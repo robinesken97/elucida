@@ -1875,7 +1875,7 @@ def selftest(outdir, with_isnet=False):
         ltxt = " ".join(a.get_text() for a in w.fl_tab.build(figf).ann_items.values())
         assert "abs" in ltxt and "\\tilde" in ltxt, ltxt
         w.fl_state.update(stokes_label=False)
-        report.append("fluorescence Stokes shift + A(λex): OK")
+        report.append("fluorescence Stokes shift + A(ex): OK")
         # Schultern, Zusatzbande, Cutoff und Ausblenden pro Bande
         w.open_csv(csv, ask=False)
         w.glob.update(shoulders=True, bands_add=True, bands="600")
@@ -2076,6 +2076,10 @@ def selftest(outdir, with_isnet=False):
         ok = False
         report.append("FAILED\n" + traceback.format_exc())
     (out / "selftest_report.txt").write_text("\n".join(report), encoding="utf-8")
+    try:                                   # Windows-Konsole (cp1252) kann z. B. kein λ: ersetzen statt abstürzen
+        sys.stdout.reconfigure(errors="replace")
+    except Exception:
+        pass
     print("\n".join(report))
     return 0 if ok else 1
 

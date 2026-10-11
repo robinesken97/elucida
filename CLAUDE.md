@@ -65,6 +65,8 @@ python build.py                                       # PyInstaller-Build (brauc
 ## Bekannte Fallen
 - **Windows-Zeilenenden:** CSVs in Tests mit `newline=""` schreiben; Reader überspringt leere Zeilen
   (früher Windows-CI-Abbruch durch `\r\r\n`).
+- **Windows-Konsole (cp1252):** Selbsttest-Meldungen nur mit ASCII/cp1252-Zeichen (kein λ, ε); die
+  Ausgabe ersetzt sonst Zeichen, früher brach CI am `print` ab.
 - **PyInstaller:** neue Imports, die nur lazy geladen werden, als `--hidden-import` in `build.py` eintragen.
 - **MuPDF:** ignoriert SVG-Clip-Pfade → Kurven geometrisch clippen (`clip_polyline`); Rechtecke mit Breite 0
   fallen bei `|=` weg → Koordinaten-Union; Alpha ist premultipliziert → beim Einfärben un-premultiplizieren.
