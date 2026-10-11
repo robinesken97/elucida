@@ -149,7 +149,11 @@ Absorption and emission in one figure, as commonly shown in papers:
 - Absorption (any UV-Vis file) and emission (Cary Eclipse CSV or .FBSW), both normalised to 1;
   λex is filled in automatically from the emission file;
   the absorption to the maximum within the "band of interest".
-- Labels with λ of the absorption maximum (plus ε, if entered) and λem of the emission maximum.
+- Labels with λabs of the absorption maximum (plus ε, if entered) and λem of the emission maximum.
+- **Stokes shift** Δν̃ = 1/λabs − 1/λem in cm⁻¹ (rounded to 10 cm⁻¹, peak positions from ~1 nm data
+  are not more precise) and in nm; optionally also in the figure at the emission label.
+- **Absorbance at λex** with a warning above A = 0.1: the inner-filter effect then distorts the
+  emission spectrum and lowers quantum yields (only relevant if both were measured on the same solution).
 - Optionally hide scattered light at λex and 2·λex.
 - Two cuvette photos (daylight and under UV) are combined with an arrow and the excitation
   wavelength; for the UV photo background removal is off by default (dark background stays).

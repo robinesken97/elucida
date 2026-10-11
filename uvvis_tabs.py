@@ -930,12 +930,27 @@ class OverlayTab(FigureTab):
 
 
 # ----------------------------------------------------------------------------
+INNER_FILTER_A = 0.1          # darüber verzerrt der Innenfiltereffekt Emissionsspektren und Quantenausbeuten
+
+
+def stokes_cm(lam_abs, lam_em):
+    """Stokes-Verschiebung Δν̃ = 1/λabs − 1/λem in cm⁻¹ (λ in nm)."""
+    if not (lam_abs and lam_em):
+        return None
+    return 1e7 / lam_abs - 1e7 / lam_em
+
+
+def fmt_stokes(v):
+    """Auf 10 cm⁻¹ runden: Peaklagen aus Spektren mit ~1 nm Raster sind nicht genauer."""
+    return f"{round(v, -1):.0f}".replace("-", "\u2212")
+
+
 class FluoTab(FigureTab):
     STATE_KEY = "fluorescence"
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",
                          c_em="#e8231b", structure=None, photo_day=None, bg_day="auto", photo_uv=None,
-                         bg_uv="none", ymax=1.2, struct_w=20.0, photo_w=30.0)
+                         bg_uv="none", ymax=1.2, struct_w=20.0, photo_w=30.0, stokes_label=False)
 
     def build_controls(self):
         st = self.st
@@ -964,6 +979,15 @@ class FluoTab(FigureTab):
         row.addWidget(color_button(st["c_em"], lambda c: self._set("c_em", c)))
         row.addStretch(1)
         f.addRow(T("ov_color"), row)
+        self.cb_stokes = QCheckBox(T("fl_stokes_label"))
+        self.cb_stokes.setChecked(st.get("stokes_label", False))
+        self.cb_stokes.toggled.connect(self.changed)
+        f.addRow(self.cb_stokes)
+        self.lbl_info = QLabel("")
+        self.lbl_info.setWordWrap(True)
+        self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        f.addRow(self.lbl_info)
+        self.info = {}
         self.lv.addWidget(g)
 
         g = QGroupBox(T("fl_images"))
@@ -1085,7 +1109,24 @@ class FluoTab(FigureTab):
 
     def collect(self):
         self.st.update(ex=self.sp_ex.value(), mask=self.cb_mask.isChecked(), alo=self.sp_alo.value(),
-                       ahi=self.sp_ahi.value(), eps=self.ed_eps.text().strip())
+                       ahi=self.sp_ahi.value(), eps=self.ed_eps.text().strip(),
+                       stokes_label=self.cb_stokes.isChecked())
+
+    def show_info(self, pa, pe, a_ex):
+        """Kennwerte unter den Daten: λabs, λem, Stokes-Verschiebung, A(λex) mit Innenfilter-Hinweis."""
+        self.info = {"lam_abs": pa, "lam_em": pe, "a_ex": a_ex,
+                     "stokes_cm": stokes_cm(pa, pe), "stokes_nm": (pe - pa) if pa and pe else None}
+        lines, warn = [], False
+        if self.info["stokes_cm"] is not None:
+            lines.append(T("fl_stokes", cm=fmt_stokes(self.info["stokes_cm"]), nm=self.info["stokes_nm"]))
+        if a_ex is not None:
+            lines.append(T("fl_a_ex", ex=self.st["ex"], a=a_ex))
+            if a_ex > INNER_FILTER_A:
+                lines.append(T("fl_inner_filter", lim=INNER_FILTER_A))
+                warn = True
+        if hasattr(self, "lbl_info"):
+            self.lbl_info.setText("\n".join(lines))
+            self.lbl_info.setStyleSheet("color: #d9534f;" if warn else "color: gray;")
 
     def figure_spec(self):
         st = self.st
@@ -1095,6 +1136,7 @@ class FluoTab(FigureTab):
             return None
         cfg = self.base_cfg()
         curves, labels = [], []
+        pa = pe = a_ex = None
         if a is not None:
             ya = X.normalize(a["x"], a["y"], st["alo"], st["ahi"])
             if ya is None:
@@ -1103,8 +1145,12 @@ class FluoTab(FigureTab):
         if a is not None:
             curves.append({"x": a["x"], "y": ya, "color": st["c_abs"], "label": None})
             pa = X.peak_in(a["x"], ya, st["alo"], st["ahi"])
+            xa = np.asarray(a["x"], float)
+            if xa.min() <= st["ex"] <= xa.max():         # Rohabsorbanz bei λex (vor dem Normieren)
+                o = np.argsort(xa)
+                a_ex = float(np.interp(st["ex"], xa[o], np.asarray(a["y"], float)[o]))
             if pa:
-                txt = f"λ =  {pa:.0f} nm"
+                txt = f"λ$_{{\\mathrm{{abs}}}}$ =  {pa:.0f} nm"
                 eps = parse_num(st["eps"])
                 if eps:
                     txt += f"\nε =  {eps:.0f} cm$^{{-1}}$ M$^{{-1}}$"
@@ -1120,7 +1166,11 @@ class FluoTab(FigureTab):
             curves.append({"x": em["x"], "y": ye, "color": st["c_em"], "label": None})
             pe = X.peak_in(em["x"], ye, float(np.nanmin(em["x"])), float(np.nanmax(em["x"])))
             if pe:
-                labels.append({"key": "label_em", "text": f"λ$_{{\\mathrm{{em}}}}$ =  {pe:.0f} nm", "lam": pe})
+                txt = f"λ$_{{\\mathrm{{em}}}}$ =  {pe:.0f} nm"
+                if st.get("stokes_label") and pa:
+                    txt += f"\nΔ$\\tilde{{\\nu}}$ =  {fmt_stokes(stokes_cm(pa, pe))} cm$^{{-1}}$"
+                labels.append({"key": "label_em", "text": txt, "lam": pe})
+        self.show_info(pa, pe, a_ex)
         xs = np.concatenate([c["x"] for c in curves])
         cfg["xlim"] = [float(xs.min()), float(xs.max())] if st["x_auto"] else [st["x_min"], st["x_max"]]
         cfg["ylim"] = [0, st["ymax"] if st["ymax"] > 0 else 1.2]

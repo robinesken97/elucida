@@ -254,6 +254,14 @@ TEXTS = {
     "fl_mask": ("Streulicht bei λex und 2·λex ausblenden", "Hide scattered light at λex and 2·λex"),
     "fl_abs_window": ("Bande von Interesse [nm]", "Band of interest [nm]"),
     "fl_eps_ph": ("optional, z. B. 23604", "optional, e.g. 23604"),
+    "fl_stokes_label": ("Stokes-Verschiebung im Bild (am Emissionslabel)",
+                        "Stokes shift in the figure (at the emission label)"),
+    "fl_stokes": ("Stokes-Verschiebung: {cm} cm⁻¹ ({nm:.0f} nm)", "Stokes shift: {cm} cm⁻¹ ({nm:.0f} nm)"),
+    "fl_a_ex": ("Absorbanz bei λex = {ex:.0f} nm: {a:.3f}", "Absorbance at λex = {ex:.0f} nm: {a:.3f}"),
+    "fl_inner_filter": ("⚠ A > {lim:g}: Innenfiltereffekt möglich (Emission verzerrt, Quantenausbeute zu "
+                        "niedrig) – gilt nur, wenn Absorption und Emission von derselben Lösung stammen.",
+                        "⚠ A > {lim:g}: inner-filter effect possible (distorted emission, quantum yield too "
+                        "low) – only applies if absorption and emission were measured on the same solution."),
     "fl_images": ("Bilder", "Images"),
     "fl_photo_day": ("Foto Tageslicht", "Photo daylight"),
     "fl_photo_uv": ("Foto unter UV", "Photo under UV"),

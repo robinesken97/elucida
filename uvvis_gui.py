@@ -1860,6 +1860,22 @@ def selftest(outdir, with_isnet=False):
         es = core.read_samples([ecl])
         assert len(es) == 1 and es[0]["name"] == "PROBE-1-45p3µM" and es[0]["ex"] == 387.0, es[0]["name"]
         report.append("overlay + fluorescence + Eclipse CSV: OK")
+
+        # Fluoreszenz: Stokes-Verschiebung, A(λex), λabs-Label
+        w.fl_state.update(stokes_label=True)
+        files = w.fl_tab.export_to(out / "fluorescence_stokes")
+        assert all(f.exists() for f in files), files
+        inf = w.fl_tab.info
+        exp_cm = 1e7 / inf["lam_abs"] - 1e7 / inf["lam_em"]
+        assert inf["lam_em"] == 520 and abs(inf["stokes_cm"] - exp_cm) < 1e-6 and inf["stokes_cm"] > 0, inf
+        assert inf["a_ex"] is not None and np.isfinite(inf["a_ex"]), inf
+        assert uvvis_tabs.fmt_stokes(1473.4) == "1470"
+        figf = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
+        FigureCanvasAgg(figf)
+        ltxt = " ".join(a.get_text() for a in w.fl_tab.build(figf).ann_items.values())
+        assert "abs" in ltxt and "\\tilde" in ltxt, ltxt
+        w.fl_state.update(stokes_label=False)
+        report.append("fluorescence Stokes shift + A(λex): OK")
         # Schultern, Zusatzbande, Cutoff und Ausblenden pro Bande
         w.open_csv(csv, ask=False)
         w.glob.update(shoulders=True, bands_add=True, bands="600")

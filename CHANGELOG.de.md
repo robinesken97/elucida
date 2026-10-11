@@ -9,6 +9,13 @@
   Abstand versetzt; „Gleiche Stapelebene wie die Kurve darüber“ (z. B. TD-DFT mit ihrer Messung).
 - Overlay: **y-Achse** mit Zahlen, ohne Zahlen und Teilstriche (Standard beim Stapeln) oder ausgeblendet.
 - Overlay: Namen **direkt an den Kurven** statt Legende; optional gestrichelte Nulllinie je Ebene.
+- Fluoreszenz: **Stokes-Verschiebung** Δν̃ = 1/λabs − 1/λem in cm⁻¹ (auf 10 cm⁻¹ gerundet) und nm
+  unter den Daten; optional auch am Emissionslabel im Bild.
+- Fluoreszenz: Absorbanz bei λex mit Warnung ab A = 0,1 (Innenfiltereffekt – relevant, wenn Absorption
+  und Emission von derselben Lösung stammen).
+
+### Geändert
+- Fluoreszenz: Das Absorptionslabel heißt λabs (einheitlich mit λem).
 
 ## 1.4.0 – 12.10.2026
 

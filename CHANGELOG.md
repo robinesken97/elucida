@@ -9,6 +9,13 @@
   "Same stacking level as the curve above" (e.g. TD-DFT with its measurement).
 - Overlay: **y axis** with numbers, without numbers and ticks (default when stacked) or hidden.
 - Overlay: names **at the curves** instead of a legend; optional dashed zero line per level.
+- Fluorescence: **Stokes shift** Δν̃ = 1/λabs − 1/λem in cm⁻¹ (rounded to 10 cm⁻¹) and nm below the
+  data; optionally also at the emission label in the figure.
+- Fluorescence: absorbance at λex with a warning above A = 0.1 (inner-filter effect – relevant if
+  absorption and emission were measured on the same solution).
+
+### Changed
+- Fluorescence: the absorption label reads λabs (consistent with λem).
 
 ## 1.4.0 – 2026-10-12
 

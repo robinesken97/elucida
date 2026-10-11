@@ -154,7 +154,11 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - Absorption (beliebige UV-Vis-Datei) und Emission (Cary-Eclipse-CSV oder .FBSW), λex wird aus der
   Emissionsdatei übernommen; beide auf 1
   normiert; die Absorption auf das Maximum in der „Bande von Interesse“.
-- Labels mit λ des Absorptionsmaximums (plus ε, wenn eingetragen) und λem des Emissionsmaximums.
+- Labels mit λabs des Absorptionsmaximums (plus ε, wenn eingetragen) und λem des Emissionsmaximums.
+- **Stokes-Verschiebung** Δν̃ = 1/λabs − 1/λem in cm⁻¹ (auf 10 cm⁻¹ gerundet, genauer sind Peaklagen aus
+  Spektren mit ~1 nm Raster nicht) und in nm; optional auch im Bild am Emissionslabel.
+- **Absorbanz bei λex** mit Warnung ab A = 0,1: Dann verzerrt der Innenfiltereffekt das Emissionsspektrum
+  und senkt Quantenausbeuten (nur relevant, wenn beides an derselben Lösung gemessen wurde).
 - Streulicht bei λex und 2·λex optional ausblenden.
 - Zwei Küvettenfotos (Tageslicht und unter UV) werden mit Pfeil und Anregungswellenlänge
   kombiniert; beim UV-Foto ist die Freistellung standardmäßig aus (dunkler Hintergrund bleibt).
