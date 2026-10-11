@@ -16,6 +16,7 @@ Lade unter **Releases** (rechts auf der Repository-Seite) die Datei für dein Sy
 |---|---|---|
 | Windows | `UVVisTool-windows-x64.zip` | `UVVisTool\UVVisTool.exe` |
 | macOS (Apple Silicon) | `UVVisTool-macos-arm64.zip` | `UVVisTool.app` |
+| macOS (Intel, ab macOS 14) | `UVVisTool-macos-x64.zip` | `UVVisTool.app` |
 | Linux | `UVVisTool-linux-x64.tar.gz` | `UVVisTool/UVVisTool` |
 
 Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
@@ -24,7 +25,8 @@ Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
 - **macOS (Gatekeeper):** `UVVisTool.app` in „Programme“ ziehen und einmal doppelklicken (wird blockiert).
   Dann Systemeinstellungen → Datenschutz & Sicherheit → ganz unten „Dennoch öffnen“ → mit Passwort/Touch ID
   bestätigen. Ab macOS 15 funktioniert der frühere Weg „Rechtsklick → Öffnen“ nicht mehr. Alternativ im
-  Terminal: `xattr -dr com.apple.quarantine /Applications/UVVisTool.app`. Nur für Apple-Silicon-Macs (M1 und neuer).
+  Terminal: `xattr -dr com.apple.quarantine /Applications/UVVisTool.app`. Welcher Mac? Apple-Menü → Über diesen Mac: „Chip Apple M…“ = Apple Silicon,
+  „Prozessor Intel…“ = Intel. Die Intel-Version braucht macOS 14 (Sonoma) oder neuer.
 
 Unter Windows immer den ganzen Ordner `UVVisTool` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 
