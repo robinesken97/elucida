@@ -44,7 +44,8 @@ def parse_release(data):
     """GitHub-API-Antwort -> {version, url, asset}. asset = Dateiname für dieses System oder None."""
     tag = data.get("tag_name") or ""
     label = platform_label()
-    asset = next((a.get("name") for a in data.get("assets") or [] if label in (a.get("name") or "")), None)
+    names = [a.get("name") or "" for a in data.get("assets") or [] if label in (a.get("name") or "")]
+    asset = next((n for n in names if n.endswith(".AppImage")), None) or next(iter(names), None)  # Linux: AppImage
     return {"version": tag.lstrip("v"), "url": data.get("html_url") or RELEASES_URL, "asset": asset}
 
 

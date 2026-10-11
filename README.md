@@ -17,7 +17,8 @@ Download the file for your system from **Releases** (right-hand side of the repo
 | Windows | `UVVisTool-windows-x64.zip` | `UVVisTool\UVVisTool.exe` |
 | macOS (Apple Silicon) | `UVVisTool-macos-arm64.zip` | `UVVisTool.app` |
 | macOS (Intel, macOS 14 or newer) | `UVVisTool-macos-x64.zip` | `UVVisTool.app` |
-| Linux | `UVVisTool-linux-x64.tar.gz` | `UVVisTool/UVVisTool` |
+| Linux (AppImage) | `UVVisTool-linux-x64.AppImage` | make executable, then double-click |
+| Linux (folder) | `UVVisTool-linux-x64.tar.gz` | `UVVisTool/UVVisTool` |
 
 The app is not code-signed, so the operating system will warn you on first launch:
 
@@ -31,6 +32,11 @@ The app is not code-signed, so the operating system will warn you on first launc
 **Updates:** on startup the app checks once a day whether a newer version is on GitHub and offers to
 open the release page (Help → "Check for updates…"; can be switched off in the Help menu). To update,
 download the new file and replace the old app; projects and settings are kept.
+
+**Linux AppImage:** `chmod +x UVVisTool-linux-x64.AppImage` (or file properties → "Allow executing"),
+then start it. It needs `fusermount` (package `fuse3`, preinstalled on most current distributions);
+without it, start with `./UVVisTool-linux-x64.AppImage --appimage-extract-and-run`. Requires a
+distribution at least as new as Ubuntu 22.04 (glibc 2.35), as does the tar.gz.
 
 On Windows, always keep the whole `UVVisTool` folder together. The `.exe` does not work without the `_internal` folder next to it.
 

@@ -14,6 +14,8 @@
 - Fluorescence: absorbance at λex with a warning above A = 0.1 (inner-filter effect – relevant if
   absorption and emission were measured on the same solution).
 
+- Linux: additionally as **AppImage** (`UVVisTool-linux-x64.AppImage`, single file); the tar.gz stays.
+
 ### Changed
 - Fluorescence: the absorption label reads λabs (consistent with λem).
 

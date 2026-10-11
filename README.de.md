@@ -17,7 +17,8 @@ Lade unter **Releases** (rechts auf der Repository-Seite) die Datei für dein Sy
 | Windows | `UVVisTool-windows-x64.zip` | `UVVisTool\UVVisTool.exe` |
 | macOS (Apple Silicon) | `UVVisTool-macos-arm64.zip` | `UVVisTool.app` |
 | macOS (Intel, ab macOS 14) | `UVVisTool-macos-x64.zip` | `UVVisTool.app` |
-| Linux | `UVVisTool-linux-x64.tar.gz` | `UVVisTool/UVVisTool` |
+| Linux (AppImage) | `UVVisTool-linux-x64.AppImage` | ausführbar machen, dann doppelklicken |
+| Linux (Ordner) | `UVVisTool-linux-x64.tar.gz` | `UVVisTool/UVVisTool` |
 
 Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
 
@@ -32,6 +33,11 @@ Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
 und bietet an, die Release-Seite zu öffnen (Hilfe → „Nach Updates suchen…“; im Hilfe-Menü abschaltbar).
 Zum Aktualisieren die neue Datei herunterladen und die alte App ersetzen; Projekte und Einstellungen
 bleiben erhalten.
+
+**Linux-AppImage:** `chmod +x UVVisTool-linux-x64.AppImage` (oder Dateieigenschaften → „Als Programm
+ausführen“), dann starten. Es braucht `fusermount` (Paket `fuse3`, bei den meisten aktuellen
+Distributionen vorinstalliert); ohne startet man mit `./UVVisTool-linux-x64.AppImage --appimage-extract-and-run`.
+Wie beim tar.gz ist eine Distribution mindestens so neu wie Ubuntu 22.04 (glibc 2.35) nötig.
 
 Unter Windows immer den ganzen Ordner `UVVisTool` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 

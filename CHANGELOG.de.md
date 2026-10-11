@@ -14,6 +14,8 @@
 - Fluoreszenz: Absorbanz bei λex mit Warnung ab A = 0,1 (Innenfiltereffekt – relevant, wenn Absorption
   und Emission von derselben Lösung stammen).
 
+- Linux: zusätzlich als **AppImage** (`UVVisTool-linux-x64.AppImage`, eine einzelne Datei); das tar.gz bleibt.
+
 ### Geändert
 - Fluoreszenz: Das Absorptionslabel heißt λabs (einheitlich mit λem).
 
