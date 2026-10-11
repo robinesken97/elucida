@@ -2,6 +2,14 @@
 
 # Änderungen
 
+## 1.5.0 – 12.10.2026
+
+### Neu
+- Overlay: **gestapelte** Darstellung wie in Papern – Kurven in Listenreihenfolge um einen gemeinsamen
+  Abstand versetzt; „Gleiche Stapelebene wie die Kurve darüber“ (z. B. TD-DFT mit ihrer Messung).
+- Overlay: **y-Achse** mit Zahlen, ohne Zahlen und Teilstriche (Standard beim Stapeln) oder ausgeblendet.
+- Overlay: Namen **direkt an den Kurven** statt Legende; optional gestrichelte Nulllinie je Ebene.
+
 ## 1.4.0 – 12.10.2026
 
 ### Neu

@@ -140,6 +140,12 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   „stärkster Übergang = 1“; alternativ zeigen die Striche die Oszillatorstärke f auf einer rechten Achse.
 - Eine **Struktur pro Spektrum**, optional in der Kurvenfarbe.
 - Struktur mit einstellbarer Größe; die Legende wird in freie Fläche gesetzt und lässt sich verschieben.
+- **Gestapelt** (wie in Papern üblich): Die Kurven werden in Listenreihenfolge um einen gemeinsamen
+  Abstand senkrecht versetzt (oben in der Liste = oberste Kurve). „Gleiche Stapelebene wie die Kurve
+  darüber“ hält z. B. eine TD-DFT-Kurve auf der Ebene ihrer Messung. Die **y-Achse** lässt sich mit
+  Zahlen, ohne Zahlen und Teilstriche (Standard beim Stapeln – bei versetzten Kurven wären die Zahlen
+  irreführend) oder gar nicht anzeigen. Optional stehen die **Namen direkt an den Kurven** statt in einer
+  Legende, und eine gestrichelte Nulllinie markiert jede Ebene.
 
 ## Fluoreszenz-Tab
 

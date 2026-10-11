@@ -415,7 +415,8 @@ COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
     DEFAULT_STATE = dict(COMMON_DEFAULTS, entries=[], mode="norm", nlo=300.0, nhi=500.0, ymax=0.0,
-                         baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0)
+                         baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0,
+                         stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False)
 
     def build_controls(self):
         st = self.st
@@ -505,6 +506,10 @@ class OverlayTab(FigureTab):
         self.cb_ecolor = QCheckBox(T("ov_struct_color"))
         self.cb_ecolor.toggled.connect(self.detail_changed)
         f.addRow(self.cb_ecolor)
+        self.cb_samelevel = QCheckBox(T("ov_same_level"))
+        self.cb_samelevel.setToolTip(T("ov_same_level_tip"))
+        self.cb_samelevel.toggled.connect(self.detail_changed)
+        f.addRow(self.cb_samelevel)
         for w in (self.sp_elo, self.sp_ehi, self.sp_d, self.sp_fwhm, self.sp_shift, self.sp_scale,
                   self.sp_offset, self.sp_lw):
             w.valueChanged.connect(self.detail_changed)
@@ -557,6 +562,36 @@ class OverlayTab(FigureTab):
             w.valueChanged.connect(self.changed)
         for w in (self.cb_base, self.cb_sticks):
             w.toggled.connect(self.changed)
+        lay.addWidget(g)
+
+        g = QGroupBox(T("ov_stack_grp"))
+        f = QFormLayout(g)
+        row = QHBoxLayout()
+        self.cb_stack = QCheckBox(T("ov_stack"))
+        self.cb_stack.setChecked(st["stack"])
+        self.cb_stack.setToolTip(T("ov_stack_tip"))
+        self.sp_gap = QDoubleSpinBox(decimals=2, minimum=0.0, maximum=1000, singleStep=0.1, value=st["stack_gap"])
+        self.sp_gap.setToolTip(T("ov_gap_tip"))
+        row.addWidget(self.cb_stack)
+        row.addWidget(QLabel(T("ov_gap")))
+        row.addWidget(self.sp_gap)
+        row.addStretch(1)
+        f.addRow(row)
+        self.cmb_yaxis = QComboBox()
+        for key in ("auto", "numbers", "no_numbers", "off"):
+            self.cmb_yaxis.addItem(T("yaxis_" + key), key)
+        self.cmb_yaxis.setCurrentIndex(max(0, self.cmb_yaxis.findData(st["y_axis"])))
+        f.addRow(T("ov_yaxis"), self.cmb_yaxis)
+        self.cb_clabels = QCheckBox(T("ov_curve_labels"))
+        self.cb_clabels.setChecked(st["curve_labels"])
+        self.cb_zero = QCheckBox(T("ov_zero_lines"))
+        self.cb_zero.setChecked(st["zero_lines"])
+        f.addRow(self.cb_clabels)
+        f.addRow(self.cb_zero)
+        for w in (self.cb_stack, self.cb_clabels, self.cb_zero):
+            w.toggled.connect(self.changed)
+        self.sp_gap.valueChanged.connect(self.changed)
+        self.cmb_yaxis.currentIndexChanged.connect(self.changed)
         lay.addWidget(g)
         self.fill_table()
         self.show_details()
@@ -671,6 +706,7 @@ class OverlayTab(FigureTab):
         if e:
             self.lbl_estruct.setText(Path(e["structure"]).name if e.get("structure") else "–")
             self.cb_ecolor.setChecked(e.get("struct_color", True))
+            self.cb_samelevel.setChecked(e.get("stack_with_prev", False))
             self.sp_scale.setValue(e.get("scale", 1.0))
             self.sp_offset.setValue(e.get("offset", 0.0))
             self.cmb_ls.setCurrentIndex(max(0, self.cmb_ls.findData(
@@ -703,7 +739,7 @@ class OverlayTab(FigureTab):
         e = self.current_entry()
         if self._loading or e is None:
             return
-        e.update(struct_color=self.cb_ecolor.isChecked())
+        e.update(struct_color=self.cb_ecolor.isChecked(), stack_with_prev=self.cb_samelevel.isChecked())
         e.update(own_norm=self.cb_own.isChecked(), nlo=self.sp_elo.value(), nhi=self.sp_ehi.value(),
                  scale=self.sp_scale.value(), offset=self.sp_offset.value(),
                  ls=self.cmb_ls.currentData(), lw=self.sp_lw.value() or None)
@@ -719,7 +755,9 @@ class OverlayTab(FigureTab):
     def collect(self):
         self.st.update(mode=self.cmb_mode.currentData(), nlo=self.sp_nlo.value(), nhi=self.sp_nhi.value(),
                        baseline=self.cb_base.isChecked(), sticks=self.cb_sticks.isChecked(),
-                       stick_mode=self.cmb_stick.currentData())
+                       stick_mode=self.cmb_stick.currentData(), stack=self.cb_stack.isChecked(),
+                       stack_gap=self.sp_gap.value(), y_axis=self.cmb_yaxis.currentData(),
+                       curve_labels=self.cb_clabels.isChecked(), zero_lines=self.cb_zero.isChecked())
 
     def choose_entry_structure(self):
         e = self.current_entry()
@@ -753,6 +791,17 @@ class OverlayTab(FigureTab):
         self.timer.start()
 
     # -- Abbildung --------------------------------------------------------------
+    @staticmethod
+    def stack_levels(vis):
+        """uid -> Stapelebene (0 = oben). „Gleiche Ebene wie darüber“ teilt die Ebene der Vorgängerkurve,
+        z. B. Messung und TD-DFT derselben Verbindung."""
+        out, lev = {}, -1
+        for i, e in enumerate(vis):
+            if i == 0 or not e.get("stack_with_prev"):
+                lev += 1
+            out[e["uid"]] = lev
+        return out
+
     LS = {"solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-."}
 
     def figure_spec(self):
@@ -760,13 +809,25 @@ class OverlayTab(FigureTab):
         vis = [e for e in st["entries"] if e["visible"]]
         if not vis:
             return None
+        for e in vis:
+            e.setdefault("uid", uuid.uuid4().hex[:8])
         cfg = self.base_cfg()
         eps_mode = st["mode"] == "eps"
         mode = st.get("stick_mode", "max")
+        stack = st.get("stack", False)
+        if stack and mode == "faxis":            # eine f-Achse passt nicht zu versetzten Kurven
+            mode = "band"
+        levels = self.stack_levels(vis) if stack else {}
+        n_lev = max(levels.values(), default=0) + 1
+        gap = st.get("stack_gap", 1.0)
+
+        def total_off(e):                        # oberster Eintrag der Liste = oberste Kurve
+            return e.get("offset", 0.0) + ((n_lev - 1 - levels[e["uid"]]) * gap if stack else 0.0)
         curves, sticks, exp_x = [], [], []
+        tagged = set()
         for e in vis:
             lo, hi = (e["nlo"], e["nhi"]) if e["own_norm"] else (st["nlo"], st["nhi"])
-            sc, off = e.get("scale", 1.0), e.get("offset", 0.0)
+            sc, off = e.get("scale", 1.0), total_off(e)
             ls = self.LS.get(e.get("ls") or ("dashed" if e["kind"] == "calc" else "solid"), "-")
             if e["kind"] == "exp":
                 s_ = self.sample(e["file"], e["sample"])
@@ -816,9 +877,19 @@ class OverlayTab(FigureTab):
                         sticks.append({"x": sl, "h": h * sc, "color": e["color"], "base": off})
             if e.get("lw"):
                 c["lw"] = e["lw"]
+            lev = levels.get(e["uid"], len(curves))
+            if lev not in tagged:                # Name an der Kurve: nur die erste Kurve je Ebene
+                c["tag"] = e["label"]
+                tagged.add(lev)
             curves.append(c)
         if not curves:
             return None
+        y_axis = st.get("y_axis", "auto")
+        cfg["y_axis"] = ("no_numbers" if stack else "numbers") if y_axis == "auto" else y_axis
+        cfg["curve_labels"] = bool(st.get("curve_labels"))
+        cfg["legend"] = not cfg["curve_labels"]
+        if stack and st.get("zero_lines"):
+            cfg["zero_lines"] = [lev * gap for lev in range(n_lev)]
         if st["x_auto"]:
             if exp_x:
                 xs = np.concatenate(exp_x)
@@ -837,7 +908,7 @@ class OverlayTab(FigureTab):
             mx = max(np.nanmax(c["y"][(c["x"] >= lo_x) & (c["x"] <= hi_x)], initial=0) for c in curves)
             cfg["ylim"] = [ymin, 1.1 * mx if mx > 0 else 1]
         else:                                    # normiert: Platz für skalierte/versetzte Kurven
-            cfg["ylim"] = [ymin, max(1.1, max(1.1 * e.get("scale", 1.0) + e.get("offset", 0.0) for e in vis))]
+            cfg["ylim"] = [ymin, max(1.1, max(1.1 * e.get("scale", 1.0) + total_off(e) for e in vis))]
         cfg["ylabel"] = r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else "normalized absorbance [a.u.]"
         imgs = []
         if st.get("structure") and Path(st["structure"]).exists():

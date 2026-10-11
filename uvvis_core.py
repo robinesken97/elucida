@@ -1168,6 +1168,10 @@ class Figure:
         ab = self.ax.get_window_extent()
         return p / ab.width, p / ab.height
 
+    def _extra_blocks(self, rend):
+        """Weitere feste Flächen (Achsenbruchteile), die Labels/Inset/Bilder meiden sollen."""
+        return []
+
     def _renderer(self):
         # eigener Agg-Renderer mit fig.dpi: unabhängig von GUI-Backend/HiDPI-Skalierung
         from matplotlib.backends.backend_agg import RendererAgg
@@ -1181,6 +1185,8 @@ class Figure:
         fs = FreeSpace()
         env = self._envelope(fs.n)
         fs.block_below(env)
+        for r in self._extra_blocks(rend):
+            fs.block_rect(*r)
         lay = self.layout
         warn_over = []
 

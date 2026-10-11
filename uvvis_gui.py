@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 if "--selftest" in sys.argv:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -1944,6 +1944,33 @@ def selftest(outdir, with_isnet=False):
             files = w.ov_tab.export_to(out / f"overlay_sticks_{mode}")
             assert all(f.exists() for f in files), files
         report.append("overlay options: OK")
+
+        # Overlay gestapelt: Ebenen in Listenreihenfolge, TD-DFT auf der Ebene der Messung, y ohne Zahlen
+        ents = w.ov_state["entries"]
+        ents.append(dict(ents[0], uid="stack3", label="exp 2", color="#e8231b"))
+        ents[1]["stack_with_prev"] = True
+
+        def ov_fig():
+            figo = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
+            FigureCanvasAgg(figo)
+            Fo = w.ov_tab.build(figo)
+            figo.canvas.draw()
+            return Fo
+        w.ov_state.update(mode="norm", stick_mode="faxis", stack=False, curve_labels=False, zero_lines=False)
+        flat = ov_fig()
+        w.ov_state.update(stack=True, stack_gap=1.2, y_axis="auto", curve_labels=True, zero_lines=True)
+        stk = ov_fig()
+        for i, dy in enumerate((1.2, 1.2, 0.0)):
+            d = np.nanmedian(stk.curves[i]["y"] - flat.curves[i]["y"])
+            assert abs(d - dy) < 1e-9, (i, d)
+        assert stk.ax2 is None and not stk.ax.yaxis.get_major_ticks()[0].label1.get_visible()
+        assert len(stk.curve_texts) == 2 and stk.legend is None, len(stk.curve_texts)
+        files = w.ov_tab.export_to(out / "overlay_stacked")
+        assert all(f.exists() for f in files), files
+        ents.pop()
+        ents[1].pop("stack_with_prev")
+        w.ov_state.update(stack=False, curve_labels=False, zero_lines=False, y_axis="auto")
+        report.append("overlay stacked: OK")
 
         # Export ins Projekt inkl. Excel-Report
         w.open_csv(csv, ask=False)

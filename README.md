@@ -136,6 +136,11 @@ Compare several spectra in one figure, measured and calculated:
   transition = 1"; alternatively the sticks show the oscillator strength f on a right axis.
 - A **structure per spectrum**, optionally drawn in the curve colour.
 - Structure with adjustable size; the legend is placed in free space and can be dragged.
+- **Stacked** (as usual in papers): curves are offset vertically by a common spacing in list order
+  (top of the list = top curve). "Same stacking level as the curve above" keeps e.g. a TD-DFT curve
+  on the level of its measurement. The **y axis** can be shown with numbers, without numbers and
+  ticks (default when stacked – offset curves make the numbers misleading) or hidden. Optionally
+  the **names are written at the curves** instead of a legend, and a dashed zero line marks each level.
 
 ## Fluorescence tab
 

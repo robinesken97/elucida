@@ -174,9 +174,11 @@ class SimpleFigure(core.Figure):
         self._inset_table = None
         self.legend = None
         self.ax2 = None
+        self.curve_texts = []
         self._plot(sticks or [])
         self._fit_axes(0.01 if cfg.get("size_cm") else 0.06)
-        if legend:
+        self._curve_labels()
+        if legend and cfg.get("legend", True):
             self._legend()
         self._make_labels(labels or [])
         self._images()
@@ -230,6 +232,16 @@ class SimpleFigure(core.Figure):
                 ax.spines["right"].set_visible(False)
         if f_sticks:
             ax.tick_params(which="both", right=False)
+        for y0 in cfg.get("zero_lines") or []:             # Nulllinie je Stapelebene
+            if ylim[0] <= y0 <= ylim[1]:
+                ax.axhline(y0, color="0.6", lw=max(0.5, 0.6 * sc), ls=(0, (4, 3)), zorder=0.5)
+        y_axis = cfg.get("y_axis", "numbers")              # numbers | no_numbers | off
+        if y_axis in ("no_numbers", "off"):
+            # gestapelte/versetzte Kurven: Zahlen auf der y-Achse wären irreführend
+            ax.tick_params(axis="y", which="both", left=False, labelleft=False)
+        if y_axis == "off":
+            ax.spines["left"].set_visible(False)
+            ax.set_ylabel("")
 
     def _fit_axes(self, pad_in=0.06):
         """Wie im Hauptplot, berücksichtigt aber auch die rechte f-Achse."""
@@ -248,6 +260,29 @@ class SimpleFigure(core.Figure):
         if right - left > 0.3 and top - bottom > 0.3:
             for a in (self.ax, self.ax2):
                 a.set_position([left, bottom, right - left, top - bottom])
+
+    def _curve_labels(self):
+        """Kurvennamen rechts über dem Kurvenende (statt Legende), in Kurvenfarbe."""
+        if not self.cfg.get("curve_labels"):
+            return
+        ax = self.ax
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        lo, hi = min(x0, x1), max(x0, x1)
+        for c in self.curves:
+            if not c.get("tag"):
+                continue
+            x, y = np.asarray(c["x"], float), np.asarray(c["y"], float)
+            sel = (x >= hi - 0.15 * (hi - lo)) & (x <= hi) & np.isfinite(y)
+            if not sel.any():
+                continue
+            yt = min(float(np.nanmax(y[sel])), y1) + 0.03 * (y1 - y0)
+            self.curve_texts.append(ax.text(hi - 0.01 * (hi - lo), yt, core.fmt_text(c["tag"], self.cfg),
+                                            ha="right", va="bottom", color=c.get("color") or "black",
+                                            fontsize=self.cfg["font_size"] * 0.8, zorder=5))
+
+    def _extra_blocks(self, rend):
+        return [self._measure_af(t.get_window_extent(rend)) for t in self.curve_texts]
 
     def _legend(self):
         handles = [h for h in self.ax.get_lines() if h.get_label() and not h.get_label().startswith("_")]
@@ -278,6 +313,8 @@ class SimpleFigure(core.Figure):
         rend = self._renderer()
         fs = core.FreeSpace()
         fs.block_below(self._envelope(fs.n))
+        for r in self._extra_blocks(rend):
+            fs.block_rect(*r)
         for a in self.axes_items.values():
             fr = getattr(a, "_frame", None)
             bb = fr.get_window_extent(rend) if fr is not None else a.get_tightbbox(rend)

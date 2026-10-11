@@ -330,6 +330,26 @@ TEXTS = {
     "tf_axes_frame": ("Geschlossener Rahmen um den Plot (auch oben und rechts)",
                       "Closed frame around the plot (top and right too)"),
     "tf_struct_frame": ("Abgerundeter Rahmen um die Struktur", "Rounded frame around the structure"),
+    # ---- Overlay: Stapeln --------------------------------------------------
+    "ov_stack_grp": ("Stapeln und Achsen", "Stacking and axes"),
+    "ov_stack": ("Gestapelt", "Stacked"),
+    "ov_stack_tip": ("Kurven senkrecht übereinander, in der Reihenfolge der Liste (oben = oben).\n"
+                     "Zusätzlich gilt der Versatz der einzelnen Kurve.",
+                     "Curves stacked vertically in list order (top = top).\n"
+                     "The offset of each curve is added on top."),
+    "ov_gap": ("Abstand", "Spacing"),
+    "ov_gap_tip": ("Abstand der Ebenen in y-Einheiten (normiert: 1 = eine Kurvenhöhe; ε-Modus: 10³ M⁻¹ cm⁻¹)",
+                   "Spacing of the levels in y units (normalised: 1 = one curve height; ε mode: 10³ M⁻¹ cm⁻¹)"),
+    "ov_yaxis": ("y-Achse", "y axis"),
+    "yaxis_auto": ("automatisch (gestapelt: ohne Zahlen)", "automatic (stacked: no numbers)"),
+    "yaxis_numbers": ("mit Zahlen", "with numbers"),
+    "yaxis_no_numbers": ("ohne Zahlen und Teilstriche", "without numbers and ticks"),
+    "yaxis_off": ("ausblenden", "hide"),
+    "ov_curve_labels": ("Namen an den Kurven statt Legende", "Names at the curves instead of a legend"),
+    "ov_zero_lines": ("Nulllinie je Ebene (gestrichelt)", "Zero line per level (dashed)"),
+    "ov_same_level": ("Gleiche Stapelebene wie die Kurve darüber", "Same stacking level as the curve above"),
+    "ov_same_level_tip": ("z. B. TD-DFT direkt unter der zugehörigen Messung",
+                          "e.g. TD-DFT directly with its measurement"),
     # ---- Update-Prüfung ---------------------------------------------------
     "act_check_updates": ("Nach Updates suchen…", "Check for updates…"),
     "act_auto_updates": ("Beim Start automatisch nach Updates suchen", "Check for updates on startup"),
