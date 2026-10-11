@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 if "--selftest" in sys.argv:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -45,6 +45,7 @@ from uvvis_i18n import T, get_lang, set_lang  # noqa: E402
 import uvvis_tabs  # noqa: E402
 import uvvis_project as PRJ  # noqa: E402
 import uvvis_report as REPORT  # noqa: E402
+import uvvis_update as UPD  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -348,6 +349,8 @@ class MainWindow(QMainWindow):
         self.build_ui()
         self.setAcceptDrops(True)
         QTimer.singleShot(0, self._init_undo)
+        if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            QTimer.singleShot(3000, lambda: self.check_updates(manual=False))
         geo = self.settings.value("geometry")
         if geo:
             self.restoreGeometry(geo)
@@ -394,6 +397,11 @@ class MainWindow(QMainWindow):
             grp.addAction(act)
             ml.addAction(act)
         mh = mb.addMenu(T("menu_help"))
+        mh.addAction(QAction(T("act_check_updates"), self, triggered=lambda: self.check_updates(manual=True)))
+        act = QAction(T("act_auto_updates"), self, checkable=True, checked=self._auto_updates())
+        act.toggled.connect(lambda on: self.settings.setValue("update_auto", on))
+        mh.addAction(act)
+        mh.addSeparator()
         mh.addAction(QAction(T("act_about"), self, triggered=lambda: QMessageBox.about(
             self, T("act_about"), T("about", v=APP_VERSION))))
 
@@ -1626,6 +1634,58 @@ class MainWindow(QMainWindow):
         if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             QMessageBox.information(self, T("app_title"), msg)
 
+    # ------------------------------------------------------------ Updates
+    def _auto_updates(self):
+        return str(self.settings.value("update_auto", True)).lower() not in ("false", "0")
+
+    def check_updates(self, manual=False):
+        """Neuestes Release auf GitHub abfragen. Automatisch höchstens einmal pro Tag und still bei
+        Fehlern (z. B. offline); über das Hilfe-Menü mit Rückmeldung."""
+        import time
+        if not manual:
+            if not self._auto_updates() or time.time() - float(self.settings.value("update_last", 0) or 0) < 86400:
+                return
+        t = Task(lambda: UPD.fetch_latest(APP_VERSION), self)
+        self._tasks.append(t)
+
+        def done(info):
+            self.settings.setValue("update_last", time.time())
+            self.show_update(info, manual)
+
+        def failed(msg):
+            if manual:
+                QMessageBox.warning(self, T("upd_title"), T("upd_failed", err=msg))
+        t.done.connect(done)
+        t.failed.connect(failed)
+        t.finished.connect(lambda: self._tasks.remove(t))
+        t.start()
+
+    def update_text(self, info, manual):
+        """Meldungstext oder None (nichts anzeigen). Übersprungene Versionen nur bei manueller Prüfung."""
+        if not UPD.is_newer(info["version"], APP_VERSION):
+            return T("upd_current", cur=APP_VERSION) if manual else None
+        if not manual and self.settings.value("update_skip", "") == info["version"]:
+            return None
+        return T("upd_available", new=info["version"], cur=APP_VERSION,
+                 file=info["asset"] or T("upd_no_asset"))
+
+    def show_update(self, info, manual):
+        txt = self.update_text(info, manual)
+        if txt is None:
+            return
+        if not UPD.is_newer(info["version"], APP_VERSION):
+            QMessageBox.information(self, T("upd_title"), txt)
+            return
+        box = QMessageBox(QMessageBox.Information, T("upd_title"), txt, parent=self)
+        b_open = box.addButton(T("upd_open"), QMessageBox.AcceptRole)
+        b_skip = box.addButton(T("upd_skip"), QMessageBox.DestructiveRole)
+        box.addButton(T("upd_later"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is b_open:
+            QDesktopServices.openUrl(QUrl(info["url"]))
+        elif box.clickedButton() is b_skip:
+            self.settings.setValue("update_skip", info["version"])
+
     def closeEvent(self, ev):
         if not self.maybe_save():
             ev.ignore()
@@ -1924,6 +1984,20 @@ def selftest(outdir, with_isnet=False):
         w.text_fmt = dict(core.TEXT_DEFAULTS)
         w.render()
         report.append("text format + frames: OK")
+
+        # Update-Prüfung (ohne Netz: Versionsvergleich, API-Antwort, Meldungstext)
+        assert UPD.parse_version("v1.10.0") > UPD.parse_version("1.9.9") and UPD.parse_version("x") == ()
+        assert UPD.is_newer("1.4.1", "1.4.0") and not UPD.is_newer("1.4", "1.4.0") and not UPD.is_newer("", "1.0")
+        lbl = UPD.platform_label()
+        fake = {"tag_name": "v99.0.0", "html_url": "https://example.invalid/r",
+                "assets": [{"name": f"UVVisTool-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
+                + [{"name": "UVVisTool-linux-x64.tar.gz"}]}
+        info = UPD.parse_release(fake)
+        assert info["version"] == "99.0.0" and lbl in info["asset"], info
+        assert "99.0.0" in w.update_text(info, manual=False)
+        assert w.update_text(dict(info, version=APP_VERSION), manual=False) is None
+        assert APP_VERSION in w.update_text(dict(info, version=APP_VERSION), manual=True)
+        report.append("update check: OK")
 
         # Projekt automatisch gespeichert -> in neuem Fenster öffnen (Dateien als Kopie, Pfade relativ)
         w.ov_state["entries"][0]["file"] = w.import_file(w.ov_state["entries"][0]["file"], "data")

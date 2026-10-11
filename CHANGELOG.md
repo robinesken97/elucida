@@ -2,6 +2,16 @@
 
 # Changelog
 
+## 1.4.0 – 2026-10-12
+
+### Added
+- Update check: on startup (at most once a day) the app asks GitHub whether a newer release exists
+  and offers to open the release page, naming the right file for your system. Help → "Check for
+  updates…" checks immediately; Help → "Check for updates on startup" switches the automatic check
+  off. Only the public GitHub API is contacted; nothing is sent except the program version. Without
+  an internet connection nothing happens.
+- Release builds for Intel Macs (macOS 14 or newer): `UVVisTool-macos-x64.zip`.
+
 ## 1.3.0 – 2026-10-10
 
 ### Added

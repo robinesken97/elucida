@@ -2,6 +2,16 @@
 
 # Änderungen
 
+## 1.4.0 – 12.10.2026
+
+### Neu
+- Update-Prüfung: Beim Start (höchstens einmal am Tag) fragt das Programm bei GitHub nach, ob es eine
+  neuere Version gibt, und bietet an, die Release-Seite zu öffnen – mit der passenden Datei für dein
+  System. Hilfe → „Nach Updates suchen…“ prüft sofort; Hilfe → „Beim Start automatisch nach Updates
+  suchen“ schaltet die automatische Prüfung ab. Es wird nur die öffentliche GitHub-API abgefragt und
+  nichts außer der Programmversion übertragen. Ohne Internetverbindung passiert nichts.
+- Release-Builds für Intel-Macs (ab macOS 14): `UVVisTool-macos-x64.zip`.
+
 ## 1.3.0 – 10.10.2026
 
 ### Neu

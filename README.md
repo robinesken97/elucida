@@ -28,6 +28,10 @@ The app is not code-signed, so the operating system will warn you on first launc
   `xattr -dr com.apple.quarantine /Applications/UVVisTool.app`. Not sure which Mac you have? Apple menu → About This Mac: "Chip Apple M…" = Apple Silicon,
   "Processor Intel…" = Intel. The Intel version needs macOS 14 (Sonoma) or newer.
 
+**Updates:** on startup the app checks once a day whether a newer version is on GitHub and offers to
+open the release page (Help → "Check for updates…"; can be switched off in the Help menu). To update,
+download the new file and replace the old app; projects and settings are kept.
+
 On Windows, always keep the whole `UVVisTool` folder together. The `.exe` does not work without the `_internal` folder next to it.
 
 ## Workflow

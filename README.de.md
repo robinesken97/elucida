@@ -28,6 +28,11 @@ Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
   Terminal: `xattr -dr com.apple.quarantine /Applications/UVVisTool.app`. Welcher Mac? Apple-Menü → Über diesen Mac: „Chip Apple M…“ = Apple Silicon,
   „Prozessor Intel…“ = Intel. Die Intel-Version braucht macOS 14 (Sonoma) oder neuer.
 
+**Updates:** Beim Start prüft das Programm einmal am Tag, ob es auf GitHub eine neuere Version gibt,
+und bietet an, die Release-Seite zu öffnen (Hilfe → „Nach Updates suchen…“; im Hilfe-Menü abschaltbar).
+Zum Aktualisieren die neue Datei herunterladen und die alte App ersetzen; Projekte und Einstellungen
+bleiben erhalten.
+
 Unter Windows immer den ganzen Ordner `UVVisTool` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 
 ## Ablauf

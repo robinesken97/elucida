@@ -330,6 +330,23 @@ TEXTS = {
     "tf_axes_frame": ("Geschlossener Rahmen um den Plot (auch oben und rechts)",
                       "Closed frame around the plot (top and right too)"),
     "tf_struct_frame": ("Abgerundeter Rahmen um die Struktur", "Rounded frame around the structure"),
+    # ---- Update-Prüfung ---------------------------------------------------
+    "act_check_updates": ("Nach Updates suchen…", "Check for updates…"),
+    "act_auto_updates": ("Beim Start automatisch nach Updates suchen", "Check for updates on startup"),
+    "upd_title": ("Update", "Update"),
+    "upd_available": ("Version {new} ist verfügbar (installiert: {cur}).\n\n"
+                      "Auf der Release-Seite herunterladen: {file}\n"
+                      "Projekte und Einstellungen bleiben erhalten.",
+                      "Version {new} is available (installed: {cur}).\n\n"
+                      "Download from the release page: {file}\n"
+                      "Projects and settings are kept."),
+    "upd_no_asset": ("die Datei für dein System", "the file for your system"),
+    "upd_current": ("Du hast die aktuelle Version ({cur}).", "You have the latest version ({cur})."),
+    "upd_failed": ("Update-Prüfung fehlgeschlagen (keine Internetverbindung?):\n{err}",
+                   "Update check failed (no internet connection?):\n{err}"),
+    "upd_open": ("Release-Seite öffnen", "Open release page"),
+    "upd_skip": ("Diese Version überspringen", "Skip this version"),
+    "upd_later": ("Später", "Later"),
     "tf_missing": ("Schrift „{name}“ nicht gefunden – Ersatzschrift wird verwendet.",
                    "Font “{name}” not found – using a fallback font."),
 }
