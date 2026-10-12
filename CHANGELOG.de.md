@@ -2,6 +2,12 @@
 
 # Änderungen
 
+## 1.5.2 – 12.10.2026
+
+### Korrigiert
+- Der Selbsttest (`--selftest`) schreibt nicht mehr in die Benutzereinstellungen (zuletzt geöffnete
+  Projekte, letzter Ordner, Sprache); er nutzt eine eigene Einstellungsdatei im Ausgabeordner.
+
 ## 1.5.1 – 12.10.2026
 
 ### Korrigiert

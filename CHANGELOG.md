@@ -2,6 +2,12 @@
 
 # Changelog
 
+## 1.5.2 – 2026-10-12
+
+### Fixed
+- The self-test (`--selftest`) no longer writes into the user's settings (recent projects, last
+  folder, language); it uses its own settings file in the output folder.
+
 ## 1.5.1 – 2026-10-12
 
 ### Fixed

@@ -13,7 +13,8 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.5.2"
+SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -312,7 +313,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.settings = QSettings(APP_NAME, APP_NAME)
+        self.settings = (QSettings(str(SETTINGS_FILE), QSettings.IniFormat) if SETTINGS_FILE
+                         else QSettings(APP_NAME, APP_NAME))
         set_lang(self.settings.value("lang", "de"))
         self.csv_path = None
         self.groups, self.units = {}, {}
@@ -1744,8 +1746,11 @@ def make_selftest_inputs(d: Path):
 
 
 def selftest(outdir, with_isnet=False):
+    global SETTINGS_FILE
     out = Path(outdir).resolve()
     out.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE = out / "selftest_settings.ini"     # zuletzt geöffnet, Sprache usw. nicht beim Nutzer ändern
+    SETTINGS_FILE.unlink(missing_ok=True)
     report = [f"{APP_NAME} {APP_VERSION} selftest", f"python {sys.version.split()[0]}, {sys.platform}"]
     ok = True
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
