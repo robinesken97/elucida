@@ -2,7 +2,12 @@
 
 # Changelog
 
-## 1.5.0 – 2026-10-12
+## 1.5.1 – 2026-10-12
+
+### Fixed
+- macOS: the app shows its version in the Finder (was 0.0.0).
+
+## 1.5.0 – 2026-10-11
 
 ### Added
 - Overlay: **stacked** display as usual in papers – curves offset by a common spacing in list order;
@@ -18,9 +23,8 @@
 
 ### Changed
 - Fluorescence: the absorption label reads λabs (consistent with λem).
-- macOS: the app shows its version in the Finder (was 0.0.0).
 
-## 1.4.0 – 2026-10-12
+## 1.4.0 – 2026-10-11
 
 ### Added
 - Update check: on startup (at most once a day) the app asks GitHub whether a newer release exists

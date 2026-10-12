@@ -2,7 +2,12 @@
 
 # Änderungen
 
-## 1.5.0 – 12.10.2026
+## 1.5.1 – 12.10.2026
+
+### Korrigiert
+- macOS: Die App zeigt im Finder ihre Version (bisher 0.0.0).
+
+## 1.5.0 – 11.10.2026
 
 ### Neu
 - Overlay: **gestapelte** Darstellung wie in Papern – Kurven in Listenreihenfolge um einen gemeinsamen
@@ -18,9 +23,8 @@
 
 ### Geändert
 - Fluoreszenz: Das Absorptionslabel heißt λabs (einheitlich mit λem).
-- macOS: Die App zeigt im Finder ihre Version (bisher 0.0.0).
 
-## 1.4.0 – 12.10.2026
+## 1.4.0 – 11.10.2026
 
 ### Neu
 - Update-Prüfung: Beim Start (höchstens einmal am Tag) fragt das Programm bei GitHub nach, ob es eine
