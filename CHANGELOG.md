@@ -18,6 +18,7 @@
 
 ### Changed
 - Fluorescence: the absorption label reads λabs (consistent with λem).
+- macOS: the app shows its version in the Finder (was 0.0.0).
 
 ## 1.4.0 – 2026-10-12
 

@@ -18,6 +18,7 @@
 
 ### Geändert
 - Fluoreszenz: Das Absorptionslabel heißt λabs (einheitlich mit λem).
+- macOS: Die App zeigt im Finder ihre Version (bisher 0.0.0).
 
 ## 1.4.0 – 12.10.2026
 
