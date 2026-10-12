@@ -5,8 +5,14 @@
 
 Ergebnis: dist/UVVisTool/ (Windows/Linux) bzw. dist/UVVisTool.app (macOS).
 """
+import plistlib
+import re
 import subprocess
 import sys
+from pathlib import Path
+
+# Versionsnummer nur an einer Stelle pflegen: APP_VERSION in uvvis_gui.py
+VERSION = re.search(r'^APP_VERSION = "([^"]+)"', Path("uvvis_gui.py").read_text(encoding="utf-8"), re.M).group(1)
 
 args = [
     sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
@@ -38,4 +44,15 @@ args = [
 if sys.platform == "darwin":
     args[4:4] = ["--osx-bundle-identifier", "de.uvvistool.app"]
 print(" ".join(args))
-sys.exit(subprocess.call(args))
+rc = subprocess.call(args)
+if rc == 0 and sys.platform == "darwin":
+    # Version in die Info.plist (sonst zeigt der Finder 0.0.0), danach neu ad-hoc signieren,
+    # weil die Signatur die Info.plist einschließt
+    app = Path("dist/UVVisTool.app")
+    plist = app / "Contents" / "Info.plist"
+    info = plistlib.loads(plist.read_bytes())
+    info.update(CFBundleShortVersionString=VERSION, CFBundleVersion=VERSION)
+    plist.write_bytes(plistlib.dumps(info))
+    rc = subprocess.call(["codesign", "--force", "--deep", "--sign", "-", str(app)])
+    print(f"Info.plist: Version {VERSION}")
+sys.exit(rc)
