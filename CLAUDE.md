@@ -73,6 +73,9 @@ python build.py                                       # PyInstaller-Build (brauc
 - **MuPDF:** ignoriert SVG-Clip-Pfade → Kurven geometrisch clippen (`clip_polyline`); Rechtecke mit Breite 0
   fallen bei `|=` weg → Koordinaten-Union; Alpha ist premultipliziert → beim Einfärben un-premultiplizieren.
 - **Label-Kollisionen:** gespeicherte Positionen von Labels, Inset und Bildern vor neuen Elementen reservieren.
+- **Mausereignisse (matplotlib):** `LocationEvent` rundet x/y auf ganze Pixel; Messpunkte liegen in der Vorschau
+  < 1 px auseinander. Tests mit simulierten Klicks/Hover nur auf ±1 Messpunkt prüfen und dann, dass die Anzeige
+  genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).
 - **Undo:** während `set_state` greift `_restoring`; Änderungen über `QTimer` verzögert erfassen.
 - **macOS-Version:** `build.py` liest `APP_VERSION` und schreibt sie nach dem Build in die `Info.plist`,
   danach `codesign --force --deep --sign -` (Signatur schließt die Info.plist ein).
