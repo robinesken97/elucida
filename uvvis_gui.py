@@ -2085,15 +2085,17 @@ def selftest(outdir, with_isnet=False):
         px, py = ax.transData.transform((sp0["x"][i0], sp0["y"][i0]))
         w.canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", w.canvas, px, py))
         msg = w.statusBar().currentMessage()
-        # identische Spektren in der Serie möglich -> Punkt (λ, A) prüfen, nicht die Kurvenidentität
+        # Mausereignisse haben ganzzahlige Pixel, Messpunkte liegen in der Vorschau < 1 px auseinander:
+        # Treffer darf der Nachbarpunkt sein. Geprüft wird, dass die Anzeige genau den markierten Punkt zeigt.
         assert hv.hit is not None, msg
         hc, hi = hv.hit
-        assert hc["x"][hi] == sp0["x"][i0] and abs(hc["y"][hi] - sp0["y"][i0]) < 1e-12, (msg, hc["y"][hi])
-        assert f"{sp0['x'][i0]:.1f}" in msg and "A =" in msg, msg
+        assert abs(hc["x"][hi] - sp0["x"][i0]) <= 1.0 + 1e-9, (msg, hc["x"][hi])
+        assert f"λ = {hc['x'][hi]:.1f} nm" in msg and f"A = {hc['y'][hi]:.4f}" in msg, msg
+        assert list(hv.marker.get_xdata()) == [hc["x"][hi]], hv.marker.get_xdata()
         assert hv.marker.get_animated(), "Marker darf nicht exportiert werden"
         w.canvas.callbacks.process("button_press_event",
                                    MouseEvent("button_press_event", w.canvas, px, py, button=1, dblclick=True))
-        lam0 = round(float(sp0["x"][i0]))
+        lam0 = round(float(hc["x"][hi]))
         assert w.glob["bands"] == f"{lam0:g}", w.glob["bands"]
         w.pick_band(lam0 + 1)                       # erneut (±2 nm) -> wieder entfernt
         assert w.glob["bands"] == "", w.glob["bands"]
