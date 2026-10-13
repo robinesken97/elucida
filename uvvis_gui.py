@@ -2085,7 +2085,11 @@ def selftest(outdir, with_isnet=False):
         px, py = ax.transData.transform((sp0["x"][i0], sp0["y"][i0]))
         w.canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", w.canvas, px, py))
         msg = w.statusBar().currentMessage()
-        assert hv.hit is not None and hv.hit[0] is sp0 and f"{sp0['x'][i0]:.1f}" in msg and "A =" in msg, msg
+        # identische Spektren in der Serie möglich -> Punkt (λ, A) prüfen, nicht die Kurvenidentität
+        assert hv.hit is not None, msg
+        hc, hi = hv.hit
+        assert hc["x"][hi] == sp0["x"][i0] and abs(hc["y"][hi] - sp0["y"][i0]) < 1e-12, (msg, hc["y"][hi])
+        assert f"{sp0['x'][i0]:.1f}" in msg and "A =" in msg, msg
         assert hv.marker.get_animated(), "Marker darf nicht exportiert werden"
         w.canvas.callbacks.process("button_press_event",
                                    MouseEvent("button_press_event", w.canvas, px, py, button=1, dblclick=True))
