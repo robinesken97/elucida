@@ -114,6 +114,101 @@ class TabDragger(core.Dragger):
         pass
 
 
+class HoverReadout:
+    """Maus über den Spektren: nächsten Messpunkt markieren und λ/Wert melden (on_text).
+    curves: [dict(x, y, val, name)] – x/y wie gezeichnet (Datenkoordinaten von F.ax), val = angezeigter
+    Wert (z. B. ohne Stapelversatz). Doppelklick auf einen Punkt -> on_pick(λ).
+    Der Marker ist 'animated' (nur per Blitting gezeichnet) und erscheint daher nie im Export."""
+
+    TOL_PX = 12
+
+    def __init__(self, F, curves, on_text, fmt, on_pick=None):
+        self.F, self.curves, self.on_text, self.fmt, self.on_pick = F, curves, on_text, fmt, on_pick
+        self.bg, self.hit, self.shown = None, None, False
+        self.marker, = F.ax.plot([], [], "o", ms=7, mfc="none", mec="#d9534f", mew=1.5,
+                                 animated=True, zorder=10, clip_on=False)
+        c = F.fig.canvas
+        self.cids = [c.mpl_connect("draw_event", self._on_draw),
+                     c.mpl_connect("motion_notify_event", self.move),
+                     c.mpl_connect("figure_leave_event", self.leave),
+                     c.mpl_connect("button_press_event", self.press)]
+
+    def disconnect(self):
+        for cid in self.cids:
+            self.F.fig.canvas.mpl_disconnect(cid)
+        self.on_text("")
+
+    def _on_draw(self, _ev):
+        self.bg = self.F.fig.canvas.copy_from_bbox(self.F.fig.bbox)
+
+    def _blocked(self, ev):
+        """Über Inset/Bild/Label/Legende oder beim Ziehen: kein Hover (die gehören dem Dragger)."""
+        if ev.button is not None:
+            return True
+        if any(a.get_window_extent().contains(ev.x, ev.y) for a in self.F.axes_items.values()):
+            return True
+        leg = getattr(self.F, "legend", None)
+        if leg is not None and leg.contains(ev)[0]:
+            return True
+        return any(a.contains(ev)[0] for a in self.F.ann_items.values())
+
+    def nearest(self, px, py):
+        """Nächster Messpunkt zum Pixel (px, py) -> (Kurve, Index) oder None."""
+        ax = self.F.ax
+        xd = ax.transData.inverted().transform((px, py))[0]
+        best, bd = None, self.TOL_PX * self.F.fig.dpi / 72
+        for c in self.curves:
+            x = np.asarray(c["x"], float)
+            if not len(x):
+                continue
+            i = int(np.nanargmin(np.abs(x - xd)))
+            if not np.isfinite(c["y"][i]):
+                continue
+            qx, qy = ax.transData.transform((x[i], c["y"][i]))
+            d = np.hypot(qx - px, qy - py)
+            if d < bd:
+                best, bd = (c, i), d
+        return best
+
+    def move(self, ev):
+        if ev.x is None or not self.F.ax.bbox.contains(ev.x, ev.y) or self._blocked(ev):
+            return self.leave(ev)
+        self.hit = self.nearest(ev.x, ev.y)
+        if self.hit:
+            c, i = self.hit
+            self.marker.set_data([c["x"][i]], [c["y"][i]])
+            self.on_text(self.fmt(float(c["x"][i]), float(c["val"][i]), c["name"]))
+        else:
+            self.on_text(self.fmt(float(self.F.ax.transData.inverted().transform((ev.x, ev.y))[0]), None, None))
+        self.shown = True
+        self._blit()
+
+    def leave(self, _ev=None):
+        if not self.shown:
+            return
+        self.hit, self.shown = None, False
+        self.on_text("")
+        self._blit()
+
+    def _blit(self):
+        canvas = self.F.fig.canvas
+        if self.bg is None:
+            return
+        canvas.restore_region(self.bg)
+        if self.hit:
+            self.F.ax.draw_artist(self.marker)
+        canvas.blit(self.F.fig.bbox)
+
+    def press(self, ev):
+        if ev.dblclick and ev.button == 1 and self.on_pick and self.hit and not self._blocked_click(ev):
+            c, i = self.hit
+            self.on_pick(float(c["x"][i]))
+
+    def _blocked_click(self, ev):
+        return any(a.get_window_extent().contains(ev.x, ev.y) for a in self.F.axes_items.values()) \
+            or any(a.contains(ev)[0] for a in self.F.ann_items.values())
+
+
 # ----------------------------------------------------------------------------
 class FigureTab(QWidget):
     """Gemeinsame Basis: Vorschau, Größe/Formate, Ziehen, Export, Speichern/Laden."""
@@ -129,6 +224,7 @@ class FigureTab(QWidget):
             self.st.setdefault(k, copy.deepcopy(v))
         self.F = None
         self.dragger = None
+        self.hover = None
         self._loading = False
         self.timer = QTimer(self, singleShot=True, interval=350)
         self.timer.timeout.connect(self.render)
@@ -343,6 +439,9 @@ class FigureTab(QWidget):
             if self.dragger:
                 self.dragger.disconnect()
                 self.dragger = None
+            if self.hover:
+                self.hover.disconnect()
+                self.hover = None
             spec_cfg = self.base_cfg()
             self.host.set_figure_size(*spec_cfg["figsize_in"])
             self.F = self.build(self.fig)
@@ -351,12 +450,20 @@ class FigureTab(QWidget):
                 self.fig.text(0.5, 0.5, T("tab_empty"), ha="center", va="center", color="gray")
             else:
                 self.dragger = TabDragger(self.F, self.layout_changed)
+                curves = [dict(x=c["x"], y=c["y"], val=c.get("val", c["y"]), name=c.get("label") or "")
+                          for c in self.F.curves]
+                self.hover = HoverReadout(self.F, curves, self.main.show_hover, self.hover_text)
                 self.sync_sizes(self.F.current_layout())
             self.canvas.draw_idle()
             self.main.push_undo()
         except Exception as e:
             self.main.log_signal.emit(traceback.format_exc())
             self.main.statusBar().showMessage(f"{T('err_title')}: {e}", 8000)
+
+    def hover_text(self, lam, val, name):
+        if val is None:
+            return T("hover_lam", lam=lam)
+        return T("hover_y", lam=lam, y=val, name=name)
 
     def layout_changed(self, layout):
         self.st["layout"][self.size_key()] = layout
@@ -790,6 +897,11 @@ class OverlayTab(FigureTab):
         self.lbl_struct.setText(Path(p).name if p else "–")
         self.timer.start()
 
+    def hover_text(self, lam, val, name):
+        if val is not None and self.st["mode"] == "eps":
+            return T("hover_eps", lam=lam, eps=val, name=name)
+        return super().hover_text(lam, val, name)
+
     # -- Abbildung --------------------------------------------------------------
     @staticmethod
     def stack_levels(vis):
@@ -852,7 +964,7 @@ class OverlayTab(FigureTab):
                         self.main.log_signal.emit("  " + T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
                         continue
                 exp_x.append(x)
-                c = {"x": x, "y": y * sc + off, "color": e["color"], "label": e["label"], "ls": ls}
+                c = {"x": x, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
             else:
                 key = ("tddft", e["file"], e.get("variant"))
                 r = self.cache(key, lambda e=e: X.parse_tddft(e["file"], e.get("variant")))
@@ -868,7 +980,7 @@ class OverlayTab(FigureTab):
                     stick_max = sh[ssel].max() if ssel.any() and sh[ssel].max() > 0 else sh.max()
                     k = 1 / (stick_max if mode == "max" else band_max)
                 y, h = eps * k, sh * k
-                c = {"x": lam, "y": y * sc + off, "color": e["color"], "label": e["label"], "ls": ls}
+                c = {"x": lam, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
                 if st["sticks"]:
                     if mode == "faxis":                 # Oszillatorstärken auf rechter Achse
                         sticks.append({"x": sl, "h": np.asarray(r["f"], float), "color": e["color"],

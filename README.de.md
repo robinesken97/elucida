@@ -79,6 +79,10 @@ Unter Windows immer den ganzen Ordner `UVVisTool` zusammenlassen. Die `.exe` fun
 5. **Layout:**
    - **Mit der Maus ziehen:** Inset, Struktur, Küvette und jedes λ/ε-Label lassen sich verschieben.
    - **Mausrad bzw. Trackpad** über Inset oder Bild ändert die Größe. Alternativ die Felder „Größe [% Plotbreite]“ nutzen.
+   - **Maus über den Spektren:** Die Statusleiste zeigt λ und A des nächsten Messpunkts (und seine
+     Konzentration), in der Vorschau mit rotem Kreis markiert (nicht im Export) – praktisch zum Prüfen der
+     Daten. **Doppelklick** auf einen Punkt fügt seine Wellenlänge als Bande hinzu, erneuter Doppelklick
+     entfernt sie. Overlay- und Fluoreszenz-Tab zeigen λ und den gezeichneten Wert genauso an.
    - „Layout zurücksetzen“ stellt die automatische Anordnung wieder her.
 6. **Exportieren:** Datei → Exportieren (oder der Knopf). Das schreibt die gewählten Formate (PDF/SVG/PNG),
    `<Serie>_results.csv` und den Excel-Report für **alle** Serien ins Projekt (siehe unten).

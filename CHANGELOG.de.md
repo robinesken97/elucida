@@ -2,6 +2,15 @@
 
 # Änderungen
 
+## 1.6.0 – 13.10.2026
+
+### Neu
+- **Werte anzeigen:** Mit der Maus über den Spektren zeigt die Statusleiste λ und die Absorbanz des
+  nächsten Messpunkts (mit Konzentration), in der Vorschau markiert (nie im Export). Im Overlay- und
+  Fluoreszenz-Tab erscheint der gezeichnete Wert (Overlay: ohne Stapelversatz).
+- **Banden picken:** Doppelklick auf einen Messpunkt im ε-Tab fügt seine Wellenlänge als Bande hinzu;
+  erneuter Doppelklick (±2 nm) entfernt sie.
+
 ## 1.5.2 – 12.10.2026
 
 ### Korrigiert

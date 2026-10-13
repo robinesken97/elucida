@@ -165,9 +165,12 @@ TEXTS = {
     "btn_reset_layout": ("Layout zurücksetzen", "Reset layout"),
     "btn_export": ("Exportieren…", "Export…"),
     "drag_hint": ("Maus: Inset, Bilder und Labels ziehen zum Verschieben, Mausrad über Inset/Bild "
-                  "ändert die Größe. CSV, Struktur und Foto können ins Fenster gezogen werden.",
+                  "ändert die Größe. Über den Spektren zeigt die Statusleiste λ und A des nächsten "
+                  "Messpunkts, Doppelklick fügt dort eine Bande hinzu. CSV, Struktur und Foto können ins "
+                  "Fenster gezogen werden.",
                   "Mouse: drag inset, images and labels to move them; scroll over inset/image to "
-                  "resize. CSV, structure and photo can be dropped onto the window."),
+                  "resize. Over the spectra the status bar shows λ and A of the nearest data point; "
+                  "double-click adds a band there. CSV, structure and photo can be dropped onto the window."),
     "tab_results": ("Ergebnisse", "Results"),
     "tab_log": ("Protokoll", "Log"),
     "col_lam": ("λ [nm]", "λ [nm]"),
@@ -207,8 +210,9 @@ TEXTS = {
     "tab_load": ("Laden…", "Load…"),
     "tab_empty": ("Noch keine Daten – links Dateien hinzufügen.", "No data yet – add files on the left."),
     "drag_hint_tab": ("Legende, Labels und Bilder lassen sich mit der Maus verschieben, Bilder per "
-                      "Mausrad skalieren.", "Legend, labels and images can be dragged with the mouse; "
-                      "scroll over images to resize."),
+                      "Mausrad skalieren. Über den Kurven zeigt die Statusleiste λ und den Wert.",
+                      "Legend, labels and images can be dragged with the mouse; scroll over images to "
+                      "resize. Over the curves the status bar shows λ and the value."),
     "auto": ("auto", "auto"),
     "ov_curves": ("Spektren", "Spectra"),
     "ov_add_exp": ("Messung…", "Measurement…"),
@@ -358,6 +362,16 @@ TEXTS = {
     "ov_same_level": ("Gleiche Stapelebene wie die Kurve darüber", "Same stacking level as the curve above"),
     "ov_same_level_tip": ("z. B. TD-DFT direkt unter der zugehörigen Messung",
                           "e.g. TD-DFT directly with its measurement"),
+    # ---- Hover-Anzeige -----------------------------------------------------
+    "hover_lam": ("λ = {lam:.1f} nm", "λ = {lam:.1f} nm"),
+    "hover_abs": ("λ = {lam:.1f} nm    A = {a:.4f}    ({name})   –   Doppelklick: Bande hinzufügen/entfernen",
+                  "λ = {lam:.1f} nm    A = {a:.4f}    ({name})   –   double-click: add/remove band"),
+    "hover_y": ("λ = {lam:.1f} nm    y = {y:.3f}    {name}", "λ = {lam:.1f} nm    y = {y:.3f}    {name}"),
+    "hover_eps": ("λ = {lam:.1f} nm    ε = {eps:.2f}·10³ M⁻¹ cm⁻¹    {name}",
+                  "λ = {lam:.1f} nm    ε = {eps:.2f}·10³ M⁻¹ cm⁻¹    {name}"),
+    "band_added": ("Bande {lam} nm hinzugefügt (erneuter Doppelklick entfernt sie).",
+                   "Band {lam} nm added (double-click again to remove it)."),
+    "band_removed": ("Bande {lam} nm entfernt.", "Band {lam} nm removed."),
     # ---- Update-Prüfung ---------------------------------------------------
     "act_check_updates": ("Nach Updates suchen…", "Check for updates…"),
     "act_auto_updates": ("Beim Start automatisch nach Updates suchen", "Check for updates on startup"),

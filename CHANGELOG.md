@@ -2,6 +2,15 @@
 
 # Changelog
 
+## 1.6.0 – 2026-10-13
+
+### Added
+- **Hover readout:** moving the mouse over the spectra shows λ and the absorbance of the nearest data
+  point (with its concentration) in the status bar and marks it in the preview (never in exports).
+  In the overlay and fluorescence tabs the plotted value is shown (overlay: without stacking offset).
+- **Picking bands:** double-click a data point in the ε tab to add its wavelength as a band;
+  double-click again (±2 nm) to remove it.
+
 ## 1.5.2 – 2026-10-12
 
 ### Fixed

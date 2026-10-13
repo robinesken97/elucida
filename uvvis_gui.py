@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.6.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -323,6 +323,7 @@ class MainWindow(QMainWindow):
         self.current = None
         self.F = None
         self.dragger = None
+        self.hover = None
         self._tasks = []
         self._loading = False
         self.glob = dict(DEFAULT_GLOB)
@@ -1383,6 +1384,34 @@ class MainWindow(QMainWindow):
         core.apply_text_format(cfg, self.text_fmt)
         return cfg
 
+    def show_hover(self, txt):
+        if txt:
+            self.statusBar().showMessage(txt)
+        else:
+            self.statusBar().clearMessage()
+
+    @staticmethod
+    def hover_text(lam, val, name):
+        return T("hover_abs", lam=lam, a=val, name=name) if val is not None else T("hover_lam", lam=lam)
+
+    def pick_band(self, lam):
+        """Doppelklick aufs Spektrum: λ als Bande hinzufügen bzw. (±2 nm) wieder entfernen."""
+        try:
+            bands = [float(x) for x in self.glob["bands"].replace(";", ",").split(",") if x.strip()]
+        except ValueError:
+            bands = []
+        lam = round(lam)
+        near = [b for b in bands if abs(b - lam) <= 2]
+        if near:
+            bands = [b for b in bands if b not in near]
+            msg = T("band_removed", lam=f"{near[0]:g}")
+        else:
+            bands.append(lam)
+            msg = T("band_added", lam=f"{lam:g}")
+        self.ed_bands.setText(", ".join(f"{b:g}" for b in sorted(bands)))
+        self.changed()
+        QTimer.singleShot(0, lambda: self.statusBar().showMessage(msg, 6000))
+
     def edit_text_format(self):
         dlg = TextFormatDialog(self, self.text_fmt)
         if dlg.exec() != QDialog.Accepted:
@@ -1408,9 +1437,15 @@ class MainWindow(QMainWindow):
             if self.dragger:
                 self.dragger.disconnect()
                 self.dragger = None
+            if self.hover:
+                self.hover.disconnect()
+                self.hover = None
             self.canvas_host.set_figure_size(*cfg2["figsize_in"])
             self.F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=self.fig)
             self.dragger = GuiDragger(self.F, self.layout_changed)
+            unit = cfg2["conc_unit"].replace("uM", "µM")
+            curves = [dict(x=s_["x"], y=s_["y"], val=s_["y"], name=f"c = {s_['c']:g} {unit}") for s_ in spectra]
+            self.hover = uvvis_tabs.HoverReadout(self.F, curves, self.show_hover, self.hover_text, self.pick_band)
             self.sync_image_sizes(self.F.current_layout())
             self.canvas.draw_idle()
             self.fill_table(results, cfg2)
@@ -2032,6 +2067,34 @@ def selftest(outdir, with_isnet=False):
         w.text_fmt = dict(core.TEXT_DEFAULTS)
         w.render()
         report.append("text format + frames: OK")
+
+        # Hover: Maus über einem Messpunkt -> λ und A in der Statusleiste; Doppelklick -> Bande
+        from matplotlib.backend_bases import MouseEvent
+        w.glob["bands"] = ""
+        w.apply_globals()
+        w.render()
+        w.canvas.draw()
+        hv, ax = w.hover, w.F.ax
+        def peak(c):                                   # Bande bei 484 nm, nur Kurven mit Peak im Bild
+            xs = np.asarray(c["x"])
+            i = int(np.nanargmax(np.where((xs > 400) & (xs < 560), c["y"], -np.inf)))
+            return i, float(c["y"][i])
+        top = ax.get_ylim()[1]
+        sp0 = max((c for c in hv.curves if peak(c)[1] < 0.9 * top), key=lambda c: peak(c)[1])
+        i0 = peak(sp0)[0]
+        px, py = ax.transData.transform((sp0["x"][i0], sp0["y"][i0]))
+        w.canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", w.canvas, px, py))
+        msg = w.statusBar().currentMessage()
+        assert hv.hit is not None and hv.hit[0] is sp0 and f"{sp0['x'][i0]:.1f}" in msg and "A =" in msg, msg
+        assert hv.marker.get_animated(), "Marker darf nicht exportiert werden"
+        w.canvas.callbacks.process("button_press_event",
+                                   MouseEvent("button_press_event", w.canvas, px, py, button=1, dblclick=True))
+        lam0 = round(float(sp0["x"][i0]))
+        assert w.glob["bands"] == f"{lam0:g}", w.glob["bands"]
+        w.pick_band(lam0 + 1)                       # erneut (±2 nm) -> wieder entfernt
+        assert w.glob["bands"] == "", w.glob["bands"]
+        w.render()
+        report.append("hover readout + band picking: OK")
 
         # Update-Prüfung (ohne Netz: Versionsvergleich, API-Antwort, Meldungstext)
         assert UPD.parse_version("v1.10.0") > UPD.parse_version("1.9.9") and UPD.parse_version("x") == ()

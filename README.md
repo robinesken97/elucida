@@ -78,6 +78,10 @@ On Windows, always keep the whole `UVVisTool` folder together. The `.exe` does n
    - **Drag** the inset, structure, cuvette and every λ/ε label with the mouse.
    - **Scroll** over the inset or an image to resize it, or use the "Size [% of plot width]" fields.
    - "Reset layout" restores the automatic arrangement.
+   - **Hover** over the spectra: the status bar shows λ and A of the nearest data point (and its
+     concentration), marked with a red circle in the preview only – handy to check the data.
+     **Double-click** a point to add its wavelength as a band; double-click it again to remove it.
+     The overlay and fluorescence tabs show λ and the plotted value the same way.
 6. **Export:** File → Export (or the button). This writes the chosen formats (PDF/SVG/PNG),
    `<series>_results.csv` and the Excel report for **all** series into the project (see below).
 
