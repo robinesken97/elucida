@@ -2,6 +2,19 @@
 
 # Changelog
 
+## 1.7.0 – 2026-10-14
+
+### Added
+- Overlay: **triplet states** of TD-DFT calculations (formally spin-forbidden, f = 0) can be marked as
+  dashed marks of fixed height ("Mark triplet states"); they do not contribute to the broadened curve.
+  Read from ORCA 6 state labels, the ORCA 4/5 triplet block and Gaussian ("Triplet-A").
+- Overlay: **combine** TD-DFT calculations – select two or more (Ctrl/Shift click) and press "Combine":
+  the transitions are merged first and then broadened together. One weight per calculation (default 1 =
+  sum; e.g. 0.7/0.3 for conformers). A warning appears if the calculations share identical states.
+
+### Changed
+- Overlay: normalisation is a checkbox ("Normalise"); off shows ε [10³ M⁻¹ cm⁻¹] as before.
+
 ## 1.6.0 – 2026-10-13
 
 ### Added

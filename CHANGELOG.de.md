@@ -2,6 +2,21 @@
 
 # Änderungen
 
+## 1.7.0 – 14.10.2026
+
+### Neu
+- Overlay: **Triplett-Zustände** aus TD-DFT-Rechnungen (formal spinverboten, f = 0) lassen sich als
+  gestrichelte Marken fester Höhe anzeigen („Triplett-Zustände markieren“); sie tragen nicht zur
+  verbreiterten Kurve bei. Gelesen aus den ORCA-6-Zustandsbezeichnungen, dem Triplett-Block von ORCA 4/5
+  und Gaussian („Triplet-A“).
+- Overlay: TD-DFT-Rechnungen **kombinieren** – zwei oder mehr markieren (Strg/Shift-Klick) und
+  „Kombinieren“ drücken: Die Übergänge werden zuerst zusammengeführt und dann gemeinsam verbreitert.
+  Ein Gewicht pro Rechnung (Standard 1 = Summe; z. B. 0,7/0,3 für Konformere). Warnung, wenn die
+  Rechnungen gleiche Zustände enthalten.
+
+### Geändert
+- Overlay: Die Normierung ist ein Häkchen („Normieren“); aus zeigt wie bisher ε [10³ M⁻¹ cm⁻¹].
+
 ## 1.6.0 – 13.10.2026
 
 ### Neu

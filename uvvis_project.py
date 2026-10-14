@@ -43,6 +43,8 @@ def _path_slots(state):
     for e in ov.get("entries") or []:
         slots.append((e, "file", "data"))
         slots.append((e, "structure", "images"))
+        for src in e.get("sources") or []:            # kombinierte TD-DFT-Einträge
+            slots.append((src, "file", "data"))
     slots.append((ov, "structure", "images"))
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", "data"), (fl, "em_file", "data"), (fl, "structure", "images"),

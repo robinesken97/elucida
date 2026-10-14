@@ -523,7 +523,8 @@ class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
     DEFAULT_STATE = dict(COMMON_DEFAULTS, entries=[], mode="norm", nlo=300.0, nhi=500.0, ymax=0.0,
                          baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0,
-                         stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False)
+                         stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False,
+                         triplets=False)
 
     def build_controls(self):
         st = self.st
@@ -531,17 +532,20 @@ class OverlayTab(FigureTab):
         v = QVBoxLayout(g)
         row = QHBoxLayout()
         for txt, fn in ((T("ov_add_exp"), self.add_exp), (T("ov_add_calc"), self.add_calc),
+                        (T("ov_combine"), self.combine_selected),
                         ("↑", lambda: self.move_selected(-1)), ("↓", lambda: self.move_selected(1)),
                         (T("remove"), self.remove_selected)):
             b = QPushButton(txt)
             b.clicked.connect(fn)
+            if fn == self.combine_selected:
+                b.setToolTip(T("ov_combine_tip"))
             row.addWidget(b)
         v.addLayout(row)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), T("ov_type")])
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)    # Strg/Shift: mehrere fürs Kombinieren
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setMinimumHeight(150)
         self.table.itemChanged.connect(self.table_edited)
@@ -584,6 +588,11 @@ class OverlayTab(FigureTab):
         self.cmb_soc = QComboBox()
         self.lbl_soc = QLabel(T("ov_soc"))
         f.addRow(self.lbl_soc, self.cmb_soc)
+        self.ed_weights = QLineEdit()
+        self.ed_weights.setToolTip(T("ov_weights_tip"))
+        self.lbl_weights = QLabel(T("ov_weights"))
+        f.addRow(self.lbl_weights, self.ed_weights)
+        self.ed_weights.editingFinished.connect(self.detail_changed)
         row = QHBoxLayout()
         self.sp_scale = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=1000, singleStep=0.05, value=1.0)
         self.sp_offset = QDoubleSpinBox(decimals=3, minimum=-1000, maximum=1000, singleStep=0.05, value=0.0)
@@ -630,11 +639,10 @@ class OverlayTab(FigureTab):
 
         g = QGroupBox(T("ov_display"))
         f = QFormLayout(g)
-        self.cmb_mode = QComboBox()
-        self.cmb_mode.addItem(T("ov_mode_norm"), "norm")
-        self.cmb_mode.addItem(T("ov_mode_eps"), "eps")
-        self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(st["mode"]))
-        f.addRow(T("ov_mode"), self.cmb_mode)
+        self.cb_norm = QCheckBox(T("ov_normalize"))
+        self.cb_norm.setToolTip(T("ov_normalize_tip"))
+        self.cb_norm.setChecked(st["mode"] == "norm")
+        f.addRow(self.cb_norm)
         row = QHBoxLayout()
         self.sp_nlo = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=st["nlo"])
         self.sp_nhi = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=st["nhi"])
@@ -647,6 +655,11 @@ class OverlayTab(FigureTab):
         self.cb_sticks.setChecked(st["sticks"])
         f.addRow(self.cb_base)
         f.addRow(self.cb_sticks)
+        self.cb_trip = QCheckBox(T("ov_triplets"))
+        self.cb_trip.setToolTip(T("ov_triplets_tip"))
+        self.cb_trip.setChecked(st.get("triplets", False))
+        self.cb_trip.toggled.connect(self.changed)
+        f.addRow(self.cb_trip)
         self.cmb_stick = QComboBox()
         for key in ("band", "max", "faxis"):
             self.cmb_stick.addItem(T("stick_" + key), key)
@@ -664,7 +677,7 @@ class OverlayTab(FigureTab):
         row.addWidget(b2)
         f.addRow(T("structure"), row)
         self.sp_struct_w = self.size_spin(f, "struct_w", "image_struktur")
-        self.cmb_mode.currentIndexChanged.connect(self.changed)
+        self.cb_norm.toggled.connect(self.changed)
         for w in (self.sp_nlo, self.sp_nhi):
             w.valueChanged.connect(self.changed)
         for w in (self.cb_base, self.cb_sticks):
@@ -749,6 +762,61 @@ class OverlayTab(FigureTab):
         self.fill_table()
         self.timer.start()
 
+    @staticmethod
+    def sources(e):
+        """Rechnungen eines TD-DFT-Eintrags: [dict(file, variant, weight)] (kombiniert: mehrere)."""
+        return e.get("sources") or [{"file": e["file"], "variant": e.get("variant"), "weight": 1.0}]
+
+    def calc_data(self, e):
+        """Übergänge aller Rechnungen des Eintrags zusammengeführt -> (E [eV], f·Gewicht, Multiplizität).
+        Verbreitert wird erst danach (gemeinsame FWHM/Verschiebung)."""
+        Es, fs, mult = [], [], []
+        for s_ in self.sources(e):
+            r = self.cache(("tddft", s_["file"], s_.get("variant")),
+                           lambda s_=s_: X.parse_tddft(s_["file"], s_.get("variant")))
+            Es.append(np.asarray(r["E"], float))
+            fs.append(np.asarray(r["f"], float) * float(s_.get("weight", 1.0)))
+            mult += list(r.get("mult") or [None] * len(r["E"]))
+        return np.concatenate(Es), np.concatenate(fs), mult
+
+    @staticmethod
+    def shared_states(a, b, tol_ev=0.002):
+        """Anzahl erlaubter Zustände (f > 0), die in beiden Rechnungen mit gleicher Energie und Stärke
+        vorkommen – Hinweis auf doppelt gerechnete Zustände."""
+        (Ea, fa, _), (Eb, fb, _) = a, b
+        return sum(1 for e, f in zip(Ea, fa)
+                   if f > 0 and np.any((np.abs(Eb - e) < tol_ev) & (np.abs(fb - f) < 0.01 * f + 1e-4)))
+
+    def combine_selected(self):
+        """Markierte TD-DFT-Einträge zu einem neuen Eintrag zusammenführen (Originale ausgeblendet)."""
+        rows = sorted({i.row() for i in self.table.selectedIndexes()})
+        ents = [self.st["entries"][r] for r in rows if self.st["entries"][r]["kind"] == "calc"]
+        if len(ents) < 2:
+            return self.main.error(T("ov_combine_need2"))
+        srcs = [dict(s_) for e in ents for s_ in self.sources(e)]
+        for s_ in srcs:
+            s_["variant"] = s_.get("variant") or self.cache(
+                ("tddft", s_["file"], None), lambda s_=s_: X.parse_tddft(s_["file"]))["variant"]
+        # gleiche Zustände in zwei Rechnungen würden doppelt zählen -> warnen
+        data = [self.calc_data({"sources": [s_]}) for s_ in srcs]
+        for i in range(len(data)):
+            for j in range(i + 1, len(data)):
+                same = self.shared_states(data[i], data[j])
+                if same:
+                    self.main.log_signal.emit("  " + T("ov_combine_dup", a=Path(srcs[i]["file"]).name,
+                                                       b=Path(srcs[j]["file"]).name, n=same))
+        first = ents[0]
+        for e in ents:
+            e["visible"] = False
+        self.st["entries"].append({
+            "kind": "calc", "sources": srcs, "label": " + ".join(e["label"].replace(" (TD-DFT)", "") for e in ents)
+            + " (TD-DFT)", "color": self.next_color(), "visible": True, "own_norm": first["own_norm"],
+            "nlo": first["nlo"], "nhi": first["nhi"], "fwhm": first.get("fwhm", 0.3),
+            "shift": first.get("shift", 0.0)})
+        self.fill_table()
+        self.table.selectRow(len(self.st["entries"]) - 1)
+        self.timer.start()
+
     def move_selected(self, d):
         r = self.table.currentRow()
         ents = self.st["entries"]
@@ -808,8 +876,13 @@ class OverlayTab(FigureTab):
         exp = e is not None and e["kind"] == "exp"
         for w in (self.lbl_conc, self.ed_conc, self.cmb_unit, self.lbl_mw, self.ed_mw, self.lbl_d, self.sp_d):
             w.setVisible(exp or e is None)
-        for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift, self.lbl_soc, self.cmb_soc):
+        combined = e is not None and bool(e.get("sources"))
+        for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift):
             w.setVisible(e is not None and not exp)
+        for w in (self.lbl_soc, self.cmb_soc):
+            w.setVisible(e is not None and not exp and not combined)
+        for w in (self.lbl_weights, self.ed_weights):
+            w.setVisible(combined)
         if e:
             self.lbl_estruct.setText(Path(e["structure"]).name if e.get("structure") else "–")
             self.cb_ecolor.setChecked(e.get("struct_color", True))
@@ -831,6 +904,10 @@ class OverlayTab(FigureTab):
                 self.sp_fwhm.setValue(e.get("fwhm", 0.3))
                 self.sp_shift.setValue(e.get("shift", 0.0))
                 self.cmb_soc.clear()
+                if combined:
+                    self.ed_weights.setText(", ".join(f"{s_.get('weight', 1.0):g}" for s_ in e["sources"]))
+                    self._loading = False
+                    return
                 try:
                     variants = self.cache(("tdv", e["file"]), lambda: X.tddft_variants(e["file"]))
                 except Exception:
@@ -855,14 +932,24 @@ class OverlayTab(FigureTab):
                      mw=parse_num(self.ed_mw.text()), d=self.sp_d.value())
         else:
             e.update(fwhm=self.sp_fwhm.value(), shift=self.sp_shift.value())
-            if self.cmb_soc.currentData():
+            if e.get("sources"):
+                try:
+                    ws = [float(x.replace(",", ".")) for x in self.ed_weights.text().replace(";", " ").split()]
+                except ValueError:
+                    ws = []
+                if len(ws) == len(e["sources"]) and all(w >= 0 for w in ws):
+                    for s_, w in zip(e["sources"], ws):
+                        s_["weight"] = w
+                else:
+                    self.ed_weights.setText(", ".join(f"{s_.get('weight', 1.0):g}" for s_ in e["sources"]))
+            elif self.cmb_soc.currentData():
                 e["variant"] = self.cmb_soc.currentData()
         self.timer.start()
 
     def collect(self):
-        self.st.update(mode=self.cmb_mode.currentData(), nlo=self.sp_nlo.value(), nhi=self.sp_nhi.value(),
+        self.st.update(mode="norm" if self.cb_norm.isChecked() else "eps", nlo=self.sp_nlo.value(), nhi=self.sp_nhi.value(),
                        baseline=self.cb_base.isChecked(), sticks=self.cb_sticks.isChecked(),
-                       stick_mode=self.cmb_stick.currentData(), stack=self.cb_stack.isChecked(),
+                       stick_mode=self.cmb_stick.currentData(), triplets=self.cb_trip.isChecked(), stack=self.cb_stack.isChecked(),
                        stack_gap=self.sp_gap.value(), y_axis=self.cmb_yaxis.currentData(),
                        curve_labels=self.cb_clabels.isChecked(), zero_lines=self.cb_zero.isChecked())
 
@@ -966,9 +1053,9 @@ class OverlayTab(FigureTab):
                 exp_x.append(x)
                 c = {"x": x, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
             else:
-                key = ("tddft", e["file"], e.get("variant"))
-                r = self.cache(key, lambda e=e: X.parse_tddft(e["file"], e.get("variant")))
-                lam, eps, sl, sh = X.broaden(r["E"], r["f"], e.get("fwhm", 0.3), e.get("shift", 0.0))
+                E, f, mult = self.calc_data(e)
+                lam, eps, sl, sh = X.broaden(E, f, e.get("fwhm", 0.3), e.get("shift", 0.0))
+                trip = np.array([m == 3 for m in mult], bool)
                 # Kurve und Striche immer mit DEMSELBEN Faktor: jeder Strich = Höhe seiner eigenen
                 # Gaußbande, die Kurve ist deren Summe. Gewählt wird nur die Bezugsgröße.
                 if eps_mode:
@@ -983,10 +1070,15 @@ class OverlayTab(FigureTab):
                 c = {"x": lam, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
                 if st["sticks"]:
                     if mode == "faxis":                 # Oszillatorstärken auf rechter Achse
-                        sticks.append({"x": sl, "h": np.asarray(r["f"], float), "color": e["color"],
+                        sticks.append({"x": sl[~trip], "h": np.asarray(f, float)[~trip], "color": e["color"],
                                        "axis2": True})
                     else:
-                        sticks.append({"x": sl, "h": h * sc, "color": e["color"], "base": off})
+                        sticks.append({"x": sl[~trip], "h": (h * sc)[~trip], "color": e["color"], "base": off})
+                if st.get("triplets") and trip.any():
+                    # formal spinverboten (f = 0): gestrichelte Marken fester Höhe, kein Beitrag zur Kurve
+                    ht = 0.15 * sc * (float(np.nanmax(y)) if eps_mode else 1.0)
+                    sticks.append({"x": sl[trip], "h": np.full(int(trip.sum()), ht), "color": e["color"],
+                                   "base": off, "ls": "dashed"})
             if e.get("lw"):
                 c["lw"] = e["lw"]
             lev = levels.get(e["uid"], len(curves))

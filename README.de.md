@@ -138,13 +138,19 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   empirische Energieverschiebung pro Rechnung einstellbar, Standard 0,3 eV); ε folgt aus den
   Oszillatorstärken (ε(ν̃) = 1,306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), wie in GaussView). Übergänge
   lassen sich als Striche anzeigen.
-- **y-Achse:** *normiert auf Bande* – jedes Spektrum wird auf sein Maximum im Normierungsbereich
+- **y-Achse** (Häkchen „Normieren“): *normiert auf Bande* – jedes Spektrum wird auf sein Maximum im Normierungsbereich
   skaliert (global oder pro Spektrum, z. B. wenn die berechnete Bande verschoben ist), oder
   **ε [10³ M⁻¹ cm⁻¹]** – gemessene Spektren brauchen dann Konzentration (bei mg/mL auch Molmasse)
   und Schichtdicke.
 - Pro Spektrum: Farbe, Name, **Linienart und -stärke**, **Skalierungsfaktor und vertikaler Versatz**
   (z. B. für gestapelte Spektren); **Reihenfolge** mit ↑/↓ (auch die der Legende).
 - ORCA-Rechnungen mit **Spin-Bahn-Kopplung**: pro Rechnung „mit SOC“ oder „ohne SOC“ wählbar.
+- **Triplett-Zustände** (ohne SOC, f = 0) lassen sich als gestrichelte Marken fester Höhe anzeigen; sie
+  tragen nicht zur Kurve bei (ORCA 4–6, Gaussian).
+- Rechnungen **kombinieren**: zwei oder mehr TD-DFT-Einträge markieren (Strg/Shift-Klick) → „Kombinieren“.
+  Die Übergänge werden zusammengeführt und dann gemeinsam verbreitert; ein Gewicht pro Rechnung (Standard
+  1 = Summe, z. B. 0,7/0,3 für Konformere). Die Rechnungen sollten auf demselben Theorieniveau sein; gleiche
+  Zustände in beiden Rechnungen lösen eine Warnung aus (sie würden doppelt zählen).
 - **TD-DFT-Normierung:** Kurve und Striche haben immer denselben Skalierungsfaktor (jeder Strich ist
   die Höhe seiner eigenen Gaußbande, die Kurve ist deren Summe). Bezug: „Kurvenmaximum = 1“ oder
   „stärkster Übergang = 1“; alternativ zeigen die Striche die Oszillatorstärke f auf einer rechten Achse.

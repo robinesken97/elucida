@@ -134,13 +134,19 @@ Compare several spectra in one figure, measured and calculated:
 - TD-DFT transitions are broadened with Gaussians in energy (FWHM and an empirical energy shift
   can be set per calculation, default 0.3 eV); ε follows from the oscillator strengths
   (ε(ν̃) = 1.306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), as in GaussView). Transitions can be shown as sticks.
-- **y axis:** *normalised to band* – every spectrum is scaled to its maximum within the
+- **y axis** ("Normalise" checkbox): *normalised to band* – every spectrum is scaled to its maximum within the
   normalisation range (globally or per spectrum, e.g. if the calculated band is shifted), or
   **ε [10³ M⁻¹ cm⁻¹]** – measured spectra then need concentration (and molar mass for mg/mL) and
   path length.
 - Per spectrum: colour, name, **line style and width**, **scale factor and vertical offset**
   (e.g. for stacked spectra); **order** with ↑/↓ (also the legend order).
 - ORCA calculations with **spin–orbit coupling**: choose "with SOC" or "without SOC" per calculation.
+- **Triplet states** (without SOC, f = 0) can be marked as dashed marks of fixed height; they do not
+  contribute to the curve (ORCA 4–6, Gaussian).
+- **Combine** calculations: select two or more TD-DFT entries (Ctrl/Shift click) → "Combine". The
+  transitions are merged and then broadened together; one weight per calculation (default 1 = sum,
+  e.g. 0.7/0.3 for conformers). Calculations should be at the same level of theory; identical states in
+  both calculations trigger a warning (they would be counted twice).
 - **TD-DFT normalisation:** curve and sticks always share one scale factor (each stick is the height
   of its own Gaussian, the curve is their sum). Reference: "curve maximum = 1" or "strongest
   transition = 1"; alternatively the sticks show the oscillator strength f on a right axis.

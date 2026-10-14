@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2027,6 +2027,66 @@ def selftest(outdir, with_isnet=False):
         ents[1].pop("stack_with_prev")
         w.ov_state.update(stack=False, curve_labels=False, zero_lines=False, y_axis="auto")
         report.append("overlay stacked: OK")
+
+        # TD-DFT: Triplett-Zustände (ORCA 6 Bezeichnung, ORCA 4/5 eigener Block, Gaussian) und Kombinieren
+        import uvvis_extra as XT
+        sep = "-" * 100
+        tab_head = [sep, "      ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", sep,
+                    "   Transition    Energy   Energy  Wavelength fosc(D2)   D2   DX   DY   DZ",
+                    "                  (eV)    (cm-1)    (nm)", sep]
+        o6 = out / "input" / "orca6_trip.out"
+        o6.write_text("\n".join(tab_head + [
+            "  0-1A  ->  1-3A    2.500000   20164.1   495.9   0.000000000   0.00000   0.00000   0.00000   0.00000",
+            "  0-1A  ->  1-1A    3.000000   24196.9   413.3   0.200000000   1.00000   1.00000   0.00000   0.00000",
+            ""]), encoding="utf-8")
+        o5 = out / "input" / "orca5_trip.out"
+        o5.write_text("\n".join([
+            "TD-DFT/TDA EXCITED STATES (TRIPLETS)", "------------------------------------", "",
+            "STATE  1:  E=   0.091874 au      2.600 eV    20970.5 cm**-1 <S**2> =   2.000000", "",
+            "STATE  2:  E=   0.110000 au      2.993 eV    24142.0 cm**-1 <S**2> =   2.000000", ""]
+            + tab_head + ["   1   26617.0    375.7   0.300000000   1.00000   1.00000   0.00000   0.00000", ""]),
+            encoding="utf-8")
+        gx = out / "input" / "gauss_trip.log"
+        gx.write_text("\n".join([
+            " Excited State   1:     Triplet-A      2.7000 eV  459.20 nm  f=0.0000  <S**2>=2.000",
+            " Excited State   2:     Singlet-A      3.2000 eV  387.45 nm  f=0.1500  <S**2>=0.000", ""]),
+            encoding="utf-8")
+        for pth, n_t, e_t in ((o6, 1, 2.5), (o5, 2, 2.6), (gx, 1, 2.7)):
+            rt = XT.parse_tddft(pth)
+            trips = [E for E, m in zip(rt["E"], rt["mult"]) if m == 3]
+            assert len(trips) == n_t and abs(min(trips) - e_t) < 1e-6, (pth.name, rt)
+            assert all(fv == 0 for fv, m in zip(rt["f"], rt["mult"]) if m == 3), pth.name
+        n_before = len(ents)
+        ents += [{"kind": "calc", "file": str(p_), "label": p_.stem, "color": "#1f9e4a", "visible": True,
+                  "own_norm": False, "nlo": 450, "nhi": 520, "fwhm": 0.3, "shift": 0.0} for p_ in (o6, gx)]
+        w.ov_tab.fill_table()
+        for r_ in range(n_before):                      # nur die beiden neuen markieren
+            ents[r_]["visible"] = r_ == 0
+        w.ov_tab.table.clearSelection()
+        w.ov_tab.table.setSelectionMode(QAbstractItemView.MultiSelection)
+        for r_ in (n_before, n_before + 1):
+            w.ov_tab.table.selectRow(r_)
+        w.ov_tab.combine_selected()
+        comb = ents[-1]
+        assert len(comb["sources"]) == 2 and not ents[n_before]["visible"], comb
+        E_c, f_c, m_c = w.ov_tab.calc_data(comb)
+        assert len(E_c) == 4 and m_c.count(3) == 2 and abs(f_c.sum() - 0.35) < 1e-9, (E_c, f_c, m_c)
+        comb["sources"][1]["weight"] = 0.5
+        assert abs(w.ov_tab.calc_data(comb)[1].sum() - 0.275) < 1e-9
+        w.ov_state.update(mode="norm", triplets=True, sticks=True, stick_mode="band")
+        _, _, _, stx = w.ov_tab.figure_spec()
+        dashed = np.concatenate([s_["x"] for s_ in stx if s_.get("ls") == "dashed"])
+        assert np.allclose(sorted(dashed), sorted(1e7 / (np.array([2.5, 2.7]) * XT.EV_TO_CM))), dashed
+        files = w.ov_tab.export_to(out / "overlay_triplets")
+        assert all(f.exists() for f in files), files
+        assert any(c_ is comb["sources"][0] for c_, _, _ in PRJ._path_slots({"overlay": w.ov_state})), \
+            "kombinierte Quellen fehlen im Projekt"
+        del ents[n_before:]
+        ents[1]["visible"] = True
+        w.ov_state.update(triplets=False)
+        w.ov_tab.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        w.ov_tab.fill_table()
+        report.append("TD-DFT triplets + combine: OK")
 
         # Export ins Projekt inkl. Excel-Report
         w.open_csv(csv, ask=False)

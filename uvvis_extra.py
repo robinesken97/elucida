@@ -24,15 +24,18 @@ TDDFT_EXT = {".out", ".log", ".txt"}
 # ----------------------------------------------------------------------------
 # TD-DFT
 # ----------------------------------------------------------------------------
-_G_STATE = re.compile(r"Excited State\s+(\d+):\s+\S+\s+([-\d.]+)\s+eV\s+([-\d.]+)\s+nm\s+f=\s*([-\d.]+)")
+_G_STATE = re.compile(r"Excited State\s+(\d+):\s+(\S+)\s+([-\d.]+)\s+eV\s+([-\d.]+)\s+nm\s+f=\s*([-\d.]+)")
+_ORCA_STATE_LABEL = re.compile(r"^\d+-(\d+)(?:\.\d+)?")      # ORCA 5/6: "1-3A" -> Multiplizität 3
+_ORCA_TRIPLET_HEAD = "EXCITED STATES (TRIPLETS)"
+_ORCA_STATE_LINE = re.compile(r"^STATE\s+\d+:\s+E=\s*[-\d.]+\s+au\s+([-\d.]+)\s+eV")
 _ORCA_HEAD = "ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS"
 _ORCA_SOC_HEAD = "SOC CORRECTED ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS"
 _FLOAT = re.compile(r"-?\d+\.\d+(?:[eE][-+]?\d+)?")
 
 
 def _orca_table(lines):
-    """Zeilen einer ORCA-Absorptionstabelle (ab Titel) -> (E [eV], f)."""
-    dashes, E, f = 0, [], []
+    """Zeilen einer ORCA-Absorptionstabelle (ab Titel) -> (E [eV], f, Multiplizität oder None)."""
+    dashes, E, f, mult = 0, [], [], []
     for ln in lines[1:]:
         s = ln.strip()
         if s.startswith("---"):
@@ -45,18 +48,37 @@ def _orca_table(lines):
         if not s:
             break
         if "->" in s:                                  # ORCA 5/6: Zustandsbezeichnungen vor den Zahlen
-            s = s.split("->", 1)[1].split(None, 1)[1] if len(s.split("->", 1)[1].split(None, 1)) > 1 else ""
-            nums = [float(v) for v in _FLOAT.findall(s)]
+            parts = s.split("->", 1)[1].split(None, 1)
+            m = _ORCA_STATE_LABEL.match(parts[0]) if parts else None
+            nums = [float(v) for v in _FLOAT.findall(parts[1])] if len(parts) > 1 else []
             if len(nums) >= 4:                         # eV, cm-1, nm, fosc
                 E.append(nums[0])
                 f.append(nums[3])
+                mult.append(int(m.group(1)) if m else None)
             continue
         parts = s.split()
         nums = [float(v) for v in _FLOAT.findall(" ".join(parts[1:]))]   # ORCA 4: Index, cm-1, nm, fosc
         if len(nums) >= 3:
             E.append(nums[0] / EV_TO_CM)
             f.append(nums[2])
-    return np.array(E), np.array(f)
+            mult.append(None)
+    return np.array(E), np.array(f), mult
+
+
+def _orca_triplets(lines):
+    """ORCA 4/5: Triplett-Energien [eV] aus dem Block „EXCITED STATES (TRIPLETS)“ (letzter Block).
+    Sie stehen dort nicht in der Absorptionstabelle (f = 0, spinverboten)."""
+    heads = [i for i, ln in enumerate(lines) if _ORCA_TRIPLET_HEAD in ln]
+    if not heads:
+        return []
+    out = []
+    for ln in lines[heads[-1] + 1:]:
+        if "EXCITED STATES" in ln or "SPECTRUM" in ln:
+            break
+        m = _ORCA_STATE_LINE.match(ln.strip())
+        if m:
+            out.append(float(m.group(1)))
+    return out
 
 
 def tddft_variants(path) -> list:
@@ -73,16 +95,20 @@ def tddft_variants(path) -> list:
 
 
 def parse_tddft(path, variant=None) -> dict:
-    """-> dict(program, E [eV], f, variant). Gaussian: letzter Zustandsblock.
-    ORCA: SOC-korrigiertes Spektrum (variant='soc', Standard falls vorhanden) oder ohne SOC."""
+    """-> dict(program, E [eV], f, mult, variant). Gaussian: letzter Zustandsblock.
+    ORCA: SOC-korrigiertes Spektrum (variant='soc', Standard falls vorhanden) oder ohne SOC.
+    mult: Spinmultiplizität je Zustand (1, 3, …) oder None, wenn unbekannt; mit SOC immer None
+    (Zustände sind gemischt und haben dort echte Intensität)."""
     txt = Path(path).read_text(encoding="utf-8", errors="replace")
     ms = list(_G_STATE.finditer(txt))
     if ms:
         starts = [i for i, m in enumerate(ms) if m.group(1) == "1"]
         ms = ms[starts[-1]:] if starts else ms
-        E = np.array([float(m.group(2)) for m in ms])
-        f = np.array([float(m.group(4)) for m in ms])
-        return {"program": "Gaussian", "E": E, "f": f, "variant": "nosoc"}
+        E = np.array([float(m.group(3)) for m in ms])
+        f = np.array([float(m.group(5)) for m in ms])
+        names = {"singlet": 1, "doublet": 2, "triplet": 3, "quartet": 4, "quintet": 5}
+        mult = [names.get(m.group(2).split("-")[0].lower()) for m in ms]
+        return {"program": "Gaussian", "E": E, "f": f, "mult": mult, "variant": "nosoc"}
     lines = txt.splitlines()
     soc_idx = [i for i, ln in enumerate(lines) if _ORCA_SOC_HEAD in ln]
     plain_idx = [i for i, ln in enumerate(lines) if _ORCA_HEAD in ln and "SOC" not in ln]
@@ -92,9 +118,16 @@ def parse_tddft(path, variant=None) -> dict:
     if not idx:
         idx, variant = (plain_idx, "nosoc") if plain_idx else (soc_idx, "soc")
     if idx:
-        E, f = _orca_table(lines[idx[-1]:])
+        E, f, mult = _orca_table(lines[idx[-1]:])
+        if variant == "soc":
+            mult = [None] * len(E)
+        elif not any(m == 3 for m in mult):            # ORCA 4/5: Tripletts nur im eigenen Block
+            trip = _orca_triplets(lines)
+            if trip:
+                mult = [m or 1 for m in mult] + [3] * len(trip)
+                E, f = np.append(E, trip), np.append(f, np.zeros(len(trip)))
         if len(E):
-            return {"program": "ORCA", "E": E, "f": f, "variant": variant}
+            return {"program": "ORCA", "E": E, "f": f, "mult": mult, "variant": variant}
     raise ValueError(f"{Path(path).name}: keine TD-DFT-Anregungen gefunden (ORCA/Gaussian)")
 
 
@@ -201,7 +234,8 @@ class SimpleFigure(core.Figure):
             if sel.any():
                 base = st.get("base", 0.0)
                 ax.vlines(st["x"][sel], max(base, ylim[0]), np.minimum(base + st["h"][sel], ylim[1]),
-                          color=st.get("color", "gray"), lw=max(0.6, cfg["line_width"]), alpha=0.8)
+                          color=st.get("color", "gray"), lw=max(0.6, cfg["line_width"]), alpha=0.8,
+                          linestyles=st.get("ls", "solid"))
         if f_sticks:                                       # Oszillatorstärken auf eigener Achse rechts
             ax2 = ax.twinx()
             fmax = 0.0

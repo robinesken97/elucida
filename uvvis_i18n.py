@@ -228,9 +228,30 @@ TEXTS = {
     "ov_fwhm": ("Breite (FWHM)", "Width (FWHM)"),
     "ov_shift": ("Verschiebung", "Shift"),
     "ov_display": ("Normierung", "Normalisation"),
-    "ov_mode": ("y-Achse", "y axis"),
-    "ov_mode_norm": ("normiert auf Bande", "normalised to band"),
-    "ov_mode_eps": ("ε [10³ M⁻¹ cm⁻¹]", "ε [10³ M⁻¹ cm⁻¹]"),
+    "ov_normalize": ("Normieren (auf die Bande von Interesse)", "Normalise (to the band of interest)"),
+    "ov_normalize_tip": ("Aus: y-Achse ε [10³ M⁻¹ cm⁻¹] – Messungen brauchen dann Konzentration und Schichtdicke.",
+                         "Off: y axis ε [10³ M⁻¹ cm⁻¹] – measurements then need concentration and path length."),
+    "ov_triplets": ("Triplett-Zustände markieren (f = 0)", "Mark triplet states (f = 0)"),
+    "ov_triplets_tip": ("Formal spinverbotene Triplett-Anregungen als gestrichelte Marken fester Höhe;\n"
+                        "sie tragen nicht zur Kurve bei. Nur Rechnungen ohne SOC (mit SOC haben die\n"
+                        "gemischten Zustände echte Intensität).",
+                        "Formally spin-forbidden triplet excitations as dashed marks of fixed height;\n"
+                        "they do not contribute to the curve. Only calculations without SOC (with SOC the\n"
+                        "mixed states have real intensity)."),
+    "ov_combine": ("Kombinieren", "Combine"),
+    "ov_combine_tip": ("Markierte TD-DFT-Rechnungen (Strg/Shift) zu einem Spektrum zusammenführen: erst alle\n"
+                       "Übergänge sammeln, dann gemeinsam verbreitern. Die Originale werden ausgeblendet.",
+                       "Merge the selected TD-DFT calculations (Ctrl/Shift) into one spectrum: collect all\n"
+                       "transitions first, then broaden them together. The originals are hidden."),
+    "ov_combine_need2": ("Bitte mindestens zwei TD-DFT-Einträge markieren (Strg- bzw. Shift-Klick).",
+                         "Please select at least two TD-DFT entries (Ctrl or Shift click)."),
+    "ov_combine_dup": ("WARNUNG: {a} und {b} enthalten {n} gleiche Zustände – diese zählen jetzt doppelt.",
+                       "WARNING: {a} and {b} share {n} identical states – they are now counted twice."),
+    "ov_weights": ("Gewichte", "Weights"),
+    "ov_weights_tip": ("Ein Faktor je Rechnung, auf die Oszillatorstärken angewandt (Standard 1 = Summe).\n"
+                       "Konformere/Spezies z. B. 0.7 0.3 (Boltzmann- oder Molenbruch).",
+                       "One factor per calculation, applied to the oscillator strengths (default 1 = sum).\n"
+                       "Conformers/species e.g. 0.7 0.3 (Boltzmann or mole fraction)."),
     "ov_baseline": ("Basislinie (Offset) abziehen", "Subtract baseline (offset)"),
     "ov_sticks": ("TD-DFT-Übergänge als Striche", "TD-DFT transitions as sticks"),
     "ov_no_signal": ("„{name}“: kein Signal im Normierungsbereich {lo:g}–{hi:g} nm – ausgelassen",
