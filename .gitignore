@@ -7,7 +7,24 @@ selftest_*/
 .uvvis_cache/
 *.uvvis.yaml
 # Messdaten nicht ins Repository (öffentliche Repos!):
-*.csv
+*.[Cc][Ss][Vv]
 *.heic
 *.HEIC
-*.cdxml
+*.[Cc][Dd][Xx][Mm][Ll]
+*.out
+*.log
+*.[Dd][Ss][Ww]
+*.[Bb][Ss][Ww]
+*.[Ff][Bb][Ss][Ww]
+*.txt
+!requirements.txt
+*.xlsx
+*.uvvis
+exports/
+# Fotos/Bilder nur in assets/ (Programmsymbol)
+*.[Pp][Nn][Gg]
+*.[Jj][Pp][Gg]
+*.[Jj][Pp][Ee][Gg]
+*.[Tt][Ii][Ff]
+*.[Tt][Ii][Ff][Ff]
+!assets/*.png
