@@ -191,6 +191,22 @@ Compare several spectra in one figure, measured and calculated:
   precedence.
 - Potential axis as measured, shifted by E(Fc⁺/Fc) or with the referencing of the CV tab.
 
+## EPR tab (CW EPR)
+
+- Reads **Bruker BES3T** (.dsc + .DTA, e.g. Magnettech ESR5000/ESRStudio, Elexsys; 2D files give one spectrum
+  per row) and **two-column text** (Magnettech MS400 export; microwave frequency from file names like
+  `…-9p404368-…`). Frequency, temperature, modulation and power are shown per spectrum.
+- **Dark spectrum:** the measurement before irradiation can be subtracted from each spectrum (light − k·dark,
+  interpolated onto the same field grid); a warning appears if frequency, modulation or power differ.
+- **Processing:** polynomial baseline (order 0–5) from the outer edges of the sweep or from chosen signal-free
+  ranges, hide field ranges (e.g. the sharp radical signal), moving-average smoothing.
+- **EasySpin simulations** as two-column text (B in mT, intensity), e.g. `writematrix([B(:) spc(:)], 'sim.txt',
+  'Delimiter', '\t')`; scaled by least squares to a measurement (or by hand) and shifted in field; drawn dashed on
+  the same level. A **parameter file** (the MATLAB lines `Sys.D = [D E]; …`) is shown with D and |E| converted to
+  cm⁻¹ and can be written into the figure.
+- Display in mT or G, overlaid or stacked, normalised, y axis without numbers by default, free labels such as
+  `Z⁻@122, Y⁺@400`. Hover shows B, the g value and the intensity.
+
 ## Fluorescence tab
 
 Absorption and emission in one figure, as commonly shown in papers:

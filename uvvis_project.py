@@ -52,6 +52,8 @@ def _path_slots(state):
     specs = sec.get("spec_files") or []
     slots += [(specs, i, "data") for i in range(len(specs))]
     slots.append((sec, "dta", "data"))
+    for e in (state.get("epr") or {}).get("entries") or []:
+        slots += [(e, "file", "data"), (e, "params", "data")]
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", "data"), (fl, "em_file", "data"), (fl, "structure", "images"),
               (fl, "photo_day", "images"), (fl, "photo_uv", "images")]
@@ -94,10 +96,12 @@ def save(project_dir, state) -> dict:
         if str(src) not in copied:
             copied[str(src)] = str(_copy_unique(src, pdir / sub))
             # zur CDXML gehörige ChemDraw-Exporte (gleicher Name) mitnehmen
-            if src.suffix.lower() == ".cdxml":
+            sibs = {".cdxml": (".svg", ".pdf", ".png", ".tif", ".tiff"),           # ChemDraw-Exporte
+                    ".dsc": (".dta", ".ygf", ".xml"), ".dta": (".dsc", ".ygf", ".xml")}   # Bruker BES3T
+            if src.suffix.lower() in sibs:
                 target = Path(copied[str(src)])
                 for sib in src.parent.glob(src.stem + ".*"):
-                    if sib.stem == src.stem and sib.suffix.lower() in (".svg", ".pdf", ".png", ".tif", ".tiff"):
+                    if sib.stem == src.stem and sib.suffix.lower() in sibs[src.suffix.lower()]:
                         shutil.copy2(sib, target.with_suffix(sib.suffix))
         cont[key] = copied[str(src)]
     rel_state = copy.deepcopy(abs_state)

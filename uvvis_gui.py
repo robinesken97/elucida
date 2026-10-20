@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.11.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -50,6 +50,7 @@ import uvvis_update as UPD  # noqa: E402
 import uvvis_color as COLOR  # noqa: E402
 import uvvis_cv as CVMOD  # noqa: E402
 import uvvis_sec as SECMOD  # noqa: E402
+import uvvis_epr as EPRMOD  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -331,7 +332,7 @@ class MainWindow(QMainWindow):
         self._loading = False
         self.glob = dict(DEFAULT_GLOB)
         self.extra_cache = {}
-        self.ov_state, self.fl_state, self.cv_state, self.sec_state = {}, {}, {}, {}   # Programm startet leer
+        self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}  # leer
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
         self.project_dir = None
@@ -643,6 +644,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.cv_tab, T("tab_cv"))
         self.sec_tab = SECMOD.SECTab(self, self.sec_state)
         self.main_tabs.addTab(self.sec_tab, T("tab_sec"))
+        self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
+        self.main_tabs.addTab(self.epr_tab, T("tab_epr"))
         self.main_tabs.setCurrentIndex(self._tab_index)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
         self.setCentralWidget(self.main_tabs)
@@ -913,7 +916,7 @@ class MainWindow(QMainWindow):
         return {"eps": {"files": list(self.csv_paths), "glob": dict(self.glob), "conc": self.conc,
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
-                "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state,
+                "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -935,6 +938,8 @@ class MainWindow(QMainWindow):
         self.cv_state.update(state.get("cv") or {})
         self.sec_state.clear()
         self.sec_state.update(state.get("sec") or {})
+        self.epr_state.clear()
+        self.epr_state.update(state.get("epr") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
         self.current = eps.get("current")
@@ -1509,6 +1514,7 @@ class MainWindow(QMainWindow):
         self.fl_tab.render()
         self.cv_tab.render()
         self.sec_tab.render()
+        self.epr_tab.render()
         self.push_undo()
 
     def render(self):
@@ -1755,6 +1761,8 @@ class MainWindow(QMainWindow):
             return self.cv_tab.export_dialog()
         if i == 4:
             return self.sec_tab.export_dialog()
+        if i == 5:
+            return self.epr_tab.export_dialog()
         return self.export_dialog()
 
     def info(self, msg):
@@ -2368,6 +2376,61 @@ def selftest(outdir, with_isnet=False):
             any(c_ is st_sec and k_ == "dta" for c_, k_, _ in slots_), "SEC-Dateien fehlen im Projekt"
         st_sec.update(spec_files=[], dta=None, mode="spectra", trace_lams="", bands="")
         report.append("spectroelectrochemistry: OK")
+
+        # EPR: BES3T lesen (G -> mT), Dunkelspektrum, Basislinie, Ausblenden, Simulation anpassen, EasySpin-Parameter
+        eprdir = out / "input" / "epr"
+        eprdir.mkdir(parents=True, exist_ok=True)
+        Bg = np.linspace(4400.0, 5100.0, 7001)                       # G
+        signal = -np.gradient(np.exp(-((Bg - 4700) / 30) ** 2)) * 1000  # Ableitungslinie bei 470 mT
+        drift = 0.05 * (Bg - 4400)                                     # lineare Drift der Basislinie
+
+        def write_bes3t(stem, y):
+            (eprdir / f"{stem}.dsc").write_text("\n".join([
+                "#DESC\t1.2", "DSRC\tEXP", "BSEQ\tLIT", "IKKF\tREAL", "XTYP\tIDX", "YTYP\tNODATA", "IRFMT\tD",
+                f"XPTS\t{len(Bg)}", f"XMIN\t{Bg[0]}", f"XWID\t{Bg[-1] - Bg[0]}", "XUNI\t'G'", "#SPL\t1.2",
+                "MWFQ\t9338553208.5", "STMP\t100.0", "B0MA\t0.00095", "MWPW\t0.01", "DATE\t08/22/25", "TIME\t11:30:15"]),
+                encoding="latin-1")
+            y.astype("<f8").tofile(eprdir / f"{stem}.DTA")
+        dark_bg = 3.0 * np.sin((Bg - 4400) / 200)                      # Untergrund, der auch dunkel da ist
+        write_bes3t("dark", drift + dark_bg)
+        write_bes3t("light", drift + dark_bg + signal)
+        sim_B = np.linspace(440.0, 510.0, 1401)                        # mT, wie EasySpin
+        sim_I = 0.5 * np.interp(sim_B, Bg / 10, signal)
+        np.savetxt(eprdir / "sim.txt", np.column_stack([sim_B, sim_I]), delimiter="\t")
+        (eprdir / "sim_params.txt").write_text("Sys.S = 1;\nSys.g = 2.0023;\nSys.D = [11100 450]; % MHz\n"
+                                               "Exp.mwFreq = 9.3386;\n", encoding="utf-8")
+        sp_e = EPRMOD.read_any(eprdir / "light.DTA")[0]
+        assert abs(sp_e["B"][0] - 440.0) < 1e-9 and abs(sp_e["meta"]["mw_GHz"] - 9.3385535) < 1e-6, sp_e["meta"]
+        assert abs(sp_e["meta"]["mod_mT"] - 0.95) < 1e-9 and abs(sp_e["meta"]["power_mW"] - 10) < 1e-9
+        pr_ = EPRMOD.parse_easyspin((eprdir / "sim_params.txt").read_text(encoding="utf-8"))
+        assert pr_["Sys.D"] == [11100.0, 450.0] and "0.3703 cm" in EPRMOD.zfs_summary(pr_)
+        assert abs(EPRMOD.g_value(9.3386, 333.2) - 2.0024) < 1e-3
+        t_e = w.epr_tab
+        ed = t_e._new("exp", str(eprdir / "dark.dsc"))
+        el = t_e._new("exp", str(eprdir / "light.dsc"))
+        es = t_e._new("sim", str(eprdir / "sim.txt"))
+        ed["visible"] = False
+        el["dark"] = ed["uid"]
+        es.update(fit_to=el["uid"], params=str(eprdir / "sim_params.txt"))
+        w.epr_state.update(entries=[ed, el, es], bl_order=1, exclude="499-501", smooth=0.0, normalize=False,
+                           stack=False, labels="Z@452, X@490", show_params=True)
+        cache_ = {}
+        Bp, Ip = t_e.processed(el, cache_)
+        cleaned = Ip[np.isfinite(Ip)]
+        ref_ = (signal / 1.0)[np.isfinite(Ip)]
+        assert np.max(np.abs(cleaned - ref_)) < 0.02 * np.ptp(signal), "Dunkelspektrum/Basislinie"
+        assert np.isnan(Ip[(Bp > 499.2) & (Bp < 500.8)]).all(), "Bereich nicht ausgeblendet"
+        Bs, Is = t_e.processed(es, cache_)
+        assert abs(np.nanmax(Is) / np.nanmax(Ip) - 1) < 0.05, "Simulation nicht an Messung angepasst"
+        t_e.fill_table()
+        files = w.epr_tab.export_to(out / "epr_test")
+        assert all(f.exists() for f in files), files
+        F_e = w.epr_tab.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
+        assert any("cm" in a.get_text() for a in F_e.ann_items.values()), "D/E-Label fehlt"
+        slots_ = PRJ._path_slots({"epr": w.epr_state})
+        assert any(c_ is es and k_ == "params" for c_, k_, _ in slots_), "EPR-Parameter fehlen im Projekt"
+        w.epr_state.update(entries=[], labels="", exclude="", show_params=False)
+        report.append("EPR (BES3T, dark spectrum, simulation): OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM

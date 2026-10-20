@@ -196,6 +196,22 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   CV-Werte haben Vorrang.
 - Potentialachse wie gemessen, um E(Fc⁺/Fc) verschoben oder mit der Referenzierung des CV-Tabs.
 
+## EPR-Tab (CW-EPR)
+
+- Liest **Bruker BES3T** (.dsc + .DTA, z. B. Magnettech ESR5000/ESRStudio, Elexsys; 2D-Dateien ergeben ein Spektrum pro
+  Zeile) und **zweispaltigen Text** (Magnettech-MS400-Export; Mikrowellenfrequenz aus Dateinamen wie `…-9p404368-…`).
+  Frequenz, Temperatur, Modulation und Leistung werden pro Spektrum angezeigt.
+- **Dunkelspektrum:** Die Messung vor dem Bestrahlen lässt sich von jedem Spektrum abziehen (hell − k·dunkel, auf
+  dasselbe Feldraster interpoliert); Warnung, wenn Frequenz, Modulation oder Leistung abweichen.
+- **Verarbeitung:** Polynom-Basislinie (Grad 0–5) aus den Rändern des Sweeps oder aus gewählten signalfreien Bereichen,
+  Feldbereiche ausblenden (z. B. das scharfe Radikalsignal), Glätten per gleitendem Mittelwert.
+- **EasySpin-Simulationen** als zweispaltiger Text (B in mT, Intensität), z. B. `writematrix([B(:) spc(:)], 'sim.txt',
+  'Delimiter', '\t')`; per kleinsten Quadraten an eine Messung angepasst (oder von Hand skaliert) und im Feld
+  verschiebbar; gestrichelt auf derselben Ebene. Eine **Parameterdatei** (die MATLAB-Zeilen `Sys.D = [D E]; …`) wird
+  angezeigt, D und |E| in cm⁻¹ umgerechnet, optional im Bild.
+- Darstellung in mT oder G, überlagert oder gestapelt, normiert, y-Achse standardmäßig ohne Zahlen, freie Labels wie
+  `Z⁻@122, Y⁺@400`. Beim Überfahren: B, g-Wert und Intensität.
+
 ## Fluoreszenz-Tab
 
 Absorption und Emission in einer Abbildung, wie in Publikationen üblich:

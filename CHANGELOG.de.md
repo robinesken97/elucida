@@ -2,6 +2,17 @@
 
 # Änderungen
 
+## 1.11.0 – 20.10.2026
+
+### Neu
+- Neuer **EPR-Tab** (CW-EPR): Bruker BES3T (ESR5000/ESRStudio, Elexsys) und MS400-Textdateien; Abziehen des vor dem
+  Bestrahlen gemessenen Dunkelspektrums; Polynom-Basislinie, ausgeblendete Feldbereiche, Glätten; EasySpin-Simulationen
+  (zweispaltiger Text) an eine Messung angepasst, mit EasySpin-Parameterdatei (D, |E| in cm⁻¹); überlagert oder
+  gestapelt, mT oder G, freie Labels; beim Überfahren B, g und Intensität.
+
+### Korrigiert
+- Kurvennamen, die mit „_“ beginnen, fehlten in Legenden.
+
 ## 1.10.0 – 20.10.2026
 
 ### Neu

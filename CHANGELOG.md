@@ -2,6 +2,17 @@
 
 # Changelog
 
+## 1.11.0 – 2026-10-20
+
+### Added
+- New **EPR tab** (CW EPR): Bruker BES3T (ESR5000/ESRStudio, Elexsys) and MS400 text files; subtraction of the dark
+  spectrum recorded before irradiation; polynomial baseline, hidden field ranges, smoothing; EasySpin simulations
+  (two-column text) scaled to a measurement, with the EasySpin parameter file (D, |E| in cm⁻¹); overlaid or stacked,
+  mT or G, free labels; hover shows B, g and intensity.
+
+### Fixed
+- Curve names starting with "_" were missing from legends.
+
 ## 1.10.0 – 2026-10-20
 
 ### Added

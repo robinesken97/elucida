@@ -224,8 +224,11 @@ class SimpleFigure(core.Figure):
         ylim = cfg["ylim"] or (0, 1.1)
         for c in self.curves:
             cx, cy = core.clip_polyline(c["x"], c["y"], xlim, ylim)
+            label = c.get("label")
+            if label and str(label).startswith("_"):          # matplotlib versteckt Namen mit "_" am Anfang
+                label = "\u200b" + str(label)
             ax.plot(cx, cy, color=c.get("color") or "black", lw=c.get("lw", cfg["line_width"] * 1.3),
-                    ls=c.get("ls", "-"), label=c.get("label"), solid_joinstyle="round",
+                    ls=c.get("ls", "-"), label=label, solid_joinstyle="round",
                     marker=c.get("marker"), ms=4 * cfg.get("scale", 1.0) if c.get("marker") else None)
         f_sticks = [st for st in sticks if st.get("axis2")]
         for st in sticks:
