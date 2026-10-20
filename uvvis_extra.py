@@ -266,6 +266,10 @@ class SimpleFigure(core.Figure):
                 ax.spines["right"].set_visible(False)
         if f_sticks:
             ax.tick_params(which="both", right=False)
+        for (x0, y0, x1, y1) in cfg.get("arrows") or []:     # z. B. Scanrichtung im CV
+            ax.annotate("", xy=(x1, y1), xytext=(x0, y0), annotation_clip=False,
+                        arrowprops=dict(arrowstyle="-|>", color="black", lw=max(0.6, 0.8 * sc),
+                                        mutation_scale=10 * sc, shrinkA=0, shrinkB=0))
         for y0 in cfg.get("zero_lines") or []:             # Nulllinie je Stapelebene
             if ylim[0] <= y0 <= ylim[1]:
                 ax.axhline(y0, color="0.6", lw=max(0.5, 0.6 * sc), ls=(0, (4, 3)), zorder=0.5)

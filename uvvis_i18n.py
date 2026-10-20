@@ -383,6 +383,62 @@ TEXTS = {
     "ov_same_level": ("Gleiche Stapelebene wie die Kurve darüber", "Same stacking level as the curve above"),
     "ov_same_level_tip": ("z. B. TD-DFT direkt unter der zugehörigen Messung",
                           "e.g. TD-DFT directly with its measurement"),
+    # ---- Cyclovoltammetrie -------------------------------------------------
+    "tab_cv": ("CV", "CV"),
+    "cv_files": ("Messungen (Gamry .DTA)", "Measurements (Gamry .DTA)"),
+    "cv_add": ("Messung…", "Measurement…"),
+    "cv_xrange": ("E-Bereich [V]", "E range [V]"),
+    "cv_analysis": ("Auswertung", "Analysis"),
+    "cv_cycle": ("Zyklus", "Cycle"),
+    "cv_cycle_tip": ("Welcher Zyklus gezeigt und ausgewertet wird (zu groß = letzter vorhandener).",
+                     "Which cycle is shown and analysed (too large = last available)."),
+    "cv_couples": ("Redoxpaare", "Redox couples"),
+    "cv_from": ("von [V]", "from [V]"),
+    "cv_to": ("bis [V]", "to [V]"),
+    "cv_couples_tip": ("Potentialfenster je Redoxpaar in der Achsenskala. Im Fenster: E_pa = Strommaximum im\n"
+                       "Hinlauf, E_pc = Minimum im Rücklauf, E½ = Mittelwert, ΔE_p = Differenz.\n"
+                       "Rot in den Ergebnissen: Peak am Fensterrand – Fenster anpassen.",
+                       "Potential window per redox couple in axis units. Within the window: E_pa = current\n"
+                       "maximum in the forward scan, E_pc = minimum in the reverse scan, E½ = mean, ΔE_p = difference.\n"
+                       "Red in the results: peak at the window edge – adjust the window."),
+    "cv_suggest": ("Vorschlag", "Suggest"),
+    "cv_ref": ("Referenz", "Reference"),
+    "cv_ref_none": ("wie gemessen (Referenzelektrode)", "as measured (reference electrode)"),
+    "cv_ref_internal": ("intern (Fc / Ac₂Fc in einer Messung)", "internal (Fc / Ac₂Fc in one measurement)"),
+    "cv_ref_manual": ("Verschiebung von Hand", "manual shift"),
+    "cv_ref_file": ("Messung mit Referenz", "Measurement with reference"),
+    "cv_ref_window": ("Fenster Referenz [V, gemessen]", "Reference window [V, measured]"),
+    "cv_ref_compound": ("Referenz E° vs. Fc⁺/Fc", "Reference E° vs. Fc⁺/Fc"),
+    "cv_ref_custom": ("eigene", "custom"),
+    "cv_ref_value_tip": ("E½ der Referenzverbindung gegen Fc⁺/Fc. Ac₂Fc (1,1'-Diacetylferrocen): Vorgabe +0,49 V;\n"
+                         "lösungsmittelabhängig – mit der verwendeten Literatur abgleichen.",
+                         "E½ of the reference compound vs. Fc⁺/Fc. Ac₂Fc (1,1'-diacetylferrocene): default +0.49 V;\n"
+                         "solvent dependent – check against the literature you use."),
+    "cv_offset": ("E(Fc⁺/Fc) gemessen", "E(Fc⁺/Fc) measured"),
+    "cv_offset_tip": ("Lage von Fc⁺/Fc gegen die Referenzelektrode; wird von allen Potentialen abgezogen.",
+                      "Position of Fc⁺/Fc vs. the reference electrode; subtracted from all potentials."),
+    "cv_electrode": ("Referenzelektrode", "Reference electrode"),
+    "cv_display": ("Darstellung CV", "CV display"),
+    "cv_gradient": ("Farbverlauf nach Scanrate (blau → rot)", "Colour gradient by scan rate (blue → red)"),
+    "cv_density": ("Stromdichte j [mA cm⁻²] (Elektrodenfläche aus der Datei)",
+                   "Current density j [mA cm⁻²] (electrode area from the file)"),
+    "cv_show_e12": ("E½ im Bild", "E½ in the figure"),
+    "cv_arrow": ("Pfeil für die Scanrichtung", "Arrow for the scan direction"),
+    "cv_invert": ("Strom invertieren (US-Konvention)", "Invert current (US convention)"),
+    "cv_invert_tip": ("Standard: wie aufgezeichnet (Gamry: IUPAC, anodisch positiv).",
+                      "Default: as recorded (Gamry: IUPAC, anodic positive)."),
+    "cv_results": ("Ergebnisse", "Results"),
+    "cv_ratio_tip": ("Rückpeak/Hinpeak nach Nicholson (Anal. Chem. 1966): berücksichtigt den abklingenden Strom\n"
+                     "des Hinlaufs. ≈ 1: chemisch reversibel.",
+                     "Reverse/forward peak ratio after Nicholson (Anal. Chem. 1966): accounts for the decaying\n"
+                     "forward current. ≈ 1: chemically reversible."),
+    "cv_ref_note": ("Referenz: {name} bei E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc",
+                    "Reference: {name} at E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc"),
+    "cv_ref_missing": ("⚠ Referenz nicht gefunden (Messung oder Fenster prüfen) – Achse wie gemessen.",
+                       "⚠ Reference not found (check measurement or window) – axis as measured."),
+    "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
+    "cv_randles": ("Paar {n}: i_pa gegen √v linear, Steigung {m} µA (V/s)^-½, R² = {r2} (Randles-Ševčík)",
+                   "Couple {n}: i_pa vs. √v linear, slope {m} µA (V/s)^-½, R² = {r2} (Randles–Ševčík)"),
     # ---- Farbe der Lösung ---------------------------------------------------
     "color_show": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),
     "color_tip": ("Aus dem Spektrum berechnet: Transmission 10^(−A) unter Tageslicht, CIE-1931-Farbmetrik → sRGB.\n"

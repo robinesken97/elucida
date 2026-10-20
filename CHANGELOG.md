@@ -2,6 +2,17 @@
 
 # Changelog
 
+## 1.9.0 – 2026-10-20
+
+### Added
+- New **CV tab** for cyclic voltammetry: Gamry .DTA files, overlay of several measurements (scan-rate series
+  with colour gradient, scan-direction arrow, E½ label), redox couples in editable windows (E_pa, E_pc, E½,
+  ΔE_p, i_pa, i_pc, Nicholson peak ratio), Randles–Ševčík fit, referencing vs. Fc⁺/Fc (internal Fc/Ac₂Fc,
+  manual), results as CSV.
+
+### Fixed
+- Automatic label placement now also works for curves whose x values are not monotonic (e.g. CVs).
+
 ## 1.8.0 – 2026-10-20
 
 ### Added

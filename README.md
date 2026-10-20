@@ -162,6 +162,22 @@ Compare several spectra in one figure, measured and calculated:
   ticks (default when stacked – offset curves make the numbers misleading) or hidden. Optionally
   the **names are written at the curves** instead of a legend, and a dashed zero line marks each level.
 
+## CV tab (cyclic voltammetry)
+
+- Reads **Gamry .DTA** files (Framework 6/7, both table variants); scan rate, electrode area and cycles
+  come from the file. Several measurements (e.g. a scan-rate series) are overlaid, optionally with a
+  blue → red colour gradient by scan rate, an arrow for the scan direction and E½ in the figure.
+- **Redox couples** are analysed in potential windows ("Suggest" proposes them, the windows can be
+  edited): E_pa (current maximum in the forward scan), E_pc (minimum in the reverse scan), E½, ΔE_p,
+  i_pa, i_pc and the peak-current ratio after **Nicholson** (accounts for the decaying forward current;
+  ≈ 1 = chemically reversible). Peaks at the window edge are marked red. With ≥ 3 scan rates the
+  **Randles–Ševčík** plot (i_pa vs. √v) is fitted.
+- **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
+  of the measurements; E½ of the reference vs. Fc⁺/Fc is editable – default Ac₂Fc +0.49 V, check against your
+  literature) or a manual shift. The axis then reads "E [V vs. Fc⁰/⁺]".
+- Current as recorded (Gamry: IUPAC, anodic positive) or inverted; optionally as current density.
+- Export: figure (PDF/SVG/PNG) and `…_results.csv` with all values.
+
 ## Fluorescence tab
 
 Absorption and emission in one figure, as commonly shown in papers:

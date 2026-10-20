@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -48,6 +48,7 @@ import uvvis_project as PRJ  # noqa: E402
 import uvvis_report as REPORT  # noqa: E402
 import uvvis_update as UPD  # noqa: E402
 import uvvis_color as COLOR  # noqa: E402
+import uvvis_cv as CVMOD  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -329,7 +330,7 @@ class MainWindow(QMainWindow):
         self._loading = False
         self.glob = dict(DEFAULT_GLOB)
         self.extra_cache = {}
-        self.ov_state, self.fl_state = {}, {}           # Programm startet immer leer
+        self.ov_state, self.fl_state, self.cv_state = {}, {}, {}      # Programm startet immer leer
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
         self.project_dir = None
@@ -637,6 +638,8 @@ class MainWindow(QMainWindow):
         self.fl_tab = uvvis_tabs.FluoTab(self, self.fl_state)
         self.main_tabs.addTab(self.ov_tab, T("tab_overlay"))
         self.main_tabs.addTab(self.fl_tab, T("tab_fluo"))
+        self.cv_tab = CVMOD.CVTab(self, self.cv_state)
+        self.main_tabs.addTab(self.cv_tab, T("tab_cv"))
         self.main_tabs.setCurrentIndex(self._tab_index)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
         self.setCentralWidget(self.main_tabs)
@@ -907,7 +910,7 @@ class MainWindow(QMainWindow):
         return {"eps": {"files": list(self.csv_paths), "glob": dict(self.glob), "conc": self.conc,
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
-                "overlay": self.ov_state, "fluo": self.fl_state, "tab": self._tab_index,
+                "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
     def set_state(self, state):
@@ -924,6 +927,8 @@ class MainWindow(QMainWindow):
         self.ov_state.update(state.get("overlay") or {})
         self.fl_state.clear()
         self.fl_state.update(state.get("fluo") or {})
+        self.cv_state.clear()
+        self.cv_state.update(state.get("cv") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
         self.current = eps.get("current")
@@ -1496,6 +1501,7 @@ class MainWindow(QMainWindow):
         self.render()
         self.ov_tab.render()
         self.fl_tab.render()
+        self.cv_tab.render()
         self.push_undo()
 
     def render(self):
@@ -1738,6 +1744,8 @@ class MainWindow(QMainWindow):
             return self.ov_tab.export_dialog()
         if i == 2:
             return self.fl_tab.export_dialog()
+        if i == 3:
+            return self.cv_tab.export_dialog()
         return self.export_dialog()
 
     def info(self, msg):
@@ -2235,6 +2243,75 @@ def selftest(outdir, with_isnet=False):
         assert w.glob["bands"] == "", w.glob["bands"]
         w.render()
         report.append("hover readout + band picking: OK")
+
+        # Cyclovoltammetrie: Gamry-Dateien (beide Varianten), Redoxpaare, interne Referenz, Export
+        def cv_sweep(e0, ip, lo, hi, step=0.002, ref=None):
+            """Modell-CV: Hinlauf lo->hi, Rücklauf hi->lo; Peaks bei E0 ± 30 mV (+ optional Referenzpaar)."""
+            up = np.arange(lo, hi + step / 2, step)
+            E_ = np.concatenate([up, up[::-1]])
+            fw = np.r_[np.ones(len(up)), np.zeros(len(up))].astype(bool)
+
+            def wave(e_c, i_p):
+                pa = i_p * np.exp(-((E_ - (e_c + 0.03)) / 0.045) ** 2) + 0.3 * i_p / (1 + np.exp(-(E_ - e_c - 0.03) / 0.02))
+                pc = -0.9 * i_p * np.exp(-((E_ - (e_c - 0.03)) / 0.045) ** 2)
+                return np.where(fw, pa, pc + 0.3 * i_p * np.exp(-(hi - E_) / 0.1))
+            I_ = wave(e0, ip) + (wave(ref, 0.8 * ip) if ref is not None else 0)
+            return E_, I_
+
+        def write_dta(path, cycles, rate, cycle_col=False):
+            head = ["EXPLAIN", "TAG\tCV", "DATE\tLABEL\t1/1/2026\tDate", "TIME\tLABEL\t12:00:00\tTime",
+                    f"SCANRATE\tQUANT\t{rate:.5E}\t&Scan Rate (mV/s)", "AREA\tQUANT\t7.10000E-002\tElectrode &Area (cm^2)",
+                    "CONVENTION\tIQUANT\t1\tCurrent Convention"]
+            cols = "\tPt\tT\tVf\tIm\tVu" + ("\tCycle" if cycle_col else "")
+            units = "\t#\ts\tV vs. Ref.\tA\tV" + ("\t#" if cycle_col else "")
+            body = []
+            if cycle_col:
+                body += [f"CURVE\tTABLE\t{sum(len(c[0]) for c in cycles)}", cols, units]
+            pt = 0
+            for n, (E_, I_) in enumerate(cycles):
+                if not cycle_col:
+                    body += [f"CURVE{n + 1}\tTABLE", cols, units]
+                for e_, i_ in zip(E_, I_):
+                    body.append(f"\t{pt}\t{pt * 0.02:.2f}\t{e_:.5E}\t{i_ * 1e-6:.5E}\t0" + (f"\t{n}" if cycle_col else ""))
+                    pt += 1
+            path.write_text("\r\n".join(head + body) + "\r\n", encoding="latin-1", newline="")
+        cvdir = out / "input" / "cv"
+        cvdir.mkdir(parents=True, exist_ok=True)
+        cv_files = []
+        for rate, ip in ((50, 40.0), (100, 56.0), (200, 80.0)):
+            p_ = cvdir / f"cv_{rate}.DTA"
+            write_dta(p_, [cv_sweep(-1.02, ip, -1.4, -0.5)], rate)
+            cv_files.append(p_)
+        ref_file = cvdir / "cv_ref.DTA"                  # zwei Zyklen, Variante mit Spalte 'Cycle'
+        write_dta(ref_file, [cv_sweep(-1.02, 80.0, -1.4, 0.9, ref=0.55)] * 2, 200, cycle_col=True)
+        d_ = CVMOD.read_gamry(ref_file)
+        assert len(d_["cycles"]) == 2 and d_["meta"]["scanrate"] == 200 and d_["meta"]["area"] == 0.071, d_["meta"]
+        c_ = CVMOD.read_gamry(cv_files[0])["cycles"][0]
+        sug = CVMOD.suggest_couples(c_["E"], c_["I"])
+        assert len(sug) == 1 and sug[0][0] < -1.02 < sug[0][1], sug
+        r_ = CVMOD.analyze_couple(c_["E"], c_["I"], *sug[0])
+        assert abs(r_["e12"] + 1.02) < 0.003 and abs(r_["dep"] - 0.06) < 0.006 and not r_["edge"], r_
+        st_cv = w.cv_state
+        st_cv["files"] = [{"file": str(p_), "uid": f"cv{i}", "visible": True, "color": "#000000",
+                           "label": f"{r} mV/s"} for i, (p_, r) in enumerate(zip(cv_files, (50, 100, 200)))]
+        st_cv["files"].append({"file": str(ref_file), "uid": "cvref", "visible": False, "color": "#000000",
+                               "label": "ref"})
+        st_cv.update(couples=[list(sug[0])], ref_mode="internal", ref_uid="cvref", ref_lo=0.3, ref_hi=0.8,
+                     ref_compound="ac2fc", ref_value=0.49, cycle=2)
+        w.cv_tab.fill_table()
+        files = w.cv_tab.export_to(out / "cv_test")
+        assert all(f.exists() for f in files), files
+        res = w.cv_tab.results
+        assert len(res) == 3 and all(abs(r["e12"] - (-1.02 - (0.55 - 0.49))) < 0.004 for r in res), res
+        assert "Ac₂Fc" in w.cv_tab.note and "+0.49 V vs. Fc" in w.cv_tab.note, w.cv_tab.note
+        rs = CVMOD.randles_sevcik([50, 100, 200], [r["ipa"] * 1e6 for r in res])
+        assert rs and rs[2] > 0.99, rs
+        csv_txt = files[-1].read_text(encoding="utf-8-sig")
+        assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt, csv_txt
+        assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
+        st_cv.update(files=[], couples=[], ref_mode="none")
+        w.cv_tab.fill_table()
+        report.append("cyclic voltammetry: OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM

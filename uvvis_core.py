@@ -1148,7 +1148,24 @@ class Figure:
         xd = x0 + fine * (x1 - x0)
         env = np.full(fine.shape, -np.inf)
         for s in self.spectra:
-            yi = np.interp(xd, s["x"], s["y"], left=-np.inf, right=-np.inf)
+            x, y = np.asarray(s["x"], float), np.asarray(s["y"], float)
+            ok = np.isfinite(x) & np.isfinite(y)
+            x, y = x[ok], y[ok]
+            if len(x) < 2:
+                continue
+            if np.all(np.diff(x) > 0):
+                yi = np.interp(xd, x, y, left=-np.inf, right=-np.inf)
+            else:
+                # nicht monoton (z. B. CV mit Hin- und Rücklauf, absteigende Wellenlängen): Maximum je Abschnitt
+                yi = np.full(fine.shape, -np.inf)
+                k = np.round((x - x0) / (x1 - x0) * (len(fine) - 1)).astype(int)
+                inside = (k >= 0) & (k < len(fine))
+                np.maximum.at(yi, k[inside], y[inside])
+                got = np.isfinite(yi)
+                if got.sum() >= 2:                       # Lücken im Datenbereich überbrücken
+                    lo, hi = np.flatnonzero(got)[[0, -1]]
+                    span = np.arange(lo, hi + 1)
+                    yi[span] = np.interp(span, np.flatnonzero(got), yi[got])
             env = np.maximum(env, (yi - y0) / (y1 - y0))
         env = np.clip(env, -1, 1).reshape(n, 4).max(1)
         env = np.maximum.reduce([env, np.roll(env, 1), np.roll(env, -1)])

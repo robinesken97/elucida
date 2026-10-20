@@ -2,6 +2,17 @@
 
 # Änderungen
 
+## 1.9.0 – 20.10.2026
+
+### Neu
+- Neuer **CV-Tab** für Cyclovoltammetrie: Gamry-.DTA-Dateien, Überlagerung mehrerer Messungen (Scanraten-Serie
+  mit Farbverlauf, Pfeil für die Scanrichtung, E½-Label), Redoxpaare in änderbaren Fenstern (E_pa, E_pc, E½,
+  ΔE_p, i_pa, i_pc, Peakverhältnis nach Nicholson), Randles-Ševčík-Fit, Referenzierung gegen Fc⁺/Fc (intern
+  Fc/Ac₂Fc, von Hand), Ergebnisse als CSV.
+
+### Korrigiert
+- Die automatische Label-Platzierung funktioniert jetzt auch bei Kurven mit nicht monotonen x-Werten (z. B. CV).
+
 ## 1.8.0 – 20.10.2026
 
 ### Neu

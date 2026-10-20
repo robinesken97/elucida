@@ -167,6 +167,22 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   irreführend) oder gar nicht anzeigen. Optional stehen die **Namen direkt an den Kurven** statt in einer
   Legende, und eine gestrichelte Nulllinie markiert jede Ebene.
 
+## CV-Tab (Cyclovoltammetrie)
+
+- Liest **Gamry-.DTA**-Dateien (Framework 6/7, beide Tabellenvarianten); Scanrate, Elektrodenfläche und
+  Zyklen kommen aus der Datei. Mehrere Messungen (z. B. eine Scanraten-Serie) werden überlagert, optional mit
+  Farbverlauf blau → rot nach Scanrate, Pfeil für die Scanrichtung und E½ im Bild.
+- **Redoxpaare** werden in Potentialfenstern ausgewertet („Vorschlag“ schlägt sie vor, die Fenster sind
+  änderbar): E_pa (Strommaximum im Hinlauf), E_pc (Minimum im Rücklauf), E½, ΔE_p, i_pa, i_pc und das
+  Peakstromverhältnis nach **Nicholson** (berücksichtigt den abklingenden Strom des Hinlaufs; ≈ 1 = chemisch
+  reversibel). Peaks am Fensterrand werden rot markiert. Ab 3 Scanraten wird die **Randles-Ševčík**-Auftragung
+  (i_pa gegen √v) gefittet.
+- **Referenzierung:** wie gemessen (Referenzelektrode, z. B. Ag/AgNO₃), **intern** (Fc- oder Ac₂Fc-Paar in einer
+  der Messungen; E½ der Referenz gegen Fc⁺/Fc ist änderbar – Vorgabe Ac₂Fc +0,49 V, mit eurer Literatur abgleichen)
+  oder Verschiebung von Hand. Die Achse heißt dann „E [V vs. Fc⁰/⁺]“.
+- Strom wie aufgezeichnet (Gamry: IUPAC, anodisch positiv) oder invertiert; optional als Stromdichte.
+- Export: Abbildung (PDF/SVG/PNG) und `…_results.csv` mit allen Werten.
+
 ## Fluoreszenz-Tab
 
 Absorption und Emission in einer Abbildung, wie in Publikationen üblich:

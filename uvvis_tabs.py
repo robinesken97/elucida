@@ -215,6 +215,8 @@ class FigureTab(QWidget):
 
     DEFAULT_STATE: dict = {}
     STATE_KEY = ""
+    X_RANGE = (100, 3500, 0, 10)         # x-Achse: min, max, Nachkommastellen, Schritt (Spektren: nm)
+    XRANGE_TEXT = "xrange"
 
     def __init__(self, main, state):
         super().__init__()
@@ -275,11 +277,12 @@ class FigureTab(QWidget):
         row = QHBoxLayout()
         self.cb_xauto = QCheckBox(T("xrange_auto"))
         self.cb_xauto.setChecked(st["x_auto"])
-        self.sp_xmin = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, singleStep=10, value=st["x_min"])
-        self.sp_xmax = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, singleStep=10, value=st["x_max"])
+        lo, hi, dec, step = self.X_RANGE
+        self.sp_xmin = QDoubleSpinBox(decimals=dec, minimum=lo, maximum=hi, singleStep=step, value=st["x_min"])
+        self.sp_xmax = QDoubleSpinBox(decimals=dec, minimum=lo, maximum=hi, singleStep=step, value=st["x_max"])
         for w in (self.cb_xauto, self.sp_xmin, QLabel("–"), self.sp_xmax):
             row.addWidget(w)
-        f.addRow(T("xrange"), row)
+        f.addRow(T(self.XRANGE_TEXT), row)
         self.sp_ymax = QDoubleSpinBox(decimals=2, minimum=0, maximum=1e6, singleStep=0.1, value=st["ymax"])
         self.sp_ymax.setSpecialValueText(T("auto"))
         f.addRow(T("ymax"), self.sp_ymax)
