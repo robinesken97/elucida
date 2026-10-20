@@ -15,12 +15,13 @@ from pathlib import Path
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox)
 
 import uvvis_cv as CV
 import uvvis_tabs as TABS
 from uvvis_i18n import T
+from uvvis_style import HINT_CSS, make_form
 
 F_RT = 96485.332 / (8.314462 * 298.15)          # 1/V bei 25 °C
 
@@ -149,7 +150,7 @@ class SECTab(TABS.FigureTab):
         st = self.st
         self.info = {}
         g = QGroupBox(T("sec_data"))
-        f = QFormLayout(g)
+        f = make_form(g)
         row = QHBoxLayout()
         self.lbl_spec = QLabel("–")
         b = QPushButton(T("choose"))
@@ -183,7 +184,7 @@ class SECTab(TABS.FigureTab):
         self.lv.addWidget(g)
 
         g = QGroupBox(T("sec_display"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.cmb_mode = QComboBox()
         for key in ("spectra", "trace"):
             self.cmb_mode.addItem(T("sec_mode_" + key), key)
@@ -197,7 +198,7 @@ class SECTab(TABS.FigureTab):
             row.addWidget(w_)
         f.addRow(T("sec_range"), row)
         self.lbl_range = QLabel("")
-        self.lbl_range.setStyleSheet("color: gray;")
+        self.lbl_range.setStyleSheet(HINT_CSS)
         f.addRow("", self.lbl_range)
         self.cb_highlight = QCheckBox(T("sec_highlight"))
         self.cb_gradient = QCheckBox(T("sec_gradient"))

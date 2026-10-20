@@ -14,12 +14,14 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QSpinBox,
                                QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 import uvvis_tabs as TABS
 from uvvis_i18n import T
+import uvvis_style as STYLE
+from uvvis_style import HINT_CSS, make_form
 
 MHZ_PER_CM = 29979.2458                       # 1 cm⁻¹ in MHz
 MU_B_H = 13.996245                             # µ_B/h in GHz/T  -> g = ν / (µ_B/h · B)
@@ -615,7 +617,7 @@ class EPRTab(TABS.FigureTab):
         for txt, fn in ((T("epr_add_exp"), self.add_exp), (T("epr_add_sim"), self.add_sim),
                         (T("epr_add_iso"), self.add_iso),
                         ("↑", lambda: self.move(-1)), ("↓", lambda: self.move(1)), (T("remove"), self.remove)):
-            b = QPushButton(txt)
+            b = STYLE.list_button(txt)
             b.clicked.connect(fn)
             row.addWidget(b)
         v.addLayout(row)
@@ -632,7 +634,7 @@ class EPRTab(TABS.FigureTab):
         self.lv.addWidget(g)
 
         self.det = QGroupBox(T("ov_details"))
-        f = QFormLayout(self.det)
+        f = make_form(self.det)
         row = QHBoxLayout()
         self.cmb_dark = QComboBox()
         self.cmb_dark.setToolTip(T("epr_dark_tip"))
@@ -670,7 +672,7 @@ class EPRTab(TABS.FigureTab):
         self.lbl_params_row = QLabel(T("epr_params"))
         f.addRow(self.lbl_params_row, row)
         self.w_iso = QGroupBox(T("epr_iso"))
-        fi = QFormLayout(self.w_iso)
+        fi = make_form(self.w_iso)
         row = QHBoxLayout()
         self.sp_g = QDoubleSpinBox(decimals=5, minimum=1.0, maximum=10.0, singleStep=0.0005, value=2.0023)
         self.sp_lw = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=50, singleStep=0.01, value=0.1, suffix=" mT")
@@ -703,7 +705,7 @@ class EPRTab(TABS.FigureTab):
         self.lbl_meta = QLabel("")
         self.lbl_meta.setWordWrap(True)
         self.lbl_meta.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl_meta.setStyleSheet("color: gray;")
+        self.lbl_meta.setStyleSheet(HINT_CSS)
         f.addRow(self.lbl_meta)
         for w_ in (self.sp_dark_k, self.sp_scale, self.sp_shift):
             w_.valueChanged.connect(self.detail_changed)
@@ -712,7 +714,7 @@ class EPRTab(TABS.FigureTab):
         self.lv.addWidget(self.det)
 
         g = QGroupBox(T("epr_processing"))
-        f = QFormLayout(g)
+        f = make_form(g)
         row = QHBoxLayout()
         self.sp_bl_order = QSpinBox(minimum=-1, maximum=5, value=st["bl_order"])
         self.sp_bl_order.setSpecialValueText(T("off"))
@@ -757,7 +759,7 @@ class EPRTab(TABS.FigureTab):
         self.lv.addWidget(g)
 
         g = QGroupBox(T("epr_display"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.cmb_unit = QComboBox()
         for u in ("mT", "G"):
             self.cmb_unit.addItem(u, u)

@@ -28,17 +28,17 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
-from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal  # noqa: E402
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
 from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon, QImage,  # noqa: E402
-                           QKeySequence, QPixmap)
+                           QGuiApplication, QKeySequence, QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
-                               QFormLayout, QGroupBox, QHBoxLayout,
+                               QFormLayout, QFrame, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
-                               QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
-                               QTabWidget, QVBoxLayout, QWidget)
+                               QSpinBox, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+                               QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import uvvis_core as core  # noqa: E402
 import uvvis_images as IMG  # noqa: E402
@@ -51,6 +51,8 @@ import uvvis_color as COLOR  # noqa: E402
 import uvvis_cv as CVMOD  # noqa: E402
 import uvvis_sec as SECMOD  # noqa: E402
 import uvvis_epr as EPRMOD  # noqa: E402
+import uvvis_style as STYLE  # noqa: E402
+from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -129,6 +131,42 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg/mL"), ("M", "M")]
 
+class Section(QWidget):
+    """Aufklappbarer Bereich für seltener gebrauchte Optionen. Weicht ein Wert vom Standard ab, steht
+    „(geändert)“ im Titel – eingeklappte Einstellungen wirken sich sonst unbemerkt aus."""
+
+    def __init__(self, title, key, settings):
+        super().__init__()
+        self.title, self.key, self.settings = title, key, settings
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        self.btn = QToolButton(checkable=True, autoRaise=True)
+        self.btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.btn.setStyleSheet("QToolButton { border: none; padding: 2px 0; }")
+        self.btn.setFont(QApplication.font())         # macOS: Werkzeugknöpfe sonst mit kleinerer Schrift
+        self.body = QWidget()
+        self.form = make_form(self.body)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.btn)
+        lay.addWidget(self.body)
+        self.btn.toggled.connect(self._toggled)
+        self.btn.setChecked(settings.value(f"ui/section_{key}", False, type=bool))
+        self._toggled(self.btn.isChecked())
+        self.set_changed(False)
+
+    def _toggled(self, on):
+        self.btn.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+        self.body.setVisible(on)
+        self.settings.setValue(f"ui/section_{self.key}", on)
+
+    def set_changed(self, changed):
+        self.changed = changed
+        self.btn.setText(f"{self.title} ({T('adv_changed')})" if changed else self.title)
+        f = self.btn.font()
+        f.setBold(changed)
+        self.btn.setFont(f)
+
 
 class ConcDialog(QDialog):
     """Konzentrationen je Probe eintragen (wenn sie nicht im Probennamen stehen)."""
@@ -187,7 +225,7 @@ class ConcDialog(QDialog):
         row.addStretch(1)
         lay.addLayout(row)
         hint = QLabel(T("dil_hint"))
-        hint.setStyleSheet("color: gray;")
+        hint.setStyleSheet(HINT_CSS)
         lay.addWidget(hint)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.try_accept)
@@ -353,6 +391,8 @@ class MainWindow(QMainWindow):
         icon = resource_path("assets/icon.png")
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
+        self.apply_theme()
+        QGuiApplication.styleHints().colorSchemeChanged.connect(self._system_scheme_changed)
         self.build_ui()
         self.setAcceptDrops(True)
         QTimer.singleShot(0, self._init_undo)
@@ -370,12 +410,17 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
         mb.clear()
         m = mb.addMenu(T("menu_file"))
-        m.addAction(QAction(T("act_new_project"), self, shortcut=QKeySequence.New, triggered=self.new_project))
-        m.addAction(QAction(T("act_open_project"), self, shortcut=QKeySequence.Open,
-                            triggered=self.open_project_dialog))
+        act_new = QAction(STYLE.icon("new"), T("act_new_project"), self, shortcut=QKeySequence.New,
+                          triggered=self.new_project)
+        act_open_prj = QAction(STYLE.icon("open"), T("act_open_project"), self, shortcut=QKeySequence.Open,
+                               triggered=self.open_project_dialog)
+        act_save = QAction(STYLE.icon("save"), T("act_save_project"), self, shortcut=QKeySequence.Save,
+                           triggered=self.save_project)
+        m.addAction(act_new)
+        m.addAction(act_open_prj)
         self.recent_menu = m.addMenu(T("act_recent"))
         self.fill_recent_menu()
-        m.addAction(QAction(T("act_save_project"), self, shortcut=QKeySequence.Save, triggered=self.save_project))
+        m.addAction(act_save)
         m.addAction(QAction(T("act_save_copy"), self, shortcut=QKeySequence("Ctrl+Shift+S"),
                             triggered=self.save_project_copy))
         m.addAction(QAction(T("act_show_folder"), self, triggered=self.show_project_folder))
@@ -383,19 +428,45 @@ class MainWindow(QMainWindow):
         m.addAction(QAction(T("act_open"), self, shortcut=QKeySequence("Ctrl+Shift+O"), triggered=self.choose_csv))
         m.addAction(QAction(T("act_conc"), self, triggered=self.edit_concentrations))
         m.addAction(QAction(T("act_restart"), self, triggered=self.restart_file))
-        m.addAction(QAction(T("act_export"), self, shortcut="Ctrl+E", triggered=self.export_current))
+        act_export = QAction(STYLE.icon("export"), T("act_export"), self, shortcut="Ctrl+E",
+                             triggered=self.export_current)
+        m.addAction(act_export)
         m.addSeparator()
         m.addAction(QAction(T("act_quit"), self, shortcut=QKeySequence.Quit, triggered=self.close))
         me = mb.addMenu(T("menu_edit"))
-        self.act_undo = QAction(T("act_undo"), self, triggered=self.undo)
+        self.act_undo = QAction(STYLE.icon("undo"), T("act_undo"), self, triggered=self.undo)
         self.act_undo.setShortcuts([QKeySequence.Undo])
-        self.act_redo = QAction(T("act_redo"), self, triggered=self.redo)
+        self.act_redo = QAction(STYLE.icon("redo"), T("act_redo"), self, triggered=self.redo)
         self.act_redo.setShortcuts([QKeySequence.Redo, QKeySequence("Ctrl+Shift+Z")])
         me.addAction(self.act_undo)
         me.addAction(self.act_redo)
         self._update_undo_actions()
+        # Werkzeugleiste: Projekt, Rückgängig/Wiederholen (dieselben Aktionen wie im Menü; Exportieren steht
+        # in jedem Tab unten fest sichtbar)
+        if getattr(self, "toolbar", None):
+            self.removeToolBar(self.toolbar)
+            self.toolbar.setParent(None)                # sofort lösen, gelöscht wird später
+            self.toolbar.deleteLater()
+        self.toolbar = self.addToolBar(T("toolbar"))
+        self.toolbar.setObjectName("mainToolbar")
+        self.toolbar.setMovable(False)
+        self.toolbar.setIconSize(QSize(18, 18))
+        for act in (act_new, act_open_prj, act_save, None, self.act_undo, self.act_redo):
+            if act is None:
+                self.toolbar.addSeparator()
+                continue
+            keys = act.shortcut().toString(QKeySequence.NativeText)
+            act.setToolTip(f"{act.text().rstrip('…')} ({keys})" if keys else act.text())
+            self.toolbar.addAction(act)
         mf = mb.addMenu(T("menu_format"))
         mf.addAction(QAction(T("act_text_format"), self, triggered=self.edit_text_format))
+        mt = mf.addMenu(T("menu_theme"))
+        grp_t = QActionGroup(self)
+        for code in ("system", "light", "dark"):
+            act = QAction(T(f"theme_{code}"), self, checkable=True, checked=self._theme_mode() == code)
+            act.triggered.connect(lambda _=False, c=code: self.switch_theme(c))
+            grp_t.addAction(act)
+            mt.addAction(act)
         ml = mb.addMenu(T("menu_lang"))
         grp = QActionGroup(self)
         for code, name in (("de", "Deutsch"), ("en", "English")):
@@ -416,10 +487,14 @@ class MainWindow(QMainWindow):
         left = QWidget()
         lv = QVBoxLayout(left)
 
-        g = QGroupBox(T("grp_data"))
-        f = QFormLayout(g)
+        forms = []
+        g, body = STYLE.card(T("grp_data"), "data")
+        f = make_form(body)
+        f.setContentsMargins(0, 0, 0, 0)
+        forms.append(f)
         row = QHBoxLayout()
-        self.btn_open = QPushButton(T("act_open"))
+        self.btn_open = QPushButton(STYLE.icon("open", "#FFFFFF"), T("act_open"))
+        self.btn_open.setProperty("accent", True)
         self.btn_open.clicked.connect(self.choose_csv)
         row.addWidget(self.btn_open)
         self.lbl_file = QLabel(self.files_label() if self.csv_path else T("no_file"))
@@ -439,12 +514,17 @@ class MainWindow(QMainWindow):
         f.addRow(T("series"), row)
         lv.addWidget(g)
 
-        g = QGroupBox(T("grp_compound"))
-        f = QFormLayout(g)
+        g, body = STYLE.card(T("grp_compound"), "compound")
+        f = make_form(body)
+        f.setContentsMargins(0, 0, 0, 0)
+        forms.append(f)
         self.ed_mw = QLineEdit()
         self.ed_mw.setPlaceholderText(T("mw_hint_none"))
         self.ed_mw.editingFinished.connect(self.mw_edited)
-        f.addRow(T("molar_mass"), self.ed_mw)
+        row = QHBoxLayout()
+        row.addWidget(self.ed_mw, 1)
+        row.addWidget(QLabel("g/mol"))
+        f.addRow(T("molar_mass_short"), row)
         self.lbl_chem = QLabel("")
         self.lbl_chem.setWordWrap(True)
         f.addRow("", self.lbl_chem)
@@ -458,9 +538,6 @@ class MainWindow(QMainWindow):
         row.addWidget(b1)
         row.addWidget(b2)
         f.addRow(T("structure"), row)
-        self.sp_struct_w = QDoubleSpinBox(decimals=1, minimum=3, maximum=90, singleStep=1, suffix=" %")
-        self.sp_struct_w.valueChanged.connect(lambda v: self.image_size_changed("struktur", v))
-        f.addRow(T("img_size"), self.sp_struct_w)
         row = QHBoxLayout()
         self.lbl_photo = QLabel("–")
         b1 = QPushButton(T("choose"))
@@ -471,15 +548,24 @@ class MainWindow(QMainWindow):
         row.addWidget(b1)
         row.addWidget(b2)
         f.addRow(T("photo"), row)
+        self.sec_images = Section(T("adv_images"), "images", self.settings)
+        fa = self.sec_images.form
+        forms.append(fa)
+        self.sp_struct_w = QDoubleSpinBox(decimals=1, minimum=3, maximum=90, singleStep=1, suffix=" %")
+        self.sp_struct_w.valueChanged.connect(lambda v: self.image_size_changed("struktur", v))
+        fa.addRow(T("img_size_struct"), self.sp_struct_w)
         self.sp_photo_w = QDoubleSpinBox(decimals=1, minimum=2, maximum=60, singleStep=0.5, suffix=" %")
         self.sp_photo_w.valueChanged.connect(lambda v: self.image_size_changed("kuevette", v))
-        f.addRow(T("img_size"), self.sp_photo_w)
+        fa.addRow(T("img_size_photo"), self.sp_photo_w)
+        compact(self.sp_struct_w, self.sp_photo_w)
         self.cmb_bg = QComboBox()
         for key in ("auto", "isnet", "grabcut", "border", "none"):
             self.cmb_bg.addItem(T({"auto": "bg_auto", "isnet": "bg_isnet", "grabcut": "bg_grabcut",
                                    "border": "bg_border", "none": "bg_off"}[key]), key)
         self.cmb_bg.currentIndexChanged.connect(self.bg_changed)
-        f.addRow(T("bg_method"), self.cmb_bg)
+        self.cmb_bg.currentIndexChanged.connect(self._update_sections)
+        fa.addRow(T("bg_method"), self.cmb_bg)
+        f.addRow(self.sec_images)
         self.lbl_thumb = QLabel()
         self.lbl_thumb.setAlignment(Qt.AlignCenter)
         f.addRow("", self.lbl_thumb)
@@ -509,24 +595,19 @@ class MainWindow(QMainWindow):
         self._color_spectra = None
         lv.addWidget(g)
 
-        g = QGroupBox(T("grp_eval"))
-        f = QFormLayout(g)
-        self.sp_d = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=100, singleStep=0.1)
-        f.addRow(T("path_length"), self.sp_d)
+        g, body = STYLE.card(T("grp_eval"), "eval")
+        f = make_form(body)
+        f.setContentsMargins(0, 0, 0, 0)
+        forms.append(f)
+        self.sp_d = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=100, singleStep=0.1, suffix=" cm")
+        f.addRow(T("path_length_short"), self.sp_d)
         self.sp_cut = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=5, singleStep=0.1)
         f.addRow(T("cutoff"), self.sp_cut)
-        self.sp_min = QSpinBox(minimum=2, maximum=20)
-        f.addRow(T("min_points"), self.sp_min)
-        self.sp_r2 = QDoubleSpinBox(decimals=3, minimum=0.0, maximum=1.0, singleStep=0.005)
-        self.sp_r2.setToolTip(T("min_r2_tip"))
-        f.addRow(T("min_r2"), self.sp_r2)
         self.ed_bands = QLineEdit()
         self.ed_bands.setPlaceholderText(T("wavelengths_ph"))
         f.addRow(T("wavelengths"), self.ed_bands)
         self.cb_bands_add = QCheckBox(T("bands_add"))
-        self.cb_shoulders = QCheckBox(T("find_shoulders"))
         f.addRow(self.cb_bands_add)
-        f.addRow(self.cb_shoulders)
         self.cmb_bl = QComboBox()
         for key in ("series", "simple", "manual", "off"):
             self.cmb_bl.addItem(T({"series": "bl_series", "simple": "bl_simple", "manual": "bl_manual",
@@ -538,12 +619,28 @@ class MainWindow(QMainWindow):
         row.addWidget(self.sp_bla)
         row.addWidget(QLabel("–"))
         row.addWidget(self.sp_blb)
+        row.addStretch(1)
         f.addRow("", row)
+        self.sec_eval = Section(T("adv_eval"), "eval", self.settings)
+        fa = self.sec_eval.form
+        forms.append(fa)
+        self.sp_min = QSpinBox(minimum=2, maximum=20)
+        fa.addRow(T("min_points"), self.sp_min)
+        self.sp_r2 = QDoubleSpinBox(decimals=3, minimum=0.0, maximum=1.0, singleStep=0.005)
+        self.sp_r2.setToolTip(T("min_r2_tip"))
+        fa.addRow(T("min_r2"), self.sp_r2)
+        self.cb_shoulders = QCheckBox(T("find_shoulders"))
+        fa.addRow(self.cb_shoulders)
+        f.addRow(self.sec_eval)
+        compact(self.sp_d, self.sp_cut, self.sp_min, self.sp_r2)
         lv.addWidget(g)
 
-        g = QGroupBox(T("grp_plot"))
-        f = QFormLayout(g)
+        g, body = STYLE.card(T("grp_plot"), "plot")
+        f = make_form(body)
+        f.setContentsMargins(0, 0, 0, 0)
+        forms.append(f)
         self.sp_ymax = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=10, singleStep=0.1)
+        compact(self.sp_ymax)
         f.addRow(T("ymax"), self.sp_ymax)
         row = QHBoxLayout()
         self.cb_xauto = QCheckBox(T("xrange_auto"))
@@ -554,20 +651,6 @@ class MainWindow(QMainWindow):
         row.addWidget(QLabel("–"))
         row.addWidget(self.sp_xmax)
         f.addRow(T("xrange"), row)
-        self.cmb_r2 = QComboBox()
-        for key in ("legend", "label", "off"):
-            self.cmb_r2.addItem(T({"legend": "r2_legend", "label": "r2_label", "off": "r2_off"}[key]), key)
-        f.addRow(T("r2_mode"), self.cmb_r2)
-        self.cb_err = QCheckBox(T("show_err"))
-        self.cb_marksh = QCheckBox(T("mark_sh"))
-        self.cb_inset = QCheckBox(T("inset_show"))
-        self.cb_tab = QCheckBox(T("inset_table"))
-        f.addRow(self.cb_err)
-        f.addRow(self.cb_marksh)
-        f.addRow(self.cb_inset)
-        f.addRow(self.cb_tab)
-        self.cb_excl = QCheckBox(T("show_excl"))
-        f.addRow(self.cb_excl)
         self.cmb_size = QComboBox()
         for key in ("half_a4", "custom", "std"):
             self.cmb_size.addItem(T({"half_a4": "size_half_a4", "custom": "size_custom",
@@ -579,34 +662,66 @@ class MainWindow(QMainWindow):
         row.addWidget(self.sp_w)
         row.addWidget(QLabel("×"))
         row.addWidget(self.sp_h)
+        row.addStretch(1)
         f.addRow(T("size_wh"), row)
+        self.sec_plot = Section(T("adv_plot"), "plot", self.settings)
+        fa = self.sec_plot.form
+        forms.append(fa)
+        self.cmb_r2 = QComboBox()
+        for key in ("legend", "label", "off"):
+            self.cmb_r2.addItem(T({"legend": "r2_legend", "label": "r2_label", "off": "r2_off"}[key]), key)
+        fa.addRow(T("r2_mode"), self.cmb_r2)
+        self.cb_err = QCheckBox(T("show_err"))
+        self.cb_marksh = QCheckBox(T("mark_sh"))
+        self.cb_inset = QCheckBox(T("inset_show"))
+        self.cb_tab = QCheckBox(T("inset_table"))
+        self.cb_excl = QCheckBox(T("show_excl"))
+        for cb in (self.cb_err, self.cb_marksh, self.cb_inset, self.cb_tab, self.cb_excl):
+            fa.addRow(cb)
         row = QHBoxLayout()
         self.cb_pdf, self.cb_svg, self.cb_png = QCheckBox("PDF"), QCheckBox("SVG"), QCheckBox("PNG")
         for cb in (self.cb_pdf, self.cb_svg, self.cb_png):
             row.addWidget(cb)
         row.addStretch(1)
-        f.addRow(T("formats"), row)
+        fa.addRow(T("formats"), row)
+        f.addRow(self.sec_plot)
         lv.addWidget(g)
 
-        row = QHBoxLayout()
-        b = QPushButton(T("btn_reset_layout"))
-        b.clicked.connect(self.reset_layout)
-        row.addWidget(b)
-        self.btn_export = QPushButton(T("btn_export"))
-        self.btn_export.clicked.connect(self.export_dialog)
-        self.btn_export.setDefault(True)
-        row.addWidget(self.btn_export)
-        lv.addLayout(row)
         hint = QLabel(T("drag_hint"))
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray;")
+        hint.setStyleSheet(HINT_CSS)
         lv.addWidget(hint)
         lv.addStretch(1)
+        align_forms(forms)
 
         lscroll = QScrollArea()
         lscroll.setWidget(left)
         lscroll.setWidgetResizable(True)
-        lscroll.setMinimumWidth(380)
+        lscroll.setFrameShape(QFrame.NoFrame)
+        # Exportieren bleibt unten sichtbar, auch wenn die Spalte gescrollt wird
+        row = QHBoxLayout()
+        row.setContentsMargins(8, 6, 8, 6)
+        b = QPushButton(STYLE.icon("reset"), T("btn_reset_layout"))
+        b.clicked.connect(self.reset_layout)
+        row.addWidget(b)
+        row.addStretch(1)
+        self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
+        self.btn_export.setProperty("accent", True)
+        self.btn_export.clicked.connect(self.export_dialog)
+        self.btn_export.setDefault(True)
+        row.addWidget(self.btn_export)
+        left_col = QWidget()
+        cv = QVBoxLayout(left_col)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(0)
+        cv.addWidget(lscroll, 1)
+        bar = QFrame(objectName="bottomBar")
+        bar.setLayout(row)
+        cv.addWidget(bar)
+        # so breit wie der Inhalt, sonst schneidet die Spalte rechts ab (macOS blendet die Leiste aus)
+        lscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_col.setMinimumWidth(max(380, left.minimumSizeHint().width()
+                                     + lscroll.verticalScrollBar().sizeHint().width() + 4))
 
         # ---- rechte Seite
         self.canvas_host = uvvis_tabs.CanvasHost(self.canvas, self.fig)
@@ -626,14 +741,35 @@ class MainWindow(QMainWindow):
         self.log.setPlainText(old_log)
         self.tabs.addTab(self.table, T("tab_results"))
         self.tabs.addTab(self.log, T("tab_log"))
+        # Leer-Zustand statt weißer Fläche, solange keine Messdaten geladen sind
+        empty = QFrame(objectName="emptyDrop")
+        empty.setStyleSheet("#emptyDrop { border: 1px dashed palette(mid); border-radius: 8px; }")
+        ev = QVBoxLayout(empty)
+        ev.addStretch(1)
+        for text, css in ((T("empty_title"), "font-size: 15px; font-weight: bold;"),
+                          (T("empty_formats"), HINT_CSS)):
+            lb = QLabel(text, alignment=Qt.AlignCenter, wordWrap=True)
+            lb.setStyleSheet(css)
+            ev.addWidget(lb)
+        b = QPushButton(STYLE.icon("open", "#FFFFFF"), T("act_open"))
+        b.setProperty("accent", True)
+        b.clicked.connect(self.choose_csv)
+        ev.addWidget(b, 0, Qt.AlignCenter)
+        ev.addStretch(1)
+        empty_wrap = QWidget()
+        QVBoxLayout(empty_wrap).addWidget(empty)
+        self.preview_stack = QStackedWidget()
+        self.preview_stack.addWidget(empty_wrap)
+        self.preview_stack.addWidget(self.canvas_host)
+        self.preview_stack.setCurrentIndex(1 if self.current and self.current in self.groups else 0)
         right = QSplitter(Qt.Vertical)
-        right.addWidget(self.canvas_host)
+        right.addWidget(self.preview_stack)
         right.addWidget(self.tabs)
         right.setSizes([650, 220])
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(lscroll)
+        split.addWidget(left_col)
         split.addWidget(right)
-        split.setSizes([400, 920])
+        split.setSizes([left_col.minimumWidth(), 920])
         self.main_tabs = QTabWidget()
         self.main_tabs.addTab(split, T("tab_eps"))
         self.ov_tab = uvvis_tabs.OverlayTab(self, self.ov_state)
@@ -667,6 +803,26 @@ class MainWindow(QMainWindow):
         for w in (self.cb_err, self.cb_tab, self.cb_bands_add, self.cb_shoulders, self.cb_excl, self.cb_inset,
                   self.cb_marksh):
             w.toggled.connect(self.changed)
+        for w in (self.sp_min, self.sp_r2):
+            w.valueChanged.connect(self._update_sections)
+        self.cmb_r2.currentIndexChanged.connect(self._update_sections)
+        for w in (self.cb_shoulders, self.cb_err, self.cb_marksh, self.cb_inset, self.cb_tab, self.cb_excl,
+                  self.cb_pdf, self.cb_svg, self.cb_png):
+            w.toggled.connect(self._update_sections)
+        self._update_sections()
+
+    def _update_sections(self, *_):
+        """Eingeklappte Bereiche markieren, wenn dort etwas vom Standard abweicht."""
+        d = DEFAULT_GLOB
+        self.sec_images.set_changed(self.cmb_bg.currentData() not in (None, "auto"))
+        self.sec_eval.set_changed(self.sp_min.value() != d["min_points"]
+                                  or abs(self.sp_r2.value() - d["min_r2"]) > 1e-9
+                                  or self.cb_shoulders.isChecked() != d["shoulders"])
+        self.sec_plot.set_changed(self.cmb_r2.currentData() != d["r2"] or any(
+            cb.isChecked() != d[k] for cb, k in (
+                (self.cb_err, "show_err"), (self.cb_marksh, "mark_sh"), (self.cb_inset, "inset"),
+                (self.cb_tab, "table"), (self.cb_excl, "show_excl"), (self.cb_pdf, "fmt_pdf"),
+                (self.cb_svg, "fmt_svg"), (self.cb_png, "fmt_png"))))
 
     def apply_globals(self):
         self._loading = True
@@ -755,9 +911,11 @@ class MainWindow(QMainWindow):
             warn = True
         self.ed_mw.setStyleSheet("border: 2px solid #d9534f;" if mw_missing else "")
         self.lbl_chem.setText(info)
-        self.lbl_chem.setStyleSheet("color: #d9534f;" if warn else "")
+        self.lbl_chem.setVisible(bool(info))          # keine leere Zeile unter der Molmasse
+        self.lbl_chem.setStyleSheet(WARN_CSS if warn else "")
         pa = st.get("photo_asset") if st else None
         self.lbl_thumb.setPixmap(rgba_to_pixmap(pa["rgba"]) if pa else QPixmap())
+        self.lbl_thumb.setVisible(bool(pa))              # ohne Foto keine Leerzeile
         self.sp_struct_w.setValue(st.get("struct_w", 17.0) if st else 17.0)
         self.sp_photo_w.setValue(st.get("photo_w", 9.0) if st else 9.0)
         self.sp_struct_w.setEnabled(bool(st and st["structure"]))
@@ -784,6 +942,23 @@ class MainWindow(QMainWindow):
             return
         self._update_size_widgets()
         self.changed()
+
+    def _theme_mode(self):
+        return self.settings.value("ui/theme", "system") or "system"
+
+    def apply_theme(self):
+        STYLE.apply(self._theme_mode(), IMG.app_data_dir() / "theme")
+
+    def switch_theme(self, mode):
+        self.collect_globals()
+        self.settings.setValue("ui/theme", mode)
+        self.apply_theme()
+        self.build_ui()                                # Symbole in der neuen Textfarbe
+        self.render()
+
+    def _system_scheme_changed(self, *_):
+        if self._theme_mode() == "system" and STYLE.resolve("system") != STYLE._mode:
+            self.switch_theme("system")
 
     def switch_lang(self, code):
         self.collect_globals()
@@ -1470,7 +1645,7 @@ class MainWindow(QMainWindow):
         if out_of_gamut:
             info += "\n" + T("color_gamut")
         self.lbl_color_info.setText(info)
-        self.lbl_color_info.setStyleSheet("color: #d9534f;" if covered < 0.95 else "color: gray;")
+        self.lbl_color_info.setStyleSheet(WARN_CSS if covered < 0.95 else HINT_CSS)
 
     def show_hover(self, txt):
         if txt:
@@ -1518,7 +1693,9 @@ class MainWindow(QMainWindow):
         self.push_undo()
 
     def render(self):
-        if not self.current or self.current not in self.groups:
+        has_data = bool(self.current and self.current in self.groups)
+        self.preview_stack.setCurrentIndex(1 if has_data else 0)
+        if not has_data:
             return
         g = self.current
         try:
@@ -2568,6 +2745,46 @@ def selftest(outdir, with_isnet=False):
         w.apply_globals()
         assert not w.lbl_color.isVisibleTo(w)
         report.append("solution colour: OK")
+
+        # Layout ε-Tab: Vorschau statt Leer-Zustand, eingeklappte Bereiche melden Abweichungen vom Standard
+        assert w.preview_stack.currentIndex() == 1
+        w.sec_eval.btn.setChecked(False)
+        assert not w.sec_eval.body.isVisibleTo(w)
+        r2_old = w.sp_r2.value()
+        w.sp_r2.setValue(DEFAULT_GLOB["min_r2"])
+        w.sp_min.setValue(DEFAULT_GLOB["min_points"])
+        w.cb_shoulders.setChecked(DEFAULT_GLOB["shoulders"])
+        assert not w.sec_eval.changed
+        w.sp_r2.setValue(0.95)
+        assert w.sec_eval.changed and T("adv_changed") in w.sec_eval.btn.text()
+        w.sp_r2.setValue(r2_old)
+        w.sec_eval.btn.setChecked(True)
+        assert w.sec_eval.body.isVisibleTo(w)
+        labels = [lb for lb in w.main_tabs.widget(0).findChildren(QLabel)
+                  if lb.text() in (T("molar_mass_short"), T("ymax"))]
+        assert len({lb.minimumWidth() for lb in labels}) == 1 and labels[0].minimumWidth() > 0
+        report.append("eps tab layout (sections, empty state): OK")
+
+        # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
+        w.render()
+        n_rows = w.table.rowCount()
+        for mode in ("dark", "light"):
+            w.switch_theme(mode)
+            pal = QApplication.instance().palette()
+            assert STYLE.base_style == "fusion"
+            assert pal.color(pal.ColorRole.Window).name().upper() == STYLE.COLORS[mode]["window"], mode
+            assert w.btn_export.property("accent") and w.btn_open.property("accent")
+            assert not w.btn_export.icon().isNull(), "icon"
+            assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
+        assert w.findChildren(QFrame, "card") and not w.main_tabs.widget(0).findChildren(QGroupBox)
+        w.switch_theme("system")
+        # Werkzeugleiste (nach Neuaufbau nur eine) und Listenknöpfe mit Symbol
+        bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
+        acts = [a for a in w.toolbar.actions() if not a.isSeparator()]
+        assert len(bars) == 1 and len(acts) == 5 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
+        arrows = [b for b in w.epr_tab.findChildren(QPushButton) if b.toolTip() == T("move_up")]
+        assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
+        report.append("appearance (Fusion, light/dark, toolbar): OK")
 
         # Update-Prüfung (ohne Netz: Versionsvergleich, API-Antwort, Meldungstext)
         assert UPD.parse_version("v1.10.0") > UPD.parse_version("1.9.9") and UPD.parse_version("x") == ()

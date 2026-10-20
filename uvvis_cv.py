@@ -20,11 +20,13 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
-                               QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+                               QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 import uvvis_tabs as TABS
 from uvvis_i18n import T
+import uvvis_style as STYLE
+from uvvis_style import make_form
 
 # Referenzverbindungen: E½ gegen Fc⁺/Fc [V]. Ac₂Fc = 1,1'-Diacetylferrocen; Wert im Programm änderbar
 # (lösungsmittelabhängig, gegen Literatur prüfen).
@@ -215,7 +217,7 @@ class CVTab(TABS.FigureTab):
         row = QHBoxLayout()
         for txt, fn in ((T("cv_add"), self.add_files), ("↑", lambda: self.move(-1)), ("↓", lambda: self.move(1)),
                         (T("remove"), self.remove)):
-            b = QPushButton(txt)
+            b = STYLE.list_button(txt)
             b.clicked.connect(fn)
             row.addWidget(b)
         v.addLayout(row)
@@ -230,7 +232,7 @@ class CVTab(TABS.FigureTab):
         self.lv.addWidget(g)
 
         g = QGroupBox(T("cv_analysis"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.sp_cycle = QSpinBox(minimum=1, maximum=100, value=st["cycle"])
         self.sp_cycle.setToolTip(T("cv_cycle_tip"))
         f.addRow(T("cv_cycle"), self.sp_cycle)
@@ -244,7 +246,7 @@ class CVTab(TABS.FigureTab):
         f.addRow(T("cv_couples"), self.tbl_couples)
         row = QHBoxLayout()
         for txt, fn in (("+", self.add_couple), ("−", self.remove_couple), (T("cv_suggest"), self.suggest)):
-            b = QPushButton(txt)
+            b = STYLE.list_button(txt)
             b.clicked.connect(fn)
             row.addWidget(b)
         row.addStretch(1)
@@ -287,7 +289,7 @@ class CVTab(TABS.FigureTab):
         self.lv.addWidget(g)
 
         g = QGroupBox(T("cv_display"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.cb_gradient = QCheckBox(T("cv_gradient"))
         self.cb_density = QCheckBox(T("cv_density"))
         self.cb_e12 = QCheckBox(T("cv_show_e12"))

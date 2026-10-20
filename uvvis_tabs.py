@@ -21,13 +21,16 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
-                               QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
+                               QWidget)
 
 import uvvis_core as core
 import uvvis_extra as X
 import uvvis_images as IMG
 import uvvis_project as PRJ
 from uvvis_i18n import T
+import uvvis_style as STYLE
+from uvvis_style import HINT_CSS, WARN_CSS, align_forms, make_form
 
 PREVIEW_DPI = 90
 PALETTE = ["#000000", "#e8231b", "#1764e8", "#1f9e4a", "#a35ce0", "#e08a00", "#00a0b0", "#8c564b"]
@@ -263,31 +266,59 @@ class FigureTab(QWidget):
         self.lv = QVBoxLayout(left)
         self.build_controls()
         self.lv.addWidget(self.common_box())
-        row = QHBoxLayout()
-        for txt, fn in ((T("tab_save"), self.save_setup), (T("tab_load"), self.load_setup),
-                        (T("btn_reset_layout"), self.reset_layout)):
-            b = QPushButton(txt)
-            b.clicked.connect(fn)
-            row.addWidget(b)
-        self.lv.addLayout(row)
-        b = QPushButton(T("btn_export"))
-        b.setDefault(True)
-        b.clicked.connect(self.export_dialog)
-        self.lv.addWidget(b)
         hint = QLabel(T("drag_hint_tab"))
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray;")
+        hint.setStyleSheet(HINT_CSS)
         self.lv.addWidget(hint)
         self.lv.addStretch(1)
+        align_forms(left.findChildren(QFormLayout))
         ls = QScrollArea()
         ls.setWidget(left)
         ls.setWidgetResizable(True)
-        ls.setMinimumWidth(480)
+        ls.setFrameShape(QFrame.NoFrame)
+        ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Speichern/Laden/Exportieren bleiben unten sichtbar, auch wenn die Spalte gescrollt wird
+        row = QHBoxLayout()
+        row.setContentsMargins(8, 6, 8, 6)
+        for txt, fn, ic in ((T("tab_save"), self.save_setup, None), (T("tab_load"), self.load_setup, "open"),
+                            (T("btn_reset_layout"), self.reset_layout, "reset")):
+            b = QPushButton(STYLE.icon(ic), txt) if ic else QPushButton(txt)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
+        self.btn_export.setProperty("accent", True)
+        self.btn_export.setDefault(True)
+        self.btn_export.clicked.connect(self.export_dialog)
+        row.addWidget(self.btn_export)
+        bar = QFrame(objectName="bottomBar")
+        bar.setLayout(row)
+        left_col = QWidget()
+        cv = QVBoxLayout(left_col)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(0)
+        cv.addWidget(ls, 1)
+        cv.addWidget(bar)
+        # so breit wie der Inhalt, sonst schneidet die Spalte rechts ab (macOS blendet die Leiste aus)
+        left_col.setMinimumWidth(max(420, left.minimumSizeHint().width(), bar.minimumSizeHint().width())
+                                 + ls.verticalScrollBar().sizeHint().width() + 4)
         self.host = CanvasHost(self.canvas, self.fig)
+        # Leer-Zustand statt Text in einer weißen Abbildung
+        empty = QFrame(objectName="emptyDrop")
+        empty.setStyleSheet("#emptyDrop { border: 1px dashed palette(mid); border-radius: 8px; }")
+        ev = QVBoxLayout(empty)
+        lb = QLabel(T("tab_empty"), alignment=Qt.AlignCenter, wordWrap=True)
+        lb.setStyleSheet(HINT_CSS + " font-size: 14px;")
+        ev.addWidget(lb)
+        empty_wrap = QWidget()
+        QVBoxLayout(empty_wrap).addWidget(empty)
+        self.preview_stack = QStackedWidget()
+        self.preview_stack.addWidget(empty_wrap)
+        self.preview_stack.addWidget(self.host)
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(ls)
-        split.addWidget(self.host)
-        split.setSizes([420, 900])
+        split.addWidget(left_col)
+        split.addWidget(self.preview_stack)
+        split.setSizes([left_col.minimumWidth(), 900])
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
@@ -299,7 +330,7 @@ class FigureTab(QWidget):
 
     def common_box(self):
         g = QGroupBox(T("grp_plot"))
-        f = QFormLayout(g)
+        f = make_form(g)
         st = self.st
         row = QHBoxLayout()
         self.cb_xauto = QCheckBox(T("xrange_auto"))
@@ -475,6 +506,7 @@ class FigureTab(QWidget):
             spec_cfg = self.base_cfg()
             self.host.set_figure_size(*spec_cfg["figsize_in"])
             self.F = self.build(self.fig)
+            self.preview_stack.setCurrentIndex(0 if self.F is None else 1)
             if self.F is None:
                 self.fig.clear()
                 self.fig.text(0.5, 0.5, T("tab_empty"), ha="center", va="center", color="gray")
@@ -567,7 +599,7 @@ class OverlayTab(FigureTab):
                         (T("ov_combine"), self.combine_selected),
                         ("↑", lambda: self.move_selected(-1)), ("↓", lambda: self.move_selected(1)),
                         (T("remove"), self.remove_selected)):
-            b = QPushButton(txt)
+            b = STYLE.list_button(txt)
             b.clicked.connect(fn)
             if fn == self.combine_selected:
                 b.setToolTip(T("ov_combine_tip"))
@@ -588,7 +620,7 @@ class OverlayTab(FigureTab):
 
         # Details der gewählten Kurve
         self.det = QGroupBox(T("ov_details"))
-        f = QFormLayout(self.det)
+        f = make_form(self.det)
         self.cb_own = QCheckBox(T("ov_own_norm"))
         row = QHBoxLayout()
         self.sp_elo = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=300)
@@ -670,7 +702,7 @@ class OverlayTab(FigureTab):
         lay.addWidget(self.det)
 
         g = QGroupBox(T("ov_display"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.cb_norm = QCheckBox(T("ov_normalize"))
         self.cb_norm.setToolTip(T("ov_normalize_tip"))
         self.cb_norm.setChecked(st["mode"] == "norm")
@@ -717,7 +749,7 @@ class OverlayTab(FigureTab):
         lay.addWidget(g)
 
         g = QGroupBox(T("ov_stack_grp"))
-        f = QFormLayout(g)
+        f = make_form(g)
         row = QHBoxLayout()
         self.cb_stack = QCheckBox(T("ov_stack"))
         self.cb_stack.setChecked(st["stack"])
@@ -1191,7 +1223,7 @@ class FluoTab(FigureTab):
     def build_controls(self):
         st = self.st
         g = QGroupBox(T("fl_data"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.w_abs = self._file_row(f, T("fl_abs"), "abs")
         self.w_em = self._file_row(f, T("fl_em"), "em")
         self.sp_ex = QDoubleSpinBox(decimals=0, minimum=150, maximum=1500, value=st["ex"], suffix=" nm")
@@ -1227,7 +1259,7 @@ class FluoTab(FigureTab):
         self.lv.addWidget(g)
 
         g = QGroupBox(T("fl_images"))
-        f = QFormLayout(g)
+        f = make_form(g)
         self.lbl_struct = self._img_row(f, T("structure"), "structure", T("flt_struct"))
         self.size_spin(f, "struct_w", "image_struktur")
         self.lbl_day = self._img_row(f, T("fl_photo_day"), "photo_day", T("flt_photo"))
@@ -1362,7 +1394,7 @@ class FluoTab(FigureTab):
                 warn = True
         if hasattr(self, "lbl_info"):
             self.lbl_info.setText("\n".join(lines))
-            self.lbl_info.setStyleSheet("color: #d9534f;" if warn else "color: gray;")
+            self.lbl_info.setStyleSheet(WARN_CSS if warn else HINT_CSS)
 
     def figure_spec(self):
         st = self.st

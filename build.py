@@ -27,6 +27,7 @@ args = [
     "--hidden-import", "parseuv_lite",
     "--hidden-import", "olefile",
     "--hidden-import", "openpyxl",
+    "--hidden-import", "PySide6.QtSvg",          # Symbole/Theme (uvvis_style)
     "--hidden-import", "matplotlib.backends.backend_qtagg",
     "--hidden-import", "matplotlib.backends.backend_agg",
     "--hidden-import", "matplotlib.backends.backend_pdf",
