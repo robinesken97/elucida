@@ -2,6 +2,16 @@
 
 # Änderungen
 
+## 1.10.0 – 20.10.2026
+
+### Neu
+- Neuer **SEC-Tab** für Spektroelektrochemie: BWSpec-Spektrenserie + Gamry-Potential (Zuordnung über die Uhrzeit,
+  Versatz einstellbar); Spektrenserie mit hervorgehobenem erstem/letztem Spektrum oder Potential-Farbverlauf,
+  Differenzspektren, farbige λ-Labels; A bei λ gegen E mit scheinbarem Nernst-Fit; Referenzierung wie im CV-Tab.
+
+### Korrigiert
+- Referenzelektroden mit Index (Ag/AgNO₃) werden in Achsenbeschriftungen korrekt gesetzt.
+
 ## 1.9.0 – 20.10.2026
 
 ### Neu

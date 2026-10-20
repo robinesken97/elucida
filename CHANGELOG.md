@@ -2,6 +2,16 @@
 
 # Changelog
 
+## 1.10.0 – 2026-10-20
+
+### Added
+- New **SEC tab** for spectroelectrochemistry: BWSpec spectral series + Gamry potential (assigned via clock time,
+  adjustable offset); spectral series with highlighted first/last spectrum or potential gradient, difference spectra,
+  coloured λ labels; A at λ vs. E with apparent Nernst fit; referencing as in the CV tab.
+
+### Fixed
+- Reference electrodes with subscripts (Ag/AgNO₃) are typeset correctly in axis labels.
+
 ## 1.9.0 – 2026-10-20
 
 ### Added

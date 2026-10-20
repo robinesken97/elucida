@@ -183,6 +183,15 @@ def randles_sevcik(rates_mVs, ipa):
 RATE_CMAP = LinearSegmentedColormap.from_list("rates", ["#56c1f0", "#1a4fd6", "#8a2be2", "#b0102a", "#e8231b"])
 
 
+_SUB = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+
+
+def axis_ref(text):
+    """Referenzelektrode für die Achsenbeschriftung: tiefgestellte Unicode-Ziffern (AgNO₃) fehlen in vielen
+    Schriften -> als Mathtext-Index setzen (AgNO$_3$)."""
+    return re.sub("[₀-₉]+", lambda m: "$_{" + m.group().translate(_SUB) + "}$", str(text))
+
+
 def _fmt_e(v, nd=3):
     return f"{v:+.{nd}f}".replace("-", "−")
 
@@ -540,7 +549,7 @@ class CVTab(TABS.FigureTab):
         ally = np.concatenate([c_["y"] for c_ in curves])
         span = float(ally.max() - ally.min()) or 1.0
         cfg["ylim"] = [float(ally.min()) - 0.08 * span, st["ymax"] if st["ymax"] > 0 else float(ally.max()) + 0.12 * span]
-        cfg["xlabel"] = f"E [V vs. {ref_label}]"
+        cfg["xlabel"] = f"E [V vs. {axis_ref(ref_label)}]"
         cfg["ylabel"] = "j [mA cm$^{-2}$]" if (st["density"] and unit == "mA") else "I [µA]"
         labels = []
         if st["show_e12"]:

@@ -183,6 +183,19 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 - Strom wie aufgezeichnet (Gamry: IUPAC, anodisch positiv) oder invertiert; optional als Stromdichte.
 - Export: Abbildung (PDF/SVG/PNG) und `…_results.csv` mit allen Werten.
 
+## SEC-Tab (Spektroelektrochemie)
+
+- Liest eine **Spektrenserie aus B&W-Tek-BWSpec**-Textexporten (Wellenlängen aus den Kalibrierkoeffizienten der
+  Datei) und die **Gamry-.DTA**-Datei des Potentialscans. Jedes Spektrum bekommt sein Potential über die Uhrzeit
+  (Spektrumzeit − Start der Gamry-Messung, plus einstellbarer Zeitversatz).
+- **Spektrenserie:** erstes und letztes Spektrum hervorgehoben (blau/rot), die übrigen grau – oder Farbverlauf nach
+  Potential; optional Differenzspektren (ΔA gegen das erste Spektrum) und Nullpunkt (Mittel 780–820 nm); λ-Labels in
+  der Farbe des passenden Spektrums. Spektrenbereich wählbar (z. B. nur die erste Welle).
+- **A bei λ gegen E** mit scheinbarem Nernst-Fit (E½, n). Bei kontinuierlichem Scan hinkt die Elektrolyse in der
+  Dünnschichtzelle nach (E½ verschoben, n < 1); echte Nernst-Werte brauchen Potentialstufen im Gleichgewicht –
+  CV-Werte haben Vorrang.
+- Potentialachse wie gemessen, um E(Fc⁺/Fc) verschoben oder mit der Referenzierung des CV-Tabs.
+
 ## Fluoreszenz-Tab
 
 Absorption und Emission in einer Abbildung, wie in Publikationen üblich:

@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.10.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -49,6 +49,7 @@ import uvvis_report as REPORT  # noqa: E402
 import uvvis_update as UPD  # noqa: E402
 import uvvis_color as COLOR  # noqa: E402
 import uvvis_cv as CVMOD  # noqa: E402
+import uvvis_sec as SECMOD  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -330,7 +331,7 @@ class MainWindow(QMainWindow):
         self._loading = False
         self.glob = dict(DEFAULT_GLOB)
         self.extra_cache = {}
-        self.ov_state, self.fl_state, self.cv_state = {}, {}, {}      # Programm startet immer leer
+        self.ov_state, self.fl_state, self.cv_state, self.sec_state = {}, {}, {}, {}   # Programm startet leer
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
         self.project_dir = None
@@ -640,6 +641,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.fl_tab, T("tab_fluo"))
         self.cv_tab = CVMOD.CVTab(self, self.cv_state)
         self.main_tabs.addTab(self.cv_tab, T("tab_cv"))
+        self.sec_tab = SECMOD.SECTab(self, self.sec_state)
+        self.main_tabs.addTab(self.sec_tab, T("tab_sec"))
         self.main_tabs.setCurrentIndex(self._tab_index)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
         self.setCentralWidget(self.main_tabs)
@@ -910,7 +913,8 @@ class MainWindow(QMainWindow):
         return {"eps": {"files": list(self.csv_paths), "glob": dict(self.glob), "conc": self.conc,
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
-                "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "tab": self._tab_index,
+                "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state,
+                "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
     def set_state(self, state):
@@ -929,6 +933,8 @@ class MainWindow(QMainWindow):
         self.fl_state.update(state.get("fluo") or {})
         self.cv_state.clear()
         self.cv_state.update(state.get("cv") or {})
+        self.sec_state.clear()
+        self.sec_state.update(state.get("sec") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
         self.current = eps.get("current")
@@ -1502,6 +1508,7 @@ class MainWindow(QMainWindow):
         self.ov_tab.render()
         self.fl_tab.render()
         self.cv_tab.render()
+        self.sec_tab.render()
         self.push_undo()
 
     def render(self):
@@ -1746,6 +1753,8 @@ class MainWindow(QMainWindow):
             return self.fl_tab.export_dialog()
         if i == 3:
             return self.cv_tab.export_dialog()
+        if i == 4:
+            return self.sec_tab.export_dialog()
         return self.export_dialog()
 
     def info(self, msg):
@@ -2258,7 +2267,7 @@ def selftest(outdir, with_isnet=False):
             I_ = wave(e0, ip) + (wave(ref, 0.8 * ip) if ref is not None else 0)
             return E_, I_
 
-        def write_dta(path, cycles, rate, cycle_col=False):
+        def write_dta(path, cycles, rate, cycle_col=False, times=None):
             head = ["EXPLAIN", "TAG\tCV", "DATE\tLABEL\t1/1/2026\tDate", "TIME\tLABEL\t12:00:00\tTime",
                     f"SCANRATE\tQUANT\t{rate:.5E}\t&Scan Rate (mV/s)", "AREA\tQUANT\t7.10000E-002\tElectrode &Area (cm^2)",
                     "CONVENTION\tIQUANT\t1\tCurrent Convention"]
@@ -2272,7 +2281,8 @@ def selftest(outdir, with_isnet=False):
                 if not cycle_col:
                     body += [f"CURVE{n + 1}\tTABLE", cols, units]
                 for e_, i_ in zip(E_, I_):
-                    body.append(f"\t{pt}\t{pt * 0.02:.2f}\t{e_:.5E}\t{i_ * 1e-6:.5E}\t0" + (f"\t{n}" if cycle_col else ""))
+                    t_ = times[pt] if times is not None else pt * 0.02
+                    body.append(f"\t{pt}\t{t_:.2f}\t{e_:.5E}\t{i_ * 1e-6:.5E}\t0" + (f"\t{n}" if cycle_col else ""))
                     pt += 1
             path.write_text("\r\n".join(head + body) + "\r\n", encoding="latin-1", newline="")
         cvdir = out / "input" / "cv"
@@ -2312,6 +2322,52 @@ def selftest(outdir, with_isnet=False):
         st_cv.update(files=[], couples=[], ref_mode="none")
         w.cv_tab.fill_table()
         report.append("cyclic voltammetry: OK")
+
+        # Spektroelektrochemie: BWSpec-Spektren + Gamry-Potential über die Uhrzeit, Nernst-Fit, Export
+        import datetime as _dt
+        secdir = out / "input" / "sec"
+        secdir.mkdir(parents=True, exist_ok=True)
+        t_start = _dt.datetime(2026, 1, 1, 12, 0, 0)
+        T_ = np.arange(0.0, 1150.0, 2.0)
+        E_run = -1.3 + 0.002 * T_                      # 2 mV/s
+        write_dta(secdir / "sec.DTA", [(E_run, 1.0 + 0 * E_run)], 2.0, cycle_col=True, times=T_)  # Start 12:00:00
+        pix = np.arange(0, 2048)
+        lam_ = 200.0 + 0.35 * pix
+        sec_files = []
+        for j in range(0, 70):
+            ts = j * 15.0 + 5.0
+            e_ = -1.3 + 0.002 * ts
+            ox = 1 / (1 + np.exp(-SECMOD.F_RT * (e_ + 0.80)))          # E½ = −0.80 V, n = 1
+            A_ = (1 - ox) * 0.3 * np.exp(-((lam_ - 432) / 25) ** 2) + ox * 0.35 * np.exp(-((lam_ - 373) / 15) ** 2)
+            hdr = ["File Version;BWSpec4.11_1", f"Date;{(t_start + _dt.timedelta(seconds=ts)):%Y-%m-%d %H:%M:%S}",
+                   "coefs_a0;200", "coefs_a1;0.35", "coefs_a2;0", "coefs_a3;0", "sel_pixel_start;0",
+                   "Pixel;Wavelength;Wavenumber;Raman Shift;Dark;Reference;Raw data #1;Dark Subtracted #1;%TR #1;"
+                   "Absorbance #1;Irradiance (W/m^2/nm) #1"]
+            rows_ = [f"{p_};   ;   ;   ;0;0;0;0;0;{a_:.5f};0;" for p_, a_ in zip(pix, A_)]
+            f_ = secdir / f"s{j:03d}.txt"
+            f_.write_text("\r\n".join(hdr + rows_), encoding="latin-1", newline="")
+            sec_files.append(str(f_))
+        (secdir / "LOG_s.txt").write_text("File Format;TXTR\r\nFile Description;Peak Monitor File\r\n",
+                                         encoding="latin-1")
+        assert not SECMOD.is_bwspec(secdir / "LOG_s.txt") and SECMOD.is_bwspec(sec_files[0])
+        sp_ = [SECMOD.read_bwspec(f_) for f_ in sec_files]
+        E_map = SECMOD.potentials(sp_, CVMOD.read_gamry(secdir / "sec.DTA"))
+        assert np.allclose(E_map, -1.3 + 0.002 * (np.arange(70) * 15.0 + 5.0), atol=1e-3), E_map[:3]
+        a432 = np.array([np.interp(432, s_["lam"], s_["A"]) for s_ in sp_])
+        fit_ = SECMOD.nernst_fit(E_map, a432)
+        assert abs(fit_["e12"] + 0.80) < 0.005 and abs(fit_["n"] - 1.0) < 0.1, fit_
+        st_sec = w.sec_state
+        st_sec.update(spec_files=sec_files, dta=str(secdir / "sec.DTA"), bands="373, 432", mode="spectra")
+        files = w.sec_tab.export_to(out / "sec_spectra")
+        assert all(f.exists() for f in files), files
+        st_sec.update(mode="trace", trace_lams="432")
+        files = w.sec_tab.export_to(out / "sec_trace")
+        assert all(f.exists() for f in files) and abs(w.sec_tab.info[432.0]["e12"] + 0.80) < 0.005
+        slots_ = PRJ._path_slots({"sec": st_sec})
+        assert sum(1 for c_, k_, _ in slots_ if c_ is st_sec["spec_files"]) == 70 and \
+            any(c_ is st_sec and k_ == "dta" for c_, k_, _ in slots_), "SEC-Dateien fehlen im Projekt"
+        st_sec.update(spec_files=[], dta=None, mode="spectra", trace_lams="", bands="")
+        report.append("spectroelectrochemistry: OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM

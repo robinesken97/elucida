@@ -48,6 +48,10 @@ def _path_slots(state):
     slots.append((ov, "structure", "images"))
     for e in (state.get("cv") or {}).get("files") or []:
         slots.append((e, "file", "data"))
+    sec = state.get("sec") or {}
+    specs = sec.get("spec_files") or []
+    slots += [(specs, i, "data") for i in range(len(specs))]
+    slots.append((sec, "dta", "data"))
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", "data"), (fl, "em_file", "data"), (fl, "structure", "images"),
               (fl, "photo_day", "images"), (fl, "photo_uv", "images")]

@@ -225,7 +225,8 @@ class SimpleFigure(core.Figure):
         for c in self.curves:
             cx, cy = core.clip_polyline(c["x"], c["y"], xlim, ylim)
             ax.plot(cx, cy, color=c.get("color") or "black", lw=c.get("lw", cfg["line_width"] * 1.3),
-                    ls=c.get("ls", "-"), label=c.get("label"), solid_joinstyle="round")
+                    ls=c.get("ls", "-"), label=c.get("label"), solid_joinstyle="round",
+                    marker=c.get("marker"), ms=4 * cfg.get("scale", 1.0) if c.get("marker") else None)
         f_sticks = [st for st in sticks if st.get("axis2")]
         for st in sticks:
             if st.get("axis2"):
@@ -334,10 +335,13 @@ class SimpleFigure(core.Figure):
 
     def _make_labels(self, labels):
         for lab in labels:
+            kw = core.label_kw(self.cfg)
+            if lab.get("color"):                      # z. B. SEC: Label in der Farbe des zugehörigen Spektrums
+                kw["color"] = lab["color"]
             ann = self.ax.annotate(core.fmt_text(lab["text"], self.cfg, label=True), xy=(lab["lam"], 0),
                                    xycoords="data", xytext=(0.5, 0.5), textcoords="axes fraction",
                                    ha="left", va="bottom", linespacing=1.4, annotation_clip=False,
-                                   zorder=5, **core.label_kw(self.cfg))
+                                   zorder=5, **kw)
             self.ann_items[lab["key"]] = ann
 
     def _place(self):

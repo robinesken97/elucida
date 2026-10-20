@@ -178,6 +178,19 @@ Compare several spectra in one figure, measured and calculated:
 - Current as recorded (Gamry: IUPAC, anodic positive) or inverted; optionally as current density.
 - Export: figure (PDF/SVG/PNG) and `…_results.csv` with all values.
 
+## SEC tab (spectroelectrochemistry)
+
+- Reads a **spectral series from B&W Tek BWSpec** text exports (wavelengths from the calibration coefficients
+  in the file) and the **Gamry .DTA** file of the potential scan. Each spectrum gets its potential via the
+  clock time (spectrum time − start of the Gamry run, plus an adjustable time offset).
+- **Spectral series:** first and last spectrum highlighted (blue/red), the others grey – or a colour gradient
+  by potential; optionally difference spectra (ΔA vs. the first spectrum) and a zero point (mean 780–820 nm);
+  λ labels in the colour of the matching spectrum. Spectrum range selectable (e.g. only the first wave).
+- **A at λ vs. E** with an apparent Nernst fit (E½, n). In a continuous scan the electrolysis in the thin-layer
+  cell lags behind (E½ shifted, n < 1); true Nernst values need potential steps at equilibrium – CV values take
+  precedence.
+- Potential axis as measured, shifted by E(Fc⁺/Fc) or with the referencing of the CV tab.
+
 ## Fluorescence tab
 
 Absorption and emission in one figure, as commonly shown in papers:

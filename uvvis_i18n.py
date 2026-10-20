@@ -439,6 +439,49 @@ TEXTS = {
     "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
     "cv_randles": ("Paar {n}: i_pa gegen √v linear, Steigung {m} µA (V/s)^-½, R² = {r2} (Randles-Ševčík)",
                    "Couple {n}: i_pa vs. √v linear, slope {m} µA (V/s)^-½, R² = {r2} (Randles–Ševčík)"),
+    # ---- Spektroelektrochemie ----------------------------------------------
+    "tab_sec": ("SEC", "SEC"),
+    "sec_data": ("Daten", "Data"),
+    "sec_spectra": ("Spektren (BWSpec .txt)", "Spectra (BWSpec .txt)"),
+    "sec_n_spectra": ("{n} Spektren", "{n} spectra"),
+    "sec_potential": ("Potential (Gamry .DTA)", "Potential (Gamry .DTA)"),
+    "sec_offset": ("Zeitversatz", "Time offset"),
+    "sec_offset_tip": ("Wird zur Zeit jedes Spektrums addiert, bevor das Potential aus der Gamry-Messung gelesen wird\n"
+                       "(z. B. Wartezeit vor dem Scan oder unterschiedliche PC-Uhren). Bei 2 mV/s: 10 s ≙ 20 mV.",
+                       "Added to each spectrum's time before the potential is read from the Gamry run\n"
+                       "(e.g. waiting time before the scan or different PC clocks). At 2 mV/s: 10 s ≙ 20 mV."),
+    "sec_shift": ("E(Fc⁺/Fc) gemessen", "E(Fc⁺/Fc) measured"),
+    "sec_shift_tip": ("Lage von Fc⁺/Fc gegen die Referenzelektrode; wird abgezogen (0 = Achse wie gemessen).",
+                      "Position of Fc⁺/Fc vs. the reference electrode; subtracted (0 = axis as measured)."),
+    "sec_from_cv": ("aus CV-Tab", "from CV tab"),
+    "sec_display": ("Darstellung SEC", "SEC display"),
+    "sec_mode": ("Ansicht", "View"),
+    "sec_mode_spectra": ("Spektrenserie", "Spectral series"),
+    "sec_mode_trace": ("A bei λ gegen E", "A at λ vs. E"),
+    "sec_range": ("Spektren (Nr.)", "Spectra (no.)"),
+    "sec_last_all": ("bis Ende", "to end"),
+    "sec_range_info_e": ("{n} Spektren, {a} V → {b} V", "{n} spectra, {a} V → {b} V"),
+    "sec_range_info": ("{n} Spektren", "{n} spectra"),
+    "sec_highlight": ("Erstes und letztes Spektrum hervorheben (blau/rot), übrige grau",
+                      "Highlight first and last spectrum (blue/red), others grey"),
+    "sec_gradient": ("Farbverlauf nach Potential", "Colour gradient by potential"),
+    "sec_diff": ("Differenzspektren (ΔA gegen erstes Spektrum)", "Difference spectra (ΔA vs. first spectrum)"),
+    "sec_baseline": ("Nullpunkt: Mittel 780–820 nm abziehen", "Zero: subtract mean of 780–820 nm"),
+    "sec_bands": ("λ-Labels [nm]", "λ labels [nm]"),
+    "sec_bands_ph": ("z. B. 373, 432", "e.g. 373, 432"),
+    "sec_trace": ("λ für A gegen E [nm]", "λ for A vs. E [nm]"),
+    "sec_trace_ph": ("leer = größte Änderung", "empty = largest change"),
+    "sec_fit": ("Scheinbares E½ (Nernst-Fit)", "Apparent E½ (Nernst fit)"),
+    "sec_fit_tip": ("A = A_red + (A_ox − A_red)/(1 + exp(−nF(E − E½)/RT)). Bei kontinuierlichem Scan hinkt die\n"
+                    "Elektrolyse in der Dünnschichtzelle nach: E½ verschoben, n < 1 – nur mit Potentialstufen im\n"
+                    "Gleichgewicht ist das ein echter Nernst-Wert. CV-Werte haben Vorrang.",
+                    "A = A_red + (A_ox − A_red)/(1 + exp(−nF(E − E½)/RT)). In a continuous scan the electrolysis in\n"
+                    "the thin-layer cell lags behind: E½ shifted, n < 1 – only potential steps at equilibrium give a true\n"
+                    "Nernst value. CV values take precedence."),
+    "sec_fit_info": ("{lam} nm: scheinbares E½ = {e12} V, n = {n}, R² = {r2}",
+                     "{lam} nm: apparent E½ = {e12} V, n = {n}, R² = {r2}"),
+    "sec_no_time": ("⚠ Keine Zeitangaben – Potentiale nicht zuordenbar.", "⚠ No time stamps – potentials cannot be assigned."),
+    "sec_index": ("Spektrum Nr.", "Spectrum no."),
     # ---- Farbe der Lösung ---------------------------------------------------
     "color_show": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),
     "color_tip": ("Aus dem Spektrum berechnet: Transmission 10^(−A) unter Tageslicht, CIE-1931-Farbmetrik → sRGB.\n"
