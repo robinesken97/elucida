@@ -11,10 +11,6 @@
   Lorentz-Anteil; Grobsuche + Levenberg-Marquardt).
 - EPR: **Feldkalibrierung** mit einer gefitteten Referenz wie TEMPO (g_lit = 2,0055); die Feldkorrektur gilt für alle
   übrigen Messungen.
-
-## 1.12.0 – 20.10.2026
-
-### Neu
 - EPR: **Intensität gegen Zeit oder Temperatur** (Doppelintegral oder Peak-zu-Peak im Feldfenster, optional × T,
   normiert), z. B. für Belichtungskinetik und thermischen Zerfall; „Dunkelspektrum für alle Messungen übernehmen“.
 - EPR: Jede Messung wird zusätzlich als **EasySpin-fertige Textdatei** exportiert (verarbeitet, volle Auflösung,

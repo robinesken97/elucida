@@ -33,7 +33,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
 
       - name: Abhängigkeiten
-        run: pip install -r requirements.txt pyinstaller
+        # --prefer-binary: fertige Pakete statt Quellcode-Builds (z. B. PyMuPDF 2.0 ohne Intel-Mac-Wheel;
+        # sonst versucht pip minutenlang zu kompilieren und fällt dann doch auf die Vorversion zurück)
+        run: pip install --prefer-binary -r requirements.txt pyinstaller
 
       - name: Selbsttest aus dem Quellcode
         env: { QT_QPA_PLATFORM: offscreen }

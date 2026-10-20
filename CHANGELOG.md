@@ -11,10 +11,6 @@
   Lorentzian fraction; coarse grid search + Levenberg–Marquardt).
 - EPR: **field calibration** with a fitted reference such as TEMPO (g_lit = 2.0055); the field correction is applied
   to all other measurements.
-
-## 1.12.0 – 2026-10-20
-
-### Added
 - EPR: **intensity vs. time or temperature** (double integral or peak-to-peak in a field window, optionally × T,
   normalised), e.g. for illumination kinetics and thermal decay; "Use this dark spectrum for all measurements".
 - EPR: every measurement is exported as an **EasySpin-ready text file** (processed, full resolution, documented
