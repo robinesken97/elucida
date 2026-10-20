@@ -9,18 +9,12 @@
   Bestrahlen gemessenen Dunkelspektrums; Polynom-Basislinie, ausgeblendete Feldbereiche, Glätten; EasySpin-Simulationen
   (zweispaltiger Text) an eine Messung angepasst, mit EasySpin-Parameterdatei (D, |E| in cm⁻¹); überlagert oder
   gestapelt, mT oder G, freie Labels; beim Überfahren B, g und Intensität.
-
-### Korrigiert
-- Kurvennamen, die mit „_“ beginnen, fehlten in Legenden.
-
-## 1.10.0 – 20.10.2026
-
-### Neu
 - Neuer **SEC-Tab** für Spektroelektrochemie: BWSpec-Spektrenserie + Gamry-Potential (Zuordnung über die Uhrzeit,
   Versatz einstellbar); Spektrenserie mit hervorgehobenem erstem/letztem Spektrum oder Potential-Farbverlauf,
   Differenzspektren, farbige λ-Labels; A bei λ gegen E mit scheinbarem Nernst-Fit; Referenzierung wie im CV-Tab.
 
 ### Korrigiert
+- Kurvennamen, die mit „_“ beginnen, fehlten in Legenden.
 - Referenzelektroden mit Index (Ag/AgNO₃) werden in Achsenbeschriftungen korrekt gesetzt.
 
 ## 1.9.0 – 20.10.2026
