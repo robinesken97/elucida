@@ -2,6 +2,16 @@
 
 # Changelog
 
+## 1.13.0 – 2026-10-20
+
+### Added
+- EPR: **several species** – simulations assigned to a measurement are scaled together (linear least squares),
+  fractions by double integral, optional sum and residual.
+- EPR: **own isotropic S = ½ simulation and fit** (g, hyperfine couplings of equivalent nuclei, linewidth,
+  Lorentzian fraction; coarse grid search + Levenberg–Marquardt).
+- EPR: **field calibration** with a fitted reference such as TEMPO (g_lit = 2.0055); the field correction is applied
+  to all other measurements.
+
 ## 1.12.0 – 2026-10-20
 
 ### Added

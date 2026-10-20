@@ -2,6 +2,16 @@
 
 # Änderungen
 
+## 1.13.0 – 20.10.2026
+
+### Neu
+- EPR: **mehrere Spezies** – einer Messung zugeordnete Simulationen werden gemeinsam skaliert (lineare kleinste
+  Quadrate), Anteile per Doppelintegral, optional Summe und Rest.
+- EPR: **eigene isotrope S = ½-Simulation mit Fit** (g, Hyperfeinkopplungen äquivalenter Kerne, Linienbreite,
+  Lorentz-Anteil; Grobsuche + Levenberg-Marquardt).
+- EPR: **Feldkalibrierung** mit einer gefitteten Referenz wie TEMPO (g_lit = 2,0055); die Feldkorrektur gilt für alle
+  übrigen Messungen.
+
 ## 1.12.0 – 20.10.2026
 
 ### Neu

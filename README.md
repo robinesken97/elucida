@@ -209,6 +209,16 @@ Compare several spectra in one figure, measured and calculated:
   cm⁻¹ and can be written into the figure.
 - Display in mT or G, overlaid or stacked, normalised, y axis without numbers by default, free labels such as
   `Z⁻@122, Y⁺@400`. Hover shows B, the g value and the intensity.
+- **Several species:** all simulations assigned to a measurement (EasySpin or own S = ½) are scaled *together* by
+  linear least squares; the fractions (double integral) are shown, optionally the sum and the residual
+  (measured − sum) – i.e. subtraction of individual species. Non-linear parameters (g, A, D/E, linewidths of
+  powder spectra) are fitted in EasySpin; the tool only determines the fractions.
+- **Own isotropic S = ½ simulation and fit** (solution, first order): g, groups of equivalent nuclei (e.g.
+  `2 14N 0.65; 4 1H 0.32`, a in mT), peak-to-peak linewidth and Lorentzian fraction; "Fit" refines g, a and
+  ΔB_pp (Levenberg–Marquardt after a coarse grid search, amplitude linear).
+- **Field calibration with TEMPO** (or another reference): fit the reference with an S = ½ simulation, choose it as
+  calibration with its literature g (default 2.0055, TEMPO in MeCN); ΔB = B(g_fit) − B(g_lit) is subtracted from all
+  other measurements, whose fits then give calibrated g values.
 - **Intensity vs. time or temperature** (e.g. illumination kinetics, thermal decay): double integral or
   peak-to-peak in a field window for every visible measurement (after dark spectrum and baseline), optionally
   × T (Curie), normalised; time counts from the earliest spectrum in the tab (e.g. the dark spectrum). "Use this

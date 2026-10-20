@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.12.0"
+APP_VERSION = "1.13.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2421,7 +2421,8 @@ def selftest(outdir, with_isnet=False):
         ref_ = (signal / 1.0)[np.isfinite(Ip)]
         assert np.max(np.abs(cleaned - ref_)) < 0.02 * np.ptp(signal), "Dunkelspektrum/Basislinie"
         assert np.isnan(Ip[(Bp > 499.2) & (Bp < 500.8)]).all(), "Bereich nicht ausgeblendet"
-        Bs, Is = t_e.processed(es, cache_)
+        data_, _ = t_e.components([el, es], {}, [])
+        Is = data_[es["uid"]][1]
         assert abs(np.nanmax(Is) / np.nanmax(Ip) - 1) < 0.05, "Simulation nicht an Messung angepasst"
         t_e.fill_table()
         files = w.epr_tab.export_to(out / "epr_test")
@@ -2457,6 +2458,63 @@ def selftest(outdir, with_isnet=False):
         assert any(f.name.endswith("_intensity.csv") for f in files) and any(f.name.endswith("_data.csv") for f in files)
         w.epr_state.update(entries=[], labels="", exclude="", show_params=False, mode="spectra")
         report.append("EPR (BES3T, dark spectrum, simulation, intensity, export): OK")
+
+        # EPR S = ½: TEMPO-artiges Spektrum mit Feldfehler +0.25 mT fitten -> Kalibrierung; zwei Spezies 70:30
+        mw_ = 9.40
+        Bt = np.linspace(330.0, 345.0, 6001)
+        tempo_I = EPRMOD.iso_spectrum(Bt, mw_, 2.0055, [(1, 1.0, 1.55)], 0.15)
+        noise = np.random.default_rng(0).standard_normal(len(Bt)) * 0.01 * np.ptp(tempo_I)
+        np.savetxt(eprdir / "tempo-9p400000.txt", np.column_stack([Bt + 0.25, tempo_I + noise]),
+                   header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+        rad_I = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(2, 0.5, 0.45)], 0.12)
+        np.savetxt(eprdir / "radikal-9p400000.txt", np.column_stack([Bt + 0.25, rad_I]),
+                   header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+        et = t_e._new("exp", str(eprdir / "tempo-9p400000.txt"))
+        er = t_e._new("exp", str(eprdir / "radikal-9p400000.txt"))
+        assert abs(t_e.spectrum(et)["meta"]["mw_GHz"] - 9.4) < 1e-9
+        w.epr_state.update(entries=[et, er], bl_order=-1, smooth=0.0, normalize=True, stack=False,
+                           show_sum=True, show_residual=True, calib_uid=None, calib_g=2.0055)
+        t_e.fill_table()
+        t_e.table.selectRow(0)
+        t_e.add_iso()
+        ti = w.epr_state["entries"][-1]
+        ti["nuclei"] = "1 14N 1.4"
+        t_e.table.selectRow(2)
+        t_e.fit_current()
+        assert abs(ti["g"] - EPRMOD.g_value(mw_, EPRMOD.b_res(mw_, 2.0055) + 0.25)) < 2e-5, ti
+        assert "1.55" in ti["nuclei"] and ti["fit"]["r2"] > 0.98, ti     # 1 % Rauschen
+        w.epr_state["calib_uid"] = ti["uid"]
+        t_e.fill_table()
+        dB_, _ = t_e.calibration_shift()
+        assert abs(dB_ - 0.25) < 0.003, dB_
+        t_e.table.selectRow(1)
+        t_e.add_iso()
+        ri = w.epr_state["entries"][-1]
+        ri["nuclei"] = "2 1H 0.4"
+        t_e.table.selectRow(3)
+        t_e.fit_current()
+        assert abs(ri["g"] - 2.0030) < 5e-5 and abs(EPRMOD.parse_nuclei(ri["nuclei"])[0][2] - 0.45) < 0.005, ri
+        # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
+        A_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(1, 1.0, 1.4)], 0.2)
+        B_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0100, [], 0.5)
+        np.savetxt(eprdir / "mix-9p400000.txt", np.column_stack([Bt, 0.7 * A_ + 0.3 * B_]), delimiter="\t")
+        np.savetxt(eprdir / "simA.txt", np.column_stack([Bt, A_]), delimiter="\t")
+        np.savetxt(eprdir / "simB.txt", np.column_stack([Bt, B_]), delimiter="\t")
+        em = t_e._new("exp", str(eprdir / "mix-9p400000.txt"))
+        sa, sb = t_e._new("sim", str(eprdir / "simA.txt")), t_e._new("sim", str(eprdir / "simB.txt"))
+        sa["fit_to"] = sb["fit_to"] = em["uid"]
+        w.epr_state.update(entries=[em, sa, sb], calib_uid=None, bl_order=-1)
+        info_ = []
+        data_, extra_ = t_e.components([em, sa, sb], {}, info_)
+        wa = np.nanmax(data_[sa["uid"]][1]) / np.nanmax(A_)
+        wb = np.nanmax(data_[sb["uid"]][1]) / np.nanmax(B_)
+        assert abs(wa - 0.7) < 1e-3 and abs(wb - 0.3) < 1e-3, (wa, wb)
+        assert np.nanmax(np.abs(extra_[em["uid"]]["res"][1])) < 1e-6 * np.ptp(A_) and "sum" in extra_[em["uid"]]
+        assert info_ and "%" in info_[0], info_
+        files = w.epr_tab.export_to(out / "epr_species")
+        assert all(f.exists() for f in files), files
+        w.epr_state.update(entries=[], calib_uid=None, show_residual=False, bl_order=1)
+        report.append("EPR S=1/2 fit, TEMPO calibration, multiple species: OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM

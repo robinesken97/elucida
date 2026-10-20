@@ -556,6 +556,34 @@ TEXTS = {
     "epr_int_none": ("Keine Werte (Zeit- bzw. Temperaturangaben fehlen?).", "No values (time or temperature missing?)."),
     "epr_int_info": ("{n} Spektren, {method} (Spektren nach Dunkelspektrum und Basislinie).",
                      "{n} spectra, {method} (spectra after dark spectrum and baseline)."),
+    "epr_add_iso": ("S = ½-Simulation", "S = ½ simulation"),
+    "epr_kind_iso": ("S = ½ (eigen)", "S = ½ (own)"),
+    "epr_iso": ("Isotrope S = ½-Simulation (erste Ordnung)", "Isotropic S = ½ simulation (first order)"),
+    "epr_lw": ("ΔB_pp", "ΔB_pp"),
+    "epr_lorentz": ("Lorentz-Anteil", "Lorentzian fraction"),
+    "epr_fit_lor": ("mitfitten", "fit as well"),
+    "epr_nuclei": ("Kerne (Anzahl Isotop a/mT)", "Nuclei (number isotope a/mT)"),
+    "epr_nuclei_ph": ("z. B. 2 14N 0.65; 4 1H 0.32", "e.g. 2 14N 0.65; 4 1H 0.32"),
+    "epr_nuclei_tip": ("Gruppen äquivalenter Kerne: Anzahl, Isotop (1H, 2H, 13C, 14N, 15N, 19F, 31P, 63Cu, …) oder I=…,\n"
+                       "Kopplung a in mT; Gruppen mit ';' trennen. Erste Ordnung, isotrop (Lösung, schnelle Rotation).",
+                       "Groups of equivalent nuclei: number, isotope (1H, 2H, 13C, 14N, 15N, 19F, 31P, 63Cu, …) or I=…,\n"
+                       "coupling a in mT; separate groups with ';'. First order, isotropic (solution, fast tumbling)."),
+    "epr_fit_btn": ("An Messung fitten (g, a, ΔB_pp)", "Fit to measurement (g, a, ΔB_pp)"),
+    "epr_iso_need_exp": ("Bitte zuerst eine Messung laden bzw. auswählen.", "Please load or select a measurement first."),
+    "epr_iso_need_mw": ("Für die Simulation wird die Mikrowellenfrequenz der Messung gebraucht (fehlt in der Datei).",
+                        "The simulation needs the microwave frequency of the measurement (missing in the file)."),
+    "epr_calib": ("Feldkalibrierung", "Field calibration"),
+    "epr_calib_tip": ("Gefittete S = ½-Simulation einer Referenz (z. B. TEMPO in MeCN, g = 2.0055) wählen: ΔB = B(g_fit) − B(g_lit)\n"
+                      "wird von allen anderen Messungen abgezogen; deren Fits liefern dann kalibrierte g-Werte.",
+                      "Choose the fitted S = ½ simulation of a reference (e.g. TEMPO in MeCN, g = 2.0055): ΔB = B(g_fit) − B(g_lit)\n"
+                      "is subtracted from all other measurements; their fits then give calibrated g values."),
+    "epr_calib_info": ("Feldkorrektur ΔB = {dB} mT (Referenz g_fit = {g} → g_lit = {glit}).",
+                       "Field correction ΔB = {dB} mT (reference g_fit = {g} → g_lit = {glit})."),
+    "epr_show_sum": ("Summe der Komponenten", "Sum of components"),
+    "epr_show_residual": ("Rest (Messung − Summe)", "Residual (measured − sum)"),
+    "epr_sum": ("Summe", "sum"),
+    "epr_residual": ("Rest", "residual"),
+    "epr_fractions": ("{name}: Anteile (Doppelintegral) {parts}", "{name}: fractions (double integral) {parts}"),
     # ---- Farbe der Lösung ---------------------------------------------------
     "color_show": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),
     "color_tip": ("Aus dem Spektrum berechnet: Transmission 10^(−A) unter Tageslicht, CIE-1931-Farbmetrik → sRGB.\n"

@@ -214,6 +214,16 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   angezeigt, D und |E| in cm⁻¹ umgerechnet, optional im Bild.
 - Darstellung in mT oder G, überlagert oder gestapelt, normiert, y-Achse standardmäßig ohne Zahlen, freie Labels wie
   `Z⁻@122, Y⁺@400`. Beim Überfahren: B, g-Wert und Intensität.
+- **Mehrere Spezies:** Alle einer Messung zugeordneten Simulationen (EasySpin oder eigene S = ½) werden *gemeinsam* per
+  linearen kleinsten Quadraten skaliert; die Anteile (Doppelintegral) werden angezeigt, optional die Summe und der Rest
+  (Messung − Summe) – also die Subtraktion einzelner Spezies. Nichtlineare Parameter (g, A, D/E, Linienbreiten von
+  Pulverspektren) werden in EasySpin gefittet; das Tool bestimmt nur die Anteile.
+- **Eigene isotrope S = ½-Simulation mit Fit** (Lösung, erste Ordnung): g, Gruppen äquivalenter Kerne (z. B.
+  `2 14N 0.65; 4 1H 0.32`, a in mT), Peak-zu-Peak-Linienbreite und Lorentz-Anteil; „Fitten“ verfeinert g, a und ΔB_pp
+  (Levenberg-Marquardt nach einer Grobsuche, Amplitude linear).
+- **Feldkalibrierung mit TEMPO** (oder einer anderen Referenz): Referenz mit einer S = ½-Simulation fitten, als
+  Kalibrierung mit ihrem Literatur-g wählen (Vorgabe 2,0055, TEMPO in MeCN); ΔB = B(g_fit) − B(g_lit) wird von allen
+  anderen Messungen abgezogen, deren Fits dann kalibrierte g-Werte liefern.
 - **Intensität gegen Zeit oder Temperatur** (z. B. Belichtungskinetik, thermischer Zerfall): Doppelintegral oder
   Peak-zu-Peak in einem Feldfenster für jede sichtbare Messung (nach Dunkelspektrum und Basislinie), optional × T
   (Curie), normiert; die Zeit zählt ab dem frühesten Spektrum im Tab (z. B. dem Dunkelspektrum). „Dunkelspektrum für
