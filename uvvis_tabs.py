@@ -4,6 +4,8 @@ uvvis_tabs.py - Zusätzliche Tabs der GUI: Overlay (Messung + TD-DFT) und Fluore
 from __future__ import annotations
 
 import copy
+import csv
+import re
 import traceback
 import uuid
 from pathlib import Path
@@ -41,6 +43,31 @@ def parse_num(txt):
         return v if v > 0 else None
     except ValueError:
         return None
+
+
+def _plain(label):
+    """Achsenbeschriftung ohne Mathtext für CSV-Köpfe: 'cm$^{-1}$' -> 'cm^-1'."""
+    s = re.sub(r"\$\^\{?([^}$]*)\}?\$", r"^\1", str(label))
+    s = re.sub(r"\$_\{?([^}$]*)\}?\$", r"_\1", s)
+    return s.replace("$", "").replace("\\mathrm", "").replace("{", "").replace("}", "")
+
+
+def write_curves_csv(path, curves, xlabel, ylabel):
+    """Gezeichnete Kurven als CSV (UTF-8, Komma): je Kurve ein x/y-Spaltenpaar, Werte ohne Stapelversatz
+    ('val'). Lässt sich in Origin, Excel und MATLAB (readmatrix) öffnen."""
+    curves = [c for c in curves if len(c["x"])]
+    cols, head = [], []
+    for k, c in enumerate(curves):
+        name = str(c.get("label") or c.get("tag") or f"curve {k + 1}").replace("\u200b", "")
+        cols += [np.asarray(c["x"], float), np.asarray(c.get("val", c["y"]), float)]
+        head += [f"{name}: {_plain(xlabel)}", f"{name}: {_plain(ylabel)}"]
+    n = max((len(c) for c in cols), default=0)
+    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
+        w = csv.writer(fh)
+        w.writerow(head)
+        for i in range(n):
+            w.writerow([(f"{c[i]:.10g}" if i < len(c) and np.isfinite(c[i]) else "") for c in cols])
+    return path
 
 
 def color_button(color, on_pick):
@@ -500,7 +527,9 @@ class FigureTab(QWidget):
         F.cfg["output"] = str(base.with_suffix("." + F.cfg["_main_fmt"]))
         F.cfg["_base_dir"] = base.parent
         F.export()
-        return [base.with_suffix("." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]]
+        data = base.with_name(base.name + "_data.csv")
+        write_curves_csv(data, F.curves, F.cfg.get("xlabel", "x"), F.cfg.get("ylabel", "y"))
+        return [base.with_suffix("." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]] + [data]
 
     def save_setup(self):
         p, _ = QFileDialog.getSaveFileName(self, T("tab_save"), self.STATE_KEY + ".yaml", "YAML (*.yaml)")

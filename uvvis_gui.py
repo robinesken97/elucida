@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.11.0"
+APP_VERSION = "1.12.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2384,11 +2384,12 @@ def selftest(outdir, with_isnet=False):
         signal = -np.gradient(np.exp(-((Bg - 4700) / 30) ** 2)) * 1000  # Ableitungslinie bei 470 mT
         drift = 0.05 * (Bg - 4400)                                     # lineare Drift der Basislinie
 
-        def write_bes3t(stem, y):
+        def write_bes3t(stem, y, time="11:30:15", temp=100.0):
             (eprdir / f"{stem}.dsc").write_text("\n".join([
                 "#DESC\t1.2", "DSRC\tEXP", "BSEQ\tLIT", "IKKF\tREAL", "XTYP\tIDX", "YTYP\tNODATA", "IRFMT\tD",
                 f"XPTS\t{len(Bg)}", f"XMIN\t{Bg[0]}", f"XWID\t{Bg[-1] - Bg[0]}", "XUNI\t'G'", "#SPL\t1.2",
-                "MWFQ\t9338553208.5", "STMP\t100.0", "B0MA\t0.00095", "MWPW\t0.01", "DATE\t08/22/25", "TIME\t11:30:15"]),
+                "MWFQ\t9338553208.5", f"STMP\t{temp}", "B0MA\t0.00095", "MWPW\t0.01", "DATE\t08/22/25",
+                f"TIME\t{time}"]),
                 encoding="latin-1")
             y.astype("<f8").tofile(eprdir / f"{stem}.DTA")
         dark_bg = 3.0 * np.sin((Bg - 4400) / 200)                      # Untergrund, der auch dunkel da ist
@@ -2429,8 +2430,33 @@ def selftest(outdir, with_isnet=False):
         assert any("cm" in a.get_text() for a in F_e.ann_items.values()), "D/E-Label fehlt"
         slots_ = PRJ._path_slots({"epr": w.epr_state})
         assert any(c_ is es and k_ == "params" for c_, k_, _ in slots_), "EPR-Parameter fehlen im Projekt"
-        w.epr_state.update(entries=[], labels="", exclude="", show_params=False)
-        report.append("EPR (BES3T, dark spectrum, simulation): OK")
+        # Intensität gegen Zeit: Amplituden 25/50/75/100 % im Minutentakt nach dem Dunkelspektrum (11:30:15)
+        series = [ed]
+        for k_, amp in enumerate((0.25, 0.5, 0.75, 1.0), 1):
+            write_bes3t(f"kin{k_}", drift + dark_bg + amp * signal, time=f"11:3{k_}:15")
+            ek = t_e._new("exp", str(eprdir / f"kin{k_}.dsc"))
+            ek["label"] = f"kin{k_}"
+            series.append(ek)
+        w.epr_state.update(entries=series, exclude="", labels="", show_params=False, mode="intensity",
+                           int_window="455-485", int_method="double", int_x="time", normalize=True)
+        t_e.fill_table()
+        t_e.table.selectRow(1)
+        series[1]["dark"] = ed["uid"]
+        t_e.dark_for_all()
+        files = w.epr_tab.export_to(out / "epr_kin")
+        xs_ = [v[0] for v in t_e.series_values]
+        ys_ = [v[1] for v in t_e.series_values]
+        assert np.allclose(xs_, [1, 2, 3, 4]) and np.allclose(ys_, [0.25, 0.5, 0.75, 1.0], atol=0.02), (xs_, ys_)
+        w.epr_state["int_method"] = "pp"
+        w.epr_tab.export_to(out / "epr_kin_pp")
+        assert np.allclose([v[1] for v in t_e.series_values], [0.25, 0.5, 0.75, 1.0], atol=0.02)
+        txt_ = next(f for f in files if f.name.endswith("_kin4.txt"))
+        arr_ = np.loadtxt(txt_, comments="%")
+        assert arr_.shape[1] == 2 and abs(arr_[0, 0] - 440.0) < 1e-6 and "mwFreq" in txt_.read_text(encoding="utf-8")
+        assert np.max(np.abs(arr_[:, 1] - signal)) < 0.02 * np.ptp(signal), "Export nicht verarbeitet"
+        assert any(f.name.endswith("_intensity.csv") for f in files) and any(f.name.endswith("_data.csv") for f in files)
+        w.epr_state.update(entries=[], labels="", exclude="", show_params=False, mode="spectra")
+        report.append("EPR (BES3T, dark spectrum, simulation, intensity, export): OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM

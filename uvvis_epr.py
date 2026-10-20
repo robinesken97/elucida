@@ -228,6 +228,42 @@ def fit_scale(B_ref, I_ref, B, I):
     return float(np.sum(yi[ok] * I_ref[ok]) / den) if den > 0 else 1.0
 
 
+def double_integral(B, I, window=None):
+    """Doppelintegral eines Ableitungsspektrums: erst integrieren (Absorption), deren Basislinie linear zwischen
+    den Fenster-Rändern (je 5 %) abziehen, dann erneut integrieren. NaN-Werte zählen als 0."""
+    B, I = np.asarray(B, float), np.nan_to_num(np.asarray(I, float))
+    if window:
+        m = (B >= window[0]) & (B <= window[1])
+        B, I = B[m], I[m]
+    if len(B) < 10:
+        return float("nan")
+    a = np.concatenate([[0.0], np.cumsum(0.5 * (I[1:] + I[:-1]) * np.diff(B))])
+    n = max(2, len(B) // 20)
+    x0, x1 = B[:n].mean(), B[-n:].mean()
+    y0, y1 = a[:n].mean(), a[-n:].mean()
+    a = a - (y0 + (y1 - y0) * (B - x0) / (x1 - x0))
+    return float(np.sum(0.5 * (a[1:] + a[:-1]) * np.diff(B)))
+
+
+def peak_to_peak(B, I, window=None):
+    B, I = np.asarray(B, float), np.asarray(I, float)
+    if window:
+        m = (B >= window[0]) & (B <= window[1])
+        B, I = B[m], I[m]
+    return float(np.nanmax(I) - np.nanmin(I)) if np.isfinite(I).any() else float("nan")
+
+
+def measured_at(meta):
+    """Aufnahmezeit aus DATE/TIME (BES3T: MM/DD/YY) -> datetime oder None."""
+    import datetime as dt
+    for fmt in ("%m/%d/%y %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return dt.datetime.strptime(f"{meta.get('date', '')} {meta.get('time', '')}".strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def g_value(mw_GHz, B_mT):
     return mw_GHz / (MU_B_H * B_mT / 1000.0)
 
@@ -254,7 +290,8 @@ class EPRTab(TABS.FigureTab):
     XRANGE_TEXT = "epr_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=300.0, x_max=360.0, ymax=0.0, entries=[], unit="mT",
                          bl_order=1, bl_edge=5.0, bl_regions="", exclude="", smooth=0.0, normalize=True,
-                         stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers")
+                         stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers",
+                         mode="spectra", int_window="", int_method="double", int_x="time", int_curie=False)
 
     def build_controls(self):
         st = self.st
@@ -290,6 +327,10 @@ class EPRTab(TABS.FigureTab):
         row.addWidget(self.sp_dark_k)
         self.lbl_dark = QLabel(T("epr_dark"))
         f.addRow(self.lbl_dark, row)
+        self.btn_dark_all = QPushButton(T("epr_dark_all"))
+        self.btn_dark_all.setToolTip(T("epr_dark_all_tip"))
+        self.btn_dark_all.clicked.connect(self.dark_for_all)
+        f.addRow("", self.btn_dark_all)
         self.cmb_fit = QComboBox()
         self.cmb_fit.setToolTip(T("epr_fit_tip"))
         self.lbl_fit = QLabel(T("epr_fit_to"))
@@ -377,6 +418,32 @@ class EPRTab(TABS.FigureTab):
         self.ed_labels.setPlaceholderText(T("epr_labels_ph"))
         self.ed_labels.setToolTip(T("epr_labels_tip"))
         f.addRow(T("epr_labels"), self.ed_labels)
+        self.cmb_mode = QComboBox()
+        for key in ("spectra", "intensity"):
+            self.cmb_mode.addItem(T("epr_mode_" + key), key)
+        self.cmb_mode.setCurrentIndex(max(0, self.cmb_mode.findData(st["mode"])))
+        f.addRow(T("sec_mode"), self.cmb_mode)
+        self.ed_int_window = QLineEdit(st["int_window"])
+        self.ed_int_window.setPlaceholderText(T("epr_int_window_ph"))
+        self.ed_int_window.setToolTip(T("epr_int_window_tip"))
+        f.addRow(T("epr_int_window"), self.ed_int_window)
+        row = QHBoxLayout()
+        self.cmb_int_method = QComboBox()
+        for key in ("double", "pp"):
+            self.cmb_int_method.addItem(T("epr_int_" + key), key)
+        self.cmb_int_method.setCurrentIndex(max(0, self.cmb_int_method.findData(st["int_method"])))
+        self.cmb_int_x = QComboBox()
+        for key in ("time", "T", "index"):
+            self.cmb_int_x.addItem(T("epr_x_" + key), key)
+        self.cmb_int_x.setCurrentIndex(max(0, self.cmb_int_x.findData(st["int_x"])))
+        row.addWidget(self.cmb_int_method, 1)
+        row.addWidget(QLabel(T("epr_against")))
+        row.addWidget(self.cmb_int_x, 1)
+        f.addRow(T("epr_int_method"), row)
+        self.cb_curie = QCheckBox(T("epr_curie"))
+        self.cb_curie.setToolTip(T("epr_curie_tip"))
+        self.cb_curie.setChecked(st["int_curie"])
+        f.addRow(self.cb_curie)
         self.cb_params = QCheckBox(T("epr_show_params"))
         self.cb_params.setChecked(st["show_params"])
         f.addRow(self.cb_params)
@@ -387,11 +454,11 @@ class EPRTab(TABS.FigureTab):
         self.lv.addWidget(g)
         for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_smooth, self.sp_gap):
             w_.valueChanged.connect(self.changed)
-        for w_ in (self.cb_norm, self.cb_stack, self.cb_params):
+        for w_ in (self.cb_norm, self.cb_stack, self.cb_params, self.cb_curie):
             w_.toggled.connect(self.changed)
-        for w_ in (self.cmb_unit, self.cmb_yaxis):
+        for w_ in (self.cmb_unit, self.cmb_yaxis, self.cmb_mode, self.cmb_int_method, self.cmb_int_x):
             w_.currentIndexChanged.connect(self.changed)
-        for ed in (self.ed_bl_regions, self.ed_exclude, self.ed_labels):
+        for ed in (self.ed_bl_regions, self.ed_exclude, self.ed_labels, self.ed_int_window):
             ed.editingFinished.connect(self.changed)
         self.fill_table()
         self.show_details()
@@ -402,7 +469,9 @@ class EPRTab(TABS.FigureTab):
                        exclude=self.ed_exclude.text().strip(), smooth=self.sp_smooth.value(),
                        normalize=self.cb_norm.isChecked(), stack=self.cb_stack.isChecked(), gap=self.sp_gap.value(),
                        y_axis=self.cmb_yaxis.currentData(), labels=self.ed_labels.text().strip(),
-                       show_params=self.cb_params.isChecked())
+                       show_params=self.cb_params.isChecked(), mode=self.cmb_mode.currentData(),
+                       int_window=self.ed_int_window.text().strip(), int_method=self.cmb_int_method.currentData(),
+                       int_x=self.cmb_int_x.currentData(), int_curie=self.cb_curie.isChecked())
 
     # -- Einträge ------------------------------------------------------------------
     def data(self, path):
@@ -523,7 +592,7 @@ class EPRTab(TABS.FigureTab):
         self.det.setEnabled(e is not None)
         self._loading = True
         exp = e is not None and e["kind"] == "exp"
-        for w_ in (self.lbl_dark, self.cmb_dark, self.sp_dark_k):
+        for w_ in (self.lbl_dark, self.cmb_dark, self.sp_dark_k, self.btn_dark_all):
             w_.setVisible(exp or e is None)
         for w_ in (self.lbl_fit, self.cmb_fit, self.lbl_scale, self.sp_scale, self.sp_shift, self.lbl_params_row,
                    self.lbl_params):
@@ -578,6 +647,16 @@ class EPRTab(TABS.FigureTab):
             self.sp_scale.setEnabled(not e["fit_to"])
         self.timer.start()
 
+    def dark_for_all(self):
+        """Dunkelspektrum und Faktor des gewählten Eintrags für alle übrigen Messungen übernehmen."""
+        e = self.current()
+        if e is None or e["kind"] != "exp":
+            return
+        for x in self.st["entries"]:
+            if x["kind"] == "exp" and x["uid"] != e.get("dark") and x is not e:
+                x.update(dark=e.get("dark"), dark_k=e.get("dark_k", 1.0))
+        self.timer.start()
+
     def choose_params(self):
         e = self.current()
         if e is None or not self.main.ensure_project():
@@ -596,10 +675,12 @@ class EPRTab(TABS.FigureTab):
         self.timer.start()
 
     # -- Verarbeitung und Abbildung -----------------------------------------------------
-    def processed(self, e, cache):
-        """Messung oder Simulation nach allen Schritten -> (B [mT], I) auf dem Raster der Datei."""
-        if e["uid"] in cache:
-            return cache[e["uid"]]
+    def processed(self, e, cache, hide=True):
+        """Messung oder Simulation nach allen Schritten -> (B [mT], I) auf dem Raster der Datei.
+        hide=False: ausgeblendete Bereiche bleiben erhalten (Export für EasySpin, Integration)."""
+        key = (e["uid"], hide)
+        if key in cache:
+            return cache[key]
         st = self.st
         s = self.spectrum(e)
         B, I = s["B"].astype(float), s["I"].astype(float).copy()
@@ -609,8 +690,9 @@ class EPRTab(TABS.FigureTab):
                 ds = self.spectrum(dark)
                 I = I - e.get("dark_k", 1.0) * np.interp(B, ds["B"], ds["I"], left=np.nan, right=np.nan)
             I = I - baseline(B, I, st["bl_order"], st["bl_edge"] / 100.0, ranges(st["bl_regions"]) or None)
-            for a, b in ranges(st["exclude"]):
-                I[(B >= a) & (B <= b)] = np.nan
+            if hide:
+                for a, b in ranges(st["exclude"]):
+                    I[(B >= a) & (B <= b)] = np.nan
             I = smooth(B, I, st["smooth"])
         else:
             B = B + e.get("shift", 0.0)
@@ -620,7 +702,7 @@ class EPRTab(TABS.FigureTab):
                 I = I * fit_scale(tb, ti, B, I)
             else:
                 I = I * e.get("scale", 1.0)
-        cache[e["uid"]] = (B, I)
+        cache[key] = (B, I)
         return B, I
 
     def figure_spec(self):
@@ -629,6 +711,8 @@ class EPRTab(TABS.FigureTab):
         if not vis:
             self.lbl_info.setText("")
             return None
+        if st["mode"] == "intensity":
+            return self.intensity_spec([e for e in vis if e["kind"] == "exp"])
         cfg = self.base_cfg()
         fac = 10.0 if st["unit"] == "G" else 1.0
         cache, curves, info = {}, [], []
@@ -686,7 +770,102 @@ class EPRTab(TABS.FigureTab):
                          and self.spectrum(e)["meta"].get("mw_GHz")), None)
         return cfg, curves, labels, []
 
+    def intensity_series(self, entries):
+        """-> (x-Werte, Intensitäten, x-Beschriftung, Einträge mit Wert) für die Intensitätsansicht."""
+        st, cache = self.st, {}
+        win = (ranges(st["int_window"]) or [None])[0]
+        xs, ys, used = [], [], []
+        # t = 0: frühestes Spektrum im Tab (auch ausgeblendet, z. B. das Dunkelspektrum vor dem Bestrahlen)
+        times = [measured_at(self.spectrum(x)["meta"]) for x in st["entries"] if x["kind"] == "exp"]
+        t0 = min((t for t in times if t), default=None)
+        for k, e in enumerate(entries):
+            B, I = self.processed(e, cache, hide=False)
+            v = (double_integral(B, I, win) if st["int_method"] == "double" else peak_to_peak(B, I, win))
+            meta = self.spectrum(e)["meta"]
+            if st["int_curie"] and meta.get("T_K"):
+                v *= meta["T_K"]
+            if st["int_x"] == "T":
+                x = meta.get("T_K")
+            elif st["int_x"] == "time":
+                t = measured_at(meta)
+                x = (t - t0).total_seconds() / 60.0 if (t and t0) else None
+            else:
+                x = float(k + 1)
+            if x is None or not np.isfinite(v):
+                continue
+            xs.append(float(x))
+            ys.append(float(v))
+            used.append(e)
+        xlabel = {"T": "T [K]", "time": "t [min]", "index": T("sec_index")}[st["int_x"]]
+        return np.array(xs), np.array(ys), xlabel, used
+
+    def intensity_spec(self, entries):
+        st = self.st
+        if not entries:
+            return None
+        x, y, xlabel, used = self.intensity_series(entries)
+        if len(x) == 0:
+            self.lbl_info.setText(T("epr_int_none"))
+            return None
+        if st["normalize"] and np.nanmax(np.abs(y)) > 0:
+            y = y / y[np.nanargmax(np.abs(y))]           # mit Vorzeichen: unabhängig von der Signalphase positiv
+        cfg = self.base_cfg()
+        o = np.argsort(x) if st["int_x"] != "index" else np.arange(len(x))
+        curves = [{"x": x[o], "y": y[o], "color": "#000000", "label": None, "ls": "-", "lw": 0.8, "marker": "o"}]
+        pad = 0.05 * (np.ptp(x) or 1.0)
+        cfg["xlim"] = [float(x.min() - pad), float(x.max() + pad)] if st["x_auto"] else [st["x_min"], st["x_max"]]
+        top = float(np.nanmax(y)) if len(y) else 1.0
+        cfg["ylim"] = [min(0.0, float(np.nanmin(y))) - 0.05 * abs(top), st["ymax"] if st["ymax"] > 0 else 1.1 * top]
+        cfg["xlabel"] = xlabel
+        name = ("normalized " if st["normalize"] else "") + "EPR intensity" + (" (I × T)" if st["int_curie"] else "")
+        cfg["ylabel"] = name + ("" if st["normalize"] else " [arb. u.]")
+        cfg["y_axis"] = "numbers"
+        cfg["legend"] = False
+        self.series_values = list(zip(x[o], y[o], [used[i]["label"] for i in o]))
+        self.lbl_info.setText(T("epr_int_info", n=len(x), method=T("epr_int_" + st["int_method"])))
+        return cfg, curves, [], []
+
+    def export_to(self, base: Path):
+        """Abbildung + Daten wie überall; zusätzlich je Messung eine EasySpin-fertige Textdatei (B in mT, I) in
+        voller Auflösung nach Dunkelspektrum/Basislinie/Glättung, ohne Normierung und Ausblenden."""
+        files = super().export_to(base)
+        st, cache = self.st, {}
+        base = Path(base).resolve()
+        for e in st["entries"]:
+            if not (e["visible"] and e["kind"] == "exp"):
+                continue
+            B, I = self.processed(e, cache, hide=False)
+            m = self.spectrum(e)["meta"]
+            dark = next((x for x in st["entries"] if x["uid"] == e.get("dark")), None)
+            head = [f"% {e['label']} – exported by UVVisTool (processed spectrum for EasySpin: load(...))",
+                    f"% source: {Path(e['file']).name}" + (f" [{e.get('slice', 0) + 1}]" if e.get("slice") else ""),
+                    f"% mwFreq [GHz]: {m.get('mw_GHz')}; T [K]: {m.get('T_K')}; ModAmp [mT]: {m.get('mod_mT')}; "
+                    f"Power [mW]: {m.get('power_mW')}",
+                    f"% dark spectrum: {dark['label'] + ' x ' + format(e.get('dark_k', 1.0), 'g') if dark else 'none'}; "
+                    f"baseline: order {st['bl_order']}, " + (f"ranges {st['bl_regions']}" if st['bl_regions']
+                                                           else f"edges {st['bl_edge']:g} %") +
+                    f"; smoothing: {st['smooth']:g} mT",
+                    "% B [mT]\tI [arb. u.]"]
+            safe = re.sub(r"[^\w.+-]+", "_", e["label"]).strip("_") or e["uid"]
+            p = base.with_name(f"{base.name}_{safe}.txt")
+            ok = np.isfinite(I)
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(head) + "\n")
+                for b, i in zip(B[ok], I[ok]):
+                    fh.write(f"{b:.6f}\t{i:.8g}\n")
+            files.append(p)
+        if st["mode"] == "intensity" and getattr(self, "series_values", None):
+            p = base.with_name(base.name + "_intensity.csv")
+            with open(p, "w", encoding="utf-8-sig") as fh:
+                fh.write("x;intensity;spectrum\n")
+                for x, y, lab in self.series_values:
+                    fh.write(f"{x:.6g};{y:.6g};{lab}\n")
+            files.append(p)
+        return files
+
     def hover_text(self, x, val, name):
+        if self.st["mode"] == "intensity":
+            return f"x = {x:.4g}    I = {val:.4g}" if val is not None else f"x = {x:.4g}"
         unit = self.st["unit"]
         B_mT = x / (10.0 if unit == "G" else 1.0)
         g = f"    g = {g_value(self._mw, B_mT):.4f}" if getattr(self, "_mw", None) and B_mT > 0 else ""

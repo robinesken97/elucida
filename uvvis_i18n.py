@@ -530,6 +530,32 @@ TEXTS = {
                        "Text@field (in axis units), comma separated – e.g. canonical positions."),
     "epr_show_params": ("D und |E| der Simulation im Bild (aus den EasySpin-Parametern)",
                         "D and |E| of the simulation in the figure (from the EasySpin parameters)"),
+    "epr_dark_all": ("Dunkelspektrum für alle Messungen übernehmen", "Use this dark spectrum for all measurements"),
+    "epr_dark_all_tip": ("Setzt Dunkelspektrum und Faktor dieses Eintrags bei allen anderen Messungen (z. B. Kinetik-Serie).",
+                         "Sets dark spectrum and factor of this entry for all other measurements (e.g. a kinetic series)."),
+    "epr_mode_spectra": ("Spektren", "Spectra"),
+    "epr_mode_intensity": ("Intensität gegen Zeit/T", "Intensity vs. time/T"),
+    "epr_int_window": ("Feldfenster Intensität", "Field window for intensity"),
+    "epr_int_window_ph": ("z. B. 445-500 (mT), leer = ganzer Sweep", "e.g. 445-500 (mT), empty = whole sweep"),
+    "epr_int_window_tip": ("Bereich, über den integriert bzw. Peak-zu-Peak bestimmt wird (mT). Ausgeblendete Bereiche zählen mit;\n"
+                           "für Tripletts das Radikalsignal also über das Fenster ausschließen.",
+                           "Range used for integration or peak-to-peak (mT). Hidden ranges are included;\n"
+                           "for triplets exclude the radical signal via the window."),
+    "epr_int_method": ("Größe", "Quantity"),
+    "epr_int_double": ("Doppelintegral", "double integral"),
+    "epr_int_pp": ("Peak-zu-Peak", "peak-to-peak"),
+    "epr_against": ("gegen", "vs."),
+    "epr_x_time": ("Zeit [min]", "time [min]"),
+    "epr_x_T": ("Temperatur [K]", "temperature [K]"),
+    "epr_x_index": ("Nr.", "no."),
+    "epr_curie": ("× T (Curie-Korrektur)", "× T (Curie correction)"),
+    "epr_curie_tip": ("Intensität mal Temperatur: bei Curie-Verhalten konstant, solange die Spezies erhalten bleibt\n"
+                      "(wie I × T in Zerfallsmessungen).",
+                      "Intensity times temperature: constant for Curie behaviour as long as the species persists\n"
+                      "(like I × T in decay measurements)."),
+    "epr_int_none": ("Keine Werte (Zeit- bzw. Temperaturangaben fehlen?).", "No values (time or temperature missing?)."),
+    "epr_int_info": ("{n} Spektren, {method} (Spektren nach Dunkelspektrum und Basislinie).",
+                     "{n} spectra, {method} (spectra after dark spectrum and baseline)."),
     # ---- Farbe der Lösung ---------------------------------------------------
     "color_show": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),
     "color_tip": ("Aus dem Spektrum berechnet: Transmission 10^(−A) unter Tageslicht, CIE-1931-Farbmetrik → sRGB.\n"

@@ -93,6 +93,9 @@ Unter Windows immer den ganzen Ordner `UVVisTool` zusammenlassen. Die `.exe` fun
 
 ## Projekte, Export, Rückgängig
 
+Jeder Export aus den Tabs Overlay, Fluoreszenz, CV, SEC und EPR schreibt zusätzlich `…_data.csv` mit genau den
+gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) – für Origin, Excel oder MATLAB.
+
 Alles passiert in einem **Projektordner**:
 
 1. **Datei → Neues Projekt…** – einen Ordner wählen oder im Dialog neu anlegen.
@@ -211,6 +214,14 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   angezeigt, D und |E| in cm⁻¹ umgerechnet, optional im Bild.
 - Darstellung in mT oder G, überlagert oder gestapelt, normiert, y-Achse standardmäßig ohne Zahlen, freie Labels wie
   `Z⁻@122, Y⁺@400`. Beim Überfahren: B, g-Wert und Intensität.
+- **Intensität gegen Zeit oder Temperatur** (z. B. Belichtungskinetik, thermischer Zerfall): Doppelintegral oder
+  Peak-zu-Peak in einem Feldfenster für jede sichtbare Messung (nach Dunkelspektrum und Basislinie), optional × T
+  (Curie), normiert; die Zeit zählt ab dem frühesten Spektrum im Tab (z. B. dem Dunkelspektrum). „Dunkelspektrum für
+  alle Messungen übernehmen“ setzt den Hintergrund für eine ganze Serie auf einmal.
+- **Export für EasySpin:** Neben der Abbildung wird jede Messung als zweispaltige Textdatei (B in mT, Intensität) in
+  voller Auflösung nach Dunkelspektrum, Basislinie und Glättung geschrieben – ohne Normierung und ohne ausgeblendete
+  Bereiche – mit `%`-Kopfzeilen zu Frequenz, Temperatur und Verarbeitung (`load(...)` in MATLAB, direkt für `esfit`).
+  Die Intensitätsreihe wird als `…_intensity.csv` gespeichert.
 
 ## Fluoreszenz-Tab
 

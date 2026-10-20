@@ -2,6 +2,15 @@
 
 # Änderungen
 
+## 1.12.0 – 20.10.2026
+
+### Neu
+- EPR: **Intensität gegen Zeit oder Temperatur** (Doppelintegral oder Peak-zu-Peak im Feldfenster, optional × T,
+  normiert), z. B. für Belichtungskinetik und thermischen Zerfall; „Dunkelspektrum für alle Messungen übernehmen“.
+- EPR: Jede Messung wird zusätzlich als **EasySpin-fertige Textdatei** exportiert (verarbeitet, volle Auflösung,
+  dokumentierter Kopf); die Intensitätsreihe als CSV.
+- Alle Abbildungs-Tabs: Der Export schreibt zusätzlich **`…_data.csv` mit den gezeichneten Kurven**.
+
 ## 1.11.0 – 20.10.2026
 
 ### Neu

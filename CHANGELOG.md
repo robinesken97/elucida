@@ -2,6 +2,15 @@
 
 # Changelog
 
+## 1.12.0 – 2026-10-20
+
+### Added
+- EPR: **intensity vs. time or temperature** (double integral or peak-to-peak in a field window, optionally × T,
+  normalised), e.g. for illumination kinetics and thermal decay; "Use this dark spectrum for all measurements".
+- EPR: every measurement is exported as an **EasySpin-ready text file** (processed, full resolution, documented
+  header); the intensity series as CSV.
+- All figure tabs: export also writes **`…_data.csv` with the plotted curves**.
+
 ## 1.11.0 – 2026-10-20
 
 ### Added

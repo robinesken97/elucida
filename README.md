@@ -91,6 +91,9 @@ On Windows, always keep the whole `UVVisTool` folder together. The `.exe` does n
 
 ## Projects, export, undo
 
+Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
+plotted curves (one x/y column pair per curve, values without stacking offset) – for Origin, Excel or MATLAB.
+
 Everything happens in a **project folder**:
 
 1. **File → New project…** – choose a folder or create a new one in the dialog.
@@ -206,6 +209,14 @@ Compare several spectra in one figure, measured and calculated:
   cm⁻¹ and can be written into the figure.
 - Display in mT or G, overlaid or stacked, normalised, y axis without numbers by default, free labels such as
   `Z⁻@122, Y⁺@400`. Hover shows B, the g value and the intensity.
+- **Intensity vs. time or temperature** (e.g. illumination kinetics, thermal decay): double integral or
+  peak-to-peak in a field window for every visible measurement (after dark spectrum and baseline), optionally
+  × T (Curie), normalised; time counts from the earliest spectrum in the tab (e.g. the dark spectrum). "Use this
+  dark spectrum for all measurements" sets the background for a whole series at once.
+- **Export for EasySpin:** besides the figure, every measurement is written as a two-column text file (B in mT,
+  intensity) in full resolution after dark spectrum, baseline and smoothing – without normalisation or hidden
+  ranges – with `%` header lines documenting frequency, temperature and processing (`load(...)` in MATLAB, ready
+  for `esfit`). The intensity series is saved as `…_intensity.csv`.
 
 ## Fluorescence tab
 
