@@ -63,6 +63,10 @@ On Windows, always keep the whole `UVVisTool` folder together. The `.exe` does n
      taken unchanged from that file and the molar mass from the CDXML. Without such a file the
      drawing is regenerated (ACS 1996 style) and may differ from ChemDraw.
    - **Cuvette photo:** HEIC (iPhone), JPG, PNG and more. The background is removed automatically.
+   - **Colour in solution (prediction, optional):** calculated from the spectrum – transmission 10^(−A)
+     under daylight, CIE 1931 colorimetry, shown as a colour patch below the photo. Concentration and
+     path length can be chosen (Beer–Lambert; default: highest measured concentration in 1 cm).
+     Fluorescence and scattering are ignored, screens are not calibrated; display only, not in the figure.
      On first use the app offers a one-time download (~180 MB) of the AI model.
    - **Molar mass:** only needed for concentrations in mg/mL. Filled in automatically from CDXML,
      otherwise enter it by hand. Without it the tool reports the specific absorption coefficient

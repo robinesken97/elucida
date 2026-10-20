@@ -383,6 +383,21 @@ TEXTS = {
     "ov_same_level": ("Gleiche Stapelebene wie die Kurve darüber", "Same stacking level as the curve above"),
     "ov_same_level_tip": ("z. B. TD-DFT direkt unter der zugehörigen Messung",
                           "e.g. TD-DFT directly with its measurement"),
+    # ---- Farbe der Lösung ---------------------------------------------------
+    "color_show": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),
+    "color_tip": ("Aus dem Spektrum berechnet: Transmission 10^(−A) unter Tageslicht, CIE-1931-Farbmetrik → sRGB.\n"
+                  "c und d frei wählbar (Lambert-Beer, Standard: höchste gemessene Konzentration in 1 cm).\n"
+                  "Fluoreszenz und Streuung werden nicht berücksichtigt; Bildschirmfarben sind nicht kalibriert.\n"
+                  "Nur Anzeige, erscheint nicht in der Abbildung.",
+                  "Calculated from the spectrum: transmission 10^(−A) under daylight, CIE 1931 colorimetry → sRGB.\n"
+                  "c and d can be chosen freely (Beer–Lambert; default: highest measured concentration in 1 cm).\n"
+                  "Fluorescence and scattering are ignored; screen colours are not calibrated.\n"
+                  "Display only, not part of the figure."),
+    "color_info": ("{hex}  (c = {c} {unit}, d = {d} cm, Tageslicht)", "{hex}  (c = {c} {unit}, d = {d} cm, daylight)"),
+    "color_partial": ("⚠ Spektrum deckt nur {p} % von 380–780 nm ab – Rest als farblos gerechnet.",
+                      "⚠ Spectrum covers only {p} % of 380–780 nm – the rest is treated as colourless."),
+    "color_gamut": ("Sehr gesättigte Farbe: außerhalb des Bildschirm-Farbraums (sRGB), angenähert.",
+                    "Very saturated colour: outside the screen gamut (sRGB), approximated."),
     # ---- Hover-Anzeige -----------------------------------------------------
     "hover_lam": ("λ = {lam:.1f} nm", "λ = {lam:.1f} nm"),
     "hover_abs": ("λ = {lam:.1f} nm    A = {a:.4f}    ({name})   –   Doppelklick: Bande hinzufügen/entfernen",

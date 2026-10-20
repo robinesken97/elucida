@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 1.8.0 – 2026-10-20
+
+### Added
+- ε tab: optional **predicted colour in solution** below the cuvette photo, calculated from the spectrum
+  (transmission under daylight, CIE 1931 colorimetry → sRGB). Concentration and path length can be chosen
+  (Beer–Lambert). Display only, not part of the figure.
+
 ## 1.7.0 – 2026-10-14
 
 ### Added

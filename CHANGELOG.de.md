@@ -2,6 +2,13 @@
 
 # Änderungen
 
+## 1.8.0 – 20.10.2026
+
+### Neu
+- ε-Tab: optional **vorhergesagte Farbe in Lösung** unter dem Küvettenfoto, aus dem Spektrum berechnet
+  (Transmission unter Tageslicht, CIE-1931-Farbmetrik → sRGB). Konzentration und Schichtdicke wählbar
+  (Lambert-Beer). Nur Anzeige, nicht in der Abbildung.
+
 ## 1.7.0 – 14.10.2026
 
 ### Neu

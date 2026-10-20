@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -47,6 +47,7 @@ import uvvis_tabs  # noqa: E402
 import uvvis_project as PRJ  # noqa: E402
 import uvvis_report as REPORT  # noqa: E402
 import uvvis_update as UPD  # noqa: E402
+import uvvis_color as COLOR  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -121,7 +122,7 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
                 "fmt_pdf": True, "fmt_svg": True, "fmt_png": True,
                 "x_auto": True, "x_min": 200.0, "x_max": 1100.0,
                 "bands_add": True, "shoulders": False, "show_excl": False, "inset": True,
-                "mark_sh": False, "min_r2": 0.98}
+                "mark_sh": False, "min_r2": 0.98, "color_show": False, "color_d": 1.0}
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg/mL"), ("M", "M")]
 
@@ -479,6 +480,30 @@ class MainWindow(QMainWindow):
         self.lbl_thumb = QLabel()
         self.lbl_thumb.setAlignment(Qt.AlignCenter)
         f.addRow("", self.lbl_thumb)
+        # Farbe der Lösung aus dem Spektrum (nur Anzeige, nie in der Abbildung)
+        self.cb_color = QCheckBox(T("color_show"))
+        self.cb_color.setToolTip(T("color_tip"))
+        self.cb_color.toggled.connect(self.color_settings_changed)
+        f.addRow(self.cb_color)
+        row = QHBoxLayout()
+        self.sp_color_c = QDoubleSpinBox(decimals=4, minimum=0.0001, maximum=1e6, singleStep=0.1)
+        self.sp_color_d = QDoubleSpinBox(decimals=2, minimum=0.01, maximum=100, singleStep=0.1, suffix=" cm")
+        for w_ in (QLabel("c"), self.sp_color_c, QLabel("d"), self.sp_color_d):
+            row.addWidget(w_)
+        self.w_color_cd = QWidget()
+        self.w_color_cd.setLayout(row)
+        row.setContentsMargins(0, 0, 0, 0)
+        f.addRow("", self.w_color_cd)
+        for sp in (self.sp_color_c, self.sp_color_d):
+            sp.valueChanged.connect(self.color_settings_changed)
+        self.lbl_color = QLabel()
+        self.lbl_color.setFixedHeight(36)
+        self.lbl_color_info = QLabel()
+        self.lbl_color_info.setWordWrap(True)
+        self.lbl_color_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        f.addRow("", self.lbl_color)
+        f.addRow("", self.lbl_color_info)
+        self._color_spectra = None
         lv.addWidget(g)
 
         g = QGroupBox(T("grp_eval"))
@@ -670,7 +695,10 @@ class MainWindow(QMainWindow):
         manual = gl["baseline"] == "manual"
         self.sp_bla.setEnabled(manual)
         self.sp_blb.setEnabled(manual)
+        self.cb_color.setChecked(gl.get("color_show", False))
+        self.sp_color_d.setValue(gl.get("color_d", 1.0))
         self._loading = False
+        self.update_color()
 
     def collect_globals(self):
         self.glob.update(path_length=self.sp_d.value(), cutoff=self.sp_cut.value(),
@@ -874,7 +902,8 @@ class MainWindow(QMainWindow):
         """Gesamter Zustand aller Tabs (serialisierbar) – für Projektdatei und Undo."""
         if hasattr(self, "sp_d"):
             self.collect_globals()
-        keys = ("mw", "structure", "photo", "bg", "layout", "struct_w", "photo_w", "band_cutoff", "band_hidden")
+        keys = ("mw", "structure", "photo", "bg", "layout", "struct_w", "photo_w", "band_cutoff", "band_hidden",
+                "color_c")
         return {"eps": {"files": list(self.csv_paths), "glob": dict(self.glob), "conc": self.conc,
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
@@ -1384,6 +1413,49 @@ class MainWindow(QMainWindow):
         core.apply_text_format(cfg, self.text_fmt)
         return cfg
 
+    # ------------------------------------------------------------ Farbe der Lösung
+    def color_settings_changed(self, *_):
+        if self._loading:
+            return
+        self.glob.update(color_show=self.cb_color.isChecked(), color_d=self.sp_color_d.value())
+        st = self.series.get(self.current)
+        if st is not None and self.sender() is self.sp_color_c:    # nur echte Eingabe merken
+            st["color_c"] = self.sp_color_c.value()
+        self.update_color()
+        self.push_undo()
+
+    def update_color(self):
+        """Farbfeld aktualisieren: c (Serieneinheit) und d frei wählbar, Standard = höchste gemessene
+        Konzentration in 1 cm."""
+        on = bool(self.glob.get("color_show"))
+        for w_ in (self.w_color_cd, self.lbl_color, self.lbl_color_info):
+            w_.setVisible(on)
+        if not on or not self._color_spectra or self.current not in self.series:
+            return
+        spectra, cfg = self._color_spectra
+        if not spectra:
+            return
+        st = self.series[self.current]
+        unit = cfg["conc_unit"].replace("uM", "µM")
+        c = st.get("color_c") or max(s_["c"] for s_ in spectra)
+        d = self.glob.get("color_d", 1.0)
+        loading, self._loading = self._loading, True
+        self.sp_color_c.setSuffix(f" {unit}")
+        self.sp_color_c.setValue(c)
+        self.sp_color_d.setValue(d)
+        self._loading = loading
+        a, covered = COLOR.solution_absorbance(spectra, c, d, cfg["path_length_cm"], cfg["max_abs_fit"])
+        rgb, out_of_gamut = COLOR.absorbance_to_rgb(a)
+        hx = COLOR.to_hex(rgb)
+        self.lbl_color.setStyleSheet(f"background: {hx}; border: 1px solid #888; border-radius: 4px;")
+        info = T("color_info", hex=hx, c=f"{c:g}", unit=unit, d=f"{d:g}")
+        if covered < 0.95:
+            info += "\n" + T("color_partial", p=round(100 * covered))
+        if out_of_gamut:
+            info += "\n" + T("color_gamut")
+        self.lbl_color_info.setText(info)
+        self.lbl_color_info.setStyleSheet("color: #d9534f;" if covered < 0.95 else "color: gray;")
+
     def show_hover(self, txt):
         if txt:
             self.statusBar().showMessage(txt)
@@ -1449,6 +1521,8 @@ class MainWindow(QMainWindow):
             self.sync_image_sizes(self.F.current_layout())
             self.canvas.draw_idle()
             self.fill_table(results, cfg2)
+            self._color_spectra = (spectra, cfg2)
+            self.update_color()
             self._last = (cfg2, results)
             self.push_undo()
         except Exception as e:
@@ -2161,6 +2235,30 @@ def selftest(outdir, with_isnet=False):
         assert w.glob["bands"] == "", w.glob["bands"]
         w.render()
         report.append("hover readout + band picking: OK")
+
+        # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
+        L_ = COLOR.LAM
+        assert COLOR.to_hex(COLOR.absorbance_to_rgb(0 * L_)[0]) == "#FFFFFF"
+        assert COLOR.to_hex(COLOR.absorbance_to_rgb(0 * L_ + 0.3)[0]) == "#BCBCBC"     # T = 50 % -> sRGB 188
+        r_, g_, b_ = COLOR.absorbance_to_rgb(np.exp(-0.5 * ((L_ - 450) / 30) ** 2))[0]
+        assert r_ > 0.9 and g_ > 0.9 and b_ < 0.5, (r_, g_, b_)                        # absorbiert Blau -> Gelb
+        w.glob.update(color_show=True, color_d=1.0)
+        w.series["TEST-A"].pop("color_c", None)
+        w.apply_globals()
+        w.render()
+        assert w.lbl_color.isVisibleTo(w) and "#" in w.lbl_color_info.text(), w.lbl_color_info.text()
+        hx1 = w.lbl_color_info.text().split()[0]
+        c_max = max(s_["c"] for s_ in w.groups["TEST-A"])
+        assert f"c = {c_max:g}" in w.lbl_color_info.text(), w.lbl_color_info.text()
+        w.sp_color_c.setValue(4 * c_max)                    # konzentrierter -> dunkler
+        hx2 = w.lbl_color_info.text().split()[0]
+        lum = lambda h: sum(int(h[i:i + 2], 16) for i in (1, 3, 5))
+        assert lum(hx2) < lum(hx1) and w.series["TEST-A"]["color_c"] == 4 * c_max, (hx1, hx2)
+        w.glob["color_show"] = False
+        w.series["TEST-A"].pop("color_c", None)
+        w.apply_globals()
+        assert not w.lbl_color.isVisibleTo(w)
+        report.append("solution colour: OK")
 
         # Update-Prüfung (ohne Netz: Versionsvergleich, API-Antwort, Meldungstext)
         assert UPD.parse_version("v1.10.0") > UPD.parse_version("1.9.9") and UPD.parse_version("x") == ()
