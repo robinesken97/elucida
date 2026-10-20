@@ -89,6 +89,12 @@ On Windows, always keep the whole `UVVisTool` folder together. The `.exe` does n
 6. **Export:** File → Export (or the button). This writes the chosen formats (PDF/SVG/PNG),
    `<series>_results.csv` and the Excel report for **all** series into the project (see below).
 
+## Appearance
+
+The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently.
+Rarely used options in the ε tab are collapsed; a section header in bold with **"(changed)"** means that a value
+there differs from the default (e.g. min. R² for the figure). The figures are not affected by the theme.
+
 ## Projects, export, undo
 
 Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the

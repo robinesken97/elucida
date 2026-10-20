@@ -2,6 +2,17 @@
 
 # Changelog
 
+## 1.15.0 – 2026-10-21
+
+### Changed
+- **New look:** uniform style on Windows, macOS and Linux with a light and a dark theme; by default it follows the
+  system, switch under **Format → Appearance**. The figures and exports are unchanged.
+- All tabs: aligned forms, the left column is no longer cut off, **Export** stays visible at the bottom, and an
+  empty tab shows a clear placeholder instead of a blank figure.
+- ε tab: groups as cards; rarely used options (image sizes, min. points/R², shoulders, inset, formats) are
+  collapsible and marked **"(changed)"** when they differ from the default.
+- Toolbar (new/open/save project, undo/redo), icons in menus and list buttons.
+
 ## 1.14.0 – 2026-10-20
 
 ### Added

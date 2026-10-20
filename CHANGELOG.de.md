@@ -2,6 +2,18 @@
 
 # Änderungen
 
+## 1.15.0 – 21.10.2026
+
+### Geändert
+- **Neues Aussehen:** einheitlicher Stil unter Windows, macOS und Linux mit hellem und dunklem Erscheinungsbild;
+  standardmäßig wie das System, umschaltbar unter **Format → Erscheinungsbild**. Abbildungen und Exporte bleiben
+  unverändert.
+- Alle Tabs: ausgerichtete Formulare, die linke Spalte wird nicht mehr abgeschnitten, **Exportieren** bleibt unten
+  sichtbar, ein leerer Tab zeigt einen klaren Hinweis statt einer weißen Abbildung.
+- ε-Tab: Gruppen als Karten; selten gebrauchte Optionen (Bildgrößen, min. Punkte/R², Schultern, Inset, Formate)
+  sind einklappbar und werden mit **„(geändert)“** markiert, wenn sie vom Standard abweichen.
+- Werkzeugleiste (Projekt neu/öffnen/speichern, Rückgängig/Wiederholen), Symbole in Menüs und Listenknöpfen.
+
 ## 1.14.0 – 20.10.2026
 
 ### Neu
