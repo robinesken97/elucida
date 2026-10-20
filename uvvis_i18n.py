@@ -584,6 +584,49 @@ TEXTS = {
     "epr_sum": ("Summe", "sum"),
     "epr_residual": ("Rest", "residual"),
     "epr_fractions": ("{name}: Anteile (Doppelintegral) {parts}", "{name}: fractions (double integral) {parts}"),
+    "epr_ref_freq": ("Feld auf Frequenz skalieren", "Scale field to frequency"),
+    "epr_ref_freq_tip": ("B·ν_ref/ν: Spektren mit leicht unterschiedlicher Mikrowellenfrequenz vergleichbar machen\n"
+                         "(z. B. Temperaturserien; im MATLAB-Skript 9,3 GHz).",
+                         "B·ν_ref/ν: makes spectra with slightly different microwave frequency comparable\n"
+                         "(e.g. temperature series; 9.3 GHz in the MATLAB script)."),
+    "epr_T_offset": ("T-Korrektur", "T correction"),
+    "epr_T_offset_tip": ("Wird zur Temperatur aus der Datei addiert (Sensorkalibrierung; im MATLAB-Skript −1,5 K).",
+                         "Added to the temperature from the file (sensor calibration; −1.5 K in the MATLAB script)."),
+    "epr_int_gauss": ("Gauß-Fit an Merkmal", "Gaussian fit to feature"),
+    "epr_int_method_tip": ("Doppelintegral: Spinmenge. Peak-zu-Peak: einfach, linienbreitenabhängig. Gauß-Fit: Gauß + Gerade an ein\n"
+                           "Merkmal im Feldfenster, Intensität = |Amplitude| (wie das MATLAB-Skript, z. B. X-Merkmal bei 487 mT).",
+                           "Double integral: spin amount. Peak-to-peak: simple, depends on linewidth. Gaussian fit: Gaussian + line\n"
+                           "fitted to a feature in the field window, intensity = |amplitude| (like the MATLAB script, e.g. X feature at 487 mT)."),
+    "epr_int_center": ("Merkmal bei (Gauß-Fit)", "Feature at (Gaussian fit)"),
+    "epr_kin_fit": ("Zerfall fitten (Arrhenius, konstante Heizrate)", "Fit decay (Arrhenius, constant heating rate)"),
+    "epr_kin_tip": ("I(T) = exp(−A·∫exp(−E_a/RT)/β dT), erste Ordnung; Heizrate β aus mittlerem T- und Zeitschritt.\n"
+                    "Intensität vorher min-max normiert (wie im MATLAB-Skript); nur mit x-Achse Temperatur.\n"
+                    "Die gepunkteten Grenzen setzen beide Intervallenden von E_a und ln A ein (wie im Skript) – wegen der\n"
+                    "starken Kopplung liegen sie fast auf der Kurve und sind kein Unsicherheitsband der Kurve.",
+                    "I(T) = exp(−A·∫exp(−E_a/RT)/β dT), first order; heating rate β from mean T and time step.\n"
+                    "Intensity min–max normalised first (like the MATLAB script); only with temperature as x axis.\n"
+                    "The dotted limits insert both interval ends of E_a and ln A (as in the script) – because of the strong\n"
+                    "coupling they lie almost on the curve and are not an uncertainty band of the curve."),
+    "epr_kin_script": ("wie Skript (√|r|)", "as script (√|r|)"),
+    "epr_kin_lsq": ("kleinste Quadrate", "least squares"),
+    "epr_kin_norm_tip": ("„wie Skript“: lsqnonlin auf √|Modell − Messung| (L1-Norm), Intervall formal aus der Jacobi-Matrix –\n"
+                         "reproduziert die bisherigen Zahlen, unterschätzt aber die Unsicherheit stark.\n"
+                         "„kleinste Quadrate“: übliche Kovarianz s²·(JᵀJ)⁻¹ mit t-Quantil – belastbareres Intervall.\n"
+                         "E_a und ln A sind fast vollständig korreliert (Kompensationseffekt).",
+                         "'as script': lsqnonlin on √|model − data| (L1 norm), interval formally from the Jacobian –\n"
+                         "reproduces previous numbers but strongly underestimates the uncertainty.\n"
+                         "'least squares': standard covariance s²·(JᵀJ)⁻¹ with t quantile – more reliable interval.\n"
+                         "E_a and ln A are almost completely correlated (compensation effect)."),
+    "epr_kin_data": ("Messung", "data"),
+    "epr_kin_fitcurve": ("Fit", "fit"),
+    "epr_kin_band": ("95-%-Grenzen", "95 % limits"),
+    "epr_kin_result": ("E_a = {Ea} kJ/mol = {kcal} kcal/mol (95 %: {lo}–{hi}), A = {A} s⁻¹, β = {beta} K/min, "
+                       "Korrelation E_a/ln A = {corr} [{how}]",
+                       "E_a = {Ea} kJ/mol = {kcal} kcal/mol (95 %: {lo}–{hi}), A = {A} s⁻¹, β = {beta} K/min, "
+                       "correlation E_a/ln A = {corr} [{how}]"),
+    "epr_gauss_edge": ("⚠ {n} Spektren: Gauß-Zentrum am Rand des Messbereichs – dort kein klares Merkmal (Rauschen).",
+                       "⚠ {n} spectra: Gaussian centre at the edge of the measured range – no clear feature there (noise)."),
+    "epr_kin_need_T": ("Zerfallsfit nur mit x-Achse Temperatur.", "Decay fit only with temperature as x axis."),
     # ---- Farbe der Lösung ---------------------------------------------------
     "color_show": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),
     "color_tip": ("Aus dem Spektrum berechnet: Transmission 10^(−A) unter Tageslicht, CIE-1931-Farbmetrik → sRGB.\n"

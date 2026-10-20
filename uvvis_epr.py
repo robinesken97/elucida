@@ -245,6 +245,144 @@ def peak_to_peak(B, I, window=None):
     return float(np.nanmax(I) - np.nanmin(I)) if np.isfinite(I).any() else float("nan")
 
 
+def gauss_lin_fit(B, I, center, c_lo, c_hi, width=8.5, w_lo=3.0, w_hi=50.0, max_iter=200):
+    """Gauß + lineare Basislinie an ein Merkmal (wie im MATLAB-Skript der Arbeitsgruppe):
+    y = p1·exp(−(x − p2)²/p3) + p4·x + p5, Grenzen c_lo ≤ p2 ≤ c_hi, w_lo ≤ p3 ≤ w_hi (mT²).
+    Startwerte: Gerade durch je 10 Randpunkte, Amplitude = Minimum − Randmittel. -> (p, Modellwerte).
+    Das Zentrum bleibt innerhalb der Messpunkte (3 % Abstand zum Rand): Ein Gauß außerhalb der Daten hätte eine
+    beliebige Amplitude (bei Spektren ohne Signal sonst Ausreißer)."""
+    ok = np.isfinite(I)
+    B, I = np.asarray(B, float)[ok], np.asarray(I, float)[ok]
+    margin = 0.03 * float(np.ptp(B))
+    c_lo, c_hi = max(c_lo, float(B.min()) + margin), min(c_hi, float(B.max()) - margin)
+    center = min(max(center, c_lo), c_hi)
+    if len(B) > 4000:
+        f = int(np.ceil(len(B) / 4000))
+        B, I = B[::f], I[::f]
+    xe = np.r_[B[:10], B[-10:]]
+    ye = np.r_[I[:10], I[-10:]]
+    m, b0 = np.polyfit(xe, ye, 1)
+    amp = float(I.min() - np.mean([I[:10].mean(), I[-10:].mean()]))
+    p = np.array([amp, center, width, m, b0], float)
+    lo = np.array([-np.inf, c_lo, w_lo, -np.inf, -np.inf])
+    hi = np.array([np.inf, c_hi, w_hi, np.inf, np.inf])
+
+    def model(q, x=B):
+        return q[0] * np.exp(-((x - q[1]) ** 2) / q[2]) + q[3] * x + q[4]
+    r = I - model(p)
+    cost, lam = float(r @ r), 1e-3
+    scale = np.maximum(np.abs(p), 1e-6)
+    for _ in range(max_iter):
+        J = np.empty((len(B), 5))
+        for k in range(5):
+            dp = np.zeros(5)
+            dp[k] = 1e-6 * scale[k]
+            J[:, k] = (model(np.clip(p + dp, lo, hi)) - model(np.clip(p - dp, lo, hi))) / (2 * dp[k])
+        A_ = J.T @ J
+        g_ = J.T @ r
+        improved = False
+        for _ in range(10):
+            try:
+                step = np.linalg.solve(A_ + lam * np.diag(np.diag(A_) + 1e-12), g_)
+            except np.linalg.LinAlgError:
+                break
+            q = np.clip(p + step, lo, hi)
+            r2 = I - model(q)
+            c2 = float(r2 @ r2)
+            if c2 < cost:
+                p, r, cost, lam, improved = q, r2, c2, lam / 3, True
+                break
+            lam *= 5
+        if not improved or np.all(np.abs(step) < 1e-9 * scale):
+            break
+    return p, model(p)
+
+
+R_GAS = 8.314462618                    # J mol⁻¹ K⁻¹ (wie EasySpin molgas)
+
+
+def decay_model(T, A, Ea, beta):
+    """Zerfall erster Ordnung bei konstanter Heizrate β (K/s): I(T) = exp(−A·∫ exp(−Ea/RT)/β dT), I(T₀) = 1
+    (Integral per Trapezregel über die gegebenen Temperaturen, wie cumtrapz im MATLAB-Skript)."""
+    T = np.asarray(T, float)
+    f = np.exp(-Ea / (R_GAS * T)) / beta
+    integral = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(T))])
+    return np.exp(-A * integral)
+
+
+def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script"):
+    """E_a und ln A. norm='script': wie das MATLAB-Skript (lsqnonlin auf sqrt(|Modell − Messung|), also L1-Norm;
+    Intervalle formal aus inv(JᵀJ)·resnorm/n – unterschätzt die Unsicherheit). norm='lsq': kleinste Quadrate
+    mit der üblichen Kovarianz s²·inv(JᵀJ), s² = SSR/(n − 2), t-Quantil.
+    -> dict(Ea, lnA, A, ci_Ea, ci_lnA, resnorm, corr)."""
+    T, I = np.asarray(T, float), np.asarray(I, float)
+
+    def res(q):
+        d = decay_model(T, np.exp(q[1]), q[0], beta) - I
+        return np.sqrt(np.abs(d)) if norm == "script" else d
+    # Startwert per Raster: für jedes E_a wird ln A so gewählt, dass das Modell bei der gemessenen Halbwertstemperatur
+    # 0.5 ergibt (eindeutig). Umgeht die fast vollständige Korrelation E_a/ln A, an der ein direkter Start scheitert.
+    p = np.array(start, float)
+    below = np.flatnonzero(I <= 0.5)
+    if len(below) and below[0] > 0:
+        k = below[0]
+        T50 = float(np.interp(0.5, [I[k], I[k - 1]], [T[k], T[k - 1]]))
+        best = None
+        for Ea in np.arange(5e3, 300e3, 500.0):
+            Tg = np.linspace(T[0], T50, 200)
+            fg = np.exp(-Ea / (R_GAS * Tg)) / beta
+            integ = float(np.sum(0.5 * (fg[1:] + fg[:-1]) * np.diff(Tg)))
+            if integ <= 0 or not np.isfinite(integ):
+                continue
+            q = np.array([Ea, np.log(np.log(2.0) / integ)])
+            with np.errstate(over="ignore", invalid="ignore"):
+                c = float(np.nansum(res(q) ** 2))
+            if best is None or c < best[0]:
+                best = (c, q)
+        if best is not None:
+            p = best[1]
+    with np.errstate(over="ignore", invalid="ignore"):
+        r = res(p)
+    cost, lam = float(r @ r), 1e-3
+    h = np.array([10.0, 1e-3])
+    for _ in range(max_iter):
+        J = np.column_stack([(res(p + dv) - res(p - dv)) / (2 * dv[k])
+                             for k, dv in enumerate((np.array([h[0], 0]), np.array([0, h[1]])))])
+        A_ = J.T @ J
+        g_ = J.T @ r
+        improved = False
+        for _ in range(12):
+            try:
+                step = np.linalg.solve(A_ + lam * np.diag(np.diag(A_) + 1e-12), -g_)
+            except np.linalg.LinAlgError:
+                break
+            r2 = res(p + step)
+            c2 = float(r2 @ r2)
+            if c2 < cost:
+                p, r, cost, lam, improved = p + step, r2, c2, lam / 3, True
+                break
+            lam *= 5
+        if not improved or (abs(step[0]) < 1e-3 and abs(step[1]) < 1e-8):
+            break
+    J = np.column_stack([(res(p + dv) - res(p - dv)) / (2 * dv[k])
+                         for k, dv in enumerate((np.array([h[0], 0]), np.array([0, h[1]])))])
+    try:
+        if norm == "script":
+            cov = np.linalg.inv(J.T @ J) * cost / len(I)
+            z = 1.96
+        else:
+            import uvvis_core as core                    # eigenes t-Quantil wie im ε-Fit
+            cov = np.linalg.inv(J.T @ J) * cost / max(1, len(I) - 2)
+            z = core.t_quantile(0.975, max(1, len(I) - 2))
+        se = np.sqrt(np.abs(np.diag(cov)))
+        corr = float(cov[0, 1] / (se[0] * se[1])) if se.all() else float("nan")
+    except np.linalg.LinAlgError:
+        se, z, corr = np.array([np.nan, np.nan]), 1.96, float("nan")
+    return {"Ea": float(p[0]), "lnA": float(p[1]), "A": float(np.exp(p[1])),
+            "ci_Ea": (float(p[0] - z * se[0]), float(p[0] + z * se[0])),
+            "ci_lnA": (float(p[1] - z * se[1]), float(p[1] + z * se[1])), "resnorm": cost, "corr": corr}
+
+
 def measured_at(meta):
     """Aufnahmezeit aus DATE/TIME (BES3T: MM/DD/YY) -> datetime oder None."""
     import datetime as dt
@@ -466,7 +604,8 @@ class EPRTab(TABS.FigureTab):
                          bl_order=1, bl_edge=5.0, bl_regions="", exclude="", smooth=0.0, normalize=True,
                          stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers",
                          mode="spectra", int_window="", int_method="double", int_x="time", int_curie=False,
-                         show_sum=True, show_residual=False, calib_uid=None, calib_g=2.0055)
+                         show_sum=True, show_residual=False, calib_uid=None, calib_g=2.0055,
+                         ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq")
 
     def build_controls(self):
         st = self.st
@@ -596,6 +735,18 @@ class EPRTab(TABS.FigureTab):
         self.sp_smooth.setSpecialValueText(T("off"))
         f.addRow(T("epr_smooth"), self.sp_smooth)
         row = QHBoxLayout()
+        self.sp_ref_freq = QDoubleSpinBox(decimals=4, minimum=0, maximum=500, singleStep=0.1, value=st["ref_freq"],
+                                          suffix=" GHz")
+        self.sp_ref_freq.setSpecialValueText(T("off"))
+        self.sp_ref_freq.setToolTip(T("epr_ref_freq_tip"))
+        self.sp_T_offset = QDoubleSpinBox(decimals=2, minimum=-50, maximum=50, singleStep=0.5, value=st["T_offset"],
+                                          suffix=" K")
+        self.sp_T_offset.setToolTip(T("epr_T_offset_tip"))
+        row.addWidget(self.sp_ref_freq)
+        row.addWidget(QLabel(T("epr_T_offset")))
+        row.addWidget(self.sp_T_offset)
+        f.addRow(T("epr_ref_freq"), row)
+        row = QHBoxLayout()
         self.cmb_calib = QComboBox()
         self.cmb_calib.setToolTip(T("epr_calib_tip"))
         self.sp_calib_g = QDoubleSpinBox(decimals=5, minimum=1.0, maximum=10.0, singleStep=0.0001, value=st["calib_g"])
@@ -644,8 +795,9 @@ class EPRTab(TABS.FigureTab):
         f.addRow(T("epr_int_window"), self.ed_int_window)
         row = QHBoxLayout()
         self.cmb_int_method = QComboBox()
-        for key in ("double", "pp"):
+        for key in ("double", "pp", "gauss"):
             self.cmb_int_method.addItem(T("epr_int_" + key), key)
+        self.cmb_int_method.setToolTip(T("epr_int_method_tip"))
         self.cmb_int_method.setCurrentIndex(max(0, self.cmb_int_method.findData(st["int_method"])))
         self.cmb_int_x = QComboBox()
         for key in ("time", "T", "index"):
@@ -655,6 +807,22 @@ class EPRTab(TABS.FigureTab):
         row.addWidget(QLabel(T("epr_against")))
         row.addWidget(self.cmb_int_x, 1)
         f.addRow(T("epr_int_method"), row)
+        self.sp_int_center = QDoubleSpinBox(decimals=1, minimum=0, maximum=20000, singleStep=0.5,
+                                            value=st["int_center"], suffix=" mT")
+        self.sp_int_center.setSpecialValueText(T("auto"))
+        f.addRow(T("epr_int_center"), self.sp_int_center)
+        row = QHBoxLayout()
+        self.cb_kin = QCheckBox(T("epr_kin_fit"))
+        self.cb_kin.setToolTip(T("epr_kin_tip"))
+        self.cb_kin.setChecked(st["kin_fit"])
+        self.cmb_kin_norm = QComboBox()
+        for key in ("lsq", "script"):                     # Standard: kleinste Quadrate (belastbares Intervall)
+            self.cmb_kin_norm.addItem(T("epr_kin_" + key), key)
+        self.cmb_kin_norm.setCurrentIndex(max(0, self.cmb_kin_norm.findData(st["kin_norm"])))
+        self.cmb_kin_norm.setToolTip(T("epr_kin_norm_tip"))
+        row.addWidget(self.cb_kin)
+        row.addWidget(self.cmb_kin_norm, 1)
+        f.addRow(row)
         self.cb_curie = QCheckBox(T("epr_curie"))
         self.cb_curie.setToolTip(T("epr_curie_tip"))
         self.cb_curie.setChecked(st["int_curie"])
@@ -682,6 +850,10 @@ class EPRTab(TABS.FigureTab):
             w_.toggled.connect(self.changed)
         self.cmb_calib.currentIndexChanged.connect(self.changed)
         self.sp_calib_g.valueChanged.connect(self.changed)
+        for w_ in (self.sp_ref_freq, self.sp_T_offset, self.sp_int_center):
+            w_.valueChanged.connect(self.changed)
+        self.cb_kin.toggled.connect(self.changed)
+        self.cmb_kin_norm.currentIndexChanged.connect(self.changed)
         for w_ in (self.cmb_unit, self.cmb_yaxis, self.cmb_mode, self.cmb_int_method, self.cmb_int_x):
             w_.currentIndexChanged.connect(self.changed)
         for ed in (self.ed_bl_regions, self.ed_exclude, self.ed_labels, self.ed_int_window):
@@ -699,7 +871,10 @@ class EPRTab(TABS.FigureTab):
                        int_window=self.ed_int_window.text().strip(), int_method=self.cmb_int_method.currentData(),
                        int_x=self.cmb_int_x.currentData(), int_curie=self.cb_curie.isChecked(),
                        show_sum=self.cb_sum.isChecked(), show_residual=self.cb_res.isChecked(),
-                       calib_uid=self.cmb_calib.currentData(), calib_g=self.sp_calib_g.value())
+                       calib_uid=self.cmb_calib.currentData(), calib_g=self.sp_calib_g.value(),
+                       ref_freq=self.sp_ref_freq.value(), T_offset=self.sp_T_offset.value(),
+                       int_center=self.sp_int_center.value(), kin_fit=self.cb_kin.isChecked(),
+                       kin_norm=self.cmb_kin_norm.currentData())
 
     # -- Einträge ------------------------------------------------------------------
     def data(self, path):
@@ -1006,6 +1181,9 @@ class EPRTab(TABS.FigureTab):
         s = self.spectrum(e)
         B, I = s["B"].astype(float), s["I"].astype(float).copy()
         if e["kind"] == "exp":
+            mw = s["meta"].get("mw_GHz")
+            if st.get("ref_freq") and mw:                  # Feld auf Referenzfrequenz skalieren (B·ν_ref/ν)
+                B = B * st["ref_freq"] / mw
             dB, calib_target = self.calibration_shift()
             if dB and e["uid"] != calib_target:
                 B = B - dB                                 # Feldkorrektur aus der Referenz (z. B. TEMPO)
@@ -1139,17 +1317,34 @@ class EPRTab(TABS.FigureTab):
         st, cache = self.st, {}
         win = (ranges(st["int_window"]) or [None])[0]
         xs, ys, used = [], [], []
+        self._edge_hits = 0
         # t = 0: frühestes Spektrum im Tab (auch ausgeblendet, z. B. das Dunkelspektrum vor dem Bestrahlen)
         times = [measured_at(self.spectrum(x)["meta"]) for x in st["entries"] if x["kind"] == "exp"]
         t0 = min((t for t in times if t), default=None)
         for k, e in enumerate(entries):
             B, I = self.processed(e, cache, hide=False)
-            v = (double_integral(B, I, win) if st["int_method"] == "double" else peak_to_peak(B, I, win))
             meta = self.spectrum(e)["meta"]
-            if st["int_curie"] and meta.get("T_K"):
-                v *= meta["T_K"]
+            T_K = meta["T_K"] + st.get("T_offset", 0.0) if meta.get("T_K") else None
+            if st["int_method"] == "gauss":
+                Bw, Iw = (B, I) if not win else (B[(B >= win[0]) & (B <= win[1])], I[(B >= win[0]) & (B <= win[1])])
+                if len(Bw) < 30:
+                    continue
+                if st["int_curie"] and T_K:               # wie im Skript: erst ×T, dann fitten
+                    Iw = Iw * T_K
+                lo_, hi_ = (win if win else (float(Bw.min()), float(Bw.max())))
+                c0 = st.get("int_center") or float(Bw[np.nanargmax(np.abs(Iw - np.polyval(np.polyfit(
+                    np.r_[Bw[:10], Bw[-10:]], np.r_[Iw[:10], Iw[-10:]], 1), Bw)))])
+                pfit, _ = gauss_lin_fit(Bw, Iw, min(max(c0, lo_), hi_), lo_, hi_)
+                v = abs(float(pfit[0]))
+                span_ = float(np.ptp(Bw))
+                if min(pfit[1] - Bw.min(), Bw.max() - pfit[1]) < 0.035 * span_:
+                    self._edge_hits = getattr(self, "_edge_hits", 0) + 1
+            else:
+                v = (double_integral(B, I, win) if st["int_method"] == "double" else peak_to_peak(B, I, win))
+                if st["int_curie"] and T_K:
+                    v *= T_K
             if st["int_x"] == "T":
-                x = meta.get("T_K")
+                x = T_K
             elif st["int_x"] == "time":
                 t = measured_at(meta)
                 x = (t - t0).total_seconds() / 60.0 if (t and t0) else None
@@ -1160,6 +1355,8 @@ class EPRTab(TABS.FigureTab):
             xs.append(float(x))
             ys.append(float(v))
             used.append(e)
+            self._times = getattr(self, "_times", {})
+            self._times[e["uid"]] = measured_at(meta)
         xlabel = {"T": "T [K]", "time": "t [min]", "index": T("sec_index")}[st["int_x"]]
         return np.array(xs), np.array(ys), xlabel, used
 
@@ -1171,11 +1368,32 @@ class EPRTab(TABS.FigureTab):
         if len(x) == 0:
             self.lbl_info.setText(T("epr_int_none"))
             return None
-        if st["normalize"] and np.nanmax(np.abs(y)) > 0:
+        kin = st.get("kin_fit") and st["int_x"] == "T" and len(x) >= 5
+        if kin and np.ptp(y) > 0:
+            y = (y - y.min()) / np.ptp(y)                  # Min-Max wie im Skript (Modell: I(T₀) = 1 → 0)
+        elif st["normalize"] and np.nanmax(np.abs(y)) > 0:
             y = y / y[np.nanargmax(np.abs(y))]           # mit Vorzeichen: unabhängig von der Signalphase positiv
         cfg = self.base_cfg()
         o = np.argsort(x) if st["int_x"] != "index" else np.arange(len(x))
-        curves = [{"x": x[o], "y": y[o], "color": "#000000", "label": None, "ls": "-", "lw": 0.8, "marker": "o"}]
+        curves = [{"x": x[o], "y": y[o], "color": "#000000", "label": T("epr_kin_data") if kin else None,
+                   "ls": "-" if not kin else "none", "lw": 0.8, "marker": "o"}]
+        self.kin_result = None
+        if kin:
+            xs_, ys_ = x[o], y[o]
+            ts_ = [self._times.get(used[i]["uid"]) for i in o]
+            if all(ts_):
+                dt = np.mean([(b - a).total_seconds() for a, b in zip(ts_[:-1], ts_[1:])])
+                beta = float(np.mean(np.diff(xs_)) / dt) if dt else 0.0
+                if beta > 0:
+                    r = fit_decay(xs_, ys_, beta, norm=st.get("kin_norm", "script"))
+                    Tf = np.linspace(xs_.min(), xs_.max(), 200)
+                    curves.append({"x": Tf, "y": decay_model(Tf, r["A"], r["Ea"], beta), "color": "#1764e8",
+                                   "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
+                    for k_, lab in ((1, T("epr_kin_band")), (0, None)):
+                        curves.append({"x": Tf, "y": decay_model(Tf, np.exp(r["ci_lnA"][k_]), r["ci_Ea"][k_], beta),
+                                       "color": "#1764e8", "label": lab, "ls": ":", "lw": 0.9})
+                    self.kin_result = dict(r, beta=beta)
+            cfg["legend"] = True
         pad = 0.05 * (np.ptp(x) or 1.0)
         cfg["xlim"] = [float(x.min() - pad), float(x.max() + pad)] if st["x_auto"] else [st["x_min"], st["x_max"]]
         top = float(np.nanmax(y)) if len(y) else 1.0
@@ -1184,9 +1402,20 @@ class EPRTab(TABS.FigureTab):
         name = ("normalized " if st["normalize"] else "") + "EPR intensity" + (" (I × T)" if st["int_curie"] else "")
         cfg["ylabel"] = name + ("" if st["normalize"] else " [arb. u.]")
         cfg["y_axis"] = "numbers"
-        cfg["legend"] = False
+        cfg.setdefault("legend", False)
         self.series_values = list(zip(x[o], y[o], [used[i]["label"] for i in o]))
-        self.lbl_info.setText(T("epr_int_info", n=len(x), method=T("epr_int_" + st["int_method"])))
+        info = T("epr_int_info", n=len(x), method=T("epr_int_" + st["int_method"]))
+        r = self.kin_result
+        if r:
+            info += "\n" + T("epr_kin_result", Ea=f"{r['Ea'] / 1000:.1f}", kcal=f"{r['Ea'] / 4184:.2f}",
+                             lo=f"{r['ci_Ea'][0] / 4184:.2f}", hi=f"{r['ci_Ea'][1] / 4184:.2f}", A=f"{r['A']:.2e}",
+                             beta=f"{r['beta'] * 60:.3f}", corr=f"{r['corr']:.4f}",
+                             how=T("epr_kin_" + st.get("kin_norm", "script")))
+        elif st.get("kin_fit") and st["int_x"] != "T":
+            info += "\n" + T("epr_kin_need_T")
+        if getattr(self, "_edge_hits", 0):
+            info += "\n" + T("epr_gauss_edge", n=self._edge_hits)
+        self.lbl_info.setText(info)
         return cfg, curves, [], []
 
     def export_to(self, base: Path):
@@ -1224,6 +1453,12 @@ class EPRTab(TABS.FigureTab):
                 fh.write("x;intensity;spectrum\n")
                 for x, y, lab in self.series_values:
                     fh.write(f"{x:.6g};{y:.6g};{lab}\n")
+                r = getattr(self, "kin_result", None)
+                if r:
+                    fh.write(f"# Arrhenius decay at constant heating rate ({st.get('kin_norm', 'script')}): "
+                             f"Ea = {r['Ea']:.6g} J/mol [{r['ci_Ea'][0]:.6g}, {r['ci_Ea'][1]:.6g}], "
+                             f"lnA = {r['lnA']:.6g} [{r['ci_lnA'][0]:.6g}, {r['ci_lnA'][1]:.6g}], "
+                             f"beta = {r['beta']:.6g} K/s, corr(Ea, lnA) = {r['corr']:.4f}\n")
             files.append(p)
         return files
 

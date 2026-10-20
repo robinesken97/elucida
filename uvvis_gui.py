@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.14.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2515,6 +2515,35 @@ def selftest(outdir, with_isnet=False):
         assert all(f.exists() for f in files), files
         w.epr_state.update(entries=[], calib_uid=None, show_residual=False, bl_order=1)
         report.append("EPR S=1/2 fit, TEMPO calibration, multiple species: OK")
+
+        # EPR-Zerfall bei konstanter Heizrate: Gauß-Intensität eines Merkmals, Arrhenius-Fit (E_a = 50 kJ/mol, ln A = 45)
+        Ea_true, lnA_true = 50e3, 45.0
+        temps = np.arange(100.0, 135.01, 0.5)
+        beta_ = 0.5 / 120.0                                         # 0,5 K alle 2 min
+        I_true = EPRMOD.decay_model(temps, np.exp(lnA_true), Ea_true, beta_)
+        Bk = Bg                                                       # G, 440–510 mT
+        kin_entries = []
+        for j, (Tk, Ik) in enumerate(zip(temps, I_true)):
+            y = -2000.0 * Ik * np.exp(-((Bk / 10 - 487.0) ** 2) / 9.0) / Tk + 0.3 * (Bk - 4400) / 10
+            stem = f"temp{j:03d}"
+            hh, mm = divmod(2 * j, 60)
+            write_bes3t(stem, y, time=f"{12 + hh:02d}:{mm:02d}:00", temp=Tk)
+            ek = t_e._new("exp", str(eprdir / f"{stem}.dsc"))
+            kin_entries.append(ek)
+        w.epr_state.update(entries=kin_entries, mode="intensity", int_method="gauss", int_window="470-510",
+                           int_center=487.0, int_x="T", int_curie=True, ref_freq=0.0, T_offset=0.0, kin_fit=True,
+                           kin_norm="lsq", bl_order=-1, smooth=0.0, normalize=True, calib_uid=None)
+        t_e.fill_table()
+        files = w.epr_tab.export_to(out / "epr_decay")
+        r_ = t_e.kin_result
+        assert r_ and abs(r_["Ea"] - Ea_true) / Ea_true < 0.02 and abs(r_["lnA"] - lnA_true) < 1.0, r_
+        assert r_["ci_Ea"][0] < Ea_true < r_["ci_Ea"][1] and abs(r_["beta"] - beta_) < 1e-9, r_
+        w.epr_state["kin_norm"] = "script"
+        w.epr_tab.export_to(out / "epr_decay_script")
+        assert abs(t_e.kin_result["Ea"] - Ea_true) / Ea_true < 0.02, t_e.kin_result
+        assert "Arrhenius" in next(f for f in files if f.name.endswith("_intensity.csv")).read_text(encoding="utf-8-sig")
+        w.epr_state.update(entries=[], mode="spectra", kin_fit=False, int_method="double", int_window="", int_center=0.0)
+        report.append("EPR decay at constant heating rate (Arrhenius): OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM

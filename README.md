@@ -223,6 +223,12 @@ Compare several spectra in one figure, measured and calculated:
   peak-to-peak in a field window for every visible measurement (after dark spectrum and baseline), optionally
   × T (Curie), normalised; time counts from the earliest spectrum in the tab (e.g. the dark spectrum). "Use this
   dark spectrum for all measurements" sets the background for a whole series at once.
+- **Thermal decay at constant heating rate** (port of the group's MATLAB script): intensity per spectrum as
+  peak-to-peak, double integral or **Gaussian + line fitted to a feature** (e.g. the X feature at 487 mT), × T,
+  field scaled to a reference frequency (e.g. 9.3 GHz) and a temperature correction (e.g. −1.5 K); then
+  **E_a and A** from I(T) = exp(−A·∫exp(−E_a/RT)/β dT) with β from the mean temperature and time steps.
+  Objective least squares (default; reliable 95 % interval with t quantile) or "as script" (√|r|, for comparison
+  with old numbers – sensitive to the optimiser, its interval strongly underestimates the uncertainty). E_a and ln A are almost fully correlated.
 - **Export for EasySpin:** besides the figure, every measurement is written as a two-column text file (B in mT,
   intensity) in full resolution after dark spectrum, baseline and smoothing – without normalisation or hidden
   ranges – with `%` header lines documenting frequency, temperature and processing (`load(...)` in MATLAB, ready

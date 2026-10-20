@@ -2,6 +2,14 @@
 
 # Änderungen
 
+## 1.14.0 – 20.10.2026
+
+### Neu
+- EPR: **thermischer Zerfall bei konstanter Heizrate** – Arrhenius-Fit von E_a und A an die Intensität gegen die
+  Temperatur (Nachbau des MATLAB-Skripts der Gruppe); kleinste Quadrate mit belastbarem 95-%-Intervall (Standard) oder
+  „wie Skript“.
+- EPR: Intensität per **Gauß + Gerade an ein Merkmal**; Feld auf eine Referenzfrequenz skaliert; Temperaturkorrektur.
+
 ## 1.13.0 – 20.10.2026
 
 ### Neu

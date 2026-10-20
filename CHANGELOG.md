@@ -2,6 +2,14 @@
 
 # Changelog
 
+## 1.14.0 – 2026-10-20
+
+### Added
+- EPR: **thermal decay at constant heating rate** – Arrhenius fit of E_a and A to the intensity vs. temperature
+  (port of the group's MATLAB script); least squares with a reliable 95 % interval (default) or "as script".
+- EPR: intensity by **Gaussian + line fitted to a feature**; field scaled to a reference frequency; temperature
+  correction.
+
 ## 1.13.0 – 2026-10-20
 
 ### Added
