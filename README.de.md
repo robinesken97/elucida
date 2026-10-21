@@ -153,6 +153,13 @@ Molmasse behalten diese. Der Name steht im Fenstertitel.
   Bericht **eingebettete ChemDraw-Objekt** geprüft; ohne Verbindung im Projekt setzt **Verbindung aus dem MS-Bericht
   übernehmen** Name, Formel und Molmasse daraus (die Zeichnung ist dann eine RDKit-Ersatzzeichnung – für Abbildungen
   die eigene CDXML nehmen).
+- **HRMS aus Rohdaten:** alternativ (oder zusätzlich) den Bruker-**Messordner** (`.d`, z. B. timsTOF; Knopf oder
+  Drag & Drop) laden. Spectravolt liest die Linienspektren des Geräts selbst (ohne Bruker-Software, auch unter macOS)
+  und mittelt das Ion über den **LC-Peak** (automatisch: zusammenhängende Scans mit ≥ 50 % des Maximums, oder ein
+  gewählter RT-Bereich). found = intensitätsgewichtetes Mittel; Anzahl der Scans, Bereich der Einzelscans und ihre
+  Streuung (± mDa/ppm) stehen dabei, weil Einzelscans in der 4. Nachkommastelle abweichen können. Mit Bericht bleibt
+  dessen Wert vorgewählt, das Mittel aus den Rohdaten ist wählbar. Ins Projekt kommen nur `analysis.baf` und
+  `analysis.sqlite`.
 - **In Zwischenablage** behält Fettdruck, Hoch- und Tiefstellung beim Einfügen in Word. Der Export schreibt die
   Spektrenabbildung und `…_SI.txt` mit beiden Zeilen.
 

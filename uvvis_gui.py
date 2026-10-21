@@ -2055,12 +2055,15 @@ class MainWindow(QMainWindow):
             if PRJ.is_project(p):
                 self.open_project(p)
                 return
-        # IR + MS: OPUS-Dateien und MS-Berichte immer, PDF nur auf dem Tab IR + MS
-        irms = [p for p in files if IRMS.is_opus(p) or Path(p).suffix.lower() == ".docx"
+        # IR + MS: OPUS-Dateien, MS-Berichte und Bruker-.d-Ordner immer, PDF nur auf dem Tab IR + MS
+        irms = [p for p in files if IRMS.is_opus(p) or IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"
                 or (Path(p).suffix.lower() == ".pdf" and self.main_tabs.currentWidget() is self.irms_tab)]
         if irms and self.ensure_project():
             for p in irms:
-                (self.irms_tab.load_ms if Path(p).suffix.lower() == ".docx" else self.irms_tab.load_ir)(p)
+                if IRMS.is_bruker_d(p):
+                    self.irms_tab.load_raw(p)
+                else:
+                    (self.irms_tab.load_ms if Path(p).suffix.lower() == ".docx" else self.irms_tab.load_ir)(p)
             self.main_tabs.setCurrentWidget(self.irms_tab)
             files = [p for p in files if p not in irms]
             if not files:
@@ -3182,6 +3185,81 @@ def selftest(outdir, with_isnet=False):
         w.irms_state.update(ir_file=None, ir_pdf=None, ms_file=None, ir_off=[], with_int=False)
         w.compound = {}
         report.append("project compound + IR/HRMS lines: OK")
+
+        # Bruker-Rohdaten (.d): künstlicher LC-Lauf, m/z über die Umkehrung der Kalibrierung in Flugzeit-Indizes
+        import sqlite3 as _sq
+        ddir = irdir / "test.d"
+        ddir.mkdir(exist_ok=True)
+        cal_ = (24790.0, 0.2, 309.0, 158509.1, 2.54e-4, 0.0, -0.0011)   # Delay, Takt, c0, c1, c2, –, c6
+        def to_idx(m):
+            m1 = np.asarray(m, float) + cal_[6]
+            return (cal_[2] + np.sqrt(1e12 * m1 / cal_[3]) + cal_[4] * m1 - cal_[0]) / cal_[1]
+        calc_ = IRMS.ion("C18H20N2", "M+H")[2]
+        rts_ = np.arange(0.0, 120.0, 10.0)
+        offs_ = 1e-4 * np.array([3, -2, 4, -3, 2, 1, -1, 3, -4, 2, 0, 1])            # Streuung je Scan
+        amp_ = 1e5 * np.exp(-0.5 * ((rts_ - 60) / 12) ** 2)
+        baf_, rows_ = bytearray(b"\0" * 64), []
+        for i_, rt_ in enumerate(rts_):
+            mz_ = np.array([180.0634, calc_ + offs_[i_], calc_ + 1.00335, 400.1234])
+            in_ = np.array([5e3, amp_[i_], 0.2 * amp_[i_], 8e3], "<f4")
+            n_ = len(mz_)
+            body = (_st.pack("<4I", n_, 16, 16 + 8 * n_, 16 + 12 * n_) + to_idx(mz_).astype("<f8").tobytes()
+                    + in_.tobytes() + np.full(n_, 0.01, "<f4").tobytes())
+            head_ = bytearray(52)
+            _st.pack_into("<III", head_, 0, 52 + len(body), IRMS.BAF_LINE_MAGIC, 52)
+            rows_.append((i_ + 1, float(rt_), 1, (0x10 << 56) | len(baf_), 0))
+            baf_ += head_ + body
+        rows_.append((99, 61.0, 1, (0x10 << 56) | 64, 0))                            # MS2 -> wird übersprungen
+        (ddir / "analysis.baf").write_bytes(bytes(baf_))
+        (ddir / "readme.txt").write_text("nicht ins Projekt")
+        tf_ = _st.pack("<i7d", 10, *cal_)
+        tf_ += b"\0" * (112 - len(tf_))
+        (ddir / "analysis.sqlite").unlink(missing_ok=True)       # Selbsttest-Ordner kann wiederverwendet werden
+        con_ = _sq.connect(ddir / "analysis.sqlite")
+        con_.executescript("create table Properties (Key text, Value text); create table AcquisitionKeys "
+                           "(Id integer, Polarity integer); create table Spectra (Id integer, Rt real, TransformatorId "
+                           "integer, LineIndexId integer, AcquisitionKey integer); create table Steps (TargetSpectrum "
+                           "integer); create table Transformators (Id integer, Blob blob);")
+        con_.executemany("insert into Properties values (?, ?)", [("SchemaType", "Baf2Sql"), ("SampleName", "TEST-1"),
+                                                                   ("InstrumentName", "timsTOF test")])
+        con_.execute("insert into AcquisitionKeys values (0, 0)")
+        con_.executemany("insert into Spectra values (?, ?, 1, ?, ?)", [(a, b, c, d) for a, b, _, c, d in rows_])
+        con_.execute("insert into Steps values (99)")
+        con_.execute("insert into Transformators values (1, ?)", (tf_,))
+        con_.commit()
+        con_.close()
+        raw_ = IRMS.read_bruker_d(ddir)
+        assert IRMS.is_bruker_d(ddir) and len(raw_["spectra"]) == 12 and raw_["polarity"] == "+", raw_["polarity"]
+        assert np.abs(raw_["spectra"][6][1][1] - (calc_ + offs_[6])) < 1e-7          # Kalibrierung zurückgerechnet
+        lc_ = IRMS.lc_found(raw_["spectra"], calc_)
+        sel_ = slice(5, 8)                                                         # 50/60/70 s: >= 50 % des Maximums
+        exp_ = float(np.average(calc_ + offs_[sel_], weights=amp_[sel_]))
+        assert lc_["n"] == 3 and abs(lc_["mz"] - exp_) < 1e-6 and lc_["rt_lo"] == 50 and lc_["rt_hi"] == 70, lc_
+        tf_bad = _st.pack("<i7d", 12, *cal_) + b"\0" * 80
+        try:
+            IRMS._baf_mz([1.0], tf_bad)
+            raise AssertionError("unbekannte Kalibrier-Variante nicht abgelehnt")
+        except ValueError:
+            pass
+        w.compound = {"formula": "C18H20N2"}
+        t_ir.load_raw(str(ddir))
+        t_ir.render()
+        assert w.irms_state["ms_raw"] and t_ir._ms_line[0].endswith(f"found {exp_:.4f}."), t_ir._ms_line[0]
+        assert "mDa" in t_ir.lbl_ms_info.text() and t_ir.cmb_found.currentData() == "raw", t_ir.lbl_ms_info.text()
+        assert abs(t_ir.sp_rt_lo.value() - 50 / 60) < 0.01 and abs(t_ir.sp_rt_hi.value() - 70 / 60) < 0.01
+        if w.project_dir:                                  # aus dem .d nur Rohdaten + Index übernommen
+            assert sorted(x.name for x in Path(w.irms_state["ms_raw"]).iterdir()) == ["analysis.baf", "analysis.sqlite"]
+        w.irms_state["ms_rt"] = [0.0, 2.0]                 # fester Bereich: alle Scans mit Signal
+        t_ir.sync_widgets()
+        t_ir.render()
+        assert t_ir.raw_found(calc_)["n"] == 12 and not t_ir.cb_rt_auto.isChecked()
+        t_ir.load_ms(str(irdir / "ms.docx"))               # Bericht + Rohdaten: Bericht vorgewählt, Rohdaten wählbar
+        t_ir.render()
+        assert t_ir._ms_line[0].endswith("found 265.1703.") and t_ir.cmb_found.findData("raw") >= 0
+        assert any(k_ == "ms_raw" for _, k_, _ in PRJ._path_slots(w.get_state()))
+        w.irms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None)
+        w.compound = {}
+        report.append("Bruker .d raw data (LC-peak mean): OK")
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
         rn_path = Path(__file__).resolve().parent / "release_notes.py"

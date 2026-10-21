@@ -259,11 +259,39 @@ TEXTS = {
     "si_copy": ("In Zwischenablage (mit Formatierung für Word)", "Copy to clipboard (formatted for Word)"),
     "ms_group": ("HRMS", "HRMS"),
     "ms_file": ("MS-Bericht", "MS report"),
+    "ms_raw": ("MS-Rohdaten (.d)", "MS raw data (.d)"),
+    "ms_raw_tip": ("Bruker-Messordner (.d) mit analysis.baf und analysis.sqlite (z. B. timsTOF); gelesen werden die "
+                   "Linienspektren des Geräts. Ins Projekt kommen nur diese beiden Dateien.",
+                   "Bruker measurement folder (.d) with analysis.baf and analysis.sqlite (e.g. timsTOF); the "
+                   "instrument's line spectra are read. Only these two files are copied into the project."),
+    "ms_raw_bad": ("kein Bruker-Messordner mit analysis.baf und analysis.sqlite",
+                   "not a Bruker measurement folder with analysis.baf and analysis.sqlite"),
+    "ms_rt": ("LC-Peak (RT)", "LC peak (RT)"),
+    "ms_rt_auto": ("automatisch", "automatic"),
+    "ms_rt_auto_tip": ("Zusammenhängende Spektren um das Maximum des Ionenstroms (± 10 ppm um calc.) mit mindestens "
+                       "50 % der Maximalintensität", "Contiguous spectra around the maximum of the ion current "
+                       "(± 10 ppm around calc.) with at least 50 % of the maximum intensity"),
+    "ms_raw_entry": ("Rohdaten: {mz}  (Mittel über {n} Spektren, {ppm} ppm)",
+                     "Raw data: {mz}  (mean over {n} spectra, {ppm} ppm)"),
+    "ms_raw_info": ("Rohdaten: {n} Spektren, RT {rt0}–{rt1} min; Einzelscans {lo}–{hi}, Streuung ± {sd} mDa "
+                    "(± {sdp} ppm). found = intensitätsgewichtetes Mittel; einzelne Scans können in der 4. "
+                    "Nachkommastelle abweichen.",
+                    "Raw data: {n} spectra, RT {rt0}–{rt1} min; single scans {lo}–{hi}, scatter ± {sd} mDa "
+                    "(± {sdp} ppm). found = intensity-weighted mean; single scans may differ in the 4th decimal."),
+    "ms_raw_few": ("Nur {n} Spektren im LC-Peak – das Mittel ist unsicher.",
+                   "Only {n} spectra in the LC peak – the mean is uncertain."),
+    "ms_raw_vs_rep": ("Mittel aus den Rohdaten weicht um {d} mDa vom Wert im Bericht ab.",
+                      "Mean from the raw data differs by {d} mDa from the value in the report."),
+    "ms_raw_none": ("Ion in den Rohdaten nicht gefunden (± 10 ppm um calc.).",
+                    "Ion not found in the raw data (± 10 ppm around calc.)."),
+    "ms_polarity_raw": ("⚠ die Rohdaten sind im Modus {rep}MS gemessen", "⚠ the raw data were measured in {rep}MS mode"),
     "compound_formula": ("Summenformel", "Formula"),
     "ms_adduct": ("Ion", "Ion"),
     "ms_found": ("gefunden (m/z)", "found (m/z)"),
-    "ms_found_tip": ("Gemessene m/z aus den Spektren im Bericht; vorgewählt ist der Wert am nächsten am berechneten",
-                     "Measured m/z from the spectra in the report; preselected is the value closest to the calculated one"),
+    "ms_found_tip": ("Gemessene m/z aus den Spektren im Bericht und das Mittel aus den Rohdaten; vorgewählt ist der "
+                     "Wert im Bericht am nächsten am berechneten, ohne Bericht das Mittel aus den Rohdaten",
+                     "Measured m/z from the spectra in the report and the mean from the raw data; preselected is the "
+                     "report value closest to the calculated one, without a report the raw-data mean"),
     "ms_no_formula": ("keine – Verbindung des Projekts (Werkzeugleiste) festlegen oder MS-Bericht laden",
                       "none – set the project's compound (toolbar) or load an MS report"),
     "ms_src_project": ("Verbindung des Projekts", "project compound"),

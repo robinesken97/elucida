@@ -148,6 +148,13 @@ structure or molar mass keep it. The name appears in the window title.
   found 265.1703. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
   **ChemDraw object embedded in the report**; without a project compound, **Take the compound from the MS report**
   sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).
+- **HRMS from raw data:** alternatively (or in addition) load the Bruker **measurement folder** (`.d`, e.g. timsTOF;
+  button or drag & drop). Spectravolt reads the instrument's line spectra itself (no Bruker software needed, also on
+  macOS) and averages the ion over the **LC peak** (automatic: contiguous scans with ≥ 50 % of the maximum, or a
+  chosen RT range). found = intensity-weighted mean; the number of scans, the range of the single scans and their
+  scatter (± mDa/ppm) are shown, because single scans can differ in the 4th decimal. With a report loaded its value
+  stays preselected and the raw-data mean is selectable. Only `analysis.baf` and `analysis.sqlite` are copied into the
+  project.
 - **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
   and `…_SI.txt` with both lines.
 

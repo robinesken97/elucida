@@ -488,7 +488,7 @@ def ms_line(formula, adduct, found, ionisation="ESI"):
 from PySide6.QtCore import QMimeData, Qt  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,  # noqa: E402
                                QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QTableWidget,
-                               QTableWidgetItem, QTextBrowser, QVBoxLayout)
+                               QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 import os  # noqa: E402
 
 import uvvis_tabs as TABS  # noqa: E402
@@ -512,7 +512,7 @@ class IRMSTab(TABS.FigureTab):
     XRANGE_TEXT = "ir_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ms_file=None, ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[],
-                         adduct="M+H", found=None, ir_labels=False)
+                         adduct="M+H", found=None, ir_labels=False, ms_raw=None, ms_rt=None)
 
     def build_controls(self):
         st = self.st
@@ -572,6 +572,29 @@ class IRMSTab(TABS.FigureTab):
         row.addWidget(self.lbl_ms, 1)
         row.addWidget(b)
         f.addRow(T("ms_file"), row)
+        row = QHBoxLayout()
+        self.lbl_raw = QLabel("–")
+        self.lbl_raw.setWordWrap(True)
+        b = QPushButton(T("choose"))
+        b.setToolTip(T("ms_raw_tip"))
+        b.clicked.connect(self.choose_raw)
+        b2 = QPushButton(T("remove"))
+        b2.clicked.connect(self.clear_raw)
+        row.addWidget(self.lbl_raw, 1)
+        row.addWidget(b)
+        row.addWidget(b2)
+        f.addRow(T("ms_raw"), row)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        self.cb_rt_auto = QCheckBox(T("ms_rt_auto"))
+        self.cb_rt_auto.setToolTip(T("ms_rt_auto_tip"))
+        self.sp_rt_lo = QDoubleSpinBox(decimals=2, minimum=0, maximum=999, singleStep=0.05, suffix=" min")
+        self.sp_rt_hi = QDoubleSpinBox(decimals=2, minimum=0, maximum=999, singleStep=0.05, suffix=" min")
+        for w_ in (self.cb_rt_auto, self.sp_rt_lo, QLabel("–"), self.sp_rt_hi):
+            row.addWidget(w_)
+        self.rt_row = QWidget()
+        self.rt_row.setLayout(row)
+        f.addRow(T("ms_rt"), self.rt_row)
         self.lbl_formula = QLabel("–")
         self.lbl_formula.setWordWrap(True)
         f.addRow(T("compound_formula"), self.lbl_formula)
@@ -600,6 +623,9 @@ class IRMSTab(TABS.FigureTab):
 
         self._ir_line = self._ms_line = ("", "")
         self.cb_full.toggled.connect(self.changed)
+        self.cb_rt_auto.toggled.connect(self.changed)
+        for w_ in (self.sp_rt_lo, self.sp_rt_hi):
+            w_.valueChanged.connect(self.changed)
         for w_ in (self.sp_lo, self.sp_hi, self.sp_prom):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cb_int, self.cb_irlab):
@@ -659,6 +685,33 @@ class IRMSTab(TABS.FigureTab):
         self.sync_widgets()
         self.timer.start()
 
+    def choose_raw(self):
+        if not self.main.ensure_project():
+            return
+        p = QFileDialog.getExistingDirectory(self, T("ms_raw"), self.main.settings.value("last_dir", ""))
+        if p:
+            self.load_raw(p)
+
+    def load_raw(self, p):
+        """Bruker-Messordner (.d); ins Projekt kommen nur analysis.baf und analysis.sqlite."""
+        if not is_bruker_d(p):
+            self.main.error(f"{Path(p).name}: {T('ms_raw_bad')}")
+            return
+        p = self.main.import_file(p, "data")
+        try:
+            self.cache(("brukerd", p), lambda: read_bruker_d(p))
+        except Exception as e:
+            self.main.error(f"{Path(p).name}: {e}")
+            return
+        self.st.update(ms_raw=p, ms_rt=None, found=None)
+        self.sync_widgets()
+        self.timer.start()
+
+    def clear_raw(self):
+        self.st.update(ms_raw=None, ms_rt=None, found=None if self.st.get("found") == "raw" else self.st.get("found"))
+        self.sync_widgets()
+        self.timer.start()
+
     def compound_changed(self):
         self.sync_widgets()
         self.timer.start()
@@ -675,6 +728,23 @@ class IRMSTab(TABS.FigureTab):
         if not p or not Path(p).exists():
             return None
         return self.cache(("msdocx", p), lambda: read_ms_docx(p))
+
+    def ms_raw(self):
+        p = self.st.get("ms_raw")
+        if not p or not is_bruker_d(p):
+            return None
+        try:
+            return self.cache(("brukerd", p), lambda: read_bruker_d(p))
+        except Exception:
+            return None
+
+    def raw_found(self, calc):
+        """Mittel über den LC-Peak (automatisch oder gewählter RT-Bereich in min) oder None."""
+        raw = self.ms_raw()
+        if raw is None:
+            return None
+        rt = self.st.get("ms_rt")
+        return lc_found(raw["spectra"], calc, rt=[60 * rt[0], 60 * rt[1]] if rt else None)
 
     def ir_range(self):
         sp = self.spectrum()
@@ -748,6 +818,17 @@ class IRMSTab(TABS.FigureTab):
         rep = self.ms_report()
         self.lbl_ms.setText((Path(st["ms_file"]).name + (f"  ({rep['sample']})" if rep and rep.get("sample") else ""))
                             if st.get("ms_file") else "–")
+        raw = self.ms_raw()
+        self.lbl_raw.setText((Path(st["ms_raw"]).name + (f"  ({raw['instrument']})" if raw and raw.get("instrument")
+                                                          else "")) if st.get("ms_raw") else "–")
+        self.rt_row.setEnabled(raw is not None)
+        rt = st.get("ms_rt")
+        self.cb_rt_auto.setChecked(not rt)
+        if rt:
+            self.sp_rt_lo.setValue(rt[0])
+            self.sp_rt_hi.setValue(rt[1])
+        self.sp_rt_lo.setEnabled(bool(rt))
+        self.sp_rt_hi.setEnabled(bool(rt))
         self._loading = False
 
     def collect(self):
@@ -756,6 +837,10 @@ class IRMSTab(TABS.FigureTab):
             st.update(ir_lo=None, ir_hi=None)
         else:
             st.update(ir_lo=self.sp_lo.value(), ir_hi=self.sp_hi.value())
+        if self.cb_rt_auto.isChecked() or self.ms_raw() is None:
+            st["ms_rt"] = None
+        else:                                        # beim Umschalten steht in den Feldern der automatische Bereich
+            st["ms_rt"] = sorted([self.sp_rt_lo.value(), self.sp_rt_hi.value()])
         st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked(),
                   adduct=self.cmb_adduct.currentData(), found=self.cmb_found.currentData())
         self.sync_widgets()
@@ -816,6 +901,10 @@ class IRMSTab(TABS.FigureTab):
             return
         found = None
         self.btn_take.setVisible(bool(rep and rep.get("structure")))
+        raw = self.ms_raw()
+        lc = self.raw_found(calc) if raw else None
+        rep_found = None
+        info = []                                    # Hinweise ohne Warnung
         if rep:
             # Abgleich bevorzugt gegen die Struktur im Bericht (das Formelfeld ist von Hand getippt)
             ref_f = rep["structure"]["formula"] if rep.get("structure") else rep.get("formula")
@@ -833,17 +922,44 @@ class IRMSTab(TABS.FigureTab):
                     pass
             for v in rep["mz"]:
                 self.cmb_found.addItem(f"{v:.4f}  ({ppm(v, calc):+.1f} ppm)", v)
-            auto = nearest(rep["mz"], calc)
-            found = st.get("found") if st.get("found") in rep["mz"] else auto
-            if found is not None:
-                self.cmb_found.setCurrentIndex(self.cmb_found.findData(found))
-            else:
+            rep_found = nearest(rep["mz"], calc)
+            if rep_found is None:
                 notes.append(T("ms_no_match"))
             pol = "+" if z > 0 else "-"
             if rep.get("polarity") and rep["polarity"] != pol:
                 notes.append(T("ms_polarity", rep=rep["polarity"]))
+        if raw:
+            if raw["polarity"] != ("+" if z > 0 else "-"):
+                notes.append(T("ms_polarity_raw", rep=raw["polarity"]))
+            if lc is None:
+                notes.append(T("ms_raw_none"))
+            else:
+                self.cmb_found.addItem(T("ms_raw_entry", mz=f"{lc['mz']:.4f}", n=lc["n"],
+                                         ppm=f"{ppm(lc['mz'], calc):+.1f}"), "raw")
+                sd_ppm = lc["std_mda"] / 1000 / calc * 1e6
+                info.append(T("ms_raw_info", n=lc["n"], rt0=f"{lc['rt_lo'] / 60:.2f}", rt1=f"{lc['rt_hi'] / 60:.2f}",
+                              lo=f"{lc['lo']:.4f}", hi=f"{lc['hi']:.4f}", sd=f"{lc['std_mda']:.2f}",
+                              sdp=f"{sd_ppm:.1f}"))
+                if lc["n"] < 3:
+                    notes.append(T("ms_raw_few", n=lc["n"]))
+                if rep_found is not None and abs(lc["mz"] - rep_found) * 1000 > max(2 * lc["std_mda"], 0.5):
+                    info.append(T("ms_raw_vs_rep", d=f"{(lc['mz'] - rep_found) * 1000:+.2f}"))
+                if not st.get("ms_rt"):                  # Felder zeigen den automatischen Bereich
+                    self._loading = True
+                    for sp_, v in ((self.sp_rt_lo, lc["rt_lo"]), (self.sp_rt_hi, lc["rt_hi"])):
+                        sp_.blockSignals(True)
+                        sp_.setValue(v / 60)
+                        sp_.blockSignals(False)
+                    self._loading = False
+        # Auswahl: gespeicherte Wahl, sonst Wert aus dem Bericht, sonst Mittel aus den Rohdaten
+        want = st.get("found")
+        if not ((want == "raw" and lc is not None) or (rep and want in rep["mz"])):
+            want = rep_found if rep_found is not None else ("raw" if lc else None)
+        found = lc["mz"] if want == "raw" else want
+        if want is not None:
+            self.cmb_found.setCurrentIndex(max(0, self.cmb_found.findData(want)))
         self.cmb_found.blockSignals(False)
-        ionis = rep["ionisation"] if rep else "ESI"
+        ionis = rep["ionisation"] if rep else (raw["ionisation"] if raw else "ESI")
         plain, html, calc = ms_line(formula, st["adduct"], found, ionis)
         self._ms_line = (plain, html)
         self.txt_ms.setHtml(html)
@@ -852,8 +968,9 @@ class IRMSTab(TABS.FigureTab):
             notes.insert(0, T("ms_dev", ppm=f"{dev:+.1f}"))
             if abs(dev) > 5:
                 notes.append(T("ms_dev_high"))
-        self.lbl_ms_info.setText("\n".join(notes))
-        self.lbl_ms_info.setStyleSheet(WARN_CSS if len(notes) > 1 or (found is None and rep) else HINT_CSS)
+        warn = len(notes) > 1 or (found is None and bool(rep or raw))
+        self.lbl_ms_info.setText("\n".join(notes[:1] + info + notes[1:]))
+        self.lbl_ms_info.setStyleSheet(WARN_CSS if warn else HINT_CSS)
 
     # -- Abbildung ------------------------------------------------------------------
     def figure_spec(self):

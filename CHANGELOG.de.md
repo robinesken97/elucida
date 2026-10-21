@@ -2,6 +2,18 @@
 
 # Änderungen
 
+## Unveröffentlicht
+
+### Neu
+- **Verbindung des Projekts** (Name, ChemDraw, Formel, Molmasse) als Vorgabe für alle Tabs (Werkzeugleiste
+  **Verbindung …**); Tabs mit eigener Struktur behalten diese.
+- Neuer Tab **IR + MS**: IR-Peakliste aus Bruker OPUS (Datei oder PDF-Ausdruck, optional w/m/s/br) und die HRMS-Zeile
+  aus dem Word-Bericht der Massenabteilung, fertig für die SI (Kopieren mit Formatierung für Word).
+- HRMS: Abgleich der Formel mit dem im Bericht eingebetteten ChemDraw-Objekt; die Verbindung des Projekts lässt sich
+  daraus übernehmen.
+- HRMS aus **Bruker-Rohdaten** (`.d`, z. B. timsTOF) ohne Bruker-Software: Linienspektren direkt gelesen, Ion über den
+  LC-Peak gemittelt (automatisch oder gewählter RT-Bereich) mit Anzahl der Scans und Streuung.
+
 ## 1.17.0 – 21.10.2026
 
 ### Neu

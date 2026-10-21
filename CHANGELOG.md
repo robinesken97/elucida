@@ -2,6 +2,17 @@
 
 # Changelog
 
+## Unreleased
+
+### Added
+- **Compound of the project** (name, ChemDraw, formula, molar mass) as default for all tabs (toolbar
+  **Compound …**); tabs with their own structure keep it.
+- New tab **IR + MS**: IR peak list from Bruker OPUS (file or PDF print-out, optional w/m/s/br) and the HRMS line
+  from the Word report of the mass-spectrometry department, ready for the SI (copy with formatting for Word).
+- HRMS: formula check against the ChemDraw object embedded in the report; the project compound can be taken from it.
+- HRMS from **Bruker raw data** (`.d`, e.g. timsTOF) without Bruker software: line spectra read directly, ion averaged
+  over the LC peak (automatic or chosen RT range) with number of scans and scatter.
+
 ## 1.17.0 – 2026-10-21
 
 ### Added
