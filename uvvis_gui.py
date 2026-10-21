@@ -3587,6 +3587,10 @@ def selftest(outdir, with_isnet=False):
         assert "the C-Cl group is shown as wireframe" in t_x.caption()[0], t_x.caption()[0]
         t_x.sel = []
         t_x.unwire_selected()
+        t_x.layout()["lbl_C1"] = [0.0, 0.0]                  # gespeichert, liegt aber auf dem Atom -> neu platziert
+        t_x.render()
+        assert tuple(float(v_) for v_ in t_x.F.ann_items["lbl_C1"].xyann) != (0.0, 0.0)
+        t_x.layout().pop("lbl_C1")
         w.xray_state["label_mode"] = "hetero"
         t_x.sync_widgets()
         t_x.render()

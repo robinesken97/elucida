@@ -1659,22 +1659,41 @@ class XrayFigure:
             if x0 < 0 or y0 < 0 or x1 > fw or y1 > fh:
                 c += 1e4
             return c
+        def hits(bx):
+            """Label liegt auf einer Bindung (Linie selbst, ohne Rand) oder einem Atom."""
+            x0, y0, x1, y1 = bx
+            if len(circ):
+                d = np.hypot(np.clip(circ[:, 0], x0, x1) - circ[:, 0], np.clip(circ[:, 1], y0, y1) - circ[:, 1])
+                if (circ[:, 2] - d > 1.0).any():
+                    return True
+            if len(segpts):
+                dx = np.maximum(np.maximum(x0 - segpts[:, 0], segpts[:, 0] - x1), 0)
+                dy = np.maximum(np.maximum(y0 - segpts[:, 1], segpts[:, 1] - y1), 0)
+                if (seghw - margin - np.hypot(dx, dy) > 0).any():
+                    return True
+            return False
         sizes = {}
         for key, ann, it in todo:
             bb = ann.get_window_extent(rend)
             sizes[key] = (bb.width, bb.height)
-        # 1) gespeicherte Versätze zuerst eintragen
+        # 1) gespeicherte Versätze zuerst eintragen – außer sie liegen (z. B. nach dem Drehen) auf einer Bindung oder
+        #    einem Atom; dann wird das Label wie ein neues platziert
+        kept = set()
         for key, ann, it in todo:
             pos = self.layout.get(key)
             if pos and len(pos) == 2:
-                ann.xyann = (float(pos[0]), float(pos[1]))
                 cx, cy = tr.transform((it["x"], it["y"]))
                 w, h = sizes[key]
                 bx = cx + pos[0] * ppt, cy + pos[1] * ppt
-                boxes.append((bx[0] - w / 2, bx[1] - h / 2, bx[0] + w / 2, bx[1] + h / 2))
+                box = (bx[0] - w / 2, bx[1] - h / 2, bx[0] + w / 2, bx[1] + h / 2)
+                if hits(box):
+                    continue
+                ann.xyann = (float(pos[0]), float(pos[1]))
+                boxes.append(box)
+                kept.add(key)
         # 2) übrige: beste von 16 Richtungen, Abstand = Umriss + Rand
         for key, ann, it in todo:
-            if self.layout.get(key):
+            if key in kept:
                 continue
             cx, cy = tr.transform((it["x"], it["y"]))
             w, h = sizes[key]
