@@ -849,7 +849,7 @@ TEXTS = {
     "xr_show_h": ("H-Atome", "H atoms"),
     "xr_labels": ("Labels", "Labels"),
     "xr_h_labels": ("H-Labels", "H labels"),
-    "xr_bond_lw": ("Bindungen", "Bonds"),
+    "xr_bond_lw": ("Bindungsdicke", "Bond thickness"),
     "xr_frags": ("Fragmente", "Fragments"),
     "xr_frags_tip": ("Getrennte Fragmente (Lösungsmittel, Gegenionen) ein-/ausblenden",
                      "Show/hide separate fragments (solvent, counter-ions)"),

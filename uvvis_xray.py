@@ -1112,15 +1112,15 @@ def _ellipse_verts(cx, cy, w, h, ang, n=None):
 
 
 def shade_colors(color, n):
-    """Mercury-ähnliche Schattierung: Rand dunkel, Mitte Grundfarbe, Glanzpunkt fast weiß."""
+    """Mercury-ähnliche, matte Schattierung: Rand etwas dunkler, Grundfarbe dominiert, schwacher Glanz oben links."""
     base = np.array(to_rgb(color))
     out = []
     for t in np.linspace(0, 1, n):
-        if t < 0.45:
-            c = base * (0.5 + 0.5 * t / 0.45)
+        if t < 0.3:
+            c = base * (0.62 + 0.38 * t / 0.3)
         else:
-            f = (t - 0.45) / 0.55
-            c = base + (1 - base) * 0.8 * f ** 1.4
+            f = (t - 0.3) / 0.7
+            c = base + (1 - base) * 0.45 * f ** 1.6
         out.append(tuple(np.clip(c, 0, 1)))
     return out
 
@@ -1134,8 +1134,8 @@ def shade_layers(it, n):
     v = -LIGHT[0] * math.sin(th) + LIGHT[1] * math.cos(th)
     nrm = math.sqrt((u / a) ** 2 + (v / b) ** 2) or 1.0
     verts = []
-    for s in np.linspace(1.0, 0.12, n):
-        d = (1 - s) * 0.6 / nrm
+    for s in np.linspace(1.0, 0.25, n):
+        d = (1 - s) * 0.55 / nrm
         verts.append(_ellipse_verts(it["x"] + LIGHT[0] * d, it["y"] + LIGHT[1] * d, it["w"] * s, it["h"] * s,
                                     it["ang"]))
     return verts
@@ -1183,7 +1183,7 @@ class XrayFigure:
         self.center = pts.mean(axis=0)
         self.rmax = float(np.max(np.linalg.norm(pts - self.center, axis=1))) + 1.0
         sc = cfg.get("scale", 1.0)
-        self.lw_bond = opts.get("bond_lw", 1.8) * sc
+        self.bond_w = float(opts.get("bond_w", 0.08))           # Bindungsdicke in Å (Mercury: Zylinder)
         self.lw_edge = max(0.4, 0.6 * sc)
         self.atom_art, self.bond_art, self.sel_art = {}, [], []
         self.auto_pos = {}
@@ -1194,6 +1194,7 @@ class XrayFigure:
         ys = [it["y"] + s_ * max(it["w"], it["h"]) / 2 for it in self.scene["atoms"] for s_ in (-1, 1)] or [-1, 1]
         self.ext = (max(abs(min(xs)), abs(max(xs)), 0.5) + 0.6, max(abs(min(ys)), abs(max(ys)), 0.5) + 0.6)
         self._limits()
+        self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self._build()
         self._footnote()
         self._labels()
@@ -1215,8 +1216,12 @@ class XrayFigure:
         self.ax.set_xlim(cx - W * s / 2, cx + W * s / 2)
         self.ax.set_ylim(cy - H * s / 2, cy + H * s / 2)
 
+    def pt_per_A(self):
+        x0, x1 = self.ax.get_xlim()
+        return 72.0 * self.cfg["figsize_in"][0] / (x1 - x0)
+
     def _project(self):
-        scene = project(self.mol, self.R, self.k, set(self.show), h_radius=self.opts.get("h_radius", 0.13))
+        scene = project(self.mol, self.R, self.k, set(self.show), h_radius=self.opts.get("h_radius", 0.09))
         # Projektion um den Schwerpunkt der gezeigten Atome (nicht aller), damit das Bild zentriert bleibt
         off = self.R @ (self.center - scene["center"])
         for it in scene["atoms"]:
@@ -1255,15 +1260,15 @@ class XrayFigure:
             verts = self._layers(it)
             nfill = len(verts) - 1
             faces = shade_colors(col, nfill) if mercury else [col]
-            edge = tuple(np.array(to_rgb(col)) * 0.35) if mercury else (0, 0, 0)
+            edge = (0.1, 0.1, 0.1) if mercury else (0, 0, 0)
             p = PolyCollection(verts, facecolors=faces + ["none"], edgecolors=["none"] * nfill + [edge],
                                linewidths=[0] * nfill + [self.lw_edge * (0.8 if mercury else 1.0)],
                                antialiaseds=True, closed=True)
             ax.add_collection(p)
             lines = []
             for xs, ys in it["curves"]:
-                ln = Line2D(xs, ys, color="#1a1a1a" if mercury else "black",
-                            lw=max(0.3, 0.45 * self.cfg.get("scale", 1.0)), solid_capstyle="butt")
+                ln = Line2D(xs, ys, color="black", lw=max(0.35, (0.7 if mercury else 0.45) * self.cfg.get("scale", 1.0)),
+                            solid_capstyle="butt")
                 ax.add_line(ln)
                 lines.append(ln)
             self.atom_art[it["k"]] = (p, lines)
@@ -1327,6 +1332,9 @@ class XrayFigure:
         if pan is not None:
             self.pan = list(pan)
         self._limits()
+        self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
+        for _, _, ln in self.bond_art:
+            ln.set_linewidth(self.lw_bond)
 
     def artists(self):
         return self.order
@@ -1647,7 +1655,7 @@ class XrayTab(TABS.FigureTab):
     STATE_KEY = "xray"
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
-                         h_labels=False, colors={}, bond_lw=1.8, style="mercury", x_auto=True, x_min=0.0,
+                         h_labels=False, colors={}, bond_w=0.08, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0)
 
     def __init__(self, main, state):
@@ -1711,8 +1719,8 @@ class XrayTab(TABS.FigureTab):
             row.addWidget(w_)
         row.addStretch(1)
         f.addRow(row)
-        self.sp_bond = QDoubleSpinBox(decimals=1, minimum=0.5, maximum=5.0, singleStep=0.2, suffix=" pt",
-                                      value=st["bond_lw"])
+        self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å",
+                                      value=st.get("bond_w", 0.08))
         f.addRow(T("xr_bond_lw"), self.sp_bond)
         self.lst_frag = QListWidget()
         self.lst_frag.setMaximumHeight(90)
@@ -1856,7 +1864,7 @@ class XrayTab(TABS.FigureTab):
     def collect(self):
         self.st.update(prob=self.sp_prob.value(), show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(),
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
-                       bond_lw=self.sp_bond.value(), style=self.cmb_style.currentData())
+                       bond_w=self.sp_bond.value(), style=self.cmb_style.currentData())
 
     # -- Einträge -------------------------------------------------------------------------
     def entries(self):
@@ -1997,7 +2005,7 @@ class XrayTab(TABS.FigureTab):
                 self.tbl.setItem(r, c, it)
         if cur is not None:
             self.tbl.selectRow(es.index(cur))
-        for w_, v in ((self.sp_prob, int(st["prob"])), (self.sp_bond, st["bond_lw"])):
+        for w_, v in ((self.sp_prob, int(st["prob"])), (self.sp_bond, st.get("bond_w", 0.08))):
             w_.setValue(v)
         self.cmb_dis.setCurrentIndex(max(0, self.cmb_dis.findData(st["disorder"])))
         self.cb_h.setChecked(st["show_h"])
@@ -2312,7 +2320,7 @@ class XrayTab(TABS.FigureTab):
     def opts(self, e):
         st = self.st
         return dict(prob=st["prob"], show_h=st["show_h"], labels=st["labels"], h_labels=st["h_labels"],
-                    colors=st.get("colors") or {}, bond_lw=st["bond_lw"], hidden_frags=e.get("hidden_frags") or [],
+                    colors=st.get("colors") or {}, bond_w=st.get("bond_w", 0.08), hidden_frags=e.get("hidden_frags") or [],
                     style=st.get("style", "mercury"), hidden_atoms=e.get("hidden_atoms") or [],
                     label_on=e.get("label_on") or {})
 
