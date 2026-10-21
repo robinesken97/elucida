@@ -2866,6 +2866,25 @@ def selftest(outdir, with_isnet=False):
         assert APP_NAME == "Spectravolt" and UPD.REPO.endswith("/spectravolt")
         report.append("rename (settings + data folder migration): OK")
 
+        # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
+        rn_path = Path(__file__).resolve().parent / "release_notes.py"
+        if rn_path.exists() and not getattr(sys, "frozen", False):
+            import importlib.util
+            spec_ = importlib.util.spec_from_file_location("release_notes", rn_path)
+            RN = importlib.util.module_from_spec(spec_)
+            spec_.loader.exec_module(RN)
+            en_ = (rn_path.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+            de_ = (rn_path.parent / "CHANGELOG.de.md").read_text(encoding="utf-8")
+            txt_ = RN.notes(APP_VERSION, en_, de_)
+            assert txt_.startswith("## English") and "## Deutsch" in txt_ and f"{APP_NAME}-windows-x64.zip" in txt_
+            assert f"## {APP_VERSION}" not in txt_ and "\n## 1." not in txt_          # nur dieser Abschnitt
+            try:
+                RN.notes("0.0.1", en_, de_)
+                raise AssertionError("fehlende Version nicht erkannt")
+            except ValueError:
+                pass
+            report.append("release notes from changelogs: OK")
+
         # Update-Prüfung (ohne Netz: Versionsvergleich, API-Antwort, Meldungstext)
         assert UPD.parse_version("v1.10.0") > UPD.parse_version("1.9.9") and UPD.parse_version("x") == ()
         assert UPD.is_newer("1.4.1", "1.4.0") and not UPD.is_newer("1.4", "1.4.0") and not UPD.is_newer("", "1.0")

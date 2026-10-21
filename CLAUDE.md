@@ -67,6 +67,7 @@ und Tabelle, ChemDraw-Struktur, Küvettenfoto). Dazu Tabs für Overlay (gemessen
 | `uvvis_color.py` | Farbe der Lösung: T = 10^(−A) × Planck 6504 K, CIE-1931-Kurven (Näherung Wyman 2013), Bradford → sRGB; Kanäle > 1 gemeinsam skalieren. |
 | `uvvis_update.py` | Update-Prüfung: neuestes GitHub-Release (API), Versionsvergleich, Paketname je System. Automatisch max. 1×/Tag, im Selbsttest ohne Netz. |
 | `uvvis_style.py` | Erscheinungsbild: Fusion + eigene Palette (hell/dunkel/System, Menü Format), zentrales Stylesheet, Karten (`card`), SVG-Symbole (`icon`). Betrifft alle Tabs, nicht die Abbildungen. |
+| `release_notes.py` | Release-Titel/-Notes für GitHub aus `CHANGELOG.md` + `CHANGELOG.de.md` (Release-Job in `build.yml`; fehlt die Version, scheitert das Release). |
 | `uvvis_i18n.py` | Texte DE/EN; `T(_key, **kw)` (Parameter heißt `_key`, damit `key=` als Format-Argument geht). |
 | `parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |
 
@@ -84,7 +85,7 @@ python build.py                                       # PyInstaller-Build (brauc
 1. `APP_VERSION` in `uvvis_gui.py` erhöhen.
 2. `CHANGELOG.md` **und** `CHANGELOG.de.md` ergänzen; bei sichtbaren Änderungen `README.md` **und** `README.de.md`.
 3. Selbsttest, commit, dann `git tag vX.Y.Z && git push && git push --tags` → GitHub Actions baut und erstellt
-   das Release. Kurze zweisprachige Release Notes (EN/DE) zum Reinkopieren liefern.
+   das Release; Titel und Notes erzeugt `release_notes.py` aus den Changelogs (also beide Changelogs vollständig pflegen).
 
 ## Bekannte Fallen
 - **Umbenennung (1.16):** Programm heißt Spectravolt, Repo `robinesken97/spectravolt`. Intern bleiben
