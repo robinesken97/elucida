@@ -2051,11 +2051,22 @@ class MainWindow(QMainWindow):
                     FigureCanvasAgg(fig)
                     F = xt.build(fig, e, interactive=False)
                     if F is not None:
+                        # wie in der SI eng um das Molekül beschnitten; SVG (Vektor, Text als Pfade) + PNG-Ersatz
                         svg = out_dir / f"{core.safe_name(fname)}_xray.svg"
-                        F.cfg.update(output=str(svg), extra_formats=["png"], dpi=600)   # SVG + PNG-Ersatz
-                        F.export()
-                        w_in, h_in = F.cfg["figsize_in"]
-                        blocks.append(("image", str(svg.with_suffix(".png")), w_in * 2.54, h_in * 2.54, str(svg)))
+                        from matplotlib.transforms import Bbox
+                        rend = F.fig.canvas.get_renderer()
+                        boxes = [a_.get_window_extent(rend) for a_ in F.artists() + ([F.foot] if F.foot else [])
+                                 if a_.get_visible()]
+                        boxes = [b_ for b_ in boxes if b_.width > 0 and b_.height > 0 and b_.width < 1e5]
+                        bb = Bbox.union(boxes).transformed(F.fig.dpi_scale_trans.inverted()).padded(0.06)
+                        W_, H_ = F.fig.get_size_inches()
+                        bb = Bbox.from_extents(max(0, bb.x0), max(0, bb.y0), min(W_, bb.x1), min(H_, bb.y1))
+                        with matplotlib.rc_context({"svg.fonttype": "path"}):
+                            F.fig.savefig(svg, bbox_inches=bb, facecolor="white")
+                            F.fig.savefig(svg.with_suffix(".png"), dpi=600, bbox_inches=bb, facecolor="white")
+                        IMG.svg_defs_first(svg)
+                        blocks.append(("image", str(svg.with_suffix(".png")), bb.width * 2.54, bb.height * 2.54,
+                                       str(svg)))
                 blocks.append(("figcap", xt.caption(e)[1]))
                 for t_title, t_name, t_head, t_rows in xt.param_tables(e):
                     blocks += [("tabcap", t_title, t_name), ("params", t_head, t_rows)]
@@ -3541,6 +3552,7 @@ def selftest(outdir, with_isnet=False):
         # Lösungsmittel-Schalter, Startansicht, Label-Modus, Drahtmodell, Bildunterschrift
         mol_ = t_x.molecule(ent_[0])
         assert [f_["kind"] for f_ in mol_.fragments] == ["main", "solvent"] and mol_.fragments[1]["name"] == "water"
+        assert XRAY.cif_order(mol_, ["C2", "C1"]) == ["C1", "C2"]                # Reihenfolge wie in der CIF
         R_ = XRAY.default_view(mol_)
         assert np.allclose(R_ @ R_.T, np.eye(3), atol=1e-9) and abs(np.linalg.det(R_) - 1) < 1e-9
         ent_[0].update(hidden_frags=[], view=None)

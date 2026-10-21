@@ -787,6 +787,27 @@ def match_geom(S: Structure, rows, atoms):
     return None
 
 
+def cif_order(mol: Molecule, keys):
+    """Atomreihenfolge wie in der _geom-Tabelle der CIF (z. B. C4–C5 statt angeklickt C5–C4); sonst unverändert."""
+    idx = [mol.find_key(k) for k in keys]
+    if None in idx or len(idx) not in (2, 3, 4):
+        return list(keys)
+    ats = [mol.atoms[k] for k in idx]
+    rows = {2: mol.S.geom_bond, 3: mol.S.geom_angle, 4: mol.S.geom_torsion}[len(idx)]
+    labs = [a["label"] for a in ats]
+    if labs == labs[::-1]:
+        return list(keys)
+    for g in rows:
+        if g["labels"] == labs:
+            return list(keys)
+        if g["labels"] == labs[::-1]:
+            rev = ats[::-1]
+            G = compose(rev[0]["T"], inverse(g["trs"][0]))
+            if all(tr_key(compose(G, t)) == tr_key(a["T"]) for t, a in zip(g["trs"], rev)):
+                return list(keys)[::-1]
+    return list(keys)
+
+
 def measure(mol: Molecule, keys):
     """2/3/4 Atome -> dict(kind, value (float), text, esd (bool), source ('cif'|'calc'))."""
     idx = [mol.find_key(k) for k in keys]
@@ -2636,7 +2657,8 @@ class XrayTab(TABS.FigureTab):
             for pp in e.get("params") or []:
                 m = measure(mol, pp["atoms"]) if mol else None
                 if m is not None and m["kind"] == kind:
-                    out.append((kind, param_name(mol, pp["atoms"]), minus(m["text"]), m["source"] == "cif"))
+                    out.append((kind, param_name(mol, cif_order(mol, pp["atoms"])), minus(m["text"]),
+                                m["source"] == "cif"))
         return out
 
     def param_tables(self, e):
@@ -2658,7 +2680,7 @@ class XrayTab(TABS.FigureTab):
                 m = measure(mol, pp["atoms"])
                 if m is None or m["kind"] != kind:
                     continue
-                names = [atom_name(mol.atoms[mol.find_key(k)]) for k in pp["atoms"]]
+                names = [atom_name(mol.atoms[mol.find_key(k)]) for k in cif_order(mol, pp["atoms"])]
                 rows.append(names + [minus(m["text"]) + ("^{a}" if m["source"] == "calc" else "")])
             if rows:
                 out.append((f"{title} for", name, ["Atom"] * n + [unit], rows))
