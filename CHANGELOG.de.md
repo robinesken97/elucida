@@ -2,6 +2,12 @@
 
 # Änderungen
 
+## 1.18.1 – 21.10.2026
+
+### Behoben
+- macOS Intel: Build und Selbsttest mit der dort älteren RDKit (Verbindung aus dem MS-Bericht übernimmt Formel
+  und Molmasse; die Ersatzzeichnung braucht eine neuere RDKit).
+
 ## 1.18.0 – 21.10.2026
 
 ### Neu

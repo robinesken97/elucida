@@ -2,6 +2,12 @@
 
 # Changelog
 
+## 1.18.1 – 2026-10-21
+
+### Fixed
+- macOS Intel: build and self-test with the older RDKit there (taking the compound from the MS report sets
+  formula and molar mass; the substitute drawing needs a newer RDKit).
+
 ## 1.18.0 – 2026-10-21
 
 ### Added

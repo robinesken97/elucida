@@ -272,7 +272,8 @@ def cdx_structure(blob: bytes) -> dict | None:
     for m in mols[1:]:
         mol = Chem.CombineMols(mol, m)
     return {"formula": rdMolDescriptors.CalcMolFormula(mol, True, True), "mw": float(Descriptors.MolWt(mol)),
-            "cdxml": Chem.MolToCDXMLBlock(mol), "n_fragments": len(mols)}
+            "cdxml": Chem.MolToCDXMLBlock(mol) if hasattr(Chem, "MolToCDXMLBlock") else None,   # ältere RDKit
+            "n_fragments": len(mols)}
 
 
 def _docx_cdx(z: zipfile.ZipFile) -> bytes | None:
@@ -792,11 +793,16 @@ class IRMSTab(TABS.FigureTab):
                 return
         name = rep.get("sample") or Path(self.st["ms_file"]).stem
         safe = re.sub(r"[^\w.-]+", "_", name) or "compound"
-        dst = Path(self.main.project_dir) / "images" / f"{safe}_aus_MS-Bericht.cdxml"
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(rep["structure"]["cdxml"], encoding="utf-8")
-        self.main.set_compound({"name": c.get("name") or name, "structure": str(dst),
-                                "formula": rep["structure"]["formula"], "mw": round(rep["structure"]["mw"], 2)})
+        new = {"name": c.get("name") or name, "formula": rep["structure"]["formula"],
+               "mw": round(rep["structure"]["mw"], 2)}
+        if rep["structure"].get("cdxml"):                 # ohne CDXML-Schreiber (ältere RDKit): nur Formel/Molmasse
+            dst = Path(self.main.project_dir) / "images" / f"{safe}_aus_MS-Bericht.cdxml"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(rep["structure"]["cdxml"], encoding="utf-8")
+            new["structure"] = str(dst)
+        elif c.get("structure"):
+            new["structure"] = c["structure"]
+        self.main.set_compound(new)
 
     # -- Oberfläche -----------------------------------------------------------------
     def sync_widgets(self):

@@ -15,7 +15,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.18.0"
+APP_VERSION = "1.18.1"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -3171,7 +3171,8 @@ def selftest(outdir, with_isnet=False):
         from rdkit import Chem as _Chem
         rep_ = t_ir.ms_report()
         rep_["structure"] = {"formula": "C18H20N2", "mw": 264.37, "n_fragments": 1,
-                             "cdxml": _Chem.MolToCDXMLBlock(_Chem.MolFromSmiles("CC(C)(C)c1ccc2nc(-c3ccccc3)n(C)c2c1"))}
+                             "cdxml": _Chem.MolToCDXMLBlock(_Chem.MolFromSmiles("CC(C)(C)c1ccc2nc(-c3ccccc3)n(C)c2c1"))
+                             if hasattr(_Chem, "MolToCDXMLBlock") else None}          # macOS Intel: RDKit 2025.9
         w.compound = {}
         t_ir.render()
         assert t_ir.formula() == ("C18H20N2", "report_struct"), t_ir.formula()
@@ -3180,8 +3181,9 @@ def selftest(outdir, with_isnet=False):
         t_ir.render()
         assert "⚠" in t_ir.lbl_ms_info.text(), t_ir.lbl_ms_info.text()
         t_ir.take_compound()
-        assert w.compound["formula"] == "C18H20N2" and Path(w.compound["structure"]).exists()
-        assert "aus_MS-Bericht" in Path(w.compound["structure"]).name and w.compound["name"] == "TEST-1"
+        assert w.compound["formula"] == "C18H20N2" and w.compound["name"] == "TEST-1", w.compound
+        if rep_["structure"]["cdxml"]:
+            assert Path(w.compound["structure"]).exists() and "aus_MS-Bericht" in Path(w.compound["structure"]).name
         w.irms_state.update(ir_file=None, ir_pdf=None, ms_file=None, ir_off=[], with_int=False)
         w.compound = {}
         report.append("project compound + IR/HRMS lines: OK")
