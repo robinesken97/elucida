@@ -121,7 +121,31 @@ def save(project_dir, state) -> dict:
     return abs_state
 
 
+BRUKER_D_FILES = ("analysis.baf", "analysis.sqlite")      # aus einem .d-Ordner nur das, was gelesen wird
+
+
+def _copy_dir(src: Path, dest_dir: Path) -> Path:
+    """Messordner (z. B. Bruker .d) übernehmen; bei .d nur die gelesenen Dateien (Rohdaten + Index)."""
+    names = [n for n in BRUKER_D_FILES if (src / n).exists()] if src.suffix.lower() == ".d" else None
+    target, n = dest_dir / src.name, 2
+    while target.exists():
+        if names and all((target / x).exists() and (target / x).stat().st_size == (src / x).stat().st_size
+                         for x in names):
+            return target                              # derselbe Messordner ist schon da
+        target = dest_dir / f"{src.stem}_{n}{src.suffix}"
+        n += 1
+    if names:
+        target.mkdir(parents=True)
+        for x in names:
+            shutil.copy2(src / x, target / x)
+    else:
+        shutil.copytree(src, target)
+    return target
+
+
 def _copy_unique(src: Path, dest_dir: Path) -> Path:
+    if src.is_dir():
+        return _copy_dir(src, dest_dir)
     target = dest_dir / src.name
     n = 2
     while target.exists():
