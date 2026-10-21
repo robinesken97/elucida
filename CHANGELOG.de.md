@@ -2,7 +2,7 @@
 
 # Änderungen
 
-## Unveröffentlicht
+## 1.19.0 – 21.10.2026
 
 ### Neu
 - Neuer Tab **X-Ray**: CIF-Dateien lesen (mehrere Strukturen/`data_`-Blöcke), drehbare **ORTEP-Abbildung im

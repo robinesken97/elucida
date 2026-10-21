@@ -2,7 +2,7 @@
 
 # Changelog
 
-## Unreleased
+## 1.19.0 – 2026-10-21
 
 ### Added
 - New tab **X-Ray**: read CIF files (several structures/`data_` blocks), rotatable **ORTEP figure in the Mercury
