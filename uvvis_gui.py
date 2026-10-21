@@ -3406,8 +3406,44 @@ def selftest(outdir, with_isnet=False):
         from openpyxl import load_workbook
         wb_ = load_workbook(out / "xray" / "xray_test_tables.xlsx")
         assert wb_.sheetnames == ["Crystal data", "Selected parameters"]
-        report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables): OK ({npath_} pdf paths)")
-        w.xray_state.update(entries=[], current=None, show_h=True)
+        assert (out / "xray" / "xray_test_captions.txt").read_text(encoding="utf-8").count("Molecular structure") == 2
+        # Lösungsmittel-Schalter, Startansicht, Label-Modus, Drahtmodell, Bildunterschrift
+        mol_ = t_x.molecule(ent_[0])
+        assert [f_["kind"] for f_ in mol_.fragments] == ["main", "solvent"] and mol_.fragments[1]["name"] == "water"
+        R_ = XRAY.default_view(mol_)
+        assert np.allclose(R_ @ R_.T, np.eye(3), atol=1e-9) and abs(np.linalg.det(R_) - 1) < 1e-9
+        ent_[0].update(hidden_frags=[], view=None)
+        w.xray_state.update(show_h=True, hide_solv=True)
+        t_x.sync_widgets()
+        t_x.render()
+        assert t_x.F.scene["atoms"] and all(mol_.atoms[it_["k"]]["frag"] == 0 for it_ in t_x.F.scene["atoms"])
+        assert "<sub>1</sub>" in t_x.lbl_info.text(), t_x.lbl_info.text()          # Raumgruppe formatiert
+        cap_ = t_x.caption()[0]
+        assert "co-crystallised water omitted for clarity" in cap_ and "50 % probability" in cap_, cap_
+        assert "major component" in cap_ and "Symmetry code: i " in cap_ and "C1–C2 1.390(3)" in cap_, cap_
+        c1_, cl1_ = mol_.find_key("C1"), mol_.find_key("Cl1")
+        assert mol_.substituent(c1_, mol_.find_key("C2")) is None                  # Ringbindung im Kern
+        assert mol_.beyond(c1_, cl1_) == {cl1_}
+        assert mol_.substituent(c1_, cl1_) == {cl1_} and mol_.substituent(cl1_, c1_) == {cl1_}
+        t_x.sel = ["C1", "Cl1"]
+        t_x.wire_selected()
+        assert ent_[0]["wire"] == ["Cl1"] and not t_x.sel, ent_[0]["wire"]
+        ent_[0]["wire"] = ["C1", "Cl1"]                                           # beide Enden -> Drahtbindung
+        ent_[0]["wire_name"] = "the C-Cl group"
+        t_x.render()
+        assert t_x.F.scene["by_k"][cl1_]["kind"] == "wire" and "lbl_Cl1" not in t_x.F.ann_items
+        halves_ = [ln_ for a_, b_, ln_, h_ in t_x.F.bond_art if {a_, b_} == {c1_, cl1_}]
+        assert len(halves_) == 2 and halves_[0].get_linewidth() < t_x.F.lw_bond, halves_
+        assert "the C-Cl group shown as wireframe" in t_x.caption()[0], t_x.caption()[0]
+        t_x.sel = []
+        t_x.unwire_selected()
+        w.xray_state["label_mode"] = "hetero"
+        t_x.sync_widgets()
+        t_x.render()
+        assert not ent_[0]["wire"] and "lbl_Cl1" in t_x.F.ann_items and "lbl_C1" not in t_x.F.ann_items
+        report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
+                      f"({npath_} pdf paths)")
+        w.xray_state.update(entries=[], current=None, show_h=True, hide_solv=False, label_mode="all")
         t_x.sel = []
         t_x.sync_widgets()
         t_x.render()

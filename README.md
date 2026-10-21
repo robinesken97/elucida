@@ -169,11 +169,19 @@ structure or molar mass keep it. The name appears in the window title.
   flat Olex2 style with bold labels. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
   (atom list or double-click on the atom). **Drag to rotate**,
   right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
-  default orientation (looking onto the largest plane). Atom colours per element are freely selectable (Olex2
+  default orientation (least overlap of the atoms). Atom colours per element are freely selectable (Olex2
   colours by default).
 - The molecule is **completed by symmetry** (e.g. a molecule on an inversion centre); generated atoms carry a
   superscript (C1ⁱ) and the operation is given as a footnote. **Disorder:** major part only (default), all parts or
-  the minor part. Separate fragments (solvent, counter-ions) and H atoms can be hidden.
+  the minor part. Separate fragments (solvent, counter-ions) and H atoms can be hidden; **Hide solvent** / **Hide
+  counterions** recognise common ones from the formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
+- **Wireframe** for bulky groups (e.g. Dipp): click the bond to the substituent (core atom first, e.g. N then
+  C_ipso) and press **As wireframe** – everything behind it is drawn as thin lines in the element colours, without
+  H atoms and labels. If the bond is part of a ring (spiro atom), the ring system behind the first atom is used. The
+  start view avoids overlapping atoms; labels optionally for heteroatoms only.
+- **Caption suggestion** (English), e.g. „… Displacement ellipsoids are drawn at the 50 % probability level;
+  co-crystallised THF omitted, Dipp groups shown as wireframe without hydrogen atoms for clarity. …“, with the
+  selected parameters and symmetry codes; copied with one click and written to `…_captions.txt` on export.
 - **Click atoms** (the front-most one wins): 2 = distance, 3 = angle, 4 = torsion angle. Values with s.u. are taken
   **exactly from the CIF** (e.g. 1.392(3)); Spectravolt never estimates an s.u. itself. If a value is missing (torsion
   angles without `CONF`), it is calculated from the coordinates, shown **without** s.u. and marked – set `CONF` in

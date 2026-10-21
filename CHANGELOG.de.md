@@ -10,6 +10,11 @@
   Element frei änderbar, verschiebbare Labels; flacher Olex2-Stil wählbar), Atome und Labels je Atom schaltbar
   (Doppelklick schaltet ein Label um), Molekül über die Symmetrie vervollständigt (C1ⁱ mit Fußnote), Fehlordnung (standardmäßig
   Hauptteil), H-Atome und getrennte Fragmente ausblendbar.
+- X-Ray: sperrige Gruppen als **Drahtmodell** (Bindung zum Substituenten wählen, z. B. N–C_ipso; auch Ringsysteme
+  hinter einem Spiro-Atom), Schalter **Lösungsmittel** / **Gegenionen ausblenden** (erkannt über die Summenformel; ein
+  zweites unabhängiges Molekül bleibt), Labels nur für Heteroatome, Startansicht mit möglichst wenig Überdeckung und
+  ein **Vorschlag für die Bildunterschrift**, der sich nach dem Ausgeblendeten und dem Drahtmodell richtet (mit
+  ausgewählten Parametern und Symmetriecodes).
 - Abstände, Winkel und Diederwinkel **per Klick auf Atome**, Standardabweichungen genau aus der CIF; in der CIF
   fehlende Werte (Diederwinkel ohne CONF) werden ohne Standardabweichung berechnet und markiert.
 - SI-Tabellen: **Kristalldaten und Strukturverfeinerung** (eine Spalte je Verbindung) und **ausgewählte Parameter**;

@@ -174,11 +174,20 @@ Molmasse behalten diese. Der Name steht im Fenstertitel.
   Labels (verschiebbar). Alternativ flacher Olex2-Stil mit fetten Labels. Einzelne Atome (z. B. einzelne H) lassen
   sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste oder Doppelklick auf das Atom).
   **Ziehen dreht**, rechte Taste verschiebt, Mausrad zoomt; die Ansicht wird je Struktur gespeichert,
-  **Ansicht zurücksetzen** führt zur Standardansicht (Blick auf die größte Ebene). Atomfarben je Element frei wählbar
+  **Ansicht zurücksetzen** führt zur Standardansicht (möglichst wenig überdeckte Atome). Atomfarben je Element frei wählbar
   (Standard: Olex2-Farben).
 - Das Molekül wird **über die Symmetrie vervollständigt** (z. B. Molekül auf einem Inversionszentrum); erzeugte Atome
   tragen einen Zusatz (C1ⁱ), die Operation steht als Fußnote darunter. **Fehlordnung:** nur Hauptteil (Standard),
-  alle Teile oder der Nebenteil. Getrennte Fragmente (Lösungsmittel, Gegenionen) und H-Atome lassen sich ausblenden.
+  alle Teile oder der Nebenteil. Getrennte Fragmente (Lösungsmittel, Gegenionen) und H-Atome lassen sich ausblenden;
+  **Lösungsmittel** / **Gegenionen ausblenden** erkennt die üblichen über die Summenformel (THF, Et₂O, CH₂Cl₂, Toluol …;
+  OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
+- **Drahtmodell** für sperrige Gruppen (z. B. Dipp): die Bindung zum Substituenten anklicken (Atom am Kern zuerst, z. B.
+  N, dann C_ipso) und **Als Drahtmodell** drücken – alles dahinter wird als dünne Linien in den Elementfarben gezeichnet,
+  ohne H-Atome und Labels. Liegt die Bindung in einem Ring (Spiro-Atom), gilt das Ringsystem hinter dem ersten Atom.
+  Die Startansicht vermeidet überdeckte Atome; Labels wahlweise nur für Heteroatome.
+- **Vorschlag für die Bildunterschrift** (Englisch), z. B. „… Displacement ellipsoids are drawn at the 50 % probability
+  level; co-crystallised THF omitted, Dipp groups shown as wireframe without hydrogen atoms for clarity. …“, mit den
+  ausgewählten Parametern und Symmetriecodes; Kopieren mit einem Klick, beim Export als `…_captions.txt`.
 - **Atome anklicken** (das vorderste gewinnt): 2 = Abstand, 3 = Winkel, 4 = Diederwinkel. Werte mit
   Standardabweichung kommen **genau aus der CIF** (z. B. 1.392(3)); Spectravolt schätzt nie selbst eine
   Standardabweichung. Fehlt ein Wert (Diederwinkel ohne `CONF`), wird er aus den Koordinaten berechnet, **ohne**

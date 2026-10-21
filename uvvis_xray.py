@@ -613,12 +613,70 @@ class Molecule:
         comps = {}
         for k in range(n):
             comps.setdefault(find(k), []).append(k)
-        frags = sorted(comps.values(), key=lambda c: (-sum(self.atoms[k]["el"] not in ("H", "D") for k in c), min(c)))
+        info = {}
+        for root, c in comps.items():
+            els = [self.atoms[k]["el"] for k in c]
+            info[root] = (frag_kind(hill(els), hill([e for e in els if e not in ("H", "D")])), els)
+        # Hauptmolekül = größtes Fragment, das kein bekanntes Lösungsmittel/Gegenion ist (z. B. BArF⁻ > Kation)
+        frags = sorted(comps.items(), key=lambda rc: (info[rc[0]][0][0] is not None,
+                                                      -sum(e not in ("H", "D") for e in info[rc[0]][1]), min(rc[1])))
         self.fragments = []
-        for fi, c in enumerate(frags):
+        main_heavy = None
+        for fi, (root, c) in enumerate(frags):
             for k in c:
                 self.atoms[k]["frag"] = fi
-            self.fragments.append(dict(atoms=c, formula=hill([self.atoms[k]["el"] for k in c])))
+            (kind, name), els = info[root]
+            heavy = hill([e for e in els if e not in ("H", "D")])
+            if fi == 0:
+                kind, main_heavy = "main", heavy
+            elif kind is None:
+                kind = "molecule" if heavy == main_heavy else "other"
+            self.fragments.append(dict(atoms=c, formula=hill(els), kind=kind, name=name))
+        self._nbrs = None
+
+    def neighbors(self):
+        if self._nbrs is None:
+            self._nbrs = {k: [] for k in range(len(self.atoms))}
+            for a, b in self.bonds:
+                self._nbrs[a].append(b)
+                self._nbrs[b].append(a)
+        return self._nbrs
+
+    def substituent(self, a, b):
+        """Atome hinter der Bindung a–b (die kleinere Seite, nach Nicht-H-Atomen). Liegt a–b in einem Ring: das
+        Ringsystem hinter a (siehe beyond) oder None."""
+        nb = self.neighbors()
+
+        def side(start, block):
+            seen, todo = {start}, [start]
+            while todo:
+                x = todo.pop()
+                for y in nb[x]:
+                    if y not in seen and not (x == start and y == block):
+                        seen.add(y)
+                        todo.append(y)
+            return seen
+        heavy = lambda c: sum(self.atoms[k]["el"] not in ("H", "D") for k in c)  # noqa: E731
+        sb = side(b, a)
+        if a not in sb:
+            sa = side(a, b)
+            return sb if heavy(sb) <= heavy(sa) else sa
+        return self.beyond(a, b)
+
+    def beyond(self, a, b):
+        """Ringsystem hinter dem Verknüpfungsatom a (z. B. Spiro-C): alles, was von b aus ohne a erreichbar ist,
+        sofern es höchstens die Hälfte des Fragments ist; sonst None."""
+        nb = self.neighbors()
+        seen, todo = {b}, [b]
+        while todo:
+            x = todo.pop()
+            for y in nb[x]:
+                if y != a and y not in seen:
+                    seen.add(y)
+                    todo.append(y)
+        frag = [k for k, at in enumerate(self.atoms) if at.get("frag") == self.atoms[a].get("frag")]
+        heavy = lambda c: sum(self.atoms[k]["el"] not in ("H", "D") for k in c)  # noqa: E731
+        return seen if heavy(seen) <= (heavy(frag) - 1) / 2 else None
 
     def find_key(self, key):
         for k, a in enumerate(self.atoms):
@@ -629,6 +687,43 @@ class Molecule:
     def footnotes(self):
         """['i: 1−x, 1−y, 1−z', …]"""
         return [f"{r}: {op}" for op, r in self.ops.items()]
+
+
+# Bekannte Lösungsmittel und Gegenionen (Hill-Formel mit H; ohne H zusätzlich über die Schweratome, weil H in
+# fehlgeordneten Lösungsmitteln oft nicht verfeinert sind). Name "" = mehrdeutig (dann Formel in der Bildunterschrift).
+SOLVENTS = {"C4H8O": "THF", "C4H10O": "Et₂O", "CH2Cl2": "CH₂Cl₂", "CHCl3": "CHCl₃", "CCl4": "CCl₄", "C7H8": "toluene",
+            "C6H6": "benzene", "C6H14": "n-hexane", "C5H12": "n-pentane", "C7H16": "n-heptane", "C6H12": "cyclohexane",
+            "C2H3N": "MeCN", "H2O": "water", "CH4O": "MeOH", "C2H6O": "EtOH", "C3H8O": "iPrOH", "C3H6O": "acetone",
+            "C2H6OS": "DMSO", "C3H7NO": "DMF", "C4H8O2": "", "C4H10O2": "DME", "C2H4Cl2": "1,2-dichloroethane",
+            "C6H5F": "fluorobenzene", "C6H4F2": "difluorobenzene", "C6H5Cl": "chlorobenzene",
+            "C6H4Cl2": "dichlorobenzene", "C5H5N": "pyridine", "C8H10": "xylene", "C5H10O": "2-MeTHF",
+            "C5H12O": "MTBE", "C3H4O3": "", "CS2": "CS₂"}
+IONS = {"CF3O3S": "OTf⁻", "BF4": "BF₄⁻", "F6P": "PF₆⁻", "F6Sb": "SbF₆⁻", "AsF6": "AsF₆⁻", "ClO4": "ClO₄⁻",
+        "NO3": "NO₃⁻", "C2F6NO4S2": "NTf₂⁻", "C32H12BF24": "BArF₂₄⁻", "C24BF20": "[B(C₆F₅)₄]⁻",
+        "C24H20B": "BPh₄⁻", "C16AlF36O4": "[Al(OC(CF₃)₃)₄]⁻", "AlCl4": "AlCl₄⁻", "Cl4Ga": "GaCl₄⁻",
+        "Cl4Fe": "FeCl₄⁻", "Cl6Sb": "SbCl₆⁻", "I3": "I₃⁻", "Cl": "Cl⁻", "Br": "Br⁻", "I": "I⁻", "F": "F⁻"}
+
+
+def _heavy_map(d):
+    out = {}
+    for f, name in d.items():
+        hv = re.sub(r"H\d*(?![a-z])", "", f)
+        out.setdefault(hv, set()).add(name)
+    return out
+
+
+SOLVENTS_HEAVY, IONS_HEAVY = _heavy_map(SOLVENTS), _heavy_map(IONS)
+
+
+def frag_kind(formula, heavy):
+    """-> (Art 'solvent'|'ion'|None, Name) für ein abgetrenntes Fragment (Hill-Formeln mit und ohne H)."""
+    for kind, full, hv in (("solvent", SOLVENTS, SOLVENTS_HEAVY), ("ion", IONS, IONS_HEAVY)):
+        if formula in full:
+            return kind, full[formula]
+        if heavy in hv and heavy:
+            names = hv[heavy]
+            return kind, next(iter(names)) if len(names) == 1 else ""
+    return None, ""
 
 
 def hill(els):
@@ -715,17 +810,55 @@ def param_label(keys):
     return "–".join(out)
 
 
-def default_view(mol: Molecule, frag=0):
-    """Blick senkrecht auf die Ebene des größten Fragments (kleinste Hauptachse = Blickrichtung)."""
-    pts = np.array([a["xyz"] for a in mol.atoms if a.get("frag") == frag and a["el"] not in ("H", "D")]
-                   or [a["xyz"] for a in mol.atoms] or [[0, 0, 0]])
+def _fib_dirs(n):
+    """n gleichmäßig verteilte Richtungen auf der oberen Halbkugel (Gegenrichtung zeigt dieselbe Überdeckung)."""
+    i = np.arange(n) + 0.5
+    z = 1 - i / n
+    r = np.sqrt(1 - z ** 2)
+    phi = i * math.pi * (3 - math.sqrt(5))
+    return np.column_stack([r * np.cos(phi), r * np.sin(phi), z])
+
+
+def overlap_score(P, d0=0.9):
+    """Überdeckung projizierter Atome (2D, Å): Summe exp(−(d/d0)²) über alle Paare – kleiner = übersichtlicher."""
+    diff = P[:, None, :] - P[None, :, :]
+    d2 = np.einsum("ijk,ijk->ij", diff, diff)
+    iu = np.triu_indices(len(P), 1)
+    return float(np.exp(-d2[iu] / d0 ** 2).sum())
+
+
+def default_view(mol: Molecule, frag=0, use=None, n_dirs=240):
+    """Startansicht: Blickrichtung mit der geringsten Überdeckung der Nicht-H-Atome (Halbkugel abgetastet, dazu die
+    Normale der Hauptebene), größte Ausdehnung waagerecht. use = zu berücksichtigende Atomindizes (sonst das
+    Hauptfragment ohne H)."""
+    idx = list(use) if use else [k for k, a in enumerate(mol.atoms) if a.get("frag") == frag
+                                  and a["el"] not in ("H", "D")]
+    pts = np.array([mol.atoms[k]["xyz"] for k in idx] or [a["xyz"] for a in mol.atoms] or [[0, 0, 0]], float)
     if len(pts) < 3:
         return np.eye(3)
     c = pts - pts.mean(axis=0)
+    if len(c) > 160:                                   # sehr große Strukturen: Stichprobe reicht für die Wahl
+        c = c[np.linspace(0, len(c) - 1, 160).astype(int)]
     w, v = np.linalg.eigh(c.T @ c)
-    R = v[:, ::-1].T                     # Zeilen: x = größte, y = mittlere, z = kleinste Ausdehnung
+    normal = v[:, 0]
+    best = None
+    for n, d in enumerate([normal] + list(_fib_dirs(n_dirs))):
+        d = d / np.linalg.norm(d)
+        e1 = np.cross(d, [1.0, 0, 0] if abs(d[0]) < 0.9 else [0, 1.0, 0])
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(d, e1)
+        P = np.column_stack([c @ e1, c @ e2])
+        sc = overlap_score(P) * (0.97 if n == 0 else 1.0)      # bei Gleichstand die Hauptebene bevorzugen
+        if best is None or sc < best[0]:
+            best = (sc, d, e1, e2, P)
+    _, d, e1, e2, P = best
+    w2, v2 = np.linalg.eigh(P.T @ P)
+    ax = v2[:, 1]                                     # größte Ausdehnung im Bild -> x
+    x = ax[0] * e1 + ax[1] * e2
+    y = np.cross(d, x)
+    R = np.array([x, y, d])
     if np.linalg.det(R) < 0:
-        R[2] *= -1
+        R[1] *= -1
     return R
 
 
@@ -1158,7 +1291,30 @@ def label_shown(a, o):
     over = (o.get("label_on") or {}).get(a["key"])
     if over is not None:
         return bool(over)
+    if a["key"] in (o.get("wire") or ()):                     # Drahtmodell-Gruppen: standardmäßig ohne Label
+        return False
+    if o.get("label_mode") == "hetero" and a["el"] == "C":
+        return False
     return a["el"] not in ("H", "D") or bool(o.get("h_labels"))
+
+
+def wire_color(color):
+    """Linienfarbe im Drahtmodell: Elementfarbe, sehr helle Farben (H) grau, damit sie auf Weiß sichtbar bleiben."""
+    r, g, b = to_rgb(color)
+    return "#9a9a9a" if 0.299 * r + 0.587 * g + 0.114 * b > 0.85 else color
+
+
+def _half(xs, ys, half):
+    """Hälfte einer Bindung (0 = zum ersten Atom, 1 = zum zweiten)."""
+    xm, ym = (xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2
+    return ([xs[0], xm], [ys[0], ym]) if half == 0 else ([xm, xs[1]], [ym, ys[1]])
+
+
+def join_en(items):
+    items = [i for i in items if i]
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
 
 
 class XrayFigure:
@@ -1178,6 +1334,8 @@ class XrayFigure:
         self.ax.set_axis_off()
         self.axes_items, self.ann_items, self.curves = {}, {}, []
         self.k = chi2_scale(opts.get("prob", 50) / 100)
+        wire = set(opts.get("wire") or ())
+        self.wire = {k for k, a in enumerate(mol.atoms) if a["key"] in wire}
         self.show = self._visible()
         pts = np.array([mol.atoms[i]["xyz"] for i in self.show]) if self.show else np.zeros((1, 3))
         self.center = pts.mean(axis=0)
@@ -1185,7 +1343,7 @@ class XrayFigure:
         sc = cfg.get("scale", 1.0)
         self.bond_w = float(opts.get("bond_w", 0.08))           # Bindungsdicke in Å (Mercury: Zylinder)
         self.lw_edge = max(0.4, 0.6 * sc)
-        self.atom_art, self.bond_art, self.sel_art = {}, [], []
+        self.atom_art, self.bond_art, self.sel_art, self.bond_lines = {}, [], [], {}
         self.auto_pos = {}
         self.scene = self._project()
         # Maßstab aus der Ausdehnung in der aktuellen Ansicht (beim Drehen bleibt er fest, nach dem Loslassen
@@ -1195,6 +1353,7 @@ class XrayFigure:
         self.ext = (max(abs(min(xs)), abs(max(xs)), 0.5) + 0.6, max(abs(min(ys)), abs(max(ys)), 0.5) + 0.6)
         self._limits()
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
+        self.lw_wire = max(0.7, 0.4 * self.lw_bond)
         self._build()
         self._footnote()
         self._labels()
@@ -1203,10 +1362,22 @@ class XrayFigure:
     def _visible(self):
         o, mol = self.opts, self.mol
         hidden = set(o.get("hidden_frags") or [])
+        kinds = set(o.get("hide_kinds") or [])
         hidden_atoms = set(o.get("hidden_atoms") or [])
-        return [i for i, a in enumerate(mol.atoms)
-                if a.get("frag") not in hidden and (o.get("show_h", True) or a["el"] not in ("H", "D"))
-                and a["key"] not in hidden_atoms]
+        nb = mol.neighbors()
+        out = []
+        for i, a in enumerate(mol.atoms):
+            fr = a.get("frag")
+            if fr in hidden or mol.fragments[fr]["kind"] in kinds or a["key"] in hidden_atoms:
+                continue
+            if a["el"] in ("H", "D"):
+                if not o.get("show_h", True):
+                    continue
+                # H an Drahtmodell-Gruppen nur mit eigener Option
+                if not o.get("wire_h") and nb[i] and all(j in self.wire for j in nb[i]):
+                    continue
+            out.append(i)
+        return out
 
     def _limits(self):
         W, H = self.cfg["figsize_in"]
@@ -1230,6 +1401,9 @@ class XrayFigure:
             for c in range(len(it["curves"])):
                 xs, ys = it["curves"][c]
                 it["curves"][c] = (xs - off[0], ys - off[1])
+        for it in scene["atoms"]:
+            if it["k"] in self.wire:                       # Drahtmodell: kein Ellipsoid, kleiner Klickbereich
+                it.update(w=0.24, h=0.24, ang=0.0, iso=True, kind="wire", curves=[])
         scene["by_k"] = {it["k"]: it for it in scene["atoms"]}
         return scene
 
@@ -1237,7 +1411,8 @@ class XrayFigure:
         A, B = self.scene["by_k"][a], self.scene["by_k"][b]
         dx, dy = B["x"] - A["x"], B["y"] - A["y"]
         L = math.hypot(dx, dy)
-        ra, rb = _radius_along(A, dx, dy), _radius_along(B, -dx, -dy)
+        ra = 0.0 if A.get("kind") == "wire" else _radius_along(A, dx, dy)
+        rb = 0.0 if B.get("kind") == "wire" else _radius_along(B, -dx, -dy)
         if L <= ra + rb:
             return [np.nan, np.nan], [np.nan, np.nan]
         ux, uy = dx / L, dy / L
@@ -1245,6 +1420,8 @@ class XrayFigure:
 
     def _layers(self, it):
         """Polygone eines Atoms: Schattierungsschichten (Mercury) bzw. eine Fläche (flach), zuletzt der Umriss."""
+        if it.get("kind") == "wire":
+            return []
         base = _ellipse_verts(it["x"], it["y"], it["w"], it["h"], it["ang"])
         if self.opts.get("style", "mercury") == "flat":
             return [base, base]
@@ -1258,6 +1435,11 @@ class XrayFigure:
             a = self.mol.atoms[it["k"]]
             col = colors.get(a["el"]) or default_color(a["el"])
             verts = self._layers(it)
+            if not verts:                                  # Drahtmodell: nur die Bindungen
+                p = PolyCollection([], facecolors="none", edgecolors="none")
+                ax.add_collection(p)
+                self.atom_art[it["k"]] = (p, [])
+                continue
             nfill = len(verts) - 1
             faces = shade_colors(col, nfill) if mercury else [col]
             edge = (0.1, 0.1, 0.1) if mercury else (0, 0, 0)
@@ -1272,11 +1454,22 @@ class XrayFigure:
                 ax.add_line(ln)
                 lines.append(ln)
             self.atom_art[it["k"]] = (p, lines)
-        for a, b, _ in self.scene["bonds"]:
+        for n, (a, b, _) in enumerate(self.scene["bonds"]):
             xs, ys = self._bond_xy(a, b)
+            if a in self.wire and b in self.wire:            # Drahtmodell: zwei Hälften in den Elementfarben
+                self.bond_lines[n] = []
+                for half, k in ((0, a), (1, b)):
+                    el = self.mol.atoms[k]["el"]
+                    ln = Line2D(*_half(xs, ys, half), color=wire_color(colors.get(el) or default_color(el)),
+                                lw=self.lw_wire, solid_capstyle="round")
+                    ax.add_line(ln)
+                    self.bond_art.append((a, b, ln, half))
+                    self.bond_lines[n].append(ln)
+                continue
             ln = Line2D(xs, ys, color="#262626" if mercury else "black", lw=self.lw_bond, solid_capstyle="butt")
             ax.add_line(ln)
-            self.bond_art.append((a, b, ln))
+            self.bond_art.append((a, b, ln, None))
+            self.bond_lines[n] = [ln]
         for n, k in enumerate(self.selection):
             if k in self.scene["by_k"]:
                 it = self.scene["by_k"][k]
@@ -1302,9 +1495,9 @@ class XrayFigure:
                     ln.set_zorder(zo + 1e-4)
                     self.order.append(ln)
             else:
-                ln = self.bond_art[key][2]
-                ln.set_zorder(zo)
-                self.order.append(ln)
+                for ln in self.bond_lines[key]:
+                    ln.set_zorder(zo)
+                    self.order.append(ln)
         self.order += [e for _, e in self.sel_art] + list(self.ann_items.values())
 
     def set_view(self, R):
@@ -1316,8 +1509,9 @@ class XrayFigure:
             p.set_verts(self._layers(it))
             for ln, (xs, ys) in zip(lines, it["curves"]):
                 ln.set_data(xs, ys)
-        for a, b, ln in self.bond_art:
-            ln.set_data(*self._bond_xy(a, b))
+        for a, b, ln, half in self.bond_art:
+            xs, ys = self._bond_xy(a, b)
+            ln.set_data(*(_half(xs, ys, half) if half is not None else (xs, ys)))
         for k, e in self.sel_art:
             it = self.scene["by_k"][k]
             e.set_center((it["x"], it["y"]))
@@ -1333,8 +1527,9 @@ class XrayFigure:
             self.pan = list(pan)
         self._limits()
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
-        for _, _, ln in self.bond_art:
-            ln.set_linewidth(self.lw_bond)
+        self.lw_wire = max(0.7, 0.4 * self.lw_bond)
+        for _, _, ln, half in self.bond_art:
+            ln.set_linewidth(self.lw_bond if half is None else self.lw_wire)
 
     def artists(self):
         return self.order
@@ -1387,7 +1582,7 @@ class XrayFigure:
             rx = abs(tr.transform((it["x"] + max(it["w"], it["h"]) / 2, it["y"]))[0] - cx)
             circ.append((cx, cy, rx))
         segpts = []
-        for _, _, ln in self.bond_art:
+        for _, _, ln, _h in self.bond_art:
             xs, ys = ln.get_data()
             if np.isfinite(xs).all():
                 for f in np.linspace(0, 1, 7):
@@ -1632,7 +1827,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
 from PySide6.QtCore import Qt, QTimer  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox,  # noqa: E402
-                               QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+                               QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTableWidget,
                                QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
@@ -1647,6 +1842,14 @@ KIND_HEAD = {"bond": "Bond lengths [Å]", "angle": "Angles [°]", "torsion": "To
 CALC_NOTE = "calculated from the atomic coordinates; no s.u. in the CIF"
 
 
+class _Vis:
+    """Minimale Figur-Attrappe, um XrayFigure._visible ohne Zeichnen zu nutzen (Bildunterschrift)."""
+
+    def __init__(self, mol, opts):
+        self.mol, self.opts = mol, opts
+        self.wire = {k for k, a in enumerate(mol.atoms) if a["key"] in (opts.get("wire") or ())}
+
+
 def is_cif(path):
     return Path(path).suffix.lower() == ".cif" and Path(path).is_file()
 
@@ -1656,7 +1859,7 @@ class XrayTab(TABS.FigureTab):
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
                          h_labels=False, colors={}, bond_w=0.08, style="mercury", x_auto=True, x_min=0.0,
-                         x_max=1.0, ymax=0.0)
+                         x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False)
 
     def __init__(self, main, state):
         self.sel = []                     # gewählte Atome (Schlüssel) der aktuellen Verbindung, nicht im Undo
@@ -1689,6 +1892,7 @@ class XrayTab(TABS.FigureTab):
         v.addWidget(self.tbl)
         self.lbl_info = QLabel("")
         self.lbl_info.setWordWrap(True)
+        self.lbl_info.setTextFormat(Qt.RichText)
         self.lbl_info.setStyleSheet(HINT_CSS)
         v.addWidget(self.lbl_info)
         self.lv.addWidget(g)
@@ -1714,11 +1918,18 @@ class XrayTab(TABS.FigureTab):
         self.cb_lab.setChecked(st["labels"])
         self.cb_hlab = QCheckBox(T("xr_h_labels"))
         self.cb_hlab.setChecked(st["h_labels"])
+        self.cb_wire_h = QCheckBox(T("xr_wire_h"))
+        self.cb_wire_h.setToolTip(T("xr_wire_h_tip"))
+        self.cb_wire_h.setChecked(st.get("wire_h", False))
         row = QHBoxLayout()
-        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab):
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_wire_h):
             row.addWidget(w_)
         row.addStretch(1)
         f.addRow(row)
+        self.cmb_labmode = QComboBox()
+        for key in ("all", "hetero"):
+            self.cmb_labmode.addItem(T("xr_lab_" + key), key)
+        f.addRow(T("xr_label_mode"), self.cmb_labmode)
         self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å",
                                       value=st.get("bond_w", 0.08))
         f.addRow(T("xr_bond_lw"), self.sp_bond)
@@ -1726,9 +1937,19 @@ class XrayTab(TABS.FigureTab):
         self.lst_frag.setMaximumHeight(90)
         self.lst_frag.setToolTip(T("xr_frags_tip"))
         self.lst_frag.itemChanged.connect(self.frag_toggled)
+        self.cb_solv = QCheckBox(T("xr_hide_solv"))
+        self.cb_ions = QCheckBox(T("xr_hide_ions"))
+        self.cb_solv.setToolTip(T("xr_hide_tip"))
+        self.cb_ions.setToolTip(T("xr_hide_tip"))
+        row = QHBoxLayout()
+        row.addWidget(self.cb_solv)
+        row.addWidget(self.cb_ions)
+        row.addStretch(1)
+        f.addRow(row)
         f.addRow(T("xr_frags"), self.lst_frag)
-        self.tbl_atoms = QTableWidget(0, 3)
-        self.tbl_atoms.setHorizontalHeaderLabels([T("xr_atom"), T("xr_atom_shown"), T("xr_atom_label")])
+        self.tbl_atoms = QTableWidget(0, 4)
+        self.tbl_atoms.setHorizontalHeaderLabels([T("xr_atom"), T("xr_atom_shown"), T("xr_atom_label"),
+                                                  T("xr_atom_wire")])
         self.tbl_atoms.verticalHeader().setVisible(False)
         self.tbl_atoms.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tbl_atoms.setMinimumHeight(150)
@@ -1776,6 +1997,24 @@ class XrayTab(TABS.FigureTab):
         row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
+        row = QHBoxLayout()
+        self.btn_wire = QPushButton(T("xr_wire"))
+        self.btn_wire.setToolTip(T("xr_wire_tip"))
+        self.btn_wire.clicked.connect(self.wire_selected)
+        b = QPushButton(T("xr_unwire"))
+        b.setToolTip(T("xr_unwire_tip"))
+        b.clicked.connect(self.unwire_selected)
+        row.addWidget(self.btn_wire)
+        row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel(T("xr_wire_name")))
+        self.ed_wire = QLineEdit()
+        self.ed_wire.setPlaceholderText(T("xr_wire_name_ph"))
+        self.ed_wire.editingFinished.connect(self.wire_name_changed)
+        row.addWidget(self.ed_wire, 1)
+        v.addLayout(row)
         self.lst_par = QListWidget()
         self.lst_par.setMaximumHeight(130)
         v.addWidget(self.lst_par)
@@ -1787,6 +2026,16 @@ class XrayTab(TABS.FigureTab):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
+        self.lv.addWidget(g)
+
+        g = QGroupBox(T("xr_caption"))
+        v = QVBoxLayout(g)
+        self.txt_cap = QTextBrowser()
+        self.txt_cap.setMaximumHeight(110)
+        v.addWidget(self.txt_cap)
+        b = QPushButton(T("xr_caption_copy"))
+        b.clicked.connect(lambda: copy_rich(*self.caption()))
+        v.addWidget(b)
         self.lv.addWidget(g)
 
         g = QGroupBox(T("xr_tables"))
@@ -1809,8 +2058,9 @@ class XrayTab(TABS.FigureTab):
         self.sp_bond.valueChanged.connect(self.changed)
         self.cmb_dis.currentIndexChanged.connect(self.disorder_changed)
         self.cmb_style.currentIndexChanged.connect(self.changed)
-        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab):
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_wire_h, self.cb_solv, self.cb_ions):
             w_.toggled.connect(self.changed)
+        self.cmb_labmode.currentIndexChanged.connect(self.changed)
         self.sync_widgets()
 
     def common_box(self):
@@ -1864,7 +2114,10 @@ class XrayTab(TABS.FigureTab):
     def collect(self):
         self.st.update(prob=self.sp_prob.value(), show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(),
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
-                       bond_w=self.sp_bond.value(), style=self.cmb_style.currentData())
+                       bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(),
+                       label_mode=self.cmb_labmode.currentData(), wire_h=self.cb_wire_h.isChecked(),
+                       hide_solv=self.cb_solv.isChecked(), hide_ions=self.cb_ions.isChecked())
+        self.cmb_labmode.setEnabled(self.cb_lab.isChecked())
 
     # -- Einträge -------------------------------------------------------------------------
     def entries(self):
@@ -1900,9 +2153,11 @@ class XrayTab(TABS.FigureTab):
             return
         last = None
         for b in blocks:
-            e = dict(uid=uuid.uuid4().hex[:8], file=p, block=b.name, name=b.name, ref="", ccdc="", view=None,
+            # Name: bei einem Block der Dateiname (Datenblöcke heißen oft nach dem Messlauf, z. B. „…sadabs“)
+            name = Path(p).stem if len(blocks) == 1 else b.name
+            e = dict(uid=uuid.uuid4().hex[:8], file=p, block=b.name, name=name, ref="", ccdc="", view=None,
                      zoom=1.0, pan=[0.0, 0.0], layout={}, hidden_frags=[], params=[], hidden_atoms=[],
-                     label_on={})
+                     label_on={}, wire=[], wire_name="")
             self.entries().append(e)
             last = e["uid"]
         self.st["current"] = last
@@ -1982,7 +2237,12 @@ class XrayTab(TABS.FigureTab):
         v = e.get("view")
         if v and len(v) == 9:
             return np.array(v, float).reshape(3, 3)
-        return default_view(mol)
+        o = self.opts(e)
+        hid, kinds, wire = set(o["hidden_frags"]), set(o["hide_kinds"]), o["wire"]
+        use = [k for k, a in enumerate(mol.atoms) if a["el"] not in ("H", "D") and a["key"] not in wire
+               and a["key"] not in set(o["hidden_atoms"]) and a.get("frag") not in hid
+               and mol.fragments[a["frag"]]["kind"] not in kinds]
+        return default_view(mol, use=use or None)        # alle sichtbaren Teile (auch Lösungsmittel/Ionen)
 
     # -- Oberfläche -----------------------------------------------------------------------
     def sync_widgets(self):
@@ -2011,6 +2271,12 @@ class XrayTab(TABS.FigureTab):
         self.cb_h.setChecked(st["show_h"])
         self.cb_lab.setChecked(st["labels"])
         self.cb_hlab.setChecked(st["h_labels"])
+        self.cb_wire_h.setChecked(st.get("wire_h", False))
+        self.cb_solv.setChecked(st.get("hide_solv", False))
+        self.cb_ions.setChecked(st.get("hide_ions", False))
+        self.cmb_labmode.setCurrentIndex(max(0, self.cmb_labmode.findData(st.get("label_mode", "all"))))
+        self.cmb_labmode.setEnabled(st["labels"])
+        self.ed_wire.setText((cur or {}).get("wire_name") or "")
         self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
         self.fill_colors()
         self.fill_atoms()
@@ -2055,7 +2321,12 @@ class XrayTab(TABS.FigureTab):
             return
         hidden = set(e.get("hidden_frags") or [])
         for i, fr in enumerate(mol.fragments):
-            it = QListWidgetItem(f"{i + 1}: {fr['formula']}" + ("" if i else f"  ({T('xr_main_frag')})"))
+            kind = fr.get("kind")
+            tag = {"main": T("xr_main_frag"), "molecule": T("xr_kind_molecule"),
+                   "solvent": T("xr_kind_solvent"), "ion": T("xr_kind_ion")}.get(kind, "")
+            if fr.get("name") and kind in ("solvent", "ion"):
+                tag = f"{fr['name']}, {tag}"
+            it = QListWidgetItem(f"{i + 1}: {fr['formula']}" + (f"  ({tag})" if tag else ""))
             it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
             it.setCheckState(Qt.Unchecked if i in hidden else Qt.Checked)
             it.setData(Qt.UserRole, i)
@@ -2077,8 +2348,11 @@ class XrayTab(TABS.FigureTab):
         self._loading = True
         e = self.entry()
         mol = self.molecule(e) if e else None
+        kinds = set(self.opts(e)["hide_kinds"]) if e else set()
         atoms = [] if mol is None else [a for a in mol.atoms if a.get("frag") not in set(e.get("hidden_frags") or [])
+                                        and mol.fragments[a["frag"]]["kind"] not in kinds
                                         and (self.st["show_h"] or a["el"] not in ("H", "D"))]
+        wire = set((e or {}).get("wire") or [])
         self.tbl_atoms.setRowCount(len(atoms))
         hidden = set((e or {}).get("hidden_atoms") or [])
         o = self.opts(e) if e else {}
@@ -2087,7 +2361,7 @@ class XrayTab(TABS.FigureTab):
             it.setFlags(Qt.ItemIsEnabled)
             it.setData(Qt.UserRole, a["key"])
             self.tbl_atoms.setItem(r, 0, it)
-            for c, on in ((1, a["key"] not in hidden), (2, label_shown(a, o))):
+            for c, on in ((1, a["key"] not in hidden), (2, label_shown(a, o)), (3, a["key"] in wire)):
                 it = QTableWidgetItem()
                 it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
                 it.setCheckState(Qt.Checked if on else Qt.Unchecked)
@@ -2108,6 +2382,10 @@ class XrayTab(TABS.FigureTab):
             hidden.discard(key) if on else hidden.add(key)
             e["hidden_atoms"] = sorted(hidden)
             self.sel = [k for k in self.sel if k not in hidden]
+        elif item.column() == 3:
+            wire = set(e.get("wire") or [])
+            wire.add(key) if on else wire.discard(key)
+            e["wire"] = sorted(wire)
         else:
             self.set_label(key, on)
             return
@@ -2200,6 +2478,134 @@ class XrayTab(TABS.FigureTab):
             self.fill_params()
             self.update_tables()
             self.main.push_undo()
+
+    # -- Drahtmodell ------------------------------------------------------------------------
+    def wire_selected(self):
+        """Gewählte Bindung: der Substituent dahinter (kleinere Seite) wird Drahtmodell; sonst die gewählten Atome."""
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        if mol is None or not self.sel:
+            self.main.statusBar().showMessage(T("xr_wire_hint"), 6000)
+            return
+        idx = [mol.find_key(k) for k in self.sel]
+        idx = [k for k in idx if k is not None]
+        add = set(idx)
+        if len(idx) == 2 and (min(idx), max(idx)) in set(mol.bonds):
+            side = mol.substituent(idx[0], idx[1])
+            if side is None:
+                self.main.statusBar().showMessage(T("xr_wire_ring"), 8000)
+                return
+            add = side
+        e["wire"] = sorted(set(e.get("wire") or []) | {mol.atoms[k]["key"] for k in add})
+        self.sel = []
+        self.update_measure()
+        self.render()
+
+    def unwire_selected(self):
+        """Gewählte Atome (bzw. Substituent hinter der gewählten Bindung) wieder normal; ohne Auswahl alle."""
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        if mol is None:
+            return
+        if not self.sel:
+            e["wire"] = []
+        else:
+            idx = [k for k in (mol.find_key(x) for x in self.sel) if k is not None]
+            drop = set(idx)
+            if len(idx) == 2 and (min(idx), max(idx)) in set(mol.bonds):
+                drop = mol.substituent(idx[0], idx[1]) or drop
+            keys = {mol.atoms[k]["key"] for k in drop}
+            e["wire"] = [k for k in e.get("wire") or [] if k not in keys]
+        self.sel = []
+        self.update_measure()
+        self.render()
+
+    def wire_name_changed(self):
+        e = self.entry()
+        if e is not None and self.ed_wire.text().strip() != (e.get("wire_name") or ""):
+            e["wire_name"] = self.ed_wire.text().strip()
+            self.update_tables()
+            self.main.push_undo()
+
+    # -- Bildunterschrift -------------------------------------------------------------------
+    def caption(self, e=None):
+        """Vorschlag für die Bildunterschrift (Englisch, wie die Tabellen) -> (Klartext, HTML). Passt sich an das an,
+        was in der Abbildung ausgeblendet oder als Drahtmodell gezeigt ist."""
+        import html as _html
+        e = e or self.entry()
+        mol = self.molecule(e) if e else None
+        if mol is None:
+            return "", ""
+        st, o = self.st, self.opts(e)
+        name = e.get("name") or e["block"]
+        shown = set(XrayFigure._visible.__get__(_Vis(mol, o))())
+        omit, solv, ions = [], [], []
+        hid = set(o["hidden_frags"])
+        for fi, fr in enumerate(mol.fragments):
+            if not (fi in hid or fr["kind"] in set(o["hide_kinds"])) or fi == 0:
+                continue
+            lab = fr.get("name") or to_plain(formula_markup(fr["formula"]))
+            if fr["kind"] == "solvent":
+                solv.append(lab)
+            elif fr["kind"] == "ion":
+                ions.append(lab)
+            elif fr["kind"] == "molecule":
+                omit.append("the second independent molecule")
+            else:
+                omit.append("further fragments")
+        heavy_hidden = [a for a in mol.atoms if a["key"] in set(o["hidden_atoms"]) and a["el"] not in ("H", "D")
+                        and a.get("frag") not in hid]
+        if not st["show_h"]:
+            omit.insert(0, "hydrogen atoms")
+        elif any(a["el"] in ("H", "D") and a["key"] in set(o["hidden_atoms"]) for a in mol.atoms):
+            omit.insert(0, "selected hydrogen atoms")
+        if heavy_hidden:
+            omit.append("selected atoms")
+        if solv:
+            omit.append("co-crystallised " + join_en(sorted(set(solv))) if len(set(solv)) <= 2
+                        else "co-crystallised solvent molecules")
+        if ions:
+            u = sorted(set(ions))
+            omit.append(("the counterion " if len(u) == 1 else "the counterions ") + join_en(u))
+        wire = [k for k in range(len(mol.atoms)) if mol.atoms[k]["key"] in o["wire"] and k in shown]
+        txt = f"Molecular structure of {name} in the solid state. Displacement ellipsoids are drawn at the " \
+              f"{int(st['prob'])} % probability level"
+        clauses = []
+        if omit:
+            clauses.append(join_en(omit) + " omitted")
+        if wire:
+            wn = e.get("wire_name") or "selected substituents"
+            extra = " without hydrogen atoms" if st["show_h"] and not st.get("wire_h") else ""
+            clauses.append(f"{wn} shown as wireframe{extra}")
+        if clauses:
+            txt += "; " + ", ".join(clauses) + " for clarity"
+        txt += "."
+        if mol.S.parts() and st["disorder"] in ("main", "minor"):
+            txt += " Only the " + ("major" if st["disorder"] == "main" else "minor") + \
+                " component of the disordered part" + ("s" if len(mol.S.parts()) > 2 else "") + " is shown."
+        pars = []
+        for kind, head in (("bond", "bond lengths [Å]"), ("angle", "angles [°]"), ("torsion", "torsion angles [°]")):
+            vals = []
+            for pp in e.get("params") or []:
+                m = measure(mol, pp["atoms"])
+                if m is not None and m["kind"] == kind:
+                    vals.append(f"{param_name(mol, pp['atoms'])} {minus(m['text'])}")
+            if vals:
+                pars.append((head, vals))
+        if pars:
+            heads = join_en([h for h, _ in pars])
+            txt += f" Selected {heads}: " + "; ".join(", ".join(v) for _, v in pars) + "."
+        used = {mol.atoms[k].get("opkey") for k in shown if mol.atoms[k].get("opkey")}
+        for pp in e.get("params") or []:
+            for k in pp["atoms"]:
+                i = mol.find_key(k)
+                if i is not None and mol.atoms[i].get("opkey"):
+                    used.add(mol.atoms[i]["opkey"])
+        codes = [f"{r} {op}" for op, r in mol.ops.items() if op in used]
+        if codes:
+            txt += " Symmetry code" + ("s" if len(codes) > 1 else "") + ": " + "; ".join(codes) + "."
+        plain = minus(txt)
+        return plain, _html.escape(plain)
 
     # -- Auswahl / Maus ---------------------------------------------------------------------
     def hover_atom(self, k):
@@ -2322,7 +2728,10 @@ class XrayTab(TABS.FigureTab):
         return dict(prob=st["prob"], show_h=st["show_h"], labels=st["labels"], h_labels=st["h_labels"],
                     colors=st.get("colors") or {}, bond_w=st.get("bond_w", 0.08), hidden_frags=e.get("hidden_frags") or [],
                     style=st.get("style", "mercury"), hidden_atoms=e.get("hidden_atoms") or [],
-                    label_on=e.get("label_on") or {})
+                    label_on=e.get("label_on") or {}, wire=set(e.get("wire") or []), wire_h=st.get("wire_h", False),
+                    label_mode=st.get("label_mode", "all"),
+                    hide_kinds=[k for k, on in (("solvent", st.get("hide_solv")), ("ion", st.get("hide_ions")))
+                                if on])
 
     def build(self, fig, e=None, interactive=True):
         e = e or self.entry()
@@ -2371,8 +2780,9 @@ class XrayTab(TABS.FigureTab):
             self.lbl_info.setText("")
             return
         S = mol.S
-        bits = [T("xr_info", n=len(S.atoms), m=len(mol.atoms), sg=to_plain(space_group_markup(
-            S.block.get("_space_group_name_h-m_alt", "_symmetry_space_group_name_h-m"))))]
+        import html as _html
+        sg = to_html(space_group_markup(S.block.get("_space_group_name_h-m_alt", "_symmetry_space_group_name_h-m")))
+        bits = [_html.escape(T("xr_info", n=len(S.atoms), m=len(mol.atoms), sg="\x00")).replace("\x00", sg)]
         if mol.ops:
             bits.append(T("xr_sym_info", ops="; ".join(f"{r}: {op}" for op, r in mol.ops.items())))
         if S.parts():
@@ -2383,7 +2793,7 @@ class XrayTab(TABS.FigureTab):
             bits.append(T("xr_no_torsion"))
         if mol.truncated:
             bits.append(T("xr_truncated"))
-        self.lbl_info.setText("\n".join(bits))
+        self.lbl_info.setText("<br>".join(b if i == 0 else _html.escape(b) for i, b in enumerate(bits)))
         self.lbl_info.setStyleSheet(WARN_CSS if mol.truncated else HINT_CSS)
 
     # -- Tabellen -------------------------------------------------------------------------
@@ -2455,6 +2865,7 @@ class XrayTab(TABS.FigureTab):
             table_html(h, r, title, notes)
 
     def update_tables(self):
+        self.txt_cap.setHtml(self.caption()[1] if self.entries() else "")
         if not self.entries():
             self.txt_tab.setHtml("")
             return
@@ -2523,6 +2934,10 @@ class XrayTab(TABS.FigureTab):
             files += F.export()
         if not files and not es:
             raise RuntimeError(T("tab_empty"))
+        cap = base.with_name(base.name + "_captions.txt")
+        cap.write_text("\n\n".join(f"{e.get('name') or e['block']}:\n{self.caption(e)[0]}" for e in es) + "\n",
+                       encoding="utf-8")
+        files.append(cap)
         h, r = self.crystal_table()
         files.append(write_table_csv(base.with_name(base.name + "_crystal_data.csv"), h, r))
         h2, r2, notes = self.params_table()

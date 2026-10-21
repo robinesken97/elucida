@@ -10,6 +10,10 @@
   draggable labels; flat Olex2 style optional), atoms and labels switchable per atom (double-click toggles a label),
   molecule completed by symmetry (C1ⁱ with footnote), disorder (major part by default), H atoms and separate
   fragments can be hidden.
+- X-Ray: bulky groups as **wireframe** (select the bond to the substituent, e.g. N–C_ipso; ring systems behind a
+  spiro atom as well), switches **hide solvent** / **hide counterions** (recognised from the formula; a second
+  independent molecule stays), labels for heteroatoms only, start view with the least overlap, and a **caption
+  suggestion** that follows what is hidden or shown as wireframe (plus selected parameters and symmetry codes).
 - Distances, angles and torsion angles **by clicking atoms**, with s.u. taken exactly from the CIF; values missing in
   the CIF (torsions without CONF) are calculated without s.u. and marked.
 - SI tables: **crystal data and structure refinement** (one column per compound) and **selected parameters**; copy

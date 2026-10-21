@@ -66,6 +66,10 @@ und Tabelle, ChemDraw-Struktur, Küvettenfoto). Dazu Tabs für Overlay (gemessen
   links, matt, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), H-Radius 0.09 Å, Bindungsdicke in Å
   (`bond_w`, Standard 0.08, skaliert mit dem Zoom wie Mercurys Zylinder), normale Labels; „flach“ = Olex2 (fett, weißer Rand).
   Labels/Atome je Atom über `label_on`/`hidden_atoms` (Schlüssel Label|Operation). Tabellen englisch beschriftet, Zahlen exakt wie in der CIF, echtes Minus (U+2212).
+  Drahtmodell (`wire`, Atom-Schlüssel): Bindung → kleinere Seite (`Molecule.substituent`), in Ringen das Ringsystem hinter
+  dem ersten Atom (`beyond`, höchstens halbes Fragment); H daran nur mit `wire_h`. Fragmentart über die Summenformel
+  (`SOLVENTS`/`IONS`, auch ohne H); gleiche Schweratomformel wie das Hauptmolekül = Z′ > 1, nie automatisch ausblenden.
+  Ausblenden/Drahtmodell ändern nur das Bild, nie Tabellen oder Messwerte; die Bildunterschrift (`caption`) folgt dem Bild.
 - Verbindung des Projekts (`compound`) ist nur Vorgabe: Tabs mit eigener Struktur/Molmasse behalten diese.
 - UI zweisprachig: jeder sichtbare Text über `uvvis_i18n.T(key)` mit DE **und** EN-Eintrag.
 
@@ -136,7 +140,8 @@ python build.py                                       # PyInstaller-Build (brauc
   befristet – fällt er weg, Intel-Build aus der Matrix nehmen.
 
 ## Offene Punkte
-- X-Ray nur mit künstlicher CIF und einer Olex2-CIF ohne Fehlordnung/Symmetrieerzeugung geprüft; Polymere werden
+- X-Ray geprüft mit künstlicher CIF, einer Olex2-CIF und einer CCDC-CIF mit Fehlordnung (95:5) und THF; Symmetrieerzeugung
+  nur künstlich; Polymere werden
   abgebrochen (`max_factor`). Stufe 3 (Vergleich mit DFT-Geometrie, ORCA-xyz) vorbereitet: `measure` arbeitet nur
   mit Atom-Schlüsseln (Label|Operation) und `param_label`; ein xyz-Molekül mit denselben Labels kann eine eigene
   Spalte liefern (Zuordnung der Atome noch offen).

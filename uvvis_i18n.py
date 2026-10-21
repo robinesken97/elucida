@@ -903,6 +903,43 @@ TEXTS = {
     "xr_labels_all": ("Alle Labels", "All labels"),
     "xr_labels_none": ("Keine Labels", "No labels"),
     "xr_atoms_reset": ("Standard", "Default"),
+    "xr_label_mode": ("Labels für", "Labels for"),
+    "xr_lab_all": ("alle Nicht-H-Atome", "all non-H atoms"),
+    "xr_lab_hetero": ("nur Heteroatome (ohne C)", "heteroatoms only (no C)"),
+    "xr_hide_solv": ("Lösungsmittel ausblenden", "Hide solvent"),
+    "xr_hide_ions": ("Gegenionen ausblenden", "Hide counterions"),
+    "xr_hide_tip": ("Erkannt über die Summenformel des Fragments (THF, Et₂O, CH₂Cl₂, Toluol …; OTf⁻, BF₄⁻, PF₆⁻, "
+                    "BArF⁻ …). Weitere Fragmente einzeln in der Liste abhaken.",
+                    "Recognised from the fragment's formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …). "
+                    "Untick other fragments individually in the list."),
+    "xr_kind_molecule": ("weiteres Molekül, Z′ > 1", "further molecule, Z′ > 1"),
+    "xr_kind_solvent": ("Lösungsmittel", "solvent"),
+    "xr_kind_ion": ("Gegenion", "counterion"),
+    "xr_atom_wire": ("Draht", "wire"),
+    "xr_wire": ("Als Drahtmodell", "As wireframe"),
+    "xr_wire_tip": ("Bindung zum Substituenten wählen, Atom am Kern zuerst (z. B. N, dann C_ipso): alles dahinter wird "
+                    "als Drahtmodell gezeigt. Liegt die Bindung in einem Ring (z. B. Spiro-C, dann ein Atom des "
+                    "Ringsystems), wird das Ringsystem hinter dem ersten Atom Drahtmodell. Sonst die gewählten Atome.",
+                    "Select the bond to the substituent, core atom first (e.g. N, then C_ipso): everything behind it "
+                    "is shown as wireframe. If the bond is part of a ring (e.g. spiro C, then an atom of the ring "
+                    "system), the ring system behind the first atom becomes wireframe. Otherwise the selected atoms."),
+    "xr_unwire": ("Drahtmodell aufheben", "Remove wireframe"),
+    "xr_unwire_tip": ("Für die gewählten Atome bzw. den Substituent hinter der gewählten Bindung; ohne Auswahl für alle",
+                      "For the selected atoms or the substituent behind the selected bond; without selection for all"),
+    "xr_wire_hint": ("Erst eine Bindung (2 Atome) oder Atome in der Abbildung anklicken.",
+                     "First click a bond (2 atoms) or atoms in the figure."),
+    "xr_wire_ring": ("Hinter dieser Bindung lässt sich nichts abtrennen (Ring im Kern). Einzelne Atome wählen oder in "
+                     "der Atomliste „Draht“ ankreuzen.",
+                     "Nothing can be separated behind this bond (ring in the core). Select individual atoms or tick "
+                     "“wire” in the atom list."),
+    "xr_wire_h": ("H am Drahtmodell", "H on wireframe"),
+    "xr_wire_h_tip": ("H-Atome an Drahtmodell-Gruppen zeigen (sonst ausgeblendet)",
+                      "Show H atoms on wireframe groups (hidden otherwise)"),
+    "xr_wire_name": ("Drahtmodell-Gruppen", "Wireframe groups"),
+    "xr_wire_name_ph": ("Bezeichnung für die Bildunterschrift, z. B. Dipp groups",
+                        "Name for the caption, e.g. Dipp groups"),
+    "xr_caption": ("Bildunterschrift (Vorschlag)", "Caption (suggestion)"),
+    "xr_caption_copy": ("Bildunterschrift kopieren", "Copy caption"),
     "xr_truncated": ("Polymer/Netzwerk: Vervollständigung abgebrochen", "polymer/network: growing stopped"),
 }
 
