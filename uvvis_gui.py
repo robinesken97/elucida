@@ -2571,6 +2571,17 @@ def selftest(outdir, with_isnet=False):
         assert len(labels_) == 5 and all(l_.get("y") is not None and "1/2" in l_["text"] for l_ in labels_), labels_
         t_cv.render()
         assert all(getattr(a_, "_anchor_y", None) is not None for a_ in t_cv.F.ann_items.values())
+        # Peakpotentiale an einzelnen Peaks, y-Achse aus, Struktur je Messung (in Kurvenfarbe)
+        st_cv.update(peak_labels="both", y_axis="off")
+        st_cv["files"][0].update(structure=str(cdxml), struct_color=True)
+        cfg_, curves_, labels_, _ = t_cv.figure_spec()
+        assert len(labels_) == 10 and {l_["side"] for l_ in labels_} == {"above", "below"}, len(labels_)
+        assert cfg_["y_axis"] == "off" and [i_["id"] for i_ in cfg_["images"]] == ["struktur_cv0"], cfg_["images"]
+        t_cv.render()
+        assert "image_struktur_cv0" in t_cv.F.axes_items
+        assert any(c_ is st_cv["files"][0] and k_ == "structure" for c_, k_, _ in PRJ._path_slots({"cv": st_cv}))
+        st_cv["files"][0].pop("structure")
+        st_cv.update(peak_labels="e12", y_axis="auto")
         for plot_, n_series in (("dep", 2), ("rs", 4), ("trumpet", 4)):
             st_cv["plot"] = plot_
             cfg_, curves_, _, _ = t_cv.figure_spec()

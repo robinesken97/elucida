@@ -258,6 +258,15 @@ TEXTS = {
     "cv_stack": ("Gestapelt", "Stacked"),
     "cv_stack_gap_tip": ("Abstand der gestapelten Kurven (1 = größte Kurvenhöhe)", "Gap between stacked curves (1 = largest curve height)"),
     "cv_e12_each": ("E½ an jeder Kurve beschriften", "Label E½ on every curve"),
+    "cv_peaklab": ("Beschriftung", "Labels"),
+    "cv_peaklab_e12": ("E½ je Redoxpaar", "E½ per redox couple"),
+    "cv_peaklab_epa": ("E_pa an den anodischen Peaks", "E_pa at the anodic peaks"),
+    "cv_peaklab_epc": ("E_pc an den kathodischen Peaks", "E_pc at the cathodic peaks"),
+    "cv_peaklab_both": ("E_pa und E_pc", "E_pa and E_pc"),
+    "cv_peaklab_tip": ("Peakpotentiale als Zahl am jeweiligen Peak jeder Kurve, z. B. Probe und Ac₂Fc in einer Messung "
+                       "(Redoxpaar für die Referenz dann ebenfalls als Fenster anlegen)",
+                       "Peak potentials as a number at each peak of every curve, e.g. sample and Ac₂Fc in one "
+                       "measurement (then also add a window for the reference couple)"),
     "cv_rates_needed": ("Für diese Auftragung mindestens zwei Scanraten je Gruppe mit ausgewertetem Redoxpaar laden.",
                         "For this plot, load at least two scan rates per group with an analysed redox couple."),
     "ov_add_exp": ("Messung…", "Measurement…"),

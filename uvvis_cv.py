@@ -54,8 +54,12 @@ def read_gamry(path) -> dict:
             meta["time"] = parts[2]
         elif key == "CONVENTION" and len(parts) > 2:
             meta["convention"] = int(float(parts[2]))
-        elif key in ("IRCOMP", "IRCOMPMODE", "RUNCOMP") and len(parts) > 2:
-            meta["ircomp"] = parts[2].strip()              # Rohwert (Gamry: 0/1 bzw. Modus), nur zur Doku
+        elif key == "IRCOMP" and len(parts) > 2:
+            meta["ircomp_on"] = parts[2].strip() not in ("0", "F", "")
+        elif key == "PFCOR" and len(parts) > 2:
+            meta["pfcor"] = float(parts[2])                    # Positive-Feedback-Widerstand [Ohm]
+        elif key == "POSFEEDENABLE" and len(parts) > 2:
+            meta["posfeed"] = parts[2].strip() == "T"
         if re.match(r"CURVE\d*$", key) and len(parts) > 1 and parts[1] == "TABLE":
             hdr = lines[i + 1].strip().split("\t")
             i += 3
@@ -82,6 +86,10 @@ def read_gamry(path) -> dict:
             cycles.append({"E": arr[:, 0], "I": arr[:, 1], "T": arr[:, 2]})
     if not cycles:
         raise ValueError(f"{Path(path).name}: keine CV-Daten (Gamry .DTA) gefunden")
+    if meta.get("ircomp_on"):                                 # nur zur Dokumentation (Abbildung/CSV)
+        meta["ircomp"] = (f"PF {meta['pfcor']:g} Ω" if meta.get("posfeed") and meta.get("pfcor") else "on")
+    elif "ircomp_on" in meta:
+        meta["ircomp"] = "off"
     return {"meta": meta, "cycles": cycles}
 
 
@@ -119,6 +127,7 @@ def analyze_couple(E, I, lo, hi):
     epc, ipc = _refine(E, I, kc)
     edge_tol = 0.01 * (hi - lo) + 0.004
     edge = any(abs(e - b) < edge_tol for e in (E[ka], E[kc]) for b in (lo, hi))
+    edge = edge or epa <= epc                              # E_pa < E_pc: kein Redoxpaar, Fenster falsch
     # Nicholson: Hinlauf = erste Scanrichtung, i_sp = Strom am ersten Umkehrpunkt
     k0 = int(np.argmax(np.abs(dE) > 0))
     anodic_first = dE[k0] > 0
@@ -208,7 +217,8 @@ class CVTab(TABS.FigureTab):
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
                          gradient=True, density=False, show_e12=True, arrow=True, invert=False,
-                         plot="cv", stack=False, stack_gap=1.0, e12_each=False)
+                         plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
+                         struct_w=18.0)
 
     PLOTS = ("cv", "dep", "rs", "trumpet")     # CV | ΔE_p gegen v | Randles-Ševčík | Trumpet-Plot
     MARKERS = ("s", "o", "^", "v", "D", "p")
@@ -272,6 +282,18 @@ class CVTab(TABS.FigureTab):
         self.sp_foffset.setToolTip(T("cv_offset_tip"))
         self.lbl_foffset = QLabel(T("cv_offset"))
         f.addRow(self.lbl_foffset, self.sp_foffset)
+        row = QHBoxLayout()
+        self.lbl_fstruct = QLabel("–")
+        b1, b2 = QPushButton(T("choose")), QPushButton(T("remove"))
+        b1.clicked.connect(self.choose_file_structure)
+        b2.clicked.connect(lambda: self.set_file_structure(None))
+        row.addWidget(self.lbl_fstruct, 1)
+        row.addWidget(b1)
+        row.addWidget(b2)
+        f.addRow(T("structure"), row)
+        self.cb_fstruct_color = QCheckBox(T("ov_struct_color"))
+        self.cb_fstruct_color.toggled.connect(self.file_ref_changed)
+        f.addRow(self.cb_fstruct_color)
         self.lbl_fref_info = QLabel("")
         self.lbl_fref_info.setWordWrap(True)
         self.lbl_fref_info.setStyleSheet(HINT_CSS)
@@ -360,6 +382,20 @@ class CVTab(TABS.FigureTab):
         self.cb_e12_each = QCheckBox(T("cv_e12_each"))
         self.cb_e12_each.setChecked(st["e12_each"])
         f.addRow(self.cb_e12_each)
+        self.cmb_peaklab = QComboBox()
+        for key in ("e12", "epa", "epc", "both"):
+            self.cmb_peaklab.addItem(T("cv_peaklab_" + key), key)
+        self.cmb_peaklab.setCurrentIndex(max(0, self.cmb_peaklab.findData(st["peak_labels"])))
+        self.cmb_peaklab.setToolTip(T("cv_peaklab_tip"))
+        f.addRow(T("cv_peaklab"), self.cmb_peaklab)
+        self.cmb_yaxis = QComboBox()
+        for key in ("auto", "numbers", "no_numbers", "off"):
+            self.cmb_yaxis.addItem(T("yaxis_" + key), key)
+        self.cmb_yaxis.setCurrentIndex(max(0, self.cmb_yaxis.findData(st["y_axis"])))
+        f.addRow(T("ov_yaxis"), self.cmb_yaxis)
+        self.sp_struct_w = self.size_spin(f, "struct_w", "image_struktur")
+        for w_ in (self.cmb_peaklab, self.cmb_yaxis):
+            w_.currentIndexChanged.connect(self.changed)
         self.cmb_plot.currentIndexChanged.connect(self.changed)
         self.sp_gap.valueChanged.connect(self.changed)
         for cb in (self.cb_stack, self.cb_e12_each):
@@ -432,7 +468,8 @@ class CVTab(TABS.FigureTab):
                   show_e12=self.cb_e12.isChecked(), arrow=self.cb_arrow.isChecked(),
                   invert=self.cb_invert.isChecked(), plot=self.cmb_plot.currentData(),
                   stack=self.cb_stack.isChecked(), stack_gap=self.sp_gap.value(),
-                  e12_each=self.cb_e12_each.isChecked())
+                  e12_each=self.cb_e12_each.isChecked(), y_axis=self.cmb_yaxis.currentData(),
+                  peak_labels=self.cmb_peaklab.currentData())
         self._sync_ref_widgets()
 
     # -- Dateien -------------------------------------------------------------------
@@ -544,6 +581,8 @@ class CVTab(TABS.FigureTab):
         self.cmb_fcompound.setCurrentIndex(max(0, self.cmb_fcompound.findData(ref.get("compound", "ac2fc"))))
         self.sp_fref_value.setValue(ref.get("value", REFERENCES["ac2fc"][1]))
         self.sp_foffset.setValue(ref.get("offset", 0.0))
+        self.lbl_fstruct.setText(Path(e["structure"]).name if e and e.get("structure") else "–")
+        self.cb_fstruct_color.setChecked(bool(e and e.get("struct_color", False)))
         self._loading = False
         mode = ref.get("mode", "global")
         for w_ in (self.lbl_fref_file, self.cmb_fref_file, self.lbl_fref_win, self.sp_fref_lo, self.sp_fref_hi,
@@ -552,6 +591,24 @@ class CVTab(TABS.FigureTab):
         for w_ in (self.lbl_foffset, self.sp_foffset):
             w_.setVisible(mode == "manual")
         self.lbl_fref_info.setText(self.file_offset(e)[2] if e is not None and mode != "global" else "")
+
+    def choose_file_structure(self):
+        e = self.current_file()
+        if e is None or not self.main.ensure_project():
+            return
+        p, _ = QFileDialog.getOpenFileName(self, T("dlg_structure"), self.main.settings.value("last_img_dir", ""),
+                                           f"{T('flt_struct')};;{T('flt_all')}")
+        if p:
+            self.main.settings.setValue("last_img_dir", str(Path(p).parent))
+            self.set_file_structure(self.main.import_file(p, "images"))
+
+    def set_file_structure(self, p):
+        e = self.current_file()
+        if e is None:
+            return
+        e["structure"] = p
+        self.show_file_ref()
+        self.timer.start()
 
     def fcompound_changed(self, *_):
         key = self.cmb_fcompound.currentData()
@@ -566,6 +623,7 @@ class CVTab(TABS.FigureTab):
         if self._loading or e is None:
             return
         mode = self.cmb_fref.currentData()
+        e["struct_color"] = self.cb_fstruct_color.isChecked()
         e["ref"] = None if mode == "global" else {
             "mode": mode, "uid": self.cmb_fref_file.currentData(), "lo": self.sp_fref_lo.value(),
             "hi": self.sp_fref_hi.value(), "compound": self.cmb_fcompound.currentData(),
@@ -713,12 +771,14 @@ class CVTab(TABS.FigureTab):
             self.show_results()
             return out
         labels = []
-        if st["stack"] and len(curves) > 1:              # oberster Eintrag der Liste = oberste Kurve
+        stacked = st["stack"] and len(curves) > 1
+        if stacked:                                      # oberster Eintrag der Liste = oberste Kurve
             span = max(float(np.ptp(c_["y"])) for c_ in curves) or 1.0
             for k, c_ in enumerate(curves):
                 c_["off"] = (len(curves) - 1 - k) * st["stack_gap"] * span
                 c_["y"] = c_["y"] + c_["off"]
-            cfg["y_axis"] = "no_numbers"
+        y_axis = st.get("y_axis", "auto")
+        cfg["y_axis"] = ("no_numbers" if stacked else "numbers") if y_axis == "auto" else y_axis
         allx = np.concatenate([c_["x"] for c_ in curves])
         cfg["xlim"] = [float(allx.min()), float(allx.max())] if st["x_auto"] else [st["x_min"], st["x_max"]]
         ally = np.concatenate([c_["y"] for c_ in curves])
@@ -729,7 +789,20 @@ class CVTab(TABS.FigureTab):
         cfg["ylabel"] = "j [mA cm$^{-2}$]" if (st["density"] and unit == "mA") else "I [µA]"
         if st["show_e12"]:
             multi = len(st["couples"]) > 1
-            if st["e12_each"] or (st["stack"] and len(curves) > 1):
+            mode = st.get("peak_labels", "e12")
+            dens = st["density"] and unit == "mA"
+            if mode != "e12":
+                # Peakpotentiale als Zahl an den einzelnen Peaks (z. B. Probe und Ac₂Fc in einer Messung)
+                for c_ in curves:
+                    for r in self.results:
+                        if r["uid"] != c_["uid"] or r["edge"]:
+                            continue
+                        for kind, ex, ip, side in (("epa", r["epa"], r["ipa"], "above"), ("epc", r["epc"], r["ipc"], "below")):
+                            if mode in (kind, "both"):
+                                labels.append({"key": f"label_{kind}_{c_['uid']}_{r['n']}", "lam": ex, "side": side,
+                                               "y": None if dens else float(ip * 1e6 * sign) + c_.get("off", 0.0),
+                                               "text": f"{ex:.2f}".replace("-", "−")})
+            elif st["e12_each"] or stacked:
                 # je Kurve und Redoxpaar, am anodischen Peak dieser Kurve (wie in Vergleichsabbildungen üblich)
                 for c_ in curves:
                     for r in self.results:
@@ -754,6 +827,18 @@ class CVTab(TABS.FigureTab):
             direction = 1.0 if np.gradient(c0["x"])[:5].mean() >= 0 else -1.0
             x0, y0 = float(c0["x"][0]), float(c0["y"][0])
             cfg["arrows"] = [(x0, y0, x0 + direction * 0.08 * xr, y0)]
+        imgs = []
+        for e, c_ in zip(vis, curves):                  # Struktur je Messung, optional in Kurvenfarbe
+            p = e.get("structure")
+            if p and Path(p).exists():
+                try:
+                    asset = self.structure_asset(p, c_["color"] if e.get("struct_color") else None)
+                except Exception as ex:
+                    self.main.log_signal.emit(f"  {Path(p).name}: {ex}")
+                    continue
+                imgs.append({"file": p, "id": "struktur_" + e["uid"], "width": st.get("struct_w", 18.0) / 100,
+                             "prefer": "top", "_asset": asset})
+        cfg["images"] = imgs
         self.show_results()
         return cfg, curves, labels, []
 

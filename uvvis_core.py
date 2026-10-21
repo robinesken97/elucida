@@ -1263,7 +1263,8 @@ class Figure:
                         px_ = axn + 0.012
                     else:
                         px_ = axn - bw / 2
-                    py_ = ayn - 0.35 * bh if side in ("left", "right") else ayn + 0.015
+                    py_ = (ayn - 0.35 * bh if side in ("left", "right")
+                           else ayn - bh - 0.015 if side == "below" else ayn + 0.015)
                     pos = (min(max(px_, 0.0), 1 - bw), min(max(py_, 0.0), 1 - bh))
                 else:
                     ayn = min(1.0, float(env[min(fs.n - 1, max(0, int(axn * fs.n)))]))
