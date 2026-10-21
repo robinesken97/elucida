@@ -31,6 +31,7 @@ Englisch.
 | **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
 | **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
 | **IR + MS** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die HRMS-Zeile aus dem Bericht der Massenabteilung, fertig für die SI |
+| **X-Ray** | CIF → drehbare ORTEP-Abbildung (Ellipsoide, Olex2-Farben), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
 Erscheinungsbild; Deutsch und Englisch.
@@ -38,7 +39,7 @@ Erscheinungsbild; Deutsch und Englisch.
 <table>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_de.png" alt="Overlay – gemessen, TD-DFT und SEC"><br><sub>Overlay – gemessen, TD-DFT und SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_de.png" alt="Fluoreszenz"><br><sub>Fluoreszenz</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie"><br><sub>Spektroelektrochemie</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR"><br><sub>CW-EPR</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR"><br><sub>CW-EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_de.png" alt="X-Ray – ORTEP aus CIF (künstliche Teststruktur)"><br><sub>X-Ray – ORTEP aus CIF (künstliche Teststruktur)</sub></td></tr>
 </table>
 
 ## Herunterladen und starten
@@ -162,6 +163,31 @@ Molmasse behalten diese. Der Name steht im Fenstertitel.
   `analysis.sqlite`.
 - **In Zwischenablage** behält Fettdruck, Hoch- und Tiefstellung beim Einfügen in Word. Der Export schreibt die
   Spektrenabbildung und `…_SI.txt` mit beiden Zeilen.
+
+## X-Ray-Tab
+
+- Eine oder mehrere **CIF**-Dateien laden (Knopf oder Drag & Drop); jeder `data_`-Block mit Atomen wird ein Eintrag
+  (eine Spalte in den Tabellen). Spectravolt liest die CIF selbst (Zelle, Koordinaten, U_iso/U_ij, Besetzung, PART,
+  Symmetrieoperationen, `_geom_bond`/`_geom_angle`/`_geom_torsion`); keine weitere Software nötig.
+- **ORTEP-Abbildung:** Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit (einstellbar), exakt projiziert,
+  mit den drei Hauptachsen-Ellipsen wie in Olex2; H-Atome als kleine weiße Kugeln, fette Labels (verschiebbar).
+  **Ziehen dreht**, rechte Taste verschiebt, Mausrad zoomt; die Ansicht wird je Struktur gespeichert,
+  **Ansicht zurücksetzen** führt zur Standardansicht (Blick auf die größte Ebene). Atomfarben je Element frei wählbar
+  (Standard: Olex2-Farben).
+- Das Molekül wird **über die Symmetrie vervollständigt** (z. B. Molekül auf einem Inversionszentrum); erzeugte Atome
+  tragen einen Zusatz (C1ⁱ), die Operation steht als Fußnote darunter. **Fehlordnung:** nur Hauptteil (Standard),
+  alle Teile oder der Nebenteil. Getrennte Fragmente (Lösungsmittel, Gegenionen) und H-Atome lassen sich ausblenden.
+- **Atome anklicken** (das vorderste gewinnt): 2 = Abstand, 3 = Winkel, 4 = Diederwinkel. Werte mit
+  Standardabweichung kommen **genau aus der CIF** (z. B. 1.392(3)); Spectravolt schätzt nie selbst eine
+  Standardabweichung. Fehlt ein Wert (Diederwinkel ohne `CONF`), wird er aus den Koordinaten berechnet, **ohne**
+  Standardabweichung angezeigt und markiert – für Diederwinkel mit esd `CONF` in Olex2/SHELXL setzen und neu verfeinern.
+- **Tabellen für die SI:** Kristalldaten und Strukturverfeinerung (eine Spalte je Verbindung; Zahlen genau wie in der
+  CIF, Raumgruppe kursiv mit Tiefstellung, Restelektronendichte mit echtem Minuszeichen; interne Referenz und
+  CCDC-Nummer editierbar) und ausgewählte Bindungslängen, Winkel und Diederwinkel (gleichnamige Atome nebeneinander).
+  **Kopieren** behält Kursivschrift und Hoch-/Tiefstellung in Word; der Export schreibt zusätzlich CSV und Excel.
+  Die Tabellen sind englisch beschriftet (wie in SI üblich).
+- Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv` und
+  `…_tables.xlsx`.
 
 ## Projekte, Export, Rückgängig
 
@@ -412,6 +438,7 @@ Format → „Schrift und Rahmen…“ gilt für alle Tabs und wird im Projekt g
   („Baseline 100%T/0%T“) in Batch-Dateien werden übersprungen.
 - **Cary Eclipse** Fluoreszenzdaten: CSV-Export und .FBSW-Dateien. Die Anregungswellenlänge wird
   aus den Metadaten der Datei übernommen.
+- **CIF** (Kristallstrukturen, z. B. aus Olex2/SHELXL): eigener Leser, mehrere `data_`-Blöcke je Datei.
 - **Mehrere Dateien** lassen sich zusammen öffnen und bilden einen Datensatz.
 
 ## Probleme

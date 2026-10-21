@@ -2,6 +2,21 @@
 
 # Changelog
 
+## Unreleased
+
+### Added
+- New tab **X-Ray**: read CIF files (several structures/`data_` blocks), rotatable **ORTEP figure** (ellipsoids at
+  adjustable probability with principal ellipses, Olex2 colours freely changeable per element, draggable labels),
+  molecule completed by symmetry (C1ⁱ with footnote), disorder (major part by default), H atoms and separate
+  fragments can be hidden.
+- Distances, angles and torsion angles **by clicking atoms**, with s.u. taken exactly from the CIF; values missing in
+  the CIF (torsions without CONF) are calculated without s.u. and marked.
+- SI tables: **crystal data and structure refinement** (one column per compound) and **selected parameters**; copy
+  with formatting for Word, CSV and Excel.
+
+### Fixed
+- Self-test: wait for the structures loaded in the background instead of a fixed time (failed on slow machines).
+
 ## 1.18.1 – 2026-10-21
 
 ### Fixed

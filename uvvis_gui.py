@@ -54,6 +54,7 @@ import uvvis_cv as CVMOD  # noqa: E402
 import uvvis_sec as SECMOD  # noqa: E402
 import uvvis_epr as EPRMOD  # noqa: E402
 import uvvis_irms as IRMS  # noqa: E402
+import uvvis_xray as XRAY  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
 
@@ -461,6 +462,7 @@ class MainWindow(QMainWindow):
         self.extra_cache = {}
         self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}  # leer
         self.irms_state = {}
+        self.xray_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
@@ -881,6 +883,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.epr_tab, T("tab_epr"))
         self.irms_tab = IRMS.IRMSTab(self, self.irms_state)
         self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
+        self.xray_tab = XRAY.XrayTab(self, self.xray_state)
+        self.main_tabs.addTab(self.xray_tab, T("tab_xray"))
         self.main_tabs.setCurrentIndex(self._tab_index)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
         self.setCentralWidget(self.main_tabs)
@@ -1192,7 +1196,7 @@ class MainWindow(QMainWindow):
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
-                "irms": self.irms_state, "compound": dict(self.compound),
+                "irms": self.irms_state, "xray": self.xray_state, "compound": dict(self.compound),
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -1218,6 +1222,8 @@ class MainWindow(QMainWindow):
         self.epr_state.update(state.get("epr") or {})
         self.irms_state.clear()
         self.irms_state.update(state.get("irms") or {})
+        self.xray_state.clear()
+        self.xray_state.update(state.get("xray") or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
@@ -2055,6 +2061,15 @@ class MainWindow(QMainWindow):
             if PRJ.is_project(p):
                 self.open_project(p)
                 return
+        # X-Ray: CIF-Dateien (jeder data_-Block mit Atomen wird ein Eintrag)
+        cifs = [p for p in files if XRAY.is_cif(p)]
+        if cifs and self.ensure_project():
+            for p in cifs:
+                self.xray_tab.load_cif(p)
+            self.main_tabs.setCurrentWidget(self.xray_tab)
+            files = [p for p in files if p not in cifs]
+            if not files:
+                return
         # IR + MS: OPUS-Dateien, MS-Berichte und Bruker-.d-Ordner immer, PDF nur auf dem Tab IR + MS
         irms = [p for p in files if IRMS.is_opus(p) or IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"
                 or (Path(p).suffix.lower() == ".pdf" and self.main_tabs.currentWidget() is self.irms_tab)]
@@ -2106,6 +2121,8 @@ class MainWindow(QMainWindow):
             return self.epr_tab.export_dialog()
         if i == 6:
             return self.irms_tab.export_dialog()
+        if i == 7:
+            return self.xray_tab.export_dialog()
         return self.export_dialog()
 
     def info(self, msg):
@@ -3262,6 +3279,113 @@ def selftest(outdir, with_isnet=False):
         w.irms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None)
         w.compound = {}
         report.append("Bruker .d raw data (LC-peak mean): OK")
+
+        # X-Ray: künstliche CIF (Ring auf Inversionszentrum, PART 1/2, Wasser als zweites Fragment, ohne Torsionen)
+        from matplotlib.backend_bases import MouseEvent
+        xdir = out / "input" / "xray"
+        xdir.mkdir(parents=True, exist_ok=True)
+        cif_, xyz_ = XRAY.make_test_cif(xdir / "xtest.cif")
+        assert abs(XRAY.chi2_scale(0.5) - 1.5382) < 1e-4, XRAY.chi2_scale(0.5)
+        S_ = XRAY.Structure(XRAY.structure_blocks(cif_)[0])
+        assert len(S_.ops) == 4 and len(S_.atoms) == 9 and S_.parts() == [1, 2]
+        c1_ = S_.cart(S_.atoms[S_.by_label["C1"]]["frac"])
+        assert np.abs(c1_ - xyz_["C1"]).max() < 1e-3, c1_                         # fraktional -> kartesisch
+        mol_ = XRAY.Molecule(S_, "main")
+        names_ = sorted(XRAY.atom_name(a_).encode("ascii", "replace").decode() for a_ in mol_.atoms)
+        assert len(mol_.atoms) == 13 and mol_.ops == {"\u2212x, \u2212y, \u2212z": "i"}, names_
+        assert mol_.find_key("Cl1B") is None and mol_.find_key("Cl1|\u2212x, \u2212y, \u2212z") is not None
+        assert [f_["formula"] for f_ in mol_.fragments] == ["C6H2Cl2", "H2O"], mol_.fragments
+        assert XRAY.Molecule(S_, "all").find_key("Cl1B") is not None
+        mi_ = XRAY.Molecule(S_, "minor")
+        assert mi_.find_key("Cl1B") is not None and mi_.find_key("Cl1") is None
+        inv_ = "|\u2212x, \u2212y, \u2212z"
+        m_ = XRAY.measure(mol_, ["C1", "C2"])
+        d_ = float(np.linalg.norm(mol_.atoms[mol_.find_key("C2")]["xyz"] - mol_.atoms[mol_.find_key("C1")]["xyz"]))
+        assert m_["text"] == "1.390(3)" and abs(d_ - 1.390) < 2e-3, (m_, d_)      # Wert aus _geom_bond
+        assert XRAY.measure(mol_, ["C3", "C1" + inv_])["text"] == "1.390(3)"       # Symmetriecode 3_555
+        assert XRAY.measure(mol_, ["C3" + inv_, "C1", "C2"])["text"] == "120.0(2)"  # umgekehrte Reihenfolge
+        tor_ = XRAY.measure(mol_, ["C1", "C2", "C3", "C1" + inv_])
+        assert tor_["source"] == "calc" and not tor_["esd"] and tor_["text"] == "0.0", tor_
+        sg_ = XRAY.space_group_markup("P 21/c")
+        assert sg_ == "*P*2_{1}/*c*" and "<sub>1</sub>" in XRAY.to_html(sg_), sg_
+        assert XRAY.to_plain(XRAY.space_group_markup("P -1")) == "P1\u0305"
+        cv_ = XRAY.crystal_values(S_.block)
+        assert cv_["diff"] == "0.42/\u22120.31" and cv_["theta"] == "5.000 to 55.000", cv_["diff"]
+        assert cv_["index"].startswith("\u22129 \u2264 *h*") and cv_["formula"] == "C_{6}H_{4}Cl_{2}O"
+        t_x = w.xray_tab
+        w.main_tabs.setCurrentWidget(t_x)
+        t_x.load_cif(str(cif_))
+        assert len(w.xray_state["entries"]) == 2 and Path(w.xray_state["entries"][0]["file"]).parent == proj / "data"
+        assert any(k_ == "file" and c_ is w.xray_state["entries"][0] for c_, k_, _ in PRJ._path_slots(w.get_state()))
+        w.xray_state["current"] = w.xray_state["entries"][0]["uid"]
+        t_x.sync_widgets()
+        t_x.render()
+        pump()
+        F_x = t_x.F
+        assert F_x is not None and len(F_x.scene["atoms"]) == 13 and F_x.foot is not None
+        # simulierter Klick auf C1 und C2 (Atommitte; Pixel gerundet -> nur das getroffene Atom prüfen)
+        proc_ = t_x.canvas.callbacks.process
+
+        def click_(key):
+            it_ = t_x.F.scene["by_k"][t_x.F.mol.find_key(key)]
+            px_, py_ = t_x.F.ax.transData.transform((it_["x"], it_["y"]))
+            proc_("button_press_event", MouseEvent("button_press_event", t_x.canvas, px_, py_, button=1))
+            proc_("button_release_event", MouseEvent("button_release_event", t_x.canvas, px_, py_, button=1))
+            pump(0.05)
+        t_x.sel = []
+        click_("C1")
+        assert t_x.sel == ["C1"], t_x.sel
+        click_("C2")
+        assert t_x.sel == ["C1", "C2"] and t_x._meas["text"] == "1.390(3)", (t_x.sel, t_x._meas)
+        t_x.take_param()
+        click_("C1")
+        click_("C2")
+        click_("C3")
+        click_("C1" + inv_)
+        assert t_x._meas and t_x._meas["kind"] == "torsion" and t_x._meas["source"] == "calc", t_x._meas
+        t_x.take_param()
+        ent_ = w.xray_state["entries"]
+        ent_[1]["params"] = [{"atoms": ["C2", "C1"]}]                      # gleiche Bindung, andere Richtung
+        hdr_, rows_, notes_ = t_x.params_table()
+        flat_ = [r_[0] for r_ in rows_]
+        assert flat_ == ["Bond lengths [\u00c5]", "C1\u2013C2", "Torsion angles [\u00b0]",
+                         "C1\u2013C2\u2013C3\u2013C1"], flat_
+        assert rows_[1][1:] == ["1.390(3)", "1.390(3)"] and rows_[3][1].startswith("0.0^{a}"), rows_
+        assert any("no s.u." in n_ for n_ in notes_) and any(n_.startswith("Symmetry") for n_ in notes_), notes_
+        hc_, rc_ = t_x.crystal_table()
+        assert len(hc_) == 3 and [r_ for r_ in rc_ if r_[0] == "Space group"][0][1] == "*P*2_{1}/*c*"
+        # Drehen per Ziehen: Ansicht im Zustand, Projektion ändert sich
+        x0_ = [(a_["x"], a_["y"]) for a_ in t_x.F.scene["atoms"]]
+        cx_, cy_ = t_x.F.ax.transData.transform((0.0, 0.0))
+        cy_ += 0.3 * t_x.F.ax.bbox.height                               # neben das Molekül (kein Label, kein Atom)
+        proc_("button_press_event", MouseEvent("button_press_event", t_x.canvas, cx_, cy_, button=1))
+        proc_("motion_notify_event", MouseEvent("motion_notify_event", t_x.canvas, cx_ + 40, cy_ + 10, button=1))
+        proc_("button_release_event", MouseEvent("button_release_event", t_x.canvas, cx_ + 40, cy_ + 10, button=1))
+        pump(0.1)
+        assert ent_[0]["view"] and len(ent_[0]["view"]) == 9, ent_[0].get("view")
+        x1_ = [(a_["x"], a_["y"]) for a_ in t_x.F.scene["atoms"]]
+        assert max(abs(a_[0] - b_[0]) + abs(a_[1] - b_[1]) for a_, b_ in zip(x0_, x1_)) > 0.05
+        ent_[0]["hidden_frags"] = [1]                                   # Wasser ausblenden
+        w.xray_state["show_h"] = False
+        t_x.sync_widgets()
+        t_x.render()
+        assert len(t_x.F.scene["atoms"]) == 8, len(t_x.F.scene["atoms"])
+        files = t_x.export_to(out / "xray" / "xray_test")
+        for f in files:
+            assert f.exists() and f.stat().st_size > 200, f
+        import pymupdf
+        npath_ = len(pymupdf.open(str(out / "xray" / "xray_test_xtest_a.pdf"))[0].get_drawings())
+        assert npath_ > 20, npath_
+        csv_ = (out / "xray" / "xray_test_crystal_data.csv").read_text(encoding="utf-8-sig")
+        assert "P2\u2081/c" in csv_ and "0.42/\u22120.31" in csv_
+        from openpyxl import load_workbook
+        wb_ = load_workbook(out / "xray" / "xray_test_tables.xlsx")
+        assert wb_.sheetnames == ["Crystal data", "Selected parameters"]
+        report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables): OK ({npath_} pdf paths)")
+        w.xray_state.update(entries=[], current=None, show_h=True)
+        t_x.sel = []
+        t_x.sync_widgets()
+        t_x.render()
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
         rn_path = Path(__file__).resolve().parent / "release_notes.py"
