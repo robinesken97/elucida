@@ -226,6 +226,8 @@ Compare several spectra in one figure, measured and calculated:
   Fc/Ac₂Fc couple in the same file, e.g. "with Ac₂Fc") or own shift – needed when comparing solvents, each against
   its own standard. The couple windows follow each measurement's reference.
 - **Group** per measurement (e.g. the solvent): data series in the plots against scan rate.
+- **Structure per measurement** (optionally in the curve colour) and **labels** either E½ per couple or **E_pa/E_pc as
+  numbers at the peaks** (e.g. sample and Ac₂Fc in one measurement); y axis with numbers, without or hidden.
 - **Stacked** CVs (list order from top to bottom, adjustable gap, y axis without numbers) with **E½ at every curve**
   next to its anodic peak (E¹½, E²½ for several couples).
 - **Plot:** cyclic voltammogram, **reversibility** (ΔE_p vs. v), **Randles–Ševčík** (i_pa and i_pc vs. √v with

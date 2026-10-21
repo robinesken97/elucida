@@ -232,6 +232,8 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   derselben Datei, z. B. „mit Ac₂Fc“) oder eigene Verschiebung – nötig beim Lösungsmittelvergleich, jedes gegen seinen
   eigenen Standard. Die Fenster der Redoxpaare folgen der Referenz der jeweiligen Messung.
 - **Gruppe** je Messung (z. B. das Lösungsmittel): Datenreihe in den Auftragungen gegen die Scanrate.
+- **Struktur je Messung** (optional in Kurvenfarbe) und **Beschriftung** wahlweise E½ je Paar oder **E_pa/E_pc als Zahl
+  an den Peaks** (z. B. Probe und Ac₂Fc in einer Messung); y-Achse mit Zahlen, ohne oder ausgeblendet.
 - **Gestapelte** CVs (Listenreihenfolge von oben nach unten, Abstand einstellbar, y-Achse ohne Zahlen) mit **E½ an jeder
   Kurve** neben ihrem anodischen Peak (E¹½, E²½ bei mehreren Paaren).
 - **Auftragung:** Cyclovoltammogramm, **Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und i_pc gegen √v mit

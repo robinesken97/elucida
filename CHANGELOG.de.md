@@ -2,6 +2,26 @@
 
 # Änderungen
 
+## 1.17.0 – 21.10.2026
+
+### Neu
+- CV: **Referenz je Messung** (eigener interner Standard – auch das Fc/Ac₂Fc-Paar in derselben Datei – oder eigene
+  Verschiebung), z. B. für den Lösungsmittelvergleich, jedes gegen seinen eigenen Standard; die Fenster der Redoxpaare
+  folgen der jeweiligen Referenz.
+- CV: **Gruppe** je Messung (z. B. Lösungsmittel) und **gestapelte** CVs mit **E½ an jeder Kurve** neben ihrem
+  anodischen Peak (E¹½, E²½); y-Achse mit Zahlen, ohne Zahlen oder ausgeblendet.
+- CV: Auftragungen gegen die Scanrate – **Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und i_pc gegen √v
+  mit Ausgleichsgerade) und **Trumpet-Plot** (E_pa/E_pc gegen log v, ohne k⁰-Auswertung), eine Datenreihe je Gruppe.
+- CV: **E_pa/E_pc als Zahl an den Peaks** (z. B. Probe und Ac₂Fc in einer Messung), **Struktur je Messung**; die
+  iR-Kompensation der Gamry-Datei (z. B. Positive Feedback 800 Ω) steht in der Ergebnis-CSV.
+- Release Notes auf GitHub werden aus den Changelogs erzeugt.
+
+### Geändert
+- Ziehen von Inset, Bildern, Labels und Legende ist deutlich flüssiger (nur das gezogene Element wird neu gezeichnet).
+
+### Behoben
+- CV: Ein Fenster ohne echtes Redoxpaar (E_pa unter E_pc) wird markiert, statt ein negatives ΔE_p auszugeben.
+
 ## 1.16.0 – 21.10.2026
 
 ### Geändert

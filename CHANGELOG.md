@@ -2,6 +2,25 @@
 
 # Changelog
 
+## 1.17.0 – 2026-10-21
+
+### Added
+- CV: **reference per measurement** (own internal standard – also the Fc/Ac₂Fc couple in the same file – or own
+  shift), e.g. for comparing solvents, each against its own standard; the couple windows follow each reference.
+- CV: **group** per measurement (e.g. solvent) and **stacked** CVs with **E½ at every curve** next to its anodic
+  peak (E¹½, E²½); y axis with numbers, without numbers or hidden.
+- CV: plots against scan rate – **reversibility** (ΔE_p vs. v), **Randles–Ševčík** (i_pa and i_pc vs. √v with fit
+  lines) and **trumpet plot** (E_pa/E_pc vs. log v, without k⁰ analysis), one series per group.
+- CV: **E_pa/E_pc as numbers at the peaks** (e.g. sample and Ac₂Fc in one measurement), **structure per
+  measurement**; the iR compensation of the Gamry file (e.g. positive feedback 800 Ω) is listed in the results CSV.
+- Release notes on GitHub are generated from the changelogs.
+
+### Changed
+- Dragging inset, images, labels and legend is much smoother (only the dragged element is redrawn).
+
+### Fixed
+- CV: a window without a real redox couple (E_pa below E_pc) is flagged instead of giving a negative ΔE_p.
+
 ## 1.16.0 – 2026-10-21
 
 ### Changed
