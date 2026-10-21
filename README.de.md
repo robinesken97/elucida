@@ -1,8 +1,13 @@
 [English](README.md) | **Deutsch** · [Änderungen](CHANGELOG.de.md)
 
-# UVVisTool – UV-Vis-Auswertung von Verdünnungsreihen
+# Spectravolt – Spektroskopie und Elektrochemie für Photo- und Redoxchemie
 
-UVVisTool bestimmt molare Absorptionskoeffizienten (ε) aus UV-Vis-Verdünnungsreihen
+*Früher **UVVisTool**. Projekte, Einstellungen und heruntergeladene Daten werden automatisch übernommen.*
+
+Spectravolt wertet UV-Vis-Verdünnungsreihen aus, legt gemessene und TD-DFT-Spektren übereinander und analysiert
+Fluoreszenz, Cyclovoltammetrie, Spektroelektrochemie (SEC) und CW-EPR – jeweils mit publikationsfertigen Abbildungen.
+
+Im ε-Tab bestimmt Spectravolt molare Absorptionskoeffizienten (ε) aus UV-Vis-Verdünnungsreihen
 (Lambert-Beer: A/d gegen c) und erzeugt publikationsfertige Abbildungen im gewohnten Origin-Stil:
 Spektren, λ/ε-Labels an den Banden, ein Inset mit den linearen Regressionen und R², die Struktur
 (CDXML/SVG/PDF) und ein freigestelltes Foto der Küvette. Die Oberfläche gibt es auf Deutsch und
@@ -14,19 +19,19 @@ Lade unter **Releases** (rechts auf der Repository-Seite) die Datei für dein Sy
 
 | System | Datei | Starten |
 |---|---|---|
-| Windows | `UVVisTool-windows-x64.zip` | `UVVisTool\UVVisTool.exe` |
-| macOS (Apple Silicon) | `UVVisTool-macos-arm64.zip` | `UVVisTool.app` |
-| macOS (Intel, ab macOS 14) | `UVVisTool-macos-x64.zip` | `UVVisTool.app` |
-| Linux (AppImage) | `UVVisTool-linux-x64.AppImage` | ausführbar machen, dann doppelklicken |
-| Linux (Ordner) | `UVVisTool-linux-x64.tar.gz` | `UVVisTool/UVVisTool` |
+| Windows | `Spectravolt-windows-x64.zip` | `Spectravolt\Spectravolt.exe` |
+| macOS (Apple Silicon) | `Spectravolt-macos-arm64.zip` | `Spectravolt.app` |
+| macOS (Intel, ab macOS 14) | `Spectravolt-macos-x64.zip` | `Spectravolt.app` |
+| Linux (AppImage) | `Spectravolt-linux-x64.AppImage` | ausführbar machen, dann doppelklicken |
+| Linux (Ordner) | `Spectravolt-linux-x64.tar.gz` | `Spectravolt/Spectravolt` |
 
 Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
 
 - **Windows (SmartScreen):** „Weitere Informationen“ → „Trotzdem ausführen“.
-- **macOS (Gatekeeper):** `UVVisTool.app` in „Programme“ ziehen und einmal doppelklicken (wird blockiert).
+- **macOS (Gatekeeper):** `Spectravolt.app` in „Programme“ ziehen und einmal doppelklicken (wird blockiert).
   Dann Systemeinstellungen → Datenschutz & Sicherheit → ganz unten „Dennoch öffnen“ → mit Passwort/Touch ID
   bestätigen. Ab macOS 15 funktioniert der frühere Weg „Rechtsklick → Öffnen“ nicht mehr. Alternativ im
-  Terminal: `xattr -dr com.apple.quarantine /Applications/UVVisTool.app`. Welcher Mac? Apple-Menü → Über diesen Mac: „Chip Apple M…“ = Apple Silicon,
+  Terminal: `xattr -dr com.apple.quarantine /Applications/Spectravolt.app`. Welcher Mac? Apple-Menü → Über diesen Mac: „Chip Apple M…“ = Apple Silicon,
   „Prozessor Intel…“ = Intel. Die Intel-Version braucht macOS 14 (Sonoma) oder neuer.
 
 **Updates:** Beim Start prüft das Programm einmal am Tag, ob es auf GitHub eine neuere Version gibt,
@@ -34,12 +39,12 @@ und bietet an, die Release-Seite zu öffnen (Hilfe → „Nach Updates suchen…
 Zum Aktualisieren die neue Datei herunterladen und die alte App ersetzen; Projekte und Einstellungen
 bleiben erhalten.
 
-**Linux-AppImage:** `chmod +x UVVisTool-linux-x64.AppImage` (oder Dateieigenschaften → „Als Programm
+**Linux-AppImage:** `chmod +x Spectravolt-linux-x64.AppImage` (oder Dateieigenschaften → „Als Programm
 ausführen“), dann starten. Es braucht `fusermount` (Paket `fuse3`, bei den meisten aktuellen
-Distributionen vorinstalliert); ohne startet man mit `./UVVisTool-linux-x64.AppImage --appimage-extract-and-run`.
+Distributionen vorinstalliert); ohne startet man mit `./Spectravolt-linux-x64.AppImage --appimage-extract-and-run`.
 Wie beim tar.gz ist eine Distribution mindestens so neu wie Ubuntu 22.04 (glibc 2.35) nötig.
 
-Unter Windows immer den ganzen Ordner `UVVisTool` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
+Unter Windows immer den ganzen Ordner `Spectravolt` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 
 ## Ablauf
 
@@ -339,10 +344,12 @@ Format → „Schrift und Rahmen…“ gilt für alle Tabs und wird im Projekt g
 ## Probleme
 
 - **Absturz:** Die Details stehen in `crash.log`:
-  - Windows: `%LOCALAPPDATA%\UVVisTool`
-  - macOS: `~/Library/Application Support/UVVisTool`
-  - Linux: `~/.local/share/UVVisTool`
-- **Selbsttest:** `UVVisTool --selftest <ordner>` prüft Einlesen, CDXML, Freistellung und Export und
+  - Windows: `%LOCALAPPDATA%\Spectravolt`
+  - macOS: `~/Library/Application Support/Spectravolt`
+  - Linux: `~/.local/share/Spectravolt`
+
+  (bis Version 1.15 hieß der Ordner `UVVisTool`; er wird beim ersten Start automatisch umbenannt)
+- **Selbsttest:** `Spectravolt --selftest <ordner>` prüft Einlesen, CDXML, Freistellung und Export und
   schreibt `selftest_report.txt`.
 
 ---
@@ -358,7 +365,7 @@ Nach jedem Build läuft auf jedem System ein Selbsttest der fertigen App.
 2. **Releases** → „Create a new release“ → bei „Choose a tag“ z. B. `v1.0.0` eintippen → „Create new tag“ → „Publish release“.
 3. Nach etwa 20–40 Minuten hängen die drei App-Dateien am Release.
 
-**Testbuild ohne Release:** Actions → „Build UVVisTool“ → „Run workflow“. Das Ergebnis liegt unten
+**Testbuild ohne Release:** Actions → „Build Spectravolt“ → „Run workflow“. Das Ergebnis liegt unten
 im Lauf unter „Artifacts“ und wird nach 90 Tagen gelöscht.
 
 **Lokal:**
@@ -392,7 +399,7 @@ unveröffentlichten Messdaten im Repository landen.
 
 ## Lizenz
 
-UVVisTool steht unter der **GNU Affero General Public License v3.0** (siehe `LICENSE`).
+Spectravolt steht unter der **GNU Affero General Public License v3.0** (siehe `LICENSE`).
 Es gibt keine Gewährleistung.
 
 Die App enthält folgende Bibliotheken unter ihren eigenen Lizenzen:

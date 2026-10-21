@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import re
 import os
+import shutil
 import sys
 import urllib.request
 from pathlib import Path
@@ -109,14 +110,22 @@ MODEL_NAME = "isnet-general-use.onnx"
 MODEL_SIZE_MB = 179
 
 
-def app_data_dir() -> Path:
-    if sys.platform.startswith("win"):
+def app_data_dir(base: Path | None = None) -> Path:
+    if base is not None:                        # Selbsttest: eigener Basisordner
+        pass
+    elif sys.platform.startswith("win"):
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    d = base / "UVVisTool"
+    d = base / "Spectravolt"
+    old = base / "UVVisTool"                    # bis 1.15 (z. B. ISNet-Modell): einmalig übernehmen
+    if not d.exists() and old.is_dir():
+        try:
+            shutil.move(str(old), str(d))
+        except OSError:
+            pass
     d.mkdir(parents=True, exist_ok=True)
     return d
 

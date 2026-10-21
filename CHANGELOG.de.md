@@ -2,6 +2,18 @@
 
 # Änderungen
 
+## 1.16.0 – 21.10.2026
+
+### Geändert
+- **Neuer Name: Spectravolt** (früher UVVisTool) – das Programm kann inzwischen deutlich mehr als UV-Vis. Einstellungen
+  (zuletzt geöffnete Projekte, Sprache, Erscheinungsbild) und der Datenordner werden beim ersten Start übernommen;
+  Projekte öffnen sich wie bisher. Die Release-Pakete heißen jetzt `Spectravolt-…`.
+
+### Neu
+- Overlay: **SEC-Spektren** aus dem SEC-Tab, ausgewählt nach Potential – als **Serie** (alle Spektren oder Anfang und
+  Ende, mit einem gemeinsamen Faktor auf das Startspektrum normiert, Intensitätsverhältnisse und isosbestische Punkte
+  bleiben) oder als einzelne Spektren. SEC wird nie als ε gezeigt (Dünnschichtzelle).
+
 ## 1.15.1 – 21.10.2026
 
 1.15.0 wurde getaggt, aber nicht veröffentlicht (ein Selbsttest unter Linux war zu streng); die Änderungen sind hier

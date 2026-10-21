@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import traceback
 from pathlib import Path
 
-APP_NAME = "UVVisTool"
-APP_VERSION = "1.15.1"
+APP_NAME = "Spectravolt"
+OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
+APP_VERSION = "1.16.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -130,6 +132,17 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
                 "mark_sh": False, "min_r2": 0.98, "color_show": False, "color_d": 1.0}
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg/mL"), ("M", "M")]
+
+def migrate_settings(old, new):
+    """Einstellungen des alten Programmnamens (zuletzt geöffnet, Sprache, Theme …) einmalig übernehmen,
+    solange unter dem neuen Namen noch nichts gespeichert ist. Das Alte bleibt (Rückkehr zur alten Version)."""
+    if new.allKeys() or not old.allKeys():
+        return False
+    for k in old.allKeys():
+        new.setValue(k, old.value(k))
+    new.sync()
+    return True
+
 
 class Section(QWidget):
     """Aufklappbarer Bereich für seltener gebrauchte Optionen. Weicht ein Wert vom Standard ab, steht
@@ -357,6 +370,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = (QSettings(str(SETTINGS_FILE), QSettings.IniFormat) if SETTINGS_FILE
                          else QSettings(APP_NAME, APP_NAME))
+        if not SETTINGS_FILE:
+            for old in OLD_APP_NAMES:
+                if migrate_settings(QSettings(old, old), self.settings):
+                    break
         set_lang(self.settings.value("lang", "de"))
         self.csv_path = None
         self.groups, self.units = {}, {}
@@ -2831,13 +2848,31 @@ def selftest(outdir, with_isnet=False):
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")
 
+        # Umbenennung UVVisTool -> Spectravolt: alte Einstellungen und Datenordner einmalig übernehmen
+        old_s = QSettings(str(out / "old_settings.ini"), QSettings.IniFormat)
+        old_s.setValue("lang", "en")
+        old_s.setValue("recent", [str(out / "p1"), str(out / "p2")])
+        new_s = QSettings(str(out / "new_settings.ini"), QSettings.IniFormat)
+        new_s.clear()
+        assert migrate_settings(old_s, new_s) and new_s.value("lang") == "en" and len(new_s.value("recent")) == 2
+        new_s.setValue("lang", "de")
+        assert not migrate_settings(old_s, new_s) and new_s.value("lang") == "de"   # nur einmal, nichts überschreiben
+        base_ = out / "appdata"
+        shutil.rmtree(base_, ignore_errors=True)
+        (base_ / "UVVisTool" / "models").mkdir(parents=True)
+        (base_ / "UVVisTool" / "models" / "m.onnx").write_bytes(b"x")
+        d_ = IMG.app_data_dir(base_)
+        assert d_.name == "Spectravolt" and (d_ / "models" / "m.onnx").exists() and not (base_ / "UVVisTool").exists()
+        assert APP_NAME == "Spectravolt" and UPD.REPO.endswith("/spectravolt")
+        report.append("rename (settings + data folder migration): OK")
+
         # Update-Prüfung (ohne Netz: Versionsvergleich, API-Antwort, Meldungstext)
         assert UPD.parse_version("v1.10.0") > UPD.parse_version("1.9.9") and UPD.parse_version("x") == ()
         assert UPD.is_newer("1.4.1", "1.4.0") and not UPD.is_newer("1.4", "1.4.0") and not UPD.is_newer("", "1.0")
         lbl = UPD.platform_label()
         fake = {"tag_name": "v99.0.0", "html_url": "https://example.invalid/r",
-                "assets": [{"name": f"UVVisTool-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
-                + [{"name": "UVVisTool-linux-x64.tar.gz"}]}
+                "assets": [{"name": f"Spectravolt-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
+                + [{"name": "Spectravolt-linux-x64.tar.gz"}]}
         info = UPD.parse_release(fake)
         assert info["version"] == "99.0.0" and lbl in info["asset"], info
         assert "99.0.0" in w.update_text(info, manual=False)

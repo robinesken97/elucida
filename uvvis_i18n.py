@@ -77,7 +77,7 @@ TEXTS = {
     "download_cancelled": ("Download abgebrochen", "download cancelled"),
 
     # ---- GUI -------------------------------------------------------------
-    "app_title": ("UV-Vis-Auswertung", "UV-Vis Analysis"),
+    "app_title": ("Spectravolt", "Spectravolt"),
     "menu_file": ("&Datei", "&File"),
     "menu_lang": ("&Sprache", "&Language"),
     "menu_help": ("&Hilfe", "&Help"),
@@ -110,7 +110,7 @@ TEXTS = {
     "save_changes_q": ("Das Projekt enthält ungespeicherte Änderungen. Speichern?",
                        "The project has unsaved changes. Save?"),
     "flt_project": ("Projektordner (*)", "Project folder (*)"),
-    "no_project": ("Kein UVVisTool-Projekt: {p}", "Not a UVVisTool project: {p}"),
+    "no_project": ("Kein Spectravolt-Projekt: {p}", "Not a Spectravolt project: {p}"),
     "missing_file": ("Datei fehlt: {p}", "File missing: {p}"),
     "project_dir_not_empty": ("Der Ordner {p} ist nicht leer und kein Projekt – bitte einen neuen Namen wählen.",
                               "Folder {p} is not empty and not a project – please choose a new name."),
@@ -218,8 +218,10 @@ TEXTS = {
     "err_title": ("Fehler", "Error"),
     "exported_to": ("Exportiert nach:\n{p}", "Exported to:\n{p}"),
     "mw_formula": ("{f}, M = {mw:.2f} g/mol", "{f}, M = {mw:.2f} g/mol"),
-    "about": ("UV-Vis-Auswertung {v}\nLambert-Beer-Auswertung von Verdünnungsreihen.",
-              "UV-Vis Analysis {v}\nBeer–Lambert analysis of dilution series."),
+    "about": ("Spectravolt {v} (früher UVVisTool)\nUV-Vis (ε aus Verdünnungsreihen), Overlay mit TD-DFT, Fluoreszenz, "
+              "CV, Spektroelektrochemie und EPR – Auswertung und Abbildungen.",
+              "Spectravolt {v} (formerly UVVisTool)\nUV-Vis (ε from dilution series), overlay with TD-DFT, fluorescence, "
+              "CV, spectroelectrochemistry and EPR – analysis and figures."),
     "load_first": ("Bitte zuerst eine CSV öffnen.", "Please open a CSV first."),
     "tab_eps": ("ε-Auswertung", "ε analysis"),
     "tab_overlay": ("Overlay", "Overlay"),

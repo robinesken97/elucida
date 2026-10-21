@@ -1,4 +1,4 @@
-# CLAUDE.md – UVVisTool
+# CLAUDE.md – Spectravolt (früher UVVisTool)
 
 PySide6-Desktop-App (Windows wichtigste Plattform, dazu macOS arm64, macOS Intel ab 14 und Linux) für UV-Vis-Verdünnungsreihen:
 Lambert-Beer-Auswertung (ε bzw. a) und Abbildung im Origin-Stil (Spektren, λ/ε-Labels, Inset mit Regression
@@ -87,6 +87,10 @@ python build.py                                       # PyInstaller-Build (brauc
    das Release. Kurze zweisprachige Release Notes (EN/DE) zum Reinkopieren liefern.
 
 ## Bekannte Fallen
+- **Umbenennung (1.16):** Programm heißt Spectravolt, Repo `robinesken97/spectravolt`. Intern bleiben
+  `uvvis_*.py` und `project.uvvis`. Alte Einstellungen (`QSettings("UVVisTool")`, `migrate_settings`) und der
+  Datenordner `…/UVVisTool` (`app_data_dir`) werden beim ersten Start übernommen. Alte Versionen fragen die
+  GitHub-API unter dem alten Repo-Namen ab (GitHub leitet um) – Repo nie neu unter altem Namen anlegen.
 - **Windows-Zeilenenden:** CSVs in Tests mit `newline=""` schreiben; Reader überspringt leere Zeilen
   (früher Windows-CI-Abbruch durch `\r\r\n`).
 - **AppImage (Linux):** in CI aus dem PyInstaller-Ordner gebaut; appimagetool und type2-Runtime mit fester
