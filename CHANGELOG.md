@@ -10,7 +10,8 @@
   from the corrected currents. Baselines optionally in the figure.
 - CV: new plots **log i_p vs. log v** (diffusion/adsorption) and **i_r/i_f vs. v** (chemical reversibility).
 - CV: regressions against scan rate with a **95% confidence interval** for slope and intercept.
-- CV: **SI text** on the data evaluation (English, copy or `…_methods.txt` on export).
+- **Copy SI text** in every tab that fits (UV-Vis (ε), CV, SEC, EPR): English methods paragraph with exactly the
+  evaluation steps and settings used, followed by the results; written as `…_methods.txt` on export.
 
 ### Changed
 - CV: i_pa, i_pc and i_r/i_f change in existing projects because of the baseline (can be switched off); peak

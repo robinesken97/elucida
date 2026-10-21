@@ -123,6 +123,66 @@ def uvvis_line(results, cfg, solvent: str = ""):
     return plain, html
 
 
+def eps_methods(cfg, results, spectra, solvent: str = ""):
+    """SI-Text (englisch) zur ε-Bestimmung einer Verdünnungsreihe nach prepare_series: Basislinie, Fit A/d = m·c + b
+    (OLS), Cutoff, Unsicherheiten; danach die Ergebnisse je Bande (ε ± SE wie in der Tabelle gerundet, 95-%-KI, n,
+    R²). Exponenten wie in der SI als „-1“."""
+    fitted = [r for r in results if r.get("fit")]
+    if not fitted:
+        return ""
+    molar = bool(core.conc_factor(cfg))
+    unit = {"uM": "µM", "mg/mL": "mg mL-1"}.get(cfg["conc_unit"], cfg["conc_unit"])
+    cs = sorted({s_["c"] for s_ in spectra})
+    coef, cunit = ("ε", "cm-1 M-1") if molar else ("a", "L g-1 cm-1")
+    m = ["Molar absorption coefficients were determined from a dilution series" if molar else
+         "Specific absorption coefficients a (no molar mass given) were determined from a dilution series",
+         ""]
+    m[0] += (f"{' in ' + solvent if solvent else ''} ({len(cs)} concentrations, {cs[0]:g}–{cs[-1]:g} {unit}, "
+             f"path length {cfg['path_length_cm']:g} cm" + (f"; mass concentrations converted with M = "
+                                                            f"{float(cfg['molar_mass_g_mol']):.2f} g mol-1"
+                                                            if molar and cfg["conc_unit"] == "mg/mL" else "") + ").")
+    bl = cfg.get("_baseline_info")
+    if bl:
+        a, b = bl["window"]
+        txt = (f"Each spectrum was baseline-corrected by its median absorbance between {a:.0f} and {b:.0f} nm "
+               "(the range of lowest absorbance of the most concentrated solution)")
+        if cfg.get("baseline_mode") == "series" and len(spectra) >= 3:
+            txt += ("; a contribution proportional to the concentration in this range (linear regression of the "
+                    "window absorbance against c, kept if the slope exceeded twice its standard error) was retained")
+        m[1] = txt + "."
+    sampling = "interpolated at the band wavelength"
+    if cfg.get("avg_window_nm"):
+        sampling = f"averaged over ±{cfg['avg_window_nm']:g} nm around the band wavelength"
+    snap = (f", which was set to the local maximum within ±{cfg['snap_window_nm']:g} nm of the most concentrated "
+            "unsaturated spectrum" if cfg.get("snap_window_nm") else "")
+    cuts = sorted({float(r["cutoff"]) for r in fitted})
+    cut_txt = (f"A ≤ {cuts[0]:g}" if len(cuts) == 1 else
+               f"A ≤ {cfg['max_abs_fit']:g} (band-specific limits: " + ", ".join(
+                   f"{r['lam']:.0f} nm: {r['cutoff']:g}" for r in fitted if r["cutoff"] != cfg["max_abs_fit"]) + ")")
+    model = "A/d = " + coef + "·c + b" if cfg["fit_intercept"] else "A/d = " + coef + "·c"
+    dof = "n − 2" if cfg["fit_intercept"] else "n − 1"
+    m.append(f"At each band, the absorbance ({sampling}{snap}) divided by the path length was fitted against the "
+             f"concentration by ordinary least squares ({model}), using only points with {cut_txt} to stay in "
+             f"the linear range; {coef} is the slope. Uncertainties are given as standard error (SE) and 95% "
+             f"confidence interval (t(0.975; {dof})·SE); {coef} was rounded to the precision of the SE"
+             + (" and is given without decimals" if molar else "") + ".")
+    if any(r.get("hidden") for r in fitted):
+        m.append(f"Bands with R² < {cfg['min_r2']:g} or deselected bands are listed but not labelled in the figure.")
+    res = []
+    for r in sorted(fitted, key=lambda r: r["lam"]):
+        v, e = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))
+        ci = r.get("eps_ci95")
+        _, ci_s = core.fmt_ve(r["eps"], ci, max_decimals=core.eps_max_decimals(cfg)) if ci == ci else (None, None)
+        sh = " (sh)" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
+        txt = f"{r['lam']:.0f} nm{sh}: {coef} = {v}" + (f" ± {e}" if e else "") + f" {cunit}"
+        txt += f" (SE; 95% CI ± {ci_s}" if ci_s else " ("
+        txt += f"{'; ' if ci_s else ''}n = {r['fit']['n']}, R² = {r['fit']['r2']:.4f})"
+        if r.get("hidden"):
+            txt += " [not in figure]"
+        res.append(txt)
+    return " ".join(x for x in m if x) + "\n\n" + "; ".join(res) + "."
+
+
 # ---------------------------------------------------------------------------- Absatz und Word-Datei
 def join_lines(parts):
     """Teilzeilen (Klartext, HTML) zu einem Absatz im SI-Stil: durch „; “ getrennt, Punkt am Ende."""

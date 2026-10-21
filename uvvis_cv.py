@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
@@ -520,10 +520,7 @@ class CVTab(TABS.FigureTab):
         self.lbl_res.setTextInteractionFlags(Qt.TextSelectableByMouse)
         v.addWidget(self.lbl_res)
         row = QHBoxLayout()
-        b = QPushButton(T("cv_copy_methods"))
-        b.setToolTip(T("cv_copy_methods_tip"))
-        b.clicked.connect(lambda: QApplication.clipboard().setText(self.methods_text()))
-        row.addWidget(b)
+        row.addWidget(self.methods_button())
         row.addStretch(1)
         v.addLayout(row)
         self.lv.addWidget(g)
@@ -1156,7 +1153,7 @@ class CVTab(TABS.FigureTab):
                  "potential, to account for the decaying current of the forward scan.[R. S. Nicholson, Anal. Chem. "
                  "1966, 38, 1406.]")
         if rates:
-            m.append("Scan rates: " + ", ".join(f"{v:g}" for v in rates) + " mV s−1.")
+            m.append("Scan rates: " + ", ".join(f"{v:g}" for v in rates) + " mV s-1.")
         fits = self.rate_fits()
         if fits:
             m.append("The scan-rate dependence was analysed by linear least-squares regression of ip vs. v1/2 "
@@ -1171,7 +1168,7 @@ class CVTab(TABS.FigureTab):
             rng = lambda v, f: f"{min(v):{f}}" + (f"–{max(v):{f}}" if f"{min(v):{f}}" != f"{max(v):{f}}" else "")  # noqa: E731
             txt = (f"Couple {n}" + (f" ({grp})" if grp else "") + f": E1/2 = {_fmt_e(e12, 2)} V vs. {ref_lab}"
                    + f" (ΔEp = {rng(dep, '.0f')} mV" + (f", ip,r/ip,f = {rng(rat, '.2f')}" if rat else "")
-                   + (f"; {rng([r['rate'] for r in rr], 'g')} mV s−1" if len(rr) > 1 else "") + ")")
+                   + (f"; {rng([r['rate'] for r in rr], 'g')} mV s-1" if len(rr) > 1 else "") + ")")
             f = fits.get((grp, n))
             if f and f["ll_a"] and f["ll_c"]:
                 txt += (f"; log–log slopes {fmt_ci(f['ll_a']['slope'], f['ll_a']['ci'])} (ipa) and "
@@ -1211,6 +1208,4 @@ class CVTab(TABS.FigureTab):
                             "failed" if r.get("bl_fail") else ("linear" if r.get("bl") else "none"),
                             f"{r['ipa_raw'] * 1e6:.3f}", f"{r['ipc_raw'] * 1e6:.3f}",
                             f"{r['bl']['step'] * 1e6:.3f}" if r.get("bl") else ""])
-        m = Path(base).with_name(Path(base).name + "_methods.txt")
-        m.write_text(self.methods_text() + "\n", encoding="utf-8")
-        return files + [p, m]
+        return files + [p]

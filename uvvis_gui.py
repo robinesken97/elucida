@@ -813,6 +813,10 @@ class MainWindow(QMainWindow):
         b = QPushButton(STYLE.icon("reset"), T("btn_reset_layout"))
         b.clicked.connect(self.reset_layout)
         row.addWidget(b)
+        b = QPushButton(T("si_copy_methods"))
+        b.setToolTip(T("si_copy_methods_tip"))
+        b.clicked.connect(self.copy_eps_methods)
+        row.addWidget(b)
         row.addStretch(1)
         self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
         self.btn_export.setProperty("accent", True)
@@ -2005,6 +2009,26 @@ class MainWindow(QMainWindow):
                 out.append(line)
         return out
 
+    def eps_methods_text(self, groups=None):
+        """SI-Text zur ε-Bestimmung je Serie (englisch, uvvis_si.eps_methods)."""
+        out = []
+        for g in (groups or list(self.groups)):
+            try:
+                cfg2, spectra, results = core.prepare_series(self.make_cfg(g), self.groups[g], g)
+            except Exception:
+                continue
+            txt = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""))
+            if txt:
+                out.append((f"Series {g}: " if len(self.groups) > 1 and g else "") + txt)
+        return "\n\n".join(out)
+
+    def copy_eps_methods(self):
+        self.collect_globals()
+        txt = self.eps_methods_text()
+        if txt:
+            QApplication.clipboard().setText(txt)
+        self.statusBar().showMessage(T("si_methods_copied") if txt else T("si_methods_none"), 6000)
+
     def export_si(self):
         """SI-Abschnitt der Verbindung als Word-Datei: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis;
         Elementaranalyse), dazu Kristalldaten, ausgewählte Parameter und Bildunterschriften aus dem X-Ray-Tab."""
@@ -2197,6 +2221,10 @@ class MainWindow(QMainWindow):
             core.write_results(results, folder_g / f"{name}_results.csv", cfg2)
             written += [folder_g / f"{name}.{e}" for e in [cfg2["_main_fmt"]] + cfg2["extra_formats"]]
             written.append(folder_g / f"{name}_results.csv")
+            meth = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""))
+            if meth:
+                written.append(folder_g / f"{name}_methods.txt")
+                written[-1].write_text(meth + "\n", encoding="utf-8")
             try:
                 rep = REPORT.write_report(folder_g / f"{name}_report.xlsx", cfg2, self.groups[g], spectra,
                                           results, g, files=self.csv_paths, version=APP_VERSION)
@@ -2702,6 +2730,10 @@ def selftest(outdir, with_isnet=False):
         files = w.export_all()
         rep = proj / "exports" / "epsilon" / "TEST-A" / "TEST-A_report.xlsx"
         assert rep in files and rep.exists(), files
+        meth_ = (proj / "exports" / "epsilon" / "TEST-A" / "TEST-A_methods.txt").read_text(encoding="utf-8")
+        assert "ordinary least squares" in meth_ and "95% confidence interval" in meth_ and " nm: " in meth_ \
+            and "M = 95.10 g mol-1" in meth_, meth_
+        assert meth_.split("\n\n")[0] in w.eps_methods_text(), "SI-Text Export/Knopf verschieden"
         from openpyxl import load_workbook
         wbk = load_workbook(rep)
         assert len(wbk.sheetnames) >= 3 and any("nm" in n for n in wbk.sheetnames), wbk.sheetnames
@@ -2853,9 +2885,9 @@ def selftest(outdir, with_isnet=False):
         assert "Ac₂Fc" in w.cv_tab.note and "+0.49 V vs. Fc" in w.cv_tab.note, w.cv_tab.note
         rs = CVMOD.randles_sevcik([50, 100, 200], [r["ipa"] * 1e6 for r in res])
         assert rs and rs[2] > 0.99, rs
-        csv_txt = files[-2].read_text(encoding="utf-8-sig")
+        csv_txt = files[-1].read_text(encoding="utf-8-sig")
         assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt and "charging_step_uA" in csv_txt, csv_txt
-        meth = files[-1].read_text(encoding="utf-8")
+        meth = files[-2].read_text(encoding="utf-8")
         assert "Nicholson" in meth and "diacetylferrocene" in meth and "95% confidence" in meth \
             and "Couple 1: E1/2 = −1.08 V vs. Fc+/Fc" in meth, meth
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
@@ -2951,8 +2983,8 @@ def selftest(outdir, with_isnet=False):
                 assert list(fits_) == [("A", 1)] and abs(fits_[("A", 1)]["ll_a"]["slope"] - 0.5) < 0.05, fits_
                 assert "log-log" in t_cv.lbl_res.text() or "log–log" in t_cv.lbl_res.text(), t_cv.lbl_res.text()
         files = t_cv.export_to(out / "cv_dep")
-        assert all(f.exists() for f in files) and "group" in files[-2].read_text(encoding="utf-8-sig")
-        assert "Couple 1 (A)" in files[-1].read_text(encoding="utf-8")
+        assert all(f.exists() for f in files) and "group" in files[-1].read_text(encoding="utf-8-sig")
+        assert "Couple 1 (A)" in files[-2].read_text(encoding="utf-8")
         st_cv["files"] = st_cv["files"][:1]
         assert t_cv.figure_spec() is None and "zwei Scanraten" in t_cv.note or "two scan rates" in t_cv.note
         st_cv.update(files=[], couples=[], ref_mode="none", plot="cv", stack=False, e12_each=False)
@@ -2996,9 +3028,13 @@ def selftest(outdir, with_isnet=False):
         st_sec.update(spec_files=sec_files, dta=str(secdir / "sec.DTA"), bands="373, 432", mode="spectra")
         files = w.sec_tab.export_to(out / "sec_spectra")
         assert all(f.exists() for f in files), files
+        assert not any(f.name.endswith("_methods.txt") for f in files), files           # kein Fit, kein SI-Text
         st_sec.update(mode="trace", trace_lams="432")
         files = w.sec_tab.export_to(out / "sec_trace")
         assert all(f.exists() for f in files) and abs(w.sec_tab.info[432.0]["e12"] + 0.80) < 0.005
+        meth_ = files[-1].read_text(encoding="utf-8")
+        assert files[-1].name.endswith("_methods.txt") and "apparent" in meth_ and "grid search" in meth_ \
+            and "λ = 432 nm: E1/2,app = −0.80" in meth_, meth_
         slots_ = PRJ._path_slots({"sec": st_sec})
         assert sum(1 for c_, k_, _ in slots_ if c_ is st_sec["spec_files"]) == 70 and \
             any(c_ is st_sec and k_ == "dta" for c_, k_, _ in slots_), "SEC-Dateien fehlen im Projekt"
@@ -3157,6 +3193,9 @@ def selftest(outdir, with_isnet=False):
         t_e.fill_table()
         dB_, _ = t_e.calibration_shift()
         assert abs(dB_ - 0.25) < 0.003, dB_
+        meth_ = t_e.methods_text()
+        assert "Levenberg–Marquardt" in meth_ and "Field calibration: g_fit" in meth_ and "ΔB = +0.25" in meth_ \
+            and "a(1 × I = 1) = 1.5" in meth_, meth_
         t_e.table.selectRow(1)
         t_e.add_iso()
         ri = w.epr_state["entries"][-1]
@@ -3208,6 +3247,10 @@ def selftest(outdir, with_isnet=False):
         r_ = t_e.kin_result
         assert r_ and abs(r_["Ea"] - Ea_true) / Ea_true < 0.02 and abs(r_["lnA"] - lnA_true) < 1.0, r_
         assert r_["ci_Ea"][0] < Ea_true < r_["ci_Ea"][1] and abs(r_["beta"] - beta_) < 1e-9, r_
+        meth_ = next(f for f in files if f.name.endswith("_methods.txt")).read_text(encoding="utf-8")
+        assert "Gaussian on a linear baseline" in meth_ and "t(0.975; n − 2)" in meth_ and "Ea = 5" in meth_ \
+            and "multiplied by the temperature (I·T) before fitting" in meth_ and "± 0.01 kJ" in meth_ \
+            and " × 10^" in meth_, meth_
         w.epr_state["kin_norm"] = "script"
         w.epr_tab.export_to(out / "epr_decay_script")
         assert abs(t_e.kin_result["Ea"] - Ea_true) / Ea_true < 0.02, t_e.kin_result

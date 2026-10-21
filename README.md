@@ -187,6 +187,12 @@ UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands a
 precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
 X-Ray tab. Parts that are still missing are listed after the export.
 
+**SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
+English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
+OLS model, cut-off, SE/95% CI; EPR: baseline polynomial, field calibration, S = 1/2 fit, kinetics), to append to the
+setup paragraph of the matching SI section, followed by the results. The same text is written as `…_methods.txt` on
+export.
+
 ## X-Ray tab
 
 - Load one or more **CIF** files (button or drag & drop); each `data_` block with atoms becomes one entry (one

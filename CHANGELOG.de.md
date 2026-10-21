@@ -10,7 +10,8 @@
   im Bild.
 - CV: neue Auftragungen **log i_p gegen log v** (Diffusion/Adsorption) und **i_r/i_f gegen v** (chemische Reversibilität).
 - CV: Regressionen gegen die Scanrate mit **95-%-Konfidenzintervall** für Steigung und Achsenabschnitt.
-- CV: **SI-Text** zur Auswertung (englisch, kopieren oder als `…_methods.txt` beim Export).
+- **SI-Text kopieren** in allen Tabs, die fitten (UV-Vis (ε), CV, SEC, EPR): englischer Methodenabsatz mit genau den
+  benutzten Auswerteschritten und Einstellungen, danach die Ergebnisse; beim Export als `…_methods.txt`.
 
 ### Geändert
 - CV: i_pa, i_pc und i_r/i_f ändern sich in bestehenden Projekten durch die Basislinie (abschaltbar); Peakpotentiale

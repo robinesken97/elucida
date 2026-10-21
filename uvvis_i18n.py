@@ -664,11 +664,15 @@ TEXTS = {
                    "Regressionen. Fenster zur Startseite des Hinpeaks erweitern.",
                    "⚠ baseline not possible (too little current before the peak in the window) – currents from zero, "
                    "excluded from the regressions. Extend the window towards the start of the forward peak."),
-    "cv_copy_methods": ("SI-Text kopieren", "Copy SI text"),
-    "cv_copy_methods_tip": ("Auswertung für den Abschnitt „Cyclic Voltammetry“ der SI (englisch, an den Aufbau-Absatz\n"
-                            "anhängen) und ein Absatz mit den Ergebnissen je Redoxpaar. Wird auch mit exportiert.",
-                            "Data evaluation for the “Cyclic Voltammetry” section of the SI (append to the setup\n"
-                            "paragraph) and one paragraph with the results per redox couple. Also written on export."),
+    "si_copy_methods": ("SI-Text kopieren", "Copy SI text"),
+    "si_copy_methods_tip": ("Methodenabsatz zu allen Fits und Auswerteschritten dieses Tabs (englisch, zum Anhängen an\n"
+                            "den Aufbau-Absatz des passenden SI-Abschnitts), danach die Ergebnisse. Richtet sich nach\n"
+                            "den aktuellen Einstellungen; wird beim Export als …_methods.txt mitgeschrieben.",
+                            "Methods paragraph on all fits and evaluation steps of this tab (English, to append to the\n"
+                            "setup paragraph of the matching SI section), followed by the results. Follows the current\n"
+                            "settings; also written as …_methods.txt on export."),
+    "si_methods_copied": ("SI-Text in der Zwischenablage.", "SI text copied to the clipboard."),
+    "si_methods_none": ("Nichts gefittet – kein SI-Text.", "Nothing fitted – no SI text."),
     # ---- Spektroelektrochemie ----------------------------------------------
     "tab_sec": ("SEC", "SEC"),
     "sec_data": ("Daten", "Data"),
