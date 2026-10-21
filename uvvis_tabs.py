@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComb
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+                               QWidget, QDialog, QDialogButtonBox, QListWidget)
 
 import uvvis_core as core
 import uvvis_extra as X
@@ -595,8 +595,8 @@ class OverlayTab(FigureTab):
         g = QGroupBox(T("ov_curves"))
         v = QVBoxLayout(g)
         row = QHBoxLayout()
-        for txt, fn in ((T("ov_add_exp"), self.add_exp), (T("ov_add_calc"), self.add_calc),
-                        (T("ov_combine"), self.combine_selected),
+        for txt, fn in ((T("ov_add_exp"), self.add_exp), (T("ov_add_sec"), self.add_sec),
+                        (T("ov_add_calc"), self.add_calc), (T("ov_combine"), self.combine_selected),
                         ("↑", lambda: self.move_selected(-1)), ("↓", lambda: self.move_selected(1)),
                         (T("remove"), self.remove_selected)):
             b = STYLE.list_button(txt)
@@ -807,6 +807,137 @@ class OverlayTab(FigureTab):
         self.fill_table()
         self.timer.start()
 
+    def add_sec(self):
+        """Spektren aus dem SEC-Tab übernehmen, ausgewählt nach Potential. SEC-Kurven werden nur normiert
+        gezeigt: Schichtdicke und umgesetzte Konzentration der Dünnschichtzelle sind nicht genau bekannt."""
+        import uvvis_cv as CV
+        sec = self.main.sec_tab
+        sec.collect()
+        sp, E = sec.series()
+        if not sp:
+            self.main.error(T("ov_sec_none"))
+            return
+        off, ref = sec.e_offset()
+        ref = "Fc⁺/Fc" if ref.startswith("Fc$") else ref
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("ov_add_sec"))
+        v = QVBoxLayout(dlg)
+        lb = QLabel(T("ov_sec_pick"), wordWrap=True)
+        v.addWidget(lb)
+        cmb = QComboBox()
+        for key in ("all", "ends", "single"):
+            cmb.addItem(T("ov_sec_mode_" + key), key)
+        v.addWidget(cmb)
+        lst = QListWidget()
+        lst.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        for i, s_ in enumerate(sp):
+            e_txt = f"   {CV._fmt_e(E[i] - off)} V vs. {ref}" if E is not None else ""
+            lst.addItem(f"{i + 1:>3}{e_txt}   ({s_['name']})")
+        v.addWidget(lst)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        dlg.resize(460, 420)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        rows = sorted(ix.row() for ix in lst.selectedIndexes())
+        if cmb.currentData() == "single":
+            self.add_sec_entries(rows or [len(sp) - 1])
+        else:                                   # Bereich: erstes bis letztes markiertes, sonst ganze Serie
+            i0, i1 = (rows[0], rows[-1]) if len(rows) >= 2 else (0, len(sp) - 1)
+            self.add_sec_series(i0, i1, ends_only=cmb.currentData() == "ends")
+
+    def add_sec_series(self, i0, i1, ends_only=False):
+        """SEC-Spektren i0…i1 als EINEN Eintrag: gemeinsamer Normierungsfaktor, damit Intensitätsverhältnisse
+        und isosbestische Punkte erhalten bleiben (Einzelnormierung würde sie zerstören)."""
+        import uvvis_cv as CV
+        import uvvis_sec as SEC
+        sec = self.main.sec_tab
+        sp, E = sec.series()
+        off, ref = sec.e_offset()
+        ref = "Fc⁺/Fc" if ref.startswith("Fc$") else ref
+        idx = list(range(i0, i1 + 1))
+        Es = None if E is None else [float(E[i] - off) for i in idx]
+        rng = f"{CV._fmt_e(Es[0], 2)} … {CV._fmt_e(Es[-1], 2)} V vs. {ref}" if Es else f"{len(idx)}"
+        self.st["entries"].append({
+            "kind": "secser", "files": [self._sec_file(sec, sp[i]) for i in idx], "E": Es, "ref": ref,
+            "ends_only": ends_only, "label": T("ov_sec_series_label", rng=rng, n=len(idx)),
+            "color": SEC.END_COLOR, "visible": True, "own_norm": False,
+            "nlo": self.st["nlo"], "nhi": self.st["nhi"]})
+        self.fill_table()
+        self.timer.start()
+
+    def sec_series_curves(self, e, lo, hi, bcfg=None):
+        """Kurven einer SEC-Serie, alle mit demselben Faktor normiert: auf das Startspektrum (Ausgangsverbindung,
+        direkt vergleichbar mit dem isolierten UV-Vis-Spektrum); ohne Signal dort auf das Maximum der Serie."""
+        import uvvis_cv as CV
+        import uvvis_sec as SEC
+        data = [self.sec_spectrum({"file": f}) for f in e["files"]]
+        if not data or any(d is None for d in data):
+            return None
+        x0 = data[0]["x"]
+        ys = []
+        for d in data:
+            y = np.interp(x0, d["x"], d["y"])
+            if bcfg is not None:
+                tmp = [{"x": x0, "y": y, "c": 1.0}]
+                core.apply_baseline(tmp, bcfg)
+                y = tmp[0]["y"]
+            ys.append(y)
+        win = (x0 >= min(lo, hi)) & (x0 <= max(lo, hi))
+        if not win.any():
+            return None
+        m = float(np.nanmax(ys[0][win]))
+        if not m > 0:
+            m = float(max(np.nanmax(y[win]) for y in ys))
+        if not m > 0:
+            return None
+        n = len(ys)
+        idx = [0, n - 1] if (e.get("ends_only") and n > 1) else list(range(n))
+        out = []
+        for i in idx:
+            end = i in (0, n - 1)
+            col = (SEC.START_COLOR if i == 0 else e["color"]) if end else "#b0b0b0"
+            lab = None
+            if end:
+                lab = (f"SEC {CV._fmt_e(e['E'][i], 2)} V vs. {CV.axis_ref(e['ref'])}" if e.get("E")
+                       else f"SEC {Path(e['files'][i]).stem}")
+            out.append({"x": x0, "val": ys[i] / m, "color": col, "label": lab, "main": end,
+                        "lw": None if end else 0.5})
+        out.sort(key=lambda c: (c["main"], c["color"] != SEC.START_COLOR))   # grau unten, Ende oben
+        return out
+
+    def add_sec_entries(self, indices):
+        """SEC-Spektren Nr. `indices` (0-basiert, Reihenfolge wie im SEC-Tab) als Einträge anlegen."""
+        import uvvis_cv as CV
+        sec = self.main.sec_tab
+        sp, E = sec.series()
+        off, ref = sec.e_offset()
+        ref = "Fc⁺/Fc" if ref.startswith("Fc$") else ref
+        for i in indices:
+            e_ax = None if E is None else float(E[i] - off)
+            label = f"SEC {CV._fmt_e(e_ax, 2)} V vs. {ref}" if e_ax is not None else f"SEC {sp[i]['name']}"
+            self.st["entries"].append({
+                "kind": "sec", "file": self._sec_file(sec, sp[i]), "E": e_ax, "ref": ref, "label": label,
+                "color": self.next_color(), "visible": True, "own_norm": False,
+                "nlo": self.st["nlo"], "nhi": self.st["nhi"]})
+        self.fill_table()
+        self.timer.start()
+
+    @staticmethod
+    def _sec_file(sec, s_):
+        """Datei eines SEC-Spektrums (eine BWSpec-Datei je Spektrum, schon im Projektordner)."""
+        return next(p for p in sec.st["spec_files"] if Path(p).stem == s_["name"])
+
+    def sec_spectrum(self, e):
+        import uvvis_sec as SEC
+        if not Path(e["file"]).exists():
+            return None
+        s_ = self.cache(("bws", e["file"]), lambda: SEC.read_bwspec(e["file"]))
+        win = (s_["lam"] >= SEC.LAM_RANGE[0]) & (s_["lam"] <= SEC.LAM_RANGE[1])   # verrauschte Ränder weg
+        return {"x": s_["lam"][win], "y": s_["A"][win]}
+
     def add_calc(self):
         if not self.main.ensure_project():
             return
@@ -909,7 +1040,8 @@ class OverlayTab(FigureTab):
             self.table.setItem(i, 0, it)
             self.table.setItem(i, 1, QTableWidgetItem(e["label"]))
             self.table.setCellWidget(i, 2, color_button(e["color"], lambda c, e=e: self._set_color(e, c)))
-            it = QTableWidgetItem(T("ov_exp") if e["kind"] == "exp" else "TD-DFT")
+            it = QTableWidgetItem({"exp": T("ov_exp"), "sec": "SEC", "secser": T("ov_sec_series")}.get(
+                e["kind"], "TD-DFT"))
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
         self.table.resizeColumnToContents(0)
@@ -938,13 +1070,14 @@ class OverlayTab(FigureTab):
         self.det.setEnabled(e is not None)
         self._loading = True
         exp = e is not None and e["kind"] == "exp"
+        calc = e is not None and e["kind"] == "calc"
         for w in (self.lbl_conc, self.ed_conc, self.cmb_unit, self.lbl_mw, self.ed_mw, self.lbl_d, self.sp_d):
-            w.setVisible(exp or e is None)
+            w.setVisible(exp or e is None)              # SEC: kein ε (Dünnschichtzelle)
         combined = e is not None and bool(e.get("sources"))
         for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift):
-            w.setVisible(e is not None and not exp)
+            w.setVisible(calc)
         for w in (self.lbl_soc, self.cmb_soc):
-            w.setVisible(e is not None and not exp and not combined)
+            w.setVisible(calc and not combined)
         for w in (self.lbl_weights, self.ed_weights):
             w.setVisible(combined)
         if e:
@@ -964,7 +1097,7 @@ class OverlayTab(FigureTab):
                 self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(e.get("unit", "mM"))))
                 self.ed_mw.setText(f"{e['mw']:g}" if e.get("mw") else "")
                 self.sp_d.setValue(e.get("d", 1.0))
-            else:
+            elif calc:
                 self.sp_fwhm.setValue(e.get("fwhm", 0.3))
                 self.sp_shift.setValue(e.get("shift", 0.0))
                 self.cmb_soc.clear()
@@ -994,7 +1127,7 @@ class OverlayTab(FigureTab):
         if e["kind"] == "exp":
             e.update(conc=parse_num(self.ed_conc.text()), unit=self.cmb_unit.currentData(),
                      mw=parse_num(self.ed_mw.text()), d=self.sp_d.value())
-        else:
+        elif e["kind"] == "calc":
             e.update(fwhm=self.sp_fwhm.value(), shift=self.sp_shift.value())
             if e.get("sources"):
                 try:
@@ -1092,8 +1225,37 @@ class OverlayTab(FigureTab):
             lo, hi = (e["nlo"], e["nhi"]) if e["own_norm"] else (st["nlo"], st["nhi"])
             sc, off = e.get("scale", 1.0), total_off(e)
             ls = self.LS.get(e.get("ls") or ("dashed" if e["kind"] == "calc" else "solid"), "-")
-            if e["kind"] == "exp":
-                s_ = self.sample(e["file"], e["sample"])
+            if e["kind"] == "secser":
+                if eps_mode:                         # Dünnschichtzelle: Schichtdicke/Konzentration unbekannt
+                    self.main.log_signal.emit("  " + T("ov_sec_no_eps", name=e["label"]))
+                    continue
+                bcfg = dict(cfg, baseline_nm="auto", baseline_mode="simple", conc_unit="mM") if st["baseline"] else None
+                ser = self.sec_series_curves(e, lo, hi, bcfg)
+                if not ser:
+                    self.main.log_signal.emit("  " + T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
+                    continue
+                for sc_c in ser:
+                    c = {"x": sc_c["x"], "y": sc_c["val"] * sc + off, "val": sc_c["val"] * sc,
+                         "color": sc_c["color"], "label": sc_c["label"], "ls": ls}
+                    if sc_c["main"] and e.get("lw"):
+                        c["lw"] = e["lw"]
+                    elif sc_c["lw"]:
+                        c["lw"] = sc_c["lw"]
+                    curves.append(c)
+                exp_x.append(ser[0]["x"])
+                lev = levels.get(e["uid"], len(curves))
+                if lev not in tagged:
+                    curves[-1]["tag"] = e["label"]
+                    tagged.add(lev)
+                continue
+            if e["kind"] in ("exp", "sec"):
+                if e["kind"] == "sec":
+                    if eps_mode:                     # Dünnschichtzelle: Schichtdicke/Konzentration unbekannt
+                        self.main.log_signal.emit("  " + T("ov_sec_no_eps", name=e["label"]))
+                        continue
+                    s_ = self.sec_spectrum(e)
+                else:
+                    s_ = self.sample(e["file"], e["sample"])
                 if s_ is None:
                     continue
                 x, y = s_["x"].copy(), s_["y"].copy()
@@ -1115,7 +1277,11 @@ class OverlayTab(FigureTab):
                         self.main.log_signal.emit("  " + T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
                         continue
                 exp_x.append(x)
-                c = {"x": x, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
+                lab = e["label"]
+                if e["kind"] == "sec":                   # AgNO₃ -> Mathtext-Index (Glyphen fehlen oft)
+                    import uvvis_cv as CV
+                    lab = CV.axis_ref(lab)
+                c = {"x": x, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": lab, "ls": ls}
             else:
                 E, f, mult = self.calc_data(e)
                 lam, eps, sl, sh = X.broaden(E, f, e.get("fwhm", 0.3), e.get("shift", 0.0))

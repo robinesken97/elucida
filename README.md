@@ -144,6 +144,12 @@ Compare several spectra in one figure, measured and calculated:
 
 - **Measurement…** adds spectra from CSV/TXT/DSW/BSW files (one entry per sample);
   **TD-DFT…** adds ORCA (4–6) or Gaussian output files.
+- **SEC…** takes spectra from the SEC tab, e.g. to compare a reduction or oxidation with the isolated UV-Vis
+  spectrum and TD-DFT. As a **series** (all spectra or only start and end, range by potential) everything is
+  normalised with **one common factor** to the start spectrum, so intensity ratios and isosbestic points are kept;
+  intermediate spectra grey, start blue, end red, legend with the potentials. **Single spectra** are normalised each on
+  their own (shape comparison). SEC is never shown as ε: path length and converted concentration in the thin-layer
+  cell are not known exactly.
 - TD-DFT transitions are broadened with Gaussians in energy (FWHM and an empirical energy shift
   can be set per calculation, default 0.3 eV); ε follows from the oscillator strengths
   (ε(ν̃) = 1.306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), as in GaussView). Transitions can be shown as sticks.

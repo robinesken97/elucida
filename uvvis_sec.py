@@ -123,6 +123,7 @@ def nernst_fit(E, A, n_range=(0.3, 3.0)):
 # ----------------------------------------------------------------------------
 POT_CMAP = LinearSegmentedColormap.from_list("pot", ["#1764e8", "#8a2be2", "#e8231b"])
 START_COLOR, END_COLOR = "#1764e8", "#e8231b"          # wie üblich: Ausgangsspektrum blau, Endspektrum rot
+LAM_RANGE = (250.0, 850.0)                              # brauchbarer Bereich des Spektrometers (Ränder verrauscht)
 
 
 def _hex(c):
@@ -369,7 +370,8 @@ class SECTab(TABS.FigureTab):
                 a0, a1 = float(np.interp(lam, lam0, first_y)), float(np.interp(lam, lam0, last_y))
                 col = START_COLOR if abs(a0) >= abs(a1) else END_COLOR
                 labels.append({"key": f"label_sec_{lam:g}", "lam": lam, "text": f"λ =  {lam:g} nm", "color": col})
-            x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(250.0, lam0.min()), min(850.0, lam0.max()))
+            x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(LAM_RANGE[0], lam0.min()),
+                                                                          min(LAM_RANGE[1], lam0.max()))
             cfg["xlim"] = [x0, x1]
             win = (lam0 >= x0) & (lam0 <= x1)
             vals = np.concatenate([c["y"][win] for c in curves])

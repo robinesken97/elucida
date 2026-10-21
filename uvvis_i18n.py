@@ -234,6 +234,24 @@ TEXTS = {
     "auto": ("auto", "auto"),
     "ov_curves": ("Spektren", "Spectra"),
     "ov_add_exp": ("Messung…", "Measurement…"),
+    "ov_add_sec": ("SEC…", "SEC…"),
+    "ov_sec_none": ("Im SEC-Tab sind noch keine Spektren geladen.", "No spectra loaded in the SEC tab yet."),
+    "ov_sec_pick": ("Serie: Bereich vom ersten bis zum letzten markierten Spektrum, ohne Markierung die ganze Serie; "
+                    "alle Spektren mit demselben Faktor auf das Startspektrum normiert (Intensitätsverhältnisse und "
+                    "isosbestische Punkte bleiben). Einzelne Spektren: jedes markierte für sich. SEC wird nie als ε "
+                    "gezeigt (Schichtdicke und umgesetzte Konzentration der Dünnschichtzelle sind nicht genau bekannt).",
+                    "Series: range from the first to the last marked spectrum, without marking the whole series; all "
+                    "spectra normalised with the same factor to the start spectrum (intensity ratios and isosbestic "
+                    "points are kept). Single spectra: each marked one on its own. SEC is never shown as ε (path "
+                    "length and converted concentration in the thin-layer cell are not known exactly)."),
+    "ov_sec_series": ("SEC-Serie", "SEC series"),
+    "ov_sec_series_label": ("SEC {rng} ({n} Spektren)", "SEC {rng} ({n} spectra)"),
+    "ov_sec_mode_all": ("Serie: alle Spektren (gemeinsam normiert)", "Series: all spectra (normalised together)"),
+    "ov_sec_mode_ends": ("Serie: nur Anfang und Ende (gemeinsam normiert)",
+                         "Series: start and end only (normalised together)"),
+    "ov_sec_mode_single": ("Einzelne Spektren (jedes für sich normiert)", "Single spectra (each normalised on its own)"),
+    "ov_sec_no_eps": ("„{name}“: SEC-Spektren nur normiert, nicht als ε – ausgelassen",
+                      "“{name}”: SEC spectra only normalised, not as ε – skipped"),
     "ov_add_calc": ("TD-DFT…", "TD-DFT…"),
     "ov_name": ("Name", "Name"),
     "ov_color": ("Farbe", "Colour"),

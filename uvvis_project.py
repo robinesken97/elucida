@@ -43,6 +43,8 @@ def _path_slots(state):
     for e in ov.get("entries") or []:
         slots.append((e, "file", "data"))
         slots.append((e, "structure", "images"))
+        files = e.get("files") or []                  # SEC-Serie: eine Datei je Spektrum
+        slots += [(files, i, "data") for i in range(len(files))]
         for src in e.get("sources") or []:            # kombinierte TD-DFT-Einträge
             slots.append((src, "file", "data"))
     slots.append((ov, "structure", "images"))

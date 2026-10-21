@@ -2554,8 +2554,50 @@ def selftest(outdir, with_isnet=False):
         slots_ = PRJ._path_slots({"sec": st_sec})
         assert sum(1 for c_, k_, _ in slots_ if c_ is st_sec["spec_files"]) == 70 and \
             any(c_ is st_sec and k_ == "dta" for c_, k_, _ in slots_), "SEC-Dateien fehlen im Projekt"
-        st_sec.update(spec_files=[], dta=None, mode="spectra", trace_lams="", bands="")
+        st_sec.update(mode="spectra")
         report.append("spectroelectrochemistry: OK")
+
+        # SEC im Overlay: Spektren nach Potential übernehmen, nur normiert (kein ε aus der Dünnschichtzelle)
+        ov_, st_ov = w.ov_tab, w.ov_state
+        saved_ov = {k: json.loads(json.dumps(st_ov[k])) for k in ("entries", "mode", "nlo", "nhi", "baseline")}
+        st_ov.update(entries=[], mode="norm", nlo=340.0, nhi=460.0)
+        ov_.add_sec_entries([0, 69])
+        e0, e1 = st_ov["entries"]
+        assert e0["kind"] == "sec" and abs(e0["E"] - (-1.3 + 0.002 * 5.0)) < 1e-3, e0
+        assert "V vs. Ag/AgNO" in e0["label"] and e1["E"] > e0["E"], (e0["label"], e1["E"])
+        ov_.render()
+        cs_ = [c_ for c_ in ov_.F.curves if c_.get("label") in (e0["label"], e1["label"]) or "SEC" in str(c_.get("label"))]
+        assert len(cs_) == 2, [c_.get("label") for c_ in ov_.F.curves]
+        for c_, peak_ in zip(cs_, (432, 373)):          # reduziert: Bande bei 432 nm, oxidiert: 373 nm
+            win_ = (c_["x"] >= 340) & (c_["x"] <= 460)
+            assert abs(float(np.max(c_["val"][win_])) - 1.0) < 1e-6, "SEC nicht normiert"
+            assert abs(float(c_["x"][win_][np.argmax(c_["val"][win_])]) - peak_) < 2, (peak_, c_["label"])
+        assert c_["x"].min() >= SECMOD.LAM_RANGE[0] and c_["x"].max() <= SECMOD.LAM_RANGE[1]
+        assert any(c_ is e0 and k_ == "file" for c_, k_, _ in PRJ._path_slots({"overlay": st_ov}))
+        # Serie: EIN Eintrag, gemeinsamer Faktor (auf das Startspektrum) -> Verhältnisse bleiben erhalten
+        st_ov.update(entries=[], baseline=False)
+        ov_.add_sec_series(0, 69)
+        ov_.render()
+        assert len(ov_.F.curves) == 70 and len(st_ov["entries"]) == 1, len(ov_.F.curves)
+        named_ = [c_["label"] for c_ in ov_.F.curves if c_.get("label")]
+        assert len(named_) == 2 and all("V vs. Ag/AgNO" in n_ for n_ in named_), named_
+        raw0, raw1 = (SECMOD.read_bwspec(sec_files[i_]) for i_ in (0, 69))
+        start_ = next(c_ for c_ in ov_.F.curves if c_["color"] == SECMOD.START_COLOR)
+        end_ = next(c_ for c_ in ov_.F.curves if c_["color"] == SECMOD.END_COLOR)
+        win_ = (start_["x"] >= 340) & (start_["x"] <= 460)
+        assert abs(float(start_["val"][win_].max()) - 1.0) < 1e-6
+        r_raw = np.interp(373, raw1["lam"], raw1["A"]) / np.interp(432, raw0["lam"], raw0["A"])
+        r_plot = np.interp(373, end_["x"], end_["val"]) / np.interp(432, start_["x"], start_["val"])
+        assert abs(r_plot / r_raw - 1) < 0.02, (r_plot, r_raw)      # nicht einzeln normiert
+        assert sum(1 for c_, k_, _ in PRJ._path_slots({"overlay": st_ov}) if c_ is st_ov["entries"][0]["files"]) == 70
+        st_ov["entries"][0]["ends_only"] = True
+        ov_.render()
+        assert len(ov_.F.curves) == 2
+        st_ov["mode"] = "eps"                           # ε-Modus: SEC wird ausgelassen, nicht falsch skaliert
+        assert ov_.figure_spec() is None or all("SEC" not in str(c_.get("label")) for c_ in ov_.figure_spec()[1])
+        st_ov.update(saved_ov)
+        st_sec.update(spec_files=[], dta=None, mode="spectra", trace_lams="", bands="")
+        report.append("SEC spectra in overlay: OK")
 
         # EPR: BES3T lesen (G -> mT), Dunkelspektrum, Basislinie, Ausblenden, Simulation anpassen, EasySpin-Parameter
         eprdir = out / "input" / "epr"
