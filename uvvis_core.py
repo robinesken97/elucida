@@ -1441,8 +1441,9 @@ class Dragger:
     def __init__(self, F, layout_path):
         self.F, self.layout_path, self.drag = F, layout_path, None
         self._cursor = None
+        self._bg = None                       # Hintergrund ohne das gezogene Element (Blitting)
         for ann in F.ann_items.values():
-            ann.draggable(True)
+            ann.draggable(True, use_blit=True)  # nur das Label neu zeichnen, nicht die ganze Abbildung
         c = F.fig.canvas
         self.cids = [c.mpl_connect("button_press_event", self.press),
                      c.mpl_connect("motion_notify_event", self.move),
@@ -1487,6 +1488,17 @@ class Dragger:
         a = self._axes_at(ev)
         if a is not None:
             self.drag = (a, ev.x, ev.y, a.get_position().frozen())
+            self._start_blit(a)
+
+    def _start_blit(self, a):
+        """Einmal alles ohne das gezogene Inset/Bild zeichnen und als Hintergrund merken; beim Ziehen wird
+        dann nur noch dieses eine Element darübergelegt (unabhängig davon, wie voll die Abbildung ist)."""
+        canvas = self.F.fig.canvas
+        if not getattr(canvas, "supports_blit", False):
+            return
+        a.set_animated(True)
+        canvas.draw()
+        self._bg = canvas.copy_from_bbox(self.F.fig.bbox)
 
     def move(self, ev):
         if ev.x is None:
@@ -1498,10 +1510,19 @@ class Dragger:
         fb = self.F.fig.bbox
         a.set_position([p.x0 + (ev.x - x0) / fb.width, p.y0 + (ev.y - y0) / fb.height,
                         p.width, p.height])
-        self.F.fig.canvas.draw_idle()
+        canvas = self.F.fig.canvas
+        if self._bg is not None:
+            canvas.restore_region(self._bg)
+            self.F.fig.draw_artist(a)
+            canvas.blit(self.F.fig.bbox)
+        else:
+            canvas.draw_idle()
 
     def release(self, ev):
-        self.drag = None
+        if self.drag and self._bg is not None:
+            self.drag[0].set_animated(False)     # wieder normal mitzeichnen (Export, Reihenfolge)
+            self.F.fig.canvas.draw_idle()
+        self.drag, self._bg = None, None
 
     def scroll(self, ev):
         """Mausrad: Inset oder Bild um seinen Mittelpunkt vergrößern/verkleinern."""

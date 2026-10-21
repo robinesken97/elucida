@@ -2458,6 +2458,26 @@ def selftest(outdir, with_isnet=False):
         w.render()
         report.append("hover readout + band picking: OK")
 
+        # Ziehen mit Blitting: Inset verschieben, beim Loslassen wieder normal gezeichnet und gespeichert
+        w.render()
+        w.canvas.draw()
+        key_, a_ = next((k, a) for k, a in w.F.axes_items.items() if a.get_visible())
+        p0 = a_.get_position().frozen()
+        cx, cy = a_.get_window_extent().x0 + 5, a_.get_window_extent().y0 + 5
+        proc = w.canvas.callbacks.process
+        proc("button_press_event", MouseEvent("button_press_event", w.canvas, cx, cy, button=1))
+        assert a_.get_animated() and w.dragger._bg is not None, "Blitting nicht aktiv"
+        proc("motion_notify_event", MouseEvent("motion_notify_event", w.canvas, cx + 30, cy + 20, button=1))
+        proc("button_release_event", MouseEvent("button_release_event", w.canvas, cx + 30, cy + 20, button=1))
+        pump()
+        p1 = a_.get_position()
+        assert p1.x0 > p0.x0 and p1.y0 > p0.y0 and not a_.get_animated() and w.dragger._bg is None, (p0, p1)
+        assert all(getattr(ann, "_draggable", None) is None or ann._draggable._use_blit
+                   for ann in w.F.ann_items.values()), "Labels ohne Blitting"
+        w.series[w.current]["layout"] = {}
+        w.render()
+        report.append("dragging with blitting: OK")
+
         # Cyclovoltammetrie: Gamry-Dateien (beide Varianten), Redoxpaare, interne Referenz, Export
         def cv_sweep(e0, ip, lo, hi, step=0.002, ref=None):
             """Modell-CV: Hinlauf lo->hi, Rücklauf hi->lo; Peaks bei E0 ± 30 mV (+ optional Referenzpaar)."""

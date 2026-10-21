@@ -334,7 +334,7 @@ class SimpleFigure(core.Figure):
         self.legend = self.ax.legend(handles=handles, loc=tuple(loc) if loc else "best",
                                      fontsize=self.cfg["font_size"] * 0.8, frameon=False,
                                      handlelength=1.8)
-        self.legend.set_draggable(True, update="loc")
+        self.legend.set_draggable(True, use_blit=True, update="loc")
 
     def _make_labels(self, labels):
         for lab in labels:
