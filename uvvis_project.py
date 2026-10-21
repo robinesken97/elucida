@@ -57,6 +57,9 @@ def _path_slots(state):
     slots.append((sec, "dta", "data"))
     for e in (state.get("epr") or {}).get("entries") or []:
         slots += [(e, "file", "data"), (e, "params", "data")]
+    slots.append((state.get("compound") or {}, "structure", "images"))
+    ir = state.get("irms") or {}
+    slots += [(ir, "ir_file", "data"), (ir, "ir_pdf", "data"), (ir, "ms_file", "data")]
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", "data"), (fl, "em_file", "data"), (fl, "structure", "images"),
               (fl, "photo_day", "images"), (fl, "photo_uv", "images")]

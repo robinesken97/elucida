@@ -30,6 +30,7 @@ Englisch.
 | **CV** | Gamry-Dateien, E½/ΔE_p, Nicholson-Verhältnis, Randles-Ševčík, Bezug auf Fc⁺/Fc |
 | **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
 | **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
+| **IR + MS** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die HRMS-Zeile aus dem Bericht der Massenabteilung, fertig für die SI |
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
 Erscheinungsbild; Deutsch und Englisch.
@@ -129,6 +130,28 @@ Das Programm folgt dem hellen oder dunklen Modus des Systems; unter **Format →
 hell oder dunkel wählen. Selten gebrauchte Optionen im ε-Tab sind eingeklappt; ein fetter Abschnittstitel mit
 **„(geändert)“** bedeutet, dass dort ein Wert vom Standard abweicht (z. B. min. R² fürs Bild). Die Abbildungen sind
 vom Erscheinungsbild nicht betroffen.
+
+## Verbindung des Projekts
+
+Ein Projekt steht meist für **eine Verbindung** (oder einen Vergleich). **Verbindung …** in der Werkzeugleiste legt
+Name/Probennummer, ChemDraw-Datei, Summenformel und Molmasse fest (aus der CDXML, Isotope wie D inklusive, änderbar).
+Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab und IR + MS; Tabs mit eigener Struktur oder
+Molmasse behalten diese. Der Name steht im Fenstertitel.
+
+## IR + MS-Tab
+
+- **IR:** Bruker-**OPUS**-Datei (`*.0`, Spektrum) und/oder den **OPUS-PDF**-Ausdruck (Peakbeschriftung) laden. Mit dem
+  PDF sind die Werte genau die OPUS-Peakliste; mit der Datei allein sucht Spectravolt die Banden selbst
+  (Empfindlichkeit einstellbar). Bereich frei wählbar (Standard: der ganze gemessene Bereich); Banden, die nicht in die
+  Liste sollen, abhaken; Intensitäten w/m/s/br optional. Ausgabe: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (ganze Zahlen,
+  absteigend).
+- **HRMS:** den **Word-Bericht** der Massenabteilung laden; Formel, Ionisierung, Polarität und die gemessenen m/z (aus
+  den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung des Projekts (Warnung, wenn der
+  Bericht etwas anderes sagt), das Ion ist wählbar ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), vorgewählt ist das nächste
+  gemessene m/z. calc. mit Elektronenmasse, vier Nachkommastellen: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
+  found 265.1703. Die Abweichung in ppm steht zur Kontrolle daneben (found − calc).
+- **In Zwischenablage** behält Fettdruck, Hoch- und Tiefstellung beim Einfügen in Word. Der Export schreibt die
+  Spektrenabbildung und `…_SI.txt` mit beiden Zeilen.
 
 ## Projekte, Export, Rückgängig
 

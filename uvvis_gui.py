@@ -53,6 +53,7 @@ import uvvis_color as COLOR  # noqa: E402
 import uvvis_cv as CVMOD  # noqa: E402
 import uvvis_sec as SECMOD  # noqa: E402
 import uvvis_epr as EPRMOD  # noqa: E402
+import uvvis_irms as IRMS  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
 
@@ -277,6 +278,77 @@ class ConcDialog(QDialog):
         return out
 
 
+class CompoundDialog(QDialog):
+    """Verbindung des Projekts: Name/Probennummer, ChemDraw (Formel und Molmasse daraus), beides änderbar."""
+
+    def __init__(self, parent, comp):
+        super().__init__(parent)
+        self.setWindowTitle(T("compound_title"))
+        self.main = parent
+        self.path = comp.get("structure")
+        f = make_form(self)
+        self.ed_name = QLineEdit(comp.get("name", ""))
+        self.ed_name.setPlaceholderText(T("compound_name_ph"))
+        f.addRow(T("compound_name"), self.ed_name)
+        row = QHBoxLayout()
+        self.lbl_struct = QLabel(Path(self.path).name if self.path else "–")
+        b = QPushButton(T("choose"))
+        b.clicked.connect(self.choose)
+        row.addWidget(self.lbl_struct, 1)
+        row.addWidget(b)
+        f.addRow(T("structure"), row)
+        self.ed_formula = QLineEdit(comp.get("formula", ""))
+        self.ed_formula.setPlaceholderText("C18H20N2")
+        f.addRow(T("compound_formula"), self.ed_formula)
+        self.ed_mw = QLineEdit(f"{comp['mw']:g}" if comp.get("mw") else "")
+        f.addRow(T("molar_mass"), self.ed_mw)
+        hint = QLabel(T("compound_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(HINT_CSS)
+        f.addRow(hint)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        f.addRow(bb)
+        self.resize(460, 0)
+
+    def choose(self):
+        p, _ = QFileDialog.getOpenFileName(self, T("dlg_structure"), self.main.settings.value("last_img_dir", ""),
+                                           f"{T('flt_struct')};;{T('flt_all')}")
+        if p:
+            self.main.settings.setValue("last_img_dir", str(Path(p).parent))
+            self.set_path(p)
+
+    def set_path(self, p):
+        self.path = p
+        self.lbl_struct.setText(Path(p).name)
+        chem = compound_from_structure(p)
+        if chem.get("formula"):
+            self.ed_formula.setText(chem["formula"])
+        if chem.get("mw"):
+            self.ed_mw.setText(f"{chem['mw']:.2f}")
+        if not self.ed_name.text().strip():
+            self.ed_name.setText(Path(p).stem)
+
+    def result_compound(self):
+        return {"name": self.ed_name.text().strip(), "structure": self.path,
+                "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text())}
+
+
+def compound_from_structure(p):
+    """Formel und Molmasse aus einer CDXML (oder der gleichnamigen CDXML neben SVG/PDF/PNG)."""
+    p = Path(p)
+    src = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
+    if not src.exists():
+        return {}
+    try:
+        import uvvis_chem
+        c = uvvis_chem.load_cdxml(src)
+        return {"formula": c.get("formula"), "mw": c.get("mw")}
+    except Exception:
+        return {}
+
+
 class TextFormatDialog(QDialog):
     """Schriften, Labelstil und Rahmen – gilt für alle Tabs (Menü Format)."""
 
@@ -388,6 +460,8 @@ class MainWindow(QMainWindow):
         self.glob = dict(DEFAULT_GLOB)
         self.extra_cache = {}
         self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}  # leer
+        self.irms_state = {}
+        self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
         self.project_dir = None
@@ -475,6 +549,12 @@ class MainWindow(QMainWindow):
             keys = act.shortcut().toString(QKeySequence.NativeText)
             act.setToolTip(f"{act.text().rstrip('…')} ({keys})" if keys else act.text())
             self.toolbar.addAction(act)
+        self.toolbar.addSeparator()
+        self.act_compound = QAction(STYLE.icon("compound"), self.compound_label(), self,
+                                    triggered=self.edit_compound)
+        self.act_compound.setToolTip(T("compound_tip"))
+        self.toolbar.addAction(self.act_compound)
+        self.toolbar.widgetForAction(self.act_compound).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mf = mb.addMenu(T("menu_format"))
         mf.addAction(QAction(T("act_text_format"), self, triggered=self.edit_text_format))
         mt = mf.addMenu(T("menu_theme"))
@@ -799,6 +879,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.sec_tab, T("tab_sec"))
         self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
         self.main_tabs.addTab(self.epr_tab, T("tab_epr"))
+        self.irms_tab = IRMS.IRMSTab(self, self.irms_state)
+        self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.main_tabs.setCurrentIndex(self._tab_index)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
         self.setCentralWidget(self.main_tabs)
@@ -1037,6 +1119,7 @@ class MainWindow(QMainWindow):
             self.error(T("conc_none"))
             return False
         self.lbl_file.setText(self.files_label())
+        self.apply_compound_defaults()
         self.apply_globals()
         self.apply_series_widgets()
         self.render()
@@ -1109,6 +1192,7 @@ class MainWindow(QMainWindow):
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
+                "irms": self.irms_state, "compound": dict(self.compound),
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -1132,6 +1216,9 @@ class MainWindow(QMainWindow):
         self.sec_state.update(state.get("sec") or {})
         self.epr_state.clear()
         self.epr_state.update(state.get("epr") or {})
+        self.irms_state.clear()
+        self.irms_state.update(state.get("irms") or {})
+        self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
         self.current = eps.get("current")
@@ -1244,7 +1331,54 @@ class MainWindow(QMainWindow):
 
     def update_title(self):
         name = Path(self.project_dir).name if self.project_dir else T("no_project_title")
+        if self.compound.get("name"):
+            name = f"{self.compound['name']} · {name}"
         self.setWindowTitle(f"{name} – {T('app_title')} {APP_VERSION}")
+
+    # -- Verbindung des Projekts (Vorgabe für alle Tabs) ------------------------------------
+    def compound_label(self):
+        c = self.compound
+        if not (c.get("name") or c.get("formula")):
+            return T("compound_none")
+        return " · ".join(x for x in (c.get("name"), c.get("formula")) if x)
+
+    def edit_compound(self):
+        if not self.ensure_project():
+            return
+        dlg = CompoundDialog(self, self.compound)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        self.set_compound(dlg.result_compound())
+
+    def set_compound(self, comp):
+        """Verbindung übernehmen und als Vorgabe eintragen, wo noch nichts gewählt ist."""
+        comp = dict(comp)
+        if comp.get("structure") and self.project_dir:
+            comp["structure"] = self.import_file(comp["structure"], "images")
+        self.compound = comp
+        self.apply_compound_defaults()
+        if hasattr(self, "act_compound"):
+            self.act_compound.setText(self.compound_label())
+        self.update_title()
+        if hasattr(self, "irms_tab"):
+            self.irms_tab.compound_changed()
+        self.render()
+        self.push_undo()
+
+    def apply_compound_defaults(self):
+        """ε-Serien ohne Struktur/Molmasse und der Fluoreszenz-Tab bekommen die Verbindung des Projekts.
+        Was schon gewählt ist, bleibt (Vergleichsprojekte, mehrere Verbindungen in einer Cary-Datei)."""
+        c = self.compound
+        p = c.get("structure")
+        for g, st in self.series.items():
+            if p and not st.get("structure") and Path(p).exists():
+                self.set_structure(p, g, render=False)
+            if not st.get("mw") and c.get("mw"):
+                st["mw"] = c["mw"]
+        if p and not self.fl_state.get("structure") and Path(p).exists():
+            self.fl_state["structure"] = p
+            if hasattr(self, "fl_tab"):
+                self.fl_tab.timer.start()
 
     # -- Projektordner zuerst: Dateien werden beim Laden kopiert, Änderungen automatisch gespeichert
     def ensure_project(self):
@@ -1921,6 +2055,16 @@ class MainWindow(QMainWindow):
             if PRJ.is_project(p):
                 self.open_project(p)
                 return
+        # IR + MS: OPUS-Dateien und MS-Berichte immer, PDF nur auf dem Tab IR + MS
+        irms = [p for p in files if IRMS.is_opus(p) or Path(p).suffix.lower() == ".docx"
+                or (Path(p).suffix.lower() == ".pdf" and self.main_tabs.currentWidget() is self.irms_tab)]
+        if irms and self.ensure_project():
+            for p in irms:
+                (self.irms_tab.load_ms if Path(p).suffix.lower() == ".docx" else self.irms_tab.load_ir)(p)
+            self.main_tabs.setCurrentWidget(self.irms_tab)
+            files = [p for p in files if p not in irms]
+            if not files:
+                return
         data = [p for p in files if Path(p).suffix.lower() in {".csv", ".txt"} | core.BINARY_EXT]
         if data:
             self.open_files(data)                     # mehrere Messdateien = ein Datensatz
@@ -1957,6 +2101,8 @@ class MainWindow(QMainWindow):
             return self.sec_tab.export_dialog()
         if i == 5:
             return self.epr_tab.export_dialog()
+        if i == 6:
+            return self.irms_tab.export_dialog()
         return self.export_dialog()
 
     def info(self, msg):
@@ -2917,7 +3063,7 @@ def selftest(outdir, with_isnet=False):
         # Werkzeugleiste (nach Neuaufbau nur eine) und Listenknöpfe mit Symbol
         bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
         acts = [a for a in w.toolbar.actions() if not a.isSeparator()]
-        assert len(bars) == 1 and len(acts) == 5 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
+        assert len(bars) == 1 and len(acts) == 6 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
         arrows = [b for b in w.epr_tab.findChildren(QPushButton) if b.toolTip() == T("move_up")]
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")
@@ -2939,6 +3085,88 @@ def selftest(outdir, with_isnet=False):
         assert d_.name == "Spectravolt" and (d_ / "models" / "m.onnx").exists() and not (base_ / "UVVisTool").exists()
         assert APP_NAME == "Spectravolt" and UPD.REPO.endswith("/spectravolt")
         report.append("rename (settings + data folder migration): OK")
+
+        # Verbindung auf Projektebene + Tab IR + MS (künstliche OPUS-, PDF- und Word-Dateien)
+        import struct as _st
+        import zipfile as _zf
+        w.set_compound({"name": "TEST-1", "structure": str(cdxml), **compound_from_structure(cdxml)})
+        assert w.compound["formula"] and w.compound["mw"] and "TEST-1" in w.windowTitle(), w.compound
+        pump(1.5)                                           # Strukturen werden im Hintergrund geladen
+        assert all(st_.get("structure") for st_ in w.series.values()), ("Verbindung nicht als Vorgabe übernommen", {g_: st_.get("structure") for g_, st_ in w.series.items()}, w.compound)
+        irdir = out / "input" / "irms"
+        irdir.mkdir(parents=True, exist_ok=True)
+        wn_ = np.linspace(3999.0, 400.0, 1800)
+        bands_ = [(2961.2, 25, 12), (1678.4, 60, 8), (1501.3, 40, 6), (1105.0, 15, 10), (758.1, 55, 6), (3350.0, 20, 160)]
+        T_ = 1.0 - sum(dp / 100 * np.exp(-((wn_ - c) / wd) ** 2) for c, dp, wd in bands_)
+        def opus_par(pairs):
+            out_ = b""
+            for nm, typ, val in pairs:
+                raw = _st.pack("<i", val) if typ == 0 else _st.pack("<d", val)
+                out_ += nm.encode() + b"\0" + _st.pack("<hh", typ, len(raw) // 2) + raw
+            return out_ + b"END\0" + _st.pack("<hh", 0, 0)
+        par = opus_par([("NPT", 0, len(wn_)), ("FXV", 1, 3999.0), ("LXV", 1, 400.0), ("CSF", 1, 1.0)])
+        dat = T_.astype("<f4").tobytes()
+        off_par, off_dat = 24 + 12 * 2, 24 + 12 * 2 + len(par)
+        head = b"\x0a\x0a\xfe\xfe" + _st.pack("<d", 920622.0) + _st.pack("<iii", 24, 2, 2)   # Version, Verz., max, n
+        dirs = _st.pack("<BBBBii", 31, 20, 0, 0, len(par) // 4, off_par) + _st.pack("<BBBBii", 15, 20, 0, 0, len(wn_), off_dat)
+        (irdir / "test.0").write_bytes(head + dirs + par + dat)
+        d_ir = IRMS.read_opus(irdir / "test.0")
+        assert d_ir["kind"] == "T" and abs(d_ir["y"].max() - 100) < 1 and IRMS.is_opus(irdir / "test.0")
+        pk_ = IRMS.pick_peaks(d_ir["wn"], d_ir["y"], "T")
+        got_ = [round(p_["wn"]) for p_ in pk_]
+        assert all(any(abs(g_ - c) <= 1 for g_ in got_) for c, _, _ in bands_), got_
+        br_ = next(p_ for p_ in pk_ if abs(p_["wn"] - 3350) < 5)
+        assert IRMS.intensity_tag(br_).startswith("br"), IRMS.intensity_tag(br_)
+        doc_ = pymupdf.open()
+        pg_ = doc_.new_page()
+        for i_, v_ in enumerate(["2961.20", "1678.41", "1501.33", "500", "1000", "Transmittance [%]", "80"]):
+            pg_.insert_text((50, 60 + 20 * i_), v_)
+        doc_.save(str(irdir / "test_ir.pdf"))
+        assert IRMS.read_ir_pdf(irdir / "test_ir.pdf") == [2961.2, 1678.41, 1501.33]
+        def emf(texts):
+            out_ = b""
+            for t_ in texts:
+                body = t_.encode("utf-16-le")
+                size = 76 + len(body) + (-(76 + len(body)) % 4)
+                rec = bytearray(size)
+                _st.pack_into("<II", rec, 0, 84, size)
+                _st.pack_into("<II", rec, 44, len(t_), 76)
+                rec[76:76 + len(body)] = body
+                out_ += bytes(rec)
+            return out_
+        xml_ = "".join(f"<w:p><w:r><w:t>{t_}</w:t></w:r></w:p>" for t_ in
+                       ("sample name:", "TEST-1", "molecular formula:", "C18H20N2", "exact mass:", "264.1626",
+                        "method of Ionisation:", "ESI ☒ APCI ☐ HESI ☐"))
+        with _zf.ZipFile(irdir / "ms.docx", "w") as z_:
+            z_.writestr("word/document.xml", f"<w:document><w:body>{xml_}</w:body></w:document>")
+            z_.writestr("word/media/image1.emf", emf(["Chemical Formula:", "C", "18", "Exact Mass:", "264,1626"]))
+            z_.writestr("word/media/image2.emf", emf(["265.1703", "266.1735", "x.d: +MS, 0.1-0.4min", "m/z"]))
+        rep_ = IRMS.read_ms_docx(irdir / "ms.docx")
+        assert rep_["formula"] == "C18H20N2" and rep_["mz"] == [265.1703, 266.1735] and rep_["polarity"] == "+", rep_
+        plain_, html_, calc_ = IRMS.ms_line("C18H20N2", "M+H", 265.1703)
+        assert plain_ == "HR-MS-ESI(+) calc. C18H21N2+ [M+H]+ 265.1699; found 265.1703." and "<sub>21</sub>" in html_
+        assert abs(IRMS.ion("C18H20N2", "M+Na")[2] - 287.1519) < 1e-4 and IRMS.ion("C18H20N2", "M-H")[1] == -1
+        t_ir = w.irms_tab
+        t_ir.load_ir(str(irdir / "test.0"))
+        t_ir.load_ms(str(irdir / "ms.docx"))
+        w.compound["formula"] = "C18H20N2"
+        t_ir.render()
+        assert t_ir._ir_line[0].startswith("IR [cm-1]: ṽ = 3350, 2961, 1678, 1501, 1105, 758"), t_ir._ir_line[0]
+        assert t_ir._ms_line[0].endswith("265.1699; found 265.1703."), t_ir._ms_line[0]
+        w.irms_state["ir_off"] = [1105]
+        w.irms_state["with_int"] = True
+        t_ir.render()
+        assert "1105" not in t_ir._ir_line[0] and "(br " in t_ir._ir_line[0], t_ir._ir_line[0]
+        w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
+        t_ir.render()
+        assert "⚠" in t_ir.lbl_ms_info.text(), t_ir.lbl_ms_info.text()
+        files = t_ir.export_to(out / "irms")
+        assert any(f.name.endswith("_SI.txt") for f in files) and all(f.exists() for f in files)
+        slots_ = PRJ._path_slots(w.get_state())
+        assert any(k_ == "ir_file" for _, k_, _ in slots_) and any(k_ == "ms_file" for _, k_, _ in slots_)
+        w.irms_state.update(ir_file=None, ir_pdf=None, ms_file=None, ir_off=[], with_int=False)
+        w.compound = {}
+        report.append("project compound + IR/HRMS lines: OK")
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
         rn_path = Path(__file__).resolve().parent / "release_notes.py"

@@ -30,6 +30,7 @@ The user interface is available in German and English.
 | **CV** | Gamry files, E½/ΔE_p, Nicholson ratio, Randles–Ševčík, reference to Fc⁺/Fc |
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
+| **IR + MS** | IR peak list from Bruker OPUS (file or PDF) and the HRMS line from the mass-spectrometry report, ready for the SI |
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
@@ -126,6 +127,27 @@ On Windows, always keep the whole `Spectravolt` folder together. The `.exe` does
 The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently.
 Rarely used options in the ε tab are collapsed; a section header in bold with **"(changed)"** means that a value
 there differs from the default (e.g. min. R² for the figure). The figures are not affected by the theme.
+
+## Compound of the project
+
+A project usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
+number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotopes such as D included, editable). This is
+the default for the ε tab (structure, molar mass), the fluorescence tab and IR + MS; tabs that already have their own
+structure or molar mass keep it. The name appears in the window title.
+
+## IR + MS tab
+
+- **IR:** load a Bruker **OPUS** file (`*.0`, spectrum) and/or the **OPUS PDF** print-out (peak labels). With the PDF the
+  values are exactly the OPUS peak list; with the file alone Spectravolt picks the bands itself (adjustable
+  sensitivity). Range freely selectable (default: the whole measured range); untick bands that should not be listed;
+  intensities w/m/s/br optional. Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
+- **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
+  m/z (from the embedded spectra) are read out. The formula comes from the project's compound (warning if the report
+  says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
+  preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
+  found 265.1703. The deviation in ppm is shown for checking (found − calc).
+- **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
+  and `…_SI.txt` with both lines.
 
 ## Projects, export, undo
 
