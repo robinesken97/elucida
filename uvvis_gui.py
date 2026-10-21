@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import html
+import re
 import traceback
 from pathlib import Path
 
@@ -2016,8 +2017,8 @@ class MainWindow(QMainWindow):
         comp = self.compound or {}
         parts, missing = [], []
         if comp.get("mp"):
-            mp = comp["mp"] if comp["mp"].lower().startswith("m.p.") else "m.p. " + comp["mp"]
-            parts.append((mp, html.escape(mp)))
+            mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", comp["mp"]).strip()
+            parts.append(("m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))       # wie in der SI: „m.p.“ fett
         else:
             missing.append("m.p.")
         ir_ms_ea = self.irms_tab.si_parts()
@@ -2033,20 +2034,38 @@ class MainWindow(QMainWindow):
             [p_ for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
         plain, para = SI.join_lines(parts + order)
         title = comp.get("name") or Path(self.project_dir or ".").name
-        blocks = [("h", title)]
+        blocks = [("synthesis", title)]
         if para:
-            blocks.append(("p", para))
+            blocks.append(("char", para))
         xt = self.xray_tab
-        if xt.entries():
+        es = [e for e in xt.entries() if xt.structure(e) is not None]
+        if es:
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+            from matplotlib.figure import Figure as MplFigure
+            out_dir = PRJ.export_dir(Path(self.project_dir), "si") if self.project_dir else None
+            blocks.append(("gap",))
+            for e in es:
+                fname = e.get("name") or e["block"]
+                if out_dir is not None:                   # Abbildung wie im X-Ray-Tab, 300 dpi
+                    fig = MplFigure(figsize=(8, 6), dpi=uvvis_tabs.PREVIEW_DPI)
+                    FigureCanvasAgg(fig)
+                    F = xt.build(fig, e, interactive=False)
+                    if F is not None:
+                        png = out_dir / f"{core.safe_name(fname)}_xray.png"
+                        F.cfg.update(output=str(png), extra_formats=[], dpi=300)
+                        F.export()
+                        w_in, h_in = F.cfg["figsize_in"]
+                        blocks.append(("image", str(png), w_in * 2.54, h_in * 2.54))
+                blocks.append(("figcap", xt.caption(e)[1]))
+                for t_title, t_name, t_head, t_rows in xt.param_tables(e):
+                    blocks += [("tabcap", t_title, t_name), ("params", t_head, t_rows)]
+                    if any("^{a}" in r_[-1] for r_ in t_rows):
+                        blocks.append(("note", "^{a} " + XRAY.CALC_NOTE))
+                    blocks.append(("gap",))
             h_, r_ = xt.crystal_table()
-            blocks.append(("table", "Crystal data and structure refinement", h_, r_, []))
-            h2, r2, notes = xt.params_table()
-            if r2:
-                blocks.append(("table", "Selected bond lengths [Å], angles and torsion angles [°]", h2, r2, notes))
-            for e in xt.entries():
-                cap = xt.caption(e)[1]
-                if cap:
-                    blocks.append(("caption", f"<b>{html.escape(e.get('name') or e['block'])}:</b> {cap}"))
+            r_ = [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_] for row_ in r_]
+            names = [e.get("name") or e["block"] for e in es]
+            blocks += [("tabcap", "Crystal data and structure refinement", ", ".join(names)), ("crystal", h_, r_)]
         self._si_plain = plain
         return blocks, missing
 
@@ -3518,7 +3537,7 @@ def selftest(outdir, with_isnet=False):
         from openpyxl import load_workbook
         wb_ = load_workbook(out / "xray" / "xray_test_tables.xlsx")
         assert wb_.sheetnames == ["Crystal data", "Selected parameters"]
-        assert (out / "xray" / "xray_test_captions.txt").read_text(encoding="utf-8").count("Molecular structure") == 2
+        assert (out / "xray" / "xray_test_captions.txt").read_text(encoding="utf-8").count("X-ray solid state structure") == 2
         # Lösungsmittel-Schalter, Startansicht, Label-Modus, Drahtmodell, Bildunterschrift
         mol_ = t_x.molecule(ent_[0])
         assert [f_["kind"] for f_ in mol_.fragments] == ["main", "solvent"] and mol_.fragments[1]["name"] == "water"
@@ -3531,8 +3550,11 @@ def selftest(outdir, with_isnet=False):
         assert t_x.F.scene["atoms"] and all(mol_.atoms[it_["k"]]["frag"] == 0 for it_ in t_x.F.scene["atoms"])
         assert "<sub>1</sub>" in t_x.lbl_info.text(), t_x.lbl_info.text()          # Raumgruppe formatiert
         cap_ = t_x.caption()[0]
-        assert "co-crystallised water omitted for clarity" in cap_ and "50 % probability" in cap_, cap_
-        assert "major component" in cap_ and "Symmetry code: i " in cap_ and "C1–C2 1.390(3)" in cap_, cap_
+        assert cap_.startswith("X-ray solid state structure of xtest_a (70% (PART 1) and 30% (B) occupancy; major part "
+                               "shown). Thermal ellipsoids are shown with 50% probability."), cap_
+        assert "Co-crystallised water is omitted for clarity." in cap_ and "Symmetry code: i: " in cap_, cap_
+        assert "Selected bond lengths and torsion angles in [Å] and [°]: C1–C2: 1.390(3); C1–C2–C3–C1ⁱ: 0.0." in cap_, cap_
+        assert "<b>xtest_a</b>" in t_x.caption()[1] and not t_x.param_tables(ent_[0])   # wenige Werte: in der Unterschrift
         c1_, cl1_ = mol_.find_key("C1"), mol_.find_key("Cl1")
         assert mol_.substituent(c1_, mol_.find_key("C2")) is None                  # Ringbindung im Kern
         assert mol_.beyond(c1_, cl1_) == {cl1_}
@@ -3550,7 +3572,7 @@ def selftest(outdir, with_isnet=False):
         assert t_x.F.scene["by_k"][cl1_]["kind"] == "wire" and "lbl_Cl1" not in t_x.F.ann_items
         halves_ = [ln_ for a_, b_, ln_, h_ in t_x.F.bond_art if {a_, b_} == {c1_, cl1_}]
         assert len(halves_) == 2 and halves_[0].get_linewidth() < t_x.F.lw_bond, halves_
-        assert "the C-Cl group shown as wireframe" in t_x.caption()[0], t_x.caption()[0]
+        assert "the C-Cl group is shown as wireframe" in t_x.caption()[0], t_x.caption()[0]
         t_x.sel = []
         t_x.unwire_selected()
         w.xray_state["label_mode"] = "hetero"
@@ -3579,15 +3601,16 @@ def selftest(outdir, with_isnet=False):
                   {"lam": 350.0, "fit": {"n": 5}, "eps": 5000.0, "eps_err": 50.0, "hidden": True},
                   {"lam": 500.0, "fit": None}]
         uvp_, uvh_ = SI.uvvis_line(res_uv, cfg_uv, "THF")
-        assert uvp_ == "UV-Vis (THF): λmax: 298 nm (ε = 24100 cm⁻¹ M⁻¹), 412 nm " \
-                       "(ε = 12350 cm⁻¹ M⁻¹)", uvp_
-        assert SI.join_lines([("m.p. 67 °C", "m.p. 67 °C"), (uvp_, uvh_)])[0].endswith("M⁻¹).")
+        assert uvp_ == "UV-Vis (THF): λmax: 298 nm (ε = 24100 cm-1 M-1), 412 nm (ε = 12350 cm-1 M-1)", uvp_
+        assert "<b>λ<sub>max</sub></b>" in uvh_ and "cm<sup>-1</sup>" in uvh_, uvh_
+        assert SI.join_lines([("m.p. 67 °C", "m.p. 67 °C"), (uvp_, uvh_)])[0].endswith("M-1).")
         w.compound = {"name": "TEST-1", "formula": "C18H20N2", "mp": "67 °C"}
         w.irms_state.update(ea_found={"C": "81.70", "H": "7.60", "N": "10.55"}, ea_solvate="")
         w.irms_tab.sync_widgets()
         blocks_, missing_ = w.si_blocks()
-        para_ = [b_[1] for b_ in blocks_ if b_[0] == "p"][0]
-        assert para_.startswith("m.p. 67 °C; ") and "<b>Elemental analysis</b>" in para_, para_
+        para_ = [b_[1] for b_ in blocks_ if b_[0] == "char"][0]
+        assert blocks_[0] == ("synthesis", "TEST-1"), blocks_[0]
+        assert para_.startswith("<b>m.p.</b> 67 °C; ") and "<b>Elemental analysis</b>" in para_, para_
         assert "IR" in missing_ and "m.p." not in missing_, missing_
         w.export_si()
         docx_ = Path(w.project_dir) / "exports" / "si" / "TEST-1_SI.docx"

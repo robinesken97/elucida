@@ -110,16 +110,16 @@ def uvvis_line(results, cfg, solvent: str = ""):
         sh = ", sh" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
         lam = f"{r['lam']:.0f}"
         if molar:
-            items_p.append(f"{lam} nm (ε = {v} cm⁻¹ M⁻¹{sh})")
-            items_h.append(f"{lam} nm (<i>ε</i> = {v} cm<sup>−1</sup> M<sup>−1</sup>{sh})")
+            items_p.append(f"{lam} nm (ε = {v} cm-1 M-1{sh})")
+            items_h.append(f"{lam} nm (ε = {v} cm<sup>-1</sup> M<sup>-1</sup>{sh})")
         else:
-            items_p.append(f"{lam} nm (a = {v} L g⁻¹ cm⁻¹{sh})")
-            items_h.append(f"{lam} nm (<i>a</i> = {v} L g<sup>−1</sup> cm<sup>−1</sup>{sh})")
+            items_p.append(f"{lam} nm (a = {v} L g-1 cm-1{sh})")
+            items_h.append(f"{lam} nm (<i>a</i> = {v} L g<sup>-1</sup> cm<sup>-1</sup>{sh})")
     if not items_p:
         return "", ""
     head = "UV-Vis" + (f" ({solvent})" if solvent else "")
     plain = f"{head}: λmax: " + ", ".join(items_p)
-    html = f"<b>{_html.escape(head)}</b>: <i>λ</i><sub>max</sub>: " + ", ".join(items_h)
+    html = f"<b>{_html.escape(head)}</b>: <b>λ<sub>max</sub></b>: " + ", ".join(items_h)
     return plain, html
 
 
@@ -133,12 +133,14 @@ def join_lines(parts):
 
 
 def html_runs(h):
-    """Kleines HTML (b, i, sub, sup) -> [(Text, {b, i, sub, sup})]."""
+    """Kleines HTML (b, i, sub, sup, br) -> [(Text, {b, i, sub, sup, br})]."""
     out, st = [], {"b": 0, "i": 0, "sub": 0, "sup": 0}
     for tok in re.split(r"(<[^>]+>)", h or ""):
         m = re.fullmatch(r"<(/?)(b|i|sub|sup)\s*>", tok)
         if m:
             st[m.group(2)] += -1 if m.group(1) else 1
+        elif re.fullmatch(r"<br\s*/?>", tok):
+            out.append(("", {"br"}))
         elif tok.startswith("<"):
             continue
         elif tok:
@@ -146,102 +148,213 @@ def html_runs(h):
     return out
 
 
-def markup_runs(markup):
-    """Tabellen-Markup des X-Ray-Tabs (*kursiv*, _{tief}, ^{hoch}) -> Läufe wie html_runs."""
+def markup_runs(markup, bold=False):
+    """Tabellen-Markup des X-Ray-Tabs (*kursiv*, _{tief}, ^{hoch}, ~{Überstrich}, Zeilenumbruch \n) -> Läufe."""
     import uvvis_xray as XRAY
     out = []
-    for t, s in XRAY.runs(markup):
-        if "o" in s:
-            t = "".join(ch + "̅" for ch in t)
-        out.append((t, {k for k, c in (("i", "i"), ("sub", "s"), ("sup", "p")) if c in s}))
+    for li, line in enumerate(str(markup).split("\n")):
+        if li:
+            out.append(("", {"br"}))
+        for t, s_ in XRAY.runs(line):
+            if "o" in s_:
+                t = "".join(ch + "̅" for ch in t)
+            st = {k for k, c in (("i", "i"), ("sub", "s"), ("sup", "p")) if c in s_}
+            out.append((t, st | ({"b"} if bold else set())))
     return out
 
 
-# Zwischenüberschriften der Parametertabelle (X-Ray-Tab) fett
-SECTION_ROWS = {"Bond lengths [Å]", "Angles [°]", "Torsion angles [°]"}
-_FONT = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>'
+# ---------------------------------------------------------------------------- docx (Stil der SI)
+# Gemessen an einer SI der Arbeitsgruppe (Word): A4, Ränder 2.5 cm, Arial 11 pt, Blocksatz, 1.5-zeilig, Hoch-/Tiefstellung
+# 7 pt (Word: vertAlign), Dreilinien-Tabellen, Unterschriften „Figure Sn: …“ / „Table Sn: …“ (fett bis zum Doppelpunkt).
+_FONT = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>'
+TEXT_W = 11906 - 2 * 1417                  # Textbreite in twips (A4, 2.5 cm Rand)
 
 
-def _run_xml(text, st, size=22, bold=False):
-    props = _FONT + ("<w:b/>" if bold or "b" in st else "") + ("<w:i/>" if "i" in st else "")
+def _run_xml(text, st, size=22):
+    if "br" in st:
+        return "<w:r><w:br/></w:r>"
+    props = _FONT + ("<w:b/><w:bCs/>" if "b" in st else "") + ("<w:i/><w:iCs/>" if "i" in st else "")
     if "sub" in st:
         props += '<w:vertAlign w:val="subscript"/>'
     elif "sup" in st:
         props += '<w:vertAlign w:val="superscript"/>'
-    props += f'<w:sz w:val="{size}"/>'
+    props += f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
     t = _html.escape(text, quote=False)
     return f'<w:r><w:rPr>{props}</w:rPr><w:t xml:space="preserve">{t}</w:t></w:r>'
 
 
-def _para_xml(runs, size=22, bold=False, align=None, space_after=120, keep_next=False):
-    ppr = f'<w:spacing w:after="{space_after}" w:line="276" w:lineRule="auto"/>'
-    if align:
-        ppr += f'<w:jc w:val="{align}"/>'
+def _seq_xml(kind, num, size=22):
+    """Word-Feld SEQ (Abbildungs-/Tabellennummer), fett, mit fortlaufendem Vorgabewert; in einer SI mit eigenen
+    SEQ-Feldern zählt Word beim Aktualisieren (F9) einfach weiter."""
+    props = _FONT + f'<w:b/><w:bCs/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
+    return (f'<w:fldSimple w:instr=" SEQ {kind} \\* ARABIC "><w:r><w:rPr>{props}</w:rPr><w:t>{num}</w:t></w:r>'
+            '</w:fldSimple>')
+
+
+def _ppr(align="both", line=360, before=0, after=0, keep_next=False):
+    x = f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
     if keep_next:
-        ppr += "<w:keepNext/>"
-    body = "".join(_run_xml(t, s, size, bold) for t, s in runs)
-    return f"<w:p><w:pPr>{ppr}</w:pPr>{body}</w:p>"
+        x += "<w:keepNext/>"
+    return f"<w:pPr>{x}<w:jc w:val=\"{align}\"/></w:pPr>"
 
 
-def _table_xml(header, rows, size=20):
-    """Dreilinien-Tabelle wie in den SI (Linie oben, unter dem Kopf, unten), Spalten zentriert, erste links."""
-    def cell(markup, bold=False, first=False, top=False, bottom=False, head=False):
-        b = []
-        if top:
-            b.append('<w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/>')
-        if bottom or head:
-            b.append('<w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/>')
-        borders = f"<w:tcBorders>{''.join(b)}</w:tcBorders>" if b else ""
-        p = _para_xml(markup_runs(markup), size=size, bold=bold, align="left" if first else "center", space_after=0)
-        return f"<w:tc><w:tcPr>{borders}</w:tcPr>{p}</w:tc>"
+def _para(runs, size=22, **kw):
+    return "<w:p>" + _ppr(**kw) + "".join(_run_xml(t, s, size) for t, s in runs) + "</w:p>"
+
+
+def _label_para(kind, num, runs, **kw):
+    """„Figure S1: …“ / „Table S1: …“ – Kürzel und Nummer fett, Doppelpunkt bei Tabellen fett, bei Abbildungen nicht
+    (wie in der SI)."""
+    lab = _run_xml(f"{kind} S", {"b"})
+    colon = _run_xml(":", {"b"} if kind == "Table" else set())
+    return "<w:p>" + _ppr(**kw) + lab + _seq_xml(kind, num) + colon + _run_xml(" ", set()) + \
+        "".join(_run_xml(t, s) for t, s in runs) + "</w:p>"
+
+
+def _border(sides):
+    b = "".join(f'<w:{s} w:val="single" w:sz="8" w:space="0" w:color="000000"/>' for s in sides)
+    return f"<w:tcBorders>{b}</w:tcBorders>" if b else ""
+
+
+def _head_runs(text):
+    """Tabellenkopf: fett bis zur Einheit („Length / Å“ -> „Length“ fett, „ / Å“ normal)."""
+    if " / " in text:
+        a, b = text.split(" / ", 1)
+        return markup_runs(a, bold=True) + markup_runs(" / " + b)
+    return markup_runs(text, bold=True)
+
+
+def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal=(), width=None):
+    """Dreilinien-Tabelle, alles zentriert. widths: Spaltenbreiten (twips). span_equal: Zeilenindizes, deren gleiche
+    Werte über alle Spalten zusammengefasst werden (z. B. Refinement method). bold_rows: Zeilen mit fetten Werten."""
+    tw = width or sum(widths)
+    grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths)
+    x = (f'<w:tbl><w:tblPr><w:tblW w:w="{tw}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/>'
+         '<w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+         f'<w:tblGrid>{grid}</w:tblGrid>')
+
+    def cell(runs, w, sides, span=1, head=False):
+        tcpr = f'<w:tcW w:w="{w}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + \
+            _border(sides) + '<w:vAlign w:val="center"/>'
+        sp = dict(line=240, after=0) if head else dict(line=line, before=row_after // 2, after=row_after // 2)
+        return f"<w:tc><w:tcPr>{tcpr}</w:tcPr>" + _para(runs, align="center", **sp) + "</w:tc>"
+    x += '<w:tr><w:trPr><w:tblHeader/></w:trPr>' + "".join(
+        cell(_head_runs(h), widths[j], ("top", "bottom"), head=True) for j, h in enumerate(header)) + "</w:tr>"
     n = len(rows)
-    xml = ('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/>'
-           '<w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr>')
-    xml += "<w:tr>" + "".join(cell(h, bold=True, first=(j == 0), top=True, head=True)
-                              for j, h in enumerate(header)) + "</w:tr>"
     for i, r in enumerate(rows):
-        xml += "<w:tr>" + "".join(cell(c or "", bold=(j == 0 and r[0] in SECTION_ROWS), first=(j == 0),
-                                       bottom=(i == n - 1)) for j, c in enumerate(r)) + "</w:tr>"
-    return xml + "</w:tbl>"
+        sides = ("bottom",) if i == n - 1 else ()
+        x += "<w:tr><w:trPr><w:cantSplit/></w:trPr>"
+        vals = r[1:]
+        if i in span_equal and len(vals) > 1 and len(set(vals)) == 1:
+            x += cell(markup_runs(r[0]), widths[0], sides) + cell(markup_runs(vals[0]), sum(widths[1:]), sides,
+                                                                    span=len(vals))
+        else:
+            x += "".join(cell(markup_runs(c or "", bold=(j > 0 and i in bold_rows)), widths[j], sides)
+                         for j, c in enumerate(r))
+        x += "</w:tr>"
+    return x + "</w:tbl>"
+
+
+def _image_xml(rid, n, w_cm, h_cm):
+    cx, cy = int(w_cm * 360000), int(h_cm * 360000)
+    return ('<w:p>' + _ppr(align="center", line=240, after=120, keep_next=True) +
+            '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            f'<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Picture {n}"/>'
+            '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            f'<pic:nvPicPr><pic:cNvPr id="{n}" name="image{n}.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+            f'<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+            '</wp:inline></w:drawing></w:r></w:p>')
 
 
 def write_docx(path, blocks):
-    """blocks: [("h", Text) | ("p", HTML) | ("caption", HTML) | ("table", Titel, Kopf, Zeilen, Fußnoten)]."""
-    body = []
+    """Blöcke:
+    ("synthesis", Name)                   „Synthesis of <b>Name</b>“
+    ("char", HTML)                        Charakterisierungsabsatz (Abstand davor wie in der SI)
+    ("image", PNG, Breite cm, Höhe cm)    Abbildung zentriert
+    ("figcap", HTML)                      „Figure Sn: …“
+    ("tabcap", Markup, Name)              „Table Sn: <Markup> <b>Name</b>.“
+    ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
+    ("params", Kopf, Zeilen)              Ausgewählte Bindungen/Winkel
+    ("note", Markup)                      Fußnote unter einer Tabelle
+    ("gap",)                              Leerzeile"""
+    body, media = [], []
+    n_fig = n_tab = 0
     for b in blocks:
-        if b[0] == "h":
-            body.append(_para_xml([(b[1], set())], size=24, bold=True, space_after=120, keep_next=True))
-        elif b[0] == "p":
-            body.append(_para_xml(html_runs(b[1]), align="both"))
-        elif b[0] == "caption":
-            body.append(_para_xml(html_runs(b[1]), size=20, align="both", space_after=240))
-        elif b[0] == "table":
-            _, title, header, rows, notes = b
-            if title:
-                body.append(_para_xml([(title, {"b"})], size=22, keep_next=True))
-            body.append(_table_xml(header, rows))
-            for n_ in notes or ():
-                body.append(_para_xml(markup_runs(n_), size=18, space_after=0))
-            body.append(_para_xml([("", set())]))
+        k = b[0]
+        if k == "synthesis":
+            body.append(_para([("Synthesis of ", set()), (b[1], {"b"})], keep_next=True))
+        elif k == "char":
+            body.append(_para(html_runs(b[1]), before=200))
+        elif k == "image":
+            media.append(Path(b[1]))
+            w_cm = min(b[2], TEXT_W / 567.0)
+            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2]))
+        elif k == "figcap":
+            n_fig += 1
+            body.append(_label_para("Figure", n_fig, html_runs(b[1]), after=240))
+        elif k == "tabcap":
+            n_tab += 1
+            body.append(_label_para("Table", n_tab, markup_runs(b[1]) + [(" ", set()), (b[2] + ".", {"b"})],
+                                    before=120, after=120, keep_next=True))
+        elif k == "crystal":
+            header, rows = b[1], b[2]
+            n = len(header) - 1
+            first = 3400
+            widths = [first] + [max(1200, (TEXT_W - first) // max(1, n))] * n
+            ref_row = [i for i, r in enumerate(rows) if r[0] == "Internal reference"]
+            meth = [i for i, r in enumerate(rows) if r[0] == "Refinement method"]
+            body.append(_table(header, rows, widths, bold_rows=ref_row, span_equal=meth))
+        elif k == "params":
+            header, rows = b[1], b[2]
+            n = len(header)
+            tw = TEXT_W if n >= 4 else int(TEXT_W * 0.85)
+            body.append(_table(header, rows, [tw // n] * n, row_after=200, line=276))
+        elif k == "note":
+            body.append(_para(markup_runs(b[1]), size=18, line=240, after=0))
+        elif k == "gap":
+            body.append(_para([("", set())]))
+    ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+          'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+          'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"')
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-           '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
-           + "".join(body) +
+           f'<w:document {ns}><w:body>' + "".join(body) +
            '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1417" w:bottom="1134" '
            'w:left="1417" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>')
+    styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+              '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults>'
+              f'<w:rPrDefault><w:rPr>{_FONT}<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-GB"/></w:rPr>'
+              '</w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr>'
+              '</w:pPrDefault></w:docDefaults></w:styles>')
     ctypes = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
               '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
               '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-              '<Default Extension="xml" ContentType="application/xml"/>'
+              '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
               '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
-              'wordprocessingml.document.main+xml"/></Types>')
+              'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
+              'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
     rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
             'officeDocument" Target="word/document.xml"/></Relationships>')
+    drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+             '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+             'styles" Target="styles.xml"/>' +
+             "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/image{i}.png"/>' for i in range(1, len(media) + 1)) +
+             '</Relationships>')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", ctypes)
         z.writestr("_rels/.rels", rels)
         z.writestr("word/document.xml", doc)
+        z.writestr("word/styles.xml", styles)
+        z.writestr("word/_rels/document.xml.rels", drels)
+        for i, m in enumerate(media, 1):
+            z.writestr(f"word/media/image{i}.png", m.read_bytes())
     return path

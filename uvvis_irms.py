@@ -229,7 +229,7 @@ def ir_line(peaks, with_intensity=False):
     items = [f"{round(p['wn']):d}" + (f" ({intensity_tag(p)})" if with_intensity and "rel" in p else "") for p in vals]
     body = ", ".join(items)
     plain = f"IR [cm-1]: ṽ = {body}"
-    html = f"<b>IR</b> [cm<sup>−1</sup>]: ṽ = {body}"
+    html = f"<b>IR</b> [cm<sup>-1</sup>]: ṽ = {body}"                    # wie in der SI: „-1“
     return plain, html
 
 

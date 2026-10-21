@@ -726,6 +726,24 @@ def frag_kind(formula, heavy):
     return None, ""
 
 
+def disorder_occupancy(S):
+    """'95% (A) and 5% (B)' für eine Fehlordnung mit zwei Teilen (Buchstaben aus den Atomlabels, sonst PART-Nummer);
+    None ohne oder bei mehreren Fehlordnungen."""
+    parts = {}
+    for a in S.atoms:
+        if a["part"]:
+            parts.setdefault(abs(a["part"]), []).append(a)
+    if len(parts) != 2 or len({a["assembly"] for v in parts.values() for a in v}) > 1:
+        return None
+    bits = []
+    for p_, ats in sorted(parts.items()):
+        occ = round(100 * float(np.mean([a["occ"] for a in ats])))
+        tags = {re.sub(r"^[A-Z][a-z]?\d+", "", a["label"]) for a in ats}
+        tag = next(iter(tags)) if len(tags) == 1 and next(iter(tags)) else f"PART {p_}"
+        bits.append(f"{occ}% ({tag})")
+    return " and ".join(bits)
+
+
 def hill(els):
     cnt = {}
     for e in els:
@@ -1081,8 +1099,8 @@ def formula_markup(sum_formula):
     return "".join(out)
 
 
-RADIATION = [(0.71073, 0.002, "MoK_{α}"), (1.54178, 0.0012, "CuK_{α}"), (0.56086, 0.002, "AgK_{α}"),
-             (1.34139, 0.002, "GaK_{α}")]
+RADIATION = [(0.71073, 0.002, "MoK_{*α*}"), (1.54178, 0.0012, "CuK_{*α*}"), (0.56086, 0.002, "AgK_{*α*}"),
+             (1.34139, 0.002, "GaK_{*α*}")]
 
 
 def radiation_markup(b: Block):
@@ -1097,7 +1115,7 @@ def radiation_markup(b: Block):
     if name is None:
         typ = (b.get("_diffrn_radiation_type") or "").replace("\\a", "α").replace("\\b", "β").replace(" ", "")
         name = typ or "λ"
-    return f"{name} (λ = {lam})"
+    return f"{name} (*λ* = {lam})"
 
 
 def _dec(s):
@@ -1105,33 +1123,33 @@ def _dec(s):
     return len(s.split(".")[1]) if "." in s else 0
 
 
-CRYSTAL_ROWS = [
+CRYSTAL_ROWS = [                                   # Beschriftung wie in den SI der Arbeitsgruppe
     ("ref", "Internal reference"),
     ("ccdc", "CCDC number"),
     ("formula", "Formula"),
     ("fw", "Formula weight"),
-    ("temp", "Temperature/K"),
+    ("temp", "Temperature / K"),
     ("system", "Crystal system"),
     ("sg", "Space group"),
-    ("a", "*a*/Å"), ("b", "*b*/Å"), ("c", "*c*/Å"),
-    ("alpha", "α/°"), ("beta", "β/°"), ("gamma", "γ/°"),
-    ("vol", "Volume/Å^{3}"),
+    ("a", "*a* / Å"), ("b", "*b* / Å"), ("c", "*c* / Å"),
+    ("alpha", "*α* / °"), ("beta", "*β* / °"), ("gamma", "*γ* / °"),
+    ("vol", "Volume / Å^{3}"),
     ("z", "*Z*"),
-    ("rho", "Density (calc.)/g cm^{−3}"),
-    ("mu", "Absorption coefficient/mm^{−1}"),
+    ("rho", "Density (calc.) g / cm^{3}"),
+    ("mu", "Absorption coefficient / mm^{-1}"),
     ("f000", "*F*(000)"),
-    ("size", "Crystal size/mm^{3}"),
+    ("size", "Crystal size / mm"),
     ("rad", "Radiation"),
-    ("theta", "2θ range for data collection/°"),
+    ("theta", "2*θ* range for data collection / °"),
     ("index", "Index ranges"),
     ("refl", "Reflections collected"),
     ("indep", "Independent reflections"),
     ("method", "Refinement method"),
-    ("drp", "Data/restraints/parameters"),
+    ("drp", "Data / restraints / parameters"),
     ("gof", "Goodness-of-fit on *F*^{2}"),
-    ("rgt", "Final *R* indices [*I* > 2σ(*I*)]"),
+    ("rgt", "Final *R* indices [*I*>2*σ*(I)]"),
     ("rall", "*R* indices (all data)"),
-    ("diff", "Largest diff. peak and hole/e Å^{−3}"),
+    ("diff", "Largest diff. peak and hole/e. Å^{-3}"),
 ]
 
 
@@ -1187,9 +1205,9 @@ def crystal_values(b: Block, ref="", ccdc=""):
     nres, npar = g("_refine_ls_number_restraints"), g("_refine_ls_number_parameters")
     v["drp"] = f"{nref}/{nres}/{npar}" if nref and nres and npar else ""
     r1, wr = g("_refine_ls_r_factor_gt"), g("_refine_ls_wr_factor_gt")
-    v["rgt"] = f"*R*_{{1}} = {r1}, *wR*_{{2}} = {wr}" if r1 and wr else ""
+    v["rgt"] = f"*R*_{{1}} = {r1}, w*R*_{{2}} = {wr}" if r1 and wr else ""
     r1a, wra = g("_refine_ls_r_factor_all"), g("_refine_ls_wr_factor_ref")
-    v["rall"] = f"*R*_{{1}} = {r1a}, *wR*_{{2}} = {wra}" if r1a and wra else ""
+    v["rall"] = f"*R*_{{1}} = {r1a}, w*R*_{{2}} = {wra}" if r1a and wra else ""
     dmax, dmin = g("_refine_diff_density_max"), g("_refine_diff_density_min")
     if dmax and dmin:
         hole = dmin.strip()
@@ -1838,6 +1856,7 @@ from uvvis_i18n import T  # noqa: E402
 from uvvis_irms import copy_rich  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
+CAPTION_MAX = 8                       # bis zu so vielen ausgewählten Werten in der Bildunterschrift, sonst Tabellen
 KIND_HEAD = {"bond": "Bond lengths [Å]", "angle": "Angles [°]", "torsion": "Torsion angles [°]"}
 CALC_NOTE = "calculated from the atomic coordinates; no s.u. in the CIF"
 
@@ -2529,8 +2548,9 @@ class XrayTab(TABS.FigureTab):
 
     # -- Bildunterschrift -------------------------------------------------------------------
     def caption(self, e=None):
-        """Vorschlag für die Bildunterschrift (Englisch, wie die Tabellen) -> (Klartext, HTML). Passt sich an das an,
-        was in der Abbildung ausgeblendet oder als Drahtmodell gezeigt ist."""
+        """Bildunterschrift im Stil der SI (ohne „Figure Sx:“) -> (Klartext, HTML). Folgt der Abbildung: Fehlordnung
+        mit Besetzung, Ausgeblendetes, Drahtmodell; bis CAPTION_MAX ausgewählte Werte stehen in der Unterschrift,
+        mehr kommen in eigene Tabellen (param_tables)."""
         import html as _html
         e = e or self.entry()
         mol = self.molecule(e) if e else None
@@ -2538,6 +2558,7 @@ class XrayTab(TABS.FigureTab):
             return "", ""
         st, o = self.st, self.opts(e)
         name = e.get("name") or e["block"]
+        esc = _html.escape
         shown = set(XrayFigure._visible.__get__(_Vis(mol, o))())
         omit, solv, ions = [], [], []
         hid = set(o["hidden_frags"])
@@ -2568,44 +2589,80 @@ class XrayTab(TABS.FigureTab):
             u = sorted(set(ions))
             omit.append(("the counterion " if len(u) == 1 else "the counterions ") + join_en(u))
         wire = [k for k in range(len(mol.atoms)) if mol.atoms[k]["key"] in o["wire"] and k in shown]
-        txt = f"Molecular structure of {name} in the solid state. Displacement ellipsoids are drawn at the " \
-              f"{int(st['prob'])} % probability level"
+        occ = disorder_occupancy(mol.S)
+        head = f"X-ray solid state structure of {name}"
+        head_h = f"X-ray solid state structure of <b>{esc(name)}</b>"
+        if occ and st["disorder"] in ("main", "minor"):
+            extra = f" ({occ} occupancy; {'major' if st['disorder'] == 'main' else 'minor'} part shown)"
+            head, head_h = head + extra, head_h + esc(extra)
+        elif occ:
+            head, head_h = head + f" ({occ} occupancy)", head_h + esc(f" ({occ} occupancy)")
+        tail = f". Thermal ellipsoids are shown with {int(st['prob'])}% probability."
         clauses = []
         if omit:
-            clauses.append(join_en(omit) + " omitted")
+            clauses.append(join_en(omit) + (" are" if len(omit) > 1 or omit[0].endswith("s") else " is") + " omitted")
         if wire:
             wn = e.get("wire_name") or "selected substituents"
             extra = " without hydrogen atoms" if st["show_h"] and not st.get("wire_h") else ""
-            clauses.append(f"{wn} shown as wireframe{extra}")
+            clauses.append(f"{wn} {'are' if wn.endswith('s') else 'is'} shown as wireframe{extra}")
         if clauses:
-            txt += "; " + ", ".join(clauses) + " for clarity"
-        txt += "."
-        if mol.S.parts() and st["disorder"] in ("main", "minor"):
-            txt += " Only the " + ("major" if st["disorder"] == "main" else "minor") + \
-                " component of the disordered part" + ("s" if len(mol.S.parts()) > 2 else "") + " is shown."
-        pars = []
-        for kind, head in (("bond", "bond lengths [Å]"), ("angle", "angles [°]"), ("torsion", "torsion angles [°]")):
-            vals = []
-            for pp in e.get("params") or []:
-                m = measure(mol, pp["atoms"])
-                if m is not None and m["kind"] == kind:
-                    vals.append(f"{param_name(mol, pp['atoms'])} {minus(m['text'])}")
-            if vals:
-                pars.append((head, vals))
-        if pars:
-            heads = join_en([h for h, _ in pars])
-            txt += f" Selected {heads}: " + "; ".join(", ".join(v) for _, v in pars) + "."
+            sent = " and ".join(clauses) + " for clarity."
+            tail += " " + sent[0].upper() + sent[1:]
+        vals = self.param_values(e, mol)
+        if vals and len(vals) <= CAPTION_MAX:
+            kinds = [k for k in ("bond", "angle", "torsion") if any(v[0] == k for v in vals)]
+            what = {("bond",): "bond lengths in [Å]", ("angle",): "angles in [°]", ("torsion",): "torsion angles in [°]",
+                    ("bond", "angle"): "bond lengths and angles in [Å] and [°]",
+                    ("bond", "torsion"): "bond lengths and torsion angles in [Å] and [°]",
+                    ("angle", "torsion"): "angles and torsion angles in [°]",
+                    ("bond", "angle", "torsion"): "bond lengths, angles and torsion angles in [Å] and [°]"}[tuple(kinds)]
+            tail += f" Selected {what}: " + "; ".join(f"{n}: {v}" for _, n, v, _ in vals) + "."
         used = {mol.atoms[k].get("opkey") for k in shown if mol.atoms[k].get("opkey")}
         for pp in e.get("params") or []:
             for k in pp["atoms"]:
                 i = mol.find_key(k)
                 if i is not None and mol.atoms[i].get("opkey"):
                     used.add(mol.atoms[i]["opkey"])
-        codes = [f"{r} {op}" for op, r in mol.ops.items() if op in used]
+        codes = [f"{r}: {op}" for op, r in mol.ops.items() if op in used]
         if codes:
-            txt += " Symmetry code" + ("s" if len(codes) > 1 else "") + ": " + "; ".join(codes) + "."
-        plain = minus(txt)
-        return plain, _html.escape(plain)
+            tail += " Symmetry code" + ("s" if len(codes) > 1 else "") + ": " + "; ".join(codes) + "."
+        return minus(head + tail), head_h + esc(minus(tail))
+
+    def param_values(self, e, mol=None):
+        """Ausgewählte Parameter einer Struktur -> [(Art, Name, Wert (CIF-Text, echtes Minus), aus der CIF?)]."""
+        mol = mol or self.molecule(e)
+        out = []
+        for kind in ("bond", "angle", "torsion"):
+            for pp in e.get("params") or []:
+                m = measure(mol, pp["atoms"]) if mol else None
+                if m is not None and m["kind"] == kind:
+                    out.append((kind, param_name(mol, pp["atoms"]), minus(m["text"]), m["source"] == "cif"))
+        return out
+
+    def param_tables(self, e):
+        """Eigene Tabellen wie „Table S1: Selected bond lengths for …“, nur bei mehr als CAPTION_MAX Werten:
+        [(Titel-Rest, Kopf, Zeilen)], Zellen als Markup; Werte ohne esd mit Fußnote a."""
+        mol = self.molecule(e)
+        if mol is None:
+            return []
+        vals = self.param_values(e, mol)
+        if len(vals) <= CAPTION_MAX:
+            return []
+        name = e.get("name") or e["block"]
+        out = []
+        for kind, title, unit, n in (("bond", "Selected bond lengths", "Length / Å", 2),
+                                     ("angle", "Selected bond angles", "Angle / °", 3),
+                                     ("torsion", "Selected torsion angles", "Torsion angle / °", 4)):
+            rows = []
+            for pp in e.get("params") or []:
+                m = measure(mol, pp["atoms"])
+                if m is None or m["kind"] != kind:
+                    continue
+                names = [atom_name(mol.atoms[mol.find_key(k)]) for k in pp["atoms"]]
+                rows.append(names + [minus(m["text"]) + ("^{a}" if m["source"] == "calc" else "")])
+            if rows:
+                out.append((f"{title} for", name, ["Atom"] * n + [unit], rows))
+        return out
 
     # -- Auswahl / Maus ---------------------------------------------------------------------
     def hover_atom(self, k):
