@@ -3111,7 +3111,10 @@ def selftest(outdir, with_isnet=False):
         import zipfile as _zf
         w.set_compound({"name": "TEST-1", "structure": str(cdxml), **compound_from_structure(cdxml)})
         assert w.compound["formula"] and w.compound["mw"] and "TEST-1" in w.windowTitle(), w.compound
-        pump(1.5)                                           # Strukturen werden im Hintergrund geladen
+        import time as _time
+        t_end_ = _time.monotonic() + 10                     # Strukturen werden im Hintergrund geladen
+        while not all(st_.get("structure") for st_ in w.series.values()) and _time.monotonic() < t_end_:
+            pump(0.1)
         assert all(st_.get("structure") for st_ in w.series.values()), ("Verbindung nicht als Vorgabe übernommen", {g_: st_.get("structure") for g_, st_ in w.series.items()}, w.compound)
         irdir = out / "input" / "irms"
         irdir.mkdir(parents=True, exist_ok=True)
