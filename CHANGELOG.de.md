@@ -2,7 +2,7 @@
 
 # Änderungen
 
-## Unveröffentlicht
+## 1.21.0 – 21.10.2026
 
 ### Neu
 - Neuer Tab **HRMS** (MS-Teil des bisherigen Tabs IR + MS): mit Bruker-Rohdaten ein Chromatogramm (TIC und Ionenstrom)

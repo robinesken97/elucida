@@ -2,7 +2,7 @@
 
 # Changelog
 
-## Unreleased
+## 1.21.0 – 2026-10-21
 
 ### Added
 - New tab **HRMS** (MS part of the former IR + MS tab): with Bruker raw data a chromatogram (TIC and ion current) with
