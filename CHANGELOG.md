@@ -2,7 +2,7 @@
 
 # Changelog
 
-## Unreleased
+## 1.18.0 – 2026-10-21
 
 ### Added
 - **Compound of the project** (name, ChemDraw, formula, molar mass) as default for all tabs (toolbar

@@ -2,7 +2,7 @@
 
 # Änderungen
 
-## Unveröffentlicht
+## 1.18.0 – 21.10.2026
 
 ### Neu
 - **Verbindung des Projekts** (Name, ChemDraw, Formel, Molmasse) als Vorgabe für alle Tabs (Werkzeugleiste
