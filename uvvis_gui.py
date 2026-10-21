@@ -2544,9 +2544,52 @@ def selftest(outdir, with_isnet=False):
         csv_txt = files[-1].read_text(encoding="utf-8-sig")
         assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt, csv_txt
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
-        st_cv.update(files=[], couples=[], ref_mode="none")
-        w.cv_tab.fill_table()
         report.append("cyclic voltammetry: OK")
+
+        # CV-Ausbau: Gruppe + eigene Referenz je Messung (zweites "Lösungsmittel"), Stapeln, E½ je Kurve,
+        # Auftragungen gegen die Scanrate (ΔE_p, Randles-Ševčík, Trumpet)
+        t_cv = w.cv_tab
+        for e_ in st_cv["files"]:
+            e_["group"] = "A"
+        for r_ in (50, 100):                            # Gruppe B: E½ −0.92 V, eigenes Ac₂Fc bei +0.75 V (gemessen)
+            p_ = cvdir / f"cvB_{r_}.DTA"
+            write_dta(p_, [cv_sweep(-0.92, 60.0 * (r_ / 50) ** 0.5, -1.4, 1.1, ref=0.75)], r_)
+            st_cv["files"].append({"file": str(p_), "uid": f"cvB{r_}", "visible": True, "color": "#000000",
+                                   "label": f"B {r_} mV/s", "group": "B"})
+        for e_ in st_cv["files"][-2:]:
+            e_["ref"] = {"mode": "internal", "uid": e_["uid"], "lo": 0.5, "hi": 1.0, "compound": "ac2fc", "value": 0.49}
+        st_cv.update(plot="cv", stack=True, e12_each=True, show_e12=True)
+        t_cv.fill_table()
+        spec_ = t_cv.figure_spec()
+        resB = [r_ for r_ in t_cv.results if r_["group"] == "B"]
+        assert len(resB) == 2 and all(abs(r_["e12"] - (-0.92 - (0.75 - 0.49))) < 0.004 for r_ in resB), resB
+        resA = [r_ for r_ in t_cv.results if r_["group"] == "A"]
+        assert len(resA) == 3 and all(abs(r_["e12"] - (-1.02 - (0.55 - 0.49))) < 0.004 for r_ in resA), resA
+        cfg_, curves_, labels_, _ = spec_
+        offs_ = [c_.get("off", 0) for c_ in curves_]
+        assert offs_ == sorted(offs_, reverse=True) and offs_[0] > 0 == offs_[-1] and cfg_["y_axis"] == "no_numbers"
+        assert len(labels_) == 5 and all(l_.get("y") is not None and "1/2" in l_["text"] for l_ in labels_), labels_
+        t_cv.render()
+        assert all(getattr(a_, "_anchor_y", None) is not None for a_ in t_cv.F.ann_items.values())
+        for plot_, n_series in (("dep", 2), ("rs", 4), ("trumpet", 4)):
+            st_cv["plot"] = plot_
+            cfg_, curves_, _, _ = t_cv.figure_spec()
+            pts_ = [c_ for c_ in curves_ if c_.get("marker")]
+            assert len(pts_) == n_series, (plot_, len(pts_))
+            if plot_ == "dep":
+                assert all(abs(y_ - 60) < 8 for c_ in pts_ for y_ in c_["y"]), [list(c_["y"]) for c_ in pts_]
+                assert sorted(len(c_["x"]) for c_ in pts_) == [2, 3]
+            if plot_ == "rs":
+                assert len([c_ for c_ in curves_ if c_.get("ls") == "--"]) == 2      # Gerade nur ab 3 Scanraten (A)
+            if plot_ == "trumpet":
+                assert abs(min(c_["x"].min() for c_ in pts_) - np.log10(0.05)) < 1e-9
+        files = t_cv.export_to(out / "cv_dep")
+        assert all(f.exists() for f in files) and "group" in files[-1].read_text(encoding="utf-8-sig")
+        st_cv["files"] = st_cv["files"][:1]
+        assert t_cv.figure_spec() is None and "zwei Scanraten" in t_cv.note or "two scan rates" in t_cv.note
+        st_cv.update(files=[], couples=[], ref_mode="none", plot="cv", stack=False, e12_each=False)
+        w.cv_tab.fill_table()
+        report.append("CV stacking, reference per file, rate plots: OK")
 
         # Spektroelektrochemie: BWSpec-Spektren + Gamry-Potential über die Uhrzeit, Nernst-Fit, Export
         import datetime as _dt

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 import uvvis_tabs as TABS
 from uvvis_i18n import T
 import uvvis_style as STYLE
-from uvvis_style import make_form
+from uvvis_style import HINT_CSS, make_form
 
 # Referenzverbindungen: E½ gegen Fc⁺/Fc [V]. Ac₂Fc = 1,1'-Diacetylferrocen; Wert im Programm änderbar
 # (lösungsmittelabhängig, gegen Literatur prüfen).
@@ -54,6 +54,8 @@ def read_gamry(path) -> dict:
             meta["time"] = parts[2]
         elif key == "CONVENTION" and len(parts) > 2:
             meta["convention"] = int(float(parts[2]))
+        elif key in ("IRCOMP", "IRCOMPMODE", "RUNCOMP") and len(parts) > 2:
+            meta["ircomp"] = parts[2].strip()              # Rohwert (Gamry: 0/1 bzw. Modus), nur zur Doku
         if re.match(r"CURVE\d*$", key) and len(parts) > 1 and parts[1] == "TABLE":
             hdr = lines[i + 1].strip().split("\t")
             i += 3
@@ -205,7 +207,11 @@ class CVTab(TABS.FigureTab):
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
-                         gradient=True, density=False, show_e12=True, arrow=True, invert=False)
+                         gradient=True, density=False, show_e12=True, arrow=True, invert=False,
+                         plot="cv", stack=False, stack_gap=1.0, e12_each=False)
+
+    PLOTS = ("cv", "dep", "rs", "trumpet")     # CV | ΔE_p gegen v | Randles-Ševčík | Trumpet-Plot
+    MARKERS = ("s", "o", "^", "v", "D", "p")
 
     # -- Bedienelemente ------------------------------------------------------------
     def build_controls(self):
@@ -221,15 +227,61 @@ class CVTab(TABS.FigureTab):
             b.clicked.connect(fn)
             row.addWidget(b)
         v.addLayout(row)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), "v [mV/s]"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), "v [mV/s]", T("cv_group")])
+        self.table.horizontalHeaderItem(4).setToolTip(T("cv_group_tip"))
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setMinimumHeight(140)
         self.table.itemChanged.connect(self.table_edited)
+        self.table.currentCellChanged.connect(lambda *_: self.show_file_ref())
         v.addWidget(self.table)
         self.lv.addWidget(g)
+
+        # Referenz je Messung (z. B. jedes Lösungsmittel gegen sein eigenes Ac₂Fc/Fc)
+        self.det = QGroupBox(T("cv_file_ref"))
+        f = make_form(self.det)
+        self.cmb_fref = QComboBox()
+        for key in ("global", "internal", "manual"):
+            self.cmb_fref.addItem(T("cv_fref_" + key), key)
+        f.addRow(T("cv_ref"), self.cmb_fref)
+        self.cmb_fref_file = QComboBox()
+        self.lbl_fref_file = QLabel(T("cv_ref_file"))
+        f.addRow(self.lbl_fref_file, self.cmb_fref_file)
+        row = QHBoxLayout()
+        self.sp_fref_lo = QDoubleSpinBox(decimals=2, minimum=-10, maximum=10, singleStep=0.05, value=0.3)
+        self.sp_fref_hi = QDoubleSpinBox(decimals=2, minimum=-10, maximum=10, singleStep=0.05, value=0.8)
+        for w_ in (self.sp_fref_lo, QLabel("–"), self.sp_fref_hi):
+            row.addWidget(w_)
+        self.lbl_fref_win = QLabel(T("cv_ref_window"))
+        f.addRow(self.lbl_fref_win, row)
+        row = QHBoxLayout()
+        self.cmb_fcompound = QComboBox()
+        for key, (name, _) in REFERENCES.items():
+            self.cmb_fcompound.addItem(name, key)
+        self.cmb_fcompound.addItem(T("cv_ref_custom"), "custom")
+        self.sp_fref_value = QDoubleSpinBox(decimals=3, minimum=-3, maximum=3, singleStep=0.01, suffix=" V",
+                                            value=REFERENCES["ac2fc"][1])
+        self.sp_fref_value.setToolTip(T("cv_ref_value_tip"))
+        row.addWidget(self.cmb_fcompound, 1)
+        row.addWidget(self.sp_fref_value)
+        self.lbl_fcompound = QLabel(T("cv_ref_compound"))
+        f.addRow(self.lbl_fcompound, row)
+        self.sp_foffset = QDoubleSpinBox(decimals=3, minimum=-5, maximum=5, singleStep=0.01, suffix=" V")
+        self.sp_foffset.setToolTip(T("cv_offset_tip"))
+        self.lbl_foffset = QLabel(T("cv_offset"))
+        f.addRow(self.lbl_foffset, self.sp_foffset)
+        self.lbl_fref_info = QLabel("")
+        self.lbl_fref_info.setWordWrap(True)
+        self.lbl_fref_info.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_fref_info)
+        self.lv.addWidget(self.det)
+        for w_ in (self.sp_fref_lo, self.sp_fref_hi, self.sp_fref_value, self.sp_foffset):
+            w_.valueChanged.connect(self.file_ref_changed)
+        for w_ in (self.cmb_fref, self.cmb_fref_file):
+            w_.currentIndexChanged.connect(self.file_ref_changed)
+        self.cmb_fcompound.currentIndexChanged.connect(self.fcompound_changed)
 
         g = QGroupBox(T("cv_analysis"))
         f = make_form(g)
@@ -290,6 +342,28 @@ class CVTab(TABS.FigureTab):
 
         g = QGroupBox(T("cv_display"))
         f = make_form(g)
+        self.cmb_plot = QComboBox()
+        for key in self.PLOTS:
+            self.cmb_plot.addItem(T("cv_plot_" + key), key)
+        self.cmb_plot.setCurrentIndex(max(0, self.cmb_plot.findData(st["plot"])))
+        self.cmb_plot.setToolTip(T("cv_plot_tip"))
+        f.addRow(T("cv_plot"), self.cmb_plot)
+        row = QHBoxLayout()
+        self.cb_stack = QCheckBox(T("cv_stack"))
+        self.cb_stack.setChecked(st["stack"])
+        self.sp_gap = QDoubleSpinBox(decimals=2, minimum=0.2, maximum=5, singleStep=0.1, value=st["stack_gap"])
+        self.sp_gap.setToolTip(T("cv_stack_gap_tip"))
+        row.addWidget(self.cb_stack)
+        row.addWidget(self.sp_gap)
+        row.addStretch(1)
+        f.addRow(row)
+        self.cb_e12_each = QCheckBox(T("cv_e12_each"))
+        self.cb_e12_each.setChecked(st["e12_each"])
+        f.addRow(self.cb_e12_each)
+        self.cmb_plot.currentIndexChanged.connect(self.changed)
+        self.sp_gap.valueChanged.connect(self.changed)
+        for cb in (self.cb_stack, self.cb_e12_each):
+            cb.toggled.connect(self.changed)
         self.cb_gradient = QCheckBox(T("cv_gradient"))
         self.cb_density = QCheckBox(T("cv_density"))
         self.cb_e12 = QCheckBox(T("cv_show_e12"))
@@ -356,7 +430,9 @@ class CVTab(TABS.FigureTab):
                   ref_electrode=self.ed_electrode.text().strip() or "Ag/AgNO₃",
                   gradient=self.cb_gradient.isChecked(), density=self.cb_density.isChecked(),
                   show_e12=self.cb_e12.isChecked(), arrow=self.cb_arrow.isChecked(),
-                  invert=self.cb_invert.isChecked())
+                  invert=self.cb_invert.isChecked(), plot=self.cmb_plot.currentData(),
+                  stack=self.cb_stack.isChecked(), stack_gap=self.sp_gap.value(),
+                  e12_each=self.cb_e12_each.isChecked())
         self._sync_ref_widgets()
 
     # -- Dateien -------------------------------------------------------------------
@@ -417,6 +493,7 @@ class CVTab(TABS.FigureTab):
             it = QTableWidgetItem(f"{round(rate, 1):g}" if rate else "–")
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
+            self.table.setItem(i, 4, QTableWidgetItem(e.get("group", "")))
         self.table.resizeColumnToContents(0)
         cur = self.st.get("ref_uid")
         self.cmb_ref_file.blockSignals(True)
@@ -426,6 +503,7 @@ class CVTab(TABS.FigureTab):
         self.cmb_ref_file.setCurrentIndex(max(0, self.cmb_ref_file.findData(cur)))
         self.cmb_ref_file.blockSignals(False)
         self._loading = False
+        self.show_file_ref()
 
     def _set_color(self, e, c):
         e["color"] = c
@@ -440,6 +518,59 @@ class CVTab(TABS.FigureTab):
         elif item.column() == 1:
             e["label"] = item.text()
             self.fill_table()
+        elif item.column() == 4:
+            e["group"] = item.text().strip()
+        self.timer.start()
+
+    # -- Referenz je Messung ---------------------------------------------------------
+    def current_file(self):
+        r = self.table.currentRow()
+        return self.st["files"][r] if 0 <= r < len(self.st["files"]) else None
+
+    def show_file_ref(self):
+        if not hasattr(self, "det"):
+            return
+        e = self.current_file()
+        self.det.setEnabled(e is not None)
+        ref = (e or {}).get("ref") or {}
+        self._loading = True
+        self.cmb_fref.setCurrentIndex(max(0, self.cmb_fref.findData(ref.get("mode", "global"))))
+        self.cmb_fref_file.clear()
+        for x in self.st["files"]:
+            self.cmb_fref_file.addItem(x["label"], x["uid"])
+        self.cmb_fref_file.setCurrentIndex(max(0, self.cmb_fref_file.findData(ref.get("uid", (e or {}).get("uid")))))
+        self.sp_fref_lo.setValue(ref.get("lo", self.st["ref_lo"]))
+        self.sp_fref_hi.setValue(ref.get("hi", self.st["ref_hi"]))
+        self.cmb_fcompound.setCurrentIndex(max(0, self.cmb_fcompound.findData(ref.get("compound", "ac2fc"))))
+        self.sp_fref_value.setValue(ref.get("value", REFERENCES["ac2fc"][1]))
+        self.sp_foffset.setValue(ref.get("offset", 0.0))
+        self._loading = False
+        mode = ref.get("mode", "global")
+        for w_ in (self.lbl_fref_file, self.cmb_fref_file, self.lbl_fref_win, self.sp_fref_lo, self.sp_fref_hi,
+                   self.lbl_fcompound, self.cmb_fcompound, self.sp_fref_value):
+            w_.setVisible(mode == "internal")
+        for w_ in (self.lbl_foffset, self.sp_foffset):
+            w_.setVisible(mode == "manual")
+        self.lbl_fref_info.setText(self.file_offset(e)[2] if e is not None and mode != "global" else "")
+
+    def fcompound_changed(self, *_):
+        key = self.cmb_fcompound.currentData()
+        if key in REFERENCES and not self._loading:
+            self.sp_fref_value.blockSignals(True)
+            self.sp_fref_value.setValue(REFERENCES[key][1])
+            self.sp_fref_value.blockSignals(False)
+        self.file_ref_changed()
+
+    def file_ref_changed(self, *_):
+        e = self.current_file()
+        if self._loading or e is None:
+            return
+        mode = self.cmb_fref.currentData()
+        e["ref"] = None if mode == "global" else {
+            "mode": mode, "uid": self.cmb_fref_file.currentData(), "lo": self.sp_fref_lo.value(),
+            "hi": self.sp_fref_hi.value(), "compound": self.cmb_fcompound.currentData(),
+            "value": self.sp_fref_value.value(), "offset": self.sp_foffset.value()}
+        self.show_file_ref()
         self.timer.start()
 
     # -- Redoxpaare (gespeichert in gemessenen Potentialen, angezeigt in der Achsenskala) -----------------
@@ -513,6 +644,26 @@ class CVTab(TABS.FigureTab):
             return 0.0, st["ref_electrode"], T("cv_ref_missing")
         return 0.0, st["ref_electrode"], ""
 
+    def file_offset(self, e):
+        """Offset dieser Messung (eigene Referenz oder global) -> (Offset, Achsenbeschriftung, Hinweis)."""
+        ref = e.get("ref") or {}
+        if ref.get("mode") == "manual":
+            return ref.get("offset", 0.0), "Fc$^{0/+}$", ""
+        if ref.get("mode") == "internal":
+            src = next((x for x in self.st["files"] if x["uid"] == ref.get("uid")), None)
+            if src is not None:
+                c = self.cycle_of(src)
+                r = analyze_couple(c["E"], c["I"], ref.get("lo", 0.3), ref.get("hi", 0.8))
+                if r is not None:
+                    name = REFERENCES.get(ref.get("compound"), (T("cv_ref_custom"), 0))[0]
+                    note = T("cv_ref_note", name=name, e12=_fmt_e(r["e12"]), el=self.st["ref_electrode"],
+                             dep=f"{r['dep'] * 1000:.0f}", val=_fmt_e(ref.get("value", 0.0), 2))
+                    if r["edge"]:
+                        note += "  " + T("cv_edge")
+                    return r["e12"] - ref.get("value", 0.0), "Fc$^{0/+}$", note
+            return 0.0, self.st["ref_electrode"], T("cv_ref_missing")
+        return self.reference_offset()
+
     def figure_spec(self):
         st = self.st
         vis = [e for e in st["files"] if e["visible"]]
@@ -521,17 +672,21 @@ class CVTab(TABS.FigureTab):
             self.show_results()
             return None
         cfg = self.base_cfg()
-        off, ref_label, note = self.reference_offset()
-        if abs(off - self._offset) > 1e-12:
-            self._offset = off
+        off_g, ref_label, note = self.reference_offset()
+        if abs(off_g - self._offset) > 1e-12:
+            self._offset = off_g
             self.fill_couples()
         sign = -1.0 if st["invert"] else 1.0
         rates = [self.data(e["file"])["meta"]["scanrate"] or 0.0 for e in vis]
         order = np.argsort(np.argsort(rates))
-        curves, self.results, xs = [], [], []
+        curves, self.results, notes, labels_ref = [], [], [note] if note else [], set()
         for k, e in enumerate(vis):
             d = self.data(e["file"])
             c = self.cycle_of(e)
+            off, lab_ref, n_ = self.file_offset(e)
+            labels_ref.add(lab_ref)
+            if n_ and e.get("ref"):
+                notes.append(f"{e['label']}: {n_}")
             E = c["E"] - off
             if st["density"] and d["meta"]["area"]:
                 y, unit = sign * c["I"] * 1e3 / d["meta"]["area"], "mA"       # mA cm⁻²
@@ -539,37 +694,131 @@ class CVTab(TABS.FigureTab):
                 y, unit = sign * c["I"] * 1e6, "µA"
             color = (RATE_CMAP(order[k] / max(1, len(vis) - 1)) if st["gradient"] and len(vis) > 1 else e["color"])
             color = color if isinstance(color, str) else "#%02x%02x%02x" % tuple(int(255 * v) for v in color[:3])
-            curves.append({"x": E, "y": y, "color": color, "label": e["label"], "ls": "-", "lw": 1.3})
-            xs.append(E)
+            curves.append({"x": E, "y": y, "val": y, "color": color, "label": e["label"], "ls": "-", "lw": 1.3,
+                           "uid": e["uid"]})
+            # Fenster gespeichert in gemessenen Potentialen der globalen Referenz -> auf diese Messung umrechnen
+            shift = off - off_g
             for n, (lo, hi) in enumerate(st["couples"], 1):
-                r = analyze_couple(c["E"], c["I"], lo, hi)
+                r = analyze_couple(c["E"], c["I"], lo + shift, hi + shift)
                 if r is not None:
-                    self.results.append(dict(r, label=e["label"], n=n, rate=d["meta"]["scanrate"],
-                                             epa=r["epa"] - off, epc=r["epc"] - off, e12=r["e12"] - off))
-        allx = np.concatenate(xs)
+                    self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
+                                             rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
+                                             e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off))
+        if len(labels_ref) > 1:
+            notes.append(T("cv_ref_mixed"))
+        ref_label = "Fc$^{0/+}$" if labels_ref == {"Fc$^{0/+}$"} else ref_label
+        self.note = "\n".join(notes)
+        if st["plot"] != "cv":
+            out = self.rate_plot(cfg, ref_label)
+            self.show_results()
+            return out
+        labels = []
+        if st["stack"] and len(curves) > 1:              # oberster Eintrag der Liste = oberste Kurve
+            span = max(float(np.ptp(c_["y"])) for c_ in curves) or 1.0
+            for k, c_ in enumerate(curves):
+                c_["off"] = (len(curves) - 1 - k) * st["stack_gap"] * span
+                c_["y"] = c_["y"] + c_["off"]
+            cfg["y_axis"] = "no_numbers"
+        allx = np.concatenate([c_["x"] for c_ in curves])
         cfg["xlim"] = [float(allx.min()), float(allx.max())] if st["x_auto"] else [st["x_min"], st["x_max"]]
         ally = np.concatenate([c_["y"] for c_ in curves])
         span = float(ally.max() - ally.min()) or 1.0
-        cfg["ylim"] = [float(ally.min()) - 0.08 * span, st["ymax"] if st["ymax"] > 0 else float(ally.max()) + 0.12 * span]
+        top = 0.22 if (st["show_e12"] and (st["e12_each"] or st["stack"])) else 0.12
+        cfg["ylim"] = [float(ally.min()) - 0.08 * span, st["ymax"] if st["ymax"] > 0 else float(ally.max()) + top * span]
         cfg["xlabel"] = f"E [V vs. {axis_ref(ref_label)}]"
         cfg["ylabel"] = "j [mA cm$^{-2}$]" if (st["density"] and unit == "mA") else "I [µA]"
-        labels = []
         if st["show_e12"]:
-            for n in range(1, len(st["couples"]) + 1):
-                vals = [r["e12"] for r in self.results if r["n"] == n and not r["edge"]]
-                if vals:
-                    e12 = float(np.mean(vals))
-                    labels.append({"key": f"label_e12_{n}", "lam": e12,
-                                   "text": "E$_{1/2}$ =\n" + _fmt_e(e12, 2) + " V"})
+            multi = len(st["couples"]) > 1
+            if st["e12_each"] or (st["stack"] and len(curves) > 1):
+                # je Kurve und Redoxpaar, am anodischen Peak dieser Kurve (wie in Vergleichsabbildungen üblich)
+                for c_ in curves:
+                    for r in self.results:
+                        if r["uid"] != c_["uid"] or r["edge"]:
+                            continue
+                        sup = f"$^{{{r['n']}}}$" if multi else ""
+                        side = "right" if (multi and r["n"] == len(st["couples"])) else "left"
+                        labels.append({"key": f"label_e12_{c_['uid']}_{r['n']}", "lam": r["epa"], "side": side,
+                                       "y": float(r["ipa"] * 1e6 * sign) + c_.get("off", 0.0)
+                                       if not (st["density"] and unit == "mA") else None,
+                                       "text": f"E{sup}$_{{1/2}}$ = " + _fmt_e(r["e12"], 2)})
+            else:
+                for n in range(1, len(st["couples"]) + 1):
+                    vals = [r["e12"] for r in self.results if r["n"] == n and not r["edge"]]
+                    if vals:
+                        e12 = float(np.mean(vals))
+                        labels.append({"key": f"label_e12_{n}", "lam": e12,
+                                       "text": "E$_{1/2}$ =\n" + _fmt_e(e12, 2) + " V"})
         if st["arrow"]:
             c0 = curves[0]
             xr = cfg["xlim"][1] - cfg["xlim"][0]
             direction = 1.0 if np.gradient(c0["x"])[:5].mean() >= 0 else -1.0
             x0, y0 = float(c0["x"][0]), float(c0["y"][0])
             cfg["arrows"] = [(x0, y0, x0 + direction * 0.08 * xr, y0)]
-        self.note = note
         self.show_results()
         return cfg, curves, labels, []
+
+    def rate_series(self):
+        """Ergebnisse nach (Gruppe, Redoxpaar) für Auftragungen gegen die Scanrate (ohne Randpeaks)."""
+        ser = {}
+        for r in self.results:
+            if r["rate"] and not r["edge"]:
+                ser.setdefault((r["group"], r["n"]), []).append(r)
+        return {k: sorted(v, key=lambda r: r["rate"]) for k, v in ser.items()}
+
+    def rate_plot(self, cfg, ref_label):
+        """ΔE_p gegen v, Randles-Ševčík (i_p gegen √v) oder Trumpet-Plot (E_p gegen log v)."""
+        st = self.st
+        ser = self.rate_series()
+        multi_n = len(st["couples"]) > 1
+        curves = []
+        for j, ((grp, n), rr) in enumerate(sorted(ser.items(), key=lambda kv: (kv[0][1], kv[0][0]))):
+            name = " ".join(x for x in (grp, f"#{n}" if multi_n else "") if x) or (f"#{n}" if multi_n else None)
+            col = TABS.PALETTE[j % len(TABS.PALETTE)]
+            mk = self.MARKERS[j % len(self.MARKERS)]
+            v = np.array([r["rate"] for r in rr], float)
+            base = dict(color=col, ls="None", marker=mk, ms=6, lw=1.0)
+            if st["plot"] == "dep":
+                curves.append(dict(base, x=v, y=np.array([r["dep"] * 1000 for r in rr]), label=name))
+            elif st["plot"] == "rs":
+                sq = np.sqrt(v / 1000.0)
+                for key, tag, m_ in (("ipa", "a", "^"), ("ipc", "c", "v")):
+                    ip = np.array([r[key] * 1e6 for r in rr])
+                    lab = f"i$_{{p{tag}}}$" + (f" {name}" if name else "")
+                    curves.append(dict(base, x=sq, y=ip, label=lab, marker=m_))
+                    fit = randles_sevcik(v, ip)
+                    if fit:
+                        xf = np.array([0.0, float(sq.max()) * 1.05])
+                        curves.append(dict(color=col, ls="--", lw=1.0, x=xf, y=fit[0] * xf + fit[1], label=None))
+            else:                                        # Trumpet: E_pa und E_pc gegen log v
+                lv = np.log10(v / 1000.0)
+                curves.append(dict(base, x=lv, y=np.array([r["epa"] for r in rr]), marker="^",
+                                   label=f"E$_{{pa}}$" + (f" {name}" if name else "")))
+                curves.append(dict(base, x=lv, y=np.array([r["epc"] for r in rr]), marker="v",
+                                   label=f"E$_{{pc}}$" + (f" {name}" if name else "")))
+        pts = [c_ for c_ in curves if c_.get("marker")]
+        if not pts or all(len(c_["x"]) < 2 for c_ in pts):
+            self.note = "\n".join(x for x in (self.note, T("cv_rates_needed")) if x)
+            return None
+        xs = np.concatenate([c_["x"] for c_ in curves])
+        ys = np.concatenate([c_["y"] for c_ in pts])
+        # Mindestspanne, sonst zoomt die Achse bei fast gleichen Werten auf Rauschen (z. B. 63,82–63,84 mV)
+        min_span = {"dep": 40.0, "rs": 1.0, "trumpet": 0.05}[st["plot"]]
+        ypad = 0.1 * max(float(np.ptp(ys)), min_span) + max(0.0, min_span - float(np.ptp(ys))) / 2
+        if st["plot"] == "dep":
+            cfg["xlim"] = [0.0, float(xs.max()) * 1.08]
+            cfg["ylim"] = [max(0.0, float(ys.min()) - ypad), float(ys.max()) + ypad]
+            cfg["xlabel"], cfg["ylabel"] = "scan rate [mV/s]", "peak to peak separation ΔE$_p$ [mV]"
+        elif st["plot"] == "rs":
+            cfg["xlim"] = [0.0, float(xs.max()) * 1.08]
+            cfg["ylim"] = [min(0.0, float(ys.min()) - ypad), max(0.0, float(ys.max()) + ypad)]
+            cfg["xlabel"], cfg["ylabel"] = "v$^{1/2}$ [V$^{1/2}$ s$^{-1/2}$]", "i$_p$ [µA]"
+        else:
+            xpad = 0.1 * (float(np.ptp(xs)) or 1.0)
+            cfg["xlim"] = [float(xs.min()) - xpad, float(xs.max()) + xpad]
+            cfg["ylim"] = [float(ys.min()) - ypad, float(ys.max()) + ypad]
+            cfg["xlabel"], cfg["ylabel"] = "log(v / V s$^{-1}$)", f"E$_p$ [V vs. {axis_ref(ref_label)}]"
+        cfg["legend"] = any(c_.get("label") for c_ in curves)
+        return cfg, curves, [], []
 
     def show_results(self):
         if not hasattr(self, "tbl_res"):
@@ -577,7 +826,8 @@ class CVTab(TABS.FigureTab):
         res = self.results
         self.tbl_res.setRowCount(len(res))
         for i, r in enumerate(res):
-            vals = [r["label"], str(r["n"]), _fmt_e(r["epa"]), _fmt_e(r["epc"]), _fmt_e(r["e12"]),
+            name = f"{r['label']} ({r['group']})" if r.get("group") else r["label"]
+            vals = [name, str(r["n"]), _fmt_e(r["epa"]), _fmt_e(r["epc"]), _fmt_e(r["e12"]),
                     f"{r['dep'] * 1000:.0f}", f"{r['ipa'] * 1e6:.1f}", f"{r['ipc'] * 1e6:.1f}", f"{r['ratio']:.2f}"]
             for j, v in enumerate(vals):
                 it = QTableWidgetItem(v)
@@ -596,6 +846,11 @@ class CVTab(TABS.FigureTab):
         self.lbl_res.setText("\n".join(lines))
 
     def hover_text(self, x, val, name):
+        plot = self.st.get("plot", "cv")
+        if plot != "cv":
+            xs = {"dep": f"v = {x:.0f} mV/s", "rs": f"√v = {x:.3f} V½ s⁻½", "trumpet": f"log v = {x:.2f}"}[plot]
+            ys = {"dep": "ΔE_p = {:.0f} mV", "rs": "i_p = {:.2f} µA", "trumpet": "E_p = {:.3f} V"}[plot]
+            return f"{xs}    {ys.format(val)}    {name}" if val is not None else xs
         if val is None:
             return f"E = {x:.3f} V"
         unit = "mA cm⁻²" if self.st["density"] else "µA"
@@ -607,10 +862,12 @@ class CVTab(TABS.FigureTab):
         p = Path(base).with_name(Path(base).name + "_results.csv")
         with open(p, "w", newline="", encoding="utf-8-sig") as fh:
             w = csv.writer(fh, delimiter=";")
-            w.writerow(["file", "couple", "scan_rate_mV_s", "E_pa_V", "E_pc_V", "E_half_V", "dE_p_mV",
-                        "i_pa_uA", "i_pc_uA", "ratio_Nicholson", "peak_at_window_edge", "reference"])
+            w.writerow(["file", "group", "couple", "scan_rate_mV_s", "E_pa_V", "E_pc_V", "E_half_V", "dE_p_mV",
+                        "i_pa_uA", "i_pc_uA", "ratio_Nicholson", "peak_at_window_edge", "reference_offset_V",
+                        "ir_compensation_in_file", "reference"])
             for r in self.results:
-                w.writerow([r["label"], r["n"], r["rate"], f"{r['epa']:.4f}", f"{r['epc']:.4f}", f"{r['e12']:.4f}",
-                            f"{r['dep'] * 1000:.1f}", f"{r['ipa'] * 1e6:.3f}", f"{r['ipc'] * 1e6:.3f}",
-                            f"{r['ratio']:.3f}", int(r["edge"]), getattr(self, "note", "")])
+                w.writerow([r["label"], r.get("group", ""), r["n"], r["rate"], f"{r['epa']:.4f}", f"{r['epc']:.4f}",
+                            f"{r['e12']:.4f}", f"{r['dep'] * 1000:.1f}", f"{r['ipa'] * 1e6:.3f}",
+                            f"{r['ipc'] * 1e6:.3f}", f"{r['ratio']:.3f}", int(r["edge"]), f"{r.get('offset', 0):.4f}",
+                            r.get("ircomp", ""), getattr(self, "note", "").replace("\n", " | ")])
         return files + [p]

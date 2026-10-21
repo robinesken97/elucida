@@ -222,8 +222,19 @@ Compare several spectra in one figure, measured and calculated:
 - **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
   of the measurements; E½ of the reference vs. Fc⁺/Fc is editable – default Ac₂Fc +0.49 V, check against your
   literature) or a manual shift. The axis then reads "E [V vs. Fc⁰/⁺]".
+- **Reference per measurement** ("Reference of the selected measurement"): own internal standard (also the
+  Fc/Ac₂Fc couple in the same file, e.g. "with Ac₂Fc") or own shift – needed when comparing solvents, each against
+  its own standard. The couple windows follow each measurement's reference.
+- **Group** per measurement (e.g. the solvent): data series in the plots against scan rate.
+- **Stacked** CVs (list order from top to bottom, adjustable gap, y axis without numbers) with **E½ at every curve**
+  next to its anodic peak (E¹½, E²½ for several couples).
+- **Plot:** cyclic voltammogram, **reversibility** (ΔE_p vs. v), **Randles–Ševčík** (i_pa and i_pc vs. √v with
+  fit lines from 3 scan rates) or **trumpet plot** (E_pa and E_pc vs. log v), one series per group. Note: ΔE_p also
+  contains the iR drop (especially in THF); the trumpet plot is drawn without a k⁰ analysis, which would need
+  several decades of scan rate.
 - Current as recorded (Gamry: IUPAC, anodic positive) or inverted; optionally as current density.
-- Export: figure (PDF/SVG/PNG) and `…_results.csv` with all values.
+- Export: figure (PDF/SVG/PNG) and `…_results.csv` with all values (incl. group, reference offset and the iR
+  compensation entry of the Gamry file, if present).
 
 ## SEC tab (spectroelectrochemistry)
 

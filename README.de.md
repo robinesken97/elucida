@@ -228,8 +228,19 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 - **Referenzierung:** wie gemessen (Referenzelektrode, z. B. Ag/AgNO₃), **intern** (Fc- oder Ac₂Fc-Paar in einer
   der Messungen; E½ der Referenz gegen Fc⁺/Fc ist änderbar – Vorgabe Ac₂Fc +0,49 V, mit eurer Literatur abgleichen)
   oder Verschiebung von Hand. Die Achse heißt dann „E [V vs. Fc⁰/⁺]“.
+- **Referenz je Messung** („Referenz der ausgewählten Messung“): eigener interner Standard (auch das Fc/Ac₂Fc-Paar in
+  derselben Datei, z. B. „mit Ac₂Fc“) oder eigene Verschiebung – nötig beim Lösungsmittelvergleich, jedes gegen seinen
+  eigenen Standard. Die Fenster der Redoxpaare folgen der Referenz der jeweiligen Messung.
+- **Gruppe** je Messung (z. B. das Lösungsmittel): Datenreihe in den Auftragungen gegen die Scanrate.
+- **Gestapelte** CVs (Listenreihenfolge von oben nach unten, Abstand einstellbar, y-Achse ohne Zahlen) mit **E½ an jeder
+  Kurve** neben ihrem anodischen Peak (E¹½, E²½ bei mehreren Paaren).
+- **Auftragung:** Cyclovoltammogramm, **Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und i_pc gegen √v mit
+  Ausgleichsgerade ab 3 Scanraten) oder **Trumpet-Plot** (E_pa und E_pc gegen log v), eine Datenreihe je Gruppe.
+  Hinweis: ΔE_p enthält auch den iR-Abfall (v. a. in THF); der Trumpet-Plot wird ohne k⁰-Auswertung gezeichnet, dafür
+  wären mehrere Dekaden Scanrate nötig.
 - Strom wie aufgezeichnet (Gamry: IUPAC, anodisch positiv) oder invertiert; optional als Stromdichte.
-- Export: Abbildung (PDF/SVG/PNG) und `…_results.csv` mit allen Werten.
+- Export: Abbildung (PDF/SVG/PNG) und `…_results.csv` mit allen Werten (inkl. Gruppe, Referenzverschiebung und dem
+  iR-Kompensations-Eintrag der Gamry-Datei, falls vorhanden).
 
 ## SEC-Tab (Spektroelektrochemie)
 

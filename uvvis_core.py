@@ -1250,8 +1250,24 @@ class Figure:
             if pos is None:
                 lam = ann.xy[0]
                 axn = (lam - x0) / (x1 - x0)
-                ayn = min(1.0, float(env[min(fs.n - 1, max(0, int(axn * fs.n)))]))
-                pos = find(key, bw, bh, anchor_score(axn, ayn)) or (min(axn, 1 - bw), 1 - bh)
+                ay = getattr(ann, "_anchor_y", None)       # Label gehört zu einer Kurve (z. B. gestapelte CVs)
+                if ay is not None:
+                    # direkt über den Peak dieser Kurve: die Hüllkurve aller Kurven würde die Lücken zwischen
+                    # gestapelten Kurven sperren und das Label ganz nach oben schieben
+                    yb0, yb1 = ax.get_ylim()
+                    ayn = min(1.0, max(0.0, (ay - yb0) / (yb1 - yb0)))
+                    side = getattr(ann, "_anchor_side", "above")
+                    if side == "left":                   # links neben dem Peak, auf Peakhöhe (wie in CV-Vergleichen)
+                        px_ = axn - bw - 0.012
+                    elif side == "right":
+                        px_ = axn + 0.012
+                    else:
+                        px_ = axn - bw / 2
+                    py_ = ayn - 0.35 * bh if side in ("left", "right") else ayn + 0.015
+                    pos = (min(max(px_, 0.0), 1 - bw), min(max(py_, 0.0), 1 - bh))
+                else:
+                    ayn = min(1.0, float(env[min(fs.n - 1, max(0, int(axn * fs.n)))]))
+                    pos = find(key, bw, bh, anchor_score(axn, ayn)) or (min(axn, 1 - bw), 1 - bh)
             ann.set_position(tuple(pos))
             fs.block_rect(pos[0], pos[1], bw, bh)
 

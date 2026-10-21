@@ -229,7 +229,7 @@ class SimpleFigure(core.Figure):
                 label = "\u200b" + str(label)
             ax.plot(cx, cy, color=c.get("color") or "black", lw=c.get("lw", cfg["line_width"] * 1.3),
                     ls=c.get("ls", "-"), label=label, solid_joinstyle="round",
-                    marker=c.get("marker"), ms=4 * cfg.get("scale", 1.0) if c.get("marker") else None)
+                    marker=c.get("marker"), ms=c.get("ms", 4) * cfg.get("scale", 1.0) if c.get("marker") else None)
         f_sticks = [st for st in sticks if st.get("axis2")]
         for st in sticks:
             if st.get("axis2"):
@@ -341,10 +341,12 @@ class SimpleFigure(core.Figure):
             kw = core.label_kw(self.cfg)
             if lab.get("color"):                      # z. B. SEC: Label in der Farbe des zugehörigen Spektrums
                 kw["color"] = lab["color"]
-            ann = self.ax.annotate(core.fmt_text(lab["text"], self.cfg, label=True), xy=(lab["lam"], 0),
+            ann = self.ax.annotate(core.fmt_text(lab["text"], self.cfg, label=True), xy=(lab["lam"], lab.get("y", 0)),
                                    xycoords="data", xytext=(0.5, 0.5), textcoords="axes fraction",
                                    ha="left", va="bottom", linespacing=1.4, annotation_clip=False,
                                    zorder=5, **kw)
+            ann._anchor_y = lab.get("y")             # None: über der Hüllkurve aller Kurven platzieren
+            ann._anchor_side = lab.get("side", "above")
             self.ann_items[lab["key"]] = ann
 
     def _place(self):
