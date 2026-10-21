@@ -487,11 +487,13 @@ def ms_line(formula, adduct, found, ionisation="ESI"):
 # Tab „IR + MS“
 # ----------------------------------------------------------------------------
 from PySide6.QtCore import QMimeData, Qt  # noqa: E402
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,  # noqa: E402
-                               QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QTableWidget,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,  # noqa: E402
+                               QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
+                               QTableWidget,
                                QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 import os  # noqa: E402
 
+import uvvis_si as SI  # noqa: E402
 import uvvis_tabs as TABS  # noqa: E402
 from uvvis_i18n import T  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
@@ -513,7 +515,8 @@ class IRMSTab(TABS.FigureTab):
     XRANGE_TEXT = "ir_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ms_file=None, ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[],
-                         adduct="M+H", found=None, ir_labels=False, ms_raw=None, ms_rt=None)
+                         adduct="M+H", found=None, ir_labels=False, ms_raw=None, ms_rt=None, ea_solvate="",
+                         ea_found={})
 
     def build_controls(self):
         st = self.st
@@ -622,7 +625,43 @@ class IRMSTab(TABS.FigureTab):
         f.addRow(b)
         self.lv.addWidget(g)
 
-        self._ir_line = self._ms_line = ("", "")
+        g = QGroupBox(T("ea_group"))
+        f = make_form(g)
+        self.lbl_ea_formula = QLabel("–")
+        self.lbl_ea_formula.setWordWrap(True)
+        f.addRow(T("compound_formula"), self.lbl_ea_formula)
+        self.ed_solv = QLineEdit(st.get("ea_solvate", ""))
+        self.ed_solv.setPlaceholderText(T("ea_solvate_ph"))
+        self.ed_solv.setToolTip(T("ea_solvate_tip"))
+        f.addRow(T("ea_solvate"), self.ed_solv)
+        grid = QGridLayout()
+        grid.addWidget(QLabel(""), 0, 0)
+        grid.addWidget(QLabel(T("ea_calc")), 1, 0)
+        grid.addWidget(QLabel(T("ea_found")), 2, 0)
+        self.ea_calc_lbl, self.ea_found_ed = {}, {}
+        for j, el in enumerate(SI.EA_ELEMENTS, 1):
+            grid.addWidget(QLabel(f"{el} [%]"), 0, j)
+            lc = QLabel("–")
+            grid.addWidget(lc, 1, j)
+            ed = QLineEdit(str((st.get("ea_found") or {}).get(el, "")))
+            ed.setMaximumWidth(80)
+            grid.addWidget(ed, 2, j)
+            ed.editingFinished.connect(self.changed)
+            self.ea_calc_lbl[el], self.ea_found_ed[el] = lc, ed
+        f.addRow(grid)
+        self.lbl_ea_info = QLabel("")
+        self.lbl_ea_info.setWordWrap(True)
+        f.addRow(self.lbl_ea_info)
+        self.txt_ea = QTextBrowser()
+        self.txt_ea.setMaximumHeight(60)
+        f.addRow(self.txt_ea)
+        b = QPushButton(T("si_copy"))
+        b.clicked.connect(lambda: copy_rich(*self._ea_line))
+        f.addRow(b)
+        self.lv.addWidget(g)
+        self.ed_solv.editingFinished.connect(self.changed)
+
+        self._ir_line = self._ms_line = self._ea_line = ("", "")
         self.cb_full.toggled.connect(self.changed)
         self.cb_rt_auto.toggled.connect(self.changed)
         for w_ in (self.sp_rt_lo, self.sp_rt_hi):
@@ -847,6 +886,9 @@ class IRMSTab(TABS.FigureTab):
             st["ms_rt"] = None
         else:                                        # beim Umschalten steht in den Feldern der automatische Bereich
             st["ms_rt"] = sorted([self.sp_rt_lo.value(), self.sp_rt_hi.value()])
+        st.update(ea_solvate=self.ed_solv.text().strip(),
+                  ea_found={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found_ed.items()
+                            if ed.text().strip()})
         st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked(),
                   adduct=self.cmb_adduct.currentData(), found=self.cmb_found.currentData())
         self.sync_widgets()
@@ -978,6 +1020,51 @@ class IRMSTab(TABS.FigureTab):
         self.lbl_ms_info.setText("\n".join(notes[:1] + info + notes[1:]))
         self.lbl_ms_info.setStyleSheet(WARN_CSS if warn else HINT_CSS)
 
+    def update_ea(self):
+        """Elementaranalyse: berechnet aus der Formel (+ Solvat), gefunden wie eingegeben; Warnung ab 0.4 %."""
+        st = self.st
+        formula, _ = self.formula()
+        self._ea_line = ("", "")
+        for el in SI.EA_ELEMENTS:
+            self.ea_calc_lbl[el].setText("–")
+        if not formula:
+            self.lbl_ea_formula.setText(T("ms_no_formula"))
+            self.txt_ea.setHtml("")
+            self.lbl_ea_info.setText("")
+            return
+        try:
+            comp = SI.ea_composition(formula, st.get("ea_solvate", ""))
+            label = SI.ea_formula_label(formula, st.get("ea_solvate", ""))
+            plain, html, notes = SI.ea_line(formula, st.get("ea_solvate", ""), st.get("ea_found") or {})
+        except (ValueError, KeyError) as e:
+            self.lbl_ea_formula.setText(formula)
+            self.lbl_ea_info.setText(str(e))
+            self.lbl_ea_info.setStyleSheet(WARN_CSS)
+            self.txt_ea.setHtml("")
+            return
+        self.lbl_ea_formula.setText(label)
+        for el in SI.EA_ELEMENTS:
+            if el in comp:
+                self.ea_calc_lbl[el].setText(f"{comp[el]:.2f}")
+        if not st.get("ea_found"):
+            self.txt_ea.setHtml("")
+            self.lbl_ea_info.setText(T("ea_enter"))
+            self.lbl_ea_info.setStyleSheet(HINT_CSS)
+            return
+        self._ea_line = (plain, html)
+        self.txt_ea.setHtml(html)
+        if notes:
+            self.lbl_ea_info.setText(T("ea_dev", els=", ".join(f"{el} {d:+.2f}" for el, d in notes)))
+            self.lbl_ea_info.setStyleSheet(WARN_CSS)
+        else:
+            self.lbl_ea_info.setText(T("ea_ok"))
+            self.lbl_ea_info.setStyleSheet(HINT_CSS)
+
+    def si_parts(self):
+        """Fertige Zeilen für den SI-Export: [(Klartext, HTML)] für IR, HR-MS, EA (leere fehlen)."""
+        self.figure_spec()
+        return [x for x in (self._ir_line, self._ms_line, self._ea_line) if x and x[0]]
+
     # -- Abbildung ------------------------------------------------------------------
     def figure_spec(self):
         st = self.st
@@ -988,6 +1075,7 @@ class IRMSTab(TABS.FigureTab):
         self._ir_line = ir_line(use, st["with_int"]) if use else ("", "")
         self.txt_ir.setHtml(self._ir_line[1])
         self.update_ms()
+        self.update_ea()
         sp = self.spectrum()
         if sp is None:
             return None
@@ -1029,5 +1117,6 @@ class IRMSTab(TABS.FigureTab):
             self.figure_spec()
         p = base.with_name(base.name + "_SI.txt")
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("\n".join(x for x in (self._ir_line[0], self._ms_line[0]) if x) + "\n", encoding="utf-8")
+        p.write_text("\n".join(x for x in (self._ir_line[0], self._ms_line[0], self._ea_line[0]) if x) + "\n",
+                     encoding="utf-8")
         return files + [p]

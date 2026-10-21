@@ -2,6 +2,19 @@
 
 # Changelog
 
+## Unreleased
+
+### Added
+- **Elemental analysis** in the tab now called **IR + MS + EA**: calculated from the project formula (optionally with a
+  solvate such as 0.5 CH2Cl2), found values entered, deviations > 0.4 % flagged; line for the SI.
+- **UV-Vis line for the SI** (page *SI line* in the ε tab, optional solvent): λmax with ε as in the figure, ascending.
+- **File → Export SI section (Word)**: characterisation paragraph (m.p.; IR; HR-MS; UV-Vis; elemental analysis) plus
+  crystal-data table, selected parameters and captions from the X-Ray tab, as a .docx in the style of the SI.
+- Melting point in **Compound …**.
+
+### Changed
+- Tabs renamed: **UV-Vis (ε)** (formerly ε analysis) and **UV-Vis overlay** (formerly Overlay).
+
 ## 1.19.0 – 2026-10-21
 
 ### Added

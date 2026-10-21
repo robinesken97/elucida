@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import sys
+import html
 import traceback
 from pathlib import Path
 
@@ -39,7 +40,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
-                               QSpinBox, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+                               QSpinBox, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTextBrowser,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import uvvis_core as core  # noqa: E402
@@ -55,6 +56,7 @@ import uvvis_sec as SECMOD  # noqa: E402
 import uvvis_epr as EPRMOD  # noqa: E402
 import uvvis_irms as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
+import uvvis_si as SI  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
 
@@ -303,6 +305,9 @@ class CompoundDialog(QDialog):
         f.addRow(T("compound_formula"), self.ed_formula)
         self.ed_mw = QLineEdit(f"{comp['mw']:g}" if comp.get("mw") else "")
         f.addRow(T("molar_mass"), self.ed_mw)
+        self.ed_mp = QLineEdit(comp.get("mp", ""))
+        self.ed_mp.setPlaceholderText(T("compound_mp_ph"))
+        f.addRow(T("compound_mp"), self.ed_mp)
         hint = QLabel(T("compound_hint"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
@@ -333,7 +338,8 @@ class CompoundDialog(QDialog):
 
     def result_compound(self):
         return {"name": self.ed_name.text().strip(), "structure": self.path,
-                "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text())}
+                "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text()),
+                "mp": self.ed_mp.text().strip()}
 
 
 def compound_from_structure(p):
@@ -524,6 +530,7 @@ class MainWindow(QMainWindow):
         act_export = QAction(STYLE.icon("export"), T("act_export"), self, shortcut="Ctrl+E",
                              triggered=self.export_current)
         m.addAction(act_export)
+        m.addAction(QAction(T("act_export_si"), self, triggered=self.export_si))
         m.addSeparator()
         m.addAction(QAction(T("act_quit"), self, shortcut=QKeySequence.Quit, triggered=self.close))
         me = mb.addMenu(T("menu_edit"))
@@ -839,6 +846,26 @@ class MainWindow(QMainWindow):
         self.log = QPlainTextEdit(readOnly=True)
         self.log.setPlainText(old_log)
         self.tabs.addTab(self.table, T("tab_results"))
+        si_w = QWidget()
+        si_l = QVBoxLayout(si_w)
+        row = QHBoxLayout()
+        row.addWidget(QLabel(T("si_solvent")))
+        self.ed_solvent = QLineEdit()
+        self.ed_solvent.setPlaceholderText(T("si_solvent_ph"))
+        self.ed_solvent.editingFinished.connect(self.solvent_changed)
+        row.addWidget(self.ed_solvent, 1)
+        si_l.addLayout(row)
+        self.txt_si = QTextBrowser()
+        si_l.addWidget(self.txt_si, 1)
+        b = QPushButton(T("si_copy"))
+        b.clicked.connect(lambda: IRMS.copy_rich(*self._uv_line))
+        si_l.addWidget(b)
+        hint = QLabel(T("si_uv_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(HINT_CSS)
+        si_l.addWidget(hint)
+        self._uv_line = ("", "")
+        self.tabs.addTab(si_w, T("tab_si_line"))
         self.tabs.addTab(self.log, T("tab_log"))
         # Leer-Zustand statt weißer Fläche, solange keine Messdaten geladen sind
         empty = QFrame(objectName="emptyDrop")
@@ -1874,6 +1901,7 @@ class MainWindow(QMainWindow):
             self.sync_image_sizes(self.F.current_layout())
             self.canvas.draw_idle()
             self.fill_table(results, cfg2)
+            self.update_si_line(results, cfg2)
             self._color_spectra = (spectra, cfg2)
             self.update_color()
             self._last = (cfg2, results)
@@ -1937,6 +1965,90 @@ class MainWindow(QMainWindow):
             self.get_layout(self.current)
             self.series[self.current]["layout"][self.size_key()] = {}
             self.render()
+
+    def update_si_line(self, results, cfg):
+        st = self.series.get(self.current) or {}
+        self.ed_solvent.setText(st.get("solvent", ""))
+        self._uv_line = SI.uvvis_line(results, cfg, st.get("solvent", ""))
+        self.txt_si.setHtml(self._uv_line[1] or T("si_uv_none"))
+
+    def solvent_changed(self):
+        st = self.series.get(self.current)
+        if st is not None and self.ed_solvent.text().strip() != st.get("solvent", ""):
+            st["solvent"] = self.ed_solvent.text().strip()
+            self.render()
+
+    def uvvis_si_parts(self):
+        """UV-Vis-Zeile je Serie mit Ergebnissen (für den SI-Export)."""
+        out = []
+        for g in self.groups:
+            try:
+                cfg2, _, results = core.prepare_series(self.make_cfg(g), self.groups[g], g)
+            except Exception:
+                continue
+            line = SI.uvvis_line(results, cfg2, (self.series.get(g) or {}).get("solvent", ""))
+            if line[0]:
+                out.append(line)
+        return out
+
+    def export_si(self):
+        """SI-Abschnitt der Verbindung als Word-Datei: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis;
+        Elementaranalyse), dazu Kristalldaten, ausgewählte Parameter und Bildunterschriften aus dem X-Ray-Tab."""
+        if not self.ensure_project():
+            return
+        try:
+            blocks, missing = self.si_blocks()
+            pdir = Path(self.project_dir)
+            name = core.safe_name(self.compound.get("name") or pdir.name)
+            p = SI.write_docx(PRJ.export_dir(pdir, "si") / f"{name}_SI.docx", blocks)
+        except PermissionError as e:
+            return self.error(T("report_locked", p=getattr(e, "filename", "")))
+        except Exception as e:
+            self.log_signal.emit(traceback.format_exc())
+            return self.error(str(e))
+        msg = T("si_written", p=str(p))
+        if missing:
+            msg += "\n" + T("si_missing", parts=", ".join(missing))
+        self.info(msg)
+
+    def si_blocks(self):
+        """-> (Blöcke für SI.write_docx, fehlende Teile)."""
+        comp = self.compound or {}
+        parts, missing = [], []
+        if comp.get("mp"):
+            mp = comp["mp"] if comp["mp"].lower().startswith("m.p.") else "m.p. " + comp["mp"]
+            parts.append((mp, html.escape(mp)))
+        else:
+            missing.append("m.p.")
+        ir_ms_ea = self.irms_tab.si_parts()
+        kinds = [p_[0].split(" ")[0] for p_ in ir_ms_ea]
+        uv = self.uvvis_si_parts()
+        for key, lab in (("IR", "IR"), ("HR-MS-", "HR-MS"), ("Elemental", "EA")):
+            if not any(k_.startswith(key) for k_ in kinds):
+                missing.append(lab)
+        if not uv:
+            missing.append("UV-Vis")
+        order = [p_ for p_ in ir_ms_ea if p_[0].startswith("IR")] + \
+            [p_ for p_ in ir_ms_ea if p_[0].startswith("HR-MS")] + uv + \
+            [p_ for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
+        plain, para = SI.join_lines(parts + order)
+        title = comp.get("name") or Path(self.project_dir or ".").name
+        blocks = [("h", title)]
+        if para:
+            blocks.append(("p", para))
+        xt = self.xray_tab
+        if xt.entries():
+            h_, r_ = xt.crystal_table()
+            blocks.append(("table", "Crystal data and structure refinement", h_, r_, []))
+            h2, r2, notes = xt.params_table()
+            if r2:
+                blocks.append(("table", "Selected bond lengths [Å], angles and torsion angles [°]", h2, r2, notes))
+            for e in xt.entries():
+                cap = xt.caption(e)[1]
+                if cap:
+                    blocks.append(("caption", f"<b>{html.escape(e.get('name') or e['block'])}:</b> {cap}"))
+        self._si_plain = plain
+        return blocks, missing
 
     def fill_table(self, results, cfg):
         sym = "ε [M⁻¹ cm⁻¹]" if core.conc_factor(cfg) else "a [L g⁻¹ cm⁻¹]"
@@ -3451,6 +3563,40 @@ def selftest(outdir, with_isnet=False):
         t_x.sel = []
         t_x.sync_widgets()
         t_x.render()
+
+        # SI-Zeilen: Elementaranalyse, UV-Vis, SI-Abschnitt als Word-Datei
+        comp_ = SI.ea_composition("C18H20N2")
+        assert [round(comp_[e_], 2) for e_ in "CHN"] == [81.78, 7.63, 10.60], comp_
+        assert SI.ea_formula_label("C18H20N2", "0.5 CH2Cl2") == "C18H20N2·0.5CH2Cl2"
+        assert abs(SI.ea_composition("C18H20N2", "0.5 CH2Cl2")["C"] - 72.42) < 0.01
+        pl_, ht_, nt_ = SI.ea_line("C18H20N2", "", {"C": "81.52", "H": "7.70", "N": "10.10"})
+        assert pl_ == "Elemental analysis calcd (%) for C18H20N2: C 81.78, H 7.63, N 10.60; found: C 81.52, " \
+                      "H 7.70, N 10.10", pl_
+        assert [e_ for e_, _ in nt_] == ["N"] and "<sub>18</sub>" in ht_       # N weicht um 0.50 % ab
+        cfg_uv = dict(core.DEFAULTS, conc_unit="mM")
+        res_uv = [{"lam": 412.0, "fit": {"n": 5}, "eps": 12345.6, "eps_err": 120.0},
+                  {"lam": 298.0, "fit": {"n": 5}, "eps": 24100.2, "eps_err": 0.4},
+                  {"lam": 350.0, "fit": {"n": 5}, "eps": 5000.0, "eps_err": 50.0, "hidden": True},
+                  {"lam": 500.0, "fit": None}]
+        uvp_, uvh_ = SI.uvvis_line(res_uv, cfg_uv, "THF")
+        assert uvp_ == "UV-Vis (THF): λmax: 298 nm (ε = 24100 cm⁻¹ M⁻¹), 412 nm " \
+                       "(ε = 12350 cm⁻¹ M⁻¹)", uvp_
+        assert SI.join_lines([("m.p. 67 °C", "m.p. 67 °C"), (uvp_, uvh_)])[0].endswith("M⁻¹).")
+        w.compound = {"name": "TEST-1", "formula": "C18H20N2", "mp": "67 °C"}
+        w.irms_state.update(ea_found={"C": "81.70", "H": "7.60", "N": "10.55"}, ea_solvate="")
+        w.irms_tab.sync_widgets()
+        blocks_, missing_ = w.si_blocks()
+        para_ = [b_[1] for b_ in blocks_ if b_[0] == "p"][0]
+        assert para_.startswith("m.p. 67 °C; ") and "<b>Elemental analysis</b>" in para_, para_
+        assert "IR" in missing_ and "m.p." not in missing_, missing_
+        w.export_si()
+        docx_ = Path(w.project_dir) / "exports" / "si" / "TEST-1_SI.docx"
+        with _zf.ZipFile(docx_) as z_:
+            xml_ = z_.read("word/document.xml").decode("utf-8")
+        assert "Elemental analysis" in xml_ and 'w:val="subscript"' in xml_ and "TEST-1" in xml_
+        w.irms_state.update(ea_found={}, ea_solvate="")
+        w.compound = {}
+        report.append("SI lines (EA, UV-Vis) + SI section as Word: OK")
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
         rn_path = Path(__file__).resolve().parent / "release_notes.py"

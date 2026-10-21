@@ -2,6 +2,20 @@
 
 # Änderungen
 
+## Unveröffentlicht
+
+### Neu
+- **Elementaranalyse** im jetzt **IR + MS + EA** genannten Tab: berechnet aus der Formel des Projekts (optional mit
+  Solvat wie 0.5 CH2Cl2), gefundene Werte eingeben, Abweichungen > 0.4 % markiert; Zeile für die SI.
+- **UV-Vis-Zeile für die SI** (Seite *SI-Zeile* im ε-Tab, optional mit Lösungsmittel): λmax mit ε wie im Bild,
+  aufsteigend.
+- **Datei → SI-Abschnitt exportieren (Word)**: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis; Elementaranalyse)
+  plus Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem X-Ray-Tab, als .docx im Stil der SI.
+- Schmelzpunkt unter **Verbindung …**.
+
+### Geändert
+- Tabs umbenannt: **UV-Vis (ε)** (vorher ε-Auswertung) und **UV-Vis-Overlay** (vorher Overlay).
+
 ## 1.19.0 – 21.10.2026
 
 ### Neu

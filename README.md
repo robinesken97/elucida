@@ -16,7 +16,7 @@ The user interface is available in German and English.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/eps_dark_en.png">
-    <img src="docs/screenshots/eps_light_en.png" alt="Spectravolt – ε analysis tab" width="900">
+    <img src="docs/screenshots/eps_light_en.png" alt="Spectravolt – UV-Vis (ε) tab" width="900">
   </picture>
 </p>
 
@@ -24,20 +24,20 @@ The user interface is available in German and English.
 
 | Tab | What it does |
 |---|---|
-| **ε analysis** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report |
-| **Overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
+| **UV-Vis (ε)** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report; UV-Vis line for the SI |
+| **UV-Vis overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
 | **Fluorescence** | Absorption and emission, Stokes shift, photos in daylight and under UV |
 | **CV** | Gamry files, E½/ΔE_p, Nicholson ratio, Randles–Ševčík, reference to Fc⁺/Fc |
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
-| **IR + MS** | IR peak list from Bruker OPUS (file or PDF) and the HRMS line from the mass-spectrometry report, ready for the SI |
+| **IR + MS + EA** | IR peak list from Bruker OPUS (file or PDF), the HRMS line from the mass-spectrometry report or Bruker raw data, and the elemental-analysis line, ready for the SI |
 | **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
 
 <table>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="Overlay – measured, TD-DFT and SEC"><br><sub>Overlay – measured, TD-DFT and SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="UV-Vis overlay – measured, TD-DFT and SEC"><br><sub>UV-Vis overlay – measured, TD-DFT and SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray – ORTEP from CIF (synthetic test structure)"><br><sub>X-Ray – ORTEP from CIF (synthetic test structure)</sub></td></tr>
 </table>
@@ -134,9 +134,10 @@ there differs from the default (e.g. min. R² for the figure). The figures are n
 A project usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
 number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotopes such as D included, editable). This is
 the default for the ε tab (structure, molar mass), the fluorescence tab and IR + MS; tabs that already have their own
-structure or molar mass keep it. The name appears in the window title.
+structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
+characterisation paragraph of the SI section.
 
-## IR + MS tab
+## IR + MS + EA tab
 
 - **IR:** load a Bruker **OPUS** file (`*.0`, spectrum) and/or the **OPUS PDF** print-out (peak labels). With the PDF the
   values are exactly the OPUS peak list; with the file alone Spectravolt picks the bands itself (adjustable
@@ -156,8 +157,21 @@ structure or molar mass keep it. The name appears in the window title.
   scatter (± mDa/ppm) are shown, because single scans can differ in the 4th decimal. With a report loaded its value
   stays preselected and the raw-data mean is selectable. Only `analysis.baf` and `analysis.sqlite` are copied into the
   project.
+- **Elemental analysis:** formula from the project's compound, optionally plus a solvate (`0.5 CH2Cl2`, several
+  separated by commas); calculated values with conventional mean atomic masses, enter the found C/H/N/S values.
+  Deviations above 0.4 % are flagged (the usual limit of the journals). Output: **Elemental analysis** calcd (%) for
+  C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
 - **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
-  and `…_SI.txt` with both lines.
+  and `…_SI.txt` with all lines.
+
+## SI section (Word)
+
+**File → Export SI section (Word) …** collects everything that is ready for the project's compound into
+`exports/si/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
+UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
+UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
+precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
+X-Ray tab. Parts that are still missing are listed after the export.
 
 ## X-Ray tab
 
@@ -237,7 +251,7 @@ For every series, `<series>_report.xlsx` contains:
 Blue numbers are measured values or tool results, black cells are formulas. Changing a flag in "in
 fit" recalculates the band in Excel.
 
-## Overlay tab
+## UV-Vis overlay tab
 
 Compare several spectra in one figure, measured and calculated:
 
