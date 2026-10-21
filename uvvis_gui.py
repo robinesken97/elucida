@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.21.0"
+APP_VERSION = "1.22.0"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2393,6 +2393,7 @@ def selftest(outdir, with_isnet=False):
     report = [f"{APP_NAME} {APP_VERSION} selftest", f"python {sys.version.split()[0]}, {sys.platform}"]
     ok = True
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
+    QApplication.setApplicationVersion(APP_VERSION)
     try:
         csv, cdxml, photo = make_selftest_inputs(out / "input")
         report.append(f"photo format: {photo.suffix}")
@@ -2852,10 +2853,41 @@ def selftest(outdir, with_isnet=False):
         assert "Ac₂Fc" in w.cv_tab.note and "+0.49 V vs. Fc" in w.cv_tab.note, w.cv_tab.note
         rs = CVMOD.randles_sevcik([50, 100, 200], [r["ipa"] * 1e6 for r in res])
         assert rs and rs[2] > 0.99, rs
-        csv_txt = files[-1].read_text(encoding="utf-8-sig")
-        assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt, csv_txt
+        csv_txt = files[-2].read_text(encoding="utf-8-sig")
+        assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt and "charging_step_uA" in csv_txt, csv_txt
+        meth = files[-1].read_text(encoding="utf-8")
+        assert "Nicholson" in meth and "diacetylferrocene" in meth and "95% confidence" in meth \
+            and "Couple 1: E1/2 = −1.08 V vs. Fc+/Fc" in meth, meth
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
         report.append("cyclic voltammetry: OK")
+
+        # CV-Basislinie: Ladestrom ±C·v + linearer Untergrund dürfen i_p und i_r/i_f nicht verändern
+        E_, I_ = cv_sweep(-1.02, 50.0, -1.4, -0.5)
+        dEs_ = np.gradient(E_)
+        I_c = I_ + np.where(dEs_ > 0, 6.0, -6.0) + 15.0 * (E_ + 1.0)
+        win_ = sug[0]
+        r0_ = CVMOD.analyze_couple(E_, I_, *win_, use_baseline=True)
+        r1_ = CVMOD.analyze_couple(E_, I_c, *win_, use_baseline=True)
+        r2_ = CVMOD.analyze_couple(E_, I_c, *win_)
+        assert r0_["bl"] and r1_["bl"] and not r1_["bl_fail"], r1_
+        assert abs(r1_["bl"]["step"] - 12.0) < 0.5, r1_["bl"]
+        for k_ in ("ipa", "ipc", "ratio"):
+            assert abs(r1_[k_] - r0_[k_]) < 0.01 * abs(r0_[k_]) + 0.05, (k_, r0_[k_], r1_[k_])
+        assert abs(r2_["ipa"] - r1_["ipa"]) > 4, (r2_["ipa"], r1_["ipa"])        # ohne Basislinie verfälscht
+        assert abs(r1_["e12"] - r2_["e12"]) < 1e-12                               # Potentiale unverändert
+        # kathodisch zuerst (Spiegelbild): gleiche Korrektur mit umgekehrtem Vorzeichen
+        r3_ = CVMOD.analyze_couple(-E_, -I_c, -win_[1], -win_[0], use_baseline=True)
+        assert abs(r3_["ratio"] - r1_["ratio"]) < 1e-6 and abs(r3_["bl"]["step"] - r1_["bl"]["step"]) < 1e-6, r3_
+        # zu wenig Vorlauf im Fenster: Fallback von null, markiert
+        r4_ = CVMOD.analyze_couple(E_, I_c, -1.08, -0.8, use_baseline=True)
+        assert r4_ is not None and r4_["bl_fail"] and r4_["ipa"] == r4_["ipa_raw"], r4_
+        f_ = CVMOD.rate_fit([1, 2, 3, 4], [2.1, 3.9, 6.2, 7.9])
+        # von Hand: RSS = 0.063, SE = √(0.063/2/5) = 0.079373, t(0.975; 2) = 4.302653
+        assert abs(f_["slope"] - 1.97) < 1e-9 and abs(f_["ci"] - 4.302653 * 0.0793725) < 1e-5, f_
+        assert CVMOD.fmt_ci(f_["slope"], f_["ci"]) == "2.0 ± 0.3", CVMOD.fmt_ci(f_["slope"], f_["ci"])
+        ll_ = CVMOD.loglog_fit([50, 100, 200, 400], [10 * (v / 50) ** 0.5 for v in (50, 100, 200, 400)])
+        assert abs(ll_["slope"] - 0.5) < 1e-9, ll_
+        report.append("CV baseline, Nicholson with baseline, fits with CI: OK")
 
         # CV-Ausbau: Gruppe + eigene Referenz je Messung (zweites "Lösungsmittel"), Stapeln, E½ je Kurve,
         # Auftragungen gegen die Scanrate (ΔE_p, Randles-Ševčík, Trumpet)
@@ -2893,7 +2925,14 @@ def selftest(outdir, with_isnet=False):
         assert any(c_ is st_cv["files"][0] and k_ == "structure" for c_, k_, _ in PRJ._path_slots({"cv": st_cv}))
         st_cv["files"][0].pop("structure")
         st_cv.update(peak_labels="e12", y_axis="auto")
-        for plot_, n_series in (("dep", 2), ("rs", 4), ("trumpet", 4)):
+        st_cv["show_bl"] = True                          # Basislinien zur Kontrolle: Hilfslinien, nicht in CSV/Hover
+        cfg_, curves_, _, _ = t_cv.figure_spec()
+        aux_ = [c_ for c_ in curves_ if c_.get("aux")]
+        assert len(aux_) >= 5 * 3 and all(c_.get("label") is None for c_ in aux_), len(aux_)
+        t_cv.render()
+        assert len(t_cv.hover.curves) == len(curves_) - len(aux_), (len(t_cv.hover.curves), len(curves_))
+        st_cv["show_bl"] = False
+        for plot_, n_series in (("dep", 2), ("rs", 4), ("loglog", 4), ("ratio", 2), ("trumpet", 4)):
             st_cv["plot"] = plot_
             cfg_, curves_, _, _ = t_cv.figure_spec()
             pts_ = [c_ for c_ in curves_ if c_.get("marker")]
@@ -2905,8 +2944,15 @@ def selftest(outdir, with_isnet=False):
                 assert len([c_ for c_ in curves_ if c_.get("ls") == "--"]) == 2      # Gerade nur ab 3 Scanraten (A)
             if plot_ == "trumpet":
                 assert abs(min(c_["x"].min() for c_ in pts_) - np.log10(0.05)) < 1e-9
+            if plot_ == "ratio":
+                assert all(0.8 < y_ < 1.3 for c_ in pts_ for y_ in c_["y"]), [list(c_["y"]) for c_ in pts_]
+            if plot_ == "loglog":
+                fits_ = t_cv.rate_fits()
+                assert list(fits_) == [("A", 1)] and abs(fits_[("A", 1)]["ll_a"]["slope"] - 0.5) < 0.05, fits_
+                assert "log-log" in t_cv.lbl_res.text() or "log–log" in t_cv.lbl_res.text(), t_cv.lbl_res.text()
         files = t_cv.export_to(out / "cv_dep")
-        assert all(f.exists() for f in files) and "group" in files[-1].read_text(encoding="utf-8-sig")
+        assert all(f.exists() for f in files) and "group" in files[-2].read_text(encoding="utf-8-sig")
+        assert "Couple 1 (A)" in files[-1].read_text(encoding="utf-8")
         st_cv["files"] = st_cv["files"][:1]
         assert t_cv.figure_spec() is None and "zwei Scanraten" in t_cv.note or "two scan rates" in t_cv.note
         st_cv.update(files=[], couples=[], ref_mode="none", plot="cv", stack=False, e12_each=False)
@@ -3793,6 +3839,7 @@ def main():
         sys.exit(selftest(outdir, "--selftest-isnet" in sys.argv))
     install_crash_handler()
     QApplication.setApplicationName(APP_NAME)
+    QApplication.setApplicationVersion(APP_VERSION)
     app = QApplication(sys.argv)
     w = MainWindow()
     w.show()

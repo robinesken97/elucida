@@ -2,6 +2,22 @@
 
 # Changelog
 
+## 1.22.0 – 2026-10-21
+
+### New
+- CV: **baseline correction** of the peak currents (on by default): straight line through the current before the
+  forward peak, shifted by the charging-current step at the switching potential for the reverse peak; Nicholson ratio
+  from the corrected currents. Baselines optionally in the figure.
+- CV: new plots **log i_p vs. log v** (diffusion/adsorption) and **i_r/i_f vs. v** (chemical reversibility).
+- CV: regressions against scan rate with a **95% confidence interval** for slope and intercept.
+- CV: **SI text** on the data evaluation (English, copy or `…_methods.txt` on export).
+
+### Changed
+- CV: i_pa, i_pc and i_r/i_f change in existing projects because of the baseline (can be switched off); peak
+  potentials and E½ stay the same. The result line now evaluates per group (previously groups, e.g. solvents, were
+  mixed in one Randles–Ševčík regression).
+- CV results table: column "i_r/i_f" instead of "i_pc/i_pa" (reverse/forward peak, correctly named for a cathodic start).
+
 ## 1.21.0 – 2026-10-21
 
 ### Added
