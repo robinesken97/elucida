@@ -1094,10 +1094,51 @@ def table_plain(header, rows):
 # ---------------------------------------------------------------------------- Abbildung (matplotlib)
 import matplotlib  # noqa: E402
 import matplotlib.patheffects as PE  # noqa: E402
+from matplotlib.collections import PolyCollection  # noqa: E402
+from matplotlib.colors import to_rgb  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Ellipse  # noqa: E402
 
 SEL_COLOR = "#FF8C00"
+LIGHT = np.array([-0.55, 0.65]) / math.hypot(0.55, 0.65)    # Licht von oben links (Bildschirm), wie Mercury
+_T48 = np.linspace(0, 2 * np.pi, 49)
+
+
+def _ellipse_verts(cx, cy, w, h, ang, n=None):
+    t = _T48 if n is None else np.linspace(0, 2 * np.pi, n + 1)
+    th = math.radians(ang)
+    x, y = w / 2 * np.cos(t), h / 2 * np.sin(t)
+    return np.column_stack([cx + x * math.cos(th) - y * math.sin(th), cy + x * math.sin(th) + y * math.cos(th)])
+
+
+def shade_colors(color, n):
+    """Mercury-ähnliche Schattierung: Rand dunkel, Mitte Grundfarbe, Glanzpunkt fast weiß."""
+    base = np.array(to_rgb(color))
+    out = []
+    for t in np.linspace(0, 1, n):
+        if t < 0.45:
+            c = base * (0.5 + 0.5 * t / 0.45)
+        else:
+            f = (t - 0.45) / 0.55
+            c = base + (1 - base) * 0.8 * f ** 1.4
+        out.append(tuple(np.clip(c, 0, 1)))
+    return out
+
+
+def shade_layers(it, n):
+    """Polygone der Schattierungsschichten (äußere zuerst). Jede Schicht ist die verkleinerte Ellipse, zum Licht
+    verschoben, aber immer ganz innerhalb des Umrisses (Abstand in der Metrik der Ellipse ≤ 1 − s)."""
+    a, b = it["w"] / 2, it["h"] / 2
+    th = math.radians(it["ang"])
+    u = LIGHT[0] * math.cos(th) + LIGHT[1] * math.sin(th)
+    v = -LIGHT[0] * math.sin(th) + LIGHT[1] * math.cos(th)
+    nrm = math.sqrt((u / a) ** 2 + (v / b) ** 2) or 1.0
+    verts = []
+    for s in np.linspace(1.0, 0.12, n):
+        d = (1 - s) * 0.6 / nrm
+        verts.append(_ellipse_verts(it["x"] + LIGHT[0] * d, it["y"] + LIGHT[1] * d, it["w"] * s, it["h"] * s,
+                                    it["ang"]))
+    return verts
 
 
 def _radius_along(it, dx, dy):
@@ -1108,6 +1149,16 @@ def _radius_along(it, dx, dy):
     v = (-dx * math.sin(th) + dy * math.cos(th)) / n
     a, b = it["w"] / 2, it["h"] / 2
     return 1.0 / math.sqrt((u / a) ** 2 + (v / b) ** 2)
+
+
+def label_shown(a, o):
+    """Label eines Atoms: Standard alle Nicht-H-Atome (H nur mit „H-Labels“), je Atom umschaltbar."""
+    if not o.get("labels", True):
+        return False
+    over = (o.get("label_on") or {}).get(a["key"])
+    if over is not None:
+        return bool(over)
+    return a["el"] not in ("H", "D") or bool(o.get("h_labels"))
 
 
 class XrayFigure:
@@ -1151,8 +1202,10 @@ class XrayFigure:
     def _visible(self):
         o, mol = self.opts, self.mol
         hidden = set(o.get("hidden_frags") or [])
+        hidden_atoms = set(o.get("hidden_atoms") or [])
         return [i for i, a in enumerate(mol.atoms)
-                if a.get("frag") not in hidden and (o.get("show_h", True) or a["el"] not in ("H", "D"))]
+                if a.get("frag") not in hidden and (o.get("show_h", True) or a["el"] not in ("H", "D"))
+                and a["key"] not in hidden_atoms]
 
     def _limits(self):
         W, H = self.cfg["figsize_in"]
@@ -1185,24 +1238,38 @@ class XrayFigure:
         ux, uy = dx / L, dy / L
         return [A["x"] + ux * ra, B["x"] - ux * rb], [A["y"] + uy * ra, B["y"] - uy * rb]
 
+    def _layers(self, it):
+        """Polygone eines Atoms: Schattierungsschichten (Mercury) bzw. eine Fläche (flach), zuletzt der Umriss."""
+        base = _ellipse_verts(it["x"], it["y"], it["w"], it["h"], it["ang"])
+        if self.opts.get("style", "mercury") == "flat":
+            return [base, base]
+        n = 6 if it.get("kind") == "H" else 12
+        return shade_layers(it, n) + [base]
+
     def _build(self):
         ax, colors = self.ax, self.opts.get("colors") or {}
+        mercury = self.opts.get("style", "mercury") != "flat"
         for it in self.scene["atoms"]:
             a = self.mol.atoms[it["k"]]
             col = colors.get(a["el"]) or default_color(a["el"])
-            p = Ellipse((it["x"], it["y"]), it["w"], it["h"], angle=it["ang"], facecolor=col, edgecolor="black",
-                        lw=self.lw_edge)
-            ax.add_patch(p)
+            verts = self._layers(it)
+            nfill = len(verts) - 1
+            faces = shade_colors(col, nfill) if mercury else [col]
+            edge = tuple(np.array(to_rgb(col)) * 0.35) if mercury else (0, 0, 0)
+            p = PolyCollection(verts, facecolors=faces + ["none"], edgecolors=["none"] * nfill + [edge],
+                               linewidths=[0] * nfill + [self.lw_edge * (0.8 if mercury else 1.0)],
+                               antialiaseds=True, closed=True)
+            ax.add_collection(p)
             lines = []
             for xs, ys in it["curves"]:
-                ln = Line2D(xs, ys, color="black", lw=max(0.3, 0.45 * self.cfg.get("scale", 1.0)),
-                            solid_capstyle="butt")
+                ln = Line2D(xs, ys, color="#1a1a1a" if mercury else "black",
+                            lw=max(0.3, 0.45 * self.cfg.get("scale", 1.0)), solid_capstyle="butt")
                 ax.add_line(ln)
                 lines.append(ln)
             self.atom_art[it["k"]] = (p, lines)
         for a, b, _ in self.scene["bonds"]:
             xs, ys = self._bond_xy(a, b)
-            ln = Line2D(xs, ys, color="black", lw=self.lw_bond, solid_capstyle="butt")
+            ln = Line2D(xs, ys, color="#262626" if mercury else "black", lw=self.lw_bond, solid_capstyle="butt")
             ax.add_line(ln)
             self.bond_art.append((a, b, ln))
         for n, k in enumerate(self.selection):
@@ -1241,8 +1308,7 @@ class XrayFigure:
         self.scene = self._project()
         for it in self.scene["atoms"]:
             p, lines = self.atom_art[it["k"]]
-            p.set_center((it["x"], it["y"]))
-            p.width, p.height, p.angle = it["w"], it["h"], it["ang"]
+            p.set_verts(self._layers(it))
             for ln, (xs, ys) in zip(lines, it["curves"]):
                 ln.set_data(xs, ys)
         for a, b, ln in self.bond_art:
@@ -1270,10 +1336,10 @@ class XrayFigure:
         return it["x"], it["y"]
 
     # -- Labels -----------------------------------------------------------------------------
-    def _label_text(self, a):
+    def _label_text(self, a, bold=False):
         t = a["label"]
         if a.get("sym"):
-            t += r"$^{\mathbf{" + a["sym"] + "}}$"
+            t += r"$^{\math" + ("bf" if bold else "rm") + "{" + a["sym"] + "}}$"
         return t
 
     def _labels(self):
@@ -1283,17 +1349,19 @@ class XrayFigure:
         lc = self.cfg["labels"]
         fs = lc["font_size"]
         todo = []
+        flat = o.get("style", "mercury") == "flat"
+        # Mercury: normale Schrift ohne Rand; flach (Olex2): fett mit weißem Rand
+        extra = dict(fontweight="bold", path_effects=[PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0),
+                                                                    foreground="white")]) if flat else {}
         for it in self.scene["atoms"]:
             a = self.mol.atoms[it["k"]]
-            if a["el"] in ("H", "D") and not o.get("h_labels"):
+            if not label_shown(a, o):
                 continue
             key = "lbl_" + a["key"]
-            ann = self.ax.annotate(self._label_text(a), xy=(it["x"], it["y"]), xycoords="data", xytext=(0, 0),
-                                   textcoords="offset points", ha="center", va="center", fontsize=fs,
-                                   fontweight="bold", color=lc.get("color") or "black", zorder=60,
-                                   annotation_clip=False,
-                                   path_effects=[PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0),
-                                                               foreground="white")])
+            ann = self.ax.annotate(self._label_text(a, flat), xy=(it["x"], it["y"]), xycoords="data",
+                                   xytext=(0, 0), textcoords="offset points", ha="center", va="center",
+                                   fontsize=fs, color=lc.get("color") or "black", zorder=60,
+                                   annotation_clip=False, **extra)
             ann._atom = it["k"]
             self.ann_items[key] = ann
             todo.append((key, ann, it))
@@ -1450,6 +1518,12 @@ class XrayMouse:
     def press(self, ev):
         if ev.x is None:
             return
+        if ev.dblclick and ev.button == 1:
+            k = self.hit(ev)
+            self.mode = None
+            if k is not None:
+                self.tab.atom_double_clicked(k)
+            return
         if self._over_label(ev) and ev.button == 1:
             self.mode = "label"
             return
@@ -1573,7 +1647,8 @@ class XrayTab(TABS.FigureTab):
     STATE_KEY = "xray"
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
-                         h_labels=False, colors={}, bond_lw=1.8, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0)
+                         h_labels=False, colors={}, bond_lw=1.8, style="mercury", x_auto=True, x_min=0.0,
+                         x_max=1.0, ymax=0.0)
 
     def __init__(self, main, state):
         self.sel = []                     # gewählte Atome (Schlüssel) der aktuellen Verbindung, nicht im Undo
@@ -1612,6 +1687,11 @@ class XrayTab(TABS.FigureTab):
 
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
+        self.cmb_style = QComboBox()
+        for key in ("mercury", "flat"):
+            self.cmb_style.addItem(T("xr_style_" + key), key)
+        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
+        f.addRow(T("xr_style"), self.cmb_style)
         self.sp_prob = QSpinBox(minimum=10, maximum=99, singleStep=5, suffix=" %", value=int(st["prob"]))
         self.sp_prob.setToolTip(T("xr_prob_tip"))
         f.addRow(T("xr_prob"), self.sp_prob)
@@ -1639,6 +1719,23 @@ class XrayTab(TABS.FigureTab):
         self.lst_frag.setToolTip(T("xr_frags_tip"))
         self.lst_frag.itemChanged.connect(self.frag_toggled)
         f.addRow(T("xr_frags"), self.lst_frag)
+        self.tbl_atoms = QTableWidget(0, 3)
+        self.tbl_atoms.setHorizontalHeaderLabels([T("xr_atom"), T("xr_atom_shown"), T("xr_atom_label")])
+        self.tbl_atoms.verticalHeader().setVisible(False)
+        self.tbl_atoms.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tbl_atoms.setMinimumHeight(150)
+        self.tbl_atoms.setToolTip(T("xr_atoms_tip"))
+        self.tbl_atoms.itemChanged.connect(self.atom_toggled)
+        f.addRow(T("xr_atoms"), self.tbl_atoms)
+        row = QHBoxLayout()
+        for txt, fn in ((T("xr_labels_all"), lambda: self.set_all_labels(True)),
+                        (T("xr_labels_none"), lambda: self.set_all_labels(False)),
+                        (T("xr_atoms_reset"), self.reset_atom_overrides)):
+            b = QPushButton(txt)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(row)
         b = QPushButton(T("xr_reset_view"))
         b.clicked.connect(self.reset_view)
         f.addRow(b)
@@ -1703,6 +1800,7 @@ class XrayTab(TABS.FigureTab):
         self.sp_prob.valueChanged.connect(self.changed)
         self.sp_bond.valueChanged.connect(self.changed)
         self.cmb_dis.currentIndexChanged.connect(self.disorder_changed)
+        self.cmb_style.currentIndexChanged.connect(self.changed)
         for w_ in (self.cb_h, self.cb_lab, self.cb_hlab):
             w_.toggled.connect(self.changed)
         self.sync_widgets()
@@ -1758,7 +1856,7 @@ class XrayTab(TABS.FigureTab):
     def collect(self):
         self.st.update(prob=self.sp_prob.value(), show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(),
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
-                       bond_lw=self.sp_bond.value())
+                       bond_lw=self.sp_bond.value(), style=self.cmb_style.currentData())
 
     # -- Einträge -------------------------------------------------------------------------
     def entries(self):
@@ -1795,7 +1893,8 @@ class XrayTab(TABS.FigureTab):
         last = None
         for b in blocks:
             e = dict(uid=uuid.uuid4().hex[:8], file=p, block=b.name, name=b.name, ref="", ccdc="", view=None,
-                     zoom=1.0, pan=[0.0, 0.0], layout={}, hidden_frags=[], params=[])
+                     zoom=1.0, pan=[0.0, 0.0], layout={}, hidden_frags=[], params=[], hidden_atoms=[],
+                     label_on={})
             self.entries().append(e)
             last = e["uid"]
         self.st["current"] = last
@@ -1904,7 +2003,9 @@ class XrayTab(TABS.FigureTab):
         self.cb_h.setChecked(st["show_h"])
         self.cb_lab.setChecked(st["labels"])
         self.cb_hlab.setChecked(st["h_labels"])
+        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
         self.fill_colors()
+        self.fill_atoms()
         self.fill_frags()
         self.fill_params()
         self._loading = False
@@ -1961,6 +2062,94 @@ class XrayTab(TABS.FigureTab):
         hidden.discard(i) if item.checkState() == Qt.Checked else hidden.add(i)
         e["hidden_frags"] = sorted(hidden)
         self.timer.start()
+
+    def fill_atoms(self):
+        """Je Atom: sichtbar (auch einzelne H) und Label (überschreibt die Vorgabe)."""
+        was = self._loading
+        self._loading = True
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        atoms = [] if mol is None else [a for a in mol.atoms if a.get("frag") not in set(e.get("hidden_frags") or [])
+                                        and (self.st["show_h"] or a["el"] not in ("H", "D"))]
+        self.tbl_atoms.setRowCount(len(atoms))
+        hidden = set((e or {}).get("hidden_atoms") or [])
+        o = self.opts(e) if e else {}
+        for r, a in enumerate(atoms):
+            it = QTableWidgetItem(atom_name(a))
+            it.setFlags(Qt.ItemIsEnabled)
+            it.setData(Qt.UserRole, a["key"])
+            self.tbl_atoms.setItem(r, 0, it)
+            for c, on in ((1, a["key"] not in hidden), (2, label_shown(a, o))):
+                it = QTableWidgetItem()
+                it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                it.setCheckState(Qt.Checked if on else Qt.Unchecked)
+                it.setData(Qt.UserRole, a["key"])
+                self.tbl_atoms.setItem(r, c, it)
+        self.tbl_atoms.resizeColumnsToContents()
+        self._loading = was
+
+    def atom_toggled(self, item):
+        if self._loading or item.column() == 0:
+            return
+        e = self.entry()
+        if e is None:
+            return
+        key, on = item.data(Qt.UserRole), item.checkState() == Qt.Checked
+        if item.column() == 1:
+            hidden = set(e.get("hidden_atoms") or [])
+            hidden.discard(key) if on else hidden.add(key)
+            e["hidden_atoms"] = sorted(hidden)
+            self.sel = [k for k in self.sel if k not in hidden]
+        else:
+            self.set_label(key, on)
+            return
+        self.timer.start()
+
+    def set_label(self, key, on):
+        """Label je Atom; entspricht es der Vorgabe, wird die Ausnahme gelöscht."""
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        if mol is None:
+            return
+        k = mol.find_key(key)
+        lo = e.setdefault("label_on", {})
+        lo.pop(key, None)
+        if k is not None and label_shown(mol.atoms[k], self.opts(e)) != on:
+            lo[key] = bool(on)
+        self.timer.start()
+
+    def atom_double_clicked(self, k):
+        """Doppelklick: Label dieses Atoms an/aus (der erste Klick des Doppelklicks wählt nicht aus)."""
+        if self.F is None:
+            return
+        a = self.F.mol.atoms[k]
+        if a["key"] in self.sel:
+            self.sel.remove(a["key"])
+            self.update_measure()
+        self.set_label(a["key"], not label_shown(a, self.opts(self.entry())))
+        self._loading = True
+        self.fill_atoms()
+        self._loading = False
+
+    def set_all_labels(self, on):
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        if mol is None:
+            return
+        o = dict(self.opts(e), label_on={})
+        if not self.st["labels"]:
+            self.st["labels"] = True
+            self.cb_lab.setChecked(True)
+        e["label_on"] = {a["key"]: on for a in mol.atoms if label_shown(a, o) != on}
+        self.fill_atoms()
+        self.render()
+
+    def reset_atom_overrides(self):
+        e = self.entry()
+        if e is not None:
+            e.update(hidden_atoms=[], label_on={})
+            self.fill_atoms()
+            self.render()
 
     def disorder_changed(self, *_):
         if self._loading:
@@ -2123,7 +2312,9 @@ class XrayTab(TABS.FigureTab):
     def opts(self, e):
         st = self.st
         return dict(prob=st["prob"], show_h=st["show_h"], labels=st["labels"], h_labels=st["h_labels"],
-                    colors=st.get("colors") or {}, bond_lw=st["bond_lw"], hidden_frags=e.get("hidden_frags") or [])
+                    colors=st.get("colors") or {}, bond_lw=st["bond_lw"], hidden_frags=e.get("hidden_frags") or [],
+                    style=st.get("style", "mercury"), hidden_atoms=e.get("hidden_atoms") or [],
+                    label_on=e.get("label_on") or {})
 
     def build(self, fig, e=None, interactive=True):
         e = e or self.entry()
@@ -2155,6 +2346,8 @@ class XrayTab(TABS.FigureTab):
                 self.dragger = XrayMouse(self.F, self)
             self.update_info()
             self.update_tables()
+            if not self._loading:
+                self.fill_atoms()
             self.canvas.draw_idle()
             if push:
                 self.main.push_undo()

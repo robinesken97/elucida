@@ -3368,6 +3368,28 @@ def selftest(outdir, with_isnet=False):
         assert ent_[0]["view"] and len(ent_[0]["view"]) == 9, ent_[0].get("view")
         x1_ = [(a_["x"], a_["y"]) for a_ in t_x.F.scene["atoms"]]
         assert max(abs(a_[0] - b_[0]) + abs(a_[1] - b_[1]) for a_, b_ in zip(x0_, x1_)) > 0.05
+        # Mercury-Stil (Standard): schattierte Schichten je Atom; je Atom ausblenden / Label per Doppelklick
+        assert w.xray_state["style"] == "mercury"
+        pc_ = t_x.F.atom_art[t_x.F.mol.find_key("C1")][0]
+        assert len(pc_.get_paths()) == 13, len(pc_.get_paths())                 # 12 Schichten + Umriss
+        assert "lbl_C1" in t_x.F.ann_items and t_x.F.ann_items["lbl_C1"].get_fontweight() == "normal"
+        it_ = t_x.F.scene["by_k"][t_x.F.mol.find_key("C2")]
+        px_, py_ = t_x.F.ax.transData.transform((it_["x"], it_["y"]))
+        t_x.sel = []
+        proc_("button_press_event", MouseEvent("button_press_event", t_x.canvas, px_, py_, button=1, dblclick=True))
+        pump(0.6)
+        assert ent_[0]["label_on"] == {"C2": False} and "lbl_C2" not in t_x.F.ann_items, ent_[0]["label_on"]
+        assert not t_x.sel
+        t_x.set_label("H3", True)                                           # H-Label einzeln an
+        ent_[0]["hidden_atoms"] = ["H3" + inv_]                             # ein einzelnes H ausblenden
+        t_x.render()
+        assert "lbl_H3" in t_x.F.ann_items and t_x.F.mol.find_key("H3" + inv_) not in t_x.F.scene["by_k"]
+        w.xray_state["style"] = "flat"
+        t_x.render()
+        assert len(t_x.F.atom_art[t_x.F.mol.find_key("C1")][0].get_paths()) == 2
+        assert t_x.F.ann_items["lbl_C1"].get_fontweight() == "bold"
+        w.xray_state["style"] = "mercury"
+        ent_[0].update(label_on={}, hidden_atoms=[])
         ent_[0]["hidden_frags"] = [1]                                   # Wasser ausblenden
         w.xray_state["show_h"] = False
         t_x.sync_widgets()

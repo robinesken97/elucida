@@ -856,9 +856,10 @@ TEXTS = {
     "xr_main_frag": ("größtes", "largest"),
     "xr_reset_view": ("Ansicht zurücksetzen", "Reset view"),
     "xr_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom wählen "
-                      "(2 = Abstand, 3 = Winkel, 4 = Diederwinkel), Labels lassen sich verschieben.",
+                      "(2 = Abstand, 3 = Winkel, 4 = Diederwinkel), Doppelklick = Label an/aus, Labels lassen sich "
+                      "verschieben.",
                       "Drag = rotate, right button = pan, wheel = zoom, click = pick atom "
-                      "(2 = distance, 3 = angle, 4 = torsion); labels can be dragged."),
+                      "(2 = distance, 3 = angle, 4 = torsion), double-click = label on/off; labels can be dragged."),
     "xr_colors": ("Atomfarben", "Atom colours"),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
     "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
@@ -888,6 +889,20 @@ TEXTS = {
                    "no _geom_bond table – bonds from covalent radii, distances without s.u."),
     "xr_no_torsion": ("keine _geom_torsion-Tabelle (CONF fehlt) – Diederwinkel ohne esd",
                       "no _geom_torsion table (CONF missing) – torsion angles without s.u."),
+    "xr_style": ("Stil", "Style"),
+    "xr_style_mercury": ("Mercury (schattiert)", "Mercury (shaded)"),
+    "xr_style_flat": ("Olex2 (flach, fette Labels)", "Olex2 (flat, bold labels)"),
+    "xr_atoms": ("Atome", "Atoms"),
+    "xr_atom": ("Atom", "Atom"),
+    "xr_atom_shown": ("zeigen", "show"),
+    "xr_atom_label": ("Label", "Label"),
+    "xr_atoms_tip": ("Einzelne Atome (z. B. H) ausblenden und Labels je Atom an-/abschalten; "
+                     "Doppelklick auf ein Atom in der Abbildung schaltet sein Label um.",
+                     "Hide single atoms (e.g. H) and switch labels per atom; "
+                     "double-click an atom in the figure to toggle its label."),
+    "xr_labels_all": ("Alle Labels", "All labels"),
+    "xr_labels_none": ("Keine Labels", "No labels"),
+    "xr_atoms_reset": ("Standard", "Default"),
     "xr_truncated": ("Polymer/Netzwerk: Vervollständigung abgebrochen", "polymer/network: growing stopped"),
 }
 

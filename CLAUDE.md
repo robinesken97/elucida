@@ -62,7 +62,9 @@ und Tabelle, ChemDraw-Struktur, Küvettenfoto). Dazu Tabs für Overlay (gemessen
   Transformationen (gesucht G mit T_k = G∘S_k, auch rückwärts), Codes `n_klm` (555 = keine Translation, „n“ allein
   ebenso). Erzeugte Atome mit römischer Hochzahl je Operation + Fußnote. Fehlordnung Standard: PART 0 + je
   `disorder_assembly` der Teil mit der größten Besetzung. Ellipsoide: k = √χ²₃(p) (50 % → 1.5382), Umriss = 2×2-Block
-  von R·U·Rᵀ. Tabellen englisch beschriftet, Zahlen exakt wie in der CIF, echtes Minus (U+2212).
+  von R·U·Rᵀ. Aussehen Standard **wie Mercury** (Nutzerwunsch): schattierte Schichten (`shade_layers`, Licht oben
+  links, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), normale Labels; „flach“ = Olex2 (fett, weißer Rand).
+  Labels/Atome je Atom über `label_on`/`hidden_atoms` (Schlüssel Label|Operation). Tabellen englisch beschriftet, Zahlen exakt wie in der CIF, echtes Minus (U+2212).
 - Verbindung des Projekts (`compound`) ist nur Vorgabe: Tabs mit eigener Struktur/Molmasse behalten diese.
 - UI zweisprachig: jeder sichtbare Text über `uvvis_i18n.T(key)` mit DE **und** EN-Eintrag.
 

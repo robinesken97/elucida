@@ -31,7 +31,7 @@ Englisch.
 | **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
 | **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
 | **IR + MS** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die HRMS-Zeile aus dem Bericht der Massenabteilung, fertig für die SI |
-| **X-Ray** | CIF → drehbare ORTEP-Abbildung (Ellipsoide, Olex2-Farben), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
+| **X-Ray** | CIF → drehbare ORTEP-Abbildung im Mercury-Stil (schattierte Ellipsoide, Labels je Atom), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
 Erscheinungsbild; Deutsch und Englisch.
@@ -169,8 +169,10 @@ Molmasse behalten diese. Der Name steht im Fenstertitel.
 - Eine oder mehrere **CIF**-Dateien laden (Knopf oder Drag & Drop); jeder `data_`-Block mit Atomen wird ein Eintrag
   (eine Spalte in den Tabellen). Spectravolt liest die CIF selbst (Zelle, Koordinaten, U_iso/U_ij, Besetzung, PART,
   Symmetrieoperationen, `_geom_bond`/`_geom_angle`/`_geom_torsion`); keine weitere Software nötig.
-- **ORTEP-Abbildung:** Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit (einstellbar), exakt projiziert,
-  mit den drei Hauptachsen-Ellipsen wie in Olex2; H-Atome als kleine weiße Kugeln, fette Labels (verschiebbar).
+- **ORTEP-Abbildung im Mercury-Stil:** schattierte Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit
+  (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; H-Atome als kleine schattierte Kugeln, normale
+  Labels (verschiebbar). Alternativ flacher Olex2-Stil mit fetten Labels. Einzelne Atome (z. B. einzelne H) lassen
+  sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste oder Doppelklick auf das Atom).
   **Ziehen dreht**, rechte Taste verschiebt, Mausrad zoomt; die Ansicht wird je Struktur gespeichert,
   **Ansicht zurücksetzen** führt zur Standardansicht (Blick auf die größte Ebene). Atomfarben je Element frei wählbar
   (Standard: Olex2-Farben).

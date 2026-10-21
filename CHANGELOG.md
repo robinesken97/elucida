@@ -5,8 +5,9 @@
 ## Unreleased
 
 ### Added
-- New tab **X-Ray**: read CIF files (several structures/`data_` blocks), rotatable **ORTEP figure** (ellipsoids at
-  adjustable probability with principal ellipses, Olex2 colours freely changeable per element, draggable labels),
+- New tab **X-Ray**: read CIF files (several structures/`data_` blocks), rotatable **ORTEP figure in the Mercury
+  style** (shaded ellipsoids at adjustable probability with principal ellipses, colours freely changeable per element,
+  draggable labels; flat Olex2 style optional), atoms and labels switchable per atom (double-click toggles a label),
   molecule completed by symmetry (C1ⁱ with footnote), disorder (major part by default), H atoms and separate
   fragments can be hidden.
 - Distances, angles and torsion angles **by clicking atoms**, with s.u. taken exactly from the CIF; values missing in

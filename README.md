@@ -31,7 +31,7 @@ The user interface is available in German and English.
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
 | **IR + MS** | IR peak list from Bruker OPUS (file or PDF) and the HRMS line from the mass-spectrometry report, ready for the SI |
-| **X-Ray** | CIF → rotatable ORTEP figure (ellipsoids, Olex2 colours), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
+| **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
@@ -164,8 +164,10 @@ structure or molar mass keep it. The name appears in the window title.
 - Load one or more **CIF** files (button or drag & drop); each `data_` block with atoms becomes one entry (one
   column in the tables). Spectravolt reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
   operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
-- **ORTEP figure:** displacement ellipsoids at 50 % probability (adjustable), projected exactly, with the three
-  principal ellipses as in Olex2; H atoms as small white spheres, bold labels (draggable). **Drag to rotate**,
+- **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
+  exactly, with the principal ellipses; H atoms as small shaded spheres, plain labels (draggable). Alternatively a
+  flat Olex2 style with bold labels. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
+  (atom list or double-click on the atom). **Drag to rotate**,
   right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
   default orientation (looking onto the largest plane). Atom colours per element are freely selectable (Olex2
   colours by default).

@@ -5,9 +5,10 @@
 ## Unveröffentlicht
 
 ### Neu
-- Neuer Tab **X-Ray**: CIF-Dateien lesen (mehrere Strukturen/`data_`-Blöcke), drehbare **ORTEP-Abbildung**
-  (Ellipsoide mit einstellbarer Wahrscheinlichkeit und Hauptachsen-Ellipsen, Olex2-Farben je Element frei änderbar,
-  verschiebbare Labels), Molekül über die Symmetrie vervollständigt (C1ⁱ mit Fußnote), Fehlordnung (standardmäßig
+- Neuer Tab **X-Ray**: CIF-Dateien lesen (mehrere Strukturen/`data_`-Blöcke), drehbare **ORTEP-Abbildung im
+  Mercury-Stil** (schattierte Ellipsoide mit einstellbarer Wahrscheinlichkeit und Hauptachsen-Ellipsen, Farben je
+  Element frei änderbar, verschiebbare Labels; flacher Olex2-Stil wählbar), Atome und Labels je Atom schaltbar
+  (Doppelklick schaltet ein Label um), Molekül über die Symmetrie vervollständigt (C1ⁱ mit Fußnote), Fehlordnung (standardmäßig
   Hauptteil), H-Atome und getrennte Fragmente ausblendbar.
 - Abstände, Winkel und Diederwinkel **per Klick auf Atome**, Standardabweichungen genau aus der CIF; in der CIF
   fehlende Werte (Diederwinkel ohne CONF) werden ohne Standardabweichung berechnet und markiert.
