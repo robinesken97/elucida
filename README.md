@@ -31,6 +31,7 @@ The user interface is available in German and English.
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
 | **IR + MS** | IR peak list from Bruker OPUS (file or PDF) and the HRMS line from the mass-spectrometry report, ready for the SI |
+| **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
@@ -38,7 +39,7 @@ German and English.
 <table>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="Overlay – measured, TD-DFT and SEC"><br><sub>Overlay – measured, TD-DFT and SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray – ORTEP from CIF (synthetic test structure)"><br><sub>X-Ray – ORTEP from CIF (synthetic test structure)</sub></td></tr>
 </table>
 
 ## Download and start
@@ -157,6 +158,41 @@ structure or molar mass keep it. The name appears in the window title.
   project.
 - **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
   and `…_SI.txt` with both lines.
+
+## X-Ray tab
+
+- Load one or more **CIF** files (button or drag & drop); each `data_` block with atoms becomes one entry (one
+  column in the tables). Spectravolt reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
+  operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
+- **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
+  exactly, with the principal ellipses; H atoms as small shaded spheres, plain labels (draggable). Alternatively a
+  flat Olex2 style with bold labels. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
+  (atom list or double-click on the atom). **Drag to rotate**,
+  right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
+  default orientation (least overlap of the atoms). Atom colours per element are freely selectable (Olex2
+  colours by default).
+- The molecule is **completed by symmetry** (e.g. a molecule on an inversion centre); generated atoms carry a
+  superscript (C1ⁱ) and the operation is given as a footnote. **Disorder:** major part only (default), all parts or
+  the minor part. Separate fragments (solvent, counter-ions) and H atoms can be hidden; **Hide solvent** / **Hide
+  counterions** recognise common ones from the formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
+- **Wireframe** for bulky groups (e.g. Dipp): click the bond to the substituent (core atom first, e.g. N then
+  C_ipso) and press **As wireframe** – everything behind it is drawn as thin lines in the element colours, without
+  H atoms and labels. If the bond is part of a ring (spiro atom), the ring system behind the first atom is used. The
+  start view avoids overlapping atoms; labels optionally for heteroatoms only.
+- **Caption suggestion** (English), e.g. „… Displacement ellipsoids are drawn at the 50 % probability level;
+  co-crystallised THF omitted, Dipp groups shown as wireframe without hydrogen atoms for clarity. …“, with the
+  selected parameters and symmetry codes; copied with one click and written to `…_captions.txt` on export.
+- **Click atoms** (the front-most one wins): 2 = distance, 3 = angle, 4 = torsion angle. Values with s.u. are taken
+  **exactly from the CIF** (e.g. 1.392(3)); Spectravolt never estimates an s.u. itself. If a value is missing (torsion
+  angles without `CONF`), it is calculated from the coordinates, shown **without** s.u. and marked – set `CONF` in
+  Olex2/SHELXL and refine again to get torsion angles with s.u.
+- **Tables for the SI:** crystal data and structure refinement (one column per compound; numbers exactly as in the
+  CIF, space group in italics with subscripts, diff. peak/hole with a true minus sign; internal reference and CCDC
+  number editable) and selected bond lengths, angles and torsion angles (same atom names side by side). **Copy**
+  keeps italics and sub-/superscripts in Word; export also writes CSV and Excel. Table labels are in English
+  (as usual for an SI).
+- Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
+  `…_tables.xlsx`.
 
 ## Projects, export, undo
 
@@ -404,6 +440,7 @@ Format → "Fonts and frames…" applies to all tabs and is saved with the proje
   records ("Baseline 100%T/0%T") in batch files are skipped.
 - **Cary Eclipse** fluorescence data: CSV export and .FBSW files. The excitation wavelength is
   taken from the file's metadata.
+- **CIF** (crystal structures, e.g. from Olex2/SHELXL): own reader, several `data_` blocks per file.
 - **Several files** can be opened together; they form one data set.
 
 ## Troubleshooting

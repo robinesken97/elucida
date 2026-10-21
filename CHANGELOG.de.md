@@ -2,6 +2,28 @@
 
 # Änderungen
 
+## Unveröffentlicht
+
+### Neu
+- Neuer Tab **X-Ray**: CIF-Dateien lesen (mehrere Strukturen/`data_`-Blöcke), drehbare **ORTEP-Abbildung im
+  Mercury-Stil** (schattierte Ellipsoide mit einstellbarer Wahrscheinlichkeit und Hauptachsen-Ellipsen, Farben je
+  Element frei änderbar, verschiebbare Labels; flacher Olex2-Stil wählbar), Atome und Labels je Atom schaltbar
+  (Doppelklick schaltet ein Label um), Molekül über die Symmetrie vervollständigt (C1ⁱ mit Fußnote), Fehlordnung (standardmäßig
+  Hauptteil), H-Atome und getrennte Fragmente ausblendbar.
+- X-Ray: sperrige Gruppen als **Drahtmodell** (Bindung zum Substituenten wählen, z. B. N–C_ipso; auch Ringsysteme
+  hinter einem Spiro-Atom), Schalter **Lösungsmittel** / **Gegenionen ausblenden** (erkannt über die Summenformel; ein
+  zweites unabhängiges Molekül bleibt), Labels nur für Heteroatome, Startansicht mit möglichst wenig Überdeckung und
+  ein **Vorschlag für die Bildunterschrift**, der sich nach dem Ausgeblendeten und dem Drahtmodell richtet (mit
+  ausgewählten Parametern und Symmetriecodes).
+- Abstände, Winkel und Diederwinkel **per Klick auf Atome**, Standardabweichungen genau aus der CIF; in der CIF
+  fehlende Werte (Diederwinkel ohne CONF) werden ohne Standardabweichung berechnet und markiert.
+- SI-Tabellen: **Kristalldaten und Strukturverfeinerung** (eine Spalte je Verbindung) und **ausgewählte Parameter**;
+  Kopieren mit Formatierung für Word, CSV und Excel.
+
+### Behoben
+- Selbsttest: wartet auf die im Hintergrund geladenen Strukturen statt einer festen Zeit (scheiterte auf langsamen
+  Rechnern).
+
 ## 1.18.1 – 21.10.2026
 
 ### Behoben
