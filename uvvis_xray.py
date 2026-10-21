@@ -1456,7 +1456,7 @@ class XrayFigure:
             self.atom_art[it["k"]] = (p, lines)
         for n, (a, b, _) in enumerate(self.scene["bonds"]):
             xs, ys = self._bond_xy(a, b)
-            if a in self.wire and b in self.wire:            # Drahtmodell: zwei Hälften in den Elementfarben
+            if a in self.wire or b in self.wire:             # Drahtmodell (auch die Bindung zum Kern): zwei Hälften
                 self.bond_lines[n] = []
                 for half, k in ((0, a), (1, b)):
                     el = self.mol.atoms[k]["el"]

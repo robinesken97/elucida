@@ -3428,6 +3428,10 @@ def selftest(outdir, with_isnet=False):
         t_x.sel = ["C1", "Cl1"]
         t_x.wire_selected()
         assert ent_[0]["wire"] == ["Cl1"] and not t_x.sel, ent_[0]["wire"]
+        t_x.render()                                                              # Bindung Kern–Draht dünn
+        mixed_ = [ln_ for a_, b_, ln_, h_ in t_x.F.bond_art if {a_, b_} == {c1_, cl1_}]
+        assert len(mixed_) == 2 and all(ln_.get_linewidth() < t_x.F.lw_bond for ln_ in mixed_), mixed_
+        assert "lbl_C1" in t_x.F.ann_items and t_x.F.scene["by_k"][c1_]["kind"] != "wire"
         ent_[0]["wire"] = ["C1", "Cl1"]                                           # beide Enden -> Drahtbindung
         ent_[0]["wire_name"] = "the C-Cl group"
         t_x.render()
