@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 APP_NAME = "UVVisTool"
-APP_VERSION = "1.15.0"
+APP_VERSION = "1.15.1"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2425,7 +2425,10 @@ def selftest(outdir, with_isnet=False):
         # Treffer darf der Nachbarpunkt sein. Geprüft wird, dass die Anzeige genau den markierten Punkt zeigt.
         assert hv.hit is not None, msg
         hc, hi = hv.hit
-        assert abs(hc["x"][hi] - sp0["x"][i0]) <= 1.0 + 1e-9, (msg, hc["x"][hi])
+        # erlaubt: ein Messpunkt Abstand plus ein Pixel in Datenkoordinaten (Vorschaugröße je nach System/Schrift)
+        step = float(np.median(np.abs(np.diff(np.asarray(sp0["x"], float)))))
+        nm_per_px = abs(ax.transData.inverted().transform((px + 1, py))[0] - sp0["x"][i0])
+        assert abs(hc["x"][hi] - sp0["x"][i0]) <= step + nm_per_px + 1e-9, (msg, hc["x"][hi], step, nm_per_px)
         assert f"λ = {hc['x'][hi]:.1f} nm" in msg and f"A = {hc['y'][hi]:.4f}" in msg, msg
         assert list(hv.marker.get_xdata()) == [hc["x"][hi]], hv.marker.get_xdata()
         assert hv.marker.get_animated(), "Marker darf nicht exportiert werden"

@@ -14,14 +14,15 @@ from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout, Q
                                QPushButton, QStyleFactory, QVBoxLayout, QWidget)
 
 COLORS = {
-    "light": dict(window="#F3F3F1", card="#FFFFFF", field="#FFFFFF", button="#FFFFFF", hover="#ECEBE8",
-                  border="#D9D8D3", border_strong="#B9B8B2", text="#1F1F1E", text2="#66655F",
-                  disabled="#A9A8A3", accent="#2F6FDB", accent_hover="#255FC2", on_accent="#FFFFFF",
-                  alt="#F8F8F6"),
-    "dark": dict(window="#1C1C1B", card="#262625", field="#1F1F1E", button="#2F2F2E", hover="#383836",
-                 border="#3A3A38", border_strong="#55554F", text="#ECECE9", text2="#A4A39D",
-                 disabled="#6A6964", accent="#4A8BF5", accent_hover="#5E99F7", on_accent="#FFFFFF",
-                 alt="#232322"),
+    # Abstufung wie im Entwurf: Seite < Karte, Felder etwas abgesetzt, warme Grautöne, dezente Ränder
+    "light": dict(window="#F4F3EF", card="#FFFFFF", field="#FAF9F6", button="#FFFFFF", hover="#EFEEE9",
+                  border="#E2E0DA", border_strong="#C8C6BE", text="#1F1E1C", text2="#6B6A64",
+                  disabled="#ABA9A2", accent="#2E6BD6", accent_hover="#255BBB", on_accent="#FFFFFF",
+                  alt="#F7F6F3"),
+    "dark": dict(window="#141413", card="#1C1C1B", field="#111110", button="#232322", hover="#2B2B29",
+                 border="#2D2D2B", border_strong="#42423F", text="#EDECE8", text2="#9D9B94",
+                 disabled="#5E5D58", accent="#3D7CE0", accent_hover="#5089E6", on_accent="#FFFFFF",
+                 alt="#181817"),
 }
 
 _SVG = {

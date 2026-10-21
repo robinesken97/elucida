@@ -2,7 +2,17 @@
 
 # Changelog
 
-## 1.15.0 – 2026-10-21
+## 1.15.1 – 2026-10-21
+
+1.15.0 was tagged but not released (a self-test on Linux was too strict); its changes are included here.
+
+### Changed
+- Colours of the light and dark theme: darker, warmer greys and subtler borders.
+
+### Fixed
+- Self-test of the hover readout: tolerance follows the actual preview resolution.
+
+## 1.15.0 – 2026-10-21 (not released)
 
 ### Changed
 - **New look:** uniform style on Windows, macOS and Linux with a light and a dark theme; by default it follows the

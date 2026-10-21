@@ -2,7 +2,18 @@
 
 # Änderungen
 
-## 1.15.0 – 21.10.2026
+## 1.15.1 – 21.10.2026
+
+1.15.0 wurde getaggt, aber nicht veröffentlicht (ein Selbsttest unter Linux war zu streng); die Änderungen sind hier
+enthalten.
+
+### Geändert
+- Farben des hellen und dunklen Erscheinungsbilds: dunkler, wärmere Grautöne, dezentere Ränder.
+
+### Behoben
+- Selbsttest der Hover-Anzeige: Toleranz richtet sich nach der tatsächlichen Auflösung der Vorschau.
+
+## 1.15.0 – 21.10.2026 (nicht veröffentlicht)
 
 ### Geändert
 - **Neues Aussehen:** einheitlicher Stil unter Windows, macOS und Linux mit hellem und dunklem Erscheinungsbild;
