@@ -2,18 +2,27 @@
 
 # Changelog
 
-## Unreleased
+## 1.20.0 – 2026-10-21
 
 ### Added
 - **Elemental analysis** in the tab now called **IR + MS + EA**: calculated from the project formula (optionally with a
   solvate such as 0.5 CH2Cl2), found values entered, deviations > 0.4 % flagged; line for the SI.
 - **UV-Vis line for the SI** (page *SI line* in the ε tab, optional solvent): λmax with ε as in the figure, ascending.
 - **File → Export SI section (Word)**: characterisation paragraph (m.p.; IR; HR-MS; UV-Vis; elemental analysis) plus
-  crystal-data table, selected parameters and captions from the X-Ray tab, as a .docx in the style of the SI.
+  the X-Ray part as a .docx laid out like the group's SI (Arial 11, 1.5 lines; ORTEP figure as vector graphic, cropped;
+  “Figure Sn: X-ray solid state structure of …” with occupancy of disordered parts; selected parameters in the caption
+  or, if more than 8, as “Table Sn: Selected bond lengths/angles for …”; crystal-data table with the column widths of
+  the SI; numbers as Word fields).
 - Melting point in **Compound …**.
 
 ### Changed
 - Tabs renamed: **UV-Vis (ε)** (formerly ε analysis) and **UV-Vis overlay** (formerly Overlay).
+- X-Ray: caption and crystal-data labels in the style of the SI (“Thermal ellipsoids are shown with 50% probability”,
+  “*a* / Å”); selected parameters in the atom order of the CIF.
+
+### Fixed
+- X-Ray: labels no longer touch bonds (exact collision test); stored label positions that land on a bond or atom
+  after rotating are placed anew.
 
 ## 1.19.0 – 2026-10-21
 
