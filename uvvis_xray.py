@@ -1620,14 +1620,21 @@ class XrayFigure:
             cx, cy = tr.transform((it["x"], it["y"]))
             rx = abs(tr.transform((it["x"] + max(it["w"], it["h"]) / 2, it["y"]))[0] - cx)
             circ.append((cx, cy, rx))
-        segpts = []
+        # Bindungen dicht abgetastet (alle ~2 px), mit halber Linienbreite + Rand: ein Label darf keine Bindung berühren
+        segpts, seghw = [], []
+        margin = 2.5 * ppt
         for _, _, ln, _h in self.bond_art:
             xs, ys = ln.get_data()
             if np.isfinite(xs).all():
-                for f in np.linspace(0, 1, 7):
-                    segpts.append(tr.transform((xs[0] + f * (xs[1] - xs[0]), ys[0] + f * (ys[1] - ys[0]))))
+                a_ = tr.transform((xs[0], ys[0]))
+                b_ = tr.transform((xs[1], ys[1]))
+                n_ = max(8, int(np.hypot(*(b_ - a_)) / 2))
+                f_ = np.linspace(0, 1, n_)[:, None]
+                segpts.append(a_ + f_ * (b_ - a_))
+                seghw.append(np.full(n_, ln.get_linewidth() * ppt / 2 + margin))
         circ = np.array(circ)
-        segpts = np.array(segpts) if segpts else np.zeros((0, 2))
+        segpts = np.vstack(segpts) if segpts else np.zeros((0, 2))
+        seghw = np.concatenate(seghw) if seghw else np.zeros(0)
         boxes = []
 
         def cost(bx):
@@ -1639,8 +1646,10 @@ class XrayFigure:
                 d = np.hypot(nx - circ[:, 0], ny - circ[:, 1])
                 c += float(np.sum(np.clip(circ[:, 2] - d, 0, None))) * 2
             if len(segpts):
-                inside = (segpts[:, 0] > x0) & (segpts[:, 0] < x1) & (segpts[:, 1] > y0) & (segpts[:, 1] < y1)
-                c += 6.0 * int(inside.sum())
+                dx = np.maximum(np.maximum(x0 - segpts[:, 0], segpts[:, 0] - x1), 0)
+                dy = np.maximum(np.maximum(y0 - segpts[:, 1], segpts[:, 1] - y1), 0)
+                over = np.clip(seghw - np.hypot(dx, dy), 0, None)
+                c += 40.0 * float(np.count_nonzero(over)) + 10.0 * float(over.sum())
             for b in boxes:
                 ox = min(x1, b[2]) - max(x0, b[0])
                 oy = min(y1, b[3]) - max(y0, b[1])
@@ -1670,7 +1679,7 @@ class XrayFigure:
             cx, cy = tr.transform((it["x"], it["y"]))
             w, h = sizes[key]
             best = None
-            for rr in (1.0, 1.5):
+            for rr in (1.0, 1.35, 1.7, 2.1):
                 for ang in np.linspace(0, 2 * np.pi, 16, endpoint=False):
                     ux, uy = math.cos(ang), math.sin(ang)
                     r_at = _radius_along(it, ux, uy)
