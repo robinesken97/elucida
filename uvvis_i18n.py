@@ -267,6 +267,16 @@ TEXTS = {
     "ms_no_formula": ("keine – Verbindung des Projekts (Werkzeugleiste) festlegen oder MS-Bericht laden",
                       "none – set the project's compound (toolbar) or load an MS report"),
     "ms_src_project": ("Verbindung des Projekts", "project compound"),
+    "ms_src_report_struct": ("aus der Struktur im MS-Bericht", "from the structure in the MS report"),
+    "ms_take_compound": ("Verbindung aus dem MS-Bericht übernehmen", "Take the compound from the MS report"),
+    "ms_take_compound_tip": ("Name, Formel und Molmasse aus dem ChemDraw-Objekt im Bericht. Die Struktur wird über RDKit "
+                             "neu gezeichnet (Ersatzzeichnung) – für Abbildungen die eigene CDXML (mit SVG/PDF) nehmen.",
+                             "Name, formula and molar mass from the ChemDraw object in the report. The structure is redrawn "
+                             "with RDKit (substitute drawing) – for figures use your own CDXML (with SVG/PDF)."),
+    "ms_take_replace": ("Das Projekt hat schon eine Struktur. Durch die aus dem MS-Bericht ersetzen (Ersatzzeichnung)?",
+                        "The project already has a structure. Replace it with the one from the MS report (substitute drawing)?"),
+    "ms_form_vs_struct": ("⚠ im Bericht passen Formelfeld ({f}) und Struktur ({s}) nicht zusammen",
+                          "⚠ in the report, formula field ({f}) and structure ({s}) do not match"),
     "ms_src_report": ("aus dem MS-Bericht", "from the MS report"),
     "ms_formula_mismatch": ("⚠ Formel im Bericht ({rep}) passt nicht zur Verbindung des Projekts ({prj}) – richtiger Bericht?",
                             "⚠ formula in the report ({rep}) does not match the project compound ({prj}) – right report?"),

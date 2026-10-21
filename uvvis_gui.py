@@ -3164,6 +3164,21 @@ def selftest(outdir, with_isnet=False):
         assert any(f.name.endswith("_SI.txt") for f in files) and all(f.exists() for f in files)
         slots_ = PRJ._path_slots(w.get_state())
         assert any(k_ == "ir_file" for _, k_, _ in slots_) and any(k_ == "ms_file" for _, k_, _ in slots_)
+        # ChemDraw-Objekt im Bericht: Abgleich und Übernahme der Verbindung (künstliche Struktur, kein CDX-Schreiber)
+        from rdkit import Chem as _Chem
+        rep_ = t_ir.ms_report()
+        rep_["structure"] = {"formula": "C18H20N2", "mw": 264.37, "n_fragments": 1,
+                             "cdxml": _Chem.MolToCDXMLBlock(_Chem.MolFromSmiles("CC(C)(C)c1ccc2nc(-c3ccccc3)n(C)c2c1"))}
+        w.compound = {}
+        t_ir.render()
+        assert t_ir.formula() == ("C18H20N2", "report_struct"), t_ir.formula()
+        assert not t_ir.btn_take.isHidden()
+        rep_["formula"] = "C18H21N2"                       # Formelfeld vertippt -> Hinweis
+        t_ir.render()
+        assert "⚠" in t_ir.lbl_ms_info.text(), t_ir.lbl_ms_info.text()
+        t_ir.take_compound()
+        assert w.compound["formula"] == "C18H20N2" and Path(w.compound["structure"]).exists()
+        assert "aus_MS-Bericht" in Path(w.compound["structure"]).name and w.compound["name"] == "TEST-1"
         w.irms_state.update(ir_file=None, ir_pdf=None, ms_file=None, ir_off=[], with_int=False)
         w.compound = {}
         report.append("project compound + IR/HRMS lines: OK")

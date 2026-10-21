@@ -149,7 +149,10 @@ Molmasse behalten diese. Der Name steht im Fenstertitel.
   den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung des Projekts (Warnung, wenn der
   Bericht etwas anderes sagt), das Ion ist wählbar ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), vorgewählt ist das nächste
   gemessene m/z. calc. mit Elektronenmasse, vier Nachkommastellen: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
-  found 265.1703. Die Abweichung in ppm steht zur Kontrolle daneben (found − calc).
+  found 265.1703. Die Abweichung in ppm steht zur Kontrolle daneben (found − calc). Die Formel wird gegen das im
+  Bericht **eingebettete ChemDraw-Objekt** geprüft; ohne Verbindung im Projekt setzt **Verbindung aus dem MS-Bericht
+  übernehmen** Name, Formel und Molmasse daraus (die Zeichnung ist dann eine RDKit-Ersatzzeichnung – für Abbildungen
+  die eigene CDXML nehmen).
 - **In Zwischenablage** behält Fettdruck, Hoch- und Tiefstellung beim Einfügen in Word. Der Export schreibt die
   Spektrenabbildung und `…_SI.txt` mit beiden Zeilen.
 

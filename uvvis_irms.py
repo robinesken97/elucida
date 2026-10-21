@@ -249,11 +249,59 @@ def _emf_texts(data: bytes) -> list[str]:
     return out
 
 
+def cdx_structure(blob: bytes) -> dict | None:
+    """ChemDraw-Objekt (CDX-Binärdaten) -> dict(formula, mw, cdxml) über RDKit; None, wenn nicht lesbar.
+    cdxml ist eine RDKit-Umwandlung (Ersatzzeichnung), nicht ChemDraws eigene Darstellung."""
+    import tempfile
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors, rdMolDescriptors
+        if not Chem.HasChemDrawCDXSupport():
+            return None
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "obj.cdx"
+            f.write_bytes(blob)
+            prm = Chem.CDXMLParserParams()
+            prm.format = Chem.CDXMLFormat.CDX
+            mols = [m for m in Chem.MolsFromCDXMLFile(str(f), prm) if m is not None]
+    except Exception:
+        return None
+    if not mols:
+        return None
+    mol = mols[0]
+    for m in mols[1:]:
+        mol = Chem.CombineMols(mol, m)
+    return {"formula": rdMolDescriptors.CalcMolFormula(mol, True, True), "mw": float(Descriptors.MolWt(mol)),
+            "cdxml": Chem.MolToCDXMLBlock(mol), "n_fragments": len(mols)}
+
+
+def _docx_cdx(z: zipfile.ZipFile) -> bytes | None:
+    """Erstes eingebettetes ChemDraw-Objekt (OLE-Container mit Stream CONTENTS = CDX) eines docx."""
+    import io
+    try:
+        import olefile
+    except ImportError:
+        return None
+    for n in z.namelist():
+        if n.startswith("word/embeddings/") and n.lower().endswith(".bin"):
+            try:
+                ole = olefile.OleFileIO(io.BytesIO(z.read(n)))
+                if ole.exists("CONTENTS"):
+                    data = ole.openstream("CONTENTS").read()
+                    if data[:8] == b"VjCD0100":
+                        return data
+            except Exception:
+                continue
+    return None
+
+
 def read_ms_docx(path) -> dict:
-    """Auftragsformular (docx) -> dict(sample, formula, exact_mass, ionisation, polarity, mz [found], remark, texts)."""
+    """Auftragsformular (docx) -> dict(sample, formula, exact_mass, ionisation, polarity, mz [found], remark,
+    structure = Formel/Molmasse aus dem eingebetteten ChemDraw-Objekt oder None)."""
     with zipfile.ZipFile(path) as z:
         xml = z.read("word/document.xml").decode("utf-8", "replace")
         emf = [z.read(n) for n in z.namelist() if n.startswith("word/media/") and n.lower().endswith(".emf")]
+        cdx = _docx_cdx(z)
     paras = [re.sub(r"<[^>]+>", "", p) for p in xml.split("</w:p>")]
     paras = [re.sub(r"\s+", " ", p.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")).strip()
              for p in paras]
@@ -296,7 +344,8 @@ def read_ms_docx(path) -> dict:
                 formula = re.sub(r"\s", "", m.group(1))
                 break
     exact = field("exact mass").replace(",", ".")
-    return {"sample": field("sample name"), "formula": formula,
+    struct_ = cdx_structure(cdx) if cdx else None
+    return {"sample": field("sample name"), "formula": formula, "structure": struct_,
             "exact_mass": float(exact) if re.fullmatch(r"\d+(\.\d+)?", exact) else None,
             "ionisation": ionisation or "ESI", "polarity": polarity or "+",
             "mz": sorted(set(mz)), "remark": field("magnification") or field("remarks")}
@@ -327,8 +376,9 @@ def ms_line(formula, adduct, found, ionisation="ESI"):
 # ----------------------------------------------------------------------------
 from PySide6.QtCore import QMimeData, Qt  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,  # noqa: E402
-                               QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
-                               QTextBrowser, QVBoxLayout)
+                               QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QTableWidget,
+                               QTableWidgetItem, QTextBrowser, QVBoxLayout)
+import os  # noqa: E402
 
 import uvvis_tabs as TABS  # noqa: E402
 from uvvis_i18n import T  # noqa: E402
@@ -414,6 +464,10 @@ class IRMSTab(TABS.FigureTab):
         self.lbl_formula = QLabel("–")
         self.lbl_formula.setWordWrap(True)
         f.addRow(T("compound_formula"), self.lbl_formula)
+        self.btn_take = QPushButton(T("ms_take_compound"))
+        self.btn_take.setToolTip(T("ms_take_compound_tip"))
+        self.btn_take.clicked.connect(self.take_compound)
+        f.addRow(self.btn_take)
         self.cmb_adduct = QComboBox()
         for key, (lab, _, z) in ADDUCTS.items():
             self.cmb_adduct.addItem(lab.replace("$_4$", "₄") + ("⁺" if z > 0 else "⁻"), key)
@@ -537,12 +591,31 @@ class IRMSTab(TABS.FigureTab):
         return found
 
     def formula(self):
-        """Formel: Verbindung des Projekts (ChemDraw), sonst die aus dem MS-Bericht."""
+        """Formel: Verbindung des Projekts, sonst die Struktur im MS-Bericht, sonst dessen Formelfeld."""
         c = self.main.compound
         if c.get("formula"):
             return c["formula"], "project"
         rep = self.ms_report()
+        if rep and rep.get("structure"):
+            return rep["structure"]["formula"], "report_struct"
         return (rep["formula"], "report") if rep and rep.get("formula") else (None, None)
+
+    def take_compound(self):
+        """Verbindung des Projekts aus dem ChemDraw-Objekt im Bericht (nur Ersatzzeichnung über RDKit)."""
+        rep = self.ms_report()
+        if not rep or not rep.get("structure"):
+            return
+        c = self.main.compound
+        if c.get("structure") and os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            if QMessageBox.question(self, T("compound_title"), T("ms_take_replace")) != QMessageBox.Yes:
+                return
+        name = rep.get("sample") or Path(self.st["ms_file"]).stem
+        safe = re.sub(r"[^\w.-]+", "_", name) or "compound"
+        dst = Path(self.main.project_dir) / "images" / f"{safe}_aus_MS-Bericht.cdxml"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(rep["structure"]["cdxml"], encoding="utf-8")
+        self.main.set_compound({"name": c.get("name") or name, "structure": str(dst),
+                                "formula": rep["structure"]["formula"], "mw": round(rep["structure"]["mw"], 2)})
 
     # -- Oberfläche -----------------------------------------------------------------
     def sync_widgets(self):
@@ -631,11 +704,20 @@ class IRMSTab(TABS.FigureTab):
             self.cmb_found.blockSignals(False)
             return
         found = None
+        self.btn_take.setVisible(bool(rep and rep.get("structure")))
         if rep:
-            if rep.get("formula") and src == "project":
+            # Abgleich bevorzugt gegen die Struktur im Bericht (das Formelfeld ist von Hand getippt)
+            ref_f = rep["structure"]["formula"] if rep.get("structure") else rep.get("formula")
+            if ref_f and src == "project":
                 try:
-                    if parse_formula(rep["formula"]) != parse_formula(formula):
-                        notes.append(T("ms_formula_mismatch", rep=rep["formula"], prj=formula))
+                    if parse_formula(ref_f) != parse_formula(formula):
+                        notes.append(T("ms_formula_mismatch", rep=ref_f, prj=formula))
+                except ValueError:
+                    pass
+            if rep.get("structure") and rep.get("formula"):
+                try:
+                    if parse_formula(rep["formula"]) != parse_formula(rep["structure"]["formula"]):
+                        notes.append(T("ms_form_vs_struct", f=rep["formula"], s=rep["structure"]["formula"]))
                 except ValueError:
                     pass
             for v in rep["mz"]:

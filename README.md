@@ -145,7 +145,9 @@ structure or molar mass keep it. The name appears in the window title.
   m/z (from the embedded spectra) are read out. The formula comes from the project's compound (warning if the report
   says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
   preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
-  found 265.1703. The deviation in ppm is shown for checking (found − calc).
+  found 265.1703. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
+  **ChemDraw object embedded in the report**; without a project compound, **Take the compound from the MS report**
+  sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).
 - **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
   and `…_SI.txt` with both lines.
 
