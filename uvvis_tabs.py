@@ -18,7 +18,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure as MplFigure
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -58,7 +58,7 @@ def _plain(label):
 def write_curves_csv(path, curves, xlabel, ylabel):
     """Gezeichnete Kurven als CSV (UTF-8, Komma): je Kurve ein x/y-Spaltenpaar, Werte ohne Stapelversatz
     ('val'). Lässt sich in Origin, Excel und MATLAB (readmatrix) öffnen."""
-    curves = [c for c in curves if len(c["x"])]
+    curves = [c for c in curves if len(c["x"]) and not c.get("aux")]    # aux: Hilfslinien (z. B. Basislinien)
     cols, head = [], []
     for k, c in enumerate(curves):
         name = str(c.get("label") or c.get("tag") or f"curve {k + 1}").replace("\u200b", "")
@@ -513,7 +513,7 @@ class FigureTab(QWidget):
             else:
                 self.dragger = TabDragger(self.F, self.layout_changed)
                 curves = [dict(x=c["x"], y=c["y"], val=c.get("val", c["y"]), name=c.get("label") or "")
-                          for c in self.F.curves]
+                          for c in self.F.curves if not c.get("aux")]
                 self.hover = HoverReadout(self.F, curves, self.main.show_hover, self.hover_text)
                 self.sync_sizes(self.F.current_layout())
             self.canvas.draw_idle()
@@ -561,7 +561,30 @@ class FigureTab(QWidget):
         F.export()
         data = base.with_name(base.name + "_data.csv")
         write_curves_csv(data, F.curves, F.cfg.get("xlabel", "x"), F.cfg.get("ylabel", "y"))
-        return [base.with_suffix("." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]] + [data]
+        out = [base.with_suffix("." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]] + [data]
+        txt = self.methods_text()
+        if txt:
+            out.append(base.with_name(base.name + "_methods.txt"))
+            out[-1].write_text(txt + "\n", encoding="utf-8")
+        return out
+
+    # -- SI-Text zu den Fits (englisch) -------------------------------------------------
+    def methods_text(self) -> str:
+        """Methodenabsatz für die SI zu allem, was dieser Tab fittet, dazu die Ergebnisse; leer = kein Fit."""
+        return ""
+
+    def methods_button(self):
+        """Knopf „SI-Text kopieren“ (Zwischenablage); derselbe Text wird beim Export als _methods.txt geschrieben."""
+        b = QPushButton(T("si_copy_methods"))
+        b.setToolTip(T("si_copy_methods_tip"))
+        b.clicked.connect(self.copy_methods)
+        return b
+
+    def copy_methods(self):
+        txt = self.methods_text()
+        if txt:
+            QApplication.clipboard().setText(txt)
+        self.main.statusBar().showMessage(T("si_methods_copied") if txt else T("si_methods_none"), 6000)
 
     def save_setup(self):
         p, _ = QFileDialog.getSaveFileName(self, T("tab_save"), self.STATE_KEY + ".yaml", "YAML (*.yaml)")

@@ -27,7 +27,7 @@ Englisch.
 | **UV-Vis (ε)** | Lambert-Beer-Fit von Verdünnungsreihen → ε (bzw. a) mit Konfidenzintervall; Abbildung im Origin-Stil mit Struktur und Küvettenfoto; Excel-Report; UV-Vis-Zeile für die SI |
 | **UV-Vis-Overlay** | Gemessene Spektren, TD-DFT (ORCA/Gaussian, SOC, Tripletts) und SEC-Serien in einer Abbildung, normiert oder als ε |
 | **Fluoreszenz** | Absorption und Emission, Stokes-Verschiebung, Fotos bei Tageslicht und unter UV |
-| **CV** | Gamry-Dateien, E½/ΔE_p, Nicholson-Verhältnis, Randles-Ševčík, Bezug auf Fc⁺/Fc |
+| **CV** | Gamry-Dateien, E½/ΔE_p, Basislinie, Nicholson-Verhältnis, Randles-Ševčík mit KI, Bezug auf Fc⁺/Fc, SI-Text |
 | **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
 | **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
 | **HRMS** | HRMS-Zeile aus dem Bericht der Massenabteilung oder aus Bruker-Rohdaten (.d): Chromatogramm mit wählbarem LC-Bereich, gemitteltes Spektrum, Peak per Klick, berechnetes Isotopenmuster |
@@ -192,6 +192,12 @@ Elemental analysis …** (Schmelzpunkt aus **Verbindung …**, UV-Vis-Zeile von 
 Standardfehlers gerundet), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
 X-Ray-Tab. Was noch fehlt, wird nach dem Export aufgezählt.
 
+**SI-Text zu den Fits:** Jeder Tab, der etwas fittet (UV-Vis (ε), CV, SEC, EPR), hat den Knopf **SI-Text kopieren**:
+ein englischer Methodenabsatz, der genau die benutzten Auswerteschritte mit ihren Einstellungen beschreibt (z. B. ε:
+Basislinienfenster, OLS-Modell, Cutoff, SE/95-%-KI; EPR: Basislinienpolynom, Feldkalibrierung, S = ½-Fit, Kinetik), zum
+Anhängen an den Aufbau-Absatz des passenden SI-Abschnitts, danach die Ergebnisse. Derselbe Text wird beim Export als
+`…_methods.txt` geschrieben.
+
 ## X-Ray-Tab
 
 - Eine oder mehrere **CIF**-Dateien laden (Knopf oder Drag & Drop); jeder `data_`-Block mit Atomen wird ein Eintrag
@@ -321,8 +327,16 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 - **Redoxpaare** werden in Potentialfenstern ausgewertet („Vorschlag“ schlägt sie vor, die Fenster sind
   änderbar): E_pa (Strommaximum im Hinlauf), E_pc (Minimum im Rücklauf), E½, ΔE_p, i_pa, i_pc und das
   Peakstromverhältnis nach **Nicholson** (berücksichtigt den abklingenden Strom des Hinlaufs; ≈ 1 = chemisch
-  reversibel). Peaks am Fensterrand werden rot markiert. Ab 3 Scanraten wird die **Randles-Ševčík**-Auftragung
-  (i_pa gegen √v) gefittet.
+  reversibel). Peaks am Fensterrand werden rot markiert.
+- **Basislinie** (Standard an): i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund),
+  extrapoliert unter den Peak; für den Rückpeak um den Sprung des Ladestroms am Umkehrpunkt (2·C·v) verschoben, den
+  abklingenden Hinlaufstrom korrigiert Nicholson. Abstand zum Peak einstellbar (Standard 0,15 V), Basislinien optional im
+  Bild. Peakpotentiale bleiben unverändert. Fehlt Vorlauf im Fenster, wird das markiert und die Messung nicht in die
+  Regressionen genommen.
+- Ab 3 Scanraten je Gruppe und Paar: Regression **i_p gegen √v** (Randles-Ševčík) und **log i_p gegen log v**
+  (Steigung 0,5 = diffusionskontrolliert, 1 = adsorbiert), jeweils mit **95-%-Konfidenzintervall**.
+- **SI-Text kopieren:** englischer Absatz zur Auswertung (Referenzierung, Peakbestimmung, Basislinie, Nicholson,
+  Regressionen) zum Anhängen an den Aufbau-Absatz „Cyclic Voltammetry“ der SI, dazu die Ergebnisse je Redoxpaar.
 - **Referenzierung:** wie gemessen (Referenzelektrode, z. B. Ag/AgNO₃), **intern** (Fc- oder Ac₂Fc-Paar in einer
   der Messungen; E½ der Referenz gegen Fc⁺/Fc ist änderbar – Vorgabe Ac₂Fc +0,49 V, mit eurer Literatur abgleichen)
   oder Verschiebung von Hand. Die Achse heißt dann „E [V vs. Fc⁰/⁺]“.
@@ -334,13 +348,14 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   an den Peaks** (z. B. Probe und Ac₂Fc in einer Messung); y-Achse mit Zahlen, ohne oder ausgeblendet.
 - **Gestapelte** CVs (Listenreihenfolge von oben nach unten, Abstand einstellbar, y-Achse ohne Zahlen) mit **E½ an jeder
   Kurve** neben ihrem anodischen Peak (E¹½, E²½ bei mehreren Paaren).
-- **Auftragung:** Cyclovoltammogramm, **Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und i_pc gegen √v mit
-  Ausgleichsgerade ab 3 Scanraten) oder **Trumpet-Plot** (E_pa und E_pc gegen log v), eine Datenreihe je Gruppe.
+- **Auftragung:** Cyclovoltammogramm, **elektrochemische Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und
+  i_pc gegen √v mit Ausgleichsgerade ab 3 Scanraten), **Diffusion** (log |i_p| gegen log v), **chemische Reversibilität**
+  (i_r/i_f nach Nicholson gegen v, Linie bei 1) oder **Trumpet-Plot** (E_pa und E_pc gegen log v), eine Datenreihe je Gruppe.
   Hinweis: ΔE_p enthält auch den iR-Abfall (v. a. in THF); der Trumpet-Plot wird ohne k⁰-Auswertung gezeichnet, dafür
   wären mehrere Dekaden Scanrate nötig.
 - Strom wie aufgezeichnet (Gamry: IUPAC, anodisch positiv) oder invertiert; optional als Stromdichte.
-- Export: Abbildung (PDF/SVG/PNG) und `…_results.csv` mit allen Werten (inkl. Gruppe, Referenzverschiebung und dem
-  iR-Kompensations-Eintrag der Gamry-Datei, falls vorhanden).
+- Export: Abbildung (PDF/SVG/PNG), `…_results.csv` mit allen Werten (inkl. Gruppe, Referenzverschiebung, dem
+  iR-Kompensations-Eintrag der Gamry-Datei, Strömen mit/ohne Basislinie und Ladestromsprung) und `…_methods.txt` (SI-Text).
 
 ## SEC-Tab (Spektroelektrochemie)
 

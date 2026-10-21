@@ -27,7 +27,7 @@ The user interface is available in German and English.
 | **UV-Vis (ε)** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report; UV-Vis line for the SI |
 | **UV-Vis overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
 | **Fluorescence** | Absorption and emission, Stokes shift, photos in daylight and under UV |
-| **CV** | Gamry files, E½/ΔE_p, Nicholson ratio, Randles–Ševčík, reference to Fc⁺/Fc |
+| **CV** | Gamry files, E½/ΔE_p, baseline, Nicholson ratio, Randles–Ševčík with CI, reference to Fc⁺/Fc, SI text |
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
 | **HRMS** | HRMS line from the mass-spectrometry report or Bruker raw data (.d): chromatogram with selectable LC range, averaged spectrum, peak by click, calculated isotope pattern |
@@ -187,6 +187,12 @@ UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands a
 precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
 X-Ray tab. Parts that are still missing are listed after the export.
 
+**SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
+English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
+OLS model, cut-off, SE/95% CI; EPR: baseline polynomial, field calibration, S = 1/2 fit, kinetics), to append to the
+setup paragraph of the matching SI section, followed by the results. The same text is written as `…_methods.txt` on
+export.
+
 ## X-Ray tab
 
 - Load one or more **CIF** files (button or drag & drop); each `data_` block with atoms becomes one entry (one
@@ -312,8 +318,16 @@ Compare several spectra in one figure, measured and calculated:
 - **Redox couples** are analysed in potential windows ("Suggest" proposes them, the windows can be
   edited): E_pa (current maximum in the forward scan), E_pc (minimum in the reverse scan), E½, ΔE_p,
   i_pa, i_pc and the peak-current ratio after **Nicholson** (accounts for the decaying forward current;
-  ≈ 1 = chemically reversible). Peaks at the window edge are marked red. With ≥ 3 scan rates the
-  **Randles–Ševčík** plot (i_pa vs. √v) is fitted.
+  ≈ 1 = chemically reversible). Peaks at the window edge are marked red.
+- **Baseline** (on by default): i_p against a straight line through the current before the forward peak (charging
+  current + background), extrapolated beneath the peak; for the reverse peak shifted by the step of the charging current
+  at the switching potential (2·C·v), the decaying forward current is corrected by Nicholson. Distance to the peak is
+  adjustable (default 0.15 V), baselines optionally in the figure. Peak potentials are unchanged. If the window has too
+  little current before the peak, this is flagged and the measurement is left out of the regressions.
+- From 3 scan rates per group and couple: regression of **i_p vs. √v** (Randles–Ševčík) and **log i_p vs. log v**
+  (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**.
+- **Copy SI text:** English paragraph on the data evaluation (referencing, peak determination, baseline, Nicholson,
+  regressions) to append to the setup paragraph "Cyclic Voltammetry" of the SI, plus the results per redox couple.
 - **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
   of the measurements; E½ of the reference vs. Fc⁺/Fc is editable – default Ac₂Fc +0.49 V, check against your
   literature) or a manual shift. The axis then reads "E [V vs. Fc⁰/⁺]".
@@ -325,13 +339,15 @@ Compare several spectra in one figure, measured and calculated:
   numbers at the peaks** (e.g. sample and Ac₂Fc in one measurement); y axis with numbers, without or hidden.
 - **Stacked** CVs (list order from top to bottom, adjustable gap, y axis without numbers) with **E½ at every curve**
   next to its anodic peak (E¹½, E²½ for several couples).
-- **Plot:** cyclic voltammogram, **reversibility** (ΔE_p vs. v), **Randles–Ševčík** (i_pa and i_pc vs. √v with
-  fit lines from 3 scan rates) or **trumpet plot** (E_pa and E_pc vs. log v), one series per group. Note: ΔE_p also
+- **Plot:** cyclic voltammogram, **electrochemical reversibility** (ΔE_p vs. v), **Randles–Ševčík** (i_pa and i_pc vs.
+  √v with fit lines from 3 scan rates), **diffusion** (log |i_p| vs. log v), **chemical reversibility** (i_r/i_f after
+  Nicholson vs. v, line at 1) or **trumpet plot** (E_pa and E_pc vs. log v), one series per group. Note: ΔE_p also
   contains the iR drop (especially in THF); the trumpet plot is drawn without a k⁰ analysis, which would need
   several decades of scan rate.
 - Current as recorded (Gamry: IUPAC, anodic positive) or inverted; optionally as current density.
-- Export: figure (PDF/SVG/PNG) and `…_results.csv` with all values (incl. group, reference offset and the iR
-  compensation entry of the Gamry file, if present).
+- Export: figure (PDF/SVG/PNG), `…_results.csv` with all values (incl. group, reference offset, the iR
+  compensation entry of the Gamry file, currents with/without baseline and the charging-current step) and
+  `…_methods.txt` (SI text).
 
 ## SEC tab (spectroelectrochemistry)
 

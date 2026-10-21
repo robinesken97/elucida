@@ -3,9 +3,15 @@
 Auswertung je Redoxpaar in einem Potentialfenster [lo, hi]:
   E_pa = Maximum des Stroms im Hinlauf (dE/dt > 0), E_pc = Minimum im Rücklauf (dE/dt < 0),
   Peaklage per Parabel über ±3 Punkte verfeinert; E½ = (E_pa + E_pc)/2, ΔE_p = E_pa − E_pc.
-  i_pa, i_pc = Ströme am Peak, gemessen von null. Der Rückpeak sitzt auf dem abklingenden Strom des
-  Hinlaufs, daher das Verhältnis nach Nicholson (Anal. Chem. 38 (1966) 1406):
+  i_pa, i_pc = Ströme am Peak, ohne Basislinie gemessen von null. Mit Basislinie (Standard):
+  Hinpeak gegen eine Gerade durch den Strom vor dem Peak (Hinlauf, bis BL_GAP vor E_p; Ladestrom und
+  Untergrund), extrapoliert unter den Peak. Der Ladestrom wechselt am Umkehrpunkt das Vorzeichen (+C·v ->
+  −C·v), der Faradaystrom ist dort stetig: Sprung des Stroms am Umkehrpunkt = 2·C·v. Rückbasislinie =
+  Hinbasislinie minus dieser Sprung. Der Rückpeak sitzt zusätzlich auf dem abklingenden Faradaystrom des
+  Hinlaufs, den korrigiert Nicholson (Anal. Chem. 38 (1966) 1406), angewandt auf die korrigierten Ströme:
   i_r/i_f = (i_r)₀/i_f + 0.485·(i_sp)₀/i_f + 0.086 (i_sp = Strom am Umkehrpotential).
+  Keine zweite (extrapolierte) Rückbasislinie zusätzlich zu Nicholson – das wäre doppelt korrigiert.
+  Peakpotentiale immer aus dem gemessenen Strom (wie bisher).
 Referenzierung: E vs. Fc⁺/Fc = E_gemessen − (E½(Referenz, gemessen) − E°(Referenz vs. Fc⁺/Fc)).
 Ströme: IUPAC-Konvention wie aufgezeichnet (Gamry: anodisch positiv); optional invertierbar.
 """
@@ -18,11 +24,12 @@ from pathlib import Path
 
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
+import uvvis_core as core
 import uvvis_tabs as TABS
 from uvvis_i18n import T
 import uvvis_style as STYLE
@@ -31,6 +38,10 @@ from uvvis_style import HINT_CSS, make_form
 # Referenzverbindungen: E½ gegen Fc⁺/Fc [V]. Ac₂Fc = 1,1'-Diacetylferrocen; Wert im Programm änderbar
 # (lösungsmittelabhängig, gegen Literatur prüfen).
 REFERENCES = {"fc": ("Fc", 0.0), "ac2fc": ("Ac₂Fc", 0.49)}
+REF_NAMES_EN = {"fc": ("ferrocene", "Fc"), "ac2fc": ("1,1'-diacetylferrocene", "Ac₂Fc")}
+
+# Basislinie endet so weit vor dem Hinpeak: Fuß einer reversiblen Welle bei E½ − 0,12 V < 1 % des Peakstroms
+BL_GAP = 0.15
 
 
 def read_gamry(path) -> dict:
@@ -110,10 +121,42 @@ def _refine(E, I, k):
     return float(e), float(np.polyval([a, b, c], e))
 
 
-def analyze_couple(E, I, lo, hi):
-    """Redoxpaar im Fenster [lo, hi] -> dict(epa, epc, e12, dep, ipa, ipc, ratio, edge) oder None.
+def _line_at(E, I, idx, e_at):
+    """Gerade durch die Punkte idx, ausgewertet bei e_at (oder None bei zu wenigen Punkten)."""
+    if len(idx) < 3 or np.ptp(E[idx]) <= 0:
+        return None
+    a, b = np.polyfit(E[idx], I[idx], 1)
+    return float(a * e_at + b)
+
+
+def baseline(E, I, k_f, k_turn, fmask, s, gap=BL_GAP):
+    """Basislinie für ein Redoxpaar -> dict(a, b, step, e0, ok) oder None.
+    Hinbasislinie i_b(E) = a·E + b aus den Punkten des Hinlaufs (fmask) mindestens gap vor dem Hinpeak k_f
+    (s = +1: anodisch zuerst). step = Sprung des Ladestroms am Umkehrpunkt k_turn (≥ 0, in Richtung s):
+    Rückbasislinie = i_b(E) − s·step."""
+    e_pf = E[k_f]
+    pre = np.flatnonzero(fmask & (s * (E - e_pf) <= -gap))
+    if len(pre) < 5 or np.ptp(E[pre]) < 0.03:
+        return None
+    a, b = np.polyfit(E[pre], I[pre], 1)
+    # Umkehrpunkt: Gerade durch je 6 Punkte davor/danach, beide bei E_umkehr ausgewertet
+    n = len(E)
+    before = np.arange(max(0, k_turn - 6), k_turn + 1)
+    after = np.arange(k_turn + 1, min(n, k_turn + 8))       # Umkehrpunkt selbst gehört zum Hinlauf
+    i_b = _line_at(E, I, before, E[k_turn])
+    i_a = _line_at(E, I, after, E[k_turn])
+    step = max(0.0, s * (i_b - i_a)) if i_b is not None and i_a is not None else 0.0
+    return {"a": float(a), "b": float(b), "step": float(step), "s": s,
+            "e0": float(E[pre].min() if s > 0 else E[pre].max()),
+            "i_sp": i_b if i_b is not None else float(I[k_turn])}
+
+
+def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
+    """Redoxpaar im Fenster [lo, hi] -> dict(epa, epc, e12, dep, ipa, ipc, ratio, edge, …) oder None.
     ratio = Rückpeak/Hinpeak nach Nicholson (1 = chemisch reversibel); Hinlauf = erste Scanrichtung.
-    edge = True, wenn ein Peak am Fensterrand liegt (Fenster zu eng oder kein echter Peak)."""
+    edge = True, wenn ein Peak am Fensterrand liegt (Fenster zu eng oder kein echter Peak).
+    use_baseline: i_pa/i_pc/i_sp gegen die Basislinie (siehe Modulkopf); ipa_raw/ipc_raw = Strom am Peak.
+    bl = Basislinie (für die Abbildung) oder None; bl_fail = Basislinie verlangt, aber zu wenig Vorlauf."""
     E, I = np.asarray(E, float), np.asarray(I, float)
     dE = np.gradient(E)
     lo, hi = min(lo, hi), max(lo, hi)
@@ -132,11 +175,25 @@ def analyze_couple(E, I, lo, hi):
     k0 = int(np.argmax(np.abs(dE) > 0))
     anodic_first = dE[k0] > 0
     turn = int(np.argmax(E) if anodic_first else np.argmin(E))
-    i_sp = abs(float(I[turn]))
-    i_f, i_r = (abs(ipa), abs(ipc)) if anodic_first else (abs(ipc), abs(ipa))
-    ratio = (i_r / i_f + 0.485 * i_sp / i_f + 0.086) if i_f > 0 else float("nan")
-    return {"epa": epa, "epc": epc, "e12": (epa + epc) / 2, "dep": epa - epc, "ipa": ipa, "ipc": ipc,
-            "ratio": ratio, "edge": bool(edge)}
+    s = 1 if anodic_first else -1
+    bl, fail = None, False
+    ia, ic, i_sp = ipa, ipc, float(I[turn])
+    if use_baseline:
+        bl = baseline(E, I, ka if anodic_first else kc, turn, fw if anodic_first else bw, s, gap)
+        if bl is None:
+            fail = True
+        else:
+            fwd = lambda e: bl["a"] * e + bl["b"]               # noqa: E731
+            rev = lambda e: fwd(e) - s * bl["step"]             # noqa: E731
+            ia = ipa - (fwd(epa) if anodic_first else rev(epa))
+            ic = ipc - (rev(epc) if anodic_first else fwd(epc))
+            i_sp = bl["i_sp"] - fwd(E[turn])
+            bl.update(epf=epa if anodic_first else epc, epr=epc if anodic_first else epa)
+    i_f, i_r = (abs(ia), abs(ic)) if anodic_first else (abs(ic), abs(ia))
+    ratio = (i_r / i_f + 0.485 * abs(i_sp) / i_f + 0.086) if i_f > 0 else float("nan")
+    return {"epa": epa, "epc": epc, "e12": (epa + epc) / 2, "dep": epa - epc, "ipa": ia, "ipc": ic,
+            "ipa_raw": ipa, "ipc_raw": ipc, "ratio": ratio, "edge": bool(edge), "bl": bl, "bl_fail": fail,
+            "anodic_first": bool(anodic_first)}
 
 
 def suggest_couples(E, I, min_rel=0.03, max_sep=0.25):
@@ -175,18 +232,35 @@ def suggest_couples(E, I, min_rel=0.03, max_sep=0.25):
     return out
 
 
-def randles_sevcik(rates_mVs, ipa):
-    """i_pa gegen √v (v in V/s): lineare Regression -> (Steigung, Achsenabschnitt, R²) oder None."""
-    v = np.sqrt(np.asarray(rates_mVs, float) / 1000.0)
-    y = np.asarray(ipa, float)
-    ok = np.isfinite(v) & np.isfinite(y)
+def rate_fit(x, y):
+    """Lineare Regression (OLS) mit 95-%-KI = t(0,975; n−2)·SE -> dict(slope, ci, intercept, ci_b, r2, n) oder None."""
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    ok = np.isfinite(x) & np.isfinite(y)
     if ok.sum() < 3:
         return None
-    m, b = np.polyfit(v[ok], y[ok], 1)
-    pred = m * v[ok] + b
-    ss = np.sum((y[ok] - y[ok].mean()) ** 2)
-    r2 = 1 - np.sum((y[ok] - pred) ** 2) / ss if ss > 0 else float("nan")
-    return float(m), float(b), float(r2)
+    f = core.linfit(x[ok], y[ok])
+    t = core.t_quantile(0.975, f["n"] - 2)
+    return dict(slope=f["slope"], ci=t * f["se_slope"], intercept=f["intercept"], ci_b=t * f["se_intercept"],
+                r2=f["r2"], n=f["n"])
+
+
+def randles_sevcik(rates_mVs, ipa):
+    """i_pa gegen √v (v in V/s): lineare Regression -> (Steigung, Achsenabschnitt, R²) oder None."""
+    f = rate_fit(np.sqrt(np.asarray(rates_mVs, float) / 1000.0), ipa)
+    return (f["slope"], f["intercept"], f["r2"]) if f else None
+
+
+def loglog_fit(rates_mVs, ip):
+    """log|i_p| gegen log v: Steigung 0,5 = diffusionskontrolliert, 1 = an der Oberfläche gebunden."""
+    v, ip = np.asarray(rates_mVs, float), np.abs(np.asarray(ip, float))
+    ok = (v > 0) & (ip > 0)
+    return rate_fit(np.log10(v[ok] / 1000.0), np.log10(ip[ok]))
+
+
+def fmt_ci(v, ci, unit=""):
+    """Wert ± 95-%-KI, gerundet auf die Genauigkeit des Intervalls (core.fmt_ve)."""
+    a, b = core.fmt_ve(v, ci)
+    return f"{a} ± {b}{unit}" if b is not None else f"{a}{unit}"
 
 
 # ----------------------------------------------------------------------------
@@ -218,9 +292,10 @@ class CVTab(TABS.FigureTab):
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
                          gradient=True, density=False, show_e12=True, arrow=True, invert=False,
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
-                         struct_w=18.0)
+                         struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False)
 
-    PLOTS = ("cv", "dep", "rs", "trumpet")     # CV | ΔE_p gegen v | Randles-Ševčík | Trumpet-Plot
+    # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
+    PLOTS = ("cv", "dep", "rs", "loglog", "ratio", "trumpet")
     MARKERS = ("s", "o", "^", "v", "D", "p")
 
     # -- Bedienelemente ------------------------------------------------------------
@@ -310,6 +385,22 @@ class CVTab(TABS.FigureTab):
         self.sp_cycle = QSpinBox(minimum=1, maximum=100, value=st["cycle"])
         self.sp_cycle.setToolTip(T("cv_cycle_tip"))
         f.addRow(T("cv_cycle"), self.sp_cycle)
+        row = QHBoxLayout()
+        self.cb_baseline = QCheckBox(T("cv_baseline"))
+        self.cb_baseline.setChecked(st["baseline"])
+        self.cb_baseline.setToolTip(T("cv_baseline_tip"))
+        self.sp_bl_gap = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=0.5, singleStep=0.01, value=st["bl_gap"],
+                                        suffix=" V")
+        self.sp_bl_gap.setToolTip(T("cv_bl_gap_tip"))
+        self.cb_show_bl = QCheckBox(T("cv_show_bl"))
+        self.cb_show_bl.setChecked(st["show_bl"])
+        for w_ in (self.cb_baseline, self.sp_bl_gap, self.cb_show_bl):
+            row.addWidget(w_)
+        row.addStretch(1)
+        f.addRow(row)
+        for cb in (self.cb_baseline, self.cb_show_bl):
+            cb.toggled.connect(self.changed)
+        self.sp_bl_gap.valueChanged.connect(self.changed)
         self.tbl_couples = QTableWidget(0, 2)
         self.tbl_couples.setHorizontalHeaderLabels([T("cv_from"), T("cv_to")])
         self.tbl_couples.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -418,7 +509,7 @@ class CVTab(TABS.FigureTab):
         self.tbl_res = QTableWidget(0, 9)
         self.tbl_res.setHorizontalHeaderLabels(
             [T("ov_name"), "#", "E_pa [V]", "E_pc [V]", "E½ [V]", "ΔE_p [mV]", "i_pa [µA]", "i_pc [µA]",
-             "i_pc/i_pa"])
+             "i_r/i_f"])
         self.tbl_res.horizontalHeaderItem(8).setToolTip(T("cv_ratio_tip"))
         self.tbl_res.verticalHeader().setVisible(False)
         self.tbl_res.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -428,6 +519,10 @@ class CVTab(TABS.FigureTab):
         self.lbl_res.setWordWrap(True)
         self.lbl_res.setTextInteractionFlags(Qt.TextSelectableByMouse)
         v.addWidget(self.lbl_res)
+        row = QHBoxLayout()
+        row.addWidget(self.methods_button())
+        row.addStretch(1)
+        v.addLayout(row)
         self.lv.addWidget(g)
 
         self.sp_cycle.valueChanged.connect(self.changed)
@@ -469,7 +564,8 @@ class CVTab(TABS.FigureTab):
                   invert=self.cb_invert.isChecked(), plot=self.cmb_plot.currentData(),
                   stack=self.cb_stack.isChecked(), stack_gap=self.sp_gap.value(),
                   e12_each=self.cb_e12_each.isChecked(), y_axis=self.cmb_yaxis.currentData(),
-                  peak_labels=self.cmb_peaklab.currentData())
+                  peak_labels=self.cmb_peaklab.currentData(), baseline=self.cb_baseline.isChecked(),
+                  bl_gap=self.sp_bl_gap.value(), show_bl=self.cb_show_bl.isChecked())
         self._sync_ref_widgets()
 
     # -- Dateien -------------------------------------------------------------------
@@ -747,17 +843,19 @@ class CVTab(TABS.FigureTab):
                 notes.append(f"{e['label']}: {n_}")
             E = c["E"] - off
             if st["density"] and d["meta"]["area"]:
-                y, unit = sign * c["I"] * 1e3 / d["meta"]["area"], "mA"       # mA cm⁻²
+                fac, unit = sign * 1e3 / d["meta"]["area"], "mA"              # mA cm⁻²
             else:
-                y, unit = sign * c["I"] * 1e6, "µA"
+                fac, unit = sign * 1e6, "µA"
+            y = fac * c["I"]
             color = (RATE_CMAP(order[k] / max(1, len(vis) - 1)) if st["gradient"] and len(vis) > 1 else e["color"])
             color = color if isinstance(color, str) else "#%02x%02x%02x" % tuple(int(255 * v) for v in color[:3])
             curves.append({"x": E, "y": y, "val": y, "color": color, "label": e["label"], "ls": "-", "lw": 1.3,
-                           "uid": e["uid"]})
+                           "uid": e["uid"], "_scale": fac,
+                           "_off_e": off})
             # Fenster gespeichert in gemessenen Potentialen der globalen Referenz -> auf diese Messung umrechnen
             shift = off - off_g
             for n, (lo, hi) in enumerate(st["couples"], 1):
-                r = analyze_couple(c["E"], c["I"], lo + shift, hi + shift)
+                r = analyze_couple(c["E"], c["I"], lo + shift, hi + shift, st["baseline"], st["bl_gap"])
                 if r is not None:
                     self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
                                              rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
@@ -797,7 +895,8 @@ class CVTab(TABS.FigureTab):
                     for r in self.results:
                         if r["uid"] != c_["uid"] or r["edge"]:
                             continue
-                        for kind, ex, ip, side in (("epa", r["epa"], r["ipa"], "above"), ("epc", r["epc"], r["ipc"], "below")):
+                        for kind, ex, ip, side in (("epa", r["epa"], r["ipa_raw"], "above"),
+                                                         ("epc", r["epc"], r["ipc_raw"], "below")):
                             if mode in (kind, "both"):
                                 labels.append({"key": f"label_{kind}_{c_['uid']}_{r['n']}", "lam": ex, "side": side,
                                                "y": None if dens else float(ip * 1e6 * sign) + c_.get("off", 0.0),
@@ -811,7 +910,7 @@ class CVTab(TABS.FigureTab):
                         sup = f"$^{{{r['n']}}}$" if multi else ""
                         side = "right" if (multi and r["n"] == len(st["couples"])) else "left"
                         labels.append({"key": f"label_e12_{c_['uid']}_{r['n']}", "lam": r["epa"], "side": side,
-                                       "y": float(r["ipa"] * 1e6 * sign) + c_.get("off", 0.0)
+                                       "y": float(r["ipa_raw"] * 1e6 * sign) + c_.get("off", 0.0)
                                        if not (st["density"] and unit == "mA") else None,
                                        "text": f"E{sup}$_{{1/2}}$ = " + _fmt_e(r["e12"], 2)})
             else:
@@ -839,21 +938,62 @@ class CVTab(TABS.FigureTab):
                 imgs.append({"file": p, "id": "struktur_" + e["uid"], "width": st.get("struct_w", 18.0) / 100,
                              "prefer": "top", "_asset": asset})
         cfg["images"] = imgs
+        if st["baseline"] and st["show_bl"]:
+            curves += self.baseline_curves(curves)
         self.show_results()
         return cfg, curves, labels, []
 
-    def rate_series(self):
-        """Ergebnisse nach (Gruppe, Redoxpaar) für Auftragungen gegen die Scanrate (ohne Randpeaks)."""
+    def baseline_curves(self, curves):
+        """Basislinien zur Kontrolle: Hin- und Rückbasislinie (gestrichelt) und Lote vom Peak (gepunktet)."""
+        out = []
+        for c_ in curves:
+            sc, off_e, yoff = c_["_scale"], c_["_off_e"], c_.get("off", 0.0)
+            for r in self.results:
+                bl = r.get("bl")
+                if r["uid"] != c_["uid"] or bl is None or r["edge"]:
+                    continue
+                s, a, b, step = bl["s"], bl["a"], bl["b"], bl["step"]
+                epf, epr = bl["epf"], bl["epr"]               # gemessene Potentiale; Achse = gemessen − off_e
+                ends = [bl["e0"], epf + s * 0.03, epr - s * 0.03]
+                x = np.linspace(min(ends), max(ends), 50)
+                fwd = a * x + b
+                kw = dict(color=c_["color"], lw=0.8, label=None, aux=True)
+                out.append(dict(kw, x=x - off_e, y=fwd * sc + yoff, ls="--"))
+                if step > 0:
+                    out.append(dict(kw, x=x - off_e, y=(fwd - s * step) * sc + yoff, ls="--"))
+                i_f, i_r = (r["ipa_raw"], r["ipc_raw"]) if r["anodic_first"] else (r["ipc_raw"], r["ipa_raw"])
+                for ep, i_pk, rev in ((epf, i_f, False), (epr, i_r, True)):
+                    i_bl = a * ep + b - (s * step if rev else 0.0)
+                    out.append(dict(kw, x=np.array([ep, ep]) - off_e, y=np.array([i_bl, i_pk]) * sc + yoff, ls=":"))
+        return out
+
+    def rate_series(self, currents=False):
+        """Ergebnisse nach (Gruppe, Redoxpaar) für Auftragungen gegen die Scanrate (ohne Randpeaks).
+        currents=True: auch ohne Messungen, deren Basislinie fehlt (sonst korrigierte und unkorrigierte
+        Ströme in einer Regression)."""
         ser = {}
         for r in self.results:
-            if r["rate"] and not r["edge"]:
+            if r["rate"] and not r["edge"] and not (currents and r.get("bl_fail")):
                 ser.setdefault((r["group"], r["n"]), []).append(r)
         return {k: sorted(v, key=lambda r: r["rate"]) for k, v in ser.items()}
+
+    def rate_fits(self):
+        """Regressionen je (Gruppe, Redoxpaar) ab 3 Scanraten -> {(Gruppe, n): dict(rs_a, rs_c, ll_a, ll_c, rates)}."""
+        out = {}
+        for key, rr in self.rate_series(currents=True).items():
+            v = [r["rate"] for r in rr]
+            if len(set(v)) < 3:
+                continue
+            ia, ic = [r["ipa"] * 1e6 for r in rr], [r["ipc"] * 1e6 for r in rr]
+            out[key] = dict(rs_a=rate_fit(np.sqrt(np.array(v) / 1000.0), ia),
+                            rs_c=rate_fit(np.sqrt(np.array(v) / 1000.0), ic),
+                            ll_a=loglog_fit(v, ia), ll_c=loglog_fit(v, ic), rates=sorted(set(v)))
+        return out
 
     def rate_plot(self, cfg, ref_label):
         """ΔE_p gegen v, Randles-Ševčík (i_p gegen √v) oder Trumpet-Plot (E_p gegen log v)."""
         st = self.st
-        ser = self.rate_series()
+        ser = self.rate_series(currents=st["plot"] in ("rs", "loglog", "ratio"))
         multi_n = len(st["couples"]) > 1
         curves = []
         for j, ((grp, n), rr) in enumerate(sorted(ser.items(), key=lambda kv: (kv[0][1], kv[0][0]))):
@@ -874,6 +1014,20 @@ class CVTab(TABS.FigureTab):
                     if fit:
                         xf = np.array([0.0, float(sq.max()) * 1.05])
                         curves.append(dict(color=col, ls="--", lw=1.0, x=xf, y=fit[0] * xf + fit[1], label=None))
+            elif st["plot"] == "loglog":
+                lv = np.log10(v / 1000.0)
+                for key, tag, m_ in (("ipa", "a", "^"), ("ipc", "c", "v")):
+                    ip = np.abs(np.array([r[key] * 1e6 for r in rr]))
+                    ok = ip > 0
+                    lab = f"i$_{{p{tag}}}$" + (f" {name}" if name else "")
+                    curves.append(dict(base, x=lv[ok], y=np.log10(ip[ok]), label=lab, marker=m_))
+                    fit = loglog_fit(v, ip)
+                    if fit:
+                        xf = np.array([lv.min() - 0.1, lv.max() + 0.1])
+                        curves.append(dict(color=col, ls="--", lw=1.0, x=xf, y=fit["slope"] * xf + fit["intercept"],
+                                           label=None))
+            elif st["plot"] == "ratio":
+                curves.append(dict(base, x=v, y=np.array([r["ratio"] for r in rr]), label=name))
             else:                                        # Trumpet: E_pa und E_pc gegen log v
                 lv = np.log10(v / 1000.0)
                 curves.append(dict(base, x=lv, y=np.array([r["epa"] for r in rr]), marker="^",
@@ -887,7 +1041,7 @@ class CVTab(TABS.FigureTab):
         xs = np.concatenate([c_["x"] for c_ in curves])
         ys = np.concatenate([c_["y"] for c_ in pts])
         # Mindestspanne, sonst zoomt die Achse bei fast gleichen Werten auf Rauschen (z. B. 63,82–63,84 mV)
-        min_span = {"dep": 40.0, "rs": 1.0, "trumpet": 0.05}[st["plot"]]
+        min_span = {"dep": 40.0, "rs": 1.0, "loglog": 0.3, "ratio": 0.3, "trumpet": 0.05}[st["plot"]]
         ypad = 0.1 * max(float(np.ptp(ys)), min_span) + max(0.0, min_span - float(np.ptp(ys))) / 2
         if st["plot"] == "dep":
             cfg["xlim"] = [0.0, float(xs.max()) * 1.08]
@@ -897,6 +1051,19 @@ class CVTab(TABS.FigureTab):
             cfg["xlim"] = [0.0, float(xs.max()) * 1.08]
             cfg["ylim"] = [min(0.0, float(ys.min()) - ypad), max(0.0, float(ys.max()) + ypad)]
             cfg["xlabel"], cfg["ylabel"] = "v$^{1/2}$ [V$^{1/2}$ s$^{-1/2}$]", "i$_p$ [µA]"
+        elif st["plot"] == "loglog":
+            xpad = 0.1 * (float(np.ptp(xs)) or 1.0)
+            cfg["xlim"] = [float(xs.min()) - xpad, float(xs.max()) + xpad]
+            cfg["ylim"] = [float(ys.min()) - ypad, float(ys.max()) + ypad]
+            cfg["xlabel"], cfg["ylabel"] = "log(v / V s$^{-1}$)", "log(|i$_p$| / µA)"
+        elif st["plot"] == "ratio":
+            x1 = float(xs.max()) * 1.08
+            cfg["xlim"] = [0.0, x1]
+            lo_, hi_ = min(float(ys.min()), 1.0), max(float(ys.max()), 1.0)
+            cfg["ylim"] = [max(0.0, lo_ - ypad), hi_ + ypad]
+            cfg["xlabel"], cfg["ylabel"] = "scan rate [mV/s]", "i$_{p,r}$/i$_{p,f}$ (Nicholson)"
+            curves.append(dict(color="#888888", ls=":", lw=0.8, x=np.array([0.0, x1]), y=np.array([1.0, 1.0]),
+                               label=None, aux=True))
         else:
             xpad = 0.1 * (float(np.ptp(xs)) or 1.0)
             cfg["xlim"] = [float(xs.min()) - xpad, float(xs.max()) + xpad]
@@ -919,22 +1086,104 @@ class CVTab(TABS.FigureTab):
                 if r["edge"]:
                     it.setForeground(Qt.red)
                     it.setToolTip(T("cv_edge"))
+                elif r.get("bl_fail") and j >= 6:
+                    it.setForeground(Qt.darkYellow)
+                    it.setToolTip(T("cv_bl_fail"))
                 self.tbl_res.setItem(i, j, it)
         self.tbl_res.resizeColumnsToContents()
         lines = [self.note] if getattr(self, "note", "") else []
-        for n in range(1, len(self.st["couples"]) + 1):
-            rr = [r for r in res if r["n"] == n and r["rate"]]
-            if len({r["rate"] for r in rr}) >= 3:
-                fit = randles_sevcik([r["rate"] for r in rr], [r["ipa"] * 1e6 for r in rr])
-                if fit:
-                    lines.append(T("cv_randles", n=n, m=f"{fit[0]:.1f}", r2=f"{fit[2]:.4f}"))
+        if any(r.get("bl_fail") for r in res):
+            lines.append(T("cv_bl_fail"))
+        for (grp, n), f in sorted(self.rate_fits().items(), key=lambda kv: (kv[0][1], kv[0][0])):
+            name = f"{n}" + (f" ({grp})" if grp else "")
+            for tag, rs, ll in (("a", f["rs_a"], f["ll_a"]), ("c", f["rs_c"], f["ll_c"])):
+                if rs and ll:
+                    lines.append(T("cv_fit_line", n=name, p=tag, m=fmt_ci(rs["slope"], rs["ci"]),
+                                   b=fmt_ci(rs["intercept"], rs["ci_b"]), r2=f"{rs['r2']:.4f}",
+                                   ll=fmt_ci(ll["slope"], ll["ci"]), k=rs["n"]))
         self.lbl_res.setText("\n".join(lines))
+
+    def _ref_sentence(self):
+        """Referenzierung der sichtbaren Messungen -> (Satz englisch, Referenz für die Ergebnisse)."""
+        st = self.st
+        kinds = set()
+        for e in (x for x in st["files"] if x["visible"]):
+            ref = e.get("ref") or {}
+            if ref.get("mode") in ("internal", "manual"):
+                kinds.add((ref["mode"], ref.get("compound"), round(ref.get("value", 0.0), 3)))
+            else:
+                kinds.add((st["ref_mode"], st["ref_compound"], round(st["ref_value"], 3)))
+        out = []
+        internal = sorted(k for k in kinds if k[0] == "internal")
+        if internal:
+            stds = []
+            for _, comp, val in internal:
+                name, short = REF_NAMES_EN.get(comp, ("an internal standard", ""))
+                stds.append(name if comp == "fc" else
+                            f"{name} ({short + ', ' if short else ''}E1/2 = {_fmt_e(val, 2)} V vs. Fc+/Fc)")
+            out.append("Potentials are given vs. the ferrocenium/ferrocene couple (Fc+/Fc) and were referenced to "
+                       "the half-wave potential of " + " or ".join(stds) + " as internal standard.")
+        if any(k[0] == "manual" for k in kinds):
+            out.append("Potentials were converted to the Fc+/Fc scale using the half-wave potential of Fc+/Fc "
+                       f"measured vs. {st['ref_electrode']}.")
+        if any(k[0] == "none" for k in kinds):
+            out.append(f"Potentials are given vs. {st['ref_electrode']}.")
+        return " ".join(out), ("Fc+/Fc" if kinds and all(k[0] != "none" for k in kinds) else st["ref_electrode"])
+
+    def methods_text(self):
+        """SI-Text zur Auswertung (englisch, Stil des Abschnitts „Cyclic Voltammetry“ der Gruppen-SI): Gerät,
+        Elektroden und Leitsalz stehen im Aufbau-Absatz der SI und fehlen hier bewusst. Danach ein Absatz mit
+        den Ergebnissen je Redoxpaar (zum Übernehmen in Text oder Bildunterschrift)."""
+        st = self.st
+        ver = QCoreApplication.applicationVersion()
+        rates = sorted({round(r["rate"], 1) for r in self.results if r["rate"]})
+        ref_txt, ref_lab = self._ref_sentence()
+        m = [f"The CVs were evaluated with Spectravolt{' ' + ver if ver else ''}.", ref_txt,
+             "Peak potentials (Epa, Epc) were obtained by a parabolic fit to the current extremum (±3 data points) "
+             f"of cycle {st['cycle']}; E1/2 = (Epa + Epc)/2 and ΔEp = Epa − Epc."]
+        if st["baseline"]:
+            m.append("Peak currents were measured against a linear baseline fitted to the current of the forward "
+                     f"scan before the onset of the wave (ending {st['bl_gap'] * 1000:.0f} mV before the peak "
+                     "potential) and extrapolated beneath the peak. For the reverse peak, this baseline was shifted "
+                     "by the change of the capacitive current at the switching potential (current step of 2C·v).")
+        else:
+            m.append("Peak currents were measured from zero current.")
+        m.append("The ratio of reverse to forward peak current was calculated according to Nicholson, "
+                 "ip,r/ip,f = (ip,r)0/ip,f + 0.485 (isp)0/ip,f + 0.086, where (isp)0 is the current at the switching "
+                 "potential, to account for the decaying current of the forward scan.[R. S. Nicholson, Anal. Chem. "
+                 "1966, 38, 1406.]")
+        if rates:
+            m.append("Scan rates: " + ", ".join(f"{v:g}" for v in rates) + " mV s-1.")
+        fits = self.rate_fits()
+        if fits:
+            m.append("The scan-rate dependence was analysed by linear least-squares regression of ip vs. v1/2 "
+                     "(Randles–Ševčík) and of log|ip| vs. log v (slope 0.5: diffusion-controlled, 1: surface-"
+                     "confined species); uncertainties are given as 95% confidence intervals (t-distribution, "
+                     "n − 2 degrees of freedom).")
+        res = []
+        for (grp, n), rr in sorted(self.rate_series().items(), key=lambda kv: (kv[0][1], kv[0][0])):
+            e12 = np.mean([r["e12"] for r in rr])
+            dep = [r["dep"] * 1000 for r in rr]
+            rat = [r["ratio"] for r in rr if np.isfinite(r["ratio"]) and not r.get("bl_fail")]
+            rng = lambda v, f: f"{min(v):{f}}" + (f"–{max(v):{f}}" if f"{min(v):{f}}" != f"{max(v):{f}}" else "")  # noqa: E731
+            txt = (f"Couple {n}" + (f" ({grp})" if grp else "") + f": E1/2 = {_fmt_e(e12, 2)} V vs. {ref_lab}"
+                   + f" (ΔEp = {rng(dep, '.0f')} mV" + (f", ip,r/ip,f = {rng(rat, '.2f')}" if rat else "")
+                   + (f"; {rng([r['rate'] for r in rr], 'g')} mV s-1" if len(rr) > 1 else "") + ")")
+            f = fits.get((grp, n))
+            if f and f["ll_a"] and f["ll_c"]:
+                txt += (f"; log–log slopes {fmt_ci(f['ll_a']['slope'], f['ll_a']['ci'])} (ipa) and "
+                        f"{fmt_ci(f['ll_c']['slope'], f['ll_c']['ci'])} (ipc)")
+            res.append(txt + ".")
+        out = " ".join(x for x in m if x)
+        return out + ("\n\n" + " ".join(res) if res else "")
 
     def hover_text(self, x, val, name):
         plot = self.st.get("plot", "cv")
         if plot != "cv":
-            xs = {"dep": f"v = {x:.0f} mV/s", "rs": f"√v = {x:.3f} V½ s⁻½", "trumpet": f"log v = {x:.2f}"}[plot]
-            ys = {"dep": "ΔE_p = {:.0f} mV", "rs": "i_p = {:.2f} µA", "trumpet": "E_p = {:.3f} V"}[plot]
+            xs = {"dep": f"v = {x:.0f} mV/s", "rs": f"√v = {x:.3f} V½ s⁻½", "trumpet": f"log v = {x:.2f}",
+                  "loglog": f"log v = {x:.2f}", "ratio": f"v = {x:.0f} mV/s"}[plot]
+            ys = {"dep": "ΔE_p = {:.0f} mV", "rs": "i_p = {:.2f} µA", "trumpet": "E_p = {:.3f} V",
+                  "loglog": "log i_p = {:.3f}", "ratio": "i_r/i_f = {:.2f}"}[plot]
             return f"{xs}    {ys.format(val)}    {name}" if val is not None else xs
         if val is None:
             return f"E = {x:.3f} V"
@@ -949,10 +1198,14 @@ class CVTab(TABS.FigureTab):
             w = csv.writer(fh, delimiter=";")
             w.writerow(["file", "group", "couple", "scan_rate_mV_s", "E_pa_V", "E_pc_V", "E_half_V", "dE_p_mV",
                         "i_pa_uA", "i_pc_uA", "ratio_Nicholson", "peak_at_window_edge", "reference_offset_V",
-                        "ir_compensation_in_file", "reference"])
+                        "ir_compensation_in_file", "reference", "baseline", "i_pa_raw_uA", "i_pc_raw_uA",
+                        "charging_step_uA"])
             for r in self.results:
                 w.writerow([r["label"], r.get("group", ""), r["n"], r["rate"], f"{r['epa']:.4f}", f"{r['epc']:.4f}",
                             f"{r['e12']:.4f}", f"{r['dep'] * 1000:.1f}", f"{r['ipa'] * 1e6:.3f}",
                             f"{r['ipc'] * 1e6:.3f}", f"{r['ratio']:.3f}", int(r["edge"]), f"{r.get('offset', 0):.4f}",
-                            r.get("ircomp", ""), getattr(self, "note", "").replace("\n", " | ")])
+                            r.get("ircomp", ""), getattr(self, "note", "").replace("\n", " | "),
+                            "failed" if r.get("bl_fail") else ("linear" if r.get("bl") else "none"),
+                            f"{r['ipa_raw'] * 1e6:.3f}", f"{r['ipc_raw'] * 1e6:.3f}",
+                            f"{r['bl']['step'] * 1e6:.3f}" if r.get("bl") else ""])
         return files + [p]

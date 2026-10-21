@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]          # git tag v1.0.0 && git push --tags  -> Release mit allen drei Apps
   workflow_dispatch:      # oder manuell unter "Actions" starten
+    inputs:
+      release:
+        description: "Release ohne lokales Tag, z. B. v1.22.0 (nur auf main; muss zu APP_VERSION passen). Leer = nur bauen."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -120,17 +125,22 @@ jobs:
           path: selftest_*/selftest_report.txt
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Tag-Push (git push --tags) oder manueller Start auf main mit Eingabe „release“ (legt das Tag selbst an)
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '' && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.release || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
       # Titel und zweisprachige Notes aus CHANGELOG.md/CHANGELOG.de.md (bricht ab, wenn die Version fehlt)
       - name: Release Notes
         id: notes
         run: |
-          python3 release_notes.py "${GITHUB_REF_NAME}" > release_notes.md
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          case "$TAG" in v[0-9]*) ;; *) echo "Tag muss mit v beginnen: $TAG"; exit 1;; esac
+          grep -q "^APP_VERSION = \"${TAG#v}\"" uvvis_gui.py || { echo "APP_VERSION passt nicht zu $TAG"; exit 1; }
+          python3 release_notes.py "$TAG" > release_notes.md
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           pattern: Spectravolt-*
@@ -138,5 +148,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: Spectravolt ${{ steps.notes.outputs.version }}
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           body_path: release_notes.md
           files: Spectravolt-*

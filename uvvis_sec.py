@@ -225,6 +225,7 @@ class SECTab(TABS.FigureTab):
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         f.addRow(self.lbl_info)
+        f.addRow(self.methods_button())
         self.lv.addWidget(g)
         for w_ in (self.sp_offset_s, self.sp_shift):
             w_.valueChanged.connect(self.changed)
@@ -298,6 +299,8 @@ class SECTab(TABS.FigureTab):
     def figure_spec(self):
         st = self.st
         sp, E = self.series()
+        self.fits = []                                     # (λ, Nernst-Fit) für den SI-Text
+        self.ref_label = None
         if not sp:
             self.lbl_info.setText("")
             return None
@@ -306,6 +309,7 @@ class SECTab(TABS.FigureTab):
         i1 = n - 1 if not st["last"] else min(max(st["last"], i0 + 1), n) - 1
         sel = list(range(i0, i1 + 1))
         off, ref_label = self.e_offset()
+        self.ref_label = ref_label
         Eax = None if E is None else E - off
         cfg = self.base_cfg()
         lam0 = sp[sel[0]]["lam"]
@@ -341,6 +345,7 @@ class SECTab(TABS.FigureTab):
                         info.append(T("sec_fit_info", lam=f"{lam:g}", e12=CV._fmt_e(fit["e12"]), n=f"{fit['n']:.2f}",
                                       r2=f"{fit['r2']:.3f}"))
                         self.info[lam] = fit
+                        self.fits.append((lam, fit))
             cfg["xlim"] = [float(xs.min()), float(xs.max())]
             span = float(np.ptp(np.concatenate([c["y"] for c in curves]))) or 1.0
             ymin = float(min(c["y"].min() for c in curves))
@@ -384,6 +389,27 @@ class SECTab(TABS.FigureTab):
             info.append(T("sec_no_time"))
         self.lbl_info.setText("\n".join(info))
         return cfg, curves, labels, []
+
+    def methods_text(self):
+        """SI-Text zum scheinbaren Nernst-Fit (nur wenn gefittet). Ausdrücklich „apparent“: Im kontinuierlichen
+        Scan hinkt die Dünnschichtzelle nach, E½ und n weichen vom CV ab; CV-Werte haben Vorrang."""
+        fits = getattr(self, "fits", [])
+        if not fits:
+            return ""
+        st = self.st
+        ref = str(self.ref_label or st["electrode"]).replace("Fc$^{0/+}$", "Fc+/Fc")
+        m = ["Each spectrum was assigned the potential at its acquisition time, interpolated from the time-resolved "
+             "potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
+             "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "
+             "A(E) = A_red + (A_ox − A_red)/[1 + exp(−nF(E − E1/2)/RT)] (T = 298.15 K); E1/2 and n were obtained by a "
+             "grid search (E1/2 in 2 mV steps, n = 0.30–3.00 in steps of 0.05) with A_red and A_ox determined by "
+             "linear least squares at each grid point.",
+             "As the potential was swept continuously in a thin-layer cell, the electrolysis lags behind the "
+             "applied potential; E1/2 and n are therefore apparent values (E1/2,app, n_app), and the half-wave "
+             "potentials from cyclic voltammetry are considered more reliable."]
+        res = [f"λ = {lam:g} nm: E1/2,app = {CV._fmt_e(f['e12'], 3)} V vs. {ref}, n_app = {f['n']:.2f}, "
+               f"R² = {f['r2']:.3f}" for lam, f in fits]
+        return " ".join(m) + "\n\n" + "; ".join(res) + "."
 
     def hover_text(self, x, val, name):
         if self.st["mode"] == "trace":

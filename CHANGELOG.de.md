@@ -2,6 +2,23 @@
 
 # Änderungen
 
+## 1.22.0 – 21.10.2026
+
+### Neu
+- CV: **Basislinienkorrektur** der Peakströme (Standard an): Gerade durch den Strom vor dem Hinpeak, für den Rückpeak um
+  den Ladestromsprung am Umkehrpunkt verschoben; Nicholson-Verhältnis aus den korrigierten Strömen. Basislinien optional
+  im Bild.
+- CV: neue Auftragungen **log i_p gegen log v** (Diffusion/Adsorption) und **i_r/i_f gegen v** (chemische Reversibilität).
+- CV: Regressionen gegen die Scanrate mit **95-%-Konfidenzintervall** für Steigung und Achsenabschnitt.
+- **SI-Text kopieren** in allen Tabs, die fitten (UV-Vis (ε), CV, SEC, EPR): englischer Methodenabsatz mit genau den
+  benutzten Auswerteschritten und Einstellungen, danach die Ergebnisse; beim Export als `…_methods.txt`.
+
+### Geändert
+- CV: i_pa, i_pc und i_r/i_f ändern sich in bestehenden Projekten durch die Basislinie (abschaltbar); Peakpotentiale
+  und E½ bleiben gleich. Die Ergebniszeile wertet jetzt je Gruppe aus (vorher wurden Gruppen, z. B. Lösungsmittel,
+  in einer Randles-Ševčík-Regression gemischt).
+- CV-Ergebnistabelle: Spalte „i_r/i_f“ statt „i_pc/i_pa“ (Rück-/Hinpeak, auch bei kathodischem Start richtig benannt).
+
 ## 1.21.0 – 21.10.2026
 
 ### Neu

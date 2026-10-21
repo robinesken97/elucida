@@ -377,8 +377,10 @@ TEXTS = {
                      "Note: measurements with different references (Fc⁺/Fc and reference electrode) in one figure."),
     "cv_plot": ("Auftragung", "Plot"),
     "cv_plot_cv": ("Cyclovoltammogramm", "Cyclic voltammogram"),
-    "cv_plot_dep": ("Reversibilität: ΔE_p gegen v", "Reversibility: ΔE_p vs. v"),
+    "cv_plot_dep": ("Elektrochem. Reversibilität: ΔE_p gegen v", "Electrochem. reversibility: ΔE_p vs. v"),
     "cv_plot_rs": ("Randles-Ševčík: i_p gegen √v", "Randles–Ševčík: i_p vs. √v"),
+    "cv_plot_loglog": ("Diffusion: log i_p gegen log v", "Diffusion: log i_p vs. log v"),
+    "cv_plot_ratio": ("Chem. Reversibilität: i_r/i_f gegen v", "Chem. reversibility: i_r/i_f vs. v"),
     "cv_plot_trumpet": ("Trumpet-Plot: E_p gegen log v", "Trumpet plot: E_p vs. log v"),
     "cv_plot_tip": ("Auftragungen gegen die Scanrate aus den Redoxpaaren aller sichtbaren Messungen, eine Datenreihe je "
                     "Gruppe. ΔE_p enthält auch den iR-Abfall (v. a. in THF); der Trumpet-Plot ist ohne k⁰-Auswertung "
@@ -632,16 +634,45 @@ TEXTS = {
                       "Default: as recorded (Gamry: IUPAC, anodic positive)."),
     "cv_results": ("Ergebnisse", "Results"),
     "cv_ratio_tip": ("Rückpeak/Hinpeak nach Nicholson (Anal. Chem. 1966): berücksichtigt den abklingenden Strom\n"
-                     "des Hinlaufs. ≈ 1: chemisch reversibel.",
+                     "des Hinlaufs. ≈ 1: chemisch reversibel. i_pa/i_pc mit Basislinie (falls eingeschaltet).",
                      "Reverse/forward peak ratio after Nicholson (Anal. Chem. 1966): accounts for the decaying\n"
-                     "forward current. ≈ 1: chemically reversible."),
+                     "forward current. ≈ 1: chemically reversible. i_pa/i_pc with baseline (if enabled)."),
     "cv_ref_note": ("Referenz: {name} bei E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc",
                     "Reference: {name} at E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc"),
     "cv_ref_missing": ("⚠ Referenz nicht gefunden (Messung oder Fenster prüfen) – Achse wie gemessen.",
                        "⚠ Reference not found (check measurement or window) – axis as measured."),
     "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
-    "cv_randles": ("Paar {n}: i_pa gegen √v linear, Steigung {m} µA (V/s)^-½, R² = {r2} (Randles-Ševčík)",
-                   "Couple {n}: i_pa vs. √v linear, slope {m} µA (V/s)^-½, R² = {r2} (Randles–Ševčík)"),
+    "cv_fit_line": ("Paar {n}, i_p{p} ({k} Scanraten): gegen √v Steigung {m} µA (V/s)^-½, Achsenabschnitt {b} µA, "
+                    "R² = {r2}; log-log-Steigung {ll} (95-%-KI)",
+                    "Couple {n}, i_p{p} ({k} scan rates): vs. √v slope {m} µA (V/s)^-½, intercept {b} µA, "
+                    "R² = {r2}; log–log slope {ll} (95% CI)"),
+    "cv_baseline": ("Basislinie", "Baseline"),
+    "cv_baseline_tip": ("i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund), extrapoliert\n"
+                        "unter den Peak. Rückpeak: dieselbe Gerade, verschoben um den Sprung des Ladestroms am\n"
+                        "Umkehrpunkt (2·C·v); den abklingenden Hinlaufstrom korrigiert Nicholson. Peakpotentiale\n"
+                        "bleiben unverändert. Aus: Ströme von null gemessen.",
+                        "i_p against a straight line through the current before the forward peak (charging current +\n"
+                        "background), extrapolated beneath the peak. Reverse peak: the same line, shifted by the step of\n"
+                        "the charging current at the switching potential (2·C·v); the decaying forward current is\n"
+                        "corrected by Nicholson. Peak potentials are unchanged. Off: currents measured from zero."),
+    "cv_bl_gap_tip": ("Die Basislinie endet so weit vor dem Hinpeak (Standard 0,15 V: Fuß einer reversiblen Welle).\n"
+                      "Braucht im Fenster mindestens 30 mV Vorlauf ohne Peak.",
+                      "The baseline ends this far before the forward peak (default 0.15 V: foot of a reversible wave).\n"
+                      "Needs at least 30 mV of peak-free current in the window."),
+    "cv_show_bl": ("im Bild", "in figure"),
+    "cv_bl_fail": ("⚠ Basislinie nicht möglich (zu wenig Vorlauf im Fenster) – Ströme von null gemessen, nicht in den "
+                   "Regressionen. Fenster zur Startseite des Hinpeaks erweitern.",
+                   "⚠ baseline not possible (too little current before the peak in the window) – currents from zero, "
+                   "excluded from the regressions. Extend the window towards the start of the forward peak."),
+    "si_copy_methods": ("SI-Text kopieren", "Copy SI text"),
+    "si_copy_methods_tip": ("Methodenabsatz zu allen Fits und Auswerteschritten dieses Tabs (englisch, zum Anhängen an\n"
+                            "den Aufbau-Absatz des passenden SI-Abschnitts), danach die Ergebnisse. Richtet sich nach\n"
+                            "den aktuellen Einstellungen; wird beim Export als …_methods.txt mitgeschrieben.",
+                            "Methods paragraph on all fits and evaluation steps of this tab (English, to append to the\n"
+                            "setup paragraph of the matching SI section), followed by the results. Follows the current\n"
+                            "settings; also written as …_methods.txt on export."),
+    "si_methods_copied": ("SI-Text in der Zwischenablage.", "SI text copied to the clipboard."),
+    "si_methods_none": ("Nichts gefittet – kein SI-Text.", "Nothing fitted – no SI text."),
     # ---- Spektroelektrochemie ----------------------------------------------
     "tab_sec": ("SEC", "SEC"),
     "sec_data": ("Daten", "Data"),

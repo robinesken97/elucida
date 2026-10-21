@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QSpinBox,
                                QTableWidget, QTableWidgetItem, QVBoxLayout)
 
+import uvvis_core as core
 import uvvis_tabs as TABS
 from uvvis_i18n import T
 import uvvis_style as STYLE
@@ -845,6 +846,7 @@ class EPRTab(TABS.FigureTab):
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         f.addRow(self.lbl_info)
+        f.addRow(self.methods_button())
         self.lv.addWidget(g)
         for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_smooth, self.sp_gap):
             w_.valueChanged.connect(self.changed)
@@ -1419,6 +1421,114 @@ class EPRTab(TABS.FigureTab):
             info += "\n" + T("epr_gauss_edge", n=self._edge_hits)
         self.lbl_info.setText(info)
         return cfg, curves, [], []
+
+    def methods_text(self):
+        """SI-Text (englisch) zu Verarbeitung und Fits der sichtbaren Einträge, nur die benutzten Schritte, in der
+        Reihenfolge der Verarbeitung; danach die Ergebnisse (S = ½-Fits, Kalibrierung, Kinetik)."""
+        st = self.st
+        vis = [e for e in st["entries"] if e["visible"]]
+        exps = [e for e in vis if e["kind"] == "exp"]
+        if not exps:
+            return ""
+        fmt_r = lambda rs: ", ".join(f"{a:g}–{b:g}" for a, b in rs)          # noqa: E731
+        m, res = [], []
+        if st.get("ref_freq"):
+            m.append(f"Field axes were scaled to a common microwave frequency of {st['ref_freq']:g} GHz "
+                     "(B·ν_ref/ν).")
+        dB, calib_t = self.calibration_shift()
+        if dB:
+            ref = next(x for x in st["entries"] if x["uid"] == st["calib_uid"])
+            m.append(f"The magnetic field was calibrated with a reference spectrum (g_lit = {st['calib_g']:.4f}): its "
+                     "simulation was fitted (see below), and the field offset ΔB = B_res(g_fit) − B_res(g_lit) at the "
+                     "microwave frequency of the reference was subtracted from the field axes of all other spectra.")
+            res.append(f"Field calibration: g_fit = {ref['g']:.5f}, ΔB = {dB:+.3f} mT".replace("-", "−"))
+        steps = []
+        darks = sorted({round(e.get("dark_k", 1.0), 3) for e in exps if e.get("dark")})
+        if darks:
+            steps.append("a dark spectrum was subtracted (I_light − k·I_dark, k = " + ", ".join(f"{k:g}" for k in darks)
+                         + "; interpolated onto the field axis of the measurement)")
+        if st["bl_order"] >= 0:
+            regs = ranges(st["bl_regions"])
+            where = (f"the signal-free field ranges {fmt_r(regs)} mT" if regs
+                     else f"the outer {st['bl_edge']:g}% of the field sweep on each side")
+            steps.append(f"a polynomial baseline of order {st['bl_order']} was fitted by least squares to {where} "
+                         "and subtracted")
+        if ranges(st["exclude"]):
+            steps.append(f"the field range(s) {fmt_r(ranges(st['exclude']))} mT were excluded")
+        if st["smooth"]:
+            steps.append(f"the spectra were smoothed by a moving average over {st['smooth']:g} mT")
+        if steps:
+            txt = "; ".join(steps)
+            m.append("Processing of the measured spectra: " + txt + ".")
+        sims = [e for e in vis if e["kind"] in ("sim", "iso") and e.get("fit_to")]
+        if any(e["kind"] == "sim" for e in sims):
+            m.append("Spectra were simulated with EasySpin.[S. Stoll, A. Schweiger, J. Magn. Reson. 2006, 178, 42–55.]")
+        if sims:
+            m.append("Simulations assigned to a measured spectrum were scaled to it by linear least squares, all "
+                     "components of a spectrum simultaneously (one factor each); relative contributions were "
+                     "obtained from the double integrals of the scaled components.")
+        isos = [e for e in vis if e["kind"] == "iso" and e.get("fit")]
+        if isos:
+            lor = any(e.get("fit_lorentz") for e in isos)
+            m.append("Isotropic S = 1/2 spectra were simulated to first order (lines of groups of equivalent nuclei "
+                     "with binomial/multinomial intensities, first-derivative pseudo-Voigt line shape with "
+                     "peak-to-peak width ΔBpp). g, the hyperfine coupling constants a and ΔBpp"
+                     + (" and the Lorentzian fraction" if lor else "") + " were optimized by Levenberg–Marquardt "
+                     "least squares after a coarse grid search over the field position and a common scaling factor "
+                     "of the coupling constants; the amplitude was determined linearly. Parameter uncertainties "
+                     "were not derived from the fit (residuals of a digitized spectrum are correlated).")
+            for e in isos:
+                parts = [f"g = {e['g']:.5f}"]
+                for n, I_, a in self.iso_groups(e):
+                    parts.append(f"a({n} × I = {I_:g}) = {a:.3f} mT ({a * MHZ_PER_MT_FREE * e['g'] / 2.0023:.1f} MHz)")
+                parts.append(f"ΔBpp = {e['lw']:.3f} mT")
+                if e.get("fit_lorentz"):
+                    parts.append(f"Lorentzian fraction {e.get('lorentz', 0.0):.2f}")
+                parts.append(f"R² = {e['fit']['r2']:.4f}")
+                res.append(f"{e['label']}: " + ", ".join(parts))
+        if st["mode"] == "intensity":
+            win = (ranges(st["int_window"]) or [None])[0]
+            wtxt = f" within {win[0]:g}–{win[1]:g} mT" if win else ""
+            meth = st["int_method"]
+            if meth == "double":
+                m.append(f"EPR intensities were obtained by double integration of the first-derivative spectra{wtxt}; "
+                         "after the first integration, a straight line through the mean values of the outer 5% "
+                         "on each side was subtracted.")
+            elif meth == "pp":
+                m.append(f"EPR intensities were taken as peak-to-peak amplitudes{wtxt}.")
+            else:
+                m.append(f"EPR intensities were obtained by fitting a Gaussian on a linear baseline{wtxt}, "
+                         "y = p1·exp[−(B − p2)²/p3] + p4·B + p5, by Levenberg–Marquardt least squares (centre p2 "
+                         "constrained to the window and at least 3% of its width from the edges, p3 = 3–50 mT²); "
+                         "|p1| was used as intensity.")
+            if st["int_curie"]:
+                m.append("Intensities were multiplied by the temperature (I·T)"
+                         + (" before fitting." if meth == "gauss" else "."))
+            if st.get("T_offset"):
+                m.append(f"Temperatures were corrected by {st['T_offset']:+g} K.".replace("-", "−"))
+            r = getattr(self, "kin_result", None)
+            if r:
+                lsq = st.get("kin_norm", "script") == "lsq"
+                m.append("The decay was analysed as a first-order process at a constant heating rate β (from the mean "
+                         "temperature step and time between spectra), I(T) = exp[−(A/β)∫exp(−Ea/RT′)dT′] from the "
+                         "first temperature (trapezoidal integration over the measured temperatures), using "
+                         "min–max normalized intensities. Ea and ln A were fitted by Levenberg–Marquardt, starting "
+                         "from a grid over Ea with ln A chosen to reproduce the measured half-decay temperature. "
+                         + ("The sum of squared residuals was minimized; 95% confidence intervals were obtained from "
+                            "s²(JᵀJ)⁻¹ with s² = SSR/(n − 2) and t(0.975; n − 2)." if lsq else
+                            "The square roots of the absolute residuals were minimized (L1 norm); the intervals "
+                            "(1.96·SE from (JᵀJ)⁻¹·SSR/n) underestimate the uncertainty."))
+                half = (r["ci_Ea"][1] - r["ci_Ea"][0]) / 2
+                a_, e_ = core.fmt_ve(r["Ea"] / 1000, half / 1000, max_decimals=2)      # Auflösung 0,01 kJ/mol
+                mant, ex = f"{r['A']:.2e}".split("e")
+                res.append(f"Ea = {a_} ± {e_} kJ mol-1 ({r['Ea'] / 4184:.1f} kcal mol-1), "
+                           f"A = {mant} × 10^{int(ex)} s-1, "
+                           f"β = {r['beta'] * 60:.3f} K min-1, n = {len(self.series_values)}, "
+                           f"correlation Ea/ln A = {r['corr']:.4f}")
+        if not m and not res:
+            return ""
+        out = " ".join(m)
+        return out + ("\n\n" + "; ".join(res) + "." if res else "")
 
     def export_to(self, base: Path):
         """Abbildung + Daten wie überall; zusätzlich je Messung eine EasySpin-fertige Textdatei (B in mT, I) in
