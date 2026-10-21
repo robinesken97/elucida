@@ -2051,11 +2051,11 @@ class MainWindow(QMainWindow):
                     FigureCanvasAgg(fig)
                     F = xt.build(fig, e, interactive=False)
                     if F is not None:
-                        png = out_dir / f"{core.safe_name(fname)}_xray.png"
-                        F.cfg.update(output=str(png), extra_formats=[], dpi=300)
+                        svg = out_dir / f"{core.safe_name(fname)}_xray.svg"
+                        F.cfg.update(output=str(svg), extra_formats=["png"], dpi=600)   # SVG + PNG-Ersatz
                         F.export()
                         w_in, h_in = F.cfg["figsize_in"]
-                        blocks.append(("image", str(png), w_in * 2.54, h_in * 2.54))
+                        blocks.append(("image", str(svg.with_suffix(".png")), w_in * 2.54, h_in * 2.54, str(svg)))
                 blocks.append(("figcap", xt.caption(e)[1]))
                 for t_title, t_name, t_head, t_rows in xt.param_tables(e):
                     blocks += [("tabcap", t_title, t_name), ("params", t_head, t_rows)]

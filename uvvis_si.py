@@ -156,9 +156,7 @@ def markup_runs(markup, bold=False):
         if li:
             out.append(("", {"br"}))
         for t, s_ in XRAY.runs(line):
-            if "o" in s_:
-                t = "".join(ch + "̅" for ch in t)
-            st = {k for k, c in (("i", "i"), ("sub", "s"), ("sup", "p")) if c in s_}
+            st = {k for k, c in (("i", "i"), ("sub", "s"), ("sup", "p"), ("ov", "o")) if c in s_}
             out.append((t, st | ({"b"} if bold else set())))
     return out
 
@@ -173,6 +171,13 @@ TEXT_W = 11906 - 2 * 1417                  # Textbreite in twips (A4, 2.5 cm Ran
 def _run_xml(text, st, size=22):
     if "br" in st:
         return "<w:r><w:br/></w:r>"
+    if "ov" in st:                          # Überstrich: Formelobjekt „Balken oben“, Text als Arial (m:nor)
+        wr = _FONT + ("<w:b/>" if "b" in st else "") + ("<w:i/>" if "i" in st else "") + \
+            f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
+        t = _html.escape(text, quote=False)
+        return ('<m:oMath><m:bar><m:barPr><m:pos m:val="top"/><m:ctrlPr><w:rPr>' + wr + '</w:rPr></m:ctrlPr>'
+                '</m:barPr><m:e><m:r><m:rPr><m:nor/></m:rPr><w:rPr>' + wr + f'</w:rPr><m:t>{t}</m:t></m:r></m:e>'
+                '</m:bar></m:oMath>')
     props = _FONT + ("<w:b/><w:bCs/>" if "b" in st else "") + ("<w:i/><w:iCs/>" if "i" in st else "")
     if "sub" in st:
         props += '<w:vertAlign w:val="subscript"/>'
@@ -212,24 +217,32 @@ def _label_para(kind, num, runs, **kw):
 
 
 def _border(sides):
-    b = "".join(f'<w:{s} w:val="single" w:sz="8" w:space="0" w:color="000000"/>' for s in sides)
+    b = "".join(f'<w:{s} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for s in sides)
     return f"<w:tcBorders>{b}</w:tcBorders>" if b else ""
 
 
 def _head_runs(text):
-    """Tabellenkopf: fett bis zur Einheit („Length / Å“ -> „Length“ fett, „ / Å“ normal)."""
-    if " / " in text:
-        a, b = text.split(" / ", 1)
-        return markup_runs(a, bold=True) + markup_runs(" / " + b)
+    """Tabellenkopf: ganz fett (wie in der SI)."""
     return markup_runs(text, bold=True)
 
 
-def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal=(), width=None):
+# Spaltenbreiten der SI-Tabellen (gemessen: 4.76 / 3.49 / 3.99 / 3.49 cm, weitere abwechselnd), twips
+COL_PATTERN = (2700, 1980, 2265, 1980)
+
+
+def col_widths(n):
+    w = list(COL_PATTERN[:n]) + [COL_PATTERN[2 + (i % 2)] for i in range(max(0, n - len(COL_PATTERN)))]
+    tot = sum(w)
+    return [int(x * TEXT_W / tot) for x in w] if tot > TEXT_W else w
+
+
+def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal=(), width=None, size=20):
     """Dreilinien-Tabelle, alles zentriert. widths: Spaltenbreiten (twips). span_equal: Zeilenindizes, deren gleiche
     Werte über alle Spalten zusammengefasst werden (z. B. Refinement method). bold_rows: Zeilen mit fetten Werten."""
     tw = width or sum(widths)
     grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths)
-    x = (f'<w:tbl><w:tblPr><w:tblW w:w="{tw}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/>'
+    x = (f'<w:tbl><w:tblPr><w:tblW w:w="{tw}" w:type="dxa"/><w:jc w:val="center"/>'
+         '<w:tblLayout w:type="fixed"/>'
          '<w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr>'
          f'<w:tblGrid>{grid}</w:tblGrid>')
 
@@ -237,7 +250,7 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
         tcpr = f'<w:tcW w:w="{w}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + \
             _border(sides) + '<w:vAlign w:val="center"/>'
         sp = dict(line=240, after=0) if head else dict(line=line, before=row_after // 2, after=row_after // 2)
-        return f"<w:tc><w:tcPr>{tcpr}</w:tcPr>" + _para(runs, align="center", **sp) + "</w:tc>"
+        return f"<w:tc><w:tcPr>{tcpr}</w:tcPr>" + _para(runs, size=size, align="center", **sp) + "</w:tc>"
     x += '<w:tr><w:trPr><w:tblHeader/></w:trPr>' + "".join(
         cell(_head_runs(h), widths[j], ("top", "bottom"), head=True) for j, h in enumerate(header)) + "</w:tr>"
     n = len(rows)
@@ -255,7 +268,7 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
     return x + "</w:tbl>"
 
 
-def _image_xml(rid, n, w_cm, h_cm):
+def _image_xml(rid, n, w_cm, h_cm, svg_rid=None):
     cx, cy = int(w_cm * 360000), int(h_cm * 360000)
     return ('<w:p>' + _ppr(align="center", line=240, after=120, keep_next=True) +
             '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
@@ -264,7 +277,11 @@ def _image_xml(rid, n, w_cm, h_cm):
             '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
             '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
             f'<pic:nvPicPr><pic:cNvPr id="{n}" name="image{n}.png"/><pic:cNvPicPr/></pic:nvPicPr>'
-            f'<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            f'<pic:blipFill><a:blip r:embed="{rid}">' +
+            ('<a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip '
+             'xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" '
+             f'r:embed="{svg_rid}"/></a:ext></a:extLst>' if svg_rid else "") +
+            '</a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
             f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
             '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
             '</wp:inline></w:drawing></w:r></w:p>')
@@ -274,14 +291,14 @@ def write_docx(path, blocks):
     """Blöcke:
     ("synthesis", Name)                   „Synthesis of <b>Name</b>“
     ("char", HTML)                        Charakterisierungsabsatz (Abstand davor wie in der SI)
-    ("image", PNG, Breite cm, Höhe cm)    Abbildung zentriert
+    ("image", PNG, Breite cm, Höhe cm[, SVG])  Abbildung zentriert (SVG = Vektor, PNG als Ersatz)
     ("figcap", HTML)                      „Figure Sn: …“
     ("tabcap", Markup, Name)              „Table Sn: <Markup> <b>Name</b>.“
     ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
     ("params", Kopf, Zeilen)              Ausgewählte Bindungen/Winkel
     ("note", Markup)                      Fußnote unter einer Tabelle
     ("gap",)                              Leerzeile"""
-    body, media = [], []
+    body, media, svgs = [], [], []
     n_fig = n_tab = 0
     for b in blocks:
         k = b[0]
@@ -291,8 +308,12 @@ def write_docx(path, blocks):
             body.append(_para(html_runs(b[1]), before=200))
         elif k == "image":
             media.append(Path(b[1]))
+            svg_rid = None
+            if len(b) > 4 and b[4] and Path(b[4]).exists():
+                svgs.append((len(media), Path(b[4])))
+                svg_rid = f"rIdSvg{len(media)}"
             w_cm = min(b[2], TEXT_W / 567.0)
-            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2]))
+            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid))
         elif k == "figcap":
             n_fig += 1
             body.append(_label_para("Figure", n_fig, html_runs(b[1]), after=240))
@@ -302,24 +323,21 @@ def write_docx(path, blocks):
                                     before=120, after=120, keep_next=True))
         elif k == "crystal":
             header, rows = b[1], b[2]
-            n = len(header) - 1
-            first = 3400
-            widths = [first] + [max(1200, (TEXT_W - first) // max(1, n))] * n
+            widths = col_widths(len(header))
             ref_row = [i for i, r in enumerate(rows) if r[0] == "Internal reference"]
             meth = [i for i, r in enumerate(rows) if r[0] == "Refinement method"]
-            body.append(_table(header, rows, widths, bold_rows=ref_row, span_equal=meth))
+            body.append(_table(header, rows, widths, row_after=64, bold_rows=ref_row, span_equal=meth))
         elif k == "params":
             header, rows = b[1], b[2]
-            n = len(header)
-            tw = TEXT_W if n >= 4 else int(TEXT_W * 0.85)
-            body.append(_table(header, rows, [tw // n] * n, row_after=200, line=276))
+            body.append(_table(header, rows, col_widths(len(header)), row_after=260))
         elif k == "note":
             body.append(_para(markup_runs(b[1]), size=18, line=240, after=0))
         elif k == "gap":
             body.append(_para([("", set())]))
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
-          'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"')
+          'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+          'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"')
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            f'<w:document {ns}><w:body>' + "".join(body) +
            '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1417" w:bottom="1134" '
@@ -333,6 +351,7 @@ def write_docx(path, blocks):
               '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
               '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
               '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
+              '<Default Extension="svg" ContentType="image/svg+xml"/>'
               '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
               'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
               'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
@@ -346,6 +365,8 @@ def write_docx(path, blocks):
              'styles" Target="styles.xml"/>' +
              "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}.png"/>' for i in range(1, len(media) + 1)) +
+             "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/image{i}.svg"/>' for i, _ in svgs) +
              '</Relationships>')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,4 +378,6 @@ def write_docx(path, blocks):
         z.writestr("word/_rels/document.xml.rels", drels)
         for i, m in enumerate(media, 1):
             z.writestr(f"word/media/image{i}.png", m.read_bytes())
+        for i, sv in svgs:
+            z.writestr(f"word/media/image{i}.svg", sv.read_bytes())
     return path
