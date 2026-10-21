@@ -901,6 +901,122 @@ def default_view(mol: Molecule, frag=0, use=None, n_dirs=240):
     return R
 
 
+# ---------------------------------------------------------------------------- Ausrichten
+SCREEN_DIRS = {"down": (0.0, -1.0, 0.0), "up": (0.0, 1.0, 0.0), "right": (1.0, 0.0, 0.0), "left": (-1.0, 0.0, 0.0)}
+
+
+def rot_between(u, t):
+    """Kleinste Drehung, die den Einheitsvektor u auf t bringt (Rodrigues)."""
+    u = np.asarray(u, float) / np.linalg.norm(u)
+    t = np.asarray(t, float) / np.linalg.norm(t)
+    v = np.cross(u, t)
+    c = float(np.dot(u, t))
+    if np.linalg.norm(v) < 1e-12:
+        if c > 0:
+            return np.eye(3)
+        a = np.cross(u, [1.0, 0, 0] if abs(u[0]) < 0.9 else [0, 1.0, 0])   # 180° um eine Senkrechte
+        a /= np.linalg.norm(a)
+        return 2 * np.outer(a, a) - np.eye(3)
+    K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + K + K @ K / (1 + c)
+
+
+def align_bond(R, mol, keys, direction="down"):
+    """Bindung (erstes -> zweites Atom) im Bild in die Richtung drehen (unten/oben/rechts/links); die Bindung liegt
+    danach in der Bildebene. Kleinste nötige Drehung, die Blickrichtung ändert sich so wenig wie möglich."""
+    a, b = (mol.atoms[mol.find_key(k)]["xyz"] for k in keys[:2])
+    v = np.asarray(R) @ (b - a)
+    return orthonormalize(rot_between(v, SCREEN_DIRS[direction]) @ np.asarray(R))
+
+
+def align_plane(R, mol, keys):
+    """Ebene durch die gewählten Atome (≥ 3) in die Bildebene: Blick senkrecht darauf, von der Seite, die der
+    bisherigen Ansicht näher ist."""
+    pts = np.array([mol.atoms[mol.find_key(k)]["xyz"] for k in keys])
+    c = pts - pts.mean(axis=0)
+    n = np.linalg.svd(c)[2][-1]
+    nv = np.asarray(R) @ n
+    target = (0.0, 0.0, 1.0 if nv[2] >= 0 else -1.0)
+    return orthonormalize(rot_between(nv, target) @ np.asarray(R))
+
+
+def align_to_template(mol, template_path, frag=0):
+    """Ausrichtung wie in einer ChemDraw-Zeichnung (CDXML): Atome der Zeichnung über das Bindungsnetz den Atomen der
+    Struktur zuordnen (nur Elemente und Verknüpfung, ohne Bindungsordnung und H), dann die Drehung, deren Projektion
+    am besten auf die 2D-Koordinaten passt (Kabsch). -> (R, dict(n, n_template, rmsd, ambiguous)); ValueError, wenn
+    keine eindeutige Zuordnung gelingt."""
+    from rdkit import Chem
+    from rdkit.Chem import rdFMCS
+    ms = [m for m in Chem.MolsFromCDXMLFile(str(template_path), sanitize=False, removeHs=False) if m is not None]
+    if not ms:
+        raise ValueError("keine Struktur in der Datei")
+    tmol = max(ms, key=lambda m: sum(a.GetAtomicNum() > 1 for a in m.GetAtoms()))
+
+    def heavy_graph(n_atoms, elem, bonds):
+        rw = Chem.RWMol()
+        for z_ in elem:
+            a = Chem.Atom(int(z_))
+            a.SetNoImplicit(True)
+            rw.AddAtom(a)
+        for i, j in bonds:
+            if rw.GetBondBetweenAtoms(i, j) is None:
+                rw.AddBond(i, j, Chem.BondType.SINGLE)
+        m = rw.GetMol()
+        m.UpdatePropertyCache(strict=False)
+        Chem.FastFindRings(m)
+        return m
+    t_idx = [a.GetIdx() for a in tmol.GetAtoms() if a.GetAtomicNum() > 1]
+    t_map = {k: i for i, k in enumerate(t_idx)}
+    conf = tmol.GetConformer()
+    t_xy = np.array([[conf.GetAtomPosition(k).x, conf.GetAtomPosition(k).y] for k in t_idx])
+    t_bonds = [(t_map[b.GetBeginAtomIdx()], t_map[b.GetEndAtomIdx()]) for b in tmol.GetBonds()
+               if b.GetBeginAtomIdx() in t_map and b.GetEndAtomIdx() in t_map]
+    tg = heavy_graph(len(t_idx), [tmol.GetAtomWithIdx(k).GetAtomicNum() for k in t_idx], t_bonds)
+    pt = Chem.GetPeriodicTable()
+    c_idx = [k for k, a in enumerate(mol.atoms) if a.get("frag") == frag and a["el"] not in ("H", "D")]
+    c_map = {k: i for i, k in enumerate(c_idx)}
+    c_xyz = np.array([mol.atoms[k]["xyz"] for k in c_idx])
+    c_bonds = [(c_map[a], c_map[b]) for a, b in mol.bonds if a in c_map and b in c_map]
+    cg = heavy_graph(len(c_idx), [pt.GetAtomicNumber(mol.atoms[k]["el"]) for k in c_idx], c_bonds)
+    matches = []
+    pairs = cg.GetSubstructMatches(tg, uniquify=False, maxMatches=2000, useChirality=False)
+    if pairs:
+        matches = [list(zip(range(len(t_idx)), m)) for m in pairs]
+    else:                                              # Zeichnung und Struktur weichen ab: größter gemeinsamer Teil
+        res = rdFMCS.FindMCS([tg, cg], timeout=5, atomCompare=rdFMCS.AtomCompare.CompareElements,
+                             bondCompare=rdFMCS.BondCompare.CompareAny, ringMatchesRingOnly=False)
+        if not res.numAtoms or res.numAtoms < max(3, 0.6 * len(t_idx)):
+            raise ValueError("Zeichnung passt nicht zur Struktur (weniger als 60 % der Atome zuzuordnen)")
+        q = Chem.MolFromSmarts(res.smartsString)
+        tm_ = tg.GetSubstructMatches(q, uniquify=False, maxMatches=50)
+        cm_ = cg.GetSubstructMatches(q, uniquify=False, maxMatches=2000)
+        if not tm_ or not cm_:
+            raise ValueError("Zuordnung fehlgeschlagen")
+        matches = [list(zip(tm_[0], m)) for m in cm_]
+    lt = np.mean([np.linalg.norm(t_xy[i] - t_xy[j]) for i, j in t_bonds]) if t_bonds else 1.0
+    lc = np.mean([np.linalg.norm(c_xyz[i] - c_xyz[j]) for i, j in c_bonds]) if c_bonds else 1.0
+    best = []
+    for m in matches:
+        ti = [a for a, _ in m]
+        ci = [b for _, b in m]
+        P = c_xyz[ci] - c_xyz[ci].mean(axis=0)
+        Q = np.column_stack([t_xy[ti] * lc / lt, np.zeros(len(ti))])
+        Q -= Q.mean(axis=0)
+        H = P.T @ Q
+        U, S, Vt = np.linalg.svd(H)
+        d = np.sign(np.linalg.det(Vt.T @ U.T)) or 1.0
+        Rk = Vt.T @ np.diag([1, 1, d]) @ U.T              # Rk @ P ≈ Q
+        proj = (Rk @ P.T).T[:, :2]
+        rmsd = float(np.sqrt(np.mean(np.sum((proj - Q[:, :2]) ** 2, axis=1))))
+        best.append((rmsd, Rk))
+    best.sort(key=lambda x: x[0])
+    rmsd, Rk = best[0]
+    # mehrdeutig: fast gleich gute Zuordnung mit deutlich anderer Ansicht (z. B. symmetrische Moleküle)
+    amb = any(r2 - rmsd < 0.05 and np.degrees(np.arccos(np.clip((np.trace(R2.T @ Rk) - 1) / 2, -1, 1))) > 20
+              for r2, R2 in best[1:50])
+    return orthonormalize(Rk), dict(n=len(matches[0]), n_template=len(t_idx), rmsd=rmsd, ambiguous=amb)
+
+
 def rot(axis, ang):
     c, s = math.cos(ang), math.sin(ang)
     if axis == "x":
@@ -2042,6 +2158,48 @@ class XrayTab(TABS.FigureTab):
         f.addRow(hint)
         self.lv.addWidget(g)
 
+        g = QGroupBox(T("xr_align"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        for txt, d in (("↓", "down"), ("↑", "up"), ("←", "left"), ("→", "right")):
+            b = QPushButton(txt)
+            b.setToolTip(T("xr_align_bond_tip"))
+            b.clicked.connect(lambda _=False, d=d: self.align_bond(d))
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(T("xr_align_bond"), row)
+        b = QPushButton(T("xr_align_plane"))
+        b.setToolTip(T("xr_align_plane_tip"))
+        b.clicked.connect(self.align_plane)
+        f.addRow(b)
+        row = QHBoxLayout()
+        self.cmb_step = QComboBox()
+        for v_ in (5, 15, 45, 90):
+            self.cmb_step.addItem(f"{v_}°", v_)
+        self.cmb_step.setCurrentIndex(1)
+        row.addWidget(self.cmb_step)
+        for txt, ax_, sg in (("x−", "x", -1), ("x+", "x", 1), ("y−", "y", -1), ("y+", "y", 1), ("z−", "z", -1),
+                             ("z+", "z", 1)):
+            b = QPushButton(txt)
+            b.setToolTip(T("xr_rot_tip"))
+            b.clicked.connect(lambda _=False, a=ax_, s_=sg: self.rotate_view(a, s_ * self.cmb_step.currentData()))
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(T("xr_rotate"), row)
+        b = QPushButton(T("xr_flip"))
+        b.setToolTip(T("xr_flip_tip"))
+        b.clicked.connect(lambda: self.rotate_view("y", 180))
+        f.addRow(b)
+        b = QPushButton(T("xr_template"))
+        b.setToolTip(T("xr_template_tip"))
+        b.clicked.connect(self.align_template)
+        f.addRow(b)
+        self.lbl_align = QLabel("")
+        self.lbl_align.setWordWrap(True)
+        self.lbl_align.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_align)
+        self.lv.addWidget(g)
+
         g = QGroupBox(T("xr_colors"))
         v = QVBoxLayout(g)
         self.color_grid = QGridLayout()
@@ -2810,6 +2968,89 @@ class XrayTab(TABS.FigureTab):
             if key in lay or pos != self.F.auto_pos.get(key):
                 lay[key] = pos
         self.main.push_undo()
+
+    # -- Ausrichten -----------------------------------------------------------------------
+    def _set_view(self, R, msg="", warn=False):
+        e = self.entry()
+        if e is None:
+            return
+        e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
+        e["pan"] = [0.0, 0.0]
+        self.lbl_align.setText(msg)
+        self.lbl_align.setStyleSheet(WARN_CSS if warn else HINT_CSS)
+        self.render()
+
+    def current_view(self):
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        return (self.view_of(e, mol), mol) if mol is not None else (None, None)
+
+    def align_bond(self, direction):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        if len(self.sel) < 2:
+            self.lbl_align.setText(T("xr_align_need2"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        keys = self.sel[:2]
+        self.sel = []
+        self.update_measure()
+        self._set_view(align_bond(R, mol, keys, direction),
+                       T("xr_align_done_bond", bond=param_name(mol, keys, sep="→")))
+
+    def align_plane(self):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        if len(self.sel) < 3:
+            self.lbl_align.setText(T("xr_align_need3"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        keys = list(self.sel)
+        self.sel = []
+        self.update_measure()
+        self._set_view(align_plane(R, mol, keys), T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
+
+    def rotate_view(self, axis, deg):
+        R, mol = self.current_view()
+        if R is not None:
+            self._set_view(rot(axis, math.radians(deg)) @ R)
+
+    def template_path(self):
+        """CDXML der Verbindung des Projekts (auch neben SVG/PDF/PNG), sonst None."""
+        st = (self.main.compound or {}).get("structure")
+        if st:
+            p = Path(st)
+            p = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
+            if p.exists():
+                return p
+        return None
+
+    def align_template(self, path=None):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        p = path or self.template_path()
+        if p is None:
+            p, _ = QFileDialog.getOpenFileName(self, T("xr_template"), self.main.settings.value("last_img_dir", ""),
+                                               "ChemDraw (*.cdxml)")
+            if not p:
+                return
+        try:
+            Rn, info = align_to_template(mol, p)
+        except Exception as ex:
+            self.lbl_align.setText(T("xr_template_fail", err=str(ex)))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        msg = T("xr_template_done", n=info["n"], nt=info["n_template"], rmsd=f"{info['rmsd']:.2f}", f=Path(p).name)
+        warn = info["ambiguous"] or info["n"] < info["n_template"] or info["rmsd"] > 0.6
+        if info["ambiguous"]:
+            msg += "\n" + T("xr_template_amb")
+        e = self.entry()
+        if e is not None:
+            e["layout"] = {}                              # Labels für die neue Ansicht neu setzen
+        self._set_view(Rn, msg, warn)
 
     def reset_view(self):
         e = self.entry()

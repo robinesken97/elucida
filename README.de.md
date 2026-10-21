@@ -30,7 +30,8 @@ Englisch.
 | **CV** | Gamry-Dateien, E½/ΔE_p, Nicholson-Verhältnis, Randles-Ševčík, Bezug auf Fc⁺/Fc |
 | **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
 | **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
-| **IR + MS + EA** | IR-Peakliste aus Bruker OPUS (Datei oder PDF), die HRMS-Zeile aus dem Bericht der Massenabteilung oder aus Bruker-Rohdaten und die Zeile der Elementaranalyse, fertig für die SI |
+| **HRMS** | HRMS-Zeile aus dem Bericht der Massenabteilung oder aus Bruker-Rohdaten (.d): Chromatogramm mit wählbarem LC-Bereich, gemitteltes Spektrum, Peak per Klick, berechnetes Isotopenmuster |
+| **IR + EA** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die Zeile der Elementaranalyse, fertig für die SI |
 | **X-Ray** | CIF → drehbare ORTEP-Abbildung im Mercury-Stil (schattierte Ellipsoide, Labels je Atom), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
@@ -140,7 +141,20 @@ Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab un
 Molmasse behalten diese. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
 Charakterisierungsabsatz im SI-Abschnitt.
 
-## IR + MS + EA-Tab
+## HRMS-Tab
+
+- Den **Word-Bericht** der Massenabteilung und/oder den Bruker-**Messordner** (`.d`) laden; was jeweils gelesen wird, steht
+  in den Punkten unten. Mit Rohdaten zeigt der Tab:
+  - ein **Chromatogramm** (Gesamt-Ionenstrom grau, Ionenstrom des gesuchten Ions rot, ± 10 ppm); das blaue Band ist der
+    LC-Bereich für das Spektrum – mit der **Maus ziehen**, um einen anderen Bereich zu wählen;
+  - das **gemittelte Spektrum** über diesen Bereich (Mittel der Linienspektren des Geräts) mit m/z an den größten Peaks
+    und dem **berechneten Isotopenmuster** des Ions gespiegelt darunter (rot; Feinstruktur, die das TOF nicht trennt,
+    z. B. ¹³C/¹⁵N, zusammengefasst); die gemessenen/berechneten Isotopenverhältnisse (M+1, M+2 …) stehen dabei;
+  - **Peak anklicken**, um ihn als *found* zu übernehmen (neben dem Wert aus dem Bericht und dem Mittel über den LC-Peak).
+- Export: Spektrum als Abbildung (PDF/SVG/PNG), `…_sticks.csv` (gemessen und berechnet) und `…_SI.txt`.
+- Alte Projekte: Die MS-Daten aus dem früheren Tab IR + MS werden automatisch übernommen.
+
+## IR + EA-Tab
 
 - **IR:** Bruker-**OPUS**-Datei (`*.0`, Spektrum) und/oder den **OPUS-PDF**-Ausdruck (Peakbeschriftung) laden. Mit dem
   PDF sind die Werte genau die OPUS-Peakliste; mit der Datei allein sucht Spectravolt die Banden selbst

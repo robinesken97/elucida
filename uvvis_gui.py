@@ -55,6 +55,7 @@ import uvvis_color as COLOR  # noqa: E402
 import uvvis_cv as CVMOD  # noqa: E402
 import uvvis_sec as SECMOD  # noqa: E402
 import uvvis_epr as EPRMOD  # noqa: E402
+import uvvis_hrms as HRMS  # noqa: E402
 import uvvis_irms as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
 import uvvis_si as SI  # noqa: E402
@@ -469,6 +470,7 @@ class MainWindow(QMainWindow):
         self.extra_cache = {}
         self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}  # leer
         self.irms_state = {}
+        self.hrms_state = {}
         self.xray_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
@@ -909,6 +911,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.sec_tab, T("tab_sec"))
         self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
         self.main_tabs.addTab(self.epr_tab, T("tab_epr"))
+        self.hrms_tab = HRMS.HRMSTab(self, self.hrms_state)
+        self.main_tabs.addTab(self.hrms_tab, T("tab_hrms"))
         self.irms_tab = IRMS.IRMSTab(self, self.irms_state)
         self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.xray_tab = XRAY.XrayTab(self, self.xray_state)
@@ -1224,7 +1228,8 @@ class MainWindow(QMainWindow):
                         "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
-                "irms": self.irms_state, "xray": self.xray_state, "compound": dict(self.compound),
+                "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
+                "compound": dict(self.compound),
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -1250,6 +1255,12 @@ class MainWindow(QMainWindow):
         self.epr_state.update(state.get("epr") or {})
         self.irms_state.clear()
         self.irms_state.update(state.get("irms") or {})
+        self.hrms_state.clear()
+        hr = state.get("hrms")
+        if hr is None:                                 # Projekte vor 1.21: MS-Teil stand im Tab IR + MS
+            ir = state.get("irms") or {}
+            hr = {k: ir[k] for k in ("ms_file", "ms_raw", "ms_rt", "adduct", "found") if k in ir}
+        self.hrms_state.update(hr)
         self.xray_state.clear()
         self.xray_state.update(state.get("xray") or {})
         self.compound = dict(state.get("compound") or {})
@@ -1396,6 +1407,8 @@ class MainWindow(QMainWindow):
         self.update_title()
         if hasattr(self, "irms_tab"):
             self.irms_tab.compound_changed()
+        if hasattr(self, "hrms_tab"):
+            self.hrms_tab.compound_changed()
         self.render()
         self.push_undo()
 
@@ -2021,7 +2034,7 @@ class MainWindow(QMainWindow):
             parts.append(("m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))       # wie in der SI: „m.p.“ fett
         else:
             missing.append("m.p.")
-        ir_ms_ea = self.irms_tab.si_parts()
+        ir_ms_ea = self.irms_tab.si_parts() + self.hrms_tab.si_parts()
         kinds = [p_[0].split(" ")[0] for p_ in ir_ms_ea]
         uv = self.uvvis_si_parts()
         for key, lab in (("IR", "IR"), ("HR-MS-", "HR-MS"), ("Elemental", "EA")):
@@ -2212,17 +2225,17 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in cifs]
             if not files:
                 return
-        # IR + MS: OPUS-Dateien, MS-Berichte und Bruker-.d-Ordner immer, PDF nur auf dem Tab IR + MS
-        irms = [p for p in files if IRMS.is_opus(p) or IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"
+        # HRMS: MS-Berichte (docx) und Bruker-.d-Ordner; IR + EA: OPUS-Dateien, PDF nur auf dem Tab IR + EA
+        ms = [p for p in files if IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"]
+        irms = [p for p in files if IRMS.is_opus(p)
                 or (Path(p).suffix.lower() == ".pdf" and self.main_tabs.currentWidget() is self.irms_tab)]
-        if irms and self.ensure_project():
+        if (ms or irms) and self.ensure_project():
+            for p in ms:
+                (self.hrms_tab.load_raw if IRMS.is_bruker_d(p) else self.hrms_tab.load_ms)(p)
             for p in irms:
-                if IRMS.is_bruker_d(p):
-                    self.irms_tab.load_raw(p)
-                else:
-                    (self.irms_tab.load_ms if Path(p).suffix.lower() == ".docx" else self.irms_tab.load_ir)(p)
-            self.main_tabs.setCurrentWidget(self.irms_tab)
-            files = [p for p in files if p not in irms]
+                self.irms_tab.load_ir(p)
+            self.main_tabs.setCurrentWidget(self.hrms_tab if ms else self.irms_tab)
+            files = [p for p in files if p not in ms and p not in irms]
             if not files:
                 return
         data = [p for p in files if Path(p).suffix.lower() in {".csv", ".txt"} | core.BINARY_EXT]
@@ -2250,21 +2263,11 @@ class MainWindow(QMainWindow):
         self.render()
 
     def export_current(self):
-        i = self.main_tabs.currentIndex()
-        if i == 1:
-            return self.ov_tab.export_dialog()
-        if i == 2:
-            return self.fl_tab.export_dialog()
-        if i == 3:
-            return self.cv_tab.export_dialog()
-        if i == 4:
-            return self.sec_tab.export_dialog()
-        if i == 5:
-            return self.epr_tab.export_dialog()
-        if i == 6:
-            return self.irms_tab.export_dialog()
-        if i == 7:
-            return self.xray_tab.export_dialog()
+        cur = self.main_tabs.currentWidget()
+        for tab in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.hrms_tab, self.irms_tab,
+                    self.xray_tab):
+            if cur is tab:
+                return tab.export_dialog()
         return self.export_dialog()
 
     def info(self, msg):
@@ -3312,46 +3315,61 @@ def selftest(outdir, with_isnet=False):
         assert plain_ == "HR-MS-ESI(+) calc. C18H21N2+ [M+H]+ 265.1699; found 265.1703." and "<sub>21</sub>" in html_
         assert abs(IRMS.ion("C18H20N2", "M+Na")[2] - 287.1519) < 1e-4 and IRMS.ion("C18H20N2", "M-H")[1] == -1
         t_ir = w.irms_tab
+        t_ms = w.hrms_tab
+        assert w.main_tabs.indexOf(t_ms) + 1 == w.main_tabs.indexOf(t_ir)      # HRMS vor IR + EA
         t_ir.load_ir(str(irdir / "test.0"))
-        t_ir.load_ms(str(irdir / "ms.docx"))
+        t_ms.load_ms(str(irdir / "ms.docx"))
         w.compound["formula"] = "C18H20N2"
         t_ir.render()
+        t_ms.render()
         assert t_ir._ir_line[0].startswith("IR [cm-1]: ṽ = 3350, 2961, 1678, 1501, 1105, 758"), t_ir._ir_line[0]
-        assert t_ir._ms_line[0].endswith("265.1699; found 265.1703."), t_ir._ms_line[0]
+        assert t_ms._ms_line[0].endswith("265.1699; found 265.1703."), t_ms._ms_line[0]
+        assert t_ms.F is None                                    # ohne Rohdaten kein Spektrum
         w.irms_state["ir_off"] = [1105]
         w.irms_state["with_int"] = True
         t_ir.render()
         assert "1105" not in t_ir._ir_line[0] and "(br " in t_ir._ir_line[0], t_ir._ir_line[0]
         w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
-        t_ir.render()
-        assert "⚠" in t_ir.lbl_ms_info.text(), t_ir.lbl_ms_info.text()
-        files = t_ir.export_to(out / "irms")
-        assert any(f.name.endswith("_SI.txt") for f in files) and all(f.exists() for f in files)
+        t_ms.render()
+        assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
+        files = t_ir.export_to(out / "irms") + t_ms.export_to(out / "hrms")
+        assert sum(f.name.endswith("_SI.txt") for f in files) == 2 and all(f.exists() for f in files)
         slots_ = PRJ._path_slots(w.get_state())
         assert any(k_ == "ir_file" for _, k_, _ in slots_) and any(k_ == "ms_file" for _, k_, _ in slots_)
         # ChemDraw-Objekt im Bericht: Abgleich und Übernahme der Verbindung (künstliche Struktur, kein CDX-Schreiber)
         from rdkit import Chem as _Chem
-        rep_ = t_ir.ms_report()
+        rep_ = t_ms.ms_report()
         rep_["structure"] = {"formula": "C18H20N2", "mw": 264.37, "n_fragments": 1,
                              "cdxml": _Chem.MolToCDXMLBlock(_Chem.MolFromSmiles("CC(C)(C)c1ccc2nc(-c3ccccc3)n(C)c2c1"))
                              if hasattr(_Chem, "MolToCDXMLBlock") else None}          # macOS Intel: RDKit 2025.9
         w.compound = {}
-        t_ir.render()
-        assert t_ir.formula() == ("C18H20N2", "report_struct"), t_ir.formula()
-        assert not t_ir.btn_take.isHidden()
+        t_ms.render()
+        assert t_ms.formula() == ("C18H20N2", "report_struct") == t_ir.formula(), t_ms.formula()
+        assert not t_ms.btn_take.isHidden()
         rep_["formula"] = "C18H21N2"                       # Formelfeld vertippt -> Hinweis
-        t_ir.render()
-        assert "⚠" in t_ir.lbl_ms_info.text(), t_ir.lbl_ms_info.text()
-        t_ir.take_compound()
+        t_ms.render()
+        assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
+        t_ms.take_compound()
         assert w.compound["formula"] == "C18H20N2" and w.compound["name"] == "TEST-1", w.compound
         if rep_["structure"]["cdxml"]:
             assert Path(w.compound["structure"]).exists() and "aus_MS-Bericht" in Path(w.compound["structure"]).name
-        w.irms_state.update(ir_file=None, ir_pdf=None, ms_file=None, ir_off=[], with_int=False)
+        w.irms_state.update(ir_file=None, ir_pdf=None, ir_off=[], with_int=False)
+        w.hrms_state.update(ms_file=None)
         w.compound = {}
+        # alte Projekte (bis 1.20): MS-Teil im Zustand von IR + MS wird in den Tab HRMS übernommen
+        st_old = w.get_state()
+        st_old.pop("hrms")
+        st_old["irms"].update(ms_file=str(irdir / "ms.docx"), adduct="M+Na")
+        w.set_state(st_old)
+        assert w.hrms_state["ms_file"] and w.hrms_state["adduct"] == "M+Na", w.hrms_state
+        t_ir, t_ms = w.irms_tab, w.hrms_tab
+        w.hrms_state.update(ms_file=None, adduct="M+H")
+        w.irms_state.pop("ms_file", None)
         report.append("project compound + IR/HRMS lines: OK")
 
         # Bruker-Rohdaten (.d): künstlicher LC-Lauf, m/z über die Umkehrung der Kalibrierung in Flugzeit-Indizes
         import sqlite3 as _sq
+        from matplotlib.backend_bases import MouseEvent
         ddir = irdir / "test.d"
         ddir.mkdir(exist_ok=True)
         cal_ = (24790.0, 0.2, 309.0, 158509.1, 2.54e-4, 0.0, -0.0011)   # Delay, Takt, c0, c1, c2, –, c6
@@ -3406,22 +3424,38 @@ def selftest(outdir, with_isnet=False):
         except ValueError:
             pass
         w.compound = {"formula": "C18H20N2"}
-        t_ir.load_raw(str(ddir))
-        t_ir.render()
-        assert w.irms_state["ms_raw"] and t_ir._ms_line[0].endswith(f"found {exp_:.4f}."), t_ir._ms_line[0]
-        assert "mDa" in t_ir.lbl_ms_info.text() and t_ir.cmb_found.currentData() == "raw", t_ir.lbl_ms_info.text()
-        assert abs(t_ir.sp_rt_lo.value() - 50 / 60) < 0.01 and abs(t_ir.sp_rt_hi.value() - 70 / 60) < 0.01
+        t_ms.load_raw(str(ddir))
+        t_ms.render()
+        assert w.hrms_state["ms_raw"] and t_ms._ms_line[0].endswith(f"found {exp_:.4f}."), t_ms._ms_line[0]
+        assert "mDa" in t_ms.lbl_ms_info.text() and t_ms.cmb_found.currentData() == "raw", t_ms.lbl_ms_info.text()
+        assert abs(t_ms.sp_rt_lo.value() - 50 / 60) < 0.01 and abs(t_ms.sp_rt_hi.value() - 70 / 60) < 0.01
         if w.project_dir:                                  # aus dem .d nur Rohdaten + Index übernommen
-            assert sorted(x.name for x in Path(w.irms_state["ms_raw"]).iterdir()) == ["analysis.baf", "analysis.sqlite"]
-        w.irms_state["ms_rt"] = [0.0, 2.0]                 # fester Bereich: alle Scans mit Signal
-        t_ir.sync_widgets()
-        t_ir.render()
-        assert t_ir.raw_found(calc_)["n"] == 12 and not t_ir.cb_rt_auto.isChecked()
-        t_ir.load_ms(str(irdir / "ms.docx"))               # Bericht + Rohdaten: Bericht vorgewählt, Rohdaten wählbar
-        t_ir.render()
-        assert t_ir._ms_line[0].endswith("found 265.1703.") and t_ir.cmb_found.findData("raw") >= 0
-        assert any(k_ == "ms_raw" for _, k_, _ in PRJ._path_slots(w.get_state()))
-        w.irms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None)
+            assert sorted(x.name for x in Path(w.hrms_state["ms_raw"]).iterdir()) == ["analysis.baf", "analysis.sqlite"]
+        # Spektrum: gemittelt über den LC-Bereich, Isotopenmuster aus der Formel, Peak per Klick
+        pat_ = HRMS.isotope_pattern("C18H21N2", 1)
+        assert abs(pat_[0][0] - calc_) < 2e-5 and pat_[0][1] == 100 and 19.5 < pat_[1][1] < 22.5, pat_[:3]
+        assert t_ms.F is not None and len(t_ms._sticks[0]) >= 2, t_ms._sticks
+        lo_, hi_ = t_ms.view_range()
+        assert lo_ < calc_ < hi_ and hi_ - lo_ < 6, (lo_, hi_)
+        assert "M+1" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
+        mzs_, rel_ = t_ms._sticks
+        j_ = int(np.argmin(np.abs(mzs_ - calc_)))
+        px_, py_ = t_ms.F.ax.transData.transform((mzs_[j_], rel_[j_] / 2))
+        t_ms.spectrum_clicked(MouseEvent("button_press_event", t_ms.canvas, px_, py_, button=1))
+        pump(0.05)
+        assert w.hrms_state["found"] == "pick" and abs(w.hrms_state["found_pick"] - mzs_[j_]) < 1e-5, w.hrms_state
+        assert t_ms._ms_line[0].endswith(f"found {mzs_[j_]:.4f}."), t_ms._ms_line[0]
+        t_ms.rt_selected(0.0, 2.0)                         # Ziehen im Chromatogramm: alle Scans mit Signal
+        assert w.hrms_state["ms_rt"] == [0.0, 2.0] and t_ms.raw_found(calc_)["n"] == 12
+        assert not t_ms.cb_rt_auto.isChecked()
+        files = t_ms.export_to(out / "hrms" / "raw")
+        assert any(f.name.endswith("_sticks.csv") for f in files) and all(f.exists() for f in files)
+        w.hrms_state["found"] = None
+        t_ms.load_ms(str(irdir / "ms.docx"))               # Bericht + Rohdaten: Bericht vorgewählt, Rohdaten wählbar
+        t_ms.render()
+        assert t_ms._ms_line[0].endswith("found 265.1703.") and t_ms.cmb_found.findData("raw") >= 0
+        assert any(k_ == "ms_raw" and c_ is w.hrms_state for c_, k_, _ in PRJ._path_slots(w.get_state()))
+        w.hrms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None, found_pick=None)
         w.compound = {}
         report.append("Bruker .d raw data (LC-peak mean): OK")
 
@@ -3555,6 +3589,31 @@ def selftest(outdir, with_isnet=False):
         assert XRAY.cif_order(mol_, ["C2", "C1"]) == ["C1", "C2"]                # Reihenfolge wie in der CIF
         R_ = XRAY.default_view(mol_)
         assert np.allclose(R_ @ R_.T, np.eye(3), atol=1e-9) and abs(np.linalg.det(R_) - 1) < 1e-9
+        # Ausrichten: Bindung nach unten, Ebene von vorn, Drehen, ChemDraw als Vorlage
+        xyz_k = lambda k_: mol_.atoms[mol_.find_key(k_)]["xyz"]  # noqa: E731
+        Rb_ = XRAY.align_bond(R_, mol_, ["C1", "Cl1"], "down")
+        v_ = Rb_ @ (xyz_k("Cl1") - xyz_k("C1"))
+        assert abs(v_[0]) < 1e-6 and abs(v_[2]) < 1e-6 and v_[1] < 0, v_
+        Rp_ = XRAY.align_plane(R_, mol_, ["C1", "C2", "C3"])
+        n_ = np.cross(xyz_k("C2") - xyz_k("C1"), xyz_k("C3") - xyz_k("C1"))
+        assert abs(abs((Rp_ @ (n_ / np.linalg.norm(n_)))[2]) - 1) < 1e-6
+        Rpb_ = XRAY.align_bond(Rp_, mol_, ["C1", "C2"], "right")           # Bindung in der Ebene: Ebene bleibt
+        assert abs(abs((Rpb_ @ (n_ / np.linalg.norm(n_)))[2]) - 1) < 1e-6
+        from rdkit import Chem as _Chem
+        if hasattr(_Chem, "MolToCDXMLBlock"):
+            from rdkit.Chem import AllChem as _AC
+            tm_ = _Chem.MolFromSmiles("Clc1ccc(Cl)cc1")
+            _AC.Compute2DCoords(tm_)
+            tpl_ = xdir / "dcb.cdxml"
+            tpl_.write_text(_Chem.MolToCDXMLBlock(tm_), encoding="utf-8")
+            Rt_, inf_ = XRAY.align_to_template(mol_, tpl_)
+            assert inf_["n"] == 8 and inf_["rmsd"] < 0.3, inf_
+            cls_ = [a_.GetIdx() for a_ in tm_.GetAtoms() if a_.GetSymbol() == "Cl"]
+            cf_ = tm_.GetConformer()
+            dt_ = np.array(cf_.GetAtomPosition(cls_[1])) - np.array(cf_.GetAtomPosition(cls_[0]))
+            dc_ = (Rt_ @ (xyz_k("Cl1|" + [o_ for o_ in mol_.ops][0]) - xyz_k("Cl1")))[:2]
+            cosang_ = abs(np.dot(dt_[:2], dc_)) / np.linalg.norm(dt_[:2]) / np.linalg.norm(dc_)
+            assert cosang_ > 0.98, cosang_                                   # Cl–Cl wie in der Zeichnung
         ent_[0].update(hidden_frags=[], view=None)
         w.xray_state.update(show_h=True, hide_solv=True)
         t_x.sync_widgets()

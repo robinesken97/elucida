@@ -235,7 +235,24 @@ TEXTS = {
                       "resize. Over the curves the status bar shows λ and the value."),
     "auto": ("auto", "auto"),
     "ov_curves": ("Spektren", "Spectra"),
-    "tab_irms": ("IR + MS + EA", "IR + MS + EA"),
+    "tab_irms": ("IR + EA", "IR + EA"),
+    "tab_hrms": ("HRMS", "HRMS"),
+    "ms_xrange": ("m/z-Bereich (Bild)", "m/z range (figure)"),
+    "ms_chrom": ("Chromatogramm", "Chromatogram"),
+    "ms_chrom_tip": ("Gesamt-Ionenstrom (grau) und Ionenstrom des gesuchten Ions (rot, ± 10 ppm); blau = LC-Bereich "
+                     "für das gemittelte Spektrum. Mit der Maus ziehen, um den Bereich zu wählen.",
+                     "Total ion current (grey) and ion current of the target ion (red, ± 10 ppm); blue = LC range used "
+                     "for the averaged spectrum. Drag with the mouse to choose the range."),
+    "ms_display": ("Spektrum", "Spectrum"),
+    "ms_show_calc": ("Berechnetes Isotopenmuster (gespiegelt, rot)", "Calculated isotope pattern (mirrored, red)"),
+    "ms_mz_labels": ("m/z an den größten Peaks", "m/z at the largest peaks"),
+    "ms_pick_hint": ("Peak im Spektrum anklicken, um ihn als found zu übernehmen; im Chromatogramm ziehen setzt den "
+                     "LC-Bereich. Spektrum = Mittel der Linienspektren des Geräts im LC-Bereich (keine Profilkurve).",
+                     "Click a peak in the spectrum to use it as found; drag in the chromatogram to set the LC range. "
+                     "Spectrum = mean of the instrument's line spectra in the LC range (no profile curve)."),
+    "ms_pick_entry": ("Im Spektrum gewählt: {mz}  ({ppm} ppm)", "Picked in the spectrum: {mz}  ({ppm} ppm)"),
+    "ms_iso_info": ("Isotope (gemessen / berechnet, relativ zu M): {items}",
+                    "Isotopes (measured / calculated, relative to M): {items}"),
     "ir_group": ("IR", "IR"),
     "ir_files": ("IR-Daten", "IR data"),
     "flt_ir": ("Bruker OPUS / PDF (*.0 *.1 *.2 *.3 *.4 *.5 *.6 *.7 *.8 *.9 *.pdf)", "Bruker OPUS / PDF (*.0 *.1 *.2 *.3 *.4 *.5 *.6 *.7 *.8 *.9 *.pdf)"),
@@ -966,6 +983,37 @@ TEXTS = {
                         "Name for the caption, e.g. Dipp groups"),
     "xr_caption": ("Bildunterschrift (Vorschlag)", "Caption (suggestion)"),
     "xr_caption_copy": ("Bildunterschrift kopieren", "Copy caption"),
+    "xr_align": ("Ausrichten", "Orientation"),
+    "xr_align_bond": ("Bindung zeigt", "Bond points"),
+    "xr_align_bond_tip": ("2 Atome anklicken (erst Start-, dann Endatom): die Bindung zeigt danach im Bild nach unten, "
+                          "oben, links oder rechts und liegt in der Bildebene",
+                          "Click 2 atoms (start atom first, then end atom): the bond then points down, up, left or "
+                          "right in the image and lies in the image plane"),
+    "xr_align_plane": ("Ebene von vorn (≥ 3 gewählte Atome)", "Plane face-on (≥ 3 selected atoms)"),
+    "xr_align_plane_tip": ("Blick senkrecht auf die Ebene durch die gewählten Atome, z. B. einen Ring; danach lässt sich "
+                           "eine Bindung in dieser Ebene mit den Pfeilen ausrichten, ohne die Ebene zu kippen",
+                           "View perpendicular to the plane through the selected atoms, e.g. a ring; a bond within this "
+                           "plane can then be aligned with the arrows without tilting the plane"),
+    "xr_rotate": ("Drehen um", "Rotate about"),
+    "xr_rot_tip": ("x = waagerecht, y = senkrecht, z = Blickrichtung", "x = horizontal, y = vertical, z = view axis"),
+    "xr_flip": ("Von hinten (180°)", "From behind (180°)"),
+    "xr_flip_tip": ("Um die senkrechte Achse um 180° drehen", "Rotate by 180° about the vertical axis"),
+    "xr_template": ("Wie ChemDraw ausrichten …", "Orient like ChemDraw …"),
+    "xr_template_tip": ("Lage wie in der ChemDraw-Zeichnung (CDXML der Verbindung des Projekts, sonst Datei wählen). "
+                        "Zuordnung über Elemente und Verknüpfung, H und Bindungsordnungen zählen nicht.",
+                        "Orientation as in the ChemDraw drawing (CDXML of the project compound, otherwise choose a "
+                        "file). Matched by elements and connectivity; H atoms and bond orders do not count."),
+    "xr_template_done": ("Wie {f} ausgerichtet: {n} von {nt} Atomen zugeordnet, Abweichung der Projektion {rmsd} Å.",
+                         "Oriented like {f}: {n} of {nt} atoms matched, deviation of the projection {rmsd} Å."),
+    "xr_template_amb": ("⚠ Zuordnung nicht eindeutig (symmetrisches Molekül) – Ansicht prüfen, ggf. „Von hinten“.",
+                        "⚠ matching not unique (symmetric molecule) – check the view, use “From behind” if needed."),
+    "xr_template_fail": ("⚠ Ausrichten nach ChemDraw nicht möglich: {err}", "⚠ cannot orient like ChemDraw: {err}"),
+    "xr_align_need2": ("Erst 2 Atome anklicken (Start- und Endatom der Bindung).",
+                       "First click 2 atoms (start and end atom of the bond)."),
+    "xr_align_need3": ("Erst mindestens 3 Atome der Ebene anklicken.", "First click at least 3 atoms of the plane."),
+    "xr_align_done_bond": ("{bond} zeigt jetzt in die gewählte Richtung.", "{bond} now points in the chosen direction."),
+    "xr_align_done_plane": ("Ebene durch {atoms} liegt jetzt in der Bildebene.",
+                            "Plane through {atoms} now lies in the image plane."),
     "xr_truncated": ("Polymer/Netzwerk: Vervollständigung abgebrochen", "polymer/network: growing stopped"),
 }
 

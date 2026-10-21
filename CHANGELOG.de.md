@@ -2,6 +2,19 @@
 
 # Änderungen
 
+## Unveröffentlicht
+
+### Neu
+- Neuer Tab **HRMS** (MS-Teil des bisherigen Tabs IR + MS): mit Bruker-Rohdaten ein Chromatogramm (TIC und Ionenstrom)
+  mit per Ziehen wählbarem Bereich, das gemittelte Spektrum über den LC-Bereich, Peak per Klick als *found* und das
+  berechnete Isotopenmuster des Ions (gespiegelt) mit gemessenen/berechneten Isotopenverhältnissen.
+- X-Ray **Ausrichten**: Bindung (erstes → zweites Atom) nach unten/oben/links/rechts, Ebene durch ≥ 3 Atome von vorn,
+  Drehen in Schritten um x/y/z, Ansicht von hinten und **Ausrichten wie eine ChemDraw-Zeichnung** (CDXML der Verbindung
+  des Projekts; Zuordnung über Elemente und Verknüpfung).
+
+### Geändert
+- Der Tab IR + MS + EA heißt jetzt **IR + EA**; alte Projekte übernehmen ihre MS-Daten in den Tab HRMS.
+
 ## 1.20.0 – 21.10.2026
 
 ### Neu

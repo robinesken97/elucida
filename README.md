@@ -30,7 +30,8 @@ The user interface is available in German and English.
 | **CV** | Gamry files, E½/ΔE_p, Nicholson ratio, Randles–Ševčík, reference to Fc⁺/Fc |
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
-| **IR + MS + EA** | IR peak list from Bruker OPUS (file or PDF), the HRMS line from the mass-spectrometry report or Bruker raw data, and the elemental-analysis line, ready for the SI |
+| **HRMS** | HRMS line from the mass-spectrometry report or Bruker raw data (.d): chromatogram with selectable LC range, averaged spectrum, peak by click, calculated isotope pattern |
+| **IR + EA** | IR peak list from Bruker OPUS (file or PDF) and the elemental-analysis line, ready for the SI |
 | **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
@@ -137,7 +138,20 @@ the default for the ε tab (structure, molar mass), the fluorescence tab and IR 
 structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
 characterisation paragraph of the SI section.
 
-## IR + MS + EA tab
+## HRMS tab
+
+- Load the **Word report** of the mass-spectrometry department and/or the Bruker **measurement folder** (`.d`); see
+  the bullet points below for what is read from each. With raw data the tab shows:
+  - a **chromatogram** (total ion current grey, ion current of the target ion red, ± 10 ppm); the blue band is the
+    LC range used for the spectrum – **drag with the mouse** to choose another range;
+  - the **averaged spectrum** over this range (mean of the instrument's line spectra) with m/z at the largest peaks
+    and the **calculated isotope pattern** of the ion mirrored below (red; fine structure that the TOF does not
+    resolve, e.g. ¹³C/¹⁵N, merged); the measured/calculated isotope ratios (M+1, M+2 …) are listed;
+  - **click a peak** to use it as *found* (besides the report value and the LC-peak mean).
+- Export: spectrum figure (PDF/SVG/PNG), `…_sticks.csv` (measured and calculated) and `…_SI.txt`.
+- Old projects: the MS data of the former IR + MS tab are taken over automatically.
+
+## IR + EA tab
 
 - **IR:** load a Bruker **OPUS** file (`*.0`, spectrum) and/or the **OPUS PDF** print-out (peak labels). With the PDF the
   values are exactly the OPUS peak list; with the file alone Spectravolt picks the bands itself (adjustable

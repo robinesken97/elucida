@@ -2,6 +2,19 @@
 
 # Changelog
 
+## Unreleased
+
+### Added
+- New tab **HRMS** (MS part of the former IR + MS tab): with Bruker raw data a chromatogram (TIC and ion current) with
+  a range selectable by dragging, the averaged spectrum over the LC range, peak picking by click as *found*, and the
+  calculated isotope pattern of the ion (mirrored) with measured/calculated isotope ratios.
+- X-Ray **orientation**: bond (first → second atom) pointing down/up/left/right, plane through ≥ 3 atoms face-on,
+  rotation in steps about x/y/z, view from behind, and **orientation like a ChemDraw drawing** (CDXML of the project
+  compound; atoms matched by elements and connectivity).
+
+### Changed
+- The tab IR + MS + EA is now **IR + EA**; old projects take their MS data over into the HRMS tab.
+
 ## 1.20.0 – 2026-10-21
 
 ### Added
