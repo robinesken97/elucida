@@ -13,6 +13,33 @@ Spektren, λ/ε-Labels an den Banden, ein Inset mit den linearen Regressionen un
 (CDXML/SVG/PDF) und ein freigestelltes Foto der Küvette. Die Oberfläche gibt es auf Deutsch und
 Englisch.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/eps_dark_de.png">
+    <img src="docs/screenshots/eps_light_de.png" alt="Spectravolt – ε-Auswertung" width="900">
+  </picture>
+</p>
+
+### Auf einen Blick
+
+| Tab | Was er macht |
+|---|---|
+| **ε-Auswertung** | Lambert-Beer-Fit von Verdünnungsreihen → ε (bzw. a) mit Konfidenzintervall; Abbildung im Origin-Stil mit Struktur und Küvettenfoto; Excel-Report |
+| **Overlay** | Gemessene Spektren, TD-DFT (ORCA/Gaussian, SOC, Tripletts) und SEC-Serien in einer Abbildung, normiert oder als ε |
+| **Fluoreszenz** | Absorption und Emission, Stokes-Verschiebung, Fotos bei Tageslicht und unter UV |
+| **CV** | Gamry-Dateien, E½/ΔE_p, Nicholson-Verhältnis, Randles-Ševčík, Bezug auf Fc⁺/Fc |
+| **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
+| **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
+
+Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
+Erscheinungsbild; Deutsch und Englisch.
+
+<table>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_de.png" alt="Overlay – gemessen, TD-DFT und SEC"><br><sub>Overlay – gemessen, TD-DFT und SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_de.png" alt="Fluoreszenz"><br><sub>Fluoreszenz</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie"><br><sub>Spektroelektrochemie</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR"><br><sub>CW-EPR</sub></td></tr>
+</table>
+
 ## Herunterladen und starten
 
 Lade unter **Releases** (rechts auf der Repository-Seite) die Datei für dein System herunter und entpacke sie.

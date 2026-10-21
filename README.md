@@ -13,6 +13,33 @@ spectra, λ/ε labels at the bands, an inset with the linear regressions and R²
 structure (CDXML/SVG/PDF) and a photo of the cuvette with the background removed.
 The user interface is available in German and English.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/eps_dark_en.png">
+    <img src="docs/screenshots/eps_light_en.png" alt="Spectravolt – ε analysis tab" width="900">
+  </picture>
+</p>
+
+### At a glance
+
+| Tab | What it does |
+|---|---|
+| **ε analysis** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report |
+| **Overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
+| **Fluorescence** | Absorption and emission, Stokes shift, photos in daylight and under UV |
+| **CV** | Gamry files, E½/ΔE_p, Nicholson ratio, Randles–Ševčík, reference to Fc⁺/Fc |
+| **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
+| **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
+
+All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
+German and English.
+
+<table>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="Overlay – measured, TD-DFT and SEC"><br><sub>Overlay – measured, TD-DFT and SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td></tr>
+</table>
+
 ## Download and start
 
 Download the file for your system from **Releases** (right-hand side of the repository page) and unzip it.

@@ -28,3 +28,4 @@ exports/
 *.[Tt][Ii][Ff]
 *.[Tt][Ii][Ff][Ff]
 !assets/*.png
+!docs/screenshots/*.png
