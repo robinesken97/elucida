@@ -980,12 +980,11 @@ class NMRTab(QWidget):
         # in Gerätepixeln rendern (HiDPI-Bildschirme), angezeigt in logischen Pixeln
         dpr = max(1.0, self.lbl_prev.devicePixelRatioF())
         lw_ = float(max(300, self.lbl_prev.width() - 10))
-        page = None
         cache = self.main.extra_cache
         key = ("nmrprev", s["file"], int(lw_ * dpr) // 50)
         if key not in cache:
             page = pymupdf.open(s["file"])[0]
-            dpi = max(60, min(600, lw_ * dpr / max(page.rect.width, 1) * 72))
+            dpi = int(round(max(60, min(600, lw_ * dpr / max(page.rect.width, 1) * 72))))   # pymupdf: nur ganze Zahl
             pix = page.get_pixmap(dpi=dpi)
             cache[key] = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
         base = cache[key]
