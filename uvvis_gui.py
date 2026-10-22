@@ -4222,15 +4222,15 @@ def selftest(outdir, with_isnet=False):
             assert F_s.style == sty_
             c_it = next(i_ for i_ in F_s.scene["atoms"] if i_["el"] == "C")
             if sty_ in XRAY.BALL_STYLES:
-                assert abs(c_it["w"] - 2 * XRAY.ball_radius("C")) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
-                assert sorted(set(F_s.bond_fac.values())) == sorted(f_ for f_, _ in XRAY.ROD_LAYERS)
+                assert abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
+                assert sorted(set(F_s.bond_fac.values())) == sorted(r_[0] for r_ in XRAY.ROD_SPEC[sty_])
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and max(F_s.bond_off.values()) > 0          # Glanz zur Lichtseite
             if sty_ == "mercury":
-                fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()
-                assert min(fc_[-2][:3]) > 0.9 and XRAY.default_color("C", "mercury") == "#FFFFFF"   # Glanz fast weiß
+                assert XRAY.default_color("C", "mercury") == XRAY.OLEX2_COLORS["C"]               # C grau wie bisher
                 assert all(a_.get_fontweight() == "bold" for a_ in F_s.ann_items.values())
                 assert all(ln_.get_color() == "black" for _, _, ln_, h_ in F_s.bond_art if h_ is None)
             if sty_ == "depth":
-                assert F_s._fog(F_s._zmax) == 0.0 and abs(F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) - 0.55) < 1e-9
+                assert F_s._fog(F_s._zmax) == 0.0 and abs(F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) - XRAY.DEPTH_MAX) < 1e-9
             f_s = t_x.export_to(out / f"xray_style_{sty_}")
             assert all(f_.exists() and f_.stat().st_size > 500 for f_ in f_s if f_.suffix in (".pdf", ".svg", ".png"))
         w.xray_state["style"] = "mercury"

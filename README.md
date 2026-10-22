@@ -258,8 +258,7 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   column in the tables). Elucida reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
   operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
 - **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
-  exactly, with the principal ellipses; carbon white with grey shading, black bonds, bold labels (draggable), H atoms as
-  small shaded spheres. Further styles (also in PDF/SVG/PNG and Word): flat Olex2 style; **ball and stick, glossy**
+  exactly, with the principal ellipses; black bonds, bold labels (draggable), H atoms as small shaded spheres. Further styles (also in PDF/SVG/PNG and Word): flat Olex2 style; **ball and stick, glossy**
   (like IboView, rods coloured by atom); **ball and stick with depth** (atoms further back lighter). Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
   (atom list or double-click on the atom). **Drag to rotate**,
   right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the

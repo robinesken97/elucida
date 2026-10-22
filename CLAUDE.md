@@ -81,10 +81,11 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   von R·U·Rᵀ. Aussehen Standard **wie Mercury** (Nutzerwunsch): schattierte Schichten (`shade_layers`, Licht oben
   links, matt, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), H-Radius 0.09 Å, Bindungsdicke in Å
   (`bond_w`, Standard 0.12 seit 1.26, skaliert mit dem Zoom wie Mercurys Zylinder); seit 1.26 nach Nutzervorlage
-  C weiß (grau schattiert, `default_color(el, style)`), Bindungen schwarz, Labels fett ohne Rand; „flach“ = Olex2 (fett,
-  weißer Rand). Kugel-Stil (`BALL_STYLES`): „ballstick“ glänzend wie IboView (`gloss_colors`), „depth“ matt mit Aufhellung
-  nach hinten (`DEPTH_A` = 6 Å bis 55 %); Kugelradius `ball_radius` (0.42 × kovalent, H ≥ 0.2 Å), Stäbe 2.6 × `bond_w`
-  als Zylinder aus `ROD_LAYERS`, je Hälfte in Atomfarbe. Messen/Ausrichten gemeinsam für X-Ray und DFT (`MeasureAlign`;
+  Bindungen schwarz, Labels fett ohne Rand – Elementfarben bleiben (C grau, Nutzerwunsch); „flach“ = Olex2 (fett,
+  weißer Rand). Kugel-Stil (`BALL_STYLES`, nach Vorlagebildern des Nutzers): „ballstick“ wie IboView (Schattenrand unten
+  rechts, Glanzpunkt, feiner Umriss, dünne Stäbe 0.2 Å mit Glanzstreifen zur Lichtseite), „depth“ matt mit dicken Stäben
+  (0.36 Å) und Aufhellung nach hinten (`DEPTH_A` = 6 Å bis `DEPTH_MAX`); Schichten in `SPHERE_SPEC`/`ROD_SPEC`, Radius
+  `ball_radius(el, style)` (Faktor × kovalent, H ≥ 0.2 Å); `bond_w` gilt dort nicht (`ROD_W`). Messen/Ausrichten gemeinsam für X-Ray und DFT (`MeasureAlign`;
   DFT: `MEASURE_ESD = False`, Klick = Auswahl, im Nummerier-Modus = Nummer).
   Labels/Atome je Atom über `label_on`/`hidden_atoms` (Schlüssel Label|Operation). Tabellen englisch beschriftet, Zahlen exakt wie in der CIF, echtes Minus (U+2212).
   Drahtmodell (`wire`, Atom-Schlüssel): Bindung → kleinere Seite (`Molecule.substituent`), in Ringen das Ringsystem hinter

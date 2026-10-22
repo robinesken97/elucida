@@ -266,8 +266,8 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
   (eine Spalte in den Tabellen). Elucida liest die CIF selbst (Zelle, Koordinaten, U_iso/U_ij, Besetzung, PART,
   Symmetrieoperationen, `_geom_bond`/`_geom_angle`/`_geom_torsion`); keine weitere Software nötig.
 - **ORTEP-Abbildung im Mercury-Stil:** schattierte Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit
-  (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; Kohlenstoff weiß mit grauer Schattierung, schwarze
-  Bindungen, fette Labels (verschiebbar), H-Atome als kleine schattierte Kugeln. Weitere Stile (auch in PDF/SVG/PNG und
+  (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; schwarze Bindungen, fette Labels (verschiebbar), H-Atome
+  als kleine schattierte Kugeln. Weitere Stile (auch in PDF/SVG/PNG und
   Word): flacher Olex2-Stil; **Kugel-Stab, glänzend** (wie IboView, Stäbe in Atomfarben); **Kugel-Stab mit Tiefe**
   (weiter hinten liegende Atome heller). Einzelne Atome (z. B. einzelne H) lassen
   sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste oder Doppelklick auf das Atom).
