@@ -323,6 +323,8 @@ class CVTab(TABS.FigureTab):
     SI_CAPTION = "Cyclic voltammograms of {name}."
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
+    RESET_KEEP = ("files", "couples", "ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value",
+                  "ref_offset", "ref_electrode")           # Messungen, Redoxpaare und Referenzierung bleiben
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",

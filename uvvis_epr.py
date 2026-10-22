@@ -624,6 +624,7 @@ class EPRTab(TABS.FigureTab):
     SI_CAPTION = "EPR spectra of {name}."
     X_RANGE = (0.0, 20000.0, 1, 1.0)
     XRANGE_TEXT = "epr_xrange"
+    RESET_KEEP = ("entries", "calib_uid", "calib_g", "T_offset")      # Spektren/Simulationen, Kalibrierung
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=300.0, x_max=360.0, ymax=0.0, entries=[], unit="mT",
                          bl_order=1, bl_edge=5.0, bl_regions="", exclude="", smooth=0.0, normalize=True,
                          stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers",

@@ -2,6 +2,17 @@
 
 # Changelog
 
+## 1.25.0 – 2026-10-22
+
+### New
+- **Reset all to defaults:** the "Reset" button (bottom left of every tab with a figure, including UV-Vis (ε)) has a menu:
+  "Reset layout" as before, or "Reset all to defaults" for all settings of the tab (display and analysis). Data and
+  measurement details stay: files, reference and calibration (CV, SEC, EPR), path length, entered values (ε, λex,
+  adduct, removed IR peaks), captions and export size. Undo brings everything back.
+- **X-Ray and DFT:** "Reset display to defaults" next to "Reset view": style, ellipsoids/radii, bond thickness, labels,
+  label size, disorder, H atoms and – for the selected structure – view, hidden atoms/fragments, labels per atom and
+  wireframe. CIF/xyz files, names, numbering and selected parameters stay.
+
 ## 1.24.1 – 2026-10-22
 
 ### New

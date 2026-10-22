@@ -185,6 +185,16 @@ TEXTS = {
     "inset_table": ("Tabelle im Inset", "table in inset"),
     "btn_update": ("Aktualisieren", "Update"),
     "btn_reset_layout": ("Layout zurücksetzen", "Reset layout"),
+    "btn_reset": ("Zurücksetzen", "Reset"),
+    "btn_reset_defaults": ("Alles auf Standard", "Reset all to defaults"),
+    "btn_reset_defaults_tip": ("„Layout zurücksetzen“: nur die Lage von Labels, Inset und Bildern.\n"
+                               "„Alles auf Standard“: alle Einstellungen dieses Tabs (Darstellung und Auswertung) auf\n"
+                               "Standard. Daten und Angaben zur Messung bleiben (Dateien, Referenz/Kalibrierung, Schichtdicke,\n"
+                               "eingegebene Werte, Bildunterschrift, Exportgröße). Rückgängig (Strg+Z) holt alles zurück.",
+                               "“Reset layout”: only the positions of labels, inset and images.\n"
+                               "“Reset all to defaults”: all settings of this tab (display and analysis) back to defaults.\n"
+                               "Data and measurement details stay (files, reference/calibration, path length, entered\n"
+                               "values, caption, export size). Undo (Ctrl+Z) brings everything back."),
     "btn_export": ("Exportieren…", "Export…"),
     "drag_hint": ("Maus: Inset, Bilder und Labels ziehen zum Verschieben, Mausrad über Inset/Bild "
                   "ändert die Größe. Über den Spektren zeigt die Statusleiste λ und A des nächsten "
@@ -1057,6 +1067,19 @@ TEXTS = {
                      "Show/hide separate fragments (solvent, counter-ions)"),
     "xr_main_frag": ("größtes", "largest"),
     "xr_reset_view": ("Ansicht zurücksetzen", "Reset view"),
+    "xr_reset_view_tip": ("Drehung, Zoom und Lage der Labels der gewählten Struktur auf den Start.",
+                          "Rotation, zoom and label positions of the selected structure back to the start."),
+    "xr_reset_display": ("Darstellung auf Standard", "Reset display to defaults"),
+    "xr_reset_display_tip": ("Alle Einstellungen der Darstellung auf Standard (Stil, Ellipsoide/Radien, Bindungsdicke,\n"
+                             "Labels, Labelgröße, Fehlordnung, H-Atome …) und für die gewählte Struktur Ansicht,\n"
+                             "ausgeblendete Atome/Fragmente, Labels je Atom und Drahtmodell. Dateien, Namen, Nummerierung,\n"
+                             "ausgewählte Parameter und Exportgröße bleiben. Rückgängig (Strg+Z) holt alles zurück.",
+                             "All display settings back to defaults (style, ellipsoids/radii, bond thickness, labels,\n"
+                             "label size, disorder, H atoms …) and, for the selected structure, view, hidden atoms/\n"
+                             "fragments, labels per atom and wireframe. Files, names, numbering, selected parameters and\n"
+                             "export size stay. Undo (Ctrl+Z) brings everything back."),
+    "xr_reset_display_done": ("Darstellung auf Standard gesetzt – Rückgängig mit Strg+Z.",
+                              "Display reset to defaults – undo with Ctrl+Z."),
     "xr_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom wählen "
                       "(2 = Abstand, 3 = Winkel, 4 = Diederwinkel), Doppelklick = Label an/aus, Labels lassen sich "
                       "verschieben.",

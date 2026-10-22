@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.24.1"
+APP_VERSION = "1.25.0"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -875,9 +875,7 @@ class MainWindow(QMainWindow):
         # Exportieren bleibt unten sichtbar, auch wenn die Spalte gescrollt wird
         row = QHBoxLayout()
         row.setContentsMargins(8, 6, 8, 6)
-        b = QPushButton(STYLE.icon("reset"), T("btn_reset_layout"))
-        b.clicked.connect(self.reset_layout)
-        row.addWidget(b)
+        row.addWidget(uvvis_tabs.reset_button(self.reset_layout, self.reset_defaults))
         b = QPushButton(T("si_copy_methods"))
         b.setToolTip(T("si_copy_methods_tip"))
         b.clicked.connect(self.copy_eps_methods)
@@ -2084,6 +2082,21 @@ class MainWindow(QMainWindow):
             self.series[self.current]["layout"][self.size_key()] = {}
             self.render()
 
+    def reset_defaults(self):
+        """ε-Tab: Einstellungen (Cutoff, Banden, Basislinie, Darstellung …) auf DEFAULT_GLOB, für die gewählte Serie
+        Cutoff/Ausblenden je Bande und Layout. Schichtdicke, Exportgröße/-formate, Molmasse, Struktur, Foto,
+        Lösungsmittel und Konzentrationen bleiben. Rückgängig holt alles zurück."""
+        keep = ("path_length", "size", "w_cm", "h_cm", "fmt_pdf", "fmt_svg", "fmt_png")
+        self.glob.update({k: v for k, v in DEFAULT_GLOB.items() if k not in keep})
+        st = self.series.get(self.current)
+        if st is not None:
+            st.update(band_cutoff={}, band_hidden=[], layout={})
+        self.apply_globals()
+        self.apply_series_widgets()
+        self.render()
+        self.push_undo()
+        self.statusBar().showMessage(T("xr_reset_display_done"), 6000)
+
     def update_si_line(self, results, cfg):
         st = self.series.get(self.current) or {}
         self.ed_solvent.setText(st.get("solvent", ""))
@@ -3164,6 +3177,17 @@ def selftest(outdir, with_isnet=False):
         assert "Nicholson" in meth and "diacetylferrocene" in meth and "95% confidence" in meth \
             and "Couple 1: E1/2 = −1.08 V vs. Fc+/Fc" in meth, meth
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
+        # „Alles auf Standard“: Einstellungen zurück; Messungen, Redoxpaare, Referenz, Unterschrift bleiben
+        snap_cv = json.loads(json.dumps({k_: st_cv[k_] for k_ in ("files", "couples", "ref_mode", "ref_value", "cycle",
+                                                                  "gradient", "baseline")}))
+        st_cv.update(gradient=False, baseline=False, stack=True, cap_temp="−78 °C")
+        w.cv_tab.reset_defaults()
+        assert st_cv["gradient"] and st_cv["baseline"] and not st_cv["stack"] and st_cv["cycle"] == 1
+        assert st_cv["cap_temp"] == "−78 °C" and all(st_cv[k_] == snap_cv[k_] for k_ in ("files", "couples", "ref_mode",
+                                                                                     "ref_value"))
+        assert w.cv_tab.cb_gradient.isChecked() and w.main_tabs.currentWidget() is not None
+        st_cv.update(cycle=snap_cv["cycle"], cap_temp="rt")
+        w.cv_tab.fill_table()
         report.append("cyclic voltammetry: OK")
 
         # SI-Export: Abbildungen aller Tabs mit Daten (ε je Serie, CV …), zwei je Seite
@@ -3694,6 +3718,16 @@ def selftest(outdir, with_isnet=False):
         labels = [lb for lb in w.eps_page.findChildren(QLabel)
                   if lb.text() in (T("molar_mass_short"), T("ymax"))]
         assert len({lb.minimumWidth() for lb in labels}) == 1 and labels[0].minimumWidth() > 0
+        # „Alles auf Standard“ im ε-Tab: Einstellungen zurück, Schichtdicke und Exportgröße bleiben
+        if w.current:
+            w.glob.update(cutoff=2.0, ymax=2.5, path_length=0.1, shoulders=True, size="custom")
+            w.series[w.current]["band_hidden"] = [600]
+            w.reset_defaults()
+            assert w.glob["cutoff"] == 1.0 and w.glob["ymax"] == 1.0 and not w.glob["shoulders"]
+            assert w.glob["path_length"] == 0.1 and w.glob["size"] == "custom" and abs(w.sp_cut.value() - 1.0) < 1e-9
+            assert w.series[w.current]["band_hidden"] == []
+            w.glob.update(path_length=1.0, size="half_a4")
+            w.apply_globals()
         report.append("eps tab layout (sections, empty state): OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
@@ -4145,6 +4179,19 @@ def selftest(outdir, with_isnet=False):
         t_x.sync_widgets()
         t_x.render()
         assert not ent_[0]["wire"] and "lbl_Cl1" in t_x.F.ann_items and "lbl_C1" not in t_x.F.ann_items
+        # Darstellung auf Standard: Einstellungen + gewählte Struktur zurück, CIFs/Namen/Parameter bleiben
+        e_x = t_x.entry()
+        w.xray_state.update(bond_w=0.2, prob=30, style="flat", label_pt=14.0, show_h=False, disorder="all")
+        e_x.update(hidden_atoms=[e_x["hidden_atoms"] or "C2"], label_on={"C1": False}, wire=["C1"], zoom=2.0,
+                   name="umbenannt")
+        n_ent, params_ = len(w.xray_state["entries"]), list(e_x.get("params") or [])
+        t_x.reset_display()
+        d_x = XRAY.XrayTab.DEFAULT_STATE
+        assert all(w.xray_state[k_] == d_x[k_] for k_ in ("bond_w", "prob", "style", "show_h", "disorder"))
+        assert w.xray_state["label_pt"] == 0.0 and abs(t_x.sp_bond.value() - 0.08) < 1e-9 and t_x.sp_prob.value() == 50
+        assert not e_x["hidden_atoms"] and not e_x["label_on"] and not e_x["wire"] and e_x["zoom"] == 1.0
+        assert len(w.xray_state["entries"]) == n_ent and e_x["name"] == "umbenannt" and e_x["params"] == params_
+        assert t_x.F is not None
         report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
                       f"({npath_} pdf paths)")
         w.xray_state.update(entries=[], current=None, show_h=True, hide_solv=False, label_mode="all")
@@ -4284,6 +4331,13 @@ def selftest(outdir, with_isnet=False):
         for frag_ in ("Point group", "Courier New", 'w:cols w:num="2"', "Max. gradient", "otest", "Gaussian 16",
                       "quasi-RRHO", "<w:tab/>"):
             assert frag_ in doc_, frag_
+        e_dr = t_d.entry()                                     # Darstellung auf Standard, Nummerierung bleibt
+        ord_ = list(e_dr.get("order") or [])
+        w.dft_state.update(bond_w=0.3, radius=0.5, show_h=False)
+        e_dr["zoom"] = 3.0
+        t_d.reset_display()
+        assert w.dft_state["bond_w"] == 0.08 and w.dft_state["radius"] == 0.25 and w.dft_state["show_h"]
+        assert e_dr["zoom"] == 1.0 and list(e_dr.get("order") or []) == ord_ and abs(t_d.sp_bond.value() - 0.08) < 1e-9
         report.append("DFT xyz (reader, bonds, click renumbering, save, export): OK")
         report.append("DFT outputs (ORCA 6 UTF-16, Gaussian, SI block, Word): OK")
         # Vergleichsmodus: Nummerierung einer anderen Geometrie bzw. einer CIF übernehmen

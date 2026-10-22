@@ -2,6 +2,17 @@
 
 # Änderungen
 
+## 1.25.0 – 22.10.2026
+
+### Neu
+- **Alles auf Standard:** Der Knopf „Zurücksetzen“ (unten links in jedem Tab mit Abbildung, auch UV-Vis (ε)) hat ein Menü:
+  „Layout zurücksetzen“ wie bisher oder „Alles auf Standard“ für alle Einstellungen des Tabs (Darstellung und
+  Auswertung). Daten und Angaben zur Messung bleiben: Dateien, Referenz und Kalibrierung (CV, SEC, EPR), Schichtdicke,
+  eingegebene Werte (ε, λex, Addukt, entfernte IR-Peaks), Bildunterschriften und Exportgröße. Rückgängig holt alles zurück.
+- **X-Ray und DFT:** „Darstellung auf Standard“ neben „Ansicht zurücksetzen“: Stil, Ellipsoide/Radien, Bindungsdicke,
+  Labels, Labelgröße, Fehlordnung, H-Atome und – für die gewählte Struktur – Ansicht, ausgeblendete Atome/Fragmente,
+  Labels je Atom und Drahtmodell. CIF-/xyz-Dateien, Namen, Nummerierung und ausgewählte Parameter bleiben.
+
 ## 1.24.1 – 22.10.2026
 
 ### Neu
