@@ -1024,6 +1024,8 @@ class DFTTab(TABS.FigureTab):
         f.addRow(T("dft_radius"), self.sp_rad)
         self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å")
         f.addRow(T("xr_bond_lw"), self.sp_bond)
+        self.sp_lab = XRAY.label_size_spin(self.st)
+        f.addRow(T("xr_label_size"), self.sp_lab)
         b = QPushButton(T("xr_reset_view"))
         b.clicked.connect(self.reset_view)
         f.addRow(b)
@@ -1033,7 +1035,7 @@ class DFTTab(TABS.FigureTab):
         f.addRow(hint)
         self.lv.addWidget(g)
 
-        for w_ in (self.sp_rad, self.sp_bond):
+        for w_ in (self.sp_rad, self.sp_bond, self.sp_lab):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cmb_style, self.cmb_lstyle):
             w_.currentIndexChanged.connect(self.changed)
@@ -1044,7 +1046,7 @@ class DFTTab(TABS.FigureTab):
     def collect(self):
         self.st.update(show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(), h_labels=self.cb_hlab.isChecked(),
                        label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
-                       radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(),
+                       radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), label_pt=self.sp_lab.value(), style=self.cmb_style.currentData(),
                        h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked())
         self.update_num_status()
 
@@ -1074,6 +1076,7 @@ class DFTTab(TABS.FigureTab):
         self.cmb_method.setCurrentIndex(max(0, self.cmb_method.findData(method_mode(st.get("si_method", "each")))))
         self.sp_rad.setValue(st.get("radius", 0.25))
         self.sp_bond.setValue(st.get("bond_w", 0.08))
+        self.sp_lab.setValue(st.get("label_pt", 0.0))
         self.fill_refs()
         self._loading = False
         self.update_num_status()
@@ -1242,6 +1245,7 @@ class DFTTab(TABS.FigureTab):
         return dict(prob=50, show_h=st["show_h"], labels=labels or numbering, h_labels=st["h_labels"],
                     colors={}, bond_w=st.get("bond_w", 0.08), hidden_frags=[], style=st.get("style", "mercury"),
                     hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
+                    label_size=st.get("label_pt", 0.0),
                     h_radius=0.55 * r)
 
     def build(self, fig, e=None, interactive=True):

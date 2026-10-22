@@ -28,6 +28,29 @@ EA_ELEMENTS = ("C", "H", "N", "S")          # was CHNS-Analysatoren messen
 EA_TOL = 0.4                                # übliche Grenze der Journals (absolut, in %)
 
 
+# ---------------------------------------------------------------------------- Geschützte Leerzeichen
+NBSP = "\u00a0"
+_UNITS = ("°C|K|°|Å|nm|pm|mm|cm|µm|μm|m|mg|µg|μg|g|kg|mmol|µmol|μmol|mol|mL|µL|μL|L|mM|µM|μM|M|N|equiv|eq|h|min|ms|s|"
+          "ppm|kHz|MHz|GHz|Hz|mT|mV|V|eV|Eh|E<sub>h</sub>|kcal|kJ|atm|mbar|bar|Torr|Da|wt%|%")
+_NB_RULES = [
+    (re.compile(r"(?<=\d)[ ]+(?=(?:" + _UNITS + r")(?![A-Za-z0-9]))"), NBSP),          # Zahl ↔ Einheit: 67 °C, 0.82 mmol
+    (re.compile(r"[ ]+([=±≈])[ ]+"), NBSP + r"\1" + NBSP),                            # ε = 8443, 7.39 ± 0.01
+    (re.compile(r"(?<=</sup>)[ ]+(?=[A-Za-zµμ]+<sup>)"), NBSP),                        # cm<sup>-1</sup> M<sup>-1</sup>
+    (re.compile(r"(?<=-1)[ ]+(?=[A-Za-zµμ]+-1\b)"), NBSP),                             # cm-1 M-1 (Klartext)
+    (re.compile(r"(?<=⁻¹)[ ]+(?=[A-Za-zµμ]+⁻¹)"), NBSP),                               # cm⁻¹ M⁻¹
+    (re.compile(r"(?<![\w.])([A-Z][a-z]?)[ ]+(?=\d{1,3}\.\d{2}\b)"), r"\1" + NBSP),     # Elementaranalyse: C 81.78
+    (re.compile(r"\bm\.p\.[ ]+"), "m.p." + NBSP),
+]
+
+
+def nbsp(text):
+    """Geschützte Leerzeichen (U+00A0) zwischen Zahl und Einheit, um =/±, in zusammengesetzten Einheiten und in der
+    Elementaranalyse – Word bricht dort nicht mehr um. Funktioniert für Klartext und das kleine HTML der SI-Zeilen."""
+    for rx, rep in _NB_RULES:
+        text = rx.sub(rep, text)
+    return text
+
+
 # ---------------------------------------------------------------------------- Elementaranalyse
 def parse_solvate(text: str) -> list[tuple[float, str]]:
     """'0.5 CH2Cl2, H2O' / '0.5CH2Cl2·H2O' -> [(0.5, 'CH2Cl2'), (1.0, 'H2O')]."""
@@ -395,7 +418,7 @@ def write_docx(path, blocks, columns=1):
         elif k == "synthesis":
             body.append(_para([("Synthesis of ", set()), (b[1], {"b"})], keep_next=True))
         elif k == "char":
-            body.append(_para(html_runs(b[1]), before=200))
+            body.append(_para(html_runs(nbsp(b[1])), before=200))
         elif k == "image":
             media.append(Path(b[1]))
             svg_rid = None
@@ -406,7 +429,7 @@ def write_docx(path, blocks, columns=1):
             body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid))
         elif k == "figcap":
             n_fig += 1
-            body.append(_label_para("Figure", n_fig, html_runs(b[1]), after=240))
+            body.append(_label_para("Figure", n_fig, html_runs(nbsp(b[1])), after=240))
         elif k == "tabcap":
             n_tab += 1
             body.append(_label_para("Table", n_tab, markup_runs(b[1]) + [(" ", set()), (b[2] + ".", {"b"})],
@@ -425,7 +448,7 @@ def write_docx(path, blocks, columns=1):
         elif k == "heading":
             body.append(_para([(b[1], {"b"})], align="left", before=240, after=120, keep_next=True))
         elif k == "text":
-            body.append(_para(html_runs(b[1]), align="left", line=240 if columns > 1 else 276, after=60,
+            body.append(_para(html_runs(nbsp(b[1])), align="left", line=240 if columns > 1 else 276, after=60,
                               size=18 if columns > 1 else 22))
         elif k == "coords":
             header, rows = b[1], b[2]

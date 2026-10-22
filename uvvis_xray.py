@@ -1705,7 +1705,7 @@ class XrayFigure:
         if not o.get("labels", True):
             return
         lc = self.cfg["labels"]
-        fs = lc["font_size"]
+        fs = o.get("label_size") or lc["font_size"]           # eigene Labelgröße des Tabs (0 = Textformat)
         todo = []
         flat = o.get("style", "mercury") == "flat"
         # Mercury: normale Schrift ohne Rand; flach (Olex2): fett mit weißem Rand
@@ -2060,6 +2060,15 @@ class _Vis:
         self.wire = {k for k, a in enumerate(mol.atoms) if a["key"] in (opts.get("wire") or ())}
 
 
+def label_size_spin(st):
+    """Labelgröße in pt; 0 = wie unter Format → Text (Standard)."""
+    sp = QDoubleSpinBox(decimals=1, minimum=0.0, maximum=30.0, singleStep=0.5, suffix=" pt",
+                        value=float(st.get("label_pt", 0.0)))
+    sp.setSpecialValueText(T("xr_label_size_std"))
+    sp.setToolTip(T("xr_label_size_tip"))
+    return sp
+
+
 def is_cif(path):
     return Path(path).suffix.lower() == ".cif" and Path(path).is_file()
 
@@ -2143,6 +2152,8 @@ class XrayTab(TABS.FigureTab):
         self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å",
                                       value=st.get("bond_w", 0.08))
         f.addRow(T("xr_bond_lw"), self.sp_bond)
+        self.sp_lab = label_size_spin(st)
+        f.addRow(T("xr_label_size"), self.sp_lab)
         self.lst_frag = QListWidget()
         self.lst_frag.setMaximumHeight(90)
         self.lst_frag.setToolTip(T("xr_frags_tip"))
@@ -2308,6 +2319,7 @@ class XrayTab(TABS.FigureTab):
 
         self.sp_prob.valueChanged.connect(self.changed)
         self.sp_bond.valueChanged.connect(self.changed)
+        self.sp_lab.valueChanged.connect(self.changed)
         self.cmb_dis.currentIndexChanged.connect(self.disorder_changed)
         self.cmb_style.currentIndexChanged.connect(self.changed)
         for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_wire_h, self.cb_solv, self.cb_ions):
@@ -2366,7 +2378,7 @@ class XrayTab(TABS.FigureTab):
     def collect(self):
         self.st.update(prob=self.sp_prob.value(), show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(),
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
-                       bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(),
+                       bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(), label_pt=self.sp_lab.value(),
                        label_mode=self.cmb_labmode.currentData(), wire_h=self.cb_wire_h.isChecked(),
                        hide_solv=self.cb_solv.isChecked(), hide_ions=self.cb_ions.isChecked())
         self.cmb_labmode.setEnabled(self.cb_lab.isChecked())
@@ -2517,7 +2529,8 @@ class XrayTab(TABS.FigureTab):
                 self.tbl.setItem(r, c, it)
         if cur is not None:
             self.tbl.selectRow(es.index(cur))
-        for w_, v in ((self.sp_prob, int(st["prob"])), (self.sp_bond, st.get("bond_w", 0.08))):
+        for w_, v in ((self.sp_prob, int(st["prob"])), (self.sp_bond, st.get("bond_w", 0.08)),
+                      (self.sp_lab, st.get("label_pt", 0.0))):
             w_.setValue(v)
         self.cmb_dis.setCurrentIndex(max(0, self.cmb_dis.findData(st["disorder"])))
         self.cb_h.setChecked(st["show_h"])
@@ -3103,7 +3116,7 @@ class XrayTab(TABS.FigureTab):
                     colors=st.get("colors") or {}, bond_w=st.get("bond_w", 0.08), hidden_frags=e.get("hidden_frags") or [],
                     style=st.get("style", "mercury"), hidden_atoms=e.get("hidden_atoms") or [],
                     label_on=e.get("label_on") or {}, wire=set(e.get("wire") or []), wire_h=st.get("wire_h", False),
-                    label_mode=st.get("label_mode", "all"),
+                    label_mode=st.get("label_mode", "all"), label_size=st.get("label_pt", 0.0),
                     hide_kinds=[k for k, on in (("solvent", st.get("hide_solv")), ("ion", st.get("hide_ions")))
                                 if on])
 

@@ -2,6 +2,29 @@
 
 # Änderungen
 
+## 1.23.0 – 22.10.2026
+
+### Neu
+- **Tab DFT:** xyz-Dateien und Ausgaben von **ORCA 6** und **Gaussian** laden (UTF-16-Dateien aus einer
+  PowerShell-Umleitung werden erkannt); drehbare Abbildung im Stil des X-Ray-Tabs.
+- DFT: **Atome per Klick umnummerieren** in der gewünschten Reihenfolge; die übrigen Atome behalten ihre Reihenfolge
+  (wahlweise H direkt hinter ihrem Atom). Gespeichert wird eine neue xyz mit unveränderten Zeilen (nur umsortiert, alle
+  Bilder einer Trajektorie); Zählung ab 0 wie ORCA wählbar.
+- DFT: **wie Vorlage nummerieren** – Nummerierung einer anderen Geometrie oder einer Kristallstruktur aus dem X-Ray-Tab
+  übernehmen (dann mit den Atomnamen der CIF). Zuordnung über das Bindungsnetz, bei symmetrischen Molekülen nach der
+  Geometrie; gleichwertige Zuordnungen werden gemeldet, nie still gewählt.
+- DFT: **SI-Block** je Rechnung wie in der SI der Gruppe: Name, Abbildung, Ladung/Multiplizität/Punktgruppe,
+  kartesische Koordinaten, Tabelle E_el/H/G (ZPE optional); Methodenzeile (je Struktur oder einmal als „Computational
+  details“), Konvergenztabelle und Frequenzergebnis schaltbar. Werte exakt wie in der Ausgabe. Warnungen bei
+  abgebrochenen Rechnungen, nicht konvergierter Optimierung und imaginären Frequenzen. Word-Datei zweispaltig.
+- Knopf **SI (Word)** in der Werkzeugleiste: Teile des SI-Abschnitts wählbar (Charakterisierung, X-Ray, DFT).
+- Labelgröße im X-Ray- und DFT-Tab einstellbar.
+- SI-Texte (Word und Kopieren) mit **geschützten Leerzeichen** zwischen Zahl und Einheit, um „=“ und „±“, in
+  zusammengesetzten Einheiten und in der Elementaranalyse.
+
+### Behoben
+- X-Ray: SI-Abbildungen ohne Labels wurden am Rand abgeschnitten.
+
 ## 1.22.1 – 22.10.2026
 
 ### Behoben

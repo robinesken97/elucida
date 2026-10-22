@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.22.1"
+APP_VERSION = "1.23.0"
 SI_PARTS = ("char", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -3722,6 +3722,11 @@ def selftest(outdir, with_isnet=False):
         pc_ = t_x.F.atom_art[t_x.F.mol.find_key("C1")][0]
         assert len(pc_.get_paths()) == 13, len(pc_.get_paths())                 # 12 Schichten + Umriss
         assert "lbl_C1" in t_x.F.ann_items and t_x.F.ann_items["lbl_C1"].get_fontweight() == "normal"
+        w.xray_state["label_pt"] = 12.5                                     # Labelgröße je Tab
+        t_x.render(push=False)
+        assert t_x.F.ann_items["lbl_C1"].get_fontsize() == 12.5
+        w.xray_state["label_pt"] = 0.0
+        t_x.render(push=False)
         it_ = t_x.F.scene["by_k"][t_x.F.mol.find_key("C2")]
         px_, py_ = t_x.F.ax.transData.transform((it_["x"], it_["y"]))
         t_x.sel = []
@@ -3887,6 +3892,10 @@ def selftest(outdir, with_isnet=False):
         t_d.apply_numbering()
         assert e_d["order"] == [1, 3, 2, 0, 4, 5, 6, 7] and not t_d.numbering and not t_d.btn_num.isChecked()
         assert t_d.F.ann_items["lbl_a2"].get_text() == "Cl3" and t_d.F.ann_items["lbl_a3"].get_text() == "C2"
+        w.dft_state["label_pt"] = 14.0                                       # eigene Labelgröße des Tabs
+        t_d.render(push=False)
+        assert t_d.F.ann_items["lbl_a1"].get_fontsize() == 14.0
+        w.dft_state["label_pt"] = 0.0
         w.dft_state["zero_based"] = True
         t_d.render(push=False)
         assert t_d.F.ann_items["lbl_a1"].get_text() == "C0"
@@ -4035,6 +4044,8 @@ def selftest(outdir, with_isnet=False):
         with _zf.ZipFile(docx_) as z_:
             xml_ = z_.read("word/document.xml").decode("utf-8")
         assert "Elemental analysis" in xml_ and 'w:val="subscript"' in xml_ and "TEST-1" in xml_
+        assert "67\u00a0°C" in xml_ and "C\u00a081." in xml_                  # geschützte Leerzeichen
+        assert SI.nbsp("298 nm (ε = 5 cm-1 M-1)") == "298\u00a0nm (ε\u00a0=\u00a05\u00a0cm-1\u00a0M-1)"
         assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
         # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
         w.dft_tab.load_xyz(str(orf_))
