@@ -4393,6 +4393,7 @@ def selftest(outdir, with_isnet=False):
                     + 'ReactionStepObjectsAboveArrow="501" ReactionStepObjectsBelowArrow="502"/></scheme></page></CDXML>')
             (sdir / "rxn.cdxml").write_text(sch_, encoding="utf-8")
             svg_, notes_ = CDXD.render_svg(sdir / "rxn.cdxml")
+            assert svg_.count(">N</text>") == 4, svg_.count(">N</text>")      # Labels auch ohne <t> (RDKit-CDXML)
             assert not notes_ and "<polygon" in svg_ and ">2</text>" in svg_ and "1.2\u00a0eq.)" in svg_, notes_
             assert CDXD.scheme_reagents(sdir / "rxn.cdxml") == [("K2CO3", "K2CO3", "reagent"), ("MeOH", "CH4O", "other")]
             t_s.set_scheme(str(sdir / "rxn.cdxml"))

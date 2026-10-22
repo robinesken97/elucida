@@ -22,8 +22,10 @@ und Tabelle, ChemDraw-Struktur, Küvettenfoto). Dazu Tabs für Overlay (gemessen
 - Cutoff global (Standard A = 1) und pro Bande; Banden mit R² < `min_r2` (einstellbar, Standard 0,98) stehen in
   Tabelle/CSV/Excel, aber nicht im Bild. Bei 4 Punkten ist R² wenig aussagekräftig, KI zählt.
 - Konzentrationsdialog: **keine** vorbelegte Einheit/Startkonzentration (führte früher zu falschem ε).
-- ChemDraw-Struktur **unverändert** übernehmen: gleichnamige SVG/PDF/PNG neben der CDXML hat Vorrang; RDKit
-  (ACS1996-Modus, keine eigene Bindungslänge) nur als Fallback. Bilder behalten immer ihr Seitenverhältnis
+- ChemDraw-Struktur **unverändert** übernehmen: gleichnamige SVG/PDF/PNG neben der CDXML hat Vorrang; sonst eigene
+  Zeichnung aus den CDXML-Koordinaten (`uvvis_cdxml`, Abkürzungen wie TMS/Dipp bleiben, Pfeile und Texte im Schema);
+  RDKit (ACS1996-Modus, keine eigene Bindungslänge) nur, wenn der Zeichner etwas nicht darstellen kann (Hinweise) –
+  im Syntheseschema nie (Pfeil/Bedingungen gingen verloren), dort Warnung. Bilder behalten immer ihr Seitenverhältnis
   (gespeichert wird nur die Breite).
 - „(sh)“ für Schultern ist abschaltbar; Molmasse aus CDXML inkl. Isotopen.
 - TD-DFT: Gauß-Verbreiterung in Energie; Kurve und Sticks teilen **immer einen** Skalierungsfaktor

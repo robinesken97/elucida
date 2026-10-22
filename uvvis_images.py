@@ -397,7 +397,18 @@ def load_structure(path, target_px=2400, color=None):
             res["n_fragments"] = info.get("n_fragments")
             res["drawing_from"] = original.name
             return res
-        info["warnings"] = info["warnings"] + [T("cdxml_redrawn", name=path.stem)]
+        # ohne Export: selbst aus den CDXML-Koordinaten zeichnen (Abkürzungen wie TMS/Dipp bleiben stehen);
+        # RDKit nur, wenn dabei etwas fehlen würde (Bilder, Klammern, Kurvenpfeile …) oder es scheitert
+        try:
+            import uvvis_cdxml
+            own, notes = uvvis_cdxml.render_svg(path)
+        except Exception as e:
+            own, notes = None, [str(e)]
+        if own is not None and not notes:
+            info["warnings"] = info["warnings"] + [T("cdxml_drawn", name=path.stem)]
+            return _render_doc(_vector_doc(path, recolor_svg(own, color) if color else own), target_px, info)
+        info["warnings"] = info["warnings"] + [T("cdxml_redrawn", name=path.stem)] + \
+            ([T("cdxml_own_failed", what=", ".join(notes))] if notes else [])
         if color:
             svg = recolor_svg(svg, color)
         return _render_doc(_vector_doc(path, svg), target_px, info)

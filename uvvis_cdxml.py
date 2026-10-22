@@ -150,6 +150,45 @@ def _poly(pts, col):
     return '<polygon points="' + " ".join(f"{x:.2f},{y:.2f}" for x, y in pts) + f'" fill="{col}" stroke="none"/>'
 
 
+# Elementsymbole und übliche Wertigkeit – nur für CDXML ohne Atomlabels (z. B. von RDKit geschrieben)
+_SYMBOLS = {1: "H", 3: "Li", 5: "B", 7: "N", 8: "O", 9: "F", 11: "Na", 12: "Mg", 13: "Al", 14: "Si", 15: "P",
+            16: "S", 17: "Cl", 19: "K", 26: "Fe", 29: "Cu", 30: "Zn", 33: "As", 34: "Se", 35: "Br", 44: "Ru", 45: "Rh",
+            46: "Pd", 47: "Ag", 50: "Sn", 52: "Te", 53: "I", 77: "Ir", 78: "Pt", 79: "Au", 80: "Hg"}
+_VALENCE = {1: 1, 5: 3, 7: 3, 8: 2, 9: 1, 14: 4, 15: 3, 16: 2, 17: 1, 34: 2, 35: 1, 52: 2, 53: 1}
+
+
+def _make_label(n, nodes, bonds, size):
+    """Atomlabel für einen Knoten ohne <t> (Heteroatom): Symbol + implizite H (NumHydrogens oder Wertigkeit),
+    H auf der Seite ohne Bindungen; Lage wie bei ChemDraw (erstes Symbol mittig auf dem Atom)."""
+    z = int(n.get("Element", 6))
+    if z == 6 or z not in _SYMBOLS:
+        return None
+    sym = _SYMBOLS[z]
+    ch = int(n.get("Charge", 0) or 0)
+    if n.get("NumHydrogens") is not None:
+        nh = int(n.get("NumHydrogens"))
+    elif z in _VALENCE:
+        used = sum({"2": 2, "3": 3, "1.5": 1.5}.get(b.get("Order", "1"), 1) for b in bonds
+                   if n.get("id") in (b.get("B"), b.get("E")))
+        nh = max(0, int(round(_VALENCE[z] + (ch if z in (7, 15) else -abs(ch)) - used)))
+    else:
+        nh = 0
+    x, y = nodes[n.get("id")]
+    nb = [nodes[b.get("E") if b.get("B") == n.get("id") else b.get("B")] for b in bonds
+          if n.get("id") in (b.get("B"), b.get("E"))]
+    h = ("H" + (str(nh) if nh > 1 else "")) if nh else ""
+    left = bool(h) and nb and all(q[0] > x + 1e-6 for q in nb)          # alle Bindungen rechts -> „HO“
+    text = (h + sym) if left else (sym + h)
+    f = _font(False)
+    w_sym = f.text_length(sym, fontsize=size)
+    w_all = sum(_run_width((t_, size, False, False, va, "")) for t_, va in _formula_parts(text))
+    x0 = x - w_sym / 2 - (w_all - w_sym if left else 0.0)
+    t = ET.Element("t", {"p": f"{x0:.2f} {y + 0.35 * size:.2f}", "LabelJustification": "Left",
+                         "BoundingBox": f"{x0:.2f} {y - 0.4 * size:.2f} {x0 + w_all:.2f} {y + 0.4 * size:.2f}"})
+    ET.SubElement(t, "s", {"size": str(size), "face": "96"}).text = text
+    return t
+
+
 # ---------------------------------------------------------------------------- Zeichnen
 class _Doc:
     def __init__(self, root):
@@ -172,11 +211,16 @@ class _Doc:
     # -- Moleküle ----------------------------------------------------------------------------------
     def fragment(self, frag):
         nodes, labels = {}, {}
+        for n in frag.findall("n"):
+            if n.get("NodeType") != "ExternalConnectionPoint" and n.get("p") is not None:
+                nodes[n.get("id")] = _pt(n.get("p"))
+        all_bonds = frag.findall("b")
         for n in frag.findall("n"):                   # nur oberste Ebene: Abkürzungen (TMS) bleiben Label
-            if n.get("NodeType") == "ExternalConnectionPoint" or n.get("p") is None:
+            if n.get("id") not in nodes:
                 continue
-            nodes[n.get("id")] = _pt(n.get("p"))
             t = n.find("t")
+            if t is None or not "".join(s.text or "" for s in t.iter("s")).strip():
+                t = _make_label(n, nodes, all_bonds, self.label_size)
             if t is not None and "".join(s.text or "" for s in t.iter("s")).strip():
                 bb = [float(v) for v in t.get("BoundingBox", "").split()]
                 if bb:
