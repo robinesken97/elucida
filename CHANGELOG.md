@@ -11,6 +11,10 @@
   number. Potential label as for start/end; λ labels take the colour of the highlighted spectrum with the largest
   absorbance. Caption field "Intermediate species": "Color coding: **neutral** (blue), **radical cation** (green),
   **dication** (red)." – only colours that appear in the figure. Without input everything stays as before.
+- **SI (Word): data processing and fitting.** New selectable part: the methods texts of all tabs that fit (UV-Vis (ε),
+  CV, SEC, EPR – the same text as "Copy SI text": only the steps used, current parameters, then the results) as a
+  section "Data processing and fitting" behind the figures.
+- **Font of the Word exports** selectable in the SI (Word) dialog (default Arial); the size stays 11 pt.
 
 ### Changed
 - Synthesis tab: only the reaction scheme is shown on a white background (and only when a scheme is loaded); the

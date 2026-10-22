@@ -18,7 +18,7 @@ from pathlib import Path
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
 APP_VERSION = "1.24.1"
-SI_PARTS = ("char", "nmr", "figs", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
+SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -35,7 +35,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
 from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
 from PySide6.QtCore import QUrl  # noqa: E402
-from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon, QImage,  # noqa: E402
+from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QImage,  # noqa: E402
                            QGuiApplication, QKeySequence, QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
@@ -508,6 +508,7 @@ class MainWindow(QMainWindow):
                 if migrate_settings(QSettings(old, old), self.settings):
                     break
         set_lang(self.settings.value("lang", "de"))
+        SI.set_font(self.settings.value("si_font", "Arial"))
         self.csv_path = None
         self.groups, self.units = {}, {}
         self.samples, self.conc, self.csv_paths = [], {}, []          # Rohproben und Konzentrations-Overrides
@@ -2133,6 +2134,7 @@ class MainWindow(QMainWindow):
         xt, dt = self.xray_tab, self.dft_tab
         return dict(char=True, nmr=bool(self.nmr_tab.spectra()),
                     figs=bool(self.groups) or any(t.F is not None for t in self.figure_tabs()),
+                    methods=bool(self.si_methods_blocks()),
                     xray=any(xt.structure(e) is not None for e in xt.entries()),
                     dft=any(dt.calc_of(e) is not None for e in dt.entries()))
 
@@ -2141,11 +2143,14 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return
         avail = self.si_available()
-        saved = self.settings.value("si_parts", "char,nmr,figs,xray,dft")
+        saved = self.settings.value("si_parts", "char,nmr,figs,methods,xray,dft")
         saved = set(str(saved).split(",")) if saved else set()
         if not self.settings.value("si_parts_figs"):         # neu in 1.24: Abbildungen einmalig mit auswählen
             saved |= {"nmr", "figs"}
             self.settings.setValue("si_parts_figs", 1)
+        if not self.settings.value("si_parts_methods"):      # neu in 1.24.1: Methodentexte einmalig mit auswählen
+            saved |= {"methods"}
+            self.settings.setValue("si_parts_methods", 1)
         dlg = QDialog(self)
         dlg.setWindowTitle(T("act_export_si").rstrip(" …"))
         v = QVBoxLayout(dlg)
@@ -2159,6 +2164,13 @@ class MainWindow(QMainWindow):
                 cb.setToolTip(T("si_part_empty"))
             cbs[k] = cb
             v.addWidget(cb)
+        row = QHBoxLayout()                                   # Schriftart aller Word-Exporte (Größe fest 11 pt)
+        cmb_font = QFontComboBox()
+        cmb_font.setCurrentFont(QFont(str(self.settings.value("si_font", "Arial") or "Arial")))
+        cmb_font.setToolTip(T("si_font_tip"))
+        row.addWidget(QLabel(T("si_font")))
+        row.addWidget(cmb_font, 1)
+        v.addLayout(row)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(dlg.accept)
         bb.rejected.connect(dlg.reject)
@@ -2166,6 +2178,8 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
         parts = [k for k, cb in cbs.items() if cb.isChecked()]
+        self.settings.setValue("si_font", cmb_font.currentFont().family())
+        SI.set_font(cmb_font.currentFont().family())
         self.settings.setValue("si_parts", ",".join(k for k, cb in cbs.items() if cb.isChecked() or not avail[k]
                                                    and k in saved))
         if parts:
@@ -2208,6 +2222,10 @@ class MainWindow(QMainWindow):
             figs = self.si_figure_blocks(PRJ.export_dir(Path(self.project_dir), "si"), title)
             if figs:
                 blocks += [("pagebreak",)] + figs
+        if "methods" in parts:
+            mb = self.si_methods_blocks()
+            if mb:
+                blocks += [("gap",)] + mb
         xt = self.xray_tab
         es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in parts else []
         if es:
@@ -2216,6 +2234,27 @@ class MainWindow(QMainWindow):
         if "dft" in parts and any(dt.calc_of(e) is not None for e in dt.entries()) and self.project_dir:
             blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
         return blocks, missing
+
+    def si_methods_blocks(self):
+        """Abschnitt „Data processing and fitting“: dieselben Methodentexte wie „SI-Text kopieren“ (nur benutzte
+        Schritte, aktuelle Parameter, dann Ergebnisse) für alle Tabs, die fitten; je Technik ein Absatz mit fettem
+        Titel. Leer, wenn nirgends gefittet wurde."""
+        self.collect_globals()
+        items = [("UV-Vis absorption spectroscopy", self.eps_methods_text() if self.groups else "")]
+        for title, t in (("Cyclic voltammetry", self.cv_tab), ("UV-Vis spectroelectrochemistry", self.sec_tab),
+                         ("EPR spectroscopy", self.epr_tab)):
+            try:
+                txt = t.methods_text() if t.figure_spec() is not None else ""   # Ergebnisse/Fits aktuell
+            except Exception:
+                self.log_signal.emit(traceback.format_exc())
+                txt = ""
+            items.append((title, txt))
+        blocks = []
+        for title, txt in items:
+            paras = [p.strip() for p in (txt or "").split("\n\n") if p.strip()]
+            for k, p in enumerate(paras):
+                blocks.append(("char", (f"<b>{title}.</b> " if k == 0 else "") + SI.methods_html(p)))
+        return [("heading", "Data processing and fitting")] + blocks if blocks else []
 
     def figure_tabs(self):
         """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
@@ -3135,6 +3174,27 @@ def selftest(outdir, with_isnet=False):
         assert any(c_.startswith("Cyclic voltammograms of <b>TEST-1</b>") for c_ in caps_) and len(imgs_) == len(caps_), caps_
         assert all(Path(b_[1]).exists() and Path(b_[4]).exists() and 0 < b_[2] <= 16.0 for b_ in imgs_), imgs_
         assert fb_.count(("pagebreak",)) == (len(imgs_) - 1) // 2 and w.si_available()["figs"]
+        # Methodik der Fits im Word-Export: Texte wie „SI-Text kopieren“, je Technik ein Absatz mit fettem Titel
+        mb_ = w.si_methods_blocks()
+        assert mb_[0] == ("heading", "Data processing and fitting") and w.si_available()["methods"], mb_[:1]
+        mtx_ = [b_[1] for b_ in mb_[1:]]
+        assert any(t_.startswith("<b>UV-Vis absorption spectroscopy.</b> ") for t_ in mtx_), mtx_
+        assert any(t_.startswith("<b>Cyclic voltammetry.</b> ") and "Nicholson" in t_ for t_ in mtx_), mtx_
+        assert any("E<sub>1/2</sub> = −1.08 V" in t_ for t_ in mtx_) and "cm<sup>-1</sup>" in "".join(mtx_), mtx_
+        assert SI.methods_html("A_red, g_lit, E1/2,app, M-1 cm-1") == \
+            "A<sub>red</sub>, g<sub>lit</sub>, E<sub>1/2</sub>,app, M<sup>-1</sup> cm<sup>-1</sup>"
+        b_m, _ = w.si_blocks(["methods"])
+        assert ("heading", "Data processing and fitting") in b_m and not any(b_[0] == "image" for b_ in b_m)
+        mdoc_ = SI.write_docx(out / "si_methods.docx", b_m)
+        with __import__("zipfile").ZipFile(mdoc_) as z_:
+            mx_ = z_.read("word/document.xml").decode("utf-8")
+            assert "Data processing and fitting" in mx_ and 'w:ascii="Arial"' in mx_
+        SI.set_font("Times New Roman")                                   # Schriftart wählbar, Größe bleibt 11 pt
+        with __import__("zipfile").ZipFile(SI.write_docx(out / "si_font.docx", b_m)) as z_:
+            mx_ = z_.read("word/document.xml").decode("utf-8")
+            assert 'w:ascii="Times New Roman"' in mx_ and 'w:ascii="Arial"' not in mx_ and 'w:sz w:val="22"' in mx_
+            assert 'w:ascii="Times New Roman"' in z_.read("word/styles.xml").decode("utf-8")
+        SI.set_font("Arial")
         cap2_ = "Cyclic voltammograms of <b>X</b> (1.8±0.1 mg mL-1) in MeCN (0.1 M n-Bu4NPF6) at rt; " * 2
         tp_ = SI.two_per_page([("char", "Setup text. " * 40)] + [("image", "a.png", 16.0, 11.0, None),
                                                                    ("figcap", cap2_)] * 3)
@@ -4485,7 +4545,7 @@ def selftest(outdir, with_isnet=False):
         assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
         # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
         w.dft_tab.load_xyz(str(orf_))
-        assert {k_: v_ for k_, v_ in w.si_available().items() if k_ != "figs"} == \
+        assert {k_: v_ for k_, v_ in w.si_available().items() if k_ not in ("figs", "methods")} == \
             {"char": True, "nmr": False, "xray": False, "dft": True}
         b_dft, _ = w.si_blocks(["dft"])
         assert b_dft[0] == ("heading", "TEST-1") and ("columns", 2) in b_dft and not any(b_[0] == "char" for b_ in b_dft)

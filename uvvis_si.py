@@ -106,6 +106,15 @@ def chem_html(text):
     return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", h)
 
 
+def methods_html(text):
+    """Methodentext (Klartext wie „SI-Text kopieren“) -> HTML für Word: Einheiten „cm-1“ hochgestellt, „E1/2“ und
+    Indizes mit Unterstrich (A_red, g_lit, n_app) tiefgestellt. Keine Formel-Regel wie chem_html (E1/2 ≠ E₁/2)."""
+    h = _html.escape(text or "", quote=False)
+    h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
+    h = re.sub(r"\bE1/2", "E<sub>1/2</sub>", h)
+    return re.sub(r"(?<=[A-Za-zνΔ])_([A-Za-z0-9]+)", r"<sub>\1</sub>", h)
+
+
 def ea_line(formula: str, solvate: str, found: dict):
     """-> (Klartext, HTML, Hinweise). found: {'C': '81.52', …}; nur gemessene Elemente stehen bei found."""
     comp = ea_composition(formula, solvate)
@@ -256,10 +265,18 @@ def markup_runs(markup, bold=False):
 # ---------------------------------------------------------------------------- docx (Stil der SI)
 # Gemessen an einer SI der Arbeitsgruppe (Word): A4, Ränder 2.5 cm, Arial 11 pt, Blocksatz, 1.5-zeilig, Hoch-/Tiefstellung
 # 7 pt (Word: vertAlign), Dreilinien-Tabellen, Unterschriften „Figure Sn: …“ / „Table Sn: …“ (fett bis zum Doppelpunkt).
-_FONT = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>'
+_FONT = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>'   # set_font ändert sie
 TEXT_W = 11906 - 2 * 1417                  # Textbreite in twips (A4, 2.5 cm Rand)
 COL_GAP = 425                              # Abstand zweier Spalten (0.75 cm)
 _MONO = '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:eastAsia="Courier New"/>'
+
+
+def set_font(name):
+    """Schriftart aller Word-Exporte (Standard Arial wie die SI der Gruppe); die Größe bleibt 11 pt, weil
+    two_per_page mit dieser Zeilenhöhe rechnet."""
+    global _FONT
+    n = _html.escape((name or "").strip() or "Arial", quote=True)
+    _FONT = f'<w:rFonts w:ascii="{n}" w:hAnsi="{n}" w:cs="{n}" w:eastAsia="{n}"/>'
 
 
 def _run_xml(text, st, size=22):

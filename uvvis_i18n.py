@@ -372,6 +372,13 @@ TEXTS = {
                        "No peak labels found in {f} (label the peaks in Mnova and export again)."),
     "nmr_peaks_done": ("{n} Signale ({nuc}) aus den Peaklabels übernommen – bitte prüfen.",
                        "{n} signals ({nuc}) taken from the peak labels – please check."),
+    "si_part_methods": ("Methodik der Auswertung und Fits (Text aus „SI-Text kopieren“ aller Tabs)",
+                        "Data processing and fitting (text of “Copy SI text” from all tabs)"),
+    "si_font": ("Schriftart (Word)", "Font (Word)"),
+    "si_font_tip": ("Gilt für alle Word-Exporte (SI, DFT, Synthese, NMR) und wird gemerkt. Standard Arial wie die SI\n"
+                    "der Gruppe. Die Größe bleibt 11 pt: „zwei Abbildungen je Seite“ rechnet mit dieser Zeilenhöhe.",
+                    "Applies to all Word exports (SI, DFT, synthesis, NMR) and is remembered. Default Arial as in the\n"
+                    "group's SI. The size stays 11 pt: “two figures per page” is calculated with this line height."),
     "si_part_xray": ("Kristallstruktur(en) aus dem Tab X-Ray", "Crystal structure(s) from the X-Ray tab"),
     "si_part_dft": ("DFT-Rechnungen aus dem Tab DFT (zweispaltig)", "DFT calculations from the DFT tab (two columns)"),
     "si_part_empty": ("Keine Daten in diesem Tab.", "No data in this tab."),

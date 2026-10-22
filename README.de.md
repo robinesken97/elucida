@@ -250,7 +250,11 @@ nicht im Repository); er steht vor den Abbildungen dieses Tabs. Word öffnet die
 ein englischer Methodenabsatz, der genau die benutzten Auswerteschritte mit ihren Einstellungen beschreibt (z. B. ε:
 Basislinienfenster, OLS-Modell, Cutoff, SE/95-%-KI; EPR: Basislinienpolynom, Feldkalibrierung, S = ½-Fit, Kinetik), zum
 Anhängen an den Aufbau-Absatz des passenden SI-Abschnitts, danach die Ergebnisse. Derselbe Text wird beim Export als
-`…_methods.txt` geschrieben.
+`…_methods.txt` geschrieben, und **SI (Word)** kann alle Texte als Abschnitt „Data processing and fitting“ (ein Absatz je
+Technik) hinter die Abbildungen setzen – so ist dokumentiert, wie die Rohdaten verarbeitet wurden.
+
+**Schriftart der Word-Exporte:** im Dialog SI (Word) wählbar (Standard Arial wie die SI der Gruppe), gilt für alle
+Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit dieser Zeilenhöhe rechnet.
 
 ## X-Ray-Tab
 

@@ -243,7 +243,11 @@ figures of that tab. Word files open in normal mode (Word 2013+).
 English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
 OLS model, cut-off, SE/95% CI; EPR: baseline polynomial, field calibration, S = 1/2 fit, kinetics), to append to the
 setup paragraph of the matching SI section, followed by the results. The same text is written as `…_methods.txt` on
-export.
+export, and **SI (Word)** can add all of them as a section "Data processing and fitting" (one paragraph per technique)
+behind the figures – so it is documented how the raw data were processed.
+
+**Font of the Word exports:** selectable in the SI (Word) dialog (default Arial as in the group's SI) and used for all
+Word exports. The size stays 11 pt, because "two figures per page" is calculated with this line height.
 
 ## X-Ray tab
 

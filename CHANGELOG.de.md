@@ -12,6 +12,10 @@
   größten Absorbanz. Feld „Spezies Zwischenstufe“ in der Bildunterschrift: „Color coding: **neutral** (blue),
   **radical cation** (green), **dication** (red).“ – nur Farben, die im Bild vorkommen. Ohne Eingabe bleibt alles wie
   bisher.
+- **SI (Word): Datenverarbeitung und Fits.** Neuer wählbarer Teil: die Methodentexte aller Tabs, die fitten (UV-Vis (ε),
+  CV, SEC, EPR – derselbe Text wie „SI-Text kopieren“: nur benutzte Schritte, aktuelle Parameter, danach die Ergebnisse)
+  als Abschnitt „Data processing and fitting“ hinter den Abbildungen.
+- **Schriftart der Word-Exporte** im Dialog SI (Word) wählbar (Standard Arial); die Größe bleibt 11 pt.
 
 ### Geändert
 - Synthese-Tab: Nur das Reaktionsschema steht auf weißem Grund (und nur, wenn eines geladen ist); der Vorschautext folgt
