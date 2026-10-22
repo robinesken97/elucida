@@ -348,9 +348,12 @@ class SynthTab(QWidget):
         ls.setMinimumWidth(max(520, left.minimumSizeHint().width() + 24))
         right = QWidget()
         rv = QVBoxLayout(right)
+        # Vorschau wie eine Word-Seite: immer weiß mit schwarzer Schrift (im dunklen Modus sonst kaum lesbar)
         self.lbl_prev = QLabel("", alignment=Qt.AlignCenter)
+        self.lbl_prev.setStyleSheet("background: #ffffff; color: #000000; padding: 8px;")
         rv.addWidget(self.lbl_prev)
         self.txt_prev = QTextBrowser()
+        self.txt_prev.setStyleSheet("QTextBrowser { background: #ffffff; color: #000000; }")
         rv.addWidget(self.txt_prev, 1)
         split = QSplitter(Qt.Horizontal)
         split.addWidget(ls)
@@ -707,8 +710,10 @@ class SynthTab(QWidget):
         if st is not None and st.get("rgba") is not None:
             a = st["rgba"]
             img = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_RGBA8888).copy()
-            self.lbl_prev.setPixmap(QPixmap.fromImage(img).scaledToWidth(min(700, img.width()),
-                                                                          Qt.SmoothTransformation))
+            dpr = max(1.0, self.lbl_prev.devicePixelRatioF())              # scharf auf HiDPI-Bildschirmen
+            pm = QPixmap.fromImage(img).scaledToWidth(int(min(700 * dpr, img.width())), Qt.SmoothTransformation)
+            pm.setDevicePixelRatio(dpr)
+            self.lbl_prev.setPixmap(pm)
         else:
             self.lbl_prev.setPixmap(QPixmap())
         name = self.compound_name()
