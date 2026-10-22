@@ -61,6 +61,7 @@ import uvvis_irms as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
 import uvvis_dft as DFT  # noqa: E402
 import uvvis_nmr as NMR  # noqa: E402
+import uvvis_synth as SYN  # noqa: E402
 import uvvis_si as SI  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
@@ -477,6 +478,7 @@ class MainWindow(QMainWindow):
         self.xray_state = {}
         self.dft_state = {}
         self.nmr_state = {}
+        self.syn_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
@@ -930,6 +932,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.xray_tab = XRAY.XrayTab(self, self.xray_state)
         self.main_tabs.addTab(self.xray_tab, T("tab_xray"))
+        self.syn_tab = SYN.SynthTab(self, self.syn_state)
+        self.main_tabs.addTab(self.syn_tab, T("tab_syn"))
         self.nmr_tab = NMR.NMRTab(self, self.nmr_state)
         self.main_tabs.addTab(self.nmr_tab, T("tab_nmr"))
         self.dft_tab = DFT.DFTTab(self, self.dft_state)
@@ -1248,7 +1252,8 @@ class MainWindow(QMainWindow):
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
-                "dft": self.dft_state, "nmr": self.nmr_state, "compound": dict(self.compound),
+                "dft": self.dft_state, "nmr": self.nmr_state, "syn": self.syn_state,
+                "compound": dict(self.compound),
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -1286,6 +1291,8 @@ class MainWindow(QMainWindow):
         self.dft_state.update(state.get("dft") or {})
         self.nmr_state.clear()
         self.nmr_state.update(state.get("nmr") or {})
+        self.syn_state.clear()
+        self.syn_state.update(state.get("syn") or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
@@ -2111,7 +2118,7 @@ class MainWindow(QMainWindow):
     def si_blocks(self, parts=SI_PARTS):
         """-> (Blöcke für SI.write_docx, fehlende Teile)."""
         comp = self.compound or {}
-        title = comp.get("name") or Path(self.project_dir or ".").name
+        title = self.syn_tab.st.get("name") or comp.get("name") or Path(self.project_dir or ".").name
         blocks, missing, plain = [], [], ""
         if "char" in parts:
             blocks, missing, plain = self.si_char_blocks(comp, title)
@@ -2154,6 +2161,8 @@ class MainWindow(QMainWindow):
             [p_ for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
         plain, para = SI.join_lines(parts + order)
         blocks = [("synthesis", title)]
+        if self.syn_tab.has_content() and self.project_dir:      # Überschrift, Schema, Vorschrift aus dem Tab
+            blocks = self.syn_tab.si_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
         if para:
             blocks.append(("char", para))
         return blocks, missing, plain
@@ -2386,7 +2395,7 @@ class MainWindow(QMainWindow):
     def export_current(self):
         cur = self.main_tabs.currentWidget()
         for tab in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.hrms_tab, self.irms_tab,
-                    self.xray_tab, self.dft_tab, self.nmr_tab):
+                    self.xray_tab, self.dft_tab, self.nmr_tab, self.syn_tab):
             if cur is tab:
                 return tab.export_dialog()
         return self.export_dialog()
@@ -4101,6 +4110,58 @@ def selftest(outdir, with_isnet=False):
         w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None)
         t_n.sync_widgets()
         report.append("NMR (Mnova SVG, nucleus from axis/manual, order, Mnova text + assignment, Bruker acqus, Word): OK")
+
+        # Synthese: Mengenprüfung mit Rundung, Reagenzientabelle, Schema als bearbeitbares ChemDraw-Objekt (CDX)
+        proc_ = ("In a flask <b>S25</b> (1.05 g, 4.58 mmol, 1.0 eq.) was dissolved in MeOH (10 mL) and "
+                 "K<sub>2</sub>CO<sub>3</sub> (760 mg, 5.49 mmol, 1.2 eq.) was added to give <b>S26</b> "
+                 "(707 mg, 4.53 mmol, 99%).")
+        tab_ = {"S25": {"M": 228.37}, "K2CO3": {"M": SYN.formula_mw("K2CO3")}, "S26": {"M": 156.19}}
+        res_ = SYN.check_amounts(SYN.parse_amounts(proc_), tab_)
+        assert [l_ for l_, _ in res_] == ["ok", "ok", "ok", "ok", "ok"], res_        # 1.05 g -> 4.58 mmol: Rundung
+        bad_ = SYN.check_amounts(SYN.parse_amounts(proc_.replace("5.49", "5.94").replace("99%", "95%")), tab_)
+        assert [l_ for l_, _ in bad_].count("warn") == 3, bad_
+        assert abs(SYN.formula_mw("K2CO3") - 138.204) < 0.01 and SYN.molar_mass("228.37") == 228.37
+        t_s = w.syn_tab
+        w.main_tabs.setCurrentWidget(t_s)
+        w.syn_state["reagents"] = [dict(name="S25", M="C13H16N2Si", m_mg="1046", role="ref"),
+                                   dict(name="K2CO3", M="K2CO3", m_mg="760", role="reagent"),
+                                   dict(name="S26", M="C10H8N2", m_mg="707", role="product")]
+        t_s.sync_widgets()
+        assert t_s.tbl.item(1, len(SYN.COLS) + 1).text() == "1.20" and t_s.tbl.item(2, len(SYN.COLS) + 1).text() == "99%"
+        r0_ = w.syn_state["reagents"][0]
+        assert SYN.amount_text(r0_, dict(SYN.row_amounts(r0_), eq=1.0)) == "(1.046 g, 4.58 mmol, 1.0 eq.)"
+        t_s.ed_proc.setHtml(proc_)
+        t_s.proc_changed()
+        assert "<b>S25</b>" in w.syn_state["proc"] and "<sub>2</sub>" in w.syn_state["proc"], w.syn_state["proc"]
+        assert t_s.lbl_check.text().count("\u2713") == 5, t_s.lbl_check.text()
+        sdir = out / "input" / "syn"
+        sdir.mkdir(parents=True, exist_ok=True)
+        if hasattr(_Chem, "MolToCDXMLBlock"):
+            (sdir / "scheme.cdxml").write_text(_Chem.MolToCDXMLBlock(sm_), encoding="utf-8")
+            from rdkit.Chem import Draw as _Draw
+            _Draw.MolToFile(sm_, str(sdir / "scheme.svg"))                   # steht für den ChemDraw-SVG-Export
+            (sdir / "scheme.cdx").write_bytes(b"VjCD0100\x04\x03\x02\x01" + b"\0" * 200)   # Platzhalter-CDX
+            t_s.set_scheme(str(sdir / "scheme.cdxml"))
+            sp_ = t_s.scheme_parts()
+            assert sp_["picture"].suffix == ".svg" and sp_["cdx"] is not None and sp_["emf"] is None
+            assert Path(w.syn_state["scheme"]).parent == proj / "images"
+            sb_ = t_s.si_blocks(out / "syn")
+            assert sb_[0] == ("synthesis", "TEST-1" if w.compound.get("name") == "TEST-1" else t_s.compound_name())
+            assert [b_[0] for b_ in sb_] == ["synthesis", "ole", "char"], [b_[0] for b_ in sb_]
+            sd_ = t_s.export_dialog()
+            import olefile
+            with _zf.ZipFile(sd_) as z_:
+                xml_ = z_.read("word/document.xml").decode("utf-8")
+                ole_ = olefile.OleFileIO(z_.read("word/embeddings/oleObject1.bin"))
+            assert 'ProgID="ChemDraw.Document.6.0"' in xml_ and ole_.openstream("CONTENTS").read().startswith(b"VjCD0100")
+            assert any(k_ == "scheme" and c_ is w.syn_state for c_, k_, _ in PRJ._path_slots(w.get_state()))
+            (Path(w.syn_state["scheme"]).with_suffix(".cdx")).unlink()           # ohne CDX: Vektorbild
+            assert [b_[0] for b_ in t_s.si_blocks(out / "syn")][1] == "image"
+        b_all, _ = w.si_blocks(["char"])
+        assert b_all[0][0] == "synthesis" and any(b_[0] == "char" and "S25" in b_[1] for b_ in b_all)
+        w.syn_state.update(name="", scheme=None, proc="", reagents=[])
+        t_s.sync_widgets()
+        report.append("Synthesis (amount check with rounding, reagent table, ChemDraw object, SI): OK")
         w.dft_state.update(entries=[], current=None)
         t_d.sync_widgets()
         t_d.render()

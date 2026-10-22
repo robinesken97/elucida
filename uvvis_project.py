@@ -67,6 +67,7 @@ def _path_slots(state):
     for e in (state.get("dft") or {}).get("entries") or []:
         slots.append((e, "file", "data"))
     slots.append((state.get("nmr") or {}, "structure", "images"))
+    slots.append((state.get("syn") or {}, "scheme", "images"))
     for e in (state.get("nmr") or {}).get("spectra") or []:
         slots += [(e, "file", "data"), (e, "bruker", "data")]
     fl = state.get("fluo") or {}

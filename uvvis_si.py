@@ -380,6 +380,31 @@ def _image_xml(rid, n, w_cm, h_cm, svg_rid=None, page_break=False):
             '</wp:inline></w:drawing></w:r></w:p>')
 
 
+_SHAPETYPE = ('<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" '
+              'path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas>'
+              '<v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/>'
+              '<v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/>'
+              '<v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/>'
+              '<v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/>'
+              '</v:formulas><v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/>'
+              '<o:lock v:ext="edit" aspectratio="t"/></v:shapetype>')
+
+
+def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
+    """Eingebettetes ChemDraw-Objekt (wie von Word beim Einfügen aus ChemDraw geschrieben); Doppelklick öffnet ChemDraw."""
+    import uvvis_ole
+    wpt, hpt = w_cm / 2.54 * 72, h_cm / 2.54 * 72
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True)
+    if page_break:
+        ppr = ppr.replace("<w:pPr>", "<w:pPr><w:pageBreakBefore/>", 1)
+    return (f'<w:p>{ppr}<w:r><w:object w:dxaOrig="{int(wpt * 20)}" w:dyaOrig="{int(hpt * 20)}">'
+            + (_SHAPETYPE if first else "") +
+            f'<v:shape id="_x0000_iOle{n}" type="#_x0000_t75" style="width:{wpt:.2f}pt;height:{hpt:.2f}pt" o:ole="">'
+            f'<v:imagedata r:id="rIdOlePrev{n}" o:title=""/></v:shape>'
+            f'<o:OLEObject Type="Embed" ProgID="{uvvis_ole.CHEMDRAW_PROGID}" ShapeID="_x0000_iOle{n}" '
+            f'DrawAspect="Content" ObjectID="_18{54180700 + n:08d}" r:id="rIdOle{n}"/></w:object></w:r></w:p>')
+
+
 def _sect(columns):
     """Abschnittseigenschaften (A4, Ränder wie in der SI), fortlaufend, mit Spaltenzahl."""
     return ('<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" '
@@ -405,9 +430,10 @@ def write_docx(path, blocks, columns=1):
     ("energies", Köpfe, Zeilen)           Energietabelle über die Spaltenbreite
     ("columns", n)                        ab hier n Spalten (fortlaufender Abschnittswechsel, z. B. DFT zweispaltig)
     ("pagebreak",)                        Seitenumbruch (NMR: zwei Spektren je Seite)
+    ("ole", CDX, Vorschau, Breite cm, Höhe cm)  bearbeitbares ChemDraw-Objekt (CDX), Vorschau EMF (Vektor) oder PNG
     ("gap",)                              Leerzeile
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
-    body, media, svgs = [], [], []
+    body, media, svgs, oles = [], [], [], []
     n_fig = n_tab = 0
     def col_width(n):
         return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
@@ -488,6 +514,11 @@ def write_docx(path, blocks, columns=1):
             n = len(header)
             body.append(_table(header, rows, [col_w // n] * n, line=240, size=16 if columns > 1 else 18))
             body.append(_para([("", set())], line=240))
+        elif k == "ole":
+            import uvvis_ole
+            oles.append((uvvis_ole.write_cfb(uvvis_ole.chemdraw_streams(Path(b[1]).read_bytes())), Path(b[2])))
+            body.append(_ole_xml(len(oles), b[3], b[4], first=len(oles) == 1, page_break=pending_break))
+            pending_break = False
         elif k == "pagebreak":
             pending_break = True                 # am nächsten Bild als „Seitenumbruch oberhalb“
         elif k == "gap":
@@ -495,7 +526,8 @@ def write_docx(path, blocks, columns=1):
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
           'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
-          'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"')
+          'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+          'xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"')
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            f'<w:document {ns}><w:body>' + "".join(body) + _sect(columns) + '</w:body></w:document>')
     styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -507,7 +539,8 @@ def write_docx(path, blocks, columns=1):
               '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
               '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
               '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
-              '<Default Extension="svg" ContentType="image/svg+xml"/>'
+              '<Default Extension="svg" ContentType="image/svg+xml"/><Default Extension="emf" ContentType="image/x-emf"/>'
+              '<Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>'
               '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
               'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
               'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
@@ -523,6 +556,11 @@ def write_docx(path, blocks, columns=1):
                      f'relationships/image" Target="media/image{i}.png"/>' for i in range(1, len(media) + 1)) +
              "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}.svg"/>' for i, _ in svgs) +
+             "".join(f'<Relationship Id="rIdOle{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/oleObject" Target="embeddings/oleObject{i}.bin"/>'
+                     f'<Relationship Id="rIdOlePrev{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/ole{i}{pv.suffix.lower()}"/>'
+                     for i, (_, pv) in enumerate(oles, 1)) +
              '</Relationships>')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -536,4 +574,7 @@ def write_docx(path, blocks, columns=1):
             z.writestr(f"word/media/image{i}.png", m.read_bytes())
         for i, sv in svgs:
             z.writestr(f"word/media/image{i}.svg", sv.read_bytes())
+        for i, (bin_, pv) in enumerate(oles, 1):
+            z.writestr(f"word/embeddings/oleObject{i}.bin", bin_)
+            z.writestr(f"word/media/ole{i}{pv.suffix.lower()}", pv.read_bytes())
     return path
