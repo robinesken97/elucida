@@ -2,6 +2,29 @@
 
 # Changelog
 
+## 1.23.0 – 2026-10-22
+
+### New
+- **DFT tab:** load xyz files and outputs of **ORCA 6** and **Gaussian** (UTF-16 files from a PowerShell redirect are
+  recognised); rotatable figure in the style of the X-Ray tab.
+- DFT: **renumber atoms by clicking** them in the desired order; the remaining atoms keep their order (optionally H
+  atoms right after their atom). The xyz is saved as a new file with the lines unchanged (only reordered, all frames
+  of a trajectory); ORCA counting from 0 optional.
+- DFT: **number like a template** – take over the numbering of another geometry or of a crystal structure from the
+  X-Ray tab (then with the atom names of the CIF). Matching by connectivity and, for symmetric molecules, by geometry;
+  equivalent assignments are reported, never chosen silently.
+- DFT: **SI block** per calculation as in the group's SI: name, figure, charge/multiplicity/point group, Cartesian
+  coordinates, table E_el/H/G (ZPE optional); method line (per structure or once as "Computational details"),
+  convergence table and frequency result can be switched on and off. Values exactly as in the output. Warnings for
+  aborted runs, non-converged optimisations and imaginary frequencies. Word file in two columns.
+- **SI (Word)** button in the toolbar: choose the parts (characterisation, X-ray, DFT) for the SI section.
+- Label size adjustable in the X-Ray and DFT tabs.
+- SI texts (Word and copy) with **non-breaking spaces** between number and unit, around "=" and "±", within
+  composite units and in the elemental analysis.
+
+### Fixed
+- X-Ray: SI figures without labels were cropped at the edge.
+
 ## 1.22.1 – 2026-10-22
 
 ### Fixed

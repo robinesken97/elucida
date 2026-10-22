@@ -64,6 +64,8 @@ def _path_slots(state):
     slots += [(hr, "ms_file", "data"), (hr, "ms_raw", "data")]
     for e in (state.get("xray") or {}).get("entries") or []:
         slots.append((e, "file", "data"))
+    for e in (state.get("dft") or {}).get("entries") or []:
+        slots.append((e, "file", "data"))
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", "data"), (fl, "em_file", "data"), (fl, "structure", "images"),
               (fl, "photo_day", "images"), (fl, "photo_uv", "images")]
@@ -186,6 +188,8 @@ def import_file(project_dir, src, sub) -> str:
     dest_dir = pdir / sub
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = _copy_unique(src, dest_dir)
+    if src.suffix.lower() in (".out", ".log") and src.with_suffix(".xyz").is_file():   # ORCA: Endgeometrie, 14 Stellen
+        shutil.copy2(src.with_suffix(".xyz"), target.with_suffix(".xyz"))
     if src.suffix.lower() == ".cdxml":
         for sib in src.parent.glob(src.stem + ".*"):
             if sib.stem == src.stem and sib.suffix.lower() in (".svg", ".pdf", ".png", ".tif", ".tiff"):

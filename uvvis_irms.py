@@ -504,8 +504,8 @@ IR_COLOR = "#7a1a12"
 def copy_rich(plain, html):
     """Zeile mit Formatierung (fett, hoch-/tiefgestellt) in die Zwischenablage – bleibt beim Einfügen in Word."""
     md = QMimeData()
-    md.setText(plain)
-    md.setHtml(html)
+    md.setText(SI.nbsp(plain))                  # geschützte Leerzeichen wie im Word-Export
+    md.setHtml(SI.nbsp(html))
     QApplication.clipboard().setMimeData(md)
 
 

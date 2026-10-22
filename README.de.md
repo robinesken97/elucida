@@ -33,6 +33,7 @@ Englisch.
 | **HRMS** | HRMS-Zeile aus dem Bericht der Massenabteilung oder aus Bruker-Rohdaten (.d): Chromatogramm mit wählbarem LC-Bereich, gemitteltes Spektrum, Peak per Klick, berechnetes Isotopenmuster |
 | **IR + EA** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die Zeile der Elementaranalyse, fertig für die SI |
 | **X-Ray** | CIF → drehbare ORTEP-Abbildung im Mercury-Stil (schattierte Ellipsoide, Labels je Atom), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
+| **DFT** | xyz, ORCA-6- und Gaussian-Ausgaben: Atome per Klick oder wie eine Vorlage (andere Geometrie oder CIF) umnummerieren, SI-Block mit Koordinaten, Energien und Konvergenz (Word, zweispaltig) |
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
 Erscheinungsbild; Deutsch und Englisch.
@@ -185,12 +186,14 @@ Charakterisierungsabsatz im SI-Abschnitt.
 
 ## SI-Abschnitt (Word)
 
-**Datei → SI-Abschnitt exportieren (Word) …** sammelt alles Fertige zur Verbindung des Projekts in
+**SI (Word)** in der Werkzeugleiste (oder **Datei → SI-Abschnitt exportieren (Word) …**) fragt, welche Teile hinein
+sollen (Charakterisierung, X-Ray, DFT), und sammelt alles Fertige zur Verbindung des Projekts in
 `exports/si/<Verbindung>_SI.docx`, im Stil der SI: ein Charakterisierungsabsatz **m.p. …; IR …; HR-MS …; UV-Vis …;
 Elemental analysis …** (Schmelzpunkt aus **Verbindung …**, UV-Vis-Zeile von der Seite **SI-Zeile** im Tab UV-Vis (ε):
 *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε auf die Genauigkeit seines
 Standardfehlers gerundet), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
-X-Ray-Tab. Was noch fehlt, wird nach dem Export aufgezählt.
+X-Ray-Tab und die DFT-Rechnungen (zweispaltig). Was noch fehlt, wird nach dem Export aufgezählt. Zahl und Einheit sind
+durch geschützte Leerzeichen verbunden, Word trennt also nie „298 nm“ oder „ε = 8440“.
 
 **SI-Text zu den Fits:** Jeder Tab, der etwas fittet (UV-Vis (ε), CV, SEC, EPR), hat den Knopf **SI-Text kopieren**:
 ein englischer Methodenabsatz, der genau die benutzten Auswerteschritte mit ihren Einstellungen beschreibt (z. B. ε:
@@ -232,7 +235,27 @@ Anhängen an den Aufbau-Absatz des passenden SI-Abschnitts, danach die Ergebniss
   **Kopieren** behält Kursivschrift und Hoch-/Tiefstellung in Word; der Export schreibt zusätzlich CSV und Excel.
   Die Tabellen sind englisch beschriftet (wie in SI üblich).
 - Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv` und
-  `…_tables.xlsx`.
+  `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar.
+
+## DFT-Tab
+
+- **xyz**-Dateien (auch Trajektorien; gezeigt wird das letzte Bild) oder Ausgaben von **ORCA 6** (`.out`) und
+  **Gaussian** (`.log`) laden. Dateien aus einer PowerShell-Umleitung (UTF-16) werden erkannt. Abbildung und Maus wie
+  im X-Ray-Tab.
+- **Umnummerieren:** **Nummerieren** drücken und die Atome in der gewünschten Reihenfolge anklicken; **Übernehmen**
+  stellt sie nach vorn, die übrigen behalten ihre Reihenfolge (wahlweise H direkt hinter ihrem Atom). **xyz speichern**
+  schreibt eine neue Datei mit unveränderten Zeilen (nur umsortiert); die geladene Datei wird nie überschrieben.
+  Zählung ab 0 (ORCA) wählbar.
+- **Wie Vorlage:** übernimmt die Nummerierung einer anderen Geometrie im Tab oder einer Kristallstruktur im X-Ray-Tab
+  (dann mit den Atomnamen der CIF, z. B. C1, H3A). Schweratome über das Bindungsnetz, symmetrische Moleküle über die
+  kleinste Abweichung nach Überlagerung; eine gleich gute Alternative wird mit den betroffenen Atomen gemeldet, H folgen
+  ihrem Nachbaratom.
+- **Rechnung für die SI** (ORCA 6, Gaussian): Name, Abbildung, Ladung/Multiplizität/Punktgruppe, kartesische Koordinaten
+  und E_el/H/G (ZPE-Spalte optional), wahlweise Eingabezeile (je Struktur oder einmal als „Computational details“),
+  Konvergenztabelle des letzten Zyklus und Frequenzergebnis. Alle Werte exakt wie in der Ausgabe. Das Programm warnt bei
+  abgebrochenen Rechnungen, nicht konvergierter Optimierung und imaginären Frequenzen; bei CPCM steht nur der
+  dielektrische Beitrag da (eine Solvatationsenergie braucht die Gasphasenrechnung). **SI-Text kopieren**, **Word
+  speichern** (zweispaltig) oder über den SI-Abschnitt.
 
 ## Projekte, Export, Rückgängig
 
@@ -493,6 +516,7 @@ Format → „Schrift und Rahmen…“ gilt für alle Tabs und wird im Projekt g
 - **Cary Eclipse** Fluoreszenzdaten: CSV-Export und .FBSW-Dateien. Die Anregungswellenlänge wird
   aus den Metadaten der Datei übernommen.
 - **CIF** (Kristallstrukturen, z. B. aus Olex2/SHELXL): eigener Leser, mehrere `data_`-Blöcke je Datei.
+- **xyz**, **ORCA-6**-Ausgaben (`.out`, auch UTF-16) und **Gaussian**-Ausgaben (`.log`) für den DFT-Tab.
 - **Mehrere Dateien** lassen sich zusammen öffnen und bilden einen Datensatz.
 
 ## Probleme

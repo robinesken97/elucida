@@ -33,6 +33,7 @@ The user interface is available in German and English.
 | **HRMS** | HRMS line from the mass-spectrometry report or Bruker raw data (.d): chromatogram with selectable LC range, averaged spectrum, peak by click, calculated isotope pattern |
 | **IR + EA** | IR peak list from Bruker OPUS (file or PDF) and the elemental-analysis line, ready for the SI |
 | **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
+| **DFT** | xyz, ORCA 6 and Gaussian outputs: renumber atoms by click or like a template (other geometry or CIF), SI block with coordinates, energies and convergence (Word, two columns) |
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
@@ -180,12 +181,14 @@ characterisation paragraph of the SI section.
 
 ## SI section (Word)
 
-**File → Export SI section (Word) …** collects everything that is ready for the project's compound into
+**SI (Word)** in the toolbar (or **File → Export SI section (Word) …**) asks which parts to include
+(characterisation, X-ray, DFT) and collects everything that is ready for the project's compound into
 `exports/si/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
 UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
 precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
-X-Ray tab. Parts that are still missing are listed after the export.
+X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
+and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
 
 **SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
 English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
@@ -226,7 +229,25 @@ export.
   keeps italics and sub-/superscripts in Word; export also writes CSV and Excel. Table labels are in English
   (as usual for an SI).
 - Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
-  `…_tables.xlsx`.
+  `…_tables.xlsx`. The label size can be set per tab.
+
+## DFT tab
+
+- Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
+  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Figure and mouse as in the X-Ray tab.
+- **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the
+  remaining atoms keep their order (optionally H atoms right after their atom). **Save xyz** writes a new file with the
+  lines unchanged (only reordered); the loaded file is never overwritten. Counting from 0 (ORCA) can be shown.
+- **Like template:** takes over the numbering of another geometry in the tab or of a crystal structure in the X-Ray
+  tab (then with the CIF atom names, e.g. C1, H3A). Heavy atoms are matched by connectivity, symmetric molecules by
+  the smallest deviation after superposition; an equally good alternative is reported with the atoms concerned, H
+  atoms follow their neighbour atom.
+- **Calculation for the SI** (ORCA 6, Gaussian): name, figure, charge/multiplicity/point group, Cartesian coordinates
+  and E_el/H/G (ZPE column optional), optionally the input line (per structure or once as "Computational details"),
+  the convergence table of the last cycle and the frequency result. All values exactly as in the output. The program
+  warns about aborted runs, non-converged optimisations and imaginary frequencies; with CPCM only the dielectric
+  contribution is given (a solvation energy needs the gas-phase calculation). **Copy SI text**, **Save Word** (two
+  columns) or via the SI section.
 
 ## Projects, export, undo
 
@@ -485,6 +506,7 @@ Format → "Fonts and frames…" applies to all tabs and is saved with the proje
 - **Cary Eclipse** fluorescence data: CSV export and .FBSW files. The excitation wavelength is
   taken from the file's metadata.
 - **CIF** (crystal structures, e.g. from Olex2/SHELXL): own reader, several `data_` blocks per file.
+- **xyz**, **ORCA 6** outputs (`.out`, also UTF-16) and **Gaussian** outputs (`.log`) for the DFT tab.
 - **Several files** can be opened together; they form one data set.
 
 ## Troubleshooting
