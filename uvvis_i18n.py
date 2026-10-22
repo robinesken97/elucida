@@ -801,6 +801,9 @@ TEXTS = {
     "sec_gradient": ("Farbverlauf nach Potential", "Colour gradient by potential"),
     "sec_diff": ("Differenzspektren (ΔA gegen erstes Spektrum)", "Difference spectra (ΔA vs. first spectrum)"),
     "sec_baseline": ("Nullpunkt: Mittel 780–820 nm abziehen", "Zero: subtract mean of 780–820 nm"),
+    "cv_color_gradient_tip": ("Farbverlauf nach Scanrate ist an: Farbe kommt aus dem Verlauf. Für eigene Farben "
+                              "„Farbverlauf“ ausschalten.", "Colour gradient by scan rate is on: the colour comes from "
+                              "the gradient. Switch off “gradient” to use your own colours."),
     "sec_mid": ("Zwischenspektren", "Intermediate spectra"),
     "sec_mid_ph_e": ("Potential [V], z. B. −0.45", "potential [V], e.g. −0.45"),
     "sec_mid_ph_n": ("Nr. des Spektrums, z. B. 35", "spectrum no., e.g. 35"),

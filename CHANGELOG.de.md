@@ -18,6 +18,13 @@
   wieder dem hellen/dunklen Erscheinungsbild.
 - README: neue Screenshots aller Tabs (auch Synthese und NMR), erzeugt mit `tools/make_screenshots.py` nur aus
   künstlichen Daten.
+- Checkboxen mit eigenem Rand und Haken in Akzentfarbe (nicht angehakte waren im dunklen Modus kaum zu sehen).
+
+### Behoben
+- UV-Vis (ε): Hinweise zur Struktur (Formel, „aus den CDXML-Koordinaten gezeichnet“, Warnungen) folgen jetzt einem
+  Sprachwechsel.
+- CV: Mit Farbverlauf nach Scanrate zeigen die Farbfelder der Liste die Farben des Bildes und sind gesperrt (vorher
+  standen dort Farben, die nicht benutzt wurden).
 
 ## 1.24.0 – 22.10.2026
 

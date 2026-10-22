@@ -721,6 +721,7 @@ class CVTab(TABS.FigureTab):
             self.table.setItem(i, 3, it)
             self.table.setItem(i, 4, QTableWidgetItem(e.get("group", "")))
         self.table.resizeColumnToContents(0)
+        self.update_color_buttons()
         cur = self.st.get("ref_uid")
         self.cmb_ref_file.blockSignals(True)
         self.cmb_ref_file.clear()
@@ -730,6 +731,19 @@ class CVTab(TABS.FigureTab):
         self.cmb_ref_file.blockSignals(False)
         self._loading = False
         self.show_file_ref()
+
+    def update_color_buttons(self):
+        """Mit Farbverlauf nach Scanrate gelten die eigenen Farben nicht: Felder zeigen die Farbe im Bild und
+        sind gesperrt."""
+        grad = getattr(self, "grad_colors", {})
+        for i, e in enumerate(self.st["files"]):
+            b = self.table.cellWidget(i, 2)
+            if b is None:
+                continue
+            col = grad.get(e["uid"], e["color"])
+            b.setEnabled(not grad)
+            b.setToolTip(T("cv_color_gradient_tip") if grad else "")
+            b.setStyleSheet(f"background-color: {col}; border: 1px solid #777;")
 
     def _set_color(self, e, c):
         e["color"] = c
@@ -917,6 +931,8 @@ class CVTab(TABS.FigureTab):
         if not vis:
             self.results = []
             self.show_results()
+            self.grad_colors = {}
+            self.update_color_buttons()
             return None
         cfg = self.base_cfg()
         off_g, ref_label, note = self.reference_offset()
@@ -927,6 +943,7 @@ class CVTab(TABS.FigureTab):
         rates = [self.data(e["file"])["meta"]["scanrate"] or 0.0 for e in vis]
         order = np.argsort(np.argsort(rates))
         curves, self.results, notes, labels_ref = [], [], [note] if note else [], set()
+        grad_colors = {}
         for k, e in enumerate(vis):
             d = self.data(e["file"])
             c = self.cycle_of(e)
@@ -942,6 +959,7 @@ class CVTab(TABS.FigureTab):
             y = fac * c["I"]
             color = (RATE_CMAP(order[k] / max(1, len(vis) - 1)) if st["gradient"] and len(vis) > 1 else e["color"])
             color = color if isinstance(color, str) else "#%02x%02x%02x" % tuple(int(255 * v) for v in color[:3])
+            grad_colors[e["uid"]] = color
             curves.append({"x": E, "y": y, "val": y, "color": color, "label": e["label"], "ls": "-", "lw": 1.3,
                            "uid": e["uid"], "_scale": fac,
                            "_off_e": off})
@@ -953,6 +971,8 @@ class CVTab(TABS.FigureTab):
                     self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
                                              rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
                                              e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off))
+        self.grad_colors = grad_colors if st["gradient"] and len(vis) > 1 else {}
+        self.update_color_buttons()
         if len(labels_ref) > 1:
             notes.append(T("cv_ref_mixed"))
         ref_label = "Fc$^{0/+}$" if labels_ref == {"Fc$^{0/+}$"} else ref_label

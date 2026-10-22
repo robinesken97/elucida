@@ -17,6 +17,12 @@
   preview text follows the light/dark theme again.
 - README: new screenshots of all tabs (including Synthesis and NMR), created with `tools/make_screenshots.py` from
   synthetic data only.
+- Checkboxes with their own border and an accent-coloured tick (unchecked boxes were almost invisible in dark mode).
+
+### Fixed
+- UV-Vis (ε): structure hints (formula, "drawn from the CDXML coordinates", warnings) now follow a language switch.
+- CV: with the colour gradient by scan rate, the colour fields in the list show the colours of the figure and are
+  locked (they used to show colours that were not used).
 
 ## 1.24.0 – 2026-10-22
 

@@ -18,11 +18,11 @@ COLORS = {
     "light": dict(window="#F4F3EF", card="#FFFFFF", field="#FAF9F6", button="#FFFFFF", hover="#EFEEE9",
                   border="#E2E0DA", border_strong="#C8C6BE", text="#1F1E1C", text2="#6B6A64",
                   disabled="#ABA9A2", accent="#2E6BD6", accent_hover="#255BBB", on_accent="#FFFFFF",
-                  alt="#F7F6F3"),
+                  alt="#F7F6F3", check_border="#9A988F"),
     "dark": dict(window="#141413", card="#1C1C1B", field="#111110", button="#232322", hover="#2B2B29",
                  border="#2D2D2B", border_strong="#42423F", text="#EDECE8", text2="#9D9B94",
                  disabled="#5E5D58", accent="#3D7CE0", accent_hover="#5089E6", on_accent="#FFFFFF",
-                 alt="#181817"),
+                 alt="#181817", check_border="#7A7872"),
 }
 
 _SVG = {
@@ -45,6 +45,7 @@ _SVG = {
     "move_down": '<path d="M12 5v14M6 13l6 6 6-6"/>',
     "up": '<path d="M7 14.5 12 9.5l5 5"/>',
     "down": '<path d="M7 9.5l5 5 5-5"/>',
+    "check": '<path d="M6 12.5l4 4 8-9"/>',
 }
 
 HINT_CSS = "color: gray;"            # Hinweistexte
@@ -190,6 +191,10 @@ def apply(mode, cache_dir: Path):
             p = cache_dir / f"{name}{state}_{_mode}.png"
             _render(name, col, 48, stroke=2.6).save(str(p))   # kräftiger, weil klein
             arrows[name + state] = p.as_posix()
+    for state, col in (("", c["on_accent"]), ("_dis", c["card"])):      # Haken auf Akzent- bzw. Grau-Fläche
+        p = cache_dir / f"check{state}_{_mode}.png"
+        _render("check", col, 48, stroke=3.2).save(str(p))
+        arrows["check" + state] = p.as_posix()
     app.setStyleSheet(stylesheet(c, arrows))
     return _mode
 
@@ -242,6 +247,15 @@ QGroupBox {{ background: {c['card']}; border: 1px solid {c['border']}; border-ra
 QGroupBox::title {{ subcontrol-origin: padding; subcontrol-position: top left; left: 12px; top: 9px;
     font-weight: bold; }}
 QGroupBox::title:disabled {{ color: {c['disabled']}; }}
+QCheckBox::indicator, QAbstractItemView::indicator, QGroupBox::indicator {{ width: 14px; height: 14px;
+    border: 1px solid {c['check_border']}; border-radius: 3px; background: {c['field']}; }}
+QCheckBox::indicator:hover, QAbstractItemView::indicator:hover {{ border-color: {c['accent']}; }}
+QCheckBox::indicator:checked, QAbstractItemView::indicator:checked, QGroupBox::indicator:checked {{
+    background: {c['accent']}; border-color: {c['accent']}; image: url("{a['check']}"); }}
+QCheckBox::indicator:disabled, QAbstractItemView::indicator:disabled {{ background: {c['alt']};
+    border-color: {c['border_strong']}; }}
+QCheckBox::indicator:checked:disabled, QAbstractItemView::indicator:checked:disabled {{
+    background: {c['disabled']}; border-color: {c['disabled']}; image: url("{a['check_dis']}"); }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QSplitter::handle {{ background: transparent; }}

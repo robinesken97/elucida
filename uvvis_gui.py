@@ -1167,6 +1167,10 @@ class MainWindow(QMainWindow):
         self.collect_globals()
         set_lang(code)
         self.settings.setValue("lang", code)
+        # Hinweise zur Struktur werden beim Laden übersetzt und gespeichert -> in der neuen Sprache neu laden
+        for g, st in self.series.items():
+            if st.get("structure") and Path(st["structure"]).exists():
+                self.set_structure(st["structure"], g, render=False, sync=True, autofill_mw=False)
         self.build_ui()
         self.render()
 
@@ -2659,6 +2663,12 @@ def selftest(outdir, with_isnet=False):
         st = w.series["TEST-A"]
         report.append(f"CDXML: {st['chem_info']!r}")
         assert st["mw"] and abs(st["mw"] - 95.10) < 0.05, st["mw"]      # 3-Hydroxypyridin C5H5NO
+        hint_ = lambda: T("cdxml_drawn", name="pyridinol")                # noqa: E731  Hinweis folgt der Sprache
+        assert hint_() in st["chem_info"], st["chem_info"]
+        for lang in ("en", "de"):
+            w.switch_lang(lang)
+            assert hint_() in w.series["TEST-A"]["chem_info"], (lang, w.series["TEST-A"]["chem_info"])
+        report.append("structure hints follow language switch: OK")
         w.series["TEST-A"]["bg"] = "isnet" if with_isnet else "grabcut"
         w.set_photo(str(photo), "TEST-A", render=False, sync=True)
         bgm = st["photo_asset"]["bg_method"]
@@ -3104,6 +3114,9 @@ def selftest(outdir, with_isnet=False):
         res = w.cv_tab.results
         assert len(res) == 3 and all(abs(r["e12"] - (-1.02 - (0.55 - 0.49))) < 0.004 for r in res), res
         assert "Ac₂Fc" in w.cv_tab.note and "+0.49 V vs. Fc" in w.cv_tab.note, w.cv_tab.note
+        b_cv = w.cv_tab.table.cellWidget(0, 2)                # Farbverlauf: Feld zeigt die Farbe im Bild, gesperrt
+        assert st_cv["gradient"] and not b_cv.isEnabled() and \
+            w.cv_tab.grad_colors[st_cv["files"][0]["uid"]] in b_cv.styleSheet(), b_cv.styleSheet()
         rs = CVMOD.randles_sevcik([50, 100, 200], [r["ipa"] * 1e6 for r in res])
         assert rs and rs[2] > 0.99, rs
         csv_txt = files[-1].read_text(encoding="utf-8-sig")
@@ -3634,6 +3647,8 @@ def selftest(outdir, with_isnet=False):
             assert w.btn_export.property("accent") and w.btn_open.property("accent")
             assert not w.btn_export.icon().isNull(), "icon"
             assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
+            css_ = QApplication.instance().styleSheet()       # Checkboxen mit eigenem Rand (dunkel sonst unsichtbar)
+            assert "QCheckBox::indicator" in css_ and STYLE.COLORS[mode]["check_border"] in css_, mode
         assert w.findChildren(QFrame, "card") and not w.eps_page.findChildren(QGroupBox)
         w.switch_theme("system")
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol

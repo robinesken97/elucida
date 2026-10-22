@@ -343,8 +343,6 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         w.syn_tab.sync_widgets()
         for lang in ("de", "en"):
             w.switch_lang(lang)
-            # Strukturhinweis im ε-Tab wird beim Laden übersetzt und gespeichert -> in der Sprache neu laden
-            w.set_structure(w.series["TEST-A"]["structure"], "TEST-A", render=False, sync=True)
             for theme in ("light", "dark"):
                 w.switch_theme(theme)
                 w.resize(*SIZE)
