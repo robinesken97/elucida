@@ -323,11 +323,14 @@ TEXTS = {
     "cap_solvent_ph": ("z. B. THF", "e.g. THF"),
     "sec_cap_tip": ("Unterschrift wie in der SI der Gruppe. Start-/Endpotential kommen aus dem Scan (erstes/letztes "
                     "gezeigtes Spektrum, Referenz wie die Achse); die Farbcodierung (blau/rot) nur mit hervorgehobenem "
-                    "ersten/letzten Spektrum.", "Caption as in the group's SI. Start/end potentials come from the scan "
+                    "ersten/letzten Spektrum; Zwischenspektren (grün …) nur, wenn sie im Bild hervorgehoben sind.",
+                    "Caption as in the group's SI. Start/end potentials come from the scan "
                     "(first/last spectrum shown, reference as on the axis); colour coding (blue/red) only with the "
-                    "first/last spectrum highlighted."),
+                    "first/last spectrum highlighted; intermediate spectra (green …) only if highlighted in the figure."),
     "cap_start": ("Spezies am Anfang", "Species at start"),
     "cap_start_ph": ("z. B. neutral", "e.g. neutral"),
+    "cap_mid": ("Spezies Zwischenstufe", "Intermediate species"),
+    "cap_mid_ph": ("z. B. radical cation (mehrere mit „;“)", "e.g. radical cation (several with “;”)"),
     "cap_end": ("Spezies am Ende", "Species at end"),
     "cap_end_ph": ("z. B. dication", "e.g. dication"),
     "epr_cap_tip": ("Unterschrift wie in der SI der Gruppe. Band aus der Mikrowellenfrequenz; Parameter (g, ΔB_pp, "
@@ -798,6 +801,20 @@ TEXTS = {
     "sec_gradient": ("Farbverlauf nach Potential", "Colour gradient by potential"),
     "sec_diff": ("Differenzspektren (ΔA gegen erstes Spektrum)", "Difference spectra (ΔA vs. first spectrum)"),
     "sec_baseline": ("Nullpunkt: Mittel 780–820 nm abziehen", "Zero: subtract mean of 780–820 nm"),
+    "sec_mid": ("Zwischenspektren", "Intermediate spectra"),
+    "sec_mid_ph_e": ("Potential [V], z. B. −0.45", "potential [V], e.g. −0.45"),
+    "sec_mid_ph_n": ("Nr. des Spektrums, z. B. 35", "spectrum no., e.g. 35"),
+    "sec_mid_tip": ("Zusätzlich hervorgehobene Spektren, z. B. für eine Zwischenstufe (Radikalkation): grün, weitere\n"
+                    "in Orange, Violett, Türkis. Eingabe als Potential in V in der Skala der Achse (mit Referenz);\n"
+                    "genommen wird das gezeigte Spektrum mit dem nächstliegenden Potential (bei Hin- und Rückscan das\n"
+                    "erste). Ohne Potentialdatei die Nummer des Spektrums. Mehrere durch Komma trennen; leer = nur\n"
+                    "erstes und letztes. Wirkt nur mit „hervorheben“.",
+                    "Additionally highlighted spectra, e.g. for an intermediate (radical cation): green, further ones\n"
+                    "in orange, purple, teal. Enter the potential in V on the axis scale (with reference); the shown\n"
+                    "spectrum with the nearest potential is used (with forward and reverse scan the first one).\n"
+                    "Without a potential file, the spectrum number. Separate several by commas; empty = first and\n"
+                    "last only. Only with “highlight”."),
+    "sec_mid_info": ("Zwischenspektren: {items}", "Intermediate spectra: {items}"),
     "sec_bands": ("λ-Labels [nm]", "λ labels [nm]"),
     "sec_bands_ph": ("z. B. 373, 432", "e.g. 373, 432"),
     "sec_trace": ("λ für A gegen E [nm]", "λ for A vs. E [nm]"),

@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.24.0"
+APP_VERSION = "1.24.1"
 SI_PARTS = ("char", "nmr", "figs", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -3329,6 +3329,32 @@ def selftest(outdir, with_isnet=False):
         cap_s = w.sec_tab.si_caption("TEST-1")
         assert cap_s.startswith("UV-vis-SEC of <b>TEST-1</b> in THF.") and "Starting potential (vs. " in cap_s \
             and "End potential" in cap_s, cap_s
+        # Zwischenspezies: Potential -> nächstliegendes Spektrum grün (Nr. 17: −0.81 V), über den grauen, mit Label
+        assert "green" not in cap_s and cap_s.count("<b>") == 3, cap_s                      # ohne Eingabe wie bisher
+        cv0_ = w.sec_tab.figure_spec()[1]
+        assert [c_["color"] for c_ in cv0_ if c_["lw"] > 1] == [SECMOD.START_COLOR, SECMOD.END_COLOR]
+        w.sec_state.update(mid="-0.80", cap_mid="radical cation")
+        _, cv_, lb_, _ = w.sec_tab.figure_spec()
+        hi_ = [c_ for c_ in cv_ if c_["lw"] > 1]
+        assert [c_["color"] for c_ in hi_] == [SECMOD.START_COLOR, SECMOD.MID_COLORS[0][0], SECMOD.END_COLOR], hi_
+        assert all(c_["z"] == 3 for c_ in cv_[-3:]) and cv_[-3:] == hi_, "hervorgehobene nicht oben"
+        assert "0.81" in hi_[1]["label"] and np.allclose(hi_[1]["y"], np.interp(
+            cv_[0]["x"], sp_[16]["lam"], sp_[16]["A"])), hi_[1]["label"]
+        assert {l_["lam"]: l_["color"] for l_ in lb_} == {373.0: SECMOD.END_COLOR, 432.0: SECMOD.START_COLOR}
+        cap_s = w.sec_tab.si_caption("TEST-1")
+        assert ("Color coding: <b>neutral</b> (blue), <b>radical cation</b> (green), <b>dication</b> (red).") \
+            in cap_s, cap_s
+        w.sec_state.update(mid="-0.80, 0.30, -0.81", cap_mid="radical cation; X")      # Doppelte fallen weg
+        hi_ = [c_ for c_ in w.sec_tab.figure_spec()[1] if c_["lw"] > 1]
+        assert [c_["color"] for c_ in hi_].count(SECMOD.MID_COLORS[1][0]) == 1 and len(hi_) == 4
+        assert "(green), <b>X</b> (orange), <b>dication</b> (red)" in w.sec_tab.si_caption("TEST-1")
+        w.sec_state.update(dta=None, mid="35")                       # ohne Potentiale: Nummer des Spektrums
+        hi_ = [c_ for c_ in w.sec_tab.figure_spec()[1] if c_["lw"] > 1]
+        assert hi_[1]["color"] == SECMOD.MID_COLORS[0][0] and np.allclose(hi_[1]["y"], np.interp(
+            hi_[1]["x"], sp_[34]["lam"], sp_[34]["A"]))
+        w.sec_state.update(highlight=False)
+        assert "green" not in w.sec_tab.si_caption("TEST-1")
+        w.sec_state.update(dta=str(secdir / "sec.DTA"), highlight=True, mid="", cap_mid="")
         w.sec_state.update(cap_solvent="", cap_start="", cap_end="")
         report.append("spectroelectrochemistry: OK")
 

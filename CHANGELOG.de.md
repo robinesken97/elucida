@@ -2,6 +2,23 @@
 
 # Änderungen
 
+## 1.24.1 – 22.10.2026
+
+### Neu
+- **SEC: Zwischenspezies hervorheben.** Neben dem ersten (blau) und letzten Spektrum (rot) lassen sich ein oder mehrere
+  Zwischenspektren grün hervorheben (weitere orange, violett, türkis), z. B. für das Radikalkation. Auswahl über das
+  Potential (Achsenskala; genommen wird das Spektrum mit dem nächstliegenden Potential) oder ohne Potentialdatei über die
+  Nummer des Spektrums. Potential-Label wie bei Start/Ende; λ-Labels in der Farbe des hervorgehobenen Spektrums mit der
+  größten Absorbanz. Feld „Spezies Zwischenstufe“ in der Bildunterschrift: „Color coding: **neutral** (blue),
+  **radical cation** (green), **dication** (red).“ – nur Farben, die im Bild vorkommen. Ohne Eingabe bleibt alles wie
+  bisher.
+
+### Geändert
+- Synthese-Tab: Nur das Reaktionsschema steht auf weißem Grund (und nur, wenn eines geladen ist); der Vorschautext folgt
+  wieder dem hellen/dunklen Erscheinungsbild.
+- README: neue Screenshots aller Tabs (auch Synthese und NMR), erzeugt mit `tools/make_screenshots.py` nur aus
+  künstlichen Daten.
+
 ## 1.24.0 – 22.10.2026
 
 ### Neu

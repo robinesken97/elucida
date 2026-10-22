@@ -43,6 +43,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Nicholson nur ohne weiteren Prozess zwischen Hinpeak und Umkehrpotential (Strom steigt um > 10 % der Peakhöhe wieder
   an → „–“). E½ im Bild und alle Mittelwerte je Gruppe, nie über Lösungsmittel gemittelt.
   Ac₂Fc-Vorgabe +0,49 V vs. Fc⁺/Fc (ergibt die publizierten −1,10 V für 6m), immer änderbar lassen.
+- SEC-Farben wie die SI: Start blau, Zwischenstufen (`mid`, Potential in Achsenskala → nächstes gezeigtes Spektrum, ohne
+  Potentiale Nummer) grün/`MID_COLORS`, Ende rot; Unterschrift nennt nur Farben, die im Bild vorkommen (`cap_mid`, „;“).
 - SEC: Nernst-Fit aus kontinuierlichem Scan nur als „scheinbar“ ausweisen (Nachhinken in der Dünnschichtzelle:
   6m in THF E½ ≈ −0,76 V statt −0,89 V im CV, n ≈ 0,45); CV-Werte haben Vorrang.
 - EPR: Reihenfolge hell − k·dunkel → Basislinie → Ausblenden → Glätten → Normieren; Simulation mit dem
@@ -145,7 +147,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   öffnet Word nicht als ChemDraw-Objekt, vom Nutzer geprüft); Vorschau EMF (Vektor) sonst PNG; OLE-Container eigener
   CFB-Schreiber (`uvvis_ole`). Mengenprüfung mit Rundungsintervallen der angegebenen Stellen (1.03 g = 1.025–1.035 g),
   Bezug = erste Zeile mit 1.0 eq. „Aus Schema“: Rollen aus dem Reaktionsschritt (RDKit `CDX_PRODUCT_ID`/`CDX_REAGENT_ID`),
-  Pfeiltexte über `scheme_reagents` (Bedingungen weg, Lösungsmittel-Kürzel → Formel). Vorschau immer weiß.
+  Pfeiltexte über `scheme_reagents` (Bedingungen weg, Lösungsmittel-Kürzel → Formel). Vorschau: nur das Schema auf
+  Weiß (ausgeblendet ohne Schema), Text im Theme.
 - SI-Methodentexte („SI-Text kopieren“, beim Export `…_methods.txt`): jeder Tab, der fittet (ε, CV, SEC, EPR), beschreibt
   englisch **nur die tatsächlich benutzten** Schritte mit den aktuellen Parametern, dann die Ergebnisse; Aufbau/Geräte
   stehen in der SI der Gruppe und nicht im Code. Keine Unsicherheiten erfinden (EPR-S = ½-Fit: ausdrücklich keine).
@@ -197,6 +200,7 @@ pip install -r requirements.txt                       # Python 3.12 (wie CI)
 python uvvis_gui.py                                   # App starten
 QT_QPA_PLATFORM=offscreen python uvvis_gui.py --selftest selftest_out   # MUSS vor jedem Commit „OK“ melden
 python build.py                                       # PyInstaller-Build (braucht: pip install pyinstaller)
+python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots), nur künstliche Daten
 ```
 - Neue Funktion → eigener Abschnitt im `selftest()` (Muster: `report.append("…: OK")`).
 - Der Selbsttest läuft in CI auch mit der **fertig gebauten** App auf allen drei Systemen.

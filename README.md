@@ -47,9 +47,11 @@ All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page i
 German and English.
 
 <table>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_en.png" alt="Synthesis – scheme, procedure, amount check (invented example)"><br><sub>Synthesis – scheme, procedure, amount check (invented example)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_en.png" alt="NMR – Mnova SVG with structure (synthetic spectrum)"><br><sub>NMR – Mnova SVG with structure (synthetic spectrum)</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="UV-Vis overlay – measured, TD-DFT and SEC"><br><sub>UV-Vis overlay – measured, TD-DFT and SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray – ORTEP from CIF (synthetic test structure)"><br><sub>X-Ray – ORTEP from CIF (synthetic test structure)</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry – neutral, radical cation, dication"><br><sub>Spectroelectrochemistry – neutral, radical cation, dication</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR – S = ½ fit"><br><sub>CW EPR – S = ½ fit</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray – ORTEP from CIF (synthetic test structure)"><br><sub>X-Ray – ORTEP from CIF (synthetic test structure)</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_en.png" alt="DFT – geometry and SI block (synthetic ORCA output)"><br><sub>DFT – geometry and SI block (synthetic ORCA output)</sub></td></tr>
 </table>
 
 ## Download and start
@@ -425,6 +427,10 @@ Compare several spectra in one figure, measured and calculated:
 - **Spectral series:** first and last spectrum highlighted (blue/red), the others grey – or a colour gradient
   by potential; optionally difference spectra (ΔA vs. the first spectrum) and a zero point (mean 780–820 nm);
   λ labels in the colour of the matching spectrum. Spectrum range selectable (e.g. only the first wave).
+- **Intermediate species:** one or more spectra in between can be highlighted in green (further ones orange, purple,
+  teal), e.g. the radical cation between neutral (blue) and dication (red) – entered as potential (axis scale, nearest
+  spectrum) or, without a potential file, as spectrum number. The caption then reads "Color coding: **neutral** (blue),
+  **radical cation** (green), **dication** (red)." (species names from the caption fields).
 - **A at λ vs. E** with an apparent Nernst fit (E½, n). In a continuous scan the electrolysis in the thin-layer
   cell lags behind (E½ shifted, n < 1); true Nernst values need potential steps at equilibrium – CV values take
   precedence.

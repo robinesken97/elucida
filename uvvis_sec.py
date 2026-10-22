@@ -123,6 +123,9 @@ def nernst_fit(E, A, n_range=(0.3, 3.0)):
 # ----------------------------------------------------------------------------
 POT_CMAP = LinearSegmentedColormap.from_list("pot", ["#1764e8", "#8a2be2", "#e8231b"])
 START_COLOR, END_COLOR = "#1764e8", "#e8231b"          # wie üblich: Ausgangsspektrum blau, Endspektrum rot
+# Zwischenspektren (Zwischenstufe, z. B. Radikalkation) wie in der SI grün, weitere aus fester Palette;
+# die englischen Namen stehen in der Bildunterschrift
+MID_COLORS = (("#2e9e3e", "green"), ("#f28e1c", "orange"), ("#8a2be2", "purple"), ("#17a2b8", "teal"))
 LAM_RANGE = (250.0, 850.0)                              # brauchbarer Bereich des Spektrometers (Ränder verrauscht)
 
 
@@ -143,12 +146,13 @@ def _floats(text):
 class SECTab(TABS.FigureTab):
     STATE_KEY = "sec"
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
-    CAP_FIELDS = ("solvent", "start", "end")
+    CAP_FIELDS = ("solvent", "start", "mid", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,
-                         mode="spectra", first=1, last=0, highlight=True, gradient=False, diff=False,
+                         mode="spectra", first=1, last=0, highlight=True, mid="", gradient=False, diff=False,
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,
-                         electrode="Ag/AgNO₃", ref_from_cv=False, cap_solvent="", cap_start="", cap_end="")
+                         electrode="Ag/AgNO₃", ref_from_cv=False, cap_solvent="", cap_start="", cap_mid="",
+                         cap_end="")
 
     def build_controls(self):
         st = self.st
@@ -213,6 +217,11 @@ class SECTab(TABS.FigureTab):
             cb.setChecked(st[key])
             f.addRow(cb)
             cb.toggled.connect(self.changed)
+            if cb is self.cb_highlight:
+                self.ed_mid = QLineEdit(st["mid"])
+                self.ed_mid.setPlaceholderText(T("sec_mid_ph_e"))
+                self.ed_mid.setToolTip(T("sec_mid_tip"))
+                f.addRow(T("sec_mid"), self.ed_mid)
         self.ed_bands = QLineEdit(st["bands"])
         self.ed_bands.setPlaceholderText(T("sec_bands_ph"))
         f.addRow(T("sec_bands"), self.ed_bands)
@@ -237,7 +246,7 @@ class SECTab(TABS.FigureTab):
             w_.valueChanged.connect(self.changed)
         self.cb_from_cv.toggled.connect(self.changed)
         self.cmb_mode.currentIndexChanged.connect(self.changed)
-        for ed in (self.ed_bands, self.ed_trace, self.ed_electrode):
+        for ed in (self.ed_mid, self.ed_bands, self.ed_trace, self.ed_electrode):
             ed.editingFinished.connect(self.changed)
         self._show_files()
 
@@ -255,7 +264,8 @@ class SECTab(TABS.FigureTab):
         self.st.update(offset_s=self.sp_offset_s.value(), e_shift=self.sp_shift.value(),
                        ref_from_cv=self.cb_from_cv.isChecked(), electrode=self.ed_electrode.text().strip() or "Ag/AgNO₃",
                        mode=self.cmb_mode.currentData(), first=self.sp_first.value(), last=self.sp_last.value(),
-                       highlight=self.cb_highlight.isChecked(), gradient=self.cb_gradient.isChecked(),
+                       highlight=self.cb_highlight.isChecked(), mid=self.ed_mid.text().strip(),
+                       gradient=self.cb_gradient.isChecked(),
                        diff=self.cb_diff.isChecked(), baseline=self.cb_baseline.isChecked(),
                        bands=self.ed_bands.text().strip(), trace_lams=self.ed_trace.text().strip(),
                        fit=self.cb_fit.isChecked())
@@ -300,6 +310,29 @@ class SECTab(TABS.FigureTab):
             return off, label
         return st["e_shift"], ("Fc$^{0/+}$" if st["e_shift"] else st["electrode"])
 
+    def selection(self, n):
+        """Indizes der gezeigten Spektren (Bereich erstes–letztes, 0-basiert)."""
+        st = self.st
+        i0 = min(max(st["first"], 1), n) - 1
+        i1 = n - 1 if not st["last"] else min(max(st["last"], i0 + 1), n) - 1
+        return list(range(i0, i1 + 1))
+
+    def mid_indices(self, sel, Eax):
+        """Zwischenspektren aus st["mid"]: Potentiale (Achsenskala) -> gezeigtes Spektrum mit dem nächstliegenden
+        Potential (bei gleichem Abstand das erste); ohne Potentiale Nummern der Spektren (wie „Spektren (Nr.)“).
+        Erstes/letztes und Doppelte fallen weg, Reihenfolge wie eingegeben."""
+        out = []
+        for v in _floats(self.st.get("mid", "")):
+            if Eax is not None:
+                i = sel[int(np.argmin(np.abs(Eax[sel] - v)))]
+            else:
+                i = int(round(v)) - 1
+                if i not in sel:
+                    continue
+            if i not in (sel[0], sel[-1]) and i not in out:
+                out.append(i)
+        return out[:len(MID_COLORS)]
+
     def figure_spec(self):
         st = self.st
         sp, E = self.series()
@@ -308,13 +341,12 @@ class SECTab(TABS.FigureTab):
         if not sp:
             self.lbl_info.setText("")
             return None
-        n = len(sp)
-        i0 = min(max(st["first"], 1), n) - 1
-        i1 = n - 1 if not st["last"] else min(max(st["last"], i0 + 1), n) - 1
-        sel = list(range(i0, i1 + 1))
+        sel = self.selection(len(sp))
+        i0, i1 = sel[0], sel[-1]
         off, ref_label = self.e_offset()
         self.ref_label = ref_label
         Eax = None if E is None else E - off
+        self.ed_mid.setPlaceholderText(T("sec_mid_ph_e" if Eax is not None else "sec_mid_ph_n"))
         cfg = self.base_cfg()
         lam0 = sp[sel[0]]["lam"]
         bl_win = (lam0 >= 780) & (lam0 <= 820)              # Nullpunkt: Mittel 780–820 nm
@@ -358,26 +390,35 @@ class SECTab(TABS.FigureTab):
             cfg["ylabel"] = ("ΔA" if st["diff"] else "A") + " [a.u.]"
         else:
             curves, labels = [], []
+            mids = self.mid_indices(sel, Eax) if st["highlight"] else []
+            if mids:
+                info.append(T("sec_mid_info", items=", ".join(
+                    f"{T('sec_index')} {i + 1}" + (f" ({CV._fmt_e(Eax[i], 2)} V)" if Eax is not None else "")
+                    for i in mids)))
+            # hervorgehoben: (Index, Farbe) – Start, Zwischenstufen, Ende
+            marked = [(sel[0], START_COLOR)] + [(i, MID_COLORS[k][0]) for k, i in enumerate(mids)] + \
+                [(sel[-1], END_COLOR)]
+            mcol = dict(marked)
             for j, i in enumerate(sel):
-                first_last = i in (sel[0], sel[-1])
+                hi = i in mcol
                 if st["gradient"]:
                     col = _hex(POT_CMAP(j / max(1, len(sel) - 1)))
-                    lw = 1.6 if (st["highlight"] and first_last) else 0.8
-                elif st["highlight"] and first_last:
-                    col, lw = (START_COLOR if i == sel[0] else END_COLOR), 1.6
+                    lw = 1.6 if (st["highlight"] and hi) else 0.8
+                elif st["highlight"] and hi:
+                    col, lw = mcol[i], 1.6
                 else:
                     col, lw = "#b0b0b0", 0.5
                 lab = None
-                if first_last and Eax is not None:
+                if hi and Eax is not None:
                     lab = CV._fmt_e(Eax[i], 2) + " V"
                 curves.append({"x": lam0, "y": ys(sp[i]), "color": col, "label": lab, "ls": "-", "lw": lw,
-                               "z": 3 if first_last else 2})
+                               "z": 3 if hi else 2})
             # Hervorgehobene Spektren zuletzt zeichnen (oben)
             curves.sort(key=lambda c: c.get("z", 2))
-            first_y, last_y = ys(sp[sel[0]]), ys(sp[sel[-1]])
+            ys_marked = [(ys(sp[i]), c) for i, c in marked]
             for lam in _floats(st["bands"]):
-                a0, a1 = float(np.interp(lam, lam0, first_y)), float(np.interp(lam, lam0, last_y))
-                col = START_COLOR if abs(a0) >= abs(a1) else END_COLOR
+                # Farbe der hervorgehobenen Kurve mit der größten |A| an dieser Wellenlänge
+                col = max(ys_marked, key=lambda yc: abs(float(np.interp(lam, lam0, yc[0]))))[1]
                 labels.append({"key": f"label_sec_{lam:g}", "lam": lam, "text": f"λ =  {lam:g} nm", "color": col})
             x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(LAM_RANGE[0], lam0.min()),
                                                                           min(LAM_RANGE[1], lam0.max()))
@@ -406,20 +447,24 @@ class SECTab(TABS.FigureTab):
         if st.get("cap_solvent"):
             h += " in " + chem_html(st["cap_solvent"])
         h += "."
-        if st["mode"] != "trace" and st["highlight"] and not st["gradient"]:
-            cols = [(f"<b>{chem_html(st[k])}</b> ({c})") for k, c in (("cap_start", "blue"), ("cap_end", "red"))
-                    if st.get(k)]
-            if cols:
-                h += " Color coding: " + ", ".join(cols) + "."
         try:
             sp, E = self.series()
         except Exception:
             sp, E = [], None
+        sel = self.selection(len(sp)) if sp else []
+        off, lab = self.e_offset()
+        if st["mode"] != "trace" and st["highlight"] and not st["gradient"]:
+            # nur Farben, die im Bild vorkommen: Zwischenspektren nur, wenn sie hervorgehoben sind
+            mids = self.mid_indices(sel, None if E is None else E - off) if sel else []
+            names = [x.strip() for x in st.get("cap_mid", "").split(";")]
+            items = [(st.get("cap_start", ""), "blue")]
+            items += [(names[k] if k < len(names) else "", MID_COLORS[k][1]) for k in range(len(mids))]
+            items.append((st.get("cap_end", ""), "red"))
+            cols = [f"<b>{chem_html(t)}</b> ({c})" for t, c in items if t]
+            if cols:
+                h += " Color coding: " + ", ".join(cols) + "."
         if sp and E is not None:
-            n = len(sp)
-            i0 = min(max(st["first"], 1), n) - 1
-            i1 = n - 1 if not st["last"] else min(max(st["last"], i0 + 1), n) - 1
-            off, lab = self.e_offset()
+            i0, i1 = sel[0], sel[-1]
             ref = chem_html(str(lab).replace("Fc$^{0/+}$", "Fc+/Fc"))
             fe = lambda v: f"{v:.2f}".replace("-", "−")                               # noqa: E731
             h += (f" Starting potential (vs. {ref}): {fe(E[i0] - off)} V; End potential (vs. {ref}): "
