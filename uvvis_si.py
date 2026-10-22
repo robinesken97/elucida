@@ -551,7 +551,13 @@ def write_docx(path, blocks, columns=1):
               '<Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>'
               '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
               'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
-              'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
+              'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" '
+              'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>')
+    # Word 2013+ (sonst öffnet Word das Dokument im Kompatibilitätsmodus)
+    settings = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat>'
+                '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" '
+                'w:val="15"/></w:compat></w:settings>')
     rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
@@ -559,7 +565,8 @@ def write_docx(path, blocks, columns=1):
     drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
              '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
              '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
-             'styles" Target="styles.xml"/>' +
+             'styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/'
+             'officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
              "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}.png"/>' for i in range(1, len(media) + 1)) +
              "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
@@ -577,6 +584,7 @@ def write_docx(path, blocks, columns=1):
         z.writestr("_rels/.rels", rels)
         z.writestr("word/document.xml", doc)
         z.writestr("word/styles.xml", styles)
+        z.writestr("word/settings.xml", settings)
         z.writestr("word/_rels/document.xml.rels", drels)
         for i, m in enumerate(media, 1):
             z.writestr(f"word/media/image{i}.png", m.read_bytes())

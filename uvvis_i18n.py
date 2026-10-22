@@ -348,6 +348,23 @@ TEXTS = {
                       "Absatz.", "Stored on this computer only (not in the project) and placed before the figures in "
                       "the SI export. Formulas such as AgNO3 or nBu4NPF6 are subscripted, “mL-1” superscripted. "
                       "Empty = no paragraph."),
+    "si_uv_no_solvent": ("Hinweis: Serie „{g}“ ohne Lösungsmittel – im ε-Tab unter „SI-Zeile“ eintragen, dann steht es "
+                         "in der UV-Vis-Zeile und in der Bildunterschrift.", "Note: series “{g}” has no solvent – enter "
+                         "it in the ε tab under “SI line” to get it into the UV-Vis line and the figure caption."),
+    "nmr_peaks": ("Zeile aus Peaklabels", "Line from peak labels"),
+    "nmr_peaks_tip": ("Für das gewählte 1D-Spektrum (z. B. ¹³C): Verschiebungen aus den Peaklabels des Mnova-SVG als "
+                      "Zeile „13C NMR (… MHz, …) δ …“ ins Textfeld (ersetzt eine vorhandene Zeile desselben Kerns). Ein "
+                      "beschriftetes Lösungsmittelsignal („77.16 CDCl3“) fällt weg, unbeschriftete bitte löschen.",
+                      "For the selected 1D spectrum (e.g. ¹³C): shifts from the peak labels of the Mnova SVG as a line "
+                      "“13C NMR (… MHz, …) δ …” in the text field (replaces an existing line of that nucleus). A "
+                      "labelled solvent signal (“77.16 CDCl3”) is dropped; please delete unlabelled ones."),
+    "nmr_peaks_need": ("Erst ein 1D-Spektrum mit Kern wählen.", "Select a 1D spectrum with a nucleus first."),
+    "nmr_peaks_1h": ("Für ¹H bitte den Multiplettbericht aus Mnova einfügen (Peaklabels kennen keine Multipletts).",
+                     "For ¹H please paste the multiplet report from Mnova (peak labels have no multiplets)."),
+    "nmr_peaks_none": ("Keine Peaklabels in {f} gefunden (in Mnova Peaks beschriften und neu exportieren).",
+                       "No peak labels found in {f} (label the peaks in Mnova and export again)."),
+    "nmr_peaks_done": ("{n} Signale ({nuc}) aus den Peaklabels übernommen – bitte prüfen.",
+                       "{n} signals ({nuc}) taken from the peak labels – please check."),
     "si_part_xray": ("Kristallstruktur(en) aus dem Tab X-Ray", "Crystal structure(s) from the X-Ray tab"),
     "si_part_dft": ("DFT-Rechnungen aus dem Tab DFT (zweispaltig)", "DFT calculations from the DFT tab (two columns)"),
     "si_part_empty": ("Keine Daten in diesem Tab.", "No data in this tab."),
@@ -1143,8 +1160,12 @@ TEXTS = {
                         "the same name in the same folder."),
     "syn_scheme_none": ("Kein Schema gewählt.", "No scheme chosen."),
     "syn_scheme_pic": ("Bild: {f}", "Picture: {f}"),
-    "syn_scheme_nopic": ("⚠ keine ChemDraw-Exportdatei (SVG/PDF/PNG) – Ersatzzeichnung ohne Pfeil und Text",
-                         "⚠ no ChemDraw export (SVG/PDF/PNG) – substitute drawing without arrow and text"),
+    "syn_scheme_nopic": ("Gezeichnet aus den Koordinaten der CDXML (Bindungen, Labels, Pfeil, Bedingungen). Ein SVG/PDF "
+                         "aus ChemDraw daneben wird unverändert übernommen.",
+                         "Drawn from the CDXML coordinates (bonds, labels, arrow, conditions). An SVG/PDF exported "
+                         "from ChemDraw next to it is used unchanged."),
+    "syn_scheme_notdrawn": ("Nicht gezeichnet: {what} – dafür SVG/PDF aus ChemDraw daneben speichern.",
+                            "Not drawn: {what} – save an SVG/PDF from ChemDraw next to it."),
     "syn_scheme_cdx": ("Word: bearbeitbares ChemDraw-Objekt (CDX gefunden),", "Word: editable ChemDraw object (CDX "
                                                                               "found),"),
     "syn_scheme_emf": ("Vorschau als Vektor (EMF).", "vector preview (EMF)."),
@@ -1248,10 +1269,12 @@ TEXTS = {
     "nmr_p_solvent": ("Lösungsmittel", "Solvent"),
     "nmr_p_probe": ("Probenkopf", "Probe"),
     "nmr_text": ("NMR-Zeile (Mnova-Multiplettbericht)", "NMR line (Mnova multiplet report)"),
-    "nmr_text_hint": ("In Mnova „Multiplets → Copy“ bzw. „Peaks → Copy“ (Journal-Format) und hier einfügen, je Kern "
-                      "eine Zeile. Zuordnungen in der Tabelle ergänzen: *kursiv*, _{tief}, ^{hoch}.",
-                      "In Mnova use “Multiplets → Copy” or “Peaks → Copy” (journal format) and paste here, one line "
-                      "per nucleus. Add assignments in the table: *italic*, _{sub}, ^{sup}."),
+    "nmr_text_hint": ("Alle Kerne in dieses eine Feld, je Kern eine Zeile (¹H, darunter ¹³C …): in Mnova „Multiplets → "
+                      "Copy“ bzw. „Peaks → Copy“ (Journal-Format) und einfügen, für ¹³C & Co. auch „Zeile aus "
+                      "Peaklabels“. Zuordnungen in der Tabelle ergänzen: *kursiv*, _{tief}, ^{hoch}.",
+                      "All nuclei go into this one field, one line per nucleus (¹H, then ¹³C …): in Mnova use "
+                      "“Multiplets → Copy” or “Peaks → Copy” (journal format) and paste, for ¹³C etc. also “Line from "
+                      "peak labels”. Add assignments in the table: *italic*, _{sub}, ^{sup}."),
     "nmr_nuc_short": ("Kern", "Nuc."),
     "nmr_mult": ("Mult.", "Mult."),
     "nmr_assign": ("Zuordnung", "Assignment"),

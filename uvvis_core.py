@@ -177,7 +177,7 @@ def apply_export_size(cfg, w_cm, h_cm):
 # Textformat aus der GUI (Menü Format): gilt für alle Tabs, wird im Projekt gespeichert
 TEXT_DEFAULTS = {"font": "Arial", "symbol_font": "Times New Roman", "greek": True, "label_pt": 0.0,
                  "bold": False, "italic": False, "color": "#000000", "struct_frame": False,
-                 "axes_frame": False}
+                 "axes_frame": True}                     # geschlossener Rahmen wie die Origin-Abbildungen der SI
 
 
 def apply_text_format(cfg, tf):

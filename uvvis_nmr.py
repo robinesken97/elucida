@@ -90,6 +90,36 @@ def svg_info(path):
     return dict(nuclei=nuclei, is2d=bool(vert), size_cm=(w, h))
 
 
+# Larmorfrequenz relativ zu ¹H (für die Nennfrequenz anderer Kerne, wenn kein Bruker-Ordner da ist)
+GAMMA_REL = {"2H": 0.15351, "7Li": 0.38864, "11B": 0.32084, "13C": 0.25145, "15N": 0.10137, "19F": 0.94094,
+             "27Al": 0.26057, "29Si": 0.19867, "31P": 0.40481, "77Se": 0.19072, "103Rh": 0.03186, "117Sn": 0.35632,
+             "119Sn": 0.37291, "125Te": 0.31549, "195Pt": 0.21496, "199Hg": 0.17911}
+
+
+def svg_peaks(path):
+    """Peaklabels eines Mnova-SVG (senkrechte Zahlen über dem Spektrum) -> (Verschiebungen als Text wie gedruckt,
+    absteigend; Lösungsmittel, falls ein Label einen Namen trägt, z. B. „77.16 CDCl3“). Das Lösungsmittelsignal
+    selbst fällt weg."""
+    import pymupdf
+    page = pymupdf.open(str(path))[0]
+    vals, solvent = [], None
+    for b in page.get_text("dict")["blocks"]:
+        for ln in b.get("lines", []):
+            dx, dy = ln.get("dir", (1, 0))
+            if abs(dy) <= abs(dx):
+                continue
+            txt = "".join(sp["text"] for sp in ln["spans"]).strip()
+            m = re.fullmatch(r"([-−]?\d+\.\d+)\s*(\S.*)?", txt)
+            if not m:
+                continue
+            if m.group(2):
+                solvent = m.group(2).strip()
+                continue
+            vals.append(m.group(1).replace("−", "-"))
+    vals = sorted(set(vals), key=float, reverse=True)
+    return vals, solvent
+
+
 def svg_png(svg, png, dpi=200):
     """PNG-Ersatz für Word (das SVG selbst bleibt die eigentliche Grafik)."""
     import pymupdf
@@ -416,7 +446,7 @@ def new_spectrum(path, info, kind=None):
                 struct_pos="auto", struct_xy=None, struct_w=20.0)
 
 
-def make_test_svg(path, nuclei=("1H",), axis=True):
+def make_test_svg(path, nuclei=("1H",), axis=True, peaks=()):
     """Künstliches Mnova-ähnliches SVG (Achsenbeschriftung als Text wie bei Mnova, eine Kurve). Kein echter Datensatz."""
     w, h = 1088, 759
     lab = lambda n, x, y, rot="": (f'<text x="{x}" y="{y}" font-size="14" {rot}>δ <tspan dy="-4" font-size="9">'  # noqa: E731
@@ -425,6 +455,9 @@ def make_test_svg(path, nuclei=("1H",), axis=True):
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="287.867mm" height="200.819mm" viewBox="0 0 {w} {h}">',
              '<title>MestReNova SVG (test)</title>',
              '<polyline fill="none" stroke="#800000" points="50,700 300,700 310,200 320,700 1040,700"/>']
+    for k, txt in enumerate(peaks):                        # senkrechte Peaklabels wie bei Mnova
+        x = 300 + 40 * k
+        parts.append(f'<text x="{x}" y="60" font-size="9" transform="rotate(-90 {x} 60)">{txt}</text>')
     if axis:
         parts.append(lab(nuclei[0], 500, 745))
         if len(nuclei) > 1:
@@ -614,8 +647,9 @@ class NMRTab(QWidget):
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
         self.ed_text = QPlainTextEdit()
-        self.ed_text.setPlaceholderText("1H NMR (501 MHz, CDCl3) δ 7.41 – 7.34 (m, 2H), …")
-        self.ed_text.setMaximumHeight(110)
+        self.ed_text.setPlaceholderText("1H NMR (501 MHz, CDCl3) δ 7.41 – 7.34 (m, 2H), …\n"
+                                        "13C NMR (126 MHz, CDCl3) δ 138.31, 131.60, …")
+        self.ed_text.setMaximumHeight(160)
         self.ed_text.textChanged.connect(lambda: None if self._loading else self.text_timer.start())
         v.addWidget(self.ed_text)
         self.tbl_sig = QTableWidget(0, 6)
@@ -633,6 +667,10 @@ class NMRTab(QWidget):
         row = QHBoxLayout()
         b = QPushButton(T("nmr_copy"))
         b.clicked.connect(self.copy_lines)
+        row.addWidget(b)
+        b = QPushButton(T("nmr_peaks"))
+        b.setToolTip(T("nmr_peaks_tip"))
+        b.clicked.connect(self.peaks_from_svg)
         row.addWidget(b)
         b = QPushButton(T("nmr_word"))
         b.setToolTip(T("nmr_word_tip"))
@@ -655,6 +693,38 @@ class NMRTab(QWidget):
 
     def blocks(self):
         return parse_mnova(self.st.get("text") or "")
+
+    def struct_w(self):
+        """Größe der Struktur in % der Bildbreite – eine für alle Spektren (ältere Projekte: je Spektrum)."""
+        if "struct_w" not in self.st:
+            self.st["struct_w"] = float(next((s["struct_w"] for s in self.st["spectra"] if s.get("struct_w")), 20.0))
+        return float(self.st["struct_w"])
+
+    def peaks_from_svg(self):
+        """Zeile „13C NMR (126 MHz, CDCl3) δ 138.31, …“ aus den Peaklabels des gewählten 1D-Spektrums (nicht ¹H:
+        dort braucht es den Multiplettbericht); ersetzt eine vorhandene Zeile desselben Kerns."""
+        s = self.current()
+        if s is None or s.get("kind") != "1D" or not s.get("nuclei"):
+            return self.main.error(T("nmr_peaks_need"))
+        nuc = s["nuclei"][0]
+        if nuc == "1H":
+            return self.main.error(T("nmr_peaks_1h"))
+        vals, solv = svg_peaks(s["file"])
+        if not vals:
+            return self.main.error(T("nmr_peaks_none", f=Path(s["file"]).name))
+        bl = {b["nucleus"]: b for b in self.blocks()}
+        h1 = bl.get("1H") or {}
+        freq = (s.get("freqs") or {}).get(nuc) or (s.get("params") or {}).get("sfo1")
+        if not freq and h1.get("freq") and nuc in GAMMA_REL:
+            freq = float(nominal_freq("1H", h1["freq"])) * GAMMA_REL[nuc]
+        solv = s.get("solvent") or solv or h1.get("solvent") or ""
+        head = f"{nuc} NMR" + (f" ({nominal_freq(nuc, freq)} MHz, {solv})" if freq else f" ({solv})" if solv else "")
+        line = f"{head} δ " + ", ".join(vals) + "."
+        lines = [ln for ln in (self.st.get("text") or "").splitlines() if ln.strip()
+                 and not re.match(rf"\s*{re.escape(nuc)}\s*(?:\{{[^}}]*\}})?\s*NMR", ln)]
+        self.ed_text.setPlainText("\n".join(lines + [line]))
+        self.text_changed()
+        self.main.statusBar().showMessage(T("nmr_peaks_done", n=len(vals), nuc=nuc), 8000)
 
     def compound_name(self):
         comp = getattr(self.main, "compound", None) or {}
@@ -702,7 +772,7 @@ class NMRTab(QWidget):
         self.ed_solv.setText(s.get("solvent") or "")
         self.cb_struct.setChecked(s.get("struct_on", True))
         self.cmb_spos.setCurrentIndex(max(0, self.cmb_spos.findData(s.get("struct_pos", "auto"))))
-        self.sp_sw.setValue(float(s.get("struct_w", 20.0)))
+        self.sp_sw.setValue(self.struct_w())
         p = s.get("params")
         self.lbl_par.setText(params_html(p) if p else T("nmr_no_bruker"))
 
@@ -791,8 +861,8 @@ class NMRTab(QWidget):
         fr = [x.strip() for x in self.ed_freq.text().split("/")]
         s["freqs"] = {n: f for n, f in zip(s.get("nuclei") or [], fr) if f}
         s["solvent"] = self.ed_solv.text().strip()
-        s.update(struct_on=self.cb_struct.isChecked(), struct_pos=self.cmb_spos.currentData(),
-                 struct_w=self.sp_sw.value())
+        s.update(struct_on=self.cb_struct.isChecked(), struct_pos=self.cmb_spos.currentData())
+        self.st["struct_w"] = self.sp_sw.value()                 # gleich groß in allen Spektren
         self.changed()
 
     # -- Struktur im Spektrum ---------------------------------------------------------------
@@ -821,7 +891,7 @@ class NMRTab(QWidget):
 
     def struct_xy(self, s, st):
         """Lage der Struktur (fx, fy); „auto“ sucht die freie Stelle (Ergebnis zwischengespeichert)."""
-        width = float(s.get("struct_w", 20)) / 100
+        width = self.struct_w() / 100
         pos = s.get("struct_pos", "auto")
         if pos != "auto":
             return place_structure(s["file"], st, pos, width, s.get("struct_xy"))
@@ -836,7 +906,7 @@ class NMRTab(QWidget):
         if st is None:
             return s["file"]
         fx, fy = self.struct_xy(s, st)
-        width = float(s.get("struct_w", 20)) / 100
+        width = self.struct_w() / 100
         cdir = Path(self.main.project_dir or Path(s["file"]).parent) / "exports" / "nmr" / "figures"
         out = cdir / f"{Path(s['file']).stem}_{int(fx * 1000)}_{int(fy * 1000)}_{int(width * 1000)}.svg"
         key = ("nmrcomp", s["file"], self.structure_path(), out.name)
@@ -907,31 +977,38 @@ class NMRTab(QWidget):
             self.lbl_cap.setText("")
             return
         import pymupdf
+        # in Gerätepixeln rendern (HiDPI-Bildschirme), angezeigt in logischen Pixeln
+        dpr = max(1.0, self.lbl_prev.devicePixelRatioF())
+        lw_ = float(max(300, self.lbl_prev.width() - 10))
+        page = None
         cache = self.main.extra_cache
-        key = ("nmrprev", s["file"])
+        key = ("nmrprev", s["file"], int(lw_ * dpr) // 50)
         if key not in cache:
-            pix = pymupdf.open(s["file"])[0].get_pixmap(dpi=110)
+            page = pymupdf.open(s["file"])[0]
+            dpi = max(60, min(600, lw_ * dpr / max(page.rect.width, 1) * 72))
+            pix = page.get_pixmap(dpi=dpi)
             cache[key] = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
         base = cache[key]
-        w = max(300, self.lbl_prev.width() - 10)
-        pm = QPixmap.fromImage(base).scaledToWidth(min(w, base.width()), Qt.SmoothTransformation)
+        pm = QPixmap.fromImage(base).scaledToWidth(int(lw_ * dpr), Qt.SmoothTransformation)
+        pm.setDevicePixelRatio(dpr)
+        lh_ = pm.height() / dpr
         st = self.structure_asset() if s.get("struct_on", True) else None
         if st is not None and st.get("rgba") is not None:
             from PySide6.QtGui import QPainter
             fx, fy = xy or self.struct_xy(s, st)
-            sw = pm.width() * float(s.get("struct_w", 20)) / 100
+            sw = lw_ * self.struct_w() / 100
             sh = sw * struct_aspect(st)
             a = st["rgba"]
             simg = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_RGBA8888).copy()
             p = QPainter(pm)
             p.setRenderHint(QPainter.SmoothPixmapTransform)
-            p.drawImage(QRectF(fx * pm.width(), fy * pm.height(), sw, sh), simg)
+            p.drawImage(QRectF(fx * lw_, fy * lh_, sw, sh), simg)
             p.setPen(QColor("#2a7ae2"))
-            p.drawRect(QRectF(fx * pm.width(), fy * pm.height(), sw, sh))
+            p.drawRect(QRectF(fx * lw_, fy * lh_, sw, sh))
             p.end()
-            self._drag_rect = (fx, fy, sw / pm.width(), sh / pm.height())
+            self._drag_rect = (fx, fy, sw / lw_, sh / lh_)
         self.lbl_prev.setPixmap(pm)
-        self._pm_size = (pm.width(), pm.height())
+        self._pm_size = (lw_, lh_)
         n = self.spectra().index(s) + 1
         self.lbl_cap.setText(f"<b>Figure S{n}</b>: " + caption_html(s, self.blocks(), self.compound_name()))
 

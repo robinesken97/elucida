@@ -236,7 +236,8 @@ def scheme_files(cdxml):
 
 
 def scheme_molecules(cdxml):
-    """Moleküle des Schemas (RDKit) -> [(Formel, Molmasse)] für die Tabelle."""
+    """Moleküle des Schemas (RDKit) -> [(Formel, Molmasse, Rolle)] für die Tabelle; Rolle aus dem Reaktionsschritt
+    der CDXML (Edukt -> "reactant", Produkt -> "product", sonst "")."""
     from rdkit import Chem
     from rdkit.Chem import Descriptors, rdMolDescriptors
     out = []
@@ -246,8 +247,22 @@ def scheme_molecules(cdxml):
         return out
     for m in mols or []:
         if m is not None:
-            out.append((rdMolDescriptors.CalcMolFormula(m), float(Descriptors.MolWt(m))))
+            role = ("product" if m.HasProp("CDX_PRODUCT_ID") else
+                    "reactant" if m.HasProp("CDX_REAGENT_ID") else "")
+            out.append((rdMolDescriptors.CalcMolFormula(m), float(Descriptors.MolWt(m)), role))
     return out
+
+
+def scheme_drawing(cdxml):
+    """Schema ohne ChemDraw-Export: eigene Zeichnung aus den CDXML-Koordinaten (uvvis_cdxml), Asset wie
+    IMG.load_structure (PDF-Vektor + Vorschau); Hinweise auf nicht gezeichnete Objekte als Warnung."""
+    import uvvis_cdxml as CDX
+    import uvvis_images as IMG
+    svg, notes = CDX.render_svg(cdxml)
+    info = {"mw": None, "formula": None, "warnings": [T("syn_scheme_notdrawn", what=", ".join(notes))] if notes else []}
+    res = IMG._render_doc(IMG._vector_doc(cdxml, svg), 2400, info)
+    res["drawing_from"] = "cdxml"
+    return res
 
 
 def emf_size_cm(path):
@@ -429,7 +444,8 @@ class SynthTab(QWidget):
     # -- Zustand --------------------------------------------------------------------------
     def compound_name(self):
         comp = getattr(self.main, "compound", None) or {}
-        return self.st.get("name") or comp.get("name") or ""
+        pdir = getattr(self.main, "project_dir", None)
+        return self.st.get("name") or comp.get("name") or (Path(pdir).name if pdir else "")
 
     def has_content(self):
         return bool(self.st.get("scheme") or (self.st.get("proc") or "").strip())
@@ -548,8 +564,9 @@ class SynthTab(QWidget):
             bits.append(T("syn_scheme_cdx") + (" " + T("syn_scheme_emf") if sp["emf"] else " " + T("syn_scheme_png")))
         else:
             bits.append(T("syn_scheme_nocdx"))
-        self.lbl_scheme.setText("\n".join(bits))
-        self.lbl_scheme.setStyleSheet("" if sp["picture"] else WARN_CSS)
+        warn = list((self.scheme_asset() or {}).get("warnings") or [])
+        self.lbl_scheme.setText("\n".join(bits + warn))
+        self.lbl_scheme.setStyleSheet(WARN_CSS if warn else "")
 
     def scheme_asset(self):
         """Schema als Struktur-Asset (PDF-Vektor + Vorschau) aus der ChemDraw-Exportdatei (sonst RDKit)."""
@@ -560,7 +577,10 @@ class SynthTab(QWidget):
         key = ("synscheme", p)
         if key not in self.main.extra_cache:
             try:
-                self.main.extra_cache[key] = IMG.load_structure(p)
+                if Path(p).suffix.lower() == ".cdxml" and IMG.find_sibling_drawing(p) is None:
+                    self.main.extra_cache[key] = scheme_drawing(p)           # Pfeil und Text wie in ChemDraw
+                else:
+                    self.main.extra_cache[key] = IMG.load_structure(p)
             except Exception as ex:
                 self.main.log_signal.emit(f"{Path(p).name}: {ex}")
                 self.main.extra_cache[key] = None
@@ -621,12 +641,25 @@ class SynthTab(QWidget):
         if not p or Path(p).suffix.lower() != ".cdxml":
             self.main.error(T("syn_need_cdxml"))
             return
-        have = {str(r.get("M")) for r in self.st["reagents"]}
+        import uvvis_cdxml as CDX
+        prod = lambda role: role == "product"                                   # noqa: E731
+        have = {(x, prod(r.get("role"))) for r in self.st["reagents"] for x in (str(r.get("M") or ""), r.get("name"))
+                if x}
         mols = scheme_molecules(p)
-        for i, (formula, _mw) in enumerate(mols):
-            if formula not in have:
-                role = "ref" if not self.st["reagents"] else ("product" if i == 0 and len(mols) > 1 else "reagent")
-                self.st["reagents"].append(dict(name="", M=formula, m_mg="", V_mL="", c_M="", rho="", role=role))
+        # Reihenfolge wie die Vorschrift: Edukte (erstes = Bezug 1.0 eq.), Reagenzien über/unter dem Pfeil, Produkt
+        rows = [("", f, "reactant") for f, _m, r in mols if r != "product"]
+        try:
+            rows += [(n, f, r) for n, f, r in CDX.scheme_reagents(p)]
+        except Exception as ex:
+            self.main.log_signal.emit(f"{Path(p).name}: {ex}")
+        rows += [("", f, "product") for f, _m, r in mols if r == "product"]
+        for name, formula, kind in rows:
+            if (formula, prod(kind)) in have or (name, prod(kind)) in have:  # Isomere: Produkt trotz gleicher Formel
+                continue
+            role = ("ref" if kind == "reactant" and not any(r["role"] == "ref" for r in self.st["reagents"])
+                    else "reagent" if kind == "reactant" else kind)
+            self.st["reagents"].append(dict(name=name, M=formula, m_mg="", V_mL="", c_M="", rho="", role=role))
+            have |= {(x, prod(kind)) for x in (formula, name) if x}
         self.fill_table()
         self.main.push_undo()
 

@@ -2258,7 +2258,10 @@ class MainWindow(QMainWindow):
             img = uvvis_tabs.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
             solv = (self.series.get(g) or {}).get("solvent", "").strip()
             cap = (f"UV-Vis spectra of <b>{html.escape(name)}</b> at different concentrations"
-                   + (f" in {html.escape(solv)}" if solv else "") + ".")
+                   + (f" in {SI.chem_html(solv)}" if solv else "")
+                   + f", measured in {cfg2['path_length_cm']:g} cm quartz cuvettes.")
+            if not solv:
+                self.log_signal.emit(T("si_uv_no_solvent", g=g))
             out += [img, ("figcap", cap)]
         return out
 
@@ -3125,7 +3128,7 @@ def selftest(outdir, with_isnet=False):
         fb_ = w.si_figure_blocks(out / "si_figs", "TEST-1")
         caps_ = [b_[1] for b_ in fb_ if b_[0] == "figcap"]
         imgs_ = [b_ for b_ in fb_ if b_[0] == "image"]
-        assert any(c_.startswith("UV-Vis spectra of <b>TEST-1</b>") for c_ in caps_), caps_
+        assert any(c_.startswith("UV-Vis spectra of <b>TEST-1</b>") and "cm quartz cuvettes." in c_ for c_ in caps_), caps_
         assert any(c_.startswith("Cyclic voltammograms of <b>TEST-1</b>") for c_ in caps_) and len(imgs_) == len(caps_), caps_
         assert all(Path(b_[1]).exists() and Path(b_[4]).exists() and 0 < b_[2] <= 16.0 for b_ in imgs_), imgs_
         assert fb_.count(("pagebreak",)) == (len(imgs_) - 1) // 2 and w.si_available()["figs"]
@@ -4226,7 +4229,7 @@ def selftest(outdir, with_isnet=False):
         # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
         ndir = out / "input" / "nmr"
         sv_h = NMR.make_test_svg(ndir / "t-1H.svg", ("1H",))
-        sv_c = NMR.make_test_svg(ndir / "t-13C.svg", ("13C",))
+        sv_c = NMR.make_test_svg(ndir / "t-13C.svg", ("13C",), peaks=("138.31", "77.16 CDCl3", "16.60"))
         sv_q = NMR.make_test_svg(ndir / "t-HSQC.svg", ("1H", "13C"))
         sv_f = NMR.make_test_svg(ndir / "t-fluor.svg", ("19F",), axis=False)
         assert NMR.svg_info(sv_q)["nuclei"] == ["1H", "13C"] and NMR.svg_info(sv_q)["is2d"]
@@ -4254,6 +4257,11 @@ def selftest(outdir, with_isnet=False):
         assert ln_[0][0] == ("\u00b9H NMR (500 MHz, CDCl\u2083): \u03b4 [ppm] = 7.41 \u2013 7.34 (m, 2H), "
                              "6.80 (dd, J = 6.7, 1.2 Hz, 1H, ImPy-H), 3.04 (s, 3H)"), ln_[0][0]
         assert "<i>J</i>" in ln_[0][1] and "ImPy-<i>C</i><sub>q</sub>" in ln_[1][1] and "\u221263.2" in ln_[2][0]
+        assert NMR.svg_peaks(sv_c) == (["138.31", "16.60"], "CDCl3"), NMR.svg_peaks(sv_c)
+        w.nmr_state["current"] = [s_ for s_ in t_n.spectra() if s_["nuclei"] == ["13C"]][0]["uid"]
+        t_n.peaks_from_svg()                                   # 13C-Zeile aus den Peaklabels (ersetzt die alte)
+        assert "13C NMR (126 MHz, CDCl3) \u03b4 138.31, 16.60." in w.nmr_state["text"] and \
+            w.nmr_state["text"].count("13C NMR") == 1, w.nmr_state["text"]
         acq_ = NMR.make_test_acqus(ndir / "exp" / "10", nuc="1H", te=300.2)
         (acq_ / "fid").write_bytes(b"\0" * 1000)                          # FID wird nicht ins Projekt kopiert
         e_h = t_n.spectra()[0]
@@ -4293,8 +4301,9 @@ def selftest(outdir, with_isnet=False):
                                (t_n.lbl_prev.height() - ph_) / 2 + (y_ + hr_ / 2) * ph_)
                 ev_ = QWheelEvent(pos_, pos_, QPoint(), QPoint(0, 240), Qt.NoButton, Qt.NoModifier,
                                   Qt.NoScrollPhase, False)
-                assert t_n.eventFilter(t_n.lbl_prev, ev_) and e0_["struct_w"] == 22, e0_["struct_w"]
-            e0_.update(struct_pos="auto", struct_xy=None, struct_w=20.0)
+                assert t_n.eventFilter(t_n.lbl_prev, ev_) and w.nmr_state["struct_w"] == 22   # gilt für alle
+            e0_.update(struct_pos="auto", struct_xy=None)
+            w.nmr_state["struct_w"] = 20.0
         m_ = NMR.occupancy(sv_h)                                           # freie Stelle: verdeckt nichts
         fx_, fy_ = NMR.auto_place(m_, 0.2, 0.5)
         H_, W_ = m_.shape
@@ -4356,6 +4365,42 @@ def selftest(outdir, with_isnet=False):
             assert any(k_ == "scheme" and c_ is w.syn_state for c_, k_, _ in PRJ._path_slots(w.get_state()))
             (Path(w.syn_state["scheme"]).with_suffix(".cdx")).unlink()           # ohne CDX: Vektorbild
             assert [b_[0] for b_ in t_s.si_blocks(out / "syn")][1] == "image"
+            # Schema ohne ChemDraw-Export: selbst gezeichnet (Pfeil, Bedingungen), Reagenzien aus den Pfeiltexten
+            import xml.etree.ElementTree as _ET
+            import uvvis_cdxml as CDXD
+            fr_ = _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment")
+            fr2_ = _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment")
+            for k_, n_ in enumerate(fr2_.iter()):                              # Produkt: 150 pt weiter rechts
+                if n_.get("id"):
+                    n_.set("id", str(90000 + k_))
+                if n_.tag == "n":
+                    x_, y_ = map(float, n_.get("p").split())
+                    n_.set("p", f"{x_ + 150} {y_}")
+            ids_ = {o_.get("id"): str(90000 + k_) for k_, o_ in enumerate(
+                _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment").iter()) if o_.get("id")}
+            for b_ in fr2_.iter("b"):
+                b_.set("B", ids_[b_.get("B")])
+                b_.set("E", ids_[b_.get("E")])
+            ys_ = [float(n_.get("p").split()[1]) for n_ in fr_.iter("n")]
+            xs_ = [float(n_.get("p").split()[0]) for n_ in fr_.iter("n")]
+            ym_, xr_ = sum(ys_) / len(ys_), max(xs_)
+            sch_ = (f'<?xml version="1.0"?><CDXML LineWidth="0.6" BondSpacing="18" LabelSize="10"><page>'
+                    + _ET.tostring(fr_, encoding="unicode") + _ET.tostring(fr2_, encoding="unicode")
+                    + f'<t id="501" p="{xr_ + 30} {ym_ - 6}"><s face="96" size="10">K2CO3 (1.2 eq.)</s></t>'
+                    + f'<t id="502" p="{xr_ + 30} {ym_ + 12}"><s size="9.7">MeOH, rt, 1 h</s></t>'
+                    + f'<arrow id="503" Head3D="{xr_ + 120} {ym_} 0" Tail3D="{xr_ + 20} {ym_} 0"/>'
+                    + f'<scheme><step ReactionStepReactants="{fr_.get("id")}" ReactionStepProducts="{fr2_.get("id")}" '
+                    + 'ReactionStepObjectsAboveArrow="501" ReactionStepObjectsBelowArrow="502"/></scheme></page></CDXML>')
+            (sdir / "rxn.cdxml").write_text(sch_, encoding="utf-8")
+            svg_, notes_ = CDXD.render_svg(sdir / "rxn.cdxml")
+            assert not notes_ and "<polygon" in svg_ and ">2</text>" in svg_ and "1.2\u00a0eq.)" in svg_, notes_
+            assert CDXD.scheme_reagents(sdir / "rxn.cdxml") == [("K2CO3", "K2CO3", "reagent"), ("MeOH", "CH4O", "other")]
+            t_s.set_scheme(str(sdir / "rxn.cdxml"))
+            assert t_s.scheme_asset()["drawing_from"] == "cdxml" and t_s.scheme_asset()["pdf"]
+            w.syn_state["reagents"] = []
+            t_s.rows_from_scheme()
+            assert [(r_["name"], r_["role"]) for r_ in w.syn_state["reagents"]] == \
+                [("", "ref"), ("K2CO3", "reagent"), ("MeOH", "other"), ("", "product")], w.syn_state["reagents"]
         b_all, _ = w.si_blocks(["char"])
         assert b_all[0][0] == "synthesis" and any(b_[0] == "char" and "S25" in b_[1] for b_ in b_all)
         w.syn_state.update(name="", scheme=None, proc="", reagents=[])
@@ -4395,6 +4440,7 @@ def selftest(outdir, with_isnet=False):
         docx_ = Path(w.project_dir) / "exports" / "si" / "TEST-1_SI.docx"
         with _zf.ZipFile(docx_) as z_:
             xml_ = z_.read("word/document.xml").decode("utf-8")
+            assert 'w:val="15"' in z_.read("word/settings.xml").decode("utf-8")   # kein Kompatibilitätsmodus
         assert "Elemental analysis" in xml_ and 'w:val="subscript"' in xml_ and "TEST-1" in xml_
         assert "67\u00a0°C" in xml_ and "C\u00a081." in xml_                  # geschützte Leerzeichen
         assert SI.nbsp("298 nm (ε = 5 cm-1 M-1)") == "298\u00a0nm (ε\u00a0=\u00a05\u00a0cm-1\u00a0M-1)"
