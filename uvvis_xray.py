@@ -2075,6 +2075,7 @@ def is_cif(path):
 
 class XrayTab(TABS.FigureTab):
     STATE_KEY = "xray"
+    TEXT_OPTS = ("fonts", "labels")              # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
                          h_labels=False, colors={}, bond_w=0.08, style="mercury", x_auto=True, x_min=0.0,

@@ -263,6 +263,8 @@ class FigureTab(QWidget):
 
     DEFAULT_STATE: dict = {}
     STATE_KEY = ""
+    # was der Tab im Bild hat (Menü Format zeigt nur das): Schriften, Symbolschrift für λ/ε, Labels, Labelgröße, Rahmen
+    TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame")
     X_RANGE = (100, 3500, 0, 10)         # x-Achse: min, max, Nachkommastellen, Schritt (Spektren: nm)
     XRANGE_TEXT = "xrange"
 
@@ -485,7 +487,7 @@ class FigureTab(QWidget):
         cfg["_base_dir"] = Path.home()
         if st["size"] != "std":
             core.apply_export_size(cfg, st["w_cm"], st["h_cm"])
-        core.apply_text_format(cfg, self.main.text_fmt)
+        core.apply_text_format(cfg, self.main.text_format(self.STATE_KEY))
         fmts = [e for e in ("pdf", "svg", "png") if st["fmt"].get(e)] or ["pdf"]
         cfg["_main_fmt"], cfg["extra_formats"] = fmts[0], fmts[1:]
         return cfg
@@ -720,6 +722,7 @@ COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half
 # ----------------------------------------------------------------------------
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
+    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Comparison of UV-Vis spectra of {name}."
     DEFAULT_STATE = dict(COMMON_DEFAULTS, entries=[], mode="norm", nlo=300.0, nhi=500.0, ymax=0.0,
                          baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0,
@@ -1517,6 +1520,7 @@ def fmt_stokes(v):
 
 class FluoTab(FigureTab):
     STATE_KEY = "fluorescence"
+    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Fluorescence spectra of {name}."
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",

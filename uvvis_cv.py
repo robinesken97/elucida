@@ -317,6 +317,7 @@ def _fmt_e(v, nd=3):
 
 class CVTab(TABS.FigureTab):
     STATE_KEY = "cv"
+    TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame", "struct_frame")
     CAP_FIELDS = ("conc", "solvent", "el", "temp")
     CAP_REMEMBER = ("el",)
     SI_CAPTION = "Cyclic voltammograms of {name}."

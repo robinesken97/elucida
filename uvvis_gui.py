@@ -363,53 +363,76 @@ def compound_from_structure(p):
 
 
 class TextFormatDialog(QDialog):
-    """Schriften, Labelstil und Rahmen – gilt für alle Tabs (Menü Format)."""
+    """Schriften, Labelstil und Rahmen (Menü Format). Gilt für alle Tabs oder – wahlweise – nur für den offenen Tab;
+    gezeigt wird nur, was der Tab im Bild überhaupt hat (opts)."""
 
-    def __init__(self, parent, tf):
+    ALL_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
+
+    def __init__(self, parent, tf, own=None, opts=ALL_OPTS, tab_key=None, tab_name=""):
         super().__init__(parent)
+        from uvvis_i18n import TEXTS
         self.setWindowTitle(T("tf_title"))
-        tf = dict(core.TEXT_DEFAULTS, **(tf or {}))
+        self.glob = dict(core.TEXT_DEFAULTS, **(tf or {}))
+        self.own = dict(self.glob, **own) if own else None
         lay = QVBoxLayout(self)
+        self.cmb_scope = QComboBox()
+        self.cmb_scope.addItem(T("tf_scope_global"), "global")
+        if tab_key:
+            self.cmb_scope.addItem(T("tf_scope_own", tab=tab_name), "own")
+            row = QHBoxLayout()
+            row.addWidget(QLabel(T("tf_scope")))
+            row.addWidget(self.cmb_scope, 1)
+            lay.addLayout(row)
+        hint = QLabel(T("tf_scope_hint") if tab_key else T("tf_no_text", tab=tab_name))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(HINT_CSS)
+        lay.addWidget(hint)
 
         g = QGroupBox(T("tf_grp_fonts"))
         f = QFormLayout(g)
         self.cmb_font, self.cmb_sym = QFontComboBox(), QFontComboBox()
-        self.cmb_font.setCurrentText(tf["font"])
-        self.cmb_sym.setCurrentText(tf["symbol_font"])
         f.addRow(T("tf_font"), self.cmb_font)
-        f.addRow(T("tf_symbol_font"), self.cmb_sym)
-        self.cb_greek = QCheckBox(T("tf_greek"), checked=tf["greek"])
+        self.cb_greek = QCheckBox(T("tf_greek"))
         self.cb_greek.toggled.connect(self.cmb_sym.setEnabled)
-        self.cmb_sym.setEnabled(tf["greek"])
+        f.addRow(T("tf_symbol_font"), self.cmb_sym)
         f.addRow(self.cb_greek)
+        if "greek" not in opts:
+            for w_ in (self.cmb_sym, self.cb_greek, f.labelForField(self.cmb_sym)):
+                w_.setVisible(False)
+        g.setVisible("fonts" in opts)
         lay.addWidget(g)
 
-        g = QGroupBox(T("tf_grp_labels"))
+        lk = f"tf_grp_labels_{tab_key}"
+        g = QGroupBox(T(lk if lk in TEXTS else "tf_grp_labels"))
         f = QFormLayout(g)
         self.sp_size = QDoubleSpinBox(decimals=1, minimum=0, maximum=40, singleStep=0.5, suffix=" pt")
         self.sp_size.setSpecialValueText(T("tf_auto"))
-        self.sp_size.setValue(tf["label_pt"] or 0)
         f.addRow(T("tf_label_size"), self.sp_size)
+        if "label_size" not in opts:
+            self.sp_size.setVisible(False)
+            f.labelForField(self.sp_size).setVisible(False)
         row = QHBoxLayout()
-        self.cb_bold = QCheckBox(T("tf_bold"), checked=tf["bold"])
-        self.cb_italic = QCheckBox(T("tf_italic"), checked=tf["italic"])
+        self.cb_bold = QCheckBox(T("tf_bold"))
+        self.cb_italic = QCheckBox(T("tf_italic"))
         row.addWidget(self.cb_bold)
         row.addWidget(self.cb_italic)
         row.addStretch(1)
         f.addRow("", row)
-        self.color = tf["color"]
         self.btn_color = QPushButton()
         self.btn_color.clicked.connect(self.pick_color)
-        self._show_color()
         f.addRow(T("tf_color"), self.btn_color)
+        g.setVisible("labels" in opts)
         lay.addWidget(g)
 
         g = QGroupBox(T("tf_grp_frames"))
         v = QVBoxLayout(g)
-        self.cb_axes = QCheckBox(T("tf_axes_frame"), checked=tf["axes_frame"])
-        self.cb_struct = QCheckBox(T("tf_struct_frame"), checked=tf["struct_frame"])
+        self.cb_axes = QCheckBox(T("tf_axes_frame"))
+        self.cb_struct = QCheckBox(T("tf_struct_frame"))
         v.addWidget(self.cb_axes)
         v.addWidget(self.cb_struct)
+        self.cb_axes.setVisible("axes_frame" in opts)
+        self.cb_struct.setVisible("struct_frame" in opts)
+        g.setVisible("axes_frame" in opts or "struct_frame" in opts)
         lay.addWidget(g)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
@@ -417,6 +440,34 @@ class TextFormatDialog(QDialog):
         bb.rejected.connect(self.reject)
         bb.button(QDialogButtonBox.RestoreDefaults).clicked.connect(self.restore_defaults)
         lay.addWidget(bb)
+        self.cmb_scope.setCurrentIndex(1 if (tab_key and own) else 0)
+        self._scope = self.cmb_scope.currentData()
+        self.load(self.own if self._scope == "own" else self.glob)
+        self.cmb_scope.currentIndexChanged.connect(self.scope_changed)
+
+    def scope_changed(self, *_):
+        """Beim Umschalten die Werte der jeweiligen Ebene zeigen (eigenes Format startet als Kopie des Standards)."""
+        cur = self.result_format()
+        if self._scope == "own":
+            self.own = cur
+        else:
+            self.glob = cur
+        self._scope = self.cmb_scope.currentData()
+        self.load((self.own or dict(self.glob)) if self._scope == "own" else self.glob)
+
+    def load(self, tf):
+        tf = dict(core.TEXT_DEFAULTS, **tf)
+        self.cmb_font.setCurrentText(tf["font"])
+        self.cmb_sym.setCurrentText(tf["symbol_font"])
+        self.cb_greek.setChecked(tf["greek"])
+        self.cmb_sym.setEnabled(tf["greek"])
+        self.sp_size.setValue(tf["label_pt"] or 0)
+        self.cb_bold.setChecked(tf["bold"])
+        self.cb_italic.setChecked(tf["italic"])
+        self.color = tf["color"]
+        self._show_color()
+        self.cb_axes.setChecked(tf["axes_frame"])
+        self.cb_struct.setChecked(tf["struct_frame"])
 
     def _show_color(self):
         self.btn_color.setText(self.color)
@@ -429,23 +480,20 @@ class TextFormatDialog(QDialog):
             self._show_color()
 
     def restore_defaults(self):
-        d = core.TEXT_DEFAULTS
-        self.cmb_font.setCurrentText(d["font"])
-        self.cmb_sym.setCurrentText(d["symbol_font"])
-        self.cb_greek.setChecked(d["greek"])
-        self.sp_size.setValue(d["label_pt"])
-        self.cb_bold.setChecked(d["bold"])
-        self.cb_italic.setChecked(d["italic"])
-        self.color = d["color"]
-        self._show_color()
-        self.cb_axes.setChecked(d["axes_frame"])
-        self.cb_struct.setChecked(d["struct_frame"])
+        self.load(core.TEXT_DEFAULTS)
 
     def result_format(self):
         return {"font": self.cmb_font.currentFont().family(), "symbol_font": self.cmb_sym.currentFont().family(),
                 "greek": self.cb_greek.isChecked(), "label_pt": self.sp_size.value(),
                 "bold": self.cb_bold.isChecked(), "italic": self.cb_italic.isChecked(), "color": self.color,
                 "axes_frame": self.cb_axes.isChecked(), "struct_frame": self.cb_struct.isChecked()}
+
+    def results(self):
+        """-> (Standard für alle Tabs, eigenes Format des Tabs oder None)."""
+        cur = self.result_format()
+        if self.cmb_scope.currentData() == "own":
+            return self.glob, cur
+        return cur, None
 
 
 class MainWindow(QMainWindow):
@@ -481,7 +529,8 @@ class MainWindow(QMainWindow):
         self.syn_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
-        self._tab_index = 0
+        self.tab_fmt = {}                                # eigenes Textformat je Tab (Schlüssel = STATE_KEY / epsilon)
+        self._tab_key = "syn"                            # offener Tab (Name, nicht Position)
         self.project_dir = None
         self._undo, self._redo = [], []
         self._restoring = False
@@ -914,32 +963,31 @@ class MainWindow(QMainWindow):
         split.addWidget(left_col)
         split.addWidget(right)
         split.setSizes([left_col.minimumWidth(), 920])
-        self.main_tabs = QTabWidget()
-        self.main_tabs.addTab(split, T("tab_eps"))
+        self.eps_page = split
         self.ov_tab = uvvis_tabs.OverlayTab(self, self.ov_state)
         self.fl_tab = uvvis_tabs.FluoTab(self, self.fl_state)
-        self.main_tabs.addTab(self.ov_tab, T("tab_overlay"))
-        self.main_tabs.addTab(self.fl_tab, T("tab_fluo"))
         self.cv_tab = CVMOD.CVTab(self, self.cv_state)
-        self.main_tabs.addTab(self.cv_tab, T("tab_cv"))
         self.sec_tab = SECMOD.SECTab(self, self.sec_state)
-        self.main_tabs.addTab(self.sec_tab, T("tab_sec"))
         self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
-        self.main_tabs.addTab(self.epr_tab, T("tab_epr"))
         self.hrms_tab = HRMS.HRMSTab(self, self.hrms_state)
-        self.main_tabs.addTab(self.hrms_tab, T("tab_hrms"))
         self.irms_tab = IRMS.IRMSTab(self, self.irms_state)
-        self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.xray_tab = XRAY.XrayTab(self, self.xray_state)
-        self.main_tabs.addTab(self.xray_tab, T("tab_xray"))
         self.syn_tab = SYN.SynthTab(self, self.syn_state)
-        self.main_tabs.addTab(self.syn_tab, T("tab_syn"))
         self.nmr_tab = NMR.NMRTab(self, self.nmr_state)
-        self.main_tabs.addTab(self.nmr_tab, T("tab_nmr"))
         self.dft_tab = DFT.DFTTab(self, self.dft_state)
-        self.main_tabs.addTab(self.dft_tab, T("tab_dft"))
-        self.main_tabs.setCurrentIndex(self._tab_index)
-        self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
+        # Reihenfolge wie die SI: Synthese, Charakterisierung, Spektroskopie, Elektrochemie, Struktur, Rechnung
+        self.main_tabs = QTabWidget()
+        self._tab_keys = []
+        for key, page, label in (("syn", self.syn_tab, "tab_syn"), ("nmr", self.nmr_tab, "tab_nmr"),
+                                 ("irms", self.irms_tab, "tab_irms"), ("hrms", self.hrms_tab, "tab_hrms"),
+                                 ("eps", split, "tab_eps"), ("overlay", self.ov_tab, "tab_overlay"),
+                                 ("fluo", self.fl_tab, "tab_fluo"), ("cv", self.cv_tab, "tab_cv"),
+                                 ("sec", self.sec_tab, "tab_sec"), ("epr", self.epr_tab, "tab_epr"),
+                                 ("xray", self.xray_tab, "tab_xray"), ("dft", self.dft_tab, "tab_dft")):
+            self.main_tabs.addTab(page, T(label))
+            self._tab_keys.append(key)
+        self.main_tabs.setCurrentIndex(self._tab_keys.index(self._tab_key) if self._tab_key in self._tab_keys else 0)
+        self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_key", self._tab_keys[i]))
         self.main_tabs.currentChanged.connect(                    # Vorlagen (CIF aus X-Ray) aktuell halten
             lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
         self.setCentralWidget(self.main_tabs)
@@ -1254,8 +1302,8 @@ class MainWindow(QMainWindow):
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
                 "dft": self.dft_state, "nmr": self.nmr_state, "syn": self.syn_state,
                 "compound": dict(self.compound),
-                "tab": self._tab_index,
-                "text": dict(self.text_fmt)}
+                "tab": self._tab_key,
+                "text": dict(self.text_fmt), "text_tabs": {k: dict(v) for k, v in self.tab_fmt.items()}}
 
     def set_state(self, state):
         """Zustand übernehmen (Projekt laden, Undo/Redo)."""
@@ -1295,7 +1343,12 @@ class MainWindow(QMainWindow):
         self.syn_state.update(state.get("syn") or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
-        self._tab_index = state.get("tab", 0) or 0
+        self.tab_fmt = {k: dict(v) for k, v in (state.get("text_tabs") or {}).items()}
+        tab = state.get("tab", "syn")
+        if isinstance(tab, int):                         # bis 1.23 gespeichert als Position (alte Reihenfolge)
+            old = ("eps", "overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "dft")
+            tab = old[tab] if 0 <= tab < len(old) else "syn"
+        self._tab_key = tab
         self.current = eps.get("current")
         self.build_ui()
         if self.csv_paths:
@@ -1829,7 +1882,7 @@ class MainWindow(QMainWindow):
                          "prefer": "right",
                          "_asset": st["photo_asset"]})
         cfg["images"] = imgs
-        core.apply_text_format(cfg, self.text_fmt)
+        core.apply_text_format(cfg, self.text_format("epsilon"))
         return cfg
 
     # ------------------------------------------------------------ Farbe der Lösung
@@ -1903,21 +1956,40 @@ class MainWindow(QMainWindow):
         self.changed()
         QTimer.singleShot(0, lambda: self.statusBar().showMessage(msg, 6000))
 
+    def text_format(self, key):
+        """Textformat eines Tabs: eigenes Format (Menü Format, „nur dieser Tab“), sonst das für alle Tabs."""
+        return {**core.TEXT_DEFAULTS, **self.text_fmt, **(self.tab_fmt.get(key) or {})}
+
+    def text_tab(self):
+        """Offener Tab -> (Schlüssel für das Textformat oder None, Name, Optionen, die der Tab im Bild hat)."""
+        w_ = self.main_tabs.currentWidget()
+        name = self.main_tabs.tabText(self.main_tabs.currentIndex())
+        if w_ is self.eps_page:
+            return "epsilon", name, TextFormatDialog.ALL_OPTS
+        if isinstance(w_, uvvis_tabs.FigureTab):
+            return w_.STATE_KEY, name, w_.TEXT_OPTS
+        return None, name, ()
+
     def edit_text_format(self):
-        dlg = TextFormatDialog(self, self.text_fmt)
+        key, name, opts = self.text_tab()
+        dlg = TextFormatDialog(self, self.text_fmt, self.tab_fmt.get(key), opts or TextFormatDialog.ALL_OPTS,
+                               key, name)
         if dlg.exec() != QDialog.Accepted:
             return
-        self.text_fmt = dlg.result_format()
-        for key in ("font", "symbol_font"):
-            name = self.text_fmt[key]
-            if core.first_font([name], None) is None:
-                self.log_signal.emit("  " + T("tf_missing", name=name))
+        self.text_fmt, own = dlg.results()
+        if key:
+            if own is None:
+                self.tab_fmt.pop(key, None)
+            else:
+                self.tab_fmt[key] = own
+        for tf in [self.text_fmt] + list(self.tab_fmt.values()):
+            for k_ in ("font", "symbol_font"):
+                if core.first_font([tf[k_]], None) is None:
+                    self.log_signal.emit("  " + T("tf_missing", name=tf[k_]))
         self.render()
-        self.ov_tab.render()
-        self.fl_tab.render()
-        self.cv_tab.render()
-        self.sec_tab.render()
-        self.epr_tab.render()
+        for t in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.irms_tab, self.hrms_tab,
+                  self.xray_tab, self.dft_tab):
+            t.render()
         self.push_undo()
 
     def render(self):
@@ -3072,6 +3144,24 @@ def selftest(outdir, with_isnet=False):
         w.cv_state.update(cap_conc="", cap_el="")
         report.append("SI figures from all tabs (CV caption, setup text): OK")
 
+        # Tab-Reihenfolge wie die SI; offener Tab über den Namen (alte Projekte: Position in der alten Reihenfolge)
+        assert [w.main_tabs.widget(i) for i in range(5)] == [w.syn_tab, w.nmr_tab, w.irms_tab, w.hrms_tab, w.eps_page]
+        st_ = w.get_state()
+        st_["tab"] = 3                                                   # 1.23: Position 3 = CV
+        w.set_state(st_)
+        assert w.main_tabs.currentWidget() is w.cv_tab and w.get_state()["tab"] == "cv"
+        # Textformat je Tab: eigenes Format nur für CV, der Rest folgt dem Standard
+        w.tab_fmt["cv"] = dict(core.TEXT_DEFAULTS, bold=True)
+        assert w.cv_tab.base_cfg()["labels"]["bold"] and not w.sec_tab.base_cfg()["labels"]["bold"]
+        assert w.get_state()["text_tabs"]["cv"]["bold"] and w.text_tab()[0] == "cv"
+        dlg_ = TextFormatDialog(w, w.text_fmt, w.tab_fmt["cv"], w.cv_tab.TEXT_OPTS, "cv", "CV")
+        assert dlg_.cmb_scope.currentData() == "own" and dlg_.cb_bold.isChecked() and dlg_.cb_greek.isHidden()
+        dlg_.cmb_scope.setCurrentIndex(0)                                  # zurück auf „alle Tabs“
+        assert not dlg_.cb_bold.isChecked() and dlg_.results()[1] is None
+        w.tab_fmt.clear()
+        w.main_tabs.setCurrentWidget(w.eps_page)
+        report.append("tab order + open tab by name, text format per tab: OK")
+
         # CV-Basislinie: Ladestrom ±C·v + linearer Untergrund dürfen i_p und i_r/i_f nicht verändern
         E_, I_ = cv_sweep(-1.02, 50.0, -1.4, -0.5)
         dEs_ = np.gradient(E_)
@@ -3503,7 +3593,7 @@ def selftest(outdir, with_isnet=False):
         w.sp_r2.setValue(r2_old)
         w.sec_eval.btn.setChecked(True)
         assert w.sec_eval.body.isVisibleTo(w)
-        labels = [lb for lb in w.main_tabs.widget(0).findChildren(QLabel)
+        labels = [lb for lb in w.eps_page.findChildren(QLabel)
                   if lb.text() in (T("molar_mass_short"), T("ymax"))]
         assert len({lb.minimumWidth() for lb in labels}) == 1 and labels[0].minimumWidth() > 0
         report.append("eps tab layout (sections, empty state): OK")
@@ -3519,7 +3609,7 @@ def selftest(outdir, with_isnet=False):
             assert w.btn_export.property("accent") and w.btn_open.property("accent")
             assert not w.btn_export.icon().isNull(), "icon"
             assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
-        assert w.findChildren(QFrame, "card") and not w.main_tabs.widget(0).findChildren(QGroupBox)
+        assert w.findChildren(QFrame, "card") and not w.eps_page.findChildren(QGroupBox)
         w.switch_theme("system")
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
@@ -3612,7 +3702,7 @@ def selftest(outdir, with_isnet=False):
         assert abs(IRMS.ion("C18H20N2", "M+Na")[2] - 287.1519) < 1e-4 and IRMS.ion("C18H20N2", "M-H")[1] == -1
         t_ir = w.irms_tab
         t_ms = w.hrms_tab
-        assert w.main_tabs.indexOf(t_ms) + 1 == w.main_tabs.indexOf(t_ir)      # HRMS vor IR + EA
+        assert w.main_tabs.indexOf(t_ir) + 1 == w.main_tabs.indexOf(t_ms)      # IR + EA vor HRMS (wie die SI)
         t_ir.load_ir(str(irdir / "test.0"))
         t_ms.load_ms(str(irdir / "ms.docx"))
         w.compound["formula"] = "C18H20N2"

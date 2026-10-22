@@ -142,6 +142,7 @@ def _floats(text):
 
 class SECTab(TABS.FigureTab):
     STATE_KEY = "sec"
+    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
     CAP_FIELDS = ("solvent", "start", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,

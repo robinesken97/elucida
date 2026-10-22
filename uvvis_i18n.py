@@ -606,7 +606,23 @@ TEXTS = {
     # ---- Format (Schrift, Rahmen) -----------------------------------------
     "menu_format": ("F&ormat", "F&ormat"),
     "act_text_format": ("Schrift und Rahmen…", "Fonts and frames…"),
-    "tf_title": ("Schrift und Rahmen (alle Tabs)", "Fonts and frames (all tabs)"),
+    "tf_title": ("Schrift und Rahmen", "Fonts and frames"),
+    "tf_scope": ("Gilt für", "Applies to"),
+    "tf_scope_global": ("alle Tabs (Standard)", "all tabs (default)"),
+    "tf_scope_own": ("nur diesen Tab ({tab})", "this tab only ({tab})"),
+    "tf_scope_hint": ("„alle Tabs“ ändert den Standard für jeden Tab ohne eigenes Format. Gezeigt wird nur, was dieser "
+                      "Tab im Bild hat.", "“all tabs” changes the default for every tab without its own format. Only "
+                      "what this tab has in its figure is shown."),
+    "tf_no_text": ("Der Tab „{tab}“ hat keine eigene Textformatierung (Bilder kommen fertig aus MestReNova bzw. "
+                   "ChemDraw). Änderungen gelten für alle Tabs.", "The “{tab}” tab has no text formatting of its own "
+                   "(figures come ready-made from MestReNova or ChemDraw). Changes apply to all tabs."),
+    "tf_grp_labels_cv": ("Labels an den Peaks (E½, E_p)", "Peak labels (E½, E_p)"),
+    "tf_grp_labels_sec": ("Labels an den Banden (λ)", "Band labels (λ)"),
+    "tf_grp_labels_epr": ("Labels im Spektrum", "Labels in the spectrum"),
+    "tf_grp_labels_irms": ("Labels an den Banden (cm⁻¹)", "Band labels (cm⁻¹)"),
+    "tf_grp_labels_hrms": ("Labels an den Peaks (m/z)", "Peak labels (m/z)"),
+    "tf_grp_labels_xray": ("Atomlabels (Größe im Tab)", "Atom labels (size in the tab)"),
+    "tf_grp_labels_dft": ("Atomlabels (Größe im Tab)", "Atom labels (size in the tab)"),
     "tf_grp_fonts": ("Schriften", "Fonts"),
     "tf_font": ("Textschrift", "Text font"),
     "tf_symbol_font": ("Symbolschrift", "Symbol font"),
