@@ -4223,8 +4223,11 @@ def selftest(outdir, with_isnet=False):
             c_it = next(i_ for i_ in F_s.scene["atoms"] if i_["el"] == "C")
             if sty_ in XRAY.BALL_STYLES:
                 assert abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
-                assert sorted(set(F_s.bond_fac.values())) == sorted(r_[0] for r_ in XRAY.ROD_SPEC[sty_])
-                assert F_s.bond_w == XRAY.ROD_W[sty_] and max(F_s.bond_off.values()) > 0          # Glanz zur Lichtseite
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rod_info) > 10 and max(F_s.bond_fac.values()) == 1.0
+                fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()                         # Phong: dunkel … Glanz
+                assert len(fc_) > 10 and sum(fc_[0][:3]) < sum(fc_[len(fc_) // 2][:3])    # Rand dunkler als Mitte
+                if sty_ == "ballstick":
+                    assert min(max(f_[:3]) for f_ in fc_[-3:-1]) > 0.95, fc_[-3:]          # Glanzpunkt fast weiß
             if sty_ == "mercury":
                 assert XRAY.default_color("C", "mercury") == XRAY.OLEX2_COLORS["C"]               # C grau wie bisher
                 assert all(a_.get_fontweight() == "bold" for a_ in F_s.ann_items.values())

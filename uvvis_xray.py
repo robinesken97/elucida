@@ -1419,23 +1419,111 @@ STYLES = ("mercury", "flat", "ballstick", "depth")
 BALL_STYLES = ("ballstick", "depth")      # Kugel-Stab: Kugeln nach Element statt Ellipsoiden, Stäbe in Atomfarben
 DEPTH_A = 6.0                             # Tiefe (Å), über die der Stil „depth“ voll aufhellt
 DEPTH_MAX = 0.6                           # … bis 60 % zum Weiß
-# Nachbau der Vorlagen: Kugel = Schattenrand unten rechts (äußere Schichten, zum Licht hin verkleinert), Grundfarbe,
-# Glanzpunkt oben links. Je Schicht (Anteil am Radius, Versatz zum Licht in r, Art, Wert): "tone" = Grundfarbe × (1 + Wert),
-# "blend" = Grundfarbe → Weiß um Wert.
-SPHERE_SPEC = {
-    "ballstick": ([(1.0 - 0.025 * i, 0.025 * i * 1.1, "tone", -0.6 + 0.075 * i) for i in range(9)]
-                  + [(0.34 - 0.04 * i, 0.42, "blend", 0.1 + 0.13 * i) for i in range(7)]),
-    "depth": ([(1.0 - 0.045 * i, 0.045 * i * 0.8, "tone", -0.45 + 0.05625 * i) for i in range(9)]
-              + [(0.32 - 0.06 * i, 0.36, "blend", 0.06 + 0.07 * i) for i in range(4)]),
+# Phong-Beleuchtung (Grundanteil ka + diffus kd·(n·L) + Glanz ks·(n·H)^p), angepasst an eine IboView-Abbildung
+# des Nutzers (Fit an die Kohlenstoffkugel: Licht oben links 40° über der Bildebene, Grundanteil 0.31, diffus 0.48 bei
+# Grau 0.55; Glanzpunkt klein und rein weiß). „depth“: matt, weicher, kaum Glanz. Schichten = Höhenlinien der
+# Helligkeit (Vektor in PDF/SVG): Kugeln über contourpy, Stäbe als Zylinder je nach Lage zum Licht.
+SHADE = {
+    "ballstick": dict(el=40.0, ka=0.567, kd=0.874, ks=0.32, p=160, nd=30, nr=16, outline=True),
+    "depth": dict(el=45.0, ka=0.6, kd=0.62, ks=0.14, p=10, nd=16, nr=10, outline=False),
 }
-# Stab = Zylinder aus übereinanderliegenden Linien (Anteil der Stabbreite, Versatz zum Licht in Stabbreiten, Art, Wert):
-# dunkler Rand, Schattenseite, Grundfarbe, schmaler Glanzstreifen an der Lichtseite
-ROD_SPEC = {
-    "ballstick": ((1.0, 0.0, "tone", -0.8), (0.92, 0.0, "tone", -0.32), (0.84, 0.02, "tone", -0.18),
-                  (0.74, 0.05, "tone", -0.07), (0.62, 0.08, "tone", 0.0), (0.16, 0.3, "blend", 0.85)),
-    "depth": ((1.0, 0.0, "tone", -0.38), (0.86, 0.03, "tone", -0.22), (0.72, 0.06, "tone", -0.1),
-              (0.56, 0.09, "tone", 0.0), (0.3, 0.16, "blend", 0.18)),
-}
+SPEC_LEVELS = tuple(np.linspace(0.04, 0.96, 12))           # weich auslaufender Glanzpunkt
+
+
+def _light3(style):
+    """Lichtrichtung L und Halbvektor H (3D, Bildschirm: x rechts, y oben, z zum Betrachter) für einen Stil."""
+    e = math.radians(SHADE[style]["el"])
+    L = np.array([LIGHT[0] * math.cos(e), LIGHT[1] * math.cos(e), math.sin(e)])
+    H = L + np.array([0.0, 0.0, 1.0])
+    return L, H / np.linalg.norm(H)
+
+
+_SPHERE_CACHE = {}
+
+
+def sphere_unit_layers(style):
+    """Schichten einer Kugel vom Radius 1: [(Polygon N×2, Art, Wert)], Art "d" = Helligkeit, "s" = Glanz.
+    Erste Schicht = ganze Scheibe; Regionen gleicher oder größerer Helligkeit als Höhenlinien (contourpy)."""
+    if style in _SPHERE_CACHE:
+        return _SPHERE_CACHE[style]
+    import contourpy
+    sp = SHADE[style]
+    L, H = _light3(style)
+    g = np.linspace(-1.25, 1.25, 241)
+    X, Y = np.meshgrid(g, g)
+    rr = np.hypot(X, Y)
+    s_ = np.where(rr > 1, 1 / np.maximum(rr, 1e-9), 1.0)       # außerhalb: Wert am Rand (für sauberes Abschneiden)
+    u, v = X * s_, Y * s_
+    w = np.sqrt(np.clip(1 - u ** 2 - v ** 2, 0, 1))
+    ndl = np.clip(u * L[0] + v * L[1] + w * L[2], 0, None)
+    ndh = np.clip(u * H[0] + v * H[1] + w * H[2], 0, None)
+    t = np.linspace(0, 2 * np.pi, 97)
+    out = [(np.column_stack([np.cos(t), np.sin(t)]), "d", sp["ka"] + sp["kd"] * 0.5 / sp["nd"])]
+
+    def regions(field, lev):
+        pts, offs = contourpy.contour_generator(X, Y, field, fill_type=contourpy.FillType.OuterOffset).filled(lev, 1e9)
+        res = []
+        for P, O in zip(pts, offs):
+            P = P[O[0]:O[1]]
+            n = np.hypot(P[:, 0], P[:, 1])
+            res.append(np.where((n > 1)[:, None], P / np.maximum(n, 1e-9)[:, None], P))   # auf die Scheibe
+        return res
+    for j in range(1, sp["nd"]):
+        for P in regions(ndl, j / sp["nd"]):
+            out.append((P, "d", sp["ka"] + sp["kd"] * (j + 0.5) / sp["nd"]))
+    for lev in SPEC_LEVELS:
+        val = sp["ks"] * (lev + (1 - lev) * 0.5)
+        for P in regions(ndh ** sp["p"], lev):
+            out.append((P, "s", val))
+    _SPHERE_CACHE[style] = out
+    return out
+
+
+def rod_layout(style, dx, dy):
+    """Stab als Zylinder (Achse in der Bildebene, Richtung dx, dy): je Schicht (Breitenanteil, Versatz in Stabbreiten
+    zur Lichtseite). Reihenfolge wie rod_levels(style); leere Schicht -> (0, 0)."""
+    sp = SHADE[style]
+    L, H = _light3(style)
+    n_ = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / n_, dx / n_
+    if nx * LIGHT[0] + ny * LIGHT[1] < 0:
+        nx, ny = -nx, -ny
+    u = np.linspace(-1, 1, 241)
+    w = np.sqrt(1 - u ** 2)
+    ndl = np.clip(u * (nx * L[0] + ny * L[1]) + w * L[2], 0, None)
+    ndh = np.clip(u * (nx * H[0] + ny * H[1]) + w * H[2], 0, None) ** sp["p"]
+    res = []
+    for kind, lev, _ in rod_levels(style):
+        m = (ndl >= lev) if kind == "d" else (ndh >= lev)
+        if not m.any():
+            res.append((0.0, 0.0))
+            continue
+        u1, u2 = u[m][0], u[m][-1]
+        res.append(((u2 - u1) / 2, (u1 + u2) / 4))
+    return res
+
+
+def rod_levels(style):
+    """Schichten eines Stabs: [(Art, Schwelle, Wert)] – gleiche Helligkeitsstufen wie die Kugeln, gröber."""
+    sp = SHADE[style]
+    out = [("d", j / sp["nr"], sp["ka"] + sp["kd"] * (j + 0.5) / sp["nr"]) for j in range(sp["nr"])]
+    out[0] = ("d", -1.0, out[0][2])                              # ganze Breite
+    return out + [("s", lev, sp["ks"] * (lev + (1 - lev) * 0.5)) for lev in SPEC_LEVELS]
+
+
+def shade_color(base, kind, val, style, fog=0.0):
+    """Farbe einer Schicht: Grundfarbe × Helligkeit, Glanz = Helligkeit am Glanzpunkt + Weißanteil; dann Tiefe."""
+    b = np.array(to_rgb(base))
+    if kind == "d":
+        c = b * val
+    else:
+        sp = SHADE[style]
+        L, H = _light3(style)
+        c = b * (sp["ka"] + sp["kd"] * float(np.dot(L, H))) + val
+    c = np.clip(c, 0, 1)
+    return tuple(np.clip(c + (1 - c) * fog, 0, 1))
+
+
 ROD_W = {"ballstick": 0.2, "depth": 0.36}           # Stabdicke (Å) wie in den Vorlagen
 BALL_R = {"ballstick": 0.45, "depth": 0.42}         # Kugelradius = Faktor × kovalenter Radius
 
@@ -1443,13 +1531,6 @@ BALL_R = {"ballstick": 0.45, "depth": 0.42}         # Kugelradius = Faktor × ko
 def ball_radius(el, style="ballstick"):
     """Kugelradius im Kugel-Stab-Modell (Å): proportional zum kovalenten Radius, H nicht zu klein."""
     return max(0.2, BALL_R.get(style, 0.45) * COV.get(el, 0.76))
-
-
-def spec_color(base, kind, val, fog=0.0):
-    base = np.array(to_rgb(base))
-    c = base * (1 + val) if kind == "tone" else base + (1 - base) * val
-    c = np.clip(c, 0, 1)
-    return tuple(np.clip(c + (1 - c) * fog, 0, 1))
 
 
 def fogged(color, fog):
@@ -1546,7 +1627,9 @@ class XrayFigure:
         self.ball = self.style in BALL_STYLES
         # Bindungsdicke in Å (Mercury: Zylinder); Kugel-Stab: kräftige Stäbe
         self.bond_w = ROD_W[self.style] if self.ball else float(opts.get("bond_w", 0.08))
-        self.bond_fac, self.bond_off, self.bond_ovl = {}, {}, {}  # Linie -> Anteil der Stabbreite / Versatz (Å) / Überlappung
+        self.bond_fac = {}                                       # Stablinie -> aktueller Breitenanteil
+        self.rod_info = {}                                       # Stablinie -> (Schicht, -1 = Umriss; Überlappung)
+        self.rod_lines = {}                                      # (Atom a, Atom b, Hälfte) -> Linien der Schichten
         self.atom_rods = {}                                      # Kugel-Stab: Atom -> Linien seiner Stabhälften
         self.lw_edge = max(0.4, 0.6 * sc)
         self.atom_art, self.bond_art, self.sel_art, self.bond_lines = {}, [], [], {}
@@ -1640,8 +1723,8 @@ class XrayFigure:
             return [base, base]
         if self.ball:
             r = it["w"] / 2
-            return [_ellipse_verts(it["x"] + LIGHT[0] * d * r, it["y"] + LIGHT[1] * d * r, 2 * r * s, 2 * r * s, 0.0)
-                    for s, d, _, _ in SPHERE_SPEC[self.style]] + [base]
+            c = np.array([it["x"], it["y"]])
+            return [c + r * P for P, _, _ in sphere_unit_layers(self.style)] + [base]
         n = 6 if it.get("kind") == "H" else 12
         return shade_layers(it, n) + [base]
 
@@ -1651,6 +1734,24 @@ class XrayFigure:
         if self.style != "depth":
             return 0.0
         return DEPTH_MAX * min(1.0, max(0.0, (self._zmax - z) / DEPTH_A))
+
+    def _place_rod(self, a, b, half):
+        """Geometrie aller Schichten einer Stabhälfte nach der aktuellen Ansicht (Breite/Versatz je Lage zum Licht)."""
+        xs, ys = self._bond_xy(a, b)
+        lines = self.rod_lines.get((a, b, half))
+        if not lines:
+            return
+        lay = rod_layout(self.style, xs[1] - xs[0], ys[1] - ys[0]) if np.isfinite(xs).all() else None
+        inner = 0.95 if SHADE[self.style]["outline"] else 1.0
+        for ln in lines:
+            j, ov = self.rod_info[ln]
+            frac, off = (1.0, 0.0) if j < 0 else (lay[j] if lay else (0.0, 0.0))
+            if j >= 0:
+                frac, off = frac * inner, off * inner
+            self.bond_fac[ln] = frac
+            ln.set_data(*self._rod(*_half(xs, ys, half, ov), off * self.bond_w))
+            ln.set_linewidth(self.lw_bond * frac)
+            ln.set_visible(frac > 0)
 
     def _rod(self, xs, ys, off):
         """Stablinie um off (Å) senkrecht zur Bindung zur Lichtseite versetzt (Glanzstreifen oben links)."""
@@ -1680,8 +1781,8 @@ class XrayFigure:
             nfill = len(verts) - 1
             if self.ball:                                  # wie die Vorlagen: IboView mit feinem Umriss, Tiefe ohne
                 fog = self._fog(it["z"])
-                faces = [spec_color(col, kd, v, fog) for _, _, kd, v in SPHERE_SPEC[self.style]]
-                edge, elw = ((0.1, 0.1, 0.1), 0.45 * self.lw_edge) if self.style == "ballstick" else ("none", 0.0)
+                faces = [shade_color(col, kd, v, self.style, fog) for _, kd, v in sphere_unit_layers(self.style)]
+                edge, elw = ((0.15, 0.15, 0.15), 0.3 * self.lw_edge) if SHADE[self.style]["outline"] else ("none", 0.0)
             elif mercury:
                 faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
             else:
@@ -1708,25 +1809,26 @@ class XrayFigure:
                     self.bond_art.append((a, b, ln, half))
                     self.bond_lines[n].append(ln)
                 continue
-            if self.ball:                                  # schattierter Stab, je Hälfte in der Atomfarbe
+            if self.ball:                                  # Zylinder (Phong), je Hälfte in der Atomfarbe
                 self.bond_lines[n] = []
                 fog = self._fog(self.scene["bonds"][n][2])
+                outline = SHADE[self.style]["outline"]
+                levels = ([("o", None, None)] if outline else []) + rod_levels(self.style)
                 for half, k in ((0, a), (1, b)):
                     el = self.mol.atoms[k]["el"]
                     base = colors.get(el) or default_color(el, self.style)
-                    for fac, off, kd, v in ROD_SPEC[self.style]:
-                        # nur innere Schichten überlappen in der Mitte: der dunkle Außenrand der oberen Hälfte endet
-                        # genau dort, sonst bliebe über den hellen Schichten der anderen Hälfte eine Naht
-                        ov = 0.0 if fac >= 1.0 else 0.02
-                        ln = Line2D(*self._rod(*_half(xs, ys, half, ov), off * self.bond_w), color=spec_color(base, kd, v, fog),
-                                    lw=self.lw_bond * fac, solid_capstyle="butt")
+                    for j, (kind, _, val) in enumerate(levels):
+                        col_ = (0.15, 0.15, 0.15) if kind == "o" else shade_color(base, kind, val, self.style, fog)
+                        # nur innere Schichten überlappen in der Mitte: der Außenrand der oberen Hälfte endet genau
+                        # dort, sonst bliebe über den hellen Schichten der anderen Hälfte eine Naht
+                        ln = Line2D([np.nan, np.nan], [np.nan, np.nan], color=col_, lw=0, solid_capstyle="butt")
                         ax.add_line(ln)
                         self.bond_art.append((a, b, ln, half))
-                        self.bond_fac[ln] = fac
-                        self.bond_ovl[ln] = ov
-                        self.bond_off[ln] = off * self.bond_w
+                        self.rod_info[ln] = (j - (1 if outline else 0), 0.0 if j == 0 else 0.02)
+                        self.rod_lines.setdefault((a, b, half), []).append(ln)
                         self.bond_lines[n].append(ln)
                         self.atom_rods.setdefault(k, []).append(ln)
+                    self._place_rod(a, b, half)
                 continue
             ln = Line2D(xs, ys, color="black", lw=self.lw_bond, solid_capstyle="butt")
             ax.add_line(ln)
@@ -1746,7 +1848,7 @@ class XrayFigure:
         items = [(it["z"], "a", it["k"]) for it in self.scene["atoms"]]
         # Kugel-Stab: Stabhälften gehören zu ihrem Atom (direkt darunter gezeichnet), Drahtmodell-Bindungen wie sonst
         items += [(z, "b", n) for n, (a, b, z) in enumerate(self.scene["bonds"])
-                  if not (self.ball and self.bond_lines.get(n) and self.bond_lines[n][0] in self.bond_fac)]
+                  if not (self.ball and self.bond_lines.get(n) and self.bond_lines[n][0] in self.rod_info)]
         items.sort(key=lambda t: (t[0], t[1] == "a"))
         self.order = []
         step = 40 / max(1, len(items))
@@ -1778,10 +1880,13 @@ class XrayFigure:
             p.set_verts(self._layers(it))
             for ln, (xs, ys) in zip(lines, it["curves"]):
                 ln.set_data(xs, ys)
+        for a, b, half in self.rod_lines:
+            self._place_rod(a, b, half)
         for a, b, ln, half in self.bond_art:
+            if ln in self.rod_info:
+                continue
             xs, ys = self._bond_xy(a, b)
-            seg = _half(xs, ys, half, self.bond_ovl.get(ln, 0.0)) if half is not None else (xs, ys)
-            ln.set_data(*self._rod(*seg, self.bond_off.get(ln, 0.0)))
+            ln.set_data(*(_half(xs, ys, half) if half is not None else (xs, ys)))
         for k, e in self.sel_art:
             it = self.scene["by_k"][k]
             e.set_center((it["x"], it["y"]))
