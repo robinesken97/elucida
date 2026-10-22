@@ -316,7 +316,7 @@ COV = {"H": 0.31, "D": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C":
 BOND_TOL = 0.45
 
 
-def default_color(el):
+def default_color(el, style=None):
     if el in OLEX2_COLORS:
         return OLEX2_COLORS[el]
     if el in METALS:
@@ -817,8 +817,10 @@ def measure(mol: Molecule, keys):
     pts = [a["xyz"] for a in ats]
     kind = {2: "bond", 3: "angle", 4: "torsion"}[len(idx)]
     val = {2: distance, 3: angle, 4: torsion}[len(idx)](pts)
-    rows = {2: mol.S.geom_bond, 3: mol.S.geom_angle, 4: mol.S.geom_torsion}[len(idx)]
-    txt = match_geom(mol.S, rows, ats)
+    txt = None
+    if mol.S is not None:                            # CIF: Wert mit esd aus den geom-Tabellen; xyz: nur rechnen
+        rows = {2: mol.S.geom_bond, 3: mol.S.geom_angle, 4: mol.S.geom_torsion}[len(idx)]
+        txt = match_geom(mol.S, rows, ats)
     if txt is not None:
         return dict(kind=kind, value=val, text=txt, esd=esd_parts(txt)[1] is not None, source="cif")
     dec = 3 if kind == "bond" else 1
@@ -1413,7 +1415,130 @@ def shade_colors(color, n):
     return out
 
 
-def shade_layers(it, n):
+STYLES = ("mercury", "flat", "ballstick", "depth")
+BALL_STYLES = ("ballstick", "depth")      # Kugel-Stab: Kugeln nach Element statt Ellipsoiden, Stäbe in Atomfarben
+DEPTH_A = 6.0                             # Tiefe (Å), über die der Stil „depth“ voll aufhellt
+DEPTH_MAX = 0.6                           # … bis 60 % zum Weiß
+# Phong-Beleuchtung (Grundanteil ka + diffus kd·(n·L) + Glanz ks·(n·H)^p), angepasst an eine IboView-Abbildung
+# des Nutzers (Fit an die Kohlenstoffkugel: Licht oben links 40° über der Bildebene, Grundanteil 0.31, diffus 0.48 bei
+# Grau 0.55; Glanzpunkt klein und rein weiß). „depth“: matt, weicher, kaum Glanz. Schichten = Höhenlinien der
+# Helligkeit (Vektor in PDF/SVG): Kugeln über contourpy, Stäbe als Zylinder je nach Lage zum Licht.
+SHADE = {
+    "ballstick": dict(el=40.0, ka=0.567, kd=0.874, ks=0.32, p=160, nd=30, nr=16, outline=True),
+    "depth": dict(el=45.0, ka=0.6, kd=0.62, ks=0.14, p=10, nd=16, nr=10, outline=False),
+}
+SPEC_LEVELS = tuple(np.linspace(0.04, 0.96, 12))           # weich auslaufender Glanzpunkt
+
+
+def _light3(style):
+    """Lichtrichtung L und Halbvektor H (3D, Bildschirm: x rechts, y oben, z zum Betrachter) für einen Stil."""
+    e = math.radians(SHADE[style]["el"])
+    L = np.array([LIGHT[0] * math.cos(e), LIGHT[1] * math.cos(e), math.sin(e)])
+    H = L + np.array([0.0, 0.0, 1.0])
+    return L, H / np.linalg.norm(H)
+
+
+_SPHERE_CACHE = {}
+
+
+def sphere_unit_layers(style):
+    """Schichten einer Kugel vom Radius 1: [(Polygon N×2, Art, Wert)], Art "d" = Helligkeit, "s" = Glanz.
+    Erste Schicht = ganze Scheibe; Regionen gleicher oder größerer Helligkeit als Höhenlinien (contourpy)."""
+    if style in _SPHERE_CACHE:
+        return _SPHERE_CACHE[style]
+    import contourpy
+    sp = SHADE[style]
+    L, H = _light3(style)
+    g = np.linspace(-1.25, 1.25, 241)
+    X, Y = np.meshgrid(g, g)
+    rr = np.hypot(X, Y)
+    s_ = np.where(rr > 1, 1 / np.maximum(rr, 1e-9), 1.0)       # außerhalb: Wert am Rand (für sauberes Abschneiden)
+    u, v = X * s_, Y * s_
+    w = np.sqrt(np.clip(1 - u ** 2 - v ** 2, 0, 1))
+    ndl = np.clip(u * L[0] + v * L[1] + w * L[2], 0, None)
+    ndh = np.clip(u * H[0] + v * H[1] + w * H[2], 0, None)
+    t = np.linspace(0, 2 * np.pi, 97)
+    out = [(np.column_stack([np.cos(t), np.sin(t)]), "d", sp["ka"] + sp["kd"] * 0.5 / sp["nd"])]
+
+    def regions(field, lev):
+        pts, offs = contourpy.contour_generator(X, Y, field, fill_type=contourpy.FillType.OuterOffset).filled(lev, 1e9)
+        res = []
+        for P, O in zip(pts, offs):
+            P = P[O[0]:O[1]]
+            n = np.hypot(P[:, 0], P[:, 1])
+            res.append(np.where((n > 1)[:, None], P / np.maximum(n, 1e-9)[:, None], P))   # auf die Scheibe
+        return res
+    for j in range(1, sp["nd"]):
+        for P in regions(ndl, j / sp["nd"]):
+            out.append((P, "d", sp["ka"] + sp["kd"] * (j + 0.5) / sp["nd"]))
+    for lev in SPEC_LEVELS:
+        val = sp["ks"] * (lev + (1 - lev) * 0.5)
+        for P in regions(ndh ** sp["p"], lev):
+            out.append((P, "s", val))
+    _SPHERE_CACHE[style] = out
+    return out
+
+
+def rod_layout(style, dx, dy):
+    """Stab als Zylinder (Achse in der Bildebene, Richtung dx, dy): je Schicht (Breitenanteil, Versatz in Stabbreiten
+    zur Lichtseite). Reihenfolge wie rod_levels(style); leere Schicht -> (0, 0)."""
+    sp = SHADE[style]
+    L, H = _light3(style)
+    n_ = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / n_, dx / n_
+    if nx * LIGHT[0] + ny * LIGHT[1] < 0:
+        nx, ny = -nx, -ny
+    u = np.linspace(-1, 1, 241)
+    w = np.sqrt(1 - u ** 2)
+    ndl = np.clip(u * (nx * L[0] + ny * L[1]) + w * L[2], 0, None)
+    ndh = np.clip(u * (nx * H[0] + ny * H[1]) + w * H[2], 0, None) ** sp["p"]
+    res = []
+    for kind, lev, _ in rod_levels(style):
+        m = (ndl >= lev) if kind == "d" else (ndh >= lev)
+        if not m.any():
+            res.append((0.0, 0.0))
+            continue
+        u1, u2 = u[m][0], u[m][-1]
+        res.append(((u2 - u1) / 2, (u1 + u2) / 4))
+    return res
+
+
+def rod_levels(style):
+    """Schichten eines Stabs: [(Art, Schwelle, Wert)] – gleiche Helligkeitsstufen wie die Kugeln, gröber."""
+    sp = SHADE[style]
+    out = [("d", j / sp["nr"], sp["ka"] + sp["kd"] * (j + 0.5) / sp["nr"]) for j in range(sp["nr"])]
+    out[0] = ("d", -1.0, out[0][2])                              # ganze Breite
+    return out + [("s", lev, sp["ks"] * (lev + (1 - lev) * 0.5)) for lev in SPEC_LEVELS]
+
+
+def shade_color(base, kind, val, style, fog=0.0):
+    """Farbe einer Schicht: Grundfarbe × Helligkeit, Glanz = Helligkeit am Glanzpunkt + Weißanteil; dann Tiefe."""
+    b = np.array(to_rgb(base))
+    if kind == "d":
+        c = b * val
+    else:
+        sp = SHADE[style]
+        L, H = _light3(style)
+        c = b * (sp["ka"] + sp["kd"] * float(np.dot(L, H))) + val
+    c = np.clip(c, 0, 1)
+    return tuple(np.clip(c + (1 - c) * fog, 0, 1))
+
+
+ROD_W = {"ballstick": 0.2, "depth": 0.36}           # Stabdicke (Å) wie in den Vorlagen
+BALL_R = {"ballstick": 0.45, "depth": 0.42}         # Kugelradius = Faktor × kovalenter Radius
+
+
+def ball_radius(el, style="ballstick"):
+    """Kugelradius im Kugel-Stab-Modell (Å): proportional zum kovalenten Radius, H nicht zu klein."""
+    return max(0.2, BALL_R.get(style, 0.45) * COV.get(el, 0.76))
+
+
+def fogged(color, fog):
+    c = np.array(to_rgb(color))
+    return tuple(np.clip(c + (1 - c) * fog, 0, 1))
+
+
+def shade_layers(it, n, shift=0.55, smin=0.25):
     """Polygone der Schattierungsschichten (äußere zuerst). Jede Schicht ist die verkleinerte Ellipse, zum Licht
     verschoben, aber immer ganz innerhalb des Umrisses (Abstand in der Metrik der Ellipse ≤ 1 − s)."""
     a, b = it["w"] / 2, it["h"] / 2
@@ -1422,8 +1547,8 @@ def shade_layers(it, n):
     v = -LIGHT[0] * math.sin(th) + LIGHT[1] * math.cos(th)
     nrm = math.sqrt((u / a) ** 2 + (v / b) ** 2) or 1.0
     verts = []
-    for s in np.linspace(1.0, 0.25, n):
-        d = (1 - s) * 0.55 / nrm
+    for s in np.linspace(1.0, smin, n):
+        d = (1 - s) * shift / nrm
         verts.append(_ellipse_verts(it["x"] + LIGHT[0] * d, it["y"] + LIGHT[1] * d, it["w"] * s, it["h"] * s,
                                     it["ang"]))
     return verts
@@ -1459,9 +1584,11 @@ def wire_color(color):
     return "#9a9a9a" if 0.299 * r + 0.587 * g + 0.114 * b > 0.85 else color
 
 
-def _half(xs, ys, half):
-    """Hälfte einer Bindung (0 = zum ersten Atom, 1 = zum zweiten)."""
-    xm, ym = (xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2
+def _half(xs, ys, half, overlap=0.0):
+    """Hälfte einer Bindung (0 = zum ersten Atom, 1 = zum zweiten); overlap (Anteil der Länge) über die Mitte hinaus,
+    damit zwischen zwei Stabhälften keine Naht sichtbar ist."""
+    f = 0.5 + overlap if half == 0 else 0.5 - overlap
+    xm, ym = xs[0] + f * (xs[1] - xs[0]), ys[0] + f * (ys[1] - ys[0])
     return ([xs[0], xm], [ys[0], ym]) if half == 0 else ([xm, xs[1]], [ym, ys[1]])
 
 
@@ -1496,7 +1623,14 @@ class XrayFigure:
         self.center = pts.mean(axis=0)
         self.rmax = float(np.max(np.linalg.norm(pts - self.center, axis=1))) + 1.0
         sc = cfg.get("scale", 1.0)
-        self.bond_w = float(opts.get("bond_w", 0.08))           # Bindungsdicke in Å (Mercury: Zylinder)
+        self.style = opts.get("style", "mercury")
+        self.ball = self.style in BALL_STYLES
+        # Bindungsdicke in Å (Mercury: Zylinder); Kugel-Stab: kräftige Stäbe
+        self.bond_w = ROD_W[self.style] if self.ball else float(opts.get("bond_w", 0.08))
+        self.bond_fac = {}                                       # Stablinie -> aktueller Breitenanteil
+        self.rod_info = {}                                       # Stablinie -> (Schicht, -1 = Umriss; Überlappung)
+        self.rod_lines = {}                                      # (Atom a, Atom b, Hälfte) -> Linien der Schichten
+        self.atom_rods = {}                                      # Kugel-Stab: Atom -> Linien seiner Stabhälften
         self.lw_edge = max(0.4, 0.6 * sc)
         self.atom_art, self.bond_art, self.sel_art, self.bond_lines = {}, [], [], {}
         self.auto_pos = {}
@@ -1559,11 +1693,18 @@ class XrayFigure:
         for it in scene["atoms"]:
             if it["k"] in self.wire:                       # Drahtmodell: kein Ellipsoid, kleiner Klickbereich
                 it.update(w=0.24, h=0.24, ang=0.0, iso=True, kind="wire", curves=[])
+            elif self.ball:                                # Kugel-Stab: Kugel nach Element, keine Hauptachsen
+                r = ball_radius(self.mol.atoms[it["k"]]["el"], self.style)
+                it.update(w=2 * r, h=2 * r, ang=0.0, iso=True, curves=[])
         scene["by_k"] = {it["k"]: it for it in scene["atoms"]}
         return scene
 
     def _bond_xy(self, a, b):
         A, B = self.scene["by_k"][a], self.scene["by_k"][b]
+        if self.ball and a not in self.wire and b not in self.wire:
+            # Kugel-Stab: Stab von Mitte zu Mitte, die Kugel verdeckt das Ende (jede Hälfte liegt direkt unter ihrem
+            # Atom, siehe _zorders) – sonst stehen die Ecken dicker Stäbe über den Kugelrand
+            return [A["x"], B["x"]], [A["y"], B["y"]]
         dx, dy = B["x"] - A["x"], B["y"] - A["y"]
         L = math.hypot(dx, dy)
         ra = 0.0 if A.get("kind") == "wire" else _radius_along(A, dx, dy)
@@ -1578,17 +1719,59 @@ class XrayFigure:
         if it.get("kind") == "wire":
             return []
         base = _ellipse_verts(it["x"], it["y"], it["w"], it["h"], it["ang"])
-        if self.opts.get("style", "mercury") == "flat":
+        if self.style == "flat":
             return [base, base]
+        if self.ball:
+            r = it["w"] / 2
+            c = np.array([it["x"], it["y"]])
+            return [c + r * P for P, _, _ in sphere_unit_layers(self.style)] + [base]
         n = 6 if it.get("kind") == "H" else 12
         return shade_layers(it, n) + [base]
 
+    def _fog(self, z):
+        """Tiefe (nur Stil „Kugel-Stab mit Tiefe“): vorn unverändert, je Å nach hinten heller, ab 6 Å hinter dem
+        vordersten Atom 55 % zum Weiß – kleine Moleküle bleiben so fast unverändert, große bekommen Tiefe."""
+        if self.style != "depth":
+            return 0.0
+        return DEPTH_MAX * min(1.0, max(0.0, (self._zmax - z) / DEPTH_A))
+
+    def _place_rod(self, a, b, half):
+        """Geometrie aller Schichten einer Stabhälfte nach der aktuellen Ansicht (Breite/Versatz je Lage zum Licht)."""
+        xs, ys = self._bond_xy(a, b)
+        lines = self.rod_lines.get((a, b, half))
+        if not lines:
+            return
+        lay = rod_layout(self.style, xs[1] - xs[0], ys[1] - ys[0]) if np.isfinite(xs).all() else None
+        inner = 0.95 if SHADE[self.style]["outline"] else 1.0
+        for ln in lines:
+            j, ov = self.rod_info[ln]
+            frac, off = (1.0, 0.0) if j < 0 else (lay[j] if lay else (0.0, 0.0))
+            if j >= 0:
+                frac, off = frac * inner, off * inner
+            self.bond_fac[ln] = frac
+            ln.set_data(*self._rod(*_half(xs, ys, half, ov), off * self.bond_w))
+            ln.set_linewidth(self.lw_bond * frac)
+            ln.set_visible(frac > 0)
+
+    def _rod(self, xs, ys, off):
+        """Stablinie um off (Å) senkrecht zur Bindung zur Lichtseite versetzt (Glanzstreifen oben links)."""
+        if not off or not np.isfinite(xs).all():
+            return xs, ys
+        dx, dy = xs[1] - xs[0], ys[1] - ys[0]
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        if nx * LIGHT[0] + ny * LIGHT[1] < 0:
+            nx, ny = -nx, -ny
+        return [x + nx * off for x in xs], [y + ny * off for y in ys]
+
     def _build(self):
         ax, colors = self.ax, self.opts.get("colors") or {}
-        mercury = self.opts.get("style", "mercury") != "flat"
+        mercury = self.style == "mercury"
+        zs = [it["z"] for it in self.scene["atoms"]] or [0.0]
+        self._zmax = max(zs)
         for it in self.scene["atoms"]:
             a = self.mol.atoms[it["k"]]
-            col = colors.get(a["el"]) or default_color(a["el"])
+            col = colors.get(a["el"]) or default_color(a["el"], self.style)
             verts = self._layers(it)
             if not verts:                                  # Drahtmodell: nur die Bindungen
                 p = PolyCollection([], facecolors="none", edgecolors="none")
@@ -1596,11 +1779,16 @@ class XrayFigure:
                 self.atom_art[it["k"]] = (p, [])
                 continue
             nfill = len(verts) - 1
-            faces = shade_colors(col, nfill) if mercury else [col]
-            edge = (0.1, 0.1, 0.1) if mercury else (0, 0, 0)
+            if self.ball:                                  # wie die Vorlagen: IboView mit feinem Umriss, Tiefe ohne
+                fog = self._fog(it["z"])
+                faces = [shade_color(col, kd, v, self.style, fog) for _, kd, v in sphere_unit_layers(self.style)]
+                edge, elw = "none", 0.0                    # wie die Vorlagen: Kugeln ohne Umriss
+            elif mercury:
+                faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
+            else:
+                faces, edge, elw = [col], (0, 0, 0), self.lw_edge
             p = PolyCollection(verts, facecolors=faces + ["none"], edgecolors=["none"] * nfill + [edge],
-                               linewidths=[0] * nfill + [self.lw_edge * (0.8 if mercury else 1.0)],
-                               antialiaseds=True, closed=True)
+                               linewidths=[0] * nfill + [elw], antialiaseds=True, closed=True)
             ax.add_collection(p)
             lines = []
             for xs, ys in it["curves"]:
@@ -1621,7 +1809,28 @@ class XrayFigure:
                     self.bond_art.append((a, b, ln, half))
                     self.bond_lines[n].append(ln)
                 continue
-            ln = Line2D(xs, ys, color="#262626" if mercury else "black", lw=self.lw_bond, solid_capstyle="butt")
+            if self.ball:                                  # Zylinder (Phong), je Hälfte in der Atomfarbe
+                self.bond_lines[n] = []
+                fog = self._fog(self.scene["bonds"][n][2])
+                outline = SHADE[self.style]["outline"]
+                levels = ([("o", None, None)] if outline else []) + rod_levels(self.style)
+                for half, k in ((0, a), (1, b)):
+                    el = self.mol.atoms[k]["el"]
+                    base = colors.get(el) or default_color(el, self.style)
+                    for j, (kind, _, val) in enumerate(levels):
+                        col_ = (0.15, 0.15, 0.15) if kind == "o" else shade_color(base, kind, val, self.style, fog)
+                        # nur innere Schichten überlappen in der Mitte: der Außenrand der oberen Hälfte endet genau
+                        # dort, sonst bliebe über den hellen Schichten der anderen Hälfte eine Naht
+                        ln = Line2D([np.nan, np.nan], [np.nan, np.nan], color=col_, lw=0, solid_capstyle="butt")
+                        ax.add_line(ln)
+                        self.bond_art.append((a, b, ln, half))
+                        self.rod_info[ln] = (j - (1 if outline else 0), 0.0 if j == 0 else 0.02)
+                        self.rod_lines.setdefault((a, b, half), []).append(ln)
+                        self.bond_lines[n].append(ln)
+                        self.atom_rods.setdefault(k, []).append(ln)
+                    self._place_rod(a, b, half)
+                continue
+            ln = Line2D(xs, ys, color="black", lw=self.lw_bond, solid_capstyle="butt")
             ax.add_line(ln)
             self.bond_art.append((a, b, ln, None))
             self.bond_lines[n] = [ln]
@@ -1637,13 +1846,20 @@ class XrayFigure:
     def _zorders(self):
         """Zeichenreihenfolge nach Tiefe (hinten zuerst); Bindungen zwischen ihren Atomen."""
         items = [(it["z"], "a", it["k"]) for it in self.scene["atoms"]]
-        items += [(z, "b", n) for n, (_, _, z) in enumerate(self.scene["bonds"])]
+        # Kugel-Stab: Stabhälften gehören zu ihrem Atom (direkt darunter gezeichnet), Drahtmodell-Bindungen wie sonst
+        items += [(z, "b", n) for n, (a, b, z) in enumerate(self.scene["bonds"])
+                  if not (self.ball and self.bond_lines.get(n) and self.bond_lines[n][0] in self.rod_info)]
         items.sort(key=lambda t: (t[0], t[1] == "a"))
         self.order = []
+        step = 40 / max(1, len(items))
         for rank, (_, kind, key) in enumerate(items):
-            zo = 2 + 40 * rank / max(1, len(items))
+            zo = 2 + step * rank
             if kind == "a":
                 p, lines = self.atom_art[key]
+                rods = self.atom_rods.get(key, ())
+                for j, ln in enumerate(rods):                # zwischen dem vorigen Element und dem Atom
+                    ln.set_zorder(zo - 0.5 * step + 0.4 * step * j / max(1, len(rods)))
+                    self.order.append(ln)
                 p.set_zorder(zo)
                 self.order.append(p)
                 for ln in lines:
@@ -1664,7 +1880,11 @@ class XrayFigure:
             p.set_verts(self._layers(it))
             for ln, (xs, ys) in zip(lines, it["curves"]):
                 ln.set_data(xs, ys)
+        for a, b, half in self.rod_lines:
+            self._place_rod(a, b, half)
         for a, b, ln, half in self.bond_art:
+            if ln in self.rod_info:
+                continue
             xs, ys = self._bond_xy(a, b)
             ln.set_data(*(_half(xs, ys, half) if half is not None else (xs, ys)))
         for k, e in self.sel_art:
@@ -1684,7 +1904,8 @@ class XrayFigure:
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
         for _, _, ln, half in self.bond_art:
-            ln.set_linewidth(self.lw_bond if half is None else self.lw_wire)
+            fac = self.bond_fac.get(ln)
+            ln.set_linewidth(self.lw_bond * fac if fac is not None else self.lw_bond if half is None else self.lw_wire)
 
     def artists(self):
         return self.order
@@ -1707,16 +1928,17 @@ class XrayFigure:
         lc = self.cfg["labels"]
         fs = o.get("label_size") or lc["font_size"]           # eigene Labelgröße des Tabs (0 = Textformat)
         todo = []
-        flat = o.get("style", "mercury") == "flat"
-        # Mercury: normale Schrift ohne Rand; flach (Olex2): fett mit weißem Rand
-        extra = dict(fontweight="bold", path_effects=[PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0),
-                                                                    foreground="white")]) if flat else {}
+        halo = [PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0), foreground="white")]
+        # Mercury: fett ohne Rand (wie Mercury-Abbildungen); flach (Olex2): fett mit weißem Rand; Kugel-Stab: normal
+        # mit weißem Rand (Labels über glänzenden Kugeln lesbar)
+        extra = {"flat": dict(fontweight="bold", path_effects=halo), "mercury": dict(fontweight="bold")}.get(
+            self.style, dict(path_effects=halo))
         for it in self.scene["atoms"]:
             a = self.mol.atoms[it["k"]]
             if not label_shown(a, o):
                 continue
             key = "lbl_" + a["key"]
-            ann = self.ax.annotate(self._label_text(a, flat), xy=(it["x"], it["y"]), xycoords="data",
+            ann = self.ax.annotate(self._label_text(a, self.style in ("flat", "mercury")), xy=(it["x"], it["y"]), xycoords="data",
                                    xytext=(0, 0), textcoords="offset points", ha="center", va="center",
                                    fontsize=fs, color=lc.get("color") or "black", zorder=60,
                                    annotation_clip=False, **extra)
@@ -2103,12 +2325,219 @@ def reset_display(tab, keep, entry_extra):
     tab.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
 
 
-class XrayTab(TABS.FigureTab):
+class MeasureAlign:
+    """Auswahl (bis 4 Atome), Messen und Ausrichten – gemeinsam für die Tabs X-Ray und DFT. Erwartet entry(),
+    molecule(e), view_of(e, mol), render(push) und self.sel (Atom-Schlüssel, Label|Operation bzw. a<Index>)."""
+    MEASURE_ESD = True          # X-Ray: Herkunft/esd des Werts melden; DFT: Werte aus der Geometrie, ohne esd
+
+    def measure_box(self, title, take=None):
+        """Gruppe mit Messwert der Auswahl, „Übernehmen“ (optional) und „Auswahl aufheben“ -> (Gruppe, Layout)."""
+        g = QGroupBox(title)
+        v = QVBoxLayout(g)
+        self.lbl_meas = QLabel(T("xr_select_hint"))
+        self.lbl_meas.setWordWrap(True)
+        self.lbl_meas.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        v.addWidget(self.lbl_meas)
+        row = QHBoxLayout()
+        self.btn_take = None
+        if take is not None:
+            self.btn_take = QPushButton(T("xr_take"))
+            self.btn_take.clicked.connect(take)
+            row.addWidget(self.btn_take)
+        b = QPushButton(T("xr_clear_sel"))
+        b.clicked.connect(self.clear_selection)
+        row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        return g, v
+
+    def align_box(self):
+        """Gruppe „Ausrichten“: Bindung in eine Richtung, Ebene von vorn, schrittweise drehen, wenden, ChemDraw-Vorlage."""
+        g = QGroupBox(T("xr_align"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        for txt, d in (("↓", "down"), ("↑", "up"), ("←", "left"), ("→", "right")):
+            b = QPushButton(txt)
+            b.setToolTip(T("xr_align_bond_tip"))
+            b.clicked.connect(lambda _=False, d=d: self.align_bond(d))
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(T("xr_align_bond"), row)
+        b = QPushButton(T("xr_align_plane"))
+        b.setToolTip(T("xr_align_plane_tip"))
+        b.clicked.connect(self.align_plane)
+        f.addRow(b)
+        row = QHBoxLayout()
+        self.cmb_step = QComboBox()
+        for v_ in (5, 15, 45, 90):
+            self.cmb_step.addItem(f"{v_}°", v_)
+        self.cmb_step.setCurrentIndex(1)
+        row.addWidget(self.cmb_step)
+        for txt, ax_, sg in (("x−", "x", -1), ("x+", "x", 1), ("y−", "y", -1), ("y+", "y", 1), ("z−", "z", -1),
+                             ("z+", "z", 1)):
+            b = QPushButton(txt)
+            b.setToolTip(T("xr_rot_tip"))
+            b.clicked.connect(lambda _=False, a=ax_, s_=sg: self.rotate_view(a, s_ * self.cmb_step.currentData()))
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(T("xr_rotate"), row)
+        b = QPushButton(T("xr_flip"))
+        b.setToolTip(T("xr_flip_tip"))
+        b.clicked.connect(lambda: self.rotate_view("y", 180))
+        f.addRow(b)
+        b = QPushButton(T("xr_template"))
+        b.setToolTip(T("xr_template_tip"))
+        b.clicked.connect(self.align_template)
+        f.addRow(b)
+        self.lbl_align = QLabel("")
+        self.lbl_align.setWordWrap(True)
+        self.lbl_align.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_align)
+        return g
+
+    def _take_enabled(self, on):
+        if getattr(self, "btn_take", None) is not None:
+            self.btn_take.setEnabled(on)
+
+    def toggle_atom(self, k):
+        """Klick: Atom zur Auswahl (max. 4), erneuter Klick entfernt es, Klick ins Leere hebt sie auf."""
+        if self.F is None:
+            return
+        if k is None:
+            self.sel = []
+        else:
+            key = self.F.mol.atoms[k]["key"]
+            if key in self.sel:
+                self.sel.remove(key)
+            else:
+                if len(self.sel) >= 4:
+                    self.sel = []
+                self.sel.append(key)
+        self.update_measure()
+        self.render(push=False)
+
+    def clear_selection(self):
+        self.sel = []
+        self.update_measure()
+        self.render(push=False)
+
+    def update_measure(self):
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        self._meas = None
+        if mol is None or not self.sel:
+            self.lbl_meas.setText(T("xr_select_hint"))
+            self.lbl_meas.setStyleSheet("")
+            self._take_enabled(False)
+            return
+        names = param_name(mol, self.sel)
+        m = measure(mol, self.sel) if len(self.sel) >= 2 else None
+        self._meas = m
+        self._take_enabled(m is not None)
+        if m is None:
+            self.lbl_meas.setText(names)
+            self.lbl_meas.setStyleSheet("")
+            return
+        unit = " Å" if m["kind"] == "bond" else "°"
+        txt = f"{T('xr_kind_' + m['kind'])}  {names} = {minus(m['text'])}{unit}"
+        warn = self.MEASURE_ESD and m["source"] == "calc"
+        if warn:
+            txt += "\n" + T("xr_no_esd_torsion" if m["kind"] == "torsion" else "xr_no_esd")
+        elif self.MEASURE_ESD and not m["esd"]:
+            txt += "\n" + T("xr_cif_no_esd")
+        self.lbl_meas.setText(txt)
+        self.lbl_meas.setStyleSheet(WARN_CSS if warn else "")
+
+    # -- Ausrichten -----------------------------------------------------------------------
+    def _set_view(self, R, msg="", warn=False):
+        e = self.entry()
+        if e is None:
+            return
+        e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
+        e["pan"] = [0.0, 0.0]
+        self.lbl_align.setText(msg)
+        self.lbl_align.setStyleSheet(WARN_CSS if warn else HINT_CSS)
+        self.render()
+
+    def current_view(self):
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        return (self.view_of(e, mol), mol) if mol is not None else (None, None)
+
+    def align_bond(self, direction):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        if len(self.sel) < 2:
+            self.lbl_align.setText(T("xr_align_need2"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        keys = self.sel[:2]
+        self.sel = []
+        self.update_measure()
+        self._set_view(align_bond(R, mol, keys, direction),
+                       T("xr_align_done_bond", bond=param_name(mol, keys, sep="→")))
+
+    def align_plane(self):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        if len(self.sel) < 3:
+            self.lbl_align.setText(T("xr_align_need3"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        keys = list(self.sel)
+        self.sel = []
+        self.update_measure()
+        self._set_view(align_plane(R, mol, keys), T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
+
+    def rotate_view(self, axis, deg):
+        R, mol = self.current_view()
+        if R is not None:
+            self._set_view(rot(axis, math.radians(deg)) @ R)
+
+    def template_path(self):
+        """CDXML der Verbindung des Projekts (auch neben SVG/PDF/PNG), sonst None."""
+        st = (self.main.compound or {}).get("structure")
+        if st:
+            p = Path(st)
+            p = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
+            if p.exists():
+                return p
+        return None
+
+    def align_template(self, path=None):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        p = path or self.template_path()
+        if p is None:
+            p, _ = QFileDialog.getOpenFileName(self, T("xr_template"), self.main.settings.value("last_img_dir", ""),
+                                               "ChemDraw (*.cdxml)")
+            if not p:
+                return
+        try:
+            Rn, info = align_to_template(mol, p)
+        except Exception as ex:
+            self.lbl_align.setText(T("xr_template_fail", err=str(ex)))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        msg = T("xr_template_done", n=info["n"], nt=info["n_template"], rmsd=f"{info['rmsd']:.2f}", f=Path(p).name)
+        warn = info["ambiguous"] or info["n"] < info["n_template"] or info["rmsd"] > 0.6
+        if info["ambiguous"]:
+            msg += "\n" + T("xr_template_amb")
+        e = self.entry()
+        if e is not None:
+            e["layout"] = {}                              # Labels für die neue Ansicht neu setzen
+        self._set_view(Rn, msg, warn)
+
+
+class XrayTab(MeasureAlign, TABS.FigureTab):
     STATE_KEY = "xray"
     TEXT_OPTS = ("fonts", "labels")              # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
-                         h_labels=False, colors={}, bond_w=0.08, style="mercury", x_auto=True, x_min=0.0,
+                         h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False)
 
     def __init__(self, main, state):
@@ -2150,7 +2579,7 @@ class XrayTab(TABS.FigureTab):
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
         self.cmb_style = QComboBox()
-        for key in ("mercury", "flat"):
+        for key in STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
         self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
         f.addRow(T("xr_style"), self.cmb_style)
@@ -2224,47 +2653,7 @@ class XrayTab(TABS.FigureTab):
         f.addRow(hint)
         self.lv.addWidget(g)
 
-        g = QGroupBox(T("xr_align"))
-        f = make_form(g)
-        row = QHBoxLayout()
-        for txt, d in (("↓", "down"), ("↑", "up"), ("←", "left"), ("→", "right")):
-            b = QPushButton(txt)
-            b.setToolTip(T("xr_align_bond_tip"))
-            b.clicked.connect(lambda _=False, d=d: self.align_bond(d))
-            row.addWidget(b)
-        row.addStretch(1)
-        f.addRow(T("xr_align_bond"), row)
-        b = QPushButton(T("xr_align_plane"))
-        b.setToolTip(T("xr_align_plane_tip"))
-        b.clicked.connect(self.align_plane)
-        f.addRow(b)
-        row = QHBoxLayout()
-        self.cmb_step = QComboBox()
-        for v_ in (5, 15, 45, 90):
-            self.cmb_step.addItem(f"{v_}°", v_)
-        self.cmb_step.setCurrentIndex(1)
-        row.addWidget(self.cmb_step)
-        for txt, ax_, sg in (("x−", "x", -1), ("x+", "x", 1), ("y−", "y", -1), ("y+", "y", 1), ("z−", "z", -1),
-                             ("z+", "z", 1)):
-            b = QPushButton(txt)
-            b.setToolTip(T("xr_rot_tip"))
-            b.clicked.connect(lambda _=False, a=ax_, s_=sg: self.rotate_view(a, s_ * self.cmb_step.currentData()))
-            row.addWidget(b)
-        row.addStretch(1)
-        f.addRow(T("xr_rotate"), row)
-        b = QPushButton(T("xr_flip"))
-        b.setToolTip(T("xr_flip_tip"))
-        b.clicked.connect(lambda: self.rotate_view("y", 180))
-        f.addRow(b)
-        b = QPushButton(T("xr_template"))
-        b.setToolTip(T("xr_template_tip"))
-        b.clicked.connect(self.align_template)
-        f.addRow(b)
-        self.lbl_align = QLabel("")
-        self.lbl_align.setWordWrap(True)
-        self.lbl_align.setStyleSheet(HINT_CSS)
-        f.addRow(self.lbl_align)
-        self.lv.addWidget(g)
+        self.lv.addWidget(self.align_box())
 
         g = QGroupBox(T("xr_colors"))
         v = QVBoxLayout(g)
@@ -2275,20 +2664,7 @@ class XrayTab(TABS.FigureTab):
         v.addWidget(b)
         self.lv.addWidget(g)
 
-        g = QGroupBox(T("xr_select"))
-        v = QVBoxLayout(g)
-        self.lbl_meas = QLabel(T("xr_select_hint"))
-        self.lbl_meas.setWordWrap(True)
-        v.addWidget(self.lbl_meas)
-        row = QHBoxLayout()
-        self.btn_take = QPushButton(T("xr_take"))
-        self.btn_take.clicked.connect(self.take_param)
-        b = QPushButton(T("xr_clear_sel"))
-        b.clicked.connect(self.clear_selection)
-        row.addWidget(self.btn_take)
-        row.addWidget(b)
-        row.addStretch(1)
-        v.addLayout(row)
+        g, v = self.measure_box(T("xr_select"), take=self.take_param)
         row = QHBoxLayout()
         self.btn_wire = QPushButton(T("xr_wire"))
         self.btn_wire.setToolTip(T("xr_wire_tip"))
@@ -2595,7 +2971,8 @@ class XrayTab(TABS.FigureTab):
             h = QHBoxLayout(box)
             h.setContentsMargins(0, 0, 0, 0)
             h.addWidget(QLabel(el))
-            h.addWidget(TABS.color_button(cols.get(el) or default_color(el), lambda c, el=el: self.set_color(el, c)))
+            h.addWidget(TABS.color_button(cols.get(el) or default_color(el, self.st.get("style")),
+                                          lambda c, el=el: self.set_color(el, c)))
             self.color_grid.addWidget(box, n // 4, n % 4)
 
     def set_color(self, el, c):
@@ -2949,52 +3326,7 @@ class XrayTab(TABS.FigureTab):
         self.main.show_hover(f"{atom_name(a)}  ({a['el']})" + (f"   {a['opkey']}" if a.get("opkey") else ""))
 
     def atom_clicked(self, k):
-        """Klick: Atom zur Auswahl (max. 4), erneuter Klick entfernt es, Klick ins Leere hebt sie auf."""
-        if self.F is None:
-            return
-        if k is None:
-            self.sel = []
-        else:
-            key = self.F.mol.atoms[k]["key"]
-            if key in self.sel:
-                self.sel.remove(key)
-            else:
-                if len(self.sel) >= 4:
-                    self.sel = []
-                self.sel.append(key)
-        self.update_measure()
-        self.render(push=False)
-
-    def clear_selection(self):
-        self.sel = []
-        self.update_measure()
-        self.render(push=False)
-
-    def update_measure(self):
-        e = self.entry()
-        mol = self.molecule(e) if e else None
-        self._meas = None
-        if mol is None or not self.sel:
-            self.lbl_meas.setText(T("xr_select_hint"))
-            self.lbl_meas.setStyleSheet("")
-            self.btn_take.setEnabled(False)
-            return
-        names = param_name(mol, self.sel)
-        m = measure(mol, self.sel) if len(self.sel) >= 2 else None
-        self._meas = m
-        self.btn_take.setEnabled(m is not None)
-        if m is None:
-            self.lbl_meas.setText(names)
-            self.lbl_meas.setStyleSheet("")
-            return
-        unit = " Å" if m["kind"] == "bond" else "°"
-        txt = f"{T('xr_kind_' + m['kind'])}  {names} = {minus(m['text'])}{unit}"
-        if m["source"] == "calc":
-            txt += "\n" + T("xr_no_esd_torsion" if m["kind"] == "torsion" else "xr_no_esd")
-        elif not m["esd"]:
-            txt += "\n" + T("xr_cif_no_esd")
-        self.lbl_meas.setText(txt)
-        self.lbl_meas.setStyleSheet(WARN_CSS if m["source"] == "calc" else "")
+        self.toggle_atom(k)
 
     def take_param(self):
         e = self.entry()
@@ -3036,89 +3368,6 @@ class XrayTab(TABS.FigureTab):
             if key in lay or pos != self.F.auto_pos.get(key):
                 lay[key] = pos
         self.main.push_undo()
-
-    # -- Ausrichten -----------------------------------------------------------------------
-    def _set_view(self, R, msg="", warn=False):
-        e = self.entry()
-        if e is None:
-            return
-        e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
-        e["pan"] = [0.0, 0.0]
-        self.lbl_align.setText(msg)
-        self.lbl_align.setStyleSheet(WARN_CSS if warn else HINT_CSS)
-        self.render()
-
-    def current_view(self):
-        e = self.entry()
-        mol = self.molecule(e) if e else None
-        return (self.view_of(e, mol), mol) if mol is not None else (None, None)
-
-    def align_bond(self, direction):
-        R, mol = self.current_view()
-        if R is None:
-            return
-        if len(self.sel) < 2:
-            self.lbl_align.setText(T("xr_align_need2"))
-            self.lbl_align.setStyleSheet(WARN_CSS)
-            return
-        keys = self.sel[:2]
-        self.sel = []
-        self.update_measure()
-        self._set_view(align_bond(R, mol, keys, direction),
-                       T("xr_align_done_bond", bond=param_name(mol, keys, sep="→")))
-
-    def align_plane(self):
-        R, mol = self.current_view()
-        if R is None:
-            return
-        if len(self.sel) < 3:
-            self.lbl_align.setText(T("xr_align_need3"))
-            self.lbl_align.setStyleSheet(WARN_CSS)
-            return
-        keys = list(self.sel)
-        self.sel = []
-        self.update_measure()
-        self._set_view(align_plane(R, mol, keys), T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
-
-    def rotate_view(self, axis, deg):
-        R, mol = self.current_view()
-        if R is not None:
-            self._set_view(rot(axis, math.radians(deg)) @ R)
-
-    def template_path(self):
-        """CDXML der Verbindung des Projekts (auch neben SVG/PDF/PNG), sonst None."""
-        st = (self.main.compound or {}).get("structure")
-        if st:
-            p = Path(st)
-            p = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
-            if p.exists():
-                return p
-        return None
-
-    def align_template(self, path=None):
-        R, mol = self.current_view()
-        if R is None:
-            return
-        p = path or self.template_path()
-        if p is None:
-            p, _ = QFileDialog.getOpenFileName(self, T("xr_template"), self.main.settings.value("last_img_dir", ""),
-                                               "ChemDraw (*.cdxml)")
-            if not p:
-                return
-        try:
-            Rn, info = align_to_template(mol, p)
-        except Exception as ex:
-            self.lbl_align.setText(T("xr_template_fail", err=str(ex)))
-            self.lbl_align.setStyleSheet(WARN_CSS)
-            return
-        msg = T("xr_template_done", n=info["n"], nt=info["n_template"], rmsd=f"{info['rmsd']:.2f}", f=Path(p).name)
-        warn = info["ambiguous"] or info["n"] < info["n_template"] or info["rmsd"] > 0.6
-        if info["ambiguous"]:
-            msg += "\n" + T("xr_template_amb")
-        e = self.entry()
-        if e is not None:
-            e["layout"] = {}                              # Labels für die neue Ansicht neu setzen
-        self._set_view(Rn, msg, warn)
 
     def reset_view(self):
         e = self.entry()

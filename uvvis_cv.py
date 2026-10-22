@@ -1265,7 +1265,7 @@ class CVTab(TABS.FigureTab):
         ver = QCoreApplication.applicationVersion()
         rates = sorted({round(r["rate"], 1) for r in self.results if r["rate"]})
         ref_txt, ref_lab = self._ref_sentence()
-        m = [f"The CVs were evaluated with Spectravolt{' ' + ver if ver else ''}.", ref_txt,
+        m = [f"The CVs were evaluated with Elucida{' ' + ver if ver else ''}.", ref_txt,
              "Peak potentials (Epa, Epc) were obtained by a parabolic fit to the current extremum (±3 data points) "
              f"of cycle {st['cycle']}; E1/2 = (Epa + Epc)/2 and ΔEp = Epa − Epc."]
         if st["baseline"]:

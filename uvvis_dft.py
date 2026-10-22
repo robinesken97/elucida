@@ -862,7 +862,7 @@ PICK_COLOR = XRAY.SEL_COLOR
 OLD_COLOR = "#9a9a9a"
 
 
-class DFTTab(TABS.FigureTab):
+class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     STATE_KEY = "dft"
     TEXT_OPTS = ("fonts", "labels")               # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
@@ -875,9 +875,12 @@ class DFTTab(TABS.FigureTab):
     _sync_common = XRAY.XrayTab._sync_common
     collect_common = XRAY.XrayTab.collect_common
 
+    MEASURE_ESD = False                   # Werte aus der berechneten Geometrie (keine esd wie in einer CIF)
+
     def __init__(self, main, state):
         self.numbering = False            # Klick-Modus „Nummerieren“ (nicht im Undo)
         self.picks = []                   # angeklickte Dateiindizes in Klickreihenfolge
+        self.sel = []                     # Auswahl zum Messen/Ausrichten (Atom-Schlüssel a<Index>), nicht im Undo
         super().__init__(main, state)
 
     # -- Bedienelemente -------------------------------------------------------------------
@@ -999,7 +1002,7 @@ class DFTTab(TABS.FigureTab):
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
         self.cmb_style = QComboBox()
-        for key in ("mercury", "flat"):
+        for key in XRAY.STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
         f.addRow(T("xr_style"), self.cmb_style)
         self.cb_h = QCheckBox(T("xr_show_h"))
@@ -1033,6 +1036,9 @@ class DFTTab(TABS.FigureTab):
         hint.setStyleSheet(HINT_CSS)
         f.addRow(hint)
         self.lv.addWidget(g)
+        g, _ = self.measure_box(T("dft_measure"))           # Messen und Ausrichten wie im Tab X-Ray
+        self.lv.addWidget(g)
+        self.lv.addWidget(self.align_box())
 
         for w_ in (self.sp_rad, self.sp_bond, self.sp_lab):
             w_.valueChanged.connect(self.changed)
@@ -1143,6 +1149,8 @@ class DFTTab(TABS.FigureTab):
         if rows and rows[0].row() < len(es) and es[rows[0].row()]["uid"] != self.st.get("current"):
             self.st["current"] = es[rows[0].row()]["uid"]
             self.stop_numbering()
+            self.sel = []
+            self.update_measure()
             self.sync_widgets()
             self.render()
 
@@ -1257,7 +1265,10 @@ class DFTTab(TABS.FigureTab):
         cfg = self.base_cfg()
         core.setup_fonts(TABS.plt, cfg)
         lay = e.setdefault("layout", {}).setdefault(self.size_key(), {})
-        sel = list(self.picks) if interactive and self.numbering else []
+        if interactive and self.numbering:
+            sel = list(self.picks)
+        else:
+            sel = [i for i in (mol.find_key(k) for k in self.sel) if i is not None] if interactive else []
         F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), self.opts(e, interactive), lay, fig, selection=sel,
                             zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0))
         if interactive and self.numbering:
@@ -1368,8 +1379,12 @@ class DFTTab(TABS.FigureTab):
         self.main.show_hover(txt)
 
     def atom_clicked(self, k):
-        """Im Modus „Nummerieren“: Atom erhält die nächste Nummer; erneuter Klick nimmt es wieder heraus."""
-        if not self.numbering or self.F is None or k is None:
+        """Im Modus „Nummerieren“: Atom erhält die nächste Nummer; erneuter Klick nimmt es wieder heraus.
+        Sonst: Auswahl zum Messen/Ausrichten wie im Tab X-Ray."""
+        if not self.numbering:
+            self.toggle_atom(k)
+            return
+        if self.F is None or k is None:
             return
         if k in self.picks:
             self.picks.remove(k)
@@ -1439,6 +1454,9 @@ class DFTTab(TABS.FigureTab):
     def set_numbering(self, on):
         self.numbering = bool(on) and self.entry() is not None
         self.picks = []
+        if self.numbering and self.sel:                       # Klicks nummerieren jetzt, Messauswahl weg
+            self.sel = []
+            self.update_measure()
         if self.btn_num.isChecked() != self.numbering:
             self.btn_num.blockSignals(True)
             self.btn_num.setChecked(self.numbering)

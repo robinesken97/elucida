@@ -81,7 +81,7 @@ TEXTS = {
     "download_cancelled": ("Download abgebrochen", "download cancelled"),
 
     # ---- GUI -------------------------------------------------------------
-    "app_title": ("Spectravolt", "Spectravolt"),
+    "app_title": ("Elucida", "Elucida"),
     "menu_file": ("&Datei", "&File"),
     "menu_lang": ("&Sprache", "&Language"),
     "menu_help": ("&Hilfe", "&Help"),
@@ -119,7 +119,7 @@ TEXTS = {
     "save_changes_q": ("Das Projekt enthält ungespeicherte Änderungen. Speichern?",
                        "The project has unsaved changes. Save?"),
     "flt_project": ("Projektordner (*)", "Project folder (*)"),
-    "no_project": ("Kein Spectravolt-Projekt: {p}", "Not a Spectravolt project: {p}"),
+    "no_project": ("Kein Elucida-Projekt: {p}", "Not an Elucida project: {p}"),
     "missing_file": ("Datei fehlt: {p}", "File missing: {p}"),
     "project_dir_not_empty": ("Der Ordner {p} ist nicht leer und kein Projekt – bitte einen neuen Namen wählen.",
                               "Folder {p} is not empty and not a project – please choose a new name."),
@@ -237,9 +237,9 @@ TEXTS = {
     "err_title": ("Fehler", "Error"),
     "exported_to": ("Exportiert nach:\n{p}", "Exported to:\n{p}"),
     "mw_formula": ("{f}, M = {mw:.2f} g/mol", "{f}, M = {mw:.2f} g/mol"),
-    "about": ("Spectravolt {v} (früher UVVisTool)\nVon der Synthese zur SI: Auswertung und publikationsfertige Abbildungen "
+    "about": ("Elucida {v} (früher Spectravolt)\nVon der Synthese zur SI: Auswertung und publikationsfertige Abbildungen "
               "für UV-Vis, NMR, IR, HRMS, Fluoreszenz, CV, SEC, EPR, Röntgenstruktur und DFT – als SI-Abschnitt in Word.",
-              "Spectravolt {v} (formerly UVVisTool)\nFrom synthesis to SI: evaluation and publication-ready figures for "
+              "Elucida {v} (formerly Spectravolt)\nFrom synthesis to SI: evaluation and publication-ready figures for "
               "UV-Vis, NMR, IR, HRMS, fluorescence, CV, SEC, EPR, X-ray and DFT – exported as an SI section in Word."),
     "load_first": ("Bitte zuerst eine CSV öffnen.", "Please open a CSV first."),
     "tab_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
@@ -1093,6 +1093,7 @@ TEXTS = {
     "xr_colors": ("Atomfarben", "Atom colours"),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
     "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
+    "dft_measure": ("Messen (Abstand, Winkel, Diederwinkel)", "Measure (distance, angle, dihedral)"),
     "xr_select_hint": ("Atome in der Abbildung anklicken.", "Click atoms in the figure."),
     "xr_take": ("In Liste übernehmen", "Add to list"),
     "xr_clear_sel": ("Auswahl aufheben", "Clear selection"),
@@ -1122,6 +1123,8 @@ TEXTS = {
     "xr_style": ("Stil", "Style"),
     "xr_style_mercury": ("Mercury (schattiert)", "Mercury (shaded)"),
     "xr_style_flat": ("Olex2 (flach, fette Labels)", "Olex2 (flat, bold labels)"),
+    "xr_style_ballstick": ("Kugel-Stab, glänzend (wie IboView)", "Ball and stick, glossy (like IboView)"),
+    "xr_style_depth": ("Kugel-Stab mit Tiefe (hinten heller)", "Ball and stick with depth (back lighter)"),
     "xr_atoms": ("Atome", "Atoms"),
     "xr_atom": ("Atom", "Atom"),
     "xr_atom_shown": ("zeigen", "show"),
@@ -1527,10 +1530,10 @@ TEXTS = {
                            "Changes the display only."),
     "dft_radius": ("Atomradius", "Atom radius"),
     "dft_hover_file": ("(in der Datei: {lab})", "(in the file: {lab})"),
-    "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Doppelklick = Label an/aus, "
-                       "Labels lassen sich verschieben.",
-                       "Drag = rotate, right button = pan, wheel = zoom, double-click = label on/off; labels can be "
-                       "dragged."),
+    "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom zum Messen/Ausrichten "
+                       "wählen (beim Nummerieren: nummerieren), Doppelklick = Label an/aus, Labels lassen sich verschieben.",
+                       "Drag = rotate, right button = pan, wheel = zoom, click = select atom to measure/align (while "
+                       "numbering: number it), double-click = label on/off; labels can be dragged."),
 }
 
 

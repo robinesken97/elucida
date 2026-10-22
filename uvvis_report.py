@@ -48,7 +48,7 @@ BOX = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
 TXT = {
     "summary": ("Übersicht", "Summary"),
     "spectra": ("Spektren", "Spectra"),
-    "title": ("Spectravolt – ε-Auswertung: {s}", "Spectravolt – ε analysis: {s}"),
+    "title": ("Elucida – ε-Auswertung: {s}", "Elucida – ε analysis: {s}"),
     "params": ("Parameter", "Parameters"),
     "version": ("Programmversion", "Program version"),
     "date": ("Erstellt", "Created"),
@@ -318,7 +318,7 @@ def _band_sheet(bs, r, cfg, spectra, unit, sym, coef_unit, summary, r_d, r_fc):
         bs[f"D{row}"].number_format = "0.00000"
         bs[f"E{row}"] = f'=IF(AND(ISNUMBER(C{row}),C{row}<=$K$7),1,0)'
         bs[f"E{row}"].fill = KEY_FILL
-        bs[f"E{row}"].comment = Comment(t("edit_hint"), "Spectravolt")
+        bs[f"E{row}"].comment = Comment(t("edit_hint"), "Elucida")
         _set(bs, f"F{row}", 1 if u else 0, BLUE, "0")
         bs[f"G{row}"] = f'=IF(E{row}=1,D{row}-($K$12*B{row}+$K$13),"")'
         bs[f"G{row}"].number_format = "0.00000"

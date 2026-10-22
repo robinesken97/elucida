@@ -2,6 +2,28 @@
 
 # Changelog
 
+## 2.0.0 – 2026-10-22
+
+### New
+- **DFT tab: measure and align** like the X-Ray tab – distance, angle and dihedral by clicking 2/3/4 atoms (values
+  from the geometry), bond direction, plane face-on, step rotation, flip and ChemDraw template. Both tabs share the
+  same code, so they behave identically.
+- **New structure styles** in the X-Ray and DFT tabs (preview, PDF/SVG/PNG, Word): **ball and stick, glossy** (like
+  IboView: shiny spheres with shadow rim and highlight, thin rods coloured by atom with a highlight streak) and **ball and
+  stick with depth** (matte spheres, thick rods, atoms further back lighter).
+
+### Changed
+- **Mercury style** now looks like Mercury figures: black bonds and bold labels; default bond thickness 0.12 Å
+  (existing projects keep their setting). Element colours unchanged.
+- **New name: Elucida** (formerly Spectravolt). The program has grown from UV-Vis and electrochemistry into a full
+  characterization suite (synthesis, NMR, IR, HRMS, UV-Vis, fluorescence, CV, SEC, EPR, X-ray, DFT). Settings, recent
+  projects and the data folder (e.g. the background-removal model) are taken over automatically on the first start;
+  projects open as before. The repository is now `robinesken97/elucida`; old links and the update check of older
+  versions are redirected by GitHub.
+- New icon: the visible spectrum stays, a benzene ring replaces the lightning bolt.
+- Downloads are now called `Elucida-<system>.zip` (Windows/macOS), `.AppImage` and `.tar.gz` (Linux). On macOS the app
+  is `Elucida.app`; the old `Spectravolt.app` can be deleted after the first start.
+
 ## 1.25.1 – 2026-10-22
 
 ### New

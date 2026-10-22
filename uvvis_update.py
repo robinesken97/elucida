@@ -12,7 +12,7 @@ import re
 import sys
 import urllib.request
 
-REPO = "robinesken97/spectravolt"   # bis 1.15 uvvis-tool (GitHub leitet um)
+REPO = "robinesken97/elucida"   # bis 1.25 spectravolt, bis 1.15 uvvis-tool (GitHub leitet um)
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_URL = f"https://github.com/{REPO}/releases/latest"
 
@@ -51,6 +51,6 @@ def parse_release(data):
 
 def fetch_latest(current, timeout=8.0):
     req = urllib.request.Request(API_URL, headers={"Accept": "application/vnd.github+json",
-                                                   "User-Agent": f"Spectravolt/{current}"})
+                                                   "User-Agent": f"Elucida/{current}"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return parse_release(json.loads(r.read().decode("utf-8")))

@@ -1602,7 +1602,7 @@ class EPRTab(TABS.FigureTab):
             B, I = self.processed(e, cache, hide=False)
             m = self.spectrum(e)["meta"]
             dark = next((x for x in st["entries"] if x["uid"] == e.get("dark")), None)
-            head = [f"% {e['label']} – exported by Spectravolt (processed spectrum for EasySpin: load(...))",
+            head = [f"% {e['label']} – exported by Elucida (processed spectrum for EasySpin: load(...))",
                     f"% source: {Path(e['file']).name}" + (f" [{e.get('slice', 0) + 1}]" if e.get("slice") else ""),
                     f"% mwFreq [GHz]: {m.get('mw_GHz')}; T [K]: {m.get('T_K')}; ModAmp [mT]: {m.get('mod_mT')}; "
                     f"Power [mW]: {m.get('power_mW')}",

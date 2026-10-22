@@ -1,7 +1,7 @@
 """
 Vendored from parseuv 1.0.4 (BSD-3-Clause, (c) 2026 Ricardo J. Fernández-Terán), see LICENSE.
 Changes: pandas/olefile imported lazily; no GUI dependencies; Cary Eclipse fluorescence files
-(.FBSW/.FDSW, header "Agilent UV-VIS-NIR", intensities > 100) accepted (Spectravolt).
+(.FBSW/.FDSW, header "Agilent UV-VIS-NIR", intensities > 100) accepted (Elucida).
 
 Binary parser for Varian / Agilent Cary 50 (.DSW, .BSW) and Shimadzu UV-Vis-NIR (.SPC) files.
 """

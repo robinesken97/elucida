@@ -15,9 +15,9 @@ import re
 import traceback
 from pathlib import Path
 
-APP_NAME = "Spectravolt"
-OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.25.1"
+APP_NAME = "Elucida"
+OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
+APP_VERSION = "2.0.0"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -3769,7 +3769,7 @@ def selftest(outdir, with_isnet=False):
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")
 
-        # Umbenennung UVVisTool -> Spectravolt: alte Einstellungen und Datenordner einmalig übernehmen
+        # Umbenennungen UVVisTool -> Spectravolt (1.16) -> Elucida (2.0): Einstellungen/Datenordner einmalig übernehmen
         old_s = QSettings(str(out / "old_settings.ini"), QSettings.IniFormat)
         old_s.setValue("lang", "en")
         old_s.setValue("recent", [str(out / "p1"), str(out / "p2")])
@@ -3783,8 +3783,14 @@ def selftest(outdir, with_isnet=False):
         (base_ / "UVVisTool" / "models").mkdir(parents=True)
         (base_ / "UVVisTool" / "models" / "m.onnx").write_bytes(b"x")
         d_ = IMG.app_data_dir(base_)
-        assert d_.name == "Spectravolt" and (d_ / "models" / "m.onnx").exists() and not (base_ / "UVVisTool").exists()
-        assert APP_NAME == "Spectravolt" and UPD.REPO.endswith("/spectravolt")
+        assert d_.name == "Elucida" and (d_ / "models" / "m.onnx").exists() and not (base_ / "UVVisTool").exists()
+        shutil.rmtree(base_, ignore_errors=True)                 # Spectravolt hat Vorrang vor UVVisTool
+        for n_, f_ in (("Spectravolt", "neu.onnx"), ("UVVisTool", "alt.onnx")):
+            (base_ / n_ / "models").mkdir(parents=True)
+            (base_ / n_ / "models" / f_).write_bytes(b"x")
+        d_ = IMG.app_data_dir(base_)
+        assert (d_ / "models" / "neu.onnx").exists() and not (base_ / "Spectravolt").exists(), list(d_.rglob("*"))
+        assert APP_NAME == "Elucida" and OLD_APP_NAMES[0] == "Spectravolt" and UPD.REPO.endswith("/elucida")
         report.append("rename (settings + data folder migration): OK")
 
         # Verbindung auf Projektebene + Tab IR + MS (künstliche OPUS-, PDF- und Word-Dateien)
@@ -4084,7 +4090,7 @@ def selftest(outdir, with_isnet=False):
         assert w.xray_state["style"] == "mercury"
         pc_ = t_x.F.atom_art[t_x.F.mol.find_key("C1")][0]
         assert len(pc_.get_paths()) == 13, len(pc_.get_paths())                 # 12 Schichten + Umriss
-        assert "lbl_C1" in t_x.F.ann_items and t_x.F.ann_items["lbl_C1"].get_fontweight() == "normal"
+        assert "lbl_C1" in t_x.F.ann_items and t_x.F.ann_items["lbl_C1"].get_fontweight() == "bold"   # wie Mercury-Bilder
         w.xray_state["label_pt"] = 12.5                                     # Labelgröße je Tab
         t_x.render(push=False)
         assert t_x.F.ann_items["lbl_C1"].get_fontsize() == 12.5
@@ -4204,10 +4210,34 @@ def selftest(outdir, with_isnet=False):
         t_x.reset_display()
         d_x = XRAY.XrayTab.DEFAULT_STATE
         assert all(w.xray_state[k_] == d_x[k_] for k_ in ("bond_w", "prob", "style", "show_h", "disorder"))
-        assert w.xray_state["label_pt"] == 0.0 and abs(t_x.sp_bond.value() - 0.08) < 1e-9 and t_x.sp_prob.value() == 50
+        assert w.xray_state["label_pt"] == 0.0 and abs(t_x.sp_bond.value() - 0.12) < 1e-9 and t_x.sp_prob.value() == 50
         assert not e_x["hidden_atoms"] and not e_x["label_on"] and not e_x["wire"] and e_x["zoom"] == 1.0
         assert len(w.xray_state["entries"]) == n_ent and e_x["name"] == "umbenannt" and e_x["params"] == params_
         assert t_x.F is not None
+        # Stile: Mercury (C weiß, schwarze Bindungen, fette Labels), Olex2, Kugel-Stab glänzend, Kugel-Stab mit Tiefe
+        for sty_ in XRAY.STYLES:
+            w.xray_state["style"] = sty_
+            t_x.render()
+            F_s = t_x.F
+            assert F_s.style == sty_
+            c_it = next(i_ for i_ in F_s.scene["atoms"] if i_["el"] == "C")
+            if sty_ in XRAY.BALL_STYLES:
+                assert abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rod_info) > 10 and max(F_s.bond_fac.values()) == 1.0
+                fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()                         # Phong: dunkel … Glanz
+                assert len(fc_) > 10 and sum(fc_[0][:3]) < sum(fc_[len(fc_) // 2][:3])    # Rand dunkler als Mitte
+                if sty_ == "ballstick":
+                    assert min(max(f_[:3]) for f_ in fc_[-3:-1]) > 0.95, fc_[-3:]          # Glanzpunkt fast weiß
+            if sty_ == "mercury":
+                assert XRAY.default_color("C", "mercury") == XRAY.OLEX2_COLORS["C"]               # C grau wie bisher
+                assert all(a_.get_fontweight() == "bold" for a_ in F_s.ann_items.values())
+                assert all(ln_.get_color() == "black" for _, _, ln_, h_ in F_s.bond_art if h_ is None)
+            if sty_ == "depth":
+                assert F_s._fog(F_s._zmax) == 0.0 and abs(F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) - XRAY.DEPTH_MAX) < 1e-9
+            f_s = t_x.export_to(out / f"xray_style_{sty_}")
+            assert all(f_.exists() and f_.stat().st_size > 500 for f_ in f_s if f_.suffix in (".pdf", ".svg", ".png"))
+        w.xray_state["style"] = "mercury"
+        t_x.render()
         report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
                       f"({npath_} pdf paths)")
         w.xray_state.update(entries=[], current=None, show_h=True, hide_solv=False, label_mode="all")
@@ -4347,6 +4377,34 @@ def selftest(outdir, with_isnet=False):
         for frag_ in ("Point group", "Courier New", 'w:cols w:num="2"', "Max. gradient", "otest", "Gaussian 16",
                       "quasi-RRHO", "<w:tab/>"):
             assert frag_ in doc_, frag_
+        # Messen und Ausrichten wie im Tab X-Ray (gemeinsame Klasse XRAY.MeasureAlign), Werte aus der Geometrie
+        t_d.set_numbering(False)
+        g_d = t_d.geometry(t_d.entry())
+        xyz_d = np.asarray(g_d[2], float)
+        for keys_, kind_ in ((["a1", "a3"], "bond"), (["a2", "a1", "a3"], "angle"), (["a2", "a1", "a3", "a0"], "torsion")):
+            t_d.sel = []
+            for k_ in keys_:
+                t_d.atom_clicked(int(k_[1:]))
+            assert t_d.sel == keys_, t_d.sel
+            m_d = t_d._meas
+            idx_ = [int(k_[1:]) for k_ in keys_]
+            ref_ = {"bond": XRAY.distance, "angle": XRAY.angle, "torsion": XRAY.torsion}[kind_]([xyz_d[i_] for i_ in idx_])
+            assert m_d["kind"] == kind_ and abs(m_d["value"] - ref_) < 1e-9 and m_d["source"] == "calc", m_d
+            assert "\n" not in t_d.lbl_meas.text() and t_d.lbl_meas.styleSheet() == "", t_d.lbl_meas.text()  # keine esd-Warnung
+        t_d.sel = ["a1", "a2"]
+        t_d.align_bond("down")                                 # Bindung C–Cl zeigt im Bild nach unten
+        R_d = np.array(t_d.entry()["view"]).reshape(3, 3)
+        v_d = R_d @ (xyz_d[2] - xyz_d[1])
+        assert v_d[1] < -0.99 * np.linalg.norm(v_d) and t_d.sel == [], v_d
+        t_d.sel = ["a1", "a2", "a3"]
+        t_d.align_plane()
+        R_d = np.array(t_d.entry()["view"]).reshape(3, 3)
+        n_d = np.cross(xyz_d[2] - xyz_d[1], xyz_d[3] - xyz_d[1])
+        assert abs(abs((R_d @ n_d)[2]) - np.linalg.norm(n_d)) < 1e-6           # Ebene von vorn
+        t_d.sel = ["a1"]
+        t_d.set_numbering(True)                                # Nummerieren hebt die Messauswahl auf
+        assert t_d.sel == [] and t_d.picks == []
+        t_d.set_numbering(False)
         e_dr = t_d.entry()                                     # Darstellung auf Standard, Nummerierung bleibt
         ord_ = list(e_dr.get("order") or [])
         w.dft_state.update(bond_w=0.3, radius=0.5, show_h=False)
@@ -4654,8 +4712,8 @@ def selftest(outdir, with_isnet=False):
         assert UPD.is_newer("1.4.1", "1.4.0") and not UPD.is_newer("1.4", "1.4.0") and not UPD.is_newer("", "1.0")
         lbl = UPD.platform_label()
         fake = {"tag_name": "v99.0.0", "html_url": "https://example.invalid/r",
-                "assets": [{"name": f"Spectravolt-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
-                + [{"name": "Spectravolt-linux-x64.tar.gz"}]}
+                "assets": [{"name": f"Elucida-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
+                + [{"name": "Elucida-linux-x64.tar.gz"}]}
         info = UPD.parse_release(fake)
         assert info["version"] == "99.0.0" and lbl in info["asset"], info
         assert "99.0.0" in w.update_text(info, manual=False)

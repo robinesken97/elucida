@@ -119,13 +119,14 @@ def app_data_dir(base: Path | None = None) -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    d = base / "Spectravolt"
-    old = base / "UVVisTool"                    # bis 1.15 (z. B. ISNet-Modell): einmalig übernehmen
-    if not d.exists() and old.is_dir():
-        try:
-            shutil.move(str(old), str(d))
-        except OSError:
-            pass
+    d = base / "Elucida"
+    for name in ("Spectravolt", "UVVisTool"):    # 1.16–1.25 bzw. bis 1.15 (z. B. ISNet-Modell): einmalig übernehmen
+        old = base / name
+        if not d.exists() and old.is_dir():
+            try:
+                shutil.move(str(old), str(d))
+            except OSError:
+                pass
     d.mkdir(parents=True, exist_ok=True)
     return d
 
