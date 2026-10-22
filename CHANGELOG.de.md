@@ -2,6 +2,12 @@
 
 # Änderungen
 
+## 1.25.1 – 22.10.2026
+
+### Neu
+- Knopf **Projektordner anzeigen** in der Werkzeugleiste: öffnet den Projektordner im Finder (macOS), Explorer (Windows)
+  bzw. im Standard-Dateimanager (Linux, z. B. Dolphin oder Nautilus); ohne Projekt gesperrt.
+
 ## 1.25.0 – 22.10.2026
 
 ### Neu

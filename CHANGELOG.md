@@ -2,6 +2,12 @@
 
 # Changelog
 
+## 1.25.1 – 2026-10-22
+
+### New
+- Toolbar button **Show project folder**: opens the project folder in Finder (macOS), Explorer (Windows) or the default
+  file manager (Linux, e.g. Dolphin or Nautilus); disabled without a project.
+
 ## 1.25.0 – 2026-10-22
 
 ### New
