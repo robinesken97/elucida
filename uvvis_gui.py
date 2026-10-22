@@ -18,6 +18,7 @@ from pathlib import Path
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
 APP_VERSION = "1.22.1"
+SI_PARTS = ("char", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -58,6 +59,7 @@ import uvvis_epr as EPRMOD  # noqa: E402
 import uvvis_hrms as HRMS  # noqa: E402
 import uvvis_irms as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
+import uvvis_dft as DFT  # noqa: E402
 import uvvis_si as SI  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
@@ -472,6 +474,7 @@ class MainWindow(QMainWindow):
         self.irms_state = {}
         self.hrms_state = {}
         self.xray_state = {}
+        self.dft_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
@@ -533,7 +536,7 @@ class MainWindow(QMainWindow):
         act_export = QAction(STYLE.icon("export"), T("act_export"), self, shortcut="Ctrl+E",
                              triggered=self.export_current)
         m.addAction(act_export)
-        m.addAction(QAction(T("act_export_si"), self, triggered=self.export_si))
+        m.addAction(QAction(T("act_export_si"), self, triggered=self.export_si_dialog))
         m.addSeparator()
         m.addAction(QAction(T("act_quit"), self, shortcut=QKeySequence.Quit, triggered=self.close))
         me = mb.addMenu(T("menu_edit"))
@@ -567,6 +570,10 @@ class MainWindow(QMainWindow):
         self.act_compound.setToolTip(T("compound_tip"))
         self.toolbar.addAction(self.act_compound)
         self.toolbar.widgetForAction(self.act_compound).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.act_si = QAction(STYLE.icon("export"), T("act_si_short"), self, triggered=self.export_si_dialog)
+        self.act_si.setToolTip(T("act_si_tip"))
+        self.toolbar.addAction(self.act_si)
+        self.toolbar.widgetForAction(self.act_si).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         mf = mb.addMenu(T("menu_format"))
         mf.addAction(QAction(T("act_text_format"), self, triggered=self.edit_text_format))
         mt = mf.addMenu(T("menu_theme"))
@@ -921,8 +928,12 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.xray_tab = XRAY.XrayTab(self, self.xray_state)
         self.main_tabs.addTab(self.xray_tab, T("tab_xray"))
+        self.dft_tab = DFT.DFTTab(self, self.dft_state)
+        self.main_tabs.addTab(self.dft_tab, T("tab_dft"))
         self.main_tabs.setCurrentIndex(self._tab_index)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
+        self.main_tabs.currentChanged.connect(                    # Vorlagen (CIF aus X-Ray) aktuell halten
+            lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
         self.setCentralWidget(self.main_tabs)
 
         self.apply_globals()
@@ -1233,7 +1244,7 @@ class MainWindow(QMainWindow):
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
-                "compound": dict(self.compound),
+                "dft": self.dft_state, "compound": dict(self.compound),
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -1267,6 +1278,8 @@ class MainWindow(QMainWindow):
         self.hrms_state.update(hr)
         self.xray_state.clear()
         self.xray_state.update(state.get("xray") or {})
+        self.dft_state.clear()
+        self.dft_state.update(state.get("dft") or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
@@ -2029,13 +2042,52 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(txt)
         self.statusBar().showMessage(T("si_methods_copied") if txt else T("si_methods_none"), 6000)
 
-    def export_si(self):
+    def si_available(self):
+        """Teile der SI, für die Daten da sind."""
+        xt, dt = self.xray_tab, self.dft_tab
+        return dict(char=True, xray=any(xt.structure(e) is not None for e in xt.entries()),
+                    dft=any(dt.calc_of(e) is not None for e in dt.entries()))
+
+    def export_si_dialog(self):
+        """Auswahl der Teile (Charakterisierung, X-Ray, DFT), dann export_si. Die Auswahl wird gemerkt."""
+        if not self.ensure_project():
+            return
+        avail = self.si_available()
+        saved = self.settings.value("si_parts", "char,xray,dft")
+        saved = set(str(saved).split(",")) if saved else set()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("act_export_si").rstrip(" …"))
+        v = QVBoxLayout(dlg)
+        v.addWidget(QLabel(T("si_parts_head")))
+        cbs = {}
+        for k in SI_PARTS:
+            cb = QCheckBox(T("si_part_" + k))
+            cb.setEnabled(avail[k])
+            cb.setChecked(avail[k] and k in saved)
+            if not avail[k]:
+                cb.setToolTip(T("si_part_empty"))
+            cbs[k] = cb
+            v.addWidget(cb)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        parts = [k for k, cb in cbs.items() if cb.isChecked()]
+        self.settings.setValue("si_parts", ",".join(k for k, cb in cbs.items() if cb.isChecked() or not avail[k]
+                                                   and k in saved))
+        if parts:
+            self.export_si(parts)
+
+    def export_si(self, parts=SI_PARTS):
         """SI-Abschnitt der Verbindung als Word-Datei: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis;
-        Elementaranalyse), dazu Kristalldaten, ausgewählte Parameter und Bildunterschriften aus dem X-Ray-Tab."""
+        Elementaranalyse), Kristalldaten, ausgewählte Parameter und Bildunterschriften aus dem X-Ray-Tab, DFT-Rechnungen
+        (zweispaltig) – je nach Auswahl."""
         if not self.ensure_project():
             return
         try:
-            blocks, missing = self.si_blocks()
+            blocks, missing = self.si_blocks(parts)
             pdir = Path(self.project_dir)
             name = core.safe_name(self.compound.get("name") or pdir.name)
             p = SI.write_docx(PRJ.export_dir(pdir, "si") / f"{name}_SI.docx", blocks)
@@ -2049,9 +2101,27 @@ class MainWindow(QMainWindow):
             msg += "\n" + T("si_missing", parts=", ".join(missing))
         self.info(msg)
 
-    def si_blocks(self):
+    def si_blocks(self, parts=SI_PARTS):
         """-> (Blöcke für SI.write_docx, fehlende Teile)."""
         comp = self.compound or {}
+        title = comp.get("name") or Path(self.project_dir or ".").name
+        blocks, missing, plain = [], [], ""
+        if "char" in parts:
+            blocks, missing, plain = self.si_char_blocks(comp, title)
+        elif title:
+            blocks = [("heading", title)]
+        self._si_plain = plain
+        xt = self.xray_tab
+        es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in parts else []
+        if es:
+            blocks += self.si_xray_blocks(es)
+        dt = self.dft_tab
+        if "dft" in parts and any(dt.calc_of(e) is not None for e in dt.entries()) and self.project_dir:
+            blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
+        return blocks, missing
+
+    def si_char_blocks(self, comp, title):
+        """„Synthesis of Name“ + Charakterisierungsabsatz -> (Blöcke, fehlende Teile, Klartext)."""
         parts, missing = [], []
         if comp.get("mp"):
             mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", comp["mp"]).strip()
@@ -2070,12 +2140,14 @@ class MainWindow(QMainWindow):
             [p_ for p_ in ir_ms_ea if p_[0].startswith("HR-MS")] + uv + \
             [p_ for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
         plain, para = SI.join_lines(parts + order)
-        title = comp.get("name") or Path(self.project_dir or ".").name
         blocks = [("synthesis", title)]
         if para:
             blocks.append(("char", para))
-        xt = self.xray_tab
-        es = [e for e in xt.entries() if xt.structure(e) is not None]
+        return blocks, missing, plain
+
+    def si_xray_blocks(self, es):
+        """Abbildungen, Unterschriften, ausgewählte Parameter und Kristalldaten aus dem X-Ray-Tab."""
+        xt, blocks = self.xray_tab, []
         if es:
             from matplotlib.backends.backend_agg import FigureCanvasAgg
             from matplotlib.figure import Figure as MplFigure
@@ -2087,23 +2159,9 @@ class MainWindow(QMainWindow):
                     fig = MplFigure(figsize=(8, 6), dpi=uvvis_tabs.PREVIEW_DPI)
                     FigureCanvasAgg(fig)
                     F = xt.build(fig, e, interactive=False)
-                    if F is not None:
-                        # wie in der SI eng um das Molekül beschnitten; SVG (Vektor, Text als Pfade) + PNG-Ersatz
+                    if F is not None:                     # wie in der SI eng um das Molekül beschnitten
                         svg = out_dir / f"{core.safe_name(fname)}_xray.svg"
-                        from matplotlib.transforms import Bbox
-                        rend = F.fig.canvas.get_renderer()
-                        boxes = [a_.get_window_extent(rend) for a_ in F.artists() + ([F.foot] if F.foot else [])
-                                 if a_.get_visible()]
-                        boxes = [b_ for b_ in boxes if b_.width > 0 and b_.height > 0 and b_.width < 1e5]
-                        bb = Bbox.union(boxes).transformed(F.fig.dpi_scale_trans.inverted()).padded(0.06)
-                        W_, H_ = F.fig.get_size_inches()
-                        bb = Bbox.from_extents(max(0, bb.x0), max(0, bb.y0), min(W_, bb.x1), min(H_, bb.y1))
-                        with matplotlib.rc_context({"svg.fonttype": "path"}):
-                            F.fig.savefig(svg, bbox_inches=bb, facecolor="white")
-                            F.fig.savefig(svg.with_suffix(".png"), dpi=600, bbox_inches=bb, facecolor="white")
-                        IMG.svg_defs_first(svg)
-                        blocks.append(("image", str(svg.with_suffix(".png")), bb.width * 2.54, bb.height * 2.54,
-                                       str(svg)))
+                        blocks.append(("image",) + XRAY.save_tight(F, svg))
                 blocks.append(("figcap", xt.caption(e)[1]))
                 for t_title, t_name, t_head, t_rows in xt.param_tables(e):
                     blocks += [("tabcap", t_title, t_name), ("params", t_head, t_rows)]
@@ -2114,8 +2172,7 @@ class MainWindow(QMainWindow):
             r_ = [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_] for row_ in r_]
             names = [e.get("name") or e["block"] for e in es]
             blocks += [("tabcap", "Crystal data and structure refinement", ", ".join(names)), ("crystal", h_, r_)]
-        self._si_plain = plain
-        return blocks, missing
+        return blocks
 
     def fill_table(self, results, cfg):
         sym = "ε [M⁻¹ cm⁻¹]" if core.conc_factor(cfg) else "a [L g⁻¹ cm⁻¹]"
@@ -2253,6 +2310,15 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in cifs]
             if not files:
                 return
+        # DFT: xyz-Geometrien und Ausgaben von ORCA/Gaussian
+        xyzs = [p for p in files if DFT.is_xyz(p) or DFT.is_calc(p)]
+        if xyzs and self.ensure_project():
+            for p in xyzs:
+                self.dft_tab.load_xyz(p)
+            self.main_tabs.setCurrentWidget(self.dft_tab)
+            files = [p for p in files if p not in xyzs]
+            if not files:
+                return
         # HRMS: MS-Berichte (docx) und Bruker-.d-Ordner; IR + EA: OPUS-Dateien, PDF nur auf dem Tab IR + EA
         ms = [p for p in files if IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"]
         irms = [p for p in files if IRMS.is_opus(p)
@@ -2293,7 +2359,7 @@ class MainWindow(QMainWindow):
     def export_current(self):
         cur = self.main_tabs.currentWidget()
         for tab in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.hrms_tab, self.irms_tab,
-                    self.xray_tab):
+                    self.xray_tab, self.dft_tab):
             if cur is tab:
                 return tab.export_dialog()
         return self.export_dialog()
@@ -3332,10 +3398,10 @@ def selftest(outdir, with_isnet=False):
             assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
         assert w.findChildren(QFrame, "card") and not w.main_tabs.widget(0).findChildren(QGroupBox)
         w.switch_theme("system")
-        # Werkzeugleiste (nach Neuaufbau nur eine) und Listenknöpfe mit Symbol
+        # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
         acts = [a for a in w.toolbar.actions() if not a.isSeparator()]
-        assert len(bars) == 1 and len(acts) == 6 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
+        assert len(bars) == 1 and len(acts) == 7 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
         arrows = [b for b in w.epr_tab.findChildren(QPushButton) if b.toolTip() == T("move_up")]
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")
@@ -3768,6 +3834,176 @@ def selftest(outdir, with_isnet=False):
         t_x.sync_widgets()
         t_x.render()
 
+        # DFT: xyz (zwei Bilder, CRLF), Bindungen, Umnummerieren per Klick, xyz speichern (Zeilen unverändert)
+        ddir = out / "input" / "dft"
+        xyzf_ = DFT.make_test_xyz(ddir / "dtest.xyz")
+        fr_ = DFT.read_xyz(xyzf_)
+        assert len(fr_) == 2 and fr_[-1]["els"] == ["H", "C", "Cl", "C", "H", "H", "H", "H"], fr_[-1]["els"]
+        assert fr_[-1]["comment"] == "E -539.123456789 (test)" and not fr_[0]["lines"][0].endswith("\r")
+        assert DFT.parse_xyz("1\n\n6 0 0 0\n")[0]["els"] == ["C"]                 # Ordnungszahl statt Symbol
+        for bad_ in ("C 0 0 0\n", "3\n\nC 0 0 0\n"):
+            try:
+                DFT.parse_xyz(bad_)
+                raise AssertionError(bad_)
+            except ValueError:
+                pass
+        bo_ = DFT.bonds_of(fr_[-1]["els"], fr_[-1]["xyz"])
+        assert sorted(bo_) == [(0, 3), (1, 2), (1, 3), (1, 4), (1, 5), (3, 6), (3, 7)], bo_
+        nb_ = {k_: [] for k_ in range(8)}
+        for a_, b_ in bo_:
+            nb_[a_].append(b_)
+            nb_[b_].append(a_)
+        assert DFT.renumber(range(8), [1, 3, 2]) == [1, 3, 2, 0, 4, 5, 6, 7]
+        assert DFT.renumber(range(8), [1, 3, 2], fr_[-1]["els"], nb_) == [1, 4, 5, 3, 0, 6, 7, 2]
+        assert DFT.renumber([2, 1, 0, 3, 4, 5, 6, 7], [3]) == [3, 2, 1, 0, 4, 5, 6, 7]   # Rest: bisherige Reihenfolge
+        t_d = w.dft_tab
+        w.main_tabs.setCurrentWidget(t_d)
+        e_d = t_d.load_xyz(str(xyzf_))
+        assert e_d and Path(e_d["file"]).parent == proj / "data"
+        assert any(k_ == "file" and c_ is e_d for c_, k_, _ in PRJ._path_slots(w.get_state()))
+        pump()
+        assert t_d.F is not None and len(t_d.F.scene["atoms"]) == 8 and len(t_d.F.scene["bonds"]) == 7
+        assert t_d.F.ann_items["lbl_a2"].get_text() == "Cl3"
+        proc_d = t_d.canvas.callbacks.process
+
+        def click_d(k_):
+            it_ = t_d.F.scene["by_k"][k_]
+            px_, py_ = t_d.F.ax.transData.transform((it_["x"], it_["y"]))
+            proc_d("button_press_event", MouseEvent("button_press_event", t_d.canvas, px_, py_, button=1))
+            proc_d("button_release_event", MouseEvent("button_release_event", t_d.canvas, px_, py_, button=1))
+            pump(0.05)
+        click_d(1)
+        assert t_d.picks == [], t_d.picks                                     # ohne Modus: Klick nummeriert nicht
+        t_d.btn_num.setChecked(True)
+        for k_ in (1, 3, 2):
+            click_d(k_)
+        assert t_d.picks == [1, 3, 2], t_d.picks
+        click_d(3)                                                             # erneuter Klick nimmt es heraus
+        assert t_d.picks == [1, 2], t_d.picks
+        click_d(3)
+        assert t_d.picks == [1, 2, 3], t_d.picks
+        assert t_d.F.ann_items["lbl_a3"].get_text() == "C3" and t_d.F.ann_items["lbl_a3"].get_fontweight() == "bold"
+        t_d.picks = [1, 3, 2]
+        t_d.apply_numbering()
+        assert e_d["order"] == [1, 3, 2, 0, 4, 5, 6, 7] and not t_d.numbering and not t_d.btn_num.isChecked()
+        assert t_d.F.ann_items["lbl_a2"].get_text() == "Cl3" and t_d.F.ann_items["lbl_a3"].get_text() == "C2"
+        w.dft_state["zero_based"] = True
+        t_d.render(push=False)
+        assert t_d.F.ann_items["lbl_a1"].get_text() == "C0"
+        w.dft_state["zero_based"] = False
+        pump(0.3)
+        w.undo()                                                               # Umnummerieren rückgängig
+        pump(0.4)
+        assert w.dft_state["entries"][0]["order"] is None, w.dft_state["entries"][0]["order"]
+        w.redo()
+        pump(0.4)
+        t_d = w.dft_tab
+        assert w.dft_state["entries"][0]["order"] == [1, 3, 2, 0, 4, 5, 6, 7]
+        sx_ = t_d.save_xyz(out / "dft" / "dtest_new.xyz")
+        fr2_ = DFT.read_xyz(sx_)
+        assert len(fr2_) == 2 and fr2_[-1]["els"] == ["C", "C", "Cl", "H", "H", "H", "H", "H"]
+        assert fr2_[0]["lines"] == [fr_[0]["lines"][k_] for k_ in (1, 3, 2, 0, 4, 5, 6, 7)]    # Zeilen unverändert
+        src_ = Path(w.dft_state["entries"][0]["file"])
+        assert t_d.save_xyz(src_) is None and DFT.read_xyz(src_)[0]["lines"] == fr_[0]["lines"]  # nie überschreiben
+        files = t_d.export_to(out / "dft" / "dft_test")
+        assert {f_.suffix for f_ in files} == {".pdf", ".svg", ".png", ".xyz"}, files
+        assert all(f_.exists() and f_.stat().st_size > 100 for f_ in files)
+        t_d.reset_order()
+        assert w.dft_state["entries"][0]["order"] is None
+        # Rechnungen: ORCA 6 (UTF-16/CRLF, CPCM, eine imaginäre Frequenz) und Gaussian (Format geraten); SI-Block, Word
+        orf_, gf_ = DFT.make_test_orca(ddir / "otest.out"), DFT.make_test_gaussian(ddir / "gtest.log")
+        assert DFT.is_calc(orf_) and DFT.is_calc(gf_) and not DFT.is_calc(xyzf_)
+        co_ = DFT.read_calc(orf_)
+        assert (co_["version"], co_["charge"], co_["mult"], co_["opt_converged"], co_["normal"]) == ("6.1.1", 0, 1, True, True)
+        assert DFT.imaginary(co_) == ["-31.20"] and co_["thermo"]["G"] == "-539.94683332", co_["thermo"]
+        assert co_["solvation"]["e_diel"] == "-0.00412345678901" and co_["solvation"]["solvent"] == "TETRAHYDROFURAN"
+        assert co_["conv"][0] == ("Energy change", "-0.0000002000", "0.0000010000", "YES") and len(co_["conv"]) == 5
+        cg_ = DFT.read_calc(gf_)
+        assert cg_["solvation"]["model"] == "SMD" and cg_["thermo"]["H"] == "-539.916710" and len(cg_["conv"]) == 4
+        assert cg_["energy"] == "-539.987654321" and not DFT.imaginary(cg_) and cg_["geometry"][1][1][0] == "Cl"
+        # gleichnamige xyz (ORCA, 14 Stellen) wird mitkopiert und benutzt, wenn sie zur Endgeometrie passt
+        with open(ddir / "otest.xyz", "w", encoding="utf-8", newline="\n") as fh_:
+            fh_.write("8\ntest\n" + "".join(f"{el_}  {float(x_):.14f}  {float(y_):.14f}  {float(z_):.14f}\n"
+                                            for el_, x_, y_, z_ in DFT._TEST_GEOM))
+        fr_p, used_ = DFT.calc_frame(co_, partner=ddir / "otest.xyz")
+        assert used_ and fr_p["lines"][1].startswith("Cl  0.00000000000000"), fr_p["lines"][1]
+        assert not DFT.calc_frame(co_, partner=xyzf_)[1]                      # andere Geometrie -> ignoriert
+        assert co_["point_group"] == "C1" and cg_["point_group"] == "CS" and DFT.pg_html("CS") == "C<sub>s</sub>"
+        e_o = t_d.load_xyz(str(orf_))
+        assert (Path(e_o["file"]).with_suffix(".xyz")).is_file()
+        t_d.load_xyz(str(gf_))
+        e_o["order"] = [1, 0, 2, 3, 4, 5, 6, 7]
+        w.dft_state["current"] = e_o["uid"]
+        t_d.sync_widgets()
+        t_d.render()
+        assert t_d.F is not None and len(t_d.F.scene["atoms"]) == 8
+        pl_ = DFT.si_plain(t_d.si_of(e_o))
+        for frag_ in ("ORCA 6.1.1: ! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)",
+                      "Charge: 0\tMultiplicity: 1\tPoint group: C1", "1 imaginary frequency (\u221231.20 cm-1)",
+                      "thermochemistry at 298.15 K and 1.00 atm (quasi-RRHO)",
+                      "CPCM dielectric energy (included in E(el)): \u22120.00412345678901 Eh",
+                      "Energy change\t\u22120.0000002000\t0.0000010000\tyes", "\nCl  0.00000000000000",
+                      "E_el [Eh]\tH [Eh]\tG [Eh]\n\u2212539.98765432\t\u2212539.91670987\t\u2212539.94683332"):
+            assert frag_ in pl_, (frag_, pl_)
+        assert pl_.index("Energy change") < pl_.index("Frequency calculation")      # Tabelle unter der Optimierung
+        assert pl_.index("\nCl  ") < pl_.index("\nC  ")                              # Koordinaten umnummeriert
+        assert T("dft_partner_used") in t_d.lbl_info.text()
+        w.dft_state["si_conv"] = False                                             # Teile abschaltbar
+        assert "Energy change" not in DFT.si_plain(t_d.si_of(e_o))
+        w.dft_state["si_conv"] = True
+        assert T("dft_w_solv_cpcm") in t_d.lbl_warn.text() and t_d.btn_si_copy.isEnabled()
+        files = t_d.export_to(out / "dft" / "dft_calc")
+        names_ = {f_.name for f_ in files}
+        assert {"dft_calc_SI.docx", "dft_calc_SI.txt"} <= names_, names_
+        import zipfile as _zf
+        with _zf.ZipFile(out / "dft" / "dft_calc_SI.docx") as z_:
+            doc_ = z_.read("word/document.xml").decode("utf-8")
+            assert "word/media/image1.png" in z_.namelist() and "word/media/image2.png" in z_.namelist()
+        for frag_ in ("Point group", "Courier New", 'w:cols w:num="2"', "Max. gradient", "otest", "Gaussian 16",
+                      "quasi-RRHO", "<w:tab/>"):
+            assert frag_ in doc_, frag_
+        report.append("DFT xyz (reader, bonds, click renumbering, save, export): OK")
+        report.append("DFT outputs (ORCA 6 UTF-16, Gaussian, SI block, Word): OK")
+        # Vergleichsmodus: Nummerierung einer anderen Geometrie bzw. einer CIF übernehmen
+        w.dft_state.update(entries=[], current=None)
+        e_ref = t_d.load_xyz(str(orf_))                                   # Vorlage: C, Cl, C, H…
+        e_tg = t_d.load_xyz(str(xyzf_))                                   # gleiche Geometrie, andere Reihenfolge
+        t_d.fill_refs()
+        t_d.cmb_ref.setCurrentIndex(t_d.cmb_ref.findData("dft:" + e_ref["uid"]))
+        t_d.apply_reference()
+        assert e_tg["order"] == [1, 2, 3, 4, 5, 6, 7, 0], e_tg["order"]
+        assert "0.00" in t_d.lbl_ref.text() and not e_tg["ref_labels"], t_d.lbl_ref.text()
+        w.xray_tab.load_cif(str(cif_))                                    # CIF als Vorlage: Labels der Kristallstruktur
+        mol_c = w.xray_tab.molecule(w.xray_state["entries"][0])
+        main_c = [k_ for k_, a_ in enumerate(mol_c.atoms) if a_["frag"] == 0]
+        perm_c = main_c[::-1]                                              # umgekehrte Reihenfolge, leicht verschoben
+        cxyz_ = ddir / "from_cif.xyz"
+        cxyz_.write_text(f"{len(perm_c)}\nfrom cif\n" + "".join(
+            f"{mol_c.atoms[k_]['el']} {x_ + 0.01:.6f} {y_:.6f} {z_:.6f}\n" for k_ in perm_c
+            for x_, y_, z_ in [mol_c.atoms[k_]["xyz"]]), encoding="utf-8")
+        e_cx = t_d.load_xyz(str(cxyz_))
+        w.main_tabs.setCurrentWidget(w.xray_tab)
+        w.main_tabs.setCurrentWidget(t_d)                                 # Tabwechsel füllt die Vorlagen neu
+        t_d.cmb_ref.setCurrentIndex(t_d.cmb_ref.findData("xray:" + w.xray_state["entries"][0]["uid"]))
+        t_d.apply_reference()
+        labs_ = e_cx["ref_labels"]
+        assert sorted(labs_.values()) == sorted(XRAY.atom_name(mol_c.atoms[k_]) for k_ in main_c), labs_
+        assert all(labs_[str(i_)].rstrip("\u2071").startswith(mol_c.atoms[k_]["el"]) for i_, k_ in enumerate(perm_c))
+        assert w.dft_state["label_style"] == "ref" and t_d.F.ann_items["lbl_a0"].get_text() in labs_.values()
+        assert "\u26a0" in t_d.lbl_ref.text()        # zentrosymmetrisch: C1/C1(i) gleichwertig -> gemeldet
+        g_cx = t_d.geometry(e_cx)
+        ok_ = DFT.match_reference(dict(els=g_cx[1], xyz=g_cx[2], bonds=g_cx[3], order=None),
+                                  dict(els=g_cx[1], xyz=g_cx[2], bonds=g_cx[3], order=None))
+        assert ok_["order"] == list(range(len(perm_c))) or ok_["ambiguous"]
+        t_d.reset_order()
+        assert e_cx["order"] is None and not e_cx["ref_labels"]
+        w.xray_state.update(entries=[], current=None)
+        w.dft_state.update(label_style="el_num")
+        report.append("DFT compare mode (number like xyz / CIF template): OK")
+        w.dft_state.update(entries=[], current=None)
+        t_d.sync_widgets()
+        t_d.render()
+
         # SI-Zeilen: Elementaranalyse, UV-Vis, SI-Abschnitt als Word-Datei
         comp_ = SI.ea_composition("C18H20N2")
         assert [round(comp_[e_], 2) for e_ in "CHN"] == [81.78, 7.63, 10.60], comp_
@@ -3799,9 +4035,22 @@ def selftest(outdir, with_isnet=False):
         with _zf.ZipFile(docx_) as z_:
             xml_ = z_.read("word/document.xml").decode("utf-8")
         assert "Elemental analysis" in xml_ and 'w:val="subscript"' in xml_ and "TEST-1" in xml_
+        assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
+        # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
+        w.dft_tab.load_xyz(str(orf_))
+        assert w.si_available() == {"char": True, "xray": False, "dft": True}
+        b_dft, _ = w.si_blocks(["dft"])
+        assert b_dft[0] == ("heading", "TEST-1") and ("columns", 2) in b_dft and not any(b_[0] == "char" for b_ in b_dft)
+        w.export_si(["char", "dft"])
+        with _zf.ZipFile(docx_) as z_:
+            xml_ = z_.read("word/document.xml").decode("utf-8")
+        assert "Elemental analysis" in xml_ and "Courier New" in xml_ and xml_.count("<w:sectPr>") == 2
+        assert xml_.index("Elemental analysis") < xml_.index('w:cols w:num="2"')   # einspaltig, dann zweispaltig
+        w.dft_state.update(entries=[], current=None)
+        w.dft_tab.sync_widgets()
         w.irms_state.update(ea_found={}, ea_solvate="")
         w.compound = {}
-        report.append("SI lines (EA, UV-Vis) + SI section as Word: OK")
+        report.append("SI lines (EA, UV-Vis) + SI section as Word (parts selectable): OK")
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
         rn_path = Path(__file__).resolve().parent / "release_notes.py"

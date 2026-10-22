@@ -1871,6 +1871,32 @@ class XrayFigure:
         return paths
 
 
+def save_tight(F, svg):
+    """Abbildung eng um das Molekül beschnitten (wie in der SI): SVG (Vektor, Text als Pfade) + PNG-Ersatz (600 dpi).
+    -> (PNG, Breite cm, Höhe cm, SVG) für SI.write_docx."""
+    from matplotlib.transforms import Bbox
+    import uvvis_images as IMG
+    svg = Path(svg)
+    svg.parent.mkdir(parents=True, exist_ok=True)
+    rend = F.fig.canvas.get_renderer()
+    # Atome über ihre Umrisse (get_window_extent der Polygone ist dafür nicht verlässlich), Text über seine Box
+    pts = [(it["x"] + sx * max(it["w"], it["h"]) / 2, it["y"] + sy * max(it["w"], it["h"]) / 2)
+           for it in F.scene["atoms"] for sx in (-1, 1) for sy in (-1, 1)]
+    boxes = [Bbox.from_extents(*F.ax.transData.transform(pts).min(axis=0), *F.ax.transData.transform(pts).max(axis=0))
+             ] if pts else []
+    boxes += [a.get_window_extent(rend) for a in list(F.ann_items.values()) + ([F.foot] if F.foot else [])
+              if a.get_visible()]
+    boxes = [b for b in boxes if b.width > 0 and b.height > 0 and b.width < 1e5]
+    bb = Bbox.union(boxes).transformed(F.fig.dpi_scale_trans.inverted()).padded(0.06)
+    W, H = F.fig.get_size_inches()
+    bb = Bbox.from_extents(max(0, bb.x0), max(0, bb.y0), min(W, bb.x1), min(H, bb.y1))
+    with matplotlib.rc_context({"svg.fonttype": "path"}):
+        F.fig.savefig(svg, bbox_inches=bb, facecolor="white")
+        F.fig.savefig(svg.with_suffix(".png"), dpi=600, bbox_inches=bb, facecolor="white")
+    IMG.svg_defs_first(svg)
+    return str(svg.with_suffix(".png")), bb.width * 2.54, bb.height * 2.54, str(svg)
+
+
 # ---------------------------------------------------------------------------- Maus
 class XrayMouse:
     """Ziehen = Drehen (Blitting: nur das Molekül neu zeichnen), rechte/mittlere Taste = Verschieben,

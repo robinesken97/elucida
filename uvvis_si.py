@@ -226,6 +226,8 @@ def markup_runs(markup, bold=False):
 # 7 pt (Word: vertAlign), Dreilinien-Tabellen, Unterschriften „Figure Sn: …“ / „Table Sn: …“ (fett bis zum Doppelpunkt).
 _FONT = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>'
 TEXT_W = 11906 - 2 * 1417                  # Textbreite in twips (A4, 2.5 cm Rand)
+COL_GAP = 425                              # Abstand zweier Spalten (0.75 cm)
+_MONO = '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:eastAsia="Courier New"/>'
 
 
 def _run_xml(text, st, size=22):
@@ -238,7 +240,10 @@ def _run_xml(text, st, size=22):
         return ('<m:oMath><m:bar><m:barPr><m:pos m:val="top"/><m:ctrlPr><w:rPr>' + wr + '</w:rPr></m:ctrlPr>'
                 '</m:barPr><m:e><m:r><m:rPr><m:nor/></m:rPr><w:rPr>' + wr + f'</w:rPr><m:t>{t}</m:t></m:r></m:e>'
                 '</m:bar></m:oMath>')
-    props = _FONT + ("<w:b/><w:bCs/>" if "b" in st else "") + ("<w:i/><w:iCs/>" if "i" in st else "")
+    if "\t" in text and text.strip("\t") == "":
+        return "<w:r>" + "<w:tab/>" * len(text) + "</w:r>"
+    props = (_MONO if "mono" in st else _FONT) + ("<w:b/><w:bCs/>" if "b" in st else "") + \
+        ("<w:i/><w:iCs/>" if "i" in st else "")
     if "sub" in st:
         props += '<w:vertAlign w:val="subscript"/>'
     elif "sup" in st:
@@ -256,10 +261,12 @@ def _seq_xml(kind, num, size=22):
             '</w:fldSimple>')
 
 
-def _ppr(align="both", line=360, before=0, after=0, keep_next=False):
+def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs=""):
     x = f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
     if keep_next:
         x += "<w:keepNext/>"
+    if tabs:
+        x = f"<w:tabs>{tabs}</w:tabs>" + x
     return f"<w:pPr>{x}<w:jc w:val=\"{align}\"/></w:pPr>"
 
 
@@ -347,7 +354,14 @@ def _image_xml(rid, n, w_cm, h_cm, svg_rid=None):
             '</wp:inline></w:drawing></w:r></w:p>')
 
 
-def write_docx(path, blocks):
+def _sect(columns):
+    """Abschnittseigenschaften (A4, Ränder wie in der SI), fortlaufend, mit Spaltenzahl."""
+    return ('<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" '
+            'w:right="1417" w:bottom="1134" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/>' +
+            (f'<w:cols w:num="{columns}" w:space="{COL_GAP}"/>' if columns > 1 else "") + '</w:sectPr>')
+
+
+def write_docx(path, blocks, columns=1):
     """Blöcke:
     ("synthesis", Name)                   „Synthesis of <b>Name</b>“
     ("char", HTML)                        Charakterisierungsabsatz (Abstand davor wie in der SI)
@@ -357,12 +371,28 @@ def write_docx(path, blocks):
     ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
     ("params", Kopf, Zeilen)              Ausgewählte Bindungen/Winkel
     ("note", Markup)                      Fußnote unter einer Tabelle
-    ("gap",)                              Leerzeile"""
+    ("heading", Text)                     fette Überschrift (DFT: Name der Rechnung)
+    ("text", HTML)                        linksbündiger Absatz, einzeilig (DFT-Angaben)
+    ("coords", Kopf, Zeilen)              kompakte Tabelle (Konvergenz)
+    ("fields", [HTML, …])                 eine Zeile, Felder auf Tabstopps verteilt (Charge / Multiplicity / Point group)
+    ("mono", [Zeilen])                    Festbreitenschrift, Größe so, dass die längste Zeile in die Spalte passt
+    ("energies", Köpfe, Zeilen)           Energietabelle über die Spaltenbreite
+    ("columns", n)                        ab hier n Spalten (fortlaufender Abschnittswechsel, z. B. DFT zweispaltig)
+    ("gap",)                              Leerzeile
+    columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
     body, media, svgs = [], [], []
     n_fig = n_tab = 0
+    def col_width(n):
+        return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
+    col_w = col_width(columns)
     for b in blocks:
         k = b[0]
-        if k == "synthesis":
+        if k == "columns":
+            if b[1] != columns:                  # Abschnitt mit der bisherigen Spaltenzahl beenden
+                body.append(f"<w:p><w:pPr>{_sect(columns)}</w:pPr></w:p>")
+                columns = b[1]
+                col_w = col_width(columns)
+        elif k == "synthesis":
             body.append(_para([("Synthesis of ", set()), (b[1], {"b"})], keep_next=True))
         elif k == "char":
             body.append(_para(html_runs(b[1]), before=200))
@@ -372,7 +402,7 @@ def write_docx(path, blocks):
             if len(b) > 4 and b[4] and Path(b[4]).exists():
                 svgs.append((len(media), Path(b[4])))
                 svg_rid = f"rIdSvg{len(media)}"
-            w_cm = min(b[2], TEXT_W / 567.0)
+            w_cm = min(b[2], col_w / 567.0)
             body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid))
         elif k == "figcap":
             n_fig += 1
@@ -392,6 +422,39 @@ def write_docx(path, blocks):
             body.append(_table(header, rows, col_widths(len(header)), row_after=260))
         elif k == "note":
             body.append(_para(markup_runs(b[1]), size=18, line=240, after=0))
+        elif k == "heading":
+            body.append(_para([(b[1], {"b"})], align="left", before=240, after=120, keep_next=True))
+        elif k == "text":
+            body.append(_para(html_runs(b[1]), align="left", line=240 if columns > 1 else 276, after=60,
+                              size=18 if columns > 1 else 22))
+        elif k == "coords":
+            header, rows = b[1], b[2]
+            n = len(header)
+            w = [int(col_w * 0.27)] + [int(col_w * 0.6 / (n - 2))] * (n - 2) + [int(col_w * 0.13)] if n > 2 else \
+                [col_w // n] * n
+            body.append(_table(header, rows, w, line=240, size=14 if columns > 1 else 18))
+            body.append(_para([("", set())], line=240))
+        elif k == "fields":
+            n = max(1, len(b[1]))
+            tabs = "".join(f'<w:tab w:val="left" w:pos="{int(col_w * i / n)}"/>' for i in range(1, n))
+            runs = []
+            for i, h in enumerate(b[1]):
+                if i:
+                    runs.append(("\t", set()))
+                runs += html_runs(h)
+            body.append(_para(runs, align="left", line=240, before=60, after=60, tabs=tabs, size=18))
+        elif k == "mono":
+            lines = b[1] or [""]
+            longest = max(len(ln) for ln in lines)
+            # Courier: Zeichenbreite 0.6 × Schriftgröße; halbe Punkte, höchstens 8 pt
+            size = max(10, min(16, int(2 * col_w / 20 / (0.6 * max(1, longest)))))
+            for ln in lines:
+                body.append(_para([(ln, {"mono"})], size=size, align="left", line=240))
+        elif k == "energies":
+            header, rows = b[1], b[2]
+            n = len(header)
+            body.append(_table(header, rows, [col_w // n] * n, line=240, size=16 if columns > 1 else 18))
+            body.append(_para([("", set())], line=240))
         elif k == "gap":
             body.append(_para([("", set())]))
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -399,9 +462,7 @@ def write_docx(path, blocks):
           'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
           'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"')
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-           f'<w:document {ns}><w:body>' + "".join(body) +
-           '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1417" w:bottom="1134" '
-           'w:left="1417" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>')
+           f'<w:document {ns}><w:body>' + "".join(body) + _sect(columns) + '</w:body></w:document>')
     styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
               '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults>'
               f'<w:rPrDefault><w:rPr>{_FONT}<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-GB"/></w:rPr>'

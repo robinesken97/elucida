@@ -297,6 +297,15 @@ TEXTS = {
     "si_uv_none": ("Noch keine Banden mit Fit.", "No fitted bands yet."),
     "act_export_si": ("SI-Abschnitt exportieren (Word) …", "Export SI section (Word) …"),
     "si_written": ("SI-Abschnitt gespeichert: {p}", "SI section saved: {p}"),
+    "act_si_short": ("SI (Word)", "SI (Word)"),
+    "act_si_tip": ("SI-Abschnitt der Verbindung als Word-Datei; Teile auswählbar (Charakterisierung, X-Ray, DFT)",
+                   "SI section of the compound as a Word file; parts selectable (characterisation, X-ray, DFT)"),
+    "si_parts_head": ("In die SI übernehmen:", "Include in the SI:"),
+    "si_part_char": ("Charakterisierung (m.p., IR, HR-MS, UV-Vis, Elementaranalyse)",
+                     "Characterisation (m.p., IR, HR-MS, UV-Vis, elemental analysis)"),
+    "si_part_xray": ("Kristallstruktur(en) aus dem Tab X-Ray", "Crystal structure(s) from the X-Ray tab"),
+    "si_part_dft": ("DFT-Rechnungen aus dem Tab DFT (zweispaltig)", "DFT calculations from the DFT tab (two columns)"),
+    "si_part_empty": ("Keine Daten in diesem Tab.", "No data in this tab."),
     "si_missing": ("Noch nicht vorhanden: {parts}", "Not available yet: {parts}"),
     "compound_mp": ("Schmelzpunkt", "Melting point"),
     "compound_mp_ph": ("z. B. 67 °C oder 218 °C (decomp.)", "e.g. 67 °C or 218 °C (decomp.)"),
@@ -1052,6 +1061,171 @@ TEXTS = {
     "xr_align_done_plane": ("Ebene durch {atoms} liegt jetzt in der Bildebene.",
                             "Plane through {atoms} now lies in the image plane."),
     "xr_truncated": ("Polymer/Netzwerk: Vervollständigung abgebrochen", "polymer/network: growing stopped"),
+
+    # ---- DFT (xyz) ---------------------------------------------------------
+    "tab_dft": ("DFT", "DFT"),
+    "dft_structures": ("Geometrien und Rechnungen", "Geometries and calculations"),
+    "dft_add": ("Datei hinzufügen …", "Add file …"),
+    "dft_flt": ("xyz, ORCA/Gaussian-Ausgabe", "xyz, ORCA/Gaussian output"),
+    "dft_si": ("Rechnung für die SI", "Calculation for the SI"),
+    "dft_si_hint": ("Für den SI-Block eine ORCA-6- oder Gaussian-Ausgabe (.out/.log) laden; reine xyz-Dateien "
+                    "enthalten keine Angaben zur Rechnung.",
+                    "Load an ORCA 6 or Gaussian output (.out/.log) for the SI block; plain xyz files contain no "
+                    "information about the calculation."),
+    "dft_si_with": ("Mit:", "Include:"),
+    "dft_si_zpe": ("ZPE-Spalte", "ZPE column"),
+    "dft_method_each": ("Methode je Struktur", "method per structure"),
+    "dft_method_top": ("Methode einmal oben", "method once at the top"),
+    "dft_method_off": ("ohne Methode", "no method"),
+    "dft_method_tip": ("„einmal oben“: Abschnitt „Computational details“ mit jeder verschiedenen Eingabezeile (bei "
+                       "mehreren Methoden mit den zugehörigen Strukturen), wie „Sample Input Files“ in einer SI.",
+                       "“once at the top”: section “Computational details” with each different input line (with the "
+                       "structures concerned if there are several methods), like “Sample Input Files” in an SI."),
+    "dft_si_conv": ("Konvergenz", "convergence"),
+    "dft_si_freq": ("Frequenzen", "frequencies"),
+    "dft_partner_used": ("Koordinaten aus der gleichnamigen xyz (volle Stellenzahl, passt zur Endgeometrie).",
+                         "coordinates from the xyz of the same name (full precision, matches the final geometry)."),
+    "dft_partner_none": ("Koordinaten aus der Ausgabe (6 Nachkommastellen); die gleichnamige xyz von ORCA daneben "
+                         "legen für volle Stellenzahl.",
+                         "coordinates from the output (6 decimals); place ORCA's xyz of the same name next to it for "
+                         "full precision."),
+    "dft_si_copy": ("SI-Text kopieren", "Copy SI text"),
+    "dft_si_copy_tip": ("Block dieser Rechnung formatiert kopieren (in Word einfügen); Tabellen als Tabulator-Text.",
+                        "Copy the block of this calculation with formatting (paste into Word); tables as tab text."),
+    "dft_si_copied": ("SI-Text in der Zwischenablage.", "SI text copied to the clipboard."),
+    "dft_si_word": ("Word speichern …", "Save Word …"),
+    "dft_si_word_tip": ("Alle Rechnungen als Word-Datei: Name, Abbildung, Methode, Konvergenz, Frequenzen, Energien, "
+                        "Koordinaten (in der aktuellen Nummerierung).",
+                        "All calculations as a Word file: name, figure, method, convergence, frequencies, energies, "
+                        "coordinates (in the current numbering)."),
+    "dft_w_partly": ("Hinweis: ORCA hat die Optimierung als konvergiert beendet, obwohl nicht alle Kriterien „YES“ "
+                     "zeigen (übererfüllter Gradient) – die Tabelle zeigt die Werte unverändert.",
+                     "Note: ORCA finished the optimisation as converged although not all criteria show “YES” "
+                     "(gradient overachieved) – the table shows the values unchanged."),
+    "dft_name": ("Name", "Name"),
+    "dft_file": ("Datei", "File"),
+    "dft_bad_xyz": ("keine xyz-Datei (Zeile {line}: Atomzahl erwartet)",
+                    "not an xyz file (line {line}: atom count expected)"),
+    "dft_short_xyz": ("xyz unvollständig: {n} Atome angekündigt (Zeile {line}), weniger Zeilen vorhanden",
+                      "incomplete xyz: {n} atoms announced (line {line}), fewer lines present"),
+    "dft_bad_atom": ("Zeile {line}: erwartet „Element x y z“", "line {line}: expected “element x y z”"),
+    "dft_no_atoms": ("keine Atome in der Datei", "no atoms in the file"),
+    "dft_frames_differ": ("Bilder der Trajektorie haben unterschiedliche Atome",
+                          "trajectory frames contain different atoms"),
+    "dft_info": ("{n} Atome, {formula}", "{n} atoms, {formula}"),
+    "dft_frames": ("Trajektorie mit {n} Bildern: gezeigt das letzte, gespeichert werden alle in der neuen Reihenfolge.",
+                   "trajectory with {n} frames: the last is shown, all are saved in the new order."),
+    "dft_comment": ("Kommentar: {c}", "comment: {c}"),
+    "dft_fragments": ("{n} getrennte Fragmente", "{n} separate fragments"),
+    "dft_renumbered": ("Nummerierung geändert (noch nicht gespeichert, siehe „xyz speichern“).",
+                       "numbering changed (not yet saved, see “Save xyz”)."),
+    "dft_file_order": ("Nummerierung wie in der Datei.", "numbering as in the file."),
+    "dft_numbering": ("Umnummerieren", "Renumber"),
+    "dft_num_start": ("Nummerieren", "Number atoms"),
+    "dft_num_cancel": ("Nummerieren abbrechen", "Cancel numbering"),
+    "dft_num_tip": ("Atome in der gewünschten Reihenfolge anklicken: das erste wird Atom 1, das zweite Atom 2 … "
+                    "Erneuter Klick nimmt ein Atom wieder heraus.",
+                    "Click the atoms in the desired order: the first becomes atom 1, the second atom 2 … "
+                    "Clicking an atom again removes it."),
+    "dft_num_hint": ("„Nummerieren“ drücken und die Atome der Reihe nach anklicken. Gespeichert wird eine neue "
+                     "xyz-Datei mit umsortierten Zeilen; Koordinaten bleiben unverändert.",
+                     "Press “Number atoms” and click the atoms in order. A new xyz file with reordered lines is "
+                     "saved; coordinates are unchanged."),
+    "dft_num_next": ("Als Nächstes: Atom {next} ({k} von {n} vergeben).", "Next: atom {next} ({k} of {n} assigned)."),
+    "dft_num_rest": ("Nicht angeklickte Atome erhalten {a}–{b} in ihrer bisherigen Reihenfolge.",
+                     "Atoms not clicked get {a}–{b} in their previous order."),
+    "dft_num_rest_h": ("Nicht angeklickte Atome erhalten {a}–{b}; H-Atome direkt hinter ihrem Atom.",
+                       "Atoms not clicked get {a}–{b}; H atoms right after their atom."),
+    "dft_num_back": ("Letztes zurück", "Undo last"),
+    "dft_num_apply": ("Übernehmen", "Apply"),
+    "dft_num_done": ("Neue Nummerierung übernommen.", "New numbering applied."),
+    "dft_h_follow": ("H-Atome folgen ihrem Atom", "H atoms follow their atom"),
+    "dft_h_follow_tip": ("Nicht angeklickte H-Atome direkt hinter das Atom stellen, an dem sie sitzen (sonst behalten "
+                         "sie ihre bisherige Reihenfolge am Ende).",
+                         "Place H atoms that were not clicked right after the atom they are bonded to (otherwise they "
+                         "keep their previous order at the end)."),
+    "dft_order_reset": ("Reihenfolge der Datei", "File order"),
+    "dft_order_reset_tip": ("Nummerierung wie in der geladenen Datei wiederherstellen",
+                            "Restore the numbering of the loaded file"),
+    "dft_save_xyz": ("xyz speichern …", "Save xyz …"),
+    "dft_save_xyz_tip": ("Neue xyz-Datei in der aktuellen Reihenfolge (Standard: exports/dft im Projekt). Die "
+                         "geladene Datei bleibt unverändert.",
+                         "New xyz file in the current order (default: exports/dft in the project). The loaded file "
+                         "stays unchanged."),
+    "dft_no_overwrite": ("Die geladene Datei wird nicht überschrieben – bitte einen anderen Namen wählen.",
+                         "The loaded file is not overwritten – please choose a different name."),
+    "dft_not_calc": ("weder xyz noch ORCA-/Gaussian-Ausgabe", "neither xyz nor ORCA/Gaussian output"),
+    "dft_no_geometry": ("keine Koordinaten in der Ausgabe", "no coordinates in the output"),
+    "dft_w_abnormal": ("⚠ Rechnung nicht normal beendet (abgebrochen oder Datei unvollständig) – Werte aus dem letzten "
+                       "vollständigen Abschnitt.",
+                       "⚠ calculation did not terminate normally (aborted or file incomplete) – values from the last "
+                       "complete section."),
+    "dft_w_not_converged": ("⚠ Optimierung nicht konvergiert.", "⚠ optimisation not converged."),
+    "dft_w_no_opt": ("Keine Optimierung in dieser Ausgabe: Geometrie = Eingabegeometrie.",
+                     "No optimisation in this output: geometry = input geometry."),
+    "dft_w_no_freq": ("⚠ Frequenzrechnung angefordert, aber keine Frequenzen gefunden.",
+                      "⚠ frequency calculation requested but no frequencies found."),
+    "dft_w_imag": ("⚠ {n} imaginäre Frequenz(en): {v} cm⁻¹ – kein Minimum; H/G gelten nicht für ein Minimum.",
+                   "⚠ {n} imaginary frequenc(y/ies): {v} cm⁻¹ – not a minimum; H/G do not refer to a minimum."),
+    "dft_w_no_thermo": ("⚠ Thermochemie (H, G) fehlt.", "⚠ thermochemistry (H, G) missing."),
+    "dft_w_solv_cpcm": ("CPCM: angegeben ist der dielektrische Beitrag (in E(el) enthalten), keine Solvatationsenergie "
+                        "ΔG_solv – dafür braucht es dieselbe Rechnung in der Gasphase.",
+                        "CPCM: the dielectric contribution (contained in E(el)) is given, not a solvation energy "
+                        "ΔG_solv – that requires the same calculation in the gas phase."),
+    "dft_w_solv_smd": ("SMD: dielektrischer Beitrag und Kavitäts-/Dispersionsterm angegeben; ΔG_solv nur aus dem "
+                       "Vergleich mit der Gasphasenrechnung.",
+                       "SMD: dielectric contribution and cavity/dispersion term given; ΔG_solv only from comparison "
+                       "with the gas-phase calculation."),
+    "dft_label_style": ("Label", "Label"),
+    "dft_export_labels": ("Labels im Export und in Word", "Labels in export and Word"),
+    "dft_export_labels_tip": ("Ohne Häkchen sind Abbildungen in Export und Word-SI ohne Labels (übliche SI-Darstellung); "
+                              "die Vorschau zeigt sie weiter zum Nummerieren.",
+                              "Unchecked: figures in the export and Word SI have no labels (usual SI style); the "
+                              "preview keeps showing them for numbering."),
+    "dft_lab_el_num": ("Element + Nummer (C12)", "element + number (C12)"),
+    "dft_lab_num": ("nur Nummer (12)", "number only (12)"),
+    "dft_lab_ref": ("Labels der Vorlage (CIF)", "labels of the template (CIF)"),
+    "dft_lab_ref_tip": ("„Labels der Vorlage“: nach „Wie Vorlage nummerieren“ mit einer CIF die Atomnamen der "
+                        "Kristallstruktur (C1, N2, H3A …); Atome ohne Gegenstück behalten Element + Nummer.",
+                        "“labels of the template”: after “Number like template” with a CIF, the atom names of the "
+                        "crystal structure (C1, N2, H3A …); atoms without a counterpart keep element + number."),
+    "dft_ref": ("Wie Vorlage:", "Like template:"),
+    "dft_ref_tip": ("Nummerierung einer anderen Geometrie (DFT) oder einer Kristallstruktur (Tab X-Ray) übernehmen: "
+                    "Zuordnung über das Bindungsnetz, bei Symmetrie nach der Geometrie (kleinste Abweichung nach "
+                    "Überlagerung), H über ihr Nachbaratom.",
+                    "Take over the numbering of another geometry (DFT) or a crystal structure (X-Ray tab): matching "
+                    "by connectivity, for symmetric molecules by geometry (smallest deviation after superposition), "
+                    "H via their neighbour atom."),
+    "dft_ref_apply": ("Zuordnen", "Match"),
+    "dft_ref_missing": ("Vorlage nicht lesbar", "template not readable"),
+    "dft_ref_fail": ("⚠ Zuordnung nicht möglich: {err}", "⚠ matching not possible: {err}"),
+    "dft_match_none": ("Bindungsnetz passt nicht zur Vorlage (weniger als 80 % der Schweratome zuzuordnen)",
+                       "connectivity does not match the template (less than 80 % of the heavy atoms can be matched)"),
+    "dft_ref_done": ("Wie {ref} nummeriert: {n} Schweratome zugeordnet (Vorlage {nr}, hier {nt}), {nh} H; "
+                     "Abweichung nach Überlagerung {rmsd} Å.",
+                     "Numbered like {ref}: {n} heavy atoms matched (template {nr}, here {nt}), {nh} H; deviation "
+                     "after superposition {rmsd} Å."),
+    "dft_ref_sym": ("Bindungsnetz symmetrisch: gewählt nach Geometrie, nächstbeste andere Zuordnung {alt} Å.",
+                    "symmetric connectivity: chosen by geometry, next best other assignment {alt} Å."),
+    "dft_ref_amb": ("⚠ praktisch gleich gute Zuordnung – gleichwertige Atome prüfen: {atoms}",
+                    "⚠ practically equal assignment – check equivalent atoms: {atoms}"),
+    "dft_ref_partial": ("⚠ nur Teilübereinstimmung (gemeinsamer Teil des Bindungsnetzes).",
+                        "⚠ partial match only (common part of the connectivity)."),
+    "dft_ref_truncated": ("⚠ mehr als {n} mögliche Zuordnungen – nur die ersten geprüft.",
+                          "⚠ more than {n} possible assignments – only the first were checked."),
+    "dft_ref_rest": ("{n} Atome ohne Gegenstück stehen am Ende in ihrer bisherigen Reihenfolge.",
+                     "{n} atoms without a counterpart are placed at the end in their previous order."),
+    "dft_zero_based": ("Zählung ab 0 (wie ORCA)", "count from 0 (as ORCA)"),
+    "dft_zero_based_tip": ("ORCA zählt Atome ab 0 (z. B. in %geom Constraints), Gaussian und die meisten Programme "
+                           "ab 1. Ändert nur die Anzeige.",
+                           "ORCA counts atoms from 0 (e.g. in %geom constraints), Gaussian and most programs from 1. "
+                           "Changes the display only."),
+    "dft_radius": ("Atomradius", "Atom radius"),
+    "dft_hover_file": ("(in der Datei: {lab})", "(in the file: {lab})"),
+    "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Doppelklick = Label an/aus, "
+                       "Labels lassen sich verschieben.",
+                       "Drag = rotate, right button = pan, wheel = zoom, double-click = label on/off; labels can be "
+                       "dragged."),
 }
 
 
