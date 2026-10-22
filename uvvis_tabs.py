@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget, QDialog, QDialogButtonBox, QListWidget)
+                               QWidget, QDialog, QDialogButtonBox, QListWidget, QPlainTextEdit)
 
 import uvvis_core as core
 import uvvis_extra as X
@@ -524,6 +524,7 @@ class FigureTab(QWidget):
             spec_cfg = self.base_cfg()
             self.host.set_figure_size(*spec_cfg["figsize_in"])
             self.F = self.build(self.fig)
+            self.show_caption()
             self.preview_stack.setCurrentIndex(0 if self.F is None else 1)
             if self.F is None:
                 self.fig.clear()
@@ -597,8 +598,78 @@ class FigureTab(QWidget):
         if F is None:
             return []
         svg = Path(out_dir) / f"{core.safe_name(name)}_{self.STATE_KEY}.svg"
-        cap = self.SI_CAPTION.format(name="<b>" + html.escape(name) + "</b>")
-        return [si_image(F, svg), ("figcap", cap)]
+        return [si_image(F, svg), ("figcap", self.si_caption(name))]
+
+    def si_caption(self, name):
+        """Bildunterschrift (HTML) für den SI-Export; Tabs mit mehr Wissen (CV, SEC, EPR) überschreiben das."""
+        return self.SI_CAPTION.format(name="<b>" + html.escape(name) + "</b>")
+
+    CAP_FIELDS: tuple = ()               # Felder der Bildunterschrift -> st["cap_<Feld>"] (Konzentration, Lösungsmittel …)
+    CAP_REMEMBER: tuple = ()             # Felder, die für neue Projekte gemerkt werden (Leitsalz)
+
+    def caption_box(self):
+        """Gruppe „Bildunterschrift (SI-Export)“: Freitextfelder + Vorschau der fertigen Unterschrift."""
+        from uvvis_i18n import TEXTS
+        st = self.st
+        g = QGroupBox(T("cap_box"))
+        g.setToolTip(T(f"{self.STATE_KEY}_cap_tip"))
+        f = make_form(g)
+        self.ed_cap = {}
+        for key in self.CAP_FIELDS:
+            if key in self.CAP_REMEMBER and not st.get("cap_" + key):
+                st["cap_" + key] = str(self.main.settings.value(f"cap_{key}", "") or "")
+            ed = QLineEdit(st.get("cap_" + key, ""))
+            ph = f"{self.STATE_KEY}_cap_{key}_ph"
+            ed.setPlaceholderText(T(ph if ph in TEXTS else f"cap_{key}_ph"))
+            ed.editingFinished.connect(self.cap_edited)
+            self.ed_cap[key] = ed
+            lab = f"{self.STATE_KEY}_cap_{key}"
+            f.addRow(T(lab if lab in TEXTS else f"cap_{key}"), ed)
+        self.lbl_cap = QLabel("")
+        self.lbl_cap.setWordWrap(True)
+        self.lbl_cap.setTextFormat(Qt.RichText)
+        self.lbl_cap.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_cap)
+        return g
+
+    def cap_edited(self):
+        for key, ed in self.ed_cap.items():
+            self.st["cap_" + key] = ed.text().strip()
+            if key in self.CAP_REMEMBER and self.st["cap_" + key]:
+                self.main.settings.setValue(f"cap_{key}", self.st["cap_" + key])
+        self.show_caption()
+        self.main.push_undo()
+
+    def show_caption(self):
+        if getattr(self, "lbl_cap", None) is not None:
+            name = (getattr(self.main, "compound", None) or {}).get("name") or "…"
+            try:
+                self.lbl_cap.setText("<b>Figure Sn:</b> " + self.si_caption(name))
+            except Exception:
+                self.lbl_cap.setText("")
+
+    def si_setup_text(self):
+        """Allgemeiner Aufbau-Absatz der Methode (Geräte, Elektroden …), vom Nutzer hinterlegt; steht nur in den
+        lokalen Einstellungen, nicht im Projekt und nicht im Code."""
+        return str(self.main.settings.value(f"si_setup/{self.STATE_KEY}", "") or "").strip()
+
+    def edit_setup_text(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("si_setup_title"))
+        dlg.resize(640, 420)
+        v = QVBoxLayout(dlg)
+        lb = QLabel(T("si_setup_hint"))
+        lb.setWordWrap(True)
+        lb.setStyleSheet(HINT_CSS)
+        v.addWidget(lb)
+        ed = QPlainTextEdit(self.si_setup_text())
+        v.addWidget(ed, 1)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        if dlg.exec() == QDialog.Accepted:
+            self.main.settings.setValue(f"si_setup/{self.STATE_KEY}", " ".join(ed.toPlainText().split()))
 
     # -- SI-Text zu den Fits (englisch) -------------------------------------------------
     def methods_text(self) -> str:
@@ -607,10 +678,19 @@ class FigureTab(QWidget):
 
     def methods_button(self):
         """Knopf „SI-Text kopieren“ (Zwischenablage); derselbe Text wird beim Export als _methods.txt geschrieben."""
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
         b = QPushButton(T("si_copy_methods"))
         b.setToolTip(T("si_copy_methods_tip"))
         b.clicked.connect(self.copy_methods)
-        return b
+        b2 = QPushButton(T("si_setup_btn"))
+        b2.setToolTip(T("si_setup_tip"))
+        b2.clicked.connect(self.edit_setup_text)
+        row.addWidget(b)
+        row.addWidget(b2)
+        row.addStretch(1)
+        return w
 
     def copy_methods(self):
         txt = self.methods_text()

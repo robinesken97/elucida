@@ -97,6 +97,14 @@ def _sub_html(f):
     return re.sub(r"(?<=[A-Za-z\)])(\d+(?:\.\d+)?)", r"<sub>\1</sub>", _html.escape(f))
 
 
+def chem_html(text):
+    """Freitext -> HTML wie in der SI: „mL-1“/„s-1“ hochgestellt, Zahlen in Formeln (CH2Cl2, n-Bu4NPF6, AgNO3)
+    tiefgestellt; Zahlen nach Leerzeichen (0.1 M, 200 mV) bleiben."""
+    h = _html.escape(text or "", quote=False)
+    h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
+    return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", h)
+
+
 def ea_line(formula: str, solvate: str, found: dict):
     """-> (Klartext, HTML, Hinweise). found: {'C': '81.52', …}; nur gemessene Elemente stehen bei found."""
     comp = ea_composition(formula, solvate)

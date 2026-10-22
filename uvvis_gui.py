@@ -2154,7 +2154,10 @@ class MainWindow(QMainWindow):
         figs = self.si_eps_figures(out_dir, name)
         for t in self.figure_tabs():
             try:
-                figs += t.si_figure(out_dir, name)
+                fb = t.si_figure(out_dir, name)
+                if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
+                    fb = [("char", SI.chem_html(t.si_setup_text()))] + fb
+                figs += fb
             except Exception:
                 self.log_signal.emit(traceback.format_exc())
         blocks, n = [], 0
@@ -3051,10 +3054,23 @@ def selftest(outdir, with_isnet=False):
         caps_ = [b_[1] for b_ in fb_ if b_[0] == "figcap"]
         imgs_ = [b_ for b_ in fb_ if b_[0] == "image"]
         assert any(c_.startswith("UV-Vis spectra of <b>TEST-1</b>") for c_ in caps_), caps_
-        assert "Cyclic voltammograms of <b>TEST-1</b>." in caps_ and len(imgs_) == len(caps_), caps_
+        assert any(c_.startswith("Cyclic voltammograms of <b>TEST-1</b>") for c_ in caps_) and len(imgs_) == len(caps_), caps_
         assert all(Path(b_[1]).exists() and Path(b_[4]).exists() and 0 < b_[2] <= 16.0 for b_ in imgs_), imgs_
         assert fb_.count(("pagebreak",)) == (len(imgs_) - 1) // 2 and w.si_available()["figs"]
-        report.append("SI figures from all tabs: OK")
+        w.cv_state.update(cap_conc="1.8±0.1 mg mL-1", cap_el="0.1 M n-Bu4NPF6")        # CV-Unterschrift wie in der SI
+        cap_cv = w.cv_tab.si_caption("TEST-1")
+        assert cap_cv.startswith("Cyclic voltammograms of <b>TEST-1</b> (1.8±0.1 mg mL<sup>-1</sup>)") \
+            and "(0.1 M n-Bu<sub>4</sub>NPF<sub>6</sub>) at rt" in cap_cv and cap_cv.endswith(".") \
+            and "referenced internally against diacetylferrocene" in cap_cv, cap_cv
+        assert SI.chem_html("CH2Cl2, AgNO3 (0.01 M), 7.1 mm², 3 min") == \
+            "CH<sub>2</sub>Cl<sub>2</sub>, AgNO<sub>3</sub> (0.01 M), 7.1 mm², 3 min"
+        w.settings.setValue("si_setup/cv", "CVs were measured in CH3CN.")              # Aufbau-Absatz vor den CVs
+        fb_ = w.si_figure_blocks(out / "si_figs", "TEST-1")
+        assert ("char", "CVs were measured in CH<sub>3</sub>CN.") in fb_ and \
+            ("figcap", cap_cv) in fb_, [b_ for b_ in fb_ if b_[0] != "image"]
+        w.settings.remove("si_setup/cv")
+        w.cv_state.update(cap_conc="", cap_el="")
+        report.append("SI figures from all tabs (CV caption, setup text): OK")
 
         # CV-Basislinie: Ladestrom ±C·v + linearer Untergrund dürfen i_p und i_r/i_f nicht verändern
         E_, I_ = cv_sweep(-1.02, 50.0, -1.4, -0.5)
@@ -3220,6 +3236,11 @@ def selftest(outdir, with_isnet=False):
         assert sum(1 for c_, k_, _ in slots_ if c_ is st_sec["spec_files"]) == 70 and \
             any(c_ is st_sec and k_ == "dta" for c_, k_, _ in slots_), "SEC-Dateien fehlen im Projekt"
         st_sec.update(mode="spectra")
+        w.sec_state.update(cap_solvent="THF", cap_start="neutral", cap_end="dication")    # Unterschrift wie in der SI
+        cap_s = w.sec_tab.si_caption("TEST-1")
+        assert cap_s.startswith("UV-vis-SEC of <b>TEST-1</b> in THF.") and "Starting potential (vs. " in cap_s \
+            and "End potential" in cap_s, cap_s
+        w.sec_state.update(cap_solvent="", cap_start="", cap_end="")
         report.append("spectroelectrochemistry: OK")
 
         # SEC im Overlay: Spektren nach Potential übernehmen, nur normiert (kein ε aus der Dünnschichtzelle)
@@ -3384,6 +3405,11 @@ def selftest(outdir, with_isnet=False):
         t_e.table.selectRow(3)
         t_e.fit_current()
         assert abs(ri["g"] - 2.0030) < 5e-5 and abs(EPRMOD.parse_nuclei(ri["nuclei"])[0][2] - 0.45) < 0.005, ri
+        w.epr_state.update(cap_species="TEST-1^{•+}", cap_solvent="THF", cap_conc="1 mM")   # Unterschrift wie in der SI
+        cap_e = t_e.si_caption("TEST-1")
+        assert cap_e.startswith("X-Band EPR spectr") and "<b>TEST-1<sup>•+</sup></b> in THF (1 mM)." in cap_e \
+            and "2×<sup>1</sup>H: 12." in cap_e and "g = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
+        w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
         # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
         A_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(1, 1.0, 1.4)], 0.2)
         B_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0100, [], 0.5)

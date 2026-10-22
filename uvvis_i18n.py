@@ -306,6 +306,48 @@ TEXTS = {
     "si_part_nmr": ("NMR-Spektren (zwei je Seite)", "NMR spectra (two per page)"),
     "si_part_figs": ("Abbildungen aller Tabs (UV-Vis, IR, HR-MS, Fluoreszenz, CV, SEC, EPR; zwei je Seite)",
                      "Figures from all tabs (UV-Vis, IR, HR-MS, fluorescence, CV, SEC, EPR; two per page)"),
+    "cap_box": ("Bildunterschrift (SI-Export)", "Figure caption (SI export)"),
+    "cv_cap_tip": ("Unterschrift wie in der SI der Gruppe. Vorschubgeschwindigkeit, iR-Kompensation (aus der Gamry-"
+                   "Datei), Referenz und Pfeile kommen aus den sichtbaren Messungen, der Rest aus diesen Feldern.",
+                   "Caption as in the group's SI. Scan rate, iR compensation (from the Gamry file), reference and "
+                   "arrows come from the visible measurements, the rest from these fields."),
+    "cap_conc": ("Konzentration", "Concentration"),
+    "cap_conc_ph": ("z. B. 1.7±0.1 mg mL-1", "e.g. 1.7±0.1 mg mL-1"),
+    "cap_solvent": ("Lösungsmittel", "Solvent"),
+    "cv_cap_solvent_ph": ("leer = Gruppe der Messungen (mehrere: „different solvents“)",
+                          "empty = group of the measurements (several: “different solvents”)"),
+    "cap_solvent_ph": ("z. B. THF", "e.g. THF"),
+    "sec_cap_tip": ("Unterschrift wie in der SI der Gruppe. Start-/Endpotential kommen aus dem Scan (erstes/letztes "
+                    "gezeigtes Spektrum, Referenz wie die Achse); die Farbcodierung (blau/rot) nur mit hervorgehobenem "
+                    "ersten/letzten Spektrum.", "Caption as in the group's SI. Start/end potentials come from the scan "
+                    "(first/last spectrum shown, reference as on the axis); colour coding (blue/red) only with the "
+                    "first/last spectrum highlighted."),
+    "cap_start": ("Spezies am Anfang", "Species at start"),
+    "cap_start_ph": ("z. B. neutral", "e.g. neutral"),
+    "cap_end": ("Spezies am Ende", "Species at end"),
+    "cap_end_ph": ("z. B. dication", "e.g. dication"),
+    "epr_cap_tip": ("Unterschrift wie in der SI der Gruppe. Band aus der Mikrowellenfrequenz; Parameter (g, ΔB_pp, "
+                    "Kopplungen in MHz) nur aus eigenen S = ½-Fits, ohne Fehlerangabe. EasySpin-Simulationen bitte "
+                    "selbst ergänzen.", "Caption as in the group's SI. Band from the microwave frequency; parameters "
+                    "(g, ΔB_pp, couplings in MHz) only from own S = ½ fits, without uncertainties. Please add "
+                    "EasySpin simulations yourself."),
+    "cap_species": ("Spezies", "Species"),
+    "cap_species_ph": ("leer = Verbindung; z. B. 6m^{•+} (^{…} hochgestellt)",
+                       "empty = compound; e.g. 6m^{•+} (^{…} superscript)"),
+    "cap_el": ("Leitsalz", "Electrolyte"),
+    "cap_el_ph": ("z. B. 0.1 M n-Bu4NPF6 (wird gemerkt)", "e.g. 0.1 M n-Bu4NPF6 (remembered)"),
+    "cap_temp": ("Temperatur", "Temperature"),
+    "cap_temp_ph": ("rt", "rt"),
+    "si_setup_btn": ("Aufbau-Text (SI) …", "Setup text (SI) …"),
+    "si_setup_tip": ("Allgemeinen Absatz zu Gerät und Aufbau hinterlegen; er steht im SI-Export vor den Abbildungen "
+                     "dieses Tabs.", "Store a general paragraph on instrument and setup; the SI export puts it "
+                     "before this tab's figures."),
+    "si_setup_title": ("Aufbau-Text für die SI", "Setup text for the SI"),
+    "si_setup_hint": ("Wird nur auf diesem Rechner gespeichert (nicht im Projekt) und im SI-Export vor die Abbildungen "
+                      "gesetzt. Formeln wie AgNO3 oder nBu4NPF6 werden tiefgestellt, „mL-1“ hochgestellt. Leer = kein "
+                      "Absatz.", "Stored on this computer only (not in the project) and placed before the figures in "
+                      "the SI export. Formulas such as AgNO3 or nBu4NPF6 are subscripted, “mL-1” superscripted. "
+                      "Empty = no paragraph."),
     "si_part_xray": ("Kristallstruktur(en) aus dem Tab X-Ray", "Crystal structure(s) from the X-Ray tab"),
     "si_part_dft": ("DFT-Rechnungen aus dem Tab DFT (zweispaltig)", "DFT calculations from the DFT tab (two columns)"),
     "si_part_empty": ("Keine Daten in diesem Tab.", "No data in this tab."),
