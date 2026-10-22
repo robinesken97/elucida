@@ -89,6 +89,11 @@ TEXTS = {
     "act_new_project": ("Neues Projekt…", "New project…"),
     "act_save_copy": ("Projekt als Kopie speichern…", "Save project copy…"),
     "act_show_folder": ("Projektordner anzeigen", "Show project folder"),
+    "act_show_folder_tip": ("Projektordner im {fm} öffnen (Daten, Bilder, Exporte)",
+                            "Open the project folder in {fm} (data, images, exports)"),
+    "fm_finder": ("Finder", "Finder"),
+    "fm_explorer": ("Explorer", "Explorer"),
+    "fm_linux": ("Dateimanager", "file manager"),
     "no_project_title": ("kein Projekt", "no project"),
     "need_project_q": ("Für die Auswertung wird ein Projektordner benötigt. Eingelesene Dateien werden dort "
                        "hineinkopiert, Exporte landen im Unterordner „exports“.\n\nJetzt einen Ordner wählen "

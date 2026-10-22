@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.25.0"
+APP_VERSION = "1.25.1"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -582,7 +582,9 @@ class MainWindow(QMainWindow):
         m.addAction(act_save)
         m.addAction(QAction(T("act_save_copy"), self, shortcut=QKeySequence("Ctrl+Shift+S"),
                             triggered=self.save_project_copy))
-        m.addAction(QAction(T("act_show_folder"), self, triggered=self.show_project_folder))
+        self.act_folder = QAction(STYLE.icon("reveal"), T("act_show_folder"), self, triggered=self.show_project_folder)
+        self.act_folder.setEnabled(bool(self.project_dir))
+        m.addAction(self.act_folder)
         m.addSeparator()
         m.addAction(QAction(T("act_open"), self, shortcut=QKeySequence("Ctrl+Shift+O"), triggered=self.choose_csv))
         m.addAction(QAction(T("act_conc"), self, triggered=self.edit_concentrations))
@@ -611,13 +613,16 @@ class MainWindow(QMainWindow):
         self.toolbar.setObjectName("mainToolbar")
         self.toolbar.setMovable(False)
         self.toolbar.setIconSize(QSize(18, 18))
-        for act in (act_new, act_open_prj, act_save, None, self.act_undo, self.act_redo):
+        for act in (act_new, act_open_prj, act_save, self.act_folder, None, self.act_undo, self.act_redo):
             if act is None:
                 self.toolbar.addSeparator()
                 continue
             keys = act.shortcut().toString(QKeySequence.NativeText)
             act.setToolTip(f"{act.text().rstrip('…')} ({keys})" if keys else act.text())
             self.toolbar.addAction(act)
+        # Name des Dateimanagers je System (Finder, Explorer, sonst Standard-Dateimanager, z. B. Dolphin/Nautilus)
+        fm = {"darwin": "fm_finder", "win32": "fm_explorer"}.get(sys.platform, "fm_linux")
+        self.act_folder.setToolTip(T("act_show_folder_tip", fm=T(fm)))
         self.toolbar.addSeparator()
         self.act_compound = QAction(STYLE.icon("compound"), self.compound_label(), self,
                                     triggered=self.edit_compound)
@@ -1458,6 +1463,8 @@ class MainWindow(QMainWindow):
         return bool(self._undo) and self._undo[-1] != self._saved_snap
 
     def update_title(self):
+        if getattr(self, "act_folder", None) is not None:
+            self.act_folder.setEnabled(bool(self.project_dir))
         name = Path(self.project_dir).name if self.project_dir else T("no_project_title")
         if self.compound.get("name"):
             name = f"{self.compound['name']} · {name}"
@@ -3748,7 +3755,16 @@ def selftest(outdir, with_isnet=False):
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
         acts = [a for a in w.toolbar.actions() if not a.isSeparator()]
-        assert len(bars) == 1 and len(acts) == 7 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
+        assert len(bars) == 1 and len(acts) == 8 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
+        opened_ = []                                         # Projektordner im Dateimanager (hier nur abgefangen)
+        orig_open_ = QDesktopServices.openUrl
+        QDesktopServices.openUrl = staticmethod(lambda u: opened_.append(u.toLocalFile()) or True)
+        try:
+            assert w.act_folder in acts and w.act_folder.isEnabled()
+            w.act_folder.trigger()
+        finally:
+            QDesktopServices.openUrl = orig_open_
+        assert opened_ and Path(opened_[0]) == Path(w.project_dir), opened_
         arrows = [b for b in w.epr_tab.findChildren(QPushButton) if b.toolTip() == T("move_up")]
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")

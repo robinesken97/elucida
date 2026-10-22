@@ -321,7 +321,8 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 Jeder Export aus den Tabs Overlay, Fluoreszenz, CV, SEC und EPR schreibt zusätzlich `…_data.csv` mit genau den
 gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) – für Origin, Excel oder MATLAB.
 
-Alles passiert in einem **Projektordner**:
+Alles passiert in einem **Projektordner** (der Ordner-Knopf in der Werkzeugleiste öffnet ihn im Finder, Explorer bzw.
+im Dateimanager des Linux-Desktops):
 
 1. **Datei → Neues Projekt…** – einen Ordner wählen oder im Dialog neu anlegen.
 2. Messdaten, Strukturen, Fotos und TD-DFT-Dateien von beliebigen Orten laden – sie werden **ins

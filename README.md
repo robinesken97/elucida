@@ -310,7 +310,8 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
 Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
 plotted curves (one x/y column pair per curve, values without stacking offset) – for Origin, Excel or MATLAB.
 
-Everything happens in a **project folder**:
+Everything happens in a **project folder** (the folder button in the toolbar opens it in Finder, Explorer or the file
+manager of your Linux desktop):
 
 1. **File → New project…** – choose a folder or create a new one in the dialog.
 2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
