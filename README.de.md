@@ -266,8 +266,10 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
   (eine Spalte in den Tabellen). Elucida liest die CIF selbst (Zelle, Koordinaten, U_iso/U_ij, Besetzung, PART,
   Symmetrieoperationen, `_geom_bond`/`_geom_angle`/`_geom_torsion`); keine weitere Software nötig.
 - **ORTEP-Abbildung im Mercury-Stil:** schattierte Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit
-  (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; H-Atome als kleine schattierte Kugeln, normale
-  Labels (verschiebbar). Alternativ flacher Olex2-Stil mit fetten Labels. Einzelne Atome (z. B. einzelne H) lassen
+  (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; Kohlenstoff weiß mit grauer Schattierung, schwarze
+  Bindungen, fette Labels (verschiebbar), H-Atome als kleine schattierte Kugeln. Weitere Stile (auch in PDF/SVG/PNG und
+  Word): flacher Olex2-Stil; **Kugel-Stab, glänzend** (wie IboView, Stäbe in Atomfarben); **Kugel-Stab mit Tiefe**
+  (weiter hinten liegende Atome heller). Einzelne Atome (z. B. einzelne H) lassen
   sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste oder Doppelklick auf das Atom).
   **Ziehen dreht**, rechte Taste verschiebt, Mausrad zoomt; die Ansicht wird je Struktur gespeichert,
   **Ansicht zurücksetzen** führt zur Standardansicht (möglichst wenig überdeckte Atome). Atomfarben je Element frei wählbar
@@ -299,8 +301,11 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 ## DFT-Tab
 
 - **xyz**-Dateien (auch Trajektorien; gezeigt wird das letzte Bild) oder Ausgaben von **ORCA 6** (`.out`) und
-  **Gaussian** (`.log`) laden. Dateien aus einer PowerShell-Umleitung (UTF-16) werden erkannt. Abbildung und Maus wie
-  im X-Ray-Tab.
+  **Gaussian** (`.log`) laden. Dateien aus einer PowerShell-Umleitung (UTF-16) werden erkannt. Abbildung, Stile und
+  Maus wie im X-Ray-Tab.
+- **Messen und Ausrichten** wie im X-Ray-Tab: 2/3/4 Atome anklicken für Abstand, Winkel oder Diederwinkel (Werte aus der
+  Geometrie, 3 bzw. 1 Nachkommastelle); Bindung nach unten/oben/links/rechts, Ebene von vorn, schrittweise drehen,
+  wenden, ChemDraw-Vorlage.
 - **Umnummerieren:** **Nummerieren** drücken und die Atome in der gewünschten Reihenfolge anklicken; **Übernehmen**
   stellt sie nach vorn, die übrigen behalten ihre Reihenfolge (wahlweise H direkt hinter ihrem Atom). **xyz speichern**
   schreibt eine neue Datei mit unveränderten Zeilen (nur umsortiert); die geladene Datei wird nie überschrieben.

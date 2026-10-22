@@ -80,7 +80,12 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `disorder_assembly` der Teil mit der größten Besetzung. Ellipsoide: k = √χ²₃(p) (50 % → 1.5382), Umriss = 2×2-Block
   von R·U·Rᵀ. Aussehen Standard **wie Mercury** (Nutzerwunsch): schattierte Schichten (`shade_layers`, Licht oben
   links, matt, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), H-Radius 0.09 Å, Bindungsdicke in Å
-  (`bond_w`, Standard 0.08, skaliert mit dem Zoom wie Mercurys Zylinder), normale Labels; „flach“ = Olex2 (fett, weißer Rand).
+  (`bond_w`, Standard 0.12 seit 1.26, skaliert mit dem Zoom wie Mercurys Zylinder); seit 1.26 nach Nutzervorlage
+  C weiß (grau schattiert, `default_color(el, style)`), Bindungen schwarz, Labels fett ohne Rand; „flach“ = Olex2 (fett,
+  weißer Rand). Kugel-Stil (`BALL_STYLES`): „ballstick“ glänzend wie IboView (`gloss_colors`), „depth“ matt mit Aufhellung
+  nach hinten (`DEPTH_A` = 6 Å bis 55 %); Kugelradius `ball_radius` (0.42 × kovalent, H ≥ 0.2 Å), Stäbe 2.6 × `bond_w`
+  als Zylinder aus `ROD_LAYERS`, je Hälfte in Atomfarbe. Messen/Ausrichten gemeinsam für X-Ray und DFT (`MeasureAlign`;
+  DFT: `MEASURE_ESD = False`, Klick = Auswahl, im Nummerier-Modus = Nummer).
   Labels/Atome je Atom über `label_on`/`hidden_atoms` (Schlüssel Label|Operation). Tabellen englisch beschriftet, Zahlen exakt wie in der CIF, echtes Minus (U+2212).
   Drahtmodell (`wire`, Atom-Schlüssel): Bindung → kleinere Seite (`Molecule.substituent`), in Ringen das Ringsystem hinter
   dem ersten Atom (`beyond`, höchstens halbes Fragment); H daran nur mit `wire_h`. Fragmentart über die Summenformel

@@ -1123,6 +1123,8 @@ TEXTS = {
     "xr_style": ("Stil", "Style"),
     "xr_style_mercury": ("Mercury (schattiert)", "Mercury (shaded)"),
     "xr_style_flat": ("Olex2 (flach, fette Labels)", "Olex2 (flat, bold labels)"),
+    "xr_style_ballstick": ("Kugel-Stab, glänzend (wie IboView)", "Ball and stick, glossy (like IboView)"),
+    "xr_style_depth": ("Kugel-Stab mit Tiefe (hinten heller)", "Ball and stick with depth (back lighter)"),
     "xr_atoms": ("Atome", "Atoms"),
     "xr_atom": ("Atom", "Atom"),
     "xr_atom_shown": ("zeigen", "show"),

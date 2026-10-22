@@ -258,8 +258,9 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   column in the tables). Elucida reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
   operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
 - **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
-  exactly, with the principal ellipses; H atoms as small shaded spheres, plain labels (draggable). Alternatively a
-  flat Olex2 style with bold labels. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
+  exactly, with the principal ellipses; carbon white with grey shading, black bonds, bold labels (draggable), H atoms as
+  small shaded spheres. Further styles (also in PDF/SVG/PNG and Word): flat Olex2 style; **ball and stick, glossy**
+  (like IboView, rods coloured by atom); **ball and stick with depth** (atoms further back lighter). Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
   (atom list or double-click on the atom). **Drag to rotate**,
   right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
   default orientation (least overlap of the atoms). Atom colours per element are freely selectable (Olex2
@@ -290,7 +291,9 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
 ## DFT tab
 
 - Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
-  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Figure and mouse as in the X-Ray tab.
+  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Figure, styles and mouse as in the X-Ray tab.
+- **Measure and align** as in the X-Ray tab: click 2/3/4 atoms for distance, angle or dihedral (values from the
+  geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
 - **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the
   remaining atoms keep their order (optionally H atoms right after their atom). **Save xyz** writes a new file with the
   lines unchanged (only reordered); the loaded file is never overwritten. Counting from 0 (ORCA) can be shown.

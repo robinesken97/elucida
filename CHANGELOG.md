@@ -4,7 +4,16 @@
 
 ## 1.26.0 – 2026-10-22
 
+### New
+- **DFT tab: measure and align** like the X-Ray tab – distance, angle and dihedral by clicking 2/3/4 atoms (values
+  from the geometry), bond direction, plane face-on, step rotation, flip and ChemDraw template. Both tabs share the
+  same code, so they behave identically.
+- **New structure styles** in the X-Ray and DFT tabs (preview, PDF/SVG/PNG, Word): **ball and stick, glossy** (like
+  IboView: shiny spheres, rods coloured by atom) and **ball and stick with depth** (atoms further back lighter).
+
 ### Changed
+- **Mercury style** now looks like Mercury figures: carbon white with grey shading, black bonds, bold labels; default
+  bond thickness 0.12 Å (existing projects keep their setting).
 - **New name: Elucida** (formerly Spectravolt). The program has grown from UV-Vis and electrochemistry into a full
   characterization suite (synthesis, NMR, IR, HRMS, UV-Vis, fluorescence, CV, SEC, EPR, X-ray, DFT). Settings, recent
   projects and the data folder (e.g. the background-removal model) are taken over automatically on the first start;

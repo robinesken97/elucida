@@ -4090,7 +4090,7 @@ def selftest(outdir, with_isnet=False):
         assert w.xray_state["style"] == "mercury"
         pc_ = t_x.F.atom_art[t_x.F.mol.find_key("C1")][0]
         assert len(pc_.get_paths()) == 13, len(pc_.get_paths())                 # 12 Schichten + Umriss
-        assert "lbl_C1" in t_x.F.ann_items and t_x.F.ann_items["lbl_C1"].get_fontweight() == "normal"
+        assert "lbl_C1" in t_x.F.ann_items and t_x.F.ann_items["lbl_C1"].get_fontweight() == "bold"   # wie Mercury-Bilder
         w.xray_state["label_pt"] = 12.5                                     # Labelgröße je Tab
         t_x.render(push=False)
         assert t_x.F.ann_items["lbl_C1"].get_fontsize() == 12.5
@@ -4210,10 +4210,31 @@ def selftest(outdir, with_isnet=False):
         t_x.reset_display()
         d_x = XRAY.XrayTab.DEFAULT_STATE
         assert all(w.xray_state[k_] == d_x[k_] for k_ in ("bond_w", "prob", "style", "show_h", "disorder"))
-        assert w.xray_state["label_pt"] == 0.0 and abs(t_x.sp_bond.value() - 0.08) < 1e-9 and t_x.sp_prob.value() == 50
+        assert w.xray_state["label_pt"] == 0.0 and abs(t_x.sp_bond.value() - 0.12) < 1e-9 and t_x.sp_prob.value() == 50
         assert not e_x["hidden_atoms"] and not e_x["label_on"] and not e_x["wire"] and e_x["zoom"] == 1.0
         assert len(w.xray_state["entries"]) == n_ent and e_x["name"] == "umbenannt" and e_x["params"] == params_
         assert t_x.F is not None
+        # Stile: Mercury (C weiß, schwarze Bindungen, fette Labels), Olex2, Kugel-Stab glänzend, Kugel-Stab mit Tiefe
+        for sty_ in XRAY.STYLES:
+            w.xray_state["style"] = sty_
+            t_x.render()
+            F_s = t_x.F
+            assert F_s.style == sty_
+            c_it = next(i_ for i_ in F_s.scene["atoms"] if i_["el"] == "C")
+            if sty_ in XRAY.BALL_STYLES:
+                assert abs(c_it["w"] - 2 * XRAY.ball_radius("C")) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
+                assert sorted(set(F_s.bond_fac.values())) == sorted(f_ for f_, _ in XRAY.ROD_LAYERS)
+            if sty_ == "mercury":
+                fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()
+                assert min(fc_[-2][:3]) > 0.9 and XRAY.default_color("C", "mercury") == "#FFFFFF"   # Glanz fast weiß
+                assert all(a_.get_fontweight() == "bold" for a_ in F_s.ann_items.values())
+                assert all(ln_.get_color() == "black" for _, _, ln_, h_ in F_s.bond_art if h_ is None)
+            if sty_ == "depth":
+                assert F_s._fog(F_s._zmax) == 0.0 and abs(F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) - 0.55) < 1e-9
+            f_s = t_x.export_to(out / f"xray_style_{sty_}")
+            assert all(f_.exists() and f_.stat().st_size > 500 for f_ in f_s if f_.suffix in (".pdf", ".svg", ".png"))
+        w.xray_state["style"] = "mercury"
+        t_x.render()
         report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
                       f"({npath_} pdf paths)")
         w.xray_state.update(entries=[], current=None, show_h=True, hide_solv=False, label_mode="all")

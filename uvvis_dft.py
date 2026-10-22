@@ -1002,7 +1002,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
         self.cmb_style = QComboBox()
-        for key in ("mercury", "flat"):
+        for key in XRAY.STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
         f.addRow(T("xr_style"), self.cmb_style)
         self.cb_h = QCheckBox(T("xr_show_h"))

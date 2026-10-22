@@ -316,7 +316,9 @@ COV = {"H": 0.31, "D": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C":
 BOND_TOL = 0.45
 
 
-def default_color(el):
+def default_color(el, style=None):
+    if style == "mercury" and el == "C":           # Mercury-Ellipsoide: Kohlenstoff weiß (grau schattiert)
+        return "#FFFFFF"
     if el in OLEX2_COLORS:
         return OLEX2_COLORS[el]
     if el in METALS:
@@ -1415,7 +1417,47 @@ def shade_colors(color, n):
     return out
 
 
-def shade_layers(it, n):
+STYLES = ("mercury", "flat", "ballstick", "depth")
+BALL_STYLES = ("ballstick", "depth")      # Kugel-Stab: Kugeln nach Element statt Ellipsoiden, Stäbe in Atomfarben
+DEPTH_A = 6.0                             # Tiefe (Å), über die der Stil „depth“ voll aufhellt
+# Stab als Zylinder: übereinanderliegende Linien abnehmender Breite, Rand dunkel -> Mitte hell (Anteil, Helligkeit)
+ROD_LAYERS = ((1.0, -0.45), (0.86, -0.25), (0.7, 0.0), (0.52, 0.18), (0.34, 0.36), (0.18, 0.55))
+
+
+def ball_radius(el):
+    """Kugelradius im Kugel-Stab-Modell (Å): proportional zum kovalenten Radius, H nicht zu klein."""
+    return max(0.2, 0.42 * COV.get(el, 0.76))
+
+
+def gloss_colors(color, n):
+    """Glänzende Kugel (wie IboView/CYLview): dunkler Rand, Grundfarbe, kräftiger weißer Glanzpunkt oben links."""
+    base = np.array(to_rgb(color))
+    out = []
+    for t in np.linspace(0, 1, n):
+        if t < 0.45:
+            c = base * (0.42 + 0.58 * t / 0.45)
+        else:
+            c = base + (1 - base) * 0.92 * ((t - 0.45) / 0.55) ** 2.2
+        out.append(tuple(np.clip(c, 0, 1)))
+    return out
+
+
+def matte_colors(color, n, fog=0.0):
+    """Matte Kugel mit Tiefe: weicher Verlauf, nach hinten zum Weiß hin aufgehellt (fog 0 … 1)."""
+    base = np.array(to_rgb(color))
+    out = []
+    for t in np.linspace(0, 1, n):
+        c = base * (0.7 + 0.3 * t / 0.4) if t < 0.4 else base + (1 - base) * 0.32 * ((t - 0.4) / 0.6) ** 1.5
+        out.append(tuple(np.clip(c + (1 - c) * fog, 0, 1)))
+    return out
+
+
+def fogged(color, fog):
+    c = np.array(to_rgb(color))
+    return tuple(np.clip(c + (1 - c) * fog, 0, 1))
+
+
+def shade_layers(it, n, shift=0.55, smin=0.25):
     """Polygone der Schattierungsschichten (äußere zuerst). Jede Schicht ist die verkleinerte Ellipse, zum Licht
     verschoben, aber immer ganz innerhalb des Umrisses (Abstand in der Metrik der Ellipse ≤ 1 − s)."""
     a, b = it["w"] / 2, it["h"] / 2
@@ -1424,8 +1466,8 @@ def shade_layers(it, n):
     v = -LIGHT[0] * math.sin(th) + LIGHT[1] * math.cos(th)
     nrm = math.sqrt((u / a) ** 2 + (v / b) ** 2) or 1.0
     verts = []
-    for s in np.linspace(1.0, 0.25, n):
-        d = (1 - s) * 0.55 / nrm
+    for s in np.linspace(1.0, smin, n):
+        d = (1 - s) * shift / nrm
         verts.append(_ellipse_verts(it["x"] + LIGHT[0] * d, it["y"] + LIGHT[1] * d, it["w"] * s, it["h"] * s,
                                     it["ang"]))
     return verts
@@ -1498,7 +1540,11 @@ class XrayFigure:
         self.center = pts.mean(axis=0)
         self.rmax = float(np.max(np.linalg.norm(pts - self.center, axis=1))) + 1.0
         sc = cfg.get("scale", 1.0)
-        self.bond_w = float(opts.get("bond_w", 0.08))           # Bindungsdicke in Å (Mercury: Zylinder)
+        self.style = opts.get("style", "mercury")
+        self.ball = self.style in BALL_STYLES
+        # Bindungsdicke in Å (Mercury: Zylinder); Kugel-Stab: kräftige Stäbe
+        self.bond_w = float(opts.get("bond_w", 0.08)) * (2.6 if self.ball else 1.0)
+        self.bond_fac = {}                                       # Linie -> Anteil der Stabbreite (schattierte Stäbe)
         self.lw_edge = max(0.4, 0.6 * sc)
         self.atom_art, self.bond_art, self.sel_art, self.bond_lines = {}, [], [], {}
         self.auto_pos = {}
@@ -1561,6 +1607,9 @@ class XrayFigure:
         for it in scene["atoms"]:
             if it["k"] in self.wire:                       # Drahtmodell: kein Ellipsoid, kleiner Klickbereich
                 it.update(w=0.24, h=0.24, ang=0.0, iso=True, kind="wire", curves=[])
+            elif self.ball:                                # Kugel-Stab: Kugel nach Element, keine Hauptachsen
+                r = ball_radius(self.mol.atoms[it["k"]]["el"])
+                it.update(w=2 * r, h=2 * r, ang=0.0, iso=True, curves=[])
         scene["by_k"] = {it["k"]: it for it in scene["atoms"]}
         return scene
 
@@ -1580,17 +1629,30 @@ class XrayFigure:
         if it.get("kind") == "wire":
             return []
         base = _ellipse_verts(it["x"], it["y"], it["w"], it["h"], it["ang"])
-        if self.opts.get("style", "mercury") == "flat":
+        if self.style == "flat":
             return [base, base]
+        if self.style == "ballstick":                      # Glanzpunkt kleiner und weiter oben links
+            return shade_layers(it, 16, shift=0.8, smin=0.1) + [base]
+        if self.style == "depth":
+            return shade_layers(it, 10, shift=0.45, smin=0.3) + [base]
         n = 6 if it.get("kind") == "H" else 12
         return shade_layers(it, n) + [base]
 
+    def _fog(self, z):
+        """Tiefe (nur Stil „Kugel-Stab mit Tiefe“): vorn unverändert, je Å nach hinten heller, ab 6 Å hinter dem
+        vordersten Atom 55 % zum Weiß – kleine Moleküle bleiben so fast unverändert, große bekommen Tiefe."""
+        if self.style != "depth":
+            return 0.0
+        return 0.55 * min(1.0, max(0.0, (self._zmax - z) / DEPTH_A))
+
     def _build(self):
         ax, colors = self.ax, self.opts.get("colors") or {}
-        mercury = self.opts.get("style", "mercury") != "flat"
+        mercury = self.style == "mercury"
+        zs = [it["z"] for it in self.scene["atoms"]] or [0.0]
+        self._zmax, self._zspan = max(zs), max(zs) - min(zs)
         for it in self.scene["atoms"]:
             a = self.mol.atoms[it["k"]]
-            col = colors.get(a["el"]) or default_color(a["el"])
+            col = colors.get(a["el"]) or default_color(a["el"], self.style)
             verts = self._layers(it)
             if not verts:                                  # Drahtmodell: nur die Bindungen
                 p = PolyCollection([], facecolors="none", edgecolors="none")
@@ -1598,11 +1660,16 @@ class XrayFigure:
                 self.atom_art[it["k"]] = (p, [])
                 continue
             nfill = len(verts) - 1
-            faces = shade_colors(col, nfill) if mercury else [col]
-            edge = (0.1, 0.1, 0.1) if mercury else (0, 0, 0)
+            if self.style == "ballstick":
+                faces, edge, elw = gloss_colors(col, nfill), (0.25, 0.25, 0.25), 0.45 * self.lw_edge
+            elif self.style == "depth":
+                faces, edge, elw = matte_colors(col, nfill, self._fog(it["z"])), "none", 0.0
+            elif mercury:
+                faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
+            else:
+                faces, edge, elw = [col], (0, 0, 0), self.lw_edge
             p = PolyCollection(verts, facecolors=faces + ["none"], edgecolors=["none"] * nfill + [edge],
-                               linewidths=[0] * nfill + [self.lw_edge * (0.8 if mercury else 1.0)],
-                               antialiaseds=True, closed=True)
+                               linewidths=[0] * nfill + [elw], antialiaseds=True, closed=True)
             ax.add_collection(p)
             lines = []
             for xs, ys in it["curves"]:
@@ -1623,7 +1690,22 @@ class XrayFigure:
                     self.bond_art.append((a, b, ln, half))
                     self.bond_lines[n].append(ln)
                 continue
-            ln = Line2D(xs, ys, color="#262626" if mercury else "black", lw=self.lw_bond, solid_capstyle="butt")
+            if self.ball:                                  # schattierter Stab, je Hälfte in der Atomfarbe
+                self.bond_lines[n] = []
+                fog = self._fog(self.scene["bonds"][n][2])
+                for half, k in ((0, a), (1, b)):
+                    el = self.mol.atoms[k]["el"]
+                    base = np.array(to_rgb(colors.get(el) or default_color(el, self.style)))
+                    for fac, lt in ROD_LAYERS:
+                        c = base * (1 + lt) if lt < 0 else base + (1 - base) * lt
+                        ln = Line2D(*_half(xs, ys, half), color=fogged(c, fog), lw=self.lw_bond * fac,
+                                    solid_capstyle="butt")
+                        ax.add_line(ln)
+                        self.bond_art.append((a, b, ln, half))
+                        self.bond_fac[ln] = fac
+                        self.bond_lines[n].append(ln)
+                continue
+            ln = Line2D(xs, ys, color="black", lw=self.lw_bond, solid_capstyle="butt")
             ax.add_line(ln)
             self.bond_art.append((a, b, ln, None))
             self.bond_lines[n] = [ln]
@@ -1686,7 +1768,8 @@ class XrayFigure:
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
         for _, _, ln, half in self.bond_art:
-            ln.set_linewidth(self.lw_bond if half is None else self.lw_wire)
+            fac = self.bond_fac.get(ln)
+            ln.set_linewidth(self.lw_bond * fac if fac is not None else self.lw_bond if half is None else self.lw_wire)
 
     def artists(self):
         return self.order
@@ -1709,16 +1792,17 @@ class XrayFigure:
         lc = self.cfg["labels"]
         fs = o.get("label_size") or lc["font_size"]           # eigene Labelgröße des Tabs (0 = Textformat)
         todo = []
-        flat = o.get("style", "mercury") == "flat"
-        # Mercury: normale Schrift ohne Rand; flach (Olex2): fett mit weißem Rand
-        extra = dict(fontweight="bold", path_effects=[PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0),
-                                                                    foreground="white")]) if flat else {}
+        halo = [PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0), foreground="white")]
+        # Mercury: fett ohne Rand (wie Mercury-Abbildungen); flach (Olex2): fett mit weißem Rand; Kugel-Stab: normal
+        # mit weißem Rand (Labels über glänzenden Kugeln lesbar)
+        extra = {"flat": dict(fontweight="bold", path_effects=halo), "mercury": dict(fontweight="bold")}.get(
+            self.style, dict(path_effects=halo))
         for it in self.scene["atoms"]:
             a = self.mol.atoms[it["k"]]
             if not label_shown(a, o):
                 continue
             key = "lbl_" + a["key"]
-            ann = self.ax.annotate(self._label_text(a, flat), xy=(it["x"], it["y"]), xycoords="data",
+            ann = self.ax.annotate(self._label_text(a, self.style in ("flat", "mercury")), xy=(it["x"], it["y"]), xycoords="data",
                                    xytext=(0, 0), textcoords="offset points", ha="center", va="center",
                                    fontsize=fs, color=lc.get("color") or "black", zorder=60,
                                    annotation_clip=False, **extra)
@@ -2317,7 +2401,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     TEXT_OPTS = ("fonts", "labels")              # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
-                         h_labels=False, colors={}, bond_w=0.08, style="mercury", x_auto=True, x_min=0.0,
+                         h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False)
 
     def __init__(self, main, state):
@@ -2359,7 +2443,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
         self.cmb_style = QComboBox()
-        for key in ("mercury", "flat"):
+        for key in STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
         self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
         f.addRow(T("xr_style"), self.cmb_style)
@@ -2751,7 +2835,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             h = QHBoxLayout(box)
             h.setContentsMargins(0, 0, 0, 0)
             h.addWidget(QLabel(el))
-            h.addWidget(TABS.color_button(cols.get(el) or default_color(el), lambda c, el=el: self.set_color(el, c)))
+            h.addWidget(TABS.color_button(cols.get(el) or default_color(el, self.st.get("style")),
+                                          lambda c, el=el: self.set_color(el, c)))
             self.color_grid.addWidget(box, n // 4, n % 4)
 
     def set_color(self, el, c):
