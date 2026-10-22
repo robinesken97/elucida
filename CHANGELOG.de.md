@@ -2,6 +2,16 @@
 
 # Änderungen
 
+## 1.22.1 – 22.10.2026
+
+### Behoben
+- CV-Basislinie: endet jetzt auch vor dem Anstieg der Welle (2 % der Peakhöhe). Bei breiten Wellen (iR-Abfall,
+  ΔE_p > 100 mV, z. B. in THF) lag sie vorher im Fuß der Welle und hat i_pa um bis zu 36 % zu klein gemacht.
+- CV: kein Nicholson-Verhältnis mehr, wenn zwischen Hinpeak und Umkehrpotential ein weiterer Prozess liegt (z. B.
+  Ac₂Fc oder eine zweite Welle) – die Formel gilt dann nicht; Anzeige „–“, nicht im i_r/i_f-Plot.
+- CV: E½ im Bild je Gruppe (vorher über alle Gruppen, z. B. Lösungsmittel, gemittelt).
+- SI-Text: Scanraten gerundet (Gamry speichert z. B. 499,999 mV/s).
+
 ## 1.22.0 – 21.10.2026
 
 ### Neu

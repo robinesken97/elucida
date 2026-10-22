@@ -33,9 +33,12 @@ und Tabelle, ChemDraw-Struktur, Küvettenfoto). Dazu Tabs für Overlay (gemessen
   Kombinieren: Übergänge mehrerer Rechnungen (`sources`, je Gewicht) erst zusammenführen, dann verbreitern.
 - CV: Strom wie aufgezeichnet (Gamry IUPAC, anodisch positiv); Paare nur im Fenster (gespeichert in gemessenen
   Potentialen, angezeigt in Achsenskala); i_pc/i_pa nach Nicholson; Referenz E_Fc = E − (E½,ref − E°ref);
-  Basislinie (Standard an): Gerade durch den Vorlauf des Hinpeaks (bis 0,15 V davor), Rückbasislinie = dieselbe minus
+  Basislinie (Standard an): Gerade durch den Vorlauf des Hinpeaks (bis 0,15 V davor **und** vor dem Anstieg der Welle,
+  2 % der Peakhöhe – sonst überkorrigiert sie breite Wellen, echte THF-Daten), Rückbasislinie = dieselbe minus
   Ladestromsprung am Umkehrpunkt (2·C·v); Nicholson auf die korrigierten Ströme, **keine** zusätzliche extrapolierte
   Rückbasislinie (doppelt korrigiert); Peakpotentiale aus dem Rohstrom. Regressionen gegen v je Gruppe, mit 95-%-KI.
+  Nicholson nur ohne weiteren Prozess zwischen Hinpeak und Umkehrpotential (Strom steigt um > 10 % der Peakhöhe wieder
+  an → „–“). E½ im Bild und alle Mittelwerte je Gruppe, nie über Lösungsmittel gemittelt.
   Ac₂Fc-Vorgabe +0,49 V vs. Fc⁺/Fc (ergibt die publizierten −1,10 V für 6m), immer änderbar lassen.
 - SEC: Nernst-Fit aus kontinuierlichem Scan nur als „scheinbar“ ausweisen (Nachhinken in der Dünnschichtzelle:
   6m in THF E½ ≈ −0,76 V statt −0,89 V im CV, n ≈ 0,45); CV-Werte haben Vorrang.
@@ -165,6 +168,8 @@ python build.py                                       # PyInstaller-Build (brauc
   befristet – fällt er weg, Intel-Build aus der Matrix nehmen.
 
 ## Offene Punkte
+- CV geprüft mit echten Gamry-Serien (MeCN, DCM, THF, DMF; 25–500 mV/s, Ac₂Fc/Fc-Zusatz): 6m in MeCN E½ = −1,10 V vs.
+  Fc⁺/Fc. THF bei ≥ 400 mV/s iR-dominiert (ΔE_p bis ≈ 600 mV) – „Vorschlag“ findet dort zu Recht kein Paar.
 - X-Ray geprüft mit künstlicher CIF, einer Olex2-CIF und einer CCDC-CIF mit Fehlordnung (95:5) und THF; Symmetrieerzeugung
   nur künstlich; Polymere werden
   abgebrochen (`max_factor`). Stufe 3 (Vergleich mit DFT-Geometrie, ORCA-xyz) vorbereitet: `measure` arbeitet nur

@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.22.0"
+APP_VERSION = "1.22.1"
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2913,6 +2913,19 @@ def selftest(outdir, with_isnet=False):
         # zu wenig Vorlauf im Fenster: Fallback von null, markiert
         r4_ = CVMOD.analyze_couple(E_, I_c, -1.08, -0.8, use_baseline=True)
         assert r4_ is not None and r4_["bl_fail"] and r4_["ipa"] == r4_["ipa_raw"], r4_
+        # breite Welle (iR-Abfall, wie THF mit ΔE_p ≈ 240 mV): Basislinie endet vor dem Anstieg, nicht im Fuß
+        upw_ = np.arange(-1.6, -0.3, 0.002)
+        Ew_ = np.concatenate([upw_, upw_[::-1]])
+        fww_ = np.r_[np.ones(len(upw_)), np.zeros(len(upw_))].astype(bool)
+        Iw_ = np.where(fww_, 100 * np.exp(-((Ew_ + 0.80) / 0.12) ** 2), -80 * np.exp(-((Ew_ + 1.04) / 0.12) ** 2))
+        rw_ = CVMOD.analyze_couple(Ew_, Iw_, -1.5, -0.5, use_baseline=True)
+        assert rw_["bl"] and abs(rw_["ipa"] - rw_["ipa_raw"]) < 1.0 and rw_["bl"]["e1"] < -1.0, rw_["bl"]   # alte Regel: -0.95 (21 % im Fuß)
+        # Nicholson nur ohne weiteren Prozess zwischen Hinpeak und Umkehrpotential (hier: Referenzpaar bei +0.55 V)
+        cr_ = CVMOD.read_gamry(ref_file)["cycles"][0]
+        rr1_ = CVMOD.analyze_couple(cr_["E"], cr_["I"], *win_)
+        rr2_ = CVMOD.analyze_couple(cr_["E"], cr_["I"], 0.3, 0.8)
+        assert not rr1_["ratio_ok"] and not np.isfinite(rr1_["ratio"]) and rr2_["ratio_ok"], (rr1_, rr2_)
+        assert r1_["ratio_ok"] and np.isfinite(r1_["ratio"])
         f_ = CVMOD.rate_fit([1, 2, 3, 4], [2.1, 3.9, 6.2, 7.9])
         # von Hand: RSS = 0.063, SE = √(0.063/2/5) = 0.079373, t(0.975; 2) = 4.302653
         assert abs(f_["slope"] - 1.97) < 1e-9 and abs(f_["ci"] - 4.302653 * 0.0793725) < 1e-5, f_
@@ -2964,7 +2977,12 @@ def selftest(outdir, with_isnet=False):
         t_cv.render()
         assert len(t_cv.hover.curves) == len(curves_) - len(aux_), (len(t_cv.hover.curves), len(curves_))
         st_cv["show_bl"] = False
-        for plot_, n_series in (("dep", 2), ("rs", 4), ("loglog", 4), ("ratio", 2), ("trumpet", 4)):
+        st_cv.update(stack=False, e12_each=False)          # E½ ohne Stapeln: je Gruppe, nie über Gruppen gemittelt
+        _, _, labels_, _ = t_cv.figure_spec()
+        assert sorted(l_["text"].split(" =")[0] for l_ in labels_) == ["E$_{1/2}$ (A)", "E$_{1/2}$ (B)"], labels_
+        assert {round(l_["lam"], 2) for l_ in labels_} == {-1.08, -1.18}, labels_
+        st_cv.update(stack=True, e12_each=True)
+        for plot_, n_series in (("dep", 2), ("rs", 4), ("loglog", 4), ("ratio", 1), ("trumpet", 4)):
             st_cv["plot"] = plot_
             cfg_, curves_, _, _ = t_cv.figure_spec()
             pts_ = [c_ for c_ in curves_ if c_.get("marker")]
