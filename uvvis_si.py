@@ -358,9 +358,12 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
     return x + "</w:tbl>"
 
 
-def _image_xml(rid, n, w_cm, h_cm, svg_rid=None):
+def _image_xml(rid, n, w_cm, h_cm, svg_rid=None, page_break=False):
     cx, cy = int(w_cm * 360000), int(h_cm * 360000)
-    return ('<w:p>' + _ppr(align="center", line=240, after=120, keep_next=True) +
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True)
+    if page_break:                       # „Seitenumbruch oberhalb“ statt eigenem Absatz (der sonst überläuft)
+        ppr = ppr.replace("<w:pPr>", "<w:pPr><w:pageBreakBefore/>", 1)
+    return ('<w:p>' + ppr +
             '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
             f'<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Picture {n}"/>'
             '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
@@ -401,6 +404,7 @@ def write_docx(path, blocks, columns=1):
     ("mono", [Zeilen])                    Festbreitenschrift, Größe so, dass die längste Zeile in die Spalte passt
     ("energies", Köpfe, Zeilen)           Energietabelle über die Spaltenbreite
     ("columns", n)                        ab hier n Spalten (fortlaufender Abschnittswechsel, z. B. DFT zweispaltig)
+    ("pagebreak",)                        Seitenumbruch (NMR: zwei Spektren je Seite)
     ("gap",)                              Leerzeile
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
     body, media, svgs = [], [], []
@@ -408,8 +412,12 @@ def write_docx(path, blocks, columns=1):
     def col_width(n):
         return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
     col_w = col_width(columns)
+    pending_break = False
     for b in blocks:
         k = b[0]
+        if pending_break and k != "image":       # kein Bild danach: echter Umbruch
+            body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+            pending_break = False
         if k == "columns":
             if b[1] != columns:                  # Abschnitt mit der bisherigen Spaltenzahl beenden
                 body.append(f"<w:p><w:pPr>{_sect(columns)}</w:pPr></w:p>")
@@ -426,7 +434,9 @@ def write_docx(path, blocks, columns=1):
                 svgs.append((len(media), Path(b[4])))
                 svg_rid = f"rIdSvg{len(media)}"
             w_cm = min(b[2], col_w / 567.0)
-            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid))
+            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid,
+                                   page_break=pending_break))
+            pending_break = False
         elif k == "figcap":
             n_fig += 1
             body.append(_label_para("Figure", n_fig, html_runs(nbsp(b[1])), after=240))
@@ -478,6 +488,8 @@ def write_docx(path, blocks, columns=1):
             n = len(header)
             body.append(_table(header, rows, [col_w // n] * n, line=240, size=16 if columns > 1 else 18))
             body.append(_para([("", set())], line=240))
+        elif k == "pagebreak":
+            pending_break = True                 # am nächsten Bild als „Seitenumbruch oberhalb“
         elif k == "gap":
             body.append(_para([("", set())]))
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '

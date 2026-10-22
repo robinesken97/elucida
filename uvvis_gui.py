@@ -18,7 +18,7 @@ from pathlib import Path
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
 APP_VERSION = "1.23.0"
-SI_PARTS = ("char", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
+SI_PARTS = ("char", "nmr", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -60,6 +60,7 @@ import uvvis_hrms as HRMS  # noqa: E402
 import uvvis_irms as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
 import uvvis_dft as DFT  # noqa: E402
+import uvvis_nmr as NMR  # noqa: E402
 import uvvis_si as SI  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
@@ -475,6 +476,7 @@ class MainWindow(QMainWindow):
         self.hrms_state = {}
         self.xray_state = {}
         self.dft_state = {}
+        self.nmr_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
         self._tab_index = 0
@@ -928,6 +930,8 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.xray_tab = XRAY.XrayTab(self, self.xray_state)
         self.main_tabs.addTab(self.xray_tab, T("tab_xray"))
+        self.nmr_tab = NMR.NMRTab(self, self.nmr_state)
+        self.main_tabs.addTab(self.nmr_tab, T("tab_nmr"))
         self.dft_tab = DFT.DFTTab(self, self.dft_state)
         self.main_tabs.addTab(self.dft_tab, T("tab_dft"))
         self.main_tabs.setCurrentIndex(self._tab_index)
@@ -1244,7 +1248,7 @@ class MainWindow(QMainWindow):
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
-                "dft": self.dft_state, "compound": dict(self.compound),
+                "dft": self.dft_state, "nmr": self.nmr_state, "compound": dict(self.compound),
                 "tab": self._tab_index,
                 "text": dict(self.text_fmt)}
 
@@ -1280,6 +1284,8 @@ class MainWindow(QMainWindow):
         self.xray_state.update(state.get("xray") or {})
         self.dft_state.clear()
         self.dft_state.update(state.get("dft") or {})
+        self.nmr_state.clear()
+        self.nmr_state.update(state.get("nmr") or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self._tab_index = state.get("tab", 0) or 0
@@ -2045,7 +2051,8 @@ class MainWindow(QMainWindow):
     def si_available(self):
         """Teile der SI, für die Daten da sind."""
         xt, dt = self.xray_tab, self.dft_tab
-        return dict(char=True, xray=any(xt.structure(e) is not None for e in xt.entries()),
+        return dict(char=True, nmr=bool(self.nmr_tab.spectra()),
+                    xray=any(xt.structure(e) is not None for e in xt.entries()),
                     dft=any(dt.calc_of(e) is not None for e in dt.entries()))
 
     def export_si_dialog(self):
@@ -2111,6 +2118,8 @@ class MainWindow(QMainWindow):
         elif title:
             blocks = [("heading", title)]
         self._si_plain = plain
+        if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
+            blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
         xt = self.xray_tab
         es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in parts else []
         if es:
@@ -2128,6 +2137,10 @@ class MainWindow(QMainWindow):
             parts.append(("m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))       # wie in der SI: „m.p.“ fett
         else:
             missing.append("m.p.")
+        nmr = self.nmr_tab.si_parts()                    # wie in der SI: m.p.; ¹H NMR …; ¹³C NMR …; IR …
+        if not nmr:
+            missing.append("NMR")
+        parts += nmr
         ir_ms_ea = self.irms_tab.si_parts() + self.hrms_tab.si_parts()
         kinds = [p_[0].split(" ")[0] for p_ in ir_ms_ea]
         uv = self.uvvis_si_parts()
@@ -2310,6 +2323,20 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in cifs]
             if not files:
                 return
+        # NMR: SVG-Exporte aus MestReNova; Bruker-Experimentordner gehören zum gewählten Spektrum
+        svgs = [p for p in files if NMR.is_nmr_svg(p)
+                or (Path(p).suffix.lower() == ".svg" and self.main_tabs.currentWidget() is self.nmr_tab)]
+        exps = [p for p in files if self.main_tabs.currentWidget() is self.nmr_tab and NMR.bruker_dir(p) is not None]
+        if (svgs or exps) and self.ensure_project():
+            for p in svgs:
+                self.nmr_tab.load_svg(p)
+            for p in exps:
+                if self.nmr_tab.current() is not None:
+                    self.nmr_tab.set_bruker(self.nmr_tab.current(), p)
+            self.main_tabs.setCurrentWidget(self.nmr_tab)
+            files = [p for p in files if p not in svgs and p not in exps]
+            if not files:
+                return
         # DFT: xyz-Geometrien und Ausgaben von ORCA/Gaussian
         xyzs = [p for p in files if DFT.is_xyz(p) or DFT.is_calc(p)]
         if xyzs and self.ensure_project():
@@ -2359,7 +2386,7 @@ class MainWindow(QMainWindow):
     def export_current(self):
         cur = self.main_tabs.currentWidget()
         for tab in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.hrms_tab, self.irms_tab,
-                    self.xray_tab, self.dft_tab):
+                    self.xray_tab, self.dft_tab, self.nmr_tab):
             if cur is tab:
                 return tab.export_dialog()
         return self.export_dialog()
@@ -4009,6 +4036,71 @@ def selftest(outdir, with_isnet=False):
         w.xray_state.update(entries=[], current=None)
         w.dft_state.update(label_style="el_num")
         report.append("DFT compare mode (number like xyz / CIF template): OK")
+
+        # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
+        ndir = out / "input" / "nmr"
+        sv_h = NMR.make_test_svg(ndir / "t-1H.svg", ("1H",))
+        sv_c = NMR.make_test_svg(ndir / "t-13C.svg", ("13C",))
+        sv_q = NMR.make_test_svg(ndir / "t-HSQC.svg", ("1H", "13C"))
+        sv_f = NMR.make_test_svg(ndir / "t-fluor.svg", ("19F",), axis=False)
+        assert NMR.svg_info(sv_q)["nuclei"] == ["1H", "13C"] and NMR.svg_info(sv_q)["is2d"]
+        assert NMR.svg_info(sv_f)["nuclei"] == [] and NMR.is_nmr_svg(sv_h)
+        t_n = w.nmr_tab
+        w.main_tabs.setCurrentWidget(t_n)
+        for sv_ in (sv_q, sv_f, sv_c, sv_h):
+            t_n.load_svg(str(sv_))
+        e_f = [s_ for s_ in w.nmr_state["spectra"] if Path(s_["file"]).stem == "t-fluor"][0]
+        w.nmr_state["current"] = e_f["uid"]
+        t_n.sync_widgets()
+        t_n.ed_nuc.setText("19F")
+        t_n.spec_edited()
+        assert e_f["nuclei"] == ["19F"] and not e_f["nuc_auto"]
+        assert [(s_["kind"], s_["nuclei"]) for s_ in t_n.spectra()] == [("1D", ["1H"]), ("1D", ["13C"]), ("1D", ["19F"]),
+                                                                        ("HSQC", ["1H", "13C"])], t_n.spectra()
+        t_n.ed_text.setPlainText("1H NMR (501 MHz, CDCl3) \u03b4 7.41 \u2013 7.34 (m, 2H), 6.80 (dd, J = 6.7, 1.2 Hz, 1H), "
+                                 "3.04 (s, 3H).\n13C NMR (126 MHz, CDCl3) \u03b4 138.3, 16.6.\n"
+                                 "19F NMR (471 MHz, CDCl3) \u03b4 -63.2 (s).")
+        t_n.text_changed()
+        assert t_n.tbl_sig.rowCount() == 6
+        t_n.tbl_sig.item(1, 5).setText("ImPy-H")                           # Zuordnung je Signal
+        t_n.tbl_sig.item(3, 5).setText("ImPy-*C*_{q}")
+        ln_ = t_n.nmr_lines()
+        assert ln_[0][0] == ("\u00b9H NMR (500 MHz, CDCl\u2083): \u03b4 [ppm] = 7.41 \u2013 7.34 (m, 2H), "
+                             "6.80 (dd, J = 6.7, 1.2 Hz, 1H, ImPy-H), 3.04 (s, 3H)"), ln_[0][0]
+        assert "<i>J</i>" in ln_[0][1] and "ImPy-<i>C</i><sub>q</sub>" in ln_[1][1] and "\u221263.2" in ln_[2][0]
+        acq_ = NMR.make_test_acqus(ndir / "exp" / "10", nuc="1H", te=300.2)
+        (acq_ / "fid").write_bytes(b"\0" * 1000)                          # FID wird nicht ins Projekt kopiert
+        e_h = t_n.spectra()[0]
+        assert t_n.set_bruker(e_h, str(acq_ / "acqus"))
+        assert Path(e_h["bruker"]).parent == proj / "data" and not (Path(e_h["bruker"]) / "fid").exists()
+        assert abs(e_h["params"]["o1p"] - 6.175) < 1e-6 and e_h["params"]["d1"] == 1.0
+        w.nmr_state["current"] = e_h["uid"]
+        t_n.temp_from_bruker()
+        assert e_h["temp"] == 300
+        cap_q = NMR.caption_html(t_n.spectra()[3], t_n.blocks(), "TEST-1")
+        assert cap_q == ("<sup>1</sup>H/<sup>13</sup>C HSQC (500/126 MHz, CDCl<sub>3</sub>, 298 K) of "
+                         "<b>TEST-1</b>."), cap_q
+        assert any(k_ == "bruker" and c_ is e_h for c_, k_, _ in PRJ._path_slots(w.get_state()))
+        from rdkit import Chem as _Chem
+        if hasattr(_Chem, "MolToCDXMLBlock"):                               # Struktur als Vektor ins Spektrum
+            from rdkit.Chem import AllChem as _AC
+            sm_ = _Chem.MolFromSmiles("Cc1ncc2cccc(C#C)n12")
+            _AC.Compute2DCoords(sm_)
+            (ndir / "struct.cdxml").write_text(_Chem.MolToCDXMLBlock(sm_), encoding="utf-8")
+            w.nmr_state["structure"] = str(ndir / "struct.cdxml")
+            fs_ = t_n.figure_svg(t_n.spectra()[0])
+            assert fs_ != t_n.spectra()[0]["file"] and 'id="structure_0"' in Path(fs_).read_text(encoding="utf-8")
+            t_n.spectra()[1]["struct_on"] = False
+            assert t_n.figure_svg(t_n.spectra()[1]) == t_n.spectra()[1]["file"]
+        nd_ = t_n.export_dialog(out / "nmr" / "nmr_test.docx")
+        with _zf.ZipFile(nd_) as z_:
+            xml_ = z_.read("word/document.xml").decode("utf-8")
+            svgs_ = [n_ for n_ in z_.namelist() if n_.endswith(".svg")]
+        assert len(svgs_) == 4 and xml_.count("<w:pageBreakBefore/>") == 1 and xml_.count("SEQ Figure") == 4, len(svgs_)
+        assert "HSQC" in xml_ and ">Figure S<" in xml_ and "projekt_test" in xml_
+        w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None)
+        t_n.sync_widgets()
+        report.append("NMR (Mnova SVG, nucleus from axis/manual, order, Mnova text + assignment, Bruker acqus, Word): OK")
         w.dft_state.update(entries=[], current=None)
         t_d.sync_widgets()
         t_d.render()
@@ -4049,7 +4141,7 @@ def selftest(outdir, with_isnet=False):
         assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
         # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
         w.dft_tab.load_xyz(str(orf_))
-        assert w.si_available() == {"char": True, "xray": False, "dft": True}
+        assert w.si_available() == {"char": True, "nmr": False, "xray": False, "dft": True}
         b_dft, _ = w.si_blocks(["dft"])
         assert b_dft[0] == ("heading", "TEST-1") and ("columns", 2) in b_dft and not any(b_[0] == "char" for b_ in b_dft)
         w.export_si(["char", "dft"])
