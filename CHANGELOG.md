@@ -2,6 +2,18 @@
 
 # Changelog
 
+## 1.26.0 – 2026-10-22
+
+### Changed
+- **New name: Elucida** (formerly Spectravolt). The program has grown from UV-Vis and electrochemistry into a full
+  characterization suite (synthesis, NMR, IR, HRMS, UV-Vis, fluorescence, CV, SEC, EPR, X-ray, DFT). Settings, recent
+  projects and the data folder (e.g. the background-removal model) are taken over automatically on the first start;
+  projects open as before. The repository is now `robinesken97/elucida`; old links and the update check of older
+  versions are redirected by GitHub.
+- New icon: the visible spectrum stays, a benzene ring replaces the lightning bolt.
+- Downloads are now called `Elucida-<system>.zip` (Windows/macOS), `.AppImage` and `.tar.gz` (Linux). On macOS the app
+  is `Elucida.app`; the old `Spectravolt.app` can be deleted after the first start.
+
 ## 1.25.1 – 2026-10-22
 
 ### New

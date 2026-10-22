@@ -1,4 +1,4 @@
-# CLAUDE.md – Spectravolt (früher UVVisTool)
+# CLAUDE.md – Elucida (früher Spectravolt, davor UVVisTool)
 
 PySide6-Desktop-App (Windows wichtigste Plattform, dazu macOS arm64, macOS Intel ab 14 und Linux) für UV-Vis-Verdünnungsreihen:
 Lambert-Beer-Auswertung (ε bzw. a) und Abbildung im Origin-Stil (Spektren, λ/ε-Labels, Inset mit Regression
@@ -218,14 +218,17 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 3. Selbsttest, commit, dann `git tag vX.Y.Z && git push && git push --tags` → GitHub Actions baut und erstellt
    das Release; Titel und Notes erzeugt `release_notes.py` aus den Changelogs (also beide Changelogs vollständig pflegen).
    Ohne lokales Tag (z. B. aus einer Cloud-Sitzung, die nur ihren Branch pushen darf): nach dem Merge auf `main` unter
-   Actions → „Build Spectravolt“ → Run workflow (Branch `main`, Eingabe `release` = `vX.Y.Z`); der Release-Job legt das
+   Actions → „Build Elucida“ → Run workflow (Branch `main`, Eingabe `release` = `vX.Y.Z`); der Release-Job legt das
    Tag selbst an. Der Job bricht ab, wenn das Tag nicht zu `APP_VERSION` passt.
 
 ## Bekannte Fallen
-- **Umbenennung (1.16):** Programm heißt Spectravolt, Repo `robinesken97/spectravolt`. Intern bleiben
-  `uvvis_*.py` und `project.uvvis`. Alte Einstellungen (`QSettings("UVVisTool")`, `migrate_settings`) und der
-  Datenordner `…/UVVisTool` (`app_data_dir`) werden beim ersten Start übernommen. Alte Versionen fragen die
-  GitHub-API unter dem alten Repo-Namen ab (GitHub leitet um) – Repo nie neu unter altem Namen anlegen.
+- **Umbenennungen (1.16 UVVisTool → Spectravolt, 1.26 → Elucida):** Programm heißt Elucida, Repo
+  `robinesken97/elucida`. Intern bleiben `uvvis_*.py` und `project.uvvis`. Alte Einstellungen (`OLD_APP_NAMES`:
+  zuerst `QSettings("Spectravolt")`, dann `"UVVisTool"`, `migrate_settings`) und der Datenordner (`app_data_dir`:
+  `…/Spectravolt`, sonst `…/UVVisTool`) werden beim ersten Start übernommen. Alte Versionen fragen die GitHub-API unter
+  den alten Repo-Namen ab (GitHub leitet um) – Repo **nie** neu unter `spectravolt` oder `uvvis-tool` anlegen. Der
+  Updater sucht Pakete nur über die Systemkennung (`windows-x64` …), nicht über den Programmnamen. Icon: Quelle
+  `assets/icon.svg`, PNG mit `python tools/make_icon.py`.
 - **Windows-Zeilenenden:** CSVs in Tests mit `newline=""` schreiben; Reader überspringt leere Zeilen
   (früher Windows-CI-Abbruch durch `\r\r\n`).
 - **AppImage (Linux):** in CI aus dem PyInstaller-Ordner gebaut; appimagetool und type2-Runtime mit fester

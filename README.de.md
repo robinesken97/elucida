@@ -1,16 +1,16 @@
 [English](README.md) | **Deutsch** · [Änderungen](CHANGELOG.de.md)
 
-# Spectravolt – von der Synthese zur SI
+# Elucida – von der Synthese zur SI
 
-*Früher **UVVisTool**. Projekte, Einstellungen und heruntergeladene Daten werden automatisch übernommen.*
+*Früher **Spectravolt** (davor **UVVisTool**). Projekte, Einstellungen und heruntergeladene Daten werden automatisch übernommen.*
 
-<p align="center"><img src="assets/icon.png" alt="Spectravolt" width="96"></p>
+<p align="center"><img src="assets/icon.png" alt="Elucida" width="96"></p>
 
 **Von der Synthese zur SI:** Auswertung und publikationsfertige Abbildungen für UV-Vis, NMR, IR, HRMS, Fluoreszenz, CV,
 SEC, EPR, Röntgenstruktur und DFT – exportiert als vollständiger SI-Abschnitt in Word (Synthese mit bearbeitbarem
 ChemDraw-Schema, Charakterisierungsabsatz, Spektren zu zweit je Seite, Kristalldaten und DFT-Koordinaten).
 
-Im ε-Tab bestimmt Spectravolt molare Absorptionskoeffizienten (ε) aus UV-Vis-Verdünnungsreihen
+Im ε-Tab bestimmt Elucida molare Absorptionskoeffizienten (ε) aus UV-Vis-Verdünnungsreihen
 (Lambert-Beer: A/d gegen c) und erzeugt publikationsfertige Abbildungen im gewohnten Origin-Stil:
 Spektren, λ/ε-Labels an den Banden, ein Inset mit den linearen Regressionen und R², die Struktur
 (CDXML/SVG/PDF) und ein freigestelltes Foto der Küvette. Die Oberfläche gibt es auf Deutsch und
@@ -19,7 +19,7 @@ Englisch.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/eps_dark_de.png">
-    <img src="docs/screenshots/eps_light_de.png" alt="Spectravolt – UV-Vis (ε)" width="900">
+    <img src="docs/screenshots/eps_light_de.png" alt="Elucida – UV-Vis (ε)" width="900">
   </picture>
 </p>
 
@@ -60,19 +60,19 @@ Lade unter **Releases** (rechts auf der Repository-Seite) die Datei für dein Sy
 
 | System | Datei | Starten |
 |---|---|---|
-| Windows | `Spectravolt-windows-x64.zip` | `Spectravolt\Spectravolt.exe` |
-| macOS (Apple Silicon) | `Spectravolt-macos-arm64.zip` | `Spectravolt.app` |
-| macOS (Intel, ab macOS 14) | `Spectravolt-macos-x64.zip` | `Spectravolt.app` |
-| Linux (AppImage) | `Spectravolt-linux-x64.AppImage` | ausführbar machen, dann doppelklicken |
-| Linux (Ordner) | `Spectravolt-linux-x64.tar.gz` | `Spectravolt/Spectravolt` |
+| Windows | `Elucida-windows-x64.zip` | `Elucida\Elucida.exe` |
+| macOS (Apple Silicon) | `Elucida-macos-arm64.zip` | `Elucida.app` |
+| macOS (Intel, ab macOS 14) | `Elucida-macos-x64.zip` | `Elucida.app` |
+| Linux (AppImage) | `Elucida-linux-x64.AppImage` | ausführbar machen, dann doppelklicken |
+| Linux (Ordner) | `Elucida-linux-x64.tar.gz` | `Elucida/Elucida` |
 
 Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
 
 - **Windows (SmartScreen):** „Weitere Informationen“ → „Trotzdem ausführen“.
-- **macOS (Gatekeeper):** `Spectravolt.app` in „Programme“ ziehen und einmal doppelklicken (wird blockiert).
+- **macOS (Gatekeeper):** `Elucida.app` in „Programme“ ziehen und einmal doppelklicken (wird blockiert).
   Dann Systemeinstellungen → Datenschutz & Sicherheit → ganz unten „Dennoch öffnen“ → mit Passwort/Touch ID
   bestätigen. Ab macOS 15 funktioniert der frühere Weg „Rechtsklick → Öffnen“ nicht mehr. Alternativ im
-  Terminal: `xattr -dr com.apple.quarantine /Applications/Spectravolt.app`. Welcher Mac? Apple-Menü → Über diesen Mac: „Chip Apple M…“ = Apple Silicon,
+  Terminal: `xattr -dr com.apple.quarantine /Applications/Elucida.app`. Welcher Mac? Apple-Menü → Über diesen Mac: „Chip Apple M…“ = Apple Silicon,
   „Prozessor Intel…“ = Intel. Die Intel-Version braucht macOS 14 (Sonoma) oder neuer.
 
 **Updates:** Beim Start prüft das Programm einmal am Tag, ob es auf GitHub eine neuere Version gibt,
@@ -80,12 +80,12 @@ und bietet an, die Release-Seite zu öffnen (Hilfe → „Nach Updates suchen…
 Zum Aktualisieren die neue Datei herunterladen und die alte App ersetzen; Projekte und Einstellungen
 bleiben erhalten.
 
-**Linux-AppImage:** `chmod +x Spectravolt-linux-x64.AppImage` (oder Dateieigenschaften → „Als Programm
+**Linux-AppImage:** `chmod +x Elucida-linux-x64.AppImage` (oder Dateieigenschaften → „Als Programm
 ausführen“), dann starten. Es braucht `fusermount` (Paket `fuse3`, bei den meisten aktuellen
-Distributionen vorinstalliert); ohne startet man mit `./Spectravolt-linux-x64.AppImage --appimage-extract-and-run`.
+Distributionen vorinstalliert); ohne startet man mit `./Elucida-linux-x64.AppImage --appimage-extract-and-run`.
 Wie beim tar.gz ist eine Distribution mindestens so neu wie Ubuntu 22.04 (glibc 2.35) nötig.
 
-Unter Windows immer den ganzen Ordner `Spectravolt` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
+Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 
 ## Ablauf
 
@@ -204,7 +204,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
 ## IR + EA-Tab
 
 - **IR:** Bruker-**OPUS**-Datei (`*.0`, Spektrum) und/oder den **OPUS-PDF**-Ausdruck (Peakbeschriftung) laden. Mit dem
-  PDF sind die Werte genau die OPUS-Peakliste; mit der Datei allein sucht Spectravolt die Banden selbst
+  PDF sind die Werte genau die OPUS-Peakliste; mit der Datei allein sucht Elucida die Banden selbst
   (Empfindlichkeit einstellbar). Bereich frei wählbar (Standard: der ganze gemessene Bereich); Banden, die nicht in die
   Liste sollen, abhaken; Intensitäten w/m/s/br optional. Ausgabe: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (ganze Zahlen,
   absteigend).
@@ -217,7 +217,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
   übernehmen** Name, Formel und Molmasse daraus (die Zeichnung ist dann eine RDKit-Ersatzzeichnung – für Abbildungen
   die eigene CDXML nehmen).
 - **HRMS aus Rohdaten:** alternativ (oder zusätzlich) den Bruker-**Messordner** (`.d`, z. B. timsTOF; Knopf oder
-  Drag & Drop) laden. Spectravolt liest die Linienspektren des Geräts selbst (ohne Bruker-Software, auch unter macOS)
+  Drag & Drop) laden. Elucida liest die Linienspektren des Geräts selbst (ohne Bruker-Software, auch unter macOS)
   und mittelt das Ion über den **LC-Peak** (automatisch: zusammenhängende Scans mit ≥ 50 % des Maximums, oder ein
   gewählter RT-Bereich). found = intensitätsgewichtetes Mittel; Anzahl der Scans, Bereich der Einzelscans und ihre
   Streuung (± mDa/ppm) stehen dabei, weil Einzelscans in der 4. Nachkommastelle abweichen können. Mit Bericht bleibt
@@ -263,7 +263,7 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 ## X-Ray-Tab
 
 - Eine oder mehrere **CIF**-Dateien laden (Knopf oder Drag & Drop); jeder `data_`-Block mit Atomen wird ein Eintrag
-  (eine Spalte in den Tabellen). Spectravolt liest die CIF selbst (Zelle, Koordinaten, U_iso/U_ij, Besetzung, PART,
+  (eine Spalte in den Tabellen). Elucida liest die CIF selbst (Zelle, Koordinaten, U_iso/U_ij, Besetzung, PART,
   Symmetrieoperationen, `_geom_bond`/`_geom_angle`/`_geom_torsion`); keine weitere Software nötig.
 - **ORTEP-Abbildung im Mercury-Stil:** schattierte Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit
   (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; H-Atome als kleine schattierte Kugeln, normale
@@ -285,7 +285,7 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
   level; co-crystallised THF omitted, Dipp groups shown as wireframe without hydrogen atoms for clarity. …“, mit den
   ausgewählten Parametern und Symmetriecodes; Kopieren mit einem Klick, beim Export als `…_captions.txt`.
 - **Atome anklicken** (das vorderste gewinnt): 2 = Abstand, 3 = Winkel, 4 = Diederwinkel. Werte mit
-  Standardabweichung kommen **genau aus der CIF** (z. B. 1.392(3)); Spectravolt schätzt nie selbst eine
+  Standardabweichung kommen **genau aus der CIF** (z. B. 1.392(3)); Elucida schätzt nie selbst eine
   Standardabweichung. Fehlt ein Wert (Diederwinkel ohne `CONF`), wird er aus den Koordinaten berechnet, **ohne**
   Standardabweichung angezeigt und markiert – für Diederwinkel mit esd `CONF` in Olex2/SHELXL setzen und neu verfeinern.
 - **Tabellen für die SI:** Kristalldaten und Strukturverfeinerung (eine Spalte je Verbindung; Zahlen genau wie in der
@@ -564,7 +564,7 @@ X-Ray):
 ## Hinweise zu CDXML
 
 - Exaktes ChemDraw-Aussehen: einen SVG/PDF/PNG-Export mit gleichem Namen neben die CDXML legen
-  (siehe oben). Sonst zeichnet Spectravolt die Struktur selbst aus den CDXML-Koordinaten: Bindungen, Labels wie
+  (siehe oben). Sonst zeichnet Elucida die Struktur selbst aus den CDXML-Koordinaten: Bindungen, Labels wie
   geschrieben (Abkürzungen wie TMS oder Dipp bleiben), Pfeile und Texte von Reaktionsschemata; Schrift Helvetica
   (gleiche Maße wie Arial). Nur wenn die Datei etwas enthält, das diese Zeichnung nicht kann (eingebettete Bilder,
   Klammern, gebogene Pfeile …), zeichnet RDKit neu, mit Hinweis.
@@ -591,12 +591,13 @@ X-Ray):
 ## Probleme
 
 - **Absturz:** Die Details stehen in `crash.log`:
-  - Windows: `%LOCALAPPDATA%\Spectravolt`
-  - macOS: `~/Library/Application Support/Spectravolt`
-  - Linux: `~/.local/share/Spectravolt`
+  - Windows: `%LOCALAPPDATA%\Elucida`
+  - macOS: `~/Library/Application Support/Elucida`
+  - Linux: `~/.local/share/Elucida`
 
-  (bis Version 1.15 hieß der Ordner `UVVisTool`; er wird beim ersten Start automatisch umbenannt)
-- **Selbsttest:** `Spectravolt --selftest <ordner>` prüft Einlesen, CDXML, Freistellung und Export und
+  (bis Version 1.25 hieß der Ordner `Spectravolt`, bis 1.15 `UVVisTool`; er wird beim ersten Start automatisch
+  umbenannt)
+- **Selbsttest:** `Elucida --selftest <ordner>` prüft Einlesen, CDXML, Freistellung und Export und
   schreibt `selftest_report.txt`.
 
 ---
@@ -612,7 +613,7 @@ Nach jedem Build läuft auf jedem System ein Selbsttest der fertigen App.
 2. **Releases** → „Create a new release“ → bei „Choose a tag“ z. B. `v1.0.0` eintippen → „Create new tag“ → „Publish release“.
 3. Nach etwa 20–40 Minuten hängen die drei App-Dateien am Release.
 
-**Testbuild ohne Release:** Actions → „Build Spectravolt“ → „Run workflow“. Das Ergebnis liegt unten
+**Testbuild ohne Release:** Actions → „Build Elucida“ → „Run workflow“. Das Ergebnis liegt unten
 im Lauf unter „Artifacts“ und wird nach 90 Tagen gelöscht.
 
 **Lokal:**
@@ -646,7 +647,7 @@ unveröffentlichten Messdaten im Repository landen.
 
 ## Lizenz
 
-Spectravolt steht unter der **GNU Affero General Public License v3.0** (siehe `LICENSE`).
+Elucida steht unter der **GNU Affero General Public License v3.0** (siehe `LICENSE`).
 Es gibt keine Gewährleistung.
 
 Die App enthält folgende Bibliotheken unter ihren eigenen Lizenzen:

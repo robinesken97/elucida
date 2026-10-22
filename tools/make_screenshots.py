@@ -329,7 +329,7 @@ def shoot(w, outdir, lang, theme):
 def main(outdir=ROOT / "docs" / "screenshots"):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="spectravolt_shots_"))
+    work = Path(tempfile.mkdtemp(prefix="elucida_shots_"))
     try:
         G.SETTINGS_FILE = work / "settings.ini"           # nicht die echten Benutzereinstellungen
         app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841

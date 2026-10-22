@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-APP = "Spectravolt"
+APP = "Elucida"
 HERE = Path(__file__).resolve().parent
 
 

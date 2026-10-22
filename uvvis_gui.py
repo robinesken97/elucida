@@ -15,9 +15,9 @@ import re
 import traceback
 from pathlib import Path
 
-APP_NAME = "Spectravolt"
-OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.25.1"
+APP_NAME = "Elucida"
+OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
+APP_VERSION = "1.26.0"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -3769,7 +3769,7 @@ def selftest(outdir, with_isnet=False):
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")
 
-        # Umbenennung UVVisTool -> Spectravolt: alte Einstellungen und Datenordner einmalig übernehmen
+        # Umbenennungen UVVisTool -> Spectravolt (1.16) -> Elucida (1.26): Einstellungen/Datenordner einmalig übernehmen
         old_s = QSettings(str(out / "old_settings.ini"), QSettings.IniFormat)
         old_s.setValue("lang", "en")
         old_s.setValue("recent", [str(out / "p1"), str(out / "p2")])
@@ -3783,8 +3783,14 @@ def selftest(outdir, with_isnet=False):
         (base_ / "UVVisTool" / "models").mkdir(parents=True)
         (base_ / "UVVisTool" / "models" / "m.onnx").write_bytes(b"x")
         d_ = IMG.app_data_dir(base_)
-        assert d_.name == "Spectravolt" and (d_ / "models" / "m.onnx").exists() and not (base_ / "UVVisTool").exists()
-        assert APP_NAME == "Spectravolt" and UPD.REPO.endswith("/spectravolt")
+        assert d_.name == "Elucida" and (d_ / "models" / "m.onnx").exists() and not (base_ / "UVVisTool").exists()
+        shutil.rmtree(base_, ignore_errors=True)                 # Spectravolt hat Vorrang vor UVVisTool
+        for n_, f_ in (("Spectravolt", "neu.onnx"), ("UVVisTool", "alt.onnx")):
+            (base_ / n_ / "models").mkdir(parents=True)
+            (base_ / n_ / "models" / f_).write_bytes(b"x")
+        d_ = IMG.app_data_dir(base_)
+        assert (d_ / "models" / "neu.onnx").exists() and not (base_ / "Spectravolt").exists(), list(d_.rglob("*"))
+        assert APP_NAME == "Elucida" and OLD_APP_NAMES[0] == "Spectravolt" and UPD.REPO.endswith("/elucida")
         report.append("rename (settings + data folder migration): OK")
 
         # Verbindung auf Projektebene + Tab IR + MS (künstliche OPUS-, PDF- und Word-Dateien)
@@ -4654,8 +4660,8 @@ def selftest(outdir, with_isnet=False):
         assert UPD.is_newer("1.4.1", "1.4.0") and not UPD.is_newer("1.4", "1.4.0") and not UPD.is_newer("", "1.0")
         lbl = UPD.platform_label()
         fake = {"tag_name": "v99.0.0", "html_url": "https://example.invalid/r",
-                "assets": [{"name": f"Spectravolt-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
-                + [{"name": "Spectravolt-linux-x64.tar.gz"}]}
+                "assets": [{"name": f"Elucida-{x}.zip"} for x in ("windows-x64", "macos-arm64", "macos-x64")]
+                + [{"name": "Elucida-linux-x64.tar.gz"}]}
         info = UPD.parse_release(fake)
         assert info["version"] == "99.0.0" and lbl in info["asset"], info
         assert "99.0.0" in w.update_text(info, manual=False)

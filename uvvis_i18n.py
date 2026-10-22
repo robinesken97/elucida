@@ -81,7 +81,7 @@ TEXTS = {
     "download_cancelled": ("Download abgebrochen", "download cancelled"),
 
     # ---- GUI -------------------------------------------------------------
-    "app_title": ("Spectravolt", "Spectravolt"),
+    "app_title": ("Elucida", "Elucida"),
     "menu_file": ("&Datei", "&File"),
     "menu_lang": ("&Sprache", "&Language"),
     "menu_help": ("&Hilfe", "&Help"),
@@ -119,7 +119,7 @@ TEXTS = {
     "save_changes_q": ("Das Projekt enthält ungespeicherte Änderungen. Speichern?",
                        "The project has unsaved changes. Save?"),
     "flt_project": ("Projektordner (*)", "Project folder (*)"),
-    "no_project": ("Kein Spectravolt-Projekt: {p}", "Not a Spectravolt project: {p}"),
+    "no_project": ("Kein Elucida-Projekt: {p}", "Not an Elucida project: {p}"),
     "missing_file": ("Datei fehlt: {p}", "File missing: {p}"),
     "project_dir_not_empty": ("Der Ordner {p} ist nicht leer und kein Projekt – bitte einen neuen Namen wählen.",
                               "Folder {p} is not empty and not a project – please choose a new name."),
@@ -237,9 +237,9 @@ TEXTS = {
     "err_title": ("Fehler", "Error"),
     "exported_to": ("Exportiert nach:\n{p}", "Exported to:\n{p}"),
     "mw_formula": ("{f}, M = {mw:.2f} g/mol", "{f}, M = {mw:.2f} g/mol"),
-    "about": ("Spectravolt {v} (früher UVVisTool)\nVon der Synthese zur SI: Auswertung und publikationsfertige Abbildungen "
+    "about": ("Elucida {v} (früher Spectravolt)\nVon der Synthese zur SI: Auswertung und publikationsfertige Abbildungen "
               "für UV-Vis, NMR, IR, HRMS, Fluoreszenz, CV, SEC, EPR, Röntgenstruktur und DFT – als SI-Abschnitt in Word.",
-              "Spectravolt {v} (formerly UVVisTool)\nFrom synthesis to SI: evaluation and publication-ready figures for "
+              "Elucida {v} (formerly Spectravolt)\nFrom synthesis to SI: evaluation and publication-ready figures for "
               "UV-Vis, NMR, IR, HRMS, fluorescence, CV, SEC, EPR, X-ray and DFT – exported as an SI section in Word."),
     "load_first": ("Bitte zuerst eine CSV öffnen.", "Please open a CSV first."),
     "tab_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
