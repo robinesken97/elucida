@@ -2,7 +2,7 @@
 
 # Changelog
 
-## 1.26.0 – 2026-10-22
+## 2.0.0 – 2026-10-22
 
 ### New
 - **DFT tab: measure and align** like the X-Ray tab – distance, angle and dihedral by clicking 2/3/4 atoms (values

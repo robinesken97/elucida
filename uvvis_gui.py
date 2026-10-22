@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Elucida"
 OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.26.0"
+APP_VERSION = "2.0.0"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -3769,7 +3769,7 @@ def selftest(outdir, with_isnet=False):
         assert arrows and arrows[0].text() == "" and not arrows[0].icon().isNull()
         report.append("appearance (Fusion, light/dark, toolbar): OK")
 
-        # Umbenennungen UVVisTool -> Spectravolt (1.16) -> Elucida (1.26): Einstellungen/Datenordner einmalig übernehmen
+        # Umbenennungen UVVisTool -> Spectravolt (1.16) -> Elucida (2.0): Einstellungen/Datenordner einmalig übernehmen
         old_s = QSettings(str(out / "old_settings.ini"), QSettings.IniFormat)
         old_s.setValue("lang", "en")
         old_s.setValue("recent", [str(out / "p1"), str(out / "p2")])

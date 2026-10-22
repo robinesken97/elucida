@@ -2,7 +2,7 @@
 
 # Änderungen
 
-## 1.26.0 – 22.10.2026
+## 2.0.0 – 22.10.2026
 
 ### Neu
 - **DFT-Tab: Messen und Ausrichten** wie im X-Ray-Tab – Abstand, Winkel und Diederwinkel durch Anklicken von 2/3/4 Atomen

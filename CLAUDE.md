@@ -80,7 +80,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `disorder_assembly` der Teil mit der größten Besetzung. Ellipsoide: k = √χ²₃(p) (50 % → 1.5382), Umriss = 2×2-Block
   von R·U·Rᵀ. Aussehen Standard **wie Mercury** (Nutzerwunsch): schattierte Schichten (`shade_layers`, Licht oben
   links, matt, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), H-Radius 0.09 Å, Bindungsdicke in Å
-  (`bond_w`, Standard 0.12 seit 1.26, skaliert mit dem Zoom wie Mercurys Zylinder); seit 1.26 nach Nutzervorlage
+  (`bond_w`, Standard 0.12 seit 2.0, skaliert mit dem Zoom wie Mercurys Zylinder); seit 2.0 nach Nutzervorlage
   Bindungen schwarz, Labels fett ohne Rand – Elementfarben bleiben (C grau, Nutzerwunsch); „flach“ = Olex2 (fett,
   weißer Rand). Kugel-Stil (`BALL_STYLES`, nach Vorlagebildern des Nutzers): „ballstick“ wie IboView (Schattenrand unten
   rechts, Glanzpunkt, feiner Umriss, dünne Stäbe 0.2 Å mit Glanzstreifen zur Lichtseite), „depth“ matt mit dicken Stäben
@@ -232,7 +232,7 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
    Tag selbst an. Der Job bricht ab, wenn das Tag nicht zu `APP_VERSION` passt.
 
 ## Bekannte Fallen
-- **Umbenennungen (1.16 UVVisTool → Spectravolt, 1.26 → Elucida):** Programm heißt Elucida, Repo
+- **Umbenennungen (1.16 UVVisTool → Spectravolt, 2.0 → Elucida):** Programm heißt Elucida, Repo
   `robinesken97/elucida`. Intern bleiben `uvvis_*.py` und `project.uvvis`. Alte Einstellungen (`OLD_APP_NAMES`:
   zuerst `QSettings("Spectravolt")`, dann `"UVVisTool"`, `migrate_settings`) und der Datenordner (`app_data_dir`:
   `…/Spectravolt`, sonst `…/UVVisTool`) werden beim ersten Start übernommen. Alte Versionen fragen die GitHub-API unter
