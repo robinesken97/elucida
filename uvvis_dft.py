@@ -1027,9 +1027,7 @@ class DFTTab(TABS.FigureTab):
         f.addRow(T("xr_bond_lw"), self.sp_bond)
         self.sp_lab = XRAY.label_size_spin(self.st)
         f.addRow(T("xr_label_size"), self.sp_lab)
-        b = QPushButton(T("xr_reset_view"))
-        b.clicked.connect(self.reset_view)
-        f.addRow(b)
+        f.addRow(XRAY.reset_buttons(self))
         hint = QLabel(T("dft_mouse_hint"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
@@ -1422,6 +1420,14 @@ class DFTTab(TABS.FigureTab):
         if e is not None:
             e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
             self.render()
+
+    def reset_display(self):
+        """Darstellung auf Standard (Stil, Radien, Bindungsdicke, Labels …; Ansicht und Labels je Atom der gewählten
+        Geometrie). Dateien, Namen, Nummerierung (order, Labelstil, Zählung ab 0) und SI-Auswahl bleiben."""
+        XRAY.reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout", "label_style",
+                                  "zero_based"), dict(label_on={}))
+
+    reset_defaults = reset_display
 
     def reset_layout(self):
         e = self.entry()

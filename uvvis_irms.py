@@ -515,6 +515,7 @@ class IRMSTab(TABS.FigureTab):
     SI_CAPTION = "IR spectrum of {name}."
     X_RANGE = (100.0, 8000.0, 0, 50.0)
     XRANGE_TEXT = "ir_xrange"
+    RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ea_solvate", "ea_found")   # Dateien, entfernte Peaks, EA
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
                          ea_solvate="", ea_found={})

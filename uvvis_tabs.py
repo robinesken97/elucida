@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget, QDialog, QDialogButtonBox, QListWidget, QPlainTextEdit)
+                               QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QPlainTextEdit)
 
 import uvvis_core as core
 import uvvis_extra as X
@@ -72,6 +72,19 @@ def write_curves_csv(path, curves, xlabel, ylabel):
         for i in range(n):
             w.writerow([(f"{c[i]:.10g}" if i < len(c) and np.isfinite(c[i]) else "") for c in cols])
     return path
+
+
+def reset_button(reset_layout, reset_defaults):
+    """Knopf „Zurücksetzen“ mit Menü: nur Layout (Lage von Labels/Inset/Bildern) oder alles auf Standard."""
+    b = QPushButton(STYLE.icon("reset"), T("btn_reset"))
+    m = QMenu(b)
+    m.addAction(T("btn_reset_layout"), reset_layout)
+    a = m.addAction(T("btn_reset_defaults"), reset_defaults)
+    a.setToolTip(T("btn_reset_defaults_tip"))
+    m.setToolTipsVisible(True)
+    b.setMenu(m)
+    b.setToolTip(T("btn_reset_defaults_tip"))
+    return b
 
 
 def color_button(color, on_pick):
@@ -300,11 +313,11 @@ class FigureTab(QWidget):
         # Speichern/Laden/Exportieren bleiben unten sichtbar, auch wenn die Spalte gescrollt wird
         row = QHBoxLayout()
         row.setContentsMargins(8, 6, 8, 6)
-        for txt, fn, ic in ((T("tab_save"), self.save_setup, None), (T("tab_load"), self.load_setup, "open"),
-                            (T("btn_reset_layout"), self.reset_layout, "reset")):
+        for txt, fn, ic in ((T("tab_save"), self.save_setup, None), (T("tab_load"), self.load_setup, "open")):
             b = QPushButton(STYLE.icon(ic), txt) if ic else QPushButton(txt)
             b.clicked.connect(fn)
             row.addWidget(b)
+        row.addWidget(reset_button(self.reset_layout, self.reset_defaults))
         row.addStretch(1)
         self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
         self.btn_export.setProperty("accent", True)
@@ -557,6 +570,21 @@ class FigureTab(QWidget):
         self.st["layout"][self.size_key()] = {}
         self.render()
 
+    # was „Alles auf Standard“ behält: Daten und Angaben zur Messung (Dateien, Referenz, Kalibrierung, eingegebene
+    # Werte); Exportgröße/-formate und Bildunterschriften (cap_*) bleiben immer
+    RESET_KEEP: tuple = ()
+
+    def reset_defaults(self):
+        """Alle übrigen Einstellungen des Tabs (Darstellung und Auswertung) auf DEFAULT_STATE, Layout neu.
+        Rückgängig (Strg+Z) holt alles zurück."""
+        keep = set(self.RESET_KEEP) | {"size", "w_cm", "h_cm", "fmt"}
+        for k, v in self.DEFAULT_STATE.items():
+            if k not in keep and not k.startswith("cap_"):
+                self.st[k] = copy.deepcopy(v)
+        self.main.rebuild_tabs()                     # Bedienelemente aus dem Zustand neu aufbauen
+        self.main.push_undo()
+        self.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
+
     def export_dialog(self):
         """Direkt ins Projekt: exports/<overlay|fluorescence>/<Projekt>_<Tab>.* (wird überschrieben)."""
         if not self.main.ensure_project():
@@ -724,6 +752,7 @@ class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Comparison of UV-Vis spectra of {name}."
+    RESET_KEEP = ("entries", "structure")
     DEFAULT_STATE = dict(COMMON_DEFAULTS, entries=[], mode="norm", nlo=300.0, nhi=500.0, ymax=0.0,
                          baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0,
                          stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False,
@@ -1522,6 +1551,7 @@ class FluoTab(FigureTab):
     STATE_KEY = "fluorescence"
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Fluorescence spectra of {name}."
+    RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv")
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",
                          c_em="#e8231b", structure=None, photo_day=None, bg_day="auto", photo_uv=None,

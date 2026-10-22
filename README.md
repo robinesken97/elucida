@@ -127,7 +127,10 @@ On Windows, always keep the whole `Spectravolt` folder together. The `.exe` does
 5. **Layout:**
    - **Drag** the inset, structure, cuvette and every λ/ε label with the mouse.
    - **Scroll** over the inset or an image to resize it, or use the "Size [% of plot width]" fields.
-   - "Reset layout" restores the automatic arrangement.
+   - **Reset ▾** → "Reset layout" restores the automatic arrangement; "Reset all to defaults" sets all settings of
+     the tab (display and analysis) back to the defaults – data and measurement details (files, reference/calibration,
+     path length, entered values, caption, export size) stay, and Undo brings everything back. X-Ray and DFT also have
+     "Reset display to defaults" next to "Reset view" (style, ellipsoids, bond thickness, labels, hidden atoms …).
    - **Hover** over the spectra: the status bar shows λ and A of the nearest data point (and its
      concentration), marked with a red circle in the preview only – handy to check the data.
      **Double-click** a point to add its wavelength as a band; double-click it again to remove it.

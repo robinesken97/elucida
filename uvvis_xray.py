@@ -2073,6 +2073,36 @@ def is_cif(path):
     return Path(path).suffix.lower() == ".cif" and Path(path).is_file()
 
 
+def reset_buttons(tab):
+    """„Ansicht zurücksetzen“ + „Darstellung auf Standard“ (X-Ray und DFT)."""
+    row = QHBoxLayout()
+    for key, fn in (("xr_reset_view", tab.reset_view), ("xr_reset_display", tab.reset_display)):
+        b = QPushButton(T(key))
+        b.setToolTip(T(key + "_tip"))
+        b.clicked.connect(fn)
+        row.addWidget(b)
+    row.addStretch(1)
+    return row
+
+
+def reset_display(tab, keep, entry_extra):
+    """Alle Einstellungen des Tabs außer `keep` auf DEFAULT_STATE, eigene Labelgröße auf „wie Textformat“, die
+    gewählte Struktur auf Startansicht (+ entry_extra). Rückgängig holt alles zurück."""
+    import copy
+    st = tab.st
+    for k, v in tab.DEFAULT_STATE.items():
+        if k not in keep:
+            st[k] = copy.deepcopy(v)
+    st["label_pt"] = 0.0
+    e = tab.entry()
+    if e is not None:
+        e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={}, **copy.deepcopy(entry_extra))
+    tab.sync_widgets()
+    tab.render()
+    tab.main.push_undo()
+    tab.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
+
+
 class XrayTab(TABS.FigureTab):
     STATE_KEY = "xray"
     TEXT_OPTS = ("fonts", "labels")              # Labelgröße hat der Tab selbst
@@ -2187,9 +2217,7 @@ class XrayTab(TABS.FigureTab):
             row.addWidget(b)
         row.addStretch(1)
         f.addRow(row)
-        b = QPushButton(T("xr_reset_view"))
-        b.clicked.connect(self.reset_view)
-        f.addRow(b)
+        f.addRow(reset_buttons(self))
         hint = QLabel(T("xr_mouse_hint"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
@@ -3097,6 +3125,16 @@ class XrayTab(TABS.FigureTab):
         if e is not None:
             e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
             self.render()
+
+    def reset_display(self):
+        """Darstellung auf Standard: Stil, Ellipsoide, Bindungsdicke, Labels, Fehlordnung, Farben …; für die gewählte
+        Struktur auch Ansicht, ausgeblendete Atome/Fragmente, Labels je Atom und Drahtmodell. CIFs, Namen, Referenzen,
+        ausgewählte Parameter und Exportgröße bleiben."""
+        reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout"),
+                      dict(hidden_frags=[], hidden_atoms=[], label_on={}, wire=[]))
+        self.sel = []
+
+    reset_defaults = reset_display
 
     def reset_layout(self):
         e = self.entry()

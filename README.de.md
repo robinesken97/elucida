@@ -133,7 +133,11 @@ Unter Windows immer den ganzen Ordner `Spectravolt` zusammenlassen. Die `.exe` f
      Konzentration), in der Vorschau mit rotem Kreis markiert (nicht im Export) – praktisch zum Prüfen der
      Daten. **Doppelklick** auf einen Punkt fügt seine Wellenlänge als Bande hinzu, erneuter Doppelklick
      entfernt sie. Overlay- und Fluoreszenz-Tab zeigen λ und den gezeichneten Wert genauso an.
-   - „Layout zurücksetzen“ stellt die automatische Anordnung wieder her.
+   - **Zurücksetzen ▾** → „Layout zurücksetzen“ stellt die automatische Anordnung wieder her; „Alles auf Standard“ setzt
+     alle Einstellungen des Tabs (Darstellung und Auswertung) auf Standard – Daten und Angaben zur Messung (Dateien,
+     Referenz/Kalibrierung, Schichtdicke, eingegebene Werte, Bildunterschrift, Exportgröße) bleiben, Rückgängig holt alles
+     zurück. X-Ray und DFT haben zusätzlich „Darstellung auf Standard“ neben „Ansicht zurücksetzen“ (Stil, Ellipsoide,
+     Bindungsdicke, Labels, ausgeblendete Atome …).
 6. **Exportieren:** Datei → Exportieren (oder der Knopf). Das schreibt die gewählten Formate (PDF/SVG/PNG),
    `<Serie>_results.csv` und den Excel-Report für **alle** Serien ins Projekt (siehe unten).
 
