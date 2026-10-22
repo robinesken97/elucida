@@ -817,8 +817,10 @@ def measure(mol: Molecule, keys):
     pts = [a["xyz"] for a in ats]
     kind = {2: "bond", 3: "angle", 4: "torsion"}[len(idx)]
     val = {2: distance, 3: angle, 4: torsion}[len(idx)](pts)
-    rows = {2: mol.S.geom_bond, 3: mol.S.geom_angle, 4: mol.S.geom_torsion}[len(idx)]
-    txt = match_geom(mol.S, rows, ats)
+    txt = None
+    if mol.S is not None:                            # CIF: Wert mit esd aus den geom-Tabellen; xyz: nur rechnen
+        rows = {2: mol.S.geom_bond, 3: mol.S.geom_angle, 4: mol.S.geom_torsion}[len(idx)]
+        txt = match_geom(mol.S, rows, ats)
     if txt is not None:
         return dict(kind=kind, value=val, text=txt, esd=esd_parts(txt)[1] is not None, source="cif")
     dec = 3 if kind == "bond" else 1
@@ -2103,7 +2105,214 @@ def reset_display(tab, keep, entry_extra):
     tab.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
 
 
-class XrayTab(TABS.FigureTab):
+class MeasureAlign:
+    """Auswahl (bis 4 Atome), Messen und Ausrichten – gemeinsam für die Tabs X-Ray und DFT. Erwartet entry(),
+    molecule(e), view_of(e, mol), render(push) und self.sel (Atom-Schlüssel, Label|Operation bzw. a<Index>)."""
+    MEASURE_ESD = True          # X-Ray: Herkunft/esd des Werts melden; DFT: Werte aus der Geometrie, ohne esd
+
+    def measure_box(self, title, take=None):
+        """Gruppe mit Messwert der Auswahl, „Übernehmen“ (optional) und „Auswahl aufheben“ -> (Gruppe, Layout)."""
+        g = QGroupBox(title)
+        v = QVBoxLayout(g)
+        self.lbl_meas = QLabel(T("xr_select_hint"))
+        self.lbl_meas.setWordWrap(True)
+        self.lbl_meas.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        v.addWidget(self.lbl_meas)
+        row = QHBoxLayout()
+        self.btn_take = None
+        if take is not None:
+            self.btn_take = QPushButton(T("xr_take"))
+            self.btn_take.clicked.connect(take)
+            row.addWidget(self.btn_take)
+        b = QPushButton(T("xr_clear_sel"))
+        b.clicked.connect(self.clear_selection)
+        row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        return g, v
+
+    def align_box(self):
+        """Gruppe „Ausrichten“: Bindung in eine Richtung, Ebene von vorn, schrittweise drehen, wenden, ChemDraw-Vorlage."""
+        g = QGroupBox(T("xr_align"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        for txt, d in (("↓", "down"), ("↑", "up"), ("←", "left"), ("→", "right")):
+            b = QPushButton(txt)
+            b.setToolTip(T("xr_align_bond_tip"))
+            b.clicked.connect(lambda _=False, d=d: self.align_bond(d))
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(T("xr_align_bond"), row)
+        b = QPushButton(T("xr_align_plane"))
+        b.setToolTip(T("xr_align_plane_tip"))
+        b.clicked.connect(self.align_plane)
+        f.addRow(b)
+        row = QHBoxLayout()
+        self.cmb_step = QComboBox()
+        for v_ in (5, 15, 45, 90):
+            self.cmb_step.addItem(f"{v_}°", v_)
+        self.cmb_step.setCurrentIndex(1)
+        row.addWidget(self.cmb_step)
+        for txt, ax_, sg in (("x−", "x", -1), ("x+", "x", 1), ("y−", "y", -1), ("y+", "y", 1), ("z−", "z", -1),
+                             ("z+", "z", 1)):
+            b = QPushButton(txt)
+            b.setToolTip(T("xr_rot_tip"))
+            b.clicked.connect(lambda _=False, a=ax_, s_=sg: self.rotate_view(a, s_ * self.cmb_step.currentData()))
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(T("xr_rotate"), row)
+        b = QPushButton(T("xr_flip"))
+        b.setToolTip(T("xr_flip_tip"))
+        b.clicked.connect(lambda: self.rotate_view("y", 180))
+        f.addRow(b)
+        b = QPushButton(T("xr_template"))
+        b.setToolTip(T("xr_template_tip"))
+        b.clicked.connect(self.align_template)
+        f.addRow(b)
+        self.lbl_align = QLabel("")
+        self.lbl_align.setWordWrap(True)
+        self.lbl_align.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_align)
+        return g
+
+    def _take_enabled(self, on):
+        if getattr(self, "btn_take", None) is not None:
+            self.btn_take.setEnabled(on)
+
+    def toggle_atom(self, k):
+        """Klick: Atom zur Auswahl (max. 4), erneuter Klick entfernt es, Klick ins Leere hebt sie auf."""
+        if self.F is None:
+            return
+        if k is None:
+            self.sel = []
+        else:
+            key = self.F.mol.atoms[k]["key"]
+            if key in self.sel:
+                self.sel.remove(key)
+            else:
+                if len(self.sel) >= 4:
+                    self.sel = []
+                self.sel.append(key)
+        self.update_measure()
+        self.render(push=False)
+
+    def clear_selection(self):
+        self.sel = []
+        self.update_measure()
+        self.render(push=False)
+
+    def update_measure(self):
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        self._meas = None
+        if mol is None or not self.sel:
+            self.lbl_meas.setText(T("xr_select_hint"))
+            self.lbl_meas.setStyleSheet("")
+            self._take_enabled(False)
+            return
+        names = param_name(mol, self.sel)
+        m = measure(mol, self.sel) if len(self.sel) >= 2 else None
+        self._meas = m
+        self._take_enabled(m is not None)
+        if m is None:
+            self.lbl_meas.setText(names)
+            self.lbl_meas.setStyleSheet("")
+            return
+        unit = " Å" if m["kind"] == "bond" else "°"
+        txt = f"{T('xr_kind_' + m['kind'])}  {names} = {minus(m['text'])}{unit}"
+        warn = self.MEASURE_ESD and m["source"] == "calc"
+        if warn:
+            txt += "\n" + T("xr_no_esd_torsion" if m["kind"] == "torsion" else "xr_no_esd")
+        elif self.MEASURE_ESD and not m["esd"]:
+            txt += "\n" + T("xr_cif_no_esd")
+        self.lbl_meas.setText(txt)
+        self.lbl_meas.setStyleSheet(WARN_CSS if warn else "")
+
+    # -- Ausrichten -----------------------------------------------------------------------
+    def _set_view(self, R, msg="", warn=False):
+        e = self.entry()
+        if e is None:
+            return
+        e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
+        e["pan"] = [0.0, 0.0]
+        self.lbl_align.setText(msg)
+        self.lbl_align.setStyleSheet(WARN_CSS if warn else HINT_CSS)
+        self.render()
+
+    def current_view(self):
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        return (self.view_of(e, mol), mol) if mol is not None else (None, None)
+
+    def align_bond(self, direction):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        if len(self.sel) < 2:
+            self.lbl_align.setText(T("xr_align_need2"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        keys = self.sel[:2]
+        self.sel = []
+        self.update_measure()
+        self._set_view(align_bond(R, mol, keys, direction),
+                       T("xr_align_done_bond", bond=param_name(mol, keys, sep="→")))
+
+    def align_plane(self):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        if len(self.sel) < 3:
+            self.lbl_align.setText(T("xr_align_need3"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        keys = list(self.sel)
+        self.sel = []
+        self.update_measure()
+        self._set_view(align_plane(R, mol, keys), T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
+
+    def rotate_view(self, axis, deg):
+        R, mol = self.current_view()
+        if R is not None:
+            self._set_view(rot(axis, math.radians(deg)) @ R)
+
+    def template_path(self):
+        """CDXML der Verbindung des Projekts (auch neben SVG/PDF/PNG), sonst None."""
+        st = (self.main.compound or {}).get("structure")
+        if st:
+            p = Path(st)
+            p = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
+            if p.exists():
+                return p
+        return None
+
+    def align_template(self, path=None):
+        R, mol = self.current_view()
+        if R is None:
+            return
+        p = path or self.template_path()
+        if p is None:
+            p, _ = QFileDialog.getOpenFileName(self, T("xr_template"), self.main.settings.value("last_img_dir", ""),
+                                               "ChemDraw (*.cdxml)")
+            if not p:
+                return
+        try:
+            Rn, info = align_to_template(mol, p)
+        except Exception as ex:
+            self.lbl_align.setText(T("xr_template_fail", err=str(ex)))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
+        msg = T("xr_template_done", n=info["n"], nt=info["n_template"], rmsd=f"{info['rmsd']:.2f}", f=Path(p).name)
+        warn = info["ambiguous"] or info["n"] < info["n_template"] or info["rmsd"] > 0.6
+        if info["ambiguous"]:
+            msg += "\n" + T("xr_template_amb")
+        e = self.entry()
+        if e is not None:
+            e["layout"] = {}                              # Labels für die neue Ansicht neu setzen
+        self._set_view(Rn, msg, warn)
+
+
+class XrayTab(MeasureAlign, TABS.FigureTab):
     STATE_KEY = "xray"
     TEXT_OPTS = ("fonts", "labels")              # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
@@ -2224,47 +2433,7 @@ class XrayTab(TABS.FigureTab):
         f.addRow(hint)
         self.lv.addWidget(g)
 
-        g = QGroupBox(T("xr_align"))
-        f = make_form(g)
-        row = QHBoxLayout()
-        for txt, d in (("↓", "down"), ("↑", "up"), ("←", "left"), ("→", "right")):
-            b = QPushButton(txt)
-            b.setToolTip(T("xr_align_bond_tip"))
-            b.clicked.connect(lambda _=False, d=d: self.align_bond(d))
-            row.addWidget(b)
-        row.addStretch(1)
-        f.addRow(T("xr_align_bond"), row)
-        b = QPushButton(T("xr_align_plane"))
-        b.setToolTip(T("xr_align_plane_tip"))
-        b.clicked.connect(self.align_plane)
-        f.addRow(b)
-        row = QHBoxLayout()
-        self.cmb_step = QComboBox()
-        for v_ in (5, 15, 45, 90):
-            self.cmb_step.addItem(f"{v_}°", v_)
-        self.cmb_step.setCurrentIndex(1)
-        row.addWidget(self.cmb_step)
-        for txt, ax_, sg in (("x−", "x", -1), ("x+", "x", 1), ("y−", "y", -1), ("y+", "y", 1), ("z−", "z", -1),
-                             ("z+", "z", 1)):
-            b = QPushButton(txt)
-            b.setToolTip(T("xr_rot_tip"))
-            b.clicked.connect(lambda _=False, a=ax_, s_=sg: self.rotate_view(a, s_ * self.cmb_step.currentData()))
-            row.addWidget(b)
-        row.addStretch(1)
-        f.addRow(T("xr_rotate"), row)
-        b = QPushButton(T("xr_flip"))
-        b.setToolTip(T("xr_flip_tip"))
-        b.clicked.connect(lambda: self.rotate_view("y", 180))
-        f.addRow(b)
-        b = QPushButton(T("xr_template"))
-        b.setToolTip(T("xr_template_tip"))
-        b.clicked.connect(self.align_template)
-        f.addRow(b)
-        self.lbl_align = QLabel("")
-        self.lbl_align.setWordWrap(True)
-        self.lbl_align.setStyleSheet(HINT_CSS)
-        f.addRow(self.lbl_align)
-        self.lv.addWidget(g)
+        self.lv.addWidget(self.align_box())
 
         g = QGroupBox(T("xr_colors"))
         v = QVBoxLayout(g)
@@ -2275,20 +2444,7 @@ class XrayTab(TABS.FigureTab):
         v.addWidget(b)
         self.lv.addWidget(g)
 
-        g = QGroupBox(T("xr_select"))
-        v = QVBoxLayout(g)
-        self.lbl_meas = QLabel(T("xr_select_hint"))
-        self.lbl_meas.setWordWrap(True)
-        v.addWidget(self.lbl_meas)
-        row = QHBoxLayout()
-        self.btn_take = QPushButton(T("xr_take"))
-        self.btn_take.clicked.connect(self.take_param)
-        b = QPushButton(T("xr_clear_sel"))
-        b.clicked.connect(self.clear_selection)
-        row.addWidget(self.btn_take)
-        row.addWidget(b)
-        row.addStretch(1)
-        v.addLayout(row)
+        g, v = self.measure_box(T("xr_select"), take=self.take_param)
         row = QHBoxLayout()
         self.btn_wire = QPushButton(T("xr_wire"))
         self.btn_wire.setToolTip(T("xr_wire_tip"))
@@ -2949,52 +3105,7 @@ class XrayTab(TABS.FigureTab):
         self.main.show_hover(f"{atom_name(a)}  ({a['el']})" + (f"   {a['opkey']}" if a.get("opkey") else ""))
 
     def atom_clicked(self, k):
-        """Klick: Atom zur Auswahl (max. 4), erneuter Klick entfernt es, Klick ins Leere hebt sie auf."""
-        if self.F is None:
-            return
-        if k is None:
-            self.sel = []
-        else:
-            key = self.F.mol.atoms[k]["key"]
-            if key in self.sel:
-                self.sel.remove(key)
-            else:
-                if len(self.sel) >= 4:
-                    self.sel = []
-                self.sel.append(key)
-        self.update_measure()
-        self.render(push=False)
-
-    def clear_selection(self):
-        self.sel = []
-        self.update_measure()
-        self.render(push=False)
-
-    def update_measure(self):
-        e = self.entry()
-        mol = self.molecule(e) if e else None
-        self._meas = None
-        if mol is None or not self.sel:
-            self.lbl_meas.setText(T("xr_select_hint"))
-            self.lbl_meas.setStyleSheet("")
-            self.btn_take.setEnabled(False)
-            return
-        names = param_name(mol, self.sel)
-        m = measure(mol, self.sel) if len(self.sel) >= 2 else None
-        self._meas = m
-        self.btn_take.setEnabled(m is not None)
-        if m is None:
-            self.lbl_meas.setText(names)
-            self.lbl_meas.setStyleSheet("")
-            return
-        unit = " Å" if m["kind"] == "bond" else "°"
-        txt = f"{T('xr_kind_' + m['kind'])}  {names} = {minus(m['text'])}{unit}"
-        if m["source"] == "calc":
-            txt += "\n" + T("xr_no_esd_torsion" if m["kind"] == "torsion" else "xr_no_esd")
-        elif not m["esd"]:
-            txt += "\n" + T("xr_cif_no_esd")
-        self.lbl_meas.setText(txt)
-        self.lbl_meas.setStyleSheet(WARN_CSS if m["source"] == "calc" else "")
+        self.toggle_atom(k)
 
     def take_param(self):
         e = self.entry()
@@ -3036,89 +3147,6 @@ class XrayTab(TABS.FigureTab):
             if key in lay or pos != self.F.auto_pos.get(key):
                 lay[key] = pos
         self.main.push_undo()
-
-    # -- Ausrichten -----------------------------------------------------------------------
-    def _set_view(self, R, msg="", warn=False):
-        e = self.entry()
-        if e is None:
-            return
-        e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
-        e["pan"] = [0.0, 0.0]
-        self.lbl_align.setText(msg)
-        self.lbl_align.setStyleSheet(WARN_CSS if warn else HINT_CSS)
-        self.render()
-
-    def current_view(self):
-        e = self.entry()
-        mol = self.molecule(e) if e else None
-        return (self.view_of(e, mol), mol) if mol is not None else (None, None)
-
-    def align_bond(self, direction):
-        R, mol = self.current_view()
-        if R is None:
-            return
-        if len(self.sel) < 2:
-            self.lbl_align.setText(T("xr_align_need2"))
-            self.lbl_align.setStyleSheet(WARN_CSS)
-            return
-        keys = self.sel[:2]
-        self.sel = []
-        self.update_measure()
-        self._set_view(align_bond(R, mol, keys, direction),
-                       T("xr_align_done_bond", bond=param_name(mol, keys, sep="→")))
-
-    def align_plane(self):
-        R, mol = self.current_view()
-        if R is None:
-            return
-        if len(self.sel) < 3:
-            self.lbl_align.setText(T("xr_align_need3"))
-            self.lbl_align.setStyleSheet(WARN_CSS)
-            return
-        keys = list(self.sel)
-        self.sel = []
-        self.update_measure()
-        self._set_view(align_plane(R, mol, keys), T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
-
-    def rotate_view(self, axis, deg):
-        R, mol = self.current_view()
-        if R is not None:
-            self._set_view(rot(axis, math.radians(deg)) @ R)
-
-    def template_path(self):
-        """CDXML der Verbindung des Projekts (auch neben SVG/PDF/PNG), sonst None."""
-        st = (self.main.compound or {}).get("structure")
-        if st:
-            p = Path(st)
-            p = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
-            if p.exists():
-                return p
-        return None
-
-    def align_template(self, path=None):
-        R, mol = self.current_view()
-        if R is None:
-            return
-        p = path or self.template_path()
-        if p is None:
-            p, _ = QFileDialog.getOpenFileName(self, T("xr_template"), self.main.settings.value("last_img_dir", ""),
-                                               "ChemDraw (*.cdxml)")
-            if not p:
-                return
-        try:
-            Rn, info = align_to_template(mol, p)
-        except Exception as ex:
-            self.lbl_align.setText(T("xr_template_fail", err=str(ex)))
-            self.lbl_align.setStyleSheet(WARN_CSS)
-            return
-        msg = T("xr_template_done", n=info["n"], nt=info["n_template"], rmsd=f"{info['rmsd']:.2f}", f=Path(p).name)
-        warn = info["ambiguous"] or info["n"] < info["n_template"] or info["rmsd"] > 0.6
-        if info["ambiguous"]:
-            msg += "\n" + T("xr_template_amb")
-        e = self.entry()
-        if e is not None:
-            e["layout"] = {}                              # Labels für die neue Ansicht neu setzen
-        self._set_view(Rn, msg, warn)
 
     def reset_view(self):
         e = self.entry()

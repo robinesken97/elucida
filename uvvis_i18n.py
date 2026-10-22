@@ -1093,6 +1093,7 @@ TEXTS = {
     "xr_colors": ("Atomfarben", "Atom colours"),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
     "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
+    "dft_measure": ("Messen (Abstand, Winkel, Diederwinkel)", "Measure (distance, angle, dihedral)"),
     "xr_select_hint": ("Atome in der Abbildung anklicken.", "Click atoms in the figure."),
     "xr_take": ("In Liste übernehmen", "Add to list"),
     "xr_clear_sel": ("Auswahl aufheben", "Clear selection"),
@@ -1527,10 +1528,10 @@ TEXTS = {
                            "Changes the display only."),
     "dft_radius": ("Atomradius", "Atom radius"),
     "dft_hover_file": ("(in der Datei: {lab})", "(in the file: {lab})"),
-    "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Doppelklick = Label an/aus, "
-                       "Labels lassen sich verschieben.",
-                       "Drag = rotate, right button = pan, wheel = zoom, double-click = label on/off; labels can be "
-                       "dragged."),
+    "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom zum Messen/Ausrichten "
+                       "wählen (beim Nummerieren: nummerieren), Doppelklick = Label an/aus, Labels lassen sich verschieben.",
+                       "Drag = rotate, right button = pan, wheel = zoom, click = select atom to measure/align (while "
+                       "numbering: number it), double-click = label on/off; labels can be dragged."),
 }
 
 

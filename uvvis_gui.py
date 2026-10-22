@@ -4353,6 +4353,34 @@ def selftest(outdir, with_isnet=False):
         for frag_ in ("Point group", "Courier New", 'w:cols w:num="2"', "Max. gradient", "otest", "Gaussian 16",
                       "quasi-RRHO", "<w:tab/>"):
             assert frag_ in doc_, frag_
+        # Messen und Ausrichten wie im Tab X-Ray (gemeinsame Klasse XRAY.MeasureAlign), Werte aus der Geometrie
+        t_d.set_numbering(False)
+        g_d = t_d.geometry(t_d.entry())
+        xyz_d = np.asarray(g_d[2], float)
+        for keys_, kind_ in ((["a1", "a3"], "bond"), (["a2", "a1", "a3"], "angle"), (["a2", "a1", "a3", "a0"], "torsion")):
+            t_d.sel = []
+            for k_ in keys_:
+                t_d.atom_clicked(int(k_[1:]))
+            assert t_d.sel == keys_, t_d.sel
+            m_d = t_d._meas
+            idx_ = [int(k_[1:]) for k_ in keys_]
+            ref_ = {"bond": XRAY.distance, "angle": XRAY.angle, "torsion": XRAY.torsion}[kind_]([xyz_d[i_] for i_ in idx_])
+            assert m_d["kind"] == kind_ and abs(m_d["value"] - ref_) < 1e-9 and m_d["source"] == "calc", m_d
+            assert "\n" not in t_d.lbl_meas.text() and t_d.lbl_meas.styleSheet() == "", t_d.lbl_meas.text()  # keine esd-Warnung
+        t_d.sel = ["a1", "a2"]
+        t_d.align_bond("down")                                 # Bindung C–Cl zeigt im Bild nach unten
+        R_d = np.array(t_d.entry()["view"]).reshape(3, 3)
+        v_d = R_d @ (xyz_d[2] - xyz_d[1])
+        assert v_d[1] < -0.99 * np.linalg.norm(v_d) and t_d.sel == [], v_d
+        t_d.sel = ["a1", "a2", "a3"]
+        t_d.align_plane()
+        R_d = np.array(t_d.entry()["view"]).reshape(3, 3)
+        n_d = np.cross(xyz_d[2] - xyz_d[1], xyz_d[3] - xyz_d[1])
+        assert abs(abs((R_d @ n_d)[2]) - np.linalg.norm(n_d)) < 1e-6           # Ebene von vorn
+        t_d.sel = ["a1"]
+        t_d.set_numbering(True)                                # Nummerieren hebt die Messauswahl auf
+        assert t_d.sel == [] and t_d.picks == []
+        t_d.set_numbering(False)
         e_dr = t_d.entry()                                     # Darstellung auf Standard, Nummerierung bleibt
         ord_ = list(e_dr.get("order") or [])
         w.dft_state.update(bond_w=0.3, radius=0.5, show_h=False)
