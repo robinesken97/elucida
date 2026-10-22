@@ -2,6 +2,16 @@
 
 # Changelog
 
+## 1.22.1 – 2026-10-22
+
+### Fixed
+- CV baseline: now also ends before the wave rises (2% of the peak height). For broad waves (iR drop, ΔE_p > 100 mV,
+  e.g. in THF) it previously lay in the foot of the wave and made i_pa up to 36% too small.
+- CV: no Nicholson ratio if another process lies between the forward peak and the switching potential (e.g. Ac₂Fc or
+  a second wave) – the formula does not apply then; shown as "–", left out of the i_r/i_f plot.
+- CV: E½ in the figure per group (previously averaged over all groups, e.g. solvents).
+- SI text: scan rates rounded (Gamry stores e.g. 499.999 mV/s).
+
 ## 1.22.0 – 2026-10-21
 
 ### New

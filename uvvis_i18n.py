@@ -655,15 +655,21 @@ TEXTS = {
                         "background), extrapolated beneath the peak. Reverse peak: the same line, shifted by the step of\n"
                         "the charging current at the switching potential (2·C·v); the decaying forward current is\n"
                         "corrected by Nicholson. Peak potentials are unchanged. Off: currents measured from zero."),
-    "cv_bl_gap_tip": ("Die Basislinie endet so weit vor dem Hinpeak (Standard 0,15 V: Fuß einer reversiblen Welle).\n"
+    "cv_bl_gap_tip": ("Die Basislinie endet mindestens so weit vor dem Hinpeak (Standard 0,15 V: Fuß einer reversiblen\n"
+                      "Welle) und in jedem Fall vor dem Anstieg der Welle (2 % der Peakhöhe; breite Wellen, iR-Abfall).\n"
                       "Braucht im Fenster mindestens 30 mV Vorlauf ohne Peak.",
-                      "The baseline ends this far before the forward peak (default 0.15 V: foot of a reversible wave).\n"
+                      "The baseline ends at least this far before the forward peak (default 0.15 V: foot of a reversible\n"
+                      "wave) and in any case before the wave rises (2% of the peak height; broad waves, iR drop).\n"
                       "Needs at least 30 mV of peak-free current in the window."),
     "cv_show_bl": ("im Bild", "in figure"),
     "cv_bl_fail": ("⚠ Basislinie nicht möglich (zu wenig Vorlauf im Fenster) – Ströme von null gemessen, nicht in den "
                    "Regressionen. Fenster zur Startseite des Hinpeaks erweitern.",
                    "⚠ baseline not possible (too little current before the peak in the window) – currents from zero, "
                    "excluded from the regressions. Extend the window towards the start of the forward peak."),
+    "cv_ratio_invalid": ("Kein Nicholson-Verhältnis: Zwischen Hinpeak und Umkehrpotential liegt ein weiterer Prozess\n"
+                         "(z. B. Referenz oder zweite Welle). Dafür eine Messung mit Umkehr kurz hinter diesem Paar nehmen.",
+                         "No Nicholson ratio: another process lies between the forward peak and the switching potential\n"
+                         "(e.g. reference or a second wave). Use a measurement switching shortly after this couple."),
     "si_copy_methods": ("SI-Text kopieren", "Copy SI text"),
     "si_copy_methods_tip": ("Methodenabsatz zu allen Fits und Auswerteschritten dieses Tabs (englisch, zum Anhängen an\n"
                             "den Aufbau-Absatz des passenden SI-Abschnitts), danach die Ergebnisse. Richtet sich nach\n"
