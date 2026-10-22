@@ -86,7 +86,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   rechts, Glanzpunkt, feiner Umriss, dünne Stäbe 0.2 Å mit Glanzstreifen zur Lichtseite), „depth“ matt mit dicken Stäben
   (0.36 Å) und Aufhellung nach hinten (`DEPTH_A` = 6 Å bis `DEPTH_MAX`). Schattierung = Phong (`SHADE`, an die
   IboView-Vorlage gefittet: Licht 40° über der Bildebene aus `LIGHT`, ka/kd aus der C-Kugel, Glanz schwach und eng,
-  damit nur die Mitte weiß wird); Kugelschichten = Höhenlinien (`sphere_unit_layers`, contourpy, gecacht), Stäbe =
+  damit nur die Mitte weiß wird; Kugeln ohne Umriss, nur die Stäbe mit feinem Rand); Kugelschichten = Höhenlinien (`sphere_unit_layers`, contourpy, gecacht), Stäbe =
   Zylinderprofil je Lage zum Licht (`rod_layout`, bei jeder Drehung neu). Stäbe von Mitte zu Mitte, jede Hälfte direkt
   unter ihrem Atom (`atom_rods`, `_zorders`); Radius `ball_radius(el, style)` (Faktor × kovalent, H ≥ 0.2 Å); `bond_w`
   gilt dort nicht (`ROD_W`). Messen/Ausrichten gemeinsam für X-Ray und DFT (`MeasureAlign`;

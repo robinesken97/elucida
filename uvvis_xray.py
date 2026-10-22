@@ -1782,7 +1782,7 @@ class XrayFigure:
             if self.ball:                                  # wie die Vorlagen: IboView mit feinem Umriss, Tiefe ohne
                 fog = self._fog(it["z"])
                 faces = [shade_color(col, kd, v, self.style, fog) for _, kd, v in sphere_unit_layers(self.style)]
-                edge, elw = ((0.15, 0.15, 0.15), 0.3 * self.lw_edge) if SHADE[self.style]["outline"] else ("none", 0.0)
+                edge, elw = "none", 0.0                    # wie die Vorlagen: Kugeln ohne Umriss
             elif mercury:
                 faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
             else:
