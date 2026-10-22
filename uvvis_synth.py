@@ -348,12 +348,13 @@ class SynthTab(QWidget):
         ls.setMinimumWidth(max(520, left.minimumSizeHint().width() + 24))
         right = QWidget()
         rv = QVBoxLayout(right)
-        # Vorschau wie eine Word-Seite: immer weiß mit schwarzer Schrift (im dunklen Modus sonst kaum lesbar)
+        # Schema auf weißem Grund wie in Word (im dunklen Modus sonst kaum lesbar), nur wenn eines geladen ist;
+        # der Text darunter folgt dem Erscheinungsbild
         self.lbl_prev = QLabel("", alignment=Qt.AlignCenter)
-        self.lbl_prev.setStyleSheet("background: #ffffff; color: #000000; padding: 8px;")
+        self.lbl_prev.setStyleSheet("background: #ffffff; padding: 12px;")
+        self.lbl_prev.hide()
         rv.addWidget(self.lbl_prev)
         self.txt_prev = QTextBrowser()
-        self.txt_prev.setStyleSheet("QTextBrowser { background: #ffffff; color: #000000; }")
         rv.addWidget(self.txt_prev, 1)
         split = QSplitter(Qt.Horizontal)
         split.addWidget(ls)
@@ -714,8 +715,10 @@ class SynthTab(QWidget):
             pm = QPixmap.fromImage(img).scaledToWidth(int(min(700 * dpr, img.width())), Qt.SmoothTransformation)
             pm.setDevicePixelRatio(dpr)
             self.lbl_prev.setPixmap(pm)
+            self.lbl_prev.show()
         else:
             self.lbl_prev.setPixmap(QPixmap())
+            self.lbl_prev.hide()
         name = self.compound_name()
         self.txt_prev.setHtml(f"<p>Synthesis of <b>{_h.escape(name)}</b></p><p style='text-align:justify'>"
                               f"{self.st.get('proc') or ''}</p>")

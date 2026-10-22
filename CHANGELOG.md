@@ -2,6 +2,32 @@
 
 # Changelog
 
+## 1.24.1 – 2026-10-22
+
+### New
+- **SEC: highlight intermediate species.** Besides the first (blue) and last spectrum (red), one or more intermediate
+  spectra can be highlighted in green (further ones orange, purple, teal), e.g. for the radical cation. Selected by
+  potential (axis scale; the spectrum with the nearest potential is used) or, without a potential file, by spectrum
+  number. Potential label as for start/end; λ labels take the colour of the highlighted spectrum with the largest
+  absorbance. Caption field "Intermediate species": "Color coding: **neutral** (blue), **radical cation** (green),
+  **dication** (red)." – only colours that appear in the figure. Without input everything stays as before.
+- **SI (Word): data processing and fitting.** New selectable part: the methods texts of all tabs that fit (UV-Vis (ε),
+  CV, SEC, EPR – the same text as "Copy SI text": only the steps used, current parameters, then the results) as a
+  section "Data processing and fitting" behind the figures.
+- **Font of the Word exports** selectable in the SI (Word) dialog (default Arial); the size stays 11 pt.
+
+### Changed
+- Synthesis tab: only the reaction scheme is shown on a white background (and only when a scheme is loaded); the
+  preview text follows the light/dark theme again.
+- README: new screenshots of all tabs (including Synthesis and NMR), created with `tools/make_screenshots.py` from
+  synthetic data only.
+- Checkboxes with their own border and an accent-coloured tick (unchecked boxes were almost invisible in dark mode).
+
+### Fixed
+- UV-Vis (ε): structure hints (formula, "drawn from the CDXML coordinates", warnings) now follow a language switch.
+- CV: with the colour gradient by scan rate, the colour fields in the list show the colours of the figure and are
+  locked (they used to show colours that were not used).
+
 ## 1.24.0 – 2026-10-22
 
 ### New

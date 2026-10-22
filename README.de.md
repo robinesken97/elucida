@@ -47,9 +47,11 @@ Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A
 Erscheinungsbild; Deutsch und Englisch.
 
 <table>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_de.png" alt="Synthese – Schema, Vorschrift, Mengenprüfung (erfundenes Beispiel)"><br><sub>Synthese – Schema, Vorschrift, Mengenprüfung (erfundenes Beispiel)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_de.png" alt="NMR – Mnova-SVG mit Struktur (künstliches Spektrum)"><br><sub>NMR – Mnova-SVG mit Struktur (künstliches Spektrum)</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_de.png" alt="UV-Vis-Overlay – gemessen, TD-DFT und SEC"><br><sub>UV-Vis-Overlay – gemessen, TD-DFT und SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_de.png" alt="Fluoreszenz"><br><sub>Fluoreszenz</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie"><br><sub>Spektroelektrochemie</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR"><br><sub>CW-EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_de.png" alt="X-Ray – ORTEP aus CIF (künstliche Teststruktur)"><br><sub>X-Ray – ORTEP aus CIF (künstliche Teststruktur)</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie – neutral, Radikalkation, Dikation"><br><sub>Spektroelektrochemie – neutral, Radikalkation, Dikation</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR – S = ½-Fit"><br><sub>CW-EPR – S = ½-Fit</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_de.png" alt="X-Ray – ORTEP aus CIF (künstliche Teststruktur)"><br><sub>X-Ray – ORTEP aus CIF (künstliche Teststruktur)</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_de.png" alt="DFT – Geometrie und SI-Block (künstliche ORCA-Ausgabe)"><br><sub>DFT – Geometrie und SI-Block (künstliche ORCA-Ausgabe)</sub></td></tr>
 </table>
 
 ## Herunterladen und starten
@@ -248,7 +250,11 @@ nicht im Repository); er steht vor den Abbildungen dieses Tabs. Word öffnet die
 ein englischer Methodenabsatz, der genau die benutzten Auswerteschritte mit ihren Einstellungen beschreibt (z. B. ε:
 Basislinienfenster, OLS-Modell, Cutoff, SE/95-%-KI; EPR: Basislinienpolynom, Feldkalibrierung, S = ½-Fit, Kinetik), zum
 Anhängen an den Aufbau-Absatz des passenden SI-Abschnitts, danach die Ergebnisse. Derselbe Text wird beim Export als
-`…_methods.txt` geschrieben.
+`…_methods.txt` geschrieben, und **SI (Word)** kann alle Texte als Abschnitt „Data processing and fitting“ (ein Absatz je
+Technik) hinter die Abbildungen setzen – so ist dokumentiert, wie die Rohdaten verarbeitet wurden.
+
+**Schriftart der Word-Exporte:** im Dialog SI (Word) wählbar (Standard Arial wie die SI der Gruppe), gilt für alle
+Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit dieser Zeilenhöhe rechnet.
 
 ## X-Ray-Tab
 
@@ -437,6 +443,11 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 - **Spektrenserie:** erstes und letztes Spektrum hervorgehoben (blau/rot), die übrigen grau – oder Farbverlauf nach
   Potential; optional Differenzspektren (ΔA gegen das erste Spektrum) und Nullpunkt (Mittel 780–820 nm); λ-Labels in
   der Farbe des passenden Spektrums. Spektrenbereich wählbar (z. B. nur die erste Welle).
+- **Zwischenspezies:** Ein oder mehrere Spektren dazwischen lassen sich grün hervorheben (weitere orange, violett,
+  türkis), z. B. das Radikalkation zwischen Neutralverbindung (blau) und Dikation (rot) – Eingabe als Potential
+  (Achsenskala, nächstliegendes Spektrum) oder ohne Potentialdatei als Nummer des Spektrums. Die Unterschrift lautet dann
+  „Color coding: **neutral** (blue), **radical cation** (green), **dication** (red).“ (Namen aus den Feldern der
+  Unterschrift).
 - **A bei λ gegen E** mit scheinbarem Nernst-Fit (E½, n). Bei kontinuierlichem Scan hinkt die Elektrolyse in der
   Dünnschichtzelle nach (E½ verschoben, n < 1); echte Nernst-Werte brauchen Potentialstufen im Gleichgewicht –
   CV-Werte haben Vorrang.

@@ -2,6 +2,34 @@
 
 # Änderungen
 
+## 1.24.1 – 22.10.2026
+
+### Neu
+- **SEC: Zwischenspezies hervorheben.** Neben dem ersten (blau) und letzten Spektrum (rot) lassen sich ein oder mehrere
+  Zwischenspektren grün hervorheben (weitere orange, violett, türkis), z. B. für das Radikalkation. Auswahl über das
+  Potential (Achsenskala; genommen wird das Spektrum mit dem nächstliegenden Potential) oder ohne Potentialdatei über die
+  Nummer des Spektrums. Potential-Label wie bei Start/Ende; λ-Labels in der Farbe des hervorgehobenen Spektrums mit der
+  größten Absorbanz. Feld „Spezies Zwischenstufe“ in der Bildunterschrift: „Color coding: **neutral** (blue),
+  **radical cation** (green), **dication** (red).“ – nur Farben, die im Bild vorkommen. Ohne Eingabe bleibt alles wie
+  bisher.
+- **SI (Word): Datenverarbeitung und Fits.** Neuer wählbarer Teil: die Methodentexte aller Tabs, die fitten (UV-Vis (ε),
+  CV, SEC, EPR – derselbe Text wie „SI-Text kopieren“: nur benutzte Schritte, aktuelle Parameter, danach die Ergebnisse)
+  als Abschnitt „Data processing and fitting“ hinter den Abbildungen.
+- **Schriftart der Word-Exporte** im Dialog SI (Word) wählbar (Standard Arial); die Größe bleibt 11 pt.
+
+### Geändert
+- Synthese-Tab: Nur das Reaktionsschema steht auf weißem Grund (und nur, wenn eines geladen ist); der Vorschautext folgt
+  wieder dem hellen/dunklen Erscheinungsbild.
+- README: neue Screenshots aller Tabs (auch Synthese und NMR), erzeugt mit `tools/make_screenshots.py` nur aus
+  künstlichen Daten.
+- Checkboxen mit eigenem Rand und Haken in Akzentfarbe (nicht angehakte waren im dunklen Modus kaum zu sehen).
+
+### Behoben
+- UV-Vis (ε): Hinweise zur Struktur (Formel, „aus den CDXML-Koordinaten gezeichnet“, Warnungen) folgen jetzt einem
+  Sprachwechsel.
+- CV: Mit Farbverlauf nach Scanrate zeigen die Farbfelder der Liste die Farben des Bildes und sind gesperrt (vorher
+  standen dort Farben, die nicht benutzt wurden).
+
 ## 1.24.0 – 22.10.2026
 
 ### Neu
