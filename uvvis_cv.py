@@ -317,6 +317,10 @@ def _fmt_e(v, nd=3):
 
 class CVTab(TABS.FigureTab):
     STATE_KEY = "cv"
+    TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame", "struct_frame")
+    CAP_FIELDS = ("conc", "solvent", "el", "temp")
+    CAP_REMEMBER = ("el",)
+    SI_CAPTION = "Cyclic voltammograms of {name}."
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
@@ -324,7 +328,8 @@ class CVTab(TABS.FigureTab):
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
                          gradient=True, density=False, show_e12=True, arrow=True, invert=False,
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
-                         struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False)
+                         struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False,
+                         cap_conc="", cap_solvent="", cap_el="", cap_temp="rt")
 
     # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
     PLOTS = ("cv", "dep", "rs", "loglog", "ratio", "trumpet")
@@ -557,6 +562,8 @@ class CVTab(TABS.FigureTab):
         v.addLayout(row)
         self.lv.addWidget(g)
 
+        self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
+
         self.sp_cycle.valueChanged.connect(self.changed)
         for w_ in (self.sp_ref_lo, self.sp_ref_hi, self.sp_ref_value, self.sp_offset):
             w_.valueChanged.connect(self.changed)
@@ -567,6 +574,60 @@ class CVTab(TABS.FigureTab):
         self.fill_table()
         self.fill_couples()
         self._sync_ref_widgets()
+
+    CAP_TITLES = {"cv": "Cyclic voltammograms", "dep": "Reversibility plot", "rs": "Randles–Ševčík plot",
+                  "loglog": "Double-logarithmic plot of peak current vs. scan rate",
+                  "ratio": "Peak current ratio vs. scan rate", "trumpet": "Trumpet plot"}
+    CAP_REFS = {"ac2fc": "diacetylferrocene", "fc": "ferrocene"}
+
+    def si_caption(self, name):
+        """Wie in der SI: „Cyclic voltammograms of <b>6b</b> (1.7±0.1 mg mL-1) in THF (0.1 M n-Bu4NPF6) at rt;
+        scan rate 200 mV s-1 (iR compensation = 2200 Ohm) referenced internally against ferrocene (arrows indicate
+        scanning direction).“ Rate, iR-Kompensation (Gamry-Datei) und Referenz aus den sichtbaren Messungen;
+        Konzentration, Lösungsmittel (leer = Gruppen) und Leitsalz aus den Feldern."""
+        import html
+        from uvvis_si import chem_html
+        st = self.st
+        vis = [e for e in st["files"] if e["visible"]]
+        plot = st.get("plot", "cv")
+        h = f"{self.CAP_TITLES.get(plot, 'Cyclic voltammograms')} of <b>{html.escape(name)}</b>"
+        if st.get("cap_conc"):
+            h += f" ({chem_html(st['cap_conc'])})"
+        groups = sorted({e.get("group", "").strip() for e in vis} - {""})
+        solv = st.get("cap_solvent") or (groups[0] if len(groups) == 1 else "different solvents" if groups else "")
+        if solv:
+            h += " in " + chem_html(solv)
+        if st.get("cap_el"):
+            h += f" ({chem_html(st['cap_el'])})"
+        h += " at " + chem_html(st.get("cap_temp") or "rt")
+        if plot == "cv" and vis:
+            metas = []
+            for e in vis:
+                try:
+                    metas.append(self.data(e["file"])["meta"])
+                except Exception:
+                    metas.append({})
+            rates = sorted({round(m.get("scanrate") or 0.0, 1) for m in metas} - {0.0})
+            if len(rates) == 1:
+                h += "; scan rate " + chem_html(f"{rates[0]:g} mV s-1")
+            elif rates:
+                h += "; different scan rates"
+            ir = {m.get("pfcor") if m.get("ircomp_on") and m.get("posfeed") else None for m in metas}
+            if len(ir) == 1 and None not in ir:
+                h += f" (iR compensation = {next(iter(ir)):g} Ohm)"
+            refs = set()
+            for e in vis:
+                ref = e.get("ref") or {}
+                if ref.get("mode") == "internal":
+                    refs.add(ref.get("compound"))
+                elif not ref.get("mode") and st["ref_mode"] == "internal":
+                    refs.add(st["ref_compound"])
+            names = [self.CAP_REFS[k] for k in self.CAP_REFS if k in refs]
+            if names:
+                h += " referenced internally against " + " or ".join(names)
+            if st.get("arrow"):
+                h += " (arrows indicate scanning direction)"
+        return h + "."
 
     def _sync_ref_widgets(self):
         mode = self.st["ref_mode"]
@@ -1115,6 +1176,7 @@ class CVTab(TABS.FigureTab):
     def show_results(self):
         if not hasattr(self, "tbl_res"):
             return
+        self.show_caption()
         res = self.results
         self.tbl_res.setRowCount(len(res))
         for i, r in enumerate(res):

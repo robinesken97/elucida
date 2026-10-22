@@ -431,6 +431,25 @@ def parse_nuclei(text):
     return out
 
 
+def nuclei_names(text):
+    """Kernbezeichnungen in der Reihenfolge von parse_nuclei: '2 14N 0.65; 4 1H 0.32' -> ['14N', '1H']."""
+    return [part.replace("×", " ").split()[1] if len(part.replace("×", " ").split()) > 1 else "?"
+            for part in re.split(r"[;\n]+", str(text)) if parse_nuclei(part)]
+
+
+def band_name(mw_GHz):
+    """Mikrowellenband aus der Frequenz (X ≈ 9–10 GHz, Q ≈ 34 GHz …); None, wenn unbekannt."""
+    for lo, hi, name in ((1, 2, "L"), (2, 4, "S"), (8, 12, "X"), (12, 18, "K"), (26, 40, "Q"), (75, 110, "W")):
+        if mw_GHz and lo <= mw_GHz < hi:
+            return name
+    return None
+
+
+def nucleus_html(nuc):
+    m = re.fullmatch(r"(\d+)([A-Z][a-z]?)", nuc)
+    return f"<sup>{m.group(1)}</sup>{m.group(2)}" if m else nuc.replace("I=", "I = ")
+
+
 def nuclei_with_a(text, new_a):
     """Kopplungen im Text ersetzen, Isotopnamen und Reihenfolge behalten: ('2 14N 0.6', [0.65]) -> '2 14N 0.6500'."""
     out, k = [], 0
@@ -601,6 +620,8 @@ def _labels(text):
 
 class EPRTab(TABS.FigureTab):
     STATE_KEY = "epr"
+    CAP_FIELDS = ("species", "solvent", "conc")
+    SI_CAPTION = "EPR spectra of {name}."
     X_RANGE = (0.0, 20000.0, 1, 1.0)
     XRANGE_TEXT = "epr_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=300.0, x_max=360.0, ymax=0.0, entries=[], unit="mT",
@@ -608,7 +629,8 @@ class EPRTab(TABS.FigureTab):
                          stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers",
                          mode="spectra", int_window="", int_method="double", int_x="time", int_curie=False,
                          show_sum=True, show_residual=False, calib_uid=None, calib_g=2.0055,
-                         ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq")
+                         ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq",
+                         cap_species="", cap_solvent="", cap_conc="")
 
     def build_controls(self):
         st = self.st
@@ -848,6 +870,7 @@ class EPRTab(TABS.FigureTab):
         f.addRow(self.lbl_info)
         f.addRow(self.methods_button())
         self.lv.addWidget(g)
+        self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
         for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_smooth, self.sp_gap):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cb_norm, self.cb_stack, self.cb_params, self.cb_curie, self.cb_sum, self.cb_res):
@@ -987,6 +1010,42 @@ class EPRTab(TABS.FigureTab):
         if r:
             parts.append(f"R² = {r['r2']:.4f}")
         return "\n".join(parts)
+
+    def si_caption(self, name):
+        """Wie in der SI: „X-Band EPR spectrum of <b>6m•+</b> in THF (1 mM). Fitting parameters: g = 2.0026;
+        ΔBpp = 0.284 mT; hyperfine coupling: 1×14N: 2.39 MHz; …“. Band aus der Mikrowellenfrequenz, Parameter nur aus
+        eigenen S = ½-Fits (ohne Fehler, siehe methods_text), Spezies/Lösungsmittel/Konzentration aus den Feldern."""
+        import html
+        from uvvis_si import chem_html
+        st = self.st
+        if st["mode"] != "spectra":
+            return super().si_caption(name)
+        sp = st.get("cap_species") or name
+        sp = re.sub(r"\^\{([^}]*)\}", r"<sup>\1</sup>", html.escape(sp, quote=False))
+        vis = [e for e in st["entries"] if e["visible"]]
+        exps = [e for e in vis if e["kind"] == "exp"]
+        mw = next((self.spectrum(e)["meta"].get("mw_GHz") for e in exps if self.spectrum(e)["meta"].get("mw_GHz")),
+                  None)
+        band = band_name(st.get("ref_freq") or mw)
+        h = (f"{band}-Band " if band else "") + ("EPR spectra" if len(exps) > 1 else "EPR spectrum") + f" of <b>{sp}</b>"
+        if st.get("cap_solvent"):
+            h += " in " + chem_html(st["cap_solvent"])
+        if st.get("cap_conc"):
+            h += f" ({chem_html(st['cap_conc'])})"
+        h += "."
+        dB, calib_t = self.calibration_shift()
+        isos = [e for e in vis if e["kind"] == "iso" and e.get("fit") and not (dB and e.get("fit_to") == calib_t)]
+        for e in isos:
+            parts = [f"g = {e['g']:.4f}", f"ΔB<sub>pp</sub> = {e['lw']:.3f} mT"]
+            hfc = [f"{n}×{nucleus_html(nm)}: {a * MHZ_PER_MT_FREE * e['g'] / 2.0023:.2f} MHz"
+                   for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", "")))]
+            if hfc:
+                parts.append("hyperfine coupling: " + "; ".join(hfc))
+            h += " Fitting parameters" + (f" ({html.escape(e['label'])})" if len(isos) > 1 else "") + ": " + \
+                "; ".join(parts) + "."
+        if dB:
+            h += f" The magnetic field was referenced to a standard (g = {st['calib_g']:.4f})."
+        return h
 
     def calibration_shift(self):
         """Feldkorrektur ΔB [mT] aus einer gefitteten Referenz (z. B. TEMPO, g_lit): B_korr = B − ΔB.

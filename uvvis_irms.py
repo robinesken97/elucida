@@ -512,6 +512,7 @@ def copy_rich(plain, html):
 class IRMSTab(TABS.FigureTab):
     """Tab „IR + EA“ (der MS-Teil steht seit 1.21 im Tab HRMS, uvvis_hrms)."""
     STATE_KEY = "irms"
+    SI_CAPTION = "IR spectrum of {name}."
     X_RANGE = (100.0, 8000.0, 0, 50.0)
     XRANGE_TEXT = "ir_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,

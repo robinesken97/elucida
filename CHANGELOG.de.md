@@ -2,6 +2,43 @@
 
 # Änderungen
 
+## 1.24.0 – 22.10.2026
+
+### Neu
+- **Synthese-Tab:** „Synthesis of **Name**“, Reaktionsschema aus ChemDraw und Vorschrift mit Formatierung (fett,
+  kursiv, tief-/hochgestellt). Mit einer gleichnamigen `.cdx` neben der CDXML wird das Schema in Word ein
+  **bearbeitbares ChemDraw-Objekt** (Doppelklick öffnet ChemDraw; eine `.emf` aus ChemDraw gibt eine scharfe Vorschau).
+  **Mengenprüfung:** „(1.03 g, 5.00 mmol, 1.0 eq.)“ und Ausbeuten in der Vorschrift werden mit der
+  Reagenzientabelle verglichen, unter Berücksichtigung der Rundung der angegebenen Stellen. Reagenzientabelle aus dem
+  Schema (Edukte, Reagenzien über/unter dem Pfeil wie K2CO3, Lösungsmittel, Produkt).
+- **NMR-Tab:** SVG-Exporte aus MestReNova; Kern aus der Achsenbeschriftung (oder von Hand), Reihenfolge ¹H, ¹³C,
+  übrige Kerne nach Massenzahl, dann 2D (HSQC, HMBC …). Mnova-Multiplettbericht → NMR-Zeile im Stil der SI, mit
+  Zuordnung je Signal; ¹³C-Zeile auch aus den Peaklabels des Spektrums. Temperatur 298 K oder aus dem Bruker-Ordner
+  (acqus) mit Parameterübersicht. Die Struktur wird automatisch an eine freie Stelle gesetzt (keine Signale, Labels oder
+  Integrale verdeckt), lässt sich ziehen, und ihre Größe (Mausrad) ist in allen Spektren gleich. Word: zwei Spektren je
+  Seite, „Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**.“
+- **SI (Word) mit allen Abbildungen:** UV-Vis (ε), IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR und NMR – immer zwei je
+  Seite (falls nötig verkleinert), mit Unterschriften im Stil der SI. CV, SEC und EPR füllen ihre Unterschrift aus den
+  Daten (Vorschub, iR-Kompensation, Referenz, Potentialbereich, Band, g und Kopplungen) und wenigen Feldern
+  (Konzentration, Lösungsmittel, Leitsalz, Spezies). UV-Vis: „… in THF, measured in 0.1 cm quartz cuvettes.“
+- **Aufbau-Text (SI)** je Tab (CV, SEC, EPR): den Absatz zu Gerät und Aufbau einmal einfügen; er wird nur auf dem
+  eigenen Rechner gespeichert und vor die Abbildungen dieses Tabs gesetzt.
+- **Schrift und Rahmen je Tab:** Format → „Schrift und Rahmen…“ gilt für alle Tabs oder nur den offenen und zeigt nur,
+  was dieser Tab im Bild hat.
+- Strukturen ohne ChemDraw-Export werden jetzt **aus den CDXML-Koordinaten gezeichnet** (Abkürzungen wie TMS oder Dipp
+  bleiben, Pfeile und Bedingungen im Schema); RDKit nur noch als Rückfall.
+
+### Geändert
+- Neues App-Icon (Spektrum in den Farben des sichtbaren Bereichs mit Blitz) und neue Kurzbeschreibung „Von der Synthese zur SI“.
+- Reihenfolge der Tabs wie in der SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC ·
+  EPR · X-Ray · DFT. Der offene Tab wird über seinen Namen gemerkt.
+- Geschlossener Rahmen um den Plot ist jetzt Standard (wie in den Origin-Abbildungen der SI); bestehende Projekte
+  behalten ihre Einstellung.
+- UV-Vis (ε): Feld für das Lösungsmittel unter „Auswertung“ (neben der Schichtdicke).
+
+### Behoben
+- Word-Dateien öffnen nicht mehr im Kompatibilitätsmodus.
+
 ## 1.23.0 – 22.10.2026
 
 ### Neu

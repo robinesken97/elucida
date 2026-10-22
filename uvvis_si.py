@@ -7,6 +7,7 @@ UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“. Die Elementaranalyse folgt d
 from __future__ import annotations
 
 import html as _html
+import math
 import re
 import zipfile
 from pathlib import Path
@@ -95,6 +96,14 @@ def ea_formula_label(formula: str, solvate: str = "") -> str:
 
 def _sub_html(f):
     return re.sub(r"(?<=[A-Za-z\)])(\d+(?:\.\d+)?)", r"<sub>\1</sub>", _html.escape(f))
+
+
+def chem_html(text):
+    """Freitext -> HTML wie in der SI: „mL-1“/„s-1“ hochgestellt, Zahlen in Formeln (CH2Cl2, n-Bu4NPF6, AgNO3)
+    tiefgestellt; Zahlen nach Leerzeichen (0.1 M, 200 mV) bleiben."""
+    h = _html.escape(text or "", quote=False)
+    h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
+    return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", h)
 
 
 def ea_line(formula: str, solvate: str, found: dict):
@@ -284,6 +293,65 @@ def _seq_xml(kind, num, size=22):
             '</w:fldSimple>')
 
 
+# Seitenfüllung: Textfläche A4 (oben 2.5 cm, unten 2.0 cm) mit Reserve; Arial 11 pt, 1.5-zeilig ≈ 0.67 cm je Zeile,
+# im Mittel ≈ 0.19 cm je Zeichen
+PAGE_BODY_CM = 29.7 - 2.5 - 2.0 - 0.7
+LINE_CM, CHAR_CM = 0.67, 0.19
+
+
+def _text_cm(markup, prefix=0, extra=0.0):
+    """Geschätzte Höhe eines Absatzes über die ganze Textbreite (HTML ohne Tags, prefix = „Figure S12: “)."""
+    plain = re.sub(r"<[^>]+>", "", markup or "")
+    per_line = max(20, int(TEXT_W / 567 / CHAR_CM))
+    return math.ceil((len(plain) + prefix) / per_line) * LINE_CM + extra
+
+
+def two_per_page(blocks, per_page=2):
+    """Abbildungen (image + figcap) seitenweise zu je per_page setzen; vorangehender Text (z. B. Aufbau-Absatz)
+    beginnt eine neue Seite und zählt mit. Bilder werden – im Seitenverhältnis – so verkleinert, dass alles auf die
+    Seite passt (16 × 11 cm mit zweizeiliger Unterschrift sind zu zweit sonst ≈ 1 cm zu hoch)."""
+    pages, cur = [], {"text": [], "figs": []}
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b[0] == "image":
+            cap = blocks[i + 1] if i + 1 < len(blocks) and blocks[i + 1][0] == "figcap" else None
+            if len(cur["figs"]) >= per_page:
+                pages.append(cur)
+                cur = {"text": [], "figs": []}
+            cur["figs"].append([list(b), cap])
+            i += 2 if cap else 1
+            continue
+        if b[0] == "pagebreak":
+            i += 1
+            continue
+        if cur["figs"]:                                  # Text nach Abbildungen: neue Seite
+            pages.append(cur)
+            cur = {"text": [], "figs": []}
+        cur["text"].append(b)
+        i += 1
+    if cur["text"] or cur["figs"]:
+        pages.append(cur)
+    out = []
+    for k, pg in enumerate(pages):
+        if k:
+            out.append(("pagebreak",))
+        used = sum(_text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35) for t in pg["text"])
+        caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
+        if pg["figs"]:
+            hmax = (PAGE_BODY_CM - used - caps) / per_page
+            for img, _ in pg["figs"]:
+                if img[3] > hmax > 0:
+                    f = hmax / img[3]
+                    img[2], img[3] = img[2] * f, hmax
+        out += pg["text"]
+        for img, cap in pg["figs"]:
+            out.append(tuple(img))
+            if cap:
+                out.append(cap)
+    return out
+
+
 def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs=""):
     x = f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
     if keep_next:
@@ -358,9 +426,12 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
     return x + "</w:tbl>"
 
 
-def _image_xml(rid, n, w_cm, h_cm, svg_rid=None):
+def _image_xml(rid, n, w_cm, h_cm, svg_rid=None, page_break=False):
     cx, cy = int(w_cm * 360000), int(h_cm * 360000)
-    return ('<w:p>' + _ppr(align="center", line=240, after=120, keep_next=True) +
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True)
+    if page_break:                       # „Seitenumbruch oberhalb“ statt eigenem Absatz (der sonst überläuft)
+        ppr = ppr.replace("<w:pPr>", "<w:pPr><w:pageBreakBefore/>", 1)
+    return ('<w:p>' + ppr +
             '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
             f'<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Picture {n}"/>'
             '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
@@ -375,6 +446,31 @@ def _image_xml(rid, n, w_cm, h_cm, svg_rid=None):
             f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
             '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
             '</wp:inline></w:drawing></w:r></w:p>')
+
+
+_SHAPETYPE = ('<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" '
+              'path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas>'
+              '<v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/>'
+              '<v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/>'
+              '<v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/>'
+              '<v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/>'
+              '</v:formulas><v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/>'
+              '<o:lock v:ext="edit" aspectratio="t"/></v:shapetype>')
+
+
+def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
+    """Eingebettetes ChemDraw-Objekt (wie von Word beim Einfügen aus ChemDraw geschrieben); Doppelklick öffnet ChemDraw."""
+    import uvvis_ole
+    wpt, hpt = w_cm / 2.54 * 72, h_cm / 2.54 * 72
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True)
+    if page_break:
+        ppr = ppr.replace("<w:pPr>", "<w:pPr><w:pageBreakBefore/>", 1)
+    return (f'<w:p>{ppr}<w:r><w:object w:dxaOrig="{int(wpt * 20)}" w:dyaOrig="{int(hpt * 20)}">'
+            + (_SHAPETYPE if first else "") +
+            f'<v:shape id="_x0000_iOle{n}" type="#_x0000_t75" style="width:{wpt:.2f}pt;height:{hpt:.2f}pt" o:ole="">'
+            f'<v:imagedata r:id="rIdOlePrev{n}" o:title=""/></v:shape>'
+            f'<o:OLEObject Type="Embed" ProgID="{uvvis_ole.CHEMDRAW_PROGID}" ShapeID="_x0000_iOle{n}" '
+            f'DrawAspect="Content" ObjectID="_18{54180700 + n:08d}" r:id="rIdOle{n}"/></w:object></w:r></w:p>')
 
 
 def _sect(columns):
@@ -401,15 +497,21 @@ def write_docx(path, blocks, columns=1):
     ("mono", [Zeilen])                    Festbreitenschrift, Größe so, dass die längste Zeile in die Spalte passt
     ("energies", Köpfe, Zeilen)           Energietabelle über die Spaltenbreite
     ("columns", n)                        ab hier n Spalten (fortlaufender Abschnittswechsel, z. B. DFT zweispaltig)
+    ("pagebreak",)                        Seitenumbruch (NMR: zwei Spektren je Seite)
+    ("ole", CDX, Vorschau, Breite cm, Höhe cm)  bearbeitbares ChemDraw-Objekt (CDX), Vorschau EMF (Vektor) oder PNG
     ("gap",)                              Leerzeile
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
-    body, media, svgs = [], [], []
+    body, media, svgs, oles = [], [], [], []
     n_fig = n_tab = 0
     def col_width(n):
         return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
     col_w = col_width(columns)
+    pending_break = False
     for b in blocks:
         k = b[0]
+        if pending_break and k != "image":       # kein Bild danach: echter Umbruch
+            body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+            pending_break = False
         if k == "columns":
             if b[1] != columns:                  # Abschnitt mit der bisherigen Spaltenzahl beenden
                 body.append(f"<w:p><w:pPr>{_sect(columns)}</w:pPr></w:p>")
@@ -426,7 +528,9 @@ def write_docx(path, blocks, columns=1):
                 svgs.append((len(media), Path(b[4])))
                 svg_rid = f"rIdSvg{len(media)}"
             w_cm = min(b[2], col_w / 567.0)
-            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid))
+            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid,
+                                   page_break=pending_break))
+            pending_break = False
         elif k == "figcap":
             n_fig += 1
             body.append(_label_para("Figure", n_fig, html_runs(nbsp(b[1])), after=240))
@@ -478,12 +582,20 @@ def write_docx(path, blocks, columns=1):
             n = len(header)
             body.append(_table(header, rows, [col_w // n] * n, line=240, size=16 if columns > 1 else 18))
             body.append(_para([("", set())], line=240))
+        elif k == "ole":
+            import uvvis_ole
+            oles.append((uvvis_ole.write_cfb(uvvis_ole.chemdraw_streams(Path(b[1]).read_bytes())), Path(b[2])))
+            body.append(_ole_xml(len(oles), b[3], b[4], first=len(oles) == 1, page_break=pending_break))
+            pending_break = False
+        elif k == "pagebreak":
+            pending_break = True                 # am nächsten Bild als „Seitenumbruch oberhalb“
         elif k == "gap":
             body.append(_para([("", set())]))
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
           'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
-          'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"')
+          'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+          'xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"')
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
            f'<w:document {ns}><w:body>' + "".join(body) + _sect(columns) + '</w:body></w:document>')
     styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -495,10 +607,17 @@ def write_docx(path, blocks, columns=1):
               '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
               '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
               '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
-              '<Default Extension="svg" ContentType="image/svg+xml"/>'
+              '<Default Extension="svg" ContentType="image/svg+xml"/><Default Extension="emf" ContentType="image/x-emf"/>'
+              '<Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>'
               '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
               'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
-              'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
+              'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" '
+              'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>')
+    # Word 2013+ (sonst öffnet Word das Dokument im Kompatibilitätsmodus)
+    settings = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat>'
+                '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" '
+                'w:val="15"/></w:compat></w:settings>')
     rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
@@ -506,11 +625,17 @@ def write_docx(path, blocks, columns=1):
     drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
              '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
              '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
-             'styles" Target="styles.xml"/>' +
+             'styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/'
+             'officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
              "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}.png"/>' for i in range(1, len(media) + 1)) +
              "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}.svg"/>' for i, _ in svgs) +
+             "".join(f'<Relationship Id="rIdOle{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/oleObject" Target="embeddings/oleObject{i}.bin"/>'
+                     f'<Relationship Id="rIdOlePrev{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/ole{i}{pv.suffix.lower()}"/>'
+                     for i, (_, pv) in enumerate(oles, 1)) +
              '</Relationships>')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -519,9 +644,13 @@ def write_docx(path, blocks, columns=1):
         z.writestr("_rels/.rels", rels)
         z.writestr("word/document.xml", doc)
         z.writestr("word/styles.xml", styles)
+        z.writestr("word/settings.xml", settings)
         z.writestr("word/_rels/document.xml.rels", drels)
         for i, m in enumerate(media, 1):
             z.writestr(f"word/media/image{i}.png", m.read_bytes())
         for i, sv in svgs:
             z.writestr(f"word/media/image{i}.svg", sv.read_bytes())
+        for i, (bin_, pv) in enumerate(oles, 1):
+            z.writestr(f"word/embeddings/oleObject{i}.bin", bin_)
+            z.writestr(f"word/media/ole{i}{pv.suffix.lower()}", pv.read_bytes())
     return path

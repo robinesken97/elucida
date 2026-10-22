@@ -66,6 +66,10 @@ def _path_slots(state):
         slots.append((e, "file", "data"))
     for e in (state.get("dft") or {}).get("entries") or []:
         slots.append((e, "file", "data"))
+    slots.append((state.get("nmr") or {}, "structure", "images"))
+    slots.append((state.get("syn") or {}, "scheme", "images"))
+    for e in (state.get("nmr") or {}).get("spectra") or []:
+        slots += [(e, "file", "data"), (e, "bruker", "data")]
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", "data"), (fl, "em_file", "data"), (fl, "structure", "images"),
               (fl, "photo_day", "images"), (fl, "photo_uv", "images")]
@@ -128,11 +132,14 @@ def save(project_dir, state) -> dict:
 
 
 BRUKER_D_FILES = ("analysis.baf", "analysis.sqlite")      # aus einem .d-Ordner nur das, was gelesen wird
+NMR_EXP_FILES = ("acqus", "acqu2s", "pulseprogram")         # Bruker-NMR-Experiment: nur die Parameter (kein FID)
 
 
 def _copy_dir(src: Path, dest_dir: Path) -> Path:
     """Messordner (z. B. Bruker .d) übernehmen; bei .d nur die gelesenen Dateien (Rohdaten + Index)."""
     names = [n for n in BRUKER_D_FILES if (src / n).exists()] if src.suffix.lower() == ".d" else None
+    if names is None and (src / "acqus").is_file():
+        names = [n for n in NMR_EXP_FILES if (src / n).exists()]
     target, n = dest_dir / src.name, 2
     while target.exists():
         if names and all((target / x).exists() and (target / x).stat().st_size == (src / x).stat().st_size

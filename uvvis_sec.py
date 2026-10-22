@@ -142,10 +142,13 @@ def _floats(text):
 
 class SECTab(TABS.FigureTab):
     STATE_KEY = "sec"
+    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
+    CAP_FIELDS = ("solvent", "start", "end")
+    SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,
                          mode="spectra", first=1, last=0, highlight=True, gradient=False, diff=False,
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,
-                         electrode="Ag/AgNO₃", ref_from_cv=False)
+                         electrode="Ag/AgNO₃", ref_from_cv=False, cap_solvent="", cap_start="", cap_end="")
 
     def build_controls(self):
         st = self.st
@@ -227,6 +230,7 @@ class SECTab(TABS.FigureTab):
         f.addRow(self.lbl_info)
         f.addRow(self.methods_button())
         self.lv.addWidget(g)
+        self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
         for w_ in (self.sp_offset_s, self.sp_shift):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.sp_first, self.sp_last):
@@ -389,6 +393,38 @@ class SECTab(TABS.FigureTab):
             info.append(T("sec_no_time"))
         self.lbl_info.setText("\n".join(info))
         return cfg, curves, labels, []
+
+    def si_caption(self, name):
+        """Wie in der SI: „UV-vis-SEC of <b>6m</b> in THF. Color coding: <b>neutral</b> (blue), <b>dication</b> (red).
+        Starting potential (vs. Ag/AgNO3): −1.30 V; End potential (vs. Ag/AgNO3): 0.70 V.“ Potentiale aus dem Scan
+        (erstes/letztes gezeigtes Spektrum), Namen der Spezies und Lösungsmittel aus den Feldern."""
+        import html
+        from uvvis_si import chem_html
+        st = self.st
+        title = "UV-vis-SEC" if st["mode"] != "trace" else "Absorbance at selected wavelengths during UV-vis-SEC"
+        h = f"{title} of <b>{html.escape(name)}</b>"
+        if st.get("cap_solvent"):
+            h += " in " + chem_html(st["cap_solvent"])
+        h += "."
+        if st["mode"] != "trace" and st["highlight"] and not st["gradient"]:
+            cols = [(f"<b>{chem_html(st[k])}</b> ({c})") for k, c in (("cap_start", "blue"), ("cap_end", "red"))
+                    if st.get(k)]
+            if cols:
+                h += " Color coding: " + ", ".join(cols) + "."
+        try:
+            sp, E = self.series()
+        except Exception:
+            sp, E = [], None
+        if sp and E is not None:
+            n = len(sp)
+            i0 = min(max(st["first"], 1), n) - 1
+            i1 = n - 1 if not st["last"] else min(max(st["last"], i0 + 1), n) - 1
+            off, lab = self.e_offset()
+            ref = chem_html(str(lab).replace("Fc$^{0/+}$", "Fc+/Fc"))
+            fe = lambda v: f"{v:.2f}".replace("-", "−")                               # noqa: E731
+            h += (f" Starting potential (vs. {ref}): {fe(E[i0] - off)} V; End potential (vs. {ref}): "
+                  f"{fe(E[i1] - off)} V.")
+        return h
 
     def methods_text(self):
         """SI-Text zum scheinbaren Nernst-Fit (nur wenn gefittet). Ausdrücklich „apparent“: Im kontinuierlichen

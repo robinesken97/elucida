@@ -17,8 +17,8 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.23.0"
-SI_PARTS = ("char", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
+APP_VERSION = "1.24.0"
+SI_PARTS = ("char", "nmr", "figs", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -60,6 +60,8 @@ import uvvis_hrms as HRMS  # noqa: E402
 import uvvis_irms as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
 import uvvis_dft as DFT  # noqa: E402
+import uvvis_nmr as NMR  # noqa: E402
+import uvvis_synth as SYN  # noqa: E402
 import uvvis_si as SI  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
@@ -361,53 +363,76 @@ def compound_from_structure(p):
 
 
 class TextFormatDialog(QDialog):
-    """Schriften, Labelstil und Rahmen – gilt für alle Tabs (Menü Format)."""
+    """Schriften, Labelstil und Rahmen (Menü Format). Gilt für alle Tabs oder – wahlweise – nur für den offenen Tab;
+    gezeigt wird nur, was der Tab im Bild überhaupt hat (opts)."""
 
-    def __init__(self, parent, tf):
+    ALL_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
+
+    def __init__(self, parent, tf, own=None, opts=ALL_OPTS, tab_key=None, tab_name=""):
         super().__init__(parent)
+        from uvvis_i18n import TEXTS
         self.setWindowTitle(T("tf_title"))
-        tf = dict(core.TEXT_DEFAULTS, **(tf or {}))
+        self.glob = dict(core.TEXT_DEFAULTS, **(tf or {}))
+        self.own = dict(self.glob, **own) if own else None
         lay = QVBoxLayout(self)
+        self.cmb_scope = QComboBox()
+        self.cmb_scope.addItem(T("tf_scope_global"), "global")
+        if tab_key:
+            self.cmb_scope.addItem(T("tf_scope_own", tab=tab_name), "own")
+            row = QHBoxLayout()
+            row.addWidget(QLabel(T("tf_scope")))
+            row.addWidget(self.cmb_scope, 1)
+            lay.addLayout(row)
+        hint = QLabel(T("tf_scope_hint") if tab_key else T("tf_no_text", tab=tab_name))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(HINT_CSS)
+        lay.addWidget(hint)
 
         g = QGroupBox(T("tf_grp_fonts"))
         f = QFormLayout(g)
         self.cmb_font, self.cmb_sym = QFontComboBox(), QFontComboBox()
-        self.cmb_font.setCurrentText(tf["font"])
-        self.cmb_sym.setCurrentText(tf["symbol_font"])
         f.addRow(T("tf_font"), self.cmb_font)
-        f.addRow(T("tf_symbol_font"), self.cmb_sym)
-        self.cb_greek = QCheckBox(T("tf_greek"), checked=tf["greek"])
+        self.cb_greek = QCheckBox(T("tf_greek"))
         self.cb_greek.toggled.connect(self.cmb_sym.setEnabled)
-        self.cmb_sym.setEnabled(tf["greek"])
+        f.addRow(T("tf_symbol_font"), self.cmb_sym)
         f.addRow(self.cb_greek)
+        if "greek" not in opts:
+            for w_ in (self.cmb_sym, self.cb_greek, f.labelForField(self.cmb_sym)):
+                w_.setVisible(False)
+        g.setVisible("fonts" in opts)
         lay.addWidget(g)
 
-        g = QGroupBox(T("tf_grp_labels"))
+        lk = f"tf_grp_labels_{tab_key}"
+        g = QGroupBox(T(lk if lk in TEXTS else "tf_grp_labels"))
         f = QFormLayout(g)
         self.sp_size = QDoubleSpinBox(decimals=1, minimum=0, maximum=40, singleStep=0.5, suffix=" pt")
         self.sp_size.setSpecialValueText(T("tf_auto"))
-        self.sp_size.setValue(tf["label_pt"] or 0)
         f.addRow(T("tf_label_size"), self.sp_size)
+        if "label_size" not in opts:
+            self.sp_size.setVisible(False)
+            f.labelForField(self.sp_size).setVisible(False)
         row = QHBoxLayout()
-        self.cb_bold = QCheckBox(T("tf_bold"), checked=tf["bold"])
-        self.cb_italic = QCheckBox(T("tf_italic"), checked=tf["italic"])
+        self.cb_bold = QCheckBox(T("tf_bold"))
+        self.cb_italic = QCheckBox(T("tf_italic"))
         row.addWidget(self.cb_bold)
         row.addWidget(self.cb_italic)
         row.addStretch(1)
         f.addRow("", row)
-        self.color = tf["color"]
         self.btn_color = QPushButton()
         self.btn_color.clicked.connect(self.pick_color)
-        self._show_color()
         f.addRow(T("tf_color"), self.btn_color)
+        g.setVisible("labels" in opts)
         lay.addWidget(g)
 
         g = QGroupBox(T("tf_grp_frames"))
         v = QVBoxLayout(g)
-        self.cb_axes = QCheckBox(T("tf_axes_frame"), checked=tf["axes_frame"])
-        self.cb_struct = QCheckBox(T("tf_struct_frame"), checked=tf["struct_frame"])
+        self.cb_axes = QCheckBox(T("tf_axes_frame"))
+        self.cb_struct = QCheckBox(T("tf_struct_frame"))
         v.addWidget(self.cb_axes)
         v.addWidget(self.cb_struct)
+        self.cb_axes.setVisible("axes_frame" in opts)
+        self.cb_struct.setVisible("struct_frame" in opts)
+        g.setVisible("axes_frame" in opts or "struct_frame" in opts)
         lay.addWidget(g)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
@@ -415,6 +440,34 @@ class TextFormatDialog(QDialog):
         bb.rejected.connect(self.reject)
         bb.button(QDialogButtonBox.RestoreDefaults).clicked.connect(self.restore_defaults)
         lay.addWidget(bb)
+        self.cmb_scope.setCurrentIndex(1 if (tab_key and own) else 0)
+        self._scope = self.cmb_scope.currentData()
+        self.load(self.own if self._scope == "own" else self.glob)
+        self.cmb_scope.currentIndexChanged.connect(self.scope_changed)
+
+    def scope_changed(self, *_):
+        """Beim Umschalten die Werte der jeweiligen Ebene zeigen (eigenes Format startet als Kopie des Standards)."""
+        cur = self.result_format()
+        if self._scope == "own":
+            self.own = cur
+        else:
+            self.glob = cur
+        self._scope = self.cmb_scope.currentData()
+        self.load((self.own or dict(self.glob)) if self._scope == "own" else self.glob)
+
+    def load(self, tf):
+        tf = dict(core.TEXT_DEFAULTS, **tf)
+        self.cmb_font.setCurrentText(tf["font"])
+        self.cmb_sym.setCurrentText(tf["symbol_font"])
+        self.cb_greek.setChecked(tf["greek"])
+        self.cmb_sym.setEnabled(tf["greek"])
+        self.sp_size.setValue(tf["label_pt"] or 0)
+        self.cb_bold.setChecked(tf["bold"])
+        self.cb_italic.setChecked(tf["italic"])
+        self.color = tf["color"]
+        self._show_color()
+        self.cb_axes.setChecked(tf["axes_frame"])
+        self.cb_struct.setChecked(tf["struct_frame"])
 
     def _show_color(self):
         self.btn_color.setText(self.color)
@@ -427,23 +480,20 @@ class TextFormatDialog(QDialog):
             self._show_color()
 
     def restore_defaults(self):
-        d = core.TEXT_DEFAULTS
-        self.cmb_font.setCurrentText(d["font"])
-        self.cmb_sym.setCurrentText(d["symbol_font"])
-        self.cb_greek.setChecked(d["greek"])
-        self.sp_size.setValue(d["label_pt"])
-        self.cb_bold.setChecked(d["bold"])
-        self.cb_italic.setChecked(d["italic"])
-        self.color = d["color"]
-        self._show_color()
-        self.cb_axes.setChecked(d["axes_frame"])
-        self.cb_struct.setChecked(d["struct_frame"])
+        self.load(core.TEXT_DEFAULTS)
 
     def result_format(self):
         return {"font": self.cmb_font.currentFont().family(), "symbol_font": self.cmb_sym.currentFont().family(),
                 "greek": self.cb_greek.isChecked(), "label_pt": self.sp_size.value(),
                 "bold": self.cb_bold.isChecked(), "italic": self.cb_italic.isChecked(), "color": self.color,
                 "axes_frame": self.cb_axes.isChecked(), "struct_frame": self.cb_struct.isChecked()}
+
+    def results(self):
+        """-> (Standard für alle Tabs, eigenes Format des Tabs oder None)."""
+        cur = self.result_format()
+        if self.cmb_scope.currentData() == "own":
+            return self.glob, cur
+        return cur, None
 
 
 class MainWindow(QMainWindow):
@@ -475,9 +525,12 @@ class MainWindow(QMainWindow):
         self.hrms_state = {}
         self.xray_state = {}
         self.dft_state = {}
+        self.nmr_state = {}
+        self.syn_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
         self.text_fmt = dict(core.TEXT_DEFAULTS)
-        self._tab_index = 0
+        self.tab_fmt = {}                                # eigenes Textformat je Tab (Schlüssel = STATE_KEY / epsilon)
+        self._tab_key = "syn"                            # offener Tab (Name, nicht Position)
         self.project_dir = None
         self._undo, self._redo = [], []
         self._restoring = False
@@ -717,6 +770,10 @@ class MainWindow(QMainWindow):
         forms.append(f)
         self.sp_d = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=100, singleStep=0.1, suffix=" cm")
         f.addRow(T("path_length_short"), self.sp_d)
+        self.ed_solvent = QLineEdit()                    # je Serie; für SI-Zeile und Bildunterschrift
+        self.ed_solvent.setPlaceholderText(T("si_solvent_ph"))
+        self.ed_solvent.editingFinished.connect(self.solvent_changed)
+        f.addRow(T("si_solvent"), self.ed_solvent)
         self.sp_cut = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=5, singleStep=0.1)
         f.addRow(T("cutoff"), self.sp_cut)
         self.ed_bands = QLineEdit()
@@ -862,13 +919,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.table, T("tab_results"))
         si_w = QWidget()
         si_l = QVBoxLayout(si_w)
-        row = QHBoxLayout()
-        row.addWidget(QLabel(T("si_solvent")))
-        self.ed_solvent = QLineEdit()
-        self.ed_solvent.setPlaceholderText(T("si_solvent_ph"))
-        self.ed_solvent.editingFinished.connect(self.solvent_changed)
-        row.addWidget(self.ed_solvent, 1)
-        si_l.addLayout(row)
         self.txt_si = QTextBrowser()
         si_l.addWidget(self.txt_si, 1)
         b = QPushButton(T("si_copy"))
@@ -910,28 +960,31 @@ class MainWindow(QMainWindow):
         split.addWidget(left_col)
         split.addWidget(right)
         split.setSizes([left_col.minimumWidth(), 920])
-        self.main_tabs = QTabWidget()
-        self.main_tabs.addTab(split, T("tab_eps"))
+        self.eps_page = split
         self.ov_tab = uvvis_tabs.OverlayTab(self, self.ov_state)
         self.fl_tab = uvvis_tabs.FluoTab(self, self.fl_state)
-        self.main_tabs.addTab(self.ov_tab, T("tab_overlay"))
-        self.main_tabs.addTab(self.fl_tab, T("tab_fluo"))
         self.cv_tab = CVMOD.CVTab(self, self.cv_state)
-        self.main_tabs.addTab(self.cv_tab, T("tab_cv"))
         self.sec_tab = SECMOD.SECTab(self, self.sec_state)
-        self.main_tabs.addTab(self.sec_tab, T("tab_sec"))
         self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
-        self.main_tabs.addTab(self.epr_tab, T("tab_epr"))
         self.hrms_tab = HRMS.HRMSTab(self, self.hrms_state)
-        self.main_tabs.addTab(self.hrms_tab, T("tab_hrms"))
         self.irms_tab = IRMS.IRMSTab(self, self.irms_state)
-        self.main_tabs.addTab(self.irms_tab, T("tab_irms"))
         self.xray_tab = XRAY.XrayTab(self, self.xray_state)
-        self.main_tabs.addTab(self.xray_tab, T("tab_xray"))
+        self.syn_tab = SYN.SynthTab(self, self.syn_state)
+        self.nmr_tab = NMR.NMRTab(self, self.nmr_state)
         self.dft_tab = DFT.DFTTab(self, self.dft_state)
-        self.main_tabs.addTab(self.dft_tab, T("tab_dft"))
-        self.main_tabs.setCurrentIndex(self._tab_index)
-        self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_index", i))
+        # Reihenfolge wie die SI: Synthese, Charakterisierung, Spektroskopie, Elektrochemie, Struktur, Rechnung
+        self.main_tabs = QTabWidget()
+        self._tab_keys = []
+        for key, page, label in (("syn", self.syn_tab, "tab_syn"), ("nmr", self.nmr_tab, "tab_nmr"),
+                                 ("irms", self.irms_tab, "tab_irms"), ("hrms", self.hrms_tab, "tab_hrms"),
+                                 ("eps", split, "tab_eps"), ("overlay", self.ov_tab, "tab_overlay"),
+                                 ("fluo", self.fl_tab, "tab_fluo"), ("cv", self.cv_tab, "tab_cv"),
+                                 ("sec", self.sec_tab, "tab_sec"), ("epr", self.epr_tab, "tab_epr"),
+                                 ("xray", self.xray_tab, "tab_xray"), ("dft", self.dft_tab, "tab_dft")):
+            self.main_tabs.addTab(page, T(label))
+            self._tab_keys.append(key)
+        self.main_tabs.setCurrentIndex(self._tab_keys.index(self._tab_key) if self._tab_key in self._tab_keys else 0)
+        self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_key", self._tab_keys[i]))
         self.main_tabs.currentChanged.connect(                    # Vorlagen (CIF aus X-Ray) aktuell halten
             lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
         self.setCentralWidget(self.main_tabs)
@@ -1244,9 +1297,10 @@ class MainWindow(QMainWindow):
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
-                "dft": self.dft_state, "compound": dict(self.compound),
-                "tab": self._tab_index,
-                "text": dict(self.text_fmt)}
+                "dft": self.dft_state, "nmr": self.nmr_state, "syn": self.syn_state,
+                "compound": dict(self.compound),
+                "tab": self._tab_key,
+                "text": dict(self.text_fmt), "text_tabs": {k: dict(v) for k, v in self.tab_fmt.items()}}
 
     def set_state(self, state):
         """Zustand übernehmen (Projekt laden, Undo/Redo)."""
@@ -1280,9 +1334,18 @@ class MainWindow(QMainWindow):
         self.xray_state.update(state.get("xray") or {})
         self.dft_state.clear()
         self.dft_state.update(state.get("dft") or {})
+        self.nmr_state.clear()
+        self.nmr_state.update(state.get("nmr") or {})
+        self.syn_state.clear()
+        self.syn_state.update(state.get("syn") or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
-        self._tab_index = state.get("tab", 0) or 0
+        self.tab_fmt = {k: dict(v) for k, v in (state.get("text_tabs") or {}).items()}
+        tab = state.get("tab", "syn")
+        if isinstance(tab, int):                         # bis 1.23 gespeichert als Position (alte Reihenfolge)
+            old = ("eps", "overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "dft")
+            tab = old[tab] if 0 <= tab < len(old) else "syn"
+        self._tab_key = tab
         self.current = eps.get("current")
         self.build_ui()
         if self.csv_paths:
@@ -1816,7 +1879,7 @@ class MainWindow(QMainWindow):
                          "prefer": "right",
                          "_asset": st["photo_asset"]})
         cfg["images"] = imgs
-        core.apply_text_format(cfg, self.text_fmt)
+        core.apply_text_format(cfg, self.text_format("epsilon"))
         return cfg
 
     # ------------------------------------------------------------ Farbe der Lösung
@@ -1890,21 +1953,40 @@ class MainWindow(QMainWindow):
         self.changed()
         QTimer.singleShot(0, lambda: self.statusBar().showMessage(msg, 6000))
 
+    def text_format(self, key):
+        """Textformat eines Tabs: eigenes Format (Menü Format, „nur dieser Tab“), sonst das für alle Tabs."""
+        return {**core.TEXT_DEFAULTS, **self.text_fmt, **(self.tab_fmt.get(key) or {})}
+
+    def text_tab(self):
+        """Offener Tab -> (Schlüssel für das Textformat oder None, Name, Optionen, die der Tab im Bild hat)."""
+        w_ = self.main_tabs.currentWidget()
+        name = self.main_tabs.tabText(self.main_tabs.currentIndex())
+        if w_ is self.eps_page:
+            return "epsilon", name, TextFormatDialog.ALL_OPTS
+        if isinstance(w_, uvvis_tabs.FigureTab):
+            return w_.STATE_KEY, name, w_.TEXT_OPTS
+        return None, name, ()
+
     def edit_text_format(self):
-        dlg = TextFormatDialog(self, self.text_fmt)
+        key, name, opts = self.text_tab()
+        dlg = TextFormatDialog(self, self.text_fmt, self.tab_fmt.get(key), opts or TextFormatDialog.ALL_OPTS,
+                               key, name)
         if dlg.exec() != QDialog.Accepted:
             return
-        self.text_fmt = dlg.result_format()
-        for key in ("font", "symbol_font"):
-            name = self.text_fmt[key]
-            if core.first_font([name], None) is None:
-                self.log_signal.emit("  " + T("tf_missing", name=name))
+        self.text_fmt, own = dlg.results()
+        if key:
+            if own is None:
+                self.tab_fmt.pop(key, None)
+            else:
+                self.tab_fmt[key] = own
+        for tf in [self.text_fmt] + list(self.tab_fmt.values()):
+            for k_ in ("font", "symbol_font"):
+                if core.first_font([tf[k_]], None) is None:
+                    self.log_signal.emit("  " + T("tf_missing", name=tf[k_]))
         self.render()
-        self.ov_tab.render()
-        self.fl_tab.render()
-        self.cv_tab.render()
-        self.sec_tab.render()
-        self.epr_tab.render()
+        for t in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.irms_tab, self.hrms_tab,
+                  self.xray_tab, self.dft_tab):
+            t.render()
         self.push_undo()
 
     def render(self):
@@ -2045,7 +2127,9 @@ class MainWindow(QMainWindow):
     def si_available(self):
         """Teile der SI, für die Daten da sind."""
         xt, dt = self.xray_tab, self.dft_tab
-        return dict(char=True, xray=any(xt.structure(e) is not None for e in xt.entries()),
+        return dict(char=True, nmr=bool(self.nmr_tab.spectra()),
+                    figs=bool(self.groups) or any(t.F is not None for t in self.figure_tabs()),
+                    xray=any(xt.structure(e) is not None for e in xt.entries()),
                     dft=any(dt.calc_of(e) is not None for e in dt.entries()))
 
     def export_si_dialog(self):
@@ -2053,8 +2137,11 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return
         avail = self.si_available()
-        saved = self.settings.value("si_parts", "char,xray,dft")
+        saved = self.settings.value("si_parts", "char,nmr,figs,xray,dft")
         saved = set(str(saved).split(",")) if saved else set()
+        if not self.settings.value("si_parts_figs"):         # neu in 1.24: Abbildungen einmalig mit auswählen
+            saved |= {"nmr", "figs"}
+            self.settings.setValue("si_parts_figs", 1)
         dlg = QDialog(self)
         dlg.setWindowTitle(T("act_export_si").rstrip(" …"))
         v = QVBoxLayout(dlg)
@@ -2104,13 +2191,19 @@ class MainWindow(QMainWindow):
     def si_blocks(self, parts=SI_PARTS):
         """-> (Blöcke für SI.write_docx, fehlende Teile)."""
         comp = self.compound or {}
-        title = comp.get("name") or Path(self.project_dir or ".").name
+        title = self.syn_tab.st.get("name") or comp.get("name") or Path(self.project_dir or ".").name
         blocks, missing, plain = [], [], ""
         if "char" in parts:
             blocks, missing, plain = self.si_char_blocks(comp, title)
         elif title:
             blocks = [("heading", title)]
         self._si_plain = plain
+        if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
+            blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
+        if "figs" in parts and self.project_dir:
+            figs = self.si_figure_blocks(PRJ.export_dir(Path(self.project_dir), "si"), title)
+            if figs:
+                blocks += [("pagebreak",)] + figs
         xt = self.xray_tab
         es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in parts else []
         if es:
@@ -2120,6 +2213,48 @@ class MainWindow(QMainWindow):
             blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
         return blocks, missing
 
+    def figure_tabs(self):
+        """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
+        return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab]
+
+    def si_figure_blocks(self, out_dir, name):
+        """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je
+        Seite (SI.two_per_page verkleinert, wo nötig), jede mit „Figure Sn: …“."""
+        figs = self.si_eps_figures(out_dir, name)
+        for t in self.figure_tabs():
+            try:
+                fb = t.si_figure(out_dir, name)
+                if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
+                    fb = [("char", SI.chem_html(t.si_setup_text()))] + fb
+                figs += fb
+            except Exception:
+                self.log_signal.emit(traceback.format_exc())
+        return SI.two_per_page(figs)
+
+    def si_eps_figures(self, out_dir, name):
+        """ε-Abbildung je Serie wie beim Export (Größe aus dem Tab) + Unterschrift."""
+        if not self.groups:
+            return []
+        self.collect_globals()
+        out = []
+        for g in self.groups:
+            cfg = self.make_cfg(g)
+            core.setup_fonts(plt, cfg)
+            cfg2, spectra, results = core.prepare_series(cfg, self.groups[g], g)
+            fig = MplFigure(figsize=cfg2["figsize_in"], dpi=PREVIEW_DPI)
+            FigureCanvasAgg(fig)
+            F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
+            sfx = f"_{core.safe_name(g)}" if len(self.groups) > 1 else ""
+            img = uvvis_tabs.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
+            solv = (self.series.get(g) or {}).get("solvent", "").strip()
+            cap = (f"UV-Vis spectra of <b>{html.escape(name)}</b>"
+                   + (f" in {SI.chem_html(solv)}" if solv else "")
+                   + f", measured in {cfg2['path_length_cm']:g} cm quartz cuvettes.")
+            if not solv:
+                self.log_signal.emit(T("si_uv_no_solvent", g=g))
+            out += [img, ("figcap", cap)]
+        return out
+
     def si_char_blocks(self, comp, title):
         """„Synthesis of Name“ + Charakterisierungsabsatz -> (Blöcke, fehlende Teile, Klartext)."""
         parts, missing = [], []
@@ -2128,6 +2263,10 @@ class MainWindow(QMainWindow):
             parts.append(("m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))       # wie in der SI: „m.p.“ fett
         else:
             missing.append("m.p.")
+        nmr = self.nmr_tab.si_parts()                    # wie in der SI: m.p.; ¹H NMR …; ¹³C NMR …; IR …
+        if not nmr:
+            missing.append("NMR")
+        parts += nmr
         ir_ms_ea = self.irms_tab.si_parts() + self.hrms_tab.si_parts()
         kinds = [p_[0].split(" ")[0] for p_ in ir_ms_ea]
         uv = self.uvvis_si_parts()
@@ -2141,6 +2280,8 @@ class MainWindow(QMainWindow):
             [p_ for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
         plain, para = SI.join_lines(parts + order)
         blocks = [("synthesis", title)]
+        if self.syn_tab.has_content() and self.project_dir:      # Überschrift, Schema, Vorschrift aus dem Tab
+            blocks = self.syn_tab.si_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
         if para:
             blocks.append(("char", para))
         return blocks, missing, plain
@@ -2310,6 +2451,20 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in cifs]
             if not files:
                 return
+        # NMR: SVG-Exporte aus MestReNova; Bruker-Experimentordner gehören zum gewählten Spektrum
+        svgs = [p for p in files if NMR.is_nmr_svg(p)
+                or (Path(p).suffix.lower() == ".svg" and self.main_tabs.currentWidget() is self.nmr_tab)]
+        exps = [p for p in files if self.main_tabs.currentWidget() is self.nmr_tab and NMR.bruker_dir(p) is not None]
+        if (svgs or exps) and self.ensure_project():
+            for p in svgs:
+                self.nmr_tab.load_svg(p)
+            for p in exps:
+                if self.nmr_tab.current() is not None:
+                    self.nmr_tab.set_bruker(self.nmr_tab.current(), p)
+            self.main_tabs.setCurrentWidget(self.nmr_tab)
+            files = [p for p in files if p not in svgs and p not in exps]
+            if not files:
+                return
         # DFT: xyz-Geometrien und Ausgaben von ORCA/Gaussian
         xyzs = [p for p in files if DFT.is_xyz(p) or DFT.is_calc(p)]
         if xyzs and self.ensure_project():
@@ -2359,7 +2514,7 @@ class MainWindow(QMainWindow):
     def export_current(self):
         cur = self.main_tabs.currentWidget()
         for tab in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.hrms_tab, self.irms_tab,
-                    self.xray_tab, self.dft_tab):
+                    self.xray_tab, self.dft_tab, self.nmr_tab, self.syn_tab):
             if cur is tab:
                 return tab.export_dialog()
         return self.export_dialog()
@@ -2959,6 +3114,53 @@ def selftest(outdir, with_isnet=False):
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
         report.append("cyclic voltammetry: OK")
 
+        # SI-Export: Abbildungen aller Tabs mit Daten (ε je Serie, CV …), zwei je Seite
+        fb_ = w.si_figure_blocks(out / "si_figs", "TEST-1")
+        caps_ = [b_[1] for b_ in fb_ if b_[0] == "figcap"]
+        imgs_ = [b_ for b_ in fb_ if b_[0] == "image"]
+        assert any(c_.startswith("UV-Vis spectra of <b>TEST-1</b>") and "cm quartz cuvettes." in c_ for c_ in caps_), caps_
+        assert any(c_.startswith("Cyclic voltammograms of <b>TEST-1</b>") for c_ in caps_) and len(imgs_) == len(caps_), caps_
+        assert all(Path(b_[1]).exists() and Path(b_[4]).exists() and 0 < b_[2] <= 16.0 for b_ in imgs_), imgs_
+        assert fb_.count(("pagebreak",)) == (len(imgs_) - 1) // 2 and w.si_available()["figs"]
+        cap2_ = "Cyclic voltammograms of <b>X</b> (1.8±0.1 mg mL-1) in MeCN (0.1 M n-Bu4NPF6) at rt; " * 2
+        tp_ = SI.two_per_page([("char", "Setup text. " * 40)] + [("image", "a.png", 16.0, 11.0, None),
+                                                                   ("figcap", cap2_)] * 3)
+        assert [b_[0] for b_ in tp_] == ["char", "image", "figcap", "image", "figcap", "pagebreak", "image", "figcap"]
+        h_ = [b_[3] for b_ in tp_ if b_[0] == "image"]
+        assert h_[0] == h_[1] < h_[2] == 11.0 and abs(tp_[1][2] / tp_[1][3] - 16 / 11) < 1e-9, h_   # zwei je Seite
+        w.cv_state.update(cap_conc="1.8±0.1 mg mL-1", cap_el="0.1 M n-Bu4NPF6")        # CV-Unterschrift wie in der SI
+        cap_cv = w.cv_tab.si_caption("TEST-1")
+        assert cap_cv.startswith("Cyclic voltammograms of <b>TEST-1</b> (1.8±0.1 mg mL<sup>-1</sup>)") \
+            and "(0.1 M n-Bu<sub>4</sub>NPF<sub>6</sub>) at rt" in cap_cv and cap_cv.endswith(".") \
+            and "referenced internally against diacetylferrocene" in cap_cv, cap_cv
+        assert SI.chem_html("CH2Cl2, AgNO3 (0.01 M), 7.1 mm², 3 min") == \
+            "CH<sub>2</sub>Cl<sub>2</sub>, AgNO<sub>3</sub> (0.01 M), 7.1 mm², 3 min"
+        w.settings.setValue("si_setup/cv", "CVs were measured in CH3CN.")              # Aufbau-Absatz vor den CVs
+        fb_ = w.si_figure_blocks(out / "si_figs", "TEST-1")
+        assert ("char", "CVs were measured in CH<sub>3</sub>CN.") in fb_ and \
+            ("figcap", cap_cv) in fb_, [b_ for b_ in fb_ if b_[0] != "image"]
+        w.settings.remove("si_setup/cv")
+        w.cv_state.update(cap_conc="", cap_el="")
+        report.append("SI figures from all tabs (CV caption, setup text): OK")
+
+        # Tab-Reihenfolge wie die SI; offener Tab über den Namen (alte Projekte: Position in der alten Reihenfolge)
+        assert [w.main_tabs.widget(i) for i in range(5)] == [w.syn_tab, w.nmr_tab, w.irms_tab, w.hrms_tab, w.eps_page]
+        st_ = w.get_state()
+        st_["tab"] = 3                                                   # 1.23: Position 3 = CV
+        w.set_state(st_)
+        assert w.main_tabs.currentWidget() is w.cv_tab and w.get_state()["tab"] == "cv"
+        # Textformat je Tab: eigenes Format nur für CV, der Rest folgt dem Standard
+        w.tab_fmt["cv"] = dict(core.TEXT_DEFAULTS, bold=True)
+        assert w.cv_tab.base_cfg()["labels"]["bold"] and not w.sec_tab.base_cfg()["labels"]["bold"]
+        assert w.get_state()["text_tabs"]["cv"]["bold"] and w.text_tab()[0] == "cv"
+        dlg_ = TextFormatDialog(w, w.text_fmt, w.tab_fmt["cv"], w.cv_tab.TEXT_OPTS, "cv", "CV")
+        assert dlg_.cmb_scope.currentData() == "own" and dlg_.cb_bold.isChecked() and dlg_.cb_greek.isHidden()
+        dlg_.cmb_scope.setCurrentIndex(0)                                  # zurück auf „alle Tabs“
+        assert not dlg_.cb_bold.isChecked() and dlg_.results()[1] is None
+        w.tab_fmt.clear()
+        w.main_tabs.setCurrentWidget(w.eps_page)
+        report.append("tab order + open tab by name, text format per tab: OK")
+
         # CV-Basislinie: Ladestrom ±C·v + linearer Untergrund dürfen i_p und i_r/i_f nicht verändern
         E_, I_ = cv_sweep(-1.02, 50.0, -1.4, -0.5)
         dEs_ = np.gradient(E_)
@@ -3123,6 +3325,11 @@ def selftest(outdir, with_isnet=False):
         assert sum(1 for c_, k_, _ in slots_ if c_ is st_sec["spec_files"]) == 70 and \
             any(c_ is st_sec and k_ == "dta" for c_, k_, _ in slots_), "SEC-Dateien fehlen im Projekt"
         st_sec.update(mode="spectra")
+        w.sec_state.update(cap_solvent="THF", cap_start="neutral", cap_end="dication")    # Unterschrift wie in der SI
+        cap_s = w.sec_tab.si_caption("TEST-1")
+        assert cap_s.startswith("UV-vis-SEC of <b>TEST-1</b> in THF.") and "Starting potential (vs. " in cap_s \
+            and "End potential" in cap_s, cap_s
+        w.sec_state.update(cap_solvent="", cap_start="", cap_end="")
         report.append("spectroelectrochemistry: OK")
 
         # SEC im Overlay: Spektren nach Potential übernehmen, nur normiert (kein ε aus der Dünnschichtzelle)
@@ -3287,6 +3494,11 @@ def selftest(outdir, with_isnet=False):
         t_e.table.selectRow(3)
         t_e.fit_current()
         assert abs(ri["g"] - 2.0030) < 5e-5 and abs(EPRMOD.parse_nuclei(ri["nuclei"])[0][2] - 0.45) < 0.005, ri
+        w.epr_state.update(cap_species="TEST-1^{•+}", cap_solvent="THF", cap_conc="1 mM")   # Unterschrift wie in der SI
+        cap_e = t_e.si_caption("TEST-1")
+        assert cap_e.startswith("X-Band EPR spectr") and "<b>TEST-1<sup>•+</sup></b> in THF (1 mM)." in cap_e \
+            and "2×<sup>1</sup>H: 12." in cap_e and "g = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
+        w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
         # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
         A_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(1, 1.0, 1.4)], 0.2)
         B_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0100, [], 0.5)
@@ -3380,7 +3592,7 @@ def selftest(outdir, with_isnet=False):
         w.sp_r2.setValue(r2_old)
         w.sec_eval.btn.setChecked(True)
         assert w.sec_eval.body.isVisibleTo(w)
-        labels = [lb for lb in w.main_tabs.widget(0).findChildren(QLabel)
+        labels = [lb for lb in w.eps_page.findChildren(QLabel)
                   if lb.text() in (T("molar_mass_short"), T("ymax"))]
         assert len({lb.minimumWidth() for lb in labels}) == 1 and labels[0].minimumWidth() > 0
         report.append("eps tab layout (sections, empty state): OK")
@@ -3396,7 +3608,7 @@ def selftest(outdir, with_isnet=False):
             assert w.btn_export.property("accent") and w.btn_open.property("accent")
             assert not w.btn_export.icon().isNull(), "icon"
             assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
-        assert w.findChildren(QFrame, "card") and not w.main_tabs.widget(0).findChildren(QGroupBox)
+        assert w.findChildren(QFrame, "card") and not w.eps_page.findChildren(QGroupBox)
         w.switch_theme("system")
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
@@ -3489,7 +3701,7 @@ def selftest(outdir, with_isnet=False):
         assert abs(IRMS.ion("C18H20N2", "M+Na")[2] - 287.1519) < 1e-4 and IRMS.ion("C18H20N2", "M-H")[1] == -1
         t_ir = w.irms_tab
         t_ms = w.hrms_tab
-        assert w.main_tabs.indexOf(t_ms) + 1 == w.main_tabs.indexOf(t_ir)      # HRMS vor IR + EA
+        assert w.main_tabs.indexOf(t_ir) + 1 == w.main_tabs.indexOf(t_ms)      # IR + EA vor HRMS (wie die SI)
         t_ir.load_ir(str(irdir / "test.0"))
         t_ms.load_ms(str(irdir / "ms.docx"))
         w.compound["formula"] = "C18H20N2"
@@ -4009,6 +4221,188 @@ def selftest(outdir, with_isnet=False):
         w.xray_state.update(entries=[], current=None)
         w.dft_state.update(label_style="el_num")
         report.append("DFT compare mode (number like xyz / CIF template): OK")
+
+        # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
+        ndir = out / "input" / "nmr"
+        sv_h = NMR.make_test_svg(ndir / "t-1H.svg", ("1H",))
+        sv_c = NMR.make_test_svg(ndir / "t-13C.svg", ("13C",), peaks=("141.20", "77.16 CDCl3", "21.05"))
+        sv_q = NMR.make_test_svg(ndir / "t-HSQC.svg", ("1H", "13C"))
+        sv_f = NMR.make_test_svg(ndir / "t-fluor.svg", ("19F",), axis=False)
+        assert NMR.svg_info(sv_q)["nuclei"] == ["1H", "13C"] and NMR.svg_info(sv_q)["is2d"]
+        assert NMR.svg_info(sv_f)["nuclei"] == [] and NMR.is_nmr_svg(sv_h)
+        t_n = w.nmr_tab
+        w.main_tabs.setCurrentWidget(t_n)
+        for sv_ in (sv_q, sv_f, sv_c, sv_h):
+            t_n.load_svg(str(sv_))
+        e_f = [s_ for s_ in w.nmr_state["spectra"] if Path(s_["file"]).stem == "t-fluor"][0]
+        w.nmr_state["current"] = e_f["uid"]
+        t_n.sync_widgets()
+        t_n.ed_nuc.setText("19F")
+        t_n.spec_edited()
+        assert e_f["nuclei"] == ["19F"] and not e_f["nuc_auto"]
+        assert [(s_["kind"], s_["nuclei"]) for s_ in t_n.spectra()] == [("1D", ["1H"]), ("1D", ["13C"]), ("1D", ["19F"]),
+                                                                        ("HSQC", ["1H", "13C"])], t_n.spectra()
+        t_n.ed_text.setPlainText("1H NMR (501 MHz, CDCl3) \u03b4 7.52 \u2013 7.45 (m, 2H), 6.91 (dd, J = 7.0, 1.5 Hz, 1H), "
+                                 "2.47 (s, 3H).\n13C NMR (126 MHz, CDCl3) \u03b4 141.2, 21.1.\n"
+                                 "19F NMR (471 MHz, CDCl3) \u03b4 -63.2 (s).")
+        t_n.text_changed()
+        assert t_n.tbl_sig.rowCount() == 6
+        t_n.tbl_sig.item(1, 5).setText("Ar-H")                           # Zuordnung je Signal
+        t_n.tbl_sig.item(3, 5).setText("Ar-*C*_{q}")
+        ln_ = t_n.nmr_lines()
+        assert ln_[0][0] == ("\u00b9H NMR (500 MHz, CDCl\u2083): \u03b4 [ppm] = 7.52 \u2013 7.45 (m, 2H), "
+                             "6.91 (dd, J = 7.0, 1.5 Hz, 1H, Ar-H), 2.47 (s, 3H)"), ln_[0][0]
+        assert "<i>J</i>" in ln_[0][1] and "Ar-<i>C</i><sub>q</sub>" in ln_[1][1] and "\u221263.2" in ln_[2][0]
+        assert NMR.svg_peaks(sv_c) == (["141.20", "21.05"], "CDCl3"), NMR.svg_peaks(sv_c)
+        w.nmr_state["current"] = [s_ for s_ in t_n.spectra() if s_["nuclei"] == ["13C"]][0]["uid"]
+        t_n.peaks_from_svg()                                   # 13C-Zeile aus den Peaklabels (ersetzt die alte)
+        assert "13C NMR (126 MHz, CDCl3) \u03b4 141.20, 21.05." in w.nmr_state["text"] and \
+            w.nmr_state["text"].count("13C NMR") == 1, w.nmr_state["text"]
+        acq_ = NMR.make_test_acqus(ndir / "exp" / "10", nuc="1H", te=300.2)
+        (acq_ / "fid").write_bytes(b"\0" * 1000)                          # FID wird nicht ins Projekt kopiert
+        e_h = t_n.spectra()[0]
+        assert t_n.set_bruker(e_h, str(acq_ / "acqus"))
+        assert Path(e_h["bruker"]).parent == proj / "data" and not (Path(e_h["bruker"]) / "fid").exists()
+        assert abs(e_h["params"]["o1p"] - 6.175) < 1e-6 and e_h["params"]["d1"] == 1.0
+        w.nmr_state["current"] = e_h["uid"]
+        t_n.temp_from_bruker()
+        assert e_h["temp"] == 300
+        cap_q = NMR.caption_html(t_n.spectra()[3], t_n.blocks(), "TEST-1")
+        assert cap_q == ("<sup>1</sup>H/<sup>13</sup>C HSQC (500/126 MHz, CDCl<sub>3</sub>, 298 K) of "
+                         "<b>TEST-1</b>."), cap_q
+        assert any(k_ == "bruker" and c_ is e_h for c_, k_, _ in PRJ._path_slots(w.get_state()))
+        from rdkit import Chem as _Chem
+        if hasattr(_Chem, "MolToCDXMLBlock"):                               # Struktur als Vektor ins Spektrum
+            from rdkit.Chem import AllChem as _AC
+            sm_ = _Chem.MolFromSmiles("Cc1ccc(C#C)nc1")             # erfundenes Testmolekül
+            _AC.Compute2DCoords(sm_)
+            (ndir / "struct.cdxml").write_text(_Chem.MolToCDXMLBlock(sm_), encoding="utf-8")
+            w.nmr_state["structure"] = str(ndir / "struct.cdxml")
+            fs_ = t_n.figure_svg(t_n.spectra()[0])
+            assert fs_ != t_n.spectra()[0]["file"] and 'id="structure_0"' in Path(fs_).read_text(encoding="utf-8")
+            t_n.spectra()[1]["struct_on"] = False
+            assert t_n.figure_svg(t_n.spectra()[1]) == t_n.spectra()[1]["file"]
+            e0_ = t_n.spectra()[0]                                         # gezogen: Lage im Dateinamen
+            e0_.update(struct_pos="manual", struct_xy=[0.5, 0.3])
+            assert Path(t_n.figure_svg(e0_)).stem.endswith("_500_300_200"), t_n.figure_svg(e0_)
+            w.nmr_state["current"] = e0_["uid"]                            # Mausrad über der Struktur: Größe
+            t_n.sync_widgets()
+            t_n.update_preview()
+            if t_n._drag_rect is not None:
+                from PySide6.QtCore import QPoint, QPointF
+                from PySide6.QtGui import QWheelEvent
+                x_, y_, wr_, hr_ = t_n._drag_rect
+                pw_, ph_ = t_n._pm_size
+                pos_ = QPointF((t_n.lbl_prev.width() - pw_) / 2 + (x_ + wr_ / 2) * pw_,
+                               (t_n.lbl_prev.height() - ph_) / 2 + (y_ + hr_ / 2) * ph_)
+                ev_ = QWheelEvent(pos_, pos_, QPoint(), QPoint(0, 240), Qt.NoButton, Qt.NoModifier,
+                                  Qt.NoScrollPhase, False)
+                assert t_n.eventFilter(t_n.lbl_prev, ev_) and w.nmr_state["struct_w"] == 22   # gilt für alle
+            e0_.update(struct_pos="auto", struct_xy=None)
+            w.nmr_state["struct_w"] = 20.0
+        m_ = NMR.occupancy(sv_h)                                           # freie Stelle: verdeckt nichts
+        fx_, fy_ = NMR.auto_place(m_, 0.2, 0.5)
+        H_, W_ = m_.shape
+        x0_, y0_ = int(fx_ * W_), int(fy_ * H_)
+        assert m_.any() and not m_[y0_:y0_ + int(0.1 * W_), x0_:x0_ + int(0.2 * W_)].any(), (fx_, fy_)
+        nd_ = t_n.export_dialog(out / "nmr" / "nmr_test.docx")
+        with _zf.ZipFile(nd_) as z_:
+            xml_ = z_.read("word/document.xml").decode("utf-8")
+            svgs_ = [n_ for n_ in z_.namelist() if n_.endswith(".svg")]
+        assert len(svgs_) == 4 and xml_.count("<w:pageBreakBefore/>") == 1 and xml_.count("SEQ Figure") == 4, len(svgs_)
+        assert "HSQC" in xml_ and ">Figure S<" in xml_ and "projekt_test" in xml_
+        w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None)
+        t_n.sync_widgets()
+        report.append("NMR (Mnova SVG, nucleus from axis/manual, order, Mnova text + assignment, Bruker acqus, Word): OK")
+
+        # Synthese: Mengenprüfung mit Rundung, Reagenzientabelle, Schema als bearbeitbares ChemDraw-Objekt (CDX)
+        proc_ = ("In a flask <b>S1</b> (1.03 g, 5.00 mmol, 1.0 eq.) was dissolved in MeOH (10 mL) and "
+                 "K<sub>2</sub>CO<sub>3</sub> (829 mg, 6.00 mmol, 1.2 eq.) was added to give <b>S2</b> "
+                 "(525 mg, 4.95 mmol, 99%).")                     # erfundene Werte
+        tab_ = {"S1": {"M": 206.36}, "K2CO3": {"M": SYN.formula_mw("K2CO3")}, "S2": {"M": 106.12}}
+        res_ = SYN.check_amounts(SYN.parse_amounts(proc_), tab_)
+        assert [l_ for l_, _ in res_] == ["ok", "ok", "ok", "ok", "ok"], res_        # 1.03 g -> 4.99 vs. 5.00 mmol: Rundung
+        bad_ = SYN.check_amounts(SYN.parse_amounts(proc_.replace("6.00", "6.60").replace("99%", "95%")), tab_)
+        assert [l_ for l_, _ in bad_].count("warn") == 3, bad_
+        assert abs(SYN.formula_mw("K2CO3") - 138.204) < 0.01 and SYN.molar_mass("206.36") == 206.36
+        t_s = w.syn_tab
+        w.main_tabs.setCurrentWidget(t_s)
+        w.syn_state["reagents"] = [dict(name="S1", M="C12H18OSi", m_mg="1032", role="ref"),
+                                   dict(name="K2CO3", M="K2CO3", m_mg="829", role="reagent"),
+                                   dict(name="S2", M="C7H6O", m_mg="525", role="product")]
+        t_s.sync_widgets()
+        assert t_s.tbl.item(1, len(SYN.COLS) + 1).text() == "1.20" and t_s.tbl.item(2, len(SYN.COLS) + 1).text() == "99%"
+        r0_ = w.syn_state["reagents"][0]
+        assert SYN.amount_text(r0_, dict(SYN.row_amounts(r0_), eq=1.0)) == "(1.032 g, 5.00 mmol, 1.0 eq.)"
+        t_s.ed_proc.setHtml(proc_)
+        t_s.proc_changed()
+        assert "<b>S1</b>" in w.syn_state["proc"] and "<sub>2</sub>" in w.syn_state["proc"], w.syn_state["proc"]
+        assert t_s.lbl_check.text().count("\u2713") == 5, t_s.lbl_check.text()
+        sdir = out / "input" / "syn"
+        sdir.mkdir(parents=True, exist_ok=True)
+        if hasattr(_Chem, "MolToCDXMLBlock"):
+            (sdir / "scheme.cdxml").write_text(_Chem.MolToCDXMLBlock(sm_), encoding="utf-8")
+            from rdkit.Chem import Draw as _Draw
+            _Draw.MolToFile(sm_, str(sdir / "scheme.svg"))                   # steht für den ChemDraw-SVG-Export
+            (sdir / "scheme.cdx").write_bytes(b"VjCD0100\x04\x03\x02\x01" + b"\0" * 200)   # Platzhalter-CDX
+            t_s.set_scheme(str(sdir / "scheme.cdxml"))
+            sp_ = t_s.scheme_parts()
+            assert sp_["picture"].suffix == ".svg" and sp_["cdx"] is not None and sp_["emf"] is None
+            assert Path(w.syn_state["scheme"]).parent == proj / "images"
+            sb_ = t_s.si_blocks(out / "syn")
+            assert sb_[0] == ("synthesis", "TEST-1" if w.compound.get("name") == "TEST-1" else t_s.compound_name())
+            assert [b_[0] for b_ in sb_] == ["synthesis", "ole", "char"], [b_[0] for b_ in sb_]
+            sd_ = t_s.export_dialog()
+            import olefile
+            with _zf.ZipFile(sd_) as z_:
+                xml_ = z_.read("word/document.xml").decode("utf-8")
+                ole_ = olefile.OleFileIO(z_.read("word/embeddings/oleObject1.bin"))
+            assert 'ProgID="ChemDraw.Document.6.0"' in xml_ and ole_.openstream("CONTENTS").read().startswith(b"VjCD0100")
+            assert any(k_ == "scheme" and c_ is w.syn_state for c_, k_, _ in PRJ._path_slots(w.get_state()))
+            (Path(w.syn_state["scheme"]).with_suffix(".cdx")).unlink()           # ohne CDX: Vektorbild
+            assert [b_[0] for b_ in t_s.si_blocks(out / "syn")][1] == "image"
+            # Schema ohne ChemDraw-Export: selbst gezeichnet (Pfeil, Bedingungen), Reagenzien aus den Pfeiltexten
+            import xml.etree.ElementTree as _ET
+            import uvvis_cdxml as CDXD
+            fr_ = _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment")
+            fr2_ = _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment")
+            for k_, n_ in enumerate(fr2_.iter()):                              # Produkt: 150 pt weiter rechts
+                if n_.get("id"):
+                    n_.set("id", str(90000 + k_))
+                if n_.tag == "n":
+                    x_, y_ = map(float, n_.get("p").split())
+                    n_.set("p", f"{x_ + 150} {y_}")
+            ids_ = {o_.get("id"): str(90000 + k_) for k_, o_ in enumerate(
+                _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment").iter()) if o_.get("id")}
+            for b_ in fr2_.iter("b"):
+                b_.set("B", ids_[b_.get("B")])
+                b_.set("E", ids_[b_.get("E")])
+            ys_ = [float(n_.get("p").split()[1]) for n_ in fr_.iter("n")]
+            xs_ = [float(n_.get("p").split()[0]) for n_ in fr_.iter("n")]
+            ym_, xr_ = sum(ys_) / len(ys_), max(xs_)
+            sch_ = (f'<?xml version="1.0"?><CDXML LineWidth="0.6" BondSpacing="18" LabelSize="10"><page>'
+                    + _ET.tostring(fr_, encoding="unicode") + _ET.tostring(fr2_, encoding="unicode")
+                    + f'<t id="501" p="{xr_ + 30} {ym_ - 6}"><s face="96" size="10">K2CO3 (1.2 eq.)</s></t>'
+                    + f'<t id="502" p="{xr_ + 30} {ym_ + 12}"><s size="9.7">MeOH, rt, 1 h</s></t>'
+                    + f'<arrow id="503" Head3D="{xr_ + 120} {ym_} 0" Tail3D="{xr_ + 20} {ym_} 0"/>'
+                    + f'<scheme><step ReactionStepReactants="{fr_.get("id")}" ReactionStepProducts="{fr2_.get("id")}" '
+                    + 'ReactionStepObjectsAboveArrow="501" ReactionStepObjectsBelowArrow="502"/></scheme></page></CDXML>')
+            (sdir / "rxn.cdxml").write_text(sch_, encoding="utf-8")
+            svg_, notes_ = CDXD.render_svg(sdir / "rxn.cdxml")
+            assert svg_.count(">N</text>") == 2, svg_.count(">N</text>")      # Labels auch ohne <t> (RDKit-CDXML)
+            assert not notes_ and "<polygon" in svg_ and ">2</text>" in svg_ and "1.2\u00a0eq.)" in svg_, notes_
+            assert CDXD.scheme_reagents(sdir / "rxn.cdxml") == [("K2CO3", "K2CO3", "reagent"), ("MeOH", "CH4O", "other")]
+            t_s.set_scheme(str(sdir / "rxn.cdxml"))
+            assert t_s.scheme_asset()["drawing_from"] == "cdxml" and t_s.scheme_asset()["pdf"]
+            w.syn_state["reagents"] = []
+            t_s.rows_from_scheme()
+            assert [(r_["name"], r_["role"]) for r_ in w.syn_state["reagents"]] == \
+                [("", "ref"), ("K2CO3", "reagent"), ("MeOH", "other"), ("", "product")], w.syn_state["reagents"]
+        b_all, _ = w.si_blocks(["char"])
+        assert b_all[0][0] == "synthesis" and any(b_[0] == "char" and "S1" in b_[1] for b_ in b_all)
+        w.syn_state.update(name="", scheme=None, proc="", reagents=[])
+        t_s.sync_widgets()
+        report.append("Synthesis (amount check with rounding, reagent table, ChemDraw object, SI): OK")
         w.dft_state.update(entries=[], current=None)
         t_d.sync_widgets()
         t_d.render()
@@ -4043,13 +4437,15 @@ def selftest(outdir, with_isnet=False):
         docx_ = Path(w.project_dir) / "exports" / "si" / "TEST-1_SI.docx"
         with _zf.ZipFile(docx_) as z_:
             xml_ = z_.read("word/document.xml").decode("utf-8")
+            assert 'w:val="15"' in z_.read("word/settings.xml").decode("utf-8")   # kein Kompatibilitätsmodus
         assert "Elemental analysis" in xml_ and 'w:val="subscript"' in xml_ and "TEST-1" in xml_
         assert "67\u00a0°C" in xml_ and "C\u00a081." in xml_                  # geschützte Leerzeichen
         assert SI.nbsp("298 nm (ε = 5 cm-1 M-1)") == "298\u00a0nm (ε\u00a0=\u00a05\u00a0cm-1\u00a0M-1)"
         assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
         # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
         w.dft_tab.load_xyz(str(orf_))
-        assert w.si_available() == {"char": True, "xray": False, "dft": True}
+        assert {k_: v_ for k_, v_ in w.si_available().items() if k_ != "figs"} == \
+            {"char": True, "nmr": False, "xray": False, "dft": True}
         b_dft, _ = w.si_blocks(["dft"])
         assert b_dft[0] == ("heading", "TEST-1") and ("columns", 2) in b_dft and not any(b_[0] == "char" for b_ in b_dft)
         w.export_si(["char", "dft"])
