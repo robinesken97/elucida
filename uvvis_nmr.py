@@ -327,7 +327,8 @@ def caption_html(spec, blocks, name):
     return f"{XRAY.to_html(head)} ({XRAY.to_html(cond)}) of <b>{_h.escape(name)}</b>."
 
 
-STRUCT_POS = ("tl", "tc", "tr")                       # oben links / Mitte / rechts
+STRUCT_POS = ("auto", "tl", "tc", "tr", "manual")     # frei suchen / feste Ecken oben / gezogen
+_FIXED = {"tl": (0.07, 0.12), "tc": (None, 0.12), "tr": (None, 0.12)}
 
 
 def svg_viewbox(svg_text):
@@ -339,17 +340,69 @@ def svg_viewbox(svg_text):
     return (0.0, 0.0, float(w.group(1)) if w else 1000.0, float(h.group(1)) if h else 700.0)
 
 
-def compose_structure(spec_svg, struct, out_svg, pos="tl", width=0.2):
+def occupancy(spec_svg, px_w=400):
+    """Belegte Fläche des Spektrums (alles, was nicht weiß ist: Signale, Labels, Integrale, Achsen, Insets) -> bool[H, W]."""
+    import numpy as np
+    import pymupdf
+    page = pymupdf.open(str(spec_svg))[0]
+    pix = page.get_pixmap(dpi=max(10, int(px_w / max(page.rect.width, 1) * 72)), colorspace=pymupdf.csGRAY)
+    a = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
+    return a < 235
+
+
+def auto_place(mask, width, aspect, margin=0.015):
+    """Freie Stelle für die Struktur (Breite = Anteil der Bildbreite, aspect = Höhe/Breite): am wenigsten Überdeckung
+    mit Rand, bei Gleichstand möglichst weit oben links. -> (fx, fy) linke obere Ecke als Anteil von Breite/Höhe."""
+    import numpy as np
+    H, W = mask.shape
+    w = max(2, int(round(width * W)))
+    h = max(2, int(round(w * aspect)))
+    m = max(1, int(round(margin * W)))
+    if w + 2 * m >= W or h + 2 * m >= H:
+        return 0.02, 0.02
+    ii = np.zeros((H + 1, W + 1), np.int64)
+    ii[1:, 1:] = mask.cumsum(0).cumsum(1)
+    best, step = None, max(1, W // 120)
+    for y in range(m, H - h - m + 1, step):
+        y0, y1 = y - m, y + h + m
+        for x in range(m, W - w - m + 1, step):
+            x0, x1 = x - m, x + w + m
+            occ = ii[y1, x1] - ii[y0, x1] - ii[y1, x0] + ii[y0, x0]
+            key = (occ, y / H + x / W)
+            if best is None or key < best[0]:
+                best = (key, x, y)
+    _, x, y = best
+    return x / W, y / H
+
+
+def struct_aspect(struct):
+    cx0, cy0, cx1, cy1 = struct["clip"]
+    return (cy1 - cy0) / max(cx1 - cx0, 1e-6)
+
+
+def place_structure(spec_svg, struct, pos="auto", width=0.2, xy=None):
+    """Lage der Struktur als (fx, fy) – gezogen (manual), feste Ecke oder frei gesucht (auto)."""
+    if pos == "manual" and xy:
+        return float(xy[0]), float(xy[1])
+    if pos in _FIXED:
+        fx, fy = _FIXED[pos]
+        if pos == "tc":
+            fx = (1 - width) / 2
+        elif pos == "tr":
+            fx = 0.93 - width
+        return fx, fy
+    return auto_place(occupancy(spec_svg), width, struct_aspect(struct))   # Pixelmaske: x und y gleich skaliert
+
+
+def compose_structure(spec_svg, struct, out_svg, xy=(0.07, 0.12), width=0.2):
     """Struktur (dict aus IMG.load_structure: pdf + clip) als Vektorgruppe in das Mnova-SVG setzen – ersetzt den
-    Inkscape-Schritt. pos = Ecke oben (tl/tc/tr), width = Anteil der Bildbreite. -> Pfad der neuen SVG."""
+    Inkscape-Schritt. xy = linke obere Ecke als Anteil der Bildbreite/-höhe, width = Anteil der Bildbreite."""
     import uvvis_images as IMG
     txt = Path(spec_svg).read_text(encoding="utf-8", errors="replace")
     vx, vy, vw, vh = svg_viewbox(txt)
-    cx0, cy0, cx1, cy1 = struct["clip"]
     w = vw * width
-    h = w * (cy1 - cy0) / max(cx1 - cx0, 1e-6)
-    x0 = {"tl": vx + 0.07 * vw, "tc": vx + (vw - w) / 2, "tr": vx + 0.93 * vw - w}[pos if pos in STRUCT_POS else "tl"]
-    y0 = vy + 0.12 * vh
+    h = w * struct_aspect(struct)
+    x0, y0 = vx + xy[0] * vw, vy + xy[1] * vh
     Path(out_svg).parent.mkdir(parents=True, exist_ok=True)
     Path(out_svg).write_text(txt, encoding="utf-8")
     IMG.overlay_vectors_svg(out_svg, [((x0, y0, x0 + w, y0 + h), struct["pdf"], struct["clip"])])
@@ -360,7 +413,7 @@ def new_spectrum(path, info, kind=None):
     k = kind or ("1D" if not info["is2d"] else (kind_from_name(path) or "2D"))
     return dict(uid=uuid.uuid4().hex[:8], file=str(path), nuclei=list(info["nuclei"]), kind=k, temp=298.0,
                 bruker=None, params=None, freqs={}, solvent="", size=list(info["size_cm"]), struct_on=True,
-                struct_pos="tl", struct_w=20.0)
+                struct_pos="auto", struct_xy=None, struct_w=20.0)
 
 
 def make_test_svg(path, nuclei=("1H",), axis=True):
@@ -398,8 +451,8 @@ def make_test_acqus(d, nuc="1H", sfo1=500.503090587, te=298.1466, nuc2=None):
 
 
 # ---------------------------------------------------------------------------- Tab
-from PySide6.QtCore import Qt, QTimer  # noqa: E402
-from PySide6.QtGui import QImage, QPixmap  # noqa: E402
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPixmap  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,  # noqa: E402
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
@@ -447,6 +500,8 @@ class NMRTab(QWidget):
         self.lbl_prev = QLabel(T("nmr_empty"), alignment=Qt.AlignCenter, wordWrap=True)
         self.lbl_prev.setStyleSheet(HINT_CSS)
         self.lbl_prev.setMinimumHeight(300)
+        self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen
+        self._drag_rect, self._drag, self._pm_size = None, None, (1, 1)
         rv.addWidget(self.lbl_prev, 1)
         self.lbl_cap = QLabel("", wordWrap=True)
         self.lbl_cap.setTextFormat(Qt.RichText)
@@ -646,7 +701,7 @@ class NMRTab(QWidget):
         self.ed_freq.setText("/".join(str((s.get("freqs") or {}).get(n, "")) for n in s.get("nuclei") or []).strip("/"))
         self.ed_solv.setText(s.get("solvent") or "")
         self.cb_struct.setChecked(s.get("struct_on", True))
-        self.cmb_spos.setCurrentIndex(max(0, self.cmb_spos.findData(s.get("struct_pos", "tl"))))
+        self.cmb_spos.setCurrentIndex(max(0, self.cmb_spos.findData(s.get("struct_pos", "auto"))))
         self.sp_sw.setValue(float(s.get("struct_w", 20.0)))
         p = s.get("params")
         self.lbl_par.setText(params_html(p) if p else T("nmr_no_bruker"))
@@ -764,17 +819,29 @@ class NMRTab(QWidget):
         st = self.main.extra_cache[key]
         return st if st.get("pdf") else None
 
+    def struct_xy(self, s, st):
+        """Lage der Struktur (fx, fy); „auto“ sucht die freie Stelle (Ergebnis zwischengespeichert)."""
+        width = float(s.get("struct_w", 20)) / 100
+        pos = s.get("struct_pos", "auto")
+        if pos != "auto":
+            return place_structure(s["file"], st, pos, width, s.get("struct_xy"))
+        key = ("nmrauto", s["file"], self.structure_path(), round(width, 3))
+        if key not in self.main.extra_cache:
+            self.main.extra_cache[key] = place_structure(s["file"], st, "auto", width)
+        return self.main.extra_cache[key]
+
     def figure_svg(self, s):
-        """SVG für Vorschau und Word: Mnova-SVG, wahlweise mit eingesetzter Struktur (Datei im Projekt-Cache)."""
+        """SVG für Word: Mnova-SVG, wahlweise mit eingesetzter Struktur (Datei unter exports/nmr/figures)."""
         st = self.structure_asset() if s.get("struct_on", True) else None
         if st is None:
             return s["file"]
+        fx, fy = self.struct_xy(s, st)
+        width = float(s.get("struct_w", 20)) / 100
         cdir = Path(self.main.project_dir or Path(s["file"]).parent) / "exports" / "nmr" / "figures"
-        out = cdir / f"{Path(s['file']).stem}_{s.get('struct_pos', 'tl')}_{int(s.get('struct_w', 20))}.svg"
+        out = cdir / f"{Path(s['file']).stem}_{int(fx * 1000)}_{int(fy * 1000)}_{int(width * 1000)}.svg"
         key = ("nmrcomp", s["file"], self.structure_path(), out.name)
         if key not in self.main.extra_cache or not out.exists():
-            self.main.extra_cache[key] = compose_structure(s["file"], st, out, s.get("struct_pos", "tl"),
-                                                           float(s.get("struct_w", 20)) / 100)
+            self.main.extra_cache[key] = compose_structure(s["file"], st, out, (fx, fy), width)
         return str(out)
 
     def add_bruker(self):
@@ -830,25 +897,87 @@ class NMRTab(QWidget):
         self.sync_widgets()
         self.main.push_undo()
 
-    def update_preview(self):
+    def update_preview(self, xy=None):
+        """Vorschau = Spektrum (Mnova-SVG) + Struktur als Bild an ihrer Lage; die Struktur lässt sich ziehen."""
         s = self.current()
+        self._drag_rect = None
         if s is None or not Path(s["file"]).is_file():
             self.lbl_prev.setPixmap(QPixmap())
             self.lbl_prev.setText(T("nmr_empty"))
             self.lbl_cap.setText("")
             return
         import pymupdf
-        f = self.figure_svg(s)
-        key = ("nmrprev", f)
         cache = self.main.extra_cache
+        key = ("nmrprev", s["file"])
         if key not in cache:
-            pix = pymupdf.open(f)[0].get_pixmap(dpi=110)
+            pix = pymupdf.open(s["file"])[0].get_pixmap(dpi=110)
             cache[key] = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
-        img = cache[key]
+        base = cache[key]
         w = max(300, self.lbl_prev.width() - 10)
-        self.lbl_prev.setPixmap(QPixmap.fromImage(img).scaledToWidth(min(w, img.width()), Qt.SmoothTransformation))
+        pm = QPixmap.fromImage(base).scaledToWidth(min(w, base.width()), Qt.SmoothTransformation)
+        st = self.structure_asset() if s.get("struct_on", True) else None
+        if st is not None and st.get("rgba") is not None:
+            from PySide6.QtGui import QPainter
+            fx, fy = xy or self.struct_xy(s, st)
+            sw = pm.width() * float(s.get("struct_w", 20)) / 100
+            sh = sw * struct_aspect(st)
+            a = st["rgba"]
+            simg = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_RGBA8888).copy()
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.SmoothPixmapTransform)
+            p.drawImage(QRectF(fx * pm.width(), fy * pm.height(), sw, sh), simg)
+            p.setPen(QColor("#2a7ae2"))
+            p.drawRect(QRectF(fx * pm.width(), fy * pm.height(), sw, sh))
+            p.end()
+            self._drag_rect = (fx, fy, sw / pm.width(), sh / pm.height())
+        self.lbl_prev.setPixmap(pm)
+        self._pm_size = (pm.width(), pm.height())
         n = self.spectra().index(s) + 1
         self.lbl_cap.setText(f"<b>Figure S{n}</b>: " + caption_html(s, self.blocks(), self.compound_name()))
+
+    def _frac(self, pos):
+        """Mausposition in der Vorschau -> Anteil (x, y) des Spektrums (Bild ist im Label zentriert)."""
+        pw, ph = self._pm_size
+        ox = (self.lbl_prev.width() - pw) / 2
+        oy = (self.lbl_prev.height() - ph) / 2
+        return (pos.x() - ox) / max(pw, 1), (pos.y() - oy) / max(ph, 1)
+
+    def eventFilter(self, obj, ev):
+        if obj is not self.lbl_prev or self._drag_rect is None:
+            return super().eventFilter(obj, ev)
+        t = ev.type()
+        if t == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton:
+            fx, fy = self._frac(ev.position())
+            x, y, w, h = self._drag_rect
+            if x <= fx <= x + w and y <= fy <= y + h:
+                self._drag = (fx - x, fy - y)
+                self.lbl_prev.setCursor(Qt.ClosedHandCursor)
+                return True
+        elif t == QEvent.Wheel and self._drag is None:
+            fx, fy = self._frac(ev.position())
+            x, y, w, h = self._drag_rect
+            if x <= fx <= x + w and y <= fy <= y + h:
+                steps = ev.angleDelta().y() / 120
+                if steps:
+                    self.sp_sw.setValue(self.sp_sw.value() + (1 if steps > 0 else -1) * max(1, round(abs(steps))))
+                return True
+        elif t == QEvent.MouseMove and self._drag is not None:
+            fx, fy = self._frac(ev.position())
+            x, y, w, h = self._drag_rect
+            nx = min(max(fx - self._drag[0], 0.0), 1.0 - w)
+            ny = min(max(fy - self._drag[1], 0.0), 1.0 - h)
+            self.update_preview((nx, ny))
+            return True
+        elif t == QEvent.MouseButtonRelease and self._drag is not None:
+            self._drag = None
+            self.lbl_prev.unsetCursor()
+            s = self.current()
+            if s is not None and self._drag_rect is not None:
+                s["struct_pos"] = "manual"
+                s["struct_xy"] = [round(self._drag_rect[0], 4), round(self._drag_rect[1], 4)]
+                self.changed()
+            return True
+        return super().eventFilter(obj, ev)
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)

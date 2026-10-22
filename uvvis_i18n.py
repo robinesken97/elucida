@@ -304,6 +304,8 @@ TEXTS = {
     "si_part_char": ("Charakterisierung (m.p., NMR, IR, HR-MS, UV-Vis, Elementaranalyse)",
                      "Characterisation (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis)"),
     "si_part_nmr": ("NMR-Spektren (zwei je Seite)", "NMR spectra (two per page)"),
+    "si_part_figs": ("Abbildungen aller Tabs (UV-Vis, IR, HR-MS, Fluoreszenz, CV, SEC, EPR; zwei je Seite)",
+                     "Figures from all tabs (UV-Vis, IR, HR-MS, fluorescence, CV, SEC, EPR; two per page)"),
     "si_part_xray": ("Kristallstruktur(en) aus dem Tab X-Ray", "Crystal structure(s) from the X-Ray tab"),
     "si_part_dft": ("DFT-Rechnungen aus dem Tab DFT (zweispaltig)", "DFT calculations from the DFT tab (two columns)"),
     "si_part_empty": ("Keine Daten in diesem Tab.", "No data in this tab."),
@@ -1201,9 +1203,14 @@ TEXTS = {
     "nmr_copy": ("NMR-Zeile kopieren", "Copy NMR line"),
     "nmr_struct": ("Struktur", "Structure"),
     "nmr_struct_on": ("einsetzen", "insert"),
-    "nmr_struct_tip": ("Struktur als Vektorgrafik ins Spektrum setzen (ersetzt den Schritt in Inkscape); Größe in % der "
-                       "Bildbreite", "Insert the structure as vector graphics into the spectrum (replaces the Inkscape "
-                                     "step); size in % of the figure width"),
+    "nmr_struct_tip": ("Struktur als Vektorgrafik ins Spektrum setzen (ersetzt den Schritt in Inkscape). „automatisch“ "
+                       "sucht die freie Stelle möglichst weit oben links, ohne Signale, Labels oder Integrale zu "
+                       "verdecken; in der Vorschau lässt sie sich mit der Maus verschieben, das Mausrad über der Struktur ändert die Größe (% der Bildbreite).",
+                       "Insert the structure as vector graphics into the spectrum (replaces the Inkscape step). "
+                       "“automatic” finds the free space nearest the top left without covering signals, labels or "
+                       "integrals; it can be dragged in the preview; the mouse wheel over the structure changes its size (% of the figure width)."),
+    "nmr_pos_auto": ("automatisch (frei)", "automatic (free space)"),
+    "nmr_pos_manual": ("von Hand (gezogen)", "by hand (dragged)"),
     "nmr_pos_tl": ("oben links", "top left"),
     "nmr_pos_tc": ("oben Mitte", "top centre"),
     "nmr_pos_tr": ("oben rechts", "top right"),

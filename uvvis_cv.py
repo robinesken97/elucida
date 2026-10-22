@@ -317,6 +317,7 @@ def _fmt_e(v, nd=3):
 
 class CVTab(TABS.FigureTab):
     STATE_KEY = "cv"
+    SI_CAPTION = "Cyclic voltammograms of {name}."
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,

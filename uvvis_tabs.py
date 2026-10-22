@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import html
 import re
 import traceback
 import uuid
@@ -240,6 +241,23 @@ class HoverReadout:
 
 
 # ----------------------------------------------------------------------------
+SI_MAX_W_CM = 16.0                       # Abbildungen im SI-Export höchstens so breit wie der Satzspiegel
+
+
+def si_image(F, svg):
+    """Abbildung für den SI-Export: SVG (Vektor, Text als Pfade) + PNG-Ersatz -> ("image", PNG, b, h, SVG)."""
+    from PIL import Image
+    svg = Path(svg).resolve()
+    F.cfg.update(output=str(svg), extra_formats=["png"], _base_dir=svg.parent)
+    F.export()
+    png = svg.with_suffix(".png")
+    with Image.open(png) as im:
+        w_cm, h_cm = (v / F.cfg["dpi"] * 2.54 for v in im.size)
+    if w_cm > SI_MAX_W_CM:
+        w_cm, h_cm = SI_MAX_W_CM, h_cm * SI_MAX_W_CM / w_cm
+    return ("image", str(png), w_cm, h_cm, str(svg))
+
+
 class FigureTab(QWidget):
     """Gemeinsame Basis: Vorschau, Größe/Formate, Ziehen, Export, Speichern/Laden."""
 
@@ -568,6 +586,20 @@ class FigureTab(QWidget):
             out[-1].write_text(txt + "\n", encoding="utf-8")
         return out
 
+    # -- SI-Export (Word) ------------------------------------------------------------------
+    SI_CAPTION = ""                      # englische Bildunterschrift, {name} = Name der Verbindung (fett)
+
+    def si_figure(self, out_dir, name):
+        """Abbildung des Tabs für den SI-Export -> [("image", …), ("figcap", …)], leer ohne Daten."""
+        fig = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
+        FigureCanvasAgg(fig)
+        F = self.build(fig)
+        if F is None:
+            return []
+        svg = Path(out_dir) / f"{core.safe_name(name)}_{self.STATE_KEY}.svg"
+        cap = self.SI_CAPTION.format(name="<b>" + html.escape(name) + "</b>")
+        return [si_image(F, svg), ("figcap", cap)]
+
     # -- SI-Text zu den Fits (englisch) -------------------------------------------------
     def methods_text(self) -> str:
         """Methodenabsatz für die SI zu allem, was dieser Tab fittet, dazu die Ergebnisse; leer = kein Fit."""
@@ -608,6 +640,7 @@ COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half
 # ----------------------------------------------------------------------------
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
+    SI_CAPTION = "Comparison of UV-Vis spectra of {name}."
     DEFAULT_STATE = dict(COMMON_DEFAULTS, entries=[], mode="norm", nlo=300.0, nhi=500.0, ymax=0.0,
                          baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0,
                          stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False,
@@ -1404,6 +1437,7 @@ def fmt_stokes(v):
 
 class FluoTab(FigureTab):
     STATE_KEY = "fluorescence"
+    SI_CAPTION = "Fluorescence spectra of {name}."
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",
                          c_em="#e8231b", structure=None, photo_day=None, bg_day="auto", photo_uv=None,

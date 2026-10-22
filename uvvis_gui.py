@@ -18,7 +18,7 @@ from pathlib import Path
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
 APP_VERSION = "1.23.0"
-SI_PARTS = ("char", "nmr", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
+SI_PARTS = ("char", "nmr", "figs", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -2059,6 +2059,7 @@ class MainWindow(QMainWindow):
         """Teile der SI, für die Daten da sind."""
         xt, dt = self.xray_tab, self.dft_tab
         return dict(char=True, nmr=bool(self.nmr_tab.spectra()),
+                    figs=bool(self.groups) or any(t.F is not None for t in self.figure_tabs()),
                     xray=any(xt.structure(e) is not None for e in xt.entries()),
                     dft=any(dt.calc_of(e) is not None for e in dt.entries()))
 
@@ -2067,8 +2068,11 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return
         avail = self.si_available()
-        saved = self.settings.value("si_parts", "char,xray,dft")
+        saved = self.settings.value("si_parts", "char,nmr,figs,xray,dft")
         saved = set(str(saved).split(",")) if saved else set()
+        if not self.settings.value("si_parts_figs"):         # neu in 1.24: Abbildungen einmalig mit auswählen
+            saved |= {"nmr", "figs"}
+            self.settings.setValue("si_parts_figs", 1)
         dlg = QDialog(self)
         dlg.setWindowTitle(T("act_export_si").rstrip(" …"))
         v = QVBoxLayout(dlg)
@@ -2127,6 +2131,10 @@ class MainWindow(QMainWindow):
         self._si_plain = plain
         if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
             blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
+        if "figs" in parts and self.project_dir:
+            figs = self.si_figure_blocks(PRJ.export_dir(Path(self.project_dir), "si"), title)
+            if figs:
+                blocks += [("pagebreak",)] + figs
         xt = self.xray_tab
         es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in parts else []
         if es:
@@ -2135,6 +2143,49 @@ class MainWindow(QMainWindow):
         if "dft" in parts and any(dt.calc_of(e) is not None for e in dt.entries()) and self.project_dir:
             blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
         return blocks, missing
+
+    def figure_tabs(self):
+        """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
+        return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab]
+
+    def si_figure_blocks(self, out_dir, name):
+        """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), zwei je
+        Seite, jede mit „Figure Sn: …“."""
+        figs = self.si_eps_figures(out_dir, name)
+        for t in self.figure_tabs():
+            try:
+                figs += t.si_figure(out_dir, name)
+            except Exception:
+                self.log_signal.emit(traceback.format_exc())
+        blocks, n = [], 0
+        for b in figs:
+            if b[0] == "image":
+                if n and n % 2 == 0:
+                    blocks.append(("pagebreak",))
+                n += 1
+            blocks.append(b)
+        return blocks
+
+    def si_eps_figures(self, out_dir, name):
+        """ε-Abbildung je Serie wie beim Export (Größe aus dem Tab) + Unterschrift."""
+        if not self.groups:
+            return []
+        self.collect_globals()
+        out = []
+        for g in self.groups:
+            cfg = self.make_cfg(g)
+            core.setup_fonts(plt, cfg)
+            cfg2, spectra, results = core.prepare_series(cfg, self.groups[g], g)
+            fig = MplFigure(figsize=cfg2["figsize_in"], dpi=PREVIEW_DPI)
+            FigureCanvasAgg(fig)
+            F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
+            sfx = f"_{core.safe_name(g)}" if len(self.groups) > 1 else ""
+            img = uvvis_tabs.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
+            solv = (self.series.get(g) or {}).get("solvent", "").strip()
+            cap = (f"UV-Vis spectra of <b>{html.escape(name)}</b> at different concentrations"
+                   + (f" in {html.escape(solv)}" if solv else "") + ".")
+            out += [img, ("figcap", cap)]
+        return out
 
     def si_char_blocks(self, comp, title):
         """„Synthesis of Name“ + Charakterisierungsabsatz -> (Blöcke, fehlende Teile, Klartext)."""
@@ -2994,6 +3045,16 @@ def selftest(outdir, with_isnet=False):
             and "Couple 1: E1/2 = −1.08 V vs. Fc+/Fc" in meth, meth
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
         report.append("cyclic voltammetry: OK")
+
+        # SI-Export: Abbildungen aller Tabs mit Daten (ε je Serie, CV …), zwei je Seite
+        fb_ = w.si_figure_blocks(out / "si_figs", "TEST-1")
+        caps_ = [b_[1] for b_ in fb_ if b_[0] == "figcap"]
+        imgs_ = [b_ for b_ in fb_ if b_[0] == "image"]
+        assert any(c_.startswith("UV-Vis spectra of <b>TEST-1</b>") for c_ in caps_), caps_
+        assert "Cyclic voltammograms of <b>TEST-1</b>." in caps_ and len(imgs_) == len(caps_), caps_
+        assert all(Path(b_[1]).exists() and Path(b_[4]).exists() and 0 < b_[2] <= 16.0 for b_ in imgs_), imgs_
+        assert fb_.count(("pagebreak",)) == (len(imgs_) - 1) // 2 and w.si_available()["figs"]
+        report.append("SI figures from all tabs: OK")
 
         # CV-Basislinie: Ladestrom ±C·v + linearer Untergrund dürfen i_p und i_r/i_f nicht verändern
         E_, I_ = cv_sweep(-1.02, 50.0, -1.4, -0.5)
@@ -4101,6 +4162,28 @@ def selftest(outdir, with_isnet=False):
             assert fs_ != t_n.spectra()[0]["file"] and 'id="structure_0"' in Path(fs_).read_text(encoding="utf-8")
             t_n.spectra()[1]["struct_on"] = False
             assert t_n.figure_svg(t_n.spectra()[1]) == t_n.spectra()[1]["file"]
+            e0_ = t_n.spectra()[0]                                         # gezogen: Lage im Dateinamen
+            e0_.update(struct_pos="manual", struct_xy=[0.5, 0.3])
+            assert Path(t_n.figure_svg(e0_)).stem.endswith("_500_300_200"), t_n.figure_svg(e0_)
+            w.nmr_state["current"] = e0_["uid"]                            # Mausrad über der Struktur: Größe
+            t_n.sync_widgets()
+            t_n.update_preview()
+            if t_n._drag_rect is not None:
+                from PySide6.QtCore import QPoint, QPointF
+                from PySide6.QtGui import QWheelEvent
+                x_, y_, wr_, hr_ = t_n._drag_rect
+                pw_, ph_ = t_n._pm_size
+                pos_ = QPointF((t_n.lbl_prev.width() - pw_) / 2 + (x_ + wr_ / 2) * pw_,
+                               (t_n.lbl_prev.height() - ph_) / 2 + (y_ + hr_ / 2) * ph_)
+                ev_ = QWheelEvent(pos_, pos_, QPoint(), QPoint(0, 240), Qt.NoButton, Qt.NoModifier,
+                                  Qt.NoScrollPhase, False)
+                assert t_n.eventFilter(t_n.lbl_prev, ev_) and e0_["struct_w"] == 22, e0_["struct_w"]
+            e0_.update(struct_pos="auto", struct_xy=None, struct_w=20.0)
+        m_ = NMR.occupancy(sv_h)                                           # freie Stelle: verdeckt nichts
+        fx_, fy_ = NMR.auto_place(m_, 0.2, 0.5)
+        H_, W_ = m_.shape
+        x0_, y0_ = int(fx_ * W_), int(fy_ * H_)
+        assert m_.any() and not m_[y0_:y0_ + int(0.1 * W_), x0_:x0_ + int(0.2 * W_)].any(), (fx_, fy_)
         nd_ = t_n.export_dialog(out / "nmr" / "nmr_test.docx")
         with _zf.ZipFile(nd_) as z_:
             xml_ = z_.read("word/document.xml").decode("utf-8")
@@ -4202,7 +4285,8 @@ def selftest(outdir, with_isnet=False):
         assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
         # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
         w.dft_tab.load_xyz(str(orf_))
-        assert w.si_available() == {"char": True, "nmr": False, "xray": False, "dft": True}
+        assert {k_: v_ for k_, v_ in w.si_available().items() if k_ != "figs"} == \
+            {"char": True, "nmr": False, "xray": False, "dft": True}
         b_dft, _ = w.si_blocks(["dft"])
         assert b_dft[0] == ("heading", "TEST-1") and ("columns", 2) in b_dft and not any(b_[0] == "char" for b_ in b_dft)
         w.export_si(["char", "dft"])

@@ -142,6 +142,7 @@ def _floats(text):
 
 class SECTab(TABS.FigureTab):
     STATE_KEY = "sec"
+    SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,
                          mode="spectra", first=1, last=0, highlight=True, gradient=False, diff=False,
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,

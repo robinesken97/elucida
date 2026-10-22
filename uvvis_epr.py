@@ -601,6 +601,7 @@ def _labels(text):
 
 class EPRTab(TABS.FigureTab):
     STATE_KEY = "epr"
+    SI_CAPTION = "EPR spectra of {name}."
     X_RANGE = (0.0, 20000.0, 1, 1.0)
     XRANGE_TEXT = "epr_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=300.0, x_max=360.0, ymax=0.0, entries=[], unit="mT",
