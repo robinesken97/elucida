@@ -2,6 +2,42 @@
 
 # Changelog
 
+## 1.24.0 – 2026-10-22
+
+### New
+- **Synthesis tab:** "Synthesis of **Name**", reaction scheme from ChemDraw and the procedure with formatting (bold,
+  italic, sub-/superscript). With a `.cdx` of the same name next to the CDXML, the scheme becomes an **editable ChemDraw
+  object** in Word (double-click opens ChemDraw; an `.emf` from ChemDraw gives a sharp preview). **Amount check:**
+  "(1.03 g, 5.00 mmol, 1.0 eq.)" and yields in the procedure are checked against the reagent table, taking
+  the rounding of the given digits into account. Reagent table from the scheme (reactants, reagents above/below the
+  arrow such as K2CO3, solvents, product).
+- **NMR tab:** SVG exports from MestReNova; nucleus from the axis label (or entered by hand), order ¹H, ¹³C, other
+  nuclei by mass number, then 2D (HSQC, HMBC …). Mnova multiplet report → NMR line in the style of the SI, with
+  assignments per signal; ¹³C line also from the peak labels of the spectrum. Temperature 298 K or from the Bruker
+  folder (acqus) with a parameter overview. The structure is placed in a free spot automatically (no signal, label or
+  integral covered), can be dragged, and its size (mouse wheel) is the same in all spectra. Word: two spectra per page,
+  "Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**."
+- **SI (Word) with all figures:** UV-Vis (ε), IR, HR-MS, overlay, fluorescence, CV, SEC, EPR and NMR – always two per
+  page (scaled to fit if needed), with captions in the style of the SI. CV, SEC and EPR fill their captions from the
+  data (scan rate, iR compensation, reference, potential range, band, g and couplings) plus a few fields
+  (concentration, solvent, electrolyte, species). UV-Vis: "… in THF, measured in 0.1 cm quartz cuvettes."
+- **Setup text (SI)** per tab (CV, SEC, EPR): paste your instrument/setup paragraph once; it is stored on your computer
+  only and placed before the figures of that tab.
+- **Fonts and frames per tab:** Format → "Fonts and frames…" applies to all tabs or only to the open one, and shows only
+  what that tab has in its figure.
+- Structures without a ChemDraw export are now **drawn from the CDXML coordinates** (abbreviations such as TMS or Dipp
+  stay, arrows and conditions in schemes); RDKit only as a fallback.
+
+### Changed
+- Tab order as in the SI: Synthesis · NMR · IR + EA · HRMS · UV-Vis (ε) · overlay · fluorescence · CV · SEC · EPR ·
+  X-Ray · DFT. The open tab is remembered by name.
+- Closed frame around the plot is now the default (as in the Origin figures of the SI); existing projects keep their
+  setting.
+- UV-Vis (ε): solvent field moved to "Analysis" (next to the path length).
+
+### Fixed
+- Word files no longer open in compatibility mode.
+
 ## 1.23.0 – 2026-10-22
 
 ### New

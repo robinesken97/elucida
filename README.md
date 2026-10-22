@@ -24,6 +24,8 @@ The user interface is available in German and English.
 
 | Tab | What it does |
 |---|---|
+| **Synthesis** | "Synthesis of …" with the ChemDraw scheme (editable ChemDraw object in Word), procedure with formatting, amount check (mmol/eq./yield against the reagent table) |
+| **NMR** | Spectra from MestReNova (SVG), nucleus from the axis, NMR line from the Mnova report with assignments, structure placed automatically, Bruker parameters, two spectra per page in Word |
 | **UV-Vis (ε)** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report; UV-Vis line for the SI |
 | **UV-Vis overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
 | **Fluorescence** | Absorption and emission, Stokes shift, photos in daylight and under UV |
@@ -34,6 +36,9 @@ The user interface is available in German and English.
 | **IR + EA** | IR peak list from Bruker OPUS (file or PDF) and the elemental-analysis line, ready for the SI |
 | **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
 | **DFT** | xyz, ORCA 6 and Gaussian outputs: renumber atoms by click or like a template (other geometry or CIF), SI block with coordinates, energies and convergence (Word, two columns) |
+
+The tabs are ordered as in the SI: Synthesis · NMR · IR + EA · HRMS · UV-Vis (ε) · overlay · fluorescence · CV · SEC ·
+EPR · X-Ray · DFT.
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
@@ -139,6 +144,36 @@ the default for the ε tab (structure, molar mass), the fluorescence tab and IR 
 structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
 characterisation paragraph of the SI section.
 
+## Synthesis tab
+
+"Synthesis of **Name**" (the name defaults to the compound or project), the reaction scheme and the procedure, exported
+to Word or as part of the SI section.
+
+- **Scheme:** choose the CDXML. Next to it (same name, same folder) you can save from ChemDraw: **SVG/PDF** (picture
+  taken unchanged), **.cdx** (the scheme becomes an editable ChemDraw object in Word – double-click opens ChemDraw; Word
+  cannot do this with a CDXML) and **.emf** (sharp vector preview of that object). Without an SVG/PDF the scheme is drawn
+  from the CDXML coordinates, including arrow and conditions.
+- **Procedure** with bold, italic, sub- and superscript.
+- **Amount check:** amounts written as "(1.03 g, 5.00 mmol, 1.0 eq.)", "(99%)" are compared with the reagent table
+  (M or formula, mass, volume, concentration, density); deviations beyond the rounding of the given digits are flagged.
+  **From scheme** fills the table with the reactants (first = reference 1.0 eq.), reagents above/below the arrow (e.g.
+  K2CO3), solvents and the product; **Insert amounts** inserts the calculated bracket of the selected row at the cursor.
+
+## NMR tab
+
+- **Spectra:** SVG exports from MestReNova (drag and drop). The nucleus is read from the axis label ("δ ¹H (ppm)");
+  if it is missing, enter it. Order: ¹H, ¹³C, other nuclei by mass number, then 2D (COSY, HSQC, HMBC, NOESY …).
+- **Structure** in every spectrum as vector graphics: placed automatically in a free spot (nothing covered), or top
+  left/centre/right, or dragged in the preview; the mouse wheel over the structure changes its size, the same for all
+  spectra.
+- **NMR line:** paste the Mnova multiplet report ("Multiplets → Copy", journal format) – all nuclei into the one
+  field, one line per nucleus. **Line from peak labels** builds the ¹³C (or other) line from the labelled peaks of the
+  selected spectrum; a solvent signal labelled with its name ("77.16 CDCl3") is dropped. Assignments per signal in the
+  table (*italic*, _{sub}, ^{sup}).
+- **Temperature** 298 K by default, or from the Bruker experiment folder (acqus, with an overview of the parameters
+  such as frequency, O1P, pulse program, scans).
+- **Word:** two spectra per page, "Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**."
+
 ## HRMS tab
 
 - Load the **Word report** of the mass-spectrometry department and/or the Bruker **measurement folder** (`.d`); see
@@ -182,13 +217,22 @@ characterisation paragraph of the SI section.
 ## SI section (Word)
 
 **SI (Word)** in the toolbar (or **File → Export SI section (Word) …**) asks which parts to include
-(characterisation, X-ray, DFT) and collects everything that is ready for the project's compound into
+(characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the project's compound into
 `exports/si/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
 UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
 precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
 X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
 and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
+
+**Figures:** the figures of all tabs with data (UV-Vis (ε) per series, IR, HR-MS, overlay, fluorescence, CV, SEC, EPR)
+and the NMR spectra always come **two per page**; where figure and caption would not fit, both figures of the page are
+scaled down (aspect ratio kept). Captions follow the SI: UV-Vis "UV-Vis spectra of **X** in THF, measured in 0.1 cm
+quartz cuvettes." (solvent under Analysis in the ε tab); CV, SEC and EPR take scan rate, iR compensation, reference,
+potential range, band, g and couplings from the data and concentration, solvent, electrolyte or species from the
+**Figure caption (SI export)** box of the tab. **Setup text (SI) …** next to "Copy SI text" stores your general
+instrument/setup paragraph on this computer only (not in the project, not in the repository); it is placed before the
+figures of that tab. Word files open in normal mode (Word 2013+).
 
 **SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
 English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
@@ -459,13 +503,14 @@ looks identical everywhere but cannot be edited in Word.
 
 ## Fonts and frames
 
-Format → "Fonts and frames…" applies to all tabs and is saved with the project:
+Format → "Fonts and frames…" applies to **all tabs** (default) or **only to the open tab** ("Applies to"), is saved
+with the project and shows only what the open tab has in its figure (e.g. no symbol font in CV, no frames in X-Ray):
 
 - **Text font** and **symbol font**. By default λ and ε are set in the symbol font (Times New Roman),
   as in Origin; this can be switched off.
 - **Band labels:** font size (automatic by default), bold, italic, colour.
-- **Frames:** closed frame around the plot (top and right too) and a rounded frame around the
-  chemical structure.
+- **Frames:** closed frame around the plot (top and right too; default since 1.24, like the Origin figures) and a
+  rounded frame around the chemical structure.
 
 ## What happens automatically during the analysis
 
@@ -487,8 +532,10 @@ Format → "Fonts and frames…" applies to all tabs and is saved with the proje
 ## Notes on CDXML
 
 - Exact ChemDraw appearance: put an SVG/PDF/PNG export with the same name next to the CDXML (see
-  above). Otherwise the structure is redrawn via RDKit with the orientation preserved, but labels
-  such as CD₃ or N₂ may be drawn differently (e.g. as explicit atoms).
+  above). Otherwise Spectravolt draws the structure itself from the CDXML coordinates: bonds, labels as written
+  (abbreviations such as TMS or Dipp stay), arrows and texts of reaction schemes; the font is Helvetica (same metrics
+  as Arial). Only if the file contains something this drawing cannot show (embedded pictures, brackets, curved
+  arrows …) RDKit redraws it, with a note.
 - Molar mass = sum of all fragments (counter-ions are included).
 - If abbreviations such as Dipp or Mes cannot be resolved, **no** molar mass is set and a warning is
   shown. Please enter it by hand in that case.

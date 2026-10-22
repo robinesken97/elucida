@@ -7,6 +7,7 @@ UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“. Die Elementaranalyse folgt d
 from __future__ import annotations
 
 import html as _html
+import math
 import re
 import zipfile
 from pathlib import Path
@@ -290,6 +291,65 @@ def _seq_xml(kind, num, size=22):
     props = _FONT + f'<w:b/><w:bCs/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
     return (f'<w:fldSimple w:instr=" SEQ {kind} \\* ARABIC "><w:r><w:rPr>{props}</w:rPr><w:t>{num}</w:t></w:r>'
             '</w:fldSimple>')
+
+
+# Seitenfüllung: Textfläche A4 (oben 2.5 cm, unten 2.0 cm) mit Reserve; Arial 11 pt, 1.5-zeilig ≈ 0.67 cm je Zeile,
+# im Mittel ≈ 0.19 cm je Zeichen
+PAGE_BODY_CM = 29.7 - 2.5 - 2.0 - 0.7
+LINE_CM, CHAR_CM = 0.67, 0.19
+
+
+def _text_cm(markup, prefix=0, extra=0.0):
+    """Geschätzte Höhe eines Absatzes über die ganze Textbreite (HTML ohne Tags, prefix = „Figure S12: “)."""
+    plain = re.sub(r"<[^>]+>", "", markup or "")
+    per_line = max(20, int(TEXT_W / 567 / CHAR_CM))
+    return math.ceil((len(plain) + prefix) / per_line) * LINE_CM + extra
+
+
+def two_per_page(blocks, per_page=2):
+    """Abbildungen (image + figcap) seitenweise zu je per_page setzen; vorangehender Text (z. B. Aufbau-Absatz)
+    beginnt eine neue Seite und zählt mit. Bilder werden – im Seitenverhältnis – so verkleinert, dass alles auf die
+    Seite passt (16 × 11 cm mit zweizeiliger Unterschrift sind zu zweit sonst ≈ 1 cm zu hoch)."""
+    pages, cur = [], {"text": [], "figs": []}
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b[0] == "image":
+            cap = blocks[i + 1] if i + 1 < len(blocks) and blocks[i + 1][0] == "figcap" else None
+            if len(cur["figs"]) >= per_page:
+                pages.append(cur)
+                cur = {"text": [], "figs": []}
+            cur["figs"].append([list(b), cap])
+            i += 2 if cap else 1
+            continue
+        if b[0] == "pagebreak":
+            i += 1
+            continue
+        if cur["figs"]:                                  # Text nach Abbildungen: neue Seite
+            pages.append(cur)
+            cur = {"text": [], "figs": []}
+        cur["text"].append(b)
+        i += 1
+    if cur["text"] or cur["figs"]:
+        pages.append(cur)
+    out = []
+    for k, pg in enumerate(pages):
+        if k:
+            out.append(("pagebreak",))
+        used = sum(_text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35) for t in pg["text"])
+        caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
+        if pg["figs"]:
+            hmax = (PAGE_BODY_CM - used - caps) / per_page
+            for img, _ in pg["figs"]:
+                if img[3] > hmax > 0:
+                    f = hmax / img[3]
+                    img[2], img[3] = img[2] * f, hmax
+        out += pg["text"]
+        for img, cap in pg["figs"]:
+            out.append(tuple(img))
+            if cap:
+                out.append(cap)
+    return out
 
 
 def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs=""):

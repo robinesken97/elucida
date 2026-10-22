@@ -3,7 +3,7 @@
 Auswertung bleibt in MestReNova. Hier: SVG-Exporte einsammeln (Kern aus der Achsenbeschriftung „δ ¹H (ppm)“, sonst von
 Hand; 2D, wenn eine senkrechte δ-Achse vorkommt; Art aus dem Dateinamen), sortieren (¹H, ¹³C, übrige Kerne nach
 Massenzahl, dann 2D), Bildunterschriften im Stil der SI („Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of Name.“),
-Word-Seiten mit zwei Spektren. Mnova-Text („1H NMR (501 MHz, CDCl3) δ 7.41 – 7.34 (m, 2H), …“) wird in Signale
+Word-Seiten mit zwei Spektren. Mnova-Text („1H NMR (501 MHz, CDCl3) δ 7.52 – 7.45 (m, 2H), …“) wird in Signale
 zerlegt, je Signal eine Zuordnung ergänzt und als „¹H NMR (500 MHz, CDCl₃): δ [ppm] = … (m, 2H, Zuordnung)“
 ausgegeben. Werte bleiben Text wie im Bericht. Bruker acqus/acqu2s (JCAMP) liefern T, SFO1, O1P, SW, NS … zur Kontrolle.
 """
@@ -232,7 +232,7 @@ def _split_top(s, sep=","):
 
 
 def parse_signal(txt):
-    """„6.80 (dd, J = 6.7, 1.2 Hz, 1H)“ -> dict(shift, mult, J, nH, assign)."""
+    """„6.91 (dd, J = 7.0, 1.5 Hz, 1H)“ -> dict(shift, mult, J, nH, assign)."""
     m = re.match(r"^\s*(?P<shift>[−-]?\d+(?:\.\d+)?(?:\s*[–—-]\s*[−-]?\d+(?:\.\d+)?)?)\s*(?:\((?P<par>.*)\))?\s*$",
                  txt, re.S)
     if not m:
@@ -647,8 +647,8 @@ class NMRTab(QWidget):
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
         self.ed_text = QPlainTextEdit()
-        self.ed_text.setPlaceholderText("1H NMR (501 MHz, CDCl3) δ 7.41 – 7.34 (m, 2H), …\n"
-                                        "13C NMR (126 MHz, CDCl3) δ 138.31, 131.60, …")
+        self.ed_text.setPlaceholderText("1H NMR (501 MHz, CDCl3) δ 7.52 – 7.45 (m, 2H), …\n"
+                                        "13C NMR (126 MHz, CDCl3) δ 141.20, 128.35, …")
         self.ed_text.setMaximumHeight(160)
         self.ed_text.textChanged.connect(lambda: None if self._loading else self.text_timer.start())
         v.addWidget(self.ed_text)
@@ -701,7 +701,7 @@ class NMRTab(QWidget):
         return float(self.st["struct_w"])
 
     def peaks_from_svg(self):
-        """Zeile „13C NMR (126 MHz, CDCl3) δ 138.31, …“ aus den Peaklabels des gewählten 1D-Spektrums (nicht ¹H:
+        """Zeile „13C NMR (126 MHz, CDCl3) δ 141.20, …“ aus den Peaklabels des gewählten 1D-Spektrums (nicht ¹H:
         dort braucht es den Multiplettbericht); ersetzt eine vorhandene Zeile desselben Kerns."""
         s = self.current()
         if s is None or s.get("kind") != "1D" or not s.get("nuclei"):
@@ -1065,14 +1065,13 @@ class NMRTab(QWidget):
         blocks = []
         name = self.compound_name()
         bl = self.blocks()
-        for i, s in enumerate(x for x in self.spectra() if Path(x["file"]).is_file()):
-            if i and i % 2 == 0:
-                blocks.append(("pagebreak",))
+        import uvvis_si as SI
+        for s in (x for x in self.spectra() if Path(x["file"]).is_file()):
             f = self.figure_svg(s)
             png = svg_png(f, Path(img_dir) / (Path(f).stem + "_nmr.png"))
             w, h = s.get("size") or svg_info(s["file"])["size_cm"]
             blocks += [("image", str(png), FIG_W_CM, FIG_W_CM * h / w, f), ("figcap", caption_html(s, bl, name))]
-        return blocks
+        return SI.two_per_page(blocks)
 
     def export_dialog(self, path=None):
         """Word-Datei mit allen Spektren und Unterschriften, dazu die NMR-Zeile als Text (exports/nmr)."""

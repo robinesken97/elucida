@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Spectravolt"
 OLD_APP_NAMES = ("UVVisTool",)    # bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "1.23.0"
+APP_VERSION = "1.24.0"
 SI_PARTS = ("char", "nmr", "figs", "xray", "dft")         # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -770,6 +770,10 @@ class MainWindow(QMainWindow):
         forms.append(f)
         self.sp_d = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=100, singleStep=0.1, suffix=" cm")
         f.addRow(T("path_length_short"), self.sp_d)
+        self.ed_solvent = QLineEdit()                    # je Serie; für SI-Zeile und Bildunterschrift
+        self.ed_solvent.setPlaceholderText(T("si_solvent_ph"))
+        self.ed_solvent.editingFinished.connect(self.solvent_changed)
+        f.addRow(T("si_solvent"), self.ed_solvent)
         self.sp_cut = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=5, singleStep=0.1)
         f.addRow(T("cutoff"), self.sp_cut)
         self.ed_bands = QLineEdit()
@@ -915,13 +919,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.table, T("tab_results"))
         si_w = QWidget()
         si_l = QVBoxLayout(si_w)
-        row = QHBoxLayout()
-        row.addWidget(QLabel(T("si_solvent")))
-        self.ed_solvent = QLineEdit()
-        self.ed_solvent.setPlaceholderText(T("si_solvent_ph"))
-        self.ed_solvent.editingFinished.connect(self.solvent_changed)
-        row.addWidget(self.ed_solvent, 1)
-        si_l.addLayout(row)
         self.txt_si = QTextBrowser()
         si_l.addWidget(self.txt_si, 1)
         b = QPushButton(T("si_copy"))
@@ -2221,8 +2218,8 @@ class MainWindow(QMainWindow):
         return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab]
 
     def si_figure_blocks(self, out_dir, name):
-        """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), zwei je
-        Seite, jede mit „Figure Sn: …“."""
+        """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je
+        Seite (SI.two_per_page verkleinert, wo nötig), jede mit „Figure Sn: …“."""
         figs = self.si_eps_figures(out_dir, name)
         for t in self.figure_tabs():
             try:
@@ -2232,14 +2229,7 @@ class MainWindow(QMainWindow):
                 figs += fb
             except Exception:
                 self.log_signal.emit(traceback.format_exc())
-        blocks, n = [], 0
-        for b in figs:
-            if b[0] == "image":
-                if n and n % 2 == 0:
-                    blocks.append(("pagebreak",))
-                n += 1
-            blocks.append(b)
-        return blocks
+        return SI.two_per_page(figs)
 
     def si_eps_figures(self, out_dir, name):
         """ε-Abbildung je Serie wie beim Export (Größe aus dem Tab) + Unterschrift."""
@@ -2257,7 +2247,7 @@ class MainWindow(QMainWindow):
             sfx = f"_{core.safe_name(g)}" if len(self.groups) > 1 else ""
             img = uvvis_tabs.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
             solv = (self.series.get(g) or {}).get("solvent", "").strip()
-            cap = (f"UV-Vis spectra of <b>{html.escape(name)}</b> at different concentrations"
+            cap = (f"UV-Vis spectra of <b>{html.escape(name)}</b>"
                    + (f" in {SI.chem_html(solv)}" if solv else "")
                    + f", measured in {cfg2['path_length_cm']:g} cm quartz cuvettes.")
             if not solv:
@@ -3132,6 +3122,12 @@ def selftest(outdir, with_isnet=False):
         assert any(c_.startswith("Cyclic voltammograms of <b>TEST-1</b>") for c_ in caps_) and len(imgs_) == len(caps_), caps_
         assert all(Path(b_[1]).exists() and Path(b_[4]).exists() and 0 < b_[2] <= 16.0 for b_ in imgs_), imgs_
         assert fb_.count(("pagebreak",)) == (len(imgs_) - 1) // 2 and w.si_available()["figs"]
+        cap2_ = "Cyclic voltammograms of <b>X</b> (1.8±0.1 mg mL-1) in MeCN (0.1 M n-Bu4NPF6) at rt; " * 2
+        tp_ = SI.two_per_page([("char", "Setup text. " * 40)] + [("image", "a.png", 16.0, 11.0, None),
+                                                                   ("figcap", cap2_)] * 3)
+        assert [b_[0] for b_ in tp_] == ["char", "image", "figcap", "image", "figcap", "pagebreak", "image", "figcap"]
+        h_ = [b_[3] for b_ in tp_ if b_[0] == "image"]
+        assert h_[0] == h_[1] < h_[2] == 11.0 and abs(tp_[1][2] / tp_[1][3] - 16 / 11) < 1e-9, h_   # zwei je Seite
         w.cv_state.update(cap_conc="1.8±0.1 mg mL-1", cap_el="0.1 M n-Bu4NPF6")        # CV-Unterschrift wie in der SI
         cap_cv = w.cv_tab.si_caption("TEST-1")
         assert cap_cv.startswith("Cyclic voltammograms of <b>TEST-1</b> (1.8±0.1 mg mL<sup>-1</sup>)") \
@@ -4229,7 +4225,7 @@ def selftest(outdir, with_isnet=False):
         # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
         ndir = out / "input" / "nmr"
         sv_h = NMR.make_test_svg(ndir / "t-1H.svg", ("1H",))
-        sv_c = NMR.make_test_svg(ndir / "t-13C.svg", ("13C",), peaks=("138.31", "77.16 CDCl3", "16.60"))
+        sv_c = NMR.make_test_svg(ndir / "t-13C.svg", ("13C",), peaks=("141.20", "77.16 CDCl3", "21.05"))
         sv_q = NMR.make_test_svg(ndir / "t-HSQC.svg", ("1H", "13C"))
         sv_f = NMR.make_test_svg(ndir / "t-fluor.svg", ("19F",), axis=False)
         assert NMR.svg_info(sv_q)["nuclei"] == ["1H", "13C"] and NMR.svg_info(sv_q)["is2d"]
@@ -4246,21 +4242,21 @@ def selftest(outdir, with_isnet=False):
         assert e_f["nuclei"] == ["19F"] and not e_f["nuc_auto"]
         assert [(s_["kind"], s_["nuclei"]) for s_ in t_n.spectra()] == [("1D", ["1H"]), ("1D", ["13C"]), ("1D", ["19F"]),
                                                                         ("HSQC", ["1H", "13C"])], t_n.spectra()
-        t_n.ed_text.setPlainText("1H NMR (501 MHz, CDCl3) \u03b4 7.41 \u2013 7.34 (m, 2H), 6.80 (dd, J = 6.7, 1.2 Hz, 1H), "
-                                 "3.04 (s, 3H).\n13C NMR (126 MHz, CDCl3) \u03b4 138.3, 16.6.\n"
+        t_n.ed_text.setPlainText("1H NMR (501 MHz, CDCl3) \u03b4 7.52 \u2013 7.45 (m, 2H), 6.91 (dd, J = 7.0, 1.5 Hz, 1H), "
+                                 "2.47 (s, 3H).\n13C NMR (126 MHz, CDCl3) \u03b4 141.2, 21.1.\n"
                                  "19F NMR (471 MHz, CDCl3) \u03b4 -63.2 (s).")
         t_n.text_changed()
         assert t_n.tbl_sig.rowCount() == 6
-        t_n.tbl_sig.item(1, 5).setText("ImPy-H")                           # Zuordnung je Signal
-        t_n.tbl_sig.item(3, 5).setText("ImPy-*C*_{q}")
+        t_n.tbl_sig.item(1, 5).setText("Ar-H")                           # Zuordnung je Signal
+        t_n.tbl_sig.item(3, 5).setText("Ar-*C*_{q}")
         ln_ = t_n.nmr_lines()
-        assert ln_[0][0] == ("\u00b9H NMR (500 MHz, CDCl\u2083): \u03b4 [ppm] = 7.41 \u2013 7.34 (m, 2H), "
-                             "6.80 (dd, J = 6.7, 1.2 Hz, 1H, ImPy-H), 3.04 (s, 3H)"), ln_[0][0]
-        assert "<i>J</i>" in ln_[0][1] and "ImPy-<i>C</i><sub>q</sub>" in ln_[1][1] and "\u221263.2" in ln_[2][0]
-        assert NMR.svg_peaks(sv_c) == (["138.31", "16.60"], "CDCl3"), NMR.svg_peaks(sv_c)
+        assert ln_[0][0] == ("\u00b9H NMR (500 MHz, CDCl\u2083): \u03b4 [ppm] = 7.52 \u2013 7.45 (m, 2H), "
+                             "6.91 (dd, J = 7.0, 1.5 Hz, 1H, Ar-H), 2.47 (s, 3H)"), ln_[0][0]
+        assert "<i>J</i>" in ln_[0][1] and "Ar-<i>C</i><sub>q</sub>" in ln_[1][1] and "\u221263.2" in ln_[2][0]
+        assert NMR.svg_peaks(sv_c) == (["141.20", "21.05"], "CDCl3"), NMR.svg_peaks(sv_c)
         w.nmr_state["current"] = [s_ for s_ in t_n.spectra() if s_["nuclei"] == ["13C"]][0]["uid"]
         t_n.peaks_from_svg()                                   # 13C-Zeile aus den Peaklabels (ersetzt die alte)
-        assert "13C NMR (126 MHz, CDCl3) \u03b4 138.31, 16.60." in w.nmr_state["text"] and \
+        assert "13C NMR (126 MHz, CDCl3) \u03b4 141.20, 21.05." in w.nmr_state["text"] and \
             w.nmr_state["text"].count("13C NMR") == 1, w.nmr_state["text"]
         acq_ = NMR.make_test_acqus(ndir / "exp" / "10", nuc="1H", te=300.2)
         (acq_ / "fid").write_bytes(b"\0" * 1000)                          # FID wird nicht ins Projekt kopiert
@@ -4278,7 +4274,7 @@ def selftest(outdir, with_isnet=False):
         from rdkit import Chem as _Chem
         if hasattr(_Chem, "MolToCDXMLBlock"):                               # Struktur als Vektor ins Spektrum
             from rdkit.Chem import AllChem as _AC
-            sm_ = _Chem.MolFromSmiles("Cc1ncc2cccc(C#C)n12")
+            sm_ = _Chem.MolFromSmiles("Cc1ccc(C#C)nc1")             # erfundenes Testmolekül
             _AC.Compute2DCoords(sm_)
             (ndir / "struct.cdxml").write_text(_Chem.MolToCDXMLBlock(sm_), encoding="utf-8")
             w.nmr_state["structure"] = str(ndir / "struct.cdxml")
@@ -4320,27 +4316,27 @@ def selftest(outdir, with_isnet=False):
         report.append("NMR (Mnova SVG, nucleus from axis/manual, order, Mnova text + assignment, Bruker acqus, Word): OK")
 
         # Synthese: Mengenprüfung mit Rundung, Reagenzientabelle, Schema als bearbeitbares ChemDraw-Objekt (CDX)
-        proc_ = ("In a flask <b>S25</b> (1.05 g, 4.58 mmol, 1.0 eq.) was dissolved in MeOH (10 mL) and "
-                 "K<sub>2</sub>CO<sub>3</sub> (760 mg, 5.49 mmol, 1.2 eq.) was added to give <b>S26</b> "
-                 "(707 mg, 4.53 mmol, 99%).")
-        tab_ = {"S25": {"M": 228.37}, "K2CO3": {"M": SYN.formula_mw("K2CO3")}, "S26": {"M": 156.19}}
+        proc_ = ("In a flask <b>S1</b> (1.03 g, 5.00 mmol, 1.0 eq.) was dissolved in MeOH (10 mL) and "
+                 "K<sub>2</sub>CO<sub>3</sub> (829 mg, 6.00 mmol, 1.2 eq.) was added to give <b>S2</b> "
+                 "(525 mg, 4.95 mmol, 99%).")                     # erfundene Werte
+        tab_ = {"S1": {"M": 206.36}, "K2CO3": {"M": SYN.formula_mw("K2CO3")}, "S2": {"M": 106.12}}
         res_ = SYN.check_amounts(SYN.parse_amounts(proc_), tab_)
-        assert [l_ for l_, _ in res_] == ["ok", "ok", "ok", "ok", "ok"], res_        # 1.05 g -> 4.58 mmol: Rundung
-        bad_ = SYN.check_amounts(SYN.parse_amounts(proc_.replace("5.49", "5.94").replace("99%", "95%")), tab_)
+        assert [l_ for l_, _ in res_] == ["ok", "ok", "ok", "ok", "ok"], res_        # 1.03 g -> 4.99 vs. 5.00 mmol: Rundung
+        bad_ = SYN.check_amounts(SYN.parse_amounts(proc_.replace("6.00", "6.60").replace("99%", "95%")), tab_)
         assert [l_ for l_, _ in bad_].count("warn") == 3, bad_
-        assert abs(SYN.formula_mw("K2CO3") - 138.204) < 0.01 and SYN.molar_mass("228.37") == 228.37
+        assert abs(SYN.formula_mw("K2CO3") - 138.204) < 0.01 and SYN.molar_mass("206.36") == 206.36
         t_s = w.syn_tab
         w.main_tabs.setCurrentWidget(t_s)
-        w.syn_state["reagents"] = [dict(name="S25", M="C13H16N2Si", m_mg="1046", role="ref"),
-                                   dict(name="K2CO3", M="K2CO3", m_mg="760", role="reagent"),
-                                   dict(name="S26", M="C10H8N2", m_mg="707", role="product")]
+        w.syn_state["reagents"] = [dict(name="S1", M="C12H18OSi", m_mg="1032", role="ref"),
+                                   dict(name="K2CO3", M="K2CO3", m_mg="829", role="reagent"),
+                                   dict(name="S2", M="C7H6O", m_mg="525", role="product")]
         t_s.sync_widgets()
         assert t_s.tbl.item(1, len(SYN.COLS) + 1).text() == "1.20" and t_s.tbl.item(2, len(SYN.COLS) + 1).text() == "99%"
         r0_ = w.syn_state["reagents"][0]
-        assert SYN.amount_text(r0_, dict(SYN.row_amounts(r0_), eq=1.0)) == "(1.046 g, 4.58 mmol, 1.0 eq.)"
+        assert SYN.amount_text(r0_, dict(SYN.row_amounts(r0_), eq=1.0)) == "(1.032 g, 5.00 mmol, 1.0 eq.)"
         t_s.ed_proc.setHtml(proc_)
         t_s.proc_changed()
-        assert "<b>S25</b>" in w.syn_state["proc"] and "<sub>2</sub>" in w.syn_state["proc"], w.syn_state["proc"]
+        assert "<b>S1</b>" in w.syn_state["proc"] and "<sub>2</sub>" in w.syn_state["proc"], w.syn_state["proc"]
         assert t_s.lbl_check.text().count("\u2713") == 5, t_s.lbl_check.text()
         sdir = out / "input" / "syn"
         sdir.mkdir(parents=True, exist_ok=True)
@@ -4393,7 +4389,7 @@ def selftest(outdir, with_isnet=False):
                     + 'ReactionStepObjectsAboveArrow="501" ReactionStepObjectsBelowArrow="502"/></scheme></page></CDXML>')
             (sdir / "rxn.cdxml").write_text(sch_, encoding="utf-8")
             svg_, notes_ = CDXD.render_svg(sdir / "rxn.cdxml")
-            assert svg_.count(">N</text>") == 4, svg_.count(">N</text>")      # Labels auch ohne <t> (RDKit-CDXML)
+            assert svg_.count(">N</text>") == 2, svg_.count(">N</text>")      # Labels auch ohne <t> (RDKit-CDXML)
             assert not notes_ and "<polygon" in svg_ and ">2</text>" in svg_ and "1.2\u00a0eq.)" in svg_, notes_
             assert CDXD.scheme_reagents(sdir / "rxn.cdxml") == [("K2CO3", "K2CO3", "reagent"), ("MeOH", "CH4O", "other")]
             t_s.set_scheme(str(sdir / "rxn.cdxml"))
@@ -4403,7 +4399,7 @@ def selftest(outdir, with_isnet=False):
             assert [(r_["name"], r_["role"]) for r_ in w.syn_state["reagents"]] == \
                 [("", "ref"), ("K2CO3", "reagent"), ("MeOH", "other"), ("", "product")], w.syn_state["reagents"]
         b_all, _ = w.si_blocks(["char"])
-        assert b_all[0][0] == "synthesis" and any(b_[0] == "char" and "S25" in b_[1] for b_ in b_all)
+        assert b_all[0][0] == "synthesis" and any(b_[0] == "char" and "S1" in b_[1] for b_ in b_all)
         w.syn_state.update(name="", scheme=None, proc="", reagents=[])
         t_s.sync_widgets()
         report.append("Synthesis (amount check with rounding, reagent table, ChemDraw object, SI): OK")

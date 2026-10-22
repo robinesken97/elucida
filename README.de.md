@@ -24,6 +24,8 @@ Englisch.
 
 | Tab | Was er macht |
 |---|---|
+| **Synthese** | „Synthesis of …“ mit dem ChemDraw-Schema (bearbeitbares ChemDraw-Objekt in Word), Vorschrift mit Formatierung, Mengenprüfung (mmol/Äquivalente/Ausbeute gegen die Reagenzientabelle) |
+| **NMR** | Spektren aus MestReNova (SVG), Kern aus der Achse, NMR-Zeile aus dem Mnova-Bericht mit Zuordnungen, Struktur automatisch platziert, Bruker-Parameter, zwei Spektren je Seite in Word |
 | **UV-Vis (ε)** | Lambert-Beer-Fit von Verdünnungsreihen → ε (bzw. a) mit Konfidenzintervall; Abbildung im Origin-Stil mit Struktur und Küvettenfoto; Excel-Report; UV-Vis-Zeile für die SI |
 | **UV-Vis-Overlay** | Gemessene Spektren, TD-DFT (ORCA/Gaussian, SOC, Tripletts) und SEC-Serien in einer Abbildung, normiert oder als ε |
 | **Fluoreszenz** | Absorption und Emission, Stokes-Verschiebung, Fotos bei Tageslicht und unter UV |
@@ -34,6 +36,9 @@ Englisch.
 | **IR + EA** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die Zeile der Elementaranalyse, fertig für die SI |
 | **X-Ray** | CIF → drehbare ORTEP-Abbildung im Mercury-Stil (schattierte Ellipsoide, Labels je Atom), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
 | **DFT** | xyz, ORCA-6- und Gaussian-Ausgaben: Atome per Klick oder wie eine Vorlage (andere Geometrie oder CIF) umnummerieren, SI-Block mit Koordinaten, Energien und Konvergenz (Word, zweispaltig) |
+
+Die Tabs stehen in der Reihenfolge der SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV ·
+SEC · EPR · X-Ray · DFT.
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
 Erscheinungsbild; Deutsch und Englisch.
@@ -142,6 +147,38 @@ Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab un
 Molmasse behalten diese. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
 Charakterisierungsabsatz im SI-Abschnitt.
 
+## Synthese-Tab
+
+„Synthesis of **Name**“ (Name standardmäßig der der Verbindung bzw. des Projekts), Reaktionsschema und Vorschrift,
+als eigene Word-Datei oder im SI-Abschnitt.
+
+- **Schema:** die CDXML wählen. Daneben (gleicher Name, gleicher Ordner) kann man aus ChemDraw speichern: **SVG/PDF**
+  (Bild unverändert übernommen), **.cdx** (das Schema wird in Word ein bearbeitbares ChemDraw-Objekt – Doppelklick
+  öffnet ChemDraw; mit einer CDXML kann Word das nicht) und **.emf** (scharfe Vektorvorschau dieses Objekts). Ohne
+  SVG/PDF wird das Schema aus den CDXML-Koordinaten gezeichnet, mit Pfeil und Bedingungen.
+- **Vorschrift** mit fett, kursiv, tief- und hochgestellt.
+- **Mengenprüfung:** Angaben wie „(1.03 g, 5.00 mmol, 1.0 eq.)“, „(99%)“ werden mit der Reagenzientabelle verglichen
+  (M oder Summenformel, Masse, Volumen, Konzentration, Dichte); Abweichungen jenseits der Rundung der angegebenen Stellen
+  werden markiert. **Aus Schema** füllt die Tabelle mit den Edukten (erstes = Bezug 1.0 eq.), den Reagenzien über/unter
+  dem Pfeil (z. B. K2CO3), Lösungsmitteln und dem Produkt; **Klammer einfügen** setzt die berechnete Klammer der gewählten
+  Zeile an der Schreibmarke ein.
+
+## NMR-Tab
+
+- **Spektren:** SVG-Exporte aus MestReNova (Drag & Drop). Der Kern kommt aus der Achsenbeschriftung („δ ¹H (ppm)“);
+  fehlt sie, von Hand eintragen. Reihenfolge: ¹H, ¹³C, übrige Kerne nach Massenzahl, dann 2D (COSY, HSQC, HMBC,
+  NOESY …).
+- **Struktur** in jedem Spektrum als Vektorgrafik: automatisch an einer freien Stelle (nichts verdeckt), oder oben
+  links/mittig/rechts, oder in der Vorschau gezogen; das Mausrad über der Struktur ändert die Größe, für alle Spektren
+  gleich.
+- **NMR-Zeile:** den Mnova-Multiplettbericht einfügen („Multiplets → Copy“, Journal-Format) – alle Kerne in das eine
+  Feld, je Kern eine Zeile. **Zeile aus Peaklabels** baut die ¹³C-Zeile (oder andere) aus den beschrifteten Peaks des
+  gewählten Spektrums; ein mit Namen beschriftetes Lösungsmittelsignal („77.16 CDCl3“) fällt weg. Zuordnungen je Signal
+  in der Tabelle (*kursiv*, _{tief}, ^{hoch}).
+- **Temperatur** standardmäßig 298 K, oder aus dem Bruker-Experimentordner (acqus, mit Übersicht der Parameter wie
+  Frequenz, O1P, Pulsprogramm, Scans).
+- **Word:** zwei Spektren je Seite, „Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**.“
+
 ## HRMS-Tab
 
 - Den **Word-Bericht** der Massenabteilung und/oder den Bruker-**Messordner** (`.d`) laden; was jeweils gelesen wird, steht
@@ -187,13 +224,22 @@ Charakterisierungsabsatz im SI-Abschnitt.
 ## SI-Abschnitt (Word)
 
 **SI (Word)** in der Werkzeugleiste (oder **Datei → SI-Abschnitt exportieren (Word) …**) fragt, welche Teile hinein
-sollen (Charakterisierung, X-Ray, DFT), und sammelt alles Fertige zur Verbindung des Projekts in
+sollen (Charakterisierung, NMR-Spektren, Abbildungen aller Tabs, X-Ray, DFT), und sammelt alles Fertige zur Verbindung des Projekts in
 `exports/si/<Verbindung>_SI.docx`, im Stil der SI: ein Charakterisierungsabsatz **m.p. …; IR …; HR-MS …; UV-Vis …;
 Elemental analysis …** (Schmelzpunkt aus **Verbindung …**, UV-Vis-Zeile von der Seite **SI-Zeile** im Tab UV-Vis (ε):
 *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε auf die Genauigkeit seines
 Standardfehlers gerundet), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
 X-Ray-Tab und die DFT-Rechnungen (zweispaltig). Was noch fehlt, wird nach dem Export aufgezählt. Zahl und Einheit sind
 durch geschützte Leerzeichen verbunden, Word trennt also nie „298 nm“ oder „ε = 8440“.
+
+**Abbildungen:** Die Abbildungen aller Tabs mit Daten (UV-Vis (ε) je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC,
+EPR) und die NMR-Spektren stehen immer **zu zweit auf einer Seite**; passen Bild und Unterschrift nicht, werden beide
+Abbildungen der Seite verkleinert (Seitenverhältnis bleibt). Unterschriften wie in der SI: UV-Vis „UV-Vis spectra of
+**X** in THF, measured in 0.1 cm quartz cuvettes.“ (Lösungsmittel unter „Auswertung“ im ε-Tab); CV, SEC und EPR nehmen
+Vorschub, iR-Kompensation, Referenz, Potentialbereich, Band, g und Kopplungen aus den Daten und Konzentration,
+Lösungsmittel, Leitsalz bzw. Spezies aus dem Kasten **Bildunterschrift (SI-Export)** des Tabs. **Aufbau-Text (SI) …**
+neben „SI-Text kopieren“ speichert den allgemeinen Absatz zu Gerät und Aufbau nur auf diesem Rechner (nicht im Projekt,
+nicht im Repository); er steht vor den Abbildungen dieses Tabs. Word öffnet die Dateien im normalen Modus (Word 2013+).
 
 **SI-Text zu den Fits:** Jeder Tab, der etwas fittet (UV-Vis (ε), CV, SEC, EPR), hat den Knopf **SI-Text kopieren**:
 ein englischer Methodenabsatz, der genau die benutzten Auswerteschritte mit ihren Einstellungen beschreibt (z. B. ε:
@@ -469,13 +515,15 @@ In PDF und SVG bleibt die Struktur eine Vektorgrafik. Text steht im SVG als Pfad
 
 ## Schrift und Rahmen
 
-Format → „Schrift und Rahmen…“ gilt für alle Tabs und wird im Projekt gespeichert:
+Format → „Schrift und Rahmen…“ gilt für **alle Tabs** (Standard) oder **nur für den offenen Tab** („Gilt für“), wird
+im Projekt gespeichert und zeigt nur, was der offene Tab im Bild hat (z. B. keine Symbolschrift in CV, keine Rahmen in
+X-Ray):
 
 - **Textschrift** und **Symbolschrift**. λ und ε stehen standardmäßig in der Symbolschrift
   (Times New Roman), wie in Origin; abschaltbar.
 - **Bandenlabels:** Schriftgröße (standardmäßig automatisch), fett, kursiv, Farbe.
-- **Rahmen:** geschlossener Rahmen um den Plot (auch oben und rechts) und abgerundeter Rahmen um die
-  Strukturformel.
+- **Rahmen:** geschlossener Rahmen um den Plot (auch oben und rechts; seit 1.24 Standard, wie die Origin-Abbildungen)
+  und abgerundeter Rahmen um die Strukturformel.
 
 ## Was bei der Auswertung automatisch passiert
 
@@ -497,8 +545,10 @@ Format → „Schrift und Rahmen…“ gilt für alle Tabs und wird im Projekt g
 ## Hinweise zu CDXML
 
 - Exaktes ChemDraw-Aussehen: einen SVG/PDF/PNG-Export mit gleichem Namen neben die CDXML legen
-  (siehe oben). Sonst wird die Struktur über RDKit neu gezeichnet. Die Orientierung bleibt, Labels
-  wie CD₃ oder N₂ können aber anders aussehen (z. B. als einzelne Atome).
+  (siehe oben). Sonst zeichnet Spectravolt die Struktur selbst aus den CDXML-Koordinaten: Bindungen, Labels wie
+  geschrieben (Abkürzungen wie TMS oder Dipp bleiben), Pfeile und Texte von Reaktionsschemata; Schrift Helvetica
+  (gleiche Maße wie Arial). Nur wenn die Datei etwas enthält, das diese Zeichnung nicht kann (eingebettete Bilder,
+  Klammern, gebogene Pfeile …), zeichnet RDKit neu, mit Hinweis.
 - Molmasse = Summe aller Fragmente (Gegenionen zählen mit).
 - Lassen sich Abkürzungen wie Dipp oder Mes nicht auflösen, wird **keine** Molmasse gesetzt und eine
   Warnung angezeigt. Dann bitte die Molmasse von Hand eintragen.

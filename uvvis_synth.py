@@ -4,8 +4,8 @@ Schema: CDXML im Projekt; gezeigt wird die gleichnamige ChemDraw-Exportdatei (SV
 gleichnamige .cdx daneben, wird das Schema in Word als **bearbeitbares ChemDraw-Objekt** eingebettet (uvvis_ole);
 Vorschau dann die gleichnamige .emf aus ChemDraw (Vektor), sonst ein PNG aus der Exportdatei. ChemDraw liest im Objekt
 nur CDX, keine CDXML (in Word geprüft).
-Mengen: Klammern im SI-Format „S25 (1.05 g, 4.58 mmol, 1.0 eq.)“, „n-BuLi (0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
-„S26 (707 mg, 4.53 mmol, 99%)“. Geprüft wird mit der Rundung der Angaben (1.05 g = 1.045–1.055 g), sonst gäbe es
+Mengen: Klammern im SI-Format „S1 (1.03 g, 5.00 mmol, 1.0 eq.)“, „n-BuLi (0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
+„S2 (525 mg, 4.95 mmol, 99%)“. Geprüft wird mit der Rundung der Angaben (1.03 g = 1.025–1.035 g), sonst gäbe es
 Falschalarme: m/M ↔ n, V·c ↔ n, V·ρ/M ↔ n, n/n_ref ↔ eq., n_Produkt/n_ref ↔ Ausbeute.
 """
 from __future__ import annotations
@@ -84,7 +84,7 @@ _PAREN = re.compile(r"(?P<name>[^\s()]+(?:\s*\{[^}]*\})?)\s*\((?P<body>[^()]*(?:
 
 
 def parse_amounts(text):
-    """Mengenangaben „Name (1.05 g, 4.58 mmol, 1.0 eq.)“ aus der Vorschrift -> [dict(name, raw, mass, vol, conc,
+    """Mengenangaben „Name (1.03 g, 5.00 mmol, 1.0 eq.)“ aus der Vorschrift -> [dict(name, raw, mass, vol, conc,
     mmol, eq, yield, density)] (Intervalle in g, mL, mol/L, mmol, –, %)."""
     out = []
     plain = re.sub(r"<[^>]+>", "", text or "")
@@ -203,7 +203,7 @@ def row_amounts(row, ref_mmol=None):
 
 
 def amount_text(row, calc):
-    """Klammer im SI-Format: „(1.05 g, 4.58 mmol, 1.0 eq.)“, Lösung „(0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
+    """Klammer im SI-Format: „(1.03 g, 5.00 mmol, 1.0 eq.)“, Lösung „(0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
     Produkt „(707 mg, 4.53 mmol, 99%)“."""
     parts = []
     m = str(row.get("m_mg") or "").strip()
@@ -639,7 +639,7 @@ class SynthTab(QWidget):
         self.main.push_undo()
 
     def rows_from_scheme(self):
-        """Moleküle des Schemas als Zeilen (Summenformel als M); Namen trägst du ein (z. B. S25)."""
+        """Moleküle des Schemas als Zeilen (Summenformel als M); Namen trägst du ein (z. B. S1)."""
         p = self.st.get("scheme")
         if not p or Path(p).suffix.lower() != ".cdxml":
             self.main.error(T("syn_need_cdxml"))
@@ -687,7 +687,7 @@ class SynthTab(QWidget):
             self.main.push_undo()
 
     def insert_amounts(self):
-        """Klammer der gewählten Zeile an der Schreibmarke einfügen, z. B. „(1.05 g, 4.58 mmol, 1.0 eq.)“."""
+        """Klammer der gewählten Zeile an der Schreibmarke einfügen, z. B. „(1.03 g, 5.00 mmol, 1.0 eq.)“."""
         rows = sorted({i.row() for i in self.tbl.selectedIndexes()})
         if not rows or rows[0] >= len(self.st["reagents"]):
             return
