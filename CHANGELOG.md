@@ -29,6 +29,7 @@
   stay, arrows and conditions in schemes); RDKit only as a fallback.
 
 ### Changed
+- New app icon (spectrum in the colours of the visible range with a bolt) and new short description "From synthesis to SI".
 - Tab order as in the SI: Synthesis · NMR · IR + EA · HRMS · UV-Vis (ε) · overlay · fluorescence · CV · SEC · EPR ·
   X-Ray · DFT. The open tab is remembered by name.
 - Closed frame around the plot is now the default (as in the Origin figures of the SI); existing projects keep their

@@ -29,6 +29,7 @@
   bleiben, Pfeile und Bedingungen im Schema); RDKit nur noch als Rückfall.
 
 ### Geändert
+- Neues App-Icon (Spektrum in den Farben des sichtbaren Bereichs mit Blitz) und neue Kurzbeschreibung „Von der Synthese zur SI“.
 - Reihenfolge der Tabs wie in der SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC ·
   EPR · X-Ray · DFT. Der offene Tab wird über seinen Namen gemerkt.
 - Geschlossener Rahmen um den Plot ist jetzt Standard (wie in den Origin-Abbildungen der SI); bestehende Projekte

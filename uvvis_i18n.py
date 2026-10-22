@@ -222,10 +222,10 @@ TEXTS = {
     "err_title": ("Fehler", "Error"),
     "exported_to": ("Exportiert nach:\n{p}", "Exported to:\n{p}"),
     "mw_formula": ("{f}, M = {mw:.2f} g/mol", "{f}, M = {mw:.2f} g/mol"),
-    "about": ("Spectravolt {v} (früher UVVisTool)\nUV-Vis (ε aus Verdünnungsreihen), Overlay mit TD-DFT, Fluoreszenz, "
-              "CV, Spektroelektrochemie und EPR – Auswertung und Abbildungen.",
-              "Spectravolt {v} (formerly UVVisTool)\nUV-Vis (ε from dilution series), overlay with TD-DFT, fluorescence, "
-              "CV, spectroelectrochemistry and EPR – analysis and figures."),
+    "about": ("Spectravolt {v} (früher UVVisTool)\nVon der Synthese zur SI: Auswertung und publikationsfertige Abbildungen "
+              "für UV-Vis, NMR, IR, HRMS, Fluoreszenz, CV, SEC, EPR, Röntgenstruktur und DFT – als SI-Abschnitt in Word.",
+              "Spectravolt {v} (formerly UVVisTool)\nFrom synthesis to SI: evaluation and publication-ready figures for "
+              "UV-Vis, NMR, IR, HRMS, fluorescence, CV, SEC, EPR, X-ray and DFT – exported as an SI section in Word."),
     "load_first": ("Bitte zuerst eine CSV öffnen.", "Please open a CSV first."),
     "tab_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
     "tab_overlay": ("UV-Vis-Overlay", "UV-Vis overlay"),

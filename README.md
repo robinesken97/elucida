@@ -1,11 +1,14 @@
 **English** | [Deutsch](README.de.md) · [Changelog](CHANGELOG.md)
 
-# Spectravolt – spectroscopy and electrochemistry for photo- and redox chemistry
+# Spectravolt – from synthesis to SI
 
 *Formerly **UVVisTool**. Projects, settings and downloaded data are taken over automatically.*
 
-Spectravolt evaluates UV-Vis dilution series, overlays measured and TD-DFT spectra, and analyses fluorescence,
-cyclic voltammetry, spectroelectrochemistry (SEC) and CW EPR – each with figures ready for publication.
+<p align="center"><img src="assets/icon.png" alt="Spectravolt" width="96"></p>
+
+**From synthesis to SI:** evaluation and publication-ready figures for UV-Vis, NMR, IR, HRMS, fluorescence, CV, SEC,
+EPR, X-ray and DFT – exported as a complete SI section in Word (synthesis with an editable ChemDraw scheme,
+characterisation paragraph, spectra two per page, crystal data and DFT coordinates).
 
 In the ε tab, Spectravolt determines molar absorption coefficients (ε) from UV-Vis dilution series
 (Beer–Lambert: A/d vs. c) and produces publication-ready figures in the classic Origin style:
