@@ -89,6 +89,42 @@ Wie beim tar.gz ist eine Distribution mindestens so neu wie Ubuntu 22.04 (glibc 
 
 Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 
+## Schnellstart: vom leeren Projekt zur SI
+
+1. **Projekt anlegen:** Ohne Projekt zeigt das Programm einen Startbildschirm: **Neues Projekt…** und einen leeren
+   Ordner wählen oder im Dialog neu anlegen (oder **Datei → Neues Projekt…**). Ein
+   Projekt steht für eine Verbindung. Alle Dateien, die du lädst, werden hineinkopiert, gespeichert wird automatisch.
+2. **Verbindung festlegen:** **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
+   ChemDraw-Datei (CDXML). Summenformel und Molmasse kommen daraus. Das ist die Vorgabe für alle Tabs und die SI.
+3. **Daten laden:** Dateien einfach ins Fenster ziehen – Elucida legt sie in den passenden Tab:
+   CIF → **X-Ray**, SVG aus MestReNova → **NMR**, xyz/ORCA/Gaussian → **DFT**, MS-Bericht (.docx) oder Bruker-.d →
+   **HRMS**, OPUS-Datei → **IR + EA**, UV-Vis-Messdaten (CSV, DSW/BSW) → **UV-Vis (ε)**. CV, SEC, EPR, Overlay und
+   Fluoreszenz lädst du im Tab über **Dateien hinzufügen…**. Ein leerer Tab zeigt, was er braucht und woher es kommt.
+4. **Auswerten:** Links stehen die Einstellungen (Seltenes ist eingeklappt; **„(geändert)“** zeigt, wo etwas vom
+   Standard abweicht), rechts die Abbildung. Labels, Strukturen und Insets lassen sich mit der Maus verschieben.
+   **Strg+Z** / **⌘Z** macht alles rückgängig.
+5. **Exportieren:** **Exportieren** unten im Tab schreibt die Abbildung (PDF/SVG/PNG, 16 × 11 cm für eine halbe
+   A4-Seite) und die Daten in den Projektordner unter `exports/`.
+6. **SI erstellen:** **SI (Word)** in der Werkzeugleiste sammelt alles Fertige in einer Word-Datei: Synthese,
+   Charakterisierungsabsatz (m.p., NMR, IR, HR-MS, UV-Vis, Elementaranalyse), Abbildungen zu zweit je Seite,
+   Kristalldaten und DFT-Koordinaten. Was noch fehlt, zählt das Programm danach auf.
+
+## Anleitungen
+
+Schritt für Schritt durch einen Arbeitsablauf, mit Bildern:
+
+- [Synthese und Charakterisierung bis zur SI](docs/anleitungen/synthese-bis-si.de.md) – Schema, Vorschrift, NMR, IR,
+  HRMS, Elementaranalyse, SI-Abschnitt
+- [UV-Vis: ε aus einer Verdünnungsreihe](docs/anleitungen/uvvis-epsilon.de.md)
+- [Elektrochemie: CV und SEC](docs/anleitungen/elektrochemie.de.md)
+- [EPR: Spektren, Simulation und Fit](docs/anleitungen/epr.de.md)
+- [Kristallstruktur und DFT](docs/anleitungen/struktur-dft.de.md)
+
+Zum Ausprobieren ohne eigene Daten: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit künstlichen Daten für alle
+Tabs an. **Hilfe → Anleitung zu diesem Tab** (F1) öffnet den passenden Abschnitt unten.
+
+Alle Einstellungen der einzelnen Tabs stehen weiter unten zum Nachschlagen.
+
 ## Ablauf
 
 1. **Daten öffnen:** Datei → Messdaten öffnen, oder Dateien ins Fenster ziehen. Unterstützt werden
@@ -157,7 +193,7 @@ sind vom Erscheinungsbild nicht betroffen.
 
 Ein Projekt steht meist für **eine Verbindung** (oder einen Vergleich). **Verbindung …** in der Werkzeugleiste legt
 Name/Probennummer, ChemDraw-Datei, Summenformel und Molmasse fest (aus der CDXML, Isotope wie D inklusive, änderbar).
-Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab und IR + MS; Tabs mit eigener Struktur oder
+Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab, IR + EA und HRMS; Tabs mit eigener Struktur oder
 Molmasse behalten diese. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
 Charakterisierungsabsatz im SI-Abschnitt.
 

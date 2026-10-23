@@ -3963,6 +3963,7 @@ def selftest(outdir, with_isnet=False):
             w.apply_globals()
         report.append("eps tab layout (sections, empty state): OK")
         # Anleitung in leeren Tabs: Texte in beiden Sprachen, Link zeigt auf eine vorhandene README-Überschrift
+        from uvvis_i18n import TEXTS as TEXTS_
         heads_ = {lang_: [ln_[3:].strip() for ln_ in (Path(__file__).parent / f_).read_text(encoding="utf-8").splitlines()
                           if ln_.startswith("## ")]
                   for lang_, f_ in (("de", "README.de.md"), ("en", "README.md"))
@@ -3971,6 +3972,9 @@ def selftest(outdir, with_isnet=False):
             assert not heads_ or (de_ in heads_["de"] and en_ in heads_["en"]), (key_, de_, en_)
             for part_ in ("title", "files", "steps"):
                 assert T(f"guide_{key_}_{part_}") != f"guide_{key_}_{part_}", (key_, part_)
+        for lang_ in heads_:                                       # Startbildschirm/Hilfe: Schnellstart-Link
+            q_ = TEXTS_["readme_quickstart"][0 if lang_ == "de" else 1]
+            assert q_ in heads_[lang_], (lang_, q_)
         assert uvvis_tabs.gh_anchor("IR + EA tab") == "ir--ea-tab"
         assert uvvis_tabs.gh_anchor("CV-Tab (Cyclovoltammetrie)") == "cv-tab-cyclovoltammetrie"
         guide_ = w.cv_tab.preview_stack.widget(0).findChild(uvvis_tabs.EmptyGuide)

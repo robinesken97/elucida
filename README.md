@@ -88,6 +88,42 @@ distribution at least as new as Ubuntu 22.04 (glibc 2.35), as does the tar.gz.
 
 On Windows, always keep the whole `Elucida` folder together. The `.exe` does not work without the `_internal` folder next to it.
 
+## Quick start: from an empty project to the SI
+
+1. **Create a project:** without a project the program shows a welcome page: **New project…** and choose an empty
+   folder or create one in the dialog (or **File → New project…**). A project
+   stands for one compound. All files you load are copied into it; it is saved automatically.
+2. **Set the compound:** **Compound …** in the toolbar: name (e.g. the sample number) and the ChemDraw file (CDXML).
+   Formula and molar mass are taken from it. This is the default for all tabs and the SI.
+3. **Load data:** simply drag files into the window – Elucida puts them into the right tab: CIF → **X-Ray**, SVG from
+   MestReNova → **NMR**, xyz/ORCA/Gaussian → **DFT**, MS report (.docx) or Bruker .d → **HRMS**, OPUS file →
+   **IR + EA**, UV-Vis measurement data (CSV, DSW/BSW) → **UV-Vis (ε)**. For CV, SEC, EPR, overlay and fluorescence use
+   **Add files…** in the tab. An empty tab shows what it needs and where it comes from.
+4. **Evaluate:** settings on the left (rarely used ones are collapsed; **"(changed)"** shows where something differs
+   from the default), the figure on the right. Labels, structures and insets can be dragged with the mouse.
+   **Ctrl+Z** / **⌘Z** undoes everything.
+5. **Export:** **Export** at the bottom of the tab writes the figure (PDF/SVG/PNG, 16 × 11 cm for half an A4 page) and
+   the data into the project folder under `exports/`.
+6. **Create the SI:** **SI (Word)** in the toolbar collects everything that is ready in one Word file: synthesis,
+   characterisation paragraph (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis), figures two per page, crystal data
+   and DFT coordinates. Afterwards the program lists what is still missing.
+
+## Guides
+
+Step by step through one workflow, with pictures:
+
+- [Synthesis and characterisation to the SI](docs/anleitungen/synthese-bis-si.en.md) – scheme, procedure, NMR, IR,
+  HRMS, elemental analysis, SI section
+- [UV-Vis: ε from a dilution series](docs/anleitungen/uvvis-epsilon.en.md)
+- [Electrochemistry: CV and SEC](docs/anleitungen/elektrochemie.en.md)
+- [EPR: spectra, simulation and fit](docs/anleitungen/epr.en.md)
+- [Crystal structure and DFT](docs/anleitungen/struktur-dft.en.md)
+
+To try it without your own data: **Help → Open example project** creates a project with artificial data for all tabs.
+**Help → Guide for this tab** (F1) opens the matching section below.
+
+All settings of the individual tabs are described further down for reference.
+
 ## Workflow
 
 1. **Open data:** File → Open measurement data, or drag files onto the window. Cary CSV/TXT exports and the
@@ -154,7 +190,7 @@ other projects. The figures are not affected by the theme.
 
 A project usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
 number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotopes such as D included, editable). This is
-the default for the ε tab (structure, molar mass), the fluorescence tab and IR + MS; tabs that already have their own
+the default for the ε tab (structure, molar mass), the fluorescence tab, IR + EA and HRMS; tabs that already have their own
 structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
 characterisation paragraph of the SI section.
 
