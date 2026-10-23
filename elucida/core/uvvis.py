@@ -2,7 +2,7 @@
 """
 elucida/core/uvvis.py - Kern der UV-Vis-Auswertung (Lambert-Beer an Verdünnungsreihen).
 
-Wird von der GUI (uvvis_gui.py) genutzt, läuft aber auch allein:
+Wird von der GUI (elucida/app/main_window.py) genutzt, läuft aber auch allein:
   python -m elucida.core.uvvis config.yaml            # rendern + auswerten
   python -m elucida.core.uvvis messung.csv            # Cary-CSV mit Standardeinstellungen
   python -m elucida.core.uvvis config.yaml -i         # Layout mit der Maus anpassen ('w' = speichern)

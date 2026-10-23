@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
-import uvvis_gui as G  # noqa: E402
+from elucida.app import main_window as G  # noqa: E402
 
 SIZE = (1600, 1000)
 # (Dateiname, Tab-Schlüssel, Themes) in der Reihenfolge der Tabs

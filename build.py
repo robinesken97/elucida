@@ -27,8 +27,8 @@ args = [
     "--hidden-import", "elucida.formats.parseuv_lite",
     "--hidden-import", "olefile",
     "--hidden-import", "openpyxl",
-    "--hidden-import", "uvvis_demo",               # Beispielprojekt (Hilfe-Menü), nur bei Bedarf importiert
-    "--hidden-import", "PySide6.QtSvg",          # Symbole/Theme (uvvis_style)
+    "--collect-submodules", "elucida",           # alle eigenen Module, auch nur bei Bedarf importierte (z. B. demo)
+    "--hidden-import", "PySide6.QtSvg",          # Symbole/Theme (elucida/app/style.py)
     "--hidden-import", "matplotlib.backends.backend_qtagg",
     "--hidden-import", "matplotlib.backends.backend_agg",
     "--hidden-import", "matplotlib.backends.backend_pdf",
@@ -41,7 +41,7 @@ args = [
     "--exclude-module", "PySide6.QtMultimedia",
     "--exclude-module", "PySide6.QtCharts",
     "--exclude-module", "PySide6.QtDataVisualization",
-    "uvvis_gui.py",
+    "Elucida.py",
 ]
 if sys.platform == "darwin":
     args[4:4] = ["--osx-bundle-identifier", "de.elucida.app"]

@@ -1,8 +1,8 @@
 """
-uvvis_gui.py - Grafische Oberfläche der UV-Vis-Auswertung (Windows / macOS / Linux).
+elucida/app/main_window.py - Grafische Oberfläche der UV-Vis-Auswertung (Windows / macOS / Linux).
 
-Start:      python uvvis_gui.py
-Selbsttest: python uvvis_gui.py --selftest AUSGABEORDNER [--selftest-isnet]
+Start:      python Elucida.py   (oder python -m elucida)
+Selbsttest: python Elucida.py --selftest AUSGABEORDNER [--selftest-isnet]
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import re
 import traceback
 from pathlib import Path
 
-from elucida import APP_NAME, APP_VERSION  # noqa: F401  (Versionsnummer nur in elucida/__init__.py)
+from elucida import APP_NAME, APP_VERSION, ROOT  # noqa: F401  (Versionsnummer nur in elucida/__init__.py)
 OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
@@ -70,7 +70,7 @@ FIGSIZE = (8.0, 6.0)
 
 
 def resource_path(rel):
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    base = Path(getattr(sys, "_MEIPASS", ROOT))
     return base / rel
 
 
@@ -1619,7 +1619,7 @@ class MainWindow(QMainWindow):
 
     def open_demo(self, folder=None):
         """Beispielprojekt mit künstlichen Daten (alle Tabs) anlegen und öffnen."""
-        import uvvis_demo as DEMO
+        from elucida.app import demo as DEMO
         self.maybe_save()
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -3995,10 +3995,10 @@ def selftest(outdir, with_isnet=False):
         report.append("eps tab layout (sections, empty state): OK")
         # Anleitung in leeren Tabs: Texte in beiden Sprachen, Link zeigt auf eine vorhandene README-Überschrift
         from elucida.app.i18n import TEXTS as TEXTS_
-        heads_ = {lang_: [ln_[3:].strip() for ln_ in (Path(__file__).parent / f_).read_text(encoding="utf-8").splitlines()
+        heads_ = {lang_: [ln_[3:].strip() for ln_ in (ROOT / f_).read_text(encoding="utf-8").splitlines()
                           if ln_.startswith("## ")]
                   for lang_, f_ in (("de", "README.de.md"), ("en", "README.md"))
-                  if (Path(__file__).parent / f_).exists()}           # im gebauten Programm fehlt die README
+                  if (ROOT / f_).exists()}           # im gebauten Programm fehlt die README
         for key_, (de_, en_) in TABS.GUIDE_HEAD.items():
             assert not heads_ or (de_ in heads_["de"] and en_ in heads_["en"]), (key_, de_, en_)
             for part_ in ("title", "files", "steps"):
@@ -5218,7 +5218,7 @@ def selftest(outdir, with_isnet=False):
         report.append("SI lines (EA, UV-Vis) + SI section as Word (parts selectable): OK")
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
-        rn_path = Path(__file__).resolve().parent / "release_notes.py"
+        rn_path = ROOT / "release_notes.py"
         if rn_path.exists() and not getattr(sys, "frozen", False):
             import importlib.util
             spec_ = importlib.util.spec_from_file_location("release_notes", rn_path)
