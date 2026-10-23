@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
-from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
 from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QImage,  # noqa: E402
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
-                               QSpinBox, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTextBrowser,
+                               QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTableWidget, QTableWidgetItem, QTextBrowser,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import uvvis_core as core  # noqa: E402
@@ -545,6 +545,14 @@ class MainWindow(QMainWindow):
         self.autosave_timer = QTimer(self, singleShot=True, interval=800)
         self.autosave_timer.timeout.connect(self.autosave)
 
+        # Meldungen als Einblendung unten über dem Fenster statt Statusleiste: die Leiste bliebe nach der ersten
+        # Meldung als leerer Streifen unter den Fußleisten stehen (Knöpfe nicht mittig), Ein-/Ausblenden ließe die
+        # Abbildung bei jedem Autosave springen
+        self._status = QStatusBar()                      # nur Nachrichtenträger (showMessage mit Zeitlimit), unsichtbar
+        self._toast = QLabel(self, objectName="toast", alignment=Qt.AlignCenter)
+        self._toast.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._toast.hide()
+        self._status.messageChanged.connect(self._place_toast)
         self.log_signal.connect(self._append_log)
         core.LOG = IMG.LOG = lambda m="": self.log_signal.emit(str(m))
         icon = resource_path("assets/icon.png")
@@ -2827,6 +2835,28 @@ class MainWindow(QMainWindow):
         elif box.clickedButton() is b_skip:
             self.settings.setValue("update_skip", info["version"])
 
+    def statusBar(self):
+        return self._status
+
+    def _place_toast(self, msg=None):
+        """Meldung unten rechts über der Abbildung (nimmt keinen Platz im Layout ein)."""
+        t = self._toast
+        msg = self._status.currentMessage() if msg is None else msg
+        if not msg:
+            t.hide()
+            return
+        t.setText(msg)
+        t.ensurePolished()
+        w = min(t.fontMetrics().horizontalAdvance(msg) + 32, self.width() - 40)
+        h = t.fontMetrics().height() + 14
+        t.setGeometry(self.width() - w - 24, self.height() - h - 24, w, h)
+        t.show()
+        t.raise_()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._place_toast()
+
     def closeEvent(self, ev):
         if not self.maybe_save():
             ev.ignore()
@@ -3980,6 +4010,33 @@ def selftest(outdir, with_isnet=False):
         assert uvvis_tabs.gh_anchor("CV-Tab (Cyclovoltammetrie)") == "cv-tab-cyclovoltammetrie"
         guide_ = w.cv_tab.preview_stack.widget(0).findChild(uvvis_tabs.EmptyGuide)
         assert guide_ is not None and T("guide_cv_title") in guide_.label.text()
+        w.resize(1440, 900)
+        w.show()
+        for tab_, key_ in ((w.syn_tab, "syn"), (w.nmr_tab, "nmr"), (w.cv_tab, "cv")):   # überall gleich und mittig
+            w.main_tabs.setCurrentWidget(tab_)
+            pump(0.1)
+            assert tab_.preview_stack.currentIndex() == 0, key_
+            g_ = tab_.preview_stack.widget(0)
+            g_ = g_ if isinstance(g_, uvvis_tabs.EmptyGuide) else g_.findChild(uvvis_tabs.EmptyGuide)
+            assert g_ is not None and T(f"guide_{key_}_title") in g_.label.text(), key_
+            b_ = g_.findChild(QPushButton)
+            assert b_ is not None, key_
+            top_, bottom_ = g_.label.geometry().top(), g_.height() - b_.geometry().bottom()
+            assert abs(top_ - bottom_) <= 12, (key_, top_, bottom_, g_.size())
+            mid_ = (g_.label.geometry().center().x(), b_.geometry().center().x())
+            assert all(abs(m_ - g_.width() / 2) <= 12 for m_ in mid_), (key_, mid_, g_.width())
+        # Meldungen als Einblendung: keine Statusleiste unter den Fußleisten, Knöpfe oben und unten gleich weit weg
+        w.statusBar().showMessage("selftest", 5000)
+        assert w._toast.isVisible() and w._toast.text() == "selftest"     # sofort (andere Meldungen folgen beim pump)
+        pump(0.1)
+        bar_ = w.cv_tab.findChild(QFrame, "bottomBar")
+        y_ = bar_.mapTo(w, bar_.rect().bottomLeft()).y()
+        assert y_ >= w.height() - 3, (y_, w.height())
+        btn_ = max((c_ for c_ in bar_.findChildren(QPushButton) if c_.isVisible()), key=lambda c_: c_.height())
+        gap_ = (btn_.geometry().top(), bar_.height() - btn_.geometry().bottom() - 1)
+        assert abs(gap_[0] - gap_[1]) <= 2, gap_
+        w.statusBar().clearMessage()                                      # Signal kommt sofort (ohne pump: Autosave)
+        assert not w._toast.isVisible(), (w._toast.text(), w.statusBar().currentMessage())
         report.append("empty-tab guides: OK")
         # Navigation: Gruppen oben statt Reiter; Knopf wechselt den Tab, Tabwechsel markiert den Knopf
         assert len(w.nav_buttons) == 12 and w.main_tabs.tabBar().isHidden()
@@ -4065,6 +4122,27 @@ def selftest(outdir, with_isnet=False):
                 need_ = cf_.content.minimumSizeHint().width()
                 have_ = cf_.scroll.viewport().width()
                 assert need_ <= have_ + 1, (w._tab_keys[i_], size_, need_, have_)
+        # Neuaufbau (Projekt öffnen): ausstehende Anpassung einer gelöschten Spalte darf nicht abstürzen
+        sp_ = QSplitter()
+        col_, sc_ = QWidget(), QScrollArea()
+        cont_ = QWidget()
+        sc_.setWidget(cont_)
+        QVBoxLayout(col_).addWidget(sc_)
+        sp_.addWidget(col_)
+        sp_.addWidget(QWidget())
+        cf_ = STYLE.fit_column(cont_, sc_, None, col_, sp_)
+        QApplication.sendEvent(cont_, QEvent(QEvent.LayoutRequest))       # Anpassung steht aus
+        hook_, errs_ = sys.excepthook, []
+        sys.excepthook = lambda *a: errs_.append(a[1])
+        try:
+            import shiboken6 as _shb
+            _shb.delete(sp_)                                                  # wie der Neuaufbau der Tabs
+            pump(0.1)
+            cf_.fit()
+            cf_._moved(10, 1)
+        finally:
+            sys.excepthook = hook_
+        assert not errs_, errs_
         report.append("left column (folds, changed mark, result tabs, field grid, never clipped): OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten

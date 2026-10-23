@@ -314,7 +314,7 @@ def doc_to_html(doc):
 from PySide6.QtCore import Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QFont, QImage, QPixmap, QTextCharFormat  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame, QGroupBox,  # noqa: E402
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea, QSplitter,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget,
                                QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
 import uvvis_project as PRJ  # noqa: E402
@@ -346,8 +346,10 @@ class SynthTab(QWidget):
         ls.setFrameShape(QFrame.NoFrame)
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         ls.setMinimumWidth(max(520, left.minimumSizeHint().width() + 24))
-        right = QWidget()
-        rv = QVBoxLayout(right)
+        from uvvis_tabs import EmptyGuide
+        prev = QWidget()
+        rv = QVBoxLayout(prev)
+        rv.setContentsMargins(0, 0, 0, 0)
         # Schema auf weißem Grund wie in Word (im dunklen Modus sonst kaum lesbar), nur wenn eines geladen ist;
         # der Text darunter folgt dem Erscheinungsbild
         self.lbl_prev = QLabel("", alignment=Qt.AlignCenter)
@@ -356,6 +358,11 @@ class SynthTab(QWidget):
         rv.addWidget(self.lbl_prev)
         self.txt_prev = QTextBrowser()
         rv.addWidget(self.txt_prev, 1)
+        right = QWidget()
+        self.preview_stack = QStackedWidget()             # 0 = Anleitung (leerer Tab, wie die anderen Tabs), 1 = Vorschau
+        self.preview_stack.addWidget(EmptyGuide("syn", (T("syn_scheme_pick"), self.pick_scheme)))
+        self.preview_stack.addWidget(prev)
+        QVBoxLayout(right).addWidget(self.preview_stack)
         from uvvis_tabs import footer
         split = QSplitter(Qt.Horizontal)
         split.addWidget(footer(self, ls))
@@ -732,10 +739,9 @@ class SynthTab(QWidget):
             self.lbl_prev.setPixmap(QPixmap())
             self.lbl_prev.hide()
         name = self.compound_name()
-        if st is None and not (self.st.get("proc") or "").strip():      # noch nichts da: Anleitung statt leerer Seite
-            from uvvis_tabs import guide_html
-            self.txt_prev.setOpenExternalLinks(True)
-            self.txt_prev.setHtml(guide_html("syn"))
+        empty = st is None and not (self.st.get("proc") or "").strip()   # noch nichts da: Anleitung statt leerer Seite
+        self.preview_stack.setCurrentIndex(0 if empty else 1)
+        if empty:
             return
         self.txt_prev.setHtml(f"<p>Synthesis of <b>{_h.escape(name)}</b></p><p style='text-align:justify'>"
                               f"{self.st.get('proc') or ''}</p>")

@@ -489,7 +489,7 @@ from PySide6.QtGui import QColor, QImage, QPixmap  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,  # noqa: E402
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
-                               QWidget)
+                               QStackedWidget, QWidget)
 
 import uvvis_project as PRJ  # noqa: E402
 from uvvis_style import HINT_CSS, make_form  # noqa: E402
@@ -528,12 +528,11 @@ class NMRTab(QWidget):
         ls.setFrameShape(QFrame.NoFrame)
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         ls.setMinimumWidth(max(460, left.minimumSizeHint().width() + 24))
-        right = QWidget()
-        rv = QVBoxLayout(right)
-        from uvvis_tabs import guide_html
-        self.lbl_prev = QLabel(guide_html("nmr", boxed=True), alignment=Qt.AlignCenter, wordWrap=True)
-        self.lbl_prev.setTextFormat(Qt.RichText)
-        self.lbl_prev.setOpenExternalLinks(True)
+        from uvvis_tabs import EmptyGuide
+        prev = QWidget()
+        rv = QVBoxLayout(prev)
+        rv.setContentsMargins(0, 0, 0, 0)
+        self.lbl_prev = QLabel("", alignment=Qt.AlignCenter)
         self.lbl_prev.setMinimumHeight(300)
         self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen
         self._drag_rect, self._drag, self._pm_size = None, None, (1, 1)
@@ -541,6 +540,11 @@ class NMRTab(QWidget):
         self.lbl_cap = QLabel("", wordWrap=True)
         self.lbl_cap.setTextFormat(Qt.RichText)
         rv.addWidget(self.lbl_cap)
+        right = QWidget()
+        self.preview_stack = QStackedWidget()             # 0 = Anleitung (leerer Tab, wie die anderen Tabs), 1 = Vorschau
+        self.preview_stack.addWidget(EmptyGuide("nmr", (T("nmr_add"), self.add_svg)))
+        self.preview_stack.addWidget(prev)
+        QVBoxLayout(right).addWidget(self.preview_stack)
         from uvvis_tabs import footer
         split = QSplitter(Qt.Horizontal)
         split.addWidget(footer(self, ls))
@@ -976,10 +980,10 @@ class NMRTab(QWidget):
         """Vorschau = Spektrum (Mnova-SVG) + Struktur als Bild an ihrer Lage; die Struktur lässt sich ziehen."""
         s = self.current()
         self._drag_rect = None
-        if s is None or not Path(s["file"]).is_file():
-            from uvvis_tabs import guide_html
+        empty = s is None or not Path(s["file"]).is_file()
+        self.preview_stack.setCurrentIndex(0 if empty else 1)
+        if empty:
             self.lbl_prev.setPixmap(QPixmap())
-            self.lbl_prev.setText(guide_html("nmr", boxed=True))
             self.lbl_cap.setText("")
             return
         import pymupdf

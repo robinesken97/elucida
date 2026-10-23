@@ -220,11 +220,11 @@ TEXTS = {
                        "werden überschrieben)", "Writes the chosen formats to the project folder under “exports” "
                        "(existing files are overwritten)"),
     "drag_hint": ("Maus: Inset, Bilder und Labels ziehen zum Verschieben, Mausrad über Inset/Bild "
-                  "ändert die Größe. Über den Spektren zeigt die Statusleiste λ und A des nächsten "
+                  "ändert die Größe. Über den Spektren zeigt eine Einblendung unten rechts λ und A des nächsten "
                   "Messpunkts, Doppelklick fügt dort eine Bande hinzu. CSV, Struktur und Foto können ins "
                   "Fenster gezogen werden.",
                   "Mouse: drag inset, images and labels to move them; scroll over inset/image to "
-                  "resize. Over the spectra the status bar shows λ and A of the nearest data point; "
+                  "resize. Over the spectra a box at the bottom right shows λ and A of the nearest data point; "
                   "double-click adds a band there. CSV, structure and photo can be dropped onto the window."),
     "tab_results": ("Ergebnisse", "Results"),
     "tab_log": ("Protokoll", "Log"),
@@ -351,9 +351,9 @@ TEXTS = {
     "act_log": ("Protokoll…", "Log…"),
     "log_title": ("Protokoll", "Log"),
     "drag_hint_tab": ("Legende, Labels und Bilder lassen sich mit der Maus verschieben, Bilder per "
-                      "Mausrad skalieren. Über den Kurven zeigt die Statusleiste λ und den Wert.",
+                      "Mausrad skalieren. Über den Kurven zeigt eine Einblendung unten rechts λ und den Wert.",
                       "Legend, labels and images can be dragged with the mouse; scroll over images to "
-                      "resize. Over the curves the status bar shows λ and the value."),
+                      "resize. Over the curves a box at the bottom right shows λ and the value."),
     "auto": ("auto", "auto"),
     "ov_curves": ("Spektren", "Spectra"),
     "tab_irms": ("IR + EA", "IR + EA"),

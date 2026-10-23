@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import shiboken6
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -356,18 +357,25 @@ class ColumnFit(QObject):
         return w + self.scroll.verticalScrollBar().sizeHint().width() + 4
 
     def _moved(self, pos, index):
-        if index == 1:
+        if index == 1 and self.alive():
             self.user_w = self.split.sizes()[0]
 
     def eventFilter(self, obj, ev):
         if ev.type() in (QEvent.LayoutRequest, QEvent.Show, QEvent.FontChange, QEvent.StyleChange) and not self._pending:
             self._pending = True
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, self.fit)
+            QTimer.singleShot(0, self, self.fit)                # Kontext: verfällt mit der Spalte
         return False
+
+    def alive(self):
+        """Nach einem Neuaufbau der Tabs (Projekt öffnen, Sprache) können Spalte/Inhalt schon gelöscht sein."""
+        return all(shiboken6.isValid(o) for o in (self, self.content, self.scroll, self.column, self.split)
+                   if o is not None) and (self.bar is None or shiboken6.isValid(self.bar))
 
     def fit(self):
         self._pending = False
+        if not self.alive():
+            return
         need = self.needed()
         self.column.setMinimumWidth(need)
         sizes = self.split.sizes()
@@ -612,6 +620,7 @@ QToolBar QToolButton {{ border: 1px solid transparent; border-radius: 5px; paddi
 QToolBar QToolButton:hover {{ background: {c['hover']}; border-color: {c['border']}; }}
 QToolBar QToolButton:pressed {{ background: {c['border']}; }}
 QToolBar::separator {{ background: {c['border']}; width: 1px; margin: 5px 6px; }}
+QLabel#toast {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 8px; }}
 QFrame#bottomBar {{ background: {c['window']}; border-top: 1px solid {c['border']}; }}
 QGroupBox {{ font-weight: bold; padding-top: 2.5em; }}
 QGroupBox::title {{ left: 16px; top: 12px; }}

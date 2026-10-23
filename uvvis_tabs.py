@@ -126,15 +126,16 @@ def guide_url(key):
     return README_URL + ("README.de.md" if de else "README.md") + "#" + gh_anchor(GUIDE_HEAD[key][0 if de else 1])
 
 
-def guide_html(key, boxed=False):
-    """Anleitung für einen leeren Tab: was herauskommt, welche Dateien, Schritte, Link zur README.
-    boxed: in eine zentrierte, begrenzt breite Tabelle (für mittig ausgerichtete Labels, Text bleibt linksbündig)."""
-    steps = "".join(f"<li style='margin-bottom:4px'>{html.escape(s)}</li>" for s in T(f"guide_{key}_steps").split("\n"))
+def guide_html(key):
+    """Anleitung für einen leeren Tab: was herauskommt, welche Dateien, Schritte, Link zur README."""
+    # Schritte als Tabelle: Nummer bündig mit Titel und Link, umbrochener Text bündig mit seiner ersten Zeile
+    steps = "".join(f"<tr><td style='padding:0 6px 4px 0'>{i}.</td><td style='padding:0 0 4px 0'>{html.escape(s)}</td></tr>"
+                    for i, s in enumerate(T(f"guide_{key}_steps").split("\n"), 1))
     body = (f"<p style='font-size:15px'><b>{html.escape(T(f'guide_{key}_title'))}</b></p>"
             f"<p style='color:gray'>{html.escape(T(f'guide_{key}_files'))}</p>"
-            f"<ol style='margin-left:-20px'>{steps}</ol>"
+            f"<table cellspacing='0' cellpadding='0' style='margin-top:8px'>{steps}</table>"
             f"<p><a href='{guide_url(key)}'>{html.escape(T('guide_more'))}</a></p>")
-    return f"<table align='center' width='540'><tr><td>{body}</td></tr></table>" if boxed else body
+    return body
 
 
 def footer(tab, left_scroll):
@@ -188,10 +189,11 @@ class EmptyGuide(QFrame):
         self.label.setMinimumWidth(280)
         self.label.setMaximumWidth(560)
         # ohne Ausrichtungs-Flag einfügen (sonst rechnet Qt die Höhe des umbrochenen Texts falsch und schneidet ab),
-        # zentriert über Dehnfelder links und rechts
+        # zentriert über gleiche Dehnfelder links und rechts; Breite = längste Zeile (fit_width), sonst sitzt der
+        # linksbündige Text links in einem zu breiten Feld
         row = QHBoxLayout()
         row.addStretch(1)
-        row.addWidget(self.label, 4)
+        row.addWidget(self.label, 100)
         row.addStretch(1)
         v.addLayout(row)
         if action is not None:
@@ -200,7 +202,21 @@ class EmptyGuide(QFrame):
             b.clicked.connect(action[1])
             v.addSpacing(6)
             v.addWidget(b, 0, Qt.AlignHCenter)
-        v.addStretch(2)
+        v.addStretch(1)                                     # Block genau in der Mitte der Fläche
+
+    def fit_width(self):
+        """Feld so breit wie die längste Zeile (höchstens 560 px) – mit der Schrift nach dem Stylesheet."""
+        from PySide6.QtGui import QTextDocument
+        doc = QTextDocument()
+        doc.setDefaultFont(self.label.font())
+        doc.setDocumentMargin(0)
+        doc.setHtml(self.label.text())
+        doc.setTextWidth(560)
+        self.label.setMaximumWidth(max(280, min(560, int(doc.idealWidth()) + 6)))
+
+    def showEvent(self, ev):
+        self.fit_width()
+        super().showEvent(ev)
 
 
 class CanvasHost(QWidget):
