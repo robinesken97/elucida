@@ -137,6 +137,35 @@ def guide_html(key, boxed=False):
     return f"<table align='center' width='540'><tr><td>{body}</td></tr></table>" if boxed else body
 
 
+def footer(tab, left_scroll):
+    """Linke Spalte mit Fußleiste wie in den anderen Tabs: Exportieren (hier: Word-Datei ins Projekt)."""
+    from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+    row = QHBoxLayout()
+    row.setContentsMargins(8, 6, 8, 6)
+    row.addStretch(1)
+    b = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
+    b.setProperty("accent", True)
+    b.setToolTip(T("btn_export_word_tip"))
+    b.clicked.connect(lambda: _export_word(tab))
+    row.addWidget(b)
+    bar = QFrame(objectName="bottomBar")
+    bar.setLayout(row)
+    col = QWidget()
+    v = QVBoxLayout(col)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(0)
+    v.addWidget(left_scroll, 1)
+    v.addWidget(bar)
+    tab.btn_export = b
+    return col
+
+
+def _export_word(tab):
+    path = tab.export_dialog()
+    if path:
+        tab.main.exported([Path(path).parent])
+
+
 class EmptyGuide(QFrame):
     """Leerer Vorschaubereich mit Anleitung (guide_html) und optional einem Knopf für den ersten Schritt."""
 
@@ -792,7 +821,7 @@ class FigureTab(QWidget):
             out = self.export_to(base)
         except Exception as e:
             return self.main.error(str(e))
-        self.main.info(T("exported_to", p=str(base.parent)))
+        self.main.exported([base.parent])
         return out
 
     def export_to(self, base: Path):
@@ -974,6 +1003,7 @@ class OverlayTab(FigureTab):
             b.clicked.connect(fn)
             if fn == self.combine_selected:
                 b.setToolTip(T("ov_combine_tip"))
+                self.btn_combine = b
             row.addWidget(b)
         v.addLayout(row)
         self.table = QTableWidget(0, 4)
@@ -985,6 +1015,8 @@ class OverlayTab(FigureTab):
         self.table.setMinimumHeight(150)
         self.table.itemChanged.connect(self.table_edited)
         self.table.itemSelectionChanged.connect(self.show_details)
+        self.table.itemSelectionChanged.connect(self.update_combine)
+        QTimer.singleShot(0, self.update_combine)             # Anfangszustand (nichts markiert)
         v.addWidget(self.table)
         lay = self.lv
         lay.addWidget(g)
@@ -1374,6 +1406,13 @@ class OverlayTab(FigureTab):
         return sum(1 for e, f in zip(Ea, fa)
                    if f > 0 and np.any((np.abs(Eb - e) < tol_ev) & (np.abs(fb - f) < 0.01 * f + 1e-4)))
 
+    def update_combine(self):
+        """„Kombinieren“ nur aktiv, wenn mindestens zwei TD-DFT-Einträge markiert sind."""
+        rows = {i.row() for i in self.table.selectedIndexes()}
+        ents = self.st["entries"]
+        n = sum(1 for r in rows if 0 <= r < len(ents) and ents[r]["kind"] == "calc")
+        self.btn_combine.setEnabled(n >= 2)
+
     def combine_selected(self):
         """Markierte TD-DFT-Einträge zu einem neuen Eintrag zusammenführen (Originale ausgeblendet)."""
         rows = sorted({i.row() for i in self.table.selectedIndexes()})
@@ -1439,6 +1478,7 @@ class OverlayTab(FigureTab):
             self.table.setItem(i, 3, it)
         self.table.resizeColumnToContents(0)
         self._loading = False
+        self.update_combine()                             # Liste neu aufgebaut: Knopfzustand nachziehen
 
     def _set_color(self, e, c):
         e["color"] = c

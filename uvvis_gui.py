@@ -2526,8 +2526,7 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return
         out = self.export_all()
-        folders = sorted({str(p.parent) for p in out})
-        self.info(T("exported_to", p="\n".join(folders)))
+        self.exported(p.parent for p in out)
 
     def export_all(self, folder: Path = None):
         """Alle Serien exportieren: Abbildungen, Ergebnis-CSV und Excel-Report.
@@ -2658,6 +2657,20 @@ class MainWindow(QMainWindow):
         self.log_signal.emit(msg)
         if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             QMessageBox.information(self, T("app_title"), msg)
+
+    def exported(self, folders):
+        """Meldung nach einem Export mit Knopf „Ordner öffnen“ (erster Zielordner im Finder/Explorer)."""
+        folders = sorted({str(f) for f in folders})
+        msg = T("exported_to", p="\n".join(folders))
+        self.log_signal.emit(msg)
+        self.last_export = folders
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen" or not folders:
+            return
+        box = QMessageBox(QMessageBox.Information, T("app_title"), msg, QMessageBox.Ok, self)
+        b_open = box.addButton(T("open_folder"), QMessageBox.ActionRole)
+        box.exec()
+        if box.clickedButton() is b_open:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(folders[0]))
 
     # ------------------------------------------------------------ Updates
     def _auto_updates(self):
@@ -3068,8 +3081,10 @@ def selftest(outdir, with_isnet=False):
             ents[r_]["visible"] = r_ == 0
         w.ov_tab.table.clearSelection()
         w.ov_tab.table.setSelectionMode(QAbstractItemView.MultiSelection)
+        assert not w.ov_tab.btn_combine.isEnabled()                 # nichts markiert: „Kombinieren“ aus
         for r_ in (n_before, n_before + 1):
             w.ov_tab.table.selectRow(r_)
+        assert w.ov_tab.btn_combine.isEnabled()                     # zwei TD-DFT-Einträge markiert
         w.ov_tab.combine_selected()
         comb = ents[-1]
         assert len(comb["sources"]) == 2 and not ents[n_before]["visible"], comb
@@ -3898,6 +3913,11 @@ def selftest(outdir, with_isnet=False):
         assert sp0_.value() != 50 or not sp0_.hasFocus()      # mit Fokus wie gewohnt (offscreen evtl. ohne Fokus)
         sa_.close()
         report.append("navigation, detail hint, SI button, wheel guard: OK")
+        # Synthese/NMR mit Fußleiste wie die anderen Tabs; „Aus Schema“ nur mit Schema; Exportmeldung mit Ordner
+        assert w.syn_tab.btn_export.property("accent") and w.nmr_tab.btn_export.property("accent")
+        assert w.syn_tab.btn_from_scheme.isEnabled() == (w.syn_tab.scheme_parts() is not None)
+        w.exported([proj / "exports"])
+        assert w.last_export == [str(proj / "exports")]
         # linke Spalte: Karten eingeklappt mit „(geändert)“, Ergebnisse als Reiter neben der Abbildung
         fc_ = next(f_ for f_ in w.cv_tab.folds if f_.group is w.cv_tab.grp_common)
         fc_.set_open(False, remember=False)

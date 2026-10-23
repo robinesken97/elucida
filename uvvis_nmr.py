@@ -541,8 +541,9 @@ class NMRTab(QWidget):
         self.lbl_cap = QLabel("", wordWrap=True)
         self.lbl_cap.setTextFormat(Qt.RichText)
         rv.addWidget(self.lbl_cap)
+        from uvvis_tabs import footer
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(ls)
+        split.addWidget(footer(self, ls))
         split.addWidget(right)
         split.setSizes([500, 900])
         lay = QVBoxLayout(self)

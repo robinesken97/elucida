@@ -3780,7 +3780,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.write_excel(p)
         except PermissionError:
             return self.main.error(T("report_locked", p=p))
-        self.main.info(T("exported_to", p=str(p.parent)))
+        self.main.exported([p.parent])
 
     # -- Export -----------------------------------------------------------------------------
     def export_to(self, base: Path):

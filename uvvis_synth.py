@@ -356,8 +356,9 @@ class SynthTab(QWidget):
         rv.addWidget(self.lbl_prev)
         self.txt_prev = QTextBrowser()
         rv.addWidget(self.txt_prev, 1)
+        from uvvis_tabs import footer
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(ls)
+        split.addWidget(footer(self, ls))
         split.addWidget(right)
         split.setSizes([620, 800])
         lay = QVBoxLayout(self)
@@ -444,6 +445,8 @@ class SynthTab(QWidget):
             if tip:
                 b.setToolTip(tip)
             b.clicked.connect(fn)
+            if fn == self.rows_from_scheme:
+                self.btn_from_scheme = b                  # nur mit Schema aktiv (update_scheme_info)
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
@@ -563,6 +566,9 @@ class SynthTab(QWidget):
 
     def update_scheme_info(self):
         sp = self.scheme_parts()
+        if getattr(self, "btn_from_scheme", None) is not None:
+            self.btn_from_scheme.setEnabled(sp is not None)
+            self.btn_from_scheme.setToolTip(T("syn_from_scheme_tip") if sp is not None else T("syn_need_scheme"))
         if sp is None:
             self.lbl_scheme.setText(T("syn_scheme_none"))
             self.lbl_scheme.setStyleSheet(HINT_CSS)
