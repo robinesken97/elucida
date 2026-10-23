@@ -5128,7 +5128,8 @@ def selftest(outdir, with_isnet=False):
         # Startbildschirm/Tabs je nach Projekt; Beispielprojekt (künstliche Daten) füllt die Tabs
         assert w.center.currentIndex() == 1
         d_demo = w.open_demo(out / "demo")
-        assert d_demo and Path(w.project_dir) == out / "demo" and w.center.currentIndex() == 1
+        assert d_demo and Path(w.project_dir) == out / "demo" and w.center.currentIndex() == 1, (
+            d_demo, w.project_dir, w.center.currentIndex(), w.log.toPlainText()[-3000:])
         assert w.groups and w.cv_state["files"] and w.xray_state["entries"] and w.dft_state["entries"]
         assert w.syn_state["proc"] and w.nmr_tab.spectra()
         report.append("welcome page + example project: OK")
