@@ -870,7 +870,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
-                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white")
+                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black")
 
     # Größe/Formate wie im X-Ray-Tab (keine Achsen)
     common_box = XRAY.XrayTab.common_box
@@ -1012,7 +1012,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
         self.cmb_style = QComboBox()
-        for key in XRAY.STYLES:
+        for key in XRAY.DFT_STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
         f.addRow(T("xr_style"), self.cmb_style)
         self.cb_h = QCheckBox(T("xr_show_h"))
@@ -1044,6 +1044,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         f.addRow(T("bg_label"), self.cmb_bg)
         self.sp_lab = XRAY.label_size_spin(self.st)
         f.addRow(T("xr_label_size"), self.sp_lab)
+        self.cmb_lcol = XRAY.label_color_combo(self.st, self.changed)
+        f.addRow(T("xr_label_color"), self.cmb_lcol)
         f.addRow(XRAY.reset_buttons(self))
         hint = QLabel(T("dft_mouse_hint"))
         hint.setWordWrap(True)
@@ -1066,7 +1068,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.st.update(show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(), h_labels=self.cb_hlab.isChecked(),
                        label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
                        radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), label_pt=self.sp_lab.value(), style=self.cmb_style.currentData(),
-                       h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked())
+                       h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked(),
+                       label_color=self.cmb_lcol.currentData())
         self.update_num_status()
 
     def sync_widgets(self):
@@ -1083,7 +1086,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         cur = self.entry()
         if cur is not None:
             self.tbl.selectRow(es.index(cur))
-        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
+        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"))))
         self.cmb_lstyle.setCurrentIndex(max(0, self.cmb_lstyle.findData(st.get("label_style", "el_num"))))
         self.cb_h.setChecked(st["show_h"])
         self.cb_lab.setChecked(st["labels"])
@@ -1097,6 +1100,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sp_rad.setValue(st.get("radius", 0.25))
         self.sp_bond.setValue(st.get("bond_w", 0.08))
         self.sp_lab.setValue(st.get("label_pt", 0.0))
+        self.cmb_lcol.setCurrentIndex(max(0, self.cmb_lcol.findData(st.get("label_color", "black"))))
         self.fill_refs()
         self._loading = False
         self.update_num_status()
@@ -1265,9 +1269,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         # Labels: Vorschau wie eingestellt (zum Nummerieren), Export/Word nur mit „Labels im Export“
         labels = st["labels"] if interactive else st.get("export_labels", False)
         return dict(prob=50, show_h=st["show_h"], labels=labels or numbering, h_labels=st["h_labels"],
-                    colors={}, bond_w=st.get("bond_w", 0.08), hidden_frags=[], style=st.get("style", "mercury"),
+                    colors={}, bond_w=st.get("bond_w", 0.08), hidden_frags=[],
+                    style=XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"),
                     hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
-                    label_size=st.get("label_pt", 0.0),
+                    label_size=st.get("label_pt", 0.0), label_color=st.get("label_color", "black"),
                     h_radius=0.55 * r, bg=st.get("bg", "white"),
                     # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard (Standardwerte = Aussehen der Vorlage)
                     ball_scale=r / self.DEFAULT_STATE["radius"],

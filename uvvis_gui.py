@@ -4647,7 +4647,12 @@ def selftest(outdir, with_isnet=False):
         assert not e_x["hidden_atoms"] and not e_x["label_on"] and not e_x["wire"] and e_x["zoom"] == 1.0
         assert len(w.xray_state["entries"]) == n_ent and e_x["name"] == "umbenannt" and e_x["params"] == params_
         assert t_x.F is not None
-        # Stile: Mercury (C weiß, schwarze Bindungen, fette Labels), Olex2, Kugel-Stab glänzend, Kugel-Stab mit Tiefe
+        # Stile: Mercury (C weiß, schwarze Bindungen, fette Labels), Olex2, Kugel-Stab glänzend, Kugel-Stab mit Tiefe,
+        # Strichzeichnung. Im Tab X-Ray wählbar nur Mercury/Olex2 (alte Projekte -> Mercury); gezeichnet werden alle
+        assert [t_x.cmb_style.itemData(i_) for i_ in range(t_x.cmb_style.count())] == list(XRAY.XRAY_STYLES)
+        w.xray_state["style"] = "ballstick"
+        assert t_x.opts(t_x.entry())["style"] == "mercury"
+        styles0_, XRAY.XRAY_STYLES = XRAY.XRAY_STYLES, XRAY.STYLES
         for sty_ in XRAY.STYLES:
             w.xray_state["style"] = sty_
             t_x.render()
@@ -4655,7 +4660,8 @@ def selftest(outdir, with_isnet=False):
             assert F_s.style == sty_
             c_it = next(i_ for i_ in F_s.scene["atoms"] if i_["el"] == "C")
             if sty_ in XRAY.BALL_STYLES:
-                assert abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
+                assert (sty_ == "cartoon" or abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9) \
+                    and c_it["w"] == c_it["h"] and not c_it["curves"]
                 assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0
                 assert F_s.rods["inplace"], "Stabsegmente nicht im gemeinsamen Puffer"      # schnelles Drehen
                 pc_s = F_s.atom_art[c_it["k"]][0]
@@ -4666,6 +4672,14 @@ def selftest(outdir, with_isnet=False):
                 assert len(nd_) == len(nv_) and sum(nd_) < sum(nv_), (sum(nd_), sum(nv_))
                 assert [len(q_.vertices) for q_ in pc_s.get_paths()] == nv_
                 fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()                         # Phong: dunkel … Glanz
+                if sty_ == "cartoon":                           # weiß mit schwarzem Umriss, hohle Stäbe, Perspektive
+                    assert all(tuple(f_[:3]) == (1, 1, 1) for f_ in fc_[:-1]), fc_
+                    assert tuple(pc_s.get_edgecolors()[-1][:3]) == (0, 0, 0)
+                    lc_ = F_s.atom_rods[c_it["k"]][0].get_colors()
+                    assert {tuple(c_[:3]) for c_ in lc_} == {(0, 0, 0), (1, 1, 1)}, lc_
+                    ws_ = {round(i_["w"], 6) for i_ in F_s.scene["atoms"] if i_["el"] == "C"}
+                    assert len(ws_) > 1, ws_                     # vordere C größer als hintere
+                    continue
                 assert len(fc_) > 10 and sum(fc_[0][:3]) < sum(fc_[len(fc_) // 2][:3])    # Rand dunkler als Mitte
                 if sty_ == "ballstick":
                     assert min(max(f_[:3]) for f_ in fc_[-3:-1]) > 0.95, fc_[-3:]          # Glanzpunkt fast weiß
@@ -4677,8 +4691,25 @@ def selftest(outdir, with_isnet=False):
                 assert F_s._fog(F_s._zmax) == 0.0 and abs(F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) - XRAY.DEPTH_MAX) < 1e-9
             f_s = t_x.export_to(out / f"xray_style_{sty_}")
             assert all(f_.exists() and f_.stat().st_size > 500 for f_ in f_s if f_.suffix in (".pdf", ".svg", ".png"))
+        XRAY.XRAY_STYLES = styles0_
         w.xray_state["style"] = "mercury"
+        # Labelfarbe: schwarz (Standard) oder wie das Atom, helle Farben abgedunkelt (lesbar)
+        w.xray_state["label_color"] = "atom"
+        t_x.sync_widgets()
         t_x.render()
+        assert t_x.cmb_lcol.currentData() == "atom"
+        from matplotlib.colors import to_rgb
+        n_lab_ = next(a_ for k_, a_ in t_x.F.ann_items.items()
+                      if k_.startswith("lbl_") and t_x.F.mol.atoms[a_._atom]["el"] not in ("C", "H"))
+        el_ = t_x.F.mol.atoms[n_lab_._atom]["el"]
+        assert to_rgb(n_lab_.get_color()) == to_rgb(XRAY.label_color(el_, {}, "atom")), (el_, n_lab_.get_color())
+        assert to_rgb(n_lab_.get_color()) != (0, 0, 0)
+        hc_ = XRAY.label_color("H", {}, "atom")
+        assert 0.299 * hc_[0] + 0.587 * hc_[1] + 0.114 * hc_[2] <= 0.45 + 1e-9, hc_
+        w.xray_state["label_color"] = "black"
+        t_x.sync_widgets()
+        t_x.render()
+        assert all(to_rgb(a_.get_color()) == (0, 0, 0) for a_ in t_x.F.ann_items.values())
         # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
         # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
         size0_ = w.size()
@@ -4873,12 +4904,15 @@ def selftest(outdir, with_isnet=False):
         assert t_d.sel == [] and t_d.picks == []
         t_d.set_numbering(False)
         # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard; Hintergrund wählbar (auch im Export)
+        # (alte Projekte mit „ballstick“/IboView zeichnen als Kugel-Stab „depth“; Auswahl ohne IboView, mit Strichzeichnung)
+        assert [t_d.cmb_style.itemData(i_) for i_ in range(t_d.cmb_style.count())] == list(XRAY.DFT_STYLES)
         w.dft_state.update(style="ballstick", radius=0.5, bond_w=0.16, bg="#203040")
         t_d.sync_widgets()
         t_d.render()
+        assert t_d.F.style == "depth" and t_d.cmb_style.currentData() == "depth"
         c_d = next(i_ for i_ in t_d.F.scene["atoms"] if i_["el"] == "C")
-        assert abs(c_d["w"] - 4 * XRAY.ball_radius("C", "ballstick")) < 1e-9, c_d["w"]
-        assert abs(t_d.F.bond_w - 2 * XRAY.ROD_W["ballstick"]) < 1e-9 and t_d.cmb_bg.currentData() == "color"
+        assert abs(c_d["w"] - 4 * XRAY.ball_radius("C", "depth")) < 1e-9, c_d["w"]
+        assert abs(t_d.F.bond_w - 2 * XRAY.ROD_W["depth"]) < 1e-9 and t_d.cmb_bg.currentData() == "color"
         from PIL import Image as PILImage
         png_bg = next(f_ for f_ in t_d.export_to(out / "dft_bg") if f_.suffix == ".png")
         with PILImage.open(png_bg) as im_:

@@ -1416,17 +1416,27 @@ def shade_colors(color, n):
     return out
 
 
-STYLES = ("mercury", "flat", "ballstick", "depth")
-BALL_STYLES = ("ballstick", "depth")      # Kugel-Stab: Kugeln nach Element statt Ellipsoiden, Stäbe in Atomfarben
-DEPTH_A = 6.0                             # Tiefe (Å), über die der Stil „depth“ voll aufhellt
-DEPTH_MAX = 0.6                           # … bis 60 % zum Weiß
+STYLES = ("mercury", "flat", "ballstick", "depth", "cartoon")
+BALL_STYLES = ("ballstick", "depth", "cartoon")   # Kugeln nach Element statt Ellipsoiden, Stäbe statt Linien
+XRAY_STYLES = ("mercury", "flat")                 # Auswahl im Tab X-Ray (Nutzerwunsch: nur Mercury und Olex2)
+DFT_STYLES = ("mercury", "flat", "depth", "cartoon")   # Auswahl im Tab DFT („ballstick“/IboView entfernt)
+
+
+def allowed_style(style, allowed, fallback):
+    """Stil alter Projekte, der im Tab nicht mehr wählbar ist -> Ersatz (zeichnen kann XrayFigure alle)."""
+    return style if style in allowed else fallback
+DEPTH_A = 8.0                             # Tiefe (Å), über die der Stil „depth“ voll aufhellt
+DEPTH_MAX = 0.35                          # … bis 35 % zum Weiß (vorher 60 %: Molekül wirkte ausgewaschen)
 # Phong-Beleuchtung (Grundanteil ka + diffus kd·(n·L) + Glanz ks·(n·H)^p), angepasst an eine IboView-Abbildung
 # des Nutzers (Fit an die Kohlenstoffkugel: Licht oben links 40° über der Bildebene, Grundanteil 0.31, diffus 0.48 bei
 # Grau 0.55; Glanzpunkt klein und rein weiß). „depth“: matt, weicher, kaum Glanz. Schichten = Höhenlinien der
 # Helligkeit (Vektor in PDF/SVG): Kugeln über contourpy, Stäbe als Zylinder je nach Lage zum Licht.
 SHADE = {
     "ballstick": dict(el=40.0, ka=0.567, kd=0.874, ks=0.32, p=160, nd=30, nr=16, outline=True),
-    "depth": dict(el=45.0, ka=0.6, kd=0.62, ks=0.14, p=10, nd=16, nr=10, outline=False),
+    # Kugel-Stab für Rechnungen (wie CYLview): kräftige Farben, kleiner Glanzpunkt, feine Kontur
+    "depth": dict(el=45.0, ka=0.42, kd=0.72, ks=0.3, p=28, nd=20, nr=12, outline=True),
+    # Strichzeichnung wie in älteren JOC-Abbildungen (Nutzervorlage): weiße Kugeln mit Umriss, hohle Stäbe
+    "cartoon": dict(el=45.0, ka=1.0, kd=0.0, ks=0.0, p=1, nd=1, nr=1, outline=True),
 }
 SPEC_LEVELS = tuple(np.linspace(0.04, 0.96, 12))           # weich auslaufender Glanzpunkt
 
@@ -1472,7 +1482,7 @@ def sphere_unit_layers(style):
     for j in range(1, sp["nd"]):
         for P in regions(ndl, j / sp["nd"]):
             out.append((P, "d", sp["ka"] + sp["kd"] * (j + 0.5) / sp["nd"]))
-    for lev in SPEC_LEVELS:
+    for lev in (SPEC_LEVELS if sp["ks"] > 0 else ()):
         val = sp["ks"] * (lev + (1 - lev) * 0.5)
         for P in regions(ndh ** sp["p"], lev):
             out.append((P, "s", val))
@@ -1557,7 +1567,7 @@ def rod_levels(style):
     sp = SHADE[style]
     out = [("d", j / sp["nr"], sp["ka"] + sp["kd"] * (j + 0.5) / sp["nr"]) for j in range(sp["nr"])]
     out[0] = ("d", -1.0, out[0][2])                              # ganze Breite
-    return out + [("s", lev, sp["ks"] * (lev + (1 - lev) * 0.5)) for lev in SPEC_LEVELS]
+    return out + [("s", lev, sp["ks"] * (lev + (1 - lev) * 0.5)) for lev in (SPEC_LEVELS if sp["ks"] > 0 else ())]
 
 
 def shade_color(base, kind, val, style, fog=0.0):
@@ -1573,13 +1583,20 @@ def shade_color(base, kind, val, style, fog=0.0):
     return tuple(np.clip(c + (1 - c) * fog, 0, 1))
 
 
-ROD_W = {"ballstick": 0.2, "depth": 0.36}           # Stabdicke (Å) wie in den Vorlagen
-BALL_R = {"ballstick": 0.45, "depth": 0.42}         # Kugelradius = Faktor × kovalenter Radius
+ROD_W = {"ballstick": 0.2, "depth": 0.2, "cartoon": 0.17}      # Stabdicke (Å) wie in den Vorlagen
+BALL_R = {"ballstick": 0.45, "depth": 0.52, "cartoon": 0.6}     # Kugelradius = Faktor × kovalenter Radius
+BALL_RMIN = {"cartoon": 0.24, "depth": 0.21}                    # kleinster Radius (H), sonst 0.2 Å
+BALL_SQRT = ("depth", "cartoon")              # Radius wächst nur mit √(kovalenter Radius): Cl, Br, Metalle nicht riesig
+ROD_INNER = {"cartoon": 0.62}                                   # Kern des Stabs (Anteil der Breite), Rest = Umriss
+PERSPECTIVE = {"cartoon": 0.07}                                 # Kugeln je Å näher am Betrachter größer
 
 
 def ball_radius(el, style="ballstick"):
     """Kugelradius im Kugel-Stab-Modell (Å): proportional zum kovalenten Radius, H nicht zu klein."""
-    return max(0.2, BALL_R.get(style, 0.45) * COV.get(el, 0.76))
+    cov = COV.get(el, 0.76)
+    if style in BALL_SQRT:
+        cov = 0.76 * math.sqrt(cov / 0.76)                    # C unverändert
+    return max(BALL_RMIN.get(style, 0.2), BALL_R.get(style, 0.45) * cov)
 
 
 def fogged(color, fog):
@@ -1742,11 +1759,14 @@ class XrayFigure:
             for c in range(len(it["curves"])):
                 xs, ys = it["curves"][c]
                 it["curves"][c] = (xs - off[0], ys - off[1])
+        zc = float(np.mean([it["z"] for it in scene["atoms"]])) if scene["atoms"] else 0.0
+        pers = PERSPECTIVE.get(self.style, 0.0)
         for it in scene["atoms"]:
             if it["k"] in self.wire:                       # Drahtmodell: kein Ellipsoid, kleiner Klickbereich
                 it.update(w=0.24, h=0.24, ang=0.0, iso=True, kind="wire", curves=[])
             elif self.ball:                                # Kugel-Stab: Kugel nach Element, keine Hauptachsen
                 r = ball_radius(self.mol.atoms[it["k"]]["el"], self.style) * float(self.opts.get("ball_scale", 1.0))
+                r *= min(1.35, max(0.7, 1 + pers * (it["z"] - zc)))       # Perspektive (nur Cartoon)
                 it.update(w=2 * r, h=2 * r, ang=0.0, iso=True, curves=[])
         scene["by_k"] = {it["k"]: it for it in scene["atoms"]}
         return scene
@@ -1798,9 +1818,10 @@ class XrayFigure:
             fog = self._fog(self.scene["bonds"][n][2])
             for half, k in ((0, a), (1, b)):
                 el = self.mol.atoms[k]["el"]
-                base = colors.get(el) or default_color(el, self.style)
+                base = "white" if self.style == "cartoon" else colors.get(el) or default_color(el, self.style)
                 for j, (kind, _, val) in enumerate(levels):
-                    col_ = (0.15, 0.15, 0.15) if kind == "o" else shade_color(base, kind, val, self.style, fog)
+                    col_ = ((0, 0, 0) if self.style == "cartoon" else (0.15, 0.15, 0.15)) if kind == "o" \
+                        else shade_color(base, kind, val, self.style, fog)
                     # nur innere Schichten überlappen in der Mitte: der Außenrand der oberen Hälfte endet genau dort,
                     # sonst bliebe über den hellen Schichten der anderen Hälfte eine Naht
                     per_atom.setdefault(k, []).append((i, half, j - (1 if outline else 0), 0.0 if j == 0 else 0.02,
@@ -1835,7 +1856,7 @@ class XrayFigure:
         dx, dy = P[:, 2] - P[:, 0], P[:, 3] - P[:, 1]
         frac, off = rod_layouts(self.style, np.where(ok, dx, 1.0), np.where(ok, dy, 0.0))
         frac[~ok], off[~ok] = 0.0, 0.0
-        inner = 0.95 if SHADE[self.style]["outline"] else 1.0
+        inner = ROD_INNER.get(self.style, 0.95) if SHADE[self.style]["outline"] else 1.0
         bi, lj = r["bond"], r["layer"]
         inside = lj >= 0
         fr = np.where(inside, frac[bi, np.maximum(lj, 0)] * inner, 1.0)          # Umriss (-1): volle Breite
@@ -1888,6 +1909,11 @@ class XrayFigure:
                 fog = self._fog(it["z"])
                 faces = [shade_color(col, kd, v, self.style, fog) for _, kd, v in sphere_unit_layers(self.style)]
                 edge, elw = "none", 0.0                    # wie die Vorlagen: Kugeln ohne Umriss
+                if self.style == "cartoon":                # Strichzeichnung: weiß mit schwarzem Umriss
+                    faces = ["white"] * len(faces)
+                    edge, elw = (0, 0, 0), max(0.5, 0.75 * self.cfg.get("scale", 1.0))
+                elif self.style == "depth":                # feine Kontur, mit der Tiefe heller wie die Kugel
+                    edge, elw = fogged((0.12, 0.12, 0.12), fog), max(0.3, 0.45 * self.cfg.get("scale", 1.0))
             elif mercury:
                 faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
             else:
@@ -2050,7 +2076,9 @@ class XrayFigure:
             key = "lbl_" + a["key"]
             ann = self.ax.annotate(self._label_text(a, self.style in ("flat", "mercury")), xy=(it["x"], it["y"]), xycoords="data",
                                    xytext=(0, 0), textcoords="offset points", ha="center", va="center",
-                                   fontsize=fs, color=lc.get("color") or "black", zorder=60,
+                                   fontsize=fs, zorder=60,
+                                   color=label_color(a["el"], o.get("colors") or {}, o.get("label_color"))
+                                   or lc.get("color") or "black",
                                    annotation_clip=False, **extra)
             ann._atom = it["k"]
             self.ann_items[key] = ann
@@ -2438,6 +2466,27 @@ def label_size_spin(st):
     return sp
 
 
+def label_color_combo(st, on_change):
+    """Labelfarbe: schwarz (Standard) oder wie das Atom (zu helle Farben abgedunkelt, damit lesbar)."""
+    cb = QComboBox()
+    for key in ("black", "atom"):
+        cb.addItem(T("xr_label_color_" + key), key)
+    cb.setCurrentIndex(max(0, cb.findData(st.get("label_color", "black"))))
+    cb.currentIndexChanged.connect(on_change)
+    return cb
+
+
+def label_color(el, colors, mode):
+    """Farbe eines Atomlabels: schwarz oder Atomfarbe; helle Farben (H weiß, Cl hellgrün) bis zur Lesbarkeit dunkler."""
+    if mode != "atom":
+        return None
+    c = np.array(to_rgb(colors.get(el) or default_color(el)))
+    lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+    if lum > 0.45:
+        c = c * (0.45 / lum)
+    return tuple(np.clip(c, 0, 1))
+
+
 def bg_parts(bg):
     """Hintergrund (Zustand „bg“: "white", "transparent" oder "#rrggbb") -> (Füllfarbe für savefig, transparent?,
     Farbe der Vorschau und der Label-Ränder)."""
@@ -2771,7 +2820,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
                          h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False,
-                         bg="white")
+                         bg="white", label_color="black")
 
 
     def arrange(self):
@@ -2822,9 +2871,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         g = QGroupBox(T("xr_display"))
         f = make_form(g)
         self.cmb_style = QComboBox()
-        for key in STYLES:
+        for key in XRAY_STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
-        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
+        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(allowed_style(st.get("style", "mercury"), XRAY_STYLES,
+                                                                                    "mercury"))))
         f.addRow(T("xr_style"), self.cmb_style)
         self.sp_prob = QSpinBox(minimum=10, maximum=99, singleStep=5, suffix=" %", value=int(st["prob"]))
         self.sp_prob.setToolTip(T("xr_prob_tip"))
@@ -2861,6 +2911,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         f.addRow(T("bg_label"), self.cmb_bg)
         self.sp_lab = label_size_spin(st)
         f.addRow(T("xr_label_size"), self.sp_lab)
+        self.cmb_lcol = label_color_combo(st, self.changed)
+        f.addRow(T("xr_label_color"), self.cmb_lcol)
         self.lst_frag = QListWidget()
         self.lst_frag.setMaximumHeight(90)
         self.lst_frag.setToolTip(T("xr_frags_tip"))
@@ -3035,6 +3087,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
                        bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(), label_pt=self.sp_lab.value(),
                        label_mode=self.cmb_labmode.currentData(), wire_h=self.cb_wire_h.isChecked(),
+                       label_color=self.cmb_lcol.currentData(),
                        hide_solv=self.cb_solv.isChecked(), hide_ions=self.cb_ions.isChecked())
         self.cmb_labmode.setEnabled(self.cb_lab.isChecked())
 
@@ -3197,8 +3250,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.cb_ions.setChecked(st.get("hide_ions", False))
         self.cmb_labmode.setCurrentIndex(max(0, self.cmb_labmode.findData(st.get("label_mode", "all"))))
         self.cmb_labmode.setEnabled(st["labels"])
+        self.cmb_lcol.setCurrentIndex(max(0, self.cmb_lcol.findData(st.get("label_color", "black"))))
         self.ed_wire.setText((cur or {}).get("wire_name") or "")
-        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
+        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(allowed_style(st.get("style", "mercury"), XRAY_STYLES,
+                                                                                    "mercury"))))
         self._prob_for_style()
         self.fill_colors()
         self.fill_atoms()
@@ -3654,9 +3709,11 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         st = self.st
         return dict(prob=st["prob"], show_h=st["show_h"], labels=st["labels"], h_labels=st["h_labels"],
                     colors=st.get("colors") or {}, bond_w=st.get("bond_w", 0.08), hidden_frags=e.get("hidden_frags") or [],
-                    style=st.get("style", "mercury"), hidden_atoms=e.get("hidden_atoms") or [],
+                    style=allowed_style(st.get("style", "mercury"), XRAY_STYLES, "mercury"),
+                    hidden_atoms=e.get("hidden_atoms") or [],
                     label_on=e.get("label_on") or {}, wire=set(e.get("wire") or []), wire_h=st.get("wire_h", False),
                     label_mode=st.get("label_mode", "all"), label_size=st.get("label_pt", 0.0),
+                    label_color=st.get("label_color", "black"),
                     rod_scale=st.get("bond_w", 0.12) / self.DEFAULT_STATE["bond_w"], bg=st.get("bg", "white"),
                     hide_kinds=[k for k, on in (("solvent", st.get("hide_solv")), ("ion", st.get("hide_ions")))
                                 if on])
