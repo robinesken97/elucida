@@ -417,9 +417,10 @@ class FigureTab(QWidget):
         cv.setSpacing(0)
         cv.addWidget(ls, 1)
         cv.addWidget(bar)
-        # so breit wie der Inhalt, sonst schneidet die Spalte rechts ab (macOS blendet die Leiste aus)
-        left_col.setMinimumWidth(max(420, left.minimumSizeHint().width(), bar.minimumSizeHint().width())
-                                 + ls.verticalScrollBar().sizeHint().width() + 4)
+        # so breit wie der Inhalt, sonst schneidet die Spalte rechts ab (macOS blendet die Leiste aus); nach dem ersten
+        # Anzeigen neu bestimmt (fit_left), weil Qt vor dem Stylesheet andere (unter Windows größere) Breiten meldet
+        self._left_parts = (left, bar, ls, left_col)
+        left_col.setMinimumWidth(self._left_width())
         self.host = CanvasHost(self.canvas, self.fig)
         # Leer-Zustand: Anleitung (was herauskommt, welche Dateien, Schritte) statt einer weißen Abbildung
         act = getattr(self, self.GUIDE_ACTION[1], None) if self.GUIDE_ACTION else None
@@ -451,6 +452,7 @@ class FigureTab(QWidget):
         split.addWidget(left_col)
         split.addWidget(right_col)
         split.setSizes([left_col.minimumWidth(), 900])
+        self._split, self._left_fitted = split, False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
@@ -628,6 +630,28 @@ class FigureTab(QWidget):
         return X.SimpleFigure(plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks)
 
     # -- linke Spalte ordnen ------------------------------------------------------
+    def _left_width(self):
+        left, bar, ls, _ = self._left_parts
+        return (max(420, left.minimumSizeHint().width(), bar.minimumSizeHint().width())
+                + ls.verticalScrollBar().sizeHint().width() + 4)
+
+    def fit_left(self):
+        """Linke Spalte auf ihre tatsächliche Mindestbreite setzen (nach Stylesheet und Anzeige); der Rest geht an die
+        Abbildung. Beim Aufbau gemessene Breiten sind unter Windows zu groß (Spalte 820 statt 658 px gemessen)."""
+        col = self._left_parts[3]
+        w = self._left_width()
+        col.setMinimumWidth(w)
+        total = sum(self._split.sizes())
+        if total > w:
+            self._split.setSizes([w, total - w])
+        self._left_fitted = True
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if not self._left_fitted:
+            QTimer.singleShot(0, self.fit_left)
+
+    # -- linke Spalte ordnen (Karten) -------------------------------------------
     def group_titled(self, key):
         root = self.lv.parentWidget()                    # linke Spalte (hängt beim Ordnen noch nicht am Tab)
         return next(g for g in root.findChildren(QGroupBox) + self.findChildren(QGroupBox) if g.title() == T(key))
