@@ -62,8 +62,8 @@ size. Optional: indices λ₁/ε₁ …, "(sh)" at shoulders, R² in the figure.
 
 ## 7. Export and into the SI
 
-**Export** writes the figure (PDF/SVG/PNG), `<series>_results.csv` and the Excel report for all series to
-`exports/epsilon/`. The UV-Vis line is under **SI line** and goes into the characterisation paragraph with
+**Export** writes the figure (PDF/SVG/PNG) to `figures/`, `<series>_UV-Vis_results.csv` and the Excel report to
+`tables/` for all series. The UV-Vis line is under **SI line** and goes into the characterisation paragraph with
 **SI (Word)**; the figure with its caption ("UV-Vis spectra of **X** in THF, measured in 0.1 cm quartz cuvettes.") goes
 into the figure part. Enter the solvent for that under **Analysis**.
 

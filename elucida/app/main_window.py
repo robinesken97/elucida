@@ -2352,7 +2352,7 @@ class MainWindow(QMainWindow):
         return out
 
     def eps_methods_text(self, groups=None):
-        """SI-Text zur ε-Bestimmung je Serie (englisch, uvvis_si.eps_methods)."""
+        """SI-Text zur ε-Bestimmung je Serie (englisch, si.lines.eps_methods)."""
         out = []
         for g in (groups or list(self.groups)):
             try:

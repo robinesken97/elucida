@@ -50,6 +50,6 @@ fluorescence, CV, SEC and EPR tabs go into the SI automatically as soon as those
 
 ## 7. Create the SI
 
-**SI (Word)** in the toolbar: choose the parts and export. The file is in `exports/si/`. Afterwards the program lists
+**SI (Word)** in the toolbar: choose the parts and export. The file is in `SI/`. Afterwards the program lists
 what is still missing (e.g. no melting point). The Word file follows the style of the group's SI (Arial 11, justified,
 figure numbers as fields).

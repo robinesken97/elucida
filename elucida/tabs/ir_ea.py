@@ -511,7 +511,7 @@ def copy_rich(plain, html):
 
 
 class IRMSTab(TABS.FigureTab):
-    """Tab „IR + EA“ (der MS-Teil steht seit 1.21 im Tab HRMS, uvvis_hrms)."""
+    """Tab „IR + EA“ (der MS-Teil steht seit 1.21 im Tab HRMS, tabs/hrms.py)."""
     STATE_KEY = "irms"
     GUIDE, GUIDE_ACTION = "irms", ("guide_add", "choose_ir")
     SI_CAPTION = "IR spectrum of {name}."

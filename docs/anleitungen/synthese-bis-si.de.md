@@ -52,6 +52,6 @@ aus Overlay, Fluoreszenz, CV, SEC und EPR kommen automatisch in die SI, sobald d
 
 ## 7. SI erstellen
 
-**SI (Word)** in der Werkzeugleiste: Teile auswählen und exportieren. Die Datei liegt unter `exports/si/`. Danach
+**SI (Word)** in der Werkzeugleiste: Teile auswählen und exportieren. Die Datei liegt unter `SI/`. Danach
 zählt das Programm auf, was noch fehlt (z. B. kein Schmelzpunkt). Die Word-Datei hat den Stil der Gruppen-SI (Arial 11,
 Blocksatz, Abbildungsnummern als Felder).

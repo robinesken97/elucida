@@ -1,6 +1,6 @@
 """HRMS: Bericht der Massenabteilung (docx) und Bruker-Rohdaten (.d) – Chromatogramm mit wählbarem LC-Bereich,
 gemitteltes Spektrum (Linienspektren des Geräts), Peak per Klick als found, berechnetes Isotopenmuster aus der
-Summenformel (gespiegelt), SI-Zeile. Leser und Ionenmassen stehen in uvvis_irms."""
+Summenformel (gespiegelt), SI-Zeile. Leser und Ionenmassen stehen in tabs/ir_ea.py."""
 from __future__ import annotations
 
 import os

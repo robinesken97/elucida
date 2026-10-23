@@ -1,7 +1,7 @@
 """elucida/tabs/synthesis.py - Synthese für die SI: „Synthesis of Name“, Reaktionsschema (ChemDraw), Vorschrift, Mengenprüfung.
 
 Schema: CDXML im Projekt; gezeigt wird die gleichnamige ChemDraw-Exportdatei (SVG/PDF/PNG, unverändert). Liegt eine
-gleichnamige .cdx daneben, wird das Schema in Word als **bearbeitbares ChemDraw-Objekt** eingebettet (uvvis_ole);
+gleichnamige .cdx daneben, wird das Schema in Word als **bearbeitbares ChemDraw-Objekt** eingebettet (formats/ole.py);
 Vorschau dann die gleichnamige .emf aus ChemDraw (Vektor), sonst ein PNG aus der Exportdatei. ChemDraw liest im Objekt
 nur CDX, keine CDXML (in Word geprüft).
 Mengen: Klammern im SI-Format „S1 (1.03 g, 5.00 mmol, 1.0 eq.)“, „n-BuLi (0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
@@ -254,7 +254,7 @@ def scheme_molecules(cdxml):
 
 
 def scheme_drawing(cdxml):
-    """Schema ohne ChemDraw-Export: eigene Zeichnung aus den CDXML-Koordinaten (uvvis_cdxml), Asset wie
+    """Schema ohne ChemDraw-Export: eigene Zeichnung aus den CDXML-Koordinaten (formats/cdxml.py), Asset wie
     IMG.load_structure (PDF-Vektor + Vorschau); Hinweise auf nicht gezeichnete Objekte als Warnung."""
     from elucida.formats import cdxml as CDX
     from elucida.core import images as IMG
