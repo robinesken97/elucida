@@ -2700,6 +2700,7 @@ class MeasureAlign:
 
 class XrayTab(MeasureAlign, TABS.FigureTab):
     STATE_KEY = "xray"
+    GUIDE, GUIDE_ACTION = "xray", ("guide_add", "add_cif")
     TEXT_OPTS = ("fonts", "labels")              # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
@@ -3605,6 +3606,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                           pan=e.get("pan") or (0.0, 0.0))
 
     def render(self, push=True):
+        self.notes_begin()
         try:
             if self.dragger:
                 self.dragger.disconnect()
@@ -3622,12 +3624,14 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             if not self._loading:
                 self.fill_atoms()
             self.canvas.draw_idle()
+            self.notes_show()
             if push:
                 self.main.push_undo()
         except Exception as ex:
             import traceback
             self.main.log_signal.emit(traceback.format_exc())
             self.main.statusBar().showMessage(f"{T('err_title')}: {ex}", 8000)
+            self.notes_show(error=ex)
 
     def update_info(self):
         e = self.entry()

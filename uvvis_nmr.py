@@ -530,8 +530,10 @@ class NMRTab(QWidget):
         ls.setMinimumWidth(max(460, left.minimumSizeHint().width() + 24))
         right = QWidget()
         rv = QVBoxLayout(right)
-        self.lbl_prev = QLabel(T("nmr_empty"), alignment=Qt.AlignCenter, wordWrap=True)
-        self.lbl_prev.setStyleSheet(HINT_CSS)
+        from uvvis_tabs import guide_html
+        self.lbl_prev = QLabel(guide_html("nmr", boxed=True), alignment=Qt.AlignCenter, wordWrap=True)
+        self.lbl_prev.setTextFormat(Qt.RichText)
+        self.lbl_prev.setOpenExternalLinks(True)
         self.lbl_prev.setMinimumHeight(300)
         self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen
         self._drag_rect, self._drag, self._pm_size = None, None, (1, 1)
@@ -972,8 +974,9 @@ class NMRTab(QWidget):
         s = self.current()
         self._drag_rect = None
         if s is None or not Path(s["file"]).is_file():
+            from uvvis_tabs import guide_html
             self.lbl_prev.setPixmap(QPixmap())
-            self.lbl_prev.setText(T("nmr_empty"))
+            self.lbl_prev.setText(guide_html("nmr", boxed=True))
             self.lbl_cap.setText("")
             return
         import pymupdf

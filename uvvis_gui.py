@@ -36,7 +36,7 @@ from matplotlib.figure import Figure as MplFigure  # noqa: E402
 from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
 from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QImage,  # noqa: E402
-                           QGuiApplication, QKeySequence, QPixmap)
+                           QGuiApplication, QKeySequence, QPixmap, QTextCursor)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
@@ -653,6 +653,8 @@ class MainWindow(QMainWindow):
             grp.addAction(act)
             ml.addAction(act)
         mh = mb.addMenu(T("menu_help"))
+        mh.addAction(QAction(T("act_log"), self, triggered=self.show_log))
+        mh.addSeparator()
         mh.addAction(QAction(T("act_check_updates"), self, triggered=lambda: self.check_updates(manual=True)))
         act = QAction(T("act_auto_updates"), self, checkable=True, checked=self._auto_updates())
         act.toggled.connect(lambda on: self.settings.setValue("update_auto", on))
@@ -945,21 +947,8 @@ class MainWindow(QMainWindow):
         self._uv_line = ("", "")
         self.tabs.addTab(si_w, T("tab_si_line"))
         self.tabs.addTab(self.log, T("tab_log"))
-        # Leer-Zustand statt weißer Fläche, solange keine Messdaten geladen sind
-        empty = QFrame(objectName="emptyDrop")
-        empty.setStyleSheet("#emptyDrop { border: 1px dashed palette(mid); border-radius: 8px; }")
-        ev = QVBoxLayout(empty)
-        ev.addStretch(1)
-        for text, css in ((T("empty_title"), "font-size: 15px; font-weight: bold;"),
-                          (T("empty_formats"), HINT_CSS)):
-            lb = QLabel(text, alignment=Qt.AlignCenter, wordWrap=True)
-            lb.setStyleSheet(css)
-            ev.addWidget(lb)
-        b = QPushButton(STYLE.icon("open", "#FFFFFF"), T("act_open"))
-        b.setProperty("accent", True)
-        b.clicked.connect(self.choose_csv)
-        ev.addWidget(b, 0, Qt.AlignCenter)
-        ev.addStretch(1)
+        # Leer-Zustand: Anleitung (was herauskommt, welche Dateien, Schritte) statt weißer Fläche
+        empty = uvvis_tabs.EmptyGuide("eps", (T("act_open"), self.choose_csv))
         empty_wrap = QWidget()
         QVBoxLayout(empty_wrap).addWidget(empty)
         self.preview_stack = QStackedWidget()
@@ -1193,6 +1182,21 @@ class MainWindow(QMainWindow):
 
     def _append_log(self, msg):
         self.log.appendPlainText(msg)
+
+    def show_log(self):
+        """Protokoll aller Tabs (Meldungen, Warnungen, Fehlerdetails) in einem eigenen Fenster."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("log_title"))
+        dlg.resize(820, 520)
+        v = QVBoxLayout(dlg)
+        txt = QPlainTextEdit(readOnly=True)
+        txt.setPlainText(self.log.toPlainText())
+        txt.moveCursor(QTextCursor.End)
+        v.addWidget(txt)
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        dlg.exec()
 
     # ------------------------------------------------------------ Daten
     def choose_csv(self):
@@ -2818,6 +2822,15 @@ def selftest(outdir, with_isnet=False):
             w.ov_state["mode"] = mode
             files = w.ov_tab.export_to(out / f"overlay_{mode}")
             assert all(f.exists() for f in files), files
+        # Hinweis im Tab statt nur im Protokoll: ε ohne Konzentration -> Messung ausgelassen, Grund unter der Vorschau
+        w.ov_state["entries"][0]["conc"] = None
+        w.ov_tab.render()
+        assert not w.ov_tab.lbl_note.isHidden() and "„exp“" in w.ov_tab.lbl_note.text(), w.ov_tab.lbl_note.text()
+        w.ov_state["entries"][0]["conc"] = 0.25
+        w.ov_state["mode"] = "norm"
+        w.ov_tab.render()
+        assert w.ov_tab.lbl_note.isHidden(), w.ov_tab.lbl_note.text()
+        report.append("overlay notes in the tab: OK")
         em = out / "input" / "emission.csv"
         xs = np.arange(400.0, 701.0, 1.0)
         em.write_text("\r\n".join(["EM ex352,,", "Wavelength (nm),Intensity (a.u.),"] +
@@ -3771,6 +3784,20 @@ def selftest(outdir, with_isnet=False):
             w.glob.update(path_length=1.0, size="half_a4")
             w.apply_globals()
         report.append("eps tab layout (sections, empty state): OK")
+        # Anleitung in leeren Tabs: Texte in beiden Sprachen, Link zeigt auf eine vorhandene README-Überschrift
+        heads_ = {lang_: [ln_[3:].strip() for ln_ in (Path(__file__).parent / f_).read_text(encoding="utf-8").splitlines()
+                          if ln_.startswith("## ")]
+                  for lang_, f_ in (("de", "README.de.md"), ("en", "README.md"))
+                  if (Path(__file__).parent / f_).exists()}           # im gebauten Programm fehlt die README
+        for key_, (de_, en_) in uvvis_tabs.GUIDE_HEAD.items():
+            assert not heads_ or (de_ in heads_["de"] and en_ in heads_["en"]), (key_, de_, en_)
+            for part_ in ("title", "files", "steps"):
+                assert T(f"guide_{key_}_{part_}") != f"guide_{key_}_{part_}", (key_, part_)
+        assert uvvis_tabs.gh_anchor("IR + EA tab") == "ir--ea-tab"
+        assert uvvis_tabs.gh_anchor("CV-Tab (Cyclovoltammetrie)") == "cv-tab-cyclovoltammetrie"
+        guide_ = w.cv_tab.preview_stack.widget(0).findChild(uvvis_tabs.EmptyGuide)
+        assert guide_ is not None and T("guide_cv_title") in guide_.label.text()
+        report.append("empty-tab guides: OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
         w.render()

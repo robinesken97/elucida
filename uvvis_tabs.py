@@ -23,14 +23,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QPlainTextEdit)
+                               QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QMessageBox, QPlainTextEdit)
 
 import uvvis_color as COLOR
 import uvvis_core as core
 import uvvis_extra as X
 import uvvis_images as IMG
 import uvvis_project as PRJ
-from uvvis_i18n import T
+from uvvis_i18n import T, get_lang
 import uvvis_style as STYLE
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, make_form
 
@@ -102,6 +102,68 @@ def color_button(color, on_pick):
     b.setProperty("color", color)
     b.clicked.connect(pick)
     return b
+
+
+# ---------------------------------------------------------------------------- Anleitung im leeren Tab
+README_URL = "https://github.com/robinesken97/elucida/blob/main/"
+# README-Abschnitt je Tab (Deutsch, Englisch) – Überschriften wie in README.de.md / README.md (Selbsttest prüft das)
+GUIDE_HEAD = {"syn": ("Synthese-Tab", "Synthesis tab"), "nmr": ("NMR-Tab", "NMR tab"),
+              "irms": ("IR + EA-Tab", "IR + EA tab"), "hrms": ("HRMS-Tab", "HRMS tab"), "eps": ("Ablauf", "Workflow"),
+              "overlay": ("UV-Vis-Overlay-Tab", "UV-Vis overlay tab"), "fluo": ("Fluoreszenz-Tab", "Fluorescence tab"),
+              "cv": ("CV-Tab (Cyclovoltammetrie)", "CV tab (cyclic voltammetry)"),
+              "sec": ("SEC-Tab (Spektroelektrochemie)", "SEC tab (spectroelectrochemistry)"),
+              "epr": ("EPR-Tab (CW-EPR)", "EPR tab (CW EPR)"), "xray": ("X-Ray-Tab", "X-Ray tab"),
+              "dft": ("DFT-Tab", "DFT tab")}
+
+
+def gh_anchor(heading):
+    """Anker einer Markdown-Überschrift wie bei GitHub: klein, Satzzeichen weg, Leerzeichen -> „-“."""
+    return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
+
+
+def guide_url(key):
+    de = get_lang() == "de"
+    return README_URL + ("README.de.md" if de else "README.md") + "#" + gh_anchor(GUIDE_HEAD[key][0 if de else 1])
+
+
+def guide_html(key, boxed=False):
+    """Anleitung für einen leeren Tab: was herauskommt, welche Dateien, Schritte, Link zur README.
+    boxed: in eine zentrierte, begrenzt breite Tabelle (für mittig ausgerichtete Labels, Text bleibt linksbündig)."""
+    steps = "".join(f"<li style='margin-bottom:4px'>{html.escape(s)}</li>" for s in T(f"guide_{key}_steps").split("\n"))
+    body = (f"<p style='font-size:15px'><b>{html.escape(T(f'guide_{key}_title'))}</b></p>"
+            f"<p style='color:gray'>{html.escape(T(f'guide_{key}_files'))}</p>"
+            f"<ol style='margin-left:-20px'>{steps}</ol>"
+            f"<p><a href='{guide_url(key)}'>{html.escape(T('guide_more'))}</a></p>")
+    return f"<table align='center' width='540'><tr><td>{body}</td></tr></table>" if boxed else body
+
+
+class EmptyGuide(QFrame):
+    """Leerer Vorschaubereich mit Anleitung (guide_html) und optional einem Knopf für den ersten Schritt."""
+
+    def __init__(self, key, action=None):
+        super().__init__(objectName="emptyDrop")
+        self.setStyleSheet("#emptyDrop { border: 1px dashed palette(mid); border-radius: 8px; }")
+        v = QVBoxLayout(self)
+        v.addStretch(1)
+        self.label = QLabel(guide_html(key), wordWrap=True)
+        self.label.setTextFormat(Qt.RichText)
+        self.label.setOpenExternalLinks(True)
+        self.label.setMinimumWidth(280)
+        self.label.setMaximumWidth(560)
+        # ohne Ausrichtungs-Flag einfügen (sonst rechnet Qt die Höhe des umbrochenen Texts falsch und schneidet ab),
+        # zentriert über Dehnfelder links und rechts
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self.label, 4)
+        row.addStretch(1)
+        v.addLayout(row)
+        if action is not None:
+            b = QPushButton(STYLE.icon("open", "#FFFFFF"), action[0])
+            b.setProperty("accent", True)
+            b.clicked.connect(action[1])
+            v.addSpacing(6)
+            v.addWidget(b, 0, Qt.AlignHCenter)
+        v.addStretch(2)
 
 
 class CanvasHost(QWidget):
@@ -284,6 +346,8 @@ class FigureTab(QWidget):
     # was der Tab im Bild hat (Menü Format zeigt nur das): Schriften, Symbolschrift für λ/ε, Labels, Labelgröße, Rahmen
     TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame")
     X_RANGE = (100, 3500, 0, 10)         # x-Achse: min, max, Nachkommastellen, Schritt (Spektren: nm)
+    GUIDE = ""                           # Schlüssel der Anleitung im leeren Tab (guide_<GUIDE>_…), "" = nur Text
+    GUIDE_ACTION = None                  # (Textschlüssel, Methode) für den Knopf in der Anleitung
     XRANGE_TEXT = "xrange"
 
     def __init__(self, main, state):
@@ -344,21 +408,32 @@ class FigureTab(QWidget):
         left_col.setMinimumWidth(max(420, left.minimumSizeHint().width(), bar.minimumSizeHint().width())
                                  + ls.verticalScrollBar().sizeHint().width() + 4)
         self.host = CanvasHost(self.canvas, self.fig)
-        # Leer-Zustand statt Text in einer weißen Abbildung
-        empty = QFrame(objectName="emptyDrop")
-        empty.setStyleSheet("#emptyDrop { border: 1px dashed palette(mid); border-radius: 8px; }")
-        ev = QVBoxLayout(empty)
-        lb = QLabel(T("tab_empty"), alignment=Qt.AlignCenter, wordWrap=True)
-        lb.setStyleSheet(HINT_CSS + " font-size: 14px;")
-        ev.addWidget(lb)
+        # Leer-Zustand: Anleitung (was herauskommt, welche Dateien, Schritte) statt einer weißen Abbildung
+        act = getattr(self, self.GUIDE_ACTION[1], None) if self.GUIDE_ACTION else None
+        empty = EmptyGuide(self.GUIDE, (T(self.GUIDE_ACTION[0]), act) if act else None) if self.GUIDE else None
+        if empty is None:
+            empty = QLabel(T("tab_empty"), alignment=Qt.AlignCenter, wordWrap=True)
+            empty.setStyleSheet(HINT_CSS + " font-size: 14px;")
         empty_wrap = QWidget()
         QVBoxLayout(empty_wrap).addWidget(empty)
         self.preview_stack = QStackedWidget()
         self.preview_stack.addWidget(empty_wrap)
         self.preview_stack.addWidget(self.host)
+        # Hinweise beim Zeichnen (z. B. Kurve ausgelassen) hier im Tab, nicht nur im Protokoll
+        self.lbl_note = QLabel(wordWrap=True)
+        self.lbl_note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl_note.setContentsMargins(10, 4, 10, 6)
+        self.lbl_note.hide()
+        self._notes = []
+        right_col = QWidget()
+        rv = QVBoxLayout(right_col)
+        rv.setContentsMargins(0, 0, 0, 0)
+        rv.setSpacing(0)
+        rv.addWidget(self.preview_stack, 1)
+        rv.addWidget(self.lbl_note)
         split = QSplitter(Qt.Horizontal)
         split.addWidget(left_col)
-        split.addWidget(self.preview_stack)
+        split.addWidget(right_col)
         split.setSizes([left_col.minimumWidth(), 900])
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -536,7 +611,29 @@ class FigureTab(QWidget):
         core.setup_fonts(plt, cfg)
         return X.SimpleFigure(plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks)
 
+    # -- Hinweise im Tab ----------------------------------------------------------
+    def add_note(self, msg):
+        """Hinweis beim Zeichnen: im Tab unter der Vorschau anzeigen und ins Protokoll schreiben."""
+        msg = msg.strip()
+        if msg not in self._notes:
+            self._notes.append(msg)
+        self.main.log_signal.emit("  " + msg)
+
+    def notes_begin(self):
+        self._notes = []
+
+    def notes_show(self, error=None):
+        """Gesammelte Hinweise (orange) bzw. einen Fehler (rot) unter der Vorschau zeigen."""
+        if error is not None:
+            self.lbl_note.setText(T("note_error", e=error))
+            self.lbl_note.setStyleSheet(WARN_CSS)
+        else:
+            self.lbl_note.setText("\n".join("⚠ " + n for n in self._notes))
+            self.lbl_note.setStyleSheet(STYLE.NOTE_CSS)
+        self.lbl_note.setVisible(error is not None or bool(self._notes))
+
     def render(self):
+        self.notes_begin()
         try:
             if self.dragger:
                 self.dragger.disconnect()
@@ -559,10 +656,12 @@ class FigureTab(QWidget):
                 self.hover = HoverReadout(self.F, curves, self.main.show_hover, self.hover_text)
                 self.sync_sizes(self.F.current_layout())
             self.canvas.draw_idle()
+            self.notes_show()
             self.main.push_undo()
         except Exception as e:
             self.main.log_signal.emit(traceback.format_exc())
             self.main.statusBar().showMessage(f"{T('err_title')}: {e}", 8000)
+            self.notes_show(error=e)
 
     def hover_text(self, lam, val, name):
         if val is None:
@@ -758,6 +857,7 @@ COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half
 # ----------------------------------------------------------------------------
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
+    GUIDE, GUIDE_ACTION = "overlay", ("guide_add", "add_exp")
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Comparison of UV-Vis spectra of {name}."
     RESET_KEEP = ("entries", "structure")
@@ -1195,8 +1295,9 @@ class OverlayTab(FigureTab):
             for j in range(i + 1, len(data)):
                 same = self.shared_states(data[i], data[j])
                 if same:
-                    self.main.log_signal.emit("  " + T("ov_combine_dup", a=Path(srcs[i]["file"]).name,
-                                                       b=Path(srcs[j]["file"]).name, n=same))
+                    msg = T("ov_combine_dup", a=Path(srcs[i]["file"]).name, b=Path(srcs[j]["file"]).name, n=same)
+                    self.main.log_signal.emit("  " + msg)
+                    QMessageBox.warning(self, T("ov_combine"), msg)     # nicht beim Zeichnen: sofort zeigen
         first = ents[0]
         for e in ents:
             e["visible"] = False
@@ -1452,12 +1553,12 @@ class OverlayTab(FigureTab):
             ls = self.LS.get(e.get("ls") or ("dashed" if e["kind"] == "calc" else "solid"), "-")
             if e["kind"] == "secser":
                 if eps_mode:                         # Dünnschichtzelle: Schichtdicke/Konzentration unbekannt
-                    self.main.log_signal.emit("  " + T("ov_sec_no_eps", name=e["label"]))
+                    self.add_note(T("ov_sec_no_eps", name=e["label"]))
                     continue
                 bcfg = dict(cfg, baseline_nm="auto", baseline_mode="simple", conc_unit="mM") if st["baseline"] else None
                 ser = self.sec_series_curves(e, lo, hi, bcfg)
                 if not ser:
-                    self.main.log_signal.emit("  " + T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
+                    self.add_note(T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
                     continue
                 for sc_c in ser:
                     c = {"x": sc_c["x"], "y": sc_c["val"] * sc + off, "val": sc_c["val"] * sc,
@@ -1476,7 +1577,7 @@ class OverlayTab(FigureTab):
             if e["kind"] in ("exp", "sec"):
                 if e["kind"] == "sec":
                     if eps_mode:                     # Dünnschichtzelle: Schichtdicke/Konzentration unbekannt
-                        self.main.log_signal.emit("  " + T("ov_sec_no_eps", name=e["label"]))
+                        self.add_note(T("ov_sec_no_eps", name=e["label"]))
                         continue
                     s_ = self.sec_spectrum(e)
                 else:
@@ -1493,13 +1594,13 @@ class OverlayTab(FigureTab):
                     fac = (1 / e["mw"] if e.get("mw") else None) if e.get("unit") == "mg/mL" \
                         else core.CONC_TO_M.get(e.get("unit", "mM"))
                     if not (e.get("conc") and fac):
-                        self.main.log_signal.emit("  " + T("ov_need_conc", name=e["label"]))
+                        self.add_note(T("ov_need_conc", name=e["label"]))
                         continue
                     y = y / (e["conc"] * fac * e.get("d", 1.0)) / 1000.0
                 else:
                     y = X.normalize(x, y, lo, hi)
                     if y is None:
-                        self.main.log_signal.emit("  " + T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
+                        self.add_note(T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
                         continue
                 exp_x.append(x)
                 lab = e["label"]
@@ -1580,7 +1681,7 @@ class OverlayTab(FigureTab):
                 try:
                     asset = self.structure_asset(p, color)
                 except Exception as ex:
-                    self.main.log_signal.emit(f"  {Path(p).name}: {ex}")
+                    self.add_note(f"{Path(p).name}: {ex}")
                     continue
                 imgs.append({"file": p, "id": "struktur_" + e.get("uid", "x"),
                              "width": st.get("struct_w", 20) / 100, "prefer": "top", "_asset": asset})
@@ -1606,6 +1707,7 @@ def fmt_stokes(v):
 
 class FluoTab(FigureTab):
     STATE_KEY = "fluorescence"
+    GUIDE, GUIDE_ACTION = "fluo", None
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Fluorescence spectra of {name}."
     RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv")
@@ -1802,7 +1904,7 @@ class FluoTab(FigureTab):
         if a is not None:
             ya = X.normalize(a["x"], a["y"], st["alo"], st["ahi"])
             if ya is None:
-                self.main.log_signal.emit("  " + T("ov_no_signal", name=a["name"], lo=st["alo"], hi=st["ahi"]))
+                self.add_note(T("ov_no_signal", name=a["name"], lo=st["alo"], hi=st["ahi"]))
                 a = None
         if a is not None:
             curves.append({"x": a["x"], "y": ya, "color": st["c_abs"], "label": None})

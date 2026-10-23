@@ -103,6 +103,7 @@ def chromatogram(spectra):
 # ---------------------------------------------------------------------------- Tab
 class HRMSTab(TABS.FigureTab):
     STATE_KEY = "hrms"
+    GUIDE, GUIDE_ACTION = "hrms", ("guide_add", "choose_ms")
     SI_CAPTION = "HR-MS spectrum of {name}."
     X_RANGE = (10.0, 5000.0, 2, 0.5)
     XRANGE_TEXT = "ms_xrange"

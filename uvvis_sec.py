@@ -145,6 +145,7 @@ def _floats(text):
 
 class SECTab(TABS.FigureTab):
     STATE_KEY = "sec"
+    GUIDE, GUIDE_ACTION = "sec", ("guide_add", "choose_spectra")
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
     CAP_FIELDS = ("solvent", "start", "mid", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."

@@ -724,6 +724,11 @@ class SynthTab(QWidget):
             self.lbl_prev.setPixmap(QPixmap())
             self.lbl_prev.hide()
         name = self.compound_name()
+        if st is None and not (self.st.get("proc") or "").strip():      # noch nichts da: Anleitung statt leerer Seite
+            from uvvis_tabs import guide_html
+            self.txt_prev.setOpenExternalLinks(True)
+            self.txt_prev.setHtml(guide_html("syn"))
+            return
         self.txt_prev.setHtml(f"<p>Synthesis of <b>{_h.escape(name)}</b></p><p style='text-align:justify'>"
                               f"{self.st.get('proc') or ''}</p>")
 

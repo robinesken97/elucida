@@ -620,6 +620,7 @@ def _labels(text):
 
 class EPRTab(TABS.FigureTab):
     STATE_KEY = "epr"
+    GUIDE, GUIDE_ACTION = "epr", ("guide_add", "add_exp")
     CAP_FIELDS = ("species", "solvent", "conc")
     SI_CAPTION = "EPR spectra of {name}."
     X_RANGE = (0.0, 20000.0, 1, 1.0)
