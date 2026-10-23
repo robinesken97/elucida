@@ -1523,7 +1523,62 @@ TEXTS = {
     "tab_dft": ("DFT", "DFT"),
     "dft_structures": ("Geometrien und Rechnungen", "Geometries and calculations"),
     "dft_add": ("xyz/.out/.log hinzufügen …", "Add xyz/.out/.log …"),
-    "dft_flt": ("xyz, ORCA/Gaussian-Ausgabe", "xyz, ORCA/Gaussian output"),
+    "dft_flt": ("xyz, ORCA/Gaussian-Ausgabe, Cube, Molden", "xyz, ORCA/Gaussian output, cube, Molden"),
+    "dft_orbitals": ("Orbitale", "Orbitals"),
+    "dft_orb_add": ("Cube/Molden hinzufügen …", "Add cube/Molden …"),
+    "dft_orb_add_tip": ("Orbitale als Gaussian-Cube (ORCA: orca_plot, Gaussian: cubegen) oder Molden-Datei (ORCA: "
+                        "orca_2mkl name -molden; alle MOs, HOMO und LUMO werden angelegt). Passt die Datei zur gewählten "
+                        "Geometrie, wird sie dort angehängt, sonst entsteht eine neue Geometrie.",
+                        "Orbitals as Gaussian cube (ORCA: orca_plot, Gaussian: cubegen) or Molden file (ORCA: "
+                        "orca_2mkl name -molden; all MOs, HOMO and LUMO are added). If the file matches the selected "
+                        "geometry it is attached there, otherwise a new geometry is created."),
+    "dft_orb_flt": ("Gaussian-Cube, Molden", "Gaussian cube, Molden"),
+    "dft_orb_mo": ("Aus Molden", "From Molden"),
+    "dft_orb_mo_tip": ("Alle MOs der Molden-Datei; „+“ legt das gewählte als weiteres Orbital an.",
+                       "All MOs of the Molden file; “+” adds the selected one as a further orbital."),
+    "dft_orb_mo_add": ("+", "+"),
+    "dft_orb_molden_conv": ("Konvention der Basisfunktionen nicht erkannt (Orbitale nicht orthonormal, Abweichung {err}) "
+                            "– Datei abgelehnt.",
+                            "Basis-function convention not recognised (orbitals not orthonormal, deviation {err}) – "
+                            "file rejected."),
+    "dft_orb_molden_ok": ("Molden: Konvention {v}, CᵀSC = 1 bis auf {err}", "Molden: convention {v}, CᵀSC = 1 within {err}"),
+    "dft_orb_select": ("Orbital", "Orbital"),
+    "dft_orb_select_tip": ("Gezeigtes Orbital. HOMO/LUMO und Energie aus der ORCA/Gaussian-Ausgabe der Geometrie, "
+                           "MO-Nummer aus dem Cube bzw. dem Dateinamen (ORCA: name.mo21a.cube).",
+                           "Orbital shown. HOMO/LUMO and energy from the ORCA/Gaussian output of the geometry, MO "
+                           "number from the cube or the file name (ORCA: name.mo21a.cube)."),
+    "dft_orb_none": ("– keins –", "– none –"),
+    "dft_orb_iso": ("Isofläche", "Isosurface"),
+    "dft_orb_iso_frac": ("Anteil der Dichte", "Density fraction"),
+    "dft_orb_iso_abs": ("Isowert", "Isovalue"),
+    "dft_orb_iso_tip": ("Wie IboView: die Fläche umschließt diesen Anteil von |ψ|² (Standard 80 %). Alternativ ein "
+                        "fester Isowert ±ψ in a.u. (üblich 0.02–0.05).",
+                        "As in IboView: the surface encloses this fraction of |ψ|² (default 80%). Alternatively a "
+                        "fixed isovalue ±ψ in a.u. (typically 0.02–0.05)."),
+    "dft_orb_alpha": ("Deckkraft", "Opacity"),
+    "dft_orb_alpha_tip": ("Deckkraft der Isoflächen (IboView: 0.6); Ränder werden wie in IboView deckender.",
+                          "Opacity of the isosurfaces (IboView: 0.6); edges become more opaque as in IboView."),
+    "dft_orb_scheme": ("Farben", "Colours"),
+    "dft_orb_scheme_hue": ("IboView (Farbton je Orbital)", "IboView (hue per orbital)"),
+    "dft_orb_scheme_sat": ("IboView (Sättigung)", "IboView (saturation)"),
+    "dft_orb_scheme_opposite": ("IboView (Gegenfarben)", "IboView (opposite colours)"),
+    "dft_orb_hint": ("Orbitale als Molden-Datei (ORCA: orca_2mkl name -molden) oder Cube laden (ORCA: orca_plot "
+                     "name.gbw -i, Gaussian: cubegen). Gezeigt wird mit Atomen wie in IboView.",
+                     "Load orbitals as Molden file (ORCA: orca_2mkl name -molden) or cube (ORCA: orca_plot name.gbw -i, "
+                     "Gaussian: cubegen). Shown with atoms as in IboView."),
+    "dft_orb_info": ("Isowert ±{iso} a.u.; Gitter {n}, Schritt {h} Å", "Isovalue ±{iso} a.u.; grid {n}, step {h} Å"),
+    "dft_orb_norm": ("Achtung: Σψ²·dV = {v} statt 1 – das Gitter enthält nicht das ganze Orbital (oder ψ ist nicht "
+                     "normiert); der Anteil der Dichte stimmt dann nicht. Größeres Gitter oder festen Isowert nehmen.",
+                     "Caution: Σψ²·dV = {v} instead of 1 – the grid does not contain the whole orbital (or ψ is not "
+                     "normalised); the density fraction is then wrong. Use a larger grid or a fixed isovalue."),
+    "dft_orb_coarse": ("Grobes Gitter ({h} Å): Fläche kantig. orca_plot: Gitterpunkte erhöhen (z. B. 100).",
+                       "Coarse grid ({h} Å): surface looks faceted. orca_plot: increase the grid points (e.g. 100)."),
+    "dft_orb_new_entry": ("{f} passt nicht zur gewählten Geometrie – neue Geometrie aus dem Cube angelegt.",
+                          "{f} does not match the selected geometry – new geometry created from the cube."),
+    "dft_orb_missing": ("Cube fehlt: {f}", "Cube missing: {f}"),
+    "dft_orb_style": ("Mit Orbital werden die Atome wie in IboView gezeichnet.",
+                      "With an orbital, atoms are drawn as in IboView."),
+    "xr_style_iboview": ("IboView", "IboView"),
     "dft_si": ("Rechnung für die SI", "Calculation for the SI"),
     "dft_si_hint": ("Für den SI-Block eine ORCA-6- oder Gaussian-Ausgabe (.out/.log) laden; reine xyz-Dateien "
                     "enthalten keine Angaben zur Rechnung.",

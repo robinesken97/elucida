@@ -28,6 +28,8 @@ args = [
     "--hidden-import", "olefile",
     "--hidden-import", "openpyxl",
     "--hidden-import", "uvvis_demo",               # Beispielprojekt (Hilfe-Menü), nur bei Bedarf importiert
+    "--hidden-import", "uvvis_orbitals",           # Orbitale im DFT-Tab (Cube/Molden, Raycasting)
+    "--hidden-import", "colorsys",                 # Orbitalfarben wie IboView (in uvvis_orbitals nur lokal importiert)
     "--hidden-import", "PySide6.QtSvg",          # Symbole/Theme (uvvis_style)
     "--hidden-import", "matplotlib.backends.backend_qtagg",
     "--hidden-import", "matplotlib.backends.backend_agg",

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+import uvvis_orbitals as ORB
 import uvvis_xray as XRAY
 from uvvis_i18n import T
 
@@ -719,6 +720,43 @@ def is_xyz(path):
     return Path(path).suffix.lower() == ".xyz" and Path(path).is_file()
 
 
+CUBE_EXT = (".cube", ".cub")
+
+
+def is_cube(path):
+    return Path(path).suffix.lower() in CUBE_EXT and Path(path).is_file()
+
+
+def cube_frame(c, comment=""):
+    """Geometrie eines Cubes als xyz-Bild (Å, 8 Nachkommastellen; der Cube speichert Bohr mit 6 Stellen)."""
+    lines = [f"{el:<2s} {x:16.8f} {y:16.8f} {z:16.8f}" for el, (x, y, z) in zip(c["els"], c["xyz"])]
+    return dict(comment=comment or c["comment"].strip(), lines=lines, els=list(c["els"]), xyz=np.array(c["xyz"]))
+
+
+def is_molden(path):
+    """Molden-Datei (ORCA: orca_2mkl name -molden -> name.molden.input), sonst am Kopf „[Molden Format]“ erkannt."""
+    p = Path(path)
+    if not p.is_file():
+        return False
+    n = p.name.lower()
+    if n.endswith(".molden") or n.endswith(".molden.input"):
+        return True
+    if p.suffix.lower() not in (".input", ".mold", ".txt"):
+        return False
+    with open(p, "rb") as fh:
+        return b"[molden format]" in fh.read(400).lower()
+
+
+def molden_frame(m, comment=""):
+    """Geometrie einer Molden-Datei als xyz-Bild (Å)."""
+    return cube_frame(dict(els=m["els"], xyz=np.asarray(m["xyz"]) * ORB.BOHR, comment=m["title"].strip()), comment)
+
+
+def cube_fits(frame, c, tol=0.02):
+    """Gehört der Cube zu dieser Geometrie? Gleiche Elemente in gleicher Reihenfolge, Koordinaten ± tol Å."""
+    return list(frame["els"]) == list(c["els"]) and np.abs(np.asarray(frame["xyz"]) - c["xyz"]).max() < tol
+
+
 def is_calc(path):
     """ORCA-/Gaussian-Ausgabe (.out/.log, am Kopf erkannt)."""
     p = Path(path)
@@ -851,7 +889,7 @@ from matplotlib.figure import Figure as MplFigure  # noqa: E402
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,  # noqa: E402
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
-                               QTableWidgetItem, QTextBrowser, QVBoxLayout)
+                               QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 import uvvis_core as core  # noqa: E402
 import uvvis_project as PRJ  # noqa: E402
@@ -870,7 +908,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
-                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black")
+                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black",
+                         orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=0.05, orb_alpha=ORB.ORB_ALPHA,
+                         orb_scheme="hue")
 
     # Größe/Formate wie im X-Ray-Tab (keine Achsen)
     common_box = XRAY.XrayTab.common_box
@@ -919,6 +959,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.lbl_info.setStyleSheet(HINT_CSS)
         v.addWidget(self.lbl_info)
         self.lv.addWidget(g)
+        self.lv.addWidget(self.orbital_box())
 
         g = QGroupBox(T("dft_si"))
         v = QVBoxLayout(g)
@@ -1064,7 +1105,65 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             w_.toggled.connect(self.changed)
         self.sync_widgets()
 
+    def orbital_box(self):
+        """Karte „Orbitale“: Cube-Dateien der gewählten Geometrie, Auswahl, Isowert, Deckkraft, Farben (IboView)."""
+        g = QGroupBox(T("dft_orbitals"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        for txt, tip, fn in ((T("dft_orb_add"), T("dft_orb_add_tip"), self.add_orbital),
+                             (T("remove"), "", self.remove_orbital)):
+            b = QPushButton(txt)
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(row)
+        self.cmb_orb = QComboBox()
+        self.cmb_orb.setToolTip(T("dft_orb_select_tip"))
+        self.cmb_orb.currentIndexChanged.connect(self.orbital_selected)
+        f.addRow(T("dft_orb_select"), self.cmb_orb)
+        self.row_mo = QWidget()
+        rm = QHBoxLayout(self.row_mo)
+        rm.setContentsMargins(0, 0, 0, 0)
+        self.cmb_mo = QComboBox()
+        self.cmb_mo.setToolTip(T("dft_orb_mo_tip"))
+        self.cmb_mo.setMaxVisibleItems(20)
+        b = QPushButton(T("dft_orb_mo_add"))
+        b.clicked.connect(self.add_molden_mo)
+        rm.addWidget(self.cmb_mo, 1)
+        rm.addWidget(b)
+        f.addRow(T("dft_orb_mo"), self.row_mo)
+        row = QHBoxLayout()
+        self.cmb_iso = QComboBox()
+        for k in ("frac", "abs"):
+            self.cmb_iso.addItem(T("dft_orb_iso_" + k), k)
+        self.cmb_iso.setToolTip(T("dft_orb_iso_tip"))
+        self.sp_iso = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=99.0, singleStep=1.0)
+        row.addWidget(self.cmb_iso)
+        row.addWidget(self.sp_iso)
+        row.addStretch(1)
+        f.addRow(T("dft_orb_iso"), row)
+        self.sp_alpha = QDoubleSpinBox(decimals=2, minimum=0.1, maximum=1.0, singleStep=0.05)
+        self.sp_alpha.setToolTip(T("dft_orb_alpha_tip"))
+        f.addRow(T("dft_orb_alpha"), self.sp_alpha)
+        self.cmb_scheme = QComboBox()
+        for k in ORB.SCHEMES:
+            self.cmb_scheme.addItem(T("dft_orb_scheme_" + k), k)
+        f.addRow(T("dft_orb_scheme"), self.cmb_scheme)
+        self.lbl_orb = QLabel("")
+        self.lbl_orb.setWordWrap(True)
+        self.lbl_orb.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_orb)
+        self.cmb_iso.currentIndexChanged.connect(self.iso_mode_changed)
+        self.sp_iso.valueChanged.connect(self.changed)
+        self.sp_alpha.valueChanged.connect(self.changed)
+        self.cmb_scheme.currentIndexChanged.connect(self.changed)
+        return g
+
     def collect(self):
+        mode = self.cmb_iso.currentData()
+        self.st.update(orb_iso_mode=mode, orb_alpha=self.sp_alpha.value(), orb_scheme=self.cmb_scheme.currentData(),
+                       **{"orb_frac" if mode == "frac" else "orb_abs": self.sp_iso.value()})
         self.st.update(show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(), h_labels=self.cb_hlab.isChecked(),
                        label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
                        radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), label_pt=self.sp_lab.value(), style=self.cmb_style.currentData(),
@@ -1102,6 +1201,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sp_lab.setValue(st.get("label_pt", 0.0))
         self.cmb_lcol.setCurrentIndex(max(0, self.cmb_lcol.findData(st.get("label_color", "black"))))
         self.fill_refs()
+        self.sync_orbitals()
         self._loading = False
         self.update_num_status()
 
@@ -1121,12 +1221,17 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         if not self.main.ensure_project():
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("dft_add"), self.main.settings.value("last_dir", ""),
-                                             f"{T('dft_flt')} (*.xyz *.out *.log);;{T('flt_all')}")
+                                             f"{T('dft_flt')} (*.xyz *.out *.log *.cube *.cub *.molden *.input);;"
+                                             f"{T('flt_all')}")
         for p in ps:
             self.load_xyz(p)
 
     def load_xyz(self, p):
-        """xyz oder Ausgabe einer Rechnung (ORCA 6, Gaussian); Name = Dateiname ohne Endung."""
+        """xyz oder Ausgabe einer Rechnung (ORCA 6, Gaussian); Name = Dateiname ohne Endung. Cube: Orbital."""
+        if Path(p).suffix.lower() in CUBE_EXT:
+            return self.load_cube(p)
+        if is_molden(p):
+            return self.load_molden(p)
         p = self.main.import_file(p, "data")
         try:
             self.frames_of(p)
@@ -1141,6 +1246,285 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sync_widgets()
         self.render()
         return e
+
+    # -- Orbitale (Cube) ---------------------------------------------------------------------
+    def add_orbital(self):
+        if not self.main.ensure_project():
+            return
+        ps, _ = QFileDialog.getOpenFileNames(self, T("dft_orb_add"), self.main.settings.value("last_dir", ""),
+                                             f"{T('dft_orb_flt')} (*.cube *.cub *.molden *.input);;{T('flt_all')}")
+        for p in ps:
+            (self.load_molden if is_molden(p) else self.load_cube)(p)
+
+    def cube_of(self, p):
+        return self.cache(("cube", p), lambda: ORB.read_cube(p))
+
+    def entry_for(self, p, frame):
+        """Geometrie, an die Orbitale aus p gehören: die gewählte, wenn Atome und Koordinaten passen, sonst neu."""
+        e = self.entry()
+        g = self.geometry(e) if e is not None else None
+        if g is not None and cube_fits(g[0][-1], frame):
+            return e
+        if e is not None:
+            self.main.statusBar().showMessage(T("dft_orb_new_entry", f=Path(p).name), 8000)
+        e = dict(uid=uuid.uuid4().hex[:8], file=p, name=Path(p).name.split(".")[0], order=None, view=None,
+                 zoom=1.0, pan=[0.0, 0.0], layout={}, label_on={})
+        self.entries().append(e)
+        self.st["current"] = e["uid"]
+        return e
+
+    def molden_of(self, p):
+        return self.cache(("molden", p), lambda: ORB.parse_molden(read_text(p)))
+
+    def basis_of(self, p):
+        """Basis der Molden-Datei mit geprüfter Konvention (CᵀSC = 1), sonst ValueError."""
+        def make():
+            b = ORB.Basis(self.molden_of(p))
+            err = b.setup()
+            if err > ORB.Basis.MAX_ORTH_ERR:
+                raise ValueError(T("dft_orb_molden_conv", err=f"{err:.1e}"))
+            return b
+        return self.cache(("basis", p), make)
+
+    def load_molden(self, p):
+        """Molden-Datei: alle MOs verfügbar, HOMO und LUMO werden gleich angelegt (weitere über die Liste)."""
+        p = self.main.import_file(p, "data")
+        try:
+            m = self.molden_of(p)
+            self.basis_of(p)
+        except Exception as ex:
+            self.main.error(f"{Path(p).name}: {ex}")
+            return None
+        e = self.entry_for(p, molden_frame(m))
+        e["molden"] = p
+        orbs = e.setdefault("orbitals", [])
+        tab = ORB.molden_table(m)
+        spin = "" if "" in tab else "a"
+        homo = max((n for n, o, _ in tab[spin] if o > 0.5), default=None)
+        for no in (homo, None if homo is None else homo + 1):
+            i = ORB.molden_index(m, no, spin) if no is not None else None
+            if i is not None and not any(it.get("mo") == i and it["file"] == p for it in orbs):
+                orbs.append(dict(file=p, mo=i))
+        e["orb_cur"] = len(orbs) - 2 if len(orbs) >= 2 else len(orbs) - 1
+        self.stop_numbering()
+        self.sync_widgets()
+        self.render()
+        return e
+
+    def add_molden_mo(self):
+        """MO aus der Liste der Molden-Datei als weiteres Orbital anlegen und zeigen."""
+        e = self.entry()
+        i = self.cmb_mo.currentData()
+        if e is None or i is None or not e.get("molden"):
+            return
+        orbs = e.setdefault("orbitals", [])
+        k = next((k for k, it in enumerate(orbs) if it.get("mo") == i and it["file"] == e["molden"]), None)
+        if k is None:
+            orbs.append(dict(file=e["molden"], mo=i))
+            k = len(orbs) - 1
+        e["orb_cur"] = k
+        self.sync_widgets()
+        self.render()
+
+    def mo_label(self, m, i):
+        """Bezeichnung des i-ten MOs einer Molden-Datei: „HOMO (MO 7, −12.05 eV)“."""
+        mo = m["mos"][i]
+        tab = ORB.molden_table(m)
+        spin = mo["spin"] if "" not in tab else ""
+        rows = tab[spin]
+        k = sum(1 for x in m["mos"][:i] if x["spin"] == mo["spin"])
+        no = rows[k][0]
+        fr = ORB.frontier_name(no, spin, tab)
+        sp = {"a": " α", "b": " β"}.get(spin, "")
+        bits = f"MO {no}{sp}, " + f"{mo['energy'] * ORB.HARTREE_EV:.2f} eV".replace("-", "\u2212")
+        return f"{fr}{sp} ({bits})" if fr else bits
+
+    def load_cube(self, p):
+        """Cube an die gewählte Geometrie hängen, wenn Atome und Koordinaten passen; sonst neue Geometrie aus dem
+        Cube. Mehrere Orbitale in einem Cube (Gaussian) -> je Orbital ein Eintrag."""
+        p = self.main.import_file(p, "data")
+        try:
+            c = self.cube_of(p)
+        except Exception as ex:
+            self.main.error(f"{Path(p).name}: {ex}")
+            return None
+        e = self.entry_for(p, c)
+        orbs = e.setdefault("orbitals", [])
+        for j in range(len(c["data"])):
+            orbs.append(dict(file=p, idx=j))
+        e["orb_cur"] = len(orbs) - 1
+        self.stop_numbering()
+        self.sync_widgets()
+        self.render()
+        return e
+
+    def remove_orbital(self):
+        e = self.entry()
+        k = self.orb_index(e)
+        if k is None:
+            return
+        e["orbitals"].pop(k)
+        e["orb_cur"] = min(k, len(e["orbitals"]) - 1) if e["orbitals"] else None
+        self.sync_widgets()
+        self.render()
+
+    def orb_index(self, e):
+        """Index des gezeigten Orbitals der Geometrie oder None."""
+        if e is None:
+            return None
+        k = e.get("orb_cur")
+        return k if isinstance(k, int) and 0 <= k < len(e.get("orbitals") or []) else None
+
+    def orb_table(self, e):
+        """Orbitalenergien der Rechnung dieser Geometrie (ORCA/Gaussian-Ausgabe) oder {}."""
+        p = e["file"] if e else None
+        if not p or Path(p).suffix.lower() not in (".out", ".log") or not Path(p).exists():
+            return {}
+        return self.cache(("orbE", p), lambda: ORB.orbital_energies(read_text(p)))
+
+    def orb_name(self, e, item):
+        """Bezeichnung eines Orbitals: „HOMO−1 (MO 20, −9.87 eV)“, sonst MO-Nummer oder Dateiname."""
+        if "mo" in item:
+            return self.mo_label(self.molden_of(item["file"]), item["mo"])
+        c = self.cube_of(item["file"])
+        mo, spin = ORB.cube_mo(item["file"], c) if len(c["data"]) == 1 else (c["mos"][item.get("idx", 0)], "")
+        tab = self.orb_table(e)
+        fr = ORB.frontier_name(mo, spin, tab) if mo is not None else None
+        en = ORB.orbital_energy(mo, spin, tab) if mo is not None else None
+        sp = {"a": " α", "b": " β"}.get(spin, "")
+        bits = [f"MO {mo}{sp}"] if mo is not None else []
+        if en is not None:
+            bits.append(f"{en:.2f} eV".replace("-", "\u2212"))
+        if fr:
+            return fr + sp + (f" ({', '.join(bits)})" if bits else "")
+        return ", ".join(bits) or Path(item["file"]).stem
+
+    def orb_short(self, e, item):
+        """Kurzname für Dateien: HOMO-1, LUMO, MO20 …"""
+        n = self.orb_name(e, item).split(" (")[0].replace("\u2212", "-").replace(" α", "a").replace(" β", "b")
+        return core.safe_name(n.replace(", ", "_").replace(" ", ""))
+
+    def orb_volume(self, item):
+        if "mo" in item:                                    # Molden: MO auf dem Gitter auswerten (gecacht)
+            def make():
+                b = self.basis_of(item["file"])
+                data, origin, axes = ORB.molden_grid(b, b.m["mos"][item["mo"]]["c"], ORB.MOLDEN_SPACING)
+                return ORB.Volume(data, origin, axes)
+            return self.cache(("orbvol", item["file"], "mo", item["mo"]), make)
+        return self.cache(("orbvol", item["file"], item.get("idx", 0)),
+                          lambda: ORB.Volume(self.cube_of(item["file"])["data"][item.get("idx", 0)],
+                                             self.cube_of(item["file"])["origin"], self.cube_of(item["file"])["axes"]))
+
+    def orb_iso(self, item, vol):
+        st = self.st
+        if st.get("orb_iso_mode", "frac") == "abs":
+            return float(st.get("orb_abs", 0.05))
+        frac = float(st.get("orb_frac", ORB.ISO_FRACTION))
+        return self.cache(("orbiso", item["file"], item.get("idx", 0), item.get("mo"), frac),
+                          lambda: ORB.iso_for_fraction(vol.data, frac))
+
+    def orbital_opts(self, e, k):
+        """Orbital k der Geometrie für XrayFigure (opts["orbital"]) oder None."""
+        orbs = e.get("orbitals") or []
+        if k is None or not 0 <= k < len(orbs):
+            return None
+        item = orbs[k]
+        if not Path(item["file"]).exists():
+            self.add_note(T("dft_orb_missing", f=Path(item["file"]).name))
+            return None
+        vol = self.orb_volume(item)
+        plus, minus, alpha = ORB.orbital_colors(k, self.st.get("orb_scheme", "hue"))
+        a = float(self.st.get("orb_alpha", ORB.ORB_ALPHA)) * alpha / ORB.ORB_ALPHA
+        return dict(vol=vol, iso=self.orb_iso(item, vol), plus=plus, minus=minus, alpha=min(1.0, a))
+
+    def orbital_selected(self, _i=None):
+        if self._loading:
+            return
+        e = self.entry()
+        if e is None:
+            return
+        e["orb_cur"] = self.cmb_orb.currentData()
+        self.sync_widgets()
+        self.render()
+
+    def iso_mode_changed(self, _i=None):
+        if self._loading:
+            return
+        mode = self.cmb_iso.currentData()
+        self.st["orb_iso_mode"] = mode
+        self._loading = True
+        self.sync_iso_spin()
+        self._loading = False
+        self.changed()
+
+    def sync_iso_spin(self):
+        frac = self.st.get("orb_iso_mode", "frac") == "frac"
+        self.sp_iso.setDecimals(1 if frac else 4)
+        self.sp_iso.setRange(1.0, 99.0) if frac else self.sp_iso.setRange(0.0001, 1.0)
+        self.sp_iso.setSingleStep(5.0 if frac else 0.005)
+        self.sp_iso.setSuffix(" %" if frac else " a.u.")
+        self.sp_iso.setValue(self.st.get("orb_frac", ORB.ISO_FRACTION) if frac else self.st.get("orb_abs", 0.05))
+
+    def sync_orbitals(self):
+        """Orbital-Karte nach dem Zustand (nur innerhalb von sync_widgets)."""
+        st, e = self.st, self.entry()
+        self.cmb_orb.clear()
+        self.cmb_orb.addItem(T("dft_orb_none"), None)
+        for k, item in enumerate((e or {}).get("orbitals") or []):
+            try:
+                self.cmb_orb.addItem(self.orb_name(e, item), k)
+            except Exception:
+                self.cmb_orb.addItem(Path(item["file"]).name, k)
+        k = self.orb_index(e)
+        self.cmb_orb.setCurrentIndex(0 if k is None else k + 1)
+        self.cmb_mo.clear()
+        mp = (e or {}).get("molden")
+        if mp and Path(mp).exists():
+            try:
+                m = self.molden_of(mp)
+                for i in range(len(m["mos"])):
+                    self.cmb_mo.addItem(self.mo_label(m, i), i)
+                homo = max((i for i, mo in enumerate(m["mos"]) if mo["occ"] > 0.5 and mo["spin"] == "a"), default=0)
+                self.cmb_mo.setCurrentIndex(homo)
+            except Exception:
+                pass
+        self.row_mo.setVisible(self.cmb_mo.count() > 0)
+        lab_ = self.row_mo.parentWidget().layout().labelForField(self.row_mo) if self.row_mo.parentWidget() else None
+        if lab_ is not None:
+            lab_.setVisible(self.cmb_mo.count() > 0)
+        self.cmb_iso.setCurrentIndex(max(0, self.cmb_iso.findData(st.get("orb_iso_mode", "frac"))))
+        self.sync_iso_spin()
+        self.sp_alpha.setValue(st.get("orb_alpha", ORB.ORB_ALPHA))
+        self.cmb_scheme.setCurrentIndex(max(0, self.cmb_scheme.findData(st.get("orb_scheme", "hue"))))
+        self.cmb_style.setEnabled(k is None)                 # mit Orbital: Atome immer wie IboView
+        self.cmb_style.setToolTip(T("dft_orb_style") if k is not None else "")
+        self.update_orb_info()
+
+    def update_orb_info(self):
+        e = self.entry()
+        k = self.orb_index(e)
+        if k is None:
+            self.lbl_orb.setText(T("dft_orb_hint") if not (e or {}).get("orbitals") else "")
+            return
+        item = e["orbitals"][k]
+        try:
+            vol = self.orb_volume(item)
+        except Exception as ex:
+            self.lbl_orb.setText(str(ex))
+            return
+        iso = self.orb_iso(item, vol)
+        bits = [T("dft_orb_info", iso=f"{iso:.4f}", n="×".join(str(x) for x in vol.n),
+                  h=f"{vol.step:.3f}")]
+        if "mo" in item:
+            b = self.basis_of(item["file"])
+            bits.append(T("dft_orb_molden_ok", v=" / ".join(b.variant), err=f"{b.err:.0e}"))
+        norm = self.cache(("orbnorm", item["file"], item.get("idx", 0), item.get("mo")),
+                          lambda: ORB.grid_norm(vol.data, vol.axes))
+        if self.st.get("orb_iso_mode", "frac") == "frac" and not 0.9 <= norm <= 1.1:
+            bits.append(T("dft_orb_norm", v=f"{norm:.2f}"))
+        if vol.step > 0.25:
+            bits.append(T("dft_orb_coarse", h=f"{vol.step:.2f}"))
+        self.lbl_orb.setText("\n".join(bits))
 
     def remove_entry(self):
         e = self.entry()
@@ -1177,6 +1561,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def frames_of(self, p):
         if Path(p).suffix.lower() == ".xyz":
             return self.cache(("xyz", p), lambda: read_xyz(p))
+        if Path(p).suffix.lower() in CUBE_EXT:
+            return self.cache(("cubexyz", p), lambda: [cube_frame(self.cube_of(p))])
+        if is_molden(p):
+            return self.cache(("moldenxyz", p), lambda: [molden_frame(self.molden_of(p))])
         return [self.calc_geom(p)[0]]
 
     def calc_geom(self, p):
@@ -1188,9 +1576,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         return self.cache(("calc", p), lambda: read_calc(p))
 
     def calc_of(self, e):
-        """Ausgewertete Rechnung eines Eintrags oder None (reine xyz)."""
+        """Ausgewertete Rechnung eines Eintrags oder None (reine xyz/Cube)."""
         p = e["file"] if e else None
-        if not p or Path(p).suffix.lower() == ".xyz" or not Path(p).exists():
+        if not p or Path(p).suffix.lower() not in (".out", ".log") or not Path(p).exists():
             return None
         return self.calc_file(p)
 
@@ -1259,7 +1647,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         return e.setdefault("layout", {}).setdefault(self.size_key(), {})
 
     # -- Abbildung ------------------------------------------------------------------------
-    def opts(self, e, interactive=True):
+    def opts(self, e, interactive=True, orb="cur"):
         st = self.st
         label_on = dict(e.get("label_on") or {})
         numbering = interactive and self.numbering
@@ -1268,7 +1656,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         r = st.get("radius", 0.25)
         # Labels: Vorschau wie eingestellt (zum Nummerieren), Export/Word nur mit „Labels im Export“
         labels = st["labels"] if interactive else st.get("export_labels", False)
-        return dict(prob=50, show_h=st["show_h"], labels=labels or numbering, h_labels=st["h_labels"],
+        o = dict(prob=50, show_h=st["show_h"], labels=labels or numbering, h_labels=st["h_labels"],
                     colors={}, bond_w=st.get("bond_w", 0.08), hidden_frags=[],
                     style=XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"),
                     hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
@@ -1276,9 +1664,13 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     h_radius=0.55 * r, bg=st.get("bg", "white"),
                     # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard (Standardwerte = Aussehen der Vorlage)
                     ball_scale=r / self.DEFAULT_STATE["radius"],
-                    rod_scale=st.get("bond_w", 0.08) / self.DEFAULT_STATE["bond_w"])
+                    rod_scale=st.get("bond_w", 0.08) / self.DEFAULT_STATE["bond_w"],
+                    orbital=self.orbital_opts(e, self.orb_index(e) if orb == "cur" else orb))
+        if o["orbital"] is not None:                       # Orbital: Atome wie IboView (Nutzerwunsch)
+            o["style"] = "iboview"
+        return o
 
-    def build(self, fig, e=None, interactive=True):
+    def build(self, fig, e=None, interactive=True, orb="cur"):
         e = e or self.entry()
         if e is None:
             return None
@@ -1292,7 +1684,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             sel = list(self.picks)
         else:
             sel = [i for i in (mol.find_key(k) for k in self.sel) if i is not None] if interactive else []
-        F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), self.opts(e, interactive), lay, fig, selection=sel,
+        F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), self.opts(e, interactive, orb), lay, fig, selection=sel,
                             zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0))
         if interactive and self.numbering:
             # neu vergeben: Nummer mittig auf dem Atom (der Auswahlring belegt den Platz daneben), nicht anklickbar,
@@ -1354,6 +1746,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             bits.append(T("dft_fragments", n=len(mol.fragments)))
         bits.append(T("dft_renumbered") if e.get("order") else T("dft_file_order"))
         self.lbl_info.setText("\n".join(bits))
+        self.update_orb_info()
         self.update_si()
 
     def update_si(self):
@@ -1675,10 +2068,20 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             stem = base.with_name(name)
             fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
             FigureCanvasAgg(fig)
-            F = self.build(fig, e, interactive=False)
+            F = self.build(fig, e, interactive=False, orb=None)
             if F is not None:
                 F.cfg["output"] = str(stem.with_suffix("." + F.cfg["_main_fmt"]))
                 files += F.export()
+            for k, item in enumerate(e.get("orbitals") or []):          # je Orbital eine Abbildung
+                if not Path(item["file"]).exists():
+                    continue
+                fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+                FigureCanvasAgg(fig)
+                F = self.build(fig, e, interactive=False, orb=k)
+                if F is not None:
+                    o = stem.with_name(stem.name + "_" + self.orb_short(e, item))
+                    F.cfg["output"] = str(o.with_suffix("." + F.cfg["_main_fmt"]))
+                    files += F.export()
             g = self.geometry(e)
             files.append(write_xyz(stem.with_suffix(".xyz"), g[0], self.order(e, len(g[1]))))
         if any(self.calc_of(e) is not None for e in es):
@@ -1708,7 +2111,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             blocks.append(("heading", p["name"]))
             fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
             FigureCanvasAgg(fig)
-            F = self.build(fig, e, interactive=False)
+            F = self.build(fig, e, interactive=False, orb=None)
             if F is not None:
                 svg = Path(img_dir) / f"{core.safe_name(p['name'])}_dft.svg"
                 blocks.append(("image",) + XRAY.save_tight(F, svg))
@@ -1721,7 +2124,34 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             blocks.append(("mono", p["coords"]))
             if p["energies"]:
                 blocks.append(("energies", p["energies"][0], [p["energies"][2]]))
+            blocks += self.orbital_blocks(e, p["name"], img_dir)
         return blocks
+
+    def orbital_caption(self, e, item, name):
+        """Unterschrift (HTML, englisch): „HOMO (−5.43 eV) of <b>X</b>, isosurface enclosing 80% of the orbital
+        density.“ bzw. mit absolutem Isowert."""
+        lab = self.orb_name(e, item)
+        if self.st.get("orb_iso_mode", "frac") == "abs":
+            iso = f"isovalue ±{self.st.get('orb_abs', 0.05):g} a.u."
+        else:
+            iso = f"isosurface enclosing {self.st.get('orb_frac', ORB.ISO_FRACTION):g}% of the orbital density"
+        return f"{lab} of <b>{name}</b>, {iso}."
+
+    def orbital_blocks(self, e, name, img_dir):
+        """Word: je Orbital der Geometrie ein Bild (eng beschnitten) mit Unterschrift."""
+        out = []
+        for k, item in enumerate(e.get("orbitals") or []):
+            if not Path(item["file"]).exists():
+                continue
+            fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+            FigureCanvasAgg(fig)
+            F = self.build(fig, e, interactive=False, orb=k)
+            if F is None:
+                continue
+            svg = Path(img_dir) / f"{core.safe_name(name)}_{self.orb_short(e, item)}.svg"
+            out.append(("image",) + XRAY.save_tight(F, svg))
+            out.append(("text", self.orbital_caption(e, item, name)))
+        return out
 
     def save_docx(self, path=None):
         """SI-Abschnitt aller Rechnungen als Word-Datei (Stil wie die SI der Gruppe)."""

@@ -41,6 +41,11 @@ Im Tab **DFT** die xyz- oder Ausgabedatei hinzufügen. Drehen und Messen wie bei
 Vorlage** von einer anderen Geometrie oder der CIF übernehmen. **xyz speichern** schreibt eine neue Datei (Zeilen
 unverändert, nur umsortiert).
 
+**Orbitale:** in der Karte **Orbitale** eine Molden-Datei (ORCA: `orca_2mkl name -molden`) oder einen Cube (ORCA:
+`orca_plot`) hinzufügen. Passt sie zur gewählten Geometrie, hängt sie dort an. HOMO und LUMO werden angelegt, weitere
+MOs über **Aus Molden** und **+**. Gezeichnet wird wie in IboView (Isofläche mit 80 % der Orbitaldichte); im Export
+entsteht je Orbital eine eigene Abbildung.
+
 ## 6. SI
 
 Der Reiter **Rechnung für die SI** zeigt den Block mit Ladung, Multiplizität, Punktgruppe, Koordinaten und

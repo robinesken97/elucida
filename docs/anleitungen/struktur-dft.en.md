@@ -39,6 +39,11 @@ In the **DFT** tab add the xyz or output file. Rotate and measure as in the X-ra
 atoms** and click the atoms in order, then **Apply** – or take the numbering **like template** from another geometry or
 the CIF. **Save xyz** writes a new file (lines unchanged, only reordered).
 
+**Orbitals:** in the **Orbitals** card add a Molden file (ORCA: `orca_2mkl name -molden`) or a cube (ORCA:
+`orca_plot`). If it matches the selected geometry it is attached there. HOMO and LUMO are added, further MOs via
+**From Molden** and **+**. Drawn as in IboView (isosurface enclosing 80% of the orbital density); the export writes
+one figure per orbital.
+
 ## 6. SI
 
 The **Calculation for the SI** tab shows the block with charge, multiplicity, point group, coordinates and E_el/H/G.
