@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import datetime as dt
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 
@@ -187,8 +186,8 @@ def scheme_cdxml(path):
 
 def load_data(w, inp):
     """Alle Tabs mit künstlichen Daten füllen."""
-    G = sys.modules[type(w).__module__]                 # Modul des Hauptfensters (auch als __main__)
-    csv, cdxml, photo = G.make_selftest_inputs(inp)
+    from elucida.selftest import make_selftest_inputs
+    csv, cdxml, photo = make_selftest_inputs(inp)
     w.set_compound({"name": "S2"})
     # UV-Vis (ε): Verdünnungsreihe, Struktur, Küvettenfoto
     w.open_csv(csv, ask=False)
