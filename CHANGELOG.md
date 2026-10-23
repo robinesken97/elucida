@@ -2,6 +2,29 @@
 
 # Changelog
 
+## 2.0.3 – 2026-10-23
+
+### New
+- **Line drawing** style in the DFT tab, like classic journal figures: white balls with outline, hollow sticks,
+  atoms in front slightly larger.
+- **Label colour** in X-ray and DFT: black or like the atom (light colours darkened so they stay readable).
+- X-ray and DFT: **Shift + drag a box** to hide or show the labels of several atoms at once.
+
+### Changed
+- **Ball and stick** in the DFT tab looks like the figures in the ORCA 6 manual (colours, lighting, soft highlight,
+  proportions); the IboView-like style was removed. X-ray offers only Mercury and Olex2; projects with an older style
+  open with the closest one.
+- **Result tabs alike in every tab:** the card fills the page, tables use the full height, buttons sit at the bottom
+  right with the main one in blue. UV-Vis (ε) shows Results and SI line next to the figure instead of below it, so
+  the figure is larger; the log is under Help → Log.
+- Empty-tab guides look the same everywhere (also Synthesis and NMR) and sit in the middle of the area.
+- Messages appear as a small box at the bottom right; the empty status strip below the footers is gone.
+
+### Fixed
+- Opening a project could show the error "Internal C++ object already deleted".
+- macOS Intel: the example project could not be created (older RDKit).
+- A figure could stay too small after being hidden behind another tab.
+
 ## 2.0.2 – 2026-10-23
 
 ### New

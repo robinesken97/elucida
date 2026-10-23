@@ -238,7 +238,7 @@ pip install -r requirements.txt                       # Python 3.12 (wie CI)
 python uvvis_gui.py                                   # App starten
 QT_QPA_PLATFORM=offscreen python uvvis_gui.py --selftest selftest_out   # MUSS vor jedem Commit „OK“ melden
 python build.py                                       # PyInstaller-Build (braucht: pip install pyinstaller)
-python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots), nur künstliche Daten
+python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots): leere Tabs mit Anleitung, keine Daten
 ```
 - Neue Funktion → eigener Abschnitt im `selftest()` (Muster: `report.append("…: OK")`).
 - Der Selbsttest läuft in CI auch mit der **fertig gebauten** App auf allen drei Systemen.

@@ -1,8 +1,8 @@
 """Screenshots für das README (docs/screenshots/<tab>_<light|dark>_<de|en>.png).
 
-Startet das Hauptfenster (1600 × 1000, ohne Bildschirm: QT_QPA_PLATFORM=offscreen), lädt **nur künstliche Daten**
-(Generatoren des Selbsttests und erfundene Beispiele, keine Messdateien, keine echten Verbindungen) und speichert
-je Tab ein Bild über QWidget.grab. Die Beispieldaten kommen aus uvvis_demo (auch Hilfe → Beispielprojekt).
+Startet das Hauptfenster (1600 × 1000, ohne Bildschirm: QT_QPA_PLATFORM=offscreen) mit einem **leeren Projekt** und
+speichert je Tab ein Bild über QWidget.grab: die zentrierte Anleitung des leeren Tabs (was herauskommt, Dateien,
+Schritte, Knopf für den ersten Schritt). Nutzerwunsch: keine Daten in den README-Bildern, auch keine Beispieldaten.
 Das Werkzeug selbst gehört nicht in den PyInstaller-Build.
 
     python tools/make_screenshots.py [Zielordner]
@@ -37,9 +37,6 @@ def pump(sec=0.6):
         time.sleep(0.02)
 
 
-from uvvis_demo import load_data  # noqa: E402,F401  (künstliche Daten: uvvis_demo)
-
-
 def shoot(w, outdir, lang, theme):
     pages = {k: w.main_tabs.widget(i) for i, k in enumerate(w._tab_keys)}
     for name, key, themes in SHOTS:
@@ -54,6 +51,8 @@ def shoot(w, outdir, lang, theme):
         if key == "eps":
             w.render()
         pump(1.2)
+        w.statusBar().clearMessage()                      # Einblendung („Projekt gespeichert“) nicht im Bild
+        pump(0.1)
         p = Path(outdir) / f"{name}_{theme}_{lang}.png"
         w.grab().save(str(p))
         print(p.name)
@@ -71,9 +70,7 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         w.settings.setValue("update_auto", False)
         w.resize(*SIZE)
         w.show()
-        assert w.create_project(work / "Demo")
-        load_data(w, work / "input")
-        w.syn_tab.sync_widgets()
+        assert w.create_project(work / "Elucida")
         for lang in ("de", "en"):
             w.switch_lang(lang)
             for theme in ("light", "dark"):

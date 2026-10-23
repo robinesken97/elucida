@@ -45,7 +45,7 @@ automatisch freigestellt.
 
 ## 5. Ergebnisse prüfen
 
-Die Tabelle unter der Abbildung zeigt je Bande ε mit Fehler, Achsenabschnitt, R² und Hinweise. Darauf achten:
+Der Reiter **Ergebnisse** neben der Abbildung zeigt je Bande ε mit Fehler, Achsenabschnitt, R² und Hinweise. Darauf achten:
 
 - **Mindestens 3 Punkte** unter dem Cutoff, sonst gibt es keinen Fit (Hinweis in der Tabelle).
 - **R² unter 0,98:** Die Bande steht in Tabelle und Export, aber nicht im Bild. Bei nur 4 Punkten sagt R² wenig;

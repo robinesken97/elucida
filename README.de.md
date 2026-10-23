@@ -49,11 +49,11 @@ Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A
 Erscheinungsbild; Deutsch und Englisch.
 
 <table>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_de.png" alt="Synthese – Schema, Vorschrift, Mengenprüfung (erfundenes Beispiel)"><br><sub>Synthese – Schema, Vorschrift, Mengenprüfung (erfundenes Beispiel)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_de.png" alt="NMR – Mnova-SVG mit Struktur (künstliches Spektrum)"><br><sub>NMR – Mnova-SVG mit Struktur (künstliches Spektrum)</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_de.png" alt="UV-Vis-Overlay – gemessen, TD-DFT und SEC"><br><sub>UV-Vis-Overlay – gemessen, TD-DFT und SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_de.png" alt="Fluoreszenz"><br><sub>Fluoreszenz</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie – neutral, Radikalkation, Dikation"><br><sub>Spektroelektrochemie – neutral, Radikalkation, Dikation</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR – S = ½-Fit"><br><sub>CW-EPR – S = ½-Fit</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_de.png" alt="X-Ray – ORTEP aus CIF (künstliche Teststruktur)"><br><sub>X-Ray – ORTEP aus CIF (künstliche Teststruktur)</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_de.png" alt="DFT – Geometrie und SI-Block (künstliche ORCA-Ausgabe)"><br><sub>DFT – Geometrie und SI-Block (künstliche ORCA-Ausgabe)</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_de.png" alt="Synthese"><br><sub>Synthese</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_de.png" alt="NMR"><br><sub>NMR</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_de.png" alt="UV-Vis-Overlay"><br><sub>UV-Vis-Overlay</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_de.png" alt="Fluoreszenz"><br><sub>Fluoreszenz</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie"><br><sub>Spektroelektrochemie</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR"><br><sub>CW-EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_de.png" alt="X-Ray"><br><sub>X-Ray</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_de.png" alt="DFT"><br><sub>DFT</sub></td></tr>
 </table>
 
 ## Herunterladen und starten
@@ -309,9 +309,9 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 - **ORTEP-Abbildung im Mercury-Stil:** schattierte Schwingungsellipsoide mit 50 % Aufenthaltswahrscheinlichkeit
   (einstellbar), exakt projiziert, mit den Hauptachsen-Ellipsen; schwarze Bindungen, fette Labels (verschiebbar), H-Atome
   als kleine schattierte Kugeln. Weitere Stile (auch in PDF/SVG/PNG und
-  Word): flacher Olex2-Stil; **Kugel-Stab, glänzend** (wie IboView, Stäbe in Atomfarben); **Kugel-Stab mit Tiefe**
-  (weiter hinten liegende Atome heller). Einzelne Atome (z. B. einzelne H) lassen
-  sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste oder Doppelklick auf das Atom).
+  Word): flacher Olex2-Stil. Einzelne Atome (z. B. einzelne H) lassen
+  sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste, Doppelklick auf das Atom oder **Shift + Rahmen
+  ziehen** für mehrere Atome); Labelfarbe schwarz oder wie das Atom.
   **Ziehen dreht**, rechte Taste verschiebt, Mausrad zoomt; die Ansicht wird je Struktur gespeichert,
   **Ansicht zurücksetzen** führt zur Standardansicht (möglichst wenig überdeckte Atome). Atomfarben je Element frei wählbar
   (Standard: Olex2-Farben).
@@ -338,13 +338,14 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
   Die Tabellen sind englisch beschriftet (wie in SI üblich).
 - Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv` und
   `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar, der **Hintergrund** wählbar (weiß, transparent, Farbe; gilt
-  auch für Word). In den Kugel-Stab-Stilen wirkt die Bindungsdicke relativ zum Standard.
+  auch für Word).
 
 ## DFT-Tab
 
 - **xyz**-Dateien (auch Trajektorien; gezeigt wird das letzte Bild) oder Ausgaben von **ORCA 6** (`.out`) und
-  **Gaussian** (`.log`) laden. Dateien aus einer PowerShell-Umleitung (UTF-16) werden erkannt. Abbildung, Stile und
-  Maus wie im X-Ray-Tab.
+  **Gaussian** (`.log`) laden. Dateien aus einer PowerShell-Umleitung (UTF-16) werden erkannt. Stile: Mercury, Olex2,
+  **Kugel-Stab wie im ORCA-Handbuch** und eine **Strichzeichnung** (weiße Kugeln, hohle Stäbe, wie in klassischen
+  Zeitschriftenabbildungen); Maus wie im X-Ray-Tab.
 - **Messen und Ausrichten** wie im X-Ray-Tab: 2/3/4 Atome anklicken für Abstand, Winkel oder Diederwinkel (Werte aus der
   Geometrie, 3 bzw. 1 Nachkommastelle); Bindung nach unten/oben/links/rechts, Ebene von vorn, schrittweise drehen,
   wenden, ChemDraw-Vorlage.

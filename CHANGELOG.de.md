@@ -2,6 +2,29 @@
 
 # Änderungen
 
+## 2.0.3 – 23.10.2026
+
+### Neu
+- **Strichzeichnung** als Stil im DFT-Tab, wie in klassischen Zeitschriftenabbildungen: weiße Kugeln mit Umriss,
+  hohle Stäbe, vordere Atome etwas größer.
+- **Labelfarbe** in X-Ray und DFT: schwarz oder wie das Atom (helle Farben abgedunkelt, damit sie lesbar bleiben).
+- X-Ray und DFT: **Shift + Rahmen ziehen** blendet die Labels mehrerer Atome auf einmal aus oder ein.
+
+### Geändert
+- **Kugel-Stab** im DFT-Tab sieht aus wie die Abbildungen im ORCA-6-Handbuch (Farben, Licht, weicher Glanzpunkt,
+  Proportionen); der IboView-ähnliche Stil ist entfernt. X-Ray bietet nur noch Mercury und Olex2; Projekte mit einem
+  älteren Stil öffnen mit dem nächstliegenden.
+- **Ergebnis-Reiter in allen Tabs gleich:** Die Karte füllt die Seite, Tabellen nutzen die volle Höhe, Knöpfe stehen
+  rechts unten, der wichtigste blau. UV-Vis (ε) zeigt Ergebnisse und SI-Zeile neben der Abbildung statt darunter, die
+  Abbildung wird dadurch größer; das Protokoll steht unter Hilfe → Protokoll.
+- Die Anleitungen in leeren Tabs sehen überall gleich aus (auch Synthese und NMR) und stehen in der Mitte der Fläche.
+- Meldungen erscheinen als kleines Feld unten rechts; der leere Statusstreifen unter den Fußleisten ist weg.
+
+### Behoben
+- Beim Öffnen eines Projekts konnte der Fehler „Internal C++ object already deleted“ erscheinen.
+- macOS Intel: Das Beispielprojekt ließ sich nicht anlegen (ältere RDKit).
+- Eine Abbildung konnte zu klein bleiben, nachdem sie hinter einem anderen Reiter verborgen war.
+
 ## 2.0.2 – 23.10.2026
 
 ### Neu

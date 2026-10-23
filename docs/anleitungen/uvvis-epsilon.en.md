@@ -46,7 +46,7 @@ automatically.
 
 ## 5. Check the results
 
-The table below the figure shows ε with its error, the intercept, R² and notes for every band. Watch out for:
+The **Results** tab next to the figure shows ε with its error, the intercept, R² and notes for every band. Watch out for:
 
 - **At least 3 points** below the cutoff, otherwise there is no fit (note in the table).
 - **R² below 0.98:** the band is in the table and the export but not in the figure. With only 4 points R² says little;

@@ -49,11 +49,11 @@ All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page i
 German and English.
 
 <table>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_en.png" alt="Synthesis – scheme, procedure, amount check (invented example)"><br><sub>Synthesis – scheme, procedure, amount check (invented example)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_en.png" alt="NMR – Mnova SVG with structure (synthetic spectrum)"><br><sub>NMR – Mnova SVG with structure (synthetic spectrum)</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="UV-Vis overlay – measured, TD-DFT and SEC"><br><sub>UV-Vis overlay – measured, TD-DFT and SEC</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry – neutral, radical cation, dication"><br><sub>Spectroelectrochemistry – neutral, radical cation, dication</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR – S = ½ fit"><br><sub>CW EPR – S = ½ fit</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray – ORTEP from CIF (synthetic test structure)"><br><sub>X-Ray – ORTEP from CIF (synthetic test structure)</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_en.png" alt="DFT – geometry and SI block (synthetic ORCA output)"><br><sub>DFT – geometry and SI block (synthetic ORCA output)</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_en.png" alt="Synthesis"><br><sub>Synthesis</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_en.png" alt="NMR"><br><sub>NMR</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="UV-Vis overlay"><br><sub>UV-Vis overlay</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray"><br><sub>X-Ray</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_en.png" alt="DFT"><br><sub>DFT</sub></td></tr>
 </table>
 
 ## Download and start
@@ -300,9 +300,8 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   column in the tables). Elucida reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
   operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
 - **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
-  exactly, with the principal ellipses; black bonds, bold labels (draggable), H atoms as small shaded spheres. Further styles (also in PDF/SVG/PNG and Word): flat Olex2 style; **ball and stick, glossy**
-  (like IboView, rods coloured by atom); **ball and stick with depth** (atoms further back lighter). Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
-  (atom list or double-click on the atom). **Drag to rotate**,
+  exactly, with the principal ellipses; black bonds, bold labels (draggable), H atoms as small shaded spheres. Further style (also in PDF/SVG/PNG and Word): flat Olex2 style. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
+  (atom list, double-click on the atom, or **Shift + drag a box** for several atoms); label colour black or like the atom. **Drag to rotate**,
   right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
   default orientation (least overlap of the atoms). Atom colours per element are freely selectable (Olex2
   colours by default).
@@ -328,12 +327,13 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   (as usual for an SI).
 - Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
   `…_tables.xlsx`. The label size can be set per tab and the **background** chosen (white, transparent, colour; also
-  for Word). In the ball-and-stick styles the bond thickness applies relative to the default.
+  for Word).
 
 ## DFT tab
 
 - Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
-  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Figure, styles and mouse as in the X-Ray tab.
+  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Styles: Mercury, Olex2, **ball and stick like the ORCA
+  manual** and a **line drawing** (white balls, hollow sticks, as in classic journal figures); mouse as in the X-Ray tab.
 - **Measure and align** as in the X-Ray tab: click 2/3/4 atoms for distance, angle or dihedral (values from the
   geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
 - **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the
