@@ -361,6 +361,8 @@ class SynthTab(QWidget):
         split.addWidget(footer(self, ls))
         split.addWidget(right)
         split.setSizes([620, 800])
+        from uvvis_tabs import fit_footer_column
+        fit_footer_column(self, split, 520)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)

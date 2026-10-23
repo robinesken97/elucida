@@ -972,6 +972,7 @@ class MainWindow(QMainWindow):
         split.addWidget(left_col)
         split.addWidget(right)
         split.setSizes([left_col.minimumWidth(), 920])
+        self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split, floor=380)   # nie abgeschnitten
         self.eps_page = split
         self.ov_tab = uvvis_tabs.OverlayTab(self, self.ov_state)
         self.fl_tab = uvvis_tabs.FluoTab(self, self.fl_state)
@@ -4050,7 +4051,21 @@ def selftest(outdir, with_isnet=False):
             odd_ = [sp_.width() for sp_ in page_.findChildren(QAbstractSpinBox)
                     if sp_.isVisibleTo(page_) and sp_.property("fieldw") and sp_.width() != STYLE.FIELD_W]
             assert not odd_, (w._tab_keys[i_], odd_)
-        report.append("left column (folds, changed mark, result tabs, field grid): OK")
+        # linke Spalte nie abgeschnitten: Inhalt passt in die sichtbare Breite, auch auf kleinerem Bildschirm
+        for size_ in ((1600, 1000), (1280, 800)):
+            w.resize(*size_)
+            for i_ in range(w.main_tabs.count()):
+                w.main_tabs.setCurrentIndex(i_)
+                pump(0.1)
+                page_ = w.main_tabs.widget(i_)
+                cf_ = getattr(page_, "column_fit", None) or (w.column_fit if w._tab_keys[i_] == "eps" else None)
+                assert cf_ is not None, w._tab_keys[i_]
+                cf_.fit()
+                pump(0.05)
+                need_ = cf_.content.minimumSizeHint().width()
+                have_ = cf_.scroll.viewport().width()
+                assert need_ <= have_ + 1, (w._tab_keys[i_], size_, need_, have_)
+        report.append("left column (folds, changed mark, result tabs, field grid, never clipped): OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
         w.render()

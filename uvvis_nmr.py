@@ -546,6 +546,8 @@ class NMRTab(QWidget):
         split.addWidget(footer(self, ls))
         split.addWidget(right)
         split.setSizes([500, 900])
+        from uvvis_tabs import fit_footer_column
+        fit_footer_column(self, split, 460)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)

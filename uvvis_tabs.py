@@ -157,7 +157,15 @@ def footer(tab, left_scroll):
     v.addWidget(left_scroll, 1)
     v.addWidget(bar)
     tab.btn_export = b
+    tab._footer_parts = (left_scroll, bar, col)
     return col
+
+
+def fit_footer_column(tab, split, floor):
+    """Spaltenbreite für Synthese/NMR wie in den anderen Tabs automatisch (STYLE.ColumnFit)."""
+    ls, bar, col = tab._footer_parts
+    ls.setMinimumWidth(0)
+    tab.column_fit = STYLE.fit_column(ls.widget(), ls, bar, col, split, floor=floor)
 
 
 def _export_word(tab):
@@ -481,7 +489,8 @@ class FigureTab(QWidget):
         split.addWidget(left_col)
         split.addWidget(right_col)
         split.setSizes([left_col.minimumWidth(), 900])
-        self._split, self._left_fitted = split, False
+        self._split = split
+        self.column_fit = STYLE.fit_column(left, ls, bar, left_col, split, floor=420)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
@@ -665,20 +674,8 @@ class FigureTab(QWidget):
                 + ls.verticalScrollBar().sizeHint().width() + 4)
 
     def fit_left(self):
-        """Linke Spalte auf ihre tatsächliche Mindestbreite setzen (nach Stylesheet und Anzeige); der Rest geht an die
-        Abbildung. Beim Aufbau gemessene Breiten sind unter Windows zu groß (Spalte 820 statt 658 px gemessen)."""
-        col = self._left_parts[3]
-        w = self._left_width()
-        col.setMinimumWidth(w)
-        total = sum(self._split.sizes())
-        if total > w:
-            self._split.setSizes([w, total - w])
-        self._left_fitted = True
-
-    def showEvent(self, ev):
-        super().showEvent(ev)
-        if not self._left_fitted:
-            QTimer.singleShot(0, self.fit_left)
+        """Linke Spalte auf ihre tatsächliche Mindestbreite (STYLE.ColumnFit, läuft auch von selbst bei Änderungen)."""
+        self.column_fit.fit()
 
     # -- linke Spalte ordnen (Karten) -------------------------------------------
     def group_titled(self, key):

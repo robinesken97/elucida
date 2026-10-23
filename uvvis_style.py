@@ -336,6 +336,55 @@ def hint_when_disabled(group, text):
     return _DisabledHint(group, text)
 
 
+class ColumnFit(QObject):
+    """Linke Spalte immer so breit wie ihr Inhalt braucht – nie abgeschnitten, nie waagerecht scrollen, der Rest geht
+    an die Abbildung. Beobachtet den Inhalt (Stylesheet, aufgeklappte Karten, eingeblendete Zeilen, Sprache) und passt
+    Spalte und Trennlinie an. Hat der Nutzer die Trennlinie verschoben, bleibt seine Breite, solange alles hineinpasst."""
+
+    def __init__(self, content, scroll, bar, column, splitter, floor=380):
+        super().__init__(column)
+        self.content, self.scroll, self.bar, self.column, self.split = content, scroll, bar, column, splitter
+        self.floor, self.user_w, self._pending = floor, None, False
+        content.installEventFilter(self)
+        column.installEventFilter(self)
+        splitter.splitterMoved.connect(self._moved)
+        self.fit()
+
+    def needed(self):
+        w = max(self.floor, self.content.minimumSizeHint().width(),
+                self.bar.minimumSizeHint().width() if self.bar is not None else 0)
+        return w + self.scroll.verticalScrollBar().sizeHint().width() + 4
+
+    def _moved(self, pos, index):
+        if index == 1:
+            self.user_w = self.split.sizes()[0]
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (QEvent.LayoutRequest, QEvent.Show, QEvent.FontChange, QEvent.StyleChange) and not self._pending:
+            self._pending = True
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self.fit)
+        return False
+
+    def fit(self):
+        self._pending = False
+        need = self.needed()
+        self.column.setMinimumWidth(need)
+        sizes = self.split.sizes()
+        total = sum(sizes)
+        if total <= 0 or len(sizes) < 2:
+            return
+        want = max(need, self.user_w or 0)
+        if sizes[0] != want and total > want:
+            self.split.blockSignals(True)
+            self.split.setSizes([want, total - want])
+            self.split.blockSignals(False)
+
+
+def fit_column(content, scroll, bar, column, splitter, floor=380):
+    return ColumnFit(content, scroll, bar, column, splitter, floor)
+
+
 # ---------------------------------------------------------------------------- Karten einklappen / Zeilen verschieben
 def _row_of(form, w):
     """Zeile eines QFormLayout, deren Feld das Widget w ist oder enthält (Feld als Layout) -> Index oder -1."""
