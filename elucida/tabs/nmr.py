@@ -805,9 +805,13 @@ class NMRTab(QWidget):
 
     def nmr_lines(self):
         """[(Klartext, HTML)] je Kern, sortiert wie die Spektren (¹H, ¹³C, übrige nach Massenzahl)."""
+        return [line for _, line in self.nmr_lines_by_nucleus()]
+
+    def nmr_lines_by_nucleus(self):
+        """[(Kern, (Klartext, HTML))] in derselben Reihenfolge (Austauschdatei: Art der Zeile)."""
         assign = self.st.get("assign") or {}
         bl = sorted(self.blocks(), key=lambda b: nuc_rank(b["nucleus"]))
-        return [nmr_line(b, assign) for b in bl if b["signals"]]
+        return [(b["nucleus"], nmr_line(b, assign)) for b in bl if b["signals"]]
 
     def si_parts(self):
         return self.nmr_lines()

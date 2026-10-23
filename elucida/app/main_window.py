@@ -543,6 +543,9 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.render)
         self.autosave_timer = QTimer(self, singleShot=True, interval=800)
         self.autosave_timer.timeout.connect(self.autosave)
+        # elucida.json (Characterization) seltener als das Autosave: baut die SI-Zeilen aller Tabs neu
+        self.exchange_timer = QTimer(self, singleShot=True, interval=5000)
+        self.exchange_timer.timeout.connect(self.write_exchange)
 
         # Meldungen als Einblendung unten über dem Fenster statt Statusleiste: die Leiste bliebe nach der ersten
         # Meldung als leerer Streifen unter den Fußleisten stehen (Knöpfe nicht mittig), Ein-/Ausblenden ließe die
@@ -1742,7 +1745,21 @@ class MainWindow(QMainWindow):
         return Path(path).parent / ".uvvis_cache"
 
     def write_exchange(self):
-        """elucida.json für Characterization neu schreiben (nach Speichern und Exporten); Fehler nur ins Protokoll."""
+        """elucida.json für Characterization neu schreiben (nach Speichern und Exporten); Fehler nur ins Protokoll.
+        Nicht, während ein Menü/eine Liste offen ist oder die Maus gedrückt wird (Tabs aktualisieren dabei Felder)."""
+        self.exchange_timer.stop()
+        if not self.project_dir:
+            return None
+        if self._restoring or QApplication.activePopupWidget() is not None or \
+                QApplication.mouseButtons() != Qt.NoButton:
+            self.exchange_timer.start()                # später noch einmal versuchen
+            return None
+        from elucida.exchange import characterization as EXCH
+        try:
+            return EXCH.write(self.project_dir, EXCH.build(self))
+        except Exception as e:
+            self.log_signal.emit(f"{EXCH.FILE}: {type(e).__name__}: {e}")
+            return None
 
     def import_file(self, path, sub):
         if not self.project_dir:
@@ -1758,6 +1775,8 @@ class MainWindow(QMainWindow):
         if self.autosave_timer.isActive():
             self.autosave_timer.stop()
             self.autosave()
+        if self.exchange_timer.isActive():
+            self.write_exchange()
         return True
 
     def autosave(self):
@@ -1767,6 +1786,7 @@ class MainWindow(QMainWindow):
             PRJ.write(self.project_dir, self.get_state())
             self._saved_snap = self._undo[-1] if self._undo else None
             self.statusBar().showMessage(T("autosaved"), 2000)
+            self.exchange_timer.start()
         except Exception as e:
             self.log_signal.emit(f"{T('err_title')}: {e}")
 
@@ -1810,6 +1830,7 @@ class MainWindow(QMainWindow):
             return self.ensure_project()
         self.autosave_timer.stop()
         self.autosave()
+        self.write_exchange()
         return True
 
     def save_project_copy(self):
@@ -1831,6 +1852,7 @@ class MainWindow(QMainWindow):
             self.project_dir = str(pdir)
             self._load_state_into_ui(abs_state)
             self.add_recent(pdir)
+            self.exchange_timer.start()
         self.log_signal.emit(T("project_saved", p=pdir))
         return True
 
@@ -2314,6 +2336,10 @@ class MainWindow(QMainWindow):
 
     def uvvis_si_parts(self):
         """UV-Vis-Zeile je Serie mit Ergebnissen (für den SI-Export)."""
+        return [line for _, line in self.uvvis_si_parts_by_series()]
+
+    def uvvis_si_parts_by_series(self):
+        """[(Serie, (Klartext, HTML))] in derselben Reihenfolge (Austauschdatei: Zeile ↔ Serie)."""
         out = []
         for g in self.groups:
             try:
@@ -2322,7 +2348,7 @@ class MainWindow(QMainWindow):
                 continue
             line = SI.uvvis_line(results, cfg2, (self.series.get(g) or {}).get("solvent", ""))
             if line[0]:
-                out.append(line)
+                out.append((g, line))
         return out
 
     def eps_methods_text(self, groups=None):
@@ -2417,6 +2443,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.log_signal.emit(traceback.format_exc())
             return self.error(str(e))
+        self.write_exchange()
         msg = T("si_written", p=str(p))
         if missing:
             msg += "\n" + T("si_missing", parts=", ".join(missing))
@@ -2514,18 +2541,19 @@ class MainWindow(QMainWindow):
             out += [img, ("figcap", cap)]
         return out
 
-    def si_char_blocks(self, comp, title):
-        """„Synthesis of Name“ + Charakterisierungsabsatz -> (Blöcke, fehlende Teile, Klartext)."""
+    def si_char_parts(self, comp):
+        """Zeilen des Charakterisierungsabsatzes in SI-Reihenfolge -> ([(Art, Klartext, HTML)], fehlende Teile).
+        Art: mp, nmr_<Kern>, ir, hrms, uvvis, ea (auch für die Austauschdatei elucida.json)."""
         parts, missing = [], []
         if comp.get("mp"):
             mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", comp["mp"]).strip()
-            parts.append(("m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))       # wie in der SI: „m.p.“ fett
+            parts.append(("mp", "m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))   # wie in der SI: „m.p.“ fett
         else:
             missing.append("m.p.")
-        nmr = self.nmr_tab.si_parts()                    # wie in der SI: m.p.; ¹H NMR …; ¹³C NMR …; IR …
+        nmr = self.nmr_tab.nmr_lines_by_nucleus()        # wie in der SI: m.p.; ¹H NMR …; ¹³C NMR …; IR …
         if not nmr:
             missing.append("NMR")
-        parts += nmr
+        parts += [("nmr_" + nuc, *line) for nuc, line in nmr]
         ir_ms_ea = self.irms_tab.si_parts() + self.hrms_tab.si_parts()
         kinds = [p_[0].split(" ")[0] for p_ in ir_ms_ea]
         uv = self.uvvis_si_parts()
@@ -2534,10 +2562,15 @@ class MainWindow(QMainWindow):
                 missing.append(lab)
         if not uv:
             missing.append("UV-Vis")
-        order = [p_ for p_ in ir_ms_ea if p_[0].startswith("IR")] + \
-            [p_ for p_ in ir_ms_ea if p_[0].startswith("HR-MS")] + uv + \
-            [p_ for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
-        plain, para = SI.join_lines(parts + order)
+        parts += [("ir", *p_) for p_ in ir_ms_ea if p_[0].startswith("IR")] + \
+            [("hrms", *p_) for p_ in ir_ms_ea if p_[0].startswith("HR-MS")] + [("uvvis", *p_) for p_ in uv] + \
+            [("ea", *p_) for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
+        return parts, missing
+
+    def si_char_blocks(self, comp, title):
+        """„Synthesis of Name“ + Charakterisierungsabsatz -> (Blöcke, fehlende Teile, Klartext)."""
+        parts, missing = self.si_char_parts(comp)
+        plain, para = SI.join_lines([(p_, h_) for _, p_, h_ in parts])
         blocks = [("synthesis", title)]
         if self.syn_tab.has_content() and self.project_dir:      # Überschrift, Schema, Vorschrift aus dem Tab
             blocks = self.syn_tab.si_blocks(PRJ.work_dir(self.project_dir, "si"))

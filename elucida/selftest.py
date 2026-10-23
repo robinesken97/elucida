@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -2467,6 +2468,30 @@ def selftest(outdir, with_isnet=False):
         assert not (old_ / "data" / "uvvis").exists()      # alte Dateien bleiben, wo sie sind
         report.append("project folder layout (SI/figures/tables/data/structures/.elucida, old projects): OK")
 
+        # elucida.json für Characterization: atomar, UTF-8 ohne BOM, Pfade relativ, Werte als Text
+        from elucida.exchange import characterization as EXCH
+        w2.compound.update(mp="67 °C", structure=str(proj / "structures" / cdxml.name))
+        jx_ = w2.write_exchange()
+        assert jx_ == proj / "elucida.json" and not (proj / "elucida.json.tmp").exists(), jx_
+        raw_ = jx_.read_bytes()
+        assert not raw_.startswith(b"\xef\xbb\xbf")
+        ex_ = json.loads(raw_.decode("utf-8"))
+        assert ex_["format"] == "elucida-exchange" and ex_["schema_version"] == 1 and ex_["app"]["version"] == APP_VERSION
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", ex_["written_at"]), ex_["written_at"]
+        assert ex_["compound"]["name"] == "TEST-1" and ex_["compound"]["structure"] == "structures/" + cdxml.name
+        assert ex_["analytics"]["mp"] == {"text": "67 °C"} and [s_["name"] for s_ in ex_["analytics"]["uvvis"]] \
+            == ["TEST-A", "TEST-B"], ex_["analytics"]
+        assert all(not Path(f_).is_absolute() and "\\" not in f_ for f_ in ex_["analytics"]["overlay"]["files"])
+        kinds_ = [l_["kind"] for l_ in ex_["si"]["lines"]]
+        assert [l_["series"] for l_ in ex_["si"]["lines"] if l_["kind"] == "uvvis"] == ["TEST-A", "TEST-B"]
+        assert kinds_[0] == "mp" and "uvvis" in kinds_ and ex_["si"]["paragraph_html"].startswith("<b>m.p.</b> 67"), kinds_
+        fig_ = next(f_ for f_ in ex_["figures"] if f_["tab"] == "overlay")
+        assert fig_["pdf"] == "figures/TEST-1_Overlay.pdf" and fig_.get("caption_html"), fig_
+        assert any(f_["tab"] == "eps" for f_ in ex_["figures"]), ex_["figures"]
+        t0_ = time.perf_counter()
+        EXCH.build(w2)
+        report.append(f"exchange file elucida.json (schema 1, {time.perf_counter() - t0_:.2f} s): OK")
+
         # Undo/Redo
         before = w2.glob["cutoff"]
         w2.sp_cut.setValue(before + 0.5)
@@ -2487,6 +2512,17 @@ def selftest(outdir, with_isnet=False):
         assert w.groups and w.cv_state["files"] and w.xray_state["entries"] and w.dft_state["entries"]
         assert w.syn_state["proc"] and w.nmr_tab.spectra()
         report.append("welcome page + example project: OK")
+        pump()                                             # Laden abgeschlossen (_restoring)
+        t0_ = time.perf_counter()
+        exd_ = json.loads(w.write_exchange().read_text(encoding="utf-8"))   # alle Tabs gefüllt
+        dt_ = time.perf_counter() - t0_
+        an_ = exd_["analytics"]
+        assert {"synthesis", "nmr", "xray", "dft"} <= set(an_), sorted(an_)   # CV: Demo-Dateien liegen noch außerhalb
+        assert an_["nmr"][0]["svg"].startswith("data/nmr/") and an_["xray"][0]["cif"].startswith("data/xray/"), an_
+        assert {l_["kind"] for l_ in exd_["si"]["lines"]} >= {"nmr_1H", "uvvis"}, exd_["si"]["lines"]
+        if "hrms" in an_ and "found" in an_["hrms"]:
+            assert re.fullmatch(r"\d+\.\d{4}", an_["hrms"]["found"]) and an_["hrms"]["ion"].endswith(("+", "\u2212"))
+        report.append(f"elucida.json for example project ({dt_:.2f} s, {len(an_)} techniques): OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         report.append("OK")

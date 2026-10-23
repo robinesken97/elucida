@@ -200,6 +200,7 @@ class HRMSTab(TABS.FigureTab):
         self.lv.addWidget(g)
 
         self._ms_line = ("", "")
+        self._ms_vals = None                          # (Addukt, calc, found) der letzten SI-Zeile (Austauschdatei)
         self._ion = self._lc = self._found = None
         self._sticks = (np.zeros(0), np.zeros(0))
         self._pick_cid = None
@@ -361,6 +362,7 @@ class HRMSTab(TABS.FigureTab):
         formula, src = self.formula()
         notes = []
         self._ms_line = ("", "")
+        self._ms_vals = None
         self.cmb_found.blockSignals(True)
         self.cmb_found.clear()
         if not formula:
@@ -445,6 +447,7 @@ class HRMSTab(TABS.FigureTab):
         ionis = rep["ionisation"] if rep else (raw["ionisation"] if raw else "ESI")
         plain, html, calc = ms_line(formula, st["adduct"], found, ionis)
         self._ms_line = (plain, html)
+        self._ms_vals = (st["adduct"], calc, found)
         self.txt_ms.setHtml(html)
         if found is not None:
             dev = ppm(found, calc)
