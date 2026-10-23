@@ -26,9 +26,9 @@ jobs:
           - { os: macos-15-intel, label: macos-x64 }     # Intel-Macs (ab macOS 14)
           - { os: ubuntu-22.04,   label: linux-x64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -112,13 +112,13 @@ jobs:
           ./Elucida-${{ matrix.label }}.AppImage --selftest selftest_appimage --selftest-isnet
           cat selftest_appimage/selftest_report.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Elucida-${{ matrix.label }}
           path: Elucida-${{ matrix.label }}.*
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: selftest-${{ matrix.label }}
@@ -132,7 +132,7 @@ jobs:
     env:
       TAG: ${{ inputs.release || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Titel und zweisprachige Notes aus CHANGELOG.md/CHANGELOG.de.md (bricht ab, wenn die Version fehlt)
       - name: Release Notes
         id: notes
@@ -141,11 +141,11 @@ jobs:
           grep -q "^APP_VERSION = \"${TAG#v}\"" uvvis_gui.py || { echo "APP_VERSION passt nicht zu $TAG"; exit 1; }
           python3 release_notes.py "$TAG" > release_notes.md
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: Elucida-*
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: Elucida ${{ steps.notes.outputs.version }}
           tag_name: ${{ env.TAG }}
