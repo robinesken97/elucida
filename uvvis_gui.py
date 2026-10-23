@@ -4443,7 +4443,17 @@ def selftest(outdir, with_isnet=False):
         pump(0.5)
         t_x.host.fit()
         pump(0.2)
-        assert t_x.canvas.width() >= 0.5 * w.width(), (t_x.canvas.width(), w.width())
+        if t_x.canvas.width() < 0.5 * w.width():                  # Messwerte für die Fehlersuche (andere Systeme)
+            left_ = t_x.lv.parentWidget()
+            cards_ = sorted(((c_.minimumSizeHint().width(), getattr(c_, "title", lambda: type(c_).__name__)()[:28])
+                             for c_ in left_.findChildren(QWidget) if c_.parentWidget() is left_ and c_.isVisibleTo(left_)),
+                            reverse=True)[:4]
+            wide_ = sorted(((x_.minimumSizeHint().width(), type(x_).__name__, (getattr(x_, "text", lambda: "")() or "")[:30])
+                            for x_ in left_.findChildren(QWidget) if x_.isVisibleTo(left_)), reverse=True)[:6]
+            raise AssertionError(f"Abbildung {t_x.canvas.width()} px bei Fenster {w.width()} px; linke Spalte "
+                                 f"{left_.width()} px (min {left_.minimumSizeHint().width()}), Karten {cards_}, "
+                                 f"breiteste Elemente {wide_}, Schrift {QApplication.font().family()} "
+                                 f"{QApplication.font().pointSizeF()} pt, DPI {w.logicalDpiX()}")
         w.resize(size0_)
         report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
                       f"({npath_} pdf paths)")
