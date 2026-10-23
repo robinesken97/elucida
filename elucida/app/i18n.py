@@ -89,17 +89,17 @@ TEXTS = {
     "act_new_project": ("Neues Projekt…", "New project…"),
     "act_save_copy": ("Projekt als Kopie speichern…", "Save project copy…"),
     "act_show_folder": ("Projektordner anzeigen", "Show project folder"),
-    "act_show_folder_tip": ("Projektordner im {fm} öffnen (Daten, Bilder, Exporte)",
-                            "Open the project folder in {fm} (data, images, exports)"),
+    "act_show_folder_tip": ("Projektordner im {fm} öffnen (SI, Abbildungen, Tabellen, Messdaten)",
+                            "Open the project folder in {fm} (SI, figures, tables, data)"),
     "fm_finder": ("Finder", "Finder"),
     "fm_explorer": ("Explorer", "Explorer"),
     "fm_linux": ("Dateimanager", "file manager"),
     "no_project_title": ("kein Projekt", "no project"),
     "need_project_q": ("Für die Auswertung wird ein Projektordner benötigt. Eingelesene Dateien werden dort "
-                       "hineinkopiert, Exporte landen im Unterordner „exports“.\n\nJetzt einen Ordner wählen "
+                       "hineinkopiert (data/, structures/), Exporte landen in SI/, figures/ und tables/.\n\nJetzt einen Ordner wählen "
                        "oder neu anlegen?",
-                       "A project folder is needed. Loaded files are copied into it and exports go to its "
-                       "“exports” subfolder.\n\nChoose or create a folder now?"),
+                       "A project folder is needed. Loaded files are copied into it (data/, structures/) and exports "
+                       "go to SI/, figures/ and tables/.\n\nChoose or create a folder now?"),
     "choose_project_dir": ("Projektordner wählen oder neu anlegen", "Choose or create project folder"),
     "make_project_q": ("{p} ist noch kein Projekt. Hier ein neues Projekt anlegen?",
                        "{p} is not a project yet. Create a new project here?"),
@@ -216,9 +216,10 @@ TEXTS = {
                                "Data and measurement details stay (files, reference/calibration, path length, entered\n"
                                "values, caption, export size). Undo (Ctrl+Z) brings everything back."),
     "btn_export": ("Exportieren", "Export"),
-    "btn_export_tip": ("Schreibt die gewählten Formate in den Projektordner unter „exports“ (vorhandene Dateien "
-                       "werden überschrieben)", "Writes the chosen formats to the project folder under “exports” "
-                       "(existing files are overwritten)"),
+    "btn_export_tip": ("Schreibt die gewählten Formate in den Projektordner: Abbildungen nach „figures“, Tabellen "
+                       "nach „tables“, Texte nach „SI“ (vorhandene Dateien werden überschrieben)",
+                       "Writes the chosen formats to the project folder: figures to “figures”, tables to “tables”, "
+                       "texts to “SI” (existing files are overwritten)"),
     "drag_hint": ("Maus: Inset, Bilder und Labels ziehen zum Verschieben, Mausrad über Inset/Bild "
                   "ändert die Größe. Über den Spektren zeigt eine Einblendung unten rechts λ und A des nächsten "
                   "Messpunkts, Doppelklick fügt dort eine Bande hinzu. CSV, Struktur und Foto können ins "
@@ -283,8 +284,8 @@ TEXTS = {
     "act_guide_tab": ("Anleitung zu diesem Tab", "Guide for this tab"),
     "act_quickstart": ("Schnellstart (README)", "Quick start (README)"),
     "open_folder": ("Ordner öffnen", "Open folder"),
-    "btn_export_word_tip": ("Schreibt die Word-Datei dieses Tabs in den Projektordner unter „exports“ (überschreibt sie)",
-                            "Writes this tab's Word file to the project folder under “exports” (overwrites it)"),
+    "btn_export_word_tip": ("Schreibt die Word-Datei dieses Tabs in den Projektordner unter „SI“ (überschreibt sie)",
+                            "Writes this tab's Word file to the project folder under “SI” (overwrites it)"),
     "syn_need_scheme": ("Erst ein Reaktionsschema (CDXML) wählen", "Choose a reaction scheme (CDXML) first"),
     "tab_figure": ("Abbildung", "Figure"),
     "grp_export": ("Achsen, Größe und Formate", "Axes, size and formats"),
@@ -1516,8 +1517,8 @@ TEXTS = {
     "nmr_struct_none": ("Keine Struktur (unter „Verbindung“ oder hier wählen).",
                         "No structure (choose under “Compound” or here)."),
     "nmr_word": ("Word speichern", "Save Word"),
-    "nmr_word_tip": ("Alle Spektren mit Bildunterschrift, zwei je Seite (exports/nmr)",
-                     "All spectra with captions, two per page (exports/nmr)"),
+    "nmr_word_tip": ("Alle Spektren mit Bildunterschrift, zwei je Seite (SI/<Name>_NMR.docx)",
+                     "All spectra with captions, two per page (SI/<name>_NMR.docx)"),
 
     # ---- DFT (xyz) ---------------------------------------------------------
     "tab_dft": ("DFT", "DFT"),
@@ -1605,9 +1606,9 @@ TEXTS = {
     "dft_order_reset_tip": ("Nummerierung wie in der geladenen Datei wiederherstellen",
                             "Restore the numbering of the loaded file"),
     "dft_save_xyz": ("xyz speichern …", "Save xyz …"),
-    "dft_save_xyz_tip": ("Neue xyz-Datei in der aktuellen Reihenfolge (Standard: exports/dft im Projekt). Die "
+    "dft_save_xyz_tip": ("Neue xyz-Datei in der aktuellen Reihenfolge (Standard: „tables“ im Projekt). Die "
                          "geladene Datei bleibt unverändert.",
-                         "New xyz file in the current order (default: exports/dft in the project). The loaded file "
+                         "New xyz file in the current order (default: “tables” in the project). The loaded file "
                          "stays unchanged."),
     "dft_no_overwrite": ("Die geladene Datei wird nicht überschrieben – bitte einen anderen Namen wählen.",
                          "The loaded file is not overwritten – please choose a different name."),

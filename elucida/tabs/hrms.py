@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 
 from elucida.tabs import base as TABS
 from elucida.app.i18n import T
+from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
                         ppm, read_bruker_d, read_ms_docx)
 from elucida.app.style import HINT_CSS, WARN_CSS, make_form
@@ -256,7 +257,7 @@ class HRMSTab(TABS.FigureTab):
             self.load_ms(p)
 
     def load_ms(self, p):
-        p = self.main.import_file(p, "data")
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
             read_ms_docx(p)
         except Exception as e:
@@ -278,7 +279,7 @@ class HRMSTab(TABS.FigureTab):
         if not is_bruker_d(p):
             self.main.error(f"{Path(p).name}: {T('ms_raw_bad')}")
             return
-        p = self.main.import_file(p, "data")
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
             self.cache(("brukerd", p), lambda: read_bruker_d(p))
         except Exception as e:
@@ -340,7 +341,7 @@ class HRMSTab(TABS.FigureTab):
         new = {"name": c.get("name") or name, "formula": rep["structure"]["formula"],
                "mw": round(rep["structure"]["mw"], 2)}
         if rep["structure"].get("cdxml"):                 # ohne CDXML-Schreiber (ältere RDKit): nur Formel/Molmasse
-            dst = Path(self.main.project_dir) / "images" / f"{safe}_aus_MS-Bericht.cdxml"
+            dst = Path(self.main.project_dir) / PRJ.STRUCTURES / f"{safe}_aus_MS-Bericht.cdxml"
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_text(rep["structure"]["cdxml"], encoding="utf-8")
             new["structure"] = str(dst)

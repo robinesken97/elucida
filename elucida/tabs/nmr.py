@@ -827,7 +827,7 @@ class NMRTab(QWidget):
         except Exception as ex:
             self.main.error(f"{Path(p).name}: {ex}")
             return None
-        p = self.main.import_file(p, "data")
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         s = new_spectrum(p, info)
         s["nuc_auto"] = bool(info["nuclei"])
         self.st["spectra"].append(s)
@@ -884,7 +884,7 @@ class NMRTab(QWidget):
         p, _ = QFileDialog.getOpenFileName(self, T("nmr_struct_pick"), self.main.settings.value("last_dir", ""),
                                            f"{T('nmr_struct_flt')} (*.cdxml *.svg *.pdf *.png);;{T('flt_all')}")
         if p:
-            self.st["structure"] = self.main.import_file(p, "images")      # ChemDraw-Exporte daneben kommen mit
+            self.st["structure"] = self.main.import_file(p, PRJ.STRUCTURES)      # ChemDraw-Exporte daneben kommen mit
             self.changed()
 
     def structure_asset(self):
@@ -910,13 +910,13 @@ class NMRTab(QWidget):
         return self.main.extra_cache[key]
 
     def figure_svg(self, s):
-        """SVG für Word: Mnova-SVG, wahlweise mit eingesetzter Struktur (Datei unter exports/nmr/figures)."""
+        """SVG für Word: Mnova-SVG, wahlweise mit eingesetzter Struktur (Datei unter .elucida/nmr)."""
         st = self.structure_asset() if s.get("struct_on", True) else None
         if st is None:
             return s["file"]
         fx, fy = self.struct_xy(s, st)
         width = self.struct_w() / 100
-        cdir = Path(self.main.project_dir or Path(s["file"]).parent) / "exports" / "nmr" / "figures"
+        cdir = PRJ.work_dir(self.main.project_dir or Path(s["file"]).parent, self.STATE_KEY)
         out = cdir / f"{Path(s['file']).stem}_{int(fx * 1000)}_{int(fy * 1000)}_{int(width * 1000)}.svg"
         key = ("nmrcomp", s["file"], self.structure_path(), out.name)
         if key not in self.main.extra_cache or not out.exists():
@@ -936,7 +936,7 @@ class NMRTab(QWidget):
         if d is None:
             self.main.error(T("nmr_no_acqus", p=Path(path).name))
             return False
-        d = Path(self.main.import_file(str(d), "data"))
+        d = Path(self.main.import_file(str(d), PRJ.data_sub(self.STATE_KEY)))
         s["bruker"] = str(d)
         s["params"] = acq_params(d)
         self.changed()
@@ -1084,28 +1084,24 @@ class NMRTab(QWidget):
         return SI.two_per_page(blocks)
 
     def export_dialog(self, path=None):
-        """Word-Datei mit allen Spektren und Unterschriften, dazu die NMR-Zeile als Text (exports/nmr)."""
+        """Word-Datei mit allen Spektren und Unterschriften, dazu die NMR-Zeile als Text (SI/<Name>_NMR.*)."""
         from elucida.si import lines as SI
         if not self.main.ensure_project():
             return None
         if not self.spectra() and not self.nmr_lines():
             self.main.error(T("nmr_empty"))
             return None
-        out = PRJ.export_dir(self.main.project_dir, self.STATE_KEY)
-        base = core_safe(self.compound_name() or "nmr")
-        path = Path(path) if path else out / f"{base}_NMR.docx"
+        out = PRJ.export_dir(self.main.project_dir, PRJ.SI_DIR)
+        base = PRJ.export_stem(self.compound_name() or self.main.export_name(), self.STATE_KEY)
+        path = Path(path) if path else out / f"{base}.docx"
         try:
-            SI.write_docx(path, self.docx_blocks(out))
+            SI.write_docx(path, self.docx_blocks(PRJ.work_dir(self.main.project_dir, self.STATE_KEY)))
         except PermissionError:
             self.main.error(T("report_locked", p=path))
             return None
         lines = self.nmr_lines()
         if lines:
-            (out / f"{base}_NMR.txt").write_text("; ".join(p for p, _ in lines) + "\n", encoding="utf-8")
+            (out / f"{base}.txt").write_text("; ".join(p for p, _ in lines) + "\n", encoding="utf-8")
         self.main.log_signal.emit(T("saved", p=str(path)))
         return path
 
-
-def core_safe(name):
-    from elucida.core import uvvis as core
-    return core.safe_name(name)

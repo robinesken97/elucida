@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.app.i18n import T
+from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
 
@@ -947,8 +948,8 @@ class EPRTab(TABS.FigureTab):
                 if Path(p).suffix.lower() in (".dsc", ".dta"):
                     for ext in (".dsc", ".DSC", ".DTA", ".dta", ".YGF", ".ygf", ".xml"):
                         if Path(stem + ext).exists() and ext.lower() != Path(p).suffix.lower():
-                            self.main.import_file(stem + ext, "data")
-                p = self.main.import_file(p, "data")
+                            self.main.import_file(stem + ext, PRJ.data_sub(self.STATE_KEY))
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                 d = self.data(p)
             except Exception as ex:
                 self.main.error(str(ex))
@@ -961,7 +962,7 @@ class EPRTab(TABS.FigureTab):
     def add_sim(self):
         for p in self._pick(T("epr_add_sim"), "ASCII (*.txt *.asc *.dat *.csv);;" + T("flt_all")):
             try:
-                p = self.main.import_file(p, "data")
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                 self.data(p)
             except Exception as ex:
                 self.main.error(str(ex))
@@ -1223,7 +1224,7 @@ class EPRTab(TABS.FigureTab):
         p, _ = QFileDialog.getOpenFileName(self, T("epr_params"), self.main.settings.value("last_dir", ""),
                                            "EasySpin (*.txt *.m);;" + T("flt_all"))
         if p:
-            self.set_params(self.main.import_file(p, "data"))
+            self.set_params(self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)))
 
     def set_params(self, p):
         e = self.current()

@@ -115,7 +115,7 @@ def selftest(outdir, with_isnet=False):
         QApplication.processEvents()
         w.open_csv(csv)
         assert set(w.groups) == {"TEST-A", "TEST-B"}, w.groups
-        assert Path(w.csv_path).parent == proj / "data", w.csv_path          # ins Projekt kopiert
+        assert Path(w.csv_path).parent == proj / "data" / "uvvis", w.csv_path          # ins Projekt kopiert
         w.set_structure(str(cdxml), "TEST-A", render=False, sync=True)
         st = w.series["TEST-A"]
         report.append(f"CDXML: {st['chem_info']!r}")
@@ -437,9 +437,10 @@ def selftest(outdir, with_isnet=False):
         w.render()
         pump()
         files = w.export_all()
-        rep = proj / "exports" / "epsilon" / "TEST-A" / "TEST-A_report.xlsx"
+        rep = proj / "tables" / "TEST-A_UV-Vis_report.xlsx"
         assert rep in files and rep.exists(), files
-        meth_ = (proj / "exports" / "epsilon" / "TEST-A" / "TEST-A_methods.txt").read_text(encoding="utf-8")
+        assert (proj / "figures" / "TEST-A_UV-Vis.pdf").exists() and not (proj / "exports").exists()
+        meth_ = (proj / "SI" / "TEST-A_UV-Vis_methods.txt").read_text(encoding="utf-8")
         assert "ordinary least squares" in meth_ and "95% confidence interval" in meth_ and " nm: " in meth_ \
             and "M = 95.10 g mol-1" in meth_, meth_
         assert meth_.split("\n\n")[0] in w.eps_methods_text(), "SI-Text Export/Knopf verschieden"
@@ -1260,8 +1261,8 @@ def selftest(outdir, with_isnet=False):
         # Synthese/NMR mit Fußleiste wie die anderen Tabs; „Aus Schema“ nur mit Schema; Exportmeldung mit Ordner
         assert w.syn_tab.btn_export.property("accent") and w.nmr_tab.btn_export.property("accent")
         assert w.syn_tab.btn_from_scheme.isEnabled() == (w.syn_tab.scheme_parts() is not None)
-        w.exported([proj / "exports"])
-        assert w.last_export == [str(proj / "exports")]
+        w.exported([proj / "figures"])
+        assert w.last_export == [str(proj / "figures")]
         # linke Spalte: Karten eingeklappt mit „(geändert)“, Ergebnisse als Reiter neben der Abbildung
         fc_ = next(f_ for f_ in w.cv_tab.folds if f_.group is w.cv_tab.grp_common)
         fc_.set_open(False, remember=False)
@@ -1632,7 +1633,7 @@ def selftest(outdir, with_isnet=False):
         t_x = w.xray_tab
         w.main_tabs.setCurrentWidget(t_x)
         t_x.load_cif(str(cif_))
-        assert len(w.xray_state["entries"]) == 2 and Path(w.xray_state["entries"][0]["file"]).parent == proj / "data"
+        assert len(w.xray_state["entries"]) == 2 and Path(w.xray_state["entries"][0]["file"]).parent == proj / "data" / "xray"
         assert any(k_ == "file" and c_ is w.xray_state["entries"][0] for c_, k_, _ in PRJ._path_slots(w.get_state()))
         w.xray_state["current"] = w.xray_state["entries"][0]["uid"]
         t_x.sync_widgets()
@@ -1952,7 +1953,7 @@ def selftest(outdir, with_isnet=False):
         t_d = w.dft_tab
         w.main_tabs.setCurrentWidget(t_d)
         e_d = t_d.load_xyz(str(xyzf_))
-        assert e_d and Path(e_d["file"]).parent == proj / "data"
+        assert e_d and Path(e_d["file"]).parent == proj / "data" / "dft"
         assert any(k_ == "file" and c_ is e_d for c_, k_, _ in PRJ._path_slots(w.get_state()))
         pump()
         assert t_d.F is not None and len(t_d.F.scene["atoms"]) == 8 and len(t_d.F.scene["bonds"]) == 7
@@ -2199,7 +2200,7 @@ def selftest(outdir, with_isnet=False):
         (acq_ / "fid").write_bytes(b"\0" * 1000)                          # FID wird nicht ins Projekt kopiert
         e_h = t_n.spectra()[0]
         assert t_n.set_bruker(e_h, str(acq_ / "acqus"))
-        assert Path(e_h["bruker"]).parent == proj / "data" and not (Path(e_h["bruker"]) / "fid").exists()
+        assert Path(e_h["bruker"]).parent == proj / "data" / "nmr" and not (Path(e_h["bruker"]) / "fid").exists()
         assert abs(e_h["params"]["o1p"] - 6.175) < 1e-6 and e_h["params"]["d1"] == 1.0
         w.nmr_state["current"] = e_h["uid"]
         t_n.temp_from_bruker()
@@ -2285,7 +2286,7 @@ def selftest(outdir, with_isnet=False):
             t_s.set_scheme(str(sdir / "scheme.cdxml"))
             sp_ = t_s.scheme_parts()
             assert sp_["picture"].suffix == ".svg" and sp_["cdx"] is not None and sp_["emf"] is None
-            assert Path(w.syn_state["scheme"]).parent == proj / "images"
+            assert Path(w.syn_state["scheme"]).parent == proj / "structures"
             sb_ = t_s.si_blocks(out / "syn")
             assert sb_[0] == ("synthesis", "TEST-1" if w.compound.get("name") == "TEST-1" else t_s.compound_name())
             assert [b_[0] for b_ in sb_] == ["synthesis", "ole", "char"], [b_[0] for b_ in sb_]
@@ -2371,7 +2372,7 @@ def selftest(outdir, with_isnet=False):
         assert para_.startswith("<b>m.p.</b> 67 °C; ") and "<b>Elemental analysis</b>" in para_, para_
         assert "IR" in missing_ and "m.p." not in missing_, missing_
         w.export_si()
-        docx_ = Path(w.project_dir) / "exports" / "si" / "TEST-1_SI.docx"
+        docx_ = Path(w.project_dir) / "SI" / "TEST-1_SI.docx"
         with _zf.ZipFile(docx_) as z_:
             xml_ = z_.read("word/document.xml").decode("utf-8")
             assert 'w:val="15"' in z_.read("word/settings.xml").decode("utf-8")   # kein Kompatibilitätsmodus
@@ -2430,19 +2431,41 @@ def selftest(outdir, with_isnet=False):
         report.append("update check: OK")
 
         # Projekt automatisch gespeichert -> in neuem Fenster öffnen (Dateien als Kopie, Pfade relativ)
-        w.ov_state["entries"][0]["file"] = w.import_file(w.ov_state["entries"][0]["file"], "data")
+        w.ov_state["entries"][0]["file"] = w.import_file(w.ov_state["entries"][0]["file"], PRJ.data_sub("overlay"))
         w.push_undo()
         pump(1.5)                                      # automatisches Speichern abwarten
         w.maybe_save()
         txt = (proj / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
         assert str(out / "input") not in txt.replace(str(proj), ""), "absolute Pfade im Projekt"
-        assert (proj / "data" / csv.name).exists() and (proj / "images" / cdxml.name).exists()
+        assert (proj / "data" / "uvvis" / csv.name).exists() and (proj / "structures" / cdxml.name).exists()
         w2 = MainWindow()
         assert w2.open_project(proj, ask=False)
         pump()
         assert set(w2.groups) == {"TEST-A", "TEST-B"} and w2.series["TEST-A"]["mw"] == 95.1, w2.groups
         assert len(w2.ov_state.get("entries", [])) == 2 and w2.fl_state.get("em_file"), "Tabs nicht geladen"
         report.append("project save/load: OK")
+
+        # Projektordner (2.1): Exporte nach Art sortiert, Name der Verbindung, Zwischendateien in .elucida
+        w2.compound["name"] = "TEST-1"
+        ov_out_ = w2.ov_tab.export_dialog()
+        assert proj / "figures" / "TEST-1_Overlay.pdf" in ov_out_, ov_out_
+        assert proj / "tables" / "TEST-1_Overlay_data.csv" in ov_out_, ov_out_
+        assert not (proj / PRJ.WORK / "export" / "overlay").exists()      # Zwischenordner wieder weg
+        assert (proj / PRJ.WORK / "project.uvvis.bak").exists() and not (proj / "project.uvvis.bak").exists()
+        assert not (proj / "exports").exists() and not (proj / "images").exists()
+        assert [PRJ.export_kind(n_) for n_ in ("a.svg", "a_SI.txt", "a.docx", "a_methods.txt", "a.csv", "a.xyz")] \
+            == ["figures", "SI", "SI", "SI", "tables", "tables"]
+        assert PRJ.data_sub("irms") == "data/ir" and PRJ.export_stem("S/2", "xray") == "S_2_X-ray"
+        old_ = out / "old_layout"                          # Projekt im alten Aufbau (bis 2.0): Pfade gelten weiter
+        (old_ / "data").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(csv, old_ / "data" / csv.name)
+        (old_ / PRJ.PROJECT_FILE).write_text(f"eps:\n  files: [data/{csv.name}]\nformat_version: 1\n", encoding="utf-8")
+        st_old_ = PRJ.load(old_)
+        assert Path(st_old_["eps"]["files"][0]) == (old_ / "data" / csv.name).resolve(), st_old_
+        PRJ.save(old_, st_old_)
+        assert "data/" + csv.name in (old_ / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
+        assert not (old_ / "data" / "uvvis").exists()      # alte Dateien bleiben, wo sie sind
+        report.append("project folder layout (SI/figures/tables/data/structures/.elucida, old projects): OK")
 
         # Undo/Redo
         before = w2.glob["cutoff"]

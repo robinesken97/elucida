@@ -550,7 +550,7 @@ class SynthTab(QWidget):
     def set_scheme(self, p):
         """CDXML (oder Bild) ins Projekt; gleichnamige ChemDraw-Dateien (SVG/PDF/PNG/CDX/EMF) kommen mit."""
         src = Path(p)
-        newp = Path(self.main.import_file(str(src), "images"))
+        newp = Path(self.main.import_file(str(src), PRJ.STRUCTURES))
         for sib in src.parent.glob(src.stem + ".*"):                # CDX und EMF zusätzlich zu den Bildern
             if sib.stem == src.stem and sib.suffix.lower() in (".cdx", ".emf"):
                 tgt = newp.with_suffix(sib.suffix.lower())
@@ -785,11 +785,11 @@ class SynthTab(QWidget):
         from elucida.si import lines as SI
         if not self.main.ensure_project():
             return None
-        out = PRJ.export_dir(self.main.project_dir, self.STATE_KEY)
-        from elucida.core import uvvis as core
-        path = out / f"{core.safe_name(self.compound_name() or 'synthesis')}_synthesis.docx"
+        pdir = self.main.project_dir
+        path = PRJ.export_dir(pdir, PRJ.SI_DIR) / (PRJ.export_stem(self.compound_name() or self.main.export_name(),
+                                                                   self.STATE_KEY) + ".docx")
         try:
-            SI.write_docx(path, self.si_blocks(out))
+            SI.write_docx(path, self.si_blocks(PRJ.work_dir(pdir, self.STATE_KEY)))
         except PermissionError:
             self.main.error(T("report_locked", p=path))
             return None

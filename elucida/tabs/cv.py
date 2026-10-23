@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.app.i18n import T
+from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
 
@@ -687,7 +688,7 @@ class CVTab(TABS.FigureTab):
                                              "Gamry (*.DTA *.dta);;" + T("flt_all"))
         for p in ps:
             try:
-                p = self.main.import_file(p, "data")
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                 d = self.data(p)
             except Exception as e:
                 self.main.error(str(e))
@@ -818,7 +819,7 @@ class CVTab(TABS.FigureTab):
                                            f"{T('flt_struct')};;{T('flt_all')}")
         if p:
             self.main.settings.setValue("last_img_dir", str(Path(p).parent))
-            self.set_file_structure(self.main.import_file(p, "images"))
+            self.set_file_structure(self.main.import_file(p, PRJ.STRUCTURES))
 
     def set_file_structure(self, p):
         e = self.current_file()

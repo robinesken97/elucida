@@ -3128,7 +3128,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def load_cif(self, p):
         """Jeder data_-Block mit Atomen wird ein Eintrag (eine Spalte in den Tabellen)."""
-        p = self.main.import_file(p, "data")
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
             blocks = self.cache(("cif", p), lambda: structure_blocks(p))
             if not blocks:
@@ -3911,7 +3911,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         if not self.main.ensure_project():
             return
         pdir = Path(self.main.project_dir)
-        p = PRJ.export_dir(pdir, self.STATE_KEY) / f"{pdir.name}_xray_tables.xlsx"
+        p = PRJ.export_dir(pdir, PRJ.TABLES) / (PRJ.export_stem(self.main.export_name(), self.STATE_KEY)
+                                                + "_tables.xlsx")
         try:
             self.write_excel(p)
         except PermissionError:

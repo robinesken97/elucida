@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 from elucida.tabs import cv as CV
 from elucida.tabs import base as TABS
 from elucida.app.i18n import T
+from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
 
@@ -286,7 +287,7 @@ class SECTab(TABS.FigureTab):
         ps = [p for p in ps if is_bwspec(p)]
         if not ps:
             return
-        self.st["spec_files"] = [self.main.import_file(p, "data") for p in sorted(ps)]
+        self.st["spec_files"] = [self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)) for p in sorted(ps)]
         self._show_files()
         self.timer.start()
 
@@ -296,7 +297,7 @@ class SECTab(TABS.FigureTab):
         p, _ = QFileDialog.getOpenFileName(self, T("sec_potential"), self.main.settings.value("last_dir", ""),
                                            "Gamry (*.DTA *.dta);;" + T("flt_all"))
         if p:
-            self._set("dta", self.main.import_file(p, "data"))
+            self._set("dta", self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)))
 
     # -- Daten ---------------------------------------------------------------------
     def series(self):

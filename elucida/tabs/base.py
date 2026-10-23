@@ -717,7 +717,7 @@ class FigureTab(QWidget):
     def photo_asset(self, path, method):
         if method in ("auto", "isnet") and not self.main.ensure_model():
             method = "grabcut" if method == "isnet" else "auto"
-        cdir = Path(path).parent / ".uvvis_cache"
+        cdir = self.main.cache_dir(path)
         return self.cache(("photo", path, method), lambda: IMG.load_photo(path, method, cdir))
 
     # -- Abbildung ----------------------------------------------------------------
@@ -884,16 +884,19 @@ class FigureTab(QWidget):
         self.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
 
     def export_dialog(self):
-        """Direkt ins Projekt: exports/<overlay|fluorescence>/<Projekt>_<Tab>.* (wird überschrieben)."""
+        """Direkt ins Projekt: <Verbindung>_<Tab>.* nach figures/, tables/ und SI/ (wird überschrieben)."""
         if not self.main.ensure_project():
             return
         pdir = Path(self.main.project_dir)
-        base = PRJ.export_dir(pdir, self.STATE_KEY) / f"{pdir.name}_{self.STATE_KEY}"
+        base = PRJ.staging(pdir, self.STATE_KEY) / PRJ.export_stem(self.main.export_name(), self.STATE_KEY)
         try:
-            out = self.export_to(base)
+            out = PRJ.place_exports(pdir, self.export_to(base))
+        except PermissionError as e:
+            return self.main.error(T("report_locked", p=getattr(e, "filename", "") or ""))
         except Exception as e:
             return self.main.error(str(e))
-        self.main.exported([base.parent])
+        self.main.exported(p.parent for p in out)
+        self.main.write_exchange()
         return out
 
     def export_to(self, base: Path):
@@ -1291,7 +1294,7 @@ class OverlayTab(FigureTab):
                                              f"{T('flt_csv')};;{T('flt_all')}")
         for p in ps:
             try:
-                p = self.main.import_file(p, "data")
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                 for s_ in self.samples(p):
                     self.st["entries"].append({
                         "kind": "exp", "file": p, "sample": s_["key"], "label": s_["name"],
@@ -1441,7 +1444,7 @@ class OverlayTab(FigureTab):
                                              "ORCA / Gaussian (*.out *.log *.txt);;" + T("flt_all"))
         for p in ps:
             try:
-                p = self.main.import_file(p, "data")
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                 r = self.cache(("tddft", p), lambda p=p: X.parse_tddft(p))
                 self.main.log_signal.emit(f"  {Path(p).name}: {r['program']}, {len(r['E'])} {T('ov_states')}")
                 self.st["entries"].append({
@@ -1691,7 +1694,7 @@ class OverlayTab(FigureTab):
                                            f"{T('flt_struct')};;{T('flt_all')}")
         if p:
             self.main.settings.setValue("last_img_dir", str(Path(p).parent))
-            self.set_entry_structure(self.main.import_file(p, "images"))
+            self.set_entry_structure(self.main.import_file(p, PRJ.STRUCTURES))
 
     def set_entry_structure(self, p):
         e = self.current_entry()
@@ -1707,7 +1710,7 @@ class OverlayTab(FigureTab):
         p, _ = QFileDialog.getOpenFileName(self, T("dlg_structure"), self.main.settings.value("last_img_dir", ""),
                                            f"{T('flt_struct')};;{T('flt_all')}")
         if p:
-            self.set_structure(self.main.import_file(p, "images"))
+            self.set_structure(self.main.import_file(p, PRJ.STRUCTURES))
 
     def set_structure(self, p):
         self.st["structure"] = p
@@ -2013,7 +2016,7 @@ class FluoTab(FigureTab):
                                                f"{T('flt_csv')};;{T('flt_all')}")
             if p:
                 try:
-                    p = self.main.import_file(p, "data")
+                    p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                     self.samples(p)
                 except Exception as e:
                     return self.main.error(f"{Path(p).name}: {e}")
@@ -2055,7 +2058,7 @@ class FluoTab(FigureTab):
                                                f"{flt};;{T('flt_all')}")
             if p:
                 self.main.settings.setValue("last_img_dir", str(Path(p).parent))
-                p = self.main.import_file(p, "images")
+                p = self.main.import_file(p, PRJ.STRUCTURES)
                 self.st[key] = p
                 lbl.setText(Path(p).name)
                 self.timer.start()

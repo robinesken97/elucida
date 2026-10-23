@@ -1127,7 +1127,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
 
     def load_xyz(self, p):
         """xyz oder Ausgabe einer Rechnung (ORCA 6, Gaussian); Name = Dateiname ohne Endung."""
-        p = self.main.import_file(p, "data")
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
             self.frames_of(p)
         except Exception as ex:
@@ -1637,7 +1637,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def default_xyz_path(self, e):
         name = core.safe_name(e.get("name") or Path(e["file"]).stem)
         if self.main.project_dir:
-            return PRJ.export_dir(self.main.project_dir, self.STATE_KEY) / f"{name}.xyz"
+            return PRJ.export_dir(self.main.project_dir, PRJ.TABLES) / f"{name}.xyz"
         return Path(e["file"]).with_name(f"{name}_renumbered.xyz")
 
     def save_xyz(self, path=None):
@@ -1730,12 +1730,14 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             if not self.main.ensure_project():
                 return None
             path, _ = QFileDialog.getSaveFileName(
-                self, T("dft_si_word"), str(PRJ.export_dir(self.main.project_dir, self.STATE_KEY) / "DFT_SI.docx"),
+                self, T("dft_si_word"), str(PRJ.export_dir(self.main.project_dir, PRJ.SI_DIR) /
+                                            (PRJ.export_stem(self.main.export_name(), self.STATE_KEY) + ".docx")),
                 "Word (*.docx)")
             if not path:
                 return None
         path = Path(path)
-        img_dir = path.parent / "si_images"
+        img_dir = (PRJ.work_dir(self.main.project_dir, self.STATE_KEY) if self.main.project_dir
+                   else path.parent / "si_images")
         img_dir.mkdir(parents=True, exist_ok=True)
         try:
             out = SI.write_docx(path, self.docx_blocks(img_dir), columns=2)     # zweispaltig wie die SI der Gruppe

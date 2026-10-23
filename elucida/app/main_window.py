@@ -1295,7 +1295,7 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return False
         try:
-            paths = sorted(self.import_file(p, "data") for p in paths)   # Kopie ins Projekt
+            paths = sorted(self.import_file(p, PRJ.data_sub("eps")) for p in paths)   # Kopie ins Projekt
         except OSError as e:
             self.error(str(e))
             return False
@@ -1671,7 +1671,7 @@ class MainWindow(QMainWindow):
         """Verbindung übernehmen und als Vorgabe eintragen, wo noch nichts gewählt ist."""
         comp = dict(comp)
         if comp.get("structure") and self.project_dir:
-            comp["structure"] = self.import_file(comp["structure"], "images")
+            comp["structure"] = self.import_file(comp["structure"], PRJ.STRUCTURES)
         self.compound = comp
         self.apply_compound_defaults()
         if hasattr(self, "act_compound"):
@@ -1730,6 +1730,19 @@ class MainWindow(QMainWindow):
         self.add_recent(pdir)
         self.log_signal.emit(T("project_created", p=pdir))
         return True
+
+    def export_name(self):
+        """Name in Exportdateien: Verbindung des Projekts, sonst der Projektordner."""
+        return self.compound.get("name") or Path(self.project_dir or ".").resolve().name
+
+    def cache_dir(self, path):
+        """Cache für freigestellte Fotos: im Projekt .elucida/cache, sonst neben der Datei (wie bis 2.0)."""
+        if self.project_dir:
+            return PRJ.work_dir(self.project_dir, "cache")
+        return Path(path).parent / ".uvvis_cache"
+
+    def write_exchange(self):
+        """elucida.json für Characterization neu schreiben (nach Speichern und Exporten); Fehler nur ins Protokoll."""
 
     def import_file(self, path, sub):
         if not self.project_dir:
@@ -1889,7 +1902,7 @@ class MainWindow(QMainWindow):
         g = g or self.current
         st = self.series[g]
         if path is not None and self.project_dir:
-            path = self.import_file(path, "images")
+            path = self.import_file(path, PRJ.STRUCTURES)
         if path is None:
             st.update(structure=None, structure_asset=None, chem_info="", chem_warn=False)
             self.apply_series_widgets()
@@ -1977,7 +1990,7 @@ class MainWindow(QMainWindow):
         g = g or self.current
         st = self.series[g]
         if path is not None and self.project_dir:
-            path = self.import_file(path, "images")
+            path = self.import_file(path, PRJ.STRUCTURES)
         if path is None:
             st.update(photo=None, photo_asset=None)
             self.apply_series_widgets()
@@ -1985,7 +1998,7 @@ class MainWindow(QMainWindow):
         method = st["bg"]
         if method in ("auto", "isnet") and not self.ensure_model():
             method = "grabcut" if method == "isnet" else "auto"
-        cache = Path(self.csv_path).parent / ".uvvis_cache" if self.csv_path else None
+        cache = self.cache_dir(self.csv_path) if self.csv_path else None
 
         def done(asset):
             st["photo"], st["photo_asset"] = str(path), asset
@@ -2397,8 +2410,8 @@ class MainWindow(QMainWindow):
         try:
             blocks, missing = self.si_blocks(parts)
             pdir = Path(self.project_dir)
-            name = core.safe_name(self.compound.get("name") or pdir.name)
-            p = SI.write_docx(PRJ.export_dir(pdir, "si") / f"{name}_SI.docx", blocks)
+            name = core.safe_name(self.export_name())
+            p = SI.write_docx(PRJ.export_dir(pdir, PRJ.SI_DIR) / f"{name}_SI.docx", blocks)
         except PermissionError as e:
             return self.error(T("report_locked", p=getattr(e, "filename", "")))
         except Exception as e:
@@ -2420,9 +2433,9 @@ class MainWindow(QMainWindow):
             blocks = [("heading", title)]
         self._si_plain = plain
         if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
-            blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
+            blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si"))
         if "figs" in parts and self.project_dir:
-            figs = self.si_figure_blocks(PRJ.export_dir(Path(self.project_dir), "si"), title)
+            figs = self.si_figure_blocks(PRJ.work_dir(self.project_dir, "si"), title)
             if figs:
                 blocks += [("pagebreak",)] + figs
         if "methods" in parts:
@@ -2435,7 +2448,7 @@ class MainWindow(QMainWindow):
             blocks += self.si_xray_blocks(es)
         dt = self.dft_tab
         if "dft" in parts and any(dt.calc_of(e) is not None for e in dt.entries()) and self.project_dir:
-            blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
+            blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.work_dir(self.project_dir, "si"))
         return blocks, missing
 
     def si_methods_blocks(self):
@@ -2527,7 +2540,7 @@ class MainWindow(QMainWindow):
         plain, para = SI.join_lines(parts + order)
         blocks = [("synthesis", title)]
         if self.syn_tab.has_content() and self.project_dir:      # Überschrift, Schema, Vorschrift aus dem Tab
-            blocks = self.syn_tab.si_blocks(PRJ.export_dir(Path(self.project_dir), "si"))
+            blocks = self.syn_tab.si_blocks(PRJ.work_dir(self.project_dir, "si"))
         if para:
             blocks.append(("char", para))
         return blocks, missing, plain
@@ -2538,7 +2551,7 @@ class MainWindow(QMainWindow):
         if es:
             from matplotlib.backends.backend_agg import FigureCanvasAgg
             from matplotlib.figure import Figure as MplFigure
-            out_dir = PRJ.export_dir(Path(self.project_dir), "si") if self.project_dir else None
+            out_dir = PRJ.work_dir(self.project_dir, "si") if self.project_dir else None
             blocks.append(("gap",))
             for e in es:
                 fname = e.get("name") or e["block"]
@@ -2636,19 +2649,23 @@ class MainWindow(QMainWindow):
             return self.error(T("load_first"))
         if not self.ensure_project():
             return
-        out = self.export_all()
+        try:
+            out = self.export_all()
+        except PermissionError as e:
+            return self.error(T("report_locked", p=getattr(e, "filename", "") or ""))
         self.exported(p.parent for p in out)
+        self.write_exchange()
 
     def export_all(self, folder: Path = None):
         """Alle Serien exportieren: Abbildungen, Ergebnis-CSV und Excel-Report.
-        Ohne Ordnerangabe nach <Projekt>/exports/epsilon/<Serie>/ (wird überschrieben)."""
+        Ohne Ordnerangabe ins Projekt: <Serie>_UV-Vis.* nach figures/, tables/, SI/ (wird überschrieben)."""
         self.collect_globals()
         stem = Path(self.csv_path).stem
         written = []
         for g in self.groups:
             if folder is None:
-                gdir = PRJ.export_dir(self.project_dir, "epsilon", core.safe_name(g))
-                name = core.safe_name(g)
+                gdir = PRJ.staging(self.project_dir, f"eps_{core.safe_name(g)}")
+                name = PRJ.export_stem(g, "eps")
             else:
                 gdir = Path(folder)
                 name = f"{stem}_{g}" if len(self.groups) > 1 else stem
@@ -2674,6 +2691,8 @@ class MainWindow(QMainWindow):
                 written.append(Path(rep))
             except PermissionError:
                 self.error(T("report_locked", p=folder_g / f"{name}_report.xlsx"))
+        if folder is None:
+            written = PRJ.place_exports(self.project_dir, written)
         return written
 
     # ------------------------------------------------------------ Drag & Drop

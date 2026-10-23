@@ -496,6 +496,7 @@ import os  # noqa: E402
 from elucida.si import lines as SI  # noqa: E402
 from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app.i18n import T  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 IR_COLOR = "#7a1a12"
@@ -624,7 +625,7 @@ class IRMSTab(TABS.FigureTab):
 
     def load_ir(self, p):
         """PDF -> Peakliste aus OPUS, OPUS-Datei -> Spektrum (eigene Peaksuche); beides darf gleichzeitig da sein."""
-        p = self.main.import_file(p, "data")
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
             if Path(p).suffix.lower() == ".pdf":
                 if not read_ir_pdf(p):
