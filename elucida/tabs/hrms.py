@@ -14,11 +14,11 @@ from matplotlib.widgets import SpanSelector
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPushButton, QTextBrowser, QWidget)
 
-import uvvis_tabs as TABS
+from elucida.tabs import base as TABS
 from elucida.app.i18n import T
-from uvvis_irms import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
+from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
                         ppm, read_bruker_d, read_ms_docx)
-from uvvis_style import HINT_CSS, WARN_CSS, make_form
+from elucida.app.style import HINT_CSS, WARN_CSS, make_form
 
 MEASURED_COLOR, CALC_COLOR = "#111111", "#c0392b"
 

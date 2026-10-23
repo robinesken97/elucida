@@ -14,9 +14,9 @@ from pathlib import Path
 import numpy as np
 
 import uvvis_dft as DFT
-import uvvis_epr as EPR
+from elucida.tabs import epr as EPR
 from elucida.core import images as IMG
-import uvvis_sec as SEC
+from elucida.tabs import sec as SEC
 import uvvis_xray as XRAY
 
 

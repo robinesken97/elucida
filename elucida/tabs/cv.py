@@ -1,4 +1,4 @@
-"""uvvis_cv.py - Cyclovoltammetrie: Gamry-Dateien lesen, Redoxpaare auswerten, CV-Tab.
+"""elucida/tabs/cv.py - Cyclovoltammetrie: Gamry-Dateien lesen, Redoxpaare auswerten, CV-Tab.
 
 Auswertung je Redoxpaar in einem Potentialfenster [lo, hi]:
   E_pa = Maximum des Stroms im Hinlauf (dE/dt > 0), E_pc = Minimum im Rücklauf (dE/dt < 0),
@@ -30,10 +30,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from elucida.core import uvvis as core
-import uvvis_tabs as TABS
+from elucida.tabs import base as TABS
 from elucida.app.i18n import T
-import uvvis_style as STYLE
-from uvvis_style import HINT_CSS, make_form
+from elucida.app import style as STYLE
+from elucida.app.style import HINT_CSS, make_form
 
 # Referenzverbindungen: E½ gegen Fc⁺/Fc [V]. Ac₂Fc = 1,1'-Diacetylferrocen; Wert im Programm änderbar
 # (lösungsmittelabhängig, gegen Literatur prüfen).
@@ -601,7 +601,7 @@ class CVTab(TABS.FigureTab):
         scanning direction).“ Rate, iR-Kompensation (Gamry-Datei) und Referenz aus den sichtbaren Messungen;
         Konzentration, Lösungsmittel (leer = Gruppen) und Leitsalz aus den Feldern."""
         import html
-        from uvvis_si import chem_html
+        from elucida.si.lines import chem_html
         st = self.st
         vis = [e for e in st["files"] if e["visible"]]
         plot = st.get("plot", "cv")

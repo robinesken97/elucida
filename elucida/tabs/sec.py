@@ -1,4 +1,4 @@
-"""uvvis_sec.py - Spektroelektrochemie: Spektrenserie (B&W Tek BWSpec) + Potential (Gamry), SEC-Tab.
+"""elucida/tabs/sec.py - Spektroelektrochemie: Spektrenserie (B&W Tek BWSpec) + Potential (Gamry), SEC-Tab.
 
 Zuordnung Spektrum -> Potential über die Uhrzeit: t = Aufnahmezeit des Spektrums − Startzeit der Gamry-Messung
 (+ einstellbarer Versatz, z. B. für Wartezeiten vor dem Scan); E = E(t) aus der Gamry-Tabelle interpoliert.
@@ -18,11 +18,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox)
 
-import uvvis_cv as CV
-import uvvis_tabs as TABS
+from elucida.tabs import cv as CV
+from elucida.tabs import base as TABS
 from elucida.app.i18n import T
-import uvvis_style as STYLE
-from uvvis_style import HINT_CSS, make_form
+from elucida.app import style as STYLE
+from elucida.app.style import HINT_CSS, make_form
 
 F_RT = 96485.332 / (8.314462 * 298.15)          # 1/V bei 25 °C
 
@@ -448,7 +448,7 @@ class SECTab(TABS.FigureTab):
         Starting potential (vs. Ag/AgNO3): −1.30 V; End potential (vs. Ag/AgNO3): 0.70 V.“ Potentiale aus dem Scan
         (erstes/letztes gezeigtes Spektrum), Namen der Spezies und Lösungsmittel aus den Feldern."""
         import html
-        from uvvis_si import chem_html
+        from elucida.si.lines import chem_html
         st = self.st
         title = "UV-vis-SEC" if st["mode"] != "trace" else "Absorbance at selected wavelengths during UV-vis-SEC"
         h = f"{title} of <b>{html.escape(name)}</b>"

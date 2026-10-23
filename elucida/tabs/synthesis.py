@@ -1,4 +1,4 @@
-"""uvvis_synth.py - Synthese für die SI: „Synthesis of Name“, Reaktionsschema (ChemDraw), Vorschrift, Mengenprüfung.
+"""elucida/tabs/synthesis.py - Synthese für die SI: „Synthesis of Name“, Reaktionsschema (ChemDraw), Vorschrift, Mengenprüfung.
 
 Schema: CDXML im Projekt; gezeigt wird die gleichnamige ChemDraw-Exportdatei (SVG/PDF/PNG, unverändert). Liegt eine
 gleichnamige .cdx daneben, wird das Schema in Word als **bearbeitbares ChemDraw-Objekt** eingebettet (uvvis_ole);
@@ -27,8 +27,8 @@ TOL = 0.005            # zusätzlicher Spielraum (relativ) über die Rundung hin
 
 def formula_mw(formula):
     """Molmasse aus einer Summenformel (mittlere Atommassen wie in der Elementaranalyse)."""
-    import uvvis_si as SI
-    from uvvis_irms import parse_formula
+    from elucida.si import lines as SI
+    from elucida.tabs.ir_ea import parse_formula
     counts = parse_formula(formula)
     missing = [el for el in counts if el not in SI.AVG]
     if missing:
@@ -317,8 +317,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget,
                                QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
-import uvvis_project as PRJ  # noqa: E402
-from uvvis_style import HINT_CSS, WARN_CSS  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS  # noqa: E402
 
 ROLES = ("ref", "reagent", "product", "other")
 COLS = ("name", "M", "m_mg", "V_mL", "c_M", "rho", "role")          # bearbeitbare Spalten, danach n und eq./%
@@ -346,7 +346,7 @@ class SynthTab(QWidget):
         ls.setFrameShape(QFrame.NoFrame)
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         ls.setMinimumWidth(max(520, left.minimumSizeHint().width() + 24))
-        from uvvis_tabs import EmptyGuide
+        from elucida.tabs.base import EmptyGuide
         prev = QWidget()
         rv = QVBoxLayout(prev)
         rv.setContentsMargins(0, 0, 0, 0)
@@ -363,12 +363,12 @@ class SynthTab(QWidget):
         self.preview_stack.addWidget(EmptyGuide("syn", (T("syn_scheme_pick"), self.pick_scheme)))
         self.preview_stack.addWidget(prev)
         QVBoxLayout(right).addWidget(self.preview_stack)
-        from uvvis_tabs import footer
+        from elucida.tabs.base import footer
         split = QSplitter(Qt.Horizontal)
         split.addWidget(footer(self, ls))
         split.addWidget(right)
         split.setSizes([620, 800])
-        from uvvis_tabs import fit_footer_column
+        from elucida.tabs.base import fit_footer_column
         fit_footer_column(self, split, 520)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -782,7 +782,7 @@ class SynthTab(QWidget):
         return blocks
 
     def export_dialog(self):
-        import uvvis_si as SI
+        from elucida.si import lines as SI
         if not self.main.ensure_project():
             return None
         out = PRJ.export_dir(self.main.project_dir, self.STATE_KEY)

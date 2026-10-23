@@ -1,4 +1,4 @@
-"""uvvis_update.py - Prüfen, ob auf GitHub eine neuere Version veröffentlicht ist.
+"""elucida/app/update.py - Prüfen, ob auf GitHub eine neuere Version veröffentlicht ist.
 
 Fragt nur die öffentliche GitHub-API ab (neuestes Release, ohne Entwürfe/Vorabversionen) und
 sendet dabei nichts außer der Programmversion im User-Agent. Herunterladen/Installieren macht

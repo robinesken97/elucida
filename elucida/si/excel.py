@@ -1,5 +1,5 @@
 """
-uvvis_report.py - Ausführlicher Excel-Report einer Verdünnungsreihe.
+elucida/si/excel.py - Ausführlicher Excel-Report einer Verdünnungsreihe.
 
 Blätter:
   Übersicht    Parameter, Ergebnisse aller Banden (Tool-Werte + Kontrolle aus den Bandenblättern),

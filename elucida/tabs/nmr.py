@@ -1,4 +1,4 @@
-"""uvvis_nmr.py - NMR für die SI: Spektren als Mnova-SVG, NMR-Zeile aus dem Mnova-Multiplettbericht, Parameter aus Bruker.
+"""elucida/tabs/nmr.py - NMR für die SI: Spektren als Mnova-SVG, NMR-Zeile aus dem Mnova-Multiplettbericht, Parameter aus Bruker.
 
 Auswertung bleibt in MestReNova. Hier: SVG-Exporte einsammeln (Kern aus der Achsenbeschriftung „δ ¹H (ppm)“, sonst von
 Hand; 2D, wenn eine senkrechte δ-Achse vorkommt; Art aus dem Dateinamen), sortieren (¹H, ¹³C, übrige Kerne nach
@@ -491,8 +491,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
                                QStackedWidget, QWidget)
 
-import uvvis_project as PRJ  # noqa: E402
-from uvvis_style import HINT_CSS, make_form  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
+from elucida.app.style import HINT_CSS, make_form  # noqa: E402
 
 FIG_W_CM = 16.0                    # Breite der Spektren in Word (zwei Abbildungen je Seite, wie in der SI)
 
@@ -528,7 +528,7 @@ class NMRTab(QWidget):
         ls.setFrameShape(QFrame.NoFrame)
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         ls.setMinimumWidth(max(460, left.minimumSizeHint().width() + 24))
-        from uvvis_tabs import EmptyGuide
+        from elucida.tabs.base import EmptyGuide
         prev = QWidget()
         rv = QVBoxLayout(prev)
         rv.setContentsMargins(0, 0, 0, 0)
@@ -545,12 +545,12 @@ class NMRTab(QWidget):
         self.preview_stack.addWidget(EmptyGuide("nmr", (T("nmr_add"), self.add_svg)))
         self.preview_stack.addWidget(prev)
         QVBoxLayout(right).addWidget(self.preview_stack)
-        from uvvis_tabs import footer
+        from elucida.tabs.base import footer
         split = QSplitter(Qt.Horizontal)
         split.addWidget(footer(self, ls))
         split.addWidget(right)
         split.setSizes([500, 900])
-        from uvvis_tabs import fit_footer_column
+        from elucida.tabs.base import fit_footer_column
         fit_footer_column(self, split, 460)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -967,7 +967,7 @@ class NMRTab(QWidget):
         self.main.push_undo()
 
     def copy_lines(self):
-        from uvvis_irms import copy_rich
+        from elucida.tabs.ir_ea import copy_rich
         lines = self.nmr_lines()
         if lines:
             copy_rich("; ".join(p for p, _ in lines), "; ".join(h for _, h in lines))
@@ -1075,7 +1075,7 @@ class NMRTab(QWidget):
         blocks = []
         name = self.compound_name()
         bl = self.blocks()
-        import uvvis_si as SI
+        from elucida.si import lines as SI
         for s in (x for x in self.spectra() if Path(x["file"]).is_file()):
             f = self.figure_svg(s)
             png = svg_png(f, Path(img_dir) / (Path(f).stem + "_nmr.png"))
@@ -1085,7 +1085,7 @@ class NMRTab(QWidget):
 
     def export_dialog(self, path=None):
         """Word-Datei mit allen Spektren und Unterschriften, dazu die NMR-Zeile als Text (exports/nmr)."""
-        import uvvis_si as SI
+        from elucida.si import lines as SI
         if not self.main.ensure_project():
             return None
         if not self.spectra() and not self.nmr_lines():

@@ -1,5 +1,5 @@
 """
-uvvis_tabs.py - Zusätzliche Tabs der GUI: Overlay (Messung + TD-DFT) und Fluoreszenz.
+elucida/tabs/base.py - Zusätzliche Tabs der GUI: Overlay (Messung + TD-DFT) und Fluoreszenz.
 """
 from __future__ import annotations
 
@@ -29,10 +29,10 @@ from elucida.core import color as COLOR
 from elucida.core import uvvis as core
 from elucida.core import tddft as X
 from elucida.core import images as IMG
-import uvvis_project as PRJ
+from elucida.app import project as PRJ
 from elucida.app.i18n import T, get_lang
-import uvvis_style as STYLE
-from uvvis_style import HINT_CSS, WARN_CSS, align_forms, make_form
+from elucida.app import style as STYLE
+from elucida.app.style import HINT_CSS, WARN_CSS, align_forms, make_form
 
 PREVIEW_DPI = 90
 PALETTE = ["#000000", "#e8231b", "#1764e8", "#1f9e4a", "#a35ce0", "#e08a00", "#00a0b0", "#8c564b"]
@@ -1306,7 +1306,7 @@ class OverlayTab(FigureTab):
     def add_sec(self):
         """Spektren aus dem SEC-Tab übernehmen, ausgewählt nach Potential. SEC-Kurven werden nur normiert
         gezeigt: Schichtdicke und umgesetzte Konzentration der Dünnschichtzelle sind nicht genau bekannt."""
-        import uvvis_cv as CV
+        from elucida.tabs import cv as CV
         sec = self.main.sec_tab
         sec.collect()
         sp, E = sec.series()
@@ -1347,8 +1347,8 @@ class OverlayTab(FigureTab):
     def add_sec_series(self, i0, i1, ends_only=False):
         """SEC-Spektren i0…i1 als EINEN Eintrag: gemeinsamer Normierungsfaktor, damit Intensitätsverhältnisse
         und isosbestische Punkte erhalten bleiben (Einzelnormierung würde sie zerstören)."""
-        import uvvis_cv as CV
-        import uvvis_sec as SEC
+        from elucida.tabs import cv as CV
+        from elucida.tabs import sec as SEC
         sec = self.main.sec_tab
         sp, E = sec.series()
         off, ref = sec.e_offset()
@@ -1367,8 +1367,8 @@ class OverlayTab(FigureTab):
     def sec_series_curves(self, e, lo, hi, bcfg=None):
         """Kurven einer SEC-Serie, alle mit demselben Faktor normiert: auf das Startspektrum (Ausgangsverbindung,
         direkt vergleichbar mit dem isolierten UV-Vis-Spektrum); ohne Signal dort auf das Maximum der Serie."""
-        import uvvis_cv as CV
-        import uvvis_sec as SEC
+        from elucida.tabs import cv as CV
+        from elucida.tabs import sec as SEC
         data = [self.sec_spectrum({"file": f}) for f in e["files"]]
         if not data or any(d is None for d in data):
             return None
@@ -1406,7 +1406,7 @@ class OverlayTab(FigureTab):
 
     def add_sec_entries(self, indices):
         """SEC-Spektren Nr. `indices` (0-basiert, Reihenfolge wie im SEC-Tab) als Einträge anlegen."""
-        import uvvis_cv as CV
+        from elucida.tabs import cv as CV
         sec = self.main.sec_tab
         sp, E = sec.series()
         off, ref = sec.e_offset()
@@ -1427,7 +1427,7 @@ class OverlayTab(FigureTab):
         return next(p for p in sec.st["spec_files"] if Path(p).stem == s_["name"])
 
     def sec_spectrum(self, e):
-        import uvvis_sec as SEC
+        from elucida.tabs import sec as SEC
         if not Path(e["file"]).exists():
             return None
         s_ = self.cache(("bws", e["file"]), lambda: SEC.read_bwspec(e["file"]))
@@ -1812,7 +1812,7 @@ class OverlayTab(FigureTab):
                 exp_x.append(x)
                 lab = e["label"]
                 if e["kind"] == "sec":                   # AgNO₃ -> Mathtext-Index (Glyphen fehlen oft)
-                    import uvvis_cv as CV
+                    from elucida.tabs import cv as CV
                     lab = CV.axis_ref(lab)
                 c = {"x": x, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": lab, "ls": ls}
             else:

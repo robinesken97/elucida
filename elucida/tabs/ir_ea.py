@@ -1,4 +1,4 @@
-"""uvvis_irms.py - IR-Peakliste und HRMS-Zeile für die SI, Tab „IR + MS“.
+"""elucida/tabs/ir_ea.py - IR-Peakliste und HRMS-Zeile für die SI, Tab „IR + MS“.
 
 IR:  Bruker OPUS (Binärdatei *.0, *.1 …: Spektrum + Parameterblock) oder OPUS-PDF-Ausdruck (Peakwerte als Text).
      Peaksuche in Rohdaten: Minima der Transmission (bzw. Maxima der Absorbanz) mit Mindest-Prominenz relativ zur
@@ -493,10 +493,10 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 import os  # noqa: E402
 
-import uvvis_si as SI  # noqa: E402
-import uvvis_tabs as TABS  # noqa: E402
+from elucida.si import lines as SI  # noqa: E402
+from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app.i18n import T  # noqa: E402
-from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 IR_COLOR = "#7a1a12"
 

@@ -854,10 +854,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QTableWidgetItem, QTextBrowser, QVBoxLayout)
 
 from elucida.core import uvvis as core  # noqa: E402
-import uvvis_project as PRJ  # noqa: E402
-import uvvis_tabs as TABS  # noqa: E402
-import uvvis_style as STYLE  # noqa: E402
-from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
+from elucida.tabs import base as TABS  # noqa: E402
+from elucida.app import style as STYLE  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 PICK_COLOR = XRAY.SEL_COLOR
 OLD_COLOR = "#9a9a9a"
@@ -1382,7 +1382,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         e = self.entry()
         p = self.si_of(e)
         if p is not None:
-            from uvvis_irms import copy_rich
+            from elucida.tabs.ir_ea import copy_rich
             pl, ht = si_plain(p), si_html(p)
             if method_mode(self.st.get("si_method")) == "top":
                 det = computational_details([(p["name"], self.calc_of(e))])
@@ -1725,7 +1725,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
 
     def save_docx(self, path=None):
         """SI-Abschnitt aller Rechnungen als Word-Datei (Stil wie die SI der Gruppe)."""
-        import uvvis_si as SI
+        from elucida.si import lines as SI
         if path is None:
             if not self.main.ensure_project():
                 return None

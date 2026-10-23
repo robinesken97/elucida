@@ -1,5 +1,5 @@
 """
-uvvis_project.py - Projektordner: alle drei Tabs in einer Datei, Eingabedateien als Kopie.
+elucida/app/project.py - Projektordner: alle drei Tabs in einer Datei, Eingabedateien als Kopie.
 
 <Projekt>/
     project.uvvis      Zustand (YAML), Pfade relativ zum Projektordner

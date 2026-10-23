@@ -2452,12 +2452,12 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 from elucida.core import uvvis as core  # noqa: E402
-import uvvis_project as PRJ  # noqa: E402
-import uvvis_tabs as TABS  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
+from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app.i18n import T  # noqa: E402
-from uvvis_irms import copy_rich  # noqa: E402
-import uvvis_style as STYLE  # noqa: E402
-from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
+from elucida.tabs.ir_ea import copy_rich  # noqa: E402
+from elucida.app import style as STYLE  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 CAPTION_MAX = 8                       # bis zu so vielen ausgewählten Werten in der Bildunterschrift, sonst Tabellen
 KIND_HEAD = {"bond": "Bond lengths [Å]", "angle": "Angles [°]", "torsion": "Torsion angles [°]"}

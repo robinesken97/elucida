@@ -47,23 +47,23 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication
 from elucida.core import uvvis as core  # noqa: E402
 from elucida.core import images as IMG  # noqa: E402
 from elucida.app.i18n import T, get_lang, set_lang  # noqa: E402
-import uvvis_tabs  # noqa: E402
-import uvvis_project as PRJ  # noqa: E402
-import uvvis_report as REPORT  # noqa: E402
-import uvvis_update as UPD  # noqa: E402
+from elucida.tabs import base as TABS  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
+from elucida.si import excel as REPORT  # noqa: E402
+from elucida.app import update as UPD  # noqa: E402
 from elucida.core import color as COLOR  # noqa: E402
-import uvvis_cv as CVMOD  # noqa: E402
-import uvvis_sec as SECMOD  # noqa: E402
-import uvvis_epr as EPRMOD  # noqa: E402
-import uvvis_hrms as HRMS  # noqa: E402
-import uvvis_irms as IRMS  # noqa: E402
+from elucida.tabs import cv as CVMOD  # noqa: E402
+from elucida.tabs import sec as SECMOD  # noqa: E402
+from elucida.tabs import epr as EPRMOD  # noqa: E402
+from elucida.tabs import hrms as HRMS  # noqa: E402
+from elucida.tabs import ir_ea as IRMS  # noqa: E402
 import uvvis_xray as XRAY  # noqa: E402
 import uvvis_dft as DFT  # noqa: E402
-import uvvis_nmr as NMR  # noqa: E402
-import uvvis_synth as SYN  # noqa: E402
-import uvvis_si as SI  # noqa: E402
-import uvvis_style as STYLE  # noqa: E402
-from uvvis_style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
+from elucida.tabs import nmr as NMR  # noqa: E402
+from elucida.tabs import synthesis as SYN  # noqa: E402
+from elucida.si import lines as SI  # noqa: E402
+from elucida.app import style as STYLE  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
 
 PREVIEW_DPI = 90
 FIGSIZE = (8.0, 6.0)
@@ -905,7 +905,7 @@ class MainWindow(QMainWindow):
         # Exportieren bleibt unten sichtbar, auch wenn die Spalte gescrollt wird
         row = QHBoxLayout()
         row.setContentsMargins(8, 6, 8, 6)
-        row.addWidget(uvvis_tabs.reset_button(self.reset_layout, self.reset_defaults))
+        row.addWidget(TABS.reset_button(self.reset_layout, self.reset_defaults))
         b = QPushButton(T("si_copy_methods"))
         b.setToolTip(T("si_copy_methods_tip"))
         b.clicked.connect(self.copy_eps_methods)
@@ -931,7 +931,7 @@ class MainWindow(QMainWindow):
                                      + lscroll.verticalScrollBar().sizeHint().width() + 4))
 
         # ---- rechte Seite
-        self.canvas_host = uvvis_tabs.CanvasHost(self.canvas, self.fig)
+        self.canvas_host = TABS.CanvasHost(self.canvas, self.fig)
         self.tabs = QTabWidget()                      # wie die anderen Tabs: Abbildung | Ergebnisse | SI-Zeile
         self.tabs.setDocumentMode(True)
         self.table = QTableWidget(0, 7)
@@ -965,7 +965,7 @@ class MainWindow(QMainWindow):
         self._uv_line = ("", "")
         # Protokoll: Hilfe → Protokoll (eigenes Fenster), kein Reiter mehr
         # Leer-Zustand: Anleitung (was herauskommt, welche Dateien, Schritte) statt weißer Fläche
-        empty = uvvis_tabs.EmptyGuide("eps", (T("act_open"), self.choose_csv))
+        empty = TABS.EmptyGuide("eps", (T("act_open"), self.choose_csv))
         empty_wrap = QWidget()
         QVBoxLayout(empty_wrap).addWidget(empty)
         self.preview_stack = QStackedWidget()
@@ -973,8 +973,8 @@ class MainWindow(QMainWindow):
         self.preview_stack.addWidget(self.canvas_host)
         self.preview_stack.setCurrentIndex(1 if self.current and self.current in self.groups else 0)
         self.tabs.addTab(self.preview_stack, T("tab_figure"))
-        self.tabs.addTab(uvvis_tabs.result_page(g_res), T("tab_results"))
-        self.tabs.addTab(uvvis_tabs.result_page(si_w), T("tab_si_line"))
+        self.tabs.addTab(TABS.result_page(g_res), T("tab_results"))
+        self.tabs.addTab(TABS.result_page(si_w), T("tab_si_line"))
         right = self.tabs
         split = QSplitter(Qt.Horizontal)
         split.addWidget(left_col)
@@ -982,8 +982,8 @@ class MainWindow(QMainWindow):
         split.setSizes([left_col.minimumWidth(), 920])
         self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split, floor=380)   # nie abgeschnitten
         self.eps_page = split
-        self.ov_tab = uvvis_tabs.OverlayTab(self, self.ov_state)
-        self.fl_tab = uvvis_tabs.FluoTab(self, self.fl_state)
+        self.ov_tab = TABS.OverlayTab(self, self.ov_state)
+        self.fl_tab = TABS.FluoTab(self, self.fl_state)
         self.cv_tab = CVMOD.CVTab(self, self.cv_state)
         self.sec_tab = SECMOD.SECTab(self, self.sec_state)
         self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
@@ -1590,8 +1590,8 @@ class MainWindow(QMainWindow):
         self.lbl_recent = QLabel(f"<b>{T('welcome_recent')}</b>")
         v.addWidget(self.lbl_recent)
         v.addWidget(self.lst_recent)
-        hint = QLabel(T("welcome_hint", url=uvvis_tabs.README_URL + ("README.de.md" if get_lang() == "de" else "README.md")
-                        + "#" + uvvis_tabs.gh_anchor(T("readme_quickstart"))))
+        hint = QLabel(T("welcome_hint", url=TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md")
+                        + "#" + TABS.gh_anchor(T("readme_quickstart"))))
         hint.setWordWrap(True)
         hint.setOpenExternalLinks(True)
         hint.setStyleSheet(HINT_CSS)
@@ -1634,11 +1634,11 @@ class MainWindow(QMainWindow):
 
     def show_tab_guide(self):
         key = self._tab_keys[self.main_tabs.currentIndex()]
-        QDesktopServices.openUrl(QUrl(uvvis_tabs.guide_url(key)))
+        QDesktopServices.openUrl(QUrl(TABS.guide_url(key)))
 
     def show_quickstart(self):
-        url = (uvvis_tabs.README_URL + ("README.de.md" if get_lang() == "de" else "README.md") + "#"
-               + uvvis_tabs.gh_anchor(T("readme_quickstart")))
+        url = (TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md") + "#"
+               + TABS.gh_anchor(T("readme_quickstart")))
         QDesktopServices.openUrl(QUrl(url))
 
     def update_title(self):
@@ -2156,7 +2156,7 @@ class MainWindow(QMainWindow):
         name = self.main_tabs.tabText(self.main_tabs.currentIndex())
         if w_ is self.eps_page:
             return "epsilon", name, TextFormatDialog.ALL_OPTS
-        if isinstance(w_, uvvis_tabs.FigureTab):
+        if isinstance(w_, TABS.FigureTab):
             return w_.STATE_KEY, name, w_.TEXT_OPTS
         return None, name, ()
 
@@ -2203,7 +2203,7 @@ class MainWindow(QMainWindow):
             self.dragger = GuiDragger(self.F, self.layout_changed)
             unit = cfg2["conc_unit"].replace("uM", "µM")
             curves = [dict(x=s_["x"], y=s_["y"], val=s_["y"], name=f"c = {s_['c']:g} {unit}") for s_ in spectra]
-            self.hover = uvvis_tabs.HoverReadout(self.F, curves, self.show_hover, self.hover_text, self.pick_band)
+            self.hover = TABS.HoverReadout(self.F, curves, self.show_hover, self.hover_text, self.pick_band)
             self.sync_image_sizes(self.F.current_layout())
             self.canvas.draw_idle()
             self.fill_table(results, cfg2)
@@ -2491,7 +2491,7 @@ class MainWindow(QMainWindow):
             FigureCanvasAgg(fig)
             F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
             sfx = f"_{core.safe_name(g)}" if len(self.groups) > 1 else ""
-            img = uvvis_tabs.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
+            img = TABS.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
             solv = (self.series.get(g) or {}).get("solvent", "").strip()
             cap = (f"UV-Vis spectra of <b>{html.escape(name)}</b>"
                    + (f" in {SI.chem_html(solv)}" if solv else "")
@@ -2543,7 +2543,7 @@ class MainWindow(QMainWindow):
             for e in es:
                 fname = e.get("name") or e["block"]
                 if out_dir is not None:                   # Abbildung wie im X-Ray-Tab, 300 dpi
-                    fig = MplFigure(figsize=(8, 6), dpi=uvvis_tabs.PREVIEW_DPI)
+                    fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
                     FigureCanvasAgg(fig)
                     F = xt.build(fig, e, interactive=False)
                     if F is not None:                     # wie in der SI eng um das Molekül beschnitten
@@ -3060,7 +3060,7 @@ def selftest(outdir, with_isnet=False):
         exp_cm = 1e7 / inf["lam_abs"] - 1e7 / inf["lam_em"]
         assert inf["lam_em"] == 520 and abs(inf["stokes_cm"] - exp_cm) < 1e-6 and inf["stokes_cm"] > 0, inf
         assert inf["a_ex"] is not None and np.isfinite(inf["a_ex"]), inf
-        assert uvvis_tabs.fmt_stokes(1473.4) == "1470"
+        assert TABS.fmt_stokes(1473.4) == "1470"
         figf = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
         FigureCanvasAgg(figf)
         ltxt = " ".join(a.get_text() for a in w.fl_tab.build(figf).ann_items.values())
@@ -3999,16 +3999,16 @@ def selftest(outdir, with_isnet=False):
                           if ln_.startswith("## ")]
                   for lang_, f_ in (("de", "README.de.md"), ("en", "README.md"))
                   if (Path(__file__).parent / f_).exists()}           # im gebauten Programm fehlt die README
-        for key_, (de_, en_) in uvvis_tabs.GUIDE_HEAD.items():
+        for key_, (de_, en_) in TABS.GUIDE_HEAD.items():
             assert not heads_ or (de_ in heads_["de"] and en_ in heads_["en"]), (key_, de_, en_)
             for part_ in ("title", "files", "steps"):
                 assert T(f"guide_{key_}_{part_}") != f"guide_{key_}_{part_}", (key_, part_)
         for lang_ in heads_:                                       # Startbildschirm/Hilfe: Schnellstart-Link
             q_ = TEXTS_["readme_quickstart"][0 if lang_ == "de" else 1]
             assert q_ in heads_[lang_], (lang_, q_)
-        assert uvvis_tabs.gh_anchor("IR + EA tab") == "ir--ea-tab"
-        assert uvvis_tabs.gh_anchor("CV-Tab (Cyclovoltammetrie)") == "cv-tab-cyclovoltammetrie"
-        guide_ = w.cv_tab.preview_stack.widget(0).findChild(uvvis_tabs.EmptyGuide)
+        assert TABS.gh_anchor("IR + EA tab") == "ir--ea-tab"
+        assert TABS.gh_anchor("CV-Tab (Cyclovoltammetrie)") == "cv-tab-cyclovoltammetrie"
+        guide_ = w.cv_tab.preview_stack.widget(0).findChild(TABS.EmptyGuide)
         assert guide_ is not None and T("guide_cv_title") in guide_.label.text()
         w.resize(1440, 900)
         w.show()
@@ -4017,7 +4017,7 @@ def selftest(outdir, with_isnet=False):
             pump(0.1)
             assert tab_.preview_stack.currentIndex() == 0, key_
             g_ = tab_.preview_stack.widget(0)
-            g_ = g_ if isinstance(g_, uvvis_tabs.EmptyGuide) else g_.findChild(uvvis_tabs.EmptyGuide)
+            g_ = g_ if isinstance(g_, TABS.EmptyGuide) else g_.findChild(TABS.EmptyGuide)
             assert g_ is not None and T(f"guide_{key_}_title") in g_.label.text(), key_
             b_ = g_.findChild(QPushButton)
             assert b_ is not None, key_
@@ -4170,7 +4170,7 @@ def selftest(outdir, with_isnet=False):
                                                         if g_.objectName() != "resultCard"]
         w.switch_theme("system")
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
-        bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")
+        bars = w.findChildren(TABS.QWidget, "mainToolbar")
         acts = [a for a in w.toolbar.actions() if not a.isSeparator()]
         assert len(bars) == 1 and len(acts) == 8 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
         opened_ = []                                         # Projektordner im Dateimanager (hier nur abgefangen)

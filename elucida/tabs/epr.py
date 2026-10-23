@@ -1,4 +1,4 @@
-"""uvvis_epr.py - CW-EPR: Bruker BES3T (ESR5000/ESRStudio, Elexsys), Magnettech-MS400-Text, EasySpin-Simulationen.
+"""elucida/tabs/epr.py - CW-EPR: Bruker BES3T (ESR5000/ESRStudio, Elexsys), Magnettech-MS400-Text, EasySpin-Simulationen.
 
 Verarbeitung einer Messung (Reihenfolge): Dunkelspektrum abziehen (hell − k·dunkel, auf das Feldraster der
 Messung interpoliert) -> Basislinie (Polynom an den Rändern des Sweeps oder in gewählten Bereichen) ->
@@ -19,10 +19,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from elucida.core import uvvis as core
-import uvvis_tabs as TABS
+from elucida.tabs import base as TABS
 from elucida.app.i18n import T
-import uvvis_style as STYLE
-from uvvis_style import HINT_CSS, make_form
+from elucida.app import style as STYLE
+from elucida.app.style import HINT_CSS, make_form
 
 MHZ_PER_CM = 29979.2458                       # 1 cm⁻¹ in MHz
 MU_B_H = 13.996245                             # µ_B/h in GHz/T  -> g = ν / (µ_B/h · B)
@@ -1027,7 +1027,7 @@ class EPRTab(TABS.FigureTab):
         ΔBpp = 0.284 mT; hyperfine coupling: 1×14N: 2.39 MHz; …“. Band aus der Mikrowellenfrequenz, Parameter nur aus
         eigenen S = ½-Fits (ohne Fehler, siehe methods_text), Spezies/Lösungsmittel/Konzentration aus den Feldern."""
         import html
-        from uvvis_si import chem_html
+        from elucida.si.lines import chem_html
         st = self.st
         if st["mode"] != "spectra":
             return super().si_caption(name)

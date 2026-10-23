@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path
 
 from elucida.core import uvvis as core
-from uvvis_irms import formula_str, parse_formula
+from elucida.tabs.ir_ea import formula_str, parse_formula
 
 # Mittlere Atommassen (IUPAC 2021, konventionelle Werte) für die Elementaranalyse
 AVG = {"H": 1.008, "D": 2.014, "Li": 6.94, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998,
