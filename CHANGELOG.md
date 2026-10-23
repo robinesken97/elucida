@@ -2,6 +2,25 @@
 
 # Changelog
 
+## 2.1.0 – 2026-10-23
+
+### New
+- **elucida.json** in the project folder: a summary for the Characterization program (compound with SMILES/InChIKey,
+  which analytics exist and where their files are, HR-MS and elemental analysis values, the SI lines and paragraph,
+  the SI Word file and the latest figures). Written when saving, after exports and shortly after autosave;
+  Characterization only reads it.
+
+### Changed
+- **Clearer project folder:** exports are sorted by kind – `SI/` (Word files, SI texts), `figures/` (PDF/SVG/PNG) and
+  `tables/` (CSV, Excel, xyz) – and named after the compound (e.g. `S2_CV.pdf`, `S2_SI.docx`; UV-Vis per series
+  `<series>_UV-Vis.pdf`). Measurement data go to `data/<technique>/` (nmr, ir, hrms, uvvis, cv …), structures, schemes
+  and photos to `structures/`. Intermediate images for Word, the photo cache and the backup are in the hidden folder
+  `.elucida/`. Folders appear only when something goes into them.
+- Projects from older versions open as before; their files stay where they are, only new files and exports use the
+  new layout.
+- Source code reorganised into the package `elucida/` (app, core, tabs, formats, si, exchange); start from source with
+  `python Elucida.py`. No change for users of the installed app.
+
 ## 2.0.3 – 2026-10-23
 
 ### New
