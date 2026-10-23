@@ -91,6 +91,7 @@ DEFAULTS = {
         "eps_digits": "auto",                # auto = nach Unsicherheit runden, oder int = sign. Stellen
         "eps_unit": r"cm$^{-1}$ M$^{-1}$",
         "mark_shoulders": False,             # „(sh)“ an Schultern in der Abbildung
+        "index": False,                      # λ₁/ε₁, λ₂/ε₂ … (aufsteigend nach λ, nur Banden im Bild)
         "font_size": 15,
         "color": "#000000",
         "bold": False,
@@ -1097,14 +1098,15 @@ class Figure:
         if not lcfg["show"]:
             return
         lo, hi = self.ax.get_xlim()
-        for r in self.results:
-            if not r["fit"] or r.get("hidden") or not (lo <= r["lam"] <= hi):
-                continue
+        shown = [r for r in self.results if r["fit"] and not r.get("hidden") and lo <= r["lam"] <= hi]
+        num = {id(r): i for i, r in enumerate(sorted(shown, key=lambda r: r["lam"]), 1)}
+        for r in shown:
             v, e = fmt_ve(r["eps"], r["eps_err"], lcfg["eps_digits"], eps_max_decimals(self.cfg))
             eps = f"({v} ± {e})" if (lcfg["show_error"] and e) else v
             sym, unit = coeff_symbol_unit(self.cfg)
             sh = " (sh)" if (r.get("shoulder") and lcfg.get("mark_shoulders")) else ""
-            txt = f"λ =  {r['lam']:g} nm{sh}\n{sym} =  {eps} {unit}"
+            ix = f"$_{{{num[id(r)]}}}$" if lcfg.get("index") else ""
+            txt = f"λ{ix} =  {r['lam']:g} nm{sh}\n{sym}{ix} =  {eps} {unit}"
             if self.cfg["r2_mode"] == "label":
                 txt += f"\n$R^2$ =  {r['fit']['r2']:.4f}"
             ann = self.ax.annotate(fmt_text(txt, self.cfg, label=True), xy=(r["lam"], 0), xycoords="data",
@@ -1500,7 +1502,10 @@ class Dragger:
             pass
 
     def press(self, ev):
-        if ev.button != 1 or ev.x is None or self._over_label(ev):
+        if ev.button != 1 or ev.x is None:
+            return
+        if self._over_label(ev):
+            self._label_drag = True           # matplotlib zieht das Label selbst (Blitting, ohne Neuzeichnen danach)
             return
         a = self._axes_at(ev)
         if a is not None:
@@ -1538,8 +1543,11 @@ class Dragger:
     def release(self, ev):
         if self.drag and self._bg is not None:
             self.drag[0].set_animated(False)     # wieder normal mitzeichnen (Export, Reihenfolge)
+        if self.drag or getattr(self, "_label_drag", False):
+            # immer ganz neu zeichnen: Blitting-Hintergründe (auch der der Hover-Anzeige) sind ohne das gezogene
+            # Element entstanden; sonst verschwinden Struktur/Labels beim nächsten Blit bis zum nächsten Klick
             self.F.fig.canvas.draw_idle()
-        self.drag, self._bg = None, None
+        self.drag, self._bg, self._label_drag = None, None, False
 
     def scroll(self, ev):
         """Mausrad: Inset oder Bild um seinen Mittelpunkt vergrößern/verkleinern."""

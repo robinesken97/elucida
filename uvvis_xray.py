@@ -1384,10 +1384,11 @@ def table_plain(header, rows):
 # ---------------------------------------------------------------------------- Abbildung (matplotlib)
 import matplotlib  # noqa: E402
 import matplotlib.patheffects as PE  # noqa: E402
-from matplotlib.collections import PolyCollection  # noqa: E402
+from matplotlib.collections import LineCollection, PolyCollection  # noqa: E402
 from matplotlib.colors import to_rgb  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Ellipse  # noqa: E402
+from matplotlib.transforms import Affine2D  # noqa: E402
 
 SEL_COLOR = "#FF8C00"
 LIGHT = np.array([-0.55, 0.65]) / math.hypot(0.55, 0.65)    # Licht von oben links (Bildschirm), wie Mercury
@@ -1479,28 +1480,76 @@ def sphere_unit_layers(style):
     return out
 
 
-def rod_layout(style, dx, dy):
-    """Stab als Zylinder (Achse in der Bildebene, Richtung dx, dy): je Schicht (Breitenanteil, Versatz in Stabbreiten
-    zur Lichtseite). Reihenfolge wie rod_levels(style); leere Schicht -> (0, 0)."""
+_SPHERE_DRAG = {}
+DRAG_TOL_PX = 0.25                                         # Ziehen: Kugelumrisse höchstens so weit (Pixel) vereinfacht
+DRAG_TOLS = (0.04, 0.02, 0.01, 0.005, 0.0025, 0.00125)      # Stufen (Anteil des Radius), gröbste passende gewinnt
+
+
+def simplify_polyline(P, tol):
+    """Douglas-Peucker: Punkte weglassen, solange die Linie höchstens tol (Einheiten von P) abweicht."""
+    keep = np.zeros(len(P), bool)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(P) - 1)]
+    while stack:
+        i, j = stack.pop()
+        if j <= i + 1:
+            continue
+        a, d, Q = P[i], P[j] - P[i], P[i + 1:j]
+        L = math.hypot(d[0], d[1])
+        dist = (np.abs(d[0] * (Q[:, 1] - a[1]) - d[1] * (Q[:, 0] - a[0])) / L if L > 0
+                else np.hypot(Q[:, 0] - a[0], Q[:, 1] - a[1]))
+        m = int(dist.argmax())
+        if dist[m] > tol:
+            keep[i + 1 + m] = True
+            stack += [(i, i + 1 + m), (i + 1 + m, j)]
+    return P[keep]
+
+
+def sphere_layer_verts(style, tol=None):
+    """Polygone der Einheitskugel (Schichten + Umriss) für die PolyCollection; tol: vereinfacht (nur beim Ziehen,
+    die Contour-Polygone haben je Schicht Hunderte Punkte – Abbildung und Export immer mit tol=None)."""
+    key = (style, tol)
+    if key not in _SPHERE_DRAG:
+        lay = [P for P, _, _ in sphere_unit_layers(style)]
+        if tol is not None:
+            lay = [simplify_polyline(P, tol) for P in lay]
+        _SPHERE_DRAG[key] = lay + [_ellipse_verts(0.0, 0.0, 2.0, 2.0, 0.0)]
+    return _SPHERE_DRAG[key]
+
+
+_ROD_U = np.linspace(-1, 1, 241)
+
+
+def rod_layouts(style, dx, dy):
+    """Stäbe als Zylinder (Achse in der Bildebene, Richtungen dx, dy: Arrays, ein Eintrag je Stab), vektorisiert ->
+    (Breitenanteil, Versatz in Stabbreiten zur Lichtseite), je Array Stab × Schicht in der Reihenfolge von
+    rod_levels(style); leere Schicht -> 0, 0. Exakt dieselbe Rechnung wie früher je Stab (kein Raster über Winkel)."""
     sp = SHADE[style]
     L, H = _light3(style)
-    n_ = math.hypot(dx, dy) or 1.0
+    dx, dy = np.asarray(dx, float), np.asarray(dy, float)
+    n_ = np.hypot(dx, dy)
+    n_ = np.where(n_ != 0, n_, 1.0)
     nx, ny = -dy / n_, dx / n_
-    if nx * LIGHT[0] + ny * LIGHT[1] < 0:
-        nx, ny = -nx, -ny
-    u = np.linspace(-1, 1, 241)
+    flip = np.where(nx * LIGHT[0] + ny * LIGHT[1] < 0, -1.0, 1.0)
+    nx, ny = nx * flip, ny * flip
+    u = _ROD_U
     w = np.sqrt(1 - u ** 2)
-    ndl = np.clip(u * (nx * L[0] + ny * L[1]) + w * L[2], 0, None)
-    ndh = np.clip(u * (nx * H[0] + ny * H[1]) + w * H[2], 0, None) ** sp["p"]
-    res = []
-    for kind, lev, _ in rod_levels(style):
-        m = (ndl >= lev) if kind == "d" else (ndh >= lev)
-        if not m.any():
-            res.append((0.0, 0.0))
-            continue
-        u1, u2 = u[m][0], u[m][-1]
-        res.append(((u2 - u1) / 2, (u1 + u2) / 4))
-    return res
+    ndl = np.clip(u * (nx * L[0] + ny * L[1])[:, None] + w * L[2], 0, None)
+    ndh = np.clip(u * (nx * H[0] + ny * H[1])[:, None] + w * H[2], 0, None) ** sp["p"]
+    lev = rod_levels(style)
+    td = np.array([t for k, t, _ in lev if k == "d"])
+    ts = np.array([t for k, t, _ in lev if k == "s"])
+    m = np.concatenate([ndl[:, None, :] >= td[None, :, None], ndh[:, None, :] >= ts[None, :, None]], axis=1)
+    hit = m.any(axis=2)
+    u1 = u[m.argmax(axis=2)]                                     # erste und letzte Stützstelle der Schicht
+    u2 = u[len(u) - 1 - m[:, :, ::-1].argmax(axis=2)]
+    return np.where(hit, (u2 - u1) / 2, 0.0), np.where(hit, (u1 + u2) / 4, 0.0)
+
+
+def rod_layout(style, dx, dy):
+    """Ein Stab (siehe rod_layouts): je Schicht (Breitenanteil, Versatz in Stabbreiten zur Lichtseite)."""
+    fr, off = rod_layouts(style, [dx], [dy])
+    return [(float(f), float(o)) for f, o in zip(fr[0], off[0])]
 
 
 def rod_levels(style):
@@ -1611,6 +1660,8 @@ class XrayFigure:
         self.selection = list(selection)
         fig.clear()
         fig.set_size_inches(cfg["figsize_in"], forward=False)
+        self.bg_face, self.bg_transparent, self.bg_show = bg_parts(opts.get("bg", "white"))
+        fig.set_facecolor(self.bg_show)                       # transparent: Vorschau weiß
         self.fig = fig
         self.ax = fig.add_axes([0, 0, 1, 1])
         self.ax.set_axis_off()
@@ -1626,11 +1677,12 @@ class XrayFigure:
         self.style = opts.get("style", "mercury")
         self.ball = self.style in BALL_STYLES
         # Bindungsdicke in Å (Mercury: Zylinder); Kugel-Stab: kräftige Stäbe
-        self.bond_w = ROD_W[self.style] if self.ball else float(opts.get("bond_w", 0.08))
-        self.bond_fac = {}                                       # Stablinie -> aktueller Breitenanteil
-        self.rod_info = {}                                       # Stablinie -> (Schicht, -1 = Umriss; Überlappung)
-        self.rod_lines = {}                                      # (Atom a, Atom b, Hälfte) -> Linien der Schichten
-        self.atom_rods = {}                                      # Kugel-Stab: Atom -> Linien seiner Stabhälften
+        # Kugel-Stab: Stabdicke des Stils, mit „Bindungsdicke“ relativ zum Standard des Tabs skaliert
+        self.bond_w = ROD_W[self.style] * float(opts.get("rod_scale", 1.0)) if self.ball \
+            else float(opts.get("bond_w", 0.08))
+        self.rods = None                                         # Kugel-Stab: Schichten aller Stabhälften (_build_rods)
+        self.atom_rods = {}                                      # Kugel-Stab: Atom -> [LineCollection seiner Stabhälften]
+        self.sphere_tr = {}                                      # Kugel-Stab: Atom -> Transform der Einheitskugel
         self.lw_edge = max(0.4, 0.6 * sc)
         self.atom_art, self.bond_art, self.sel_art, self.bond_lines = {}, [], [], {}
         self.auto_pos = {}
@@ -1694,7 +1746,7 @@ class XrayFigure:
             if it["k"] in self.wire:                       # Drahtmodell: kein Ellipsoid, kleiner Klickbereich
                 it.update(w=0.24, h=0.24, ang=0.0, iso=True, kind="wire", curves=[])
             elif self.ball:                                # Kugel-Stab: Kugel nach Element, keine Hauptachsen
-                r = ball_radius(self.mol.atoms[it["k"]]["el"], self.style)
+                r = ball_radius(self.mol.atoms[it["k"]]["el"], self.style) * float(self.opts.get("ball_scale", 1.0))
                 it.update(w=2 * r, h=2 * r, ang=0.0, iso=True, curves=[])
         scene["by_k"] = {it["k"]: it for it in scene["atoms"]}
         return scene
@@ -1735,34 +1787,85 @@ class XrayFigure:
             return 0.0
         return DEPTH_MAX * min(1.0, max(0.0, (self._zmax - z) / DEPTH_A))
 
-    def _place_rod(self, a, b, half):
-        """Geometrie aller Schichten einer Stabhälfte nach der aktuellen Ansicht (Breite/Versatz je Lage zum Licht)."""
-        xs, ys = self._bond_xy(a, b)
-        lines = self.rod_lines.get((a, b, half))
-        if not lines:
-            return
-        lay = rod_layout(self.style, xs[1] - xs[0], ys[1] - ys[0]) if np.isfinite(xs).all() else None
-        inner = 0.95 if SHADE[self.style]["outline"] else 1.0
-        for ln in lines:
-            j, ov = self.rod_info[ln]
-            frac, off = (1.0, 0.0) if j < 0 else (lay[j] if lay else (0.0, 0.0))
-            if j >= 0:
-                frac, off = frac * inner, off * inner
-            self.bond_fac[ln] = frac
-            ln.set_data(*self._rod(*_half(xs, ys, half, ov), off * self.bond_w))
-            ln.set_linewidth(self.lw_bond * frac)
-            ln.set_visible(frac > 0)
+    def _build_rods(self, bonds, colors):
+        """Kugel-Stab: alle Schichten aller Stabhälften als Segmente, je Atom eine LineCollection (Hälften und
+        Schichten in derselben Reihenfolge wie früher die Einzellinien). Die Segmente sind Sichten auf einen
+        gemeinsamen Puffer, den _place_rods bei jeder Drehung in einem Rechenschritt neu füllt."""
+        outline = SHADE[self.style]["outline"]
+        levels = ([("o", None, None)] if outline else []) + rod_levels(self.style)
+        per_atom = {}
+        for i, (n, a, b) in enumerate(bonds):
+            fog = self._fog(self.scene["bonds"][n][2])
+            for half, k in ((0, a), (1, b)):
+                el = self.mol.atoms[k]["el"]
+                base = colors.get(el) or default_color(el, self.style)
+                for j, (kind, _, val) in enumerate(levels):
+                    col_ = (0.15, 0.15, 0.15) if kind == "o" else shade_color(base, kind, val, self.style, fog)
+                    # nur innere Schichten überlappen in der Mitte: der Außenrand der oberen Hälfte endet genau dort,
+                    # sonst bliebe über den hellen Schichten der anderen Hälfte eine Naht
+                    per_atom.setdefault(k, []).append((i, half, j - (1 if outline else 0), 0.0 if j == 0 else 0.02,
+                                                       col_))
+        segs = [t for k in per_atom for t in per_atom[k]]
+        buf = np.full((len(segs), 2, 2), np.nan)
+        self.rods = dict(ab=[(a, b) for _, a, b in bonds], bond=np.array([t[0] for t in segs], int),
+                         half=np.array([t[1] for t in segs], int), layer=np.array([t[2] for t in segs], int),
+                         ov=np.array([t[3] for t in segs]), buf=buf, frac=np.zeros(len(segs)), slices={})
+        pos = 0
+        for k, lst in per_atom.items():
+            sl = slice(pos, pos + len(lst))
+            pos += len(lst)
+            lc = LineCollection(list(buf[sl]), colors=[t[4] for t in lst], linewidths=0, capstyle="butt",
+                                antialiaseds=True)
+            self.ax.add_collection(lc, autolim=False)
+            self.atom_rods[k] = [lc]
+            self.rods["slices"][k] = sl
+        # Segmente teilen sich den Puffer (Path übernimmt float-Arrays ohne Kopie); sonst jedes Mal neu setzen
+        first = next(iter(self.atom_rods.values()), [None])[0]
+        self.rods["inplace"] = first is not None and np.shares_memory(first.get_paths()[0].vertices, buf)
+        self._place_rods()
 
-    def _rod(self, xs, ys, off):
-        """Stablinie um off (Å) senkrecht zur Bindung zur Lichtseite versetzt (Glanzstreifen oben links)."""
-        if not off or not np.isfinite(xs).all():
-            return xs, ys
-        dx, dy = xs[1] - xs[0], ys[1] - ys[0]
-        L = math.hypot(dx, dy) or 1.0
+    def _place_rods(self):
+        """Geometrie aller Stabschichten nach der aktuellen Ansicht (Breite/Versatz je Lage zum Licht)."""
+        r = self.rods
+        if r is None or not len(r["bond"]):
+            return
+        by = self.scene["by_k"]
+        P = np.array([(by[a]["x"], by[a]["y"], by[b]["x"], by[b]["y"]) for a, b in r["ab"]], float)
+        ok = np.isfinite(P).all(axis=1)
+        dx, dy = P[:, 2] - P[:, 0], P[:, 3] - P[:, 1]
+        frac, off = rod_layouts(self.style, np.where(ok, dx, 1.0), np.where(ok, dy, 0.0))
+        frac[~ok], off[~ok] = 0.0, 0.0
+        inner = 0.95 if SHADE[self.style]["outline"] else 1.0
+        bi, lj = r["bond"], r["layer"]
+        inside = lj >= 0
+        fr = np.where(inside, frac[bi, np.maximum(lj, 0)] * inner, 1.0)          # Umriss (-1): volle Breite
+        of = np.where(inside, off[bi, np.maximum(lj, 0)] * inner, 0.0) * self.bond_w
+        # Versatz senkrecht zur Bindung zur Lichtseite (Glanzstreifen oben links)
+        L = np.hypot(dx, dy)
+        L = np.where(L != 0, L, 1.0)
         nx, ny = -dy / L, dx / L
-        if nx * LIGHT[0] + ny * LIGHT[1] < 0:
-            nx, ny = -nx, -ny
-        return [x + nx * off for x in xs], [y + ny * off for y in ys]
+        flip = np.where(nx * LIGHT[0] + ny * LIGHT[1] < 0, -1.0, 1.0)
+        nx, ny = (nx * flip)[bi], (ny * flip)[bi]
+        x0, y0, x1, y1 = (P[bi, c] for c in range(4))
+        f = np.where(r["half"] == 0, 0.5 + r["ov"], 0.5 - r["ov"])
+        xm, ym = x0 + f * (x1 - x0), y0 + f * (y1 - y0)
+        h0 = r["half"] == 0
+        buf = r["buf"]
+        buf[:, 0, 0] = np.where(h0, x0, xm) + nx * of
+        buf[:, 0, 1] = np.where(h0, y0, ym) + ny * of
+        buf[:, 1, 0] = np.where(h0, xm, x1) + nx * of
+        buf[:, 1, 1] = np.where(h0, ym, y1) + ny * of
+        r["frac"] = fr
+        self._rod_widths(reset=not r["inplace"])
+
+    def _rod_widths(self, reset=False):
+        """Linienbreiten der Stabschichten (Breitenanteil × Stabdicke in pt; leere Schicht = 0, wird nicht gezeichnet)."""
+        r = self.rods
+        for k, sl in r["slices"].items():
+            lc = self.atom_rods[k][0]
+            if reset:
+                lc.set_segments(list(r["buf"][sl]))
+            lc.set_linewidths(self.lw_bond * r["frac"][sl])
 
     def _build(self):
         ax, colors = self.ax, self.opts.get("colors") or {}
@@ -1779,6 +1882,8 @@ class XrayFigure:
                 self.atom_art[it["k"]] = (p, [])
                 continue
             nfill = len(verts) - 1
+            if self.ball:                                  # Einheitskugel, verschoben/skaliert über die Transform
+                verts = sphere_layer_verts(self.style)
             if self.ball:                                  # wie die Vorlagen: IboView mit feinem Umriss, Tiefe ohne
                 fog = self._fog(it["z"])
                 faces = [shade_color(col, kd, v, self.style, fog) for _, kd, v in sphere_unit_layers(self.style)]
@@ -1789,6 +1894,10 @@ class XrayFigure:
                 faces, edge, elw = [col], (0, 0, 0), self.lw_edge
             p = PolyCollection(verts, facecolors=faces + ["none"], edgecolors=["none"] * nfill + [edge],
                                linewidths=[0] * nfill + [elw], antialiaseds=True, closed=True)
+            if self.ball:
+                tr = Affine2D().scale(it["w"] / 2).translate(it["x"], it["y"])
+                self.sphere_tr[it["k"]] = tr
+                p.set_transform(tr + ax.transData)
             ax.add_collection(p)
             lines = []
             for xs, ys in it["curves"]:
@@ -1797,6 +1906,7 @@ class XrayFigure:
                 ax.add_line(ln)
                 lines.append(ln)
             self.atom_art[it["k"]] = (p, lines)
+        rod_bonds = []
         for n, (a, b, _) in enumerate(self.scene["bonds"]):
             xs, ys = self._bond_xy(a, b)
             if a in self.wire or b in self.wire:             # Drahtmodell (auch die Bindung zum Kern): zwei Hälften
@@ -1811,24 +1921,7 @@ class XrayFigure:
                 continue
             if self.ball:                                  # Zylinder (Phong), je Hälfte in der Atomfarbe
                 self.bond_lines[n] = []
-                fog = self._fog(self.scene["bonds"][n][2])
-                outline = SHADE[self.style]["outline"]
-                levels = ([("o", None, None)] if outline else []) + rod_levels(self.style)
-                for half, k in ((0, a), (1, b)):
-                    el = self.mol.atoms[k]["el"]
-                    base = colors.get(el) or default_color(el, self.style)
-                    for j, (kind, _, val) in enumerate(levels):
-                        col_ = (0.15, 0.15, 0.15) if kind == "o" else shade_color(base, kind, val, self.style, fog)
-                        # nur innere Schichten überlappen in der Mitte: der Außenrand der oberen Hälfte endet genau
-                        # dort, sonst bliebe über den hellen Schichten der anderen Hälfte eine Naht
-                        ln = Line2D([np.nan, np.nan], [np.nan, np.nan], color=col_, lw=0, solid_capstyle="butt")
-                        ax.add_line(ln)
-                        self.bond_art.append((a, b, ln, half))
-                        self.rod_info[ln] = (j - (1 if outline else 0), 0.0 if j == 0 else 0.02)
-                        self.rod_lines.setdefault((a, b, half), []).append(ln)
-                        self.bond_lines[n].append(ln)
-                        self.atom_rods.setdefault(k, []).append(ln)
-                    self._place_rod(a, b, half)
+                rod_bonds.append((n, a, b))
                 continue
             ln = Line2D(xs, ys, color="black", lw=self.lw_bond, solid_capstyle="butt")
             ax.add_line(ln)
@@ -1841,14 +1934,15 @@ class XrayFigure:
                             facecolor="none", edgecolor=SEL_COLOR, lw=2.2, zorder=50)
                 ax.add_patch(e)
                 self.sel_art.append((k, e))
+        if rod_bonds:
+            self._build_rods(rod_bonds, colors)
         self._zorders()
 
     def _zorders(self):
         """Zeichenreihenfolge nach Tiefe (hinten zuerst); Bindungen zwischen ihren Atomen."""
         items = [(it["z"], "a", it["k"]) for it in self.scene["atoms"]]
         # Kugel-Stab: Stabhälften gehören zu ihrem Atom (direkt darunter gezeichnet), Drahtmodell-Bindungen wie sonst
-        items += [(z, "b", n) for n, (a, b, z) in enumerate(self.scene["bonds"])
-                  if not (self.ball and self.bond_lines.get(n) and self.bond_lines[n][0] in self.rod_info)]
+        items += [(z, "b", n) for n, (a, b, z) in enumerate(self.scene["bonds"]) if self.bond_lines.get(n)]
         items.sort(key=lambda t: (t[0], t[1] == "a"))
         self.order = []
         step = 40 / max(1, len(items))
@@ -1877,14 +1971,16 @@ class XrayFigure:
         self.scene = self._project()
         for it in self.scene["atoms"]:
             p, lines = self.atom_art[it["k"]]
-            p.set_verts(self._layers(it))
+            tr = self.sphere_tr.get(it["k"])
+            if tr is not None:                             # Kugel: nur verschieben, Schichten bleiben
+                tr.clear().scale(it["w"] / 2).translate(it["x"], it["y"])
+                p.stale = True
+            else:
+                p.set_verts(self._layers(it))
             for ln, (xs, ys) in zip(lines, it["curves"]):
                 ln.set_data(xs, ys)
-        for a, b, half in self.rod_lines:
-            self._place_rod(a, b, half)
+        self._place_rods()
         for a, b, ln, half in self.bond_art:
-            if ln in self.rod_info:
-                continue
             xs, ys = self._bond_xy(a, b)
             ln.set_data(*(_half(xs, ys, half) if half is not None else (xs, ys)))
         for k, e in self.sel_art:
@@ -1895,6 +1991,19 @@ class XrayFigure:
             ann.xy = self._anchor(ann._atom)
         self._zorders()
 
+    def set_drag(self, on):
+        """Kugel-Stab beim Ziehen: Kugelschichten mit vereinfachten Polygonen (Abweichung ≤ DRAG_TOL_PX Pixel bei der
+        aktuellen Größe), danach wieder die vollen. Ändert nur die Vorschau während der Bewegung."""
+        if not self.sphere_tr:
+            return
+        px = 1.0 / self.data_per_px()
+        for k in self.sphere_tr:
+            tol = None
+            if on:
+                r_px = self.scene["by_k"][k]["w"] / 2 * px
+                tol = next((t for t in DRAG_TOLS if t * r_px <= DRAG_TOL_PX), None)
+            self.atom_art[k][0].set_verts(sphere_layer_verts(self.style, tol))
+
     def set_zoom_pan(self, zoom=None, pan=None):
         if zoom is not None:
             self.zoom = zoom
@@ -1904,8 +2013,9 @@ class XrayFigure:
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
         for _, _, ln, half in self.bond_art:
-            fac = self.bond_fac.get(ln)
-            ln.set_linewidth(self.lw_bond * fac if fac is not None else self.lw_bond if half is None else self.lw_wire)
+            ln.set_linewidth(self.lw_bond if half is None else self.lw_wire)
+        if self.rods is not None:
+            self._rod_widths()
 
     def artists(self):
         return self.order
@@ -1928,7 +2038,7 @@ class XrayFigure:
         lc = self.cfg["labels"]
         fs = o.get("label_size") or lc["font_size"]           # eigene Labelgröße des Tabs (0 = Textformat)
         todo = []
-        halo = [PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0), foreground="white")]
+        halo = [PE.withStroke(linewidth=2.2 * self.cfg.get("scale", 1.0), foreground=self.bg_show)]
         # Mercury: fett ohne Rand (wie Mercury-Abbildungen); flach (Olex2): fett mit weißem Rand; Kugel-Stab: normal
         # mit weißem Rand (Labels über glänzenden Kugeln lesbar)
         extra = {"flat": dict(fontweight="bold", path_effects=halo), "mercury": dict(fontweight="bold")}.get(
@@ -2083,7 +2193,8 @@ class XrayFigure:
         out.parent.mkdir(parents=True, exist_ok=True)
         paths = [out] + [out.with_suffix("." + e.lstrip(".")) for e in self.cfg["extra_formats"]]
         W, H = self.fig.get_size_inches()
-        kw = dict(dpi=self.cfg["dpi"], bbox_inches=Bbox.from_bounds(0, 0, W, H), facecolor="white")
+        kw = dict(dpi=self.cfg["dpi"], bbox_inches=Bbox.from_bounds(0, 0, W, H), facecolor=self.bg_face,
+                  transparent=self.bg_transparent)
         import uvvis_images as IMG
         for p in dict.fromkeys(paths):
             with matplotlib.rc_context({"svg.fonttype": "path"}):
@@ -2113,8 +2224,9 @@ def save_tight(F, svg):
     W, H = F.fig.get_size_inches()
     bb = Bbox.from_extents(max(0, bb.x0), max(0, bb.y0), min(W, bb.x1), min(H, bb.y1))
     with matplotlib.rc_context({"svg.fonttype": "path"}):
-        F.fig.savefig(svg, bbox_inches=bb, facecolor="white")
-        F.fig.savefig(svg.with_suffix(".png"), dpi=600, bbox_inches=bb, facecolor="white")
+        kw = dict(bbox_inches=bb, facecolor=F.bg_face, transparent=F.bg_transparent)
+        F.fig.savefig(svg, **kw)
+        F.fig.savefig(svg.with_suffix(".png"), dpi=600, **kw)
     IMG.svg_defs_first(svg)
     return str(svg.with_suffix(".png")), bb.width * 2.54, bb.height * 2.54, str(svg)
 
@@ -2195,6 +2307,7 @@ class XrayMouse:
                 return
             if not self.moved:
                 self.moved = True
+                self.F.set_drag(True)
                 self._start_blit()
             if self.mode == "rot":
                 s = 2.5 * math.pi / max(200.0, min(self.F.fig.bbox.width, self.F.fig.bbox.height))
@@ -2231,6 +2344,8 @@ class XrayMouse:
             if mode == "rot":
                 self.tab.atom_clicked(self.hit(ev))
             return
+        self.F.set_drag(False)
+        self.F.fig.canvas.draw_idle()
         if mode == "rot":
             self.tab.view_changed(self.F.R)
         else:
@@ -2289,6 +2404,57 @@ def label_size_spin(st):
     sp.setSpecialValueText(T("xr_label_size_std"))
     sp.setToolTip(T("xr_label_size_tip"))
     return sp
+
+
+def bg_parts(bg):
+    """Hintergrund (Zustand „bg“: "white", "transparent" oder "#rrggbb") -> (Füllfarbe für savefig, transparent?,
+    Farbe der Vorschau und der Label-Ränder)."""
+    if bg == "transparent":
+        return "none", True, "white"
+    c = bg if isinstance(bg, str) and bg.startswith("#") else "white"
+    return c, False, c
+
+
+class BackgroundCombo(QComboBox):
+    """Hintergrund der Abbildung (Vorschau, PDF/SVG/PNG, Word): Weiß, transparent oder eigene Farbe; schreibt st["bg"]
+    und meldet die Änderung über on_change."""
+
+    def __init__(self, st, on_change):
+        super().__init__()
+        self.st, self.on_change = st, on_change
+        for key in ("white", "transparent", "color"):
+            self.addItem(T("bg_" + key), key)
+        self.setToolTip(T("bg_tip"))
+        self.sync()
+        self.activated.connect(self._chosen)
+
+    def sync(self):
+        from PySide6.QtGui import QColor, QIcon, QPixmap
+        bg = self.st.get("bg", "white")
+        kind = bg if bg in ("white", "transparent") else "color"
+        self.setItemText(2, T("bg_color_x", c=bg) if kind == "color" else T("bg_color"))
+        pm = QPixmap(12, 12)
+        pm.fill(QColor(bg if kind == "color" else "#ffffff"))
+        self.setItemIcon(2, QIcon(pm))
+        self.blockSignals(True)
+        self.setCurrentIndex(self.findData(kind))
+        self.blockSignals(False)
+
+    def _chosen(self, _i):
+        kind = self.currentData()
+        if kind == "color":
+            from PySide6.QtGui import QColor
+            from PySide6.QtWidgets import QColorDialog
+            cur = self.st.get("bg", "")
+            c = QColorDialog.getColor(QColor(cur if cur.startswith("#") else "#ffffff"), self, T("bg_pick"))
+            if not c.isValid():
+                self.sync()
+                return
+            kind = c.name()
+        if kind != self.st.get("bg", "white"):
+            self.st["bg"] = kind
+            self.sync()
+            self.on_change()
 
 
 def is_cif(path):
@@ -2538,7 +2704,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
                          h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
-                         x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False)
+                         x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False,
+                         bg="white")
 
     def __init__(self, main, state):
         self.sel = []                     # gewählte Atome (Schlüssel) der aktuellen Verbindung, nicht im Undo
@@ -2611,7 +2778,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         f.addRow(T("xr_label_mode"), self.cmb_labmode)
         self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å",
                                       value=st.get("bond_w", 0.08))
+        self.sp_bond.setToolTip(T("ball_rel_tip", std=f"{self.DEFAULT_STATE['bond_w']:g}"))
         f.addRow(T("xr_bond_lw"), self.sp_bond)
+        self.cmb_bg = BackgroundCombo(st, self.changed)
+        f.addRow(T("bg_label"), self.cmb_bg)
         self.sp_lab = label_size_spin(st)
         f.addRow(T("xr_label_size"), self.sp_lab)
         self.lst_frag = QListWidget()
@@ -2917,6 +3087,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     def sync_widgets(self):
         self._loading = True
         st = self.st
+        self.cmb_bg.sync()
         es = self.entries()
         self.tbl.setRowCount(len(es))
         cur = self.entry()
@@ -3405,6 +3576,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                     style=st.get("style", "mercury"), hidden_atoms=e.get("hidden_atoms") or [],
                     label_on=e.get("label_on") or {}, wire=set(e.get("wire") or []), wire_h=st.get("wire_h", False),
                     label_mode=st.get("label_mode", "all"), label_size=st.get("label_pt", 0.0),
+                    rod_scale=st.get("bond_w", 0.12) / self.DEFAULT_STATE["bond_w"], bg=st.get("bg", "white"),
                     hide_kinds=[k for k, on in (("solvent", st.get("hide_solv")), ("ion", st.get("hide_ions")))
                                 if on])
 

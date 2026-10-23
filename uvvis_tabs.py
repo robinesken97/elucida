@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QPlainTextEdit)
 
+import uvvis_color as COLOR
 import uvvis_core as core
 import uvvis_extra as X
 import uvvis_images as IMG
@@ -244,6 +245,10 @@ class HoverReadout:
         canvas.blit(self.F.fig.bbox)
 
     def press(self, ev):
+        # Ziehen von Inset/Bild/Label beginnt: der gemerkte Hintergrund ist ohne das gezogene Element entstanden ->
+        # erst nach dem nächsten vollständigen Zeichnen (draw_event, nach dem Loslassen) wieder blitten
+        if ev.button == 1 and ev.x is not None and self._blocked_click(ev):
+            self.bg = None
         if ev.dblclick and ev.button == 1 and self.on_pick and self.hit and not self._blocked_click(ev):
             c, i = self.hit
             self.on_pick(float(c["x"][i]))
@@ -825,6 +830,26 @@ class OverlayTab(FigureTab):
         self.lbl_weights = QLabel(T("ov_weights"))
         f.addRow(self.lbl_weights, self.ed_weights)
         self.ed_weights.editingFinished.connect(self.detail_changed)
+        # Farbe der Lösung aus dem gerechneten Spektrum (nur Anzeige, wie im ε-Tab): A = ε(λ)·c·d
+        row = QHBoxLayout()
+        self.sp_ccol_c = QDoubleSpinBox(decimals=4, minimum=0.0001, maximum=1e4, singleStep=0.1, value=1.0, suffix=" mM")
+        self.sp_ccol_d = QDoubleSpinBox(decimals=2, minimum=0.01, maximum=100, singleStep=0.1, value=1.0, suffix=" cm")
+        for w_ in (QLabel("c"), self.sp_ccol_c, QLabel("d"), self.sp_ccol_d):
+            row.addWidget(w_)
+        self.w_ccol = QWidget()
+        self.w_ccol.setLayout(row)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.lbl_ccol = QLabel(T("ov_calc_color"))
+        self.lbl_ccol.setToolTip(T("ov_calc_color_tip"))
+        f.addRow(self.lbl_ccol, self.w_ccol)
+        self.sw_ccol = QLabel()
+        self.sw_ccol.setFixedHeight(28)
+        self.lbl_ccol_info = QLabel()
+        self.lbl_ccol_info.setWordWrap(True)
+        self.lbl_ccol_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        f.addRow("", self.sw_ccol)
+        f.addRow("", self.lbl_ccol_info)
+        self.calc_color_widgets = (self.lbl_ccol, self.w_ccol, self.sw_ccol, self.lbl_ccol_info)
         row = QHBoxLayout()
         self.sp_scale = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=1000, singleStep=0.05, value=1.0)
         self.sp_offset = QDoubleSpinBox(decimals=3, minimum=-1000, maximum=1000, singleStep=0.05, value=0.0)
@@ -859,7 +884,7 @@ class OverlayTab(FigureTab):
         self.cb_samelevel.toggled.connect(self.detail_changed)
         f.addRow(self.cb_samelevel)
         for w in (self.sp_elo, self.sp_ehi, self.sp_d, self.sp_fwhm, self.sp_shift, self.sp_scale,
-                  self.sp_offset, self.sp_lw):
+                  self.sp_offset, self.sp_lw, self.sp_ccol_c, self.sp_ccol_d):
             w.valueChanged.connect(self.detail_changed)
         self.cmb_ls.currentIndexChanged.connect(self.detail_changed)
         self.cmb_soc.currentIndexChanged.connect(self.detail_changed)
@@ -1242,7 +1267,7 @@ class OverlayTab(FigureTab):
         for w in (self.lbl_conc, self.ed_conc, self.cmb_unit, self.lbl_mw, self.ed_mw, self.lbl_d, self.sp_d):
             w.setVisible(exp or e is None)              # SEC: kein ε (Dünnschichtzelle)
         combined = e is not None and bool(e.get("sources"))
-        for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift):
+        for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift) + self.calc_color_widgets:
             w.setVisible(calc)
         for w in (self.lbl_soc, self.cmb_soc):
             w.setVisible(calc and not combined)
@@ -1268,6 +1293,9 @@ class OverlayTab(FigureTab):
             elif calc:
                 self.sp_fwhm.setValue(e.get("fwhm", 0.3))
                 self.sp_shift.setValue(e.get("shift", 0.0))
+                self.sp_ccol_c.setValue(e.get("color_c", 1.0))
+                self.sp_ccol_d.setValue(e.get("color_d", 1.0))
+                self.update_calc_color(e)
                 self.cmb_soc.clear()
                 if combined:
                     self.ed_weights.setText(", ".join(f"{s_.get('weight', 1.0):g}" for s_ in e["sources"]))
@@ -1309,7 +1337,32 @@ class OverlayTab(FigureTab):
                     self.ed_weights.setText(", ".join(f"{s_.get('weight', 1.0):g}" for s_ in e["sources"]))
             elif self.cmb_soc.currentData():
                 e["variant"] = self.cmb_soc.currentData()
+            e.update(color_c=self.sp_ccol_c.value(), color_d=self.sp_ccol_d.value())
+            self.update_calc_color(e)
         self.timer.start()
+
+    def calc_color(self, e):
+        """Farbe einer Lösung aus dem TD-DFT-Spektrum: ε(λ) mit FWHM/Verschiebung des Eintrags verbreitert,
+        A = ε·c·d (c in mM, Standard 1 mM in 1 cm) -> (Hex, außerhalb sRGB?)."""
+        E, f, _ = self.calc_data(e)
+        _, eps, _, _ = X.broaden(E, f, e.get("fwhm", 0.3), e.get("shift", 0.0), lam=COLOR.LAM)
+        rgb, out_of_gamut = COLOR.absorbance_to_rgb(eps * e.get("color_c", 1.0) * 1e-3 * e.get("color_d", 1.0))
+        return COLOR.to_hex(rgb), out_of_gamut
+
+    def update_calc_color(self, e):
+        try:
+            hx, oog = self.calc_color(e)
+        except Exception as ex:
+            self.sw_ccol.setStyleSheet("")
+            self.lbl_ccol_info.setText(f"{T('err_title')}: {ex}")
+            return
+        self.sw_ccol.setStyleSheet(f"background: {hx}; border: 1px solid #888; border-radius: 4px;")
+        info = T("color_info", hex=hx, c=f"{e.get('color_c', 1.0):g}", unit="mM", d=f"{e.get('color_d', 1.0):g}")
+        info += "\n" + T("ov_calc_color_hint")
+        if oog:
+            info += "\n" + T("color_gamut")
+        self.lbl_ccol_info.setText(info)
+        self.lbl_ccol_info.setStyleSheet(HINT_CSS)
 
     def collect(self):
         self.st.update(mode="norm" if self.cb_norm.isChecked() else "eps", nlo=self.sp_nlo.value(), nhi=self.sp_nhi.value(),

@@ -28,12 +28,15 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   RDKit (ACS1996-Modus, keine eigene Bindungslänge) nur, wenn der Zeichner etwas nicht darstellen kann (Hinweise) –
   im Syntheseschema nie (Pfeil/Bedingungen gingen verloren), dort Warnung. Bilder behalten immer ihr Seitenverhältnis
   (gespeichert wird nur die Breite).
-- „(sh)“ für Schultern ist abschaltbar; Molmasse aus CDXML inkl. Isotopen.
+- „(sh)“ für Schultern ist abschaltbar; Indizes λ₁/ε₁ … (`label_index`, Standard aus, aufsteigend nach λ, nur Banden
+  im Bild; SI-Zeile ohne Indizes); Molmasse aus CDXML inkl. Isotopen.
 - TD-DFT: Gauß-Verbreiterung in Energie; Kurve und Sticks teilen **immer einen** Skalierungsfaktor
   (Modi `band` Standard, `max`, `faxis`). ORCA 5/6-Zustandslabels („0-1A -> 1-1A“) nach „->“ splitten; SOC-Tabelle.
   Multiplizität aus dem Label („1-3A“ = Triplett), ORCA 4/5 aus dem TRIPLETS-Block, Gaussian aus „Triplet-A“;
   Tripletts (f = 0) nur als Marken, nie in der Gauß-Kurve; mit SOC keine Multiplizität (gemischte Zustände).
   Kombinieren: Übergänge mehrerer Rechnungen (`sources`, je Gewicht) erst zusammenführen, dann verbreitern.
+  Lösungsfarbe aus TD-DFT (Overlay-Details, `calc_color`): ε mit FWHM/Verschiebung des Eintrags, A = ε·c·d, Standard
+  1 mM, 1 cm (`color_c`/`color_d`); nur qualitativ.
 - CV: Strom wie aufgezeichnet (Gamry IUPAC, anodisch positiv); Paare nur im Fenster (gespeichert in gemessenen
   Potentialen, angezeigt in Achsenskala); i_pc/i_pa nach Nicholson; Referenz E_Fc = E − (E½,ref − E°ref);
   Basislinie (Standard an): Gerade durch den Vorlauf des Hinpeaks (bis 0,15 V davor **und** vor dem Anstieg der Welle,
@@ -87,9 +90,11 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   (0.36 Å) und Aufhellung nach hinten (`DEPTH_A` = 6 Å bis `DEPTH_MAX`). Schattierung = Phong (`SHADE`, an die
   IboView-Vorlage gefittet: Licht 40° über der Bildebene aus `LIGHT`, ka/kd aus der C-Kugel, Glanz schwach und eng,
   damit nur die Mitte weiß wird; Kugeln ohne Umriss, nur die Stäbe mit feinem Rand); Kugelschichten = Höhenlinien (`sphere_unit_layers`, contourpy, gecacht), Stäbe =
-  Zylinderprofil je Lage zum Licht (`rod_layout`, bei jeder Drehung neu). Stäbe von Mitte zu Mitte, jede Hälfte direkt
+  Zylinderprofil je Lage zum Licht (`rod_layouts`, vektorisiert, bei jeder Drehung neu; exakt, kein Winkelraster). Schnelles Drehen: Stabschichten je Atom eine LineCollection auf einem gemeinsamen Puffer (`_place_rods`), Kugeln = Einheitspolygone + Transform (`sphere_tr`); nur während des Ziehens vereinfachte Kugelpolygone (`set_drag`, ≤ `DRAG_TOL_PX`), Ruhebild und Export pixelgleich zur Einzellinien-Version. Stäbe von Mitte zu Mitte, jede Hälfte direkt
   unter ihrem Atom (`atom_rods`, `_zorders`); Radius `ball_radius(el, style)` (Faktor × kovalent, H ≥ 0.2 Å); `bond_w`
-  gilt dort nicht (`ROD_W`). Messen/Ausrichten gemeinsam für X-Ray und DFT (`MeasureAlign`;
+  wirkt dort relativ: Stabdicke = `ROD_W` × bond_w/Standard des Tabs, im DFT-Tab Kugelradius × radius/0.25
+  (`rod_scale`/`ball_scale`; Standardwerte = abgenommenes Aussehen). Hintergrund je Tab (`bg`: white/transparent/#hex,
+  `BackgroundCombo`, `bg_parts`; Vorschau bei transparent weiß, Label-Ränder in Hintergrundfarbe). Messen/Ausrichten gemeinsam für X-Ray und DFT (`MeasureAlign`;
   DFT: `MEASURE_ESD = False`, Klick = Auswahl, im Nummerier-Modus = Nummer).
   Labels/Atome je Atom über `label_on`/`hidden_atoms` (Schlüssel Label|Operation). Tabellen englisch beschriftet, Zahlen exakt wie in der CIF, echtes Minus (U+2212).
   Drahtmodell (`wire`, Atom-Schlüssel): Bindung → kleinere Seite (`Molecule.substituent`), in Ringen das Ringsystem hinter

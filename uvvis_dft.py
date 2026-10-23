@@ -868,7 +868,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
-                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0)
+                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white")
 
     # Größe/Formate wie im X-Ray-Tab (keine Achsen)
     common_box = XRAY.XrayTab.common_box
@@ -1025,9 +1025,13 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.cb_zero.setToolTip(T("dft_zero_based_tip"))
         f.addRow(self.cb_zero)
         self.sp_rad = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=0.8, singleStep=0.01, suffix=" Å")
+        self.sp_rad.setToolTip(T("ball_rel_tip", std=f"{self.DEFAULT_STATE['radius']:g}"))
         f.addRow(T("dft_radius"), self.sp_rad)
         self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å")
+        self.sp_bond.setToolTip(T("ball_rel_tip", std=f"{self.DEFAULT_STATE['bond_w']:g}"))
         f.addRow(T("xr_bond_lw"), self.sp_bond)
+        self.cmb_bg = XRAY.BackgroundCombo(self.st, self.changed)
+        f.addRow(T("bg_label"), self.cmb_bg)
         self.sp_lab = XRAY.label_size_spin(self.st)
         f.addRow(T("xr_label_size"), self.sp_lab)
         f.addRow(XRAY.reset_buttons(self))
@@ -1058,6 +1062,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def sync_widgets(self):
         self._loading = True
         st = self.st
+        self.cmb_bg.sync()
         es = self.entries()
         self.tbl.setRowCount(len(es))
         for r, e in enumerate(es):
@@ -1253,7 +1258,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     colors={}, bond_w=st.get("bond_w", 0.08), hidden_frags=[], style=st.get("style", "mercury"),
                     hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
                     label_size=st.get("label_pt", 0.0),
-                    h_radius=0.55 * r)
+                    h_radius=0.55 * r, bg=st.get("bg", "white"),
+                    # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard (Standardwerte = Aussehen der Vorlage)
+                    ball_scale=r / self.DEFAULT_STATE["radius"],
+                    rod_scale=st.get("bond_w", 0.08) / self.DEFAULT_STATE["bond_w"])
 
     def build(self, fig, e=None, interactive=True):
         e = e or self.entry()

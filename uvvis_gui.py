@@ -139,7 +139,7 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
                 "fmt_pdf": True, "fmt_svg": True, "fmt_png": True,
                 "x_auto": True, "x_min": 200.0, "x_max": 1100.0,
                 "bands_add": True, "shoulders": False, "show_excl": False, "inset": True,
-                "mark_sh": False, "min_r2": 0.98, "color_show": False, "color_d": 1.0}
+                "mark_sh": False, "label_index": False, "min_r2": 0.98, "color_show": False, "color_d": 1.0}
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg/mL"), ("M", "M")]
 
@@ -852,10 +852,12 @@ class MainWindow(QMainWindow):
         fa.addRow(T("r2_mode"), self.cmb_r2)
         self.cb_err = QCheckBox(T("show_err"))
         self.cb_marksh = QCheckBox(T("mark_sh"))
+        self.cb_lidx = QCheckBox(T("label_index"))
+        self.cb_lidx.setToolTip(T("label_index_tip"))
         self.cb_inset = QCheckBox(T("inset_show"))
         self.cb_tab = QCheckBox(T("inset_table"))
         self.cb_excl = QCheckBox(T("show_excl"))
-        for cb in (self.cb_err, self.cb_marksh, self.cb_inset, self.cb_tab, self.cb_excl):
+        for cb in (self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab, self.cb_excl):
             fa.addRow(cb)
         row = QHBoxLayout()
         self.cb_pdf, self.cb_svg, self.cb_png = QCheckBox("PDF"), QCheckBox("SVG"), QCheckBox("PNG")
@@ -1008,13 +1010,13 @@ class MainWindow(QMainWindow):
         for w in (self.cmb_bl, self.cmb_r2):
             w.currentIndexChanged.connect(self.changed)
         for w in (self.cb_err, self.cb_tab, self.cb_bands_add, self.cb_shoulders, self.cb_excl, self.cb_inset,
-                  self.cb_marksh):
+                  self.cb_marksh, self.cb_lidx):
             w.toggled.connect(self.changed)
         for w in (self.sp_min, self.sp_r2):
             w.valueChanged.connect(self._update_sections)
         self.cmb_r2.currentIndexChanged.connect(self._update_sections)
-        for w in (self.cb_shoulders, self.cb_err, self.cb_marksh, self.cb_inset, self.cb_tab, self.cb_excl,
-                  self.cb_pdf, self.cb_svg, self.cb_png):
+        for w in (self.cb_shoulders, self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab,
+                  self.cb_excl, self.cb_pdf, self.cb_svg, self.cb_png):
             w.toggled.connect(self._update_sections)
         self._update_sections()
 
@@ -1027,7 +1029,8 @@ class MainWindow(QMainWindow):
                                   or self.cb_shoulders.isChecked() != d["shoulders"])
         self.sec_plot.set_changed(self.cmb_r2.currentData() != d["r2"] or any(
             cb.isChecked() != d[k] for cb, k in (
-                (self.cb_err, "show_err"), (self.cb_marksh, "mark_sh"), (self.cb_inset, "inset"),
+                (self.cb_err, "show_err"), (self.cb_marksh, "mark_sh"), (self.cb_lidx, "label_index"),
+                (self.cb_inset, "inset"),
                 (self.cb_tab, "table"), (self.cb_excl, "show_excl"), (self.cb_pdf, "fmt_pdf"),
                 (self.cb_svg, "fmt_svg"), (self.cb_png, "fmt_png"))))
 
@@ -1058,6 +1061,7 @@ class MainWindow(QMainWindow):
         self.cb_excl.setChecked(gl.get("show_excl", False))
         self.cb_inset.setChecked(gl.get("inset", True))
         self.cb_marksh.setChecked(gl.get("mark_sh", False))
+        self.cb_lidx.setChecked(gl.get("label_index", False))
         self.cb_tab.setEnabled(gl.get("inset", True))
         self.sp_xmin.setValue(gl["x_min"])
         self.sp_xmax.setValue(gl["x_max"])
@@ -1084,7 +1088,7 @@ class MainWindow(QMainWindow):
                          fmt_png=self.cb_png.isChecked(), x_auto=self.cb_xauto.isChecked(),
                          bands_add=self.cb_bands_add.isChecked(), shoulders=self.cb_shoulders.isChecked(),
                          show_excl=self.cb_excl.isChecked(), inset=self.cb_inset.isChecked(),
-                         mark_sh=self.cb_marksh.isChecked(),
+                         mark_sh=self.cb_marksh.isChecked(), label_index=self.cb_lidx.isChecked(),
                          x_min=self.sp_xmin.value(), x_max=self.sp_xmax.value())
 
     def _update_size_widgets(self):
@@ -1858,6 +1862,7 @@ class MainWindow(QMainWindow):
         cfg["inset"]["show_excluded"] = gl.get("show_excl", False)
         cfg["inset"]["show"] = gl.get("inset", True)
         cfg["labels"]["mark_shoulders"] = gl.get("mark_sh", False)
+        cfg["labels"]["index"] = gl.get("label_index", False)
         cfg["band_cutoff"] = {int(k): float(v) for k, v in (st.get("band_cutoff") or {}).items()}
         cfg["band_hidden"] = [int(k) for k in (st.get("band_hidden") or [])]
         if gl["baseline"] == "off":
@@ -3009,6 +3014,16 @@ def selftest(outdir, with_isnet=False):
         w.ov_state.update(triplets=False)
         w.ov_tab.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         w.ov_tab.fill_table()
+        e_cc = next(e_ for e_ in w.ov_state["entries"] if e_["kind"] == "calc")
+        e_cc.update(color_c=1.0, color_d=1.0)                  # Lösungsfarbe aus dem TD-DFT-Spektrum (1 mM, 1 cm)
+        hx1_, _ = w.ov_tab.calc_color(e_cc)
+        e_cc["color_c"] = 1e4
+        hx2_, _ = w.ov_tab.calc_color(e_cc)
+        lum_ = lambda h_: sum(int(h_[i_:i_ + 2], 16) for i_ in (1, 3, 5))      # noqa: E731
+        assert re.fullmatch(r"#[0-9A-F]{6}", hx1_) and lum_(hx2_) <= lum_(hx1_), (hx1_, hx2_)
+        e_cc["color_c"] = 1.0
+        w.ov_tab.update_calc_color(e_cc)
+        assert hx1_ in w.ov_tab.lbl_ccol_info.text(), w.ov_tab.lbl_ccol_info.text()
         report.append("TD-DFT triplets + combine: OK")
 
         # Export ins Projekt inkl. Excel-Report
@@ -3106,11 +3121,22 @@ def selftest(outdir, with_isnet=False):
         pump()
         p1 = a_.get_position()
         assert p1.x0 > p0.x0 and p1.y0 > p0.y0 and not a_.get_animated() and w.dragger._bg is None, (p0, p1)
+        assert w.hover.bg is not None, "nach dem Ziehen kein neuer Hintergrund (Hover blittet alten ohne Element)"
         assert all(getattr(ann, "_draggable", None) is None or ann._draggable._use_blit
                    for ann in w.F.ann_items.values()), "Labels ohne Blitting"
         w.series[w.current]["layout"] = {}
         w.render()
         report.append("dragging with blitting: OK")
+        w.glob["label_index"] = True                            # λ₁/ε₁ … aufsteigend nach λ
+        w.apply_globals()
+        w.render()
+        lt_ = sorted((float(k_.split("_")[1]), a_.get_text()) for k_, a_ in w.F.ann_items.items())
+        assert lt_ and all(t_.count(f"_{{{i_}}}") == 2 for i_, (_, t_) in enumerate(lt_, 1)), lt_
+        w.glob["label_index"] = False
+        w.apply_globals()
+        w.render()
+        assert not any("_{" in a_.get_text() for a_ in w.F.ann_items.values())
+        report.append("label indices: OK")
 
         # Cyclovoltammetrie: Gamry-Dateien (beide Varianten), Redoxpaare, interne Referenz, Export
         def cv_sweep(e0, ip, lo, hi, step=0.002, ref=None):
@@ -4223,7 +4249,15 @@ def selftest(outdir, with_isnet=False):
             c_it = next(i_ for i_ in F_s.scene["atoms"] if i_["el"] == "C")
             if sty_ in XRAY.BALL_STYLES:
                 assert abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9 and c_it["w"] == c_it["h"] and not c_it["curves"]
-                assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rod_info) > 10 and max(F_s.bond_fac.values()) == 1.0
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0
+                assert F_s.rods["inplace"], "Stabsegmente nicht im gemeinsamen Puffer"      # schnelles Drehen
+                pc_s = F_s.atom_art[c_it["k"]][0]
+                nv_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
+                F_s.set_drag(True)                                     # Ziehen: gröbere Kugelpolygone, gleiche Schichten
+                nd_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
+                F_s.set_drag(False)
+                assert len(nd_) == len(nv_) and sum(nd_) < sum(nv_), (sum(nd_), sum(nv_))
+                assert [len(q_.vertices) for q_ in pc_s.get_paths()] == nv_
                 fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()                         # Phong: dunkel … Glanz
                 assert len(fc_) > 10 and sum(fc_[0][:3]) < sum(fc_[len(fc_) // 2][:3])    # Rand dunkler als Mitte
                 if sty_ == "ballstick":
@@ -4405,12 +4439,30 @@ def selftest(outdir, with_isnet=False):
         t_d.set_numbering(True)                                # Nummerieren hebt die Messauswahl auf
         assert t_d.sel == [] and t_d.picks == []
         t_d.set_numbering(False)
+        # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard; Hintergrund wählbar (auch im Export)
+        w.dft_state.update(style="ballstick", radius=0.5, bond_w=0.16, bg="#203040")
+        t_d.sync_widgets()
+        t_d.render()
+        c_d = next(i_ for i_ in t_d.F.scene["atoms"] if i_["el"] == "C")
+        assert abs(c_d["w"] - 4 * XRAY.ball_radius("C", "ballstick")) < 1e-9, c_d["w"]
+        assert abs(t_d.F.bond_w - 2 * XRAY.ROD_W["ballstick"]) < 1e-9 and t_d.cmb_bg.currentData() == "color"
+        from PIL import Image as PILImage
+        png_bg = next(f_ for f_ in t_d.export_to(out / "dft_bg") if f_.suffix == ".png")
+        with PILImage.open(png_bg) as im_:
+            assert im_.convert("RGB").getpixel((1, 1)) == (0x20, 0x30, 0x40), im_.convert("RGB").getpixel((1, 1))
+        w.dft_state["bg"] = "transparent"
+        t_d.sync_widgets()
+        png_bg = next(f_ for f_ in t_d.export_to(out / "dft_bg") if f_.suffix == ".png")
+        with PILImage.open(png_bg) as im_:
+            assert im_.convert("RGBA").getpixel((1, 1))[3] == 0
+        w.dft_state["style"] = "mercury"
         e_dr = t_d.entry()                                     # Darstellung auf Standard, Nummerierung bleibt
         ord_ = list(e_dr.get("order") or [])
         w.dft_state.update(bond_w=0.3, radius=0.5, show_h=False)
         e_dr["zoom"] = 3.0
         t_d.reset_display()
         assert w.dft_state["bond_w"] == 0.08 and w.dft_state["radius"] == 0.25 and w.dft_state["show_h"]
+        assert w.dft_state["bg"] == "white" and t_d.cmb_bg.currentData() == "white"
         assert e_dr["zoom"] == 1.0 and list(e_dr.get("order") or []) == ord_ and abs(t_d.sp_bond.value() - 0.08) < 1e-9
         report.append("DFT xyz (reader, bonds, click renumbering, save, export): OK")
         report.append("DFT outputs (ORCA 6 UTF-16, Gaussian, SI block, Word): OK")

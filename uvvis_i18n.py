@@ -598,6 +598,9 @@ TEXTS = {
     "bands_add": ("zusätzlich zu den automatisch gefundenen", "in addition to automatically found bands"),
     "find_shoulders": ("Schultern automatisch suchen", "Find shoulders automatically"),
     "mark_sh": ("Schultern im Bild mit „(sh)“ kennzeichnen", "Mark shoulders with “(sh)” in figure"),
+    "label_index": ("λ und ε im Bild nummerieren (λ₁, ε₁ …)", "Number λ and ε in the figure (λ₁, ε₁ …)"),
+    "label_index_tip": ("Indizes aufsteigend nach Wellenlänge, nur für Banden im Bild", "Indices in order of increasing "
+                        "wavelength, only for bands shown in the figure"),
     "show_excl": ("ausgeschlossene Punkte im Inset (hohl)", "excluded points in inset (open symbols)"),
     "col_cut": ("Cutoff A", "Cutoff A"),
     "cut_tip": ("Häkchen bei λ: Bande im Bild zeigen. Doppelklick auf „Cutoff A“: eigener Cutoff für "
@@ -1011,6 +1014,14 @@ TEXTS = {
                   "Fluorescence and scattering are ignored; screen colours are not calibrated.\n"
                   "Display only, not part of the figure."),
     "color_info": ("{hex}  (c = {c} {unit}, d = {d} cm, Tageslicht)", "{hex}  (c = {c} {unit}, d = {d} cm, daylight)"),
+    "ov_calc_color": ("Farbe in Lösung", "Colour in solution"),
+    "ov_calc_color_tip": ("Vorhersage aus dem gerechneten Spektrum: A(λ) = ε(λ)·c·d, Transmission unter Tageslicht, "
+                          "CIE 1931 → sRGB (wie im ε-Tab). Standard 1 mM in 1 cm.",
+                          "Prediction from the calculated spectrum: A(λ) = ε(λ)·c·d, transmission under daylight, "
+                          "CIE 1931 → sRGB (as in the ε tab). Default 1 mM in 1 cm."),
+    "ov_calc_color_hint": ("Hängt von FWHM und Verschiebung ab; TD-DFT-Energien liegen oft 0,2–0,3 eV daneben – "
+                           "nur qualitativ.",
+                           "Depends on FWHM and shift; TD-DFT energies are often off by 0.2–0.3 eV – qualitative only."),
     "color_partial": ("⚠ Spektrum deckt nur {p} % von 380–780 nm ab – Rest als farblos gerechnet.",
                       "⚠ Spectrum covers only {p} % of 380–780 nm – the rest is treated as colourless."),
     "color_gamut": ("Sehr gesättigte Farbe: außerhalb des Bildschirm-Farbraums (sRGB), angenähert.",
@@ -1529,6 +1540,16 @@ TEXTS = {
                            "ORCA counts atoms from 0 (e.g. in %geom constraints), Gaussian and most programs from 1. "
                            "Changes the display only."),
     "dft_radius": ("Atomradius", "Atom radius"),
+    "bg_label": ("Hintergrund", "Background"),
+    "bg_white": ("Weiß", "White"),
+    "bg_transparent": ("Transparent", "Transparent"),
+    "bg_color": ("Farbe …", "Colour …"),
+    "bg_color_x": ("Farbe {c} …", "Colour {c} …"),
+    "bg_pick": ("Hintergrundfarbe", "Background colour"),
+    "bg_tip": ("Hintergrund der Abbildung in Vorschau, PDF/SVG/PNG und Word (transparent: Vorschau weiß)",
+               "Figure background in preview, PDF/SVG/PNG and Word (transparent: preview white)"),
+    "ball_rel_tip": ("Kugel-Stab-Stile: relativ zum Standardwert ({std} Å = Größe wie im Stil vorgesehen)",
+                     "Ball-and-stick styles: relative to the default ({std} Å = size as designed for the style)"),
     "dft_hover_file": ("(in der Datei: {lab})", "(in the file: {lab})"),
     "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom zum Messen/Ausrichten "
                        "wählen (beim Nummerieren: nummerieren), Doppelklick = Label an/aus, Labels lassen sich verschieben.",
