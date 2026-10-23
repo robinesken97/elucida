@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 import uvvis_cv as CV
 import uvvis_tabs as TABS
 from uvvis_i18n import T
+import uvvis_style as STYLE
 from uvvis_style import HINT_CSS, make_form
 
 F_RT = 96485.332 / (8.314462 * 298.15)          # 1/V bei 25 °C
@@ -156,6 +157,11 @@ class SECTab(TABS.FigureTab):
                          electrode="Ag/AgNO₃", ref_from_cv=False, cap_solvent="", cap_start="", cap_mid="",
                          cap_end="")
 
+
+    def arrange(self):
+        super().arrange()
+        g = STYLE.split_group(self.group_titled("sec_display"), self.cb_highlight, self.ed_bands, T("grp_highlight"))
+        self.fold(g, "highlight", ("highlight", "mid", "gradient", "diff", "baseline", "bands"))
     def build_controls(self):
         st = self.st
         self.info = {}

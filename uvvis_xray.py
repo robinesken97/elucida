@@ -2382,6 +2382,7 @@ import uvvis_project as PRJ  # noqa: E402
 import uvvis_tabs as TABS  # noqa: E402
 from uvvis_i18n import T  # noqa: E402
 from uvvis_irms import copy_rich  # noqa: E402
+import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 CAPTION_MAX = 8                       # bis zu so vielen ausgewählten Werten in der Bildunterschrift, sonst Tabellen
@@ -2708,6 +2709,15 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False,
                          bg="white")
 
+
+    def arrange(self):
+        super().arrange()
+        g = STYLE.split_group(self.group_titled("xr_display"), self.lst_frag, None, T("grp_atoms"), n=4)
+        self.fold(g, "atoms")
+        self.fold(self.group_titled("xr_align"), "align")
+        self.fold(self.group_titled("xr_colors"), "colors", ("colors",))
+        self.to_right(self.group_titled("xr_caption"), T("xr_caption"))
+        self.to_right(self.group_titled("xr_tables"), T("xr_tables"))
     def __init__(self, main, state):
         self.sel = []                     # gewählte Atome (Schlüssel) der aktuellen Verbindung, nicht im Undo
         self._meas = None
@@ -2907,7 +2917,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def common_box(self):
         """Nur Größe und Formate (keine Achsen)."""
-        g = QGroupBox(T("grp_plot"))
+        g = QGroupBox(T("grp_export_size"))
         f = make_form(g)
         st = self.st
         self.cmb_size = QComboBox()

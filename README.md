@@ -40,8 +40,10 @@ The user interface is available in German and English.
 | **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
 | **DFT** | xyz, ORCA 6 and Gaussian outputs: renumber atoms by click or like a template (other geometry or CIF), SI block with coordinates, energies and convergence (Word, two columns) |
 
-The tabs are ordered as in the SI: Synthesis · NMR · IR + EA · HRMS · UV-Vis (ε) · overlay · fluorescence · CV · SEC ·
-EPR · X-Ray · DFT.
+The tabs are ordered as in the SI, in four groups on top: **Synthesis & analysis** (synthesis · NMR · IR + EA · HRMS) ·
+**UV-Vis & photophysics** (UV-Vis (ε) · overlay · fluorescence) · **Electrochemistry & EPR** (CV · SEC · EPR) ·
+**Structure & computation** (X-Ray · DFT). An empty tab shows what it produces, which files it needs and the steps to
+the result.
 
 All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page in Word). Light and dark theme;
 German and English.
@@ -119,7 +121,8 @@ On Windows, always keep the whole `Elucida` folder together. The `.exe` does not
      *a* in L g⁻¹ cm⁻¹ instead of ε, and the field is marked red. For mM/µM the molar mass is not used.
 4. **Analysis:** set path length and fit cutoff. Bands are found automatically; additional bands
    (e.g. shoulders) can be entered as a list ("in addition to automatically found" keeps both), and
-   **"Find shoulders automatically"** adds shoulders (in the figure optionally marked "(sh)").
+   **"Find shoulders automatically"** adds shoulders (in the figure optionally marked "(sh)"); the labels can carry
+   indices **λ₁/ε₁ …**.
    In the results table, the tick next to λ decides whether a band appears in the figure, and a
    double-click on **"Cutoff A"** sets an own cutoff for that band (e.g. to include a point just
    above A = 1). Bands with an own cutoff are highlighted; optionally, excluded points are shown as
@@ -141,8 +144,11 @@ On Windows, always keep the whole `Elucida` folder together. The `.exe` does not
 ## Appearance
 
 The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently.
-Rarely used options in the ε tab are collapsed; a section header in bold with **"(changed)"** means that a value
-there differs from the default (e.g. min. R² for the figure). The figures are not affected by the theme.
+Rarely used cards of the left column are collapsed (click the title to open them); a title with **"(changed)"** means
+that a value there differs from the default. Results, tables and SI texts sit in tabs next to the figure. The mouse
+wheel scrolls the column and only changes a field after it has been clicked. Notes while drawing (e.g. curves left out)
+appear below the preview, **Help → Log…** shows all messages. **Presets ▾** at the bottom saves a tab's settings for
+other projects. The figures are not affected by the theme.
 
 ## Compound of the project
 
@@ -285,7 +291,8 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   keeps italics and sub-/superscripts in Word; export also writes CSV and Excel. Table labels are in English
   (as usual for an SI).
 - Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
-  `…_tables.xlsx`. The label size can be set per tab.
+  `…_tables.xlsx`. The label size can be set per tab and the **background** chosen (white, transparent, colour; also
+  for Word). In the ball-and-stick styles the bond thickness applies relative to the default.
 
 ## DFT tab
 
@@ -295,7 +302,9 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
 - **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the
   remaining atoms keep their order (optionally H atoms right after their atom). **Save xyz** writes a new file with the
-  lines unchanged (only reordered); the loaded file is never overwritten. Counting from 0 (ORCA) can be shown.
+  lines unchanged (only reordered); the loaded file is never overwritten. Counting from 0 (ORCA) can be shown. Atom
+  radius and bond thickness also apply in the ball-and-stick styles (relative to the default); the background is
+  selectable as in the X-Ray tab.
 - **Like template:** takes over the numbering of another geometry in the tab or of a crystal structure in the X-Ray
   tab (then with the CIF atom names, e.g. C1, H3A). Heavy atoms are matched by connectivity, symmetric molecules by
   the smallest deviation after superposition; an equally good alternative is reported with the atoms concerned, H
@@ -373,6 +382,8 @@ Compare several spectra in one figure, measured and calculated:
 - Per spectrum: colour, name, **line style and width**, **scale factor and vertical offset**
   (e.g. for stacked spectra); **order** with ↑/↓ (also the legend order).
 - ORCA calculations with **spin–orbit coupling**: choose "with SOC" or "without SOC" per calculation.
+- **Colour in solution** per TD-DFT calculation (entry details): A = ε·c·d with the chosen broadening, default
+  1 mM in 1 cm – qualitative only, TD-DFT energies are often off by 0.2–0.3 eV.
 - **Triplet states** (without SOC, f = 0) can be marked as dashed marks of fixed height; they do not
   contribute to the curve (ORCA 4–6, Gaussian).
 - **Combine** calculations: select two or more TD-DFT entries (Ctrl/Shift click) → "Combine". The

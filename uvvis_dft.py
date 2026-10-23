@@ -856,6 +856,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 import uvvis_core as core  # noqa: E402
 import uvvis_project as PRJ  # noqa: E402
 import uvvis_tabs as TABS  # noqa: E402
+import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 PICK_COLOR = XRAY.SEL_COLOR
@@ -878,6 +879,13 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
 
     MEASURE_ESD = False                   # Werte aus der berechneten Geometrie (keine esd wie in einer CIF)
 
+
+    def arrange(self):
+        super().arrange()
+        self.fold(self.group_titled("dft_numbering"), "numbering")
+        self.fold(self.group_titled("dft_measure"), "measure")
+        self.fold(self.group_titled("xr_align"), "align")
+        self.to_right(self.group_titled("dft_si"), T("dft_si"))
     def __init__(self, main, state):
         self.numbering = False            # Klick-Modus „Nummerieren“ (nicht im Undo)
         self.picks = []                   # angeklickte Dateiindizes in Klickreihenfolge

@@ -40,8 +40,10 @@ Englisch.
 | **X-Ray** | CIF → drehbare ORTEP-Abbildung im Mercury-Stil (schattierte Ellipsoide, Labels je Atom), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
 | **DFT** | xyz, ORCA-6- und Gaussian-Ausgaben: Atome per Klick oder wie eine Vorlage (andere Geometrie oder CIF) umnummerieren, SI-Block mit Koordinaten, Energien und Konvergenz (Word, zweispaltig) |
 
-Die Tabs stehen in der Reihenfolge der SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV ·
-SEC · EPR · X-Ray · DFT.
+Die Tabs stehen in der Reihenfolge der SI, oben in vier Gruppen: **Synthese & Analytik** (Synthese · NMR · IR + EA ·
+HRMS) · **UV-Vis & Photophysik** (UV-Vis (ε) · Overlay · Fluoreszenz) · **Elektrochemie & EPR** (CV · SEC · EPR) ·
+**Struktur & Rechnung** (X-Ray · DFT). Ein leerer Tab zeigt, was er erzeugt, welche Dateien er braucht und die
+Schritte bis zum Ergebnis.
 
 Alle Exporte: PDF/SVG (vektoriell) und PNG, standardmäßig 16 × 11 cm (halbe A4-Seite in Word). Helles und dunkles
 Erscheinungsbild; Deutsch und Englisch.
@@ -121,7 +123,7 @@ Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funkt
      L g⁻¹ cm⁻¹ statt ε aus, und das Feld wird rot markiert. Bei mM/µM wird die Molmasse nicht verwendet.
 4. **Auswertung:** Schichtdicke und Fit-Cutoff eintragen. Banden werden automatisch gefunden;
    zusätzliche Banden (z. B. Schultern) lassen sich als Liste eintragen („zusätzlich zu den
-   automatisch gefundenen“ behält beide), und **„Schultern automatisch suchen“** ergänzt Schultern
+   automatisch gefundenen“ behält beide), optional mit Indizes **λ₁/ε₁ …** an den Labels, und **„Schultern automatisch suchen“** ergänzt Schultern
    (in der Abbildung optional mit „(sh)“ markiert). In der Ergebnistabelle entscheidet das Häkchen bei λ, ob eine Bande im Bild
    erscheint, und ein Doppelklick auf **„Cutoff A“** setzt einen eigenen Cutoff für diese Bande
    (z. B. um einen Punkt knapp über A = 1 mitzunehmen). Banden mit eigenem Cutoff sind farbig
@@ -144,9 +146,12 @@ Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funkt
 ## Erscheinungsbild
 
 Das Programm folgt dem hellen oder dunklen Modus des Systems; unter **Format → Erscheinungsbild** lässt sich dauerhaft
-hell oder dunkel wählen. Selten gebrauchte Optionen im ε-Tab sind eingeklappt; ein fetter Abschnittstitel mit
-**„(geändert)“** bedeutet, dass dort ein Wert vom Standard abweicht (z. B. min. R² fürs Bild). Die Abbildungen sind
-vom Erscheinungsbild nicht betroffen.
+hell oder dunkel wählen. Selten gebrauchte Karten der linken Spalte sind eingeklappt (Klick auf den Titel klappt sie
+auf); ein Titel mit **„(geändert)“** bedeutet, dass dort ein Wert vom Standard abweicht. Ergebnisse, Tabellen und
+SI-Texte stehen als Reiter neben der Abbildung. Das Mausrad scrollt die Spalte; ein Feld ändert es erst, wenn es
+angeklickt ist. Hinweise beim Zeichnen (z. B. ausgelassene Kurven) stehen unter der Vorschau, **Hilfe → Protokoll…**
+zeigt alle Meldungen. **Vorlagen ▾** unten speichert die Einstellungen eines Tabs für andere Projekte. Die Abbildungen
+sind vom Erscheinungsbild nicht betroffen.
 
 ## Verbindung des Projekts
 
@@ -296,7 +301,8 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
   **Kopieren** behält Kursivschrift und Hoch-/Tiefstellung in Word; der Export schreibt zusätzlich CSV und Excel.
   Die Tabellen sind englisch beschriftet (wie in SI üblich).
 - Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv` und
-  `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar.
+  `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar, der **Hintergrund** wählbar (weiß, transparent, Farbe; gilt
+  auch für Word). In den Kugel-Stab-Stilen wirkt die Bindungsdicke relativ zum Standard.
 
 ## DFT-Tab
 
@@ -309,7 +315,8 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 - **Umnummerieren:** **Nummerieren** drücken und die Atome in der gewünschten Reihenfolge anklicken; **Übernehmen**
   stellt sie nach vorn, die übrigen behalten ihre Reihenfolge (wahlweise H direkt hinter ihrem Atom). **xyz speichern**
   schreibt eine neue Datei mit unveränderten Zeilen (nur umsortiert); die geladene Datei wird nie überschrieben.
-  Zählung ab 0 (ORCA) wählbar.
+  Zählung ab 0 (ORCA) wählbar. Atomradius und Bindungsdicke wirken auch in den Kugel-Stab-Stilen (relativ zum Standard);
+  Hintergrund wählbar wie im X-Ray-Tab.
 - **Wie Vorlage:** übernimmt die Nummerierung einer anderen Geometrie im Tab oder einer Kristallstruktur im X-Ray-Tab
   (dann mit den Atomnamen der CIF, z. B. C1, H3A). Schweratome über das Bindungsnetz, symmetrische Moleküle über die
   kleinste Abweichung nach Überlagerung; eine gleich gute Alternative wird mit den betroffenen Atomen gemeldet, H folgen
@@ -389,6 +396,8 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 - Pro Spektrum: Farbe, Name, **Linienart und -stärke**, **Skalierungsfaktor und vertikaler Versatz**
   (z. B. für gestapelte Spektren); **Reihenfolge** mit ↑/↓ (auch die der Legende).
 - ORCA-Rechnungen mit **Spin-Bahn-Kopplung**: pro Rechnung „mit SOC“ oder „ohne SOC“ wählbar.
+- **Farbe in Lösung** je TD-DFT-Rechnung (Details des Eintrags): A = ε·c·d mit der eingestellten Verbreiterung,
+  Standard 1 mM in 1 cm – nur qualitativ, TD-DFT-Energien liegen oft 0,2–0,3 eV daneben.
 - **Triplett-Zustände** (ohne SOC, f = 0) lassen sich als gestrichelte Marken fester Höhe anzeigen; sie
   tragen nicht zur Kurve bei (ORCA 4–6, Gaussian).
 - Rechnungen **kombinieren**: zwei oder mehr TD-DFT-Einträge markieren (Strg/Shift-Klick) → „Kombinieren“.

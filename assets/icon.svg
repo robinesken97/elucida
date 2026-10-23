@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Elucida: Spektrum im sichtbaren Bereich + Benzolring (Struktur) an der Stelle des früheren Blitzes.
+  <!-- Elucida: Spektrum im sichtbaren Bereich + Pyridinring (N unten) an der Stelle des früheren Blitzes.
        Quelle für assets/icon.png (python tools/make_icon.py). -->
   <defs>
     <linearGradient id="vis" x1="176" y1="0" x2="848" y2="0" gradientUnits="userSpaceOnUse">
@@ -13,11 +13,8 @@
     </linearGradient>
   </defs>
   <rect x="64" y="64" width="896" height="896" rx="190" fill="#1d2a44"/>
-  <!-- Benzolring -->
-  <g fill="none" stroke="#ffffff" stroke-linejoin="round" stroke-linecap="round">
-    <polygon points="704,128 856,216 856,392 704,480 552,392 552,216" stroke-width="40"/>
-    <circle cx="704" cy="304" r="88" stroke-width="26"/>
-  </g>
+  <!-- Pyridinring, N unten -->
+  <g fill="none" stroke="#ffffff" stroke-linejoin="round" stroke-linecap="round"><polyline points="632.5,438.6 552.0,392.0 552.0,216.0 704.0,128.0 856.0,216.0 856.0,392.0 775.5,438.6" stroke-width="40"/><circle cx="704" cy="304" r="88" stroke-width="26"/></g><path transform="translate(660.31 523.67)" d="M9.05 0.00 L9.05 -87.33 L26.21 -87.33 L61.95 -29.01 L61.95 -87.33 L78.33 -87.33 L78.33 0.00 L60.64 0.00 L25.44 -56.95 L25.44 0.00 L9.05 0.00 Z" fill="#4C8DFF"/>
   <!-- Grundlinie und Spektrum -->
   <line x1="176" y1="826" x2="848" y2="826" stroke="#c9d3e3" stroke-width="16" stroke-linecap="round"/>
   <path d="M176 816 C 260 816, 300 650, 330 500 C 345 420, 352 380, 370 380 C 392 380, 405 470, 425 580

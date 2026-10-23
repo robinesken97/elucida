@@ -17,7 +17,7 @@ from pathlib import Path
 
 APP_NAME = "Elucida"
 OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -37,7 +37,7 @@ from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa
 from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QImage,  # noqa: E402
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
+from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
@@ -996,8 +996,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.currentChanged.connect(                    # Vorlagen (CIF aus X-Ray) aktuell halten
             lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
         for i in range(self.main_tabs.count()):
-            if self.main_tabs.widget(i) is not split:              # ε-Tab ist schon aufgeräumt (Karten, Abschnitte)
-                STYLE.tidy(self.main_tabs.widget(i))
+            STYLE.tidy(self.main_tabs.widget(i))
         self.setCentralWidget(self.nav_bar())
 
         self.apply_globals()
@@ -3893,6 +3892,32 @@ def selftest(outdir, with_isnet=False):
         assert sp0_.value() != 50 or not sp0_.hasFocus()      # mit Fokus wie gewohnt (offscreen evtl. ohne Fokus)
         sa_.close()
         report.append("navigation, detail hint, SI button, wheel guard: OK")
+        # linke Spalte: Karten eingeklappt mit „(geändert)“, Ergebnisse als Reiter neben der Abbildung
+        fc_ = next(f_ for f_ in w.cv_tab.folds if f_.group is w.cv_tab.grp_common)
+        fc_.set_open(False, remember=False)
+        assert fc_.body.isHidden() and fc_.group.title().startswith("▶")
+        w.cv_state["size"] = "custom"
+        fc_.refresh()
+        assert T("adv_changed") in fc_.group.title(), fc_.group.title()
+        w.cv_state["size"] = "half_a4"
+        fc_.refresh()
+        assert T("adv_changed") not in fc_.group.title()
+        fc_.set_open(True, remember=False)
+        assert not fc_.body.isHidden()
+        assert w.cv_tab.right_tabs is not None and w.cv_tab.right_tabs.tabText(0) == T("tab_figure")
+        assert [w.xray_tab.right_tabs.tabText(i_) for i_ in range(3)] == [T("tab_figure"), T("xr_caption"), T("xr_tables")]
+        assert w.dft_tab.right_tabs.count() == 2 and w.hrms_tab.right_tabs is None
+        # Raster: jedes sichtbare Zahlenfeld der linken Spalten genau STYLE.FIELD_W breit (das Stylesheet darf die
+        # feste Breite nicht nachträglich aufheben – so liefen die Felder früher auseinander)
+        w.show()
+        for i_ in range(w.main_tabs.count()):
+            w.main_tabs.setCurrentIndex(i_)
+            pump(0.05)
+            page_ = w.main_tabs.widget(i_)
+            odd_ = [sp_.width() for sp_ in page_.findChildren(QAbstractSpinBox)
+                    if sp_.isVisibleTo(page_) and sp_.property("fieldw") and sp_.width() != STYLE.FIELD_W]
+            assert not odd_, (w._tab_keys[i_], odd_)
+        report.append("left column (folds, changed mark, result tabs, field grid): OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
         w.render()

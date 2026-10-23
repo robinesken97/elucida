@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QMessageBox, QPlainTextEdit)
+                               QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QMessageBox, QPlainTextEdit, QTabWidget)
 
 import uvvis_color as COLOR
 import uvvis_core as core
@@ -367,13 +367,16 @@ class FigureTab(QWidget):
         left = QWidget()
         self.lv = QVBoxLayout(left)
         self.build_controls()
-        self.lv.addWidget(self.common_box())
+        self.grp_common = self.common_box()
+        self.lv.addWidget(self.grp_common)
         hint = QLabel(T("drag_hint_tab"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
         self.lv.addWidget(hint)
         self.lv.addStretch(1)
         align_forms(left.findChildren(QFormLayout))
+        self.folds, self._to_right = [], []
+        self.arrange()                                   # einklappen / Zeilen gruppieren / Ergebnisse nach rechts
         STYLE.tidy(left)
         det = getattr(self, "det", None)                 # Einstellungen des gewählten Eintrags: erst nach Auswahl
         if isinstance(det, QGroupBox):
@@ -441,6 +444,9 @@ class FigureTab(QWidget):
         rv.setSpacing(0)
         rv.addWidget(self.preview_stack, 1)
         rv.addWidget(self.lbl_note)
+        self.right_tabs = None
+        for g, title in self._to_right:                   # Ergebnisse als Reiter neben der Abbildung
+            self.move_right(g, title)
         split = QSplitter(Qt.Horizontal)
         split.addWidget(left_col)
         split.addWidget(right_col)
@@ -455,7 +461,7 @@ class FigureTab(QWidget):
         raise NotImplementedError
 
     def common_box(self):
-        g = QGroupBox(T("grp_plot"))
+        g = QGroupBox(T("grp_export"))
         f = make_form(g)
         st = self.st
         row = QHBoxLayout()
@@ -621,6 +627,53 @@ class FigureTab(QWidget):
         core.setup_fonts(plt, cfg)
         return X.SimpleFigure(plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks)
 
+    # -- linke Spalte ordnen ------------------------------------------------------
+    def group_titled(self, key):
+        root = self.lv.parentWidget()                    # linke Spalte (hängt beim Ordnen noch nicht am Tab)
+        return next(g for g in root.findChildren(QGroupBox) + self.findChildren(QGroupBox) if g.title() == T(key))
+
+    def fold(self, group, name, keys=None, opened=False):
+        """Karte einklappbar machen; keys: Zustandsschlüssel für „(geändert)“ (Vergleich mit DEFAULT_STATE)."""
+        changed = (lambda: any(self.st.get(k) != self.DEFAULT_STATE.get(k) for k in keys)) if keys else None
+        f = STYLE.Fold(group, f"{self.STATE_KEY}/{name}", self.main.settings, changed, opened)
+        self.folds.append(f)
+        return f
+
+    def to_right(self, group, title):
+        self._to_right.append((group, title))
+
+    def arrange(self):
+        """Standard: „Achsen, Größe und Formate“ und die Bildunterschrift eingeklappt. Tabs ergänzen (super())."""
+        self.fold(self.grp_common, "common", ("x_auto", "ymax", "size", "w_cm", "h_cm", "fmt"))
+        if getattr(self, "grp_caption", None) is not None:
+            self.fold(self.grp_caption, "caption")
+
+    def move_right(self, group, title):
+        """Karte als Reiter neben „Abbildung“ (kostet nur die Reiterzeile, die Abbildung bleibt gleich groß –
+        unter der Abbildung würde sie in der Höhe begrenzt und schrumpfen)."""
+        if self.right_tabs is None:
+            rv = self.preview_stack.parentWidget().layout()
+            i = rv.indexOf(self.preview_stack)
+            rv.removeWidget(self.preview_stack)
+            self.right_tabs = QTabWidget()
+            self.right_tabs.setDocumentMode(True)
+            self.right_tabs.addTab(self.preview_stack, T("tab_figure"))
+            rv.insertWidget(i, self.right_tabs, 1)
+        group.setParent(None)
+        group.setTitle("")
+        group.setObjectName("resultCard")
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(12, 12, 12, 12)
+        v.addWidget(group)
+        v.addStretch(1)
+        sa = QScrollArea()
+        sa.setWidget(page)
+        sa.setWidgetResizable(True)
+        sa.setFrameShape(QFrame.NoFrame)
+        self.right_tabs.addTab(sa, title)
+        group.show()
+
     # -- Hinweise im Tab ----------------------------------------------------------
     def add_note(self, msg):
         """Hinweis beim Zeichnen: im Tab unter der Vorschau anzeigen und ins Protokoll schreiben."""
@@ -633,7 +686,10 @@ class FigureTab(QWidget):
         self._notes = []
 
     def notes_show(self, error=None):
-        """Gesammelte Hinweise (orange) bzw. einen Fehler (rot) unter der Vorschau zeigen."""
+        """Gesammelte Hinweise (orange) bzw. einen Fehler (rot) unter der Vorschau zeigen; „(geändert)“ an
+        eingeklappten Karten aktualisieren."""
+        for f in getattr(self, "folds", ()):
+            f.refresh()
         if error is not None:
             self.lbl_note.setText(T("note_error", e=error))
             self.lbl_note.setStyleSheet(WARN_CSS)
@@ -759,6 +815,7 @@ class FigureTab(QWidget):
         from uvvis_i18n import TEXTS
         st = self.st
         g = QGroupBox(T("cap_box"))
+        self.grp_caption = g
         g.setToolTip(T(f"{self.STATE_KEY}_cap_tip"))
         f = make_form(g)
         self.ed_cap = {}
@@ -876,6 +933,10 @@ class OverlayTab(FigureTab):
                          stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False,
                          triplets=False)
 
+
+    def arrange(self):
+        super().arrange()
+        self.fold(self.group_titled("ov_stack_grp"), "stack", ("stack", "stack_gap", "y_axis", "curve_labels", "zero_lines"))
     def build_controls(self):
         st = self.st
         g = QGroupBox(T("ov_curves"))
@@ -1726,6 +1787,10 @@ class FluoTab(FigureTab):
                          c_em="#e8231b", structure=None, photo_day=None, bg_day="auto", photo_uv=None,
                          bg_uv="none", ymax=1.2, struct_w=20.0, photo_w=30.0, stokes_label=False)
 
+
+    def arrange(self):
+        super().arrange()
+        self.fold(self.group_titled("fl_images"), "images")
     def build_controls(self):
         st = self.st
         g = QGroupBox(T("fl_data"))

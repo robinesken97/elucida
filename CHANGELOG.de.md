@@ -2,6 +2,40 @@
 
 # Änderungen
 
+## 2.0.1 – 23.10.2026
+
+### Neu
+- **Übersichtlichere, ruhigere Oberfläche:** Die zwölf Tabs stehen wie die SI in Gruppen in einer Leiste oben (Synthese
+  & Analytik, UV-Vis & Photophysik, Elektrochemie & EPR, Struktur & Rechnung); **SI (Word)** ist der Hauptknopf in der
+  Werkzeugleiste. Die Abbildung bleibt so groß wie bisher – die neue Leiste kostet Höhe, nicht Breite.
+- **Aufgeräumte linke Spalte in allen Tabs:** Selten gebrauchte Karten sind eingeklappt (Achsen, Größe und Formate;
+  Bildunterschrift; CV-Referenzierung; SEC Hervorheben; EPR Intensität und Kinetik; X-Ray Atome, Ausrichten, Farben …).
+  Eine eingeklappte Karte zeigt **„(geändert)“**, wenn darin etwas vom Standard abweicht. Ergebnisse, Tabellen und
+  SI-Text stehen als Reiter neben der Abbildung (CV-Ergebnisse, X-Ray-Unterschrift und -Tabellen, DFT-SI-Text).
+  Gleichmäßige Abstände, alle Zahlenfelder gleich breit und rechtsbündig, Beschriftungen auf Höhe ihrer Felder.
+- **Anleitung in leeren Tabs:** was der Tab erzeugt, welche Dateien er braucht und woher sie kommen, vier Schritte, ein
+  Link zum passenden README-Abschnitt und ein Knopf „Dateien hinzufügen…“.
+- **Hinweise dort, wo sie entstehen:** Lässt z. B. das Overlay eine Kurve weg (keine Konzentration für ε), steht der
+  Grund unter der Vorschau; **Hilfe → Protokoll…** zeigt das Protokoll aller Tabs.
+- **X-Ray und DFT:** **Hintergrund** wählbar (weiß, transparent, Farbe) für Vorschau, PDF/SVG/PNG und Word.
+- **Overlay:** vorhergesagte **Farbe in Lösung** für TD-DFT-Spektren (A = ε·c·d, Standard 1 mM in 1 cm; qualitativ).
+- **UV-Vis (ε):** optionale **Indizes λ₁/ε₁ …** an den Bandenlabels.
+- **Neues Icon:** Spektrum mit Pyridinring.
+
+### Geändert
+- **Kugel-Stab (X-Ray, DFT):** Atomradius und Bindungsdicke wirken jetzt, relativ zum Standard (die Standardwerte
+  ergeben das bisherige Aussehen).
+- **Schnelleres Drehen** in den Kugel-Stab-Stilen (etwa 20 ms statt 140 ms je Schritt bei 80 Atomen); Abbildungen und
+  Exporte pixelgleich.
+- Das Mausrad scrollt die linke Spalte und verstellt ein Feld erst, nachdem es angeklickt wurde.
+- Klarere Bezeichnungen und Tooltips („Vorlage speichern…“ statt „Speichern…“, „Peakschwelle“, eindeutige
+  Kopier-Knöpfe, ε-Befehle unter Datei → UV-Vis (ε), „Exportieren (aktueller Tab)“ …).
+
+### Behoben
+- Nach dem Ziehen eines Labels oder Bildes wird die Abbildung ganz neu gezeichnet; nichts verschwindet mehr bis zum
+  nächsten Klick.
+- CV: „wie oben“ bei der Referenz einer Messung verwies auf eine Einstellung weiter unten.
+
 ## 2.0.0 – 22.10.2026
 
 ### Neu

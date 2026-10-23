@@ -2,6 +2,39 @@
 
 # Changelog
 
+## 2.0.1 – 2026-10-23
+
+### New
+- **Clearer, calmer interface:** the twelve tabs are grouped like the SI in a bar on top (synthesis & analysis,
+  UV-Vis & photophysics, electrochemistry & EPR, structure & computation); **SI (Word)** is the main button in the
+  toolbar. The figure keeps its full size – the new bar costs height, not width.
+- **Tidy left column in every tab:** rarely used cards are collapsed (axes, size and formats; figure caption; CV
+  referencing; SEC highlighting; EPR intensity and kinetics; X-ray atoms, alignment and colours …). A collapsed card
+  shows **"(changed)"** when a setting inside differs from the default. Results, tables and SI text sit in tabs next to the
+  figure (CV results, X-ray caption and tables, DFT SI text). Even spacing, all number fields the same width and
+  right-aligned, labels level with their fields.
+- **Guides in empty tabs:** what the tab produces, which files it needs and where they come from, four steps, a link to
+  the matching README section and an "Add files…" button.
+- **Warnings where they happen:** e.g. when the overlay leaves out a curve (no concentration for ε), the reason is shown
+  below the preview; **Help → Log…** shows the log of all tabs.
+- **X-ray and DFT:** selectable **background** (white, transparent, colour) for preview, PDF/SVG/PNG and Word.
+- **Overlay:** predicted **colour in solution** for TD-DFT spectra (A = ε·c·d, default 1 mM in 1 cm; qualitative).
+- **UV-Vis (ε):** optional **λ₁/ε₁ … indices** on the band labels.
+- **New icon:** spectrum with a pyridine ring.
+
+### Changed
+- **Ball and stick (X-ray, DFT):** atom radius and bond thickness now apply, relative to the defaults (the defaults keep
+  the previous look).
+- **Faster rotation** in the ball-and-stick styles (about 20 ms instead of 140 ms per step at 80 atoms); figures and
+  exports are pixel-identical.
+- The mouse wheel scrolls the left column and only changes a field after it has been clicked.
+- Clearer names and tooltips throughout ("Save preset…" instead of "Save…", "Peak threshold", distinct copy buttons,
+  ε-only commands in File → UV-Vis (ε), "Export (current tab)" …).
+
+### Fixed
+- After dragging a label or picture the figure is redrawn completely, so nothing disappears until the next click.
+- CV: "as above" for the reference of a measurement pointed to a setting further down.
+
 ## 2.0.0 – 2026-10-22
 
 ### New

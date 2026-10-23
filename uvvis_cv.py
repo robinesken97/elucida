@@ -339,6 +339,15 @@ class CVTab(TABS.FigureTab):
     MARKERS = ("s", "o", "^", "v", "D", "p")
 
     # -- Bedienelemente ------------------------------------------------------------
+
+    def arrange(self):
+        super().arrange()
+        g = STYLE.split_group(self.group_titled("cv_analysis"), self.cmb_ref, self.ed_electrode, T("grp_refs"))
+        self.fold(g, "refs", ("ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value", "ref_offset",
+                              "ref_electrode"))
+        g = STYLE.split_group(self.group_titled("cv_display"), self.cb_gradient, self.cb_invert, T("grp_more_display"))
+        self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "invert"))
+        self.to_right(self.group_titled("cv_results"), T("cv_results"))
     def build_controls(self):
         st = self.st
         self._offset = 0.0

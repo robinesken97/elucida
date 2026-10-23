@@ -634,6 +634,12 @@ class EPRTab(TABS.FigureTab):
                          ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq",
                          cap_species="", cap_solvent="", cap_conc="")
 
+
+    def arrange(self):
+        super().arrange()
+        g = STYLE.split_group(self.group_titled("epr_display"), self.ed_int_window, self.cb_curie, T("grp_intensity"))
+        self.fold(g, "intensity", ("int_window", "int_method", "int_x", "int_center", "kin_fit", "kin_norm",
+                                   "int_curie"))
     def build_controls(self):
         st = self.st
         g = QGroupBox(T("epr_entries"))

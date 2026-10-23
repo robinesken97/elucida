@@ -154,11 +154,32 @@ def card(title, icon_name=None):
     return frame, body
 
 
+FIELD_W = 150                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
+CHECKS_IN_FIELD_COLUMN = True     # Häkchen-Zeilen in der Wertespalte (eine Kante für alle Bedienelemente)
+
+
+def _fw(fl, r):
+    """Breite einer Formularzeile aus Beschriftung + Feld (Hinweis für die Einrück-Regel)."""
+    li, fi = fl.itemAt(r, QFormLayout.LabelRole), fl.itemAt(r, QFormLayout.FieldRole)
+    if li is None or fi is None:
+        return 0
+    return li.sizeHint().width() + fl.horizontalSpacing() + fi.sizeHint().width()
+
+
 def tidy(root):
     """Linke Spalte ruhiger: Zeilenabstand 8 px, einzelne Knöpfe in Formularen in natürlicher Breite statt als
     Balken über die ganze Karte, reine Symbol-Knöpfe (↑/↓) quadratisch. Vor dem Bestimmen der Spaltenbreite aufrufen."""
+    from PySide6.QtWidgets import QGroupBox
+    top = root.layout()
+    if isinstance(top, QVBoxLayout):                          # Spalte: gleicher Rand und Abstand zwischen Karten
+        top.setContentsMargins(12, 12, 12, 12)
+        top.setSpacing(12)
+    for g in root.findChildren(QGroupBox):                    # Karten: gleicher Innenrand (oben sitzt der Titel)
+        if g.layout() is not None and not any(isinstance(f, Fold) and f.group is g for f in g.children()):
+            g.layout().setContentsMargins(16, 6, 16, 14)
     for fl in root.findChildren(QFormLayout):
-        fl.setVerticalSpacing(8)
+        fl.setVerticalSpacing(10)
+        fl.setHorizontalSpacing(14)
         for r in range(fl.rowCount()):
             it = fl.itemAt(r, QFormLayout.SpanningRole)
             if it is not None and isinstance(it.widget(), QPushButton):
@@ -168,14 +189,91 @@ def tidy(root):
             b.setFixedWidth(34)
     for x in root.findChildren(QAbstractSpinBox) + root.findChildren(QComboBox):
         x.setFocusPolicy(Qt.StrongFocus)                        # siehe _WheelGuard
-    # Zeilen nur aus Zahlenfeldern/Beschriftungen/Häkchen (z. B. „450 – 520“): zusammenhalten statt über die Breite
-    # verteilen (die Zahlenfelder sind höchstens 160 px breit, sonst rückt das zweite Feld an den rechten Rand)
+    # Raster je Karte: alle Zahlenfelder gleich breit (FIELD_W), zweite Werte einer Zeile („[5] Ränder [5 %]“) in einer
+    # gemeinsamen Spalte (Beschriftungen davor je Formular gleich breit), Text/Listen bis zum rechten Rand.
     from PySide6.QtWidgets import QCheckBox
+    for sp in root.findChildren(QAbstractSpinBox):
+        sp.setProperty("fieldw", True)                       # _WheelGuard setzt die Breite nach dem Stylesheet erneut
+        sp.setFixedWidth(FIELD_W)
+    # Platz in einer Karte = Spaltenbreite (breitester Inhalt der Spalte) minus Spalten- und Kartenrand
+    col_room = root.minimumSizeHint().width() - 2 * 12 - 2 * 16
+    for fl in root.findChildren(QFormLayout):
+        inner = []                                           # Beschriftungen zwischen zwei Werten
+        for r in range(fl.rowCount()):
+            it = fl.itemAt(r, QFormLayout.FieldRole) or fl.itemAt(r, QFormLayout.SpanningRole)
+            lay = it.layout() if it is not None else None
+            if not isinstance(lay, QHBoxLayout):
+                continue
+            ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            if not any(isinstance(x, QAbstractSpinBox) for x in ws):
+                continue
+            for i, x in enumerate(ws):
+                if 0 < i < len(ws) - 1 and isinstance(x, QLabel) and len(x.text().strip()) > 2:
+                    inner.append(x)
+                    if isinstance(ws[i - 1], QComboBox):     # „[keine ▾] g_lit [2,0055]“: Auswahl so breit wie ein Wert
+                        ws[i - 1].setProperty("fieldw", True)
+                        ws[i - 1].setFixedWidth(FIELD_W)
+        if inner:
+            wmax = max(x.sizeHint().width() for x in inner)
+            for x in inner:
+                x.setMinimumWidth(wmax)
+        # „☑ Basislinie [0,15 V]“ (Zeile über die ganze Breite): Häkchen so breit wie die Beschriftungsspalte, damit
+        # der Wert in der Wertespalte steht
+        labels = [fl.itemAt(r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
+                  if fl.itemAt(r, QFormLayout.LabelRole) is not None]
+        lab_w = max((lb.minimumWidth() or lb.sizeHint().width() for lb in labels if lb is not None), default=0)
+        for r in range(fl.rowCount()):
+            it = fl.itemAt(r, QFormLayout.SpanningRole)
+            lay = it.layout() if it is not None else None
+            if not isinstance(lay, QHBoxLayout) or not lab_w or lay.count() < 2:
+                continue
+            first, second = lay.itemAt(0).widget(), lay.itemAt(1).widget()
+            if isinstance(first, QCheckBox) and isinstance(second, QAbstractSpinBox):
+                first.setMinimumWidth(lab_w + fl.horizontalSpacing() - lay.spacing())
+        # Beschriftung so hoch wie ihr Feld, Text darin mittig: Qt setzt Beschriftungen sonst mit einem festen Versatz,
+        # der bei den höheren Feldern 2–3 px zu hoch liegt
+        for r in range(fl.rowCount()):
+            li, fi = fl.itemAt(r, QFormLayout.LabelRole), fl.itemAt(r, QFormLayout.FieldRole)
+            if li is None or fi is None or not isinstance(li.widget(), QLabel):
+                continue
+            fw = fi.widget()
+            parts = [fw] if fw is not None else [fi.layout().itemAt(i).widget() for i in range(fi.layout().count())]
+            parts = [x for x in parts if x is not None]
+            for x in parts:
+                x.ensurePolished()
+            h = max((x.sizeHint().height() for x in parts), default=0)
+            if 0 < h <= 48:                                   # Tabellen/Textfelder: Beschriftung bleibt oben
+                li.widget().setMinimumHeight(h)
+                li.widget().setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        # Häkchen-Zeilen in die Wertespalte einrücken: alle Bedienelemente beginnen an derselben Kante
+        # (nur wenn die Zeile eingerückt in die vorhandene Breite passt – die Spalte darf nicht breiter werden, sonst
+        # schrumpft die Abbildung; gemessen −7 % im X-Ray-Tab bei der langen Häkchen-Zeile)
+        if lab_w and CHECKS_IN_FIELD_COLUMN:
+            indent = lab_w + fl.horizontalSpacing()
+            room = max(fl.sizeHint().width(), col_room,
+                       max(_fw(fl, r) for r in range(fl.rowCount())) if fl.rowCount() else 0)
+            for r in range(fl.rowCount()):
+                it = fl.itemAt(r, QFormLayout.SpanningRole)
+                if it is None:
+                    continue
+                if isinstance(it.widget(), QCheckBox):
+                    if it.widget().sizeHint().width() + indent <= room:
+                        it.widget().setStyleSheet(f"QCheckBox {{ margin-left: {indent}px; }}")
+                elif isinstance(it.layout(), QHBoxLayout) and it.layout().count() > 1:
+                    lay = it.layout()
+                    first, second = lay.itemAt(0).widget(), lay.itemAt(1).widget()
+                    if (isinstance(first, QCheckBox) and not isinstance(second, QAbstractSpinBox)
+                            and lay.sizeHint().width() + indent <= room):
+                        lay.setContentsMargins(indent, 0, 0, 0)
     for lay in root.findChildren(QHBoxLayout):
         items = [lay.itemAt(i) for i in range(lay.count())]
+        if any(isinstance(it.widget(), (QLabel, QCheckBox)) for it in items[1:]):   # Beschriftung nicht ankleben
+            lay.setSpacing(max(lay.spacing(), 8))
         ws = [it.widget() for it in items if it.widget() is not None]
+        # nur feste Elemente: links zusammenhalten statt über die Breite verteilen
         if (ws and any(isinstance(x, QAbstractSpinBox) for x in ws) and not any(it.spacerItem() for it in items)
-                and all(isinstance(x, (QAbstractSpinBox, QLabel, QCheckBox)) for x in ws)):
+                and all(isinstance(x, (QAbstractSpinBox, QLabel, QCheckBox))
+                        or (isinstance(x, QComboBox) and x.maximumWidth() == FIELD_W) for x in ws)):
             lay.addStretch(1)
 
 
@@ -188,6 +286,10 @@ class _WheelGuard(QObject):
         t = ev.type()
         if t == QEvent.Polish and isinstance(obj, (QAbstractSpinBox, QComboBox)):
             obj.setFocusPolicy(Qt.StrongFocus)                  # Mausrad gibt keinen Fokus (Qt-Standard: doch)
+            if isinstance(obj, QAbstractSpinBox):               # Zahlen rechtsbündig: Stellen/Einheiten untereinander
+                obj.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            if obj.property("fieldw"):                          # Rasterbreite nach dem Stylesheet erneut festsetzen
+                obj.setFixedWidth(FIELD_W)
         elif t == QEvent.Wheel and isinstance(obj, (QAbstractSpinBox, QComboBox)) and not obj.hasFocus():
             p = obj.parentWidget()
             while p is not None and not isinstance(p, QScrollArea):
@@ -223,6 +325,115 @@ class _DisabledHint(QObject):
 
 def hint_when_disabled(group, text):
     return _DisabledHint(group, text)
+
+
+# ---------------------------------------------------------------------------- Karten einklappen / Zeilen verschieben
+def _row_of(form, w):
+    """Zeile eines QFormLayout, deren Feld das Widget w ist oder enthält (Feld als Layout) -> Index oder -1."""
+    for r in range(form.rowCount()):
+        for role in (QFormLayout.FieldRole, QFormLayout.SpanningRole):
+            it = form.itemAt(r, role)
+            if it is None:
+                continue
+            if it.widget() is w:
+                return r
+            lay = it.layout()
+            if lay is not None and any(lay.itemAt(i).widget() is w for i in range(lay.count())):
+                return r
+    return -1
+
+
+def _move_row(src, r, dst):
+    """Zeile r aus dem QFormLayout src ans Ende von dst (Beschriftung und Feld bleiben dieselben Objekte)."""
+    res = src.takeRow(r)
+    lw = res.labelItem.widget() if res.labelItem is not None else None
+    fi = res.fieldItem
+    fw = (fi.widget() or fi.layout()) if fi is not None else None
+    if lw is not None and fw is not None:
+        dst.addRow(lw, fw)
+    elif fw is not None:
+        dst.addRow(fw)
+    elif lw is not None:
+        dst.addRow(lw)
+
+
+def split_group(group, first, last, title, n=None):
+    """Zeilen von `first` bis `last` (Feld-Widgets; oder `n` Zeilen ab `first`) aus der Karte `group` in eine neue
+    Karte direkt darunter verschieben (z. B. „Referenzierung“ aus „Auswertung“). -> neue QGroupBox."""
+    from PySide6.QtWidgets import QGroupBox
+    src = group.layout()
+    r0 = _row_of(src, first)
+    r1 = r0 + n - 1 if n else _row_of(src, last)
+    assert 0 <= r0 <= r1, (title, r0, r1)
+    new = QGroupBox(title)
+    dst = make_form(new)
+    for _ in range(r1 - r0 + 1):
+        _move_row(src, r0, dst)
+    lay = group.parentWidget().layout()
+    lay.insertWidget(lay.indexOf(group) + 1, new)
+    return new
+
+
+class Fold(QObject):
+    """Karte (QGroupBox) zum Einklappen: Klick auf den Titel klappt auf/zu, „▸/▾“ davor, „(geändert)“ dahinter,
+    wenn `changed()` meldet, dass darin etwas vom Standard abweicht. Zustand je Karte in QSettings gemerkt.
+    Der Inhalt wandert in ein eigenes Widget (dieselben Objekte, nur umgehängt)."""
+
+    def __init__(self, group, name, settings=None, changed=None, opened=False):
+        super().__init__(group)
+        self.group, self.name, self.settings, self.changed = group, name, settings, changed
+        self.base = group.title()
+        lay = group.layout()
+        self.body = QWidget()
+        if isinstance(lay, QFormLayout):
+            nf = make_form(self.body)
+            nf.setContentsMargins(0, 0, 0, 0)
+            while lay.rowCount():
+                _move_row(lay, 0, nf)
+            lay.addRow(self.body)
+        else:
+            nl = QVBoxLayout(self.body)
+            nl.setContentsMargins(0, 0, 0, 0)
+            nl.setSpacing(lay.spacing())
+            while lay.count():
+                it = lay.takeAt(0)
+                if it.widget() is not None:
+                    nl.addWidget(it.widget())
+                elif it.layout() is not None:
+                    nl.addLayout(it.layout())
+                else:
+                    nl.addItem(it)
+            lay.addWidget(self.body)
+        group.installEventFilter(self)
+        if settings is not None:
+            opened = str(settings.value(f"fold/{name}", opened)).lower() in ("true", "1")
+        self.set_open(opened, remember=False)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.MouseButtonRelease and ev.position().y() < 36:
+            self.set_open(not self.opened)
+            return True
+        return False
+
+    def set_open(self, on, remember=True):
+        self.opened = bool(on)
+        self.body.setVisible(self.opened)
+        lay = self.group.layout()                             # zugeklappt: nur die Titelzeile, kein leerer Innenrand
+        lay.setContentsMargins(16, 6 if self.opened else 0, 16, 14 if self.opened else 0)
+        if self.opened:
+            self.group.setMinimumHeight(0)
+            self.group.setMaximumHeight(16777215)
+        else:
+            self.group.setFixedHeight(self.group.fontMetrics().height() + 26)
+        self.group.setCursor(Qt.ArrowCursor if self.opened else Qt.PointingHandCursor)
+        if remember and self.settings is not None:
+            self.settings.setValue(f"fold/{self.name}", self.opened)
+        self.refresh()
+
+    def refresh(self):
+        from uvvis_i18n import T
+        mark = f"   ({T('adv_changed')})" if self.changed is not None and self.changed() else ""
+        self.group.setTitle(("▼  " if self.opened else "▶  ") + self.base + mark)
 
 
 def resolve(mode):
@@ -344,10 +555,12 @@ QToolBar QToolButton:hover {{ background: {c['hover']}; border-color: {c['border
 QToolBar QToolButton:pressed {{ background: {c['border']}; }}
 QToolBar::separator {{ background: {c['border']}; width: 1px; margin: 5px 6px; }}
 QFrame#bottomBar {{ background: {c['window']}; border-top: 1px solid {c['border']}; }}
-QGroupBox {{ font-weight: bold; }}
+QGroupBox {{ font-weight: bold; padding-top: 2.5em; }}
+QGroupBox::title {{ left: 16px; top: 12px; }}
+QGroupBox#resultCard {{ padding-top: 8px; }}
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPushButton {{ min-height: 20px; }}
 QGroupBox QWidget {{ font-weight: normal; }}
 QGroupBox QGroupBox {{ font-weight: bold; }}
-QAbstractSpinBox {{ max-width: 160px; }}
 QLabel#cardHint {{ color: {c['text2']}; background: {c['card']}; border: 1px dashed {c['border_strong']};
     border-radius: 8px; padding: 10px 14px; }}
 QToolButton[accent="true"] {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
