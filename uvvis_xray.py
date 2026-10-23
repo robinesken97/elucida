@@ -316,7 +316,14 @@ COV = {"H": 0.31, "D": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C":
 BOND_TOL = 0.45
 
 
+# Kugel-Stab wie im ORCA-Handbuch (Avogadro/Jmol-Farben, gesättigt): nur für den Stil „depth“
+ORCA_COLORS = {"C": "#909090", "H": "#FFFFFF", "N": "#3050F8", "O": "#FF0D0D", "F": "#90E050", "Cl": "#1FF01F",
+               "Br": "#A62929", "I": "#940094", "S": "#FFFF30", "P": "#FF8000", "Si": "#F0C8A0", "B": "#FFB5B5"}
+
+
 def default_color(el, style=None):
+    if style == "depth" and el in ORCA_COLORS:
+        return ORCA_COLORS[el]
     if el in OLEX2_COLORS:
         return OLEX2_COLORS[el]
     if el in METALS:
@@ -1426,15 +1433,17 @@ def allowed_style(style, allowed, fallback):
     """Stil alter Projekte, der im Tab nicht mehr wählbar ist -> Ersatz (zeichnen kann XrayFigure alle)."""
     return style if style in allowed else fallback
 DEPTH_A = 8.0                             # Tiefe (Å), über die der Stil „depth“ voll aufhellt
-DEPTH_MAX = 0.35                          # … bis 35 % zum Weiß (vorher 60 %: Molekül wirkte ausgewaschen)
+DEPTH_MAX = 0.35                          # … bis 35 % zum Weiß
+FOG_STYLES = ()                           # Stile mit Aufhellung nach hinten (ORCA-Vorlage hat keine)
 # Phong-Beleuchtung (Grundanteil ka + diffus kd·(n·L) + Glanz ks·(n·H)^p), angepasst an eine IboView-Abbildung
 # des Nutzers (Fit an die Kohlenstoffkugel: Licht oben links 40° über der Bildebene, Grundanteil 0.31, diffus 0.48 bei
 # Grau 0.55; Glanzpunkt klein und rein weiß). „depth“: matt, weicher, kaum Glanz. Schichten = Höhenlinien der
 # Helligkeit (Vektor in PDF/SVG): Kugeln über contourpy, Stäbe als Zylinder je nach Lage zum Licht.
 SHADE = {
     "ballstick": dict(el=40.0, ka=0.567, kd=0.874, ks=0.32, p=160, nd=30, nr=16, outline=True),
-    # Kugel-Stab für Rechnungen (wie CYLview): kräftige Farben, kleiner Glanzpunkt, feine Kontur
-    "depth": dict(el=45.0, ka=0.42, kd=0.72, ks=0.3, p=28, nd=20, nr=12, outline=True),
+    # Kugel-Stab wie im ORCA-Handbuch (an dessen Abbildung gemessen: Licht oben links 47° über der Bildebene,
+    # Mitte/Lichtseite gesättigt, Schattenseite bis ~50 %, weicher Glanzpunkt bei halbem Radius), ohne Umriss
+    "depth": dict(el=47.0, ka=0.5, kd=0.97, ks=0.3, p=150, nd=24, nr=14, outline=False, soft=True, spot=0.5),
     # Strichzeichnung wie in älteren JOC-Abbildungen (Nutzervorlage): weiße Kugeln mit Umriss, hohle Stäbe
     "cartoon": dict(el=45.0, ka=1.0, kd=0.0, ks=0.0, p=1, nd=1, nr=1, outline=True),
 }
@@ -1446,7 +1455,15 @@ def _light3(style):
     e = math.radians(SHADE[style]["el"])
     L = np.array([LIGHT[0] * math.cos(e), LIGHT[1] * math.cos(e), math.sin(e)])
     H = L + np.array([0.0, 0.0, 1.0])
+    hr = SHADE[style].get("spot")                 # Glanzpunkt bei diesem Anteil des Radius (eigenes Glanzlicht)
+    if hr is not None:
+        H = np.array([LIGHT[0] * hr, LIGHT[1] * hr, math.sqrt(1 - hr * hr)])
     return L, H / np.linalg.norm(H)
+
+
+def spec_val(sp, lev):
+    """Helligkeitszuschlag einer Glanzschicht: weich (soft, ORCA: auslaufender Lichtfleck) oder als Scheibe."""
+    return sp["ks"] * lev if sp.get("soft") else sp["ks"] * (lev + (1 - lev) * 0.5)
 
 
 _SPHERE_CACHE = {}
@@ -1483,7 +1500,7 @@ def sphere_unit_layers(style):
         for P in regions(ndl, j / sp["nd"]):
             out.append((P, "d", sp["ka"] + sp["kd"] * (j + 0.5) / sp["nd"]))
     for lev in (SPEC_LEVELS if sp["ks"] > 0 else ()):
-        val = sp["ks"] * (lev + (1 - lev) * 0.5)
+        val = spec_val(sp, lev)
         for P in regions(ndh ** sp["p"], lev):
             out.append((P, "s", val))
     _SPHERE_CACHE[style] = out
@@ -1567,7 +1584,7 @@ def rod_levels(style):
     sp = SHADE[style]
     out = [("d", j / sp["nr"], sp["ka"] + sp["kd"] * (j + 0.5) / sp["nr"]) for j in range(sp["nr"])]
     out[0] = ("d", -1.0, out[0][2])                              # ganze Breite
-    return out + [("s", lev, sp["ks"] * (lev + (1 - lev) * 0.5)) for lev in (SPEC_LEVELS if sp["ks"] > 0 else ())]
+    return out + [("s", lev, spec_val(sp, lev)) for lev in (SPEC_LEVELS if sp["ks"] > 0 else ())]
 
 
 def shade_color(base, kind, val, style, fog=0.0):
@@ -1584,9 +1601,9 @@ def shade_color(base, kind, val, style, fog=0.0):
 
 
 ROD_W = {"ballstick": 0.2, "depth": 0.2, "cartoon": 0.17}      # Stabdicke (Å) wie in den Vorlagen
-BALL_R = {"ballstick": 0.45, "depth": 0.52, "cartoon": 0.6}     # Kugelradius = Faktor × kovalenter Radius
+BALL_R = {"ballstick": 0.45, "depth": 0.45, "cartoon": 0.6}     # Kugelradius = Faktor × kovalenter Radius
 BALL_RMIN = {"cartoon": 0.24, "depth": 0.21}                    # kleinster Radius (H), sonst 0.2 Å
-BALL_SQRT = ("depth", "cartoon")              # Radius wächst nur mit √(kovalenter Radius): Cl, Br, Metalle nicht riesig
+BALL_SQRT = ("cartoon",)                      # Radius wächst nur mit √(kovalenter Radius): Cl, Br, Metalle nicht riesig
 ROD_INNER = {"cartoon": 0.62}                                   # Kern des Stabs (Anteil der Breite), Rest = Umriss
 PERSPECTIVE = {"cartoon": 0.07}                                 # Kugeln je Å näher am Betrachter größer
 
@@ -1801,9 +1818,9 @@ class XrayFigure:
         return shade_layers(it, n) + [base]
 
     def _fog(self, z):
-        """Tiefe (nur Stil „Kugel-Stab mit Tiefe“): vorn unverändert, je Å nach hinten heller, ab 6 Å hinter dem
-        vordersten Atom 55 % zum Weiß – kleine Moleküle bleiben so fast unverändert, große bekommen Tiefe."""
-        if self.style != "depth":
+        """Tiefe nach hinten heller (DEPTH_A/DEPTH_MAX) – derzeit in keinem Stil (FOG_STYLES; Kugel-Stab wie ORCA
+        ohne Aufhellung)."""
+        if self.style not in FOG_STYLES:
             return 0.0
         return DEPTH_MAX * min(1.0, max(0.0, (self._zmax - z) / DEPTH_A))
 
@@ -1912,8 +1929,6 @@ class XrayFigure:
                 if self.style == "cartoon":                # Strichzeichnung: weiß mit schwarzem Umriss
                     faces = ["white"] * len(faces)
                     edge, elw = (0, 0, 0), max(0.5, 0.75 * self.cfg.get("scale", 1.0))
-                elif self.style == "depth":                # feine Kontur, mit der Tiefe heller wie die Kugel
-                    edge, elw = fogged((0.12, 0.12, 0.12), fog), max(0.3, 0.45 * self.cfg.get("scale", 1.0))
             elif mercury:
                 faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
             else:
@@ -2077,7 +2092,7 @@ class XrayFigure:
             ann = self.ax.annotate(self._label_text(a, self.style in ("flat", "mercury")), xy=(it["x"], it["y"]), xycoords="data",
                                    xytext=(0, 0), textcoords="offset points", ha="center", va="center",
                                    fontsize=fs, zorder=60,
-                                   color=label_color(a["el"], o.get("colors") or {}, o.get("label_color"))
+                                   color=label_color(a["el"], o.get("colors") or {}, o.get("label_color"), self.style)
                                    or lc.get("color") or "black",
                                    annotation_clip=False, **extra)
             ann._atom = it["k"]
@@ -2476,11 +2491,11 @@ def label_color_combo(st, on_change):
     return cb
 
 
-def label_color(el, colors, mode):
+def label_color(el, colors, mode, style=None):
     """Farbe eines Atomlabels: schwarz oder Atomfarbe; helle Farben (H weiß, Cl hellgrün) bis zur Lesbarkeit dunkler."""
     if mode != "atom":
         return None
-    c = np.array(to_rgb(colors.get(el) or default_color(el)))
+    c = np.array(to_rgb(colors.get(el) or default_color(el, style)))
     lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
     if lum > 0.45:
         c = c * (0.45 / lum)

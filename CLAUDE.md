@@ -88,7 +88,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   weißer Rand). Auswahl je Tab (Nutzerwunsch): X-Ray nur Mercury/Olex2 (`XRAY_STYLES`), DFT Mercury/Olex2/
   Kugel-Stab „depth“/Strichzeichnung „cartoon“ (`DFT_STYLES`); alte Projekte über `allowed_style` (X-Ray → Mercury,
   DFT „ballstick“ → „depth“). „cartoon“ nach JOC-Vorlage: weiße Kugeln mit schwarzem Umriss, hohle Stäbe
-  (`ROD_INNER`), Perspektive (`PERSPECTIVE`); „depth“ wie CYLview (kräftig, feine Kontur, Radius ∝ √kovalent, `BALL_SQRT`).
+  (`ROD_INNER`), Perspektive (`PERSPECTIVE`); „depth“ nach der Kugel-Stab-Abbildung im ORCA-6-Handbuch (gemessen: Jmol-Farben
+  `ORCA_COLORS`, Licht 47°, weicher Glanzpunkt `soft`/`spot`, kein Umriss, keine Aufhellung `FOG_STYLES`).
   Labelfarbe schwarz oder Atomfarbe (`label_color`, helle Farben abgedunkelt). Kugel-Stil (`BALL_STYLES`, nach Vorlagebildern des Nutzers): „ballstick“ wie IboView (Schattenrand unten
   rechts, Glanzpunkt, feiner Umriss, dünne Stäbe 0.2 Å mit Glanzstreifen zur Lichtseite), „depth“ matt mit dicken Stäben
   (0.36 Å) und Aufhellung nach hinten (`DEPTH_A` = 6 Å bis `DEPTH_MAX`). Schattierung = Phong (`SHADE`, an die

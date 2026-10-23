@@ -1271,7 +1271,7 @@ TEXTS = {
     "xr_style_mercury": ("Mercury (schattiert)", "Mercury (shaded)"),
     "xr_style_flat": ("Olex2 (flach, fette Labels)", "Olex2 (flat, bold labels)"),
     "xr_style_ballstick": ("Kugel-Stab, glänzend (wie IboView)", "Ball and stick, glossy (like IboView)"),
-    "xr_style_depth": ("Kugel-Stab (Elementfarben, hinten heller)", "Ball and stick (element colours, back lighter)"),
+    "xr_style_depth": ("Kugel-Stab (wie ORCA-Handbuch)", "Ball and stick (like the ORCA manual)"),
     "xr_style_cartoon": ("Strichzeichnung (weiß, hohle Stäbe)", "Line drawing (white, hollow sticks)"),
     "xr_atoms": ("Atome", "Atoms"),
     "xr_atom": ("Atom", "Atom"),

@@ -4697,8 +4697,9 @@ def selftest(outdir, with_isnet=False):
                 assert XRAY.default_color("C", "mercury") == XRAY.OLEX2_COLORS["C"]               # C grau wie bisher
                 assert all(a_.get_fontweight() == "bold" for a_ in F_s.ann_items.values())
                 assert all(ln_.get_color() == "black" for _, _, ln_, h_ in F_s.bond_art if h_ is None)
-            if sty_ == "depth":
-                assert F_s._fog(F_s._zmax) == 0.0 and abs(F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) - XRAY.DEPTH_MAX) < 1e-9
+            if sty_ == "depth":                                 # wie ORCA-Handbuch: ohne Aufhellung, Jmol-Farben
+                assert F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) == 0.0
+                assert XRAY.default_color("O", "depth") == "#FF0D0D" and XRAY.default_color("O") != "#FF0D0D"
             f_s = t_x.export_to(out / f"xray_style_{sty_}")
             assert all(f_.exists() and f_.stat().st_size > 500 for f_ in f_s if f_.suffix in (".pdf", ".svg", ".png"))
         XRAY.XRAY_STYLES = styles0_
@@ -4712,7 +4713,7 @@ def selftest(outdir, with_isnet=False):
         n_lab_ = next(a_ for k_, a_ in t_x.F.ann_items.items()
                       if k_.startswith("lbl_") and t_x.F.mol.atoms[a_._atom]["el"] not in ("C", "H"))
         el_ = t_x.F.mol.atoms[n_lab_._atom]["el"]
-        assert to_rgb(n_lab_.get_color()) == to_rgb(XRAY.label_color(el_, {}, "atom")), (el_, n_lab_.get_color())
+        assert to_rgb(n_lab_.get_color()) == to_rgb(XRAY.label_color(el_, {}, "atom", "mercury")), (el_, n_lab_.get_color())
         assert to_rgb(n_lab_.get_color()) != (0, 0, 0)
         hc_ = XRAY.label_color("H", {}, "atom")
         assert 0.299 * hc_[0] + 0.587 * hc_[1] + 0.114 * hc_[2] <= 0.45 + 1e-9, hc_
