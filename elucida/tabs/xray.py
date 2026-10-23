@@ -1,4 +1,4 @@
-"""uvvis_xray.py - Kristallstrukturen aus CIF: ORTEP-Abbildung, Bindungen/Winkel/Diederwinkel, SI-Tabellen.
+"""elucida/tabs/xray.py - Kristallstrukturen aus CIF: ORTEP-Abbildung, Bindungen/Winkel/Diederwinkel, SI-Tabellen.
 
 CIF:   eigener Leser (CIF 1.1-Syntax: data_-Blöcke, loop_, Strings in '…'/"…", Textfelder ;…;), Zahlen bleiben
        zusätzlich als Text erhalten, damit Werte mit Standardabweichung exakt wie in der CIF erscheinen.

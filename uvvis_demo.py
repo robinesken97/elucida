@@ -13,11 +13,11 @@ from pathlib import Path
 
 import numpy as np
 
-import uvvis_dft as DFT
+from elucida.tabs import dft as DFT
 from elucida.tabs import epr as EPR
 from elucida.core import images as IMG
 from elucida.tabs import sec as SEC
-import uvvis_xray as XRAY
+from elucida.tabs import xray as XRAY
 
 
 def write_dta(path, cycles, rate, cycle_col=False, times=None):

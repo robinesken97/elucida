@@ -1,4 +1,4 @@
-"""uvvis_dft.py - DFT-Geometrien (xyz): Ansicht wie im X-Ray-Tab, Atome per Klick umnummerieren, xyz speichern.
+"""elucida/tabs/dft.py - DFT-Geometrien (xyz): Ansicht wie im X-Ray-Tab, Atome per Klick umnummerieren, xyz speichern.
 
 xyz:   Atomzahl, Kommentarzeile, je Atom „El x y z“ (Symbol, Label wie „C12“ oder Ordnungszahl); mehrere Bilder
        hintereinander (ORCA-Trajektorie) werden alle gelesen, gezeigt wird das letzte. Beim Speichern bleiben die
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-import uvvis_xray as XRAY
+from elucida.tabs import xray as XRAY
 from elucida.app.i18n import T
 
 ELEMENTS = ("H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr "

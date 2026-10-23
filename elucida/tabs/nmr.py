@@ -14,7 +14,7 @@ import re
 import uuid
 from pathlib import Path
 
-import uvvis_xray as XRAY
+from elucida.tabs import xray as XRAY
 from elucida.app.i18n import T
 
 KINDS_2D = ("COSY", "HSQC", "HMQC", "HMBC", "NOESY", "ROESY", "TOCSY", "HOESY", "INADEQUATE", "2D")

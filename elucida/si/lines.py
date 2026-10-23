@@ -251,7 +251,7 @@ def html_runs(h):
 
 def markup_runs(markup, bold=False):
     """Tabellen-Markup des X-Ray-Tabs (*kursiv*, _{tief}, ^{hoch}, ~{Überstrich}, Zeilenumbruch \n) -> Läufe."""
-    import uvvis_xray as XRAY
+    from elucida.tabs import xray as XRAY
     out = []
     for li, line in enumerate(str(markup).split("\n")):
         if li:

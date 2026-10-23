@@ -57,8 +57,8 @@ from elucida.tabs import sec as SECMOD  # noqa: E402
 from elucida.tabs import epr as EPRMOD  # noqa: E402
 from elucida.tabs import hrms as HRMS  # noqa: E402
 from elucida.tabs import ir_ea as IRMS  # noqa: E402
-import uvvis_xray as XRAY  # noqa: E402
-import uvvis_dft as DFT  # noqa: E402
+from elucida.tabs import xray as XRAY  # noqa: E402
+from elucida.tabs import dft as DFT  # noqa: E402
 from elucida.tabs import nmr as NMR  # noqa: E402
 from elucida.tabs import synthesis as SYN  # noqa: E402
 from elucida.si import lines as SI  # noqa: E402
