@@ -141,9 +141,16 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Lichter (`IBO_LIGHTS`, Haupt­licht **oben rechts**), diffus 0.7·c^0.8, Glanz k·(−0.5c¹⁶+1.2c⁶⁴) nur über n·L;
   Deckkraft = α·D/|n_z| (Ränder deckender), nur Vorderseiten, die **hintersten 4** Schichten vor dem Atom; Aufhellung
   ab 1 Bohr hinter der Mitte über 22 Bohr. Atome mit Orbital immer Stil `iboview` (Radius 0.4 × IboView-Tabelle,
-  RasMol-Farben, Stab 0.148 Å zur Mitte auf 72 % verjüngt = Trapeze `ROD_TAPER`). Orbital = Rasterbild
-  (`OrbitalImage`, Raycasting auf dem Gitter, beim Zeichnen in Zielauflösung, Export ≤ `ORB_MAX_DPI` 300, beim
-  Ziehen 1/3) über den Vektor-Atomen; Verdeckung über Tiefenkarte der Kugeln/Stäbe (Nutzer-OK: Rasterbild im PDF).
+  RasMol-Farben, Stab 0.148 Å zur Mitte auf 72 % verjüngt). Nutzerwunsch „genauso wie IboView“: geprüft gegen ein
+  lokal kompiliertes IboView (Scratchpad, nie ins Repo) mit gleicher Kamera – Kugeln pixelgenau (p95 < 1.2 %),
+  Isowerte gleich. Kugeln = Höhenlinien der fertigen Farbe mit Löchern (`ibo_sphere_layers`), Stäbe = Längsstreifen
+  mit exakter Zylinderfarbe auch schräg (`ibo_rod_colors`); Stäbe zum Betrachter liegen VOR ihrer Kugel ab der
+  Austrittskurve (`atom_rods_over`, wie der Tiefenpuffer). Mit Molden: Bindungen/-ordnungen wie IboView = Wiberg in
+  IAO (MINAO aus `uvvis_minao`, `iao_bond_orders`, ≥ 0.2; ±0.2 an ganzer Zahl → ganz), n Stäbe à 1.4/n nebeneinander
+  (Abstand 0.7 Stabradien, Richtung `ibo_tan_u`), Teilbindung < 0.8 gestrichelt; Cube: Einfachbindungen. Element-
+  symbole (C/Heteroatome, 0.8 Bohr, Atomfarbe −20 %, schwarzer Rand) abschaltbar (`orb_labels`). Orbital = Rasterbild
+  (`OrbitalImage`, Raycasting auf dem Gitter, Kanten 2×2 nachgerechnet, beim Zeichnen in Zielauflösung, Export ≤
+  `ORB_MAX_DPI` 300, beim Ziehen 1/4) über den Vektor-Atomen; Verdeckung über Tiefenkarte (Nutzer-OK: Raster im PDF).
   Cube: MO aus MO-Liste/Dateiname (ORCA „mo21a“, ab 0), HOMO/LUMO aus der Ausgabe der Geometrie. Molden: eigene
   Gauß-Auswertung bis g; Konvention (Primitive normiert/roh, ORCA-Vorzeichen f/g ±3/±4) über CᵀSC = 1 gewählt,
   > 1e-3 **ablehnen**. Geprüft gegen PySCF (cc-pVTZ kartesisch/kugelförmig, def2-QZVP mit g: Werte wie deren Cubes,
@@ -237,6 +244,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 | `uvvis_hrms.py` | Tab HRMS: Chromatogramm (TIC/XIC, LC-Bereich per `SpanSelector`), gemitteltes Linienspektrum (`averaged_spectrum`, 5 ppm), Peak per Klick, Isotopenmuster (`isotope_pattern`, Isotope aus RDKit, Feinstruktur bis m/20000 zusammengefasst). Leser/Ionenmassen in `uvvis_irms`. |
 | `uvvis_dft.py` | Tab DFT: xyz-Leser (mehrere Bilder, Ordnungszahlen), `read_text` (UTF-16), `parse_orca`/`parse_gaussian`/`read_calc`, `si_parts`/`computational_details` (SI-Block, englisch), `match_reference`/`kabsch` (Vergleichsmodus), `bonds_of` (kovalente Radien wie X-Ray), `XyzMolecule`, `renumber`, `write_xyz`, `DFTTab` (Klick-Nummerierung, SI kopieren, Word), `make_test_xyz`/`make_test_orca`/`make_test_gaussian`. Zuschnitt der SI-Bilder: `XRAY.save_tight`. |
 | `uvvis_orbitals.py` | Orbitale (DFT-Tab): Cube-Leser/-Schreiber, Molden-Leser + `Basis` (Überlappung Obara–Saika, Konventionsprüfung, Auswertung), `molden_grid`, Orbitalenergien ORCA/Gaussian, `iso_for_fraction`, `Volume`, `render` (Raycasting), `occluder_depth`, `OrbitalImage`, IboView-Konstanten, `make_test_cube`/`make_test_molden`. |
+| `uvvis_minao.py` | Minimalbasis MINAO (Daten aus PySCF, Apache-2.0) für IAO-Bindungsordnungen im Orbitalbild. |
 | `uvvis_nmr.py` | Tab NMR: `svg_info`/`svg_peaks` (Mnova-SVG), Bruker `acq_params`, `parse_mnova`/`nmr_line`, `caption_html`, Strukturplatzierung (`occupancy`, `auto_place`, `compose_structure`), `NMRTab`, `make_test_svg`/`make_test_acqus`. |
 | `uvvis_synth.py` | Tab Synthese: `parse_amounts`/`check_amounts` (Rundung), `row_amounts`/`amount_text`, `scheme_files`/`scheme_molecules`/`scheme_drawing`, `doc_to_html`, `SynthTab`. |
 | `uvvis_cdxml.py` | CDXML selbst zeichnen (`render_svg`: Bindungen, Labels, Formelstil, Pfeile, Texte; Labels für CDXML ohne `<t>`), `scheme_texts`/`scheme_reagents`. |
@@ -309,6 +317,6 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - BSW-Datei mit Sprung in Spektrum 60 (CSV-Export zum Vergleich fehlt).
 - Echte Gaussian-TD-DFT-Ausgabe noch nicht getestet (nur ORCA inkl. SOC); DFT-Tab: Gaussian-Leser mit einer Opt+Freq geprüft.
 - DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering, Orbitale wie IboView). Orbitale: echte ORCA-Molden-
-  Datei und ORCA-Cube noch nicht gegen orca_plot geprüft; Mehrfachbindungen zeigt IboView als mehrere Stäbe (fehlt). Multireferenz-Auswertung (CASSCF/NEVPT2/SORCI,
+  Datei und ORCA-Cube noch nicht gegen orca_plot geprüft (PySCF-Molden ja, inkl. g). Multireferenz-Auswertung (CASSCF/NEVPT2/SORCI,
   z. B. Diradikaloide, Triplett-Vinylidene) zurückgestellt: großer Parser, bisher Abschreiben der ORCA-Tabellen.
   Vergleichsmodus mit echter CIF noch ungeprüft (nur künstliche CIF und echte DFT-Paare).

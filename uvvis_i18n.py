@@ -1579,6 +1579,9 @@ TEXTS = {
     "dft_orb_style": ("Mit Orbital werden die Atome wie in IboView gezeichnet.",
                       "With an orbital, atoms are drawn as in IboView."),
     "xr_style_iboview": ("IboView", "IboView"),
+    "dft_orb_labels": ("Elementsymbole wie IboView", "Element symbols as in IboView"),
+    "dft_orb_labels_tip": ("Buchstaben auf C und Heteroatomen (nicht H), wie IboView sie standardmäßig zeigt.",
+                           "Letters on C and heteroatoms (not H), as IboView shows them by default."),
     "dft_si": ("Rechnung für die SI", "Calculation for the SI"),
     "dft_si_hint": ("Für den SI-Block eine ORCA-6- oder Gaussian-Ausgabe (.out/.log) laden; reine xyz-Dateien "
                     "enthalten keine Angaben zur Rechnung.",

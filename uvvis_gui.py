@@ -4672,15 +4672,16 @@ def selftest(outdir, with_isnet=False):
             if sty_ in XRAY.BALL_STYLES:
                 assert (sty_ == "cartoon" or abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9) \
                     and c_it["w"] == c_it["h"] and not c_it["curves"]
-                assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and (sty_ == "iboview" and len(F_s.rods["seg"]) > 10 or
+                                                           len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0)
                 # schnelles Drehen: Segmente im gemeinsamen Puffer (verjüngte IboView-Stäbe: Trapeze)
-                assert F_s.rods["inplace"] or sty_ in XRAY.ROD_TAPER, "Stabsegmente nicht im gemeinsamen Puffer"
+                assert F_s.rods.get("inplace") or sty_ == "iboview", "Stabsegmente nicht im gemeinsamen Puffer"
                 pc_s = F_s.atom_art[c_it["k"]][0]
                 nv_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
                 F_s.set_drag(True)                                     # Ziehen: gröbere Kugelpolygone, gleiche Schichten
                 nd_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
                 F_s.set_drag(False)
-                assert len(nd_) == len(nv_) and sum(nd_) < sum(nv_), (sum(nd_), sum(nv_))
+                assert len(nd_) == len(nv_) and (sum(nd_) < sum(nv_) or sty_ == "iboview"), (sum(nd_), sum(nv_))
                 assert [len(q_.vertices) for q_ in pc_s.get_paths()] == nv_
                 fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()                         # Phong: dunkel … Glanz
                 if sty_ == "cartoon":                           # weiß mit schwarzem Umriss, hohle Stäbe, Perspektive
@@ -4701,10 +4702,12 @@ def selftest(outdir, with_isnet=False):
             if sty_ == "iboview":                               # wie IboView: Radien/Farben, Stab zur Mitte 72 %
                 import uvvis_orbitals as ORB
                 assert abs(c_it["w"] / 2 - 0.4 * 1.43 * ORB.BOHR) < 1e-9 and XRAY.default_color("C", sty_) == "#999999"
-                q_ = F_s.atom_rods[c_it["k"]][0].get_paths()[0].vertices[:4]
-                w0_, w1_ = np.linalg.norm(q_[0] - q_[3]), np.linalg.norm(q_[1] - q_[2])
-                assert abs(min(w0_, w1_) / max(w0_, w1_) - ORB.IBO_TAPER) < 1e-6, (w0_, w1_)
+                sp_ = F_s.rods["specs"]
+                assert all(abs(x_["r1"] / x_["r0"] - ORB.IBO_TAPER) < 1e-9 for x_ in sp_)          # Einfachbindungen
+                assert len(F_s.rods["seg"]) == len(sp_) * ORB.IBO_ROD_STRIPS
                 assert F_s._fog(-20.0) == 1.0 and F_s._fog(0.0) == 0.0
+                assert set(F_s.elem_lab) == {i_["k"] for i_ in F_s.scene["atoms"] if i_["el"] not in ("H", "D")}
+                assert F_s.elem_lab[c_it["k"]].get_text() == "C"
             if sty_ == "depth":                                 # wie ORCA-Handbuch: ohne Aufhellung, Jmol-Farben
                 assert F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) == 0.0
                 assert XRAY.default_color("O", "depth") == "#FF0D0D" and XRAY.default_color("O") != "#FF0D0D"
@@ -5099,7 +5102,33 @@ def selftest(outdir, with_isnet=False):
         w.dft_state.update(entries=[], current=None)
         t_d.sync_widgets()
         t_d.render(push=False)
-        report.append("DFT orbitals from Molden (basis up to g, convention check, HOMO/LUMO): OK")
+        # Bindungsordnungen wie IboView (IAO-Wiberg): H2 Einfachbindung, Ne ohne Bindung; Doppelbindung -> zwei Stäbe
+        bo_ = ORB.iao_bond_orders(bb_)
+        assert list(bo_) == [(0, 1)] and abs(bo_[(0, 1)] - 1) < 0.02, bo_
+        e_m = t_d.load_molden(str(mf_))
+        assert t_d.bond_orders(e_m) is not None and t_d.F.opts.get("bond_orders") and t_d.F.elem_lab
+        w.dft_state.update(entries=[], current=None)
+        t_d.sync_widgets()
+        t_d.render(push=False)
+        Xd_ = np.array([[0.0, 0, 0], [1.2, 0, 0], [-0.6, 0.9, 0], [-0.6, -0.9, 0]])
+        md_ = DFT.XyzMolecule(["C", "O", "H", "H"], Xd_, [(0, 1), (0, 2), (0, 3)], ["C1", "O2", "H3", "H4"])
+        assert np.allclose(np.abs(ORB.ibo_tan_u(Xd_, ["C", "O", "H", "H"], 0, 1)), [0, 1, 0])   # in der Molekülebene
+        from matplotlib.figure import Figure as Fig_
+        fg_ = Fig_(figsize=(6, 4), dpi=80)
+        FigureCanvasAgg(fg_)
+        cfg_d = core.deep_merge(core.DEFAULTS, {})
+        Fd_ = XRAY.XrayFigure(cfg_d, md_, np.eye(3), dict(style="iboview", labels=False,
+                                                         bond_orders={(0, 1): 1.95, (0, 2): 0.93, (0, 3): 1.45}), {}, fg_)
+        sp_ = Fd_.rods["specs"]
+        assert sum(1 for x_ in sp_ if x_["bond"] == 0) == 4 and sum(1 for x_ in sp_ if x_["bond"] == 1) == 2
+        assert sum(1 for x_ in sp_ if x_["bond"] == 2 and x_["r0"] == x_["r1"]) > 2       # 1.45: zweiter Stab gestrichelt
+        offs_ = {round(float(x_["off"][1]), 4) for x_ in sp_ if x_["bond"] == 0}
+        assert len(offs_) == 2 and abs(sum(offs_)) < 1e-9                                 # symmetrisch neben der Achse
+        fg_.canvas.draw()
+        Fd_.set_view(XRAY.rot("y", 1.2))                                   # C=O zeigt zum Betrachter: Stab vor dem C
+        tw_ = Fd_.atom_rods_over[0].get_paths()
+        assert any(np.ptp(p_.vertices[:, 0]) > 0 for p_ in tw_)
+        report.append("DFT orbitals from Molden (basis up to g, convention check, HOMO/LUMO, IAO bond orders): OK")
 
         # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
         ndir = out / "input" / "nmr"

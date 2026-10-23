@@ -9,7 +9,8 @@
   Molden file (ORCA: `orca_2mkl name -molden`; all MOs, HOMO and LUMO are added, further MOs from a list) or as
   Gaussian cube (ORCA: `orca_plot`, Gaussian: `cubegen`). Isosurface as in IboView enclosing 80% of the orbital
   density (adjustable, or a fixed isovalue), IboView colours per orbital, translucent with more opaque edges,
-  lighting and depth fading as in IboView; atoms are drawn as in IboView (tapered sticks).
+  lighting and depth fading as in IboView; atoms are drawn as in IboView (tapered sticks, element letters, double and
+  partial bonds from the wave function like IboView's IAO bond orders). Checked side by side against IboView itself.
 - HOMO/LUMO names and orbital energies from the Molden file or the ORCA/Gaussian output of the geometry.
 - Export: one figure per orbital (PDF/SVG with the orbital embedded as a 300 dpi image, atoms and labels stay
   vector); Word SI: orbital figures with caption below each calculation.

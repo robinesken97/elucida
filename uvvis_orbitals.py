@@ -39,6 +39,12 @@ IBO_OTHER = "#FF1493"
 IBO_BALL = 0.4                                  # Kugelradius = 0.4 × Zeichenradius
 IBO_ROD_R = 0.35 * 0.4 / 0.5                    # Stabradius am Atom (Bohr)
 IBO_TAPER = 0.72                                # Stab zur Bindungsmitte auf 72 % verjüngt
+IBO_BOND_OFFS = 0.3 * IBO_BALL                  # Stab beginnt 0.12 × Zeichenradius vom Atommittelpunkt
+IBO_FULL_BOND = 0.2                             # Bindungsordnung so nah an einer ganzen Zahl -> ganz; darunter keine Bindung
+IBO_LABEL_EM = 0.8                              # Elementsymbol: Schriftgröße 0.8 Bohr (m_LabelSize 80)
+IBO_LABEL_DARK = 0.2                            # … in der Atomfarbe, 20 % dunkler (m_LabelBrightness −0.2)
+IBO_LABEL_EDGE = 0.035                          # … mit dünnem schwarzem Rand (Strichbreite × Schriftgröße)
+IBO_LABEL_FONTS = ["Liberation Sans", "Arial", "Helvetica", "DejaVu Sans"]   # IboView: Liberation Sans
 # drei Lichter (Ansicht: x rechts, y oben, z zum Betrachter) mit Gewicht
 IBO_LIGHTS = ((np.array([0.5, 0.5, 0.70710678]), 1.0), (np.array([-0.4330127, -0.25, 0.8660254]), 0.6),
               (np.array([0.4330127, -0.25, 0.8660254]), 0.5))
@@ -48,6 +54,42 @@ ISO_FRACTION = 80.0                             # % der Orbitaldichte innerhalb 
 ORB_ALPHA = 0.6
 MOLDEN_SPACING = 0.1                            # Å, Gitter für MOs aus Molden (IboView: 12 Punkte/Å)
 MAX_LAYERS = 4
+
+
+_COV_IBO = {"H": 0.31, "B": 0.84, "C": 0.76, "N": 0.71, "O": 0.66, "F": 0.57, "Si": 1.11, "P": 1.07, "S": 1.05,
+            "Cl": 1.02, "Br": 1.2, "I": 1.39}
+
+
+def ibo_tan_u(X, els, i, j):
+    """Richtung, in der IboView die Stäbe einer Mehrfachbindung nebeneinander legt: senkrecht zur Bindung in der Ebene
+    mit dem nächsten nicht kollinearen Atom (Abstand relativ zu den kovalenten Radien, B–O/P/S bevorzugt)."""
+    i, j = min(i, j), max(i, j)
+    X = np.asarray(X, float)
+    v = X[j] - X[i]
+    v = v / (np.linalg.norm(v) or 1.0)
+    o0 = np.cross(v, [1.0, 0.0, 0.0])
+    if o0 @ o0 < 1e-1:
+        o0 = np.cross(v, [0.0, 1.0, 0.0])
+    o0 /= np.linalg.norm(o0)
+    tu = -np.cross(v, o0)
+    cov = [_COV_IBO.get(e, 1.2) for e in els]
+
+    def wd(p, k):
+        z = ELEMENTS.index(els[k]) + 1 if els[k] in ELEMENTS else 0
+        pi = 1.5 if 5 <= z <= 8 or 15 <= z <= 16 else 1.0
+        return float(np.sum((X[p] - X[k]) ** 2)) / (0.5 * (cov[p] + cov[k]) * pi) ** 2
+    cos_thr = math.cos(math.radians(10.0))
+    for k in sorted(range(len(X)), key=lambda k: min(wd(i, k), wd(j, k))):
+        if np.sum((X[k] - X[i]) ** 2) < 1e-6 or np.sum((X[k] - X[j]) ** 2) < 1e-6:
+            continue
+        w = X[k] - X[i]
+        w = w / np.linalg.norm(w)
+        if abs(v @ w) > cos_thr:
+            continue
+        tv = np.cross(v, w)
+        tv /= np.linalg.norm(tv)
+        return np.cross(tv, v)
+    return tu
 
 
 def ibo_radius(el):
@@ -69,6 +111,96 @@ def ibo_light(n, kind="atom"):
         D += w * kd * c ** e
         S += w * ks * (k3 * c ** 16 + 1.2 * c ** 64)
     return D, S
+
+
+IBO_SPHERE_LEVELS = 64                          # Kugel: Höhenlinien der fertigen Helligkeit (Vektor)
+IBO_ROD_STRIPS = 24                             # Stab: Längsstreifen über die Breite (exakte Farbe je Streifen)
+_SPHERE_IBO = {}
+
+
+def ibo_shade_rgb(base, n, kind="atom"):
+    """Fertige Farbe wie IboView (ohne Aufhellung): clip(Grundfarbe · D + S)."""
+    D, S = ibo_light(n, kind)
+    return np.clip(np.asarray(base, float)[None, :] * D[..., None] + S[..., None], 0, 1)
+
+
+def _simplify_codes(P, C, tol):
+    """Pfad mit mehreren Teilpfaden (MOVETO … CLOSEPOLY) je Teilpfad nach Douglas-Peucker vereinfachen."""
+    from uvvis_xray import simplify_polyline
+    starts = list(np.nonzero(C == 1)[0]) + [len(C)]
+    pts, codes = [], []
+    for a, b in zip(starts[:-1], starts[1:]):
+        Q = P[a:b]
+        if len(Q) > 8:
+            Q = simplify_polyline(Q, tol)
+        pts.append(Q)
+        codes.append(np.r_[1, np.full(max(0, len(Q) - 2), 2), 79][:len(Q)].astype(np.uint8))
+    return np.vstack(pts), np.concatenate(codes)
+
+
+IBO_SPHERE_TOL = 1.5e-3                         # Kugelkonturen vereinfacht (Anteil des Radius; < 0.1 px im Export)
+
+
+def ibo_sphere_layers(base, levels=IBO_SPHERE_LEVELS, tol=None):
+    """Einheitskugel wie IboView als Vektorschichten: Bereiche {Helligkeit ≥ t} (mit Löchern, z. B. der dunkle Ring um
+    die Glanzpunkte) für gleichmäßige Stufen t, Farbe = Mittel der echten Farbe im Band. -> [(Punkte, Codes, RGB)]."""
+    from matplotlib.colors import to_rgb
+    import contourpy
+    rgb = tuple(to_rgb(base))
+    tol = IBO_SPHERE_TOL if tol is None else tol
+    key = (rgb, levels, tol)
+    if key in _SPHERE_IBO:
+        return _SPHERE_IBO[key]
+    if tol != IBO_SPHERE_TOL:                                   # gröber (beim Ziehen): aus den vollen Schichten
+        out = [(*_simplify_codes(P, C, tol), c) for P, C, c in ibo_sphere_layers(base, levels)]
+        _SPHERE_IBO[key] = out
+        return out
+    g = np.linspace(-1.02, 1.02, 361)
+    X, Y = np.meshgrid(g, g)
+    rr = np.hypot(X, Y)
+    sc = np.where(rr > 0.999, 0.999 / np.maximum(rr, 1e-9), 1.0)            # außerhalb: Wert am Rand
+    u, v = X * sc, Y * sc
+    n = np.stack([u, v, np.sqrt(np.clip(1 - u ** 2 - v ** 2, 0, 1))], -1)
+    col = ibo_shade_rgb(rgb, n)
+    lum = col @ np.array([0.299, 0.587, 0.114])
+    inside = rr <= 1
+    lo, hi = float(lum[inside].min()), float(lum[inside].max())
+    t = np.linspace(lo, hi, levels + 1)
+    t_ = np.linspace(0, 2 * np.pi, 145)
+    circ = np.column_stack([np.cos(t_), np.sin(t_)])
+    band = np.clip(np.searchsorted(t, lum, side="right") - 1, 0, levels - 1)
+    out = []
+    gen = contourpy.contour_generator(X, Y, lum, fill_type=contourpy.FillType.OuterCode)
+    for j in range(levels):
+        m = inside & (band == j)
+        c = tuple(col[m].mean(axis=0)) if m.any() else None
+        if j == 0:
+            out.append((circ, np.array([1] + [2] * (len(circ) - 2) + [79], np.uint8), c or rgb))
+            continue
+        if c is None:
+            continue
+        pts, codes = gen.filled(t[j], 1e9)
+        for P, C in zip(pts, codes):
+            nr = np.hypot(P[:, 0], P[:, 1])
+            P = np.where((nr > 1)[:, None], P / np.maximum(nr, 1e-9)[:, None], P)       # auf die Scheibe
+            out.append((*_simplify_codes(P, np.asarray(C, np.uint8), tol), c))
+    _SPHERE_IBO[key] = out
+    return out
+
+
+def ibo_rod_colors(base, axis3, kind="atom", strips=IBO_ROD_STRIPS):
+    """Farben der Längsstreifen eines Zylinders mit Achse axis3 (N×3, Ansicht): Normale über die sichtbare Breite
+    u ∈ [−1, 1] = u·w⊥ + √(1−u²)·w_vorn (exakt auch für schräge Stäbe). -> (Farben N×strips×3, w⊥, w_vorn je N×3)."""
+    a = np.asarray(axis3, float)
+    a = a / np.maximum(np.linalg.norm(a, axis=1), 1e-12)[:, None]
+    wp = np.cross(a, [0.0, 0.0, 1.0])
+    nwp = np.linalg.norm(wp, axis=1)
+    wp = np.where((nwp > 1e-6)[:, None], wp / np.maximum(nwp, 1e-12)[:, None], [1.0, 0.0, 0.0])
+    wf = np.cross(wp, a)
+    wf = np.where((wf[:, 2] < 0)[:, None], -wf, wf)
+    uc = -1 + (np.arange(strips) + 0.5) * 2 / strips
+    n = uc[None, :, None] * wp[:, None, :] + np.sqrt(1 - uc ** 2)[None, :, None] * wf[:, None, :]
+    return ibo_shade_rgb(base, n, kind), wp, wf
 
 
 def ibo_fog(z):
@@ -296,11 +428,87 @@ class Volume:
 TILE = 8                                                        # Pixel je Kachel für die Tiefenbereiche
 
 
+def _trace(vol, iso, R, center, zoff, X, Y, top, floor, cp, cm, alpha, max_layers, step, budget):
+    """Strahlen (Bildschirm X, Y; von top bis floor, z zum Betrachter) -> (Farbe vormultipliziert N×3, Deckkraft N)."""
+    N = len(X)
+    C = np.zeros((N, 3), np.float32)
+    A = np.zeros(N, np.float32)
+    if not N:
+        return C, A
+    nst = np.maximum(np.ceil((top - floor) / step).astype(int) + 2, 2)
+    order = np.argsort(nst)
+    dirI = R[2] @ vol.inv.T                                     # Indexschritt je Å Tiefe
+    base_all = vol.index_of(np.column_stack([X, Y, np.zeros(N)]) @ R + center)
+    pos = 0
+    while pos < N:
+        # Strahlen ähnlicher Schrittzahl zusammen (aufsteigend; Speicher etwa ≤ budget Stützstellen)
+        cnt = max(1, budget // int(nst[order[pos]]))
+        while cnt > 1 and cnt * int(nst[order[min(pos + cnt, N) - 1]]) > budget:
+            cnt //= 2
+        sel = order[pos:pos + cnt]
+        pos += len(sel)
+        ns = int(nst[sel].max())
+        fl = floor[sel]
+        # Stützstellen von vorn nach hinten: z_j = top − j·step
+        zs = top[sel][:, None] - step * np.arange(ns)[None, :]
+        live = zs >= fl[:, None] - step
+        I = base_all[sel][:, None, :] + zs[..., None] * dirI[None, None, :]
+        v = np.zeros(zs.shape, np.float32)
+        v[live] = vol.sample(I[live])
+        ins = np.abs(v) > iso
+        # Eintritt in eine Fläche (außen -> innen, nur Vorderseiten wie IboView)
+        ent = ~ins[:, :-1] & ins[:, 1:]
+        r_, j_ = np.nonzero(ent)
+        if not len(r_):
+            continue
+        a0, a1 = np.abs(v[r_, j_]), np.abs(v[r_, j_ + 1])
+        t = np.clip((iso - a0) / np.maximum(a1 - a0, 1e-12), 0, 1)
+        zc = zs[r_, j_] - t * step
+        keep = zc > fl[r_]
+        r_, j_, t, zc = r_[keep], j_[keep], t[keep], zc[keep]
+        if not len(r_):
+            continue
+        # je Strahl die hintersten max_layers (IboView schält von hinten), dann von hinten nach vorn überlagern
+        o = np.lexsort((zc, r_))                                 # je Strahl aufsteigend in z = von hinten
+        r_, j_, t, zc = r_[o], j_[o], t[o], zc[o]
+        first = np.r_[True, r_[1:] != r_[:-1]]
+        rank = np.arange(len(r_)) - np.maximum.accumulate(np.where(first, np.arange(len(r_)), 0))
+        keep = rank < max_layers
+        r_, j_, t, zc, rank = r_[keep], j_[keep], t[keep], zc[keep], rank[keep]
+        Ic = I[r_, j_] + t[:, None] * (I[r_, j_ + 1] - I[r_, j_])
+        g = np.column_stack(vol.sample(Ic, vol.grad()))
+        sign = np.sign(v[r_, j_ + 1])
+        nw = -(sign[:, None] * g) @ vol.inv                     # Index-Gradient -> Ort; nach außen (kleineres |ψ|)
+        nv = nw @ R.T
+        nv /= np.maximum(np.linalg.norm(nv, axis=1), 1e-12)[:, None]
+        D, Sp = ibo_light(nv, "orbital")
+        base_c = np.where((sign > 0)[:, None], cp, cm)
+        col = np.clip(base_c * D[:, None] + Sp[:, None], 0, 1)
+        fog = ibo_fog(zc + zoff)[:, None]
+        col = col + (1 - col) * fog
+        a = np.clip(alpha * D / np.clip(np.abs(nv[:, 2]), 0.1, 1.0), 0, 1)
+        Cb = np.zeros((len(sel), 3), np.float32)
+        Ab = np.zeros(len(sel), np.float32)
+        for lay in range(max_layers):                          # Schicht für Schicht, hinterste zuerst
+            s_ = rank == lay
+            if not s_.any():
+                break
+            rr, aa = r_[s_], a[s_]
+            Cb[rr] = col[s_] * aa[:, None] + Cb[rr] * (1 - aa[:, None])
+            Ab[rr] = aa + Ab[rr] * (1 - aa)
+        C[sel], A[sel] = Cb, Ab
+    return C, A
+
+
+AA_EDGE = 0.03                                  # Kantenglättung: Pixel mit Sprung > 3 % zum Nachbarn 2×2 nachrechnen
+
+
 def render(vol: Volume, iso, R, center, zoff, xlim, ylim, W, H, cplus, cminus, alpha=ORB_ALPHA, occ=None,
-           max_layers=MAX_LAYERS, step_frac=0.5, budget=3_000_000):
+           max_layers=MAX_LAYERS, step_frac=0.5, budget=3_000_000, occ2=None, aa=True):
     """Orbital als RGBA-Bild (H×W×4, Zeile 0 unten, gerade Deckkraft).
     Bildschirm s = R·(p − center) (Å, z zum Betrachter); zoff: Tiefe der Szenenmitte relativ dazu (Aufhellung).
-    occ: Tiefe des vordersten Atoms je Pixel (H×W, −inf = frei); nur Flächen davor zählen."""
+    occ: Tiefe des vordersten Atoms je Pixel (H×W, −inf = frei); nur Flächen davor zählen. aa: Kanten (Silhouetten,
+    Schichtwechsel, Atomränder) mit 2×2 Unterabtastung wie IboViews doppelte Auflösung; occ2 = Verdeckung in 2W×2H."""
     img = np.zeros((H, W, 4), np.float32)
     if iso <= 0 or W < 1 or H < 1:
         return img
@@ -308,11 +516,11 @@ def render(vol: Volume, iso, R, center, zoff, xlim, ylim, W, H, cplus, cminus, a
     center = np.asarray(center, float)
     px = (xlim[1] - xlim[0]) / W
     py = (ylim[1] - ylim[0]) / H
-    # Bereich mit |ψ| > iso: Gitterpunkte -> Bildschirm, je Kachel kleinste/größte Tiefe (mit Rand)
-    sup = np.argwhere(np.abs(vol.data) > iso * 0.9)
+    # Bereich mit |ψ| > iso: Oberflächen-Gitterpunkte -> Bildschirm, je Kachel kleinste/größte Tiefe (mit Rand)
+    sup = surface_points(vol, iso)
     if not len(sup):
         return img
-    S = (vol.origin + sup @ vol.axes - center) @ R.T
+    S = (sup - center) @ R.T
     m = float(np.linalg.norm(vol.axes.sum(axis=0)))             # Raumdiagonale einer Zelle
     TW, TH = (W + TILE - 1) // TILE, (H + TILE - 1) // TILE
     zmin = np.full((TH, TW), np.inf)
@@ -328,93 +536,54 @@ def render(vol: Volume, iso, R, center, zoff, xlim, ylim, W, H, cplus, cminus, a
             o = (a >= 0) & (a < TW) & (b >= 0) & (b < TH)
             np.minimum.at(zmin, (b[o], a[o]), sz[o])
             np.maximum.at(zmax, (b[o], a[o]), sz[o])
-    tiles = np.argwhere(np.isfinite(zmin))
-    if not len(tiles):
+    act = np.isfinite(zmin)
+    if not act.any():
         return img
     step = vol.step * step_frac
-    lo = zmin[tiles[:, 0], tiles[:, 1]] - m
-    hi = zmax[tiles[:, 0], tiles[:, 1]] + m
-    nst = np.ceil((hi - lo) / step).astype(int) + 2
-    order = np.argsort(nst)
-    dirI = R[2] @ vol.inv.T                                     # Indexschritt je Å Tiefe
-    gx = (np.arange(W) + 0.5) * px + xlim[0]
-    gy = (np.arange(H) + 0.5) * py + ylim[0]
+    lo_t, hi_t = zmin - m, zmax + m
+    iy, ix = np.nonzero(np.repeat(np.repeat(act, TILE, 0), TILE, 1)[:H, :W])
+    lo = lo_t[iy // TILE, ix // TILE]
+    hi = hi_t[iy // TILE, ix // TILE]
+    floor = np.maximum(occ[iy, ix], lo) if occ is not None else lo
     cp, cm = np.array(cplus[:3], np.float32), np.array(cminus[:3], np.float32)
-    lin = np.arange(TILE)
-    pos = 0
-    while pos < len(order):
-        # Kacheln mit ähnlicher Schrittzahl zusammen (aufsteigend sortiert; Speicher etwa ≤ budget Stützstellen),
-        # Schrittzahl = größte der Gruppe, damit keine Kachel zu früh endet
-        cnt = max(1, budget // (TILE * TILE * int(nst[order[pos]])))
-        while cnt > 1 and cnt * TILE * TILE * int(nst[order[min(pos + cnt, len(order)) - 1]]) > budget:
-            cnt //= 2
-        sel = order[pos:pos + cnt]
-        ns = int(nst[sel].max())
-        pos += len(sel)
-        ty_, tx_ = tiles[sel, 0], tiles[sel, 1]
-        iy = (ty_[:, None, None] * TILE + lin[None, :, None]).repeat(TILE, 2).reshape(len(sel), -1)
-        ix = (tx_[:, None, None] * TILE + lin[None, None, :]).repeat(TILE, 1).reshape(len(sel), -1)
-        top = np.repeat(hi[sel], TILE * TILE)
-        iy, ix = iy.ravel(), ix.ravel()
-        inb = (iy < H) & (ix < W)
-        iy, ix, top = iy[inb], ix[inb], top[inb]
-        if not len(iy):
-            continue
-        floor_ = occ[iy, ix] if occ is not None else np.full(len(iy), -np.inf)
-        floor_ = np.maximum(floor_, np.repeat(lo[sel], TILE * TILE)[inb])
-        # Stützstellen von vorn nach hinten: z_j = top − j·step
-        base = vol.index_of(np.column_stack([gx[ix], gy[iy], np.zeros(len(ix))]) @ R + center)
-        zs = top[:, None] - step * np.arange(ns)[None, :]
-        live = zs >= floor_[:, None] - step
-        I = base[:, None, :] + zs[..., None] * dirI[None, None, :]
-        v = np.zeros(zs.shape, np.float32)
-        v[live] = vol.sample(I[live])
-        ins = np.abs(v) > iso
-        # Eintritt in eine Fläche (außen -> innen, nur Vorderseiten wie IboView)
-        ent = ~ins[:, :-1] & ins[:, 1:]
-        r_, j_ = np.nonzero(ent)
-        if not len(r_):
-            continue
-        a0, a1 = np.abs(v[r_, j_]), np.abs(v[r_, j_ + 1])
-        t = np.clip((iso - a0) / np.maximum(a1 - a0, 1e-12), 0, 1)
-        zc = zs[r_, j_] - t * step
-        keep = zc > floor_[r_]
-        r_, j_, t, zc = r_[keep], j_[keep], t[keep], zc[keep]
-        if not len(r_):
-            continue
-        # je Strahl die hintersten max_layers (IboView schält von hinten), dann von hinten nach vorn überlagern
-        o = np.lexsort((zc, r_))                                 # je Strahl aufsteigend in z = von hinten
-        r_, j_, t, zc = r_[o], j_[o], t[o], zc[o]
-        first = np.r_[True, r_[1:] != r_[:-1]]
-        rank = np.arange(len(r_)) - np.maximum.accumulate(np.where(first, np.arange(len(r_)), 0))
-        keep = rank < max_layers
-        r_, j_, t, zc = r_[keep], j_[keep], t[keep], zc[keep]
-        Ic = I[r_, j_] + t[:, None] * (I[r_, j_ + 1] - I[r_, j_])
-        g = np.column_stack(vol.sample(Ic, vol.grad()))
-        sign = np.sign(v[r_, j_ + 1])
-        nw = -(sign[:, None] * g) @ vol.inv                     # Index-Gradient -> Ort; nach außen (kleineres |ψ|)
-        nv = nw @ R.T
-        nv /= np.maximum(np.linalg.norm(nv, axis=1), 1e-12)[:, None]
-        D, Sp = ibo_light(nv, "orbital")
-        base_c = np.where((sign > 0)[:, None], cp, cm)
-        col = np.clip(base_c * D[:, None] + Sp[:, None], 0, 1)
-        fog = ibo_fog(zc + zoff)[:, None]
-        col = col + (1 - col) * fog
-        a = np.clip(alpha * D / np.clip(np.abs(nv[:, 2]), 0.1, 1.0), 0, 1)
-        # Überlagern je Strahl (Schicht für Schicht, hinterste zuerst)
-        C = np.zeros((len(iy), 3), np.float32)
-        A = np.zeros(len(iy), np.float32)
-        rank = rank[keep]
-        for lay in range(max_layers):
-            s = rank == lay
-            if not s.any():
-                break
-            rr, aa = r_[s], a[s]
-            C[rr] = col[s] * aa[:, None] + C[rr] * (1 - aa[:, None])
-            A[rr] = aa + A[rr] * (1 - aa)
-        hit = A > 0
-        img[iy[hit], ix[hit], :3] = C[hit] / A[hit, None]
-        img[iy[hit], ix[hit], 3] = A[hit]
+    args = (vol, iso, R, center, zoff)
+    rest = (cp, cm, alpha, max_layers, step, budget)
+    C, A = _trace(*args, (ix + 0.5) * px + xlim[0], (iy + 0.5) * py + ylim[0], hi, floor, *rest)
+    pre = np.zeros((H, W, 4), np.float32)
+    pre[iy, ix, :3], pre[iy, ix, 3] = C, A
+    if aa:
+        # Kantenpixel: Sprung in Deckkraft oder Farbe zu einem Nachbarn -> 2×2 Unterabtastung
+        d = np.zeros((H, W), bool)
+        for ax_ in (0, 1):
+            g = np.abs(np.diff(pre, axis=ax_)).max(axis=-1) > AA_EDGE
+            if ax_ == 0:
+                d[1:] |= g
+                d[:-1] |= g
+            else:
+                d[:, 1:] |= g
+                d[:, :-1] |= g
+        d &= np.repeat(np.repeat(act, TILE, 0), TILE, 1)[:H, :W]
+        ey, ex = np.nonzero(d)
+        if len(ey):
+            sub = np.zeros((len(ey), 4), np.float32)
+            for oy in (0.25, 0.75):
+                for ox in (0.25, 0.75):
+                    X_ = (ex + ox) * px + xlim[0]
+                    Y_ = (ey + oy) * py + ylim[0]
+                    lo_e = lo_t[ey // TILE, ex // TILE]
+                    if occ2 is not None:
+                        fl = np.maximum(occ2[2 * ey + int(oy > 0.5), 2 * ex + int(ox > 0.5)], lo_e)
+                    elif occ is not None:
+                        fl = np.maximum(occ[ey, ex], lo_e)
+                    else:
+                        fl = lo_e
+                    Cs, As = _trace(*args, X_, Y_, hi_t[ey // TILE, ex // TILE], fl, *rest)
+                    sub[:, :3] += Cs / 4
+                    sub[:, 3] += As / 4
+            pre[ey, ex] = sub
+    hit = pre[..., 3] > 0
+    img[hit, :3] = pre[hit, :3] / pre[hit, 3:4]
+    img[hit, 3] = pre[hit, 3]
     return img
 
 
@@ -630,6 +799,60 @@ def _overlap_1d(la, lb, PA, PB, p):
     return S
 
 
+def cart_overlap(C, L, EX, W):
+    """Überlappung kartesischer Schalenfunktionen (Σ Gewicht · Primitive) aller Schalenpaare -> {(i, j): Block}.
+    C: Zentren je Schale, L: Drehimpuls, EX/W: Exponenten/Gewichte (aufgefüllt, Gewicht 0 = leer).
+    Vektorisiert je Drehimpulspaar über alle Schalenpaare (Primitive auf gleiche Zahl aufgefüllt); weit entfernte
+    Paare (Überlappung < e^−40) entfallen."""
+    n = len(L)
+    amin = np.where(W != 0, EX, np.inf).min(axis=1)
+    blocks = {}
+    I, J = np.triu_indices(n)
+    AB2 = np.sum((C[I] - C[J]) ** 2, axis=1)
+    keep = amin[I] * amin[J] / (amin[I] + amin[J]) * AB2 < 40.0
+    I, J, AB2 = I[keep], J[keep], AB2[keep]
+    for la in range(L.max() + 1):
+        for lb in range(L.max() + 1):
+            sel = np.nonzero((L[I] == la) & (L[J] == lb))[0]
+            ca, cb = _cart(la), _cart(lb)
+            ax, ay, az = (np.array([c[d] for c in ca]) for d in range(3))
+            bx, by, bz = (np.array([c[d] for c in cb]) for d in range(3))
+            for k0 in range(0, len(sel), 4000):
+                ss = sel[k0:k0 + 4000]
+                i_, j_ = I[ss], J[ss]
+                a = EX[i_][:, :, None]
+                b = EX[j_][:, None, :]
+                p = a + b
+                K = np.exp(-a * b / p * AB2[ss][:, None, None]) * W[i_][:, :, None] * W[j_][:, None, :]
+                A, B = C[i_], C[j_]
+                S1 = []
+                for d in range(3):
+                    Pd = (a * A[:, d, None, None] + b * B[:, d, None, None]) / p
+                    S1.append(_overlap_1d(la, lb, Pd - A[:, d, None, None], Pd - B[:, d, None, None], p))
+                Sx = np.array([[S1[0][u][v] for v in range(lb + 1)] for u in range(la + 1)])
+                Sy = np.array([[S1[1][u][v] for v in range(lb + 1)] for u in range(la + 1)])
+                Sz = np.array([[S1[2][u][v] for v in range(lb + 1)] for u in range(la + 1)])
+                # (la+1, lb+1, P, ni, nj) -> Block (P, nu, nv)
+                prod = Sx[ax[:, None], bx[None, :]] * Sy[ay[:, None], by[None, :]] * Sz[az[:, None], bz[None, :]]
+                blk = np.einsum("uvpij,pij->puv", prod, K)
+                for q, (i, j) in enumerate(zip(i_, j_)):
+                    blocks[(int(i), int(j))] = blk[q]
+    return blocks
+
+
+
+def _shell_arrays(centers, shells, weights):
+    """Schalen -> Arrays für cart_overlap (Primitive auf gleiche Zahl aufgefüllt)."""
+    n = len(shells)
+    npr = max(len(sh["ex"]) for sh in shells)
+    EX, W = np.ones((n, npr)), np.zeros((n, npr))
+    for i, sh in enumerate(shells):
+        k = len(sh["ex"])
+        EX[i, :k] = sh["ex"]
+        W[i, :k] = weights(sh)
+    return np.asarray(centers)[[sh["at"] for sh in shells]], np.array([sh["l"] for sh in shells]), EX, W
+
+
 class Basis:
     """Gauß-Basis einer Molden-Datei: AO-Transformationen, Überlappung, Auswertung von MOs auf Gittern.
     Jede AO wird numerisch auf 1 normiert (Molden-Standard). Die Konvention (Koeffizienten bezogen auf normierte oder
@@ -668,53 +891,8 @@ class Basis:
         return sh["co"] * np.array([_prim_norm(a, sh["l"]) for a in sh["ex"]]) if prim == "norm" else sh["co"]
 
     def _cart_overlap(self, prim):
-        """Überlappung der kartesischen Schalenfunktionen (Σ Gewicht · Primitive) aller Schalenpaare -> {(i, j): Block}.
-        Vektorisiert je Drehimpulspaar über alle Schalenpaare (Primitive auf gleiche Zahl aufgefüllt); weit entfernte
-        Paare (Überlappung < e^−40) entfallen."""
-        sh = self.shells
-        n = len(sh)
-        npr = max(len(s["ex"]) for s in sh)
-        EX = np.ones((n, npr))
-        W = np.zeros((n, npr))
-        for i, s in enumerate(sh):
-            k = len(s["ex"])
-            EX[i, :k] = s["ex"]
-            W[i, :k] = self._weights(s, prim)
-        C = self.centers[[s["at"] for s in sh]]
-        L = np.array([s["l"] for s in sh])
-        amin = np.array([s["ex"].min() for s in sh])
-        blocks = {}
-        I, J = np.triu_indices(n)
-        AB2 = np.sum((C[I] - C[J]) ** 2, axis=1)
-        keep = amin[I] * amin[J] / (amin[I] + amin[J]) * AB2 < 40.0
-        I, J, AB2 = I[keep], J[keep], AB2[keep]
-        for la in range(L.max() + 1):
-            for lb in range(L.max() + 1):
-                sel = np.nonzero((L[I] == la) & (L[J] == lb))[0]
-                ca, cb = _cart(la), _cart(lb)
-                ax, ay, az = (np.array([c[d] for c in ca]) for d in range(3))
-                bx, by, bz = (np.array([c[d] for c in cb]) for d in range(3))
-                for k0 in range(0, len(sel), 4000):
-                    ss = sel[k0:k0 + 4000]
-                    i_, j_ = I[ss], J[ss]
-                    a = EX[i_][:, :, None]
-                    b = EX[j_][:, None, :]
-                    p = a + b
-                    K = np.exp(-a * b / p * AB2[ss][:, None, None]) * W[i_][:, :, None] * W[j_][:, None, :]
-                    A, B = C[i_], C[j_]
-                    S1 = []
-                    for d in range(3):
-                        Pd = (a * A[:, d, None, None] + b * B[:, d, None, None]) / p
-                        S1.append(_overlap_1d(la, lb, Pd - A[:, d, None, None], Pd - B[:, d, None, None], p))
-                    Sx = np.array([[S1[0][u][v] for v in range(lb + 1)] for u in range(la + 1)])
-                    Sy = np.array([[S1[1][u][v] for v in range(lb + 1)] for u in range(la + 1)])
-                    Sz = np.array([[S1[2][u][v] for v in range(lb + 1)] for u in range(la + 1)])
-                    # (la+1, lb+1, P, ni, nj) -> Block (P, nu, nv)
-                    prod = Sx[ax[:, None], bx[None, :]] * Sy[ay[:, None], by[None, :]] * Sz[az[:, None], bz[None, :]]
-                    blk = np.einsum("uvpij,pij->puv", prod, K)
-                    for q, (i, j) in enumerate(zip(i_, j_)):
-                        blocks[(int(i), int(j))] = blk[q]
-        return blocks
+        """Überlappung der kartesischen Schalenfunktionen aller Schalenpaare (siehe cart_overlap)."""
+        return cart_overlap(*_shell_arrays(self.centers, self.shells, lambda sh: self._weights(sh, prim)))
 
     def setup(self, mos=None):
         """Konvention bestimmen, Normierung je AO setzen. -> größte Abweichung von CᵀSC = 1."""
@@ -739,8 +917,8 @@ class Basis:
                 err = float(np.abs(C.T @ Sn @ C - np.eye(C.shape[1])).max())
                 self.errors[(prim, sign)] = err
                 if best is None or err < best[0]:
-                    best = (err, (prim, sign), Ts, nrm)
-        self.err, self.variant, self._Ts, self._nrm = best
+                    best = (err, (prim, sign), Ts, nrm, Sn)
+        self.err, self.variant, self._Ts, self._nrm, self.S = best
         return self.err
 
     def evaluate(self, c, P, eps=1e-9):
@@ -774,6 +952,91 @@ class Basis:
                     ang += wk * ds[:, 0] ** a * ds[:, 1] ** b * ds[:, 2] ** cc
             val[sel] += ang * R
         return val
+
+
+def _pure_T(l):
+    """Kugelförmige Funktionen (Molden-Reihenfolge) bzw. p kartesisch als Monom-Matrix (für die MINAO-Schalen)."""
+    cart = _cart(l)
+    idx = {c: k for k, c in enumerate(cart)}
+    if l < 2:
+        out = [_mono(w) for w in _MOLDEN_CART[l]]
+        T = np.zeros((len(out), len(cart)))
+        for r, o in enumerate(out):
+            T[r, idx[o]] = 1.0
+        return T
+    order = _sph_order(l)
+    T = np.zeros((len(order), len(cart)))
+    for r, m in enumerate(order):
+        for mono, v in solid_harmonic(l, m).items():
+            T[r, idx[mono]] = v
+    return T
+
+
+def iao_bond_orders(basis: Basis, thresh=0.2):
+    """Bindungsordnungen wie IboView: Wiberg-Index in intrinsischen Atomorbitalen (IAO, Knizia 2013) mit MINAO als
+    Minimalbasis. -> {(i, j): Bindungsordnung ≥ thresh} oder None (Element ohne MINAO, z. B. K, Rb, Lanthanoide).
+    Geschlossenschalig: B = Σ D_μν² (Gesamtdichte), offen: B = 2 Σ_σ Σ D^σ_μν²."""
+    import uvvis_minao
+    if basis.variant is None:
+        basis.setup()
+    els = basis.m["els"]
+    if any(e not in uvvis_minao.MINAO for e in els):
+        return None
+    mshells = []
+    for at, e in enumerate(els):
+        for l, prims in uvvis_minao.MINAO[e]:
+            ex = np.array([p[0] for p in prims])
+            for c in range(1, len(prims[0])):
+                co = np.array([p[c] for p in prims])
+                mshells.append(dict(at=at, l=l, ex=ex, co=co))
+    prim = basis.variant[0]
+    allsh = list(basis.shells) + mshells
+    wfun = lambda sh: (basis._weights(sh, prim) if "pure" in sh else          # noqa: E731
+                       sh["co"] * np.array([_prim_norm(a, sh["l"]) for a in sh["ex"]]))
+    blocks = cart_overlap(*_shell_arrays(basis.centers, allsh, wfun))
+    Ts = list(basis._Ts) + [_pure_T(sh["l"]) for sh in mshells]
+    off = np.cumsum([0] + [T.shape[0] for T in Ts])
+    S = np.zeros((off[-1], off[-1]))
+    for (i, j), blk in blocks.items():
+        v = Ts[i] @ blk @ Ts[j].T
+        S[off[i]:off[i + 1], off[j]:off[j + 1]] = v
+        S[off[j]:off[j + 1], off[i]:off[i + 1]] = v.T
+    nrm = 1 / np.sqrt(np.diag(S))
+    S = S * nrm[:, None] * nrm[None, :]
+    n1 = basis.nao
+    S1, S12, S2 = S[:n1, :n1], S[:n1, n1:], S[n1:, n1:]
+    at2 = np.concatenate([[sh["at"]] * Ts[len(basis.shells) + k].shape[0] for k, sh in enumerate(mshells)])
+
+    def orth(X):
+        w, V = np.linalg.eigh(X.T @ S1 @ X)
+        return X @ (V * (1 / np.sqrt(np.maximum(w, 1e-14)))) @ V.T
+
+    mos = basis.m["mos"]
+    spins = sorted({mo["spin"] for mo in mos})
+    closed = spins == ["a"]
+    dens = []
+    for sp in spins:
+        sel = [mo for mo in mos if mo["spin"] == sp and mo["occ"] > 1e-8]
+        Cs = np.array([mo["c"] for mo in sel]).T
+        occ = np.array([mo["occ"] for mo in sel]) / (2.0 if closed else 1.0)
+        dens.append((Cs, occ))
+    Cref = dens[0][0]                                            # IAOs aus den (α-)besetzten Orbitalen
+    P12 = np.linalg.solve(S1, S12)
+    Ct = orth(P12 @ np.linalg.solve(S2, S12.T @ Cref))
+    Cr = orth(Cref)
+    O = Cr @ Cr.T @ S1
+    Ot = Ct @ Ct.T @ S1
+    I1 = np.eye(n1)
+    A = orth((O @ Ot + (I1 - O) @ (I1 - Ot)) @ P12)
+    B = np.zeros((len(els), len(els)))
+    for Cs, occ in (dens * 2 if closed else dens):              # geschlossen: α = β
+        Dm = (A.T @ S1 @ Cs) * occ[None, :] @ (A.T @ S1 @ Cs).T
+        sq = Dm ** 2
+        for i in range(len(els)):
+            mi = at2 == i
+            for j in range(i + 1, len(els)):
+                B[i, j] += 2 * sq[np.ix_(mi, at2 == j)].sum()
+    return {(i, j): float(B[i, j]) for i in range(len(els)) for j in range(i + 1, len(els)) if B[i, j] >= thresh}
 
 
 def molden_grid(basis: Basis, c, spacing=0.12, margin=4.0, thresh=1e-3):
@@ -843,7 +1106,8 @@ def make_test_cube(path, n=48):
 
 # ---------------------------------------------------------------------------- Bild in der Abbildung
 ORB_MAX_DPI = 300                               # Export: Orbitalbild höchstens so fein (PDF/SVG eingebettet)
-DRAG_SCALE = 3                                  # beim Drehen: Bild mit 1/3 der Auflösung (flüssig), danach voll
+DRAG_SCALE = 4                                  # beim Drehen: Bild mit 1/4 der Auflösung und halb so vielen
+DRAG_STEP = 1.0                                 # Tiefenschritten (Gitterabstände je Schritt) – flüssig, danach voll
 
 from matplotlib.image import AxesImage  # noqa: E402
 
@@ -873,15 +1137,34 @@ class OrbitalImage(AxesImage):
         H = max(2, int(round(bb.height * magnification * f)))
         xl, yl = tuple(ax.get_xlim()), tuple(ax.get_ylim())
         key = (W, H, self.F.R.tobytes(), xl, yl)
+        self.set_interpolation("nearest" if self.drag else "bilinear")     # Ziehen: billiges Hochskalieren
         if key != self._key:
             self._key = key
             o = self.orb
             occ, zoff = self.F.occluder(xl, yl, W, H)
+            occ2 = None if self.drag else self.F.occluder(xl, yl, 2 * W, 2 * H)[0] - zoff
             img = render(o["vol"], o["iso"], self.F.R, self.F.center, zoff, xl, yl, W, H, o["plus"], o["minus"],
-                         o.get("alpha", ORB_ALPHA), occ - zoff)
+                         o.get("alpha", ORB_ALPHA), occ - zoff, occ2=occ2, aa=not self.drag,
+                         step_frac=DRAG_STEP if self.drag else 0.5)
             self.set_data(img)
             self.set_extent((xl[0], xl[1], yl[0], yl[1]))
         return super().make_image(renderer, magnification, unsampled)
+
+
+def surface_points(vol: Volume, iso):
+    """Orte (Å) der Gitterpunkte mit |ψ| > 0.9·iso, die einen Nachbarn darunter haben (Rand des Lappens) – genügen
+    für die Tiefenbereiche je Kachel; gecacht je Isowert."""
+    key = ("surf", float(iso))
+    cache = vol.__dict__.setdefault("_cache", {})
+    if key not in cache:
+        inside = np.abs(vol.data) > iso * 0.9
+        edge = np.zeros_like(inside)
+        for ax_ in range(3):
+            for sh in (1, -1):
+                edge |= inside & ~np.roll(inside, sh, axis=ax_)
+        idx = np.argwhere(edge)
+        cache[key] = vol.origin + idx @ vol.axes
+    return cache[key]
 
 
 def support_points(vol: Volume, iso):

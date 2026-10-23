@@ -910,7 +910,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
                          h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black",
                          orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=0.05, orb_alpha=ORB.ORB_ALPHA,
-                         orb_scheme="hue")
+                         orb_scheme="hue", orb_labels=True)
 
     # Größe/Formate wie im X-Ray-Tab (keine Achsen)
     common_box = XRAY.XrayTab.common_box
@@ -1150,6 +1150,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         for k in ORB.SCHEMES:
             self.cmb_scheme.addItem(T("dft_orb_scheme_" + k), k)
         f.addRow(T("dft_orb_scheme"), self.cmb_scheme)
+        self.cb_orb_lab = QCheckBox(T("dft_orb_labels"))
+        self.cb_orb_lab.setToolTip(T("dft_orb_labels_tip"))
+        self.cb_orb_lab.toggled.connect(self.changed)
+        f.addRow(self.cb_orb_lab)
         self.lbl_orb = QLabel("")
         self.lbl_orb.setWordWrap(True)
         self.lbl_orb.setStyleSheet(HINT_CSS)
@@ -1163,6 +1167,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def collect(self):
         mode = self.cmb_iso.currentData()
         self.st.update(orb_iso_mode=mode, orb_alpha=self.sp_alpha.value(), orb_scheme=self.cmb_scheme.currentData(),
+                       orb_labels=self.cb_orb_lab.isChecked(),
                        **{"orb_frac" if mode == "frac" else "orb_abs": self.sp_iso.value()})
         self.st.update(show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(), h_labels=self.cb_hlab.isChecked(),
                        label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
@@ -1437,6 +1442,18 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         a = float(self.st.get("orb_alpha", ORB.ORB_ALPHA)) * alpha / ORB.ORB_ALPHA
         return dict(vol=vol, iso=self.orb_iso(item, vol), plus=plus, minus=minus, alpha=min(1.0, a))
 
+    def bond_orders(self, e):
+        """IAO-Wiberg-Bindungsordnungen (≥ 0.2) aus der Molden-Datei der Geometrie wie IboView, sonst None (Cube:
+        Einfachbindungen nach Abstand, wie IboView ohne Wellenfunktion)."""
+        mp = (e or {}).get("molden")
+        if not mp or not Path(mp).exists():
+            return None
+        try:
+            return self.cache(("bondorders", mp), lambda: ORB.iao_bond_orders(self.basis_of(mp)))
+        except Exception as ex:
+            self.add_note(str(ex))
+            return None
+
     def orbital_selected(self, _i=None):
         if self._loading:
             return
@@ -1496,6 +1513,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sync_iso_spin()
         self.sp_alpha.setValue(st.get("orb_alpha", ORB.ORB_ALPHA))
         self.cmb_scheme.setCurrentIndex(max(0, self.cmb_scheme.findData(st.get("orb_scheme", "hue"))))
+        self.cb_orb_lab.setChecked(st.get("orb_labels", True))
         self.cmb_style.setEnabled(k is None)                 # mit Orbital: Atome immer wie IboView
         self.cmb_style.setToolTip(T("dft_orb_style") if k is not None else "")
         self.update_orb_info()
@@ -1668,6 +1686,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     orbital=self.orbital_opts(e, self.orb_index(e) if orb == "cur" else orb))
         if o["orbital"] is not None:                       # Orbital: Atome wie IboView (Nutzerwunsch)
             o["style"] = "iboview"
+            o["elem_labels"] = st.get("orb_labels", True)
         return o
 
     def build(self, fig, e=None, interactive=True, orb="cur"):
@@ -1684,7 +1703,14 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             sel = list(self.picks)
         else:
             sel = [i for i in (mol.find_key(k) for k in self.sel) if i is not None] if interactive else []
-        F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), self.opts(e, interactive, orb), lay, fig, selection=sel,
+        o = self.opts(e, interactive, orb)
+        if o["orbital"] is not None:                       # wie IboView: Bindungen/-ordnungen aus der Wellenfunktion
+            bo = self.bond_orders(e)
+            if bo is not None:
+                mol.bonds = sorted(bo)
+                mol._fragments()
+                o["bond_orders"] = bo
+        F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), o, lay, fig, selection=sel,
                             zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0))
         if interactive and self.numbering:
             # neu vergeben: Nummer mittig auf dem Atom (der Auswahlring belegt den Platz daneben), nicht anklickbar,
