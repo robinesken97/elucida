@@ -118,6 +118,31 @@ def demo_nmr_svg(path, nucleus, peaks, x_range, solvent=None):
     return Path(path)
 
 
+def mol_cdxml(m) -> str:
+    """CDXML eines RDKit-Moleküls mit 2D-Koordinaten. RDKit 2025.9 (macOS Intel) hat kein MolToCDXMLBlock:
+    dann eigene minimale CDXML (Kekulé-Bindungen, 14.4 pt Bindungslänge, y nach unten)."""
+    from rdkit import Chem
+    if hasattr(Chem, "MolToCDXMLBlock"):
+        return Chem.MolToCDXMLBlock(m)
+    m = Chem.Mol(m)
+    Chem.Kekulize(m, clearAromaticFlags=True)
+    pos = m.GetConformer().GetPositions()
+    k = 14.4 / 1.5
+    n = m.GetNumAtoms()
+    xml = ['<?xml version="1.0" encoding="UTF-8" ?><CDXML BondLength="14.40"><page id="1"><fragment id="1">']
+    for a in m.GetAtoms():
+        x, y = pos[a.GetIdx()][:2]
+        e = a.GetAtomicNum()
+        xml.append(f'<n id="{a.GetIdx() + 2}" p="{100 + k * x:.3f} {100 - k * y:.3f}"'
+                   + (f' Element="{e}"' if e != 6 else "") + "/>")
+    for b in m.GetBonds():
+        o = int(b.GetBondTypeAsDouble())
+        xml.append(f'<b id="{b.GetIdx() + 2 + n}" B="{b.GetBeginAtomIdx() + 2}" E="{b.GetEndAtomIdx() + 2}"'
+                   + (f' Order="{o}"' if o > 1 else "") + "/>")
+    xml.append("</fragment></page></CDXML>")
+    return "".join(xml)
+
+
 def scheme_cdxml(path):
     """Erfundenes Schema: TMS-Entschützung eines Alkins (RDKit-CDXML), Pfeil mit K2CO3 / MeOH, rt, 1 h."""
     import xml.etree.ElementTree as ET
@@ -127,7 +152,7 @@ def scheme_cdxml(path):
     def frag(smiles, offset, dx):
         m = Chem.MolFromSmiles(smiles)
         AllChem.Compute2DCoords(m)
-        fr = ET.fromstring(Chem.MolToCDXMLBlock(m)).find(".//fragment")
+        fr = ET.fromstring(mol_cdxml(m)).find(".//fragment")
         ids = {o.get("id"): str(offset + k) for k, o in enumerate(fr.iter()) if o.get("id")}
         for o in fr.iter():
             if o.get("id"):
@@ -264,7 +289,7 @@ def load_data(w, inp):
     from rdkit.Chem import AllChem
     m = Chem.MolFromSmiles("Cc1ccc(C#C)nc1")
     AllChem.Compute2DCoords(m)
-    (nd / "S2.cdxml").write_text(Chem.MolToCDXMLBlock(m), encoding="utf-8")
+    (nd / "S2.cdxml").write_text(mol_cdxml(m), encoding="utf-8")
     w.nmr_state["structure"] = str(nd / "S2.cdxml")
     w.nmr_state["text"] = ("1H NMR (400 MHz, CDCl3) δ 8.38 (s, 1H), 7.50 (d, J = 7.9 Hz, 1H), 7.41 (d, J = 7.9 Hz, 1H), "
                            "3.08 (s, 1H), 2.33 (s, 3H).\n13C NMR (101 MHz, CDCl3) δ 150.4, 139.9, 136.7, 133.4, "
