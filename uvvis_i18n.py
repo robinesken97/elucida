@@ -266,6 +266,22 @@ TEXTS = {
     "tab_save": ("Vorlage speichern…", "Save preset…"),
     "tab_load": ("Vorlage laden…", "Load preset…"),
     "tab_presets": ("Vorlagen", "Presets"),
+    "welcome_sub": ("Von der Synthese zur SI: Auswertung und Abbildungen für UV-Vis, NMR, IR, HRMS, CV, EPR, X-Ray, DFT "
+                    "und mehr. Ein Projekt sammelt alle Daten einer Verbindung.",
+                    "From synthesis to the SI: analysis and figures for UV-Vis, NMR, IR, HRMS, CV, EPR, X-ray, DFT and "
+                    "more. A project collects all data of one compound."),
+    "welcome_recent": ("Zuletzt geöffnet", "Recently opened"),
+    "welcome_hint": ("Projektordner oder Messdateien lassen sich auch einfach ins Fenster ziehen. "
+                     "<a href='{url}'>Schnellstart in 6 Schritten</a>",
+                     "You can also simply drag a project folder or measurement files into the window. "
+                     "<a href='{url}'>Quick start in 6 steps</a>"),
+    "readme_quickstart": ("Schnellstart: vom leeren Projekt zur SI", "Quick start: from an empty project to the SI"),
+    "act_demo": ("Beispielprojekt ansehen", "Open example project"),
+    "act_demo_tip": ("Legt ein Projekt mit künstlichen Daten für alle Tabs an – zum Ausprobieren",
+                     "Creates a project with artificial data for all tabs – to try things out"),
+    "demo_done": ("Beispielprojekt (künstliche Daten) geöffnet: {p}", "Example project (artificial data) opened: {p}"),
+    "act_guide_tab": ("Anleitung zu diesem Tab", "Guide for this tab"),
+    "act_quickstart": ("Schnellstart (README)", "Quick start (README)"),
     "open_folder": ("Ordner öffnen", "Open folder"),
     "btn_export_word_tip": ("Schreibt die Word-Datei dieses Tabs in den Projektordner unter „exports“ (überschreibt sie)",
                             "Writes this tab's Word file to the project folder under “exports” (overwrites it)"),

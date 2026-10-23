@@ -40,7 +40,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFon
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
+                               QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
                                QSpinBox, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTextBrowser,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
@@ -658,6 +658,10 @@ class MainWindow(QMainWindow):
             grp.addAction(act)
             ml.addAction(act)
         mh = mb.addMenu(T("menu_help"))
+        mh.addAction(QAction(T("act_guide_tab"), self, shortcut=QKeySequence.HelpContents, triggered=self.show_tab_guide))
+        mh.addAction(QAction(T("act_quickstart"), self, triggered=self.show_quickstart))
+        mh.addAction(QAction(T("act_demo"), self, triggered=self.open_demo))
+        mh.addSeparator()
         mh.addAction(QAction(T("act_log"), self, triggered=self.show_log))
         mh.addSeparator()
         mh.addAction(QAction(T("act_check_updates"), self, triggered=lambda: self.check_updates(manual=True)))
@@ -997,7 +1001,11 @@ class MainWindow(QMainWindow):
             lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
         for i in range(self.main_tabs.count()):
             STYLE.tidy(self.main_tabs.widget(i))
-        self.setCentralWidget(self.nav_bar())
+        self.center = QStackedWidget()
+        self.center.addWidget(self.welcome_page())          # 0: ohne Projekt
+        self.center.addWidget(self.nav_bar())               # 1: Tabs
+        self.setCentralWidget(self.center)
+        self.center.setCurrentIndex(1 if self.project_dir else 0)
 
         self.apply_globals()
         self.apply_series_widgets()
@@ -1533,7 +1541,101 @@ class MainWindow(QMainWindow):
             return False
         return bool(self._undo) and self._undo[-1] != self._saved_snap
 
+    def welcome_page(self):
+        """Startbildschirm ohne Projekt: worum es geht, Neues Projekt / Öffnen / Beispielprojekt, zuletzt geöffnet."""
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.addStretch(1)
+        card = QFrame(objectName="card")
+        card.setMaximumWidth(620)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(32, 28, 32, 28)
+        v.setSpacing(12)
+        head = QHBoxLayout()
+        icon = resource_path("assets/icon.png")
+        if icon.exists():
+            lb = QLabel()
+            lb.setPixmap(QIcon(str(icon)).pixmap(64, 64))
+            head.addWidget(lb)
+        t = QLabel(f"<span style='font-size:22px; font-weight:bold'>{APP_NAME}</span><br>{T('welcome_sub')}")
+        t.setWordWrap(True)
+        head.addWidget(t, 1)
+        v.addLayout(head)
+        row = QHBoxLayout()
+        b_new = QPushButton(STYLE.icon("new", "#FFFFFF"), T("act_new_project"))
+        b_new.setProperty("accent", True)
+        b_new.clicked.connect(self.new_project)
+        b_open = QPushButton(STYLE.icon("open"), T("act_open_project"))
+        b_open.clicked.connect(self.open_project_dialog)
+        b_demo = QPushButton(T("act_demo"))
+        b_demo.setToolTip(T("act_demo_tip"))
+        b_demo.clicked.connect(self.open_demo)
+        for b in (b_new, b_open, b_demo):
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.lst_recent = QListWidget()
+        self.lst_recent.setMaximumHeight(150)
+        self.lst_recent.itemActivated.connect(lambda it: self.open_project(it.data(Qt.UserRole)))
+        self.lst_recent.itemClicked.connect(lambda it: self.open_project(it.data(Qt.UserRole)))
+        self.lbl_recent = QLabel(f"<b>{T('welcome_recent')}</b>")
+        v.addWidget(self.lbl_recent)
+        v.addWidget(self.lst_recent)
+        hint = QLabel(T("welcome_hint", url=uvvis_tabs.README_URL + ("README.de.md" if get_lang() == "de" else "README.md")
+                        + "#" + uvvis_tabs.gh_anchor(T("readme_quickstart"))))
+        hint.setWordWrap(True)
+        hint.setOpenExternalLinks(True)
+        hint.setStyleSheet(HINT_CSS)
+        v.addWidget(hint)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(card, 4)
+        row.addStretch(1)
+        outer.addLayout(row)
+        outer.addStretch(2)
+        self.fill_recent_list()
+        return page
+
+    def fill_recent_list(self):
+        if getattr(self, "lst_recent", None) is None:
+            return
+        self.lst_recent.clear()
+        rec = [r for r in self.recent() if PRJ.is_project(r)]
+        for r in rec:
+            it = QListWidgetItem(f"{Path(r).name}  –  {Path(r).parent}")
+            it.setData(Qt.UserRole, r)
+            self.lst_recent.addItem(it)
+        self.lst_recent.setVisible(bool(rec))
+        self.lbl_recent.setVisible(bool(rec))
+
+    def open_demo(self, folder=None):
+        """Beispielprojekt mit künstlichen Daten (alle Tabs) anlegen und öffnen."""
+        import uvvis_demo as DEMO
+        self.maybe_save()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            d = DEMO.open_demo(self, folder)
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.log_signal.emit(traceback.format_exc())
+            return self.error(str(e))
+        QApplication.restoreOverrideCursor()
+        self.statusBar().showMessage(T("demo_done", p=str(d)), 10000)
+        return d
+
+    def show_tab_guide(self):
+        key = self._tab_keys[self.main_tabs.currentIndex()]
+        QDesktopServices.openUrl(QUrl(uvvis_tabs.guide_url(key)))
+
+    def show_quickstart(self):
+        url = (uvvis_tabs.README_URL + ("README.de.md" if get_lang() == "de" else "README.md") + "#"
+               + uvvis_tabs.gh_anchor(T("readme_quickstart")))
+        QDesktopServices.openUrl(QUrl(url))
+
     def update_title(self):
+        if getattr(self, "center", None) is not None:
+            self.center.setCurrentIndex(1 if self.project_dir else 0)
+            self.fill_recent_list()
         if getattr(self, "act_folder", None) is not None:
             self.act_folder.setEnabled(bool(self.project_dir))
         name = Path(self.project_dir).name if self.project_dir else T("no_project_title")
@@ -2796,6 +2898,7 @@ def selftest(outdir, with_isnet=False):
         report.append(f"photo format: {photo.suffix}")
         w = MainWindow()
         w._allow_download = with_isnet
+        assert w.center.currentIndex() == 0, "ohne Projekt: Startbildschirm"
         proj = out / "projekt_test"
         assert not w.open_csv(csv), "ohne Projekt darf nichts geladen werden"
         assert w.create_project(proj)
@@ -5003,6 +5106,13 @@ def selftest(outdir, with_isnet=False):
         pump()
         assert abs(w2.glob["cutoff"] - (before + 0.5)) < 1e-9, w2.glob["cutoff"]
         report.append("undo/redo: OK")
+        # Startbildschirm/Tabs je nach Projekt; Beispielprojekt (künstliche Daten) füllt die Tabs
+        assert w.center.currentIndex() == 1
+        d_demo = w.open_demo(out / "demo")
+        assert d_demo and Path(w.project_dir) == out / "demo" and w.center.currentIndex() == 1
+        assert w.groups and w.cv_state["files"] and w.xray_state["entries"] and w.dft_state["entries"]
+        assert w.syn_state["proc"] and w.nmr_tab.spectra()
+        report.append("welcome page + example project: OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         report.append("OK")
