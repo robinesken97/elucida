@@ -2805,11 +2805,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.cb_ions = QCheckBox(T("xr_hide_ions"))
         self.cb_solv.setToolTip(T("xr_hide_tip"))
         self.cb_ions.setToolTip(T("xr_hide_tip"))
-        row = QHBoxLayout()
-        row.addWidget(self.cb_solv)
-        row.addWidget(self.cb_ions)
-        row.addStretch(1)
-        f.addRow(row)
+        f.addRow(self.cb_solv)                      # untereinander: nebeneinander bestimmten sie die Spaltenbreite
+        f.addRow(self.cb_ions)                      # (unter Windows ~600 px, Abbildung zu schmal)
         f.addRow(T("xr_frags"), self.lst_frag)
         self.tbl_atoms = QTableWidget(0, 4)
         self.tbl_atoms.setHorizontalHeaderLabels([T("xr_atom"), T("xr_atom_shown"), T("xr_atom_label"),
