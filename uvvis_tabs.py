@@ -318,14 +318,17 @@ class FigureTab(QWidget):
         # Speichern/Laden/Exportieren bleiben unten sichtbar, auch wenn die Spalte gescrollt wird
         row = QHBoxLayout()
         row.setContentsMargins(8, 6, 8, 6)
-        for txt, fn, ic in ((T("tab_save"), self.save_setup, None), (T("tab_load"), self.load_setup, "open")):
+        for txt, fn, ic, tip in ((T("tab_save"), self.save_setup, None, T("tab_save_tip")),
+                                 (T("tab_load"), self.load_setup, "open", T("tab_load_tip"))):
             b = QPushButton(STYLE.icon(ic), txt) if ic else QPushButton(txt)
+            b.setToolTip(tip)
             b.clicked.connect(fn)
             row.addWidget(b)
         row.addWidget(reset_button(self.reset_layout, self.reset_defaults))
         row.addStretch(1)
         self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
         self.btn_export.setProperty("accent", True)
+        self.btn_export.setToolTip(T("btn_export_tip"))
         self.btn_export.setDefault(True)
         self.btn_export.clicked.connect(self.export_dialog)
         row.addWidget(self.btn_export)
@@ -921,6 +924,7 @@ class OverlayTab(FigureTab):
         for key in ("band", "max", "faxis"):
             self.cmb_stick.addItem(T("stick_" + key), key)
         self.cmb_stick.setCurrentIndex(max(0, self.cmb_stick.findData(st.get("stick_mode", "band"))))
+        self.cmb_stick.setToolTip(T("stick_mode_tip"))
         f.addRow(T("stick_mode"), self.cmb_stick)
         self.cmb_stick.currentIndexChanged.connect(self.changed)
         row = QHBoxLayout()

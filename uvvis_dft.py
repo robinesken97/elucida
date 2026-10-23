@@ -979,6 +979,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.cmb_ref.setToolTip(T("dft_ref_tip"))
         row.addWidget(self.cmb_ref, 1)
         self.btn_ref = QPushButton(T("dft_ref_apply"))
+        self.btn_ref.setToolTip(T("dft_ref_apply_tip"))
         self.btn_ref.clicked.connect(self.apply_reference)
         row.addWidget(self.btn_ref)
         v.addLayout(row)

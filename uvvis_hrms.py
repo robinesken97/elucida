@@ -114,10 +114,13 @@ class HRMSTab(TABS.FigureTab):
         st = self.st
         g = QGroupBox(T("ms_group"))
         f = make_form(g)
+        self._form = f
         row = QHBoxLayout()
         self.lbl_ms = QLabel("–")
         self.lbl_ms.setWordWrap(True)
+        self.lbl_ms.setToolTip(T("ms_file_tip"))
         b = QPushButton(T("choose"))
+        b.setToolTip(T("ms_file_tip"))
         b.clicked.connect(self.choose_ms)
         row.addWidget(self.lbl_ms, 1)
         row.addWidget(b)
@@ -175,7 +178,7 @@ class HRMSTab(TABS.FigureTab):
         self.txt_ms = QTextBrowser()
         self.txt_ms.setMaximumHeight(70)
         f.addRow(self.txt_ms)
-        b = QPushButton(T("si_copy"))
+        b = QPushButton(T("ms_copy"))
         b.clicked.connect(lambda: copy_rich(*self._ms_line))
         f.addRow(b)
         self.lv.addWidget(g)
@@ -221,7 +224,7 @@ class HRMSTab(TABS.FigureTab):
         self.lbl_raw.setText((Path(st["ms_raw"]).name + (f"  ({raw['instrument']})" if raw and raw.get("instrument")
                                                           else "")) if st.get("ms_raw") else "–")
         self.rt_row.setEnabled(raw is not None)
-        self.ccanvas.setVisible(raw is not None)
+        self._form.setRowVisible(self.ccanvas, raw is not None)     # mit Beschriftung, sonst bleibt sie allein
         rt = st.get("ms_rt")
         self.cb_rt_auto.setChecked(not rt)
         if rt:

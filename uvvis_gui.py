@@ -586,9 +586,12 @@ class MainWindow(QMainWindow):
         self.act_folder.setEnabled(bool(self.project_dir))
         m.addAction(self.act_folder)
         m.addSeparator()
-        m.addAction(QAction(T("act_open"), self, shortcut=QKeySequence("Ctrl+Shift+O"), triggered=self.choose_csv))
-        m.addAction(QAction(T("act_conc"), self, triggered=self.edit_concentrations))
-        m.addAction(QAction(T("act_restart"), self, triggered=self.restart_file))
+        # nur für den Tab UV-Vis (ε): eigenes Untermenü, damit klar ist, wofür die Befehle gelten
+        m_eps = m.addMenu(T("menu_eps"))
+        m_eps.addAction(QAction(T("act_open"), self, shortcut=QKeySequence("Ctrl+Shift+O"), triggered=self.choose_csv))
+        m_eps.addAction(QAction(T("act_conc"), self, triggered=self.edit_concentrations))
+        m_eps.addAction(QAction(T("act_restart"), self, triggered=self.restart_file))
+        m.addSeparator()
         act_export = QAction(STYLE.icon("export"), T("act_export"), self, shortcut="Ctrl+E",
                              triggered=self.export_current)
         m.addAction(act_export)
@@ -781,6 +784,7 @@ class MainWindow(QMainWindow):
         self.ed_solvent.editingFinished.connect(self.solvent_changed)
         f.addRow(T("si_solvent"), self.ed_solvent)
         self.sp_cut = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=5, singleStep=0.1)
+        self.sp_cut.setToolTip(T("cutoff_tip"))
         f.addRow(T("cutoff"), self.sp_cut)
         self.ed_bands = QLineEdit()
         self.ed_bands.setPlaceholderText(T("wavelengths_ph"))
@@ -791,6 +795,7 @@ class MainWindow(QMainWindow):
         for key in ("series", "simple", "manual", "off"):
             self.cmb_bl.addItem(T({"series": "bl_series", "simple": "bl_simple", "manual": "bl_manual",
                                    "off": "bl_off"}[key]), key)
+        self.cmb_bl.setToolTip(T("baseline_tip"))
         f.addRow(T("baseline"), self.cmb_bl)
         row = QHBoxLayout()
         self.sp_bla = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, suffix=" nm")
@@ -891,6 +896,7 @@ class MainWindow(QMainWindow):
         self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
         self.btn_export.setProperty("accent", True)
         self.btn_export.clicked.connect(self.export_dialog)
+        self.btn_export.setToolTip(T("btn_export_tip"))
         self.btn_export.setDefault(True)
         row.addWidget(self.btn_export)
         left_col = QWidget()
@@ -912,6 +918,8 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([T("col_lam"), T("col_n"), T("col_coeff"),
                                               T("col_intercept"), T("col_r2"), T("col_cut"), T("col_warn")])
+        for c_ in range(6):                           # Spaltenköpfe nicht abschneiden („Achsenabschnitt“)
+            self.table.horizontalHeader().setSectionResizeMode(c_, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed
@@ -927,7 +935,7 @@ class MainWindow(QMainWindow):
         si_l = QVBoxLayout(si_w)
         self.txt_si = QTextBrowser()
         si_l.addWidget(self.txt_si, 1)
-        b = QPushButton(T("si_copy"))
+        b = QPushButton(T("uv_copy"))
         b.clicked.connect(lambda: IRMS.copy_rich(*self._uv_line))
         si_l.addWidget(b)
         hint = QLabel(T("si_uv_hint"))
@@ -1123,7 +1131,8 @@ class MainWindow(QMainWindow):
         self.ed_mw.setStyleSheet("border: 2px solid #d9534f;" if mw_missing else "")
         self.lbl_chem.setText(info)
         self.lbl_chem.setVisible(bool(info))          # keine leere Zeile unter der Molmasse
-        self.lbl_chem.setStyleSheet(WARN_CSS if warn else "")
+        # fehlende Molmasse = Fehler (rot); Hinweise zur Zeichnung (aus CDXML statt ChemDraw-Bild) nur orange
+        self.lbl_chem.setStyleSheet(WARN_CSS if mw_missing else STYLE.NOTE_CSS if warn else "")
         pa = st.get("photo_asset") if st else None
         self.lbl_thumb.setPixmap(rgba_to_pixmap(pa["rgba"]) if pa else QPixmap())
         self.lbl_thumb.setVisible(bool(pa))              # ohne Foto keine Leerzeile
@@ -1479,7 +1488,7 @@ class MainWindow(QMainWindow):
         c = self.compound
         if not (c.get("name") or c.get("formula")):
             return T("compound_none")
-        return " · ".join(x for x in (c.get("name"), c.get("formula")) if x)
+        return T("compound_set", c=" · ".join(x for x in (c.get("name"), c.get("formula")) if x))
 
     def edit_compound(self):
         if not self.ensure_project():

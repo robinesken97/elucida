@@ -124,7 +124,8 @@ TEXTS = {
     "project_dir_not_empty": ("Der Ordner {p} ist nicht leer und kein Projekt – bitte einen neuen Namen wählen.",
                               "Folder {p} is not empty and not a project – please choose a new name."),
     "project_saved": ("Projekt gespeichert: {p}", "Project saved: {p}"),
-    "act_export": ("Exportieren…", "Export…"),
+    "act_export": ("Exportieren (aktueller Tab)", "Export (current tab)"),
+    "menu_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
     "act_quit": ("Beenden", "Quit"),
     "act_about": ("Über", "About"),
     "lang_restart": ("Die Sprache wird sofort umgestellt.", "Language switched."),
@@ -152,8 +153,10 @@ TEXTS = {
     "theme_light": ("hell", "light"),
     "theme_dark": ("dunkel", "dark"),
     "empty_title": ("Messdaten hierher ziehen", "Drop measurement data here"),
-    "empty_formats": ("Cary-CSV, DSW/BSW, Eclipse-CSV oder Projektordner",
-                      "Cary CSV, DSW/BSW, Eclipse CSV or project folder"),
+    "empty_formats": ("Cary-CSV, DSW/BSW, Eclipse-CSV oder Projektordner\nKonzentration aus dem Probennamen, z. B. "
+                      "ABC-1-0p5mgml_THF = 0,5 mg/mL (sonst Tabelle zum Eintragen)",
+                      "Cary CSV, DSW/BSW, Eclipse CSV or project folder\nConcentration from the sample name, e.g. "
+                      "ABC-1-0p5mgml_THF = 0.5 mg/mL (otherwise a table to fill in)"),
     "mw_from_cdxml": ("aus CDXML", "from CDXML"),
     "mw_hint_none": ("leer = spezifischer Koeffizient a statt ε", "empty = specific coefficient a instead of ε"),
     "bg_method": ("Freistellung", "Background"),
@@ -166,6 +169,10 @@ TEXTS = {
     "path_length": ("Schichtdicke [cm]", "Path length [cm]"),
     "path_length_short": ("Schichtdicke", "Path length"),
     "cutoff": ("Fit-Cutoff A", "Fit cutoff A"),
+    "cutoff_tip": ("Messpunkte mit höherer Absorbanz gehen nicht in den Fit ein (Detektor nicht mehr linear).\n"
+                   "Je Bande änderbar: Doppelklick auf „Cutoff A“ in der Ergebnistabelle.",
+                   "Points with higher absorbance are left out of the fit (detector no longer linear).\n"
+                   "Per band: double-click “Cutoff A” in the results table."),
     "min_points": ("min. Punkte", "min. points"),
     "r2_below": ("R² < {min:g} – Bande wird nicht im Bild gezeigt (Schwelle: Auswertung → Erweitert → min. R² fürs Bild)",
                  "R² < {min:g} – band not shown in the figure (threshold: Analysis → Advanced → min. R² for figure)"),
@@ -175,6 +182,14 @@ TEXTS = {
     "wavelengths": ("Banden [nm]", "Bands [nm]"),
     "wavelengths_ph": ("z. B. Schultern: 350, 660", "e.g. shoulders: 350, 660"),
     "baseline": ("Basislinie", "Baseline"),
+    "baseline_tip": ("Wird vor dem Fit von jedem Spektrum abgezogen, gemessen in einem Fenster, in dem die Probe kaum "
+                     "absorbiert.\nautomatisch (Reihe): nur der konzentrationsunabhängige Versatz (Restabsorption der "
+                     "Probe bleibt)\nautomatisch (einfach): der ganze Wert im Fenster\nmanuelles Fenster: Bereich "
+                     "darunter selbst wählen",
+                     "Subtracted from every spectrum before the fit, measured in a window where the sample barely "
+                     "absorbs.\nautomatic (series): only the concentration-independent offset (residual absorption of "
+                     "the sample stays)\nautomatic (simple): the whole value in the window\nmanual window: choose the "
+                     "range below"),
     "bl_series": ("automatisch (Reihe)", "automatic (series)"),
     "bl_simple": ("automatisch (einfach)", "automatic (simple)"),
     "bl_manual": ("manuelles Fenster", "manual window"),
@@ -200,7 +215,10 @@ TEXTS = {
                                "“Reset all to defaults”: all settings of this tab (display and analysis) back to defaults.\n"
                                "Data and measurement details stay (files, reference/calibration, path length, entered\n"
                                "values, caption, export size). Undo (Ctrl+Z) brings everything back."),
-    "btn_export": ("Exportieren…", "Export…"),
+    "btn_export": ("Exportieren", "Export"),
+    "btn_export_tip": ("Schreibt die gewählten Formate in den Projektordner unter „exports“ (vorhandene Dateien "
+                       "werden überschrieben)", "Writes the chosen formats to the project folder under “exports” "
+                       "(existing files are overwritten)"),
     "drag_hint": ("Maus: Inset, Bilder und Labels ziehen zum Verschieben, Mausrad über Inset/Bild "
                   "ändert die Größe. Über den Spektren zeigt die Statusleiste λ und A des nächsten "
                   "Messpunkts, Doppelklick fügt dort eine Bande hinzu. CSV, Struktur und Foto können ins "
@@ -245,8 +263,14 @@ TEXTS = {
     "tab_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
     "tab_overlay": ("UV-Vis-Overlay", "UV-Vis overlay"),
     "tab_fluo": ("Fluoreszenz", "Fluorescence"),
-    "tab_save": ("Speichern…", "Save…"),
-    "tab_load": ("Laden…", "Load…"),
+    "tab_save": ("Vorlage speichern…", "Save preset…"),
+    "tab_load": ("Vorlage laden…", "Load preset…"),
+    "tab_save_tip": ("Einstellungen dieses Tabs als Vorlage (YAML) speichern, z. B. für andere Projekte. "
+                     "Daten und Projekt bleiben unberührt – das Projekt speichert die Werkzeugleiste.",
+                     "Save this tab's settings as a preset (YAML), e.g. for other projects. Data and project are not "
+                     "affected – the toolbar saves the project."),
+    "tab_load_tip": ("Einstellungen aus einer Vorlage (YAML) übernehmen; geladene Daten bleiben",
+                     "Apply settings from a preset (YAML); loaded data stay"),
     "tab_empty": ("Noch keine Daten – links Dateien hinzufügen.", "No data yet – add files on the left."),
     "drag_hint_tab": ("Legende, Labels und Bilder lassen sich mit der Maus verschieben, Bilder per "
                       "Mausrad skalieren. Über den Kurven zeigt die Statusleiste λ und den Wert.",
@@ -280,7 +304,7 @@ TEXTS = {
     "ir_full": ("gesamt", "full"),
     "ir_range": ("Bereich", "Range"),
     "ir_xrange": ("ṽ-Bereich (Bild) [cm⁻¹]", "ṽ range (figure) [cm⁻¹]"),
-    "ir_prom": ("Empfindlichkeit", "Sensitivity"),
+    "ir_prom": ("Peakschwelle", "Peak threshold"),
     "ir_prom_tip": ("Mindesttiefe einer Bande relativ zur stärksten (kleiner = mehr Peaks). Nur bei eigener Peaksuche "
                     "in der OPUS-Datei; mit PDF gilt die Peakliste aus OPUS.",
                     "Minimum depth of a band relative to the strongest one (smaller = more peaks). Only for the own peak "
@@ -402,6 +426,14 @@ TEXTS = {
     "compound_mp_ph": ("z. B. 67 °C oder 218 °C (decomp.)", "e.g. 67 °C or 218 °C (decomp.)"),
     "ms_group": ("HRMS", "HRMS"),
     "ms_file": ("MS-Bericht", "MS report"),
+    "ms_file_tip": ("Bericht der Massenabteilung (.docx): Summenformel, Ion und found. Mit Bericht und Rohdaten ist der "
+                    "Wert aus dem Bericht vorgewählt; der aus den Rohdaten steht unter „gefunden“ zur Auswahl.",
+                    "Report of the mass spectrometry service (.docx): formula, ion and found. With report and raw data, "
+                    "the report value is preselected; the raw-data value can be chosen under “found”."),
+    "ms_copy": ("HRMS-Zeile kopieren (für Word)", "Copy HRMS line (for Word)"),
+    "ir_copy": ("IR-Zeile kopieren (für Word)", "Copy IR line (for Word)"),
+    "ea_copy": ("EA-Zeile kopieren (für Word)", "Copy EA line (for Word)"),
+    "uv_copy": ("UV-Vis-Zeile kopieren (für Word)", "Copy UV-Vis line (for Word)"),
     "ms_raw": ("MS-Rohdaten (.d)", "MS raw data (.d)"),
     "ms_raw_tip": ("Bruker-Messordner (.d) mit analysis.baf und analysis.sqlite (z. B. timsTOF); gelesen werden die "
                    "Linienspektren des Geräts. Ins Projekt kommen nur diese beiden Dateien.",
@@ -437,6 +469,8 @@ TEXTS = {
                      "report value closest to the calculated one, without a report the raw-data mean"),
     "ms_no_formula": ("keine – Verbindung des Projekts (Werkzeugleiste) festlegen oder MS-Bericht laden",
                       "none – set the project's compound (toolbar) or load an MS report"),
+    "ea_no_formula": ("keine – Verbindung des Projekts (Werkzeugleiste) festlegen oder im Tab HRMS den MS-Bericht laden",
+                      "none – set the project's compound (toolbar) or load the MS report in the HRMS tab"),
     "ms_src_project": ("Verbindung des Projekts", "project compound"),
     "ms_src_report_struct": ("aus der Struktur im MS-Bericht", "from the structure in the MS report"),
     "ms_take_compound": ("Verbindung aus dem MS-Bericht übernehmen", "Take the compound from the MS report"),
@@ -457,8 +491,19 @@ TEXTS = {
                "deviation found − calc = {ppm} ppm (check only, not part of the line)"),
     "ms_dev_high": ("⚠ Abweichung über 5 ppm", "⚠ deviation above 5 ppm"),
     "compound_none": ("Verbindung …", "Compound …"),
-    "compound_tip": ("Verbindung dieses Projekts (Name, ChemDraw, Formel, Molmasse): Vorgabe für ε, Fluoreszenz und IR + MS",
-                     "Compound of this project (name, ChemDraw, formula, molar mass): default for ε, fluorescence and IR + MS"),
+    "compound_tip": ("Verbindung dieses Projekts (Name, ChemDraw, Formel, Molmasse): Vorgabe für alle Tabs, z. B. ε, "
+                     "Fluoreszenz, IR + EA, HRMS und die SI", "Compound of this project (name, ChemDraw, formula, molar "
+                     "mass): default for all tabs, e.g. ε, fluorescence, IR + EA, HRMS and the SI"),
+    "compound_set": ("Verbindung: {c}", "Compound: {c}"),
+    "stick_mode_tip": ("Ein gemeinsamer Faktor für Kurve und Striche: Kurvenmaximum = 1 (höchste Stelle der verbreiterten "
+                       "Kurve im Normierungsbereich), stärkster Übergang = 1 oder Striche als Oszillatorstärke f auf "
+                       "der rechten Achse", "One common factor for curve and sticks: curve maximum = 1 (highest point "
+                       "of the broadened curve in the normalisation range), strongest transition = 1, or sticks as "
+                       "oscillator strength f on the right axis"),
+    "xr_prob_ball": ("gilt nur für die Stile Mercury und flach (Kugel-Stab: feste Kugelgröße)",
+                     "only for the Mercury and flat styles (ball and stick: fixed sphere size)"),
+    "syn_output_hint": ("Erscheint im SI-Export (Werkzeugleiste: SI (Word)); eigene Word-Datei: Datei → Exportieren.",
+                        "Appears in the SI export (toolbar: SI (Word)); own Word file: File → Export."),
     "compound_title": ("Verbindung des Projekts", "Compound of the project"),
     "compound_name": ("Name / Probe", "Name / sample"),
     "compound_name_ph": ("z. B. Probennummer", "e.g. sample number"),
@@ -470,7 +515,7 @@ TEXTS = {
     "cv_group_tip": ("Freies Feld, z. B. Lösungsmittel (THF, MeCN …): Datenreihe in den Auftragungen gegen die Scanrate",
                      "Free field, e.g. solvent (THF, MeCN …): data series in the plots against scan rate"),
     "cv_file_ref": ("Referenz der ausgewählten Messung", "Reference of the selected measurement"),
-    "cv_fref_global": ("wie oben (für alle)", "as above (for all)"),
+    "cv_fref_global": ("wie unter „Auswertung“ (für alle)", "as under “Evaluation” (for all)"),
     "cv_fref_internal": ("eigener interner Standard", "own internal standard"),
     "cv_fref_manual": ("eigene feste Verschiebung", "own fixed shift"),
     "cv_ref_mixed": ("Achtung: Messungen mit unterschiedlicher Referenz (Fc⁺/Fc und Referenzelektrode) in einer Abbildung.",
@@ -528,7 +573,7 @@ TEXTS = {
     "ov_exp": ("Messung", "measured"),
     "ov_states": ("Zustände", "states"),
     "ov_details": ("Ausgewähltes Spektrum", "Selected spectrum"),
-    "ov_own_norm": ("eigenes", "own"),
+    "ov_own_norm": ("eigener (statt „Normierung“ unten)", "own (instead of “Normalisation” below)"),
     "ov_norm_window": ("Normierungsbereich [nm]", "Normalisation range [nm]"),
     "ov_fwhm": ("Breite (FWHM)", "Width (FWHM)"),
     "ov_shift": ("Verschiebung", "Shift"),
@@ -725,7 +770,9 @@ TEXTS = {
                        "Potential window per redox couple in axis units. Within the window: E_pa = current\n"
                        "maximum in the forward scan, E_pc = minimum in the reverse scan, E½ = mean, ΔE_p = difference.\n"
                        "Red in the results: peak at the window edge – adjust the window."),
-    "cv_suggest": ("Vorschlag", "Suggest"),
+    "cv_suggest": ("Vorschlagen", "Suggest"),
+    "cv_suggest_tip": ("Redoxpaare automatisch aus der ausgewählten Messung vorschlagen",
+                       "Suggest redox couples automatically from the selected measurement"),
     "cv_ref": ("Referenz", "Reference"),
     "cv_ref_none": ("wie gemessen (Referenzelektrode)", "as measured (reference electrode)"),
     "cv_ref_internal": ("intern (Fc / Ac₂Fc in einer Messung)", "internal (Fc / Ac₂Fc in one measurement)"),
@@ -780,7 +827,7 @@ TEXTS = {
                       "The baseline ends at least this far before the forward peak (default 0.15 V: foot of a reversible\n"
                       "wave) and in any case before the wave rises (2% of the peak height; broad waves, iR drop).\n"
                       "Needs at least 30 mV of peak-free current in the window."),
-    "cv_show_bl": ("im Bild", "in figure"),
+    "cv_show_bl": ("im Bild zeigen", "show in figure"),
     "cv_bl_fail": ("⚠ Basislinie nicht möglich (zu wenig Vorlauf im Fenster) – Ströme von null gemessen, nicht in den "
                    "Regressionen. Fenster zur Startseite des Hinpeaks erweitern.",
                    "⚠ baseline not possible (too little current before the peak in the window) – currents from zero, "
@@ -864,6 +911,8 @@ TEXTS = {
     "epr_entries": ("Spektren", "Spectra"),
     "epr_add_exp": ("Messung…", "Measurement…"),
     "epr_add_sim": ("Simulation…", "Simulation…"),
+    "epr_add_sim_tip": ("Fertige Simulation als ASCII-Datei laden (z. B. aus EasySpin)",
+                        "Load a finished simulation as an ASCII file (e.g. from EasySpin)"),
     "epr_kind_exp": ("Messung", "Measured"),
     "epr_kind_sim": ("Simulation", "Simulation"),
     "epr_none": ("– keine –", "– none –"),
@@ -933,6 +982,9 @@ TEXTS = {
     "epr_int_info": ("{n} Spektren, {method} (Spektren nach Dunkelspektrum und Basislinie).",
                      "{n} spectra, {method} (spectra after dark spectrum and baseline)."),
     "epr_add_iso": ("S = ½-Simulation", "S = ½ simulation"),
+    "epr_add_iso_tip": ("Eigene isotrope S = ½-Simulation anlegen und an eine Messung anpassen (Fit von g, Linienbreite, "
+                        "Kopplungen)", "Create an own isotropic S = ½ simulation and fit it to a measurement (g, "
+                        "linewidth, couplings)"),
     "epr_kind_iso": ("S = ½ (eigen)", "S = ½ (own)"),
     "epr_iso": ("Isotrope S = ½-Simulation (erste Ordnung)", "Isotropic S = ½ simulation (first order)"),
     "epr_lw": ("ΔB_pp", "ΔB_pp"),
@@ -1059,7 +1111,7 @@ TEXTS = {
     "tab_xray": ("X-Ray", "X-Ray"),
     "xr_structures": ("Strukturen (CIF)", "Structures (CIF)"),
     "xr_add": ("CIF hinzufügen …", "Add CIF …"),
-    "xr_name": ("Name (Spaltenkopf)", "Name (column header)"),
+    "xr_name": ("Name (in Tabellen)", "Name (in tables)"),
     "xr_ref": ("Interne Referenz", "Internal reference"),
     "xr_no_atoms": ("keine Atome (_atom_site_fract_x) in der Datei", "no atoms (_atom_site_fract_x) in the file"),
     "xr_display": ("Darstellung", "Display"),
@@ -1384,14 +1436,14 @@ TEXTS = {
     # ---- DFT (xyz) ---------------------------------------------------------
     "tab_dft": ("DFT", "DFT"),
     "dft_structures": ("Geometrien und Rechnungen", "Geometries and calculations"),
-    "dft_add": ("Datei hinzufügen …", "Add file …"),
+    "dft_add": ("xyz/.out/.log hinzufügen …", "Add xyz/.out/.log …"),
     "dft_flt": ("xyz, ORCA/Gaussian-Ausgabe", "xyz, ORCA/Gaussian output"),
     "dft_si": ("Rechnung für die SI", "Calculation for the SI"),
     "dft_si_hint": ("Für den SI-Block eine ORCA-6- oder Gaussian-Ausgabe (.out/.log) laden; reine xyz-Dateien "
                     "enthalten keine Angaben zur Rechnung.",
                     "Load an ORCA 6 or Gaussian output (.out/.log) for the SI block; plain xyz files contain no "
                     "information about the calculation."),
-    "dft_si_with": ("Mit:", "Include:"),
+    "dft_si_with": ("Im SI-Text:", "In the SI text:"),
     "dft_si_zpe": ("ZPE-Spalte", "ZPE column"),
     "dft_method_each": ("Methode je Struktur", "method per structure"),
     "dft_method_top": ("Methode einmal oben", "method once at the top"),
@@ -1516,6 +1568,9 @@ TEXTS = {
                     "by connectivity, for symmetric molecules by geometry (smallest deviation after superposition), "
                     "H via their neighbour atom."),
     "dft_ref_apply": ("Zuordnen", "Match"),
+    "dft_ref_apply_tip": ("Nummerierung von der Vorlage übernehmen (andere Geometrie dieses Tabs oder CIF aus dem "
+                          "X-Ray-Tab)", "Take the numbering from the template (another geometry of this tab or a CIF "
+                          "from the X-ray tab)"),
     "dft_ref_missing": ("Vorlage nicht lesbar", "template not readable"),
     "dft_ref_fail": ("⚠ Zuordnung nicht möglich: {err}", "⚠ matching not possible: {err}"),
     "dft_match_none": ("Bindungsnetz passt nicht zur Vorlage (weniger als 80 % der Schweratome zuzuordnen)",

@@ -376,6 +376,10 @@ class SynthTab(QWidget):
         self.ed_name.editingFinished.connect(self.name_changed)
         row.addWidget(self.ed_name, 1)
         v.addLayout(row)
+        hint = QLabel(T("syn_output_hint"))                  # wohin der Text geht (Tab ohne eigenen Export-Knopf)
+        hint.setWordWrap(True)
+        hint.setStyleSheet(HINT_CSS)
+        v.addWidget(hint)
         self.lv.addWidget(g)
 
         g = QGroupBox(T("syn_scheme"))

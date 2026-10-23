@@ -563,7 +563,7 @@ class IRMSTab(TABS.FigureTab):
         self.txt_ir = QTextBrowser()
         self.txt_ir.setMaximumHeight(90)
         f.addRow(self.txt_ir)
-        b = QPushButton(T("si_copy"))
+        b = QPushButton(T("ir_copy"))
         b.clicked.connect(lambda: copy_rich(*self._ir_line))
         f.addRow(b)
         self.lv.addWidget(g)
@@ -598,7 +598,7 @@ class IRMSTab(TABS.FigureTab):
         self.txt_ea = QTextBrowser()
         self.txt_ea.setMaximumHeight(60)
         f.addRow(self.txt_ea)
-        b = QPushButton(T("si_copy"))
+        b = QPushButton(T("ea_copy"))
         b.clicked.connect(lambda: copy_rich(*self._ea_line))
         f.addRow(b)
         self.lv.addWidget(g)
@@ -754,7 +754,7 @@ class IRMSTab(TABS.FigureTab):
         for el in SI.EA_ELEMENTS:
             self.ea_calc_lbl[el].setText("–")
         if not formula:
-            self.lbl_ea_formula.setText(T("ms_no_formula"))
+            self.lbl_ea_formula.setText(T("ea_no_formula"))
             self.txt_ea.setHtml("")
             self.lbl_ea_info.setText("")
             return

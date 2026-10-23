@@ -449,8 +449,11 @@ class CVTab(TABS.FigureTab):
         self.tbl_couples.itemChanged.connect(self.couples_edited)
         f.addRow(T("cv_couples"), self.tbl_couples)
         row = QHBoxLayout()
-        for txt, fn in (("+", self.add_couple), ("−", self.remove_couple), (T("cv_suggest"), self.suggest)):
+        for txt, fn, tip in (("+", self.add_couple, ""), ("−", self.remove_couple, ""),
+                             (T("cv_suggest"), self.suggest, T("cv_suggest_tip"))):
             b = STYLE.list_button(txt)
+            if tip:
+                b.setToolTip(tip)
             b.clicked.connect(fn)
             row.addWidget(b)
         row.addStretch(1)

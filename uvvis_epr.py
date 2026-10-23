@@ -638,10 +638,13 @@ class EPRTab(TABS.FigureTab):
         g = QGroupBox(T("epr_entries"))
         v = QVBoxLayout(g)
         row = QHBoxLayout()
+        tips = {T("epr_add_sim"): T("epr_add_sim_tip"), T("epr_add_iso"): T("epr_add_iso_tip")}
         for txt, fn in ((T("epr_add_exp"), self.add_exp), (T("epr_add_sim"), self.add_sim),
                         (T("epr_add_iso"), self.add_iso),
                         ("↑", lambda: self.move(-1)), ("↓", lambda: self.move(1)), (T("remove"), self.remove)):
             b = STYLE.list_button(txt)
+            if txt in tips:
+                b.setToolTip(tips[txt])
             b.clicked.connect(fn)
             row.addWidget(b)
         v.addLayout(row)

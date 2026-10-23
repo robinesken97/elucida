@@ -2730,6 +2730,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.tbl.setHorizontalHeaderLabels([T("xr_name"), T("xr_ref"), "CCDC"])
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)   # „Interne Referenz“ ganz
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tbl.setMinimumHeight(110)
@@ -2753,6 +2754,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.sp_prob = QSpinBox(minimum=10, maximum=99, singleStep=5, suffix=" %", value=int(st["prob"]))
         self.sp_prob.setToolTip(T("xr_prob_tip"))
         f.addRow(T("xr_prob"), self.sp_prob)
+        self.cmb_style.currentIndexChanged.connect(self._prob_for_style)
         self.cmb_dis = QComboBox()
         for key in ("main", "all", "minor"):
             self.cmb_dis.addItem(T("xr_dis_" + key), key)
@@ -2950,6 +2952,12 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.st.update(size=self.cmb_size.currentData(), w_cm=self.sp_w.value(), h_cm=self.sp_h.value(),
                        fmt={e: cb.isChecked() for e, cb in self.cb_fmt.items()})
 
+    def _prob_for_style(self, *_):
+        """Ellipsoid-Wahrscheinlichkeit wirkt im Kugel-Stab-Stil nicht: ausgrauen und sagen, warum."""
+        ball = self.cmb_style.currentData() in BALL_STYLES
+        self.sp_prob.setEnabled(not ball)
+        self.sp_prob.setToolTip(T("xr_prob_ball") if ball else T("xr_prob_tip"))
+
     def collect(self):
         self.st.update(prob=self.sp_prob.value(), show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(),
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
@@ -3119,6 +3127,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.cmb_labmode.setEnabled(st["labels"])
         self.ed_wire.setText((cur or {}).get("wire_name") or "")
         self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(st.get("style", "mercury"))))
+        self._prob_for_style()
         self.fill_colors()
         self.fill_atoms()
         self.fill_frags()

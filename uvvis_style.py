@@ -52,6 +52,7 @@ _SVG = {
 
 HINT_CSS = "color: gray;"            # Hinweistexte
 WARN_CSS = "color: #d9534f;"         # Warnungen (fehlende Molmasse, Farbe unvollständig)
+NOTE_CSS = "color: #c77c0e;"         # Hinweise, die man beachten sollte, aber kein Fehler sind (orange)
 
 
 def make_form(parent=None):
