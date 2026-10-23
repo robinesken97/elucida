@@ -2397,14 +2397,14 @@ def selftest(outdir, with_isnet=False):
         report.append("SI lines (EA, UV-Vis) + SI section as Word (parts selectable): OK")
 
         # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
-        rn_path = ROOT / "release_notes.py"
+        rn_path = ROOT / "tools" / "release_notes.py"
         if rn_path.exists() and not getattr(sys, "frozen", False):
             import importlib.util
             spec_ = importlib.util.spec_from_file_location("release_notes", rn_path)
             RN = importlib.util.module_from_spec(spec_)
             spec_.loader.exec_module(RN)
-            en_ = (rn_path.parent / "CHANGELOG.md").read_text(encoding="utf-8")
-            de_ = (rn_path.parent / "CHANGELOG.de.md").read_text(encoding="utf-8")
+            en_ = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+            de_ = (ROOT / "CHANGELOG.de.md").read_text(encoding="utf-8")
             txt_ = RN.notes(APP_VERSION, en_, de_)
             assert txt_.startswith("## English") and "## Deutsch" in txt_ and f"{APP_NAME}-windows-x64.zip" in txt_
             assert f"## {APP_VERSION}" not in txt_ and "\n## 1." not in txt_          # nur dieser Abschnitt

@@ -2,7 +2,7 @@
 
     python tools/make_icon.py
 
-PyInstaller macht daraus .ico/.icns (build.py, --icon); gehört nicht in den Build.
+PyInstaller macht daraus .ico/.icns (tools/build.py, --icon); gehört nicht in den Build.
 """
 import sys
 from pathlib import Path

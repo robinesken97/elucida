@@ -1,15 +1,18 @@
 """Baut Elucida mit PyInstaller für das aktuelle Betriebssystem.
 
     pip install -r requirements.txt pyinstaller
-    python build.py
+    python tools/build.py
 
 Ergebnis: dist/Elucida/ (Windows/Linux) bzw. dist/Elucida.app (macOS).
 """
+import os
 import plistlib
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+os.chdir(Path(__file__).resolve().parent.parent)     # Pfade relativ zur Repo-Wurzel (dist/ liegt dort)
 
 # Versionsnummer nur an einer Stelle pflegen: APP_VERSION in elucida/__init__.py
 VERSION = re.search(r'^APP_VERSION = "([^"]+)"', Path("elucida/__init__.py").read_text(encoding="utf-8"), re.M).group(1)

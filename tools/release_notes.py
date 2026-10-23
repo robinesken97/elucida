@@ -1,6 +1,6 @@
 """Release Notes aus CHANGELOG.md und CHANGELOG.de.md erzeugen (für den Release-Job in build.yml).
 
-    python release_notes.py 1.16.0 > notes.md
+    python tools/release_notes.py 1.16.0 > notes.md
 
 Nimmt den Abschnitt „## <Version> – …“ aus beiden Changelogs (bis zum nächsten „## “) und setzt ihn unter
 „## English“ bzw. „## Deutsch“, danach die Download-Tabelle. Fehlt die Version in einem Changelog, bricht das
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 APP = "Elucida"
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent           # Repo-Wurzel (Changelogs)
 
 
 def section(text: str, version: str) -> str | None:
