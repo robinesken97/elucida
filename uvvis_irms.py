@@ -495,7 +495,7 @@ import os  # noqa: E402
 
 import uvvis_si as SI  # noqa: E402
 import uvvis_tabs as TABS  # noqa: E402
-from uvvis_i18n import T  # noqa: E402
+from elucida.app.i18n import T  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 IR_COLOR = "#7a1a12"

@@ -15,7 +15,7 @@ import numpy as np
 
 import uvvis_dft as DFT
 import uvvis_epr as EPR
-import uvvis_images as IMG
+from elucida.core import images as IMG
 import uvvis_sec as SEC
 import uvvis_xray as XRAY
 

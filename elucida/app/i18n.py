@@ -1,4 +1,4 @@
-"""uvvis_i18n.py - Übersetzungen DE/EN. T(key, **kw) liefert den Text in der aktiven Sprache."""
+"""elucida/app/i18n.py - Übersetzungen DE/EN. T(key, **kw) liefert den Text in der aktiven Sprache."""
 from __future__ import annotations
 
 import os

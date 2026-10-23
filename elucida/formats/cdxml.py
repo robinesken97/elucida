@@ -1,4 +1,4 @@
-"""uvvis_cdxml.py - CDXML (ChemDraw) direkt zeichnen: Bindungen, Atomlabels, Texte, Reaktionspfeile.
+"""elucida/formats/cdxml.py - CDXML (ChemDraw) direkt zeichnen: Bindungen, Atomlabels, Texte, Reaktionspfeile.
 
 Für Reaktionsschemata ohne ChemDraw-Export daneben: RDKit zeichnet nur die Moleküle (ohne Pfeil und Bedingungen)
 und löst Abkürzungen wie TMS auf. Hier wird alles an den Koordinaten der CDXML gezeichnet, Texte wie geschrieben

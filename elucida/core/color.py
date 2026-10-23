@@ -1,4 +1,4 @@
-"""uvvis_color.py - Farbe einer Lösung aus dem Absorptionsspektrum (CIE-Farbmetrik).
+"""elucida/core/color.py - Farbe einer Lösung aus dem Absorptionsspektrum (CIE-Farbmetrik).
 
 Transmission T(λ) = 10^(−A), mal Weißlicht (Planck 6504 K ≈ Tageslicht D65), integriert mit den
 CIE-1931-Normspektralwertkurven (2°) -> XYZ -> Bradford-Anpassung auf den D65-Weißpunkt (klare Lösung

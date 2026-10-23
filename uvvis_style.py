@@ -130,7 +130,7 @@ def pixmap(name, size=16, color=None):
 def list_button(txt):
     """Knopf über einer Liste: ↑/↓ nur als Symbol (mit Tooltip), Entfernen mit Papierkorb,
     Hinzufügen („…“) mit Plus."""
-    from uvvis_i18n import T
+    from elucida.app.i18n import T
     b = QPushButton(txt)
     if txt in ("↑", "↓"):
         b.setText("")
@@ -499,7 +499,7 @@ class Fold(QObject):
         self.refresh()
 
     def refresh(self):
-        from uvvis_i18n import T
+        from elucida.app.i18n import T
         mark = f"   ({T('adv_changed')})" if self.changed is not None and self.changed() else ""
         self.group.setTitle(("▼  " if self.opened else "▶  ") + self.base + mark)
 

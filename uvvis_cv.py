@@ -29,9 +29,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
-import uvvis_core as core
+from elucida.core import uvvis as core
 import uvvis_tabs as TABS
-from uvvis_i18n import T
+from elucida.app.i18n import T
 import uvvis_style as STYLE
 from uvvis_style import HINT_CSS, make_form
 

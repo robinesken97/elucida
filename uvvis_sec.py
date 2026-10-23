@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 
 import uvvis_cv as CV
 import uvvis_tabs as TABS
-from uvvis_i18n import T
+from elucida.app.i18n import T
 import uvvis_style as STYLE
 from uvvis_style import HINT_CSS, make_form
 

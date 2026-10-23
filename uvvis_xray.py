@@ -2238,7 +2238,7 @@ class XrayFigure:
         W, H = self.fig.get_size_inches()
         kw = dict(dpi=self.cfg["dpi"], bbox_inches=Bbox.from_bounds(0, 0, W, H), facecolor=self.bg_face,
                   transparent=self.bg_transparent)
-        import uvvis_images as IMG
+        from elucida.core import images as IMG
         for p in dict.fromkeys(paths):
             with matplotlib.rc_context({"svg.fonttype": "path"}):
                 self.fig.savefig(p, **kw)
@@ -2251,7 +2251,7 @@ def save_tight(F, svg):
     """Abbildung eng um das Molekül beschnitten (wie in der SI): SVG (Vektor, Text als Pfade) + PNG-Ersatz (600 dpi).
     -> (PNG, Breite cm, Höhe cm, SVG) für SI.write_docx."""
     from matplotlib.transforms import Bbox
-    import uvvis_images as IMG
+    from elucida.core import images as IMG
     svg = Path(svg)
     svg.parent.mkdir(parents=True, exist_ok=True)
     rend = F.fig.canvas.get_renderer()
@@ -2451,10 +2451,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTableWidget,
                                QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
-import uvvis_core as core  # noqa: E402
+from elucida.core import uvvis as core  # noqa: E402
 import uvvis_project as PRJ  # noqa: E402
 import uvvis_tabs as TABS  # noqa: E402
-from uvvis_i18n import T  # noqa: E402
+from elucida.app.i18n import T  # noqa: E402
 from uvvis_irms import copy_rich  # noqa: E402
 import uvvis_style as STYLE  # noqa: E402
 from uvvis_style import HINT_CSS, WARN_CSS, make_form  # noqa: E402

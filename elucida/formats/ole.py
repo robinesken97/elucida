@@ -1,4 +1,4 @@
-"""uvvis_ole.py - Bearbeitbare ChemDraw-Objekte in Word: OLE-Container (Compound File Binary, Version 3) schreiben.
+"""elucida/formats/ole.py - Bearbeitbare ChemDraw-Objekte in Word: OLE-Container (Compound File Binary, Version 3) schreiben.
 
 Aufbau wie ein in Word eingefügtes ChemDraw-Objekt (ProgID „ChemDraw.Document.6.0“): Streams „\\x01CompObj“
 (Klassenname), „\\x01Ole“, „\\x03ObjInfo“, „\\x03EPRINT“ (EMF-Vorschau, optional) und „CONTENTS“ (die Zeichnung, bei

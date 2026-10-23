@@ -15,9 +15,8 @@ import re
 import traceback
 from pathlib import Path
 
-APP_NAME = "Elucida"
+from elucida import APP_NAME, APP_VERSION  # noqa: F401  (Versionsnummer nur in elucida/__init__.py)
 OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
-APP_VERSION = "2.0.3"
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
@@ -45,14 +44,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication
                                QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTableWidget, QTableWidgetItem, QTextBrowser,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
-import uvvis_core as core  # noqa: E402
-import uvvis_images as IMG  # noqa: E402
-from uvvis_i18n import T, get_lang, set_lang  # noqa: E402
+from elucida.core import uvvis as core  # noqa: E402
+from elucida.core import images as IMG  # noqa: E402
+from elucida.app.i18n import T, get_lang, set_lang  # noqa: E402
 import uvvis_tabs  # noqa: E402
 import uvvis_project as PRJ  # noqa: E402
 import uvvis_report as REPORT  # noqa: E402
 import uvvis_update as UPD  # noqa: E402
-import uvvis_color as COLOR  # noqa: E402
+from elucida.core import color as COLOR  # noqa: E402
 import uvvis_cv as CVMOD  # noqa: E402
 import uvvis_sec as SECMOD  # noqa: E402
 import uvvis_epr as EPRMOD  # noqa: E402
@@ -355,8 +354,8 @@ def compound_from_structure(p):
     if not src.exists():
         return {}
     try:
-        import uvvis_chem
-        c = uvvis_chem.load_cdxml(src)
+        from elucida.core import chem as CHEM
+        c = CHEM.load_cdxml(src)
         return {"formula": c.get("formula"), "mw": c.get("mw")}
     except Exception:
         return {}
@@ -370,7 +369,7 @@ class TextFormatDialog(QDialog):
 
     def __init__(self, parent, tf, own=None, opts=ALL_OPTS, tab_key=None, tab_name=""):
         super().__init__(parent)
-        from uvvis_i18n import TEXTS
+        from elucida.app.i18n import TEXTS
         self.setWindowTitle(T("tf_title"))
         self.glob = dict(core.TEXT_DEFAULTS, **(tf or {}))
         self.own = dict(self.glob, **own) if own else None
@@ -1902,8 +1901,8 @@ class MainWindow(QMainWindow):
             if asset["mw"] is None and p.suffix.lower() != ".cdxml":
                 sib = p.with_suffix(".cdxml")            # gleichnamige CDXML neben SVG/PDF
                 if sib.exists():
-                    import uvvis_chem
-                    chem = uvvis_chem.load_cdxml(sib)
+                    from elucida.core import chem as CHEM
+                    chem = CHEM.load_cdxml(sib)
                     asset.update(mw=chem["mw"], formula=chem["formula"], warnings=chem["warnings"])
             return asset
 
@@ -3012,7 +3011,7 @@ def selftest(outdir, with_isnet=False):
             "   1   20660.0    484.0   0.150000000   1.00000   1.00000   0.00000   0.00000",
             "   2   38168.0    262.0   0.600000000   3.00000   1.70000   0.00000   0.00000", ""]),
             encoding="utf-8")
-        assert len(__import__("uvvis_extra").parse_tddft(orca)["E"]) == 2
+        assert len(__import__("elucida.core.tddft", fromlist=["_"]).parse_tddft(orca)["E"]) == 2
         w.ov_state["entries"] = [
             {"kind": "exp", "file": str(csv), "sample": "TEST-A-0p25mgml_THF", "label": "exp", "color": "#000000",
              "visible": True, "own_norm": False, "nlo": 450, "nhi": 520, "conc": 0.25, "unit": "mg/mL",
@@ -3109,7 +3108,7 @@ def selftest(outdir, with_isnet=False):
                "  0-1.0A  -> 10-1.0A    4.004892   32301.6   309.6   0.120701528   1.23017   0.69013   0.85513   0.15048",
                ""]
         soc.write_text("\n".join(orca.read_text(encoding="utf-8").splitlines() + hdr), encoding="utf-8")
-        import uvvis_extra as XX
+        from elucida.core import tddft as XX
         r_soc = XX.parse_tddft(soc)
         assert r_soc["variant"] == "soc" and abs(r_soc["E"][1] - 4.004892) < 1e-6 and abs(r_soc["f"][1] - 0.1207) < 1e-3, r_soc
         assert XX.parse_tddft(soc, "nosoc")["variant"] == "nosoc"
@@ -3181,7 +3180,7 @@ def selftest(outdir, with_isnet=False):
         report.append("overlay stacked: OK")
 
         # TD-DFT: Triplett-Zustände (ORCA 6 Bezeichnung, ORCA 4/5 eigener Block, Gaussian) und Kombinieren
-        import uvvis_extra as XT
+        from elucida.core import tddft as XT
         sep = "-" * 100
         tab_head = [sep, "      ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", sep,
                     "   Transition    Energy   Energy  Wavelength fosc(D2)   D2   DX   DY   DZ",
@@ -3995,7 +3994,7 @@ def selftest(outdir, with_isnet=False):
             w.apply_globals()
         report.append("eps tab layout (sections, empty state): OK")
         # Anleitung in leeren Tabs: Texte in beiden Sprachen, Link zeigt auf eine vorhandene README-Überschrift
-        from uvvis_i18n import TEXTS as TEXTS_
+        from elucida.app.i18n import TEXTS as TEXTS_
         heads_ = {lang_: [ln_[3:].strip() for ln_ in (Path(__file__).parent / f_).read_text(encoding="utf-8").splitlines()
                           if ln_.startswith("## ")]
                   for lang_, f_ in (("de", "README.de.md"), ("en", "README.md"))
@@ -5122,7 +5121,7 @@ def selftest(outdir, with_isnet=False):
             assert [b_[0] for b_ in t_s.si_blocks(out / "syn")][1] == "image"
             # Schema ohne ChemDraw-Export: selbst gezeichnet (Pfeil, Bedingungen), Reagenzien aus den Pfeiltexten
             import xml.etree.ElementTree as _ET
-            import uvvis_cdxml as CDXD
+            from elucida.formats import cdxml as CDXD
             fr_ = _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment")
             fr2_ = _ET.fromstring(_Chem.MolToCDXMLBlock(sm_)).find(".//fragment")
             for k_, n_ in enumerate(fr2_.iter()):                              # Produkt: 150 pt weiter rechts

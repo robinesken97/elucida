@@ -1,5 +1,5 @@
 """
-uvvis_chem.py - CDXML lesen: Zeichnung (Orientierung wie in ChemDraw), Molmasse, Summenformel.
+elucida/core/chem.py - CDXML lesen: Zeichnung (Orientierung wie in ChemDraw), Molmasse, Summenformel.
 
 RDKit übernimmt die 2D-Koordinaten aus der CDXML, die Struktur wird also nicht neu
 ausgerichtet, sondern nur im ACS-1996-Stil neu gezeichnet.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from uvvis_i18n import T
+from elucida.app.i18n import T
 
 
 def _rdkit():

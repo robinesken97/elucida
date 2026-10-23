@@ -14,7 +14,7 @@ import html as _h
 import re
 from pathlib import Path
 
-from uvvis_i18n import T
+from elucida.app.i18n import T
 
 # Massen (g), Volumen (mL), Stoffmengen (mmol): Umrechnungsfaktoren
 MASS = {"kg": 1000.0, "g": 1.0, "mg": 1e-3, "µg": 1e-6, "μg": 1e-6}
@@ -228,7 +228,7 @@ def amount_text(row, calc):
 # ---------------------------------------------------------------------------- Schema
 def scheme_files(cdxml):
     """Zur CDXML gehörende ChemDraw-Dateien: Bild (SVG/PDF/PNG), CDX (bearbeitbar), EMF (Vektor-Vorschau)."""
-    import uvvis_images as IMG
+    from elucida.core import images as IMG
     p = Path(cdxml)
     sib = {c.suffix.lower(): c for c in p.parent.glob(p.stem + ".*") if c.stem == p.stem}
     return dict(picture=IMG.find_sibling_drawing(p) if p.suffix.lower() == ".cdxml" else p,
@@ -256,8 +256,8 @@ def scheme_molecules(cdxml):
 def scheme_drawing(cdxml):
     """Schema ohne ChemDraw-Export: eigene Zeichnung aus den CDXML-Koordinaten (uvvis_cdxml), Asset wie
     IMG.load_structure (PDF-Vektor + Vorschau); Hinweise auf nicht gezeichnete Objekte als Warnung."""
-    import uvvis_cdxml as CDX
-    import uvvis_images as IMG
+    from elucida.formats import cdxml as CDX
+    from elucida.core import images as IMG
     svg, notes = CDX.render_svg(cdxml)
     info = {"mw": None, "formula": None, "warnings": [T("syn_scheme_notdrawn", what=", ".join(notes))] if notes else []}
     res = IMG._render_doc(IMG._vector_doc(cdxml, svg), 2400, info)
@@ -593,7 +593,7 @@ class SynthTab(QWidget):
 
     def scheme_asset(self):
         """Schema als Struktur-Asset (PDF-Vektor + Vorschau) aus der ChemDraw-Exportdatei (sonst RDKit)."""
-        import uvvis_images as IMG
+        from elucida.core import images as IMG
         p = self.st.get("scheme")
         if not p or not Path(p).exists():
             return None
@@ -664,7 +664,7 @@ class SynthTab(QWidget):
         if not p or Path(p).suffix.lower() != ".cdxml":
             self.main.error(T("syn_need_cdxml"))
             return
-        import uvvis_cdxml as CDX
+        from elucida.formats import cdxml as CDX
         prod = lambda role: role == "product"                                   # noqa: E731
         have = {(x, prod(r.get("role"))) for r in self.st["reagents"] for x in (str(r.get("M") or ""), r.get("name"))
                 if x}
@@ -786,7 +786,7 @@ class SynthTab(QWidget):
         if not self.main.ensure_project():
             return None
         out = PRJ.export_dir(self.main.project_dir, self.STATE_KEY)
-        import uvvis_core as core
+        from elucida.core import uvvis as core
         path = out / f"{core.safe_name(self.compound_name() or 'synthesis')}_synthesis.docx"
         try:
             SI.write_docx(path, self.si_blocks(out))

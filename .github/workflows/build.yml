@@ -138,7 +138,7 @@ jobs:
         id: notes
         run: |
           case "$TAG" in v[0-9]*) ;; *) echo "Tag muss mit v beginnen: $TAG"; exit 1;; esac
-          grep -q "^APP_VERSION = \"${TAG#v}\"" uvvis_gui.py || { echo "APP_VERSION passt nicht zu $TAG"; exit 1; }
+          grep -q "^APP_VERSION = \"${TAG#v}\"" elucida/__init__.py || { echo "APP_VERSION passt nicht zu $TAG"; exit 1; }
           python3 release_notes.py "$TAG" > release_notes.md
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v7

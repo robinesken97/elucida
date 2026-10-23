@@ -12,7 +12,7 @@ import re
 import zipfile
 from pathlib import Path
 
-import uvvis_core as core
+from elucida.core import uvvis as core
 from uvvis_irms import formula_str, parse_formula
 
 # Mittlere Atommassen (IUPAC 2021, konventionelle Werte) für die Elementaranalyse
@@ -477,7 +477,7 @@ _SHAPETYPE = ('<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o
 
 def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
     """Eingebettetes ChemDraw-Objekt (wie von Word beim Einfügen aus ChemDraw geschrieben); Doppelklick öffnet ChemDraw."""
-    import uvvis_ole
+    from elucida.formats import ole as OLE
     wpt, hpt = w_cm / 2.54 * 72, h_cm / 2.54 * 72
     ppr = _ppr(align="center", line=240, after=120, keep_next=True)
     if page_break:
@@ -486,7 +486,7 @@ def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
             + (_SHAPETYPE if first else "") +
             f'<v:shape id="_x0000_iOle{n}" type="#_x0000_t75" style="width:{wpt:.2f}pt;height:{hpt:.2f}pt" o:ole="">'
             f'<v:imagedata r:id="rIdOlePrev{n}" o:title=""/></v:shape>'
-            f'<o:OLEObject Type="Embed" ProgID="{uvvis_ole.CHEMDRAW_PROGID}" ShapeID="_x0000_iOle{n}" '
+            f'<o:OLEObject Type="Embed" ProgID="{OLE.CHEMDRAW_PROGID}" ShapeID="_x0000_iOle{n}" '
             f'DrawAspect="Content" ObjectID="_18{54180700 + n:08d}" r:id="rIdOle{n}"/></w:object></w:r></w:p>')
 
 
@@ -600,8 +600,8 @@ def write_docx(path, blocks, columns=1):
             body.append(_table(header, rows, [col_w // n] * n, line=240, size=16 if columns > 1 else 18))
             body.append(_para([("", set())], line=240))
         elif k == "ole":
-            import uvvis_ole
-            oles.append((uvvis_ole.write_cfb(uvvis_ole.chemdraw_streams(Path(b[1]).read_bytes())), Path(b[2])))
+            from elucida.formats import ole as OLE
+            oles.append((OLE.write_cfb(OLE.chemdraw_streams(Path(b[1]).read_bytes())), Path(b[2])))
             body.append(_ole_xml(len(oles), b[3], b[4], first=len(oles) == 1, page_break=pending_break))
             pending_break = False
         elif k == "pagebreak":

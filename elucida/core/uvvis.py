@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-uvvis_core.py - Kern der UV-Vis-Auswertung (Lambert-Beer an Verdünnungsreihen).
+elucida/core/uvvis.py - Kern der UV-Vis-Auswertung (Lambert-Beer an Verdünnungsreihen).
 
 Wird von der GUI (uvvis_gui.py) genutzt, läuft aber auch allein:
-  python uvvis_core.py config.yaml            # rendern + auswerten
-  python uvvis_core.py messung.csv            # Cary-CSV mit Standardeinstellungen
-  python uvvis_core.py config.yaml -i         # Layout mit der Maus anpassen ('w' = speichern)
-  python uvvis_core.py --demo ORDNER          # Beispieldaten erzeugen
+  python -m elucida.core.uvvis config.yaml            # rendern + auswerten
+  python -m elucida.core.uvvis messung.csv            # Cary-CSV mit Standardeinstellungen
+  python -m elucida.core.uvvis config.yaml -i         # Layout mit der Maus anpassen ('w' = speichern)
+  python -m elucida.core.uvvis --demo ORDNER          # Beispieldaten erzeugen
 """
 from __future__ import annotations
 
@@ -26,9 +26,8 @@ import numpy as np
 import yaml
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import uvvis_images as IMG  # noqa: E402
-from uvvis_i18n import T  # noqa: E402
+from elucida.core import images as IMG  # noqa: E402
+from elucida.app.i18n import T  # noqa: E402
 
 LOG = print          # GUI ersetzt das durch ihr Protokollfenster
 
@@ -411,7 +410,7 @@ _HEADERISH = re.compile(r"^(#?\d*|wave.*|.*\(nm\).*|abs.*|nm|x|y)$", re.I)
 
 def read_binary_samples(path):
     """Cary WinUV .DSW/.BSW (und Shimadzu .SPC) über den mitgelieferten parseuv-Parser."""
-    from parseuv_lite import CaryFile
+    from elucida.formats.parseuv_lite import CaryFile
     cf = CaryFile(str(path))
     raw = Path(path).read_bytes().decode("cp1252", errors="replace")
     ex_list = [float(v) for v in _EX_RE.findall(raw)]

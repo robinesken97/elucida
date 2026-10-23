@@ -25,12 +25,12 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QMessageBox, QPlainTextEdit, QTabWidget)
 
-import uvvis_color as COLOR
-import uvvis_core as core
-import uvvis_extra as X
-import uvvis_images as IMG
+from elucida.core import color as COLOR
+from elucida.core import uvvis as core
+from elucida.core import tddft as X
+from elucida.core import images as IMG
 import uvvis_project as PRJ
-from uvvis_i18n import T, get_lang
+from elucida.app.i18n import T, get_lang
 import uvvis_style as STYLE
 from uvvis_style import HINT_CSS, WARN_CSS, align_forms, make_form
 
@@ -937,7 +937,7 @@ class FigureTab(QWidget):
 
     def caption_box(self):
         """Gruppe „Bildunterschrift (SI-Export)“: Freitextfelder + Vorschau der fertigen Unterschrift."""
-        from uvvis_i18n import TEXTS
+        from elucida.app.i18n import TEXTS
         st = self.st
         g = QGroupBox(T("cap_box"))
         self.grp_caption = g

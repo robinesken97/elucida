@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
                                QMessageBox, QPushButton, QTextBrowser, QWidget)
 
 import uvvis_tabs as TABS
-from uvvis_i18n import T
+from elucida.app.i18n import T
 from uvvis_irms import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
                         ppm, read_bruker_d, read_ms_docx)
 from uvvis_style import HINT_CSS, WARN_CSS, make_form

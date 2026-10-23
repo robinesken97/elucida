@@ -1,5 +1,5 @@
 """
-uvvis_images.py - Bilder für uvvis_plot.py laden.
+elucida/core/images.py - Bilder für uvvis_plot.py laden.
 
 Küvettenfoto:  jedes Pillow-Format + HEIC/HEIF/AVIF (pillow-heif), EXIF-Drehung,
                Hintergrund entfernen (rembg -> GrabCut -> Randfarbe), zuschneiden.
@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
-from uvvis_i18n import T
+from elucida.app.i18n import T
 
 LOG = print
 
@@ -386,8 +386,8 @@ def load_structure(path, target_px=2400, color=None):
     ext = path.suffix.lower()
     info = {"mw": None, "formula": None, "warnings": []}
     if ext in CHEM_EXT:
-        import uvvis_chem
-        chem = uvvis_chem.load_cdxml(path)
+        from elucida.core import chem as CHEM
+        chem = CHEM.load_cdxml(path)
         svg = chem.pop("svg")
         info.update(chem)
         original = find_sibling_drawing(path)
@@ -401,8 +401,8 @@ def load_structure(path, target_px=2400, color=None):
         # ohne Export: selbst aus den CDXML-Koordinaten zeichnen (Abkürzungen wie TMS/Dipp bleiben stehen);
         # RDKit nur, wenn dabei etwas fehlen würde (Bilder, Klammern, Kurvenpfeile …) oder es scheitert
         try:
-            import uvvis_cdxml
-            own, notes = uvvis_cdxml.render_svg(path)
+            from elucida.formats import cdxml as CDXDRAW
+            own, notes = CDXDRAW.render_svg(path)
         except Exception as e:
             own, notes = None, [str(e)]
         if own is not None and not notes:

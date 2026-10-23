@@ -24,8 +24,8 @@ from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-import uvvis_core as core
-from uvvis_i18n import get_lang
+from elucida.core import uvvis as core
+from elucida.app.i18n import get_lang
 
 FONT = "Arial"
 BLUE = Font(name=FONT, color="0000FF")

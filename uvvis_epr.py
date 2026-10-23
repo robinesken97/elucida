@@ -18,9 +18,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QSpinBox,
                                QTableWidget, QTableWidgetItem, QVBoxLayout)
 
-import uvvis_core as core
+from elucida.core import uvvis as core
 import uvvis_tabs as TABS
-from uvvis_i18n import T
+from elucida.app.i18n import T
 import uvvis_style as STYLE
 from uvvis_style import HINT_CSS, make_form
 
@@ -374,7 +374,7 @@ def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script
             cov = np.linalg.inv(J.T @ J) * cost / len(I)
             z = 1.96
         else:
-            import uvvis_core as core                    # eigenes t-Quantil wie im ε-Fit
+            from elucida.core import uvvis as core                    # eigenes t-Quantil wie im ε-Fit
             cov = np.linalg.inv(J.T @ J) * cost / max(1, len(I) - 2)
             z = core.t_quantile(0.975, max(1, len(I) - 2))
         se = np.sqrt(np.abs(np.diag(cov)))

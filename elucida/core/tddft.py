@@ -1,5 +1,5 @@
 """
-uvvis_extra.py - Overlay- und Fluoreszenz-Abbildungen.
+elucida/core/tddft.py - Overlay- und Fluoreszenz-Abbildungen.
 
 - TD-DFT-Ausgaben von ORCA (4–6) und Gaussian lesen, Oszillatorstärken zu ε(λ) verbreitern
 - Fotopaar (Tageslicht -> UV) mit Pfeil und Anregungswellenlänge als ein Bildelement
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-import uvvis_core as core
+from elucida.core import uvvis as core
 
 EV_TO_CM = 8065.544          # 1 eV in cm⁻¹
 EPS_CONST = 1.3062974e8      # L mol⁻¹ cm⁻² ; ε(ν̃) = C · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), σ in cm⁻¹

@@ -11,8 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Versionsnummer nur an einer Stelle pflegen: APP_VERSION in uvvis_gui.py
-VERSION = re.search(r'^APP_VERSION = "([^"]+)"', Path("uvvis_gui.py").read_text(encoding="utf-8"), re.M).group(1)
+# Versionsnummer nur an einer Stelle pflegen: APP_VERSION in elucida/__init__.py
+VERSION = re.search(r'^APP_VERSION = "([^"]+)"', Path("elucida/__init__.py").read_text(encoding="utf-8"), re.M).group(1)
 
 args = [
     sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
@@ -24,7 +24,7 @@ args = [
     "--collect-all", "pymupdf",
     "--collect-all", "pillow_heif",
     "--collect-all", "onnxruntime",
-    "--hidden-import", "parseuv_lite",
+    "--hidden-import", "elucida.formats.parseuv_lite",
     "--hidden-import", "olefile",
     "--hidden-import", "openpyxl",
     "--hidden-import", "uvvis_demo",               # Beispielprojekt (Hilfe-Menü), nur bei Bedarf importiert

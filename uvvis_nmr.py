@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 import uvvis_xray as XRAY
-from uvvis_i18n import T
+from elucida.app.i18n import T
 
 KINDS_2D = ("COSY", "HSQC", "HMQC", "HMBC", "NOESY", "ROESY", "TOCSY", "HOESY", "INADEQUATE", "2D")
 _KIND_ORDER = {k: i for i, k in enumerate(("COSY", "TOCSY", "HSQC", "HMQC", "HMBC", "NOESY", "ROESY", "HOESY",
@@ -427,7 +427,7 @@ def place_structure(spec_svg, struct, pos="auto", width=0.2, xy=None):
 def compose_structure(spec_svg, struct, out_svg, xy=(0.07, 0.12), width=0.2):
     """Struktur (dict aus IMG.load_structure: pdf + clip) als Vektorgruppe in das Mnova-SVG setzen – ersetzt den
     Inkscape-Schritt. xy = linke obere Ecke als Anteil der Bildbreite/-höhe, width = Anteil der Bildbreite."""
-    import uvvis_images as IMG
+    from elucida.core import images as IMG
     txt = Path(spec_svg).read_text(encoding="utf-8", errors="replace")
     vx, vy, vw, vh = svg_viewbox(txt)
     w = vw * width
@@ -888,7 +888,7 @@ class NMRTab(QWidget):
             self.changed()
 
     def structure_asset(self):
-        import uvvis_images as IMG
+        from elucida.core import images as IMG
         p = self.structure_path()
         if p is None:
             return None
@@ -1107,5 +1107,5 @@ class NMRTab(QWidget):
 
 
 def core_safe(name):
-    import uvvis_core as core
+    from elucida.core import uvvis as core
     return core.safe_name(name)
