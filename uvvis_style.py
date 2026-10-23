@@ -10,8 +10,8 @@ from pathlib import Path
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout, QLabel, QSizePolicy,
-                               QPushButton, QStyleFactory, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
+                               QScrollArea, QSizePolicy, QPushButton, QStyleFactory, QVBoxLayout, QWidget)
 
 COLORS = {
     # Abstufung wie im Entwurf: Seite < Karte, Felder etwas abgesetzt, warme Grautöne, dezente Ränder
@@ -166,15 +166,36 @@ def tidy(root):
     for b in root.findChildren(QPushButton):
         if not b.text() and not b.icon().isNull():
             b.setFixedWidth(34)
+    for x in root.findChildren(QAbstractSpinBox) + root.findChildren(QComboBox):
+        x.setFocusPolicy(Qt.StrongFocus)                        # siehe _WheelGuard
     # Zeilen nur aus Zahlenfeldern/Beschriftungen/Häkchen (z. B. „450 – 520“): zusammenhalten statt über die Breite
     # verteilen (die Zahlenfelder sind höchstens 160 px breit, sonst rückt das zweite Feld an den rechten Rand)
-    from PySide6.QtWidgets import QAbstractSpinBox, QCheckBox
+    from PySide6.QtWidgets import QCheckBox
     for lay in root.findChildren(QHBoxLayout):
         items = [lay.itemAt(i) for i in range(lay.count())]
         ws = [it.widget() for it in items if it.widget() is not None]
         if (ws and any(isinstance(x, QAbstractSpinBox) for x in ws) and not any(it.spacerItem() for it in items)
                 and all(isinstance(x, (QAbstractSpinBox, QLabel, QCheckBox)) for x in ws)):
             lay.addStretch(1)
+
+
+class _WheelGuard(QObject):
+    """Mausrad über Zahlenfeldern und Auswahllisten in einer scrollbaren Spalte: ohne Fokus scrollt die Spalte weiter,
+    statt beim Darüberfahren den Wert zu verstellen. Erst nach Anklicken (Fokus) ändert das Mausrad den Wert.
+    Einmal für die ganze Anwendung (apply)."""
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t == QEvent.Polish and isinstance(obj, (QAbstractSpinBox, QComboBox)):
+            obj.setFocusPolicy(Qt.StrongFocus)                  # Mausrad gibt keinen Fokus (Qt-Standard: doch)
+        elif t == QEvent.Wheel and isinstance(obj, (QAbstractSpinBox, QComboBox)) and not obj.hasFocus():
+            p = obj.parentWidget()
+            while p is not None and not isinstance(p, QScrollArea):
+                p = p.parentWidget()
+            if p is not None:
+                QApplication.sendEvent(p.verticalScrollBar(), ev)
+                return True
+        return False
 
 
 class _DisabledHint(QObject):
@@ -216,6 +237,9 @@ def apply(mode, cache_dir: Path):
     """Fusion, Palette und Stylesheet für die ganze Anwendung setzen."""
     global _mode, base_style
     app = QApplication.instance()
+    if getattr(app, "_wheel_guard", None) is None:
+        app._wheel_guard = _WheelGuard(app)
+        app.installEventFilter(app._wheel_guard)
     hints = QGuiApplication.styleHints()
     # Fensterrahmen/Titelleiste passend; "system" folgt wieder dem Betriebssystem
     hints.setColorScheme({"light": Qt.ColorScheme.Light, "dark": Qt.ColorScheme.Dark}.get(

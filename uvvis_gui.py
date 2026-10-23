@@ -1210,7 +1210,7 @@ class MainWindow(QMainWindow):
                 hb.addSpacing(8)
             col = QVBoxLayout()
             col.setSpacing(1)
-            col.addWidget(QLabel(T(head).upper(), objectName="navGroup"))
+            col.addWidget(QLabel(T(head).upper(), objectName="navGroup"), 0, Qt.AlignHCenter)   # mittig über der Gruppe
             row = QHBoxLayout()
             row.setSpacing(2)
             for k in keys:
@@ -3866,7 +3866,33 @@ def selftest(outdir, with_isnet=False):
         w.ov_tab.show_details()
         assert w.ov_tab.det.isHidden() == (not w.ov_tab.det.isEnabled())
         assert w.toolbar.widgetForAction(w.act_si).property("accent")
-        report.append("navigation, detail hint, SI button: OK")
+        # Mausrad über einem Zahlenfeld in der linken Spalte: ohne Fokus scrollt die Spalte, der Wert bleibt
+        from PySide6.QtCore import QPoint, QPointF
+        from PySide6.QtGui import QWheelEvent
+        sa_ = QScrollArea()
+        inner_ = QWidget()
+        lv_ = QVBoxLayout(inner_)
+        spins_ = [QSpinBox(maximum=100, value=50) for _ in range(40)]
+        for sp_ in spins_:
+            lv_.addWidget(sp_)
+        sa_.setWidget(inner_)
+        sa_.setWidgetResizable(True)
+        sa_.resize(200, 200)
+        sa_.show()
+        pump(0.2)
+        sp0_ = spins_[2]
+
+        def wheel_(target_):
+            return QWheelEvent(QPointF(5, 5), QPointF(target_.mapToGlobal(QPoint(5, 5))), QPoint(0, 0), QPoint(0, -120),
+                               Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        QApplication.sendEvent(sp0_, wheel_(sp0_))
+        assert sp0_.value() == 50 and sa_.verticalScrollBar().value() > 0, (sp0_.value(), sa_.verticalScrollBar().value())
+        assert sp0_.focusPolicy() == Qt.StrongFocus
+        sp0_.setFocus()
+        QApplication.sendEvent(sp0_, wheel_(sp0_))
+        assert sp0_.value() != 50 or not sp0_.hasFocus()      # mit Fokus wie gewohnt (offscreen evtl. ohne Fokus)
+        sa_.close()
+        report.append("navigation, detail hint, SI button, wheel guard: OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
         w.render()
