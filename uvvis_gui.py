@@ -3193,11 +3193,17 @@ def selftest(outdir, with_isnet=False):
         proc("button_press_event", MouseEvent("button_press_event", w.canvas, cx, cy, button=1))
         assert a_.get_animated() and w.dragger._bg is not None, "Blitting nicht aktiv"
         proc("motion_notify_event", MouseEvent("motion_notify_event", w.canvas, cx + 30, cy + 20, button=1))
+        # nach dem Loslassen muss ganz neu gezeichnet werden (Blitting-Hintergründe, auch der der Hover-Anzeige, sind
+        # ohne das gezogene Element entstanden); geprüft wird die Anforderung, nicht ihr Zeitpunkt (CI ohne Fenster)
+        idle_ = []
+        w.canvas.draw_idle = lambda *a_k: idle_.append(1)
         proc("button_release_event", MouseEvent("button_release_event", w.canvas, cx + 30, cy + 20, button=1))
+        del w.canvas.draw_idle
+        assert idle_, "nach dem Ziehen kein Neuzeichnen angefordert"
+        assert w.hover.bg is None, "Hover-Hintergrund aus der Zeit des Ziehens noch gültig"
         pump()
         p1 = a_.get_position()
         assert p1.x0 > p0.x0 and p1.y0 > p0.y0 and not a_.get_animated() and w.dragger._bg is None, (p0, p1)
-        assert w.hover.bg is not None, "nach dem Ziehen kein neuer Hintergrund (Hover blittet alten ohne Element)"
         assert all(getattr(ann, "_draggable", None) is None or ann._draggable._use_blit
                    for ann in w.F.ann_items.values()), "Labels ohne Blitting"
         w.series[w.current]["layout"] = {}
