@@ -1227,10 +1227,13 @@ TEXTS = {
     "xr_reset_display_done": ("Darstellung auf Standard gesetzt – Rückgängig mit Strg+Z.",
                               "Display reset to defaults – undo with Ctrl+Z."),
     "xr_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom wählen "
-                      "(2 = Abstand, 3 = Winkel, 4 = Diederwinkel), Doppelklick = Label an/aus, Labels lassen sich "
-                      "verschieben.",
+                      "(2 = Abstand, 3 = Winkel, 4 = Diederwinkel), Doppelklick = Label an/aus, Shift + Rahmen = Labels "
+                      "mehrerer Atome an/aus, Labels lassen sich verschieben.",
                       "Drag = rotate, right button = pan, wheel = zoom, click = pick atom "
-                      "(2 = distance, 3 = angle, 4 = torsion), double-click = label on/off; labels can be dragged."),
+                      "(2 = distance, 3 = angle, 4 = torsion), double-click = label on/off, Shift + drag a box = labels "
+                      "of several atoms on/off; labels can be dragged."),
+    "xr_box_labels_off": ("Labels ausblenden ({n} Atome)", "Hide labels ({n} atoms)"),
+    "xr_box_labels_on": ("Labels zeigen ({n} Atome)", "Show labels ({n} atoms)"),
     "xr_colors": ("Atomfarben", "Atom colours"),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
     "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
@@ -1271,9 +1274,10 @@ TEXTS = {
     "xr_atom_shown": ("zeigen", "show"),
     "xr_atom_label": ("Label", "Label"),
     "xr_atoms_tip": ("Einzelne Atome (z. B. H) ausblenden und Labels je Atom an-/abschalten; "
-                     "Doppelklick auf ein Atom in der Abbildung schaltet sein Label um.",
+                     "Doppelklick auf ein Atom in der Abbildung schaltet sein Label um, Shift + Rahmen ziehen die Labels "
+                     "mehrerer Atome.",
                      "Hide single atoms (e.g. H) and switch labels per atom; "
-                     "double-click an atom in the figure to toggle its label."),
+                     "double-click an atom in the figure to toggle its label, Shift + drag a box for several atoms."),
     "xr_labels_all": ("Alle Labels", "All labels"),
     "xr_labels_none": ("Keine Labels", "No labels"),
     "xr_atoms_reset": ("Standard", "Default"),
@@ -1685,9 +1689,11 @@ TEXTS = {
                      "Ball-and-stick styles: relative to the default ({std} Å = size as designed for the style)"),
     "dft_hover_file": ("(in der Datei: {lab})", "(in the file: {lab})"),
     "dft_mouse_hint": ("Ziehen = drehen, rechte Taste = verschieben, Mausrad = Zoom, Klick = Atom zum Messen/Ausrichten "
-                       "wählen (beim Nummerieren: nummerieren), Doppelklick = Label an/aus, Labels lassen sich verschieben.",
+                       "wählen (beim Nummerieren: nummerieren), Doppelklick = Label an/aus, Shift + Rahmen = Labels mehrerer "
+                       "Atome an/aus, Labels lassen sich verschieben.",
                        "Drag = rotate, right button = pan, wheel = zoom, click = select atom to measure/align (while "
-                       "numbering: number it), double-click = label on/off; labels can be dragged."),
+                       "numbering: number it), double-click = label on/off, Shift + drag a box = labels of several "
+                       "atoms on/off; labels can be dragged."),
 }
 
 

@@ -4511,6 +4511,31 @@ def selftest(outdir, with_isnet=False):
         pump(0.6)
         assert ent_[0]["label_on"] == {"C2": False} and "lbl_C2" not in t_x.F.ann_items, ent_[0]["label_on"]
         assert not t_x.sel
+        # Shift + Rahmen: Atome im Rahmen -> Menü (hier abgefangen), dann Labels mehrerer Atome aus und wieder an
+        got_, boxed_ = [], t_x.atoms_boxed
+        t_x.atoms_boxed = got_.extend
+        try:
+            p1_, p2_ = (t_x.F.ax.transData.transform((t_x.F.scene["by_k"][t_x.F.mol.find_key(l_)]["x"],
+                                                      t_x.F.scene["by_k"][t_x.F.mol.find_key(l_)]["y"]))
+                        for l_ in ("C1", "C2"))
+            x0_, y0_ = min(p1_[0], p2_[0]) - 3, min(p1_[1], p2_[1]) - 3
+            x1_, y1_ = max(p1_[0], p2_[0]) + 3, max(p1_[1], p2_[1]) + 3
+            proc_("button_press_event", MouseEvent("button_press_event", t_x.canvas, x0_, y0_, button=1, key="shift"))
+            proc_("motion_notify_event", MouseEvent("motion_notify_event", t_x.canvas, x1_, y1_, button=1,
+                                                    key="shift"))
+            proc_("button_release_event", MouseEvent("button_release_event", t_x.canvas, x1_, y1_, button=1,
+                                                     key="shift"))
+            pump(0.1)
+        finally:
+            t_x.atoms_boxed = boxed_
+        keys_ = {t_x.F.mol.atoms[k_]["key"] for k_ in got_}
+        assert {"C1", "C2"} <= keys_, keys_
+        assert not any(p_.get_linestyle() == "--" for p_ in t_x.F.ax.patches), "Rahmen bleibt stehen"
+        t_x.set_labels(got_, False)
+        assert not any(f"lbl_{k_}" in t_x.F.ann_items for k_ in keys_), keys_
+        t_x.set_labels(got_, True)
+        assert all(f"lbl_{k_}" in t_x.F.ann_items for k_ in keys_ if not k_.startswith("H")), keys_
+        ent_[0]["label_on"] = {}
         t_x.set_label("H3", True)                                           # H-Label einzeln an
         ent_[0]["hidden_atoms"] = ["H3" + inv_]                             # ein einzelnes H ausblenden
         t_x.render()
@@ -4789,6 +4814,11 @@ def selftest(outdir, with_isnet=False):
         t_d.sync_widgets()
         t_d.render()
         assert t_d.F is not None and len(t_d.F.scene["atoms"]) == 8
+        lab_ = [k_ for k_ in range(8) if t_d.F.mol.atoms[k_]["el"] != "H"]    # Labels mehrerer Atome (Rahmen)
+        t_d.set_labels(lab_, False)
+        assert all(e_o["label_on"].get(t_d.F.mol.atoms[k_]["key"]) is False for k_ in lab_), e_o["label_on"]
+        t_d.set_labels(lab_, True)
+        assert not e_o["label_on"], e_o["label_on"]                            # Vorgabe: Ausnahmen fallen weg
         pl_ = DFT.si_plain(t_d.si_of(e_o))
         for frag_ in ("ORCA 6.1.1: ! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)",
                       "Charge: 0\tMultiplicity: 1\tPoint group: C1", "1 imaginary frequency (\u221231.20 cm-1)",

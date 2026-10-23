@@ -2234,13 +2234,15 @@ def save_tight(F, svg):
 # ---------------------------------------------------------------------------- Maus
 class XrayMouse:
     """Ziehen = Drehen (Blitting: nur das Molekül neu zeichnen), rechte/mittlere Taste = Verschieben,
-    Mausrad = Zoom, Klick = Atom wählen (vorderstes gewinnt), Labels ziehen = Versatz ändern."""
+    Mausrad = Zoom, Klick = Atom wählen (vorderstes gewinnt), Labels ziehen = Versatz ändern,
+    Shift + Rahmen ziehen = mehrere Atome für Labels an/aus (tab.atoms_boxed)."""
 
     CLICK_PX = 4
 
     def __init__(self, F, tab):
         self.F, self.tab = F, tab
         self.mode, self.start, self.moved, self._bg = None, None, False, None
+        self.box = None
         for ann in F.ann_items.values():
             ann.draggable(True, use_blit=True)
         c = F.fig.canvas
@@ -2269,6 +2271,13 @@ class XrayMouse:
             self.mode = None
             if k is not None:
                 self.tab.atom_double_clicked(k)
+            return
+        if ev.button == 1 and "shift" in (ev.key or "") and ev.xdata is not None:
+            from matplotlib.patches import Rectangle
+            self.mode, self.start = "box", (ev.xdata, ev.ydata)
+            self.box = Rectangle(self.start, 0, 0, fill=True, fc=(0.23, 0.51, 0.96, 0.08), ec="#3b82f6", lw=0.8,
+                                 ls="--", zorder=1e6)
+            self.F.ax.add_patch(self.box)
             return
         if self._over_label(ev) and ev.button == 1:
             self.mode = "label"
@@ -2301,6 +2310,11 @@ class XrayMouse:
     def move(self, ev):
         if ev.x is None:
             return
+        if self.mode == "box":
+            if ev.xdata is not None and self.box is not None:
+                self.box.set_bounds(self.start[0], self.start[1], ev.xdata - self.start[0], ev.ydata - self.start[1])
+                self.F.fig.canvas.draw_idle()
+            return
         if self.mode in ("rot", "pan"):
             dx, dy = ev.x - self.start[0], ev.y - self.start[1]
             if not self.moved and math.hypot(dx, dy) < self.CLICK_PX:
@@ -2324,6 +2338,15 @@ class XrayMouse:
             hit = self.hit(ev)
             self.tab.hover_atom(hit)
 
+    def boxed(self):
+        """Atome, deren Mitte im gezogenen Rahmen liegt (Bildkoordinaten der Szene)."""
+        if self.box is None or self.F.scene is None:
+            return []
+        x0, y0 = self.box.get_x(), self.box.get_y()
+        x1, y1 = x0 + self.box.get_width(), y0 + self.box.get_height()
+        x0, x1, y0, y1 = min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1)
+        return [it["k"] for it in self.F.scene["atoms"] if x0 <= it["x"] <= x1 and y0 <= it["y"] <= y1]
+
     def hit(self, ev):
         if ev.xdata is None or self.F.scene is None:
             return None
@@ -2331,6 +2354,14 @@ class XrayMouse:
 
     def release(self, ev):
         mode, self.mode = self.mode, None
+        if mode == "box":
+            ks = self.boxed()
+            self.box.remove()
+            self.box = None
+            self.F.fig.canvas.draw_idle()
+            if ks:
+                QTimer.singleShot(0, lambda: self.tab.atoms_boxed(ks))
+            return
         if mode == "label":
             QTimer.singleShot(0, lambda: self.tab.labels_moved(self.F.current_layout()))
             return
@@ -2565,6 +2596,39 @@ class MeasureAlign:
     def _take_enabled(self, on):
         if getattr(self, "btn_take", None) is not None:
             self.btn_take.setEnabled(on)
+
+    def atoms_boxed(self, ks):
+        """Shift + Rahmen: Menü für die Labels aller Atome im Rahmen."""
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QMenu
+        m = QMenu(self)
+        a_off = m.addAction(T("xr_box_labels_off", n=len(ks)))
+        a_on = m.addAction(T("xr_box_labels_on", n=len(ks)))
+        a = m.exec(QCursor.pos())
+        if a is not None:
+            self.set_labels(ks, a is a_on)
+
+    def set_labels(self, ks, on):
+        """Labels mehrerer Atome (Indizes im Molekül der Abbildung) an/aus; entspricht es der Vorgabe, fällt die
+        Ausnahme weg."""
+        e = self.entry()
+        if e is None or self.F is None:
+            return
+        if on and not self.st.get("labels", True):
+            self.st["labels"] = True
+            self.cb_lab.setChecked(True)
+        o = dict(self.opts(e), label_on={}, labels=True)
+        lo = e.setdefault("label_on", {})
+        for k in ks:
+            a = self.F.mol.atoms[k]
+            lo.pop(a["key"], None)
+            if label_shown(a, o) != on:
+                lo[a["key"]] = bool(on)
+        if hasattr(self, "fill_atoms"):
+            was, self._loading = self._loading, True
+            self.fill_atoms()
+            self._loading = was
+        self.render()
 
     def toggle_atom(self, k):
         """Klick: Atom zur Auswahl (max. 4), erneuter Klick entfernt es, Klick ins Leere hebt sie auf."""
