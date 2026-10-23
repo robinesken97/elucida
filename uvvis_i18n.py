@@ -573,7 +573,7 @@ TEXTS = {
     "cv_group_tip": ("Freies Feld, z. B. Lösungsmittel (THF, MeCN …): Datenreihe in den Auftragungen gegen die Scanrate",
                      "Free field, e.g. solvent (THF, MeCN …): data series in the plots against scan rate"),
     "cv_file_ref": ("Referenz der ausgewählten Messung", "Reference of the selected measurement"),
-    "cv_fref_global": ("wie unter „Auswertung“ (für alle)", "as under “Evaluation” (for all)"),
+    "cv_fref_global": ("wie unter „Auswertung“ (für alle)", "as under “Analysis” (for all)"),
     "cv_fref_internal": ("eigener interner Standard", "own internal standard"),
     "cv_fref_manual": ("eigene feste Verschiebung", "own fixed shift"),
     "cv_ref_mixed": ("Achtung: Messungen mit unterschiedlicher Referenz (Fc⁺/Fc und Referenzelektrode) in einer Abbildung.",

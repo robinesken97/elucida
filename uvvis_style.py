@@ -71,8 +71,15 @@ def align_forms(forms):
     labels = [f.itemAt(i, QFormLayout.LabelRole).widget() for f in forms for i in range(f.rowCount())
               if f.itemAt(i, QFormLayout.LabelRole) and f.itemAt(i, QFormLayout.LabelRole).widget()]
     width = max((lb.sizeHint().width() for lb in labels), default=0)
+    # höchstens ~32 Zeichen breit: längere Beschriftungen brechen um, statt die Spalte (und damit die Abbildung) zu
+    # verbreitern – wichtig bei breiterer Schrift (Windows)
+    if labels:
+        width = min(width, labels[0].fontMetrics().averageCharWidth() * 32)
     for lb in labels:
+        if isinstance(lb, QLabel):
+            lb.setWordWrap(True)
         lb.setMinimumWidth(width)
+        lb.setMaximumWidth(width)
         lb.setProperty("formlabel", True)
 
 
@@ -195,8 +202,11 @@ def tidy(root):
     for sp in root.findChildren(QAbstractSpinBox):
         sp.setProperty("fieldw", True)                       # _WheelGuard setzt die Breite nach dem Stylesheet erneut
         sp.setFixedWidth(FIELD_W)
-    # Platz in einer Karte = Spaltenbreite (breitester Inhalt der Spalte) minus Spalten- und Kartenrand
-    col_room = root.minimumSizeHint().width() - 2 * 12 - 2 * 16
+    # Auswahllisten dürfen schmaler sein als ihr längster Eintrag (Text wird gekürzt, die aufgeklappte Liste zeigt alles):
+    # sonst bestimmt der längste Eintrag die Spaltenbreite – unter Windows (breitere Schrift) bis 470 px, Abbildung −35 %
+    for cb in root.findChildren(QComboBox):
+        cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        cb.setMinimumContentsLength(10)
     for fl in root.findChildren(QFormLayout):
         inner = []                                           # Beschriftungen zwischen zwei Werten
         for r in range(fl.rowCount()):
@@ -250,8 +260,7 @@ def tidy(root):
         # schrumpft die Abbildung; gemessen −7 % im X-Ray-Tab bei der langen Häkchen-Zeile)
         if lab_w and CHECKS_IN_FIELD_COLUMN:
             indent = lab_w + fl.horizontalSpacing()
-            room = max(fl.sizeHint().width(), col_room,
-                       max(_fw(fl, r) for r in range(fl.rowCount())) if fl.rowCount() else 0)
+            room = max(_fw(fl, r) for r in range(fl.rowCount())) if fl.rowCount() else 0   # nur die eigene Karte
             for r in range(fl.rowCount()):
                 it = fl.itemAt(r, QFormLayout.SpanningRole)
                 if it is None:
