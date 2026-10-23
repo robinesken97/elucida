@@ -2,6 +2,27 @@
 
 # Änderungen
 
+## 2.0.2 – 23.10.2026
+
+### Neu
+- **Startbildschirm** ohne Projekt: was das Programm kann, Neues Projekt / Projekt öffnen / Beispielprojekt ansehen und
+  die zuletzt geöffneten Projekte.
+- **Beispielprojekt** mit künstlichen Daten für alle Tabs (Hilfe → Beispielprojekt ansehen) – zum Ausprobieren.
+- **Hilfe-Menü:** Anleitung zum aktuellen Tab (F1), Schnellstart, Beispielprojekt, Protokoll.
+- **README:** Schnellstart in sechs Schritten und Schritt-für-Schritt-Anleitungen (Deutsch und Englisch) für Synthese bis
+  zur SI, UV-Vis ε, CV und SEC, EPR, Kristallstruktur und DFT.
+- Nach dem Export bietet die Meldung **Ordner öffnen** an; Synthese und NMR haben dieselbe Fußleiste
+  mit **Exportieren** wie die anderen Tabs.
+
+### Geändert
+- Die **linke Spalte passt sich immer ihrem Inhalt an** – nichts wird rechts abgeschnitten, auch auf kleineren
+  Laptop-Bildschirmen und bei breiterer Schrift (Windows); die übrige Breite bekommt die Abbildung.
+- Knöpfe sind nur aktiv, wenn sie etwas tun können („Kombinieren“ ab zwei markierten TD-DFT-Einträgen, „Aus Schema“ mit
+  Schema).
+
+### Behoben
+- UV-Vis (ε): Die linke Spalte konnte auf einem MacBook abgeschnitten sein („Konzentrationen…“, „g/mol“, „Entfernen“).
+
 ## 2.0.1 – 23.10.2026
 
 ### Neu

@@ -2,6 +2,27 @@
 
 # Changelog
 
+## 2.0.2 – 2026-10-23
+
+### New
+- **Welcome page** without a project: what the program does, New project / Open project / Open example project and
+  the recently opened projects.
+- **Example project** with artificial data for all tabs (Help → Open example project) – to try everything out.
+- **Help menu:** guide for the current tab (F1), quick start, example project, log.
+- **README:** quick start in six steps and step-by-step guides (German and English) for synthesis to the SI, UV-Vis ε,
+  CV and SEC, EPR, crystal structure and DFT.
+- After an export, the message offers **Open folder**; synthesis and NMR have the same footer with **Export** as the
+  other tabs.
+
+### Changed
+- The **left column always fits its content** – nothing is cut off at the right edge, also on smaller laptop screens
+  and with wider fonts (Windows); the rest of the width goes to the figure.
+- Buttons are only active when they can do something ("Combine" from two selected TD-DFT entries, "From scheme" with a
+  scheme).
+
+### Fixed
+- UV-Vis (ε) tab: the left column could be cut off on a MacBook ("Concentrations…", "g/mol", "Remove").
+
 ## 2.0.1 – 2026-10-23
 
 ### New
