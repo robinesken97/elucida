@@ -160,8 +160,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Linke Spalte (`FigureTab.arrange`): „Achsen, Größe und Formate“ und Bildunterschrift eingeklappt (`STYLE.Fold`,
   Zustand in QSettings `fold/<Tab>/<Name>`, „(geändert)“ über Zustandsschlüssel gegen DEFAULT_STATE); seltene Zeilen
   per `split_group` in eigene Karten (CV Referenzierung, SEC Hervorheben, EPR Intensität, X-Ray Atome); Ergebnisse/
-  Tabellen/SI-Text als Reiter neben „Abbildung“ (`to_right`/`move_right`) – nie unter die Abbildung (Höhe begrenzt
-  sie dann, −28 % gemessen). Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
+  Tabellen/SI-Text als Reiter neben „Abbildung“ (`to_right`/`move_right`, auch ε) – nie unter die Abbildung (Höhe
+  begrenzt sie dann, −28 % gemessen). Jede Ergebnisseite über `result_page`: Karte füllt die Seite, Tabellen/Texte
+  wachsen mit, reine Knopfreihen rechts, erster Knopf der letzten Reihe = Hauptknopf (blau, Symbol). Protokoll nur
+  über Hilfe → Protokoll. Meldungen als Einblendung unten rechts (`_toast`), keine Statusleiste. Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
 - Tab-Reihenfolge wie die SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC · EPR ·
   X-Ray · DFT; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
 - NMR-Tab: Abbildungen = Mnova-SVG (nicht aus Bruker 1r rechnen: Referenzierung weicht ab). Kern aus der Achse

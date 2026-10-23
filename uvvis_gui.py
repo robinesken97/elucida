@@ -933,7 +933,8 @@ class MainWindow(QMainWindow):
 
         # ---- rechte Seite
         self.canvas_host = uvvis_tabs.CanvasHost(self.canvas, self.fig)
-        self.tabs = QTabWidget()
+        self.tabs = QTabWidget()                      # wie die anderen Tabs: Abbildung | Ergebnisse | SI-Zeile
+        self.tabs.setDocumentMode(True)
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([T("col_lam"), T("col_n"), T("col_coeff"),
                                               T("col_intercept"), T("col_r2"), T("col_cut"), T("col_warn")])
@@ -949,21 +950,21 @@ class MainWindow(QMainWindow):
         old_log = self.log.toPlainText() if hasattr(self, "log") else ""
         self.log = QPlainTextEdit(readOnly=True)
         self.log.setPlainText(old_log)
-        self.tabs.addTab(self.table, T("tab_results"))
-        si_w = QWidget()
+        g_res = QGroupBox()
+        QVBoxLayout(g_res).addWidget(self.table)
+        si_w = QGroupBox()
         si_l = QVBoxLayout(si_w)
         self.txt_si = QTextBrowser()
-        si_l.addWidget(self.txt_si, 1)
-        b = QPushButton(T("uv_copy"))
-        b.clicked.connect(lambda: IRMS.copy_rich(*self._uv_line))
-        si_l.addWidget(b)
+        si_l.addWidget(self.txt_si)
         hint = QLabel(T("si_uv_hint"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
         si_l.addWidget(hint)
+        b = QPushButton(T("uv_copy"))
+        b.clicked.connect(lambda: IRMS.copy_rich(*self._uv_line))
+        si_l.addWidget(b)
         self._uv_line = ("", "")
-        self.tabs.addTab(si_w, T("tab_si_line"))
-        self.tabs.addTab(self.log, T("tab_log"))
+        # Protokoll: Hilfe → Protokoll (eigenes Fenster), kein Reiter mehr
         # Leer-Zustand: Anleitung (was herauskommt, welche Dateien, Schritte) statt weißer Fläche
         empty = uvvis_tabs.EmptyGuide("eps", (T("act_open"), self.choose_csv))
         empty_wrap = QWidget()
@@ -972,10 +973,10 @@ class MainWindow(QMainWindow):
         self.preview_stack.addWidget(empty_wrap)
         self.preview_stack.addWidget(self.canvas_host)
         self.preview_stack.setCurrentIndex(1 if self.current and self.current in self.groups else 0)
-        right = QSplitter(Qt.Vertical)
-        right.addWidget(self.preview_stack)
-        right.addWidget(self.tabs)
-        right.setSizes([650, 220])
+        self.tabs.addTab(self.preview_stack, T("tab_figure"))
+        self.tabs.addTab(uvvis_tabs.result_page(g_res), T("tab_results"))
+        self.tabs.addTab(uvvis_tabs.result_page(si_w), T("tab_si_line"))
+        right = self.tabs
         split = QSplitter(Qt.Horizontal)
         split.addWidget(left_col)
         split.addWidget(right)
@@ -4098,6 +4099,14 @@ def selftest(outdir, with_isnet=False):
         assert w.cv_tab.right_tabs is not None and w.cv_tab.right_tabs.tabText(0) == T("tab_figure")
         assert [w.xray_tab.right_tabs.tabText(i_) for i_ in range(3)] == [T("tab_figure"), T("xr_caption"), T("xr_tables")]
         assert w.dft_tab.right_tabs.count() == 2 and w.hrms_tab.right_tabs is None
+        # Ergebnisseiten überall gleich: ε neben der Abbildung, Karte füllt die Seite, Hauptknopf blau rechts
+        assert [w.tabs.tabText(i_) for i_ in range(w.tabs.count())] == [T("tab_figure"), T("tab_results"),
+                                                                       T("tab_si_line")]
+        for rt_, j_ in ((w.cv_tab.right_tabs, 1), (w.xray_tab.right_tabs, 2), (w.dft_tab.right_tabs, 1), (w.tabs, 2)):
+            card_ = rt_.widget(j_).widget().findChild(QGroupBox, "resultCard")
+            assert card_ is not None and card_.title() == "", (rt_.tabText(j_),)
+            acc_ = [b_ for b_ in card_.findChildren(QPushButton) if b_.property("accent")]
+            assert len(acc_) == 1 and not acc_[0].icon().isNull(), (rt_.tabText(j_), len(acc_))
         # Raster: jedes sichtbare Zahlenfeld der linken Spalten genau STYLE.FIELD_W breit (das Stylesheet darf die
         # feste Breite nicht nachträglich aufheben – so liefen die Felder früher auseinander)
         w.show()
@@ -4158,7 +4167,8 @@ def selftest(outdir, with_isnet=False):
             assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
             css_ = QApplication.instance().styleSheet()       # Checkboxen mit eigenem Rand (dunkel sonst unsichtbar)
             assert "QCheckBox::indicator" in css_ and STYLE.COLORS[mode]["check_border"] in css_, mode
-        assert w.findChildren(QFrame, "card") and not w.eps_page.findChildren(QGroupBox)
+        assert w.findChildren(QFrame, "card") and not [g_ for g_ in w.eps_page.findChildren(QGroupBox)
+                                                        if g_.objectName() != "resultCard"]
         w.switch_theme("system")
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(uvvis_tabs.QWidget, "mainToolbar")

@@ -138,6 +138,73 @@ def guide_html(key):
     return body
 
 
+_BIG = ()          # Felder, die auf Ergebnisseiten mit der Höhe wachsen (gesetzt beim ersten Aufruf)
+
+
+def _buttons_of(w):
+    """Knopf -> [Knopf]; Container, der nur Knöpfe enthält -> diese Knöpfe; sonst None."""
+    if isinstance(w, QPushButton):
+        return [w]
+    lay = w.layout() if w is not None else None
+    if lay is None:
+        return None
+    ws = [lay.itemAt(j).widget() for j in range(lay.count()) if lay.itemAt(j).widget() is not None]
+    return ws if ws and all(isinstance(x, QPushButton) for x in ws) else None
+
+
+def result_page(group):
+    """Ergebnisse als Reiter neben „Abbildung“, in allen Tabs gleich: Karte füllt die Seite, Tabellen/Texte wachsen
+    mit der Höhe (statt fester kleiner Kästen), reine Knopfreihen stehen rechts unten, der erste Knopf der letzten
+    Reihe ist der Hauptknopf (blau wie „Exportieren“). -> QScrollArea für addTab."""
+    from PySide6.QtWidgets import QSizePolicy, QTextBrowser, QTextEdit
+    big = (QTextBrowser, QTextEdit, QPlainTextEdit, QTableWidget, QListWidget)
+    group.setParent(None)
+    group.setTitle("")
+    group.setObjectName("resultCard")
+    v = group.layout()
+    actions = []
+    for idx in range(v.count()):
+        it = v.itemAt(idx)
+        w, lay = it.widget(), it.layout()
+        if isinstance(w, big):
+            w.setMaximumHeight(16777215)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            v.setStretch(idx, 1)
+        elif isinstance(w, QPushButton):                     # einzelner Knopf über die volle Breite -> rechts
+            v.removeWidget(w)
+            row = QHBoxLayout()
+            row.addStretch(1)
+            row.addWidget(w)
+            v.insertLayout(idx, row)
+            actions.append(row)
+        elif isinstance(lay, QHBoxLayout):
+            items = [lay.itemAt(j) for j in range(lay.count())]
+            parts = [_buttons_of(i.widget()) for i in items if i.widget() is not None]
+            if parts and all(p is not None for p in parts):  # nur Knöpfe (auch in Containern wie methods_button)
+                while lay.count():
+                    lay.takeAt(0)
+                lay.addStretch(1)
+                for x in (b for p in parts for b in p):
+                    lay.addWidget(x)
+                actions.append(lay)
+    if actions:
+        last = actions[-1]
+        b = next(last.itemAt(j).widget() for j in range(last.count()) if last.itemAt(j).widget() is not None)
+        b.setProperty("accent", True)
+        if b.icon().isNull():
+            b.setIcon(STYLE.icon("copy", "#FFFFFF"))
+    page = QWidget()
+    pv = QVBoxLayout(page)
+    pv.setContentsMargins(12, 12, 12, 12)
+    pv.addWidget(group, 1)
+    sa = QScrollArea()
+    sa.setWidget(page)
+    sa.setWidgetResizable(True)
+    sa.setFrameShape(QFrame.NoFrame)
+    group.show()
+    return sa
+
+
 def footer(tab, left_scroll):
     """Linke Spalte mit Fußleiste wie in den anderen Tabs: Exportieren (hier: Word-Datei ins Projekt)."""
     from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
@@ -251,6 +318,11 @@ class CanvasHost(QWidget):
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
+        QTimer.singleShot(0, self.fit)
+
+    def showEvent(self, ev):
+        """Wieder sichtbar (Reiter „Abbildung“, Anleitung -> Abbildung): Größe kann sich verborgen geändert haben."""
+        super().showEvent(ev)
         QTimer.singleShot(0, self.fit)
 
 
@@ -725,20 +797,7 @@ class FigureTab(QWidget):
             self.right_tabs.setDocumentMode(True)
             self.right_tabs.addTab(self.preview_stack, T("tab_figure"))
             rv.insertWidget(i, self.right_tabs, 1)
-        group.setParent(None)
-        group.setTitle("")
-        group.setObjectName("resultCard")
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setContentsMargins(12, 12, 12, 12)
-        v.addWidget(group)
-        v.addStretch(1)
-        sa = QScrollArea()
-        sa.setWidget(page)
-        sa.setWidgetResizable(True)
-        sa.setFrameShape(QFrame.NoFrame)
-        self.right_tabs.addTab(sa, title)
-        group.show()
+        self.right_tabs.addTab(result_page(group), title)
 
     # -- Hinweise im Tab ----------------------------------------------------------
     def add_note(self, msg):

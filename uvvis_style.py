@@ -49,6 +49,8 @@ _SVG = {
     "up": '<path d="M7 14.5 12 9.5l5 5"/>',
     "down": '<path d="M7 9.5l5 5 5-5"/>',
     "check": '<path d="M6 12.5l4 4 8-9"/>',
+    "copy": '<rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/>'
+            '<path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
 }
 
 HINT_CSS = "color: gray;"            # Hinweistexte
