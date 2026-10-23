@@ -635,7 +635,12 @@ class MainWindow(QMainWindow):
         self.act_si = QAction(STYLE.icon("export"), T("act_si_short"), self, triggered=self.export_si_dialog)
         self.act_si.setToolTip(T("act_si_tip"))
         self.toolbar.addAction(self.act_si)
-        self.toolbar.widgetForAction(self.act_si).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        tb_si = self.toolbar.widgetForAction(self.act_si)          # Ziel des Programms: als Hauptknopf hervorheben
+        tb_si.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        tb_si.setProperty("accent", True)
+        tb_si.style().unpolish(tb_si)
+        tb_si.style().polish(tb_si)
+        self.act_si.setIcon(STYLE.icon("export", "#FFFFFF"))
         mf = mb.addMenu(T("menu_format"))
         mf.addAction(QAction(T("act_text_format"), self, triggered=self.edit_text_format))
         mt = mf.addMenu(T("menu_theme"))
@@ -990,7 +995,10 @@ class MainWindow(QMainWindow):
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_key", self._tab_keys[i]))
         self.main_tabs.currentChanged.connect(                    # Vorlagen (CIF aus X-Ray) aktuell halten
             lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
-        self.setCentralWidget(self.main_tabs)
+        for i in range(self.main_tabs.count()):
+            if self.main_tabs.widget(i) is not split:              # ε-Tab ist schon aufgeräumt (Karten, Abschnitte)
+                STYLE.tidy(self.main_tabs.widget(i))
+        self.setCentralWidget(self.nav_bar())
 
         self.apply_globals()
         self.apply_series_widgets()
@@ -1179,6 +1187,53 @@ class MainWindow(QMainWindow):
                 self.set_structure(st["structure"], g, render=False, sync=True, autofill_mw=False)
         self.build_ui()
         self.render()
+
+    NAV_GROUPS = (("nav_grp_syn", ("syn", "nmr", "irms", "hrms")), ("nav_grp_uv", ("eps", "overlay", "fluo")),
+                  ("nav_grp_ec", ("cv", "sec", "epr")), ("nav_grp_struct", ("xray", "dft")))
+
+    def nav_bar(self):
+        """Tabs in vier Gruppen wie die SI (Leiste oben statt Reiter): kostet Höhe statt Breite – die Abbildung
+        ist in der Breite begrenzt, eine Seitenleiste würde sie um ~20 % verkleinern."""
+        from PySide6.QtWidgets import QButtonGroup
+        bar = QFrame(objectName="navBar")
+        hb = QHBoxLayout(bar)
+        hb.setContentsMargins(10, 4, 10, 6)
+        hb.setSpacing(4)
+        grp = QButtonGroup(bar)
+        self.nav_buttons = {}
+        for gi, (head, keys) in enumerate(self.NAV_GROUPS):
+            if gi:
+                sep = QFrame(objectName="navSep")
+                sep.setFixedWidth(1)
+                hb.addSpacing(8)
+                hb.addWidget(sep)
+                hb.addSpacing(8)
+            col = QVBoxLayout()
+            col.setSpacing(1)
+            col.addWidget(QLabel(T(head).upper(), objectName="navGroup"))
+            row = QHBoxLayout()
+            row.setSpacing(2)
+            for k in keys:
+                i = self._tab_keys.index(k)
+                b = QPushButton(self.main_tabs.tabText(i), objectName="navTab", checkable=True)
+                b.clicked.connect(lambda _=False, i=i: self.main_tabs.setCurrentIndex(i))
+                grp.addButton(b)
+                row.addWidget(b)
+                self.nav_buttons[i] = b
+            col.addLayout(row)
+            hb.addLayout(col)
+        hb.addStretch(1)
+        self.main_tabs.currentChanged.connect(lambda i: self.nav_buttons[i].setChecked(True))
+        self.nav_buttons[self.main_tabs.currentIndex()].setChecked(True)
+        self.main_tabs.tabBar().hide()
+        self.main_tabs.setDocumentMode(True)
+        holder = QWidget()
+        v = QVBoxLayout(holder)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+        v.addWidget(bar)
+        v.addWidget(self.main_tabs, 1)
+        return holder
 
     def _append_log(self, msg):
         self.log.appendPlainText(msg)
@@ -3798,6 +3853,20 @@ def selftest(outdir, with_isnet=False):
         guide_ = w.cv_tab.preview_stack.widget(0).findChild(uvvis_tabs.EmptyGuide)
         assert guide_ is not None and T("guide_cv_title") in guide_.label.text()
         report.append("empty-tab guides: OK")
+        # Navigation: Gruppen oben statt Reiter; Knopf wechselt den Tab, Tabwechsel markiert den Knopf
+        assert len(w.nav_buttons) == 12 and w.main_tabs.tabBar().isHidden()
+        i_cv_ = w._tab_keys.index("cv")
+        w.nav_buttons[i_cv_].click()
+        assert w.main_tabs.currentWidget() is w.cv_tab
+        w.main_tabs.setCurrentWidget(w.ov_tab)
+        assert w.nav_buttons[w._tab_keys.index("overlay")].isChecked()
+        # Einstellungen des gewählten Eintrags: ohne Auswahl ausgeblendet, stattdessen ein Hinweis
+        w.ov_tab.table.clearSelection()
+        w.ov_tab.table.setCurrentCell(-1, -1)
+        w.ov_tab.show_details()
+        assert w.ov_tab.det.isHidden() == (not w.ov_tab.det.isEnabled())
+        assert w.toolbar.widgetForAction(w.act_si).property("accent")
+        report.append("navigation, detail hint, SI button: OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
         w.render()
@@ -4308,6 +4377,17 @@ def selftest(outdir, with_isnet=False):
             assert all(f_.exists() and f_.stat().st_size > 500 for f_ in f_s if f_.suffix in (".pdf", ".svg", ".png"))
         w.xray_state["style"] = "mercury"
         t_x.render()
+        # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
+        # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
+        size0_ = w.size()
+        w.show()
+        w.resize(1440, 900)
+        w.main_tabs.setCurrentWidget(t_x)
+        pump(0.5)
+        t_x.host.fit()
+        pump(0.2)
+        assert t_x.canvas.width() >= 0.5 * w.width(), (t_x.canvas.width(), w.width())
+        w.resize(size0_)
         report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
                       f"({npath_} pdf paths)")
         w.xray_state.update(entries=[], current=None, show_h=True, hide_solv=False, label_mode="all")

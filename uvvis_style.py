@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QRectF, Qt
+from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout, QLabel, QSizePolicy,
@@ -154,6 +154,56 @@ def card(title, icon_name=None):
     return frame, body
 
 
+def tidy(root):
+    """Linke Spalte ruhiger: Zeilenabstand 8 px, einzelne Knöpfe in Formularen in natürlicher Breite statt als
+    Balken über die ganze Karte, reine Symbol-Knöpfe (↑/↓) quadratisch. Vor dem Bestimmen der Spaltenbreite aufrufen."""
+    for fl in root.findChildren(QFormLayout):
+        fl.setVerticalSpacing(8)
+        for r in range(fl.rowCount()):
+            it = fl.itemAt(r, QFormLayout.SpanningRole)
+            if it is not None and isinstance(it.widget(), QPushButton):
+                it.widget().setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    for b in root.findChildren(QPushButton):
+        if not b.text() and not b.icon().isNull():
+            b.setFixedWidth(34)
+    # Zeilen nur aus Zahlenfeldern/Beschriftungen/Häkchen (z. B. „450 – 520“): zusammenhalten statt über die Breite
+    # verteilen (die Zahlenfelder sind höchstens 160 px breit, sonst rückt das zweite Feld an den rechten Rand)
+    from PySide6.QtWidgets import QAbstractSpinBox, QCheckBox
+    for lay in root.findChildren(QHBoxLayout):
+        items = [lay.itemAt(i) for i in range(lay.count())]
+        ws = [it.widget() for it in items if it.widget() is not None]
+        if (ws and any(isinstance(x, QAbstractSpinBox) for x in ws) and not any(it.spacerItem() for it in items)
+                and all(isinstance(x, (QAbstractSpinBox, QLabel, QCheckBox)) for x in ws)):
+            lay.addStretch(1)
+
+
+class _DisabledHint(QObject):
+    """Karte, die ohne Auswahl ausgegraut wäre: stattdessen ausblenden und einen Satz zeigen, was zu tun ist."""
+
+    def __init__(self, group, text):
+        super().__init__(group)
+        self.group = group
+        self.label = QLabel(text, objectName="cardHint", wordWrap=True)
+        lay = group.parentWidget().layout()
+        lay.insertWidget(lay.indexOf(group), self.label)
+        group.installEventFilter(self)
+        self.update()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.EnabledChange:
+            self.update()
+        return False
+
+    def update(self):
+        off = self.group.testAttribute(Qt.WA_ForceDisabled)          # selbst abgeschaltet, nicht über den Tab
+        self.group.setVisible(not off)
+        self.label.setVisible(off)
+
+
+def hint_when_disabled(group, text):
+    return _DisabledHint(group, text)
+
+
 def resolve(mode):
     """'system' | 'light' | 'dark' -> 'light' | 'dark'."""
     if mode in ("light", "dark"):
@@ -270,4 +320,21 @@ QToolBar QToolButton:hover {{ background: {c['hover']}; border-color: {c['border
 QToolBar QToolButton:pressed {{ background: {c['border']}; }}
 QToolBar::separator {{ background: {c['border']}; width: 1px; margin: 5px 6px; }}
 QFrame#bottomBar {{ background: {c['window']}; border-top: 1px solid {c['border']}; }}
+QGroupBox {{ font-weight: bold; }}
+QGroupBox QWidget {{ font-weight: normal; }}
+QGroupBox QGroupBox {{ font-weight: bold; }}
+QAbstractSpinBox {{ max-width: 160px; }}
+QLabel#cardHint {{ color: {c['text2']}; background: {c['card']}; border: 1px dashed {c['border_strong']};
+    border-radius: 8px; padding: 10px 14px; }}
+QToolButton[accent="true"] {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
+    font-weight: bold; padding: 4px 10px; }}
+QToolButton[accent="true"]:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
+QFrame#navBar {{ background: {c['window']}; border-bottom: 1px solid {c['border']}; }}
+QLabel#navGroup {{ color: {c['text2']}; font-size: 10px; font-weight: bold; padding: 0 3px; }}
+QPushButton#navTab {{ background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 10px;
+    color: {c['text2']}; min-height: 16px; }}
+QPushButton#navTab:hover {{ background: {c['hover']}; color: {c['text']}; }}
+QPushButton#navTab:checked {{ background: {c['card']}; color: {c['accent']}; border-color: {c['border']};
+    border-bottom: 2px solid {c['accent']}; }}
+QFrame#navSep {{ background: {c['border']}; }}
 """

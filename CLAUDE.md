@@ -149,6 +149,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Textformat (Menü Format): global `text_fmt`, je Tab optional eigenes (`tab_fmt[STATE_KEY]`, ε = `epsilon`, gespeichert als
   `text_tabs`); `main.text_format(key)` mischt. Der Dialog zeigt nur `TEXT_OPTS` des Tabs. Geschlossener Rahmen
   (`axes_frame`) Standard seit 1.24.
+- Navigation: Tabs in vier Gruppen als Leiste **oben** (`nav_bar`, `NAV_GROUPS`), Reiter ausgeblendet. Keine Leisten
+  links/rechts: die Vorschau ist in der Breite begrenzt (Seitenleiste −20 % Abbildung, gemessen); Selbsttest verlangt
+  bei 1440 × 900 Abbildungsbreite ≥ halbe Fensterbreite. Leere Tabs: Anleitung (`EmptyGuide`, `guide_<tab>_*`), Hinweise
+  beim Zeichnen über `add_note` unter der Vorschau.
 - Tab-Reihenfolge wie die SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC · EPR ·
   X-Ray · DFT; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
 - NMR-Tab: Abbildungen = Mnova-SVG (nicht aus Bruker 1r rechnen: Referenzierung weicht ab). Kern aus der Achse
@@ -211,7 +215,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 | `uvvis_cdxml.py` | CDXML selbst zeichnen (`render_svg`: Bindungen, Labels, Formelstil, Pfeile, Texte; Labels für CDXML ohne `<t>`), `scheme_texts`/`scheme_reagents`. |
 | `uvvis_ole.py` | OLE-Container (CFB v3) für bearbeitbare ChemDraw-Objekte in Word (`chemdraw_streams`, `write_cfb`). |
 | `uvvis_si.py` | SI-Zeilen: Elementaranalyse (mittlere Atommassen, Solvat, Grenze 0.4 %), UV-Vis-Zeile aus den ε-Ergebnissen, Absatz (`join_lines`) und eigener docx-Schreiber (`write_docx`, ohne Zusatzpaket; Dreilinien-Tabellen, OLE, Seitenumbruch), `two_per_page`, `chem_html`. |
-| `uvvis_style.py` | Erscheinungsbild: Fusion + eigene Palette (hell/dunkel/System, Menü Format), zentrales Stylesheet, Karten (`card`), SVG-Symbole (`icon`). Betrifft alle Tabs, nicht die Abbildungen. |
+| `uvvis_style.py` | Erscheinungsbild: Fusion + eigene Palette (hell/dunkel/System, Menü Format), zentrales Stylesheet, Karten (`card`), SVG-Symbole (`icon`), `tidy` (linke Spalte: Zahlenfelder ≤ 160 px, Knöpfe in natürlicher Breite), `hint_when_disabled` (Detailkarte erst nach Auswahl). Betrifft alle Tabs, nicht die Abbildungen. |
 | `release_notes.py` | Release-Titel/-Notes für GitHub aus `CHANGELOG.md` + `CHANGELOG.de.md` (Release-Job in `build.yml`; fehlt die Version, scheitert das Release). |
 | `uvvis_i18n.py` | Texte DE/EN; `T(_key, **kw)` (Parameter heißt `_key`, damit `key=` als Format-Argument geht). |
 | `parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |

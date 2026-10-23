@@ -265,6 +265,15 @@ TEXTS = {
     "tab_fluo": ("Fluoreszenz", "Fluorescence"),
     "tab_save": ("Vorlage speichern…", "Save preset…"),
     "tab_load": ("Vorlage laden…", "Load preset…"),
+    "tab_presets": ("Vorlagen", "Presets"),
+    "tab_presets_tip": ("Einstellungen dieses Tabs als Vorlage speichern oder laden (Daten bleiben unberührt)",
+                        "Save or load this tab's settings as a preset (data are not affected)"),
+    "card_select_first": ("{t}: erst einen Eintrag in der Liste oben auswählen.",
+                          "{t}: first select an entry in the list above."),
+    "nav_grp_syn": ("Synthese & Analytik", "Synthesis & analysis"),
+    "nav_grp_uv": ("UV-Vis & Photophysik", "UV-Vis & photophysics"),
+    "nav_grp_ec": ("Elektrochemie & EPR", "Electrochemistry & EPR"),
+    "nav_grp_struct": ("Struktur & Rechnung", "Structure & computation"),
     "tab_save_tip": ("Einstellungen dieses Tabs als Vorlage (YAML) speichern, z. B. für andere Projekte. "
                      "Daten und Projekt bleiben unberührt – das Projekt speichert die Werkzeugleiste.",
                      "Save this tab's settings as a preset (YAML), e.g. for other projects. Data and project are not "

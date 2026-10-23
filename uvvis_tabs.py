@@ -374,6 +374,10 @@ class FigureTab(QWidget):
         self.lv.addWidget(hint)
         self.lv.addStretch(1)
         align_forms(left.findChildren(QFormLayout))
+        STYLE.tidy(left)
+        det = getattr(self, "det", None)                 # Einstellungen des gewählten Eintrags: erst nach Auswahl
+        if isinstance(det, QGroupBox):
+            STYLE.hint_when_disabled(det, T("card_select_first", t=det.title()))
         ls = QScrollArea()
         ls.setWidget(left)
         ls.setWidgetResizable(True)
@@ -382,13 +386,19 @@ class FigureTab(QWidget):
         # Speichern/Laden/Exportieren bleiben unten sichtbar, auch wenn die Spalte gescrollt wird
         row = QHBoxLayout()
         row.setContentsMargins(8, 6, 8, 6)
-        for txt, fn, ic, tip in ((T("tab_save"), self.save_setup, None, T("tab_save_tip")),
-                                 (T("tab_load"), self.load_setup, "open", T("tab_load_tip"))):
-            b = QPushButton(STYLE.icon(ic), txt) if ic else QPushButton(txt)
-            b.setToolTip(tip)
-            b.clicked.connect(fn)
-            row.addWidget(b)
+        # gleiche Reihenfolge in allen Tabs: Zurücksetzen ▾ · Vorlagen ▾ … Exportieren
         row.addWidget(reset_button(self.reset_layout, self.reset_defaults))
+        b = QPushButton(T("tab_presets"))
+        b.setToolTip(T("tab_presets_tip"))
+        m = QMenu(b)
+        for txt, fn, tip in ((T("tab_save"), self.save_setup, T("tab_save_tip")),
+                             (T("tab_load"), self.load_setup, T("tab_load_tip"))):
+            a = m.addAction(txt, fn)
+            a.setToolTip(tip)
+        m.setToolTipsVisible(True)
+        b.setMenu(m)
+        self.btn_presets = b
+        row.addWidget(b)
         row.addStretch(1)
         self.btn_export = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
         self.btn_export.setProperty("accent", True)
