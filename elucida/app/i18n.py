@@ -272,6 +272,12 @@ TEXTS = {
                     "From synthesis to the SI: analysis and figures for UV-Vis, NMR, IR, HRMS, CV, EPR, X-ray, DFT and "
                     "more. A project collects all data of one compound."),
     "welcome_recent": ("Zuletzt geöffnet", "Recently opened"),
+    "compound_note": ("Notiz", "Note"),
+    "compound_note_ph": ("z. B. Radikalkation von 6m", "e.g. radical cation of 6m"),
+    "compound_note_tip": ("Was ist das? Steht auf dem Startbildschirm und in der Titelleiste, geht an Characterization "
+                          "(elucida.json) – nicht in SI, Word-Export oder Datenpaket.",
+                          "What is it? Shown on the welcome page and in the title bar, passed to Characterization "
+                          "(elucida.json) – not into the SI, Word export or data package."),
     "recent_search_ph": ("Suchen: Verbindung, Ordner, Analytik …", "Search: compound, folder, technique …"),
     "recent_none": ("Noch keine Projekte – lege ein neues an oder sieh dir das Beispielprojekt an.",
                     "No projects yet – create a new one or have a look at the example project."),

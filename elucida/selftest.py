@@ -2891,12 +2891,24 @@ def selftest(outdir, with_isnet=False):
         st_file_ = PRJ.load(out / "demo")                  # gespeichert, nicht nur im Fenster (war leer: _restoring)
         assert st_file_.get("cv", {}).get("files") and st_file_.get("eps", {}).get("files"), sorted(st_file_)
         from elucida.app import welcome as WEL                 # Startbildschirm: Projektliste mit Struktur und Analytik
+        w.compound["note"] = "Radikalkation (Test)"           # Notiz zur Verbindung: Titel, Startbildschirm, elucida.json
+        w.update_title()
+        pump(0.4)                                              # Ladevorgang des Beispielprojekts abgeschlossen
+        w.save_project()
+        w.write_exchange()
+        assert "(Radikalkation (Test))" in w.windowTitle(), w.windowTitle()
+        import json as _json
+        assert _json.loads((out / "demo" / "elucida.json").read_text(encoding="utf-8"))["compound"]["note"] == \
+            "Radikalkation (Test)"
         w.add_recent(out / "demo")
         w.fill_recent_list()
         inf_ = WEL.project_info(out / "demo")
         assert inf_ and {"nmr", "cv", "uvvis", "xray", "dft"} <= set(inf_["badges"]), inf_
         assert WEL.thumb_path(out / "demo").exists() and inf_["thumb"], "Strukturbild fehlt"
         assert any(r_.info["path"] == str((out / "demo")) for r_ in w.recent_rows)
+        assert inf_["note"] == "Radikalkation (Test)"
+        w._filter_recent("radikalkation")
+        assert any(r_.isVisibleTo(r_.parentWidget()) for r_ in w.recent_rows)
         w._filter_recent("gibtsnicht")
         assert not any(r_.isVisibleTo(r_.parentWidget()) for r_ in w.recent_rows)
         w._filter_recent("")

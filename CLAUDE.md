@@ -241,6 +241,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   eingegebene Werte) – neue Schlüssel dort einordnen. X-Ray/DFT: `XRAY.reset_display` (+ Ansicht/Atom-Auswahl der
   gewählten Struktur; DFT behält Nummerierung, `label_style`, `zero_based`); ε: `MainWindow.reset_defaults` (DEFAULT_GLOB ohne
   Schichtdicke/Export). Immer `push_undo`.
+- Notiz zur Verbindung (`compound.note`): nur intern (Startbildschirm, Titelleiste, `elucida.json`), nie in SI/Word/
+  Datenpaket.
 - Verbindung des Projekts (`compound`) ist nur Vorgabe: Tabs mit eigener Struktur/Molmasse behalten diese.
 - UI zweisprachig: jeder sichtbare Text über `elucida.app.i18n.T(key)` mit DE **und** EN-Eintrag.
 

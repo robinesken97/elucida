@@ -2,6 +2,13 @@
 
 # Änderungen
 
+## 2.2.4 – 24.10.2026
+
+### Neu
+- **Notiz zur Verbindung** (Dialog Verbindung), z. B. „Radikalkation von 6m“ neben der Laborbuchnummer: steht auf dem
+  Startbildschirm und in der Titelleiste, durchsuchbar, geht an Characterization (`elucida.json`) – nie in SI,
+  Word-Export oder Datenpaket.
+
 ## 2.2.3 – 24.10.2026
 
 ### Neu

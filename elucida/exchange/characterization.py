@@ -74,6 +74,8 @@ def _compound(w, pdir):
     out = {}
     if c.get("name"):
         out["name"] = c["name"]
+    if c.get("note"):                                  # Notiz im laufenden Projekt (z. B. „Radikalkation von 6m“)
+        out["note"] = c["note"]
     if c.get("formula"):
         out["formula"] = c["formula"]
     if c.get("mw"):

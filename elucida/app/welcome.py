@@ -88,8 +88,9 @@ def project_info(path) -> dict | None:
         "dft": bool(g("dft", "entries")),
     }
     name = (g("compound", "name") or g("syn", "name") or "").strip()
+    note = (g("compound", "note") or "").strip()
     th = thumb_path(pdir)
-    return dict(path=str(pdir), folder=pdir.name, name=name or pdir.name, has_compound=bool(name),
+    return dict(path=str(pdir), folder=pdir.name, name=name or pdir.name, has_compound=bool(name), note=note,
                 modified=dt.datetime.fromtimestamp(pf.stat().st_mtime), badges=[k for k, _, _ in BADGES if has[k]],
                 thumb=str(th) if th.exists() else None)
 
@@ -168,7 +169,14 @@ class RecentRow(QWidget):
         h.addWidget(pic)
         v = QVBoxLayout()
         v.setSpacing(2)
-        title = ElidedLabel(info["name"], objectName="recentTitle")
+        title = QHBoxLayout()
+        title.setSpacing(8)
+        name_lbl = QLabel(info["name"], objectName="recentTitle")
+        title.addWidget(name_lbl)
+        if info.get("note"):                           # Notiz zur Verbindung neben dem Namen
+            title.addWidget(ElidedLabel("·  " + info["note"], objectName="recentNote"), 1)
+        else:
+            title.addStretch(1)
         parent = short_path(Path(info["path"]).parent)
         sub = ElidedLabel((info["folder"] + "  ·  " if info["has_compound"] else "") + parent, objectName="recentSub")
         sub.setToolTip(info["path"])
@@ -179,7 +187,7 @@ class RecentRow(QWidget):
         if not info["badges"]:
             badges.addWidget(QLabel(T("recent_empty_project"), objectName="recentSub"))
         badges.addStretch(1)
-        v.addWidget(title)
+        v.addLayout(title)
         v.addWidget(sub)
         v.addLayout(badges)
         h.addLayout(v, 1)
@@ -194,5 +202,5 @@ class RecentRow(QWidget):
 
     def matches(self, text):
         t = text.strip().lower()
-        return not t or any(t in s.lower() for s in (self.info["name"], self.info["path"])) or any(
+        return not t or any(t in s.lower() for s in (self.info["name"], self.info["path"], self.info.get("note", ""))) or any(
             t in badge_label(k).lower() for k in self.info["badges"])

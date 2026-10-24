@@ -298,6 +298,10 @@ class CompoundDialog(QDialog):
         self.ed_name = QLineEdit(comp.get("name", ""))
         self.ed_name.setPlaceholderText(T("compound_name_ph"))
         f.addRow(T("compound_name"), self.ed_name)
+        self.ed_note = QLineEdit(comp.get("note", ""))                 # nur intern: Startbildschirm, Titel, elucida.json
+        self.ed_note.setPlaceholderText(T("compound_note_ph"))
+        self.ed_note.setToolTip(T("compound_note_tip"))
+        f.addRow(T("compound_note"), self.ed_note)
         row = QHBoxLayout()
         self.lbl_struct = QLabel(Path(self.path).name if self.path else "–")
         b = QPushButton(T("choose"))
@@ -344,7 +348,7 @@ class CompoundDialog(QDialog):
     def result_compound(self):
         return {"name": self.ed_name.text().strip(), "structure": self.path,
                 "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text()),
-                "mp": self.ed_mp.text().strip()}
+                "mp": self.ed_mp.text().strip(), "note": self.ed_note.text().strip()}
 
 
 def compound_from_structure(p):
@@ -1821,6 +1825,8 @@ class MainWindow(QMainWindow):
         name = Path(self.project_dir).name if self.project_dir else T("no_project_title")
         if self.compound.get("name"):
             name = f"{self.compound['name']} · {name}"
+        if self.compound.get("note"):                  # Notiz zur Verbindung (z. B. „Radikalkation von 6m“)
+            name = f"{name} ({self.compound['note']})"
         self.setWindowTitle(f"{name} – {T('app_title')} {APP_VERSION}")
 
     # -- Verbindung des Projekts (Vorgabe für alle Tabs) ------------------------------------

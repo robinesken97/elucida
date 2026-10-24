@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 2.2.4 – 2026-10-24
+
+### New
+- **Note for the compound** (dialog Compound), e.g. "radical cation of 6m" next to the lab number: shown on the
+  welcome page and in the title bar, searchable, passed to Characterization (`elucida.json`) – never into the SI,
+  Word export or data package.
+
 ## 2.2.3 – 2026-10-24
 
 ### New

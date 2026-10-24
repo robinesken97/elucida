@@ -635,6 +635,7 @@ QLabel#recentMono {{ background: {c['accent']}; color: {c['on_accent']}; border-
     font-size: 18px; }}
 QLabel#recentThumb {{ background: #ffffff; border: 1px solid {c['border']}; border-radius: 8px; }}
 QLabel#recentTitle {{ font-size: 15px; font-weight: bold; background: transparent; }}
+QLabel#recentNote {{ color: {c['text2']}; font-size: 14px; font-style: italic; background: transparent; }}
 QLabel#recentSub, QLabel#recentWhen {{ color: {c['text2']}; background: transparent; }}
 QLabel#recentBadge {{ color: {c['text2']}; background: {c['alt']}; border: 1px solid {c['border']}; border-radius: 8px;
     padding: 0px 7px; font-size: 11px; }}
