@@ -70,9 +70,10 @@ def project_info(path) -> dict | None:
         return None
     pf = PRJ.project_file(pdir)
     try:
-        st = yaml.safe_load(pf.read_text(encoding="utf-8")) or {}
+        raw = pf.read_text(encoding="utf-8")
+        st = yaml.safe_load(raw) or {}
     except Exception:
-        st = {}
+        raw, st = "", {}
     g = lambda *ks: _get(st, *ks)                                  # noqa: E731
     has = {
         "syn": bool(g("syn", "proc") or g("syn", "scheme")),
@@ -90,7 +91,11 @@ def project_info(path) -> dict | None:
     name = (g("compound", "name") or g("syn", "name") or "").strip()
     note = (g("compound", "note") or "").strip()
     th = thumb_path(pdir)
+    from elucida.exchange.datapack import CODE_RE      # Laborkürzel (RE-3-150) in Dateinamen, Vorschrift … – für die Suche
+    comp = g("compound") or {}
     return dict(path=str(pdir), folder=pdir.name, name=name or pdir.name, has_compound=bool(name), note=note,
+                formula=str(comp.get("formula") or ""), lit=str(comp.get("lit") or ""),
+                codes=sorted(set(CODE_RE.findall(raw))),
                 modified=dt.datetime.fromtimestamp(pf.stat().st_mtime), badges=[k for k, _, _ in BADGES if has[k]],
                 thumb=str(th) if th.exists() else None)
 
@@ -126,6 +131,15 @@ def short_path(p) -> str:
     """Pfad mit ~ für den Benutzerordner."""
     p, home = str(p), str(Path.home())
     return "~" + p[len(home):] if p.startswith(home) else p
+
+
+def info_matches(info, text) -> bool:
+    """Suche (Startbildschirm, Projektseite): Name/Nummer, Ordner, Notiz, Summenformel, Literatur, Projekt,
+    Laborkürzel aus der Verbindung, Analytik; mehrere Wörter müssen alle passen, Groß-/Kleinschreibung egal."""
+    hay = " ".join([info.get("name", ""), Path(info.get("path", "")).name, info.get("note", ""),
+                    info.get("formula", ""), info.get("lit", ""), info.get("publication", "")]
+                   + list(info.get("codes") or []) + [badge_label(k) for k in info.get("badges") or []]).lower()
+    return all(w in hay for w in text.lower().split())
 
 
 class ElidedLabel(QLabel):
@@ -240,7 +254,4 @@ class RecentRow(QWidget):
         super().mouseReleaseEvent(ev)
 
     def matches(self, text):
-        t = text.strip().lower()
-        return not t or any(t in s.lower() for s in (self.info["name"], self.info["path"], self.info.get("note", ""),
-                                                      self.info.get("publication", ""))) or any(
-            t in badge_label(k).lower() for k in self.info["badges"])
+        return info_matches(self.info, text)

@@ -211,6 +211,9 @@ elsewhere into the project.
   at the top → **Move to another project …** moves the folder; **Copy to another project …** makes an independent copy,
   e.g. when the same compound appears in two papers. Compounds from older versions without a project are offered for
   assignment when they are opened (path: "⚠ no project").
+- **Search:** the field at the top of the welcome page searches all compounds of all known projects by name/number,
+  lab code (e.g. RE-3-150, also from file names and procedures), formula, note, reference or project; the project page
+  has a filter; Ctrl+F jumps there.
 - **Move to trash …** (right-click in the overview) removes a compound or a whole project after a question with the
   number of files and the size; it can be restored from the trash.
 

@@ -175,6 +175,12 @@ class PublicationPage(QWidget):
         hrow = QHBoxLayout()
         self.lbl_head = QLabel(objectName="recentHead")
         hrow.addWidget(self.lbl_head, 1)
+        self.ed_filter = QLineEdit()
+        self.ed_filter.setPlaceholderText(T("pub_filter_ph"))
+        self.ed_filter.setClearButtonEnabled(True)
+        self.ed_filter.setMaximumWidth(320)
+        self.ed_filter.textChanged.connect(self._filter)
+        hrow.addWidget(self.ed_filter)
         self.b_sort = QPushButton(T("pub_sort_name"))
         self.b_sort.setToolTip(T("pub_sort_tip"))
         self.b_sort.clicked.connect(self.sort_by_name)
@@ -257,6 +263,7 @@ class PublicationPage(QWidget):
         self.lbl_missing.setVisible(bool(missing))
         self.lbl_missing.setText(T("pub_missing", p=", ".join(missing)))
         self.b_pack.setEnabled(bool(self.rows))
+        self._filter(self.ed_filter.text())
         self.b_si.setEnabled(bool(self.rows))
 
     def _menu(self, row, pos):
@@ -271,6 +278,10 @@ class PublicationPage(QWidget):
         m.addAction(T("move_copy_title"), lambda: self.main.move_compound(p, copy=True))
         m.addAction(T("pub_remove"), lambda: self._remove(p))
         m.exec(row.mapToGlobal(pos))
+
+    def _filter(self, text):
+        for r in self.rows:
+            r.setVisible(r.matches(text))
 
     def sort_by_name(self):
         PUB.sort_by_name(self.pdir)

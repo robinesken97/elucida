@@ -200,6 +200,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   über `choose_publication` + `new_compound_in_publication`; `move_compound` (verschieben/kopieren/zuordnen,
   `PUB.move_compound_to`/`copy_compound_to`, Kopie ohne `.elucida`, freier Name `unique_dest`); alte Verbindungen ohne
   Projekt beim Öffnen anbieten (`_ask_assign`), nie erzwingen (sonst kein Zugriff auf alte Daten).
+  Suche (`search_index`, `WEL.info_matches`): alle Verbindungen der bekannten Projekte + zuletzt geöffnete; Felder Name,
+  Ordner, Notiz, Formel, Literatur, Projekt, Laborkürzel (`CODE_RE` über die Projektdatei), Analytik; alle Wörter.
 - Startbildschirm (`app/welcome.py`): Projektliste aus der Projektdatei (Verbindung, Analytik-Abzeichen, Stand),
   Strukturbild nur aus `.elucida/thumb.png` (`write_thumb` beim Speichern, nur wenn die Struktur neuer ist) – nie beim
   Anzeigen rendern; bis 20 Projekte.

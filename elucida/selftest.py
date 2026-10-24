@@ -3074,6 +3074,15 @@ def selftest(outdir, with_isnet=False):
         assert IMG.find_sibling_drawing(s_t_) == old_svg_
         old_svg_.unlink()
         w.go_home()
+        w.add_recent_publication(pub2_)                                   # Suche über alle bekannten Projekte
+        w.ed_recent.setText("9z")
+        assert [r_.info["name"] for r_ in w.recent_rows] == ["9z", "9z"], [r_.info["path"] for r_ in w.recent_rows]
+        assert all(r_.info.get("publication") for r_ in w.recent_rows)
+        w.ed_recent.setText("C5H5N 9z")                                   # mehrere Wörter: alle müssen passen
+        w.ed_recent.setText("RE-9-999")
+        assert not w.recent_rows and w.lbl_recent_empty.isVisibleTo(w.lbl_recent_empty.parentWidget())
+        w.ed_recent.setText("")
+        assert not getattr(w, "_searching", False)
         dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
         assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
         assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2
@@ -3095,6 +3104,9 @@ def selftest(outdir, with_isnet=False):
         w.btn_pub.click()
         assert w.project_dir is None and w.center.currentIndex() == 2 and not w.btn_pub.isVisibleTo(
             w.btn_pub.parentWidget())
+        w.pub_page.ed_filter.setText("S3")                                   # Filter auf der Projektseite
+        assert [r_.isVisibleTo(r_.parentWidget()) for r_ in w.pub_page.rows] == [False, True]
+        w.pub_page.ed_filter.setText("")
         assert "2 von 2" in w.pub_page.lbl_head.text() or "2 of 2" in w.pub_page.lbl_head.text(), \
             w.pub_page.lbl_head.text()
         w.open_project(dpub_ / "S2")                                      # Pfadleiste: ⌂ Übersicht

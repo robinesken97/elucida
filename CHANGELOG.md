@@ -9,6 +9,9 @@
   1996 settings); **Edit in ChemDraw** (Compound dialog, synthesis tab) opens them, and saving in ChemDraw is taken
   over automatically (structure with formula and molar mass, scheme).
 - **Sort compounds** in a project by dragging the rows or with **Sort by name** (1a, 1b, 2a … 10a).
+- **Search** on the welcome page across all compounds of all known projects – name/number, lab code (e.g. RE-3-150,
+  also from file names and procedures), formula, note, reference, project (several words: all must match); filter on
+  the project page; Edit → Find compound (Ctrl+F).
 
 ### Changed
 - An SVG/PDF/PNG export (and .cdx/.emf of a scheme) next to a CDXML is only used while it is not older than the CDXML;

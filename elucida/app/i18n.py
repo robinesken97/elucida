@@ -303,7 +303,14 @@ TEXTS = {
                           "(elucida.json) – nicht in SI, Word-Export oder Datenpaket.",
                           "What is it? Shown on the welcome page and in the title bar, passed to Characterization "
                           "(elucida.json) – not into the SI, Word export or data package."),
-    "recent_search_ph": ("Suchen: Verbindung, Ordner, Analytik …", "Search: compound, folder, technique …"),
+    "recent_search_ph": ("Suchen in allen Projekten: Name/Nummer, Laborkürzel (z. B. RE-3-150), Summenformel, Notiz, "
+                         "Projekt …",
+                         "Search all projects: name/number, lab code (e.g. RE-3-150), formula, note, project …"),
+    "search_hits": ("Treffer", "Results"),
+    "act_search": ("Verbindung suchen …", "Find compound …"),
+    "search_none": ("Keine Verbindung gefunden.", "No compound found."),
+    "pub_filter_ph": ("Verbindungen filtern: Name, Laborkürzel, Formel, Notiz …",
+                      "Filter compounds: name, lab code, formula, note …"),
     "recent_none": ("Noch nichts geöffnet – lege eine Verbindung oder ein Projekt an oder sieh dir die Beispiele an.",
                     "Nothing opened yet – create a compound or a project, or have a look at the examples."),
     "recent_empty_project": ("noch keine Daten", "no data yet"),

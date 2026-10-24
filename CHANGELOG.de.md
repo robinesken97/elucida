@@ -9,6 +9,9 @@
   (Einstellungen ACS 1996); **In ChemDraw bearbeiten** (Dialog Verbindung, Synthese-Tab) öffnet sie, Speichern in
   ChemDraw wird automatisch übernommen (Struktur mit Formel und Molmasse, Schema).
 - **Verbindungen sortieren** im Projekt per Ziehen der Zeilen oder mit **Nach Name sortieren** (1a, 1b, 2a … 10a).
+- **Suche** auf dem Startbildschirm über alle Verbindungen aller bekannten Projekte – Name/Nummer, Laborkürzel (z. B.
+  RE-3-150, auch aus Dateinamen und Vorschriften), Summenformel, Notiz, Literatur, Projekt (mehrere Wörter: alle müssen
+  passen); Filter auf der Projektseite; Bearbeiten → Verbindung suchen (Strg+F).
 
 ### Geändert
 - Ein SVG/PDF/PNG-Export (und .cdx/.emf eines Schemas) neben einer CDXML gilt nur, solange er nicht älter ist als die

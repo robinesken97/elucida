@@ -658,6 +658,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(QAction(T("act_quit"), self, shortcut=QKeySequence.Quit, triggered=self.close))
         me = mb.addMenu(T("menu_edit"))
+        me.addAction(QAction(T("act_search"), self, shortcut=QKeySequence.Find, triggered=self.focus_search))
         self.act_undo = QAction(STYLE.icon("undo"), T("act_undo"), self, triggered=self.undo)
         self.act_undo.setShortcuts([QKeySequence.Undo])
         self.act_redo = QAction(STYLE.icon("redo"), T("act_redo"), self, triggered=self.redo)
@@ -1780,6 +1781,11 @@ class MainWindow(QMainWindow):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
+        self.ed_recent = QLineEdit()                    # Suche über alle Verbindungen aller bekannten Projekte
+        self.ed_recent.setPlaceholderText(T("recent_search_ph"))
+        self.ed_recent.setClearButtonEnabled(True)
+        self.ed_recent.textChanged.connect(self._filter_recent)
+        v.addWidget(self.ed_recent)
         v.addSpacing(6)
         self.lbl_pubs = QLabel(objectName="recentHead")
         v.addWidget(self.lbl_pubs)
@@ -1790,12 +1796,6 @@ class MainWindow(QMainWindow):
         self.lbl_recent = QLabel(objectName="recentHead")
         row.addWidget(self.lbl_recent)
         row.addStretch(1)
-        self.ed_recent = QLineEdit()
-        self.ed_recent.setPlaceholderText(T("recent_search_ph"))
-        self.ed_recent.setClearButtonEnabled(True)
-        self.ed_recent.setMaximumWidth(260)
-        self.ed_recent.textChanged.connect(self._filter_recent)
-        row.addWidget(self.ed_recent)
         v.addLayout(row)
         self.recent_box = QVBoxLayout()
         self.recent_box.setContentsMargins(0, 0, 4, 0)
@@ -1832,6 +1832,8 @@ class MainWindow(QMainWindow):
         """Projektliste des Startbildschirms neu füllen (nur vorhandene Projekte, neueste zuerst)."""
         if getattr(self, "recent_box", None) is None:
             return
+        self._search_cache = None                       # Suche neu aufbauen (Liste hat sich geändert)
+        self.lbl_recent_empty.setText(T("recent_none"))
         from elucida.app import welcome as WEL
         from elucida.app import publication as PUB
         from elucida.app.publication_view import PublicationRow, publication_info
@@ -1869,13 +1871,86 @@ class MainWindow(QMainWindow):
             self.recent_rows.append(row)
         self.lbl_recent.setText(f"<b>{T('welcome_recent')}</b>" + (f"  <span style='color:gray'>{len(infos)}</span>"
                                                                    if infos else ""))
-        self.ed_recent.setVisible(len(infos) > 3)
         self.lbl_recent_empty.setVisible(not infos)
         self._filter_recent(self.ed_recent.text())
 
+    def focus_search(self):
+        """Strg+F: in einem Projekt dessen Filter, sonst die Suche der Übersicht (offene Verbindung wird geschlossen
+        – gespeichert ist sie ohnehin)."""
+        if self.publication_dir and not self.project_dir:
+            self.pub_page.ed_filter.setFocus()
+            self.pub_page.ed_filter.selectAll()
+            return
+        if self.project_dir or self.publication_dir:
+            self.go_home()
+        self.ed_recent.setFocus()
+        self.ed_recent.selectAll()
+
+    def search_index(self):
+        """Alle Verbindungen der bekannten Projekte und die zuletzt geöffneten (ohne doppelte) für die Suche."""
+        from elucida.app import welcome as WEL
+        from elucida.app import publication as PUB
+        out, seen = [], set()
+
+        def add(path, pub_title=""):
+            try:
+                key = Path(path).resolve()
+            except OSError:
+                return
+            if key in seen:
+                return
+            info = WEL.project_info(path)
+            if info is None:
+                return
+            seen.add(key)
+            if not pub_title:
+                pp = PUB.publication_of(path)
+                pub_title = (re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(pp))) or pp.name) if pp else ""
+            if pub_title:
+                info["publication"] = pub_title
+            out.append(info)
+        for pub in self.recent_publications():
+            if PUB.is_publication(pub) is None:
+                continue
+            title = re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(pub))) or Path(pub).name
+            for d in PUB.sync(pub)[0]:
+                add(d, title)
+        for r in self.recent():
+            add(r)
+        return out
+
     def _filter_recent(self, text):
-        for r in getattr(self, "recent_rows", []) + getattr(self, "pub_rows", []):
-            r.setVisible(r.matches(text))
+        """Leer: Übersicht wie immer. Sonst Treffer aus allen Verbindungen aller bekannten Projekte (+ Projekte, deren
+        Titel passt) statt der Listen."""
+        from elucida.app import welcome as WEL
+        t = text.strip()
+        if not t:
+            if getattr(self, "_searching", False):
+                self._searching = False
+                self._search_cache = None
+                self.fill_recent_list()
+            return
+        if not getattr(self, "_searching", False) or getattr(self, "_search_cache", None) is None:
+            self._search_cache = self.search_index()
+        self._searching = True
+        for r in self.recent_rows:
+            r.setParent(None)
+            r.deleteLater()
+        self.recent_rows = []
+        for r in self.pub_rows:
+            r.setVisible(r.matches(t))
+        self.lbl_pubs.setVisible(any(r.matches(t) for r in self.pub_rows))
+        hits = [i for i in self._search_cache if WEL.info_matches(i, t)][:60]
+        for info in hits:
+            row = WEL.RecentRow(info)
+            row.opened.connect(lambda p: self.open_project(p))
+            row.setContextMenuPolicy(Qt.CustomContextMenu)
+            row.customContextMenuRequested.connect(lambda pos, r=row: self._recent_menu(r, pos))
+            self.recent_box.addWidget(row)
+            self.recent_rows.append(row)
+        self.lbl_recent.setText(f"<b>{T('search_hits')}</b>  <span style='color:gray'>{len(hits)}</span>")
+        self.lbl_recent_empty.setText(T("search_none"))
+        self.lbl_recent_empty.setVisible(not hits)
 
     def _recent_menu(self, row, pos):
         p = row.info["path"]

@@ -214,6 +214,9 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
   Verbindung im Pfad oben → **In anderes Projekt verschieben …** verschiebt den Ordner; **In anderes Projekt kopieren …**
   legt eine unabhängige Kopie an, z. B. wenn dieselbe Verbindung in zwei Papern vorkommt. Verbindungen aus älteren
   Versionen ohne Projekt bietet das Programm beim Öffnen zum Zuordnen an (Pfad: „⚠ ohne Projekt“).
+- **Suchen:** Das Feld oben auf dem Startbildschirm durchsucht alle Verbindungen aller bekannten Projekte nach
+  Name/Nummer, Laborkürzel (z. B. RE-3-150, auch aus Dateinamen und Vorschriften), Summenformel, Notiz, Literatur oder
+  Projekt; die Projektseite hat einen Filter; Strg+F springt dorthin.
 - **In den Papierkorb verschieben …** (Rechtsklick in der Übersicht) entfernt eine Verbindung oder ein ganzes Projekt
   nach einer Nachfrage mit Anzahl der Dateien und Größe; aus dem Papierkorb lässt sich alles wiederherstellen.
 
