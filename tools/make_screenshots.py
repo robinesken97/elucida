@@ -26,10 +26,10 @@ from elucida.app import main_window as G  # noqa: E402
 
 SIZE = (1600, 1000)
 # (Dateiname, Tab-Schlüssel, Themes) in der Reihenfolge der Tabs
-SHOTS = (("synthesis", "syn", ("light",)), ("nmr", "nmr", ("light",)), ("eps", "eps", ("light", "dark")),
-         ("overlay", "overlay", ("light",)), ("fluorescence", "fluo", ("light",)), ("cv", "cv", ("light",)),
-         ("sec", "sec", ("light",)), ("epr", "epr", ("light",)), ("xray", "xray", ("light", "dark")),
-         ("dft", "dft", ("light",)))
+# Übersicht im README dunkel (Nutzerwunsch); hell nur das Coverbild (welcome_light_*)
+SHOTS = tuple((name, key, ("dark",)) for name, key in (
+    ("synthesis", "syn"), ("nmr", "nmr"), ("irms", "irms"), ("hrms", "hrms"), ("eps", "eps"), ("overlay", "overlay"),
+    ("fluorescence", "fluo"), ("cv", "cv"), ("sec", "sec"), ("epr", "epr"), ("xray", "xray"), ("dft", "dft")))
 
 
 def pump(sec=0.6):
@@ -63,13 +63,13 @@ def shoot_welcome(w, outdir, lang, theme, work):
 
 
 def shoot(w, outdir, lang, theme):
-    pages = {k: w.main_tabs.widget(i) for i, k in enumerate(w._tab_keys)}
     for name, key, themes in SHOTS:
         if theme not in themes:
             continue
-        page = pages[key]
-        w.main_tabs.setCurrentWidget(page)
+        idx = w._tab_keys.index(key)
+        w.main_tabs.setCurrentIndex(idx)                  # Tabs werden erst beim Anzeigen gebaut (Platzhalter)
         pump(0.3)
+        page = w.main_tabs.widget(idx)
         for fn in ("sync_widgets", "update_preview", "render"):
             if getattr(type(page), fn, None) not in (None, QWidget.render):    # nicht QWidget.render
                 getattr(page, fn)()

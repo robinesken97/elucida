@@ -8,7 +8,7 @@ shares of several species and – if needed – intensity versus time or tempera
 **What you need:** Bruker BES3T files (.dsc + .DTA) or two-column text (e.g. MS400); optionally a dark spectrum (before
 irradiation) and simulations from EasySpin as text.
 
-![EPR tab with example data](../screenshots/epr_light_en.png)
+![EPR tab](../screenshots/epr_dark_en.png)
 
 ## 1. Load the measurements
 

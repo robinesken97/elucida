@@ -13,7 +13,7 @@ cuvette photo), ε per band with standard error and 95 % confidence interval, th
 - the structure as CDXML (for the picture and the molar mass), optionally a photo of the cuvette (HEIC from an iPhone
   works)
 
-![UV-Vis (ε) with example data](../screenshots/eps_light_en.png)
+![UV-Vis (ε)](../screenshots/eps_dark_en.png)
 
 ## 1. Create the compound
 

@@ -10,7 +10,7 @@ die Spektren zu zweit je Seite.
 bearbeitbar bleibt), die NMR-Spektren als SVG aus MestReNova, die IR-Datei aus OPUS (oder den OPUS-PDF-Ausdruck), den
 HRMS-Bericht der Massenabteilung (.docx) und die Werte der Elementaranalyse.
 
-![Synthese-Tab mit Beispieldaten](../screenshots/synthesis_light_de.png)
+![Synthese-Tab](../screenshots/synthesis_dark_de.png)
 
 ## 1. Verbindung anlegen
 

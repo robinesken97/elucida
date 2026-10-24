@@ -9,7 +9,7 @@ Koordinaten, Energien und Konvergenz.
 **Was du brauchst:** die CIF (z. B. aus Olex2 oder vom CCDC); für DFT xyz-Dateien oder Ausgaben von ORCA 6 (.out) bzw.
 Gaussian (.log).
 
-![X-Ray-Tab mit Beispieldaten](../screenshots/xray_light_de.png)
+![X-Ray-Tab](../screenshots/xray_dark_de.png)
 
 ## 1. CIF laden
 

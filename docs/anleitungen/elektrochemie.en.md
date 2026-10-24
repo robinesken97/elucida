@@ -9,7 +9,7 @@ methods paragraph. In the SEC tab the spectrum series during the potential scan.
 **What you need:** Gamry .DTA files (e.g. a scan-rate series), ideally one measurement with an internal standard (Fc
 or Ac₂Fc). For SEC the spectrum series from B&W Tek BWSpec (text export) and the .DTA of the potential scan.
 
-![CV tab with example data](../screenshots/cv_light_en.png)
+![CV tab](../screenshots/cv_dark_en.png)
 
 ## 1. Load the measurements (CV)
 

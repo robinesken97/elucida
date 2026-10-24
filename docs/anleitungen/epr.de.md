@@ -8,7 +8,7 @@ eigenen S = ½-Fit, Anteile mehrerer Spezies und – wenn nötig – Intensität
 **Was du brauchst:** Bruker-BES3T-Dateien (.dsc + .DTA) oder zweispaltigen Text (z. B. MS400); optional ein
 Dunkelspektrum (vor dem Bestrahlen) und Simulationen aus EasySpin als Text.
 
-![EPR-Tab mit Beispieldaten](../screenshots/epr_light_de.png)
+![EPR-Tab](../screenshots/epr_dark_de.png)
 
 ## 1. Messungen laden
 

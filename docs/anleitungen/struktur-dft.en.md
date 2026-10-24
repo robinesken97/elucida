@@ -9,7 +9,7 @@ coordinates, energies and convergence.
 **What you need:** the CIF (e.g. from Olex2 or the CCDC); for DFT xyz files or outputs of ORCA 6 (.out) or Gaussian
 (.log).
 
-![X-ray tab with example data](../screenshots/xray_light_en.png)
+![X-ray tab](../screenshots/xray_dark_en.png)
 
 ## 1. Load the CIF
 

@@ -2,19 +2,19 @@
 
 # Elucida – from synthesis to SI
 
-*Formerly **Spectravolt** (and before that **UVVisTool**). Compounds, settings and downloaded data are taken over automatically.*
-
 <p align="center"><img src="assets/icon.png" alt="Elucida" width="96"></p>
 
-**From synthesis to SI:** evaluation and publication-ready figures for UV-Vis, NMR, IR, HRMS, fluorescence, CV, SEC,
-EPR, X-ray and DFT – exported as a complete SI section in Word (synthesis with an editable ChemDraw scheme,
-characterisation paragraph, spectra two per page, crystal data and DFT coordinates).
+Elucida turns the analytical data of new compounds into a finished **Supporting Information**: evaluation and
+publication-ready figures for synthesis, NMR, IR, HRMS, elemental analysis, UV-Vis, fluorescence, cyclic voltammetry,
+spectroelectrochemistry, EPR, X-ray and DFT – exported to Word in the layout of a real SI.
 
-In the ε tab, Elucida determines molar absorption coefficients (ε) from UV-Vis dilution series
-(Beer–Lambert: A/d vs. c) and produces publication-ready figures in the classic Origin style:
-spectra, λ/ε labels at the bands, an inset with the linear regressions and R², the chemical
-structure (CDXML/SVG/PDF) and a photo of the cuvette with the background removed.
-The user interface is available in German and English.
+- **Compounds and projects:** a compound folder collects all data of one compound; a project groups the compounds of a
+  paper, shows what is still missing for each of them and writes the **complete SI** (title page, table of contents,
+  chapters as in a typical SI; templates for Wiley, ACS, RSC and Nature) and the **raw-data packages** for a repository
+  such as TUDOdata (lab codes and dates removed).
+- **Figures** in a consistent Origin-like style, PDF/SVG as vector graphics, 16 × 11 cm for half an A4 page; SI texts
+  (characterisation paragraph, captions, data processing) are written alongside.
+- Light and dark theme, German and English; Windows, macOS and Linux.
 
 <p align="center">
   <picture>
@@ -49,11 +49,12 @@ All exports: PDF/SVG (vector) and PNG, 16 × 11 cm by default (half an A4 page i
 German and English.
 
 <table>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_light_en.png" alt="Synthesis"><br><sub>Synthesis</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_light_en.png" alt="NMR"><br><sub>NMR</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="UV-Vis overlay"><br><sub>UV-Vis overlay</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray"><br><sub>X-Ray</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/eps_light_en.png" alt="UV-Vis (ε)"><br><sub>UV-Vis (ε)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/dft_light_en.png" alt="DFT"><br><sub>DFT</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/synthesis_dark_en.png" alt="Synthesis"><br><sub>Synthesis</sub></td><td width="50%" valign="top"><img src="docs/screenshots/nmr_dark_en.png" alt="NMR"><br><sub>NMR</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/irms_dark_en.png" alt="IR + EA"><br><sub>IR + EA</sub></td><td width="50%" valign="top"><img src="docs/screenshots/hrms_dark_en.png" alt="HRMS"><br><sub>HRMS</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/eps_dark_en.png" alt="UV-Vis (ε)"><br><sub>UV-Vis (ε)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/overlay_dark_en.png" alt="UV-Vis overlay"><br><sub>UV-Vis overlay</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_dark_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td><td width="50%" valign="top"><img src="docs/screenshots/cv_dark_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/sec_dark_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/epr_dark_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/xray_dark_en.png" alt="X-Ray"><br><sub>X-Ray</sub></td><td width="50%" valign="top"><img src="docs/screenshots/dft_dark_en.png" alt="DFT"><br><sub>DFT</sub></td></tr>
 </table>
 
 ## Download and start
@@ -87,6 +88,9 @@ without it, start with `./Elucida-linux-x64.AppImage --appimage-extract-and-run`
 distribution at least as new as Ubuntu 22.04 (glibc 2.35), as does the tar.gz.
 
 On Windows, always keep the whole `Elucida` folder together. The `.exe` does not work without the `_internal` folder next to it.
+
+*Elucida was called **Spectravolt** before (and **UVVisTool** before that, when it only evaluated UV-Vis dilution
+series). Compounds, settings and downloaded data are taken over automatically.*
 
 ## Quick start: from an empty compound to the SI
 
@@ -149,7 +153,199 @@ To try it without your own data: **Help → Open example compound** creates a co
 
 All settings of the individual tabs are described further down for reference.
 
-## Workflow
+## Compounds, projects, export
+
+Everything happens in the **compound folder** (the folder button in the toolbar opens it in Finder, Explorer or the file
+manager of your Linux desktop):
+
+1. **File → New compound…** – choose a folder or create a new one in the dialog.
+2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
+   compound** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
+   Files that are already inside the compound are not copied again.
+3. Work as usual – the compound is **saved automatically**. A backup (`.elucida/project.elucida.bak`) is made
+   each time it is opened. Folders from older versions (`project.uvvis`) open as before and are saved as
+   `project.elucida` from then on (the file name keeps "project" for compatibility).
+4. **Export** writes directly into the compound folder (existing files are overwritten):
+
+```
+S2/
+  project.elucida        settings (paths relative to the folder)
+  elucida.json           summary for the Characterization program (read-only for it)
+  SI/                    Word files and SI texts: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
+  figures/               figures (PDF/SVG/PNG): S2_CV.pdf, S2_X-ray.svg, <series>_UV-Vis.png …
+  tables/                tables and data files: S2_CV_results.csv, <series>_UV-Vis_report.xlsx, xyz …
+  data/nmr/ data/cv/ …   copies of the measurement data, one folder per technique
+  structures/            ChemDraw structures (with their exports), schemes, photos
+  .elucida/              intermediate images for Word, cache, backup (hidden)
+```
+
+File names start with the name of the compound (**Compound …**; without one, the folder name). Folders appear only when
+something goes into them. Folders from versions before 2.1 (`data/`, `images/`, `exports/`) open as before; their
+files stay where they are, new files and exports use the new layout.
+
+The program starts with the welcome page. Open compounds and projects via **File → Open**, **Recently opened**
+or by dragging the folder onto the window. **File → Save compound copy** writes a complete copy (e.g.
+an intermediate state). **Edit → Undo / Redo** (⌘Z / ⌘⇧Z, Ctrl+Z / Ctrl+Y) covers all tabs.
+
+**File → Export data package (zip)** writes the raw data of the compound for a data repository (e.g. TUDOdata), laid
+out like published datasets: `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments), `NMR/HSQC + HMBC/12/`,
+`IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`; DFT and Elucida's own
+figures/SI optional. X-ray (CCDC) and synthesis are not included. Every file can be deselected; the choice is
+remembered per compound. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
+names by the compound (`6m`), in the contents by „Compound 6m“ (both editable) – and **dates and times are deleted**:
+in all text files (CSV, Gamry DTA, EPR, TopSpin parameters, title and audit trail), in the MS report (text, file
+author and dates, labels in its spectra) and in OPUS files (same length). The measured values (FID, ser, spectra) stay
+byte-identical. PDF, Mnova and Bruker .d cannot be edited; if a code remains in one of them, the log names it.
+
+Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
+plotted curves (one x/y column pair per curve, values without stacking offset) – for Origin, Excel or MATLAB.
+
+### Projects
+
+**File → New project** turns a folder into a project: the parent folder for all compounds of a paper. The compounds
+stay ordinary compound folders in its subfolders (each can still be opened on its own); `publication.elucida` keeps
+their order, the details for the dataset and the SI texts. The project page lists the compounds with a checklist
+(right-click: up/down, remove), **New compound** creates a subfolder, **Add compound** includes one from elsewhere.
+
+- **Data packages (zip):** the whole dataset as on TUDOdata – one zip per compound (as above), the DFT calculations of
+  all compounds in `CompChem.zip`, `README.txt` (title, authors, DOI, citation, related publication, descriptions,
+  license; generated from **Details**) and the license text (CC BY 4.0 or CC0). Lab codes are assigned to the compound
+  whose file names contain them.
+- **Complete SI (Word):** one file with title page and table of contents, chapters as in the group's SI – 1. Materials
+  and Methods, 2. Synthetic Procedures and Characterization Data, 3. NMR Spectra, 4. UV-Vis Spectroscopy, 5. EPR
+  Spectroscopy, 6. Cyclic Voltammetry, 7. Spectroelectrochemistry, 8. X-Ray Characterization Data, 9. Computational
+  Section (empty chapters are left out). Within each chapter the compounds follow the order of the project;
+  figures two per page and numbered throughout, crystal data of all structures in common tables. **SI texts** holds
+  "Materials and Methods" and an optional introduction per chapter.
+- **Templates** for the complete SI: group (as the group's Angewandte SI: "Supplementary Materials for",
+  Figure S1:), Wiley ("Supporting Information for", Figure S1.; Angewandte requires the SI to start with a table of
+  contents), ACS ("Supporting Information for", Figure S1., pages S1, S2 …; JOC asks for a table of contents with page
+  numbers), RSC ("Supplementary Information for", Fig. S1 as in RSC articles), Nature ("Supplementary Information
+  for", Supplementary Figure 1 |, numbered separately from the article). Publishers hardly prescribe a layout for the
+  SI, so only the title page, labels and page numbers change; chapters, font and page layout stay as in the group's
+  SI. The complete SI has page numbers and a table of contents that is already filled in (estimated page numbers;
+  Word updates them when opening, ONLYOFFICE via "Update table of contents"). The SI of a single compound keeps the
+  group's style.
+
+## Compound
+
+A compound folder usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
+number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotopes such as D included, editable). This is
+the default for the ε tab (structure, molar mass), the fluorescence tab, IR + EA and HRMS; tabs that already have their own
+structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
+characterisation paragraph of the SI section.
+
+## SI section (Word)
+
+**SI (Word)** in the toolbar (or **File → Export SI section (Word) …**) asks which parts to include
+(characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the compound into
+`SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
+UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
+UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
+precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
+X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
+and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
+
+**Figures:** the figures of all tabs with data (UV-Vis (ε) per series, IR, HR-MS, overlay, fluorescence, CV, SEC, EPR)
+and the NMR spectra always come **two per page**; where figure and caption would not fit, both figures of the page are
+scaled down (aspect ratio kept). Captions follow the SI: UV-Vis "UV-Vis spectra of **X** in THF, measured in 0.1 cm
+quartz cuvettes." (solvent under Analysis in the ε tab); CV, SEC and EPR take scan rate, iR compensation, reference,
+potential range, band, g and couplings from the data and concentration, solvent, electrolyte or species from the
+**Figure caption (SI export)** box of the tab. **Setup text (SI) …** next to "Copy SI text" stores your general
+instrument/setup paragraph on this computer only (not in the compound, not in the repository); it is placed before the
+figures of that tab. Word files open in normal mode (Word 2013+).
+
+**SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
+English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
+OLS model, cut-off, SE/95% CI; EPR: baseline polynomial, field calibration, S = 1/2 fit, kinetics), to append to the
+setup paragraph of the matching SI section, followed by the results. The same text is written as `…_methods.txt` on
+export, and **SI (Word)** can add all of them as a section "Data processing and fitting" (one paragraph per technique)
+behind the figures – so it is documented how the raw data were processed.
+
+**Font of the Word exports:** selectable in the SI (Word) dialog (default Arial as in the group's SI) and used for all
+Word exports. The size stays 11 pt, because "two figures per page" is calculated with this line height.
+
+## Synthesis tab
+
+"Synthesis of **Name**" (the name defaults to the compound or folder), the reaction scheme and the procedure, exported
+to Word or as part of the SI section.
+
+- **Scheme:** choose the CDXML. Next to it (same name, same folder) you can save from ChemDraw: **SVG/PDF** (picture
+  taken unchanged), **.cdx** (the scheme becomes an editable ChemDraw object in Word – double-click opens ChemDraw; Word
+  cannot do this with a CDXML) and **.emf** (sharp vector preview of that object). Without an SVG/PDF the scheme is drawn
+  from the CDXML coordinates, including arrow and conditions.
+- **Procedure** with bold, italic, sub- and superscript.
+- **Amount check:** amounts written as "(1.03 g, 5.00 mmol, 1.0 eq.)", "(99%)" are compared with the reagent table
+  (M or formula, mass, volume, concentration, density); deviations beyond the rounding of the given digits are flagged.
+  **From scheme** fills the table with the reactants (first = reference 1.0 eq.), reagents above/below the arrow (e.g.
+  K2CO3), solvents and the product; **Insert amounts** inserts the calculated bracket of the selected row at the cursor.
+
+## NMR tab
+
+- **Spectra:** SVG exports from MestReNova (drag and drop). The nucleus is read from the axis label ("δ ¹H (ppm)");
+  if it is missing, enter it. Order: ¹H, ¹³C, other nuclei by mass number, then 2D (COSY, HSQC, HMBC, NOESY …).
+- **Structure** in every spectrum as vector graphics: placed automatically in a free spot (nothing covered), or top
+  left/centre/right, or dragged in the preview; the mouse wheel over the structure changes its size, the same for all
+  spectra.
+- **NMR line:** paste the Mnova multiplet report ("Multiplets → Copy", journal format) – all nuclei into the one
+  field, one line per nucleus. **Line from peak labels** builds the ¹³C (or other) line from the labelled peaks of the
+  selected spectrum; a solvent signal labelled with its name ("77.16 CDCl3") is dropped. Assignments per signal in the
+  table (*italic*, _{sub}, ^{sup}).
+- **Temperature** 298 K by default, or from the Bruker experiment folder (acqus, with an overview of the parameters
+  such as frequency, O1P, pulse program, scans).
+- **Raw data** (tab next to the figure): **TopSpin data …** takes an experiment, a dataset (10, 11, …) or a folder with
+  several datasets – also by drag & drop – and copies each experiment completely into the compound, sorted by kind
+  (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). If exactly one experiment fits a spectrum, it is assigned automatically
+  (parameters, temperature). **Mnova documents** (`.mnova`) are kept in `data/nmr/mnova`; double-click opens them.
+- Spectra can also be **EMF** from Mnova: they go into Word unchanged (vector, without the inserted structure); for the
+  preview and the structure use SVG.
+- **Word:** two spectra per page, "Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**."
+
+## IR + EA tab
+
+- **IR:** load a Bruker **OPUS** file (`*.0`, spectrum) and/or the **OPUS PDF** print-out (peak labels). With the PDF the
+  values are exactly the OPUS peak list; with the file alone Elucida picks the bands itself (adjustable
+  sensitivity). Range freely selectable (default: the whole measured range); untick bands that should not be listed;
+  intensities w/m/s/br optional. Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
+- **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
+  m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
+  says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
+  preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
+  found 265.1703. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
+  **ChemDraw object embedded in the report**; without a compound set, **Take the compound from the MS report**
+  sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).
+- **HRMS from raw data:** alternatively (or in addition) load the Bruker **measurement folder** (`.d`, e.g. timsTOF;
+  button or drag & drop). Elucida reads the instrument's line spectra itself (no Bruker software needed, also on
+  macOS) and averages the ion over the **LC peak** (automatic: contiguous scans with ≥ 50 % of the maximum, or a
+  chosen RT range). found = intensity-weighted mean; the number of scans, the range of the single scans and their
+  scatter (± mDa/ppm) are shown, because single scans can differ in the 4th decimal. With a report loaded its value
+  stays preselected and the raw-data mean is selectable. Only `analysis.baf` and `analysis.sqlite` are copied into the
+  compound.
+- **Elemental analysis:** formula from the compound, optionally plus a solvate (`0.5 CH2Cl2`, several
+  separated by commas); calculated values with conventional mean atomic masses, enter the found C/H/N/S values.
+  Deviations above 0.4 % are flagged (the usual limit of the journals). Output: **Elemental analysis** calcd (%) for
+  C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
+- **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
+  and `…_SI.txt` with all lines.
+
+## HRMS tab
+
+- Load the **Word report** of the mass-spectrometry department and/or the Bruker **measurement folder** (`.d`); see
+  the bullet points below for what is read from each. With raw data the tab shows:
+  - a **chromatogram** (total ion current grey, ion current of the target ion red, ± 10 ppm); the blue band is the
+    LC range used for the spectrum – **drag with the mouse** to choose another range;
+  - the **averaged spectrum** over this range (mean of the instrument's line spectra) with m/z at the largest peaks
+    and the **calculated isotope pattern** of the ion mirrored below (red; fine structure that the TOF does not
+    resolve, e.g. ¹³C/¹⁵N, merged); the measured/calculated isotope ratios (M+1, M+2 …) are listed;
+  - **click a peak** to use it as *found* (besides the report value and the LC-peak mean).
+- Export: spectrum figure (PDF/SVG/PNG), `…_sticks.csv` (measured and calculated) and `…_SI.txt`.
+- Older compounds: the MS data of the former IR + MS tab are taken over automatically.
+
+## UV-Vis (ε) tab
+
+Molar absorption coefficients (ε) from UV-Vis dilution series (Beer–Lambert: A/d vs. c) with standard error and 95 %
+confidence interval, and a figure in the Origin style: spectra, λ/ε labels at the bands, an inset with the linear
+regressions and R², the structure and a photo of the cuvette with the background removed.
 
 1. **Open data:** File → Open measurement data, or drag files onto the window. Cary CSV/TXT exports and the
    instrument's own **.DSW/.BSW** files are supported. **Several files at once** (e.g. each
@@ -202,262 +398,24 @@ All settings of the individual tabs are described further down for reference.
 6. **Export:** File → Export (or the button). This writes the chosen formats (PDF/SVG/PNG),
    `<series>_results.csv` and the Excel report for **all** series into the compound (see below).
 
-## Appearance
+### What happens automatically during the analysis
 
-The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently.
-Rarely used cards of the left column are collapsed (click the title to open them); a title with **"(changed)"** means
-that a value there differs from the default. Results, tables and SI texts sit in tabs next to the figure. The mouse
-wheel scrolls the column and only changes a field after it has been clicked. Notes while drawing (e.g. curves left out)
-appear below the preview, **Help → Log…** shows all messages. **Presets ▾** at the bottom saves a tab's settings for
-other compounds. The figures are not affected by the theme.
+- **Baseline** ("automatic (series)", default): the window is placed where the most concentrated
+  sample absorbs least. Only the part of the window value that does *not* scale with concentration
+  (instrument/cuvette offset) is subtracted. A residual proportional to c is treated as real
+  absorption and kept. "automatic (simple)" subtracts the full window value. The baseline always
+  uses the full data range, independent of the displayed λ range.
+- **Fit cutoff:** points above the cutoff (default A = 1.0) are excluded from the fit.
+- **Bands:** found automatically within the displayed λ range, or entered as a list.
+- **Rounding:** ε (M⁻¹ cm⁻¹) is never shown with decimals; it is rounded to the precision its
+  standard error supports. The results CSV keeps the full values.
+- **Warnings** (results table and log): fewer than 4 fit points, significant intercept (> 2σ),
+  R² below the threshold (default 0.98, adjustable under Analysis → "min. R² for figure"; 0 = show
+  all; the band stays in the table – R² cell marked red –, CSV and Excel report but is not shown in the
+  figure), fewer than 3 points (then no ε at all). With 4 points, R² alone says little: check the
+  95 % confidence interval in the Excel report before lowering the threshold.
 
-## Compound
-
-A compound folder usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
-number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotopes such as D included, editable). This is
-the default for the ε tab (structure, molar mass), the fluorescence tab, IR + EA and HRMS; tabs that already have their own
-structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
-characterisation paragraph of the SI section.
-
-## Synthesis tab
-
-"Synthesis of **Name**" (the name defaults to the compound or folder), the reaction scheme and the procedure, exported
-to Word or as part of the SI section.
-
-- **Scheme:** choose the CDXML. Next to it (same name, same folder) you can save from ChemDraw: **SVG/PDF** (picture
-  taken unchanged), **.cdx** (the scheme becomes an editable ChemDraw object in Word – double-click opens ChemDraw; Word
-  cannot do this with a CDXML) and **.emf** (sharp vector preview of that object). Without an SVG/PDF the scheme is drawn
-  from the CDXML coordinates, including arrow and conditions.
-- **Procedure** with bold, italic, sub- and superscript.
-- **Amount check:** amounts written as "(1.03 g, 5.00 mmol, 1.0 eq.)", "(99%)" are compared with the reagent table
-  (M or formula, mass, volume, concentration, density); deviations beyond the rounding of the given digits are flagged.
-  **From scheme** fills the table with the reactants (first = reference 1.0 eq.), reagents above/below the arrow (e.g.
-  K2CO3), solvents and the product; **Insert amounts** inserts the calculated bracket of the selected row at the cursor.
-
-## NMR tab
-
-- **Spectra:** SVG exports from MestReNova (drag and drop). The nucleus is read from the axis label ("δ ¹H (ppm)");
-  if it is missing, enter it. Order: ¹H, ¹³C, other nuclei by mass number, then 2D (COSY, HSQC, HMBC, NOESY …).
-- **Structure** in every spectrum as vector graphics: placed automatically in a free spot (nothing covered), or top
-  left/centre/right, or dragged in the preview; the mouse wheel over the structure changes its size, the same for all
-  spectra.
-- **NMR line:** paste the Mnova multiplet report ("Multiplets → Copy", journal format) – all nuclei into the one
-  field, one line per nucleus. **Line from peak labels** builds the ¹³C (or other) line from the labelled peaks of the
-  selected spectrum; a solvent signal labelled with its name ("77.16 CDCl3") is dropped. Assignments per signal in the
-  table (*italic*, _{sub}, ^{sup}).
-- **Temperature** 298 K by default, or from the Bruker experiment folder (acqus, with an overview of the parameters
-  such as frequency, O1P, pulse program, scans).
-- **Raw data** (tab next to the figure): **TopSpin data …** takes an experiment, a dataset (10, 11, …) or a folder with
-  several datasets – also by drag & drop – and copies each experiment completely into the compound, sorted by kind
-  (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). If exactly one experiment fits a spectrum, it is assigned automatically
-  (parameters, temperature). **Mnova documents** (`.mnova`) are kept in `data/nmr/mnova`; double-click opens them.
-- Spectra can also be **EMF** from Mnova: they go into Word unchanged (vector, without the inserted structure); for the
-  preview and the structure use SVG.
-- **Word:** two spectra per page, "Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**."
-
-## HRMS tab
-
-- Load the **Word report** of the mass-spectrometry department and/or the Bruker **measurement folder** (`.d`); see
-  the bullet points below for what is read from each. With raw data the tab shows:
-  - a **chromatogram** (total ion current grey, ion current of the target ion red, ± 10 ppm); the blue band is the
-    LC range used for the spectrum – **drag with the mouse** to choose another range;
-  - the **averaged spectrum** over this range (mean of the instrument's line spectra) with m/z at the largest peaks
-    and the **calculated isotope pattern** of the ion mirrored below (red; fine structure that the TOF does not
-    resolve, e.g. ¹³C/¹⁵N, merged); the measured/calculated isotope ratios (M+1, M+2 …) are listed;
-  - **click a peak** to use it as *found* (besides the report value and the LC-peak mean).
-- Export: spectrum figure (PDF/SVG/PNG), `…_sticks.csv` (measured and calculated) and `…_SI.txt`.
-- Older compounds: the MS data of the former IR + MS tab are taken over automatically.
-
-## IR + EA tab
-
-- **IR:** load a Bruker **OPUS** file (`*.0`, spectrum) and/or the **OPUS PDF** print-out (peak labels). With the PDF the
-  values are exactly the OPUS peak list; with the file alone Elucida picks the bands itself (adjustable
-  sensitivity). Range freely selectable (default: the whole measured range); untick bands that should not be listed;
-  intensities w/m/s/br optional. Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
-- **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
-  m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
-  says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
-  preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
-  found 265.1703. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
-  **ChemDraw object embedded in the report**; without a compound set, **Take the compound from the MS report**
-  sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).
-- **HRMS from raw data:** alternatively (or in addition) load the Bruker **measurement folder** (`.d`, e.g. timsTOF;
-  button or drag & drop). Elucida reads the instrument's line spectra itself (no Bruker software needed, also on
-  macOS) and averages the ion over the **LC peak** (automatic: contiguous scans with ≥ 50 % of the maximum, or a
-  chosen RT range). found = intensity-weighted mean; the number of scans, the range of the single scans and their
-  scatter (± mDa/ppm) are shown, because single scans can differ in the 4th decimal. With a report loaded its value
-  stays preselected and the raw-data mean is selectable. Only `analysis.baf` and `analysis.sqlite` are copied into the
-  compound.
-- **Elemental analysis:** formula from the compound, optionally plus a solvate (`0.5 CH2Cl2`, several
-  separated by commas); calculated values with conventional mean atomic masses, enter the found C/H/N/S values.
-  Deviations above 0.4 % are flagged (the usual limit of the journals). Output: **Elemental analysis** calcd (%) for
-  C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
-- **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
-  and `…_SI.txt` with all lines.
-
-## SI section (Word)
-
-**SI (Word)** in the toolbar (or **File → Export SI section (Word) …**) asks which parts to include
-(characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the compound into
-`SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
-UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
-UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
-precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
-X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
-and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
-
-**Figures:** the figures of all tabs with data (UV-Vis (ε) per series, IR, HR-MS, overlay, fluorescence, CV, SEC, EPR)
-and the NMR spectra always come **two per page**; where figure and caption would not fit, both figures of the page are
-scaled down (aspect ratio kept). Captions follow the SI: UV-Vis "UV-Vis spectra of **X** in THF, measured in 0.1 cm
-quartz cuvettes." (solvent under Analysis in the ε tab); CV, SEC and EPR take scan rate, iR compensation, reference,
-potential range, band, g and couplings from the data and concentration, solvent, electrolyte or species from the
-**Figure caption (SI export)** box of the tab. **Setup text (SI) …** next to "Copy SI text" stores your general
-instrument/setup paragraph on this computer only (not in the compound, not in the repository); it is placed before the
-figures of that tab. Word files open in normal mode (Word 2013+).
-
-**SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
-English methods paragraph describing exactly the evaluation steps used, with their settings (e.g. ε: baseline window,
-OLS model, cut-off, SE/95% CI; EPR: baseline polynomial, field calibration, S = 1/2 fit, kinetics), to append to the
-setup paragraph of the matching SI section, followed by the results. The same text is written as `…_methods.txt` on
-export, and **SI (Word)** can add all of them as a section "Data processing and fitting" (one paragraph per technique)
-behind the figures – so it is documented how the raw data were processed.
-
-**Font of the Word exports:** selectable in the SI (Word) dialog (default Arial as in the group's SI) and used for all
-Word exports. The size stays 11 pt, because "two figures per page" is calculated with this line height.
-
-## X-Ray tab
-
-- Load one or more **CIF** files (button or drag & drop); each `data_` block with atoms becomes one entry (one
-  column in the tables). Elucida reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
-  operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
-- **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
-  exactly, with the principal ellipses; black bonds, bold labels (draggable), H atoms as small shaded spheres. Further style (also in PDF/SVG/PNG and Word): flat Olex2 style. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
-  (atom list, double-click on the atom, or **Shift + drag a box** for several atoms); label colour black or like the atom. **Drag to rotate**,
-  right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
-  default orientation (least overlap of the atoms). Atom colours per element are freely selectable (Olex2
-  colours by default).
-- The molecule is **completed by symmetry** (e.g. a molecule on an inversion centre); generated atoms carry a
-  superscript (C1ⁱ) and the operation is given as a footnote. **Disorder:** major part only (default), all parts or
-  the minor part. Separate fragments (solvent, counter-ions) and H atoms can be hidden; **Hide solvent** / **Hide
-  counterions** recognise common ones from the formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
-- **Wireframe** for bulky groups (e.g. Dipp): click the bond to the substituent (core atom first, e.g. N then
-  C_ipso) and press **As wireframe** – everything behind it is drawn as thin lines in the element colours, without
-  H atoms and labels. If the bond is part of a ring (spiro atom), the ring system behind the first atom is used. The
-  start view avoids overlapping atoms; labels optionally for heteroatoms only.
-- **Caption suggestion** (English), e.g. „… Displacement ellipsoids are drawn at the 50 % probability level;
-  co-crystallised THF omitted, Dipp groups shown as wireframe without hydrogen atoms for clarity. …“, with the
-  selected parameters and symmetry codes; copied with one click and written to `…_captions.txt` on export.
-- **Click atoms** (the front-most one wins): 2 = distance, 3 = angle, 4 = torsion angle. Values with s.u. are taken
-  **exactly from the CIF** (e.g. 1.392(3)); Elucida never estimates an s.u. itself. If a value is missing (torsion
-  angles without `CONF`), it is calculated from the coordinates, shown **without** s.u. and marked – set `CONF` in
-  Olex2/SHELXL and refine again to get torsion angles with s.u.
-- **Tables for the SI:** crystal data and structure refinement (one column per compound; numbers exactly as in the
-  CIF, space group in italics with subscripts, diff. peak/hole with a true minus sign; internal reference and CCDC
-  number editable) and selected bond lengths, angles and torsion angles (same atom names side by side). **Copy**
-  keeps italics and sub-/superscripts in Word; export also writes CSV and Excel. Table labels are in English
-  (as usual for an SI).
-- Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
-  `…_tables.xlsx`. The label size can be set per tab and the **background** chosen (white, transparent, colour; also
-  for Word).
-
-## DFT tab
-
-- Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
-  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Styles: Mercury, Olex2, **ball and stick like the ORCA
-  manual**, **IboView** and a **line drawing** (white balls, hollow sticks, as in classic journal figures); mouse as in the X-Ray tab.
-- **Measure and align** as in the X-Ray tab: click 2/3/4 atoms for distance, angle or dihedral (values from the
-  geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
-- **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the
-  remaining atoms keep their order (optionally H atoms right after their atom). **Save xyz** writes a new file with the
-  lines unchanged (only reordered); the loaded file is never overwritten. Counting from 0 (ORCA) can be shown. Atom
-  radius and bond thickness also apply in the ball-and-stick styles (relative to the default); the background is
-  selectable as in the X-Ray tab.
-- **Like template:** takes over the numbering of another geometry in the tab or of a crystal structure in the X-Ray
-  tab (then with the CIF atom names, e.g. C1, H3A). Heavy atoms are matched by connectivity, symmetric molecules by
-  the smallest deviation after superposition; an equally good alternative is reported with the atoms concerned, H
-  atoms follow their neighbour atom.
-- **Calculation for the SI** (ORCA 6, Gaussian): name, figure, charge/multiplicity/point group, Cartesian coordinates
-  and E_el/H/G (ZPE column optional), optionally the input line (per structure or once as "Computational details"),
-  the convergence table of the last cycle and the frequency result. All values exactly as in the output. The program
-  warns about aborted runs, non-converged optimisations and imaginary frequencies; with CPCM only the dielectric
-  contribution is given (a solvation energy needs the gas-phase calculation). **Copy SI text**, **Save Word** (two
-  columns) or via the SI section.
-
-## Compounds, export, undo
-
-Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
-plotted curves (one x/y column pair per curve, values without stacking offset) – for Origin, Excel or MATLAB.
-
-Everything happens in the **compound folder** (the folder button in the toolbar opens it in Finder, Explorer or the file
-manager of your Linux desktop):
-
-1. **File → New compound…** – choose a folder or create a new one in the dialog.
-2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
-   compound** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
-   Files that are already inside the compound are not copied again.
-3. Work as usual – the compound is **saved automatically**. A backup (`.elucida/project.elucida.bak`) is made
-   each time it is opened. Folders from older versions (`project.uvvis`) open as before and are saved as
-   `project.elucida` from then on (the file name keeps "project" for compatibility).
-4. **Export** writes directly into the compound folder (existing files are overwritten):
-
-```
-S2/
-  project.elucida        settings (paths relative to the folder)
-  elucida.json           summary for the Characterization program (read-only for it)
-  SI/                    Word files and SI texts: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
-  figures/               figures (PDF/SVG/PNG): S2_CV.pdf, S2_X-ray.svg, <series>_UV-Vis.png …
-  tables/                tables and data files: S2_CV_results.csv, <series>_UV-Vis_report.xlsx, xyz …
-  data/nmr/ data/cv/ …   copies of the measurement data, one folder per technique
-  structures/            ChemDraw structures (with their exports), schemes, photos
-  .elucida/              intermediate images for Word, cache, backup (hidden)
-```
-
-File names start with the name of the compound (**Compound …**; without one, the folder name). Folders appear only when
-something goes into them. Folders from versions before 2.1 (`data/`, `images/`, `exports/`) open as before; their
-files stay where they are, new files and exports use the new layout.
-
-The program starts with the welcome page. Open compounds and projects via **File → Open**, **Recently opened**
-or by dragging the folder onto the window. **File → Save compound copy** writes a complete copy (e.g.
-an intermediate state). **Edit → Undo / Redo** (⌘Z / ⌘⇧Z, Ctrl+Z / Ctrl+Y) covers all tabs.
-
-**File → Export data package (zip)** writes the raw data of the compound for a data repository (e.g. TUDOdata), laid
-out like published datasets: `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments), `NMR/HSQC + HMBC/12/`,
-`IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`; DFT and Elucida's own
-figures/SI optional. X-ray (CCDC) and synthesis are not included. Every file can be deselected; the choice is
-remembered per compound. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
-names by the compound (`6m`), in the contents by „Compound 6m“ (both editable) – and **dates and times are deleted**:
-in all text files (CSV, Gamry DTA, EPR, TopSpin parameters, title and audit trail), in the MS report (text, file
-author and dates, labels in its spectra) and in OPUS files (same length). The measured values (FID, ser, spectra) stay
-byte-identical. PDF, Mnova and Bruker .d cannot be edited; if a code remains in one of them, the log names it.
-
-### Projects
-
-**File → New project** turns a folder into a project: the parent folder for all compounds of a paper. The compounds
-stay ordinary compound folders in its subfolders (each can still be opened on its own); `publication.elucida` keeps
-their order, the details for the dataset and the SI texts. The project page lists the compounds with a checklist
-(right-click: up/down, remove), **New compound** creates a subfolder, **Add compound** includes one from elsewhere.
-
-- **Data packages (zip):** the whole dataset as on TUDOdata – one zip per compound (as above), the DFT calculations of
-  all compounds in `CompChem.zip`, `README.txt` (title, authors, DOI, citation, related publication, descriptions,
-  license; generated from **Details**) and the license text (CC BY 4.0 or CC0). Lab codes are assigned to the compound
-  whose file names contain them.
-- **Complete SI (Word):** one file with title page and table of contents, chapters as in the group's SI – 1. Materials
-  and Methods, 2. Synthetic Procedures and Characterization Data, 3. NMR Spectra, 4. UV-Vis Spectroscopy, 5. EPR
-  Spectroscopy, 6. Cyclic Voltammetry, 7. Spectroelectrochemistry, 8. X-Ray Characterization Data, 9. Computational
-  Section (empty chapters are left out). Within each chapter the compounds follow the order of the project;
-  figures two per page and numbered throughout, crystal data of all structures in common tables. **SI texts** holds
-  "Materials and Methods" and an optional introduction per chapter.
-- **Templates** for the complete SI: group (as the group's Angewandte SI: "Supplementary Materials for",
-  Figure S1:), Wiley ("Supporting Information for", Figure S1.; Angewandte requires the SI to start with a table of
-  contents), ACS ("Supporting Information for", Figure S1., pages S1, S2 …; JOC asks for a table of contents with page
-  numbers), RSC ("Supplementary Information for", Fig. S1 as in RSC articles), Nature ("Supplementary Information
-  for", Supplementary Figure 1 |, numbered separately from the article). Publishers hardly prescribe a layout for the
-  SI, so only the title page, labels and page numbers change; chapters, font and page layout stay as in the group's
-  SI. The complete SI has page numbers and a table of contents that is already filled in (estimated page numbers;
-  Word updates them when opening, ONLYOFFICE via "Update table of contents"). The SI of a single compound keeps the
-  group's style.
-
-## Excel report
+### Excel report
 
 For every series, `<series>_report.xlsx` contains:
 
@@ -466,7 +424,7 @@ For every series, `<series>_report.xlsx` contains:
   interval** from the t-distribution) and the method with all equations.
 - **Spectra:** A(λ) of all samples, baseline-corrected and raw, with chart.
 - **One sheet per band:** data points, "in fit" flag (1/0, editable), the complete regression as
-  **Excel formulas** (x̄, ȳ, Sxx, Sxy, m, b, RSS, s, SE, R², ε, t, CI) next to the tool's values with
+  **Excel formulas** (x̄, ȳ, Sxx, Sxy, m, b, RSS, s, SE, R², ε, t, CI) next to the program's values with
   their difference, residuals and a chart (A/d vs c with regression line).
 
 Blue numbers are measured values or tool results, black cells are formulas. Changing a flag in "in
@@ -512,6 +470,24 @@ Compare several spectra in one figure, measured and calculated:
   on the level of its measurement. The **y axis** can be shown with numbers, without numbers and
   ticks (default when stacked – offset curves make the numbers misleading) or hidden. Optionally
   the **names are written at the curves** instead of a legend, and a dashed zero line marks each level.
+
+## Fluorescence tab
+
+Absorption and emission in one figure, as commonly shown in papers:
+
+- Absorption (any UV-Vis file) and emission (Cary Eclipse CSV or .FBSW), both normalised to 1;
+  λex is filled in automatically from the emission file;
+  the absorption to the maximum within the "band of interest".
+- Labels with λabs of the absorption maximum (plus ε, if entered) and λem of the emission maximum.
+- **Stokes shift** Δν̃ = 1/λabs − 1/λem in cm⁻¹ (rounded to 10 cm⁻¹, peak positions from ~1 nm data
+  are not more precise) and in nm; optionally also in the figure at the emission label.
+- **Absorbance at λex** with a warning above A = 0.1: the inner-filter effect then distorts the
+  emission spectrum and lowers quantum yields (only relevant if both were measured on the same solution).
+- Optionally hide scattered light at λex and 2·λex.
+- Two cuvette photos (daylight and under UV) are combined with an arrow and the excitation
+  wavelength; for the UV photo background removal is off by default (dark background stays).
+- Structure as in the ε tab.
+
 
 ## CV tab (cyclic voltammetry)
 
@@ -587,7 +563,7 @@ Compare several spectra in one figure, measured and calculated:
 - **Several species:** all simulations assigned to a measurement (EasySpin or own S = ½) are scaled *together* by
   linear least squares; the fractions (double integral) are shown, optionally the sum and the residual
   (measured − sum) – i.e. subtraction of individual species. Non-linear parameters (g, A, D/E, linewidths of
-  powder spectra) are fitted in EasySpin; the tool only determines the fractions.
+  powder spectra) are fitted in EasySpin; Elucida only determines the fractions.
 - **Own isotropic S = ½ simulation and fit** (solution, first order): g, groups of equivalent nuclei (e.g.
   `2 14N 0.65; 4 1H 0.32`, a in mT), peak-to-peak linewidth and Lorentzian fraction; "Fit" refines g, a and
   ΔB_pp (Levenberg–Marquardt after a coarse grid search, amplitude linear).
@@ -609,23 +585,72 @@ Compare several spectra in one figure, measured and calculated:
   ranges – with `%` header lines documenting frequency, temperature and processing (`load(...)` in MATLAB, ready
   for `esfit`). The intensity series is saved as `…_intensity.csv`.
 
-## Fluorescence tab
+## X-Ray tab
 
-Absorption and emission in one figure, as commonly shown in papers:
+- Load one or more **CIF** files (button or drag & drop); each `data_` block with atoms becomes one entry (one
+  column in the tables). Elucida reads the CIF itself (cell, coordinates, U_iso/U_ij, occupancy, PART, symmetry
+  operations, `_geom_bond`/`_geom_angle`/`_geom_torsion`); no extra software needed.
+- **ORTEP figure in the Mercury style:** shaded displacement ellipsoids at 50 % probability (adjustable), projected
+  exactly, with the principal ellipses; black bonds, bold labels (draggable), H atoms as small shaded spheres. Further style (also in PDF/SVG/PNG and Word): flat Olex2 style. Single atoms (e.g. individual H) can be hidden and labels switched **per atom**
+  (atom list, double-click on the atom, or **Shift + drag a box** for several atoms); label colour black or like the atom. **Drag to rotate**,
+  right button to pan, mouse wheel to zoom; the view is stored per structure, **Reset view** goes back to the
+  default orientation (least overlap of the atoms). Atom colours per element are freely selectable (Olex2
+  colours by default).
+- The molecule is **completed by symmetry** (e.g. a molecule on an inversion centre); generated atoms carry a
+  superscript (C1ⁱ) and the operation is given as a footnote. **Disorder:** major part only (default), all parts or
+  the minor part. Separate fragments (solvent, counter-ions) and H atoms can be hidden; **Hide solvent** / **Hide
+  counterions** recognise common ones from the formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
+- **Wireframe** for bulky groups (e.g. Dipp): click the bond to the substituent (core atom first, e.g. N then
+  C_ipso) and press **As wireframe** – everything behind it is drawn as thin lines in the element colours, without
+  H atoms and labels. If the bond is part of a ring (spiro atom), the ring system behind the first atom is used. The
+  start view avoids overlapping atoms; labels optionally for heteroatoms only.
+- **Caption suggestion** (English), e.g. „… Displacement ellipsoids are drawn at the 50 % probability level;
+  co-crystallised THF omitted, Dipp groups shown as wireframe without hydrogen atoms for clarity. …“, with the
+  selected parameters and symmetry codes; copied with one click and written to `…_captions.txt` on export.
+- **Click atoms** (the front-most one wins): 2 = distance, 3 = angle, 4 = torsion angle. Values with s.u. are taken
+  **exactly from the CIF** (e.g. 1.392(3)); Elucida never estimates an s.u. itself. If a value is missing (torsion
+  angles without `CONF`), it is calculated from the coordinates, shown **without** s.u. and marked – set `CONF` in
+  Olex2/SHELXL and refine again to get torsion angles with s.u.
+- **Tables for the SI:** crystal data and structure refinement (one column per compound; numbers exactly as in the
+  CIF, space group in italics with subscripts, diff. peak/hole with a true minus sign; internal reference and CCDC
+  number editable) and selected bond lengths, angles and torsion angles (same atom names side by side). **Copy**
+  keeps italics and sub-/superscripts in Word; export also writes CSV and Excel. Table labels are in English
+  (as usual for an SI).
+- Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
+  `…_tables.xlsx`. The label size can be set per tab and the **background** chosen (white, transparent, colour; also
+  for Word).
 
-- Absorption (any UV-Vis file) and emission (Cary Eclipse CSV or .FBSW), both normalised to 1;
-  λex is filled in automatically from the emission file;
-  the absorption to the maximum within the "band of interest".
-- Labels with λabs of the absorption maximum (plus ε, if entered) and λem of the emission maximum.
-- **Stokes shift** Δν̃ = 1/λabs − 1/λem in cm⁻¹ (rounded to 10 cm⁻¹, peak positions from ~1 nm data
-  are not more precise) and in nm; optionally also in the figure at the emission label.
-- **Absorbance at λex** with a warning above A = 0.1: the inner-filter effect then distorts the
-  emission spectrum and lowers quantum yields (only relevant if both were measured on the same solution).
-- Optionally hide scattered light at λex and 2·λex.
-- Two cuvette photos (daylight and under UV) are combined with an arrow and the excitation
-  wavelength; for the UV photo background removal is off by default (dark background stays).
-- Structure as in the ε tab.
+## DFT tab
 
+- Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
+  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Styles: Mercury, Olex2, **ball and stick like the ORCA
+  manual**, **IboView** and a **line drawing** (white balls, hollow sticks, as in classic journal figures); mouse as in the X-Ray tab.
+- **Measure and align** as in the X-Ray tab: click 2/3/4 atoms for distance, angle or dihedral (values from the
+  geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
+- **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the
+  remaining atoms keep their order (optionally H atoms right after their atom). **Save xyz** writes a new file with the
+  lines unchanged (only reordered); the loaded file is never overwritten. Counting from 0 (ORCA) can be shown. Atom
+  radius and bond thickness also apply in the ball-and-stick styles (relative to the default); the background is
+  selectable as in the X-Ray tab.
+- **Like template:** takes over the numbering of another geometry in the tab or of a crystal structure in the X-Ray
+  tab (then with the CIF atom names, e.g. C1, H3A). Heavy atoms are matched by connectivity, symmetric molecules by
+  the smallest deviation after superposition; an equally good alternative is reported with the atoms concerned, H
+  atoms follow their neighbour atom.
+- **Calculation for the SI** (ORCA 6, Gaussian): name, figure, charge/multiplicity/point group, Cartesian coordinates
+  and E_el/H/G (ZPE column optional), optionally the input line (per structure or once as "Computational details"),
+  the convergence table of the last cycle and the frequency result. All values exactly as in the output. The program
+  warns about aborted runs, non-converged optimisations and imaginary frequencies; with CPCM only the dielectric
+  contribution is given (a solvation energy needs the gas-phase calculation). **Copy SI text**, **Save Word** (two
+  columns) or via the SI section.
+
+## Appearance
+
+The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently.
+Rarely used cards of the left column are collapsed (click the title to open them); a title with **"(changed)"** means
+that a value there differs from the default. Results, tables and SI texts sit in tabs next to the figure. The mouse
+wheel scrolls the column and only changes a field after it has been clicked. Notes while drawing (e.g. curves left out)
+appear below the preview, **Help → Log…** shows all messages. **Presets ▾** at the bottom saves a tab's settings for
+other compounds. The figures are not affected by the theme.
 
 ## Figure size for Word
 
@@ -654,23 +679,6 @@ with the compound and shows only what the open tab has in its figure (e.g. no sy
 - **Frames:** closed frame around the plot (top and right too; default since 1.24, like the Origin figures) and a
   rounded frame around the chemical structure.
 
-## What happens automatically during the analysis
-
-- **Baseline** ("automatic (series)", default): the window is placed where the most concentrated
-  sample absorbs least. Only the part of the window value that does *not* scale with concentration
-  (instrument/cuvette offset) is subtracted. A residual proportional to c is treated as real
-  absorption and kept. "automatic (simple)" subtracts the full window value. The baseline always
-  uses the full data range, independent of the displayed λ range.
-- **Fit cutoff:** points above the cutoff (default A = 1.0) are excluded from the fit.
-- **Bands:** found automatically within the displayed λ range, or entered as a list.
-- **Rounding:** ε (M⁻¹ cm⁻¹) is never shown with decimals; it is rounded to the precision its
-  standard error supports. The results CSV keeps the full values.
-- **Warnings** (results table and log): fewer than 4 fit points, significant intercept (> 2σ),
-  R² below the threshold (default 0.98, adjustable under Analysis → "min. R² for figure"; 0 = show
-  all; the band stays in the table – R² cell marked red –, CSV and Excel report but is not shown in the
-  figure), fewer than 3 points (then no ε at all). With 4 points, R² alone says little: check the
-  95 % confidence interval in the Excel report before lowering the threshold.
-
 ## Notes on CDXML
 
 - Exact ChemDraw appearance: put an SVG/PDF/PNG export with the same name next to the CDXML (see
@@ -681,22 +689,24 @@ with the compound and shows only what the open tab has in its figure (e.g. no sy
 - Molar mass = sum of all fragments (counter-ions are included).
 - If abbreviations such as Dipp or Mes cannot be resolved, **no** molar mass is set and a warning is
   shown. Please enter it by hand in that case.
-- Binary `.cdx` files are not supported. Save them as `.cdxml` in ChemDraw.
+- Structures are read from `.cdxml` (save binary `.cdx` files as `.cdxml` in ChemDraw); a `.cdx` next to a synthesis scheme is only used for the editable object in Word.
 
 ## Supported data
 
-- **Cary CSV/TXT exports** (Agilent Cary 60 and others): first row = sample names, second row =
-  `Wavelength (nm),Abs` per sample, followed by the data. Decimal comma and point are both
-  recognised, and the instrument metadata at the end of the file is ignored. Simple two-column
-  files work too; the file name is then used as the sample name.
-- **Cary WinUV .DSW / .BSW** (binary files from the instrument software), read with the parser
-  from the open-source project [parseuv](https://pypi.org/project/parseuv/). Instrument baseline
-  records ("Baseline 100%T/0%T") in batch files are skipped.
-- **Cary Eclipse** fluorescence data: CSV export and .FBSW files. The excitation wavelength is
-  taken from the file's metadata.
-- **CIF** (crystal structures, e.g. from Olex2/SHELXL): own reader, several `data_` blocks per file.
-- **xyz**, **ORCA 6** outputs (`.out`, also UTF-16) and **Gaussian** outputs (`.log`) for the DFT tab.
-- **Several files** can be opened together; they form one data set.
+| Tab | Files |
+|---|---|
+| Compound, structures | ChemDraw **CDXML** (formula and molar mass), with an SVG/PDF/PNG export of the same name for the exact ChemDraw drawing; photos as HEIC, JPG, PNG |
+| Synthesis | Scheme as CDXML (+ SVG/PDF), **.cdx** next to it for an editable ChemDraw object in Word, **.emf** for a sharp preview |
+| NMR | MestReNova **SVG** or **EMF** exports, Mnova report (text), **TopSpin** experiments/datasets (folder), **.mnova** documents |
+| IR + EA | Bruker **OPUS** (`.0`, `.1` …) and the OPUS **PDF** with peak labels |
+| HRMS | Report of the mass-spectrometry department (**.docx**), Bruker raw data (**.d** with analysis.baf) |
+| UV-Vis (ε) | **Cary** CSV/TXT exports, Cary WinUV **.DSW/.BSW** (parser from [parseuv](https://pypi.org/project/parseuv/)); several files form one data set |
+| Overlay | The UV-Vis formats above, TD-DFT outputs of **ORCA** (4–6, incl. SOC) and **Gaussian**, SEC series |
+| Fluorescence | Cary **Eclipse** CSV and .FBSW (excitation wavelength from the metadata) |
+| CV, SEC | **Gamry** .DTA; SEC spectra from **B&W Tek BWSpec** |
+| EPR | Bruker **BES3T** (.dsc/.DTA, also 2D), Magnettech MS400 text, **EasySpin** simulations |
+| X-Ray | **CIF** (Olex2/SHELXL, CCDC; several `data_` blocks per file) |
+| DFT | **xyz** (also trajectories), **ORCA 6** outputs (`.out`, also UTF-16), **Gaussian** `.log`, orbitals from **Molden** and **cube** files |
 
 ## Troubleshooting
 
@@ -707,7 +717,7 @@ with the compound and shows only what the open tab has in its figure (e.g. no sy
 
   (up to version 1.25 the folder was called `Spectravolt`, up to 1.15 `UVVisTool`; it is renamed automatically on the
   first start)
-- **Self-test:** `Elucida --selftest <folder>` checks reading, CDXML, background removal and export,
+- **Self-test:** `Elucida --selftest <folder>` checks all tabs (reading, analysis, figures, SI and data export),
   and writes `selftest_report.txt`.
 
 ---

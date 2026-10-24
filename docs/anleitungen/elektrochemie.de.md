@@ -9,7 +9,7 @@ SI-Unterschrift und ein Methodenabsatz. Im SEC-Tab die Spektrenserie während de
 **Was du brauchst:** Gamry-.DTA-Dateien (z. B. eine Scanraten-Serie), am besten eine Messung mit internem Standard
 (Fc oder Ac₂Fc). Für SEC die Spektrenserie aus B&W-Tek BWSpec (Textexport) und die .DTA des Potentialscans.
 
-![CV-Tab mit Beispieldaten](../screenshots/cv_light_de.png)
+![CV-Tab](../screenshots/cv_dark_de.png)
 
 ## 1. Messungen laden (CV)
 

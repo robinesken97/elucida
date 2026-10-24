@@ -1030,6 +1030,8 @@ class NMRTab(QWidget):
 
     def update_preview(self, xy=None):
         """Vorschau = Spektrum (Mnova-SVG) + Struktur als Bild an ihrer Lage; die Struktur lässt sich ziehen."""
+        if "spectra" not in self.st:                   # alter Tab nach dem Schließen der Verbindung (Zustand geleert,
+            return                                     # der neue Tab ist schon gebaut): verspätete Vorschau überspringen
         s = self.current()
         self._drag_rect = None
         empty = s is None or not Path(s["file"]).is_file()

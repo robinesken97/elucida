@@ -108,7 +108,7 @@ def color_button(color, on_pick):
 README_URL = "https://github.com/robinesken97/elucida/blob/main/"
 # README-Abschnitt je Tab (Deutsch, Englisch) – Überschriften wie in README.de.md / README.md (Selbsttest prüft das)
 GUIDE_HEAD = {"syn": ("Synthese-Tab", "Synthesis tab"), "nmr": ("NMR-Tab", "NMR tab"),
-              "irms": ("IR + EA-Tab", "IR + EA tab"), "hrms": ("HRMS-Tab", "HRMS tab"), "eps": ("Ablauf", "Workflow"),
+              "irms": ("IR + EA-Tab", "IR + EA tab"), "hrms": ("HRMS-Tab", "HRMS tab"), "eps": ("UV-Vis-(ε)-Tab", "UV-Vis (ε) tab"),
               "overlay": ("UV-Vis-Overlay-Tab", "UV-Vis overlay tab"), "fluo": ("Fluoreszenz-Tab", "Fluorescence tab"),
               "cv": ("CV-Tab (Cyclovoltammetrie)", "CV tab (cyclic voltammetry)"),
               "sec": ("SEC-Tab (Spektroelektrochemie)", "SEC tab (spectroelectrochemistry)"),

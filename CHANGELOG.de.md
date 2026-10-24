@@ -42,7 +42,9 @@
   als internem Standard referenziert sind; CV/SEC-Texte durchgehend Fc0/+. X-Ray: keine Symmetriecode-Fußnote mehr
   in Bild und Unterschrift (die Codes bleiben in den Parametertabellen).
 - Auswertungstexte beschreiben nur die Mathematik – ohne Verweis auf das Programm.
-- README: Der Startbildschirm mit einem Beispielprojekt ist das Coverbild.
+- README neu geordnet: kurze Einleitung für das ganze Programm, der Startbildschirm mit einem Beispielprojekt als
+  Coverbild, Abschnitte in der Reihenfolge der Tabs, Übersicht aller unterstützten Dateien; Tab-Übersicht im dunklen
+  Erscheinungsbild.
 - **Neue Begriffe:** Was bisher „Projekt“ hieß (Ordner einer Verbindung), heißt jetzt **Verbindung**; **Projekt** ist
   jetzt der Ordner mit allen Verbindungen einer Veröffentlichung. Nur die Bezeichnungen ändern sich – Ordner und
   Dateien (`project.elucida`) bleiben, es muss nichts umgewandelt werden.

@@ -12,7 +12,7 @@ und Küvettenfoto), ε je Bande mit Standardfehler und 95-%-Konfidenzintervall, 
 - die Messdaten als Cary-CSV/TXT oder als DSW/BSW-Dateien direkt vom Gerät (auch eine Datei je Konzentration)
 - die Struktur als CDXML (für Bild und Molmasse), optional ein Foto der Küvette (auch HEIC vom iPhone)
 
-![UV-Vis (ε) mit Beispieldaten](../screenshots/eps_light_de.png)
+![UV-Vis (ε)](../screenshots/eps_dark_de.png)
 
 ## 1. Verbindung anlegen
 

@@ -10,7 +10,7 @@ two per page.
 in Word), the NMR spectra as SVG from MestReNova, the IR file from OPUS (or the OPUS PDF printout), the HRMS report of
 the mass spectrometry service (.docx) and the elemental analysis values.
 
-![Synthesis tab with example data](../screenshots/synthesis_light_en.png)
+![Synthesis tab](../screenshots/synthesis_dark_en.png)
 
 ## 1. Create the compound
 
