@@ -438,7 +438,7 @@ def open_demo_publication(w, folder=None) -> Path:
     w.save_project()
     PUB.add_compound(d, d / "S3")
     data = PUB.load(d)
-    data.update(paper_title="Example paper with artificial data for all tabs",
+    data.update(paper_title="Example project with artificial data for all tabs",
                 authors="A. Author, B. Author and C. Author*",
                 affiliation="Example Department, Example University, Example Street 1, 12345 Example City.",
                 contact="author@example.org", doi="10.0000/EXAMPLE",

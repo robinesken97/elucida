@@ -104,8 +104,8 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         from elucida.app import publication as PUB
         w.open_demo_publication(work / "Beispielprojekt")      # Coverbild und Projektseite
         w.go_home()
-        PUB.create(work / "Paper", "Paper")                      # Tab-Bilder: leere Verbindung in eigenem Projekt
-        w.open_publication(work / "Paper")
+        PUB.create(work / "My project", "My project")                    # Tab-Bilder: leere Verbindung in eigenem Projekt
+        w.open_publication(work / "My project")
         assert w.new_compound_in_publication("1a")
         w.settings.setValue("recent_projects", json.dumps(      # Übersicht: nur das Beispielprojekt
             [str((work / "Beispielprojekt" / n).resolve()) for n in ("S3", "S2")]))
