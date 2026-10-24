@@ -4,6 +4,10 @@
 
 ## 2.2.2 – 2026-10-24
 
+### New
+- Line drawing (DFT): option **Atoms in element colours** – balls filled in their element colour, outlines and
+  hollow sticks stay.
+
 ### Changed
 - **Opening a project is much faster** (example project: 2.1 s -> 0.2 s): the window is no longer rebuilt, and each
   tab is built only when it is first shown or needed (first click on a tab ~0.2 s).

@@ -2016,8 +2016,8 @@ class XrayFigure:
                 fog = self._fog(it["z"])
                 faces = [shade_color(col, kd, v, self.style, fog) for _, kd, v in sphere_unit_layers(self.style)]
                 edge, elw = "none", 0.0                    # wie die Vorlagen: Kugeln ohne Umriss
-                if self.style == "cartoon":                # Strichzeichnung: weiß mit schwarzem Umriss
-                    faces = ["white"] * len(faces)
+                if self.style == "cartoon":                # Strichzeichnung: weiß (oder Elementfarbe) mit Umriss
+                    faces = [col if self.opts.get("cartoon_color") else "white"] * len(faces)
                     edge, elw = (0, 0, 0), self._cartoon_edge()
             elif mercury:
                 faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge

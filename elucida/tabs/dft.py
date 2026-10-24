@@ -585,6 +585,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                          layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
                          h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black",
+                         cartoon_color=False,
                          orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=0.05, orb_alpha=ORB.ORB_ALPHA,
                          orb_scheme="hue", orb_labels=True)
 
@@ -732,6 +733,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         for key in XRAY.DFT_STYLES:
             self.cmb_style.addItem(T("xr_style_" + key), key)
         f.addRow(T("xr_style"), self.cmb_style)
+        self.cb_ccol = QCheckBox(T("dft_cartoon_color"))      # Strichzeichnung: Kugeln in Elementfarben (Standard weiß)
+        self.cb_ccol.setToolTip(T("dft_cartoon_color_tip"))
+        f.addRow("", self.cb_ccol)
         self.cb_h = QCheckBox(T("xr_show_h"))
         self.cb_lab = QCheckBox(T("xr_labels"))
         self.cb_hlab = QCheckBox(T("xr_h_labels"))
@@ -777,7 +781,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cmb_style, self.cmb_lstyle):
             w_.currentIndexChanged.connect(self.changed)
-        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_zero, self.cb_hfollow, self.cb_explab):
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_zero, self.cb_hfollow, self.cb_explab, self.cb_ccol):
             w_.toggled.connect(self.changed)
         self.sync_widgets()
 
@@ -849,7 +853,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                        label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
                        radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), label_pt=self.sp_lab.value(), style=self.cmb_style.currentData(),
                        h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked(),
-                       label_color=self.cmb_lcol.currentData())
+                       label_color=self.cmb_lcol.currentData(), cartoon_color=self.cb_ccol.isChecked())
+        self.cb_ccol.setVisible(self.st["style"] == "cartoon")
         self.update_num_status()
 
     def sync_widgets(self):
@@ -868,6 +873,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             self.tbl.selectRow(es.index(cur))
         self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"))))
         self.cmb_lstyle.setCurrentIndex(max(0, self.cmb_lstyle.findData(st.get("label_style", "el_num"))))
+        self.cb_ccol.setChecked(st.get("cartoon_color", False))
+        self.cb_ccol.setVisible(XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth") == "cartoon")
         self.cb_h.setChecked(st["show_h"])
         self.cb_lab.setChecked(st["labels"])
         self.cb_hlab.setChecked(st["h_labels"])
@@ -1355,6 +1362,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     style=XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"),
                     hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
                     label_size=st.get("label_pt", 0.0), label_color=st.get("label_color", "black"),
+                    cartoon_color=st.get("cartoon_color", False),
                     h_radius=0.55 * r, bg=st.get("bg", "white"),
                     # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard (Standardwerte = Aussehen der Vorlage)
                     ball_scale=r / self.DEFAULT_STATE["radius"],

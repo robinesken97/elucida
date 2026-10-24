@@ -2132,6 +2132,15 @@ def selftest(outdir, with_isnet=False):
         t_d.sync_widgets()
         t_d.render()
         assert t_d.F.style == "depth" and t_d.cmb_style.currentData() == "depth"
+        w.dft_state.update(style="cartoon", cartoon_color=True)          # Strichzeichnung, Atome in Elementfarben
+        t_d.sync_widgets()
+        t_d.render()
+        cc_ = next(i_ for i_ in t_d.F.scene["atoms"] if i_["el"] == "C")
+        fcc_ = tuple(t_d.F.atom_art[cc_["k"]][0].get_facecolors()[0][:3])
+        assert fcc_ != (1, 1, 1) and t_d.cb_ccol.isChecked() and not t_d.cb_ccol.isHidden(), fcc_
+        w.dft_state.update(style="ballstick", cartoon_color=False)
+        t_d.sync_widgets()
+        t_d.render()
         c_d = next(i_ for i_ in t_d.F.scene["atoms"] if i_["el"] == "C")
         assert abs(c_d["w"] - 4 * XRAY.ball_radius("C", "depth")) < 1e-9, c_d["w"]
         assert abs(t_d.F.bond_w - 2 * XRAY.ROD_W["depth"]) < 1e-9 and t_d.cmb_bg.currentData() == "color"
