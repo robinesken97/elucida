@@ -443,6 +443,11 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
     return x + "</w:tbl>"
 
 
+def _media_ext(p):
+    """Endung eines Bildes in word/media: EMF bleibt EMF (Vektor, z. B. NMR aus Mnova), sonst PNG."""
+    return ".emf" if Path(p).suffix.lower() == ".emf" else ".png"
+
+
 def _image_xml(rid, n, w_cm, h_cm, svg_rid=None, page_break=False):
     cx, cy = int(w_cm * 360000), int(h_cm * 360000)
     ppr = _ppr(align="center", line=240, after=120, keep_next=True)
@@ -645,7 +650,7 @@ def write_docx(path, blocks, columns=1):
              'styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/'
              'officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
              "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
-                     f'relationships/image" Target="media/image{i}.png"/>' for i in range(1, len(media) + 1)) +
+                     f'relationships/image" Target="media/image{i}{_media_ext(m)}"/>' for i, m in enumerate(media, 1)) +
              "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}.svg"/>' for i, _ in svgs) +
              "".join(f'<Relationship Id="rIdOle{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
@@ -664,7 +669,7 @@ def write_docx(path, blocks, columns=1):
         z.writestr("word/settings.xml", settings)
         z.writestr("word/_rels/document.xml.rels", drels)
         for i, m in enumerate(media, 1):
-            z.writestr(f"word/media/image{i}.png", m.read_bytes())
+            z.writestr(f"word/media/image{i}{_media_ext(m)}", m.read_bytes())
         for i, sv in svgs:
             z.writestr(f"word/media/image{i}.svg", sv.read_bytes())
         for i, (bin_, pv) in enumerate(oles, 1):

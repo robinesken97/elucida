@@ -314,7 +314,7 @@ TEXTS = {
     "guide_syn_files": ('Dateien: ChemDraw-Schema als CDXML (dazu gleichnamige SVG/PDF für das Bild, .cdx für ein in Word bearbeitbares Objekt)', 'Files: ChemDraw scheme as CDXML (plus an SVG/PDF of the same name for the picture, .cdx for an object editable in Word)'),
     "guide_syn_steps": ('Namen eintragen (Vorgabe: Verbindung des Projekts)\nSchema wählen und die Vorschrift schreiben – Mengen wie „(1.03 g, 5.00 mmol, 1.0 eq.)“\nReagenzien eintragen oder „Aus Schema“ – die Mengen in der Vorschrift werden geprüft\nAusgabe: „Exportieren“ unten (Word-Datei) oder SI (Word) in der Werkzeugleiste', 'Enter the name (default: compound of the project)\nChoose the scheme and write the procedure – amounts like “(1.03 g, 5.00 mmol, 1.0 eq.)”\nEnter reagents or use “From scheme” – the amounts in the procedure are checked\nOutput: “Export” at the bottom (Word file) or SI (Word) in the toolbar'),
     "guide_nmr_title": ('NMR: Spektren aus MestReNova mit Struktur und die NMR-Zeile', 'NMR: spectra from MestReNova with structure, and the NMR line'),
-    "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG), auch per Ziehen ins Fenster; optional Bruker-Experimentordner (acqus) für die Temperatur', 'Files: SVG export from MestReNova (File → Save as → SVG), also by dragging into the window; optionally the Bruker experiment folder (acqus) for the temperature'),
+    "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG; EMF geht unverändert nach Word), auch per Ziehen ins Fenster; optional TopSpin-Daten und Mnova-Dokumente (Reiter Rohdaten)', 'Files: SVG export from MestReNova (File → Save as → SVG; EMF goes into Word unchanged), also by dragging into the window; optionally TopSpin data and Mnova documents (Raw data tab)'),
     "guide_nmr_steps": ('SVG hinzufügen – Kern und Reihenfolge erkennt das Programm\nStruktur kommt aus der Verbindung des Projekts; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus Mnova unter „NMR-Zeile“ einfügen (¹³C auch „Zeile aus Peaklabels“)\nWord speichern (zwei Spektren je Seite) oder über SI (Word)', "Add the SVG – nucleus and order are recognised\nThe structure comes from the project's compound; placed automatically or dragged in the preview\nPaste the Mnova multiplet report under “NMR line” (¹³C also “line from peak labels”)\nSave Word (two spectra per page) or via SI (Word)"),
     "guide_irms_title": ('IR + EA: IR-Peakliste und Elementaranalyse als SI-Zeilen', 'IR + EA: IR peak list and elemental analysis as SI lines'),
     "guide_irms_files": ('Dateien: Bruker-OPUS-Datei (*.0) und/oder OPUS-PDF mit Peakbeschriftung, auch per Ziehen ins Fenster; für die EA die Summenformel der Verbindung des Projekts', "Files: Bruker OPUS file (*.0) and/or OPUS PDF with peak labels, also by dragging into the window; for the EA the formula of the project's compound"),
@@ -1446,8 +1446,8 @@ TEXTS = {
     "tab_nmr": ("NMR", "NMR"),
     "nmr_empty": ("Mnova-SVG hinzufügen oder hineinziehen (in MestReNova: Datei → Speichern unter → SVG).",
                   "Add or drop a Mnova SVG (in MestReNova: File → Save As → SVG)."),
-    "nmr_spectra": ("Spektren (SVG aus MestReNova)", "Spectra (SVG from MestReNova)"),
-    "nmr_add": ("SVG hinzufügen …", "Add SVG …"),
+    "nmr_spectra": ("Spektren (SVG/EMF aus MestReNova)", "Spectra (SVG/EMF from MestReNova)"),
+    "nmr_add": ("Spektrum hinzufügen …", "Add spectrum …"),
     "nmr_file": ("Datei", "File"),
     "nmr_nuclei": ("Kern(e)", "Nucleus/nuclei"),
     "nmr_nuclei_tip": ("1D: z. B. 1H, 13C, 19F; 2D: zuerst die waagerechte, dann die senkrechte Achse, z. B. 1H/13C",
@@ -1470,8 +1470,42 @@ TEXTS = {
     "nmr_solvent": ("Lösungsmittel", "Solvent"),
     "nmr_solv_ph": ("aus dem Mnova-Text (z. B. CDCl3)", "from the Mnova text (e.g. CDCl3)"),
     "nmr_bruker": ("Bruker-Ordner …", "Bruker folder …"),
-    "nmr_bruker_tip": ("Experimentordner (mit acqus) zuordnen: Parameterübersicht; ins Projekt kommen nur acqus/acqu2s",
-                       "Assign the experiment folder (with acqus): parameter overview; only acqus/acqu2s are copied"),
+    "nmr_bruker_tip": ("Experimentordner (mit acqus) diesem Spektrum zuordnen: Parameterübersicht; der Ordner kommt ganz "
+                       "ins Projekt (data/nmr/<Art>)",
+                       "Assign the experiment folder (with acqus) to this spectrum: parameter overview; the whole folder "
+                       "is copied into the project (data/nmr/<kind>)"),
+    "nmr_raw": ("Rohdaten", "Raw data"),
+    "nmr_spec_flt": ("Mnova-Spektren", "Mnova spectra"),
+    "nmr_emf_bad": ("keine EMF-Datei", "not an EMF file"),
+    "nmr_emf_preview": ("{f}\n\nEMF: keine Vorschau in Elucida – das Spektrum geht unverändert nach Word (ohne eingesetzte "
+                        "Struktur). Für Vorschau und Struktur das Spektrum als SVG aus Mnova speichern.",
+                        "{f}\n\nEMF: no preview in Elucida – the spectrum goes into Word unchanged (without the inserted "
+                        "structure). For a preview and the structure, save the spectrum as SVG from Mnova."),
+    "nmr_emf_nopeaks": ("Peaklabels lassen sich nur aus SVG lesen – das Spektrum als SVG aus Mnova speichern.",
+                        "Peak labels can only be read from SVG – save the spectrum as SVG from Mnova."),
+    "nmr_raw_hint": ("TopSpin-Experimente und Mnova-Dokumente werden ganz ins Projekt übernommen und nach Art abgelegt "
+                     "(data/nmr/1H, 13C, HSQC …). Ausgewertet werden weiter die Mnova-SVGs; passt genau ein Experiment "
+                     "zu einem Spektrum, wird es zugeordnet (Parameter, Temperatur).",
+                     "TopSpin experiments and Mnova documents are copied into the project as a whole and sorted by "
+                     "kind (data/nmr/1H, 13C, HSQC …). The Mnova SVGs are still what is evaluated; if exactly one "
+                     "experiment fits a spectrum, it is assigned (parameters, temperature)."),
+    "nmr_topspin": ("TopSpin-Daten …", "TopSpin data …"),
+    "nmr_topspin_tip": ("Ein Experiment (Ordner mit acqus), einen Datensatz (10, 11, …) oder einen Ordner mit mehreren "
+                        "Datensätzen wählen – auch per Ziehen ins Fenster",
+                        "Choose an experiment (folder with acqus), a dataset (10, 11, …) or a folder with several "
+                        "datasets – also by dragging into the window"),
+    "nmr_mnova": ("Mnova-Datei …", "Mnova file …"),
+    "nmr_mnova_tip": ("MestReNova-Dokument (.mnova) ins Projekt übernehmen (data/nmr/mnova); Doppelklick öffnet es",
+                      "Copy a MestReNova document (.mnova) into the project (data/nmr/mnova); double-click opens it"),
+    "nmr_raw_remove_tip": ("Eintrag aus der Liste nehmen; die Dateien im Projektordner bleiben",
+                           "Remove the entry from the list; the files in the project folder stay"),
+    "nmr_raw_open_tip": ("Doppelklick: Ordner bzw. Datei öffnen", "Double-click: open folder or file"),
+    "nmr_raw_kind": ("Art", "Kind"),
+    "nmr_raw_name": ("Name", "Name"),
+    "nmr_raw_pulprog": ("Pulsprogramm", "Pulse program"),
+    "nmr_raw_spectrum": ("Spektrum", "Spectrum"),
+    "nmr_raw_imported": ("NMR-Rohdaten: {n} Experiment(e) übernommen ({kinds})",
+                         "NMR raw data: {n} experiment(s) copied ({kinds})"),
     "nmr_bruker_temp": ("T aus Bruker", "T from Bruker"),
     "nmr_bruker_temp_tip": ("Temperatur der Messung (TE) für die Bildunterschrift übernehmen",
                             "Use the measured temperature (TE) for the caption"),

@@ -28,7 +28,7 @@ The user interface is available in German and English.
 | Tab | What it does |
 |---|---|
 | **Synthesis** | "Synthesis of …" with the ChemDraw scheme (editable ChemDraw object in Word), procedure with formatting, amount check (mmol/eq./yield against the reagent table) |
-| **NMR** | Spectra from MestReNova (SVG), nucleus from the axis, NMR line from the Mnova report with assignments, structure placed automatically, Bruker parameters, two spectra per page in Word |
+| **NMR** | Spectra from MestReNova (SVG or EMF), TopSpin raw data sorted by experiment, nucleus from the axis, NMR line from the Mnova report with assignments, structure placed automatically, Bruker parameters, two spectra per page in Word |
 | **UV-Vis (ε)** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report; UV-Vis line for the SI |
 | **UV-Vis overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
 | **Fluorescence** | Absorption and emission, Stokes shift, photos in daylight and under UV |
@@ -222,6 +222,12 @@ to Word or as part of the SI section.
   table (*italic*, _{sub}, ^{sup}).
 - **Temperature** 298 K by default, or from the Bruker experiment folder (acqus, with an overview of the parameters
   such as frequency, O1P, pulse program, scans).
+- **Raw data** (tab next to the figure): **TopSpin data …** takes an experiment, a dataset (10, 11, …) or a folder with
+  several datasets – also by drag & drop – and copies each experiment completely into the project, sorted by kind
+  (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). If exactly one experiment fits a spectrum, it is assigned automatically
+  (parameters, temperature). **Mnova documents** (`.mnova`) are kept in `data/nmr/mnova`; double-click opens them.
+- Spectra can also be **EMF** from Mnova: they go into Word unchanged (vector, without the inserted structure); for the
+  preview and the structure use SVG.
 - **Word:** two spectra per page, "Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**."
 
 ## HRMS tab

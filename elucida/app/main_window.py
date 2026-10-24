@@ -1761,10 +1761,10 @@ class MainWindow(QMainWindow):
             self.log_signal.emit(f"{EXCH.FILE}: {type(e).__name__}: {e}")
             return None
 
-    def import_file(self, path, sub):
+    def import_file(self, path, sub, name=None):
         if not self.project_dir:
             return str(Path(path).resolve())
-        new = PRJ.import_file(self.project_dir, path, sub)
+        new = PRJ.import_file(self.project_dir, path, sub, name)
         if Path(new) != Path(path).resolve():
             self.log_signal.emit("  " + T("file_imported", src=Path(path).name, dst=Path(new).relative_to(
                 self.project_dir).as_posix()))
@@ -2748,18 +2748,21 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in cifs]
             if not files:
                 return
-        # NMR: SVG-Exporte aus MestReNova; Bruker-Experimentordner gehören zum gewählten Spektrum
+        # NMR: SVG-Exporte aus MestReNova, Mnova-Dokumente; TopSpin-Ordner (Experiment, Datensatz, mehrere Datensätze)
+        # kommen als Rohdaten ins Projekt und werden passenden Spektren zugeordnet
         svgs = [p for p in files if NMR.is_nmr_svg(p)
-                or (Path(p).suffix.lower() == ".svg" and self.main_tabs.currentWidget() is self.nmr_tab)]
-        exps = [p for p in files if self.main_tabs.currentWidget() is self.nmr_tab and NMR.bruker_dir(p) is not None]
-        if (svgs or exps) and self.ensure_project():
+                or (Path(p).suffix.lower() in (".svg", ".emf") and self.main_tabs.currentWidget() is self.nmr_tab)]
+        mnovas = [p for p in files if Path(p).suffix.lower() == ".mnova"]
+        exps = [p for p in files if Path(p).is_dir() and NMR.find_experiments(p)]
+        if (svgs or exps or mnovas) and self.ensure_project():
             for p in svgs:
                 self.nmr_tab.load_svg(p)
+            for p in mnovas:
+                self.nmr_tab.add_mnova_file(p)
             for p in exps:
-                if self.nmr_tab.current() is not None:
-                    self.nmr_tab.set_bruker(self.nmr_tab.current(), p)
+                self.nmr_tab.import_topspin(p)
             self.main_tabs.setCurrentWidget(self.nmr_tab)
-            files = [p for p in files if p not in svgs and p not in exps]
+            files = [p for p in files if p not in svgs and p not in exps and p not in mnovas]
             if not files:
                 return
         # DFT: xyz-Geometrien und Ausgaben von ORCA/Gaussian

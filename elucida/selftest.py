@@ -2349,10 +2349,10 @@ def selftest(outdir, with_isnet=False):
         assert "13C NMR (126 MHz, CDCl3) \u03b4 141.20, 21.05." in w.nmr_state["text"] and \
             w.nmr_state["text"].count("13C NMR") == 1, w.nmr_state["text"]
         acq_ = NMR.make_test_acqus(ndir / "exp" / "10", nuc="1H", te=300.2)
-        (acq_ / "fid").write_bytes(b"\0" * 1000)                          # FID wird nicht ins Projekt kopiert
+        (acq_ / "fid").write_bytes(b"\0" * 1000)                          # ganzer Ordner ins Projekt (seit 2.1)
         e_h = t_n.spectra()[0]
         assert t_n.set_bruker(e_h, str(acq_ / "acqus"))
-        assert Path(e_h["bruker"]).parent == proj / "data" / "nmr" and not (Path(e_h["bruker"]) / "fid").exists()
+        assert Path(e_h["bruker"]) == proj / "data" / "nmr" / "1H" / "exp_10" and (Path(e_h["bruker"]) / "fid").exists()
         assert abs(e_h["params"]["o1p"] - 6.175) < 1e-6 and e_h["params"]["d1"] == 1.0
         w.nmr_state["current"] = e_h["uid"]
         t_n.temp_from_bruker()
@@ -2401,9 +2401,64 @@ def selftest(outdir, with_isnet=False):
             svgs_ = [n_ for n_ in z_.namelist() if n_.endswith(".svg")]
         assert len(svgs_) == 4 and xml_.count("<w:pageBreakBefore/>") == 1 and xml_.count("SEQ Figure") == 4, len(svgs_)
         assert "HSQC" in xml_ and ">Figure S<" in xml_ and "projekt_test" in xml_
-        w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None)
+        # Rohdaten: TopSpin-Datensatz (ganz, nach Art sortiert), automatische Zuordnung, Mnova-Dokument, EMF-Spektrum
+        ds_ = ndir / "topspin" / "TS1"
+        for no_, nuc_, pp_, n2_ in (("1", "1H", "zg30", None), ("2", "13C", "zgpg30", None),
+                                    ("3", "13C", "dept135", None), ("4", "1H", "hsqcedetgpsisp2.3", "13C")):
+            e_ = NMR.make_test_acqus(ds_ / no_, nuc=nuc_, nuc2=n2_, pulprog=pp_, te=299.0)
+            (e_ / ("ser" if n2_ else "fid")).write_bytes(b"\1" * 64)
+            (e_ / "pdata" / "1").mkdir(parents=True)
+            (e_ / "pdata" / "1" / "procs").write_text("##$SI= 1024\n", encoding="latin-1")
+        assert [p_.name for p_ in NMR.find_experiments(ds_.parent)] == ["1", "2", "3", "4"]
+        assert [NMR.experiment_kind(NMR.acq_params(ds_ / n_)) for n_ in "1234"] == ["1H", "13C", "DEPT135", "HSQC"]
+        w.nmr_state.update(raw=[])
+        for s_ in t_n.spectra():
+            s_.update(bruker=None, params=None)
+        assert t_n.import_topspin(str(ds_)) == 4 and t_n.import_topspin(str(ds_)) == 0     # zweimal: nichts doppelt
+        for kind_, no_ in (("1H", "1"), ("13C", "2"), ("DEPT135", "3"), ("HSQC", "4")):
+            d_ = proj / "data" / "nmr" / kind_ / f"TS1_{no_}"
+            assert (d_ / "acqus").exists() and (d_ / "pdata" / "1" / "procs").exists(), d_
+        sp_ = {NMR.spectrum_kind(s_): s_ for s_ in t_n.spectra()}
+        assert sp_["1H"]["bruker"] == str(proj / "data" / "nmr" / "1H" / "TS1_1") and sp_["1H"]["temp"] == 299
+        assert sp_["HSQC"]["bruker"].endswith("TS1_4") and sp_["13C"]["bruker"].endswith("TS1_2")
         t_n.sync_widgets()
-        report.append("NMR (Mnova SVG, nucleus from axis/manual, order, Mnova text + assignment, Bruker acqus, Word): OK")
+        assert t_n.tbl_raw.rowCount() == 4 and t_n.tbl_raw.item(3, 2).text() == "hsqcedetgpsisp2.3"
+        assert t_n.right_tabs.tabText(1) == T("nmr_raw")
+        (ndir / "TS1.mnova").write_bytes(b"MNOVA-TEST")
+        mn_ = t_n.add_mnova_file(str(ndir / "TS1.mnova"))
+        assert Path(mn_) == proj / "data" / "nmr" / "mnova" / "TS1.mnova" and t_n.tbl_raw.rowCount() == 5
+        slots_ = {str(PRJ._get(c_, k_)) for c_, k_, _ in PRJ._path_slots(w.get_state())}
+        assert mn_ in slots_ and sp_["HSQC"]["bruker"] in slots_
+        def emf_spec(path_, texts_):                       # minimale EMF: Header (rclFrame 16 × 11 cm) + Texte
+            hdr_ = bytearray(108)
+            _st.pack_into("<II", hdr_, 0, 1, 108)
+            _st.pack_into("<iiii", hdr_, 24, 0, 0, 16000, 11000)
+            body_ = b""
+            for t_ in texts_:
+                b_ = t_.encode("utf-16-le")
+                size_ = 76 + len(b_) + (-(76 + len(b_)) % 4)
+                rec_ = bytearray(size_)
+                _st.pack_into("<II", rec_, 0, 84, size_)
+                _st.pack_into("<II", rec_, 44, len(t_), 76)
+                rec_[76:76 + len(b_)] = b_
+                body_ += bytes(rec_)
+            Path(path_).write_bytes(bytes(hdr_) + body_ + _st.pack("<III", 14, 20, 0) + b"\0" * 8)
+            return Path(path_)
+        em_ = emf_spec(ndir / "S2_19F.emf", ["10", "\u03b4 19F (ppm)", "0"])
+        assert NMR.emf_info(em_) == dict(nuclei=["19F"], is2d=False, size_cm=(16.0, 11.0))
+        s_em_ = t_n.load_svg(str(em_))
+        assert s_em_["nuclei"] == ["19F"] and Path(s_em_["file"]).suffix == ".emf"
+        w.nmr_state["current"] = s_em_["uid"]
+        t_n.update_preview()
+        assert "EMF" in t_n.lbl_prev.text()
+        nd2_ = t_n.export_dialog(out / "nmr" / "nmr_test_emf.docx")
+        with _zf.ZipFile(nd2_) as z_:
+            assert any(n_.endswith(".emf") for n_ in z_.namelist())
+            assert z_.read([n_ for n_ in z_.namelist() if n_.endswith(".emf")][0]) == em_.read_bytes()
+        w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None, raw=[], mnova=[])
+        t_n.sync_widgets()
+        report.append("NMR (Mnova SVG/EMF, nucleus from axis/manual, order, Mnova text + assignment, TopSpin raw data "
+                      "sorted by kind, Mnova file, Word): OK")
 
         # Synthese: Mengenprüfung mit Rundung, Reagenzientabelle, Schema als bearbeitbares ChemDraw-Objekt (CDX)
         proc_ = ("In a flask <b>S1</b> (1.03 g, 5.00 mmol, 1.0 eq.) was dissolved in MeOH (10 mL) and "

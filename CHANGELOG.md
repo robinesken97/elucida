@@ -11,6 +11,11 @@
   density (adjustable, or a fixed isovalue), IboView colours per orbital, translucent with more opaque edges,
   lighting and depth fading as in IboView; atoms are drawn as in IboView (tapered sticks, element letters, double and
   partial bonds from the wave function like IboView's IAO bond orders). Checked side by side against IboView itself.
+- **NMR raw data:** TopSpin experiments (also whole datasets or several at once, by drag & drop too) are copied into
+  the project completely and sorted by kind (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …), shown in a new **Raw data** tab
+  next to the figure and assigned to the matching spectrum automatically (parameters, temperature). Mnova documents
+  (`.mnova`) can be added as well.
+- NMR spectra can also be **EMF** files from Mnova; they go into Word unchanged.
 - The IboView look is also available as a style for any structure in the DFT tab, with or without orbitals.
 - HOMO/LUMO names and orbital energies from the Molden file or the ORCA/Gaussian output of the geometry.
 - Export: one figure per orbital (PDF/SVG with the orbital embedded as a 300 dpi image, atoms and labels stay

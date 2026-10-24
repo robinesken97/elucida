@@ -107,13 +107,18 @@ def _analytics(w, pdir):
             e["solvent"] = s["solvent"]
         if s.get("temp"):
             e["temp_k"] = round(float(s["temp"]))
-        for k, key in (("svg", "file"), ("bruker_params", "bruker")):    # Bruker: nur acqus usw., kein FID
+        for k, key in (("emf" if str(s.get("file", "")).lower().endswith(".emf") else "svg", "file"),
+                       ("bruker", "bruker")):                    # Bruker: ganzer Experimentordner (seit 2.1)
             r = rel(pdir, s.get(key))
             if r:
                 e[k] = r
         nmr.append(e)
     if nmr:
         a["nmr"] = nmr
+    raw = [{"kind": r["kind"], "path": rel(pdir, r["path"])} for r in w.nmr_tab.st.get("raw") or [] if rel(pdir, r["path"])]
+    raw += [{"kind": "mnova", "path": rel(pdir, m)} for m in w.nmr_tab.st.get("mnova") or [] if rel(pdir, m)]
+    if raw:
+        a["nmr_raw"] = raw
     ir = w.irms_tab.st
     if rel(pdir, ir.get("ir_file")) or rel(pdir, ir.get("ir_pdf")):
         a["ir"] = {k: rel(pdir, ir.get(src)) for k, src in (("file", "ir_file"), ("opus_pdf", "ir_pdf"))

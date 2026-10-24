@@ -108,6 +108,10 @@ def _path_slots(state):
     slots.append((state.get("syn") or {}, "scheme", STRUCTURES))
     for e in (state.get("nmr") or {}).get("spectra") or []:
         slots += [(e, "file", data_sub("nmr")), (e, "bruker", data_sub("nmr"))]
+    for r in (state.get("nmr") or {}).get("raw") or []:      # TopSpin-Experimente, nach Art sortiert
+        slots.append((r, "path", data_sub("nmr") + "/" + (r.get("kind") or "other")))
+    mn = (state.get("nmr") or {}).get("mnova") or []          # Mnova-Dokumente
+    slots += [(mn, i, data_sub("nmr") + "/mnova") for i in range(len(mn))]
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", data_sub("fluorescence")), (fl, "em_file", data_sub("fluorescence")),
               (fl, "structure", STRUCTURES), (fl, "photo_day", STRUCTURES), (fl, "photo_uv", STRUCTURES)]
@@ -173,20 +177,23 @@ def save(project_dir, state) -> dict:
 
 
 BRUKER_D_FILES = ("analysis.baf", "analysis.sqlite")      # aus einem .d-Ordner nur das, was gelesen wird
-NMR_EXP_FILES = ("acqus", "acqu2s", "pulseprogram")         # Bruker-NMR-Experiment: nur die Parameter (kein FID)
+# Bruker-NMR-Experiment (TopSpin): ganzer Ordner (FID/ser, pdata …, Nutzerwunsch seit 2.1); gleich = diese Dateien
+NMR_SAME_FILES = ("acqus", "acqu2s", "fid", "ser", "pulseprogram")
 
 
-def _copy_dir(src: Path, dest_dir: Path) -> Path:
-    """Messordner (z. B. Bruker .d) übernehmen; bei .d nur die gelesenen Dateien (Rohdaten + Index)."""
+def _copy_dir(src: Path, dest_dir: Path, name=None) -> Path:
+    """Messordner übernehmen: bei Bruker .d nur die gelesenen Dateien (Rohdaten + Index), NMR-Experimente ganz."""
     names = [n for n in BRUKER_D_FILES if (src / n).exists()] if src.suffix.lower() == ".d" else None
+    same = names
     if names is None and (src / "acqus").is_file():
-        names = [n for n in NMR_EXP_FILES if (src / n).exists()]
-    target, n = dest_dir / src.name, 2
+        same = [n for n in NMR_SAME_FILES if (src / n).exists()]
+    base = Path(name or src.name)
+    target, n = dest_dir / base.name, 2
     while target.exists():
-        if names and all((target / x).exists() and (target / x).stat().st_size == (src / x).stat().st_size
-                         for x in names):
+        if same and all((target / x).exists() and (target / x).stat().st_size == (src / x).stat().st_size
+                        for x in same):
             return target                              # derselbe Messordner ist schon da
-        target = dest_dir / f"{src.stem}_{n}{src.suffix}"
+        target = dest_dir / f"{base.stem}_{n}{base.suffix}"
         n += 1
     if names:
         target.mkdir(parents=True)
@@ -197,10 +204,10 @@ def _copy_dir(src: Path, dest_dir: Path) -> Path:
     return target
 
 
-def _copy_unique(src: Path, dest_dir: Path) -> Path:
+def _copy_unique(src: Path, dest_dir: Path, name=None) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
-        return _copy_dir(src, dest_dir)
+        return _copy_dir(src, dest_dir, name)
     target = dest_dir / src.name
     n = 2
     while target.exists():
@@ -227,16 +234,17 @@ def missing_files(state) -> list:
     return [_get(c, k) for c, k, _ in _path_slots(state) if _get(c, k) and not Path(_get(c, k)).exists()]
 
 
-def import_file(project_dir, src, sub) -> str:
+def import_file(project_dir, src, sub, name=None) -> str:
     """Datei ins Projekt übernehmen (Kopie nach data/ bzw. images/), falls sie nicht schon darin liegt.
-    Bei CDXML werden gleichnamige ChemDraw-Exporte (SVG/PDF/PNG/TIFF) mitkopiert."""
+    Bei CDXML werden gleichnamige ChemDraw-Exporte (SVG/PDF/PNG/TIFF) mitkopiert. name: Zielname eines Ordners
+    (NMR-Experimente: <Datensatz>_<Nummer>, sonst hießen alle „10“, „11“ …)."""
     pdir = Path(project_dir).resolve()
     src = Path(src).resolve()
     if pdir == src.parent or pdir in src.parents:
         return str(src)
     dest_dir = pdir / sub
     dest_dir.mkdir(parents=True, exist_ok=True)
-    target = _copy_unique(src, dest_dir)
+    target = _copy_unique(src, dest_dir, name)
     if src.suffix.lower() in (".out", ".log") and src.with_suffix(".xyz").is_file():   # ORCA: Endgeometrie, 14 Stellen
         shutil.copy2(src.with_suffix(".xyz"), target.with_suffix(".xyz"))
     if src.suffix.lower() == ".cdxml":

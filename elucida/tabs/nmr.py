@@ -66,6 +66,34 @@ def kind_from_name(name):
 
 
 # ---------------------------------------------------------------------------- SVG
+def is_emf(path):
+    return Path(path).suffix.lower() == ".emf"
+
+
+def emf_info(path):
+    """Mnova-EMF -> wie svg_info. Kern aus den Texten (EMR_EXTTEXTOUTW, „δ 1H (ppm)“), Größe aus dem Header.
+    Die Richtung der Beschriftung ist nicht bekannt: zwei verschiedene Kerne = 2D (erster = x). Elucida zeichnet EMF
+    nicht selbst (keine Vorschau), sie geht unverändert nach Word."""
+    import struct
+    from elucida.tabs.ir_ea import _emf_texts
+    data = Path(path).read_bytes()
+    if len(data) < 40 or struct.unpack_from("<I", data, 0)[0] != 1:
+        raise ValueError(T("nmr_emf_bad"))
+    left, top, right, bottom = struct.unpack_from("<iiii", data, 24)          # rclFrame in 0.01 mm
+    texts = _emf_texts(data)
+    joined = " ".join(texts)
+    nuclei = []
+    for m in _NUC.finditer(joined):
+        n = f"{m.group(1)}{m.group(2)}"
+        if n not in nuclei:
+            nuclei.append(n)
+    return dict(nuclei=nuclei[:2], is2d=len(nuclei) > 1, size_cm=((right - left) / 1000.0, (bottom - top) / 1000.0))
+
+
+def spectrum_info(path):
+    return emf_info(path) if is_emf(path) else svg_info(path)
+
+
 def svg_info(path):
     """Mnova-SVG -> dict(nuclei=[x, (y)], is2d, size_cm). Kern aus „δ ¹H (ppm)“ (waagerecht = x, senkrecht = y)."""
     import pymupdf
@@ -181,6 +209,66 @@ def acq_params(d):
         if p.get("nucleus2") and p["nucleus2"] != p["nucleus"]:
             p["nucleus_f2"], p["nucleus_f1"] = p["nucleus"], p["nucleus2"]
     return p
+
+
+# Experimentart aus dem Pulsprogramm (Bruker-Namen, klein geschrieben); Reihenfolge: spezifischere zuerst
+_PULPROG_2D = (("hsqc", "HSQC"), ("hmqc", "HMQC"), ("hmbc", "HMBC"), ("noesy", "NOESY"), ("roesy", "ROESY"),
+               ("hoesy", "HOESY"), ("tocsy", "TOCSY"), ("mlev", "TOCSY"), ("dipsi", "TOCSY"), ("cosy", "COSY"),
+               ("inad", "INADEQUATE"))
+
+
+def experiment_kind(p):
+    """Art eines Bruker-Experiments (acq_params): 1D nach Kern („1H“, „13C“, „19F“), DEPT/APT nach Pulsprogramm
+    („DEPT135“, „APT“), 2D nach Pulsprogramm („HSQC“, „COSY“ …), unbekanntes 2D = „2D“. Ordnername in data/nmr/."""
+    pp = (p.get("pulprog") or "").lower()
+    if p.get("nucleus2") is not None or "td2" in p:
+        return next((k for key, k in _PULPROG_2D if key in pp), "2D")
+    if pp.startswith("dept"):
+        m = re.match(r"dept(\d+)", pp)
+        return "DEPT" + (m.group(1) if m else "")
+    if pp.startswith("jmod") or pp.startswith("apt"):
+        return "APT"
+    return p.get("nucleus") or "1D"
+
+
+def experiment_name(d):
+    """Zielname eines Experiments im Projekt: <Datensatz>_<Nummer> (TopSpin: Datensatz/10, /11 …), sonst Ordnername."""
+    d = Path(d)
+    return f"{d.parent.name}_{d.name}" if d.name.isdigit() and d.parent.name else d.name
+
+
+def find_experiments(root, depth=3):
+    """Alle Bruker-Experimentordner (mit acqus) unter einer Auswahl: ein Experiment, ein Datensatz (10, 11, …) oder
+    ein Ordner mit mehreren Datensätzen. pdata wird nicht durchsucht. Sortiert nach Datensatz und Nummer."""
+    root = Path(root)
+    if (root / "acqus").is_file():
+        return [root]
+    out = []
+
+    def walk(d, k):
+        for c in sorted(d.iterdir()) if k > 0 else ():
+            if c.is_dir() and c.name != "pdata" and not c.name.startswith("."):
+                if (c / "acqus").is_file():
+                    out.append(c)
+                else:
+                    walk(c, k - 1)
+    walk(root, depth)
+    return sorted(out, key=lambda c: (str(c.parent), int(c.name) if c.name.isdigit() else 10 ** 9, c.name))
+
+
+def spectrum_kind(spec):
+    """Art eines Mnova-Spektrums im Sinne von experiment_kind (1D: Kern, 2D: COSY/HSQC …)."""
+    nuc = spec.get("nuclei") or []
+    if spec.get("kind", "1D") == "1D":
+        return nuc[0] if nuc else "1D"
+    return spec.get("kind") or "2D"
+
+
+def match_experiment(spec, raws):
+    """Das eine TopSpin-Experiment, das zu einem Spektrum passt (gleiche Art), sonst None (keins oder mehrdeutig)."""
+    k = spectrum_kind(spec)
+    hits = [r for r in raws if r.get("kind") == k]
+    return hits[0] if len(hits) == 1 else None
 
 
 def params_html(p):
@@ -468,11 +556,11 @@ def make_test_svg(path, nuclei=("1H",), axis=True, peaks=()):
     return Path(path)
 
 
-def make_test_acqus(d, nuc="1H", sfo1=500.503090587, te=298.1466, nuc2=None):
+def make_test_acqus(d, nuc="1H", sfo1=500.503090587, te=298.1466, nuc2=None, pulprog="zg30"):
     """Künstlicher Bruker-Experimentordner mit acqus (und acqu2s). Kein echter Datensatz."""
     d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
-    txt = ["##TITLE= Parameter file", f"##$NUC1= <{nuc}>", "##$PULPROG= <zg30>", "##$SOLVENT= <CDCl3>",
+    txt = ["##TITLE= Parameter file", f"##$NUC1= <{nuc}>", f"##$PULPROG= <{pulprog}>", "##$SOLVENT= <CDCl3>",
            f"##$TE= {te}", f"##$SFO1= {sfo1}", "##$BF1= 500.5", f"##$O1= {6.175 * sfo1}", "##$SW= 19.9784",
            "##$NS= 16", "##$DS= 2", "##$TD= 65536", "##$RG= 101", "##$D= (0..63)", "0 1 0.03 0 0 0 0 0",
            "##$PROBHD= <test probe>", "##END="]
@@ -485,10 +573,11 @@ def make_test_acqus(d, nuc="1H", sfo1=500.503090587, te=298.1466, nuc2=None):
 
 # ---------------------------------------------------------------------------- Tab
 from PySide6.QtCore import QEvent, QRectF, Qt, QTimer  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPixmap  # noqa: E402
+from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtGui import QColor, QDesktopServices, QImage, QPixmap  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,  # noqa: E402
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-                               QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
+                               QScrollArea, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
                                QStackedWidget, QWidget)
 
 from elucida.app import project as PRJ  # noqa: E402
@@ -508,7 +597,7 @@ def is_nmr_svg(path):
 
 class NMRTab(QWidget):
     STATE_KEY = "nmr"
-    DEFAULT_STATE = dict(spectra=[], current=None, text="", assign={})
+    DEFAULT_STATE = dict(spectra=[], current=None, text="", assign={}, raw=[], mnova=[])
 
     def __init__(self, main, state):
         super().__init__()
@@ -532,7 +621,7 @@ class NMRTab(QWidget):
         prev = QWidget()
         rv = QVBoxLayout(prev)
         rv.setContentsMargins(0, 0, 0, 0)
-        self.lbl_prev = QLabel("", alignment=Qt.AlignCenter)
+        self.lbl_prev = QLabel("", alignment=Qt.AlignCenter, wordWrap=True)
         self.lbl_prev.setMinimumHeight(300)
         self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen
         self._drag_rect, self._drag, self._pm_size = None, None, (1, 1)
@@ -544,7 +633,13 @@ class NMRTab(QWidget):
         self.preview_stack = QStackedWidget()             # 0 = Anleitung (leerer Tab, wie die anderen Tabs), 1 = Vorschau
         self.preview_stack.addWidget(EmptyGuide("nmr", (T("nmr_add"), self.add_svg)))
         self.preview_stack.addWidget(prev)
-        QVBoxLayout(right).addWidget(self.preview_stack)
+        # Reiter neben der Abbildung wie die Ergebnisseiten der anderen Tabs: Rohdaten (TopSpin, Mnova)
+        from elucida.tabs.base import result_page
+        self.right_tabs = QTabWidget()
+        self.right_tabs.setDocumentMode(True)
+        self.right_tabs.addTab(self.preview_stack, T("tab_figure"))
+        self.right_tabs.addTab(result_page(self.grp_raw), T("nmr_raw"))
+        QVBoxLayout(right).addWidget(self.right_tabs)
         from elucida.tabs.base import footer
         split = QSplitter(Qt.Horizontal)
         split.addWidget(footer(self, ls))
@@ -582,6 +677,39 @@ class NMRTab(QWidget):
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
         self.lv.addWidget(g)
+
+        # Rohdaten: TopSpin-Experimente (ganz, nach Art sortiert) und Mnova-Dokumente – nur ablegen, nicht auswerten;
+        # als Reiter neben der Abbildung (siehe __init__), nicht in der linken Spalte
+        g = QGroupBox(T("nmr_raw"))
+        v = QVBoxLayout(g)
+        hint = QLabel(T("nmr_raw_hint"), wordWrap=True)
+        hint.setStyleSheet(HINT_CSS)
+        v.addWidget(hint)
+        self.tbl_raw = QTableWidget(0, 4)
+        self.tbl_raw.setHorizontalHeaderLabels([T("nmr_raw_kind"), T("nmr_raw_name"), T("nmr_raw_pulprog"),
+                                                T("nmr_raw_spectrum")])
+        self.tbl_raw.verticalHeader().setVisible(False)
+        self.tbl_raw.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.tbl_raw.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_raw.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tbl_raw.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_raw.setToolTip(T("nmr_raw_open_tip"))
+        self.tbl_raw.itemDoubleClicked.connect(lambda it: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(self.tbl_raw.item(it.row(), 0).data(Qt.UserRole))))
+        v.addWidget(self.tbl_raw)
+        row = QHBoxLayout()
+        for txt, tip, fn, ic in ((T("nmr_topspin"), T("nmr_topspin_tip"), self.add_topspin, "open"),
+                                 (T("nmr_mnova"), T("nmr_mnova_tip"), self.add_mnova, None),
+                                 (T("remove"), T("nmr_raw_remove_tip"), self.remove_raw, None)):
+            b = QPushButton(txt)
+            if ic:
+                from elucida.app import style as STYLE
+                b.setIcon(STYLE.icon(ic, "#FFFFFF"))
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        v.addLayout(row)
+        self.grp_raw = g
 
         g = QGroupBox(T("nmr_selected"))
         f = make_form(g)
@@ -718,6 +846,8 @@ class NMRTab(QWidget):
         nuc = s["nuclei"][0]
         if nuc == "1H":
             return self.main.error(T("nmr_peaks_1h"))
+        if is_emf(s["file"]):
+            return self.main.error(T("nmr_emf_nopeaks"))
         vals, solv = svg_peaks(s["file"])
         if not vals:
             return self.main.error(T("nmr_peaks_none", f=Path(s["file"]).name))
@@ -756,6 +886,7 @@ class NMRTab(QWidget):
             self.ed_text.setPlainText(self.st.get("text") or "")
         self.fill_selected()
         self.fill_signals()
+        self.fill_raw()
         self._loading = False
         self.update_preview()
 
@@ -821,13 +952,13 @@ class NMRTab(QWidget):
         if not self.main.ensure_project():
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("nmr_add"), self.main.settings.value("last_dir", ""),
-                                             f"SVG (*.svg);;{T('flt_all')}")
+                                             f"{T('nmr_spec_flt')} (*.svg *.emf);;{T('flt_all')}")
         for p in ps:
             self.load_svg(p)
 
     def load_svg(self, p):
         try:
-            info = svg_info(p)
+            info = spectrum_info(p)
         except Exception as ex:
             self.main.error(f"{Path(p).name}: {ex}")
             return None
@@ -836,8 +967,104 @@ class NMRTab(QWidget):
         s["nuc_auto"] = bool(info["nuclei"])
         self.st["spectra"].append(s)
         self.st["current"] = s["uid"]
+        self.link_raw()
         self.changed()
         return s
+
+    # -- Rohdaten (TopSpin, Mnova) ----------------------------------------------------------
+    def add_topspin(self):
+        if not self.main.ensure_project():
+            return
+        d = QFileDialog.getExistingDirectory(self, T("nmr_topspin"), self.main.settings.value("last_dir", ""))
+        if d:
+            self.import_topspin(d)
+
+    def import_topspin(self, path):
+        """TopSpin-Experiment, -Datensatz oder Ordner mit Datensätzen: jedes Experiment ganz ins Projekt nach
+        data/nmr/<Art>/<Datensatz>_<Nummer>, dann zu passenden Spektren zuordnen. -> Anzahl neuer Experimente."""
+        exps = find_experiments(path)
+        if not exps:
+            self.main.error(T("nmr_no_acqus", p=Path(path).name))
+            return 0
+        raws = self.st.setdefault("raw", [])
+        n0 = len(raws)
+        for e in exps:
+            try:
+                self.import_experiment(e)
+            except Exception as ex:
+                self.main.log_signal.emit(f"  {e.name}: {ex}")
+        n = len(raws) - n0
+        self.main.log_signal.emit(T("nmr_raw_imported", n=n, kinds=", ".join(sorted({r["kind"] for r in raws}))))
+        self.link_raw()
+        self.changed()
+        return n
+
+    def link_raw(self):
+        """Spektren ohne Bruker-Ordner mit dem einen passenden Experiment verknüpfen (Parameter, Temperatur)."""
+        raws = [r for r in self.st.get("raw") or [] if Path(r["path"]).is_dir()]
+        for s in self.spectra():
+            if s.get("bruker"):
+                continue
+            r = match_experiment(s, raws)
+            if r is not None:
+                s["bruker"] = r["path"]
+                s["params"] = acq_params(r["path"])
+                if s["params"].get("te"):
+                    s["temp"] = round(s["params"]["te"])
+
+    def add_mnova(self):
+        if not self.main.ensure_project():
+            return
+        ps, _ = QFileDialog.getOpenFileNames(self, T("nmr_mnova"), self.main.settings.value("last_dir", ""),
+                                             f"Mnova (*.mnova);;{T('flt_all')}")
+        for p in ps:
+            self.add_mnova_file(p)
+
+    def add_mnova_file(self, p):
+        dst = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY) + "/mnova")
+        lst = self.st.setdefault("mnova", [])
+        if dst not in lst:
+            lst.append(dst)
+        self.changed()
+        return dst
+
+    def remove_raw(self):
+        """Eintrag aus der Liste nehmen (die Dateien im Projektordner bleiben liegen)."""
+        r = self.tbl_raw.currentRow()
+        if r < 0:
+            return
+        p = self.tbl_raw.item(r, 0).data(Qt.UserRole)
+        for s in self.spectra():                         # Verknüpfung lösen
+            if s.get("bruker") == p:
+                s["bruker"], s["params"] = None, None
+        self.st["raw"] = [r for r in self.st.get("raw") or [] if r["path"] != p]
+        self.st["mnova"] = [m for m in self.st.get("mnova") or [] if m != p]
+        self.changed()
+
+    def raw_rows(self):
+        """Zeilen der Rohdaten-Tabelle: (Art, Name, Pulsprogramm, verknüpftes Spektrum, Pfad)."""
+        linked = {s.get("bruker"): Path(s["file"]).name for s in self.spectra() if s.get("bruker")}
+        rows = []
+        for r in self.st.get("raw") or []:
+            pp = ""
+            try:
+                pp = acq_params(r["path"]).get("pulprog", "")
+            except Exception:
+                pass
+            rows.append((r["kind"], r["name"], pp, linked.get(r["path"], ""), r["path"]))
+        rows += [("Mnova", Path(m).name, "", "", m) for m in self.st.get("mnova") or []]
+        return rows
+
+    def fill_raw(self):
+        rows = self.raw_rows()
+        self.tbl_raw.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            for c, val in enumerate(row[:4]):
+                it = QTableWidgetItem(val)
+                if c == 0:
+                    it.setData(Qt.UserRole, row[4])
+                self.tbl_raw.setItem(i, c, it)
+        self.tbl_raw.resizeColumnsToContents()
 
     def remove_spectrum(self):
         s = self.current()
@@ -940,11 +1167,20 @@ class NMRTab(QWidget):
         if d is None:
             self.main.error(T("nmr_no_acqus", p=Path(path).name))
             return False
-        d = Path(self.main.import_file(str(d), PRJ.data_sub(self.STATE_KEY)))
+        d = Path(self.import_experiment(d))
         s["bruker"] = str(d)
         s["params"] = acq_params(d)
         self.changed()
         return True
+
+    def import_experiment(self, e):
+        """Ein Experiment ganz nach data/nmr/<Art>/<Datensatz>_<Nummer>, in die Rohdaten-Liste -> Pfad im Projekt."""
+        kind = experiment_kind(acq_params(e))
+        dst = self.main.import_file(str(e), PRJ.data_sub(self.STATE_KEY) + "/" + kind, name=experiment_name(e))
+        raws = self.st.setdefault("raw", [])
+        if not any(Path(r["path"]) == Path(dst) for r in raws):
+            raws.append(dict(path=dst, kind=kind, name=Path(dst).name))
+        return dst
 
     def temp_from_bruker(self):
         s = self.current()
@@ -990,6 +1226,13 @@ class NMRTab(QWidget):
             self.lbl_prev.setPixmap(QPixmap())
             self.lbl_cap.setText("")
             return
+        n = self.spectra().index(s) + 1
+        if is_emf(s["file"]):                              # EMF: keine eigene Darstellung, geht unverändert nach Word
+            self.lbl_prev.setPixmap(QPixmap())
+            self.lbl_prev.setText(T("nmr_emf_preview", f=Path(s["file"]).name))
+            self.lbl_cap.setText(f"<b>Figure S{n}</b>: " + caption_html(s, self.blocks(), self.compound_name()))
+            return
+        self.lbl_prev.setText("")
         import pymupdf
         # in Gerätepixeln rendern (HiDPI-Bildschirme), angezeigt in logischen Pixeln
         dpr = max(1.0, self.lbl_prev.devicePixelRatioF())
@@ -1081,9 +1324,13 @@ class NMRTab(QWidget):
         bl = self.blocks()
         from elucida.si import lines as SI
         for s in (x for x in self.spectra() if Path(x["file"]).is_file()):
+            if is_emf(s["file"]):                          # unverändert (Vektor in Word, ohne eingesetzte Struktur)
+                w, h = s.get("size") or emf_info(s["file"])["size_cm"]
+                blocks += [("image", s["file"], FIG_W_CM, FIG_W_CM * h / w), ("figcap", caption_html(s, bl, name))]
+                continue
             f = self.figure_svg(s)
             png = svg_png(f, Path(img_dir) / (Path(f).stem + "_nmr.png"))
-            w, h = s.get("size") or svg_info(s["file"])["size_cm"]
+            w, h = s.get("size") or spectrum_info(s["file"])["size_cm"]
             blocks += [("image", str(png), FIG_W_CM, FIG_W_CM * h / w, f), ("figcap", caption_html(s, bl, name))]
         return SI.two_per_page(blocks)
 

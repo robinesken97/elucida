@@ -11,6 +11,11 @@
   (einstellbar, oder fester Isowert), IboView-Farben je Orbital, durchscheinend mit deckenderen Rändern, Licht und
   Aufhellung nach hinten wie IboView; Atome wie in IboView (zur Mitte verjüngte Stäbe, Elementbuchstaben, Doppel- und
   Teilbindungen aus der Wellenfunktion wie IboViews IAO-Bindungsordnungen). Direkt mit IboView verglichen.
+- **NMR-Rohdaten:** TopSpin-Experimente (auch ganze Datensätze oder mehrere auf einmal, auch per Ziehen) kommen
+  vollständig ins Projekt, nach Art sortiert (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …), stehen im neuen Reiter
+  **Rohdaten** neben der Abbildung und werden dem passenden Spektrum automatisch zugeordnet (Parameter, Temperatur).
+  Mnova-Dokumente (`.mnova`) lassen sich ebenfalls ablegen.
+- NMR-Spektren können auch **EMF**-Dateien aus Mnova sein; sie gehen unverändert nach Word.
 - Das IboView-Aussehen ist im DFT-Tab auch als Stil für jede Struktur wählbar, mit oder ohne Orbitale.
 - HOMO/LUMO-Bezeichnung und Orbitalenergien aus der Molden-Datei bzw. der ORCA/Gaussian-Ausgabe der Geometrie.
 - Export: je Orbital eine Abbildung (PDF/SVG mit dem Orbital als eingebettetem 300-dpi-Bild, Atome und Labels bleiben

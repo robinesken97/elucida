@@ -28,7 +28,7 @@ Englisch.
 | Tab | Was er macht |
 |---|---|
 | **Synthese** | „Synthesis of …“ mit dem ChemDraw-Schema (bearbeitbares ChemDraw-Objekt in Word), Vorschrift mit Formatierung, Mengenprüfung (mmol/Äquivalente/Ausbeute gegen die Reagenzientabelle) |
-| **NMR** | Spektren aus MestReNova (SVG), Kern aus der Achse, NMR-Zeile aus dem Mnova-Bericht mit Zuordnungen, Struktur automatisch platziert, Bruker-Parameter, zwei Spektren je Seite in Word |
+| **NMR** | Spektren aus MestReNova (SVG oder EMF), TopSpin-Rohdaten nach Experiment sortiert, Kern aus der Achse, NMR-Zeile aus dem Mnova-Bericht mit Zuordnungen, Struktur automatisch platziert, Bruker-Parameter, zwei Spektren je Seite in Word |
 | **UV-Vis (ε)** | Lambert-Beer-Fit von Verdünnungsreihen → ε (bzw. a) mit Konfidenzintervall; Abbildung im Origin-Stil mit Struktur und Küvettenfoto; Excel-Report; UV-Vis-Zeile für die SI |
 | **UV-Vis-Overlay** | Gemessene Spektren, TD-DFT (ORCA/Gaussian, SOC, Tripletts) und SEC-Serien in einer Abbildung, normiert oder als ε |
 | **Fluoreszenz** | Absorption und Emission, Stokes-Verschiebung, Fotos bei Tageslicht und unter UV |
@@ -227,6 +227,13 @@ als eigene Word-Datei oder im SI-Abschnitt.
   in der Tabelle (*kursiv*, _{tief}, ^{hoch}).
 - **Temperatur** standardmäßig 298 K, oder aus dem Bruker-Experimentordner (acqus, mit Übersicht der Parameter wie
   Frequenz, O1P, Pulsprogramm, Scans).
+- **Rohdaten** (Reiter neben der Abbildung): **TopSpin-Daten …** nimmt ein Experiment, einen Datensatz (10, 11, …) oder
+  einen Ordner mit mehreren Datensätzen – auch per Ziehen ins Fenster – und übernimmt jedes Experiment vollständig ins
+  Projekt, nach Art sortiert (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). Passt genau ein Experiment zu einem Spektrum,
+  wird es automatisch zugeordnet (Parameter, Temperatur). **Mnova-Dokumente** (`.mnova`) liegen in `data/nmr/mnova`;
+  Doppelklick öffnet sie.
+- Spektren können auch **EMF** aus Mnova sein: Sie gehen unverändert nach Word (Vektor, ohne eingesetzte Struktur); für
+  Vorschau und Struktur SVG verwenden.
 - **Word:** zwei Spektren je Seite, „Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**.“
 
 ## HRMS-Tab
