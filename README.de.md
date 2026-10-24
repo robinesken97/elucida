@@ -415,9 +415,11 @@ TUDOdata), aufgebaut wie veröffentlichte Datensätze: `6m.zip` mit `6m/NMR/1H/1
 `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (Bericht, Bruker-.d), `UV-Vis/`, `Fluorescence/`, `CV/<Lösungsmittel>/`, `SEC/`,
 `EPR/`; DFT und die eigenen Abbildungen/SI wahlweise. X-Ray (CCDC) und Synthese gehören nicht hinein. Jede Datei ist
 abwählbar, die Auswahl wird je Projekt gemerkt. **Laborkürzel** wie `RE-3-150` werden automatisch gefunden und ersetzt –
-in Datei- und Ordnernamen durch die Verbindung (`6m`), in Textdateien (CSV, DTA, TopSpin-Parameter und -Titel …) durch
-„Compound 6m“ (beides änderbar). Binärdateien (FID, OPUS, PDF, Mnova) bleiben unverändert; steckt dort noch ein
-Kürzel, nennt das Protokoll die Datei.
+in Datei- und Ordnernamen durch die Verbindung (`6m`), im Inhalt durch „Compound 6m“ (beides änderbar) –, und **Datum
+und Uhrzeit werden gelöscht**: in allen Textdateien (CSV, Gamry-DTA, EPR, TopSpin-Parameter, -Titel und -Prüfprotokoll),
+im MS-Bericht (Text, Ersteller und Datum der Datei, Beschriftungen der Spektren) und in OPUS-Dateien (auf gleicher
+Länge). Die Messwerte (FID, ser, Spektren) bleiben bytegleich. PDF, Mnova und Bruker-.d lassen sich nicht bearbeiten;
+steckt dort noch ein Kürzel, nennt das Protokoll die Datei.
 
 ## Excel-Report
 

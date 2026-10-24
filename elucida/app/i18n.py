@@ -436,11 +436,15 @@ TEXTS = {
     "dp_code_name": ("in Datei-/Ordnernamen", "in file/folder names"),
     "dp_code_text": ("im Inhalt", "in the contents"),
     "dp_code_add": ("Kürzel hinzufügen", "Add code"),
-    "dp_text": ("auch im Inhalt von Textdateien (CSV, DTA, TopSpin-Parameter und -Titel …)",
-                "also in the contents of text files (CSV, DTA, TopSpin parameters and title …)"),
-    "dp_text_tip": ("Binärdateien (FID, OPUS, PDF, Mnova) bleiben unverändert; enthalten sie ein Kürzel, steht das danach "
-                    "im Protokoll",
-                    "Binary files (FID, OPUS, PDF, Mnova) stay unchanged; if they contain a code, the log says so"),
+    "dp_text": ("auch im Inhalt: Kürzel → „Compound …“, Datum und Uhrzeit löschen (Textdateien, TopSpin-Parameter, "
+                "MS-Bericht, OPUS)",
+                "also in the contents: codes → “Compound …”, delete date and time (text files, TopSpin parameters, "
+                "MS report, OPUS)"),
+    "dp_text_tip": ("Messwerte (FID, ser, Spektren) bleiben bytegleich. Im MS-Bericht auch Ersteller und Datum der "
+                    "Datei. PDF, Mnova und Bruker-.d lassen sich nicht bearbeiten; ein Kürzel darin steht danach im "
+                    "Protokoll",
+                    "Measured values (FID, ser, spectra) stay byte-identical. In the MS report also the file's author "
+                    "and date. PDF, Mnova and Bruker .d cannot be edited; a code in them is listed in the log"),
     "dp_export": ("Exportieren …", "Export …"),
     "dp_size": ("{n} Einträge, {size} (vor dem Packen)", "{n} entries, {size} (before compression)"),
     "dp_writing": ("Datenpaket wird geschrieben …", "Writing the data package …"),

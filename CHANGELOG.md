@@ -2,6 +2,23 @@
 
 # Changelog
 
+## 2.2.0 – 2026-10-24
+
+### New
+- **Data package (zip) per compound** (File → Export data package): the raw data for a data repository such as
+  TUDOdata, laid out like published datasets – `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments),
+  `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`;
+  DFT and Elucida's own figures/SI optional, X-ray and synthesis not included. Every file can be deselected, the
+  choice is remembered per project.
+- **Lab codes and dates removed:** codes such as `RE-3-150` are found automatically and replaced – in names by the
+  compound, in the contents by „Compound 6m“ – and dates and times are deleted: in text files (CSV, Gamry DTA, EPR,
+  TopSpin parameters, title and audit trail), in the MS report (text, file author and dates, labels in its spectra)
+  and in OPUS files. The measured values stay byte-identical; codes left in files that cannot be edited (PDF, Mnova,
+  Bruker .d) are listed in the log.
+
+### Changed
+- Check boxes in lists show the partly-checked state of a group.
+
 ## 2.1.0 – 2026-10-24
 
 ### New

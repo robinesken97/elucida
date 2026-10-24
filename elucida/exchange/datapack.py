@@ -11,9 +11,11 @@ Aufbau wie die veröffentlichten Datensätze der Gruppe (je Verbindung ein Zip <
     DFT/, Elucida/ (Abbildungen, SI)           wählbar, Standard aus
 X-Ray (CCDC) und Synthese gehören nicht hinein. Nur Dateien, auf die der Projektzustand zeigt (nichts Internes).
 
-Laborkürzel (z. B. „RE-3-150“) werden ersetzt: in Datei- und Ordnernamen immer, im Inhalt aller Textdateien wahlweise
-(Nutzerwunsch: auch TopSpin-Parameter, title, audita.txt – Mnova zeigt sonst den Messnamen). Text = keine Nullbytes;
-Binärdateien (fid/ser/1r, OPUS, PDF, .mnova) bleiben bytegleich, wo dort ein Kürzel steckt, nennt der Bericht die Datei.
+Nutzerwunsch: außer „Compound XX“ und ohne Datum unveränderte Rohdaten, überall. Laborkürzel (z. B. „RE-3-150“) in
+Datei- und Ordnernamen immer ersetzt; im Inhalt (wahlweise, Standard an) Kürzel -> „Compound XX“ und Datum/Uhrzeit
+gelöscht: alle Textdateien (keine Nullbytes; auch TopSpin-Parameter, title, audita.txt, ##$DATE= -> 0), Word-Berichte
+(Absätze, Dateieigenschaften, EMF-Beschriftungen), OPUS-Binärdateien auf gleicher Länge (Strings mit Leerzeichen).
+Messwerte (fid/ser/1r …) bytegleich; nicht bearbeitbar (PDF, .mnova, Bruker .d): Kürzel darin im Bericht.
 Ohne Qt (Dialog: elucida/app/datapack_dialog.py).
 """
 from __future__ import annotations
@@ -167,7 +169,12 @@ def find_codes(items, read_text=True, limit=2_000_000) -> list[str]:
         files = [it.src] if it.src.is_file() else [f for f in it.src.rglob("*") if f.is_file()]
         for f in files:
             found |= set(CODE_RE.findall(f.name))
-            if read_text and f.stat().st_size <= limit and _is_text(f):
+            if read_text and f.suffix.lower() == ".docx" and zipfile.is_zipfile(f):
+                try:
+                    found |= set(CODE_RE.findall(docx_text(f.read_bytes())))
+                except (zipfile.BadZipFile, KeyError):
+                    pass
+            elif read_text and f.stat().st_size <= limit and _is_text(f):
                 found |= set(CODE_RE.findall(f.read_bytes().decode("latin-1")))
     return sorted(found)
 
@@ -190,6 +197,118 @@ def replace_codes(s: str, repl: dict) -> str:
     return s
 
 
+# Datumsangaben (MS-Bericht): 12.03.2024, 12.3.24, 2024-03-12, 12/03/2024, 12 March 2024, 12. März 2024; mit Uhrzeit
+_MONTHS = ("Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Mär|Mai|Okt|Dez|January|February|March|April|June|July|"
+           "August|September|October|November|December|Januar|Februar|März|Juni|Juli|Oktober|Dezember")
+DATE_RE = re.compile(r"(?<![\d.])(?:\d{1,2}[./]\d{1,2}[./](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|"
+                     rf"\d{{1,2}}\.?\s(?:{_MONTHS})\.?\s\d{{4}})"
+                     r"(?:[ T,]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s?[AP]M)?(?:\s?[+-]\d{2}:?\d{2})?)?(?![\d.])")
+JCAMP_DATE = re.compile(r"^(##\$DATE=\s*)\d+", re.M)          # TopSpin: Messzeit als Sekunden seit 1970
+OPUS_RE = re.compile(r"\.\d+$")                              # Bruker OPUS: name.0, name.1 …
+# Dateieigenschaften eines Word-Dokuments mit Personen/Zeitpunkten (docProps/core.xml, app.xml)
+_DOCPROPS = ("dc:creator", "cp:lastModifiedBy", "dcterms:created", "dcterms:modified", "cp:lastPrinted", "Company",
+             "Manager")
+
+
+def scrub_text(s: str, repl: dict, dates: bool) -> str:
+    s = replace_codes(s, repl)
+    return JCAMP_DATE.sub(r"\g<1>0", DATE_RE.sub("", s)) if dates else s
+
+
+def scrub_binary_strings(data: bytes, repl: dict, dates: bool) -> bytes:
+    """Binärdatei mit Textfeldern (OPUS): Kürzel und Datum auf gleicher Länge (ASCII und UTF-16) ersetzen, damit
+    alle Längen und Versätze stimmen; übrige Bytes unverändert."""
+    b = bytearray(data)
+    for code, new in repl.items():
+        for enc in ("latin-1", "utf-16-le"):
+            old_b, new_b = code.encode(enc), new[:len(code)].ljust(len(code)).encode(enc)
+            b = bytearray(bytes(b).replace(old_b, new_b))
+    if dates:
+        txt = bytes(b).decode("latin-1")
+        for m in DATE_RE.finditer(txt):
+            b[m.start():m.end()] = b" " * (m.end() - m.start())
+    return bytes(b)
+
+
+def _scrub_word_xml(xml: str, repl: dict, dates: bool) -> str:
+    """Absätze eines WordprocessingML-Teils: Text je Absatz zusammensetzen (Word teilt ihn in Runs, z. B. „RE-3-“ +
+    „150“), Kürzel/Datum ersetzen; geänderter Absatz -> ganzer Text im ersten Run, übrige Runs leer."""
+    import html as _h
+    t_re = re.compile(r"(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)", re.S)
+
+    def para(m):
+        p = m.group(0)
+        parts = t_re.findall(p)
+        if not parts:
+            return p
+        old = "".join(_h.unescape(t) for _, t, _ in parts)
+        new = scrub_text(old, repl, dates)
+        if new == old:
+            return p
+        k = [0]
+
+        def run(mt):
+            k[0] += 1
+            text = _h.escape(new, quote=False) if k[0] == 1 else ""
+            return '<w:t xml:space="preserve">' + text + "</w:t>"
+        return t_re.sub(run, p)
+    return re.sub(r"<w:p[ >].*?</w:p>", para, xml, flags=re.S)
+
+
+def _scrub_emf(data: bytes, repl: dict, dates: bool) -> bytes:
+    """Beschriftungen in EMF (UTF-16, EMR_EXTTEXTOUTW): auf gleicher Länge ersetzen (Zeichenzahl/Abstände bleiben)."""
+    for code, new in repl.items():
+        data = data.replace(code.encode("utf-16-le"), new[:len(code)].ljust(len(code)).encode("utf-16-le"))
+    if dates:
+        for off in (0, 1):                             # Texte beginnen auf gerader oder ungerader Position
+            seg = data[off:]
+            txt = seg[:len(seg) // 2 * 2].decode("utf-16-le", errors="replace")
+            for m in set(DATE_RE.findall(txt)):
+                data = data.replace(m.encode("utf-16-le"), (" " * len(m)).encode("utf-16-le"))
+    return data
+
+
+def scrub_docx(data: bytes, repl: dict, dates=True) -> bytes:
+    """Word-Bericht (z. B. der Massenabteilung) ohne Laborkürzel, Datumsangaben und Personennamen in den
+    Dateieigenschaften; Spektren-Bilder (EMF) auf gleicher Länge. Übrige Teile bytegleich."""
+    import io
+    src = zipfile.ZipFile(io.BytesIO(data))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for info in src.infolist():
+            b = src.read(info.filename)
+            n = info.filename
+            if n.startswith("word/") and n.endswith(".xml"):
+                b = _scrub_word_xml(b.decode("utf-8"), repl, dates).encode("utf-8")
+            elif n in ("docProps/core.xml", "docProps/app.xml"):
+                x = b.decode("utf-8")
+                for tag in _DOCPROPS:
+                    x = re.sub(rf"<{tag}(?:\s[^>]*)?>.*?</{tag}>|<{tag}(?:\s[^>]*)?/>", "", x, flags=re.S)
+                b = x.encode("utf-8")
+            elif n.lower().endswith(".emf"):
+                b = _scrub_emf(b, repl, dates)
+            z.writestr(info, b)
+    return out.getvalue()
+
+
+def docx_text(data: bytes) -> str:
+    """Gesamter Text eines Word-Dokuments (Teile word/*.xml, Dateieigenschaften, EMF-Beschriftungen) zum Prüfen."""
+    import html as _h
+    import io
+    parts = []
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for n in z.namelist():
+            b = z.read(n)
+            if n.endswith(".xml"):
+                x = b.decode("utf-8", errors="replace")
+                for p in re.findall(r"<w:p[ >].*?</w:p>", x, flags=re.S) or [x]:
+                    parts.append("".join(_h.unescape(t) for t in re.findall(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", p, re.S))
+                                 or re.sub(r"<[^>]+>", " ", p))
+            elif n.lower().endswith(".emf") and len(b) % 2 == 0:
+                parts.append(b.decode("utf-16-le", errors="replace"))
+    return "\n".join(parts)
+
+
 def _safe_name(s: str) -> str:
     return re.sub(r'[\\:*?"<>|]', "_", s).strip() or "_"
 
@@ -202,10 +321,11 @@ def _decode(data: bytes):
         return data.decode("latin-1"), "latin-1"
 
 
-def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None) -> dict:
+def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, docx_scrub=True) -> dict:
     """Ausgewählte Einträge als <path> schreiben (Ordner <root>/ darin). name_repl/text_repl: Kürzel -> Ersatz in
-    Namen bzw. im Inhalt von Textdateien (None = Inhalt nicht ändern). -> Bericht: Dateien, Größe, ersetzte
-    Textdateien, Dateien, in denen ein Kürzel unverändert bleibt (binär oder TopSpin-Parameter)."""
+    Namen bzw. im Inhalt von Textdateien (None = Inhalt nicht ändern). docx_scrub: Word-Berichte (MS) ohne Kürzel,
+    Datum und Personennamen. -> Bericht: Dateien, Größe, ersetzte Textdateien, Dateien, in denen ein Kürzel
+    unverändert bleibt (Binärdateien)."""
     name_repl, codes = name_repl or {}, set(name_repl or {}) | set(text_repl or {})
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,13 +353,28 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None) 
                 k += 1
             seen.add(arc)
             data = f.read_bytes()
-            if codes and text_repl is not None and _is_text(f, data[:65536]):
+            is_docx = f.suffix.lower() == ".docx" and zipfile.is_zipfile(f)
+            if is_docx and docx_scrub and text_repl is not None:
+                try:
+                    new_ = scrub_docx(data, text_repl or name_repl or {}, dates=True)
+                    if new_ != data:
+                        data = new_
+                        report["text_replaced"].append(arc)
+                except (zipfile.BadZipFile, UnicodeDecodeError, KeyError):
+                    pass
+            elif text_repl is not None and _is_text(f, data[:65536]):
                 txt, enc = _decode(data)
-                new = replace_codes(txt, text_repl)
+                new = scrub_text(txt, text_repl, dates=True)
                 if new != txt:
                     data = new.encode(enc, errors="replace")
                     report["text_replaced"].append(arc)
-            if codes and any(c.encode() in data or c.encode("utf-16-le") in data for c in codes):
+            elif text_repl is not None and group == "ir" and OPUS_RE.search(f.name):
+                new_b = scrub_binary_strings(data, name_repl, dates=True)
+                if new_b != data:
+                    data = new_b
+                    report["text_replaced"].append(arc)
+            check = docx_text(data).encode("utf-8") if is_docx else data
+            if codes and any(c.encode() in check or c.encode("utf-16-le") in check for c in codes):
                 report["kept"].append(arc)
             z.writestr(zipfile.ZipInfo.from_file(f, arc), data, compress_type=zipfile.ZIP_DEFLATED)
             report["files"] += 1

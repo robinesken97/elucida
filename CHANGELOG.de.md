@@ -2,6 +2,23 @@
 
 # Änderungen
 
+## 2.2.0 – 24.10.2026
+
+### Neu
+- **Datenpaket (Zip) je Verbindung** (Datei → Datenpaket exportieren): die Rohdaten für ein Datenrepositorium wie
+  TUDOdata, aufgebaut wie veröffentlichte Datensätze – `6m.zip` mit `6m/NMR/1H/10/` (TopSpin-Experimente vollständig),
+  `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (Bericht, Bruker-.d), `UV-Vis/`, `Fluorescence/`, `CV/<Lösungsmittel>/`, `SEC/`,
+  `EPR/`; DFT und die eigenen Abbildungen/SI wahlweise, X-Ray und Synthese nicht. Jede Datei ist abwählbar, die Auswahl
+  wird je Projekt gemerkt.
+- **Laborkürzel und Datum entfernt:** Kürzel wie `RE-3-150` werden automatisch gefunden und ersetzt – in Namen durch die
+  Verbindung, im Inhalt durch „Compound 6m“ –, Datum und Uhrzeit werden gelöscht: in Textdateien (CSV, Gamry-DTA, EPR,
+  TopSpin-Parameter, -Titel und -Prüfprotokoll), im MS-Bericht (Text, Ersteller und Datum der Datei, Beschriftungen der
+  Spektren) und in OPUS-Dateien. Die Messwerte bleiben bytegleich; Kürzel in nicht bearbeitbaren Dateien (PDF, Mnova,
+  Bruker-.d) nennt das Protokoll.
+
+### Geändert
+- Kästchen in Listen zeigen, wenn eine Gruppe nur teilweise ausgewählt ist.
+
 ## 2.1.0 – 24.10.2026
 
 ### Neu

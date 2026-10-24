@@ -400,8 +400,10 @@ out like published datasets: `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin exp
 `IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`; DFT and Elucida's own
 figures/SI optional. X-ray (CCDC) and synthesis are not included. Every file can be deselected; the choice is
 remembered per project. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
-names by the compound (`6m`), in text files (CSV, DTA, TopSpin parameters and title …) by „Compound 6m“ (both
-editable). Binary files (FID, OPUS, PDF, Mnova) stay unchanged; if a code remains in one of them, the log names it.
+names by the compound (`6m`), in the contents by „Compound 6m“ (both editable) – and **dates and times are deleted**:
+in all text files (CSV, Gamry DTA, EPR, TopSpin parameters, title and audit trail), in the MS report (text, file
+author and dates, labels in its spectra) and in OPUS files (same length). The measured values (FID, ser, spectra) stay
+byte-identical. PDF, Mnova and Bruker .d cannot be edited; if a code remains in one of them, the log names it.
 
 ## Excel report
 

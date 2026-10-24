@@ -2710,11 +2710,12 @@ def selftest(outdir, with_isnet=False):
         dp_ = out / "datapack" / "proj"
         ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "RE-3-150_10", nuc="1H")
         with open(ex_ / "acqus", "a", encoding="latin-1") as fh_:
-            fh_.write("$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n")
+            fh_.write("$$ 2024-03-12 14:35:12.123 +0100  user@nmr\n$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n"
+                      "##$DATE= 1710251712\n")
         fid_ = bytes(range(256)) * 4
         (ex_ / "fid").write_bytes(fid_)
         (ex_ / "pdata" / "1").mkdir(parents=True)
-        (ex_ / "pdata" / "1" / "title").write_text("RE-3-150 in CDCl3\n", encoding="latin-1")
+        (ex_ / "pdata" / "1" / "title").write_text("RE-3-150 in CDCl3 12.03.2024\n", encoding="latin-1")
         hs_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HSQC" / "RE-3-150_12", nuc="1H", nuc2="13C",
                                   pulprog="hsqcedetgpsisp2.3")
         hm_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HMBC" / "RE-3-150_13", nuc="1H", nuc2="13C",
@@ -2724,16 +2725,24 @@ def selftest(outdir, with_isnet=False):
         mn_.write_bytes(b"\0MNOVA\0RE-3-150\0")                        # binär: bleibt, wird gemeldet
         ir0_ = dp_ / "data" / "ir" / "RE-3-150_IR.0"
         ir0_.parent.mkdir(parents=True)
-        ir0_.write_bytes(b"\x0a\x0a\0OPUS")
+        ir0_bytes_ = b"\x0a\x0a\x00OPUS\x00SNM\x00RE-3-150\x00DAT\x0012/03/2024\x00\xff\x01"
+        ir0_.write_bytes(ir0_bytes_)
         msr_ = dp_ / "data" / "hrms" / "MS-Bericht.docx"
         msr_.parent.mkdir(parents=True)
-        msr_.write_bytes(b"PK\0docx")
+        with _zfp.ZipFile(msr_, "w") as z_:                               # Bericht: Kürzel in Runs geteilt, Datum
+            z_.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>sample name: RE-3-</w:t></w:r>'
+                        '<w:r><w:t>150</w:t></w:r></w:p><w:p><w:r><w:t>date: 12.03.2024</w:t></w:r></w:p>'
+                        '<w:p><w:r><w:t>exact mass: 264.1626</w:t></w:r></w:p></w:body></w:document>')
+            z_.writestr("docProps/core.xml", "<cp:coreProperties><dc:creator>Jane Doe</dc:creator>"
+                        "<dcterms:created>2024-03-12T10:00:00Z</dcterms:created><dc:title>MS</dc:title>"
+                        "</cp:coreProperties>")
+            z_.writestr("word/media/image1.emf", b"\x01\0\0\0" + "RE-3-150 12.03.2024".encode("utf-16-le"))
         cvf_ = dp_ / "data" / "cv" / "RE-3-150-thf-200mVs.DTA"
         cvf_.parent.mkdir(parents=True)
         cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1")
         epr_ = dp_ / "data" / "epr" / "RE-3-150_epr.txt"
         epr_.parent.mkdir(parents=True)
-        epr_.write_text("B [G]\tRE-3-150\n3380\t0.1\n", encoding="utf-8")
+        epr_.write_text("B [G]\tRE-3-150\tmeasured 2024-03-12 09:15\n3380\t0.1\n", encoding="utf-8")
         cif_ = dp_ / "data" / "xray" / "s.cif"
         cif_.parent.mkdir(parents=True)
         cif_.write_text("data_x\n", encoding="utf-8")
@@ -2748,6 +2757,7 @@ def selftest(outdir, with_isnet=False):
                          "NMR/RE-3-150.mnova": True, "IR/RE-3-150_IR.0": True, "MS/MS-Bericht.docx": True,
                          "CV/THF/RE-3-150-thf-200mVs.DTA": True, "EPR/RE-3-150_epr.txt": True}, arcs_   # ohne X-Ray
         assert DP.find_codes(its_) == ["RE-3-150"]
+        import zipfile as _zfp
         zp_ = out / "datapack" / "6m.zip"
         rep_ = DP.write_zip(its_, zp_, "6m", {"RE-3-150": "6m"}, {"RE-3-150": "Compound 6m"})
         with _zfp.ZipFile(zp_) as z_:
@@ -2760,6 +2770,17 @@ def selftest(outdir, with_isnet=False):
             assert b"Compound 6m in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title")
             acq_txt_ = z_.read("6m/NMR/1H/10/acqus").decode("latin-1")
             assert "RE-3-150" not in acq_txt_ and "/Compound 6m/10/acqus" in acq_txt_ and "##$PULPROG= <zg30>" in acq_txt_
+            assert "2024" not in acq_txt_ and "##$DATE= 0" in acq_txt_ and "user@nmr" in acq_txt_     # nur Datum weg
+            assert z_.read("6m/NMR/1H/10/pdata/1/title") == b"Compound 6m in CDCl3 \n"
+            assert "2024" not in z_.read("6m/EPR/6m_epr.txt").decode("utf-8")
+            ir_z_ = z_.read("6m/IR/6m_IR.0")                                # OPUS: gleiche Länge, Rest bytegleich
+            assert len(ir_z_) == len(ir0_bytes_) and b"RE-3-150" not in ir_z_ and b"2024" not in ir_z_
+            assert ir_z_.startswith(b"\x0a\x0a\0OPUS\0SNM\x006m      \0") and ir_z_.endswith(b"\0\xff\x01")
+            ms_txt_ = DP.docx_text(z_.read("6m/MS/MS-Bericht.docx"))
+            assert "sample name: Compound 6m" in ms_txt_ and "2024" not in ms_txt_ and "264.1626" in ms_txt_
+            with _zfp.ZipFile(__import__("io").BytesIO(z_.read("6m/MS/MS-Bericht.docx"))) as zm_:
+                core_ = zm_.read("docProps/core.xml").decode("utf-8")
+                assert "Jane Doe" not in core_ and "dcterms:created" not in core_ and "<dc:title>MS</dc:title>" in core_
             assert "Compound 6m CV" in z_.read("6m/CV/THF/6m-thf-200mVs.DTA").decode("latin-1")
             assert z_.read("6m/NMR/6m.mnova") == mn_.read_bytes()
         assert rep_["kept"] == ["6m/NMR/6m.mnova"], rep_["kept"]
