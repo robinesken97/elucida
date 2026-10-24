@@ -1701,6 +1701,19 @@ class XrayFigure:
 
     def _bond_xy(self, a, b):
         A, B = self.scene["by_k"][a], self.scene["by_k"][b]
+        if self.style == "cartoon" and a not in self.wire and b not in self.wire:
+            # Strichzeichnung (Nutzerfeedback zur JOC-Vorlage): ein Stab je Bindung, an beiden Enden dort, wo seine
+            # Oberfläche die Kugel in 3D verlässt – zum Betrachter liegt das innerhalb des Kugelumrisses, der Stab kommt
+            # also sichtbar aus der Kugel; Reihenfolge nach Tiefe (über der hinteren, unter der vorderen Kugel)
+            D = np.array([B["x"] - A["x"], B["y"] - A["y"], B["z"] - A["z"]], float)
+            L = float(np.linalg.norm(D))
+            r = self.bond_w / 2
+            sa = math.sqrt(max((A["w"] / 2) ** 2 - r * r, 0.0))
+            sb = math.sqrt(max((B["w"] / 2) ** 2 - r * r, 0.0))
+            if L <= sa + sb or L == 0:
+                return [np.nan, np.nan], [np.nan, np.nan]
+            d = D / L
+            return [A["x"] + d[0] * sa, B["x"] - d[0] * sb], [A["y"] + d[1] * sa, B["y"] - d[1] * sb]
         if self.ball and a not in self.wire and b not in self.wire:
             # Kugel-Stab: Stab von Mitte zu Mitte, die Kugel verdeckt das Ende (jede Hälfte liegt direkt unter ihrem
             # Atom, siehe _zorders) – sonst stehen die Ecken dicker Stäbe über den Kugelrand
@@ -2005,7 +2018,7 @@ class XrayFigure:
                 edge, elw = "none", 0.0                    # wie die Vorlagen: Kugeln ohne Umriss
                 if self.style == "cartoon":                # Strichzeichnung: weiß mit schwarzem Umriss
                     faces = ["white"] * len(faces)
-                    edge, elw = (0, 0, 0), max(0.5, 0.75 * self.cfg.get("scale", 1.0))
+                    edge, elw = (0, 0, 0), self._cartoon_edge()
             elif mercury:
                 faces, edge, elw = shade_colors(col, nfill), (0.1, 0.1, 0.1), 0.8 * self.lw_edge
             else:
@@ -2036,6 +2049,14 @@ class XrayFigure:
                     ax.add_line(ln)
                     self.bond_art.append((a, b, ln, half))
                     self.bond_lines[n].append(ln)
+                continue
+            if self.style == "cartoon":                    # hohler Stab: schwarze Linie, weißer Kern (Rand = Kugelumriss)
+                lo = Line2D(xs, ys, color="black", lw=self.lw_bond, solid_capstyle="butt")
+                li = Line2D(xs, ys, color="white", lw=self._cartoon_core(), solid_capstyle="butt")
+                ax.add_line(lo)
+                ax.add_line(li)
+                self.bond_art += [(a, b, lo, None), (a, b, li, "core")]
+                self.bond_lines[n] = [lo, li]
                 continue
             if self.ball:                                  # Zylinder (Phong), je Hälfte in der Atomfarbe
                 self.bond_lines[n] = []
@@ -2081,6 +2102,14 @@ class XrayFigure:
     def _elem_fs(self):
         return ORB.IBO_LABEL_EM * ORB.BOHR * self.pt_per_A() * float(self.opts.get("ball_scale", 1.0))
 
+    def _cartoon_edge(self):
+        """Linienstärke des Umrisses (pt) in der Strichzeichnung: Kugeln und Stäbe gleich (Nutzerfeedback: Stabränder
+        waren zu dick)."""
+        return max(0.5, 0.75 * self.cfg.get("scale", 1.0))
+
+    def _cartoon_core(self):
+        return max(0.2, self.lw_bond - 2 * self._cartoon_edge())
+
     def _zorders(self):
         """Zeichenreihenfolge nach Tiefe (hinten zuerst); Bindungen zwischen ihren Atomen."""
         items = [(it["z"], "a", it["k"]) for it in self.scene["atoms"]]
@@ -2111,8 +2140,8 @@ class XrayFigure:
                     t.set_zorder(zo + 2e-4)
                     self.order.append(t)
             else:
-                for ln in self.bond_lines[key]:
-                    ln.set_zorder(zo)
+                for j, ln in enumerate(self.bond_lines[key]):    # Strichzeichnung: weißer Kern über dem Rand
+                    ln.set_zorder(zo + 1e-5 * j)
                     self.order.append(ln)
         self.order += [e for _, e in self.sel_art] + list(self.ann_items.values())
         if getattr(self, "orb_art", None) is not None:
@@ -2136,7 +2165,7 @@ class XrayFigure:
         self._place_rods()
         for a, b, ln, half in self.bond_art:
             xs, ys = self._bond_xy(a, b)
-            ln.set_data(*(_half(xs, ys, half) if half is not None else (xs, ys)))
+            ln.set_data(*(_half(xs, ys, half) if half not in (None, "core") else (xs, ys)))
         for k, t in getattr(self, "elem_lab", {}).items():
             it = self.scene["by_k"][k]
             t.set_position((it["x"], it["y"]))
@@ -2184,7 +2213,7 @@ class XrayFigure:
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
         for _, _, ln, half in self.bond_art:
-            ln.set_linewidth(self.lw_bond if half is None else self.lw_wire)
+            ln.set_linewidth(self.lw_bond if half is None else self._cartoon_core() if half == "core" else self.lw_wire)
         if self.rods is not None:
             self._rod_widths()
         import matplotlib.patheffects as PE

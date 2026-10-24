@@ -9,6 +9,10 @@
   jeder Tab entsteht erst, wenn er zum ersten Mal angezeigt oder gebraucht wird (erster Klick auf einen Tab ~0,2 s).
 - ChemDraw-Strukturen werden je Sitzung nur einmal gelesen.
 
+### Behoben
+- Strichzeichnung (DFT): Bindungen zum Betrachter kommen jetzt aus der Kugel heraus statt dahinter hervor, und die
+  Ränder der Stäbe sind so dünn wie die der Kugeln.
+
 ## 2.2.1 – 24.10.2026
 
 ### Geändert

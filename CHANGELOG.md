@@ -9,6 +9,10 @@
   tab is built only when it is first shown or needed (first click on a tab ~0.2 s).
 - ChemDraw structures are read only once per session.
 
+### Fixed
+- Line drawing (DFT): bonds pointing towards the viewer now come out of the ball instead of from behind it, and the
+  outlines of the sticks are as thin as those of the balls.
+
 ## 2.2.1 – 2026-10-24
 
 ### Changed

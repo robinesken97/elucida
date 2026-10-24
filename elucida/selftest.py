@@ -1858,10 +1858,11 @@ def selftest(outdir, with_isnet=False):
             if sty_ in XRAY.BALL_STYLES:
                 assert (sty_ == "cartoon" or abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9) \
                     and c_it["w"] == c_it["h"] and not c_it["curves"]
-                assert F_s.bond_w == XRAY.ROD_W[sty_] and (sty_ == "iboview" and len(F_s.rods["seg"]) > 10 or
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and (sty_ == "cartoon" or sty_ == "iboview" and
+                                                           len(F_s.rods["seg"]) > 10 or
                                                            len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0)
                 # schnelles Drehen: Segmente im gemeinsamen Puffer (verjüngte IboView-Stäbe: Trapeze)
-                assert F_s.rods.get("inplace") or sty_ == "iboview", "Stabsegmente nicht im gemeinsamen Puffer"
+                assert sty_ in ("iboview", "cartoon") or F_s.rods.get("inplace"), "Stabsegmente nicht im gemeinsamen Puffer"
                 pc_s = F_s.atom_art[c_it["k"]][0]
                 nv_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
                 F_s.set_drag(True)                                     # Ziehen: gröbere Kugelpolygone, gleiche Schichten
@@ -1873,8 +1874,21 @@ def selftest(outdir, with_isnet=False):
                 if sty_ == "cartoon":                           # weiß mit schwarzem Umriss, hohle Stäbe, Perspektive
                     assert all(tuple(f_[:3]) == (1, 1, 1) for f_ in fc_[:-1]), fc_
                     assert tuple(pc_s.get_edgecolors()[-1][:3]) == (0, 0, 0)
-                    lc_ = F_s.atom_rods[c_it["k"]][0].get_colors()
-                    assert {tuple(c_[:3]) for c_ in lc_} == {(0, 0, 0), (1, 1, 1)}, lc_
+                    rods_ = [(ln_, h_) for _, _, ln_, h_ in F_s.bond_art]          # je Bindung Rand + Kern
+                    outl_ = [ln_ for ln_, h_ in rods_ if h_ is None]
+                    core_ = [ln_ for ln_, h_ in rods_ if h_ == "core"]
+                    assert outl_ and len(outl_) == len(core_) and all(c_.get_color() == "white" for c_ in core_)
+                    assert all(c_.get_zorder() > o_.get_zorder() for o_, c_ in zip(outl_, core_))
+                    edge_ = (outl_[0].get_linewidth() - core_[0].get_linewidth()) / 2   # Rand = Kugelumriss
+                    assert abs(edge_ - F_s._cartoon_edge()) < 1e-6 or core_[0].get_linewidth() == 0.2, edge_
+                    toward_ = 0                                  # Stab zum Betrachter beginnt im Kugelumriss
+                    for a_, b_, ln_, h_ in F_s.bond_art:
+                        A_, B_ = F_s.scene["by_k"][a_], F_s.scene["by_k"][b_]
+                        xs_, ys_ = ln_.get_data()
+                        if h_ is None and np.isfinite(xs_).all() and B_["z"] - A_["z"] > 0.3:
+                            assert float(np.hypot(xs_[0] - A_["x"], ys_[0] - A_["y"])) < A_["w"] / 2, (a_, b_)
+                            toward_ += 1
+                    assert toward_ > 0
                     ws_ = {round(i_["w"], 6) for i_ in F_s.scene["atoms"] if i_["el"] == "C"}
                     assert len(ws_) > 1, ws_                     # vordere C größer als hintere
                     continue
