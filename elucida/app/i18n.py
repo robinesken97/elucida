@@ -309,6 +309,19 @@ TEXTS = {
     "recent_empty_project": ("noch keine Daten", "no data yet"),
     "recent_reveal": ("Im Ordner zeigen", "Show in folder"),
     "recent_remove": ("Aus der Liste entfernen", "Remove from the list"),
+    "recent_trash": ("In den Papierkorb verschieben …", "Move to trash …"),
+    "trash_q": ("Den Ordner der Verbindung in den Papierkorb verschieben?\n\n{p}\n{n} Dateien, {size}\n\nAus dem "
+                "Papierkorb lässt er sich wiederherstellen.",
+                "Move the compound folder to the trash?\n\n{p}\n{n} files, {size}\n\nIt can be restored from the "
+                "trash."),
+    "trash_pub_q": ("Den Projektordner mit allem darin in den Papierkorb verschieben?\n\n{p}\n{n} Dateien, {size}\n"
+                    "Verbindungen darin ({k}): {names}\n\nVerbindungen außerhalb des Ordners bleiben. Aus dem "
+                    "Papierkorb lässt sich alles wiederherstellen.",
+                    "Move the project folder with everything in it to the trash?\n\n{p}\n{n} files, {size}\n"
+                    "Compounds inside ({k}): {names}\n\nCompounds outside the folder stay. Everything can be "
+                    "restored from the trash."),
+    "trash_failed": ("{p} konnte nicht in den Papierkorb verschoben werden.", "{p} could not be moved to the trash."),
+    "trashed": ("In den Papierkorb verschoben: {p}", "Moved to the trash: {p}"),
     "time_today": ("heute {t}", "today {t}"),
     "time_yesterday": ("gestern {t}", "yesterday {t}"),
     "time_days": ("vor {n} Tagen", "{n} days ago"),
@@ -1962,7 +1975,9 @@ TEXTS = {
     "pub_ph_project_description": ("z. B. Abstract des Artikels", "e.g. abstract of the article"),
     "pub_ph_dataset_description": ("Leer = automatisch aus den Datenarten (NMR, IR, UV-Vis, CV …) und Verbindungen",
                                    "Empty = generated from the data kinds (NMR, IR, UV-Vis, CV …) and compounds"),
-    "pub_close": ("Schließen", "Close"),
+    "nav_home": ("Übersicht", "Overview"),
+    "act_to_overview": ("Zur Übersicht", "Back to overview"),
+    "nav_switch_tip": ("Zu einer anderen Verbindung des Projekts wechseln", "Switch to another compound of the project"),
     "pub_new_compound": ("Neue Verbindung", "New compound"),
     "pub_new_compound_q": ("Name der Verbindung (auch Ordnername), z. B. 6m:",
                            "Name of the compound (also the folder name), e.g. 6m:"),

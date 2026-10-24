@@ -189,6 +189,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Textformat (Menü Format): global `text_fmt`, je Tab optional eigenes (`tab_fmt[STATE_KEY]`, ε = `epsilon`, gespeichert als
   `text_tabs`); `main.text_format(key)` mischt. Der Dialog zeigt nur `TEXT_OPTS` des Tabs. Geschlossener Rahmen
   (`axes_frame`) Standard seit 1.24.
+- Navigation (Nutzerwunsch 2.3.1): Pfadleiste links in der Tab-Leiste `⌂ Übersicht › Projekt › Verbindung ▾`
+  (`btn_home`/`btn_pub`/`btn_comp`, `_update_crumbs`, Verbindungsmenü `_fill_comp_menu`), `go_home`. Beispiele
+  (`demo.is_demo`, Datenordner) nie in den Zuletzt-Listen. Löschen nur in den Papierkorb (`trash_folder`,
+  `QFile.moveToTrash`, Nachfrage mit Dateien/Größe), nie endgültig; im Selbsttest nur mit Attrappe.
 - Startbildschirm (`app/welcome.py`): Projektliste aus der Projektdatei (Verbindung, Analytik-Abzeichen, Stand),
   Strukturbild nur aus `.elucida/thumb.png` (`write_thumb` beim Speichern, nur wenn die Struktur neuer ist) – nie beim
   Anzeigen rendern; bis 20 Projekte.

@@ -118,9 +118,10 @@ a paper (complete SI, dataset; see the next quick start). A compound can also be
    affiliation, DOI of the dataset, related publication, descriptions, license. They end up in `README.txt` of the
    dataset and on the title page.
 3. **Add compounds:** **New compound** creates a subfolder (name = compound, e.g. `6m`); click a
-   compound to open it and work as in the quick start above. **File → Back to project** returns to the list.
-   Right-click changes the order – it is the order in the SI and in the dataset. The button **◂ <project>** at the
-   left of the tab bar (or Ctrl+Shift+P) leads back. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
+   compound to open it and work as in the quick start above. The path at the left of the tab bar,
+   **⌂ Overview › <project> › <compound> ▾**, leads back to the project or the overview and switches directly to another
+   compound of the project (also File → Back to project, Ctrl+Shift+P; File → Back to overview, Ctrl+Shift+H).
+   Right-click changes the order – it is the order in the SI and in the dataset. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
    m.p. are required; for compounds marked **known from the literature** in the Compound dialog (with the reference)
    only ¹H and ¹³C. **Oil** next to the melting point gives "m.p. <25 °C".
 4. **SI texts:** **SI texts …** – "Materials and Methods" (or insert the setup texts stored in the tabs) and an

@@ -3038,7 +3038,11 @@ def selftest(outdir, with_isnet=False):
         ck_ = PUB.checklist(dpub_ / "S2")                                 # Checkliste: neue Verbindung
         assert {"1H", "13C"} <= ck_["have"] and not ck_["known"] and "mp" in ck_["missing"], ck_
         w.open_project(dpub_ / "S3")
-        assert w.btn_pub.isVisibleTo(w.btn_pub.parentWidget()) and w.btn_pub.text().startswith("\u25c2 Example")
+        assert w.btn_pub.isVisibleTo(w.btn_pub.parentWidget()) and w.btn_pub.text().startswith("Example")
+        assert w.btn_home.isVisibleTo(w.btn_home.parentWidget()) and w.btn_comp.text() == "S3"   # Pfadleiste
+        w._fill_comp_menu()
+        assert [a_.text() for a_ in w.comp_menu.actions() if a_.isCheckable()] == ["S2", "S3"]
+        assert [a_.isChecked() for a_ in w.comp_menu.actions() if a_.isCheckable()] == [False, True]
         w.set_compound({**w.compound, "known": True, "lit": "J. Test. Chem. 2020, 1, 1"})
         pm_ = w.si_char_parts({**w.compound, "oil": True})[0]                 # Öl: m.p. <25 °C
         assert pm_[0][:2] == ("mp", "m.p. <25 \u00b0C"), pm_[0]
@@ -3050,6 +3054,32 @@ def selftest(outdir, with_isnet=False):
             w.btn_pub.parentWidget())
         assert "1 von 2" in w.pub_page.lbl_head.text() or "1 of 2" in w.pub_page.lbl_head.text(), \
             w.pub_page.lbl_head.text()
+        w.open_project(dpub_ / "S2")                                      # Pfadleiste: ⌂ Übersicht
+        w.btn_home.click()
+        assert w.project_dir is None and w.publication_dir is None and w.center.currentIndex() == 0
+        from elucida.app import demo as DEMO                              # Beispiele nie in der Übersicht
+        real_dir_ = DEMO.IMG.app_data_dir
+        DEMO.IMG.app_data_dir = lambda: out
+        try:
+            w.add_recent(out / "Beispielverbindung")
+            w.add_recent_publication(out / "Beispielprojekt")
+            assert not any(DEMO.is_demo(r_) for r_ in w.recent() + w.recent_publications())
+            assert DEMO.is_demo(out / "Beispielprojekt" / "S2") and not DEMO.is_demo(out / "demo")
+        finally:
+            DEMO.IMG.app_data_dir = real_dir_
+        from PySide6.QtCore import QFile as _QF                           # Papierkorb (Attrappe, nicht echt)
+        trashed_ = []
+        real_trash_ = _QF.moveToTrash
+        _QF.moveToTrash = staticmethod(lambda p_: trashed_.append(p_) or True)
+        try:
+            w.add_recent(pub_ / "2a")
+            w.add_recent_publication(pub_)
+            assert w.trash_folder(pub_ / "2a", confirm=False) and trashed_ == [str(pub_ / "2a")]
+            assert str(pub_ / "2a") not in w.recent()
+            assert w.trash_folder(pub_, publication=True, confirm=False) and str(pub_) not in w.recent_publications()
+            assert not any(str(pub_) in r_ for r_ in w.recent())             # Verbindungen darin auch aus der Liste
+        finally:
+            _QF.moveToTrash = real_trash_
         w.close_publication()
         report.append(f"publication (order, datapack {len(names_)} zips, complete SI {len(heads_)} chapters): OK")
         for lang in ("en", "de"):

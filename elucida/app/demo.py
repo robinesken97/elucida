@@ -308,8 +308,21 @@ def load_data(w, inp):
                            "(556 mg, 4.75 mmol, 95%) as a colourless solid.")
 
 
+DEMO_DIRS = ("Beispielverbindung", "Beispielprojekt", "Beispielpublikation")   # im Datenordner (alte Namen mit)
+
+
 def demo_dir() -> Path:
-    return IMG.app_data_dir() / "Beispielprojekt"
+    return IMG.app_data_dir() / "Beispielverbindung"
+
+
+def is_demo(path) -> bool:
+    """Liegt der Ordner in einem der Beispiele (Datenordner)? Die erscheinen nie in „Zuletzt geöffnet“."""
+    try:
+        p = Path(path).resolve()
+        return any(p == (IMG.app_data_dir() / d).resolve() or (IMG.app_data_dir() / d).resolve() in p.parents
+                   for d in DEMO_DIRS)
+    except OSError:
+        return False
 
 
 def open_demo(w, folder=None) -> Path:
@@ -337,7 +350,7 @@ def open_demo(w, folder=None) -> Path:
 
 
 def demo_pub_dir() -> Path:
-    return IMG.app_data_dir() / "Beispielpublikation"
+    return IMG.app_data_dir() / "Beispielprojekt"
 
 
 def open_demo_publication(w, folder=None) -> Path:

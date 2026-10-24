@@ -120,9 +120,10 @@ Verbindung lässt sich auch ohne Projekt anlegen.
    Adresse, DOI des Datensatzes, zugehörige Publikation, Beschreibungen, Lizenz. Sie landen in `README.txt` des
    Datensatzes und auf dem Titelblatt.
 3. **Verbindungen anlegen:** **Neue Verbindung** legt einen Unterordner an (Name = Verbindung, z. B.
-   `6m`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. **Datei → Zum Projekt**
-   führt zurück zur Liste, ebenso der Knopf **◂ <Projekt>** links in der Tab-Leiste (Strg+Umschalt+P). Rechtsklick
-   ändert die Reihenfolge – sie gilt für SI und Datensatz. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
+   `6m`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. Der Pfad links in der
+   Tab-Leiste, **⌂ Übersicht › <Projekt> › <Verbindung> ▾**, führt zurück zum Projekt oder zur Übersicht und wechselt
+   direkt zu einer anderen Verbindung des Projekts (auch Datei → Zum Projekt, Strg+Umschalt+P; Datei → Zur Übersicht,
+   Strg+Umschalt+H). Rechtsklick ändert die Reihenfolge – sie gilt für SI und Datensatz. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
    ¹³C, 2D-NMR, HRMS, IR und m.p.; für im Dialog Verbindung als **literaturbekannt** markierte Verbindungen (mit Literatur)
    nur ¹H und ¹³C. **Öl** neben dem Schmelzpunkt ergibt „m.p. <25 °C“.
 4. **SI-Texte:** **SI-Texte …** – „Materials and Methods“ (oder die in den Tabs hinterlegten Aufbau-Texte übernehmen) und

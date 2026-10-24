@@ -2,6 +2,22 @@
 
 # Changelog
 
+## 2.3.1 – 2026-10-24
+
+### Changed
+- **Navigation:** a path at the left of the tab bar – **⌂ Overview › project › compound ▾** – leads back to the project
+  or the overview with one click and switches directly to another compound of the project; the project page has
+  "⌂ Overview" above its title; File → Back to overview (Ctrl+Shift+H). Before, a compound without a project had no
+  visible way back to the overview.
+- The example project and the example compound no longer appear in the overview after looking at them.
+
+### New
+- **Move to trash** from the overview (right-click on a compound or project): with a question naming the folder, the
+  number of files and the size (for a project also the compounds inside it); never deleted permanently.
+
+### Fixed
+- Closing a compound could log an error from the NMR tab.
+
 ## 2.3.0 – 2026-10-24
 
 ### New

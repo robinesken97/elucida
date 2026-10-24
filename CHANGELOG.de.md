@@ -2,6 +2,22 @@
 
 # Änderungen
 
+## 2.3.1 – 24.10.2026
+
+### Geändert
+- **Navigation:** Ein Pfad links in der Tab-Leiste – **⌂ Übersicht › Projekt › Verbindung ▾** – führt mit einem Klick
+  zurück zum Projekt oder zur Übersicht und wechselt direkt zu einer anderen Verbindung des Projekts; die Projektseite
+  hat „⌂ Übersicht“ über dem Titel; Datei → Zur Übersicht (Strg+Umschalt+H). Bisher führte aus einer Verbindung ohne
+  Projekt kein sichtbarer Weg zurück zur Übersicht.
+- Beispielprojekt und Beispielverbindung erscheinen nach dem Ansehen nicht mehr in der Übersicht.
+
+### Neu
+- **In den Papierkorb verschieben** aus der Übersicht (Rechtsklick auf eine Verbindung oder ein Projekt): mit Nachfrage
+  zu Ordner, Anzahl der Dateien und Größe (beim Projekt auch die Verbindungen darin); nie endgültig gelöscht.
+
+### Behoben
+- Beim Schließen einer Verbindung konnte der NMR-Tab einen Fehler ins Protokoll schreiben.
+
 ## 2.3.0 – 24.10.2026
 
 ### Neu

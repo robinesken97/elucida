@@ -613,6 +613,10 @@ class MainWindow(QMainWindow):
         m.addAction(QAction(T("act_new_publication"), self, triggered=self.new_publication))
         self.act_to_pub = QAction(T("act_to_publication"), self, shortcut=QKeySequence("Ctrl+Shift+P"),
                                   triggered=self.go_publication)
+        self.act_home = QAction(T("act_to_overview"), self, shortcut=QKeySequence("Ctrl+Shift+H"),
+                                triggered=self.go_home)
+        self.act_home.setEnabled(bool(self.project_dir or self.publication_dir))
+        m.addAction(self.act_home)
         self.act_to_pub.setEnabled(bool(self.publication_dir and self.project_dir))
         m.addAction(self.act_to_pub)
         self.recent_menu = m.addMenu(T("act_recent"))
@@ -1327,14 +1331,27 @@ class MainWindow(QMainWindow):
         hb = QHBoxLayout(bar)
         hb.setContentsMargins(10, 4, 10, 6)
         hb.setSpacing(4)
-        self.btn_pub = QPushButton(objectName="navTab")      # zurück zur Publikation (nur bei Verbindungen darin)
+        # Pfadleiste: ⌂ Übersicht › Projekt › Verbindung ▾ (jede Stufe anklickbar, Verbindungen des Projekts im Menü)
+        self.btn_home = QPushButton("⌂ " + T("nav_home"), objectName="navTab")
+        self.btn_home.setToolTip(T("act_to_overview"))
+        self.btn_home.clicked.connect(self.go_home)
+        self.btn_pub = QPushButton(objectName="navTab")      # Projekt (nur bei Verbindungen darin)
         self.btn_pub.setToolTip(T("act_to_publication"))
         self.btn_pub.clicked.connect(self.go_publication)
-        self.btn_pub.setVisible(bool(self.publication_dir))
-        hb.addWidget(self.btn_pub, 0, Qt.AlignBottom)
+        self.btn_comp = QPushButton(objectName="navTab")     # andere Verbindungen des Projekts
+        self.btn_comp.setToolTip(T("nav_switch_tip"))
+        self.comp_menu = QMenu(self.btn_comp)
+        self.comp_menu.aboutToShow.connect(self._fill_comp_menu)
+        self.btn_comp.setMenu(self.comp_menu)
+        self.crumb_seps = [QLabel("›", objectName="navGroup"), QLabel("›", objectName="navGroup")]
+        crumbs = QHBoxLayout()
+        crumbs.setSpacing(2)
+        for w_ in (self.btn_home, self.crumb_seps[0], self.btn_pub, self.crumb_seps[1], self.btn_comp):
+            crumbs.addWidget(w_, 0, Qt.AlignVCenter)
+        hb.addLayout(crumbs)
+        self._update_crumbs()
         self.btn_pub_sep = QFrame(objectName="navSep")
         self.btn_pub_sep.setFixedWidth(1)
-        self.btn_pub_sep.setVisible(bool(self.publication_dir))
         hb.addSpacing(6)
         hb.addWidget(self.btn_pub_sep)
         hb.addSpacing(6)
@@ -1817,6 +1834,8 @@ class MainWindow(QMainWindow):
         for info in pubs[:3]:
             row = PublicationRow(info)
             row.opened.connect(lambda p: self.open_publication(p))
+            row.setContextMenuPolicy(Qt.CustomContextMenu)
+            row.customContextMenuRequested.connect(lambda pos, r=row: self._pub_menu(r, pos))
             self.pub_box.addWidget(row)
             self.pub_rows.append(row)
         self.lbl_pubs.setText(f"<b>{T('welcome_publications')}</b>")
@@ -1849,7 +1868,75 @@ class MainWindow(QMainWindow):
         m.addAction(T("recent_reveal"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
         m.addSeparator()
         m.addAction(T("recent_remove"), lambda: self.remove_recent(p))
+        m.addAction(STYLE.icon("trash"), T("recent_trash"), lambda: self.trash_folder(p, publication=False))
         m.exec(row.mapToGlobal(pos))
+
+    def _pub_menu(self, row, pos):
+        p = row.info["path"]
+        m = QMenu(self)
+        m.addAction(T("act_open_project"), lambda: self.open_publication(p))
+        m.addAction(T("recent_reveal"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
+        m.addSeparator()
+        m.addAction(T("recent_remove"), lambda: self.remove_recent_publication(p))
+        m.addAction(STYLE.icon("trash"), T("recent_trash"), lambda: self.trash_folder(p, publication=True))
+        m.exec(row.mapToGlobal(pos))
+
+    def remove_recent_publication(self, pdir):
+        """Projekt aus der Liste nehmen (der Ordner bleibt unberührt)."""
+        self.settings.setValue("recent_publications",
+                               json.dumps([r for r in self.recent_publications() if r != str(pdir)]))
+        self.fill_recent_list()
+
+    @staticmethod
+    def folder_stats(path):
+        """-> (Dateien, Bytes) eines Ordners (für die Nachfrage vor dem Löschen)."""
+        n = size = 0
+        for f in Path(path).rglob("*"):
+            if f.is_file():
+                n += 1
+                try:
+                    size += f.stat().st_size
+                except OSError:
+                    pass
+        return n, size
+
+    def trash_folder(self, path, publication=False, confirm=True):
+        """Verbindungs- oder Projektordner in den Papierkorb (nie endgültig löschen: Rohdaten). Vorher nachfragen
+        (Ordner, Dateien, Größe; beim Projekt die Verbindungen darin – Verbindungen außerhalb bleiben). Offene
+        Verbindung/offenes Projekt vorher schließen. -> True, wenn verschoben."""
+        from PySide6.QtCore import QFile
+        from elucida.app import publication as PUB
+        p = Path(path)
+        if not p.is_dir():
+            self.remove_recent_publication(p) if publication else self.remove_recent(p)
+            return False
+        n, size = self.folder_stats(p)
+        mb = f"{size / 1e6:.1f} MB"
+        if publication:
+            inside = [d for d in PUB.sync(p)[0] if p.resolve() in d.resolve().parents]
+            names = ", ".join(PUB.compound_name(d) for d in inside) or "–"
+            msg = T("trash_pub_q", p=str(p), n=n, size=mb, k=len(inside), names=names)
+        else:
+            msg = T("trash_q", p=str(p), n=n, size=mb)
+        if confirm and QMessageBox.question(self, T("recent_trash"), msg, QMessageBox.Yes | QMessageBox.No,
+                                            QMessageBox.No) != QMessageBox.Yes:
+            return False
+        cur = Path(self.project_dir).resolve() if self.project_dir else None
+        if cur is not None and (cur == p.resolve() or p.resolve() in cur.parents):
+            self.close_project()
+        if self.publication_dir and Path(self.publication_dir).resolve() == p.resolve():
+            self.close_publication()
+        if not QFile.moveToTrash(str(p)):
+            self.error(T("trash_failed", p=str(p)))
+            return False
+        if publication:
+            self.remove_recent_publication(p)
+        self.settings.setValue("recent_projects", json.dumps(
+            [r for r in self.recent() if Path(r).resolve() != p.resolve() and p.resolve() not in Path(r).resolve().parents]))
+        self.fill_recent_menu()
+        self.fill_recent_list()
+        self.log_signal.emit(T("trashed", p=str(p)))
+        return True
 
     def thumb_structure(self):
         """Struktur fürs Vorschaubild: Verbindung des Projekts, sonst eine ε-Serie, sonst die des NMR-Tabs."""
@@ -1915,13 +2002,9 @@ class MainWindow(QMainWindow):
             self.act_folder.setEnabled(bool(self.project_dir))
         if getattr(self, "act_to_pub", None) is not None:
             self.act_to_pub.setEnabled(bool(self.publication_dir and self.project_dir))
-        if getattr(self, "btn_pub", None) is not None:
-            on = bool(self.publication_dir and self.project_dir)
-            self.btn_pub.setVisible(on)
-            self.btn_pub_sep.setVisible(on)
-            if on:
-                t_ = self.publication_title()
-                self.btn_pub.setText("◂ " + (t_ if len(t_) <= 28 else t_[:26] + "…"))
+        if getattr(self, "act_home", None) is not None:
+            self.act_home.setEnabled(bool(self.project_dir or self.publication_dir))
+        self._update_crumbs()
         if self.publication_dir and not self.project_dir:
             self.setWindowTitle(f"{self.publication_title()} – {T('app_title')} {APP_VERSION}")
             return
@@ -2155,6 +2238,9 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.project_dir))
 
     def add_recent(self, pdir):
+        from elucida.app import demo as DEMO
+        if DEMO.is_demo(pdir):                         # Beispiele nach dem Ansehen nicht in der Übersicht
+            return
         rec = [str(pdir)] + [r for r in self.recent() if r != str(pdir)]
         self.settings.setValue("recent_projects", json.dumps(rec[:20]))
         self.fill_recent_menu()
@@ -2168,12 +2254,17 @@ class MainWindow(QMainWindow):
             Path(self.publication_dir).name
 
     def recent_publications(self):
+        from elucida.app import demo as DEMO
         try:
-            return list(json.loads(self.settings.value("recent_publications", "[]") or "[]"))
+            rec = list(json.loads(self.settings.value("recent_publications", "[]") or "[]"))
         except Exception:
             return []
+        return [r for r in rec if not DEMO.is_demo(r)]
 
     def add_recent_publication(self, pdir):
+        from elucida.app import demo as DEMO
+        if DEMO.is_demo(pdir):
+            return
         rec = [str(pdir)] + [r for r in self.recent_publications() if r != str(pdir)]
         self.settings.setValue("recent_publications", json.dumps(rec[:10]))
 
@@ -2221,6 +2312,41 @@ class MainWindow(QMainWindow):
     def close_publication(self):
         self.publication_dir = None
         self.pub_page.set_publication(None)
+        self.update_title()
+
+    def _update_crumbs(self):
+        if getattr(self, "btn_home", None) is None:
+            return
+        on = bool(self.publication_dir and self.project_dir)
+        for w_ in (self.crumb_seps[0], self.btn_pub, self.crumb_seps[1], self.btn_comp):
+            w_.setVisible(on)
+        if on:
+            t_ = self.publication_title()
+            self.btn_pub.setText(t_ if len(t_) <= 28 else t_[:26] + "…")
+            self.btn_pub.setToolTip(T("act_to_publication") + ": " + t_)
+            self.btn_comp.setText(self.export_name())
+
+    def _fill_comp_menu(self):
+        """Verbindungen des Projekts zum direkten Wechseln (die offene abgehakt)."""
+        from elucida.app import publication as PUB
+        self.comp_menu.clear()
+        if not self.publication_dir:
+            return
+        cur = Path(self.project_dir).resolve() if self.project_dir else None
+        for d in PUB.sync(self.publication_dir)[0]:
+            act = self.comp_menu.addAction(PUB.compound_name(d))
+            act.setCheckable(True)
+            act.setChecked(d.resolve() == cur)
+            act.triggered.connect(lambda _=False, d=d: d.resolve() != cur and self.open_project(d))
+        self.comp_menu.addSeparator()
+        self.comp_menu.addAction(T("pub_new_compound") + " …", self.new_compound_in_publication)
+
+    def go_home(self):
+        """Zur Übersicht (Startbildschirm): offene Verbindung und Projekt schließen (gespeichert wird automatisch)."""
+        if self.project_dir:
+            self.close_project()
+        if self.publication_dir:
+            self.close_publication()
         self.update_title()
 
     def go_publication(self):
@@ -2299,8 +2425,9 @@ class MainWindow(QMainWindow):
         return path
 
     def recent(self):
+        from elucida.app import demo as DEMO
         try:
-            return [r for r in json.loads(self.settings.value("recent_projects", "[]") or "[]")]
+            return [r for r in json.loads(self.settings.value("recent_projects", "[]") or "[]") if not DEMO.is_demo(r)]
         except Exception:
             return []
 

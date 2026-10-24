@@ -112,13 +112,19 @@ class PublicationPage(QWidget):
         v = QVBoxLayout(col)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)
+        crumb = QHBoxLayout()                               # Pfad wie in der Tab-Leiste: ⌂ Übersicht ›
+        b_home = QPushButton("⌂ " + T("nav_home") + "  ›", objectName="navTab")
+        b_home.setToolTip(T("act_to_overview"))
+        b_home.clicked.connect(main.go_home)
+        crumb.addWidget(b_home)
+        crumb.addStretch(1)
+        v.addLayout(crumb)
         head = QHBoxLayout()
         self.lbl_title = QLabel(wordWrap=True)
         self.lbl_title.setTextFormat(Qt.RichText)
         head.addWidget(self.lbl_title, 1)
         for text, slot, icon in ((T("pub_info"), self.edit_info, "compound"), (T("pub_texts"), self.edit_texts, None),
-                                 (T("recent_reveal"), self.reveal, "reveal"),
-                                 (T("pub_close"), main.close_publication, None)):
+                                 (T("recent_reveal"), self.reveal, "reveal")):
             b = QPushButton(STYLE.icon(icon), text) if icon else QPushButton(text)
             b.clicked.connect(slot)
             head.addWidget(b, 0, Qt.AlignTop)
