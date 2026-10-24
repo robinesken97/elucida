@@ -2,6 +2,19 @@
 
 # Änderungen
 
+## 2.2.1 – 24.10.2026
+
+### Geändert
+- **Rückgängig/Wiederholen deutlich schneller:** Nur der geänderte Tab wird neu aufgebaut statt des ganzen Fensters
+  (Beispielprojekt: 1,5 s -> 0,1 s); ebenso „Alles auf Standard“ und Vorlage laden in einem Tab.
+- **Projekt öffnen schneller:** Verborgene Tabs zeichnen ihre Abbildung erst beim Anzeigen; der SI-Export packt die
+  Ersatzbilder für Word schneller.
+- Dateileser in eigene Module verschoben (`elucida/formats/`: Gamry, BWSpec, EPR, OPUS, MS-Bericht, Bruker-.d,
+  TopSpin, Mnova, CIF, xyz/ORCA/Gaussian, Cube/Molden) – ohne sichtbare Änderung.
+
+### Behoben
+- Das Beispielprojekt wurde leer gespeichert (beim erneuten Öffnen fehlten die Daten).
+
 ## 2.2.0 – 24.10.2026
 
 ### Neu

@@ -330,8 +330,10 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
   genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).
 - **Undo:** während `set_state` greift `_restoring`; Änderungen über `QTimer` verzögert erfassen.
   `save_project` speichert trotzdem (`autosave(force=True)`), sonst blieb das Beispielprojekt leer.
-- **Tempo:** `set_state` baut bei Öffnen und Rückgängig die ganze Oberfläche neu (`build_ui`, ~1,2 s im
-  Beispielprojekt; Tabs ohne `sync_widgets`). Verborgene Tabs zeichnen erst beim Anzeigen (`_first_render`;
+- **Tempo:** Öffnen baut die ganze Oberfläche (`build_ui`, ~1,2 s im Beispielprojekt; Tabs ohne `sync_widgets`).
+  Rückgängig/Wiederholen (`set_state(partial=True)`, `_changed_parts`) und „Alles auf Standard“/Vorlage laden ersetzen
+  nur den geänderten Tab (`replace_tab`, `_tab_spec`, `tab_key_of`), ε wird nur nachgezogen (`apply_globals`);
+  Verbindung/Textformat geändert -> voller Aufbau. Neue Tabs in `_tab_spec`/`_TAB_ORDER`/`_TAB_BUILD_ORDER` eintragen. Verborgene Tabs zeichnen erst beim Anzeigen (`_first_render`;
   `ensure_rendered()` vor Zugriff auf `F`). PNG-Ersatz für Word mit `png_fast` (compress_level 1).
 - **macOS-Version:** `tools/build.py` liest `APP_VERSION` und schreibt sie nach dem Build in die `Info.plist`,
   danach `codesign --force --deep --sign -` (Signatur schließt die Info.plist ein).

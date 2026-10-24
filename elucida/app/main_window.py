@@ -986,26 +986,15 @@ class MainWindow(QMainWindow):
         split.setSizes([left_col.minimumWidth(), 920])
         self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split, floor=380)   # nie abgeschnitten
         self.eps_page = split
-        self.ov_tab = TABS.OverlayTab(self, self.ov_state)
-        self.fl_tab = TABS.FluoTab(self, self.fl_state)
-        self.cv_tab = CVMOD.CVTab(self, self.cv_state)
-        self.sec_tab = SECMOD.SECTab(self, self.sec_state)
-        self.epr_tab = EPRMOD.EPRTab(self, self.epr_state)
-        self.hrms_tab = HRMS.HRMSTab(self, self.hrms_state)
-        self.irms_tab = IRMS.IRMSTab(self, self.irms_state)
-        self.xray_tab = XRAY.XrayTab(self, self.xray_state)
-        self.syn_tab = SYN.SynthTab(self, self.syn_state)
-        self.nmr_tab = NMR.NMRTab(self, self.nmr_state)
-        self.dft_tab = DFT.DFTTab(self, self.dft_state)
+        for key in self._TAB_BUILD_ORDER:                    # DFT nach X-Ray (Vorlagen aus der CIF)
+            attr, cls, st_attr, _ = self._tab_spec(key)
+            setattr(self, attr, cls(self, getattr(self, st_attr)))
         # Reihenfolge wie die SI: Synthese, Charakterisierung, Spektroskopie, Elektrochemie, Struktur, Rechnung
         self.main_tabs = QTabWidget()
         self._tab_keys = []
-        for key, page, label in (("syn", self.syn_tab, "tab_syn"), ("nmr", self.nmr_tab, "tab_nmr"),
-                                 ("irms", self.irms_tab, "tab_irms"), ("hrms", self.hrms_tab, "tab_hrms"),
-                                 ("eps", split, "tab_eps"), ("overlay", self.ov_tab, "tab_overlay"),
-                                 ("fluo", self.fl_tab, "tab_fluo"), ("cv", self.cv_tab, "tab_cv"),
-                                 ("sec", self.sec_tab, "tab_sec"), ("epr", self.epr_tab, "tab_epr"),
-                                 ("xray", self.xray_tab, "tab_xray"), ("dft", self.dft_tab, "tab_dft")):
+        for key in self._TAB_ORDER:
+            page, label = (split, "tab_eps") if key == "eps" else (getattr(self, self._tab_spec(key)[0]),
+                                                                   self._tab_spec(key)[3])
             self.main_tabs.addTab(page, T(label))
             self._tab_keys.append(key)
         self.main_tabs.setCurrentIndex(self._tab_keys.index(self._tab_key) if self._tab_key in self._tab_keys else 0)
@@ -1044,6 +1033,46 @@ class MainWindow(QMainWindow):
                   self.cb_excl, self.cb_pdf, self.cb_svg, self.cb_png):
             w.toggled.connect(self._update_sections)
         self._update_sections()
+
+    # Tabs: Schlüssel im Zustand -> (Attribut, Klasse, Attribut des Zustands, Textschlüssel); ε ist Teil des Fensters
+    _TAB_ORDER = ("syn", "nmr", "irms", "hrms", "eps", "overlay", "fluo", "cv", "sec", "epr", "xray", "dft")
+    _TAB_BUILD_ORDER = ("overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft")
+
+    def _tab_spec(self, key):
+        return {"overlay": ("ov_tab", TABS.OverlayTab, "ov_state", "tab_overlay"),
+                "fluo": ("fl_tab", TABS.FluoTab, "fl_state", "tab_fluo"),
+                "cv": ("cv_tab", CVMOD.CVTab, "cv_state", "tab_cv"),
+                "sec": ("sec_tab", SECMOD.SECTab, "sec_state", "tab_sec"),
+                "epr": ("epr_tab", EPRMOD.EPRTab, "epr_state", "tab_epr"),
+                "hrms": ("hrms_tab", HRMS.HRMSTab, "hrms_state", "tab_hrms"),
+                "irms": ("irms_tab", IRMS.IRMSTab, "irms_state", "tab_irms"),
+                "xray": ("xray_tab", XRAY.XrayTab, "xray_state", "tab_xray"),
+                "syn": ("syn_tab", SYN.SynthTab, "syn_state", "tab_syn"),
+                "nmr": ("nmr_tab", NMR.NMRTab, "nmr_state", "tab_nmr"),
+                "dft": ("dft_tab", DFT.DFTTab, "dft_state", "tab_dft")}[key]
+
+    def tab_key_of(self, tab):
+        """Schlüssel (cv, xray …) eines Tab-Objekts, None für Unbekanntes."""
+        return next((k for k in self._TAB_BUILD_ORDER if getattr(self, self._tab_spec(k)[0], None) is tab), None)
+
+    def replace_tab(self, key):
+        """Einen Tab aus seinem Zustand neu aufbauen und an derselben Stelle einsetzen (Rückgängig: nur was sich
+        geändert hat statt der ganzen Oberfläche, ~0,05 s statt ~1,2 s)."""
+        attr, cls, st_attr, label = self._tab_spec(key)
+        old = getattr(self, attr)
+        new = cls(self, getattr(self, st_attr))
+        setattr(self, attr, new)
+        i = self._tab_keys.index(key)
+        cur = self.main_tabs.currentIndex()
+        self.main_tabs.blockSignals(True)
+        self.main_tabs.removeTab(i)
+        self.main_tabs.insertTab(i, new, T(label))
+        self.main_tabs.setCurrentIndex(cur)
+        self.main_tabs.blockSignals(False)
+        STYLE.tidy(new)
+        old.setParent(None)
+        old.deleteLater()
+        return new
 
     def _update_sections(self, *_):
         """Eingeklappte Bereiche markieren, wenn dort etwas vom Standard abweicht."""
@@ -1402,16 +1431,28 @@ class MainWindow(QMainWindow):
                 "tab": self._tab_key,
                 "text": dict(self.text_fmt), "text_tabs": {k: dict(v) for k, v in self.tab_fmt.items()}}
 
-    def set_state(self, state):
-        """Zustand übernehmen (Projekt laden, Undo/Redo)."""
+    def _changed_parts(self, state):
+        """Teile des Zustands (eps, cv, xray, tab …), die sich gegenüber der Oberfläche unterscheiden; None = alles
+        neu (Verbindung oder Textformat wirken auf alle Tabs)."""
+        prev = json.loads(self._snap())
+        dump = lambda v: json.dumps(v, sort_keys=True, default=str)       # noqa: E731
+        changed = {k for k in set(prev) | set(state) if dump(prev.get(k)) != dump(state.get(k))}
+        return None if changed & {"compound", "text", "text_tabs"} else changed
+
+    def set_state(self, state, partial=False):
+        """Zustand übernehmen (Projekt laden, Undo/Redo). partial (Rückgängig/Wiederholen): nur geänderte Tabs neu
+        aufbauen, ε nur nachziehen, statt der ganzen Oberfläche (build_ui, ~1,2 s im Beispielprojekt)."""
         state = json.loads(json.dumps(state))          # entkoppeln
+        changed = self._changed_parts(state) if partial and getattr(self, "main_tabs", None) is not None else None
+        eps_changed = changed is None or "eps" in changed
         eps = state.get("eps") or {}
         old_series = self.series
-        self.glob = dict(DEFAULT_GLOB, **(eps.get("glob") or {}))
-        self.conc = eps.get("conc") or {}
-        self.csv_paths = [p for p in eps.get("files") or [] if Path(p).exists()]
-        self.csv_path = self.csv_paths[0] if self.csv_paths else None
-        self.groups, self.units, self.series, self.samples = {}, {}, {}, []
+        if eps_changed:
+            self.glob = dict(DEFAULT_GLOB, **(eps.get("glob") or {}))
+            self.conc = eps.get("conc") or {}
+            self.csv_paths = [p for p in eps.get("files") or [] if Path(p).exists()]
+            self.csv_path = self.csv_paths[0] if self.csv_paths else None
+            self.groups, self.units, self.series, self.samples = {}, {}, {}, []
         self.ov_state.clear()
         self.ov_state.update(state.get("overlay") or {})
         self.fl_state.clear()
@@ -1446,8 +1487,22 @@ class MainWindow(QMainWindow):
             old = ("eps", "overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "dft")
             tab = old[tab] if 0 <= tab < len(old) else "syn"
         self._tab_key = tab
-        self.current = eps.get("current")
-        self.build_ui()
+        if changed is None:
+            self.current = eps.get("current")
+            self.build_ui()
+        else:
+            for key in changed:
+                if key in self._TAB_BUILD_ORDER:
+                    self.replace_tab(key)
+            if "tab" in changed and tab in self._tab_keys:
+                self.main_tabs.setCurrentIndex(self._tab_keys.index(tab))
+            if not eps_changed:
+                return
+            self.current = eps.get("current")
+            self.cmb_series.blockSignals(True)
+            self.cmb_series.clear()
+            self.cmb_series.blockSignals(False)
+            self.lbl_file.setText(self.files_label())
         if self.csv_paths:
             key = ("samples_multi", tuple(self.csv_paths))
             if key not in self.extra_cache:
@@ -1482,6 +1537,9 @@ class MainWindow(QMainWindow):
             self.lbl_file.setText(self.files_label())
         self.apply_globals()
         self.apply_series_widgets()
+        if changed is not None:                        # ohne Neuaufbau: Anleitung/Abbildung selbst umschalten
+            self.preview_stack.setCurrentIndex(1 if self.current and self.current in self.groups else 0)
+            self._update_sections()
         if self.csv_paths:
             self.render()
         else:
@@ -1512,7 +1570,7 @@ class MainWindow(QMainWindow):
 
     def _restore(self, snap):
         self._restoring = True
-        self.set_state(json.loads(snap))
+        self.set_state(json.loads(snap), partial=True)
         QTimer.singleShot(200, self._end_restore)       # erst nach dem Neuzeichnen aller Tabs
 
     def _end_restore(self):

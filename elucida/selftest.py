@@ -2806,7 +2806,37 @@ def selftest(outdir, with_isnet=False):
         w2.redo()
         pump()
         assert abs(w2.glob["cutoff"] - (before + 0.5)) < 1e-9, w2.glob["cutoff"]
-        report.append("undo/redo: OK")
+        # Rückgängig baut nur, was sich geändert hat: ε ohne Tab-Neuaufbau, ein Tab -> nur dieser Tab neu
+        tabs_ = lambda: {k_: getattr(w2, w2._tab_spec(k_)[0]) for k_ in w2._TAB_BUILD_ORDER}   # noqa: E731
+        pump(0.4)
+        w2._init_undo()                                    # frischer Verlauf (vorher Verbindung ohne Eintrag gesetzt)
+        w2.sp_cut.setValue(before + 1.0)
+        pump(0.8)
+        objs_ = tabs_()
+        w2.undo()
+        pump(0.4)
+        diff_ = [k_ for k_, v_ in tabs_().items() if v_ is not objs_[k_]]
+        assert not diff_ and abs(w2.glob["cutoff"] - (before + 0.5)) < 1e-9, (
+            diff_, w2.glob["cutoff"], before, len(w2._undo))
+        assert abs(w2.sp_cut.value() - (before + 0.5)) < 1e-9          # Bedienelement nachgezogen, nicht neu
+        cap_ = w2.cv_state.get("cap_temp", "rt")
+        w2.cv_state["cap_temp"] = "-30 \u00b0C"
+        w2.push_undo()
+        pump(0.4)
+        objs_ = tabs_()
+        w2.undo()
+        pump(0.4)
+        now_ = tabs_()
+        assert w2.cv_state["cap_temp"] == cap_ and now_["cv"] is not objs_["cv"], w2.cv_state.get("cap_temp")
+        assert all(now_[k_] is objs_[k_] for k_ in now_ if k_ != "cv")                  # übrige Tabs unverändert
+        assert w2.main_tabs.widget(w2._tab_keys.index("cv")) is w2.cv_tab and w2.cv_tab.st is w2.cv_state
+        assert w2.cv_tab.ed_temp.text() == cap_ if hasattr(w2.cv_tab, "ed_temp") else True
+        w2.redo()
+        pump(0.4)
+        assert w2.cv_state["cap_temp"] == "-30 \u00b0C"
+        w2.undo()
+        pump(0.4)
+        report.append("undo/redo (only changed tabs rebuilt): OK")
         # Startbildschirm/Tabs je nach Projekt; Beispielprojekt (künstliche Daten) füllt die Tabs
         assert w.center.currentIndex() == 1
         d_demo = w.open_demo(out / "demo")

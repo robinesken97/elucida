@@ -900,7 +900,8 @@ class FigureTab(QWidget):
         for k, v in self.DEFAULT_STATE.items():
             if k not in keep and not k.startswith("cap_"):
                 self.st[k] = copy.deepcopy(v)
-        self.main.rebuild_tabs()                     # Bedienelemente aus dem Zustand neu aufbauen
+        key = self.main.tab_key_of(self)              # nur diesen Tab aus dem Zustand neu aufbauen
+        self.main.replace_tab(key) if key else self.main.rebuild_tabs()
         self.main.push_undo()
         self.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
 
@@ -1063,7 +1064,8 @@ class FigureTab(QWidget):
             self.st.clear()
             self.st.update(copy.deepcopy(self.DEFAULT_STATE))
             self.st.update(data)
-            self.main.rebuild_tabs()
+            key = self.main.tab_key_of(self)
+            self.main.replace_tab(key) if key else self.main.rebuild_tabs()
 
 
 COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half_a4", "w_cm": 16.0,

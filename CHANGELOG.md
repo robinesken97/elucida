@@ -2,6 +2,19 @@
 
 # Changelog
 
+## 2.2.1 – 2026-10-24
+
+### Changed
+- **Undo/redo is much faster:** only the tab that changed is rebuilt instead of the whole window (example project:
+  1.5 s -> 0.1 s); the same for "Reset all" and loading a preset in a tab.
+- **Opening a project is faster:** hidden tabs draw their figure only when they are shown; the SI export packs the
+  fallback images for Word faster.
+- File readers moved into their own modules (`elucida/formats/`: Gamry, BWSpec, EPR, OPUS, MS report, Bruker .d,
+  TopSpin, Mnova, CIF, xyz/ORCA/Gaussian, cube/Molden) – no visible change.
+
+### Fixed
+- The example project was saved empty (opened again it showed no data).
+
 ## 2.2.0 – 2026-10-24
 
 ### New
