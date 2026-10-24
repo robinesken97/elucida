@@ -3,6 +3,8 @@
 Startet das Hauptfenster (1600 × 1000, ohne Bildschirm: QT_QPA_PLATFORM=offscreen) mit einem **leeren Projekt** und
 speichert je Tab ein Bild über QWidget.grab: die zentrierte Anleitung des leeren Tabs (was herauskommt, Dateien,
 Schritte, Knopf für den ersten Schritt). Nutzerwunsch: keine Daten in den README-Bildern, auch keine Beispieldaten.
+Ausnahme Coverbild (Nutzerwunsch): Startbildschirm (welcome_<theme>_<lang>.png) mit dem Beispielprojekt (zwei
+erfundene Verbindungen, nur Namen, Strukturen und Analytik-Abzeichen; Pfade als ~/Documents/…).
 Das Werkzeug selbst gehört nicht in den PyInstaller-Build.
 
     python tools/make_screenshots.py [Zielordner]
@@ -35,6 +37,29 @@ def pump(sec=0.6):
     while time.time() - t0 < sec:
         QApplication.processEvents()
         time.sleep(0.02)
+
+
+def shoot_welcome(w, outdir, lang, theme, work):
+    """Coverbild: Startbildschirm mit dem Beispielprojekt (Projekte + zuletzt geöffnete Verbindungen)."""
+    from elucida.app import welcome as WEL
+    keep = w.project_dir
+    w.close_project()
+    w.close_publication()
+    real = WEL.short_path
+    base = str(Path(work).resolve())                   # macOS: /var -> /private/var
+    WEL.short_path = lambda p: "~/Documents/" + Path(p).resolve().relative_to(base).as_posix() if str(
+        Path(p).resolve()).startswith(base) else real(p)
+    try:
+        w.fill_recent_list()
+        pump(0.8)
+        p = Path(outdir) / f"welcome_{theme}_{lang}.png"
+        w.grab().save(str(p))
+        print(p.name)
+    finally:
+        WEL.short_path = real
+    w.open_project(keep, recent=False)
+    pump(0.5)
+
 
 
 def shoot(w, outdir, lang, theme):
@@ -70,13 +95,18 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         w.settings.setValue("update_auto", False)
         w.resize(*SIZE)
         w.show()
+        w.open_demo_publication(work / "Beispielprojekt")      # nur fürs Coverbild (Startbildschirm)
+        w.close_publication()
         assert w.create_project(work / "Elucida")
+        w.settings.setValue("recent_projects", __import__("json").dumps(      # Coverbild: nur das Beispielprojekt
+            [str((work / "Beispielprojekt" / n).resolve()) for n in ("S3", "S2")]))
         for lang in ("de", "en"):
             w.switch_lang(lang)
             for theme in ("light", "dark"):
                 w.switch_theme(theme)
                 w.resize(*SIZE)
                 pump(0.5)
+                shoot_welcome(w, outdir, lang, theme, work)
                 shoot(w, outdir, lang, theme)
         w.switch_theme("system")
         w.close()

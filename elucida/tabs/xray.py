@@ -2372,16 +2372,9 @@ class XrayFigure:
         self.auto_pos = self.current_layout()
 
     def _footnote(self):
-        notes = []
-        used = {self.mol.atoms[i].get("opkey") for i in self.show}
-        for op, r in self.mol.ops.items():
-            if op in used and (self.opts.get("labels", True)):
-                notes.append(r"$^{\mathrm{" + r + "}}$" + op)
+        """Keine Symmetrie-Fußnote im Bild (Nutzerwunsch: wirkte wie ein loses „xyz“ unten links); die erzeugten Atome
+        bleiben an ihrem Label erkennbar, die Codes stehen in den Parametertabellen."""
         self.foot = None
-        if notes:
-            fs = self.cfg["labels"]["font_size"] * 0.8
-            self.foot = self.fig.text(0.01, 0.01, "; ".join(notes), ha="left", va="bottom", fontsize=fs,
-                                      color="black", zorder=70)
 
     # -- Schnittstelle Export/Tab ---------------------------------------------------------
     def current_layout(self):
@@ -3752,15 +3745,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                     ("angle", "torsion"): "angles and torsion angles in [°]",
                     ("bond", "angle", "torsion"): "bond lengths, angles and torsion angles in [Å] and [°]"}[tuple(kinds)]
             tail += f" Selected {what}: " + "; ".join(f"{n}: {v}" for _, n, v, _ in vals) + "."
-        used = {mol.atoms[k].get("opkey") for k in shown if mol.atoms[k].get("opkey")}
-        for pp in e.get("params") or []:
-            for k in pp["atoms"]:
-                i = mol.find_key(k)
-                if i is not None and mol.atoms[i].get("opkey"):
-                    used.add(mol.atoms[i]["opkey"])
-        codes = [f"{r}: {op}" for op, r in mol.ops.items() if op in used]
-        if codes:
-            tail += " Symmetry code" + ("s" if len(codes) > 1 else "") + ": " + "; ".join(codes) + "."
+        # keine Symmetriecodes in der Unterschrift (Nutzerwunsch); sie stehen in den Parametertabellen
         return minus(head + tail), head_h + esc(minus(tail))
 
     def param_values(self, e, mol=None):

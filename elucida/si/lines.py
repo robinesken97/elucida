@@ -112,6 +112,7 @@ def methods_html(text):
     h = _html.escape(text or "", quote=False)
     h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
     h = re.sub(r"\bE1/2", "E<sub>1/2</sub>", h)
+    h = h.replace("Fc0/+", "Fc<sup>0/+</sup>")         # wie die CV-Achse und die Unterschrift
     return re.sub(r"(?<=[A-Za-zνΔ])_([A-Za-z0-9]+)", r"<sub>\1</sub>", h)
 
 

@@ -34,6 +34,15 @@
   Word-Export oder Datenpaket.
 
 ### Geändert
+- **Abbildungen:** Das Inset (lineare Regression) liegt nie mehr über den Spektren – ist kein Platz frei, steht es
+  neben dem Diagramm (ohne Tabelle, R² in der Legende). Die Peaklabels stehen geordnet: in einer Reihe auf gleicher
+  Höhe, sonst als linksbündiger Block nach Wellenlänge sortiert.
+- **Bildunterschriften:** Fluoreszenz nennt Absorption und Emission (Farben, λex), Lösungsmittel, Konzentration und
+  Küvette (neue Felder); CV sagt wie die Achse, dass die Potentiale gegen Fc0/+ mit Diacetylferrocen (und dessen E½)
+  als internem Standard referenziert sind; CV/SEC-Texte durchgehend Fc0/+. X-Ray: keine Symmetriecode-Fußnote mehr
+  in Bild und Unterschrift (die Codes bleiben in den Parametertabellen).
+- Auswertungstexte beschreiben nur die Mathematik – ohne Verweis auf das Programm.
+- README: Der Startbildschirm mit einem Beispielprojekt ist das Coverbild.
 - **Neue Begriffe:** Was bisher „Projekt“ hieß (Ordner einer Verbindung), heißt jetzt **Verbindung**; **Projekt** ist
   jetzt der Ordner mit allen Verbindungen einer Veröffentlichung. Nur die Bezeichnungen ändern sich – Ordner und
   Dateien (`project.elucida`) bleiben, es muss nichts umgewandelt werden.

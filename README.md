@@ -18,8 +18,8 @@ The user interface is available in German and English.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/eps_dark_en.png">
-    <img src="docs/screenshots/eps_light_en.png" alt="Elucida – UV-Vis (ε) tab" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome_dark_en.png">
+    <img src="docs/screenshots/welcome_light_en.png" alt="Elucida – welcome page with a project and its compounds" width="900">
   </picture>
 </p>
 
@@ -53,7 +53,7 @@ German and English.
 <tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_en.png" alt="UV-Vis overlay"><br><sub>UV-Vis overlay</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_en.png" alt="Fluorescence"><br><sub>Fluorescence</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_en.png" alt="Cyclic voltammetry"><br><sub>Cyclic voltammetry</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_en.png" alt="Spectroelectrochemistry"><br><sub>Spectroelectrochemistry</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_en.png" alt="CW EPR"><br><sub>CW EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_en.png" alt="X-Ray"><br><sub>X-Ray</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_en.png" alt="DFT"><br><sub>DFT</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/eps_light_en.png" alt="UV-Vis (ε)"><br><sub>UV-Vis (ε)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/dft_light_en.png" alt="DFT"><br><sub>DFT</sub></td></tr>
 </table>
 
 ## Download and start

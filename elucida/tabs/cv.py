@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
@@ -539,8 +539,9 @@ class CVTab(TABS.FigureTab):
 
     def si_caption(self, name):
         """Wie in der SI: „Cyclic voltammograms of <b>6b</b> (1.7±0.1 mg mL-1) in THF (0.1 M n-Bu4NPF6) at rt;
-        scan rate 200 mV s-1 (iR compensation = 2200 Ohm) referenced internally against ferrocene (arrows indicate
-        scanning direction).“ Rate, iR-Kompensation (Gamry-Datei) und Referenz aus den sichtbaren Messungen;
+        scan rate 200 mV s-1 (iR compensation = 2200 Ohm); potentials referenced against Fc0/+ using ferrocene as
+        internal standard (arrows indicate scanning direction).“ (Achse vs. Fc0/+, Nutzerhinweis: der Standard ist nur das
+        Hilfsmittel; bei Ac2Fc mit seinem E½.) Rate, iR-Kompensation (Gamry-Datei) und Referenz aus den sichtbaren Messungen;
         Konzentration, Lösungsmittel (leer = Gruppen) und Leitsalz aus den Feldern."""
         import html
         from elucida.si.lines import chem_html
@@ -572,16 +573,26 @@ class CVTab(TABS.FigureTab):
             ir = {m.get("pfcor") if m.get("ircomp_on") and m.get("posfeed") else None for m in metas}
             if len(ir) == 1 and None not in ir:
                 h += f" (iR compensation = {next(iter(ir)):g} Ohm)"
-            refs = set()
+            refs = {}                                  # interner Standard -> E½ vs. Fc0/+ (Vorgabe)
             for e in vis:
                 ref = e.get("ref") or {}
                 if ref.get("mode") == "internal":
-                    refs.add(ref.get("compound"))
+                    refs.setdefault(ref.get("compound"), set()).add(ref.get("value"))
                 elif not ref.get("mode") and st["ref_mode"] == "internal":
-                    refs.add(st["ref_compound"])
-            names = [self.CAP_REFS[k] for k in self.CAP_REFS if k in refs]
-            if names:
-                h += " referenced internally against " + " or ".join(names)
+                    refs.setdefault(st["ref_compound"], set()).add(st["ref_value"])
+            if refs:                                   # Achse = vs. Fc0/+; der Standard ist nur das Hilfsmittel
+                fc = "Fc<sup>0/+</sup>"
+                parts = []
+                for k in self.CAP_REFS:
+                    if k not in refs:
+                        continue
+                    vals = sorted(v for v in refs[k] if v is not None)
+                    if k == "fc":
+                        parts.append("ferrocene")
+                    else:
+                        e12 = (f" (E<sub>1/2</sub> = {vals[0]:+.2f}".replace("-", "\u2212") + f" V vs. {fc})" if len(vals) == 1 else "")
+                        parts.append(self.CAP_REFS[k] + e12)
+                h += f"; potentials referenced against {fc} using " + " or ".join(parts) + " as internal standard"
             if st.get("arrow"):
                 h += " (arrows indicate scanning direction)"
         return h + "."
@@ -1202,25 +1213,24 @@ class CVTab(TABS.FigureTab):
             for _, comp, val in internal:
                 name, short = REF_NAMES_EN.get(comp, ("an internal standard", ""))
                 stds.append(name if comp == "fc" else
-                            f"{name} ({short + ', ' if short else ''}E1/2 = {_fmt_e(val, 2)} V vs. Fc+/Fc)")
-            out.append("Potentials are given vs. the ferrocenium/ferrocene couple (Fc+/Fc) and were referenced to "
+                            f"{name} ({short + ', ' if short else ''}E1/2 = {_fmt_e(val, 2)} V vs. Fc0/+)")
+            out.append("Potentials are given vs. the ferrocene/ferrocenium couple (Fc0/+) and were referenced to "
                        "the half-wave potential of " + " or ".join(stds) + " as internal standard.")
         if any(k[0] == "manual" for k in kinds):
-            out.append("Potentials were converted to the Fc+/Fc scale using the half-wave potential of Fc+/Fc "
+            out.append("Potentials were converted to the Fc0/+ scale using the half-wave potential of Fc0/+ "
                        f"measured vs. {st['ref_electrode']}.")
         if any(k[0] == "none" for k in kinds):
             out.append(f"Potentials are given vs. {st['ref_electrode']}.")
-        return " ".join(out), ("Fc+/Fc" if kinds and all(k[0] != "none" for k in kinds) else st["ref_electrode"])
+        return " ".join(out), ("Fc0/+" if kinds and all(k[0] != "none" for k in kinds) else st["ref_electrode"])
 
     def methods_text(self):
         """SI-Text zur Auswertung (englisch, Stil des Abschnitts „Cyclic Voltammetry“ der Gruppen-SI): Gerät,
         Elektroden und Leitsalz stehen im Aufbau-Absatz der SI und fehlen hier bewusst. Danach ein Absatz mit
         den Ergebnissen je Redoxpaar (zum Übernehmen in Text oder Bildunterschrift)."""
         st = self.st
-        ver = QCoreApplication.applicationVersion()
         rates = sorted({round(r["rate"], 1) for r in self.results if r["rate"]})
         ref_txt, ref_lab = self._ref_sentence()
-        m = [f"The CVs were evaluated with Elucida{' ' + ver if ver else ''}.", ref_txt,
+        m = [ref_txt,                                  # nur die Mathematik, kein Programmname (Nutzerwunsch)
              "Peak potentials (Epa, Epc) were obtained by a parabolic fit to the current extremum (±3 data points) "
              f"of cycle {st['cycle']}; E1/2 = (Epa + Epc)/2 and ΔEp = Epa − Epc."]
         if st["baseline"]:

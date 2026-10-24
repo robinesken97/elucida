@@ -1938,11 +1938,31 @@ def fmt_stokes(v):
     return f"{round(v, -1):.0f}".replace("-", "\u2212")
 
 
+def color_name(c) -> str:
+    """Grober englischer Farbname für Bildunterschriften („blue“, „red“ …) aus einer Matplotlib-Farbe."""
+    import colorsys
+    from matplotlib.colors import to_rgb
+    try:
+        r, g, b = to_rgb(c)
+    except ValueError:
+        return str(c)
+    h, l, s_ = colorsys.rgb_to_hls(r, g, b)
+    if s_ < 0.2 or l < 0.12 or l > 0.92:
+        return "black" if l < 0.3 else "grey" if l < 0.85 else "white"
+    hue = h * 360
+    for lim, name in ((15, "red"), (45, "orange"), (70, "yellow"), (160, "green"), (195, "cyan"), (255, "blue"),
+                      (290, "purple"), (335, "magenta"), (360, "red")):
+        if hue < lim:
+            return name
+    return "red"
+
+
 class FluoTab(FigureTab):
     STATE_KEY = "fluorescence"
     GUIDE, GUIDE_ACTION = "fluo", None
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Fluorescence spectra of {name}."
+    CAP_FIELDS = ("solvent", "conc", "cuvette")
     RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv")
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",
@@ -2001,6 +2021,7 @@ class FluoTab(FigureTab):
         self.cmb_bg_uv = self._bg_combo(f, "bg_uv")
         self.size_spin(f, "photo_w", "image_fotos")
         self.lv.addWidget(g)
+        self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
         for w in (self.sp_ex, self.sp_alo, self.sp_ahi):
             w.valueChanged.connect(self.changed)
         self.cb_mask.toggled.connect(self.changed)
@@ -2112,6 +2133,29 @@ class FluoTab(FigureTab):
         self.st.update(ex=self.sp_ex.value(), mask=self.cb_mask.isChecked(), alo=self.sp_alo.value(),
                        ahi=self.sp_ahi.value(), eps=self.ed_eps.text().strip(),
                        stokes_label=self.cb_stokes.isChecked())
+
+    def si_caption(self, name):
+        """Vergleich Absorption/Emission wie in der SI üblich: „Normalized UV-Vis absorption (blue) and fluorescence
+        emission spectra (red; λex = 350 nm) of X in THF, measured in 1 cm quartz cuvettes.“ Farben aus dem Bild,
+        Küvette aus dem Feld (leer = 1 cm, übliche Fluoreszenzküvette)."""
+        from elucida.si.lines import chem_html
+        st = self.st
+        n = "<b>" + html.escape(name) + "</b>"
+        ab, em = bool(st.get("abs_file")), bool(st.get("em_file"))
+        ex = f"λ<sub>ex</sub> = {st['ex']:g} nm"
+        if ab and em:
+            h = (f"Normalized UV-Vis absorption ({color_name(st['c_abs'])}) and fluorescence emission spectra "
+                 f"({color_name(st['c_em'])}; {ex}) of {n}")
+        elif em:
+            h = f"Normalized fluorescence emission spectrum ({ex}) of {n}"
+        else:
+            h = f"Normalized UV-Vis absorption spectrum of {n}"
+        if st.get("cap_solvent"):
+            h += " in " + chem_html(st["cap_solvent"])
+        if st.get("cap_conc"):
+            h += f" ({chem_html(st['cap_conc'])})"
+        cuv = (st.get("cap_cuvette") or "1 cm").strip()
+        return h + ", measured in " + chem_html(cuv) + " quartz cuvettes."
 
     def show_info(self, pa, pe, a_ex):
         """Kennwerte unter den Daten: λabs, λem, Stokes-Verschiebung, A(λex) mit Innenfilter-Hinweis."""

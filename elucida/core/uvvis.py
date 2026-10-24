@@ -835,6 +835,15 @@ class FreeSpace:
         iy0, iy1 = int(max(0, math.floor((y0 - pad) * n))), int(min(n, math.ceil((y0 + h + pad) * n)))
         self.elems[iy0:iy1, ix0:ix1] = True
 
+    def is_free(self, x0, y0, w, h):
+        """Rechteck (Achsenbruchteile) frei von Kurven und Elementen und innerhalb des Rands?"""
+        n, m = self.n, self.margin
+        if x0 < m or y0 < m or x0 + w > 1 - m or y0 + h > 1 - m:
+            return False
+        ix0, ix1 = int(math.floor(x0 * n)), int(math.ceil((x0 + w) * n))
+        iy0, iy1 = int(math.floor(y0 * n)), int(math.ceil((y0 + h) * n))
+        return not (self.elems | self.curves)[iy0:iy1, ix0:ix1].any()
+
     def find(self, w, h, score_fn, over_curves=False):
         """over_curves=True: nur Überlappung mit anderen Elementen vermeiden (Notlösung)."""
         occ = self.elems if over_curves else (self.elems | self.curves)
@@ -954,6 +963,7 @@ class Figure:
         self.ax = self.fig.add_axes(cfg["axes_rect"])
         self.axes_items = {}     # id -> Axes   (Inset, Bilder)
         self._inset_table = None
+        self._inset_beside = False   # kein Platz im Bild: Inset rechts neben der (schmaleren) Achse
         self.tight_off = {}      # id -> (dx0, dy0, w, h) Tight-Box relativ zur Achsenposition
         self.ann_items = {}      # id -> Annotation
         self._main()
@@ -1244,8 +1254,14 @@ class Figure:
                 px, py = self._frame_pad(a)
                 fs.block_rect(ppos[0] - px, ppos[1] - py, w0 + 2 * px, h0 + 2 * py)
 
-        # 1) Labels: sie gehören an ihre Bande, alles andere ist verschiebbar
+        # 1) Labels: sie gehören an ihre Bande, alles andere ist verschiebbar. Nicht gespeicherte Bandenlabels
+        #    geordnet (Nutzerwunsch): eine Reihe auf gleicher Höhe, sonst ein Block untereinander, sonst einzeln
+        ordered = self._place_labels_ordered(
+            [k for k, a_ in self.ann_items.items() if not (lay.get(k) or fixed_lbl.get(k))
+             and getattr(a_, "_anchor_y", None) is None], fs, env, rend)
         for key, ann in self.ann_items.items():
+            if key in ordered:
+                continue
             _, _, bw, bh = self._measure_af(ann.get_window_extent(rend))
             pos = lay.get(key) or fixed_lbl.get(key)
             if pos is None:
@@ -1280,7 +1296,9 @@ class Figure:
             fixed = icfg["pos"] if isinstance(icfg["pos"], (list, tuple)) else None
             pos = lay.get("inset") or fixed
             aw, ah = icfg["size"]
-            if pos is None:
+            if pos is None and self._inset_beside:
+                self._put_beside(iax)
+            elif pos is None:
                 tries = [(1.0, True), (1.0, False), (0.85, False), (0.7, False)]
                 for f, tab in tries:
                     if not tab and self._inset_table is not None:
@@ -1295,21 +1313,22 @@ class Figure:
                     aw, ah = aw * f, ah * f
                     if f < 1 or not tab:
                         log("  " + T("inset_shrunk", f=f, tab="" if tab else T("without_table")))
-                else:
-                    if self._inset_table is not None:
-                        self._inset_table.set_visible(icfg["table"])
-                        self._legend_r2(not icfg["table"])
-                    self._set_axes_af(iax, 0.5, 0.5, aw, ah)
-                    dx, dy, tw, th = self._axes_tight(iax, rend)
-                    hit = find("inset", tw, th, corner_score(icfg["prefer"])) or (1 - tw, 1 - th)
-                pos = (hit[0] - dx, hit[1] - dy)
+                else:                                  # nirgends frei: nie über die Kurven (Nutzerwunsch), sondern
+                    if not self._inset_beside:         # rechts neben die Achse, die dafür schmaler wird
+                        self._make_room_right(iax, rend, aw * 0.85, min(0.7, ah * 1.5))   # Höhe ist frei
+                        return self._place()           # alles neu, Labels jetzt in der schmaleren Achse
+                    self._put_beside(iax)
+                    pos = None
+                if hit:
+                    pos = (hit[0] - dx, hit[1] - dy)
             else:
                 if len(pos) == 4:
                     aw, ah = pos[2], pos[3]
                 self._set_axes_af(iax, 0.5, 0.5, aw, ah)
-            dx, dy, tw, th = self._axes_tight(iax, rend)
-            self._set_axes_af(iax, pos[0], pos[1], aw, ah)
-            fs.block_rect(pos[0] + dx, pos[1] + dy, tw, th)
+            if pos is not None:
+                dx, dy, tw, th = self._axes_tight(iax, rend)
+                self._set_axes_af(iax, pos[0], pos[1], aw, ah)
+                fs.block_rect(pos[0] + dx, pos[1] + dy, tw, th)
 
         # 3) Bilder (schrumpfen, falls nicht genug Platz)
         for im in self.cfg["images"]:
@@ -1351,6 +1370,85 @@ class Figure:
         for txt, (base, with_r2) in zip(leg.get_texts(), self._legend_labels):
             txt.set_text(with_r2 if on else base)
 
+    def _place_labels_ordered(self, keys, fs, env, rend):
+        """Mehrere Labels ordentlich setzen (sortiert nach x der Bande): erst als Reihe – alle Oberkanten gleich hoch,
+        jedes möglichst über seiner Bande, so hoch wie frei –, sonst als linksbündiger Block untereinander nahe den
+        Banden. Nur ganz frei von Kurven und anderen Elementen; sonst nichts (dann Einzelplatzierung). -> gesetzte."""
+        if len(keys) < 2:
+            return set()
+        x0, x1 = self.ax.get_xlim()
+        items = []
+        for k in keys:
+            ann = self.ann_items[k]
+            _, _, bw, bh = self._measure_af(ann.get_window_extent(rend))
+            axn = (ann.xy[0] - x0) / (x1 - x0)
+            items.append((axn, k, bw, bh))
+        items.sort()
+        gap_x, gap_y = 0.015, 0.012
+        hmax = max(it[3] for it in items)
+
+        def row_xs():
+            xs, right = [], fs.margin
+            for axn, _, bw, _ in items:                  # von links: über der Bande, ohne Überlappung
+                x = max(min(axn - bw / 2, 1 - fs.margin - bw), right)
+                xs.append(x)
+                right = x + bw + gap_x
+            if right - gap_x > 1 - fs.margin:            # rechts zu weit: von rechts zurückschieben
+                left = 1 - fs.margin
+                for i in range(len(items) - 1, -1, -1):
+                    xs[i] = min(xs[i], left - items[i][2])
+                    left = xs[i] - gap_x
+                if xs[0] < fs.margin:
+                    return None
+            return xs
+        xs = row_xs()
+        if xs is not None:
+            top = 1 - fs.margin
+            while top - hmax > 0.25:                     # höchste freie Reihe
+                if all(fs.is_free(x, top - bh, bw, bh) for x, (_, _, bw, bh) in zip(xs, items)):
+                    for x, (_, k, bw, bh) in zip(xs, items):
+                        self.ann_items[k].set_position((x, top - bh))
+                        fs.block_rect(x, top - bh, bw, bh)
+                    return {it[1] for it in items}
+                top -= 0.01
+        W = max(it[2] for it in items)
+        H = sum(it[3] for it in items) + gap_y * (len(items) - 1)
+        mx = float(np.mean([it[0] for it in items]))
+        my = min(1.0, float(np.max([env[min(fs.n - 1, max(0, int(it[0] * fs.n)))] for it in items])))
+        hit = fs.find(W, H, anchor_score(mx, my))
+        if hit is None:
+            return set()
+        y = hit[1] + H
+        for _, k, bw, bh in items:                       # kleinste Wellenlänge oben
+            y -= bh
+            self.ann_items[k].set_position((hit[0], y))
+            fs.block_rect(hit[0], y, bw, bh)
+            y -= gap_y
+        return {it[1] for it in items}
+
+    def _make_room_right(self, iax, rend, aw, ah):
+        """Achse schmaler machen, damit das Inset (Größe aw × ah der bisherigen Achse) rechts daneben Platz hat. Ohne
+        Tabelle (in der schmalen Spalte zu eng), R² dann in der Legende."""
+        if self._inset_table is not None:
+            self._inset_table.set_visible(False)
+            self._legend_r2(True)
+        self._set_axes_af(iax, 0.5, 0.5, aw, ah)
+        fw, fh = self.fig.get_size_inches() * self.fig.dpi
+        tb, ib = iax.get_tightbbox(rend), iax.get_window_extent(rend)
+        gap = 0.12 * self.fig.dpi
+        p = self.ax.get_position()
+        need = (tb.width + 2 * gap) / fw
+        self.ax.set_position([p.x0, p.y0, max(0.3, p.width - need), p.height])
+        # Inset-Achse in Figurenbruchteilen und Abstand der Achse zur Tight-Box (Achsenbeschriftung links, Tabelle oben)
+        self._beside_box = (ib.width / fw, ib.height / fh, (ib.x0 - tb.x0 + gap) / fw, (tb.y1 - ib.y1) / fh)
+        self._inset_beside = True
+        log("  " + T("inset_beside"))
+
+    def _put_beside(self, iax):
+        w, h, left, top = self._beside_box
+        p = self.ax.get_position()
+        iax.set_position([p.x1 + left, p.y1 - top - h, w, h])
+
     def _axes_tight(self, a, rend):
         p = a.get_position()
         px, py = self._fig_to_af(p.x0, p.y0)
@@ -1381,6 +1479,8 @@ class Figure:
     def current_layout(self):
         out = {}
         for key, a in self.axes_items.items():
+            if key == "inset" and self._inset_beside:  # ergibt sich bei jedem Zeichnen neu
+                continue
             p = a.get_position()
             (x0, y0), (x1, y1) = self._fig_to_af(p.x0, p.y0), self._fig_to_af(p.x1, p.y1)
             out[key] = [round(float(v), 4) for v in

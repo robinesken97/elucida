@@ -427,7 +427,7 @@ class SECTab(TABS.FigureTab):
                 h += " Color coding: " + ", ".join(cols) + "."
         if sp and E is not None:
             i0, i1 = sel[0], sel[-1]
-            ref = chem_html(str(lab).replace("Fc$^{0/+}$", "Fc+/Fc"))
+            ref = ("Fc<sup>0/+</sup>" if str(lab) == "Fc$^{0/+}$" else chem_html(str(lab)))   # wie die Achse
             fe = lambda v: f"{v:.2f}".replace("-", "−")                               # noqa: E731
             h += (f" Starting potential (vs. {ref}): {fe(E[i0] - off)} V; End potential (vs. {ref}): "
                   f"{fe(E[i1] - off)} V.")
@@ -440,7 +440,7 @@ class SECTab(TABS.FigureTab):
         if not fits:
             return ""
         st = self.st
-        ref = str(self.ref_label or st["electrode"]).replace("Fc$^{0/+}$", "Fc+/Fc")
+        ref = str(self.ref_label or st["electrode"]).replace("Fc$^{0/+}$", "Fc0/+")
         m = ["Each spectrum was assigned the potential at its acquisition time, interpolated from the time-resolved "
              "potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
              "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "

@@ -323,6 +323,14 @@ def selftest(outdir, with_isnet=False):
         b0, b1 = (Fl.ann_items[k].get_window_extent(rl) for k in (lk[0], lk[-1]))
         assert not b0.overlaps(b1), "Label-Kollision"
         report.append("label collision: OK")
+        # Inset nie über den Kurven: füllen die Spektren das ganze Bild, kommt es rechts neben die (schmalere) Achse
+        sp_f = [dict(s_, y=np.full_like(np.asarray(s_["y"], float), 5.0)) for s_ in sp_l]
+        Ff = core.build_figure(plt, cfg_l2, sp_f, res_l, {}, fig=figl)
+        if "inset" in Ff.axes_items:
+            assert Ff._inset_beside and Ff.axes_items["inset"].get_position().x0 >= Ff.ax.get_position().x1, \
+                (Ff.axes_items["inset"].get_position(), Ff.ax.get_position())
+            assert "inset" not in Ff.current_layout()
+        report.append("inset beside the plot when no free space: OK")
 
         # Overlay-Optionen: Skalierung, Versatz, Linienart, Strich-Modi
         w.ov_state["entries"][1].update(scale=0.8, offset=0.2, ls="dotted", lw=2.0)
@@ -620,7 +628,7 @@ def selftest(outdir, with_isnet=False):
         assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt and "charging_step_uA" in csv_txt, csv_txt
         meth = files[-2].read_text(encoding="utf-8")
         assert "Nicholson" in meth and "diacetylferrocene" in meth and "95% confidence" in meth \
-            and "Couple 1: E1/2 = −1.08 V vs. Fc+/Fc" in meth, meth
+            and "Couple 1: E1/2 = −1.08 V vs. Fc0/+" in meth, meth
         assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
         # „Alles auf Standard“: Einstellungen zurück; Messungen, Redoxpaare, Referenz, Unterschrift bleiben
         snap_cv = json.loads(json.dumps({k_: st_cv[k_] for k_ in ("files", "couples", "ref_mode", "ref_value", "cycle",
@@ -674,7 +682,8 @@ def selftest(outdir, with_isnet=False):
         cap_cv = w.cv_tab.si_caption("TEST-1")
         assert cap_cv.startswith("Cyclic voltammograms of <b>TEST-1</b> (1.8±0.1 mg mL<sup>-1</sup>)") \
             and "(0.1 M n-Bu<sub>4</sub>NPF<sub>6</sub>) at rt" in cap_cv and cap_cv.endswith(".") \
-            and "referenced internally against diacetylferrocene" in cap_cv, cap_cv
+            and "potentials referenced against Fc<sup>0/+</sup> using diacetylferrocene (E<sub>1/2</sub> = +0.49 V vs. " \
+            "Fc<sup>0/+</sup>) as internal standard" in cap_cv, cap_cv
         assert SI.chem_html("CH2Cl2, AgNO3 (0.01 M), 7.1 mm², 3 min") == \
             "CH<sub>2</sub>Cl<sub>2</sub>, AgNO<sub>3</sub> (0.01 M), 7.1 mm², 3 min"
         w.settings.setValue("si_setup/cv", "CVs were measured in CH3CN.")              # Aufbau-Absatz vor den CVs
@@ -1647,7 +1656,7 @@ def selftest(outdir, with_isnet=False):
         t_x.render()
         pump()
         F_x = t_x.F
-        assert F_x is not None and len(F_x.scene["atoms"]) == 13 and F_x.foot is not None
+        assert F_x is not None and len(F_x.scene["atoms"]) == 13 and F_x.foot is None   # keine Symmetrie-Fußnote im Bild
         # simulierter Klick auf C1 und C2 (Atommitte; Pixel gerundet -> nur das getroffene Atom prüfen)
         proc_ = t_x.canvas.callbacks.process
 
@@ -1799,7 +1808,7 @@ def selftest(outdir, with_isnet=False):
         cap_ = t_x.caption()[0]
         assert cap_.startswith("X-ray solid state structure of xtest_a (70% (PART 1) and 30% (B) occupancy; major part "
                                "shown). Thermal ellipsoids are shown with 50% probability."), cap_
-        assert "Co-crystallised water is omitted for clarity." in cap_ and "Symmetry code: i: " in cap_, cap_
+        assert "Co-crystallised water is omitted for clarity." in cap_ and "Symmetry code" not in cap_, cap_
         assert "Selected bond lengths and torsion angles in [Å] and [°]: C1–C2: 1.390(3); C1–C2–C3–C1ⁱ: 0.0." in cap_, cap_
         assert "<b>xtest_a</b>" in t_x.caption()[1] and not t_x.param_tables(ent_[0])   # wenige Werte: in der Unterschrift
         c1_, cl1_ = mol_.find_key("C1"), mol_.find_key("Cl1")

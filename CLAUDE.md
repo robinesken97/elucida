@@ -91,7 +91,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   **nie schätzen**; fehlt ein Wert, selbst rechnen und ohne esd markieren (Torsion: Hinweis „CONF setzen“).
   Symmetrie: Molekül über Bindungen × Symmetrieoperationen vervollständigen; Abgleich mit geom-Einträgen über
   Transformationen (gesucht G mit T_k = G∘S_k, auch rückwärts), Codes `n_klm` (555 = keine Translation, „n“ allein
-  ebenso). Erzeugte Atome mit römischer Hochzahl je Operation + Fußnote. Fehlordnung Standard: PART 0 + je
+  ebenso). Erzeugte Atome mit römischer Hochzahl je Operation; Fußnote/Symmetriecode **nicht** in Bild und
+  Unterschrift (Nutzerwunsch 2.3, wirkte wie ein loses „xyz“), nur in den Parametertabellen. Fehlordnung Standard: PART 0 + je
   `disorder_assembly` der Teil mit der größten Besetzung. Ellipsoide: k = √χ²₃(p) (50 % → 1.5382), Umriss = 2×2-Block
   von R·U·Rᵀ. Aussehen Standard **wie Mercury** (Nutzerwunsch): schattierte Schichten (`shade_layers`, Licht oben
   links, matt, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), H-Radius 0.09 Å, Bindungsdicke in Å
@@ -225,7 +226,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - SI-Methodentexte („SI-Text kopieren“, beim Export `…_methods.txt`): jeder Tab, der fittet (ε, CV, SEC, EPR), beschreibt
   englisch **nur die tatsächlich benutzten** Schritte mit den aktuellen Parametern, dann die Ergebnisse; Aufbau/Geräte
   stehen in der SI der Gruppe und nicht im Code. Keine Unsicherheiten erfinden (EPR-S = ½-Fit: ausdrücklich keine).
-  Neue Fits → Satz in `methods_text` des Tabs ergänzen. Exponenten als „-1“ wie in der SI. Im Word-Export als Teil
+  Neue Fits → Satz in `methods_text` des Tabs ergänzen. Nie das Programm nennen (Nutzerwunsch: nur die Mathematik).
+  Referenz in CV/SEC-Texten und -Unterschriften wie die Achse „Fc0/+“; interner Standard (Ac₂Fc mit E½) nur als
+  Hilfsmittel nennen. Exponenten als „-1“ wie in der SI. Im Word-Export als Teil
   `methods` („Data processing and fitting“, `si_methods_blocks`, `SI.methods_html`; neue Fit-Tabs dort eintragen).
 - SI-Stil (aus den SI der Gruppe): Absatz „m.p. …; IR …; HR-MS …; UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“, durch
   „; “ getrennt, Punkt am Ende. UV-Vis-Zeile nur mit den Banden des Bildes, aufsteigend, ε wie in der Tabelle gerundet
@@ -361,6 +364,9 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - **MuPDF:** ignoriert SVG-Clip-Pfade → Kurven geometrisch clippen (`clip_polyline`); Rechtecke mit Breite 0
   fallen bei `|=` weg → Koordinaten-Union; Alpha ist premultipliziert → beim Einfärben un-premultiplizieren.
 - **Label-Kollisionen:** gespeicherte Positionen von Labels, Inset und Bildern vor neuen Elementen reservieren.
+- **Platzierung (Nutzerwunsch 2.3):** Inset nie über Kurven – ohne freie Stelle rechts neben die schmalere Achse
+  (`_make_room_right`/`_put_beside`, ohne Tabelle, nicht ins Layout gespeichert). Bandenlabels geordnet
+  (`_place_labels_ordered`): Reihe mit gleicher Oberkante, sonst linksbündiger Block nach λ, erst dann einzeln.
 - **Mausereignisse (matplotlib):** `LocationEvent` rundet x/y auf ganze Pixel; Messpunkte liegen in der Vorschau
   < 1 px auseinander. Tests mit simulierten Klicks/Hover nur auf ±1 Messpunkt prüfen und dann, dass die Anzeige
   genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).

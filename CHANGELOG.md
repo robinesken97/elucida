@@ -34,6 +34,15 @@
   Word export or data package.
 
 ### Changed
+- **Figures:** the inset (linear regression) is never drawn over the spectra – if there is no free space, it moves
+  next to the plot (without its table, R² in the legend). Peak labels are arranged in order: in one row at the same
+  height, otherwise as a left-aligned block sorted by wavelength.
+- **Captions:** fluorescence names absorption and emission (colours, λex), solvent, concentration and cuvette (new
+  caption fields); CV says the potentials are referenced against Fc0/+ with diacetylferrocene (and its E½) as
+  internal standard, as on the axis; CV/SEC texts use Fc0/+ throughout. X-ray: no symmetry-code footnote in the
+  figure and caption any more (the codes stay in the parameter tables).
+- Data processing texts describe only the mathematics – no reference to the program.
+- README: the welcome page with an example project is the cover picture.
 - **New terms:** what used to be a "project" (folder of one compound) is now called a **compound**; **project** now
   means the folder with all compounds of a paper. Only the wording changes – folders and files (`project.elucida`)
   stay as they are, nothing has to be converted.

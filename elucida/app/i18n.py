@@ -578,6 +578,13 @@ TEXTS = {
     "cap_el": ("Leitsalz", "Electrolyte"),
     "cap_el_ph": ("z. B. 0.1 M n-Bu4NPF6 (wird gemerkt)", "e.g. 0.1 M n-Bu4NPF6 (remembered)"),
     "cap_temp": ("Temperatur", "Temperature"),
+    "cap_cuvette": ("Küvette", "Cuvette"),
+    "cap_cuvette_ph": ("leer = 1 cm", "empty = 1 cm"),
+    "fluorescence_cap_conc_ph": ("z. B. 10 µM", "e.g. 10 µM"),
+    "fluorescence_cap_tip": ("Angaben für die Bildunterschrift im SI-Export (Lösungsmittel, Konzentration, Küvette); "
+                             "Farben und λex kommen aus dem Bild",
+                             "Details for the caption in the SI export (solvent, concentration, cuvette); colours "
+                             "and λex come from the figure"),
     "cap_temp_ph": ("rt", "rt"),
     "si_setup_btn": ("Aufbau-Text (SI) …", "Setup text (SI) …"),
     "si_setup_tip": ("Allgemeinen Absatz zu Gerät und Aufbau hinterlegen; er steht im SI-Export vor den Abbildungen "
@@ -1984,6 +1991,8 @@ TEXTS = {
                  "Order = order in the complete SI and the dataset (right-click: up/down). Each compound stays "
                  "self-contained and can also be opened on its own."),
     "pub_up": ("Nach oben", "Move up"),
+    "inset_beside": ("Inset: im Bild kein freier Platz ohne Kurven – steht rechts neben dem Spektrum",
+                     "Inset: no free space without curves in the plot – placed to the right of the spectrum"),
     "pub_check_summary": ("{ok} von {n} vollständig", "{ok} of {n} complete"),
     "pub_check_gaps": ("fehlt: {gaps}", "missing: {gaps}"),
     "pub_check_known": ("literaturbekannt", "known"),

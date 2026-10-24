@@ -633,7 +633,7 @@ QWidget#recentRow {{ background: {c['card']}; border: 1px solid {c['border']}; b
 QWidget#recentRow:hover {{ border-color: {c['accent']}; background: {c['hover']}; }}
 QLabel#recentMono {{ background: {c['accent']}; color: {c['on_accent']}; border-radius: 8px; font-weight: bold;
     font-size: 18px; }}
-QLabel#recentThumb {{ background: #ffffff; border: 1px solid {c['border']}; border-radius: 8px; }}
+QLabel#recentThumb, QFrame#recentThumb {{ background: #ffffff; border: 1px solid {c['border']}; border-radius: 8px; }}
 QLabel#recentTitle {{ font-size: 15px; font-weight: bold; background: transparent; }}
 QLabel#recentNote {{ color: {c['text2']}; font-size: 14px; font-style: italic; background: transparent; }}
 QLabel#recentSub, QLabel#recentWhen {{ color: {c['text2']}; background: transparent; }}

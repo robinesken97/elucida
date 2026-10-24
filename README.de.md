@@ -18,8 +18,8 @@ Englisch.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/eps_dark_de.png">
-    <img src="docs/screenshots/eps_light_de.png" alt="Elucida – UV-Vis (ε)" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome_dark_de.png">
+    <img src="docs/screenshots/welcome_light_de.png" alt="Elucida – Startbildschirm mit einem Projekt und seinen Verbindungen" width="900">
   </picture>
 </p>
 
@@ -53,7 +53,7 @@ Erscheinungsbild; Deutsch und Englisch.
 <tr><td width="50%" valign="top"><img src="docs/screenshots/overlay_light_de.png" alt="UV-Vis-Overlay"><br><sub>UV-Vis-Overlay</sub></td><td width="50%" valign="top"><img src="docs/screenshots/fluorescence_light_de.png" alt="Fluoreszenz"><br><sub>Fluoreszenz</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/cv_light_de.png" alt="Cyclovoltammetrie"><br><sub>Cyclovoltammetrie</sub></td><td width="50%" valign="top"><img src="docs/screenshots/sec_light_de.png" alt="Spektroelektrochemie"><br><sub>Spektroelektrochemie</sub></td></tr>
 <tr><td width="50%" valign="top"><img src="docs/screenshots/epr_light_de.png" alt="CW-EPR"><br><sub>CW-EPR</sub></td><td width="50%" valign="top"><img src="docs/screenshots/xray_light_de.png" alt="X-Ray"><br><sub>X-Ray</sub></td></tr>
-<tr><td width="50%" valign="top"><img src="docs/screenshots/dft_light_de.png" alt="DFT"><br><sub>DFT</sub></td></tr>
+<tr><td width="50%" valign="top"><img src="docs/screenshots/eps_light_de.png" alt="UV-Vis (ε)"><br><sub>UV-Vis (ε)</sub></td><td width="50%" valign="top"><img src="docs/screenshots/dft_light_de.png" alt="DFT"><br><sub>DFT</sub></td></tr>
 </table>
 
 ## Herunterladen und starten
