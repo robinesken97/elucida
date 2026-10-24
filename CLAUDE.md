@@ -209,7 +209,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `find_experiments` (Experiment, Datensatz, Ordner mit Datensätzen); genau ein passendes Experiment je Spektrum wird
   zugeordnet (`match_experiment`), sonst von Hand. Mnova-Dokumente nach `data/nmr/mnova` (nur ablegen). EMF-Spektren:
   Kern aus den EMF-Texten (`emf_info`), keine Vorschau, unverändert nach Word (`_media_ext`), ohne Struktur;
-  EMF→SVG-Wandler und das Herauslösen der Leser nach `formats/` vorgemerkt (Nutzer: später). Struktur als Vektor ins SVG (`compose_structure`), Lage `auto` = freie
+  EMF→SVG-Wandler vorgemerkt (Nutzer: später). Struktur als Vektor ins SVG (`compose_structure`), Lage `auto` = freie
   Stelle über Belegungsmaske (`auto_place`, oben links bevorzugt), ziehbar (`manual`), Größe `struct_w` für alle Spektren
   gleich. Unterschrift „¹H NMR (500 MHz, CDCl₃, 298 K) of **X**.“
 - Synthese-Tab: Schema über `scheme_files` (CDXML + gleichnamige SVG/PDF, .cdx, .emf). Word-OLE nur mit CDX (CDXML
@@ -269,6 +269,7 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `tabs/dft.py` | Tab DFT: xyz-Leser (mehrere Bilder, Ordnungszahlen), `read_text` (UTF-16), `parse_orca`/`parse_gaussian`/`read_calc`, `si_parts`/`computational_details` (SI-Block, englisch), `match_reference`/`kabsch` (Vergleichsmodus), `bonds_of` (kovalente Radien wie X-Ray), `XyzMolecule`, `renumber`, `write_xyz`, `DFTTab` (Klick-Nummerierung, SI kopieren, Word), `make_test_xyz`/`make_test_orca`/`make_test_gaussian`. Zuschnitt der SI-Bilder: `XRAY.save_tight`. |
 | `tabs/nmr.py` | Tab NMR: `svg_info`/`svg_peaks` (Mnova-SVG), Bruker `acq_params`, `parse_mnova`/`nmr_line`, `caption_html`, Strukturplatzierung (`occupancy`, `auto_place`, `compose_structure`), `NMRTab`, `make_test_svg`/`make_test_acqus`. |
 | `tabs/synthesis.py` | Tab Synthese: `parse_amounts`/`check_amounts` (Rundung), `row_amounts`/`amount_text`, `scheme_files`/`scheme_molecules`/`scheme_drawing`, `doc_to_html`, `SynthTab`. |
+| `formats/` (Leser) | Dateiformate ohne Qt/Tabs (nur `i18n` für Fehlertexte), seit 2.2 aus den Tabs herausgelöst; die Tab-Module leiten die alten Namen weiter (`CVMOD.read_gamry` usw. bleibt gültig): `gamry.py` (.DTA), `bwspec.py` (SEC-Spektren), `epr.py` (BES3T, ASCII, EasySpin), `opus.py` (OPUS + PDF), `ms_report.py` (MS-Bericht .docx, EMF-Texte, CDX), `bruker_ms.py` (Bruker .d/BAF), `topspin.py` (acqus, Experimentart), `mnova.py` (SVG/EMF), `cif.py` (`Block`, `num`), `calc.py` (xyz, ORCA, Gaussian), `orbital_files.py` (Cube, Molden), `elements.py` (`ELEMENTS`, `BOHR`, `COV`, `element_of`). Neue Leser hierher, nicht in die Tabs. Cary/DSW/Eclipse bleiben in `core/uvvis.py` (Meldungen über `core.LOG`). |
 | `formats/cdxml.py` | CDXML selbst zeichnen (`render_svg`: Bindungen, Labels, Formelstil, Pfeile, Texte; Labels für CDXML ohne `<t>`), `scheme_texts`/`scheme_reagents`. |
 | `formats/ole.py` | OLE-Container (CFB v3) für bearbeitbare ChemDraw-Objekte in Word (`chemdraw_streams`, `write_cfb`). |
 | `si/lines.py` | SI-Zeilen: Elementaranalyse (mittlere Atommassen, Solvat, Grenze 0.4 %), UV-Vis-Zeile aus den ε-Ergebnissen, Absatz (`join_lines`) und eigener docx-Schreiber (`write_docx`, ohne Zusatzpaket; Dreilinien-Tabellen, OLE, Seitenumbruch), `two_per_page`, `chem_html`. |
