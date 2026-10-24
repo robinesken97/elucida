@@ -26,7 +26,7 @@ from elucida.app import main_window as G  # noqa: E402
 
 SIZE = (1600, 1000)
 # (Dateiname, Tab-Schlüssel, Themes) in der Reihenfolge der Tabs
-# Übersicht im README dunkel (Nutzerwunsch); hell nur das Coverbild (welcome_light_*)
+# Alle README-Bilder dunkel (Nutzerwunsch), auch das Coverbild
 SHOTS = tuple((name, key, ("dark",)) for name, key in (
     ("synthesis", "syn"), ("nmr", "nmr"), ("irms", "irms"), ("hrms", "hrms"), ("eps", "eps"), ("overlay", "overlay"),
     ("fluorescence", "fluo"), ("cv", "cv"), ("sec", "sec"), ("epr", "epr"), ("xray", "xray"), ("dft", "dft")))
@@ -102,7 +102,7 @@ def main(outdir=ROOT / "docs" / "screenshots"):
             [str((work / "Beispielprojekt" / n).resolve()) for n in ("S3", "S2")]))
         for lang in ("de", "en"):
             w.switch_lang(lang)
-            for theme in ("light", "dark"):
+            for theme in ("dark",):
                 w.switch_theme(theme)
                 w.resize(*SIZE)
                 pump(0.5)

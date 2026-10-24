@@ -16,12 +16,7 @@ Spektroelektrochemie, EPR, Röntgenstruktur und DFT – als Word-Datei im Aufbau
   SI-Texte (Charakterisierungsabsatz, Bildunterschriften, Auswertung) entstehen gleich mit.
 - Helles und dunkles Erscheinungsbild, Deutsch und Englisch; Windows, macOS und Linux.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome_dark_de.png">
-    <img src="docs/screenshots/welcome_light_de.png" alt="Elucida – Startbildschirm mit einem Projekt und seinen Verbindungen" width="900">
-  </picture>
-</p>
+<p align="center"><img src="docs/screenshots/welcome_dark_de.png" alt="Elucida – Startbildschirm mit einem Projekt und seinen Verbindungen" width="900"></p>
 
 ### Auf einen Blick
 

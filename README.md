@@ -16,12 +16,7 @@ spectroelectrochemistry, EPR, X-ray and DFT – exported to Word in the layout o
   (characterisation paragraph, captions, data processing) are written alongside.
 - Light and dark theme, German and English; Windows, macOS and Linux.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/welcome_dark_en.png">
-    <img src="docs/screenshots/welcome_light_en.png" alt="Elucida – welcome page with a project and its compounds" width="900">
-  </picture>
-</p>
+<p align="center"><img src="docs/screenshots/welcome_dark_en.png" alt="Elucida – welcome page with a project and its compounds" width="900"></p>
 
 ### At a glance
 

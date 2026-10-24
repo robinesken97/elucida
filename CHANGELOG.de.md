@@ -43,7 +43,7 @@
   in Bild und Unterschrift (die Codes bleiben in den Parametertabellen).
 - Auswertungstexte beschreiben nur die Mathematik – ohne Verweis auf das Programm.
 - README neu geordnet: kurze Einleitung für das ganze Programm, der Startbildschirm mit einem Beispielprojekt als
-  Coverbild, Abschnitte in der Reihenfolge der Tabs, Übersicht aller unterstützten Dateien; Tab-Übersicht im dunklen
+  Coverbild, Abschnitte in der Reihenfolge der Tabs, Übersicht aller unterstützten Dateien; alle Bilder im dunklen
   Erscheinungsbild.
 - **Neue Begriffe:** Was bisher „Projekt“ hieß (Ordner einer Verbindung), heißt jetzt **Verbindung**; **Projekt** ist
   jetzt der Ordner mit allen Verbindungen einer Veröffentlichung. Nur die Bezeichnungen ändern sich – Ordner und

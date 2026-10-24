@@ -43,7 +43,7 @@
   figure and caption any more (the codes stay in the parameter tables).
 - Data processing texts describe only the mathematics – no reference to the program.
 - README reorganised: short introduction for the whole program, the welcome page with an example project as cover,
-  sections in the order of the tabs, overview of all supported files; tab overview in dark mode.
+  sections in the order of the tabs, overview of all supported files; all pictures in dark mode.
 - **New terms:** what used to be a "project" (folder of one compound) is now called a **compound**; **project** now
   means the folder with all compounds of a paper. Only the wording changes – folders and files (`project.elucida`)
   stay as they are, nothing has to be converted.
