@@ -147,7 +147,7 @@ class RecentRow(QWidget):
     """Eine Zeile der Projektliste: Verbindung, Ordner/Pfad, Analytik-Abzeichen, zuletzt geändert."""
     opened = Signal(str)
 
-    def __init__(self, info):
+    def __init__(self, info, number=None, extra=None):
         super().__init__()
         self.info = info
         self.setObjectName("recentRow")
@@ -156,6 +156,8 @@ class RecentRow(QWidget):
         h = QHBoxLayout(self)
         h.setContentsMargins(14, 10, 14, 10)
         h.setSpacing(14)
+        if number is not None:                         # Publikationsseite: Platz in der Reihenfolge
+            h.addWidget(QLabel(str(number), objectName="recentWhen", alignment=Qt.AlignCenter), 0, Qt.AlignVCenter)
         if info.get("thumb"):                          # Struktur (beim Speichern abgelegt), auf Weiß wie in ChemDraw
             pic = QLabel(objectName="recentThumb", alignment=Qt.AlignCenter)
             pic.setFixedSize(64, 64)
@@ -186,10 +188,19 @@ class RecentRow(QWidget):
             badges.addWidget(QLabel(badge_label(k), objectName="recentBadge"))
         if not info["badges"]:
             badges.addWidget(QLabel(T("recent_empty_project"), objectName="recentSub"))
-        badges.addStretch(1)
+        if info.get("publication"):                    # gehört zu einem Projekt (intern: Publikation), gekürzt
+            badges.addSpacing(12)
+            pub = ElidedLabel("▸ " + info["publication"], objectName="recentSub")
+            pub.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            pub.setToolTip(T("pub_part_of", t=info["publication"]))
+            badges.addWidget(pub, 1)
+        else:
+            badges.addStretch(1)
         v.addLayout(title)
         v.addWidget(sub)
         v.addLayout(badges)
+        if extra is not None:                          # Publikation: Checkliste der Verbindung
+            v.addWidget(extra)
         h.addLayout(v, 1)
         when = QLabel(relative_time(info["modified"]), objectName="recentWhen", alignment=Qt.AlignRight | Qt.AlignTop)
         when.setToolTip(info["modified"].strftime("%d.%m.%Y %H:%M"))
@@ -202,5 +213,6 @@ class RecentRow(QWidget):
 
     def matches(self, text):
         t = text.strip().lower()
-        return not t or any(t in s.lower() for s in (self.info["name"], self.info["path"], self.info.get("note", ""))) or any(
+        return not t or any(t in s.lower() for s in (self.info["name"], self.info["path"], self.info.get("note", ""),
+                                                      self.info.get("publication", ""))) or any(
             t in badge_label(k).lower() for k in self.info["badges"])

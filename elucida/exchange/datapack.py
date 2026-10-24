@@ -388,3 +388,64 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
     tmp.replace(path)
     report["path"] = str(path)
     return report
+
+
+# -- Publikation: alle Verbindungen auf einmal (elucida/app/publication.py) ---------------------------------------
+@dataclass
+class Plan:
+    name: str                  # Name der Verbindung = Zip-Name (z. B. „6m“)
+    pdir: Path
+    items: list
+
+
+def assign_codes(plans, read_text=True) -> dict:
+    """Laborkürzel -> Verbindung: steht ein Kürzel in Datei-/Ordnernamen eines Projekts, gehört es zu dieser
+    Verbindung; Kürzel nur im Inhalt gehören zur ersten Verbindung, in der sie vorkommen (wie beim Einzelpaket)."""
+    out = {}
+    for pl in plans:
+        for c in find_codes(pl.items, read_text=False):
+            out.setdefault(c, pl.name)
+    if read_text:
+        for pl in plans:
+            for c in find_codes(pl.items, read_text=True):
+                out.setdefault(c, pl.name)
+    return dict(sorted(out.items()))
+
+
+def write_publication(plans, out_dir, names, texts=None, compchem=True, readme="", license=None,
+                      progress=None) -> dict:
+    """Datensatz wie auf TUDOdata: je Verbindung <Name>.zip, DFT aller Verbindungen in CompChem.zip (Ordner je
+    Verbindung), README.txt, Lizenztext. names/texts: Kürzel -> Ersatz in Namen/Inhalt (texts None = Inhalt
+    unverändert). progress(Text, i, n) -> False bricht ab. -> Bericht je Zip + Summe."""
+    from dataclasses import replace
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    jobs = []
+    chem = []
+    for pl in plans:
+        own = [i for i in pl.items if i.on and not (compchem and i.group == "dft")]
+        if own:
+            jobs.append((pl.name, own))
+        if compchem:
+            chem += [replace(i, arc=f"{pl.name}/{Path(i.arc).name}") for i in pl.items if i.on and i.group == "dft"]
+    if chem:
+        jobs.append(("CompChem", chem))
+    report = dict(zips=[], files=0, bytes=0, text_replaced=0, kept=[], dir=str(out_dir))
+    for k, (root, items) in enumerate(jobs):
+        def prog(i, n, root=root, k=k):
+            return progress is None or progress(root, k * 1000 + int(1000 * i / max(1, n)), 1000 * len(jobs))
+        rep = write_zip(items, out_dir / f"{_safe_name(replace_codes(root, names))}.zip", root, names, texts, prog)
+        if rep.get("cancelled"):
+            report["cancelled"] = True
+            return report
+        report["zips"].append(rep["path"])
+        report["files"] += rep["files"]
+        report["bytes"] += rep["bytes"]
+        report["text_replaced"] += len(rep["text_replaced"])
+        report["kept"] += rep["kept"]
+    if readme:
+        (out_dir / "README.txt").write_text(readme, encoding="utf-8", newline="\n")
+    if license is not None:
+        name, src = license
+        (out_dir / name).write_bytes(Path(src).read_bytes())
+    return report

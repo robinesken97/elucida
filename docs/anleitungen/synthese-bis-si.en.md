@@ -12,9 +12,9 @@ the mass spectrometry service (.docx) and the elemental analysis values.
 
 ![Synthesis tab with example data](../screenshots/synthesis_light_en.png)
 
-## 1. Project and compound
+## 1. Create the compound
 
-**File → New project…**, then **Compound …** in the toolbar: name (e.g. the sample number) and the compound's CDXML.
+**File → New compound…** (or **New compound** on the page of a project), then **Compound …** in the toolbar: name (e.g. the sample number) and the compound's CDXML.
 Formula and molar mass for all tabs come from it. Enter the melting point there as well.
 
 ## 2. Synthesis
@@ -27,7 +27,7 @@ rounding of the given digits are marked.
 ## 3. NMR
 
 In the **NMR** tab add the SVG exports from MestReNova or drag them into the window. Nucleus and order (¹H, ¹³C, …,
-2D) are recognised. The structure comes from the project's compound and is placed at a free spot; you can drag it in
+2D) are recognised. The structure comes from the Compound dialog and is placed at a free spot; you can drag it in
 the preview. Paste the Mnova multiplet report under **NMR line** (all nuclei in one field); the ¹³C line can also be
 built with **Line from peak labels**.
 

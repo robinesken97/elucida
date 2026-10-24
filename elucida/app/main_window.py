@@ -38,7 +38,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFon
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
-                               QFormLayout, QFrame, QGroupBox, QHBoxLayout,
+                               QFormLayout, QFrame, QGroupBox, QHBoxLayout, QInputDialog,
                                QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
                                QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTableWidget, QTableWidgetItem, QTextBrowser,
@@ -316,7 +316,24 @@ class CompoundDialog(QDialog):
         f.addRow(T("molar_mass"), self.ed_mw)
         self.ed_mp = QLineEdit(comp.get("mp", ""))
         self.ed_mp.setPlaceholderText(T("compound_mp_ph"))
-        f.addRow(T("compound_mp"), self.ed_mp)
+        self.cb_oil = QCheckBox(T("compound_oil"))                    # Öl: m.p. <25 °C
+        self.cb_oil.setToolTip(T("compound_oil_tip"))
+        self.cb_oil.setChecked(bool(comp.get("oil")))
+        self.ed_mp.setEnabled(not self.cb_oil.isChecked())
+        self.cb_oil.toggled.connect(lambda on: self.ed_mp.setEnabled(not on))
+        mp_row = QHBoxLayout()
+        mp_row.addWidget(self.ed_mp, 1)
+        mp_row.addWidget(self.cb_oil)
+        f.addRow(T("compound_mp"), mp_row)
+        self.cb_known = QCheckBox(T("compound_known"))                # Publikation: Checkliste nur ¹H/¹³C
+        self.cb_known.setChecked(bool(comp.get("known")))
+        self.cb_known.setToolTip(T("compound_known_tip"))
+        self.ed_lit = QLineEdit(comp.get("lit", ""))
+        self.ed_lit.setPlaceholderText(T("compound_lit_ph"))
+        self.ed_lit.setEnabled(self.cb_known.isChecked())
+        self.cb_known.toggled.connect(self.ed_lit.setEnabled)
+        f.addRow("", self.cb_known)
+        f.addRow(T("compound_lit"), self.ed_lit)
         hint = QLabel(T("compound_hint"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
@@ -348,7 +365,8 @@ class CompoundDialog(QDialog):
     def result_compound(self):
         return {"name": self.ed_name.text().strip(), "structure": self.path,
                 "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text()),
-                "mp": self.ed_mp.text().strip(), "note": self.ed_note.text().strip()}
+                "mp": self.ed_mp.text().strip(), "oil": self.cb_oil.isChecked(), "note": self.ed_note.text().strip(),
+                "known": self.cb_known.isChecked(), "lit": self.ed_lit.text().strip() if self.cb_known.isChecked() else ""}
 
 
 def compound_from_structure(p):
@@ -536,6 +554,7 @@ class MainWindow(QMainWindow):
         self.tab_fmt = {}                                # eigenes Textformat je Tab (Schlüssel = STATE_KEY / epsilon)
         self._tab_key = "syn"                            # offener Tab (Name, nicht Position)
         self.project_dir = None
+        self.publication_dir = None                      # Publikation (übergeordneter Ordner), falls bekannt
         self._undo, self._redo = [], []
         self._restoring = False
         self._saved_snap = None
@@ -591,6 +610,11 @@ class MainWindow(QMainWindow):
                            triggered=self.save_project)
         m.addAction(act_new)
         m.addAction(act_open_prj)
+        m.addAction(QAction(T("act_new_publication"), self, triggered=self.new_publication))
+        self.act_to_pub = QAction(T("act_to_publication"), self, shortcut=QKeySequence("Ctrl+Shift+P"),
+                                  triggered=self.go_publication)
+        self.act_to_pub.setEnabled(bool(self.publication_dir and self.project_dir))
+        m.addAction(self.act_to_pub)
         self.recent_menu = m.addMenu(T("act_recent"))
         self.fill_recent_menu()
         m.addAction(act_save)
@@ -676,6 +700,7 @@ class MainWindow(QMainWindow):
         mh.addAction(QAction(T("act_guide_tab"), self, shortcut=QKeySequence.HelpContents, triggered=self.show_tab_guide))
         mh.addAction(QAction(T("act_quickstart"), self, triggered=self.show_quickstart))
         mh.addAction(QAction(T("act_demo"), self, triggered=self.open_demo))
+        mh.addAction(QAction(T("act_demo_pub"), self, triggered=self.open_demo_publication))
         mh.addSeparator()
         mh.addAction(QAction(T("act_log"), self, triggered=self.show_log))
         mh.addSeparator()
@@ -1018,8 +1043,12 @@ class MainWindow(QMainWindow):
         self.center = QStackedWidget()
         self.center.addWidget(self.welcome_page())          # 0: ohne Projekt
         self.center.addWidget(self.nav_bar())               # 1: Tabs
+        from elucida.app.publication_view import PublicationPage
+        self.pub_page = PublicationPage(self)               # 2: Publikation (Verbindungen, Exporte)
+        self.pub_page.set_publication(self.publication_dir)
+        self.center.addWidget(self.pub_page)
         self.setCentralWidget(self.center)
-        self.center.setCurrentIndex(1 if self.project_dir else 0)
+        self.center.setCurrentIndex(self._center_index())
 
         self.apply_globals()
         self.apply_series_widgets()
@@ -1298,6 +1327,17 @@ class MainWindow(QMainWindow):
         hb = QHBoxLayout(bar)
         hb.setContentsMargins(10, 4, 10, 6)
         hb.setSpacing(4)
+        self.btn_pub = QPushButton(objectName="navTab")      # zurück zur Publikation (nur bei Verbindungen darin)
+        self.btn_pub.setToolTip(T("act_to_publication"))
+        self.btn_pub.clicked.connect(self.go_publication)
+        self.btn_pub.setVisible(bool(self.publication_dir))
+        hb.addWidget(self.btn_pub, 0, Qt.AlignBottom)
+        self.btn_pub_sep = QFrame(objectName="navSep")
+        self.btn_pub_sep.setFixedWidth(1)
+        self.btn_pub_sep.setVisible(bool(self.publication_dir))
+        hb.addSpacing(6)
+        hb.addWidget(self.btn_pub_sep)
+        hb.addSpacing(6)
         grp = QButtonGroup(bar)
         self.nav_buttons = {}
         for gi, (head, keys) in enumerate(self.NAV_GROUPS):
@@ -1689,19 +1729,30 @@ class MainWindow(QMainWindow):
         head.addWidget(t, 1)
         v.addLayout(head)
         row = QHBoxLayout()
-        b_new = QPushButton(STYLE.icon("new", "#FFFFFF"), T("act_new_project"))
-        b_new.setProperty("accent", True)
+        b_new = QPushButton(STYLE.icon("new"), T("act_new_project"))           # einzelne Verbindung
         b_new.clicked.connect(self.new_project)
         b_open = QPushButton(STYLE.icon("open"), T("act_open_project"))
         b_open.clicked.connect(self.open_project_dialog)
+        b_pub = QPushButton(STYLE.icon("new", "#FFFFFF"), T("act_new_publication"))   # Projekt (mehrere Verbindungen)
+        b_pub.setProperty("accent", True)
+        b_pub.setToolTip(T("act_new_publication_tip"))
+        b_pub.clicked.connect(self.new_publication)
         b_demo = QPushButton(T("act_demo"))
         b_demo.setToolTip(T("act_demo_tip"))
         b_demo.clicked.connect(self.open_demo)
-        for b in (b_new, b_open, b_demo):
+        b_demo_pub = QPushButton(T("act_demo_pub"))
+        b_demo_pub.setToolTip(T("act_demo_pub_tip"))
+        b_demo_pub.clicked.connect(self.open_demo_publication)
+        for b in (b_pub, b_new, b_open, b_demo_pub, b_demo):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
         v.addSpacing(6)
+        self.lbl_pubs = QLabel(objectName="recentHead")
+        v.addWidget(self.lbl_pubs)
+        self.pub_box = QVBoxLayout()
+        self.pub_box.setSpacing(8)
+        v.addLayout(self.pub_box)
         row = QHBoxLayout()
         self.lbl_recent = QLabel(objectName="recentHead")
         row.addWidget(self.lbl_recent)
@@ -1740,6 +1791,7 @@ class MainWindow(QMainWindow):
         outer.addWidget(col, 12)
         outer.addStretch(1)
         self.recent_rows = []
+        self.pub_rows = []
         self.fill_recent_list()
         return page
 
@@ -1748,12 +1800,32 @@ class MainWindow(QMainWindow):
         if getattr(self, "recent_box", None) is None:
             return
         from elucida.app import welcome as WEL
-        for r in self.recent_rows:
+        from elucida.app import publication as PUB
+        from elucida.app.publication_view import PublicationRow, publication_info
+        for r in self.recent_rows + self.pub_rows:
             r.setParent(None)
             r.deleteLater()
-        self.recent_rows = []
+        self.recent_rows, self.pub_rows = [], []
+        pubs = []
+        for p in self.recent_publications():          # Publikationen oben, je höchstens drei sichtbar
+            try:
+                info = publication_info(p)
+            except Exception:
+                info = None
+            if info is not None:
+                pubs.append(info)
+        for info in pubs[:3]:
+            row = PublicationRow(info)
+            row.opened.connect(lambda p: self.open_publication(p))
+            self.pub_box.addWidget(row)
+            self.pub_rows.append(row)
+        self.lbl_pubs.setText(f"<b>{T('welcome_publications')}</b>")
+        self.lbl_pubs.setVisible(bool(pubs))
         infos = [i for i in (WEL.project_info(p) for p in self.recent()) if i is not None]
         for info in infos:
+            pub = PUB.publication_of(info["path"])
+            if pub is not None:
+                info["publication"] = re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(pub))) or pub.name
             row = WEL.RecentRow(info)
             row.opened.connect(lambda p: self.open_project(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1767,7 +1839,7 @@ class MainWindow(QMainWindow):
         self._filter_recent(self.ed_recent.text())
 
     def _filter_recent(self, text):
-        for r in getattr(self, "recent_rows", []):
+        for r in getattr(self, "recent_rows", []) + getattr(self, "pub_rows", []):
             r.setVisible(r.matches(text))
 
     def _recent_menu(self, row, pos):
@@ -1791,6 +1863,21 @@ class MainWindow(QMainWindow):
         self.settings.setValue("recent_projects", json.dumps([r for r in self.recent() if r != str(pdir)]))
         self.fill_recent_menu()
         self.fill_recent_list()
+
+    def open_demo_publication(self, folder=None):
+        """Beispielpublikation mit zwei Verbindungen (künstliche Daten) anlegen und ihre Seite zeigen."""
+        from elucida.app import demo as DEMO
+        self.maybe_save()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            d = DEMO.open_demo_publication(self, folder)
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.log_signal.emit(traceback.format_exc())
+            return self.error(str(e))
+        QApplication.restoreOverrideCursor()
+        self.statusBar().showMessage(T("demo_pub_done", p=str(d)), 10000)
+        return d
 
     def open_demo(self, folder=None):
         """Beispielprojekt mit künstlichen Daten (alle Tabs) anlegen und öffnen."""
@@ -1816,17 +1903,35 @@ class MainWindow(QMainWindow):
                + TABS.gh_anchor(T("readme_quickstart")))
         QDesktopServices.openUrl(QUrl(url))
 
+    def _center_index(self):
+        return 1 if self.project_dir else 2 if self.publication_dir else 0
+
     def update_title(self):
         if getattr(self, "center", None) is not None:
-            self.center.setCurrentIndex(1 if self.project_dir else 0)
-            self.fill_recent_list()
+            self.center.setCurrentIndex(self._center_index())
+            if self._center_index() == 0:                # Liste nur lesen, wenn sie zu sehen ist
+                self.fill_recent_list()
         if getattr(self, "act_folder", None) is not None:
             self.act_folder.setEnabled(bool(self.project_dir))
+        if getattr(self, "act_to_pub", None) is not None:
+            self.act_to_pub.setEnabled(bool(self.publication_dir and self.project_dir))
+        if getattr(self, "btn_pub", None) is not None:
+            on = bool(self.publication_dir and self.project_dir)
+            self.btn_pub.setVisible(on)
+            self.btn_pub_sep.setVisible(on)
+            if on:
+                t_ = self.publication_title()
+                self.btn_pub.setText("◂ " + (t_ if len(t_) <= 28 else t_[:26] + "…"))
+        if self.publication_dir and not self.project_dir:
+            self.setWindowTitle(f"{self.publication_title()} – {T('app_title')} {APP_VERSION}")
+            return
         name = Path(self.project_dir).name if self.project_dir else T("no_project_title")
         if self.compound.get("name"):
             name = f"{self.compound['name']} · {name}"
         if self.compound.get("note"):                  # Notiz zur Verbindung (z. B. „Radikalkation von 6m“)
             name = f"{name} ({self.compound['note']})"
+        if self.publication_dir:                         # Teil einer Publikation
+            name = f"{name} – {self.publication_title()}"
         self.setWindowTitle(f"{name} – {T('app_title')} {APP_VERSION}")
 
     # -- Verbindung des Projekts (Vorgabe für alle Tabs) ------------------------------------
@@ -1901,8 +2006,12 @@ class MainWindow(QMainWindow):
             self.error(str(e))
             return False
         self.project_dir = str(pdir)
+        from elucida.app import publication as PUB
+        pub = PUB.publication_of(pdir)
+        self.publication_dir = str(pub) if pub else None
         self.settings.setValue("last_project_dir", str(pdir.parent))
         self._load_state_into_ui({})
+        self.update_title()
         self.add_recent(pdir)
         self.log_signal.emit(T("project_created", p=pdir))
         return True
@@ -1977,12 +2086,15 @@ class MainWindow(QMainWindow):
                                              self.settings.value("last_project_dir", str(Path.home())))
         if not d:
             return
+        from elucida.app import publication as PUB
         if PRJ.is_project(d):
             self.open_project(d, ask=False)
+        elif PUB.is_publication(d):
+            self.open_publication(d)
         elif QMessageBox.question(self, T("app_title"), T("make_project_q", p=d)) == QMessageBox.Yes:
             self.create_project(d)
 
-    def open_project(self, path, ask=True):
+    def open_project(self, path, ask=True, recent=True):
         pdir = PRJ.is_project(path)
         if pdir is None:
             self.error(T("no_project", p=path))
@@ -1997,9 +2109,14 @@ class MainWindow(QMainWindow):
         for m in PRJ.missing_files(state):
             self.log_signal.emit("  " + T("missing_file", p=m))
         self.project_dir = str(pdir)
+        from elucida.app import publication as PUB
+        pub = PUB.publication_of(pdir)
+        self.publication_dir = str(pub) if pub else None
         self._load_state_into_ui(state)
-        self.add_recent(pdir)
-        self.settings.setValue("last_project_dir", str(pdir.parent))
+        if recent:
+            self.add_recent(pdir)
+            self.settings.setValue("last_project_dir", str(pdir.parent))
+        self.update_title()
         return True
 
     def save_project(self):
@@ -2041,6 +2158,145 @@ class MainWindow(QMainWindow):
         rec = [str(pdir)] + [r for r in self.recent() if r != str(pdir)]
         self.settings.setValue("recent_projects", json.dumps(rec[:20]))
         self.fill_recent_menu()
+
+    # -- Publikation (elucida/app/publication.py) ------------------------------------------
+    def publication_title(self):
+        from elucida.app import publication as PUB
+        if not self.publication_dir:
+            return ""
+        return re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(self.publication_dir))) or \
+            Path(self.publication_dir).name
+
+    def recent_publications(self):
+        try:
+            return list(json.loads(self.settings.value("recent_publications", "[]") or "[]"))
+        except Exception:
+            return []
+
+    def add_recent_publication(self, pdir):
+        rec = [str(pdir)] + [r for r in self.recent_publications() if r != str(pdir)]
+        self.settings.setValue("recent_publications", json.dumps(rec[:10]))
+
+    def new_publication(self):
+        """Ordner wählen (leer oder mit vorhandenen Verbindungsprojekten) und zur Publikation machen."""
+        from elucida.app import publication as PUB
+        d = QFileDialog.getExistingDirectory(self, T("act_new_publication"),
+                                             self.settings.value("last_project_dir", str(Path.home())))
+        if not d:
+            return False
+        if PRJ.is_project(d):
+            self.error(T("pub_is_project"))
+            return False
+        try:
+            PUB.create(d)
+        except (OSError, ValueError) as e:
+            self.error(str(e))
+            return False
+        self.open_publication(d)
+        if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            self.pub_page.edit_info()
+        return True
+
+    def open_publication(self, path):
+        from elucida.app import publication as PUB
+        pdir = PUB.is_publication(path)
+        if pdir is None:
+            self.error(T("no_project", p=path))
+            return False
+        if self.project_dir:
+            self.close_project()
+        self.publication_dir = str(pdir)
+        self.add_recent_publication(pdir)
+        self.pub_page.set_publication(pdir)
+        self.update_title()
+        return True
+
+    def close_project(self):
+        """Verbindung schließen (gespeichert wird automatisch) – zurück zur Publikation bzw. zum Startbildschirm."""
+        self.maybe_save()
+        self.project_dir = None
+        self._load_state_into_ui({})
+        self.update_title()
+
+    def close_publication(self):
+        self.publication_dir = None
+        self.pub_page.set_publication(None)
+        self.update_title()
+
+    def go_publication(self):
+        if self.publication_dir:
+            self.open_publication(self.publication_dir)
+
+    def new_compound_in_publication(self, name=None):
+        """Neue Verbindung als Unterordner der Publikation; Name = Ordner und Verbindung des Projekts."""
+        from elucida.app import publication as PUB
+        if not self.publication_dir:
+            return False
+        if name is None:
+            name, ok = QInputDialog.getText(self, T("pub_new_compound"), T("pub_new_compound_q"))
+            if not ok:
+                return False
+        name = name.strip()
+        if not name:
+            return False
+        d = Path(self.publication_dir) / core.safe_name(name)
+        if PRJ.is_project(d):
+            return self.open_project(d)
+        if not self.create_project(d):
+            return False
+        PUB.add_compound(self.publication_dir, d)
+        self.set_compound({**self.compound, "name": name})
+        self.save_project()
+        return True
+
+    def export_publication_si(self, pdir, compounds, sections, toc=True, methods=True, path=None, template="group"):
+        """Gesamt-SI (elucida/si/publication_si.py): jede Verbindung kurz öffnen, ihre Blöcke je Kapitel sammeln,
+        danach die vorher offene Verbindung wiederherstellen. -> Pfad der Word-Datei."""
+        from elucida.app import publication as PUB
+        from elucida.si import publication_si as PSI
+        self.maybe_save()
+        prev = self.project_dir
+        comps = []
+        dlg = QProgressDialog(T("pub_si_writing"), T("cancel"), 0, len(compounds), self)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(300)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            for i, d in enumerate(compounds):
+                dlg.setValue(i)
+                dlg.setLabelText(T("pub_si_compound", name=PUB.compound_name(d)))
+                QApplication.processEvents()
+                if dlg.wasCanceled():
+                    return None
+                if not self.open_project(d, recent=False):
+                    continue
+                try:
+                    comps.append(self.si_compound_parts(sections, methods))
+                except Exception:
+                    self.log_signal.emit(traceback.format_exc())
+        finally:
+            if prev:
+                self.open_project(prev, recent=False)
+            else:
+                self.close_project()
+                self.open_publication(pdir)
+            QApplication.restoreOverrideCursor()
+            dlg.close()
+        meta = PUB.load(pdir)
+        setup = [str(self.settings.value(f"si_setup/{k}", "") or "").strip() for k in PSI.SETUP_KEYS]
+        blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods)
+        name = core.safe_name(Path(pdir).name)
+        path = Path(path) if path else Path(pdir) / PUB.SI_DIR / f"{name}_SI.docx"
+        SI.set_template(template)                       # Vorlage nur für diese Datei (Einzel-SI bleibt wie die Gruppe)
+        try:
+            SI.write_docx(path, blocks)
+        except PermissionError:
+            self.error(T("report_locked", p=str(path)))
+            return None
+        finally:
+            SI.set_template("group")
+        self.exported([path.parent])
+        return path
 
     def recent(self):
         try:
@@ -2655,26 +2911,79 @@ class MainWindow(QMainWindow):
             blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.work_dir(self.project_dir, "si"))
         return blocks, missing
 
-    def si_methods_blocks(self):
-        """Abschnitt „Data processing and fitting“: dieselben Methodentexte wie „SI-Text kopieren“ (nur benutzte
-        Schritte, aktuelle Parameter, dann Ergebnisse) für alle Tabs, die fitten; je Technik ein Absatz mit fettem
-        Titel. Leer, wenn nirgends gefittet wurde."""
+    def si_methods_items(self):
+        """Methodentexte der Tabs, die fitten -> [(Kapitel der Gesamt-SI, Titel, Text)] (Text leer ohne Fit)."""
         self.collect_globals()
-        items = [("UV-Vis absorption spectroscopy", self.eps_methods_text() if self.groups else "")]
-        for title, t in (("Cyclic voltammetry", self.cv_tab), ("UV-Vis spectroelectrochemistry", self.sec_tab),
-                         ("EPR spectroscopy", self.epr_tab)):
+        items = [("uvvis", "UV-Vis absorption spectroscopy", self.eps_methods_text() if self.groups else "")]
+        for key, title, t in (("cv", "Cyclic voltammetry", self.cv_tab),
+                              ("sec", "UV-Vis spectroelectrochemistry", self.sec_tab),
+                              ("epr", "EPR spectroscopy", self.epr_tab)):
             try:
                 txt = t.methods_text() if t.figure_spec() is not None else ""   # Ergebnisse/Fits aktuell
             except Exception:
                 self.log_signal.emit(traceback.format_exc())
                 txt = ""
-            items.append((title, txt))
+            items.append((key, title, txt))
+        return items
+
+    @staticmethod
+    def _methods_paras(title, txt):
+        paras = [p.strip() for p in (txt or "").split("\n\n") if p.strip()]
+        return [("char", (f"<b>{title}.</b> " if k == 0 else "") + SI.methods_html(p)) for k, p in enumerate(paras)]
+
+    def si_methods_blocks(self):
+        """Abschnitt „Data processing and fitting“: dieselben Methodentexte wie „SI-Text kopieren“ (nur benutzte
+        Schritte, aktuelle Parameter, dann Ergebnisse) für alle Tabs, die fitten; je Technik ein Absatz mit fettem
+        Titel. Leer, wenn nirgends gefittet wurde."""
         blocks = []
-        for title, txt in items:
-            paras = [p.strip() for p in (txt or "").split("\n\n") if p.strip()]
-            for k, p in enumerate(paras):
-                blocks.append(("char", (f"<b>{title}.</b> " if k == 0 else "") + SI.methods_html(p)))
+        for _, title, txt in self.si_methods_items():
+            blocks += self._methods_paras(title, txt)
         return [("heading", "Data processing and fitting")] + blocks if blocks else []
+
+    def si_compound_parts(self, sections, methods=True):
+        """Gesamt-SI (elucida/si/publication_si.py): Blöcke der geöffneten Verbindung je Kapitel. Abbildungen ohne
+        Seitenaufteilung (macht die Gesamt-SI), Aufbau-Texte stehen dort in „Materials and Methods“."""
+        comp = self.compound or {}
+        title = self.syn_tab.st.get("name") or comp.get("name") or Path(self.project_dir or ".").name
+        out_dir = PRJ.work_dir(self.project_dir, "si")
+        parts = {}
+
+        def figs(tabs):
+            res = []
+            for t in tabs:
+                try:
+                    res += t.si_figure(out_dir, title)
+                except Exception:
+                    self.log_signal.emit(traceback.format_exc())
+            return res
+        if "char" in sections:
+            parts["char"] = self.si_char_blocks(comp, title)[0]
+        if "nmr" in sections and self.nmr_tab.spectra():
+            parts["nmr"] = self.nmr_tab.docx_blocks(out_dir)
+        if "irms" in sections:
+            parts["irms"] = figs([self.irms_tab, self.hrms_tab])
+        if "uvvis" in sections:
+            parts["uvvis"] = self.si_eps_figures(out_dir, title) + figs([self.ov_tab, self.fl_tab])
+        for key, tab in (("epr", self.epr_tab), ("cv", self.cv_tab), ("sec", self.sec_tab)):
+            if key in sections:
+                parts[key] = figs([tab])
+        if methods:
+            for key, mtitle, txt in self.si_methods_items():
+                if key in sections and txt:
+                    parts["methods_" + key] = self._methods_paras(f"{mtitle} ({title})", txt)
+        xt = self.xray_tab
+        es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in sections else []
+        if es:
+            blocks = self.si_xray_blocks(es)
+            k = next((i for i, b in enumerate(blocks) if b[0] == "tabcap" and b[1].startswith("Crystal data")), None)
+            parts["xray"] = blocks[:k] if k is not None else blocks       # Kristalldaten: gemeinsame Tabellen
+            h_, r_ = xt.crystal_table()
+            parts["crystal"] = (h_, [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_]
+                                     for row_ in r_])
+        dt = self.dft_tab
+        if "dft" in sections and any(dt.calc_of(e) is not None for e in dt.entries()):
+            parts["dft"] = dt.docx_blocks(out_dir)
+        return title, parts
 
     def figure_tabs(self):
         """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
@@ -2722,7 +3031,9 @@ class MainWindow(QMainWindow):
         """Zeilen des Charakterisierungsabsatzes in SI-Reihenfolge -> ([(Art, Klartext, HTML)], fehlende Teile).
         Art: mp, nmr_<Kern>, ir, hrms, uvvis, ea (auch für die Austauschdatei elucida.json)."""
         parts, missing = [], []
-        if comp.get("mp"):
+        if comp.get("oil"):                                # Öl: Schmelzpunkt unter Raumtemperatur
+            parts.append(("mp", "m.p. <25 °C", "<b>m.p.</b> &lt;25 °C"))
+        elif comp.get("mp"):
             mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", comp["mp"]).strip()
             parts.append(("mp", "m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))   # wie in der SI: „m.p.“ fett
         else:
@@ -2912,9 +3223,13 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, ev):
         files = [u.toLocalFile() for u in ev.mimeData().urls()]
+        from elucida.app import publication as PUB
         for p in files:
             if PRJ.is_project(p):
                 self.open_project(p)
+                return
+            if PUB.is_publication(p):
+                self.open_publication(p)
                 return
         # X-Ray: CIF-Dateien (jeder data_-Block mit Atomen wird ein Eintrag)
         cifs = [p for p in files if XRAY.is_cif(p)]

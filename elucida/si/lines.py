@@ -271,6 +271,24 @@ COL_GAP = 425                              # Abstand zweier Spalten (0.75 cm)
 _MONO = '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:eastAsia="Courier New"/>'
 
 
+# Vorlagen der Gesamt-SI: Kopf des Titelblatts und Bezeichnung von Abbildungen/Tabellen (Verlage schreiben für die SI
+# kaum etwas vor; „group“ = SI der Gruppe, Angewandte/Wiley). colon: Trennzeichen nach der Nummer.
+TEMPLATES = {
+    "group": dict(header="Supplementary Materials for", fig="Figure S", tab="Table S", colon=":"),
+    "acs": dict(header="Supporting Information for", fig="Figure S", tab="Table S", colon="."),
+    "rsc": dict(header="Electronic Supplementary Information for", fig="Fig. S", tab="Table S", colon=""),
+    "nature": dict(header="Supplementary Information for", fig="Supplementary Figure ", tab="Supplementary Table ",
+                   colon=" |"),
+}
+_TEMPLATE = "group"
+
+
+def set_template(key):
+    """Vorlage für die folgenden Word-Exporte (Standard „group“; die Gesamt-SI setzt sie und danach zurück)."""
+    global _TEMPLATE
+    _TEMPLATE = key if key in TEMPLATES else "group"
+
+
 def set_font(name):
     """Schriftart aller Word-Exporte (Standard Arial wie die SI der Gruppe); die Größe bleibt 11 pt, weil
     two_per_page mit dieser Zeilenhöhe rechnet."""
@@ -369,12 +387,18 @@ def two_per_page(blocks, per_page=2):
     return out
 
 
-def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs=""):
+def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs="", style="", page_before=False, ind=0):
     x = f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
     if keep_next:
-        x += "<w:keepNext/>"
+        x = "<w:keepNext/>" + x
+    if page_before:
+        x = "<w:pageBreakBefore/>" + x
     if tabs:
         x = f"<w:tabs>{tabs}</w:tabs>" + x
+    if style:
+        x = f'<w:pStyle w:val="{style}"/>' + x
+    if ind:
+        x += f'<w:ind w:left="{ind}"/>'
     return f"<w:pPr>{x}<w:jc w:val=\"{align}\"/></w:pPr>"
 
 
@@ -385,8 +409,12 @@ def _para(runs, size=22, **kw):
 def _label_para(kind, num, runs, **kw):
     """„Figure S1: …“ / „Table S1: …“ – Kürzel und Nummer fett, Doppelpunkt bei Tabellen fett, bei Abbildungen nicht
     (wie in der SI)."""
-    lab = _run_xml(f"{kind} S", {"b"})
-    colon = _run_xml(":", {"b"} if kind == "Table" else set())
+    tpl = TEMPLATES[_TEMPLATE]
+    lab = _run_xml(tpl["fig"] if kind == "Figure" else tpl["tab"], {"b"})
+    if _TEMPLATE == "group":                   # SI der Gruppe: Doppelpunkt nur bei Tabellen fett
+        colon = _run_xml(":", {"b"} if kind == "Table" else set())
+    else:
+        colon = _run_xml(tpl["colon"], {"b"}) if tpl["colon"] else ""
     return "<w:p>" + _ppr(**kw) + lab + _seq_xml(kind, num) + colon + _run_xml(" ", set()) + \
         "".join(_run_xml(t, s) for t, s in runs) + "</w:p>"
 
@@ -522,6 +550,9 @@ def write_docx(path, blocks, columns=1):
     ("pagebreak",)                        Seitenumbruch (NMR: zwei Spektren je Seite)
     ("ole", CDX, Vorschau, Breite cm, Höhe cm)  bearbeitbares ChemDraw-Objekt (CDX), Vorschau EMF (Vektor) oder PNG
     ("gap",)                              Leerzeile
+    ("title", Titel, Autoren, Adresse)    Titelseite der Gesamt-SI („Supplementary Materials for“)
+    ("toc",)                              „Table of Contents“ + Verzeichnisfeld (Word aktualisiert beim Öffnen)
+    ("section", Text)                     Kapitel („1. Materials and Methods“, Überschrift 1, neue Seite)
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
     body, media, svgs, oles = [], [], [], []
     n_fig = n_tab = 0
@@ -529,6 +560,7 @@ def write_docx(path, blocks, columns=1):
         return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
     col_w = col_width(columns)
     pending_break = False
+    toc_used = False
     for b in blocks:
         k = b[0]
         if pending_break and k != "image":       # kein Bild danach: echter Umbruch
@@ -613,6 +645,26 @@ def write_docx(path, blocks, columns=1):
             pending_break = True                 # am nächsten Bild als „Seitenumbruch oberhalb“
         elif k == "gap":
             body.append(_para([("", set())]))
+        elif k == "title":                       # Titelblatt wie die SI der Gruppe (gemessen: 18 pt, Rest 11 pt)
+            body.append(_para([(TEMPLATES[_TEMPLATE]["header"], set())], size=36, align="center", before=1200,
+                              after=720))
+            body.append(_para(html_runs("<b>" + nbsp(b[1]) + "</b>"), align="center", after=600))
+            if len(b) > 2 and b[2]:
+                body.append(_para(html_runs(nbsp(b[2])), align="center", after=600))
+            for ln in (b[3] if len(b) > 3 and b[3] else "").splitlines():
+                body.append(_para(html_runs(nbsp(ln)), align="center"))
+        elif k == "toc":
+            toc_used = True
+            body.append(_para([("Table of Contents", {"b"})], size=24, align="left", after=240, page_before=True))
+            body.append('<w:p><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr>'
+                        '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText '
+                        'xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar '
+                        'w:fldCharType="separate"/></w:r>' + _run_xml("(Update field: right-click \u2192 Update Field)",
+                                                                      {"i"}) +
+                        '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>')
+        elif k == "section":
+            body.append(_para([(b[1], {"b"})], align="left", style="Heading1", page_before=True, after=240,
+                              keep_next=True, ind=357))
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
           'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
@@ -624,7 +676,15 @@ def write_docx(path, blocks, columns=1):
               '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults>'
               f'<w:rPrDefault><w:rPr>{_FONT}<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-GB"/></w:rPr>'
               '</w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr>'
-              '</w:pPrDefault></w:docDefaults></w:styles>')
+              '</w:pPrDefault></w:docDefaults>'
+              # Kapitel der Gesamt-SI: wie Fließtext fett, Gliederungsebene 1 (Inhaltsverzeichnis)
+              '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
+              '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>'
+              '<w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr>'
+              '<w:rPr><w:b/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/>'
+              '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9061"/></w:tabs></w:pPr></w:style>'
+              '</w:styles>')
     ctypes = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
               '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
               '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
@@ -639,7 +699,8 @@ def write_docx(path, blocks, columns=1):
     settings = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat>'
                 '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" '
-                'w:val="15"/></w:compat></w:settings>')
+                'w:val="15"/></w:compat>' + ('<w:updateFields w:val="true"/>' if toc_used else '') +
+                '</w:settings>')
     rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'

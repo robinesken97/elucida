@@ -2,7 +2,7 @@
 
 # Elucida – von der Synthese zur SI
 
-*Früher **Spectravolt** (davor **UVVisTool**). Projekte, Einstellungen und heruntergeladene Daten werden automatisch übernommen.*
+*Früher **Spectravolt** (davor **UVVisTool**). Verbindungen, Einstellungen und heruntergeladene Daten werden automatisch übernommen.*
 
 <p align="center"><img src="assets/icon.png" alt="Elucida" width="96"></p>
 
@@ -79,7 +79,7 @@ Die App ist nicht signiert, deshalb warnt das Betriebssystem beim ersten Start:
 
 **Updates:** Beim Start prüft das Programm einmal am Tag, ob es auf GitHub eine neuere Version gibt,
 und bietet an, die Release-Seite zu öffnen (Hilfe → „Nach Updates suchen…“; im Hilfe-Menü abschaltbar).
-Zum Aktualisieren die neue Datei herunterladen und die alte App ersetzen; Projekte und Einstellungen
+Zum Aktualisieren die neue Datei herunterladen und die alte App ersetzen; Verbindungen, Projekte und Einstellungen
 bleiben erhalten.
 
 **Linux-AppImage:** `chmod +x Elucida-linux-x64.AppImage` (oder Dateieigenschaften → „Als Programm
@@ -89,11 +89,15 @@ Wie beim tar.gz ist eine Distribution mindestens so neu wie Ubuntu 22.04 (glibc 
 
 Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funktioniert nicht ohne den Ordner `_internal` daneben.
 
-## Schnellstart: vom leeren Projekt zur SI
+## Schnellstart: von der leeren Verbindung zur SI
 
-1. **Projekt anlegen:** Ohne Projekt zeigt das Programm einen Startbildschirm: **Neues Projekt…** und einen leeren
-   Ordner wählen oder im Dialog neu anlegen (oder **Datei → Neues Projekt…**). Ein
-   Projekt steht für eine Verbindung. Alle Dateien, die du lädst, werden hineinkopiert, gespeichert wird automatisch.
+Elucida kennt zwei Ebenen: Eine **Verbindung** ist ein Ordner mit allen Daten einer Verbindung, ein **Projekt** fasst
+die Verbindungen einer Veröffentlichung zusammen (Gesamt-SI, Datensatz; siehe den nächsten Schnellstart). Eine
+Verbindung lässt sich auch ohne Projekt anlegen.
+
+1. **Verbindung anlegen:** Der Startbildschirm zeigt **Neue Verbindung…**: einen leeren Ordner wählen oder im Dialog neu
+   anlegen (oder **Datei → Neue Verbindung…**; in einem Projekt **Neue Verbindung** auf dessen Seite). Alle Dateien, die
+   du lädst, werden hineinkopiert, gespeichert wird automatisch.
 2. **Verbindung festlegen:** **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
    ChemDraw-Datei (CDXML). Summenformel und Molmasse kommen daraus. Das ist die Vorgabe für alle Tabs und die SI.
 3. **Daten laden:** Dateien einfach ins Fenster ziehen – Elucida legt sie in den passenden Tab:
@@ -104,10 +108,32 @@ Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funkt
    Standard abweicht), rechts die Abbildung. Labels, Strukturen und Insets lassen sich mit der Maus verschieben.
    **Strg+Z** / **⌘Z** macht alles rückgängig.
 5. **Exportieren:** **Exportieren** unten im Tab schreibt die Abbildung (PDF/SVG/PNG, 16 × 11 cm für eine halbe
-   A4-Seite) und die Daten in den Projektordner (`figures/`, `tables/`, `SI/`).
+   A4-Seite) und die Daten in den Ordner der Verbindung (`figures/`, `tables/`, `SI/`).
 6. **SI erstellen:** **SI (Word)** in der Werkzeugleiste sammelt alles Fertige in einer Word-Datei: Synthese,
    Charakterisierungsabsatz (m.p., NMR, IR, HR-MS, UV-Vis, Elementaranalyse), Abbildungen zu zweit je Seite,
    Kristalldaten und DFT-Koordinaten. Was noch fehlt, zählt das Programm danach auf.
+
+## Schnellstart: Projekt mit mehreren Verbindungen
+
+1. **Projekt anlegen:** **Neues Projekt…** auf dem Startbildschirm (oder **Datei → Neues Projekt…**) und einen
+   Ordner wählen – leer oder einer, in dem schon Verbindungen liegen (die werden automatisch aufgenommen).
+2. **Angaben ausfüllen:** **Angaben …** – Titel des Artikels (Titelblatt der SI; kursiv mit `<i>…</i>`), Autoren,
+   Adresse, DOI des Datensatzes, zugehörige Publikation, Beschreibungen, Lizenz. Sie landen in `README.txt` des
+   Datensatzes und auf dem Titelblatt.
+3. **Verbindungen anlegen:** **Neue Verbindung** legt einen Unterordner an (Name = Verbindung, z. B.
+   `6m`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. **Datei → Zum Projekt**
+   führt zurück zur Liste, ebenso der Knopf **◂ <Projekt>** links in der Tab-Leiste (Strg+Umschalt+P). Rechtsklick
+   ändert die Reihenfolge – sie gilt für SI und Datensatz. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
+   ¹³C, 2D-NMR, HRMS, IR und m.p.; für im Dialog Verbindung als **literaturbekannt** markierte Verbindungen (mit Literatur)
+   nur ¹H und ¹³C. **Öl** neben dem Schmelzpunkt ergibt „m.p. <25 °C“.
+4. **SI-Texte:** **SI-Texte …** – „Materials and Methods“ (oder die in den Tabs hinterlegten Aufbau-Texte übernehmen) und
+   je Kapitel eine optionale Einleitung.
+5. **Gesamt-SI:** **Gesamt-SI (Word) …** – Kapitel, Verbindungen und Vorlage (Gruppe/Wiley, ACS, RSC, Nature) wählen;
+   die Word-Datei liegt danach in `SI/` des Projekts.
+6. **Datensatz:** **Datenpakete (Zip) …** – je Verbindung ein Zip, `CompChem.zip`, `README.txt` und Lizenztext in
+   `datapack/`, fertig zum Hochladen (z. B. TUDOdata).
+
+Zum Ausprobieren: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit zwei Verbindungen (künstliche Daten) an.
 
 ## Anleitungen
 
@@ -120,8 +146,8 @@ Schritt für Schritt durch einen Arbeitsablauf, mit Bildern:
 - [EPR: Spektren, Simulation und Fit](docs/anleitungen/epr.de.md)
 - [Kristallstruktur und DFT](docs/anleitungen/struktur-dft.de.md)
 
-Zum Ausprobieren ohne eigene Daten: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit künstlichen Daten für alle
-Tabs an. **Hilfe → Anleitung zu diesem Tab** (F1) öffnet den passenden Abschnitt unten.
+Zum Ausprobieren ohne eigene Daten: **Hilfe → Beispielverbindung ansehen** legt eine Verbindung mit künstlichen Daten für
+alle Tabs an. **Hilfe → Anleitung zu diesem Tab** (F1) öffnet den passenden Abschnitt unten.
 
 Alle Einstellungen der einzelnen Tabs stehen weiter unten zum Nachschlagen.
 
@@ -177,7 +203,7 @@ Alle Einstellungen der einzelnen Tabs stehen weiter unten zum Nachschlagen.
      zurück. X-Ray und DFT haben zusätzlich „Darstellung auf Standard“ neben „Ansicht zurücksetzen“ (Stil, Ellipsoide,
      Bindungsdicke, Labels, ausgeblendete Atome …).
 6. **Exportieren:** Datei → Exportieren (oder der Knopf). Das schreibt die gewählten Formate (PDF/SVG/PNG),
-   `<Serie>_results.csv` und den Excel-Report für **alle** Serien ins Projekt (siehe unten).
+   `<Serie>_results.csv` und den Excel-Report für **alle** Serien in die Verbindung (siehe unten).
 
 ## Erscheinungsbild
 
@@ -186,12 +212,12 @@ hell oder dunkel wählen. Selten gebrauchte Karten der linken Spalte sind eingek
 auf); ein Titel mit **„(geändert)“** bedeutet, dass dort ein Wert vom Standard abweicht. Ergebnisse, Tabellen und
 SI-Texte stehen als Reiter neben der Abbildung. Das Mausrad scrollt die Spalte; ein Feld ändert es erst, wenn es
 angeklickt ist. Hinweise beim Zeichnen (z. B. ausgelassene Kurven) stehen unter der Vorschau, **Hilfe → Protokoll…**
-zeigt alle Meldungen. **Vorlagen ▾** unten speichert die Einstellungen eines Tabs für andere Projekte. Die Abbildungen
+zeigt alle Meldungen. **Vorlagen ▾** unten speichert die Einstellungen eines Tabs für andere Verbindungen. Die Abbildungen
 sind vom Erscheinungsbild nicht betroffen.
 
-## Verbindung des Projekts
+## Verbindung
 
-Ein Projekt steht meist für **eine Verbindung** (oder einen Vergleich). **Verbindung …** in der Werkzeugleiste legt
+Ein Verbindungsordner steht meist für **eine Verbindung** (oder einen Vergleich). **Verbindung …** in der Werkzeugleiste legt
 Name/Probennummer, ChemDraw-Datei, Summenformel und Molmasse fest (aus der CDXML, Isotope wie D inklusive, änderbar).
 Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab, IR + EA und HRMS; Tabs mit eigener Struktur oder
 Molmasse behalten diese. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
@@ -199,7 +225,7 @@ Charakterisierungsabsatz im SI-Abschnitt.
 
 ## Synthese-Tab
 
-„Synthesis of **Name**“ (Name standardmäßig der der Verbindung bzw. des Projekts), Reaktionsschema und Vorschrift,
+„Synthesis of **Name**“ (Name standardmäßig der der Verbindung bzw. des Ordners), Reaktionsschema und Vorschrift,
 als eigene Word-Datei oder im SI-Abschnitt.
 
 - **Schema:** die CDXML wählen. Daneben (gleicher Name, gleicher Ordner) kann man aus ChemDraw speichern: **SVG/PDF**
@@ -228,8 +254,8 @@ als eigene Word-Datei oder im SI-Abschnitt.
 - **Temperatur** standardmäßig 298 K, oder aus dem Bruker-Experimentordner (acqus, mit Übersicht der Parameter wie
   Frequenz, O1P, Pulsprogramm, Scans).
 - **Rohdaten** (Reiter neben der Abbildung): **TopSpin-Daten …** nimmt ein Experiment, einen Datensatz (10, 11, …) oder
-  einen Ordner mit mehreren Datensätzen – auch per Ziehen ins Fenster – und übernimmt jedes Experiment vollständig ins
-  Projekt, nach Art sortiert (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). Passt genau ein Experiment zu einem Spektrum,
+  einen Ordner mit mehreren Datensätzen – auch per Ziehen ins Fenster – und übernimmt jedes Experiment vollständig in
+  die Verbindung, nach Art sortiert (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). Passt genau ein Experiment zu einem Spektrum,
   wird es automatisch zugeordnet (Parameter, Temperatur). **Mnova-Dokumente** (`.mnova`) liegen in `data/nmr/mnova`;
   Doppelklick öffnet sie.
 - Spektren können auch **EMF** aus Mnova sein: Sie gehen unverändert nach Word (Vektor, ohne eingesetzte Struktur); für
@@ -247,7 +273,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
     z. B. ¹³C/¹⁵N, zusammengefasst); die gemessenen/berechneten Isotopenverhältnisse (M+1, M+2 …) stehen dabei;
   - **Peak anklicken**, um ihn als *found* zu übernehmen (neben dem Wert aus dem Bericht und dem Mittel über den LC-Peak).
 - Export: Spektrum als Abbildung (PDF/SVG/PNG), `…_sticks.csv` (gemessen und berechnet) und `…_SI.txt`.
-- Alte Projekte: Die MS-Daten aus dem früheren Tab IR + MS werden automatisch übernommen.
+- Ältere Verbindungen: Die MS-Daten aus dem früheren Tab IR + MS werden automatisch übernommen.
 
 ## IR + EA-Tab
 
@@ -257,11 +283,11 @@ als eigene Word-Datei oder im SI-Abschnitt.
   Liste sollen, abhaken; Intensitäten w/m/s/br optional. Ausgabe: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (ganze Zahlen,
   absteigend).
 - **HRMS:** den **Word-Bericht** der Massenabteilung laden; Formel, Ionisierung, Polarität und die gemessenen m/z (aus
-  den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung des Projekts (Warnung, wenn der
+  den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung (Warnung, wenn der
   Bericht etwas anderes sagt), das Ion ist wählbar ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), vorgewählt ist das nächste
   gemessene m/z. calc. mit Elektronenmasse, vier Nachkommastellen: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
   found 265.1703. Die Abweichung in ppm steht zur Kontrolle daneben (found − calc). Die Formel wird gegen das im
-  Bericht **eingebettete ChemDraw-Objekt** geprüft; ohne Verbindung im Projekt setzt **Verbindung aus dem MS-Bericht
+  Bericht **eingebettete ChemDraw-Objekt** geprüft; ohne festgelegte Verbindung setzt **Verbindung aus dem MS-Bericht
   übernehmen** Name, Formel und Molmasse daraus (die Zeichnung ist dann eine RDKit-Ersatzzeichnung – für Abbildungen
   die eigene CDXML nehmen).
 - **HRMS aus Rohdaten:** alternativ (oder zusätzlich) den Bruker-**Messordner** (`.d`, z. B. timsTOF; Knopf oder
@@ -269,9 +295,9 @@ als eigene Word-Datei oder im SI-Abschnitt.
   und mittelt das Ion über den **LC-Peak** (automatisch: zusammenhängende Scans mit ≥ 50 % des Maximums, oder ein
   gewählter RT-Bereich). found = intensitätsgewichtetes Mittel; Anzahl der Scans, Bereich der Einzelscans und ihre
   Streuung (± mDa/ppm) stehen dabei, weil Einzelscans in der 4. Nachkommastelle abweichen können. Mit Bericht bleibt
-  dessen Wert vorgewählt, das Mittel aus den Rohdaten ist wählbar. Ins Projekt kommen nur `analysis.baf` und
+  dessen Wert vorgewählt, das Mittel aus den Rohdaten ist wählbar. In die Verbindung kommen nur `analysis.baf` und
   `analysis.sqlite`.
-- **Elementaranalyse:** Formel aus der Verbindung des Projekts, optional plus Solvat (`0.5 CH2Cl2`, mehrere mit
+- **Elementaranalyse:** Formel aus der Verbindung, optional plus Solvat (`0.5 CH2Cl2`, mehrere mit
   Komma); berechnet mit den konventionellen mittleren Atommassen, gefundene C/H/N/S-Werte eintragen. Abweichungen über
   0.4 % werden markiert (übliche Grenze der Journals). Ausgabe: **Elemental analysis** calcd (%) for C₁₈H₂₀N₂: C 81.78,
   H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
@@ -281,7 +307,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
 ## SI-Abschnitt (Word)
 
 **SI (Word)** in der Werkzeugleiste (oder **Datei → SI-Abschnitt exportieren (Word) …**) fragt, welche Teile hinein
-sollen (Charakterisierung, NMR-Spektren, Abbildungen aller Tabs, X-Ray, DFT), und sammelt alles Fertige zur Verbindung des Projekts in
+sollen (Charakterisierung, NMR-Spektren, Abbildungen aller Tabs, X-Ray, DFT), und sammelt alles Fertige zur Verbindung in
 `SI/<Verbindung>_SI.docx`, im Stil der SI: ein Charakterisierungsabsatz **m.p. …; IR …; HR-MS …; UV-Vis …;
 Elemental analysis …** (Schmelzpunkt aus **Verbindung …**, UV-Vis-Zeile von der Seite **SI-Zeile** im Tab UV-Vis (ε):
 *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε auf die Genauigkeit seines
@@ -295,7 +321,7 @@ Abbildungen der Seite verkleinert (Seitenverhältnis bleibt). Unterschriften wie
 **X** in THF, measured in 0.1 cm quartz cuvettes.“ (Lösungsmittel unter „Auswertung“ im ε-Tab); CV, SEC und EPR nehmen
 Vorschub, iR-Kompensation, Referenz, Potentialbereich, Band, g und Kopplungen aus den Daten und Konzentration,
 Lösungsmittel, Leitsalz bzw. Spezies aus dem Kasten **Bildunterschrift (SI-Export)** des Tabs. **Aufbau-Text (SI) …**
-neben „SI-Text kopieren“ speichert den allgemeinen Absatz zu Gerät und Aufbau nur auf diesem Rechner (nicht im Projekt,
+neben „SI-Text kopieren“ speichert den allgemeinen Absatz zu Gerät und Aufbau nur auf diesem Rechner (nicht in der Verbindung,
 nicht im Repository); er steht vor den Abbildungen dieses Tabs. Word öffnet die Dateien im normalen Modus (Word 2013+).
 
 **SI-Text zu den Fits:** Jeder Tab, der etwas fittet (UV-Vis (ε), CV, SEC, EPR), hat den Knopf **SI-Text kopieren**:
@@ -372,25 +398,25 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
   dielektrische Beitrag da (eine Solvatationsenergie braucht die Gasphasenrechnung). **SI-Text kopieren**, **Word
   speichern** (zweispaltig) oder über den SI-Abschnitt.
 
-## Projekte, Export, Rückgängig
+## Verbindungen, Export, Rückgängig
 
 Jeder Export aus den Tabs Overlay, Fluoreszenz, CV, SEC und EPR schreibt zusätzlich `…_data.csv` mit genau den
 gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) – für Origin, Excel oder MATLAB.
 
-Alles passiert in einem **Projektordner** (der Ordner-Knopf in der Werkzeugleiste öffnet ihn im Finder, Explorer bzw.
+Alles passiert im **Ordner der Verbindung** (der Ordner-Knopf in der Werkzeugleiste öffnet ihn im Finder, Explorer bzw.
 im Dateimanager des Linux-Desktops):
 
-1. **Datei → Neues Projekt…** – einen Ordner wählen oder im Dialog neu anlegen.
-2. Messdaten, Strukturen, Fotos und TD-DFT-Dateien von beliebigen Orten laden – sie werden **ins
-   Projekt kopiert** (`data/<Analytik>/`, `structures/`; ChemDraw-Exporte mit gleichem Namen wie eine CDXML kommen
-   mit). Dateien, die schon im Projekt liegen, werden nicht erneut kopiert.
-3. Normal arbeiten – das Projekt wird **automatisch gespeichert**. Beim Öffnen eines Projekts wird
-   jeweils eine Sicherung angelegt (`.elucida/project.elucida.bak`). Projekte älterer Versionen (`project.uvvis`)
-   öffnen wie bisher und werden ab dann als `project.elucida` gespeichert.
-4. **Exportieren** schreibt direkt ins Projekt (vorhandene Dateien werden überschrieben):
+1. **Datei → Neue Verbindung…** – einen Ordner wählen oder im Dialog neu anlegen.
+2. Messdaten, Strukturen, Fotos und TD-DFT-Dateien von beliebigen Orten laden – sie werden **in die
+   Verbindung kopiert** (`data/<Analytik>/`, `structures/`; ChemDraw-Exporte mit gleichem Namen wie eine CDXML kommen
+   mit). Dateien, die schon in der Verbindung liegen, werden nicht erneut kopiert.
+3. Normal arbeiten – die Verbindung wird **automatisch gespeichert**. Beim Öffnen wird jeweils eine Sicherung angelegt
+   (`.elucida/project.elucida.bak`). Ordner älterer Versionen (`project.uvvis`) öffnen wie bisher und werden ab dann als
+   `project.elucida` gespeichert (der Dateiname bleibt aus Gründen der Verträglichkeit „project“).
+4. **Exportieren** schreibt direkt in die Verbindung (vorhandene Dateien werden überschrieben):
 
 ```
-MeinProjekt/
+S2/
   project.elucida        Einstellungen (Pfade relativ zum Ordner)
   elucida.json           Zusammenfassung für das Programm Characterization (liest nur)
   SI/                    Word-Dateien und SI-Texte: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
@@ -401,12 +427,12 @@ MeinProjekt/
   .elucida/              Zwischenbilder für Word, Cache, Sicherung (versteckt)
 ```
 
-Dateinamen beginnen mit der Verbindung des Projekts (**Verbindung …**; ohne sie der Ordnername). Ordner entstehen erst,
-wenn etwas hineinkommt. Projekte aus Versionen vor 2.1 (`data/`, `images/`, `exports/`) öffnen wie bisher; ihre
+Dateinamen beginnen mit dem Namen der Verbindung (**Verbindung …**; ohne sie der Ordnername). Ordner entstehen erst,
+wenn etwas hineinkommt. Ordner aus Versionen vor 2.1 (`data/`, `images/`, `exports/`) öffnen wie bisher; ihre
 Dateien bleiben liegen, neue Dateien und Exporte kommen in den neuen Aufbau.
 
-Das Programm startet ohne Projekt. Projekte öffnen über **Datei → Projekt öffnen**, **Zuletzt
-geöffnet** oder indem man den Ordner ins Fenster zieht. **Datei → Projekt als Kopie speichern** legt
+Das Programm startet mit dem Startbildschirm. Verbindungen und Projekte öffnen über **Datei → Öffnen**, **Zuletzt
+geöffnet** oder indem man den Ordner ins Fenster zieht. **Datei → Verbindung als Kopie speichern** legt
 eine vollständige Kopie an (z. B. als Zwischenstand). **Bearbeiten → Rückgängig / Wiederholen**
 (⌘Z / ⌘⇧Z, Strg+Z / Strg+Y) gilt für alle Tabs.
 
@@ -414,12 +440,36 @@ eine vollständige Kopie an (z. B. als Zwischenstand). **Bearbeiten → Rückgä
 TUDOdata), aufgebaut wie veröffentlichte Datensätze: `6m.zip` mit `6m/NMR/1H/10/` (TopSpin-Experimente vollständig),
 `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (Bericht, Bruker-.d), `UV-Vis/`, `Fluorescence/`, `CV/<Lösungsmittel>/`, `SEC/`,
 `EPR/`; DFT und die eigenen Abbildungen/SI wahlweise. X-Ray (CCDC) und Synthese gehören nicht hinein. Jede Datei ist
-abwählbar, die Auswahl wird je Projekt gemerkt. **Laborkürzel** wie `RE-3-150` werden automatisch gefunden und ersetzt –
+abwählbar, die Auswahl wird je Verbindung gemerkt. **Laborkürzel** wie `RE-3-150` werden automatisch gefunden und ersetzt –
 in Datei- und Ordnernamen durch die Verbindung (`6m`), im Inhalt durch „Compound 6m“ (beides änderbar) –, und **Datum
 und Uhrzeit werden gelöscht**: in allen Textdateien (CSV, Gamry-DTA, EPR, TopSpin-Parameter, -Titel und -Prüfprotokoll),
 im MS-Bericht (Text, Ersteller und Datum der Datei, Beschriftungen der Spektren) und in OPUS-Dateien (auf gleicher
 Länge). Die Messwerte (FID, ser, Spektren) bleiben bytegleich. PDF, Mnova und Bruker-.d lassen sich nicht bearbeiten;
 steckt dort noch ein Kürzel, nennt das Protokoll die Datei.
+
+### Projekte
+
+**Datei → Neues Projekt** macht einen Ordner zum Projekt: dem übergeordneten Ordner für alle Verbindungen einer
+Veröffentlichung. Die Verbindungen bleiben normale Verbindungsordner in seinen Unterordnern (jede lässt sich weiter allein
+öffnen); `publication.elucida` hält ihre Reihenfolge, die Angaben für den Datensatz und die SI-Texte. Die Seite des
+Projekts listet die Verbindungen mit Checkliste (Rechtsklick: nach oben/unten, herausnehmen), **Neue Verbindung** legt
+einen Unterordner an, **Verbindung hinzufügen** nimmt eine von woanders auf.
+
+- **Datenpakete (Zip):** der ganze Datensatz wie auf TUDOdata – je Verbindung ein Zip (wie oben), die DFT-Rechnungen
+  aller Verbindungen in `CompChem.zip`, `README.txt` (Titel, Autoren, DOI, Zitat, zugehörige Publikation,
+  Beschreibungen, Lizenz; aus den **Angaben**) und der Lizenztext (CC BY 4.0 oder CC0). Laborkürzel gehören zu der
+  Verbindung, in deren Dateinamen sie stehen.
+- **Gesamt-SI (Word):** eine Datei mit Titelseite und Inhaltsverzeichnis, Kapitel wie die SI der Gruppe – 1. Materials
+  and Methods, 2. Synthetic Procedures and Characterization Data, 3. NMR Spectra, 4. UV-Vis Spectroscopy, 5. EPR
+  Spectroscopy, 6. Cyclic Voltammetry, 7. Spectroelectrochemistry, 8. X-Ray Characterization Data, 9. Computational
+  Section (leere Kapitel fallen weg). In jedem Kapitel die Verbindungen in der Reihenfolge des Projekts; Abbildungen
+  zwei je Seite und fortlaufend nummeriert, Kristalldaten aller Strukturen in gemeinsamen Tabellen. **SI-Texte** enthält
+  „Materials and Methods“ und je Kapitel eine optionale Einleitung.
+- **Vorlagen** der Gesamt-SI: Gruppe/Wiley („Supplementary Materials for“, Figure S1:), ACS („Supporting Information
+  for“, Figure S1.), RSC („Electronic Supplementary Information for“, Fig. S1), Nature („Supplementary Information for“,
+  Supplementary Figure 1 |). Für die SI schreiben die Verlage kaum etwas vor; es ändern sich nur Titelblatt und
+  Bezeichnungen, Kapitel, Schrift und Seitenaufteilung bleiben wie die SI der Gruppe. Die SI einer einzelnen Verbindung
+  bleibt im Stil der Gruppe.
 
 ## Excel-Report
 
@@ -612,7 +662,7 @@ In PDF und SVG bleibt die Struktur eine Vektorgrafik. Text steht im SVG als Pfad
 ## Schrift und Rahmen
 
 Format → „Schrift und Rahmen…“ gilt für **alle Tabs** (Standard) oder **nur für den offenen Tab** („Gilt für“), wird
-im Projekt gespeichert und zeigt nur, was der offene Tab im Bild hat (z. B. keine Symbolschrift in CV, keine Rahmen in
+in der Verbindung gespeichert und zeigt nur, was der offene Tab im Bild hat (z. B. keine Symbolschrift in CV, keine Rahmen in
 X-Ray):
 
 - **Textschrift** und **Symbolschrift**. λ und ε stehen standardmäßig in der Symbolschrift
@@ -709,7 +759,7 @@ python tools/build.py                  # App bauen -> dist/
 | Datei | Inhalt |
 |---|---|
 | `Elucida.py` | Startdatei (auch Einstieg für PyInstaller) |
-| `elucida/app/` | Hauptfenster und UV-Vis-(ε-)Tab, Projektordner, Texte, Erscheinungsbild, Update-Prüfung, Beispielprojekt |
+| `elucida/app/` | Hauptfenster und UV-Vis-(ε-)Tab, Verbindungs- und Projektordner, Texte, Erscheinungsbild, Update-Prüfung, Beispiele |
 | `elucida/core/` | UV-Vis-Auswertung und Abbildungen, TD-DFT, Lösungsfarbe, Bilder, CDXML über RDKit |
 | `elucida/tabs/` | Ein Modul je Tab (Synthese, NMR, IR + EA, HRMS, CV, SEC, EPR, X-Ray, DFT, Overlay, Fluoreszenz) |
 | `elucida/formats/` | ChemDraw-Zeichnung, OLE-Objekte für Word, Leser für Cary .DSW/.BSW/.FBSW (aus parseuv, BSD-3-Clause) |

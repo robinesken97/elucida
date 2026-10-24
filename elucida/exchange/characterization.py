@@ -76,6 +76,10 @@ def _compound(w, pdir):
         out["name"] = c["name"]
     if c.get("note"):                                  # Notiz im laufenden Projekt (z. B. „Radikalkation von 6m“)
         out["note"] = c["note"]
+    if c.get("known"):                                 # literaturbekannt (+ Zitat/DOI)
+        out["known"] = True
+        if c.get("lit"):
+            out["lit"] = c["lit"]
     if c.get("formula"):
         out["formula"] = c["formula"]
     if c.get("mw"):
@@ -98,7 +102,9 @@ def _analytics(w, pdir):
         if rel(pdir, syn.st.get("scheme")):
             d["scheme"] = rel(pdir, syn.st["scheme"])
         a["synthesis"] = d
-    if (w.compound or {}).get("mp"):
+    if (w.compound or {}).get("oil"):                  # Öl: m.p. <25 °C
+        a["mp"] = {"text": "<25 °C", "oil": True}
+    elif (w.compound or {}).get("mp"):
         a["mp"] = {"text": w.compound["mp"]}
     nmr = []
     for s in w.nmr_tab.spectra():

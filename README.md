@@ -2,7 +2,7 @@
 
 # Elucida – from synthesis to SI
 
-*Formerly **Spectravolt** (and before that **UVVisTool**). Projects, settings and downloaded data are taken over automatically.*
+*Formerly **Spectravolt** (and before that **UVVisTool**). Compounds, settings and downloaded data are taken over automatically.*
 
 <p align="center"><img src="assets/icon.png" alt="Elucida" width="96"></p>
 
@@ -79,7 +79,7 @@ The app is not code-signed, so the operating system will warn you on first launc
 
 **Updates:** on startup the app checks once a day whether a newer version is on GitHub and offers to
 open the release page (Help → "Check for updates…"; can be switched off in the Help menu). To update,
-download the new file and replace the old app; projects and settings are kept.
+download the new file and replace the old app; compounds, projects and settings are kept.
 
 **Linux AppImage:** `chmod +x Elucida-linux-x64.AppImage` (or file properties → "Allow executing"),
 then start it. It needs `fusermount` (package `fuse3`, preinstalled on most current distributions);
@@ -88,11 +88,14 @@ distribution at least as new as Ubuntu 22.04 (glibc 2.35), as does the tar.gz.
 
 On Windows, always keep the whole `Elucida` folder together. The `.exe` does not work without the `_internal` folder next to it.
 
-## Quick start: from an empty project to the SI
+## Quick start: from an empty compound to the SI
 
-1. **Create a project:** without a project the program shows a welcome page: **New project…** and choose an empty
-   folder or create one in the dialog (or **File → New project…**). A project
-   stands for one compound. All files you load are copied into it; it is saved automatically.
+Elucida has two levels: a **compound** is a folder with all data of one compound, a **project** groups the compounds of
+a paper (complete SI, dataset; see the next quick start). A compound can also be created without a project.
+
+1. **Create a compound:** the welcome page shows **New compound…**: choose an empty folder or create one in the dialog
+   (or **File → New compound…**; inside a project **New compound** on its page). All files you load are copied into
+   it; it is saved automatically.
 2. **Set the compound:** **Compound …** in the toolbar: name (e.g. the sample number) and the ChemDraw file (CDXML).
    Formula and molar mass are taken from it. This is the default for all tabs and the SI.
 3. **Load data:** simply drag files into the window – Elucida puts them into the right tab: CIF → **X-Ray**, SVG from
@@ -103,10 +106,32 @@ On Windows, always keep the whole `Elucida` folder together. The `.exe` does not
    from the default), the figure on the right. Labels, structures and insets can be dragged with the mouse.
    **Ctrl+Z** / **⌘Z** undoes everything.
 5. **Export:** **Export** at the bottom of the tab writes the figure (PDF/SVG/PNG, 16 × 11 cm for half an A4 page) and
-   the data into the project folder (`figures/`, `tables/`, `SI/`).
+   the data into the compound folder (`figures/`, `tables/`, `SI/`).
 6. **Create the SI:** **SI (Word)** in the toolbar collects everything that is ready in one Word file: synthesis,
    characterisation paragraph (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis), figures two per page, crystal data
    and DFT coordinates. Afterwards the program lists what is still missing.
+
+## Quick start: a project with several compounds
+
+1. **Create a project:** **New project…** on the welcome page (or **File → New project…**) and choose a
+   folder – empty, or one that already contains compounds (they are added automatically).
+2. **Fill in the details:** **Details …** – title of the paper (title page of the SI; italics with `<i>…</i>`), authors,
+   affiliation, DOI of the dataset, related publication, descriptions, license. They end up in `README.txt` of the
+   dataset and on the title page.
+3. **Add compounds:** **New compound** creates a subfolder (name = compound, e.g. `6m`); click a
+   compound to open it and work as in the quick start above. **File → Back to project** returns to the list.
+   Right-click changes the order – it is the order in the SI and in the dataset. The button **◂ <project>** at the
+   left of the tab bar (or Ctrl+Shift+P) leads back. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
+   m.p. are required; for compounds marked **known from the literature** in the Compound dialog (with the reference)
+   only ¹H and ¹³C. **Oil** next to the melting point gives "m.p. <25 °C".
+4. **SI texts:** **SI texts …** – "Materials and Methods" (or insert the setup texts stored in the tabs) and an
+   optional introduction for each chapter.
+5. **Complete SI:** **Complete SI (Word) …** – choose chapters, compounds and template (group/Wiley, ACS, RSC, Nature);
+   the Word file lands in `SI/` of the project.
+6. **Dataset:** **Data packages (zip) …** – one zip per compound, `CompChem.zip`, `README.txt` and license text in
+   `datapack/`, ready for the upload (e.g. TUDOdata).
+
+To try it: **Help → Open example project** creates a project with two compounds (artificial data).
 
 ## Guides
 
@@ -119,7 +144,7 @@ Step by step through one workflow, with pictures:
 - [EPR: spectra, simulation and fit](docs/anleitungen/epr.en.md)
 - [Crystal structure and DFT](docs/anleitungen/struktur-dft.en.md)
 
-To try it without your own data: **Help → Open example project** creates a project with artificial data for all tabs.
+To try it without your own data: **Help → Open example compound** creates a compound with artificial data for all tabs.
 **Help → Guide for this tab** (F1) opens the matching section below.
 
 All settings of the individual tabs are described further down for reference.
@@ -175,7 +200,7 @@ All settings of the individual tabs are described further down for reference.
      **Double-click** a point to add its wavelength as a band; double-click it again to remove it.
      The overlay and fluorescence tabs show λ and the plotted value the same way.
 6. **Export:** File → Export (or the button). This writes the chosen formats (PDF/SVG/PNG),
-   `<series>_results.csv` and the Excel report for **all** series into the project (see below).
+   `<series>_results.csv` and the Excel report for **all** series into the compound (see below).
 
 ## Appearance
 
@@ -184,11 +209,11 @@ Rarely used cards of the left column are collapsed (click the title to open them
 that a value there differs from the default. Results, tables and SI texts sit in tabs next to the figure. The mouse
 wheel scrolls the column and only changes a field after it has been clicked. Notes while drawing (e.g. curves left out)
 appear below the preview, **Help → Log…** shows all messages. **Presets ▾** at the bottom saves a tab's settings for
-other projects. The figures are not affected by the theme.
+other compounds. The figures are not affected by the theme.
 
-## Compound of the project
+## Compound
 
-A project usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
+A compound folder usually stands for **one compound** (or one comparison). **Compound …** in the toolbar sets its name/sample
 number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotopes such as D included, editable). This is
 the default for the ε tab (structure, molar mass), the fluorescence tab, IR + EA and HRMS; tabs that already have their own
 structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
@@ -196,7 +221,7 @@ characterisation paragraph of the SI section.
 
 ## Synthesis tab
 
-"Synthesis of **Name**" (the name defaults to the compound or project), the reaction scheme and the procedure, exported
+"Synthesis of **Name**" (the name defaults to the compound or folder), the reaction scheme and the procedure, exported
 to Word or as part of the SI section.
 
 - **Scheme:** choose the CDXML. Next to it (same name, same folder) you can save from ChemDraw: **SVG/PDF** (picture
@@ -223,7 +248,7 @@ to Word or as part of the SI section.
 - **Temperature** 298 K by default, or from the Bruker experiment folder (acqus, with an overview of the parameters
   such as frequency, O1P, pulse program, scans).
 - **Raw data** (tab next to the figure): **TopSpin data …** takes an experiment, a dataset (10, 11, …) or a folder with
-  several datasets – also by drag & drop – and copies each experiment completely into the project, sorted by kind
+  several datasets – also by drag & drop – and copies each experiment completely into the compound, sorted by kind
   (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). If exactly one experiment fits a spectrum, it is assigned automatically
   (parameters, temperature). **Mnova documents** (`.mnova`) are kept in `data/nmr/mnova`; double-click opens them.
 - Spectra can also be **EMF** from Mnova: they go into Word unchanged (vector, without the inserted structure); for the
@@ -241,7 +266,7 @@ to Word or as part of the SI section.
     resolve, e.g. ¹³C/¹⁵N, merged); the measured/calculated isotope ratios (M+1, M+2 …) are listed;
   - **click a peak** to use it as *found* (besides the report value and the LC-peak mean).
 - Export: spectrum figure (PDF/SVG/PNG), `…_sticks.csv` (measured and calculated) and `…_SI.txt`.
-- Old projects: the MS data of the former IR + MS tab are taken over automatically.
+- Older compounds: the MS data of the former IR + MS tab are taken over automatically.
 
 ## IR + EA tab
 
@@ -250,11 +275,11 @@ to Word or as part of the SI section.
   sensitivity). Range freely selectable (default: the whole measured range); untick bands that should not be listed;
   intensities w/m/s/br optional. Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
-  m/z (from the embedded spectra) are read out. The formula comes from the project's compound (warning if the report
+  m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
   says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
   preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
   found 265.1703. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
-  **ChemDraw object embedded in the report**; without a project compound, **Take the compound from the MS report**
+  **ChemDraw object embedded in the report**; without a compound set, **Take the compound from the MS report**
   sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).
 - **HRMS from raw data:** alternatively (or in addition) load the Bruker **measurement folder** (`.d`, e.g. timsTOF;
   button or drag & drop). Elucida reads the instrument's line spectra itself (no Bruker software needed, also on
@@ -262,8 +287,8 @@ to Word or as part of the SI section.
   chosen RT range). found = intensity-weighted mean; the number of scans, the range of the single scans and their
   scatter (± mDa/ppm) are shown, because single scans can differ in the 4th decimal. With a report loaded its value
   stays preselected and the raw-data mean is selectable. Only `analysis.baf` and `analysis.sqlite` are copied into the
-  project.
-- **Elemental analysis:** formula from the project's compound, optionally plus a solvate (`0.5 CH2Cl2`, several
+  compound.
+- **Elemental analysis:** formula from the compound, optionally plus a solvate (`0.5 CH2Cl2`, several
   separated by commas); calculated values with conventional mean atomic masses, enter the found C/H/N/S values.
   Deviations above 0.4 % are flagged (the usual limit of the journals). Output: **Elemental analysis** calcd (%) for
   C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
@@ -273,7 +298,7 @@ to Word or as part of the SI section.
 ## SI section (Word)
 
 **SI (Word)** in the toolbar (or **File → Export SI section (Word) …**) asks which parts to include
-(characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the project's compound into
+(characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the compound into
 `SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
 UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
@@ -287,7 +312,7 @@ scaled down (aspect ratio kept). Captions follow the SI: UV-Vis "UV-Vis spectra 
 quartz cuvettes." (solvent under Analysis in the ε tab); CV, SEC and EPR take scan rate, iR compensation, reference,
 potential range, band, g and couplings from the data and concentration, solvent, electrolyte or species from the
 **Figure caption (SI export)** box of the tab. **Setup text (SI) …** next to "Copy SI text" stores your general
-instrument/setup paragraph on this computer only (not in the project, not in the repository); it is placed before the
+instrument/setup paragraph on this computer only (not in the compound, not in the repository); it is placed before the
 figures of that tab. Word files open in normal mode (Word 2013+).
 
 **SI text on the fits:** every tab that fits something (UV-Vis (ε), CV, SEC, EPR) has a **Copy SI text** button: an
@@ -358,25 +383,25 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
   contribution is given (a solvation energy needs the gas-phase calculation). **Copy SI text**, **Save Word** (two
   columns) or via the SI section.
 
-## Projects, export, undo
+## Compounds, export, undo
 
 Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
 plotted curves (one x/y column pair per curve, values without stacking offset) – for Origin, Excel or MATLAB.
 
-Everything happens in a **project folder** (the folder button in the toolbar opens it in Finder, Explorer or the file
+Everything happens in the **compound folder** (the folder button in the toolbar opens it in Finder, Explorer or the file
 manager of your Linux desktop):
 
-1. **File → New project…** – choose a folder or create a new one in the dialog.
+1. **File → New compound…** – choose a folder or create a new one in the dialog.
 2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
-   project** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
-   Files that are already inside the project are not copied again.
-3. Work as usual – the project is **saved automatically**. A backup (`.elucida/project.elucida.bak`) is made
-   each time a project is opened. Projects from older versions (`project.uvvis`) open as before and are saved as
-   `project.elucida` from then on.
-4. **Export** writes directly into the project (existing files are overwritten):
+   compound** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
+   Files that are already inside the compound are not copied again.
+3. Work as usual – the compound is **saved automatically**. A backup (`.elucida/project.elucida.bak`) is made
+   each time it is opened. Folders from older versions (`project.uvvis`) open as before and are saved as
+   `project.elucida` from then on (the file name keeps "project" for compatibility).
+4. **Export** writes directly into the compound folder (existing files are overwritten):
 
 ```
-MyProject/
+S2/
   project.elucida        settings (paths relative to the folder)
   elucida.json           summary for the Characterization program (read-only for it)
   SI/                    Word files and SI texts: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
@@ -387,23 +412,46 @@ MyProject/
   .elucida/              intermediate images for Word, cache, backup (hidden)
 ```
 
-File names start with the project's compound (**Compound …**; without one, the folder name). Folders appear only when
-something goes into them. Projects from versions before 2.1 (`data/`, `images/`, `exports/`) open as before; their
+File names start with the name of the compound (**Compound …**; without one, the folder name). Folders appear only when
+something goes into them. Folders from versions before 2.1 (`data/`, `images/`, `exports/`) open as before; their
 files stay where they are, new files and exports use the new layout.
 
-The program starts without a project. Open projects via **File → Open project**, **Recent projects**
-or by dragging the folder onto the window. **File → Save project copy** writes a complete copy (e.g.
+The program starts with the welcome page. Open compounds and projects via **File → Open**, **Recently opened**
+or by dragging the folder onto the window. **File → Save compound copy** writes a complete copy (e.g.
 an intermediate state). **Edit → Undo / Redo** (⌘Z / ⌘⇧Z, Ctrl+Z / Ctrl+Y) covers all tabs.
 
 **File → Export data package (zip)** writes the raw data of the compound for a data repository (e.g. TUDOdata), laid
 out like published datasets: `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments), `NMR/HSQC + HMBC/12/`,
 `IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`; DFT and Elucida's own
 figures/SI optional. X-ray (CCDC) and synthesis are not included. Every file can be deselected; the choice is
-remembered per project. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
+remembered per compound. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
 names by the compound (`6m`), in the contents by „Compound 6m“ (both editable) – and **dates and times are deleted**:
 in all text files (CSV, Gamry DTA, EPR, TopSpin parameters, title and audit trail), in the MS report (text, file
 author and dates, labels in its spectra) and in OPUS files (same length). The measured values (FID, ser, spectra) stay
 byte-identical. PDF, Mnova and Bruker .d cannot be edited; if a code remains in one of them, the log names it.
+
+### Projects
+
+**File → New project** turns a folder into a project: the parent folder for all compounds of a paper. The compounds
+stay ordinary compound folders in its subfolders (each can still be opened on its own); `publication.elucida` keeps
+their order, the details for the dataset and the SI texts. The project page lists the compounds with a checklist
+(right-click: up/down, remove), **New compound** creates a subfolder, **Add compound** includes one from elsewhere.
+
+- **Data packages (zip):** the whole dataset as on TUDOdata – one zip per compound (as above), the DFT calculations of
+  all compounds in `CompChem.zip`, `README.txt` (title, authors, DOI, citation, related publication, descriptions,
+  license; generated from **Details**) and the license text (CC BY 4.0 or CC0). Lab codes are assigned to the compound
+  whose file names contain them.
+- **Complete SI (Word):** one file with title page and table of contents, chapters as in the group's SI – 1. Materials
+  and Methods, 2. Synthetic Procedures and Characterization Data, 3. NMR Spectra, 4. UV-Vis Spectroscopy, 5. EPR
+  Spectroscopy, 6. Cyclic Voltammetry, 7. Spectroelectrochemistry, 8. X-Ray Characterization Data, 9. Computational
+  Section (empty chapters are left out). Within each chapter the compounds follow the order of the project;
+  figures two per page and numbered throughout, crystal data of all structures in common tables. **SI texts** holds
+  "Materials and Methods" and an optional introduction per chapter.
+- **Templates** for the complete SI: group/Wiley ("Supplementary Materials for", Figure S1:), ACS ("Supporting
+  Information for", Figure S1.), RSC ("Electronic Supplementary Information for", Fig. S1), Nature ("Supplementary
+  Information for", Supplementary Figure 1 |). Publishers hardly prescribe a layout for the SI, so only the title page
+  and the labels change; chapters, font and page layout stay as in the group's SI. The SI of a single compound keeps
+  the group's style.
 
 ## Excel report
 
@@ -594,7 +642,7 @@ looks identical everywhere but cannot be edited in Word.
 ## Fonts and frames
 
 Format → "Fonts and frames…" applies to **all tabs** (default) or **only to the open tab** ("Applies to"), is saved
-with the project and shows only what the open tab has in its figure (e.g. no symbol font in CV, no frames in X-Ray):
+with the compound and shows only what the open tab has in its figure (e.g. no symbol font in CV, no frames in X-Ray):
 
 - **Text font** and **symbol font**. By default λ and ε are set in the symbol font (Times New Roman),
   as in Origin; this can be switched off.
@@ -690,7 +738,7 @@ python tools/build.py                  # build the app -> dist/
 | File | Content |
 |---|---|
 | `Elucida.py` | Start file (also the PyInstaller entry) |
-| `elucida/app/` | Main window and UV-Vis (ε) tab, project folder, texts, style, update check, example project |
+| `elucida/app/` | Main window and UV-Vis (ε) tab, compound and project folders, texts, style, update check, examples |
 | `elucida/core/` | UV-Vis analysis and figures, TD-DFT, solution colour, images, CDXML via RDKit |
 | `elucida/tabs/` | One module per tab (synthesis, NMR, IR + EA, HRMS, CV, SEC, EPR, X-ray, DFT, overlay, fluorescence) |
 | `elucida/formats/` | ChemDraw drawing, OLE objects for Word, reader for Cary .DSW/.BSW/.FBSW (from parseuv, BSD-3-Clause) |

@@ -14,9 +14,9 @@ und Küvettenfoto), ε je Bande mit Standardfehler und 95-%-Konfidenzintervall, 
 
 ![UV-Vis (ε) mit Beispieldaten](../screenshots/eps_light_de.png)
 
-## 1. Projekt und Verbindung
+## 1. Verbindung anlegen
 
-**Datei → Neues Projekt…**, dann **Verbindung …** in der Werkzeugleiste mit Name und CDXML. Die Molmasse kommt aus
+**Datei → Neue Verbindung…**, dann **Verbindung …** in der Werkzeugleiste mit Name und CDXML. Die Molmasse kommt aus
 der CDXML. Sie wird nur gebraucht, wenn die Konzentrationen in mg/mL angegeben sind.
 
 ## 2. Messdaten laden
@@ -31,7 +31,7 @@ ausfüllen“ setzt Start, Start/Faktor, … in die markierten Zeilen.
 
 ## 3. Verbindung im Tab prüfen
 
-Unter **Verbindung** stehen Struktur und Molmasse aus dem Projekt. Willst du die Struktur genau wie in ChemDraw,
+Unter **Verbindung** stehen Struktur und Molmasse aus dem Dialog Verbindung. Willst du die Struktur genau wie in ChemDraw,
 speichere sie dort zusätzlich als SVG oder PDF mit gleichem Namen neben die CDXML. Ein Foto der Küvette wird
 automatisch freigestellt.
 

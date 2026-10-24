@@ -29,3 +29,6 @@ exports/
 *.[Tt][Ii][Ff][Ff]
 !assets/*.png
 !docs/screenshots/*.png
+
+# Lizenztexte für Datensätze (CC-Texte selbst CC0)
+!assets/licenses/*.txt

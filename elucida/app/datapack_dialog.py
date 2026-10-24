@@ -18,6 +18,19 @@ from elucida.app.i18n import T
 from elucida.exchange import datapack as DP
 
 
+def selection_key(project_dir):
+    """QSettings-Schlüssel der gemerkten Auswahl eines Projekts (auch für die Datenpakete der Publikation)."""
+    h = hashlib.md5(str(Path(project_dir or ".").resolve()).encode()).hexdigest()[:12]
+    return f"datapack/{h}"
+
+
+def saved_selection(settings, project_dir) -> dict:
+    try:
+        return json.loads(settings.value(selection_key(project_dir), "{}") or "{}")
+    except (TypeError, ValueError):
+        return {}
+
+
 def _mb(n):
     return f"{n / 1e6:.1f} MB" if n >= 1e5 else f"{n / 1e3:.0f} kB"
 
@@ -84,14 +97,10 @@ class DatapackDialog(QDialog):
 
     # -- Auswahl --------------------------------------------------------------------------
     def _settings_key(self):
-        h = hashlib.md5(str(Path(self.main.project_dir or ".").resolve()).encode()).hexdigest()[:12]
-        return f"datapack/{h}"
+        return selection_key(self.main.project_dir)
 
     def _apply_saved(self):
-        try:
-            saved = json.loads(self.main.settings.value(self._settings_key(), "{}") or "{}")
-        except (TypeError, ValueError):
-            saved = {}
+        saved = saved_selection(self.main.settings, self.main.project_dir)
         for it in self.items:
             if it.key in saved:
                 it.on = bool(saved[it.key])

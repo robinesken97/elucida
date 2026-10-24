@@ -243,6 +243,29 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Schichtdicke/Export). Immer `push_undo`.
 - Notiz zur Verbindung (`compound.note`): nur intern (Startbildschirm, Titelleiste, `elucida.json`), nie in SI/Word/
   Datenpaket.
+- **Begriffe (seit 2.3, Nutzerwunsch):** in der Oberfläche/Doku heißt der Ordner einer Verbindung **„Verbindung“**
+  (früher „Projekt“), der übergeordnete Ordner **„Projekt“**. Intern bleiben die alten Namen: `project_dir`/`PRJ`/
+  `project.elucida` = Verbindung, `publication_dir`/`PUB`/`publication.elucida` = Projekt (Dateinamen nie umbenennen,
+  sonst bräuchte jeder vorhandene Ordner eine Migration).
+- Publikation (seit 2.3, `app/publication.py`, Oberfläche `app/publication_view.py`): Ordner mit `publication.elucida`
+  (Angaben für README, Reihenfolge `compounds` relativ, `excluded`, `si_texts`) über den Verbindungsprojekten; Projekte
+  bleiben eigenständig und kennen die Publikation nicht (`publication_of` = Elternordner). Unterordner mit Projekt werden
+  beim `sync` angefügt (natürlich sortiert), herausgenommene als `excluded` vermerkt. Name einer Verbindung = `compound.name`
+  des Projekts. Datensatz (`datapack.write_publication`) wie TUDOdata: `<Name>.zip` je Verbindung, DFT aller in
+  `CompChem.zip` (`CompChem/<Name>/…`), README.txt nach der Vorlage des Datensatzes der Gruppe (`readme_text`; Felder
+  TITLE … LICENSE), Lizenztext aus `assets/licenses` (CC-Texte selbst CC0); Kürzel → Verbindung über Dateinamen
+  (`assign_codes`), Einzelauswahl aus QSettings (`saved_selection`) gilt weiter. Gesamt-SI (`si/publication_si.py`)
+  **in der Kapitelfolge der SI der Gruppe** (Methods, Synthesis/Characterization, NMR, [IR/MS nur auf Wunsch], UV-Vis inkl.
+  Overlay/Fluoreszenz, EPR, CV, SEC, X-Ray, Computational), leere Kapitel weg, Nummern rücken nach; Titelseite +
+  Inhaltsverzeichnis (TOC-Feld, `updateFields`), Kapitel = Überschrift 1 mit Seitenumbruch; je Kapitel erst Text aus
+  `si_texts`, dann die Verbindungen in Reihenfolge (Auswertungstexte je Verbindung vor ihren Abbildungen); Kristalldaten
+  aller Strukturen gemeinsam (`merge_crystal`, ≤ 3 je Tabelle). Erzeugt durch kurzes Öffnen jeder Verbindung
+  (`MainWindow.export_publication_si` → `si_compound_parts`), danach die vorher offene wieder. Vorlagen (`SI.TEMPLATES`:
+  group/acs/rsc/nature) ändern nur Titelblatt und Abbildungs-/Tabellenbezeichnung, nur für die Gesamt-SI (danach
+  `set_template("group")`). Titelblatt = `paper_title` (wie die Gruppen-SI: 18 pt Kopf, Rest 11 pt); Datensatztitel
+  sonst „Electronic supplement to …“. Checkliste (`checklist`, Nutzerwunsch): Pflicht ¹H, ¹³C, 2D, HRMS, IR, m.p.;
+  `compound.known` (+ `lit`) nur ¹H/¹³C; `compound.oil` = „m.p. <25 °C“ (zählt als m.p.). Zurück: `btn_pub` in der
+  Tab-Leiste.
 - Verbindung des Projekts (`compound`) ist nur Vorgabe: Tabs mit eigener Struktur/Molmasse behalten diese.
 - UI zweisprachig: jeder sichtbare Text über `elucida.app.i18n.T(key)` mit DE **und** EN-Eintrag.
 
@@ -284,6 +307,8 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `app/i18n.py` | Texte DE/EN; `T(_key, **kw)` (Parameter heißt `_key`, damit `key=` als Format-Argument geht). |
 | `formats/parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |
 | `exchange/datapack.py` | Datenpaket je Verbindung (Zip wie die TUDOdata-Datensätze der Gruppe: `<Name>/NMR/1H/10`, `NMR/HSQC + HMBC/12`, IR, MS, UV-Vis, Fluorescence, CV/<Lösungsmittel>, SEC, EPR; DFT/Elucida-Ergebnisse Standard aus; nie X-Ray/Synthese): `collect` nur aus Zustandspfaden, `find_codes` (Laborkürzel `CODE_RE`), `write_zip` (Nutzerwunsch: „ausschließlich Compound XX und sonst unveränderte Rohdaten, Datum überall weg“: Namen immer ersetzen; Inhalt wahlweise, Standard an – Textdateien = keine Nullbytes inkl. TopSpin-Parameter/Titel/audita, `DATE_RE` löschen, `##$DATE=` → 0; MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docProps-Personen/-Daten, EMF gleiche Länge); OPUS `scrub_binary_strings` gleiche Länge; Messwerte bytegleich; PDF/Mnova/.d nicht bearbeitbar, Kürzel darin im Bericht `kept`). Dialog `app/datapack_dialog.py` (Auswahl je Projekt in QSettings). |
+| `app/publication.py` / `app/publication_view.py` | Publikation: Index `publication.elucida`, `sync`/`add_compound`/`move_compound`/`remove_compound`, `publication_of`, `readme_text`/`license_file`; Seite `PublicationPage` (Zentrum Index 2), `PublicationRow` (Startbildschirm), Dialoge Angaben/SI-Texte/Datenpakete/Gesamt-SI. |
+| `si/publication_si.py` | Gesamt-SI: `SECTIONS` (Kapitelfolge der Gruppen-SI), `assemble`, `merge_crystal`; Blöcke `title`/`toc`/`section` in `write_docx`. |
 | `exchange/characterization.py` | `elucida.json` für Characterization (Schema v1): `build(main)` nur aus vorhandenen SI-Teilen/Zuständen, `write` atomar; `structure_ids` (SMILES/InChIKey, nicht bei Abkürzungen). |
 | `tools/build.py` | PyInstaller-Build (wechselt selbst in die Repo-Wurzel; `--collect-submodules elucida`). |
 | `core/orbitals.py` | Orbitale (DFT-Tab): Cube-Leser/-Schreiber, Molden-Leser + `Basis` (Überlappung Obara–Saika, Konventionsprüfung, Auswertung), `molden_grid`, Orbitalenergien ORCA/Gaussian, `iso_for_fraction`, `Volume`, `render` (Raycasting), `occluder_depth`, `OrbitalImage`, IboView-Konstanten, `make_test_cube`/`make_test_molden`. |

@@ -2930,6 +2930,108 @@ def selftest(outdir, with_isnet=False):
         if "hrms" in an_ and "found" in an_["hrms"]:
             assert re.fullmatch(r"\d+\.\d{4}", an_["hrms"]["found"]) and an_["hrms"]["ion"].endswith(("+", "\u2212"))
         report.append(f"elucida.json for example project ({dt_:.2f} s, {len(an_)} techniques): OK")
+        # Publikation: übergeordneter Ordner, Verbindungen in Reihenfolge, Datensatz (Zips + README), Gesamt-SI
+        from elucida.app import publication as PUB
+        from elucida.si import publication_si as PSI
+        import shutil as _sh
+        pub_ = out / "pub"
+        _sh.rmtree(pub_, ignore_errors=True)
+        pub_.mkdir()
+        w.save_project()
+        _sh.copytree(out / "demo", pub_ / "6m")
+        PUB.create(pub_, "Test publication")
+        assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["6m"], PUB.load(pub_)
+        w.open_publication(pub_)
+        assert w.center.currentIndex() == 2 and w.project_dir is None and len(w.pub_page.rows) == 1
+        assert w.new_compound_in_publication("2a") and Path(w.project_dir) == pub_ / "2a"
+        assert Path(w.publication_dir) == pub_ and "Test publication" in w.windowTitle(), w.windowTitle()
+        assert w.act_to_pub.isEnabled()
+        PUB.move_compound(pub_, pub_ / "2a", -1)
+        assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "6m"]
+        assert PUB.compound_name(pub_ / "2a") == "2a"
+        w.go_publication()
+        assert w.project_dir is None and w.center.currentIndex() == 2 and len(w.pub_page.rows) == 2
+        PUB.remove_compound(pub_, pub_ / "2a")                     # Ordner bleibt, kommt nicht von selbst zurück
+        assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["6m"] and (pub_ / "2a").is_dir()
+        assert PUB.publication_of(pub_ / "2a") is None and PUB.publication_of(pub_ / "6m") == pub_
+        PUB.add_compound(pub_, pub_ / "2a")
+        PUB.move_compound(pub_, pub_ / "2a", -1)
+        d_ = PUB.load(pub_)
+        d_.update(authors="A. Author and B. Author", doi="10.1234/test", license="CC-BY-4.0",
+                  si_texts={"methods": "All reactions were carried out under argon.", "cv": "CV intro CH2Cl2."})
+        PUB.save(pub_, d_)
+        assert PUB.load(pub_)["si_texts"]["cv"] == "CV intro CH2Cl2."
+        w.close_publication()
+        w.add_recent_publication(pub_)
+        w.fill_recent_list()
+        assert w.center.currentIndex() == 0 and any(r_.info["path"] == str(pub_) for r_ in w.pub_rows)
+        n6_ = PUB.compound_name(pub_ / "6m")                       # Verbindung des kopierten Beispielprojekts
+        assert w.pub_rows[0].info["compounds"] == ["2a", n6_], w.pub_rows[0].info["compounds"]
+        w.add_recent(pub_ / "6m")
+        w.fill_recent_list()
+        assert any(r_.info.get("publication") == "Test publication" for r_ in w.recent_rows)
+        rd_ = PUB.readme_text(PUB.load(pub_), {"nmr", "cv", "dft"}, ["2a", "6m"])
+        assert rd_.startswith("TITLE:\nTest publication") and "https://doi.org/10.1234/test" in rd_
+        assert "CC-BY 4.0" in rd_ and "CompChem.zip" in rd_ and "NMR -> TopSpin" in rd_, rd_
+        assert PUB.dataset_title({"paper_title": "Imidazo[1,5-<i>a</i>]pyridines"}) == \
+            "Electronic supplement to Imidazo[1,5-a]pyridines"
+        assert PUB.paper_title({"title": "Electronic supplement to X"}) == "X"
+        mc_ = PSI.merge_crystal([(["Compound", "a", "b"], [["Formula", "C1", "C2"], ["Z", "4", "2"]]),
+                                 (["Compound", "c", "d"], [["Formula", "C3", "C4"], ["Z", "8", "1"]])])
+        assert [h_ for h_, _ in mc_] == [["Compound", "a", "b", "c"], ["Compound", "d"]] and mc_[1][1][1] == ["Z", "1"]
+        from elucida.app.publication_view import PublicationPackDialog
+        pdl_ = PublicationPackDialog(w, pub_)
+        rep_ = pdl_.export(out / "pubpack")
+        names_ = sorted(Path(z_).name for z_ in rep_["zips"])
+        assert f"{n6_}.zip" in names_ and "CompChem.zip" in names_ and "2a.zip" not in names_, names_   # 2a ohne Daten
+        assert (out / "pubpack" / "README.txt").exists() and (out / "pubpack" / "LICENSE-CC_BY_4.0_en.txt").exists()
+        with _zfp.ZipFile(out / "pubpack" / "CompChem.zip") as z_:
+            assert all(n_.startswith(f"CompChem/{n6_}/") for n_ in z_.namelist()), z_.namelist()[:5]
+        with _zfp.ZipFile(out / "pubpack" / f"{n6_}.zip") as z_:
+            assert not any("/DFT/" in n_ for n_ in z_.namelist())
+        w.open_project(pub_ / "6m")
+        pump(0.3)
+        psi_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], [k_ for k_, _, _ in PSI.SECTIONS],
+                                       path=out / "pub_SI.docx")
+        assert Path(w.project_dir) == pub_ / "6m", w.project_dir          # vorher offene Verbindung wieder da
+        with _zfp.ZipFile(psi_) as z_:
+            doc_ = z_.read("word/document.xml").decode("utf-8")
+            assert "updateFields" in z_.read("word/settings.xml").decode("utf-8")
+        heads_ = re.findall(r'w:val="Heading1".*?<w:t[^>]*>([^<]+)</w:t>', doc_)
+        assert heads_[0] == "1. Materials and Methods" and "All reactions were carried out" in doc_, heads_
+        order_ = [h_.split(". ", 1)[1] for h_ in heads_]
+        ref_ = [t_ for _, t_, _ in PSI.SECTIONS]
+        assert order_ == sorted(order_, key=ref_.index) and {"NMR Spectra", "Cyclic Voltammetry",
+                                                             "X-Ray Characterization Data"} <= set(order_), order_
+        assert doc_.index("CV intro") > doc_.index("Cyclic Voltammetry") and "TOC \\o" in doc_
+        assert "Supplementary Materials for" in doc_ and "Synthesis of " in doc_
+        psi2_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], ["char", "nmr"], path=out / "pub_SI_nature.docx",
+                                        template="nature")
+        with _zfp.ZipFile(psi2_) as z_:
+            doc2_ = z_.read("word/document.xml").decode("utf-8")
+        assert "Supplementary Information for" in doc2_ and "Supplementary Figure " in doc2_ and "Figure S" not in doc2_
+        assert SI.TEMPLATES and SI._TEMPLATE == "group"                    # danach wieder Standard
+        dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
+        assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
+        assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2
+        assert PUB.load(dpub_)["si_texts"]["methods"].startswith("All reactions")
+        ck_ = PUB.checklist(dpub_ / "S2")                                 # Checkliste: neue Verbindung
+        assert {"1H", "13C"} <= ck_["have"] and not ck_["known"] and "mp" in ck_["missing"], ck_
+        w.open_project(dpub_ / "S3")
+        assert w.btn_pub.isVisibleTo(w.btn_pub.parentWidget()) and w.btn_pub.text().startswith("\u25c2 Example")
+        w.set_compound({**w.compound, "known": True, "lit": "J. Test. Chem. 2020, 1, 1"})
+        pm_ = w.si_char_parts({**w.compound, "oil": True})[0]                 # Öl: m.p. <25 °C
+        assert pm_[0][:2] == ("mp", "m.p. <25 \u00b0C"), pm_[0]
+        w.save_project()
+        ck_ = PUB.checklist(dpub_ / "S3")                                 # literaturbekannt: nur 1H/13C Pflicht
+        assert ck_["known"] and ck_["missing"] == [] and ck_["lit"].startswith("J. Test"), ck_
+        w.btn_pub.click()
+        assert w.project_dir is None and w.center.currentIndex() == 2 and not w.btn_pub.isVisibleTo(
+            w.btn_pub.parentWidget())
+        assert "1 von 2" in w.pub_page.lbl_head.text() or "1 of 2" in w.pub_page.lbl_head.text(), \
+            w.pub_page.lbl_head.text()
+        w.close_publication()
+        report.append(f"publication (order, datapack {len(names_)} zips, complete SI {len(heads_)} chapters): OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         report.append("OK")

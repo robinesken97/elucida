@@ -12,9 +12,9 @@ HRMS-Bericht der Massenabteilung (.docx) und die Werte der Elementaranalyse.
 
 ![Synthese-Tab mit Beispieldaten](../screenshots/synthesis_light_de.png)
 
-## 1. Projekt und Verbindung
+## 1. Verbindung anlegen
 
-**Datei → Neues Projekt…**, dann **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
+**Datei → Neue Verbindung…** (oder **Neue Verbindung** auf der Seite eines Projekts), dann **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
 CDXML der Verbindung. Daraus kommen Summenformel und Molmasse für alle Tabs. Den Schmelzpunkt trägst du dort ebenfalls
 ein.
 
@@ -28,7 +28,7 @@ der Rundung der angegebenen Stellen werden markiert.
 ## 3. NMR
 
 Im Tab **NMR** die SVG-Exporte aus MestReNova hinzufügen oder ins Fenster ziehen. Kern und Reihenfolge (¹H, ¹³C, …,
-2D) erkennt das Programm. Die Struktur kommt aus der Verbindung des Projekts und wird an eine freie Stelle gesetzt;
+2D) erkennt das Programm. Die Struktur kommt aus dem Dialog Verbindung und wird an eine freie Stelle gesetzt;
 du kannst sie in der Vorschau verschieben. Unter **NMR-Zeile** den Multiplettbericht aus Mnova einfügen (alle Kerne in
 ein Feld); die ¹³C-Zeile entsteht auch mit **Zeile aus Peaklabels**.
 

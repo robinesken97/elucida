@@ -2,12 +2,39 @@
 
 # Änderungen
 
-## 2.2.4 – 24.10.2026
+## 2.3.0 – 24.10.2026
 
 ### Neu
+- **Projekte:** übergeordneter Ordner für alle Verbindungen einer Veröffentlichung (Datei → Neues Projekt).
+  Die Verbindungen bleiben, wie sie sind (jede lässt sich weiter allein öffnen); das Projekt hält ihre
+  Reihenfolge, die Angaben für den Datensatz (Titel, Autoren, DOI, Lizenz, Beschreibungen) und die SI-Texte. Auf dem
+  Startbildschirm mit ihren Verbindungen; zuletzt geöffnete Verbindungen zeigen, zu welchem Projekt sie gehören.
+- **Datenpakete für das ganze Projekt** wie die Datensätze der Gruppe auf TUDOdata: je Verbindung ein Zip,
+  DFT-Rechnungen aller Verbindungen in `CompChem.zip`, `README.txt` aus den Angaben und der Lizenztext (CC BY 4.0
+  oder CC0). Laborkürzel werden ihrer Verbindung zugeordnet und überall ersetzt, Datumsangaben entfernt – wie beim
+  Einzelpaket.
+- **Gesamt-SI als eine Word-Datei** mit Titelseite und Inhaltsverzeichnis, Kapitel wie die SI der Gruppe
+  (Materials and Methods, Synthetic Procedures and Characterization Data, NMR Spectra, UV-Vis, EPR, CV, SEC, X-Ray,
+  Computational); Verbindungen in der Reihenfolge des Projekts, Abbildungen fortlaufend nummeriert, Kristalldaten
+  aller Strukturen in gemeinsamen Tabellen. „Materials and Methods“ und eine Einleitung je Kapitel werden einmal für
+  das Projekt gepflegt (SI-Texte). Titelblatt mit dem Titel des Artikels wie die SI der Gruppe; Vorlagen
+  Gruppe/Wiley, ACS, RSC und Nature (Titelblatt und Bezeichnung von Abbildungen/Tabellen).
+- **Checkliste je Verbindung** auf der Seite des Projekts: ✓/✗ für ¹H, ¹³C, 2D-NMR, HRMS, IR und m.p. (im Dialog
+  Verbindung als **literaturbekannt** markierte Verbindungen, mit Feld für die Literatur: nur ¹H und ¹³C); weitere Daten
+  (EA, UV-Vis, X-Ray) grau, oben eine Zusammenfassung, was fehlt.
+- **Zurück zum Projekt** mit einem Klick: Knopf links in der Tab-Leiste, solange eine Verbindung eines Projekts
+  offen ist (auch Menü Datei, Strg+Umschalt+P).
+- Dialog Verbindung: **Öl** neben dem Schmelzpunkt – in der SI steht dann „m.p. <25 °C“.
+- **Beispielprojekt** (Menü Hilfe, Startbildschirm) mit zwei Verbindungen und künstlichen Daten; Schnellstart für
+  Projekte im README.
 - **Notiz zur Verbindung** (Dialog Verbindung), z. B. „Radikalkation von 6m“ neben der Laborbuchnummer: steht auf dem
   Startbildschirm und in der Titelleiste, durchsuchbar, geht an Characterization (`elucida.json`) – nie in SI,
   Word-Export oder Datenpaket.
+
+### Geändert
+- **Neue Begriffe:** Was bisher „Projekt“ hieß (Ordner einer Verbindung), heißt jetzt **Verbindung**; **Projekt** ist
+  jetzt der Ordner mit allen Verbindungen einer Veröffentlichung. Nur die Bezeichnungen ändern sich – Ordner und
+  Dateien (`project.elucida`) bleiben, es muss nichts umgewandelt werden.
 
 ## 2.2.3 – 24.10.2026
 

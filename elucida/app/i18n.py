@@ -86,44 +86,60 @@ TEXTS = {
     "menu_lang": ("&Sprache", "&Language"),
     "menu_help": ("&Hilfe", "&Help"),
     "act_open": ("Messdaten öffnen…", "Open measurement data…"),
-    "act_new_project": ("Neues Projekt…", "New project…"),
-    "act_save_copy": ("Projekt als Kopie speichern…", "Save project copy…"),
-    "act_show_folder": ("Projektordner anzeigen", "Show project folder"),
-    "act_show_folder_tip": ("Projektordner im {fm} öffnen (SI, Abbildungen, Tabellen, Messdaten)",
-                            "Open the project folder in {fm} (SI, figures, tables, data)"),
+    "act_new_project": ("Neue Verbindung…",
+                        "New compound…"),
+    "act_save_copy": ("Verbindung als Kopie speichern…",
+                      "Save compound copy…"),
+    "act_show_folder": ("Ordner der Verbindung anzeigen",
+                        "Show compound folder"),
+    "act_show_folder_tip": ("Ordner der Verbindung im {fm} öffnen (SI, Abbildungen, Tabellen, Messdaten)",
+                            "Open the compound folder in {fm} (SI, figures, tables, data)"),
     "fm_finder": ("Finder", "Finder"),
     "fm_explorer": ("Explorer", "Explorer"),
     "fm_linux": ("Dateimanager", "file manager"),
-    "no_project_title": ("kein Projekt", "no project"),
-    "need_project_q": ("Für die Auswertung wird ein Projektordner benötigt. Eingelesene Dateien werden dort "
-                       "hineinkopiert (data/, structures/), Exporte landen in SI/, figures/ und tables/.\n\nJetzt einen Ordner wählen "
-                       "oder neu anlegen?",
-                       "A project folder is needed. Loaded files are copied into it (data/, structures/) and exports "
-                       "go to SI/, figures/ and tables/.\n\nChoose or create a folder now?"),
-    "choose_project_dir": ("Projektordner wählen oder neu anlegen", "Choose or create project folder"),
-    "make_project_q": ("{p} ist noch kein Projekt. Hier ein neues Projekt anlegen?",
-                       "{p} is not a project yet. Create a new project here?"),
-    "project_created": ("Projekt angelegt: {p}", "Project created: {p}"),
-    "file_imported": ("{src} ins Projekt kopiert: {dst}", "{src} copied into project: {dst}"),
-    "autosaved": ("Projekt gespeichert", "Project saved"),
+    "no_project_title": ("keine Verbindung",
+                         "no compound"),
+    "need_project_q": ("Für die Auswertung wird ein Ordner für die Verbindung benötigt. Eingelesene Dateien werden dort "
+                       "hineinkopiert (data/, structures/), Exporte landen in SI/, figures/ und tables/.\n\nJetzt einen "
+                       "Ordner wählen oder neu anlegen?",
+                       "A compound folder is needed. Loaded files are copied into it (data/, structures/) and exports go to "
+                       "SI/, figures/ and tables/.\n\nChoose or create a folder now?"),
+    "choose_project_dir": ("Ordner der Verbindung wählen oder neu anlegen",
+                           "Choose or create compound folder"),
+    "make_project_q": ("{p} ist noch keine Verbindung. Hier eine neue Verbindung anlegen?",
+                       "{p} is not a compound yet. Create a new compound here?"),
+    "project_created": ("Verbindung angelegt: {p}",
+                        "Compound created: {p}"),
+    "file_imported": ("{src} in die Verbindung kopiert: {dst}",
+                      "{src} copied into the compound: {dst}"),
+    "autosaved": ("Gespeichert",
+                  "Saved"),
     "report_locked": ("{p} ist geöffnet (z. B. in Excel) und konnte nicht überschrieben werden.",
                       "{p} is open (e.g. in Excel) and could not be overwritten."),
-    "act_open_project": ("Projekt öffnen…", "Open project…"),
-    "act_recent": ("Zuletzt geöffnet", "Recent projects"),
-    "act_save_project": ("Projekt speichern", "Save project"),
-    "act_save_project_as": ("Projekt speichern unter…", "Save project as…"),
+    "act_open_project": ("Öffnen…",
+                         "Open…"),
+    "act_recent": ("Zuletzt geöffnet",
+                   "Recently opened"),
+    "act_save_project": ("Speichern",
+                         "Save"),
+    "act_save_project_as": ("Speichern unter…",
+                            "Save as…"),
     "menu_edit": ("&Bearbeiten", "&Edit"),
     "act_undo": ("Rückgängig", "Undo"),
     "act_redo": ("Wiederholen", "Redo"),
-    "untitled": ("Unbenanntes Projekt", "Untitled project"),
-    "save_changes_q": ("Das Projekt enthält ungespeicherte Änderungen. Speichern?",
-                       "The project has unsaved changes. Save?"),
-    "flt_project": ("Projektordner (*)", "Project folder (*)"),
-    "no_project": ("Kein Elucida-Projekt: {p}", "Not an Elucida project: {p}"),
+    "untitled": ("Unbenannte Verbindung",
+                 "Untitled compound"),
+    "save_changes_q": ("Die Verbindung enthält ungespeicherte Änderungen. Speichern?",
+                       "The compound has unsaved changes. Save?"),
+    "flt_project": ("Ordner der Verbindung (*)",
+                    "Compound folder (*)"),
+    "no_project": ("Keine Elucida-Verbindung und kein Projekt: {p}",
+                   "Not an Elucida compound or project: {p}"),
     "missing_file": ("Datei fehlt: {p}", "File missing: {p}"),
-    "project_dir_not_empty": ("Der Ordner {p} ist nicht leer und kein Projekt – bitte einen neuen Namen wählen.",
-                              "Folder {p} is not empty and not a project – please choose a new name."),
-    "project_saved": ("Projekt gespeichert: {p}", "Project saved: {p}"),
+    "project_dir_not_empty": ("Der Ordner {p} ist nicht leer und keine Verbindung – bitte einen neuen Namen wählen.",
+                              "Folder {p} is not empty and not a compound – please choose a new name."),
+    "project_saved": ("Verbindung gespeichert: {p}",
+                      "Compound saved: {p}"),
     "act_export": ("Exportieren (aktueller Tab)", "Export (current tab)"),
     "menu_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
     "act_quit": ("Beenden", "Quit"),
@@ -153,9 +169,9 @@ TEXTS = {
     "theme_light": ("hell", "light"),
     "theme_dark": ("dunkel", "dark"),
     "empty_title": ("Messdaten hierher ziehen", "Drop measurement data here"),
-    "empty_formats": ("Cary-CSV, DSW/BSW, Eclipse-CSV oder Projektordner\nKonzentration aus dem Probennamen, z. B. "
-                      "ABC-1-0p5mgml_THF = 0,5 mg/mL (sonst Tabelle zum Eintragen)",
-                      "Cary CSV, DSW/BSW, Eclipse CSV or project folder\nConcentration from the sample name, e.g. "
+    "empty_formats": ("Cary-CSV, DSW/BSW, Eclipse-CSV oder Ordner einer Verbindung\nKonzentration aus dem Probennamen, z. "
+                      "B. ABC-1-0p5mgml_THF = 0,5 mg/mL (sonst Tabelle zum Eintragen)",
+                      "Cary CSV, DSW/BSW, Eclipse CSV or compound folder\nConcentration from the sample name, e.g. "
                       "ABC-1-0p5mgml_THF = 0.5 mg/mL (otherwise a table to fill in)"),
     "mw_from_cdxml": ("aus CDXML", "from CDXML"),
     "mw_hint_none": ("leer = spezifischer Koeffizient a statt ε", "empty = specific coefficient a instead of ε"),
@@ -216,10 +232,10 @@ TEXTS = {
                                "Data and measurement details stay (files, reference/calibration, path length, entered\n"
                                "values, caption, export size). Undo (Ctrl+Z) brings everything back."),
     "btn_export": ("Exportieren", "Export"),
-    "btn_export_tip": ("Schreibt die gewählten Formate in den Projektordner: Abbildungen nach „figures“, Tabellen "
+    "btn_export_tip": ("Schreibt die gewählten Formate in den Ordner der Verbindung: Abbildungen nach „figures“, Tabellen "
                        "nach „tables“, Texte nach „SI“ (vorhandene Dateien werden überschrieben)",
-                       "Writes the chosen formats to the project folder: figures to “figures”, tables to “tables”, "
-                       "texts to “SI” (existing files are overwritten)"),
+                       "Writes the chosen formats to the compound folder: figures to “figures”, tables to “tables”, texts to "
+                       "“SI” (existing files are overwritten)"),
     "drag_hint": ("Maus: Inset, Bilder und Labels ziehen zum Verschieben, Mausrad über Inset/Bild "
                   "ändert die Größe. Über den Spektren zeigt eine Einblendung unten rechts λ und A des nächsten "
                   "Messpunkts, Doppelklick fügt dort eine Bande hinzu. CSV, Struktur und Foto können ins "
@@ -268,39 +284,58 @@ TEXTS = {
     "tab_load": ("Vorlage laden…", "Load preset…"),
     "tab_presets": ("Vorlagen", "Presets"),
     "welcome_sub": ("Von der Synthese zur SI: Auswertung und Abbildungen für UV-Vis, NMR, IR, HRMS, CV, EPR, X-Ray, DFT "
-                    "und mehr. Ein Projekt sammelt alle Daten einer Verbindung.",
+                    "und mehr. Eine Verbindung sammelt alle ihre Daten, ein Projekt die Verbindungen einer "
+                    "Veröffentlichung.",
                     "From synthesis to the SI: analysis and figures for UV-Vis, NMR, IR, HRMS, CV, EPR, X-ray, DFT and "
-                    "more. A project collects all data of one compound."),
-    "welcome_recent": ("Zuletzt geöffnet", "Recently opened"),
+                    "more. A compound collects all its data, a project the compounds of a paper."),
+    "welcome_recent": ("Zuletzt geöffnete Verbindungen", "Recently opened compounds"),
     "compound_note": ("Notiz", "Note"),
+    "compound_oil": ("Öl", "Oil"),
+    "compound_oil_tip": ("Öl bei Raumtemperatur: in der SI steht „m.p. <25 °C“",
+                         "Oil at room temperature: the SI reads “m.p. <25 °C”"),
+    "compound_known": ("Literaturbekannt", "Known from the literature"),
+    "compound_known_tip": ("Für die Checkliste des Projekts: bekannte Verbindungen brauchen nur ¹H- und ¹³C-NMR",
+                           "For the checklist of the project: known compounds only need ¹H and ¹³C NMR"),
+    "compound_lit": ("Literatur", "Reference"),
+    "compound_lit_ph": ("Zitat oder DOI, z. B. J. Org. Chem. 2020, 85, 1234", "Citation or DOI, e.g. J. Org. Chem. 2020, 85, 1234"),
     "compound_note_ph": ("z. B. Radikalkation von 6m", "e.g. radical cation of 6m"),
     "compound_note_tip": ("Was ist das? Steht auf dem Startbildschirm und in der Titelleiste, geht an Characterization "
                           "(elucida.json) – nicht in SI, Word-Export oder Datenpaket.",
                           "What is it? Shown on the welcome page and in the title bar, passed to Characterization "
                           "(elucida.json) – not into the SI, Word export or data package."),
     "recent_search_ph": ("Suchen: Verbindung, Ordner, Analytik …", "Search: compound, folder, technique …"),
-    "recent_none": ("Noch keine Projekte – lege ein neues an oder sieh dir das Beispielprojekt an.",
-                    "No projects yet – create a new one or have a look at the example project."),
+    "recent_none": ("Noch nichts geöffnet – lege eine Verbindung oder ein Projekt an oder sieh dir die Beispiele an.",
+                    "Nothing opened yet – create a compound or a project, or have a look at the examples."),
     "recent_empty_project": ("noch keine Daten", "no data yet"),
     "recent_reveal": ("Im Ordner zeigen", "Show in folder"),
     "recent_remove": ("Aus der Liste entfernen", "Remove from the list"),
     "time_today": ("heute {t}", "today {t}"),
     "time_yesterday": ("gestern {t}", "yesterday {t}"),
     "time_days": ("vor {n} Tagen", "{n} days ago"),
-    "welcome_hint": ("Projektordner oder Messdateien lassen sich auch einfach ins Fenster ziehen. "
+    "welcome_hint": ("Ordner von Verbindungen und Projekten oder Messdateien lassen sich auch einfach ins Fenster ziehen. "
                      "<a href='{url}'>Schnellstart in 6 Schritten</a>",
-                     "You can also simply drag a project folder or measurement files into the window. "
-                     "<a href='{url}'>Quick start in 6 steps</a>"),
-    "readme_quickstart": ("Schnellstart: vom leeren Projekt zur SI", "Quick start: from an empty project to the SI"),
-    "act_demo": ("Beispielprojekt ansehen", "Open example project"),
-    "act_demo_tip": ("Legt ein Projekt mit künstlichen Daten für alle Tabs an – zum Ausprobieren",
-                     "Creates a project with artificial data for all tabs – to try things out"),
-    "demo_done": ("Beispielprojekt (künstliche Daten) geöffnet: {p}", "Example project (artificial data) opened: {p}"),
+                     "You can also simply drag a compound or project folder or measurement files into the window. <a "
+                     "href='{url}'>Quick start in 6 steps</a>"),
+    "readme_quickstart": ("Schnellstart: von der leeren Verbindung zur SI",
+                          "Quick start: from an empty compound to the SI"),
+    "act_demo": ("Beispielverbindung ansehen",
+                 "Open example compound"),
+    "act_demo_pub": ("Beispielprojekt ansehen",
+                     "Open example project"),
+    "act_demo_pub_tip": ("Legt ein Projekt mit zwei Verbindungen (künstliche Daten) an – Gesamt-SI und Datenpakete zum "
+                         "Ausprobieren",
+                         "Creates a project with two compounds (artificial data) – to try the complete SI and data packages"),
+    "demo_pub_done": ("Beispielprojekt (künstliche Daten) geöffnet: {p}",
+                      "Example project (artificial data) opened: {p}"),
+    "act_demo_tip": ("Legt eine Verbindung mit künstlichen Daten für alle Tabs an – zum Ausprobieren",
+                     "Creates a compound with artificial data for all tabs – to try things out"),
+    "demo_done": ("Beispielverbindung (künstliche Daten) geöffnet: {p}",
+                  "Example compound (artificial data) opened: {p}"),
     "act_guide_tab": ("Anleitung zu diesem Tab", "Guide for this tab"),
     "act_quickstart": ("Schnellstart (README)", "Quick start (README)"),
     "open_folder": ("Ordner öffnen", "Open folder"),
-    "btn_export_word_tip": ("Schreibt die Word-Datei dieses Tabs in den Projektordner unter „SI“ (überschreibt sie)",
-                            "Writes this tab's Word file to the project folder under “SI” (overwrites it)"),
+    "btn_export_word_tip": ("Schreibt die Word-Datei dieses Tabs in den Ordner der Verbindung unter „SI“ (überschreibt sie)",
+                            "Writes this tab's Word file to the compound folder under “SI” (overwrites it)"),
     "syn_need_scheme": ("Erst ein Reaktionsschema (CDXML) wählen", "Choose a reaction scheme (CDXML) first"),
     "tab_figure": ("Abbildung", "Figure"),
     "grp_export": ("Achsen, Größe und Formate", "Axes, size and formats"),
@@ -318,25 +353,46 @@ TEXTS = {
     "nav_grp_uv": ("UV-Vis & Photophysik", "UV-Vis & photophysics"),
     "nav_grp_ec": ("Elektrochemie & EPR", "Electrochemistry & EPR"),
     "nav_grp_struct": ("Struktur & Rechnung", "Structure & computation"),
-    "tab_save_tip": ("Einstellungen dieses Tabs als Vorlage (YAML) speichern, z. B. für andere Projekte. "
-                     "Daten und Projekt bleiben unberührt – das Projekt speichert die Werkzeugleiste.",
-                     "Save this tab's settings as a preset (YAML), e.g. for other projects. Data and project are not "
-                     "affected – the toolbar saves the project."),
+    "tab_save_tip": ("Einstellungen dieses Tabs als Vorlage (YAML) speichern, z. B. für andere Verbindungen. Daten und "
+                     "Verbindung bleiben unberührt – gespeichert wird über die Werkzeugleiste.",
+                     "Save this tab's settings as a preset (YAML), e.g. for other compounds. Data and compound are not "
+                     "affected – the toolbar saves the compound."),
     "tab_load_tip": ("Einstellungen aus einer Vorlage (YAML) übernehmen; geladene Daten bleiben",
                      "Apply settings from a preset (YAML); loaded data stay"),
     "tab_empty": ("Noch keine Daten – links Dateien hinzufügen.", "No data yet – add files on the left."),
     "guide_syn_title": ('Synthese: „Synthesis of …“ mit Schema und Vorschrift für die SI', 'Synthesis: “Synthesis of …” with scheme and procedure for the SI'),
     "guide_syn_files": ('Dateien: ChemDraw-Schema als CDXML (dazu gleichnamige SVG/PDF für das Bild, .cdx für ein in Word bearbeitbares Objekt)', 'Files: ChemDraw scheme as CDXML (plus an SVG/PDF of the same name for the picture, .cdx for an object editable in Word)'),
-    "guide_syn_steps": ('Namen eintragen (Vorgabe: Verbindung des Projekts)\nSchema wählen und die Vorschrift schreiben – Mengen wie „(1.03 g, 5.00 mmol, 1.0 eq.)“\nReagenzien eintragen oder „Aus Schema“ – die Mengen in der Vorschrift werden geprüft\nAusgabe: „Exportieren“ unten (Word-Datei) oder SI (Word) in der Werkzeugleiste', 'Enter the name (default: compound of the project)\nChoose the scheme and write the procedure – amounts like “(1.03 g, 5.00 mmol, 1.0 eq.)”\nEnter reagents or use “From scheme” – the amounts in the procedure are checked\nOutput: “Export” at the bottom (Word file) or SI (Word) in the toolbar'),
+    "guide_syn_steps": ("Namen eintragen (Vorgabe: Name der Verbindung)\nSchema wählen und die Vorschrift schreiben – Mengen "
+                        "wie „(1.03 g, 5.00 mmol, 1.0 eq.)“\nReagenzien eintragen oder „Aus Schema“ – die Mengen in der "
+                        "Vorschrift werden geprüft\nAusgabe: „Exportieren“ unten (Word-Datei) oder SI (Word) in der "
+                        "Werkzeugleiste",
+                        "Enter the name (default: name of the compound)\nChoose the scheme and write the procedure – amounts "
+                        "like “(1.03 g, 5.00 mmol, 1.0 eq.)”\nEnter reagents or use “From scheme” – the amounts in the "
+                        "procedure are checked\nOutput: “Export” at the bottom (Word file) or SI (Word) in the toolbar"),
     "guide_nmr_title": ('NMR: Spektren aus MestReNova mit Struktur und die NMR-Zeile', 'NMR: spectra from MestReNova with structure, and the NMR line'),
     "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG; EMF geht unverändert nach Word), auch per Ziehen ins Fenster; optional TopSpin-Daten und Mnova-Dokumente (Reiter Rohdaten)', 'Files: SVG export from MestReNova (File → Save as → SVG; EMF goes into Word unchanged), also by dragging into the window; optionally TopSpin data and Mnova documents (Raw data tab)'),
-    "guide_nmr_steps": ('SVG hinzufügen – Kern und Reihenfolge erkennt das Programm\nStruktur kommt aus der Verbindung des Projekts; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus Mnova unter „NMR-Zeile“ einfügen (¹³C auch „Zeile aus Peaklabels“)\nWord speichern (zwei Spektren je Seite) oder über SI (Word)', "Add the SVG – nucleus and order are recognised\nThe structure comes from the project's compound; placed automatically or dragged in the preview\nPaste the Mnova multiplet report under “NMR line” (¹³C also “line from peak labels”)\nSave Word (two spectra per page) or via SI (Word)"),
+    "guide_nmr_steps": ("SVG hinzufügen – Kern und Reihenfolge erkennt das Programm\nStruktur kommt aus dem Dialog "
+                        "Verbindung; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus Mnova unter "
+                        "„NMR-Zeile“ einfügen (¹³C auch „Zeile aus Peaklabels“)\nWord speichern (zwei Spektren je Seite) oder "
+                        "über SI (Word)",
+                        "Add the SVG – nucleus and order are recognised\nThe structure comes from the Compound dialog; placed "
+                        "automatically or dragged in the preview\nPaste the Mnova multiplet report under “NMR line” (¹³C also "
+                        "“line from peak labels”)\nSave Word (two spectra per page) or via SI (Word)"),
     "guide_irms_title": ('IR + EA: IR-Peakliste und Elementaranalyse als SI-Zeilen', 'IR + EA: IR peak list and elemental analysis as SI lines'),
-    "guide_irms_files": ('Dateien: Bruker-OPUS-Datei (*.0) und/oder OPUS-PDF mit Peakbeschriftung, auch per Ziehen ins Fenster; für die EA die Summenformel der Verbindung des Projekts', "Files: Bruker OPUS file (*.0) and/or OPUS PDF with peak labels, also by dragging into the window; for the EA the formula of the project's compound"),
+    "guide_irms_files": ("Dateien: Bruker-OPUS-Datei (*.0) und/oder OPUS-PDF mit Peakbeschriftung, auch per Ziehen ins "
+                         "Fenster; für die EA die Summenformel der Verbindung (Werkzeugleiste)",
+                         "Files: Bruker OPUS file (*.0) and/or OPUS PDF with peak labels, also by dragging into the window; "
+                         "for the EA the formula of the compound (toolbar)"),
     "guide_irms_steps": ('IR-Daten wählen – mit PDF gelten genau die OPUS-Peaks, sonst sucht das Programm die Banden (Peakschwelle)\nBanden, die nicht in die Liste sollen, abhaken; Intensitäten w/m/s/br optional\nEA: gefundene C/H/N/S-Werte eintragen, ggf. Solvat; Abweichungen über 0,4 % werden markiert\nZeilen kopieren (Formatierung bleibt in Word) oder über SI (Word)', 'Choose the IR data – with the PDF the OPUS peaks are used exactly, otherwise bands are searched (peak threshold)\nUntick bands that should not be listed; intensities w/m/s/br optional\nEA: enter the found C/H/N/S values, a solvate if needed; deviations above 0.4 % are marked\nCopy the lines (formatting is kept in Word) or via SI (Word)'),
     "guide_hrms_title": ('HRMS: HR-MS-Zeile (calc./found) mit Spektrum und Isotopenmuster', 'HRMS: HR-MS line (calc./found) with spectrum and isotope pattern'),
     "guide_hrms_files": ('Dateien: Word-Bericht der Massenabteilung (.docx) und/oder Bruker-Messordner (.d), auch per Ziehen ins Fenster', 'Files: report of the mass spectrometry service (.docx) and/or Bruker measurement folder (.d), also by dragging'),
-    "guide_hrms_steps": ('Bericht und/oder Rohdaten wählen\nSummenformel prüfen (aus der Verbindung des Projekts oder „Verbindung aus dem MS-Bericht übernehmen“)\nIon wählen; found ist vorgewählt – mit Rohdaten den LC-Bereich im Chromatogramm ziehen oder einen Peak anklicken\nHRMS-Zeile kopieren, Abbildung exportieren oder über SI (Word)', "Choose the report and/or raw data\nCheck the formula (from the project's compound or “Take compound from the MS report”)\nChoose the ion; found is preselected – with raw data drag the LC range in the chromatogram or click a peak\nCopy the HRMS line, export the figure or via SI (Word)"),
+    "guide_hrms_steps": ("Bericht und/oder Rohdaten wählen\nSummenformel prüfen (aus der Verbindung oder „Verbindung aus dem "
+                         "MS-Bericht übernehmen“)\nIon wählen; found ist vorgewählt – mit Rohdaten den LC-Bereich im "
+                         "Chromatogramm ziehen oder einen Peak anklicken\nHRMS-Zeile kopieren, Abbildung exportieren oder über "
+                         "SI (Word)",
+                         "Choose the report and/or raw data\nCheck the formula (from the compound or “Take compound from the "
+                         "MS report”)\nChoose the ion; found is preselected – with raw data drag the LC range in the "
+                         "chromatogram or click a peak\nCopy the HRMS line, export the figure or via SI (Word)"),
     "guide_eps_title": ('UV-Vis (ε): Absorptionskoeffizienten aus einer Verdünnungsreihe, Abbildung im Origin-Stil', 'UV-Vis (ε): absorption coefficients from a dilution series, figure in Origin style'),
     "guide_eps_files": ('Dateien: Cary-CSV/TXT, DSW/BSW oder Eclipse-CSV, auch per Ziehen ins Fenster. Konzentration aus dem Probennamen, z. B. ABC-1-0p5mgml_THF = 0,5 mg/mL – sonst Tabelle zum Eintragen', 'Files: Cary CSV/TXT, DSW/BSW or Eclipse CSV, also by dragging into the window. Concentration from the sample name, e.g. ABC-1-0p5mgml_THF = 0.5 mg/mL – otherwise a table to fill in'),
     "guide_eps_steps": ('Messdaten öffnen, Konzentrationen und Einheit prüfen\nVerbindung: Struktur (CDXML) und bei mg/mL die Molmasse, optional Küvettenfoto\nSchichtdicke und Cutoff prüfen; Banden in der Ergebnistabelle an- oder abwählen\nExportieren; die UV-Vis-Zeile für die SI steht unter „SI-Zeile“', 'Open the measurement data, check concentrations and unit\nCompound: structure (CDXML) and, for mg/mL, the molar mass; optionally a cuvette photo\nCheck path length and cutoff; tick or untick bands in the results table\nExport; the UV-Vis line for the SI is under “SI line”'),
@@ -528,11 +584,11 @@ TEXTS = {
                      "dieses Tabs.", "Store a general paragraph on instrument and setup; the SI export puts it "
                      "before this tab's figures."),
     "si_setup_title": ("Aufbau-Text für die SI", "Setup text for the SI"),
-    "si_setup_hint": ("Wird nur auf diesem Rechner gespeichert (nicht im Projekt) und im SI-Export vor die Abbildungen "
-                      "gesetzt. Formeln wie AgNO3 oder nBu4NPF6 werden tiefgestellt, „mL-1“ hochgestellt. Leer = kein "
-                      "Absatz.", "Stored on this computer only (not in the project) and placed before the figures in "
-                      "the SI export. Formulas such as AgNO3 or nBu4NPF6 are subscripted, “mL-1” superscripted. "
-                      "Empty = no paragraph."),
+    "si_setup_hint": ("Wird nur auf diesem Rechner gespeichert (nicht in der Verbindung) und im SI-Export vor die "
+                      "Abbildungen gesetzt. Formeln wie AgNO3 oder nBu4NPF6 werden tiefgestellt, „mL-1“ hochgestellt. Leer "
+                      "= kein Absatz.",
+                      "Stored on this computer only (not in the compound) and placed before the figures in the SI export. "
+                      "Formulas such as AgNO3 or nBu4NPF6 are subscripted, “mL-1” superscripted. Empty = no paragraph."),
     "si_uv_no_solvent": ("Hinweis: Serie „{g}“ ohne Lösungsmittel – im ε-Tab unter „SI-Zeile“ eintragen, dann steht es "
                          "in der UV-Vis-Zeile und in der Bildunterschrift.", "Note: series “{g}” has no solvent – enter "
                          "it in the ε tab under “SI line” to get it into the UV-Vis line and the figure caption."),
@@ -575,9 +631,9 @@ TEXTS = {
     "uv_copy": ("UV-Vis-Zeile kopieren (für Word)", "Copy UV-Vis line (for Word)"),
     "ms_raw": ("MS-Rohdaten (.d)", "MS raw data (.d)"),
     "ms_raw_tip": ("Bruker-Messordner (.d) mit analysis.baf und analysis.sqlite (z. B. timsTOF); gelesen werden die "
-                   "Linienspektren des Geräts. Ins Projekt kommen nur diese beiden Dateien.",
+                   "Linienspektren des Geräts. In die Verbindung kommen nur diese beiden Dateien.",
                    "Bruker measurement folder (.d) with analysis.baf and analysis.sqlite (e.g. timsTOF); the "
-                   "instrument's line spectra are read. Only these two files are copied into the project."),
+                   "instrument's line spectra are read. Only these two files are copied into the compound."),
     "ms_raw_bad": ("kein Bruker-Messordner mit analysis.baf und analysis.sqlite",
                    "not a Bruker measurement folder with analysis.baf and analysis.sqlite"),
     "ms_rt": ("LC-Peak (RT)", "LC peak (RT)"),
@@ -606,33 +662,36 @@ TEXTS = {
                      "Wert im Bericht am nächsten am berechneten, ohne Bericht das Mittel aus den Rohdaten",
                      "Measured m/z from the spectra in the report and the mean from the raw data; preselected is the "
                      "report value closest to the calculated one, without a report the raw-data mean"),
-    "ms_no_formula": ("keine – Verbindung des Projekts (Werkzeugleiste) festlegen oder MS-Bericht laden",
-                      "none – set the project's compound (toolbar) or load an MS report"),
-    "ea_no_formula": ("keine – Verbindung des Projekts (Werkzeugleiste) festlegen oder im Tab HRMS den MS-Bericht laden",
-                      "none – set the project's compound (toolbar) or load the MS report in the HRMS tab"),
-    "ms_src_project": ("Verbindung des Projekts", "project compound"),
+    "ms_no_formula": ("keine – Verbindung (Werkzeugleiste) festlegen oder MS-Bericht laden",
+                      "none – set the compound (toolbar) or load an MS report"),
+    "ea_no_formula": ("keine – Verbindung (Werkzeugleiste) festlegen oder im Tab HRMS den MS-Bericht laden",
+                      "none – set the compound (toolbar) or load the MS report in the HRMS tab"),
+    "ms_src_project": ("Verbindung",
+                       "compound"),
     "ms_src_report_struct": ("aus der Struktur im MS-Bericht", "from the structure in the MS report"),
     "ms_take_compound": ("Verbindung aus dem MS-Bericht übernehmen", "Take the compound from the MS report"),
     "ms_take_compound_tip": ("Name, Formel und Molmasse aus dem ChemDraw-Objekt im Bericht. Die Struktur wird über RDKit "
                              "neu gezeichnet (Ersatzzeichnung) – für Abbildungen die eigene CDXML (mit SVG/PDF) nehmen.",
                              "Name, formula and molar mass from the ChemDraw object in the report. The structure is redrawn "
                              "with RDKit (substitute drawing) – for figures use your own CDXML (with SVG/PDF)."),
-    "ms_take_replace": ("Das Projekt hat schon eine Struktur. Durch die aus dem MS-Bericht ersetzen (Ersatzzeichnung)?",
-                        "The project already has a structure. Replace it with the one from the MS report (substitute drawing)?"),
+    "ms_take_replace": ("Die Verbindung hat schon eine Struktur. Durch die aus dem MS-Bericht ersetzen (Ersatzzeichnung)?",
+                        "The compound already has a structure. Replace it with the one from the MS report (substitute "
+                        "drawing)?"),
     "ms_form_vs_struct": ("⚠ im Bericht passen Formelfeld ({f}) und Struktur ({s}) nicht zusammen",
                           "⚠ in the report, formula field ({f}) and structure ({s}) do not match"),
     "ms_src_report": ("aus dem MS-Bericht", "from the MS report"),
-    "ms_formula_mismatch": ("⚠ Formel im Bericht ({rep}) passt nicht zur Verbindung des Projekts ({prj}) – richtiger Bericht?",
-                            "⚠ formula in the report ({rep}) does not match the project compound ({prj}) – right report?"),
+    "ms_formula_mismatch": ("⚠ Formel im Bericht ({rep}) passt nicht zur Verbindung ({prj}) – richtiger Bericht?",
+                            "⚠ formula in the report ({rep}) does not match the compound ({prj}) – right report?"),
     "ms_no_match": ("⚠ kein gemessenes m/z innerhalb 20 ppm – Ion/Addukt prüfen", "⚠ no measured m/z within 20 ppm – check the ion/adduct"),
     "ms_polarity": ("⚠ der Bericht ist im Modus {rep}MS gemessen", "⚠ the report was measured in {rep}MS mode"),
     "ms_dev": ("Abweichung found − calc = {ppm} ppm (nur zur Kontrolle, steht nicht in der Zeile)",
                "deviation found − calc = {ppm} ppm (check only, not part of the line)"),
     "ms_dev_high": ("⚠ Abweichung über 5 ppm", "⚠ deviation above 5 ppm"),
     "compound_none": ("Verbindung …", "Compound …"),
-    "compound_tip": ("Verbindung dieses Projekts (Name, ChemDraw, Formel, Molmasse): Vorgabe für alle Tabs, z. B. ε, "
-                     "Fluoreszenz, IR + EA, HRMS und die SI", "Compound of this project (name, ChemDraw, formula, molar "
-                     "mass): default for all tabs, e.g. ε, fluorescence, IR + EA, HRMS and the SI"),
+    "compound_tip": ("Diese Verbindung (Name, ChemDraw, Formel, Molmasse): Vorgabe für alle Tabs, z. B. ε, Fluoreszenz, IR "
+                     "+ EA, HRMS und die SI",
+                     "This compound (name, ChemDraw, formula, molar mass): default for all tabs, e.g. ε, fluorescence, IR "
+                     "+ EA, HRMS and the SI"),
     "compound_set": ("Verbindung: {c}", "Compound: {c}"),
     "stick_mode_tip": ("Ein gemeinsamer Faktor für Kurve und Striche: Kurvenmaximum = 1 (höchste Stelle der verbreiterten "
                        "Kurve im Normierungsbereich), stärkster Übergang = 1 oder Striche als Oszillatorstärke f auf "
@@ -643,7 +702,8 @@ TEXTS = {
                      "only for the Mercury and flat styles (ball and stick: fixed sphere size)"),
     "syn_output_hint": ("Erscheint im SI-Export (Werkzeugleiste: SI (Word)); eigene Word-Datei: „Exportieren“ unten.",
                         "Appears in the SI export (toolbar: SI (Word)); own Word file: “Export” at the bottom."),
-    "compound_title": ("Verbindung des Projekts", "Compound of the project"),
+    "compound_title": ("Verbindung",
+                       "Compound"),
     "compound_name": ("Name / Probe", "Name / sample"),
     "compound_name_ph": ("z. B. Probennummer", "e.g. sample number"),
     "compound_hint": ("Formel und Molmasse kommen aus der ChemDraw-Datei (Isotope wie D inklusive) und sind änderbar. "
@@ -802,12 +862,11 @@ TEXTS = {
     "xrange": ("λ-Bereich [nm]", "λ range [nm]"),
     "xrange_auto": ("gesamt", "full"),
     "conc_title": ("Konzentrationen eingeben", "Enter concentrations"),
-    "conc_intro": ("Die Probennamen enthalten keine (vollständigen) Konzentrationsangaben. "
-                   "Bitte Konzentrationen eintragen – Proben ohne Wert (z. B. Blindprobe) werden "
-                   "ignoriert. Die Angaben werden mit dem Projekt gespeichert.",
-                   "The sample names do not contain (complete) concentration information. "
-                   "Please enter concentrations – samples without a value (e.g. blank) are "
-                   "ignored. The values are saved with the project."),
+    "conc_intro": ("Die Probennamen enthalten keine (vollständigen) Konzentrationsangaben. Bitte Konzentrationen "
+                   "eintragen – Proben ohne Wert (z. B. Blindprobe) werden ignoriert. Die Angaben werden mit der "
+                   "Verbindung gespeichert.",
+                   "The sample names do not contain (complete) concentration information. Please enter concentrations – "
+                   "samples without a value (e.g. blank) are ignored. The values are saved with the compound."),
     "col_sample": ("Probe", "Sample"),
     "col_series": ("Serie", "Series"),
     "col_conc": ("Konzentration", "Concentration"),
@@ -1231,12 +1290,10 @@ TEXTS = {
     "act_check_updates": ("Nach Updates suchen…", "Check for updates…"),
     "act_auto_updates": ("Beim Start automatisch nach Updates suchen", "Check for updates on startup"),
     "upd_title": ("Update", "Update"),
-    "upd_available": ("Version {new} ist verfügbar (installiert: {cur}).\n\n"
-                      "Auf der Release-Seite herunterladen: {file}\n"
-                      "Projekte und Einstellungen bleiben erhalten.",
-                      "Version {new} is available (installed: {cur}).\n\n"
-                      "Download from the release page: {file}\n"
-                      "Projects and settings are kept."),
+    "upd_available": ("Version {new} ist verfügbar (installiert: {cur}).\n\nAuf der Release-Seite herunterladen: "
+                      "{file}\nVerbindungen, Projekte und Einstellungen bleiben erhalten.",
+                      "Version {new} is available (installed: {cur}).\n\nDownload from the release page: {file}\nCompounds, "
+                      "projects and settings are kept."),
     "upd_no_asset": ("die Datei für dein System", "the file for your system"),
     "upd_current": ("Du hast die aktuelle Version ({cur}).", "You have the latest version ({cur})."),
     "upd_failed": ("Update-Prüfung fehlgeschlagen (keine Internetverbindung?):\n{err}",
@@ -1402,10 +1459,10 @@ TEXTS = {
     "xr_flip": ("Von hinten (180°)", "From behind (180°)"),
     "xr_flip_tip": ("Um die senkrechte Achse um 180° drehen", "Rotate by 180° about the vertical axis"),
     "xr_template": ("Wie ChemDraw ausrichten …", "Orient like ChemDraw …"),
-    "xr_template_tip": ("Lage wie in der ChemDraw-Zeichnung (CDXML der Verbindung des Projekts, sonst Datei wählen). "
-                        "Zuordnung über Elemente und Verknüpfung, H und Bindungsordnungen zählen nicht.",
-                        "Orientation as in the ChemDraw drawing (CDXML of the project compound, otherwise choose a "
-                        "file). Matched by elements and connectivity; H atoms and bond orders do not count."),
+    "xr_template_tip": ("Lage wie in der ChemDraw-Zeichnung (CDXML der Verbindung, sonst Datei wählen). Zuordnung über "
+                        "Elemente und Verknüpfung, H und Bindungsordnungen zählen nicht.",
+                        "Orientation as in the ChemDraw drawing (CDXML of the compound, otherwise choose a file). Matched by "
+                        "elements and connectivity; H atoms and bond orders do not count."),
     "xr_template_done": ("Wie {f} ausgerichtet: {n} von {nt} Atomen zugeordnet, Abweichung der Projektion {rmsd} Å.",
                          "Oriented like {f}: {n} of {nt} atoms matched, deviation of the projection {rmsd} Å."),
     "xr_template_amb": ("⚠ Zuordnung nicht eindeutig (symmetrisches Molekül) – Ansicht prüfen, ggf. „Von hinten“.",
@@ -1533,10 +1590,10 @@ TEXTS = {
     "nmr_solvent": ("Lösungsmittel", "Solvent"),
     "nmr_solv_ph": ("aus dem Mnova-Text (z. B. CDCl3)", "from the Mnova text (e.g. CDCl3)"),
     "nmr_bruker": ("Bruker-Ordner …", "Bruker folder …"),
-    "nmr_bruker_tip": ("Experimentordner (mit acqus) diesem Spektrum zuordnen: Parameterübersicht; der Ordner kommt ganz "
-                       "ins Projekt (data/nmr/<Art>)",
-                       "Assign the experiment folder (with acqus) to this spectrum: parameter overview; the whole folder "
-                       "is copied into the project (data/nmr/<kind>)"),
+    "nmr_bruker_tip": ("Experimentordner (mit acqus) diesem Spektrum zuordnen: Parameterübersicht; der Ordner kommt ganz in "
+                       "die Verbindung (data/nmr/<Art>)",
+                       "Assign the experiment folder (with acqus) to this spectrum: parameter overview; the whole folder is "
+                       "copied into the compound (data/nmr/<kind>)"),
     "nmr_raw": ("Rohdaten", "Raw data"),
     "nmr_spec_flt": ("Mnova-Spektren", "Mnova spectra"),
     "nmr_emf_bad": ("keine EMF-Datei", "not an EMF file"),
@@ -1546,22 +1603,22 @@ TEXTS = {
                         "structure). For a preview and the structure, save the spectrum as SVG from Mnova."),
     "nmr_emf_nopeaks": ("Peaklabels lassen sich nur aus SVG lesen – das Spektrum als SVG aus Mnova speichern.",
                         "Peak labels can only be read from SVG – save the spectrum as SVG from Mnova."),
-    "nmr_raw_hint": ("TopSpin-Experimente und Mnova-Dokumente werden ganz ins Projekt übernommen und nach Art abgelegt "
-                     "(data/nmr/1H, 13C, HSQC …). Ausgewertet werden weiter die Mnova-SVGs; passt genau ein Experiment "
-                     "zu einem Spektrum, wird es zugeordnet (Parameter, Temperatur).",
-                     "TopSpin experiments and Mnova documents are copied into the project as a whole and sorted by "
-                     "kind (data/nmr/1H, 13C, HSQC …). The Mnova SVGs are still what is evaluated; if exactly one "
-                     "experiment fits a spectrum, it is assigned (parameters, temperature)."),
+    "nmr_raw_hint": ("TopSpin-Experimente und Mnova-Dokumente werden ganz in die Verbindung übernommen und nach Art "
+                     "abgelegt (data/nmr/1H, 13C, HSQC …). Ausgewertet werden weiter die Mnova-SVGs; passt genau ein "
+                     "Experiment zu einem Spektrum, wird es zugeordnet (Parameter, Temperatur).",
+                     "TopSpin experiments and Mnova documents are copied into the compound as a whole and sorted by kind "
+                     "(data/nmr/1H, 13C, HSQC …). The Mnova SVGs are still what is evaluated; if exactly one experiment "
+                     "fits a spectrum, it is assigned (parameters, temperature)."),
     "nmr_topspin": ("TopSpin-Daten …", "TopSpin data …"),
     "nmr_topspin_tip": ("Ein Experiment (Ordner mit acqus), einen Datensatz (10, 11, …) oder einen Ordner mit mehreren "
                         "Datensätzen wählen – auch per Ziehen ins Fenster",
                         "Choose an experiment (folder with acqus), a dataset (10, 11, …) or a folder with several "
                         "datasets – also by dragging into the window"),
     "nmr_mnova": ("Mnova-Datei …", "Mnova file …"),
-    "nmr_mnova_tip": ("MestReNova-Dokument (.mnova) ins Projekt übernehmen (data/nmr/mnova); Doppelklick öffnet es",
-                      "Copy a MestReNova document (.mnova) into the project (data/nmr/mnova); double-click opens it"),
-    "nmr_raw_remove_tip": ("Eintrag aus der Liste nehmen; die Dateien im Projektordner bleiben",
-                           "Remove the entry from the list; the files in the project folder stay"),
+    "nmr_mnova_tip": ("MestReNova-Dokument (.mnova) in die Verbindung übernehmen (data/nmr/mnova); Doppelklick öffnet es",
+                      "Copy a MestReNova document (.mnova) into the compound (data/nmr/mnova); double-click opens it"),
+    "nmr_raw_remove_tip": ("Eintrag aus der Liste nehmen; die Dateien im Ordner der Verbindung bleiben",
+                           "Remove the entry from the list; the files in the compound folder stay"),
     "nmr_raw_open_tip": ("Doppelklick: Ordner bzw. Datei öffnen", "Double-click: open folder or file"),
     "nmr_raw_kind": ("Art", "Kind"),
     "nmr_raw_name": ("Name", "Name"),
@@ -1761,10 +1818,10 @@ TEXTS = {
     "dft_order_reset_tip": ("Nummerierung wie in der geladenen Datei wiederherstellen",
                             "Restore the numbering of the loaded file"),
     "dft_save_xyz": ("xyz speichern …", "Save xyz …"),
-    "dft_save_xyz_tip": ("Neue xyz-Datei in der aktuellen Reihenfolge (Standard: „tables“ im Projekt). Die "
-                         "geladene Datei bleibt unverändert.",
-                         "New xyz file in the current order (default: “tables” in the project). The loaded file "
-                         "stays unchanged."),
+    "dft_save_xyz_tip": ("Neue xyz-Datei in der aktuellen Reihenfolge (Standard: „tables“ der Verbindung). Die geladene Datei "
+                         "bleibt unverändert.",
+                         "New xyz file in the current order (default: “tables” of the compound). The loaded file stays "
+                         "unchanged."),
     "dft_no_overwrite": ("Die geladene Datei wird nicht überschrieben – bitte einen anderen Namen wählen.",
                          "The loaded file is not overwritten – please choose a different name."),
     "dft_not_calc": ("weder xyz noch ORCA-/Gaussian-Ausgabe", "neither xyz nor ORCA/Gaussian output"),
@@ -1854,6 +1911,141 @@ TEXTS = {
                        "Drag = rotate, right button = pan, wheel = zoom, click = select atom to measure/align (while "
                        "numbering: number it), double-click = label on/off, Shift + drag a box = labels of several "
                        "atoms on/off; labels can be dragged."),
+    # -- Publikation (seit 2.3) -------------------------------------------------------------------------------
+    "act_new_publication": ("Neues Projekt …",
+                            "New project …"),
+    "act_new_publication_tip": ("Projekt = Ordner für alle Verbindungen einer Veröffentlichung: Gesamt-SI und Datenpakete aller "
+                                "Verbindungen auf einmal",
+                                "Project = folder for all compounds of a paper: complete SI and data packages of all compounds at "
+                                "once"),
+    "act_to_publication": ("Zum Projekt",
+                           "Back to project"),
+    "welcome_publications": ("Projekte",
+                             "Projects"),
+    "pub_mono": ("P", "P"),
+    "pub_n_compounds": ("{n} Verbindungen", "{n} compounds"),
+    "pub_part_of": ("Teil des Projekts „{t}“",
+                    "Part of the project “{t}”"),
+    "pub_is_project": ("Dieser Ordner ist schon eine Verbindung. Bitte den übergeordneten Ordner wählen.",
+                       "This folder already is a compound. Please choose its parent folder."),
+    "pub_info": ("Angaben …", "Details …"),
+    "pub_info_missing": ("Noch keine Angaben – Titel, Autoren, DOI unter „Angaben …“",
+                         "No details yet – title, authors, DOI under “Details …”"),
+    "pub_info_hint": ("Angaben für README.txt des Datensatzes (Aufbau wie die Datensätze der Gruppe auf TUDOdata) und "
+                      "die Titelseite der Gesamt-SI. Leere Felder fallen weg.",
+                      "Details for the README.txt of the dataset (layout as the group's datasets on TUDOdata) and "
+                      "the title page of the complete SI. Empty fields are left out."),
+    "pub_f_paper_title": ("Titel des Artikels", "Title of the paper"),
+    "pub_ph_paper_title": ("für das Titelblatt der SI; kursiv mit <i>…</i>", "for the SI title page; italics with <i>…</i>"),
+    "pub_f_title": ("Titel des Datensatzes", "Title of the dataset"),
+    "pub_f_authors": ("Autoren", "Authors"),
+    "pub_f_affiliation": ("Adresse", "Affiliation"),
+    "pub_f_contact": ("Kontakt (E-Mail)", "Contact (email)"),
+    "pub_f_orcid": ("ORCID", "ORCID"),
+    "pub_f_doi": ("DOI des Datensatzes", "DOI of the dataset"),
+    "pub_f_related": ("Zugehörige Publikation", "Related publication"),
+    "pub_f_project_description": ("Projektbeschreibung", "Project description"),
+    "pub_f_dataset_description": ("Datensatzbeschreibung", "Dataset description"),
+    "pub_f_license": ("Lizenz", "License"),
+    "pub_ph_title": ("leer = Electronic supplement to <Titel des Artikels>",
+                     "empty = Electronic supplement to <title of the paper>"),
+    "pub_ph_authors": ("Vorname Name, Vorname Name and Vorname Name", "First Last, First Last and First Last"),
+    "pub_ph_doi": ("z. B. 10.17877/RESOLV-…", "e.g. 10.17877/RESOLV-…"),
+    "pub_ph_related": ("Zitat und DOI des Artikels", "Citation and DOI of the article"),
+    "pub_ph_project_description": ("z. B. Abstract des Artikels", "e.g. abstract of the article"),
+    "pub_ph_dataset_description": ("Leer = automatisch aus den Datenarten (NMR, IR, UV-Vis, CV …) und Verbindungen",
+                                   "Empty = generated from the data kinds (NMR, IR, UV-Vis, CV …) and compounds"),
+    "pub_close": ("Schließen", "Close"),
+    "pub_new_compound": ("Neue Verbindung", "New compound"),
+    "pub_new_compound_q": ("Name der Verbindung (auch Ordnername), z. B. 6m:",
+                           "Name of the compound (also the folder name), e.g. 6m:"),
+    "pub_add_project": ("Verbindung hinzufügen …",
+                        "Add compound …"),
+    "pub_add_project_tip": ("Vorhandene Verbindung aufnehmen (der Ordner bleibt, wo er ist). Verbindungen in Unterordnern des "
+                            "Projekts werden automatisch aufgenommen.",
+                            "Add an existing compound (the folder stays where it is). Compounds in subfolders of the project are "
+                            "added automatically."),
+    "pub_datapack": ("Datenpakete (Zip) …", "Data packages (zip) …"),
+    "pub_datapack_tip": ("Rohdaten aller Verbindungen wie der Datensatz der Gruppe: je Verbindung ein Zip, "
+                         "CompChem.zip, README.txt und Lizenz",
+                         "Raw data of all compounds like the group's dataset: one zip per compound, CompChem.zip, "
+                         "README.txt and license"),
+    "pub_si": ("Gesamt-SI (Word) …", "Complete SI (Word) …"),
+    "pub_si_tip": ("Eine Word-Datei für alle Verbindungen, Kapitel wie die SI der Gruppe",
+                   "One Word file for all compounds, chapters as in the group's SI"),
+    "pub_compounds": ("Verbindungen", "Compounds"),
+    "pub_empty": ("Noch keine Verbindungen. „Neue Verbindung“ legt einen Unterordner an; vorhandene Verbindungsordner "
+                  "hierher verschieben oder über „Verbindung hinzufügen“ aufnehmen.",
+                  "No compounds yet. “New compound” creates a subfolder; move existing compound folders here or use "
+                  "“Add compound”."),
+    "pub_missing": ("Nicht gefunden: {p}", "Not found: {p}"),
+    "pub_hint": ("Reihenfolge = Reihenfolge in Gesamt-SI und Datensatz (Rechtsklick: nach oben/unten). Jede Verbindung "
+                 "bleibt eigenständig und lässt sich auch allein öffnen.",
+                 "Order = order in the complete SI and the dataset (right-click: up/down). Each compound stays "
+                 "self-contained and can also be opened on its own."),
+    "pub_up": ("Nach oben", "Move up"),
+    "pub_check_summary": ("{ok} von {n} vollständig", "{ok} of {n} complete"),
+    "pub_check_gaps": ("fehlt: {gaps}", "missing: {gaps}"),
+    "pub_check_known": ("literaturbekannt", "known"),
+    "pub_check_tip": ("Pflicht: ¹H, ¹³C, 2D-NMR, HRMS, IR, m.p. (literaturbekannt: nur ¹H, ¹³C); grau = weitere "
+                      "vorhandene Daten. Literaturbekannt im Dialog Verbindung setzen.",
+                      "Required: ¹H, ¹³C, 2D NMR, HRMS, IR, m.p. (known compounds: only ¹H, ¹³C); grey = further "
+                      "data present. Set “known” in the Compound dialog."),
+    "pub_down": ("Nach unten", "Move down"),
+    "pub_remove": ("Aus dem Projekt nehmen (Ordner bleibt)",
+                   "Remove from the project (folder stays)"),
+    "pub_dp_hint": ("Je Verbindung ein Zip <Name>.zip (Aufbau wie beim Einzelpaket), DFT-Rechnungen aller Verbindungen in "
+                    "CompChem.zip, dazu README.txt aus den Angaben und der Lizenztext. Die Auswahl einzelner Dateien aus "
+                    "„Datenpaket (Zip)“ der Verbindung gilt weiter. Laborkürzel werden der Verbindung zugeordnet, in "
+                    "deren Dateinamen sie stehen.",
+                    "One zip <name>.zip per compound (as the single package), DFT calculations of all compounds in "
+                    "CompChem.zip, plus README.txt from the details and the license text. File choices made in the "
+                    "compound's “Data package (zip)” still apply. Lab codes are assigned to the compound whose file names "
+                    "contain them."),
+    "pub_dp_groups": ("Datenarten", "Data kinds"),
+    "pub_dp_dft": ("DFT → CompChem.zip", "DFT → CompChem.zip"),
+    "pub_dp_readme": ("README.txt und Lizenz", "README.txt and license"),
+    "pub_dp_dir": ("Zielordner", "Target folder"),
+    "pub_dp_size": ("{z} Zip-Dateien, {n} Einträge, {size}", "{z} zip files, {n} entries, {size}"),
+    "pub_dp_writing": ("Schreibe {name}.zip …", "Writing {name}.zip …"),
+    "pub_dp_done": ("Datensatz geschrieben: {p} ({z} Zip-Dateien, {n} Dateien, {size})",
+                    "Dataset written: {p} ({z} zip files, {n} files, {size})"),
+    "pub_si_hint": ("Kapitel wie die SI der Gruppe: Materials and Methods, Synthesis and Characterization, NMR, UV-Vis, "
+                    "EPR, CV, SEC, X-Ray, Computational. In jedem Kapitel die Verbindungen in der Reihenfolge des "
+                    "Projekts; leere Kapitel fallen weg. Texte zu Methoden und Kapiteln unter „SI-Texte …“.",
+                    "Chapters as in the group's SI: Materials and Methods, Synthesis and Characterization, NMR, UV-Vis, "
+                    "EPR, CV, SEC, X-ray, Computational. Within each chapter the compounds in the order of the project; "
+                    "empty chapters are left out. Texts for methods and chapters under “SI texts …”."),
+    "pub_si_sections": ("Kapitel", "Chapters"),
+    "pub_si_template": ("Vorlage", "Template"),
+    "pub_si_template_tip": ("Titelblatt und Bezeichnung der Abbildungen/Tabellen; Kapitel, Schrift und Seitenaufteilung "
+                            "bleiben wie die SI der Gruppe",
+                            "Title page and labels of figures/tables; chapters, font and page layout stay as in the "
+                            "group's SI"),
+    "pub_tpl_group": ("Gruppe / Wiley (Figure S1:)", "Group / Wiley (Figure S1:)"),
+    "pub_tpl_acs": ("ACS (Supporting Information, Figure S1.)", "ACS (Supporting Information, Figure S1.)"),
+    "pub_tpl_rsc": ("RSC (ESI, Fig. S1)", "RSC (ESI, Fig. S1)"),
+    "pub_tpl_nature": ("Nature (Supplementary Figure 1 |)", "Nature (Supplementary Figure 1 |)"),
+    "pub_si_toc": ("Titelseite und Inhaltsverzeichnis", "Title page and table of contents"),
+    "pub_si_methods": ("Auswertungstexte (Fits) je Verbindung in den Kapiteln",
+                       "Data processing texts (fits) per compound in the chapters"),
+    "pub_si_write": ("Word-Datei schreiben", "Write Word file"),
+    "pub_si_writing": ("Gesamt-SI wird erstellt …", "Creating complete SI …"),
+    "pub_si_compound": ("Verbindung {name} …", "Compound {name} …"),
+    "pub_texts": ("SI-Texte …", "SI texts …"),
+    "pub_texts_hint": ("Texte, die zum Projekt gehören: „Materials and Methods“ und je Kapitel eine Einleitung (steht unter "
+                       "der Kapitelüberschrift vor den Verbindungen). Absätze durch Leerzeilen trennen; Formeln wie CH2Cl2 "
+                       "und Exponenten wie cm-1 werden wie in den Unterschriften gesetzt. Gespeichert in "
+                       "publication.elucida.",
+                       "Texts that belong to the project: “Materials and Methods” and an introduction per chapter (below the "
+                       "chapter heading, before the compounds). Separate paragraphs by blank lines; formulas such as CH2Cl2 "
+                       "and exponents such as cm-1 are set as in the captions. Stored in publication.elucida."),
+    "pub_texts_ph": ("Einleitung des Kapitels (optional)", "Introduction of the chapter (optional)"),
+    "pub_texts_ph_methods": ("Lösungsmittel, Reagenzien, Geräte … (leer = Aufbau-Texte der Tabs)",
+                             "Solvents, reagents, instruments … (empty = setup texts of the tabs)"),
+    "pub_texts_setup": ("Aufbau-Texte der Tabs übernehmen", "Insert setup texts of the tabs"),
+    "pub_texts_setup_tip": ("Hängt die in den Tabs hinterlegten Aufbau-Texte (Geräte) an",
+                            "Appends the setup texts (instruments) stored in the tabs"),
 }
 
 

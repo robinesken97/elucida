@@ -2,12 +2,39 @@
 
 # Changelog
 
-## 2.2.4 – 2026-10-24
+## 2.3.0 – 2026-10-24
 
 ### New
+- **Projects:** a parent folder for all compounds of a paper (File → New project). The compounds
+  stay as they are (each can still be opened on its own); the project keeps their order, the details for the
+  dataset (title, authors, DOI, license, descriptions) and the SI texts. Shown on the welcome page with its compounds;
+  recent compounds show which project they belong to.
+- **Data packages for the whole project** like the group's datasets on TUDOdata: one zip per compound,
+  DFT calculations of all compounds in `CompChem.zip`, `README.txt` from the details and the license text
+  (CC BY 4.0 or CC0). Lab codes are assigned to their compound and replaced everywhere, dates removed – as for the
+  single package.
+- **Complete SI as one Word file** with title page and table of contents, chapters as in the group's SI
+  (Materials and Methods, Synthetic Procedures and Characterization Data, NMR Spectra, UV-Vis, EPR, CV, SEC, X-ray,
+  Computational); compounds in the order of the project, figures numbered throughout, crystal data of all
+  structures in common tables. "Materials and Methods" and an introduction per chapter are edited once for the
+  project (SI texts). Title page with the title of the paper as in the group's SI; templates group/Wiley, ACS,
+  RSC and Nature (title page and figure/table labels).
+- **Checklist per compound** on the project page: ✓/✗ for ¹H, ¹³C, 2D NMR, HRMS, IR and m.p. (compounds marked
+  **known from the literature** in the Compound dialog, with a field for the reference: only ¹H and ¹³C); further data
+  (EA, UV-Vis, X-ray) in grey, summary of what is missing at the top.
+- **Back to the project** with one click: button at the left of the tab bar while a compound of a project is
+  open (also File menu, Ctrl+Shift+P).
+- Compound dialog: **Oil** next to the melting point – the SI then reads "m.p. <25 °C".
+- **Example project** (Help menu, welcome page) with two compounds and artificial data; quick start for
+  projects in the README.
 - **Note for the compound** (dialog Compound), e.g. "radical cation of 6m" next to the lab number: shown on the
   welcome page and in the title bar, searchable, passed to Characterization (`elucida.json`) – never into the SI,
   Word export or data package.
+
+### Changed
+- **New terms:** what used to be a "project" (folder of one compound) is now called a **compound**; **project** now
+  means the folder with all compounds of a paper. Only the wording changes – folders and files (`project.elucida`)
+  stay as they are, nothing has to be converted.
 
 ## 2.2.3 – 2026-10-24
 

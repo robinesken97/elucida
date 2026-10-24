@@ -15,9 +15,9 @@ cuvette photo), ε per band with standard error and 95 % confidence interval, th
 
 ![UV-Vis (ε) with example data](../screenshots/eps_light_en.png)
 
-## 1. Project and compound
+## 1. Create the compound
 
-**File → New project…**, then **Compound …** in the toolbar with name and CDXML. The molar mass comes from the CDXML.
+**File → New compound…**, then **Compound …** in the toolbar with name and CDXML. The molar mass comes from the CDXML.
 It is only needed when the concentrations are given in mg/mL.
 
 ## 2. Load the data
@@ -32,7 +32,7 @@ start/factor, … into the selected rows.
 
 ## 3. Check the compound in the tab
 
-Under **Compound** you see structure and molar mass from the project. If the structure should look exactly as in
+Under **Compound** you see structure and molar mass from the Compound dialog. If the structure should look exactly as in
 ChemDraw, also save it there as SVG or PDF with the same name next to the CDXML. A cuvette photo is cut out
 automatically.
 
