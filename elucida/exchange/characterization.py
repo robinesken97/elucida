@@ -1,6 +1,6 @@
 """elucida/exchange/characterization.py - Austauschdatei elucida.json für das Programm Characterization (Schema v1).
 
-Characterization liest nur diese Datei (nie project.uvvis) und schreibt nie in den Projektordner. Grundsätze:
+Characterization liest nur diese Datei (nie project.elucida) und schreibt nie in den Projektordner. Grundsätze:
 - Werte als Text, so gerundet wie in Elucidas SI (found „118.0649“); der Leser rechnet nichts nach.
 - Pfade relativ zum Projektordner mit „/“; nur Dateien, die im Projekt liegen und existieren.
 - Felder ohne Daten fehlen ganz; neue Felder kommen ohne Versionssprung dazu (Leser ignoriert unbekannte).

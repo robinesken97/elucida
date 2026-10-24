@@ -73,7 +73,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   (`.tmp` + `os.replace`), UTF-8 ohne BOM. Geschrieben beim Speichern, nach Exporten und 5 s nach dem Autosave
   (`exchange_timer`; nicht bei offenem Menü/gedrückter Maus). Fehler nur ins Protokoll, nie das Speichern abbrechen.
   Nichts neu rechnen, was die Tabs nicht ohnehin für die SI liefern (`si_char_parts`); SMILES/InChIKey nur ohne
-  Platzhalteratome (Abkürzungen). `project.uvvis` bleibt intern.
+  Platzhalteratome (Abkürzungen). `project.elucida` bleibt intern.
 - HRMS: calc. = monoisotopisch **mit Elektronenmasse** ([M+H]⁺ = M + 1.007276), calc./found immer 4 Nachkommastellen;
   ppm zur Kontrolle als found − calc (die Massenabteilung gibt das umgekehrte Vorzeichen an). IR: ganze Zahlen,
   absteigend; Bereich standardmäßig der ganze gemessene; mit OPUS-PDF gelten dessen Peakwerte.
@@ -299,7 +299,9 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 ## Bekannte Fallen
 - **Umbenennungen (1.16 UVVisTool → Spectravolt, 2.0 → Elucida):** Programm heißt Elucida, Repo
   `robinesken97/elucida`. Seit 2.1 liegen die Module im Paket `elucida/` (vorher `uvvis_*.py` flach im Repo);
-  `project.uvvis` und der Cache-Name `.uvvis_cache` (ohne Projekt) bleiben. Alte Einstellungen (`OLD_APP_NAMES`:
+  Projektdatei seit 2.1 `project.elucida` (`PRJ.PROJECT_FILE`); alte `project.uvvis` (`OLD_PROJECT_FILES`) wird gelesen,
+  beim Speichern entsteht der neue Name und die alte Datei wandert nach `.elucida/project.uvvis.old` (Elucida ≤ 2.0
+  erkennt solche Projekte nicht mehr). Der Cache-Name `.uvvis_cache` (ohne Projekt) bleibt. Alte Einstellungen (`OLD_APP_NAMES`:
   zuerst `QSettings("Spectravolt")`, dann `"UVVisTool"`, `migrate_settings`) und der Datenordner (`app_data_dir`:
   `…/Spectravolt`, sonst `…/UVVisTool`) werden beim ersten Start übernommen. Alte Versionen fragen die GitHub-API unter
   den alten Repo-Namen ab (GitHub leitet um) – Repo **nie** neu unter `spectravolt` oder `uvvis-tool` anlegen. Der

@@ -2603,7 +2603,8 @@ def selftest(outdir, with_isnet=False):
         assert proj / "figures" / "TEST-1_Overlay.pdf" in ov_out_, ov_out_
         assert proj / "tables" / "TEST-1_Overlay_data.csv" in ov_out_, ov_out_
         assert not (proj / PRJ.WORK / "export" / "overlay").exists()      # Zwischenordner wieder weg
-        assert (proj / PRJ.WORK / "project.uvvis.bak").exists() and not (proj / "project.uvvis.bak").exists()
+        assert (proj / PRJ.WORK / "project.elucida.bak").exists() and not (proj / "project.elucida.bak").exists()
+        assert (proj / "project.elucida").exists() and not (proj / "project.uvvis").exists()
         assert not (proj / "exports").exists() and not (proj / "images").exists()
         assert [PRJ.export_kind(n_) for n_ in ("a.svg", "a_SI.txt", "a.docx", "a_methods.txt", "a.csv", "a.xyz")] \
             == ["figures", "SI", "SI", "SI", "tables", "tables"]
@@ -2611,11 +2612,16 @@ def selftest(outdir, with_isnet=False):
         old_ = out / "old_layout"                          # Projekt im alten Aufbau (bis 2.0): Pfade gelten weiter
         (old_ / "data").mkdir(parents=True, exist_ok=True)
         shutil.copy2(csv, old_ / "data" / csv.name)
-        (old_ / PRJ.PROJECT_FILE).write_text(f"eps:\n  files: [data/{csv.name}]\nformat_version: 1\n", encoding="utf-8")
+        (old_ / "project.uvvis").write_text(f"eps:\n  files: [data/{csv.name}]\nformat_version: 1\n", encoding="utf-8")
+        assert PRJ.is_project(old_) == old_ and PRJ.is_project(old_ / "project.uvvis") == old_   # alter Name wird erkannt
         st_old_ = PRJ.load(old_)
         assert Path(st_old_["eps"]["files"][0]) == (old_ / "data" / csv.name).resolve(), st_old_
-        PRJ.save(old_, st_old_)
-        assert "data/" + csv.name in (old_ / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
+        PRJ.backup(old_)
+        assert (old_ / PRJ.WORK / "project.uvvis.bak").exists()
+        PRJ.save(old_, st_old_)                            # Speichern: neuer Name, alter als Sicherung
+        assert "data/" + csv.name in (old_ / "project.elucida").read_text(encoding="utf-8")
+        assert not (old_ / "project.uvvis").exists() and (old_ / PRJ.WORK / "project.uvvis.old").exists()
+        assert PRJ.load(old_)["eps"]["files"] == st_old_["eps"]["files"]
         assert not (old_ / "data" / "uvvis").exists()      # alte Dateien bleiben, wo sie sind
         report.append("project folder layout (SI/figures/tables/data/structures/.elucida, old projects): OK")
 

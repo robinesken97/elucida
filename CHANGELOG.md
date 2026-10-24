@@ -28,6 +28,9 @@
   `<series>_UV-Vis.pdf`). Measurement data go to `data/<technique>/` (nmr, ir, hrms, uvvis, cv …), structures, schemes
   and photos to `structures/`. Intermediate images for Word, the photo cache and the backup are in the hidden folder
   `.elucida/`. Folders appear only when something goes into them.
+- The project file is now called **`project.elucida`**. Projects from older versions (`project.uvvis`) open as
+  before; when saved, the new file is written and the old one is kept as a backup in `.elucida/`. Elucida 2.0 and
+  older cannot open projects saved with 2.1.
 - Projects from older versions open as before; their files stay where they are, only new files and exports use the
   new layout.
 - Source code reorganised into the package `elucida/` (app, core, tabs, formats, si, exchange); start from source with

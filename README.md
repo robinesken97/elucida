@@ -364,13 +364,14 @@ manager of your Linux desktop):
 2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
    project** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
    Files that are already inside the project are not copied again.
-3. Work as usual – the project is **saved automatically**. A backup (`.elucida/project.uvvis.bak`) is made
-   each time a project is opened.
+3. Work as usual – the project is **saved automatically**. A backup (`.elucida/project.elucida.bak`) is made
+   each time a project is opened. Projects from older versions (`project.uvvis`) open as before and are saved as
+   `project.elucida` from then on.
 4. **Export** writes directly into the project (existing files are overwritten):
 
 ```
 MyProject/
-  project.uvvis          settings (paths relative to the folder)
+  project.elucida        settings (paths relative to the folder)
   elucida.json           summary for the Characterization program (read-only for it)
   SI/                    Word files and SI texts: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
   figures/               figures (PDF/SVG/PNG): S2_CV.pdf, S2_X-ray.svg, <series>_UV-Vis.png …

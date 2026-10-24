@@ -2,7 +2,7 @@
 elucida/app/project.py - Projektordner: Zustand aller Tabs in einer Datei, Eingabedateien als Kopie.
 
 <Projekt>/                (seit 2.1; Ordner entstehen erst, wenn etwas hineinkommt)
-    project.uvvis      Zustand (YAML), Pfade relativ zum Projektordner
+    project.elucida    Zustand (YAML), Pfade relativ zum Projektordner (bis 2.0: project.uvvis, weiter lesbar)
     elucida.json       Austausch mit Characterization (elucida/exchange)
     SI/                Word-Dateien und SI-Texte (<Name>_SI.docx, _methods.txt …)
     figures/           Abbildungen (<Name>_CV.pdf/.svg/.png …), werden beim Export überschrieben
@@ -12,7 +12,8 @@ elucida/app/project.py - Projektordner: Zustand aller Tabs in einer Datei, Einga
     .elucida/          Zwischenbilder für Word, Cache, Sicherung (versteckt)
 
 Alte Projekte (data/, images/, exports/) bleiben lesbar: gespeicherte Pfade gelten weiter, nur neue Dateien und Exporte
-kommen in die neue Struktur.
+kommen in die neue Struktur. project.uvvis wird gelesen; beim ersten Speichern entsteht project.elucida und die alte
+Datei wandert als Sicherung nach .elucida/project.uvvis.old.
 """
 from __future__ import annotations
 
@@ -25,7 +26,8 @@ from pathlib import Path
 
 import yaml
 
-PROJECT_FILE = "project.uvvis"
+PROJECT_FILE = "project.elucida"
+OLD_PROJECT_FILES = ("project.uvvis",)          # bis 2.0 (UVVisTool/Spectravolt/Elucida 2.0): lesen, nie schreiben
 FORMAT_VERSION = 1
 STRUCTURES = "structures"
 SI_DIR, FIGURES, TABLES, WORK = "SI", "figures", "tables", ".elucida"
@@ -45,12 +47,21 @@ def data_sub(key) -> str:
     return "data/" + DATA_SUB.get(key, key)
 
 
+def project_file(project_dir) -> Path:
+    """Projektdatei eines Ordners: project.elucida, sonst die alte project.uvvis, sonst der neue Name (zum Anlegen)."""
+    pdir = Path(project_dir)
+    for name in (PROJECT_FILE,) + OLD_PROJECT_FILES:
+        if (pdir / name).exists():
+            return pdir / name
+    return pdir / PROJECT_FILE
+
+
 def is_project(path) -> Path | None:
-    """Projektordner oder project.uvvis -> Projektordner, sonst None."""
+    """Projektordner oder Projektdatei (project.elucida, alt project.uvvis) -> Projektordner, sonst None."""
     p = Path(path)
-    if p.is_file() and p.name == PROJECT_FILE:
+    if p.is_file() and p.name in (PROJECT_FILE,) + OLD_PROJECT_FILES:
         return p.parent
-    if p.is_dir() and (p / PROJECT_FILE).exists():
+    if p.is_dir() and any((p / n).exists() for n in (PROJECT_FILE,) + OLD_PROJECT_FILES):
         return p
     return None
 
@@ -119,7 +130,8 @@ def _digest(p: Path):
 
 
 def save(project_dir, state) -> dict:
-    """Kopiert alle referenzierten Dateien in den Projektordner und schreibt project.uvvis.
+    """Kopiert alle referenzierten Dateien in den Projektordner und schreibt project.elucida (alte project.uvvis
+    danach als Sicherung nach .elucida/project.uvvis.old).
     Gibt den Zustand mit absoluten Pfaden auf die Kopien zurück."""
     pdir = Path(project_dir).resolve()
     pdir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +166,9 @@ def save(project_dir, state) -> dict:
     rel_state["format_version"] = FORMAT_VERSION
     (pdir / PROJECT_FILE).write_text(yaml.safe_dump(rel_state, allow_unicode=True, sort_keys=False),
                                      encoding="utf-8")
+    for name in OLD_PROJECT_FILES:                     # alter Name: nicht zwei Projektdateien nebeneinander
+        if (pdir / name).exists():
+            os.replace(pdir / name, work_dir(pdir) / (name + ".old"))
     return abs_state
 
 
@@ -198,9 +213,9 @@ def _copy_unique(src: Path, dest_dir: Path) -> Path:
 
 
 def load(project_dir) -> dict:
-    """project.uvvis lesen, relative Pfade auf den Projektordner beziehen."""
+    """Projektdatei lesen (project.elucida oder alte project.uvvis), relative Pfade auf den Projektordner beziehen."""
     pdir = Path(project_dir).resolve()
-    state = yaml.safe_load((pdir / PROJECT_FILE).read_text(encoding="utf-8")) or {}
+    state = yaml.safe_load(project_file(pdir).read_text(encoding="utf-8")) or {}
     for cont, key, _ in _path_slots(state):
         v = _get(cont, key)
         if v and not Path(v).is_absolute():
@@ -240,16 +255,16 @@ def create(project_dir):
     """Projektordner anlegen bzw. einen vorhandenen Ordner zum Projekt machen (Unterordner erst bei Bedarf)."""
     pdir = Path(project_dir).resolve()
     pdir.mkdir(parents=True, exist_ok=True)
-    if not (pdir / PROJECT_FILE).exists():
+    if not is_project(pdir):
         save(pdir, {})
     return pdir
 
 
 def backup(project_dir):
-    """Sicherung vor dem Öffnen: .elucida/project.uvvis.bak."""
-    pf = Path(project_dir) / PROJECT_FILE
+    """Sicherung vor dem Öffnen: .elucida/project.elucida.bak (bzw. project.uvvis.bak bei alten Projekten)."""
+    pf = project_file(project_dir)
     if pf.exists():
-        shutil.copy2(pf, work_dir(project_dir) / (PROJECT_FILE + ".bak"))
+        shutil.copy2(pf, work_dir(project_dir) / (pf.name + ".bak"))
 
 
 def _hide(d: Path):

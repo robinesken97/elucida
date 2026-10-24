@@ -28,6 +28,9 @@
   UV-Vis je Serie `<Serie>_UV-Vis.pdf`). Messdaten kommen nach `data/<Analytik>/` (nmr, ir, hrms, uvvis, cv …),
   Strukturen, Schemata und Fotos nach `structures/`. Zwischenbilder für Word, der Foto-Cache und die Sicherung liegen
   im versteckten Ordner `.elucida/`. Ordner entstehen erst, wenn etwas hineinkommt.
+- Die Projektdatei heißt jetzt **`project.elucida`**. Projekte älterer Versionen (`project.uvvis`) öffnen wie bisher;
+  beim Speichern entsteht die neue Datei, die alte bleibt als Sicherung in `.elucida/`. Elucida 2.0 und älter können
+  mit 2.1 gespeicherte Projekte nicht öffnen.
 - Projekte aus älteren Versionen öffnen wie bisher; ihre Dateien bleiben liegen, nur neue Dateien und Exporte kommen in
   den neuen Aufbau.
 - Quellcode neu geordnet im Paket `elucida/` (app, core, tabs, formats, si, exchange); Start aus dem Quellcode mit

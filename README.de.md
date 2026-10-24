@@ -378,12 +378,13 @@ im Dateimanager des Linux-Desktops):
    Projekt kopiert** (`data/<Analytik>/`, `structures/`; ChemDraw-Exporte mit gleichem Namen wie eine CDXML kommen
    mit). Dateien, die schon im Projekt liegen, werden nicht erneut kopiert.
 3. Normal arbeiten – das Projekt wird **automatisch gespeichert**. Beim Öffnen eines Projekts wird
-   jeweils eine Sicherung angelegt (`.elucida/project.uvvis.bak`).
+   jeweils eine Sicherung angelegt (`.elucida/project.elucida.bak`). Projekte älterer Versionen (`project.uvvis`)
+   öffnen wie bisher und werden ab dann als `project.elucida` gespeichert.
 4. **Exportieren** schreibt direkt ins Projekt (vorhandene Dateien werden überschrieben):
 
 ```
 MeinProjekt/
-  project.uvvis          Einstellungen (Pfade relativ zum Ordner)
+  project.elucida        Einstellungen (Pfade relativ zum Ordner)
   elucida.json           Zusammenfassung für das Programm Characterization (liest nur)
   SI/                    Word-Dateien und SI-Texte: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
   figures/               Abbildungen (PDF/SVG/PNG): S2_CV.pdf, S2_X-ray.svg, <Serie>_UV-Vis.png …

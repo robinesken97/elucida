@@ -1812,7 +1812,7 @@ class MainWindow(QMainWindow):
             return False
         self.maybe_save()
         try:
-            PRJ.backup(pdir)                           # Sicherung: project.uvvis.bak
+            PRJ.backup(pdir)                           # Sicherung: .elucida/project.elucida.bak
             state = PRJ.load(pdir)
         except Exception as e:
             self.error(f"{type(e).__name__}: {e}")
