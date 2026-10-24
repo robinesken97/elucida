@@ -7,12 +7,9 @@ import re
 from pathlib import Path
 import numpy as np
 from elucida.app.i18n import T
-from elucida.formats.elements import element_of
+from elucida.formats.elements import ELEMENTS, element_of
 
 
-ELEMENTS = ("H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr "
-            "Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb "
-            "Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn").split()
 
 
 def parse_xyz(text) -> list[dict]:
