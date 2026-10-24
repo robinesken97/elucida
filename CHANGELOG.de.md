@@ -2,6 +2,18 @@
 
 # Änderungen
 
+## 2.3.2 – 24.10.2026
+
+### Neu
+- **In ChemDraw bearbeiten:** Jede Verbindung hat von Anfang an leere ChemDraw-Dateien für Struktur und Reaktionsschema
+  (Einstellungen ACS 1996); **In ChemDraw bearbeiten** (Dialog Verbindung, Synthese-Tab) öffnet sie, Speichern in
+  ChemDraw wird automatisch übernommen (Struktur mit Formel und Molmasse, Schema).
+- **Verbindungen sortieren** im Projekt per Ziehen der Zeilen oder mit **Nach Name sortieren** (1a, 1b, 2a … 10a).
+
+### Geändert
+- Ein SVG/PDF/PNG-Export (und .cdx/.emf eines Schemas) neben einer CDXML gilt nur, solange er nicht älter ist als die
+  CDXML; nach dem Bearbeiten in ChemDraw zeichnet Elucida aus der CDXML und schlägt neues Exportieren vor.
+
 ## 2.3.1 – 24.10.2026
 
 ### Geändert

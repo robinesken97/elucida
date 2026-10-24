@@ -204,7 +204,7 @@ plotted curves (one x/y column pair per curve, values without stacking offset) �
 **File → New project** turns a folder into a project: the parent folder for all compounds of a paper. The compounds
 stay ordinary compound folders in its subfolders (each can still be opened on its own); `publication.elucida` keeps
 their order, the details for the dataset and the SI texts. The project page lists the compounds with a checklist
-(right-click: up/down, remove), **New compound** creates a subfolder, **Add compound** moves or copies one from
+(drag rows to reorder, **Sort by name**, right-click: move, copy, remove), **New compound** creates a subfolder, **Add compound** moves or copies one from
 elsewhere into the project.
 
 - **Move or duplicate:** right-click on a compound (project page or overview) or the menu of the compound in the path
@@ -241,6 +241,11 @@ number, the ChemDraw file, formula and molar mass (taken from the CDXML, isotope
 the default for the ε tab (structure, molar mass), the fluorescence tab, IR + EA and HRMS; tabs that already have their own
 structure or molar mass keep it. The name appears in the window title. The melting point entered there starts the
 characterisation paragraph of the SI section.
+
+**Edit in ChemDraw:** every compound folder already contains empty ChemDraw files for the structure and the reaction
+scheme (`structures/<name>.cdxml`, `…_scheme.cdxml`, document settings ACS 1996). **Edit in ChemDraw** (Compound dialog,
+synthesis tab) opens the file in ChemDraw; as soon as you save there, Elucida takes over the structure (formula, molar
+mass, pictures) or the scheme by itself.
 
 ## SI section (Word)
 
@@ -690,7 +695,8 @@ with the compound and shows only what the open tab has in its figure (e.g. no sy
 ## Notes on CDXML
 
 - Exact ChemDraw appearance: put an SVG/PDF/PNG export with the same name next to the CDXML (see
-  above). Otherwise Elucida draws the structure itself from the CDXML coordinates: bonds, labels as written
+  above). It is only used while it is not older than the CDXML – after editing in ChemDraw an old export would show the
+  old drawing, so Elucida then draws from the CDXML and says so (export again for the exact picture). Otherwise Elucida draws the structure itself from the CDXML coordinates: bonds, labels as written
   (abbreviations such as TMS or Dipp stay), arrows and texts of reaction schemes; the font is Helvetica (same metrics
   as Arial). Only if the file contains something this drawing cannot show (embedded pictures, brackets, curved
   arrows …) RDKit redraws it, with a note.

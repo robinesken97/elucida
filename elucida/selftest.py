@@ -5,6 +5,7 @@ Neue Funktion -> eigener Abschnitt mit report.append("…: OK"); Meldungen nur A
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -3051,6 +3052,27 @@ def selftest(outdir, with_isnet=False):
         assert mv_ == (pub2_ / "orphan_2").resolve() and not new_.exists()
         assert [d_.name for d_ in PUB.sync(pub2_)[0]] == ["orphan", "orphan_2"]
         assert not any(d_.name == "orphan" for d_ in PUB.sync(pub_)[0])
+        # ChemDraw: leere Vorlagen je Verbindung, Übernahme beim Speichern, veraltete Exporte nicht verwenden
+        s_t_, sch_t_ = PRJ.template_paths(w.project_dir)
+        assert s_t_.exists() and sch_t_.exists() and not PRJ.cdxml_has_content(s_t_)
+        assert 'BondLength="14.40"' in s_t_.read_text(encoding="utf-8")            # ACS 1996
+        assert w.edit_in_chemdraw("structure").resolve() == s_t_.resolve()
+        assert not w.chemdraw_saved(str(s_t_))                                    # leer: nichts übernehmen
+        _sh.copy(cdxml, s_t_)
+        assert w.chemdraw_saved(str(s_t_)) and Path(w.compound["structure"]).resolve() == s_t_.resolve()
+        assert w.compound.get("formula") and w.compound.get("name") == "9z", w.compound
+        assert w.chemdraw_file("structure").resolve() == s_t_.resolve()
+        _sh.copy(cdxml, sch_t_)
+        assert w.chemdraw_saved(str(sch_t_)) and Path(w.syn_state["scheme"]).resolve() == sch_t_.resolve()
+        old_svg_ = s_t_.with_suffix(".svg")
+        old_svg_.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
+        t_old_ = s_t_.stat().st_mtime - 100
+        os.utime(old_svg_, (t_old_, t_old_))
+        stale_ = []
+        assert IMG.find_sibling_drawing(s_t_, stale_) is None and stale_ == [old_svg_]
+        os.utime(old_svg_, None)                                                  # frisch exportiert: gilt wieder
+        assert IMG.find_sibling_drawing(s_t_) == old_svg_
+        old_svg_.unlink()
         w.go_home()
         dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
         assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2

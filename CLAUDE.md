@@ -23,7 +23,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Cutoff global (Standard A = 1) und pro Bande; Banden mit R² < `min_r2` (einstellbar, Standard 0,98) stehen in
   Tabelle/CSV/Excel, aber nicht im Bild. Bei 4 Punkten ist R² wenig aussagekräftig, KI zählt.
 - Konzentrationsdialog: **keine** vorbelegte Einheit/Startkonzentration (führte früher zu falschem ε).
-- ChemDraw-Struktur **unverändert** übernehmen: gleichnamige SVG/PDF/PNG neben der CDXML hat Vorrang; sonst eigene
+- ChemDraw-Struktur **unverändert** übernehmen: gleichnamige SVG/PDF/PNG neben der CDXML hat Vorrang, aber nur wenn nicht
+  älter als die CDXML (`IMG.is_fresh`, sonst veraltet nach Bearbeiten in ChemDraw; gilt auch für .cdx/.emf des Schemas);
+  leere ACS-1996-Vorlagen je Verbindung (`PRJ.ensure_templates`), „In ChemDraw bearbeiten“ + `QFileSystemWatcher`
+  (`watch_chemdraw`/`chemdraw_saved`, leere Vorlage zählt nicht: `cdxml_has_content`); sonst eigene
   Zeichnung aus den CDXML-Koordinaten (`formats/cdxml.py`, Abkürzungen wie TMS/Dipp bleiben, Pfeile und Texte im Schema);
   RDKit (ACS1996-Modus, keine eigene Bindungslänge) nur, wenn der Zeichner etwas nicht darstellen kann (Hinweise) –
   im Syntheseschema nie (Pfeil/Bedingungen gingen verloren), dort Warnung. Bilder behalten immer ihr Seitenverhältnis

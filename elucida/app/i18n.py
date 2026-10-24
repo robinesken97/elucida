@@ -1976,6 +1976,26 @@ TEXTS = {
     "pub_ph_dataset_description": ("Leer = automatisch aus den Datenarten (NMR, IR, UV-Vis, CV …) und Verbindungen",
                                    "Empty = generated from the data kinds (NMR, IR, UV-Vis, CV …) and compounds"),
     "nav_home": ("Übersicht", "Overview"),
+    "chemdraw_edit": ("In ChemDraw bearbeiten", "Edit in ChemDraw"),
+    "chemdraw_edit_tip": ("Öffnet die Struktur der Verbindung in ChemDraw (eine leere Datei liegt schon bereit). Beim "
+                          "Speichern übernimmt Elucida Struktur, Formel und Molmasse automatisch.",
+                          "Opens the structure of the compound in ChemDraw (an empty file is already prepared). When "
+                          "you save, Elucida takes over structure, formula and molar mass automatically."),
+    "chemdraw_edit_scheme_tip": ("Öffnet das Reaktionsschema in ChemDraw (eine leere Datei liegt schon bereit). Beim "
+                                 "Speichern übernimmt Elucida das Schema automatisch. Für das bearbeitbare Objekt in "
+                                 "Word zusätzlich als .cdx, für die Vorschau als .emf speichern.",
+                                 "Opens the reaction scheme in ChemDraw (an empty file is already prepared). When you "
+                                 "save, Elucida takes over the scheme automatically. For the editable object in Word "
+                                 "also save as .cdx, for the preview as .emf."),
+    "chemdraw_opened": ("{name} in ChemDraw geöffnet – Speichern übernimmt die Änderung", "{name} opened in ChemDraw – "
+                        "saving takes over the change"),
+    "chemdraw_taken": ("Aus ChemDraw übernommen: {name}", "Taken over from ChemDraw: {name}"),
+    "chemdraw_open_failed": ("{p} ließ sich nicht öffnen – ist ChemDraw das Standardprogramm für .cdxml?",
+                             "{p} could not be opened – is ChemDraw the default application for .cdxml?"),
+    "export_stale": ("{name} ist älter als die CDXML (in ChemDraw bearbeitet) und wird nicht verwendet – für die exakte "
+                     "ChemDraw-Grafik neu exportieren",
+                     "{name} is older than the CDXML (edited in ChemDraw) and is not used – export it again for the "
+                     "exact ChemDraw drawing"),
     "nav_no_project": ("ohne Projekt", "no project"),
     "choose_pub_new": ("Projekt für die neue Verbindung", "Project for the new compound"),
     "choose_pub_hint": ("Jede Verbindung gehört zu einem Projekt (Ordner der Veröffentlichung). Projekt wählen:",
@@ -2021,11 +2041,16 @@ TEXTS = {
                   "No compounds yet. “New compound” creates a subfolder; move existing compound folders here or use "
                   "“Add compound”."),
     "pub_missing": ("Nicht gefunden: {p}", "Not found: {p}"),
-    "pub_hint": ("Reihenfolge = Reihenfolge in Gesamt-SI und Datensatz (Rechtsklick: nach oben/unten). Jede Verbindung "
+    "pub_hint": ("Reihenfolge = Reihenfolge in Gesamt-SI und Datensatz (Zeilen mit der Maus ziehen oder nach Name sortieren). Jede Verbindung "
                  "bleibt eigenständig und lässt sich auch allein öffnen.",
-                 "Order = order in the complete SI and the dataset (right-click: up/down). Each compound stays "
+                 "Order = order in the complete SI and the dataset (drag rows with the mouse or sort by name). Each compound stays "
                  "self-contained and can also be opened on its own."),
     "pub_up": ("Nach oben", "Move up"),
+    "pub_sort_name": ("Nach Name sortieren", "Sort by name"),
+    "pub_sort_tip": ("Reihenfolge nach dem Namen der Verbindung (1a, 1b, 2a … 10a); einzeln lassen sich Verbindungen mit "
+                     "der Maus an eine andere Stelle ziehen",
+                     "Order by compound name (1a, 1b, 2a … 10a); single compounds can be dragged to another place with "
+                     "the mouse"),
     "inset_beside": ("Inset: im Bild kein freier Platz ohne Kurven – steht rechts neben dem Spektrum",
                      "Inset: no free space without curves in the plot – placed to the right of the spectrum"),
     "pub_check_summary": ("{ok} von {n} vollständig", "{ok} of {n} complete"),

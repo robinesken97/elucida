@@ -342,3 +342,46 @@ def place_exports(project_dir, files) -> list:
         if f.parent.parent.name == "export" and not any(f.parent.iterdir()):
             f.parent.rmdir()                           # leerer Zwischenordner (.elucida/export/<Tab>)
     return out
+
+
+# -- Leere ChemDraw-Dateien je Verbindung (Nutzerwunsch: sofort in ChemDraw bearbeitbar, ohne erst eine anzulegen) ----
+# Dokumenteinstellungen wie ChemDraw-Stil „ACS Document 1996“: Bindungslänge 14.4 pt, Abstand 18 %, Linie 0.6 pt,
+# fett 2 pt, Rand 1.6 pt, Schraffur 2.5 pt, Kettenwinkel 120°, Arial 10 (Labels im Formelstil)
+EMPTY_CDXML = """<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >
+<CDXML CreationProgram="Elucida" BoundingBox="0 0 0 0" FractionalWidths="yes" InterpretChemically="yes"
+ ShowAtomQuery="yes" ShowAtomStereo="no" ShowAtomEnhancedStereo="yes" ShowAtomNumber="no" ShowBondQuery="yes"
+ ShowBondRxn="yes" ShowBondStereo="no" ShowTerminalCarbonLabels="no" ShowNonTerminalCarbonLabels="no"
+ HideImplicitHydrogens="no" LabelFont="3" LabelSize="10" LabelFace="96" CaptionFont="3" CaptionSize="10"
+ HashSpacing="2.50" MarginWidth="1.60" LineWidth="0.60" BoldWidth="2" BondLength="14.40" BondSpacing="18"
+ ChainAngle="120" LabelJustification="Auto" CaptionJustification="Left" PrintMargins="36 36 36 36" color="0"
+ bgcolor="1"><colortable><color r="1" g="1" b="1"/><color r="0" g="0" b="0"/></colortable><fonttable><font id="3"
+ charset="iso-8859-1" name="Arial"/></fonttable><page id="1" BoundingBox="0 0 540 720" HeaderPosition="36"
+ FooterPosition="36" HeightPages="1" WidthPages="1"/></CDXML>
+"""
+
+
+def template_paths(project_dir) -> tuple[Path, Path]:
+    """(Struktur, Reaktionsschema) als CDXML in structures/, benannt nach dem Ordner der Verbindung."""
+    pdir = Path(project_dir)
+    d = pdir / STRUCTURES
+    return d / f"{pdir.name}.cdxml", d / f"{pdir.name}_scheme.cdxml"
+
+
+def ensure_templates(project_dir) -> tuple[Path, Path]:
+    """Leere ChemDraw-Dateien anlegen, falls sie fehlen (vorhandene bleiben unangetastet)."""
+    paths = template_paths(project_dir)
+    for p in paths:
+        if not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(EMPTY_CDXML, encoding="utf-8")
+    return paths
+
+
+def cdxml_has_content(path) -> bool:
+    """Enthält die CDXML schon etwas (Atome, Texte, Pfeile)? Leere Vorlagen zählen nicht als Struktur."""
+    try:
+        txt = Path(path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return any(tag in txt for tag in ("<n ", "<n>", "<fragment", "<t ", "<arrow", "<graphic"))

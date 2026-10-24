@@ -98,6 +98,28 @@ class PublicationRow(QWidget):
         return not t or any(t in s.lower() for s in [self.info["title"], self.info["path"]] + self.info["compounds"])
 
 
+class _DropArea(QWidget):
+    """Liste der Verbindungen: nimmt gezogene Zeilen an und meldet (Pfad, y) für die neue Position."""
+
+    def __init__(self, on_drop):
+        super().__init__()
+        self.on_drop = on_drop
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat(WEL.RecentRow.DRAG_MIME):
+            ev.acceptProposedAction()
+
+    def dragMoveEvent(self, ev):
+        if ev.mimeData().hasFormat(WEL.RecentRow.DRAG_MIME):
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev):
+        path = bytes(ev.mimeData().data(WEL.RecentRow.DRAG_MIME)).decode("utf-8")
+        ev.acceptProposedAction()
+        self.on_drop(path, ev.position().toPoint().y())
+
+
 class PublicationPage(QWidget):
     """Seite einer Publikation: Angaben, Verbindungen (Reihenfolge = SI und Datensatz), Exporte."""
 
@@ -150,12 +172,18 @@ class PublicationPage(QWidget):
         row.addWidget(b_si)
         self.b_pack, self.b_si = b_pack, b_si
         v.addLayout(row)
+        hrow = QHBoxLayout()
         self.lbl_head = QLabel(objectName="recentHead")
-        v.addWidget(self.lbl_head)
+        hrow.addWidget(self.lbl_head, 1)
+        self.b_sort = QPushButton(T("pub_sort_name"))
+        self.b_sort.setToolTip(T("pub_sort_tip"))
+        self.b_sort.clicked.connect(self.sort_by_name)
+        hrow.addWidget(self.b_sort)
+        v.addLayout(hrow)
         self.box = QVBoxLayout()
         self.box.setContentsMargins(0, 0, 4, 0)
         self.box.setSpacing(8)
-        inner = QWidget()
+        inner = _DropArea(self._dropped)               # Verbindungen per Ziehen umsortieren
         iv = QVBoxLayout(inner)
         iv.setContentsMargins(0, 0, 0, 0)
         iv.addLayout(self.box)
@@ -212,6 +240,7 @@ class PublicationPage(QWidget):
             for k in ck["missing"]:
                 gaps[k] = gaps.get(k, 0) + 1
             row = WEL.RecentRow(info, number=i + 1, extra=check_label(ck))
+            row.draggable = True
             row.opened.connect(lambda p: self.main.open_project(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
             row.customContextMenuRequested.connect(lambda pos, r=row: self._menu(r, pos))
@@ -242,6 +271,20 @@ class PublicationPage(QWidget):
         m.addAction(T("move_copy_title"), lambda: self.main.move_compound(p, copy=True))
         m.addAction(T("pub_remove"), lambda: self._remove(p))
         m.exec(row.mapToGlobal(pos))
+
+    def sort_by_name(self):
+        PUB.sort_by_name(self.pdir)
+        self.refresh()
+
+    def _dropped(self, path, y):
+        """Abgelegte Verbindung vor die erste Zeile setzen, deren Mitte unterhalb der Ablagestelle liegt."""
+        idx = len(self.rows)
+        for i, r in enumerate(self.rows):
+            if y < r.geometry().center().y():
+                idx = i
+                break
+        PUB.place_compound(self.pdir, path, idx)
+        self.refresh()
 
     def _move(self, p, delta):
         PUB.move_compound(self.pdir, p, delta)

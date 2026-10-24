@@ -206,9 +206,37 @@ class RecentRow(QWidget):
         when.setToolTip(info["modified"].strftime("%d.%m.%Y %H:%M"))
         h.addWidget(when, 0, Qt.AlignTop)
 
+    draggable = False                                  # Projektseite: Reihenfolge per Ziehen ändern
+    DRAG_MIME = "application/x-elucida-compound"
+
+    def mousePressEvent(self, ev):
+        self._press = ev.position().toPoint() if ev.button() == Qt.LeftButton else None
+        self._dragged = False
+        super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev):
+        from PySide6.QtCore import QMimeData
+        from PySide6.QtGui import QDrag
+        from PySide6.QtWidgets import QApplication
+        p0 = getattr(self, "_press", None)
+        if self.draggable and p0 is not None and (ev.position().toPoint() - p0).manhattanLength() >= \
+                QApplication.startDragDistance():
+            self._dragged = True
+            md = QMimeData()
+            md.setData(self.DRAG_MIME, self.info["path"].encode("utf-8"))
+            drag = QDrag(self)
+            drag.setMimeData(md)
+            drag.setPixmap(self.grab().scaledToWidth(min(420, self.width()), Qt.SmoothTransformation))
+            drag.setHotSpot(p0 * min(420, self.width()) / max(1, self.width()))
+            self._press = None
+            drag.exec(Qt.MoveAction)
+            return
+        super().mouseMoveEvent(ev)
+
     def mouseReleaseEvent(self, ev):
-        if ev.button() == Qt.LeftButton:
+        if ev.button() == Qt.LeftButton and not getattr(self, "_dragged", False):
             self.opened.emit(self.info["path"])
+        self._press = None
         super().mouseReleaseEvent(ev)
 
     def matches(self, text):

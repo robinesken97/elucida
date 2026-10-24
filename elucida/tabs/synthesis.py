@@ -231,8 +231,10 @@ def scheme_files(cdxml):
     from elucida.core import images as IMG
     p = Path(cdxml)
     sib = {c.suffix.lower(): c for c in p.parent.glob(p.stem + ".*") if c.stem == p.stem}
-    return dict(picture=IMG.find_sibling_drawing(p) if p.suffix.lower() == ".cdxml" else p,
-                cdx=sib.get(".cdx"), emf=sib.get(".emf"))
+    cdxml_ = p.suffix.lower() == ".cdxml"
+    fresh = lambda f: f if f is not None and (not cdxml_ or IMG.is_fresh(f, p)) else None   # noqa: E731
+    return dict(picture=IMG.find_sibling_drawing(p) if cdxml_ else p,       # veraltete Exporte nicht verwenden
+                cdx=fresh(sib.get(".cdx")), emf=fresh(sib.get(".emf")))
 
 
 def scheme_molecules(cdxml):
@@ -397,6 +399,10 @@ class SynthTab(QWidget):
         row = QHBoxLayout()
         b = QPushButton(T("syn_scheme_pick"))
         b.clicked.connect(self.pick_scheme)
+        row.addWidget(b)
+        b = QPushButton(T("chemdraw_edit"))                # leere Vorlage liegt schon bereit
+        b.setToolTip(T("chemdraw_edit_scheme_tip"))
+        b.clicked.connect(lambda: self.main.edit_in_chemdraw("scheme"))
         row.addWidget(b)
         b = QPushButton(T("remove"))
         b.clicked.connect(self.remove_scheme)

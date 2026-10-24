@@ -415,7 +415,10 @@ def _load_structure(path, target_px=2400, color=None):
         chem = CHEM.load_cdxml(path)
         svg = chem.pop("svg")
         info.update(chem)
-        original = find_sibling_drawing(path)
+        stale = []
+        original = find_sibling_drawing(path, stale)
+        if stale:
+            info["warnings"] = info["warnings"] + [T("export_stale", name=stale[0].name)]
         if original is not None:
             # Grafik unverändert aus der ChemDraw-Exportdatei, Molmasse aus der CDXML
             res = load_structure(original, target_px, color)
@@ -460,13 +463,28 @@ def _load_structure(path, target_px=2400, color=None):
 SIBLING_DRAWING_EXT = (".svg", ".pdf", ".png", ".tif", ".tiff")
 
 
-def find_sibling_drawing(cdxml_path):
-    """Gleichnamige ChemDraw-Exportdatei neben der CDXML (SVG/PDF bevorzugt, sonst PNG/TIFF)."""
+STALE_S = 2.0                     # Export so viel älter als die CDXML: veraltet (CDXML in ChemDraw weiterbearbeitet)
+
+
+def is_fresh(export, cdxml) -> bool:
+    """Export (SVG/PDF/CDX/EMF …) nicht älter als die CDXML? Sonst zeigt er eine alte Zeichnung."""
+    try:
+        return Path(export).stat().st_mtime >= Path(cdxml).stat().st_mtime - STALE_S
+    except OSError:
+        return False
+
+
+def find_sibling_drawing(cdxml_path, stale=None):
+    """Gleichnamige ChemDraw-Exportdatei neben der CDXML (SVG/PDF bevorzugt, sonst PNG/TIFF) – nur, wenn sie nicht
+    älter ist als die CDXML (nach Bearbeiten in ChemDraw wäre sie veraltet). stale: Liste, in die veraltete kommen."""
     p = Path(cdxml_path)
     candidates = {c.suffix.lower(): c for c in p.parent.glob(p.stem + ".*") if c.stem == p.stem}
     for ext in SIBLING_DRAWING_EXT:
         if ext in candidates:
-            return candidates[ext]
+            if is_fresh(candidates[ext], p):
+                return candidates[ext]
+            if stale is not None:
+                stale.append(candidates[ext])
     return None
 
 

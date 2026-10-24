@@ -207,7 +207,7 @@ gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) �
 **Datei → Neues Projekt** macht einen Ordner zum Projekt: dem übergeordneten Ordner für alle Verbindungen einer
 Veröffentlichung. Die Verbindungen bleiben normale Verbindungsordner in seinen Unterordnern (jede lässt sich weiter allein
 öffnen); `publication.elucida` hält ihre Reihenfolge, die Angaben für den Datensatz und die SI-Texte. Die Seite des
-Projekts listet die Verbindungen mit Checkliste (Rechtsklick: nach oben/unten, herausnehmen), **Neue Verbindung** legt
+Projekts listet die Verbindungen mit Checkliste (Zeilen ziehen zum Umsortieren, **Nach Name sortieren**, Rechtsklick: verschieben, kopieren, herausnehmen), **Neue Verbindung** legt
 einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine von woanders in das Projekt.
 
 - **Verschieben oder duplizieren:** Rechtsklick auf eine Verbindung (Projektseite oder Übersicht) oder das Menü der
@@ -244,6 +244,11 @@ Name/Probennummer, ChemDraw-Datei, Summenformel und Molmasse fest (aus der CDXML
 Das ist die Vorgabe für den ε-Tab (Struktur, Molmasse), den Fluoreszenz-Tab, IR + EA und HRMS; Tabs mit eigener Struktur oder
 Molmasse behalten diese. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
 Charakterisierungsabsatz im SI-Abschnitt.
+
+**In ChemDraw bearbeiten:** Jeder Verbindungsordner enthält von Anfang an leere ChemDraw-Dateien für Struktur und
+Reaktionsschema (`structures/<Name>.cdxml`, `…_scheme.cdxml`, Dokumenteinstellungen ACS 1996). **In ChemDraw
+bearbeiten** (Dialog Verbindung, Synthese-Tab) öffnet die Datei in ChemDraw; sobald du dort speicherst, übernimmt Elucida
+die Struktur (Formel, Molmasse, Bilder) bzw. das Schema von selbst.
 
 ## SI-Abschnitt (Word)
 
@@ -709,7 +714,9 @@ X-Ray):
 ## Hinweise zu CDXML
 
 - Exaktes ChemDraw-Aussehen: einen SVG/PDF/PNG-Export mit gleichem Namen neben die CDXML legen
-  (siehe oben). Sonst zeichnet Elucida die Struktur selbst aus den CDXML-Koordinaten: Bindungen, Labels wie
+  (siehe oben). Er gilt nur, solange er nicht älter ist als die CDXML – nach dem Bearbeiten in ChemDraw zeigte ein alter
+  Export die alte Zeichnung; Elucida zeichnet dann aus der CDXML und weist darauf hin (für das exakte Bild neu
+  exportieren). Sonst zeichnet Elucida die Struktur selbst aus den CDXML-Koordinaten: Bindungen, Labels wie
   geschrieben (Abkürzungen wie TMS oder Dipp bleiben), Pfeile und Texte von Reaktionsschemata; Schrift Helvetica
   (gleiche Maße wie Arial). Nur wenn die Datei etwas enthält, das diese Zeichnung nicht kann (eingebettete Bilder,
   Klammern, gebogene Pfeile …), zeichnet RDKit neu, mit Hinweis.

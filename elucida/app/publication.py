@@ -369,3 +369,23 @@ def copy_compound_to(cdir, target_pub) -> Path:
     shutil.copytree(cdir, dest, ignore=shutil.ignore_patterns(PRJ.WORK))
     add_compound(target_pub, dest)
     return dest
+
+
+def place_compound(pdir, cdir, index):
+    """Verbindung an Position index der Reihenfolge setzen (Ziehen mit der Maus auf der Projektseite)."""
+    data = load(pdir)
+    target = Path(cdir).resolve()
+    items = data["compounds"]
+    k = next((i for i, c in enumerate(items) if _abs(Path(pdir), c) == target), None)
+    if k is None:
+        return
+    entry = items.pop(k)
+    items.insert(max(0, min(len(items), index - (1 if index > k else 0))), entry)
+    save(pdir, data)
+
+
+def sort_by_name(pdir):
+    """Reihenfolge nach dem Namen der Verbindung, natürlich sortiert (1a, 1b, 2a … 10a, S1, S2)."""
+    data = load(pdir)
+    data["compounds"].sort(key=lambda c: natural_key(compound_name(_abs(Path(pdir), c))))
+    save(pdir, data)

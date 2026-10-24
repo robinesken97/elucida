@@ -2,5 +2,5 @@
 from pathlib import Path
 
 APP_NAME = "Elucida"
-APP_VERSION = "2.3.1"
+APP_VERSION = "2.3.2"
 ROOT = Path(__file__).resolve().parent.parent       # Repo-Wurzel (assets/, README, tools/); gebaut: sys._MEIPASS

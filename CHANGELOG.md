@@ -2,6 +2,18 @@
 
 # Changelog
 
+## 2.3.2 – 2026-10-24
+
+### New
+- **Edit in ChemDraw:** every compound has empty ChemDraw files for structure and reaction scheme from the start (ACS
+  1996 settings); **Edit in ChemDraw** (Compound dialog, synthesis tab) opens them, and saving in ChemDraw is taken
+  over automatically (structure with formula and molar mass, scheme).
+- **Sort compounds** in a project by dragging the rows or with **Sort by name** (1a, 1b, 2a … 10a).
+
+### Changed
+- An SVG/PDF/PNG export (and .cdx/.emf of a scheme) next to a CDXML is only used while it is not older than the CDXML;
+  after editing in ChemDraw Elucida draws from the CDXML and suggests exporting again.
+
 ## 2.3.1 – 2026-10-24
 
 ### Changed

@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
-from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
+from PySide6.QtCore import QEvent, QFileSystemWatcher, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
 from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QImage,  # noqa: E402
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
@@ -308,6 +308,11 @@ class CompoundDialog(QDialog):
         b.clicked.connect(self.choose)
         row.addWidget(self.lbl_struct, 1)
         row.addWidget(b)
+        self.chemdraw = False                            # „In ChemDraw bearbeiten“ gedrückt (nach dem Schließen öffnen)
+        b_cd = QPushButton(T("chemdraw_edit"))
+        b_cd.setToolTip(T("chemdraw_edit_tip"))
+        b_cd.clicked.connect(self._chemdraw)
+        row.addWidget(b_cd)
         f.addRow(T("structure"), row)
         self.ed_formula = QLineEdit(comp.get("formula", ""))
         self.ed_formula.setPlaceholderText("C18H20N2")
@@ -343,6 +348,10 @@ class CompoundDialog(QDialog):
         bb.rejected.connect(self.reject)
         f.addRow(bb)
         self.resize(460, 0)
+
+    def _chemdraw(self):
+        self.chemdraw = True
+        self.accept()
 
     def choose(self):
         p, _ = QFileDialog.getOpenFileName(self, T("dlg_structure"), self.main.settings.value("last_img_dir", ""),
@@ -569,6 +578,13 @@ class MainWindow(QMainWindow):
         # elucida.json (Characterization) seltener als das Autosave: baut die SI-Zeilen aller Tabs neu
         self.exchange_timer = QTimer(self, singleShot=True, interval=5000)
         self.exchange_timer.timeout.connect(self.write_exchange)
+        # ChemDraw: Struktur/Schema der Verbindung überwachen; gespeichert -> automatisch übernehmen
+        self.cd_watch = QFileSystemWatcher(self)
+        self.cd_watch.fileChanged.connect(self._cd_changed)
+        self._cd_kinds = {}                              # Pfad -> "structure" | "scheme"
+        self._cd_pending = set()
+        self.cd_timer = QTimer(self, singleShot=True, interval=800)   # ChemDraw schreibt in mehreren Schritten
+        self.cd_timer.timeout.connect(self._cd_apply_pending)
 
         # Meldungen als Einblendung unten über dem Fenster statt Statusleiste: die Leiste bliebe nach der ersten
         # Meldung als leerer Streifen unter den Fußleisten stehen (Knöpfe nicht mittig), Ein-/Ausblenden ließe die
@@ -2037,6 +2053,82 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
         self.set_compound(dlg.result_compound())
+        if dlg.chemdraw:                                 # „In ChemDraw bearbeiten“: Dialog zu, ChemDraw auf
+            self.edit_in_chemdraw("structure")
+
+    # -- ChemDraw: leere Vorlagen, bearbeiten, beim Speichern übernehmen ---------------------------------------
+    def watch_chemdraw(self):
+        """Vorlagen anlegen und Struktur/Schema der offenen Verbindung überwachen (auch außerhalb von Elucida
+        bearbeitete CDXML werden übernommen)."""
+        if self.cd_watch.files():
+            self.cd_watch.removePaths(self.cd_watch.files())
+        self._cd_kinds = {}
+        if not self.project_dir:
+            return
+        try:
+            s_t, sch_t = PRJ.ensure_templates(self.project_dir)
+        except OSError as e:
+            self.log_signal.emit(f"ChemDraw: {e}")
+            return
+        cur_s = self.compound.get("structure")
+        cur_sch = self.syn_state.get("scheme")
+        for p, kind in ((s_t, "structure"), (sch_t, "scheme"), (cur_s, "structure"), (cur_sch, "scheme")):
+            if p and Path(p).suffix.lower() == ".cdxml" and Path(p).exists():
+                self._cd_kinds[str(Path(p).resolve())] = kind
+                self.cd_watch.addPath(str(Path(p).resolve()))
+
+    def chemdraw_file(self, kind):
+        """CDXML zum Bearbeiten: die der Verbindung bzw. des Schemas, sonst die leere Vorlage."""
+        s_t, sch_t = PRJ.ensure_templates(self.project_dir)
+        cur = self.compound.get("structure") if kind == "structure" else self.syn_state.get("scheme")
+        if cur and Path(cur).suffix.lower() == ".cdxml" and Path(cur).exists():
+            return Path(cur)
+        return s_t if kind == "structure" else sch_t
+
+    def edit_in_chemdraw(self, kind):
+        """CDXML in ChemDraw (Standardprogramm für .cdxml) öffnen; beim Speichern übernimmt Elucida sie selbst."""
+        if not self.ensure_project():
+            return None
+        p = self.chemdraw_file(kind)
+        key = str(p.resolve())
+        self._cd_kinds[key] = kind
+        if key not in self.cd_watch.files():
+            self.cd_watch.addPath(key)
+        if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(key)):
+                self.error(T("chemdraw_open_failed", p=key))
+                return None
+        self.statusBar().showMessage(T("chemdraw_opened", name=p.name), 8000)
+        return p
+
+    def _cd_changed(self, path):
+        self._cd_pending.add(path)
+        self.cd_timer.start()
+
+    def _cd_apply_pending(self):
+        for p in list(self._cd_pending):
+            self._cd_pending.discard(p)
+            self.chemdraw_saved(p)
+
+    def chemdraw_saved(self, path):
+        """In ChemDraw gespeichert: Struktur (Formel, Molmasse, Bilder) bzw. Schema neu übernehmen. Leere Vorlagen
+        zählen nicht. ChemDraw ersetzt die Datei beim Speichern – dann wieder überwachen."""
+        key = str(Path(path).resolve())
+        if Path(key).exists() and key not in self.cd_watch.files():
+            self.cd_watch.addPath(key)
+        if not self.project_dir or not PRJ.cdxml_has_content(key):
+            return False
+        kind = self._cd_kinds.get(key, "structure")
+        if kind == "scheme":
+            self.syn_tab.set_scheme(key)
+        else:
+            comp = dict(self.compound)
+            comp["structure"] = key
+            comp.update({k: v for k, v in compound_from_structure(key).items() if v})
+            self.set_compound(comp)
+        self.statusBar().showMessage(T("chemdraw_taken", name=Path(key).name), 6000)
+        self.log_signal.emit(T("chemdraw_taken", name=Path(key).name))
+        return True
 
     def set_compound(self, comp):
         """Verbindung übernehmen und als Vorgabe eintragen, wo noch nichts gewählt ist."""
@@ -2091,6 +2183,7 @@ class MainWindow(QMainWindow):
         self.publication_dir = str(pub) if pub else None
         self.settings.setValue("last_project_dir", str(pdir.parent))
         self._load_state_into_ui({})
+        self.watch_chemdraw()                          # leere ChemDraw-Dateien für Struktur und Schema
         self.update_title()
         self.add_recent(pdir)
         self.log_signal.emit(T("project_created", p=pdir))
@@ -2294,6 +2387,7 @@ class MainWindow(QMainWindow):
         pub = PUB.publication_of(pdir)
         self.publication_dir = str(pub) if pub else None
         self._load_state_into_ui(state)
+        self.watch_chemdraw()
         if recent:
             self.add_recent(pdir)
             self.settings.setValue("last_project_dir", str(pdir.parent))
@@ -2413,6 +2507,7 @@ class MainWindow(QMainWindow):
         self.maybe_save()
         self.project_dir = None
         self._load_state_into_ui({})
+        self.watch_chemdraw()                          # nichts mehr überwachen
         self.update_title()
 
     def close_publication(self):
