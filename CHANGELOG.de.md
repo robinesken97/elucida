@@ -2,6 +2,13 @@
 
 # Änderungen
 
+## 2.2.2 – 24.10.2026
+
+### Geändert
+- **Projekt öffnen deutlich schneller** (Beispielprojekt: 2,1 s -> 0,2 s): Das Fenster wird nicht mehr neu gebaut, und
+  jeder Tab entsteht erst, wenn er zum ersten Mal angezeigt oder gebraucht wird (erster Klick auf einen Tab ~0,2 s).
+- ChemDraw-Strukturen werden je Sitzung nur einmal gelesen.
+
 ## 2.2.1 – 24.10.2026
 
 ### Geändert

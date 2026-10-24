@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 2.2.2 – 2026-10-24
+
+### Changed
+- **Opening a project is much faster** (example project: 2.1 s -> 0.2 s): the window is no longer rebuilt, and each
+  tab is built only when it is first shown or needed (first click on a tab ~0.2 s).
+- ChemDraw structures are read only once per session.
+
 ## 2.2.1 – 2026-10-24
 
 ### Changed

@@ -986,21 +986,29 @@ class MainWindow(QMainWindow):
         split.setSizes([left_col.minimumWidth(), 920])
         self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split, floor=380)   # nie abgeschnitten
         self.eps_page = split
-        for key in self._TAB_BUILD_ORDER:                    # DFT nach X-Ray (Vorlagen aus der CIF)
-            attr, cls, st_attr, _ = self._tab_spec(key)
-            setattr(self, attr, cls(self, getattr(self, st_attr)))
+        # Tabs erst bei Bedarf bauen (sichtbar oder Zugriff auf self.<x>_tab, siehe __getattr__): beim Öffnen nur
+        # der angezeigte; die übrigen sind Platzhalter
+        self._lazy = set()
+        for key in self._TAB_BUILD_ORDER:
+            self.__dict__.pop(self._tab_spec(key)[0], None)
         # Reihenfolge wie die SI: Synthese, Charakterisierung, Spektroskopie, Elektrochemie, Struktur, Rechnung
         self.main_tabs = QTabWidget()
         self._tab_keys = []
         for key in self._TAB_ORDER:
-            page, label = (split, "tab_eps") if key == "eps" else (getattr(self, self._tab_spec(key)[0]),
-                                                                   self._tab_spec(key)[3])
+            if key == "eps":
+                page, label = split, "tab_eps"
+            else:
+                page, label = QWidget(), self._tab_spec(key)[3]
+                self._lazy.add(key)
             self.main_tabs.addTab(page, T(label))
             self._tab_keys.append(key)
+        if self._tab_key in self._lazy:
+            self._build_tab(self._tab_key)
         self.main_tabs.setCurrentIndex(self._tab_keys.index(self._tab_key) if self._tab_key in self._tab_keys else 0)
+        self.main_tabs.currentChanged.connect(self._tab_shown)
         self.main_tabs.currentChanged.connect(lambda i: setattr(self, "_tab_key", self._tab_keys[i]))
         self.main_tabs.currentChanged.connect(                    # Vorlagen (CIF aus X-Ray) aktuell halten
-            lambda i: self.dft_tab.fill_refs() if self.main_tabs.widget(i) is self.dft_tab else None)
+            lambda i: self.dft_tab.fill_refs() if self._tab_keys[i] == "dft" else None)
         for i in range(self.main_tabs.count()):
             STYLE.tidy(self.main_tabs.widget(i))
         self.center = QStackedWidget()
@@ -1052,12 +1060,50 @@ class MainWindow(QMainWindow):
                 "dft": ("dft_tab", DFT.DFTTab, "dft_state", "tab_dft")}[key]
 
     def tab_key_of(self, tab):
-        """Schlüssel (cv, xray …) eines Tab-Objekts, None für Unbekanntes."""
-        return next((k for k in self._TAB_BUILD_ORDER if getattr(self, self._tab_spec(k)[0], None) is tab), None)
+        """Schlüssel (cv, xray …) eines Tab-Objekts, None für Unbekanntes (baut keine Tabs)."""
+        return next((k for k in self._TAB_BUILD_ORDER if self.__dict__.get(self._tab_spec(k)[0]) is tab), None)
+
+    def _built(self, key):
+        """Ist der Tab schon gebaut? (hasattr würde ihn über __getattr__ bauen)"""
+        return self._tab_spec(key)[0] in self.__dict__
+
+    def __getattr__(self, name):
+        """Noch nicht gebauter Tab (self.cv_tab …): jetzt bauen und an seinen Platz setzen."""
+        lazy = self.__dict__.get("_lazy") or ()
+        for key in lazy:
+            if self._tab_spec(key)[0] == name:
+                return self._build_tab(key)
+        raise AttributeError(name)
+
+    def _tab_shown(self, i):
+        if 0 <= i < len(self._tab_keys) and self._tab_keys[i] in self._lazy:
+            self._build_tab(self._tab_keys[i])
+
+    def _build_tab(self, key):
+        """Tab aus seinem Zustand bauen und den Platzhalter ersetzen."""
+        self._lazy.discard(key)
+        attr, cls, st_attr, label = self._tab_spec(key)
+        tab = cls(self, getattr(self, st_attr))
+        self.__dict__[attr] = tab
+        i = self._tab_keys.index(key)
+        old = self.main_tabs.widget(i)
+        cur = self.main_tabs.currentIndex()
+        self.main_tabs.blockSignals(True)
+        self.main_tabs.removeTab(i)
+        self.main_tabs.insertTab(i, tab, T(label))
+        self.main_tabs.setCurrentIndex(cur)
+        self.main_tabs.blockSignals(False)
+        STYLE.tidy(tab)
+        if old is not None:
+            old.setParent(None)
+            old.deleteLater()
+        return tab
 
     def replace_tab(self, key):
         """Einen Tab aus seinem Zustand neu aufbauen und an derselben Stelle einsetzen (Rückgängig: nur was sich
         geändert hat statt der ganzen Oberfläche, ~0,05 s statt ~1,2 s)."""
+        if key in self._lazy:                          # noch nicht gebaut: entsteht später aus dem neuen Zustand
+            return None
         attr, cls, st_attr, label = self._tab_spec(key)
         old = getattr(self, attr)
         new = cls(self, getattr(self, st_attr))
@@ -1495,8 +1541,8 @@ class MainWindow(QMainWindow):
         else:
             if hasattr(self, "act_compound"):              # Werkzeugleiste: Verbindung des Projekts
                 self.act_compound.setText(self.compound_label())
-            for key in changed:
-                if key in self._TAB_BUILD_ORDER:
+            for key in self._TAB_BUILD_ORDER:          # feste Reihenfolge wie beim Aufbau (DFT liest X-Ray)
+                if key in changed:
                     self.replace_tab(key)
             if "tab" in changed and tab in self._tab_keys:
                 self.main_tabs.setCurrentIndex(self._tab_keys.index(tab))
@@ -1743,10 +1789,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "act_compound"):
             self.act_compound.setText(self.compound_label())
         self.update_title()
-        if hasattr(self, "irms_tab"):
-            self.irms_tab.compound_changed()
-        if hasattr(self, "hrms_tab"):
-            self.hrms_tab.compound_changed()
+        for key in ("irms", "hrms"):                   # ungebaute Tabs lesen die Verbindung beim Bauen
+            if self._built(key):
+                getattr(self, self._tab_spec(key)[0]).compound_changed()
         self.render()
         self.push_undo()
 
@@ -1762,7 +1807,7 @@ class MainWindow(QMainWindow):
                 st["mw"] = c["mw"]
         if p and not self.fl_state.get("structure") and Path(p).exists():
             self.fl_state["structure"] = p
-            if hasattr(self, "fl_tab"):
+            if self._built("fluo"):
                 self.fl_tab.timer.start()
 
     # -- Projektordner zuerst: Dateien werden beim Laden kopiert, Änderungen automatisch gespeichert
@@ -2277,9 +2322,9 @@ class MainWindow(QMainWindow):
                 if core.first_font([tf[k_]], None) is None:
                     self.log_signal.emit("  " + T("tf_missing", name=tf[k_]))
         self.render()
-        for t in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.irms_tab, self.hrms_tab,
-                  self.xray_tab, self.dft_tab):
-            t.render()
+        for key in ("overlay", "fluo", "cv", "sec", "epr", "irms", "hrms", "xray", "dft"):
+            if self._built(key):                       # ungebaute zeichnen beim Bauen mit dem neuen Format
+                getattr(self, self._tab_spec(key)[0]).render()
         self.push_undo()
 
     def render(self):
@@ -2877,12 +2922,10 @@ class MainWindow(QMainWindow):
         self.render()
 
     def export_current(self):
-        cur = self.main_tabs.currentWidget()
-        for tab in (self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab, self.hrms_tab, self.irms_tab,
-                    self.xray_tab, self.dft_tab, self.nmr_tab, self.syn_tab):
-            if cur is tab:
-                return tab.export_dialog()
-        return self.export_dialog()
+        key = self._tab_keys[self.main_tabs.currentIndex()]
+        if key == "eps":
+            return self.export_dialog()
+        return getattr(self, self._tab_spec(key)[0]).export_dialog()
 
     def info(self, msg):
         self.log_signal.emit(msg)

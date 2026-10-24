@@ -330,10 +330,12 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
   genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).
 - **Undo:** während `set_state` greift `_restoring`; Änderungen über `QTimer` verzögert erfassen.
   `save_project` speichert trotzdem (`autosave(force=True)`), sonst blieb das Beispielprojekt leer.
-- **Tempo:** Öffnen baut die ganze Oberfläche (`build_ui`, ~1,2 s im Beispielprojekt; Tabs ohne `sync_widgets`).
-  Rückgängig/Wiederholen (`set_state(partial=True)`, `_changed_parts`) und „Alles auf Standard“/Vorlage laden ersetzen
-  nur den geänderten Tab (`replace_tab`, `_tab_spec`, `tab_key_of`), ε wird nur nachgezogen (`apply_globals`);
-  Verbindung/Textformat geändert -> voller Aufbau. Neue Tabs in `_tab_spec`/`_TAB_ORDER`/`_TAB_BUILD_ORDER` eintragen. Verborgene Tabs zeichnen erst beim Anzeigen (`_first_render`;
+- **Tempo:** `build_ui` nur beim Start, Sprach-/Theme-Wechsel. Öffnen und Rückgängig/Wiederholen über
+  `set_state(partial=True)`/`_changed_parts`: nur geänderte Tabs ersetzen (`replace_tab`, feste `_TAB_BUILD_ORDER`, DFT
+  liest X-Ray), ε nachziehen (`apply_globals`); Verbindung/Textformat geändert -> alle Tabs ersetzen, Fenster bleibt.
+  Tabs werden **bei Bedarf gebaut** (`_lazy`, `__getattr__` auf `self.<x>_tab`, `_tab_shown`): nie `hasattr(self,
+  "<x>_tab")` (baut), sondern `_built(key)`; Schleifen über alle Tabs nur über gebaute. Neue Tabs in `_tab_spec`/
+  `_TAB_ORDER`/`_TAB_BUILD_ORDER`. Beispielprojekt: Öffnen 0,2 s, Rückgängig 0,1 s, erster Klick auf einen Tab ~0,2 s. Verborgene Tabs zeichnen erst beim Anzeigen (`_first_render`;
   `ensure_rendered()` vor Zugriff auf `F`). PNG-Ersatz für Word mit `png_fast` (compress_level 1).
 - **macOS-Version:** `tools/build.py` liest `APP_VERSION` und schreibt sie nach dem Build in die `Info.plist`,
   danach `codesign --force --deep --sign -` (Signatur schließt die Info.plist ein).

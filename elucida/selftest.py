@@ -2842,7 +2842,22 @@ def selftest(outdir, with_isnet=False):
         assert w2.cv_state["cap_temp"] == "-30 \u00b0C"
         w2.undo()
         pump(0.4)
-        report.append("undo/redo (only changed tabs rebuilt): OK")
+        # Öffnen: Fenster bleibt, nur der sichtbare Tab wird gebaut; übrige beim ersten Zugriff/Anzeigen
+        w3_ = MainWindow()
+        w3_.resize(1200, 800)
+        w3_.show()
+        assert w3_.open_project(proj, ask=False)
+        pump(0.4)
+        built_ = [k_ for k_ in w3_._TAB_BUILD_ORDER if w3_._built(k_)]
+        assert len(built_) <= 1, built_
+        key_ = next(k_ for k_ in ("cv", "sec", "epr") if not w3_._built(k_))
+        tab3_ = getattr(w3_, w3_._tab_spec(key_)[0])                       # Zugriff baut ihn
+        assert w3_._built(key_) and w3_.main_tabs.widget(w3_._tab_keys.index(key_)) is tab3_
+        w3_.main_tabs.setCurrentIndex(w3_._tab_keys.index("xray"))         # Anzeigen baut ihn
+        pump(0.2)
+        assert w3_._built("xray") and w3_.main_tabs.currentWidget() is w3_.xray_tab
+        w3_.close()
+        report.append("undo/redo (only changed tabs rebuilt), lazy tabs on open: OK")
         # Startbildschirm/Tabs je nach Projekt; Beispielprojekt (künstliche Daten) füllt die Tabs
         assert w.center.currentIndex() == 1
         d_demo = w.open_demo(out / "demo")
