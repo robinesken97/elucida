@@ -97,7 +97,9 @@ project folder.
    (a recent one, another one or a new one), then for the name; inside a project **New compound** on its page. All
    files you load are copied into it; it is saved automatically.
 2. **Set the compound:** **Compound …** in the toolbar: name (e.g. the sample number) and the ChemDraw file (CDXML).
-   Formula and molar mass are taken from it. This is the default for all tabs and the SI.
+   Formula and molar mass are taken from it. This is the default for all tabs and the SI. No ChemDraw file yet?
+   **Edit in ChemDraw** opens the empty file that every compound already has – draw, save, and Elucida takes over the
+   structure with formula and molar mass by itself (the same for the reaction scheme in the synthesis tab).
 3. **Load data:** simply drag files into the window – Elucida puts them into the right tab: CIF → **X-Ray**, SVG from
    MestReNova → **NMR**, xyz/ORCA/Gaussian/Molden/cube → **DFT**, MS report (.docx) or Bruker .d → **HRMS**, OPUS file →
    **IR + EA**, UV-Vis measurement data (CSV, DSW/BSW) → **UV-Vis (ε)**. For CV, SEC, EPR, overlay and fluorescence use
@@ -122,7 +124,9 @@ project folder.
    compound to open it and work as in the quick start above. The path at the left of the tab bar,
    **⌂ Overview › <project> › <compound> ▾**, leads back to the project or the overview and switches directly to another
    compound of the project (also File → Back to project, Ctrl+Shift+P; File → Back to overview, Ctrl+Shift+H).
-   Right-click changes the order – it is the order in the SI and in the dataset. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
+   Drag the rows or use **Sort by name** to change the order – it is the order in the SI and in the dataset. The
+   search field at the top of the welcome page finds compounds in all your projects (name/number, lab code such as
+   RE-3-150, formula, note); Ctrl+F jumps there. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
    m.p. are required; for compounds marked **known from the literature** in the Compound dialog (with the reference)
    only ¹H and ¹³C. **Oil** next to the melting point gives "m.p. <25 °C".
 4. **SI texts:** **SI texts …** – "Materials and Methods" (or insert the setup texts stored in the tabs) and an
@@ -285,7 +289,8 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
 "Synthesis of **Name**" (the name defaults to the compound or folder), the reaction scheme and the procedure, exported
 to Word or as part of the SI section.
 
-- **Scheme:** choose the CDXML. Next to it (same name, same folder) you can save from ChemDraw: **SVG/PDF** (picture
+- **Scheme:** **Edit in ChemDraw** opens the empty scheme file of the compound (saving is taken over automatically), or
+  choose an existing CDXML. Next to it (same name, same folder) you can save from ChemDraw: **SVG/PDF** (picture
   taken unchanged), **.cdx** (the scheme becomes an editable ChemDraw object in Word – double-click opens ChemDraw; Word
   cannot do this with a CDXML) and **.emf** (sharp vector preview of that object). Without an SVG/PDF the scheme is drawn
   from the CDXML coordinates, including arrow and conditions.

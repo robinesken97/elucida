@@ -98,7 +98,10 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    nach dem Projekt (zuletzt geöffnetes, anderes oder neues), dann nach dem Namen; in einem Projekt **Neue Verbindung**
    auf dessen Seite. Alle Dateien, die du lädst, werden hineinkopiert, gespeichert wird automatisch.
 2. **Verbindung festlegen:** **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
-   ChemDraw-Datei (CDXML). Summenformel und Molmasse kommen daraus. Das ist die Vorgabe für alle Tabs und die SI.
+   ChemDraw-Datei (CDXML). Summenformel und Molmasse kommen daraus. Das ist die Vorgabe für alle Tabs und die SI. Noch
+   keine ChemDraw-Datei? **In ChemDraw bearbeiten** öffnet die leere Datei, die jede Verbindung schon hat – zeichnen,
+   speichern, und Elucida übernimmt Struktur, Summenformel und Molmasse von selbst (genauso das Reaktionsschema im
+   Synthese-Tab).
 3. **Daten laden:** Dateien einfach ins Fenster ziehen – Elucida legt sie in den passenden Tab:
    CIF → **X-Ray**, SVG aus MestReNova → **NMR**, xyz/ORCA/Gaussian/Molden/Cube → **DFT**, MS-Bericht (.docx) oder Bruker-.d →
    **HRMS**, OPUS-Datei → **IR + EA**, UV-Vis-Messdaten (CSV, DSW/BSW) → **UV-Vis (ε)**. CV, SEC, EPR, Overlay und
@@ -123,7 +126,9 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    `6m`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. Der Pfad links in der
    Tab-Leiste, **⌂ Übersicht › <Projekt> › <Verbindung> ▾**, führt zurück zum Projekt oder zur Übersicht und wechselt
    direkt zu einer anderen Verbindung des Projekts (auch Datei → Zum Projekt, Strg+Umschalt+P; Datei → Zur Übersicht,
-   Strg+Umschalt+H). Rechtsklick ändert die Reihenfolge – sie gilt für SI und Datensatz. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
+   Strg+Umschalt+H). Zeilen ziehen oder **Nach Name sortieren** ändert die Reihenfolge – sie gilt für SI und Datensatz. Das Suchfeld oben
+   auf dem Startbildschirm findet Verbindungen in allen deinen Projekten (Name/Nummer, Laborkürzel wie RE-3-150,
+   Summenformel, Notiz); Strg+F springt dorthin. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
    ¹³C, 2D-NMR, HRMS, IR und m.p.; für im Dialog Verbindung als **literaturbekannt** markierte Verbindungen (mit Literatur)
    nur ¹H und ¹³C. **Öl** neben dem Schmelzpunkt ergibt „m.p. <25 °C“.
 4. **SI-Texte:** **SI-Texte …** – „Materials and Methods“ (oder die in den Tabs hinterlegten Aufbau-Texte übernehmen) und
@@ -288,7 +293,8 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 „Synthesis of **Name**“ (Name standardmäßig der der Verbindung bzw. des Ordners), Reaktionsschema und Vorschrift,
 als eigene Word-Datei oder im SI-Abschnitt.
 
-- **Schema:** die CDXML wählen. Daneben (gleicher Name, gleicher Ordner) kann man aus ChemDraw speichern: **SVG/PDF**
+- **Schema:** **In ChemDraw bearbeiten** öffnet die leere Schemadatei der Verbindung (Speichern wird automatisch
+  übernommen), oder eine vorhandene CDXML wählen. Daneben (gleicher Name, gleicher Ordner) kann man aus ChemDraw speichern: **SVG/PDF**
   (Bild unverändert übernommen), **.cdx** (das Schema wird in Word ein bearbeitbares ChemDraw-Objekt – Doppelklick
   öffnet ChemDraw; mit einer CDXML kann Word das nicht) und **.emf** (scharfe Vektorvorschau dieses Objekts). Ohne
   SVG/PDF wird das Schema aus den CDXML-Koordinaten gezeichnet, mit Pfeil und Bedingungen.
