@@ -22,7 +22,26 @@ def _rdkit():
         raise RuntimeError(T("need_rdkit")) from e
 
 
+_CACHE = {}                            # (Pfad, Änderungszeit, Größe) -> Ergebnis (RDKit liest dieselbe CDXML sonst oft)
+
+
 def load_cdxml(path) -> dict:
+    """Wie _load_cdxml, zwischengespeichert je Datei und Stand; Rückgabe ist eine Kopie."""
+    p = Path(path)
+    try:
+        st = p.stat()
+        from elucida.app.i18n import get_lang
+        key = (str(p.resolve()), st.st_mtime_ns, st.st_size, get_lang())      # Warnungen sind übersetzt
+    except OSError:
+        return _load_cdxml(path)
+    if key not in _CACHE:
+        if len(_CACHE) >= 32:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[key] = _load_cdxml(path)
+    return {k: (list(v) if isinstance(v, list) else v) for k, v in _CACHE[key].items()}
+
+
+def _load_cdxml(path) -> dict:
     """-> dict(svg, mw, formula, n_fragments, warnings)."""
     Chem, Descriptors, Draw, rdMolDescriptors, rdMolDraw2D = _rdkit()
     path = Path(path)

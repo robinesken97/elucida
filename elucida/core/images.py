@@ -379,7 +379,32 @@ def _render_doc(doc, target_px, info):
     return {"rgba": rgba, "pdf": doc.tobytes(), "clip": tuple(clip), **info}
 
 
+_STRUCT_CACHE = {}                    # (Pfad, Änderungszeit, Größe, px, Farbe) -> Ergebnis; RDKit/Rendern nur einmal
+_STRUCT_CACHE_MAX = 8
+
+
 def load_structure(path, target_px=2400, color=None):
+    """Wie _load_structure, zwischengespeichert (Projekt öffnen las dieselbe CDXML für ε und NMR je über RDKit).
+    Schlüssel mit Änderungszeit und Größe der Datei und der gleichnamigen ChemDraw-Exporte; Rückgabe ist eine Kopie."""
+    p = Path(path)
+    try:
+        sibs = tuple((s.name, s.stat().st_mtime_ns, s.stat().st_size) for s in sorted(p.parent.glob(p.stem + ".*")))
+        from elucida.app.i18n import get_lang
+        key = (str(p.resolve()), sibs, int(target_px), color, get_lang())     # Hinweise sind übersetzt
+    except OSError:
+        return _load_structure(path, target_px, color)
+    if key not in _STRUCT_CACHE:
+        if len(_STRUCT_CACHE) >= _STRUCT_CACHE_MAX:
+            _STRUCT_CACHE.pop(next(iter(_STRUCT_CACHE)))
+        _STRUCT_CACHE[key] = _load_structure(path, target_px, color)
+    res = dict(_STRUCT_CACHE[key])
+    for k, v in res.items():
+        if isinstance(v, (list, dict)):
+            res[k] = type(v)(v)
+    return res
+
+
+def _load_structure(path, target_px=2400, color=None):
     """-> dict(rgba=Vorschau, pdf=bytes|None, clip, mw, formula, warnings).
     color (z. B. '#e8231b'): Struktur einfärben – SVG/CDXML als Vektor, PDF/Raster als Bild."""
     path = Path(path)

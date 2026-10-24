@@ -1432,12 +1432,14 @@ class MainWindow(QMainWindow):
                 "text": dict(self.text_fmt), "text_tabs": {k: dict(v) for k, v in self.tab_fmt.items()}}
 
     def _changed_parts(self, state):
-        """Teile des Zustands (eps, cv, xray, tab …), die sich gegenüber der Oberfläche unterscheiden; None = alles
-        neu (Verbindung oder Textformat wirken auf alle Tabs)."""
+        """Teile des Zustands (eps, cv, xray, tab …), die sich gegenüber der Oberfläche unterscheiden. Verbindung oder
+        Textformat wirken auf alle Tabs und ε: dann gelten alle als geändert (ohne das Fenster neu zu bauen)."""
         prev = json.loads(self._snap())
         dump = lambda v: json.dumps(v, sort_keys=True, default=str)       # noqa: E731
         changed = {k for k in set(prev) | set(state) if dump(prev.get(k)) != dump(state.get(k))}
-        return None if changed & {"compound", "text", "text_tabs"} else changed
+        if changed & {"compound", "text", "text_tabs"}:
+            changed |= set(self._TAB_BUILD_ORDER) | {"eps"}
+        return changed
 
     def set_state(self, state, partial=False):
         """Zustand übernehmen (Projekt laden, Undo/Redo). partial (Rückgängig/Wiederholen): nur geänderte Tabs neu
@@ -1491,6 +1493,8 @@ class MainWindow(QMainWindow):
             self.current = eps.get("current")
             self.build_ui()
         else:
+            if hasattr(self, "act_compound"):              # Werkzeugleiste: Verbindung des Projekts
+                self.act_compound.setText(self.compound_label())
             for key in changed:
                 if key in self._TAB_BUILD_ORDER:
                     self.replace_tab(key)
@@ -1585,7 +1589,7 @@ class MainWindow(QMainWindow):
     def _load_state_into_ui(self, state):
         """Projekt/neues Projekt: Zustand setzen, Undo-Verlauf nach dem Neuzeichnen neu beginnen."""
         self._restoring = True
-        self.set_state(state)
+        self.set_state(state, partial=True)            # Fenster bleibt, nur Tabs und ε (statt build_ui)
         QTimer.singleShot(200, self._after_load)
 
     def _after_load(self):
