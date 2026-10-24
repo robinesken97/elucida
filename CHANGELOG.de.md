@@ -2,9 +2,21 @@
 
 # Änderungen
 
-## 2.1.0 – 23.10.2026
+## 2.1.0 – 24.10.2026
 
 ### Neu
+- **Orbitale im DFT-Tab, Aussehen wie IboView:** Isoflächen von Molekülorbitalen über der Struktur. Eingabe als
+  Molden-Datei (ORCA: `orca_2mkl name -molden`; alle MOs, HOMO und LUMO werden angelegt, weitere aus einer Liste)
+  oder als Gaussian-Cube (ORCA: `orca_plot`, Gaussian: `cubegen`). Isofläche wie IboView mit 80 % der Orbitaldichte
+  (einstellbar, oder fester Isowert), IboView-Farben je Orbital, durchscheinend mit deckenderen Rändern, Licht und
+  Aufhellung nach hinten wie IboView; Atome wie in IboView (zur Mitte verjüngte Stäbe, Elementbuchstaben, Doppel- und
+  Teilbindungen aus der Wellenfunktion wie IboViews IAO-Bindungsordnungen). Direkt mit IboView verglichen.
+- Das IboView-Aussehen ist im DFT-Tab auch als Stil für jede Struktur wählbar, mit oder ohne Orbitale.
+- HOMO/LUMO-Bezeichnung und Orbitalenergien aus der Molden-Datei bzw. der ORCA/Gaussian-Ausgabe der Geometrie.
+- Export: je Orbital eine Abbildung (PDF/SVG mit dem Orbital als eingebettetem 300-dpi-Bild, Atome und Labels bleiben
+  Vektor); Word-SI: Orbitalbilder mit Unterschrift unter der jeweiligen Rechnung.
+- Molden-Dateien werden geprüft: die Konvention der Basisfunktionen (Standard oder ORCA) ergibt sich aus der
+  Orthonormalität der Orbitale; passt keine bekannte, wird die Datei abgelehnt.
 - **elucida.json** im Projektordner: eine Zusammenfassung für das Programm Characterization (Verbindung mit
   SMILES/InChIKey, welche Analytik vorliegt und wo ihre Dateien liegen, HR-MS- und Elementaranalysewerte, die SI-Zeilen
   und der Absatz, die SI-Word-Datei und die letzten Abbildungen). Wird beim Speichern, nach Exporten und kurz nach dem

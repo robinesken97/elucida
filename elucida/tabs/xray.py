@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from elucida.core import orbitals as ORB
+
 # ---------------------------------------------------------------------------- CIF lesen
 _NUM = re.compile(r"^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(?:\((\d+)\))?$")
 
@@ -322,6 +324,8 @@ ORCA_COLORS = {"C": "#909090", "H": "#FFFFFF", "N": "#3050F8", "O": "#FF0D0D", "
 
 
 def default_color(el, style=None):
+    if style == "iboview":
+        return ORB.ibo_color(el)
     if style == "depth" and el in ORCA_COLORS:
         return ORCA_COLORS[el]
     if el in OLEX2_COLORS:
@@ -1423,10 +1427,10 @@ def shade_colors(color, n):
     return out
 
 
-STYLES = ("mercury", "flat", "ballstick", "depth", "cartoon")
-BALL_STYLES = ("ballstick", "depth", "cartoon")   # Kugeln nach Element statt Ellipsoiden, Stäbe statt Linien
+STYLES = ("mercury", "flat", "ballstick", "depth", "cartoon", "iboview")
+BALL_STYLES = ("ballstick", "depth", "cartoon", "iboview")   # Kugeln nach Element statt Ellipsoiden, Stäbe statt Linien
 XRAY_STYLES = ("mercury", "flat")                 # Auswahl im Tab X-Ray (Nutzerwunsch: nur Mercury und Olex2)
-DFT_STYLES = ("mercury", "flat", "depth", "cartoon")   # Auswahl im Tab DFT („ballstick“/IboView entfernt)
+DFT_STYLES = ("mercury", "flat", "depth", "cartoon", "iboview")   # Auswahl im Tab DFT (alter Glanz-Stil „ballstick“ entfernt)
 
 
 def allowed_style(style, allowed, fallback):
@@ -1447,6 +1451,21 @@ SHADE = {
     # Strichzeichnung wie in älteren JOC-Abbildungen (Nutzervorlage): weiße Kugeln mit Umriss, hohle Stäbe
     "cartoon": dict(el=45.0, ka=1.0, kd=0.0, ks=0.0, p=1, nd=1, nr=1, outline=True),
 }
+
+
+def _ibo_shade():
+    """Atome im Orbitalbild wie IboView (drei Lichter, orbitals.ibo_light): Schichten über die diffuse Helligkeit
+    D (normiert auf ihr Maximum) und den Glanz S > 0; ka/kd/ks so, dass shade_color die Werte von D/S liefert.
+    Der schwache dunkle Ring um den Glanzpunkt (S < 0) entfällt."""
+    U, V = np.meshgrid(np.linspace(-1, 1, 181), np.linspace(-1, 1, 181))
+    W = np.sqrt(np.clip(1 - U ** 2 - V ** 2, 0, 1))
+    D, S = ORB.ibo_light(np.stack([U, V, W], -1)[(U ** 2 + V ** 2) <= 1])
+    i = int(np.argmax(S))
+    return dict(el=45.0, ka=0.0, kd=float(D.max()), ks=float(S.max()), p=1, nd=24, nr=14, outline=False,
+                soft=True, ibo=True, d_spec=float(D[i]))
+
+
+SHADE["iboview"] = _ibo_shade()
 SPEC_LEVELS = tuple(np.linspace(0.04, 0.96, 12))           # weich auslaufender Glanzpunkt
 
 
@@ -1459,6 +1478,19 @@ def _light3(style):
     if hr is not None:
         H = np.array([LIGHT[0] * hr, LIGHT[1] * hr, math.sqrt(1 - hr * hr)])
     return L, H / np.linalg.norm(H)
+
+
+def _fields(style, nx, ny, nz):
+    """Helligkeitsfelder für die Schichten je Normale: (diffus 0…1, Glanz 0…1) – Phong (Licht L, Halbvektor H) oder
+    wie IboView (drei Lichter, auf das Maximum normiert)."""
+    sp = SHADE[style]
+    if sp.get("ibo"):
+        D, S = ORB.ibo_light(np.stack(np.broadcast_arrays(nx, ny, nz), -1))
+        return D / sp["kd"], np.clip(S, 0, None) / sp["ks"]
+    L, H = _light3(style)
+    ndl = np.clip(nx * L[0] + ny * L[1] + nz * L[2], 0, None)
+    ndh = np.clip(nx * H[0] + ny * H[1] + nz * H[2], 0, None)
+    return ndl, ndh ** sp["p"]
 
 
 def spec_val(sp, lev):
@@ -1476,15 +1508,13 @@ def sphere_unit_layers(style):
         return _SPHERE_CACHE[style]
     import contourpy
     sp = SHADE[style]
-    L, H = _light3(style)
     g = np.linspace(-1.25, 1.25, 241)
     X, Y = np.meshgrid(g, g)
     rr = np.hypot(X, Y)
     s_ = np.where(rr > 1, 1 / np.maximum(rr, 1e-9), 1.0)       # außerhalb: Wert am Rand (für sauberes Abschneiden)
     u, v = X * s_, Y * s_
     w = np.sqrt(np.clip(1 - u ** 2 - v ** 2, 0, 1))
-    ndl = np.clip(u * L[0] + v * L[1] + w * L[2], 0, None)
-    ndh = np.clip(u * H[0] + v * H[1] + w * H[2], 0, None)
+    ndl, ndh = _fields(style, u, v, w)
     t = np.linspace(0, 2 * np.pi, 97)
     out = [(np.column_stack([np.cos(t), np.sin(t)]), "d", sp["ka"] + sp["kd"] * 0.5 / sp["nd"])]
 
@@ -1501,7 +1531,7 @@ def sphere_unit_layers(style):
             out.append((P, "d", sp["ka"] + sp["kd"] * (j + 0.5) / sp["nd"]))
     for lev in (SPEC_LEVELS if sp["ks"] > 0 else ()):
         val = spec_val(sp, lev)
-        for P in regions(ndh ** sp["p"], lev):
+        for P in regions(ndh, lev):
             out.append((P, "s", val))
     _SPHERE_CACHE[style] = out
     return out
@@ -1551,8 +1581,6 @@ def rod_layouts(style, dx, dy):
     """Stäbe als Zylinder (Achse in der Bildebene, Richtungen dx, dy: Arrays, ein Eintrag je Stab), vektorisiert ->
     (Breitenanteil, Versatz in Stabbreiten zur Lichtseite), je Array Stab × Schicht in der Reihenfolge von
     rod_levels(style); leere Schicht -> 0, 0. Exakt dieselbe Rechnung wie früher je Stab (kein Raster über Winkel)."""
-    sp = SHADE[style]
-    L, H = _light3(style)
     dx, dy = np.asarray(dx, float), np.asarray(dy, float)
     n_ = np.hypot(dx, dy)
     n_ = np.where(n_ != 0, n_, 1.0)
@@ -1561,8 +1589,7 @@ def rod_layouts(style, dx, dy):
     nx, ny = nx * flip, ny * flip
     u = _ROD_U
     w = np.sqrt(1 - u ** 2)
-    ndl = np.clip(u * (nx * L[0] + ny * L[1])[:, None] + w * L[2], 0, None)
-    ndh = np.clip(u * (nx * H[0] + ny * H[1])[:, None] + w * H[2], 0, None) ** sp["p"]
+    ndl, ndh = _fields(style, u * nx[:, None], u * ny[:, None], w)
     lev = rod_levels(style)
     td = np.array([t for k, t, _ in lev if k == "d"])
     ts = np.array([t for k, t, _ in lev if k == "s"])
@@ -1592,6 +1619,8 @@ def shade_color(base, kind, val, style, fog=0.0):
     b = np.array(to_rgb(base))
     if kind == "d":
         c = b * val
+    elif SHADE[style].get("ibo"):
+        c = b * SHADE[style]["d_spec"] + val
     else:
         sp = SHADE[style]
         L, H = _light3(style)
@@ -1600,7 +1629,8 @@ def shade_color(base, kind, val, style, fog=0.0):
     return tuple(np.clip(c + (1 - c) * fog, 0, 1))
 
 
-ROD_W = {"ballstick": 0.2, "depth": 0.2, "cartoon": 0.17}      # Stabdicke (Å) wie in den Vorlagen
+ROD_W = {"ballstick": 0.2, "depth": 0.2, "cartoon": 0.17,      # Stabdicke (Å) wie in den Vorlagen
+         "iboview": 2 * ORB.IBO_ROD_R * ORB.BOHR}
 BALL_R = {"ballstick": 0.45, "depth": 0.45, "cartoon": 0.6}     # Kugelradius = Faktor × kovalenter Radius
 BALL_RMIN = {"cartoon": 0.24, "depth": 0.21}                    # kleinster Radius (H), sonst 0.2 Å
 BALL_SQRT = ("cartoon",)                      # Radius wächst nur mit √(kovalenter Radius): Cl, Br, Metalle nicht riesig
@@ -1610,6 +1640,8 @@ PERSPECTIVE = {"cartoon": 0.07}                                 # Kugeln je Å n
 
 def ball_radius(el, style="ballstick"):
     """Kugelradius im Kugel-Stab-Modell (Å): proportional zum kovalenten Radius, H nicht zu klein."""
+    if style == "iboview":
+        return ORB.ibo_radius(el)
     cov = COV.get(el, 0.76)
     if style in BALL_SQRT:
         cov = 0.76 * math.sqrt(cov / 0.76)                    # C unverändert
@@ -1716,22 +1748,63 @@ class XrayFigure:
             else float(opts.get("bond_w", 0.08))
         self.rods = None                                         # Kugel-Stab: Schichten aller Stabhälften (_build_rods)
         self.atom_rods = {}                                      # Kugel-Stab: Atom -> [LineCollection seiner Stabhälften]
+        self.atom_rods_over = {}                                 # IboView: Stabhälften vor ihrem Atom
         self.sphere_tr = {}                                      # Kugel-Stab: Atom -> Transform der Einheitskugel
         self.lw_edge = max(0.4, 0.6 * sc)
         self.atom_art, self.bond_art, self.sel_art, self.bond_lines = {}, [], [], {}
+        self.elem_lab = {}
         self.auto_pos = {}
+        self.orb, self.orb_art = opts.get("orbital"), None      # Orbital (elucida.core.orbitals): Bild über den Atomen
         self.scene = self._project()
         # Maßstab aus der Ausdehnung in der aktuellen Ansicht (beim Drehen bleibt er fest, nach dem Loslassen
         # passt das Neuzeichnen ihn an)
         xs = [it["x"] + s_ * max(it["w"], it["h"]) / 2 for it in self.scene["atoms"] for s_ in (-1, 1)] or [-1, 1]
         ys = [it["y"] + s_ * max(it["w"], it["h"]) / 2 for it in self.scene["atoms"] for s_ in (-1, 1)] or [-1, 1]
+        for x_, y_ in self.orbital_outline():                  # Orbitallappen ganz im Bild
+            xs.append(x_)
+            ys.append(y_)
         self.ext = (max(abs(min(xs)), abs(max(xs)), 0.5) + 0.6, max(abs(min(ys)), abs(max(ys)), 0.5) + 0.6)
         self._limits()
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
         self._build()
+        if self.orb:
+            self.orb_art = ORB.OrbitalImage(self.ax, self, self.orb)
+            self.orb_art.set_zorder(45)                        # über allen Atomen, unter Auswahl und Labels
+            self.ax.add_image(self.orb_art)
+            self.order.append(self.orb_art)
         self._footnote()
         self._labels()
+
+    # -- Orbital ----------------------------------------------------------------------------
+    def orbital_outline(self):
+        """Ecken der Orbitallappen (Bildkoordinaten, Å): Ausdehnung von |ψ| > iso in der aktuellen Ansicht."""
+        if not self.orb:
+            return []
+        P = ORB.support_points(self.orb["vol"], self.orb["iso"])
+        if not len(P):
+            return []
+        S = (P - self.center) @ self.R.T
+        lo, hi = S[:, :2].min(axis=0), S[:, :2].max(axis=0)
+        return [(lo[0], lo[1]), (hi[0], hi[1])]
+
+    def occluder(self, xl, yl, W, H):
+        """Tiefe der vordersten Atom-/Stabfläche je Pixel (Szene) und Tiefe der Szenenmitte relativ zu self.center."""
+        sc = self.scene
+        spheres = [(it["x"], it["y"], it["z"], it["w"] / 2) for it in sc["atoms"] if it.get("kind") != "wire"]
+        rods = []
+        if self.rods is not None and self.rods.get("ibo") and self.rods["specs"]:
+            P0, P1, _ = self._ibo_seg_geometry()
+            rods = [(*p0, *p1, s["r0"], s["r1"]) for p0, p1, s in zip(P0, P1, self.rods["specs"])]
+        elif self.ball:
+            r0 = self.bond_w / 2
+            r1 = r0
+            for a, b, _ in sc["bonds"]:
+                A, B = sc["by_k"][a], sc["by_k"][b]
+                xm, ym, zm = (A["x"] + B["x"]) / 2, (A["y"] + B["y"]) / 2, (A["z"] + B["z"]) / 2
+                rods += [(A["x"], A["y"], A["z"], xm, ym, zm, r0, r1), (B["x"], B["y"], B["z"], xm, ym, zm, r0, r1)]
+        zoff = float((self.R @ (self.center - sc["center"]))[2])
+        return ORB.occluder_depth(spheres, rods, xl, yl, W, H), zoff
 
     # -- Szene ----------------------------------------------------------------------------
     def _visible(self):
@@ -1820,6 +1893,8 @@ class XrayFigure:
     def _fog(self, z):
         """Tiefe nach hinten heller (DEPTH_A/DEPTH_MAX) – derzeit in keinem Stil (FOG_STYLES; Kugel-Stab wie ORCA
         ohne Aufhellung)."""
+        if self.style == "iboview":                       # wie IboView: ab der Mitte nach hinten zu Weiß
+            return float(ORB.ibo_fog(z))
         if self.style not in FOG_STYLES:
             return 0.0
         return DEPTH_MAX * min(1.0, max(0.0, (self._zmax - z) / DEPTH_A))
@@ -1862,9 +1937,157 @@ class XrayFigure:
         self.rods["inplace"] = first is not None and np.shares_memory(first.get_paths()[0].vertices, buf)
         self._place_rods()
 
+    def _ibo_rod_specs(self, bonds):
+        """Stäbe wie IboView: je Bindung n = ⌈Bindungsordnung⌉ Stäbe nebeneinander (Dicke 1.4/n, Abstand 0.7 Stabradien,
+        Richtung zum nächsten nicht kollinearen Nachbarn), Teilbindung (< 0.8) gestrichelt; jede Hälfte ab 0.12 × Zeichen-
+        radius im Atom bis zur Mitte, verjüngt auf 72 %. -> Segmente dict(k, a, b, t0, t1, off, r0, r1, bond)."""
+        atoms = self.mol.atoms
+        X = np.array([a["xyz"] for a in atoms], float)
+        els = [a["el"] for a in atoms]
+        bo_map = self.opts.get("bond_orders") or {}
+        rb = self.bond_w / 2
+        thr = ORB.IBO_FULL_BOND
+        specs = []
+        for n, a, b in bonds:
+            bo = float(bo_map.get((min(a, b), max(a, b)), 1.0))
+            if abs(bo - math.floor(bo + 0.5)) < thr:
+                bo = float(math.floor(bo + 0.5))
+            nmb = max(1, math.ceil(bo - 1e-9))
+            u = ORB.ibo_tan_u(X, els, a, b)
+            L = float(np.linalg.norm(X[b] - X[a])) or 1.0
+            for k, o in ((a, b), (b, a)):
+                t_base = ORB.IBO_BOND_OFFS * ORB.IBO_RADII.get(els[k], 1.5) * ORB.BOHR / L
+                for im in range(nmb):
+                    scale = 1.4 / nmb if nmb > 1 else 1.0
+                    cx = 2.0 * im / (nmb - 1) - 1.0 if nmb > 1 else 0.0
+                    w = 1.0
+                    if im == nmb - 1 and bo - (nmb - 1) < 1 - thr:
+                        w = bo - (nmb - 1)
+                        scale *= 0.25 + 0.75 * ORB.IBO_TAPER
+                    off = u * (0.7 * rb * cx)
+                    rr = rb * scale
+
+                    def seg(t0, t1, r0, r1):
+                        # t von Atom k aus gezählt -> Anteil a→b
+                        ta, tb = (t0, t1) if k == a else (1 - t0, 1 - t1)
+                        specs.append(dict(k=k, a=a, b=b, t0=ta, t1=tb, off=off, r0=r0, r1=r1, bond=n))
+                    if w >= 1.0:
+                        seg(t_base, 0.5, rr, rr * ORB.IBO_TAPER)
+                    else:                                          # gestrichelt: Gewicht 1 − (1 − w)², Radius × √w
+                        dw = 1 - (1 - w) ** 2
+                        rr *= math.sqrt(w)
+                        h = (0.5 - t_base) * L
+                        nseg = int(math.floor(1 + h / (0.5 * ORB.BOHR)))
+                        ds = 1 - dw
+                        sh = h / (nseg - ds / 2)
+                        for i in range(nseg):
+                            s0 = t_base * L + i * sh
+                            seg(s0 / L, min(0.5, (s0 + dw * sh) / L), rr, rr)
+        return specs
+
+    def _build_rods_ibo(self, bonds, colors):
+        """IboView-Stäbe (_ibo_rod_specs) als Längsstreifen (ORB.IBO_ROD_STRIPS) mit der exakten Farbe des Zylinders;
+        die Farben hängen von der Lage des Stabs ab und werden bei jeder Drehung neu gesetzt (_place_rods_ibo)."""
+        specs = self._ibo_rod_specs(bonds)
+        ns = ORB.IBO_ROD_STRIPS
+        zb = {n: z for n, (_, _, z) in enumerate(self.scene["bonds"])}
+        per_atom = {}
+        for si, sp in enumerate(specs):
+            per_atom.setdefault(sp["k"], []).append(si)
+        order, slices, pos = [], {}, 0
+        for k, lst in per_atom.items():
+            rows = [(si, j) for si in lst for j in range(ns)]
+            slices[k] = slice(pos, pos + len(rows))
+            pos += len(rows)
+            order += rows
+            # unter dem Atom (Stab zeigt vom Betrachter weg) und darüber (zum Betrachter, ab der Kugeloberfläche)
+            pcs = []
+            for _ in range(2):
+                pc = PolyCollection([np.zeros((4, 2))] * len(rows), edgecolors="none", linewidths=0, antialiaseds=True)
+                self.ax.add_collection(pc, autolim=False)
+                pcs.append(pc)
+            self.atom_rods[k] = [pcs[0]]
+            self.atom_rods_over[k] = pcs[1]
+        base = {}
+        for sp in specs:
+            el = self.mol.atoms[sp["k"]]["el"]
+            base[sp["k"]] = np.array(to_rgb(colors.get(el) or default_color(el, self.style)))
+        self.rods = dict(ibo=True, specs=specs, seg=np.array([t[0] for t in order], int),
+                         strip=np.array([t[1] for t in order], int), slices=slices,
+                         base=np.array([base[sp["k"]] for sp in specs]).reshape(-1, 3),
+                         fog=np.array([self._fog(zb.get(sp["bond"], 0.0)) for sp in specs]))
+        self._place_rods_ibo()
+
+    def _ibo_seg_geometry(self):
+        """Segmente in der aktuellen Ansicht -> (P0, P1 (N×3, Bildschirm, z), Richtung je Segment (dx, dy, dz))."""
+        sp = self.rods["specs"]
+        by = self.scene["by_k"]
+        A = np.array([(by[s["a"]]["x"], by[s["a"]]["y"], by[s["a"]]["z"]) for s in sp], float)
+        B = np.array([(by[s["b"]]["x"], by[s["b"]]["y"], by[s["b"]]["z"]) for s in sp], float)
+        off = np.array([s["off"] for s in sp], float) @ self.R.T
+        t0 = np.array([s["t0"] for s in sp])[:, None]
+        t1 = np.array([s["t1"] for s in sp])[:, None]
+        return A + t0 * (B - A) + off, A + t1 * (B - A) + off, B - A
+
+    def _place_rods_ibo(self):
+        r = self.rods
+        if not r["specs"]:
+            return
+        P0, P1, D = self._ibo_seg_geometry()
+        sp = r["specs"]
+        ns = ORB.IBO_ROD_STRIPS
+        cols = np.empty((len(sp), ns, 3))
+        wps, wfs = np.empty((len(sp), 3)), np.empty((len(sp), 3))
+        for bkey in np.unique(r["base"], axis=0):                 # je Grundfarbe ein Rechenschritt
+            m = np.all(r["base"] == bkey, axis=1)
+            cols[m], wps[m], wfs[m] = ORB.ibo_rod_colors(bkey, D[m])
+        cols = cols + (1 - cols) * r["fog"][:, None, None]
+        si, j = r["seg"], r["strip"]
+        u0 = -1 + 2 * j / ns
+        u1 = np.minimum(1.0, -1 + 2 * (j + 1.6) / ns)              # leicht überlappend: keine Nähte
+        r0 = np.array([s["r0"] for s in sp])[si]
+        r1 = np.array([s["r1"] for s in sp])[si]
+        # Zum Betrachter zeigende Stäbe liegen vor ihrer Kugel (Tiefenpuffer in IboView): Streifen erst ab der Stelle,
+        # an der die Zylinderoberfläche die Kugel verlässt, und über dem Atom gezeichnet
+        by = self.scene["by_k"]
+        own = np.array([s["k"] for s in sp])
+        Ck = np.array([(by[k]["x"], by[k]["y"], by[k]["z"]) for k in own], float)
+        Rk = np.array([by[k]["w"] / 2 for k in own])
+        dseg = P1 - P0
+        toward = (dseg[:, 2] > 0)[si]
+
+        def start(uu):
+            n3 = uu[:, None] * wps[si] + np.sqrt(np.clip(1 - uu ** 2, 0, 1))[:, None] * wfs[si]
+            Q = P0[si] + r0[:, None] * n3 - Ck[si]
+            d = dseg[si]
+            dd = np.maximum(np.einsum("ij,ij->i", d, d), 1e-12)
+            qd = np.einsum("ij,ij->i", Q, d)
+            disc = qd ** 2 - dd * (np.einsum("ij,ij->i", Q, Q) - Rk[si] ** 2)
+            t = (-qd + np.sqrt(np.maximum(disc, 0))) / dd
+            return np.clip(np.where(disc > 0, t, 0.0), 0.0, 1.0)
+        s0, s1 = np.where(toward, start(u0), 0.0), np.where(toward, start(u1), 0.0)
+        q = np.empty((len(si), 4, 2))
+        for c, (ss, uu, end) in enumerate(((s0, u0, False), (s0, u0, True), (s1, u1, True), (s1, u1, False))):
+            tt = np.ones_like(ss) if end else ss
+            P = P0[si] + tt[:, None] * dseg[si]
+            rr = r0 + tt * (r1 - r0)
+            # Punkt auf der sichtbaren Zylinderoberfläche (bei schrägen Stäben entlang der Achse verschoben)
+            n3 = uu[:, None] * wps[si] + np.sqrt(np.clip(1 - uu ** 2, 0, 1))[:, None] * wfs[si]
+            q[:, c, :] = P[:, :2] + rr[:, None] * n3[:, :2]
+        empty = np.zeros_like(q)
+        fc = cols[si, j]
+        for k, sl in r["slices"].items():
+            tw = toward[sl][:, None, None]
+            for pc, qq in ((self.atom_rods[k][0], np.where(tw, empty[sl], q[sl])),
+                           (self.atom_rods_over[k], np.where(tw, q[sl], empty[sl]))):
+                pc.set_verts(qq)
+                pc.set_facecolors(fc[sl])
+
     def _place_rods(self):
         """Geometrie aller Stabschichten nach der aktuellen Ansicht (Breite/Versatz je Lage zum Licht)."""
         r = self.rods
+        if r is not None and r.get("ibo"):
+            return self._place_rods_ibo()
         if r is None or not len(r["bond"]):
             return
         by = self.scene["by_k"]
@@ -1899,6 +2122,8 @@ class XrayFigure:
     def _rod_widths(self, reset=False):
         """Linienbreiten der Stabschichten (Breitenanteil × Stabdicke in pt; leere Schicht = 0, wird nicht gezeichnet)."""
         r = self.rods
+        if r.get("ibo"):                              # IboView-Stäbe: Breite steckt in der Geometrie (Å)
+            return
         for k, sl in r["slices"].items():
             lc = self.atom_rods[k][0]
             if reset:
@@ -1920,6 +2145,20 @@ class XrayFigure:
                 self.atom_art[it["k"]] = (p, [])
                 continue
             nfill = len(verts) - 1
+            if self.style == "iboview":                    # wie IboView: genaue Schichten der fertigen Farbe
+                lay = ORB.ibo_sphere_layers(col)
+                fog = self._fog(it["z"])
+                p = PolyCollection([], antialiaseds=True, closed=True)
+                p.set_verts_and_codes([v for v, _, _ in lay], [c for _, c, _ in lay])
+                p.set_facecolors([fogged(c, fog) for _, _, c in lay])
+                p.set_edgecolors("none")
+                p.set_linewidths(0)
+                tr = Affine2D().scale(it["w"] / 2).translate(it["x"], it["y"])
+                self.sphere_tr[it["k"]] = tr
+                p.set_transform(tr + ax.transData)
+                ax.add_collection(p)
+                self.atom_art[it["k"]] = (p, [])
+                continue
             if self.ball:                                  # Einheitskugel, verschoben/skaliert über die Transform
                 verts = sphere_layer_verts(self.style)
             if self.ball:                                  # wie die Vorlagen: IboView mit feinem Umriss, Tiefe ohne
@@ -1976,8 +2215,33 @@ class XrayFigure:
                 ax.add_patch(e)
                 self.sel_art.append((k, e))
         if rod_bonds:
-            self._build_rods(rod_bonds, colors)
+            (self._build_rods_ibo if self.style == "iboview" else self._build_rods)(rod_bonds, colors)
+        self._elem_labels(colors)
         self._zorders()
+
+    def _elem_labels(self, colors):
+        """IboView: Elementsymbole auf C und Heteroatomen (nicht H), Atomfarbe um 20 % dunkler mit schwarzem Rand,
+        Größe 0.8 Bohr, unter dem Orbital; Aufhellung nach hinten wie die Atome."""
+        self.elem_lab = {}
+        if self.style != "iboview" or not self.opts.get("elem_labels", True):
+            return
+        import matplotlib.patheffects as PE
+        fs = self._elem_fs()
+        for it in self.scene["atoms"]:
+            el = self.mol.atoms[it["k"]]["el"]
+            if el in ("H", "D") or it.get("kind") == "wire":
+                continue
+            fog = self._fog(it["z"])
+            col = np.array(to_rgb(colors.get(el) or default_color(el, self.style))) * (1 - ORB.IBO_LABEL_DARK)
+            t = self.ax.text(it["x"], it["y"], el, ha="center", va="center", fontsize=fs, color=fogged(col, fog),
+                             family=ORB.IBO_LABEL_FONTS,
+                             path_effects=[PE.withStroke(linewidth=ORB.IBO_LABEL_EDGE * fs,
+                                                         foreground=fogged((0, 0, 0), fog))])
+            t._fog = fog
+            self.elem_lab[it["k"]] = t
+
+    def _elem_fs(self):
+        return ORB.IBO_LABEL_EM * ORB.BOHR * self.pt_per_A() * float(self.opts.get("ball_scale", 1.0))
 
     def _zorders(self):
         """Zeichenreihenfolge nach Tiefe (hinten zuerst); Bindungen zwischen ihren Atomen."""
@@ -2000,11 +2264,22 @@ class XrayFigure:
                 for ln in lines:
                     ln.set_zorder(zo + 1e-4)
                     self.order.append(ln)
+                over = self.atom_rods_over.get(key)
+                if over is not None:                          # IboView: Stäbe zum Betrachter vor der Kugel
+                    over.set_zorder(zo + 1.5e-4)
+                    self.order.append(over)
+                t = self.elem_lab.get(key)
+                if t is not None:                             # IboView: Elementsymbol auf seinem Atom
+                    t.set_zorder(zo + 2e-4)
+                    self.order.append(t)
             else:
                 for ln in self.bond_lines[key]:
                     ln.set_zorder(zo)
                     self.order.append(ln)
         self.order += [e for _, e in self.sel_art] + list(self.ann_items.values())
+        if getattr(self, "orb_art", None) is not None:
+            self.orb_art.stale = True
+            self.order.append(self.orb_art)
 
     def set_view(self, R):
         """Nur Geometrie der vorhandenen Artists ändern (für flüssiges Drehen per Blitting)."""
@@ -2024,6 +2299,9 @@ class XrayFigure:
         for a, b, ln, half in self.bond_art:
             xs, ys = self._bond_xy(a, b)
             ln.set_data(*(_half(xs, ys, half) if half is not None else (xs, ys)))
+        for k, t in getattr(self, "elem_lab", {}).items():
+            it = self.scene["by_k"][k]
+            t.set_position((it["x"], it["y"]))
         for k, e in self.sel_art:
             it = self.scene["by_k"][k]
             e.set_center((it["x"], it["y"]))
@@ -2035,9 +2313,23 @@ class XrayFigure:
     def set_drag(self, on):
         """Kugel-Stab beim Ziehen: Kugelschichten mit vereinfachten Polygonen (Abweichung ≤ DRAG_TOL_PX Pixel bei der
         aktuellen Größe), danach wieder die vollen. Ändert nur die Vorschau während der Bewegung."""
+        if self.orb_art is not None:                       # Orbital beim Ziehen gröber gerechnet
+            self.orb_art.drag = on
+            self.orb_art.stale = True
         if not self.sphere_tr:
             return
         px = 1.0 / self.data_per_px()
+        if self.style == "iboview":                         # IboView-Kugeln: Konturen beim Ziehen gröber
+            colors = self.opts.get("colors") or {}
+            for k in self.sphere_tr:
+                el = self.mol.atoms[k]["el"]
+                tol = None
+                if on:
+                    r_px = self.scene["by_k"][k]["w"] / 2 * px
+                    tol = next((t for t in DRAG_TOLS if t * r_px <= DRAG_TOL_PX), None)
+                lay = ORB.ibo_sphere_layers(colors.get(el) or default_color(el, self.style), tol=tol)
+                self.atom_art[k][0].set_verts_and_codes([v for v, _, _ in lay], [c for _, c, _ in lay])
+            return
         for k in self.sphere_tr:
             tol = None
             if on:
@@ -2057,6 +2349,11 @@ class XrayFigure:
             ln.set_linewidth(self.lw_bond if half is None else self.lw_wire)
         if self.rods is not None:
             self._rod_widths()
+        import matplotlib.patheffects as PE
+        for t in getattr(self, "elem_lab", {}).values():
+            fs = self._elem_fs()
+            t.set_fontsize(fs)
+            t.set_path_effects([PE.withStroke(linewidth=ORB.IBO_LABEL_EDGE * fs, foreground=fogged((0, 0, 0), t._fog))])
 
     def artists(self):
         return self.order
@@ -2257,7 +2554,7 @@ def save_tight(F, svg):
     rend = F.fig.canvas.get_renderer()
     # Atome über ihre Umrisse (get_window_extent der Polygone ist dafür nicht verlässlich), Text über seine Box
     pts = [(it["x"] + sx * max(it["w"], it["h"]) / 2, it["y"] + sy * max(it["w"], it["h"]) / 2)
-           for it in F.scene["atoms"] for sx in (-1, 1) for sy in (-1, 1)]
+           for it in F.scene["atoms"] for sx in (-1, 1) for sy in (-1, 1)] + F.orbital_outline()
     boxes = [Bbox.from_extents(*F.ax.transData.transform(pts).min(axis=0), *F.ax.transData.transform(pts).max(axis=0))
              ] if pts else []
     boxes += [a.get_window_extent(rend) for a in list(F.ann_items.values()) + ([F.foot] if F.foot else [])

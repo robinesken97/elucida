@@ -98,7 +98,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   (`bond_w`, Standard 0.12 seit 2.0, skaliert mit dem Zoom wie Mercurys Zylinder); seit 2.0 nach Nutzervorlage
   Bindungen schwarz, Labels fett ohne Rand – Elementfarben bleiben (C grau, Nutzerwunsch); „flach“ = Olex2 (fett,
   weißer Rand). Auswahl je Tab (Nutzerwunsch): X-Ray nur Mercury/Olex2 (`XRAY_STYLES`), DFT Mercury/Olex2/
-  Kugel-Stab „depth“/Strichzeichnung „cartoon“ (`DFT_STYLES`); alte Projekte über `allowed_style` (X-Ray → Mercury,
+  Kugel-Stab „depth“/Strichzeichnung „cartoon“/„iboview“ (`DFT_STYLES`; IboView auch ohne Orbital wählbar); alte Projekte über `allowed_style` (X-Ray → Mercury,
   DFT „ballstick“ → „depth“). „cartoon“ nach JOC-Vorlage: weiße Kugeln mit schwarzem Umriss, hohle Stäbe
   (`ROD_INNER`), Perspektive (`PERSPECTIVE`); „depth“ nach der Kugel-Stab-Abbildung im ORCA-6-Handbuch (gemessen: Jmol-Farben
   `ORCA_COLORS`, Licht 47°, weicher Glanzpunkt `soft`/`spot`, kein Umriss, keine Aufhellung `FOG_STYLES`).
@@ -147,6 +147,27 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   immer melden, innerhalb `AMBIG_TOL` (0.05 Å) als mehrdeutig mit den betroffenen Atomen warnen, nie still wählen.
   H über ihr Schweratom und den Abstand nach Überlagerung; Atome ohne Gegenstück ans Ende. CIF-Labels als `ref_labels`
   (Schlüssel Dateiindex) und Labelstil „ref“; Reihenfolge der Datei setzt beides zurück.
+- DFT-Orbitale (`core/orbitals`, Nutzerwunsch: Aussehen **wie IboView**, Werte aus dessen Quellcode 2021-10-19 nur
+  gelesen, GPL – kein Code übernommen): Isofläche umschließt 80 % von Σψ² (`iso_for_fraction`, wahlweise fester
+  Isowert); Farben je Orbital (`orbital_colors`: Farbton −120°·(k+1) ± 25°, S 0.6, Deckkraft 0.6); Licht = drei
+  Lichter (`IBO_LIGHTS`, Haupt­licht **oben rechts**), diffus 0.7·c^0.8, Glanz k·(−0.5c¹⁶+1.2c⁶⁴) nur über n·L;
+  Deckkraft = α·D/|n_z| (Ränder deckender), nur Vorderseiten, die **hintersten 4** Schichten vor dem Atom; Aufhellung
+  ab 1 Bohr hinter der Mitte über 22 Bohr. Atome mit Orbital immer Stil `iboview` (Radius 0.4 × IboView-Tabelle,
+  RasMol-Farben, Stab 0.148 Å zur Mitte auf 72 % verjüngt). Nutzerwunsch „genauso wie IboView“: geprüft gegen ein
+  lokal kompiliertes IboView (Scratchpad, nie ins Repo) mit gleicher Kamera – Kugeln pixelgenau (p95 < 1.2 %),
+  Isowerte gleich. Kugeln = Höhenlinien der fertigen Farbe mit Löchern (`ibo_sphere_layers`), Stäbe = Längsstreifen
+  mit exakter Zylinderfarbe auch schräg (`ibo_rod_colors`); Stäbe zum Betrachter liegen VOR ihrer Kugel ab der
+  Austrittskurve (`atom_rods_over`, wie der Tiefenpuffer). Mit Molden: Bindungen/-ordnungen wie IboView = Wiberg in
+  IAO (MINAO aus `core/minao`, `iao_bond_orders`, ≥ 0.2; ±0.2 an ganzer Zahl → ganz), n Stäbe à 1.4/n nebeneinander
+  (Abstand 0.7 Stabradien, Richtung `ibo_tan_u`), Teilbindung < 0.8 gestrichelt; Cube: Einfachbindungen. Element-
+  symbole (C/Heteroatome, 0.8 Bohr, Atomfarbe −20 %, schwarzer Rand) abschaltbar (`orb_labels`). Orbital = Rasterbild
+  (`OrbitalImage`, Raycasting auf dem Gitter, Kanten 2×2 nachgerechnet, beim Zeichnen in Zielauflösung, Export ≤
+  `ORB_MAX_DPI` 300, beim Ziehen 1/4) über den Vektor-Atomen; Verdeckung über Tiefenkarte (Nutzer-OK: Raster im PDF).
+  Cube: MO aus MO-Liste/Dateiname (ORCA „mo21a“, ab 0), HOMO/LUMO aus der Ausgabe der Geometrie. Molden: eigene
+  Gauß-Auswertung bis g; Konvention (Primitive normiert/roh, ORCA-Vorzeichen f/g ±3/±4) über CᵀSC = 1 gewählt,
+  > 1e-3 **ablehnen**. Geprüft gegen PySCF (cc-pVTZ kartesisch/kugelförmig, def2-QZVP mit g: Werte wie deren Cubes,
+  ±2e-5); echte ORCA-Molden-Datei noch ungeprüft. Gitter 0.1 Å (IboView 12/Å). Gleiche Atome/Koordinaten (± 0.02 Å)
+  → an die gewählte Geometrie hängen, sonst neue Geometrie. Export: Struktur ohne Orbital + je Orbital ein Bild.
 - SI-Export (Werkzeugleiste „SI (Word)“ und Menü): Teile wählbar (Charakterisierung, NMR, Abbildungen aller Tabs,
   X-Ray, DFT; Auswahl in QSettings `si_parts`); DFT zweispaltig über fortlaufenden Abschnittswechsel (`("columns", 2)`
   in `write_docx`). Ohne Charakterisierung nur der Name als Überschrift. `settings.xml` mit compatibilityMode 15
@@ -252,6 +273,8 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `formats/parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |
 | `exchange/characterization.py` | `elucida.json` für Characterization (Schema v1): `build(main)` nur aus vorhandenen SI-Teilen/Zuständen, `write` atomar; `structure_ids` (SMILES/InChIKey, nicht bei Abkürzungen). |
 | `tools/build.py` | PyInstaller-Build (wechselt selbst in die Repo-Wurzel; `--collect-submodules elucida`). |
+| `core/orbitals.py` | Orbitale (DFT-Tab): Cube-Leser/-Schreiber, Molden-Leser + `Basis` (Überlappung Obara–Saika, Konventionsprüfung, Auswertung), `molden_grid`, Orbitalenergien ORCA/Gaussian, `iso_for_fraction`, `Volume`, `render` (Raycasting), `occluder_depth`, `OrbitalImage`, IboView-Konstanten, `make_test_cube`/`make_test_molden`. |
+| `core/minao.py` | Minimalbasis MINAO (Daten aus PySCF, Apache-2.0) für IAO-Bindungsordnungen im Orbitalbild. |
 
 ## Befehle
 ```bash
@@ -316,6 +339,7 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
   Spalte liefern (Zuordnung der Atome noch offen).
 - BSW-Datei mit Sprung in Spektrum 60 (CSV-Export zum Vergleich fehlt).
 - Echte Gaussian-TD-DFT-Ausgabe noch nicht getestet (nur ORCA inkl. SOC); DFT-Tab: Gaussian-Leser mit einer Opt+Freq geprüft.
-- DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering). Multireferenz-Auswertung (CASSCF/NEVPT2/SORCI,
+- DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering, Orbitale wie IboView). Orbitale: echte ORCA-Molden-
+  Datei und ORCA-Cube noch nicht gegen orca_plot geprüft (PySCF-Molden ja, inkl. g). Multireferenz-Auswertung (CASSCF/NEVPT2/SORCI,
   z. B. Diradikaloide, Triplett-Vinylidene) zurückgestellt: großer Parser, bisher Abschreiben der ORCA-Tabellen.
   Vergleichsmodus mit echter CIF noch ungeprüft (nur künstliche CIF und echte DFT-Paare).

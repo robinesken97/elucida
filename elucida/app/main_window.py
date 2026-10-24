@@ -2763,7 +2763,7 @@ class MainWindow(QMainWindow):
             if not files:
                 return
         # DFT: xyz-Geometrien und Ausgaben von ORCA/Gaussian
-        xyzs = [p for p in files if DFT.is_xyz(p) or DFT.is_calc(p)]
+        xyzs = [p for p in files if DFT.is_xyz(p) or DFT.is_calc(p) or DFT.is_cube(p) or DFT.is_molden(p)]
         if xyzs and self.ensure_project():
             for p in xyzs:
                 self.dft_tab.load_xyz(p)

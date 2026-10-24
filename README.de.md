@@ -38,7 +38,7 @@ Englisch.
 | **HRMS** | HRMS-Zeile aus dem Bericht der Massenabteilung oder aus Bruker-Rohdaten (.d): Chromatogramm mit wählbarem LC-Bereich, gemitteltes Spektrum, Peak per Klick, berechnetes Isotopenmuster |
 | **IR + EA** | IR-Peakliste aus Bruker OPUS (Datei oder PDF) und die Zeile der Elementaranalyse, fertig für die SI |
 | **X-Ray** | CIF → drehbare ORTEP-Abbildung im Mercury-Stil (schattierte Ellipsoide, Labels je Atom), Bindungslängen/Winkel/Diederwinkel per Klick mit esd aus der CIF, Kristalldatentabelle für die SI |
-| **DFT** | xyz, ORCA-6- und Gaussian-Ausgaben: Atome per Klick oder wie eine Vorlage (andere Geometrie oder CIF) umnummerieren, SI-Block mit Koordinaten, Energien und Konvergenz (Word, zweispaltig) |
+| **DFT** | xyz, ORCA-6- und Gaussian-Ausgaben: Atome per Klick oder wie eine Vorlage (andere Geometrie oder CIF) umnummerieren, SI-Block mit Koordinaten, Energien und Konvergenz (Word, zweispaltig); Orbitale aus Molden- oder Cube-Dateien im Stil von IboView |
 
 Die Tabs stehen in der Reihenfolge der SI, oben in vier Gruppen: **Synthese & Analytik** (Synthese · NMR · IR + EA ·
 HRMS) · **UV-Vis & Photophysik** (UV-Vis (ε) · Overlay · Fluoreszenz) · **Elektrochemie & EPR** (CV · SEC · EPR) ·
@@ -97,7 +97,7 @@ Unter Windows immer den ganzen Ordner `Elucida` zusammenlassen. Die `.exe` funkt
 2. **Verbindung festlegen:** **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
    ChemDraw-Datei (CDXML). Summenformel und Molmasse kommen daraus. Das ist die Vorgabe für alle Tabs und die SI.
 3. **Daten laden:** Dateien einfach ins Fenster ziehen – Elucida legt sie in den passenden Tab:
-   CIF → **X-Ray**, SVG aus MestReNova → **NMR**, xyz/ORCA/Gaussian → **DFT**, MS-Bericht (.docx) oder Bruker-.d →
+   CIF → **X-Ray**, SVG aus MestReNova → **NMR**, xyz/ORCA/Gaussian/Molden/Cube → **DFT**, MS-Bericht (.docx) oder Bruker-.d →
    **HRMS**, OPUS-Datei → **IR + EA**, UV-Vis-Messdaten (CSV, DSW/BSW) → **UV-Vis (ε)**. CV, SEC, EPR, Overlay und
    Fluoreszenz lädst du im Tab über **Dateien hinzufügen…**. Ein leerer Tab zeigt, was er braucht und woher es kommt.
 4. **Auswerten:** Links stehen die Einstellungen (Seltenes ist eingeklappt; **„(geändert)“** zeigt, wo etwas vom
@@ -344,7 +344,7 @@ Word-Exporte. Die Größe bleibt 11 pt, weil „zwei Abbildungen je Seite“ mit
 
 - **xyz**-Dateien (auch Trajektorien; gezeigt wird das letzte Bild) oder Ausgaben von **ORCA 6** (`.out`) und
   **Gaussian** (`.log`) laden. Dateien aus einer PowerShell-Umleitung (UTF-16) werden erkannt. Stile: Mercury, Olex2,
-  **Kugel-Stab wie im ORCA-Handbuch** und eine **Strichzeichnung** (weiße Kugeln, hohle Stäbe, wie in klassischen
+  **Kugel-Stab wie im ORCA-Handbuch**, **IboView** und eine **Strichzeichnung** (weiße Kugeln, hohle Stäbe, wie in klassischen
   Zeitschriftenabbildungen); Maus wie im X-Ray-Tab.
 - **Messen und Ausrichten** wie im X-Ray-Tab: 2/3/4 Atome anklicken für Abstand, Winkel oder Diederwinkel (Werte aus der
   Geometrie, 3 bzw. 1 Nachkommastelle); Bindung nach unten/oben/links/rechts, Ebene von vorn, schrittweise drehen,

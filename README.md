@@ -38,7 +38,7 @@ The user interface is available in German and English.
 | **HRMS** | HRMS line from the mass-spectrometry report or Bruker raw data (.d): chromatogram with selectable LC range, averaged spectrum, peak by click, calculated isotope pattern |
 | **IR + EA** | IR peak list from Bruker OPUS (file or PDF) and the elemental-analysis line, ready for the SI |
 | **X-Ray** | CIF → rotatable ORTEP figure in the Mercury style (shaded ellipsoids, labels per atom), bond lengths/angles/torsions by click with s.u. from the CIF, crystal-data table for the SI |
-| **DFT** | xyz, ORCA 6 and Gaussian outputs: renumber atoms by click or like a template (other geometry or CIF), SI block with coordinates, energies and convergence (Word, two columns) |
+| **DFT** | xyz, ORCA 6 and Gaussian outputs: renumber atoms by click or like a template (other geometry or CIF), SI block with coordinates, energies and convergence (Word, two columns); orbitals from Molden or cube files drawn like IboView |
 
 The tabs are ordered as in the SI, in four groups on top: **Synthesis & analysis** (synthesis · NMR · IR + EA · HRMS) ·
 **UV-Vis & photophysics** (UV-Vis (ε) · overlay · fluorescence) · **Electrochemistry & EPR** (CV · SEC · EPR) ·
@@ -96,7 +96,7 @@ On Windows, always keep the whole `Elucida` folder together. The `.exe` does not
 2. **Set the compound:** **Compound …** in the toolbar: name (e.g. the sample number) and the ChemDraw file (CDXML).
    Formula and molar mass are taken from it. This is the default for all tabs and the SI.
 3. **Load data:** simply drag files into the window – Elucida puts them into the right tab: CIF → **X-Ray**, SVG from
-   MestReNova → **NMR**, xyz/ORCA/Gaussian → **DFT**, MS report (.docx) or Bruker .d → **HRMS**, OPUS file →
+   MestReNova → **NMR**, xyz/ORCA/Gaussian/Molden/cube → **DFT**, MS report (.docx) or Bruker .d → **HRMS**, OPUS file →
    **IR + EA**, UV-Vis measurement data (CSV, DSW/BSW) → **UV-Vis (ε)**. For CV, SEC, EPR, overlay and fluorescence use
    **Add files…** in the tab. An empty tab shows what it needs and where it comes from.
 4. **Evaluate:** settings on the left (rarely used ones are collapsed; **"(changed)"** shows where something differs
@@ -333,7 +333,7 @@ Word exports. The size stays 11 pt, because "two figures per page" is calculated
 
 - Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
   (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Styles: Mercury, Olex2, **ball and stick like the ORCA
-  manual** and a **line drawing** (white balls, hollow sticks, as in classic journal figures); mouse as in the X-Ray tab.
+  manual**, **IboView** and a **line drawing** (white balls, hollow sticks, as in classic journal figures); mouse as in the X-Ray tab.
 - **Measure and align** as in the X-Ray tab: click 2/3/4 atoms for distance, angle or dihedral (values from the
   geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
 - **Renumber:** press **Number atoms** and click the atoms in the desired order; **Apply** puts them in front, the

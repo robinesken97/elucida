@@ -1852,14 +1852,16 @@ def selftest(outdir, with_isnet=False):
             if sty_ in XRAY.BALL_STYLES:
                 assert (sty_ == "cartoon" or abs(c_it["w"] - 2 * XRAY.ball_radius("C", sty_)) < 1e-9) \
                     and c_it["w"] == c_it["h"] and not c_it["curves"]
-                assert F_s.bond_w == XRAY.ROD_W[sty_] and len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0
-                assert F_s.rods["inplace"], "Stabsegmente nicht im gemeinsamen Puffer"      # schnelles Drehen
+                assert F_s.bond_w == XRAY.ROD_W[sty_] and (sty_ == "iboview" and len(F_s.rods["seg"]) > 10 or
+                                                           len(F_s.rods["frac"]) > 10 and F_s.rods["frac"].max() == 1.0)
+                # schnelles Drehen: Segmente im gemeinsamen Puffer (verjüngte IboView-Stäbe: Trapeze)
+                assert F_s.rods.get("inplace") or sty_ == "iboview", "Stabsegmente nicht im gemeinsamen Puffer"
                 pc_s = F_s.atom_art[c_it["k"]][0]
                 nv_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
                 F_s.set_drag(True)                                     # Ziehen: gröbere Kugelpolygone, gleiche Schichten
                 nd_ = [len(q_.vertices) for q_ in pc_s.get_paths()]
                 F_s.set_drag(False)
-                assert len(nd_) == len(nv_) and sum(nd_) < sum(nv_), (sum(nd_), sum(nv_))
+                assert len(nd_) == len(nv_) and (sum(nd_) < sum(nv_) or sty_ == "iboview"), (sum(nd_), sum(nv_))
                 assert [len(q_.vertices) for q_ in pc_s.get_paths()] == nv_
                 fc_ = F_s.atom_art[c_it["k"]][0].get_facecolors()                         # Phong: dunkel … Glanz
                 if sty_ == "cartoon":                           # weiß mit schwarzem Umriss, hohle Stäbe, Perspektive
@@ -1877,6 +1879,15 @@ def selftest(outdir, with_isnet=False):
                 assert XRAY.default_color("C", "mercury") == XRAY.OLEX2_COLORS["C"]               # C grau wie bisher
                 assert all(a_.get_fontweight() == "bold" for a_ in F_s.ann_items.values())
                 assert all(ln_.get_color() == "black" for _, _, ln_, h_ in F_s.bond_art if h_ is None)
+            if sty_ == "iboview":                               # wie IboView: Radien/Farben, Stab zur Mitte 72 %
+                from elucida.core import orbitals as ORB
+                assert abs(c_it["w"] / 2 - 0.4 * 1.43 * ORB.BOHR) < 1e-9 and XRAY.default_color("C", sty_) == "#999999"
+                sp_ = F_s.rods["specs"]
+                assert all(abs(x_["r1"] / x_["r0"] - ORB.IBO_TAPER) < 1e-9 for x_ in sp_)          # Einfachbindungen
+                assert len(F_s.rods["seg"]) == len(sp_) * ORB.IBO_ROD_STRIPS
+                assert F_s._fog(-20.0) == 1.0 and F_s._fog(0.0) == 0.0
+                assert set(F_s.elem_lab) == {i_["k"] for i_ in F_s.scene["atoms"] if i_["el"] not in ("H", "D")}
+                assert F_s.elem_lab[c_it["k"]].get_text() == "C"
             if sty_ == "depth":                                 # wie ORCA-Handbuch: ohne Aufhellung, Jmol-Farben
                 assert F_s._fog(F_s._zmax - XRAY.DEPTH_A - 1) == 0.0
                 assert XRAY.default_color("O", "depth") == "#FF0D0D" and XRAY.default_color("O") != "#FF0D0D"
@@ -2160,6 +2171,146 @@ def selftest(outdir, with_isnet=False):
         w.xray_state.update(entries=[], current=None)
         w.dft_state.update(label_style="el_num")
         report.append("DFT compare mode (number like xyz / CIF template): OK")
+
+        # Orbitale (Cube): Leser, Isowert wie IboView (80 % der Dichte), Raycasting, Verdeckung, Tab, Export, Word
+        from elucida.core import orbitals as ORB
+        cub_ = ORB.make_test_cube(ddir / "eth.mo7a.cube")
+        cc_ = ORB.read_cube(cub_)
+        assert cc_["els"] == ["C", "C", "H", "H", "H", "H"] and cc_["data"][0].shape == (48, 48, 48)
+        assert abs(cc_["xyz"][1][0] - 0.667) < 1e-5 and ORB.cube_mo(cub_, cc_) == (7, "a")
+        v_ = cc_["data"][0].astype(float)
+        assert abs(ORB.grid_norm(v_, cc_["axes"]) - 1) < 1e-3
+        iso_ = ORB.iso_for_fraction(v_, 80)
+        frac_ = float(np.sum(v_[np.abs(v_) > iso_] ** 2) / np.sum(v_ ** 2))
+        assert abs(frac_ - 0.8) < 0.01, frac_
+        txt_ = ("ORBITAL ENERGIES\n----------------\n\n  NO   OCC          E(Eh)            E(eV) \n"
+                "   6   2.0000      -0.400000       -10.8846 \n   7   2.0000      -0.300000        -8.1634 \n"
+                "   8   0.0000       0.050000         1.3606 \n   9   0.0000       0.100000         2.7211 \n\n"
+                "------------\nMULLIKEN\n")
+        tab_ = ORB.orbital_energies(txt_)
+        assert ORB.frontier_name(7, "", tab_) == "HOMO" and ORB.frontier_name(6, "a", tab_) == "HOMO\u22121"
+        assert ORB.frontier_name(9, "", tab_) == "LUMO+1" and abs(ORB.orbital_energy(8, "", tab_) - 1.3606) < 1e-9
+        gtab_ = ORB.orbital_energies(" Population analysis using the SCF Density.\n Alpha  occ. eigenvalues --"
+                                     "  -10.20000  -0.50000\n Alpha virt. eigenvalues --    0.10000\n")
+        assert ORB.frontier_name(2, "", gtab_) == "HOMO" and ORB.frontier_name(3, "", gtab_) == "LUMO", gtab_
+        # zwei Orbitale in einem Cube (Gaussian: Atomzahl negativ, MO-Liste)
+        mc_ = ddir / "two.cube"
+        mc_.write_text("t\nc\n   -1 0 0 0\n    2 1 0 0\n    2 0 1 0\n    2 0 0 1\n    1 1.0 0 0 0\n    2 5 6\n"
+                       + " ".join(str(float(i_)) for i_ in range(16)) + "\n", encoding="utf-8")
+        m2_ = ORB.read_cube(mc_)
+        assert m2_["mos"] == [5, 6] and m2_["data"][1][1, 1, 1] == 15.0 and m2_["data"][0][0, 0, 1] == 2.0
+        # Raycasting: beide Phasen in ihren Farben; Kugel davor verdeckt alles
+        vol_ = ORB.Volume(cc_["data"][0], cc_["origin"], cc_["axes"])
+        cp_, cm_, al_ = ORB.orbital_colors(0)
+        Rv_ = XRAY.rot("x", -1.2)
+        im_ = ORB.render(vol_, iso_, Rv_, cc_["xyz"].mean(0), 0.0, (-4, 4), (-3, 3), 160, 120, cp_, cm_, al_)
+        hit_ = im_[..., 3] > 0.3
+        assert hit_.sum() > 2000, hit_.sum()
+        up_, dn_ = im_[80:][hit_[80:]][:, :3].mean(0), im_[:40][hit_[:40]][:, :3].mean(0)
+        assert up_[0] > up_[1] and dn_[1] > dn_[0], (up_, dn_)          # oben violett (+), unten hellblau (−)
+        occ_ = ORB.occluder_depth([(0.0, 0.0, 50.0, 10.0)], [], (-4, 4), (-3, 3), 160, 120)
+        assert not (ORB.render(vol_, iso_, Rv_, cc_["xyz"].mean(0), 0.0, (-4, 4), (-3, 3), 160, 120, cp_, cm_, al_,
+                               occ=occ_)[..., 3] > 0).any()
+        # Tab: Cube ohne passende Geometrie -> neue Geometrie, Orbital gezeigt, Atome wie IboView
+        w.dft_state.update(entries=[], current=None)
+        w.main_tabs.setCurrentWidget(t_d)
+        e_orb = t_d.load_cube(str(cub_))
+        assert e_orb["orbitals"] and t_d.F.orb is not None and t_d.F.style == "iboview", t_d.F.style
+        assert "HOMO" not in t_d.cmb_orb.currentText() and "MO 7" in t_d.cmb_orb.currentText()
+        assert not t_d.cmb_style.isEnabled()
+        t_d.canvas.draw()
+        assert t_d.F.orb_art.get_array().shape[0] > 50 and t_d.F.orb_art.get_array()[..., 3].max() > 0.5
+        t_d.F.set_drag(True)
+        t_d.F.set_view(XRAY.rot("y", 0.3) @ t_d.F.R)
+        t_d.canvas.draw()
+        small_ = t_d.F.orb_art.get_array().shape[1]
+        t_d.F.set_drag(False)
+        t_d.canvas.draw()
+        assert t_d.F.orb_art.get_array().shape[1] > 2 * small_                 # beim Ziehen gröber gerechnet
+        # passender zweiter Cube hängt an derselben Geometrie, Farben je Orbital wie IboView
+        cub2_ = ddir / "eth.mo8a.cube"
+        cub2_.write_bytes(Path(cub_).read_bytes())
+        t_d.load_cube(str(cub2_))
+        assert len(w.dft_state["entries"]) == 1 and len(e_orb["orbitals"]) == 2 and e_orb["orb_cur"] == 1
+        assert t_d.F.orb["plus"] == ORB.orbital_colors(1)[0]
+        t_d.cmb_iso.setCurrentIndex(t_d.cmb_iso.findData("abs"))
+        t_d.sp_iso.setValue(0.03)
+        t_d.render(push=False)
+        assert w.dft_state["orb_abs"] == 0.03 and t_d.F.orb["iso"] == 0.03 and "0.0300" in t_d.lbl_orb.text()
+        t_d.cmb_iso.setCurrentIndex(t_d.cmb_iso.findData("frac"))
+        files_o = t_d.export_to(out / "dft_orb" / "orb")
+        names_o = sorted(Path(f_).name for f_ in files_o)
+        assert "orb_MO7a.pdf" in names_o and "orb_MO8a.pdf" in names_o and "orb.pdf" in names_o, names_o
+        assert b"/Subtype /Image" in (out / "dft_orb" / "orb_MO7a.pdf").read_bytes()
+        assert b"/Subtype /Image" not in (out / "dft_orb" / "orb.pdf").read_bytes()   # Struktur ohne Orbital
+        cap_ = t_d.orbital_caption(e_orb, e_orb["orbitals"][0], "X")
+        assert cap_ == "MO 7 \u03b1 of <b>X</b>, isosurface enclosing 80% of the orbital density.", cap_
+        blk_ = t_d.orbital_blocks(e_orb, "X", out / "dft_orb")
+        assert [b_[0] for b_ in blk_] == ["image", "text", "image", "text"]
+        t_d.cmb_orb.setCurrentIndex(0)
+        assert t_d.F.orb is None and t_d.cmb_style.isEnabled()
+        w.dft_state.update(entries=[], current=None)
+        t_d.sync_widgets()
+        t_d.render(push=False)
+        report.append("DFT orbitals (cube, 80% isosurface like IboView, ray casting, occlusion, export): OK")
+        # Molden: Basis bis g, Konvention über CᵀSC = 1 (Standard / ORCA: rohe Primitive), Werte, HOMO/LUMO, Tab
+        for orca_ in (False, True):
+            mf_ = ORB.make_test_molden(ddir / f"t{int(orca_)}.molden", orca=orca_)
+            mm_ = ORB.parse_molden(Path(mf_).read_text())
+            bb_ = ORB.Basis(mm_)
+            assert bb_.nao == 27 and bb_.setup() < 1e-6 and bb_.variant[0] == ("raw" if orca_ else "norm"), bb_.errors
+            assert min(v_ for k_, v_ in bb_.errors.items() if k_[0] != bb_.variant[0]) > 0.1
+            phi_ = sum(c_ * ORB._prim_norm(a_, 0) * np.exp(-a_ * 0.49) for a_, c_ in
+                       zip([3.42525091, 0.62391373, 0.16885540], [0.15432897, 0.53532814, 0.44463454]))
+            val_ = bb_.evaluate(mm_["mos"][0]["c"], np.array([[0.0, 0.0, 0.7]]))[0]
+            assert abs(val_ - 2 * phi_ * mm_["mos"][0]["c"][0]) < 1e-6, (val_, phi_)
+            tb_ = ORB.molden_table(mm_)
+            assert ORB.frontier_name(tb_[""][0][0], "", tb_) == "HOMO" and tb_[""][0][0] == (0 if orca_ else 1)
+        dat_, org_, axs_ = ORB.molden_grid(bb_, mm_["mos"][0]["c"], 0.15)
+        assert abs(ORB.grid_norm(dat_, axs_) - 1) < 0.02 and org_[2] < -1.0 / 1.9 and dat_.shape[0] < 60
+        w.dft_state.update(entries=[], current=None)
+        e_m = t_d.load_molden(str(mf_))
+        assert [it_["mo"] for it_ in e_m["orbitals"]] == [0, 1] and e_m["orb_cur"] == 0, e_m["orbitals"]
+        assert t_d.cmb_orb.currentText().startswith("HOMO (MO 0") and t_d.row_mo.isVisibleTo(t_d)
+        assert t_d.F.orb is not None and t_d.F.orb_art is not None and "Molden" in t_d.lbl_orb.text()
+        t_d.cmb_mo.setCurrentIndex(5)
+        t_d.add_molden_mo()
+        assert e_m["orb_cur"] == 2 and e_m["orbitals"][2]["mo"] == 5 and "LUMO+4" in t_d.cmb_orb.currentText()
+        bad_ = ddir / "bad.molden"
+        bad_.write_text(Path(mf_).read_text().replace("    1     0.", "    1     5.", 1), encoding="utf-8")
+        assert ORB.Basis(ORB.parse_molden(bad_.read_text())).setup() > ORB.Basis.MAX_ORTH_ERR   # wird abgelehnt
+        w.dft_state.update(entries=[], current=None)
+        t_d.sync_widgets()
+        t_d.render(push=False)
+        # Bindungsordnungen wie IboView (IAO-Wiberg): H2 Einfachbindung, Ne ohne Bindung; Doppelbindung -> zwei Stäbe
+        bo_ = ORB.iao_bond_orders(bb_)
+        assert list(bo_) == [(0, 1)] and abs(bo_[(0, 1)] - 1) < 0.02, bo_
+        e_m = t_d.load_molden(str(mf_))
+        assert t_d.bond_orders(e_m) is not None and t_d.F.opts.get("bond_orders") and t_d.F.elem_lab
+        w.dft_state.update(entries=[], current=None)
+        t_d.sync_widgets()
+        t_d.render(push=False)
+        Xd_ = np.array([[0.0, 0, 0], [1.2, 0, 0], [-0.6, 0.9, 0], [-0.6, -0.9, 0]])
+        md_ = DFT.XyzMolecule(["C", "O", "H", "H"], Xd_, [(0, 1), (0, 2), (0, 3)], ["C1", "O2", "H3", "H4"])
+        assert np.allclose(np.abs(ORB.ibo_tan_u(Xd_, ["C", "O", "H", "H"], 0, 1)), [0, 1, 0])   # in der Molekülebene
+        from matplotlib.figure import Figure as Fig_
+        fg_ = Fig_(figsize=(6, 4), dpi=80)
+        FigureCanvasAgg(fg_)
+        cfg_d = core.deep_merge(core.DEFAULTS, {})
+        Fd_ = XRAY.XrayFigure(cfg_d, md_, np.eye(3), dict(style="iboview", labels=False,
+                                                         bond_orders={(0, 1): 1.95, (0, 2): 0.93, (0, 3): 1.45}), {}, fg_)
+        sp_ = Fd_.rods["specs"]
+        assert sum(1 for x_ in sp_ if x_["bond"] == 0) == 4 and sum(1 for x_ in sp_ if x_["bond"] == 1) == 2
+        assert sum(1 for x_ in sp_ if x_["bond"] == 2 and x_["r0"] == x_["r1"]) > 2       # 1.45: zweiter Stab gestrichelt
+        offs_ = {round(float(x_["off"][1]), 4) for x_ in sp_ if x_["bond"] == 0}
+        assert len(offs_) == 2 and abs(sum(offs_)) < 1e-9                                 # symmetrisch neben der Achse
+        fg_.canvas.draw()
+        Fd_.set_view(XRAY.rot("y", 1.2))                                   # C=O zeigt zum Betrachter: Stab vor dem C
+        tw_ = Fd_.atom_rods_over[0].get_paths()
+        assert any(np.ptp(p_.vertices[:, 0]) > 0 for p_ in tw_)
+        st_p_ = {"dft": {"entries": [{"file": "g.xyz", "molden": "g.molden", "orbitals": [{"file": "g.cube"}]}]}}
+        assert {PRJ._get(c_, k_) for c_, k_, _ in PRJ._path_slots(st_p_)} >= {"g.xyz", "g.molden", "g.cube"}   # im Projekt
+        report.append("DFT orbitals from Molden (basis up to g, convention check, HOMO/LUMO, IAO bond orders): OK")
 
         # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
         ndir = out / "input" / "nmr"
