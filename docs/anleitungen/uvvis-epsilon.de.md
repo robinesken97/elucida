@@ -62,8 +62,8 @@ Anordnung wieder her.
 
 ## 7. Exportieren und in die SI
 
-**Exportieren** schreibt für alle Serien die Abbildung (PDF/SVG/PNG), `<Serie>_results.csv` und den Excel-Report nach
-`exports/epsilon/`. Die UV-Vis-Zeile steht unter **SI-Zeile** und kommt mit **SI (Word)** automatisch in den
+**Exportieren** schreibt für alle Serien die Abbildung (PDF/SVG/PNG) nach `figures/`, `<Serie>_UV-Vis_results.csv` und
+den Excel-Report nach `tables/`. Die UV-Vis-Zeile steht unter **SI-Zeile** und kommt mit **SI (Word)** automatisch in den
 Charakterisierungsabsatz, die Abbildung mit Unterschrift („UV-Vis spectra of **X** in THF, measured in 0.1 cm quartz
 cuvettes.“) in den Abbildungsteil. Das Lösungsmittel dafür trägst du unter **Auswertung** ein.
 

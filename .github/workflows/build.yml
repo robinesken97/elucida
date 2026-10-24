@@ -44,10 +44,10 @@ jobs:
 
       - name: Selbsttest aus dem Quellcode
         env: { QT_QPA_PLATFORM: offscreen }
-        run: python uvvis_gui.py --selftest selftest_src --selftest-isnet
+        run: python Elucida.py --selftest selftest_src --selftest-isnet
 
       - name: App bauen
-        run: python build.py
+        run: python tools/build.py
 
       - name: Selbsttest der fertigen App (Windows)
         if: runner.os == 'Windows'
@@ -138,8 +138,8 @@ jobs:
         id: notes
         run: |
           case "$TAG" in v[0-9]*) ;; *) echo "Tag muss mit v beginnen: $TAG"; exit 1;; esac
-          grep -q "^APP_VERSION = \"${TAG#v}\"" uvvis_gui.py || { echo "APP_VERSION passt nicht zu $TAG"; exit 1; }
-          python3 release_notes.py "$TAG" > release_notes.md
+          grep -q "^APP_VERSION = \"${TAG#v}\"" elucida/__init__.py || { echo "APP_VERSION passt nicht zu $TAG"; exit 1; }
+          python3 tools/release_notes.py "$TAG" > release_notes.md
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v7
         with:

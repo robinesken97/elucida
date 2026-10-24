@@ -103,7 +103,7 @@ On Windows, always keep the whole `Elucida` folder together. The `.exe` does not
    from the default), the figure on the right. Labels, structures and insets can be dragged with the mouse.
    **Ctrl+Z** / **⌘Z** undoes everything.
 5. **Export:** **Export** at the bottom of the tab writes the figure (PDF/SVG/PNG, 16 × 11 cm for half an A4 page) and
-   the data into the project folder under `exports/`.
+   the data into the project folder (`figures/`, `tables/`, `SI/`).
 6. **Create the SI:** **SI (Word)** in the toolbar collects everything that is ready in one Word file: synthesis,
    characterisation paragraph (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis), figures two per page, crystal data
    and DFT coordinates. Afterwards the program lists what is still missing.
@@ -268,7 +268,7 @@ to Word or as part of the SI section.
 
 **SI (Word)** in the toolbar (or **File → Export SI section (Word) …**) asks which parts to include
 (characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the project's compound into
-`exports/si/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
+`SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
 UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
 precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
@@ -362,20 +362,27 @@ manager of your Linux desktop):
 
 1. **File → New project…** – choose a folder or create a new one in the dialog.
 2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
-   project** (`data/`, `images/`; ChemDraw exports with the same name as a CDXML come along).
+   project** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
    Files that are already inside the project are not copied again.
-3. Work as usual – the project is **saved automatically**. A backup `project.uvvis.bak` is made each
-   time a project is opened.
+3. Work as usual – the project is **saved automatically**. A backup (`.elucida/project.uvvis.bak`) is made
+   each time a project is opened.
 4. **Export** writes directly into the project (existing files are overwritten):
 
 ```
 MyProject/
-  project.uvvis               settings (paths relative to the folder)
-  data/  images/              copies of all input files
-  exports/epsilon/<series>/   figures (PDF/SVG/PNG), <series>_results.csv, <series>_report.xlsx
-  exports/overlay/            <project>_overlay.*
-  exports/fluorescence/       <project>_fluorescence.*
+  project.uvvis          settings (paths relative to the folder)
+  elucida.json           summary for the Characterization program (read-only for it)
+  SI/                    Word files and SI texts: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
+  figures/               figures (PDF/SVG/PNG): S2_CV.pdf, S2_X-ray.svg, <series>_UV-Vis.png …
+  tables/                tables and data files: S2_CV_results.csv, <series>_UV-Vis_report.xlsx, xyz …
+  data/nmr/ data/cv/ …   copies of the measurement data, one folder per technique
+  structures/            ChemDraw structures (with their exports), schemes, photos
+  .elucida/              intermediate images for Word, cache, backup (hidden)
 ```
+
+File names start with the project's compound (**Compound …**; without one, the folder name). Folders appear only when
+something goes into them. Projects from versions before 2.1 (`data/`, `images/`, `exports/`) open as before; their
+files stay where they are, new files and exports use the new layout.
 
 The program starts without a project. Open projects via **File → Open project**, **Recent projects**
 or by dragging the folder onto the window. **File → Save project copy** writes a complete copy (e.g.
@@ -654,27 +661,26 @@ at the bottom of the run under "Artifacts", which are deleted after 90 days.
 
 ```
 pip install -r requirements.txt pyinstaller
-python uvvis_gui.py                    # start directly from source
-python uvvis_gui.py --selftest out     # self-test
-python build.py                        # build the app -> dist/
+python Elucida.py                      # start directly from source (or: python -m elucida)
+python Elucida.py --selftest out       # self-test
+python tools/build.py                  # build the app -> dist/
 ```
 
-**Without a GUI:** `python uvvis_core.py measurement.csv` runs the analysis with default settings.
+**Without a GUI:** `python -m elucida.core.uvvis measurement.csv` runs the analysis with default settings.
 
 **Files:**
 
 | File | Content |
 |---|---|
-| `uvvis_gui.py` | User interface (PySide6), self-test |
-| `uvvis_core.py` | Import, baseline, band search, fits, plot layout, export |
-| `uvvis_images.py` | Images, HEIC, background removal (ISNet/ONNX, GrabCut), SVG/PDF embedding |
-| `uvvis_chem.py` | CDXML: drawing and molar mass (RDKit) |
-| `uvvis_i18n.py` | German/English texts |
-| `uvvis_tabs.py` | Overlay and fluorescence tabs |
-| `uvvis_extra.py` | TD-DFT reading/broadening, photo pair, figure for the extra tabs |
-| `uvvis_project.py` | Project folders (save/load, copying input files) |
-| `uvvis_report.py` | Excel report (openpyxl) |
-| `parseuv_lite/` | Reader for Cary .DSW/.BSW/.FBSW (from parseuv, BSD-3-Clause) |
+| `Elucida.py` | Start file (also the PyInstaller entry) |
+| `elucida/app/` | Main window and UV-Vis (ε) tab, project folder, texts, style, update check, example project |
+| `elucida/core/` | UV-Vis analysis and figures, TD-DFT, solution colour, images, CDXML via RDKit |
+| `elucida/tabs/` | One module per tab (synthesis, NMR, IR + EA, HRMS, CV, SEC, EPR, X-ray, DFT, overlay, fluorescence) |
+| `elucida/formats/` | ChemDraw drawing, OLE objects for Word, reader for Cary .DSW/.BSW/.FBSW (from parseuv, BSD-3-Clause) |
+| `elucida/si/` | SI lines and Word writer, Excel report |
+| `elucida/exchange/` | `elucida.json` for Characterization |
+| `elucida/selftest.py` | Self-test (also runs in the built app) |
+| `tools/` | Build, release notes, icon, README screenshots |
 
 **Data protection:** `.gitignore` excludes CSV, HEIC and CDXML files so that no unpublished
 measurement data ends up in the repository.
