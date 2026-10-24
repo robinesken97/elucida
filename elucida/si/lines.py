@@ -274,19 +274,28 @@ _MONO = '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New
 # Vorlagen der Gesamt-SI: Kopf des Titelblatts und Bezeichnung von Abbildungen/Tabellen (Verlage schreiben für die SI
 # kaum etwas vor; „group“ = SI der Gruppe, Angewandte/Wiley). colon: Trennzeichen nach der Nummer.
 TEMPLATES = {
-    "group": dict(header="Supplementary Materials for", fig="Figure S", tab="Table S", colon=":"),
-    "acs": dict(header="Supporting Information for", fig="Figure S", tab="Table S", colon="."),
-    "rsc": dict(header="Electronic Supplementary Information for", fig="Fig. S", tab="Table S", colon=""),
+    # Gruppe: wie die eigene Angewandte-SI (gemessen)
+    "group": dict(header="Supplementary Materials for", fig="Figure S", tab="Table S", colon=":", page=""),
+    # Wiley: „Supporting Information“, muss mit einem Inhaltsverzeichnis beginnen (Notice to Authors Angewandte)
+    "wiley": dict(header="Supporting Information for", fig="Figure S", tab="Table S", colon=".", page=""),
+    # ACS: Inhaltsverzeichnis mit Seitenzahlen verlangt (JOC); Seiten wie üblich S1, S2 …
+    "acs": dict(header="Supporting Information for", fig="Figure S", tab="Table S", colon=".", page="S"),
+    # RSC: „Fig. 1 Caption“ wie im Artikel, ohne Satzzeichen nach der Nummer
+    "rsc": dict(header="Supplementary Information for", fig="Fig. S", tab="Table S", colon="", page=""),
+    # Nature: „Supplementary Figure 1“, eigene Zählung, Legende wie im Artikel („|“)
     "nature": dict(header="Supplementary Information for", fig="Supplementary Figure ", tab="Supplementary Table ",
-                   colon=" |"),
+                   colon=" |", page=""),
 }
 _TEMPLATE = "group"
+_PAGE_NUMBERS = False
 
 
-def set_template(key):
-    """Vorlage für die folgenden Word-Exporte (Standard „group“; die Gesamt-SI setzt sie und danach zurück)."""
-    global _TEMPLATE
+def set_template(key, page_numbers=False):
+    """Vorlage für die folgenden Word-Exporte (Standard „group“; die Gesamt-SI setzt sie und danach zurück).
+    page_numbers: Seitenzahl in der Fußzeile (Gesamt-SI; ACS mit „S“ davor)."""
+    global _TEMPLATE, _PAGE_NUMBERS
     _TEMPLATE = key if key in TEMPLATES else "group"
+    _PAGE_NUMBERS = bool(page_numbers)
 
 
 def set_font(name):
@@ -331,6 +340,7 @@ def _seq_xml(kind, num, size=22):
 # Seitenfüllung: Textfläche A4 (oben 2.5 cm, unten 2.0 cm) mit Reserve; Arial 11 pt, 1.5-zeilig ≈ 0.67 cm je Zeile,
 # im Mittel ≈ 0.19 cm je Zeichen
 PAGE_BODY_CM = 29.7 - 2.5 - 2.0 - 0.7
+MIN_FIG_CM = 7.0           # kleiner nie: dann kommen die Abbildungen auf die nächste Seite
 LINE_CM, CHAR_CM = 0.67, 0.19
 
 
@@ -367,6 +377,15 @@ def two_per_page(blocks, per_page=2):
         i += 1
     if cur["text"] or cur["figs"]:
         pages.append(cur)
+    split = []
+    for pg in pages:                                    # langer Text davor (Gesamt-SI: Auswertung je Verbindung):
+        used = sum(_text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35) for t in pg["text"])
+        caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
+        if pg["text"] and pg["figs"] and (PAGE_BODY_CM - used - caps) / per_page < MIN_FIG_CM:
+            split += [{"text": pg["text"], "figs": []}, {"text": [], "figs": pg["figs"]}]   # Bilder auf neue Seite
+        else:
+            split.append(pg)
+    pages = split
     out = []
     for k, pg in enumerate(pages):
         if k:
@@ -523,9 +542,54 @@ def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
             f'DrawAspect="Content" ObjectID="_18{54180700 + n:08d}" r:id="rIdOle{n}"/></w:object></w:r></w:p>')
 
 
+def toc_entries(blocks):
+    """Kapitel („section“) mit geschätzter Seite fürs Inhaltsverzeichnis: Seiten wie in write_docx gezählt
+    (Titelblatt, Verzeichnis, jedes Kapitel neue Seite, Seitenumbrüche, Text-/Bildhöhen grob). Word aktualisiert die
+    Zahlen beim Öffnen, OnlyOffice über „Inhaltsverzeichnis aktualisieren“."""
+    page, used, cols, out = 0, 0.0, 1, []
+    body = 29.7 - 2.5 - 2.0 + 0.8                      # Textfläche + Toleranz (Zeilenhöhen grob geschätzt)
+
+    def add(h):
+        nonlocal page, used
+        h /= cols
+        if used + h > body:
+            page += 1 + int((used + h - body) // body)
+            used = (used + h - body) % body
+        else:
+            used += h
+    brk = False
+    for b in blocks:
+        k = b[0]
+        if k in ("title", "toc", "section") or (brk and k != "pagebreak"):   # Umbruch wirkt auf den nächsten Block
+            page, used, brk = page + 1, 0.0, False
+        if k == "section":
+            out.append((b[1], page))
+            add(1.2)
+        elif k == "columns":
+            cols = b[1]
+        elif k == "pagebreak":
+            brk = True
+        elif k == "image":                               # wie two_per_page: Bild + Abstand, Unterschrift
+            add(b[3] + 0.21 + 0.42)
+        elif k == "figcap":
+            add(_text_cm(b[1], prefix=12))
+        elif k in ("char", "text"):
+            add(_text_cm(b[1] if isinstance(b[1], str) else "", extra=0.35))
+        elif k in ("crystal", "params", "coords", "energies"):
+            add(0.55 * (len(b[2]) + 1) + 0.6)
+        elif k == "mono":
+            add(0.42 * len(b[1]))
+        elif k in ("synthesis", "heading", "tabcap", "fields", "gap", "note"):
+            add(0.9)
+        elif k == "ole":
+            add(b[4] + 0.6)
+    return out
+
+
 def _sect(columns):
     """Abschnittseigenschaften (A4, Ränder wie in der SI), fortlaufend, mit Spaltenzahl."""
-    return ('<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" '
+    foot = '<w:footerReference w:type="default" r:id="rIdFooter1"/>' if _PAGE_NUMBERS else ""   # Schema: zuerst
+    return ('<w:sectPr>' + foot + '<w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" '
             'w:right="1417" w:bottom="1134" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/>' +
             (f'<w:cols w:num="{columns}" w:space="{COL_GAP}"/>' if columns > 1 else "") + '</w:sectPr>')
 
@@ -561,6 +625,7 @@ def write_docx(path, blocks, columns=1):
     col_w = col_width(columns)
     pending_break = False
     toc_used = False
+    n_sec = 0
     for b in blocks:
         k = b[0]
         if pending_break and k != "image":       # kein Bild danach: echter Umbruch
@@ -653,18 +718,33 @@ def write_docx(path, blocks, columns=1):
                 body.append(_para(html_runs(nbsp(b[2])), align="center", after=600))
             for ln in (b[3] if len(b) > 3 and b[3] else "").splitlines():
                 body.append(_para(html_runs(nbsp(ln)), align="center"))
-        elif k == "toc":
-            toc_used = True
+        elif k == "toc":                         # Einträge schon eingetragen (OnlyOffice/Vorschau aktualisieren
+            toc_used = True                      # Felder nicht selbst), Seiten geschätzt; Word setzt sie beim Öffnen
             body.append(_para([("Table of Contents", {"b"})], size=24, align="left", after=240, page_before=True))
-            body.append('<w:p><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr>'
-                        '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText '
-                        'xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar '
-                        'w:fldCharType="separate"/></w:r>' + _run_xml("(Update field: right-click \u2192 Update Field)",
-                                                                      {"i"}) +
-                        '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>')
+            entries = toc_entries(blocks)
+            fld_b = ('<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText '
+                     'xml:space="preserve"> TOC \\o "1-1" \\h \\z \\u </w:instrText></w:r>'
+                     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>')
+            fld_e = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+            if not entries:
+                body.append("<w:p>" + fld_b + fld_e + "</w:p>")
+            for j, (title, page) in enumerate(entries):
+                num = TEMPLATES[_TEMPLATE]["page"] + str(page)
+                body.append('<w:p><w:pPr><w:pStyle w:val="TOC1"/><w:tabs><w:tab w:val="right" w:leader="dot" '
+                            f'w:pos="{TEXT_W}"/></w:tabs><w:spacing w:after="60" w:line="360" w:lineRule="auto"/>'
+                            '</w:pPr>' + (fld_b if j == 0 else "") +
+                            f'<w:hyperlink w:anchor="_Toc{j + 1}" w:history="1">' + _run_xml(title, set()) +
+                            _run_xml("\t", set()) +
+                            '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> '
+                            f'PAGEREF _Toc{j + 1} \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/>'
+                            '</w:r>' + _run_xml(num, set()) + '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+                            '</w:hyperlink>' + (fld_e if j == len(entries) - 1 else "") + '</w:p>')
         elif k == "section":
+            n_sec += 1
             body.append(_para([(b[1], {"b"})], align="left", style="Heading1", page_before=True, after=240,
-                              keep_next=True, ind=357))
+                              keep_next=True, ind=357).replace(
+                "</w:pPr>", f'</w:pPr><w:bookmarkStart w:id="{n_sec}" w:name="_Toc{n_sec}"/>'
+                            f'<w:bookmarkEnd w:id="{n_sec}"/>', 1))
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
           'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
@@ -694,7 +774,9 @@ def write_docx(path, blocks, columns=1):
               '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
               'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
               'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" '
-              'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>')
+              'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>' +
+              ('<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.'
+               'wordprocessingml.footer+xml"/>' if _PAGE_NUMBERS else '') + '</Types>')
     # Word 2013+ (sonst öffnet Word das Dokument im Kompatibilitätsmodus)
     settings = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat>'
@@ -710,6 +792,8 @@ def write_docx(path, blocks, columns=1):
              '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
              'styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/'
              'officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
+             ('<Relationship Id="rIdFooter1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+              'relationships/footer" Target="footer1.xml"/>' if _PAGE_NUMBERS else '') +
              "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                      f'relationships/image" Target="media/image{i}{_media_ext(m)}"/>' for i, m in enumerate(media, 1)) +
              "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
@@ -728,6 +812,14 @@ def write_docx(path, blocks, columns=1):
         z.writestr("word/document.xml", doc)
         z.writestr("word/styles.xml", styles)
         z.writestr("word/settings.xml", settings)
+        if _PAGE_NUMBERS:                        # Seitenzahl unten mittig (ACS: S1, S2 …)
+            pre = _run_xml(TEMPLATES[_TEMPLATE]["page"], set(), 18) if TEMPLATES[_TEMPLATE]["page"] else ""
+            z.writestr("word/footer1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                       '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                       '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>' + pre +
+                       '<w:fldSimple w:instr=" PAGE "><w:r><w:rPr>' + _FONT + '<w:sz w:val="18"/></w:rPr>'
+                       '<w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>')
         z.writestr("word/_rels/document.xml.rels", drels)
         for i, m in enumerate(media, 1):
             z.writestr(f"word/media/image{i}{_media_ext(m)}", m.read_bytes())

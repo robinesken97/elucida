@@ -17,8 +17,10 @@
   (Materials and Methods, Synthetic Procedures and Characterization Data, NMR Spectra, UV-Vis, EPR, CV, SEC, X-Ray,
   Computational); Verbindungen in der Reihenfolge des Projekts, Abbildungen fortlaufend nummeriert, Kristalldaten
   aller Strukturen in gemeinsamen Tabellen. „Materials and Methods“ und eine Einleitung je Kapitel werden einmal für
-  das Projekt gepflegt (SI-Texte). Titelblatt mit dem Titel des Artikels wie die SI der Gruppe; Vorlagen
-  Gruppe/Wiley, ACS, RSC und Nature (Titelblatt und Bezeichnung von Abbildungen/Tabellen).
+  das Projekt gepflegt (SI-Texte). Titelblatt mit dem Titel des Artikels wie die SI der Gruppe; Seitenzahlen in
+  der Fußzeile; das Inhaltsverzeichnis ist schon ausgefüllt (Seitenzahlen geschätzt, Word aktualisiert beim Öffnen).
+  Vorlagen Gruppe (wie die eigene Angewandte-SI), Wiley, ACS (Seiten S1, S2 …), RSC und Nature (Titelblatt und
+  Bezeichnung von Abbildungen/Tabellen; mit den Autorenrichtlinien der Verlage abgeglichen).
 - **Checkliste je Verbindung** auf der Seite des Projekts: ✓/✗ für ¹H, ¹³C, 2D-NMR, HRMS, IR und m.p. (im Dialog
   Verbindung als **literaturbekannt** markierte Verbindungen, mit Feld für die Literatur: nur ¹H und ¹³C); weitere Daten
   (EA, UV-Vis, X-Ray) grau, oben eine Zusammenfassung, was fehlt.

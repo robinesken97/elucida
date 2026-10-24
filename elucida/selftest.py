@@ -3005,11 +3005,22 @@ def selftest(outdir, with_isnet=False):
                                                              "X-Ray Characterization Data"} <= set(order_), order_
         assert doc_.index("CV intro") > doc_.index("Cyclic Voltammetry") and "TOC \\o" in doc_
         assert "Supplementary Materials for" in doc_ and "Synthesis of " in doc_
+        assert "PAGEREF _Toc1" in doc_ and 'w:name="_Toc1"' in doc_            # Verzeichnis schon gefüllt
+        toc_ = SI.toc_entries([("title", "T"), ("toc",), ("section", "1. A"), ("char", "x"), ("section", "2. B")])
+        assert toc_ == [("1. A", 3), ("2. B", 4)], toc_
+        tp_ = SI.two_per_page([("char", "x " * 3000), ("image", "a.png", 16.0, 10.9), ("figcap", "c")])
+        assert [b_[0] for b_ in tp_] == ["char", "pagebreak", "image", "figcap"] and tp_[2][3] == 10.9, \
+            [b_[0] for b_ in tp_]                                            # langer Text: Bild auf neue Seite
         psi2_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], ["char", "nmr"], path=out / "pub_SI_nature.docx",
                                         template="nature")
         with _zfp.ZipFile(psi2_) as z_:
             doc2_ = z_.read("word/document.xml").decode("utf-8")
         assert "Supplementary Information for" in doc2_ and "Supplementary Figure " in doc2_ and "Figure S" not in doc2_
+        psi3_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], ["char", "nmr"], path=out / "pub_SI_acs.docx",
+                                        template="acs")
+        with _zfp.ZipFile(psi3_) as z_:
+            assert "PAGE" in z_.read("word/footer1.xml").decode("utf-8") and ">S<" in z_.read(
+                "word/footer1.xml").decode("utf-8")                         # ACS: Seiten S1, S2 …
         assert SI.TEMPLATES and SI._TEMPLATE == "group"                    # danach wieder Standard
         dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
         assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2

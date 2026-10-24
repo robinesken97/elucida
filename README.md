@@ -126,7 +126,7 @@ a paper (complete SI, dataset; see the next quick start). A compound can also be
    only ¹H and ¹³C. **Oil** next to the melting point gives "m.p. <25 °C".
 4. **SI texts:** **SI texts …** – "Materials and Methods" (or insert the setup texts stored in the tabs) and an
    optional introduction for each chapter.
-5. **Complete SI:** **Complete SI (Word) …** – choose chapters, compounds and template (group/Wiley, ACS, RSC, Nature);
+5. **Complete SI:** **Complete SI (Word) …** – choose chapters, compounds and template (group, Wiley, ACS, RSC, Nature);
    the Word file lands in `SI/` of the project.
 6. **Dataset:** **Data packages (zip) …** – one zip per compound, `CompChem.zip`, `README.txt` and license text in
    `datapack/`, ready for the upload (e.g. TUDOdata).
@@ -447,11 +447,15 @@ their order, the details for the dataset and the SI texts. The project page list
   Section (empty chapters are left out). Within each chapter the compounds follow the order of the project;
   figures two per page and numbered throughout, crystal data of all structures in common tables. **SI texts** holds
   "Materials and Methods" and an optional introduction per chapter.
-- **Templates** for the complete SI: group/Wiley ("Supplementary Materials for", Figure S1:), ACS ("Supporting
-  Information for", Figure S1.), RSC ("Electronic Supplementary Information for", Fig. S1), Nature ("Supplementary
-  Information for", Supplementary Figure 1 |). Publishers hardly prescribe a layout for the SI, so only the title page
-  and the labels change; chapters, font and page layout stay as in the group's SI. The SI of a single compound keeps
-  the group's style.
+- **Templates** for the complete SI: group (as the group's Angewandte SI: "Supplementary Materials for",
+  Figure S1:), Wiley ("Supporting Information for", Figure S1.; Angewandte requires the SI to start with a table of
+  contents), ACS ("Supporting Information for", Figure S1., pages S1, S2 …; JOC asks for a table of contents with page
+  numbers), RSC ("Supplementary Information for", Fig. S1 as in RSC articles), Nature ("Supplementary Information
+  for", Supplementary Figure 1 |, numbered separately from the article). Publishers hardly prescribe a layout for the
+  SI, so only the title page, labels and page numbers change; chapters, font and page layout stay as in the group's
+  SI. The complete SI has page numbers and a table of contents that is already filled in (estimated page numbers;
+  Word updates them when opening, ONLYOFFICE via "Update table of contents"). The SI of a single compound keeps the
+  group's style.
 
 ## Excel report
 

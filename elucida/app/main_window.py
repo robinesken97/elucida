@@ -2287,7 +2287,7 @@ class MainWindow(QMainWindow):
         blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods)
         name = core.safe_name(Path(pdir).name)
         path = Path(path) if path else Path(pdir) / PUB.SI_DIR / f"{name}_SI.docx"
-        SI.set_template(template)                       # Vorlage nur für diese Datei (Einzel-SI bleibt wie die Gruppe)
+        SI.set_template(template, page_numbers=True)    # nur für diese Datei (Einzel-SI bleibt wie die Gruppe)
         try:
             SI.write_docx(path, blocks)
         except PermissionError:

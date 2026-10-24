@@ -261,8 +261,13 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `si_texts`, dann die Verbindungen in Reihenfolge (Auswertungstexte je Verbindung vor ihren Abbildungen); Kristalldaten
   aller Strukturen gemeinsam (`merge_crystal`, ≤ 3 je Tabelle). Erzeugt durch kurzes Öffnen jeder Verbindung
   (`MainWindow.export_publication_si` → `si_compound_parts`), danach die vorher offene wieder. Vorlagen (`SI.TEMPLATES`:
-  group/acs/rsc/nature) ändern nur Titelblatt und Abbildungs-/Tabellenbezeichnung, nur für die Gesamt-SI (danach
-  `set_template("group")`). Titelblatt = `paper_title` (wie die Gruppen-SI: 18 pt Kopf, Rest 11 pt); Datensatztitel
+  group/wiley/acs/rsc/nature, abgeglichen mit den Autorenrichtlinien: Wiley SI beginnt mit Inhaltsverzeichnis, ACS
+  Verzeichnis mit Seitenzahlen „S1“, Nature „Supplementary Figure 1“ eigene Zählung, RSC „Fig. S1“) ändern nur Titelblatt,
+  Bezeichnungen und Seitenpräfix, nur für die Gesamt-SI (`set_template(…, page_numbers=True)`, danach zurück). Gesamt-SI:
+  Seitenzahl in der Fußzeile, Verzeichnis schon gefüllt (`toc_entries` schätzt die Seiten wie `two_per_page`, mit
+  ONLYOFFICE geprüft: alle Kapitel exakt; Word aktualisiert beim Öffnen). `two_per_page`: bleibt neben langem Text
+  weniger als `MIN_FIG_CM` je Bild, kommen die Bilder auf die nächste Seite (sonst briefmarkengroß). Prüfen ohne Word:
+  ONLYOFFICE-Konverter `x2t` mit Parameter-XML (`m_sAllFontsPath` aus dem App-Datenordner). Titelblatt = `paper_title` (wie die Gruppen-SI: 18 pt Kopf, Rest 11 pt); Datensatztitel
   sonst „Electronic supplement to …“. Checkliste (`checklist`, Nutzerwunsch): Pflicht ¹H, ¹³C, 2D, HRMS, IR, m.p.;
   `compound.known` (+ `lit`) nur ¹H/¹³C; `compound.oil` = „m.p. <25 °C“ (zählt als m.p.). Zurück: `btn_pub` in der
   Tab-Leiste.

@@ -17,8 +17,10 @@
   (Materials and Methods, Synthetic Procedures and Characterization Data, NMR Spectra, UV-Vis, EPR, CV, SEC, X-ray,
   Computational); compounds in the order of the project, figures numbered throughout, crystal data of all
   structures in common tables. "Materials and Methods" and an introduction per chapter are edited once for the
-  project (SI texts). Title page with the title of the paper as in the group's SI; templates group/Wiley, ACS,
-  RSC and Nature (title page and figure/table labels).
+  project (SI texts). Title page with the title of the paper as in the group's SI; page numbers in the footer;
+  the table of contents is filled in already (page numbers estimated, Word updates them when opening). Templates
+  group (as the own Angewandte SI), Wiley, ACS (pages S1, S2 …), RSC and Nature (title page and figure/table
+  labels; checked against the publishers' author guidelines).
 - **Checklist per compound** on the project page: ✓/✗ for ¹H, ¹³C, 2D NMR, HRMS, IR and m.p. (compounds marked
   **known from the literature** in the Compound dialog, with a field for the reference: only ¹H and ¹³C); further data
   (EA, UV-Vis, X-ray) in grey, summary of what is missing at the top.

@@ -128,7 +128,7 @@ Verbindung lässt sich auch ohne Projekt anlegen.
    nur ¹H und ¹³C. **Öl** neben dem Schmelzpunkt ergibt „m.p. <25 °C“.
 4. **SI-Texte:** **SI-Texte …** – „Materials and Methods“ (oder die in den Tabs hinterlegten Aufbau-Texte übernehmen) und
    je Kapitel eine optionale Einleitung.
-5. **Gesamt-SI:** **Gesamt-SI (Word) …** – Kapitel, Verbindungen und Vorlage (Gruppe/Wiley, ACS, RSC, Nature) wählen;
+5. **Gesamt-SI:** **Gesamt-SI (Word) …** – Kapitel, Verbindungen und Vorlage (Gruppe, Wiley, ACS, RSC, Nature) wählen;
    die Word-Datei liegt danach in `SI/` des Projekts.
 6. **Datensatz:** **Datenpakete (Zip) …** – je Verbindung ein Zip, `CompChem.zip`, `README.txt` und Lizenztext in
    `datapack/`, fertig zum Hochladen (z. B. TUDOdata).
@@ -465,11 +465,15 @@ einen Unterordner an, **Verbindung hinzufügen** nimmt eine von woanders auf.
   Section (leere Kapitel fallen weg). In jedem Kapitel die Verbindungen in der Reihenfolge des Projekts; Abbildungen
   zwei je Seite und fortlaufend nummeriert, Kristalldaten aller Strukturen in gemeinsamen Tabellen. **SI-Texte** enthält
   „Materials and Methods“ und je Kapitel eine optionale Einleitung.
-- **Vorlagen** der Gesamt-SI: Gruppe/Wiley („Supplementary Materials for“, Figure S1:), ACS („Supporting Information
-  for“, Figure S1.), RSC („Electronic Supplementary Information for“, Fig. S1), Nature („Supplementary Information for“,
-  Supplementary Figure 1 |). Für die SI schreiben die Verlage kaum etwas vor; es ändern sich nur Titelblatt und
-  Bezeichnungen, Kapitel, Schrift und Seitenaufteilung bleiben wie die SI der Gruppe. Die SI einer einzelnen Verbindung
-  bleibt im Stil der Gruppe.
+- **Vorlagen** der Gesamt-SI: Gruppe (wie die Angewandte-SI der Gruppe: „Supplementary Materials for“, Figure S1:),
+  Wiley („Supporting Information for“, Figure S1.; Angewandte verlangt ein Inhaltsverzeichnis am Anfang), ACS
+  („Supporting Information for“, Figure S1., Seiten S1, S2 …; JOC verlangt ein Inhaltsverzeichnis mit Seitenzahlen), RSC
+  („Supplementary Information for“, Fig. S1 wie in RSC-Artikeln), Nature („Supplementary Information for“,
+  Supplementary Figure 1 |, eigene Zählung). Für die SI schreiben die Verlage kaum etwas vor; es ändern sich nur
+  Titelblatt, Bezeichnungen und Seitenzahlen, Kapitel, Schrift und Seitenaufteilung bleiben wie die SI der Gruppe. Die
+  Gesamt-SI hat Seitenzahlen und ein schon ausgefülltes Inhaltsverzeichnis (Seitenzahlen geschätzt; Word aktualisiert
+  beim Öffnen, ONLYOFFICE über „Inhaltsverzeichnis aktualisieren“). Die SI einer einzelnen Verbindung bleibt im Stil
+  der Gruppe.
 
 ## Excel-Report
 
