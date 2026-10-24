@@ -1196,9 +1196,15 @@ def selftest(outdir, with_isnet=False):
         for tab_, key_ in ((w.syn_tab, "syn"), (w.nmr_tab, "nmr"), (w.cv_tab, "cv")):   # überall gleich und mittig
             w.main_tabs.setCurrentWidget(tab_)
             pump(0.1)
+            if hasattr(tab_, "ensure_rendered"):                # erst zeichnen (verzögert beim Anzeigen), dann messen
+                tab_.ensure_rendered()
+            pump(0.3)
             assert tab_.preview_stack.currentIndex() == 0, key_
             g_ = tab_.preview_stack.widget(0)
             g_ = g_ if isinstance(g_, TABS.EmptyGuide) else g_.findChild(TABS.EmptyGuide)
+            g_.fit_width()                                       # Breite nach der Schrift des Systems, Layout fertig
+            g_.layout().activate()
+            pump(0.1)
             assert g_ is not None and T(f"guide_{key_}_title") in g_.label.text(), key_
             b_ = g_.findChild(QPushButton)
             assert b_ is not None, key_
