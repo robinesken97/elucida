@@ -2890,6 +2890,22 @@ def selftest(outdir, with_isnet=False):
         assert w.syn_state["proc"] and w.nmr_tab.spectra()
         st_file_ = PRJ.load(out / "demo")                  # gespeichert, nicht nur im Fenster (war leer: _restoring)
         assert st_file_.get("cv", {}).get("files") and st_file_.get("eps", {}).get("files"), sorted(st_file_)
+        from elucida.app import welcome as WEL                 # Startbildschirm: Projektliste mit Struktur und Analytik
+        w.add_recent(out / "demo")
+        w.fill_recent_list()
+        inf_ = WEL.project_info(out / "demo")
+        assert inf_ and {"nmr", "cv", "uvvis", "xray", "dft"} <= set(inf_["badges"]), inf_
+        assert WEL.thumb_path(out / "demo").exists() and inf_["thumb"], "Strukturbild fehlt"
+        assert any(r_.info["path"] == str((out / "demo")) for r_ in w.recent_rows)
+        w._filter_recent("gibtsnicht")
+        assert not any(r_.isVisibleTo(r_.parentWidget()) for r_ in w.recent_rows)
+        w._filter_recent("")
+        import datetime as _dt
+        now_ = _dt.datetime(2026, 10, 24, 15, 0)
+        assert WEL.relative_time(_dt.datetime(2026, 10, 24, 9, 5), now_) == T("time_today", t="09:05")
+        assert WEL.relative_time(_dt.datetime(2026, 10, 21, 9, 5), now_) == T("time_days", n=3)
+        w.remove_recent(out / "demo")
+        assert str(out / "demo") not in w.recent()
         report.append("welcome page + example project: OK")
         pump()                                             # Laden abgeschlossen (_restoring)
         t0_ = time.perf_counter()

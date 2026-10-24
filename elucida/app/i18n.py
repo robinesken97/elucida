@@ -272,6 +272,15 @@ TEXTS = {
                     "From synthesis to the SI: analysis and figures for UV-Vis, NMR, IR, HRMS, CV, EPR, X-ray, DFT and "
                     "more. A project collects all data of one compound."),
     "welcome_recent": ("Zuletzt geöffnet", "Recently opened"),
+    "recent_search_ph": ("Suchen: Verbindung, Ordner, Analytik …", "Search: compound, folder, technique …"),
+    "recent_none": ("Noch keine Projekte – lege ein neues an oder sieh dir das Beispielprojekt an.",
+                    "No projects yet – create a new one or have a look at the example project."),
+    "recent_empty_project": ("noch keine Daten", "no data yet"),
+    "recent_reveal": ("Im Ordner zeigen", "Show in folder"),
+    "recent_remove": ("Aus der Liste entfernen", "Remove from the list"),
+    "time_today": ("heute {t}", "today {t}"),
+    "time_yesterday": ("gestern {t}", "yesterday {t}"),
+    "time_days": ("vor {n} Tagen", "{n} days ago"),
     "welcome_hint": ("Projektordner oder Messdateien lassen sich auch einfach ins Fenster ziehen. "
                      "<a href='{url}'>Schnellstart in 6 Schritten</a>",
                      "You can also simply drag a project folder or measurement files into the window. "

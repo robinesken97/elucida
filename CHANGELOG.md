@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 2.2.3 – 2026-10-24
+
+### New
+- **Welcome page with a real overview of recent projects:** structure of the compound, which techniques the project
+  contains, when it was last changed; search, right-click to show in folder or remove from the list; up to 20
+  projects. The structure picture is saved with the project, so the page stays fast.
+
 ## 2.2.2 – 2026-10-24
 
 ### New

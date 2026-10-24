@@ -2,6 +2,13 @@
 
 # Änderungen
 
+## 2.2.3 – 24.10.2026
+
+### Neu
+- **Startbildschirm mit echter Übersicht der letzten Projekte:** Struktur der Verbindung, welche Analytik das Projekt
+  enthält, wann es zuletzt geändert wurde; Suche, Rechtsklick zum Zeigen im Ordner oder Entfernen aus der Liste; bis
+  zu 20 Projekte. Das Strukturbild wird mit dem Projekt gespeichert, der Bildschirm bleibt schnell.
+
 ## 2.2.2 – 24.10.2026
 
 ### Neu

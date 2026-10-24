@@ -39,7 +39,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFon
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
+                               QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
                                QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTableWidget, QTableWidgetItem, QTextBrowser,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
@@ -1663,22 +1663,24 @@ class MainWindow(QMainWindow):
         return bool(self._undo) and self._undo[-1] != self._saved_snap
 
     def welcome_page(self):
-        """Startbildschirm ohne Projekt: worum es geht, Neues Projekt / Öffnen / Beispielprojekt, zuletzt geöffnet."""
+        """Startbildschirm ohne Projekt: worum es geht, Neues Projekt / Öffnen / Beispielprojekt und eine Übersicht der
+        zuletzt geöffneten Projekte (Verbindung, Analytik, Stand; Suche, Rechtsklick-Menü)."""
         page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.addStretch(1)
-        card = QFrame(objectName="card")
-        card.setMaximumWidth(620)
-        v = QVBoxLayout(card)
-        v.setContentsMargins(32, 28, 32, 28)
-        v.setSpacing(12)
+        outer = QHBoxLayout(page)
+        outer.setContentsMargins(24, 28, 24, 20)
+        col = QWidget()
+        col.setMaximumWidth(920)
+        v = QVBoxLayout(col)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(14)
         head = QHBoxLayout()
+        head.setSpacing(16)
         icon = resource_path("assets/icon.png")
         if icon.exists():
             lb = QLabel()
-            lb.setPixmap(QIcon(str(icon)).pixmap(64, 64))
-            head.addWidget(lb)
-        t = QLabel(f"<span style='font-size:22px; font-weight:bold'>{APP_NAME}</span><br>{T('welcome_sub')}")
+            lb.setPixmap(QIcon(str(icon)).pixmap(72, 72))
+            head.addWidget(lb, 0, Qt.AlignTop)
+        t = QLabel(f"<span style='font-size:26px; font-weight:bold'>{APP_NAME}</span><br>{T('welcome_sub')}")
         t.setWordWrap(True)
         head.addWidget(t, 1)
         v.addLayout(head)
@@ -1695,39 +1697,96 @@ class MainWindow(QMainWindow):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
-        self.lst_recent = QListWidget()
-        self.lst_recent.setMaximumHeight(150)
-        self.lst_recent.itemActivated.connect(lambda it: self.open_project(it.data(Qt.UserRole)))
-        self.lst_recent.itemClicked.connect(lambda it: self.open_project(it.data(Qt.UserRole)))
-        self.lbl_recent = QLabel(f"<b>{T('welcome_recent')}</b>")
-        v.addWidget(self.lbl_recent)
-        v.addWidget(self.lst_recent)
+        v.addSpacing(6)
+        row = QHBoxLayout()
+        self.lbl_recent = QLabel(objectName="recentHead")
+        row.addWidget(self.lbl_recent)
+        row.addStretch(1)
+        self.ed_recent = QLineEdit()
+        self.ed_recent.setPlaceholderText(T("recent_search_ph"))
+        self.ed_recent.setClearButtonEnabled(True)
+        self.ed_recent.setMaximumWidth(260)
+        self.ed_recent.textChanged.connect(self._filter_recent)
+        row.addWidget(self.ed_recent)
+        v.addLayout(row)
+        self.recent_box = QVBoxLayout()
+        self.recent_box.setContentsMargins(0, 0, 4, 0)
+        self.recent_box.setSpacing(8)
+        inner = QWidget()
+        iv = QVBoxLayout(inner)
+        iv.setContentsMargins(0, 0, 0, 0)
+        iv.addLayout(self.recent_box)
+        iv.addStretch(1)
+        sa = QScrollArea()
+        sa.setWidget(inner)
+        sa.setWidgetResizable(True)
+        sa.setFrameShape(QFrame.NoFrame)
+        sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        v.addWidget(sa, 1)
+        self.lbl_recent_empty = QLabel(T("recent_none"), wordWrap=True, alignment=Qt.AlignCenter)
+        self.lbl_recent_empty.setStyleSheet(HINT_CSS + " padding: 24px;")
+        v.addWidget(self.lbl_recent_empty)
         hint = QLabel(T("welcome_hint", url=TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md")
                         + "#" + TABS.gh_anchor(T("readme_quickstart"))))
         hint.setWordWrap(True)
         hint.setOpenExternalLinks(True)
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(card, 4)
-        row.addStretch(1)
-        outer.addLayout(row)
-        outer.addStretch(2)
+        outer.addStretch(1)
+        outer.addWidget(col, 12)
+        outer.addStretch(1)
+        self.recent_rows = []
         self.fill_recent_list()
         return page
 
     def fill_recent_list(self):
-        if getattr(self, "lst_recent", None) is None:
+        """Projektliste des Startbildschirms neu füllen (nur vorhandene Projekte, neueste zuerst)."""
+        if getattr(self, "recent_box", None) is None:
             return
-        self.lst_recent.clear()
-        rec = [r for r in self.recent() if PRJ.is_project(r)]
-        for r in rec:
-            it = QListWidgetItem(f"{Path(r).name}  –  {Path(r).parent}")
-            it.setData(Qt.UserRole, r)
-            self.lst_recent.addItem(it)
-        self.lst_recent.setVisible(bool(rec))
-        self.lbl_recent.setVisible(bool(rec))
+        from elucida.app import welcome as WEL
+        for r in self.recent_rows:
+            r.setParent(None)
+            r.deleteLater()
+        self.recent_rows = []
+        infos = [i for i in (WEL.project_info(p) for p in self.recent()) if i is not None]
+        for info in infos:
+            row = WEL.RecentRow(info)
+            row.opened.connect(lambda p: self.open_project(p))
+            row.setContextMenuPolicy(Qt.CustomContextMenu)
+            row.customContextMenuRequested.connect(lambda pos, r=row: self._recent_menu(r, pos))
+            self.recent_box.addWidget(row)
+            self.recent_rows.append(row)
+        self.lbl_recent.setText(f"<b>{T('welcome_recent')}</b>" + (f"  <span style='color:gray'>{len(infos)}</span>"
+                                                                   if infos else ""))
+        self.ed_recent.setVisible(len(infos) > 3)
+        self.lbl_recent_empty.setVisible(not infos)
+        self._filter_recent(self.ed_recent.text())
+
+    def _filter_recent(self, text):
+        for r in getattr(self, "recent_rows", []):
+            r.setVisible(r.matches(text))
+
+    def _recent_menu(self, row, pos):
+        p = row.info["path"]
+        m = QMenu(self)
+        m.addAction(T("act_open_project"), lambda: self.open_project(p))
+        m.addAction(T("recent_reveal"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
+        m.addSeparator()
+        m.addAction(T("recent_remove"), lambda: self.remove_recent(p))
+        m.exec(row.mapToGlobal(pos))
+
+    def thumb_structure(self):
+        """Struktur fürs Vorschaubild: Verbindung des Projekts, sonst eine ε-Serie, sonst die des NMR-Tabs."""
+        cands = [(self.compound or {}).get("structure")]
+        cands += [st.get("structure") for st in self.series.values()]
+        cands += [self.nmr_state.get("structure")]
+        return next((p for p in cands if p and Path(p).exists()), None)
+
+    def remove_recent(self, pdir):
+        """Projekt aus der Liste nehmen (der Ordner bleibt unberührt)."""
+        self.settings.setValue("recent_projects", json.dumps([r for r in self.recent() if r != str(pdir)]))
+        self.fill_recent_menu()
+        self.fill_recent_list()
 
     def open_demo(self, folder=None):
         """Beispielprojekt mit künstlichen Daten (alle Tabs) anlegen und öffnen."""
@@ -1894,6 +1953,8 @@ class MainWindow(QMainWindow):
             return
         try:
             PRJ.write(self.project_dir, self.get_state())
+            from elucida.app import welcome as WEL       # Strukturbild für den Startbildschirm (nur wenn neuer)
+            WEL.write_thumb(self.project_dir, self.thumb_structure(), self.log_signal.emit)
             self._saved_snap = self._undo[-1] if self._undo else None
             self.statusBar().showMessage(T("autosaved"), 2000)
             self.exchange_timer.start()
@@ -1972,7 +2033,7 @@ class MainWindow(QMainWindow):
 
     def add_recent(self, pdir):
         rec = [str(pdir)] + [r for r in self.recent() if r != str(pdir)]
-        self.settings.setValue("recent_projects", json.dumps(rec[:10]))
+        self.settings.setValue("recent_projects", json.dumps(rec[:20]))
         self.fill_recent_menu()
 
     def recent(self):

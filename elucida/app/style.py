@@ -629,6 +629,16 @@ QToolBar QToolButton:hover {{ background: {c['hover']}; border-color: {c['border
 QToolBar QToolButton:pressed {{ background: {c['border']}; }}
 QToolBar::separator {{ background: {c['border']}; width: 1px; margin: 5px 6px; }}
 QLabel#toast {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 8px; }}
+QWidget#recentRow {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 10px; }}
+QWidget#recentRow:hover {{ border-color: {c['accent']}; background: {c['hover']}; }}
+QLabel#recentMono {{ background: {c['accent']}; color: {c['on_accent']}; border-radius: 8px; font-weight: bold;
+    font-size: 18px; }}
+QLabel#recentThumb {{ background: #ffffff; border: 1px solid {c['border']}; border-radius: 8px; }}
+QLabel#recentTitle {{ font-size: 15px; font-weight: bold; background: transparent; }}
+QLabel#recentSub, QLabel#recentWhen {{ color: {c['text2']}; background: transparent; }}
+QLabel#recentBadge {{ color: {c['text2']}; background: {c['alt']}; border: 1px solid {c['border']}; border-radius: 8px;
+    padding: 0px 7px; font-size: 11px; }}
+QLabel#recentHead {{ font-size: 14px; }}
 QFrame#bottomBar {{ background: {c['window']}; border-top: 1px solid {c['border']}; }}
 QGroupBox {{ font-weight: bold; padding-top: 2.5em; }}
 QGroupBox::title {{ left: 16px; top: 12px; }}
