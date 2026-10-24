@@ -350,8 +350,11 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 ## Release-Ablauf
 1. `APP_VERSION` in `elucida/__init__.py` erhöhen.
 2. `CHANGELOG.md` **und** `CHANGELOG.de.md` ergänzen; bei sichtbaren Änderungen `README.md` **und** `README.de.md`.
-3. Selbsttest, commit, dann `git tag vX.Y.Z && git push && git push --tags` → GitHub Actions baut und erstellt
-   das Release; Titel und Notes erzeugt `tools/release_notes.py` aus den Changelogs (also beide Changelogs vollständig pflegen).
+3. Selbsttest, commit, push, dann **ein** Lauf: `gh workflow run build.yml --ref main -f release=vX.Y.Z` (Nutzerwunsch
+   2.3.2: kein Testbuild + Tag mehr; der Release-Job hat `needs: build` und legt Tag und Release nur an, wenn alle vier
+   Builds grün sind). Zufällige Fehler (PySide-Event-Filter unter Windows, ETIMEDOUT beim Artefakt-Upload) mit
+   `gh run rerun <id> --failed` wiederholen. Alternativ `git tag vX.Y.Z && git push --tags` → GitHub Actions baut und
+   erstellt das Release; Titel und Notes erzeugt `tools/release_notes.py` aus den Changelogs (also beide Changelogs vollständig pflegen).
    Ohne lokales Tag (z. B. aus einer Cloud-Sitzung, die nur ihren Branch pushen darf): nach dem Merge auf `main` unter
    Actions → „Build Elucida“ → Run workflow (Branch `main`, Eingabe `release` = `vX.Y.Z`); der Release-Job legt das
    Tag selbst an. Der Job bricht ab, wenn das Tag nicht zu `APP_VERSION` passt.
