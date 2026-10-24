@@ -453,7 +453,7 @@ def si_image(F, svg):
     """Abbildung für den SI-Export: SVG (Vektor, Text als Pfade) + PNG-Ersatz -> ("image", PNG, b, h, SVG)."""
     from PIL import Image
     svg = Path(svg).resolve()
-    F.cfg.update(output=str(svg), extra_formats=["png"], _base_dir=svg.parent)
+    F.cfg.update(output=str(svg), extra_formats=["png"], _base_dir=svg.parent, png_fast=True)
     F.export()
     png = svg.with_suffix(".png")
     with Image.open(png) as im:
@@ -582,7 +582,28 @@ class FigureTab(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
-        QTimer.singleShot(0, self.render)
+        self._render_pending = False
+        QTimer.singleShot(0, self._first_render)
+
+    def _first_render(self):
+        """Erstes Zeichnen nach dem Aufbau: sofort, wenn der Tab zu sehen ist, sonst beim ersten Anzeigen (beim
+        Öffnen eines Projekts sind elf von zwölf Tabs verborgen – das Zeichnen aller Abbildungen kostete ~1 s)."""
+        if self.isVisible():
+            self.render()
+        else:
+            self._render_pending = True
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if getattr(self, "_render_pending", False):
+            self._render_pending = False
+            QTimer.singleShot(0, self.render)
+
+    def ensure_rendered(self):
+        """Abbildung jetzt zeichnen, falls sie wegen eines verborgenen Tabs noch aussteht (z. B. vor Zugriff auf F)."""
+        if getattr(self, "_render_pending", False):
+            self._render_pending = False
+            self.render()
 
     # -- Bausteine ------------------------------------------------------------
     def build_controls(self):

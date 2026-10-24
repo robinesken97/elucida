@@ -2375,8 +2375,9 @@ class XrayFigure:
                   transparent=self.bg_transparent)
         from elucida.core import images as IMG
         for p in dict.fromkeys(paths):
+            fast = {"pil_kwargs": {"compress_level": 1}} if p.suffix.lower() == ".png" and self.cfg.get("png_fast") else {}
             with matplotlib.rc_context({"svg.fonttype": "path"}):
-                self.fig.savefig(p, **kw)
+                self.fig.savefig(p, **kw, **fast)
             if p.suffix.lower() == ".svg":
                 IMG.svg_defs_first(p)
         return paths
@@ -2404,7 +2405,7 @@ def save_tight(F, svg):
     with matplotlib.rc_context({"svg.fonttype": "path"}):
         kw = dict(bbox_inches=bb, facecolor=F.bg_face, transparent=F.bg_transparent)
         F.fig.savefig(svg, **kw)
-        F.fig.savefig(svg.with_suffix(".png"), dpi=600, **kw)
+        F.fig.savefig(svg.with_suffix(".png"), dpi=600, pil_kwargs={"compress_level": 1}, **kw)   # docx packt nochmal
     IMG.svg_defs_first(svg)
     return str(svg.with_suffix(".png")), bb.width * 2.54, bb.height * 2.54, str(svg)
 

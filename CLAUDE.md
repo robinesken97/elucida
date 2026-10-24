@@ -329,6 +329,10 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
   < 1 px auseinander. Tests mit simulierten Klicks/Hover nur auf ±1 Messpunkt prüfen und dann, dass die Anzeige
   genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).
 - **Undo:** während `set_state` greift `_restoring`; Änderungen über `QTimer` verzögert erfassen.
+  `save_project` speichert trotzdem (`autosave(force=True)`), sonst blieb das Beispielprojekt leer.
+- **Tempo:** `set_state` baut bei Öffnen und Rückgängig die ganze Oberfläche neu (`build_ui`, ~1,2 s im
+  Beispielprojekt; Tabs ohne `sync_widgets`). Verborgene Tabs zeichnen erst beim Anzeigen (`_first_render`;
+  `ensure_rendered()` vor Zugriff auf `F`). PNG-Ersatz für Word mit `png_fast` (compress_level 1).
 - **macOS-Version:** `tools/build.py` liest `APP_VERSION` und schreibt sie nach dem Build in die `Info.plist`,
   danach `codesign --force --deep --sign -` (Signatur schließt die Info.plist ein).
 - **pymupdf:** `get_pixmap(dpi=…)` nur mit ganzen Zahlen (die Windows-Version wirft sonst TypeError; lokal unbemerkt).

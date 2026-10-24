@@ -1426,6 +1426,8 @@ class Figure:
             elif ext == ".svg":
                 with matplotlib.rc_context({"svg.fonttype": "path"}):
                     self.fig.savefig(p, **kw)
+            elif ext == ".png" and self.cfg.get("png_fast"):   # PNG-Ersatz in Word: schwach packen (docx packt nochmal)
+                self.fig.savefig(p, pil_kwargs={"compress_level": 1}, **kw)
             else:
                 self.fig.savefig(p, **kw)
             if ext == ".svg":
