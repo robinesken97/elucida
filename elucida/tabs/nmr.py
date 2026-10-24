@@ -564,7 +564,7 @@ def make_test_acqus(d, nuc="1H", sfo1=500.503090587, te=298.1466, nuc2=None, pul
            f"##$TE= {te}", f"##$SFO1= {sfo1}", "##$BF1= 500.5", f"##$O1= {6.175 * sfo1}", "##$SW= 19.9784",
            "##$NS= 16", "##$DS= 2", "##$TD= 65536", "##$RG= 101", "##$D= (0..63)", "0 1 0.03 0 0 0 0 0",
            "##$PROBHD= <test probe>", "##END="]
-    (d / "acqus").write_text("\n".join(txt) + "\n", encoding="latin-1")
+    (d / "acqus").write_text("\n".join(txt) + "\n", encoding="latin-1", newline="")      # wie TopSpin, auch unter Windows
     if nuc2:
         (d / "acqu2s").write_text(f"##$NUC1= <{nuc2}>\n##$SFO1= 125.8\n##$SW= 165\n##$TD= 256\n##END=\n",
                                   encoding="latin-1")

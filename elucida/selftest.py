@@ -2709,13 +2709,13 @@ def selftest(outdir, with_isnet=False):
         import zipfile as _zfp
         dp_ = out / "datapack" / "proj"
         ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "RE-3-150_10", nuc="1H")
-        with open(ex_ / "acqus", "a", encoding="latin-1") as fh_:
+        with open(ex_ / "acqus", "a", encoding="latin-1", newline="") as fh_:   # Windows: \n bleibt \n
             fh_.write("$$ 2024-03-12 14:35:12.123 +0100  user@nmr\n$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n"
                       "##$DATE= 1710251712\n")
         fid_ = bytes(range(256)) * 4
         (ex_ / "fid").write_bytes(fid_)
         (ex_ / "pdata" / "1").mkdir(parents=True)
-        (ex_ / "pdata" / "1" / "title").write_text("RE-3-150 in CDCl3 12.03.2024\n", encoding="latin-1")
+        (ex_ / "pdata" / "1" / "title").write_text("RE-3-150 in CDCl3 12.03.2024\n", encoding="latin-1", newline="")
         hs_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HSQC" / "RE-3-150_12", nuc="1H", nuc2="13C",
                                   pulprog="hsqcedetgpsisp2.3")
         hm_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HMBC" / "RE-3-150_13", nuc="1H", nuc2="13C",
@@ -2739,10 +2739,10 @@ def selftest(outdir, with_isnet=False):
             z_.writestr("word/media/image1.emf", b"\x01\0\0\0" + "RE-3-150 12.03.2024".encode("utf-16-le"))
         cvf_ = dp_ / "data" / "cv" / "RE-3-150-thf-200mVs.DTA"
         cvf_.parent.mkdir(parents=True)
-        cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1")
+        cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1", newline="")
         epr_ = dp_ / "data" / "epr" / "RE-3-150_epr.txt"
         epr_.parent.mkdir(parents=True)
-        epr_.write_text("B [G]\tRE-3-150\tmeasured 2024-03-12 09:15\n3380\t0.1\n", encoding="utf-8")
+        epr_.write_text("B [G]\tRE-3-150\tmeasured 2024-03-12 09:15\n3380\t0.1\n", encoding="utf-8", newline="")
         cif_ = dp_ / "data" / "xray" / "s.cif"
         cif_.parent.mkdir(parents=True)
         cif_.write_text("data_x\n", encoding="utf-8")
