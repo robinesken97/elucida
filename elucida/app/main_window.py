@@ -1780,8 +1780,10 @@ class MainWindow(QMainWindow):
             self.write_exchange()
         return True
 
-    def autosave(self):
-        if not self.project_dir or self._restoring:
+    def autosave(self, force=False):
+        """Projekt speichern. Automatisch nicht während eines Ladevorgangs (_restoring: halb gesetzter Zustand);
+        force (ausdrückliches Speichern, Beispielprojekt): Zustand ist vollständig gesetzt, immer speichern."""
+        if not self.project_dir or (self._restoring and not force):
             return
         try:
             PRJ.write(self.project_dir, self.get_state())
@@ -1830,7 +1832,7 @@ class MainWindow(QMainWindow):
         if not self.project_dir:
             return self.ensure_project()
         self.autosave_timer.stop()
-        self.autosave()
+        self.autosave(force=True)                      # auch direkt nach dem Laden (Beispielprojekt), sonst leer
         self.write_exchange()
         return True
 

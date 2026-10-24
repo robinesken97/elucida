@@ -2814,6 +2814,8 @@ def selftest(outdir, with_isnet=False):
             d_demo, w.project_dir, w.center.currentIndex(), w.log.toPlainText()[-3000:])
         assert w.groups and w.cv_state["files"] and w.xray_state["entries"] and w.dft_state["entries"]
         assert w.syn_state["proc"] and w.nmr_tab.spectra()
+        st_file_ = PRJ.load(out / "demo")                  # gespeichert, nicht nur im Fenster (war leer: _restoring)
+        assert st_file_.get("cv", {}).get("files") and st_file_.get("eps", {}).get("files"), sorted(st_file_)
         report.append("welcome page + example project: OK")
         pump()                                             # Laden abgeschlossen (_restoring)
         t0_ = time.perf_counter()
