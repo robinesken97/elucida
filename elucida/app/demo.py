@@ -448,5 +448,7 @@ def open_demo_publication(w, folder=None) -> Path:
                                      "NMR spectra were recorded at 298 K; chemical shifts are given in ppm.",
                           "cv": "Cyclic voltammograms were recorded with ferrocene as internal reference."})
     PUB.save(d, data)
+    PUB.set_group(d, d / "S2", "Precursors")          # Gruppen im Projekt zeigen
+    PUB.set_group(d, d / "S3", "Products")
     w.open_publication(d)
     return d

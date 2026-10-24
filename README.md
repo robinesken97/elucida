@@ -124,6 +124,8 @@ project folder.
    compound to open it and work as in the quick start above. The path at the left of the tab bar,
    **⌂ Overview › <project> › <compound> ▾**, leads back to the project or the overview and switches directly to another
    compound of the project (also File → Back to project, Ctrl+Shift+P; File → Back to overview, Ctrl+Shift+H).
+   **New group …** organises the compounds (e.g. precursors, salts, NHOs; right-click a compound → Group, or drag it
+   into a group); in the complete SI the groups become sub-chapters of synthesis and NMR (2.1, 2.2 …).
    Drag the rows or use **Sort by name** to change the order – it is the order in the SI and in the dataset. The
    search field at the top of the welcome page finds compounds in all your projects (name/number, lab code such as
    RE-3-150, formula, note); Ctrl+F jumps there. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and

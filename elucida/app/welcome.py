@@ -137,7 +137,7 @@ def info_matches(info, text) -> bool:
     """Suche (Startbildschirm, Projektseite): Name/Nummer, Ordner, Notiz, Summenformel, Literatur, Projekt,
     Laborkürzel aus der Verbindung, Analytik; mehrere Wörter müssen alle passen, Groß-/Kleinschreibung egal."""
     hay = " ".join([info.get("name", ""), Path(info.get("path", "")).name, info.get("note", ""),
-                    info.get("formula", ""), info.get("lit", ""), info.get("publication", "")]
+                    info.get("formula", ""), info.get("lit", ""), info.get("publication", ""), info.get("group", "")]
                    + list(info.get("codes") or []) + [badge_label(k) for k in info.get("badges") or []]).lower()
     return all(w in hay for w in text.lower().split())
 

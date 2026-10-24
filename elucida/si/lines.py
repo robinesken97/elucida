@@ -353,6 +353,16 @@ def _text_cm(markup, prefix=0, extra=0.0):
     return math.ceil((len(plain) + prefix) / per_line) * LINE_CM + extra
 
 
+HEADING_CM = 1.6            # Überschrift (Unter-)Kapitel inkl. Abstand davor/danach (in Word gemessen ~1.5 cm)
+
+
+def _block_cm(t):
+    """Höhe eines Textblocks vor Abbildungen; Überschriften mit ihrem Abstand."""
+    if t[0] in ("subsection", "heading", "section"):
+        return HEADING_CM
+    return _text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35)
+
+
 def two_per_page(blocks, per_page=2):
     """Abbildungen (image + figcap) seitenweise zu je per_page setzen; vorangehender Text (z. B. Aufbau-Absatz)
     beginnt eine neue Seite und zählt mit. Bilder werden – im Seitenverhältnis – so verkleinert, dass alles auf die
@@ -381,7 +391,7 @@ def two_per_page(blocks, per_page=2):
         pages.append(cur)
     split = []
     for pg in pages:                                    # langer Text davor (Gesamt-SI: Auswertung je Verbindung):
-        used = sum(_text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35) for t in pg["text"])
+        used = sum(_block_cm(t) for t in pg["text"])
         caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
         if pg["text"] and pg["figs"] and (PAGE_BODY_CM - used - caps) / per_page < MIN_FIG_CM:
             split += [{"text": pg["text"], "figs": []}, {"text": [], "figs": pg["figs"]}]   # Bilder auf neue Seite
@@ -392,7 +402,7 @@ def two_per_page(blocks, per_page=2):
     for k, pg in enumerate(pages):
         if k:
             out.append(("pagebreak",))
-        used = sum(_text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35) for t in pg["text"])
+        used = sum(_block_cm(t) for t in pg["text"])
         caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
         if pg["figs"]:
             hmax = (PAGE_BODY_CM - used - caps) / per_page
@@ -409,18 +419,29 @@ def two_per_page(blocks, per_page=2):
 
 
 def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs="", style="", page_before=False, ind=0):
-    x = f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
-    if keep_next:
-        x = "<w:keepNext/>" + x
-    if page_before:
-        x = "<w:pageBreakBefore/>" + x
-    if tabs:
-        x = f"<w:tabs>{tabs}</w:tabs>" + x
-    if style:
-        x = f'<w:pStyle w:val="{style}"/>' + x
-    if ind:
-        x += f'<w:ind w:left="{ind}"/>'
+    """Absatzeigenschaften in der Reihenfolge des OOXML-Schemas (Word ist da streng): pStyle, keepNext,
+    pageBreakBefore, tabs, spacing, ind, jc."""
+    x = f'<w:pStyle w:val="{style}"/>' if style else ""
+    x += "<w:keepNext/>" if keep_next else ""
+    x += "<w:pageBreakBefore/>" if page_before else ""
+    x += f"<w:tabs>{tabs}</w:tabs>" if tabs else ""
+    x += f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
+    x += f'<w:ind w:left="{ind}"/>' if ind else ""
     return f"<w:pPr>{x}<w:jc w:val=\"{align}\"/></w:pPr>"
+
+
+_PBB_AT = re.compile(r"<w:pPr>((?:<w:pStyle [^>]*/>)?(?:<w:keepNext/>)?(?:<w:keepLines/>)?)")
+
+
+def _page_break_before(xml):
+    """„Seitenumbruch oberhalb“ an der richtigen Stelle in die erste Absatz-Eigenschaft setzen."""
+    if "<w:pageBreakBefore/>" in xml[:300]:
+        return xml
+    if xml.startswith("<w:p>") and xml[5:12] == "<w:pPr>":
+        return _PBB_AT.sub(lambda m: "<w:pPr>" + m.group(1) + "<w:pageBreakBefore/>", xml, count=1)
+    if xml.startswith("<w:p>"):
+        return "<w:p><w:pPr><w:pageBreakBefore/></w:pPr>" + xml[5:]
+    return None
 
 
 def _para(runs, size=22, **kw):
@@ -499,9 +520,8 @@ def _media_ext(p):
 
 def _image_xml(rid, n, w_cm, h_cm, svg_rid=None, page_break=False):
     cx, cy = int(w_cm * 360000), int(h_cm * 360000)
-    ppr = _ppr(align="center", line=240, after=120, keep_next=True)
-    if page_break:                       # „Seitenumbruch oberhalb“ statt eigenem Absatz (der sonst überläuft)
-        ppr = ppr.replace("<w:pPr>", "<w:pPr><w:pageBreakBefore/>", 1)
+    # „Seitenumbruch oberhalb“ statt eigenem Absatz (der sonst überläuft); Reihenfolge nach Schema in _ppr
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True, page_before=page_break)
     return ('<w:p>' + ppr +
             '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
             f'<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Picture {n}"/>'
@@ -533,9 +553,7 @@ def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
     """Eingebettetes ChemDraw-Objekt (wie von Word beim Einfügen aus ChemDraw geschrieben); Doppelklick öffnet ChemDraw."""
     from elucida.formats import ole as OLE
     wpt, hpt = w_cm / 2.54 * 72, h_cm / 2.54 * 72
-    ppr = _ppr(align="center", line=240, after=120, keep_next=True)
-    if page_break:
-        ppr = ppr.replace("<w:pPr>", "<w:pPr><w:pageBreakBefore/>", 1)
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True, page_before=page_break)
     return (f'<w:p>{ppr}<w:r><w:object w:dxaOrig="{int(wpt * 20)}" w:dyaOrig="{int(hpt * 20)}">'
             + (_SHAPETYPE if first else "") +
             f'<v:shape id="_x0000_iOle{n}" type="#_x0000_t75" style="width:{wpt:.2f}pt;height:{hpt:.2f}pt" o:ole="">'
@@ -562,11 +580,16 @@ def toc_entries(blocks):
     brk = False
     for b in blocks:
         k = b[0]
-        if k in ("title", "toc", "section") or (brk and k != "pagebreak"):   # Umbruch wirkt auf den nächsten Block
+        if k in ("title", "toc", "section") or (brk and k != "pagebreak" and k != "subsection"):   # Umbruch wirkt auf den nächsten Block
             page, used, brk = page + 1, 0.0, False
         if k == "section":
-            out.append((b[1], page))
+            out.append((b[1], page, 1))
             add(1.2)
+        elif k == "subsection":                         # Unterkapitel (Gruppe), steht auf der Seite des Folgenden
+            if brk:
+                page, used, brk = page + 1, 0.0, False
+            out.append((b[1], page, 2))
+            add(HEADING_CM)
         elif k == "columns":
             cols = b[1]
         elif k == "pagebreak":
@@ -577,8 +600,10 @@ def toc_entries(blocks):
             add(_text_cm(b[1], prefix=12))
         elif k in ("char", "text"):
             add(_text_cm(b[1] if isinstance(b[1], str) else "", extra=0.35))
-        elif k in ("crystal", "params", "coords", "energies"):
-            add(0.55 * (len(b[2]) + 1) + 0.6)
+        elif k in ("crystal", "params", "coords", "energies"):   # Zellen brechen um: Zeilen je Tabellenzeile zählen
+            w_cell = 30 if k == "crystal" else 40
+            lines = sum(max(1 + str(c).count("\n") + len(str(c)) // w_cell for c in row) for row in b[2])
+            add(0.5 * (lines + 1) + 0.6 * cols)
         elif k == "mono":
             add(0.42 * len(b[1]))
         elif k in ("synthesis", "heading", "tabcap", "fields", "gap", "note"):
@@ -619,6 +644,7 @@ def write_docx(path, blocks, columns=1):
     ("title", Titel, Autoren, Adresse)    Titelseite der Gesamt-SI („Supplementary Materials for“)
     ("toc",)                              „Table of Contents“ + Verzeichnisfeld (Word aktualisiert beim Öffnen)
     ("section", Text)                     Kapitel („1. Materials and Methods“, Überschrift 1, neue Seite)
+    ("subsection", Text)                  Unterkapitel („2.1 Precursor“, Überschrift 2; Gruppen im Projekt)
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
     body, media, svgs, oles = [], [], [], []
     n_fig = n_tab = 0
@@ -630,9 +656,10 @@ def write_docx(path, blocks, columns=1):
     n_sec = 0
     for b in blocks:
         k = b[0]
-        if pending_break and k != "image":       # kein Bild danach: echter Umbruch
-            body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+        force_break = pending_break and k != "image"   # kein Bild danach: Umbruch am nächsten Absatz
+        if force_break:
             pending_break = False
+        n_before = len(body)
         if k == "columns":
             if b[1] != columns:                  # Abschnitt mit der bisherigen Spaltenzahl beenden
                 body.append(f"<w:p><w:pPr>{_sect(columns)}</w:pPr></w:p>")
@@ -725,14 +752,14 @@ def write_docx(path, blocks, columns=1):
             body.append(_para([("Table of Contents", {"b"})], size=24, align="left", after=240, page_before=True))
             entries = toc_entries(blocks)
             fld_b = ('<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText '
-                     'xml:space="preserve"> TOC \\o "1-1" \\h \\z \\u </w:instrText></w:r>'
+                     'xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r>'
                      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>')
             fld_e = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
             if not entries:
                 body.append("<w:p>" + fld_b + fld_e + "</w:p>")
-            for j, (title, page) in enumerate(entries):
+            for j, (title, page, lvl) in enumerate(entries):
                 num = TEMPLATES[_TEMPLATE]["page"] + str(page)
-                body.append('<w:p><w:pPr><w:pStyle w:val="TOC1"/><w:tabs><w:tab w:val="right" w:leader="dot" '
+                body.append(f'<w:p><w:pPr><w:pStyle w:val="TOC{lvl}"/><w:tabs><w:tab w:val="right" w:leader="dot" '
                             f'w:pos="{TEXT_W}"/></w:tabs><w:spacing w:after="60" w:line="360" w:lineRule="auto"/>'
                             '</w:pPr>' + (fld_b if j == 0 else "") +
                             f'<w:hyperlink w:anchor="_Toc{j + 1}" w:history="1">' + _run_xml(title, set()) +
@@ -741,12 +768,24 @@ def write_docx(path, blocks, columns=1):
                             f'PAGEREF _Toc{j + 1} \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/>'
                             '</w:r>' + _run_xml(num, set()) + '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
                             '</w:hyperlink>' + (fld_e if j == len(entries) - 1 else "") + '</w:p>')
+        elif k == "subsection":                      # Unterkapitel (Gruppe im Projekt), Überschrift 2
+            n_sec += 1
+            body.append(_para([(b[1], {"b"})], align="left", style="Heading2", before=240, after=200,
+                              keep_next=True, ind=357).replace(
+                "</w:pPr>", f'</w:pPr><w:bookmarkStart w:id="{n_sec}" w:name="_Toc{n_sec}"/>'
+                            f'<w:bookmarkEnd w:id="{n_sec}"/>', 1))
         elif k == "section":
             n_sec += 1
             body.append(_para([(b[1], {"b"})], align="left", style="Heading1", page_before=True, after=240,
                               keep_next=True, ind=357).replace(
                 "</w:pPr>", f'</w:pPr><w:bookmarkStart w:id="{n_sec}" w:name="_Toc{n_sec}"/>'
                             f'<w:bookmarkEnd w:id="{n_sec}"/>', 1))
+        if force_break and len(body) > n_before:   # „Seitenumbruch oberhalb“ statt leerem Absatz (der rutschte bei
+            new = _page_break_before(body[n_before])   # voller Seite selbst auf die nächste -> leere Seite)
+            if new is not None:
+                body[n_before] = new
+            else:                                # Tabelle o. Ä.: wie bisher eigener Umbruch-Absatz
+                body.insert(n_before, '<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
     ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
           'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
           'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
@@ -764,8 +803,14 @@ def write_docx(path, blocks, columns=1):
               '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>'
               '<w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr>'
               '<w:rPr><w:b/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>'
+              '<w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="1"/></w:pPr>'
+              '<w:rPr><w:b/></w:rPr></w:style>'
               '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/>'
               '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9061"/></w:tabs></w:pPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/><w:basedOn w:val="Normal"/>'
+              '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9061"/></w:tabs><w:ind w:left="357"/></w:pPr>'
+              '</w:style>'
               '</w:styles>')
     ctypes = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
               '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'

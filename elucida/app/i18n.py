@@ -2054,6 +2054,17 @@ TEXTS = {
                  "self-contained and can also be opened on its own."),
     "pub_up": ("Nach oben", "Move up"),
     "pub_sort_name": ("Nach Name sortieren", "Sort by name"),
+    "group_menu": ("Gruppe", "Group"),
+    "group_new": ("Neue Gruppe", "New group"),
+    "group_none": ("Ohne Gruppe", "No group"),
+    "group_name_q": ("Name der Gruppe (z. B. Precursor, Salze, NHOs):", "Name of the group (e.g. precursors, salts, NHOs):"),
+    "group_rename": ("Umbenennen …", "Rename …"),
+    "group_delete": ("Gruppe auflösen (Verbindungen bleiben)", "Dissolve group (compounds stay)"),
+    "group_exists": ("Eine Gruppe „{g}“ gibt es schon.", "A group “{g}” already exists."),
+    "group_tip": ("Verbindungen gliedern (z. B. Precursor, Salze, NHOs): Rechtsklick auf eine Verbindung → Gruppe, oder "
+                  "in eine Gruppe ziehen. Die Reihenfolge der Gruppen gilt für Gesamt-SI und Datensatz.",
+                  "Organise compounds (e.g. precursors, salts, NHOs): right-click a compound → Group, or drag it into a "
+                  "group. The order of the groups applies to the complete SI and the dataset."),
     "pub_sort_tip": ("Reihenfolge nach dem Namen der Verbindung (1a, 1b, 2a … 10a); einzeln lassen sich Verbindungen mit "
                      "der Maus an eine andere Stelle ziehen",
                      "Order by compound name (1a, 1b, 2a … 10a); single compounds can be dragged to another place with "

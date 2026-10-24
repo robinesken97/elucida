@@ -52,7 +52,7 @@ KIND_PROGRAMS = {"nmr": "NMR -> TopSpin, MestReNova", "ir": "IR -> Spectragryph,
 
 def default() -> dict:
     d = {k: "" for k, _ in FIELDS}
-    d.update(format=FORMAT_VERSION, license="CC-BY-4.0", compounds=[], excluded=[], si_texts={})
+    d.update(format=FORMAT_VERSION, license="CC-BY-4.0", compounds=[], excluded=[], si_texts={}, groups=[], group_of={})
     return d
 
 
@@ -76,6 +76,9 @@ def load(pdir) -> dict:
     data["compounds"] = [str(c) for c in data.get("compounds") or []]
     data["excluded"] = [str(c) for c in data.get("excluded") or []]
     data["si_texts"] = {str(k): str(v) for k, v in (data.get("si_texts") or {}).items() if v}
+    data["groups"] = [str(g) for g in data.get("groups") or [] if str(g).strip()]       # Reihenfolge der Gruppen
+    data["group_of"] = {str(k): str(v) for k, v in (data.get("group_of") or {}).items()  # Eintrag -> Gruppe
+                        if str(v) in data["groups"]}
     return data
 
 
@@ -88,6 +91,11 @@ def save(pdir, data):
     out["compounds"] = list(data.get("compounds") or [])
     if data.get("excluded"):
         out["excluded"] = list(data["excluded"])
+    if data.get("groups"):                 # Gruppen im Projekt (Precursor, Salze …), Zuordnung je Eintrag
+        out["groups"] = list(data["groups"])
+        gof = {k: v for k, v in (data.get("group_of") or {}).items() if k in out["compounds"] and v in out["groups"]}
+        if gof:
+            out["group_of"] = gof
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
         out["si_texts"] = texts
@@ -143,6 +151,12 @@ def sync(pdir) -> tuple[list[Path], list[str]]:
         data["compounds"] += [_rel(pdir, d) for d in new]
         save(pdir, data)
         dirs += new
+    if data["groups"]:                     # Reihenfolge: Gruppen nacheinander, ohne Gruppe am Ende
+        rank = {g: i for i, g in enumerate(data["groups"])}
+        entry = {_abs(pdir, c): c for c in data["compounds"]}
+        pos = {d: i for i, d in enumerate(dirs)}
+        dirs.sort(key=lambda d: (rank.get(data["group_of"].get(entry.get(d.resolve(), entry.get(d, ""))),
+                                           len(rank)), pos[d]))
     return dirs, missing
 
 
@@ -160,6 +174,8 @@ def remove_compound(pdir, cdir):
     sie beim nächsten sync zurück."""
     data = load(pdir)
     target = Path(cdir).resolve()
+    for c in [c for c in data["compounds"] if _abs(Path(pdir), c) == target]:
+        data["group_of"].pop(c, None)
     data["compounds"] = [c for c in data["compounds"] if _abs(Path(pdir), c) != target]
     rel = _rel(Path(pdir), target)
     if target.parent == Path(pdir).resolve() and rel not in data["excluded"]:
@@ -343,6 +359,8 @@ def _drop_from_index(cdir):
         return
     data = load(src)
     target = Path(cdir).resolve()
+    for c in [c for c in data["compounds"] if _abs(src, c) == target]:
+        data["group_of"].pop(c, None)
     data["compounds"] = [c for c in data["compounds"] if _abs(src, c) != target]
     save(src, data)
 
@@ -388,4 +406,89 @@ def sort_by_name(pdir):
     """Reihenfolge nach dem Namen der Verbindung, natürlich sortiert (1a, 1b, 2a … 10a, S1, S2)."""
     data = load(pdir)
     data["compounds"].sort(key=lambda c: natural_key(compound_name(_abs(Path(pdir), c))))
+    save(pdir, data)
+
+
+
+# -- Gruppen im Projekt (frei benannt, z. B. „Precursor“, „Salze“, „NHOs“) ----------------------------------------
+def _entry(pdir, data, cdir):
+    target = Path(cdir).resolve()
+    return next((c for c in data["compounds"] if _abs(Path(pdir), c) == target), None)
+
+
+def group_name(pdir, cdir, data=None):
+    """Gruppe einer Verbindung im Projekt, sonst None."""
+    data = data or load(pdir)
+    e = _entry(pdir, data, cdir)
+    return data["group_of"].get(e) if e else None
+
+
+def grouped(pdir):
+    """-> [(Gruppe oder None, [Ordner])] in der Reihenfolge des Projekts; leere Gruppen mit []; ohne Gruppe am Ende
+    (nur, wenn es solche Verbindungen gibt oder gar keine Gruppen)."""
+    data = load(pdir)
+    dirs, _ = sync(pdir)
+    data = load(pdir)
+    out = [(g, []) for g in data["groups"]]
+    idx = {g: i for i, g in enumerate(data["groups"])}
+    rest = []
+    for d in dirs:
+        g = group_name(pdir, d, data)
+        (out[idx[g]][1] if g in idx else rest).append(d)
+    if rest or not out:
+        out.append((None, rest))
+    return out
+
+
+def add_group(pdir, name) -> str:
+    name = str(name).strip()
+    data = load(pdir)
+    if name and name not in data["groups"]:
+        data["groups"].append(name)
+        save(pdir, data)
+    return name
+
+
+def set_group(pdir, cdir, name):
+    """Verbindung einer Gruppe zuordnen (neu angelegt, wenn nötig); None/"" = ohne Gruppe."""
+    data = load(pdir)
+    e = _entry(pdir, data, cdir)
+    if e is None:
+        return
+    name = str(name or "").strip()
+    if name:
+        if name not in data["groups"]:
+            data["groups"].append(name)
+        data["group_of"][e] = name
+    else:
+        data["group_of"].pop(e, None)
+    save(pdir, data)
+
+
+def rename_group(pdir, old, new):
+    data = load(pdir)
+    new = str(new).strip()
+    if not new or old not in data["groups"] or (new != old and new in data["groups"]):
+        return False
+    data["groups"] = [new if g == old else g for g in data["groups"]]
+    data["group_of"] = {k: (new if v == old else v) for k, v in data["group_of"].items()}
+    save(pdir, data)
+    return True
+
+
+def delete_group(pdir, name):
+    """Gruppe auflösen: die Verbindungen bleiben, nur ohne Gruppe."""
+    data = load(pdir)
+    data["groups"] = [g for g in data["groups"] if g != name]
+    data["group_of"] = {k: v for k, v in data["group_of"].items() if v != name}
+    save(pdir, data)
+
+
+def move_group(pdir, name, delta):
+    data = load(pdir)
+    if name not in data["groups"]:
+        return
+    i = data["groups"].index(name)
+    j = max(0, min(len(data["groups"]) - 1, i + delta))
+    data["groups"].insert(j, data["groups"].pop(i))
     save(pdir, data)

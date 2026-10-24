@@ -98,6 +98,25 @@ class PublicationRow(QWidget):
         return not t or any(t in s.lower() for s in [self.info["title"], self.info["path"]] + self.info["compounds"])
 
 
+class GroupHeader(QWidget):
+    """Überschrift einer Gruppe auf der Projektseite (Name, Anzahl, vollständig); Rechtsklick: umbenennen, verschieben,
+    auflösen. Auch Ziel beim Ziehen (alles unterhalb gehört zur Gruppe)."""
+
+    def __init__(self, group, n):
+        super().__init__()
+        self.group = group
+        h = QHBoxLayout(self)
+        h.setContentsMargins(4, 10, 4, 2)
+        self.lbl = QLabel(objectName="recentHead")
+        h.addWidget(self.lbl, 1)
+        self.set_count(n, 0)
+
+    def set_count(self, n, done):
+        name = _esc(self.group) if self.group is not None else T("group_none")
+        self.lbl.setText(f"<b>{name}</b>  <span style='color:gray'>{n}"
+                         + (f" · {T('pub_check_summary', ok=done, n=n)}" if n else "") + "</span>")
+
+
 class _DropArea(QWidget):
     """Liste der Verbindungen: nimmt gezogene Zeilen an und meldet (Pfad, y) für die neue Position."""
 
@@ -178,6 +197,7 @@ class PublicationPage(QWidget):
         self.ed_filter = QLineEdit()
         self.ed_filter.setPlaceholderText(T("pub_filter_ph"))
         self.ed_filter.setClearButtonEnabled(True)
+        self.ed_filter.setMinimumWidth(240)
         self.ed_filter.setMaximumWidth(320)
         self.ed_filter.textChanged.connect(self._filter)
         hrow.addWidget(self.ed_filter)
@@ -185,6 +205,10 @@ class PublicationPage(QWidget):
         self.b_sort.setToolTip(T("pub_sort_tip"))
         self.b_sort.clicked.connect(self.sort_by_name)
         hrow.addWidget(self.b_sort)
+        self.b_group = QPushButton(T("group_new") + " …")
+        self.b_group.setToolTip(T("group_tip"))
+        self.b_group.clicked.connect(self.new_group)
+        hrow.addWidget(self.b_group)
         v.addLayout(hrow)
         self.box = QVBoxLayout()
         self.box.setContentsMargins(0, 0, 4, 0)
@@ -223,10 +247,10 @@ class PublicationPage(QWidget):
         return PUB.sync(self.pdir)[0] if self.pdir else []
 
     def refresh(self):
-        for r in self.rows:
+        for r in self.rows + [h for h, _ in getattr(self, "headers", [])]:
             r.setParent(None)
             r.deleteLater()
-        self.rows = []
+        self.rows, self.headers = [], []
         if self.pdir is None:
             return
         data = PUB.load(self.pdir)
@@ -237,21 +261,40 @@ class PublicationPage(QWidget):
                                + (f"<br><span style='color:gray'>{_esc(sub)}</span>" if sub else
                                   f"<br><span style='color:gray'>{T('pub_info_missing')}</span>"))
         complete, gaps = 0, {}
-        for i, d in enumerate(dirs):
-            info = WEL.project_info(d)
-            if info is None:
-                continue
-            ck = PUB.checklist(d)
-            complete += not ck["missing"]
-            for k in ck["missing"]:
-                gaps[k] = gaps.get(k, 0) + 1
-            row = WEL.RecentRow(info, number=i + 1, extra=check_label(ck))
-            row.draggable = True
-            row.opened.connect(lambda p: self.main.open_project(p))
-            row.setContextMenuPolicy(Qt.CustomContextMenu)
-            row.customContextMenuRequested.connect(lambda pos, r=row: self._menu(r, pos))
-            self.box.addWidget(row)
-            self.rows.append(row)
+        groups = PUB.grouped(self.pdir)
+        with_heads = any(g is not None for g, _ in groups)   # Überschriften nur, wenn es Gruppen gibt
+        num = 0
+        for g, ds in groups:
+            head = None
+            if with_heads:
+                head = GroupHeader(g, len(ds))
+                head.setContextMenuPolicy(Qt.CustomContextMenu)
+                head.customContextMenuRequested.connect(lambda pos, h=head: self._group_menu(h, pos))
+                self.box.addWidget(head)
+                self.headers.append((head, g))
+            done_g = 0
+            for d in ds:
+                info = WEL.project_info(d)
+                if info is None:
+                    continue
+                if g:
+                    info["group"] = g
+                ck = PUB.checklist(d)
+                complete += not ck["missing"]
+                done_g += not ck["missing"]
+                for k in ck["missing"]:
+                    gaps[k] = gaps.get(k, 0) + 1
+                num += 1
+                row = WEL.RecentRow(info, number=num, extra=check_label(ck))
+                row.draggable = True
+                row.group = g
+                row.opened.connect(lambda p: self.main.open_project(p))
+                row.setContextMenuPolicy(Qt.CustomContextMenu)
+                row.customContextMenuRequested.connect(lambda pos, r=row: self._menu(r, pos))
+                self.box.addWidget(row)
+                self.rows.append(row)
+            if head is not None:
+                head.set_count(len(ds), done_g)
         summary = T("pub_check_summary", ok=complete, n=len(self.rows))
         if gaps:
             summary += " · " + T("pub_check_gaps", gaps=", ".join(f"{PUB.check_label(k)} ({n})" for k, n in
@@ -273,6 +316,16 @@ class PublicationPage(QWidget):
         m.addAction(T("pub_up"), lambda: self._move(p, -1))
         m.addAction(T("pub_down"), lambda: self._move(p, 1))
         m.addAction(T("recent_reveal"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
+        gm = m.addMenu(T("group_menu"))                  # Gruppe: vorhandene, neue, keine
+        cur = getattr(row, "group", None)
+        for g in PUB.load(self.pdir)["groups"]:
+            a = gm.addAction(g, lambda g=g: self._set_group(p, g))
+            a.setCheckable(True)
+            a.setChecked(g == cur)
+        gm.addSeparator()
+        gm.addAction(T("group_new") + " …", lambda: self._new_group_for(p))
+        a = gm.addAction(T("group_none"), lambda: self._set_group(p, None))
+        a.setEnabled(cur is not None)
         m.addSeparator()
         m.addAction(T("move_title"), lambda: self.main.move_compound(p))
         m.addAction(T("move_copy_title"), lambda: self.main.move_compound(p, copy=True))
@@ -282,18 +335,70 @@ class PublicationPage(QWidget):
     def _filter(self, text):
         for r in self.rows:
             r.setVisible(r.matches(text))
+        for h, g in getattr(self, "headers", []):     # Überschrift nur, wenn in der Gruppe etwas übrig ist
+            h.setVisible(not text.strip() or any(r.matches(text) for r in self.rows if getattr(r, "group", None) == g))
+
+    # -- Gruppen ---------------------------------------------------------------------------
+    def _ask_group_name(self, old=""):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, T("group_new"), T("group_name_q"), text=old)
+        return name.strip() if ok and name.strip() else None
+
+    def new_group(self):
+        name = self._ask_group_name()
+        if name:
+            PUB.add_group(self.pdir, name)
+            self.refresh()
+
+    def _set_group(self, path, name):
+        PUB.set_group(self.pdir, path, name)
+        self.refresh()
+
+    def _new_group_for(self, path):
+        name = self._ask_group_name()
+        if name:                                   # Abbrechen lässt die Zuordnung, wie sie ist
+            self._set_group(path, name)
+
+    def _group_menu(self, head, pos):
+        g = head.group
+        if g is None:
+            return
+        m = QMenu(self)
+        m.addAction(T("group_rename"), lambda: self._rename_group(g))
+        m.addAction(T("pub_up"), lambda: (PUB.move_group(self.pdir, g, -1), self.refresh()))
+        m.addAction(T("pub_down"), lambda: (PUB.move_group(self.pdir, g, 1), self.refresh()))
+        m.addSeparator()
+        m.addAction(T("group_delete"), lambda: (PUB.delete_group(self.pdir, g), self.refresh()))
+        m.exec(head.mapToGlobal(pos))
+
+    def _rename_group(self, g):
+        new = self._ask_group_name(g)
+        if new and not PUB.rename_group(self.pdir, g, new):
+            self.main.error(T("group_exists", g=new))
+        self.refresh()
 
     def sort_by_name(self):
         PUB.sort_by_name(self.pdir)
         self.refresh()
 
     def _dropped(self, path, y):
-        """Abgelegte Verbindung vor die erste Zeile setzen, deren Mitte unterhalb der Ablagestelle liegt."""
-        idx = len(self.rows)
-        for i, r in enumerate(self.rows):
-            if y < r.geometry().center().y():
-                idx = i
-                break
+        """Abgelegte Verbindung: Gruppe = Überschrift oberhalb der Ablagestelle; Platz vor der ersten Zeile dieser
+        Gruppe, deren Mitte unterhalb liegt (sonst ans Ende der Gruppe)."""
+        g = None
+        if self.headers:
+            above = [hg for h, hg in self.headers if h.geometry().top() <= y]
+            g = above[-1] if above else self.headers[0][1]
+            PUB.set_group(self.pdir, path, g)
+        rows_g = [r for r in self.rows if getattr(r, "group", None) == g and r.info["path"] != path]
+        data = PUB.load(self.pdir)
+        ent = {PUB._abs(self.pdir, c): i for i, c in enumerate(data["compounds"])}
+        before = next((r for r in rows_g if y < r.geometry().center().y()), None)
+        if before is not None:
+            idx = ent.get(Path(before.info["path"]).resolve(), len(data["compounds"]))
+        elif rows_g:
+            idx = ent.get(Path(rows_g[-1].info["path"]).resolve(), len(data["compounds"]) - 1) + 1
+        else:
+            idx = len(data["compounds"])
         PUB.place_compound(self.pdir, path, idx)
         self.refresh()
 

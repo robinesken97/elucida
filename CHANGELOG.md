@@ -2,6 +2,20 @@
 
 # Changelog
 
+## 2.3.3 – 2026-10-24
+
+### New
+- **Groups in a project**, freely named (e.g. precursors, salts, NHOs): create, rename, reorder, dissolve; assign by
+  right-click or by dragging a compound into a group. The project page shows the compounds under their groups, the
+  search finds the group name, and in the complete SI the groups become sub-chapters of the synthesis and NMR chapters
+  (2.1, 2.2 …) with entries in the table of contents.
+
+### Fixed
+- Complete SI: no more empty page when a page break followed a full page (the break is now a property of the next
+  paragraph); paragraph properties in the order Word expects; table of contents also correct after long crystal-data
+  tables.
+- Example project called "project" instead of "paper".
+
 ## 2.3.2 – 2026-10-24
 
 ### New

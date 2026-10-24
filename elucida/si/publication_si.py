@@ -65,6 +65,21 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
         blocks.append(("title", paper_title(meta), meta.get("authors", ""), meta.get("affiliation", "")))
     if toc:
         blocks.append(("toc",))
+    groups_on = any(parts.get("_group") for _, parts in compounds)   # Gruppen im Projekt -> Unterkapitel
+
+    def grouped(blocks_of):
+        """Blöcke aller Verbindungen; mit Gruppen vor jeder neuen Gruppe ein Unterkapitel (Nummer folgt später)."""
+        out, cur = [], object()
+        for _, parts in compounds:
+            bl = blocks_of(parts)
+            if not bl:
+                continue
+            g = parts.get("_group")
+            if groups_on and g != cur:
+                cur = g
+                out.append(("subsection", g or "Further compounds"))
+            out += bl
+        return out
     n = 0
     for key, title, _ in SECTIONS:
         if key not in sections:
@@ -74,15 +89,17 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
         if key == "methods":
             body = intro or [("char", SI.chem_html(t)) for t in setup_texts if t] or [("char", METHODS_PLACEHOLDER)]
             intro = []
-        elif key == "char":
-            for _, parts in compounds:
-                body += parts.get("char") or []
+        elif key == "char":                          # Synthese: Unterkapitel je Gruppe (wie die SI der Gruppe)
+            body = grouped(lambda parts: parts.get("char") or [])
         elif key in FIGURE_SECTIONS:
-            figs = []
-            for _, parts in compounds:
+            def fig_blocks(parts, key=key):
                 fb = [b for b in parts.get(key) or [] if b[0] != "pagebreak"]
                 mb = (parts.get("methods_" + key) or []) if methods else []
-                figs += mb + fb
+                return mb + fb
+            if key == "nmr":                         # NMR ebenfalls je Gruppe
+                figs = grouped(fig_blocks)
+            else:
+                figs = [b for _, parts in compounds for b in fig_blocks(parts)]
             body = SI.two_per_page(intro + figs) if figs else []     # Einleitung zählt bei der Seitenaufteilung mit
             intro = []
         elif key == "xray":
@@ -102,5 +119,10 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
             continue
         body = intro + body                                   # DFT: Einleitung noch einspaltig
         n += 1
+        k_sub = 0
+        for i, b in enumerate(body):                          # Unterkapitel nummerieren: 2.1, 2.2 …
+            if b[0] == "subsection":
+                k_sub += 1
+                body[i] = ("subsection", f"{n}.{k_sub} {b[1]}")
         blocks += [("section", f"{n}. {title}")] + body      # DFT: zweispaltig erst nach der Überschrift
     return blocks

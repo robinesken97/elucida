@@ -2,6 +2,20 @@
 
 # Änderungen
 
+## 2.3.3 – 24.10.2026
+
+### Neu
+- **Gruppen im Projekt**, frei benannt (z. B. Precursor, Salze, NHOs): anlegen, umbenennen, verschieben, auflösen;
+  zuordnen per Rechtsklick oder durch Ziehen einer Verbindung in eine Gruppe. Die Projektseite zeigt die Verbindungen
+  unter ihren Gruppen, die Suche findet den Gruppennamen, und in der Gesamt-SI werden die Gruppen zu Unterkapiteln von
+  Synthese und NMR (2.1, 2.2 …) mit Einträgen im Inhaltsverzeichnis.
+
+### Behoben
+- Gesamt-SI: keine leere Seite mehr, wenn ein Seitenumbruch auf eine volle Seite folgte (der Umbruch ist jetzt eine
+  Eigenschaft des nächsten Absatzes); Absatz-Eigenschaften in der Reihenfolge, die Word erwartet; Inhaltsverzeichnis
+  auch nach langen Kristalldaten-Tabellen richtig.
+- Beispielprojekt heißt „project“ statt „paper“.
+
 ## 2.3.2 – 24.10.2026
 
 ### Neu

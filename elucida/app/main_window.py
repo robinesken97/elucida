@@ -1913,8 +1913,12 @@ class MainWindow(QMainWindow):
             if PUB.is_publication(pub) is None:
                 continue
             title = re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(pub))) or Path(pub).name
+            data_ = PUB.load(pub)
             for d in PUB.sync(pub)[0]:
                 add(d, title)
+                g_ = PUB.group_name(pub, d, data_)
+                if g_ and out and Path(out[-1]["path"]).resolve() == d.resolve():
+                    out[-1]["group"] = g_
         for r in self.recent():
             add(r)
         return out
@@ -2688,7 +2692,9 @@ class MainWindow(QMainWindow):
                 if not self.open_project(d, recent=False):
                     continue
                 try:
-                    comps.append(self.si_compound_parts(sections, methods))
+                    name_, parts_ = self.si_compound_parts(sections, methods)
+                    parts_["_group"] = PUB.group_name(pdir, d)     # Unterkapitel je Gruppe
+                    comps.append((name_, parts_))
                 except Exception:
                     self.log_signal.emit(traceback.format_exc())
         finally:

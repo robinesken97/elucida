@@ -2999,6 +2999,18 @@ def selftest(outdir, with_isnet=False):
             assert all(n_.startswith(f"CompChem/{n6_}/") for n_ in z_.namelist()), z_.namelist()[:5]
         with _zfp.ZipFile(out / "pubpack" / f"{n6_}.zip") as z_:
             assert not any("/DFT/" in n_ for n_ in z_.namelist())
+        PUB.set_group(pub_, pub_ / "6m", "NHOs")                            # Gruppen im Projekt
+        PUB.set_group(pub_, pub_ / "2a", "Precursor")
+        PUB.move_group(pub_, "Precursor", -1)
+        assert [(g_, [d_.name for d_ in ds_]) for g_, ds_ in PUB.grouped(pub_)] == [("Precursor", ["2a"]),
+                                                                                    ("NHOs", ["6m"])]
+        assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "6m"]
+        w.open_publication(pub_)
+        assert [g_ for _, g_ in w.pub_page.headers] == ["Precursor", "NHOs"] and \
+            [r_.group for r_ in w.pub_page.rows] == ["Precursor", "NHOs"]
+        w.pub_page.ed_filter.setText("NHOs")                                 # Filter findet auch die Gruppe
+        assert [r_.isVisibleTo(r_.parentWidget()) for r_ in w.pub_page.rows] == [False, True]
+        w.pub_page.ed_filter.setText("")
         w.open_project(pub_ / "6m")
         pump(0.3)
         psi_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], [k_ for k_, _, _ in PSI.SECTIONS],
@@ -3015,9 +3027,12 @@ def selftest(outdir, with_isnet=False):
                                                              "X-Ray Characterization Data"} <= set(order_), order_
         assert doc_.index("CV intro") > doc_.index("Cyclic Voltammetry") and "TOC \\o" in doc_
         assert "Supplementary Materials for" in doc_ and "Synthesis of " in doc_
+        subs_ = re.findall(r'w:val="Heading2".*?<w:t[^>]*>([^<]+)</w:t>', doc_)        # Unterkapitel je Gruppe
+        assert subs_[:2] == ["2.1 Precursor", "2.2 NHOs"] and "3.1 NHOs" in subs_, subs_
+        assert 'w:val="TOC2"' in doc_
         assert "PAGEREF _Toc1" in doc_ and 'w:name="_Toc1"' in doc_            # Verzeichnis schon gefüllt
         toc_ = SI.toc_entries([("title", "T"), ("toc",), ("section", "1. A"), ("char", "x"), ("section", "2. B")])
-        assert toc_ == [("1. A", 3), ("2. B", 4)], toc_
+        assert toc_ == [("1. A", 3, 1), ("2. B", 4, 1)], toc_
         tp_ = SI.two_per_page([("char", "x " * 3000), ("image", "a.png", 16.0, 10.9), ("figcap", "c")])
         assert [b_[0] for b_ in tp_] == ["char", "pagebreak", "image", "figcap"] and tp_[2][3] == 10.9, \
             [b_[0] for b_ in tp_]                                            # langer Text: Bild auf neue Seite

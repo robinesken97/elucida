@@ -126,7 +126,10 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    `6m`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. Der Pfad links in der
    Tab-Leiste, **⌂ Übersicht › <Projekt> › <Verbindung> ▾**, führt zurück zum Projekt oder zur Übersicht und wechselt
    direkt zu einer anderen Verbindung des Projekts (auch Datei → Zum Projekt, Strg+Umschalt+P; Datei → Zur Übersicht,
-   Strg+Umschalt+H). Zeilen ziehen oder **Nach Name sortieren** ändert die Reihenfolge – sie gilt für SI und Datensatz. Das Suchfeld oben
+   Strg+Umschalt+H). **Neue Gruppe …** gliedert die Verbindungen (z. B.
+   Precursor, Salze, NHOs; Rechtsklick auf eine Verbindung → Gruppe, oder in eine Gruppe ziehen); in der Gesamt-SI werden
+   die Gruppen zu Unterkapiteln von Synthese und NMR (2.1, 2.2 …). Zeilen ziehen oder **Nach Name sortieren** ändert die
+   Reihenfolge – sie gilt für SI und Datensatz. Das Suchfeld oben
    auf dem Startbildschirm findet Verbindungen in allen deinen Projekten (Name/Nummer, Laborkürzel wie RE-3-150,
    Summenformel, Notiz); Strg+F springt dorthin. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
    ¹³C, 2D-NMR, HRMS, IR und m.p.; für im Dialog Verbindung als **literaturbekannt** markierte Verbindungen (mit Literatur)
