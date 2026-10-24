@@ -49,6 +49,7 @@ _SVG = {
     "up": '<path d="M7 14.5 12 9.5l5 5"/>',
     "down": '<path d="M7 9.5l5 5 5-5"/>',
     "check": '<path d="M6 12.5l4 4 8-9"/>',
+    "dash": '<path d="M7 12h10"/>',
     "copy": '<rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/>'
             '<path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
 }
@@ -551,6 +552,9 @@ def apply(mode, cache_dir: Path):
         p = cache_dir / f"check{state}_{_mode}.png"
         _render("check", col, 48, stroke=3.2).save(str(p))
         arrows["check" + state] = p.as_posix()
+        p = cache_dir / f"dash{state}_{_mode}.png"                          # teilweise (Gruppe in Bäumen)
+        _render("dash", col, 48, stroke=3.2).save(str(p))
+        arrows["dash" + state] = p.as_posix()
     app.setStyleSheet(stylesheet(c, arrows))
     return _mode
 
@@ -608,6 +612,8 @@ QCheckBox::indicator, QAbstractItemView::indicator, QGroupBox::indicator {{ widt
 QCheckBox::indicator:hover, QAbstractItemView::indicator:hover {{ border-color: {c['accent']}; }}
 QCheckBox::indicator:checked, QAbstractItemView::indicator:checked, QGroupBox::indicator:checked {{
     background: {c['accent']}; border-color: {c['accent']}; image: url("{a['check']}"); }}
+QCheckBox::indicator:indeterminate, QAbstractItemView::indicator:indeterminate {{
+    background: {c['accent']}; border-color: {c['accent']}; image: url("{a['dash']}"); }}
 QCheckBox::indicator:disabled, QAbstractItemView::indicator:disabled {{ background: {c['alt']};
     border-color: {c['border_strong']}; }}
 QCheckBox::indicator:checked:disabled, QAbstractItemView::indicator:checked:disabled {{

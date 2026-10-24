@@ -395,6 +395,14 @@ The program starts without a project. Open projects via **File → Open project*
 or by dragging the folder onto the window. **File → Save project copy** writes a complete copy (e.g.
 an intermediate state). **Edit → Undo / Redo** (⌘Z / ⌘⇧Z, Ctrl+Z / Ctrl+Y) covers all tabs.
 
+**File → Export data package (zip)** writes the raw data of the compound for a data repository (e.g. TUDOdata), laid
+out like published datasets: `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments), `NMR/HSQC + HMBC/12/`,
+`IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`; DFT and Elucida's own
+figures/SI optional. X-ray (CCDC) and synthesis are not included. Every file can be deselected; the choice is
+remembered per project. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
+names by the compound (`6m`), in text files (CSV, DTA, TopSpin parameters and title …) by „Compound 6m“ (both
+editable). Binary files (FID, OPUS, PDF, Mnova) stay unchanged; if a code remains in one of them, the log names it.
+
 ## Excel report
 
 For every series, `<series>_report.xlsx` contains:

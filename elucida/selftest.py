@@ -2704,6 +2704,76 @@ def selftest(outdir, with_isnet=False):
         EXCH.build(w2)
         report.append(f"exchange file elucida.json (schema 1, {time.perf_counter() - t0_:.2f} s): OK")
 
+        # Datenpaket (Zip) je Verbindung wie die Datensätze der Gruppe; Laborkürzel ersetzt, Binärdateien unverändert
+        from elucida.exchange import datapack as DP
+        import zipfile as _zfp
+        dp_ = out / "datapack" / "proj"
+        ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "RE-3-150_10", nuc="1H")
+        with open(ex_ / "acqus", "a", encoding="latin-1") as fh_:
+            fh_.write("$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n")
+        fid_ = bytes(range(256)) * 4
+        (ex_ / "fid").write_bytes(fid_)
+        (ex_ / "pdata" / "1").mkdir(parents=True)
+        (ex_ / "pdata" / "1" / "title").write_text("RE-3-150 in CDCl3\n", encoding="latin-1")
+        hs_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HSQC" / "RE-3-150_12", nuc="1H", nuc2="13C",
+                                  pulprog="hsqcedetgpsisp2.3")
+        hm_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HMBC" / "RE-3-150_13", nuc="1H", nuc2="13C",
+                                  pulprog="hmbcgplpndqf")
+        mn_ = dp_ / "data" / "nmr" / "mnova" / "RE-3-150.mnova"
+        mn_.parent.mkdir(parents=True)
+        mn_.write_bytes(b"\0MNOVA\0RE-3-150\0")                        # binär: bleibt, wird gemeldet
+        ir0_ = dp_ / "data" / "ir" / "RE-3-150_IR.0"
+        ir0_.parent.mkdir(parents=True)
+        ir0_.write_bytes(b"\x0a\x0a\0OPUS")
+        msr_ = dp_ / "data" / "hrms" / "MS-Bericht.docx"
+        msr_.parent.mkdir(parents=True)
+        msr_.write_bytes(b"PK\0docx")
+        cvf_ = dp_ / "data" / "cv" / "RE-3-150-thf-200mVs.DTA"
+        cvf_.parent.mkdir(parents=True)
+        cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1")
+        epr_ = dp_ / "data" / "epr" / "RE-3-150_epr.txt"
+        epr_.parent.mkdir(parents=True)
+        epr_.write_text("B [G]\tRE-3-150\n3380\t0.1\n", encoding="utf-8")
+        cif_ = dp_ / "data" / "xray" / "s.cif"
+        cif_.parent.mkdir(parents=True)
+        cif_.write_text("data_x\n", encoding="utf-8")
+        st_dp_ = {"nmr": {"raw": [dict(path=str(ex_), kind="1H"), dict(path=str(hs_), kind="HSQC"),
+                                  dict(path=str(hm_), kind="HMBC")], "mnova": [str(mn_)]},
+                  "irms": {"ir_file": str(ir0_)}, "hrms": {"ms_file": str(msr_)},
+                  "cv": {"files": [dict(file=str(cvf_), group="THF")]}, "epr": {"entries": [dict(file=str(epr_))]},
+                  "xray": {"entries": [dict(file=str(cif_))]}, "syn": {"scheme": str(cif_)}}
+        its_ = DP.collect(st_dp_, dp_)
+        arcs_ = {i_.arc: i_.on for i_ in its_}
+        assert arcs_ == {"NMR/1H/10": True, "NMR/HSQC + HMBC/12": True, "NMR/HSQC + HMBC/13": True,
+                         "NMR/RE-3-150.mnova": True, "IR/RE-3-150_IR.0": True, "MS/MS-Bericht.docx": True,
+                         "CV/THF/RE-3-150-thf-200mVs.DTA": True, "EPR/RE-3-150_epr.txt": True}, arcs_   # ohne X-Ray
+        assert DP.find_codes(its_) == ["RE-3-150"]
+        zp_ = out / "datapack" / "6m.zip"
+        rep_ = DP.write_zip(its_, zp_, "6m", {"RE-3-150": "6m"}, {"RE-3-150": "Compound 6m"})
+        with _zfp.ZipFile(zp_) as z_:
+            names_ = set(z_.namelist())
+            assert {"6m/NMR/1H/10/acqus", "6m/NMR/1H/10/fid", "6m/NMR/1H/10/pdata/1/title", "6m/NMR/6m.mnova",
+                    "6m/IR/6m_IR.0", "6m/MS/MS-Bericht.docx", "6m/CV/THF/6m-thf-200mVs.DTA",
+                    "6m/EPR/6m_epr.txt", "6m/NMR/HSQC + HMBC/12/acqu2s"} <= names_, sorted(names_)
+            assert not any("RE-3-150" in n_ for n_ in names_)
+            assert z_.read("6m/NMR/1H/10/fid") == fid_                        # Rohdaten bytegleich
+            assert b"Compound 6m in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title")
+            acq_txt_ = z_.read("6m/NMR/1H/10/acqus").decode("latin-1")
+            assert "RE-3-150" not in acq_txt_ and "/Compound 6m/10/acqus" in acq_txt_ and "##$PULPROG= <zg30>" in acq_txt_
+            assert "Compound 6m CV" in z_.read("6m/CV/THF/6m-thf-200mVs.DTA").decode("latin-1")
+            assert z_.read("6m/NMR/6m.mnova") == mn_.read_bytes()
+        assert rep_["kept"] == ["6m/NMR/6m.mnova"], rep_["kept"]
+        assert not (out / "datapack" / "6m.zip.tmp").exists()
+        rep2_ = DP.write_zip(its_, out / "datapack" / "6m_raw.zip", "6m", {"RE-3-150": "6m"}, None)   # Inhalt unverändert
+        with _zfp.ZipFile(out / "datapack" / "6m_raw.zip") as z_:
+            assert b"RE-3-150 in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title") and not rep2_["text_replaced"]
+        from elucida.app.datapack_dialog import DatapackDialog          # Dialog mit dem Projekt des Selbsttests
+        dd_ = DatapackDialog(w2)
+        assert dd_.ed_name.text() == w2.export_name() and dd_.tree.topLevelItemCount() >= 1
+        rep3_ = dd_.export(out / "datapack" / "dialog.zip")
+        assert rep3_ and Path(rep3_["path"]).exists() and rep3_["files"] > 0
+        report.append("data package zip (layout like the group's datasets, lab codes replaced, binaries unchanged): OK")
+
         # Undo/Redo
         before = w2.glob["cutoff"]
         w2.sp_cut.setValue(before + 0.5)

@@ -606,6 +606,7 @@ class MainWindow(QMainWindow):
                              triggered=self.export_current)
         m.addAction(act_export)
         m.addAction(QAction(T("act_export_si"), self, triggered=self.export_si_dialog))
+        m.addAction(QAction(T("act_datapack"), self, triggered=self.export_datapack))
         m.addSeparator()
         m.addAction(QAction(T("act_quit"), self, shortcut=QKeySequence.Quit, triggered=self.close))
         me = mb.addMenu(T("menu_edit"))
@@ -2823,6 +2824,16 @@ class MainWindow(QMainWindow):
         self.log_signal.emit(msg)
         if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             QMessageBox.information(self, T("app_title"), msg)
+
+    def export_datapack(self):
+        """Datenpaket (Zip) dieser Verbindung für ein Datenrepositorium (elucida/exchange/datapack.py)."""
+        if not self.ensure_project():
+            return None
+        self.maybe_save()
+        from elucida.app.datapack_dialog import DatapackDialog
+        dlg = DatapackDialog(self)
+        dlg.exec()
+        return dlg.report
 
     def exported(self, folders):
         """Meldung nach einem Export mit Knopf „Ordner öffnen“ (erster Zielordner im Finder/Explorer)."""

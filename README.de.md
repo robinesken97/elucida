@@ -410,6 +410,15 @@ geöffnet** oder indem man den Ordner ins Fenster zieht. **Datei → Projekt als
 eine vollständige Kopie an (z. B. als Zwischenstand). **Bearbeiten → Rückgängig / Wiederholen**
 (⌘Z / ⌘⇧Z, Strg+Z / Strg+Y) gilt für alle Tabs.
 
+**Datei → Datenpaket (Zip) exportieren** schreibt die Rohdaten der Verbindung für ein Datenrepositorium (z. B.
+TUDOdata), aufgebaut wie veröffentlichte Datensätze: `6m.zip` mit `6m/NMR/1H/10/` (TopSpin-Experimente vollständig),
+`NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (Bericht, Bruker-.d), `UV-Vis/`, `Fluorescence/`, `CV/<Lösungsmittel>/`, `SEC/`,
+`EPR/`; DFT und die eigenen Abbildungen/SI wahlweise. X-Ray (CCDC) und Synthese gehören nicht hinein. Jede Datei ist
+abwählbar, die Auswahl wird je Projekt gemerkt. **Laborkürzel** wie `RE-3-150` werden automatisch gefunden und ersetzt –
+in Datei- und Ordnernamen durch die Verbindung (`6m`), in Textdateien (CSV, DTA, TopSpin-Parameter und -Titel …) durch
+„Compound 6m“ (beides änderbar). Binärdateien (FID, OPUS, PDF, Mnova) bleiben unverändert; steckt dort noch ein
+Kürzel, nennt das Protokoll die Datei.
+
 ## Excel-Report
 
 Für jede Serie enthält `<Serie>_report.xlsx`:
