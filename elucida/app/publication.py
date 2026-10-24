@@ -323,3 +323,49 @@ def checklist(cdir) -> dict:
 
 def check_label(key) -> str:
     return dict(CHECKS)[key]
+
+
+# -- Verbindungen zwischen Projekten verschieben/kopieren (Zugehörigkeit = Ordner im Projekt) --------------------
+def unique_dest(pdir, name) -> Path:
+    """Freier Zielordner <pdir>/<name>, sonst <name>_2, <name>_3 …"""
+    d = Path(pdir) / name
+    k = 2
+    while d.exists():
+        d = Path(pdir) / f"{name}_{k}"
+        k += 1
+    return d
+
+
+def _drop_from_index(cdir):
+    """Verbindung aus dem Index ihres bisherigen Projekts nehmen (falls es eins gibt)."""
+    src = publication_of(cdir)
+    if src is None:
+        return
+    data = load(src)
+    target = Path(cdir).resolve()
+    data["compounds"] = [c for c in data["compounds"] if _abs(src, c) != target]
+    save(src, data)
+
+
+def move_compound_to(cdir, target_pub) -> Path:
+    """Verbindungsordner in ein anderes Projekt verschieben (Index beider Projekte nachgeführt). -> neuer Ordner."""
+    import shutil
+    cdir, target_pub = Path(cdir).resolve(), Path(target_pub).resolve()
+    if cdir.parent == target_pub:
+        return cdir
+    _drop_from_index(cdir)
+    dest = unique_dest(target_pub, cdir.name)
+    shutil.move(str(cdir), str(dest))
+    add_compound(target_pub, dest)
+    return dest
+
+
+def copy_compound_to(cdir, target_pub) -> Path:
+    """Verbindung in ein (anderes) Projekt kopieren – z. B. dieselbe Verbindung in zwei Papern; danach unabhängig.
+    Sicherungen/Zwischenbilder (.elucida) bleiben weg, sie entstehen neu. -> neuer Ordner."""
+    import shutil
+    cdir, target_pub = Path(cdir).resolve(), Path(target_pub).resolve()
+    dest = unique_dest(target_pub, cdir.name)
+    shutil.copytree(cdir, dest, ignore=shutil.ignore_patterns(PRJ.WORK))
+    add_compound(target_pub, dest)
+    return dest

@@ -1976,6 +1976,26 @@ TEXTS = {
     "pub_ph_dataset_description": ("Leer = automatisch aus den Datenarten (NMR, IR, UV-Vis, CV …) und Verbindungen",
                                    "Empty = generated from the data kinds (NMR, IR, UV-Vis, CV …) and compounds"),
     "nav_home": ("Übersicht", "Overview"),
+    "nav_no_project": ("ohne Projekt", "no project"),
+    "choose_pub_new": ("Projekt für die neue Verbindung", "Project for the new compound"),
+    "choose_pub_hint": ("Jede Verbindung gehört zu einem Projekt (Ordner der Veröffentlichung). Projekt wählen:",
+                        "Every compound belongs to a project (folder of the paper). Choose the project:"),
+    "choose_pub_other": ("Anderes Projekt öffnen …", "Open another project …"),
+    "move_title": ("In anderes Projekt verschieben …", "Move to another project …"),
+    "move_copy_title": ("In anderes Projekt kopieren …", "Copy to another project …"),
+    "assign_title": ("Einem Projekt zuordnen …", "Assign to a project …"),
+    "orphan_q": ("Diese Verbindung gehört noch zu keinem Projekt. Jetzt einem Projekt zuordnen? Der Ordner wird dafür in "
+                 "den Projektordner verschoben.",
+                 "This compound does not belong to a project yet. Assign it to a project now? Its folder is moved into "
+                 "the project folder."),
+    "compound_moved": ("Verbindung verschoben: {src} → {dst}", "Compound moved: {src} → {dst}"),
+    "compound_copied": ("Verbindung kopiert: {src} → {dst}", "Compound copied: {src} → {dst}"),
+    "add_move_copy_q": ("{p}\n\nliegt außerhalb des Projekts. In den Projektordner verschieben oder eine Kopie "
+                        "anlegen (z. B. für ein zweites Paper)?",
+                        "{p}\n\nis outside the project. Move it into the project folder or make a copy (e.g. for a "
+                        "second paper)?"),
+    "add_move": ("Verschieben", "Move"),
+    "add_copy": ("Kopieren", "Copy"),
     "act_to_overview": ("Zur Übersicht", "Back to overview"),
     "nav_switch_tip": ("Zu einer anderen Verbindung des Projekts wechseln", "Switch to another compound of the project"),
     "pub_new_compound": ("Neue Verbindung", "New compound"),

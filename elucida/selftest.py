@@ -2596,7 +2596,7 @@ def selftest(outdir, with_isnet=False):
         assert SI.ea_formula_label("C18H20N2", "0.5 CH2Cl2") == "C18H20N2·0.5CH2Cl2"
         assert abs(SI.ea_composition("C18H20N2", "0.5 CH2Cl2")["C"] - 72.42) < 0.01
         pl_, ht_, nt_ = SI.ea_line("C18H20N2", "", {"C": "81.52", "H": "7.70", "N": "10.10"})
-        assert pl_ == "Elemental analysis calcd (%) for C18H20N2: C 81.78, H 7.63, N 10.60; found: C 81.52, " \
+        assert pl_ == "Elemental analysis (%) calc. C18H20N2: C 81.78, H 7.63, N 10.60; found C 81.52, " \
                       "H 7.70, N 10.10", pl_
         assert [e_ for e_, _ in nt_] == ["N"] and "<sub>18</sub>" in ht_       # N weicht um 0.50 % ab
         cfg_uv = dict(core.DEFAULTS, conc_unit="mM")
@@ -3031,12 +3031,33 @@ def selftest(outdir, with_isnet=False):
             assert "PAGE" in z_.read("word/footer1.xml").decode("utf-8") and ">S<" in z_.read(
                 "word/footer1.xml").decode("utf-8")                         # ACS: Seiten S1, S2 …
         assert SI.TEMPLATES and SI._TEMPLATE == "group"                    # danach wieder Standard
+        orph_ = out / "orphan"                                            # Verbindung ohne Projekt zuordnen,
+        _sh.rmtree(orph_, ignore_errors=True)                             # verschieben und duplizieren
+        assert w.create_project(orph_)
+        w.set_compound({"name": "9z"})
+        w.save_project()
+        assert w.publication_dir is None and w.btn_pub.text().startswith("\u26a0")
+        new_ = w.move_compound(target=pub_)                               # offene Verbindung: schließen, verschieben,
+        assert new_ == (pub_ / "orphan").resolve() and not orph_.exists()  # am neuen Ort wieder öffnen
+        assert Path(w.project_dir).resolve() == new_ and Path(w.publication_dir).resolve() == pub_.resolve()
+        assert PUB.compound_name(new_) == "9z" and new_ in [d_.resolve() for d_ in PUB.sync(pub_)[0]]
+        pub2_ = out / "pub2"
+        _sh.rmtree(pub2_, ignore_errors=True)
+        PUB.create(pub2_, "Second paper")
+        cp_ = w.move_compound(new_, copy=True, target=pub2_)               # dieselbe Verbindung im zweiten Paper
+        assert cp_ == (pub2_ / "orphan").resolve() and new_.exists() and PRJ.is_project(cp_)
+        assert not (cp_ / PRJ.WORK).exists() and [d_.name for d_ in PUB.sync(pub2_)[0]] == ["orphan"]
+        mv_ = w.move_compound(new_, target=pub2_)                          # zweites Mal: freier Name
+        assert mv_ == (pub2_ / "orphan_2").resolve() and not new_.exists()
+        assert [d_.name for d_ in PUB.sync(pub2_)[0]] == ["orphan", "orphan_2"]
+        assert not any(d_.name == "orphan" for d_ in PUB.sync(pub_)[0])
+        w.go_home()
         dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
         assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
         assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2
         assert PUB.load(dpub_)["si_texts"]["methods"].startswith("All reactions")
         ck_ = PUB.checklist(dpub_ / "S2")                                 # Checkliste: neue Verbindung
-        assert {"1H", "13C"} <= ck_["have"] and not ck_["known"] and "mp" in ck_["missing"], ck_
+        assert {"1H", "13C", "2D", "ms", "ir", "mp"} <= ck_["have"] and not ck_["missing"], ck_   # Beispiel vollständig
         w.open_project(dpub_ / "S3")
         assert w.btn_pub.isVisibleTo(w.btn_pub.parentWidget()) and w.btn_pub.text().startswith("Example")
         assert w.btn_home.isVisibleTo(w.btn_home.parentWidget()) and w.btn_comp.text() == "S3"   # Pfadleiste
@@ -3052,7 +3073,7 @@ def selftest(outdir, with_isnet=False):
         w.btn_pub.click()
         assert w.project_dir is None and w.center.currentIndex() == 2 and not w.btn_pub.isVisibleTo(
             w.btn_pub.parentWidget())
-        assert "1 von 2" in w.pub_page.lbl_head.text() or "1 of 2" in w.pub_page.lbl_head.text(), \
+        assert "2 von 2" in w.pub_page.lbl_head.text() or "2 of 2" in w.pub_page.lbl_head.text(), \
             w.pub_page.lbl_head.text()
         w.open_project(dpub_ / "S2")                                      # Pfadleiste: ⌂ Übersicht
         w.btn_home.click()
@@ -3077,7 +3098,7 @@ def selftest(outdir, with_isnet=False):
             assert w.trash_folder(pub_ / "2a", confirm=False) and trashed_ == [str(pub_ / "2a")]
             assert str(pub_ / "2a") not in w.recent()
             assert w.trash_folder(pub_, publication=True, confirm=False) and str(pub_) not in w.recent_publications()
-            assert not any(str(pub_) in r_ for r_ in w.recent())             # Verbindungen darin auch aus der Liste
+            assert not any(pub_.resolve() in Path(r_).resolve().parents for r_ in w.recent())   # auch die darin
         finally:
             _QF.moveToTrash = real_trash_
         w.close_publication()

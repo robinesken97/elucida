@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QProgressDialog, QPushButton,
+                               QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
                                QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QApplication)
 from PySide6.QtCore import QUrl
 
@@ -238,6 +238,8 @@ class PublicationPage(QWidget):
         m.addAction(T("pub_down"), lambda: self._move(p, 1))
         m.addAction(T("recent_reveal"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
         m.addSeparator()
+        m.addAction(T("move_title"), lambda: self.main.move_compound(p))
+        m.addAction(T("move_copy_title"), lambda: self.main.move_compound(p, copy=True))
         m.addAction(T("pub_remove"), lambda: self._remove(p))
         m.exec(row.mapToGlobal(pos))
 
@@ -260,7 +262,17 @@ class PublicationPage(QWidget):
         from elucida.app import project as PRJ
         if PRJ.is_project(d) is None:
             return self.main.error(T("no_project", p=d))
-        PUB.add_compound(self.pdir, d)
+        if Path(d).resolve().parent != self.pdir.resolve():   # Zugehörigkeit = Ordner im Projekt
+            box = QMessageBox(QMessageBox.Question, T("pub_add_project"), T("add_move_copy_q", p=d), parent=self)
+            b_move = box.addButton(T("add_move"), QMessageBox.AcceptRole)
+            b_copy = box.addButton(T("add_copy"), QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            if box.clickedButton() not in (b_move, b_copy):
+                return
+            self.main.move_compound(d, copy=box.clickedButton() is b_copy, target=self.pdir)
+        else:
+            PUB.add_compound(self.pdir, d)
         self.refresh()
 
     def edit_info(self):

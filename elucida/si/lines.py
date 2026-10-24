@@ -1,8 +1,8 @@
 """SI-Zeilen und SI-Export: UV-Vis-Zeile (ε-Tab), Elementaranalyse, Word-Datei (docx ohne Zusatzpaket).
 
 Stil wie in den SI der Arbeitsgruppe: „m.p. …; IR [cm-1]: ṽ = …; HR-MS-ESI(+) calc. …; found …;
-UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“. Die Elementaranalyse folgt dem üblichen Wiley-Format
-„Elemental analysis calcd (%) for C18H20N2: C 81.78, H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41“.
+UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“. Die Elementaranalyse ist aufgebaut wie die HR-MS-Zeile:
+„Elemental analysis (%) calc. C18H20N2: C 81.78, H 7.63, N 10.60; found C 81.52, H 7.70, N 10.41“ (wie HR-MS).
 """
 from __future__ import annotations
 
@@ -133,8 +133,9 @@ def ea_line(formula: str, solvate: str, found: dict):
             notes.append((el, d))
     label = ea_formula_label(formula, solvate)
     fnd = ", ".join(f"{el} {v:.2f}" for el, v in fv.items()) if fv else "–"
-    plain = f"Elemental analysis calcd (%) for {label}: {calc}; found: {fnd}"
-    html = f"<b>Elemental analysis</b> calcd (%) for {_sub_html(label)}: {calc}; found: {fnd}"
+    # gleich aufgebaut wie die HR-MS-Zeile („calc. … ; found …“, Nutzerwunsch)
+    plain = f"Elemental analysis (%) calc. {label}: {calc}; found {fnd}"
+    html = f"<b>Elemental analysis</b> (%) calc. {_sub_html(label)}: {calc}; found {fnd}"
     return plain, html, notes
 
 

@@ -193,6 +193,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   (`btn_home`/`btn_pub`/`btn_comp`, `_update_crumbs`, Verbindungsmenü `_fill_comp_menu`), `go_home`. Beispiele
   (`demo.is_demo`, Datenordner) nie in den Zuletzt-Listen. Löschen nur in den Papierkorb (`trash_folder`,
   `QFile.moveToTrash`, Nachfrage mit Dateien/Größe), nie endgültig; im Selbsttest nur mit Attrappe.
+  Jede Verbindung gehört zu einem Projekt (Nutzerwunsch): Zugehörigkeit = Ordner im Projektordner; neue Verbindung nur
+  über `choose_publication` + `new_compound_in_publication`; `move_compound` (verschieben/kopieren/zuordnen,
+  `PUB.move_compound_to`/`copy_compound_to`, Kopie ohne `.elucida`, freier Name `unique_dest`); alte Verbindungen ohne
+  Projekt beim Öffnen anbieten (`_ask_assign`), nie erzwingen (sonst kein Zugriff auf alte Daten).
 - Startbildschirm (`app/welcome.py`): Projektliste aus der Projektdatei (Verbindung, Analytik-Abzeichen, Stand),
   Strukturbild nur aus `.elucida/thumb.png` (`write_thumb` beim Speichern, nur wenn die Struktur neuer ist) – nie beim
   Anzeigen rendern; bis 20 Projekte.
@@ -236,7 +240,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `methods` („Data processing and fitting“, `si_methods_blocks`, `SI.methods_html`; neue Fit-Tabs dort eintragen).
 - SI-Stil (aus den SI der Gruppe): Absatz „m.p. …; IR …; HR-MS …; UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“, durch
   „; “ getrennt, Punkt am Ende. UV-Vis-Zeile nur mit den Banden des Bildes, aufsteigend, ε wie in der Tabelle gerundet
-  (ohne ±). EA: „Elemental analysis calcd (%) for …: C …; found: …“, 2 Nachkommastellen, Warnung > 0.4 %.
+  (ohne ±). EA (Nutzerwunsch 2.3.1, wie die HR-MS-Zeile): „Elemental analysis (%) calc. …: C …; found C …“, 2 Nachkommastellen,
+  Warnung > 0.4 %; immer optional (nie als fehlend melden, auch nicht in der Checkliste).
   Word-Export exakt wie die SI-PDF der Gruppe: A4, Ränder 2.5 cm, Arial 11 (Schriftart wählbar über `SI.set_font`/QSettings
   `si_font`, Größe fest wegen `two_per_page`), Blocksatz, 1.5-zeilig; „Synthesis of **Name**“,
   Absatz mit fettem **m.p.**/**IR**/**HR-MS-ESI(+)**/**UV-Vis**/**λ**max, Exponenten als „-1“; „**Figure Sn**: X-ray solid state

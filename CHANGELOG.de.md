@@ -5,11 +5,18 @@
 ## 2.3.1 – 24.10.2026
 
 ### Geändert
+- **Jede Verbindung gehört zu einem Projekt:** Neue Verbindung fragt erst nach dem Projekt; Verbindungen ohne Projekt
+  (ältere Versionen) werden beim Öffnen zum Zuordnen angeboten. Verbindungen in ein anderes Projekt **verschieben** oder
+  dorthin **kopieren** (dieselbe Verbindung in zwei Papern); Verbindung hinzufügen verschiebt oder kopiert ins Projekt.
+- Elementaranalyse immer optional und aufgebaut wie die HR-MS-Zeile: „Elemental analysis (%) calc. …; found …“.
 - **Navigation:** Ein Pfad links in der Tab-Leiste – **⌂ Übersicht › Projekt › Verbindung ▾** – führt mit einem Klick
   zurück zum Projekt oder zur Übersicht und wechselt direkt zu einer anderen Verbindung des Projekts; die Projektseite
   hat „⌂ Übersicht“ über dem Titel; Datei → Zur Übersicht (Strg+Umschalt+H). Bisher führte aus einer Verbindung ohne
   Projekt kein sichtbarer Weg zurück zur Übersicht.
-- Beispielprojekt und Beispielverbindung erscheinen nach dem Ansehen nicht mehr in der Übersicht.
+- Beispielprojekt und Beispielverbindung erscheinen nach dem Ansehen nicht mehr in der Übersicht; die
+  Beispielverbindungen haben jetzt erfundene Daten für alles auf der Checkliste (2D-NMR, HRMS, IR, m.p.,
+  Elementaranalyse).
+- README: Screenshot der Projektseite.
 
 ### Neu
 - **In den Papierkorb verschieben** aus der Übersicht (Rechtsklick auf eine Verbindung oder ein Projekt): mit Nachfrage

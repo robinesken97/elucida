@@ -1337,7 +1337,7 @@ class MainWindow(QMainWindow):
         self.btn_home.clicked.connect(self.go_home)
         self.btn_pub = QPushButton(objectName="navTab")      # Projekt (nur bei Verbindungen darin)
         self.btn_pub.setToolTip(T("act_to_publication"))
-        self.btn_pub.clicked.connect(self.go_publication)
+        self.btn_pub.clicked.connect(self._crumb_pub)
         self.btn_comp = QPushButton(objectName="navTab")     # andere Verbindungen des Projekts
         self.btn_comp.setToolTip(T("nav_switch_tip"))
         self.comp_menu = QMenu(self.btn_comp)
@@ -1867,6 +1867,12 @@ class MainWindow(QMainWindow):
         m.addAction(T("act_open_project"), lambda: self.open_project(p))
         m.addAction(T("recent_reveal"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
         m.addSeparator()
+        if row.info.get("publication"):
+            m.addAction(T("move_title"), lambda: self.move_compound(p))
+            m.addAction(T("move_copy_title"), lambda: self.move_compound(p, copy=True))
+        else:
+            m.addAction(T("assign_title"), lambda: self.move_compound(p))
+        m.addSeparator()
         m.addAction(T("recent_remove"), lambda: self.remove_recent(p))
         m.addAction(STYLE.icon("trash"), T("recent_trash"), lambda: self.trash_folder(p, publication=False))
         m.exec(row.mapToGlobal(pos))
@@ -2071,16 +2077,7 @@ class MainWindow(QMainWindow):
             return False
         if QMessageBox.question(self, T("app_title"), T("need_project_q")) != QMessageBox.Yes:
             return False
-        return self.choose_project_folder()
-
-    def choose_project_folder(self):
-        d = QFileDialog.getExistingDirectory(self, T("choose_project_dir"),
-                                             self.settings.value("last_project_dir", str(Path.home())))
-        if not d:
-            return False
-        if PRJ.is_project(d):
-            return self.open_project(d, ask=False)
-        return self.create_project(d)
+        return self.new_project()                      # jede Verbindung gehört zu einem Projekt
 
     def create_project(self, d):
         try:
@@ -2160,8 +2157,109 @@ class MainWindow(QMainWindow):
             self.log_signal.emit(f"{T('err_title')}: {e}")
 
     def new_project(self):
+        """Neue Verbindung – immer in einem Projekt (Nutzerwunsch): im offenen Projekt, sonst Projekt wählen/anlegen."""
         self.maybe_save()
-        self.choose_project_folder()
+        if not self.publication_dir:
+            pub = self.choose_publication(T("choose_pub_new"))
+            if pub is None:
+                return False
+            self.open_publication(pub)
+        return self.new_compound_in_publication()
+
+    def choose_publication(self, title, exclude=None):
+        """Projekt wählen: zuletzt geöffnete, „Anderes Projekt öffnen …“ oder „Neues Projekt …“. -> Ordner oder None."""
+        from elucida.app import publication as PUB
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(560, 380)
+        v = QVBoxLayout(dlg)
+        v.addWidget(QLabel(T("choose_pub_hint"), wordWrap=True))
+        lst = QListWidget()
+        ex = Path(exclude).resolve() if exclude else None
+        for p in self.recent_publications():
+            if PUB.is_publication(p) is None or (ex is not None and Path(p).resolve() == ex):
+                continue
+            title_ = re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(p))) or Path(p).name
+            it = QListWidgetItem(f"{title_}\n{p}")
+            it.setData(Qt.UserRole, p)
+            lst.addItem(it)
+        lst.itemDoubleClicked.connect(lambda *_: dlg.accept())
+        if lst.count():
+            lst.setCurrentRow(0)
+        v.addWidget(lst, 1)
+        chosen = {}
+
+        def other(new):
+            d = QFileDialog.getExistingDirectory(dlg, T("act_new_publication") if new else T("act_open_project"),
+                                                 self.settings.value("last_project_dir", str(Path.home())))
+            if not d:
+                return
+            if new:
+                if PRJ.is_project(d):
+                    return self.error(T("pub_is_project"))
+                PUB.create(d)
+            elif PUB.is_publication(d) is None:
+                return self.error(T("no_project", p=d))
+            chosen["p"] = d
+            dlg.accept()
+        row = QHBoxLayout()
+        b_open = QPushButton(STYLE.icon("open"), T("choose_pub_other"))
+        b_open.clicked.connect(lambda: other(False))
+        b_new = QPushButton(STYLE.icon("new"), T("act_new_publication"))
+        b_new.clicked.connect(lambda: other(True))
+        row.addWidget(b_open)
+        row.addWidget(b_new)
+        row.addStretch(1)
+        v.addLayout(row)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        if "p" in chosen:
+            return Path(chosen["p"])
+        it = lst.currentItem()
+        return Path(it.data(Qt.UserRole)) if it is not None else None
+
+    def move_compound(self, cdir=None, copy=False, target=None):
+        """Verbindung in ein anderes Projekt verschieben oder dorthin kopieren (dieselbe Verbindung in zwei Papern; die
+        Kopie ist danach unabhängig). Ohne Projekt: einem Projekt zuordnen. -> neuer Ordner oder None."""
+        from elucida.app import publication as PUB
+        cdir = Path(cdir or self.project_dir or "")
+        if PRJ.is_project(cdir) is None:
+            return None
+        src = PUB.publication_of(cdir)
+        if target is None:
+            title = T("move_copy_title" if copy else ("move_title" if src else "assign_title"))
+            target = self.choose_publication(title, exclude=None if copy else src)
+            if target is None:
+                return None
+        was_open = bool(self.project_dir) and Path(self.project_dir).resolve() == cdir.resolve()
+        if was_open and not copy:
+            self.close_project()                       # gespeichert, Ordner frei zum Verschieben
+        else:
+            self.maybe_save()
+        try:
+            new = PUB.copy_compound_to(cdir, target) if copy else PUB.move_compound_to(cdir, target)
+        except OSError as e:
+            self.error(f"{type(e).__name__}: {e}")
+            if was_open and not copy:
+                self.open_project(cdir, ask=False)
+            return None
+        if not copy:                                   # Listen auf den neuen Ort umstellen
+            self.settings.setValue("recent_projects", json.dumps(
+                [str(new) if Path(r).resolve() == cdir.resolve() else r for r in self.recent()]))
+        self.add_recent_publication(target)
+        self.log_signal.emit(T("compound_copied" if copy else "compound_moved", src=str(cdir), dst=str(new)))
+        if was_open and not copy:
+            self.open_project(new, ask=False)
+        if self.publication_dir and not self.project_dir:
+            self.pub_page.refresh()
+        self.fill_recent_menu()
+        self.fill_recent_list()
+        self.update_title()
+        return new
 
     def open_project_dialog(self):
         self.maybe_save()
@@ -2200,7 +2298,15 @@ class MainWindow(QMainWindow):
             self.add_recent(pdir)
             self.settings.setValue("last_project_dir", str(pdir.parent))
         self.update_title()
+        from elucida.app import demo as DEMO
+        if pub is None and ask and recent and not DEMO.is_demo(pdir) and os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            QTimer.singleShot(0, self._ask_assign)     # jede Verbindung gehört zu einem Projekt (Nutzerwunsch)
         return True
+
+    def _ask_assign(self):
+        if self.project_dir and not self.publication_dir and \
+                QMessageBox.question(self, T("app_title"), T("orphan_q")) == QMessageBox.Yes:
+            self.move_compound()
 
     def save_project(self):
         if not self.project_dir:
@@ -2314,12 +2420,25 @@ class MainWindow(QMainWindow):
         self.pub_page.set_publication(None)
         self.update_title()
 
+    def _crumb_pub(self):
+        if self.publication_dir:
+            self.go_publication()
+        else:
+            self.move_compound()                       # „⚠ ohne Projekt“: einem Projekt zuordnen
+
     def _update_crumbs(self):
         if getattr(self, "btn_home", None) is None:
             return
+        from elucida.app import demo as DEMO
         on = bool(self.publication_dir and self.project_dir)
-        for w_ in (self.crumb_seps[0], self.btn_pub, self.crumb_seps[1], self.btn_comp):
+        orphan = bool(self.project_dir and not self.publication_dir and not DEMO.is_demo(self.project_dir))
+        self.crumb_seps[0].setVisible(on or orphan)
+        self.btn_pub.setVisible(on or orphan)
+        for w_ in (self.crumb_seps[1], self.btn_comp):
             w_.setVisible(on)
+        if orphan:
+            self.btn_pub.setText("⚠ " + T("nav_no_project"))
+            self.btn_pub.setToolTip(T("assign_title"))
         if on:
             t_ = self.publication_title()
             self.btn_pub.setText(t_ if len(t_) <= 28 else t_[:26] + "…")
@@ -2340,6 +2459,8 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _=False, d=d: d.resolve() != cur and self.open_project(d))
         self.comp_menu.addSeparator()
         self.comp_menu.addAction(T("pub_new_compound") + " …", self.new_compound_in_publication)
+        self.comp_menu.addAction(T("move_title"), lambda: self.move_compound())
+        self.comp_menu.addAction(T("move_copy_title"), lambda: self.move_compound(copy=True))
 
     def go_home(self):
         """Zur Übersicht (Startbildschirm): offene Verbindung und Projekt schließen (gespeichert wird automatisch)."""
@@ -3172,7 +3293,7 @@ class MainWindow(QMainWindow):
         ir_ms_ea = self.irms_tab.si_parts() + self.hrms_tab.si_parts()
         kinds = [p_[0].split(" ")[0] for p_ in ir_ms_ea]
         uv = self.uvvis_si_parts()
-        for key, lab in (("IR", "IR"), ("HR-MS-", "HR-MS"), ("Elemental", "EA")):
+        for key, lab in (("IR", "IR"), ("HR-MS-", "HR-MS")):   # Elementaranalyse immer optional (Nutzerwunsch)
             if not any(k_.startswith(key) for k_ in kinds):
                 missing.append(lab)
         if not uv:

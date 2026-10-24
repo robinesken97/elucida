@@ -90,11 +90,12 @@ series). Compounds, settings and downloaded data are taken over automatically.*
 ## Quick start: from an empty compound to the SI
 
 Elucida has two levels: a **compound** is a folder with all data of one compound, a **project** groups the compounds of
-a paper (complete SI, dataset; see the next quick start). A compound can also be created without a project.
+a paper (complete SI, dataset; see the next quick start). Every compound belongs to a project: it lives in the
+project folder.
 
-1. **Create a compound:** the welcome page shows **New compound…**: choose an empty folder or create one in the dialog
-   (or **File → New compound…**; inside a project **New compound** on its page). All files you load are copied into
-   it; it is saved automatically.
+1. **Create a compound:** **New compound…** on the welcome page (or **File → New compound…**) first asks for the project
+   (a recent one, another one or a new one), then for the name; inside a project **New compound** on its page. All
+   files you load are copied into it; it is saved automatically.
 2. **Set the compound:** **Compound …** in the toolbar: name (e.g. the sample number) and the ChemDraw file (CDXML).
    Formula and molar mass are taken from it. This is the default for all tabs and the SI.
 3. **Load data:** simply drag files into the window – Elucida puts them into the right tab: CIF → **X-Ray**, SVG from
@@ -154,7 +155,7 @@ All settings of the individual tabs are described further down for reference.
 Everything happens in the **compound folder** (the folder button in the toolbar opens it in Finder, Explorer or the file
 manager of your Linux desktop):
 
-1. **File → New compound…** – choose a folder or create a new one in the dialog.
+1. **File → New compound…** – choose the project, then the name; the compound becomes a subfolder of the project.
 2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
    compound** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
    Files that are already inside the compound are not copied again.
@@ -198,10 +199,20 @@ plotted curves (one x/y column pair per curve, values without stacking offset) �
 
 ### Projects
 
+<p align="center"><img src="docs/screenshots/project_dark_en.png" alt="Project page with the compounds and their checklists" width="800"></p>
+
 **File → New project** turns a folder into a project: the parent folder for all compounds of a paper. The compounds
 stay ordinary compound folders in its subfolders (each can still be opened on its own); `publication.elucida` keeps
 their order, the details for the dataset and the SI texts. The project page lists the compounds with a checklist
-(right-click: up/down, remove), **New compound** creates a subfolder, **Add compound** includes one from elsewhere.
+(right-click: up/down, remove), **New compound** creates a subfolder, **Add compound** moves or copies one from
+elsewhere into the project.
+
+- **Move or duplicate:** right-click on a compound (project page or overview) or the menu of the compound in the path
+  at the top → **Move to another project …** moves the folder; **Copy to another project …** makes an independent copy,
+  e.g. when the same compound appears in two papers. Compounds from older versions without a project are offered for
+  assignment when they are opened (path: "⚠ no project").
+- **Move to trash …** (right-click in the overview) removes a compound or a whole project after a question with the
+  number of files and the size; it can be restored from the trash.
 
 - **Data packages (zip):** the whole dataset as on TUDOdata – one zip per compound (as above), the DFT calculations of
   all compounds in `CompChem.zip`, `README.txt` (title, authors, DOI, citation, related publication, descriptions,
@@ -319,8 +330,9 @@ to Word or as part of the SI section.
   compound.
 - **Elemental analysis:** formula from the compound, optionally plus a solvate (`0.5 CH2Cl2`, several
   separated by commas); calculated values with conventional mean atomic masses, enter the found C/H/N/S values.
-  Deviations above 0.4 % are flagged (the usual limit of the journals). Output: **Elemental analysis** calcd (%) for
-  C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
+  Deviations above 0.4 % are flagged (the usual limit of the journals). Output, built like the HR-MS line: **Elemental analysis**
+  (%) calc. C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found C 81.52, H 7.70, N 10.41. The elemental analysis is always
+  optional (not reported as missing).
 - **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
   and `…_SI.txt` with all lines.
 

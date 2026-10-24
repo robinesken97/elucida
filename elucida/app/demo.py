@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 
 from elucida.tabs import dft as DFT
+from elucida.tabs import nmr as NMR
+from elucida.app import project as PRJ
 from elucida.tabs import epr as EPR
 from elucida.core import images as IMG
 from elucida.tabs import sec as SEC
@@ -188,7 +190,8 @@ def load_data(w, inp):
     """Alle Tabs mit künstlichen Daten füllen."""
     from elucida.selftest import make_selftest_inputs
     csv, cdxml, photo = make_selftest_inputs(inp)
-    w.set_compound({"name": "S2"})
+    # Verbindung mit Formel, Molmasse und Schmelzpunkt (erfunden), damit die Checkliste des Projekts vollständig ist
+    w.set_compound({"name": "S2", "formula": "C8H7N", "mw": 117.15, "mp": "112–114 °C"})
     # UV-Vis (ε): Verdünnungsreihe, Struktur, Küvettenfoto
     w.open_csv(csv, ask=False)
     w.set_structure(str(cdxml), "TEST-A", render=False, sync=True)
@@ -289,7 +292,15 @@ def load_data(w, inp):
     m = Chem.MolFromSmiles("Cc1ccc(C#C)nc1")
     AllChem.Compute2DCoords(m)
     (nd / "S2.cdxml").write_text(mol_cdxml(m), encoding="utf-8")
-    w.nmr_state["structure"] = str(nd / "S2.cdxml")
+    w.nmr_state["structure"] = w.import_file(str(nd / "S2.cdxml"), PRJ.STRUCTURES)   # nicht im Temp-Ordner lassen
+    # 2D: künstliches TopSpin-HSQC-Experiment (Rohdaten-Reiter, Checkliste „2D NMR“)
+    t_n.import_topspin(str(NMR.make_test_acqus(nd / "S2" / "3", nuc="1H", nuc2="13C", pulprog="hsqcedetgpsisp2.3")))
+    # IR (künstliche OPUS-Datei), HRMS (künstlicher Bericht der Massenabteilung), Elementaranalyse (erfundene Werte)
+    ird = inp / "irms"
+    ird.mkdir(parents=True, exist_ok=True)
+    w.irms_tab.load_ir(str(make_opus(ird / "S2.0")))
+    w.hrms_tab.load_ms(str(make_ms_report(ird / "S2_MS.docx", "S2", "C8H7N")))
+    w.irms_state["ea_found"] = {"C": "81.88", "H": "6.07", "N": "11.86"}
     w.nmr_state["text"] = ("1H NMR (400 MHz, CDCl3) δ 8.38 (s, 1H), 7.50 (d, J = 7.9 Hz, 1H), 7.41 (d, J = 7.9 Hz, 1H), "
                            "3.08 (s, 1H), 2.33 (s, 3H).\n13C NMR (101 MHz, CDCl3) δ 150.4, 139.9, 136.7, 133.4, "
                            "127.1, 82.9, 76.9, 18.4.")
@@ -309,6 +320,62 @@ def load_data(w, inp):
 
 
 DEMO_DIRS = ("Beispielverbindung", "Beispielprojekt", "Beispielpublikation")   # im Datenordner (alte Namen mit)
+
+
+def make_opus(path, bands=((3290.0, 35, 10), (2104.0, 20, 6), (1598.0, 40, 8), (1482.0, 45, 6), (1029.0, 30, 8),
+                            (823.0, 55, 6))) -> Path:
+    """Künstliche Bruker-OPUS-Datei (Transmission, 4000–400 cm-1) wie im Selbsttest."""
+    import struct
+    wn = np.linspace(3999.0, 400.0, 1800)
+    T = 1.0 - sum(dp / 100 * np.exp(-((wn - c) / wd) ** 2) for c, dp, wd in bands)
+
+    def par(pairs):
+        out = b""
+        for nm, typ, val in pairs:
+            raw = struct.pack("<i", val) if typ == 0 else struct.pack("<d", val)
+            out += nm.encode() + b"\0" + struct.pack("<hh", typ, len(raw) // 2) + raw
+        return out + b"END\0" + struct.pack("<hh", 0, 0)
+    p_ = par([("NPT", 0, len(wn)), ("FXV", 1, 3999.0), ("LXV", 1, 400.0), ("CSF", 1, 1.0)])
+    off_par, off_dat = 24 + 12 * 2, 24 + 12 * 2 + len(p_)
+    head = b"\x0a\x0a\xfe\xfe" + struct.pack("<d", 920622.0) + struct.pack("<iii", 24, 2, 2)
+    dirs = struct.pack("<BBBBii", 31, 20, 0, 0, len(p_) // 4, off_par) + \
+        struct.pack("<BBBBii", 15, 20, 0, 0, len(wn), off_dat)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(head + dirs + p_ + T.astype("<f4").tobytes())
+    return Path(path)
+
+
+def make_ms_report(path, name, formula, adduct="M+H", shift=0.0004) -> Path:
+    """Künstlicher Word-Bericht der Massenabteilung (Text + EMF-Beschriftungen wie im echten Bericht): Probe, Formel,
+    exakte Masse, ESI; gemessenes m/z = berechnet + shift."""
+    import struct
+    import zipfile
+    from elucida.tabs import ir_ea as IRMS
+    calc = IRMS.ion(formula, adduct)[2]
+    exact = IRMS.ion(formula, "M+H")[2] - 1.007276467   # neutrale monoisotopische Masse (nur Text im Bericht)
+    found = calc + shift
+
+    def emf(texts):
+        out = b""
+        for t in texts:
+            body = t.encode("utf-16-le")
+            size = 76 + len(body) + (-(76 + len(body)) % 4)
+            rec = bytearray(size)
+            struct.pack_into("<II", rec, 0, 84, size)
+            struct.pack_into("<II", rec, 44, len(t), 76)
+            rec[76:76 + len(body)] = body
+            out += bytes(rec)
+        return out
+    xml = "".join(f"<w:p><w:r><w:t>{t}</w:t></w:r></w:p>" for t in
+                  ("sample name:", name, "molecular formula:", formula, "exact mass:", f"{exact:.4f}",
+                   "method of Ionisation:", "ESI ☒ APCI ☐ HESI ☐"))
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("word/document.xml", f"<w:document><w:body>{xml}</w:body></w:document>")
+        z.writestr("word/media/image1.emf", emf(["Chemical Formula:", formula, "Exact Mass:", f"{exact:.4f}"]))
+        z.writestr("word/media/image2.emf", emf([f"{found:.4f}", f"{found + 1.0034:.4f}", "x.d: +MS, 0.1-0.4min",
+                                                 "m/z"]))
+    return Path(path)
 
 
 def demo_dir() -> Path:

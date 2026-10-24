@@ -5,11 +5,17 @@
 ## 2.3.1 – 2026-10-24
 
 ### Changed
+- **Every compound belongs to a project:** New compound first asks for the project; compounds without a project
+  (older versions) are offered for assignment when opened. **Move** a compound to another project or **copy** it into
+  one (the same compound in two papers); Add compound moves or copies into the project.
+- Elemental analysis is always optional and built like the HR-MS line: "Elemental analysis (%) calc. …; found …".
 - **Navigation:** a path at the left of the tab bar – **⌂ Overview › project › compound ▾** – leads back to the project
   or the overview with one click and switches directly to another compound of the project; the project page has
   "⌂ Overview" above its title; File → Back to overview (Ctrl+Shift+H). Before, a compound without a project had no
   visible way back to the overview.
-- The example project and the example compound no longer appear in the overview after looking at them.
+- The example project and the example compound no longer appear in the overview after looking at them; the example
+  compounds now have artificial data for everything on the checklist (2D NMR, HRMS, IR, m.p., elemental analysis).
+- README: screenshot of the project page.
 
 ### New
 - **Move to trash** from the overview (right-click on a compound or project): with a question naming the folder, the

@@ -91,12 +91,12 @@ Verbindungen, Einstellungen und heruntergeladene Daten werden automatisch übern
 ## Schnellstart: von der leeren Verbindung zur SI
 
 Elucida kennt zwei Ebenen: Eine **Verbindung** ist ein Ordner mit allen Daten einer Verbindung, ein **Projekt** fasst
-die Verbindungen einer Veröffentlichung zusammen (Gesamt-SI, Datensatz; siehe den nächsten Schnellstart). Eine
-Verbindung lässt sich auch ohne Projekt anlegen.
+die Verbindungen einer Veröffentlichung zusammen (Gesamt-SI, Datensatz; siehe den nächsten Schnellstart). Jede
+Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
 
-1. **Verbindung anlegen:** Der Startbildschirm zeigt **Neue Verbindung…**: einen leeren Ordner wählen oder im Dialog neu
-   anlegen (oder **Datei → Neue Verbindung…**; in einem Projekt **Neue Verbindung** auf dessen Seite). Alle Dateien, die
-   du lädst, werden hineinkopiert, gespeichert wird automatisch.
+1. **Verbindung anlegen:** **Neue Verbindung…** auf dem Startbildschirm (oder **Datei → Neue Verbindung…**) fragt erst
+   nach dem Projekt (zuletzt geöffnetes, anderes oder neues), dann nach dem Namen; in einem Projekt **Neue Verbindung**
+   auf dessen Seite. Alle Dateien, die du lädst, werden hineinkopiert, gespeichert wird automatisch.
 2. **Verbindung festlegen:** **Verbindung …** in der Werkzeugleiste: Name (z. B. die Probennummer) und die
    ChemDraw-Datei (CDXML). Summenformel und Molmasse kommen daraus. Das ist die Vorgabe für alle Tabs und die SI.
 3. **Daten laden:** Dateien einfach ins Fenster ziehen – Elucida legt sie in den passenden Tab:
@@ -156,7 +156,7 @@ Alle Einstellungen der einzelnen Tabs stehen weiter unten zum Nachschlagen.
 Alles passiert im **Ordner der Verbindung** (der Ordner-Knopf in der Werkzeugleiste öffnet ihn im Finder, Explorer bzw.
 im Dateimanager des Linux-Desktops):
 
-1. **Datei → Neue Verbindung…** – einen Ordner wählen oder im Dialog neu anlegen.
+1. **Datei → Neue Verbindung…** – Projekt wählen, dann den Namen; die Verbindung wird ein Unterordner des Projekts.
 2. Messdaten, Strukturen, Fotos und TD-DFT-Dateien von beliebigen Orten laden – sie werden **in die
    Verbindung kopiert** (`data/<Analytik>/`, `structures/`; ChemDraw-Exporte mit gleichem Namen wie eine CDXML kommen
    mit). Dateien, die schon in der Verbindung liegen, werden nicht erneut kopiert.
@@ -202,11 +202,20 @@ gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) �
 
 ### Projekte
 
+<p align="center"><img src="docs/screenshots/project_dark_de.png" alt="Projektseite mit den Verbindungen und ihren Checklisten" width="800"></p>
+
 **Datei → Neues Projekt** macht einen Ordner zum Projekt: dem übergeordneten Ordner für alle Verbindungen einer
 Veröffentlichung. Die Verbindungen bleiben normale Verbindungsordner in seinen Unterordnern (jede lässt sich weiter allein
 öffnen); `publication.elucida` hält ihre Reihenfolge, die Angaben für den Datensatz und die SI-Texte. Die Seite des
 Projekts listet die Verbindungen mit Checkliste (Rechtsklick: nach oben/unten, herausnehmen), **Neue Verbindung** legt
-einen Unterordner an, **Verbindung hinzufügen** nimmt eine von woanders auf.
+einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine von woanders in das Projekt.
+
+- **Verschieben oder duplizieren:** Rechtsklick auf eine Verbindung (Projektseite oder Übersicht) oder das Menü der
+  Verbindung im Pfad oben → **In anderes Projekt verschieben …** verschiebt den Ordner; **In anderes Projekt kopieren …**
+  legt eine unabhängige Kopie an, z. B. wenn dieselbe Verbindung in zwei Papern vorkommt. Verbindungen aus älteren
+  Versionen ohne Projekt bietet das Programm beim Öffnen zum Zuordnen an (Pfad: „⚠ ohne Projekt“).
+- **In den Papierkorb verschieben …** (Rechtsklick in der Übersicht) entfernt eine Verbindung oder ein ganzes Projekt
+  nach einer Nachfrage mit Anzahl der Dateien und Größe; aus dem Papierkorb lässt sich alles wiederherstellen.
 
 - **Datenpakete (Zip):** der ganze Datensatz wie auf TUDOdata – je Verbindung ein Zip (wie oben), die DFT-Rechnungen
   aller Verbindungen in `CompChem.zip`, `README.txt` (Titel, Autoren, DOI, Zitat, zugehörige Publikation,
@@ -329,8 +338,9 @@ als eigene Word-Datei oder im SI-Abschnitt.
   `analysis.sqlite`.
 - **Elementaranalyse:** Formel aus der Verbindung, optional plus Solvat (`0.5 CH2Cl2`, mehrere mit
   Komma); berechnet mit den konventionellen mittleren Atommassen, gefundene C/H/N/S-Werte eintragen. Abweichungen über
-  0.4 % werden markiert (übliche Grenze der Journals). Ausgabe: **Elemental analysis** calcd (%) for C₁₈H₂₀N₂: C 81.78,
-  H 7.63, N 10.60; found: C 81.52, H 7.70, N 10.41.
+  0.4 % werden markiert (übliche Grenze der Journals). Ausgabe, aufgebaut wie die HR-MS-Zeile: **Elemental analysis** (%) calc.
+  C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found C 81.52, H 7.70, N 10.41. Die Elementaranalyse ist immer optional (wird
+  nicht als fehlend gemeldet).
 - **In Zwischenablage** behält Fettdruck, Hoch- und Tiefstellung beim Einfügen in Word. Der Export schreibt die
   Spektrenabbildung und `…_SI.txt` mit allen Zeilen.
 

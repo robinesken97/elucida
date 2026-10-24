@@ -40,11 +40,11 @@ def pump(sec=0.6):
 
 
 def shoot_welcome(w, outdir, lang, theme, work):
-    """Coverbild: Startbildschirm mit dem Beispielprojekt (Projekte + zuletzt geöffnete Verbindungen)."""
+    """Coverbild: Startbildschirm mit dem Beispielprojekt (Projekte + zuletzt geöffnete Verbindungen), dazu die Seite
+    des Beispielprojekts (Verbindungen mit Checkliste) für den Projekt-Abschnitt."""
     from elucida.app import welcome as WEL
     keep = w.project_dir
-    w.close_project()
-    w.close_publication()
+    w.go_home()
     real = WEL.short_path
     base = str(Path(work).resolve())                   # macOS: /var -> /private/var
     WEL.short_path = lambda p: "~/Documents/" + Path(p).resolve().relative_to(base).as_posix() if str(
@@ -55,9 +55,14 @@ def shoot_welcome(w, outdir, lang, theme, work):
         p = Path(outdir) / f"welcome_{theme}_{lang}.png"
         w.grab().save(str(p))
         print(p.name)
+        w.open_publication(work / "Beispielprojekt")
+        pump(0.8)
+        p = Path(outdir) / f"project_{theme}_{lang}.png"
+        w.grab().save(str(p))
+        print(p.name)
     finally:
         WEL.short_path = real
-    w.open_project(keep, recent=False)
+    w.open_project(keep, recent=False)               # Tab-Bilder: leere Verbindung in eigenem Projekt
     pump(0.5)
 
 
@@ -95,11 +100,16 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         w.settings.setValue("update_auto", False)
         w.resize(*SIZE)
         w.show()
-        w.open_demo_publication(work / "Beispielprojekt")      # nur fürs Coverbild (Startbildschirm)
-        w.close_publication()
-        assert w.create_project(work / "Elucida")
-        w.settings.setValue("recent_projects", __import__("json").dumps(      # Coverbild: nur das Beispielprojekt
+        import json
+        from elucida.app import publication as PUB
+        w.open_demo_publication(work / "Beispielprojekt")      # Coverbild und Projektseite
+        w.go_home()
+        PUB.create(work / "Paper", "Paper")                      # Tab-Bilder: leere Verbindung in eigenem Projekt
+        w.open_publication(work / "Paper")
+        assert w.new_compound_in_publication("1a")
+        w.settings.setValue("recent_projects", json.dumps(      # Übersicht: nur das Beispielprojekt
             [str((work / "Beispielprojekt" / n).resolve()) for n in ("S3", "S2")]))
+        w.settings.setValue("recent_publications", json.dumps([str((work / "Beispielprojekt").resolve())]))
         for lang in ("de", "en"):
             w.switch_lang(lang)
             for theme in ("dark",):
