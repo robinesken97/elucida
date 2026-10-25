@@ -1363,6 +1363,9 @@ def selftest(outdir, with_isnet=False):
             assert w.table.rowCount() == n_rows, (w.table.rowCount(), n_rows)
             css_ = QApplication.instance().styleSheet()       # Checkboxen mit eigenem Rand (dunkel sonst unsichtbar)
             assert "QCheckBox::indicator" in css_ and STYLE.COLORS[mode]["check_border"] in css_, mode
+            ic_ = w.app_icon()                                # App-Symbol hell/dunkel passend zum Theme
+            assert ic_.exists() and ic_.name == ("icon-dark.png" if mode == "dark" else "icon.png"), (mode, ic_)
+            assert not w.windowIcon().isNull(), mode
         assert w.findChildren(QFrame, "card") and not [g_ for g_ in w.eps_page.findChildren(QGroupBox)
                                                         if g_.objectName() != "resultCard"]
         w.switch_theme("system")

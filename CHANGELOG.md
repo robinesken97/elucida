@@ -5,6 +5,8 @@
 ## 2.3.7 – 2026-10-25
 
 ### Changed
+- New app icon in a light and a dark version: the window/Dock icon and the start screen follow the light/dark theme;
+  Windows uses the light, macOS the dark icon for the program file.
 - IR: "y-axis max" replaced by a y range (min – max). Auto: transmittance from 100 % at the top down to what the
   labels need; without "auto" both limits apply exactly (0–100 %T). Old projects keep their previous maximum.
 

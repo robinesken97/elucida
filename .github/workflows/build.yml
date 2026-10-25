@@ -95,7 +95,7 @@ jobs:
           chmod +x appimagetool
           mkdir -p AppDir/usr/bin
           cp -a dist/Elucida AppDir/usr/bin/
-          python -c "from PIL import Image; Image.open('assets/icon.png').resize((256, 256), Image.LANCZOS).save('AppDir/Elucida.png')"
+          cp assets/png/icon-256.png AppDir/Elucida.png
           printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Elucida' \
             'Comment=From synthesis to SI: characterization data and figures' 'Exec=Elucida' 'Icon=Elucida' \
             'Categories=Science;Chemistry;' 'Terminal=false' > AppDir/Elucida.desktop

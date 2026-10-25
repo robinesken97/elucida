@@ -21,7 +21,7 @@ args = [
     sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
     "--name", "Elucida",
     "--windowed",
-    "--icon", "assets/icon.png",
+    "--icon", {"darwin": "assets/icon.icns", "win32": "assets/icon.ico"}.get(sys.platform, "assets/icon.png"),
     "--add-data", f"assets{';' if sys.platform.startswith('win') else ':'}assets",
     "--collect-all", "rdkit",
     "--collect-all", "pymupdf",

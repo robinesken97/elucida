@@ -2,7 +2,7 @@
 
 # Elucida – from synthesis to SI
 
-<p align="center"><img src="assets/icon.png" alt="Elucida" width="96"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.png"><img src="assets/icon.png" alt="Elucida" width="96"></picture></p>
 
 Elucida turns the analytical data of new compounds into a finished **Supporting Information**: evaluation and
 publication-ready figures for synthesis, NMR, IR, HRMS, elemental analysis, UV-Vis, fluorescence, cyclic voltammetry,

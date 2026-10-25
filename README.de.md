@@ -2,7 +2,7 @@
 
 # Elucida – von der Synthese zur SI
 
-<p align="center"><img src="assets/icon.png" alt="Elucida" width="96"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.png"><img src="assets/icon.png" alt="Elucida" width="96"></picture></p>
 
 Elucida macht aus den Analysedaten neuer Verbindungen eine fertige **Supporting Information**: Auswertung und
 publikationsfertige Abbildungen für Synthese, NMR, IR, HRMS, Elementaranalyse, UV-Vis, Fluoreszenz, Cyclovoltammetrie,

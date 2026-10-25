@@ -28,7 +28,11 @@ exports/
 *.[Tt][Ii][Ff]
 *.[Tt][Ii][Ff][Ff]
 !assets/*.png
+!assets/png/*.png
 !docs/screenshots/*.png
 
 # Lizenztexte für Datensätze (CC-Texte selbst CC0)
 !assets/licenses/*.txt
+
+# macOS
+.DS_Store

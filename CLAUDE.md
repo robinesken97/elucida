@@ -373,7 +373,8 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
   `…/Spectravolt`, sonst `…/UVVisTool`) werden beim ersten Start übernommen. Alte Versionen fragen die GitHub-API unter
   den alten Repo-Namen ab (GitHub leitet um) – Repo **nie** neu unter `spectravolt` oder `uvvis-tool` anlegen. Der
   Updater sucht Pakete nur über die Systemkennung (`windows-x64` …), nicht über den Programmnamen. Icon: Quelle
-  `assets/icon.svg`, PNG mit `python tools/make_icon.py`.
+  `assets/icon-light.svg` (Windows/Linux/README, `.ico`) und `assets/icon-dark.svg` (macOS, `.icns`, Fenster unter
+  macOS, Startbildschirm im dunklen Theme); alle PNG/ICO/ICNS mit `python tools/make_icon.py` (ICNS nur auf macOS).
 - **Windows-Zeilenenden:** CSVs in Tests mit `newline=""` schreiben; Reader überspringt leere Zeilen
   (früher Windows-CI-Abbruch durch `\r\r\n`).
 - **AppImage (Linux):** in CI aus dem PyInstaller-Ordner gebaut; appimagetool und type2-Runtime mit fester

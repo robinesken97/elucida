@@ -599,9 +599,6 @@ class MainWindow(QMainWindow):
         self._status.messageChanged.connect(self._place_toast)
         self.log_signal.connect(self._append_log)
         core.LOG = IMG.LOG = lambda m="": self.log_signal.emit(str(m))
-        icon = resource_path("assets/icon.png")
-        if icon.exists():
-            self.setWindowIcon(QIcon(str(icon)))
         self.apply_theme()
         QGuiApplication.styleHints().colorSchemeChanged.connect(self._system_scheme_changed)
         self._mac_title = MAC.enabled()
@@ -1326,6 +1323,14 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self):
         STYLE.apply(self._theme_mode(), IMG.app_data_dir() / "theme")
+        icon = self.app_icon()                           # Fenster-/Dock-Symbol folgt dem Theme
+        if icon.exists():
+            self.setWindowIcon(QIcon(str(icon)))
+
+    @staticmethod
+    def app_icon():
+        """Helles oder dunkles App-Symbol passend zum aktuellen Theme (Paket-Icons: .ico hell, .icns dunkel)."""
+        return resource_path("assets/icon-dark.png" if STYLE._mode == "dark" else "assets/icon.png")
 
     def switch_theme(self, mode):
         self.collect_globals()
@@ -1765,7 +1770,7 @@ class MainWindow(QMainWindow):
         v.setSpacing(14)
         head = QHBoxLayout()
         head.setSpacing(16)
-        icon = resource_path("assets/icon.png")
+        icon = self.app_icon()
         if icon.exists():
             lb = QLabel()
             lb.setPixmap(QIcon(str(icon)).pixmap(72, 72))

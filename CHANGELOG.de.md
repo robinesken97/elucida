@@ -5,6 +5,8 @@
 ## 2.3.7 – 25.10.2026
 
 ### Geändert
+- Neues App-Symbol in heller und dunkler Fassung: Fenster-/Dock-Symbol und Startbildschirm folgen dem hellen/dunklen
+  Theme; als Programmsymbol nutzt Windows das helle, macOS das dunkle.
 - IR: „y-Achse max“ ersetzt durch einen y-Bereich (min – max). Auto: Transmission oben 100 %, unten so weit, wie die
   Labels brauchen; ohne „auto“ gelten beide Grenzen exakt (0–100 %T). Alte Projekte behalten ihr bisheriges Maximum.
 
