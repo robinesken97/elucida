@@ -2653,7 +2653,7 @@ class MainWindow(QMainWindow):
         from elucida.app import publication as PUB
         if not self.publication_dir:
             return False
-        if name is None:
+        if not isinstance(name, str):   # Qt-Signale übergeben sonst checked (bool) als Namen
             name, ok = QInputDialog.getText(self, T("pub_new_compound"), T("pub_new_compound_q"))
             if not ok:
                 return False

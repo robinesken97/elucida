@@ -173,7 +173,7 @@ class PublicationPage(QWidget):
         row = QHBoxLayout()
         b_new = QPushButton(STYLE.icon("new", "#FFFFFF"), T("pub_new_compound"))
         b_new.setProperty("accent", True)
-        b_new.clicked.connect(main.new_compound_in_publication)
+        b_new.clicked.connect(lambda: main.new_compound_in_publication())
         b_add = QPushButton(STYLE.icon("open"), T("pub_add_project"))
         b_add.setToolTip(T("pub_add_project_tip"))
         b_add.clicked.connect(self.add_project)

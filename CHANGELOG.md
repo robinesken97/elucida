@@ -2,6 +2,11 @@
 
 # Changelog
 
+## 2.3.4 – 2026-10-25
+
+### Fixed
+- Project page: "New compound" crashed with an error message instead of asking for the name.
+
 ## 2.3.3 – 2026-10-24
 
 ### New

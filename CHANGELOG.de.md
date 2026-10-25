@@ -2,6 +2,11 @@
 
 # Änderungen
 
+## 2.3.4 – 25.10.2026
+
+### Behoben
+- Projektseite: „Neue Verbindung“ brach mit einer Fehlermeldung ab, statt nach dem Namen zu fragen.
+
 ## 2.3.3 – 24.10.2026
 
 ### Neu
