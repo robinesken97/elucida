@@ -492,8 +492,17 @@ TEXTS = {
                     "(immer aus den gemessenen Daten).",
                     "Display only: A = −log₁₀(T/100). Peak search, peak values and SI line stay the same "
                     "(always from the measured data)."),
-    "ir_ymax_low": ("„y-Achse max“ liegt nicht über dem Spektrum – Obergrenze automatisch.",
-                    "“y-axis max” is not above the spectrum – upper limit set automatically."),
+    "ir_yrange": ("y-Bereich", "y range"),
+    "ir_yrange_tip": ("auto: Transmission oben 100 %, unten mit Platz für die Labels; Absorbanz unten 0, oben nach den "
+                      "Daten. Ohne Haken gelten min und max exakt (Transmission 0–100 %).",
+                      "auto: transmittance top 100 %, bottom with room for the labels; absorbance bottom 0, top from "
+                      "the data. Unchecked, min and max are used exactly (transmittance 0–100 %)."),
+    "ir_yrange_bad": ("y-Bereich ungültig (min muss kleiner als max sein) – automatisch.",
+                      "Invalid y range (min must be below max) – set automatically."),
+    "ir_labels_clamped": ("{n} Wellenzahl-Label(s) passen nicht in den festen y-Bereich und liegen am Rand – "
+                          "min verkleinern oder „auto“ wählen.",
+                          "{n} wavenumber label(s) do not fit into the fixed y range and sit at the edge – "
+                          "lower min or choose “auto”."),
     "ir_intensity": ("Intensität", "Intensity"),
     "si_copy": ("In Zwischenablage (mit Formatierung für Word)", "Copy to clipboard (formatted for Word)"),
     "ea_group": ("Elementaranalyse", "Elemental analysis"),

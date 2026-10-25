@@ -164,30 +164,36 @@ def display_y(sp, mode):
     return to_absorbance(y) if mode == "A" else to_transmission(y)
 
 
-# Eingabe „y-Achse max“ je Darstellung: (Minimum, Maximum, Nachkommastellen, Schritt); 0 = automatisch
-YMAX_SPIN = {"T": (0.0, 100.0, 0, 5.0), "A": (0.0, 10.0, 2, 0.1)}
+# Felder „y-Bereich“ je Darstellung: (Minimum, Maximum, Nachkommastellen, Schritt) und Vorgabe beim Abschalten von
+# „auto“ ohne Bild
+Y_SPIN = {"T": (0.0, 100.0, 0, 5.0), "A": (-1.0, 10.0, 2, 0.1)}
+Y_DEFAULT = {"T": (0.0, 100.0), "A": (0.0, 1.0)}
 
 
-def y_limits(y, mode, ymax=0.0):
-    """y-Grenzen [unten, oben] für das IR-Bild und ob die Eingabe „y-Achse max“ verworfen wurde.
-    %T: Obergrenze höchstens 100. Eine Obergrenze, die nicht über dem kleinsten Wert liegt, würde die ganze Kurve
-    abschneiden (früher: Spinbox ab „auto“ = 0 mit Schritt 0.1 -> ylim [37, 0.1], Spektrum weg) -> automatisch."""
+def y_limits(y, mode, manual=None):
+    """y-Grenzen [unten, oben] für das IR-Bild und ob ein eingegebener Bereich verworfen wurde.
+    auto: %T oben 100 (nur höher, wenn Messwerte darüber liegen), unten nach den Daten (Platz für Labels schafft
+    IRFigure); Absorbanz unten 0 (bzw. tiefster Wert, falls negativ), oben nach den Daten.
+    manual = (min, max): exakt übernommen, %T auf 0–100 begrenzt; min ≥ max -> verworfen (auto)."""
     y = np.asarray(y, float)
     y = y[np.isfinite(y)]
     ymin, ymaxv = (float(y.min()), float(y.max())) if len(y) else (0.0, 100.0 if mode == "T" else 1.0)
     span = ymaxv - ymin or 1.0
-    lo = ymin - 0.08 * span
-    hi = ymaxv + 0.05 * span
-    rejected = False
-    if ymax and ymax > 0:
-        top = min(float(ymax), 100.0) if mode == "T" else float(ymax)
-        if top > ymin + 0.02 * span:
-            hi = top
-        else:
-            rejected = True
+    if manual is not None:
+        lo, hi = float(manual[0]), float(manual[1])
+        if mode == "T":
+            lo, hi = min(max(lo, 0.0), 100.0), min(max(hi, 0.0), 100.0)
+        if lo < hi:
+            return [lo, hi], False
+    if mode == "T":
+        lo = ymin - 0.08 * span
+        hi = 100.0 if ymaxv <= 100.0 else ymaxv + 0.02 * span
+    else:
+        lo = min(0.0, ymin)
+        hi = ymaxv + 0.05 * span
     if hi <= lo:
         hi = lo + 1.0
-    return [lo, hi], rejected
+    return [lo, hi], manual is not None
 
 
 def intensity_tag(p, broad=BROAD_CM):
@@ -322,8 +328,9 @@ class IRFigure(TABS.X.SimpleFigure):
     (Absorbanz), seitlich auseinandergeschoben statt überlappend; die y-Achse wächst, bis alle Labels hineinpassen.
     Gespeicherte (gezogene) Positionen haben Vorrang."""
 
-    def __init__(self, *a, side="below", fixed_top=False, **kw):
-        self._ir_side, self._ir_fixed_top = side, fixed_top
+    def __init__(self, *a, side="below", fixed=False, **kw):
+        self._ir_side, self._ir_fixed = side, fixed       # fixed: y-Bereich vom Nutzer -> nie erweitern
+        self.ir_clamped = []                               # Labels, die im festen Bereich nicht ganz passen
         super().__init__(*a, **kw)
 
     def _make_labels(self, labels):
@@ -359,7 +366,7 @@ class IRFigure(TABS.X.SimpleFigure):
                 wid.append(bw + gx)
                 hgt.append(bh)
             cen = spread_centers(tgt, wid)
-            pos, need = {}, []
+            pos, need, hs = {}, [], dict(zip(keys, hgt))
             for key, c, ay, w, h in zip(keys, cen, ays, wid, hgt):
                 m = (fx >= c - w / 2) & (fx <= c + w / 2)
                 if below:                                # Oberkante unter der Kurve über die ganze Labelbreite
@@ -371,20 +378,26 @@ class IRFigure(TABS.X.SimpleFigure):
                     need.append((yb, h))
                 pos[key] = (c - (w - gx) / 2, yb)
             span = y1 - y0
+            if self._ir_fixed:
+                break
             if below:                                    # unten Platz schaffen: (top − Y0)/(y1 − Y0) ≥ h + Rand
                 new0 = min(y1 - (y1 - (y0 + t * span)) / (1 - (h + 0.01)) for t, h in need)
                 if new0 >= y0 - 1e-9 * span:
                     break
                 ax.set_ylim(new0, y1)
             else:
-                if self._ir_fixed_top:
-                    break
                 new1 = max(y0 + (y0 + b * span - y0) / (1 - (h + 0.01)) for b, h in need)
                 if new1 <= y1 + 1e-9 * span:
                     break
                 ax.set_ylim(y0, new1)
             self._fit_axes(pad)
-        return {k: (min(max(x, 0.0), 1.0), min(max(y, 0.0), 1.0)) for k, (x, y) in pos.items()}
+        out = {}
+        for k, (x, y) in pos.items():
+            yc = min(max(y, 0.0), max(0.0, 1.0 - hs[k]))
+            if abs(yc - y) > 1e-6:
+                self.ir_clamped.append(k)
+            out[k] = (min(max(x, 0.0), 1.0), yc)
+        return out
 
     def _place(self):
         auto = self._ir_positions()
@@ -414,10 +427,12 @@ class IRMSTab(TABS.FigureTab):
     RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ea_solvate", "ea_found")   # Dateien, entfernte Peaks, EA
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
-                         ea_solvate="", ea_found={}, ir_mode=None)    # ir_mode: None = wie die Datei, "T" | "A"
+                         ea_solvate="", ea_found={}, ir_mode=None,    # ir_mode: None = wie die Datei, "T" | "A"
+                         y_auto=True, y_min=0.0, y_max=100.0)        # y-Bereich (ymax: nur alte Projekte)
 
     def build_controls(self):
         st = self.st
+        self.migrate_ymax()
         g = QGroupBox(T("ir_group"))
         f = make_form(g)
         row = QHBoxLayout()
@@ -515,9 +530,72 @@ class IRMSTab(TABS.FigureTab):
         self.sync_widgets()
 
     def common_box(self):
+        """Statt „y-Achse max“ eine Zeile „y-Bereich“: auto | min – max (exakt)."""
         g = super().common_box()
-        self.sync_ymax_spin()
+        fl = g.layout()
+        r, _ = fl.getWidgetPosition(self.sp_ymax)
+        fl.setRowVisible(r, False)
+        row = QHBoxLayout()
+        self.cb_yauto = QCheckBox(T("auto"))
+        self.cb_yauto.setToolTip(T("ir_yrange_tip"))
+        self.sp_ymin = QDoubleSpinBox()
+        self.sp_ymax2 = QDoubleSpinBox()
+        for w_ in (self.cb_yauto, self.sp_ymin, QLabel("–"), self.sp_ymax2):
+            row.addWidget(w_)
+        fl.insertRow(r + 1, T("ir_yrange"), row)
+        self.cb_yauto.toggled.connect(self.yauto_toggled)
+        self.cb_yauto.toggled.connect(self.changed)
+        for w_ in (self.sp_ymin, self.sp_ymax2):
+            w_.valueChanged.connect(self.changed)
+        self.sync_yrange()
         return g
+
+    def migrate_ymax(self):
+        """Alte Projekte (bis 2.3.6): „y-Achse max“ > 0 -> fester y-Bereich mit dieser Obergrenze und der damaligen
+        automatischen Untergrenze; der alte Schlüssel wird danach 0 (bleibt lesbar)."""
+        st = self.st
+        old = float(st.get("ymax") or 0.0)
+        if old <= 0:
+            return
+        st["ymax"] = 0.0
+        mode = self.mode()
+        sp = self.spectrum()
+        auto, _ = y_limits(display_y(sp, mode) if sp else [], mode)
+        top = min(old, 100.0) if mode == "T" else old
+        lo = max(auto[0], 0.0) if mode == "T" else auto[0]
+        if top > lo:
+            st.update(y_auto=False, y_min=round(lo, 2), y_max=round(top, 2))
+
+    def yauto_toggled(self, on):
+        """„auto“ aus: Felder mit dem aktuell gezeigten Bereich vorbelegen (dann nur noch verschieben)."""
+        if self._loading or on:
+            return
+        lo, hi = self.F.ax.get_ylim() if self.F is not None else Y_DEFAULT[self.mode()]
+        mn, mx, dec, _ = Y_SPIN[self.mode()]
+        for sp_, v in ((self.sp_ymin, lo), (self.sp_ymax2, hi)):
+            sp_.blockSignals(True)
+            sp_.setValue(round(min(max(v, mn), mx), dec))
+            sp_.blockSignals(False)
+
+    def sync_yrange(self):
+        """Felder „y-Bereich“ passend zur Darstellung: %T 0–100 in ganzen Prozent, Absorbanz −1–10."""
+        if getattr(self, "sp_ymin", None) is None:
+            return
+        mode, st = self.mode(), self.st
+        mn, mx, dec, step = Y_SPIN[mode]
+        auto = bool(st.get("y_auto", True))
+        for sp_, k in ((self.sp_ymin, "y_min"), (self.sp_ymax2, "y_max")):
+            sp_.blockSignals(True)
+            sp_.setDecimals(dec)
+            sp_.setRange(mn, mx)
+            sp_.setSingleStep(step)
+            sp_.setSuffix(" %" if mode == "T" else "")
+            sp_.setValue(float(st.get(k, 0.0)))
+            sp_.setEnabled(not auto)
+            sp_.blockSignals(False)
+        self.cb_yauto.blockSignals(True)
+        self.cb_yauto.setChecked(auto)
+        self.cb_yauto.blockSignals(False)
 
     def mode(self):
         """Darstellung im Bild: gewählt, sonst wie die Datei (Transmission, falls keine Datei)."""
@@ -533,28 +611,11 @@ class IRMSTab(TABS.FigureTab):
         m = self.cmb_mode.currentData()
         if m != self.mode():
             self.st["ir_mode"] = m
-            self.st["ymax"] = 0.0                      # Obergrenze gehört zur alten Einheit -> automatisch
+            lo, hi = Y_DEFAULT[m]                      # Bereich gehört zur alten Einheit -> auto
+            self.st.update(y_auto=True, y_min=lo, y_max=hi)
             self.st["layout"][self.size_key()] = {}    # Labels wechseln die Seite
-        self.sync_ymax_spin()
+        self.sync_yrange()
         self.timer.start()
-
-    def sync_ymax_spin(self):
-        """„y-Achse max“ passend zur Darstellung: %T 0–100 in ganzen Prozent, Absorbanz 0–10; 0 = automatisch."""
-        sp_ = getattr(self, "sp_ymax", None)
-        if sp_ is None:
-            return
-        lo, hi, dec, step = YMAX_SPIN[self.mode()]
-        v = float(self.st.get("ymax") or 0.0)
-        if not lo <= v <= hi:
-            v = 0.0 if v < lo else hi
-            self.st["ymax"] = v
-        sp_.blockSignals(True)
-        sp_.setDecimals(dec)
-        sp_.setRange(lo, hi)
-        sp_.setSingleStep(step)
-        sp_.setSuffix(" %" if self.mode() == "T" else "")
-        sp_.setValue(v)
-        sp_.blockSignals(False)
 
     # -- Dateien --------------------------------------------------------------------
     def choose_ir(self):
@@ -650,7 +711,7 @@ class IRMSTab(TABS.FigureTab):
         self.cb_irlab.setChecked(bool(st.get("ir_labels")))
         self.sp_prom.setValue(st.get("prominence", 5.0))
         self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
-        self.sync_ymax_spin()
+        self.sync_yrange()
         self._loading = False
 
     def collect(self):
@@ -663,6 +724,17 @@ class IRMSTab(TABS.FigureTab):
                   ea_found={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found_ed.items()
                             if ed.text().strip()})
         st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked())
+        if getattr(self, "sp_ymin", None) is not None:
+            lo, hi = self.sp_ymin.value(), self.sp_ymax2.value()
+            if lo >= hi:                                  # min < max: das gerade nicht geänderte Feld weicht aus
+                step = Y_SPIN[self.mode()][3]
+                if self.sender() is self.sp_ymax2:
+                    lo = max(Y_SPIN[self.mode()][0], hi - step)
+                    hi = max(hi, lo + step)
+                else:
+                    hi = min(Y_SPIN[self.mode()][1], lo + step)
+                    lo = min(lo, hi - step)
+            st.update(y_auto=self.cb_yauto.isChecked(), y_min=lo, y_max=hi)
         self.sync_widgets()
 
     def ir_toggled(self, item):
@@ -757,9 +829,10 @@ class IRMSTab(TABS.FigureTab):
         mode = self.mode()
         y = display_y(sp, mode)
         sel = (sp["wn"] >= x0) & (sp["wn"] <= x1)
-        cfg["ylim"], rejected = y_limits(y[sel], mode, st["ymax"])
+        manual = None if st.get("y_auto", True) else (st["y_min"], st["y_max"])
+        cfg["ylim"], rejected = y_limits(y[sel], mode, manual)
         if rejected:
-            self.add_note(T("ir_ymax_low"))
+            self.add_note(T("ir_yrange_bad"))
         span = cfg["ylim"][1] - cfg["ylim"][0]
         cfg["xlabel"] = "wavenumber [cm$^{-1}$]"
         cfg["ylabel"] = "transmittance [%]" if mode == "T" else "absorbance"
@@ -771,6 +844,9 @@ class IRMSTab(TABS.FigureTab):
             o = np.argsort(sp["wn"])
             py = np.interp(px, sp["wn"][o], y[o])
             dy = -0.03 * span if mode == "T" else 0.03 * span
+            vis = (py >= cfg["ylim"][0]) & (py <= cfg["ylim"][1])   # fester y-Bereich: Peaks außerhalb ohne Marke/Label
+            use = [p for p, v in zip(use, vis) if v]
+            px, py = px[vis], py[vis]
             curves.append({"x": px, "y": py + dy, "val": py, "color": "#14247a", "ls": "None",
                            "marker": "^" if mode == "T" else "v", "ms": 3, "label": None})
             if st.get("ir_labels"):                     # Labels am Peak: unter dem Minimum bzw. über dem Maximum
@@ -780,7 +856,7 @@ class IRMSTab(TABS.FigureTab):
                                        "side": "below" if mode == "T" else "above",
                                        "text": f"{round(p['wn'])}"})
         self._ir_fig = {"side": "below" if mode == "T" else "above",
-                        "fixed_top": bool(st["ymax"]) and not rejected}
+                        "fixed": manual is not None and not rejected}
         return cfg, curves, labels, []
 
     def build(self, fig):
@@ -794,7 +870,10 @@ class IRMSTab(TABS.FigureTab):
             return None
         cfg, curves, labels, sticks = spec
         TABS.core.setup_fonts(TABS.plt, cfg)
-        return IRFigure(TABS.plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks, **self._ir_fig)
+        F = IRFigure(TABS.plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks, **self._ir_fig)
+        if F.ir_clamped:
+            self.add_note(T("ir_labels_clamped", n=len(F.ir_clamped)))
+        return F
 
     def hover_text(self, x, val, name):
         fmt = ".1f" if self.mode() == "T" else ".3f"

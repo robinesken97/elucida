@@ -1535,7 +1535,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
-            XRAY.keep_scale(e, self.F, bool(self.layout()) and not self.numbering)
+            XRAY.keep_scale(e, self.F)
             self.render()
 
     def pan_changed(self, pan):
@@ -1579,7 +1579,6 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["layout"] = {}
-            e.pop("ext", None)
         self.render()
 
     # -- Nummerieren ----------------------------------------------------------------------

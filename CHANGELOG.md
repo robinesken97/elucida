@@ -2,6 +2,18 @@
 
 # Changelog
 
+## 2.3.7 – 2026-10-25
+
+### Changed
+- IR: "y-axis max" replaced by a y range (min – max). Auto: transmittance from 100 % at the top down to what the
+  labels need; without "auto" both limits apply exactly (0–100 %T). Old projects keep their previous maximum.
+
+### Fixed
+- X-Ray and DFT: rotating no longer changes the size of the molecule (2.3.6 only fixed this with moved labels). The
+  size is only refitted by "Reset view", alignment or when atoms would leave the picture.
+- Example project: the reaction scheme opens in ChemDraw on the page, at ACS 1996 size, with one arrow and K₂CO₃
+  subscripted (new example projects only).
+
 ## 2.3.6 – 2026-10-25
 
 ### New

@@ -2,6 +2,18 @@
 
 # Änderungen
 
+## 2.3.7 – 25.10.2026
+
+### Geändert
+- IR: „y-Achse max“ ersetzt durch einen y-Bereich (min – max). Auto: Transmission oben 100 %, unten so weit, wie die
+  Labels brauchen; ohne „auto“ gelten beide Grenzen exakt (0–100 %T). Alte Projekte behalten ihr bisheriges Maximum.
+
+### Behoben
+- X-Ray und DFT: Beim Drehen ändert sich die Größe des Moleküls nicht mehr (2.3.6 behob das nur bei verschobenen
+  Labels). Neu eingepasst wird nur über „Ansicht zurücksetzen“, Ausrichten oder wenn Atome aus dem Bild ragen würden.
+- Beispielprojekt: Das Reaktionsschema öffnet in ChemDraw auf der Seite, in ACS-1996-Größe, mit einem Pfeil und
+  tiefgestelltem K₂CO₃ (nur neu angelegte Beispielprojekte).
+
 ## 2.3.6 – 25.10.2026
 
 ### Neu

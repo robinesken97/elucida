@@ -1603,11 +1603,15 @@ class XrayFigure:
             ys.append(y_)
         self.ext = (max(abs(min(xs)), abs(max(xs)), 0.5) + 0.6, max(abs(min(ys)), abs(max(ys)), 0.5) + 0.6)
         if ext and len(ext) == 2:
-            # festgehaltener Maßstab (keep_scale: nach dem Drehen mit verschobenen Labels); neu angepasst nur, wenn Atome
-            # in der neuen Ansicht sonst aus dem Bild ragten (Rand 0.6 Å darf aufgebraucht werden)
+            # festgehaltener Maßstab (keep_scale: nach dem Drehen); neu angepasst nur, wenn Atome
+            # in der neuen Ansicht sonst aus dem Bild ragten (Rand 0.6 Å darf aufgebraucht werden) – dann gleichmäßig
+            # vergrößert, bis die Ausdehnung samt Rand passt
             fixed = (float(ext[0]), float(ext[1]))
             if self._scale((self.ext[0] - 0.6, self.ext[1] - 0.6)) <= self._scale(fixed) * (1 + 1e-9):
                 self.ext = fixed
+            else:
+                f = self._scale(self.ext) / self._scale(fixed)
+                self.ext = (fixed[0] * f, fixed[1] * f)
         self._limits()
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
@@ -2767,14 +2771,13 @@ class BackgroundCombo(QComboBox):
             self.on_change()
 
 
-def keep_scale(e, F, manual):
-    """Nach dem Drehen (X-Ray und DFT): mit verschobenen Labels den Maßstab der Drehung festhalten (e["ext"], Å),
-    sonst passte das Neuzeichnen ihn an die neue Ansicht an und die Labels (Versatz in Punkten) sprängen relativ zum
-    Molekül. Ohne verschobene Labels bleibt alles wie bisher (kein Schlüssel)."""
-    if manual and F is not None:
-        e["ext"] = [round(float(v), 4) for v in F.ext]
-    else:
-        e.pop("ext", None)
+def keep_scale(e, F):
+    """Nach dem Drehen (X-Ray und DFT, Nutzerentscheidung 2.3.7): Maßstab der Drehung im Zustand festhalten (e["ext"],
+    halbe Breite/Höhe in Å), damit das Molekül beim Loslassen seine Größe behält – sonst passte das Neuzeichnen
+    (render -> neue XrayFigure) ihn an die Ausdehnung in der neuen Ansicht an. Neu angepasst nur über „Ansicht
+    zurücksetzen“/Ausrichten/„Darstellung auf Standard“ (ext wird gelöscht) oder wenn Atome sonst aus dem Bild ragten."""
+    if F is not None:
+        e["ext"] = [round(float(v), 6) for v in F.ext]
 
 
 def reset_buttons(tab):
@@ -3880,7 +3883,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
-            keep_scale(e, self.F, bool(self.layout()))
+            keep_scale(e, self.F)
             self.render()                          # nicht verschobene Labels werden neu platziert
 
     def pan_changed(self, pan):
@@ -3927,7 +3930,6 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["layout"] = {}
-            e.pop("ext", None)
         self.render()
 
     def layout(self):

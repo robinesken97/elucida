@@ -144,45 +144,176 @@ def mol_cdxml(m) -> str:
     return "".join(xml)
 
 
+PAGE_W, PAGE_H, PAGE_MARGIN = 540.0, 720.0, 36.0   # ChemDraw-Seite wie PRJ.EMPTY_CDXML (ACS 1996)
+_XY_ATTRS = ("p", "Head3D", "Tail3D", "Center3D", "MajorAxisEnd3D", "MinorAxisEnd3D")
+
+
+def cdxml_extent(root) -> tuple[float, float, float, float]:
+    """Umriss (x0, y0, x1, y1) aller Objekte auf den Seiten; Texte grob über Schriftgröße und Zeichenzahl."""
+    xs, ys = [], []
+    for page in root.iter("page"):
+        for el in page.iter():
+            if el.tag == "page":
+                continue
+            for a in _XY_ATTRS[:3]:                 # Center3D/Achsen (Bogenpfeile) zählen nicht zum Umriss
+                if el.get(a):
+                    v = [float(t) for t in el.get(a).split()]
+                    xs.append(v[0])
+                    ys.append(v[1])
+            if el.tag == "t" and el.get("p") and not el.get("BoundingBox"):
+                x, y = map(float, el.get("p").split()[:2])
+                size = max([float(s.get("size", 10)) for s in el.iter("s")] or [10.0])
+                n = len("".join(s.text or "" for s in el.iter("s")))
+                xs.append(x + 0.6 * size * n)
+                ys.append(y - size)
+            if el.get("BoundingBox") and el.tag != "page":
+                v = [float(t) for t in el.get("BoundingBox").split()]
+                xs += v[0::2]
+                ys += v[1::2]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def fit_to_page(text: str) -> str:
+    """CDXML so verschieben, dass alles auf der ersten ChemDraw-Seite liegt (RDKit schreibt Koordinaten um 0, ChemDraw
+    zeigt dann nur den unteren Rand oben an der Seite). Nur Verschiebung: Zeichnung und Chemie bleiben gleich.
+    Dazu Seitenangaben wie ChemDraw (Dokument-BoundingBox, PrintMargins, Seite 540 × 720 pt)."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(text)
+    x0, y0, x1, y1 = cdxml_extent(root)
+    dx = round((PAGE_W - (x1 - x0)) / 2 - x0, 2)                  # mittig, bei ACS-Größe innerhalb der Druckränder
+    dy = round(PAGE_MARGIN * 1.5 - y0, 2)
+    fmt = lambda v: f"{v:.2f}".rstrip("0").rstrip(".") if v != int(v) else str(int(v))
+    for page in root.iter("page"):
+        for el in page.iter():
+            if el.tag == "page":
+                continue
+            for a in _XY_ATTRS:
+                if el.get(a):
+                    v = [float(t) for t in el.get(a).split()]
+                    v[0] += dx
+                    v[1] += dy
+                    el.set(a, " ".join(fmt(t) for t in v))
+            if el.get("BoundingBox"):
+                v = [float(t) for t in el.get("BoundingBox").split()]
+                el.set("BoundingBox", " ".join(fmt(t + (dx if k % 2 == 0 else dy)) for k, t in enumerate(v)))
+    root.set("BoundingBox", f"{fmt(x0 + dx)} {fmt(y0 + dy)} {fmt(x1 + dx)} {fmt(y1 + dy)}")
+    root.set("PrintMargins", " ".join([fmt(PAGE_MARGIN)] * 4))
+    for page in root.iter("page"):
+        page.set("BoundingBox", f"0 0 {fmt(PAGE_W)} {fmt(PAGE_H)}")
+        page.attrib.update(HeaderPosition="36", FooterPosition="36", HeightPages="1", WidthPages="1")
+    return '<?xml version="1.0" encoding="UTF-8" ?>\n' + ET.tostring(root, encoding="unicode")
+
+
+ACS_BOND = 14.4                                    # Bindungslänge ACS Document 1996 (pt)
+
+
+def _scale_fragment(fr, bond=ACS_BOND):
+    """Koordinaten eines Fragments auf die Bindungslänge `bond` skalieren (RDKit schreibt 28.8 pt)."""
+    import statistics
+    pos = {n.get("id"): tuple(map(float, n.get("p").split()[:2])) for n in fr.iter("n")}
+    ls = [((pos[b.get("B")][0] - pos[b.get("E")][0]) ** 2 + (pos[b.get("B")][1] - pos[b.get("E")][1]) ** 2) ** 0.5
+          for b in fr.iter("b")]
+    k = bond / statistics.median(ls) if ls else 1.0
+    for n in fr.iter("n"):
+        x, y = pos[n.get("id")]
+        n.set("p", f"{k * x:.2f} {k * y:.2f}")
+    return fr
+
+
+def acs_document(*children) -> str:
+    """CDXML mit den Dokumenteinstellungen der leeren ACS-1996-Vorlage (PRJ.EMPTY_CDXML) um die Seitenobjekte."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(PRJ.EMPTY_CDXML.split("?>", 1)[1].split(">", 1)[1])   # ohne XML-Kopf und DOCTYPE
+    root.set("CreationProgram", "Elucida")
+    page = root.find("page")
+    for c in children:
+        page.append(c)
+    return ET.tostring(root, encoding="unicode")
+
+
+def acs_cdxml(text: str) -> str:
+    """Einzelstruktur (RDKit-CDXML) in ACS-1996-Größe auf der ersten Seite."""
+    import xml.etree.ElementTree as ET
+    frags = [_scale_fragment(f) for f in ET.fromstring(text).iter("fragment")]
+    return fit_to_page(acs_document(*frags))
+
+
+def _formula_runs(t, text, size=10.0):
+    """Text als <s>-Läufe wie ChemDraw-Formelstil: Ziffern nach Buchstaben/Klammern tiefgestellt (face 32)."""
+    import re
+    import xml.etree.ElementTree as ET
+    for m in re.finditer(r"(?<=[A-Za-z)])\d+|(?:(?<![A-Za-z)])\d|[^\d])+", text):
+        sub = m.group(0)[0].isdigit() and m.start() > 0 and re.match(r"[A-Za-z)]", text[m.start() - 1])
+        ET.SubElement(t, "s", {"font": "3", "size": f"{size:g}", "color": "0",
+                               "face": "32" if sub else "0"}).text = m.group(0)
+    return t
+
+
 def scheme_cdxml(path):
-    """Erfundenes Schema: TMS-Entschützung eines Alkins (RDKit-CDXML), Pfeil mit K2CO3 / MeOH, rt, 1 h."""
+    """Erfundenes Schema: TMS-Entschützung eines Alkins (RDKit-CDXML, auf ACS 1996 skaliert), ein Pfeil mit
+    K2CO3 (1.2 eq.) darüber und MeOH, rt, 1 h darunter – Lage und Pfeil wie von ChemDraw geschrieben."""
     import xml.etree.ElementTree as ET
     from rdkit import Chem
     from rdkit.Chem import AllChem
+    from elucida.formats import cdxml as CDXD
 
-    def frag(smiles, offset, dx):
+    def frag(smiles, offset):
         m = Chem.MolFromSmiles(smiles)
         AllChem.Compute2DCoords(m)
-        fr = ET.fromstring(mol_cdxml(m)).find(".//fragment")
+        fr = _scale_fragment(ET.fromstring(mol_cdxml(m)).find(".//fragment"))
         ids = {o.get("id"): str(offset + k) for k, o in enumerate(fr.iter()) if o.get("id")}
         for o in fr.iter():
             if o.get("id"):
                 o.set("id", ids[o.get("id")])
-            if o.tag == "n":
-                x, y = map(float, o.get("p").split())
-                o.set("p", f"{x + dx} {y}")
             if o.tag == "b":
                 o.set("B", ids[o.get("B")])
                 o.set("E", ids[o.get("E")])
         return fr
-    f1 = frag("C[Si](C)(C)C#Cc1ccc(C)cn1", 1000, 0)
-    xs = [float(n.get("p").split()[0]) for n in f1.iter("n")]
-    ys = [float(n.get("p").split()[1]) for n in f1.iter("n")]
-    xr, ym = max(xs), sum(ys) / len(ys)
-    f2 = frag("Cc1ccc(C#C)nc1", 2000, 0)
-    p2 = [float(n.get("p").split()[0]) for n in f2.iter("n")]
-    f2_shift = (xr + 150) - min(p2)
-    for n in f2.iter("n"):
-        x, y = map(float, n.get("p").split())
-        n.set("p", f"{x + f2_shift} {y}")
-    txt = (f'<?xml version="1.0"?><CDXML LineWidth="0.6" BondSpacing="18" LabelSize="10"><page>'
-           + ET.tostring(f1, encoding="unicode") + ET.tostring(f2, encoding="unicode")
-           + f'<t id="501" p="{xr + 30} {ym - 6}"><s face="96" size="10">K2CO3 (1.2 eq.)</s></t>'
-           + f'<t id="502" p="{xr + 30} {ym + 12}"><s size="9.7">MeOH, rt, 1 h</s></t>'
-           + f'<arrow id="503" Head3D="{xr + 125} {ym} 0" Tail3D="{xr + 20} {ym} 0"/>'
-           + f'<scheme><step ReactionStepReactants="{f1.get("id")}" ReactionStepProducts="{f2.get("id")}" '
-           + 'ReactionStepObjectsAboveArrow="501" ReactionStepObjectsBelowArrow="502"/></scheme></page></CDXML>')
-    Path(path).write_text(txt, encoding="utf-8")
+
+    def box(fr):
+        xy = [tuple(map(float, n.get("p").split())) for n in fr.iter("n")]
+        return (min(x for x, _ in xy), min(y for _, y in xy), max(x for x, _ in xy), max(y for _, y in xy))
+
+    def move(fr, dx, dy):
+        for n in fr.iter("n"):
+            x, y = map(float, n.get("p").split())
+            n.set("p", f"{x + dx:.2f} {y + dy:.2f}")
+
+    f1 = frag("C[Si](C)(C)C#Cc1ccc(C)cn1", 1000)
+    f2 = frag("Cc1ccc(C#C)nc1", 2000)
+    b1 = box(f1)
+    ay = (b1[1] + b1[3]) / 2                                     # Pfeil auf halber Höhe der Edukte
+    b2 = box(f2)
+    move(f2, 0, ay - (b2[1] + b2[3]) / 2)
+    size = 10.0
+    t1 = _formula_runs(ET.Element("t"), "K2CO3 (1.2 eq.)", size)
+    t2 = _formula_runs(ET.Element("t"), "MeOH, rt, 1 h", size)
+    width = lambda t: sum(CDXD._font(False).text_length(s.text, fontsize=size * (0.75 if s.get("face") == "32"
+                                                                                  else 1.0)) for s in t.iter("s"))
+    w_txt = max(width(t1), width(t2))
+    tail = b1[2] + 8.0
+    head = tail + max(w_txt + 18.0, 43.2)                        # Text frei von der Pfeilspitze
+    cx = (tail + head) / 2
+    for t, i, base in ((t1, "501", ay - 5.0), (t2, "502", ay + 4.0 + 0.72 * size)):
+        w = width(t)
+        t.attrib.update({"id": i, "p": f"{cx:.2f} {base:.2f}", "Z": i,
+                         "BoundingBox": f"{cx - w / 2:.2f} {base - 0.72 * size:.2f} {cx + w / 2:.2f} "
+                                        f"{base + (0.25 if t is t1 else 0.21) * size:.2f}",
+                         "CaptionJustification": "Center", "Justification": "Center", "InterpretChemically": "no"})
+    b2 = box(f2)
+    move(f2, head + 8.0 - b2[0], 0)
+    L = head - tail
+    arrow = ET.Element("arrow", {
+        "id": "503", "BoundingBox": f"{tail:.2f} {ay - 1.88:.2f} {head:.2f} {ay + 1.88:.2f}", "Z": "503",
+        "FillType": "None", "ArrowheadHead": "Full", "ArrowheadType": "Solid", "HeadSize": "1000",
+        "ArrowheadCenterSize": "875", "ArrowheadWidth": "250",
+        "Head3D": f"{head:.2f} {ay:.2f} 0", "Tail3D": f"{tail:.2f} {ay:.2f} 0",
+        "Center3D": f"{cx:.2f} {ay:.2f} 0", "MajorAxisEnd3D": f"{cx + L / 2:.2f} {ay:.2f} 0",
+        "MinorAxisEnd3D": f"{cx:.2f} {ay + L / 2:.2f} 0"})
+    scheme = ET.fromstring(f'<scheme id="504"><step id="505" ReactionStepReactants="{f1.get("id")}" '
+                           f'ReactionStepProducts="{f2.get("id")}" ReactionStepArrows="503" '
+                           'ReactionStepObjectsAboveArrow="501" ReactionStepObjectsBelowArrow="502"/></scheme>')
+    Path(path).write_text(fit_to_page(acs_document(f1, f2, t1, t2, arrow, scheme)), encoding="utf-8")
     return Path(path)
 
 
@@ -291,7 +422,7 @@ def load_data(w, inp):
     from rdkit.Chem import AllChem
     m = Chem.MolFromSmiles("Cc1ccc(C#C)nc1")
     AllChem.Compute2DCoords(m)
-    (nd / "S2.cdxml").write_text(mol_cdxml(m), encoding="utf-8")
+    (nd / "S2.cdxml").write_text(acs_cdxml(mol_cdxml(m)), encoding="utf-8")
     w.nmr_state["structure"] = w.import_file(str(nd / "S2.cdxml"), PRJ.STRUCTURES)   # nicht im Temp-Ordner lassen
     # 2D: künstliches TopSpin-HSQC-Experiment (Rohdaten-Reiter, Checkliste „2D NMR“)
     t_n.import_topspin(str(NMR.make_test_acqus(nd / "S2" / "3", nuc="1H", nuc2="13C", pulprog="hsqcedetgpsisp2.3")))

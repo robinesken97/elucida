@@ -1485,16 +1485,26 @@ def selftest(outdir, with_isnet=False):
         w.irms_state["with_int"] = True
         t_ir.render()
         assert "1105" not in t_ir._ir_line[0] and "(br " in t_ir._ir_line[0], t_ir._ir_line[0]
-        # IR: Absorbanz-Umschalter, y-Achse max (%T 0-100), Labels senkrecht unter dem Peakminimum
+        # IR: Absorbanz-Umschalter, y-Bereich (%T 0-100, exakt), Labels senkrecht unter dem Peakminimum
         a_ = IRMS.to_absorbance([100.0, 10.0, 1.0, 0.0, -1.0])
         assert np.allclose(a_[:3], [0, 1, 2]) and np.isnan(a_[3:]).all(), a_
         assert np.allclose(IRMS.to_transmission(a_[:3]), [100, 10, 1])
         yt_ = np.linspace(40.0, 100.0, 50)
-        lim_, rej_ = IRMS.y_limits(yt_, "T", 0.1)           # früher: ylim [37, 0.1] -> Spektrum verschwand
-        assert rej_ and lim_[0] < 40 < 100 < lim_[1], lim_
-        lim_, rej_ = IRMS.y_limits(yt_, "T", 150.0)
-        assert not rej_ and lim_[1] == 100.0 and lim_[0] < lim_[1], lim_
-        assert t_ir.sp_ymax.maximum() == 100.0 and t_ir.sp_ymax.decimals() == 0 and t_ir.mode() == "T"
+        lim_, rej_ = IRMS.y_limits(yt_, "T")                 # auto: oben immer 100
+        assert not rej_ and lim_[1] == 100.0 and lim_[0] < 40, lim_
+        assert IRMS.y_limits(yt_, "T", (20.0, 75.0)) == ([20.0, 75.0], False)       # exakt, keine Erweiterung
+        assert IRMS.y_limits(yt_, "T", (-5.0, 150.0)) == ([0.0, 100.0], False)      # %T strikt 0-100
+        lim_, rej_ = IRMS.y_limits(yt_, "T", (80.0, 50.0))  # min >= max -> auto (früher verschwand das Spektrum)
+        assert rej_ and lim_[1] == 100.0, lim_
+        assert IRMS.y_limits([0.1, 0.8], "A")[0][0] == 0.0
+        assert t_ir.sp_ymax.isHidden() or not t_ir.sp_ymax.isVisibleTo(t_ir)
+        assert (t_ir.sp_ymin.minimum(), t_ir.sp_ymax2.maximum(), t_ir.sp_ymin.decimals()) == (0.0, 100.0, 0)
+        assert t_ir.mode() == "T" and t_ir.cb_yauto.isChecked()
+        w.irms_state.update(ymax=75.0, y_auto=True)         # altes Projekt mit „y-Achse max“
+        t_ir.migrate_ymax()
+        assert (w.irms_state["ymax"], w.irms_state["y_auto"], w.irms_state["y_max"]) == (0.0, False, 75.0), w.irms_state
+        assert 0.0 <= w.irms_state["y_min"] < 75.0
+        w.irms_state.update(y_auto=True, y_min=0.0, y_max=100.0)
         line_t_ = t_ir._ir_line
         w.irms_state["ir_labels"] = True
         t_ir.render()
@@ -1515,15 +1525,28 @@ def selftest(outdir, with_isnet=False):
         t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("A"))
         t_ir.render()
         assert w.irms_state["ir_mode"] == "A" and t_ir._ir_line == line_t_, t_ir._ir_line   # Peaks wie aus %T
-        assert t_ir.F.cfg["ylabel"] == "absorbance" and t_ir.sp_ymax.maximum() == 10.0
+        assert t_ir.F.cfg["ylabel"] == "absorbance" and t_ir.sp_ymax2.maximum() == 10.0
+        assert t_ir.F.ax.get_ylim()[0] == 0.0                  # Absorbanz: unten 0
         rend_ = t_ir.F._renderer()
         for ann_ in t_ir.F.ann_items.values():                # Absorbanz: Labels über dem Maximum
             assert ann_.get_window_extent(rend_).y0 > t_ir.F.ax.transData.transform([ann_.xy])[0][1]
         t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("T"))
-        w.irms_state.update(ir_labels=False, ir_mode=None, ymax=0.0)
+        t_ir.render()
+        assert t_ir.F.ax.get_ylim()[1] == 100.0                # %T auto: oben fest 100, unten Platz für Labels
+        t_ir.cb_yauto.setChecked(False)                         # Felder übernehmen den gezeigten Bereich
+        assert not w.irms_state["y_auto"] and w.irms_state["y_max"] == 100.0
+        t_ir.sp_ymin.setValue(20.0)
+        t_ir.render()
+        assert np.allclose(t_ir.F.ax.get_ylim(), (20.0, 100.0)), t_ir.F.ax.get_ylim()   # exakt, nicht erweitert
+        rend_ = t_ir.F._renderer()
+        assert all(t_ir.F.ax.get_window_extent(rend_).y0 - 1 <= a_.get_window_extent(rend_).y0
+                   for a_ in t_ir.F.ann_items.values())          # Labels innerhalb geklemmt
+        t_ir.sp_ymax2.setValue(10.0)                             # max unter min -> min weicht aus
+        assert w.irms_state["y_min"] < w.irms_state["y_max"] == 10.0, w.irms_state
+        w.irms_state.update(ir_labels=False, ir_mode=None, ymax=0.0, y_auto=True, y_min=0.0, y_max=100.0)
         t_ir.sync_widgets()
         t_ir.render()
-        report.append("IR: Absorbanz-Umschalter, y-Achse max 0-100 %T, Labels unter Peakminimum: OK")
+        report.append("IR: Absorbanz-Umschalter, y-Bereich (0-100 %T, exakt), Labels unter Peakminimum: OK")
         w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
         t_ms.render()
         assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
@@ -1993,43 +2016,64 @@ def selftest(outdir, with_isnet=False):
         t_x.sync_widgets()
         t_x.render(push=False)
         report.append("X-Ray custom label colour: OK")
-        # Drehen nach verschobenem Label: Maßstab/Achsengrenzen bleiben (auch nach dem Loslassen), Label behält seinen
-        # Versatz zum Atom; ohne verschobene Labels kein festgehaltener Maßstab (Ruhebild wie bisher)
-        e_r = t_x.entry()
-        view0_, lay0_ = e_r.get("view"), json.loads(json.dumps(e_r.get("layout") or {}))
+        # Drehen (GUI-Pfad über die Canvas-Ereignisse): das Molekül behält seine Größe – beim Ziehen, nach dem Loslassen
+        # (render -> neue XrayFigure), bei mehreren Drehungen, mit verschobenem Label und nach Zoom per Rad;
+        # „Ansicht zurücksetzen“ passt wieder an
+        def rot_keeps_scale_(tab_):
+            e_r = tab_.entry()
+            keep_ = {k_: json.loads(json.dumps(e_r.get(k_))) for k_ in ("view", "layout", "zoom", "pan", "ext")}
+            proc_r = tab_.canvas.callbacks.process
 
-        def drag_rot_(key_=None):
-            cx_, cy_ = t_x.F.ax.transData.transform((0.0, 0.0))
-            cy_ += 0.3 * t_x.F.ax.bbox.height
-            proc_("button_press_event", MouseEvent("button_press_event", t_x.canvas, cx_, cy_, button=1))
-            lims_ = []
-            for i_ in range(1, 4):
-                proc_("motion_notify_event", MouseEvent("motion_notify_event", t_x.canvas, cx_ + 4 * i_, cy_ + 2 * i_,
-                                                        button=1))
-                off_ = tuple(float(v_) for v_ in t_x.F.ann_items[key_].xyann) if key_ else None
-                lims_.append((t_x.F.ax.get_xlim(), t_x.F.ax.get_ylim(), off_))
-            proc_("button_release_event", MouseEvent("button_release_event", t_x.canvas, cx_ + 12, cy_ + 6, button=1))
+            def drag_(key_=None, dx_=24, dy_=8):
+                F_ = tab_.F
+                cx_, cy_ = F_.ax.bbox.x0 + 6, F_.ax.bbox.y0 + 6                  # Ecke: kein Atom, kein Label
+                proc_r("button_press_event", MouseEvent("button_press_event", tab_.canvas, cx_, cy_, button=1))
+                got_ = []
+                for i_ in range(1, 4):
+                    proc_r("motion_notify_event", MouseEvent("motion_notify_event", tab_.canvas, cx_ + dx_ * i_ / 3,
+                                                             cy_ + dy_ * i_ / 3, button=1))
+                    off_ = tuple(float(v_) for v_ in tab_.F.ann_items[key_].xyann) if key_ else None
+                    got_.append((tab_.F.ax.get_xlim(), tab_.F.ax.get_ylim(), off_))
+                proc_r("button_release_event", MouseEvent("button_release_event", tab_.canvas, cx_ + dx_, cy_ + dy_,
+                                                          button=1))
+                pump(0.1)
+                return got_
+
+            def lims_():
+                return np.array([tab_.F.ax.get_xlim(), tab_.F.ax.get_ylim()])
+            e_r.update(layout={}, zoom=1.0, pan=[0.0, 0.0])
+            e_r.pop("ext", None)
+            tab_.render(push=False)
+            lim0_ = lims_()
+            v0_ = list(e_r.get("view") or [])
+            for dx_, dy_ in ((24, 8), (-18, 20), (30, -10)):                 # mehrere Drehungen ohne Labels
+                got_ = drag_(dx_=dx_, dy_=dy_)
+                assert all(np.allclose(g_[:2], lim0_) for g_ in got_), (got_, lim0_)
+                assert np.allclose(lims_(), lim0_, atol=1e-4), (lims_(), lim0_)
+            assert e_r.get("ext") and e_r.get("view") != v0_, e_r.get("ext")
+            lk_ = next(iter(tab_.F.ann_items))                                # Label „verschoben“
+            off0_ = tuple(float(v_) for v_ in tab_.F.ann_items[lk_].xyann)
+            tab_.layout()[lk_] = list(off0_)
+            tab_.render(push=False)
+            got_ = drag_(lk_)
+            assert all(np.allclose(g_[:2], lim0_) and g_[2] == off0_ for g_ in got_), (got_, lim0_)
+            assert np.allclose(lims_(), lim0_, atol=1e-4), (lims_(), lim0_)
+            F_ = tab_.F                                                     # Zoom per Rad, dann drehen
+            proc_r("scroll_event", MouseEvent("scroll_event", tab_.canvas, F_.ax.bbox.x0 + 40, F_.ax.bbox.y0 + 40,
+                                              button="up", step=1))
             pump(0.1)
-            return lims_
-        t_x.layout().clear()
-        t_x.render(push=False)
-        drag_rot_()
-        assert "ext" not in e_r, e_r.get("ext")
-        lk_ = next(k_ for k_ in t_x.F.ann_items)
-        off0_ = tuple(float(v_) for v_ in t_x.F.ann_items[lk_].xyann)
-        t_x.layout()[lk_] = list(off0_)                                    # als verschoben gespeichert
-        t_x.render(push=False)
-        lim0_ = (t_x.F.ax.get_xlim(), t_x.F.ax.get_ylim())
-        ppa0_ = t_x.F.pt_per_A()
-        lims_ = drag_rot_(lk_)
-        assert all(np.allclose(l_[:2], lim0_) and l_[2] == off0_ for l_ in lims_), (lims_, lim0_)
-        assert np.allclose((t_x.F.ax.get_xlim(), t_x.F.ax.get_ylim()), lim0_, atol=1e-3), (t_x.F.ax.get_xlim(), lim0_)
-        assert abs(t_x.F.pt_per_A() - ppa0_) < 1e-3 * ppa0_ and e_r.get("ext"), e_r.get("ext")
-        t_x.reset_layout()
-        assert "ext" not in e_r
-        e_r["view"], e_r["layout"] = view0_, lay0_
-        t_x.render(push=False)
-        report.append("X-Ray rotate after moved label keeps scale: OK")
+            lim1_ = lims_()
+            assert not np.allclose(lim1_, lim0_)
+            drag_()
+            assert np.allclose(lims_(), lim1_, atol=1e-4), (lims_(), lim1_)
+            tab_.reset_view()
+            assert "ext" not in e_r
+            e_r.update({k_: v_ for k_, v_ in keep_.items() if v_ is not None})
+            if keep_["ext"] is None:
+                e_r.pop("ext", None)
+            tab_.render(push=False)
+        rot_keeps_scale_(t_x)
+        report.append("X-Ray rotate keeps size (GUI path, labels moved, zoom): OK")
         # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
         # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
         size0_ = w.size()
@@ -2262,6 +2306,11 @@ def selftest(outdir, with_isnet=False):
         assert e_dr["zoom"] == 1.0 and list(e_dr.get("order") or []) == ord_ and abs(t_d.sp_bond.value() - 0.08) < 1e-9
         report.append("DFT xyz (reader, bonds, click renumbering, save, export): OK")
         report.append("DFT outputs (ORCA 6 UTF-16, Gaussian, SI block, Word): OK")
+        w.main_tabs.setCurrentWidget(t_d)
+        pump(0.2)
+        assert not t_d.numbering
+        rot_keeps_scale_(t_d)
+        report.append("DFT rotate keeps size (GUI path, labels moved, zoom): OK")
         # Vergleichsmodus: Nummerierung einer anderen Geometrie bzw. einer CIF übernehmen
         w.dft_state.update(entries=[], current=None)
         e_ref = t_d.load_xyz(str(orf_))                                   # Vorlage: C, Cl, C, H…
@@ -3015,6 +3064,21 @@ def selftest(outdir, with_isnet=False):
         assert w.syn_state["proc"] and w.nmr_tab.spectra()
         st_file_ = PRJ.load(out / "demo")                  # gespeichert, nicht nur im Fenster (war leer: _restoring)
         assert st_file_.get("cv", {}).get("files") and st_file_.get("eps", {}).get("files"), sorted(st_file_)
+        from elucida.app import demo as DEMO_                 # Beispiel-CDXML in ChemDraw auf der ersten Seite
+        import xml.etree.ElementTree as ET_c
+        cdx_demo_ = [p_ for p_ in (out / "demo").rglob("*.cdxml") if ET_c.parse(p_).getroot().find(".//n") is not None]
+        assert any(p_.name == "rxn.cdxml" for p_ in cdx_demo_), cdx_demo_
+        for p_ in cdx_demo_:
+            x0_, y0_, x1_, y1_ = DEMO_.cdxml_extent(ET_c.parse(p_).getroot())
+            m_ = DEMO_.PAGE_MARGIN                            # innerhalb der Druckränder (ACS-1996-Größe)
+            assert m_ <= x0_ and x1_ <= DEMO_.PAGE_W - m_ and m_ <= y0_ and y1_ <= DEMO_.PAGE_H - m_, \
+                (p_.name, x0_, y0_, x1_, y1_)
+            if p_.name == "rxn.cdxml":                            # ein Pfeil, K2CO3 mit tiefgestellten Ziffern
+                r_ = ET_c.parse(p_).getroot()
+                assert len(r_.findall(".//arrow")) == 1 and not r_.findall(".//graphic")
+                assert [s_.text for s_ in r_.iter("s") if s_.get("face") == "32"] == ["2", "3"]
+                assert r_.get("BondLength") == "14.40" and r_.find(".//fonttable") is not None
+        report.append("Example CDXML on the ChemDraw page (ACS 1996 size, one arrow): OK")
         from elucida.app import welcome as WEL                 # Startbildschirm: Projektliste mit Struktur und Analytik
         w.compound["note"] = "Radikalkation (Test)"           # Notiz zur Verbindung: Titel, Startbildschirm, elucida.json
         w.update_title()
