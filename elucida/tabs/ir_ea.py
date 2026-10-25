@@ -141,6 +141,55 @@ def pick_peaks(wn, y, kind="T", lo=None, hi=None, prominence=0.05, min_dist=4.0)
     return uniq
 
 
+def to_absorbance(t_pct):
+    """A = −log10(T/100); T ≤ 0 (Rauschen bei Totalabsorption) -> NaN statt ±∞ (Lücke in der Kurve)."""
+    t = np.asarray(t_pct, float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        a = -np.log10(t / 100.0)
+    a[~(t > 0)] = np.nan
+    return a
+
+
+def to_transmission(a):
+    """T [%] = 100 · 10^(−A)."""
+    return 100.0 * np.power(10.0, -np.asarray(a, float))
+
+
+def display_y(sp, mode):
+    """Spektrum in der gewählten Darstellung (T = Transmission in %, A = Absorbanz). Die Peaksuche läuft immer auf
+    den Originaldaten (pick_peaks mit sp["kind"]), die Darstellung ändert nur das Bild."""
+    y = np.asarray(sp["y"], float)
+    if mode == sp["kind"]:
+        return y
+    return to_absorbance(y) if mode == "A" else to_transmission(y)
+
+
+# Eingabe „y-Achse max“ je Darstellung: (Minimum, Maximum, Nachkommastellen, Schritt); 0 = automatisch
+YMAX_SPIN = {"T": (0.0, 100.0, 0, 5.0), "A": (0.0, 10.0, 2, 0.1)}
+
+
+def y_limits(y, mode, ymax=0.0):
+    """y-Grenzen [unten, oben] für das IR-Bild und ob die Eingabe „y-Achse max“ verworfen wurde.
+    %T: Obergrenze höchstens 100. Eine Obergrenze, die nicht über dem kleinsten Wert liegt, würde die ganze Kurve
+    abschneiden (früher: Spinbox ab „auto“ = 0 mit Schritt 0.1 -> ylim [37, 0.1], Spektrum weg) -> automatisch."""
+    y = np.asarray(y, float)
+    y = y[np.isfinite(y)]
+    ymin, ymaxv = (float(y.min()), float(y.max())) if len(y) else (0.0, 100.0 if mode == "T" else 1.0)
+    span = ymaxv - ymin or 1.0
+    lo = ymin - 0.08 * span
+    hi = ymaxv + 0.05 * span
+    rejected = False
+    if ymax and ymax > 0:
+        top = min(float(ymax), 100.0) if mode == "T" else float(ymax)
+        if top > ymin + 0.02 * span:
+            hi = top
+        else:
+            rejected = True
+    if hi <= lo:
+        hi = lo + 1.0
+    return [lo, hi], rejected
+
+
 def intensity_tag(p, broad=BROAD_CM):
     """w/m/s nach relativer Tiefe (≥ 0.6 s, ≥ 0.3 m), „br“ bei breiten Banden."""
     t = "s" if p["rel"] >= 0.6 else ("m" if p["rel"] >= 0.3 else "w")
@@ -238,6 +287,115 @@ from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 IR_COLOR = "#7a1a12"
 
 
+def spread_centers(targets, widths, lo=0.0, hi=1.0):
+    """Mittelpunkte nebeneinanderliegender Labels (Achsenbruchteile) so nah wie möglich an targets, ohne dass sich
+    Labels der Breite widths überlappen: überlappende Labels bilden einen Block, der um den Mittelwert seiner Ziele
+    zentriert wird; Blöcke bleiben in [lo, hi]."""
+    order = sorted(range(len(targets)), key=lambda i: targets[i])
+    blocks = []                                          # [indices, start]
+
+    def start_of(idx):
+        off, acc = [], 0.0
+        for i in idx:
+            off.append(acc + widths[i] / 2)
+            acc += widths[i]
+        s = float(np.mean([targets[i] - o for i, o in zip(idx, off)]))
+        return min(max(s, lo), max(lo, hi - acc))
+
+    for i in order:
+        blocks.append([[i], start_of([i])])
+        while len(blocks) > 1:
+            (ia, sa), (ib, sb) = blocks[-2], blocks[-1]
+            if sa + sum(widths[k] for k in ia) <= sb:
+                break
+            blocks[-2:] = [[ia + ib, start_of(ia + ib)]]
+    out = [0.0] * len(targets)
+    for idx, s in blocks:
+        for i in idx:
+            out[i] = s + widths[i] / 2
+            s += widths[i]
+    return out
+
+
+class IRFigure(TABS.X.SimpleFigure):
+    """IR-Abbildung: Wellenzahl-Labels senkrecht direkt unter dem Peakminimum (Transmission) bzw. über dem Maximum
+    (Absorbanz), seitlich auseinandergeschoben statt überlappend; die y-Achse wächst, bis alle Labels hineinpassen.
+    Gespeicherte (gezogene) Positionen haben Vorrang."""
+
+    def __init__(self, *a, side="below", fixed_top=False, **kw):
+        self._ir_side, self._ir_fixed_top = side, fixed_top
+        super().__init__(*a, **kw)
+
+    def _make_labels(self, labels):
+        super()._make_labels(labels)
+        for ann in self.ann_items.values():
+            ann.set_rotation(90)
+
+    def _ir_positions(self):
+        """-> {key: (x, y)} lower-left in Achsenbruchteilen; erweitert dabei ggf. die y-Achse."""
+        if not self.ann_items:
+            return {}
+        ax, below = self.ax, self._ir_side == "below"
+        pts = [(np.asarray(c["x"], float), np.asarray(c["y"], float)) for c in self.spectra]
+        X_ = np.concatenate([p[0] for p in pts])
+        Y_ = np.concatenate([p[1] for p in pts])
+        ok = np.isfinite(X_) & np.isfinite(Y_)
+        X_, Y_ = X_[ok], Y_[ok]
+        pad = 0.01 if self.cfg.get("size_cm") else 0.06
+        pos = {}
+        for _ in range(4):
+            rend = self._renderer()
+            ab = ax.get_window_extent(rend)
+            gy, gx = 2.5 * self.fig.dpi / 72 / ab.height, 1.0 * self.fig.dpi / 72 / ab.width
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+            fx, fy = (X_ - x0) / (x1 - x0), (Y_ - y0) / (y1 - y0)
+            keys, tgt, ays, wid, hgt = [], [], [], [], []
+            for key, ann in self.ann_items.items():
+                _, _, bw, bh = self._measure_af(ann.get_window_extent(rend))
+                keys.append(key)
+                tgt.append((ann.xy[0] - x0) / (x1 - x0))
+                ays.append((ann.xy[1] - y0) / (y1 - y0))
+                wid.append(bw + gx)
+                hgt.append(bh)
+            cen = spread_centers(tgt, wid)
+            pos, need = {}, []
+            for key, c, ay, w, h in zip(keys, cen, ays, wid, hgt):
+                m = (fx >= c - w / 2) & (fx <= c + w / 2)
+                if below:                                # Oberkante unter der Kurve über die ganze Labelbreite
+                    top = min(float(fy[m].min()) if m.any() else ay, ay) - gy
+                    yb = top - h
+                    need.append((top, h))
+                else:
+                    yb = max(float(fy[m].max()) if m.any() else ay, ay) + gy
+                    need.append((yb, h))
+                pos[key] = (c - (w - gx) / 2, yb)
+            span = y1 - y0
+            if below:                                    # unten Platz schaffen: (top − Y0)/(y1 − Y0) ≥ h + Rand
+                new0 = min(y1 - (y1 - (y0 + t * span)) / (1 - (h + 0.01)) for t, h in need)
+                if new0 >= y0 - 1e-9 * span:
+                    break
+                ax.set_ylim(new0, y1)
+            else:
+                if self._ir_fixed_top:
+                    break
+                new1 = max(y0 + (y0 + b * span - y0) / (1 - (h + 0.01)) for b, h in need)
+                if new1 <= y1 + 1e-9 * span:
+                    break
+                ax.set_ylim(y0, new1)
+            self._fit_axes(pad)
+        return {k: (min(max(x, 0.0), 1.0), min(max(y, 0.0), 1.0)) for k, (x, y) in pos.items()}
+
+    def _place(self):
+        auto = self._ir_positions()
+        orig = self.layout
+        self.layout = {**{k: list(v) for k, v in auto.items()}, **orig}
+        try:
+            super()._place()
+        finally:
+            self.layout = orig
+
+
 def copy_rich(plain, html):
     """Zeile mit Formatierung (fett, hoch-/tiefgestellt) in die Zwischenablage – bleibt beim Einfügen in Word."""
     md = QMimeData()
@@ -256,7 +414,7 @@ class IRMSTab(TABS.FigureTab):
     RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ea_solvate", "ea_found")   # Dateien, entfernte Peaks, EA
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
-                         ea_solvate="", ea_found={})
+                         ea_solvate="", ea_found={}, ir_mode=None)    # ir_mode: None = wie die Datei, "T" | "A"
 
     def build_controls(self):
         st = self.st
@@ -291,6 +449,11 @@ class IRMSTab(TABS.FigureTab):
         self.cb_irlab = QCheckBox(T("ir_labels"))
         self.cb_irlab.setChecked(st["ir_labels"])
         f.addRow(self.cb_irlab)
+        self.cmb_mode = QComboBox()
+        self.cmb_mode.addItem(T("ir_mode_T"), "T")
+        self.cmb_mode.addItem(T("ir_mode_A"), "A")
+        self.cmb_mode.setToolTip(T("ir_mode_tip"))
+        f.addRow(T("ir_mode"), self.cmb_mode)
         self.tbl_ir = QTableWidget(0, 3)
         self.tbl_ir.setHorizontalHeaderLabels(["", "ṽ [cm⁻¹]", T("ir_intensity")])
         self.tbl_ir.verticalHeader().setVisible(False)
@@ -348,7 +511,50 @@ class IRMSTab(TABS.FigureTab):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cb_int, self.cb_irlab):
             w_.toggled.connect(self.changed)
+        self.cmb_mode.currentIndexChanged.connect(self.mode_changed)
         self.sync_widgets()
+
+    def common_box(self):
+        g = super().common_box()
+        self.sync_ymax_spin()
+        return g
+
+    def mode(self):
+        """Darstellung im Bild: gewählt, sonst wie die Datei (Transmission, falls keine Datei)."""
+        m = self.st.get("ir_mode")
+        if m in ("T", "A"):
+            return m
+        sp = self.spectrum()
+        return sp["kind"] if sp else "T"
+
+    def mode_changed(self, *_):
+        if self._loading:
+            return
+        m = self.cmb_mode.currentData()
+        if m != self.mode():
+            self.st["ir_mode"] = m
+            self.st["ymax"] = 0.0                      # Obergrenze gehört zur alten Einheit -> automatisch
+            self.st["layout"][self.size_key()] = {}    # Labels wechseln die Seite
+        self.sync_ymax_spin()
+        self.timer.start()
+
+    def sync_ymax_spin(self):
+        """„y-Achse max“ passend zur Darstellung: %T 0–100 in ganzen Prozent, Absorbanz 0–10; 0 = automatisch."""
+        sp_ = getattr(self, "sp_ymax", None)
+        if sp_ is None:
+            return
+        lo, hi, dec, step = YMAX_SPIN[self.mode()]
+        v = float(self.st.get("ymax") or 0.0)
+        if not lo <= v <= hi:
+            v = 0.0 if v < lo else hi
+            self.st["ymax"] = v
+        sp_.blockSignals(True)
+        sp_.setDecimals(dec)
+        sp_.setRange(lo, hi)
+        sp_.setSingleStep(step)
+        sp_.setSuffix(" %" if self.mode() == "T" else "")
+        sp_.setValue(v)
+        sp_.blockSignals(False)
 
     # -- Dateien --------------------------------------------------------------------
     def choose_ir(self):
@@ -443,6 +649,8 @@ class IRMSTab(TABS.FigureTab):
         self.cb_int.setChecked(bool(st.get("with_int")))
         self.cb_irlab.setChecked(bool(st.get("ir_labels")))
         self.sp_prom.setValue(st.get("prominence", 5.0))
+        self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
+        self.sync_ymax_spin()
         self._loading = False
 
     def collect(self):
@@ -546,29 +754,51 @@ class IRMSTab(TABS.FigureTab):
         (lo, hi), _ = self.ir_range()
         x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (min(lo, hi), max(lo, hi))
         cfg["xlim"] = [x1, x0]                           # Wellenzahl fällt nach rechts (IR-Konvention)
-        y = sp["y"]
+        mode = self.mode()
+        y = display_y(sp, mode)
         sel = (sp["wn"] >= x0) & (sp["wn"] <= x1)
-        ymin, ymaxv = float(np.nanmin(y[sel])), float(np.nanmax(y[sel]))
-        span = ymaxv - ymin or 1.0
-        cfg["ylim"] = [ymin - 0.08 * span, st["ymax"] if st["ymax"] > 0 else ymaxv + 0.05 * span]
+        cfg["ylim"], rejected = y_limits(y[sel], mode, st["ymax"])
+        if rejected:
+            self.add_note(T("ir_ymax_low"))
+        span = cfg["ylim"][1] - cfg["ylim"][0]
         cfg["xlabel"] = "wavenumber [cm$^{-1}$]"
-        cfg["ylabel"] = "transmittance [%]" if sp["kind"] == "T" else "absorbance"
+        cfg["ylabel"] = "transmittance [%]" if mode == "T" else "absorbance"
         cfg["legend"] = False
         curves = [{"x": sp["wn"], "y": y, "color": IR_COLOR, "label": None, "ls": "-", "lw": 1.0}]
+        labels = []
         if use:
             px = np.array([p["wn"] for p in use])
-            py = np.interp(px, sp["wn"][::-1], y[::-1])
-            dy = -0.03 * span if sp["kind"] == "T" else 0.03 * span
-            curves.append({"x": px, "y": py + dy, "color": "#14247a", "ls": "None", "marker": "^" if sp["kind"] == "T"
-                           else "v", "ms": 3, "label": None})
-        labels = []
-        if st.get("ir_labels"):
-            for p in use:
-                labels.append({"key": f"label_ir_{round(p['wn'])}", "lam": p["wn"], "text": f"{round(p['wn'])}"})
+            o = np.argsort(sp["wn"])
+            py = np.interp(px, sp["wn"][o], y[o])
+            dy = -0.03 * span if mode == "T" else 0.03 * span
+            curves.append({"x": px, "y": py + dy, "val": py, "color": "#14247a", "ls": "None",
+                           "marker": "^" if mode == "T" else "v", "ms": 3, "label": None})
+            if st.get("ir_labels"):                     # Labels am Peak: unter dem Minimum bzw. über dem Maximum
+                for p, yv in zip(use, py):
+                    if x0 <= p["wn"] <= x1 and np.isfinite(yv):
+                        labels.append({"key": f"label_ir_{round(p['wn'])}", "lam": p["wn"], "y": float(yv),
+                                       "side": "below" if mode == "T" else "above",
+                                       "text": f"{round(p['wn'])}"})
+        self._ir_fig = {"side": "below" if mode == "T" else "above",
+                        "fixed_top": bool(st["ymax"]) and not rejected}
         return cfg, curves, labels, []
 
+    def build(self, fig):
+        quiet = TABS.core.LOG
+        TABS.core.LOG = lambda *a: None
+        try:
+            spec = self.figure_spec()
+        finally:
+            TABS.core.LOG = quiet
+        if spec is None:
+            return None
+        cfg, curves, labels, sticks = spec
+        TABS.core.setup_fonts(TABS.plt, cfg)
+        return IRFigure(TABS.plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks, **self._ir_fig)
+
     def hover_text(self, x, val, name):
-        return f"ṽ = {x:.0f} cm⁻¹" + (f"    {val:.1f}" if val is not None else "")
+        fmt = ".1f" if self.mode() == "T" else ".3f"
+        return f"ṽ = {x:.0f} cm⁻¹" + (f"    {val:{fmt}}" if val is not None else "")
 
     def export_to(self, base: Path):
         """Abbildung (falls Spektrum) und die SI-Zeilen als Text."""

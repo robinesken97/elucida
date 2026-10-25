@@ -1557,7 +1557,7 @@ class XrayFigure:
     (fig, ax, cfg, ann_items, axes_items, current_layout, export). Labels: Versatz in Punkten zum Atom,
     damit sie beim Drehen mitwandern; gespeicherte Versätze werden vor der automatischen Platzierung reserviert."""
 
-    def __init__(self, cfg, mol, R, opts, layout, fig, selection=(), zoom=1.0, pan=(0.0, 0.0)):
+    def __init__(self, cfg, mol, R, opts, layout, fig, selection=(), zoom=1.0, pan=(0.0, 0.0), ext=None):
         self.cfg, self.mol, self.opts, self.layout = cfg, mol, opts, layout or {}
         self.R = orthonormalize(R)
         self.zoom, self.pan = float(zoom), [float(pan[0]), float(pan[1])]
@@ -1602,6 +1602,12 @@ class XrayFigure:
             xs.append(x_)
             ys.append(y_)
         self.ext = (max(abs(min(xs)), abs(max(xs)), 0.5) + 0.6, max(abs(min(ys)), abs(max(ys)), 0.5) + 0.6)
+        if ext and len(ext) == 2:
+            # festgehaltener Maßstab (keep_scale: nach dem Drehen mit verschobenen Labels); neu angepasst nur, wenn Atome
+            # in der neuen Ansicht sonst aus dem Bild ragten (Rand 0.6 Å darf aufgebraucht werden)
+            fixed = (float(ext[0]), float(ext[1]))
+            if self._scale((self.ext[0] - 0.6, self.ext[1] - 0.6)) <= self._scale(fixed) * (1 + 1e-9):
+                self.ext = fixed
         self._limits()
         self.lw_bond = max(0.6, self.bond_w * self.pt_per_A())
         self.lw_wire = max(0.7, 0.4 * self.lw_bond)
@@ -1665,10 +1671,15 @@ class XrayFigure:
             out.append(i)
         return out
 
-    def _limits(self):
+    def _scale(self, ext):
+        """Å pro Zoll, damit die Ausdehnung ext (halbe Breite/Höhe in Å) ins Bild passt (ohne Zoom)."""
         W, H = self.cfg["figsize_in"]
         foot = 0.06 if self.mol.ops else 0.0                        # Platz für die Symmetrie-Fußnote
-        s = max(2 * self.ext[0] / W, 2 * self.ext[1] / (H * (1 - 2 * foot))) * 1.04 / self.zoom   # Å pro Zoll
+        return max(2 * ext[0] / W, 2 * ext[1] / (H * (1 - 2 * foot))) * 1.04
+
+    def _limits(self):
+        W, H = self.cfg["figsize_in"]
+        s = self._scale(self.ext) / self.zoom                       # Å pro Zoll
         cx, cy = self.pan
         self.ax.set_xlim(cx - W * s / 2, cx + W * s / 2)
         self.ax.set_ylim(cy - H * s / 2, cy + H * s / 2)
@@ -2639,18 +2650,63 @@ def label_size_spin(st):
     return sp
 
 
+class LabelColorCombo(QComboBox):
+    """Labelfarbe (X-Ray und DFT): schwarz (Standard), wie das Atom (zu helle Farben abgedunkelt, damit lesbar) oder
+    eigene Farbe (Farbwähler, gespeichert als "#rrggbb"); schreibt st["label_color"] und meldet über on_change."""
+
+    def __init__(self, st, on_change):
+        super().__init__()
+        self.st, self.on_change = st, on_change
+        for key in ("black", "atom", "color"):
+            self.addItem(T("xr_label_color_" + key), key)
+        self.sync()
+        self.activated.connect(self._chosen)
+
+    def value(self):
+        v = self.st.get("label_color", "black")
+        return v if v in ("black", "atom") or (isinstance(v, str) and v.startswith("#")) else "black"
+
+    def sync(self):
+        from PySide6.QtGui import QColor, QIcon, QPixmap
+        v = self.value()
+        kind = v if v in ("black", "atom") else "color"
+        self.setItemText(2, T("bg_color_x", c=v) if kind == "color" else T("bg_color"))
+        pm = QPixmap(12, 12)
+        pm.fill(QColor(v if kind == "color" else "#000000"))
+        self.setItemIcon(2, QIcon(pm))
+        self.blockSignals(True)
+        self.setCurrentIndex(self.findData(kind))
+        self.blockSignals(False)
+
+    def _chosen(self, _i):
+        kind = self.currentData()
+        if kind == "color":
+            from PySide6.QtGui import QColor
+            from PySide6.QtWidgets import QColorDialog
+            cur = self.value()
+            c = QColorDialog.getColor(QColor(cur if cur.startswith("#") else "#000000"), self, T("xr_label_color_pick"))
+            if not c.isValid():
+                self.sync()
+                return
+            kind = c.name()
+        if kind != self.value():
+            self.st["label_color"] = kind
+            self.sync()
+            self.on_change()
+
+
 def label_color_combo(st, on_change):
-    """Labelfarbe: schwarz (Standard) oder wie das Atom (zu helle Farben abgedunkelt, damit lesbar)."""
-    cb = QComboBox()
-    for key in ("black", "atom"):
-        cb.addItem(T("xr_label_color_" + key), key)
-    cb.setCurrentIndex(max(0, cb.findData(st.get("label_color", "black"))))
-    cb.currentIndexChanged.connect(on_change)
-    return cb
+    return LabelColorCombo(st, on_change)
 
 
 def label_color(el, colors, mode, style=None):
-    """Farbe eines Atomlabels: schwarz oder Atomfarbe; helle Farben (H weiß, Cl hellgrün) bis zur Lesbarkeit dunkler."""
+    """Farbe eines Atomlabels: schwarz (None), eigene Farbe ("#rrggbb") oder Atomfarbe; helle Atomfarben (H weiß,
+    Cl hellgrün) bis zur Lesbarkeit dunkler."""
+    if isinstance(mode, str) and mode.startswith("#"):
+        try:
+            return to_rgb(mode)
+        except ValueError:
+            return None
     if mode != "atom":
         return None
     c = np.array(to_rgb(colors.get(el) or default_color(el, style)))
@@ -2711,6 +2767,16 @@ class BackgroundCombo(QComboBox):
             self.on_change()
 
 
+def keep_scale(e, F, manual):
+    """Nach dem Drehen (X-Ray und DFT): mit verschobenen Labels den Maßstab der Drehung festhalten (e["ext"], Å),
+    sonst passte das Neuzeichnen ihn an die neue Ansicht an und die Labels (Versatz in Punkten) sprängen relativ zum
+    Molekül. Ohne verschobene Labels bleibt alles wie bisher (kein Schlüssel)."""
+    if manual and F is not None:
+        e["ext"] = [round(float(v), 4) for v in F.ext]
+    else:
+        e.pop("ext", None)
+
+
 def reset_buttons(tab):
     """„Ansicht zurücksetzen“ + „Darstellung auf Standard“ (X-Ray und DFT)."""
     row = QHBoxLayout()
@@ -2735,6 +2801,7 @@ def reset_display(tab, keep, entry_extra):
     e = tab.entry()
     if e is not None:
         e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={}, **copy.deepcopy(entry_extra))
+        e.pop("ext", None)
     tab.sync_widgets()
     tab.render()
     tab.main.push_undo()
@@ -2904,6 +2971,7 @@ class MeasureAlign:
             return
         e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
         e["pan"] = [0.0, 0.0]
+        e.pop("ext", None)
         self.lbl_align.setText(msg)
         self.lbl_align.setStyleSheet(WARN_CSS if warn else HINT_CSS)
         self.render()
@@ -3256,7 +3324,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                        h_labels=self.cb_hlab.isChecked(), disorder=self.cmb_dis.currentData(),
                        bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(), label_pt=self.sp_lab.value(),
                        label_mode=self.cmb_labmode.currentData(), wire_h=self.cb_wire_h.isChecked(),
-                       label_color=self.cmb_lcol.currentData(),
+                       label_color=self.cmb_lcol.value(),
                        hide_solv=self.cb_solv.isChecked(), hide_ions=self.cb_ions.isChecked())
         self.cmb_labmode.setEnabled(self.cb_lab.isChecked())
 
@@ -3419,7 +3487,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.cb_ions.setChecked(st.get("hide_ions", False))
         self.cmb_labmode.setCurrentIndex(max(0, self.cmb_labmode.findData(st.get("label_mode", "all"))))
         self.cmb_labmode.setEnabled(st["labels"])
-        self.cmb_lcol.setCurrentIndex(max(0, self.cmb_lcol.findData(st.get("label_color", "black"))))
+        self.cmb_lcol.sync()
         self.ed_wire.setText((cur or {}).get("wire_name") or "")
         self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(allowed_style(st.get("style", "mercury"), XRAY_STYLES,
                                                                                     "mercury"))))
@@ -3812,6 +3880,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
+            keep_scale(e, self.F, bool(self.layout()))
             self.render()                          # nicht verschobene Labels werden neu platziert
 
     def pan_changed(self, pan):
@@ -3841,6 +3910,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
+            e.pop("ext", None)
             self.render()
 
     def reset_display(self):
@@ -3857,6 +3927,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["layout"] = {}
+            e.pop("ext", None)
         self.render()
 
     def layout(self):
@@ -3892,7 +3963,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         sel = [mol.find_key(k) for k in self.sel] if interactive else []
         return XrayFigure(cfg, mol, self.view_of(e, mol), self.opts(e), lay, fig,
                           selection=[k for k in sel if k is not None], zoom=e.get("zoom", 1.0),
-                          pan=e.get("pan") or (0.0, 0.0))
+                          pan=e.get("pan") or (0.0, 0.0), ext=e.get("ext"))
 
     def render(self, push=True):
         self.notes_begin()

@@ -348,7 +348,9 @@ class CompoundDialog(QDialog):
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         f.addRow(bb)
-        self.resize(460, 0)
+        # Höhe über heightForWidth: resize(460, 0) nahm nur die Mindesthöhe des Formulars, die den umbrechenden
+        # Hinweis mit einer Zeile rechnet – die letzte Zeile unter „Literatur“ war abgeschnitten (macOS)
+        self.resize(460, max(self.sizeHint().height(), f.totalHeightForWidth(460)))
 
     def _chemdraw(self):
         self.chemdraw = True
@@ -3806,20 +3808,32 @@ class MainWindow(QMainWindow):
         if not manual:
             if not self._auto_updates() or time.time() - float(self.settings.value("update_last", 0) or 0) < 86400:
                 return
-        t = Task(lambda: UPD.fetch_latest(APP_VERSION), self)
-        self._tasks.append(t)
+        # Daemon-Thread statt QThread: beim Beenden während der Abfrage (Netz langsam, DNS ohne Timeout) zerstörte
+        # Qt sonst den laufenden QThread -> qFatal/abort -> macOS meldete einen Absturz. Ergebnis per Polling holen.
+        import threading
+        box = {}
 
-        def done(info):
-            self.settings.setValue("update_last", time.time())
-            self.show_update(info, manual)
+        def work():
+            try:
+                box["info"] = UPD.fetch_latest(APP_VERSION)
+            except Exception as e:
+                box["err"] = f"{type(e).__name__}: {e}"
 
-        def failed(msg):
-            if manual:
-                QMessageBox.warning(self, T("upd_title"), T("upd_failed", err=msg))
-        t.done.connect(done)
-        t.failed.connect(failed)
-        t.finished.connect(lambda: self._tasks.remove(t))
-        t.start()
+        def poll():
+            if not box:
+                return
+            timer.stop()
+            timer.deleteLater()
+            if "info" in box:
+                self.settings.setValue("update_last", time.time())
+                self.show_update(box["info"], manual)
+            elif manual:
+                QMessageBox.warning(self, T("upd_title"), T("upd_failed", err=box["err"]))
+        timer = QTimer(self)
+        timer.setInterval(200)
+        timer.timeout.connect(poll)
+        threading.Thread(target=work, daemon=True).start()
+        timer.start()
 
     def update_text(self, info, manual):
         """Meldungstext oder None (nichts anzeigen). Übersprungene Versionen nur bei manueller Prüfung."""
@@ -3874,6 +3888,8 @@ class MainWindow(QMainWindow):
             ev.ignore()
             return
         self.settings.setValue("geometry", self.saveGeometry())
+        for t in list(self._tasks):                      # laufende Hintergrundarbeit (Freistellung, CDXML) abwarten:
+            t.wait()                                     # zerstörter laufender QThread = abort beim Beenden
         super().closeEvent(ev)
 
 

@@ -2,6 +2,22 @@
 
 # Changelog
 
+## 2.3.6 – 2026-10-25
+
+### New
+- IR: switch between transmittance (%T) and absorbance; peak values and the SI line stay the same.
+- X-Ray and DFT: atom labels in a custom colour (colour picker), besides black and atom colour.
+
+### Fixed
+- Closing the program while the update check was still running (slow network) crashed it (macOS showed a crash
+  report).
+- IR: wavenumber labels now sit directly below each peak instead of overlapping the spectrum; changing "y-axis max"
+  no longer makes the spectrum disappear (limited to 0–100 %T, values below the spectrum are ignored with a hint).
+- X-Ray and DFT: after moving a label, rotating the molecule no longer changes its size on release.
+- NMR: the preview fills the available area (fitted to width and height, redrawn on every size change).
+- Compound dialog: the hint below "Reference" is no longer cut off.
+- Synthesis: the help text on the reaction scheme describes the current workflow (CDXML, optional SVG/PDF, .cdx/.emf).
+
 ## 2.3.5 – 2026-10-25
 
 ### Changed

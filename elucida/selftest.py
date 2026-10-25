@@ -1485,6 +1485,45 @@ def selftest(outdir, with_isnet=False):
         w.irms_state["with_int"] = True
         t_ir.render()
         assert "1105" not in t_ir._ir_line[0] and "(br " in t_ir._ir_line[0], t_ir._ir_line[0]
+        # IR: Absorbanz-Umschalter, y-Achse max (%T 0-100), Labels senkrecht unter dem Peakminimum
+        a_ = IRMS.to_absorbance([100.0, 10.0, 1.0, 0.0, -1.0])
+        assert np.allclose(a_[:3], [0, 1, 2]) and np.isnan(a_[3:]).all(), a_
+        assert np.allclose(IRMS.to_transmission(a_[:3]), [100, 10, 1])
+        yt_ = np.linspace(40.0, 100.0, 50)
+        lim_, rej_ = IRMS.y_limits(yt_, "T", 0.1)           # früher: ylim [37, 0.1] -> Spektrum verschwand
+        assert rej_ and lim_[0] < 40 < 100 < lim_[1], lim_
+        lim_, rej_ = IRMS.y_limits(yt_, "T", 150.0)
+        assert not rej_ and lim_[1] == 100.0 and lim_[0] < lim_[1], lim_
+        assert t_ir.sp_ymax.maximum() == 100.0 and t_ir.sp_ymax.decimals() == 0 and t_ir.mode() == "T"
+        line_t_ = t_ir._ir_line
+        w.irms_state["ir_labels"] = True
+        t_ir.render()
+        rend_ = t_ir.F._renderer()
+        bbs_ = {k_: a_.get_window_extent(rend_) for k_, a_ in t_ir.F.ann_items.items()}
+        assert bbs_ and all(abs(a_.get_rotation() - 90) < 1e-6 for a_ in t_ir.F.ann_items.values())
+        ks_ = list(bbs_)
+        assert not any(bbs_[k1].overlaps(bbs_[k2]) for i_, k1 in enumerate(ks_) for k2 in ks_[i_ + 1:]), "IR-Labels überlappen"
+        ab_ = t_ir.F.ax.get_window_extent(rend_)
+        for k_, ann_ in t_ir.F.ann_items.items():
+            bb_ = bbs_[k_]
+            yd_ = t_ir.F.ax.transData.transform([ann_.xy])[0][1]     # Peakminimum in Pixeln
+            assert bb_.y1 < yd_ and bb_.y0 >= ab_.y0 - 1, (k_, bb_, yd_)
+            xd0_, xd1_ = t_ir.F.ax.transData.inverted().transform([[bb_.x0, 0], [bb_.x1, 0]])[:, 0]
+            m_ = (d_ir["wn"] <= max(xd0_, xd1_)) & (d_ir["wn"] >= min(xd0_, xd1_))
+            if m_.any():                                   # Linie über die ganze Labelbreite oberhalb des Labels
+                assert t_ir.F.ax.transData.transform([[0, d_ir["y"][m_].min()]])[0][1] > bb_.y1, k_
+        t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("A"))
+        t_ir.render()
+        assert w.irms_state["ir_mode"] == "A" and t_ir._ir_line == line_t_, t_ir._ir_line   # Peaks wie aus %T
+        assert t_ir.F.cfg["ylabel"] == "absorbance" and t_ir.sp_ymax.maximum() == 10.0
+        rend_ = t_ir.F._renderer()
+        for ann_ in t_ir.F.ann_items.values():                # Absorbanz: Labels über dem Maximum
+            assert ann_.get_window_extent(rend_).y0 > t_ir.F.ax.transData.transform([ann_.xy])[0][1]
+        t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("T"))
+        w.irms_state.update(ir_labels=False, ir_mode=None, ymax=0.0)
+        t_ir.sync_widgets()
+        t_ir.render()
+        report.append("IR: Absorbanz-Umschalter, y-Achse max 0-100 %T, Labels unter Peakminimum: OK")
         w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
         t_ms.render()
         assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
@@ -1942,6 +1981,55 @@ def selftest(outdir, with_isnet=False):
         t_x.sync_widgets()
         t_x.render()
         assert all(to_rgb(a_.get_color()) == (0, 0, 0) for a_ in t_x.F.ann_items.values())
+        # eigene Labelfarbe (Hex) für alle Labels, auch im Export
+        w.xray_state["label_color"] = "#1a7f37"
+        t_x.sync_widgets()
+        t_x.render(push=False)
+        assert t_x.cmb_lcol.currentData() == "color" and t_x.cmb_lcol.value() == "#1a7f37"
+        assert t_x.F.ann_items and all(to_rgb(a_.get_color()) == to_rgb("#1a7f37") for a_ in t_x.F.ann_items.values())
+        Fe_ = t_x.build(MplFigure(), interactive=False)
+        assert all(to_rgb(a_.get_color()) == to_rgb("#1a7f37") for a_ in Fe_.ann_items.values())
+        w.xray_state["label_color"] = "black"
+        t_x.sync_widgets()
+        t_x.render(push=False)
+        report.append("X-Ray custom label colour: OK")
+        # Drehen nach verschobenem Label: Maßstab/Achsengrenzen bleiben (auch nach dem Loslassen), Label behält seinen
+        # Versatz zum Atom; ohne verschobene Labels kein festgehaltener Maßstab (Ruhebild wie bisher)
+        e_r = t_x.entry()
+        view0_, lay0_ = e_r.get("view"), json.loads(json.dumps(e_r.get("layout") or {}))
+
+        def drag_rot_(key_=None):
+            cx_, cy_ = t_x.F.ax.transData.transform((0.0, 0.0))
+            cy_ += 0.3 * t_x.F.ax.bbox.height
+            proc_("button_press_event", MouseEvent("button_press_event", t_x.canvas, cx_, cy_, button=1))
+            lims_ = []
+            for i_ in range(1, 4):
+                proc_("motion_notify_event", MouseEvent("motion_notify_event", t_x.canvas, cx_ + 4 * i_, cy_ + 2 * i_,
+                                                        button=1))
+                off_ = tuple(float(v_) for v_ in t_x.F.ann_items[key_].xyann) if key_ else None
+                lims_.append((t_x.F.ax.get_xlim(), t_x.F.ax.get_ylim(), off_))
+            proc_("button_release_event", MouseEvent("button_release_event", t_x.canvas, cx_ + 12, cy_ + 6, button=1))
+            pump(0.1)
+            return lims_
+        t_x.layout().clear()
+        t_x.render(push=False)
+        drag_rot_()
+        assert "ext" not in e_r, e_r.get("ext")
+        lk_ = next(k_ for k_ in t_x.F.ann_items)
+        off0_ = tuple(float(v_) for v_ in t_x.F.ann_items[lk_].xyann)
+        t_x.layout()[lk_] = list(off0_)                                    # als verschoben gespeichert
+        t_x.render(push=False)
+        lim0_ = (t_x.F.ax.get_xlim(), t_x.F.ax.get_ylim())
+        ppa0_ = t_x.F.pt_per_A()
+        lims_ = drag_rot_(lk_)
+        assert all(np.allclose(l_[:2], lim0_) and l_[2] == off0_ for l_ in lims_), (lims_, lim0_)
+        assert np.allclose((t_x.F.ax.get_xlim(), t_x.F.ax.get_ylim()), lim0_, atol=1e-3), (t_x.F.ax.get_xlim(), lim0_)
+        assert abs(t_x.F.pt_per_A() - ppa0_) < 1e-3 * ppa0_ and e_r.get("ext"), e_r.get("ext")
+        t_x.reset_layout()
+        assert "ext" not in e_r
+        e_r["view"], e_r["layout"] = view0_, lay0_
+        t_x.render(push=False)
+        report.append("X-Ray rotate after moved label keeps scale: OK")
         # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
         # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
         size0_ = w.size()
@@ -2485,6 +2573,19 @@ def selftest(outdir, with_isnet=False):
             return Path(path_)
         em_ = emf_spec(ndir / "S2_19F.emf", ["10", "\u03b4 19F (ppm)", "0"])
         assert NMR.emf_info(em_) == dict(nuclei=["19F"], is2d=False, size_cm=(16.0, 11.0))
+        # Vorschau füllt die Fläche (Breite oder Höhe, ganzes Bild sichtbar), auch nach Größenänderung; die Größe der
+        # Vorschau kommt nie vom Bild (früher: Mindestgröße = altes Pixmap, Bild nur nach der Breite)
+        w.nmr_state["current"] = [s_ for s_ in t_n.spectra() if s_["kind"] == "1D" and s_["nuclei"] == ["1H"]][0]["uid"]
+        w.show()
+        w.main_tabs.setCurrentWidget(t_n)
+        t_n.right_tabs.setCurrentIndex(0)
+        t_n.sync_widgets()
+        for size_ in ((1440, 900), (1440, 600), (1000, 700), (1440, 900)):
+            w.resize(*size_)
+            pump(0.6)                                           # Layout setzt die Breite verzögert
+            aw_, ah_ = t_n.lbl_prev.width() - 10, t_n.lbl_prev.height() - 10
+            pw_, ph_ = t_n._pm_size
+            assert pw_ <= aw_ + 1 and ph_ <= ah_ + 1 and (pw_ >= aw_ - 2 or ph_ >= ah_ - 2), (size_, aw_, ah_, pw_, ph_)
         s_em_ = t_n.load_svg(str(em_))
         assert s_em_["nuclei"] == ["19F"] and Path(s_em_["file"]).suffix == ".emf"
         w.nmr_state["current"] = s_em_["uid"]
@@ -2497,7 +2598,21 @@ def selftest(outdir, with_isnet=False):
         w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None, raw=[], mnova=[])
         t_n.sync_widgets()
         report.append("NMR (Mnova SVG/EMF, nucleus from axis/manual, order, Mnova text + assignment, TopSpin raw data "
-                      "sorted by kind, Mnova file, Word): OK")
+                      "sorted by kind, Mnova file, Word, preview fits area): OK")
+
+        # Dialog Verbindung: umbrechender Hinweis unter „Literatur“ in voller Höhe (früher letzte Zeile abgeschnitten)
+        cdlg_ = MW.CompoundDialog(w, dict(w.compound or {}, known=True, lit="J. Org. Chem. 2020, 85, 1234"))
+        cdlg_.show()
+        pump(0.1)
+        hint_lb_ = [lb_ for lb_ in cdlg_.findChildren(QLabel) if lb_.text() == T("compound_hint")][0]
+        assert hint_lb_.height() >= hint_lb_.heightForWidth(hint_lb_.width()), \
+            (hint_lb_.height(), hint_lb_.heightForWidth(hint_lb_.width()))
+        cdlg_.reject()
+        # Schema-Hinweis beschreibt den aktuellen Ablauf (CDXML + optionale SVG/PDF, .cdx, .emf) in beiden Sprachen
+        from elucida.app.i18n import TEXTS as TX_
+        for k_ in ("syn_scheme_hint", "guide_syn_files"):
+            assert all(all(x_ in t_ for x_ in ("CDXML", "SVG/PDF", ".cdx", ".emf")) for t_ in TX_[k_]), k_
+        report.append("compound dialog hint not clipped, scheme hint (CDXML/SVG/PDF/.cdx/.emf): OK")
 
         # Synthese: Mengenprüfung mit Rundung, Reagenzientabelle, Schema als bearbeitbares ChemDraw-Objekt (CDX)
         proc_ = ("In a flask <b>S1</b> (1.03 g, 5.00 mmol, 1.0 eq.) was dissolved in MeOH (10 mL) and "

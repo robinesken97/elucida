@@ -853,7 +853,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                        label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
                        radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), label_pt=self.sp_lab.value(), style=self.cmb_style.currentData(),
                        h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked(),
-                       label_color=self.cmb_lcol.currentData(), cartoon_color=self.cb_ccol.isChecked())
+                       label_color=self.cmb_lcol.value(), cartoon_color=self.cb_ccol.isChecked())
         self.cb_ccol.setVisible(self.st["style"] == "cartoon")
         self.update_num_status()
 
@@ -887,7 +887,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sp_rad.setValue(st.get("radius", 0.25))
         self.sp_bond.setValue(st.get("bond_w", 0.08))
         self.sp_lab.setValue(st.get("label_pt", 0.0))
-        self.cmb_lcol.setCurrentIndex(max(0, self.cmb_lcol.findData(st.get("label_color", "black"))))
+        self.cmb_lcol.sync()
         self.fill_refs()
         self.sync_orbitals()
         self._loading = False
@@ -1395,7 +1395,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                 mol._fragments()
                 o["bond_orders"] = bo
         F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), o, lay, fig, selection=sel,
-                            zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0))
+                            zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0), ext=e.get("ext"))
         if interactive and self.numbering:
             # neu vergeben: Nummer mittig auf dem Atom (der Auswahlring belegt den Platz daneben), nicht anklickbar,
             # damit ein erneuter Klick das Atom trifft; noch nicht vergebene Labels grau
@@ -1535,6 +1535,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
+            XRAY.keep_scale(e, self.F, bool(self.layout()) and not self.numbering)
             self.render()
 
     def pan_changed(self, pan):
@@ -1563,6 +1564,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
+            e.pop("ext", None)
             self.render()
 
     def reset_display(self):
@@ -1577,6 +1579,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         e = self.entry()
         if e is not None:
             e["layout"] = {}
+            e.pop("ext", None)
         self.render()
 
     # -- Nummerieren ----------------------------------------------------------------------

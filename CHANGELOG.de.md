@@ -2,6 +2,22 @@
 
 # Änderungen
 
+## 2.3.6 – 25.10.2026
+
+### Neu
+- IR: Umschalten zwischen Transmission (%T) und Absorbanz; Peakwerte und SI-Zeile bleiben gleich.
+- X-Ray und DFT: Atom-Labels in eigener Farbe (Farbwähler), neben Schwarz und Atomfarbe.
+
+### Behoben
+- Beenden während der noch laufenden Update-Prüfung (langsames Netz) brachte das Programm zum Absturz (macOS
+  meldete einen Absturz).
+- IR: Wellenzahl-Labels stehen direkt unter dem Peak statt über der Kurve; „y-Achse max“ lässt das Spektrum nicht
+  mehr verschwinden (begrenzt auf 0–100 %T, Werte unter dem Spektrum werden mit Hinweis ignoriert).
+- X-Ray und DFT: Nach dem Verschieben eines Labels ändert das Molekül beim Drehen nicht mehr seine Größe.
+- NMR: Die Vorschau füllt die verfügbare Fläche (in Breite und Höhe eingepasst, bei jeder Größenänderung neu).
+- Dialog Verbindung: Der Hinweis unter „Literatur“ ist nicht mehr abgeschnitten.
+- Synthese: Der Hilfetext zum Reaktionsschema beschreibt den aktuellen Ablauf (CDXML, optional SVG/PDF, .cdx/.emf).
+
 ## 2.3.5 – 25.10.2026
 
 ### Geändert

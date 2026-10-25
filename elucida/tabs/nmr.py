@@ -399,7 +399,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QImage, QPixmap  # noqa: E40
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,  # noqa: E402
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                QScrollArea, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
-                               QStackedWidget, QWidget)
+                               QSizePolicy, QStackedWidget, QWidget)
 
 from elucida.app import project as PRJ  # noqa: E402
 from elucida.app.style import HINT_CSS, make_form  # noqa: E402
@@ -434,8 +434,10 @@ class NMRTab(QWidget):
         rv = QVBoxLayout(prev)
         rv.setContentsMargins(0, 0, 0, 0)
         self.lbl_prev = QLabel("", alignment=Qt.AlignCenter, wordWrap=True)
-        self.lbl_prev.setMinimumHeight(300)
-        self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen
+        # Größe kommt vom Layout, nie vom Pixmap (sonst Mindestgröße = altes Bild: wächst nicht nach, schrumpft nicht)
+        self.lbl_prev.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.lbl_prev.setMinimumSize(200, 200)
+        self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen, Größenänderung
         self._drag_rect, self._drag, self._pm_size = None, None, (1, 1)
         rv.addWidget(self.lbl_prev, 1)
         self.lbl_cap = QLabel("", wordWrap=True)
@@ -1050,8 +1052,15 @@ class NMRTab(QWidget):
         import pymupdf
         # in Gerätepixeln rendern (HiDPI-Bildschirme), angezeigt in logischen Pixeln
         dpr = max(1.0, self.lbl_prev.devicePixelRatioF())
-        lw_ = float(max(300, self.lbl_prev.width() - 10))
         cache = self.main.extra_cache
+        akey = ("nmraspect", s["file"])
+        if akey not in cache:
+            r_ = pymupdf.open(s["file"])[0].rect
+            cache[akey] = max(r_.width, 1) / max(r_.height, 1)
+        # wie CanvasHost: ganzes Bild in die Fläche einpassen (Breite und Höhe), Seitenverhältnis der Mnova-Seite
+        aw = max(100.0, self.lbl_prev.width() - 10.0)
+        ah = max(80.0, self.lbl_prev.height() - 10.0)
+        lw_ = float(int(min(aw, ah * cache[akey])))
         key = ("nmrprev", s["file"], int(lw_ * dpr) // 50)
         if key not in cache:
             page = pymupdf.open(s["file"])[0]
@@ -1090,6 +1099,10 @@ class NMRTab(QWidget):
         return (pos.x() - ox) / max(pw, 1), (pos.y() - oy) / max(ph, 1)
 
     def eventFilter(self, obj, ev):
+        if obj is self.lbl_prev and ev.type() == QEvent.Resize and getattr(self, "_drag", 1) is None:
+            # sofort neu einpassen (auch bei Splitter/Reiter/verzögertem Layout, nicht nur beim Fenster): Bild passt
+            # immer zur aktuellen Labelgröße; kein Rückkopplungsrisiko, die Labelgröße hängt nicht vom Pixmap ab
+            self.update_preview()
         if obj is not self.lbl_prev or self._drag_rect is None:
             return super().eventFilter(obj, ev)
         t = ev.type()
@@ -1125,10 +1138,6 @@ class NMRTab(QWidget):
                 self.changed()
             return True
         return super().eventFilter(obj, ev)
-
-    def resizeEvent(self, ev):
-        super().resizeEvent(ev)
-        QTimer.singleShot(0, self.update_preview)
 
     # -- Export ---------------------------------------------------------------------------
     def docx_blocks(self, img_dir):

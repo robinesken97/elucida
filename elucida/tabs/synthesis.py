@@ -1,9 +1,10 @@
 """elucida/tabs/synthesis.py - Synthese für die SI: „Synthesis of Name“, Reaktionsschema (ChemDraw), Vorschrift, Mengenprüfung.
 
-Schema: CDXML im Projekt; gezeigt wird die gleichnamige ChemDraw-Exportdatei (SVG/PDF/PNG, unverändert). Liegt eine
-gleichnamige .cdx daneben, wird das Schema in Word als **bearbeitbares ChemDraw-Objekt** eingebettet (formats/ole.py);
-Vorschau dann die gleichnamige .emf aus ChemDraw (Vektor), sonst ein PNG aus der Exportdatei. ChemDraw liest im Objekt
-nur CDX, keine CDXML (in Word geprüft).
+Schema: CDXML im Projekt; gezeigt wird die gleichnamige ChemDraw-Exportdatei (SVG/PDF/PNG, unverändert), sonst die
+eigene Zeichnung aus den CDXML-Koordinaten (formats/cdxml.py). Exporte, die älter als die CDXML sind, gelten als
+veraltet (IMG.is_fresh). Liegt eine gleichnamige .cdx daneben, wird das Schema in Word als **bearbeitbares
+ChemDraw-Objekt** eingebettet (formats/ole.py); Vorschau dann die gleichnamige .emf aus ChemDraw (Vektor), sonst ein
+PNG des Bildes. ChemDraw liest im Objekt nur CDX, keine CDXML (in Word geprüft).
 Mengen: Klammern im SI-Format „S1 (1.03 g, 5.00 mmol, 1.0 eq.)“, „n-BuLi (0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
 „S2 (525 mg, 4.95 mmol, 99%)“. Geprüft wird mit der Rundung der Angaben (1.03 g = 1.025–1.035 g), sonst gäbe es
 Falschalarme: m/M ↔ n, V·c ↔ n, V·ρ/M ↔ n, n/n_ref ↔ eq., n_Produkt/n_ref ↔ Ausbeute.

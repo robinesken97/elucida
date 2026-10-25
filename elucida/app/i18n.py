@@ -381,7 +381,7 @@ TEXTS = {
                      "Apply settings from a preset (YAML); loaded data stay"),
     "tab_empty": ("Noch keine Daten – links Dateien hinzufügen.", "No data yet – add files on the left."),
     "guide_syn_title": ('Synthese: „Synthesis of …“ mit Schema und Vorschrift für die SI', 'Synthesis: “Synthesis of …” with scheme and procedure for the SI'),
-    "guide_syn_files": ('Dateien: ChemDraw-Schema als CDXML (dazu gleichnamige SVG/PDF für das Bild, .cdx für ein in Word bearbeitbares Objekt)', 'Files: ChemDraw scheme as CDXML (plus an SVG/PDF of the same name for the picture, .cdx for an object editable in Word)'),
+    "guide_syn_files": ('Dateien: ChemDraw-Schema als CDXML – das Bild zeichnet Elucida daraus; optional mit gleichem Namen daneben: SVG/PDF (Bild hat Vorrang), .cdx (in Word bearbeitbares Objekt), .emf (dessen Vorschau)', 'Files: ChemDraw scheme as CDXML – Elucida draws the picture from it; optionally next to it with the same name: SVG/PDF (picture takes precedence), .cdx (object editable in Word), .emf (its preview)'),
     "guide_syn_steps": ("Namen eintragen (Vorgabe: Name der Verbindung)\nSchema wählen und die Vorschrift schreiben – Mengen "
                         "wie „(1.03 g, 5.00 mmol, 1.0 eq.)“\nReagenzien eintragen oder „Aus Schema“ – die Mengen in der "
                         "Vorschrift werden geprüft\nAusgabe: „Exportieren“ unten (Word-Datei) oder SI (Word) in der "
@@ -485,6 +485,15 @@ TEXTS = {
                         "From the relative depth: s ≥ 60 %, m ≥ 30 %, otherwise w; br for half widths > 120 cm⁻¹. "
                         "Needs the OPUS file (spectrum)."),
     "ir_labels": ("Wellenzahlen im Bild beschriften", "Label wavenumbers in the figure"),
+    "ir_mode": ("y-Achse", "y axis"),
+    "ir_mode_T": ("Transmission (%T)", "Transmittance (%T)"),
+    "ir_mode_A": ("Absorbanz (A)", "Absorbance (A)"),
+    "ir_mode_tip": ("Nur die Darstellung im Bild: A = −log₁₀(T/100). Peaksuche, Peakwerte und SI-Zeile bleiben gleich "
+                    "(immer aus den gemessenen Daten).",
+                    "Display only: A = −log₁₀(T/100). Peak search, peak values and SI line stay the same "
+                    "(always from the measured data)."),
+    "ir_ymax_low": ("„y-Achse max“ liegt nicht über dem Spektrum – Obergrenze automatisch.",
+                    "“y-axis max” is not above the spectrum – upper limit set automatically."),
     "ir_intensity": ("Intensität", "Intensity"),
     "si_copy": ("In Zwischenablage (mit Formatierung für Word)", "Copy to clipboard (formatted for Word)"),
     "ea_group": ("Elementaranalyse", "Elemental analysis"),
@@ -1413,6 +1422,8 @@ TEXTS = {
     "xr_label_color": ("Labelfarbe", "Label colour"),
     "xr_label_color_black": ("Schwarz", "Black"),
     "xr_label_color_atom": ("Wie das Atom", "Like the atom"),
+    "xr_label_color_color": ("Eigene Farbe …", "Custom colour …"),
+    "xr_label_color_pick": ("Labelfarbe", "Label colour"),
     "xr_style_mercury": ("Mercury (schattiert)", "Mercury (shaded)"),
     "xr_style_flat": ("Olex2 (flach, fette Labels)", "Olex2 (flat, bold labels)"),
     "xr_style_ballstick": ("Kugel-Stab, glänzend (wie IboView)", "Ball and stick, glossy (like IboView)"),
@@ -1511,12 +1522,15 @@ TEXTS = {
     "syn_name_ph": ("z. B. S2", "e.g. S2"),
     "syn_scheme": ("Reaktionsschema (ChemDraw)", "Reaction scheme (ChemDraw)"),
     "syn_scheme_pick": ("Schema wählen …", "Choose scheme …"),
-    "syn_scheme_hint": ("CDXML wählen. In ChemDraw zusätzlich speichern: SVG oder PDF (Bild, unverändert übernommen), "
-                        ".cdx (dann in Word bearbeitbar per Doppelklick) und .emf (scharfe Vorschau des bearbeitbaren "
-                        "Objekts) – jeweils mit gleichem Namen im selben Ordner.",
-                        "Choose the CDXML. In ChemDraw also save: SVG or PDF (picture, taken unchanged), .cdx (then "
-                        "editable in Word by double-click) and .emf (sharp preview of the editable object) – each with "
-                        "the same name in the same folder."),
+    "syn_scheme_hint": ("CDXML wählen oder „In ChemDraw bearbeiten“ (Speichern übernimmt das Schema). Das Bild "
+                        "zeichnet Elucida aus der CDXML; eine gleichnamige SVG/PDF daneben hat Vorrang und wird "
+                        "unverändert übernommen. Optional, ebenfalls gleichnamig: .cdx = in Word bearbeitbares "
+                        "ChemDraw-Objekt, .emf = dessen scharfe Vorschau. Dateien, die älter als die CDXML sind, "
+                        "werden ignoriert.",
+                        "Choose the CDXML or use “Edit in ChemDraw” (saving takes over the scheme). Elucida draws the "
+                        "picture from the CDXML; an SVG/PDF of the same name next to it takes precedence and is used "
+                        "unchanged. Optional, also with the same name: .cdx = ChemDraw object editable in Word, "
+                        ".emf = its sharp preview. Files older than the CDXML are ignored."),
     "syn_scheme_none": ("Kein Schema gewählt.", "No scheme chosen."),
     "syn_scheme_pic": ("Bild: {f}", "Picture: {f}"),
     "syn_scheme_nopic": ("Gezeichnet aus den Koordinaten der CDXML (Bindungen, Labels, Pfeil, Bedingungen). Ein SVG/PDF "
