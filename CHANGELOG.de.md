@@ -2,6 +2,13 @@
 
 # Änderungen
 
+## 2.3.5 – 25.10.2026
+
+### Geändert
+- macOS: keine eigene Titelleiste mehr – der Fensterinhalt reicht bis an den oberen Rand, die Fensterknöpfe liegen auf
+  der Werkzeugleiste (wie bei anderen aktuellen Mac-Apps). Fenster an einer freien Stelle der Werkzeugleiste ziehen,
+  Doppelklick zoomt. Windows und Linux behalten ihre normale Titelleiste.
+
 ## 2.3.4 – 25.10.2026
 
 ### Behoben

@@ -63,6 +63,7 @@ from elucida.tabs import nmr as NMR  # noqa: E402
 from elucida.tabs import synthesis as SYN  # noqa: E402
 from elucida.si import lines as SI  # noqa: E402
 from elucida.app import style as STYLE  # noqa: E402
+from elucida.app import macos as MAC  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS, align_forms, compact, make_form  # noqa: E402
 
 PREVIEW_DPI = 90
@@ -601,6 +602,9 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(str(icon)))
         self.apply_theme()
         QGuiApplication.styleHints().colorSchemeChanged.connect(self._system_scheme_changed)
+        self._mac_title = MAC.enabled()
+        MAC.prepare(self)                                # macOS: keine Titelleiste, Ampelknöpfe auf der Werkzeugleiste
+        self._title_h = None                             # Höhe der Titelleiste (px) nach dem ersten Anzeigen
         self.build_ui()
         self.setAcceptDrops(True)
         QTimer.singleShot(0, self._init_undo)
@@ -676,6 +680,12 @@ class MainWindow(QMainWindow):
         self.toolbar.setObjectName("mainToolbar")
         self.toolbar.setMovable(False)
         self.toolbar.setIconSize(QSize(18, 18))
+        if self._mac_title:                              # Platz für die Ampelknöpfe, freie Stellen ziehen das Fenster
+            inset = QWidget(objectName="titleInset")
+            inset.setFixedWidth(MAC.INSET)
+            self._title_inset = self.toolbar.addWidget(inset)      # QAction: sie steuert die Sichtbarkeit
+            self.toolbar.installEventFilter(MAC.TitleDrag(self))
+            self._fit_title_bar()
         for act in (act_new, act_open_prj, act_save, self.act_folder, None, self.act_undo, self.act_redo):
             if act is None:
                 self.toolbar.addSeparator()
@@ -2093,6 +2103,29 @@ class MainWindow(QMainWindow):
 
     def _center_index(self):
         return 1 if self.project_dir else 2 if self.publication_dir else 0
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if self._mac_title and self._title_h is None:
+            self._title_h = MAC.finish(self)
+            self._fit_title_bar()
+
+    def changeEvent(self, ev):
+        super().changeEvent(ev)
+        if ev.type() == QEvent.WindowStateChange and getattr(self, "_mac_title", False):
+            self._fit_title_bar()
+
+    def _fit_title_bar(self):
+        """macOS: Werkzeugleiste so hoch wie die Titelleiste; im Vollbild (ohne Ampelknöpfe) kein Einzug."""
+        inset = getattr(self, "_title_inset", None)
+        if inset is None or self._title_h is None:
+            return
+        full = bool(self.windowState() & Qt.WindowFullScreen)
+        on = bool(self._title_h) and not full
+        if self._title_h:
+            MAC.set_toolbar_visible(self, not full)
+        inset.setVisible(on)
+        self.toolbar.setMinimumHeight(self._title_h if on else 0)
 
     def update_title(self):
         if getattr(self, "center", None) is not None:

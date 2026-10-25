@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 2.3.5 – 2026-10-25
+
+### Changed
+- macOS: no separate title bar any more – the window content reaches the top edge and the window buttons sit on the
+  toolbar (like other current Mac apps). Drag the window by a free spot on the toolbar, double-click to zoom. Windows
+  and Linux keep their normal title bar.
+
 ## 2.3.4 – 2026-10-25
 
 ### Fixed

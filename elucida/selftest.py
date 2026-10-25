@@ -2929,6 +2929,16 @@ def selftest(outdir, with_isnet=False):
         w.remove_recent(out / "demo")
         assert str(out / "demo") not in w.recent()
         report.append("welcome page + example project: OK")
+        # macOS-Titelleiste: offscreen nie AppKit (winId kein NSView); Knöpfe der Leiste bekommen ihre Klicks
+        from elucida.app import macos as MAC
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QMouseEvent
+        assert not MAC.enabled() and not w._mac_title and getattr(w, "_title_inset", None) is None
+        btn_ = w.toolbar.widgetForAction(w.act_si)
+        ev_ = QMouseEvent(QEvent.MouseButtonPress, QPointF(btn_.geometry().center()), QPointF(),
+                          Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        assert MAC.TitleDrag(w).eventFilter(w.toolbar, ev_) is False
+        report.append("macOS title bar (off offscreen, toolbar buttons keep clicks): OK")
         pump()                                             # Laden abgeschlossen (_restoring)
         t0_ = time.perf_counter()
         exd_ = json.loads(w.write_exchange().read_text(encoding="utf-8"))   # alle Tabs gefüllt
