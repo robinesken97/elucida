@@ -12,6 +12,7 @@ Falschalarme: m/M ↔ n, V·c ↔ n, V·ρ/M ↔ n, n/n_ref ↔ eq., n_Produkt/n
 from __future__ import annotations
 
 import html as _h
+import math
 import re
 from pathlib import Path
 
@@ -44,7 +45,8 @@ def molar_mass(text):
     if not t:
         return None
     try:
-        return float(t)
+        v = float(t)
+        return v if math.isfinite(v) and v > 0 else None
     except ValueError:
         try:
             return formula_mw(re.sub(r"[·•]+(?=[+\-−]*\d*$)", "", t))   # Radikalpunkt am Ende; Hydrat-Punkt bleibt
@@ -94,7 +96,7 @@ def parse_amounts(text):
         body = m.group("body")
         it = dict(name=m.group("name").strip(".,;:"), raw=m.group(0), pos=m.start(), mass=None, vol=None, conc=None,
                   mmol=None, eq=None, yld=None, density=None)
-        for part in (p.strip() for p in re.split(r",(?!\d)", body)):     # „1,03 g“: Dezimalkomma bleibt
+        for part in (p.strip() for p in re.split(r"(?<!\d),|,(?!\d)", body)):   # „1,03 g“: Dezimalkomma bleibt
             if mm := re.fullmatch(_NUM + r"\s*(kg|mg|µg|μg|ug|g)", part):
                 it["mass"] = interval(mm.group(1), MASS[mm.group(2)])
             elif mm := re.fullmatch(_NUM + r"\s*(mL|µL|μL|uL|L)", part):
@@ -186,9 +188,10 @@ def sig_digits(text):
 def cell_num(x):
     """Zahlenfeld der Tabelle -> float oder None (leer oder kein Zahlenwert, z. B. „150 mg“)."""
     try:
-        return float(str(x or "").strip().replace(",", "."))
+        v = float(str(x or "").strip().replace(",", "."))
     except ValueError:
         return None
+    return v if math.isfinite(v) else None
 
 
 def row_amounts(row, ref_mmol=None):
@@ -232,7 +235,8 @@ def amount_text(row, calc):
     if calc.get("yld") is not None:
         parts.append(f"{calc['yld']:.0f}%")
     elif calc.get("eq") is not None:
-        parts.append(f"{calc['eq']:.1f} eq.")
+        e = f"{calc['eq']:.2f}"                             # 1.05 eq., aber 1.1/1.0 eq. (Nutzerwunsch P7 R1)
+        parts.append(f"{e[:-1] if e.endswith('0') else e} eq.")
     return f"({', '.join(parts)})" if parts else ""
 
 

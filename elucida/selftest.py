@@ -3991,7 +3991,8 @@ def selftest(outdir, with_isnet=False):
         assert abs(SYN.molar_mass("C6[13C]H8") - 93.133) < 0.002, SYN.molar_mass("C6[13C]H8")
         assert SYN.row_amounts(dict(M="100", m_mg="150 mg"))["mmol"] is None
         it7 = SYN.parse_amounts("S1 (1,03 g, 5,00 mmol, 1,0 eq.), S2 (5 ug, 0.1 umol)")
-        assert np.allclose(it7[0]["mass"], (1.025, 1.035)) and it7[0]["eq"][0] > 0.9 and it7[1]["mmol"] and it7[1]["mass"], it7
+        assert np.allclose(it7[0]["mass"], (1.025, 1.035)) and it7[0]["eq"][0] > 0.9, it7
+        assert np.allclose(it7[1]["mass"], (4.5e-6, 5.5e-6)) and np.allclose(it7[1]["mmol"], (5e-5, 1.5e-4)), it7
         s7 = out / "input" / "syn7"
         s7.mkdir(parents=True, exist_ok=True)
         (s7 / "part.cdxml").write_text(                                     # zweites Fragment: C mit 5 Bindungen
@@ -4044,6 +4045,25 @@ def selftest(outdir, with_isnet=False):
             t_s.sync_widgets()
         report.append("NMR/synthesis audit P7 (Mnova report headings, multiplets, DEPT, raw matching, TMS label, EA with D, "
                       "hydrate/isotope formulas, amounts, partial CDXML, scheme roles, abbreviations): OK")
+
+        # Audit P7, Codex-Gegenlesen + Entscheidungen R1 (eq. zwei Stellen) / R2 (50 MHz nur nahe einem Vielfachen)
+        it7r = SYN.parse_amounts("S1 (100 mg,1.00 mmol,1.0 eq.)")                   # Komma ohne Leerzeichen
+        assert it7r[0]["mass"] and it7r[0]["mmol"] and it7r[0]["eq"], it7r
+        (s7 / "badbond.cdxml").write_text(                                  # Bindung zu fehlender ID: RDKit verwirft
+            '<?xml version="1.0"?><CDXML><page><fragment id="1"><n id="2" p="0 0"/><n id="3" p="14 0"/><b id="4" B="2" '
+            'E="3"/></fragment><fragment id="10"><n id="11" p="100 0"/><n id="12" p="114 0"/><b id="13" B="11" E="99"/>'
+            '</fragment></page></CDXML>', encoding="utf-8")
+        ld7r = CHEM.load_cdxml(s7 / "badbond.cdxml")
+        assert ld7r["mw"] is None and ld7r["warnings"], ld7r
+        assert SYN.cell_num("nan") is None and SYN.cell_num("inf") is None and SYN.molar_mass("nan") is None
+        assert SYN.amount_text(dict(M="100", m_mg="nan"), SYN.row_amounts(dict(M="100", m_mg="nan"))) == ""
+        r7r = dict(m_mg="71.0", M="199.485")
+        assert SYN.amount_text(r7r, dict(SYN.row_amounts(r7r), eq=1.053)) == "(71.0 mg, 0.356 mmol, 1.05 eq.)"
+        assert SYN.amount_text(r7r, dict(SYN.row_amounts(r7r), eq=1.1)) == "(71.0 mg, 0.356 mmol, 1.1 eq.)"
+        assert [NMR.nominal_freq("1H", f_) for f_ in (501.2, 400.13, 270.1, 360.13, 850.2)] == \
+            ["500", "400", "270", "360", "850"]
+        report.append("NMR/synthesis audit P7 review (comma without space, dropped fragment, NaN/inf, eq. digits, "
+                      "nominal 1H frequency): OK")
         w.dft_state.update(entries=[], current=None)
         t_d.sync_widgets()
         t_d.render()

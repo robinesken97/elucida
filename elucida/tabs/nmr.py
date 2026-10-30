@@ -193,13 +193,15 @@ def parse_mnova(text):
 
 
 def nominal_freq(nuc, freq):
-    """¹H auf die Nennfrequenz (501 -> 500 MHz), andere Kerne ganzzahlig wie im Bericht."""
+    """¹H auf die Nennfrequenz (501 -> 500 MHz; nur bis ±5 MHz neben einem Vielfachen von 50, sonst ganzzahlig:
+    270/360 MHz bleiben), andere Kerne ganzzahlig wie im Bericht."""
     try:
         f = float(freq)
     except (TypeError, ValueError):
         return str(freq or "")
     if nuc == "1H":
-        return f"{round(f / 50) * 50:d}" if f >= 100 else f"{round(f):d}"
+        n50 = round(f / 50) * 50
+        return f"{n50:d}" if f >= 100 and abs(f - n50) <= 5 else f"{round(f):d}"
     return f"{round(f):d}"
 
 

@@ -41,6 +41,18 @@ def load_cdxml(path) -> dict:
     return {k: (list(v) if isinstance(v, list) else v) for k, v in _CACHE[key].items()}
 
 
+def _xml_fragments(path) -> int:
+    """Strukturen in der CDXML (Fragmente mit Atomen, ohne die in Abkürzungen verschachtelten)."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.parse(str(path)).getroot()
+    except (ET.ParseError, OSError):
+        return 0
+    parent = {c: p for p in root.iter() for c in p}
+    return sum(1 for f in root.iter("fragment") if parent.get(f) is not None and parent[f].tag != "n"
+               and f.find("n") is not None)
+
+
 def _load_cdxml(path) -> dict:
     """-> dict(svg, mw, formula, n_fragments, warnings)."""
     Chem, Descriptors, Draw, rdMolDescriptors, rdMolDraw2D = _rdkit()
@@ -49,7 +61,8 @@ def _load_cdxml(path) -> dict:
     mols = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=True, removeHs=False) if m]
     raw = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=False, removeHs=False) if m]
     sanitized = True
-    if len(mols) < len(raw):          # RDKit lässt nicht interpretierbare Fragmente weg -> Masse sonst still zu klein
+    # RDKit lässt nicht interpretierbare Fragmente weg (auch ungültige Bindungen) -> Masse sonst still zu klein
+    if len(mols) < max(len(raw), _xml_fragments(path)):
         mols = raw
         sanitized = False
         if mols:

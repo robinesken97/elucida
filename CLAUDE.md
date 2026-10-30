@@ -238,7 +238,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   X-Ray · DFT; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
 - NMR-Tab: Abbildungen = Mnova-SVG (nicht aus Bruker 1r rechnen: Referenzierung weicht ab). Kern aus der Achse
   („δ ¹H (ppm)“, senkrecht = 2D), sonst von Hand; Reihenfolge ¹H, ¹³C, übrige nach Massenzahl, dann 2D (`sort_key`).
-  NMR-Zeile aus dem Mnova-Bericht (alle Kerne in einem Feld), ¹H-Frequenz auf 50 MHz gerundet (501 → 500); ¹³C auch aus
+  NMR-Zeile aus dem Mnova-Bericht (alle Kerne in einem Feld), ¹H-Frequenz auf 50 MHz gerundet (501 → 500; nur bis ±5 MHz daneben, 270/360 bleiben, Nutzerwunsch P7); ¹³C auch aus
   den Peaklabels (`svg_peaks`, beschriftetes Lösungsmittelsignal fällt weg). Temperatur 298 K oder aus acqus. Rohdaten
   (Nutzerwunsch 2.1, Reiter „Rohdaten“ neben der Abbildung): TopSpin-Experimente **ganz** (FID/ser, pdata) nach
   `data/nmr/<Art>/<Datensatz>_<Nr.>` (`experiment_kind` aus acqus: 1D = Kern, DEPT/APT, 2D aus dem Pulsprogramm),
@@ -251,7 +251,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Synthese-Tab: Schema über `scheme_files` (CDXML + gleichnamige SVG/PDF, .cdx, .emf). Word-OLE nur mit CDX (CDXML
   öffnet Word nicht als ChemDraw-Objekt, vom Nutzer geprüft); Vorschau EMF (Vektor) sonst PNG; OLE-Container eigener
   CFB-Schreiber (`formats/ole.py`). Mengenprüfung mit Rundungsintervallen der angegebenen Stellen (1.03 g = 1.025–1.035 g),
-  Bezug = erste Zeile mit 1.0 eq. „Aus Schema“: Rollen aus dem Reaktionsschritt (RDKit `CDX_PRODUCT_ID`/`CDX_REAGENT_ID`),
+  Bezug = erste Zeile mit 1.0 eq.; eingefügte eq. mit zwei Stellen, eine Null am Ende weg (1.05, 1.1; Nutzerwunsch P7) „Aus Schema“: Rollen aus dem Reaktionsschritt (RDKit `CDX_PRODUCT_ID`/`CDX_REAGENT_ID`),
   Pfeiltexte über `scheme_reagents` (Bedingungen weg, Lösungsmittel-Kürzel → Formel). Vorschau: nur das Schema auf
   Weiß (ausgeblendet ohne Schema), Text im Theme.
 - SI-Methodentexte („SI-Text kopieren“, beim Export `…_methods.txt`): jeder Tab, der fittet (ε, CV, SEC, EPR), beschreibt
