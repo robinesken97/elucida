@@ -1919,6 +1919,8 @@ TEXTS = {
                        "⚠ calculation did not terminate normally (aborted or file incomplete) – values from the last "
                        "complete section."),
     "dft_w_not_converged": ("⚠ Optimierung nicht konvergiert.", "⚠ optimisation not converged."),
+    "dft_w_orca_version": ("⚠ ORCA {v}: geprüft ist nur ORCA 6 – Werte im SI-Text mit der Ausgabe vergleichen.",
+                           "⚠ ORCA {v}: only ORCA 6 has been verified – compare the SI values with the output."),
     "dft_w_no_opt": ("Keine Optimierung in dieser Ausgabe: Geometrie = Eingabegeometrie.",
                      "No optimisation in this output: geometry = input geometry."),
     "dft_w_no_freq": ("⚠ Frequenzrechnung angefordert, aber keine Frequenzen gefunden.",

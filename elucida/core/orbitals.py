@@ -232,8 +232,9 @@ def cube_mo(path, cube=None):
     """MO-Nummer und Spin aus der MO-Liste oder dem Dateinamen (ORCA: „name.mo21a.cube“) -> (Nummer, „a“/„b“/"")."""
     if cube and cube["mos"][0] is not None:
         return cube["mos"][0], ""
-    m = re.search(r"mo(\d+)([ab]?)", Path(path).name, re.I)
-    return (int(m.group(1)), m.group(2).lower()) if m else (None, "")
+    # „mo“/„MO“ (ORCA: klein), nicht mitten im Wort („demo12“) und nicht „Mo2“ (Molybdän); letzter Treffer
+    m = re.findall(r"(?<![A-Za-z\d])(?:mo|MO)(\d+)([ab]?)(?![A-Za-z\d])", Path(path).name)
+    return (int(m[-1][0]), m[-1][1]) if m else (None, "")
 
 
 def write_cube(path, els, xyz, origin, axes, data, title="Elucida test cube", comment="orbital"):
@@ -283,8 +284,9 @@ def orbital_energies(text) -> dict:
     for spin, key in (("a", "Alpha"), ("b", "Beta")):
         rows = []
         for m in re.finditer(key + r"\s+(occ|virt)\. eigenvalues --(.*)", part):
-            for v in re.findall(r"-?\d+\.\d+", m.group(2)):
-                rows.append((len(rows) + 1, 1.0 if m.group(1) == "occ" else 0.0, float(v) * HARTREE_EV))
+            for v in re.findall(r"\*{10}|-?\d+\.\d+", m.group(2)):         # ********** = Wert < −999.99999 (5F10.5)
+                rows.append((len(rows) + 1, 1.0 if m.group(1) == "occ" else 0.0,
+                             float("nan") if v.startswith("*") else float(v) * HARTREE_EV))
         if rows:
             out[spin] = rows
     if "a" in out and "b" not in out:                           # geschlossenschalig: doppelt besetzt, ohne Spin
@@ -295,8 +297,8 @@ def orbital_energies(text) -> dict:
 def frontier_name(no, spin, table):
     """„HOMO“, „HOMO−2“, „LUMO+1“ … aus den Besetzungen (Spin des Orbitals), sonst None."""
     rows = table.get(spin or "") or table.get("") or table.get("a")       # geschlossenschalig: „mo7a“ = Spin ""
-    if not rows or no is None:
-        return None
+    if not rows or no is None or any(min(abs(o - k) for k in (0, 1, 2)) > 1e-3 for _, o, _ in rows):
+        return None                                              # gebrochene Besetzungen (CASSCF, NO): kein HOMO
     homo = max((n for n, o, _ in rows if o > 0.5), default=None)
     if homo is None:
         return None
@@ -767,7 +769,9 @@ class Basis:
 
     def setup(self, mos=None):
         """Konvention bestimmen, Normierung je AO setzen. -> größte Abweichung von CᵀSC = 1."""
-        C = np.array([mo["c"] for mo in (mos or self.m["mos"])]).T
+        mos = mos or self.m["mos"]
+        C = np.array([mo["c"] for mo in mos]).T
+        spin = np.array([mo.get("spin", "a") for mo in mos])
         if C.shape[0] != self.nao:
             raise ValueError(f"Molden: {C.shape[0]} MO coefficients, basis has {self.nao} functions")
         self.errors = {}
@@ -785,7 +789,8 @@ class Basis:
                     S[off[j]:off[j + 1], off[i]:off[i + 1]] = v.T
                 nrm = 1 / np.sqrt(np.diag(S))
                 Sn = S * nrm[:, None] * nrm[None, :]
-                err = float(np.abs(C.T @ Sn @ C - np.eye(C.shape[1])).max())
+                err = max(float(np.abs(C[:, spin == sp].T @ Sn @ C[:, spin == sp] - np.eye((spin == sp).sum())).max())
+                          for sp in set(spin))                 # α und β je für sich orthonormal
                 self.errors[(prim, sign)] = err
                 if best is None or err < best[0]:
                     best = (err, (prim, sign), Ts, nrm, Sn)
@@ -886,11 +891,16 @@ def iao_bond_orders(basis: Basis, thresh=0.2):
     spins = sorted({mo["spin"] for mo in mos})
     closed = spins == ["a"]
     dens = []
-    for sp in spins:
-        sel = [mo for mo in mos if mo["spin"] == sp and mo["occ"] > 1e-8]
-        Cs = np.array([mo["c"] for mo in sel]).T
-        occ = np.array([mo["occ"] for mo in sel]) / (2.0 if closed else 1.0)
-        dens.append((Cs, occ))
+    # nur α gespeichert mit Besetzung 1 (ROHF): α = einfach + doppelt besetzte, β = doppelt besetzte
+    rohf = closed and any(abs(mo["occ"] - 1) < 1e-6 for mo in mos)
+    for sp in (["a", "b"] if rohf else spins):
+        src = [mo for mo in mos if mo["spin"] == ("a" if rohf else sp)]
+        occ = np.array([mo["occ"] for mo in src])
+        occ = np.clip(occ - (sp == "b"), 0.0, 1.0) if rohf else occ / 2.0 if closed else occ
+        keep = occ > 1e-8
+        if keep.any():                                           # sonst z. B. H₂⁺: keine β-Elektronen
+            dens.append((np.array([mo["c"] for mo in src]).T[:, keep], occ[keep]))
+    closed = closed and not rohf
     Cref = dens[0][0]                                            # IAOs aus den (α-)besetzten Orbitalen
     P12 = np.linalg.solve(S1, S12)
     Ct = orth(P12 @ np.linalg.solve(S2, S12.T @ Cref))

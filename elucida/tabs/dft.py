@@ -63,6 +63,8 @@ def calc_warnings(c):
         w.append(T("dft_w_partly"))
     if not c["opt_requested"]:
         w.append(T("dft_w_no_opt"))
+    if c["program"] == "ORCA" and not c["version"].startswith("6"):
+        w.append(T("dft_w_orca_version", v=c["version"] or "?"))
     if c["freq_requested"] and not c["freqs"]:
         w.append(T("dft_w_no_freq"))
     im = imaginary(c)
@@ -158,12 +160,15 @@ def si_parts(c, name, coord_lines, opts=None):
             t = f"Solvation: {s['model']}" + (f" ({', '.join(bits)})" if bits else "") + "."
             extra.append((t, _h.escape(t)))
     if o["conv"] and c["opt_requested"]:
-        t = ("Geometry optimisation converged" if c["opt_converged"] else "Geometry optimisation NOT converged") + \
-            (" (final cycle):" if c["conv"] else ".")
-        extra.append((t, _h.escape(t)))
+        # nicht konvergiert: nur Hinweis in der Anzeige, im SI-Text neutral die letzte Tabelle
+        t = "Geometry optimisation converged (final cycle):" if c["opt_converged"] and c["conv"] else \
+            "Geometry optimisation converged." if c["opt_converged"] else \
+            "Final geometry optimisation cycle:" if c["conv"] else ""
+        if t:
+            extra.append((t, _h.escape(t)))
     conv_at = len(extra)                                   # Konvergenztabelle direkt unter dieser Zeile
     th = c["thermo"]
-    if o["freq"] and c["freqs"] is not None:
+    if o["freq"] and c["freqs"]:                          # leerer Block (abgebrochen): keine Aussage
         im = imaginary(c)
         if not im:
             t = "Frequency calculation: no imaginary frequencies."
@@ -318,7 +323,8 @@ def _graph(els, idx, bonds):
 
 
 def kabsch(P, Q):
-    """Beste Überlagerung von P auf Q (n×3); Spiegelung erlaubt (Enantiomer im Kristall) -> (RMSD, R, cP, cQ)."""
+    """Beste Überlagerung von P auf Q (n×3); Spiegelung nur bei deutlich besserer Passung (Enantiomer im Kristall)
+    -> (RMSD, R, cP, cQ)."""
     cP, cQ = P.mean(axis=0), Q.mean(axis=0)
     U, _, Vt = np.linalg.svd((P - cP).T @ (Q - cQ))
     d0 = np.sign(np.linalg.det(Vt.T @ U.T)) or 1.0
@@ -327,10 +333,11 @@ def kabsch(P, Q):
         R = Vt.T @ np.diag([1.0, 1.0, d]) @ U.T
         return float(np.sqrt(np.mean(np.sum(((R @ (P - cP).T).T - (Q - cQ)) ** 2, axis=1)))), R
     # echte Drehung (det = +1); Spiegelung nur, wenn sie deutlich besser passt – bei ebenen Schweratomen passen
-    # beide gleich gut, dann zählt die Drehung (sonst werden H-Atome ober- und unterhalb der Ebene vertauscht)
+    # beide gleich gut, dann zählt die Drehung (sonst werden H-Atome ober- und unterhalb der Ebene vertauscht);
+    # „deutlich“ = halbe Abweichung und mindestens AMBIG_TOL besser (Koordinatenrauschen ≫ 1e-3 Å)
     rp, Rp = fit(d0)
     rm, Rm = fit(-d0)
-    return (rm, Rm, cP, cQ) if rm < rp - 1e-3 else (rp, Rp, cP, cQ)
+    return (rm, Rm, cP, cQ) if rm < min(0.5 * rp, rp - AMBIG_TOL) else (rp, Rp, cP, cQ)
 
 
 MATCH_MAX = 20000            # Obergrenze für Zuordnungen (symmetrische Gruppen: tBu, Phenyl … vervielfachen sie)
@@ -377,7 +384,8 @@ def match_reference(ref, tgt):
     rmsd, best, R, cP, cQ = scored[0]
     # symmetrisches Bindungsnetz: nächstbeste andere Zuordnung immer melden (gewählt wird nach Geometrie)
     alt = next(((r2, mp2) for r2, mp2, *_ in scored[1:] if mp2 != best), None)
-    amb = {k for k in best if alt and alt[1].get(k) != best[k]} if alt and alt[0] - rmsd <= AMBIG_TOL else set()
+    amb = {k for r2, mp2, *_ in scored[1:] if r2 - rmsd <= AMBIG_TOL       # alle praktisch gleich guten, nicht nur
+           for k in best if mp2.get(k) != best[k]}                       # die nächstbeste (unabhängige Gruppen)
     # H: je zugeordnetem Schweratom die H-Nachbarn nach Abstand (Ziel auf die Vorlage überlagert)
     def h_nbrs(g, k):
         return [j for a, b in g["bonds"] for j in ((b,) if a == k else (a,) if b == k else ())
@@ -993,7 +1001,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             i = ORB.molden_index(m, no, spin) if no is not None else None
             if i is not None and not any(it.get("mo") == i and it["file"] == p for it in orbs):
                 orbs.append(dict(file=p, mo=i))
-        e["orb_cur"] = len(orbs) - 2 if len(orbs) >= 2 else len(orbs) - 1
+        hi = ORB.molden_index(m, homo, spin) if homo is not None else None
+        e["orb_cur"] = next((k for k, it in enumerate(orbs) if it["file"] == p and it.get("mo") == hi),
+                            len(orbs) - 1)                       # HOMO, auch wenn er schon in der Liste war
         self.stop_numbering()
         self.sync_widgets()
         self.render()
@@ -1775,8 +1785,13 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         es = [e for e in self.entries() if self.geometry(e) is not None]
         if not es:
             raise RuntimeError(T("tab_empty"))
+        used = set()
         for e in es:
-            name = base.name + ("_" + core.safe_name(e.get("name") or Path(e["file"]).stem) if len(es) > 1 else "")
+            name = first = base.name + ("_" + core.safe_name(e.get("name") or Path(e["file"]).stem)
+                                        if len(es) > 1 else "")
+            while name in used:                                 # gleiche Namen überschreiben sich sonst: _2, _3 …
+                name = f"{first}_{len(used) + 1}"
+            used.add(name)
             stem = base.with_name(name)
             fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
             FigureCanvasAgg(fig)
@@ -1814,7 +1829,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             if det:
                 blocks.append(("heading", "Computational details"))
                 blocks += [("text", h) for _, h in det]
-        for e in self.entries():
+        for n, e in enumerate(self.entries()):
             p = self.si_of(e) if self.geometry(e) is not None else None
             if p is None:
                 continue
@@ -1825,7 +1840,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             FigureCanvasAgg(fig)
             F = self.build(fig, e, interactive=False, orb=None)
             if F is not None:
-                svg = Path(img_dir) / f"{core.safe_name(p['name'])}_dft.svg"
+                svg = Path(img_dir) / f"{n}_{core.safe_name(p['name'])}_dft.svg"  # Namen können gleich sein
                 blocks.append(("image",) + XRAY.save_tight(F, svg))
             blocks.append(("fields", p["fields"][1]))
             k = p["conv_at"]
@@ -1836,7 +1851,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             blocks.append(("mono", p["coords"]))
             if p["energies"]:
                 blocks.append(("energies", p["energies"][0], [p["energies"][2]]))
-            blocks += self.orbital_blocks(e, p["name"], img_dir)
+            blocks += self.orbital_blocks(e, p["name"], img_dir, n)
         return blocks
 
     def orbital_caption(self, e, item, name):
@@ -1849,7 +1864,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             iso = f"isosurface enclosing {self.st.get('orb_frac', ORB.ISO_FRACTION):g}% of the orbital density"
         return f"{lab} of <b>{name}</b>, {iso}."
 
-    def orbital_blocks(self, e, name, img_dir):
+    def orbital_blocks(self, e, name, img_dir, n=0):
         """Word: je Orbital der Geometrie ein Bild (eng beschnitten) mit Unterschrift."""
         out = []
         for k, item in enumerate(e.get("orbitals") or []):
@@ -1860,7 +1875,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             F = self.build(fig, e, interactive=False, orb=k)
             if F is None:
                 continue
-            svg = Path(img_dir) / f"{core.safe_name(name)}_{self.orb_short(e, item)}.svg"
+            svg = Path(img_dir) / f"{n}_{core.safe_name(name)}_{self.orb_short(e, item)}.svg"
             out.append(("image",) + XRAY.save_tight(F, svg))
             out.append(("text", self.orbital_caption(e, item, name)))
         return out

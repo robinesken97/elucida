@@ -3276,6 +3276,182 @@ def selftest(outdir, with_isnet=False):
         assert {PRJ._get(c_, k_) for c_, k_, _ in PRJ._path_slots(st_p_)} >= {"g.xyz", "g.molden", "g.cube"}   # im Projekt
         report.append("DFT orbitals from Molden (basis up to g, convention check, HOMO/LUMO, IAO bond orders): OK")
 
+        # Audit P5 (DFT, TD-DFT, Orbitale): je Fall ein Fund, der vor dem Fix scheiterte
+        from elucida.formats import calc as CALC
+        from elucida.formats.elements import element_of as elem_of_
+        from elucida.core import tddft as XT5
+        fails_ = []
+        def chk_(name, fn):
+            try:
+                fn()
+            except Exception as e_:
+                fails_.append(f"{name}: {type(e_).__name__} {e_}"[:160])
+        def g_or_(title, x):                     # Gaussian-Orientierungstabelle (H2O)
+            return [f"                         {title}", " " + "-" * 69, " Center  Atomic  Atomic  Coordinates (Angstroms)",
+                    " Number  Number  Type  X  Y  Z", " " + "-" * 69,
+                    f"      1          8           0     {x:>9s}    0.000000    0.000000",
+                    "      2          1           0     0.000000    0.757000    0.586000",
+                    "      3          1           0     0.000000   -0.757000    0.586000", " " + "-" * 69]
+        g_head_ = [" Entering Gaussian System, Link 0=g16", " ---", " #p B3LYP/def2SVP opt", " ---",
+                   " Charge =  0 Multiplicity = 1"]
+        g_link_ = [" Normal termination of Gaussian 16", " Link1:  Proceeding to internal job step number  2."]
+        def p5_g_orient():                       # spätere Input orientation nach Link1 gilt
+            c_ = CALC.parse_gaussian("\n".join(g_head_ + g_or_("Standard orientation:", "0.000000") + g_link_ +
+                                               g_or_("Input orientation:", "2.000000")))
+            assert c_["geometry"][0][1][1] == "2.000000", c_["geometry"][0]
+        chk_("gaussian orientation after Link1", p5_g_orient)
+        def p5_g_freq_jobs():                    # Frequenzen des letzten Jobs; Single Point danach: E(el) des Freq-Jobs
+            c_ = CALC.parse_gaussian("\n".join(
+                g_head_ + g_or_("Standard orientation:", "0.0") + [" Frequencies --   -100.0   200.0   300.0"] + g_link_ +
+                g_or_("Standard orientation:", "0.0") +
+                [" SCF Done:  E(RB3LYP) =  -76.400000000     A.U. after 1 cycles",
+                 " Frequencies ---   100.1234   250.2345   350.3456",          # hpmodes: Kopie mit „---“
+                 " Frequencies --   100.1234   250.2345   350.3456",
+                 " Sum of electronic and thermal Free Energies=        -76.390000"] + g_link_ +
+                [" SCF Done:  E(RwB97XD) =  -76.500000000     A.U. after 1 cycles", " Normal termination of Gaussian 16"]))
+            assert c_["freqs"] == ["100.1234", "250.2345", "350.3456"], c_["freqs"]
+            assert c_["thermo"]["E_el"] == "-76.400000000", c_["thermo"]
+        chk_("gaussian frequencies of the last job", p5_g_freq_jobs)
+        def p5_g_route():                        # Route am Leerzeichen umbrochen: Wörter bleiben getrennt
+            c_ = CALC.parse_gaussian("\n".join([" Entering Gaussian System", " ---", " #p B3LYP/def2SVP opt",
+                                                "  freq scrf=(smd,solv", " ent=thf)", " ---"] + g_or_("Standard orientation:", "0.0")))
+            assert c_["keywords"] == ["#p B3LYP/def2SVP opt freq scrf=(smd,solvent=thf)"] and c_["freq_requested"], c_
+        chk_("gaussian wrapped route", p5_g_route)
+        o_geo_ = ["CARTESIAN COORDINATES (ANGSTROEM)", "---------------------------------", "  O  0.0 0.0 0.0",
+                  "  H  0.0 0.757 0.586", "  H  0.0 -0.757 0.586", ""]
+        def p5_o_empty_freq():                   # abgebrochener Frequenzblock: keine Aussage im SI-Text
+            c_ = CALC.parse_orca("\n".join(["Program Version 6.1.1"] + o_geo_ +
+                                           ["-----------------------", "VIBRATIONAL FREQUENCIES", "-----------------------", ""]))
+            assert "Frequency" not in DFT.si_plain(DFT.si_parts(c_, "x", [r_[0] for r_ in c_["geometry"]])), c_["freqs"]
+        chk_("orca empty frequency block", p5_o_empty_freq)
+        def p5_o_energy_comment():               # Text nach der Energie, Kommentar „#“ in der Eingabezeile
+            c_ = CALC.parse_orca("\n".join(["Program Version 6.1.1", "INPUT FILE", "|  1> ! B3LYP def2-SVP Opt  # test",
+                                            "END OF INPUT"] + o_geo_ +
+                                           ["FINAL SINGLE POINT ENERGY      -76.123456789 (Wavefunction not fully converged!)"]))
+            assert c_["energy"] == "-76.123456789" and c_["keywords"] == ["! B3LYP def2-SVP Opt"], c_
+        chk_("orca energy suffix and comment", p5_o_energy_comment)
+        def p5_o_not_conv():                     # nicht konvergiert / ORCA 5: Hinweis nur in der Anzeige
+            c_ = CALC.parse_orca("\n".join(["Program Version 5.0.4", "INPUT FILE", "|  1> ! B3LYP Opt", "END OF INPUT",
+                "          ----------------------|Geometry convergence|-------------------------",
+                "          Energy change      -0.0010000000            0.0000010000      NO",
+                "          ---------------------------------------------------------------------"] + o_geo_))
+            assert c_["opt_requested"] and not c_["opt_converged"] and len(c_["conv"]) == 1, c_
+            assert "NOT" not in DFT.si_plain(DFT.si_parts(c_, "x", [r_[0] for r_ in c_["geometry"]]))
+            assert any("5.0.4" in w_ for w_ in DFT.calc_warnings(c_)), DFT.calc_warnings(c_)
+        chk_("not converged / ORCA 5 only as warning", p5_o_not_conv)
+        def p5_kabsch_planar():                  # ebene Schweratome mit Rauschen: immer echte Drehung
+            P_ = np.array([[1.25 * i_, 0.4 * (i_ % 2), 0.0] for i_ in range(9)])
+            dets_ = []
+            for s_ in range(40):
+                r_ = np.random.default_rng(s_)
+                dets_.append(np.linalg.det(DFT.kabsch(P_ + r_.normal(0, 0.01, P_.shape),
+                                                      P_ + r_.normal(0, 0.01, P_.shape))[1]))
+            assert min(dets_) > 0, sum(d_ < 0 for d_ in dets_)
+            Q_ = np.array([[0, 0, 0], [1.5, 0, 0], [0, 1.6, 0], [0, 0, 1.7], [-0.9, -0.8, -0.7]])
+            assert np.linalg.det(DFT.kabsch(Q_, Q_ * [-1, 1, 1])[1]) < 0     # Enantiomer: Spiegelung bleibt
+        chk_("kabsch mirror only if clearly better", p5_kabsch_planar)
+        def p5_ambig_union():                    # zwei unabhängige symmetrische Gabeln: beide gemeldet
+            X_ = [[1.25 * i_, 0.4 * (i_ % 2), 0.6 * np.sin(0.5 * i_) + 0.02 * i_] for i_ in range(40)]   # chiral
+            els_, bonds_ = ["N"] + ["C"] * 38 + ["O"], [(i_, i_ + 1) for i_ in range(39)]
+            for k_ in (10, 30):
+                for z_ in (0.14, -0.04):
+                    X_.append([1.25 * k_, 0.4 * (k_ % 2) + (1.0 if k_ % 2 else -1.0), X_[k_][2] + z_])
+                    els_.append("C")
+                    bonds_.append((k_, len(X_) - 1))
+            g_ = dict(els=els_, xyz=np.array(X_), bonds=bonds_, order=None)
+            r_ = DFT.match_reference(g_, dict(g_))
+            assert len(r_["ambiguous"]) == 4, r_["ambiguous"]
+        chk_("ambiguity of independent groups", p5_ambig_union)
+        def p5_element():                        # nur Unbekanntes auf den ersten Buchstaben kürzen
+            got_ = [elem_of_(x_, x_) for x_ in ("Ho", "Nd", "CL")]
+            assert got_ == ["Ho", "Nd", "Cl"], got_
+        chk_("element Ho stays Ho", p5_element)
+        def p5_orb_spin():                       # ROHF (nur α, Besetzung 1) und UHF (α/β je orthonormal)
+            def mold_(mos_):
+                t_ = ["[Molden Format]", "[Atoms] AU", "H 1 1 0.0 0.0 0.0", "H 2 1 0.0 0.0 1.4", "[GTO]"]
+                for a_ in (1, 2):
+                    t_ += [f"{a_} 0", "s 1 1.0", "1.0 1.0", ""]
+                t_ += ["[MO]"]
+                for sp_, oc_, c_ in mos_:
+                    t_ += [" Sym= A", " Ene= 0.0", f" Spin= {sp_}", f" Occup= {oc_}"] + \
+                          [f"{i_ + 1} {v_:.15f}" for i_, v_ in enumerate(c_)]
+                return ORB.Basis(ORB.parse_molden("\n".join(t_) + "\n"))
+            s_ = np.exp(-1.4 ** 2 / 2)
+            b_, a_ = 1 / np.sqrt(2 + 2 * s_), 1 / np.sqrt(2 - 2 * s_)
+            B_ = mold_([("Alpha", 1.0, [b_, b_]), ("Alpha", 0.0, [a_, -a_])])
+            assert B_.setup() < 1e-9 and abs(ORB.iao_bond_orders(B_, 0.0)[(0, 1)] - 0.5) < 1e-6
+            B_ = mold_([("Alpha", 1.0, [b_, b_]), ("Alpha", 0.0, [a_, -a_]), ("Beta", 0.0, [b_, b_]), ("Beta", 0.0, [a_, -a_])])
+            assert B_.setup() < 1e-9 and abs(ORB.iao_bond_orders(B_, 0.0)[(0, 1)] - 0.5) < 1e-6
+            bad_h_ = "[Molden Format]\n[Atoms] AU\nH 1 1 0 0 0\n[GTO]\n1 0\nh 1 1.0\n1.0 1.0\n\n[MO]\n"
+            try:
+                ORB.parse_molden(bad_h_)
+                raise AssertionError("h shell accepted")
+            except ValueError as ex_:
+                assert "'h'" in str(ex_) and "not supported" in str(ex_), ex_
+        chk_("molden ROHF/UHF bond orders, h shell", p5_orb_spin)
+        def p5_orb_names():                      # Dateiname, Gaussian-Sterne, gebrochene Besetzung
+            assert ORB.cube_mo("demo12.cube") == (None, "") and ORB.cube_mo("NHO.mo67a.cube") == (67, "a")
+            tb_ = ORB.orbital_energies(" Population analysis using the SCF density.\n"
+                                       " Alpha  occ. eigenvalues -- **********-100.12345 -10.19134 -10.18734  -0.80000\n"
+                                       " Alpha virt. eigenvalues --    0.10000   0.20000\n")
+            assert [n_ for n_, o_, _ in tb_[""] if o_ > 0] == [1, 2, 3, 4, 5], tb_
+            assert ORB.frontier_name(6, "", tb_) == "LUMO"
+            assert ORB.frontier_name(3, "", {"": [(1, 2.0, -9), (2, 1.56, -7), (3, 0.43, -1)]}) is None
+        chk_("orbital names", p5_orb_names)
+        def p5_td_utf16_sf():                    # UTF-16; Spin-Flip-Labels sind keine Multiplizität
+            u_ = ddir / "td_u16.log"
+            u_.write_bytes(" Excited State   1:      Singlet-A      3.0000 eV  413.28 nm  f=0.1000\n".encode("utf-16"))
+            assert XT5.tddft_variants(u_) == ["nosoc"] and XT5.parse_tddft(u_)["f"][0] == 0.1
+            sf_ = ddir / "td_sf.out"
+            sf_.write_text("\n".join(["SPIN FLIP ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", "-" * 100,
+                                      "  Transition  Energy", "   (eV)", "-" * 100,
+                                      "  1-3A  ->  2-3A    3.269852   26373.1   379.2   0.124943095   1.5  0.1  0.1  0.1", ""]),
+                           encoding="utf-8")
+            assert XT5.parse_tddft(sf_)["mult"] == [None], XT5.parse_tddft(sf_)["mult"]
+        chk_("TD-DFT UTF-16 and spin flip", p5_td_utf16_sf)
+        def ov_spec_(name_, rows_, **st_):           # Overlay mit einer TD-DFT-Rechnung (ORCA-6-Tabelle)
+            td_ = ddir / name_
+            td_.write_text("\n".join(["ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", "-" * 100,
+                                      "  Transition  Energy", "   (eV)", "-" * 100] +
+                                     [f"  0-1A  ->  {lab_}    {e_:.6f}   1.0   1.0   {f_:.9f}   0 0 0 0"
+                                      for lab_, e_, f_ in rows_] + [""]), encoding="utf-8")
+            ent_ = {"kind": "calc", "file": str(td_), "label": "t", "color": "#000000", "visible": True,
+                    "own_norm": False, "nlo": 300, "nhi": 600, "fwhm": 0.3, "shift": 0.0, "offset": st_.pop("offset", 0)}
+            st0_ = dict(entries=[ent_], triplets=True, x_auto=True, mode="norm", sticks=True, stick_mode="band",
+                        nlo=300, nhi=600)
+            old_ = {k_: w.ov_state.get(k_) for k_ in st0_}
+            try:
+                w.ov_state.update(st0_, **st_)
+                return w.ov_tab.figure_spec()
+            finally:
+                w.ov_state.update(old_)
+        chk_("overlay triplets only", lambda: ov_spec_("td_trip.out", [("1-3A", 2.5, 0.0), ("2-3A", 3.0, 0.0)])[0])
+        def p5_ov_xrange():                      # ausgeblendetes Triplett bei 1771 nm bestimmt nicht den x-Bereich
+            xl_ = ov_spec_("td_mixed.out", [("1-3A", 0.7, 0.0), ("1-1A", 3.5, 0.2)], triplets=False)[0]["xlim"]
+            assert xl_[1] < 1000, xl_
+        chk_("overlay x range without hidden triplets", p5_ov_xrange)
+        def p5_ov_faxis():                       # f-Achse beginnt bei y = 0: mit Versatz keine f-Achse
+            assert "f_axis" not in ov_spec_("td_f.out", [("1-1A", 3.5, 0.2)], stick_mode="faxis", offset=0.5)[0]
+        chk_("overlay f axis with offset", p5_ov_faxis)
+        def p5_dft_dupes():                      # gleich benannte Geometrien: eigene Dateien; HOMO nach erneutem Laden
+            w.dft_state.update(entries=[], current=None)
+            e1_ = t_d.load_xyz(str(xyzf_))
+            t_d.entries().append(dict(e1_, name=e1_.get("name") or Path(e1_["file"]).stem))
+            e1_["name"] = t_d.entries()[1]["name"]
+            fs_ = [str(f_) for f_ in t_d.export_to(out / "p5_dupes" / "d")]
+            assert len(fs_) == len(set(fs_)), fs_
+            w.dft_state.update(entries=[], current=None)
+            e_m_ = t_d.load_molden(str(mf_))
+            e_m_["orbitals"].append(dict(file=e_m_["orbitals"][0]["file"], mo=5))
+            e_m_ = t_d.load_molden(str(mf_))
+            assert e_m_["orbitals"][e_m_["orb_cur"]]["mo"] == 0, (e_m_["orb_cur"], e_m_["orbitals"])
+            w.dft_state.update(entries=[], current=None)
+            t_d.sync_widgets()
+            t_d.render(push=False)
+        chk_("DFT duplicate names, HOMO after reload", p5_dft_dupes)
+        assert not fails_, "\n".join(fails_)
+        report.append("audit P5 DFT/TD-DFT/orbitals edge cases: OK")
+
         # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
         ndir = out / "input" / "nmr"
         sv_h = NMR.make_test_svg(ndir / "t-1H.svg", ("1H",))

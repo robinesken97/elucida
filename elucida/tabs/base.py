@@ -1789,7 +1789,7 @@ class OverlayTab(FigureTab):
         eps_mode, abs_mode = st["mode"] == "eps", st["mode"] == "abs"
         mode = st.get("stick_mode", "max")
         stack = st.get("stack", False)
-        if stack and mode == "faxis":            # eine f-Achse passt nicht zu versetzten Kurven
+        if mode == "faxis" and (stack or any(e.get("offset") for e in vis)):   # f-Achse beginnt bei y = 0
             mode = "band"
         levels = self.stack_levels(vis) if stack else {}
         n_lev = max(levels.values(), default=0) + 1
@@ -1867,9 +1867,10 @@ class OverlayTab(FigureTab):
                 E, f, mult = self.calc_data(e)
                 lam, eps, sl, sh = X.broaden(E, f, e.get("fwhm", 0.3), e.get("shift", 0.0))
                 trip = np.array([m == 3 for m in mult], bool)
+                only_trip = st.get("triplets") and trip.any() and not (np.asarray(f) > 0).any()
                 # Kurve und Striche immer mit DEMSELBEN Faktor: jeder Strich = Höhe seiner eigenen
                 # Gaußbande, die Kurve ist deren Summe. Gewählt wird nur die Bezugsgröße.
-                if eps_mode:
+                if eps_mode or only_trip:                # nur Tripletts (alle f = 0): Marken ohne Kurve
                     k = 1 / 1000.0                       # ε in 10³ M⁻¹ cm⁻¹
                 else:
                     sel = (lam >= min(lo, hi)) & (lam <= max(lo, hi))
@@ -1883,7 +1884,7 @@ class OverlayTab(FigureTab):
                     k = 1 / (stick_max if mode == "max" else band_max)
                 y, h = eps * k, sh * k
                 c = {"x": lam, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
-                calc_x.append(sl)                        # x-Bereich unabhängig davon, ob Striche gezeigt werden
+                calc_x.append(sl if st.get("triplets") else sl[~trip])     # ohne ausgeblendete Tripletts
                 if st["sticks"]:
                     sticks.append({"x": sl[~trip], "h": (h * sc)[~trip], "color": e["color"], "base": off})
                     fa, hs = np.asarray(f, float), h * sc
@@ -1894,7 +1895,7 @@ class OverlayTab(FigureTab):
                         f_scales.append(float(np.median(fa[ok] / hs[ok])))
                 if st.get("triplets") and trip.any():
                     # formal spinverboten (f = 0): gestrichelte Marken fester Höhe, kein Beitrag zur Kurve
-                    ht = 0.15 * sc * (float(np.nanmax(y)) if eps_mode else 1.0)
+                    ht = 0.15 * sc * (float(np.nanmax(y)) if eps_mode and np.nanmax(y) > 0 else 1.0)
                     sticks.append({"x": sl[trip], "h": np.full(int(trip.sum()), ht), "color": e["color"],
                                    "base": off, "ls": "dashed"})
             if e.get("lw"):

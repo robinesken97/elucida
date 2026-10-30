@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from elucida.core import uvvis as core
+from elucida.formats.calc import read_text
 
 EV_TO_CM = 8065.544          # 1 eV in cm⁻¹
 EPS_CONST = 1.3062974e8      # L mol⁻¹ cm⁻² ; ε(ν̃) = C · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), σ in cm⁻¹
@@ -83,7 +84,7 @@ def _orca_triplets(lines):
 
 def tddft_variants(path) -> list:
     """Welche Spektren enthält die Datei? -> ['soc', 'nosoc'] / ['nosoc']."""
-    txt = Path(path).read_text(encoding="utf-8", errors="replace")
+    txt = read_text(path)                          # erkennt UTF-16 (Windows-PowerShell-Umleitung)
     if _G_STATE.search(txt):
         return ["nosoc"]
     out = []
@@ -99,7 +100,7 @@ def parse_tddft(path, variant=None) -> dict:
     ORCA: SOC-korrigiertes Spektrum (variant='soc', Standard falls vorhanden) oder ohne SOC.
     mult: Spinmultiplizität je Zustand (1, 3, …) oder None, wenn unbekannt; mit SOC immer None
     (Zustände sind gemischt und haben dort echte Intensität)."""
-    txt = Path(path).read_text(encoding="utf-8", errors="replace")
+    txt = read_text(path)                          # erkennt UTF-16 (Windows-PowerShell-Umleitung)
     ms = list(_G_STATE.finditer(txt))
     if ms:
         starts = [i for i, m in enumerate(ms) if m.group(1) == "1"]
@@ -119,8 +120,8 @@ def parse_tddft(path, variant=None) -> dict:
         idx, variant = (plain_idx, "nosoc") if plain_idx else (soc_idx, "soc")
     if idx:
         E, f, mult = _orca_table(lines[idx[-1]:])
-        if variant == "soc":
-            mult = [None] * len(E)
+        if variant == "soc" or "SPIN FLIP" in lines[idx[-1]]:
+            mult = [None] * len(E)                     # SOC: gemischt; Spin-Flip: Label = Referenz, nicht der Zustand
         elif not any(m == 3 for m in mult):            # ORCA 4/5: Tripletts nur im eigenen Block
             trip = _orca_triplets(lines)
             if trip:

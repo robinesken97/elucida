@@ -92,6 +92,8 @@ def parse_molden(text) -> dict:
                 t = lines[i].split()
                 if not t[0].isalpha():
                     break
+                if t[0].lower() not in _L:
+                    raise ValueError(f"Molden: shell type '{t[0]}' not supported (s–g)")
                 l, n = _L[t[0].lower()], int(t[1])
                 ex, co = [], []
                 for j in range(n):

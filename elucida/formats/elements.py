@@ -29,6 +29,6 @@ def element_of(type_symbol, label):
     m = re.match(r"^([A-Za-z]{1,2})", s)
     el = m.group(1) if m else "C"
     el = el[0].upper() + el[1:].lower()
-    if el not in COV and el[0] in COV:
+    if el not in ELEMENTS and el[0] in COV:            # nur Unbekanntes kürzen (Ho bleibt Ho, nicht H)
         el = el[0]
     return el

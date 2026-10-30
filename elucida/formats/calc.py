@@ -122,13 +122,14 @@ def parse_orca(text) -> dict:
                 in_input, input_done = False, True
             m = re.match(r"\|\s*\d+>\s?(.*)$", ln)
             if m and m.group(1).lstrip().startswith("!"):
-                c["keywords"].append(m.group(1).strip())
+                c["keywords"].append(m.group(1).split("#")[0].strip())          # „#“ = Kommentar
         elif s.startswith("Total Charge") and "...." in s and c["charge"] is None:
             c["charge"] = int(s.split()[-1])
         elif s.startswith("Multiplicity") and "...." in s and c["mult"] is None:
             c["mult"] = int(s.split()[-1])
         elif s.startswith("FINAL SINGLE POINT ENERGY"):
-            c["energy"] = s.split()[-1]
+            m = re.search(_E, s)                 # danach evtl. „(Wavefunction not fully converged!)“
+            c["energy"] = m.group(1) if m else c["energy"]
         elif "|Geometry convergence|" in ln:
             rows, j = [], i + 1
             while j < n and j < i + 15:
@@ -234,9 +235,9 @@ def parse_gaussian(text) -> dict:
         if s.startswith("#") and not c["keywords"] and i > 0 and L[i - 1].strip().startswith("---"):
             route, j = [], i
             while j < n and not L[j].strip().startswith("---"):
-                route.append(L[j].strip())
+                route.append(L[j][1:] if L[j].startswith(" ") else L[j])  # Umbruch auch mitten im Wort
                 j += 1
-            c["keywords"] = ["".join(route)]
+            c["keywords"] = ["".join(route).strip()]
             i = j
             continue
         if s.startswith("Charge =") and "Multiplicity =" in s and c["charge"] is None:
@@ -277,8 +278,10 @@ def parse_gaussian(text) -> dict:
             c["opt_converged"] = True
         elif "Optimization stopped." in s:
             c["opt_converged"] = False
-        elif s.startswith("Frequencies --"):
-            c["freqs"] = (c["freqs"] or []) + s.split("--")[1].split()
+        elif s.startswith("Frequencies --") and not s.startswith("Frequencies ---"):    # „---“: hpmodes-Kopie
+            if not c.get("_fjob"):               # erste Frequenzzeile dieses Jobs: Liste eines früheren Jobs verwerfen
+                c["freqs"], c["_fjob"] = [], True
+            c["freqs"] += s.split("--")[1].split()
         elif s.startswith("Temperature") and "Kelvin" in s:
             m = re.match(r"Temperature\s+(\S+)\s+Kelvin\.\s+Pressure\s+(\S+)\s+Atm", s)
             if m:
@@ -289,16 +292,18 @@ def parse_gaussian(text) -> dict:
             c["thermo"]["H"] = s.split("=")[1].split()[0]
         elif s.startswith("Sum of electronic and thermal Free Energies="):
             c["thermo"]["G"] = s.split("=")[1].split()[0]
+            c["_e_th"] = c["energy"]             # E(el) desselben Jobs (spätere Single Points: andere Methode)
         elif "Normal termination of Gaussian" in s:
             c["normal"] = True
         elif s.startswith(("Initial command:", "Link1:")) or "Error termination" in s:
             c["normal"] = False                  # neuer Job (opt freq = zwei Jobs) bzw. Abbruch: gilt erst am Ende
+            if not s.startswith("Error"):        # neuer Job: eigene Orientierung/Frequenzen
+                c.pop("_orient", None)
+                c["_fjob"] = False
         i += 1
     route = " ".join(c["keywords"]).lower()
     c["opt_requested"] = c["opt_requested"] or bool(re.search(r"\bopt\b", route))
     c["freq_requested"] = bool(re.search(r"\bfreq\b", route)) or c["freqs"] is not None
-    if c["freqs"] and c["geometry"]:                 # mit freq=hpmodes steht die Liste zweimal da
-        c["freqs"] = c["freqs"][:max(1, 3 * len(c["geometry"]) - 5)]
     m = re.search(r"scrf\s*=?\s*\(?([^)\s]*)", route)
     if m:
         opts = m.group(1)
@@ -306,8 +311,9 @@ def parse_gaussian(text) -> dict:
         c["solvation"] = dict(model="SMD" if "smd" in opts else "PCM", solvent=sm.group(1) if sm else "", eps="",
                               e_diel=None, e_cds=None)
     if c["energy"] is not None:
-        c["thermo"].setdefault("E_el", c["energy"])
-    c.pop("_orient", None)
+        c["thermo"].setdefault("E_el", c.get("_e_th") or c["energy"])
+    for k in ("_orient", "_fjob", "_e_th"):
+        c.pop(k, None)
     return c
 
 
