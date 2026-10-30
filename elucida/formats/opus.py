@@ -32,7 +32,7 @@ def _opus_params(b, off, ln):
 
 def read_opus(path) -> dict:
     """Bruker OPUS -> dict(wn, y, kind 'T'|'A', name). Nimmt das prozessierte Spektrum (Transmission oder Absorbanz
-    mit eigenem Parameterblock), sonst das erste Datenfeld mit passender Punktzahl."""
+    mit eigenem Parameterblock, x in cm⁻¹); Einkanal-/Interferogramm-Dateien werden abgelehnt."""
     b = Path(path).read_bytes()
     if b[:4] != b"\x0a\x0a\xfe\xfe":
         raise ValueError(f"{Path(path).name}: keine OPUS-Datei")
@@ -47,13 +47,13 @@ def read_opus(path) -> dict:
     # bevorzugt: Transmission (Typ 15/20) bzw. Absorbanz, mit gleicher Kennung im Parameterblock (31,20,…)
     cands = []
     for t, ln, off in blocks:
-        if t[0] in (15, 7, 11) and ln > 100:
+        if t[0] in (15, 7, 11) and t[1] in (20, 16) and ln > 100:     # nur TR/AB (4 = Einkanal)
             key = (31, t[1], t[2], t[3])
             pr = params.get(key) or params.get((23, t[1], t[2], t[3])) or params.get((27, t[1], t[2], t[3]))
-            if pr:
+            if pr and pr.get("DXU", "WN") == "WN":       # x-Achse in cm⁻¹ (nicht µm/nm)
                 cands.append((t, ln, off, pr))
     if not cands:
-        raise ValueError(f"{Path(path).name}: kein Spektrum gefunden")
+        raise ValueError(f"{Path(path).name}: kein Transmissions- oder Absorbanzspektrum (cm⁻¹) gefunden")
     cands.sort(key=lambda c: (c[0][1] not in (20, 16), c[0][1] != 20, c[0][2] != 0))   # erst T, dann A
     t, ln, off, pr = cands[0]
     npt = int(pr["NPT"])
@@ -61,7 +61,7 @@ def read_opus(path) -> dict:
     wn = np.linspace(pr["FXV"], pr["LXV"], npt)
     # 2. Kennbyte 20 = Transmission (OPUS speichert sie als Anteil 0–1), 16 = Absorbanz
     kind = "A" if t[1] == 16 else "T"
-    if kind == "T" and np.nanmax(y) <= 1.5:
+    if kind == "T" and np.nanmedian(y) <= 1.5:      # Median: einzelne Ausreißer > 1.5 ändern die Einheit nicht
         y = y * 100.0                                # in % wie im OPUS-Ausdruck
     return {"wn": wn, "y": y, "kind": kind, "name": Path(path).stem}
 

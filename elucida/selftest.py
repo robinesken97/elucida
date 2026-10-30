@@ -1993,6 +1993,189 @@ def selftest(outdir, with_isnet=False):
         w.compound = {}
         report.append("Bruker .d raw data (LC-peak mean): OK")
 
+        # Audit P3 (HRMS + IR + EA): jeder Fall scheiterte vor den Fixes; Fälle gesammelt, Fehler alle auf einmal
+        fails_ = []
+        def chk_(name, fn):
+            try:
+                fn()
+            except Exception as e_:
+                fails_.append(f"{name}: {type(e_).__name__} {e_}"[:160])
+        def p3_formula():
+            assert IRMS.parse_formula("Ca(OH)2") == {"Ca": 1, "O": 2, "H": 2}
+            assert IRMS.parse_formula("C18H20N2·2H2O") == {"C": 18, "H": 24, "N": 2, "O": 2}
+            for bad_ in ("C18H20n2", "C18H20N2(", "C18H20N2 (264.16)"):
+                try:
+                    IRMS.parse_formula(bad_)
+                    raise AssertionError(f"{bad_} angenommen")
+                except ValueError:
+                    pass
+        chk_("formula parentheses/hydrate/strict", p3_formula)
+        def p3_heavy():                                  # Ir: mittlere Masse vorhanden, HRMS über RDKit (193Ir)
+            assert abs(sum(SI.ea_composition("C20H20ClIrN2").values()) - 100) < 1e-9
+            m_ = IRMS.ion("C20H20ClIrN2", "M+H")[2]
+            assert abs(m_ - (240 + 21 * 1.00782503207 + 192.9629264 + 2 * 14.0030740048 + 34.96885268
+                             - 0.000548579909)) < 1e-4, m_
+        chk_("EA/HRMS heavy elements", p3_heavy)
+        def p3_isotope():                                # RDKit schreibt Isotope als [13C]
+            f_, z_, m_, _ = IRMS.ion("[13C]H4", "M+H")
+            assert abs(m_ - 18.0419) < 1e-4 and f_ == "[13C]H5", (f_, m_)
+            assert "<sup>13</sup>C" in IRMS.ms_line("[13C]H4", "M+H", None)[1]
+            assert abs(HRMS.isotope_pattern(f_, 1)[0][0] - m_) < 2e-5
+        chk_("isotope labels", p3_isotope)
+        def p3_ea_nan():
+            try:
+                SI.ea_line("C18H20N2", "", {"C": "NaN"})
+                raise AssertionError("NaN angenommen")
+            except ValueError:
+                pass
+        chk_("EA found NaN", p3_ea_nan)
+        def opus_file_(path, y, kind=(15, 20), par_kind=(31, 20)):
+            par_ = opus_par([("NPT", 0, len(y)), ("FXV", 1, 4000.0), ("LXV", 1, 400.0), ("CSF", 1, 1.0)])
+            hd_ = b"\x0a\x0a\xfe\xfe" + _st.pack("<d", 920622.0) + _st.pack("<iii", 24, 2, 2)
+            dr_ = (_st.pack("<BBBBii", par_kind[0], par_kind[1], 0, 0, len(par_) // 4, 48)
+                   + _st.pack("<BBBBii", kind[0], kind[1], 0, 0, len(y), 48 + len(par_)))
+            path.write_bytes(hd_ + dr_ + par_ + np.asarray(y, "<f4").tobytes())
+            return path
+        def p3_opus_outlier():
+            y_ = np.full(128, 0.8)
+            y_[5] = 1.6
+            r_ = IRMS.read_opus(opus_file_(irdir / "outlier.0", y_))
+            assert abs(np.median(r_["y"]) - 80) < 1e-3, np.median(r_["y"])
+        chk_("OPUS fraction with outlier", p3_opus_outlier)
+        def p3_opus_single():                            # nur Einkanalspektrum (2. Kennbyte 4): ablehnen
+            try:
+                IRMS.read_opus(opus_file_(irdir / "single.0", np.full(128, 0.05), (7, 4), (23, 4)))
+                raise AssertionError("Einkanal angenommen")
+            except ValueError:
+                pass
+        chk_("OPUS single channel rejected", p3_opus_single)
+        def p3_plateau():                                # gesättigte Bande: ein Peak in der Mitte
+            x_ = np.arange(4000.0, 399.0, -2.0)
+            t_ = 100 - 40 * np.exp(-((x_ - 2900) / 10) ** 2) - 300 * np.exp(-((x_ - 1700) / 25) ** 2)
+            pk_ = IRMS.pick_peaks(x_, np.clip(t_, 0, None), "T")
+            w_ = [p_["wn"] for p_ in pk_]
+            assert len(w_) == 2 and abs(w_[1] - 1700) < 1.5, w_
+        chk_("IR saturated band", p3_plateau)
+        def p3_round():                                  # round() rundet x.5 zur geraden Zahl
+            l_ = IRMS.ir_line([{"wn": 2960.5}, {"wn": 1000.5}])[0]
+            assert l_.endswith("2961, 1001"), l_
+        chk_("IR x.5 rounded up", p3_round)
+        def p3_ir_pdf():
+            for name_, vals_ in (("p3a.pdf", ["1678.41"]), ("p3b.pdf", ["4500.10", "1700.20", "380.30"])):
+                d_ = pymupdf.open()
+                pg_ = d_.new_page()
+                for i_, v_ in enumerate(vals_):
+                    pg_.insert_text((50, 60 + 20 * i_), v_)
+                d_.save(str(irdir / name_))
+            t_ir.load_ir(str(irdir / "test.0"))
+            t_ir.load_ir(str(irdir / "p3a.pdf"))
+            (irdir / "other.0").write_bytes((irdir / "test.0").read_bytes())
+            t_ir.load_ir(str(irdir / "other.0"))         # neues Spektrum: altes PDF gilt nicht mehr
+            assert not w.irms_state.get("ir_pdf"), w.irms_state.get("ir_pdf")
+            t_ir.clear_ir()
+            t_ir.load_ir(str(irdir / "p3b.pdf"))         # nur PDF: alle Peakwerte, nicht 400-4000
+            assert [p_["wn"] for p_ in t_ir.peaks()] == [4500.1, 1700.2, 380.3], t_ir.peaks()
+        chk_("IR PDF replace/range", p3_ir_pdf)
+        t_ir.clear_ir()
+        def ms_docx_(path, paras, mzs, emf_extra=()):
+            with _zf.ZipFile(path, "w") as z_:
+                z_.writestr("word/document.xml", "<w:document><w:body>" + "".join(paras) + "</w:body></w:document>")
+                z_.writestr("word/media/image1.emf", emf(list(emf_extra) + [*mzs, "m/z"]))
+            return path
+        par_ = lambda t_: f"<w:p><w:r><w:t>{t_}</w:t></w:r></w:p>"
+        def p3_report():
+            rep_ = IRMS.read_ms_docx(ms_docx_(irdir / "p3_del.docx", [
+                par_("molecular formula:"), '<w:p><w:del w:id="1"><w:r><w:delText>C18H22N2</w:delText></w:r></w:del>'
+                '<w:ins w:id="2"><w:r><w:t>C18H20N2</w:t></w:r></w:ins></w:p>',
+                par_("method of Ionisation:"), par_("ESI ☐ APCI ☑ HESI ☐")], ["265.1703"], ["HR-MS"]))
+            assert rep_["formula"] == "C18H20N2" and rep_["ionisation"] == "APCI" and rep_["polarity"] == "+", rep_
+        chk_("MS report tracked changes/checkbox/HR-MS", p3_report)
+        def set_adduct_(a_):                             # Combobox kann nach Zustandstests abweichen
+            t_ms.cmb_adduct.setCurrentIndex(t_ms.cmb_adduct.findData(a_))
+            w.hrms_state["adduct"] = a_
+        def p3_adduct():                                 # Wechsel M+H -> M+Na: found des neuen Ions
+            w.compound = {"formula": "C18H20N2"}
+            set_adduct_("M+H")
+            t_ms.load_ms(str(ms_docx_(irdir / "p3_na.docx", [par_("molecular formula:"), par_("C18H20N2")],
+                                      ["265.1703", "287.1519"], ["+MS"])))
+            t_ms.render()
+            assert t_ms._ms_line[0].endswith("found 265.1703."), t_ms._ms_line[0]
+            t_ms.cmb_adduct.setCurrentIndex(t_ms.cmb_adduct.findData("M+Na"))
+            t_ms.render()
+            assert t_ms._ms_line[0].endswith("found 287.1519."), t_ms._ms_line[0]
+        chk_("HRMS adduct change", p3_adduct)
+        def p3_nomatch():                                # kein passender Wert: found bleibt leer
+            set_adduct_("M+H")
+            t_ms.load_ms(str(ms_docx_(irdir / "p3_none.docx", [par_("molecular formula:"), par_("C18H20N2")],
+                                      ["100.0000", "200.0000"], ["+MS"])))
+            t_ms.render()
+            t_ms.cb_calc.toggle()
+            t_ms.render()
+            t_ms.cb_calc.toggle()
+            t_ms.render()
+            assert t_ms._ms_line[0].endswith("found –."), t_ms._ms_line[0]
+        chk_("HRMS no match stays empty", p3_nomatch)
+        w.hrms_state.update(ms_file=None, found=None)
+        def make_d_(dir_, scans):                        # scans: (rt, [m/z], [Intensität], Polarität 0/1)
+            dir_.mkdir(parents=True, exist_ok=True)
+            baf_, rows_ = bytearray(b"\0" * 64), []
+            for i_, (rt_, mz_, in_, key_) in enumerate(scans):
+                n_ = len(mz_)
+                body = (_st.pack("<4I", n_, 16, 16 + 8 * n_, 16 + 12 * n_) + to_idx(mz_).astype("<f8").tobytes()
+                        + np.asarray(in_, "<f4").tobytes() + np.full(n_, 0.01, "<f4").tobytes())
+                head_ = bytearray(52)
+                _st.pack_into("<III", head_, 0, 52 + len(body), IRMS.BAF_LINE_MAGIC, 52)
+                rows_.append((i_ + 1, float(rt_), (0x10 << 56) | len(baf_), key_))
+                baf_ += head_ + body
+            (dir_ / "analysis.baf").write_bytes(bytes(baf_))
+            tf_ = _st.pack("<i7d", 10, *cal_)
+            (dir_ / "analysis.sqlite").unlink(missing_ok=True)
+            con_ = _sq.connect(str(dir_ / "analysis.sqlite"))
+            con_.executescript("create table Properties (Key text, Value text); create table AcquisitionKeys "
+                               "(Id integer, Polarity integer); create table Spectra (Id integer, Rt real, "
+                               "TransformatorId integer, LineIndexId integer, AcquisitionKey integer); create table "
+                               "Steps (TargetSpectrum integer); create table Transformators (Id integer, Blob blob);")
+            con_.executemany("insert into Properties values (?, ?)", [("SchemaType", "Baf2Sql"), ("SampleName", "P3")])
+            con_.executemany("insert into AcquisitionKeys values (?, ?)", [(0, 0), (1, 1)])
+            con_.executemany("insert into Spectra values (?, ?, 1, ?, ?)", rows_)
+            con_.execute("insert into Transformators values (1, ?)", (tf_ + b"\0" * (112 - len(tf_)),))
+            con_.commit()
+            con_.close()
+            return dir_
+        amps_ = [1e4, 8e4, 1e5, 8e4, 1e4]
+        scans_ = [(41.5 + 10 * i_, [calc_], [a_], 0) for i_, a_ in enumerate(amps_)]
+        scans_ += [(46.5 + 10 * i_, [calc_ + 0.004], [10 * a_], 1) for i_, a_ in enumerate(amps_)]   # negativ
+        def p3_uri():
+            r_ = IRMS.read_bruker_d(make_d_(irdir / "P3#1.d", scans_[:2]))
+            assert len(r_["spectra"]) == 2 and not (irdir / "P3").exists()
+        chk_("Bruker path with #", p3_uri)
+        def p3_polarity():                               # Polaritätswechsel: nur Scans des Addukts
+            d_ = make_d_(irdir / "p3mixed.d", sorted(scans_))
+            assert IRMS.read_bruker_d(d_)["polarity"] == "±"
+            w.compound = {"formula": "C18H20N2"}
+            set_adduct_("M+H")
+            t_ms.load_raw(str(d_))
+            t_ms.render()
+            assert abs(t_ms._found - calc_) < 1e-6 and t_ms._lc["n"] == 3, (t_ms._found, t_ms._lc)
+            t_ms.cb_rt_auto.setChecked(False)            # Felder (0.01 min) dürfen Randscans nicht abschneiden
+            t_ms.render()
+            assert t_ms._lc["n"] == 3 and abs(w.hrms_state["ms_rt"][0] * 60 - 51.5) < 1e-6, w.hrms_state["ms_rt"]
+            w.hrms_state.update(found="pick", found_pick=calc_)
+            t_ms.clear_raw()
+            assert w.hrms_state["found"] is None and w.hrms_state["found_pick"] is None, w.hrms_state
+        chk_("Bruker polarity/RT fields/pick", p3_polarity)
+        def p3_view():                                   # Isotope unter calc (Sn: 116 bei calc - 4) im Bild
+            w.compound = {"formula": "C4H10Sn"}
+            w.hrms_state["x_auto"] = True
+            t_ms.update_ms()
+            lo_, _ = t_ms.view_range()
+            assert lo_ < t_ms._ion[2] - 4, (lo_, t_ms._ion)
+        chk_("HRMS view range lower isotopes", p3_view)
+        w.hrms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None, found_pick=None, adduct="M+H")
+        w.compound = {}
+        assert not fails_, "\n".join(fails_)
+        report.append("audit P3 HRMS/IR/EA edge cases: OK")
+
         # X-Ray: künstliche CIF (Ring auf Inversionszentrum, PART 1/2, Wasser als zweites Fragment, ohne Torsionen)
         from matplotlib.backend_bases import MouseEvent
         xdir = out / "input" / "xray"

@@ -103,7 +103,8 @@ def ea_formula_label(formula: str, solvate: str = "") -> str:
 
 
 def _sub_html(f):
-    return re.sub(r"(?<=[A-Za-z\)])(\d+(?:\.\d+)?)", r"<sub>\1</sub>", _html.escape(f))
+    h = re.sub(r"(?<=[A-Za-z\)])(\d+(?:\.\d+)?)", r"<sub>\1</sub>", _html.escape(f))
+    return re.sub(r"\[(\d+)([A-Z][a-z]?)\]", r"<sup>\1</sup>\2", h)          # Isotope wie RDKit: [13C]
 
 
 def chem_html(text):
@@ -134,6 +135,8 @@ def ea_line(formula: str, solvate: str, found: dict):
         v = str((found or {}).get(el) or "").strip().replace(",", ".")
         if v:
             fv[el] = float(v)
+            if not math.isfinite(fv[el]):
+                raise ValueError(f"found {el}: {v}")
     notes = []
     for el, v in fv.items():
         d = v - comp.get(el, 0.0)

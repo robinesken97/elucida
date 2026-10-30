@@ -3737,7 +3737,7 @@ class MainWindow(QMainWindow):
         if (ms or irms) and self.ensure_project():
             for p in ms:
                 (self.hrms_tab.load_raw if IRMS.is_bruker_d(p) else self.hrms_tab.load_ms)(p)
-            for p in irms:
+            for p in sorted(irms, key=lambda p: Path(p).suffix.lower() == ".pdf"):   # PDF nach seinem Spektrum
                 self.irms_tab.load_ir(p)
             self.main_tabs.setCurrentWidget(self.hrms_tab if ms else self.irms_tab)
             files = [p for p in files if p not in ms and p not in irms]

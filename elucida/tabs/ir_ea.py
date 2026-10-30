@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 from elucida.formats.opus import (read_opus, is_opus, read_ir_pdf)  # noqa: E402,F401  (Leser in elucida/formats)
 from elucida.formats.ms_report import (read_ms_docx, _emf_texts, cdx_structure)  # noqa: E402,F401  (Leser in elucida/formats)
+from elucida.formats.elements import ELEMENTS  # noqa: E402
 from elucida.formats.bruker_ms import (read_bruker_d, is_bruker_d, BAF_LINE_MAGIC, BAF_TRANSFORMATOR, _baf_mz)  # noqa: E402,F401  (Leser in elucida/formats)
 
 # ---------------------------------------------------------------------------- Massen
@@ -38,23 +39,88 @@ ADDUCTS = {
 }
 
 
+_FTOK = re.compile(r"(?:\[(\d+)([A-Z][a-z]?)\]|([A-Z][a-z]?))(\d*)|(\()|\)(\d*)")
+_ISO = re.compile(r"\[(\d+)([A-Z][a-z]?)\]")
+
+
+def _formula_part(s: str) -> dict:
+    stack = [{}]
+    pos = 0
+    while pos < len(s):
+        m = _FTOK.match(s, pos)
+        if not m:
+            raise ValueError(f"Summenformel nicht lesbar: {s}")
+        pos = m.end()
+        if m.group(5):                               # „(“
+            stack.append({})
+        elif m.group(0).startswith(")"):
+            if len(stack) == 1:
+                raise ValueError(f"Summenformel nicht lesbar: {s}")
+            grp, k = stack.pop(), int(m.group(6) or 1)
+            for el, n in grp.items():
+                stack[-1][el] = stack[-1].get(el, 0) + n * k
+        else:
+            sym = m.group(3) or m.group(2)
+            if sym not in ELEMENTS and sym != "D":
+                raise ValueError(f"Element {sym} nicht bekannt")
+            el = m.group(3) or f"[{m.group(1)}{m.group(2)}]"     # Isotop wie RDKit: [13C]
+            stack[-1][el] = stack[-1].get(el, 0) + int(m.group(4) or 1)
+    if len(stack) != 1:
+        raise ValueError(f"Summenformel nicht lesbar: {s}")
+    return stack[0]
+
+
 def parse_formula(text: str) -> dict:
-    """'C31H21N3' / 'C18H20N2+' -> {'C': 31, …}; Ladung am Ende wird ignoriert (kommt vom Addukt)."""
+    """'C31H21N3' / 'C18H20N2+' / 'Ca(OH)2' / 'C18H20N2·2H2O' / '[13C]H4' (Isotope wie RDKit) -> {'C': 31, …,
+    '[13C]': 1}; Ladung am Ende wird ignoriert (kommt vom Addukt). Nicht lesbare Teile -> ValueError."""
     text = re.sub(r"[+\-−]+\d*$", "", str(text).replace(" ", ""))
     out = {}
-    for el, n in re.findall(r"([A-Z][a-z]?)(\d*)", text):
-        if el not in MONO:
-            raise ValueError(f"Element {el} nicht bekannt")
-        out[el] = out.get(el, 0) + (int(n) if n else 1)
+    for part in re.split(r"[·•*]", text):
+        m = re.fullmatch(r"(\d+)?(.+)", part)
+        if not m:
+            raise ValueError(f"Summenformel nicht lesbar: {text}")
+        k = int(m.group(1) or 1)
+        for el, n in _formula_part(m.group(2)).items():
+            out[el] = out.get(el, 0) + n * k
     if not out:
         raise ValueError("keine Summenformel")
     return out
 
 
+def element_of_key(key: str) -> str:
+    """'[13C]' -> 'C', 'C' -> 'C'."""
+    m = _ISO.fullmatch(key)
+    return m.group(2) if m else key
+
+
+def mono_mass(key: str) -> float:
+    """Monoisotopische Masse: Tabelle MONO, sonst häufigstes Isotop aus RDKit; '[13C]' = Masse des Isotops."""
+    if key in MONO:
+        return MONO[key]
+    from rdkit import Chem
+    pt = Chem.GetPeriodicTable()
+    m = _ISO.fullmatch(key)
+    mass = (pt.GetMassForIsotope(pt.GetAtomicNumber(m.group(2)), int(m.group(1))) if m
+            else pt.GetMostCommonIsotopeMass(pt.GetAtomicNumber(key)))
+    if not mass > 0:
+        raise ValueError(f"keine Masse für {key}")
+    return float(mass)
+
+
 def formula_str(counts: dict) -> str:
-    """Hill-Reihenfolge: C, H, dann alphabetisch."""
-    keys = [k for k in ("C", "H", "D") if counts.get(k)] + sorted(k for k in counts if k not in ("C", "H", "D") and counts[k])
+    """Hill-Reihenfolge: C, H, dann alphabetisch (Isotope beim Element)."""
+    def order(k):
+        el = element_of_key(k)
+        r = {"C": 0, "H": 1, "D": 2}.get(el, 3)
+        return (r, el if r == 3 else "", k)
+    keys = sorted((k for k in counts if counts[k]), key=order)
     return "".join(f"{k}{counts[k] if counts[k] != 1 else ''}" for k in keys)
+
+
+def formula_html(f: str) -> str:
+    """'[13C]H5' -> <sup>13</sup>CH<sub>5</sub>."""
+    return re.sub(r"\[(\d+)([A-Z][a-z]?)\]|(\d+)",
+                  lambda m: f"<sup>{m.group(1)}</sup>{m.group(2)}" if m.group(1) else f"<sub>{m.group(3)}</sub>", f)
 
 
 def ion(formula: str, adduct: str = "M+H"):
@@ -65,7 +131,7 @@ def ion(formula: str, adduct: str = "M+H"):
         counts[el] = counts.get(el, 0) + n
     if any(v < 0 for v in counts.values()):
         raise ValueError("Addukt passt nicht zur Formel")
-    m = sum(MONO[el] * n for el, n in counts.items()) - z * ELECTRON
+    m = sum(mono_mass(el) * n for el, n in counts.items()) - z * ELECTRON
     return formula_str(counts), z, m / abs(z), label
 
 
@@ -104,8 +170,11 @@ def pick_peaks(wn, y, kind="T", lo=None, hi=None, prominence=0.05, min_dist=4.0)
     out = []
     for i in range(1, len(x) - 1):
         a, b = max(0, i - win), min(len(x), i + win + 1)
-        if dd[i] < dd[a:b].max() or dd[i] <= 0:
+        if dd[i] < dd[a:b].max() or dd[i] <= 0 or dd[i] == dd[i - 1]:     # Plateau: nur am Anfang
             continue
+        j = i                                        # gesättigte Bande (flache Spitze): Mitte des Plateaus
+        while j < len(x) - 1 and dd[j + 1] == dd[i]:
+            j += 1
         # Prominenz: Tiefe über dem höheren der beiden seitlichen Minima bis zur nächsten tieferen Bande
         left = dd[:i][::-1]
         right = dd[i + 1:]
@@ -125,9 +194,9 @@ def pick_peaks(wn, y, kind="T", lo=None, hi=None, prominence=0.05, min_dist=4.0)
             l_ -= 1
         while r_ < len(x) - 1 and dd[r_] > half:
             r_ += 1
-        xi = float(x[i])                             # Lage zwischen den Messpunkten per Parabel (wie OPUS)
+        xi = float(x[i] + x[j]) / 2                  # Lage zwischen den Messpunkten per Parabel (wie OPUS)
         den = dd[i - 1] - 2 * dd[i] + dd[i + 1]
-        if den < 0:
+        if den < 0 and j == i:
             xi += 0.5 * (dd[i - 1] - dd[i + 1]) / den * (x[i + 1] - x[i - 1]) / 2
         out.append({"wn": xi, "depth": float(dd[i]), "rel": float(dd[i] / dmax),
                     "width": float(x[r_] - x[l_])})
@@ -196,6 +265,11 @@ def y_limits(y, mode, manual=None):
     return [lo, hi], manual is not None
 
 
+def wn_text(v):
+    """Wellenzahl als ganze Zahl, x.5 aufgerundet (round() rundet x.5 zur geraden Zahl)."""
+    return f"{int(np.floor(v + 0.5)):d}"
+
+
 def intensity_tag(p, broad=BROAD_CM):
     """w/m/s nach relativer Tiefe (≥ 0.6 s, ≥ 0.3 m), „br“ bei breiten Banden."""
     t = "s" if p["rel"] >= 0.6 else ("m" if p["rel"] >= 0.3 else "w")
@@ -205,7 +279,7 @@ def intensity_tag(p, broad=BROAD_CM):
 def ir_line(peaks, with_intensity=False):
     """-> (Klartext, HTML) wie in der SI: IR [cm⁻¹]: ṽ = 2961, 2866, … (ganze Zahlen, absteigend)."""
     vals = sorted(peaks, key=lambda p: -p["wn"])
-    items = [f"{round(p['wn']):d}" + (f" ({intensity_tag(p)})" if with_intensity and "rel" in p else "") for p in vals]
+    items = [wn_text(p["wn"]) + (f" ({intensity_tag(p)})" if with_intensity and "rel" in p else "") for p in vals]
     body = ", ".join(items)
     plain = f"IR [cm-1]: ṽ = {body}"
     html = f"<b>IR</b> [cm<sup>-1</sup>]: ṽ = {body}"                    # wie in der SI: „-1“
@@ -266,7 +340,7 @@ def ms_line(formula, adduct, found, ionisation="ESI"):
     sign = "+" if z > 0 else "−"
     lab_plain = label.replace("$_4$", "4")
     lab_html = label.replace("$_4$", "<sub>4</sub>")
-    f_html = re.sub(r"(\d+)", r"<sub>\1</sub>", f_ion)
+    f_html = formula_html(f_ion)
     tail = f"; found {found:.4f}." if found is not None else "; found –."
     plain = f"HR-MS-{ionisation}({sign}) calc. {f_ion}{sign} {lab_plain}{sign} {calc:.4f}{tail}"
     html = (f"<b>HR-MS-{ionisation}({sign})</b> calc. {f_html}<sup>{sign}</sup> {lab_html}<sup>{sign}</sup> "
@@ -623,7 +697,7 @@ class IRMSTab(TABS.FigureTab):
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("ir_files"), self.main.settings.value("last_dir", ""),
                                              f"{T('flt_ir')};;{T('flt_all')}")
-        for p in ps:
+        for p in sorted(ps, key=lambda p: Path(p).suffix.lower() == ".pdf"):    # PDF nach seinem Spektrum
             self.load_ir(p)
 
     def load_ir(self, p):
@@ -636,6 +710,8 @@ class IRMSTab(TABS.FigureTab):
                 self.st["ir_pdf"] = p
             else:
                 read_opus(p)
+                if self.st.get("ir_file") and self.st["ir_file"] != p:
+                    self.st["ir_pdf"] = None             # PDF gehörte zum vorigen Spektrum
                 self.st["ir_file"] = p
         except Exception as e:
             self.main.error(f"{Path(p).name}: {e}")
@@ -663,6 +739,10 @@ class IRMSTab(TABS.FigureTab):
     def ir_range(self):
         sp = self.spectrum()
         full = (float(sp["wn"].min()), float(sp["wn"].max())) if sp else (400.0, 4000.0)
+        pdf = self.st.get("ir_pdf")
+        if sp is None and pdf and Path(pdf).exists():   # nur PDF: alle Peakwerte liegen im ganzen Bereich
+            vals = self.cache(("irpdf", pdf), lambda: read_ir_pdf(pdf))
+            full = (min([full[0], *vals]), max([full[1], *vals]))
         lo, hi = self.st.get("ir_lo"), self.st.get("ir_hi")
         return (full[0] if lo is None else lo, full[1] if hi is None else hi), full
 
@@ -854,7 +934,7 @@ class IRMSTab(TABS.FigureTab):
                     if x0 <= p["wn"] <= x1 and np.isfinite(yv):
                         labels.append({"key": f"label_ir_{round(p['wn'])}", "lam": p["wn"], "y": float(yv),
                                        "side": "below" if mode == "T" else "above",
-                                       "text": f"{round(p['wn'])}"})
+                                       "text": wn_text(p["wn"])})
         self._ir_fig = {"side": "below" if mode == "T" else "above",
                         "fixed": manual is not None and not rejected}
         return cfg, curves, labels, []

@@ -20,6 +20,8 @@ from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
                         ppm, read_bruker_d, read_ms_docx)
 from elucida.app.style import HINT_CSS, WARN_CSS, make_form
+from elucida.formats.bruker_ms import spectra_of
+from elucida.tabs.ir_ea import mono_mass
 
 MEASURED_COLOR, CALC_COLOR = "#111111", "#c0392b"
 
@@ -29,6 +31,8 @@ def _isotopes(el):
     """[(Masse, Anteil)] eines Elements aus der Isotopentabelle von RDKit (D = reines ²H)."""
     if el == "D":
         return [(2.0141017781, 1.0)]
+    if el.startswith("["):                            # Isotop wie RDKit: [13C]
+        return [(mono_mass(el), 1.0)]
     from rdkit import Chem
     pt = Chem.GetPeriodicTable()
     z = pt.GetAtomicNumber(el)
@@ -244,7 +248,11 @@ class HRMSTab(TABS.FigureTab):
         if self.cb_rt_auto.isChecked() or self.ms_raw() is None:
             st["ms_rt"] = None
         else:                                        # beim Umschalten steht in den Feldern der automatische Bereich
-            st["ms_rt"] = sorted([self.sp_rt_lo.value(), self.sp_rt_hi.value()])
+            prev = st.get("ms_rt") or ([self._lc["rt_lo"] / 60, self._lc["rt_hi"] / 60] if self._lc else None)
+            vals = [self.sp_rt_lo.value(), self.sp_rt_hi.value()]
+            if prev:                                 # Felder runden auf 0.01 min: unveränderte Grenze genau behalten
+                vals = [p if abs(p - v) <= 0.005 + 1e-9 else v for p, v in zip(sorted(prev), vals)]
+            st["ms_rt"] = sorted(vals)
         st.update(adduct=self.cmb_adduct.currentData(), found=self.cmb_found.currentData(),
                   show_calc=self.cb_calc.isChecked(), mz_labels=self.cb_mzlab.isChecked())
         self.sync_widgets()
@@ -286,12 +294,13 @@ class HRMSTab(TABS.FigureTab):
         except Exception as e:
             self.main.error(f"{Path(p).name}: {e}")
             return
-        self.st.update(ms_raw=p, ms_rt=None, found=None)
+        self.st.update(ms_raw=p, ms_rt=None, found=None, found_pick=None)
         self.sync_widgets()
         self.timer.start()
 
     def clear_raw(self):
-        self.st.update(ms_raw=None, ms_rt=None, found=None if self.st.get("found") == "raw" else self.st.get("found"))
+        self.st.update(ms_raw=None, ms_rt=None, found_pick=None,          # angeklickter Peak gehörte zu den Rohdaten
+                       found=None if self.st.get("found") in ("raw", "pick") else self.st.get("found"))
         self.sync_widgets()
         self.timer.start()
 
@@ -310,13 +319,20 @@ class HRMSTab(TABS.FigureTab):
         except Exception:
             return None
 
+    def raw_spectra(self, raw):
+        """Scans in der Polarität des gewählten Addukts (Messungen mit Polaritätswechsel nie mischen)."""
+        return spectra_of(raw, "+" if ADDUCTS[self.st["adduct"]][2] > 0 else "-")
+
     def raw_found(self, calc):
         """Mittel über den LC-Peak (automatisch oder gewählter RT-Bereich in min) oder None."""
         raw = self.ms_raw()
         if raw is None:
             return None
         rt = self.st.get("ms_rt")
-        return lc_found(raw["spectra"], calc, rt=[60 * rt[0], 60 * rt[1]] if rt else None)
+        spectra = self.raw_spectra(raw)
+        if not spectra:
+            return None
+        return lc_found(spectra, calc, rt=[60 * rt[0], 60 * rt[1]] if rt else None)
 
     def formula(self):
         """Formel: Verbindung des Projekts, sonst die Struktur im MS-Bericht, sonst dessen Formelfeld."""
@@ -353,6 +369,9 @@ class HRMSTab(TABS.FigureTab):
     def adduct_changed(self, *_):
         if not self._loading:
             self.st["found"] = None                  # neu zuordnen
+            self.cmb_found.blockSignals(True)        # sonst übernimmt collect die alte Auswahl wieder
+            self.cmb_found.clear()
+            self.cmb_found.blockSignals(False)
         self.changed()
 
     def update_ms(self):
@@ -411,7 +430,7 @@ class HRMSTab(TABS.FigureTab):
             if rep.get("polarity") and rep["polarity"] != pol:
                 notes.append(T("ms_polarity", rep=rep["polarity"]))
         if raw:
-            if raw["polarity"] != ("+" if z > 0 else "-"):
+            if raw["polarity"] not in ("+" if z > 0 else "-", "±"):
                 notes.append(T("ms_polarity_raw", rep=raw["polarity"]))
             if lc is None:
                 notes.append(T("ms_raw_none"))
@@ -441,8 +460,8 @@ class HRMSTab(TABS.FigureTab):
         if not ((want == "raw" and lc is not None) or (rep and want in rep["mz"]) or (want == "pick" and pick)):
             want = rep_found if rep_found is not None else ("raw" if lc else None)
         found = lc["mz"] if want == "raw" else (pick if want == "pick" else want)
-        if want is not None:
-            self.cmb_found.setCurrentIndex(max(0, self.cmb_found.findData(want)))
+        # ohne Zuordnung keine Vorauswahl (sonst würde der erste Eintrag beim nächsten collect zu found)
+        self.cmb_found.setCurrentIndex(max(0, self.cmb_found.findData(want)) if want is not None else -1)
         self.cmb_found.blockSignals(False)
         ionis = rep["ionisation"] if rep else (raw["ionisation"] if raw else "ESI")
         plain, html, calc = ms_line(formula, st["adduct"], found, ionis)
@@ -475,8 +494,9 @@ class HRMSTab(TABS.FigureTab):
             return min(st["x_min"], st["x_max"]), max(st["x_min"], st["x_max"])
         pat = self.pattern()
         top = max([m for m, r in pat if r >= 1.0] or [calc])
+        bot = min([m for m, r in pat if r >= 1.0] or [calc])          # Isotope unter calc (Pt, Sn, Se …) mit
         d = 1.5 / (abs(z) or 1)
-        return calc - d, top + d
+        return min(calc, bot) - d, top + d
 
     def pattern(self):
         if self._ion is None:
@@ -492,7 +512,12 @@ class HRMSTab(TABS.FigureTab):
         if raw is None:
             self.ccanvas.draw_idle()
             return
-        t, tic = self.cache(("tic", self.st.get("ms_raw")), lambda: chromatogram(raw["spectra"]))
+        spectra = self.raw_spectra(raw)
+        if not spectra:
+            self.ccanvas.draw_idle()
+            return
+        t, tic = self.cache(("tic", self.st.get("ms_raw"), raw["polarity"] == "±" and self.st["adduct"]),
+                            lambda: chromatogram(spectra))
         sc = (tic.max() or 1.0)
         ax.plot(t, tic / sc, color="0.55", lw=0.8, label="TIC")
         lc = self._lc
@@ -530,7 +555,7 @@ class HRMSTab(TABS.FigureTab):
         formula, z, calc = self._ion
         lo, hi = self.view_range()
         lc = self._lc
-        mz, it, n = averaged_spectrum(raw["spectra"], lc["rt_lo"], lc["rt_hi"], lo, hi)
+        mz, it, n = averaged_spectrum(self.raw_spectra(raw), lc["rt_lo"], lc["rt_hi"], lo, hi)
         if not len(mz):
             return None
         rel = 100 * it / it.max()

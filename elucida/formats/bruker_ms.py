@@ -55,10 +55,12 @@ def _baf_mz(idx, blob):
 
 
 def read_bruker_d(path) -> dict:
-    """Bruker-Messordner (.d mit analysis.baf/.sqlite) -> dict(sample, polarity, spectra=[(rt_s, mz, int)])."""
+    """Bruker-Messordner (.d mit analysis.baf/.sqlite) -> dict(sample, polarity „+“/„-“/„±“, spectra=[(rt_s, mz, int)],
+    spectrum_polarity je Scan)."""
     import sqlite3
+    from urllib.parse import quote
     p = Path(path)
-    con = sqlite3.connect(f"file:{(p / 'analysis.sqlite').as_posix()}?mode=ro", uri=True)
+    con = sqlite3.connect(f"file:{quote((p / 'analysis.sqlite').as_posix())}?mode=ro", uri=True)   # „#“, „?“, „%“
     try:
         props = dict(con.execute("select Key, Value from Properties").fetchall())
         if props.get("SchemaType") != "Baf2Sql":
@@ -71,14 +73,24 @@ def read_bruker_d(path) -> dict:
     finally:
         con.close()
     buf = (p / "analysis.baf").read_bytes()
-    spectra, pols = [], set()
+    spectra, pols, pol_of = [], set(), []
     for rt, tid, lid, key, nsteps in rows:
         if nsteps or not lid:                                 # nur MS1 mit Linienspektrum
             continue
         idx, inten = _baf_line(buf, lid)
         spectra.append((float(rt), _baf_mz(idx, blobs[tid]), inten))
         pols.add(pol.get(key, 0))
+        pol_of.append("-" if pol.get(key, 0) == 1 else "+")
     if not spectra:
         raise ValueError("keine MS1-Linienspektren gefunden")
     return {"sample": props.get("SampleName", p.stem), "instrument": (props.get("InstrumentName") or "").strip(),
-            "polarity": "-" if pols == {1} else "+", "ionisation": "ESI", "spectra": spectra, "kind": "raw"}
+            "polarity": "±" if len(pols) > 1 else ("-" if pols == {1} else "+"), "ionisation": "ESI",
+            "spectra": spectra, "spectrum_polarity": pol_of, "kind": "raw"}
+
+
+def spectra_of(raw, polarity) -> list:
+    """Scans einer Polarität (Wechsel +/− in einer Messung: nie mischen)."""
+    pol = raw.get("spectrum_polarity")
+    if not pol or raw.get("polarity") != "±":
+        return raw["spectra"]
+    return [s for s, p in zip(raw["spectra"], pol) if p == polarity]
