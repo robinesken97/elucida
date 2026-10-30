@@ -371,9 +371,9 @@ def move_compound_to(cdir, target_pub) -> Path:
     cdir, target_pub = Path(cdir).resolve(), Path(target_pub).resolve()
     if cdir.parent == target_pub:
         return cdir
-    _drop_from_index(cdir)
     dest = unique_dest(target_pub, cdir.name)
     shutil.move(str(cdir), str(dest))
+    _drop_from_index(cdir)                             # erst nach dem Verschieben (scheitert es, bleibt der Index)
     add_compound(target_pub, dest)
     return dest
 

@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import html as _html
 import math
+import os
 import re
 import zipfile
 from pathlib import Path
 
 from elucida.core import uvvis as core
+from elucida.formats.elements import ELEMENTS
 from elucida.tabs.ir_ea import element_of_key, formula_str, mono_mass, parse_formula
 
 # Mittlere Atommassen (IUPAC 2021, konventionelle Werte) für die Elementaranalyse
@@ -57,7 +59,7 @@ def mp_text(text: str) -> str:
     """Schmelzpunkt wie in der SI: „m.p.“ davor weg, nur Zahl/Bereich (auch „>300“) -> „ °C“ ergänzen."""
     mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", text or "").strip()
     if re.fullmatch(r"[<>≤≥~]?\s*\d+(?:[.,]\d+)?(?:\s*[-–−]\s*\d+(?:[.,]\d+)?)?", mp):
-        mp += " °C"
+        mp = mp.replace(",", ".") + " °C"            # englische SI: Dezimalpunkt
     return mp
 
 
@@ -113,12 +115,27 @@ def _sub_html(f):
     return re.sub(r"\[(\d+)([A-Z][a-z]?)\]", r"<sup>\1</sup>\2", h)          # Isotope wie RDKit: [13C]
 
 
+# Formelteile in Freitext: Elementsymbole und übliche Abkürzungen (n-Bu4NPF6, Et2O, (CH3)2); zwei Buchstaben zuerst
+_FORMULA_SYMS = sorted(set(ELEMENTS) | {"D", "Me", "Et", "Pr", "Bu", "Ph", "Cp", "Ac", "Tf", "Ts", "Ms", "Bn", "Bz",
+                                        "Py", "Fc", "Cy", "Mes", "Dipp"}, key=len, reverse=True)
+_FORMULA_RE = re.compile(r"(?:(?:" + "|".join(_FORMULA_SYMS) + r")\d{0,2}|\(|\)\d{0,2})+")
+_GASES = {"H", "N", "O", "F", "Cl", "Br", "I"}          # Formel aus einem Symbol nur so (N2, O2), nicht „S12“, „D3“
+
+
+def _formula_sub(m):
+    tok = m.group(0)
+    units = re.findall(r"[A-Z][a-z]*", tok)
+    if not re.search(r"\d", tok) or not _FORMULA_RE.fullmatch(tok) or (len(units) == 1 and units[0] not in _GASES):
+        return tok                                     # B3LYP, def2-SVP, PBE0, M06-2X, Figure S12, SP300
+    return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", tok)
+
+
 def chem_html(text):
     """Freitext -> HTML wie in der SI: „mL-1“/„s-1“ hochgestellt, Zahlen in Formeln (CH2Cl2, n-Bu4NPF6, AgNO3)
-    tiefgestellt; Zahlen nach Leerzeichen (0.1 M, 200 mV) bleiben."""
+    tiefgestellt; Zahlen nach Leerzeichen (0.1 M, 200 mV) und in Namen (B3LYP, Figure S12) bleiben."""
     h = _html.escape(text or "", quote=False)
     h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
-    return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", h)
+    return re.sub(r"(?<![A-Za-z0-9])[A-Z(][A-Za-z0-9()]*", _formula_sub, h)
 
 
 def methods_html(text):
@@ -845,10 +862,10 @@ def write_docx(path, blocks, columns=1):
                'wordprocessingml.footer+xml"/>' if _PAGE_NUMBERS else '') + '</Types>')
     # Word 2013+ (sonst öffnet Word das Dokument im Kompatibilitätsmodus)
     settings = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat>'
-                '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" '
-                'w:val="15"/></w:compat>' + ('<w:updateFields w:val="true"/>' if toc_used else '') +
-                '</w:settings>')
+                '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+                ('<w:updateFields w:val="true"/>' if toc_used else '') +       # Schema: updateFields vor compat
+                '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/'
+                'word" w:val="15"/></w:compat></w:settings>')
     rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
@@ -872,7 +889,11 @@ def write_docx(path, blocks, columns=1):
              '</Relationships>')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+    media_b = [m.read_bytes() for m in media]          # fehlt ein Bild: Fehler, bevor die alte Datei weg ist
+    svgs_b = [(i, sv.read_bytes()) for i, sv in svgs]
+    oles_b = [(bin_, pv.suffix.lower(), pv.read_bytes()) for bin_, pv in oles]
+    tmp = path.with_name(path.name + ".tmp")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", ctypes)
         z.writestr("_rels/.rels", rels)
         z.writestr("word/document.xml", doc)
@@ -887,11 +908,12 @@ def write_docx(path, blocks, columns=1):
                        '<w:fldSimple w:instr=" PAGE "><w:r><w:rPr>' + _FONT + '<w:sz w:val="18"/></w:rPr>'
                        '<w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>')
         z.writestr("word/_rels/document.xml.rels", drels)
-        for i, m in enumerate(media, 1):
-            z.writestr(f"word/media/image{i}{_media_ext(m)}", m.read_bytes())
-        for i, sv in svgs:
-            z.writestr(f"word/media/image{i}.svg", sv.read_bytes())
-        for i, (bin_, pv) in enumerate(oles, 1):
+        for i, (m, b) in enumerate(zip(media, media_b), 1):
+            z.writestr(f"word/media/image{i}{_media_ext(m)}", b)
+        for i, b in svgs_b:
+            z.writestr(f"word/media/image{i}.svg", b)
+        for i, (bin_, ext, b) in enumerate(oles_b, 1):
             z.writestr(f"word/embeddings/oleObject{i}.bin", bin_)
-            z.writestr(f"word/media/ole{i}{pv.suffix.lower()}", pv.read_bytes())
+            z.writestr(f"word/media/ole{i}{ext}", b)
+    os.replace(tmp, path)                              # atomar (Word offen: PermissionError, alte Datei bleibt)
     return path

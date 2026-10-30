@@ -844,6 +844,16 @@ def selftest(outdir, with_isnet=False):
             assert 'w:ascii="Times New Roman"' in mx_ and 'w:ascii="Arial"' not in mx_ and 'w:sz w:val="22"' in mx_
             assert 'w:ascii="Times New Roman"' in z_.read("word/styles.xml").decode("utf-8")
         SI.set_font("Arial")
+        old_doc_ = Path(mdoc_).read_bytes()
+        try:                                                             # Bild fehlt: alte Datei bleibt ganz
+            SI.write_docx(out / "si_methods.docx", b_m + [("image", out / "fehlt.png", 10.0, 5.0)])
+        except FileNotFoundError:
+            pass
+        assert Path(mdoc_).read_bytes() == old_doc_
+        assert SI.mp_text("120,5") == "120.5 °C"                         # englische SI: Dezimalpunkt
+        assert SI.chem_html("B3LYP-D3(BJ)/def2-SVP, PBE0, M06-2X (Figure S12), SP300 under N2, (CH3)2, C6D6") == \
+            "B3LYP-D3(BJ)/def2-SVP, PBE0, M06-2X (Figure S12), SP300 under N<sub>2</sub>, (CH<sub>3</sub>)<sub>2</sub>, " \
+            "C<sub>6</sub>D<sub>6</sub>"
         cap2_ = "Cyclic voltammograms of <b>X</b> (1.8±0.1 mg mL-1) in MeCN (0.1 M n-Bu4NPF6) at rt; " * 2
         tp_ = SI.two_per_page([("char", "Setup text. " * 40)] + [("image", "a.png", 16.0, 11.0, None),
                                                                    ("figcap", cap2_)] * 3)
@@ -4194,6 +4204,30 @@ def selftest(outdir, with_isnet=False):
         assert not (old_ / "project.uvvis").exists() and (old_ / PRJ.WORK / "project.uvvis.old").exists()
         assert PRJ.load(old_)["eps"]["files"] == st_old_["eps"]["files"]
         assert not (old_ / "data" / "uvvis").exists()      # alte Dateien bleiben, wo sie sind
+        pf_ = old_ / "project.elucida"                     # Audit P8: Sicherung nie mit leerer Datei überschreiben
+        good_ = pf_.read_text(encoding="utf-8")
+        PRJ.backup(old_)
+        pf_.write_text("", encoding="utf-8")               # abgebrochenes Speichern (Strom weg, Platte voll)
+        PRJ.backup(old_)
+        assert (old_ / PRJ.WORK / "project.elucida.bak").read_text(encoding="utf-8") == good_
+        pf_.write_text(good_, encoding="utf-8")
+        rep_os_ = PRJ.os.replace                           # Speichern atomar: Fehler beim Ersetzen -> alte Datei bleibt
+
+        def _fail_os_(*a_):
+            raise OSError("disk full")
+        PRJ.os.replace = _fail_os_
+        try:
+            PRJ.save(old_, {**st_old_, "note": "x"})
+        except OSError:
+            pass
+        finally:
+            PRJ.os.replace = rep_os_
+        assert pf_.read_text(encoding="utf-8") == good_
+        for k_, b_ in (("a", b"A"), ("b", b"B")):          # zwei Messungen MS400/10 mit gleich großer fid
+            (NMR.make_test_acqus(out / "p8nmr" / k_ / "MS400" / "10") / "fid").write_bytes(b_ * 64)
+        t1_, t2_, t3_ = (PRJ.import_file(old_, out / "p8nmr" / k_ / "MS400" / "10", "data/nmr", name="MS400_10")
+                         for k_ in "aba")
+        assert t1_ != t2_ and (Path(t2_) / "fid").read_bytes() == b"B" * 64 and t3_ == t1_, (t1_, t2_, t3_)
         report.append("project folder layout (SI/figures/tables/data/structures/.elucida, old projects): OK")
 
         # elucida.json für Characterization: atomar, UTF-8 ohne BOM, Pfade relativ, Werte als Text
@@ -4227,7 +4261,8 @@ def selftest(outdir, with_isnet=False):
         ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "RE-3-150_10", nuc="1H")
         with open(ex_ / "acqus", "a", encoding="latin-1", newline="") as fh_:   # Windows: \n bleibt \n
             fh_.write("$$ 2024-03-12 14:35:12.123 +0100  user@nmr\n$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n"
-                      "##$DATE= 1710251712\n")
+                      "##$DATE= 1710251712\n$$ /NMR-Daten/OCM-RE-3-150FC_2024-03-12_14-35-12_AV500/10/acqus\n")
+        (ex_ / "uxnmr.info").write_text("Date         : Fri Mar  8 08:29:16 2024\n", encoding="latin-1", newline="")
         fid_ = bytes(range(256)) * 4
         (ex_ / "fid").write_bytes(fid_)
         (ex_ / "pdata" / "1").mkdir(parents=True)
@@ -4248,11 +4283,19 @@ def selftest(outdir, with_isnet=False):
         with _zfp.ZipFile(msr_, "w") as z_:                               # Bericht: Kürzel in Runs geteilt, Datum
             z_.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>sample name: RE-3-</w:t></w:r>'
                         '<w:r><w:t>150</w:t></w:r></w:p><w:p><w:r><w:t>date: 12.03.2024</w:t></w:r></w:p>'
-                        '<w:p><w:r><w:t>exact mass: 264.1626</w:t></w:r></w:p></w:body></w:document>')
+                        '<w:p><w:r><w:t>exact mass: 264.1626</w:t></w:r></w:p><w:p><w:del w:id="1" w:author="Jane Doe" '
+                        'w:date="2024-03-12T10:00:00Z"><w:r><w:delText>RE-3-150 old</w:delText></w:r></w:del></w:p>'
+                        '</w:body></w:document>')
             z_.writestr("docProps/core.xml", "<cp:coreProperties><dc:creator>Jane Doe</dc:creator>"
                         "<dcterms:created>2024-03-12T10:00:00Z</dcterms:created><dc:title>MS</dc:title>"
+                        "<dc:subject>RE-3-150 12.03.2024</dc:subject>"
                         "</cp:coreProperties>")
             z_.writestr("word/media/image1.emf", b"\x01\0\0\0" + "RE-3-150 12.03.2024".encode("utf-16-le"))
+        irp_ = dp_ / "data" / "ir" / "IR.pdf"                              # Kürzel nur im komprimierten Inhalt
+        import pymupdf as _pm
+        pdd_ = _pm.open()
+        pdd_.new_page().insert_text((72, 72), "sample RE-3-150")
+        pdd_.save(irp_, deflate=True)
         cvf_ = dp_ / "data" / "cv" / "RE-3-150-thf-200mVs.DTA"
         cvf_.parent.mkdir(parents=True)
         cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1", newline="")
@@ -4264,18 +4307,20 @@ def selftest(outdir, with_isnet=False):
         cif_.write_text("data_x\n", encoding="utf-8")
         st_dp_ = {"nmr": {"raw": [dict(path=str(ex_), kind="1H"), dict(path=str(hs_), kind="HSQC"),
                                   dict(path=str(hm_), kind="HMBC")], "mnova": [str(mn_)]},
-                  "irms": {"ir_file": str(ir0_)}, "hrms": {"ms_file": str(msr_)},
+                  "irms": {"ir_file": str(ir0_), "ir_pdf": str(irp_)}, "hrms": {"ms_file": str(msr_)},
                   "cv": {"files": [dict(file=str(cvf_), group="THF")]}, "epr": {"entries": [dict(file=str(epr_))]},
                   "xray": {"entries": [dict(file=str(cif_))]}, "syn": {"scheme": str(cif_)}}
         its_ = DP.collect(st_dp_, dp_)
         arcs_ = {i_.arc: i_.on for i_ in its_}
         assert arcs_ == {"NMR/1H/10": True, "NMR/HSQC + HMBC/12": True, "NMR/HSQC + HMBC/13": True,
-                         "NMR/RE-3-150.mnova": True, "IR/RE-3-150_IR.0": True, "MS/MS-Bericht.docx": True,
+                         "NMR/RE-3-150.mnova": True, "IR/RE-3-150_IR.0": True, "IR/IR.pdf": True,
+                         "MS/MS-Bericht.docx": True,
                          "CV/THF/RE-3-150-thf-200mVs.DTA": True, "EPR/RE-3-150_epr.txt": True}, arcs_   # ohne X-Ray
-        assert DP.find_codes(its_) == ["RE-3-150"]
+        codes_ = DP.find_codes(its_)                                    # TopSpin-Ordner „OCM-RE-3-150FC_<Datum>_…“
+        assert codes_ == ["RE-3-150", "RE-3-150FC"], codes_
         import zipfile as _zfp
         zp_ = out / "datapack" / "6m.zip"
-        rep_ = DP.write_zip(its_, zp_, "6m", {"RE-3-150": "6m"}, {"RE-3-150": "Compound 6m"})
+        rep_ = DP.write_zip(its_, zp_, "6m", dict.fromkeys(codes_, "6m"), dict.fromkeys(codes_, "Compound 6m"))
         with _zfp.ZipFile(zp_) as z_:
             names_ = set(z_.namelist())
             assert {"6m/NMR/1H/10/acqus", "6m/NMR/1H/10/fid", "6m/NMR/1H/10/pdata/1/title", "6m/NMR/6m.mnova",
@@ -4287,6 +4332,10 @@ def selftest(outdir, with_isnet=False):
             acq_txt_ = z_.read("6m/NMR/1H/10/acqus").decode("latin-1")
             assert "RE-3-150" not in acq_txt_ and "/Compound 6m/10/acqus" in acq_txt_ and "##$PULPROG= <zg30>" in acq_txt_
             assert "2024" not in acq_txt_ and "##$DATE= 0" in acq_txt_ and "user@nmr" in acq_txt_     # nur Datum weg
+            assert "RE-3" not in acq_txt_ and "14-35-12" not in acq_txt_ and "OCM-Compound 6m_" in acq_txt_
+            ux_ = z_.read("6m/NMR/1H/10/uxnmr.info").decode("latin-1")                  # ctime (TopSpin)
+            assert "2024" not in ux_ and "08:29" not in ux_ and "Mar" not in ux_, ux_
+            assert {i_.date_time for i_ in z_.infolist()} == {(1980, 1, 1, 0, 0, 0)}   # Messdatum nicht als Zeitstempel
             assert z_.read("6m/NMR/1H/10/pdata/1/title") == b"Compound 6m in CDCl3 \n"
             assert "2024" not in z_.read("6m/EPR/6m_epr.txt").decode("utf-8")
             ir_z_ = z_.read("6m/IR/6m_IR.0")                                # OPUS: gleiche Länge, Rest bytegleich
@@ -4297,10 +4346,22 @@ def selftest(outdir, with_isnet=False):
             with _zfp.ZipFile(__import__("io").BytesIO(z_.read("6m/MS/MS-Bericht.docx"))) as zm_:
                 core_ = zm_.read("docProps/core.xml").decode("utf-8")
                 assert "Jane Doe" not in core_ and "dcterms:created" not in core_ and "<dc:title>MS</dc:title>" in core_
+                assert "RE-3" not in core_ and "2024" not in core_, core_
+                doc_ = zm_.read("word/document.xml").decode("utf-8")              # Änderungsverfolgung
+                assert "RE-3" not in doc_ and "Jane Doe" not in doc_ and "2024" not in doc_ and "<w:delText" in doc_, doc_
+                assert {i_.date_time for i_ in zm_.infolist()} == {(1980, 1, 1, 0, 0, 0)}
             assert "Compound 6m CV" in z_.read("6m/CV/THF/6m-thf-200mVs.DTA").decode("latin-1")
             assert z_.read("6m/NMR/6m.mnova") == mn_.read_bytes()
-        assert rep_["kept"] == ["6m/NMR/6m.mnova"], rep_["kept"]
+        assert sorted(rep_["kept"]) == ["6m/IR/IR.pdf", "6m/NMR/6m.mnova"], rep_["kept"]
         assert not (out / "datapack" / "6m.zip.tmp").exists()
+        assert DP.scrub_text("measured on 12.03.2024. Next", {}, True) == "measured on . Next"   # Satzende
+        uvd_ = dp_ / "data" / "uvvis" / "RE-3-150_2024-03-12_14-35-12.csv"     # Datum im Dateinamen
+        uvd_.parent.mkdir(parents=True)
+        uvd_.write_text("nm,A\n300,0.1\n", encoding="utf-8", newline="")
+        DP.write_zip([DP.Item("uvvis", uvd_, f"UV-Vis/{uvd_.name}")], out / "datapack" / "uv.zip", "6m",
+                     {"RE-3-150": "6m"}, None)
+        with _zfp.ZipFile(out / "datapack" / "uv.zip") as z_:
+            assert z_.namelist() == ["6m/UV-Vis/6m_.csv"], z_.namelist()
         rep2_ = DP.write_zip(its_, out / "datapack" / "6m_raw.zip", "6m", {"RE-3-150": "6m"}, None)   # Inhalt unverändert
         with _zfp.ZipFile(out / "datapack" / "6m_raw.zip") as z_:
             assert b"RE-3-150 in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title") and not rep2_["text_replaced"]
@@ -4506,6 +4567,20 @@ def selftest(outdir, with_isnet=False):
         PUB.move_group(pub_, "Precursor", -1)
         assert [(g_, [d_.name for d_ in ds_]) for g_, ds_ in PUB.grouped(pub_)] == [("Precursor", ["2a"]),
                                                                                     ("NHOs", ["6m"])]
+        st_pub_ = PUB.load(pub_)                                            # Verschieben scheitert: Index bleibt
+        mv_ = _sh.move
+
+        def _fail_mv_(*a_):
+            raise PermissionError("locked")
+        _sh.move = _fail_mv_
+        try:
+            PUB.move_compound_to(pub_ / "2a", out / "pub_other")
+        except PermissionError:
+            pass
+        finally:
+            _sh.move = mv_
+        assert PUB.load(pub_)["compounds"] == st_pub_["compounds"] and \
+            PUB.load(pub_)["group_of"] == st_pub_["group_of"], PUB.load(pub_)
         assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "6m"]
         w.open_publication(pub_)
         assert [g_ for _, g_ in w.pub_page.headers] == ["Precursor", "NHOs"] and \
@@ -4520,7 +4595,8 @@ def selftest(outdir, with_isnet=False):
         assert Path(w.project_dir) == pub_ / "6m", w.project_dir          # vorher offene Verbindung wieder da
         with _zfp.ZipFile(psi_) as z_:
             doc_ = z_.read("word/document.xml").decode("utf-8")
-            assert "updateFields" in z_.read("word/settings.xml").decode("utf-8")
+            set_ = z_.read("word/settings.xml").decode("utf-8")
+            assert 0 < set_.index("updateFields") < set_.index("<w:compat>"), set_     # Schemafolge CT_Settings
         heads_ = re.findall(r'w:val="Heading1".*?<w:t[^>]*>([^<]+)</w:t>', doc_)
         assert heads_[0] == "1. Materials and Methods" and "All reactions were carried out" in doc_, heads_
         order_ = [h_.split(". ", 1)[1] for h_ in heads_]

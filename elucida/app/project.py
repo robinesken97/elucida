@@ -168,8 +168,9 @@ def save(project_dir, state) -> dict:
         if v and Path(v).is_absolute() and pdir in Path(v).parents:
             cont[key] = Path(v).relative_to(pdir).as_posix()
     rel_state["format_version"] = FORMAT_VERSION
-    (pdir / PROJECT_FILE).write_text(yaml.safe_dump(rel_state, allow_unicode=True, sort_keys=False),
-                                     encoding="utf-8")
+    tmp = pdir / (PROJECT_FILE + ".tmp")               # atomar: Abbruch beim Schreiben lässt die alte Datei stehen
+    tmp.write_text(yaml.safe_dump(rel_state, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    os.replace(tmp, pdir / PROJECT_FILE)
     for name in OLD_PROJECT_FILES:                     # alter Name: nicht zwei Projektdateien nebeneinander
         if (pdir / name).exists():
             os.replace(pdir / name, work_dir(pdir) / (name + ".old"))
@@ -191,7 +192,7 @@ def _copy_dir(src: Path, dest_dir: Path, name=None) -> Path:
     target, n = dest_dir / base.name, 2
     while target.exists():
         if same and all((target / x).exists() and (target / x).stat().st_size == (src / x).stat().st_size
-                        for x in same):
+                        and _digest(target / x) == _digest(src / x) for x in same):
             return target                              # derselbe Messordner ist schon da
         target = dest_dir / f"{base.stem}_{n}{base.suffix}"
         n += 1
@@ -302,7 +303,11 @@ def create(project_dir):
 def backup(project_dir):
     """Sicherung vor dem Öffnen: .elucida/project.elucida.bak (bzw. project.uvvis.bak bei alten Projekten)."""
     pf = project_file(project_dir)
-    if pf.exists():
+    try:
+        ok = isinstance(yaml.safe_load(pf.read_text(encoding="utf-8")), dict)
+    except (OSError, ValueError, yaml.YAMLError):
+        ok = False
+    if ok:                                             # leere/kaputte Datei nie über die letzte gute Sicherung
         shutil.copy2(pf, work_dir(project_dir) / (pf.name + ".bak"))
 
 

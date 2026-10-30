@@ -25,8 +25,8 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Laborkürzel „Initialen-Buch-Seite“, z. B. RE-3-150, RE-12-7a
-CODE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{1,4}-\d{1,3}-\d{1,4}[a-z]?)(?![A-Za-z0-9])")
+# Laborkürzel „Initialen-Buch-Seite“, z. B. RE-3-150, RE-12-7a, RE-2-142FC (TopSpin-Datensatz „OCM-RE-2-142FC_…“)
+CODE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{1,4}-\d{1,3}-\d{1,4}(?:[a-z]|[A-Z]{1,3})?)(?![A-Za-z0-9])")
 TEXT_MAX = 50_000_000            # größere Dateien nie als Text behandeln
 BINARY_EXT = {".pdf", ".0", ".1", ".2", ".mnova", ".docx", ".xlsx", ".png", ".jpg", ".emf", ".baf", ".sqlite", ".gbw",
               ".zip"}
@@ -197,12 +197,16 @@ def replace_codes(s: str, repl: dict) -> str:
     return s
 
 
-# Datumsangaben (MS-Bericht): 12.03.2024, 12.3.24, 2024-03-12, 12/03/2024, 12 March 2024, 12. März 2024; mit Uhrzeit
+# Datumsangaben (MS-Bericht): 12.03.2024, 12.3.24, 2024-03-12, 12/03/2024, 12 March 2024, 12. März 2024; mit Uhrzeit;
+# TopSpin: „Fri Mar  8 08:29:16 2024“ (ctime), Datensatzordner „…_2024-04-11_13-23-37_AV500“
 _MONTHS = ("Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Mär|Mai|Okt|Dez|January|February|March|April|June|July|"
            "August|September|October|November|December|Januar|Februar|März|Juni|Juli|Oktober|Dezember")
 DATE_RE = re.compile(r"(?<![\d.])(?:\d{1,2}[./]\d{1,2}[./](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|"
-                     rf"\d{{1,2}}\.?\s(?:{_MONTHS})\.?\s\d{{4}})"
-                     r"(?:[ T,]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s?[AP]M)?(?:\s?[+-]\d{2}:?\d{2})?)?(?![\d.])")
+                     rf"\d{{1,2}}\.?\s(?:{_MONTHS})\.?\s\d{{4}}|"
+                     rf"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+)?(?:{_MONTHS})\s+\d{{1,2}}\s+\d{{1,2}}:\d{{2}}:\d{{2}}\s+\d{{4}})"
+                     r"(?:[ T,]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s?[AP]M)?(?:\s?[+-]\d{2}:?\d{2})?|_\d{2}-\d{2}-\d{2})?"
+                     r"(?!\d|\.\d)")                                # Punkt am Satzende/vor der Endung zählt nicht
+_ZIP_TIME = (1980, 1, 1, 0, 0, 0)                            # Zeitstempel im Zip (sonst Messdatum als mtime)
 JCAMP_DATE = re.compile(r"^(##\$DATE=\s*)\d+", re.M)          # TopSpin: Messzeit als Sekunden seit 1970
 OPUS_RE = re.compile(r"\.\d+$")                              # Bruker OPUS: name.0, name.1 …
 # Dateieigenschaften eines Word-Dokuments mit Personen/Zeitpunkten (docProps/core.xml, app.xml)
@@ -252,7 +256,11 @@ def _scrub_word_xml(xml: str, repl: dict, dates: bool) -> str:
             text = _h.escape(new, quote=False) if k[0] == 1 else ""
             return '<w:t xml:space="preserve">' + text + "</w:t>"
         return t_re.sub(run, p)
-    return re.sub(r"<w:p[ >].*?</w:p>", para, xml, flags=re.S)
+    xml = re.sub(r"<w:p[ >].*?</w:p>", para, xml, flags=re.S)
+    xml = re.sub(r"(<w:delText(?:\s[^>]*)?>)(.*?)(</w:delText>)",   # gelöschter Text der Änderungsverfolgung
+                 lambda m: m[1] + _h.escape(scrub_text(_h.unescape(m[2]), repl, dates), quote=False) + m[3], xml, flags=re.S)
+    xml = re.sub(r'(\sw:(?:author|initials)=")[^"]*(")', r"\1\2", xml)   # Personen an Änderungen/Kommentaren
+    return re.sub(r'\sw:date="[^"]*"', "", xml) if dates else xml
 
 
 def _scrub_emf(data: bytes, repl: dict, dates: bool) -> bytes:
@@ -280,13 +288,15 @@ def scrub_docx(data: bytes, repl: dict, dates=True) -> bytes:
             n = info.filename
             if n.startswith("word/") and n.endswith(".xml"):
                 b = _scrub_word_xml(b.decode("utf-8"), repl, dates).encode("utf-8")
-            elif n in ("docProps/core.xml", "docProps/app.xml"):
+            elif n.startswith("docProps/") and n.endswith(".xml"):
                 x = b.decode("utf-8")
                 for tag in _DOCPROPS:
                     x = re.sub(rf"<{tag}(?:\s[^>]*)?>.*?</{tag}>|<{tag}(?:\s[^>]*)?/>", "", x, flags=re.S)
-                b = x.encode("utf-8")
+                b = scrub_text(x, repl, dates).encode("utf-8")               # Titel/Betreff/eigene Felder
             elif n.lower().endswith(".emf"):
                 b = _scrub_emf(b, repl, dates)
+            if dates:
+                info.date_time = _ZIP_TIME
             z.writestr(info, b)
     return out.getvalue()
 
@@ -307,6 +317,13 @@ def docx_text(data: bytes) -> str:
             elif n.lower().endswith(".emf") and len(b) % 2 == 0:
                 parts.append(b.decode("utf-16-le", errors="replace"))
     return "\n".join(parts)
+
+
+def pdf_text(data: bytes) -> str:
+    """Text und Dateieigenschaften einer PDF (Inhalt meist komprimiert) zum Prüfen auf Kürzel."""
+    import pymupdf
+    with pymupdf.open(stream=data, filetype="pdf") as d:
+        return "\n".join([v for v in d.metadata.values() if v] + [p.get_text() for p in d])
 
 
 def _safe_name(s: str) -> str:
@@ -332,11 +349,12 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
     tmp = path.with_suffix(path.suffix + ".tmp")
     files = []
     for it in (i for i in items if i.on):
-        base = "/".join(_safe_name(replace_codes(p, name_repl)) for p in it.arc.split("/"))
+        base = "/".join(_safe_name(DATE_RE.sub("", replace_codes(p, name_repl))) for p in it.arc.split("/"))
         if it.src.is_dir():
             for f in sorted(it.src.rglob("*")):
                 if f.is_file():
-                    rel = "/".join(_safe_name(replace_codes(p, name_repl)) for p in f.relative_to(it.src).parts)
+                    rel = "/".join(_safe_name(DATE_RE.sub("", replace_codes(p, name_repl)))
+                                   for p in f.relative_to(it.src).parts)
                     files.append((f, f"{base}/{rel}", it.group))
         else:
             files.append((it.src, base, it.group))
@@ -373,10 +391,19 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
                 if new_b != data:
                     data = new_b
                     report["text_replaced"].append(arc)
-            check = docx_text(data).encode("utf-8") if is_docx else data
+            check = data
+            if is_docx:
+                check = docx_text(data).encode("utf-8")
+            elif f.suffix.lower() == ".pdf" and codes:
+                try:
+                    check = data + pdf_text(data).encode("utf-8")
+                except Exception:                      # beschädigte PDF: nur die Rohbytes prüfen
+                    pass
             if codes and any(c.encode() in check or c.encode("utf-16-le") in check for c in codes):
                 report["kept"].append(arc)
-            z.writestr(zipfile.ZipInfo.from_file(f, arc), data, compress_type=zipfile.ZIP_DEFLATED)
+            zi = zipfile.ZipInfo.from_file(f, arc)
+            zi.date_time = _ZIP_TIME
+            z.writestr(zi, data, compress_type=zipfile.ZIP_DEFLATED)
             report["files"] += 1
             report["bytes"] += len(data)
             if progress is not None and progress(n + 1, len(files)) is False:
