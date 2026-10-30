@@ -1434,6 +1434,155 @@ def selftest(outdir, with_isnet=False):
         w.epr_state.update(entries=[], mode="spectra", kin_fit=False, int_method="double", int_window="", int_center=0.0)
         report.append("EPR decay at constant heating rate (Arrhenius): OK")
 
+        # Audit P6 (EPR): Funde mit synthetischen Daten
+        p6 = eprdir / "p6"
+        p6.mkdir(exist_ok=True)
+        B6 = np.linspace(330.0, 345.0, 1501)
+        S6 = EPRMOD.iso_spectrum(B6, 9.4, 2.003, [], 0.15)
+        MINUS = "−"
+
+        def asc6(name, I, B=B6):
+            np.savetxt(p6 / name, np.column_stack([B, I]), header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+            return t_e._new("exp", str(p6 / name))
+        # Fit, Simulation und Hover auf der Achse B·ν_ref/ν: g bleibt gleich (vorher mit ν der Datei gerechnet)
+        e6 = asc6("s-9p400000.txt", S6)
+        w.epr_state.update(entries=[e6], bl_order=-1, smooth=0.0, ref_freq=9.41, exclude="", calib_uid=None,
+                           normalize=False, mode="spectra", unit="mT", kin_fit=False)
+        t_e.fill_table()
+        t_e.table.selectRow(0)
+        t_e.add_iso()
+        i6 = w.epr_state["entries"][-1]
+        t_e.table.selectRow(1)
+        t_e.fit_current()
+        assert abs(i6["g"] - 2.003) < 2e-5 and abs(i6["fit"]["mw"] - 9.41) < 1e-12, i6
+        t_e.figure_spec()
+        assert abs(float(t_e.hover_text(EPRMOD.b_res(9.41, 2.003), None, "").split("g = ")[1]) - 2.003) < 1e-4
+        # Handänderung nach dem Fit: kein „Fitting parameters“ mehr; Lorentz-Häkchen allein ändert keinen Wert
+        t_e.cb_fit_lor.setChecked(True)
+        assert i6["fit"], "fit_lorentz allein verwirft den Fit"
+        t_e.cb_fit_lor.setChecked(False)
+        t_e.sp_g.setValue(2.0040)
+        assert i6["fit"] is None and "Fitting parameters" not in t_e.si_caption("X"), i6
+        # unbekannter Kern: Fit verweigern statt Kopplung still weglassen; kompakte Schreibweise bleibt erhalten
+        i6["nuclei"] = "2 14n 0.65"
+        t_e.fit_current()
+        assert i6["fit"] is None and i6["nuclei"] == "2 14n 0.65", i6
+        assert EPRMOD.unknown_nuclei("2 14n 0.65; 4 1H 0.3") == ["2 14n 0.65"]
+        assert EPRMOD.nuclei_with_a("2x14N 0.65", [0.7]) == "2 14N 0.7000", EPRMOD.nuclei_with_a("2x14N 0.65", [0.7])
+        assert EPRMOD.nuclei_names("2x14N 0.65") == ["14N"], EPRMOD.nuclei_names("2x14N 0.65")
+        # Dunkelspektrum vor dem Skalieren/Verschieben abziehen (hell = dunkel -> 0, keine Randlücken)
+        el6, ed6 = asc6("l-9p400000.txt", B6 - 330), asc6("d-9p400000.txt", B6 - 330)
+        el6["dark"] = ed6["uid"]
+        w.epr_state.update(entries=[el6, ed6])
+        I6 = t_e.processed(el6, {})[1]
+        assert np.isfinite(I6).all() and np.max(np.abs(I6)) < 1e-9, (np.isnan(I6).sum(), np.nanmax(np.abs(I6)))
+        # ausgeblendete Messung: Simulation behält den gemeinsamen Faktor (7) und den Normierungsfaktor der Messung
+        em6 = asc6("m-9p400000.txt", 7 * S6)
+        np.savetxt(p6 / "sim6.txt", np.column_stack([B6, S6]), delimiter="\t")
+        es6 = t_e._new("sim", str(p6 / "sim6.txt"))
+        es6["fit_to"] = em6["uid"]
+        w.epr_state.update(entries=[em6, es6], ref_freq=0.0)
+        em6["visible"] = False
+        cur6 = t_e.figure_spec()[1]
+        assert abs(np.nanmax(np.abs(cur6[0]["y"])) / np.nanmax(np.abs(7 * S6)) - 1) < 0.01, np.nanmax(cur6[0]["y"])
+        w.epr_state["normalize"] = True
+        cur6 = t_e.figure_spec()[1]
+        assert abs(np.nanmax(np.abs(cur6[0]["y"])) - 1) < 0.01, np.nanmax(cur6[0]["y"])
+        em6["visible"] = True
+        assert "normalized" in t_e.methods_text(), t_e.methods_text()
+        # negatives Gewicht: keine Anteile in %, sondern Hinweis
+        Bn6 = EPRMOD.iso_spectrum(B6, 9.4, 2.010, [], 0.5)
+        np.savetxt(p6 / "simn.txt", np.column_stack([B6, Bn6]), delimiter="\t")
+        en6, sn6 = asc6("n-9p400000.txt", S6 - 0.2 * Bn6), t_e._new("sim", str(p6 / "simn.txt"))
+        sa6 = t_e._new("sim", str(p6 / "sim6.txt"))
+        sa6["fit_to"] = sn6["fit_to"] = en6["uid"]
+        info6 = []
+        t_e.components([en6, sa6, sn6], {}, info6)
+        assert info6 and T("epr_negative_weight", name=en6["label"]) in info6 and "%" not in info6[0], info6
+        # Export: gleiche bereinigte Beschriftung überschreibt nicht
+        e2_6 = asc6("m2-9p400000.txt", 2 * S6)
+        em6["label"], e2_6["label"] = "sample A", "sample/A"
+        w.epr_state.update(entries=[em6, e2_6], normalize=False)
+        txt6 = [f for f in t_e.export_to(out / "epr_p6") if f.suffix == ".txt" and "sample" in f.name]
+        assert len(set(txt6)) == 2, txt6
+        # I·T ohne Temperatur: Spektrum auslassen statt I und I·T zu mischen
+        w.epr_state.update(entries=[e6, kin_entries[0]], mode="intensity", int_method="pp", int_x="index",
+                           int_curie=True, int_window="")
+        assert len(t_e.intensity_series([e6, kin_entries[0]])[0]) == 1
+        # Zerfall: Kurve = gefittetes Modell an den Messpunkten, Band aus der Kovarianz (nicht aus Randwerten)
+        w.epr_state.update(entries=kin_entries[::10], int_method="gauss", int_window="470-510", int_x="T",
+                           kin_fit=True, kin_norm="lsq")
+        sp6 = t_e.intensity_spec(kin_entries[::10])
+        r6 = t_e.kin_result
+        x6 = sp6[1][0]["x"]
+        fit6 = sp6[1][1]
+        assert np.allclose(np.interp(x6, fit6["x"], fit6["y"]),
+                           EPRMOD.decay_model(x6, r6["A"], r6["Ea"], r6["beta"]), atol=1e-9), fit6
+        rng6 = np.random.default_rng(6)
+        Tn6 = np.arange(100.0, 135.01, 0.5)
+        yn6 = EPRMOD.decay_model(Tn6, np.exp(45.0), 50e3, 0.5 / 120) + rng6.normal(0, 0.01, len(Tn6))
+        rn6 = EPRMOD.fit_decay(Tn6, yn6, 0.5 / 120, norm="lsq")
+        lo6, hi6 = EPRMOD.decay_band(Tn6, rn6, 0.5 / 120)
+        smp6 = rng6.multivariate_normal([rn6["Ea"], rn6["lnA"]], rn6["cov"], 20000)
+        k6 = int(np.argmin(np.abs(Tn6 - 116.5)))
+        mc6 = np.std([EPRMOD.decay_model(Tn6[:k6 + 1], np.exp(b_), a_, 0.5 / 120)[-1] for a_, b_ in smp6])
+        assert abs((hi6[k6] - lo6[k6]) / 2 / (rn6["t"] * mc6) - 1) < 0.1, ((hi6[k6] - lo6[k6]) / 2, rn6["t"] * mc6)
+        # kein „± None“ im SI-Text, wenn das Intervall nicht bestimmbar ist
+        t_e.kin_result = dict(Ea=4e4, lnA=34.5, A=1e15, ci_Ea=(np.nan, np.nan), ci_lnA=(np.nan, np.nan),
+                              corr=np.nan, beta=0.01)
+        assert "None" not in t_e.methods_text(), t_e.methods_text()
+        w.epr_state.update(entries=[], mode="spectra", kin_fit=False, int_method="double", int_window="",
+                           int_curie=False, normalize=True)
+        # Leser: Dezimalkomma, BOM, echtes Minus, ν aus dem Dateinamen, YFMT, fallende Achse, unbekannte Varianten
+        (p6 / "komma.txt").write_text("B [mT];I\n" + "\n".join(f"{330 + k / 2:.1f};{1.25 + k:.2f}".replace(".", ",")
+                                                              for k in range(12)), encoding="utf-8")
+        rk6 = EPRMOD.read_ascii(p6 / "komma.txt")
+        assert abs(rk6["B"][1] - 330.5) < 1e-9 and abs(rk6["I"][0] - 1.25) < 1e-9, (rk6["B"][:2], rk6["I"][:2])
+        pm6 = p6 / "Cpd1p5_ox-9p404368-339p0230-10p0708.txt"
+        pm6.write_text("﻿" + "\n".join(f"{330 + k:.1f}\t{MINUS if k % 2 else ''}{k}" for k in range(12)),
+                       encoding="utf-8")
+        rm6 = EPRMOD.read_ascii(pm6)
+        assert len(rm6["B"]) == 12 and rm6["I"][1] == -1 and abs(rm6["meta"]["mw_GHz"] - 9.404368) < 1e-9, rm6
+
+        def bes6(stem, extra=(), xwid=99.0, ny=1, yv=None, yfmt="D"):
+            h = ["BSEQ\tLIT", "IKKF\tREAL", "XTYP\tIDX", "IRFMT\tD", "XPTS\t100", f"YPTS\t{ny}", "XMIN\t3300",
+                 f"XWID\t{xwid}", "XUNI\t'G'", "MWFQ\t9.4e9"] + list(extra)
+            if yv is not None:
+                h += ["YTYP\tIGD", f"YFMT\t{yfmt}"]
+                np.asarray(yv, {"D": "<f8", "F": "<f4"}[yfmt]).tofile(p6 / f"{stem}.YGF")
+            (p6 / f"{stem}.dsc").write_text("\n".join(h), encoding="latin-1")
+            np.arange(100 * ny, dtype="<f8").tofile(p6 / f"{stem}.DTA")
+            return p6 / f"{stem}.dsc"
+        assert [s["meta"]["y"] for s in EPRMOD.read_bes3t(bes6("yf", ny=2, yv=[100, 110], yfmt="F"))] == [100.0, 110.0]
+        sd6 = EPRMOD.read_bes3t(bes6("down", xwid=-99.0))[0]
+        assert sd6["B"][0] < sd6["B"][-1] and sd6["I"][0] == 99, (sd6["B"][:2], sd6["I"][:2])
+        for ex6 in (["XUNI\t'MHz'"], ["BSEQ\tVAX"], ["IRFMT\tZ"]):
+            try:
+                EPRMOD.read_bes3t(bes6("bad", ex6))
+            except ValueError:
+                continue
+            raise AssertionError(f"BES3T-Variante angenommen: {ex6}")
+        # BES3T-Partner gemeinsam übernehmen: gleiche .dsc, andere .DTA -> eigener Stamm für beide
+        for sub6, v6 in (("a", 1.0), ("b", 2.0)):
+            (p6 / sub6).mkdir(exist_ok=True)
+            (p6 / sub6 / "same.dsc").write_text("IKKF\tREAL\nXPTS\t10\nXMIN\t3300\nXWID\t9\nBSEQ\tLIT\nIRFMT\tD",
+                                                encoding="latin-1")
+            np.full(10, v6, "<f8").tofile(p6 / sub6 / "same.DTA")
+        got6 = [PRJ.import_group(p6 / "proj", [p6 / s6 / "same.dsc", p6 / s6 / "same.DTA"], "data/epr")
+                for s6 in ("a", "b")]
+        assert [float(EPRMOD.read_bes3t(g_[0])[0]["I"][0]) for g_ in got6] == [1.0, 2.0], got6
+        assert PRJ.import_group(p6 / "proj", [p6 / "b" / "same.dsc", p6 / "b" / "same.DTA"], "data/epr") == got6[1]
+        # Bereiche mit Dezimalkomma; Glätten breiter als der Sweep; EasySpin: Ausdrücke, mehrere Anweisungen, [Dx Dy Dz]
+        assert EPRMOD.ranges("330,5-340,5") == [(330.5, 340.5)], EPRMOD.ranges("330,5-340,5")
+        assert EPRMOD.ranges("330-340,480-485") == [(330.0, 340.0), (480.0, 485.0)]
+        assert EPRMOD.ranges("330,5-340,5; 480-485") == [(330.5, 340.5), (480.0, 485.0)]
+        assert len(EPRMOD.smooth(np.linspace(330, 331, 101), np.ones(101), 2)) == 101
+        pe6 = EPRMOD.parse_easyspin("Sys.D = [1.1 0.16]*1000;\nSys.g = 2.0023; Sys.lwpp = 1.5; % Kommentar")
+        assert pe6["Sys.D"] == "[1.1 0.16]*1000" and pe6["Sys.g"] == [2.0023] and pe6["Sys.lwpp"] == [1.5], pe6
+        z6 = EPRMOD.zfs_summary({"Sys.D": [-100.0, -100.0, 200.0]})
+        assert "(300 MHz)" in z6 and "(0 MHz)" in z6, z6
+        report.append("EPR audit P6 (reference frequency, dark axis, decay band, readers, import): OK")
+
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
         L_ = COLOR.LAM
         assert COLOR.to_hex(COLOR.absorbance_to_rgb(0 * L_)[0]) == "#FFFFFF"

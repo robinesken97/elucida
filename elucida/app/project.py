@@ -219,6 +219,31 @@ def _copy_unique(src: Path, dest_dir: Path, name=None) -> Path:
     return target
 
 
+def import_group(project_dir, srcs, sub) -> list:
+    """Zusammengehörige Dateien (gleicher Stamm, z. B. BES3T .dsc/.DTA/.YGF/.xml) unter einem gemeinsamen freien Stamm
+    übernehmen – einzeln umbenannt passten Beschreibung und Daten sonst nicht mehr zusammen. -> Zielpfade."""
+    pdir = Path(project_dir).resolve()
+    srcs = [Path(s).resolve() for s in srcs]
+    if all(pdir == s.parent or pdir in s.parents for s in srcs):
+        return [str(s) for s in srcs]
+    dest_dir = pdir / sub
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    base, stem, n = srcs[0].stem, srcs[0].stem, 2
+    while True:
+        targets = [dest_dir / (stem + s.suffix) for s in srcs]
+        names = {t.name.lower() for t in targets}
+        same = all(not t.exists() or (t.stat().st_size == s.stat().st_size and _digest(t) == _digest(s))
+                   for s, t in zip(srcs, targets))
+        # frei nur ohne fremde Partner unter diesem Stamm (z. B. alte .YGF einer anderen Messung)
+        if same and not any(q.stem == stem and q.name.lower() not in names for q in dest_dir.iterdir()):
+            break
+        stem, n = f"{base}_{n}", n + 1
+    for s, t in zip(srcs, targets):
+        if not t.exists():
+            shutil.copy2(s, t)
+    return [str(t) for t in targets]
+
+
 def load(project_dir) -> dict:
     """Projektdatei lesen (project.elucida oder alte project.uvvis), relative Pfade auf den Projektordner beziehen."""
     pdir = Path(project_dir).resolve()

@@ -1284,6 +1284,11 @@ TEXTS = {
     "epr_show_residual": ("Rest (Messung − Summe)", "Residual (measured − sum)"),
     "epr_sum": ("Summe", "sum"),
     "epr_residual": ("Rest", "residual"),
+    "epr_negative_weight": ("{name}: eine Komponente hat ein negatives Gewicht – keine Anteile angegeben (Komponenten "
+                            "prüfen).", "{name}: a component has a negative weight – no fractions given (check the "
+                            "components)."),
+    "epr_nuclei_unknown": ("Kern nicht erkannt: {parts} (Schreibweise z. B. „2 14N 0.65“ oder „2 I=1 0.65“).",
+                           "Nucleus not recognized: {parts} (write e.g. “2 14N 0.65” or “2 I=1 0.65”)."),
     "epr_fractions": ("{name}: Anteile (Doppelintegral) {parts}", "{name}: fractions (double integral) {parts}"),
     "epr_ref_freq": ("Feld auf Frequenz skalieren", "Scale field to frequency"),
     "epr_ref_freq_tip": ("B·ν_ref/ν: Spektren mit leicht unterschiedlicher Mikrowellenfrequenz vergleichbar machen\n"

@@ -24,6 +24,9 @@ def _f(h, key, default=None):
         return default
 
 
+_FMT = {"D": "f8", "F": "f4", "I": "i4", "S": "i2"}
+
+
 def read_bes3t(path) -> list:
     """Bruker BES3T (.DSC/.dsc + .DTA): -> [dict(B [mT], I, meta)], bei 2D je Zeile ein Spektrum.
     Unterstützt: reelle Daten, lineare x-Achse (IDX), D/F/I-Formate, Byte-Reihenfolge LIT/BIG."""
@@ -36,7 +39,11 @@ def read_bes3t(path) -> list:
     if h.get("IKKF", "REAL") != "REAL":
         raise ValueError(f"{p.name}: komplexe Daten werden nicht unterstützt")
     nx, ny = int(_f(h, "XPTS", 0)), int(_f(h, "YPTS", 1) or 1)
-    fmt = {"D": "f8", "F": "f4", "I": "i4", "S": "i2"}.get(h.get("IRFMT", "D"), "f8")
+    fmt = _FMT.get(h.get("IRFMT", "D"))
+    unit = h.get("XUNI", "G").strip().lower()
+    if fmt is None or h.get("BSEQ", "BIG") not in ("BIG", "LIT") or unit not in ("g", "mt", "t"):
+        raise ValueError(f"{p.name}: unbekannte BES3T-Variante (IRFMT {h.get('IRFMT')}, BSEQ {h.get('BSEQ')}, "
+                         f"XUNI {h.get('XUNI')})")
     order = "<" if h.get("BSEQ", "BIG") == "LIT" else ">"
     y = np.fromfile(dta, dtype=order + fmt).astype(float)
     if nx <= 1 or len(y) < nx * ny:
@@ -44,13 +51,14 @@ def read_bes3t(path) -> list:
     if h.get("XTYP", "IDX") != "IDX":
         raise ValueError(f"{p.name}: nur lineare Feldachsen (XTYP IDX) werden unterstützt")
     B = _f(h, "XMIN", 0.0) + np.arange(nx) * _f(h, "XWID", 1.0) / (nx - 1)
-    unit = h.get("XUNI", "G").strip().lower()
     B = B / 10.0 if unit == "g" else (B * 1000.0 if unit == "t" else B)
+    flip = nx > 1 and B[1] < B[0]                      # fallender Sweep: aufsteigend wie read_ascii
     yvals = None
     if ny > 1 and h.get("YTYP") == "IGD":
         ygf = next((p.with_suffix(s) for s in (".YGF", ".ygf") if p.with_suffix(s).exists()), None)
         if ygf is not None:
-            yvals = np.fromfile(ygf, dtype=order + "f8")
+            yfmt = _FMT.get(h.get("YFMT", "D"))
+            yvals = np.fromfile(ygf, dtype=order + yfmt) if yfmt else None
     meta = {"mw_GHz": (_f(h, "MWFQ") or 0) / 1e9 or None, "T_K": _f(h, "STMP"),
             "mod_mT": (_f(h, "B0MA") or 0) * 1000 or None, "power_mW": (_f(h, "MWPW") or 0) * 1000 or None,
             "date": h.get("DATE", ""), "time": h.get("TIME", ""), "title": h.get("TITL", p.stem),
@@ -60,14 +68,27 @@ def read_bes3t(path) -> list:
         m = dict(meta)
         if yvals is not None and k < len(yvals):
             m["y"], m["y_name"], m["y_unit"] = float(yvals[k]), h.get("YNAM", ""), h.get("YUNI", "")
-        out.append({"B": B, "I": y[k * nx:(k + 1) * nx], "meta": m})
+        I = y[k * nx:(k + 1) * nx]
+        out.append({"B": B[::-1] if flip else B, "I": I[::-1] if flip else I, "meta": m})
     return out
+
+
+def _text(path):
+    """UTF-8 (auch mit BOM), sonst Latin-1."""
+    raw = Path(path).read_bytes()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
 
 
 def _ascii_xy(path):
     rows = []
-    for ln in Path(path).read_text(encoding="latin-1", errors="replace").splitlines():
-        parts = re.split(r"[\s,;]+", ln.strip().replace("−", "-"))
+    for ln in _text(path).splitlines():
+        ln = ln.strip().replace("−", "-")
+        if re.search(r"\d,\d", ln) and re.search(r"[\s;]", ln):   # Dezimalkomma, Spalten durch Leerraum/;
+            ln = ln.replace(",", ".")
+        parts = re.split(r"[\s,;]+", ln)
         try:
             vals = [float(v) for v in parts if v]
         except ValueError:
@@ -85,17 +106,21 @@ def read_ascii(path, unit=None) -> dict:
     oder geschätzt (Median > 1500 -> G). Mikrowellenfrequenz aus Dateinamen wie '…-9p404368-…' (GHz)."""
     p = Path(path)
     B, I = _ascii_xy(p)
-    head = p.read_text(encoding="latin-1", errors="replace")[:300].lower()
+    head = _text(p)[:300].lower()
     if unit is None:
         unit = "g" if ("[g]" in head or "(g)" in head) else ("mt" if "mt" in head else
                                                           ("g" if np.median(B) > 1500 else "mt"))
     B = B / 10.0 if unit == "g" else B
     o = np.argsort(B)
+    # „9p402995GHz“ zuerst, sonst die erste Zahl mit ≥ 3 Nachkommastellen (MS400: „-9p404368-“; nicht „Cpd1p5“)
     mw = None
-    for m in re.finditer(r"(?<![\d.])(\d{1,3})p(\d+)(?![\d])", p.stem):
-        v = float(f"{m.group(1)}.{m.group(2)}")
-        if 1 <= v <= 100:
-            mw = v
+    for pat in (r"(?<![\d.])(\d{1,3})p(\d+)GHz", r"(?<![\d.])(\d{1,3})p(\d{3,})(?![\d])"):
+        for m in re.finditer(pat, p.stem, re.I):
+            v = float(f"{m.group(1)}.{m.group(2)}")
+            if 1 <= v <= 100:
+                mw = v
+                break
+        if mw:
             break
     return {"B": B[o], "I": I[o], "meta": {"mw_GHz": mw, "title": p.stem, "device": "ASCII"}}
 
@@ -110,16 +135,24 @@ def read_any(path) -> list:
 def parse_easyspin(text) -> dict:
     """MATLAB-Zeilen wie 'Sys.D = [1100 160];' -> {'Sys.D': [1100.0, 160.0], …} (nur Zahlen/Vektoren).
     Kommentare (%) werden entfernt; Zeichenketten und Funktionsaufrufe bleiben als Text."""
+    num = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
     out = {}
     for ln in str(text).splitlines():
-        ln = ln.split("%")[0].strip().rstrip(";")
-        m = re.match(r"^((?:Sys|Exp|Opt|Fit\w*|Vary)\w*\.\w+)\s*=\s*(.+)$", ln)
-        if not m:
-            continue
-        key, val = m.group(1), m.group(2).strip()
-        nums = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", val)
-        if val.startswith("[") or re.fullmatch(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", val):
-            out[key] = [float(x) for x in nums]
-        else:
-            out[key] = val
+        ln, stmts, depth, cur = ln.split("%")[0], [], 0, ""
+        for ch in ln:                                  # mehrere Anweisungen je Zeile: ';' außerhalb von [...]
+            depth += (ch == "[") - (ch == "]")
+            if ch == ";" and depth <= 0:
+                stmts.append(cur)
+                cur = ""
+            else:
+                cur += ch
+        for st in stmts + [cur]:
+            m = re.match(r"^((?:Sys|Exp|Opt|Fit\w*|Vary)\w*\.\w+)\s*=\s*(.+)$", st.strip())
+            if not m:
+                continue
+            key, val = m.group(1), m.group(2).strip()
+            if re.fullmatch(num, val) or re.fullmatch(rf"\[\s*(?:{num}(?:\s*,?\s*|\s+))*\]", val):
+                out[key] = [float(x) for x in re.findall(num, val)]
+            else:                                      # Ausdrücke ([1.1 0.16]*1000, Matrizen) bleiben Text
+                out[key] = val
     return out

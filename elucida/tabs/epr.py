@@ -45,22 +45,40 @@ def zfs_summary(params) -> str | None:
     d = params.get("Sys.D")
     if not isinstance(d, list) or not d:
         return None
-    D, E = d[0], (d[1] if len(d) > 1 else 0.0)
+    D, E = zfs_DE(d)
     return (f"D = {D / MHZ_PER_CM:.4f} cm⁻¹ ({D:.0f} MHz), |E| = {abs(E) / MHZ_PER_CM:.4f} cm⁻¹ "
             f"({abs(E):.0f} MHz), E/D = {abs(E / D) if D else 0:.3f}")
+
+
+def zfs_DE(d):
+    """EasySpin Sys.D: [D], [D E] oder Hauptwerte [Dx Dy Dz] -> (D, E) (D = Dz − (Dx + Dy)/2, E = (Dx − Dy)/2)."""
+    if len(d) >= 3:
+        return d[2] - (d[0] + d[1]) / 2.0, (d[0] - d[1]) / 2.0
+    return d[0], (d[1] if len(d) > 1 else 0.0)
 
 
 # ----------------------------------------------------------------------------
 # Verarbeitung
 # ----------------------------------------------------------------------------
 def ranges(text):
-    """'330-340, 480–485' -> [(330, 340), (480, 485)] (mT)."""
-    out = []
-    for part in str(text).replace(";", ",").split(","):
-        m = re.match(r"^\s*([-+]?\d*\.?\d+)\s*[-–—]\s*([-+]?\d*\.?\d+)\s*$", part.replace("−", "-"))
-        if m:
-            a, b = float(m.group(1)), float(m.group(2))
-            out.append((min(a, b), max(a, b)))
+    """'330-340, 480–485' -> [(330, 340), (480, 485)] (mT). Dezimalkomma ('330,5-340,5'), wenn sich der Text nur
+    so vollständig in Bereiche zerlegen lässt."""
+    def parse(t):
+        out, ok = [], True
+        for part in t.replace(";", ",").split(","):
+            m = re.match(r"^\s*([-+]?\d*\.?\d+)\s*[-–—]\s*([-+]?\d*\.?\d+)\s*$", part.replace("−", "-"))
+            if m:
+                a, b = float(m.group(1)), float(m.group(2))
+                out.append((min(a, b), max(a, b)))
+            elif part.strip():
+                ok = False
+        return out, ok
+    text = str(text)
+    out, ok = parse(text)
+    if not ok and re.search(r"\d,\d", text):
+        alt, ok2 = parse(re.sub(r"(\d),(\d)", r"\1.\2", text))
+        if ok2:
+            return alt
     return out
 
 
@@ -89,7 +107,7 @@ def smooth(B, I, width_mT):
     if not width_mT or len(B) < 3:
         return I
     step = float(np.median(np.diff(B))) or 1.0
-    n = int(round(width_mT / step)) | 1
+    n = min(int(round(width_mT / step)) | 1, len(B) - 1 + len(B) % 2)   # höchstens so breit wie der Sweep
     if n < 3:
         return I
     ok = np.isfinite(I).astype(float)
@@ -269,10 +287,22 @@ def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script
         se = np.sqrt(np.abs(np.diag(cov)))
         corr = float(cov[0, 1] / (se[0] * se[1])) if se.all() else float("nan")
     except np.linalg.LinAlgError:
-        se, z, corr = np.array([np.nan, np.nan]), 1.96, float("nan")
-    return {"Ea": float(p[0]), "lnA": float(p[1]), "A": float(np.exp(p[1])),
+        cov, se, z, corr = np.full((2, 2), np.nan), np.array([np.nan, np.nan]), 1.96, float("nan")
+    return {"Ea": float(p[0]), "lnA": float(p[1]), "A": float(np.exp(p[1])), "cov": cov, "t": z,
             "ci_Ea": (float(p[0] - z * se[0]), float(p[0] + z * se[0])),
             "ci_lnA": (float(p[1] - z * se[1]), float(p[1] + z * se[1])), "resnorm": cost, "corr": corr}
+
+
+def decay_band(T, r, beta):
+    """Band (Faktor r["t"] wie die Intervalle) um das Modell aus der Kovarianz von (E_a, ln A), linear fortgepflanzt:
+    sd = √(J·cov·Jᵀ). Die Randwerte der Einzelintervalle taugen dafür nicht (Korrelation ≈ 1). -> (unten, oben)."""
+    T = np.asarray(T, float)
+    m = decay_model(T, r["A"], r["Ea"], beta)
+    J = np.column_stack([(decay_model(T, np.exp(r["lnA"] + d[1]), r["Ea"] + d[0], beta)
+                          - decay_model(T, np.exp(r["lnA"] - d[1]), r["Ea"] - d[0], beta)) / (2 * max(d))
+                         for d in ((10.0, 0.0), (0.0, 1e-3))])
+    sd = np.sqrt(np.abs(np.einsum("ij,jk,ik->i", J, np.asarray(r["cov"], float), J)))
+    return m - r["t"] * sd, m + r["t"] * sd
 
 
 def measured_at(meta):
@@ -296,12 +326,17 @@ NUCLEAR_SPIN = {"1H": 0.5, "2H": 1.0, "D": 1.0, "13C": 0.5, "14N": 1.0, "15N": 0
 MHZ_PER_MT_FREE = 28.02495             # g_e·µ_B/h in MHz/mT (Umrechnung a [mT] <-> A [MHz] für g ≈ 2.0023)
 
 
+def _nuc_tokens(part):
+    """'2x14N 0,65' / '2 × 14N 0.65' -> ['2', '14N', '0.65']."""
+    return part.replace(",", ".").replace("×", " ").replace("x", " ", 1 if re.match(r"^\s*\d+x", part) else 0).split()
+
+
 def parse_nuclei(text):
     """'2 14N 0.65; 4 1H 0.32' -> [(2, 1.0, 0.65), (4, 0.5, 0.32)] (Anzahl äquivalenter Kerne, Kernspin, a in mT).
     Auch 'I=1' statt Isotop möglich: '2 I=1 0.65'."""
     out = []
     for part in re.split(r"[;\n]+", str(text)):
-        tok = part.replace(",", ".").replace("×", " ").replace("x", " ", 1 if re.match(r"^\s*\d+x", part) else 0).split()
+        tok = _nuc_tokens(part)
         if len(tok) < 3:
             continue
         try:
@@ -322,8 +357,12 @@ def parse_nuclei(text):
 
 def nuclei_names(text):
     """Kernbezeichnungen in der Reihenfolge von parse_nuclei: '2 14N 0.65; 4 1H 0.32' -> ['14N', '1H']."""
-    return [part.replace("×", " ").split()[1] if len(part.replace("×", " ").split()) > 1 else "?"
-            for part in re.split(r"[;\n]+", str(text)) if parse_nuclei(part)]
+    return [_nuc_tokens(part)[1] for part in re.split(r"[;\n]+", str(text)) if parse_nuclei(part)]
+
+
+def unknown_nuclei(text):
+    """Nicht lesbare Einträge (z. B. '2 14n 0.65') – der Fit würde sie sonst still weglassen."""
+    return [part.strip() for part in re.split(r"[;\n]+", str(text)) if part.strip() and not parse_nuclei(part)]
 
 
 def band_name(mw_GHz):
@@ -343,7 +382,7 @@ def nuclei_with_a(text, new_a):
     """Kopplungen im Text ersetzen, Isotopnamen und Reihenfolge behalten: ('2 14N 0.6', [0.65]) -> '2 14N 0.6500'."""
     out, k = [], 0
     for part in re.split(r"[;\n]+", str(text)):
-        tok = part.split()
+        tok = _nuc_tokens(part)
         if len(tok) >= 3 and k < len(new_a) and parse_nuclei(part):
             tok[2] = f"{new_a[k]:.4f}"
             k += 1
@@ -811,6 +850,11 @@ class EPRTab(TABS.FigureTab):
         d = self.data(e["file"])
         return d[min(e.get("slice", 0), len(d) - 1)]
 
+    def axis_mw(self, e):
+        """Frequenz der Feldachse einer Messung nach processed(): ν_ref, wenn skaliert wird, sonst ν der Datei."""
+        mw = self.spectrum(e)["meta"].get("mw_GHz") if e else None
+        return (self.st.get("ref_freq") or mw) if mw else None
+
     def _new(self, kind, path, k=0, n=1):
         d = self.data(path)[k]
         name = Path(path).stem if n == 1 else f"{Path(path).stem} [{k + 1}]"
@@ -833,11 +877,15 @@ class EPRTab(TABS.FigureTab):
                 continue
             seen.add(stem)
             try:
-                if Path(p).suffix.lower() in (".dsc", ".dta"):
-                    for ext in (".dsc", ".DSC", ".DTA", ".dta", ".YGF", ".ygf", ".xml"):
-                        if Path(stem + ext).exists() and ext.lower() != Path(p).suffix.lower():
-                            self.main.import_file(stem + ext, PRJ.data_sub(self.STATE_KEY))
-                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+                if Path(p).suffix.lower() in (".dsc", ".dta"):       # Partner unter einem gemeinsamen Namen
+                    parts, have = [Path(p)], {Path(p).suffix.lower()}
+                    for x in (".dsc", ".DSC", ".DTA", ".dta", ".YGF", ".ygf", ".xml"):
+                        if Path(stem + x).exists() and x.lower() not in have:
+                            parts.append(Path(stem + x))
+                            have.add(x.lower())
+                    p = PRJ.import_group(self.main.project_dir, parts, PRJ.data_sub(self.STATE_KEY))[0]
+                else:
+                    p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
                 d = self.data(p)
             except Exception as ex:
                 self.main.error(str(ex))
@@ -872,7 +920,7 @@ class EPRTab(TABS.FigureTab):
         e = {"uid": uuid.uuid4().hex[:8], "kind": "iso", "file": None, "label": f"S = ½ ({target['label']})",
              "color": "#e8238a", "visible": True, "fit_to": target["uid"], "g": 2.0023, "lw": 0.1, "lorentz": 0.0,
              "fit_lorentz": False, "nuclei": "", "fit": None, "T": None}
-        mw = self.spectrum(target)["meta"].get("mw_GHz")
+        mw = self.axis_mw(target)
         if mw:
             B, I = self.processed(target, {})
             e["g"] = round(center_g(B, I, mw), 5)
@@ -889,9 +937,12 @@ class EPRTab(TABS.FigureTab):
         if e is None or e["kind"] != "iso":
             return
         target = next((x for x in self.st["entries"] if x["uid"] == e.get("fit_to")), None)
-        mw = self.spectrum(target)["meta"].get("mw_GHz") if target else None
+        mw = self.axis_mw(target)
         if target is None or not mw:
             return self.main.error(T("epr_iso_need_mw"))
+        bad = unknown_nuclei(e.get("nuclei", ""))
+        if bad:
+            return self.main.error(T("epr_nuclei_unknown", parts="; ".join(bad)))
         B, I = self.processed(target, {})
         r = fit_iso(B, I, mw, e["g"], self.iso_groups(e), e["lw"], e.get("lorentz", 0.0),
                     vary_lorentz=e.get("fit_lorentz", False))
@@ -1087,9 +1138,16 @@ class EPRTab(TABS.FigureTab):
         if e["kind"] == "exp":
             e.update(dark=self.cmb_dark.currentData(), dark_k=self.sp_dark_k.value())
         elif e["kind"] == "iso":
-            e.update(fit_to=self.cmb_fit.currentData(), g=self.sp_g.value(), lw=self.sp_lw.value(),
-                     lorentz=self.sp_lor.value(), fit_lorentz=self.cb_fit_lor.isChecked(),
-                     nuclei=self.ed_nuclei.text().strip())
+            new = dict(fit_to=self.cmb_fit.currentData(), g=self.sp_g.value(), lw=self.sp_lw.value(),
+                       lorentz=self.sp_lor.value(), fit_lorentz=self.cb_fit_lor.isChecked(),
+                       nuclei=self.ed_nuclei.text().strip())
+            # von Hand geändert -> keine Fit-Ergebnisse mehr (Unterschrift/SI nennen nur Fits); Vergleich in der
+            # Genauigkeit der Felder, sonst verwirft schon das Häkchen den Fit
+            tol = {"g": 6e-6, "lw": 6e-4, "lorentz": 6e-3}
+            if (any(new[k] != e.get(k) for k in ("fit_to", "nuclei"))
+                    or any(abs(new[k] - e.get(k, 0.0)) > d for k, d in tol.items())):
+                new["fit"] = None
+            e.update(new)
         else:
             e.update(fit_to=self.cmb_fit.currentData(), scale=self.sp_scale.value(), shift=self.sp_shift.value())
             self.sp_scale.setEnabled(not e["fit_to"])
@@ -1132,7 +1190,7 @@ class EPRTab(TABS.FigureTab):
         st = self.st
         if e["kind"] == "iso":                           # eigene Simulation auf dem Raster ihrer Messung
             target = next((x for x in st["entries"] if x["uid"] == e.get("fit_to")), None)
-            mw = self.spectrum(target)["meta"].get("mw_GHz") if target else None
+            mw = self.axis_mw(target)
             if target is None or not mw:
                 cache[key] = (np.array([]), np.array([]))
                 return cache[key]
@@ -1144,16 +1202,16 @@ class EPRTab(TABS.FigureTab):
         s = self.spectrum(e)
         B, I = s["B"].astype(float), s["I"].astype(float).copy()
         if e["kind"] == "exp":
+            dark = next((x for x in st["entries"] if x["uid"] == e.get("dark")), None)
+            if dark is not None:                           # auf den Rohachsen, vor Skalierung/Kalibrierung
+                ds = self.spectrum(dark)
+                I = I - e.get("dark_k", 1.0) * np.interp(B, ds["B"], ds["I"], left=np.nan, right=np.nan)
             mw = s["meta"].get("mw_GHz")
             if st.get("ref_freq") and mw:                  # Feld auf Referenzfrequenz skalieren (B·ν_ref/ν)
                 B = B * st["ref_freq"] / mw
             dB, calib_target = self.calibration_shift()
             if dB and e["uid"] != calib_target:
                 B = B - dB                                 # Feldkorrektur aus der Referenz (z. B. TEMPO)
-            dark = next((x for x in st["entries"] if x["uid"] == e.get("dark")), None)
-            if dark is not None:
-                ds = self.spectrum(dark)
-                I = I - e.get("dark_k", 1.0) * np.interp(B, ds["B"], ds["I"], left=np.nan, right=np.nan)
             I = I - baseline(B, I, st["bl_order"], st["bl_edge"] / 100.0, ranges(st["bl_regions"]) or None)
             if hide:
                 for a, b in ranges(st["exclude"]):
@@ -1181,7 +1239,8 @@ class EPRTab(TABS.FigureTab):
         # Normierung: Messung auf max |I| = 1; Simulationen, Summe, Rest mit dem Faktor ihrer Messung
         norm = {}
         for e in vis:
-            ref = e if e["kind"] == "exp" else next((x for x in vis if x["uid"] == e.get("fit_to")), e)
+            ref = e if e["kind"] == "exp" else next((x for x in st["entries"] if x["uid"] == e.get("fit_to")
+                                                     and x["uid"] in data), e)   # auch ausgeblendete Messung
             ri = data[ref["uid"]][1]
             mx = np.nanmax(np.abs(ri)) if len(ri) and np.isfinite(ri).any() else 0
             norm[e["uid"]] = (1.0 / mx) if (st["normalize"] and mx > 0) else 1.0
@@ -1230,14 +1289,14 @@ class EPRTab(TABS.FigureTab):
                     pr = parse_easyspin(Path(e["params"]).read_text(encoding="utf-8", errors="replace"))
                     d = pr.get("Sys.D")
                     if isinstance(d, list) and d:
-                        txt = f"D = {d[0] / MHZ_PER_CM:.3f} cm$^{{-1}}$"
+                        D_, E_ = zfs_DE(d)
+                        txt = f"D = {D_ / MHZ_PER_CM:.3f} cm$^{{-1}}$"
                         if len(d) > 1:
-                            txt += f"\n|E| = {abs(d[1]) / MHZ_PER_CM:.4f} cm$^{{-1}}$"
+                            txt += f"\n|E| = {abs(E_) / MHZ_PER_CM:.4f} cm$^{{-1}}$"
                         labels.append({"key": f"label_zfs_{e['uid']}", "lam": float(np.mean(cfg["xlim"])), "text": txt,
                                        "color": e["color"]})
         self.lbl_info.setText("\n".join(dict.fromkeys(info)))
-        self._mw = next((self.spectrum(e)["meta"].get("mw_GHz") for e in vis if e["kind"] == "exp"
-                         and self.spectrum(e)["meta"].get("mw_GHz")), None)
+        self._mw = next((self.axis_mw(e) for e in vis if e["kind"] == "exp" and self.axis_mw(e)), None)
         return cfg, curves, labels, []
 
     def components(self, vis, cache, info):
@@ -1245,8 +1304,13 @@ class EPRTab(TABS.FigureTab):
         Quadraten skalieren. -> (uid -> (B, I) für alle sichtbaren Einträge, uid der Messung -> {sum/res: (B, I)})."""
         st = self.st
         data = {e["uid"]: self.processed(e, cache) for e in vis}
+        # ausgeblendete Messung mit sichtbarer Simulation: Faktor und Normierung kommen weiter von ihr
+        wanted = {e.get("fit_to") for e in vis if e["kind"] in ("sim", "iso")}
+        hidden = [e for e in st["entries"] if e["kind"] == "exp" and e["uid"] in wanted and e["uid"] not in data]
+        for e in hidden:
+            data[e["uid"]] = self.processed(e, cache)
         extra = {}
-        for t in [e for e in vis if e["kind"] == "exp"]:
+        for t in [e for e in vis if e["kind"] == "exp"] + hidden:
             comps = [e for e in vis if e["kind"] in ("sim", "iso") and e.get("fit_to") == t["uid"] and len(data[e["uid"]][0])]
             if not comps:
                 continue
@@ -1259,7 +1323,9 @@ class EPRTab(TABS.FigureTab):
                 data[c["uid"]] = (b, wk * i)
                 total += np.interp(tb, b, wk * i, left=0.0, right=0.0)
                 parts.append((c["label"], abs(double_integral(b, wk * i))))
-            if len(comps) > 1:
+            if min(w) < 0:                                # Anteile in % wären irreführend
+                info.append(T("epr_negative_weight", name=t["label"]))
+            elif len(comps) > 1:
                 tot = sum(v for _, v in parts) or 1.0
                 info.append(T("epr_fractions", name=t["label"],
                               parts=", ".join(f"{n} {100 * v / tot:.0f} %" for n, v in parts)))
@@ -1288,6 +1354,8 @@ class EPRTab(TABS.FigureTab):
             B, I = self.processed(e, cache, hide=False)
             meta = self.spectrum(e)["meta"]
             T_K = meta["T_K"] + st.get("T_offset", 0.0) if meta.get("T_K") else None
+            if st["int_curie"] and not T_K:               # I und I·T nicht mischen
+                continue
             if st["int_method"] == "gauss":
                 Bw, Iw = (B, I) if not win else (B[(B >= win[0]) & (B <= win[1])], I[(B >= win[0]) & (B <= win[1])])
                 if len(Bw) < 30:
@@ -1349,12 +1417,13 @@ class EPRTab(TABS.FigureTab):
                 beta = float(np.mean(np.diff(xs_)) / dt) if dt else 0.0
                 if beta > 0:
                     r = fit_decay(xs_, ys_, beta, norm=st.get("kin_norm", "script"))
-                    Tf = np.linspace(xs_.min(), xs_.max(), 200)
-                    curves.append({"x": Tf, "y": decay_model(Tf, r["A"], r["Ea"], beta), "color": "#1764e8",
+                    # an den Messpunkten: das Integral des Modells läuft über genau diese Temperaturen (wie im Fit)
+                    curves.append({"x": xs_, "y": decay_model(xs_, r["A"], r["Ea"], beta), "color": "#1764e8",
                                    "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
-                    for k_, lab in ((1, T("epr_kin_band")), (0, None)):
-                        curves.append({"x": Tf, "y": decay_model(Tf, np.exp(r["ci_lnA"][k_]), r["ci_Ea"][k_], beta),
-                                       "color": "#1764e8", "label": lab, "ls": ":", "lw": 0.9})
+                    if np.isfinite(r["cov"]).all():
+                        for yb, lab in zip(decay_band(xs_, r, beta), (T("epr_kin_band"), None)):
+                            curves.append({"x": xs_, "y": yb, "color": "#1764e8", "label": lab, "ls": ":",
+                                           "lw": 0.9})
                     self.kin_result = dict(r, beta=beta)
             cfg["legend"] = True
         pad = 0.05 * (np.ptp(x) or 1.0)
@@ -1416,6 +1485,9 @@ class EPRTab(TABS.FigureTab):
             steps.append(f"the field range(s) {fmt_r(ranges(st['exclude']))} mT were excluded")
         if st["smooth"]:
             steps.append(f"the spectra were smoothed by a moving average over {st['smooth']:g} mT")
+        if st["normalize"] and st["mode"] == "spectra":
+            steps.append("the spectra were normalized to their maximum absolute intensity (assigned simulations "
+                         "with the factor of their measurement)")
         if steps:
             txt = "; ".join(steps)
             m.append("Processing of the measured spectra: " + txt + ".")
@@ -1480,7 +1552,8 @@ class EPRTab(TABS.FigureTab):
                 half = (r["ci_Ea"][1] - r["ci_Ea"][0]) / 2
                 a_, e_ = core.fmt_ve(r["Ea"] / 1000, half / 1000, max_decimals=2)      # Auflösung 0,01 kJ/mol
                 mant, ex = f"{r['A']:.2e}".split("e")
-                res.append(f"Ea = {a_} ± {e_} kJ mol-1 ({r['Ea'] / 4184:.1f} kcal mol-1), "
+                res.append(f"Ea = {a_}" + (f" ± {e_}" if e_ is not None else "") +
+                           f" kJ mol-1 ({r['Ea'] / 4184:.1f} kcal mol-1), "
                            f"A = {mant} × 10^{int(ex)} s-1, "
                            f"β = {r['beta'] * 60:.3f} K min-1, n = {len(self.series_values)}, "
                            f"correlation Ea/ln A = {r['corr']:.4f}")
@@ -1503,7 +1576,7 @@ class EPRTab(TABS.FigureTab):
             dark = next((x for x in st["entries"] if x["uid"] == e.get("dark")), None)
             head = [f"% {e['label']} – exported by Elucida (processed spectrum for EasySpin: load(...))",
                     f"% source: {Path(e['file']).name}" + (f" [{e.get('slice', 0) + 1}]" if e.get("slice") else ""),
-                    f"% mwFreq [GHz]: {m.get('mw_GHz')}; T [K]: {m.get('T_K')}; ModAmp [mT]: {m.get('mod_mT')}; "
+                    f"% mwFreq [GHz]: {self.axis_mw(e)}; T [K]: {m.get('T_K')}; ModAmp [mT]: {m.get('mod_mT')}; "
                     f"Power [mW]: {m.get('power_mW')}",
                     f"% dark spectrum: {dark['label'] + ' x ' + format(e.get('dark_k', 1.0), 'g') if dark else 'none'}; "
                     f"baseline: order {st['bl_order']}, " + (f"ranges {st['bl_regions']}" if st['bl_regions']
@@ -1512,6 +1585,8 @@ class EPRTab(TABS.FigureTab):
                     "% B [mT]\tI [arb. u.]"]
             safe = re.sub(r"[^\w.+-]+", "_", e["label"]).strip("_") or e["uid"]
             p = base.with_name(f"{base.name}_{safe}.txt")
+            if p in files:                                 # „sample A“ und „sample/A“: nicht überschreiben
+                p = base.with_name(f"{base.name}_{safe}_{e['uid']}.txt")
             ok = np.isfinite(I)
             with open(p, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(head) + "\n")
