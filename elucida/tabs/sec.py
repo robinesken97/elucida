@@ -10,6 +10,7 @@ A_red/A_ox jeweils linear (kleinste Quadrate).
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 
 import numpy as np
@@ -39,24 +40,30 @@ def gamry_start(meta) -> dt.datetime | None:
     return None
 
 
-def potentials(spectra, gamry, offset_s=0.0):
-    """Potential je Spektrum (V vs. Referenzelektrode) über die Uhrzeit; None, wenn keine Zeiten."""
+def potentials(spectra, gamry, offset_s=0.0, with_outside=False):
+    """Potential je Spektrum (V vs. Referenzelektrode) über die Uhrzeit; None, wenn keine Zeiten.
+    with_outside: (Potentiale, Anzahl Spektren außerhalb der Messung)."""
     t0 = gamry_start(gamry["meta"])
     if t0 is None or any(s["time"] is None for s in spectra):
-        return None
+        return (None, 0) if with_outside else None
     E = np.concatenate([c["E"] for c in gamry["cycles"]])
     T = np.concatenate([c["T"] for c in gamry["cycles"]])
+    if not np.isfinite(T).all():                      # Datei ohne Zeitspalte
+        return (None, 0) if with_outside else None
     o = np.argsort(T)
     ts = np.array([(s["time"] - t0).total_seconds() + offset_s for s in spectra])
-    return np.interp(ts, T[o], E[o])                  # außerhalb: Start- bzw. Endpotential
+    out = np.interp(ts, T[o], E[o])                   # außerhalb: Start- bzw. Endpotential
+    return (out, int(np.sum((ts < T.min()) | (ts > T.max())))) if with_outside else out
 
 
 def nernst_fit(E, A, n_range=(0.3, 3.0)):
-    """A(E) sigmoidal anpassen -> dict(e12, n, a_red, a_ox, r2) oder None."""
+    """A(E) sigmoidal anpassen -> dict(e12, n, a_red, a_ox, r2, bound) oder None.
+    bound = True: Optimum am Rand des Rasters (E½ am Rand der Messpunkte oder n an einer Grenze von n_range) –
+    dann nicht bestimmbar, nicht als Ergebnis angeben."""
     E, A = np.asarray(E, float), np.asarray(A, float)
     ok = np.isfinite(E) & np.isfinite(A)
     E, A = E[ok], A[ok]
-    if len(E) < 5 or np.ptp(A) <= 0:
+    if len(E) < 5 or np.ptp(A) <= 0 or len(np.unique(np.round(E, 4))) < 3:   # ohne Potentialänderung unbestimmt
         return None
     best = None
     for n in np.arange(n_range[0], n_range[1] + 1e-9, 0.05):
@@ -69,8 +76,10 @@ def nernst_fit(E, A, n_range=(0.3, 3.0)):
                 best = (res, e12, n, coef)
     res, e12, n, (a_red, a_ox) = best
     ss = float(np.sum((A - A.mean()) ** 2))
+    bound = bool(e12 - E.min() < 0.003 or E.max() - e12 < 0.003 or n < n_range[0] + 0.025
+                 or n > n_range[1] - 0.025)
     return {"e12": float(e12), "n": float(n), "a_red": float(a_red), "a_ox": float(a_ox),
-            "r2": 1 - res / ss if ss > 0 else float("nan")}
+            "r2": 1 - res / ss if ss > 0 else float("nan"), "bound": bound}
 
 
 # ----------------------------------------------------------------------------
@@ -86,6 +95,11 @@ LAM_RANGE = (250.0, 850.0)                              # brauchbarer Bereich de
 
 def _hex(c):
     return c if isinstance(c, str) else "#%02x%02x%02x" % tuple(int(255 * v) for v in c[:3])
+
+
+def _natural(name):
+    """Sortierschlüssel mit Zahlen als Zahlen (s_2 vor s_10)."""
+    return [(0, int(x), "") if x.isdigit() else (1, 0, x) for x in re.split(r"(\d+)", str(name)) if x]
 
 
 def _floats(text):
@@ -240,7 +254,7 @@ class SECTab(TABS.FigureTab):
         ps = [p for p in ps if is_bwspec(p)]
         if not ps:
             return
-        self.st["spec_files"] = [self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)) for p in sorted(ps)]
+        self.st["spec_files"] = [self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)) for p in sorted(ps, key=lambda p: _natural(Path(p).name))]
         self._show_files()
         self.timer.start()
 
@@ -257,11 +271,11 @@ class SECTab(TABS.FigureTab):
         """-> (Spektren nach Zeit sortiert, Potentiale in V vs. Referenzelektrode oder None)."""
         st = self.st
         sp = [self.cache(("bws", p), lambda p=p: read_bwspec(p)) for p in st["spec_files"] if Path(p).exists()]
-        sp.sort(key=lambda s: (s["time"] is None, s["time"] or 0, s["name"]))
-        E = None
+        sp.sort(key=lambda s: (s["time"] is None, s["time"] or 0, _natural(s["name"])))
+        E, self.outside = None, 0
         if st.get("dta") and Path(st["dta"]).exists() and sp:
             g = self.cache(("cv", st["dta"]), lambda: CV.read_gamry(st["dta"]))
-            E = potentials(sp, g, st["offset_s"])
+            E, self.outside = potentials(sp, g, st["offset_s"], with_outside=True)
         return sp, E
 
     def e_offset(self):
@@ -279,12 +293,13 @@ class SECTab(TABS.FigureTab):
         i1 = n - 1 if not st["last"] else min(max(st["last"], i0 + 1), n) - 1
         return list(range(i0, i1 + 1))
 
-    def mid_indices(self, sel, Eax):
+    def mid_indices(self, sel, Eax, with_pos=False):
         """Zwischenspektren aus st["mid"]: Potentiale (Achsenskala) -> gezeigtes Spektrum mit dem nächstliegenden
         Potential (bei gleichem Abstand das erste); ohne Potentiale Nummern der Spektren (wie „Spektren (Nr.)“).
-        Erstes/letztes und Doppelte fallen weg, Reihenfolge wie eingegeben."""
-        out = []
-        for v in _floats(self.st.get("mid", "")):
+        Erstes/letztes und Doppelte fallen weg, Reihenfolge wie eingegeben. with_pos: [(Index, Position der Eingabe)]
+        (Namen in cap_mid gehören zur Eingabe, nicht zur gefilterten Liste)."""
+        out, pos = [], []
+        for k, v in enumerate(_floats(self.st.get("mid", ""))):
             if Eax is not None:
                 i = sel[int(np.argmin(np.abs(Eax[sel] - v)))]
             else:
@@ -293,7 +308,9 @@ class SECTab(TABS.FigureTab):
                     continue
             if i not in (sel[0], sel[-1]) and i not in out:
                 out.append(i)
-        return out[:len(MID_COLORS)]
+                pos.append(k)
+        n = len(MID_COLORS)
+        return list(zip(out[:n], pos[:n])) if with_pos else out[:n]
 
     def figure_spec(self):
         st = self.st
@@ -335,7 +352,9 @@ class SECTab(TABS.FigureTab):
                                "marker": "o"})
                 if st["fit"] and Eax is not None:
                     fit = nernst_fit(xs, a)
-                    if fit:
+                    if fit and fit["bound"]:
+                        info.append(T("sec_fit_bound", lam=f"{lam:g}"))
+                    elif fit:
                         xf = np.linspace(xs.min(), xs.max(), 300)
                         s_ = 1 / (1 + np.exp(-fit["n"] * F_RT * (xf - fit["e12"])))
                         curves.append({"x": xf, "y": fit["a_red"] + (fit["a_ox"] - fit["a_red"]) * s_, "color": col,
@@ -394,6 +413,8 @@ class SECTab(TABS.FigureTab):
             cfg["ylabel"] = ("ΔA" if st["diff"] else "absorbance") + " [a.u.]"
         if E is None and st.get("dta"):
             info.append(T("sec_no_time"))
+        elif E is not None and self.outside:
+            info.append(T("sec_outside", n=self.outside))
         self.lbl_info.setText("\n".join(info))
         return cfg, curves, labels, []
 
@@ -417,10 +438,11 @@ class SECTab(TABS.FigureTab):
         off, lab = self.e_offset()
         if st["mode"] != "trace" and st["highlight"] and not st["gradient"]:
             # nur Farben, die im Bild vorkommen: Zwischenspektren nur, wenn sie hervorgehoben sind
-            mids = self.mid_indices(sel, None if E is None else E - off) if sel else []
+            mids = self.mid_indices(sel, None if E is None else E - off, with_pos=True) if sel else []
             names = [x.strip() for x in st.get("cap_mid", "").split(";")]
-            items = [(st.get("cap_start", ""), "blue")]
-            items += [(names[k] if k < len(names) else "", MID_COLORS[k][1]) for k in range(len(mids))]
+            # ein einziges Spektrum ist zugleich Ende (rot) – Blau kommt dann nicht vor
+            items = [(st.get("cap_start", ""), "blue")] if len(sel) > 1 else []
+            items += [(names[p] if p < len(names) else "", MID_COLORS[k][1]) for k, (_, p) in enumerate(mids)]
             items.append((st.get("cap_end", ""), "red"))
             cols = [f"<b>{chem_html(t)}</b> ({c})" for t, c in items if t]
             if cols:
@@ -443,7 +465,11 @@ class SECTab(TABS.FigureTab):
         ref = str(self.ref_label or st["electrode"]).replace("Fc$^{0/+}$", "Fc0/+")
         m = ["Each spectrum was assigned the potential at its acquisition time, interpolated from the time-resolved "
              "potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
-             "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "
+             ("Each spectrum was corrected by subtracting its mean absorbance between 780 and 820 nm. "
+              if st["baseline"] else "")
+             + ("Difference spectra were obtained by subtracting the first spectrum shown. "
+                if st["diff"] else "")
+             + "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "
              "A(E) = A_red + (A_ox − A_red)/[1 + exp(−nF(E − E1/2)/RT)] (T = 298.15 K); E1/2 and n were obtained by a "
              "grid search (E1/2 in 2 mV steps, n = 0.30–3.00 in steps of 0.05) with A_red and A_ox determined by "
              "linear least squares at each grid point.",

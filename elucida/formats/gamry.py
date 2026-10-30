@@ -53,7 +53,7 @@ def read_gamry(path) -> dict:
         if len(rows) < 10 or "Vf" not in hdr or "Im" not in hdr:
             continue
         col = {h: k for k, h in enumerate(hdr)}
-        arr = np.array([[float(r[col["Vf"]]), float(r[col["Im"]]), float(r[col["T"]]) if "T" in col else 0.0,
+        arr = np.array([[float(r[col["Vf"]]), float(r[col["Im"]]), float(r[col["T"]]) if "T" in col else np.nan,
                          float(r[col["Cycle"]]) if "Cycle" in col else 0.0] for r in rows if len(r) >= len(hdr) - 1])
         if "Cycle" in col:
             for c in np.unique(arr[:, 3]):

@@ -135,15 +135,20 @@ def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
     edge_tol = 0.01 * (hi - lo) + 0.004
     edge = any(abs(e - b) < edge_tol for e in (E[ka], E[kc]) for b in (lo, hi))
     edge = edge or epa <= epc                              # E_pa < E_pc: kein Redoxpaar, Fenster falsch
-    # Nicholson: Hinlauf = erste Scanrichtung, i_sp = Strom am ersten Umkehrpunkt
-    k0 = int(np.argmax(np.abs(dE) > 0))
-    anodic_first = dE[k0] > 0
-    turn = int(np.argmax(E) if anodic_first else np.argmin(E))
+    # Nicholson: Hinlauf = der zuerst durchlaufene Peak dieses Paars (Start innerhalb des Bereichs: nicht unbedingt
+    # die erste Scanrichtung), i_sp = Strom am Umkehrpunkt zwischen Hin- und Rückpeak
+    anodic_first = ka < kc
+    k_f, k_r = (ka, kc) if anodic_first else (kc, ka)
+    turn = k_f + int(np.argmax(E[k_f:k_r + 1]) if anodic_first else np.argmin(E[k_f:k_r + 1]))
     s = 1 if anodic_first else -1
     bl, fail = None, False
     ia, ic, i_sp = ipa, ipc, float(I[turn])
     if use_baseline:
-        bl = baseline(E, I, ka if anodic_first else kc, turn, fw if anodic_first else bw, s, gap)
+        # Vorlauf nur aus dem Abschnitt des Hinpeaks (gleiche Richtung ab dem vorigen Umkehrpunkt)
+        other = np.flatnonzero(np.sign(dE[:k_f]) != s)
+        seg = np.zeros(len(E), bool)
+        seg[(other[-1] + 1 if len(other) else 0):turn + 1] = True
+        bl = baseline(E, I, k_f, turn, (fw if anodic_first else bw) & seg, s, gap)
         if bl is None:
             fail = True
         else:
@@ -156,7 +161,6 @@ def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
     i_f, i_r = (abs(ia), abs(ic)) if anodic_first else (abs(ic), abs(ia))
     ratio = (i_r / i_f + 0.485 * abs(i_sp) / i_f + 0.086) if i_f > 0 else float("nan")
     # weiterer Prozess zwischen Hinpeak und Umkehrpunkt (z. B. Referenz oder zweite Welle) -> Verhältnis ungültig
-    k_f = ka if anodic_first else kc
     ratio_ok = True
     if turn - k_f > 10:
         y = s * np.convolve(I[k_f:turn + 1], np.ones(5) / 5, mode="valid")
@@ -213,6 +217,8 @@ def rate_fit(x, y):
     if ok.sum() < 3:
         return None
     f = core.linfit(x[ok], y[ok])
+    if f is None:                                         # z. B. nur eine Scanrate: keine Steigung
+        return None
     t = core.t_quantile(0.975, f["n"] - 2)
     return dict(slope=f["slope"], ci=t * f["se_slope"], intercept=f["intercept"], ci_b=t * f["se_intercept"],
                 r2=f["r2"], n=f["n"])
@@ -576,6 +582,8 @@ class CVTab(TABS.FigureTab):
             refs = {}                                  # interner Standard -> E½ vs. Fc0/+ (Vorgabe)
             for e in vis:
                 ref = e.get("ref") or {}
+                if self.file_offset(e)[1] != "Fc$^{0/+}$":           # nicht gefunden: Achse wie gemessen
+                    continue
                 if ref.get("mode") == "internal":
                     refs.setdefault(ref.get("compound"), set()).add(ref.get("value"))
                 elif not ref.get("mode") and st["ref_mode"] == "internal":
@@ -844,7 +852,9 @@ class CVTab(TABS.FigureTab):
         if not vis:
             return
         c = self.cycle_of(vis[0])
-        self.st["couples"] = [list(w) for w in suggest_couples(c["E"], c["I"])]
+        # Fenster gespeichert in gemessenen Potentialen der globalen Referenz (figure_spec verschiebt je Messung)
+        shift = self.file_offset(vis[0])[0] - self.reference_offset()[0]
+        self.st["couples"] = [[lo - shift, hi - shift] for lo, hi in suggest_couples(c["E"], c["I"])]
         self.fill_couples()
         self.timer.start()
 
@@ -912,6 +922,14 @@ class CVTab(TABS.FigureTab):
         order = np.argsort(np.argsort(rates))
         curves, self.results, notes, labels_ref = [], [], [note] if note else [], set()
         grad_colors = {}
+        # Stromdichte nur, wenn alle Messungen eine Fläche haben (sonst Strom und Dichte unter einer Achse)
+        no_area = [e["label"] for e in vis if not self.data(e["file"])["meta"]["area"]]
+        density = self._density = st["density"] and not no_area
+        if st["density"] and no_area:
+            notes.append(T("cv_area_missing", files=", ".join(no_area)))
+        short = [e["label"] for e in vis if len(self.data(e["file"])["cycles"]) < st["cycle"]]
+        if short:
+            notes.append(T("cv_cycle_missing", files=", ".join(short), n=st["cycle"]))
         for k, e in enumerate(vis):
             d = self.data(e["file"])
             c = self.cycle_of(e)
@@ -920,7 +938,7 @@ class CVTab(TABS.FigureTab):
             if n_ and e.get("ref"):
                 notes.append(f"{e['label']}: {n_}")
             E = c["E"] - off
-            if st["density"] and d["meta"]["area"]:
+            if density:
                 fac, unit = sign * 1e3 / d["meta"]["area"], "mA"              # mA cm⁻²
             else:
                 fac, unit = sign * 1e6, "µA"
@@ -1202,7 +1220,9 @@ class CVTab(TABS.FigureTab):
         kinds = set()
         for e in (x for x in st["files"] if x["visible"]):
             ref = e.get("ref") or {}
-            if ref.get("mode") in ("internal", "manual"):
+            if self.file_offset(e)[1] != "Fc$^{0/+}$":            # interne Referenz nicht gefunden: wie gemessen
+                kinds.add(("none", None, 0.0))
+            elif ref.get("mode") in ("internal", "manual"):
                 kinds.add((ref["mode"], ref.get("compound"), round(ref.get("value", 0.0), 3)))
             else:
                 kinds.add((st["ref_mode"], st["ref_compound"], round(st["ref_value"], 3)))
@@ -1239,6 +1259,11 @@ class CVTab(TABS.FigureTab):
                      f"peak potential and before the current exceeded {BL_ONSET * 100:.0f}% of the peak height) and "
                      "extrapolated beneath the peak. For the reverse peak, this baseline was shifted "
                      "by the change of the capacitive current at the switching potential (current step of 2C·v).")
+            n_fail = sum(1 for r in self.results if r.get("bl_fail"))
+            if n_fail:
+                m.append(f"For {n_fail} of {len(self.results)} peak pairs the scan before the wave was too short for "
+                         "a baseline; their peak currents were measured from zero current and excluded from the "
+                         "regressions and ratios.")
         else:
             m.append("Peak currents were measured from zero current.")
         m.append("The ratio of reverse to forward peak current was calculated according to Nicholson, "
@@ -1283,8 +1308,9 @@ class CVTab(TABS.FigureTab):
             return f"{xs}    {ys.format(val)}    {name}" if val is not None else xs
         if val is None:
             return f"E = {x:.3f} V"
-        unit = "mA cm⁻²" if self.st["density"] else "µA"
-        return f"E = {x:.3f} V    {'j' if self.st['density'] else 'I'} = {val:.2f} {unit}    {name}"
+        dens = getattr(self, "_density", self.st["density"])
+        unit = "mA cm⁻²" if dens else "µA"
+        return f"E = {x:.3f} V    {'j' if dens else 'I'} = {val:.2f} {unit}    {name}"
 
     def export_to(self, base: Path):
         """Abbildung wie die anderen Tabs, dazu die Ergebnisse als CSV (UTF-8, Semikolon)."""

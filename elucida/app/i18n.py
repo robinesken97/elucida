@@ -1065,6 +1065,10 @@ TEXTS = {
     "cv_ref_missing": ("⚠ Referenz nicht gefunden (Messung oder Fenster prüfen) – Achse wie gemessen.",
                        "⚠ Reference not found (check measurement or window) – axis as measured."),
     "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
+    "cv_area_missing": ("⚠ Keine Elektrodenfläche in {files} – Strom statt Stromdichte.",
+                        "⚠ No electrode area in {files} – current instead of current density."),
+    "cv_cycle_missing": ("⚠ {files}: Zyklus {n} fehlt – letzter Zyklus ausgewertet.",
+                         "⚠ {files}: cycle {n} missing – last cycle evaluated."),
     "cv_fit_line": ("Paar {n}, i_p{p} ({k} Scanraten): gegen √v Steigung {m} µA (V/s)^-½, Achsenabschnitt {b} µA, "
                     "R² = {r2}; log-log-Steigung {ll} (95-%-KI)",
                     "Couple {n}, i_p{p} ({k} scan rates): vs. √v slope {m} µA (V/s)^-½, intercept {b} µA, "
@@ -1160,6 +1164,14 @@ TEXTS = {
                     "Nernst value. CV values take precedence."),
     "sec_fit_info": ("{lam} nm: scheinbares E½ = {e12} V, n = {n}, R² = {r2}",
                      "{lam} nm: apparent E½ = {e12} V, n = {n}, R² = {r2}"),
+    "sec_outside": ("⚠ {n} Spektren außerhalb der Potentialmessung – Start- bzw. Endpotential angenommen "
+                    "(Datum/Uhrzeit oder Zeitversatz prüfen).",
+                    "⚠ {n} spectra outside the potential record – start or end potential assumed "
+                    "(check date/time or time offset)."),
+    "sec_fit_bound": ("⚠ {lam} nm: Fit am Rand des Suchbereichs (E½ außerhalb der Messpunkte oder n außerhalb "
+                      "0,3–3) – nicht bestimmbar, nicht angegeben.",
+                      "⚠ {lam} nm: fit at the edge of the search range (E½ outside the data or n outside 0.3–3) – "
+                      "not determinable, not reported."),
     "sec_no_time": ("⚠ Keine Zeitangaben – Potentiale nicht zuordenbar.", "⚠ No time stamps – potentials cannot be assigned."),
     "sec_index": ("Spektrum Nr.", "Spectrum no."),
     # ---- EPR ---------------------------------------------------------------

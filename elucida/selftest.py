@@ -1081,6 +1081,104 @@ def selftest(outdir, with_isnet=False):
         w.sec_state.update(cap_solvent="", cap_start="", cap_end="")
         report.append("spectroelectrochemistry: OK")
 
+        # Audit P2 (CV + SEC): Grenzfälle mit synthetischen Daten
+        E_s = np.concatenate([np.arange(0, 1, 0.01), np.arange(1, -1, -0.01), np.arange(-1, 1e-9, 0.01)])
+        dE_s = np.gradient(E_s)                          # Start innerhalb: 0 -> +1 -> −1 -> 0, Paar bei −0,5 V
+
+        def g_s(c_, w_):
+            return np.exp(-((E_s - c_) / w_) ** 2)
+        I_s = np.where(dE_s < 0, -g_s(-0.55, 0.05), 0) + np.where(dE_s > 0, 0.8 * g_s(-0.45, 0.05), 0)
+        r_ = CVMOD.analyze_couple(E_s, I_s, -0.75, -0.25)
+        assert not r_["anodic_first"] and r_["ratio_ok"] and abs(r_["e12"] + 0.5) < 0.005, r_
+        I_s2 = I_s + np.where(dE_s < 0, -0.4 * g_s(-0.85, 0.04), 0)   # zweiter Prozess vor dem Umkehrpunkt (−1 V)
+        r_ = CVMOD.analyze_couple(E_s, I_s2, -0.75, -0.25)
+        assert not r_["anodic_first"] and not r_["ratio_ok"] and not np.isfinite(r_["ratio"]), r_
+        assert CVMOD.rate_fit([100, 100, 100], [1, 2, 3]) is None and \
+            CVMOD.randles_sevcik([100, 100, 100], [1, 2, 3]) is None
+        assert SECMOD.nernst_fit([0.0] * 5, [0.1, 0.2, 0.3, 0.4, 0.5]) is None
+        E_n = np.linspace(-1.3, -0.5, 60)
+        for e0_, n0_, bound_ in ((-0.4, 1.0, True), (-0.6, 4.0, True), (-0.9, 0.2, True), (-0.9, 1.0, False)):
+            f_ = SECMOD.nernst_fit(E_n, 0.1 + 0.5 / (1 + np.exp(-n0_ * SECMOD.F_RT * (E_n - e0_))))
+            assert f_ is not None and bool(f_.get("bound")) == bound_, (e0_, n0_, f_)
+        bw_ = secdir / "nocal.txt"                       # ohne Wellenlängen und Kalibrierung: ablehnen
+        bw_.write_text("File Version;BWSpec4\r\nDate;2026-01-01 12:00:00\r\nPixel;Wavelength;Absorbance #1\r\n"
+                       + "".join(f"{k_};;0.{k_ + 1}\r\n" for k_ in range(3)), encoding="latin-1", newline="")
+        try:
+            SECMOD.read_bwspec(bw_)
+            raise AssertionError("BWSpec ohne Kalibrierung angenommen")
+        except ValueError:
+            pass
+        nt_ = secdir / "noT.DTA"                         # ohne Zeitspalte: keine Zuordnung über die Uhrzeit
+        nt_.write_text("DATE\tLABEL\t1/1/2026\r\nTIME\tLABEL\t12:00:00\r\nCURVE1\tTABLE\r\n\tPt\tVf\tIm\r\n"
+                       "\t#\tV\tA\r\n" + "".join(f"\t{k_}\t{k_ * 0.1}\t1e-6\r\n" for k_ in range(10)),
+                       encoding="latin-1", newline="")
+        assert SECMOD.potentials(sp_[:3], CVMOD.read_gamry(nt_)) is None
+        # Stromdichte nur, wenn alle Messungen eine Fläche haben; sonst Strom mit Hinweis
+        na_ = cvdir / "cv_noarea.DTA"
+        na_.write_text(cv_files[0].read_text(encoding="latin-1").replace(
+            "AREA\tQUANT\t7.10000E-002\tElectrode &Area (cm^2)", ""), encoding="latin-1", newline="")
+        st_cv.update(files=[{"file": str(p_), "uid": f"d{k_}", "visible": True, "color": "#000000",
+                             "label": f"d{k_}"} for k_, p_ in enumerate((cv_files[0], na_))],
+                     density=True, couples=[[-1.25, -0.8]], ref_mode="none", cycle=1, baseline=True)
+        cfg_, curves_, _, _ = t_cv.figure_spec()
+        assert cfg_["ylabel"] == "I [µA]" and np.allclose(curves_[0]["y"], curves_[1]["y"]), cfg_["ylabel"]
+        assert T("cv_area_missing", files="d1") in t_cv.note, t_cv.note
+        st_cv["files"] = st_cv["files"][:1]
+        cfg_, curves_, _, _ = t_cv.figure_spec()
+        assert cfg_["ylabel"].startswith("j [mA") and T("cv_area_missing", files="d0") not in t_cv.note
+        st_cv["density"] = False
+        # gewählter Zyklus fehlt in einer Messung -> Hinweis (nicht still den letzten nehmen)
+        st_cv["cycle"] = 2
+        t_cv.figure_spec()
+        assert T("cv_cycle_missing", files="d0", n=2) in t_cv.note, t_cv.note
+        st_cv["cycle"] = 1
+        # Basislinie verlangt, aber nicht möglich -> Methodentext sagt es
+        st_cv["couples"] = [[-1.13, -0.8]]
+        t_cv.figure_spec()
+        assert t_cv.results[0]["bl_fail"] and "from zero current" in t_cv.methods_text(), t_cv.methods_text()
+        # interne Referenz nicht gefunden: Achse wie gemessen -> Text und Unterschrift nicht „vs. Fc0/+“
+        st_cv.update(couples=[[-1.25, -0.8]], ref_mode="internal", ref_uid="missing", ref_compound="ac2fc")
+        t_cv.figure_spec()
+        assert "Fc0/+" not in t_cv.methods_text() and "Fc" not in t_cv.si_caption("X"), t_cv.methods_text()
+        # Vorschlag bei eigener Referenz der ersten Messung: Fenster in der Skala der globalen Referenz speichern
+        p_ = cvdir / "cvB_50.DTA"
+        st_cv.update(ref_mode="none", couples=[], files=[{
+            "file": str(p_), "uid": "sB", "visible": True, "color": "#000000", "label": "B", "ref": {
+                "mode": "internal", "uid": "sB", "lo": 0.5, "hi": 1.0, "compound": "ac2fc", "value": 0.49}}])
+        t_cv.suggest()
+        t_cv.figure_spec()
+        assert t_cv.results and not any(r_["edge"] for r_ in t_cv.results) and \
+            abs(t_cv.results[0]["e12"] - (-0.92 - (0.75 - 0.49))) < 0.004, t_cv.results
+        st_cv.update(files=[], couples=[], ref_mode="none", baseline=True)
+        t_cv.fill_table()
+        # SEC: Namen der Zwischenstufen nach Eingabeposition (weggefallene Einträge verschieben nichts)
+        w.sec_state.update(mid="-1.3; -0.80", cap_mid="startlike; radical", cap_start="neutral", cap_end="dication")
+        cap_s = w.sec_tab.si_caption("TEST-1")
+        assert "<b>radical</b> (green)" in cap_s and "startlike" not in cap_s, cap_s
+        w.sec_state.update(first=3, last=3, mid="", cap_mid="")      # ein Spektrum: nur Rot im Bild
+        cap_s = w.sec_tab.si_caption("TEST-1")
+        assert "(blue)" not in cap_s and "<b>dication</b> (red)" in cap_s, cap_s
+        w.sec_state.update(first=1, last=0, cap_start="", cap_end="")
+        w.sec_state["offset_s"] = -400.0                 # Spektren vor Scanbeginn: Hinweis mit Anzahl
+        w.sec_tab.figure_spec()
+        assert T("sec_outside", n=27) in w.sec_tab.lbl_info.text(), w.sec_tab.lbl_info.text()
+        w.sec_state.update(offset_s=0.0, mode="trace", trace_lams="432", baseline=True, diff=True)
+        w.sec_tab.figure_spec()
+        meth_ = w.sec_tab.methods_text()
+        assert "780" in meth_ and "Difference spectra" in meth_, meth_
+        w.sec_state.update(mode="spectra", trace_lams="", baseline=False, diff=False)
+        nat_ = []                                        # ohne Zeit: natürliche Reihenfolge der Namen
+        for k_ in (1, 2, 10):
+            f_ = secdir / "nat" / f"s_{k_}.txt"
+            f_.parent.mkdir(exist_ok=True)
+            f_.write_text(Path(sec_files[0]).read_text(encoding="latin-1").replace("Date;", "Datum;"),
+                          encoding="latin-1", newline="")
+            nat_.append(str(f_))
+        w.sec_state["spec_files"] = nat_[::-1]
+        assert [s_["name"] for s_ in w.sec_tab.series()[0]] == ["s_1", "s_2", "s_10"]
+        w.sec_state["spec_files"] = sec_files
+        report.append("audit P2 CV/SEC edge cases: OK")
+
         # SEC im Overlay: Spektren nach Potential übernehmen, nur normiert (kein ε aus der Dünnschichtzelle)
         ov_, st_ov = w.ov_tab, w.ov_state
         saved_ov = {k: json.loads(json.dumps(st_ov[k])) for k in ("entries", "mode", "nlo", "nhi", "baseline")}

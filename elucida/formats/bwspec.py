@@ -36,6 +36,8 @@ def read_bwspec(path) -> dict:
             lam = None
     if lam is None:
         a = [float(hdr.get(f"coefs_a{i}", 0) or 0) for i in range(4)]
+        if not any(a):                                          # ohne Kalibrierung keine Wellenlängenachse
+            raise ValueError(f"{Path(path).name}: keine Wellenlängen und keine Kalibrierung (coefs_a0…a3)")
         lam = a[0] + a[1] * pix + a[2] * pix ** 2 + a[3] * pix ** 3
     lo = int(float(hdr.get("sel_pixel_start", 0) or 0))         # vom Gerät gewählter gültiger Bereich
     keep = pix >= lo
