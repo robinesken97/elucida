@@ -2810,6 +2810,52 @@ def selftest(outdir, with_isnet=False):
         chk_("template with many tBu", p4_template_core)
         assert not fails_, "\n".join(fails_)
         report.append("audit P4 X-Ray edge cases: OK")
+        # Audit P4, Codex-Gegenlesen: jeder Fall scheiterte an e4c5324
+        fails_ = []
+        def p4r_params_order():                      # Symmetrie-Variante zuerst gewählt: beide Zeilen bleiben
+            S_x, m_ = xmol_(xcif_([("C1", "C", (1, 0, 0)), ("C2", "C", (2.5, 0, 0))], ops=inv2_,
+                                  bonds=["C1 C2 1.500(2) . .", "C1 C1 2.000(2) . 2"]))
+            g_ = [a_["key"] for a_ in m_.atoms if a_["sym"] and a_["label"] == "C2"][0]
+            _, rows_, _ = XRAY.XrayTab.params_table(_XS(S_x, m_, [{"atoms": ["C1", g_]}, {"atoms": ["C1", "C2"]}]))
+            vals_ = sorted(r_[1] for r_ in rows_[1:])
+            assert len(vals_) == 2 and vals_[0] == "1.500(2)" and vals_[1].startswith("3.500"), rows_
+        chk_("params table, symmetric variant first", p4r_params_order)
+        def p4r_near_mirror():                       # fast auf einer Spiegelebene: kein CIF-Text für einen anderen Satz
+            _, m_ = xmol_(xcif_([("C1", "C", (1, 1, 0.004)), ("C2", "C", (2.5, 1, 0.004)), ("C3", "C", (3.2, 2.3, 0.004)),
+                                 ("C4", "C", (4.7, 2.3, 0.006))], ops=("x, y, -z", "x, y, z"),
+                                tors=["C1 C2 C3 C4 179.9(3) . . . ."]))
+            ks_ = ["C1", "C2|x, y, −z", "C3", "C4|x, y, −z"]
+            assert all(m_.find_key(k_) is not None for k_ in ks_), [a_["key"] for a_ in m_.atoms]
+            r_ = XRAY.measure(m_, ks_)
+            assert r_["source"] == "calc", r_
+        chk_("near-mirror torsion not matched", p4r_near_mirror)
+        def p4r_merge_mixed():                       # gemischte Schwellen in der Gesamt-SI: keine doppelte Angabe
+            from elucida.si.publication_si import merge_crystal
+            L2_, L3_ = "Final *R* indices [*I*>2*σ*(I)]", "Final *R* indices [*I*>3*σ*(I)]"
+            row_ = merge_crystal([(["Compound", "A"], [[L3_, "RA"]]),
+                                  (["Compound", "B", "C"], [[L2_, "RB", "RC [*I*>3*σ*(I)]"]])])[0][1][0]
+            assert row_ == [L3_, "RA", "RB [*I*>2*σ*(I)]", "RC"], row_
+        chk_("merged mixed thresholds", p4r_merge_mixed)
+        def p4r_template_small():                    # kleines Molekül: nie schlechter als die vollständige Suche
+            from rdkit import Chem as _Ch
+            from rdkit.Chem import AllChem as _AC
+            m3_ = _Ch.AddHs(_Ch.MolFromSmiles("OC(=O)CC(C)C"))
+            _AC.EmbedMolecule(m3_, randomSeed=1)
+            _AC.MMFFOptimizeMolecule(m3_)
+            cf_ = m3_.GetConformer()
+            mm_ = SimpleNamespace(atoms=[dict(el=a_.GetSymbol(), xyz=np.array(list(cf_.GetAtomPosition(a_.GetIdx()))),
+                                              frag=0, key=str(a_.GetIdx())) for a_ in m3_.GetAtoms()],
+                                  bonds={(b_.GetBeginAtomIdx(), b_.GetEndAtomIdx()) for b_ in m3_.GetBonds()})
+            t2_ = _Ch.RemoveHs(_Ch.Mol(m3_))
+            t2_.RemoveAllConformers()
+            _AC.Compute2DCoords(t2_)
+            tp_ = xdir / "small_template.cdxml"
+            tp_.write_text(_Ch.MolToCDXMLBlock(t2_), encoding="utf-8")
+            inf_ = XRAY.align_to_template(mm_, tp_)[1]
+            assert inf_["rmsd"] < 0.7, inf_          # vollständige Suche 0.57, nur Gerüst 0.85
+        chk_("template small molecule", p4r_template_small)
+        assert not fails_, "\n".join(fails_)
+        report.append("audit P4 review fixes (Codex): OK")
         # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
         # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
         size0_ = w.size()

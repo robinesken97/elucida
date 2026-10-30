@@ -48,8 +48,13 @@ def merge_crystal(tables):
                 r = by_label.get(lab)
                 if r is None and i < len(rows):          # gleiche Zeile, andere Beschriftung (R-Schwelle 3σ statt 2σ)
                     own = re.search(r"\[(.*)\]$", rows[i][0])
+                    here = re.search(r"\[(.*)\]$", lab)
                     v = rows[i][j]
-                    vals.append(v + f" [{own.group(1)}]" if v and own else v)
+                    if v and own and not v.endswith("]"):   # Schwelle an den Wert, wenn er noch keine trägt
+                        v += f" [{own.group(1)}]"
+                    if v and here and v.endswith(f" [{here.group(1)}]"):    # entspricht der Zeilenbeschriftung
+                        v = v[:-len(here.group(1)) - 3]
+                    vals.append(v)
                     continue
                 vals.append((r or [lab] + [""] * len(head))[j])
             cols.append((head[j], vals))

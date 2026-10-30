@@ -683,19 +683,23 @@ def torsion(p):
 
 def geom_op(S: Structure, g, ats):
     """Symmetrieoperation G, die die Atome des _geom-Eintrags g (Label + Code S_k) auf die gewählten Atome bringt
-    (G(S_k(x_k)) = Lage des k-ten Atoms) -> (R, t) oder None. Über die Lagen statt über T_k = G∘S_k, damit auch
-    Atome auf speziellen Lagen (mehrere T für dieselbe Lage) passen."""
+    -> (R, t) oder None. Zuerst exakt über die Transformationen (T_k = G∘S_k), sonst über die Lagen (G(S_k(x_k)) =
+    Lage des k-ten Atoms, Toleranz 2e-4 wie auf 4 Stellen gerundete spezielle Lagen), damit auch Atome auf speziellen
+    Lagen (mehrere T für dieselbe Lage) passen; eng, damit fast symmetrische Sätze nicht als gleich gelten."""
     idx = [S.by_label.get(lab) for lab in g["labels"]]
     if None in idx:
         return None
+    G = compose(ats[0]["T"], inverse(g["trs"][0]))
+    if all(tr_key(compose(G, s)) == tr_key(a["T"]) for s, a in zip(g["trs"], ats)):
+        return G
     src = [apply(s, S.atoms[i]["frac"]) for s, i in zip(g["trs"], idx)]
     for R, t in S.ops:
         d = ats[0]["frac"] - (R @ src[0] + t)
         shift = np.rint(d)
-        if np.abs(d - shift).max() > 1e-3:
+        if np.abs(d - shift).max() > 2e-4:
             continue
         G = (R, t + shift)
-        if all(np.abs(apply(G, p) - a["frac"]).max() < 1e-3 for p, a in zip(src, ats)):
+        if all(np.abs(apply(G, p) - a["frac"]).max() < 2e-4 for p, a in zip(src, ats)):
             return G
     return None
 
@@ -953,12 +957,8 @@ def align_to_template(mol, template_path, frag=0):
         for i, j in c_bonds:
             c_nb.setdefault(i, []).append(j)
             c_nb.setdefault(j, []).append(i)
-        for cm in cg.GetSubstructMatches(tgc, uniquify=False, maxMatches=2000, useChirality=False):
-            m = list(zip(core, cm))
-            _, Rk = kabsch(m)
-            cc = c_xyz[list(cm)].mean(axis=0)
-            tc = (t_xy[core] * lc / lt).mean(axis=0)
-            used, ok = set(cm), True
+        def assign(cm, Rk, cc, tc):
+            m, used = list(zip(core, cm)), set(cm)
             for par, tt in term.items():
                 cands = [c for c in c_nb.get(cm[k_map[par]], []) if c not in used]
                 best_p = None
@@ -971,15 +971,26 @@ def align_to_template(mol, template_path, frag=0):
                     if best_p is None or cost < best_p[0]:
                         best_p = (cost, perm)
                 if best_p is None:
-                    ok = False
-                    break
+                    return None
                 m += list(zip(tt, best_p[1]))
                 used.update(best_p[1])
-            if ok and len(m) == len(t_idx):
-                matches.append(sorted(m))
-    if not matches:
-        pairs = cg.GetSubstructMatches(tg, uniquify=False, maxMatches=2000, useChirality=False)
-        matches = [list(zip(range(len(t_idx)), m)) for m in pairs]
+            return sorted(m) if len(m) == len(t_idx) else None
+        for cm in cg.GetSubstructMatches(tgc, uniquify=False, maxMatches=2000, useChirality=False):
+            _, Rk = kabsch(list(zip(core, cm)))
+            m = assign(cm, Rk, c_xyz[list(cm)].mean(axis=0), (t_xy[core] * lc / lt).mean(axis=0))
+            for _ in range(3):                           # nachverfeinern: Drehung aus allen Atomen, neu verteilen
+                if m is None:
+                    break
+                matches.append(m)
+                _, Rk = kabsch(m)
+                ti_, ci_ = [a for a, _ in m], [b for _, b in m]
+                m2 = assign(cm, Rk, c_xyz[ci_].mean(axis=0), (t_xy[ti_] * lc / lt).mean(axis=0))
+                if m2 == m:
+                    break
+                m = m2
+    # dazu die vollständige Suche (bis 2000 Treffer, wie bisher): kleine Moleküle sind damit nie schlechter
+    pairs = cg.GetSubstructMatches(tg, uniquify=False, maxMatches=2000, useChirality=False)
+    matches += [list(zip(range(len(t_idx)), m)) for m in pairs]
     if not matches:                                    # Zeichnung und Struktur weichen ab: größter gemeinsamer Teil
         res = rdFMCS.FindMCS([tg, cg], timeout=5, atomCompare=rdFMCS.AtomCompare.CompareElements,
                              bondCompare=rdFMCS.BondCompare.CompareAny, ringMatchesRingOnly=False)
@@ -4230,16 +4241,19 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         for ci, e in enumerate(es):
             mol = self.molecule(e)
             used_ops = {}
+            base = {}                                    # gleicher Zeilenname in einer Struktur (C1–C2 und C1–C2ⁱ)?
+            for p in e.get("params") or []:
+                lab_ = param_label(p["atoms"]).split("–")
+                base.setdefault(min(tuple(lab_), tuple(lab_[::-1])), []).append(p)
             for p in e.get("params") or []:
                 m = measure(mol, p["atoms"])
                 if m is None:
                     continue
                 label = param_label(p["atoms"])
+                lab_ = label.split("–")
+                if len(base[min(tuple(lab_), tuple(lab_[::-1]))]) > 1 and "|" in "".join(p["atoms"]):
+                    label = param_name(mol, p["atoms"])      # die Variante mit erzeugten Atomen: eigene Zeile
                 key = (m["kind"], label)
-                if any(c_ == ci and (k_[1] in (label, "–".join(label.split("–")[::-1])))
-                       for (k_, c_) in cells if k_[0] == m["kind"]):
-                    label = param_name(mol, p["atoms"])      # C1–C2 und C1–C2ⁱ derselben Struktur: eigene Zeilen
-                    key = (m["kind"], label)
                 if key not in rows_by_kind[m["kind"]]:
                     rev = (m["kind"], "–".join(label.split("–")[::-1]))
                     if rev in rows_by_kind[m["kind"]]:
