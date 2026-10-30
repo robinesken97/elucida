@@ -3548,11 +3548,14 @@ class MainWindow(QMainWindow):
                         svg = out_dir / f"{core.safe_name(fname)}_xray.svg"
                         blocks.append(("image",) + XRAY.save_tight(F, svg))
                 blocks.append(("figcap", xt.caption(e)[1]))
-                for t_title, t_name, t_head, t_rows in xt.param_tables(e):
+                p_tabs = xt.param_tables(e)
+                for t_title, t_name, t_head, t_rows in p_tabs:
                     blocks += [("tabcap", t_title, t_name), ("params", t_head, t_rows)]
                     if any("^{a}" in r_[-1] for r_ in t_rows):
                         blocks.append(("note", "^{a} " + XRAY.CALC_NOTE))
                     blocks.append(("gap",))
+                if p_tabs and xt.sym_note(e):              # Symmetriecodes nur in den Parametertabellen (Regel)
+                    blocks[-1:-1] = [("note", xt.sym_note(e))]
             h_, r_ = xt.crystal_table()
             r_ = [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_] for row_ in r_]
             names = [e.get("name") or e["block"] for e in es]

@@ -2647,6 +2647,169 @@ def selftest(outdir, with_isnet=False):
             tab_.render(push=False)
         rot_keeps_scale_(t_x)
         report.append("X-Ray rotate keeps size (GUI path, labels moved, zoom): OK")
+        # Audit P4 (X-Ray): jeder Fall scheiterte vor den Fixes; künstliche CIFs (kubische 10-Å-Zelle, Å-Koordinaten)
+        fails_ = []
+        def chk_(name, fn):
+            try:
+                fn()
+            except Exception as e_:
+                fails_.append(f"{name}: {type(e_).__name__} {e_}"[:160])
+        import math
+        from types import SimpleNamespace
+        from elucida.formats.cif import parse_cif_text as _pcif
+        def xcif_(atoms, ops=("x, y, z",), ids=None, bonds=(), angles=(), tors=(), extra=(), aniso=()):
+            L_ = ["data_t"] + [f"_cell_length_{x_} 10" for x_ in "abc"] + \
+                 [f"_cell_angle_{x_} 90" for x_ in ("alpha", "beta", "gamma")] + list(extra) + ["loop_"]
+            L_ += (["_space_group_symop_id"] if ids else []) + ["_space_group_symop_operation_xyz"]
+            L_ += [(f"{ids[k_]} " if ids else "") + f"'{o_}'" for k_, o_ in enumerate(ops)]
+            L_ += ["loop_"] + [f"_atom_site_{t_}" for t_ in ("label", "type_symbol", "fract_x", "fract_y", "fract_z",
+                                                             "U_iso_or_equiv", "occupancy", "disorder_group")]
+            for at_ in atoms:
+                lab_, el_, p_ = at_[:3]
+                L_.append(f"{lab_} {el_} " + " ".join(f"{v_ / 10:.6f}" for v_ in p_) +
+                          f" 0.02 {at_[4] if len(at_) > 4 else 1} {at_[3] if len(at_) > 3 else '.'}")
+            if aniso:
+                L_ += ["loop_", "_atom_site_aniso_label"] + [f"_atom_site_aniso_U_{k_}" for k_ in
+                                                             ("11", "22", "33", "23", "13", "12")] + list(aniso)
+            for tag_, n_, rows_ in (("bond", 2, bonds), ("angle", 3, angles), ("torsion", 4, tors)):
+                if rows_:
+                    L_ += ["loop_"] + [f"_geom_{tag_}_atom_site_label_{k_ + 1}" for k_ in range(n_)] + \
+                          [f"_geom_{tag_}" + ("_distance" if tag_ == "bond" else "")] + \
+                          [f"_geom_{tag_}_site_symmetry_{k_ + 1}" for k_ in range(n_)] + list(rows_)
+            return "\n".join(L_) + "\n"
+        def xmol_(txt, **kw):
+            S_x = XRAY.Structure(_pcif(txt)[0])
+            return S_x, XRAY.Molecule(S_x, **kw)
+        inv2_ = ("x, y, z", "-x, -y, -z")
+        def p4_torsion_sign():                       # Inversion kehrt das Vorzeichen der CIF-Torsion um
+            _, m_ = xmol_(xcif_([("C1", "C", (0.75, 1.5, 0)), ("C2", "C", (0.75, 0, 0)), ("C3", "C", (2.25, 0, 0)),
+                                 ("C4", "C", (2.25, 0, 1.5))], ops=inv2_,
+                                bonds=["C1 C2 1.500(2) . .", "C2 C3 1.500(2) . .", "C3 C4 1.500(2) . .",
+                                       "C2 C2 1.500(2) . 2"], tors=["C1 C2 C3 C4 90.0(2) . . . ."]))
+            g_ = {a_["label"]: a_["key"] for a_ in m_.atoms if a_["sym"]}
+            r_ = XRAY.measure(m_, [g_[x_] for x_ in ("C1", "C2", "C3", "C4")])
+            assert r_["text"] == "-90.0(2)" and abs(r_["value"] + 90) < 1e-6, r_
+            assert XRAY.measure(m_, ["C1", "C2", "C3", "C4"])["text"] == "90.0(2)"
+        chk_("torsion sign under inversion", p4_torsion_sign)
+        def p4_symop_id():                           # Codes beziehen sich auf _space_group_symop_id, nicht die Zeile
+            _, m_ = xmol_(xcif_([("C1", "C", (1, 0, 0))], ops=("-x, -y, -z", "x, y, z"), ids=(2, 1),
+                                bonds=["C1 C1 2.000(3) . 2_555"]))
+            assert len(m_.atoms) == 2 and m_.bonds == [(0, 1)], (len(m_.atoms), m_.bonds)
+        chk_("symop ids", p4_symop_id)
+        def p4_truncated():                          # abgeschnittener Atom-Loop: Fehler statt still ein Atom weniger
+            txt_ = xcif_([("C1", "C", (1, 1, 1)), ("C2", "C", (2, 1, 1))]).rstrip("\n")
+            try:
+                XRAY.Structure(_pcif(txt_.rsplit(" ", 4)[0] + "\n")[0])
+                raise AssertionError("unvollständige Schleife angenommen")
+            except ValueError:
+                pass
+        chk_("truncated atom loop", p4_truncated)
+        def p4_special_position():                   # Zn im Inversionszentrum: CIF-esd auch für die invertierten N
+            _, m_ = xmol_(xcif_([("Zn1", "Zn", (0, 0, 0)), ("N1", "N", (2, 0, 0)), ("N2", "N", (0, 2, 0))], ops=inv2_,
+                                bonds=["Zn1 N1 2.000(2) . .", "Zn1 N2 2.000(2) . .", "Zn1 N1 2.000(2) . 2",
+                                       "Zn1 N2 2.000(2) . 2"], angles=["N1 Zn1 N2 90.00(5) . . ."]))
+            g_ = {a_["label"]: a_["key"] for a_ in m_.atoms if a_["sym"]}
+            assert XRAY.measure(m_, [g_["N1"], "Zn1", g_["N2"]])["text"] == "90.00(5)"
+        chk_("special position esd", p4_special_position)
+        def p4_zprime():                             # zwei C6-Ringe ohne H: Z′ = 2 vor „Lösungsmittel Benzol“
+            ring_ = lambda c_, n0_: [(f"C{n0_ + i_}", "C", (c_ + 1.39 * math.cos(math.radians(60 * i_)),
+                                                            c_ + 1.39 * math.sin(math.radians(60 * i_)), c_))
+                                     for i_ in range(6)]
+            _, m_ = xmol_(xcif_(ring_(2, 1) + ring_(6, 7)))
+            assert [f_["kind"] for f_ in m_.fragments] == ["main", "molecule"], m_.fragments
+        chk_("Z' before solvent", p4_zprime)
+        def p4_antiparallel():
+            R_ = XRAY.rot_between(np.array([1e-9, 1.0, 0.0]), (0, -1, 0))
+            assert np.isfinite(R_).all() and np.allclose(R_ @ [0, 1, 0], [0, -1, 0], atol=1e-6), R_
+        chk_("rot_between near antiparallel", p4_antiparallel)
+        def p4_threshold():                          # R-Werte unter der Schwelle der CIF beschriften
+            b_ = _pcif(xcif_([("C1", "C", (1, 1, 1))], extra=["_reflns_threshold_expression 'I > 3sigma(I)'",
+                                                               "_refine_ls_R_factor_gt 0.035",
+                                                               "_refine_ls_wR_factor_gt 0.087"]))[0]
+            v_ = XRAY.crystal_values(b_)
+            assert v_["thr"] == "*I*>3*σ*(I)" and v_["method"] == "", v_
+            from elucida.si.publication_si import merge_crystal
+            t1_ = (["Compound", "A"], [["Final *R* indices [*I*>2*σ*(I)]", "R1"]])
+            t2_ = (["Compound", "B"], [["Final *R* indices [*I*>3*σ*(I)]", "R2"]])
+            assert merge_crystal([t1_, t2_])[0][1][0] == ["Final *R* indices [*I*>2*σ*(I)]", "R1",
+                                                           "R2 [*I*>3*σ*(I)]"], merge_crystal([t1_, t2_])
+            b2_ = _pcif(xcif_([("C1", "C", (1, 1, 1))], extra=["_refine_diff_density_max 0.42",
+                                                                "_refine_diff_density_min 0.31"]))[0]
+            assert XRAY.crystal_values(b2_)["diff"] == "0.42/0.31", XRAY.crystal_values(b2_)["diff"]
+        chk_("R threshold, method, hole", p4_threshold)
+        def p4_markup_names():                       # „Cp*“ im Namen: nicht kursiv/verschluckt, kein Absturz
+            for nm_ in ("Cp*2Fe", "A_{1", "x^2~y"):
+                assert XRAY.to_plain(XRAY.esc_markup(nm_)) == nm_ and XRAY.to_html(XRAY.esc_markup(nm_)) == nm_
+        chk_("markup escaping", p4_markup_names)
+        def p4_disorder_sites():                     # zwei unabhängige Fehlordnungen ohne assembly ('.')
+            S_x, _ = xmol_(xcif_([("C1", "C", (5, 5, 5)), ("C2A", "C", (6.5, 5, 5), 1, 0.7),
+                                  ("C2B", "C", (6.3, 5.6, 5), 2, 0.3), ("C3A", "C", (3.5, 5, 5), 1, 0.4),
+                                  ("C3B", "C", (3.7, 5.6, 5), 2, 0.6)]))
+            assert [S_x.atoms[i_]["label"] for i_ in S_x.visible_asu("main")] == ["C1", "C2A", "C3B"]
+            assert XRAY.disorder_occupancy(S_x) is None
+            S_x, _ = xmol_(xcif_([("C1", "C", (5, 5, 5)), ("C2A", "C", (6.5, 5, 5), 1, 0.545),
+                                  ("C2B", "C", (6.3, 5.6, 5), 2, 0.455)]))
+            assert XRAY.disorder_occupancy(S_x) == "55% (A) and 45% (B)", XRAY.disorder_occupancy(S_x)
+        chk_("disorder sites", p4_disorder_sites)
+        def p4_reader_misc():                        # Typ '?' -> aus dem Label; ohne Symmetrie-Loop Hinweis
+            S_x, _ = xmol_(xcif_([("H1A", "?", (1, 1, 1))]))
+            assert S_x.atoms[0]["el"] == "H", S_x.atoms[0]["el"]
+            txt_ = "\n".join(l_ for l_ in xcif_([("C1", "C", (1, 1, 1))]).splitlines()
+                             if "symop" not in l_ and "x, y, z" not in l_).replace("loop_\nloop_", "loop_")
+            S_x = XRAY.Structure(_pcif(txt_ + "\n_space_group_name_H-M_alt 'P 21/c'\n")[0])
+            assert S_x.no_symops, "kein Hinweis"
+        chk_("reader type '?' / no symops", p4_reader_misc)
+        def p4_plane_collinear():
+            _, m_ = xmol_(xcif_([("C1", "C", (1, 1, 1)), ("C2", "C", (2, 1, 1)), ("C3", "C", (3, 1, 1))]))
+            try:
+                XRAY.align_plane(np.eye(3), m_, ["C1", "C2", "C3"])
+                raise AssertionError("Ebene aus drei Atomen auf einer Linie")
+            except ValueError:
+                pass
+        chk_("plane from collinear atoms", p4_plane_collinear)
+        class _XS:                                   # Tab-Attrappe für Tabellen (nur Modell)
+            def __init__(s_, S_x, m_, params):
+                s_.e_ = dict(name="t", block="t", params=params)
+                s_.S_x, s_.m_ = S_x, m_
+            def entries(s_):
+                return [s_.e_]
+            def structure(s_, e_):
+                return s_.S_x
+            def molecule(s_, e_):
+                return s_.m_
+        def p4_params_rows():                        # C1–C2 und C1–C2ⁱ derselben Struktur: beide Zeilen
+            S_x, m_ = xmol_(xcif_([("C1", "C", (1, 0, 0)), ("C2", "C", (2.5, 0, 0))], ops=inv2_,
+                                  bonds=["C1 C2 1.500(2) . .", "C1 C1 2.000(2) . 2"]))
+            g_ = [a_["key"] for a_ in m_.atoms if a_["sym"] and a_["label"] == "C2"]
+            assert g_, [a_["key"] for a_ in m_.atoms]
+            st_ = _XS(S_x, m_, [{"atoms": ["C1", "C2"]}, {"atoms": ["C1", g_[0]]}])
+            _, rows_, _ = XRAY.XrayTab.params_table(st_)
+            vals_ = [r_[1] for r_ in rows_[1:]]
+            assert len(vals_) == 2 and vals_[0] == "1.500(2)" and vals_[1].startswith("3.500"), rows_
+            assert XRAY.XrayTab.sym_note(st_, st_.e_).startswith("Symmetry codes: i: −x"), "Word-Fußnote fehlt"
+        chk_("params table rows / Word symmetry note", p4_params_rows)
+        def p4_template_core():                      # tBu-reiche Vorlage: beste Ansicht trotz vieler Permutationen
+            from rdkit import Chem as _Ch
+            from rdkit.Chem import AllChem as _AC
+            m3_ = _Ch.AddHs(_Ch.MolFromSmiles("CC(C)(C)c1cc(C(C)(C)C)c(Oc2c(C(C)(C)C)cc(C(C)(C)C)cc2C(C)(C)C)"
+                                              "c(C(C)(C)C)c1"))
+            _AC.EmbedMolecule(m3_, randomSeed=7)
+            _AC.MMFFOptimizeMolecule(m3_)
+            cf_ = m3_.GetConformer()
+            ats_ = [dict(el=a_.GetSymbol(), xyz=np.array(list(cf_.GetAtomPosition(a_.GetIdx()))), frag=0,
+                         key=str(a_.GetIdx())) for a_ in m3_.GetAtoms()]
+            mm_ = SimpleNamespace(atoms=ats_, bonds={(b_.GetBeginAtomIdx(), b_.GetEndAtomIdx())
+                                                    for b_ in m3_.GetBonds()})
+            t2_ = _Ch.RemoveHs(_Ch.Mol(m3_))
+            t2_.RemoveAllConformers()
+            _AC.Compute2DCoords(t2_)
+            tp_ = xdir / "tbu_template.cdxml"
+            tp_.write_text(_Ch.MolToCDXMLBlock(t2_), encoding="utf-8")
+            R_, inf_ = XRAY.align_to_template(mm_, tp_)
+            assert inf_["rmsd"] < 0.8 and abs(np.linalg.det(R_) - 1) < 1e-9, inf_
+        chk_("template with many tBu", p4_template_core)
+        assert not fails_, "\n".join(fails_)
+        report.append("audit P4 X-Ray edge cases: OK")
         # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
         # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
         size0_ = w.size()

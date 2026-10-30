@@ -56,6 +56,7 @@ class Block:
         self.items = {}          # tag -> Text
         self.loops = []          # [{tag: [Werte]}]
         self.loop_of = {}        # tag -> Schleife
+        self.incomplete = set()  # Tags von Schleifen mit unvollständiger letzter Zeile (abgeschnittene Datei)
 
     def get(self, *tags):
         """Erster vorhandener Tag (Aliase DDL1/DDL2); '?' und '.' gelten als fehlend."""
@@ -120,7 +121,9 @@ def parse_cif_text(text) -> list[Block]:
                 vals.append(toks[i][0])
                 i += 1
             if tags:
-                m = len(vals) // len(tags)               # unvollständige letzte Zeile verwerfen
+                m = len(vals) // len(tags)               # unvollständige letzte Zeile verwerfen (vermerkt)
+                if len(vals) % len(tags):
+                    cur.incomplete.update(tags)
                 lp = {t: vals[k::len(tags)][:m] for k, t in enumerate(tags)}
                 cur.loops.append(lp)
                 for t in tags:

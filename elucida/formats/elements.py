@@ -25,7 +25,7 @@ COV = {"H": 0.31, "D": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C":
 
 
 def element_of(type_symbol, label):
-    s = type_symbol or label or "C"
+    s = (type_symbol if type_symbol not in ("?", ".") else None) or label or "C"   # '?' = fehlend -> Label
     m = re.match(r"^([A-Za-z]{1,2})", s)
     el = m.group(1) if m else "C"
     el = el[0].upper() + el[1:].lower()

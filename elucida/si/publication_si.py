@@ -12,6 +12,8 @@ Ohne Qt: die Blöcke je Verbindung liefert das Hauptfenster (MainWindow.si_compo
 """
 from __future__ import annotations
 
+import re
+
 from elucida.si import lines as SI
 
 # (Schlüssel, Kapitel, Standard an)
@@ -41,7 +43,16 @@ def merge_crystal(tables):
         labels = labels or [r[0] for r in rows]
         by_label = {r[0]: r for r in rows}
         for j in range(1, len(head)):
-            cols.append((head[j], [by_label.get(lab, [lab] + [""] * len(head))[j] for lab in labels]))
+            vals = []
+            for i, lab in enumerate(labels):
+                r = by_label.get(lab)
+                if r is None and i < len(rows):          # gleiche Zeile, andere Beschriftung (R-Schwelle 3σ statt 2σ)
+                    own = re.search(r"\[(.*)\]$", rows[i][0])
+                    v = rows[i][j]
+                    vals.append(v + f" [{own.group(1)}]" if v and own else v)
+                    continue
+                vals.append((r or [lab] + [""] * len(head))[j])
+            cols.append((head[j], vals))
     out = []
     for k in range(0, len(cols), CRYSTAL_COLS):
         part = cols[k:k + CRYSTAL_COLS]
@@ -108,8 +119,10 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
                 body += parts.get("xray") or []
                 if parts.get("crystal"):
                     tables.append(parts["crystal"])
+            from elucida.tabs.xray import to_plain              # Kopf ist Markup (Namen maskiert, esc_markup)
             for head, rows in merge_crystal(tables):
-                body += [("gap",), ("tabcap", "Crystal data and structure refinement", ", ".join(head[1:])),
+                body += [("gap",), ("tabcap", "Crystal data and structure refinement",
+                                    ", ".join(to_plain(h) for h in head[1:])),
                          ("crystal", head, rows)]
         elif key == "dft":
             for _, parts in compounds:

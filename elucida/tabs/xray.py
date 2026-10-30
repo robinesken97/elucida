@@ -13,6 +13,7 @@ esd:   Standardabweichungen nur aus der CIF (_geom_bond/_geom_angle/_geom_torsio
 from __future__ import annotations
 
 import csv
+import itertools
 import math
 import re
 from pathlib import Path
@@ -127,8 +128,9 @@ def _frac_str(v):
 
 
 def symcode(code, ops):
-    """SHELXL-Code '3_665' -> Transformation (Operation 3, Translation +1,+1,0); '.' -> Identität."""
-    if code in (None, ".", "?", "") or code == "1_555":
+    """SHELXL-Code '3_665' -> Transformation (Operation 3, Translation +1,+1,0); '.' -> Identität. ops: Liste
+    (Nummer = Zeile) oder dict Operations-ID -> Operation (_space_group_symop_id)."""
+    if code in (None, ".", "?", ""):
         return IDENT
     m = re.match(r"^(\d+)(?:_(\d+))?$", str(code))
     if not m:
@@ -138,7 +140,7 @@ def symcode(code, ops):
         raise ValueError(f"Symmetriecode unlesbar: {code}")
     k = len(tt) // 3                             # 555 = keine Translation; zweistellig (z. B. 1_105555) -> 55
     shift = np.array([int(tt[i * k:(i + 1) * k]) for i in range(3)], float) - (5 if k == 1 else 55)
-    R, t = ops[n - 1]
+    R, t = ops[str(n)] if isinstance(ops, dict) else ops[n - 1]
     return R, t + shift
 
 
@@ -231,8 +233,18 @@ class Structure:
         self.name = block.name
         self.cell = cell_of(block)
         self.M = ortho_matrix(*self.cell)
-        ops = block.column("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz") or ["x, y, z"]
+        bad = [next(iter(lp)) for lp in block.loops if next(iter(lp)) in block.incomplete
+               and next(iter(lp)).startswith(("_atom_site", "_geom_", "_space_group_symop", "_symmetry_equiv"))]
+        if bad:                                      # sonst fehlte das letzte Atom/der letzte Wert still
+            raise ValueError(T("xr_cif_truncated", tag=bad[0]))
+        ops = block.column("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz")
+        sg = re.sub(r"\s", "", block.get("_space_group_name_h-m_alt", "_symmetry_space_group_name_h-m") or "P1")
+        self.no_symops = not ops and sg.upper() != "P1"   # Hinweis: als P1 gezeigt, Molekül evtl. unvollständig
+        ops = ops or ["x, y, z"]
         self.ops = [parse_symop(o) for o in ops]
+        ids = block.column("_space_group_symop_id", "_symmetry_equiv_pos_site_id")
+        self.op_ids = (dict(zip([str(int(float(x))) if num(x) is not None else x for x in ids], self.ops))
+                       if ids and len(ids) == len(self.ops) else self.ops)      # Codes beziehen sich auf die ID
         self.atoms = []
         aniso = {}
         for r in block.rows("_atom_site_aniso_label"):
@@ -284,8 +296,8 @@ class Structure:
             if n == 3 and not codes[1]:
                 codes[1] = "."
             try:
-                trs = [symcode(c, self.ops) for c in codes]
-            except (ValueError, IndexError):
+                trs = [symcode(c, self.op_ids) for c in codes]
+            except (ValueError, IndexError, KeyError):
                 continue
             out.append(dict(labels=labs, trs=trs, value=val))
         return out
@@ -301,14 +313,51 @@ class Structure:
         if mode == "minor":
             main = set(self.visible_asu("main"))
             return [i for i, a in enumerate(self.atoms) if a["part"] == 0 or i not in main]
+        site = self.disorder_sites()
         groups = {}
         for i, a in enumerate(self.atoms):
             if a["part"]:
-                groups.setdefault(a["assembly"], {}).setdefault(abs(a["part"]), []).append(a["occ"])
+                groups.setdefault(site[i], {}).setdefault(abs(a["part"]), []).append(a["occ"])
         keep = {}
-        for asm, parts in groups.items():
-            keep[asm] = max(sorted(parts), key=lambda p: (np.mean(parts[p]) - 1e-9 * p))
-        return [i for i, a in enumerate(self.atoms) if not a["part"] or keep.get(a["assembly"]) == abs(a["part"])]
+        for st, parts in groups.items():
+            keep[st] = max(sorted(parts), key=lambda p: (np.mean(parts[p]) - 1e-9 * p))
+        return [i for i, a in enumerate(self.atoms) if not a["part"] or keep.get(site[i]) == abs(a["part"])]
+
+    def disorder_sites(self):
+        """Atomindex (PART ≠ 0) -> Fehlordnungsstelle: die disorder_assembly; ohne Angabe ('.', Olex2) eigene Stelle
+        für jede räumlich getrennte, vollständige Gruppe (Atome mit Abstand < Summe der Kovalenzradien + BOND_TOL,
+        alle PARTs, mit Symmetrie; ≥ 2 PARTs mit Besetzung Σ ≈ 1), sonst würden unabhängige PART 1/2 aller Stellen
+        gemeinsam gewertet. Unvollständige Gruppen (z. B. Cl auf zwei Ringpositionen, 3 Å auseinander) bleiben
+        zusammen."""
+        if getattr(self, "_sites", None) is not None:
+            return self._sites
+        idx = [i for i, a in enumerate(self.atoms) if a["part"]]
+        loose = [i for i in idx if self.atoms[i]["assembly"] in ("", ".", "?")]
+        parent = {i: i for i in loose}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        if loose:
+            F = np.array([self.atoms[i]["frac"] for i in loose])
+            rad = np.array([COV.get(self.atoms[i]["el"], 1.5) for i in loose])
+            cut = rad[:, None] + rad[None, :] + BOND_TOL
+            for R, t in self.ops:
+                D = ((R @ F.T).T + t)[None, :, :] - F[:, None, :]
+                D -= np.rint(D)                                  # nächstes Bild in der Zelle
+                d = np.linalg.norm(D @ self.M.T, axis=2)
+                for a, b in np.argwhere(d < cut):
+                    parent[find(loose[a])] = find(loose[b])
+        groups = {}
+        for i in loose:
+            groups.setdefault(find(i), {}).setdefault(abs(self.atoms[i]["part"]), []).append(self.atoms[i]["occ"])
+        complete = {r for r, g in groups.items()
+                    if len(g) >= 2 and abs(sum(float(np.mean(o)) for o in g.values()) - 1) < 0.02}
+        self._sites = {i: ("site", find(i)) if i in parent and find(i) in complete
+                       else ("asm", self.atoms[i]["assembly"]) for i in idx}
+        return self._sites
 
     def parts(self):
         return sorted({a["part"] for a in self.atoms if a["part"]})
@@ -478,8 +527,10 @@ class Molecule:
             heavy = hill([e for e in els if e not in ("H", "D")])
             if fi == 0:
                 kind, main_heavy = "main", heavy
+            elif heavy == main_heavy:                    # Z′ > 1 hat Vorrang vor Lösungsmittel/Ion (nie ausblenden)
+                kind, name = "molecule", ""
             elif kind is None:
-                kind = "molecule" if heavy == main_heavy else "other"
+                kind = "other"
             self.fragments.append(dict(atoms=c, formula=hill(els), kind=kind, name=name))
         self._nbrs = None
 
@@ -578,15 +629,24 @@ def frag_kind(formula, heavy):
 def disorder_occupancy(S):
     """'95% (A) and 5% (B)' für eine Fehlordnung mit zwei Teilen (Buchstaben aus den Atomlabels, sonst PART-Nummer);
     None ohne oder bei mehreren Fehlordnungen."""
-    parts = {}
-    for a in S.atoms:
+    parts, by_site = {}, {}
+    site = S.disorder_sites()
+    for i, a in enumerate(S.atoms):
         if a["part"]:
             parts.setdefault(abs(a["part"]), []).append(a)
+            by_site.setdefault(site[i], {}).setdefault(abs(a["part"]), []).append(a["occ"])
     if len(parts) != 2 or len({a["assembly"] for v in parts.values() for a in v}) > 1:
         return None
+    occs = {tuple(sorted((p_, round(float(np.mean(o)), 3)) for p_, o in d.items())) for d in by_site.values()}
+    if len(occs) > 1:                                # mehrere Stellen mit verschiedener Besetzung
+        return None
     bits = []
+    means = {p_: float(np.mean([a["occ"] for a in ats])) for p_, ats in parts.items()}
+    first = round(100 * means[min(means)])
     for p_, ats in sorted(parts.items()):
-        occ = round(100 * float(np.mean([a["occ"] for a in ats])))
+        occ = round(100 * means[p_])
+        if p_ != min(means) and abs(sum(means.values()) - 1) < 1e-3:
+            occ = 100 - first                        # Summe 100 % (0.545/0.455 sonst 55 % und 46 %)
         tags = {re.sub(r"^[A-Z][a-z]?\d+", "", a["label"]) for a in ats}
         tag = next(iter(tags)) if len(tags) == 1 and next(iter(tags)) else f"PART {p_}"
         bits.append(f"{occ}% ({tag})")
@@ -621,17 +681,47 @@ def torsion(p):
     return float(math.degrees(math.atan2(y, x)))
 
 
+def geom_op(S: Structure, g, ats):
+    """Symmetrieoperation G, die die Atome des _geom-Eintrags g (Label + Code S_k) auf die gewählten Atome bringt
+    (G(S_k(x_k)) = Lage des k-ten Atoms) -> (R, t) oder None. Über die Lagen statt über T_k = G∘S_k, damit auch
+    Atome auf speziellen Lagen (mehrere T für dieselbe Lage) passen."""
+    idx = [S.by_label.get(lab) for lab in g["labels"]]
+    if None in idx:
+        return None
+    src = [apply(s, S.atoms[i]["frac"]) for s, i in zip(g["trs"], idx)]
+    for R, t in S.ops:
+        d = ats[0]["frac"] - (R @ src[0] + t)
+        shift = np.rint(d)
+        if np.abs(d - shift).max() > 1e-3:
+            continue
+        G = (R, t + shift)
+        if all(np.abs(apply(G, p) - a["frac"]).max() < 1e-3 for p, a in zip(src, ats)):
+            return G
+    return None
+
+
+def _negated(txt):
+    """Torsionstext mit umgekehrtem Vorzeichen ('90.0(2)' -> '-90.0(2)'); 0 und 180 bleiben."""
+    s = str(txt).strip()
+    v = num(s)
+    if v is None or abs(v) in (0.0, 180.0):
+        return s
+    return s[1:] if s.startswith("-") else "-" + s.lstrip("+")
+
+
 def match_geom(S: Structure, rows, atoms):
-    """Eintrag aus _geom_* zu gewählten Atomen (Label + Transformation T): gesucht ist G mit T_k = G∘S_k für alle k,
-    auch in umgekehrter Reihenfolge. -> Textwert aus der CIF oder None."""
+    """Eintrag aus _geom_* zu gewählten Atomen (Label + Transformation T): gesucht ist eine Operation G, die die
+    Atome des Eintrags auf die gewählten bringt, auch in umgekehrter Reihenfolge. -> Textwert aus der CIF oder None.
+    Torsionen: uneigentliche G (Inversion, Spiegelung) kehren das Vorzeichen um."""
     labs = [a["label"] for a in atoms]
     for g in rows:
         for order in (labs, labs[::-1]):
             if g["labels"] != order:
                 continue
-            ats = atoms if order is labs else atoms[::-1]
-            G = compose(ats[0]["T"], inverse(g["trs"][0]))
-            if all(tr_key(compose(G, s)) == tr_key(a["T"]) for s, a in zip(g["trs"], ats)):
+            G = geom_op(S, g, atoms if order is labs else atoms[::-1])
+            if G is not None:
+                if len(atoms) == 4 and np.linalg.det(G[0]) < 0:
+                    return _negated(g["value"])
                 return g["value"]
     return None
 
@@ -649,11 +739,8 @@ def cif_order(mol: Molecule, keys):
     for g in rows:
         if g["labels"] == labs:
             return list(keys)
-        if g["labels"] == labs[::-1]:
-            rev = ats[::-1]
-            G = compose(rev[0]["T"], inverse(g["trs"][0]))
-            if all(tr_key(compose(G, t)) == tr_key(a["T"]) for t, a in zip(g["trs"], rev)):
-                return list(keys)[::-1]
+        if g["labels"] == labs[::-1] and geom_op(mol.S, g, ats[::-1]) is not None:
+            return list(keys)[::-1]
     return list(keys)
 
 
@@ -762,7 +849,7 @@ def rot_between(u, t):
     t = np.asarray(t, float) / np.linalg.norm(t)
     v = np.cross(u, t)
     c = float(np.dot(u, t))
-    if np.linalg.norm(v) < 1e-12:
+    if np.linalg.norm(v) < 1e-12 or c < -1 + 1e-9:     # fast antiparallel: 1 + c → 0, Rodrigues instabil
         if c > 0:
             return np.eye(3)
         a = np.cross(u, [1.0, 0, 0] if abs(u[0]) < 0.9 else [0, 1.0, 0])   # 180° um eine Senkrechte
@@ -785,7 +872,10 @@ def align_plane(R, mol, keys):
     bisherigen Ansicht näher ist."""
     pts = np.array([mol.atoms[mol.find_key(k)]["xyz"] for k in keys])
     c = pts - pts.mean(axis=0)
-    n = np.linalg.svd(c)[2][-1]
+    sv, vt = np.linalg.svd(c)[1:]
+    if len(sv) < 2 or sv[1] < 0.05 * sv[0]:           # (fast) auf einer Linie: keine Ebene, Normale beliebig
+        raise ValueError("collinear")
+    n = vt[-1]
     nv = np.asarray(R) @ n
     target = (0.0, 0.0, 1.0 if nv[2] >= 0 else -1.0)
     return orthonormalize(rot_between(nv, target) @ np.asarray(R))
@@ -829,11 +919,68 @@ def align_to_template(mol, template_path, frag=0):
     c_xyz = np.array([mol.atoms[k]["xyz"] for k in c_idx])
     c_bonds = [(c_map[a], c_map[b]) for a, b in mol.bonds if a in c_map and b in c_map]
     cg = heavy_graph(len(c_idx), [pt.GetAtomicNumber(mol.atoms[k]["el"]) for k in c_idx], c_bonds)
+    lt = np.mean([np.linalg.norm(t_xy[i] - t_xy[j]) for i, j in t_bonds]) if t_bonds else 1.0
+    lc = np.mean([np.linalg.norm(c_xyz[i] - c_xyz[j]) for i, j in c_bonds]) if c_bonds else 1.0
+
+    def kabsch(m):
+        ti = [a for a, _ in m]
+        ci = [b for _, b in m]
+        P = c_xyz[ci] - c_xyz[ci].mean(axis=0)
+        Q = np.column_stack([t_xy[ti] * lc / lt, np.zeros(len(ti))])
+        Q -= Q.mean(axis=0)
+        U, S, Vt = np.linalg.svd(P.T @ Q)
+        d = np.sign(np.linalg.det(Vt.T @ U.T)) or 1.0
+        Rk = Vt.T @ np.diag([1, 1, d]) @ U.T              # Rk @ P ≈ Q
+        proj = (Rk @ P.T).T[:, :2]
+        return float(np.sqrt(np.mean(np.sum((proj - Q[:, :2]) ** 2, axis=1)))), Rk
+
+    # Erst das Gerüst ohne endständige Atome zuordnen, dann je Gerüst-Zuordnung die Endatome (Methyle von tBu/iPr,
+    # F von CF₃ …) bestmöglich verteilen: alle Permutationen durchzuprobieren sprengt sonst jedes Trefferlimit
+    # (6 tBu = 6⁶ Zuordnungen, die besten Ansichten lagen nicht unter den ersten 2000).
+    t_deg = np.bincount(np.array(t_bonds, int).ravel(), minlength=len(t_idx)) if t_bonds else np.zeros(len(t_idx))
+    core = [i for i in range(len(t_idx)) if t_deg[i] >= 2]
     matches = []
-    pairs = cg.GetSubstructMatches(tg, uniquify=False, maxMatches=2000, useChirality=False)
-    if pairs:
+    if len(core) >= 3:
+        k_map = {i: n for n, i in enumerate(core)}
+        tgc = heavy_graph(len(core), [tg.GetAtomWithIdx(i).GetAtomicNum() for i in core],
+                          [(k_map[i], k_map[j]) for i, j in t_bonds if i in k_map and j in k_map])
+        term = {}
+        for i, j in t_bonds:
+            for x, y in ((i, j), (j, i)):
+                if t_deg[x] < 2 and y in k_map:
+                    term.setdefault(y, []).append(x)
+        c_nb = {}
+        for i, j in c_bonds:
+            c_nb.setdefault(i, []).append(j)
+            c_nb.setdefault(j, []).append(i)
+        for cm in cg.GetSubstructMatches(tgc, uniquify=False, maxMatches=2000, useChirality=False):
+            m = list(zip(core, cm))
+            _, Rk = kabsch(m)
+            cc = c_xyz[list(cm)].mean(axis=0)
+            tc = (t_xy[core] * lc / lt).mean(axis=0)
+            used, ok = set(cm), True
+            for par, tt in term.items():
+                cands = [c for c in c_nb.get(cm[k_map[par]], []) if c not in used]
+                best_p = None
+                for perm in itertools.permutations(cands, len(tt)):
+                    if any(cg.GetAtomWithIdx(c).GetAtomicNum() != tg.GetAtomWithIdx(t).GetAtomicNum()
+                           for t, c in zip(tt, perm)):
+                        continue
+                    cost = sum(float(np.sum(((Rk @ (c_xyz[c] - cc))[:2] - (t_xy[t] * lc / lt - tc)) ** 2))
+                               for t, c in zip(tt, perm))
+                    if best_p is None or cost < best_p[0]:
+                        best_p = (cost, perm)
+                if best_p is None:
+                    ok = False
+                    break
+                m += list(zip(tt, best_p[1]))
+                used.update(best_p[1])
+            if ok and len(m) == len(t_idx):
+                matches.append(sorted(m))
+    if not matches:
+        pairs = cg.GetSubstructMatches(tg, uniquify=False, maxMatches=2000, useChirality=False)
         matches = [list(zip(range(len(t_idx)), m)) for m in pairs]
-    else:                                              # Zeichnung und Struktur weichen ab: größter gemeinsamer Teil
+    if not matches:                                    # Zeichnung und Struktur weichen ab: größter gemeinsamer Teil
         res = rdFMCS.FindMCS([tg, cg], timeout=5, atomCompare=rdFMCS.AtomCompare.CompareElements,
                              bondCompare=rdFMCS.BondCompare.CompareAny, ringMatchesRingOnly=False)
         if not res.numAtoms or res.numAtoms < max(3, 0.6 * len(t_idx)):
@@ -844,22 +991,7 @@ def align_to_template(mol, template_path, frag=0):
         if not tm_ or not cm_:
             raise ValueError("Zuordnung fehlgeschlagen")
         matches = [list(zip(tm_[0], m)) for m in cm_]
-    lt = np.mean([np.linalg.norm(t_xy[i] - t_xy[j]) for i, j in t_bonds]) if t_bonds else 1.0
-    lc = np.mean([np.linalg.norm(c_xyz[i] - c_xyz[j]) for i, j in c_bonds]) if c_bonds else 1.0
-    best = []
-    for m in matches:
-        ti = [a for a, _ in m]
-        ci = [b for _, b in m]
-        P = c_xyz[ci] - c_xyz[ci].mean(axis=0)
-        Q = np.column_stack([t_xy[ti] * lc / lt, np.zeros(len(ti))])
-        Q -= Q.mean(axis=0)
-        H = P.T @ Q
-        U, S, Vt = np.linalg.svd(H)
-        d = np.sign(np.linalg.det(Vt.T @ U.T)) or 1.0
-        Rk = Vt.T @ np.diag([1, 1, d]) @ U.T              # Rk @ P ≈ Q
-        proj = (Rk @ P.T).T[:, :2]
-        rmsd = float(np.sqrt(np.mean(np.sum((proj - Q[:, :2]) ** 2, axis=1))))
-        best.append((rmsd, Rk))
+    best = [kabsch(m) for m in matches]
     best.sort(key=lambda x: x[0])
     rmsd, Rk = best[0]
     # mehrdeutig: fast gleich gute Zuordnung mit deutlich anderer Ansicht (z. B. symmetrische Moleküle)
@@ -958,7 +1090,10 @@ def runs(markup):
             buf = ""
     while i < n:
         c = markup[i]
-        if c == "*":
+        if c == "\\" and i + 1 < n:                   # \* \_ \^ \~ \\ = Zeichen selbst (Namen, siehe esc_markup)
+            buf += markup[i + 1]
+            i += 2
+        elif c == "*":
             flush()
             ital = not ital
             i += 1
@@ -975,6 +1110,11 @@ def runs(markup):
             i += 1
     flush()
     return out
+
+
+def esc_markup(text):
+    """Freitext (Verbindungsname, Referenz) unverändert in Markup einsetzen („Cp*“ sonst kursiv/verschluckt)."""
+    return re.sub(r"([*_^~\\])", r"\\\1", str(text))
 
 
 def to_html(markup):
@@ -1135,20 +1275,38 @@ CRYSTAL_ROWS = [                                   # Beschriftung wie in den SI 
     ("method", "Refinement method"),
     ("drp", "Data / restraints / parameters"),
     ("gof", "Goodness-of-fit on *F*^{2}"),
-    ("rgt", "Final *R* indices [*I*>2*σ*(I)]"),
+    ("rgt", "Final *R* indices [*I*>2*σ*(I)]"),     # Schwelle aus der CIF: rgt_label/crystal_table
     ("rall", "*R* indices (all data)"),
     ("diff", "Largest diff. peak and hole/e. Å^{-3}"),
 ]
+
+
+RGT_THR = "*I*>2*σ*(I)"                           # Standard (SHELXL), steht in der Zeilenbeschriftung
+
+
+def threshold_markup(expr):
+    """_reflns_threshold_expression ('I>2\\s(I)', 'I > 3sigma(I)', 'Fo>4sig(Fo)') -> Markup; ohne Angabe 2σ(I)."""
+    if not expr:
+        return RGT_THR
+    m = re.search(r"([IF])\w*\s*>\s*(\d+(?:\.\d+)?)\s*\*?\s*(?:\\s|sig|σ)", expr, re.I)
+    if not m:
+        return expr.replace("\\s", "σ").replace(" ", "")
+    q = m.group(1).upper()
+    return f"*{q}*>{m.group(2)}*σ*({q})"
+
+
+def rgt_label(thr):
+    return f"Final *R* indices [{thr}]"
 
 
 def crystal_values(b: Block, ref="", ccdc=""):
     """Spalte der Kristalldatentabelle: Schlüssel -> Markup (Zahlen exakt wie in der CIF, echtes Minus)."""
     g = b.get
     v = {}
-    v["ref"] = ref or ""
+    v["ref"] = esc_markup(ref or "")
     cc = g("_database_code_depnum_ccdc_archive") or ""
     cc = re.sub(r"(?i)^\s*ccdc\s*", "", cc.strip())
-    v["ccdc"] = ccdc or cc
+    v["ccdc"] = esc_markup(ccdc or cc)
     v["formula"] = formula_markup(g("_chemical_formula_sum"))
     v["fw"] = g("_chemical_formula_weight") or ""
     v["temp"] = g("_diffrn_ambient_temperature", "_cell_measurement_temperature") or ""
@@ -1188,18 +1346,19 @@ def crystal_values(b: Block, ref="", ccdc=""):
     coef = (g("_refine_ls_structure_factor_coef") or "").lower()
     mat = (g("_refine_ls_matrix_type") or "full").lower()
     on = "*F*^{2}" if coef.startswith("fsq") else ("*F*" if coef else "*F*^{2}")
-    v["method"] = ("Full-matrix" if mat == "full" else mat.capitalize()) + f" least-squares on {on}"
+    v["method"] = (("Full-matrix" if mat == "full" else mat.capitalize()) + f" least-squares on {on}"
+                   if coef or g("_refine_ls_matrix_type") else "")     # nichts erfinden, wenn die CIF schweigt
     nref = g("_refine_ls_number_reflns", "_reflns_number_total")
     nres, npar = g("_refine_ls_number_restraints"), g("_refine_ls_number_parameters")
     v["drp"] = f"{nref}/{nres}/{npar}" if nref and nres and npar else ""
     r1, wr = g("_refine_ls_r_factor_gt"), g("_refine_ls_wr_factor_gt")
     v["rgt"] = f"*R*_{{1}} = {r1}, w*R*_{{2}} = {wr}" if r1 and wr else ""
+    v["thr"] = threshold_markup(g("_reflns_threshold_expression"))
     r1a, wra = g("_refine_ls_r_factor_all"), g("_refine_ls_wr_factor_ref")
     v["rall"] = f"*R*_{{1}} = {r1a}, w*R*_{{2}} = {wra}" if r1a and wra else ""
     dmax, dmin = g("_refine_diff_density_max"), g("_refine_diff_density_min")
     if dmax and dmin:
-        hole = dmin.strip()
-        hole = "\u2212" + hole.lstrip("-\u2212") if not hole.startswith("+") else hole
+        hole = minus(dmin.strip())                   # Vorzeichen wie in der CIF (nicht erzwingen)
         v["diff"] = f"{dmax}/{hole}"
     else:
         v["diff"] = ""
@@ -3007,9 +3166,15 @@ class MeasureAlign:
             self.lbl_align.setStyleSheet(WARN_CSS)
             return
         keys = list(self.sel)
+        try:
+            Rn = align_plane(R, mol, keys)
+        except ValueError:
+            self.lbl_align.setText(T("xr_align_collinear"))
+            self.lbl_align.setStyleSheet(WARN_CSS)
+            return
         self.sel = []
         self.update_measure()
-        self._set_view(align_plane(R, mol, keys), T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
+        self._set_view(Rn, T("xr_align_done_plane", atoms=param_name(mol, keys, sep=", ")))
 
     def rotate_view(self, axis, deg):
         R, mol = self.current_view()
@@ -3856,6 +4021,20 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 out.append((f"{title} for", name, ["Atom"] * n + [unit], rows))
         return out
 
+    def sym_note(self, e):
+        """'Symmetry codes: i: −x, −y, −z' für die in den ausgewählten Parametern vorkommenden Operationen (Word-
+        Parametertabellen); '' ohne erzeugte Atome."""
+        mol = self.molecule(e)
+        used = {}
+        for pp in (e.get("params") or []) if mol else []:
+            for k in pp["atoms"]:
+                i = mol.find_key(k)
+                if i is not None and mol.atoms[i].get("sym"):
+                    used[mol.atoms[i]["sym"]] = mol.atoms[i]["opkey"]
+        order = list(mol.ops.values()) if mol else []
+        return ("Symmetry codes: " + "; ".join(f"{r}: {used[r]}" for r in sorted(used, key=order.index))
+                if used else "")
+
     # -- Auswahl / Maus ---------------------------------------------------------------------
     def hover_atom(self, k):
         if self.F is None or k is None:
@@ -4015,8 +4194,13 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             bits.append(T("xr_no_torsion"))
         if mol.truncated:
             bits.append(T("xr_truncated"))
+        npd = [a["label"] for a in S.atoms if a["U"] is not None and np.linalg.eigvalsh(a["U"]).min() <= 0]
+        if npd:                                      # werden als Kugel aus U_iso gezeichnet (project)
+            bits.append(T("xr_npd", atoms=", ".join(npd)))
+        if S.no_symops:
+            bits.append(T("xr_no_symops"))
         self.lbl_info.setText("<br>".join(b if i == 0 else _html.escape(b) for i, b in enumerate(bits)))
-        self.lbl_info.setStyleSheet(WARN_CSS if mol.truncated else HINT_CSS)
+        self.lbl_info.setStyleSheet(WARN_CSS if mol.truncated or npd or S.no_symops else HINT_CSS)
 
     # -- Tabellen -------------------------------------------------------------------------
     def crystal_table(self):
@@ -4026,8 +4210,16 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             S = self.structure(e)
             if S is not None:
                 cols.append((e, crystal_values(S.block, e.get("ref", ""), e.get("ccdc", ""))))
-        header = ["Compound"] + [e.get("name") or e["block"] for e, _ in cols]
-        rows = [[lab] + [v[key] for _, v in cols] for key, lab in CRYSTAL_ROWS]
+        header = ["Compound"] + [esc_markup(e.get("name") or e["block"]) for e, _ in cols]
+        thrs = {v["thr"] for _, v in cols if v["rgt"]}
+        rgt_thr = thrs.pop() if len(thrs) == 1 else RGT_THR     # verschiedene Schwellen: Abweichende am Wert
+        rows = []
+        for key, lab in CRYSTAL_ROWS:
+            if key == "rgt":
+                rows.append([rgt_label(rgt_thr)] + [v["rgt"] + (f" [{v['thr']}]" if v["rgt"] and v["thr"] != rgt_thr
+                                                                else "") for _, v in cols])
+            else:
+                rows.append([lab] + [v[key] for _, v in cols])
         return header, rows
 
     def params_table(self):
@@ -4044,6 +4236,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                     continue
                 label = param_label(p["atoms"])
                 key = (m["kind"], label)
+                if any(c_ == ci and (k_[1] in (label, "–".join(label.split("–")[::-1])))
+                       for (k_, c_) in cells if k_[0] == m["kind"]):
+                    label = param_name(mol, p["atoms"])      # C1–C2 und C1–C2ⁱ derselben Struktur: eigene Zeilen
+                    key = (m["kind"], label)
                 if key not in rows_by_kind[m["kind"]]:
                     rev = (m["kind"], "–".join(label.split("–")[::-1]))
                     if rev in rows_by_kind[m["kind"]]:
@@ -4063,7 +4259,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 cells[(key, ci)] = txt + ("" if not syms else " (" + ",".join("*" + s + "*" for s in syms) + ")")
             if used_ops:
                 notes.append(f"{e.get('name') or e['block']}: " + "; ".join(f"{r}: {op}" for r, op in used_ops.items()))
-        header = [""] + [e.get("name") or e["block"] for e in es]
+        header = [""] + [esc_markup(e.get("name") or e["block"]) for e in es]
         rows = []
         for kind in ("bond", "angle", "torsion"):
             if rows_by_kind[kind]:
