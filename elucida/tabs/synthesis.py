@@ -18,23 +18,24 @@ from pathlib import Path
 from elucida.app.i18n import T
 
 # Massen (g), Volumen (mL), Stoffmengen (mmol): Umrechnungsfaktoren
-MASS = {"kg": 1000.0, "g": 1.0, "mg": 1e-3, "µg": 1e-6, "μg": 1e-6}
+MASS = {"kg": 1000.0, "g": 1.0, "mg": 1e-3, "µg": 1e-6, "μg": 1e-6, "ug": 1e-6}
 VOL = {"L": 1000.0, "mL": 1.0, "µL": 1e-3, "μL": 1e-3, "uL": 1e-3}
-AMOUNT = {"mol": 1000.0, "mmol": 1.0, "µmol": 1e-3, "μmol": 1e-3}
+AMOUNT = {"mol": 1000.0, "mmol": 1.0, "µmol": 1e-3, "μmol": 1e-3, "umol": 1e-3}
 CONC = {"M": 1.0, "mM": 1e-3, "mol/L": 1.0, "mol L-1": 1.0}
 _BOLD = 700
 TOL = 0.005            # zusätzlicher Spielraum (relativ) über die Rundung hinaus: Atommassen, gerundete Molmassen
 
 
 def formula_mw(formula):
-    """Molmasse aus einer Summenformel (mittlere Atommassen wie in der Elementaranalyse)."""
+    """Molmasse aus einer Summenformel (mittlere Atommassen wie in der Elementaranalyse, Isotope wie [13C] mit ihrer
+    Masse)."""
     from elucida.si import lines as SI
-    from elucida.tabs.ir_ea import parse_formula
+    from elucida.tabs.ir_ea import mono_mass, parse_formula
     counts = parse_formula(formula)
-    missing = [el for el in counts if el not in SI.AVG]
+    missing = [el for el in counts if el not in SI.AVG and not el.startswith("[")]
     if missing:
         raise ValueError(T("syn_no_mass", el=", ".join(missing)))
-    return sum(SI.AVG[el] * k for el, k in counts.items())
+    return sum((SI.AVG[el] if el in SI.AVG else mono_mass(el)) * k for el, k in counts.items())
 
 
 def molar_mass(text):
@@ -46,7 +47,7 @@ def molar_mass(text):
         return float(t)
     except ValueError:
         try:
-            return formula_mw(re.sub(r"[·•]", "", t))
+            return formula_mw(re.sub(r"[·•]+(?=[+\-−]*\d*$)", "", t))   # Radikalpunkt am Ende; Hydrat-Punkt bleibt
         except ValueError:
             return None
 
@@ -93,12 +94,12 @@ def parse_amounts(text):
         body = m.group("body")
         it = dict(name=m.group("name").strip(".,;:"), raw=m.group(0), pos=m.start(), mass=None, vol=None, conc=None,
                   mmol=None, eq=None, yld=None, density=None)
-        for part in (p.strip() for p in body.split(",")):
-            if mm := re.fullmatch(_NUM + r"\s*(kg|mg|µg|μg|g)", part):
+        for part in (p.strip() for p in re.split(r",(?!\d)", body)):     # „1,03 g“: Dezimalkomma bleibt
+            if mm := re.fullmatch(_NUM + r"\s*(kg|mg|µg|μg|ug|g)", part):
                 it["mass"] = interval(mm.group(1), MASS[mm.group(2)])
             elif mm := re.fullmatch(_NUM + r"\s*(mL|µL|μL|uL|L)", part):
                 it["vol"] = interval(mm.group(1), VOL[mm.group(2)])
-            elif mm := re.fullmatch(_NUM + r"\s*(mmol|µmol|μmol|mol)", part):
+            elif mm := re.fullmatch(_NUM + r"\s*(mmol|µmol|μmol|umol|mol)", part):
                 it["mmol"] = interval(mm.group(1), AMOUNT[mm.group(2)])
             elif mm := re.fullmatch(_NUM + r"\s*(M|mM)(?:\s+in\s+.+)?", part):
                 it["conc"] = interval(mm.group(1), CONC[mm.group(2)])
@@ -182,11 +183,18 @@ def sig_digits(text):
     return max(2, min(5, len(t)))
 
 
+def cell_num(x):
+    """Zahlenfeld der Tabelle -> float oder None (leer oder kein Zahlenwert, z. B. „150 mg“)."""
+    try:
+        return float(str(x or "").strip().replace(",", "."))
+    except ValueError:
+        return None
+
+
 def row_amounts(row, ref_mmol=None):
     """Zeile der Tabelle (M, m_mg, V_mL, c_M, rho, role) -> dict(M, mmol, eq, yld) (Zahlen oder None)."""
     M = molar_mass(row.get("M"))
-    num = lambda k: float(str(row.get(k)).replace(",", ".")) if str(row.get(k) or "").strip() else None  # noqa: E731
-    m, V, c, rho = num("m_mg"), num("V_mL"), num("c_M"), num("rho")
+    m, V, c, rho = (cell_num(row.get(k)) for k in ("m_mg", "V_mL", "c_M", "rho"))
     n = None
     if m is not None and M:
         n = m / M
@@ -209,6 +217,8 @@ def amount_text(row, calc):
     parts = []
     m = str(row.get("m_mg") or "").strip()
     V = str(row.get("V_mL") or "").strip()
+    m = m if cell_num(m) is not None else ""
+    V = V if cell_num(V) is not None else ""
     if m:                                                   # Stellen wie eingegeben; ab 1000 mg in g
         mv = float(m.replace(",", "."))
         parts.append(f"{fmt_sig(mv / 1000, sig_digits(m))} g" if mv >= 1000 else f"{m.replace(',', '.')} mg")
@@ -252,7 +262,7 @@ def scheme_molecules(cdxml):
         if m is not None:
             role = ("product" if m.HasProp("CDX_PRODUCT_ID") else
                     "reactant" if m.HasProp("CDX_REAGENT_ID") else "")
-            out.append((rdMolDescriptors.CalcMolFormula(m), float(Descriptors.MolWt(m)), role))
+            out.append((rdMolDescriptors.CalcMolFormula(m, True, True), float(Descriptors.MolWt(m)), role))  # D, [13C]
     return out
 
 
@@ -534,8 +544,7 @@ class SynthTab(QWidget):
         for row in self.st["reagents"]:
             name = str(row.get("name") or "").strip()
             if name:
-                f = lambda k: float(str(row.get(k)).replace(",", ".")) if str(row.get(k) or "").strip() else None  # noqa: E731
-                out[name] = dict(M=molar_mass(row.get("M")), density=f("rho"), conc=f("c_M"))
+                out[name] = dict(M=molar_mass(row.get("M")), density=cell_num(row.get("rho")), conc=cell_num(row.get("c_M")))
                 out[re.sub(r"\s+", "", name)] = out[name]
         return out
 
@@ -677,7 +686,10 @@ class SynthTab(QWidget):
                 if x}
         mols = scheme_molecules(p)
         # Reihenfolge wie die Vorschrift: Edukte (erstes = Bezug 1.0 eq.), Reagenzien über/unter dem Pfeil, Produkt
-        rows = [("", f, "reactant") for f, _m, r in mols if r != "product"]
+        # Mit Reaktionsschritt: Moleküle ohne Rolle (über/unter dem Pfeil) sind Reagenzien, nie der Bezug
+        step = any(r for _f, _m, r in mols)
+        rows = [("", f, "reactant" if r == "reactant" or not step else "reagent")
+                for f, _m, r in sorted(mols, key=lambda x: x[2] != "reactant") if r != "product"]
         try:
             rows += [(n, f, r) for n, f, r in CDX.scheme_reagents(p)]
         except Exception as ex:

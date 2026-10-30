@@ -3853,6 +3853,14 @@ def selftest(outdir, with_isnet=False):
         with _zf.ZipFile(nd2_) as z_:
             assert any(n_.endswith(".emf") for n_ in z_.namelist())
             assert z_.read([n_ for n_ in z_.namelist() if n_.endswith(".emf")][0]) == em_.read_bytes()
+        # Audit P7: Peaklabel-Zeile nimmt SFO1 nur vom passenden Kern (¹H-Ordner an ¹³C-Spektrum -> aus ¹H abgeleitet)
+        e_c7 = [s_ for s_ in t_n.spectra() if s_["kind"] == "1D" and s_["nuclei"] == ["13C"]][0]
+        e_c7.update(params=dict(nucleus="1H", sfo1=500.5), freqs={})
+        t_n.ed_text.setPlainText("1H NMR (501 MHz, CDCl3) δ 2.47 (s, 3H).")
+        t_n.text_changed()
+        w.nmr_state["current"] = e_c7["uid"]
+        t_n.peaks_from_svg()
+        assert "13C NMR (126 MHz, CDCl3)" in w.nmr_state["text"], w.nmr_state["text"]
         w.nmr_state.update(spectra=[], current=None, text="", assign={}, structure=None, raw=[], mnova=[])
         t_n.sync_widgets()
         report.append("NMR (Mnova SVG/EMF, nucleus from axis/manual, order, Mnova text + assignment, TopSpin raw data "
@@ -3965,6 +3973,77 @@ def selftest(outdir, with_isnet=False):
         w.syn_state.update(name="", scheme=None, proc="", reagents=[])
         t_s.sync_widgets()
         report.append("Synthesis (amount check with rounding, reagent table, ChemDraw object, SI): OK")
+
+        # Audit P7: NMR-Text/-Leser, Synthese (Mengen, Formeln, Schema-Rollen), Struktur, EA mit Deuterium
+        bl7 = NMR.parse_mnova("(1H Multiplet Report)\n1H NMR (500 MHz, C6D6) δ 7.33 – 7.29 (m, 2H), 0.91 (s, 3H)."
+                              "\n\n(13C Peak Report)\n13C NMR (126 MHz, C6D6) δ = 155.53, 6.64.\n")   # wie Mnova speichert
+        assert bl7[0]["signals"][-1]["nH"] == "3H" and NMR.nmr_line(bl7[0])[0].endswith("0.91 (s, 3H)"), bl7[0]
+        sg7 = NMR.parse_signal("7.10 (ddq, J = 7.0, 1.5 Hz, 1H)")
+        assert (sg7["mult"], sg7["assign"]) == ("ddq", ""), sg7
+        assert NMR.experiment_kind(dict(pulprog="deptsp135", nucleus="13C")) == "DEPT135"
+        raw7, s7a, s7b = dict(kind="13C", path="r13"), dict(nuclei=["13C"], kind="1D"), dict(nuclei=["13C"], kind="1D")
+        assert NMR.match_experiment(s7a, [raw7], [s7a]) is raw7 and NMR.match_experiment(s7a, [raw7], [s7a, s7b]) is None
+        sv7 = NMR.make_test_svg(out / "input" / "nmr7" / "c.svg", ("13C",), peaks=("77.16 CDCl3", "21.05", "0.00 TMS"))
+        assert NMR.svg_peaks(sv7) == (["21.05"], "CDCl3"), NMR.svg_peaks(sv7)
+        assert SI.ea_line("C10H4D6N4", "", {})[0].startswith("Elemental analysis (%) calc. C10H4D6N4: C 62.47, H 8.38, "
+                                                             "N 29.14"), SI.ea_line("C10H4D6N4", "", {})   # wie ChemDraw
+        assert abs(SYN.molar_mass("CuSO4·5H2O") - 249.68) < 0.02 and abs(SYN.molar_mass("C22H24N2•+") - 316.448) < 1e-6
+        assert abs(SYN.molar_mass("C6[13C]H8") - 93.133) < 0.002, SYN.molar_mass("C6[13C]H8")
+        assert SYN.row_amounts(dict(M="100", m_mg="150 mg"))["mmol"] is None
+        it7 = SYN.parse_amounts("S1 (1,03 g, 5,00 mmol, 1,0 eq.), S2 (5 ug, 0.1 umol)")
+        assert np.allclose(it7[0]["mass"], (1.025, 1.035)) and it7[0]["eq"][0] > 0.9 and it7[1]["mmol"] and it7[1]["mass"], it7
+        s7 = out / "input" / "syn7"
+        s7.mkdir(parents=True, exist_ok=True)
+        (s7 / "part.cdxml").write_text(                                     # zweites Fragment: C mit 5 Bindungen
+            '<?xml version="1.0"?><CDXML><page><fragment id="1"><n id="2" p="0 0"/><n id="3" p="14 0"/><b id="4" B="2" '
+            'E="3"/></fragment><fragment id="10"><n id="11" p="100 0"/>'
+            + "".join(f'<n id="{12 + k}" p="{100 + 14 * c_} {14 * s_}"/>' for k, (c_, s_) in
+                      enumerate(((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7))))
+            + "".join(f'<b id="{20 + k}" B="11" E="{12 + k}"/>' for k in range(5)) + "</fragment></page></CDXML>",
+            encoding="utf-8")
+        from elucida.core import chem as CHEM
+        ld7 = CHEM.load_cdxml(s7 / "part.cdxml")
+        assert ld7["mw"] is None and ld7["warnings"], ld7                # nicht still nur das Ethan
+        if hasattr(_Chem, "MolToCDXMLBlock"):
+            from rdkit.Chem import rdDepictor as _Dep
+            import xml.etree.ElementTree as _ET
+            m7 = _Chem.AddHs(_Chem.MolFromSmiles("[2H]C([2H])([2H])c1ccccc1"))
+            _Dep.Compute2DCoords(m7)
+            (s7 / "cd3.cdxml").write_text(_Chem.MolToCDXMLBlock(m7), encoding="utf-8")
+            assert SYN.scheme_molecules(s7 / "cd3.cdxml")[0][0] == "C7H5D3", SYN.scheme_molecules(s7 / "cd3.cdxml")
+
+            def frag7(smi_, off_):
+                f_ = _ET.fromstring(_Chem.MolToCDXMLBlock(_Chem.MolFromSmiles(smi_))).find(".//fragment")
+                ids_ = {}
+                for k_, n_ in enumerate(f_.iter()):
+                    if n_.get("id"):
+                        ids_[n_.get("id")] = str(off_ + k_)
+                        n_.set("id", str(off_ + k_))
+                for b_ in f_.iter("b"):
+                    b_.set("B", ids_[b_.get("B")])
+                    b_.set("E", ids_[b_.get("E")])
+                return f_
+            a7, r7, p7 = frag7("O", 1000), frag7("CC", 2000), frag7("CCO", 3000)    # H2O über dem Pfeil, zuerst
+            (s7 / "rxn7.cdxml").write_text(
+                '<?xml version="1.0"?><CDXML><page>' + "".join(_ET.tostring(f_, encoding="unicode") for f_ in (a7, r7, p7))
+                + f'<t id="5000" p="0 0"><s>NBS, DCC</s></t><scheme><step ReactionStepReactants="{r7.get("id")}" '
+                f'ReactionStepProducts="{p7.get("id")}" ReactionStepObjectsAboveArrow="{a7.get("id")} 5000"/></scheme>'
+                '</page></CDXML>', encoding="utf-8")
+            from elucida.formats import cdxml as CDXD
+            assert CDXD.scheme_reagents(s7 / "rxn7.cdxml") == [("NBS", "C4H4BrNO2", "reagent"),
+                                                               ("DCC", "C13H22N2", "reagent")], CDXD.scheme_reagents(s7 / "rxn7.cdxml")
+            w.syn_state.update(scheme=str(s7 / "rxn7.cdxml"), reagents=[dict(name="X", M="100", m_mg="150 mg", role="ref")])
+            t_s.fill_table()                                                  # Text im Zahlenfeld: kein Abbruch
+            assert not t_s.tbl.signalsBlocked()
+            w.syn_state["reagents"] = []
+            t_s.rows_from_scheme()
+            assert [(r_["M"], r_["role"]) for r_ in w.syn_state["reagents"]] == \
+                [("C2H6", "ref"), ("H2O", "reagent"), ("C4H4BrNO2", "reagent"), ("C13H22N2", "reagent"),
+                 ("C2H6O", "product")], w.syn_state["reagents"]
+            w.syn_state.update(scheme=None, reagents=[])
+            t_s.sync_widgets()
+        report.append("NMR/synthesis audit P7 (Mnova report headings, multiplets, DEPT, raw matching, TMS label, EA with D, "
+                      "hydrate/isotope formulas, amounts, partial CDXML, scheme roles, abbreviations): OK")
         w.dft_state.update(entries=[], current=None)
         t_d.sync_widgets()
         t_d.render()

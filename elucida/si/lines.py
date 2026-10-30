@@ -86,12 +86,12 @@ def ea_composition(formula: str, solvate: str = "") -> dict:
     missing = [el for el in counts if el not in AVG and not el.startswith("[")]
     if missing:
         raise ValueError("keine Atommasse für " + ", ".join(missing))
-    # Isotope ([13C]) wie ChemDraw: beim Element, mit der Masse des Isotops (C20[13C]H24N4: C 75.94)
+    # Isotope ([13C], D) wie ChemDraw: beim Element, mit der Masse des Isotops (C20[13C]H24N4: C 75.94; D bei H)
     mass = {el: AVG[el] if el in AVG else mono_mass(el) for el in counts}
     mw = sum(mass[el] * k for el, k in counts.items())
     out = {}
     for el, k in counts.items():
-        e = element_of_key(el)
+        e = "H" if el == "D" else element_of_key(el)
         out[e] = out.get(e, 0.0) + 100 * mass[el] * k / mw
     return out
 

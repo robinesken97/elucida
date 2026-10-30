@@ -85,7 +85,7 @@ def experiment_kind(p):
     if p.get("nucleus2") is not None or "td2" in p:
         return next((k for key, k in _PULPROG_2D if key in pp), "2D")
     if pp.startswith("dept"):
-        m = re.match(r"dept(\d+)", pp)
+        m = re.match(r"dept(?:sp)?(\d+)", pp)
         return "DEPT" + (m.group(1) if m else "")
     if pp.startswith("jmod") or pp.startswith("apt"):
         return "APT"

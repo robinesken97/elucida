@@ -85,10 +85,15 @@ def spectrum_kind(spec):
     return spec.get("kind") or "2D"
 
 
-def match_experiment(spec, raws):
-    """Das eine TopSpin-Experiment, das zu einem Spektrum passt (gleiche Art), sonst None (keins oder mehrdeutig)."""
+def match_experiment(spec, raws, spectra=()):
+    """Das eine TopSpin-Experiment, das zu einem Spektrum passt (gleiche Art), sonst None (keins oder mehrdeutig, auch
+    wenn ein anderes Spektrum dieselbe Art hat, z. B. ¹³C + DEPT, oder das Experiment schon verknüpft ist)."""
     k = spectrum_kind(spec)
-    hits = [r for r in raws if r.get("kind") == k]
+    others = [t for t in spectra if t is not spec]
+    if any(spectrum_kind(t) == k for t in others):
+        return None
+    taken = {t.get("bruker") for t in others}
+    hits = [r for r in raws if r.get("kind") == k and r.get("path") not in taken]
     return hits[0] if len(hits) == 1 else None
 
 
@@ -120,8 +125,8 @@ def params_html(p):
 # ---------------------------------------------------------------------------- Mnova-Text
 _HEAD = re.compile(r"(?P<mass>\d{1,3})\s*(?P<el>[A-Z][a-z]?)\s*(?P<dec>\{[^}]*\})?\s*NMR\s*\(\s*(?P<freq>[\d.]+)\s*MHz\s*,"
                    r"\s*(?P<solv>[^)]+?)\s*\)\s*:?\s*δ\s*(?:\[\s*ppm\s*\]\s*=|\(\s*ppm\s*\)|=)?\s*", re.S)
-_MULT = re.compile(r"^(?:br\.?\s*)?(?:app\.?\s*)?(?:s|d|t|q|p|m|quint|sext|sept|hept|dd|ddd|dddd|dt|td|tt|dq|qd|ddt|"
-                   r"dtd|tdd|br|br s|brs|bs|m_c|AB|ABq|AA'BB'|AA′BB′)$", re.I)
+_MULT = re.compile(r"^(?:br\.?\s*)?(?:app\.?\s*)?(?:[sdtqp]{1,4}|m|quint|sext|sept|hept|br|br s|brs|bs|m_c|AB|ABq|"
+                   r"AA'BB'|AA′BB′)$", re.I)
 
 
 def _split_top(s, sep=","):
@@ -179,6 +184,7 @@ def parse_mnova(text):
     heads = list(_HEAD.finditer(text or ""))
     for k, m in enumerate(heads):
         body = text[m.end(): heads[k + 1].start() if k + 1 < len(heads) else len(text)].strip()
+        body = re.split(r"\.\s*\n", body)[0]          # Satzende: danach z. B. „(13C Peak Report)“ von Mnova
         body = re.sub(r"[.;]\s*$", "", body.strip())
         sigs = [parse_signal(s) for s in _split_top(body)]
         blocks.append(dict(nucleus=f"{m.group('mass')}{m.group('el')}", dec=m.group("dec") or "",
@@ -667,7 +673,7 @@ class NMRTab(QWidget):
             return self.main.error(T("nmr_peaks_none", f=Path(s["file"]).name))
         bl = {b["nucleus"]: b for b in self.blocks()}
         h1 = bl.get("1H") or {}
-        freq = (s.get("freqs") or {}).get(nuc) or (s.get("params") or {}).get("sfo1")
+        freq = spectrum_freqs(s, []).get(nuc)                       # SFO1 nur vom selben Kern
         if not freq and h1.get("freq") and nuc in GAMMA_REL:
             freq = float(nominal_freq("1H", h1["freq"])) * GAMMA_REL[nuc]
         solv = s.get("solvent") or solv or h1.get("solvent") or ""
@@ -819,7 +825,7 @@ class NMRTab(QWidget):
         for s in self.spectra():
             if s.get("bruker"):
                 continue
-            r = match_experiment(s, raws)
+            r = match_experiment(s, raws, self.spectra())
             if r is not None:
                 s["bruker"] = r["path"]
                 s["params"] = acq_params(r["path"])

@@ -474,6 +474,9 @@ SOLVENTS = {"MeOH": "CH4O", "EtOH": "C2H6O", "iPrOH": "C3H8O", "THF": "C4H8O", "
             "toluene": "C7H8", "PhMe": "C7H8", "acetone": "C3H6O", "H2O": "H2O", "hexane": "C6H14",
             "n-hexane": "C6H14", "pentane": "C5H12", "EtOAc": "C4H8O2", "CHCl3": "CHCl3", "benzene": "C6H6",
             "dioxane": "C4H8O2", "1,4-dioxane": "C4H8O2", "pyridine": "C5H5N", "DME": "C4H10O2", "MTBE": "C5H12O"}
+# Reagenzkürzel, die sich sonst als Summenformel lesen ließen (NBS = N+B+S)
+REAGENTS = {"NBS": "C4H4BrNO2", "NCS": "C4H4ClNO2", "NIS": "C4H4INO2", "DCC": "C13H22N2", "DIC": "C7H14N2",
+            "PCC": "C5H6ClCrNO3", "CDI": "C7H6N4O", "COD": "C8H12", "NMO": "C5H11NO2", "DIBAL": "C8H19Al"}
 _CONDITION = re.compile(r"^(r\.?\s?t\.?|reflux|overnight|o\.?n\.?|hv|hν|Δ|N2|Ar|air|dark|in the dark|"
                         r"[-−–]?\d+(?:[.,]\d+)?\s*(?:°C|K|h|min|d|s|days?|hours?|bar|atm|W)\b.*|"
                         r"\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*(?:°C|h|min).*)$", re.I)
@@ -494,6 +497,7 @@ def scheme_reagents(path):
             if name in SOLVENTS:
                 out.append((name, SOLVENTS[name], "other"))
                 continue
-            formula = name if re.fullmatch(r"(?:[A-Z][a-z]?\d*|\((?:[A-Z][a-z]?\d*)+\)\d*)+", name) else ""
+            formula = REAGENTS.get(name) or \
+                (name if re.fullmatch(r"(?:[A-Z][a-z]?\d*|\((?:[A-Z][a-z]?\d*)+\)\d*)+", name) else "")
             out.append((name, formula, "reagent"))
     return out

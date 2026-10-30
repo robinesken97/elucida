@@ -80,7 +80,8 @@ def svg_peaks(path):
             if not m:
                 continue
             if m.group(2):
-                solvent = m.group(2).strip()
+                if m.group(2).strip().upper() != "TMS":                 # Referenz, kein Lösungsmittel
+                    solvent = m.group(2).strip()
                 continue
             vals.append(m.group(1).replace("−", "-"))
     vals = sorted(set(vals), key=float, reverse=True)

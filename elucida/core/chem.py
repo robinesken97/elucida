@@ -47,9 +47,10 @@ def _load_cdxml(path) -> dict:
     path = Path(path)
     warnings = []
     mols = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=True, removeHs=False) if m]
+    raw = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=False, removeHs=False) if m]
     sanitized = True
-    if not mols:
-        mols = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=False, removeHs=False) if m]
+    if len(mols) < len(raw):          # RDKit lässt nicht interpretierbare Fragmente weg -> Masse sonst still zu klein
+        mols = raw
         sanitized = False
         if mols:
             warnings.append(T("cdxml_unsanitized"))
