@@ -956,7 +956,8 @@ class CVTab(TABS.FigureTab):
                 if r is not None:
                     self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
                                              rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
-                                             e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off))
+                                             e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off,
+                                             ref=lab_ref))
         self.grad_colors = grad_colors if st["gradient"] and len(vis) > 1 else {}
         self.update_color_buttons()
         if len(labels_ref) > 1:
@@ -1017,9 +1018,9 @@ class CVTab(TABS.FigureTab):
                 groups = sorted({r.get("group", "") for r in self.results})
                 for n in range(1, len(st["couples"]) + 1):
                     for grp in groups:
-                        vals = [r["e12"] for r in self.results if r["n"] == n and not r["edge"]
-                                and r.get("group", "") == grp]
-                        if vals:
+                        rr = [r for r in self.results if r["n"] == n and not r["edge"] and r.get("group", "") == grp]
+                        vals = [r["e12"] for r in rr]
+                        if vals and len({r["ref"] for r in rr}) == 1:      # nie über Referenzskalen mitteln
                             e12 = float(np.mean(vals))
                             tag = f" ({grp})" if len(groups) > 1 and grp else ""
                             key = f"label_e12_{n}" + (f"_{grp}" if len(groups) > 1 else "")
@@ -1240,7 +1241,9 @@ class CVTab(TABS.FigureTab):
             out.append("Potentials were converted to the Fc0/+ scale using the half-wave potential of Fc0/+ "
                        f"measured vs. {st['ref_electrode']}.")
         if any(k[0] == "none" for k in kinds):
-            out.append(f"Potentials are given vs. {st['ref_electrode']}.")
+            out.append(f"Potentials of measurements without internal standard are given vs. {st['ref_electrode']}."
+                       if len({k[0] == "none" for k in kinds}) > 1 else
+                       f"Potentials are given vs. {st['ref_electrode']}.")
         return " ".join(out), ("Fc0/+" if kinds and all(k[0] != "none" for k in kinds) else st["ref_electrode"])
 
     def methods_text(self):
@@ -1253,6 +1256,10 @@ class CVTab(TABS.FigureTab):
         m = [ref_txt,                                  # nur die Mathematik, kein Programmname (Nutzerwunsch)
              "Peak potentials (Epa, Epc) were obtained by a parabolic fit to the current extremum (±3 data points) "
              f"of cycle {st['cycle']}; E1/2 = (Epa + Epc)/2 and ΔEp = Epa − Epc."]
+        vis = [e for e in st["files"] if e["visible"]]
+        short = [e["label"] for e in vis if len(self.data(e["file"])["cycles"]) < st["cycle"]]
+        if short:
+            m.append(f"For {', '.join(short)} (fewer cycles), the last cycle was used.")
         if st["baseline"]:
             m.append("Peak currents were measured against a linear baseline fitted to the current of the forward "
                      f"scan before the onset of the wave (ending at least {st['bl_gap'] * 1000:.0f} mV before the "
@@ -1263,7 +1270,7 @@ class CVTab(TABS.FigureTab):
             if n_fail:
                 m.append(f"For {n_fail} of {len(self.results)} peak pairs the scan before the wave was too short for "
                          "a baseline; their peak currents were measured from zero current and excluded from the "
-                         "regressions and ratios.")
+                         "regressions and from the ratios given below.")
         else:
             m.append("Peak currents were measured from zero current.")
         m.append("The ratio of reverse to forward peak current was calculated according to Nicholson, "
@@ -1283,11 +1290,15 @@ class CVTab(TABS.FigureTab):
                      "n − 2 degrees of freedom).")
         res = []
         for (grp, n), rr in sorted(self.rate_series().items(), key=lambda kv: (kv[0][1], kv[0][0])):
-            e12 = np.mean([r["e12"] for r in rr])
+            refs = {r["ref"] for r in rr}
+            e12 = np.mean([r["e12"] for r in rr]) if len(refs) == 1 else None
+            lab = str(next(iter(refs))).replace("Fc$^{0/+}$", "Fc0/+") if len(refs) == 1 else ref_lab
             dep = [r["dep"] * 1000 for r in rr]
             rat = [r["ratio"] for r in rr if np.isfinite(r["ratio"]) and not r.get("bl_fail")]
             rng = lambda v, f: f"{min(v):{f}}" + (f"–{max(v):{f}}" if f"{min(v):{f}}" != f"{max(v):{f}}" else "")  # noqa: E731
-            txt = (f"Couple {n}" + (f" ({grp})" if grp else "") + f": E1/2 = {_fmt_e(e12, 2)} V vs. {ref_lab}"
+            e_txt = (f"E1/2 = {_fmt_e(e12, 2)} V vs. {lab}" if e12 is not None
+                     else "E1/2 not averaged (different reference scales)")
+            txt = (f"Couple {n}" + (f" ({grp})" if grp else "") + f": {e_txt}"
                    + f" (ΔEp = {rng(dep, '.0f')} mV" + (f", ip,r/ip,f = {rng(rat, '.2f')}" if rat else "")
                    + (f"; {rng([round(r['rate'], 1) for r in rr], 'g')} mV s-1" if len(rr) > 1 else "") + ")")
             f = fits.get((grp, n))

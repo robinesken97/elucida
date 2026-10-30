@@ -53,7 +53,7 @@ def potentials(spectra, gamry, offset_s=0.0, with_outside=False):
     o = np.argsort(T)
     ts = np.array([(s["time"] - t0).total_seconds() + offset_s for s in spectra])
     out = np.interp(ts, T[o], E[o])                   # außerhalb: Start- bzw. Endpotential
-    return (out, int(np.sum((ts < T.min()) | (ts > T.max())))) if with_outside else out
+    return (out, int(np.sum((ts < T.min() - 30) | (ts > T.max() + 30)))) if with_outside else out
 
 
 def nernst_fit(E, A, n_range=(0.3, 3.0)):
@@ -299,7 +299,11 @@ class SECTab(TABS.FigureTab):
         Erstes/letztes und Doppelte fallen weg, Reihenfolge wie eingegeben. with_pos: [(Index, Position der Eingabe)]
         (Namen in cap_mid gehören zur Eingabe, nicht zur gefilterten Liste)."""
         out, pos = [], []
-        for k, v in enumerate(_floats(self.st.get("mid", ""))):
+        for k, x in enumerate(str(self.st.get("mid", "")).replace(";", ",").split(",")):
+            v = _floats(x)                                 # leere/ungültige Einträge behalten ihre Position
+            if not v:
+                continue
+            v = v[0]
             if Eax is not None:
                 i = sel[int(np.argmin(np.abs(Eax[sel] - v)))]
             else:
@@ -333,6 +337,7 @@ class SECTab(TABS.FigureTab):
         def on_grid(s):
             y = np.interp(lam0, s["lam"], s["A"])
             return y - float(np.mean(y[bl_win])) if (st["baseline"] and bl_win.any()) else y
+        self._bl_applied = bool(st["baseline"] and bl_win.any())   # für den Methodentext
         ref_y = on_grid(sp[sel[0]])
 
         def ys(s):
@@ -413,7 +418,7 @@ class SECTab(TABS.FigureTab):
             cfg["ylabel"] = ("ΔA" if st["diff"] else "absorbance") + " [a.u.]"
         if E is None and st.get("dta"):
             info.append(T("sec_no_time"))
-        elif E is not None and self.outside:
+        elif E is not None and self.outside:              # > 30 s außerhalb (Ruhepotential davor ist normal)
             info.append(T("sec_outside", n=self.outside))
         self.lbl_info.setText("\n".join(info))
         return cfg, curves, labels, []
@@ -466,7 +471,7 @@ class SECTab(TABS.FigureTab):
         m = ["Each spectrum was assigned the potential at its acquisition time, interpolated from the time-resolved "
              "potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
              ("Each spectrum was corrected by subtracting its mean absorbance between 780 and 820 nm. "
-              if st["baseline"] else "")
+              if getattr(self, "_bl_applied", False) else "")
              + ("Difference spectra were obtained by subtracting the first spectrum shown. "
                 if st["diff"] else "")
              + "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "

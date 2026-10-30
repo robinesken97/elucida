@@ -1108,6 +1108,13 @@ def selftest(outdir, with_isnet=False):
             raise AssertionError("BWSpec ohne Kalibrierung angenommen")
         except ValueError:
             pass
+        bw_.write_text(bw_.read_text(encoding="latin-1").replace("Pixel;", "coefs_a0;400\nPixel;"),
+                       encoding="latin-1")                # nur a0: konstante λ, ebenso ablehnen
+        try:
+            SECMOD.read_bwspec(bw_)
+            raise AssertionError("BWSpec mit unvollständiger Kalibrierung angenommen")
+        except ValueError:
+            pass
         nt_ = secdir / "noT.DTA"                         # ohne Zeitspalte: keine Zuordnung über die Uhrzeit
         nt_.write_text("DATE\tLABEL\t1/1/2026\r\nTIME\tLABEL\t12:00:00\r\nCURVE1\tTABLE\r\n\tPt\tVf\tIm\r\n"
                        "\t#\tV\tA\r\n" + "".join(f"\t{k_}\t{k_ * 0.1}\t1e-6\r\n" for k_ in range(10)),
@@ -1131,11 +1138,13 @@ def selftest(outdir, with_isnet=False):
         st_cv["cycle"] = 2
         t_cv.figure_spec()
         assert T("cv_cycle_missing", files="d0", n=2) in t_cv.note, t_cv.note
+        assert "For d0 (fewer cycles), the last cycle was used." in t_cv.methods_text(), t_cv.methods_text()
         st_cv["cycle"] = 1
         # Basislinie verlangt, aber nicht möglich -> Methodentext sagt es
         st_cv["couples"] = [[-1.13, -0.8]]
         t_cv.figure_spec()
-        assert t_cv.results[0]["bl_fail"] and "from zero current" in t_cv.methods_text(), t_cv.methods_text()
+        assert t_cv.results[0]["bl_fail"] and "from the ratios given below" in t_cv.methods_text(), \
+            t_cv.methods_text()
         # interne Referenz nicht gefunden: Achse wie gemessen -> Text und Unterschrift nicht „vs. Fc0/+“
         st_cv.update(couples=[[-1.25, -0.8]], ref_mode="internal", ref_uid="missing", ref_compound="ac2fc")
         t_cv.figure_spec()
@@ -1149,24 +1158,48 @@ def selftest(outdir, with_isnet=False):
         t_cv.figure_spec()
         assert t_cv.results and not any(r_["edge"] for r_ in t_cv.results) and \
             abs(t_cv.results[0]["e12"] - (-0.92 - (0.75 - 0.49))) < 0.004, t_cv.results
+        # eine Messung mit gefundener, eine mit fehlender Referenz in einer Gruppe: E½ nie über Skalen mitteln
+        st_cv.update(couples=[[-1.5, -0.6]], stack=False, e12_each=False, show_e12=True, files=[
+            dict(st_cv["files"][0], group="G"),
+            {"file": str(cvdir / "cvB_100.DTA"), "uid": "sB2", "visible": True, "color": "#000000", "label": "B2",
+             "group": "G", "ref": {"mode": "internal", "uid": "fehlt", "lo": 0.5, "hi": 1.0, "compound": "ac2fc",
+                                   "value": 0.49}}])
+        _, _, labels_, _ = t_cv.figure_spec()
+        assert {r_["ref"] for r_ in t_cv.results} == {"Fc$^{0/+}$", st_cv["ref_electrode"]}, t_cv.results
+        assert not labels_ and "not averaged" in t_cv.methods_text(), (labels_, t_cv.methods_text())
         st_cv.update(files=[], couples=[], ref_mode="none", baseline=True)
         t_cv.fill_table()
         # SEC: Namen der Zwischenstufen nach Eingabeposition (weggefallene Einträge verschieben nichts)
         w.sec_state.update(mid="-1.3; -0.80", cap_mid="startlike; radical", cap_start="neutral", cap_end="dication")
         cap_s = w.sec_tab.si_caption("TEST-1")
         assert "<b>radical</b> (green)" in cap_s and "startlike" not in cap_s, cap_s
+        w.sec_state.update(mid=";-0.80", cap_mid=";radical")         # leerer Eintrag behält seine Position
+        assert "<b>radical</b> (green)" in w.sec_tab.si_caption("TEST-1"), w.sec_tab.si_caption("TEST-1")
         w.sec_state.update(first=3, last=3, mid="", cap_mid="")      # ein Spektrum: nur Rot im Bild
         cap_s = w.sec_tab.si_caption("TEST-1")
         assert "(blue)" not in cap_s and "<b>dication</b> (red)" in cap_s, cap_s
         w.sec_state.update(first=1, last=0, cap_start="", cap_end="")
         w.sec_state["offset_s"] = -400.0                 # Spektren vor Scanbeginn: Hinweis mit Anzahl
         w.sec_tab.figure_spec()
-        assert T("sec_outside", n=27) in w.sec_tab.lbl_info.text(), w.sec_tab.lbl_info.text()
+        assert T("sec_outside", n=25) in w.sec_tab.lbl_info.text(), w.sec_tab.lbl_info.text()   # > 30 s davor
+        w.sec_state["offset_s"] = -20.0                  # ein Spektrum kurz vor Scanbeginn: normal, kein Hinweis
+        w.sec_tab.figure_spec()
+        assert "⚠" not in w.sec_tab.lbl_info.text(), w.sec_tab.lbl_info.text()
         w.sec_state.update(offset_s=0.0, mode="trace", trace_lams="432", baseline=True, diff=True)
         w.sec_tab.figure_spec()
         meth_ = w.sec_tab.methods_text()
         assert "780" in meth_ and "Difference spectra" in meth_, meth_
-        w.sec_state.update(mode="spectra", trace_lams="", baseline=False, diff=False)
+        short_ = []                                      # Spektren nur bis 700 nm: keine Basislinie 780–820 nm
+        for f_ in sec_files:
+            g_ = secdir / "short" / Path(f_).name
+            g_.parent.mkdir(exist_ok=True)
+            ln_ = Path(f_).read_text(encoding="latin-1").splitlines()
+            g_.write_text("\r\n".join(ln_[:7 + 1428]), encoding="latin-1", newline="")
+            short_.append(str(g_))
+        w.sec_state.update(spec_files=short_, diff=False)
+        w.sec_tab.figure_spec()
+        assert w.sec_tab.fits and "780" not in w.sec_tab.methods_text(), w.sec_tab.methods_text()
+        w.sec_state.update(spec_files=sec_files, mode="spectra", trace_lams="", baseline=False, diff=False)
         nat_ = []                                        # ohne Zeit: natürliche Reihenfolge der Namen
         for k_ in (1, 2, 10):
             f_ = secdir / "nat" / f"s_{k_}.txt"
