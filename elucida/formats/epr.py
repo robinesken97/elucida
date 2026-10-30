@@ -86,7 +86,7 @@ def _ascii_xy(path):
     rows = []
     for ln in _text(path).splitlines():
         ln = ln.strip().replace("−", "-")
-        if re.search(r"\d,\d", ln) and re.search(r"[\s;]", ln):   # Dezimalkomma, Spalten durch Leerraum/;
+        if re.search(r"\d,\d", ln) and "." not in ln and re.search(r"[\s;]", ln):  # Dezimalkomma, Spalten ␣/;
             ln = ln.replace(",", ".")
         parts = re.split(r"[\s,;]+", ln)
         try:
@@ -112,9 +112,10 @@ def read_ascii(path, unit=None) -> dict:
                                                           ("g" if np.median(B) > 1500 else "mt"))
     B = B / 10.0 if unit == "g" else B
     o = np.argsort(B)
-    # „9p402995GHz“ zuerst, sonst die erste Zahl mit ≥ 3 Nachkommastellen (MS400: „-9p404368-“; nicht „Cpd1p5“)
+    # „9p402995GHz“ zuerst, dann Zahlen mit ≥ 3 Nachkommastellen (MS400: „-9p404368-“, vor „Cpd1p5“), sonst wie früher
     mw = None
-    for pat in (r"(?<![\d.])(\d{1,3})p(\d+)GHz", r"(?<![\d.])(\d{1,3})p(\d{3,})(?![\d])"):
+    for pat in (r"(?<![\d.])(\d{1,3})p(\d+)GHz", r"(?<![\d.])(\d{1,3})p(\d{3,})(?![\d])",
+                r"(?<![\d.])(\d{1,3})p(\d+)(?![\d])"):
         for m in re.finditer(pat, p.stem, re.I):
             v = float(f"{m.group(1)}.{m.group(2)}")
             if 1 <= v <= 100:
@@ -151,8 +152,9 @@ def parse_easyspin(text) -> dict:
             if not m:
                 continue
             key, val = m.group(1), m.group(2).strip()
-            if re.fullmatch(num, val) or re.fullmatch(rf"\[\s*(?:{num}(?:\s*,?\s*|\s+))*\]", val):
-                out[key] = [float(x) for x in re.findall(num, val)]
+            toks = re.split(r"[\s,]+", val[1:-1].strip()) if val.startswith("[") and val.endswith("]") else [val]
+            if all(re.fullmatch(num, x) for x in toks if x):     # '[1000-100 20]' ist ein Ausdruck, kein Vektor
+                out[key] = [float(x) for x in toks if x]
             else:                                      # Ausdrücke ([1.1 0.16]*1000, Matrizen) bleiben Text
                 out[key] = val
     return out

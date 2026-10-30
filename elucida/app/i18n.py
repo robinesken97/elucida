@@ -1317,11 +1317,13 @@ TEXTS = {
     "epr_kin_lsq": ("kleinste Quadrate", "least squares"),
     "epr_kin_norm_tip": ("„wie Skript“: lsqnonlin auf √|Modell − Messung| (L1-Norm), Intervall formal aus der Jacobi-Matrix –\n"
                          "reproduziert die bisherigen Zahlen, unterschätzt aber die Unsicherheit stark.\n"
-                         "„kleinste Quadrate“: übliche Kovarianz s²·(JᵀJ)⁻¹ mit t-Quantil – belastbareres Intervall.\n"
+                         "„kleinste Quadrate“: gemessene Intensitäten ohne Min-Max, Startintensität mitgefittet, Integral\n"
+                         "über die Messzeit (auch Haltephasen); Kovarianz s²·(JᵀJ)⁻¹ mit t-Quantil – belastbares Intervall.\n"
                          "E_a und ln A sind fast vollständig korreliert (Kompensationseffekt).",
                          "'as script': lsqnonlin on √|model − data| (L1 norm), interval formally from the Jacobian –\n"
                          "reproduces previous numbers but strongly underestimates the uncertainty.\n"
-                         "'least squares': standard covariance s²·(JᵀJ)⁻¹ with t quantile – more reliable interval.\n"
+                         "'least squares': measured intensities without min–max, initial intensity fitted, integral over\n"
+                         "the measured time (also holds); covariance s²·(JᵀJ)⁻¹ with t quantile – reliable interval.\n"
                          "E_a and ln A are almost completely correlated (compensation effect)."),
     "epr_kin_data": ("Messung", "data"),
     "epr_kin_fitcurve": ("Fit", "fit"),

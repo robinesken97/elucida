@@ -1422,9 +1422,10 @@ def selftest(outdir, with_isnet=False):
         files = w.epr_tab.export_to(out / "epr_decay")
         r_ = t_e.kin_result
         assert r_ and abs(r_["Ea"] - Ea_true) / Ea_true < 0.02 and abs(r_["lnA"] - lnA_true) < 1.0, r_
-        assert r_["ci_Ea"][0] < Ea_true < r_["ci_Ea"][1] and abs(r_["beta"] - beta_) < 1e-9, r_
+        # rauschfrei: Fit exakt, Intervall nur Rundungsbreite
+        assert r_["ci_Ea"][0] - 1e-3 < Ea_true < r_["ci_Ea"][1] + 1e-3 and abs(r_["beta"] - beta_) < 1e-9, r_
         meth_ = next(f for f in files if f.name.endswith("_methods.txt")).read_text(encoding="utf-8")
-        assert "Gaussian on a linear baseline" in meth_ and "t(0.975; n − 2)" in meth_ and "Ea = 5" in meth_ \
+        assert "Gaussian on a linear baseline" in meth_ and "t(0.975; n − 3)" in meth_ and "Ea = 5" in meth_ \
             and "multiplied by the temperature (I·T) before fitting" in meth_ and "± 0.01 kJ" in meth_ \
             and " × 10^" in meth_, meth_
         w.epr_state["kin_norm"] = "script"
@@ -1476,23 +1477,24 @@ def selftest(outdir, with_isnet=False):
         w.epr_state.update(entries=[el6, ed6])
         I6 = t_e.processed(el6, {})[1]
         assert np.isfinite(I6).all() and np.max(np.abs(I6)) < 1e-9, (np.isnan(I6).sum(), np.nanmax(np.abs(I6)))
-        # ausgeblendete Messung: Simulation behält den gemeinsamen Faktor (7) und den Normierungsfaktor der Messung
-        em6 = asc6("m-9p400000.txt", 7 * S6)
+        # ausgeblendete Messung (7·S + 3·Bn): Simulationen behalten Faktor 7 und den Normierungsfaktor der Messung
+        Bn6 = EPRMOD.iso_spectrum(B6, 9.4, 2.010, [], 0.5)
+        np.savetxt(p6 / "simn.txt", np.column_stack([B6, Bn6]), delimiter="\t")
+        em6 = asc6("m-9p400000.txt", 7 * S6 + 3 * Bn6)
         np.savetxt(p6 / "sim6.txt", np.column_stack([B6, S6]), delimiter="\t")
-        es6 = t_e._new("sim", str(p6 / "sim6.txt"))
-        es6["fit_to"] = em6["uid"]
-        w.epr_state.update(entries=[em6, es6], ref_freq=0.0)
+        es6, eb6 = t_e._new("sim", str(p6 / "sim6.txt")), t_e._new("sim", str(p6 / "simn.txt"))
+        es6["fit_to"] = eb6["fit_to"] = em6["uid"]
+        w.epr_state.update(entries=[em6, es6, eb6], ref_freq=0.0)
         em6["visible"] = False
         cur6 = t_e.figure_spec()[1]
         assert abs(np.nanmax(np.abs(cur6[0]["y"])) / np.nanmax(np.abs(7 * S6)) - 1) < 0.01, np.nanmax(cur6[0]["y"])
         w.epr_state["normalize"] = True
         cur6 = t_e.figure_spec()[1]
-        assert abs(np.nanmax(np.abs(cur6[0]["y"])) - 1) < 0.01, np.nanmax(cur6[0]["y"])
+        want6 = 7 * np.nanmax(np.abs(S6)) / np.nanmax(np.abs(7 * S6 + 3 * Bn6))
+        assert abs(np.nanmax(np.abs(cur6[0]["y"])) / want6 - 1) < 0.01, (np.nanmax(cur6[0]["y"]), want6)
         em6["visible"] = True
         assert "normalized" in t_e.methods_text(), t_e.methods_text()
         # negatives Gewicht: keine Anteile in %, sondern Hinweis
-        Bn6 = EPRMOD.iso_spectrum(B6, 9.4, 2.010, [], 0.5)
-        np.savetxt(p6 / "simn.txt", np.column_stack([B6, Bn6]), delimiter="\t")
         en6, sn6 = asc6("n-9p400000.txt", S6 - 0.2 * Bn6), t_e._new("sim", str(p6 / "simn.txt"))
         sa6 = t_e._new("sim", str(p6 / "sim6.txt"))
         sa6["fit_to"] = sn6["fit_to"] = en6["uid"]
@@ -1500,11 +1502,11 @@ def selftest(outdir, with_isnet=False):
         t_e.components([en6, sa6, sn6], {}, info6)
         assert info6 and T("epr_negative_weight", name=en6["label"]) in info6 and "%" not in info6[0], info6
         # Export: gleiche bereinigte Beschriftung überschreibt nicht
-        e2_6 = asc6("m2-9p400000.txt", 2 * S6)
-        em6["label"], e2_6["label"] = "sample A", "sample/A"
-        w.epr_state.update(entries=[em6, e2_6], normalize=False)
+        e2_6, e3_6 = asc6("m2-9p400000.txt", 2 * S6), asc6("m3-9p400000.txt", 3 * S6)
+        em6["label"], e2_6["label"], e3_6["label"] = f"sample_A_{e3_6['uid']}", "sample A", "sample/A"
+        w.epr_state.update(entries=[em6, e2_6, e3_6], normalize=False)
         txt6 = [f for f in t_e.export_to(out / "epr_p6") if f.suffix == ".txt" and "sample" in f.name]
-        assert len(set(txt6)) == 2, txt6
+        assert len(set(txt6)) == 3, txt6
         # I·T ohne Temperatur: Spektrum auslassen statt I und I·T zu mischen
         w.epr_state.update(entries=[e6, kin_entries[0]], mode="intensity", int_method="pp", int_x="index",
                            int_curie=True, int_window="")
@@ -1518,6 +1520,8 @@ def selftest(outdir, with_isnet=False):
         fit6 = sp6[1][1]
         assert np.allclose(np.interp(x6, fit6["x"], fit6["y"]),
                            EPRMOD.decay_model(x6, r6["A"], r6["Ea"], r6["beta"]), atol=1e-9), fit6
+        band6 = EPRMOD.decay_band(x6, r6, r6["beta"], (x6 - x6[0]) / r6["beta"])   # gezeichnetes Band = Kovarianz
+        assert np.allclose(sp6[1][2]["y"], band6[0], atol=1e-9) and np.allclose(sp6[1][3]["y"], band6[1], atol=1e-9)
         rng6 = np.random.default_rng(6)
         Tn6 = np.arange(100.0, 135.01, 0.5)
         yn6 = EPRMOD.decay_model(Tn6, np.exp(45.0), 50e3, 0.5 / 120) + rng6.normal(0, 0.01, len(Tn6))
@@ -1531,6 +1535,24 @@ def selftest(outdir, with_isnet=False):
         t_e.kin_result = dict(Ea=4e4, lnA=34.5, A=1e15, ci_Ea=(np.nan, np.nan), ci_lnA=(np.nan, np.nan),
                               corr=np.nan, beta=0.01)
         assert "None" not in t_e.methods_text(), t_e.methods_text()
+        # R1: ohne Min-Max mit freier Startintensität (unvollständiger Zerfall) und Integral über die Zeit (Haltephase)
+        bR = 1 / 60
+
+        def truth6(T_, t_):                         # dichtes Zeitraster, unabhängig vom Messraster
+            tf_ = np.linspace(t_[0], t_[-1], 200001)
+            return np.interp(t_, tf_, EPRMOD.decay_model(np.interp(tf_, t_, T_), np.exp(45.0), 100e3, bR, tf_))
+        TR = np.arange(150.0, 300.0, 2.0)
+        IR = truth6(TR, (TR - 150) / bR)
+        kR = int(np.flatnonzero(IR <= 0.57)[0])
+        rR = EPRMOD.fit_decay(TR[:kR + 1], 5 * IR[:kR + 1], bR, norm="lsq", time=(TR[:kR + 1] - 150) / bR)
+        assert abs(rR["Ea"] / 100e3 - 1) < 0.005 and abs(rR["I0"] / 5 - 1) < 1e-3, rR
+        t1R = np.arange(0, 4800.1, 120.0)
+        t2R = t1R[-1] + np.arange(120, 1800.1, 120.0)
+        t3R = t2R[-1] + np.arange(120, 4000.1, 120.0)
+        tR = np.r_[t1R, t2R, t3R]
+        TRh = np.r_[150 + bR * t1R, np.full(len(t2R), 150 + bR * t1R[-1]), 150 + bR * (t1R[-1] + t3R - t2R[-1])]
+        rR = EPRMOD.fit_decay(TRh, truth6(TRh, tR), bR, norm="lsq", time=tR)
+        assert abs(rR["Ea"] / 100e3 - 1) < 0.01, rR
         w.epr_state.update(entries=[], mode="spectra", kin_fit=False, int_method="double", int_window="",
                            int_curie=False, normalize=True)
         # Leser: Dezimalkomma, BOM, echtes Minus, ν aus dem Dateinamen, YFMT, fallende Achse, unbekannte Varianten
@@ -1581,6 +1603,54 @@ def selftest(outdir, with_isnet=False):
         assert pe6["Sys.D"] == "[1.1 0.16]*1000" and pe6["Sys.g"] == [2.0023] and pe6["Sys.lwpp"] == [1.5], pe6
         z6 = EPRMOD.zfs_summary({"Sys.D": [-100.0, -100.0, 200.0]})
         assert "(300 MHz)" in z6 and "(0 MHz)" in z6, z6
+        # Codex-Gegenlesen: ΔB folgt einer später geänderten ν_ref; Toleranz der Handänderung; Leser/Import/Glätten
+        mwC = 9.4
+        BC = np.linspace(330.0, 345.0, 3001)
+        erC = asc6("refC-9p400000.txt", EPRMOD.iso_spectrum(BC, mwC, 2.0055, [], 0.15), B=BC + 0.25)
+        esC = asc6("smpC-9p400000.txt", EPRMOD.iso_spectrum(BC, mwC, 2.003, [], 0.15), B=BC + 0.25)
+        w.epr_state.update(entries=[erC, esC], bl_order=-1, smooth=0.0, ref_freq=0.0, calib_uid=None, calib_g=2.0055,
+                           exclude="", mode="spectra")
+        t_e.fill_table()
+        t_e.table.selectRow(0)
+        t_e.add_iso()
+        riC = w.epr_state["entries"][-1]
+        t_e.table.selectRow(2)
+        t_e.fit_current()
+        w.epr_state.update(calib_uid=riC["uid"], ref_freq=9.8)
+        t_e.fill_table()
+        t_e.table.selectRow(1)
+        t_e.add_iso()
+        siC = w.epr_state["entries"][-1]
+        t_e.table.selectRow(3)
+        t_e.fit_current()
+        assert abs(siC["g"] - 2.003) < 2e-5, siC
+        siC["lw"] = 0.10049                                   # angezeigt 0.100; Handänderung auf 0.101 zählt
+        t_e.table.selectRow(2)
+        t_e.table.selectRow(3)
+        t_e.sp_lw.setValue(0.101)
+        assert siC["fit"] is None, siC
+        w.epr_state.update(entries=[], calib_uid=None, ref_freq=0.0)
+        assert EPRMOD.parse_easyspin("Sys.D=[1000-100 20]")["Sys.D"] == "[1000-100 20]"
+        assert EPRMOD.parse_easyspin("Sys.D = [1000 -100]")["Sys.D"] == [1000.0, -100.0]
+        (p6 / "kp.txt").write_text("\n".join(f"{330 + k},1.25, 99" for k in range(12)), encoding="utf-8")
+        rkp = EPRMOD.read_ascii(p6 / "kp.txt")
+        assert len(rkp["B"]) == 12 and rkp["B"][0] == 330 and rkp["I"][0] == 1.25, rkp
+        np.savetxt(p6 / "s-9p40.txt", np.column_stack([B6[:20], S6[:20]]))
+        assert EPRMOD.read_ascii(p6 / "s-9p40.txt")["meta"]["mw_GHz"] == 9.4
+        for sub6, nm6, x6m in (("c", "same.DSC", 3300), ("d", "same.dsc", 3400)):   # nur die Beschreibung anders
+            (p6 / sub6).mkdir(exist_ok=True)
+            (p6 / sub6 / nm6).write_text(f"IKKF\tREAL\nXPTS\t10\nXMIN\t{x6m}\nXWID\t9\nBSEQ\tLIT\nIRFMT\tD",
+                                         encoding="latin-1")
+            np.ones(10, "<f8").tofile(p6 / sub6 / "same.DTA")
+        gC = [PRJ.import_group(p6 / "projC", [p6 / s6 / n6, p6 / s6 / "same.DTA"], "data/epr")
+              for s6, n6 in (("c", "same.DSC"), ("d", "same.dsc"))]
+        assert [EPRMOD.read_bes3t(g_[0])[0]["B"][0] for g_ in gC] == [330.0, 340.0], gC
+        eS = asc6("sm-9p400000.txt", S6)                       # Fenster < 3 Punkte: keine Glättung, kein Satz dazu
+        w.epr_state.update(entries=[eS], smooth=0.01, normalize=False)
+        assert "smoothed" not in t_e.methods_text(), t_e.methods_text()
+        w.epr_state["smooth"] = 0.05
+        assert "moving average over 0.05 mT" in t_e.methods_text(), t_e.methods_text()
+        w.epr_state.update(entries=[], smooth=0.0, normalize=True)
         report.append("EPR audit P6 (reference frequency, dark axis, decay band, readers, import): OK")
 
         # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab

@@ -228,19 +228,25 @@ def import_group(project_dir, srcs, sub) -> list:
         return [str(s) for s in srcs]
     dest_dir = pdir / sub
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    def same(q, s):
+        return q.stat().st_size == s.stat().st_size and _digest(q) == _digest(s)
     base, stem, n = srcs[0].stem, srcs[0].stem, 2
     while True:
-        targets = [dest_dir / (stem + s.suffix) for s in srcs]
-        names = {t.name.lower() for t in targets}
-        same = all(not t.exists() or (t.stat().st_size == s.stat().st_size and _digest(t) == _digest(s))
-                   for s, t in zip(srcs, targets))
-        # frei nur ohne fremde Partner unter diesem Stamm (z. B. alte .YGF einer anderen Messung)
-        if same and not any(q.stem == stem and q.name.lower() not in names for q in dest_dir.iterdir()):
+        # Groß-/Kleinschreibung egal (same.DSC neben same.dsc: der Leser nähme die falsche); frei nur, wenn jede
+        # vorhandene Datei dieses Stamms gleich einer der neuen ist (keine fremden Partner wie alte .YGF)
+        want = {(stem + s.suffix).lower(): s for s in srcs}
+        have = {q.name.lower(): q for q in dest_dir.iterdir() if q.stem.lower() == stem.lower()}
+        if all(k in want and same(q, want[k]) for k, q in have.items()):
             break
         stem, n = f"{base}_{n}", n + 1
-    for s, t in zip(srcs, targets):
-        if not t.exists():
+    targets = []
+    for s in srcs:
+        t = have.get((stem + s.suffix).lower())
+        if t is None:
+            t = dest_dir / (stem + s.suffix)
             shutil.copy2(s, t)
+        targets.append(t)
     return [str(t) for t in targets]
 
 

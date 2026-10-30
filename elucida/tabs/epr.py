@@ -102,13 +102,19 @@ def baseline(B, I, order=1, edge=0.05, regions=None):
     return np.polyval(c, (B - x0) / s)
 
 
+def smooth_points(B, width_mT):
+    """Punktzahl des gleitenden Mittels (ungerade, höchstens der Sweep); < 3 = keine Glättung."""
+    if not width_mT or len(B) < 3:
+        return 0
+    step = float(np.median(np.diff(B))) or 1.0
+    n = min(int(round(width_mT / step)) | 1, len(B) - 1 + len(B) % 2)
+    return n if n >= 3 else 0
+
+
 def smooth(B, I, width_mT):
     """Gleitender Mittelwert über width_mT (ungerade Punktzahl), NaN-sicher."""
-    if not width_mT or len(B) < 3:
-        return I
-    step = float(np.median(np.diff(B))) or 1.0
-    n = min(int(round(width_mT / step)) | 1, len(B) - 1 + len(B) % 2)   # höchstens so breit wie der Sweep
-    if n < 3:
+    n = smooth_points(B, width_mT)
+    if not n:
         return I
     ok = np.isfinite(I).astype(float)
     k = np.ones(n)
@@ -211,46 +217,84 @@ def gauss_lin_fit(B, I, center, c_lo, c_hi, width=8.5, w_lo=3.0, w_hi=50.0, max_
 R_GAS = 8.314462618                    # J mol⁻¹ K⁻¹ (wie EasySpin molgas)
 
 
-def decay_model(T, A, Ea, beta):
-    """Zerfall erster Ordnung bei konstanter Heizrate β (K/s): I(T) = exp(−A·∫ exp(−Ea/RT)/β dT), I(T₀) = 1
-    (Integral per Trapezregel über die gegebenen Temperaturen, wie cumtrapz im MATLAB-Skript)."""
+def decay_model(T, A, Ea, beta, time=None):
+    """Zerfall erster Ordnung: I = exp(−A·∫ exp(−Ea/RT) dt), I(erster Punkt) = 1. Integral per Trapezregel über die
+    Messpunkte: mit time (s) über die gemessene Zeit (beliebiges Temperaturprogramm, auch Haltephasen/Abkühlen),
+    sonst wie cumtrapz im MATLAB-Skript über T bei konstanter Heizrate β (K/s), dt = dT/β."""
     T = np.asarray(T, float)
-    f = np.exp(-Ea / (R_GAS * T)) / beta
-    integral = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(T))])
+    f = np.exp(-Ea / (R_GAS * T))
+    x = np.asarray(time, float) if time is not None else T / beta
+    integral = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(x))])
     return np.exp(-A * integral)
 
 
-def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script"):
-    """E_a und ln A. norm='script': wie das MATLAB-Skript (lsqnonlin auf sqrt(|Modell − Messung|), also L1-Norm;
-    Intervalle formal aus inv(JᵀJ)·resnorm/n – unterschätzt die Unsicherheit). norm='lsq': kleinste Quadrate
-    mit der üblichen Kovarianz s²·inv(JᵀJ), s² = SSR/(n − 2), t-Quantil.
-    -> dict(Ea, lnA, A, ci_Ea, ci_lnA, resnorm, corr)."""
+def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script", time=None):
+    """E_a und ln A. norm='script': wie das MATLAB-Skript (min-max-normierte Intensitäten, konstante Heizrate,
+    lsqnonlin auf sqrt(|Modell − Messung|), also L1-Norm; Intervalle formal aus inv(JᵀJ)·resnorm/n – unterschätzt die
+    Unsicherheit). norm='lsq' (Standard, Audit P6 R1): gemessene Intensitäten ohne Min-Max, Startintensität I0 linear
+    mitbestimmt (Min-Max verschob E_a bei unvollständigem Zerfall und Rauschen an den Extremen), Integral über die
+    Messzeit time, wenn gegeben; kleinste Quadrate, Kovarianz s²·inv(JᵀJ) der projizierten Residuen,
+    s² = SSR/(n − 3), t-Quantil. -> dict(Ea, lnA, A, I0, ci_Ea, ci_lnA, cov, t, resnorm, corr)."""
     T, I = np.asarray(T, float), np.asarray(I, float)
+    lsq = norm != "script"
+    tm = time if lsq else None
+
+    def model(q):
+        return decay_model(T, np.exp(q[1]), q[0], beta, tm)
+
+    def amp(m):
+        den = float(m @ m)
+        return float(m @ I) / den if den > 0 else 0.0
 
     def res(q):
-        d = decay_model(T, np.exp(q[1]), q[0], beta) - I
-        return np.sqrt(np.abs(d)) if norm == "script" else d
+        m = model(q)
+        if lsq:
+            return amp(m) * m - I
+        return np.sqrt(np.abs(m - I))
     # Startwert per Raster: für jedes E_a wird ln A so gewählt, dass das Modell bei der gemessenen Halbwertstemperatur
     # 0.5 ergibt (eindeutig). Umgeht die fast vollständige Korrelation E_a/ln A, an der ein direkter Start scheitert.
     p = np.array(start, float)
-    below = np.flatnonzero(I <= 0.5)
-    if len(below) and below[0] > 0:
-        k = below[0]
-        T50 = float(np.interp(0.5, [I[k], I[k - 1]], [T[k], T[k - 1]]))
-        best = None
-        for Ea in np.arange(5e3, 300e3, 500.0):
-            Tg = np.linspace(T[0], T50, 200)
-            fg = np.exp(-Ea / (R_GAS * Tg)) / beta
-            integ = float(np.sum(0.5 * (fg[1:] + fg[:-1]) * np.diff(Tg)))
-            if integ <= 0 or not np.isfinite(integ):
-                continue
-            q = np.array([Ea, np.log(np.log(2.0) / integ)])
-            with np.errstate(over="ignore", invalid="ignore"):
-                c = float(np.nansum(res(q) ** 2))
-            if best is None or c < best[0]:
-                best = (c, q)
-        if best is not None:
-            p = best[1]
+    if lsq:                                          # relativ zum Anfang; ohne Halbwert: Stand am Ende der Serie
+        rel = I / (np.max(I[:3]) or 1.0)
+        L = 0.5 if (rel <= 0.5).any() else float(rel[-1])
+        below = np.flatnonzero(rel <= L)
+        x = np.asarray(tm, float) if tm is not None else T / beta
+        if 0 < L < 0.98 and len(below) and below[0] > 0:
+            k = below[0]
+            frac = (rel[k - 1] - L) / (rel[k - 1] - rel[k]) if rel[k - 1] != rel[k] else 1.0
+            best = None
+            for Ea in np.arange(5e3, 300e3, 500.0):
+                f = np.exp(-Ea / (R_GAS * T))
+                cum = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(x))])
+                integ = float(cum[k - 1] + frac * (cum[k] - cum[k - 1]))
+                if integ <= 0 or not np.isfinite(integ):
+                    continue
+                q = np.array([Ea, np.log(-np.log(L) / integ)])
+                with np.errstate(over="ignore", invalid="ignore"):
+                    c = float(np.nansum(res(q) ** 2))
+                if best is None or c < best[0]:
+                    best = (c, q)
+            if best is not None:
+                p = best[1]
+    else:
+        below = np.flatnonzero(I <= 0.5)
+        if len(below) and below[0] > 0:
+            k = below[0]
+            T50 = float(np.interp(0.5, [I[k], I[k - 1]], [T[k], T[k - 1]]))
+            best = None
+            for Ea in np.arange(5e3, 300e3, 500.0):
+                Tg = np.linspace(T[0], T50, 200)
+                fg = np.exp(-Ea / (R_GAS * Tg)) / beta
+                integ = float(np.sum(0.5 * (fg[1:] + fg[:-1]) * np.diff(Tg)))
+                if integ <= 0 or not np.isfinite(integ):
+                    continue
+                q = np.array([Ea, np.log(np.log(2.0) / integ)])
+                with np.errstate(over="ignore", invalid="ignore"):
+                    c = float(np.nansum(res(q) ** 2))
+                if best is None or c < best[0]:
+                    best = (c, q)
+            if best is not None:
+                p = best[1]
     with np.errstate(over="ignore", invalid="ignore"):
         r = res(p)
     cost, lam = float(r @ r), 1e-3
@@ -277,29 +321,31 @@ def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script
     J = np.column_stack([(res(p + dv) - res(p - dv)) / (2 * dv[k])
                          for k, dv in enumerate((np.array([h[0], 0]), np.array([0, h[1]])))])
     try:
-        if norm == "script":
+        if not lsq:
             cov = np.linalg.inv(J.T @ J) * cost / len(I)
             z = 1.96
         else:
             from elucida.core import uvvis as core                    # eigenes t-Quantil wie im ε-Fit
-            cov = np.linalg.inv(J.T @ J) * cost / max(1, len(I) - 2)
-            z = core.t_quantile(0.975, max(1, len(I) - 2))
+            dof = max(1, len(I) - 3)                                  # E_a, ln A und I0
+            cov = np.linalg.inv(J.T @ J) * cost / dof
+            z = core.t_quantile(0.975, dof)
         se = np.sqrt(np.abs(np.diag(cov)))
         corr = float(cov[0, 1] / (se[0] * se[1])) if se.all() else float("nan")
     except np.linalg.LinAlgError:
         cov, se, z, corr = np.full((2, 2), np.nan), np.array([np.nan, np.nan]), 1.96, float("nan")
     return {"Ea": float(p[0]), "lnA": float(p[1]), "A": float(np.exp(p[1])), "cov": cov, "t": z,
+            "I0": amp(model(p)) if lsq else 1.0,
             "ci_Ea": (float(p[0] - z * se[0]), float(p[0] + z * se[0])),
             "ci_lnA": (float(p[1] - z * se[1]), float(p[1] + z * se[1])), "resnorm": cost, "corr": corr}
 
 
-def decay_band(T, r, beta):
+def decay_band(T, r, beta, time=None):
     """Band (Faktor r["t"] wie die Intervalle) um das Modell aus der Kovarianz von (E_a, ln A), linear fortgepflanzt:
     sd = √(J·cov·Jᵀ). Die Randwerte der Einzelintervalle taugen dafür nicht (Korrelation ≈ 1). -> (unten, oben)."""
     T = np.asarray(T, float)
-    m = decay_model(T, r["A"], r["Ea"], beta)
-    J = np.column_stack([(decay_model(T, np.exp(r["lnA"] + d[1]), r["Ea"] + d[0], beta)
-                          - decay_model(T, np.exp(r["lnA"] - d[1]), r["Ea"] - d[0], beta)) / (2 * max(d))
+    m = decay_model(T, r["A"], r["Ea"], beta, time)
+    J = np.column_stack([(decay_model(T, np.exp(r["lnA"] + d[1]), r["Ea"] + d[0], beta, time)
+                          - decay_model(T, np.exp(r["lnA"] - d[1]), r["Ea"] - d[0], beta, time)) / (2 * max(d))
                          for d in ((10.0, 0.0), (0.0, 1e-3))])
     sd = np.sqrt(np.abs(np.einsum("ij,jk,ik->i", J, np.asarray(r["cov"], float), J)))
     return m - r["t"] * sd, m + r["t"] * sd
@@ -1005,7 +1051,9 @@ class EPRTab(TABS.FigureTab):
         ref = next((x for x in st["entries"] if x["uid"] == st.get("calib_uid") and x["kind"] == "iso"), None)
         if ref is None or not ref.get("fit"):
             return 0.0, None
-        mw = ref["fit"]["mw"]
+        # bei der aktuellen Achsenfrequenz (ν_ref später geändert: ΔB skaliert mit); g_fit hängt nicht davon ab
+        target = next((x for x in st["entries"] if x["uid"] == ref.get("fit_to")), None)
+        mw = self.axis_mw(target) or ref["fit"]["mw"]
         return b_res(mw, ref["g"]) - b_res(mw, st["calib_g"]), ref.get("fit_to")
 
     def move(self, d):
@@ -1143,9 +1191,9 @@ class EPRTab(TABS.FigureTab):
                        nuclei=self.ed_nuclei.text().strip())
             # von Hand geändert -> keine Fit-Ergebnisse mehr (Unterschrift/SI nennen nur Fits); Vergleich in der
             # Genauigkeit der Felder, sonst verwirft schon das Häkchen den Fit
-            tol = {"g": 6e-6, "lw": 6e-4, "lorentz": 6e-3}
+            dec = {"g": 5, "lw": 3, "lorentz": 2}                       # Nachkommastellen der Felder
             if (any(new[k] != e.get(k) for k in ("fit_to", "nuclei"))
-                    or any(abs(new[k] - e.get(k, 0.0)) > d for k, d in tol.items())):
+                    or any(abs(new[k] - round(e.get(k, 0.0), d)) > 0.4 * 10 ** -d for k, d in dec.items())):
                 new["fit"] = None
             e.update(new)
         else:
@@ -1400,31 +1448,38 @@ class EPRTab(TABS.FigureTab):
             self.lbl_info.setText(T("epr_int_none"))
             return None
         kin = st.get("kin_fit") and st["int_x"] == "T" and len(x) >= 5
-        if kin and np.ptp(y) > 0:
+        lsq = st.get("kin_norm", "lsq") == "lsq"
+        if kin and not lsq and np.ptp(y) > 0:
             y = (y - y.min()) / np.ptp(y)                  # Min-Max wie im Skript (Modell: I(T₀) = 1 → 0)
         elif st["normalize"] and np.nanmax(np.abs(y)) > 0:
             y = y / y[np.nanargmax(np.abs(y))]           # mit Vorzeichen: unabhängig von der Signalphase positiv
         cfg = self.base_cfg()
         o = np.argsort(x) if st["int_x"] != "index" else np.arange(len(x))
-        curves = [{"x": x[o], "y": y[o], "color": "#000000", "label": T("epr_kin_data") if kin else None,
-                   "ls": "-" if not kin else "none", "lw": 0.8, "marker": "o"}]
         self.kin_result = None
+        fits = []
         if kin:
-            xs_, ys_ = x[o], y[o]
-            ts_ = [self._times.get(used[i]["uid"]) for i in o]
+            ts_ = [self._times.get(e["uid"]) for e in used]
             if all(ts_):
-                dt = np.mean([(b - a).total_seconds() for a, b in zip(ts_[:-1], ts_[1:])])
-                beta = float(np.mean(np.diff(xs_)) / dt) if dt else 0.0
-                if beta > 0:
-                    r = fit_decay(xs_, ys_, beta, norm=st.get("kin_norm", "script"))
-                    # an den Messpunkten: das Integral des Modells läuft über genau diese Temperaturen (wie im Fit)
-                    curves.append({"x": xs_, "y": decay_model(xs_, r["A"], r["Ea"], beta), "color": "#1764e8",
-                                   "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
+                sec = np.array([(t_ - min(ts_)).total_seconds() for t_ in ts_])
+                o = np.argsort(sec, kind="stable")          # Integral in Zeitfolge
+                xs_, ss_ = x[o], sec[o]
+                beta = float((xs_[-1] - xs_[0]) / (ss_[-1] - ss_[0])) if ss_[-1] > ss_[0] else 0.0  # mittlere Rate
+                if lsq or beta > 0:
+                    tm = ss_ if lsq else None
+                    r = fit_decay(xs_, y[o], beta, norm=st.get("kin_norm", "lsq"), time=tm)
+                    if lsq and r["I0"]:
+                        y = y / r["I0"]                    # Anzeige relativ zur gefitteten Startintensität
+                    # an den Messpunkten: das Integral des Modells läuft über genau diese Punkte (wie im Fit)
+                    fits.append({"x": xs_, "y": decay_model(xs_, r["A"], r["Ea"], beta, tm), "color": "#1764e8",
+                                 "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
                     if np.isfinite(r["cov"]).all():
-                        for yb, lab in zip(decay_band(xs_, r, beta), (T("epr_kin_band"), None)):
-                            curves.append({"x": xs_, "y": yb, "color": "#1764e8", "label": lab, "ls": ":",
-                                           "lw": 0.9})
+                        for yb, lab in zip(decay_band(xs_, r, beta, tm), (T("epr_kin_band"), None)):
+                            fits.append({"x": xs_, "y": yb, "color": "#1764e8", "label": lab, "ls": ":",
+                                         "lw": 0.9})
                     self.kin_result = dict(r, beta=beta)
+        curves = [{"x": x[o], "y": y[o], "color": "#000000", "label": T("epr_kin_data") if kin else None,
+                   "ls": "-" if not kin else "none", "lw": 0.8, "marker": "o"}] + fits
+        if kin:
             cfg["legend"] = True
         pad = 0.05 * (np.ptp(x) or 1.0)
         cfg["xlim"] = [float(x.min() - pad), float(x.max() + pad)] if st["x_auto"] else [st["x_min"], st["x_max"]]
@@ -1442,7 +1497,7 @@ class EPRTab(TABS.FigureTab):
             info += "\n" + T("epr_kin_result", Ea=f"{r['Ea'] / 1000:.1f}", kcal=f"{r['Ea'] / 4184:.2f}",
                              lo=f"{r['ci_Ea'][0] / 4184:.2f}", hi=f"{r['ci_Ea'][1] / 4184:.2f}", A=f"{r['A']:.2e}",
                              beta=f"{r['beta'] * 60:.3f}", corr=f"{r['corr']:.4f}",
-                             how=T("epr_kin_" + st.get("kin_norm", "script")))
+                             how=T("epr_kin_" + st.get("kin_norm", "lsq")))
         elif st.get("kin_fit") and st["int_x"] != "T":
             info += "\n" + T("epr_kin_need_T")
         if getattr(self, "_edge_hits", 0):
@@ -1483,8 +1538,11 @@ class EPRTab(TABS.FigureTab):
                          "and subtracted")
         if ranges(st["exclude"]):
             steps.append(f"the field range(s) {fmt_r(ranges(st['exclude']))} mT were excluded")
-        if st["smooth"]:
-            steps.append(f"the spectra were smoothed by a moving average over {st['smooth']:g} mT")
+        win = sorted({round(n * float(np.median(np.diff(B))), 4) for B in (self.spectrum(e)["B"] for e in exps)
+                      for n in [smooth_points(B, st["smooth"])] if n})   # wirksames Fenster, nicht die Eingabe
+        if win:
+            steps.append("the spectra were smoothed by a moving average over " + ", ".join(f"{v:g}" for v in win)
+                         + " mT")
         if st["normalize"] and st["mode"] == "spectra":
             steps.append("the spectra were normalized to their maximum absolute intensity (assigned simulations "
                          "with the factor of their measurement)")
@@ -1539,16 +1597,23 @@ class EPRTab(TABS.FigureTab):
                 m.append(f"Temperatures were corrected by {st['T_offset']:+g} K.".replace("-", "−"))
             r = getattr(self, "kin_result", None)
             if r:
-                lsq = st.get("kin_norm", "script") == "lsq"
-                m.append("The decay was analysed as a first-order process at a constant heating rate β (from the mean "
-                         "temperature step and time between spectra), I(T) = exp[−(A/β)∫exp(−Ea/RT′)dT′] from the "
-                         "first temperature (trapezoidal integration over the measured temperatures), using "
-                         "min–max normalized intensities. Ea and ln A were fitted by Levenberg–Marquardt, starting "
-                         "from a grid over Ea with ln A chosen to reproduce the measured half-decay temperature. "
-                         + ("The sum of squared residuals was minimized; 95% confidence intervals were obtained from "
-                            "s²(JᵀJ)⁻¹ with s² = SSR/(n − 2) and t(0.975; n − 2)." if lsq else
-                            "The square roots of the absolute residuals were minimized (L1 norm); the intervals "
-                            "(1.96·SE from (JᵀJ)⁻¹·SSR/n) underestimate the uncertainty."))
+                lsq = st.get("kin_norm", "lsq") == "lsq"
+                if lsq:
+                    m.append("The decay was analysed as a first-order process, I(t) = I0·exp[−A∫exp(−Ea/RT(t′))dt′] "
+                             "from the first spectrum, with the integral evaluated by the trapezoidal rule over the "
+                             "recorded times and temperatures (no constant heating rate assumed). Ea and ln A were "
+                             "fitted to the measured intensities by Levenberg–Marquardt least squares, with I0 determined "
+                             "linearly, starting from a grid over Ea with ln A chosen to reproduce the measured "
+                             "half-decay point; 95% confidence intervals were obtained from s²(JᵀJ)⁻¹ with "
+                             "s² = SSR/(n − 3) and t(0.975; n − 3). β is the mean heating rate.")
+                else:
+                    m.append("The decay was analysed as a first-order process at a constant heating rate β (from the "
+                             "first and last temperature and time), I(T) = exp[−(A/β)∫exp(−Ea/RT′)dT′] from the first "
+                             "temperature (trapezoidal integration over the measured temperatures), using min–max "
+                             "normalized intensities. Ea and ln A were fitted by Levenberg–Marquardt, starting from a "
+                             "grid over Ea with ln A chosen to reproduce the measured half-decay temperature. The square "
+                             "roots of the absolute residuals were minimized (L1 norm); the intervals (1.96·SE from "
+                             "(JᵀJ)⁻¹·SSR/n) underestimate the uncertainty.")
                 half = (r["ci_Ea"][1] - r["ci_Ea"][0]) / 2
                 a_, e_ = core.fmt_ve(r["Ea"] / 1000, half / 1000, max_decimals=2)      # Auflösung 0,01 kJ/mol
                 mant, ex = f"{r['A']:.2e}".split("e")
@@ -1584,9 +1649,9 @@ class EPRTab(TABS.FigureTab):
                     f"; smoothing: {st['smooth']:g} mT",
                     "% B [mT]\tI [arb. u.]"]
             safe = re.sub(r"[^\w.+-]+", "_", e["label"]).strip("_") or e["uid"]
-            p = base.with_name(f"{base.name}_{safe}.txt")
-            if p in files:                                 # „sample A“ und „sample/A“: nicht überschreiben
-                p = base.with_name(f"{base.name}_{safe}_{e['uid']}.txt")
+            p, n = base.with_name(f"{base.name}_{safe}.txt"), 1
+            while p in files:                              # „sample A“ und „sample/A“: nicht überschreiben
+                p, n = base.with_name(f"{base.name}_{safe}_{e['uid']}" + (f"_{n}" if n > 1 else "") + ".txt"), n + 1
             ok = np.isfinite(I)
             with open(p, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(head) + "\n")
@@ -1601,7 +1666,7 @@ class EPRTab(TABS.FigureTab):
                     fh.write(f"{x:.6g};{y:.6g};{lab}\n")
                 r = getattr(self, "kin_result", None)
                 if r:
-                    fh.write(f"# Arrhenius decay at constant heating rate ({st.get('kin_norm', 'script')}): "
+                    fh.write(f"# Arrhenius first-order decay ({st.get('kin_norm', 'lsq')}): "
                              f"Ea = {r['Ea']:.6g} J/mol [{r['ci_Ea'][0]:.6g}, {r['ci_Ea'][1]:.6g}], "
                              f"lnA = {r['lnA']:.6g} [{r['ci_lnA'][0]:.6g}, {r['ci_lnA'][1]:.6g}], "
                              f"beta = {r['beta']:.6g} K/s, corr(Ea, lnA) = {r['corr']:.4f}\n")
