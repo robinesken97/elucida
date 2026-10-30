@@ -4466,6 +4466,116 @@ def selftest(outdir, with_isnet=False):
         assert w3_._built("xray") and w3_.main_tabs.currentWidget() is w3_.xray_tab
         w3_.close()
         report.append("undo/redo (only changed tabs rebuilt), lazy tabs on open: OK")
+
+        # Audit P9: Zustand, Speichern, Rückgängig, Vorlagen
+        from elucida.app import demo as DEMO9_
+        from elucida.app import publication as PUB9_
+        w9_ = MainWindow()
+        w9_.resize(1200, 800)
+        w9_.show()
+        d9_ = DEMO9_.open_demo(w9_, out / "p9demo")
+        pump(0.6)
+        g9_ = w9_.current
+        w9_.series[g9_]["solvent"] = "THF"                 # Lösungsmittel je Serie wurde nie gespeichert
+        w9_.push_undo()
+        w9_.save_project()
+        assert PRJ.load(d9_)["eps"]["series"][g9_].get("solvent") == "THF"
+        w9_.close_project()                                # CSV fehlt beim Öffnen -> nichts löschen
+        (d9_ / "data" / "uvvis").rename(out / "p9_uvvis_away")
+        assert w9_.open_project(d9_, ask=False)
+        pump(0.4)
+        w9_.syn_state["name"] = "P9 edit"
+        w9_.push_undo()
+        w9_.save_project()
+        w9_.close_project()
+        (out / "p9_uvvis_away").rename(d9_ / "data" / "uvvis")
+        eps9_ = PRJ.load(d9_)["eps"]
+        assert eps9_["files"] and eps9_["series"].get(g9_, {}).get("solvent") == "THF", eps9_
+        assert w9_.open_project(d9_, ask=False)
+        pump(0.4)
+        assert g9_ in w9_.groups and w9_.series[g9_].get("solvent") == "THF"
+        w9_.main_tabs.setCurrentIndex(w9_._tab_keys.index("irms"))   # Feld mit Fokus: Strg+S ohne Return/Tab
+        pump(0.2)
+        w9_.activateWindow()
+        w9_.irms_tab.ed_solv.setFocus()
+        pump(0.2)
+        w9_.irms_tab.ed_solv.setText("0.5 CH2Cl2")
+        w9_.syn_tab.ed_proc.setPlainText("P9 procedure")   # Vorschrift: 500 ms verzögert übernommen
+        w9_.save_project()
+        st9_ = PRJ.load(d9_)
+        assert st9_["irms"].get("ea_solvate") == "0.5 CH2Cl2" and "P9 procedure" in str(st9_["syn"].get("proc")), (
+            st9_["irms"].get("ea_solvate"), st9_["syn"].get("proc"))
+        w9_.irms_tab.ed_solv.setText("1 H2O")               # Rückgängig (Menü), Fokus bleibt im Feld des alten Tabs
+        w9_.irms_tab.ed_solv.editingFinished.emit()
+        pump(0.6)
+        assert QApplication.focusWidget() is w9_.irms_tab.ed_solv
+        w9_.undo()
+        pump(0.6)
+        assert w9_.irms_state.get("ea_solvate") == "0.5 CH2Cl2", w9_.irms_state.get("ea_solvate")
+        e9_ = w9_.ov_state["entries"][0]                    # Rückgängig in einem Tab: übrige behalten ihre Einträge
+        w9_.fl_state["c_abs"] = "#123456"
+        w9_.push_undo()
+        pump(0.4)
+        w9_.undo()
+        pump(0.4)
+        assert w9_.ov_state["entries"][0] is e9_, "Overlay-Einträge nach Rückgängig ersetzt (Farbknopf ins Leere)"
+        w9_.epr_state["ref_freq"] = 9.8                     # Referenzfrequenz gehört zur Kalibrierung
+        w9_.replace_tab("epr")
+        w9_.epr_tab.reset_defaults()
+        assert w9_.epr_state["ref_freq"] == 9.8
+        sp9_ = w9_.nmr_tab.current()                        # HSQC ohne ¹H-Frequenz: 125 MHz bleibt bei ¹³C
+        sp9_.update(nuclei=["1H", "13C"], kind="HSQC", freqs={"13C": "125"})
+        w9_.nmr_tab._loading = True                         # wie beim Anklicken des Spektrums
+        w9_.nmr_tab.fill_selected()
+        w9_.nmr_tab._loading = False
+        w9_.nmr_tab.spec_edited()
+        assert sp9_["freqs"] == {"13C": "125"}, sp9_["freqs"]
+        xt9_ = w9_.xray_tab                                 # Alles auf Standard mit gewählten Atomen
+        xt9_.ensure_rendered()
+        n9_ = len(xt9_.entry()["params"])
+        xt9_.sel = ["C1", "C2"]
+        xt9_.update_measure()
+        xt9_.reset_defaults()
+        xt9_.take_param()
+        assert not xt9_.sel and len(xt9_.entry()["params"]) == n9_, xt9_.entry()["params"]
+        ov9_ = w9_.ov_tab                                   # Vorlage: Einstellungen ja, Daten/Unterschrift nein
+        w9_.ov_state["cap_extra"] = "P9 caption"
+        n_ov9_ = len(w9_.ov_state["entries"])
+        yaml9_ = out / "p9_preset.yaml"
+        real9_ = (TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName)
+        TABS.QFileDialog.getSaveFileName = staticmethod(lambda *a_, **k_: (str(yaml9_), ""))
+        TABS.QFileDialog.getOpenFileName = staticmethod(lambda *a_, **k_: (str(yaml9_), ""))
+        try:
+            ov9_.save_setup()
+            assert "entries" not in yaml9_.read_text(encoding="utf-8")
+            yaml9_.write_text("mode: abs\nentries: []\n", encoding="utf-8")
+            ov9_.load_setup()
+        finally:
+            TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName = real9_
+        assert w9_.ov_state["mode"] == "abs" and len(w9_.ov_state["entries"]) == n_ov9_, w9_.ov_state.get("entries")
+        assert w9_.ov_state["cap_extra"] == "P9 caption"
+        ov9_ = w9_.ov_tab                                   # Bild scheitert: Änderung trotzdem im Verlauf
+        ov9_.build = lambda fig_: 1 / 0
+        u9_ = len(w9_._undo)
+        w9_.ov_state["mode"] = "eps"
+        ov9_.render()
+        assert len(w9_._undo) == u9_ + 1 and w9_.is_dirty()
+        other9_ = PRJ.create(out / "p9_other")              # Kopie nie über Verbindung/Projekt
+        other_txt9_ = (other9_ / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
+        PUB9_.create(out / "p9_pub")
+        real9_ = MW.QFileDialog.getExistingDirectory
+        try:
+            for tgt9_ in (other9_, out / "p9_pub"):
+                MW.QFileDialog.getExistingDirectory = staticmethod(lambda *a_, t_=tgt9_, **k_: str(t_))
+                assert not w9_.save_project_copy()
+        finally:
+            MW.QFileDialog.getExistingDirectory = real9_
+        assert (other9_ / PRJ.PROJECT_FILE).read_text(encoding="utf-8") == other_txt9_
+        assert not PRJ.is_project(out / "p9_pub")
+        w9_.close()
+        report.append("state audit P9 (solvent saved, missing UV-Vis file kept, focused field/procedure flushed on "
+                      "save, undo keeps untouched tabs, EPR ref. frequency, NMR freq. slots, X-Ray reset selection, "
+                      "presets keep data, failed render undoable, save copy never overwrites): OK")
         # Startbildschirm/Tabs je nach Projekt; Beispielprojekt (künstliche Daten) füllt die Tabs
         assert w.center.currentIndex() == 1
         d_demo = w.open_demo(out / "demo")

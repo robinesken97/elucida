@@ -545,6 +545,7 @@ class MainWindow(QMainWindow):
         self.csv_path = None
         self.groups, self.units = {}, {}
         self.samples, self.conc, self.csv_paths = [], {}, []          # Rohproben und Konzentrations-Overrides
+        self._eps_held = {}            # beim Öffnen fehlende Dateien/Serien: unverändert weiter speichern
         self.series = {}               # je Serie: mw, structure, photo, bg, layout, assets
         self.current = None
         self.F = None
@@ -1169,6 +1170,7 @@ class MainWindow(QMainWindow):
             return None
         attr, cls, st_attr, label = self._tab_spec(key)
         old = getattr(self, attr)
+        old._loading = True                            # Feld mit Fokus meldet beim Entfernen editingFinished
         new = cls(self, getattr(self, st_attr))
         setattr(self, attr, new)
         i = self._tab_keys.index(key)
@@ -1483,6 +1485,7 @@ class MainWindow(QMainWindow):
             self.error(T("conc_none"))
             return False
         self.csv_path, self.csv_paths, self.samples = path, paths, samples
+        self._eps_held = {}
         self.settings.setValue("last_dir", str(Path(path).parent))
         self.groups, self.units, self.series, self.conc = {}, {}, {}, {}
         _, _, missing = core.group_samples(samples, self.conc, Path(path).stem)
@@ -1561,9 +1564,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, "sp_d"):
             self.collect_globals()
         keys = ("mw", "structure", "photo", "bg", "layout", "struct_w", "photo_w", "band_cutoff", "band_hidden",
-                "color_c")
-        return {"eps": {"files": list(self.csv_paths), "glob": dict(self.glob), "conc": self.conc,
-                        "series": {g: {k: st.get(k) for k in keys} for g, st in self.series.items()},
+                "color_c", "solvent")
+        held = self._eps_held
+        return {"eps": {"files": list(self.csv_paths) + [p for p in held.get("files", []) if p not in self.csv_paths],
+                        "glob": dict(self.glob), "conc": self.conc,
+                        "series": dict(held.get("series", {}),
+                                       **{g: {k: st.get(k) for k in keys} for g, st in self.series.items()}),
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
@@ -1586,6 +1592,9 @@ class MainWindow(QMainWindow):
         """Zustand übernehmen (Projekt laden, Undo/Redo). partial (Rückgängig/Wiederholen): nur geänderte Tabs neu
         aufbauen, ε nur nachziehen, statt der ganzen Oberfläche (build_ui, ~1,2 s im Beispielprojekt)."""
         state = json.loads(json.dumps(state))          # entkoppeln
+        if state.get("hrms") is None:                  # Projekte vor 1.21: MS-Teil stand im Tab IR + MS
+            ir = state.get("irms") or {}
+            state["hrms"] = {k: ir[k] for k in ("ms_file", "ms_raw", "ms_rt", "adduct", "found") if k in ir}
         changed = self._changed_parts(state) if partial and getattr(self, "main_tabs", None) is not None else None
         eps_changed = changed is None or "eps" in changed
         eps = state.get("eps") or {}
@@ -1595,33 +1604,14 @@ class MainWindow(QMainWindow):
             self.conc = eps.get("conc") or {}
             self.csv_paths = [p for p in eps.get("files") or [] if Path(p).exists()]
             self.csv_path = self.csv_paths[0] if self.csv_paths else None
+            self._eps_held = {"files": [p for p in eps.get("files") or [] if p not in self.csv_paths]}
             self.groups, self.units, self.series, self.samples = {}, {}, {}, []
-        self.ov_state.clear()
-        self.ov_state.update(state.get("overlay") or {})
-        self.fl_state.clear()
-        self.fl_state.update(state.get("fluo") or {})
-        self.cv_state.clear()
-        self.cv_state.update(state.get("cv") or {})
-        self.sec_state.clear()
-        self.sec_state.update(state.get("sec") or {})
-        self.epr_state.clear()
-        self.epr_state.update(state.get("epr") or {})
-        self.irms_state.clear()
-        self.irms_state.update(state.get("irms") or {})
-        self.hrms_state.clear()
-        hr = state.get("hrms")
-        if hr is None:                                 # Projekte vor 1.21: MS-Teil stand im Tab IR + MS
-            ir = state.get("irms") or {}
-            hr = {k: ir[k] for k in ("ms_file", "ms_raw", "ms_rt", "adduct", "found") if k in ir}
-        self.hrms_state.update(hr)
-        self.xray_state.clear()
-        self.xray_state.update(state.get("xray") or {})
-        self.dft_state.clear()
-        self.dft_state.update(state.get("dft") or {})
-        self.nmr_state.clear()
-        self.nmr_state.update(state.get("nmr") or {})
-        self.syn_state.clear()
-        self.syn_state.update(state.get("syn") or {})
+        for key in self._TAB_BUILD_ORDER:
+            # unveränderte Tabs behalten ihre Objekte (nicht neu gebaute Tabs halten Verweise)
+            if changed is None or key in changed:
+                st_ = getattr(self, self._tab_spec(key)[2])
+                st_.clear()
+                st_.update(state.get(key) or {})
         self.compound = dict(state.get("compound") or {})
         self.text_fmt = dict(core.TEXT_DEFAULTS, **(state.get("text") or {}))
         self.tab_fmt = {k: dict(v) for k, v in (state.get("text_tabs") or {}).items()}
@@ -1680,6 +1670,7 @@ class MainWindow(QMainWindow):
             self.cmb_series.setCurrentText(self.current or "")
             self.cmb_series.blockSignals(False)
             self.lbl_file.setText(self.files_label())
+        self._eps_held["series"] = {g: sd for g, sd in (eps.get("series") or {}).items() if g not in self.series}
         self.apply_globals()
         self.apply_series_widgets()
         if changed is not None:                        # ohne Neuaufbau: Anleitung/Abbildung selbst umschalten
@@ -2344,8 +2335,21 @@ class MainWindow(QMainWindow):
                 self.project_dir).as_posix()))
         return new
 
+    def _flush_edits(self):
+        """Laufende Eingabe übernehmen: Textfelder melden sich erst bei Return/Fokuswechsel, Vorschrift und NMR-Text
+        nach 500 ms – Speichern (Strg+S) und Schließen verschieben den Fokus nicht."""
+        w = QApplication.focusWidget()
+        if isinstance(w, QLineEdit) and w.window() is self:
+            w.editingFinished.emit()
+        for key, timer, slot in (("syn", "timer", "proc_changed"), ("nmr", "text_timer", "text_changed")):
+            tab = self.__dict__.get(self._tab_spec(key)[0])
+            if tab is not None and getattr(tab, timer).isActive():
+                getattr(tab, timer).stop()
+                getattr(tab, slot)()
+
     def maybe_save(self):
         """Vor Neu/Öffnen/Schließen: ausstehendes automatisches Speichern sofort ausführen."""
+        self._flush_edits()
         if self.autosave_timer.isActive():
             self.autosave_timer.stop()
             self.autosave()
@@ -2524,6 +2528,7 @@ class MainWindow(QMainWindow):
     def save_project(self):
         if not self.project_dir:
             return self.ensure_project()
+        self._flush_edits()
         self.autosave_timer.stop()
         self.autosave(force=True)                      # auch direkt nach dem Laden (Beispielprojekt), sonst leer
         self.write_exchange()
@@ -2535,6 +2540,9 @@ class MainWindow(QMainWindow):
             return self.error(T("load_first"))
         d = QFileDialog.getExistingDirectory(self, T("act_save_copy"), str(Path(self.project_dir).parent))
         if d:
+            from elucida.app import publication as PUB
+            if PRJ.is_project(d) or PUB.is_publication(d):    # nie über Verbindung/Projekt
+                return self.error(T("copy_target_used", p=d))
             return self._write_project(Path(d), switch=False)
         return False
 

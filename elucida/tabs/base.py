@@ -869,11 +869,11 @@ class FigureTab(QWidget):
                 self.sync_sizes(self.F.current_layout())
             self.canvas.draw_idle()
             self.notes_show()
-            self.main.push_undo()
         except Exception as e:
             self.main.log_signal.emit(traceback.format_exc())
             self.main.statusBar().showMessage(f"{T('err_title')}: {e}", 8000)
             self.notes_show(error=e)
+        self.main.push_undo()                          # auch wenn das Bild scheitert: Änderung speichern/rückgängig
 
     def hover_text(self, lam, val, name):
         if val is None:
@@ -1052,18 +1052,27 @@ class FigureTab(QWidget):
             QApplication.clipboard().setText(txt)
         self.main.statusBar().showMessage(T("si_methods_copied") if txt else T("si_methods_none"), 6000)
 
+    def _is_data_key(self, k):
+        """Daten, Angaben zur Messung, Bildunterschrift: nicht in Vorlagen (X-Ray/DFT: entries, current)."""
+        return k in self.RESET_KEEP or k in ("entries", "current") or k.startswith("cap_")
+
     def save_setup(self):
         p, _ = QFileDialog.getSaveFileName(self, T("tab_save"), self.STATE_KEY + ".yaml", "YAML (*.yaml)")
         if p:
-            Path(p).write_text(yaml.safe_dump(self.st, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            data = {k: v for k, v in self.st.items() if not self._is_data_key(k)}
+            Path(p).write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     def load_setup(self):
         p, _ = QFileDialog.getOpenFileName(self, T("tab_load"), "", "YAML (*.yaml)")
         if p:
             data = yaml.safe_load(Path(p).read_text(encoding="utf-8")) or {}
+            if not isinstance(data, dict):
+                return self.main.error(f"YAML: {p}")
+            keep = {k: v for k, v in self.st.items() if self._is_data_key(k)}
             self.st.clear()
             self.st.update(copy.deepcopy(self.DEFAULT_STATE))
-            self.st.update(data)
+            self.st.update({k: v for k, v in data.items() if not self._is_data_key(k)})
+            self.st.update(keep)
             key = self.main.tab_key_of(self)
             self.main.replace_tab(key) if key else self.main.rebuild_tabs()
 

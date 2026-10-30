@@ -2975,6 +2975,8 @@ def reset_display(tab, keep, entry_extra):
     if e is not None:
         e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={}, **copy.deepcopy(entry_extra))
         e.pop("ext", None)
+    tab.sel = []                                       # sonst „Übernehmen“ mit altem Messwert
+    tab.update_measure()
     tab.sync_widgets()
     tab.render()
     tab.main.push_undo()
@@ -4128,7 +4130,6 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         ausgewählte Parameter und Exportgröße bleiben."""
         reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout"),
                       dict(hidden_frags=[], hidden_atoms=[], label_on={}, wire=[]))
-        self.sel = []
 
     reset_defaults = reset_display
 

@@ -2027,6 +2027,8 @@ TEXTS = {
                     "Part of the project “{t}”"),
     "pub_is_project": ("Dieser Ordner ist schon eine Verbindung. Bitte den übergeordneten Ordner wählen.",
                        "This folder already is a compound. Please choose its parent folder."),
+    "copy_target_used": ("In {p} liegt schon eine Verbindung oder ein Projekt. Bitte einen leeren Ordner wählen.",
+                         "{p} already holds a compound or project. Please choose an empty folder."),
     "pub_info": ("Angaben …", "Details …"),
     "pub_info_missing": ("Noch keine Angaben – Titel, Autoren, DOI unter „Angaben …“",
                          "No details yet – title, authors, DOI under “Details …”"),
