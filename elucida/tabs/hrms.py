@@ -42,6 +42,8 @@ def _isotopes(el):
         ab = pt.GetAbundanceForIsotope(z, a)
         if ab > 0:
             out.append((pt.GetMassForIsotope(z, a), ab))
+    if not out:
+        raise ValueError(f"Element {el} ohne natürliche Isotope")
     tot = sum(p for _, p in out) or 1.0
     return [(m, p / tot) for m, p in out]
 
@@ -250,8 +252,9 @@ class HRMSTab(TABS.FigureTab):
         else:                                        # beim Umschalten steht in den Feldern der automatische Bereich
             prev = st.get("ms_rt") or ([self._lc["rt_lo"] / 60, self._lc["rt_hi"] / 60] if self._lc else None)
             vals = [self.sp_rt_lo.value(), self.sp_rt_hi.value()]
-            if prev:                                 # Felder runden auf 0.01 min: unveränderte Grenze genau behalten
-                vals = [p if abs(p - v) <= 0.005 + 1e-9 else v for p, v in zip(sorted(prev), vals)]
+            if prev:                                 # Felder runden auf 0.01 min: nur das bearbeitete Feld übernehmen
+                src = self.sender()
+                vals = [v if src is sp else p for p, v, sp in zip(sorted(prev), vals, (self.sp_rt_lo, self.sp_rt_hi))]
             st["ms_rt"] = sorted(vals)
         st.update(adduct=self.cmb_adduct.currentData(), found=self.cmb_found.currentData(),
                   show_calc=self.cb_calc.isChecked(), mz_labels=self.cb_mzlab.isChecked())

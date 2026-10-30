@@ -81,7 +81,7 @@ def read_ms_docx(path) -> dict:
         xml = z.read("word/document.xml").decode("utf-8", "replace")
         emf = [z.read(n) for n in z.namelist() if n.startswith("word/media/") and n.lower().endswith(".emf")]
         cdx = _docx_cdx(z)
-    xml = re.sub(r"<w:del\b.*?</w:del>", "", xml, flags=re.S)       # nachverfolgte Löschungen nicht mitlesen
+    xml = re.sub(r"<w:del(?:\s[^>]*)?(?<!/)>.*?</w:del>", "", xml, flags=re.S)   # Löschungen (nicht <w:del/>)
     paras = [re.sub(r"<[^>]+>", "", p) for p in xml.split("</w:p>")]
     paras = [re.sub(r"\s+", " ", p.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")).strip()
              for p in paras]

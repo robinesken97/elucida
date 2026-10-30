@@ -474,6 +474,10 @@ TEXTS = {
     "flt_ir": ("Bruker OPUS / PDF (*.0 *.1 *.2 *.3 *.4 *.5 *.6 *.7 *.8 *.9 *.pdf)", "Bruker OPUS / PDF (*.0 *.1 *.2 *.3 *.4 *.5 *.6 *.7 *.8 *.9 *.pdf)"),
     "ir_pdf_empty": ("keine Peakwerte im PDF gefunden (OPUS-Ausdruck mit Peakbeschriftung nötig)",
                      "no peak values found in the PDF (OPUS print-out with peak labels needed)"),
+    "ir_pdf_ambiguous": ("mehrere Spektren ausgewählt: das PDF heißt nicht wie das übernommene (letzte) "
+                         "Spektrum und wurde nicht übernommen – PDF einzeln zum Spektrum laden",
+                         "several spectra selected: the PDF is not named like the spectrum kept (the last one) "
+                         "and was not used – load the PDF on its own with its spectrum"),
     "ir_full": ("gesamt", "full"),
     "ir_range": ("Bereich", "Range"),
     "ir_xrange": ("ṽ-Bereich (Bild) [cm⁻¹]", "ṽ range (figure) [cm⁻¹]"),

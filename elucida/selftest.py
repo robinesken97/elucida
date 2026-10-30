@@ -2176,6 +2176,80 @@ def selftest(outdir, with_isnet=False):
         assert not fails_, "\n".join(fails_)
         report.append("audit P3 HRMS/IR/EA edge cases: OK")
 
+        # Audit P3, Codex-Gegenlesen + Entscheidungen R1-R3 (jeder Fall scheiterte an b076a23)
+        fails_ = []
+        def r3_chemdraw():                               # ChemDraw: 13C beim C mit Isotopenmasse (Nutzerbeispiel)
+            pl_ = SI.ea_line("C20[13C]H24N4", "", {})[0]
+            assert "C 75.94, H 7.26, N 16.80" in pl_, pl_
+            assert abs(IRMS.ion("C20[13C]H24N4", "M")[2] + 0.000548579909 - 333.2035) < 5e-5
+        chk_("EA isotopes like ChemDraw", r3_chemdraw)
+        def r2_printed():                                # Warnung nach den gedruckten Werten (calc 81.78)
+            assert SI.ea_line("C18H20N2", "", {"C": "82.18"})[2] == []
+            assert SI.ea_line("C18H20N2", "", {"C": "82.19"})[2]
+        chk_("EA warning on printed values", r2_printed)
+        def r1_tags():                                   # w/m/s: Tiefe in T, ganzes Spektrum, auch für A-Dateien
+            x_ = np.arange(4000.0, 399.0, -2.0)
+            t_ = 100 - 95 * np.exp(-((x_ - 1700) / 10) ** 2) - 40 * np.exp(-((x_ - 2900) / 10) ** 2)
+            def tag_(wn_, y_, kind_, lo_=None, hi_=None):
+                return next(IRMS.intensity_tag(p_) for p_ in IRMS.pick_peaks(wn_, y_, kind_, lo_, hi_)
+                            if abs(p_["wn"] - 2900) < 2)
+            tags_ = (tag_(x_, t_, "T"), tag_(x_, IRMS.to_absorbance(t_), "A"), tag_(x_, t_, "T", 2000, 3500))
+            assert tags_ == ("m", "m", "m"), tags_
+        chk_("IR intensity class", r1_tags)
+        def c1_del():                                    # gelöschte Absatzmarke <w:del/>: Text danach bleibt
+            rep_ = IRMS.read_ms_docx(ms_docx_(irdir / "p3_delmark.docx", [
+                par_("molecular formula:"), '<w:p><w:pPr><w:rPr><w:del w:id="3" w:author="x"/></w:rPr></w:pPr>'
+                '<w:r><w:t>C18H20N2</w:t></w:r></w:p>', '<w:p><w:del w:id="4"><w:r><w:delText>alt</w:delText>'
+                '</w:r></w:del></w:p>'], ["265.1703"], ["+MS"]))
+            assert rep_["formula"] == "C18H20N2", rep_["formula"]
+        chk_("MS report deleted paragraph mark", c1_del)
+        def c2_batch():                                  # A.0, A.pdf, B.0: B ohne das PDF von A
+            (irdir / "A.0").write_bytes((irdir / "test.0").read_bytes())
+            (irdir / "B.0").write_bytes((irdir / "test.0").read_bytes())
+            (irdir / "A.pdf").write_bytes((irdir / "p3a.pdf").read_bytes())
+            t_ir.load_ir_files([str(irdir / "A.0"), str(irdir / "A.pdf"), str(irdir / "B.0")])
+            assert Path(w.irms_state["ir_file"]).stem.startswith("B") and not w.irms_state.get("ir_pdf"), w.irms_state
+            t_ir.load_ir_files([str(irdir / "A.0"), str(irdir / "A.pdf")])    # ein Spektrum: PDF gehört dazu
+            assert Path(w.irms_state["ir_pdf"]).stem.startswith("A")
+            t_ir.clear_ir()
+        chk_("IR batch load PDF pairing", c2_batch)
+        def c3_unit():                                   # Prozentdaten mit vielen Werten < 1.5: nicht raten
+            y_ = np.where(np.arange(128) % 2, 80.0, 0.8)
+            try:
+                IRMS.read_opus(opus_file_(irdir / "mixed_unit.0", y_))
+                raise AssertionError("Einheit geraten")
+            except ValueError:
+                pass
+        chk_("OPUS ambiguous unit rejected", c3_unit)
+        def c5_tc():                                     # ohne natürliche Isotope nur mit Massenzahl
+            try:
+                IRMS.parse_formula("C10H10Tc")
+                raise AssertionError("Tc angenommen")
+            except ValueError:
+                pass
+            assert HRMS.isotope_pattern("C10H11[99Tc]", 1)[0][1] == 100
+        chk_("element without natural isotopes", c5_tc)
+        def c4_edges():                                  # Grenzen s -> min -> s: Randscan bleibt
+            sp_ = [(t_, np.array([calc_]), np.array([1e4])) for t_ in (13.0, 14.0, 15.002)]
+            assert IRMS.lc_found(sp_, calc_, rt=[60 * (13.0 / 60), 60 * (15.002 / 60)])["n"] == 3   # 15.0019999…
+            d_ = make_d_(irdir / "p3mixed2.d", sorted(scans_))
+            w.compound = {"formula": "C18H20N2"}
+            set_adduct_("M+H")
+            t_ms.load_raw(str(d_))
+            t_ms.render()
+            mz_ = t_ms._sticks[0]                        # Spektrum ohne die negativen Scans
+            assert len(mz_) and not (np.abs(mz_ - (calc_ + 0.004)) < 1e-3).any(), mz_
+            w.hrms_state["ms_rt"] = [0.865, 1.2]         # Feld zeigt 0.86; bewusste Änderung auf 0.87 gilt
+            t_ms.sync_widgets()
+            t_ms.sp_rt_lo.setValue(0.87)
+            assert abs(w.hrms_state["ms_rt"][0] - 0.87) < 1e-9, w.hrms_state["ms_rt"]
+            t_ms.clear_raw()
+        chk_("HRMS RT edges/spectrum polarity", c4_edges)
+        w.hrms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None, found_pick=None, adduct="M+H")
+        w.compound = {}
+        assert not fails_, "\n".join(fails_)
+        report.append("audit P3 review fixes (Codex) + EA/IR decisions: OK")
+
         # X-Ray: künstliche CIF (Ring auf Inversionszentrum, PART 1/2, Wasser als zweites Fragment, ohne Torsionen)
         from matplotlib.backend_bases import MouseEvent
         xdir = out / "input" / "xray"

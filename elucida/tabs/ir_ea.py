@@ -40,6 +40,7 @@ ADDUCTS = {
 
 
 _FTOK = re.compile(r"(?:\[(\d+)([A-Z][a-z]?)\]|([A-Z][a-z]?))(\d*)|(\()|\)(\d*)")
+NO_NATURAL = {"Tc", "Pm", "Po", "At", "Rn"}          # ohne stabile Isotope: Masse nur mit Massenzahl
 _ISO = re.compile(r"\[(\d+)([A-Z][a-z]?)\]")
 
 
@@ -63,6 +64,8 @@ def _formula_part(s: str) -> dict:
             sym = m.group(3) or m.group(2)
             if sym not in ELEMENTS and sym != "D":
                 raise ValueError(f"Element {sym} nicht bekannt")
+            if sym in NO_NATURAL and not m.group(2):
+                raise ValueError(f"Element {sym} ohne natürliche Isotope: Massenzahl angeben, z. B. [99{sym}]")
             el = m.group(3) or f"[{m.group(1)}{m.group(2)}]"     # Isotop wie RDKit: [13C]
             stack[-1][el] = stack[-1].get(el, 0) + int(m.group(4) or 1)
     if len(stack) != 1:
@@ -152,7 +155,8 @@ BROAD_CM = 120.0                                    # Halbwertsbreite, ab der ei
 
 def pick_peaks(wn, y, kind="T", lo=None, hi=None, prominence=0.05, min_dist=4.0):  # noqa: C901
     """Banden im Bereich [lo, hi] (cm⁻¹): Tiefe d = 100 − T (bzw. A), lokale Maxima von d mit Prominenz
-    ≥ prominence · max(d). -> [dict(wn, depth, rel, width)] absteigend nach Wellenzahl."""
+    ≥ prominence · max(d). rel (w/m/s) = Tiefe in T relativ zur stärksten Bande des ganzen Spektrums.
+    -> [dict(wn, depth, rel, width)] absteigend nach Wellenzahl."""
     wn, y = np.asarray(wn, float), np.asarray(y, float)
     d = (100.0 - y) if kind == "T" else y.copy()
     lo = float(np.nanmin(wn)) if lo is None else lo
@@ -207,6 +211,17 @@ def pick_peaks(wn, y, kind="T", lo=None, hi=None, prominence=0.05, min_dist=4.0)
         if k not in seen:
             seen.add(k)
             uniq.append(p)
+    # w/m/s wie üblich: Tiefe im Transmissionsspektrum (100 − T, auch bei Absorbanzdateien) relativ zur stärksten
+    # Bande des ganzen gemessenen Spektrums – unabhängig vom gewählten Bereich
+    dT = 100.0 - (y if kind == "T" else to_transmission(y))
+    ok = np.isfinite(dT)
+    if uniq and ok.sum() >= 5:
+        o2 = np.argsort(wn[ok])
+        xs, ds = wn[ok][o2], dT[ok][o2]
+        ds = ds - float(np.percentile(ds, 5))
+        dmx = float(ds.max()) or 1.0
+        for p in uniq:
+            p["rel"] = float(np.interp(p["wn"], xs, ds)) / dmx
     return uniq
 
 
@@ -306,8 +321,8 @@ def lc_found(spectra, calc, tol_ppm=10.0, rt=None, frac=0.5):
     xic = np.array(xic)
     if not (xic[:, 2] > 0).any():
         return None
-    if rt is not None:
-        use = (xic[:, 0] >= min(rt)) & (xic[:, 0] <= max(rt)) & (xic[:, 2] > 0)
+    if rt is not None:                                 # 1e-6 s: Grenzen kommen über min zurück (Rundung)
+        use = (xic[:, 0] >= min(rt) - 1e-6) & (xic[:, 0] <= max(rt) + 1e-6) & (xic[:, 2] > 0)
     else:
         top = int(np.argmax(xic[:, 2]))
         thr = frac * xic[top, 2]
@@ -697,7 +712,21 @@ class IRMSTab(TABS.FigureTab):
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("ir_files"), self.main.settings.value("last_dir", ""),
                                              f"{T('flt_ir')};;{T('flt_all')}")
-        for p in sorted(ps, key=lambda p: Path(p).suffix.lower() == ".pdf"):    # PDF nach seinem Spektrum
+        self.load_ir_files(ps)
+
+    def load_ir_files(self, ps):
+        """Mehrere Dateien auf einmal: das letzte Spektrum gilt; ein PDF nur, wenn es eindeutig zu ihm gehört (einziges
+        Spektrum der Auswahl oder gleicher Dateiname), sonst Hinweis statt fremder Peaks."""
+        spec = [p for p in ps if Path(p).suffix.lower() != ".pdf"]
+        pdfs = [p for p in ps if Path(p).suffix.lower() == ".pdf"]
+        for p in spec:
+            self.load_ir(p)
+        if spec and len(spec) > 1:
+            same = [p for p in pdfs if Path(p).stem == Path(spec[-1]).stem]
+            if pdfs and not same:
+                self.main.error(T("ir_pdf_ambiguous"))
+            pdfs = same
+        for p in pdfs[-1:]:
             self.load_ir(p)
 
     def load_ir(self, p):

@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path
 
 from elucida.core import uvvis as core
-from elucida.tabs.ir_ea import formula_str, parse_formula
+from elucida.tabs.ir_ea import element_of_key, formula_str, mono_mass, parse_formula
 
 # Mittlere Atommassen (IUPAC 2021, konventionelle Werte) für die Elementaranalyse
 AVG = {"H": 1.008, "D": 2.014, "Li": 6.94, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998,
@@ -83,11 +83,17 @@ def ea_composition(formula: str, solvate: str = "") -> dict:
     for n, f in parse_solvate(solvate):
         for el, k in parse_formula(f).items():
             counts[el] = counts.get(el, 0) + n * k
-    missing = [el for el in counts if el not in AVG]
+    missing = [el for el in counts if el not in AVG and not el.startswith("[")]
     if missing:
         raise ValueError("keine Atommasse für " + ", ".join(missing))
-    mw = sum(AVG[el] * k for el, k in counts.items())
-    return {el: 100 * AVG[el] * k / mw for el, k in counts.items()}
+    # Isotope ([13C]) wie ChemDraw: beim Element, mit der Masse des Isotops (C20[13C]H24N4: C 75.94)
+    mass = {el: AVG[el] if el in AVG else mono_mass(el) for el in counts}
+    mw = sum(mass[el] * k for el, k in counts.items())
+    out = {}
+    for el, k in counts.items():
+        e = element_of_key(el)
+        out[e] = out.get(e, 0.0) + 100 * mass[el] * k / mw
+    return out
 
 
 def _num(n):
@@ -138,9 +144,9 @@ def ea_line(formula: str, solvate: str, found: dict):
             if not math.isfinite(fv[el]):
                 raise ValueError(f"found {el}: {v}")
     notes = []
-    for el, v in fv.items():
-        d = v - comp.get(el, 0.0)
-        if abs(d) > EA_TOL:
+    for el, v in fv.items():                       # wie gedruckt verglichen (2 Nachkommastellen)
+        d = float(f"{v:.2f}") - float(f"{comp.get(el, 0.0):.2f}")
+        if abs(d) > EA_TOL + 1e-9:
             notes.append((el, d))
     label = ea_formula_label(formula, solvate)
     fnd = ", ".join(f"{el} {v:.2f}" for el, v in fv.items()) if fv else "–"

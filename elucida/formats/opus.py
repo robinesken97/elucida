@@ -61,8 +61,12 @@ def read_opus(path) -> dict:
     wn = np.linspace(pr["FXV"], pr["LXV"], npt)
     # 2. Kennbyte 20 = Transmission (OPUS speichert sie als Anteil 0–1), 16 = Absorbanz
     kind = "A" if t[1] == 16 else "T"
-    if kind == "T" and np.nanmedian(y) <= 1.5:      # Median: einzelne Ausreißer > 1.5 ändern die Einheit nicht
-        y = y * 100.0                                # in % wie im OPUS-Ausdruck
+    if kind == "T":                                  # Anteil (0–1) oder %: fast alle Werte ≤ 1.5 bzw. fast alle darüber
+        hi_ = float(np.nanmean(y > 1.5))
+        if hi_ <= 0.05:
+            y = y * 100.0                            # in % wie im OPUS-Ausdruck
+        elif hi_ < 0.95:
+            raise ValueError(f"{Path(path).name}: Einheit der Transmission unklar (Anteil oder %)")
     return {"wn": wn, "y": y, "kind": kind, "name": Path(path).stem}
 
 
