@@ -271,6 +271,77 @@ def selftest(outdir, with_isnet=False):
         w.glob["min_r2"] = 0.98
         w.apply_globals()
         report.append("min. R² threshold: OK")
+        # Audit P1: Grenzfälle der ε-Auswertung (synthetisch)
+        cfg_a = core.deep_merge(core.DEFAULTS, dict(conc_unit="mM", path_length_cm=1.0))
+        assert core.parse_sample_name("probe_0,1mM") == ("probe", 0.1, "mM")         # Dezimalkomma
+        assert core.parse_sample_name("probe_1e-3mM") == ("probe", 0.001, "mM")
+        assert core.parse_sample_name("S-0p25mgml2") == ("S", 0.25, "mg/mL")         # Cary-Laufnummer dahinter
+        x_a = np.arange(490.0, 511.0)
+        sp_a = [dict(x=x_a, y=0.2 * c * np.exp(-((x_a - 503) / 2) ** 2), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
+        r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500], snap_window_nm=5), sp_a)[0]
+        assert r_a["lam"] == 503 and abs(r_a["eps"] - 200) < 1e-6, (r_a["lam"], r_a.get("eps"))  # Maximum-Snap
+        x_a = np.arange(400.0, 601.0)
+        flat = [dict(x=x_a, y=np.full_like(x_a, 0.1), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
+        r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500]), flat)[0]
+        assert r_a.get("hidden"), r_a                                    # R² undefiniert -> nicht ins Bild/SI
+        prop = [dict(x=x_a, y=0.125 * c * np.ones_like(x_a), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
+        r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500], fit_intercept=False), prop)[0]
+        assert core.fmt_ve(r_a["eps"], r_a["eps_err"], max_decimals=0)[1] != "0"   # nie „± 0“
+        same_c = [dict(x=x_a, y=np.full_like(x_a, 0.2), c=1.0) for _ in range(3)]
+        r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500]), same_c)[0]
+        assert r_a["fit"] is None and "eps" not in r_a, r_a              # gleiche c: kein ε statt Absturz
+        x_a = np.arange(300.0, 801.0)
+        edge = [dict(x=x_a, y=0.2 * c * np.exp(-0.5 * ((x_a - 600) / 20) ** 2), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
+        _, _, r_e = core.prepare_series(cfg_a, edge, "edge")             # Basislinienfenster am Messbeginn
+        assert any(abs(r_["lam"] - 600) <= 2 for r_ in r_e), [r_["lam"] for r_ in r_e]
+        semi = out / "input" / "semicolon.csv"
+        semi.write_text("\r\n".join(["S_0,1mM;;S_0,2mM;", "Wavelength (nm);Abs;Wavelength (nm);Abs;"] +
+                                    [f"{lam};{0.1 * (lam - 395):.1f};{lam};{0.2 * (lam - 395):.1f};".replace(".", ",")
+                                     for lam in range(400, 406)]), encoding="utf-8", newline="")
+        smp_ = core.read_samples([semi])
+        assert [s_["parsed"] for s_ in smp_] == [("S", 0.1, "mM"), ("S", 0.2, "mM")], [s_["name"] for s_ in smp_]
+        assert core.parse_sample_name("p_.5mM")[1] == 0.5 and core.parse_sample_name("p_5μM")[2] == "uM"
+        ansi = out / "input" / "ansi.csv"                                 # Windows-Export (cp1252): µ = 0xB5
+        ansi.write_bytes(("A-10 \xb5M,,A-5 \xb5M,\r\n" + "".join(f"{lam},0.{lam - 390},{lam},0.0{lam - 390},\r\n"
+                                                           for lam in range(400, 406))).encode("cp1252"))
+        assert [s_["parsed"] for s_ in core.read_samples([ansi])] == [("A", 10.0, "uM"), ("A", 5.0, "uM")]
+        x_a = np.arange(200.0, 801.0)
+        part = [dict(x=x_a, y=1.2 * c / 0.04 * np.exp(-((x_a - 400) / 30) ** 2), c=c) for c in (0.04, 0.02, 0.01, 0.005)]
+        part[0] = dict(part[0], x=part[0]["x"][301:], y=part[0]["y"][301:])  # stärkste Probe erst ab 501 nm
+        assert any(abs(p_ - 400) <= 2 for p_ in core.detect_peaks(part, dict(cfg_a, peak_range_nm=[230, None]))), \
+            "Bande der verduennten Proben verloren"
+        nan_bl = [dict(s_) for s_ in part[1:]]
+        assert core.apply_baseline(nan_bl, dict(cfg_a, baseline_nm=[900, 950])) is None \
+            and not any(np.isnan(s_["y"]).any() for s_ in nan_bl)        # Fenster ausserhalb: nicht korrigieren
+        icpt = [dict(x=x_a, y=np.full_like(x_a, v), c=c) for c, v in zip((0.1, 0.2, 0.3, 0.4), (0.20, 0.28, 0.45, 0.50))]
+        r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500]), icpt)[0]
+        assert not r_a["warnings"], r_a["warnings"]                       # |b|/SE = 2.1 < t(0.975; 2) = 4.3
+        res_x = [dict(lam=280.0, fit={"r2": 1.0}, eps=5000.0, eps_err=10.0),
+                 dict(lam=450.0, fit={"r2": 1.0}, eps=3000.0, eps_err=10.0)]
+        line_x = SI.uvvis_line(res_x, dict(cfg_a, xlim=[300, 600]))[0]
+        assert "450 nm" in line_x and "280" not in line_x, line_x         # nur Banden des Bildes
+        nir = bytearray([len(magic)]) + magic                            # Cary-NIR bis 1200 nm
+        nir += bytes(0x400 - len(nir))
+        blk = bytearray(256)
+        blk[:10] = b"NIR-1mgml\x00"
+        nir += blk + b"".join(struct.pack("<ff", x, 0.3) for x in np.arange(1200.0, 999.0, -1.0)) + bytes(64)
+        (out / "input" / "nir.DSW").write_bytes(bytes(nir))
+        s_nir = core.read_samples([out / "input" / "nir.DSW"])
+        assert s_nir and s_nir[0]["x"].max() > 1199 and len(s_nir[0]["x"]) == 201, [len(s_["x"]) for s_ in s_nir]
+        spc = bytearray(600)                                              # unbekannte SPC-Variante (Version 0)
+        spc[4:8] = struct.pack("<i", 6)
+        spc[8:24] = struct.pack("<dd", 400.0, 405.0)
+        spc[544:568] = struct.pack("<6f", *[0.1] * 6)
+        (out / "input" / "bad.spc").write_bytes(bytes(spc))
+        try:
+            core.read_samples([out / "input" / "bad.spc"])
+            raise AssertionError("SPC ohne Versionskennung angenommen")
+        except ValueError:
+            pass
+        spc[0:4] = bytes([0, 0x4B, 0, 0x80])                              # gültig: neues Format, y als float
+        (out / "input" / "good.spc").write_bytes(bytes(spc))
+        assert len(core.read_samples([out / "input" / "good.spc"])[0]["x"]) == 6
+        report.append("eps edge cases (names, snap, undefined R2, SE 0, equal c, baseline at start, ';' CSV): OK")
 
         def pump(sec=0.4):
             import time
@@ -340,6 +411,47 @@ def selftest(outdir, with_isnet=False):
             files = w.ov_tab.export_to(out / f"overlay_sticks_{mode}")
             assert all(f.exists() for f in files), files
         report.append("overlay options: OK")
+        # Audit P1 (Feedback: Spektren ausserhalb des Bildes, Einzelnormierung): Overlay-Grenzfälle
+        ov, ents0 = w.ov_tab, w.ov_state["entries"]
+        calc_e = dict(ents0[1], scale=1.0, offset=0.0, ls=None, lw=None, own_norm=False, nlo=450, nhi=520)
+        w.ov_state.update(entries=[calc_e], mode="norm", nlo=450, nhi=520, ymax=0.0, x_auto=True, sticks=True,
+                          stick_mode="band", stack=False)
+        cfg_o, curves_o = ov.figure_spec()[:2]
+        top_o = max(np.nanmax(c_["y"][(c_["x"] >= cfg_o["xlim"][0]) & (c_["x"] <= cfg_o["xlim"][1])]) for c_ in curves_o)
+        assert cfg_o["ylim"][1] >= top_o, (cfg_o["ylim"], top_o)          # 262-nm-Bande ~4x: nicht abschneiden
+        w.ov_state["sticks"] = False
+        assert ov.figure_spec()[0]["xlim"] == cfg_o["xlim"], "x-Bereich haengt an den Strichen"
+        w.ov_state.update(sticks=True, nlo=700, nhi=800)                  # keine Bande im Fenster
+        spec_o = ov.figure_spec()
+        assert spec_o is None or max(np.nanmax(c_["y"]) for c_ in spec_o[1]) < 10, "Gauss-Auslaeufer normiert"
+        w.ov_state.update(nlo=450, nhi=520)
+        w.ov_state["entries"] = [dict(calc_e, label="a"), dict(calc_e, label="b", own_norm=True, nlo=400, nhi=300),
+                                 dict(calc_e, label="c", sources=[{"file": calc_e["file"], "weight": 1.0},
+                                                                  {"file": calc_e["file"], "weight": 1.0}])]
+        ov.fill_table()
+        ov.table.setCurrentCell(0, 1)
+        ov.remove_selected()                                               # Details muessen nachziehen
+        ov.sp_lw.setValue(1.5)
+        e_b = w.ov_state["entries"][0]
+        assert e_b["label"] == "b" and e_b["own_norm"] and (e_b["nlo"], e_b["nhi"]) == (400, 300), e_b
+        ov.table.setCurrentCell(1, 1)
+        ov.ed_weights.setText("0.7, 0.3")
+        ov.detail_changed()
+        assert [s_["weight"] for s_ in w.ov_state["entries"][1]["sources"]] == [0.7, 0.3]
+        ov.table.setCurrentCell(0, 1)
+        w.ov_state["entries"][0]["own_norm"] = False
+        ov.show_details()
+        ov.sp_elo.setValue(420)                                            # eigenes Fenster = eigene Normierung
+        assert w.ov_state["entries"][0]["own_norm"] and w.ov_state["entries"][0]["nlo"] == 420
+        ov.cb_norm.setChecked(True)
+        ov.sp_ymax.setValue(1.2)
+        ov.cb_norm.setChecked(False)                                      # ε-Skala: alte Obergrenze passt nicht
+        assert ov.sp_ymax.value() == 0 and not ov.cb_own.isEnabled()
+        ov.cb_norm.setChecked(True)
+        assert ov.cb_own.isEnabled()
+        w.ov_state["entries"] = ents0
+        ov.fill_table()
+        report.append("overlay: y range, x range without sticks, tail normalisation, own window, remove, weights: OK")
 
         # Overlay gestapelt: Ebenen in Listenreihenfolge, TD-DFT auf der Ebene der Messung, y ohne Zahlen
         ents = w.ov_state["entries"]

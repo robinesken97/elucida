@@ -329,8 +329,17 @@ def _parse_line(s, delim, dec_comma):
     return vals
 
 
+def _read_text(path):
+    """UTF-8, sonst Windows-ANSI (cp1252, z. B. µ = 0xB5 in Probennamen)."""
+    raw = Path(path).read_bytes()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")
+
+
 def read_table(path):
-    lines = Path(path).read_text(encoding="utf-8-sig", errors="replace").splitlines()
+    lines = _read_text(path).splitlines()
     best = []
     for delim, dc in _MODES:
         rows = []
@@ -361,15 +370,16 @@ def load_spectrum(entry, base_dir):
     return _clean_xy(arr[:, xc], arr[:, yc])
 
 
-_CONC_RE = re.compile(r"(\d+(?:[p.]\d+)?)\s*(mg_?/?ml|mm|um|µm)(?![a-z])", re.I)
-_UNIT_MAP = {"mgml": "mg/mL", "mg/ml": "mg/mL", "mg_ml": "mg/mL", "mm": "mM", "um": "uM", "µm": "uM"}
+_CONC_RE = re.compile(r"((?:\d+[p.,]\d+|\.?\d+)(?:e[-+]?\d+)?)\s*(mg_?/?ml|mm|um|µm)(?![a-z])", re.I)
+_UNIT_MAP = {"mgml": "mg/mL", "mg/ml": "mg/mL", "mg_ml": "mg/mL", "mm": "mM", "um": "uM", "µm": "uM",
+             "\u03bcm": "uM"}                     # µ (U+00B5) und griechisches μ (U+03BC)
 
 
 def parse_sample_name(name):
     m = _CONC_RE.search(name)
     if not m:
         return None
-    conc = float(m.group(1).lower().replace("p", "."))
+    conc = float(m.group(1).lower().replace("p", ".").replace(",", "."))
     unit = _UNIT_MAP.get(m.group(2).lower().replace(" ", ""), m.group(2))
     group = name[:m.start()].rstrip("-_ ") or "probe"
     return group, conc, unit
@@ -378,14 +388,15 @@ def parse_sample_name(name):
 def read_cary_samples(path):
     """Cary-Export: Zeile 1 = Probennamen (je 2 Spalten), danach λ/Abs-Paare.
     -> Liste von dict(key, name, x, y, parsed=(serie, c, einheit) | None)."""
-    text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+    text = _read_text(path)
     lines = [ln for ln in text.splitlines() if ln.strip()]      # Leerzeilen (z. B. \r\r\n) ignorieren
     first = lines[0] if lines else ""
     if len(lines) > 1 and "intensity" in first.lower() and lines[1].lstrip().startswith(","):
         # Cary-Eclipse-Export: Zeile 1 Spaltenköpfe, Zeile 2 Probennamen (je 2 Spalten)
         names = [n.strip() for n in lines[1].split(",")[1::2]]
-    else:
-        names = [n.strip() for n in first.split(",")[0::2]]
+    else:                                                       # Komma, sonst Semikolon/Tab (Excel-Export)
+        delim = max((",", ";", "\t"), key=first.count)
+        names = [n.strip() for n in first.split(delim)[0::2]]
     ex_list = [float(v) for v in _EX_RE.findall(text)]
     arr = read_table(path)
     samples, seen = [], {}
@@ -521,7 +532,11 @@ def apply_baseline(spectra, cfg):
             return None
         bl = [best[1], best[1] + w]
     a, b = sorted(bl)
-    vals = np.array([np.median(s_["y"][(s_["x"] >= a) & (s_["x"] <= b)]) for s_ in spectra])
+    sels = [(s_["x"] >= a) & (s_["x"] <= b) for s_ in spectra]
+    if not all(sel.any() for sel in sels):                 # Fenster ausserhalb der Daten: nicht korrigieren
+        log("  " + T("baseline_outside", a=a, b=b))
+        return None
+    vals = np.array([np.median(s_["y"][sel]) for s_, sel in zip(spectra, sels)])
     c = np.array([s_["c"] for s_ in spectra])
     offs, kept = vals.copy(), 0.0
     if cfg["baseline_mode"] == "series" and len(spectra) >= 3:
@@ -547,10 +562,12 @@ def _composite(spectra, cfg):
     comp = np.full(grid.shape, np.nan)
     aref = np.full(grid.shape, np.nan)
     for s in sorted(spectra, key=lambda s: -s["c"]):
-        yi = np.interp(grid, s["x"], s["y"])
+        yi = np.interp(grid, s["x"], s["y"], left=np.nan, right=np.nan)   # ausserhalb nicht gemessen
         ok = np.isnan(comp) & (yi <= cfg["max_abs_fit"])
         comp[ok] = yi[ok] / s["c"]
         aref[ok] = yi[ok]
+    if not len(grid):
+        return grid, comp, aref
     comp = np.convolve(np.nan_to_num(comp), np.ones(7) / 7, mode="same")
     return grid, comp, np.nan_to_num(aref)
 
@@ -679,8 +696,8 @@ def linfit(x, y, intercept=True):
     x = np.asarray(x, float)
     y = np.asarray(y, float)
     n = len(x)
-    if n < (2 if intercept else 1):
-        return None
+    if n < (2 if intercept else 1) or (np.ptp(x) == 0 if intercept else not (x @ x) > 0):
+        return None                                      # z. B. alle Konzentrationen gleich: Steigung unbestimmt
     if intercept:
         X = np.column_stack([x, np.ones(n)])
         (m, b), *_ = np.linalg.lstsq(X, y, rcond=None)
@@ -726,7 +743,7 @@ def fmt_ve(v, e=None, digits="auto", max_decimals=None):
     es = None
     if e is not None and np.isfinite(e):
         er = round(e, d)
-        if er == 0 and e > 0:                          # z. B. ε ganzzahlig, SE = 0,65 -> „± 1“ statt „± 0“
+        if er == 0 and e >= 0:                         # z. B. ε ganzzahlig, SE = 0,65 -> „± 1“ statt „± 0“
             er = 10.0 ** (-d)
         es = f"{er:.{max(d, 0)}f}"
     return vs.replace("-", "\u2212"), es
@@ -740,9 +757,8 @@ def evaluate(cfg, spectra):
         lam = float(lam0)
         if cfg["snap_window_nm"] > 0:
             w = cfg["snap_window_nm"]
-            cand = [s for s in spectra
-                    if np.nanmax(s["y"][(s["x"] >= lam - w) & (s["x"] <= lam + w)], initial=np.inf)
-                    <= cfg["max_abs_fit"]]
+            cand = [s for s in spectra if (((s["x"] >= lam - w) & (s["x"] <= lam + w)).any() and
+                    np.nanmax(s["y"][(s["x"] >= lam - w) & (s["x"] <= lam + w)]) <= cfg["max_abs_fit"])]
             if cand:
                 s = max(cand, key=lambda s: s["c"])
                 sel = (s["x"] >= lam - w) & (s["x"] <= lam + w)
@@ -757,9 +773,11 @@ def evaluate(cfg, spectra):
         fit = linfit([c for c, _ in used], [A / d for _, A in used], cfg["fit_intercept"]) \
             if len(used) >= cfg["min_fit_points"] else None
         r = dict(lam=lam, lam_requested=float(lam0), used=used, excluded=excl, fit=fit, cutoff=cut)
+        if fit is None and len(used) >= cfg["min_fit_points"]:
+            r["no_fit"] = T("no_fit_conc")
         if int(round(float(lam0))) in set(cfg.get("band_hidden") or []):
             r["hidden"] = True                      # in Tabelle/CSV, aber nicht im Bild
-        if fit and fit["r2"] < cfg["min_r2"]:
+        if fit and not fit["r2"] >= cfg["min_r2"]:             # auch R² undefiniert (alle A gleich)
             log("  " + T("r2_hidden", lam=lam, r2=fit["r2"], min=cfg["min_r2"]))
             r["hidden"] = True
         if fit:
@@ -772,7 +790,7 @@ def evaluate(cfg, spectra):
             if fit["n"] < 4:
                 warn.append(T("few_points", n=fit["n"]))
             if cfg["fit_intercept"] and np.isfinite(fit["se_intercept"]) and fit["se_intercept"] > 0 \
-                    and abs(fit["intercept"]) > 2 * fit["se_intercept"]:
+                    and abs(fit["intercept"]) > r["t95"] * fit["se_intercept"]:         # 95 %, wie das KI
                 warn.append(T("intercept_sig", b=fit["intercept"], e=fit["se_intercept"]))
             r["warnings"] = warn
         results.append(r)
@@ -802,8 +820,8 @@ def print_results(results, cfg):
     for r in results:
         ft = r["fit"]
         if not ft:
-            log(f"{r['lam']:7.1f}   –  " + T("no_fit", n=len(r["used"]), cut=cfg["max_abs_fit"],
-                                                min=cfg["min_fit_points"]))
+            log(f"{r['lam']:7.1f}   –  " + (r.get("no_fit") or T("no_fit", n=len(r["used"]), cut=cfg["max_abs_fit"],
+                                                                 min=cfg["min_fit_points"])))
             continue
         v, e = fmt_ve(r["eps"], r["eps_err"], max_decimals=eps_max_decimals(cfg))
         b, be = fmt_ve(ft["intercept"], ft["se_intercept"])
@@ -1776,8 +1794,9 @@ def prepare_series(cfg, spectra, tag=""):
     bl = apply_baseline(spectra, cfg)                 # Basislinie immer aus dem vollen Datenbereich
     cfg["_baseline_info"] = bl
     lo, hi = cfg["peak_range_nm"]
-    if bl:
-        hi = min(hi if hi is not None else np.inf, bl["window"][0] - 10)
+    x0 = max(s_["x"].min() for s_ in spectra)
+    if bl and bl["window"][0] - 10 > max(lo if lo is not None else -np.inf, x0):   # Fenster am Messbeginn: nicht
+        hi = min(hi if hi is not None else np.inf, bl["window"][0] - 10)            # die ganze Suche abschneiden
     if cfg.get("xlim"):                                # Peaksuche nur im dargestellten Bereich
         lo = max(lo if lo is not None else -np.inf, min(cfg["xlim"]))
         hi = min(hi if hi is not None else np.inf, max(cfg["xlim"]))

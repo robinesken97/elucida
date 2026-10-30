@@ -14,6 +14,8 @@ from typing import Any, Optional, Union
 
 from .spectrum import Spectrum
 
+W_MIN, W_MAX = 175.0, 3300.0   # Cary 4000/5000/6000i bis 3300 nm (früher 190–1100: NIR still abgeschnitten)
+
 
 class CaryFile:
     """
@@ -188,10 +190,10 @@ class CaryFile:
             w1, y1 = struct.unpack("<ff", data[i + 8 : i + 16])
 
             dw = w1 - w0
-            # Valid wavelength range between 190 and 1100 nm, step between 0.01 and 25.0 nm
+            # Valid wavelength range W_MIN..W_MAX (Cary UV-Vis-NIR), step between 0.01 and 25.0 nm
             if (
-                190.0 <= w0 <= 1100.0
-                and 190.0 <= w1 <= 1100.0
+                W_MIN <= w0 <= W_MAX
+                and W_MIN <= w1 <= W_MAX
                 and (0.01 <= abs(dw) <= 25.0)
                 and (-10.0 <= y0 <= y_hi_start)
                 and (-10.0 <= y1 <= y_hi_start)
@@ -206,7 +208,7 @@ class CaryFile:
                     prev_w = pts_w[-1]
                     step = cw - prev_w
 
-                    if 190.0 <= cw <= 1100.0 and -10.0 <= cy <= y_hi:
+                    if W_MIN <= cw <= W_MAX and -10.0 <= cy <= y_hi:
                         if is_decreasing and (-30.0 <= step <= -0.001):
                             pts_w.append(round(cw, 3))
                             pts_y.append(cy)
@@ -448,6 +450,9 @@ class CaryFile:
         try:
             data = self._data
             if len(data) >= 160:
+                # nur das neue Format (fversn 0x4B) mit float-y (fexp 0x80), ohne x-Werte/Mehrfachdateien
+                if data[1] != 0x4B or data[3] != 0x80 or data[0] & 0xC4:
+                    raise ValueError(f"Unsupported SPC variant: {self.filepath}")
                 fnpts = struct.unpack("<i", data[4:8])[0]
                 ffirst = struct.unpack("<d", data[8:16])[0]
                 flast = struct.unpack("<d", data[16:24])[0]

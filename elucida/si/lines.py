@@ -154,8 +154,9 @@ def uvvis_line(results, cfg, solvent: str = ""):
     ohne ±). Ohne Molmasse: a in L g-1 cm-1."""
     molar = bool(core.conc_factor(cfg))
     items_p, items_h = [], []
+    xl = cfg.get("xlim")
     for r in sorted(results, key=lambda r: r["lam"]):
-        if not r.get("fit") or r.get("hidden"):
+        if not r.get("fit") or r.get("hidden") or (xl and not min(xl) <= r["lam"] <= max(xl)):   # wie das Bild
             continue
         v, _ = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))
         sh = ", sh" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""

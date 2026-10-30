@@ -1264,6 +1264,7 @@ class OverlayTab(FigureTab):
         f.addRow(T("structure"), row)
         self.sp_struct_w = self.size_spin(f, "struct_w", "image_struktur")
         self.cb_norm.toggled.connect(self.changed)
+        self.cb_norm.toggled.connect(self.norm_toggled)
         for w in (self.sp_nlo, self.sp_nhi):
             w.valueChanged.connect(self.changed)
         for w in (self.cb_base, self.cb_sticks):
@@ -1301,6 +1302,12 @@ class OverlayTab(FigureTab):
         lay.addWidget(g)
         self.fill_table()
         self.show_details()
+
+    def norm_toggled(self, on):
+        """ymax gilt für die jeweilige Skala (normiert ~1, ε in 10³): beim Umschalten auf Automatik."""
+        self.sp_ymax.setValue(0.0)
+        for w in (self.cb_own, self.sp_elo, self.sp_ehi):
+            w.setEnabled(on)                       # Normierungsbereich wirkt nur beim Normieren
 
     # -- Kurvenliste ------------------------------------------------------------
     def next_color(self):
@@ -1556,6 +1563,7 @@ class OverlayTab(FigureTab):
         if 0 <= r < len(self.st["entries"]):
             del self.st["entries"][r]
             self.fill_table()
+            self.show_details()                    # sonst schreibt die nächste Änderung alte Werte in den Nachbarn
             self.timer.start()
 
     def fill_table(self):
@@ -1600,6 +1608,8 @@ class OverlayTab(FigureTab):
         e = self.current_entry()
         self.det.setEnabled(e is not None)
         self._loading = True
+        for w in (self.cb_own, self.sp_elo, self.sp_ehi):
+            w.setEnabled(self.cb_norm.isChecked())
         exp = e is not None and e["kind"] == "exp"
         calc = e is not None and e["kind"] == "calc"
         for w in (self.lbl_conc, self.ed_conc, self.cmb_unit, self.lbl_mw, self.ed_mw, self.lbl_d, self.sp_d):
@@ -1655,6 +1665,10 @@ class OverlayTab(FigureTab):
         if self._loading or e is None:
             return
         e.update(struct_color=self.cb_ecolor.isChecked(), stack_with_prev=self.cb_samelevel.isChecked())
+        if self.sender() in (self.sp_elo, self.sp_ehi) and not self.cb_own.isChecked():
+            self._loading = True                   # eigenen Bereich eingestellt = eigene Normierung
+            self.cb_own.setChecked(True)
+            self._loading = False
         e.update(own_norm=self.cb_own.isChecked(), nlo=self.sp_elo.value(), nhi=self.sp_ehi.value(),
                  scale=self.sp_scale.value(), offset=self.sp_offset.value(),
                  ls=self.cmb_ls.currentData(), lw=self.sp_lw.value() or None)
@@ -1665,7 +1679,9 @@ class OverlayTab(FigureTab):
             e.update(fwhm=self.sp_fwhm.value(), shift=self.sp_shift.value())
             if e.get("sources"):
                 try:
-                    ws = [float(x.replace(",", ".")) for x in self.ed_weights.text().replace(";", " ").split()]
+                    # „0.7, 0.3“ (Anzeige) wie „0,7; 0,3“ oder „0,7 0,3“
+                    ws = [float(x.replace(",", ".")) for x in re.split(r";\s*|,\s+|\s+", self.ed_weights.text().strip())
+                          if x]
                 except ValueError:
                     ws = []
                 if len(ws) == len(e["sources"]) and all(w >= 0 for w in ws):
@@ -1778,7 +1794,7 @@ class OverlayTab(FigureTab):
 
         def total_off(e):                        # oberster Eintrag der Liste = oberste Kurve
             return e.get("offset", 0.0) + ((n_lev - 1 - levels[e["uid"]]) * gap if stack else 0.0)
-        curves, sticks, exp_x = [], [], []
+        curves, sticks, exp_x, calc_x = [], [], [], []
         tagged = set()
         for e in vis:
             lo, hi = (e["nlo"], e["nhi"]) if e["own_norm"] else (st["nlo"], st["nhi"])
@@ -1851,12 +1867,16 @@ class OverlayTab(FigureTab):
                     k = 1 / 1000.0                       # ε in 10³ M⁻¹ cm⁻¹
                 else:
                     sel = (lam >= min(lo, hi)) & (lam <= max(lo, hi))
-                    band_max = eps[sel].max() if sel.any() and eps[sel].max() > 0 else eps.max()
+                    if not sel.any() or not eps[sel].max() >= 0.01 * eps.max():   # nur Gauß-Ausläufer im Fenster
+                        self.add_note(T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
+                        continue
+                    band_max = eps[sel].max()
                     ssel = (sl >= min(lo, hi)) & (sl <= max(lo, hi))
                     stick_max = sh[ssel].max() if ssel.any() and sh[ssel].max() > 0 else sh.max()
                     k = 1 / (stick_max if mode == "max" else band_max)
                 y, h = eps * k, sh * k
                 c = {"x": lam, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
+                calc_x.append(sl)                        # x-Bereich unabhängig davon, ob Striche gezeigt werden
                 if st["sticks"]:
                     if mode == "faxis":                 # Oszillatorstärken auf rechter Achse
                         sticks.append({"x": sl[~trip], "h": np.asarray(f, float)[~trip], "color": e["color"],
@@ -1888,7 +1908,7 @@ class OverlayTab(FigureTab):
                 xs = np.concatenate(exp_x)
                 cfg["xlim"] = [float(xs.min()), float(xs.max())]
             else:
-                sx = np.concatenate([s_["x"] for s_ in sticks]) if sticks else np.array([300.0, 600.0])
+                sx = np.concatenate(calc_x) if calc_x else np.array([300.0, 600.0])
                 cfg["xlim"] = [max(150.0, sx.min() - 80), sx.max() + 120]
         else:
             cfg["xlim"] = [st["x_min"], st["x_max"]]
@@ -1901,7 +1921,11 @@ class OverlayTab(FigureTab):
             mx = max(np.nanmax(c["y"][(c["x"] >= lo_x) & (c["x"] <= hi_x)], initial=0) for c in curves)
             cfg["ylim"] = [ymin, 1.1 * mx if mx > 0 else 1]
         else:                                    # normiert: Platz für skalierte/versetzte Kurven
-            cfg["ylim"] = [ymin, max(1.1, max(1.1 * e.get("scale", 1.0) + total_off(e) for e in vis))]
+            mx = max(np.nanmax(c["y"][(c["x"] >= lo_x) & (c["x"] <= hi_x)], initial=0) for c in curves)
+            mx = max([mx] + [float(np.max(sk["h"][(sk["x"] >= lo_x) & (sk["x"] <= hi_x)] + sk.get("base", 0.0),
+                                          initial=0)) for sk in sticks if not sk.get("axis2")])
+            cfg["ylim"] = [ymin, max(1.1, 1.05 * mx,      # stärkere Banden ausserhalb des Normierungsbereichs
+                                     max(1.1 * e.get("scale", 1.0) + total_off(e) for e in vis))]
         cfg["ylabel"] = r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else "normalized absorbance [a.u.]"
         imgs = []
         if st.get("structure") and Path(st["structure"]).exists():

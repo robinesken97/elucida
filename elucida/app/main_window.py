@@ -3577,7 +3577,7 @@ class MainWindow(QMainWindow):
                          f"{b} ± {be}" if be else b, f"{ft['r2']:.5f}", f"{cut:g}", "; ".join(r["warnings"])]
             else:
                 cells = [lam, str(len(r["used"])), "–", "–", "–", f"{cut:g}",
-                         T("no_fit", n=len(r["used"]), cut=cut, min=cfg["min_fit_points"])]
+                         r.get("no_fit") or T("no_fit", n=len(r["used"]), cut=cut, min=cfg["min_fit_points"])]
             for j, c in enumerate(cells):
                 it = QTableWidgetItem(c)
                 if j < 6:
