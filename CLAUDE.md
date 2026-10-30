@@ -275,7 +275,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Length / Å); Kristalldaten mit zentrierter erster Spalte, „a / Å“ usw.; Nummern als Word-SEQ-Felder (fortlaufend).
 - „Alles auf Standard“ (`FigureTab.reset_defaults`): alle Schlüssel von DEFAULT_STATE außer `RESET_KEEP` des Tabs, Exportgröße/
   -formate und `cap_*`. In `RESET_KEEP` gehört, was Daten oder Angaben zur Messung sind (Dateien, Referenz/Kalibrierung,
-  eingegebene Werte) – neue Schlüssel dort einordnen. X-Ray/DFT: `XRAY.reset_display` (+ Ansicht/Atom-Auswahl der
+  eingegebene Werte, gewählte Messdaten wie CV `cycle`, SEC `mid`, EPR `ref_freq`; Nutzerwunsch P9 R2) – neue Schlüssel
+  dort einordnen. Vorlagen (`save_setup`/`load_setup`) nur ohne diese Schlüssel und ohne `cap_*`. X-Ray/DFT: `XRAY.reset_display` (+ Ansicht/Atom-Auswahl der
   gewählten Struktur; DFT behält Nummerierung, `label_style`, `zero_based`); ε: `MainWindow.reset_defaults` (DEFAULT_GLOB ohne
   Schichtdicke/Export). Immer `push_undo`.
 - Notiz zur Verbindung (`compound.note`): nur intern (Startbildschirm, Titelleiste, `elucida.json`), nie in SI/Word/

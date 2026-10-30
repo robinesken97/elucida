@@ -118,7 +118,7 @@ class SECTab(TABS.FigureTab):
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
     CAP_FIELDS = ("solvent", "start", "mid", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
-    RESET_KEEP = ("spec_files", "dta", "offset_s", "e_shift", "electrode", "ref_from_cv")   # Daten, Zeit, Referenz
+    RESET_KEEP = ("spec_files", "dta", "offset_s", "e_shift", "electrode", "ref_from_cv", "mid")  # Daten, Zeit, Referenz
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,
                          mode="spectra", first=1, last=0, highlight=True, mid="", gradient=False, diff=False,
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,

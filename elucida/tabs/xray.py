@@ -4194,13 +4194,13 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 self.fill_atoms()
             self.canvas.draw_idle()
             self.notes_show()
-            if push:
-                self.main.push_undo()
         except Exception as ex:
             import traceback
             self.main.log_signal.emit(traceback.format_exc())
             self.main.statusBar().showMessage(f"{T('err_title')}: {ex}", 8000)
             self.notes_show(error=ex)
+        if push:                                       # auch wenn das Bild scheitert: Änderung speichern/rückgängig
+            self.main.push_undo()
 
     def update_info(self):
         e = self.entry()

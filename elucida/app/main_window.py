@@ -1170,7 +1170,9 @@ class MainWindow(QMainWindow):
             return None
         attr, cls, st_attr, label = self._tab_spec(key)
         old = getattr(self, attr)
-        old._loading = True                            # Feld mit Fokus meldet beim Entfernen editingFinished
+        fw = QApplication.focusWidget()                # Feld mit Fokus meldet beim Entfernen editingFinished: still
+        if fw is not None and old.isAncestorOf(fw):
+            fw.blockSignals(True)
         new = cls(self, getattr(self, st_attr))
         setattr(self, attr, new)
         i = self._tab_keys.index(key)
@@ -1602,9 +1604,11 @@ class MainWindow(QMainWindow):
         if eps_changed:
             self.glob = dict(DEFAULT_GLOB, **(eps.get("glob") or {}))
             self.conc = eps.get("conc") or {}
-            self.csv_paths = [p for p in eps.get("files") or [] if Path(p).exists()]
+            files = list(eps.get("files") or [])
+            # alle oder keine: bei mehreren Dateien tragen die Probenschlüssel (Konzentrationen) den Dateinamen
+            self.csv_paths = files if all(Path(p).exists() for p in files) else []
             self.csv_path = self.csv_paths[0] if self.csv_paths else None
-            self._eps_held = {"files": [p for p in eps.get("files") or [] if p not in self.csv_paths]}
+            self._eps_held = {"files": [p for p in files if p not in self.csv_paths]}
             self.groups, self.units, self.series, self.samples = {}, {}, {}, []
         for key in self._TAB_BUILD_ORDER:
             # unveränderte Tabs behalten ihre Objekte (nicht neu gebaute Tabs halten Verweise)
@@ -2336,16 +2340,24 @@ class MainWindow(QMainWindow):
         return new
 
     def _flush_edits(self):
-        """Laufende Eingabe übernehmen: Textfelder melden sich erst bei Return/Fokuswechsel, Vorschrift und NMR-Text
-        nach 500 ms – Speichern (Strg+S) und Schließen verschieben den Fokus nicht."""
+        """Laufende Eingabe übernehmen (Strg+S/Schließen verschieben den Fokus nicht): verzögerte Texte (Vorschrift,
+        NMR-Text) zuerst – Feld-Handler ziehen Bedienelemente aus dem Zustand nach –, dann das Feld mit Fokus (Fokus
+        weg: editingFinished, Tabelleneditor übernimmt), dann ausstehendes Neuzeichnen (legt den Undo-Schritt an)."""
+        tabs = {k: self.__dict__.get(self._tab_spec(k)[0]) for k in self._TAB_BUILD_ORDER}
+        for key, timer, slot in (("syn", "timer", "proc_changed"), ("nmr", "text_timer", "text_changed")):
+            if tabs[key] is not None and getattr(tabs[key], timer).isActive():
+                getattr(tabs[key], timer).stop()
+                getattr(tabs[key], slot)()
         w = QApplication.focusWidget()
         if isinstance(w, QLineEdit) and w.window() is self:
-            w.editingFinished.emit()
-        for key, timer, slot in (("syn", "timer", "proc_changed"), ("nmr", "text_timer", "text_changed")):
-            tab = self.__dict__.get(self._tab_spec(key)[0])
-            if tab is not None and getattr(tab, timer).isActive():
-                getattr(tab, timer).stop()
-                getattr(tab, slot)()
+            w.clearFocus()
+            if w.isVisible():                          # Cursor bleibt im Feld (Tabelleneditor ist danach zu)
+                w.setFocus()
+        for tab in [self] + [t for k, t in tabs.items() if t is not None and k != "syn"]:
+            t = getattr(tab, "timer", None)
+            if isinstance(t, QTimer) and t.isActive():
+                t.stop()
+                tab.render()
 
     def maybe_save(self):
         """Vor Neu/Öffnen/Schließen: ausstehendes automatisches Speichern sofort ausführen."""
@@ -3151,10 +3163,10 @@ class MainWindow(QMainWindow):
             self._color_spectra = (spectra, cfg2)
             self.update_color()
             self._last = (cfg2, results)
-            self.push_undo()
         except Exception as e:
             self.log_signal.emit(traceback.format_exc())
             self.statusBar().showMessage(f"{T('err_title')}: {e}", 8000)
+        self.push_undo()                               # auch wenn das Bild scheitert: Änderung speichern/rückgängig
 
     def size_key(self):
         gl = self.glob

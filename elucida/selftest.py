@@ -807,9 +807,9 @@ def selftest(outdir, with_isnet=False):
                                                                   "gradient", "baseline")}))
         st_cv.update(gradient=False, baseline=False, stack=True, cap_temp="−78 °C")
         w.cv_tab.reset_defaults()
-        assert st_cv["gradient"] and st_cv["baseline"] and not st_cv["stack"] and st_cv["cycle"] == 1
+        assert st_cv["gradient"] and st_cv["baseline"] and not st_cv["stack"]
         assert st_cv["cap_temp"] == "−78 °C" and all(st_cv[k_] == snap_cv[k_] for k_ in ("files", "couples", "ref_mode",
-                                                                                     "ref_value"))
+                                                                                     "ref_value", "cycle"))
         assert w.cv_tab.cb_gradient.isChecked() and w.main_tabs.currentWidget() is not None
         st_cv.update(cycle=snap_cv["cycle"], cap_temp="rt")
         w.cv_tab.fill_table()
@@ -4512,6 +4512,45 @@ def selftest(outdir, with_isnet=False):
         w9_.undo()
         pump(0.6)
         assert w9_.irms_state.get("ea_solvate") == "0.5 CH2Cl2", w9_.irms_state.get("ea_solvate")
+        pump(1.2)                                          # Autosave erledigt; Schließen ohne laufenden Autosave-Timer
+        w9_.irms_tab.ed_solv.setFocus()
+        pump(0.2)
+        w9_.irms_tab.ed_solv.setText("2 MeOH")
+        assert not w9_.autosave_timer.isActive()
+        w9_.maybe_save()
+        assert PRJ.load(d9_)["irms"].get("ea_solvate") == "2 MeOH", PRJ.load(d9_)["irms"].get("ea_solvate")
+        cv9_ = w9_.cv_tab                                   # Bildunterschrift-Feld: Rückgängig bei bleibendem Fokus
+        w9_.main_tabs.setCurrentIndex(w9_._tab_keys.index("cv"))
+        pump(0.3)
+        cv9_.ed_cap["solvent"].setFocus()
+        pump(0.2)
+        cap9_ = w9_.cv_state.get("cap_solvent", "")
+        cv9_.ed_cap["solvent"].setText("P9 MeCN")
+        cv9_.ed_cap["solvent"].editingFinished.emit()
+        pump(0.6)
+        w9_.undo()
+        pump(0.6)
+        assert w9_.cv_state.get("cap_solvent", "") == cap9_, w9_.cv_state.get("cap_solvent")
+        syn9_ = w9_.syn_tab                                 # Tabelleneditor offen, dann Strg+S
+        w9_.main_tabs.setCurrentIndex(w9_._tab_keys.index("syn"))
+        pump(0.3)
+        assert syn9_.st["reagents"], "Beispiel ohne Reagenzien"
+        syn9_.tbl.setCurrentCell(0, 2)
+        syn9_.tbl.editItem(syn9_.tbl.item(0, 2))
+        pump(0.2)
+        ed9_ = QApplication.focusWidget()
+        assert ed9_ is not None and syn9_.tbl.isAncestorOf(ed9_), ed9_
+        ed9_.setText("987")
+        w9_.save_project()
+        assert PRJ.load(d9_)["syn"]["reagents"][0].get("m_mg") == "987", PRJ.load(d9_)["syn"]["reagents"][0]
+        nt9_ = w9_.nmr_tab                                  # NMR-Text ausstehend, Fokus im Frequenzfeld, speichern
+        w9_.main_tabs.setCurrentIndex(w9_._tab_keys.index("nmr"))
+        pump(0.3)
+        nt9_.ed_freq.setFocus()
+        pump(0.2)
+        nt9_.ed_text.setPlainText("P9 NMR text")
+        w9_.save_project()
+        assert "P9 NMR text" in str(PRJ.load(d9_)["nmr"].get("text")), PRJ.load(d9_)["nmr"].get("text")
         e9_ = w9_.ov_state["entries"][0]                    # Rückgängig in einem Tab: übrige behalten ihre Einträge
         w9_.fl_state["c_abs"] = "#123456"
         w9_.push_undo()
@@ -4560,6 +4599,36 @@ def selftest(outdir, with_isnet=False):
         w9_.ov_state["mode"] = "eps"
         ov9_.render()
         assert len(w9_._undo) == u9_ + 1 and w9_.is_dirty()
+        xt9_.build = lambda fig_: 1 / 0                      # dasselbe in X-Ray und ε (eigene render)
+        u9_ = len(w9_._undo)
+        w9_.xray_state["bond_w"] = 0.2
+        xt9_.render()
+        assert len(w9_._undo) == u9_ + 1
+        del xt9_.build
+        w9_.make_cfg = lambda g_: 1 / 0
+        u9_ = len(w9_._undo)
+        w9_.series[w9_.current]["band_hidden"] = [999]       # (glob käme aus den Bedienelementen)
+        w9_.render()
+        del w9_.make_cfg
+        assert len(w9_._undo) == u9_ + 1
+        w9_.cv_state["cycle"] = 2                           # Nutzerwunsch P9 R2: gewählte Messdaten bleiben
+        w9_.sec_state["mid"] = "-0.5"
+        w9_.replace_tab("cv")
+        w9_.replace_tab("sec")
+        w9_.cv_tab.reset_defaults()
+        w9_.sec_tab.reset_defaults()
+        assert w9_.cv_state["cycle"] == 2 and w9_.sec_state["mid"] == "-0.5"
+        w9_.close_project()                                # zwei ε-Dateien, eine fehlt: nichts halb laden
+        st9_ = PRJ.load(d9_)
+        gone9_ = str(d9_ / "data" / "uvvis" / "p9_gone.csv")
+        st9_["eps"]["files"] = st9_["eps"]["files"] + [gone9_]
+        PRJ.write(d9_, st9_)
+        assert w9_.open_project(d9_, ask=False)
+        pump(0.4)
+        assert not w9_.csv_paths and not w9_.groups, w9_.csv_paths
+        w9_.save_project()
+        files9_ = PRJ.load(d9_)["eps"]["files"]
+        assert len(files9_) == 2 and files9_[1] == gone9_ and PRJ.load(d9_)["eps"]["series"].get(g9_), files9_
         other9_ = PRJ.create(out / "p9_other")              # Kopie nie über Verbindung/Projekt
         other_txt9_ = (other9_ / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
         PUB9_.create(out / "p9_pub")
