@@ -16,8 +16,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Namen von Mitarbeitenden in README/CHANGELOG/CLAUDE.md/Code (öffentliches Repo).
 
 ## Fachliche Regeln (nicht ändern ohne Rückfrage)
-- ε (M⁻¹ cm⁻¹) **nie mit Nachkommastellen** anzeigen; Rundung auf die Genauigkeit des Standardfehlers
-  (`core.fmt_ve`, `eps_max_decimals`). Sehr kleine Fehler auf 1 Einheit aufrunden, nie „± 0“.
+- ε (M⁻¹ cm⁻¹) **immer ganzzahlig**, Wert und Fehler (Nutzerwunsch P1, wie in den Publikationen: „9525 ± 455“, nicht
+  auf die SE-Genauigkeit „9500 ± 500“; `core.fmt_ve`/`ve_decimals`, `eps_max_decimals`); spezifisches a weiter auf die
+  Genauigkeit des SE. Sehr kleine Fehler auf 1 Einheit aufrunden, nie „± 0“. Dieselbe Zahl überall (Nutzerwunsch):
+  Tabelle, Bild, SI-Zeile, Methodentext und Excel-Zahlenformat (`excel._coef_fmts`); nur die CSV behält Rohwerte.
 - Fit: A/d = m·c + b (OLS); ε = m / f_c (f_c: mM 1e-3, µM 1e-6, M 1; mg/mL über die Molmasse; ohne Molmasse
   spezifischer Koeffizient a in L g⁻¹ cm⁻¹). 95-%-KI = t(0,975; n−2)·SE (eigene `t_quantile`).
 - Cutoff global (Standard A = 1) und pro Bande; Banden mit R² < `min_r2` (einstellbar, Standard 0,98) stehen in
@@ -34,7 +36,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - „(sh)“ für Schultern ist abschaltbar; Indizes λ₁/ε₁ … (`label_index`, Standard aus, aufsteigend nach λ, nur Banden
   im Bild; SI-Zeile ohne Indizes); Molmasse aus CDXML inkl. Isotopen.
 - TD-DFT: Gauß-Verbreiterung in Energie; Kurve und Sticks teilen **immer einen** Skalierungsfaktor
-  (Modi `band` Standard, `max`, `faxis`). ORCA 5/6-Zustandslabels („0-1A -> 1-1A“) nach „->“ splitten; SOC-Tabelle.
+  (Modi `band` Standard, `max`, `faxis`; `faxis` seit P1: Striche wie `band` auf der linken Achse, f rechts nur als
+  zweite Skala `cfg["f_axis"]`, entfällt mit Hinweis bei verschiedenen Maßstäben der Rechnungen). Overlay-y-Größe
+  `mode`: `norm` (Standard), `eps`, `abs` (Absorbanz wie gemessen, ohne TD-DFT; Nutzerfeedback „y-Achse immer ε“). ORCA 5/6-Zustandslabels („0-1A -> 1-1A“) nach „->“ splitten; SOC-Tabelle.
   Multiplizität aus dem Label („1-3A“ = Triplett), ORCA 4/5 aus dem TRIPLETS-Block, Gaussian aus „Triplet-A“;
   Tripletts (f = 0) nur als Marken, nie in der Gauß-Kurve; mit SOC keine Multiplizität (gemischte Zustände).
   Kombinieren: Übergänge mehrerer Rechnungen (`sources`, je Gewicht) erst zusammenführen, dann verbreitern.

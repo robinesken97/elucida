@@ -285,7 +285,7 @@ def label_kw(cfg):
 
 
 def eps_max_decimals(cfg):
-    """ε in M⁻¹ cm⁻¹ grundsätzlich ganzzahlig; spezifisches a (L g⁻¹ cm⁻¹) normal gerundet."""
+    """ε in M⁻¹ cm⁻¹ immer ganzzahlig (Wert und Fehler); spezifisches a (L g⁻¹ cm⁻¹) nach Unsicherheit gerundet."""
     return 0 if conc_factor(cfg) else None
 
 
@@ -379,6 +379,8 @@ def parse_sample_name(name):
     m = _CONC_RE.search(name)
     if not m:
         return None
+    if m.start() and name[m.start() - 1] in "pP" and not name[:m.start() - 1][-1:].isdigit():
+        return None                                  # „p5mM“: 0,5 oder 5? Nicht raten, Dialog fragt
     conc = float(m.group(1).lower().replace("p", ".").replace(",", "."))
     unit = _UNIT_MAP.get(m.group(2).lower().replace(" ", ""), m.group(2))
     group = name[:m.start()].rstrip("-_ ") or "probe"
@@ -395,8 +397,9 @@ def read_cary_samples(path):
         # Cary-Eclipse-Export: Zeile 1 Spaltenköpfe, Zeile 2 Probennamen (je 2 Spalten)
         names = [n.strip() for n in lines[1].split(",")[1::2]]
     else:                                                       # Komma, sonst Semikolon/Tab (Excel-Export)
-        delim = max((",", ";", "\t"), key=first.count)
-        names = [n.strip() for n in first.split(delim)[0::2]]
+        probe = lines[1] if len(lines) > 1 else first           # Trennzeichen aus der Zeile darunter (Namen
+        delim = max((",", ";", "\t"), key=probe.count)         # können selbst Kommas enthalten)
+        names = [n.strip() for n in next(csv.reader([first], delimiter=delim), [])[0::2]]
     ex_list = [float(v) for v in _EX_RE.findall(text)]
     arr = read_table(path)
     samples, seen = [], {}
@@ -598,6 +601,8 @@ def detect_shoulders(spectra, cfg, peaks, min_dist=18.0, rel_curv=1.5e-4, edge_n
     deutlicher negativer Krümmung, nicht direkt neben einem gefundenen Maximum und nicht an den
     verrauschten Datenrändern. Heuristisch – im Zweifel Bande lieber von Hand eintragen."""
     grid, comp, aref = _composite(spectra, cfg)
+    if not len(grid):                                      # Suchbereich ausserhalb der Messung
+        return []
     sm = np.convolve(comp, np.ones(15) / 15, mode="same")
     d2 = np.gradient(np.gradient(sm))
     cand = []
@@ -734,11 +739,18 @@ def _decimals_for(v, e, digits):
     return n - 1 - math.floor(math.log10(abs(v)))
 
 
-def fmt_ve(v, e=None, digits="auto", max_decimals=None):
-    """Wert ± Fehler, gerundet nach Unsicherheit. max_decimals=0: nie Nachkommastellen (ε)."""
+def ve_decimals(v, e=None, digits="auto", max_decimals=None):
+    """Nachkommastellen von fmt_ve (auch für das Zahlenformat im Excel-Bericht: überall dieselbe Zahl)."""
     d = _decimals_for(v, e, digits)
     if max_decimals is not None:
-        d = min(d, max_decimals)
+        d = 0 if (max_decimals == 0 and digits == "auto") else min(d, max_decimals)
+    return d
+
+
+def fmt_ve(v, e=None, digits="auto", max_decimals=None):
+    """Wert ± Fehler, gerundet nach Unsicherheit. max_decimals=0 (ε): ganzzahlig, auch bei großem Fehler
+    (wie in den Publikationen der Gruppe: 9525 ± 455, nicht 9500 ± 500)."""
+    d = ve_decimals(v, e, digits, max_decimals)
     vs = f"{round(v, d):.{max(d, 0)}f}"
     es = None
     if e is not None and np.isfinite(e):
@@ -1794,9 +1806,11 @@ def prepare_series(cfg, spectra, tag=""):
     bl = apply_baseline(spectra, cfg)                 # Basislinie immer aus dem vollen Datenbereich
     cfg["_baseline_info"] = bl
     lo, hi = cfg["peak_range_nm"]
-    x0 = max(s_["x"].min() for s_ in spectra)
-    if bl and bl["window"][0] - 10 > max(lo if lo is not None else -np.inf, x0):   # Fenster am Messbeginn: nicht
-        hi = min(hi if hi is not None else np.inf, bl["window"][0] - 10)            # die ganze Suche abschneiden
+    x1 = min(s_["x"].max() for s_ in spectra)
+    if bl and bl["window"][1] >= x1 - 2 * float(cfg["baseline_width_nm"]):
+        # Fenster am langwelligen Ende: dahinter nur Rauschen. Liegt es dazwischen (Banden auf beiden Seiten)
+        # oder am Messbeginn, wird die Suche nicht abgeschnitten.
+        hi = min(hi if hi is not None else np.inf, bl["window"][0] - 10)
     if cfg.get("xlim"):                                # Peaksuche nur im dargestellten Bereich
         lo = max(lo if lo is not None else -np.inf, min(cfg["xlim"]))
         hi = min(hi if hi is not None else np.inf, max(cfg["xlim"]))

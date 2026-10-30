@@ -27,6 +27,18 @@ from openpyxl.utils import get_column_letter
 from elucida.core import uvvis as core
 from elucida.app.i18n import get_lang
 
+
+def _coef_fmts(r, cfg):
+    """Zahlenformate für ε/a, SE und 95-%-KI wie in Tabelle, Bild und SI (core.fmt_ve) – überall dieselbe Zahl."""
+    md = core.eps_max_decimals(cfg)
+
+    def f(e):
+        if not np.isfinite(r.get("eps", np.nan)):
+            return "0"
+        d = max(core.ve_decimals(r["eps"], e if e == e else None, max_decimals=md), 0)
+        return "0" if d == 0 else "0." + "0" * d
+    return f(r.get("eps_err")), f(r.get("eps_ci95"))
+
 FONT = "Arial"
 BLUE = Font(name=FONT, color="0000FF")
 BLACK = Font(name=FONT)
@@ -241,9 +253,8 @@ def write_report(path, cfg, raw_spectra, spectra, results, series, files=(), ver
         vals = [r["lam"], t("sh") if r.get("shoulder") else t("max"), ft["n"] if ft else len(r["used"]),
                 ft and ft["slope"], ft and ft["se_slope"], ft and ft["intercept"], ft and ft["se_intercept"],
                 ft and ft["r2"], r.get("eps"), r.get("eps_err"), r.get("eps_ci95")]
-        fmts = ["0", None, "0", "0.0000", "0.0000", "0.0000", "0.0000", "0.00000", "0", "0.0", "0.0"]
-        if sym == "a":
-            fmts[8:11] = ["0.0000", "0.0000", "0.0000"]
+        f_v, f_ci = _coef_fmts(r, cfg)
+        fmts = ["0", None, "0", "0.0000", "0.0000", "0.0000", "0.0000", "0.00000", f_v, f_v, f_ci]
         for j, (v, f) in enumerate(zip(vals, fmts)):
             c = ws.cell(row=rr, column=1 + j, value=_num(v) if j != 1 else v)
             c.font = BLUE
@@ -284,6 +295,7 @@ def write_report(path, cfg, raw_spectra, spectra, results, series, files=(), ver
 def _band_sheet(bs, r, cfg, spectra, unit, sym, coef_unit, summary, r_d, r_fc):
     """Bandenblatt. Gibt die Zelle mit ε (Excel) zurück."""
     lam = r["lam"]
+    f_v, f_ci = _coef_fmts(r, cfg)
     _set(bs, "A1", t("band", l=f"{lam:g}", t=t("sh") if r.get("shoulder") else t("max")), TITLE)
     _set(bs, "A2", t("edit_hint"))
     # Datentabelle
@@ -345,11 +357,10 @@ def _band_sheet(bs, r, cfg, spectra, unit, sym, coef_unit, summary, r_d, r_fc):
         ("SE(m)", None, ft.get("se_slope"), "0.000000"),
         ("SE(b)", None, ft.get("se_intercept") if icpt else None, "0.000000"),
         ("R²", f"=IF(K10>1,1-K17/SUMPRODUCT({W},({Y}-K14)^2),\"\")", ft.get("r2"), "0.000000"),
-        (f"{sym} [{coef_unit}]", "=IF(K10>=K8,IFERROR(K12/K6,\"\"),\"\")", r.get("eps"),
-         "0" if sym == "ε" else "0.0000"),
-        (f"SE({sym})", "=IFERROR(K19/K6,\"\")", r.get("eps_err"), "0.0" if sym == "ε" else "0.0000"),
+        (f"{sym} [{coef_unit}]", "=IF(K10>=K8,IFERROR(K12/K6,\"\"),\"\")", r.get("eps"), f_v),
+        (f"SE({sym})", "=IFERROR(K19/K6,\"\")", r.get("eps_err"), f_v),
         ("t(0.975; n−p)", f"=IF(K10>{p},TINV(0.05,K10-{p}),\"\")", r.get("t95"), "0.0000"),
-        ("95 % CI ±", "=IFERROR(K24*K23,\"\")", r.get("eps_ci95"), "0.0" if sym == "ε" else "0.0000"),
+        ("95 % CI ±", "=IFERROR(K24*K23,\"\")", r.get("eps_ci95"), f_ci),
     ]
     # Steigung/Achsenabschnitt/SE abhängig vom Modell (Zeilen 12, 13, 19, 20)
     if icpt:

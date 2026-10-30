@@ -287,6 +287,10 @@ def selftest(outdir, with_isnet=False):
         prop = [dict(x=x_a, y=0.125 * c * np.ones_like(x_a), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
         r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500], fit_intercept=False), prop)[0]
         assert core.fmt_ve(r_a["eps"], r_a["eps_err"], max_decimals=0)[1] != "0"   # nie „± 0“
+        assert core.fmt_ve(9525.4, 455.15, max_decimals=0) == ("9525", "455")         # ε ganzzahlig wie publiziert
+        assert core.fmt_ve(9.4802, 0.0123) == ("9.480", "0.012")                       # a nach Unsicherheit
+        assert core.fmt_ve(12345.0, 0.0, max_decimals=0) == ("12345", "1")              # SE 0: eine Einheit
+        assert core.parse_sample_name("probe-p5mM") is None                            # 0,5 oder 5? nicht raten
         same_c = [dict(x=x_a, y=np.full_like(x_a, 0.2), c=1.0) for _ in range(3)]
         r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500]), same_c)[0]
         assert r_a["fit"] is None and "eps" not in r_a, r_a              # gleiche c: kein ε statt Absturz
@@ -294,10 +298,21 @@ def selftest(outdir, with_isnet=False):
         edge = [dict(x=x_a, y=0.2 * c * np.exp(-0.5 * ((x_a - 600) / 20) ** 2), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
         _, _, r_e = core.prepare_series(cfg_a, edge, "edge")             # Basislinienfenster am Messbeginn
         assert any(abs(r_["lam"] - 600) <= 2 for r_ in r_e), [r_["lam"] for r_ in r_e]
+        two = [dict(x=x_a, y=0.2 * c * (np.exp(-0.5 * ((x_a - 300) / 15) ** 2) + np.exp(-0.5 * ((x_a - 600) / 60) ** 2)),
+                    c=c) for c in (1.0, 2.0, 3.0, 4.0)]                  # Basislinienfenster 350-370 nm dazwischen
+        lam_two = [r_["lam"] for r_ in core.prepare_series(cfg_a, two, "two")[2]]
+        assert any(abs(l_ - 600) <= 2 for l_ in lam_two), lam_two      # Banden auf beiden Seiten des Fensters
+        _, _, r_s = core.prepare_series(dict(cfg_a, peak_range_nm=[900, 950], find_shoulders=True), edge, "out")
+        assert r_s == [], r_s                                             # Suchbereich ausserhalb: kein Absturz
         semi = out / "input" / "semicolon.csv"
         semi.write_text("\r\n".join(["S_0,1mM;;S_0,2mM;", "Wavelength (nm);Abs;Wavelength (nm);Abs;"] +
                                     [f"{lam};{0.1 * (lam - 395):.1f};{lam};{0.2 * (lam - 395):.1f};".replace(".", ",")
                                      for lam in range(400, 406)]), encoding="utf-8", newline="")
+        quoted = out / "input" / "quoted.csv"                              # Namen mit Komma, korrekt zitiert
+        quoted.write_text("\r\n".join(['"S_0,1mM",,"S_0,2mM",', "Wavelength (nm),Abs,Wavelength (nm),Abs,"] +
+                                      [f"{lam},{0.01 * (lam - 395):.2f},{lam},{0.02 * (lam - 395):.2f},"
+                                       for lam in range(400, 406)]), encoding="utf-8", newline="")
+        assert [s_["parsed"] for s_ in core.read_samples([quoted])] == [("S", 0.1, "mM"), ("S", 0.2, "mM")]
         smp_ = core.read_samples([semi])
         assert [s_["parsed"] for s_ in smp_] == [("S", 0.1, "mM"), ("S", 0.2, "mM")], [s_["name"] for s_ in smp_]
         assert core.parse_sample_name("p_.5mM")[1] == 0.5 and core.parse_sample_name("p_5μM")[2] == "uM"
@@ -424,6 +439,12 @@ def selftest(outdir, with_isnet=False):
         w.ov_state.update(sticks=True, nlo=700, nhi=800)                  # keine Bande im Fenster
         spec_o = ov.figure_spec()
         assert spec_o is None or max(np.nanmax(c_["y"]) for c_ in spec_o[1]) < 10, "Gauss-Auslaeufer normiert"
+        orca0 = out / "input" / "orca_f0.out"                               # nur f = 0: keine NaN-Kurve
+        orca0.write_text(orca.read_text(encoding="utf-8").replace("0.150000000", "0.000000000")
+                         .replace("0.600000000", "0.000000000"), encoding="utf-8")
+        w.ov_state["entries"] = [dict(calc_e, file=str(orca0))]
+        spec_o = ov.figure_spec()
+        assert spec_o is None or all(np.isfinite(c_["y"]).all() for c_ in spec_o[1]), "f = 0 -> NaN"
         w.ov_state.update(nlo=450, nhi=520)
         w.ov_state["entries"] = [dict(calc_e, label="a"), dict(calc_e, label="b", own_norm=True, nlo=400, nhi=300),
                                  dict(calc_e, label="c", sources=[{"file": calc_e["file"], "weight": 1.0},
@@ -443,12 +464,33 @@ def selftest(outdir, with_isnet=False):
         ov.show_details()
         ov.sp_elo.setValue(420)                                            # eigenes Fenster = eigene Normierung
         assert w.ov_state["entries"][0]["own_norm"] and w.ov_state["entries"][0]["nlo"] == 420
-        ov.cb_norm.setChecked(True)
+        ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("norm"))
         ov.sp_ymax.setValue(1.2)
-        ov.cb_norm.setChecked(False)                                      # ε-Skala: alte Obergrenze passt nicht
-        assert ov.sp_ymax.value() == 0 and not ov.cb_own.isEnabled()
-        ov.cb_norm.setChecked(True)
+        ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("eps"))       # ε-Skala: alte Obergrenze passt nicht
+        assert ov.sp_ymax.value() == 0 and not ov.cb_own.isEnabled() and w.ov_state["mode"] == "eps"
+        ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("norm"))
         assert ov.cb_own.isEnabled()
+        # f-Achse: ein Faktor – jeder Strich so hoch wie seine Bande, f rechts nur als zweite Skala
+        w.ov_state.update(entries=[dict(calc_e)], stick_mode="faxis", mode="norm", nlo=450, nhi=520)
+        cfg_f, curves_f, _, sticks_f = ov.figure_spec()
+        lam_f, y_f = curves_f[0]["x"], curves_f[0]["y"]
+        k_ = int(np.argmin(np.abs(sticks_f[0]["x"] - 484.0)))
+        h_ = sticks_f[0]["h"][k_]
+        assert abs(h_ * cfg_f["f_axis"] - 0.15) < 1e-6, h_ * cfg_f["f_axis"]          # f = 0.15 auf der f-Skala
+        assert h_ <= np.interp(484.0, lam_f, y_f) + 1e-6 and h_ > 0.9 * np.interp(484.0, lam_f, y_f)
+        w.ov_state["entries"] = [dict(calc_e), dict(calc_e, fwhm=0.5, label="breit")]
+        assert "f_axis" in ov.figure_spec()[0]                            # normiert: beide Banden = 1, ein f-Maßstab
+        w.ov_state["mode"] = "eps"
+        assert "f_axis" not in ov.figure_spec()[0]                        # ε: verschiedene Maßstäbe, keine f-Achse
+        w.ov_state["mode"] = "norm"
+        # Absorbanz wie gemessen (y-Achse folgt den Daten, nicht immer ε)
+        exp_e = dict(ents0[0], conc=None, own_norm=False, scale=1.0, offset=0.0, ls=None, lw=None)
+        w.ov_state.update(entries=[exp_e, dict(calc_e)], mode="abs", stick_mode="band", baseline=False)
+        cfg_a2, curves_a2 = ov.figure_spec()[:2]
+        s_ab = ov.sample(exp_e["file"], exp_e["sample"])
+        assert len(curves_a2) == 1 and np.allclose(curves_a2[0]["y"], s_ab["y"]) and "absorbance" in cfg_a2["ylabel"] \
+            and "normalized" not in cfg_a2["ylabel"], cfg_a2["ylabel"]
+        w.ov_state.update(mode="norm", baseline=True, stick_mode="band")
         w.ov_state["entries"] = ents0
         ov.fill_table()
         report.append("overlay: y range, x range without sticks, tail normalisation, own window, remove, weights: OK")
@@ -569,6 +611,8 @@ def selftest(outdir, with_isnet=False):
         from openpyxl import load_workbook
         wbk = load_workbook(rep)
         assert len(wbk.sheetnames) >= 3 and any("nm" in n for n in wbk.sheetnames), wbk.sheetnames
+        fmts_x = {c_.number_format for ws_ in wbk.worksheets for row_ in ws_.iter_rows() for c_ in row_}
+        assert "0.0" not in fmts_x, "Excel: SE/KI von ε mit anderer Rundung als Tabelle/SI"
         report.append("export into project + Excel report: OK")
 
         # Textformat: λ/ε in Symbolschrift, Labels fett/farbig, Rahmen um Plot und Struktur
@@ -2916,7 +2960,7 @@ def selftest(outdir, with_isnet=False):
                   {"lam": 350.0, "fit": {"n": 5}, "eps": 5000.0, "eps_err": 50.0, "hidden": True},
                   {"lam": 500.0, "fit": None}]
         uvp_, uvh_ = SI.uvvis_line(res_uv, cfg_uv, "THF")
-        assert uvp_ == "UV-Vis (THF): λmax: 298 nm (ε = 24100 cm-1 M-1), 412 nm (ε = 12350 cm-1 M-1)", uvp_
+        assert uvp_ == "UV-Vis (THF): λmax: 298 nm (ε = 24100 cm-1 M-1), 412 nm (ε = 12346 cm-1 M-1)", uvp_
         assert "<b>λ<sub>max</sub></b>" in uvh_ and "cm<sup>-1</sup>" in uvh_, uvh_
         assert SI.join_lines([("m.p. 67 °C", "m.p. 67 °C"), (uvp_, uvh_)])[0].endswith("M-1).")
         w.compound = {"name": "TEST-1", "formula": "C18H20N2", "mp": "67 °C"}

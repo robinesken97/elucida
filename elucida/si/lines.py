@@ -216,8 +216,9 @@ def eps_methods(cfg, results, spectra, solvent: str = ""):
     m.append(f"At each band, the absorbance ({sampling}{snap}) divided by the path length was fitted against the "
              f"concentration by ordinary least squares ({model}), using only points with {cut_txt} to stay in "
              f"the linear range; {coef} is the slope. Uncertainties are given as standard error (SE) and 95% "
-             f"confidence interval (t(0.975; {dof})·SE); {coef} was rounded to the precision of the SE"
-             + (" and is given without decimals" if molar else "") + ".")
+             f"confidence interval (t(0.975; {dof})·SE); "
+             + (f"{coef} and its uncertainties are given as integers." if molar
+                else f"{coef} was rounded to the precision of the SE."))
     if any(r.get("hidden") for r in fitted):
         m.append(f"Bands with R² < {cfg['min_r2']:g} or deselected bands are listed but not labelled in the figure.")
     res = []

@@ -257,6 +257,14 @@ class SimpleFigure(core.Figure):
             self.ax2 = ax2
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
+        if cfg.get("f_axis") and self.ax2 is None:      # f als zweite Skala derselben Striche (ein Faktor)
+            ax2 = ax.twinx()
+            ax2.set_ylim(ylim[0] * cfg["f_axis"], ylim[1] * cfg["f_axis"])
+            ax2.set_ylabel(core.fmt_text("oscillator strength f", cfg), fontsize=cfg["font_size"] * 1.3)
+            sc = cfg.get("scale", 1.0)
+            ax2.tick_params(direction=cfg["tick_direction"], length=6 * sc, width=max(0.6, sc))
+            ax2.spines["top"].set_visible(False)
+            self.ax2 = ax2
         ax.set_xlabel(core.fmt_text(cfg["xlabel"], cfg), fontsize=cfg["font_size"] * 1.3)
         ax.set_ylabel(core.fmt_text(cfg["ylabel"], cfg), fontsize=cfg["font_size"] * 1.3)
         ax.minorticks_on()

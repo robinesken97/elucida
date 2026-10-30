@@ -267,8 +267,7 @@ die Struktur (Formel, Molmasse, Bilder) bzw. das Schema von selbst.
 sollen (Charakterisierung, NMR-Spektren, Abbildungen aller Tabs, X-Ray, DFT), und sammelt alles Fertige zur Verbindung in
 `SI/<Verbindung>_SI.docx`, im Stil der SI: ein Charakterisierungsabsatz **m.p. …; IR …; HR-MS …; UV-Vis …;
 Elemental analysis …** (Schmelzpunkt aus **Verbindung …**, UV-Vis-Zeile von der Seite **SI-Zeile** im Tab UV-Vis (ε):
-*λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε auf die Genauigkeit seines
-Standardfehlers gerundet), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
+*λ*_max: 331 nm (*ε* = 8443 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε ganzzahlig), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
 X-Ray-Tab und die DFT-Rechnungen (zweispaltig). Was noch fehlt, wird nach dem Export aufgezählt. Zahl und Einheit sind
 durch geschützte Leerzeichen verbunden, Word trennt also nie „298 nm“ oder „ε = 8440“.
 
@@ -441,10 +440,11 @@ linearen Regressionen und R², die Struktur und ein freigestelltes Foto der Küv
   Die Basislinie nutzt immer den vollen Datenbereich, unabhängig vom dargestellten λ-Bereich.
 - **Fit-Cutoff:** Punkte oberhalb des Cutoffs (Standard A = 1,0) gehen nicht in den Fit ein.
 - **Banden:** automatisch im dargestellten λ-Bereich gesucht oder als Liste vorgegeben.
-- **Rundung:** ε (M⁻¹ cm⁻¹) erscheint nie mit Nachkommastellen; gerundet wird auf die Genauigkeit,
-  die sein Standardfehler hergibt. Die Ergebnis-CSV enthält die vollen Werte.
+- **Rundung:** ε (M⁻¹ cm⁻¹) und seine Fehler erscheinen ganzzahlig (z. B. 9525 ± 455), gleich in Tabelle, Bild,
+  SI-Zeile, Methodentext und Excel-Bericht; der spezifische Koeffizient a wird auf die Genauigkeit seines
+  Standardfehlers gerundet. Die Ergebnis-CSV enthält die vollen Werte.
 - **Warnungen** (Ergebnistabelle und Protokoll): weniger als 4 Fitpunkte, signifikanter
-  Achsenabschnitt (> 2σ), R² unter der Schwelle (Standard 0,98, einstellbar unter Auswertung →
+  Achsenabschnitt (> t(0,975; n−2)·SE), R² unter der Schwelle (Standard 0,98, einstellbar unter Auswertung →
   „min. R² fürs Bild“; 0 = alle zeigen; die Bande bleibt in Tabelle – R²-Zelle rot markiert –, CSV und
   Excel-Report, erscheint aber nicht im Bild), weniger als 3 Punkte (dann gar kein ε). Bei 4 Punkten
   sagt R² allein wenig: vor dem Absenken der Schwelle das 95-%-Konfidenzintervall im Excel-Report prüfen.
@@ -480,10 +480,10 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   empirische Energieverschiebung pro Rechnung einstellbar, Standard 0,3 eV); ε folgt aus den
   Oszillatorstärken (ε(ν̃) = 1,306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), wie in GaussView). Übergänge
   lassen sich als Striche anzeigen.
-- **y-Achse** (Häkchen „Normieren“): *normiert auf Bande* – jedes Spektrum wird auf sein Maximum im Normierungsbereich
-  skaliert (global oder pro Spektrum, z. B. wenn die berechnete Bande verschoben ist), oder
-  **ε [10³ M⁻¹ cm⁻¹]** – gemessene Spektren brauchen dann Konzentration (bei mg/mL auch Molmasse)
-  und Schichtdicke.
+- **y-Größe**: *normiert* – jedes Spektrum wird auf sein Maximum im Normierungsbereich skaliert (global oder pro
+  Spektrum mit eigenem Bereich, z. B. wenn die berechnete Bande verschoben ist), **ε [10³ M⁻¹ cm⁻¹]** – gemessene
+  Spektren brauchen dann Konzentration (bei mg/mL auch Molmasse) und Schichtdicke, oder **Absorbanz** wie gemessen
+  (Messungen und SEC, ohne TD-DFT). Der automatische y-Bereich enthält immer alle Kurven.
 - Pro Spektrum: Farbe, Name, **Linienart und -stärke**, **Skalierungsfaktor und vertikaler Versatz**
   (z. B. für gestapelte Spektren); **Reihenfolge** mit ↑/↓ (auch die der Legende).
 - ORCA-Rechnungen mit **Spin-Bahn-Kopplung**: pro Rechnung „mit SOC“ oder „ohne SOC“ wählbar.
@@ -497,7 +497,8 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   Zustände in beiden Rechnungen lösen eine Warnung aus (sie würden doppelt zählen).
 - **TD-DFT-Normierung:** Kurve und Striche haben immer denselben Skalierungsfaktor (jeder Strich ist
   die Höhe seiner eigenen Gaußbande, die Kurve ist deren Summe). Bezug: „Kurvenmaximum = 1“ oder
-  „stärkster Übergang = 1“; alternativ zeigen die Striche die Oszillatorstärke f auf einer rechten Achse.
+  „stärkster Übergang = 1“; „Kurvenmaximum = 1, rechts zusätzlich f“ zeigt die Oszillatorstärke als zweite Skala
+  derselben Striche (entfällt mit Hinweis, wenn die Rechnungen verschiedene Maßstäbe haben).
 - Eine **Struktur pro Spektrum**, optional in der Kurvenfarbe.
 - Struktur mit einstellbarer Größe; die Legende wird in freie Fläche gesetzt und lässt sich verschieben.
 - **Gestapelt** (wie in Papern üblich): Die Kurven werden in Listenreihenfolge um einen gemeinsamen

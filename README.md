@@ -262,8 +262,7 @@ mass, pictures) or the scheme by itself.
 (characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the compound into
 `SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
-UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8440 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε rounded to the
-precision of its standard error), followed by the crystal-data table, the selected parameters and the captions of the
+UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8443 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε as an integer), followed by the crystal-data table, the selected parameters and the captions of the
 X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
 and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
 
@@ -430,9 +429,10 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
   uses the full data range, independent of the displayed λ range.
 - **Fit cutoff:** points above the cutoff (default A = 1.0) are excluded from the fit.
 - **Bands:** found automatically within the displayed λ range, or entered as a list.
-- **Rounding:** ε (M⁻¹ cm⁻¹) is never shown with decimals; it is rounded to the precision its
-  standard error supports. The results CSV keeps the full values.
-- **Warnings** (results table and log): fewer than 4 fit points, significant intercept (> 2σ),
+- **Rounding:** ε (M⁻¹ cm⁻¹) and its errors are shown as integers (e.g. 9525 ± 455), the same in the table,
+  figure, SI line, methods text and Excel report; the specific coefficient a is rounded to the precision of its
+  standard error. The results CSV keeps the full values.
+- **Warnings** (results table and log): fewer than 4 fit points, significant intercept (> t(0.975; n−2)·SE),
   R² below the threshold (default 0.98, adjustable under Analysis → "min. R² for figure"; 0 = show
   all; the band stays in the table – R² cell marked red –, CSV and Excel report but is not shown in the
   figure), fewer than 3 points (then no ε at all). With 4 points, R² alone says little: check the
@@ -468,10 +468,10 @@ Compare several spectra in one figure, measured and calculated:
 - TD-DFT transitions are broadened with Gaussians in energy (FWHM and an empirical energy shift
   can be set per calculation, default 0.3 eV); ε follows from the oscillator strengths
   (ε(ν̃) = 1.306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), as in GaussView). Transitions can be shown as sticks.
-- **y axis** ("Normalise" checkbox): *normalised to band* – every spectrum is scaled to its maximum within the
-  normalisation range (globally or per spectrum, e.g. if the calculated band is shifted), or
-  **ε [10³ M⁻¹ cm⁻¹]** – measured spectra then need concentration (and molar mass for mg/mL) and
-  path length.
+- **y quantity**: *normalised* – every spectrum is scaled to its maximum within the normalisation range (globally,
+  or per spectrum with its own range, e.g. if the calculated band is shifted), **ε [10³ M⁻¹ cm⁻¹]** – measured
+  spectra then need concentration (and molar mass for mg/mL) and path length, or **absorbance** as measured
+  (measurements and SEC, without TD-DFT). The automatic y range always contains every curve.
 - Per spectrum: colour, name, **line style and width**, **scale factor and vertical offset**
   (e.g. for stacked spectra); **order** with ↑/↓ (also the legend order).
 - ORCA calculations with **spin–orbit coupling**: choose "with SOC" or "without SOC" per calculation.
@@ -485,7 +485,8 @@ Compare several spectra in one figure, measured and calculated:
   both calculations trigger a warning (they would be counted twice).
 - **TD-DFT normalisation:** curve and sticks always share one scale factor (each stick is the height
   of its own Gaussian, the curve is their sum). Reference: "curve maximum = 1" or "strongest
-  transition = 1"; alternatively the sticks show the oscillator strength f on a right axis.
+  transition = 1"; "curve maximum = 1, f on the right axis" adds the oscillator strength as a second scale for
+  the same sticks (left out with a note if the calculations use different scales).
 - A **structure per spectrum**, optionally drawn in the curve colour.
 - Structure with adjustable size; the legend is placed in free space and can be dragged.
 - **Stacked** (as usual in papers): curves are offset vertically by a common spacing in list order

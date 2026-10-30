@@ -742,10 +742,12 @@ TEXTS = {
                      "+ EA, HRMS and the SI"),
     "compound_set": ("Verbindung: {c}", "Compound: {c}"),
     "stick_mode_tip": ("Ein gemeinsamer Faktor für Kurve und Striche: Kurvenmaximum = 1 (höchste Stelle der verbreiterten "
-                       "Kurve im Normierungsbereich), stärkster Übergang = 1 oder Striche als Oszillatorstärke f auf "
-                       "der rechten Achse", "One common factor for curve and sticks: curve maximum = 1 (highest point "
-                       "of the broadened curve in the normalisation range), strongest transition = 1, or sticks as "
-                       "oscillator strength f on the right axis"),
+                       "Kurve im Normierungsbereich), stärkster Übergang = 1 oder Kurvenmaximum = 1 mit "
+                       "Oszillatorstärke f als zweiter Skala rechts (jeder Strich so hoch wie seine Bande)",
+                       "One common factor for curve and sticks: curve maximum = 1 (highest point "
+                       "of the broadened curve in the normalisation range), strongest transition = 1, or curve "
+                       "maximum = 1 with oscillator strength f as a second scale on the right (each stick as high "
+                       "as its band)"),
     "xr_prob_ball": ("gilt nur für die Stile Mercury und flach (Kugel-Stab: feste Kugelgröße)",
                      "only for the Mercury and flat styles (ball and stick: fixed sphere size)"),
     "syn_output_hint": ("Erscheint im SI-Export (Werkzeugleiste: SI (Word)); eigene Word-Datei: „Exportieren“ unten.",
@@ -825,9 +827,16 @@ TEXTS = {
     "ov_fwhm": ("Breite (FWHM)", "Width (FWHM)"),
     "ov_shift": ("Verschiebung", "Shift"),
     "ov_display": ("Normierung", "Normalisation"),
-    "ov_normalize": ("Normieren (auf die Bande von Interesse)", "Normalise (to the band of interest)"),
-    "ov_normalize_tip": ("Aus: y-Achse ε [10³ M⁻¹ cm⁻¹] – Messungen brauchen dann Konzentration und Schichtdicke.",
-                         "Off: y axis ε [10³ M⁻¹ cm⁻¹] – measurements then need concentration and path length."),
+    "ov_ymode": ("y-Größe", "y quantity"),
+    "ov_y_norm": ("normiert (auf die Bande von Interesse)", "normalised (to the band of interest)"),
+    "ov_y_eps": ("ε [10³ M⁻¹ cm⁻¹]", "ε [10³ M⁻¹ cm⁻¹]"),
+    "ov_y_abs": ("Absorbanz (wie gemessen)", "absorbance (as measured)"),
+    "ov_ymode_tip": ("ε: Messungen brauchen Konzentration und Schichtdicke (SEC entfällt). Absorbanz: Messungen und "
+                     "SEC wie gemessen, ohne TD-DFT.",
+                     "ε: measurements need concentration and path length (SEC is left out). Absorbance: measurements "
+                     "and SEC as measured, without TD-DFT."),
+    "ov_calc_no_abs": ("„{name}“: TD-DFT hat keine Absorbanz (c, d unbekannt) – ε oder normiert wählen",
+                       "“{name}”: TD-DFT has no absorbance (c, d unknown) – choose ε or normalised"),
     "ov_triplets": ("Triplett-Zustände markieren (f = 0)", "Mark triplet states (f = 0)"),
     "ov_triplets_tip": ("Formal spinverbotene Triplett-Anregungen als gestrichelte Marken fester Höhe;\n"
                         "sie tragen nicht zur Kurve bei. Nur Rechnungen ohne SOC (mit SOC haben die\n"
@@ -868,7 +877,9 @@ TEXTS = {
     "stick_mode": ("TD-DFT-Normierung", "TD-DFT normalisation"),
     "stick_max": ("stärkster Übergang = 1", "strongest transition = 1"),
     "stick_band": ("Kurvenmaximum = 1", "curve maximum = 1"),
-    "stick_faxis": ("Kurvenmaximum = 1, Striche als f (rechte Achse)", "curve maximum = 1, sticks as f (right axis)"),
+    "stick_faxis": ("Kurvenmaximum = 1, rechts zusätzlich f", "curve maximum = 1, f on the right axis"),
+    "ov_faxis_mixed": ("f-Achse ausgelassen: die Rechnungen haben verschiedene Maßstäbe (FWHM/Normierung)",
+                       "f axis omitted: the calculations use different scales (FWHM/normalisation)"),
     "fl_data": ("Spektren", "Spectra"),
     "fl_abs": ("Absorption", "Absorption"),
     "fl_em": ("Emission", "Emission"),
