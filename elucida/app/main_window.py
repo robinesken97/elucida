@@ -3571,7 +3571,7 @@ class MainWindow(QMainWindow):
         self._row_keys = []
         for i, r in enumerate(results):
             ft = r["fit"]
-            lam = f"{r['lam']:g}" + (" (sh)" if r.get("shoulder") else "")
+            lam = core.fmt_lam(r["lam"]) + (" (sh)" if r.get("shoulder") else "")
             cut = r.get("cutoff", cfg["max_abs_fit"])
             if ft:
                 v, e = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))

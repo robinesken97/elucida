@@ -20,6 +20,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   auf die SE-Genauigkeit „9500 ± 500“; `core.fmt_ve`/`ve_decimals`, `eps_max_decimals`); spezifisches a weiter auf die
   Genauigkeit des SE. Sehr kleine Fehler auf 1 Einheit aufrunden, nie „± 0“. Dieselbe Zahl überall (Nutzerwunsch):
   Tabelle, Bild, SI-Zeile, Methodentext und Excel-Zahlenformat (`excel._coef_fmts`); nur die CSV behält Rohwerte.
+  λ überall ganzzahlig, kaufmännisch gerundet (`core.fmt_lam`, Nutzerwunsch P8 R3).
 - Fit: A/d = m·c + b (OLS); ε = m / f_c (f_c: mM 1e-3, µM 1e-6, M 1; mg/mL über die Molmasse; ohne Molmasse
   spezifischer Koeffizient a in L g⁻¹ cm⁻¹). 95-%-KI = t(0,975; n−2)·SE (eigene `t_quantile`).
 - Cutoff global (Standard A = 1) und pro Bande; Banden mit R² < `min_r2` (einstellbar, Standard 0,98) stehen in
@@ -198,7 +199,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   EPR). Unterschriften je Tab (`si_caption`): ε „UV-Vis spectra of **X** in THF, measured in 0.1 cm quartz cuvettes.“
   (Lösungsmittel je Serie im Abschnitt Auswertung); CV/SEC/EPR wie die SI der Gruppe aus den Daten (Vorschub,
   iR-Kompensation nur wenn für alle gleich, interne Referenz, Start-/Endpotential, Band aus ν, g/ΔBpp/Kopplungen nur aus
-  eigenen S = ½-Fits) plus Felder `cap_*` (`CAP_FIELDS`, Leitsalz gemerkt); `chem_html` stellt Formeln tief, „-1“ hoch.
+  eigenen S = ½-Fits) plus Felder `cap_*` (`CAP_FIELDS`, Leitsalz gemerkt); `chem_html` stellt Formeln tief, „-1“ hoch (nur Tokens aus
+  Elementsymbolen/Abkürzungen: B3LYP, def2-SVP, Figure S12, S1 bleiben; P8).
   Aufbau-Texte (Geräte) nur in QSettings `si_setup/<Tab>` (lokal, nie im Code/Projekt), im Export vor den Abbildungen.
 - Geschützte Leerzeichen (`SI.nbsp`, U+00A0) zentral in `write_docx` (Absätze, Unterschriften, Text) und `copy_rich`:
   Zahl ↔ Einheit, um „=“/„±“, in zusammengesetzten Einheiten (cm-1 M-1), Elementaranalyse „C 81.78“, „m.p.“.
@@ -347,7 +349,11 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `tools/release_notes.py` | Release-Titel/-Notes für GitHub aus `CHANGELOG.md` + `CHANGELOG.de.md` (Release-Job in `build.yml`; fehlt die Version, scheitert das Release). |
 | `app/i18n.py` | Texte DE/EN; `T(_key, **kw)` (Parameter heißt `_key`, damit `key=` als Format-Argument geht). |
 | `formats/parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |
-| `exchange/datapack.py` | Datenpaket je Verbindung (Zip wie die TUDOdata-Datensätze der Gruppe: `<Name>/NMR/1H/10`, `NMR/HSQC + HMBC/12`, IR, MS, UV-Vis, Fluorescence, CV/<Lösungsmittel>, SEC, EPR; DFT/Elucida-Ergebnisse Standard aus; nie X-Ray/Synthese): `collect` nur aus Zustandspfaden, `find_codes` (Laborkürzel `CODE_RE`), `write_zip` (Nutzerwunsch: „ausschließlich Compound XX und sonst unveränderte Rohdaten, Datum überall weg“: Namen immer ersetzen; Inhalt wahlweise, Standard an – Textdateien = keine Nullbytes inkl. TopSpin-Parameter/Titel/audita, `DATE_RE` löschen, `##$DATE=` → 0; MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docProps-Personen/-Daten, EMF gleiche Länge); OPUS `scrub_binary_strings` gleiche Länge; Messwerte bytegleich; PDF/Mnova/.d nicht bearbeitbar, Kürzel darin im Bericht `kept`). Dialog `app/datapack_dialog.py` (Auswahl je Projekt in QSettings). |
+| `exchange/datapack.py` | Datenpaket je Verbindung (Zip wie die TUDOdata-Datensätze der Gruppe: `<Name>/NMR/1H/10`, `NMR/HSQC + HMBC/12`, IR, MS, UV-Vis, Fluorescence, CV/<Lösungsmittel>, SEC, EPR; DFT/Elucida-Ergebnisse Standard aus; nie X-Ray/Synthese): `collect` nur aus Zustandspfaden, `find_codes` (Laborkürzel `CODE_RE`), `write_zip` (Nutzerwunsch: „ausschließlich Compound XX und sonst unveränderte Rohdaten, Datum überall weg“: Namen immer ersetzen; Inhalt wahlweise, Standard an – Textdateien = keine Nullbytes inkl. TopSpin-Parameter/Titel/audita; Datum (`DATE_RE`) → 1980-01-01 **im selben
+Format**, Uhrzeit bleibt (Nutzerwunsch P8 R2: Dateien lesbar, kein Projektverlauf; Hinweis `SCRUB_NOTE` im README),
+`##$DATE=` → 0; Nutzer-/Kontonamen (`find_users`: ##OWNER, user@host, audita, BES3T OPER, Benutzerpfade, OPUS CNM)
+→ „user“ (R1); Zip-Zeitstempel fest 1980; im Dateinamen wird das Datum gelöscht; PDF nur Eigenschaften auf gleicher
+Länge (Datum, Autor); MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docProps-Personen/-Daten, EMF gleiche Länge); OPUS `scrub_binary_strings` gleiche Länge; Messwerte bytegleich; PDF/Mnova/.d nicht bearbeitbar, Kürzel darin im Bericht `kept`). Dialog `app/datapack_dialog.py` (Auswahl je Projekt in QSettings). |
 | `app/publication.py` / `app/publication_view.py` | Publikation: Index `publication.elucida`, `sync`/`add_compound`/`move_compound`/`remove_compound`, `publication_of`, `readme_text`/`license_file`; Seite `PublicationPage` (Zentrum Index 2), `PublicationRow` (Startbildschirm), Dialoge Angaben/SI-Texte/Datenpakete/Gesamt-SI. |
 | `si/publication_si.py` | Gesamt-SI: `SECTIONS` (Kapitelfolge der Gruppen-SI), `assemble`, `merge_crystal`; Blöcke `title`/`toc`/`section` in `write_docx`. |
 | `exchange/characterization.py` | `elucida.json` für Characterization (Schema v1): `build(main)` nur aus vorhandenen SI-Teilen/Zuständen, `write` atomar; `structure_ids` (SMILES/InChIKey, nicht bei Abkürzungen). |

@@ -182,6 +182,12 @@ BRUKER_D_FILES = ("analysis.baf", "analysis.sqlite")      # aus einem .d-Ordner 
 NMR_SAME_FILES = ("acqus", "acqu2s", "fid", "ser", "pulseprogram")
 
 
+def _tree_digest(d: Path, names=None):
+    """Inhalt eines Messordners (alle Dateien samt pdata bzw. nur names) -> Prüfsumme."""
+    files = [d / n for n in names] if names else sorted(f for f in d.rglob("*") if f.is_file())
+    return [(f.relative_to(d).as_posix(), _digest(f)) for f in files]
+
+
 def _copy_dir(src: Path, dest_dir: Path, name=None) -> Path:
     """Messordner übernehmen: bei Bruker .d nur die gelesenen Dateien (Rohdaten + Index), NMR-Experimente ganz."""
     names = [n for n in BRUKER_D_FILES if (src / n).exists()] if src.suffix.lower() == ".d" else None
@@ -192,7 +198,7 @@ def _copy_dir(src: Path, dest_dir: Path, name=None) -> Path:
     target, n = dest_dir / base.name, 2
     while target.exists():
         if same and all((target / x).exists() and (target / x).stat().st_size == (src / x).stat().st_size
-                        and _digest(target / x) == _digest(src / x) for x in same):
+                        for x in same) and (_tree_digest(target, names) == _tree_digest(src, names)):
             return target                              # derselbe Messordner ist schon da
         target = dest_dir / f"{base.stem}_{n}{base.suffix}"
         n += 1

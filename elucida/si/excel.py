@@ -166,10 +166,10 @@ def _num(v):
 
 
 def _sheet_name(lam, used):
-    name = f"{lam:g} nm"
+    name = f"{core.fmt_lam(lam)} nm"
     k = 2
     while name in used:
-        name = f"{lam:g} nm ({k})"
+        name = f"{core.fmt_lam(lam)} nm ({k})"
         k += 1
     used.add(name)
     return name
@@ -296,7 +296,7 @@ def _band_sheet(bs, r, cfg, spectra, unit, sym, coef_unit, summary, r_d, r_fc):
     """Bandenblatt. Gibt die Zelle mit ε (Excel) zurück."""
     lam = r["lam"]
     f_v, f_ci = _coef_fmts(r, cfg)
-    _set(bs, "A1", t("band", l=f"{lam:g}", t=t("sh") if r.get("shoulder") else t("max")), TITLE)
+    _set(bs, "A1", t("band", l=core.fmt_lam(lam), t=t("sh") if r.get("shoulder") else t("max")), TITLE)
     _set(bs, "A2", t("edit_hint"))
     # Datentabelle
     hdr = [t("sample"), t("conc", u=unit), t("A"), t("Ad"), t("w"), t("w_tool"), t("res")]
@@ -412,7 +412,7 @@ def _band_sheet(bs, r, cfg, spectra, unit, sym, coef_unit, summary, r_d, r_fc):
         bs[f"F{r0 + 1 + i}"] = f'=IFERROR($K$12*E{r0 + 1 + i}+$K$13,0)'
         bs[f"F{r0 + 1 + i}"].number_format = "0.00000"
     ch = ScatterChart()
-    ch.title = t("chart_fit", l=f"{lam:g}")
+    ch.title = t("chart_fit", l=core.fmt_lam(lam))
     ch.style = 13
     ch.x_axis.title = f"c [{unit}]"
     ch.y_axis.title = "A/d [cm⁻¹]"

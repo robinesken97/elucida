@@ -254,9 +254,14 @@ def dataset_title(data) -> str:
     return f"Electronic supplement to {pt}" if pt else ""
 
 
-def readme_text(data, kinds=(), compounds=()) -> str:
+# Hinweis im README, wenn der Inhalt bereinigt wurde (Nutzerwunsch P8 R2: transparent, aber ohne Projektverlauf)
+SCRUB_NOTE = ("For privacy, calendar dates in the raw files were replaced by 1 January 1980 in their original format "
+              "(times of day unchanged), and user and account names by \"user\". All measured values are unchanged.")
+
+
+def readme_text(data, kinds=(), compounds=(), scrubbed=False) -> str:
     """README.txt: TITLE, AUTHORS (+ Adresse), CONTACT, ORCID, DOI, CITATION, RELATED PUBLICATION, PROJECT
-    DESCRIPTION, DATASET DESCRIPTION, LICENSE – leere Angaben fallen weg."""
+    DESCRIPTION, DATASET DESCRIPTION, LICENSE – leere Angaben fallen weg. scrubbed: Inhalt bereinigt (Hinweis)."""
     g = lambda k: str(data.get(k) or "").strip()            # noqa: E731
     out = []
 
@@ -277,7 +282,8 @@ def readme_text(data, kinds=(), compounds=()) -> str:
         sec("CITATION", f"{first} et al., \"{title}\"" + (f", {doi}" if doi else ""))
     sec("RELATED PUBLICATION", g("related"))
     sec("PROJECT DESCRIPTION", g("project_description"))
-    sec("DATASET DESCRIPTION", g("dataset_description") or dataset_description(kinds, compounds))
+    sec("DATASET DESCRIPTION", (g("dataset_description") or dataset_description(kinds, compounds))
+        + ("\n\n" + SCRUB_NOTE if scrubbed else ""))
     lic = LICENSES.get(data.get("license") or "CC-BY-4.0", LICENSES["CC-BY-4.0"])
     sec("LICENSE", f"This work is licensed under {lic[0]}. To view a copy of this license, visit {lic[1]}\n\n{lic[3]}")
     return "\n".join(out)

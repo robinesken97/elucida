@@ -850,10 +850,13 @@ def selftest(outdir, with_isnet=False):
         except FileNotFoundError:
             pass
         assert Path(mdoc_).read_bytes() == old_doc_
-        assert SI.mp_text("120,5") == "120.5 °C"                         # englische SI: Dezimalpunkt
+        assert SI.mp_text("120,5") == SI.mp_text("120,5 °C") == "120.5 °C"   # englische SI: Dezimalpunkt
         assert SI.chem_html("B3LYP-D3(BJ)/def2-SVP, PBE0, M06-2X (Figure S12), SP300 under N2, (CH3)2, C6D6") == \
             "B3LYP-D3(BJ)/def2-SVP, PBE0, M06-2X (Figure S12), SP300 under N<sub>2</sub>, (CH<sub>3</sub>)<sub>2</sub>, " \
             "C<sub>6</sub>D<sub>6</sub>"
+        assert SI.chem_html("S8, C60, C100H202; Figure S8, S1 state, D4") == \
+            "S<sub>8</sub>, C<sub>60</sub>, C<sub>100</sub>H<sub>202</sub>; Figure S8, S1 state, D4"
+        assert core.fmt_lam(330.5) == "331" and core.fmt_lam(331.49) == "331"   # λ ganzzahlig, nicht halb-gerade (R3)
         cap2_ = "Cyclic voltammograms of <b>X</b> (1.8±0.1 mg mL-1) in MeCN (0.1 M n-Bu4NPF6) at rt; " * 2
         tp_ = SI.two_per_page([("char", "Setup text. " * 40)] + [("image", "a.png", 16.0, 11.0, None),
                                                                    ("figcap", cap2_)] * 3)
@@ -4228,6 +4231,11 @@ def selftest(outdir, with_isnet=False):
         t1_, t2_, t3_ = (PRJ.import_file(old_, out / "p8nmr" / k_ / "MS400" / "10", "data/nmr", name="MS400_10")
                          for k_ in "aba")
         assert t1_ != t2_ and (Path(t2_) / "fid").read_bytes() == b"B" * 64 and t3_ == t1_, (t1_, t2_, t3_)
+        e4_ = out / "p8nmr" / "c" / "MS400" / "10"                         # gleiche fid, andere Verarbeitung (pdata)
+        shutil.copytree(out / "p8nmr" / "a" / "MS400" / "10", e4_)
+        (e4_ / "pdata" / "1").mkdir(parents=True, exist_ok=True)
+        (e4_ / "pdata" / "1" / "1r").write_bytes(b"other phase")
+        assert PRJ.import_file(old_, e4_, "data/nmr", name="MS400_10") not in (t1_, t2_)
         report.append("project folder layout (SI/figures/tables/data/structures/.elucida, old projects): OK")
 
         # elucida.json für Characterization: atomar, UTF-8 ohne BOM, Pfade relativ, Werte als Text
@@ -4260,9 +4268,11 @@ def selftest(outdir, with_isnet=False):
         dp_ = out / "datapack" / "proj"
         ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "RE-3-150_10", nuc="1H")
         with open(ex_ / "acqus", "a", encoding="latin-1", newline="") as fh_:   # Windows: \n bleibt \n
-            fh_.write("$$ 2024-03-12 14:35:12.123 +0100  user@nmr\n$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n"
+            fh_.write("$$ 2024-03-12 14:35:12.123 +0100  jdoe@nmr\n$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n"
+                      "##OWNER= jdoe\n"
                       "##$DATE= 1710251712\n$$ /NMR-Daten/OCM-RE-3-150FC_2024-03-12_14-35-12_AV500/10/acqus\n")
-        (ex_ / "uxnmr.info").write_text("Date         : Fri Mar  8 08:29:16 2024\n", encoding="latin-1", newline="")
+        (ex_ / "uxnmr.info").write_text("Date         : Fri Mar  8 08:29:16 2024\nUser         : jdoe (Jane Doe (jdoe))\n",
+                                        encoding="latin-1", newline="")
         fid_ = bytes(range(256)) * 4
         (ex_ / "fid").write_bytes(fid_)
         (ex_ / "pdata" / "1").mkdir(parents=True)
@@ -4276,7 +4286,7 @@ def selftest(outdir, with_isnet=False):
         mn_.write_bytes(b"\0MNOVA\0RE-3-150\0")                        # binär: bleibt, wird gemeldet
         ir0_ = dp_ / "data" / "ir" / "RE-3-150_IR.0"
         ir0_.parent.mkdir(parents=True)
-        ir0_bytes_ = b"\x0a\x0a\x00OPUS\x00SNM\x00RE-3-150\x00DAT\x0012/03/2024\x00\xff\x01"
+        ir0_bytes_ = b"\x0a\x0a\x00OPUS\x00SNM\x00RE-3-150\x00CNM\x00\x02\x00\x04\x00Admin\x00\x00\x00DAT\x0012/03/2024\x00\xff\x01"
         ir0_.write_bytes(ir0_bytes_)
         msr_ = dp_ / "data" / "hrms" / "MS-Bericht.docx"
         msr_.parent.mkdir(parents=True)
@@ -4284,7 +4294,8 @@ def selftest(outdir, with_isnet=False):
             z_.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>sample name: RE-3-</w:t></w:r>'
                         '<w:r><w:t>150</w:t></w:r></w:p><w:p><w:r><w:t>date: 12.03.2024</w:t></w:r></w:p>'
                         '<w:p><w:r><w:t>exact mass: 264.1626</w:t></w:r></w:p><w:p><w:del w:id="1" w:author="Jane Doe" '
-                        'w:date="2024-03-12T10:00:00Z"><w:r><w:delText>RE-3-150 old</w:delText></w:r></w:del></w:p>'
+                        'w:date="2024-03-12T10:00:00Z"><w:r><w:delText>RE-3-</w:delText></w:r><w:r><w:delText>150 old'
+                        '</w:delText></w:r></w:del></w:p>'
                         '</w:body></w:document>')
             z_.writestr("docProps/core.xml", "<cp:coreProperties><dc:creator>Jane Doe</dc:creator>"
                         "<dcterms:created>2024-03-12T10:00:00Z</dcterms:created><dc:title>MS</dc:title>"
@@ -4295,7 +4306,9 @@ def selftest(outdir, with_isnet=False):
         import pymupdf as _pm
         pdd_ = _pm.open()
         pdd_.new_page().insert_text((72, 72), "sample RE-3-150")
+        pdd_.set_metadata({"author": "Jane Doe", "creationDate": "D:20240312101500+01'00'"})
         pdd_.save(irp_, deflate=True)
+        assert DP.find_codes([DP.Item("ir", irp_, "IR/IR.pdf")]) == ["RE-3-150"]    # nur im komprimierten Text
         cvf_ = dp_ / "data" / "cv" / "RE-3-150-thf-200mVs.DTA"
         cvf_.parent.mkdir(parents=True)
         cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1", newline="")
@@ -4331,15 +4344,17 @@ def selftest(outdir, with_isnet=False):
             assert b"Compound 6m in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title")
             acq_txt_ = z_.read("6m/NMR/1H/10/acqus").decode("latin-1")
             assert "RE-3-150" not in acq_txt_ and "/Compound 6m/10/acqus" in acq_txt_ and "##$PULPROG= <zg30>" in acq_txt_
-            assert "2024" not in acq_txt_ and "##$DATE= 0" in acq_txt_ and "user@nmr" in acq_txt_     # nur Datum weg
-            assert "RE-3" not in acq_txt_ and "14-35-12" not in acq_txt_ and "OCM-Compound 6m_" in acq_txt_
+            assert "2024" not in acq_txt_ and "##$DATE= 0" in acq_txt_ and "1980-01-01 14:35:12.123 +0100  user@nmr" \
+                in acq_txt_ and "jdoe" not in acq_txt_ and "##OWNER= user" in acq_txt_, acq_txt_   # Nutzer weg (R1)
+            assert "RE-3" not in acq_txt_ and "OCM-Compound 6m_1980-01-01_14-35-12_AV500" in acq_txt_
             ux_ = z_.read("6m/NMR/1H/10/uxnmr.info").decode("latin-1")                  # ctime (TopSpin)
-            assert "2024" not in ux_ and "08:29" not in ux_ and "Mar" not in ux_, ux_
+            assert "Tue Jan  1 08:29:16 1980" in ux_ and "User         : user\n" in ux_ and "Jane" not in ux_, ux_
             assert {i_.date_time for i_ in z_.infolist()} == {(1980, 1, 1, 0, 0, 0)}   # Messdatum nicht als Zeitstempel
-            assert z_.read("6m/NMR/1H/10/pdata/1/title") == b"Compound 6m in CDCl3 \n"
+            assert z_.read("6m/NMR/1H/10/pdata/1/title") == b"Compound 6m in CDCl3 01.01.1980\n"   # Platzhalter (R2)
             assert "2024" not in z_.read("6m/EPR/6m_epr.txt").decode("utf-8")
             ir_z_ = z_.read("6m/IR/6m_IR.0")                                # OPUS: gleiche Länge, Rest bytegleich
             assert len(ir_z_) == len(ir0_bytes_) and b"RE-3-150" not in ir_z_ and b"2024" not in ir_z_
+            assert b"Admin" not in ir_z_ and b"\x00user\x00" in ir_z_ and b"01/01/1980" in ir_z_   # Operator weg
             assert ir_z_.startswith(b"\x0a\x0a\0OPUS\0SNM\x006m      \0") and ir_z_.endswith(b"\0\xff\x01")
             ms_txt_ = DP.docx_text(z_.read("6m/MS/MS-Bericht.docx"))
             assert "sample name: Compound 6m" in ms_txt_ and "2024" not in ms_txt_ and "264.1626" in ms_txt_
@@ -4349,19 +4364,41 @@ def selftest(outdir, with_isnet=False):
                 assert "RE-3" not in core_ and "2024" not in core_, core_
                 doc_ = zm_.read("word/document.xml").decode("utf-8")              # Änderungsverfolgung
                 assert "RE-3" not in doc_ and "Jane Doe" not in doc_ and "2024" not in doc_ and "<w:delText" in doc_, doc_
+                assert "150 old" not in doc_ and ">Compound 6m old<" in doc_               # über zwei Runs
                 assert {i_.date_time for i_ in zm_.infolist()} == {(1980, 1, 1, 0, 0, 0)}
             assert "Compound 6m CV" in z_.read("6m/CV/THF/6m-thf-200mVs.DTA").decode("latin-1")
             assert z_.read("6m/NMR/6m.mnova") == mn_.read_bytes()
         assert sorted(rep_["kept"]) == ["6m/IR/IR.pdf", "6m/NMR/6m.mnova"], rep_["kept"]
+        with _zfp.ZipFile(zp_) as z_:                                     # PDF: nur Eigenschaften, gleiche Länge
+            pdz_ = z_.read("6m/IR/IR.pdf")
+            assert len(pdz_) == irp_.stat().st_size and b"Jane" not in pdz_ and b"D:2024" not in pdz_
+            assert _pm.open(stream=pdz_, filetype="pdf").metadata["creationDate"].startswith("D:19800101")
+        dx_ = DP.scrub_docx(msr_.read_bytes(), {"RE-3-150": "A&B"})        # Ersatz mit „&“: XML bleibt gültig
+        with _zfp.ZipFile(__import__("io").BytesIO(dx_)) as zm_:
+            for n_ in ("docProps/core.xml", "word/document.xml"):
+                __import__("xml.parsers.expat").parsers.expat.ParserCreate().Parse(zm_.read(n_), True)   # wohlgeformt
+        assert DP.scrub_text("DATE\tLABEL\t8/7/2024\tDate\nTIME\tLABEL\t16:41:11\tTime", {}, True) == \
+            "DATE\tLABEL\t1/1/1980\tDate\nTIME\tLABEL\t16:41:11\tTime"          # Gamry bleibt lesbar (SEC)
+        assert DP.scrub_text("changer/20/20.95/data", {}, True) == "changer/20/20.95/data"   # Wechslerplatz, kein Datum
         assert not (out / "datapack" / "6m.zip.tmp").exists()
-        assert DP.scrub_text("measured on 12.03.2024. Next", {}, True) == "measured on . Next"   # Satzende
+        assert DP.scrub_text("measured on 12.03.2024. Next", {}, True) == "measured on 01.01.1980. Next"   # Satzende
         uvd_ = dp_ / "data" / "uvvis" / "RE-3-150_2024-03-12_14-35-12.csv"     # Datum im Dateinamen
         uvd_.parent.mkdir(parents=True)
         uvd_.write_text("nm,A\n300,0.1\n", encoding="utf-8", newline="")
-        DP.write_zip([DP.Item("uvvis", uvd_, f"UV-Vis/{uvd_.name}")], out / "datapack" / "uv.zip", "6m",
+        __import__("os").utime(uvd_, (0, 0))                             # mtime vor 1980 (ZipInfo.from_file warf)
+        opd_ = dp_ / "data" / "ir" / "RE-3-150_2024-03-12.0"                 # OPUS-Endung
+        opd_.write_bytes(b"\0OPUS\0")
+        msd_ = [dp_ / "data" / "hrms" / f"RE-3-150_2024-03-1{k_}.d" for k_ in (2, 3)]   # zwei Messungen, Datum im Namen
+        for k_, d_ in enumerate(msd_):
+            d_.mkdir(parents=True)
+            (d_ / "analysis.baf").write_bytes(bytes([k_]) * 8)
+        DP.write_zip([DP.Item("uvvis", uvd_, f"UV-Vis/{uvd_.name}"), DP.Item("ir", opd_, f"IR/{opd_.name}")] +
+                     [DP.Item("ms", d_, f"MS/{d_.name}") for d_ in msd_], out / "datapack" / "uv.zip", "6m",
                      {"RE-3-150": "6m"}, None)
         with _zfp.ZipFile(out / "datapack" / "uv.zip") as z_:
-            assert z_.namelist() == ["6m/UV-Vis/6m_.csv"], z_.namelist()
+            assert sorted(z_.namelist()) == ["6m/IR/6m_.0", "6m/MS/6m_.d/analysis.baf", "6m/MS/6m__2.d/analysis.baf",
+                                             "6m/UV-Vis/6m_.csv"], z_.namelist()
+            assert z_.read("6m/MS/6m__2.d/analysis.baf") == bytes([1]) * 8
         rep2_ = DP.write_zip(its_, out / "datapack" / "6m_raw.zip", "6m", {"RE-3-150": "6m"}, None)   # Inhalt unverändert
         with _zfp.ZipFile(out / "datapack" / "6m_raw.zip") as z_:
             assert b"RE-3-150 in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title") and not rep2_["text_replaced"]
@@ -4544,6 +4581,7 @@ def selftest(outdir, with_isnet=False):
         w.fill_recent_list()
         assert any(r_.info.get("publication") == "Test publication" for r_ in w.recent_rows)
         rd_ = PUB.readme_text(PUB.load(pub_), {"nmr", "cv", "dft"}, ["2a", "6m"])
+        assert PUB.SCRUB_NOTE not in rd_ and PUB.SCRUB_NOTE in PUB.readme_text(PUB.load(pub_), {"nmr"}, ["6m"], True)
         assert rd_.startswith("TITLE:\nTest publication") and "https://doi.org/10.1234/test" in rd_
         assert "CC-BY 4.0" in rd_ and "CompChem.zip" in rd_ and "NMR -> TopSpin" in rd_, rd_
         assert PUB.dataset_title({"paper_title": "Imidazo[1,5-<i>a</i>]pyridines"}) == \

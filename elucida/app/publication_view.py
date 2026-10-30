@@ -740,7 +740,8 @@ class PublicationPackDialog(QDialog):
         names, texts = self.replacements()
         data = PUB.load(self.pdir)
         kinds = {it.group for p in plans for it in p.items if it.on}
-        readme = PUB.readme_text(data, kinds, [p.name for p in plans]) if self.cb_readme.isChecked() else ""
+        readme = PUB.readme_text(data, kinds, [p.name for p in plans], scrubbed=self.cb_text.isChecked()) \
+            if self.cb_readme.isChecked() else ""
         lic = PUB.license_file(data, resource_path("assets")) if self.cb_readme.isChecked() else None
         dlg = QProgressDialog(T("dp_writing"), T("cancel"), 0, 100, self)
         dlg.setWindowModality(Qt.WindowModal)

@@ -58,8 +58,9 @@ def nbsp(text):
 def mp_text(text: str) -> str:
     """Schmelzpunkt wie in der SI: „m.p.“ davor weg, nur Zahl/Bereich (auch „>300“) -> „ °C“ ergänzen."""
     mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", text or "").strip()
+    mp = re.sub(r"(?<=\d),(?=\d)", ".", mp)          # englische SI: Dezimalpunkt (auch „120,5 °C“)
     if re.fullmatch(r"[<>≤≥~]?\s*\d+(?:[.,]\d+)?(?:\s*[-–−]\s*\d+(?:[.,]\d+)?)?", mp):
-        mp = mp.replace(",", ".") + " °C"            # englische SI: Dezimalpunkt
+        mp += " °C"
     return mp
 
 
@@ -118,15 +119,20 @@ def _sub_html(f):
 # Formelteile in Freitext: Elementsymbole und übliche Abkürzungen (n-Bu4NPF6, Et2O, (CH3)2); zwei Buchstaben zuerst
 _FORMULA_SYMS = sorted(set(ELEMENTS) | {"D", "Me", "Et", "Pr", "Bu", "Ph", "Cp", "Ac", "Tf", "Ts", "Ms", "Bn", "Bz",
                                         "Py", "Fc", "Cy", "Mes", "Dipp"}, key=len, reverse=True)
-_FORMULA_RE = re.compile(r"(?:(?:" + "|".join(_FORMULA_SYMS) + r")\d{0,2}|\(|\)\d{0,2})+")
-_GASES = {"H", "N", "O", "F", "Cl", "Br", "I"}          # Formel aus einem Symbol nur so (N2, O2), nicht „S12“, „D3“
+_FORMULA_RE = re.compile(r"(?:(?:" + "|".join(_FORMULA_SYMS) + r")\d{0,3}|\(|\)\d{0,3})+")
+_GASES = {"H", "N", "O", "F", "Cl", "Br", "I"}          # ein Symbol mit kleiner Zahl nur so (N2, O2), nicht „S1“, „D3“
+_REF_WORD = re.compile(r"(?:Figures?|Fig\.|Tables?|Schemes?|Charts?|Eqs?\.|Equations?|Sections?)\s*$")
 
 
 def _formula_sub(m):
     tok = m.group(0)
     units = re.findall(r"[A-Z][a-z]*", tok)
-    if not re.search(r"\d", tok) or not _FORMULA_RE.fullmatch(tok) or (len(units) == 1 and units[0] not in _GASES):
-        return tok                                     # B3LYP, def2-SVP, PBE0, M06-2X, Figure S12, SP300
+    nums = [int(n) for n in re.findall(r"\d+", tok)]
+    if not nums or not _FORMULA_RE.fullmatch(tok) or max(nums) > 99 and len(nums) < 2:
+        return tok                                     # B3LYP, def2-SVP, PBE0, M06-2X, SP300 (C100H202 ja)
+    if len(units) == 1 and not (units[0] in _GASES or units[0] != "D" and nums[0] >= 4
+                                and not _REF_WORD.search(m.string[:m.start()])):
+        return tok                                     # S1/T1 (Zustände), D3/D4 (Grimme), Figure S12; S8, C60 ja
     return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", tok)
 
 
@@ -186,7 +192,7 @@ def uvvis_line(results, cfg, solvent: str = ""):
             continue
         v, _ = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))
         sh = ", sh" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
-        lam = f"{r['lam']:.0f}"
+        lam = core.fmt_lam(r["lam"])
         if molar:
             items_p.append(f"{lam} nm (ε = {v} cm-1 M-1{sh})")
             items_h.append(f"{lam} nm (ε = {v} cm<sup>-1</sup> M<sup>-1</sup>{sh})")
@@ -236,7 +242,7 @@ def eps_methods(cfg, results, spectra, solvent: str = ""):
     cuts = sorted({float(r["cutoff"]) for r in fitted})
     cut_txt = (f"A ≤ {cuts[0]:g}" if len(cuts) == 1 else
                f"A ≤ {cfg['max_abs_fit']:g} (band-specific limits: " + ", ".join(
-                   f"{r['lam']:.0f} nm: {r['cutoff']:g}" for r in fitted if r["cutoff"] != cfg["max_abs_fit"]) + ")")
+                   f"{core.fmt_lam(r['lam'])} nm: {r['cutoff']:g}" for r in fitted if r["cutoff"] != cfg["max_abs_fit"]) + ")")
     model = "A/d = " + coef + "·c + b" if cfg["fit_intercept"] else "A/d = " + coef + "·c"
     dof = "n − 2" if cfg["fit_intercept"] else "n − 1"
     m.append(f"At each band, the absorbance ({sampling}{snap}) divided by the path length was fitted against the "
@@ -253,7 +259,7 @@ def eps_methods(cfg, results, spectra, solvent: str = ""):
         ci = r.get("eps_ci95")
         _, ci_s = core.fmt_ve(r["eps"], ci, max_decimals=core.eps_max_decimals(cfg)) if ci == ci else (None, None)
         sh = " (sh)" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
-        txt = f"{r['lam']:.0f} nm{sh}: {coef} = {v}" + (f" ± {e}" if e else "") + f" {cunit}"
+        txt = f"{core.fmt_lam(r['lam'])} nm{sh}: {coef} = {v}" + (f" ± {e}" if e else "") + f" {cunit}"
         txt += f" (SE; 95% CI ± {ci_s}" if ci_s else " ("
         txt += f"{'; ' if ci_s else ''}n = {r['fit']['n']}, R² = {r['fit']['r2']:.4f})"
         if r.get("hidden"):

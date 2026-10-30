@@ -747,6 +747,11 @@ def ve_decimals(v, e=None, digits="auto", max_decimals=None):
     return d
 
 
+def fmt_lam(lam) -> str:
+    """λ in Bild, Tabelle, SI, Excel immer ganzzahlig (Nutzerwunsch P8 R3), 330.5 -> 331 (nicht halb-gerade)."""
+    return str(math.floor(float(lam) + 0.5))
+
+
 def fmt_ve(v, e=None, digits="auto", max_decimals=None):
     """Wert ± Fehler, gerundet nach Unsicherheit. max_decimals=0 (ε): ganzzahlig, auch bei großem Fehler
     (wie in den Publikationen der Gruppe: 9525 ± 455, nicht 9500 ± 500)."""
@@ -1075,7 +1080,7 @@ class Figure:
         for i, r in enumerate(fits):
             col = cols[i % len(cols)]
             mark = r.get("shoulder") and self.cfg["labels"].get("mark_shoulders")
-            base = f"{r['lam']:g} nm" + (" (sh)" if mark else "")
+            base = f"{fmt_lam(r['lam'])} nm" + (" (sh)" if mark else "")
             with_r2 = f"{base}   $R^2$ = {r['fit']['r2']:.4f}" if r["fit"] else base
             self._legend_labels.append((base, with_r2))
             # R² nur in der Legende, wenn es nicht schon in der Inset-Tabelle steht
@@ -1109,7 +1114,7 @@ class Figure:
                 ft = r["fit"]
                 s, se = fmt_ve(ft["slope"], ft["se_slope"])
                 b, be = fmt_ve(ft["intercept"], ft["se_intercept"])
-                rows.append([f"{r['lam']:g}", f"{s} ± {se}" if se else s,
+                rows.append([fmt_lam(r["lam"]), f"{s} ± {se}" if se else s,
                              f"{b} ± {be}" if be else b, f"{ft['r2']:.4f}"])
             cu_s = f"({cu})" if "/" in cu else cu
             header = [fmt_text(h, self.cfg) for h in
@@ -1145,7 +1150,7 @@ class Figure:
             sym, unit = coeff_symbol_unit(self.cfg)
             sh = " (sh)" if (r.get("shoulder") and lcfg.get("mark_shoulders")) else ""
             ix = f"$_{{{num[id(r)]}}}$" if lcfg.get("index") else ""
-            txt = f"λ{ix} =  {r['lam']:g} nm{sh}\n{sym}{ix} =  {eps} {unit}"
+            txt = f"λ{ix} =  {fmt_lam(r['lam'])} nm{sh}\n{sym}{ix} =  {eps} {unit}"
             if self.cfg["r2_mode"] == "label":
                 txt += f"\n$R^2$ =  {r['fit']['r2']:.4f}"
             ann = self.ax.annotate(fmt_text(txt, self.cfg, label=True), xy=(r["lam"], 0), xycoords="data",

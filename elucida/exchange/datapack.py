@@ -174,6 +174,11 @@ def find_codes(items, read_text=True, limit=2_000_000) -> list[str]:
                     found |= set(CODE_RE.findall(docx_text(f.read_bytes())))
                 except (zipfile.BadZipFile, KeyError):
                     pass
+            elif read_text and f.suffix.lower() == ".pdf" and f.stat().st_size <= TEXT_MAX:
+                try:                                   # Text meist komprimiert
+                    found |= set(CODE_RE.findall(pdf_text(f.read_bytes())))
+                except Exception:
+                    pass
             elif read_text and f.stat().st_size <= limit and _is_text(f):
                 found |= set(CODE_RE.findall(f.read_bytes().decode("latin-1")))
     return sorted(found)
@@ -201,12 +206,57 @@ def replace_codes(s: str, repl: dict) -> str:
 # TopSpin: „Fri Mar  8 08:29:16 2024“ (ctime), Datensatzordner „…_2024-04-11_13-23-37_AV500“
 _MONTHS = ("Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Mär|Mai|Okt|Dez|January|February|March|April|June|July|"
            "August|September|October|November|December|Januar|Februar|März|Juni|Juli|Oktober|Dezember")
-DATE_RE = re.compile(r"(?<![\d.])(?:\d{1,2}[./]\d{1,2}[./](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|"
+DATE_RE = re.compile(r"(?<![\d.])(?:\d{1,2}(?P<sep>[./])\d{1,2}(?P=sep)(?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|"
                      rf"\d{{1,2}}\.?\s(?:{_MONTHS})\.?\s\d{{4}}|"
-                     rf"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+)?(?:{_MONTHS})\s+\d{{1,2}}\s+\d{{1,2}}:\d{{2}}:\d{{2}}\s+\d{{4}})"
+                     rf"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+)?(?:{_MONTHS})\s+\d{{1,2}}\s+\d{{1,2}}:\d{{2}}:\d{{2}}\s+\d{{4}}|"
+                     rf"(?:{_MONTHS})\d{{1,2}}-\d{{4}})"                    # TopSpin-Probenwechsler „Apr11-2024-0602“
                      r"(?:[ T,]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s?[AP]M)?(?:\s?[+-]\d{2}:?\d{2})?|_\d{2}-\d{2}-\d{2})?"
                      r"(?!\d|\.\d)")                                # Punkt am Satzende/vor der Endung zählt nicht
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)                            # Zeitstempel im Zip (sonst Messdatum als mtime)
+# Im Inhalt wird das Datum nicht gelöscht, sondern durch 1980-01-01 im selben Format ersetzt (Nutzerwunsch P8 R2):
+# Dateien bleiben lesbar (Gamry DATE+TIME, BWSpec-Zeitstempel), Uhrzeiten und damit Abstände innerhalb einer
+# Messung bleiben, ein Projektverlauf über Kalendertage nicht. Zahlenfelder behalten ihre Breite.
+_KEEP_IN_DATE = re.compile(r"\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s?[AP]M)?(?:\s?[+-]\d{2}:?\d{2})?|_\d{2}-\d{2}-\d{2}$")
+_MONTH_ANY = re.compile("|".join(sorted(_MONTHS.split("|"), key=len, reverse=True)))
+
+
+def date_placeholder(m) -> str:
+    """Treffer von DATE_RE -> 1980-01-01 im selben Format, Uhrzeit/Zeitzone bleiben."""
+    s = m.group(0)
+    keep = [k.span() for k in _KEEP_IN_DATE.finditer(s)]
+    runs = [r for r in re.finditer(r"\d+", s) if not any(a <= r.start() < b for a, b in keep)]
+    year = runs[0] if re.match(r"\d{4}-", s) else runs[-1]
+    for r in reversed(runs):                           # gleiche Breite: Positionen bleiben gültig
+        n = len(r.group())
+        new = ("1980" if n == 4 else "80"[-n:].rjust(n, "0")) if r is year else "1".rjust(n, "0")
+        s = s[:r.start()] + new + s[r.end():]
+    s = re.sub(r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b", "Tue", s)        # 1980-01-01 war ein Dienstag
+    return _MONTH_ANY.sub(lambda m: "Jan" if len(m.group()) == 3 else "January", s)
+
+
+# Verweise auf Nutzer (Nutzerwunsch P8 R1: alle weg) – Namen aus diesen Feldern werden überall im Paket ersetzt
+USER = "user"
+_USER_RES = (re.compile(r"^##OWNER=[ \t]*([^\s<>]+)[ \t]*$", re.M),                 # TopSpin-Parameter
+             re.compile(r"^(?:\$\$|#)\s.*?\s([^\s@]+)@[^\s@]+\s*$", re.M),       # „$$ <Zeit>  nmrsu@AV500“
+             re.compile(r"^\(\s*\d+,<[^>]*>,<([^<>]+)>,", re.M),                    # audita.txt
+             re.compile(r"^User\s*:\s*(\S+)", re.M),                                # uxnmr.info
+             re.compile(r'\b(?:creator|owner)="([^"]+)"'),                           # peaklist.xml
+             re.compile(r"^OPER\s+(\S.*?)\s*$", re.M),                               # BES3T .dsc
+             re.compile(r"(?i)[A-Z]:\\Users\\([^\\\s\x00]+)\\"),                 # Windows-Benutzerordner
+             re.compile(r"/(?:Users|home)/([^/\s]+)/"),
+             re.compile(r"/data/([^/\s]+)/nmr/"))                                   # TopSpin-Datenpfad
+_NOT_USERS = {"user", "public", "shared", "default", "all users"}
+_USER_LINE = re.compile(r"^(User\s*:\s*)\S.*$", re.M)                                # „nmrsu (NMR Administrator …)“
+_OPUS_OPERATOR = re.compile(rb"CNM\x00\x02\x00(.)\x00", re.S)                       # OPUS: Operator (Text, n Wörter)
+
+
+def find_users(texts) -> list[str]:
+    """Nutzer-/Kontonamen aus TopSpin-, BES3T-, Pfadangaben usw. (Texte als str)."""
+    found = set()
+    for t in texts:
+        for rx in _USER_RES:
+            found |= {u.strip() for u in rx.findall(t)}
+    return sorted(u for u in found if len(u) >= 2 and u.lower() not in _NOT_USERS)
 JCAMP_DATE = re.compile(r"^(##\$DATE=\s*)\d+", re.M)          # TopSpin: Messzeit als Sekunden seit 1970
 OPUS_RE = re.compile(r"\.\d+$")                              # Bruker OPUS: name.0, name.1 …
 # Dateieigenschaften eines Word-Dokuments mit Personen/Zeitpunkten (docProps/core.xml, app.xml)
@@ -216,7 +266,9 @@ _DOCPROPS = ("dc:creator", "cp:lastModifiedBy", "dcterms:created", "dcterms:modi
 
 def scrub_text(s: str, repl: dict, dates: bool) -> str:
     s = replace_codes(s, repl)
-    return JCAMP_DATE.sub(r"\g<1>0", DATE_RE.sub("", s)) if dates else s
+    if not dates:
+        return s
+    return _USER_LINE.sub(rf"\g<1>{USER}", JCAMP_DATE.sub(r"\g<1>0", DATE_RE.sub(date_placeholder, s)))
 
 
 def scrub_binary_strings(data: bytes, repl: dict, dates: bool) -> bytes:
@@ -230,35 +282,49 @@ def scrub_binary_strings(data: bytes, repl: dict, dates: bool) -> bytes:
     if dates:
         txt = bytes(b).decode("latin-1")
         for m in DATE_RE.finditer(txt):
-            b[m.start():m.end()] = b" " * (m.end() - m.start())
+            new = date_placeholder(m)
+            b[m.start():m.end()] = new[:len(m.group())].ljust(len(m.group())).encode("latin-1")
+        for m in _OPUS_OPERATOR.finditer(bytes(b)):
+            n = 2 * m.group(1)[0]
+            b[m.end():m.end() + n] = USER.encode()[:n].ljust(n, b"\0")
     return bytes(b)
+
+
+def scrub_pdf(data: bytes) -> bytes:
+    """PDF (nicht bearbeitbar): nur Dateieigenschaften auf gleicher Länge – Datum (Info, XMP) -> 1980-01-01,
+    Autor/Ersteller-Person leer; Inhalt, Versätze und xref bleiben."""
+    data = re.sub(rb"(/(?:CreationDate|ModDate)\s*\(D:)\d{8}", rb"\g<1>19800101", data)
+    data = re.sub(rb"((?:xmp:\w*Date|xap:\w*Date)(?:>|=\"))\d{4}-\d{2}-\d{2}", rb"\g<1>1980-01-01", data)
+    return re.sub(rb"(/Author\s*\()([^()\\]*)(\))", lambda m: m[1] + b" " * len(m[2]) + m[3], data)
 
 
 def _scrub_word_xml(xml: str, repl: dict, dates: bool) -> str:
     """Absätze eines WordprocessingML-Teils: Text je Absatz zusammensetzen (Word teilt ihn in Runs, z. B. „RE-3-“ +
     „150“), Kürzel/Datum ersetzen; geänderter Absatz -> ganzer Text im ersten Run, übrige Runs leer."""
     import html as _h
-    t_re = re.compile(r"(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)", re.S)
 
-    def para(m):
-        p = m.group(0)
-        parts = t_re.findall(p)
-        if not parts:
-            return p
-        old = "".join(_h.unescape(t) for _, t, _ in parts)
-        new = scrub_text(old, repl, dates)
-        if new == old:
-            return p
-        k = [0]
+    def runs(tag):
+        t_re = re.compile(rf"(<{tag}(?:\s[^>]*)?>)(.*?)(</{tag}>)", re.S)
 
-        def run(mt):
-            k[0] += 1
-            text = _h.escape(new, quote=False) if k[0] == 1 else ""
-            return '<w:t xml:space="preserve">' + text + "</w:t>"
-        return t_re.sub(run, p)
-    xml = re.sub(r"<w:p[ >].*?</w:p>", para, xml, flags=re.S)
-    xml = re.sub(r"(<w:delText(?:\s[^>]*)?>)(.*?)(</w:delText>)",   # gelöschter Text der Änderungsverfolgung
-                 lambda m: m[1] + _h.escape(scrub_text(_h.unescape(m[2]), repl, dates), quote=False) + m[3], xml, flags=re.S)
+        def block(m):
+            p = m.group(0)
+            parts = t_re.findall(p)
+            if not parts:
+                return p
+            old = "".join(_h.unescape(t) for _, t, _ in parts)
+            new = scrub_text(old, repl, dates)
+            if new == old:
+                return p
+            k = [0]
+
+            def run(mt):
+                k[0] += 1
+                text = _h.escape(new, quote=False) if k[0] == 1 else ""
+                return f'<{tag} xml:space="preserve">' + text + f"</{tag}>"
+            return t_re.sub(run, p)
+        return block
+    xml = re.sub(r"<w:p[ >].*?</w:p>", runs("w:t"), xml, flags=re.S)
+    xml = re.sub(r"<w:del[ >].*?</w:del>", runs("w:delText"), xml, flags=re.S)   # gelöschter Text (Änderungen)
     xml = re.sub(r'(\sw:(?:author|initials)=")[^"]*(")', r"\1\2", xml)   # Personen an Änderungen/Kommentaren
     return re.sub(r'\sw:date="[^"]*"', "", xml) if dates else xml
 
@@ -271,8 +337,10 @@ def _scrub_emf(data: bytes, repl: dict, dates: bool) -> bytes:
         for off in (0, 1):                             # Texte beginnen auf gerader oder ungerader Position
             seg = data[off:]
             txt = seg[:len(seg) // 2 * 2].decode("utf-16-le", errors="replace")
-            for m in set(DATE_RE.findall(txt)):
-                data = data.replace(m.encode("utf-16-le"), (" " * len(m)).encode("utf-16-le"))
+            for m in DATE_RE.finditer(txt):            # Platzhalter gleicher Länge (R2)
+                old = m.group(0)
+                data = data.replace(old.encode("utf-16-le"),
+                                    date_placeholder(m)[:len(old)].ljust(len(old)).encode("utf-16-le"))
     return data
 
 
@@ -292,7 +360,7 @@ def scrub_docx(data: bytes, repl: dict, dates=True) -> bytes:
                 x = b.decode("utf-8")
                 for tag in _DOCPROPS:
                     x = re.sub(rf"<{tag}(?:\s[^>]*)?>.*?</{tag}>|<{tag}(?:\s[^>]*)?/>", "", x, flags=re.S)
-                b = scrub_text(x, repl, dates).encode("utf-8")               # Titel/Betreff/eigene Felder
+                b = scrub_text(x, _xml_repl(repl), dates).encode("utf-8")    # Titel/Betreff/eigene Felder
             elif n.lower().endswith(".emf"):
                 b = _scrub_emf(b, repl, dates)
             if dates:
@@ -312,8 +380,8 @@ def docx_text(data: bytes) -> str:
             if n.endswith(".xml"):
                 x = b.decode("utf-8", errors="replace")
                 for p in re.findall(r"<w:p[ >].*?</w:p>", x, flags=re.S) or [x]:
-                    parts.append("".join(_h.unescape(t) for t in re.findall(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", p, re.S))
-                                 or re.sub(r"<[^>]+>", " ", p))
+                    parts.append("".join(_h.unescape(t) for t in re.findall(
+                        r"<w:(?:t|delText)(?:\s[^>]*)?>(.*?)</w:(?:t|delText)>", p, re.S)) or re.sub(r"<[^>]+>", " ", p))
             elif n.lower().endswith(".emf") and len(b) % 2 == 0:
                 parts.append(b.decode("utf-16-le", errors="replace"))
     return "\n".join(parts)
@@ -328,6 +396,24 @@ def pdf_text(data: bytes) -> str:
 
 def _safe_name(s: str) -> str:
     return re.sub(r'[\\:*?"<>|]', "_", s).strip() or "_"
+
+
+def _clean_name(p: str, repl: dict) -> str:
+    """Datei-/Ordnername im Zip: Kürzel ersetzt, Datum weg (vor der Endung, auch OPUS „….0“)."""
+    p = replace_codes(p, repl)
+    stem, dot, ext = p.rpartition(".")
+    if dot and stem and re.fullmatch(r"[A-Za-z0-9]{1,5}", ext) and not (ext.isdigit() and len(ext) > 2):
+        return _safe_name(DATE_RE.sub("", stem) + dot + ext)
+    return _safe_name(DATE_RE.sub("", p))
+
+
+def _xml_repl(repl: dict) -> dict:
+    """Ersatztexte für XML-Inhalt maskieren („Compound A&B“)."""
+    import html as _h
+    return {k: (_h.escape(v, quote=False) if v is not None else v) for k, v in repl.items()}
+
+
+_XML_EXT = {".xml", ".svg", ".html", ".htm", ".xhtml"}
 
 
 def _decode(data: bytes):
@@ -347,17 +433,28 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    files = []
+    files, bases = [], set()
     for it in (i for i in items if i.on):
-        base = "/".join(_safe_name(DATE_RE.sub("", replace_codes(p, name_repl))) for p in it.arc.split("/"))
+        base = "/".join(_clean_name(p, name_repl) for p in it.arc.split("/"))
+        k = 2
+        while base in bases:                           # zwei Messordner gleich nach dem Ersetzen: getrennt halten
+            stem, dot, ext = base.rpartition(".")
+            base = f"{stem}_{k}.{ext}" if dot and "/" not in ext else f"{base}_{k}"
+            k += 1
+        bases.add(base)
         if it.src.is_dir():
             for f in sorted(it.src.rglob("*")):
                 if f.is_file():
-                    rel = "/".join(_safe_name(DATE_RE.sub("", replace_codes(p, name_repl)))
-                                   for p in f.relative_to(it.src).parts)
+                    rel = "/".join(_clean_name(p, name_repl) for p in f.relative_to(it.src).parts)
                     files.append((f, f"{base}/{rel}", it.group))
         else:
             files.append((it.src, base, it.group))
+    if text_repl is not None:                          # Nutzer-/Kontonamen aus allen Dateien des Pakets (R1)
+        texts = []
+        for f, _, group in files:
+            if f.stat().st_size <= TEXT_MAX and (_is_text(f) or group == "ir" and OPUS_RE.search(f.name)):
+                texts.append(f.read_bytes().decode("latin-1"))
+        text_repl = {**dict.fromkeys(find_users(texts), USER), **text_repl}
     report = dict(files=0, bytes=0, text_replaced=[], kept=[])
     root = _safe_name(replace_codes(root, name_repl))
     seen = set()
@@ -382,12 +479,17 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
                     pass
             elif text_repl is not None and _is_text(f, data[:65536]):
                 txt, enc = _decode(data)
-                new = scrub_text(txt, text_repl, dates=True)
+                new = scrub_text(txt, _xml_repl(text_repl) if f.suffix.lower() in _XML_EXT else text_repl, dates=True)
                 if new != txt:
                     data = new.encode(enc, errors="replace")
                     report["text_replaced"].append(arc)
             elif text_repl is not None and group == "ir" and OPUS_RE.search(f.name):
-                new_b = scrub_binary_strings(data, name_repl, dates=True)
+                new_b = scrub_binary_strings(data, {**text_repl, **name_repl}, dates=True)
+                if new_b != data:
+                    data = new_b
+                    report["text_replaced"].append(arc)
+            elif text_repl is not None and f.suffix.lower() == ".pdf":
+                new_b = scrub_pdf(data)
                 if new_b != data:
                     data = new_b
                     report["text_replaced"].append(arc)
@@ -401,8 +503,8 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
                     pass
             if codes and any(c.encode() in check or c.encode("utf-16-le") in check for c in codes):
                 report["kept"].append(arc)
-            zi = zipfile.ZipInfo.from_file(f, arc)
-            zi.date_time = _ZIP_TIME
+            zi = zipfile.ZipInfo(arc, _ZIP_TIME)       # nicht from_file: mtime vor 1980 wirft dort ValueError
+            zi.external_attr = 0o644 << 16
             z.writestr(zi, data, compress_type=zipfile.ZIP_DEFLATED)
             report["files"] += 1
             report["bytes"] += len(data)
