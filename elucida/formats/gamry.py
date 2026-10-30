@@ -28,6 +28,8 @@ def read_gamry(path) -> dict:
             meta["date"] = parts[2]
         elif key == "TIME" and len(parts) > 2:
             meta["time"] = parts[2]
+        elif key == "CYCLES" and len(parts) > 2:
+            meta["n_cycles"] = int(float(parts[2]))
         elif key == "CONVENTION" and len(parts) > 2:
             meta["convention"] = int(float(parts[2]))
         elif key == "IRCOMP" and len(parts) > 2:
@@ -62,6 +64,12 @@ def read_gamry(path) -> dict:
             cycles.append({"E": arr[:, 0], "I": arr[:, 1], "T": arr[:, 2]})
     if not cycles:
         raise ValueError(f"{Path(path).name}: keine CV-Daten (Gamry .DTA) gefunden")
+    # Start innerhalb des Fensters (VINIT zwischen den Grenzen): Gamry schreibt den Rückweg zu VFINAL als eigenes
+    # Stück (CURVE{n+1} bzw. Cycle n) – gehört zum letzten Zyklus, sonst fehlt das Ende der Kurve
+    n = meta.get("n_cycles")
+    if n and len(cycles) == n + 1 and abs(cycles[-1]["E"][0] - cycles[-2]["E"][-1]) < 0.05:
+        tail = cycles.pop()
+        cycles[-1] = {k: np.concatenate([cycles[-1][k], tail[k]]) for k in ("E", "I", "T")}
     if meta.get("ircomp_on"):                                 # nur zur Dokumentation (Abbildung/CSV)
         meta["ircomp"] = (f"PF {meta['pfcor']:g} Ω" if meta.get("posfeed") and meta.get("pfcor") else "on")
     elif "ircomp_on" in meta:

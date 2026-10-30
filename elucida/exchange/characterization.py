@@ -105,7 +105,7 @@ def _analytics(w, pdir):
     if (w.compound or {}).get("oil"):                  # Öl: m.p. <25 °C
         a["mp"] = {"text": "<25 °C", "oil": True}
     elif (w.compound or {}).get("mp"):
-        a["mp"] = {"text": w.compound["mp"]}
+        a["mp"] = {"text": SI.mp_text(w.compound["mp"])}   # wie in der SI (mit °C)
     nmr = []
     for s in w.nmr_tab.spectra():
         e = {"nuclei": list(s.get("nuclei") or []), "kind": s.get("kind") or "1D"}

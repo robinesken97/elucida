@@ -427,8 +427,8 @@ def render_svg(path):
     """CDXML -> (SVG-Text, Hinweise auf nicht gezeichnete Objekte)."""
     root = ET.parse(str(path)).getroot()
     d = _Doc(root)
-    for page in root.iter("page"):
-        for el in page:
+    def draw(parent):
+        for el in parent:
             tag = el.tag
             if tag == "fragment":
                 d.fragment(el)
@@ -438,16 +438,14 @@ def render_svg(path):
                 d.arrow(el)
             elif tag == "graphic":
                 d.graphic(el)
-            elif tag == "group":
-                for sub in el:
-                    if sub.tag == "fragment":
-                        d.fragment(sub)
-                    elif sub.tag == "t":
-                        d.caption(sub)
+            elif tag == "group":                   # gruppierte Bedingungen (auch verschachtelt): alles darin zeichnen
+                draw(el)
             elif tag in ("scheme", "chemicalproperty", "objecttag"):
                 continue
             else:
                 d.notes.append(f"<{tag}> not drawn")
+    for page in root.iter("page"):
+        draw(page)
     if not d.pts:
         raise ValueError(f"{Path(path).name}: nothing to draw")
     xs = [p[0] for p in d.pts]

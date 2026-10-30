@@ -427,7 +427,7 @@ class IRMSTab(TABS.FigureTab):
     RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ea_solvate", "ea_found")   # Dateien, entfernte Peaks, EA
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
-                         ea_solvate="", ea_found={}, ir_mode=None,    # ir_mode: None = wie die Datei, "T" | "A"
+                         ea_solvate="", ea_found={}, ir_mode="T",     # "T" | "A"; None (alte Projekte) = wie die Datei
                          y_auto=True, y_min=0.0, y_max=100.0)        # y-Bereich (ymax: nur alte Projekte)
 
     def build_controls(self):

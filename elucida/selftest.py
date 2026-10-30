@@ -602,6 +602,21 @@ def selftest(outdir, with_isnet=False):
         write_dta(ref_file, [cv_sweep(-1.02, 80.0, -1.4, 0.9, ref=0.55)] * 2, 200, cycle_col=True)
         d_ = CVMOD.read_gamry(ref_file)
         assert len(d_["cycles"]) == 2 and d_["meta"]["scanrate"] == 200 and d_["meta"]["area"] == 0.071, d_["meta"]
+        # weites Fenster, Start innerhalb (Feedback „abgeschnitten“): Gamry legt den Rückweg zu VFINAL in eine eigene
+        # Tabelle; mit CYCLES 1 gehört sie zum Zyklus (beide Varianten)
+        up_w = np.arange(-1.2, 2.0 + 1e-9, 0.004)
+        leg1_ = np.concatenate([up_w, np.arange(2.0, -3.0 - 1e-9, -0.004)[1:]])
+        leg2_ = np.arange(-3.0 + 0.004, -1.2 + 1e-9, 0.004)
+        for cc_ in (False, True):
+            p_ = cvdir / f"cv_wide_{int(cc_)}.DTA"
+            write_dta(p_, [(leg1_, np.sin(leg1_)), (leg2_, np.sin(leg2_))], 200, cycle_col=cc_)
+            p_.write_text(p_.read_text(encoding="latin-1").replace(
+                "EXPLAIN", "EXPLAIN\r\nCYCLES\tIQUANT\t1\tC&ycles (#)", 1), encoding="latin-1", newline="")
+            cw_ = CVMOD.read_gamry(p_)["cycles"]
+            assert len(cw_) == 1 and len(cw_[0]["E"]) == len(leg1_) + len(leg2_), [len(c_["E"]) for c_ in cw_]
+            assert abs(cw_[0]["E"].min() + 3.0) < 1e-6 and abs(cw_[0]["E"].max() - 2.0) < 1e-6
+            assert abs(cw_[0]["E"][-1] + 1.2) < 1e-6, cw_[0]["E"][-1]        # endet wieder am Start
+        report.append("CV: weites Fenster, Rueckweg zu VFINAL im Zyklus (Gamry CURVE2 / Cycle 1): OK")
         c_ = CVMOD.read_gamry(cv_files[0])["cycles"][0]
         sug = CVMOD.suggest_couples(c_["E"], c_["I"])
         assert len(sug) == 1 and sug[0][0] < -1.02 < sug[0][1], sug
@@ -1550,6 +1565,17 @@ def selftest(outdir, with_isnet=False):
         t_ir.sync_widgets()
         t_ir.render()
         report.append("IR: Absorbanz-Umschalter, y-Bereich (0-100 %T, exakt), Labels unter Peakminimum: OK")
+        sp_real_ = t_ir.spectrum                                # Absorbanzdatei: Standard Transmission (Feedback)
+        t_ir.spectrum = lambda: {**sp_real_(), "kind": "A"}
+        try:
+            assert IRMS.IRMSTab.DEFAULT_STATE["ir_mode"] == "T" and w.irms_state.get("ir_mode") is None
+            assert t_ir.mode() == "A"                           # altes Projekt (None = wie die Datei) bleibt
+            w.irms_state["ir_mode"] = IRMS.IRMSTab.DEFAULT_STATE["ir_mode"]
+            assert t_ir.mode() == "T"
+        finally:
+            del t_ir.spectrum
+            w.irms_state["ir_mode"] = None
+        report.append("IR: Standard Transmission auch fuer Absorbanzdateien, alte Projekte unveraendert: OK")
         w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
         t_ms.render()
         assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
@@ -2742,6 +2768,11 @@ def selftest(outdir, with_isnet=False):
             svg_, notes_ = CDXD.render_svg(sdir / "rxn.cdxml")
             assert svg_.count(">N</text>") == 2, svg_.count(">N</text>")      # Labels auch ohne <t> (RDKit-CDXML)
             assert not notes_ and "<polygon" in svg_ and ">2</text>" in svg_ and "1.2\u00a0eq.)" in svg_, notes_
+            nest_ = sch_.replace('<t id="501"', '<group id="601"><group id="602"><t id="501"').replace(
+                '<arrow id="503"', '</group><arrow id="503"').replace('"/><scheme>', '"/></group><scheme>')
+            assert nest_.count("<group") == 2 and nest_.count("</group>") == 2
+            (sdir / "rxn_grp.cdxml").write_text(nest_, encoding="utf-8")     # Bedingungen + Pfeil gruppiert (Feedback)
+            assert CDXD.render_svg(sdir / "rxn_grp.cdxml") == (svg_, notes_), "Pfeil/Texte in Gruppe fehlen"
             assert CDXD.scheme_reagents(sdir / "rxn.cdxml") == [("K2CO3", "K2CO3", "reagent"), ("MeOH", "CH4O", "other")]
             t_s.set_scheme(str(sdir / "rxn.cdxml"))
             assert t_s.scheme_asset()["drawing_from"] == "cdxml" and t_s.scheme_asset()["pdf"]
@@ -3305,6 +3336,11 @@ def selftest(outdir, with_isnet=False):
         w.set_compound({**w.compound, "known": True, "lit": "J. Test. Chem. 2020, 1, 1"})
         pm_ = w.si_char_parts({**w.compound, "oil": True})[0]                 # Öl: m.p. <25 °C
         assert pm_[0][:2] == ("mp", "m.p. <25 \u00b0C"), pm_[0]
+        for in_, out_ in (("145", "145 \u00b0C"), ("145-147", "145-147 \u00b0C"), ("145.5 \u2013 147", "145.5 \u2013 147 \u00b0C"),
+                          ("m.p. >300", ">300 \u00b0C"), ("145 \u00b0C", "145 \u00b0C"), ("145 \u00b0C (dec.)", "145 \u00b0C (dec.)"),
+                          ("decomp.", "decomp.")):                      # m.p. ohne Einheit: °C ergänzen (Feedback)
+            pm_ = w.si_char_parts({**w.compound, "mp": in_, "oil": False})[0]
+            assert pm_[0][:2] == ("mp", "m.p. " + out_), (in_, pm_[0])
         w.save_project()
         ck_ = PUB.checklist(dpub_ / "S3")                                 # literaturbekannt: nur 1H/13C Pflicht
         assert ck_["known"] and ck_["missing"] == [] and ck_["lit"].startswith("J. Test"), ck_

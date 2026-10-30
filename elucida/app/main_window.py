@@ -3498,7 +3498,7 @@ class MainWindow(QMainWindow):
         if comp.get("oil"):                                # Öl: Schmelzpunkt unter Raumtemperatur
             parts.append(("mp", "m.p. <25 °C", "<b>m.p.</b> &lt;25 °C"))
         elif comp.get("mp"):
-            mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", comp["mp"]).strip()
+            mp = SI.mp_text(comp["mp"])                    # nur Zahl/Bereich: „°C“ ergänzen
             parts.append(("mp", "m.p. " + mp, "<b>m.p.</b> " + html.escape(mp)))   # wie in der SI: „m.p.“ fett
         else:
             missing.append("m.p.")

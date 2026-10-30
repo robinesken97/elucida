@@ -53,6 +53,14 @@ def nbsp(text):
 
 
 # ---------------------------------------------------------------------------- Elementaranalyse
+def mp_text(text: str) -> str:
+    """Schmelzpunkt wie in der SI: „m.p.“ davor weg, nur Zahl/Bereich (auch „>300“) -> „ °C“ ergänzen."""
+    mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", text or "").strip()
+    if re.fullmatch(r"[<>≤≥~]?\s*\d+(?:[.,]\d+)?(?:\s*[-–−]\s*\d+(?:[.,]\d+)?)?", mp):
+        mp += " °C"
+    return mp
+
+
 def parse_solvate(text: str) -> list[tuple[float, str]]:
     """'0.5 CH2Cl2, H2O' / '0.5CH2Cl2·H2O' -> [(0.5, 'CH2Cl2'), (1.0, 'H2O')]."""
     out = []
