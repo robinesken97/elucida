@@ -3912,6 +3912,18 @@ def install_crash_handler():
     sys.excepthook = hook
 
 
+def release_widgets(app):
+    """Alle Fenster löschen, solange die QApplication lebt (Qt löscht Kinder mit). Sonst baut PySide beim
+    Interpreter-Ende (atexit, destroyQCoreApplication) die übrigen Widgets in beliebiger Reihenfolge ab –
+    macOS-Absturz 2.3.7: pure virtual in ~QObject einer QCheckBox. Liste jedes Mal neu von Qt holen."""
+    import shiboken6
+    for _ in range(10000):
+        top = [x for x in app.topLevelWidgets() if x.parentWidget() is None]
+        if not top:
+            break
+        shiboken6.delete(top[0])
+
+
 def main():
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
@@ -3928,7 +3940,9 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     if args and Path(args[0]).exists():
         w.open_csv(args[0])          # Datei per Doppelklick / Drag auf das Programmsymbol
-    sys.exit(app.exec())
+    rc = app.exec()
+    release_widgets(app)
+    sys.exit(rc)
 
 
 if __name__ == "__main__":

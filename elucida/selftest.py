@@ -3382,6 +3382,12 @@ def selftest(outdir, with_isnet=False):
         report.append(f"publication (order, datapack {len(names_)} zips, complete SI {len(heads_)} chapters): OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
+        import shiboken6 as _shb_end                                     # Beenden: alle Widgets vor dem Interpreter-
+        from PySide6.QtWidgets import QWidget as _QW_end                 # Ende löschen (macOS-Absturz 2.3.7)
+        MW.release_widgets(app)
+        left_ = [type(o_).__name__ for o_ in _shb_end.getAllValidWrappers() if isinstance(o_, _QW_end)]
+        assert not app.topLevelWidgets() and not left_, left_[:10]
+        report.append("Quit: no widgets left for PySide's atexit cleanup: OK")
         report.append("OK")
     except Exception:
         ok = False
