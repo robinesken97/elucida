@@ -2444,8 +2444,13 @@ def selftest(outdir, with_isnet=False):
         cap_ = t_x.caption()[0]
         assert cap_.startswith("X-ray solid state structure of xtest_a (70% (PART 1) and 30% (B) occupancy; major part "
                                "shown). Thermal ellipsoids are shown with 50% probability."), cap_
-        assert "Co-crystallised water is omitted for clarity." in cap_ and "Symmetry code" not in cap_, cap_
-        assert "Selected bond lengths and torsion angles in [Å] and [°]: C1–C2: 1.390(3); C1–C2–C3–C1ⁱ: 0.0." in cap_, cap_
+        assert "Co-crystallised water is omitted for clarity." in cap_, cap_
+        # Audit P4 R1/R2 (wissenschaftliche Praxis, Transparenz): Symmetriecode der genannten erzeugten Atome und
+        # Kennzeichnung gerechneter Werte in der Unterschrift (vorher: weder noch)
+        assert ("Selected bond lengths and torsion angles in [Å] and [°]: C1–C2: 1.390(3); C1–C2–C3–C1ⁱ: 0.0\u1d43. "
+                "Symmetry code: (i) \u2212x, \u2212y, \u2212z. \u1d43 Calculated from the atomic coordinates; no s.u. "
+                "in the CIF.") in cap_, cap_
+        assert "0.0<sup>a</sup>." in t_x.caption()[1] and "(i) \u2212x" in t_x.caption()[1], t_x.caption()[1]
         assert "<b>xtest_a</b>" in t_x.caption()[1] and not t_x.param_tables(ent_[0])   # wenige Werte: in der Unterschrift
         c1_, cl1_ = mol_.find_key("C1"), mol_.find_key("Cl1")
         assert mol_.substituent(c1_, mol_.find_key("C2")) is None                  # Ringbindung im Kern
@@ -2768,6 +2773,7 @@ def selftest(outdir, with_isnet=False):
                 pass
         chk_("plane from collinear atoms", p4_plane_collinear)
         class _XS:                                   # Tab-Attrappe für Tabellen (nur Modell)
+            _sym_ops = XRAY.XrayTab._sym_ops
             def __init__(s_, S_x, m_, params):
                 s_.e_ = dict(name="t", block="t", params=params)
                 s_.S_x, s_.m_ = S_x, m_

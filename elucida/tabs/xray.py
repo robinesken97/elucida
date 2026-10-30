@@ -3991,8 +3991,21 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                     ("bond", "torsion"): "bond lengths and torsion angles in [Å] and [°]",
                     ("angle", "torsion"): "angles and torsion angles in [°]",
                     ("bond", "angle", "torsion"): "bond lengths, angles and torsion angles in [Å] and [°]"}[tuple(kinds)]
-            tail += f" Selected {what}: " + "; ".join(f"{n}: {v}" for _, n, v, _ in vals) + "."
-        # keine Symmetriecodes in der Unterschrift (Nutzerwunsch); sie stehen in den Parametertabellen
+            tail += f" Selected {what}: "
+            tail_h = esc(minus(tail)) + "; ".join(esc(minus(f"{n}: {v}")) + ("" if cif else "<sup>a</sup>")
+                                                  for _, n, v, cif in vals) + "."
+            tail += "; ".join(f"{n}: {v}" + ("" if cif else "ᵃ") for _, n, v, cif in vals) + "."
+            # wie in Acta Cryst./SI üblich: Symmetriecodes der genannten erzeugten Atome und Herkunft gerechneter Werte
+            ops_ = self._sym_ops(e)
+            if ops_:
+                sym = (" Symmetry code" + ("s" if len(ops_) > 1 else "") + ": "
+                       + "; ".join(f"({r}) {op}" for r, op in ops_) + ".")
+                tail, tail_h = tail + sym, tail_h + esc(minus(sym))
+            if not all(cif for *_, cif in vals):
+                note = " Calculated from the atomic coordinates; no s.u. in the CIF."
+                tail, tail_h = tail + " ᵃ" + note, tail_h + " <sup>a</sup>" + esc(note)   # wie Tabellen: „a …“
+            return minus(head + tail), head_h + tail_h
+        # Bild: keine Symmetriecodes (Nutzerwunsch 2.3); Unterschrift nur, wenn genannte Werte erzeugte Atome haben
         return minus(head + tail), head_h + esc(minus(tail))
 
     def param_values(self, e, mol=None):
@@ -4032,9 +4045,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 out.append((f"{title} for", name, ["Atom"] * n + [unit], rows))
         return out
 
-    def sym_note(self, e):
-        """'Symmetry codes: i: −x, −y, −z' für die in den ausgewählten Parametern vorkommenden Operationen (Word-
-        Parametertabellen); '' ohne erzeugte Atome."""
+    def _sym_ops(self, e):
+        """[(römisch, Operation)] der in den ausgewählten Parametern vorkommenden erzeugten Atome, in Modellreihenfolge."""
         mol = self.molecule(e)
         used = {}
         for pp in (e.get("params") or []) if mol else []:
@@ -4043,8 +4055,12 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 if i is not None and mol.atoms[i].get("sym"):
                     used[mol.atoms[i]["sym"]] = mol.atoms[i]["opkey"]
         order = list(mol.ops.values()) if mol else []
-        return ("Symmetry codes: " + "; ".join(f"{r}: {used[r]}" for r in sorted(used, key=order.index))
-                if used else "")
+        return [(r, used[r]) for r in sorted(used, key=order.index)]
+
+    def sym_note(self, e):
+        """'Symmetry codes: i: −x, −y, −z' für die Word-Parametertabellen; '' ohne erzeugte Atome."""
+        ops_ = self._sym_ops(e)
+        return ("Symmetry codes: " + "; ".join(f"{r}: {op}" for r, op in ops_)) if ops_ else ""
 
     # -- Auswahl / Maus ---------------------------------------------------------------------
     def hover_atom(self, k):

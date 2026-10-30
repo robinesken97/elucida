@@ -95,12 +95,17 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Intensität gewichtetes Mittel über den LC-Peak (≥ 50 % des Maximums, zusammenhängend, ± 10 ppm um calc.); Streuung
   immer mit anzeigen. Bericht der Massenabteilung bleibt vorgewählt.
 - X-Ray: Standardabweichungen **nur aus der CIF** (`_geom_bond/_angle/_torsion`, Text unverändert, z. B. „1.392(3)“),
-  **nie schätzen**; fehlt ein Wert, selbst rechnen und ohne esd markieren (Torsion: Hinweis „CONF setzen“).
+  **nie schätzen**; fehlt ein Wert, selbst rechnen und ohne esd markieren (Torsion: Hinweis „CONF setzen“), in Tabellen
+  und Unterschrift mit Fußnote a („Calculated from the atomic coordinates; no s.u. in the CIF“, Audit P4: Transparenz).
   Symmetrie: Molekül über Bindungen × Symmetrieoperationen vervollständigen; Abgleich mit geom-Einträgen über
-  Transformationen (gesucht G mit T_k = G∘S_k, auch rückwärts), Codes `n_klm` (555 = keine Translation, „n“ allein
-  ebenso). Erzeugte Atome mit römischer Hochzahl je Operation; Fußnote/Symmetriecode **nicht** in Bild und
-  Unterschrift (Nutzerwunsch 2.3, wirkte wie ein loses „xyz“), nur in den Parametertabellen. Fehlordnung Standard: PART 0 + je
-  `disorder_assembly` der Teil mit der größten Besetzung. Ellipsoide: k = √χ²₃(p) (50 % → 1.5382), Umriss = 2×2-Block
+  Transformationen (zuerst exakt T_k = G∘S_k, sonst über die Lagen mit 2e-4 für spezielle Lagen, auch rückwärts;
+  uneigentliches G kehrt das Torsionsvorzeichen um), Codes `n_klm` über `_space_group_symop_id` (555 = keine
+  Translation, „n“ allein ebenso). Erzeugte Atome mit römischer Hochzahl je Operation; Symmetriecode **nie im Bild**
+  (Nutzerwunsch 2.3, wirkte wie ein loses „xyz“), in den Parametertabellen (auch Word) und – wie in Acta Cryst./SI
+  üblich – in der Unterschrift, wenn dort genannte Werte erzeugte Atome enthalten („Symmetry code: (i) −x, −y, −z.“,
+  Audit P4). Fehlordnung Standard: PART 0 + je `disorder_assembly` der Teil mit der größten Besetzung; ohne assembly
+  („.“, Olex2) je räumlich getrennte vollständige Gruppe (≥ 2 PARTs, Σ Besetzung ≈ 1, `disorder_sites`), unvollständige
+  Gruppen gemeinsam (Audit P4). Ellipsoide: k = √χ²₃(p) (50 % → 1.5382), Umriss = 2×2-Block
   von R·U·Rᵀ. Aussehen Standard **wie Mercury** (Nutzerwunsch): schattierte Schichten (`shade_layers`, Licht oben
   links, matt, Schichten immer innerhalb des Umrisses, keine Clip-Pfade), H-Radius 0.09 Å, Bindungsdicke in Å
   (`bond_w`, Standard 0.12 seit 2.0, skaliert mit dem Zoom wie Mercurys Zylinder); seit 2.0 nach Nutzervorlage
