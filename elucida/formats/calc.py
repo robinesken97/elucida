@@ -279,8 +279,9 @@ def parse_gaussian(text) -> dict:
         elif "Optimization stopped." in s:
             c["opt_converged"] = False
         elif s.startswith("Frequencies --") and not s.startswith("Frequencies ---"):    # „---“: hpmodes-Kopie
-            if not c.get("_fjob"):               # erste Frequenzzeile dieses Jobs: Liste eines früheren Jobs verwerfen
-                c["freqs"], c["_fjob"] = [], True
+            if not c.get("_fjob"):               # erste Frequenzzeile dieses Jobs: Werte eines früheren Jobs verwerfen
+                c["freqs"], c["thermo"], c["_fjob"] = [], {}, True
+                c.pop("_e_th", None)
             c["freqs"] += s.split("--")[1].split()
         elif s.startswith("Temperature") and "Kelvin" in s:
             m = re.match(r"Temperature\s+(\S+)\s+Kelvin\.\s+Pressure\s+(\S+)\s+Atm", s)

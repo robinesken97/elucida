@@ -311,7 +311,7 @@ def frontier_name(no, spin, table):
 def orbital_energy(no, spin, table):
     for n, _, e in table.get(spin) or table.get("") or []:
         if n == no:
-            return e
+            return e if e == e else None                         # NaN: Gaussian „**********“
     return None
 
 

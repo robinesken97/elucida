@@ -2910,7 +2910,8 @@ def selftest(outdir, with_isnet=False):
             nb_[a_].append(b_)
             nb_[b_].append(a_)
         assert DFT.renumber(range(8), [1, 3, 2]) == [1, 3, 2, 0, 4, 5, 6, 7]
-        assert DFT.renumber(range(8), [1, 3, 2], fr_[-1]["els"], nb_) == [1, 4, 5, 3, 0, 6, 7, 2]
+        # H folgen ihrem Atom: angeklickte behalten 1–3, H danach nach ihrem Atom (C1: 4, 5; C3: 0, 6, 7)
+        assert DFT.renumber(range(8), [1, 3, 2], fr_[-1]["els"], nb_) == [1, 3, 2, 4, 5, 0, 6, 7]
         assert DFT.renumber([2, 1, 0, 3, 4, 5, 6, 7], [3]) == [3, 2, 1, 0, 4, 5, 6, 7]   # Rest: bisherige Reihenfolge
         t_d = w.dft_tab
         w.main_tabs.setCurrentWidget(t_d)
@@ -3451,6 +3452,31 @@ def selftest(outdir, with_isnet=False):
         chk_("DFT duplicate names, HOMO after reload", p5_dft_dupes)
         assert not fails_, "\n".join(fails_)
         report.append("audit P5 DFT/TD-DFT/orbitals edge cases: OK")
+        fails_ = []
+        def p5r_names():                         # opt, opt_3, opt: keine Endlosschleife; opt.1/opt.2 nicht beide „opt“
+            got_ = DFT.export_names(["opt", "opt_3", "opt", "opt.1", "opt.2", "opt"])
+            assert len(set(got_)) == 6 and not any("." in g_ for g_ in got_), got_
+        chk_("export names unique without dots", p5r_names)
+        chk_("overlay triplets only, eps, hidden triplets",
+             lambda: ov_spec_("td_t2.out", [("1-3A", 2.5, 0.0)], mode="eps", triplets=False)[0])
+        def p5r_thermo():                        # zweiter Freq-Job bricht nach H ab: kein altes G/E(el) daneben
+            c_ = CALC.parse_gaussian("\n".join(
+                g_head_ + g_or_("Standard orientation:", "0.0") +
+                [" SCF Done:  E(RB3LYP) =  -76.400000000     A.U. after 1 cycles", " Frequencies --   100.0   250.0   350.0",
+                 " Sum of electronic and thermal Enthalpies=           -76.370000",
+                 " Sum of electronic and thermal Free Energies=        -76.420000"] + g_link_ + g_or_("Standard orientation:", "0.0") +
+                [" SCF Done:  E(RB3LYP) =  -77.410000000     A.U. after 1 cycles", " Frequencies --   110.0   260.0   360.0",
+                 " Sum of electronic and thermal Enthalpies=           -77.390000"]))
+            assert c_["thermo"].get("H") == "-77.390000" and "G" not in c_["thermo"], c_["thermo"]
+            assert c_["thermo"]["E_el"] == "-77.410000000", c_["thermo"]
+        chk_("gaussian thermo of an aborted second job", p5r_thermo)
+        def p5r_nan():                           # „**********“: kein „nan eV“ in Beschriftungen
+            tb_ = ORB.orbital_energies(" Population analysis using the SCF density.\n"
+                                       " Alpha  occ. eigenvalues -- **********  -0.80000\n Alpha virt. eigenvalues --  0.10000\n")
+            assert ORB.orbital_energy(1, "", tb_) is None and ORB.orbital_energy(2, "", tb_) is not None, tb_
+        chk_("no nan orbital energy", p5r_nan)
+        assert not fails_, "\n".join(fails_)
+        report.append("audit P5 review fixes (Codex): OK")
 
         # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
         ndir = out / "input" / "nmr"

@@ -280,7 +280,8 @@ class XyzMolecule(XRAY.Molecule):
 
 def renumber(order, picked, els=None, nbrs=None):
     """Neue Reihenfolge: angeklickte Atome (Dateiindizes) zuerst, Rest in der bisherigen Reihenfolge. Mit nbrs
-    (Nachbarn je Atom) folgen die nicht angeklickten H direkt ihrem Atom."""
+    (Nachbarn je Atom): erst alle übrigen Schweratome, dann die nicht angeklickten H nach ihrem Atom geordnet – die
+    angeklickten Atome behalten die Nummern der Klickreihenfolge (wie C1, C2 … mit H1A, H1B … in der Kristallographie)."""
     order = list(order)
     inside = set(order)
     picked = [k for k in dict.fromkeys(picked) if k in inside]
@@ -289,14 +290,11 @@ def renumber(order, picked, els=None, nbrs=None):
     if nbrs is None or els is None:
         return picked + rest
     pos = {k: i for i, k in enumerate(order)}
-    seq, placed = [], set()
-    for k in picked + [r for r in rest if els[r] not in H_ELS]:
-        if k in placed:
-            continue
-        seq.append(k)
-        placed.add(k)
+    seq = picked + [r for r in rest if els[r] not in H_ELS]
+    placed = set(seq)
+    for k in list(seq):
         for h in sorted(nbrs.get(k, ()), key=pos.get):
-            if els[h] in H_ELS and h not in placed and h not in chosen:
+            if els[h] in H_ELS and h not in placed:
                 seq.append(h)
                 placed.add(h)
     return seq + [k for k in rest if k not in placed]
@@ -583,6 +581,19 @@ from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
 
 PICK_COLOR = XRAY.SEL_COLOR
 OLD_COLOR = "#9a9a9a"
+
+
+def export_names(names):
+    """Dateinamen je Geometrie: eindeutig (gleiche Namen sonst überschrieben: _2, _3 …) und ohne Punkt (with_suffix
+    schnitte „opt.1“ zu „opt“ ab)."""
+    out = []
+    for n in names:
+        name = first = core.safe_name(n).replace(".", "_")
+        k = 2
+        while name in out:
+            name, k = f"{first}_{k}", k + 1
+        out.append(name)
+    return out
 
 
 class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
@@ -1785,13 +1796,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         es = [e for e in self.entries() if self.geometry(e) is not None]
         if not es:
             raise RuntimeError(T("tab_empty"))
-        used = set()
-        for e in es:
-            name = first = base.name + ("_" + core.safe_name(e.get("name") or Path(e["file"]).stem)
-                                        if len(es) > 1 else "")
-            while name in used:                                 # gleiche Namen überschreiben sich sonst: _2, _3 …
-                name = f"{first}_{len(used) + 1}"
-            used.add(name)
+        names = export_names([e.get("name") or Path(e["file"]).stem for e in es])
+        for e, nm in zip(es, names):
+            name = base.name + ("_" + nm if len(es) > 1 else "")
             stem = base.with_name(name)
             fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
             FigureCanvasAgg(fig)

@@ -134,7 +134,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Ausblenden/Drahtmodell ändern nur das Bild, nie Tabellen oder Messwerte; die Bildunterschrift (`caption`) folgt dem Bild.
 - DFT-Tab (xyz): Ansicht über `XyzMolecule` mit der X-Ray-Schnittstelle (`XrayFigure`/`XrayMouse`), Startansicht
   **mit** H (jedes Atom muss anklickbar sein). Umnummerieren: angeklickte Atome der Reihe nach vorn, Rest in bisheriger
-  Reihenfolge (optional H hinter ihr Atom); gespeichert als `order` (Dateiindizes), Atom-Schlüssel `a<Index>` bleibt.
+  Reihenfolge (optional „H folgen ihrem Atom“: übrige Schweratome, dann alle nicht angeklickten H nach ihrem Atom geordnet –
+  angeklickte behalten die Klicknummern, Nutzerwunsch P5 „wissenschaftliche Konvention“); gespeichert als `order`
+  (Dateiindizes), Atom-Schlüssel `a<Index>` bleibt.
   xyz-Zeilen beim Speichern **unverändert** (nur umsortiert, alle Bilder einer Trajektorie), geladene Datei nie
   überschreiben. Anzeige ab 1, optional ab 0 (ORCA).
 - DFT-Rechnungen (SI-Block): nur ORCA 6 (geprüft mit 6.1.1), ORCA 5 bewusst nicht; Gaussian (siehe unten).

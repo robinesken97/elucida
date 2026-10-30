@@ -1884,7 +1884,7 @@ class OverlayTab(FigureTab):
                     k = 1 / (stick_max if mode == "max" else band_max)
                 y, h = eps * k, sh * k
                 c = {"x": lam, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
-                calc_x.append(sl if st.get("triplets") else sl[~trip])     # ohne ausgeblendete Tripletts
+                calc_x.append(sl if st.get("triplets") or trip.all() else sl[~trip])   # ohne ausgeblendete Tripletts
                 if st["sticks"]:
                     sticks.append({"x": sl[~trip], "h": (h * sc)[~trip], "color": e["color"], "base": off})
                     fa, hs = np.asarray(f, float), h * sc

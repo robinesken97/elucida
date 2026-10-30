@@ -1892,16 +1892,18 @@ TEXTS = {
     "dft_num_next": ("Als Nächstes: Atom {next} ({k} von {n} vergeben).", "Next: atom {next} ({k} of {n} assigned)."),
     "dft_num_rest": ("Nicht angeklickte Atome erhalten {a}–{b} in ihrer bisherigen Reihenfolge.",
                      "Atoms not clicked get {a}–{b} in their previous order."),
-    "dft_num_rest_h": ("Nicht angeklickte Atome erhalten {a}–{b}; H-Atome direkt hinter ihrem Atom.",
-                       "Atoms not clicked get {a}–{b}; H atoms right after their atom."),
+    "dft_num_rest_h": ("Nicht angeklickte Atome erhalten {a}–{b}; H-Atome am Ende, nach ihrem Atom geordnet.",
+                       "Atoms not clicked get {a}–{b}; H atoms at the end, ordered by their atom."),
     "dft_num_back": ("Letztes zurück", "Undo last"),
     "dft_num_apply": ("Übernehmen", "Apply"),
     "dft_num_done": ("Neue Nummerierung übernommen.", "New numbering applied."),
     "dft_h_follow": ("H-Atome folgen ihrem Atom", "H atoms follow their atom"),
-    "dft_h_follow_tip": ("Nicht angeklickte H-Atome direkt hinter das Atom stellen, an dem sie sitzen (sonst behalten "
-                         "sie ihre bisherige Reihenfolge am Ende).",
-                         "Place H atoms that were not clicked right after the atom they are bonded to (otherwise they "
-                         "keep their previous order at the end)."),
+    "dft_h_follow_tip": ("Angeklickte Atome behalten ihre Nummern, dann die übrigen Schweratome; nicht angeklickte "
+                         "H-Atome kommen ans Ende, geordnet nach dem Atom, an dem sie sitzen (sonst behalten sie ihre "
+                         "bisherige Reihenfolge).",
+                         "Clicked atoms keep their numbers, then the other heavy atoms; H atoms that were not clicked "
+                         "go to the end, ordered by the atom they are bonded to (otherwise they keep their previous "
+                         "order)."),
     "dft_order_reset": ("Reihenfolge der Datei", "File order"),
     "dft_order_reset_tip": ("Nummerierung wie in der geladenen Datei wiederherstellen",
                             "Restore the numbering of the loaded file"),
