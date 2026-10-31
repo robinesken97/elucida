@@ -91,7 +91,7 @@ def reset_button(reset_layout, reset_defaults):
 def color_button(color, on_pick, cell=False):
     """Farbfeld; cell: in einer Tabellenzelle mit gleichem Rand ringsum (mittig wie die übrigen Zellen)."""
     b = QPushButton()
-    css = "margin: 4px 12px; " if cell else ""
+    css = "margin: 6px 12px; min-height: 0px; padding: 0px; " if cell else ""   # passt in die Zeilenhöhe
     if not cell:
         b.setFixedSize(44, 22)
     b.setProperty("cellcss", css)
@@ -2197,7 +2197,7 @@ class FluoTab(FigureTab):
         self.lbl_info = STYLE.HintLabel("")
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        f.addRow(self.lbl_info)
+        f.addRow("", self.lbl_info)                          # mittig unter der Zeile darüber
         self.info = {}
         self.lv.addWidget(g)
 

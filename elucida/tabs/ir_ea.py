@@ -657,7 +657,10 @@ class IRMSTab(TABS.FigureTab):
         self.tbl_ir = QTableWidget(0, 3)
         self.tbl_ir.setHorizontalHeaderLabels(["", "ṽ [cm⁻¹]", T("ir_intensity")])
         self.tbl_ir.verticalHeader().setVisible(False)
-        self.tbl_ir.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        hh = self.tbl_ir.horizontalHeader()                 # feste Spalten: springen beim Scrollen nicht
+        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.Stretch)
         self.tbl_ir.setMinimumHeight(160)
         self.tbl_ir.itemChanged.connect(self.ir_toggled)
         f.addRow(self.tbl_ir)
@@ -679,16 +682,19 @@ class IRMSTab(TABS.FigureTab):
         self.ed_solv.setToolTip(T("ea_solvate_tip"))
         f.addRow(T("ea_solvate"), self.ed_solv)
         grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
         grid.addWidget(QLabel(""), 0, 0)
         grid.addWidget(QLabel(T("ea_calc")), 1, 0)
         grid.addWidget(QLabel(T("ea_found")), 2, 0)
         self.ea_calc_lbl, self.ea_found_ed = {}, {}
         for j, el in enumerate(SI.EA_ELEMENTS, 1):
-            grid.addWidget(QLabel(f"{el} [%]"), 0, j)
-            lc = QLabel("–")
+            grid.addWidget(QLabel(f"{el} [%]", alignment=Qt.AlignCenter), 0, j)    # mittig über den Feldern
+            lc = QLabel("–", alignment=Qt.AlignCenter)
             grid.addWidget(lc, 1, j)
             ed = QLineEdit(str((st.get("ea_found") or {}).get(el, "")))
-            ed.setMaximumWidth(80)
+            ed.setAlignment(Qt.AlignCenter)                  # Wert mittig unter „calc.“
+            grid.setColumnStretch(j, 1)
             grid.addWidget(ed, 2, j)
             ed.editingFinished.connect(self.changed)
             self.ea_calc_lbl[el], self.ea_found_ed[el] = lc, ed
@@ -1013,7 +1019,6 @@ class IRMSTab(TABS.FigureTab):
                 it = QTableWidgetItem(v)
                 it.setFlags(Qt.ItemIsEnabled)
                 self.tbl_ir.setItem(i, j, it)
-        self.tbl_ir.resizeColumnsToContents()
         self._loading = False
 
     def update_ea(self):

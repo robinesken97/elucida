@@ -647,7 +647,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.tbl = QTableWidget(0, 2)
         self.tbl.setHorizontalHeaderLabels([T("dft_name"), T("dft_file")])
         self.tbl.verticalHeader().setVisible(False)
-        self.tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)   # Name und Datei gleich breit
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tbl.setMinimumHeight(100)
@@ -655,7 +655,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.tbl.itemSelectionChanged.connect(self.entry_selected)
         v.addWidget(self.tbl)
         STYLE.hide_when_empty(self.tbl)
-        self.lbl_info = QLabel("")
+        self.lbl_info = STYLE.HintLabel("")
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setStyleSheet(HINT_CSS)
         v.addWidget(self.lbl_info)

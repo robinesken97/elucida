@@ -3280,7 +3280,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.tbl.itemSelectionChanged.connect(self.entry_selected)
         v.addWidget(self.tbl)
         STYLE.hide_when_empty(self.tbl)
-        self.lbl_info = QLabel("")
+        self.lbl_info = STYLE.HintLabel("")
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextFormat(Qt.RichText)
         self.lbl_info.setStyleSheet(HINT_CSS)
@@ -3696,9 +3696,14 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             box = QWidget()
             h = QHBoxLayout(box)
             h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(8)
+            h.addStretch(1)                                    # Paar mittig in seiner Zelle (wie die übrigen Farbfelder)
             h.addWidget(QLabel(el))
-            h.addWidget(TABS.color_button(cols.get(el) or default_color(el, self.st.get("style")),
-                                          lambda c, el=el: self.set_color(el, c)))
+            b_ = TABS.color_button(cols.get(el) or default_color(el, self.st.get("style")),
+                                   lambda c, el=el: self.set_color(el, c))
+            b_.setFixedSize(34, STYLE.CONTROL_H)
+            h.addWidget(b_)
+            h.addStretch(1)
             self.color_grid.addWidget(box, n // 4, n % 4)
 
     def set_color(self, el, c):

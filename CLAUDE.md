@@ -356,7 +356,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `compound.known` (+ `lit`) nur ¹H/¹³C; `compound.oil` = „m.p. <25 °C“ (zählt als m.p.). Zurück: `btn_pub` in der
   Tab-Leiste.
 - Verbindung des Projekts (`compound`) ist nur Vorgabe: Tabs mit eigener Struktur/Molmasse behalten diese.
-- UI zweisprachig: jeder sichtbare Text über `elucida.app.i18n.T(key)` mit DE **und** EN-Eintrag.
+- UI zweisprachig: jeder sichtbare Text über `elucida.app.i18n.T(key)` mit DE **und** EN-Eintrag. Englische Kartentitel in
+  Title Case (Nutzerwunsch); Zahlenfelder immer mit Dezimalpunkt (`STYLE._number_locale`, QLocale C), Schreibweise „MNova“.
 
 ## Architektur
 Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.py` und `tools/`); Importe absolut

@@ -160,9 +160,9 @@ TEXTS = {
     "molar_mass_short": ("Molmasse", "Molar mass"),
     "img_size_struct": ("Größe Struktur", "Structure size"),
     "img_size_photo": ("Größe Foto", "Photo size"),
-    "adv_images": ("Bildgrößen und Freistellung", "Image sizes and background"),
-    "adv_eval": ("Erweitert: min. Punkte, min. R², Schultern", "Advanced: min. points, min. R², shoulders"),
-    "adv_plot": ("Inset, Fehler, R²-Anzeige, Formate", "Inset, errors, R² display, formats"),
+    "adv_images": ('Bildgrößen und Freistellung', 'Image Sizes and Background'),
+    "adv_eval": ('Erweitert: min. Punkte, min. R², Schultern', 'Advanced: Min. Points, Min. R², Shoulders'),
+    "adv_plot": ('Inset, Fehler, R²-Anzeige, Formate', 'Inset, Errors, R² Display, Formats'),
     "adv_changed": ("geändert", "changed"),
     "menu_theme": ("Erscheinungsbild", "Appearance"),
     "move_up": ("Nach oben", "Move up"),
@@ -361,13 +361,13 @@ TEXTS = {
                             "Writes this tab's Word file to the compound folder under “SI” (overwrites it)"),
     "syn_need_scheme": ("Erst ein Reaktionsschema (CDXML) wählen", "Choose a reaction scheme (CDXML) first"),
     "tab_figure": ("Abbildung", "Figure"),
-    "grp_export": ("Achsen, Größe und Formate", "Axes, size and formats"),
-    "grp_export_size": ("Größe und Formate", "Size and formats"),
+    "grp_export": ('Achsen, Größe und Formate', 'Axes, Size and Formats'),
+    "grp_export_size": ('Größe und Formate', 'Size and Formats'),
     "grp_refs": ("Referenzierung", "Referencing"),
-    "grp_more_display": ("Weitere Darstellung", "More display options"),
-    "grp_highlight": ("Hervorheben und Labels", "Highlighting and labels"),
-    "grp_intensity": ("Intensität und Kinetik", "Intensity and kinetics"),
-    "grp_atoms": ("Atome und Fragmente", "Atoms and fragments"),
+    "grp_more_display": ('Weitere Darstellung', 'More Display Options'),
+    "grp_highlight": ('Hervorheben und Labels', 'Highlighting and Labels'),
+    "grp_intensity": ('Intensität und Kinetik', 'Intensity and Kinetics'),
+    "grp_atoms": ('Atome und Fragmente', 'Atoms and Fragments'),
     "tab_presets_tip": ("Einstellungen dieses Tabs als Vorlage speichern oder laden (Daten bleiben unberührt)",
                         "Save or load this tab's settings as a preset (data are not affected)"),
     "card_select_first": ("{t}: erst einen Eintrag in der Liste oben auswählen.",
@@ -393,13 +393,13 @@ TEXTS = {
                         "like “(1.03 g, 5.00 mmol, 1.0 eq.)”\nEnter reagents or use “From scheme” – the amounts in the "
                         "procedure are checked\nOutput: “Export” at the bottom (Word file) or SI (Word) in the toolbar"),
     "guide_nmr_title": ('NMR: Spektren aus MestReNova mit Struktur und die NMR-Zeile', 'NMR: spectra from MestReNova with structure, and the NMR line'),
-    "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG; EMF geht unverändert nach Word), auch per Ziehen ins Fenster; optional Mnova-Dokumente (links oben) und TopSpin-Daten (Reiter Rohdaten)', 'Files: SVG export from MestReNova (File → Save as → SVG; EMF goes into Word unchanged), also by dragging into the window; optionally Mnova documents (top left) and TopSpin data (Raw data tab)'),
+    "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG; EMF geht unverändert nach Word), auch per Ziehen ins Fenster; optional MNova-Dokumente (links oben) und TopSpin-Daten (Reiter Rohdaten)', 'Files: SVG export from MestReNova (File → Save as → SVG; EMF goes into Word unchanged), also by dragging into the window; optionally MNova documents (top left) and TopSpin data (Raw data tab)'),
     "guide_nmr_steps": ("SVG hinzufügen – Kern und Reihenfolge erkennt das Programm\nStruktur kommt aus dem Dialog "
-                        "Verbindung; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus Mnova unter "
+                        "Verbindung; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus MNova unter "
                         "„NMR-Zeile“ einfügen (¹³C auch „Zeile aus Peaklabels“)\nWord speichern (zwei Spektren je Seite) oder "
                         "über SI (Word)",
                         "Add the SVG – nucleus and order are recognised\nThe structure comes from the Compound dialog; placed "
-                        "automatically or dragged in the preview\nPaste the Mnova multiplet report under “NMR line” (¹³C also "
+                        "automatically or dragged in the preview\nPaste the MNova multiplet report under “NMR line” (¹³C also "
                         "“line from peak labels”)\nSave Word (two spectra per page) or via SI (Word)"),
     "guide_irms_title": ('IR + EA: IR-Peakliste und Elementaranalyse als SI-Zeilen', 'IR + EA: IR peak list and elemental analysis as SI lines'),
     "guide_irms_files": ("Dateien: Bruker-OPUS-Datei (*.0) und/oder OPUS-PDF mit Peakbeschriftung, auch per Ziehen ins "
@@ -537,7 +537,7 @@ TEXTS = {
                           "lower min or choose “auto”."),
     "ir_intensity": ("Intensität", "Intensity"),
     "si_copy": ("In Zwischenablage (mit Formatierung für Word)", "Copy to clipboard (formatted for Word)"),
-    "ea_group": ("Elementaranalyse", "Elemental analysis"),
+    "ea_group": ('Elementaranalyse', 'Elemental Analysis'),
     "ea_solvate": ("Solvat", "Solvate"),
     "ea_solvate_ph": ("z. B. 0.5 CH2Cl2 (optional)", "e.g. 0.5 CH2Cl2 (optional)"),
     "ea_solvate_tip": ("Wird zur Formel addiert (berechnete Werte und Zeile), mehrere mit Komma: 0.5 CH2Cl2, H2O",
@@ -582,10 +582,10 @@ TEXTS = {
                 "also in the contents: codes → “Compound …”, delete date and time (text files, TopSpin parameters, "
                 "MS report, OPUS)"),
     "dp_text_tip": ("Messwerte (FID, ser, Spektren) bleiben bytegleich. Im MS-Bericht auch Ersteller und Datum der "
-                    "Datei. PDF, Mnova und Bruker-.d lassen sich nicht bearbeiten; ein Kürzel darin steht danach im "
+                    "Datei. PDF, MNova und Bruker-.d lassen sich nicht bearbeiten; ein Kürzel darin steht danach im "
                     "Protokoll",
                     "Measured values (FID, ser, spectra) stay byte-identical. In the MS report also the file's author "
-                    "and date. PDF, Mnova and Bruker .d cannot be edited; a code in them is listed in the log"),
+                    "and date. PDF, MNova and Bruker .d cannot be edited; a code in them is listed in the log"),
     "dp_export": ("Exportieren …", "Export …"),
     "dp_size": ("{n} Einträge, {size} (vor dem Packen)", "{n} entries, {size} (before compression)"),
     "dp_writing": ("Datenpaket wird geschrieben …", "Writing the data package …"),
@@ -593,7 +593,7 @@ TEXTS = {
                 "Data package saved: {p} ({n} files, {size}; codes replaced in {t} text files)"),
     "dp_kept": ("Kürzel noch enthalten (Binärdateien, unverändert):\n  {files}",
                 "Codes still contained (binary files, unchanged):\n  {files}"),
-    "dp_grp_nmr": ("NMR (TopSpin, Mnova)", "NMR (TopSpin, Mnova)"),
+    "dp_grp_nmr": ("NMR (TopSpin, MNova)", "NMR (TopSpin, MNova)"),
     "dp_grp_ir": ("IR", "IR"),
     "dp_grp_ms": ("MS (Bericht, Rohdaten)", "MS (report, raw data)"),
     "dp_grp_uvvis": ("UV-Vis", "UV-Vis"),
@@ -614,7 +614,7 @@ TEXTS = {
     "si_part_nmr": ("NMR-Spektren (zwei je Seite)", "NMR spectra (two per page)"),
     "si_part_figs": ("Abbildungen aller Tabs (UV-Vis, IR, HR-MS, Fluoreszenz, CV, SEC, EPR; zwei je Seite)",
                      "Figures from all tabs (UV-Vis, IR, HR-MS, fluorescence, CV, SEC, EPR; two per page)"),
-    "cap_box": ("Bildunterschrift (SI-Export)", "Figure caption (SI export)"),
+    "cap_box": ('Bildunterschrift (SI-Export)', 'Figure Caption (SI Export)'),
     "cv_cap_tip": ("Unterschrift wie in der SI der Gruppe. Vorschubgeschwindigkeit, iR-Kompensation (aus der Gamry-"
                    "Datei), Referenz und Pfeile kommen aus den sichtbaren Messungen, der Rest aus diesen Feldern.",
                    "Caption as in the group's SI. Scan rate, iR compensation (from the Gamry file), reference and "
@@ -670,17 +670,17 @@ TEXTS = {
                          "in der UV-Vis-Zeile und in der Bildunterschrift.", "Note: series “{g}” has no solvent – enter "
                          "it in the ε tab under “SI line” to get it into the UV-Vis line and the figure caption."),
     "nmr_peaks": ("Zeile aus Peaklabels", "Line from peak labels"),
-    "nmr_peaks_tip": ("Für das gewählte 1D-Spektrum (z. B. ¹³C): Verschiebungen aus den Peaklabels des Mnova-SVG als "
+    "nmr_peaks_tip": ("Für das gewählte 1D-Spektrum (z. B. ¹³C): Verschiebungen aus den Peaklabels des MNova-SVG als "
                       "Zeile „13C NMR (… MHz, …) δ …“ ins Textfeld (ersetzt eine vorhandene Zeile desselben Kerns). Ein "
                       "beschriftetes Lösungsmittelsignal („77.16 CDCl3“) fällt weg, unbeschriftete bitte löschen.",
-                      "For the selected 1D spectrum (e.g. ¹³C): shifts from the peak labels of the Mnova SVG as a line "
+                      "For the selected 1D spectrum (e.g. ¹³C): shifts from the peak labels of the MNova SVG as a line "
                       "“13C NMR (… MHz, …) δ …” in the text field (replaces an existing line of that nucleus). A "
                       "labelled solvent signal (“77.16 CDCl3”) is dropped; please delete unlabelled ones."),
     "nmr_peaks_need": ("Erst ein 1D-Spektrum mit Kern wählen.", "Select a 1D spectrum with a nucleus first."),
-    "nmr_peaks_1h": ("Für ¹H bitte den Multiplettbericht aus Mnova einfügen (Peaklabels kennen keine Multipletts).",
-                     "For ¹H please paste the multiplet report from Mnova (peak labels have no multiplets)."),
-    "nmr_peaks_none": ("Keine Peaklabels in {f} gefunden (in Mnova Peaks beschriften und neu exportieren).",
-                       "No peak labels found in {f} (label the peaks in Mnova and export again)."),
+    "nmr_peaks_1h": ("Für ¹H bitte den Multiplettbericht aus MNova einfügen (Peaklabels kennen keine Multipletts).",
+                     "For ¹H please paste the multiplet report from MNova (peak labels have no multiplets)."),
+    "nmr_peaks_none": ("Keine Peaklabels in {f} gefunden (in MNova Peaks beschriften und neu exportieren).",
+                       "No peak labels found in {f} (label the peaks in MNova and export again)."),
     "nmr_peaks_done": ("{n} Signale ({nuc}) aus den Peaklabels übernommen – bitte prüfen.",
                        "{n} signals ({nuc}) taken from the peak labels – please check."),
     "si_part_methods": ("Methodik der Auswertung und Fits (Text aus „SI-Text kopieren“ aller Tabs)",
@@ -795,7 +795,7 @@ TEXTS = {
     "cv_group": ("Gruppe", "Group"),
     "cv_group_tip": ("Freies Feld, z. B. Lösungsmittel (THF, MeCN …): Datenreihe in den Auftragungen gegen die Scanrate",
                      "Free field, e.g. solvent (THF, MeCN …): data series in the plots against scan rate"),
-    "cv_file_ref": ("Referenz der ausgewählten Messung", "Reference of the selected measurement"),
+    "cv_file_ref": ('Referenz der ausgewählten Messung', 'Reference of the Selected Measurement'),
     "cv_fref_global": ("wie unter „Referenzierung“ (für alle)", "as under “Referencing” (for all)"),
     "cv_fref_internal": ("eigener interner Standard", "own internal standard"),
     "cv_fref_manual": ("eigene feste Verschiebung", "own fixed shift"),
@@ -870,7 +870,7 @@ TEXTS = {
     "ov_type": ("Typ", "Type"),
     "ov_exp": ("Messung", "measured"),
     "ov_states": ("Zustände", "states"),
-    "ov_details": ("Ausgewähltes Spektrum", "Selected spectrum"),
+    "ov_details": ('Ausgewähltes Spektrum', 'Selected Spectrum'),
     "ov_own_norm": ("eigener (statt „Normierung“ unten)", "own (instead of “Normalisation” below)"),
     "ov_norm_window": ("Normierungsbereich [nm]", "Normalisation range [nm]"),
     "ov_fwhm": ("Breite (FWHM)", "Width (FWHM)"),
@@ -1052,7 +1052,7 @@ TEXTS = {
                       "Closed frame around the plot (top and right too)"),
     "tf_struct_frame": ("Abgerundeter Rahmen um die Struktur", "Rounded frame around the structure"),
     # ---- Overlay: Stapeln --------------------------------------------------
-    "ov_stack_grp": ("Stapeln und Achsen", "Stacking and axes"),
+    "ov_stack_grp": ('Stapeln und Achsen', 'Stacking and Axes'),
     "ov_stack": ("Gestapelt", "Stacked"),
     "ov_stack_tip": ("Kurven senkrecht übereinander, in der Reihenfolge der Liste (oben = oben).\n"
                      "Zusätzlich gilt der Versatz der einzelnen Kurve.",
@@ -1324,7 +1324,7 @@ TEXTS = {
                         "Kopplungen)", "Create an own isotropic S = ½ simulation and fit it to a measurement (g, "
                         "linewidth, couplings)"),
     "epr_kind_iso": ("S = ½ (eigen)", "S = ½ (own)"),
-    "epr_iso": ("Isotrope S = ½-Simulation (erste Ordnung)", "Isotropic S = ½ simulation (first order)"),
+    "epr_iso": ('Isotrope S = ½-Simulation (erste Ordnung)', 'Isotropic S = ½ Simulation (First Order)'),
     "epr_lw": ("ΔB_pp", "ΔB_pp"),
     "epr_lorentz": ("Lorentz-Anteil", "Lorentzian fraction"),
     "epr_fit_lor": ("mitfitten", "fit as well"),
@@ -1508,10 +1508,10 @@ TEXTS = {
                       "of several atoms on/off; labels can be dragged."),
     "xr_box_labels_off": ("Labels ausblenden ({n} Atome)", "Hide labels ({n} atoms)"),
     "xr_box_labels_on": ("Labels zeigen ({n} Atome)", "Show labels ({n} atoms)"),
-    "xr_colors": ("Atomfarben", "Atom colours"),
+    "xr_colors": ('Atomfarben', 'Atom Colours'),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
     "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
-    "dft_measure": ("Messen (Abstand, Winkel, Diederwinkel)", "Measure (distance, angle, dihedral)"),
+    "dft_measure": ('Messen (Abstand, Winkel, Diederwinkel)', 'Measure (Distance, Angle, Dihedral)'),
     "xr_select_hint": ("Atome in der Abbildung anklicken.", "Click atoms in the figure."),
     "xr_take": ("In Liste übernehmen", "Add to list"),
     "xr_clear_sel": ("Auswahl aufheben", "Clear selection"),
@@ -1641,7 +1641,7 @@ TEXTS = {
     "syn_name_tip": ("Name/Nummer der Verbindung in „Synthesis of …“ (leer = Name unter „Verbindung“)",
                      "Name/number of the compound in “Synthesis of …” (empty = name under “Compound”)"),
     "syn_name_ph": ("z. B. S2", "e.g. S2"),
-    "syn_scheme": ("Reaktionsschema (ChemDraw)", "Reaction scheme (ChemDraw)"),
+    "syn_scheme": ('Reaktionsschema (ChemDraw)', 'Reaction Scheme (ChemDraw)'),
     "syn_scheme_pick": ("Schema wählen …", "Choose scheme …"),
     "syn_scheme_hint": ("CDXML wählen oder „In ChemDraw bearbeiten“ (Speichern übernimmt das Schema). Das Bild "
                         "zeichnet Elucida aus der CDXML; eine gleichnamige SVG/PDF daneben hat Vorrang und wird "
@@ -1681,7 +1681,7 @@ TEXTS = {
     "syn_sup": ("Hochgestellt", "Superscript"),
     "syn_check_none": ("Keine Mengenangaben „(… mg, … mmol, … eq.)“ in der Vorschrift.",
                        "No amounts “(… mg, … mmol, … eq.)” in the procedure."),
-    "syn_reagents": ("Reagenzien (Mengen berechnen)", "Reagents (calculate amounts)"),
+    "syn_reagents": ('Reagenzien (Mengen berechnen)', 'Reagents (Calculate Amounts)'),
     "syn_col_name": ("Name", "Name"),
     "syn_col_M": ("M / Formel", "M / formula"),
     "syn_col_role": ("Rolle", "Role"),
@@ -1753,8 +1753,8 @@ TEXTS = {
 
     # ---- NMR ---------------------------------------------------------------
     "tab_nmr": ("NMR", "NMR"),
-    "nmr_empty": ("Mnova-SVG hinzufügen oder hineinziehen (in MestReNova: Datei → Speichern unter → SVG).",
-                  "Add or drop a Mnova SVG (in MestReNova: File → Save As → SVG)."),
+    "nmr_empty": ("MNova-SVG hinzufügen oder hineinziehen (in MestReNova: Datei → Speichern unter → SVG).",
+                  "Add or drop a MNova SVG (in MestReNova: File → Save As → SVG)."),
     "nmr_spectra": ("Spektren (SVG/EMF aus MestReNova)", "Spectra (SVG/EMF from MestReNova)"),
     "nmr_add": ("Spektrum hinzufügen …", "Add spectrum …"),
     "nmr_file": ("Datei", "File"),
@@ -1766,37 +1766,37 @@ TEXTS = {
                        "NOESY …). In Word zwei Spektren je Seite.",
                        "Order is automatic: ¹H, ¹³C, other nuclei by mass number, then 2D (COSY, HSQC, HMBC, NOESY …). "
                        "Two spectra per page in Word."),
-    "nmr_selected": ("Ausgewähltes Spektrum", "Selected spectrum"),
+    "nmr_selected": ('Ausgewähltes Spektrum', 'Selected Spectrum'),
     "nmr_nuc_from_axis": ("Kern aus der Achsenbeschriftung erkannt.", "Nucleus recognised from the axis label."),
     "nmr_nuc_manual": ("Kern von Hand eingetragen.", "Nucleus entered by hand."),
     "nmr_nuc_missing": ("⚠ Kern nicht in der Achse gefunden – bitte eintragen (z. B. 1H oder 1H/13C).",
                         "⚠ nucleus not found in the axis label – please enter it (e.g. 1H or 1H/13C)."),
     "nmr_temp": ("Temperatur", "Temperature"),
     "nmr_freq": ("Frequenz [MHz]", "Frequency [MHz]"),
-    "nmr_freq_ph": ("aus dem Mnova-Text bzw. Bruker", "from the Mnova text or Bruker"),
-    "nmr_freq_tip": ("Nur nötig, wenn der Mnova-Text den Kern nicht enthält; 2D: 500/126",
-                     "Only needed if the Mnova text lacks the nucleus; 2D: 500/126"),
+    "nmr_freq_ph": ("aus dem MNova-Text bzw. Bruker", "from the MNova text or Bruker"),
+    "nmr_freq_tip": ("Nur nötig, wenn der MNova-Text den Kern nicht enthält; 2D: 500/126",
+                     "Only needed if the MNova text lacks the nucleus; 2D: 500/126"),
     "nmr_solvent": ("Lösungsmittel", "Solvent"),
-    "nmr_solv_ph": ("aus dem Mnova-Text (z. B. CDCl3)", "from the Mnova text (e.g. CDCl3)"),
+    "nmr_solv_ph": ("aus dem MNova-Text (z. B. CDCl3)", "from the MNova text (e.g. CDCl3)"),
     "nmr_bruker": ("Bruker-Ordner …", "Bruker folder …"),
     "nmr_bruker_tip": ("Experimentordner (mit acqus) diesem Spektrum zuordnen: Parameterübersicht; der Ordner kommt ganz in "
                        "die Verbindung (data/nmr/<Art>)",
                        "Assign the experiment folder (with acqus) to this spectrum: parameter overview; the whole folder is "
                        "copied into the compound (data/nmr/<kind>)"),
-    "nmr_raw": ("Rohdaten", "Raw data"),
-    "nmr_spec_flt": ("Mnova-Spektren", "Mnova spectra"),
+    "nmr_raw": ('Rohdaten', 'Raw Data'),
+    "nmr_spec_flt": ("MNova-Spektren", "MNova spectra"),
     "nmr_emf_bad": ("keine EMF-Datei", "not an EMF file"),
     "nmr_emf_preview": ("{f}\n\nEMF: keine Vorschau in Elucida – das Spektrum geht unverändert nach Word (ohne eingesetzte "
-                        "Struktur). Für Vorschau und Struktur das Spektrum als SVG aus Mnova speichern.",
+                        "Struktur). Für Vorschau und Struktur das Spektrum als SVG aus MNova speichern.",
                         "{f}\n\nEMF: no preview in Elucida – the spectrum goes into Word unchanged (without the inserted "
-                        "structure). For a preview and the structure, save the spectrum as SVG from Mnova."),
-    "nmr_emf_nopeaks": ("Peaklabels lassen sich nur aus SVG lesen – das Spektrum als SVG aus Mnova speichern.",
-                        "Peak labels can only be read from SVG – save the spectrum as SVG from Mnova."),
-    "nmr_raw_hint": ("TopSpin-Experimente und Mnova-Dokumente werden ganz in die Verbindung übernommen und nach Art "
-                     "abgelegt (data/nmr/1H, 13C, HSQC …). Ausgewertet werden weiter die Mnova-SVGs; passt genau ein "
+                        "structure). For a preview and the structure, save the spectrum as SVG from MNova."),
+    "nmr_emf_nopeaks": ("Peaklabels lassen sich nur aus SVG lesen – das Spektrum als SVG aus MNova speichern.",
+                        "Peak labels can only be read from SVG – save the spectrum as SVG from MNova."),
+    "nmr_raw_hint": ("TopSpin-Experimente und MNova-Dokumente werden ganz in die Verbindung übernommen und nach Art "
+                     "abgelegt (data/nmr/1H, 13C, HSQC …). Ausgewertet werden weiter die MNova-SVGs; passt genau ein "
                      "Experiment zu einem Spektrum, wird es zugeordnet (Parameter, Temperatur).",
-                     "TopSpin experiments and Mnova documents are copied into the compound as a whole and sorted by kind "
-                     "(data/nmr/1H, 13C, HSQC …). The Mnova SVGs are still what is evaluated; if exactly one experiment "
+                     "TopSpin experiments and MNova documents are copied into the compound as a whole and sorted by kind "
+                     "(data/nmr/1H, 13C, HSQC …). The MNova SVGs are still what is evaluated; if exactly one experiment "
                      "fits a spectrum, it is assigned (parameters, temperature)."),
     "nmr_topspin": ("TopSpin-Daten …", "TopSpin data …"),
     "nmr_topspin_tip": ("Ein Experiment (Ordner mit acqus), einen Datensatz (10, 11, …) oder einen Ordner mit mehreren "
@@ -1824,11 +1824,11 @@ TEXTS = {
     "nmr_p_pulprog": ("Pulsprogramm", "Pulse program"),
     "nmr_p_solvent": ("Lösungsmittel", "Solvent"),
     "nmr_p_probe": ("Probenkopf", "Probe"),
-    "nmr_text": ("NMR-Zeile (Mnova-Multiplettbericht)", "NMR line (Mnova multiplet report)"),
-    "nmr_text_hint": ("Alle Kerne in dieses eine Feld, je Kern eine Zeile (¹H, darunter ¹³C …): in Mnova „Multiplets → "
+    "nmr_text": ('NMR-Zeile (MNova-Multiplettbericht)', 'NMR Line (MNova Multiplet Report)'),
+    "nmr_text_hint": ("Alle Kerne in dieses eine Feld, je Kern eine Zeile (¹H, darunter ¹³C …): in MNova „Multiplets → "
                       "Copy“ bzw. „Peaks → Copy“ (Journal-Format) und einfügen, für ¹³C & Co. auch „Zeile aus "
                       "Peaklabels“. Zuordnungen in der Tabelle ergänzen: *kursiv*, _{tief}, ^{hoch}.",
-                      "All nuclei go into this one field, one line per nucleus (¹H, then ¹³C …): in Mnova use "
+                      "All nuclei go into this one field, one line per nucleus (¹H, then ¹³C …): in MNova use "
                       "“Multiplets → Copy” or “Peaks → Copy” (journal format) and paste, for ¹³C etc. also “Line from "
                       "peak labels”. Add assignments in the table: *italic*, _{sub}, ^{sup}."),
     "nmr_nuc_short": ("Kern", "Nuc."),
@@ -1836,7 +1836,7 @@ TEXTS = {
     "nmr_assign": ("Zuordnung", "Assignment"),
     "nmr_assign_tip": ("Zuordnung je Signal, z. B. ImPy-H oder ImPy-*C*_{q}", "Assignment per signal, e.g. ImPy-H or "
                                                                               "ImPy-*C*_{q}"),
-    "nmr_text_empty": ("Noch kein Mnova-Text.", "No Mnova text yet."),
+    "nmr_text_empty": ("Noch kein MNova-Text.", "No MNova text yet."),
     "nmr_copy": ("NMR-Zeile kopieren", "Copy NMR line"),
     "nmr_struct": ("Struktur", "Structure"),
     "nmr_struct_on": ("einsetzen", "insert"),
@@ -1868,8 +1868,8 @@ TEXTS = {
     "tab_other": ("Weitere", "Other"),
     "guide_other_title": ("Weitere: Abbildungen aus anderen Programmen unverändert in die SI",
                           "Other: figures from other programs into the SI unchanged"),
-    "guide_other_files": ("Dateien: PDF, SVG oder PNG (z. B. aus Origin, Mnova, ChemDraw, Gerätesoftware)",
-                          "Files: PDF, SVG or PNG (e.g. from Origin, Mnova, ChemDraw, instrument software)"),
+    "guide_other_files": ("Dateien: PDF, SVG oder PNG (z. B. aus Origin, MNova, ChemDraw, Gerätesoftware)",
+                          "Files: PDF, SVG or PNG (e.g. from Origin, MNova, ChemDraw, instrument software)"),
     "guide_other_steps": ("Abbildung hinzufügen\nUnterschrift eintragen\nKapitel wählen: ein vorhandenes SI-Kapitel oder eine "
                           "eigene Überschrift (Gesamt-SI: eigenes Kapitel am Ende)\nSI (Word): zwei Abbildungen je Seite wie alle "
                           "anderen",
@@ -1878,7 +1878,7 @@ TEXTS = {
     "other_group": ("Abbildungen", "Figures"),
     "other_add": ("Abbildung hinzufügen …", "Add figure …"),
     "other_up": ("↑", "↑"),
-    "other_details": ("Gewählte Abbildung", "Selected figure"),
+    "other_details": ('Gewählte Abbildung', 'Selected Figure'),
     "other_cap": ("Unterschrift", "Caption"),
     "other_cap_ph": ("z. B. DSC trace of 6m (10 K min-1).", "e.g. DSC trace of 6m (10 K min-1)."),
     "other_cap_tip": ("Englisch wie die übrigen Unterschriften; „Figure Sn:“ setzt der Export davor.",
@@ -1908,15 +1908,15 @@ TEXTS = {
     "pub_tile_sub": ("{n} Verbindungen · {k} vollständig", "{n} compounds · {k} complete"),
     "pub_tile_progress": ("{k} von {n} Verbindungen vollständig laut Checkliste (¹H, ¹³C, 2D, HRMS, IR, m.p.)",
                           "{k} of {n} compounds complete according to the checklist (¹H, ¹³C, 2D, HRMS, IR, m.p.)"),
-    "mnova_store": ("Mnova ablegen …", "Store Mnova …"),
-    "mnova_open": ("In Mnova öffnen", "Open in Mnova"),
-    "mnova_open_tip": ("Gewähltes Mnova-Dokument (sonst Auswahl) mit dem Standardprogramm öffnen",
-                       "Open the selected Mnova document (otherwise a choice) with the default program"),
-    "mnova_none": ("Kein Mnova-Dokument abgelegt.", "No Mnova document stored."),
+    "mnova_store": ("MNova ablegen …", "Store MNova …"),
+    "mnova_open": ("In MNova öffnen", "Open in MNova"),
+    "mnova_open_tip": ("Gewähltes MNova-Dokument (sonst Auswahl) mit dem Standardprogramm öffnen",
+                       "Open the selected MNova document (otherwise a choice) with the default program"),
+    "mnova_none": ("Kein MNova-Dokument abgelegt.", "No MNova document stored."),
     "mnova_pick": ("Dokument:", "Document:"),
-    "mnova_noapp": ("{name} konnte nicht geöffnet werden – ist Mnova installiert und für .mnova zuständig?",
-                    "{name} could not be opened – is Mnova installed and associated with .mnova?"),
-    "dft_structures": ("Geometrien und Rechnungen", "Geometries and calculations"),
+    "mnova_noapp": ("{name} konnte nicht geöffnet werden – ist MNova installiert und für .mnova zuständig?",
+                    "{name} could not be opened – is MNova installed and associated with .mnova?"),
+    "dft_structures": ('Geometrien und Rechnungen', 'Geometries and Calculations'),
     "dft_add": ("xyz/.out/.log hinzufügen …", "Add xyz/.out/.log …"),
     "dft_flt": ("xyz, ORCA/Gaussian-Ausgabe, Cube, Molden", "xyz, ORCA/Gaussian output, cube, Molden"),
     "dft_orbitals": ("Orbitale", "Orbitals"),
@@ -1943,7 +1943,7 @@ TEXTS = {
                            "Orbital shown. HOMO/LUMO and energy from the ORCA/Gaussian output of the geometry, MO "
                            "number from the cube or the file name (ORCA: name.mo21a.cube)."),
     "dft_orb_none": ("– keins –", "– none –"),
-    "dft_profile": ("Energieprofil", "Energy profile"),
+    "dft_profile": ('Energieprofil', 'Energy Profile'),
     "dft_prof_mode": ("Darstellung", "Display"),
     "dft_prof_mode_levels": ("Stufen (Opt/Freq)", "Levels (opt/freq)"),
     "dft_prof_mode_irc": ("IRC", "IRC"),

@@ -164,7 +164,7 @@ class GroupHeader(QWidget):
         super().__init__()
         self.group = group
         h = QHBoxLayout(self)
-        h.setContentsMargins(4, 10, 4, 2)
+        h.setContentsMargins(0, 10, 4, 2)                   # bündig mit „Verbindungen“ und den Zeilen
         self.lbl = QLabel(objectName="recentHead")
         h.addWidget(self.lbl, 1)
         self.set_count(n, 0)

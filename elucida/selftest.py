@@ -1862,15 +1862,16 @@ def selftest(outdir, with_isnet=False):
             assert card_ is not None and card_.title() == "", (rt_.tabText(j_),)
             acc_ = [b_ for b_ in card_.findChildren(QPushButton) if b_.property("accent")]
             assert len(acc_) == 1 and not acc_[0].icon().isNull(), (rt_.tabText(j_), len(acc_))
-        # Raster: jedes sichtbare Zahlenfeld der linken Spalten genau STYLE.FIELD_W breit (das Stylesheet darf die
-        # feste Breite nicht nachträglich aufheben – so liefen die Felder früher auseinander)
+        # Raster: jedes sichtbare Zahlenfeld der linken Spalten genau so breit wie seine Rasterbreite (fieldw: Feld A
+        # des Formulars, sonst STYLE.FIELD_W) – das Stylesheet darf die feste Breite nicht nachträglich aufheben
         w.show()
         for i_ in range(w.main_tabs.count()):
             w.main_tabs.setCurrentIndex(i_)
             pump(0.05)
             page_ = w.main_tabs.widget(i_)
             odd_ = [sp_.width() for sp_ in page_.findChildren(QAbstractSpinBox)
-                    if sp_.isVisibleTo(page_) and sp_.property("fieldw") and sp_.width() != STYLE.FIELD_W]
+                    if sp_.isVisibleTo(page_) and sp_.property("fieldw") and sp_.width() !=
+                    (sp_.property("fieldw") if type(sp_.property("fieldw")) is int else STYLE.FIELD_W)]
             assert not odd_, (w._tab_keys[i_], odd_)
         # linke Spalte nie abgeschnitten: Inhalt passt in die sichtbare Breite, auch auf kleinerem Bildschirm
         for size_ in ((1600, 1000), (1280, 800)):

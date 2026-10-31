@@ -12,7 +12,7 @@
   and value + checkbox in A and B, lists, text fields and file rows exactly to the common edge; two values with a
   long label in between and "☑ full"-type checkboxes get their own line, rows of checkboxes two per line; "Remove" in
   file rows as a bin icon; all text in fields left-aligned with the same inset; empty hint lines no longer leave gaps;
-  table cells and checkboxes in lists centred; card titles flush with the card content; hint below the cards centred.
+  tables over the full column width, table cells and checkboxes centred; value fields use the full card width; card titles flush with the card content; hint below the cards centred.
 - **Navigation:** the path (Overview › Project › Compound) moved from the tab bar into the toolbar; "Compound" and
   "SI (Word)" only show with an open compound. The window can be made narrower (about 960 px, half of a full-HD
   screen).
@@ -20,7 +20,9 @@
   the "Raw data" tab; nuclei in the lists with superscript mass numbers (¹H, ¹³C).
 - **Project page:** title over the full width, actions in a row below. Storing a Mnova document for the whole project
   was removed (existing files stay in the folder `mnova/`).
-- **Start screen:** example project and example compound as links at the bottom; time and project of a compound
+- **Numbers:** all number fields use a decimal point (no thousands separator), whatever the system language.
+- **English headings** in title case ("Geometries and Calculations").
+- **Start screen:** header and buttons centred; example project and example compound as links at the bottom; time and project of a compound
   share one right edge.
 
 ## 2.4.0 – 2026-10-31

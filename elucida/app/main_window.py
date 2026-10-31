@@ -874,6 +874,7 @@ class MainWindow(QMainWindow):
         self.lbl_color.setFixedHeight(36)
         self.lbl_color_info = QLabel()
         self.lbl_color_info.setWordWrap(True)
+        self.lbl_color_info.setAlignment(Qt.AlignHCenter)            # mittig unter dem Farbfeld
         self.lbl_color_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         f.addRow("", self.lbl_color)
         f.addRow("", self.lbl_color_info)
@@ -1397,7 +1398,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QButtonGroup
         bar = QFrame(objectName="navBar")
         hb = QHBoxLayout(bar)
-        hb.setContentsMargins(10, 4, 10, 6)
+        hb.setContentsMargins(10, 8, 10, 8)
         hb.setSpacing(4)
         # Pfadleiste: ⌂ Übersicht › Projekt › Verbindung ▾ (jede Stufe anklickbar, Verbindungen des Projekts im Menü);
         # sitzt in der Werkzeugleiste, damit die Tab-Leiste schmaler wird (Mindestbreite des Fensters)
@@ -1431,7 +1432,7 @@ class MainWindow(QMainWindow):
                 hb.addWidget(sep)
                 hb.addSpacing(8)
             col = QVBoxLayout()
-            col.setSpacing(1)
+            col.setSpacing(5)                                   # Abstand Gruppenüberschrift – Tabs
             col.addWidget(QLabel(T(head).upper(), objectName="navGroup"), 0, Qt.AlignHCenter)   # mittig über der Gruppe
             row = QHBoxLayout()
             row.setSpacing(2)
@@ -1834,6 +1835,7 @@ class MainWindow(QMainWindow):
         v.setSpacing(14)
         head = QHBoxLayout()
         head.setSpacing(16)
+        head.addStretch(1)                                  # Kopf mittig (Nutzerwunsch)
         icon = self.app_icon()
         if icon.exists():
             lb = QLabel()
@@ -1841,7 +1843,9 @@ class MainWindow(QMainWindow):
             head.addWidget(lb, 0, Qt.AlignTop)
         t = QLabel(f"<span style='font-size:26px; font-weight:bold'>{APP_NAME}</span><br>{T('welcome_sub')}")
         t.setWordWrap(True)
-        head.addWidget(t, 1)
+        t.setMinimumWidth(760)                              # zwei Zeilen statt schmaler Spalte
+        head.addWidget(t)
+        head.addStretch(1)
         v.addLayout(head)
         row = QHBoxLayout()
         b_new = QPushButton(STYLE.icon("new"), T("act_new_project"))           # einzelne Verbindung
@@ -1855,6 +1859,7 @@ class MainWindow(QMainWindow):
         b_quick = QPushButton(STYLE.icon("new"), T("act_quick"))               # Einzelauswertung ohne Projektwahl
         b_quick.setToolTip(T("act_quick_tip"))
         b_quick.clicked.connect(self.quick_evaluation)
+        row.addStretch(1)                                   # Knopfreihe mittig
         for b in (b_pub, b_new, b_quick, b_open):          # Beispiele als Links unten (zweitrangig, Fensterbreite)
             row.addWidget(b)
         row.addStretch(1)
@@ -1916,6 +1921,7 @@ class MainWindow(QMainWindow):
                         + "#" + TABS.gh_anchor(T("readme_quickstart")))
                       + f" · <a href='demo:pub'>{T('act_demo_pub')}</a> · <a href='demo:compound'>{T('act_demo')}</a>")
         hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignHCenter)
         hint.linkActivated.connect(lambda u: self.open_demo_publication() if u == "demo:pub" else
                                    self.open_demo() if u == "demo:compound" else QDesktopServices.openUrl(QUrl(u)))
         hint.setStyleSheet(HINT_CSS)

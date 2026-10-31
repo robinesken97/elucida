@@ -486,7 +486,7 @@ class NMRTab(QWidget):
     # -- Bedienelemente -------------------------------------------------------------------
     def build_controls(self):
         # Mnova-Dokumente der Verbindung oben in der Spalte (Nutzerwunsch: nicht im Reiter Rohdaten verstecken)
-        g = QGroupBox("Mnova")
+        g = QGroupBox("MNova")
         v = QVBoxLayout(g)
         self.lbl_mnova = QLabel("", wordWrap=True)
         v.addWidget(self.lbl_mnova)
@@ -865,7 +865,7 @@ class NMRTab(QWidget):
         if not self.main.ensure_project():
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("mnova_store"), self.main.settings.value("last_dir", ""),
-                                             f"Mnova (*.mnova);;{T('flt_all')}")
+                                             f"MNova (*.mnova);;{T('flt_all')}")
         for p in ps:
             self.add_mnova_file(p)
 

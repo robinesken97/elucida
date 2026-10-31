@@ -15,6 +15,17 @@ from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QDialo
                                QHBoxLayout, QLabel, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyle,
                                QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QVBoxLayout, QWidget)
 
+def _number_locale():
+    """Dezimalpunkt in allen Zahlenfeldern (wissenschaftliche Konvention, Nutzerwunsch), ohne Tausendertrennzeichen –
+    unabhängig von der Systemsprache; beim Import, also vor dem ersten Zahlenfeld."""
+    from PySide6.QtCore import QLocale
+    loc = QLocale(QLocale.C)
+    loc.setNumberOptions(QLocale.OmitGroupSeparator | QLocale.RejectGroupSeparator)
+    QLocale.setDefault(loc)
+
+
+_number_locale()
+
 COLORS = {
     # Abstufung wie im Entwurf: Seite < Karte, Felder etwas abgesetzt, warme Grautöne, dezente Ränder
     "light": dict(window="#F4F3EF", card="#FFFFFF", field="#FAF9F6", button="#FFFFFF", hover="#EFEEE9",
@@ -205,11 +216,17 @@ class HintLabel(QLabel):
         super().setText(text)
         self.sync()
 
+    def sync_align(self):
+        """Hinweise mittig, auch mehrzeilige (Nutzerwunsch)."""
+        self.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+
     def sync(self):
         p = self.parentWidget()
         if p is None:
             return
         vis = bool(self.text())
+        if self.property("centered"):
+            self.sync_align()
         form = next((fl for fl in p.findChildren(QFormLayout) if fl.indexOf(self) >= 0), None)
         if form is not None:
             form.setRowVisible(self, vis)
@@ -234,6 +251,7 @@ def card(title):
 
 
 FIELD_W = 120                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
+CONTROL_H = 28                     # Höhe aller Felder und Knöpfe in den Spalten
 GAP_W = 24                         # Lücke zwischen Feld A und B (Platz für „–“/„×“)
 WIDE_W = 2 * FIELD_W + GAP_W       # Wertespalte: Listen, Textfelder, „[a] – [b]“ enden an einer Kante (Nutzerwunsch)
 COLUMN_W = 538                    # linke Spalte in allen Tabs gleich breit (breiter nur, wenn Inhalt sonst abgeschnitten)
@@ -250,8 +268,34 @@ def _fw(fl, r):
 
 def _cell(x, w):
     """Feld fest auf eine Rasterbreite setzen (Zahlenfelder setzt _WheelGuard nach dem Stylesheet erneut)."""
-    if x.maximumWidth() != w:
-        x.setFixedWidth(w)
+    x.setProperty("fieldw", w)
+    x.setFixedWidth(w)
+
+
+def _pairs(lay, ws, width, gap):
+    """„C [■] H [■] …“ / „Absorption [■] Emission [■]“: Paare aus Beschriftung + Farbfeld gleichmäßig über width."""
+    from PySide6.QtWidgets import QLineEdit
+    swatch = lambda x: isinstance(x, QPushButton) and not x.text()
+    val = lambda x: swatch(x) or isinstance(x, (QAbstractSpinBox, QComboBox, QLineEdit))
+    if len(ws) < 4 or len(ws) % 2 or not all(isinstance(ws[i], QLabel) and val(ws[i + 1])
+                                              for i in range(0, len(ws), 2)):
+        return False
+    n = len(ws) // 2
+    cell = (width - gap * (n - 1)) // n
+    lay.setSpacing(8)
+    _strip_stretch(lay)
+    for i in range(0, len(ws), 2):
+        lb, x = ws[i], ws[i + 1]
+        lb.setMinimumWidth(0)
+        if swatch(x):                                     # „Absorption [■]“: Farbfeld rechts, Text füllt
+            x.setFixedWidth(34)
+            lb.setFixedWidth(max(16, cell - 34 - 8))
+        else:                                             # „c [1 mM]“: kurze Beschriftung, Feld füllt
+            lb.setFixedWidth(lb.sizeHint().width())
+            _cell(x, max(40, cell - lb.sizeHint().width() - 8))
+        if i:
+            lay.insertSpacing(lay.indexOf(lb), gap - 8)
+    return True
 
 
 def _strip_stretch(lay):
@@ -265,18 +309,56 @@ def _field_edge(root):
     zusammen WIDE_W. Einzelwert in A; „[a] – [b]“, „[a] × [b]“, Auswahl + Wert und Wert + Häkchen in A und B; Listen,
     Textfelder und Dateizeilen genau bis zur Kante. Zwei Werte mit langer Zwischenbeschriftung („[a] Ränder [b]“)
     und „☑ gesamt [a] – [b]“ bekommen eine zweite Zeile. Feste Breiten statt Formularrand (der zöge die Spalte mit)."""
-    from PySide6.QtWidgets import QAbstractScrollArea, QCheckBox, QLineEdit
+    from PySide6.QtWidgets import QAbstractItemView, QAbstractScrollArea, QCheckBox, QLineEdit
     from elucida.app.i18n import T
-    U, G, W = FIELD_W, GAP_W, WIDE_W
+    G = GAP_W
     value = (QAbstractSpinBox, QComboBox, QLineEdit)
     for fl in [fl for fl in root.findChildren(QFormLayout) if fl.parentWidget() is not None]:
         fl.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+        # Wertespalte bis zum Kartenrand (Nutzerwunsch: Breite gleichmäßig nutzen): Spalte − Ränder − Beschriftungen
+        labs = [fl.itemAt(r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
+                if fl.itemAt(r, QFormLayout.LabelRole) is not None and fl.itemAt(r, QFormLayout.LabelRole).widget()]
+        lab = max((x.maximumWidth() if x.maximumWidth() < 10000 else x.sizeHint().width() for x in labs), default=0)
+        span_all = COLUMN_W - 2 * 12 - 2 * 18 - 8              # ganze Kartenbreite innen
+        W = max(WIDE_W, span_all - lab - fl.horizontalSpacing())
+        U = (W - G) // 2
+        W = 2 * U + G
+        for sp in [fl.itemAt(r, QFormLayout.FieldRole).widget() for r in range(fl.rowCount())
+                   if fl.itemAt(r, QFormLayout.FieldRole) is not None]:
+            if isinstance(sp, QAbstractSpinBox):
+                _cell(sp, U)
+        span = max(span_all, W)                               # ganze Breite (Beschriftung + Wertespalte)
         for r in reversed(range(fl.rowCount())):            # Häkchenreihen (≥ 3) zu zweit in Feld A und B
             it = fl.itemAt(r, QFormLayout.SpanningRole)
+            if it is not None and isinstance(it.widget(), QAbstractScrollArea):
+                _cell(it.widget(), span)                      # Listen/Textfelder über die ganze Breite
+                continue
             lay = it.layout() if it is not None else None
             if not isinstance(lay, QHBoxLayout):
                 continue
             cbs = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            if not lay.property("grid") and _pairs(lay, cbs, span, G):
+                lay.setProperty("grid", True)
+                continue
+            if 2 <= len(cbs) <= 4 and all(isinstance(x, QPushButton) and x.text() for x in cbs) and \
+                    not any(x.property("accent") for x in cbs):   # Knopfreihe: gleich breit über die ganze Breite
+                _strip_stretch(lay)
+                lay.setSpacing(8)
+                lay.setContentsMargins(max(0, span - W), 0, 0, 0)   # in der Wertespalte wie die Häkchen darüber
+                for x in cbs:
+                    x.setFixedWidth((W - 8 * (len(cbs) - 1)) // len(cbs))
+                continue
+            if len(cbs) == 3 and isinstance(cbs[0], QCheckBox) and isinstance(cbs[1], QLabel) and \
+                    isinstance(cbs[2], QAbstractSpinBox):             # „☐ Gestapelt  Abstand [1,20]“: Wert eigene Zeile
+                lay.removeWidget(cbs[1])
+                lay.removeWidget(cbs[2])
+                cbs[1].setProperty("formlabel", True)
+                cbs[1].setMinimumHeight(cbs[2].sizeHint().height())
+                if labs and labs[0].maximumWidth() < 10000:
+                    cbs[1].setFixedWidth(labs[0].maximumWidth())
+                _cell(cbs[2], U)
+                fl.insertRow(r + 1, cbs[1], cbs[2])
+                continue
             if len(cbs) < 3 or not all(isinstance(x, QCheckBox) for x in cbs):
                 continue
             for x in cbs:
@@ -294,16 +376,61 @@ def _field_edge(root):
                 fl.insertRow(r, "", h)
         for r in reversed(range(fl.rowCount())):
             it = fl.itemAt(r, QFormLayout.FieldRole)
-            if it is None:
+            if it is None or fl.itemAt(r, QFormLayout.SpanningRole) is not None:   # ganze Breite: oben erledigt
                 continue
             w, lay = it.widget(), it.layout()
             if w is not None:
-                if isinstance(w, (QLineEdit, QComboBox, QAbstractScrollArea)) and w.maximumWidth() != U:
+                if isinstance(w, QAbstractItemView):
+                    res = fl.takeRow(r)                       # Tabelle: Beschriftung darüber, Tabelle volle Breite
+                    lw = res.labelItem.widget() if res.labelItem is not None else None
+                    fl.insertRow(r, w)
+                    if lw is not None and (not isinstance(lw, QLabel) or lw.text()):
+                        fl.insertRow(r, lw)
+                    _cell(w, max(span_all, W))
+                elif isinstance(w, (QLineEdit, QComboBox, QAbstractScrollArea)) and w.maximumWidth() != U:
                     _cell(w, W)
+                elif isinstance(w, QLabel) and (isinstance(w, HintLabel) or HINT_CSS in (w.styleSheet() or "")
+                                                or (w.wordWrap() and w.alignment() & Qt.AlignHCenter)):
+                    w.setWordWrap(True)                       # Hinweis zu den Feldern darüber: mittig in der Wertespalte
+                    prev = None                               # unter einem Häkchen: mittig über Häkchen + Text
+                    for role in (QFormLayout.FieldRole, QFormLayout.SpanningRole):
+                        pi = fl.itemAt(r - 1, role) if r else None
+                        prev = pi.widget() if pi is not None and pi.widget() is not None else prev
+                    if isinstance(prev, QCheckBox):
+                        ind = span_all - W if "margin-left" in (prev.styleSheet() or "") else 0
+                        _cell(w, min(W, prev.sizeHint().width() - ind))
+                    else:
+                        _cell(w, W)
+                elif type(w) in (QWidget, QFrame) or (type(w) is QLabel and not w.text()):   # Sammelfeld, Farbfeld
+                    _cell(w, W)
+                    il = w.layout()
+                    if isinstance(il, QHBoxLayout):
+                        _pairs(il, [il.itemAt(i).widget() for i in range(il.count()) if il.itemAt(i).widget()], W, G)
+                continue
+            if isinstance(lay, QVBoxLayout) and any(isinstance(lay.itemAt(i).widget(), QAbstractScrollArea)
+                                                    for i in range(lay.count())):
+                res = fl.takeRow(r)                           # Tabelle mit Beschriftung: Beschriftung darüber,
+                lw = res.labelItem.widget() if res.labelItem is not None else None   # Tabelle über die ganze Breite
+                fl.insertRow(r, lay)
+                if lw is not None:
+                    fl.insertRow(r, lw)
+                for i in range(lay.count()):
+                    if isinstance(lay.itemAt(i).widget(), QAbstractScrollArea):
+                        _cell(lay.itemAt(i).widget(), max(span_all, W))
                 continue
             if not isinstance(lay, QHBoxLayout) or lay.property("grid"):
                 continue
             lay.setProperty("grid", True)
+            lw_ = fl.itemAt(r, QFormLayout.LabelRole)
+            lw_ = lw_.widget() if lw_ is not None else None
+            bts = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            if bts and all(isinstance(x, QPushButton) for x in bts) and (lw_ is None or (isinstance(lw_, QLabel)
+                                                                                         and not lw_.text())):
+                _strip_stretch(lay)                           # Knopfreihe ohne Beschriftung: Wertespalte, gleich breit
+                lay.setSpacing(8)
+                for x in bts:
+                    x.setFixedWidth((W - 8 * (len(bts) - 1)) // len(bts))
+                continue
             ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
             if len(ws) >= 3 and isinstance(ws[0], QCheckBox) and isinstance(ws[1], value):
                 lay.removeWidget(ws[0])                        # „☑ gesamt“/„☑ einsetzen“ unter die Werte
@@ -342,18 +469,13 @@ def _field_edge(root):
                 lay.setSpacing(G)
                 _strip_stretch(lay)
                 continue
-            if len(ws) == 4 and isinstance(ws[0], QLabel) and isinstance(ws[2], QLabel) and \
-                    not isinstance(ws[1], value + (QLabel,)) and not isinstance(ws[3], value + (QLabel,)):
-                # „Absorption [■] Emission [■]“: je ein Paar in Feld A und B
-                lay.setSpacing(8)
+            if 2 <= len(ws) <= 4 and all(isinstance(x, QCheckBox) for x in ws):   # PDF SVG PNG: gleich verteilt
+                lay.setSpacing(0)
                 _strip_stretch(lay)
-                for lb, x in ((ws[0], ws[1]), (ws[2], ws[3])):
-                    if isinstance(x, QPushButton):            # Farbfeld quadratisch wie die Symbolknöpfe
-                        x.setFixedWidth(34)
-                    lb.setMinimumWidth(0)
-                    lb.setFixedWidth(max(20, U - x.maximumWidth() if isinstance(x, QPushButton) else
-                                         U - x.sizeHint().width()) - 8)
-                lay.insertSpacing(lay.indexOf(ws[2]), G - 8)
+                for x in ws:
+                    x.setFixedWidth(W // len(ws))
+                continue
+            if _pairs(lay, ws, W, G):
                 continue
             # Datei-, Einheits- und Auswahl+Knopf-Zeilen: das dehnbare Element füllt bis zur Kante
             fill = [x for x in ws if (isinstance(x, QLabel) and lay.stretch(lay.indexOf(x)) > 0)
@@ -403,6 +525,8 @@ def tidy(root):
     # gemeinsamen Spalte (Beschriftungen davor je Formular gleich breit), Text/Listen bis zum rechten Rand.
     from PySide6.QtWidgets import QCheckBox
     for sp in root.findChildren(QAbstractSpinBox):
+        if type(sp.property("fieldw")) is int:                # schon im Raster (zweiter Aufruf von tidy): bleibt
+            continue
         sp.setProperty("fieldw", True)                       # _WheelGuard setzt die Breite nach dem Stylesheet erneut
         sp.setFixedWidth(FIELD_W)
     # Auswahllisten dürfen schmaler sein als ihr längster Eintrag (Text wird gekürzt, die aufgeklappte Liste zeigt alles):
@@ -482,12 +606,34 @@ def tidy(root):
                             and lay.sizeHint().width() + indent <= room):
                         lay.setContentsMargins(indent, 0, 0, 0)
     _field_edge(root)
+    from PySide6.QtWidgets import QLineEdit as _LE
+    for x in root.findChildren(QAbstractSpinBox) + root.findChildren(QComboBox) + root.findChildren(_LE) + \
+            root.findChildren(QPushButton):                   # alle Felder und Knöpfe gleich hoch (Nutzerwunsch)
+        if not isinstance(x.parentWidget(), (QAbstractSpinBox, QComboBox)) and not x.property("cellcss") and \
+                x.parentWidget().objectName() != "bottomBar":   # Fußleiste: eigene Höhe (Knöpfe mittig)
+            x.setFixedHeight(CONTROL_H)
     from PySide6.QtWidgets import QTableWidget
     for t in root.findChildren(QTableWidget):                # Zellen und Kästchen mittig (alle Tabellen)
         if not isinstance(t.itemDelegate(), _CellDelegate):
             t.setItemDelegate(_CellDelegate(t))
     for h in root.findChildren(HintLabel):                    # leere Hinweise ohne Zeile
         h.sync()
+    from PySide6.QtWidgets import QGroupBox as _GB
+    for lb in root.findChildren(QLabel):                      # Erklärtexte mittig (Nutzerwunsch), auch verborgene
+        if isinstance(lb, HintLabel):
+            lb.setProperty("centered", True)
+            lb.sync_align()
+        elif lb.objectName() == "cardHint" or HINT_CSS in (lb.styleSheet() or ""):
+            lb.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+    for lay in root.findChildren(QHBoxLayout):                # Knopfreihen in Karten: gleich breit über die Karte
+        pw = lay.parentWidget()
+        ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+        if (isinstance(pw, _GB) and 2 <= len(ws) <= 4 and all(isinstance(x, QPushButton) and x.text() for x in ws)
+                and not any(x.property("accent") for x in ws) and not lay.property("grid")):
+            _strip_stretch(lay)
+            for x in ws:
+                x.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                lay.setStretchFactor(x, 1)
     for lay in root.findChildren(QHBoxLayout):
         items = [lay.itemAt(i) for i in range(lay.count())]
         if not lay.property("grid") and any(isinstance(it.widget(), (QLabel, QCheckBox)) for it in items[1:]):   # Beschriftung nicht ankleben
@@ -512,8 +658,9 @@ class _WheelGuard(QObject):
             if isinstance(obj, QAbstractSpinBox):               # linksbündig wie Text- und Auswahlfelder (Nutzerwunsch)
                 obj.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 obj.lineEdit().setTextMargins(11, 0, 0, 0)      # Stylesheet-Padding gilt nicht für das innere Feld
-            if obj.property("fieldw"):                          # Rasterbreite nach dem Stylesheet erneut festsetzen
-                obj.setFixedWidth(FIELD_W)
+            fw = obj.property("fieldw")
+            if fw:                                              # Rasterbreite nach dem Stylesheet erneut festsetzen
+                obj.setFixedWidth(fw if isinstance(fw, int) and not isinstance(fw, bool) else FIELD_W)
         elif (t == QEvent.Polish and isinstance(obj, QDialog) and not isinstance(obj, (QMessageBox, QFileDialog))
               and obj.layout() is not None):
             obj.layout().setContentsMargins(16, 16, 16, 16)
@@ -702,7 +849,7 @@ class Fold(QObject):
 
     def refresh(self):
         from elucida.app.i18n import T
-        mark = f"   ({T('adv_changed')})" if self.changed is not None and self.changed() else ""
+        mark = f" ({T('adv_changed')})" if self.changed is not None and self.changed() else ""
         self.group.setTitle(("▼  " if self.opened else "▶  ") + self.base + mark)
 
 
@@ -842,8 +989,8 @@ QLabel#recentThumb, QFrame#recentThumb {{ background: #ffffff; border: 1px solid
 QLabel#recentTitle {{ font-size: 15px; font-weight: bold; background: transparent; }}
 QLabel#recentNote {{ color: {c['text2']}; font-size: 14px; font-style: italic; background: transparent; }}
 QLabel#recentSub, QLabel#recentWhen {{ color: {c['text2']}; background: transparent; }}
-QLabel#recentBadge {{ color: {c['text2']}; background: {c['alt']}; border: 1px solid {c['border']}; border-radius: 8px;
-    padding: 0px 7px; font-size: 11px; }}
+QLabel#recentBadge {{ color: {c['text2']}; background: {c['alt']}; border: 1px solid {c['border']}; border-radius: 6px;
+    padding: 1px 7px; font-size: 11px; }}
 QLabel#recentHead {{ font-size: 14px; }}
 QFrame#bottomBar {{ background: {c['window']}; border-top: 1px solid {c['border']}; }}
 QGroupBox {{ font-weight: bold; padding-top: 2.5em; }}

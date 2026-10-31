@@ -186,7 +186,7 @@ class RecentRow(QWidget):
             pic.setFixedSize(64, 64)
         h.addWidget(pic)
         v = QVBoxLayout()
-        v.setSpacing(2)
+        v.setSpacing(6)                                    # Zeilen der Verbindung nicht zu eng
         title = QHBoxLayout()
         title.setSpacing(8)
         name_lbl = QLabel(info["name"], objectName="recentTitle")
