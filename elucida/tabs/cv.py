@@ -887,7 +887,7 @@ class CVTab(TABS.FigureTab):
         """Offset dieser Messung (eigene Referenz oder global) -> (Offset, Achsenbeschriftung, Hinweis)."""
         ref = e.get("ref") or {}
         if ref.get("mode") == "manual":
-            return ref.get("offset", 0.0), "Fc$^{0/+}$", ""
+            return ref.get("offset", 0.0), "Fc$^{0/+}$", T("cv_ref_own", off=_fmt_e(ref.get("offset", 0.0)))
         if ref.get("mode") == "internal":
             src = next((x for x in self.st["files"] if x["uid"] == ref.get("uid")), None)
             if src is not None:

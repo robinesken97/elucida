@@ -232,7 +232,7 @@ class HRMSTab(TABS.FigureTab):
         raw = self.ms_raw()
         self.lbl_raw.setText((Path(st["ms_raw"]).name + (f"  ({raw['instrument']})" if raw and raw.get("instrument")
                                                           else "")) if st.get("ms_raw") else "–")
-        self.rt_row.setEnabled(raw is not None)
+        self._form.setRowVisible(self.rt_row, raw is not None)     # LC-Bereich nur mit .d (wie das Chromatogramm)
         self._form.setRowVisible(self.ccanvas, raw is not None)     # mit Beschriftung, sonst bleibt sie allein
         rt = st.get("ms_rt")
         self.cb_rt_auto.setChecked(not rt)

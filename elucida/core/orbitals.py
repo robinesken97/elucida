@@ -989,6 +989,8 @@ def make_test_cube(path, n=48):
 ORB_MAX_DPI = 300                               # Export: Orbitalbild höchstens so fein (PDF/SVG eingebettet)
 DRAG_SCALE = 4                                  # beim Drehen: Bild mit 1/4 der Auflösung und halb so vielen
 DRAG_STEP = 1.0                                 # Tiefenschritten (Gitterabstände je Schritt) – flüssig, danach voll
+DRAG_PX = 25000                                 # beim Drehen höchstens so viele Pixel (~50 ms je Schritt; große/HiDPI-
+                                                # Vorschau sonst 0,2–0,3 s, FB-19)
 
 from matplotlib.image import AxesImage  # noqa: E402
 
@@ -1013,7 +1015,9 @@ class OrbitalImage(AxesImage):
         # Zielpixel (Agg: Bildschirm/PNG; PDF/SVG: Punkte × Vergrößerung = dpi des Exports) -> wirksame dpi begrenzen
         w_in = ax.get_position().width * ax.figure.get_figwidth()
         dpi = bb.width * magnification / max(w_in, 1e-9)
-        f = min(1.0, ORB_MAX_DPI / max(dpi, 1e-9)) / (DRAG_SCALE if self.drag else 1)
+        f = min(1.0, ORB_MAX_DPI / max(dpi, 1e-9))
+        if self.drag:
+            f /= max(DRAG_SCALE, np.sqrt(bb.width * bb.height * (magnification * f) ** 2 / DRAG_PX))
         W = max(2, int(round(bb.width * magnification * f)))
         H = max(2, int(round(bb.height * magnification * f)))
         xl, yl = tuple(ax.get_xlim()), tuple(ax.get_ylim())

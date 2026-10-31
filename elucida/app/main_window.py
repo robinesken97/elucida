@@ -116,17 +116,20 @@ class GuiDragger(core.Dragger):
         self.on_change = on_change
         super().__init__(F, None)
 
-    def _report(self):
+    def _report(self, lay0):
         # erst nach allen anderen Release-Handlern auslesen (Label-Drag von matplotlib)
-        QTimer.singleShot(0, lambda: self.on_change(self.F.current_layout()))
+        QTimer.singleShot(0, lambda: self.on_change(self.moved(lay0)))
 
     def release(self, ev):
+        lay0, self._lay0 = self._lay0, None
         super().release(ev)
-        self._report()
+        if lay0 is not None:
+            self._report(lay0)
 
     def scroll(self, ev):
+        lay0 = self.F.current_layout()
         if super().scroll(ev):
-            self._report()
+            self._report(lay0)
 
     def key(self, ev):
         pass
@@ -730,6 +733,7 @@ class MainWindow(QMainWindow):
         mh = mb.addMenu(T("menu_help"))
         mh.addAction(QAction(T("act_guide_tab"), self, shortcut=QKeySequence.HelpContents, triggered=self.show_tab_guide))
         mh.addAction(QAction(T("act_quickstart"), self, triggered=self.show_quickstart))
+        mh.addAction(QAction(T("act_shortcuts"), self, triggered=self.show_shortcuts))
         mh.addAction(QAction(T("act_demo"), self, triggered=self.open_demo))
         mh.addAction(QAction(T("act_demo_pub"), self, triggered=self.open_demo_publication))
         mh.addSeparator()
@@ -1700,9 +1704,13 @@ class MainWindow(QMainWindow):
             return
         snap = self._snap()
         if snap != self._undo[-1]:
-            self._undo.append(snap)
-            del self._undo[:-200]
-            self._redo.clear()
+            no_tab = lambda s: dict(json.loads(s), tab=None)       # noqa: E731
+            if no_tab(snap) == no_tab(self._undo[-1]):         # nur der offene Tab anders: kein eigener Schritt
+                self._undo[-1] = snap
+            else:
+                self._undo.append(snap)
+                del self._undo[:-200]
+                self._redo.clear()
             self._update_undo_actions()
             self.update_title()
             if self.project_dir:
@@ -1710,7 +1718,12 @@ class MainWindow(QMainWindow):
 
     def _restore(self, snap):
         self._restoring = True
-        self.set_state(json.loads(snap), partial=True)
+        state = json.loads(snap)
+        # im offenen Tab bleiben; betrifft die Änderung nur andere Tabs, deren ersten zeigen (Nutzerwunsch P9 R1)
+        ch = self._changed_parts(state)
+        state["tab"] = next((k for k in self._TAB_ORDER if k in ch), self._tab_key) \
+            if self._tab_key not in ch else self._tab_key
+        self.set_state(state, partial=True)
         QTimer.singleShot(200, self._end_restore)       # erst nach dem Neuzeichnen aller Tabs
 
     def _end_restore(self):
@@ -1759,7 +1772,7 @@ class MainWindow(QMainWindow):
         outer = QHBoxLayout(page)
         outer.setContentsMargins(24, 28, 24, 20)
         col = QWidget()
-        col.setMaximumWidth(920)
+        col.setMaximumWidth(1500)                   # wächst mit dem Fenster (FB-1), bleibt auf großen Schirmen lesbar
         v = QVBoxLayout(col)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(14)
@@ -2097,6 +2110,31 @@ class MainWindow(QMainWindow):
     def show_tab_guide(self):
         key = self._tab_keys[self.main_tabs.currentIndex()]
         QDesktopServices.openUrl(QUrl(TABS.guide_url(key)))
+
+    # Maus im offenen Tab (dieselben Texte wie unter den Tabs); Synthese/NMR ohne Mausaktionen im Bild
+    _MOUSE_HINTS = {"eps": ("drag_hint",), "hrms": ("ms_pick_hint", "drag_hint_tab"), "syn": (), "nmr": (),
+                    "xray": ("xr_mouse_hint", "drag_hint_tab"), "dft": ("dft_mouse_hint", "drag_hint_tab")}
+
+    def shortcuts_html(self):
+        """Hilfe → Maus und Tastenkürzel: Maus im offenen Tab + alle Kürzel aus den Menüaktionen (nie doppelt gepflegt)."""
+        import html
+        key = self._tab_keys[self.main_tabs.currentIndex()] if self.project_dir and self._tab_keys else None
+        mouse = [T(k) for k in self._MOUSE_HINTS.get(key, ("drag_hint_tab",))] if key else []
+        rows = []
+        for m in self.menuBar().actions():
+            for a in (m.menu().actions() if m.menu() else []):
+                if not a.shortcut().isEmpty():
+                    rows.append(f"<tr><td><b>{html.escape(a.shortcut().toString(QKeySequence.NativeText))}</b>"
+                                f"&nbsp;&nbsp;</td><td>{html.escape(a.text().replace('&', ''))}</td></tr>")
+        out = ""
+        if mouse:
+            out += f"<h4>{T('shortcuts_mouse')}</h4>" + "".join(f"<p>{html.escape(x)}</p>" for x in mouse)
+        return out + f"<h4>{T('shortcuts_keys')}</h4><table>{''.join(rows)}</table>"
+
+    def show_shortcuts(self):
+        box = QMessageBox(QMessageBox.Information, T("act_shortcuts").rstrip("…"), self.shortcuts_html(), parent=self)
+        box.setTextFormat(Qt.RichText)
+        box.exec()
 
     def show_quickstart(self):
         url = (TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md") + "#"
@@ -3182,7 +3220,10 @@ class MainWindow(QMainWindow):
     def layout_changed(self, layout):
         if not self.current or self.F is None:
             return
+        if not layout:                                 # nichts bewegt
+            return
         stored = self.get_layout(self.current)
+        layout = dict(stored, **layout)
         if layout != stored:
             self.series[self.current]["layout"][self.size_key()] = layout
         self.sync_image_sizes(layout)

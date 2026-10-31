@@ -611,6 +611,9 @@ class EPRTab(TABS.FigureTab):
 
     def arrange(self):
         super().arrange()
+        # Fit-Ergebnis + „SI-Text kopieren“ als Reiter neben der Abbildung wie in CV (nicht mitten in „Darstellung“)
+        self.to_right(STYLE.split_group(self.group_titled("epr_display"), self.lbl_info, None, T("tab_results"), n=2),
+                      T("tab_results"))
         g = STYLE.split_group(self.group_titled("epr_display"), self.ed_int_window, self.cb_curie, T("grp_intensity"))
         self.fold(g, "intensity", ("int_window", "int_method", "int_x", "int_center", "kin_fit", "kin_norm",
                                    "int_curie"))
@@ -664,6 +667,8 @@ class EPRTab(TABS.FigureTab):
         self.sp_scale = QDoubleSpinBox(decimals=4, minimum=-1e9, maximum=1e9, singleStep=0.1, value=1.0)
         self.sp_shift = QDoubleSpinBox(decimals=3, minimum=-100, maximum=100, singleStep=0.05, value=0.0,
                                        suffix=" mT")
+        self.sp_scale.setToolTip(T("epr_scale_tip"))
+        self.sp_shift.setToolTip(T("epr_shift_tip"))
         row.addWidget(QLabel("×"))
         row.addWidget(self.sp_scale)
         row.addWidget(QLabel(T("epr_shift")))
@@ -760,6 +765,7 @@ class EPRTab(TABS.FigureTab):
         self.cmb_calib = QComboBox()
         self.cmb_calib.setToolTip(T("epr_calib_tip"))
         self.sp_calib_g = QDoubleSpinBox(decimals=5, minimum=1.0, maximum=10.0, singleStep=0.0001, value=st["calib_g"])
+        self.sp_calib_g.setToolTip(T("epr_calib_tip"))
         row.addWidget(self.cmb_calib, 1)
         row.addWidget(QLabel("g_lit"))
         row.addWidget(self.sp_calib_g)

@@ -444,6 +444,9 @@ TEXTS = {
     "guide_add": ("Dateien hinzufügen…", "Add files…"),
     "note_error": ("Fehler beim Zeichnen: {e} – Details unter Hilfe → Protokoll", "Error while drawing: {e} – details under Help → Log"),
     "act_log": ("Protokoll…", "Log…"),
+    "act_shortcuts": ("Maus und Tastenkürzel…", "Mouse and keyboard shortcuts…"),
+    "shortcuts_mouse": ("Maus im offenen Tab", "Mouse in the open tab"),
+    "shortcuts_keys": ("Tastenkürzel", "Keyboard shortcuts"),
     "log_title": ("Protokoll", "Log"),
     "drag_hint_tab": ("Legende, Labels und Bilder lassen sich mit der Maus verschieben, Bilder per "
                       "Mausrad skalieren. Über den Kurven zeigt eine Einblendung unten rechts λ und den Wert.",
@@ -683,9 +686,12 @@ TEXTS = {
     "uv_copy": ("UV-Vis-Zeile kopieren (für Word)", "Copy UV-Vis line (for Word)"),
     "ms_raw": ("MS-Rohdaten (.d)", "MS raw data (.d)"),
     "ms_raw_tip": ("Bruker-Messordner (.d) mit analysis.baf und analysis.sqlite (z. B. timsTOF); gelesen werden die "
-                   "Linienspektren des Geräts. In die Verbindung kommen nur diese beiden Dateien.",
+                   "Linienspektren des Geräts. In die Verbindung kommen nur diese beiden Dateien. Mit Bericht der Massenabteilung "
+                   "bleibt dessen found vorgewählt; die .d liefert Spektrum, Chromatogramm und den Vergleichswert.",
                    "Bruker measurement folder (.d) with analysis.baf and analysis.sqlite (e.g. timsTOF); the "
-                   "instrument's line spectra are read. Only these two files are copied into the compound."),
+                   "instrument's line spectra are read. Only these two files are copied into the compound. With a report from "
+                   "the MS department its found value stays preselected; the .d gives the spectrum, chromatogram and the "
+                   "value for comparison."),
     "ms_raw_bad": ("kein Bruker-Messordner mit analysis.baf und analysis.sqlite",
                    "not a Bruker measurement folder with analysis.baf and analysis.sqlite"),
     "ms_rt": ("LC-Peak (RT)", "LC peak (RT)"),
@@ -768,7 +774,7 @@ TEXTS = {
     "cv_group_tip": ("Freies Feld, z. B. Lösungsmittel (THF, MeCN …): Datenreihe in den Auftragungen gegen die Scanrate",
                      "Free field, e.g. solvent (THF, MeCN …): data series in the plots against scan rate"),
     "cv_file_ref": ("Referenz der ausgewählten Messung", "Reference of the selected measurement"),
-    "cv_fref_global": ("wie unter „Auswertung“ (für alle)", "as under “Analysis” (for all)"),
+    "cv_fref_global": ("wie unter „Referenzierung“ (für alle)", "as under “Referencing” (for all)"),
     "cv_fref_internal": ("eigener interner Standard", "own internal standard"),
     "cv_fref_manual": ("eigene feste Verschiebung", "own fixed shift"),
     "cv_ref_mixed": ("Achtung: Messungen mit unterschiedlicher Referenz (Fc⁺/Fc und Referenzelektrode) in einer Abbildung.",
@@ -882,6 +888,9 @@ TEXTS = {
     "stick_max": ("stärkster Übergang = 1", "strongest transition = 1"),
     "stick_band": ("Kurvenmaximum = 1", "curve maximum = 1"),
     "stick_faxis": ("Kurvenmaximum = 1, rechts zusätzlich f", "curve maximum = 1, f on the right axis"),
+    "ov_faxis_stack": ("f-Achse ausgelassen: gestapelt bzw. mit Versatz beginnt die Kurve nicht bei y = 0 "
+                       "(Striche wie „Kurvenmaximum = 1“)",
+                       "f axis omitted: stacked or offset curves do not start at y = 0 (sticks as “curve maximum = 1”)"),
     "ov_faxis_mixed": ("f-Achse ausgelassen: die Rechnungen haben verschiedene Maßstäbe (FWHM/Normierung)",
                        "f axis omitted: the calculations use different scales (FWHM/normalisation)"),
     "fl_data": ("Spektren", "Spectra"),
@@ -890,6 +899,16 @@ TEXTS = {
     "fl_ex": ("Anregung λex", "Excitation λex"),
     "fl_mask": ("Streulicht bei λex und 2·λex ausblenden", "Hide scattered light at λex and 2·λex"),
     "fl_abs_window": ("Bande von Interesse [nm]", "Band of interest [nm]"),
+    "fl_ex_tip": ("Für A(λex) mit Innenfilter-Hinweis und für die Streulicht-Maske; die Kurven ändert es sonst nicht.",
+                  "Used for A(λex) with the inner-filter warning and for the scattered-light mask; it does not "
+                  "change the curves otherwise."),
+    "fl_abs_window_tip": ("Die Absorption wird in diesem Fenster auf ihr Maximum = 1 normiert, dort liegt λabs. "
+                          "Die Emission wird auf ihr Maximum im ganzen Spektrum normiert.",
+                          "The absorption is normalised to its maximum = 1 in this window, where λabs is taken. "
+                          "The emission is normalised to its maximum over the whole spectrum."),
+    "fl_eps_tip": ("Nur Beschriftung am Absorptionslabel (z. B. aus dem Tab UV-Vis (ε)), wird nicht gerechnet.",
+                   "Label text at the absorption label only (e.g. from the UV-Vis (ε) tab), not used in any "
+                   "calculation."),
     "fl_eps_ph": ("optional, z. B. 23604", "optional, e.g. 23604"),
     "fl_stokes_label": ("Stokes-Verschiebung im Bild (am Emissionslabel)",
                         "Stokes shift in the figure (at the emission label)"),
@@ -1023,8 +1042,8 @@ TEXTS = {
     "cv_cycle_tip": ("Welcher Zyklus gezeigt und ausgewertet wird (zu groß = letzter vorhandener).",
                      "Which cycle is shown and analysed (too large = last available)."),
     "cv_couples": ("Redoxpaare", "Redox couples"),
-    "cv_from": ("von [V]", "from [V]"),
-    "cv_to": ("bis [V]", "to [V]"),
+    "cv_from": ("von [V, Achse]", "from [V, axis]"),
+    "cv_to": ("bis [V, Achse]", "to [V, axis]"),
     "cv_couples_tip": ("Potentialfenster je Redoxpaar in der Achsenskala. Im Fenster: E_pa = Strommaximum im\n"
                        "Hinlauf, E_pc = Minimum im Rücklauf, E½ = Mittelwert, ΔE_p = Differenz.\n"
                        "Rot in den Ergebnissen: Peak am Fensterrand – Fenster anpassen.",
@@ -1066,6 +1085,8 @@ TEXTS = {
                      "forward current. ≈ 1: chemically reversible. i_pa/i_pc with baseline (if enabled)."),
     "cv_ref_note": ("Referenz: {name} bei E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc",
                     "Reference: {name} at E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc"),
+    "cv_ref_own": ("eigene Referenz dieser Messung: Verschiebung {off} V (nicht die für alle)",
+                   "own reference of this measurement: shift {off} V (not the one for all)"),
     "cv_ref_missing": ("⚠ Referenz nicht gefunden (Messung oder Fenster prüfen) – Achse wie gemessen.",
                        "⚠ Reference not found (check measurement or window) – axis as measured."),
     "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
@@ -1183,7 +1204,7 @@ TEXTS = {
     "off": ("aus", "off"),
     "epr_entries": ("Spektren", "Spectra"),
     "epr_add_exp": ("Messung…", "Measurement…"),
-    "epr_add_sim": ("Simulation…", "Simulation…"),
+    "epr_add_sim": ("Simulation laden…", "Load simulation…"),
     "epr_add_sim_tip": ("Fertige Simulation als ASCII-Datei laden (z. B. aus EasySpin)",
                         "Load a finished simulation as an ASCII file (e.g. from EasySpin)"),
     "epr_kind_exp": ("Messung", "Measured"),
@@ -1203,6 +1224,10 @@ TEXTS = {
                     "the simulation is then drawn on the same stacking level."),
     "epr_scale": ("Faktor / Verschiebung", "Factor / shift"),
     "epr_shift": ("ΔB", "ΔB"),
+    "epr_scale_tip": ("Faktor der Simulation (gesperrt, solange sie an eine Messung angepasst wird)",
+                      "Factor of the simulation (locked while it is scaled to a measurement)"),
+    "epr_shift_tip": ("Feldverschiebung nur dieser Simulation (nicht die Feldkalibrierung)",
+                      "Field shift of this simulation only (not the field calibration)"),
     "epr_params": ("EasySpin-Parameter", "EasySpin parameters"),
     "epr_processing": ("Verarbeitung", "Processing"),
     "epr_bl_order": ("Basislinie (Polynomgrad)", "Baseline (polynomial order)"),
@@ -1492,9 +1517,10 @@ TEXTS = {
     "xr_atom_label": ("Label", "Label"),
     "xr_atoms_tip": ("Einzelne Atome (z. B. H) ausblenden und Labels je Atom an-/abschalten; "
                      "Doppelklick auf ein Atom in der Abbildung schaltet sein Label um, Shift + Rahmen ziehen die Labels "
-                     "mehrerer Atome.",
+                     "mehrerer Atome. Draht: Atom im Drahtmodell zeigen (nur das Bild).",
                      "Hide single atoms (e.g. H) and switch labels per atom; "
-                     "double-click an atom in the figure to toggle its label, Shift + drag a box for several atoms."),
+                     "double-click an atom in the figure to toggle its label, Shift + drag a box for several atoms. "
+                     "Wire: show the atom as wireframe (figure only)."),
     "xr_labels_all": ("Alle Labels", "All labels"),
     "xr_labels_none": ("Keine Labels", "No labels"),
     "xr_atoms_reset": ("Standard", "Default"),
@@ -1585,6 +1611,10 @@ TEXTS = {
                         "picture from the CDXML; an SVG/PDF of the same name next to it takes precedence and is used "
                         "unchanged. Optional, also with the same name: .cdx = ChemDraw object editable in Word, "
                         ".emf = its sharp preview. Files older than the CDXML are ignored."),
+    "syn_scheme_hint_short": ("CDXML wählen oder „In ChemDraw bearbeiten“ (Speichern übernimmt das Schema; "
+                              "gleichnamige SVG/PDF, .cdx, .emf: siehe Tooltip).",
+                              "Choose the CDXML or use “Edit in ChemDraw” (saving takes over the scheme; SVG/PDF, "
+                              ".cdx, .emf of the same name: see tooltip)."),
     "syn_scheme_none": ("Kein Schema gewählt.", "No scheme chosen."),
     "syn_scheme_pic": ("Bild: {f}", "Picture: {f}"),
     "syn_scheme_nopic": ("Gezeichnet aus den Koordinaten der CDXML (Bindungen, Labels, Pfeil, Bedingungen). Ein SVG/PDF "
@@ -1620,9 +1650,11 @@ TEXTS = {
     "syn_role_product": ("Produkt", "product"),
     "syn_role_other": ("sonstiges", "other"),
     "syn_table_tip": ("M als Zahl (g/mol) oder Summenformel; n aus m/M, V·c oder V·ρ/M; eq. bzw. Ausbeute bezogen auf "
-                      "die Zeile „Bezug“. Die Namen dienen auch der Prüfung der Vorschrift.",
+                      "die Zeile „Bezug“. Die Namen dienen auch der Prüfung der Vorschrift.\nAusfüllen: m + M, V + c oder V + ρ + M "
+                      "(m hat Vorrang); fehlt eine Angabe, bleiben n und eq. leer („–“).",
                       "M as number (g/mol) or formula; n from m/M, V·c or V·ρ/M; eq. or yield relative to the "
-                      "“reference” row. The names are also used to check the procedure."),
+                      "“reference” row. The names are also used to check the procedure.\nFill in: m + M, V + c or V + ρ + M "
+                      "(m takes precedence); if one is missing, n and eq. stay empty (“–”)."),
     "syn_M_bad": ("Molmasse nicht lesbar (Zahl oder Summenformel)", "molar mass not readable (number or formula)"),
     "syn_row_add": ("Zeile +", "Row +"),
     "syn_from_scheme": ("Aus Schema", "From scheme"),
@@ -1763,6 +1795,7 @@ TEXTS = {
                             "Otherwise the structure of the compound is used (toolbar “Compound”)"),
     "nmr_struct_flt": ("Struktur", "Structure"),
     "nmr_struct_from": ("Struktur: {f}", "Structure: {f}"),
+    "nmr_select_first": ("Erst ein Spektrum laden bzw. in der Liste wählen.", "Load or select a spectrum first."),
     "nmr_struct_none": ("Keine Struktur (unter „Verbindung“ oder hier wählen).",
                         "No structure (choose under “Compound” or here)."),
     "nmr_word": ("Word speichern", "Save Word"),

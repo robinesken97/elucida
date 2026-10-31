@@ -416,6 +416,9 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
   genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).
 - **Undo:** während `set_state` greift `_restoring`; Änderungen über `QTimer` verzögert erfassen.
   `save_project` speichert trotzdem (`autosave(force=True)`), sonst blieb das Beispielprojekt leer.
+  Rückgängig bleibt im offenen Tab bzw. zeigt den Tab der Änderung (`_restore`, Nutzerwunsch P9 R1); ein Schnappschuss,
+  der sich nur im Tab unterscheidet, ist kein eigener Schritt. Ziehen speichert nur bewegte Elemente
+  (`Dragger.moved`, ein Klick ins Bild hält die automatische Platzierung nicht fest).
 - **Tempo:** `build_ui` nur beim Start, Sprach-/Theme-Wechsel. Öffnen und Rückgängig/Wiederholen über
   `set_state(partial=True)`/`_changed_parts`: nur geänderte Tabs ersetzen (`replace_tab`, feste `_TAB_BUILD_ORDER`, DFT
   liest X-Ray), ε nachziehen (`apply_globals`); Verbindung/Textformat geändert -> alle Tabs ersetzen, Fenster bleibt.

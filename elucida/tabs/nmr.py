@@ -721,7 +721,8 @@ class NMRTab(QWidget):
         self.lbl_struct.setText(T("nmr_struct_from", f=Path(sp_).name) if sp_ else T("nmr_struct_none"))
         if s is None:
             self.lbl_par.setText("")
-            self.lbl_nuc.setText("")
+            self.lbl_nuc.setText(T("nmr_select_first"))       # Grund für die gesperrten Felder
+            self.lbl_nuc.setStyleSheet(HINT_CSS)
             return
         self.ed_nuc.setText("/".join(s.get("nuclei") or []))
         self.lbl_nuc.setText(T("nmr_nuc_from_axis") if s.get("nuc_auto") else T("nmr_nuc_manual"))

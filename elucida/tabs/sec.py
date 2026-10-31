@@ -128,6 +128,9 @@ class SECTab(TABS.FigureTab):
 
     def arrange(self):
         super().arrange()
+        # Fit-Ergebnis + „SI-Text kopieren“ als Reiter neben der Abbildung wie in CV (nicht mitten in „Darstellung“)
+        self.to_right(STYLE.split_group(self.group_titled("sec_display"), self.lbl_info, None, T("tab_results"), n=2),
+                      T("tab_results"))
         g = STYLE.split_group(self.group_titled("sec_display"), self.cb_highlight, self.ed_bands, T("grp_highlight"))
         self.fold(g, "highlight", ("highlight", "mid", "gradient", "diff", "baseline", "bands"))
     def build_controls(self):

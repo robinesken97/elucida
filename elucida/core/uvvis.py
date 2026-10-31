@@ -1595,6 +1595,7 @@ class Dragger:
 
     def __init__(self, F, layout_path):
         self.F, self.layout_path, self.drag = F, layout_path, None
+        self._lay0 = None                     # Layout beim Drücken (gemeldet wird nur, was sich bewegt hat)
         self._cursor = None
         self._bg = None                       # Hintergrund ohne das gezogene Element (Blitting)
         for ann in F.ann_items.values():
@@ -1614,6 +1615,11 @@ class Dragger:
                 ann.draggable(False)
             except Exception:
                 pass
+
+    def moved(self, lay0):
+        """Nur die Positionen, die sich seit lay0 geändert haben: ein Klick ohne Ziehen hält die automatische
+        Platzierung nicht fest, Ziehen nur das gezogene Element."""
+        return {k: v for k, v in self.F.current_layout().items() if lay0.get(k) != v}
 
     def _axes_at(self, ev):
         for a in reversed(list(self.F.axes_items.values())):
@@ -1640,6 +1646,7 @@ class Dragger:
     def press(self, ev):
         if ev.button != 1 or ev.x is None:
             return
+        self._lay0 = self.F.current_layout()
         if self._over_label(ev):
             self._label_drag = True           # matplotlib zieht das Label selbst (Blitting, ohne Neuzeichnen danach)
             return

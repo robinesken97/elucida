@@ -331,16 +331,19 @@ class TabDragger(core.Dragger):
         self.cb = cb
         super().__init__(F, None)
 
-    def _report(self):
-        QTimer.singleShot(0, lambda: self.cb(self.F.current_layout()))
+    def _report(self, lay0):
+        QTimer.singleShot(0, lambda: self.cb(self.moved(lay0)))
 
     def release(self, ev):
+        lay0, self._lay0 = self._lay0, None
         super().release(ev)
-        self._report()
+        if lay0 is not None:
+            self._report(lay0)
 
     def scroll(self, ev):
+        lay0 = self.F.current_layout()
         if super().scroll(ev):
-            self._report()
+            self._report(lay0)
 
     def key(self, ev):
         pass
@@ -881,7 +884,9 @@ class FigureTab(QWidget):
         return T("hover_y", lam=lam, y=val, name=name)
 
     def layout_changed(self, layout):
-        self.st["layout"][self.size_key()] = layout
+        if not layout:                                 # nichts bewegt
+            return
+        layout = self.st["layout"][self.size_key()] = dict(self.st["layout"].get(self.size_key()) or {}, **layout)
         self.sync_sizes(layout)
         self.main.push_undo()
 
@@ -1643,8 +1648,9 @@ class OverlayTab(FigureTab):
                 e.get("ls", "dashed" if e["kind"] == "calc" else "solid"))))
             self.sp_lw.setValue(e.get("lw") or 0.0)
             self.cb_own.setChecked(e["own_norm"])
-            self.sp_elo.setValue(e["nlo"])
-            self.sp_ehi.setValue(e["nhi"])
+            src = e if e["own_norm"] else self.st              # ohne eigene: das geltende (globale) Fenster zeigen
+            self.sp_elo.setValue(src["nlo"])
+            self.sp_ehi.setValue(src["nhi"])
             if exp:
                 self.ed_conc.setText(f"{e['conc']:g}" if e.get("conc") else "")
                 self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(e.get("unit", "mM"))))
@@ -1800,6 +1806,7 @@ class OverlayTab(FigureTab):
         stack = st.get("stack", False)
         if mode == "faxis" and (stack or any(e.get("offset") for e in vis)):   # f-Achse beginnt bei y = 0
             mode = "band"
+            self.add_note(T("ov_faxis_stack"))
         levels = self.stack_levels(vis) if stack else {}
         n_lev = max(levels.values(), default=0) + 1
         gap = st.get("stack_gap", 1.0)
@@ -2029,6 +2036,7 @@ class FluoTab(FigureTab):
         self.w_abs = self._file_row(f, T("fl_abs"), "abs")
         self.w_em = self._file_row(f, T("fl_em"), "em")
         self.sp_ex = QDoubleSpinBox(decimals=0, minimum=150, maximum=1500, value=st["ex"], suffix=" nm")
+        self.sp_ex.setToolTip(T("fl_ex_tip"))
         f.addRow(T("fl_ex"), self.sp_ex)
         self.cb_mask = QCheckBox(T("fl_mask"))
         self.cb_mask.setChecked(st["mask"])
@@ -2038,9 +2046,11 @@ class FluoTab(FigureTab):
         self.sp_ahi = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=st["ahi"])
         for w in (self.sp_alo, QLabel("–"), self.sp_ahi):
             row.addWidget(w)
+            w.setToolTip(T("fl_abs_window_tip"))
         f.addRow(T("fl_abs_window"), row)
         self.ed_eps = QLineEdit(st["eps"])
         self.ed_eps.setPlaceholderText(T("fl_eps_ph"))
+        self.ed_eps.setToolTip(T("fl_eps_tip"))
         f.addRow("ε [M⁻¹ cm⁻¹]", self.ed_eps)
         row = QHBoxLayout()
         row.addWidget(QLabel(T("fl_abs")))

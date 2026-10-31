@@ -464,6 +464,11 @@ def selftest(outdir, with_isnet=False):
         ov.show_details()
         ov.sp_elo.setValue(420)                                            # eigenes Fenster = eigene Normierung
         assert w.ov_state["entries"][0]["own_norm"] and w.ov_state["entries"][0]["nlo"] == 420
+        # Audit P10 (A11): ohne eigene Normierung zeigen die Felder das geltende (globale) Fenster, nicht alte Werte
+        w.ov_state["entries"][0].update(own_norm=False, nlo=400, nhi=300)
+        ov.show_details()
+        assert (ov.sp_elo.value(), ov.sp_ehi.value()) == (w.ov_state["nlo"], w.ov_state["nhi"]), ov.sp_elo.value()
+        assert not w.ov_state["entries"][0]["own_norm"]
         ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("norm"))
         ov.sp_ymax.setValue(1.2)
         ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("eps"))       # ε-Skala: alte Obergrenze passt nicht
@@ -483,6 +488,11 @@ def selftest(outdir, with_isnet=False):
         w.ov_state["mode"] = "eps"
         assert "f_axis" not in ov.figure_spec()[0]                        # ε: verschiedene Maßstäbe, keine f-Achse
         w.ov_state["mode"] = "norm"
+        # Audit P10: gestapelt/Versatz -> f-Achse entfällt mit Hinweis (nicht still)
+        w.ov_state["stack"] = True
+        ov.notes_begin()
+        assert "f_axis" not in ov.figure_spec()[0] and T("ov_faxis_stack") in ov._notes, ov._notes
+        w.ov_state["stack"] = False
         # Absorbanz wie gemessen (y-Achse folgt den Daten, nicht immer ε)
         exp_e = dict(ents0[0], conc=None, own_norm=False, scale=1.0, offset=0.0, ls=None, lw=None)
         w.ov_state.update(entries=[exp_e, dict(calc_e)], mode="abs", stick_mode="band", baseline=False)
@@ -1152,6 +1162,11 @@ def selftest(outdir, with_isnet=False):
         t_cv.figure_spec()
         assert T("cv_cycle_missing", files="d0", n=2) in t_cv.note, t_cv.note
         assert "For d0 (fewer cycles), the last cycle was used." in t_cv.methods_text(), t_cv.methods_text()
+        # Audit P10 (A11): eigene Referenz einer Messung -> Hinweis unter der Abbildung
+        st_cv["files"][0]["ref"] = {"mode": "manual", "offset": -0.1}
+        t_cv.figure_spec()
+        assert "d0: " + T("cv_ref_own", off="\u22120.100") in t_cv.note, t_cv.note
+        del st_cv["files"][0]["ref"]
         st_cv["cycle"] = 1
         # Basislinie verlangt, aber nicht möglich -> Methodentext sagt es
         st_cv["couples"] = [[-1.13, -0.8]]
@@ -4450,6 +4465,56 @@ def selftest(outdir, with_isnet=False):
         assert w2.cv_state["cap_temp"] == "-30 \u00b0C"
         w2.undo()
         pump(0.4)
+        # Audit P10 (P9 R1): Rückgängig zeigt den Tab der Änderung bzw. bleibt im offenen Tab, nicht den beim
+        # vorigen Schnappschuss offenen
+        go_ = lambda k_: (w2.main_tabs.setCurrentIndex(w2._tab_keys.index(k_)), pump(0.2))   # noqa: E731
+        go_("sec")
+        w2._init_undo()
+        go_("cv")
+        w2.cv_state["cap_temp"] = "-40 °C"
+        w2.push_undo()
+        go_("epr")
+        w2.undo()
+        pump(0.4)
+        assert w2._tab_key == "cv" and w2.main_tabs.currentWidget() is w2.cv_tab, w2._tab_key
+        go_("epr")
+        w2.redo()
+        pump(0.4)
+        assert w2._tab_key == "cv" and w2.cv_state["cap_temp"] == "-40 °C", w2._tab_key
+        w2.undo()
+        pump(0.4)
+        assert w2._tab_key == "cv", w2._tab_key                           # Änderung im offenen Tab: bleibt
+        n_, r_ = len(w2._undo), len(w2._redo)
+        go_("epr")
+        w2.push_undo()                                                    # nur der Tab anders: kein Schritt
+        assert (len(w2._undo), len(w2._redo)) == (n_, r_), (len(w2._undo), len(w2._redo), n_, r_)
+        # Audit P10: Klick ohne Ziehen hält die automatische Platzierung nicht fest, Ziehen nur das gezogene Element
+        go_("eps")
+        w2.render()
+        pump(0.4)
+        from matplotlib.backend_bases import MouseEvent as ME_
+        lay_ = w2.get_layout(w2.current)
+        lay_.clear()
+        assert w2.dragger is not None and w2.F.ann_items, "eps labels"
+        click_ = lambda: (w2.dragger.press(ME_("button_press_event", w2.canvas, 5, 5, button=1)),   # noqa: E731
+                          w2.dragger.release(ME_("button_release_event", w2.canvas, 5, 5, button=1)), pump(0.2))
+        click_()
+        assert w2.get_layout(w2.current) == {}, w2.get_layout(w2.current)
+        k_ = next(iter(w2.F.ann_items))
+        w2.dragger.press(ME_("button_press_event", w2.canvas, 5, 5, button=1))
+        w2.F.ann_items[k_].xyann = (w2.F.ann_items[k_].xyann[0] + 3.0, w2.F.ann_items[k_].xyann[1])
+        w2.dragger.release(ME_("button_release_event", w2.canvas, 5, 5, button=1))
+        pump(0.2)
+        assert list(w2.get_layout(w2.current)) == [k_], w2.get_layout(w2.current)
+        w2.get_layout(w2.current).clear()
+        # Audit P10: Hilfe → Maus und Tastenkürzel (Maus des offenen Tabs + Kürzel aus den Menüs)
+        import html as html_
+        h_ = w2.shortcuts_html()
+        assert html_.escape(T("drag_hint")) in h_ and html_.escape(w2.act_undo.text().replace("&", "")) in h_, h_[:300]
+        # SEC/EPR: Fit-Ergebnis und „SI-Text kopieren“ als Reiter neben der Abbildung (wie CV), nicht in „Darstellung“
+        for t_ in (w2.sec_tab, w2.epr_tab):
+            assert t_.right_tabs is not None and t_.right_tabs.tabText(1) == T("tab_results"), t_
+            assert t_.right_tabs.widget(1).isAncestorOf(t_.lbl_info)
         # Öffnen: Fenster bleibt, nur der sichtbare Tab wird gebaut; übrige beim ersten Zugriff/Anzeigen
         w3_ = MainWindow()
         w3_.resize(1200, 800)
