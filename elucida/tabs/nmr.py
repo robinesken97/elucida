@@ -409,7 +409,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QScrollArea, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
                                QSizePolicy, QStackedWidget, QWidget)
 
-from elucida.app import project as PRJ  # noqa: E402
+from elucida.app import project as PRJ, style as STYLE  # noqa: E402
 from elucida.app.style import HINT_CSS, make_form  # noqa: E402
 
 FIG_W_CM = 16.0                    # Breite der Spektren in Word (zwei Abbildungen je Seite, wie in der SI)
@@ -468,8 +468,9 @@ class NMRTab(QWidget):
         split.addWidget(right)
         split.setSizes([500, 900])
         from elucida.tabs.base import fit_footer_column
-        fit_footer_column(self, split, 460)
-        lay = QVBoxLayout(self)
+        fit_footer_column(self, split)
+        STYLE.tidy(left)                                 # Rand/Abstände der Spalte wie in den übrigen Tabs
+        lay = QHBoxLayout(self)                          # kein QVBoxLayout: tidy(Tab) rückt sonst alles ein
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
         self.sync_widgets()
@@ -511,6 +512,7 @@ class NMRTab(QWidget):
         self.tbl.setMinimumHeight(130)
         self.tbl.itemSelectionChanged.connect(self.spectrum_selected)
         v.addWidget(self.tbl)
+        STYLE.hide_when_empty(self.tbl)
         hint = QLabel(T("nmr_order_hint"), wordWrap=True)
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
@@ -540,7 +542,6 @@ class NMRTab(QWidget):
                                  (T("remove"), T("nmr_raw_remove_tip"), self.remove_raw, None)):
             b = QPushButton(txt)
             if ic:
-                from elucida.app import style as STYLE
                 b.setIcon(STYLE.icon(ic, "#FFFFFF"))
             b.setToolTip(tip)
             b.clicked.connect(fn)

@@ -3279,6 +3279,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.tbl.itemChanged.connect(self.entry_edited)
         self.tbl.itemSelectionChanged.connect(self.entry_selected)
         v.addWidget(self.tbl)
+        STYLE.hide_when_empty(self.tbl)
         self.lbl_info = QLabel("")
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextFormat(Qt.RichText)

@@ -319,6 +319,7 @@ class CVTab(TABS.FigureTab):
         self.table.itemChanged.connect(self.table_edited)
         self.table.currentCellChanged.connect(lambda *_: self.show_file_ref())
         v.addWidget(self.table)
+        STYLE.hide_when_empty(self.table)
         self.lv.addWidget(g)
 
         # Referenz je Messung (z. B. jedes Lösungsmittel gegen sein eigenes Ac₂Fc/Fc)

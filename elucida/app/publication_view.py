@@ -211,13 +211,6 @@ class PublicationPage(QWidget):
         v = QVBoxLayout(col)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)
-        crumb = QHBoxLayout()                               # Pfad wie in der Tab-Leiste: ⌂ Übersicht ›
-        b_home = QPushButton("⌂ " + T("nav_home") + "  ›", objectName="navTab")
-        b_home.setToolTip(T("act_to_overview"))
-        b_home.clicked.connect(main.go_home)
-        crumb.addWidget(b_home)
-        crumb.addStretch(1)
-        v.addLayout(crumb)
         self.lbl_title = QLabel(wordWrap=True)              # Titel über die volle Breite, Aktionen darunter
         self.lbl_title.setTextFormat(Qt.RichText)
         v.addWidget(self.lbl_title)

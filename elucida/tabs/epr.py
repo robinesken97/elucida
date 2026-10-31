@@ -621,7 +621,7 @@ class EPRTab(TABS.FigureTab):
         st = self.st
         g = QGroupBox(T("epr_entries"))
         v = QVBoxLayout(g)
-        row = QHBoxLayout()
+        row, row2 = QHBoxLayout(), QHBoxLayout()               # Hinzufügen / Auswahl: zwei Reihen (Spaltenbreite)
         tips = {T("epr_add_sim"): T("epr_add_sim_tip"), T("epr_add_iso"): T("epr_add_iso_tip")}
         for txt, fn in ((T("epr_add_exp"), self.add_exp), (T("epr_add_sim"), self.add_sim),
                         (T("epr_add_iso"), self.add_iso),
@@ -630,8 +630,11 @@ class EPRTab(TABS.FigureTab):
             if txt in tips:
                 b.setToolTip(tips[txt])
             b.clicked.connect(fn)
-            row.addWidget(b)
+            (row if txt.endswith("…") or txt in tips else row2).addWidget(b)
+        row.addStretch(1)
+        row2.addStretch(1)
         v.addLayout(row)
+        v.addLayout(row2)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), T("ov_type"), "T [K]"])
         self.table.verticalHeader().setVisible(False)
@@ -642,6 +645,7 @@ class EPRTab(TABS.FigureTab):
         self.table.itemChanged.connect(self.table_edited)
         self.table.itemSelectionChanged.connect(self.show_details)
         v.addWidget(self.table)
+        STYLE.hide_when_empty(self.table)
         self.lv.addWidget(g)
 
         self.det = QGroupBox(T("ov_details"))
@@ -748,6 +752,7 @@ class EPRTab(TABS.FigureTab):
         self.sp_smooth = QDoubleSpinBox(decimals=2, minimum=0, maximum=50, singleStep=0.05, value=st["smooth"],
                                         suffix=" mT")
         self.sp_smooth.setSpecialValueText(T("off"))
+        self.sp_smooth.setToolTip(T("epr_smooth_tip"))
         f.addRow(T("epr_smooth"), self.sp_smooth)
         row = QHBoxLayout()
         self.sp_ref_freq = QDoubleSpinBox(decimals=4, minimum=0, maximum=500, singleStep=0.1, value=st["ref_freq"],
@@ -826,6 +831,7 @@ class EPRTab(TABS.FigureTab):
         self.sp_int_center = QDoubleSpinBox(decimals=1, minimum=0, maximum=20000, singleStep=0.5,
                                             value=st["int_center"], suffix=" mT")
         self.sp_int_center.setSpecialValueText(T("auto"))
+        self.sp_int_center.setToolTip(T("epr_int_center_tip"))
         f.addRow(T("epr_int_center"), self.sp_int_center)
         row = QHBoxLayout()
         self.cb_kin = QCheckBox(T("epr_kin_fit"))

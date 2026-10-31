@@ -144,6 +144,15 @@ def list_button(txt):
     return b
 
 
+def hide_when_empty(table):
+    """Dateiliste ohne Einträge ausblenden (Leer-Zustand: die Anleitung rechts nennt Dateien und ersten Schritt)."""
+    upd = lambda *_: shiboken6.isValid(table) and table.setVisible(table.rowCount() > 0)   # Neuaufbau: schon gelöscht
+    m = table.model()
+    for sig in (m.rowsInserted, m.rowsRemoved, m.modelReset):
+        sig.connect(upd)
+    upd()
+
+
 def card(title, icon_name=None):
     """Gruppe als Karte mit Symbol im Titel. Gibt (Karte, Inhalts-Widget) zurück."""
     frame = QFrame(objectName="card")
@@ -165,7 +174,8 @@ def card(title, icon_name=None):
     return frame, body
 
 
-FIELD_W = 150                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
+FIELD_W = 120                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
+COLUMN_W = 534                    # linke Spalte in allen Tabs gleich breit (breiter nur, wenn Inhalt sonst abgeschnitten)
 CHECKS_IN_FIELD_COLUMN = True     # Häkchen-Zeilen in der Wertespalte (eine Kante für alle Bedienelemente)
 
 
@@ -341,27 +351,24 @@ def hint_when_disabled(group, text):
 
 
 class ColumnFit(QObject):
-    """Linke Spalte immer so breit wie ihr Inhalt braucht – nie abgeschnitten, nie waagerecht scrollen, der Rest geht
-    an die Abbildung. Beobachtet den Inhalt (Stylesheet, aufgeklappte Karten, eingeblendete Zeilen, Sprache) und passt
-    Spalte und Trennlinie an. Hat der Nutzer die Trennlinie verschoben, bleibt seine Breite, solange alles hineinpasst."""
+    """Linke Spalte fest COLUMN_W breit (alle Tabs gleich, Trennlinie nicht verschiebbar, Nutzerwunsch); breiter nur,
+    wenn der Inhalt sonst abgeschnitten würde – nie waagerecht scrollen, der Rest geht an die Abbildung. Beobachtet den
+    Inhalt (Stylesheet, aufgeklappte Karten, eingeblendete Zeilen, Sprache)."""
 
-    def __init__(self, content, scroll, bar, column, splitter, floor=380):
+    def __init__(self, content, scroll, bar, column, splitter):
         super().__init__(column)
         self.content, self.scroll, self.bar, self.column, self.split = content, scroll, bar, column, splitter
-        self.floor, self.user_w, self._pending = floor, None, False
+        self.floor, self._pending = COLUMN_W, False
         content.installEventFilter(self)
         column.installEventFilter(self)
-        splitter.splitterMoved.connect(self._moved)
+        splitter.handle(1).setEnabled(False)
+        splitter.handle(1).setCursor(Qt.ArrowCursor)
         self.fit()
 
     def needed(self):
         w = max(self.floor, self.content.minimumSizeHint().width(),
                 self.bar.minimumSizeHint().width() if self.bar is not None else 0)
         return w + self.scroll.verticalScrollBar().sizeHint().width() + 4
-
-    def _moved(self, pos, index):
-        if index == 1 and self.alive():
-            self.user_w = self.split.sizes()[0]
 
     def eventFilter(self, obj, ev):
         if ev.type() in (QEvent.LayoutRequest, QEvent.Show, QEvent.FontChange, QEvent.StyleChange) and not self._pending:
@@ -379,21 +386,11 @@ class ColumnFit(QObject):
         self._pending = False
         if not self.alive():
             return
-        need = self.needed()
-        self.column.setMinimumWidth(need)
-        sizes = self.split.sizes()
-        total = sum(sizes)
-        if total <= 0 or len(sizes) < 2:
-            return
-        want = max(need, self.user_w or 0)
-        if sizes[0] != want and total > want:
-            self.split.blockSignals(True)
-            self.split.setSizes([want, total - want])
-            self.split.blockSignals(False)
+        self.column.setFixedWidth(self.needed())
 
 
-def fit_column(content, scroll, bar, column, splitter, floor=380):
-    return ColumnFit(content, scroll, bar, column, splitter, floor)
+def fit_column(content, scroll, bar, column, splitter):
+    return ColumnFit(content, scroll, bar, column, splitter)
 
 
 # ---------------------------------------------------------------------------- Karten einklappen / Zeilen verschieben
@@ -654,7 +651,7 @@ QToolButton[accent="true"] {{ background: {c['accent']}; color: {c['on_accent']}
 QToolButton[accent="true"]:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
 QFrame#navBar {{ background: {c['window']}; border-bottom: 1px solid {c['border']}; }}
 QLabel#navGroup {{ color: {c['text2']}; font-size: 10px; font-weight: bold; padding: 0 3px; }}
-QPushButton#navTab {{ background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 10px;
+QPushButton#navTab {{ background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px;
     color: {c['text2']}; min-height: 16px; }}
 QPushButton#navTab:hover {{ background: {c['hover']}; color: {c['text']}; }}
 QPushButton#navTab:checked {{ background: {c['card']}; color: {c['accent']}; border-color: {c['border']};

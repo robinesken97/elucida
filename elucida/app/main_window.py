@@ -716,7 +716,8 @@ class MainWindow(QMainWindow):
         # Name des Dateimanagers je System (Finder, Explorer, sonst Standard-Dateimanager, z. B. Dolphin/Nautilus)
         fm = {"darwin": "fm_finder", "win32": "fm_explorer"}.get(sys.platform, "fm_linux")
         self.act_folder.setToolTip(T("act_show_folder_tip", fm=T(fm)))
-        self.toolbar.addSeparator()
+        self._sep_crumbs = self.toolbar.addSeparator()       # Pfadleiste kommt aus nav_bar davor (_update_crumbs)
+        self._sep_compound = self.toolbar.addSeparator()
         self.act_compound = QAction(STYLE.icon("compound"), self.compound_label(), self,
                                     triggered=self.edit_compound)
         self.act_compound.setToolTip(T("compound_tip"))
@@ -1065,7 +1066,7 @@ class MainWindow(QMainWindow):
         split.addWidget(left_col)
         split.addWidget(right)
         split.setSizes([left_col.minimumWidth(), 920])
-        self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split, floor=380)   # nie abgeschnitten
+        self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split)   # nie abgeschnitten
         self.eps_page = split
         # Tabs erst bei Bedarf bauen (sichtbar oder Zugriff auf self.<x>_tab, siehe __getattr__): beim Öffnen nur
         # der angezeigte; die übrigen sind Platzhalter
@@ -1395,7 +1396,8 @@ class MainWindow(QMainWindow):
         hb = QHBoxLayout(bar)
         hb.setContentsMargins(10, 4, 10, 6)
         hb.setSpacing(4)
-        # Pfadleiste: ⌂ Übersicht › Projekt › Verbindung ▾ (jede Stufe anklickbar, Verbindungen des Projekts im Menü)
+        # Pfadleiste: ⌂ Übersicht › Projekt › Verbindung ▾ (jede Stufe anklickbar, Verbindungen des Projekts im Menü);
+        # sitzt in der Werkzeugleiste, damit die Tab-Leiste schmaler wird (Mindestbreite des Fensters)
         self.btn_home = QPushButton("⌂ " + T("nav_home"), objectName="navTab")
         self.btn_home.setToolTip(T("act_to_overview"))
         self.btn_home.clicked.connect(self.go_home)
@@ -1408,17 +1410,14 @@ class MainWindow(QMainWindow):
         self.comp_menu.aboutToShow.connect(self._fill_comp_menu)
         self.btn_comp.setMenu(self.comp_menu)
         self.crumb_seps = [QLabel("›", objectName="navGroup"), QLabel("›", objectName="navGroup")]
-        crumbs = QHBoxLayout()
+        cw = QWidget()
+        crumbs = QHBoxLayout(cw)
+        crumbs.setContentsMargins(0, 0, 0, 0)
         crumbs.setSpacing(2)
         for w_ in (self.btn_home, self.crumb_seps[0], self.btn_pub, self.crumb_seps[1], self.btn_comp):
             crumbs.addWidget(w_, 0, Qt.AlignVCenter)
-        hb.addLayout(crumbs)
+        self.act_crumbs = self.toolbar.insertWidget(self._sep_compound, cw)
         self._update_crumbs()
-        self.btn_pub_sep = QFrame(objectName="navSep")
-        self.btn_pub_sep.setFixedWidth(1)
-        hb.addSpacing(6)
-        hb.addWidget(self.btn_pub_sep)
-        hb.addSpacing(6)
         grp = QButtonGroup(bar)
         self.nav_buttons = {}
         for gi, (head, keys) in enumerate(self.NAV_GROUPS):
@@ -1850,16 +1849,10 @@ class MainWindow(QMainWindow):
         b_pub.setProperty("accent", True)
         b_pub.setToolTip(T("act_new_publication_tip"))
         b_pub.clicked.connect(self.new_publication)
-        b_demo = QPushButton(T("act_demo"))
-        b_demo.setToolTip(T("act_demo_tip"))
-        b_demo.clicked.connect(self.open_demo)
-        b_demo_pub = QPushButton(T("act_demo_pub"))
-        b_demo_pub.setToolTip(T("act_demo_pub_tip"))
-        b_demo_pub.clicked.connect(self.open_demo_publication)
         b_quick = QPushButton(STYLE.icon("new"), T("act_quick"))               # Einzelauswertung ohne Projektwahl
         b_quick.setToolTip(T("act_quick_tip"))
         b_quick.clicked.connect(self.quick_evaluation)
-        for b in (b_pub, b_new, b_quick, b_open, b_demo_pub, b_demo):
+        for b in (b_pub, b_new, b_quick, b_open):          # Beispiele als Links unten (zweitrangig, Fensterbreite)
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
@@ -1917,9 +1910,11 @@ class MainWindow(QMainWindow):
         self.lbl_recent_empty.setStyleSheet(HINT_CSS + " padding: 24px;")
         v.addWidget(self.lbl_recent_empty)
         hint = QLabel(T("welcome_hint", url=TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md")
-                        + "#" + TABS.gh_anchor(T("readme_quickstart"))))
+                        + "#" + TABS.gh_anchor(T("readme_quickstart")))
+                      + f" · <a href='demo:pub'>{T('act_demo_pub')}</a> · <a href='demo:compound'>{T('act_demo')}</a>")
         hint.setWordWrap(True)
-        hint.setOpenExternalLinks(True)
+        hint.linkActivated.connect(lambda u: self.open_demo_publication() if u == "demo:pub" else
+                                   self.open_demo() if u == "demo:compound" else QDesktopServices.openUrl(QUrl(u)))
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
         outer.addWidget(col, 1)                         # füllt die ganze Breite (Robin, 2.4.0)
@@ -2787,6 +2782,10 @@ class MainWindow(QMainWindow):
     def _update_crumbs(self):
         if getattr(self, "btn_home", None) is None:
             return
+        for a_ in (self.act_crumbs, self._sep_crumbs):            # Startbildschirm: nur Datei-Aktionen
+            a_.setVisible(bool(self.project_dir or self.publication_dir))
+        for a_ in (self._sep_compound, self.act_compound, self.act_si):
+            a_.setVisible(bool(self.project_dir))
         from elucida.app import demo as DEMO
         on = bool(self.publication_dir and self.project_dir)
         orphan = bool(self.project_dir and not self.publication_dir and not DEMO.is_demo(self.project_dir))

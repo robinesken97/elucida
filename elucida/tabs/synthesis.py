@@ -394,7 +394,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSplitter, QStackedWidget,
                                QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
-from elucida.app import project as PRJ  # noqa: E402
+from elucida.app import project as PRJ, style as STYLE  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS  # noqa: E402
 
 ROLES = ("ref", "reagent", "product", "other")
@@ -446,8 +446,9 @@ class SynthTab(QWidget):
         split.addWidget(right)
         split.setSizes([620, 800])
         from elucida.tabs.base import fit_footer_column
-        fit_footer_column(self, split, 520)
-        lay = QVBoxLayout(self)
+        fit_footer_column(self, split)
+        STYLE.tidy(left)                                 # Rand/Abstände der Spalte wie in den übrigen Tabs
+        lay = QHBoxLayout(self)                          # kein QVBoxLayout: tidy(Tab) rückt sonst alles ein
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
         self.sync_widgets()

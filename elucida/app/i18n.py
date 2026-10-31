@@ -483,7 +483,7 @@ TEXTS = {
                          "and was not used – load the PDF on its own with its spectrum"),
     "ir_full": ("gesamt", "full"),
     "ir_range": ("Bereich", "Range"),
-    "ir_xrange": ("ṽ-Bereich (Bild) [cm⁻¹]", "ṽ range (figure) [cm⁻¹]"),
+    "ir_xrange": ("ṽ-Bereich [cm⁻¹]", "ṽ range [cm⁻¹]"),
     "ir_prom": ("Peakschwelle", "Peak threshold"),
     "ir_base": ("Basislinie korrigieren (wie OPUS)", "Correct baseline (as in OPUS)"),
     "ir_base_tip": ("Konkaves Gummiband wie OPUS-Basislinienmethode 3 (Stützpunkte/Iterationen aus dem OPUS-Verlauf, "
@@ -977,7 +977,7 @@ TEXTS = {
     "size_std": ("Standard (eng zugeschnitten)", "Standard (tight crop)"),
     "size_half_a4": ("Word: halbe A4-Seite (16 × 11 cm)", "Word: half A4 page (16 × 11 cm)"),
     "size_custom": ("benutzerdefiniert", "custom"),
-    "size_wh": ("Breite × Höhe [cm]", "Width × height [cm]"),
+    "size_wh": ("B × H [cm]", "W × H [cm]"),
     "formats": ("Formate", "Formats"),
     "img_size": ("Größe [% Plotbreite]", "Size [% of plot width]"),
     "xrange": ("λ-Bereich [nm]", "λ range [nm]"),
@@ -1249,19 +1249,19 @@ TEXTS = {
     "epr_kind_exp": ("Messung", "Measured"),
     "epr_kind_sim": ("Simulation", "Simulation"),
     "epr_none": ("– keine –", "– none –"),
-    "epr_dark": ("Dunkelspektrum abziehen", "Subtract dark spectrum"),
+    "epr_dark": ("Dunkelspektrum", "Dark spectrum"),
     "epr_dark_tip": ("Messung vor dem Bestrahlen (ohne Triplett) als Hintergrund: hell − k·dunkel, auf das Feldraster\n"
                      "der Messung interpoliert. Gleiche Frequenz, Modulation und Leistung nötig (sonst Warnung).",
                      "Measurement before irradiation (no triplet) as background: light − k·dark, interpolated onto the\n"
                      "field grid of the measurement. Same frequency, modulation and power required (warning otherwise)."),
     "epr_dark_mismatch": ("⚠ {name}: Dunkelspektrum mit anderem {what} gemessen.",
                           "⚠ {name}: dark spectrum recorded with different {what}."),
-    "epr_fit_to": ("An Messung anpassen", "Scale to measurement"),
+    "epr_fit_to": ("Anpassen an", "Scale to"),
     "epr_fit_tip": ("Skalierung der Simulation per kleinsten Quadraten an die gewählte Messung (nach deren Verarbeitung);\n"
                     "Simulation liegt dann auf derselben Stapelebene.",
                     "Least-squares scaling of the simulation to the selected measurement (after its processing);\n"
                     "the simulation is then drawn on the same stacking level."),
-    "epr_scale": ("Faktor / Verschiebung", "Factor / shift"),
+    "epr_scale": ("Faktor / Versatz", "Factor / shift"),
     "epr_shift": ("ΔB", "ΔB"),
     "epr_scale_tip": ("Faktor der Simulation (gesperrt, solange sie an eine Messung angepasst wird)",
                       "Factor of the simulation (locked while it is scaled to a measurement)"),
@@ -1269,9 +1269,9 @@ TEXTS = {
                       "Field shift of this simulation only (not the field calibration)"),
     "epr_params": ("EasySpin-Parameter", "EasySpin parameters"),
     "epr_processing": ("Verarbeitung", "Processing"),
-    "epr_bl_order": ("Basislinie (Polynomgrad)", "Baseline (polynomial order)"),
+    "epr_bl_order": ("Basislinie (Grad)", "Baseline (order)"),
     "epr_bl_edge": ("Ränder", "edges"),
-    "epr_bl_regions": ("Basislinie aus Bereichen", "Baseline from ranges"),
+    "epr_bl_regions": ("Basislinie: Bereiche", "Baseline ranges"),
     "epr_bl_regions_tip": ("Signalfreie Feldbereiche für die Basislinie (Achseneinheit mT), z. B. '400-430, 560-600'.\n"
                            "Leer: die äußeren Ränder des Sweeps (Prozent links und rechts).",
                            "Signal-free field ranges for the baseline (axis unit mT), e.g. '400-430, 560-600'.\n"
@@ -1280,7 +1280,8 @@ TEXTS = {
     "epr_exclude": ("Bereiche ausblenden", "Hide ranges"),
     "epr_exclude_tip": ("Feldbereiche, die nicht gezeichnet werden (mT), z. B. das scharfe Radikalsignal bei g ≈ 2.",
                         "Field ranges that are not drawn (mT), e.g. the sharp radical signal at g ≈ 2."),
-    "epr_smooth": ("Glätten (gleitender Mittelwert)", "Smoothing (moving average)"),
+    "epr_smooth": ("Glätten", "Smoothing"),
+    "epr_smooth_tip": ("Gleitender Mittelwert über diese Feldbreite", "Moving average over this field width"),
     "epr_display": ("Darstellung EPR", "EPR display"),
     "epr_xrange": ("B-Bereich", "B range"),
     "epr_unit": ("Feldeinheit", "Field unit"),
@@ -1297,7 +1298,7 @@ TEXTS = {
                          "Sets dark spectrum and factor of this entry for all other measurements (e.g. a kinetic series)."),
     "epr_mode_spectra": ("Spektren", "Spectra"),
     "epr_mode_intensity": ("Intensität gegen Zeit/T", "Intensity vs. time/T"),
-    "epr_int_window": ("Feldfenster Intensität", "Field window for intensity"),
+    "epr_int_window": ("Feldfenster", "Field window"),
     "epr_int_window_ph": ("z. B. 445-500 (mT), leer = ganzer Sweep", "e.g. 445-500 (mT), empty = whole sweep"),
     "epr_int_window_tip": ("Bereich, über den integriert bzw. Peak-zu-Peak bestimmt wird (mT). Ausgeblendete Bereiche zählen mit;\n"
                            "für Tripletts das Radikalsignal also über das Fenster ausschließen.",
@@ -1327,7 +1328,7 @@ TEXTS = {
     "epr_lw": ("ΔB_pp", "ΔB_pp"),
     "epr_lorentz": ("Lorentz-Anteil", "Lorentzian fraction"),
     "epr_fit_lor": ("mitfitten", "fit as well"),
-    "epr_nuclei": ("Kerne (Anzahl Isotop a/mT)", "Nuclei (number isotope a/mT)"),
+    "epr_nuclei": ("Kerne (a/mT)", "Nuclei (a/mT)"),
     "epr_nuclei_ph": ("z. B. 2 14N 0.65; 4 1H 0.32", "e.g. 2 14N 0.65; 4 1H 0.32"),
     "epr_nuclei_tip": ("Gruppen äquivalenter Kerne: Anzahl, Isotop (1H, 2H, 13C, 14N, 15N, 19F, 31P, 63Cu, …) oder I=…,\n"
                        "Kopplung a in mT; Gruppen mit ';' trennen. Erste Ordnung, isotrop (Lösung, schnelle Rotation).",
@@ -1354,7 +1355,7 @@ TEXTS = {
     "epr_nuclei_unknown": ("Kern nicht erkannt: {parts} (Schreibweise z. B. „2 14N 0.65“ oder „2 I=1 0.65“).",
                            "Nucleus not recognized: {parts} (write e.g. “2 14N 0.65” or “2 I=1 0.65”)."),
     "epr_fractions": ("{name}: Anteile (Doppelintegral) {parts}", "{name}: fractions (double integral) {parts}"),
-    "epr_ref_freq": ("Feld auf Frequenz skalieren", "Scale field to frequency"),
+    "epr_ref_freq": ("Frequenz angleichen", "Scale to frequency"),
     "epr_ref_freq_tip": ("B·ν_ref/ν: Spektren mit leicht unterschiedlicher Mikrowellenfrequenz vergleichbar machen\n"
                          "(z. B. Temperaturserien; im MATLAB-Skript 9,3 GHz).",
                          "B·ν_ref/ν: makes spectra with slightly different microwave frequency comparable\n"
@@ -1367,7 +1368,8 @@ TEXTS = {
                            "Merkmal im Feldfenster, Intensität = |Amplitude| (wie das MATLAB-Skript, z. B. X-Merkmal bei 487 mT).",
                            "Double integral: spin amount. Peak-to-peak: simple, depends on linewidth. Gaussian fit: Gaussian + line\n"
                            "fitted to a feature in the field window, intensity = |amplitude| (like the MATLAB script, e.g. X feature at 487 mT)."),
-    "epr_int_center": ("Merkmal bei (Gauß-Fit)", "Feature at (Gaussian fit)"),
+    "epr_int_center": ("Merkmal bei", "Feature at"),
+    "epr_int_center_tip": ("Lage des Merkmals für den Gauß-Fit", "Position of the feature for the Gaussian fit"),
     "epr_kin_fit": ("Zerfall fitten (Arrhenius, konstante Heizrate)", "Fit decay (Arrhenius, constant heating rate)"),
     "epr_kin_tip": ("I(T) = exp(−A·∫exp(−E_a/RT)/β dT), erste Ordnung; Heizrate β aus mittlerem T- und Zeitschritt.\n"
                     "Intensität vorher min-max normiert (wie im MATLAB-Skript); nur mit x-Achse Temperatur.\n"

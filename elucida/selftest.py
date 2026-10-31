@@ -1903,11 +1903,11 @@ def selftest(outdir, with_isnet=False):
             _shb.delete(sp_)                                                  # wie der Neuaufbau der Tabs
             pump(0.1)
             cf_.fit()
-            cf_._moved(10, 1)
         finally:
             sys.excepthook = hook_
         assert not errs_, errs_
-        report.append("left column (folds, changed mark, result tabs, field grid, never clipped): OK")
+        assert not w.eps_page.handle(1).isEnabled() and w.eps_page.widget(0).width() == w.column_fit.needed()   # fest
+        report.append("left column (folds, changed mark, result tabs, field grid, never clipped, fixed width): OK")
 
         # Erscheinungsbild: Fusion, Palette je Modus, Akzentbuttons, Symbole; Ergebnisse bleiben erhalten
         w.render()
@@ -1928,9 +1928,10 @@ def selftest(outdir, with_isnet=False):
         assert w.findChildren(QFrame, "card") and not [g_ for g_ in w.eps_page.findChildren(QGroupBox)
                                                         if g_.objectName() != "resultCard"]
         w.switch_theme("system")
-        # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Verbindung, SI) und Listenknöpfe mit Symbol
+        # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Pfadleiste, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(TABS.QWidget, "mainToolbar")
-        acts = [a for a in w.toolbar.actions() if not a.isSeparator()]
+        assert w.act_crumbs in w.toolbar.actions()
+        acts = [a for a in w.toolbar.actions() if not a.isSeparator() and a is not w.act_crumbs]
         assert len(bars) == 1 and len(acts) == 8 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
         opened_ = []                                         # Projektordner im Dateimanager (hier nur abgefangen)
         orig_open_ = QDesktopServices.openUrl

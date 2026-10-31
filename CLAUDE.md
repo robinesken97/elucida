@@ -235,7 +235,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Textformat (Menü Format): global `text_fmt`, je Tab optional eigenes (`tab_fmt[STATE_KEY]`, ε = `epsilon`, gespeichert als
   `text_tabs`); `main.text_format(key)` mischt. Der Dialog zeigt nur `TEXT_OPTS` des Tabs. Geschlossener Rahmen
   (`axes_frame`) Standard seit 1.24.
-- Navigation (Nutzerwunsch 2.3.1): Pfadleiste links in der Tab-Leiste `⌂ Übersicht › Projekt › Verbindung ▾`
+- Navigation (Nutzerwunsch 2.3.1): Pfadleiste in der Werkzeugleiste (Fensterbreite) `⌂ Übersicht › Projekt › Verbindung ▾`
   (`btn_home`/`btn_pub`/`btn_comp`, `_update_crumbs`, Verbindungsmenü `_fill_comp_menu`), `go_home`. Beispiele
   (`demo.is_demo`, Datenordner) nie in den Zuletzt-Listen. Löschen nur in den Papierkorb (`trash_folder`,
   `QFile.moveToTrash`, Nachfrage mit Dateien/Größe), nie endgültig; im Selbsttest nur mit Attrappe.
@@ -264,6 +264,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   begrenzt sie dann, −28 % gemessen). Jede Ergebnisseite über `result_page`: Karte füllt die Seite, Tabellen/Texte
   wachsen mit, reine Knopfreihen rechts, erster Knopf der letzten Reihe = Hauptknopf (blau, Symbol). Protokoll nur
   über Hilfe → Protokoll. Meldungen als Einblendung unten rechts (`_toast`), keine Statusleiste. Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
+  Spalte in allen Tabs gleich breit (`STYLE.COLUMN_W`, Trennlinie fest, Nutzerwunsch; breiter nur, wenn sonst
+  abgeschnitten): lange Beschriftungen kürzen (Langform in den Tooltip), Zahlenfelder `FIELD_W` 120, Listenknöpfe
+  in zwei Reihen (Hinzufügen / Auswahl). Leere Dateilisten ausgeblendet (`STYLE.hide_when_empty`). Fenster bedienbar
+  ab ~960 px (halber 1920er-Bildschirm): Tab-Leiste und Startbildschirm nicht breiter machen.
 - Tab-Reihenfolge wie die SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC · EPR ·
   X-Ray · DFT · Weitere; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
 - NMR-Tab: Abbildungen = Mnova-SVG (nicht aus Bruker 1r rechnen: Referenzierung weicht ab). Kern aus der Achse
@@ -386,7 +390,7 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `formats/ole.py` | OLE-Container (CFB v3) für bearbeitbare ChemDraw-Objekte in Word (`chemdraw_streams`, `write_cfb`). |
 | `si/lines.py` | SI-Zeilen: Elementaranalyse (mittlere Atommassen, Solvat, Grenze 0.4 %), UV-Vis-Zeile aus den ε-Ergebnissen, Absatz (`join_lines`) und eigener docx-Schreiber (`write_docx`, ohne Zusatzpaket; Dreilinien-Tabellen, OLE, Seitenumbruch), `two_per_page`, `chem_html`. |
 | `app/macos.py` | macOS ohne Titelleiste (Qt `ExpandedClientAreaHint`, Titel aus + leere kompakte NSToolbar per ctypes, Ampelknöpfe auf der Werkzeugleiste, Einzug `INSET`, im Vollbild NSToolbar aus), `TitleDrag` (freie Stellen ziehen/Doppelklick); nur mit Cocoa (`enabled()`, nie offscreen). Windows/Linux bewusst normal (rahmenlos hieße Snap nachbauen). |
-| `app/style.py` | Erscheinungsbild: Fusion + eigene Palette (hell/dunkel/System, Menü Format), zentrales Stylesheet, Karten (`card`), SVG-Symbole (`icon`), `tidy` (linke Spalte: Zahlenfelder ≤ 160 px, Knöpfe in natürlicher Breite), `hint_when_disabled` (Detailkarte erst nach Auswahl). Betrifft alle Tabs, nicht die Abbildungen. |
+| `app/style.py` | Erscheinungsbild: Fusion + eigene Palette (hell/dunkel/System, Menü Format), zentrales Stylesheet, Karten (`card`), SVG-Symbole (`icon`), `tidy` (linke Spalte: Zahlenfelder `FIELD_W`, Knöpfe in natürlicher Breite), `ColumnFit` (feste Spaltenbreite `COLUMN_W`), `hint_when_disabled` (Detailkarte erst nach Auswahl). Betrifft alle Tabs, nicht die Abbildungen. |
 | `tools/release_notes.py` | Release-Titel/-Notes für GitHub aus `CHANGELOG.md` + `CHANGELOG.de.md` (Release-Job in `build.yml`; fehlt die Version, scheitert das Release). |
 | `app/i18n.py` | Texte DE/EN; `T(_key, **kw)` (Parameter heißt `_key`, damit `key=` als Format-Argument geht). |
 | `formats/parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |

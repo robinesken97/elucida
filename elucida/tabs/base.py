@@ -229,11 +229,11 @@ def footer(tab, left_scroll):
     return col
 
 
-def fit_footer_column(tab, split, floor):
+def fit_footer_column(tab, split):
     """Spaltenbreite für Synthese/NMR wie in den anderen Tabs automatisch (STYLE.ColumnFit)."""
     ls, bar, col = tab._footer_parts
     ls.setMinimumWidth(0)
-    tab.column_fit = STYLE.fit_column(ls.widget(), ls, bar, col, split, floor=floor)
+    tab.column_fit = STYLE.fit_column(ls.widget(), ls, bar, col, split)
 
 
 def _export_word(tab):
@@ -585,7 +585,7 @@ class FigureTab(QWidget):
         split.addWidget(right_col)
         split.setSizes([left_col.minimumWidth(), 900])
         self._split = split
-        self.column_fit = STYLE.fit_column(left, ls, bar, left_col, split, floor=420)
+        self.column_fit = STYLE.fit_column(left, ls, bar, left_col, split)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
@@ -1110,7 +1110,7 @@ class OverlayTab(FigureTab):
         st = self.st
         g = QGroupBox(T("ov_curves"))
         v = QVBoxLayout(g)
-        row = QHBoxLayout()
+        row, row2 = QHBoxLayout(), QHBoxLayout()
         for txt, fn in ((T("ov_add_exp"), self.add_exp), (T("ov_add_sec"), self.add_sec),
                         (T("ov_add_calc"), self.add_calc), (T("ov_combine"), self.combine_selected),
                         ("↑", lambda: self.move_selected(-1)), ("↓", lambda: self.move_selected(1)),
@@ -1120,9 +1120,12 @@ class OverlayTab(FigureTab):
             if fn == self.combine_selected:
                 b.setToolTip(T("ov_combine_tip"))
                 self.btn_combine = b
-            row.addWidget(b)
-        row.insertWidget(3, self.tabs_button(list_style=True))
-        v.addLayout(row)
+            (row if fn in (self.add_exp, self.add_sec, self.add_calc) else row2).addWidget(b)
+        row.addWidget(self.tabs_button(list_style=True))
+        row.addStretch(1)
+        row2.addStretch(1)
+        v.addLayout(row)                                     # Hinzufügen / Auswahl: zwei Reihen (Spaltenbreite)
+        v.addLayout(row2)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), T("ov_type")])
         self.table.verticalHeader().setVisible(False)
@@ -1135,6 +1138,7 @@ class OverlayTab(FigureTab):
         self.table.itemSelectionChanged.connect(self.update_combine)
         QTimer.singleShot(0, self.update_combine)             # Anfangszustand (nichts markiert)
         v.addWidget(self.table)
+        STYLE.hide_when_empty(self.table)
         lay = self.lv
         lay.addWidget(g)
 
