@@ -2,6 +2,22 @@
 
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Layout:** the settings column has the same fixed width in every tab (no longer draggable); long labels shortened
+  (details in the tooltip), number fields narrower, list buttons in two rows (add / selection). Empty file lists stay
+  hidden until something is loaded. Cards, forms and dialogs use one spacing grid; the default button of every dialog
+  is highlighted.
+- **Navigation:** the path (Overview › Project › Compound) moved from the tab bar into the toolbar; "Compound" and
+  "SI (Word)" only show with an open compound. The window can be made narrower (about 960 px, half of a full-HD
+  screen).
+- **NMR:** Mnova documents of the compound at the top of the left column (file name, store, open in Mnova) instead of
+  the "Raw data" tab.
+- **Project page:** title over the full width, actions in a row below. Storing a Mnova document for the whole project
+  was removed (existing files stay in the folder `mnova/`).
+- **Start screen:** example project and example compound as links at the bottom.
+
 ## 2.4.0 – 2026-10-31
 
 ### New

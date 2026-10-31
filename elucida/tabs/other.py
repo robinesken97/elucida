@@ -13,7 +13,7 @@ import numpy as np
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLineEdit, QListWidget, QPushButton,
                                QVBoxLayout)
 
-from elucida.app import project as PRJ
+from elucida.app import project as PRJ, style as STYLE
 from elucida.app.i18n import T
 from elucida.app.style import make_form
 from elucida.tabs import base as TABS
@@ -106,6 +106,7 @@ class OtherTab(TABS.FigureTab):
         self.lst.setMinimumHeight(120)
         self.lst.currentRowChanged.connect(self.entry_selected)
         v.addWidget(self.lst)
+        STYLE.hide_when_empty(self.lst)
         row = QHBoxLayout()
         for txt, fn in ((T("other_add"), self.add_files), (T("other_up"), self.move_up), (T("remove"), self.remove)):
             b = QPushButton(txt)

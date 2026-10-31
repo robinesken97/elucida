@@ -768,9 +768,11 @@ class MainWindow(QMainWindow):
         # ---- linke Spalte
         left = QWidget()
         lv = QVBoxLayout(left)
+        lv.setContentsMargins(12, 12, 12, 12)            # wie STYLE.tidy in den übrigen Tabs
+        lv.setSpacing(12)
 
         forms = []
-        g, body = STYLE.card(T("grp_data"), "data")
+        g, body = STYLE.card(T("grp_data"))
         f = make_form(body)
         f.setContentsMargins(0, 0, 0, 0)
         forms.append(f)
@@ -796,7 +798,7 @@ class MainWindow(QMainWindow):
         f.addRow(T("series"), row)
         lv.addWidget(g)
 
-        g, body = STYLE.card(T("grp_compound"), "compound")
+        g, body = STYLE.card(T("grp_compound"))
         f = make_form(body)
         f.setContentsMargins(0, 0, 0, 0)
         forms.append(f)
@@ -877,7 +879,7 @@ class MainWindow(QMainWindow):
         self._color_spectra = None
         lv.addWidget(g)
 
-        g, body = STYLE.card(T("grp_eval"), "eval")
+        g, body = STYLE.card(T("grp_eval"))
         f = make_form(body)
         f.setContentsMargins(0, 0, 0, 0)
         forms.append(f)
@@ -923,7 +925,7 @@ class MainWindow(QMainWindow):
         compact(self.sp_d, self.sp_cut, self.sp_min, self.sp_r2)
         lv.addWidget(g)
 
-        g, body = STYLE.card(T("grp_plot"), "plot")
+        g, body = STYLE.card(T("grp_plot"))
         f = make_form(body)
         f.setContentsMargins(0, 0, 0, 0)
         forms.append(f)

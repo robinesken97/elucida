@@ -2,6 +2,22 @@
 
 # Änderungen
 
+## Unveröffentlicht
+
+### Geändert
+- **Aufbau:** Die Einstellungsspalte ist in allen Tabs gleich breit und fest (nicht mehr verschiebbar); lange
+  Beschriftungen gekürzt (Details im Tooltip), Zahlenfelder schmaler, Listenknöpfe in zwei Reihen (Hinzufügen /
+  Auswahl). Leere Dateilisten bleiben ausgeblendet, bis etwas geladen ist. Karten, Formulare und Dialoge mit einem
+  gemeinsamen Abstandsraster; der Standardknopf jedes Dialogs ist hervorgehoben.
+- **Navigation:** Der Pfad (Übersicht › Projekt › Verbindung) steht jetzt in der Werkzeugleiste statt in der
+  Tab-Leiste; „Verbindung“ und „SI (Word)“ erscheinen nur bei offener Verbindung. Das Fenster lässt sich schmaler
+  ziehen (etwa 960 px, halber Full-HD-Bildschirm).
+- **NMR:** Mnova-Dokumente der Verbindung oben in der linken Spalte (Dateiname, ablegen, in Mnova öffnen) statt im
+  Reiter „Rohdaten“.
+- **Projektseite:** Titel über die volle Breite, Aktionen in einer Zeile darunter. Mnova-Ablage für das ganze Projekt
+  entfernt (vorhandene Dateien bleiben im Ordner `mnova/`).
+- **Startbildschirm:** Beispielprojekt und Beispielverbindung als Links unten.
+
 ## 2.4.0 – 31.10.2026
 
 ### Neu

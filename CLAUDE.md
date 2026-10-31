@@ -412,6 +412,7 @@ pip install -r requirements.txt                       # Python 3.12 (wie CI)
 python Elucida.py                                     # App starten (oder python -m elucida)
 QT_QPA_PLATFORM=offscreen python Elucida.py --selftest selftest_out   # MUSS vor jedem Commit „OK“ melden
 python tools/build.py                                 # PyInstaller-Build (braucht: pip install pyinstaller)
+python tools/compare_figures.py vorher nachher        # Abbildungen zweier Selbsttest-Läufe pixelgenau (UI-Änderungen)
 python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots): Cover = Startbildschirm mit Beispielprojekt, Tabs leer mit Anleitung; alles nur dunkel (Nutzerwunsch)
 ```
 - Neue Funktion → eigener Abschnitt im `selftest()` (`elucida/selftest.py`) (Muster: `report.append("…: OK")`).

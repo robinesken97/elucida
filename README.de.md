@@ -329,8 +329,9 @@ als eigene Word-Datei oder im SI-Abschnitt.
 - **Rohdaten** (Reiter neben der Abbildung): **TopSpin-Daten …** nimmt ein Experiment, einen Datensatz (10, 11, …) oder
   einen Ordner mit mehreren Datensätzen – auch per Ziehen ins Fenster – und übernimmt jedes Experiment vollständig in
   die Verbindung, nach Art sortiert (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). Passt genau ein Experiment zu einem Spektrum,
-  wird es automatisch zugeordnet (Parameter, Temperatur). **Mnova-Dokumente** (`.mnova`) liegen in `data/nmr/mnova`;
-  Doppelklick öffnet sie.
+  wird es automatisch zugeordnet (Parameter, Temperatur).
+- **Mnova-Dokumente** (`.mnova`): Karte oben in der linken Spalte – ablegen (liegen in `data/nmr/mnova`) und in Mnova
+  öffnen.
 - Spektren können auch **EMF** aus Mnova sein: Sie gehen unverändert nach Word (Vektor, ohne eingesetzte Struktur); für
   Vorschau und Struktur SVG verwenden.
 - **Word:** zwei Spektren je Seite, „Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**.“

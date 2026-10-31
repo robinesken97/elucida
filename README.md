@@ -322,7 +322,9 @@ to Word or as part of the SI section.
 - **Raw data** (tab next to the figure): **TopSpin data …** takes an experiment, a dataset (10, 11, …) or a folder with
   several datasets – also by drag & drop – and copies each experiment completely into the compound, sorted by kind
   (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). If exactly one experiment fits a spectrum, it is assigned automatically
-  (parameters, temperature). **Mnova documents** (`.mnova`) are kept in `data/nmr/mnova`; double-click opens them.
+  (parameters, temperature).
+- **Mnova documents** (`.mnova`): card at the top of the left column – store them (kept in `data/nmr/mnova`) and
+  open them in Mnova.
 - Spectra can also be **EMF** from Mnova: they go into Word unchanged (vector, without the inserted structure); for the
   preview and the structure use SVG.
 - **Word:** two spectra per page, "Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**."

@@ -11,8 +11,9 @@ import shiboken6
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
-                               QScrollArea, QSizePolicy, QPushButton, QStyleFactory, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
+                               QHBoxLayout, QLabel, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyleFactory,
+                               QVBoxLayout, QWidget)
 
 COLORS = {
     # Abstufung wie im Entwurf: Seite < Karte, Felder etwas abgesetzt, warme Grautöne, dezente Ränder
@@ -33,11 +34,7 @@ _SVG = {
     "reveal": '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2h9A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15'
               'A1.5 1.5 0 0 1 3 17.5z"/><path d="M10 16l4.5-4.5M11.5 11.5h3v3"/>',
     "reset": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
-    "data": '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
     "compound": '<path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z"/><circle cx="12" cy="12" r="3.6"/>',
-    "eval": '<path d="M4 4v16h16"/><path d="M6.5 17.5 19 6"/><circle cx="9" cy="14.6" r="1.1"/>'
-            '<circle cx="13" cy="11.3" r="1.1"/><circle cx="16.6" cy="8.1" r="1.1"/>',
-    "plot": '<path d="M4 4v16h16"/><path d="M6 18c2.5 0 3-10 5.5-10S14 18 17 18c1.2 0 2-1 2.5-2"/>',
     "new": '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M13 12v6M10 15h6"/>',
     "save": '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
     "undo": '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
@@ -146,25 +143,20 @@ def list_button(txt):
 
 def hide_when_empty(table):
     """Dateiliste ohne Einträge ausblenden (Leer-Zustand: die Anleitung rechts nennt Dateien und ersten Schritt)."""
-    upd = lambda *_: shiboken6.isValid(table) and table.setVisible(table.rowCount() > 0)   # Neuaufbau: schon gelöscht
+    upd = lambda *_: shiboken6.isValid(table) and table.setVisible(table.model().rowCount() > 0)   # Neuaufbau: gelöscht
     m = table.model()
     for sig in (m.rowsInserted, m.rowsRemoved, m.modelReset):
         sig.connect(upd)
     upd()
 
 
-def card(title, icon_name=None):
-    """Gruppe als Karte mit Symbol im Titel. Gibt (Karte, Inhalts-Widget) zurück."""
+def card(title):
+    """Gruppe als Karte, Titel und Ränder wie QGroupBox in den übrigen Tabs. Gibt (Karte, Inhalts-Widget) zurück."""
     frame = QFrame(objectName="card")
     v = QVBoxLayout(frame)
-    v.setContentsMargins(12, 10, 12, 10)
-    v.setSpacing(6)
+    v.setContentsMargins(16, 12, 16, 16)
+    v.setSpacing(8)
     head = QHBoxLayout()
-    head.setSpacing(6)
-    if icon_name:
-        lb = QLabel(objectName="cardIcon")
-        lb.setPixmap(pixmap(icon_name, 16))
-        head.addWidget(lb)
     t = QLabel(title, objectName="cardTitle")
     head.addWidget(t)
     head.addStretch(1)
@@ -197,10 +189,10 @@ def tidy(root):
         top.setSpacing(12)
     for g in root.findChildren(QGroupBox):                    # Karten: gleicher Innenrand (oben sitzt der Titel)
         if g.layout() is not None and not any(isinstance(f, Fold) and f.group is g for f in g.children()):
-            g.layout().setContentsMargins(16, 6, 16, 14)
+            g.layout().setContentsMargins(16, 8, 16, 16)       # Raster 4/8/12/16
     for fl in root.findChildren(QFormLayout):
-        fl.setVerticalSpacing(10)
-        fl.setHorizontalSpacing(14)
+        fl.setVerticalSpacing(8)
+        fl.setHorizontalSpacing(12)
         for r in range(fl.rowCount()):
             it = fl.itemAt(r, QFormLayout.SpanningRole)
             if it is not None and isinstance(it.widget(), QPushButton):
@@ -303,7 +295,7 @@ def tidy(root):
 class _WheelGuard(QObject):
     """Mausrad über Zahlenfeldern und Auswahllisten in einer scrollbaren Spalte: ohne Fokus scrollt die Spalte weiter,
     statt beim Darüberfahren den Wert zu verstellen. Erst nach Anklicken (Fokus) ändert das Mausrad den Wert.
-    Einmal für die ganze Anwendung (apply)."""
+    Dazu einheitliche Dialogränder (16 px wie die Karten). Einmal für die ganze Anwendung (apply)."""
 
     def eventFilter(self, obj, ev):
         t = ev.type()
@@ -313,6 +305,9 @@ class _WheelGuard(QObject):
                 obj.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             if obj.property("fieldw"):                          # Rasterbreite nach dem Stylesheet erneut festsetzen
                 obj.setFixedWidth(FIELD_W)
+        elif (t == QEvent.Polish and isinstance(obj, QDialog) and not isinstance(obj, (QMessageBox, QFileDialog))
+              and obj.layout() is not None):
+            obj.layout().setContentsMargins(16, 16, 16, 16)
         elif t == QEvent.Wheel and isinstance(obj, (QAbstractSpinBox, QComboBox)) and not obj.hasFocus():
             p = obj.parentWidget()
             while p is not None and not isinstance(p, QScrollArea):
@@ -485,7 +480,7 @@ class Fold(QObject):
         self.opened = bool(on)
         self.body.setVisible(self.opened)
         lay = self.group.layout()                             # zugeklappt: nur die Titelzeile, kein leerer Innenrand
-        lay.setContentsMargins(16, 6 if self.opened else 0, 16, 14 if self.opened else 0)
+        lay.setContentsMargins(16, 8 if self.opened else 0, 16, 16 if self.opened else 0)
         if self.opened:
             self.group.setMinimumHeight(0)
             self.group.setMaximumHeight(16777215)
@@ -589,6 +584,9 @@ QPushButton:disabled {{ color: {c['disabled']}; background: {c['alt']}; }}
 QPushButton[accent="true"] {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
     font-weight: bold; }}
 QPushButton[accent="true"]:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
+QDialog QPushButton:default:enabled {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
+    font-weight: bold; }}
+QDialog QPushButton:default:enabled:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
 QTabWidget::pane {{ border: 1px solid {c['border']}; border-radius: 8px; background: {c['window']}; top: -1px; }}
 QTabBar::tab {{ background: transparent; color: {c['text2']}; border: 1px solid transparent; border-radius: 6px;
     padding: 4px 12px; margin: 3px 2px; }}
