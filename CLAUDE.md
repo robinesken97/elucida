@@ -248,7 +248,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Gruppe, ohne Gruppe am Ende; Gesamt-SI: Unterkapitel (`subsection`, Überschrift 2, TOC-Ebene 2) nur in Synthese und NMR.
   docx: Seitenumbruch als `pageBreakBefore` am nächsten Absatz (`_page_break_before`), pPr in Schema-Reihenfolge (`_ppr`).
 - Startbildschirm (`app/welcome.py`, F5): Projektkacheln (`PublicationTile`, höchstens zwei Reihen à `PUB_TILE_COLS`,
-  Fortschritt = vollständig laut `checklist`), darunter Verbindungen kompakt mit Filtern `WELCOME_FILTERS` (Alle =
+  Fortschritt = vollständig laut `checklist`), darunter Verbindungen (volle Zeilen, Robin) mit Filtern `WELCOME_FILTERS` (Alle =
   `search_index` nach Stand, 20 + „Mehr“); Projektliste aus der Projektdatei (Verbindung, Analytik-Abzeichen, Stand),
   Strukturbild nur aus `.elucida/thumb.png` (`write_thumb` beim Speichern, nur wenn die Struktur neuer ist) – nie beim
   Anzeigen rendern; bis 20 Projekte.

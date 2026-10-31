@@ -1944,13 +1944,15 @@ class MainWindow(QMainWindow):
             r.setParent(None)
             r.deleteLater()
         self.recent_rows, self.pub_rows = [], []
-        pubs = []
-        for p in self.recent_publications():          # Publikationen oben, je höchstens drei sichtbar
+        pubs, seen = [], set()
+        for p in self.recent_publications():          # Projekte oben als Kacheln, jeder Ordner einmal
             try:
                 info = publication_info(p)
+                key = Path(p).resolve()                # macOS: /var und /private/var sind derselbe Ordner
             except Exception:
                 info = None
-            if info is not None:
+            if info is not None and key not in seen:
+                seen.add(key)
                 pubs.append(info)
         shown = pubs if self._pubs_all else pubs[:2 * PUB_TILE_COLS]     # höchstens zwei Reihen (FB-2)
         for k, info in enumerate(shown):
@@ -1966,9 +1968,13 @@ class MainWindow(QMainWindow):
         self.lbl_pubs.setVisible(bool(pubs))
         self.btn_pubs_all.setVisible(len(pubs) > 2 * PUB_TILE_COLS)
         self.btn_pubs_all.setText(T("welcome_pubs_less") if self._pubs_all else T("welcome_pubs_all", n=len(pubs)))
+        for b in self.grp_filter.buttons():                # aktiver Filter hervorgehoben (blau wie Hauptknöpfe)
+            b.setProperty("accent", b.property("filter") == self._recent_filter)
+            b.style().unpolish(b)
+            b.style().polish(b)
         infos = self.compound_infos(self._recent_filter)
         for info in infos[:self._recent_limit]:
-            row = WEL.RecentRow(info, compact=True)
+            row = WEL.RecentRow(info)
             row.opened.connect(lambda p: self.open_project(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
             row.customContextMenuRequested.connect(lambda pos, r=row: self._recent_menu(r, pos))
@@ -2052,7 +2058,7 @@ class MainWindow(QMainWindow):
         self.lbl_pubs.setVisible(any(r.matches(t) for r in self.pub_rows))
         hits = [i for i in self._search_cache if WEL.info_matches(i, t)][:60]
         for info in hits:
-            row = WEL.RecentRow(info, compact=True)
+            row = WEL.RecentRow(info)
             row.opened.connect(lambda p: self.open_project(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
             row.customContextMenuRequested.connect(lambda pos, r=row: self._recent_menu(r, pos))

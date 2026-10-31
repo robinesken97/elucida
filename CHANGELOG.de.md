@@ -2,6 +2,58 @@
 
 # Änderungen
 
+## 2.4.0 – 31.10.2026
+
+### Neu
+- **Synthese:** allgemeine Vorschriften (GP A, B …) je Projekt, je Verbindung wählbar und in der Gesamt-SI einmal vor der
+  ersten Verbindung, die sie benutzt; ein umbenanntes GP-Kürzel ändert sich in allen Verbindungen des Projekts; Mengen mit Einheit in der Zelle („1.03 g“, „150 µL“, „800 mM“), Stoffmenge
+  eintragbar; „Aus Schema“ liest die ChemDraw-Reagenzientabelle; „Substanz übrig“ mit Probennummer (Startbildschirm ⚗,
+  Suche, Checkliste gelb statt rot).
+- **UV-Vis-Overlay:** „Aus Tabs ▾“ übernimmt ε-Serien (verknüpft mit dem ε-Tab, Messung wählbar) und TD-DFT-Rechnungen
+  des DFT-Tabs, ohne die Dateien neu zu laden.
+- **IR:** „Basislinie korrigieren (wie OPUS)“ (konkaves Gummiband wie OPUS-Basislinienmethode 3, Parameter aus dem
+  OPUS-Verlauf; Hinweis, wenn OPUS korrigiert hat, die Datei aber das Rohspektrum enthält); Schwellenlinie für die
+  Peaksuche (Klick = Punkt, Rechtsklick = entfernen); liegt nur das OPUS-PDF vor, wird das Spektrum aus dem PDF gelesen.
+- **DFT:** Isofläche wie in IboView; neuer Reiter **Energieprofil** (Opt/Freq + optionale Einzelpunkte, über die
+  Geometrie zugeordnet, ΔG/ΔH/ΔE in kcal mol⁻¹, Pfade, Unterschrift „SP//Opt level of theory“) mit **IRC**-Modus
+  (Reaktionskoordinate in Å, Barrieren); neuer Reiter **NICS** (Gaussian-NMR mit Geisteratomen: NICS und NICSzz, Scans
+  als Kurven).
+- **Tab „Weitere“** (letzter Tab): Abbildungen anderer Programme (PDF, SVG, PNG) unverändert in die SI, mit Unterschrift
+  und Kapitel (vorhandenes Kapitel oder eigene Überschrift).
+- **Schnellauswertung** auf dem Startbildschirm: Verbindung „Auswertung <Datum>“ in einem internen Projekt, Exporte
+  fragen nach dem Zielordner; später in ein echtes Projekt verschieben.
+- **Startbildschirm:** kompakte Projektkacheln mit Fortschritt (vollständig laut Checkliste), Verbindungsliste mit den
+  Filtern Alle · Zuletzt · Unvollständig · Substanz übrig, 20 neueste und „Mehr“.
+- **Mnova:** ein Mnova-Dokument kann auch für das ganze Projekt abgelegt werden; „In Mnova öffnen“ auf der Projektseite
+  und im NMR-Tab.
+- Hilfe → „Maus und Tastenkürzel“, Rückgängig bleibt im offenen Tab, Hinweise, wenn ein Schritt noch nicht geht.
+
+### Geändert
+- Datenpakete enthalten keine Mnova-Dokumente (.mnova) mehr.
+- IR-Bild wie der OPUS-Bericht (Labels in einer Reihe am Rand, Hilfslinien), Farbe des Spektrums wählbar.
+- ε immer ganzzahlig, Wert und Fehler („1234 ± 56“), dieselbe Zahl in Tabelle, Bild, SI-Zeile, Methodentext und
+  Excel; λ immer ganzzahlig.
+
+### Behoben (Prüfung aller Tabs mit echten Daten)
+- **UV-Vis (ε) und Overlay:** Probennamen mit Dezimalkomma, „µ“/„μ“ und CSV-Kodierungen; Skalierung und Einzelnormierung
+  im Overlay; Größe der y-Achse.
+- **CV und SEC:** Hinpeak eines Paars, Basislinie breiter Wellen, Potentiale von Spektren ohne Zeitspalte,
+  BWSpec-Dateien ohne Kalibrierung.
+- **HRMS, IR, EA:** Formeln mit allen Elementen, gemischte Polarität in Bruker-.d, nachverfolgte Löschungen im
+  MS-Bericht, OPUS-Transmission als Anteil/Prozent.
+- **X-Ray:** Vorzeichen von Torsionen invertierter Atome, Z′ = 2 gegenüber Lösungsmittel, Fehlordnungsgruppen,
+  Symmetriecodes in Unterschriften.
+- **DFT, TD-DFT, Orbitale:** Geometrien nach Gaussian-Link1, Spiegelbild im Vergleichsmodus, offenschalige
+  Molden-Dateien, TD-DFT-Ausgaben in UTF-16, Spin-Flip-Zustände.
+- **EPR:** Referenzfrequenz in Fit und Simulation, Kalibrierung bei „Alles auf Standard“, BES3T-Partnerdateien,
+  Zerfallsfit (jetzt kleinste Quadrate auf den gemessenen Intensitäten mit Vertrauensband).
+- **NMR, Synthese, Strukturen:** Zeilen des Mnova-Berichts, Multiplizitäten, DEPT-Namen, Rundung der ¹H-Frequenz,
+  Mengenprüfung.
+- **SI-Export, Datenpaket, Projekt:** Laborkürzel, Nutzernamen und Daten aus allen Dateien der Datenpakete entfernt
+  (Messwerte bytegleich), Details im Word-Export.
+- **Zustand und Rückgängig:** Einstellungen gingen nach Öffnen/Rückgängig verloren (Lösungsmittel je Serie,
+  EPR-Referenz), automatisches Speichern des Beispielprojekts.
+
 ## 2.3.7 – 25.10.2026
 
 ### Geändert

@@ -2,6 +2,55 @@
 
 # Changelog
 
+## 2.4.0 – 2026-10-31
+
+### New
+- **Synthesis:** general procedures (GP A, B …) per project, chosen per compound and written once before the first
+  compound that uses them in the full SI; renaming a GP key updates every compound of the project; amounts with units in the cell ("1.03 g", "150 µL", "800 mM"), amount of
+  substance as an entry; "From scheme" reads the ChemDraw reagent table; "sample left" with sample number (start
+  screen ⚗, search, checklist yellow instead of red).
+- **UV-Vis overlay:** "From tabs ▾" takes ε series (linked to the ε tab, measurement selectable) and TD-DFT
+  calculations of the DFT tab without loading the files again.
+- **IR:** "Correct baseline (as in OPUS)" (concave rubberband like OPUS baseline method 3, parameters from the OPUS
+  history; hint when OPUS corrected the spectrum but the file holds the raw one); threshold line for peak picking
+  (click = point, right-click = remove); with only the OPUS PDF the spectrum is read from the PDF.
+- **DFT:** isosurface controls like IboView; new page **Energy profile** (opt/freq + optional single points matched by
+  geometry, ΔG/ΔH/ΔE in kcal mol⁻¹, paths, caption "SP//Opt level of theory") with an **IRC** mode (reaction coordinate
+  in Å, barriers); new page **NICS** (Gaussian NMR with ghost atoms: NICS and NICSzz, scans as curves).
+- **Other tab** (last tab): figures from other programs (PDF, SVG, PNG) go into the SI unchanged, with caption and
+  chapter (existing chapter or own heading).
+- **Quick evaluation** on the start screen: a compound "Evaluation <date>" in an internal project, exports ask for the
+  target folder; move it into a real project later.
+- **Start screen:** compact project tiles with progress (complete according to the checklist), compound list with the
+  filters All · Recent · Incomplete · Sample left, 20 newest and "More".
+- **Mnova:** a Mnova document can also be stored for the whole project; "Open in Mnova" on the project page and in
+  the NMR tab.
+- Help → "Mouse and shortcuts", undo stays in the open tab, hints when a step is not possible yet.
+
+### Changed
+- Data packages no longer contain Mnova documents (.mnova).
+- IR figure like the OPUS report (labels in one row at the edge, guide lines), spectrum colour selectable.
+- ε is always an integer, value and error ("1234 ± 56"), the same number in table, figure, SI line, methods text and
+  Excel; λ always an integer.
+
+### Fixed (review of all tabs against real data)
+- **UV-Vis (ε) and overlay:** sample names with decimal comma, "µ"/"μ" and CSV encodings; overlay scaling and single
+  normalisation; y-axis quantity.
+- **CV and SEC:** forward peak of a couple, baseline of broad waves, potentials of spectra without a time column,
+  BWSpec files without calibration.
+- **HRMS, IR, EA:** formulas with all elements, mixed polarity in Bruker .d files, tracked deletions in the MS report,
+  OPUS transmittance as fraction/percent.
+- **X-Ray:** torsion signs of inverted atoms, Z′ = 2 versus solvent, disorder groups, symmetry codes in captions.
+- **DFT, TD-DFT, orbitals:** Gaussian Link1 geometries, mirror image in the comparison mode, open-shell Molden files,
+  UTF-16 TD-DFT outputs, spin-flip states.
+- **EPR:** reference frequency in fit and simulation, calibration with "Reset all", BES3T partner files, decay fit
+  (now least squares on the measured intensities with confidence band).
+- **NMR, synthesis, structures:** Mnova report lines, multiplicities, DEPT names, ¹H frequency rounding, amount checks.
+- **SI export, data package, project:** lab codes, user names and dates removed from all files of data packages
+  (measured values byte-identical), Word details.
+- **State and undo:** settings lost after opening/undo (solvent per series, EPR reference), autosave of the example
+  project.
+
 ## 2.3.7 – 2026-10-25
 
 ### Changed
