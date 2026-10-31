@@ -380,21 +380,20 @@ def parse_irc(text) -> dict:
 
 def parse_nics(text) -> dict:
     """Gaussian-NMR mit Geisteratomen (Bq, z. B. aus py.Aroma) -> dict(route, els, xyz (echte Atome), bq_xyz,
-    iso [ppm], tensor [3×3, ppm]). Lagen aus der letzten Orientierung vor den Abschirmungen (Ordnungszahl 0 = Bq),
-    Tensor in derselben Orientierung."""
+    iso [ppm], tensor [3×3, ppm]). Mehrere Jobs (Link1): der letzte NMR-Block; Lagen aus der letzten Orientierung
+    davor (Ordnungszahl 0 = Bq), Tensor in derselben Orientierung, Route des Jobs davor."""
     L = text.splitlines()
+    k = max((i for i, ln in enumerate(L) if "Magnetic shielding tensor (ppm)" in ln), default=None)
+    if k is None:
+        raise ValueError(T("dft_nics_none"))
     route = ""
-    for i, ln in enumerate(L):
-        if ln.strip().startswith("#") and i > 0 and L[i - 1].strip().startswith("---"):
+    for i in range(k):
+        if L[i].strip().startswith("#") and i > 0 and L[i - 1].strip().startswith("---"):
             j, parts = i, []
             while j < len(L) and not L[j].strip().startswith("---"):
                 parts.append(L[j].strip())
                 j += 1
-            route = "".join(parts)
-            break
-    k = next((i for i, ln in enumerate(L) if "Magnetic shielding tensor (ppm)" in ln), None)
-    if k is None:
-        raise ValueError(T("dft_nics_none"))
+            route = "".join(parts)                       # letzte Route vor dem Block = Job des Blocks
     o = max((i for i in range(k) if L[i].strip() in ("Input orientation:", "Standard orientation:")), default=None)
     if o is None:
         raise ValueError(T("dft_nics_none"))

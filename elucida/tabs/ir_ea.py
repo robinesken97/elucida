@@ -1097,10 +1097,11 @@ class IRMSTab(TABS.FigureTab):
         cfg["legend"] = False
         curves = [{"x": sp["wn"], "y": y, "color": st.get("ir_color") or IR_COLOR, "label": None, "ls": "-", "lw": 1.0}]
         labels = []
-        if self.btn_thr.isChecked() and st.get("ir_thr"):    # Schwellenlinie nur im Schwellenmodus (nie im Export)
+        if getattr(self, "_preview", False) and self.btn_thr.isChecked() and st.get("ir_thr"):   # nur Vorschau
             px_, py_ = np.array(sorted(st["ir_thr"])).T
-            lx = np.concatenate([[min(x0, px_.min())], px_, [max(x1, px_.max())]])
-            ly = np.concatenate([[py_[0]], py_, [py_[-1]]])
+            # dicht abgetastet: in %T ist die (in A lineare) ausgewertete Linie gekrümmt – Bild = Auswertung
+            lx = np.union1d(np.linspace(min(x0, px_.min()), max(x1, px_.max()), 400), px_)
+            ly = np.interp(lx, px_, py_)
             yv = (lambda a: a) if mode == "A" else to_transmission
             curves += [{"x": lx, "y": yv(ly), "color": "#d0021b", "ls": "--", "lw": 0.8, "label": None, "aux": True},
                        {"x": px_, "y": yv(py_), "color": "#d0021b", "ls": "None", "marker": "o", "ms": 3,
@@ -1142,7 +1143,11 @@ class IRMSTab(TABS.FigureTab):
         return F
 
     def render(self):
-        super().render()
+        self._preview = True                             # Schwellenlinie nur in der Vorschau, nie in Export/SI
+        try:
+            super().render()
+        finally:
+            self._preview = False
         if getattr(self, "_thr_cid", None) is not None:
             self.canvas.mpl_disconnect(self._thr_cid)
             self._thr_cid = None

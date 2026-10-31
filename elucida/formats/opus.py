@@ -102,11 +102,12 @@ def read_ir_pdf(path) -> list[float]:
 
 
 def _ticks(words, axis):
-    """Achsenbeschriftung: größte Gruppe ganzzahliger Werte auf einer Linie (x-Achse: gleiche Höhe, y: gleiche
+    """Achsenbeschriftung: größte Gruppe von Zahlen (x ganzzahlig, y auch mit Dezimalstellen) auf einer Linie (x-Achse: gleiche Höhe, y: gleiche
     Spalte) -> [(Wert, Pixel)] nach Pixel."""
     groups = {}
+    num = r"\d{1,4}" if axis == "x" else r"-?\d{1,4}(\.\d{1,3})?"   # y auch 0.0, 0.2 … (Absorbanz)
     for w in words:
-        if re.fullmatch(r"\d{1,4}", w[4]):
+        if re.fullmatch(num, w[4]):
             cx, cy = (w[0] + w[2]) / 2, (w[1] + w[3]) / 2
             line, pos = (cy, cx) if axis == "x" else (w[2], cy)       # y-Achse: rechtsbündige Spalte
             groups.setdefault(round(line), []).append((float(w[4]), pos))

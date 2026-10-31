@@ -1195,6 +1195,8 @@ class NMRTab(QWidget):
         lines = self.nmr_lines()
         if lines:
             (out / f"{base}.txt").write_text("; ".join(p for p, _ in lines) + "\n", encoding="utf-8")
+        if self.main.is_quick() and path.parent == out:  # Schnellauswertung: in den gewählten Ordner
+            path = (self.main.place_exports([path] + ([out / f"{base}.txt"] if lines else [])) or [path])[0]
         self.main.log_signal.emit(T("saved", p=str(path)))
         return path
 

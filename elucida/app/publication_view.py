@@ -669,9 +669,22 @@ def edit_procedures(parent, pdir):
         return
     dlg = ProceduresDialog(parent, PUB.load(pdir)["procedures"])
     if dlg.exec() == QDialog.Accepted:
-        data = PUB.load(pdir)
-        data["procedures"] = dlg.result()
-        PUB.save(pdir, data)
+        apply_procedures(getattr(parent, "main", None), pdir, dlg.result(), dlg.renames())
+
+
+def apply_procedures(main, pdir, procs, renames):
+    """Vorschriften speichern; umbenannte Kürzel wirken wie Variablen (Robin, F-Review): alle Verbindungen des
+    Projekts folgen (Zuordnung und „GP A“ im Text), die offene über ihren Zustand (ein Rückgängig-Schritt)."""
+    data = PUB.load(pdir)
+    data["procedures"] = procs
+    PUB.save(pdir, data)
+    open_dir = getattr(main, "project_dir", None)
+    PUB.rename_procedures(pdir, renames, skip=open_dir)
+    if open_dir and PUB.publication_of(open_dir) == Path(pdir).resolve() and \
+            PUB.rename_gp_in(main.syn_state, renames):
+        if main._built("syn"):
+            main.replace_tab("syn")
+        main.push_undo()
 
 
 class ProceduresDialog(QDialog):
@@ -682,7 +695,7 @@ class ProceduresDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(T("pub_procs"))
         self.resize(720, 520)
-        self.procs = [dict(p) for p in procs]
+        self.procs = [dict(p, _orig=p["key"]) for p in procs]      # _orig: Umbenennen an Verbindungen weitergeben
         v = QVBoxLayout(self)
         hint = QLabel(T("pub_procs_hint"), wordWrap=True)
         hint.setStyleSheet(HINT_CSS)
@@ -771,8 +784,14 @@ class ProceduresDialog(QDialog):
         for p in self.procs:
             if p["key"] and p["key"] not in seen:
                 seen.add(p["key"])
-                out.append(dict(p))
+                out.append({k: v for k, v in p.items() if k != "_orig"})
         return out
+
+    def renames(self):
+        """Umbenannte Kürzel {alt: neu} (Tausch A <-> B möglich)."""
+        keys = {p["key"] for p in self.result()}
+        return {p["_orig"]: p["key"] for p in self.procs
+                if p.get("_orig") and p["key"] and p["key"] != p["_orig"] and p["key"] in keys}
 
 
 def _check_list(names, checked=True):

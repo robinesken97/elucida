@@ -83,7 +83,10 @@ def species_energies(opt, sp=None) -> dict:
     """Absolute Energien [Eh] einer Spezies: E, H, G (fehlende Thermochemie -> Schlüssel fehlt). Mit Einzelpunkt
     E = E(SP), H/G = E(SP) + Korrektur der Opt/Freq-Rechnung."""
     th = opt.get("thermo") or {}
-    e_el = float(th.get("E_el") or opt["energy"])
+    e = th.get("E_el") or opt.get("energy")
+    if e is None or (sp is not None and sp.get("energy") is None):   # abgebrochen: keine Energie -> keine Größe
+        return {}
+    e_el = float(e)
     base = float(sp["energy"]) if sp is not None else e_el
     out = {"E": base}
     for k in ("H", "G"):
@@ -299,7 +302,9 @@ class DftPages:
         for p in self.prof["sp"]:
             if Path(p).exists():
                 try:
-                    out.append((p, self.tab.calc_file(p), self.tab.calc_geom(p)[0]))
+                    c = self.tab.calc_file(p)
+                    if c.get("energy") is not None:              # abgebrochener Einzelpunkt zählt nicht
+                        out.append((p, c, self.tab.calc_geom(p)[0]))
                 except Exception:
                     continue
         return out
@@ -367,7 +372,7 @@ class DftPages:
             return float(curves[0]["E"][curves[0]["ts"]])
         if ref.startswith("e:"):
             e = next((x for x in self.calc_entries() if x["uid"] == ref[2:]), None)
-            if e is not None:
+            if e is not None and species_energies(self.tab.calc_of(e)):
                 return species_energies(self.tab.calc_of(e))["E"]
         return float(curves[0]["E"][0])
 

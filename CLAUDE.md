@@ -94,6 +94,12 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   IR-Bild wie der OPUS-Bericht (Nutzerwunsch P10): Labels senkrecht in einer Reihe am Rand, Hilfslinien senkrecht –
   schräg – senkrecht zum Peak (`IRFigure`), ohne Nachkommastellen; %T oben 100 + 2 % (Basislinie sichtbar);
   Farbe des Spektrums wählbar (`ir_color`).
+  Basislinie (F3, Haken `ir_base`, Standard aus): konkaves Gummiband wie OPUS-Methode 3 (Patent US 7359815, Amplitude
+  Spannweite/2,2 an einem OPUS-8.5-Bericht angepasst, RMS 0,06 %T), BPO/BIO aus dem OPUS-Verlauf, in Absorbanz; nur Bild
+  und Peaksuche, nie die Datei; Hinweis, wenn der Verlauf korrigiert und die Datei roh ist. Schwellenlinie (`ir_thr`,
+  [ṽ, A], RESET_KEEP): Peaks jenseits der Linie statt Mindesttiefe, Linie nur im Schwellenmodus (nie im Export), mit
+  OPUS-PDF gesperrt. Nur OPUS-PDF: Kurve aus den Vektorlinien (`read_ir_pdf_curve`, x stückweise zwischen den Ticks –
+  OPUS staucht über 2000 cm⁻¹), unbekanntes Layout ablehnen; Peakwerte bleiben die des PDF.
 - HRMS-Tab (seit 1.21) und IR + EA getrennt; `irms`-Zustand alter Projekte: MS-Schlüssel nach `hrms` übernehmen (set_state).
   Spektrum = Linienspektren (Centroide), keine Profilkurve; Isotopenmuster nur zum Vergleich, found bleibt gemessen.
 - X-Ray ausrichten: Bildkoordinaten x rechts, y oben, z zum Betrachter; Bindung/Ebene über kleinste Drehung
@@ -198,6 +204,20 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   X-Ray, DFT; Auswahl in QSettings `si_parts`); DFT zweispaltig über fortlaufenden Abschnittswechsel (`("columns", 2)`
   in `write_docx`). Ohne Charakterisierung nur der Name als Überschrift. `settings.xml` mit compatibilityMode 15
   (sonst Kompatibilitätsmodus).
+- DFT-Energieprofil/IRC/NICS (F4, `tabs/dft_pages.py`, Reiter neben „Abbildung“): Spezies = Opt/Freq-Einträge,
+  Einzelpunkte nur über gleiche Atome/Koordinaten (± 0.02 Å, nie Dateinamen); G = E(SP) + (G − E_el), H analog, ΔE = E(SP);
+  haben einige Spezies SP, fallen die übrigen weg (Hinweis, nie mischen); SP ohne Lösungsmittel bei SMD/CPCM-Opt nur
+  Hinweis. kcal mol⁻¹, eine Nachkommastelle, echtes Minus, Bezug = erste Spezies; Unterschrift „<SP>//<Opt> level of
+  theory“ (übliche Reihenfolge, Robin) mit T/p; Methode aus den „!“-Zeilen (`level_of_theory`, Schreibweise wie in der
+  Eingabe). IRC nur ΔE_el (nie mit G-Stufen), x = Σ|ΔR| der Trajektorie (TS = 0) oder Bindungsspalte, verschiedene
+  Methoden ablehnen. NICS = −σ_iso, NICSzz = −n·σ·n (n = Ebene der Schweratome < 2,5 Å um das Bq), Scan ab 10 Bq
+  (NICS schwarz, NICSzz rot). Isowert-Bedienung wie IboView („Threshold Type“ density/absolute, absolut Standard 0.01).
+- Tab „Weitere“ (F5, `tabs/other.py`, letzter Tab): fremde PDF/SVG/PNG unverändert (PNG direkt, SVG + PNG-Ersatz, PDF
+  als SVG mit Text als Pfaden), Seitenverhältnis, Unterschrift + Kapitel (SI-Kapitel oder eigene Überschrift = eigenes
+  Kapitel am Ende der Gesamt-SI, `new:<Überschrift>` in den Teilen); nie im Datenpaket. .mnova nie im Datenpaket
+  (FB-10), Ablage auch je Projekt (`publication.elucida` `mnova`, Ordner `mnova/`), „In Mnova öffnen“ = Standardprogramm.
+  Schnellauswertung: internes Projekt `<Datenordner>/Einzelauswertungen` (`quick_dir`), Exporte dort in einen gewählten
+  Ordner (`place_exports`, QSettings `quick_export_dir`), nie automatisch löschen.
 - SI-Abbildungen (Nutzerwunsch): **immer zwei je Seite** (`SI.two_per_page`: Text vor Abbildungen beginnt eine Seite und
   zählt mit; Bilder im Seitenverhältnis verkleinern, bis Bild + Unterschrift passen – 16 × 11 cm mit zweizeiliger
   Unterschrift sind zu zweit zu hoch). Reihenfolge `figure_tabs` (IR, HRMS, ε je Serie, Overlay, Fluoreszenz, CV, SEC,
@@ -227,7 +247,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Gruppen (Nutzerwunsch 2.3.3): `groups` (Reihenfolge) + `group_of` (Eintrag -> Gruppe) im Index; `sync` ordnet nach
   Gruppe, ohne Gruppe am Ende; Gesamt-SI: Unterkapitel (`subsection`, Überschrift 2, TOC-Ebene 2) nur in Synthese und NMR.
   docx: Seitenumbruch als `pageBreakBefore` am nächsten Absatz (`_page_break_before`), pPr in Schema-Reihenfolge (`_ppr`).
-- Startbildschirm (`app/welcome.py`): Projektliste aus der Projektdatei (Verbindung, Analytik-Abzeichen, Stand),
+- Startbildschirm (`app/welcome.py`, F5): Projektkacheln (`PublicationTile`, höchstens zwei Reihen à `PUB_TILE_COLS`,
+  Fortschritt = vollständig laut `checklist`), darunter Verbindungen kompakt mit Filtern `WELCOME_FILTERS` (Alle =
+  `search_index` nach Stand, 20 + „Mehr“); Projektliste aus der Projektdatei (Verbindung, Analytik-Abzeichen, Stand),
   Strukturbild nur aus `.elucida/thumb.png` (`write_thumb` beim Speichern, nur wenn die Struktur neuer ist) – nie beim
   Anzeigen rendern; bis 20 Projekte.
 - Navigation: Tabs in vier Gruppen als Leiste **oben** (`nav_bar`, `NAV_GROUPS`), Reiter ausgeblendet. Keine Leisten
@@ -242,7 +264,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   wachsen mit, reine Knopfreihen rechts, erster Knopf der letzten Reihe = Hauptknopf (blau, Symbol). Protokoll nur
   über Hilfe → Protokoll. Meldungen als Einblendung unten rechts (`_toast`), keine Statusleiste. Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
 - Tab-Reihenfolge wie die SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC · EPR ·
-  X-Ray · DFT; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
+  X-Ray · DFT · Weitere; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
 - NMR-Tab: Abbildungen = Mnova-SVG (nicht aus Bruker 1r rechnen: Referenzierung weicht ab). Kern aus der Achse
   („δ ¹H (ppm)“, senkrecht = 2D), sonst von Hand; Reihenfolge ¹H, ¹³C, übrige nach Massenzahl, dann 2D (`sort_key`).
   NMR-Zeile aus dem Mnova-Bericht (alle Kerne in einem Feld), ¹H-Frequenz auf 50 MHz gerundet (501 → 500; nur bis ±5 MHz daneben, 270/360 bleiben, Nutzerwunsch P7); ¹³C auch aus
@@ -265,7 +287,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Spalte (alte Projekte); SI wie eingegeben; n eintragbar (`n_mmol`, zählt, wenn n nicht aus m/V berechenbar ist, z. B. Harz ohne M; SI wie eingegeben). ChemDraw-Reagenzientabelle
   (`<stoichiometrygrid>` in der Schema-CDXML, `CDX.stoich_grid`/`grid_row`): Moleküle/Formeln von dort, limitierend =
   Bezug, eingegebene Werte roh, berechnete 3 gültige Stellen, Produkt nur Produktmasse, nur leere Zellen füllen (F1).
-  Allgemeine Vorschriften (Nutzerwunsch F1): im Projekt (`procedures`), je Verbindung `syn.gp` (Knopf „GP ▾“); Gesamt-SI
+  Allgemeine Vorschriften (Nutzerwunsch F1): im Projekt (`procedures`), je Verbindung `syn.gp` (Knopf „GP ▾“); Kürzel
+  wie Variablen (Robin): Umbenennen zieht in allen Verbindungen mit (`gp` und „GP A“ im Text, Tausch möglich;
+  `PUB.rename_procedures`, offene Verbindung über ihren Zustand + Undo); Gesamt-SI
   einmal direkt vor der ersten Verbindung, die sie benutzt (nie umsortieren), Einzel-SI davor; Gruppen-Unterkapitel
   abschaltbar (`group_headings`). „Substanz übrig“ (`compound.sample`/`sample_no`, wie Characterization): nur intern
   (Startbildschirm ⚗, Suche, Checkliste gelb statt rot, `elucida.json`), nie SI/Datenpaket.
@@ -353,6 +377,8 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `tabs/hrms.py` | Tab HRMS: Chromatogramm (TIC/XIC, LC-Bereich per `SpanSelector`), gemitteltes Linienspektrum (`averaged_spectrum`, 5 ppm), Peak per Klick, Isotopenmuster (`isotope_pattern`, Isotope aus RDKit, Feinstruktur bis m/20000 zusammengefasst). Leser/Ionenmassen in `tabs/ir_ea.py`. |
 | `tabs/dft.py` | Tab DFT: xyz-Leser (mehrere Bilder, Ordnungszahlen), `read_text` (UTF-16), `parse_orca`/`parse_gaussian`/`read_calc`, `si_parts`/`computational_details` (SI-Block, englisch), `match_reference`/`kabsch` (Vergleichsmodus), `bonds_of` (kovalente Radien wie X-Ray), `XyzMolecule`, `renumber`, `write_xyz`, `DFTTab` (Klick-Nummerierung, SI kopieren, Word), `make_test_xyz`/`make_test_orca`/`make_test_gaussian`. Zuschnitt der SI-Bilder: `XRAY.save_tight`. |
 | `tabs/nmr.py` | Tab NMR: `svg_info`/`svg_peaks` (Mnova-SVG), Bruker `acq_params`, `parse_mnova`/`nmr_line`, `caption_html`, Strukturplatzierung (`occupancy`, `auto_place`, `compose_structure`), `NMRTab`, `make_test_svg`/`make_test_acqus`. |
+| `tabs/dft_pages.py` | DFT-Reiter Energieprofil (Stufen, Einzelpunkte, IRC) und NICS: `level_of_theory`, `species_energies`, `profile_rows`, `irc_curve`, `nics_points`/`nics_pairs`, `DftPages` (Oberfläche, Abbildungen, Export, SI). Leser `parse_irc`/`parse_nics` in `formats/calc.py`. |
+| `tabs/other.py` | Tab „Weitere“: fremde Abbildungen (`render_rgba`, `natural_cm`, `word_image`), `OtherTab` (Kapitel/Überschrift, `chapter_blocks`). |
 | `tabs/synthesis.py` | Tab Synthese: `parse_amounts`/`check_amounts` (Rundung), `row_amounts`/`amount_text`, `scheme_files`/`scheme_molecules`/`scheme_drawing`, `doc_to_html`, `SynthTab`. |
 | `formats/` (Leser) | Dateiformate ohne Qt/Tabs (nur `i18n` für Fehlertexte), seit 2.2 aus den Tabs herausgelöst; die Tab-Module leiten die alten Namen weiter (`CVMOD.read_gamry` usw. bleibt gültig): `gamry.py` (.DTA), `bwspec.py` (SEC-Spektren), `epr.py` (BES3T, ASCII, EasySpin), `opus.py` (OPUS + PDF), `ms_report.py` (MS-Bericht .docx, EMF-Texte, CDX), `bruker_ms.py` (Bruker .d/BAF), `topspin.py` (acqus, Experimentart), `mnova.py` (SVG/EMF), `cif.py` (`Block`, `num`), `calc.py` (xyz, ORCA, Gaussian), `orbital_files.py` (Cube, Molden), `elements.py` (`ELEMENTS`, `BOHR`, `COV`, `element_of`). Neue Leser hierher, nicht in die Tabs. Cary/DSW/Eclipse bleiben in `core/uvvis.py` (Meldungen über `core.LOG`). |
 | `formats/cdxml.py` | CDXML selbst zeichnen (`render_svg`: Bindungen, Labels, Formelstil, Pfeile, Texte; Labels für CDXML ohne `<t>`), `scheme_texts`/`scheme_reagents`. |

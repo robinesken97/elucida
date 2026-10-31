@@ -361,6 +361,45 @@ def check_label(key) -> str:
 
 
 # -- Verbindungen zwischen Projekten verschieben/kopieren (Zugehörigkeit = Ordner im Projekt) --------------------
+def rename_gp_in(syn, mapping) -> bool:
+    """Synthese-Zustand einer Verbindung an umbenannte GP-Kürzel anpassen (gleichzeitig, Tausch A <-> B):
+    Zuordnung `gp` und jedes „GP A“ im Vorschrifttext. -> geändert?"""
+    mapping = {o: n for o, n in (mapping or {}).items() if o and n and o != n}
+    if not mapping or not isinstance(syn, dict):
+        return False
+    changed = False
+    if syn.get("gp") in mapping:
+        syn["gp"] = mapping[syn["gp"]]
+        changed = True
+    pat = re.compile(r"\bGP (" + "|".join(map(re.escape, sorted(mapping, key=len, reverse=True))) + r")\b")
+    txt = syn.get("proc") or ""
+    new = pat.sub(lambda m: "GP " + mapping[m.group(1)], txt)
+    if new != txt:
+        syn["proc"] = new
+        changed = True
+    return changed
+
+
+def rename_procedures(pdir, mapping, skip=None) -> list[Path]:
+    """Umbenannte GP-Kürzel in allen (geschlossenen) Verbindungen des Projekts nachziehen; skip = offene Verbindung
+    (folgt über ihren Zustand). Projektdatei atomar. -> geänderte Ordner."""
+    out = []
+    for cdir in sync(pdir)[0] if mapping else []:
+        if skip and Path(cdir).resolve() == Path(skip).resolve():
+            continue
+        pf = PRJ.project_file(cdir)
+        try:
+            st = yaml.safe_load(pf.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        if rename_gp_in(st.get("syn"), mapping):
+            tmp = pf.with_name(pf.name + ".tmp")
+            tmp.write_text(yaml.safe_dump(st, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            os.replace(tmp, pf)
+            out.append(Path(cdir))
+    return out
+
+
 MNOVA_DIR = "mnova"
 
 
@@ -375,8 +414,13 @@ def add_mnova(pdir, src) -> Path:
         dst = src
     else:
         dst = pdir / MNOVA_DIR / src.name
+        k = 2
+        while dst.exists() and dst.read_bytes() != src.read_bytes():   # anderes Dokument gleichen Namens: nie überschreiben
+            dst = pdir / MNOVA_DIR / f"{src.stem}_{k}{src.suffix}"
+            k += 1
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+        if not dst.exists():
+            shutil.copy2(src, dst)
     data = load(pdir)
     rel = dst.resolve().relative_to(pdir.resolve()).as_posix()
     if rel not in data["mnova"]:

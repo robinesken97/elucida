@@ -158,9 +158,12 @@ def collect(state, project_dir) -> list[Item]:
             d = pdir / sub
             if d.is_dir():
                 for f in sorted(d.rglob("*")):
-                    if f.is_file():
+                    if f.is_file() and not OTHER_EXPORT_RE.search(f.stem):   # Tab „Weitere“: nie im Datenpaket
                         add("elucida", f, f"Elucida/{f.relative_to(pdir).as_posix()}")
     return items
+
+
+OTHER_EXPORT_RE = re.compile(r"_Figure_\d+$")    # Exporte des Tabs „Weitere“ (<Name>_Figure_<n>, EXPORT_LABEL)
 
 
 def find_codes(items, read_text=True, limit=2_000_000) -> list[str]:

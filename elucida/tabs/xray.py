@@ -4363,6 +4363,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.write_excel(p)
         except PermissionError:
             return self.main.error(T("report_locked", p=p))
+        if self.main.is_quick():                        # Schnellauswertung: in den gewählten Ordner
+            p = (self.main.place_exports([p]) or [p])[0]
         self.main.exported([p.parent])
 
     # -- Export -----------------------------------------------------------------------------

@@ -2417,10 +2417,12 @@ TEXTS = {
     "pub_procs": ("Allgemeine Vorschriften", "General procedures"),
     "pub_procs_hint": ("Je Reaktionstyp eine Vorschrift (GP A, GP B …). Im Synthese-Tab wählt jede Verbindung ihre GP "
                        "(Knopf „GP“); dort stehen nur die spezifischen Angaben. In der Gesamt-SI steht die GP einmal, "
-                       "direkt vor der ersten Verbindung, die sie benutzt. Absätze durch Leerzeilen, Formeln wie CH2Cl2.",
+                       "direkt vor der ersten Verbindung, die sie benutzt. Absätze durch Leerzeilen, Formeln wie CH2Cl2. "
+                       "Ein umbenanntes Kürzel ändert sich in allen Verbindungen mit (Zuordnung und „GP A“ im Text).",
                        "One procedure per reaction type (GP A, GP B …). In the Synthesis tab each compound chooses its GP "
                        "(button “GP”) and holds only the specific details. The combined SI shows each GP once, right "
-                       "before the first compound using it. Paragraphs separated by blank lines, formulas like CH2Cl2."),
+                       "before the first compound using it. Paragraphs separated by blank lines, formulas like CH2Cl2. "
+                       "A renamed key changes in all compounds (assignment and “GP A” in the text)."),
     "pub_procs_add": ("Neu", "New"),
     "pub_procs_key": ("Kürzel", "Label"),
     "pub_procs_title": ("Titel", "Title"),

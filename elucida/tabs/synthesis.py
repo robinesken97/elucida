@@ -1001,6 +1001,8 @@ class SynthTab(QWidget):
         except PermissionError:
             self.main.error(T("report_locked", p=path))
             return None
+        if self.main.is_quick():                        # Schnellauswertung: in den gewählten Ordner
+            path = (self.main.place_exports([path]) or [path])[0]
         self.main.log_signal.emit(T("saved", p=str(path)))
         return path
 

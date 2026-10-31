@@ -3479,6 +3479,7 @@ class MainWindow(QMainWindow):
             pdir = Path(self.project_dir)
             name = core.safe_name(self.export_name())
             p = SI.write_docx(PRJ.export_dir(pdir, PRJ.SI_DIR) / f"{name}_SI.docx", blocks)
+            p = (self.place_exports([p]) or [p])[0] if self.is_quick() else p     # Schnellauswertung: Zielordner
         except PermissionError as e:
             return self.error(T("report_locked", p=getattr(e, "filename", "")))
         except Exception as e:

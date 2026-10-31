@@ -5337,6 +5337,146 @@ def selftest(outdir, with_isnet=False):
         mods_ = [r_.info["modified"] for r_ in w.recent_rows]
         assert mods_ == sorted(mods_, reverse=True)                                     # neueste zuerst
         report.append("F5: Mnova (project, open, not in data package), quick evaluation, home screen, Other tab: OK")
+
+        # Codex-Gegenlesen F3–F5: je Fall ein Fund, der vor dem Fix scheiterte; dazu GP-Kürzel wie Variablen
+        from elucida.tabs import dft_pages as PG5
+        from elucida.formats import calc as CALC5
+        from elucida.tabs import ir_ea as IR5
+        rv_ = []
+
+        def chk5_(name, fn):
+            try:
+                fn()
+            except Exception as e_:
+                rv_.append(f"{name}: {type(e_).__name__} {e_}"[:200])
+
+        def r1_():                                       # abgebrochene Rechnung ohne Energie: kein Absturz
+            assert PG5.species_energies({"thermo": {}, "energy": None}) == {}
+            rows_, notes_ = PG5.profile_rows([dict(label="X", step=0, paths=["A"], opt={"thermo": {}, "energy": None},
+                                                   sp=None)], "G")
+            assert rows_ == [] and notes_, notes_
+        chk5_("energy missing", r1_)
+
+        def r2_():                                       # zwei NMR-Jobs: alles aus dem letzten
+            def job(route, z, iso):
+                return [" ------", f" #p nmr=giao {route}", " ------", "                          Input orientation:",
+                        " ---", " h", " h", " ---", "      1          6           0    0.000000 0.000000 0.000000",
+                        "      2          6           0    1.400000 0.000000 0.000000",
+                        "      3          6           0    0.700000 1.200000 0.000000",
+                        f"      4          0           0    0.700000 0.400000 {z:9.6f}", " ---",
+                        " SCF GIAO Magnetic shielding tensor (ppm):",
+                        f"      4  Bq   Isotropic =    {iso:8.4f}   Anisotropy =    1.0000",
+                        "   XX=     1.0000   YX=     0.0000   ZX=     0.0000",
+                        "   XY=     0.0000   YY=     1.0000   ZY=     0.0000",
+                        "   XZ=     0.0000   YZ=     0.0000   ZZ=     1.0000"]
+            n_ = CALC5.parse_nics("\n".join(job("b3lyp/6-31g", 1.0, 5.0) + job("cam-b3lyp/6-311g", 1.7, 9.0)))
+            assert "cam-b3lyp" in n_["route"] and n_["iso"][0] == 9.0 and n_["bq_xyz"][0][2] == 1.7, n_
+        chk5_("NICS last job", r2_)
+
+        def r3_():                                       # Schwelle in %T: gezeichnete = ausgewertete Linie
+            t_ir5 = w.irms_tab
+            t_ir5.load_ir(str(irdir / "base.0"))
+            w.irms_state["ir_thr"] = [[3800.0, float(IR5.to_absorbance([90.0])[0])],
+                                      [600.0, float(IR5.to_absorbance([10.0])[0])]]
+            t_ir5.sync_widgets()
+            t_ir5.btn_thr.setChecked(True)
+            t_ir5.render()
+            ln_ = next(l_ for l_ in t_ir5.F.ax.lines if l_.get_linestyle() == "--")
+            xs_, ys_ = np.asarray(ln_.get_xdata(), float), np.asarray(ln_.get_ydata(), float)
+            o_ = np.argsort(xs_)
+            mid_ = float(np.interp(2200.0, xs_[o_], ys_[o_]))
+            want_ = float(IR5.to_transmission(np.interp(2200.0, [600.0, 3800.0], IR5.to_absorbance([10.0, 90.0]))))  # ≈ 30, nicht 50 %T
+            assert abs(mid_ - want_) < 0.5, (mid_, want_)
+            fig_ = MplFigure(figsize=(6, 4))
+            FigureCanvasAgg(fig_)
+            Fx_ = t_ir5.build(fig_)                       # Export/SI: nie die Schwellenlinie
+            assert not any(l_.get_linestyle() == "--" for l_ in Fx_.ax.lines)
+            t_ir5.btn_thr.setChecked(False)
+            t_ir5.clear_ir()
+        chk5_("IR threshold", r3_)
+
+        def r4_():                                       # Absorbanz-PDF mit Achsenwerten 0.0, 0.2 …
+            d_ = pymupdf.open()
+            pg_ = d_.new_page(width=842, height=595)
+            for v_, x_ in ((3000, 200.0), (2000, 350.0), (1000, 642.0), (500, 789.0)):
+                pg_.insert_text((x_ - pymupdf.get_text_length(str(v_), fontsize=10) / 2, 548), str(v_), fontsize=10)
+            for i_, v_ in enumerate(("0.0", "0.2", "0.4", "0.6")):
+                pg_.insert_text((41.0 - pymupdf.get_text_length(v_, fontsize=10), 388.0 - 100 * i_), v_, fontsize=10)
+            sh_ = pg_.new_shape()
+            sh_.draw_polyline([pymupdf.Point(200 + 5 * i_, 300 - 50 * np.sin(i_ / 10)) for i_ in range(100)])
+            sh_.finish(color=(0, 0, 0))
+            sh_.commit()
+            pg_.insert_text((380, 570), "Wavenumber cm-1", fontsize=10)
+            pg_.insert_text((5, 300), "Absorbance", fontsize=10, rotate=90)
+            d_.save(str(irdir / "abs_only.pdf"))
+            cv_ = IR5.read_ir_pdf_curve(irdir / "abs_only.pdf")
+            assert cv_["kind"] == "A" and 0.0 < cv_["y"].max() < 0.6, (cv_["kind"], cv_["y"].max())
+        chk5_("IR PDF absorbance ticks", r4_)
+
+        def r5_():                                       # eigenes Kapitel nach DFT wieder einspaltig
+            img_ = ("image", str(f5d_ / "dsc.png"), 5.0, 2.5, None)
+            bl_ = PSI.assemble({}, [("X", {"dft": [("text", "x")], "new:Thermal": [img_, ("figcap", "c")]})],
+                               ["dft"], toc=False)
+            i_ = [b_[0] for b_ in bl_].index("section", 1)
+            assert bl_[i_ - 1] == ("columns", 1), bl_
+        chk5_("SI columns after DFT", r5_)
+
+        def r6_():                                       # Exporte des Tabs „Weitere“ nie im Datenpaket
+            fd_ = Path(w.project_dir or out / "f5") / "figures"
+            fd_.mkdir(parents=True, exist_ok=True)
+            (fd_ / "X_Figure_1.png").write_bytes(b"png")
+            (fd_ / "X_IR.png").write_bytes(b"png")
+            arcs_ = [i_.arc for i_ in DP.collect({}, fd_.parent)]
+            assert any(a_.endswith("X_IR.png") for a_ in arcs_) and not any("X_Figure_1" in a_ for a_ in arcs_), arcs_
+        chk5_("data package without Other exports", r6_)
+
+        def r7_():                                       # Schnellauswertung: auch Word der Synthese fragt
+            w.open_project(str(qd5_ / sorted(p_.name for p_ in qd5_.iterdir() if PRJ.is_project(p_))[0]))
+            pump()
+            assert w.is_quick()
+            tgt_ = out / "f5" / "export_syn"
+            tgt_.mkdir(exist_ok=True)
+            real_ = MW.QFileDialog
+            MW.QFileDialog = type("FD6", (), {"getExistingDirectory": staticmethod(lambda *a_, **k_: str(tgt_))})
+            try:
+                w.syn_tab.st["name"] = "Q"
+                p_ = w.syn_tab.export_dialog()
+            finally:
+                MW.QFileDialog = real_
+            w.go_home()
+            assert p_ is not None and Path(p_).parent == tgt_ and Path(p_).exists(), p_
+        chk5_("quick export synthesis", r7_)
+
+        def r8_():                                       # gleichnamige Mnova-Dokumente: nie überschreiben
+            a_ = out / "f5" / "a" / "Paper.mnova"
+            a_.parent.mkdir(parents=True, exist_ok=True)
+            a_.write_bytes(b"OTHER")
+            d2_ = PUB.add_mnova(pub2_, a_)
+            assert d2_.name == "Paper_2.mnova" and (Path(pub2_) / "mnova" / "Paper.mnova").read_bytes() == b"MNOVA"
+            assert PUB.load(pub2_)["mnova"] == ["mnova/Paper.mnova", "mnova/Paper_2.mnova"]
+        chk5_("Mnova same name", r8_)
+
+        def r9_():                                       # GP-Kürzel wie Variablen: Umbenennen zieht überall mit
+            import yaml
+            gp_ = out / "f5" / "gp_pub"
+            for nm_, gp_k, txt_ in (("c1", "A", "Prepared according to <b>GP A</b>; see also GP B."),
+                                    ("c2", "B", "according to <b>GP B</b>")):
+                (gp_ / nm_).mkdir(parents=True, exist_ok=True)
+                (gp_ / nm_ / PRJ.PROJECT_FILE).write_text(
+                    yaml.safe_dump({"syn": {"gp": gp_k, "proc": txt_}}), encoding="utf-8")
+            PUB.create(gp_, "GP test")
+            PV5.apply_procedures(w, gp_, [dict(key="B", title="", text=""), dict(key="A", title="", text="")],
+                                 {"A": "B", "B": "A"})              # Tausch
+            s1_ = yaml.safe_load((gp_ / "c1" / PRJ.PROJECT_FILE).read_text(encoding="utf-8"))["syn"]
+            s2_ = yaml.safe_load((gp_ / "c2" / PRJ.PROJECT_FILE).read_text(encoding="utf-8"))["syn"]
+            assert s1_ == {"gp": "B", "proc": "Prepared according to <b>GP B</b>; see also GP A."}, s1_
+            assert s2_["gp"] == "A" and s2_["proc"] == "according to <b>GP A</b>", s2_
+            st_o = {"gp": "A", "proc": "according to <b>GP A</b>, not GP AB"}
+            assert PUB.rename_gp_in(st_o, {"A": "C"}) and st_o == {"gp": "C", "proc": "according to <b>GP C</b>, not GP AB"}
+            assert not PUB.rename_gp_in({"gp": "A", "proc": "GP A"}, {"A": "A"})
+        chk5_("GP rename like variables", r9_)
+        assert not rv_, rv_
+        report.append("F3-F5 review fixes (Codex) + GP keys like variables: OK")
         dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
         assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
         assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2

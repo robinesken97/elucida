@@ -165,6 +165,8 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
     extra = []                                              # Tab „Weitere“: eigene Überschriften als Kapitel am Ende
     for _, parts in compounds:
         extra += [k for k in parts if k.startswith("new:") and k not in extra]
+    if extra and any(b[0] == "columns" for b in blocks):      # nach dem zweispaltigen DFT-Kapitel wieder einspaltig
+        blocks.append(("columns", 1))
     for k in extra:
         figs = [b for _, parts in compounds for b in parts.get(k) or []]
         n += 1
