@@ -9,7 +9,8 @@
   (details in the tooltip), number fields narrower, list buttons in two rows (add / selection). Empty file lists stay
   hidden until something is loaded. Cards, forms and dialogs use one spacing grid; the default button of every dialog
   is highlighted. Fields on a fixed grid: number fields one width, lists, text fields and ranges end at one common
-  edge per tab; all text in fields left-aligned with the same inset; empty hint lines no longer leave gaps.
+  edge per tab; all text in fields left-aligned with the same inset; empty hint lines no longer leave gaps;
+  checkboxes in lists centred in their column; card titles flush with the card content.
 - **Navigation:** the path (Overview › Project › Compound) moved from the tab bar into the toolbar; "Compound" and
   "SI (Word)" only show with an open compound. The window can be made narrower (about 960 px, half of a full-HD
   screen).

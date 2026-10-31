@@ -12,8 +12,8 @@ from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
-                               QHBoxLayout, QLabel, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyleFactory,
-                               QVBoxLayout, QWidget)
+                               QHBoxLayout, QLabel, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyle,
+                               QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QVBoxLayout, QWidget)
 
 COLORS = {
     # Abstufung wie im Entwurf: Seite < Karte, Felder etwas abgesetzt, warme Grautöne, dezente Ränder
@@ -150,6 +150,50 @@ def hide_when_empty(table):
     upd()
 
 
+class _CheckDelegate(QStyledItemDelegate):
+    """Kästchen ohne Text mittig in der Zelle (Qt setzt es sonst an den linken Rand, z. B. unter breiten Überschriften).
+    Zeichnen und Klicken über dasselbe Rechteck; Zellen mit Text bleiben unverändert."""
+
+    def _box(self, option, index):
+        if index.data(Qt.DisplayRole) or index.data(Qt.CheckStateRole) is None:
+            return None
+        o = QStyleOptionViewItem(option)
+        o.features |= QStyleOptionViewItem.HasCheckIndicator
+        st = option.widget.style() if option.widget is not None else QApplication.style()
+        r = st.subElementRect(QStyle.SE_ItemViewItemCheckIndicator, o, option.widget)
+        r.moveCenter(option.rect.center())
+        return r
+
+    def paint(self, painter, option, index):
+        r = self._box(option, index)
+        if r is None:
+            return super().paint(painter, option, index)
+        st = option.widget.style() if option.widget is not None else QApplication.style()
+        o = QStyleOptionViewItem(option)
+        self.initStyleOption(o, index)
+        o.features &= ~QStyleOptionViewItem.HasCheckIndicator      # nur Hintergrund/Auswahl der Zelle
+        st.drawControl(QStyle.CE_ItemViewItem, o, painter, option.widget)
+        c = QStyleOptionViewItem(option)
+        c.rect = r
+        cs = Qt.CheckState(index.data(Qt.CheckStateRole))
+        c.state &= ~(QStyle.State_On | QStyle.State_Off | QStyle.State_NoChange)
+        c.state |= {Qt.Checked: QStyle.State_On, Qt.PartiallyChecked: QStyle.State_NoChange}.get(cs, QStyle.State_Off)
+        st.drawPrimitive(QStyle.PE_IndicatorItemViewItemCheck, c, painter, option.widget)
+
+    def editorEvent(self, event, model, option, index):
+        r = self._box(option, index)
+        if r is not None and event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
+                                              QEvent.MouseButtonDblClick):
+            if event.button() != Qt.LeftButton or not r.contains(event.position().toPoint()):
+                return False
+            fl = index.flags()
+            if event.type() == QEvent.MouseButtonRelease and fl & Qt.ItemIsUserCheckable and fl & Qt.ItemIsEnabled:
+                cs = Qt.CheckState(index.data(Qt.CheckStateRole))
+                model.setData(index, (Qt.Unchecked if cs == Qt.Checked else Qt.Checked).value, Qt.CheckStateRole)
+            return True
+        return super().editorEvent(event, model, option, index)
+
+
 class HintLabel(QLabel):
     """Hinweiszeile, die ohne Text samt Zeilenabstand verschwindet (keine Leerzeile im Formular)."""
 
@@ -173,7 +217,7 @@ def card(title):
     """Gruppe als Karte, Titel und Ränder wie QGroupBox in den übrigen Tabs. Gibt (Karte, Inhalts-Widget) zurück."""
     frame = QFrame(objectName="card")
     v = QVBoxLayout(frame)
-    v.setContentsMargins(16, 12, 16, 16)
+    v.setContentsMargins(20, 12, 20, 16)                     # Inhalt bündig mit QGroupBox (Rahmen + Padding)
     v.setSpacing(8)
     head = QHBoxLayout()
     t = QLabel(title, objectName="cardTitle")
@@ -309,6 +353,7 @@ def tidy(root):
                 continue
             first, second = lay.itemAt(0).widget(), lay.itemAt(1).widget()
             if isinstance(first, QCheckBox) and isinstance(second, QAbstractSpinBox):
+                lay.setSpacing(8)                             # -1 (Stil-Standard) verschob den Wert um 1 px
                 first.setMinimumWidth(lab_w + fl.horizontalSpacing() - lay.spacing())
         # Beschriftung so hoch wie ihr Feld, Text darin mittig: Qt setzt Beschriftungen sonst mit einem festen Versatz,
         # der bei den höheren Feldern 2–3 px zu hoch liegt
@@ -345,6 +390,10 @@ def tidy(root):
                             and lay.sizeHint().width() + indent <= room):
                         lay.setContentsMargins(indent, 0, 0, 0)
     _field_edge(root)
+    from PySide6.QtWidgets import QTableWidget
+    for t in root.findChildren(QTableWidget):                # Kästchen ohne Text mittig (alle Listen)
+        if not isinstance(t.itemDelegate(), _CheckDelegate):
+            t.setItemDelegate(_CheckDelegate(t))
     for h in root.findChildren(HintLabel):                    # leere Hinweise ohne Zeile
         h.sync()
     for lay in root.findChildren(QHBoxLayout):
@@ -706,7 +755,7 @@ QLabel#recentBadge {{ color: {c['text2']}; background: {c['alt']}; border: 1px s
 QLabel#recentHead {{ font-size: 14px; }}
 QFrame#bottomBar {{ background: {c['window']}; border-top: 1px solid {c['border']}; }}
 QGroupBox {{ font-weight: bold; padding-top: 2.5em; }}
-QGroupBox::title {{ left: 16px; top: 12px; }}
+QGroupBox::title {{ left: 18px; top: 12px; }}                 /* bündig mit dem Karteninhalt */
 QGroupBox#resultCard {{ padding-top: 8px; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPushButton {{ min-height: 20px; }}
 QGroupBox QWidget {{ font-weight: normal; }}
