@@ -2,13 +2,15 @@
 
 # Änderungen
 
-## Unveröffentlicht
+## 2.4.1 – 31.10.2026
 
 ### Geändert
 - **Aufbau:** Die Einstellungsspalte ist in allen Tabs gleich breit und fest (nicht mehr verschiebbar); lange
   Beschriftungen gekürzt (Details im Tooltip), Zahlenfelder schmaler, Listenknöpfe in zwei Reihen (Hinzufügen /
   Auswahl). Leere Dateilisten bleiben ausgeblendet, bis etwas geladen ist. Karten, Formulare und Dialoge mit einem
-  gemeinsamen Abstandsraster; der Standardknopf jedes Dialogs ist hervorgehoben.
+  gemeinsamen Abstandsraster; der Standardknopf jedes Dialogs ist hervorgehoben. Felder im festen Raster:
+  Zahlenfelder gleich breit, Auswahllisten, Textfelder und Bereiche enden je Tab an einer Kante; Text in allen Feldern
+  linksbündig mit gleichem Abstand zum Rand; leere Hinweiszeilen hinterlassen keine Lücke.
 - **Navigation:** Der Pfad (Übersicht › Projekt › Verbindung) steht jetzt in der Werkzeugleiste statt in der
   Tab-Leiste; „Verbindung“ und „SI (Word)“ erscheinen nur bei offener Verbindung. Das Fenster lässt sich schmaler
   ziehen (etwa 960 px, halber Full-HD-Bildschirm).
@@ -16,7 +18,8 @@
   Reiter „Rohdaten“.
 - **Projektseite:** Titel über die volle Breite, Aktionen in einer Zeile darunter. Mnova-Ablage für das ganze Projekt
   entfernt (vorhandene Dateien bleiben im Ordner `mnova/`).
-- **Startbildschirm:** Beispielprojekt und Beispielverbindung als Links unten.
+- **Startbildschirm:** Beispielprojekt und Beispielverbindung als Links unten; Zeit und Projekt einer Verbindung
+  an derselben rechten Kante.
 
 ## 2.4.0 – 31.10.2026
 

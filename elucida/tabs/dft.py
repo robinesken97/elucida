@@ -857,7 +857,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.cb_orb_lab.setToolTip(T("dft_orb_labels_tip"))
         self.cb_orb_lab.toggled.connect(self.changed)
         f.addRow(self.cb_orb_lab)
-        self.lbl_orb = QLabel("")
+        self.lbl_orb = STYLE.HintLabel("")
         self.lbl_orb.setWordWrap(True)
         self.lbl_orb.setStyleSheet(HINT_CSS)
         f.addRow(self.lbl_orb)

@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
                                QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
                                QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
-                               QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
+                               QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea, QSizePolicy,
                                QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTableWidget, QTableWidgetItem, QTextBrowser,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
@@ -780,6 +780,7 @@ class MainWindow(QMainWindow):
         self.btn_open = QPushButton(STYLE.icon("open", "#FFFFFF"), T("act_open"))
         self.btn_open.setProperty("accent", True)
         self.btn_open.clicked.connect(self.choose_csv)
+        self.btn_open.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)      # natürliche Breite
         row.addWidget(self.btn_open)
         self.lbl_file = QLabel(self.files_label() if self.csv_path else T("no_file"))
         self.lbl_file.setWordWrap(True)

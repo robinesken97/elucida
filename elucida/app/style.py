@@ -150,6 +150,25 @@ def hide_when_empty(table):
     upd()
 
 
+class HintLabel(QLabel):
+    """Hinweiszeile, die ohne Text samt Zeilenabstand verschwindet (keine Leerzeile im Formular)."""
+
+    def setText(self, text):
+        super().setText(text)
+        self.sync()
+
+    def sync(self):
+        p = self.parentWidget()
+        if p is None:
+            return
+        vis = bool(self.text())
+        form = next((fl for fl in p.findChildren(QFormLayout) if fl.indexOf(self) >= 0), None)
+        if form is not None:
+            form.setRowVisible(self, vis)
+        else:
+            self.setVisible(vis)
+
+
 def card(title):
     """Gruppe als Karte, Titel und Ränder wie QGroupBox in den übrigen Tabs. Gibt (Karte, Inhalts-Widget) zurück."""
     frame = QFrame(objectName="card")
@@ -167,7 +186,8 @@ def card(title):
 
 
 FIELD_W = 120                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
-COLUMN_W = 534                    # linke Spalte in allen Tabs gleich breit (breiter nur, wenn Inhalt sonst abgeschnitten)
+WIDE_W = 2 * FIELD_W + 24          # Wertespalte: Listen, Textfelder, „[a] – [b]“ enden an einer Kante (Nutzerwunsch)
+COLUMN_W = 538                    # linke Spalte in allen Tabs gleich breit (breiter nur, wenn Inhalt sonst abgeschnitten)
 CHECKS_IN_FIELD_COLUMN = True     # Häkchen-Zeilen in der Wertespalte (eine Kante für alle Bedienelemente)
 
 
@@ -177,6 +197,50 @@ def _fw(fl, r):
     if li is None or fi is None:
         return 0
     return li.sizeHint().width() + fl.horizontalSpacing() + fi.sizeHint().width()
+
+
+def _field_edge(root):
+    """Wertespalte je Tab an einer Kante (siehe unten): Listen und Textfelder
+    genau so breit, in Zeilen mit mehreren Teilen wächst das erste dehnbare Element (Dateiname, Textfeld, Lücke vor
+    den Knöpfen) auf die Kante. Feste Breiten statt Formularrand: der würde die Mindestbreite der Spalte mitziehen."""
+    from PySide6.QtWidgets import QAbstractScrollArea, QLineEdit
+    forms = [fl for fl in root.findChildren(QFormLayout) if fl.parentWidget() is not None]
+    items = [it for fl in forms for it in (fl.itemAt(r, QFormLayout.FieldRole) for r in range(fl.rowCount()))
+             if it is not None]
+    if not items:
+        return
+    for it in items:
+        if it.widget() is not None:
+            it.widget().ensurePolished()
+    # Kante je Tab: mindestens WIDE_W, sonst die breiteste Zeile aus mehreren Teilen („[a] Ränder [b]“), aber nie
+    # breiter als die feste Spalte (COLUMN_W abzüglich Ränder und Beschriftungsspalte) – die Abbildung bleibt gleich groß
+    lab = max((fl.itemAt(r, QFormLayout.LabelRole).widget().minimumWidth() for fl in forms for r in range(fl.rowCount())
+               if fl.itemAt(r, QFormLayout.LabelRole) is not None and fl.itemAt(r, QFormLayout.LabelRole).widget()),
+              default=0)
+    room = COLUMN_W - 2 * 12 - 2 * 16 - lab - 12 - 10          # Reserve: verschachtelte Karten, Klappkarten
+    wide = max([WIDE_W] + [h for h in (it.sizeHint().width() for it in items if it.layout() is not None) if h <= room])
+    stretchy = (QLineEdit, QComboBox, QAbstractScrollArea)
+    for fl in forms:
+        fl.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    for it in items:
+        w, lay = it.widget(), it.layout()
+        if isinstance(w, stretchy) and w.maximumWidth() != FIELD_W:
+            w.setFixedWidth(wide)
+        elif isinstance(lay, QHBoxLayout) and lay.sizeHint().width() < wide:
+            extra = wide - lay.sizeHint().width()
+            for i in range(lay.count()):
+                sub_ = lay.itemAt(i)
+                x = sub_.widget()
+                if sub_.spacerItem() is not None and sub_.expandingDirections() & Qt.Horizontal:
+                    sp = sub_.spacerItem()
+                    sp.changeSize(sp.sizeHint().width() + extra, 0, QSizePolicy.Fixed, QSizePolicy.Minimum)
+                elif (isinstance(x, stretchy) or (isinstance(x, QLabel) and lay.stretch(i) > 0)) and \
+                        x.maximumWidth() != FIELD_W:
+                    x.setFixedWidth(x.sizeHint().width() + extra)
+                else:
+                    continue
+                lay.invalidate()
+                break
 
 
 def tidy(root):
@@ -280,6 +344,9 @@ def tidy(root):
                     if (isinstance(first, QCheckBox) and not isinstance(second, QAbstractSpinBox)
                             and lay.sizeHint().width() + indent <= room):
                         lay.setContentsMargins(indent, 0, 0, 0)
+    _field_edge(root)
+    for h in root.findChildren(HintLabel):                    # leere Hinweise ohne Zeile
+        h.sync()
     for lay in root.findChildren(QHBoxLayout):
         items = [lay.itemAt(i) for i in range(lay.count())]
         if any(isinstance(it.widget(), (QLabel, QCheckBox)) for it in items[1:]):   # Beschriftung nicht ankleben
@@ -301,8 +368,9 @@ class _WheelGuard(QObject):
         t = ev.type()
         if t == QEvent.Polish and isinstance(obj, (QAbstractSpinBox, QComboBox)):
             obj.setFocusPolicy(Qt.StrongFocus)                  # Mausrad gibt keinen Fokus (Qt-Standard: doch)
-            if isinstance(obj, QAbstractSpinBox):               # Zahlen rechtsbündig: Stellen/Einheiten untereinander
-                obj.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            if isinstance(obj, QAbstractSpinBox):               # linksbündig wie Text- und Auswahlfelder (Nutzerwunsch)
+                obj.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                obj.lineEdit().setTextMargins(11, 0, 0, 0)      # Stylesheet-Padding gilt nicht für das innere Feld
             if obj.property("fieldw"):                          # Rasterbreite nach dem Stylesheet erneut festsetzen
                 obj.setFixedWidth(FIELD_W)
         elif (t == QEvent.Polish and isinstance(obj, QDialog) and not isinstance(obj, (QMessageBox, QFileDialog))
@@ -558,7 +626,7 @@ QLabel#cardTitle {{ font-weight: bold; }}
 QLabel[formlabel="true"] {{ color: {c['text2']}; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
     background: {c['field']}; border: 1px solid {c['border']}; border-radius: 5px;
-    padding: 3px 6px; min-height: 18px; selection-background-color: {c['accent']}; }}
+    padding: 3px 10px; min-height: 18px; selection-background-color: {c['accent']}; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {c['accent']}; }}
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{
     color: {c['disabled']}; background: {c['alt']}; }}
@@ -571,6 +639,7 @@ QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url("{a['up']}"); width: 
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url("{a['down']}"); width: 11px; height: 11px; }}
 QSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:disabled {{ image: url("{a['up_dis']}"); }}
 QSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:disabled {{ image: url("{a['down_dis']}"); }}
+QComboBox {{ padding-left: 12px; }}
 QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 20px; border: none; }}
 QComboBox::down-arrow {{ image: url("{a['down']}"); width: 12px; height: 12px; }}
 QComboBox::down-arrow:disabled {{ image: url("{a['down_dis']}"); }}

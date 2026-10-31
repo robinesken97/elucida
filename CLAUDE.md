@@ -265,7 +265,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   wachsen mit, reine Knopfreihen rechts, erster Knopf der letzten Reihe = Hauptknopf (blau, Symbol). Protokoll nur
   über Hilfe → Protokoll. Meldungen als Einblendung unten rechts (`_toast`), keine Statusleiste. Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
   Spalte in allen Tabs gleich breit (`STYLE.COLUMN_W`, Trennlinie fest, Nutzerwunsch; breiter nur, wenn sonst
-  abgeschnitten): lange Beschriftungen kürzen (Langform in den Tooltip), Zahlenfelder `FIELD_W` 120, Listenknöpfe
+  abgeschnitten): lange Beschriftungen kürzen (Langform in den Tooltip), Zahlenfelder `FIELD_W` 120, Listen/Textfelder/
+  Bereiche enden je Tab an einer Kante (`WIDE_W`, `_field_edge` in `tidy`), Text in allen Feldern linksbündig mit
+  gleichem Einzug (Nutzerwunsch, nicht zentrieren), Hinweiszeilen als `STYLE.HintLabel` (leer = keine Zeile), Listenknöpfe
   in zwei Reihen (Hinzufügen / Auswahl). Leere Dateilisten ausgeblendet (`STYLE.hide_when_empty`). Fenster bedienbar
   ab ~960 px (halber 1920er-Bildschirm): Tab-Leiste und Startbildschirm nicht breiter machen.
 - Tab-Reihenfolge wie die SI: Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC · EPR ·

@@ -445,7 +445,7 @@ from elucida.si import lines as SI  # noqa: E402
 from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app.i18n import T  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
-from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form  # noqa: E402
 
 IR_COLOR = "#7a1a12"
 
@@ -693,7 +693,7 @@ class IRMSTab(TABS.FigureTab):
             ed.editingFinished.connect(self.changed)
             self.ea_calc_lbl[el], self.ea_found_ed[el] = lc, ed
         f.addRow(grid)
-        self.lbl_ea_info = QLabel("")
+        self.lbl_ea_info = HintLabel("")
         self.lbl_ea_info.setWordWrap(True)
         f.addRow(self.lbl_ea_info)
         self.txt_ea = QTextBrowser()

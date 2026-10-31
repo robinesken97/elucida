@@ -19,7 +19,7 @@ from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
                         ppm, read_bruker_d, read_ms_docx)
-from elucida.app.style import HINT_CSS, WARN_CSS, make_form
+from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form
 from elucida.formats.bruker_ms import spectra_of
 from elucida.tabs.ir_ea import mono_mass
 
@@ -180,7 +180,7 @@ class HRMSTab(TABS.FigureTab):
         self.cmb_found = QComboBox()
         self.cmb_found.setToolTip(T("ms_found_tip"))
         f.addRow(T("ms_found"), self.cmb_found)
-        self.lbl_ms_info = QLabel("")
+        self.lbl_ms_info = HintLabel("")
         self.lbl_ms_info.setWordWrap(True)
         f.addRow(self.lbl_ms_info)
         self.txt_ms = QTextBrowser()

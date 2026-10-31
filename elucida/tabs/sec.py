@@ -184,9 +184,9 @@ class SECTab(TABS.FigureTab):
         for w_ in (self.sp_first, QLabel("–"), self.sp_last):
             row.addWidget(w_)
         f.addRow(T("sec_range"), row)
-        self.lbl_range = QLabel("")
+        self.lbl_range = STYLE.HintLabel("")
         self.lbl_range.setStyleSheet(HINT_CSS)
-        f.addRow("", self.lbl_range)
+        f.addRow(self.lbl_range)
         self.cb_highlight = QCheckBox(T("sec_highlight"))
         self.cb_gradient = QCheckBox(T("sec_gradient"))
         self.cb_diff = QCheckBox(T("sec_diff"))

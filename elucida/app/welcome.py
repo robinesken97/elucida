@@ -199,6 +199,10 @@ class RecentRow(QWidget):
             title.addWidget(ElidedLabel("·  " + info["note"], objectName="recentNote"), 1)
         else:
             title.addStretch(1)
+        # Zeit rechts in der Titelzeile: gleiche rechte Kante wie „▸ Projekt“ darunter (Nutzerwunsch: symmetrisch)
+        when = QLabel(relative_time(info["modified"]), objectName="recentWhen", alignment=Qt.AlignRight | Qt.AlignVCenter)
+        when.setToolTip(info["modified"].strftime("%d.%m.%Y %H:%M"))
+        title.addWidget(when)
         parent = short_path(Path(info["path"]).parent)
         sub = ElidedLabel((info["folder"] + "  ·  " if info["has_compound"] else "") + parent, objectName="recentSub")
         sub.setToolTip(info["path"])
@@ -222,9 +226,6 @@ class RecentRow(QWidget):
         if extra is not None:                          # Publikation: Checkliste der Verbindung
             v.addWidget(extra)
         h.addLayout(v, 1)
-        when = QLabel(relative_time(info["modified"]), objectName="recentWhen", alignment=Qt.AlignRight | Qt.AlignTop)
-        when.setToolTip(info["modified"].strftime("%d.%m.%Y %H:%M"))
-        h.addWidget(when, 0, Qt.AlignTop)
 
     draggable = False                                  # Projektseite: Reihenfolge per Ziehen ändern
     DRAG_MIME = "application/x-elucida-compound"

@@ -988,7 +988,7 @@ class FigureTab(QWidget):
             self.ed_cap[key] = ed
             lab = f"{self.STATE_KEY}_cap_{key}"
             f.addRow(T(lab if lab in TEXTS else f"cap_{key}"), ed)
-        self.lbl_cap = QLabel("")
+        self.lbl_cap = STYLE.HintLabel("")
         self.lbl_cap.setWordWrap(True)
         self.lbl_cap.setTextFormat(Qt.RichText)
         self.lbl_cap.setStyleSheet(HINT_CSS)
@@ -1200,7 +1200,7 @@ class OverlayTab(FigureTab):
         f.addRow(self.lbl_ccol, self.w_ccol)
         self.sw_ccol = QLabel()
         self.sw_ccol.setFixedHeight(28)
-        self.lbl_ccol_info = QLabel()
+        self.lbl_ccol_info = STYLE.HintLabel()
         self.lbl_ccol_info.setWordWrap(True)
         self.lbl_ccol_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         f.addRow("", self.sw_ccol)
@@ -2190,7 +2190,7 @@ class FluoTab(FigureTab):
         self.cb_stokes.setChecked(st.get("stokes_label", False))
         self.cb_stokes.toggled.connect(self.changed)
         f.addRow(self.cb_stokes)
-        self.lbl_info = QLabel("")
+        self.lbl_info = STYLE.HintLabel("")
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         f.addRow(self.lbl_info)

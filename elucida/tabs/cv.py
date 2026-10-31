@@ -367,7 +367,7 @@ class CVTab(TABS.FigureTab):
         self.cb_fstruct_color = QCheckBox(T("ov_struct_color"))
         self.cb_fstruct_color.toggled.connect(self.file_ref_changed)
         f.addRow(self.cb_fstruct_color)
-        self.lbl_fref_info = QLabel("")
+        self.lbl_fref_info = STYLE.HintLabel("")
         self.lbl_fref_info.setWordWrap(True)
         self.lbl_fref_info.setStyleSheet(HINT_CSS)
         f.addRow(self.lbl_fref_info)
