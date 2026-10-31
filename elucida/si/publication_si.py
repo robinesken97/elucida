@@ -150,6 +150,8 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
             for _, parts in compounds:
                 body += parts.get("dft") or []
             body = [("columns", 2)] + body if body else []
+            figs = [b for _, parts in compounds for b in parts.get("dft_figs") or []]   # Energieprofile usw. einspaltig
+            body = SI.two_per_page(figs) + body if figs else body
         if not body:
             continue
         body = intro + body                                   # DFT: Einleitung noch einspaltig

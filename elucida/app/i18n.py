@@ -1891,13 +1891,81 @@ TEXTS = {
                            "Orbital shown. HOMO/LUMO and energy from the ORCA/Gaussian output of the geometry, MO "
                            "number from the cube or the file name (ORCA: name.mo21a.cube)."),
     "dft_orb_none": ("– keins –", "– none –"),
-    "dft_orb_iso": ("Isofläche", "Isosurface"),
-    "dft_orb_iso_frac": ("Anteil der Dichte", "Density fraction"),
-    "dft_orb_iso_abs": ("Isowert", "Isovalue"),
-    "dft_orb_iso_tip": ("Wie IboView: die Fläche umschließt diesen Anteil von |ψ|² (Standard 80 %). Alternativ ein "
-                        "fester Isowert ±ψ in a.u. (üblich 0.02–0.05).",
-                        "As in IboView: the surface encloses this fraction of |ψ|² (default 80%). Alternatively a "
-                        "fixed isovalue ±ψ in a.u. (typically 0.02–0.05)."),
+    "dft_profile": ("Energieprofil", "Energy profile"),
+    "dft_prof_mode": ("Darstellung", "Display"),
+    "dft_prof_mode_levels": ("Stufen (Opt/Freq)", "Levels (opt/freq)"),
+    "dft_prof_mode_irc": ("IRC", "IRC"),
+    "dft_prof_y": ("Größe", "Quantity"),
+    "dft_prof_y_tip": ("ΔG (Standard), ΔH oder ΔE in kcal mol⁻¹ relativ zur ersten Spezies; mit Einzelpunkt "
+                       "G = E(SP) + (G − E_el) der Opt/Freq-Rechnung.",
+                       "ΔG (default), ΔH or ΔE in kcal mol⁻¹ relative to the first species; with a single point "
+                       "G = E(SP) + (G − E_el) of the opt/freq calculation."),
+    "dft_prof_species": ("Rechnung", "Calculation"),
+    "dft_prof_label": ("Label", "Label"),
+    "dft_prof_step": ("Schritt", "Step"),
+    "dft_prof_paths": ("Pfad(e)", "Path(s)"),
+    "dft_prof_sp": ("Einzelpunkt", "Single point"),
+    "dft_prof_tbl_tip": ("Haken = im Profil; Label frei (Hochzahlen wie „TS6¹“), Schritt = x-Position, Pfade durch "
+                         "Komma getrennt (gemeinsame Spezies: „A,B“). Einzelpunkte werden über gleiche "
+                         "Atome/Koordinaten (± 0.02 Å) zugeordnet, nie über Dateinamen.",
+                         "Tick = in the profile; free label (superscripts like “TS6¹”), step = x position, paths "
+                         "separated by commas (shared species: “A,B”). Single points are matched by identical "
+                         "atoms/coordinates (± 0.02 Å), never by file name."),
+    "dft_prof_sp_add": ("Einzelpunkte hinzufügen …", "Add single points …"),
+    "dft_prof_sp_rm": ("Einzelpunkte entfernen", "Remove single points"),
+    "dft_prof_no_sp": ("Ohne Einzelpunkt, nicht im Profil (nie gemischt): {names}",
+                       "No single point, left out of the profile (never mixed): {names}"),
+    "dft_prof_no_kind": ("{name}: {kind} fehlt (Frequenzrechnung nötig), nicht im Profil",
+                         "{name}: {kind} missing (frequency calculation needed), left out"),
+    "dft_prof_mixed": ("Spezies mit verschiedenen Methoden – Unterschrift nennt nur die erste.",
+                       "Species with different methods – the caption names only the first."),
+    "dft_prof_sp_solv": ("Einzelpunkt ohne Lösungsmittel, Geometrie mit SMD/CPCM: Solvatation ist in E(SP) nicht "
+                         "enthalten (keine Korrektur).",
+                         "Single point without solvent, geometry with SMD/CPCM: solvation is not included in E(SP) "
+                         "(no correction applied)."),
+    "dft_prof_colors": ("Farben:", "Colours:"),
+    "dft_prof_empty": ("Rechnungen (Opt/Freq) laden – Energieprofil erscheint hier",
+                       "Load calculations (opt/freq) – the energy profile appears here"),
+    "dft_irc_tip": ("ORCA-IRC (.out mit „IRC PATH SUMMARY“ und <Name>_IRC_Full_trj.xyz daneben), mehrere "
+                    "nacheinander auf einer Achse (Reihenfolge mit ↑). Nur ΔE (entlang der IRC gibt es kein G).",
+                    "ORCA IRC (.out with “IRC PATH SUMMARY” and <name>_IRC_Full_trj.xyz next to it), several in a "
+                    "row on one axis (order with ↑). ΔE only (there is no G along an IRC)."),
+    "dft_irc_add": ("IRC hinzufügen …", "Add IRC …"),
+    "dft_irc_up": ("↑", "↑"),
+    "dft_irc_x": ("x-Achse", "x axis"),
+    "dft_irc_rc": ("Reaktionskoordinate [Å]", "Reaction coordinate [Å]"),
+    "dft_irc_ref": ("Bezug", "Reference"),
+    "dft_irc_ref_first": ("erster Punkt", "first point"),
+    "dft_irc_ref_ts": ("Übergangszustand", "transition state"),
+    "dft_irc_none": ("keine IRC-Tabelle („IRC PATH SUMMARY“ mit TS-Zeile) gefunden",
+                     "no IRC table (“IRC PATH SUMMARY” with TS row) found"),
+    "dft_irc_trj": ("Trajektorie {name} fehlt (gehört neben die .out)", "trajectory {name} missing (belongs next to the .out)"),
+    "dft_irc_trj_bad": ("Trajektorie hat {n} Bilder, die IRC-Tabelle {m} Schritte",
+                        "trajectory has {n} frames, the IRC table {m} steps"),
+    "dft_irc_method": ("IRCs mit verschiedenen Methoden gehören nicht auf eine Achse",
+                       "IRCs with different methods do not belong on one axis"),
+    "dft_irc_no_col": ("{name}: keine Spalte „{col}“, nicht im Bild", "{name}: no column “{col}”, left out"),
+    "dft_nics": ("NICS", "NICS"),
+    "dft_nics_add": ("Gaussian-NMR (Bq) hinzufügen …", "Add Gaussian NMR (Bq) …"),
+    "dft_nics_geom": ("Geometrie-Methode", "Geometry method"),
+    "dft_nics_geom_ph": ("z. B. r2SCAN-3c(SMD:THF)", "e.g. r2SCAN-3c(SMD:THF)"),
+    "dft_nics_geom_tip": ("Für die Unterschrift „<NMR-Methode>//<Geometrie>“ (die NMR-Ausgabe kennt die Methode der "
+                          "Optimierung nicht).",
+                          "For the caption “<NMR method>//<geometry>” (the NMR output does not know the "
+                          "optimisation method)."),
+    "dft_nics_file": ("Datei", "File"),
+    "dft_nics_pair": ("Mittel ober-/unterhalb", "Average above/below"),
+    "dft_nics_empty": ("NICS-Scan (Gaussian-NMR mit ≥ 10 Bq) erscheint hier; Einzelpunkte in der Tabelle",
+                       "NICS scan (Gaussian NMR with ≥ 10 Bq) appears here; single points in the table"),
+    "dft_nics_none": ("keine Abschirmungen von Geisteratomen (Bq) gefunden", "no ghost-atom (Bq) shieldings found"),
+    "dft_orb_iso": ("Schwellentyp", "Threshold Type"),
+    "dft_orb_iso_frac": ("Dichte", "density"),
+    "dft_orb_iso_abs": ("absolut", "absolute"),
+    "dft_orb_thr": ("Schwelle", "Threshold"),
+    "dft_orb_iso_tip": ("Wie IboView: „Dichte“ = die Fläche umschließt diesen Anteil von |ψ|² (Standard 80 %); "
+                        "„absolut“ = fester Isowert ±ψ in a.u. (Standard 0.01, üblich 0.02–0.05).",
+                        "As in IboView: “density” = the surface encloses this fraction of |ψ|² (default 80%); "
+                        "“absolute” = fixed isovalue ±ψ in a.u. (default 0.01, typically 0.02–0.05)."),
     "dft_orb_alpha": ("Deckkraft", "Opacity"),
     "dft_orb_alpha_tip": ("Deckkraft der Isoflächen (IboView: 0.6); Ränder werden wie in IboView deckender.",
                           "Opacity of the isosurfaces (IboView: 0.6); edges become more opaque as in IboView."),

@@ -1852,7 +1852,8 @@ def selftest(outdir, with_isnet=False):
         assert not fc_.body.isHidden()
         assert w.cv_tab.right_tabs is not None and w.cv_tab.right_tabs.tabText(0) == T("tab_figure")
         assert [w.xray_tab.right_tabs.tabText(i_) for i_ in range(3)] == [T("tab_figure"), T("xr_caption"), T("xr_tables")]
-        assert w.dft_tab.right_tabs.count() == 2 and w.hrms_tab.right_tabs is None
+        assert [w.dft_tab.right_tabs.tabText(i_) for i_ in range(w.dft_tab.right_tabs.count())] == \
+            [T("tab_figure"), T("dft_si"), T("dft_profile"), T("dft_nics")] and w.hrms_tab.right_tabs is None   # F4
         # Ergebnisseiten überall gleich: ε neben der Abbildung, Karte füllt die Seite, Hauptknopf blau rechts
         assert [w.tabs.tabText(i_) for i_ in range(w.tabs.count())] == [T("tab_figure"), T("tab_results"),
                                                                        T("tab_si_line")]
@@ -3658,6 +3659,144 @@ def selftest(outdir, with_isnet=False):
         st_p_ = {"dft": {"entries": [{"file": "g.xyz", "molden": "g.molden", "orbitals": [{"file": "g.cube"}]}]}}
         assert {PRJ._get(c_, k_) for c_, k_, _ in PRJ._path_slots(st_p_)} >= {"g.xyz", "g.molden", "g.cube"}   # im Projekt
         report.append("DFT orbitals from Molden (basis up to g, convention check, HOMO/LUMO, IAO bond orders): OK")
+
+        # F4: Isowert wie IboView (FB-20), Energieprofil (Opt/Freq + Einzelpunkt, FB-18), IRC, NICS
+        from elucida.tabs import dft_pages as PG
+
+        def fig_f4_():
+            f_ = MplFigure(figsize=(6, 4))
+            FigureCanvasAgg(f_)
+            return f_
+        t_d = w.dft_tab
+        assert t_d.cmb_iso.itemData(0) == "frac" and t_d.DEFAULT_STATE["orb_abs"] == ORB.ISO_ABS == 0.01
+        w.dft_state["orb_iso_mode"] = "frac"
+        t_d.sync_iso_spin()
+        assert (t_d.sp_iso.decimals(), t_d.sp_iso.maximum(), t_d.sp_iso.singleStep()) == (4, 99.99, 1.0)   # IboView
+        w.dft_state["orb_iso_mode"] = "abs"
+        t_d.sync_iso_spin()
+        assert (t_d.sp_iso.decimals(), t_d.sp_iso.singleStep()) == (5, 0.001)
+        w.dft_state["orb_iso_mode"] = "frac"
+        t_d.sync_iso_spin()
+        keep_e_ = list(w.dft_state["entries"])
+        w.dft_state["entries"] = []
+        orca_t_ = Path(DFT.make_test_orca(ddir / "f4_tmpl.out")).read_bytes()[2:].decode("utf-16-le")
+
+        def f4_orca(name, de, dg=0.0, dz="1.790000", sp=None):
+            """Opt/Freq (Energien um de verschoben, G zusätzlich um dg) bzw. Einzelpunkt ohne Lösungsmittel."""
+            t_ = orca_t_.replace("1.790000", dz)
+            for old_ in ("-539.987654321098", "-539.98765432", "-539.91765432", "-539.91670987"):
+                t_ = t_.replace(old_, f"{float(old_) + de:.{len(old_.split('.')[1])}f}")
+            t_ = t_.replace("-539.94683332", f"{-539.94683332 + de + dg:.8f}")
+            if sp is not None:
+                t_ = t_.replace("! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)", "! DLPNO-CCSD(T) def2-TZVPP def2-TZVPP/C TightPNO")
+                t_ = t_[:t_.index("CPCM SOLVATION MODEL")] + t_[t_.index("          ----------------------|Geometry"):]
+                t_ = t_[:t_.index("FINAL SINGLE POINT ENERGY")] + f"FINAL SINGLE POINT ENERGY      {sp:.12f}\r\n\r\n" \
+                    "                             ****ORCA TERMINATED NORMALLY****\r\n"
+            q_ = ddir / name
+            q_.write_bytes(b"\xff\xfe" + t_.encode("utf-16-le"))
+            return str(q_)
+        opt_f4_ = [f4_orca("f4_A.out", 0.0), f4_orca("f4_TS.out", 0.03, 0.001, "1.890000"),
+                   f4_orca("f4_B.out", -0.02, 0.0, "1.990000")]
+        for q_ in opt_f4_:
+            t_d.load_xyz(q_)
+        pg_ = t_d.pages
+        assert [it_["label"] for it_ in pg_.items()] == ["f4_A", "f4_TS", "f4_B"]
+        rows_, _ = PG.profile_rows(pg_.items(), "G")
+        assert [PG.kcal(r_["value"]) for r_ in rows_] == ["0.0", "19.5", "−12.6"], [r_["value"] for r_ in rows_]
+        # Einzelpunkte: Zuordnung über die Geometrie (Dateinamen vertauscht), Spezies ohne SP fällt weg
+        sp_f4_ = [f4_orca("f4_sp_X.out", 0, 0, "1.890000", sp=-540.47), f4_orca("f4_sp_Y.out", 0, 0, "1.790000", sp=-540.5)]
+        pg_.load_sp(sp_f4_)
+        its_ = pg_.items()
+        assert [Path(it_["sp_file"]).name if it_["sp_file"] else None for it_ in its_] == ["f4_sp_Y.out", "f4_sp_X.out", None]
+        rows_, notes_ = PG.profile_rows(its_, "G")
+        assert [PG.kcal(r_["value"]) for r_ in rows_] == ["0.0", "19.5"] and any("f4_B" in n_ for n_ in notes_), notes_
+        assert PG.kcal(PG.profile_rows(its_, "E")[0][1]["value"]) == "18.8"           # ΔE = E(SP)
+        cap_f4_ = pg_.levels_caption("X")
+        assert "DLPNO-CCSD(T)/def2-TZVPP//B3LYP-D4/def2-SVP(CPCM:thf) level of theory." in cap_f4_, cap_f4_
+        assert "T = 298.15 K, p = 1.00 atm" in cap_f4_ and "relative to f4_A" in cap_f4_, cap_f4_
+        _, _, n_lv_ = pg_.levels_spec()
+        assert any("SMD/CPCM" in n_ for n_ in n_lv_), n_lv_                            # SP ohne Lösungsmittel
+        it_lab_ = pg_.tbl_sp.item(1, 1)
+        it_lab_.setText("TS1¹")                                                      # Label in der Tabelle, Undo
+        pump()
+        assert w.dft_state["profile"]["species"][w.dft_state["entries"][1]["uid"]]["label"] == "TS1¹"
+        F_pr_, _ = pg_.build(fig_f4_(), "levels")
+        assert F_pr_ is not None and {t_.get_text() for t_ in F_pr_.ax.texts} >= {"0.0", "19.5", "TS1¹", "f4_A"}
+        w.undo()
+        pump()
+        t_d, pg_ = w.dft_tab, w.dft_tab.pages
+        assert w.dft_state["profile"]["species"].get(w.dft_state["entries"][1]["uid"], {}).get("label") != "TS1¹"
+        # IRC: Trajektorie (Reaktionskoordinate = aufsummierte Abstände, TS = 0) + Tabelle der Ausgabe
+        irc_out_ = ddir / "f4irc.out"
+        e_irc_ = [-100.000, -99.990, -99.970, -99.990, -100.020]
+        summ_ = ["IRC PATH SUMMARY", "", "Step        E(Eh)      dE(kcal/mol)  max(|G|)   RMS(G)  B(C 1,H 2)"]
+        summ_ += [f"   {i_ + 1}      {e_:.6f}   0.0    0.001  0.0001      {1.0 + 0.1 * i_:.2f}" + ("    <= TS" if i_ == 2 else "")
+                  for i_, e_ in enumerate(e_irc_)]
+        irc_out_.write_text(orca_t_.replace("TightOpt Freq", "IRC").split("FINAL SINGLE POINT ENERGY")[0]
+                            + "\n".join(summ_) + "\n\n****ORCA TERMINATED NORMALLY****\n", encoding="utf-8")
+        trj_ = []
+        for i_, e_ in enumerate(e_irc_):
+            trj_ += ["2", f"Coordinates from ORCA-job f4irc_IRC_Full E {e_:.12f}", "C 0 0 0", f"H 0 0 {1.0 + 0.1 * i_:.3f}"]
+        (ddir / "f4irc_IRC_Full_trj.xyz").write_text("\n".join(trj_) + "\n", encoding="utf-8")
+        pg_.load_irc(str(irc_out_))
+        cv_ = pg_.irc_data()[0][0]
+        assert np.allclose(cv_["s"], [-0.2, -0.1, 0.0, 0.1, 0.2]) and cv_["ts"] == 2, cv_["s"]
+        assert w.dft_state["profile"]["mode"] == "irc" and Path(w.dft_state["profile"]["irc"][0]["trj"]).exists()
+        F_irc_, _ = pg_.build(fig_f4_(), "irc")
+        assert any("ΔE‡ = 18.8 / 31.4" == t_.get_text() for t_ in F_irc_.ax.texts), [t_.get_text() for t_ in F_irc_.ax.texts]
+        assert "B3LYP-D4/def2-SVP(CPCM:thf)" in pg_.irc_caption("X")
+        # NICS: Gaussian-NMR mit Bq (Benzol in einer schiefen Ebene, Tensor in derselben Orientierung)
+        ang_ = np.arange(6) * np.pi / 3
+        ring_ = np.c_[1.39 * np.cos(ang_), 1.39 * np.sin(ang_), np.zeros(6)]
+        nrm_ = np.array([0.0, 0.0, 1.0])
+        Rt_ = XRAY.rot("x", 0.5)
+        ring_, nrm_ = ring_ @ Rt_.T, Rt_ @ nrm_
+        sig_ = Rt_ @ np.diag([2.0, 4.0, 30.0]) @ Rt_.T                            # σzz = 30 ppm entlang der Normalen
+        bqs_ = [nrm_, -nrm_]
+        L_ = [" ------", " #p nmr=giao b3lyp/6-311+g(2d,p)", " ------", "                          Input orientation:",
+              " ---", " Center Atomic Atomic Coordinates", " Number Number Type X Y Z", " ---"]
+        L_ += [f"      {i_ + 1}          6           0    {x_:10.6f} {y_:10.6f} {z_:10.6f}" for i_, (x_, y_, z_) in enumerate(ring_)]
+        L_ += [f"      {7 + i_}          0           0    {x_:10.6f} {y_:10.6f} {z_:10.6f}" for i_, (x_, y_, z_) in enumerate(bqs_)]
+        L_ += [" ---", " SCF GIAO Magnetic shielding tensor (ppm):"]
+        for i_ in range(2):
+            L_ += [f"     {7 + i_}  Bq   Isotropic =    12.0000   Anisotropy =    27.0000",
+                   "   XX= {0:10.4f}   YX= {1:10.4f}   ZX= {2:10.4f}".format(*sig_[0]),
+                   "   XY= {0:10.4f}   YY= {1:10.4f}   ZY= {2:10.4f}".format(*sig_[1]),
+                   "   XZ= {0:10.4f}   YZ= {1:10.4f}   ZZ= {2:10.4f}".format(*sig_[2]), "   Eigenvalues: 2 4 30"]
+        (ddir / "f4nics.log").write_text("\n".join(L_) + "\n", encoding="utf-8")
+        pg_.load_nics([str(ddir / "f4nics.log")])
+        rows_n_ = pg_.nics_rows()
+        assert [round(r_[3], 1) for r_ in rows_n_] == [-12.0, -12.0] and round(rows_n_[0][4], 1) == -30.0, rows_n_
+        assert abs(abs(rows_n_[0][2]) - 1.0) < 1e-3 and rows_n_[0][5].startswith("NICS(1.0) = −12.0, NICSzz(1.0) = −30.0")
+        scan_ = [ln_ for ln_ in L_]
+        # Scan: 12 Bq auf einer Linie 1 Å über der Ebene -> Kurve über die Weglänge
+        k_ = scan_.index(" ---", 9)
+        path_ = [nrm_ + Rt_ @ np.array([-1.5 + 0.25 * i_, 0.0, 0.0]) for i_ in range(12)]
+        scan_[k_ - 2:k_] = [f"      {7 + i_}          0           0    {x_:10.6f} {y_:10.6f} {z_:10.6f}" for i_, (x_, y_, z_) in enumerate(path_)]
+        blk_ = L_[L_.index(" SCF GIAO Magnetic shielding tensor (ppm):") + 1:][:5]
+        scan_ = scan_[:scan_.index(" SCF GIAO Magnetic shielding tensor (ppm):") + 1]
+        for i_ in range(12):
+            scan_ += [blk_[0].replace("     7  Bq", f"     {7 + i_}  Bq")] + blk_[1:]
+        (ddir / "f4scan.log").write_text("\n".join(scan_) + "\n", encoding="utf-8")
+        pg_.load_nics([str(ddir / "f4scan.log")])
+        F_n_, _ = pg_.build_nics(fig_f4_())
+        assert F_n_ is not None and len([l_ for l_ in F_n_.ax.lines if len(l_.get_xdata()) == 12]) == 2
+        assert abs(max(F_n_.ax.lines[0].get_xdata()) - 2.75) < 1e-6
+        w.dft_state["nics"]["geom"] = "r2SCAN-3c"
+        assert "GIAO-b3lyp/6-311+g(2d,p)//r2SCAN-3c level of theory." in pg_.nics_caption("X"), pg_.nics_caption("X")
+        # Export, SI, Projektpfade
+        files_f4_ = [Path(f_).name for f_ in t_d.export_to(out / "dft_f4" / "X_DFT")]
+        assert {"X_DFT_profile.pdf", "X_DFT_IRC.pdf", "X_DFT_NICS.pdf", "X_DFT_NICS.csv"} <= set(files_f4_), files_f4_
+        si_f4_ = pg_.si_figures(out / "dft_f4", "X")
+        assert [b_[0] for b_ in si_f4_] == ["image", "figcap"] * 3, [b_[0] for b_ in si_f4_]
+        names_f4_ = {Path(str(PRJ._get(c_, k_))).name for c_, k_, _ in PRJ._path_slots(w.get_state()) if PRJ._get(c_, k_)}
+        assert {"f4_sp_X.out", "f4_sp_Y.out", "f4nics.log", "f4scan.log", "f4irc.out",
+                "f4irc_IRC_Full_trj.xyz"} <= names_f4_, names_f4_                 # im Projekt gespeichert/kopiert
+        w.dft_state["entries"] = keep_e_
+        w.dft_state["profile"] = json.loads(json.dumps(PG.PROFILE_DEFAULT))
+        w.dft_state["nics"] = json.loads(json.dumps(PG.NICS_DEFAULT))
+        t_d.sync_widgets()
+        report.append("DFT F4: isovalue like IboView, energy profile (SP//Opt), IRC, NICS: OK")
 
         # Audit P5 (DFT, TD-DFT, Orbitale): je Fall ein Fund, der vor dem Fix scheiterte
         from elucida.formats import calc as CALC

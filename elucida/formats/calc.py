@@ -346,3 +346,75 @@ def is_calc(path):
     except OSError:
         return False
     return is_orca(head) or is_gaussian(head)
+
+
+def parse_irc(text) -> dict:
+    """ORCA-IRC (Ausgabe): Tabelle „IRC PATH SUMMARY“ -> dict(steps, E (Eh, Text), cols {Name: [Werte]}, ts (Index)).
+    Spalten nach max/RMS(G) sind Bindungslängen wie „B(C 26,H 23)“; die TS-Zeile trägt „<= TS“."""
+    L = text.splitlines()
+    k = max((i for i, ln in enumerate(L) if ln.strip() == "IRC PATH SUMMARY"), default=None)
+    if k is None:
+        raise ValueError(T("dft_irc_none"))
+    head = next((i for i in range(k, min(k + 10, len(L))) if L[i].lstrip().startswith("Step")), None)
+    if head is None:
+        raise ValueError(T("dft_irc_none"))
+    names = re.findall(r"[A-Za-z]+\([^)]*\)|\S+", L[head])[4:]       # Step, E(Eh), dE(kcal/mol), max(|G|), RMS(G)
+    names = names[1:] if names and names[0].startswith("RMS") else names
+    steps, E, cols, ts = [], [], {n: [] for n in names}, None
+    for ln in L[head + 1:]:
+        tok = ln.split()
+        if not tok or not tok[0].isdigit():
+            if steps:
+                break
+            continue
+        steps.append(int(tok[0]))
+        E.append(tok[1])
+        for n, v in zip(names, tok[5:5 + len(names)]):
+            cols[n].append(float(v))
+        if "<= TS" in ln:
+            ts = len(steps) - 1
+    if not steps or ts is None:
+        raise ValueError(T("dft_irc_none"))
+    return dict(steps=steps, E=E, cols=cols, ts=ts)
+
+
+def parse_nics(text) -> dict:
+    """Gaussian-NMR mit Geisteratomen (Bq, z. B. aus py.Aroma) -> dict(route, els, xyz (echte Atome), bq_xyz,
+    iso [ppm], tensor [3×3, ppm]). Lagen aus der letzten Orientierung vor den Abschirmungen (Ordnungszahl 0 = Bq),
+    Tensor in derselben Orientierung."""
+    L = text.splitlines()
+    route = ""
+    for i, ln in enumerate(L):
+        if ln.strip().startswith("#") and i > 0 and L[i - 1].strip().startswith("---"):
+            j, parts = i, []
+            while j < len(L) and not L[j].strip().startswith("---"):
+                parts.append(L[j].strip())
+                j += 1
+            route = "".join(parts)
+            break
+    k = next((i for i, ln in enumerate(L) if "Magnetic shielding tensor (ppm)" in ln), None)
+    if k is None:
+        raise ValueError(T("dft_nics_none"))
+    o = max((i for i in range(k) if L[i].strip() in ("Input orientation:", "Standard orientation:")), default=None)
+    if o is None:
+        raise ValueError(T("dft_nics_none"))
+    atoms = []
+    for ln in L[o + 5:]:
+        tok = ln.split()
+        if len(tok) != 6:
+            break
+        atoms.append((int(tok[1]), [float(v) for v in tok[3:6]]))
+    bq = {}
+    for i in range(k, len(L) - 3):
+        m = re.match(r"^\s*(\d+)\s+Bq\s+Isotropic =\s*" + _E, L[i])
+        if m:
+            vals = [float(v) for ln in L[i + 1:i + 4] for v in re.findall(r"=\s*" + _E, ln)]
+            if len(vals) == 9:
+                bq[int(m.group(1)) - 1] = (float(m.group(2)), np.array(vals).reshape(3, 3))
+    idx = [i for i, (z, _) in enumerate(atoms) if z == 0]
+    if not idx or any(i not in bq for i in idx):
+        raise ValueError(T("dft_nics_none"))
+    real = [(z, p) for z, p in atoms if z > 0]
+    return dict(route=route, els=[ELEMENTS[z - 1] if 0 < z <= len(ELEMENTS) else "X" for z, _ in real],
+                xyz=np.array([p for _, p in real]), bq_xyz=np.array([atoms[i][1] for i in idx]),
+                iso=np.array([bq[i][0] for i in idx]), tensor=np.array([bq[i][1] for i in idx]))

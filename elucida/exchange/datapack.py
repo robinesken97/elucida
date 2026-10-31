@@ -142,7 +142,11 @@ def collect(state, project_dir) -> list[Item]:
                     if sib.suffix.lower() in BES3T:
                         add("epr", sib, f"EPR/{sib.name}")
 
-    for e in (state.get("dft") or {}).get("entries") or []:
+    dft = state.get("dft") or {}
+    prof = dft.get("profile") or {}
+    extra = [{"file": f} for f in (prof.get("sp") or []) + ((dft.get("nics") or {}).get("files") or [])]
+    extra += [{"file": d.get("file"), "molden": d.get("trj")} for d in prof.get("irc") or []]   # IRC + Trajektorie
+    for e in (dft.get("entries") or []) + extra:
         for f in [e.get("file"), e.get("molden")] + [o.get("file") for o in e.get("orbitals") or []]:
             if f:
                 add("dft", f, f"DFT/{Path(f).name}")

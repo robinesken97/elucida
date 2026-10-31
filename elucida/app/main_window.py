@@ -3527,6 +3527,11 @@ class MainWindow(QMainWindow):
         dt = self.dft_tab
         if "dft" in sections and any(dt.calc_of(e) is not None for e in dt.entries()):
             parts["dft"] = dt.docx_blocks(out_dir)
+        if "dft" in sections:
+            try:
+                parts["dft_figs"] = dt.pages.si_figures(out_dir, title)    # Energieprofil, IRC, NICS (F4)
+            except Exception:
+                self.log_signal.emit(traceback.format_exc())
         return title, parts
 
     def figure_tabs(self):
@@ -3543,6 +3548,12 @@ class MainWindow(QMainWindow):
                 if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
                     fb = [("char", SI.chem_html(t.si_setup_text()))] + fb
                 figs += fb
+            except Exception:
+                self.log_signal.emit(traceback.format_exc())
+        ds = self.dft_state
+        if ds.get("entries") or (ds.get("profile") or {}).get("irc") or (ds.get("nics") or {}).get("files"):   # F4
+            try:
+                figs += self.dft_tab.pages.si_figures(out_dir, name)
             except Exception:
                 self.log_signal.emit(traceback.format_exc())
         return SI.two_per_page(figs)

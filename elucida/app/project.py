@@ -104,6 +104,13 @@ def _path_slots(state):
         slots.append((e, "file", data_sub("dft")))
         slots.append((e, "molden", data_sub("dft")))         # Orbitale: Molden-Datei der Rechnung
         slots += [(o, "file", data_sub("dft")) for o in e.get("orbitals") or []]   # je Orbital Cube oder Molden
+    prof = (state.get("dft") or {}).get("profile") or {}
+    sp = prof.get("sp") or []                                   # Einzelpunkte des Energieprofils
+    slots += [(sp, i, data_sub("dft")) for i in range(len(sp))]
+    for d in prof.get("irc") or []:                             # IRC: Ausgabe + Trajektorie
+        slots += [(d, "file", data_sub("dft")), (d, "trj", data_sub("dft"))]
+    nf = ((state.get("dft") or {}).get("nics") or {}).get("files") or []
+    slots += [(nf, i, data_sub("dft")) for i in range(len(nf))]
     slots.append((state.get("nmr") or {}, "structure", STRUCTURES))
     slots.append((state.get("syn") or {}, "scheme", STRUCTURES))
     for e in (state.get("nmr") or {}).get("spectra") or []:

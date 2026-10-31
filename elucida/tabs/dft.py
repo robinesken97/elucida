@@ -17,6 +17,7 @@ import numpy as np
 
 from elucida.core import orbitals as ORB
 from elucida.tabs import xray as XRAY
+from elucida.tabs import dft_pages as PAGES
 from elucida.formats.elements import element_of
 from elucida.app.i18n import T
 from elucida.formats.calc import (parse_xyz, read_text, read_xyz, is_orca, is_gaussian, parse_orca, parse_gaussian, read_calc, is_xyz, is_calc, ELEMENTS, ORCA_THERMO, decode)  # noqa: E402,F401  (Leser in elucida/formats)
@@ -605,8 +606,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
                          h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black",
                          cartoon_color=False,
-                         orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=0.05, orb_alpha=ORB.ORB_ALPHA,
-                         orb_scheme="hue", orb_labels=True)
+                         orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=ORB.ISO_ABS, orb_alpha=ORB.ORB_ALPHA,
+                         orb_scheme="hue", orb_labels=True,
+                         profile=PAGES.PROFILE_DEFAULT, nics=PAGES.NICS_DEFAULT)   # Reiter Energieprofil/NICS (F4)
 
     # Größe/Formate wie im X-Ray-Tab (keine Achsen)
     common_box = XRAY.XrayTab.common_box
@@ -622,6 +624,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.fold(self.group_titled("dft_measure"), "measure")
         self.fold(self.group_titled("xr_align"), "align")
         self.to_right(self.group_titled("dft_si"), T("dft_si"))
+        self.to_right(self.pages.prof_group, T("dft_profile"))
+        self.to_right(self.pages.nics_group, T("dft_nics"))
     def __init__(self, main, state):
         self.numbering = False            # Klick-Modus „Nummerieren“ (nicht im Undo)
         self.picks = []                   # angeklickte Dateiindizes in Klickreihenfolge
@@ -802,6 +806,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             w_.currentIndexChanged.connect(self.changed)
         for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_zero, self.cb_hfollow, self.cb_explab, self.cb_ccol):
             w_.toggled.connect(self.changed)
+        self.pages = PAGES.DftPages(self)
         self.sync_widgets()
 
     def orbital_box(self):
@@ -832,16 +837,14 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         rm.addWidget(self.cmb_mo, 1)
         rm.addWidget(b)
         f.addRow(T("dft_orb_mo"), self.row_mo)
-        row = QHBoxLayout()
-        self.cmb_iso = QComboBox()
+        self.cmb_iso = QComboBox()                     # wie IboView „Iso Surface Settings“ (FB-20)
         for k in ("frac", "abs"):
             self.cmb_iso.addItem(T("dft_orb_iso_" + k), k)
         self.cmb_iso.setToolTip(T("dft_orb_iso_tip"))
-        self.sp_iso = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=99.0, singleStep=1.0)
-        row.addWidget(self.cmb_iso)
-        row.addWidget(self.sp_iso)
-        row.addStretch(1)
-        f.addRow(T("dft_orb_iso"), row)
+        f.addRow(T("dft_orb_iso"), self.cmb_iso)
+        self.sp_iso = QDoubleSpinBox(decimals=4, minimum=0.0001, maximum=99.99, singleStep=1.0)
+        self.sp_iso.setToolTip(T("dft_orb_iso_tip"))
+        f.addRow(T("dft_orb_thr"), self.sp_iso)
         self.sp_alpha = QDoubleSpinBox(decimals=2, minimum=0.1, maximum=1.0, singleStep=0.05)
         self.sp_alpha.setToolTip(T("dft_orb_alpha_tip"))
         f.addRow(T("dft_orb_alpha"), self.sp_alpha)
@@ -911,6 +914,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sync_orbitals()
         self._loading = False
         self.update_num_status()
+        self.pages.sync()
+        self.pages.sync_nics()
+        self.pages.refresh()
 
     # -- Einträge -------------------------------------------------------------------------
     def entries(self):
@@ -1127,7 +1133,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def orb_iso(self, item, vol):
         st = self.st
         if st.get("orb_iso_mode", "frac") == "abs":
-            return float(st.get("orb_abs", 0.05))
+            return float(st.get("orb_abs", ORB.ISO_ABS))
         frac = float(st.get("orb_frac", ORB.ISO_FRACTION))
         return self.cache(("orbiso", item["file"], item.get("idx", 0), item.get("mo"), frac),
                           lambda: ORB.iso_for_fraction(vol.data, frac))
@@ -1180,11 +1186,12 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
 
     def sync_iso_spin(self):
         frac = self.st.get("orb_iso_mode", "frac") == "frac"
-        self.sp_iso.setDecimals(1 if frac else 4)
-        self.sp_iso.setRange(1.0, 99.0) if frac else self.sp_iso.setRange(0.0001, 1.0)
-        self.sp_iso.setSingleStep(5.0 if frac else 0.005)
+        # Stellen/Bereich/Schritt wie IboView: Hauptfenster (Dichte %) bzw. „Compute Surface“ (absolut)
+        self.sp_iso.setDecimals(4 if frac else 5)
+        self.sp_iso.setRange(0.0001, 99.99) if frac else self.sp_iso.setRange(0.00001, 100000.0)
+        self.sp_iso.setSingleStep(1.0 if frac else 0.001)
         self.sp_iso.setSuffix(" %" if frac else " a.u.")
-        self.sp_iso.setValue(self.st.get("orb_frac", ORB.ISO_FRACTION) if frac else self.st.get("orb_abs", 0.05))
+        self.sp_iso.setValue(self.st.get("orb_frac", ORB.ISO_FRACTION) if frac else self.st.get("orb_abs", ORB.ISO_ABS))
 
     def sync_orbitals(self):
         """Orbital-Karte nach dem Zustand (nur innerhalb von sync_widgets)."""
@@ -1792,10 +1799,13 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         """Je Geometrie eine Abbildung (eigene Ansicht) und die xyz-Datei in der aktuellen Reihenfolge."""
         base = Path(base).resolve()
         base.parent.mkdir(parents=True, exist_ok=True)
-        files = []
         es = [e for e in self.entries() if self.geometry(e) is not None]
+        extra = self.pages.export_to(base)               # Energieprofil, IRC, NICS (F4)
         if not es:
+            if extra:
+                return extra
             raise RuntimeError(T("tab_empty"))
+        files = []
         names = export_names([e.get("name") or Path(e["file"]).stem for e in es])
         for e, nm in zip(es, names):
             name = base.name + ("_" + nm if len(es) > 1 else "")
@@ -1824,7 +1834,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             txt = base.with_name(base.name + "_SI.txt")
             txt.write_text("\n\n\n".join(si) + "\n", encoding="utf-8")
             files.append(txt)
-        return files
+        return files + extra
 
     def docx_blocks(self, img_dir):
         """Blöcke für SI.write_docx: je Rechnung Name, Abbildung (eng beschnitten), Text, Konvergenz, Koordinaten."""
@@ -1866,7 +1876,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         density.“ bzw. mit absolutem Isowert."""
         lab = self.orb_name(e, item)
         if self.st.get("orb_iso_mode", "frac") == "abs":
-            iso = f"isovalue ±{self.st.get('orb_abs', 0.05):g} a.u."
+            iso = f"isovalue ±{self.st.get('orb_abs', ORB.ISO_ABS):g} a.u."
         else:
             iso = f"isosurface enclosing {self.st.get('orb_frac', ORB.ISO_FRACTION):g}% of the orbital density"
         return f"{lab} of <b>{name}</b>, {iso}."

@@ -48,6 +48,7 @@ IBO_LIGHTS = ((np.array([0.5, 0.5, 0.70710678]), 1.0), (np.array([-0.4330127, -0
 IBO_REG = {"atom": (0.8, 0.7, 0.4, -0.5), "orbital": (0.8, 0.7, 0.7, -0.5)}   # Exponent, diffus, Glanz, Glanz-Vorfaktor
 IBO_FADE = (1.0 * BOHR, 22.0 * BOHR)            # Aufhellung ab 1 Bohr hinter der Mitte, voll weiß nach weiteren 22 Bohr
 ISO_FRACTION = 80.0                             # % der Orbitaldichte innerhalb der Fläche
+ISO_ABS = 0.01                                  # fester Isowert (a.u.), Vorgabe wie IboView „Compute Surface“
 ORB_ALPHA = 0.6
 MOLDEN_SPACING = 0.1                            # Å, Gitter für MOs aus Molden (IboView: 12 Punkte/Å)
 MAX_LAYERS = 4
