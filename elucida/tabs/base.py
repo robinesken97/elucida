@@ -1420,6 +1420,7 @@ class OverlayTab(FigureTab):
                 self.st["entries"].append(dict(base, kind="calc", file=key, label=f"{name} (TD-DFT)", fwhm=0.3,
                                                shift=0.0))
         self.fill_table()
+        self.show_details()                        # sonst schreibt die nächste Änderung alte Werte in den Nachbarn
         self.timer.start()
 
     def eps_series(self, e):
@@ -1795,6 +1796,7 @@ class OverlayTab(FigureTab):
                  ls=self.cmb_ls.currentData(), lw=self.sp_lw.value() or None)
         if e.get("link") == "eps":
             e["sample"] = self.cmb_eps.currentData()
+            self.show_details()                    # c/Einheit/d der gewählten Messung anzeigen
         elif e["kind"] == "exp":
             e.update(conc=parse_num(self.ed_conc.text()), unit=self.cmb_unit.currentData(),
                      mw=parse_num(self.ed_mw.text()), d=self.sp_d.value())

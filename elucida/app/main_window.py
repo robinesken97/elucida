@@ -1161,7 +1161,8 @@ class MainWindow(QMainWindow):
             self._build_tab(self._tab_keys[i])
         elif 0 <= i < len(self._tab_keys) and self._tab_keys[i] == "overlay" and \
                 any(e.get("link") for e in self.ov_state.get("entries") or []):
-            self.ov_tab.timer.start()                 # verknüpfte ε-Serien: Änderungen im ε-Tab übernehmen
+            self.ov_tab.show_details()                # verknüpfte ε-Serien: Änderungen im ε-Tab übernehmen
+            self.ov_tab.timer.start()
 
     def _build_tab(self, key):
         """Tab aus seinem Zustand bauen und den Platzhalter ersetzen."""

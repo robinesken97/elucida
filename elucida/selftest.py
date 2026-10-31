@@ -5244,6 +5244,7 @@ def selftest(outdir, with_isnet=False):
         report.append("F1 synthesis (units in cells, n entered, ChemDraw stoichiometry table, general procedures, "
                       "group headings toggle, sample left): OK")
 
+        parse_num_f2 = lambda t_: float(t_.replace(",", "."))                    # noqa: E731
         # F2 (FB-22): Overlay übernimmt ε-Serien (verknüpft, Messung wählbar) und TD-DFT aus dem DFT-Tab
         w.open_project(out / "demo")
         pump(0.4)
@@ -5263,6 +5264,11 @@ def selftest(outdir, with_isnet=False):
         mn_f2.deleteLater()
         n_f2 = len(w.ov_state["entries"])
         ot_.toggle_linked("calc", tdf_f2, "x", True)                             # schon da: nicht doppelt
+        assert len(w.ov_state["entries"]) == n_f2
+        ot_.toggle_linked("calc", tdf_f2, "x", False)                            # Codex: wirklich entfernen …
+        assert len(w.ov_state["entries"]) == n_f2 - 1 and ot_.linked_entry("calc", tdf_f2) is None
+        ot_.toggle_linked("calc", tdf_f2, "x", True)                             # … und hinzufügen
+        assert ot_.linked_entry("calc", tdf_f2)["label"] == "x (TD-DFT)" and len(w.ov_state["entries"]) == n_f2
         ot_.toggle_linked("eps", g_f2, g_f2, True)
         e_f2 = w.ov_state["entries"][-1]
         assert len(w.ov_state["entries"]) == n_f2 + 1 and e_f2["link"] == "eps" and "file" not in e_f2
@@ -5275,7 +5281,8 @@ def selftest(outdir, with_isnet=False):
         w.groups["f2fake"] = [dict(x=x_f2, y=np.where(x_f2 < 230, 3.0, 0.5 * c_), c=c_, unit="mM", name=f"n{c_}")
                               for c_ in (1.0, 1.8, 2.5)]                         # unter 230 nm zählt nicht
         assert ot_.eps_linked(dict(series="f2fake", label="f"))[1]["conc"] == 1.8
-        w.groups["f2fake"] = w.groups["f2fake"][2:]                              # alle gesättigt: niedrigste
+        w.groups["f2fake"] = [dict(s_, c=c_ * 2, y=s_["y"] * 4) for s_, c_ in
+                              zip(w.groups["f2fake"][1:], (1.8, 1.25))]          # alle gesättigt: niedrigste
         assert ot_.eps_linked(dict(series="f2fake", label="f"))[1]["conc"] == 2.5
         del w.groups["f2fake"]
         lo_f2 = min(sp_f2, key=lambda s_: s_["c"])
@@ -5283,18 +5290,41 @@ def selftest(outdir, with_isnet=False):
         assert ot_.cmb_eps.isVisibleTo(ot_.det) and not ot_.ed_conc.isEnabled()
         ot_.cmb_eps.setCurrentIndex(ot_.cmb_eps.findData(lo_f2["name"]))
         assert e_f2["sample"] == lo_f2["name"] and ot_.eps_linked(e_f2)[1]["conc"] == lo_f2["c"]
-        w.conc[lo_f2["name"]] = {"conc": lo_f2["c"] * 2, "unit": lo_f2["unit"], "series": g_f2}   # verknüpft
+        assert parse_num_f2(ot_.ed_conc.text()) == lo_f2["c"], ot_.ed_conc.text()   # Codex: Anzeige folgt der Wahl
+        w.conc[lo_f2["name"]] = {"conc": 0.7, "unit": lo_f2["unit"], "series": g_f2}   # verknüpft
         w.rebuild_groups()
-        assert ot_.eps_linked(e_f2)[1]["conc"] == lo_f2["c"] * 2
+        assert ot_.eps_linked(e_f2)[1]["conc"] == 0.7
+        w._tab_shown(w._tab_keys.index("overlay"))                               # Codex: Anzeige beim Zeigen
+        assert parse_num_f2(ot_.ed_conc.text()) == 0.7, ot_.ed_conc.text()
         del w.conc[lo_f2["name"]]
         w.rebuild_groups()
-        ot_.st["mode"] = "eps"
+        ot_.st.update(mode="eps", baseline=False)
         ot_.render()
+        r_f2 = ot_.eps_linked(e_f2)[1]                                          # Codex: Kurve und ε-Werte prüfen
+        fac_f2 = 1 / r_f2["mw"] if r_f2["unit"] == "mg/mL" else core.CONC_TO_M[r_f2["unit"]]
+        cv_f2 = [c_ for c_ in ot_.F.curves if c_.get("label") == e_f2["label"]]
+        assert len(cv_f2) == 1 and np.allclose(cv_f2[0]["val"], lo_f2["y"] / (r_f2["conc"] * fac_f2 * r_f2["d"]) / 1000)
         assert not any(e_f2["label"] in n_ for n_ in ot_._notes), ot_._notes    # ε ohne eigene Konzentration
+        ot_.st["baseline"] = True
         w.save_project()
         assert PRJ.load(out / "demo")["overlay"]["entries"][-1].get("link") == "eps"
+        w.ov_state["entries"].append(dict(w.ov_state["entries"][0], uid="f2nb", label="f2 neighbour"))
+        ot_.fill_table()                                                         # Nachbar hinter der ε-Kurve
+        ot_.table.setCurrentCell(len(w.ov_state["entries"]) - 2, 1)
         ot_.toggle_linked("eps", g_f2, g_f2, False)                              # Haken weg: entfernt
+        assert ot_.current_entry()["label"] == "f2 neighbour"
+        assert not ot_.cmb_eps.isVisibleTo(ot_.det)                              # Codex: Details des Nachbarn
+        w.ov_state["entries"].pop()
+        ot_.fill_table()
+        ot_.show_details()
         assert len(w.ov_state["entries"]) == n_f2
+        pump(0.8)
+        ot_.toggle_linked("eps", g_f2, g_f2, True)                               # Undo nimmt die Übernahme zurück
+        pump(0.8)
+        assert ot_.linked_entry("eps", g_f2) is not None
+        w.undo()
+        pump(0.4)
+        assert w.ov_tab.linked_entry("eps", g_f2) is None, w.ov_state["entries"]
         w.dft_state["entries"].pop()
         w.save_project()
         report.append("F2 overlay (epsilon series linked with selectable measurement, TD-DFT from DFT tab): OK")
