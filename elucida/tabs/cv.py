@@ -688,7 +688,8 @@ class CVTab(TABS.FigureTab):
             it.setCheckState(Qt.Checked if e["visible"] else Qt.Unchecked)
             self.table.setItem(i, 0, it)
             self.table.setItem(i, 1, QTableWidgetItem(e["label"]))
-            self.table.setCellWidget(i, 2, TABS.color_button(e["color"], lambda c, e=e: self._set_color(e, c)))
+            self.table.setCellWidget(i, 2, TABS.color_button(e["color"], lambda c, e=e: self._set_color(e, c),
+                                                              cell=True))
             try:
                 rate = self.data(e["file"])["meta"]["scanrate"]
             except Exception:
@@ -720,7 +721,7 @@ class CVTab(TABS.FigureTab):
             col = grad.get(e["uid"], e["color"])
             b.setEnabled(not grad)
             b.setToolTip(T("cv_color_gradient_tip") if grad else "")
-            b.setStyleSheet(f"background-color: {col}; border: 1px solid #777;")
+            b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {col}; border: 1px solid #777;")
 
     def _set_color(self, e, c):
         e["color"] = c

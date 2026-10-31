@@ -4293,6 +4293,7 @@ def selftest(outdir, with_isnet=False):
         report.append("Synthesis (amount check with rounding, reagent table, ChemDraw object, SI): OK")
 
         # Audit P7: NMR-Text/-Leser, Synthese (Mengen, Formeln, Schema-Rollen), Struktur, EA mit Deuterium
+        assert [NMR.sup_nuclei(t_) for t_ in ("1H/13C", "29Si", "DEPT135", "2D")] == ["\u00b9H/\u00b9\u00b3C", "\u00b2\u2079Si", "DEPT135", "2D"]
         bl7 = NMR.parse_mnova("(1H Multiplet Report)\n1H NMR (500 MHz, C6D6) δ 7.33 – 7.29 (m, 2H), 0.91 (s, 3H)."
                               "\n\n(13C Peak Report)\n13C NMR (126 MHz, C6D6) δ = 155.53, 6.64.\n")   # wie Mnova speichert
         assert bl7[0]["signals"][-1]["nH"] == "3H" and NMR.nmr_line(bl7[0])[0].endswith("0.91 (s, 3H)"), bl7[0]

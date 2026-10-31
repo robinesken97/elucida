@@ -8,14 +8,16 @@
 - **Layout:** the settings column has the same fixed width in every tab (no longer draggable); long labels shortened
   (details in the tooltip), number fields narrower, list buttons in two rows (add / selection). Empty file lists stay
   hidden until something is loaded. Cards, forms and dialogs use one spacing grid; the default button of every dialog
-  is highlighted. Fields on a fixed grid: number fields one width, lists, text fields and ranges end at one common
-  edge per tab; all text in fields left-aligned with the same inset; empty hint lines no longer leave gaps;
-  checkboxes in lists centred in their column; card titles flush with the card content.
+  is highlighted. Fields on a two-column grid (value A, gap, value B): single values in A, ranges, choice + value
+  and value + checkbox in A and B, lists, text fields and file rows exactly to the common edge; two values with a
+  long label in between and "☑ full"-type checkboxes get their own line, rows of checkboxes two per line; "Remove" in
+  file rows as a bin icon; all text in fields left-aligned with the same inset; empty hint lines no longer leave gaps;
+  table cells and checkboxes in lists centred; card titles flush with the card content; hint below the cards centred.
 - **Navigation:** the path (Overview › Project › Compound) moved from the tab bar into the toolbar; "Compound" and
   "SI (Word)" only show with an open compound. The window can be made narrower (about 960 px, half of a full-HD
   screen).
 - **NMR:** Mnova documents of the compound at the top of the left column (file name, store, open in Mnova) instead of
-  the "Raw data" tab.
+  the "Raw data" tab; nuclei in the lists with superscript mass numbers (¹H, ¹³C).
 - **Project page:** title over the full width, actions in a row below. Storing a Mnova document for the whole project
   was removed (existing files stay in the folder `mnova/`).
 - **Start screen:** example project and example compound as links at the bottom; time and project of a compound

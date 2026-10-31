@@ -412,6 +412,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from elucida.app import project as PRJ, style as STYLE  # noqa: E402
 from elucida.app.style import HINT_CSS, make_form  # noqa: E402
 
+_SUP = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def sup_nuclei(text):
+    """Massenzahl vor einem Elementsymbol hochstellen (1H/13C -> ¹H/¹³C; DEPT135 bleibt) – nur für die Anzeige."""
+    return re.sub(r"(?<![A-Za-z0-9])\d+(?!D\b)(?=[A-Z])", lambda m: m.group().translate(_SUP), text or "")   # „2D“ bleibt
+
+
 FIG_W_CM = 16.0                    # Breite der Spektren in Word (zwei Abbildungen je Seite, wie in der SI)
 
 
@@ -712,7 +720,8 @@ class NMRTab(QWidget):
         sp = self.spectra()
         self.tbl.setRowCount(len(sp))
         for r, s in enumerate(sp):
-            for c, val in enumerate((Path(s["file"]).name, "/".join(s.get("nuclei") or []) or "?", s.get("kind"))):
+            nuc = sup_nuclei("/".join(s.get("nuclei") or []))
+            for c, val in enumerate((Path(s["file"]).name, nuc or "?", s.get("kind"))):
                 it = QTableWidgetItem(val)
                 if c == 1 and not s.get("nuclei"):
                     it.setToolTip(T("nmr_nuc_missing"))
@@ -908,7 +917,7 @@ class NMRTab(QWidget):
         self.tbl_raw.setRowCount(len(rows))
         for i, row in enumerate(rows):
             for c, val in enumerate(row[:4]):
-                it = QTableWidgetItem(val)
+                it = QTableWidgetItem(sup_nuclei(val) if c == 0 else val)
                 if c == 0:
                     it.setData(Qt.UserRole, row[4])
                 self.tbl_raw.setItem(i, c, it)

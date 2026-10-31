@@ -150,9 +150,13 @@ def hide_when_empty(table):
     upd()
 
 
-class _CheckDelegate(QStyledItemDelegate):
-    """Kästchen ohne Text mittig in der Zelle (Qt setzt es sonst an den linken Rand, z. B. unter breiten Überschriften).
-    Zeichnen und Klicken über dasselbe Rechteck; Zellen mit Text bleiben unverändert."""
+class _CellDelegate(QStyledItemDelegate):
+    """Tabellenzellen mittig wie die Spaltenüberschriften (Nutzerwunsch); Kästchen ohne Text mittig in der Zelle (Qt
+    setzt es sonst an den linken Rand) – Zeichnen und Klicken über dasselbe Rechteck."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.displayAlignment = Qt.AlignCenter
 
     def _box(self, option, index):
         if index.data(Qt.DisplayRole) or index.data(Qt.CheckStateRole) is None:
@@ -230,7 +234,8 @@ def card(title):
 
 
 FIELD_W = 120                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
-WIDE_W = 2 * FIELD_W + 24          # Wertespalte: Listen, Textfelder, „[a] – [b]“ enden an einer Kante (Nutzerwunsch)
+GAP_W = 24                         # Lücke zwischen Feld A und B (Platz für „–“/„×“)
+WIDE_W = 2 * FIELD_W + GAP_W       # Wertespalte: Listen, Textfelder, „[a] – [b]“ enden an einer Kante (Nutzerwunsch)
 COLUMN_W = 538                    # linke Spalte in allen Tabs gleich breit (breiter nur, wenn Inhalt sonst abgeschnitten)
 CHECKS_IN_FIELD_COLUMN = True     # Häkchen-Zeilen in der Wertespalte (eine Kante für alle Bedienelemente)
 
@@ -243,48 +248,132 @@ def _fw(fl, r):
     return li.sizeHint().width() + fl.horizontalSpacing() + fi.sizeHint().width()
 
 
+def _cell(x, w):
+    """Feld fest auf eine Rasterbreite setzen (Zahlenfelder setzt _WheelGuard nach dem Stylesheet erneut)."""
+    if x.maximumWidth() != w:
+        x.setFixedWidth(w)
+
+
+def _strip_stretch(lay):
+    for i in reversed(range(lay.count())):
+        if lay.itemAt(i).spacerItem() is not None:
+            lay.takeAt(i)
+
+
 def _field_edge(root):
-    """Wertespalte je Tab an einer Kante (siehe unten): Listen und Textfelder
-    genau so breit, in Zeilen mit mehreren Teilen wächst das erste dehnbare Element (Dateiname, Textfeld, Lücke vor
-    den Knöpfen) auf die Kante. Feste Breiten statt Formularrand: der würde die Mindestbreite der Spalte mitziehen."""
-    from PySide6.QtWidgets import QAbstractScrollArea, QLineEdit
-    forms = [fl for fl in root.findChildren(QFormLayout) if fl.parentWidget() is not None]
-    items = [it for fl in forms for it in (fl.itemAt(r, QFormLayout.FieldRole) for r in range(fl.rowCount()))
-             if it is not None]
-    if not items:
-        return
-    for it in items:
-        if it.widget() is not None:
-            it.widget().ensurePolished()
-    # Kante je Tab: mindestens WIDE_W, sonst die breiteste Zeile aus mehreren Teilen („[a] Ränder [b]“), aber nie
-    # breiter als die feste Spalte (COLUMN_W abzüglich Ränder und Beschriftungsspalte) – die Abbildung bleibt gleich groß
-    lab = max((fl.itemAt(r, QFormLayout.LabelRole).widget().minimumWidth() for fl in forms for r in range(fl.rowCount())
-               if fl.itemAt(r, QFormLayout.LabelRole) is not None and fl.itemAt(r, QFormLayout.LabelRole).widget()),
-              default=0)
-    room = COLUMN_W - 2 * 12 - 2 * 16 - lab - 12 - 10          # Reserve: verschachtelte Karten, Klappkarten
-    wide = max([WIDE_W] + [h for h in (it.sizeHint().width() for it in items if it.layout() is not None) if h <= room])
-    stretchy = (QLineEdit, QComboBox, QAbstractScrollArea)
-    for fl in forms:
+    """Zwei-Spalten-Raster der Wertespalte (Nutzerwunsch Symmetrie): Feld A = FIELD_W, Lücke GAP_W, Feld B = FIELD_W,
+    zusammen WIDE_W. Einzelwert in A; „[a] – [b]“, „[a] × [b]“, Auswahl + Wert und Wert + Häkchen in A und B; Listen,
+    Textfelder und Dateizeilen genau bis zur Kante. Zwei Werte mit langer Zwischenbeschriftung („[a] Ränder [b]“)
+    und „☑ gesamt [a] – [b]“ bekommen eine zweite Zeile. Feste Breiten statt Formularrand (der zöge die Spalte mit)."""
+    from PySide6.QtWidgets import QAbstractScrollArea, QCheckBox, QLineEdit
+    from elucida.app.i18n import T
+    U, G, W = FIELD_W, GAP_W, WIDE_W
+    value = (QAbstractSpinBox, QComboBox, QLineEdit)
+    for fl in [fl for fl in root.findChildren(QFormLayout) if fl.parentWidget() is not None]:
         fl.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
-    for it in items:
-        w, lay = it.widget(), it.layout()
-        if isinstance(w, stretchy) and w.maximumWidth() != FIELD_W:
-            w.setFixedWidth(wide)
-        elif isinstance(lay, QHBoxLayout) and lay.sizeHint().width() < wide:
-            extra = wide - lay.sizeHint().width()
-            for i in range(lay.count()):
-                sub_ = lay.itemAt(i)
-                x = sub_.widget()
-                if sub_.spacerItem() is not None and sub_.expandingDirections() & Qt.Horizontal:
-                    sp = sub_.spacerItem()
-                    sp.changeSize(sp.sizeHint().width() + extra, 0, QSizePolicy.Fixed, QSizePolicy.Minimum)
-                elif (isinstance(x, stretchy) or (isinstance(x, QLabel) and lay.stretch(i) > 0)) and \
-                        x.maximumWidth() != FIELD_W:
-                    x.setFixedWidth(x.sizeHint().width() + extra)
+        for r in reversed(range(fl.rowCount())):            # Häkchenreihen (≥ 3) zu zweit in Feld A und B
+            it = fl.itemAt(r, QFormLayout.SpanningRole)
+            lay = it.layout() if it is not None else None
+            if not isinstance(lay, QHBoxLayout):
+                continue
+            cbs = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            if len(cbs) < 3 or not all(isinstance(x, QCheckBox) for x in cbs):
+                continue
+            for x in cbs:
+                lay.removeWidget(x)
+            fl.removeRow(r)                                   # leeres Layout weg (Widgets sind schon herausgenommen)
+            for k in reversed(range(0, len(cbs), 2)):
+                h = QHBoxLayout()
+                h.setSpacing(0)
+                h.setProperty("grid", True)
+                cbs[k].setFixedWidth(U + G)
+                h.addWidget(cbs[k])
+                if k + 1 < len(cbs):
+                    h.addWidget(cbs[k + 1])
+                h.addStretch(1)
+                fl.insertRow(r, "", h)
+        for r in reversed(range(fl.rowCount())):
+            it = fl.itemAt(r, QFormLayout.FieldRole)
+            if it is None:
+                continue
+            w, lay = it.widget(), it.layout()
+            if w is not None:
+                if isinstance(w, (QLineEdit, QComboBox, QAbstractScrollArea)) and w.maximumWidth() != U:
+                    _cell(w, W)
+                continue
+            if not isinstance(lay, QHBoxLayout) or lay.property("grid"):
+                continue
+            lay.setProperty("grid", True)
+            ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            if len(ws) >= 3 and isinstance(ws[0], QCheckBox) and isinstance(ws[1], value):
+                lay.removeWidget(ws[0])                        # „☑ gesamt“/„☑ einsetzen“ unter die Werte
+                fl.insertRow(r + 1, "", ws[0])
+                ws = ws[1:]
+            if len(ws) == 3 and isinstance(ws[0], value) and isinstance(ws[1], QLabel) and isinstance(ws[2], value):
+                a, mid, b = ws
+                _cell(a, U)
+                _cell(b, U)
+                if len(mid.text().strip()) > 1:               # lange Zwischenbeschriftung: eigene Zeile
+                    lay.removeWidget(mid)
+                    lay.removeWidget(b)
+                    lab = fl.itemAt(r, QFormLayout.LabelRole)
+                    lab = lab.widget() if lab is not None else None
+                    mid.setWordWrap(True)
+                    mid.setProperty("formlabel", True)
+                    if lab is not None and lab.maximumWidth() < 10000:
+                        mid.setMinimumWidth(lab.minimumWidth())
+                        mid.setMaximumWidth(lab.maximumWidth())
+                    mid.setMinimumHeight(b.sizeHint().height())
+                    mid.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                    mid.style().unpolish(mid)
+                    mid.style().polish(mid)
+                    fl.insertRow(r + 1, mid, b)
                 else:
-                    continue
-                lay.invalidate()
-                break
+                    lay.setSpacing(0)
+                    mid.setMinimumWidth(G)
+                    mid.setMaximumWidth(G)
+                    mid.setAlignment(Qt.AlignCenter)
+                _strip_stretch(lay)
+                continue
+            if len(ws) == 2 and isinstance(ws[0], value) and isinstance(ws[1], (QCheckBox,) + value):
+                _cell(ws[0], U)
+                if isinstance(ws[1], value):
+                    _cell(ws[1], U)
+                lay.setSpacing(G)
+                _strip_stretch(lay)
+                continue
+            if len(ws) == 4 and isinstance(ws[0], QLabel) and isinstance(ws[2], QLabel) and \
+                    not isinstance(ws[1], value + (QLabel,)) and not isinstance(ws[3], value + (QLabel,)):
+                # „Absorption [■] Emission [■]“: je ein Paar in Feld A und B
+                lay.setSpacing(8)
+                _strip_stretch(lay)
+                for lb, x in ((ws[0], ws[1]), (ws[2], ws[3])):
+                    if isinstance(x, QPushButton):            # Farbfeld quadratisch wie die Symbolknöpfe
+                        x.setFixedWidth(34)
+                    lb.setMinimumWidth(0)
+                    lb.setFixedWidth(max(20, U - x.maximumWidth() if isinstance(x, QPushButton) else
+                                         U - x.sizeHint().width()) - 8)
+                lay.insertSpacing(lay.indexOf(ws[2]), G - 8)
+                continue
+            # Datei-, Einheits- und Auswahl+Knopf-Zeilen: das dehnbare Element füllt bis zur Kante
+            fill = [x for x in ws if (isinstance(x, QLabel) and lay.stretch(lay.indexOf(x)) > 0)
+                    or (isinstance(x, (QLineEdit, QComboBox)) and x.maximumWidth() != U)]
+            if not fill:
+                continue
+            for x in ws:
+                if isinstance(x, QPushButton) and x.text() == T("remove") and len(ws) > 2:
+                    x.setToolTip(T("remove"))                 # Dateizeilen: Papierkorb statt Text (Platz für den Namen)
+                    x.setText("")
+                    x.setIcon(icon("trash"))
+                    x.setFixedWidth(34)
+            others = sum(x.minimumWidth() if x.minimumWidth() == x.maximumWidth() else x.sizeHint().width()
+                         for x in ws if x is not fill[0]) + 8 * (len(ws) - 1)
+            if W - others < 60:                               # passt nicht ins Raster: Zeile bleibt, wie sie ist
+                continue
+            lay.setSpacing(8)
+            _strip_stretch(lay)
+            fill[0].setMinimumWidth(0)
+            fill[0].setFixedWidth(W - others)
 
 
 def tidy(root):
@@ -355,6 +444,9 @@ def tidy(root):
             if isinstance(first, QCheckBox) and isinstance(second, QAbstractSpinBox):
                 lay.setSpacing(8)                             # -1 (Stil-Standard) verschob den Wert um 1 px
                 first.setMinimumWidth(lab_w + fl.horizontalSpacing() - lay.spacing())
+                if lay.count() > 2 and not lay.property("grid"):   # drittes Element in Feld B
+                    lay.setProperty("grid", True)
+                    lay.insertSpacing(2, GAP_W - lay.spacing())
         # Beschriftung so hoch wie ihr Feld, Text darin mittig: Qt setzt Beschriftungen sonst mit einem festen Versatz,
         # der bei den höheren Feldern 2–3 px zu hoch liegt
         for r in range(fl.rowCount()):
@@ -391,14 +483,14 @@ def tidy(root):
                         lay.setContentsMargins(indent, 0, 0, 0)
     _field_edge(root)
     from PySide6.QtWidgets import QTableWidget
-    for t in root.findChildren(QTableWidget):                # Kästchen ohne Text mittig (alle Listen)
-        if not isinstance(t.itemDelegate(), _CheckDelegate):
-            t.setItemDelegate(_CheckDelegate(t))
+    for t in root.findChildren(QTableWidget):                # Zellen und Kästchen mittig (alle Tabellen)
+        if not isinstance(t.itemDelegate(), _CellDelegate):
+            t.setItemDelegate(_CellDelegate(t))
     for h in root.findChildren(HintLabel):                    # leere Hinweise ohne Zeile
         h.sync()
     for lay in root.findChildren(QHBoxLayout):
         items = [lay.itemAt(i) for i in range(lay.count())]
-        if any(isinstance(it.widget(), (QLabel, QCheckBox)) for it in items[1:]):   # Beschriftung nicht ankleben
+        if not lay.property("grid") and any(isinstance(it.widget(), (QLabel, QCheckBox)) for it in items[1:]):   # Beschriftung nicht ankleben
             lay.setSpacing(max(lay.spacing(), 8))
         ws = [it.widget() for it in items if it.widget() is not None]
         # nur feste Elemente: links zusammenhalten statt über die Breite verteilen

@@ -88,16 +88,20 @@ def reset_button(reset_layout, reset_defaults):
     return b
 
 
-def color_button(color, on_pick):
+def color_button(color, on_pick, cell=False):
+    """Farbfeld; cell: in einer Tabellenzelle mit gleichem Rand ringsum (mittig wie die übrigen Zellen)."""
     b = QPushButton()
-    b.setFixedSize(44, 22)
-    b.setStyleSheet(f"background-color: {color}; border: 1px solid #777;")
+    css = "margin: 4px 12px; " if cell else ""
+    if not cell:
+        b.setFixedSize(44, 22)
+    b.setProperty("cellcss", css)
+    b.setStyleSheet(f"{css}background-color: {color}; border: 1px solid #777;")
 
     def pick():
         c = QColorDialog.getColor(QColor(b.property("color") or color))
         if c.isValid():
             b.setProperty("color", c.name())
-            b.setStyleSheet(f"background-color: {c.name()}; border: 1px solid #777;")
+            b.setStyleSheet(f"{css}background-color: {c.name()}; border: 1px solid #777;")
             on_pick(c.name())
     b.setProperty("color", color)
     b.clicked.connect(pick)
@@ -500,7 +504,7 @@ class FigureTab(QWidget):
         self.build_controls()
         self.grp_common = self.common_box()
         self.lv.addWidget(self.grp_common)
-        hint = QLabel(T("drag_hint_tab"))
+        hint = QLabel(T("drag_hint_tab"), alignment=Qt.AlignHCenter)     # Fußnote unter den Karten: mittig
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
         self.lv.addWidget(hint)
@@ -1689,7 +1693,7 @@ class OverlayTab(FigureTab):
             it.setCheckState(Qt.Checked if e["visible"] else Qt.Unchecked)
             self.table.setItem(i, 0, it)
             self.table.setItem(i, 1, QTableWidgetItem(e["label"]))
-            self.table.setCellWidget(i, 2, color_button(e["color"], lambda c, e=e: self._set_color(e, c)))
+            self.table.setCellWidget(i, 2, color_button(e["color"], lambda c, e=e: self._set_color(e, c), cell=True))
             it = QTableWidgetItem(T("ov_eps_linked") if e.get("link") == "eps" else
                                   {"exp": T("ov_exp"), "sec": "SEC", "secser": T("ov_sec_series")}.get(e["kind"], "TD-DFT"))
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)

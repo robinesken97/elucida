@@ -1097,7 +1097,8 @@ class EPRTab(TABS.FigureTab):
             it.setCheckState(Qt.Checked if e["visible"] else Qt.Unchecked)
             self.table.setItem(i, 0, it)
             self.table.setItem(i, 1, QTableWidgetItem(e["label"]))
-            self.table.setCellWidget(i, 2, TABS.color_button(e["color"], lambda c, e=e: self._set_color(e, c)))
+            self.table.setCellWidget(i, 2, TABS.color_button(e["color"], lambda c, e=e: self._set_color(e, c),
+                                                              cell=True))
             for j, txt in ((3, T("epr_kind_" + e["kind"])), (4, f"{e['T']:.0f}" if e.get("T") else "–")):
                 it = QTableWidgetItem(txt)
                 it.setFlags(it.flags() & ~Qt.ItemIsEditable)

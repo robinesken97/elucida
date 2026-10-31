@@ -8,15 +8,17 @@
 - **Aufbau:** Die Einstellungsspalte ist in allen Tabs gleich breit und fest (nicht mehr verschiebbar); lange
   Beschriftungen gekürzt (Details im Tooltip), Zahlenfelder schmaler, Listenknöpfe in zwei Reihen (Hinzufügen /
   Auswahl). Leere Dateilisten bleiben ausgeblendet, bis etwas geladen ist. Karten, Formulare und Dialoge mit einem
-  gemeinsamen Abstandsraster; der Standardknopf jedes Dialogs ist hervorgehoben. Felder im festen Raster:
-  Zahlenfelder gleich breit, Auswahllisten, Textfelder und Bereiche enden je Tab an einer Kante; Text in allen Feldern
-  linksbündig mit gleichem Abstand zum Rand; leere Hinweiszeilen hinterlassen keine Lücke; Kästchen in Listen mittig in
-  ihrer Spalte; Kartentitel bündig mit dem Karteninhalt.
+  gemeinsamen Abstandsraster; der Standardknopf jedes Dialogs ist hervorgehoben. Felder im Zwei-Spalten-Raster
+  (Wert A, Lücke, Wert B): Einzelwerte in A, Bereiche, Auswahl + Wert und Wert + Häkchen in A und B, Listen,
+  Textfelder und Dateizeilen genau bis zur gemeinsamen Kante; zwei Werte mit langer Beschriftung dazwischen und
+  Häkchen wie „☑ gesamt“ bekommen eine eigene Zeile, Häkchenreihen zu zweit; „Entfernen“ in Dateizeilen als Papierkorb; Text in allen Feldern
+  linksbündig mit gleichem Abstand zum Rand; leere Hinweiszeilen hinterlassen keine Lücke; Tabellenzellen und Kästchen in
+  Listen mittig; Kartentitel bündig mit dem Karteninhalt; Hinweis unter den Karten mittig.
 - **Navigation:** Der Pfad (Übersicht › Projekt › Verbindung) steht jetzt in der Werkzeugleiste statt in der
   Tab-Leiste; „Verbindung“ und „SI (Word)“ erscheinen nur bei offener Verbindung. Das Fenster lässt sich schmaler
   ziehen (etwa 960 px, halber Full-HD-Bildschirm).
 - **NMR:** Mnova-Dokumente der Verbindung oben in der linken Spalte (Dateiname, ablegen, in Mnova öffnen) statt im
-  Reiter „Rohdaten“.
+  Reiter „Rohdaten“; Kerne in den Listen mit hochgestellter Massenzahl (¹H, ¹³C).
 - **Projektseite:** Titel über die volle Breite, Aktionen in einer Zeile darunter. Mnova-Ablage für das ganze Projekt
   entfernt (vorhandene Dateien bleiben im Ordner `mnova/`).
 - **Startbildschirm:** Beispielprojekt und Beispielverbindung als Links unten; Zeit und Projekt einer Verbindung
