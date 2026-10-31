@@ -1827,7 +1827,6 @@ class MainWindow(QMainWindow):
         outer = QHBoxLayout(page)
         outer.setContentsMargins(24, 28, 24, 20)
         col = QWidget()
-        col.setMaximumWidth(1500)                   # wächst mit dem Fenster (FB-1), bleibt auf großen Schirmen lesbar
         v = QVBoxLayout(col)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(14)
@@ -1923,9 +1922,7 @@ class MainWindow(QMainWindow):
         hint.setOpenExternalLinks(True)
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
-        outer.addStretch(1)
-        outer.addWidget(col, 12)
-        outer.addStretch(1)
+        outer.addWidget(col, 1)                         # füllt die ganze Breite (Robin, 2.4.0)
         self.recent_rows = []
         self.pub_rows = []
         self.fill_recent_list()
@@ -1962,8 +1959,9 @@ class MainWindow(QMainWindow):
             row.customContextMenuRequested.connect(lambda pos, r=row: self._pub_menu(r, pos))
             self.pub_box.addWidget(row, k // PUB_TILE_COLS, k % PUB_TILE_COLS)
             self.pub_rows.append(row)
+        used = max(1, min(len(shown), PUB_TILE_COLS))   # Kacheln füllen die Reihe (eine Kachel = ganze Breite)
         for c in range(PUB_TILE_COLS):
-            self.pub_box.setColumnStretch(c, 1)
+            self.pub_box.setColumnStretch(c, 1 if c < used else 0)
         self.lbl_pubs.setText(f"<b>{T('welcome_publications')}</b>")
         self.lbl_pubs.setVisible(bool(pubs))
         self.btn_pubs_all.setVisible(len(pubs) > 2 * PUB_TILE_COLS)
