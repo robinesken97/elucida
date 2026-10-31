@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-from elucida.formats.opus import (read_opus, is_opus, read_ir_pdf)  # noqa: E402,F401  (Leser in elucida/formats)
+from elucida.formats.opus import (read_opus, is_opus, read_ir_pdf, read_ir_pdf_curve)  # noqa: E402,F401  (Leser in elucida/formats)
 from elucida.formats.ms_report import (read_ms_docx, _emf_texts, cdx_structure)  # noqa: E402,F401  (Leser in elucida/formats)
 from elucida.formats.elements import ELEMENTS  # noqa: E402
 from elucida.formats.bruker_ms import (read_bruker_d, is_bruker_d, BAF_LINE_MAGIC, BAF_TRANSFORMATOR, _baf_mz)  # noqa: E402,F401  (Leser in elucida/formats)
@@ -223,6 +223,73 @@ def pick_peaks(wn, y, kind="T", lo=None, hi=None, prominence=0.05, min_dist=4.0)
         for p in uniq:
             p["rel"] = float(np.interp(p["wn"], xs, ds)) / dmx
     return uniq
+
+
+OPUS_BASE = (128, 50)        # Stützpunkte und Iterationen (OPUS BPO/BIO), falls der Verlauf keine nennt
+
+
+def _lower_hull(x, y):
+    h = []
+    for p in zip(x, y):
+        while len(h) >= 2 and (h[-1][0] - h[-2][0]) * (p[1] - h[-2][1]) - (h[-1][1] - h[-2][1]) * (p[0] - h[-2][0]) <= 0:
+            h.pop()
+        h.append(p)
+    return np.array(h)
+
+
+def concave_rubberband(wn, a, points=OPUS_BASE[0], iters=OPUS_BASE[1]):
+    """Basislinie wie OPUS „Baseline Method 3“ (konkaves Gummiband, Bruker-Patent US 7359815): je Iteration eine
+    Parabel F·((x − Mitte)/(Rand − Mitte))² addieren, F = Spannweite/2.2, dann das Gummiband (untere Hülle der Minima
+    von `points` Abschnitten) abziehen. a = Absorbanz -> Basislinie (Rohspektrum − Ergebnis), NaN bleibt NaN.
+    Faktor 1/2.2 statt 1/10 aus dem Patent: an einem OPUS-8.5-Bericht angepasst (RMS 0.05 %T, max. 0.4 %T)."""
+    wn, a = np.asarray(wn, float), np.asarray(a, float)
+    ok = np.isfinite(a) & np.isfinite(wn)
+    out = np.full_like(a, np.nan)
+    if ok.sum() < 3:
+        return out
+    o = np.argsort(wn[ok])
+    x, y = wn[ok][o], a[ok][o]
+    par = ((x - (x[0] + x[-1]) / 2) / ((x[-1] - x[0]) / 2)) ** 2
+    parts = np.array_split(np.arange(len(x)), max(1, min(int(points), len(x))))
+    z = y.copy()
+    for _ in range(max(1, int(iters))):
+        z = z + (z.max() - z.min()) / 2.2 * par
+        mi = sorted({0, len(x) - 1, *(int(i[np.argmin(z[i])]) for i in parts)})
+        h = _lower_hull(x[mi], z[mi])
+        z = z - np.interp(x, h[:, 0], h[:, 1])
+    base = np.empty_like(y)
+    base[o] = y - z
+    out[ok] = base
+    return out
+
+
+def baseline_corrected(sp):
+    """Spektrum mit abgezogener OPUS-Basislinie (Stützpunkte/Iterationen aus dem OPUS-Verlauf, sonst OPUS_BASE);
+    gerechnet in Absorbanz, zurück in der Einheit der Datei. Ändert nur die Anzeige/Peaksuche, nie die Datei."""
+    h = sp.get("baseline") or {}
+    pts, its = (h.get("BPO", OPUS_BASE[0]), h.get("BIO", OPUS_BASE[1])) if h.get("BME") == 3 else OPUS_BASE
+    y = np.asarray(sp["y"], float)
+    a = y if sp["kind"] == "A" else to_absorbance(y)
+    a2 = a - concave_rubberband(sp["wn"], a, pts, its)
+    y2 = a2 if sp["kind"] == "A" else to_transmission(a2)
+    return dict(sp, y=np.where(np.isfinite(a2), y2, y))
+
+
+def threshold_peaks(sp, line, lo=None, hi=None):
+    """Peaks jenseits der Schwellenlinie (FB-15): line = [[ṽ, A], …] stückweise linear (außerhalb waagrecht), Peak =
+    lokales Maximum der Absorbanz bzw. Minimum der Transmission oberhalb bzw. unterhalb der Linie. Kleine Prominenz
+    (THR_PROM) nur gegen Rauschspitzen."""
+    pk = pick_peaks(sp["wn"], sp["y"], sp["kind"], lo, hi, THR_PROM)
+    if not pk or not line:
+        return pk
+    lx, ly = np.array(sorted(line)).T
+    o = np.argsort(sp["wn"])
+    y = np.asarray(sp["y"], float)[o]
+    a = y if sp["kind"] == "A" else to_absorbance(y)
+    return [p for p in pk if np.interp(p["wn"], sp["wn"][o], a) > np.interp(p["wn"], lx, ly)]
+
+
+THR_PROM = 0.005
 
 
 def to_absorbance(t_pct):
@@ -519,12 +586,14 @@ class IRMSTab(TABS.FigureTab):
     SI_CAPTION = "IR spectrum of {name}."
     X_RANGE = (100.0, 8000.0, 0, 50.0)
     XRANGE_TEXT = "ir_xrange"
-    RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ea_solvate", "ea_found")   # Dateien, entfernte Peaks, EA
+    RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ir_thr", "ea_solvate", "ea_found")   # Dateien, Peakwahl, EA
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
                          ea_solvate="", ea_found={}, ir_mode="T",     # "T" | "A"; None (alte Projekte) = wie die Datei
                          y_auto=True, y_min=0.0, y_max=100.0,        # y-Bereich (ymax: nur alte Projekte)
-                         ir_color=IR_COLOR)                          # Farbe des Spektrums (FB-13)
+                         ir_color=IR_COLOR,                          # Farbe des Spektrums (FB-13)
+                         ir_base=False,                              # OPUS-Basislinie abziehen (FB-11)
+                         ir_thr=[])                                  # Schwellenlinie [[ṽ, A], …] (FB-15)
 
     def build_controls(self):
         st = self.st
@@ -553,6 +622,20 @@ class IRMSTab(TABS.FigureTab):
                                       value=st["prominence"])
         self.sp_prom.setToolTip(T("ir_prom_tip"))
         f.addRow(T("ir_prom"), self.sp_prom)
+        self.cb_base = QCheckBox(T("ir_base"))
+        self.cb_base.setToolTip(T("ir_base_tip"))
+        f.addRow(self.cb_base)
+        row = QHBoxLayout()
+        self.btn_thr = QPushButton(T("ir_thr"))
+        self.btn_thr.setCheckable(True)
+        self.btn_thr.setToolTip(T("ir_thr_tip"))
+        self.btn_thr.toggled.connect(lambda _on: self.render())
+        self.btn_thr_clear = QPushButton(T("ir_thr_clear"))
+        self.btn_thr_clear.clicked.connect(self.clear_threshold)
+        row.addWidget(self.btn_thr)
+        row.addWidget(self.btn_thr_clear)
+        row.addStretch(1)
+        f.addRow(row)
         self.cb_int = QCheckBox(T("ir_with_int"))
         self.cb_int.setToolTip(T("ir_with_int_tip"))
         self.cb_int.setChecked(st["with_int"])
@@ -626,7 +709,7 @@ class IRMSTab(TABS.FigureTab):
         self.cb_full.toggled.connect(self.changed)
         for w_ in (self.sp_lo, self.sp_hi, self.sp_prom):
             w_.valueChanged.connect(self.changed)
-        for w_ in (self.cb_int, self.cb_irlab):
+        for w_ in (self.cb_int, self.cb_irlab, self.cb_base):
             w_.toggled.connect(self.changed)
         self.cmb_mode.currentIndexChanged.connect(self.mode_changed)
         self.sync_widgets()
@@ -758,12 +841,12 @@ class IRMSTab(TABS.FigureTab):
         except Exception as e:
             self.main.error(f"{Path(p).name}: {e}")
             return
-        self.st.update(ir_lo=None, ir_hi=None, ir_off=[])
+        self.st.update(ir_lo=None, ir_hi=None, ir_off=[], ir_thr=[])
         self.sync_widgets()
         self.timer.start()
 
     def clear_ir(self):
-        self.st.update(ir_file=None, ir_pdf=None, ir_lo=None, ir_hi=None, ir_off=[])
+        self.st.update(ir_file=None, ir_pdf=None, ir_lo=None, ir_hi=None, ir_off=[], ir_thr=[])
         self.sync_widgets()
         self.timer.start()
 
@@ -772,11 +855,42 @@ class IRMSTab(TABS.FigureTab):
         self.timer.start()
 
     # -- Daten ------------------------------------------------------------------------
+    def raw_spectrum(self):
+        """Spektrum der OPUS-Datei, sonst die Kurve aus dem OPUS-PDF (FB-14; unlesbar -> None, Grund in pdf_error)."""
+        p, pdf = self.st.get("ir_file"), self.st.get("ir_pdf")
+        if p and Path(p).exists():
+            return self.cache(("opus", p), lambda: read_opus(p))
+        if pdf and Path(pdf).exists():
+            def curve():
+                try:
+                    return read_ir_pdf_curve(pdf)
+                except Exception as e:                   # unbekanntes Layout: Peakwerte gelten weiter, kein Bild
+                    return str(e)
+            sp = self.cache(("irpdfcurve", pdf), curve)
+            return sp if isinstance(sp, dict) else None
+        return None
+
+    def pdf_error(self):
+        pdf = self.st.get("ir_pdf")
+        e = self.main.extra_cache.get(("irpdfcurve", pdf)) if pdf and not self.st.get("ir_file") else None
+        return e if isinstance(e, str) else None
+
     def spectrum(self):
-        p = self.st.get("ir_file")
-        if not p or not Path(p).exists():
-            return None
-        return self.cache(("opus", p), lambda: read_opus(p))
+        """Spektrum für Bild und Peaksuche: mit Haken „Basislinie“ korrigiert (nie die Datei)."""
+        sp = self.raw_spectrum()
+        if sp is None or not self.st.get("ir_base"):
+            return sp
+        key = ("irbase", self.st.get("ir_file") or self.st.get("ir_pdf"))
+        return self.cache(key, lambda: baseline_corrected(sp))
+
+    def raw_uncorrected(self):
+        """OPUS-Verlauf nennt eine Basislinienkorrektur, die Datei hat aber noch die Basislinie (> 0.02 A)."""
+        sp = self.raw_spectrum()
+        if not sp or not sp.get("baseline") or self.st.get("ir_base"):
+            return False
+        b = self.cache(("irbase", self.st.get("ir_file")), lambda: baseline_corrected(sp))
+        d = to_absorbance(sp["y"]) - to_absorbance(b["y"]) if sp["kind"] == "T" else sp["y"] - b["y"]
+        return bool(np.nanmax(np.abs(d)) > 0.02)
 
     def ir_range(self):
         sp = self.spectrum()
@@ -794,7 +908,10 @@ class IRMSTab(TABS.FigureTab):
         st = self.st
         (lo, hi), _ = self.ir_range()
         sp = self.spectrum()
-        found = pick_peaks(sp["wn"], sp["y"], sp["kind"], lo, hi, st["prominence"] / 100) if sp else []
+        if sp and st.get("ir_thr") and not st.get("ir_pdf"):
+            found = threshold_peaks(sp, st["ir_thr"], lo, hi)
+        else:
+            found = pick_peaks(sp["wn"], sp["y"], sp["kind"], lo, hi, st["prominence"] / 100) if sp else []
         if st.get("ir_pdf") and Path(st["ir_pdf"]).exists():
             vals = self.cache(("irpdf", st["ir_pdf"]), lambda: read_ir_pdf(st["ir_pdf"]))
             out = []
@@ -828,7 +945,16 @@ class IRMSTab(TABS.FigureTab):
         self.sp_hi.setValue(hi)
         self.sp_lo.setEnabled(not auto)
         self.sp_hi.setEnabled(not auto)
-        self.sp_prom.setEnabled(self.spectrum() is not None and not st.get("ir_pdf"))
+        self.sp_prom.setEnabled(self.spectrum() is not None and not st.get("ir_pdf") and not st.get("ir_thr"))
+        self.cb_base.setChecked(bool(st.get("ir_base")))
+        self.cb_base.setEnabled(self.raw_spectrum() is not None)
+        thr_ok = self.spectrum() is not None and not st.get("ir_pdf")
+        self.btn_thr.setEnabled(thr_ok)
+        if not thr_ok and self.btn_thr.isChecked():
+            self.btn_thr.blockSignals(True)
+            self.btn_thr.setChecked(False)
+            self.btn_thr.blockSignals(False)
+        self.btn_thr_clear.setEnabled(bool(st.get("ir_thr")))
         self.cb_int.setChecked(bool(st.get("with_int")))
         self.cb_irlab.setChecked(bool(st.get("ir_labels")))
         c_ = st.get("ir_color") or IR_COLOR
@@ -848,7 +974,8 @@ class IRMSTab(TABS.FigureTab):
         st.update(ea_solvate=self.ed_solv.text().strip(),
                   ea_found={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found_ed.items()
                             if ed.text().strip()})
-        st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked())
+        st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked(),
+                  ir_base=self.cb_base.isChecked())
         if getattr(self, "sp_ymin", None) is not None:
             lo, hi = self.sp_ymin.value(), self.sp_ymax2.value()
             if lo >= hi:                                  # min < max: das gerade nicht geänderte Feld weicht aus
@@ -945,8 +1072,14 @@ class IRMSTab(TABS.FigureTab):
         self.txt_ir.setHtml(self._ir_line[1])
         self.update_ea()
         sp = self.spectrum()
+        if self.pdf_error():
+            self.add_note(T("ir_pdf_curve_none", e=self.pdf_error()))
         if sp is None:
             return None
+        if self.raw_uncorrected():
+            self.add_note(T("ir_base_hint"))
+        if st.get("ir_thr") and st.get("ir_pdf"):
+            self.add_note(T("ir_thr_pdf"))
         cfg = self.base_cfg()
         (lo, hi), _ = self.ir_range()
         x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (min(lo, hi), max(lo, hi))
@@ -964,6 +1097,14 @@ class IRMSTab(TABS.FigureTab):
         cfg["legend"] = False
         curves = [{"x": sp["wn"], "y": y, "color": st.get("ir_color") or IR_COLOR, "label": None, "ls": "-", "lw": 1.0}]
         labels = []
+        if self.btn_thr.isChecked() and st.get("ir_thr"):    # Schwellenlinie nur im Schwellenmodus (nie im Export)
+            px_, py_ = np.array(sorted(st["ir_thr"])).T
+            lx = np.concatenate([[min(x0, px_.min())], px_, [max(x1, px_.max())]])
+            ly = np.concatenate([[py_[0]], py_, [py_[-1]]])
+            yv = (lambda a: a) if mode == "A" else to_transmission
+            curves += [{"x": lx, "y": yv(ly), "color": "#d0021b", "ls": "--", "lw": 0.8, "label": None, "aux": True},
+                       {"x": px_, "y": yv(py_), "color": "#d0021b", "ls": "None", "marker": "o", "ms": 3,
+                        "label": None, "aux": True}]
         if use:
             px = np.array([p["wn"] for p in use])
             o = np.argsort(sp["wn"])
@@ -999,6 +1140,43 @@ class IRMSTab(TABS.FigureTab):
         if F.ir_clamped:
             self.add_note(T("ir_labels_clamped", n=len(F.ir_clamped)))
         return F
+
+    def render(self):
+        super().render()
+        if getattr(self, "_thr_cid", None) is not None:
+            self.canvas.mpl_disconnect(self._thr_cid)
+            self._thr_cid = None
+        if self.F is not None and self.btn_thr.isChecked():
+            self._thr_cid = self.canvas.mpl_connect("button_press_event", self.threshold_clicked)
+
+    def threshold_clicked(self, ev):
+        """Schwellenmodus: Linksklick = Stützpunkt (in Datenkoordinaten, gespeichert als Absorbanz), Rechtsklick =
+        nächsten Stützpunkt entfernen. Klicks auf Labels bleiben beim Verschieben."""
+        F = self.F
+        if F is None or ev.inaxes is not F.ax or ev.dblclick or ev.xdata is None or ev.button not in (1, 3):
+            return
+        if any(a.contains(ev)[0] for a in F.ann_items.values()):
+            return
+        thr = [list(p) for p in self.st.get("ir_thr") or []]
+        if ev.button == 1:
+            a = float(ev.ydata) if self.mode() == "A" else float(to_absorbance([ev.ydata])[0])
+            if not np.isfinite(a):
+                return
+            thr.append([round(float(ev.xdata), 2), a])
+        elif thr:
+            yv = lambda a: a if self.mode() == "A" else float(to_transmission(a))        # noqa: E731
+            pix = F.ax.transData.transform([(x_, yv(a_)) for x_, a_ in thr])
+            thr.pop(int(np.argmin(np.hypot(pix[:, 0] - ev.x, pix[:, 1] - ev.y))))
+        else:
+            return
+        self.st["ir_thr"] = sorted(thr)
+        self.sync_widgets()
+        self.render()
+
+    def clear_threshold(self):
+        self.st["ir_thr"] = []
+        self.sync_widgets()
+        self.render()
 
     def hover_text(self, x, val, name):
         fmt = ".1f" if self.mode() == "T" else ".3f"

@@ -485,6 +485,28 @@ TEXTS = {
     "ir_range": ("Bereich", "Range"),
     "ir_xrange": ("ṽ-Bereich (Bild) [cm⁻¹]", "ṽ range (figure) [cm⁻¹]"),
     "ir_prom": ("Peakschwelle", "Peak threshold"),
+    "ir_base": ("Basislinie korrigieren (wie OPUS)", "Correct baseline (as in OPUS)"),
+    "ir_base_tip": ("Konkaves Gummiband wie OPUS-Basislinienmethode 3 (Stützpunkte/Iterationen aus dem OPUS-Verlauf, "
+                    "sonst 128/50), in Absorbanz gerechnet. Wirkt auf Bild und Peaksuche, nie auf die Datei; mit OPUS-PDF "
+                    "gelten dessen Peakwerte.",
+                    "Concave rubberband as in OPUS baseline method 3 (points/iterations from the OPUS history, otherwise "
+                    "128/50), computed in absorbance. Affects figure and peak search, never the file; with an OPUS PDF its "
+                    "peak values apply."),
+    "ir_base_hint": ("Laut OPUS-Verlauf wurde die Basislinie in OPUS korrigiert, die Datei enthält aber das Rohspektrum – "
+                     "Haken „Basislinie korrigieren“ setzen?",
+                     "According to the OPUS history the baseline was corrected in OPUS, but the file holds the raw "
+                     "spectrum – tick “Correct baseline”?"),
+    "ir_thr": ("Schwelle setzen", "Set threshold"),
+    "ir_thr_tip": ("Im Bild: Klick = Stützpunkt der Schwellenlinie, Rechtsklick = nächsten entfernen. Peaks = Minima "
+                   "(%T) bzw. Maxima (A) jenseits der Linie; ersetzt die Mindesttiefe, solange Stützpunkte da sind.",
+                   "In the figure: click = threshold point, right-click = remove the nearest. Peaks = minima (%T) or "
+                   "maxima (A) beyond the line; replaces the minimum depth while points exist."),
+    "ir_thr_clear": ("Schwelle löschen", "Clear threshold"),
+    "ir_thr_pdf": ("Schwellenlinie wirkt nicht: mit OPUS-PDF gelten dessen Peakwerte.",
+                   "Threshold line has no effect: with an OPUS PDF its peak values apply."),
+    "ir_pdf_layout": ("Kurve im PDF nicht lesbar (kein OPUS-Ausdruck mit Achsenbeschriftung und einer Spektrenseite)",
+                      "curve in the PDF not readable (no OPUS print-out with axis labels and one spectrum page)"),
+    "ir_pdf_curve_none": ("Nur Peakwerte aus dem PDF, kein Bild: {e}", "Only peak values from the PDF, no figure: {e}"),
     "ir_prom_tip": ("Mindesttiefe einer Bande relativ zur stärksten (kleiner = mehr Peaks). Nur bei eigener Peaksuche "
                     "in der OPUS-Datei; mit PDF gilt die Peakliste aus OPUS.",
                     "Minimum depth of a band relative to the strongest one (smaller = more peaks). Only for the own peak "

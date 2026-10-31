@@ -2142,6 +2142,109 @@ def selftest(outdir, with_isnet=False):
             del t_ir.spectrum
             w.irms_state["ir_mode"] = None
         report.append("IR: Standard Transmission auch fuer Absorbanzdateien, alte Projekte unveraendert: OK")
+        # F3 (FB-11/14/15): OPUS-Basislinie, Kurve aus dem OPUS-PDF, Schwellenlinie
+        xb_ = np.linspace(400.0, 4000.0, 1801)
+        bands_a_ = sum(h_ * np.exp(-((xb_ - c_) / 15.0) ** 2) for c_, h_ in ((3000, 0.3), (1700, 0.5), (1000, 0.4)))
+        for base_ in (0.01 + 0.02 * (xb_ - 400) / 3600,                      # schräg
+                      0.04 * (1 - ((xb_ - 2200) / 1800) ** 2)):               # gewölbt (konkav: einfaches Band scheitert)
+            corr_ = (bands_a_ + base_) - IRMS.concave_rubberband(xb_, bands_a_ + base_)
+            assert np.abs(corr_ - bands_a_).max() < 0.012, np.abs(corr_ - bands_a_).max()
+        hist_ = b'COMMAND_LINE Baseline (["::this::":TR], {BME=3, BCO=0, BPO=64, BIO=20});'
+        raw_t_ = (irdir / "test.0").read_bytes()
+        n_ = len(xb_)
+        Tb_ = 100.0 * 10 ** (-(bands_a_ + 0.04 * (1 - ((xb_ - 2200) / 1800) ** 2)))
+        par_ = opus_par([("NPT", 0, n_), ("FXV", 1, 4000.0), ("LXV", 1, 400.0), ("CSF", 1, 1.0)])
+        dirs_ = _st.pack("<BBBBii", 31, 20, 0, 0, len(par_) // 4, 48) + _st.pack("<BBBBii", 15, 20, 0, 0, n_, 48 + len(par_))
+        (irdir / "base.0").write_bytes(raw_t_[:24] + dirs_ + par_ + (Tb_[::-1] / 100).astype("<f4").tobytes() + hist_)   # FXV > LXV: absteigend
+        assert IRMS.read_opus(irdir / "base.0")["baseline"] == {"BME": 3, "BCO": 0, "BPO": 64, "BIO": 20}
+        assert "baseline" not in IRMS.read_opus(irdir / "test.0")
+        t_ir.load_ir(str(irdir / "base.0"))
+        t_ir.render()
+        assert any("Rohspektrum" in n_ or "raw spectrum" in n_ for n_ in t_ir._notes), t_ir._notes
+        raw_y_ = t_ir.spectrum()["y"].copy()
+        t_ir.cb_base.setChecked(True)
+        t_ir.render()
+        assert w.irms_state["ir_base"] and not any("OPUS" in n_ for n_ in t_ir._notes), t_ir._notes
+        assert np.allclose(IRMS.read_opus(irdir / "base.0")["y"], raw_y_)            # Datei unverändert
+        ycor_ = t_ir.spectrum()["y"]
+        assert ycor_.max() > 99.5 and np.abs(ycor_ - 100 * 10 ** -bands_a_[::-1]).max() < 3.0, np.abs(ycor_ - 100 * 10 ** -bands_a_[::-1]).max()
+        assert "ir_base" in t_ir.DEFAULT_STATE and "ir_base" not in t_ir.RESET_KEEP and "ir_thr" in t_ir.RESET_KEEP
+        w.undo()
+        pump()
+        t_ir = w.irms_tab                                        # Rückgängig ersetzt den Tab
+        t_ir.render()
+        assert not w.irms_state["ir_base"] and not t_ir.cb_base.isChecked(), w.irms_state["ir_base"]
+        # Schwellenlinie per Klick (Datenkoordinaten; Mausregel: Treffer nur auf ±1 Messpunkt prüfen)
+        t_ir.btn_thr.setChecked(True)
+        assert t_ir._thr_cid is not None
+        class Ev_:
+            def __init__(s_, x_, y_, b_=1):
+                s_.inaxes, s_.button, s_.dblclick = t_ir.F.ax, b_, False
+                s_.x, s_.y = t_ir.F.ax.transData.transform((x_, y_))
+                s_.xdata, s_.ydata = x_, y_
+        for x_, y_ in ((3800.0, 45.0), (600.0, 45.0)):          # 45 %T: nur 1700 (≈ 30 %T) und 1000 (≈ 38 %T), nicht 3000 (≈ 48 %T)
+            t_ir.threshold_clicked(Ev_(x_, y_))
+        assert len(w.irms_state["ir_thr"]) == 2 and abs(w.irms_state["ir_thr"][0][1] - (-np.log10(0.45))) < 1e-9
+        got_ = sorted(round(p_["wn"]) for p_ in t_ir.peaks())
+        assert len(got_) == 2 and abs(got_[0] - 1000) <= 2 and abs(got_[1] - 1700) <= 2, got_
+        assert not t_ir.sp_prom.isEnabled() and any(l_.get_linestyle() == "--" for l_ in t_ir.F.ax.lines)
+        t_ir.threshold_clicked(Ev_(3700.0, 80.0, 3))             # Rechtsklick: nächsten (3800) entfernen
+        assert [round(p_[0]) for p_ in w.irms_state["ir_thr"]] == [600], w.irms_state["ir_thr"]
+        w.undo()
+        pump()
+        t_ir = w.irms_tab
+        t_ir.render()
+        assert len(w.irms_state["ir_thr"]) == 2, w.irms_state["ir_thr"]
+        t_ir.btn_thr.setChecked(False)
+        t_ir.render()
+        assert not any(l_.get_linestyle() == "--" for l_ in t_ir.F.ax.lines)  # Linie nie im Export
+        t_ir.clear_threshold()
+        assert not w.irms_state["ir_thr"] and len(t_ir.peaks()) >= 3
+        # nur OPUS-PDF: Kurve aus den Vektorlinien, x über 2000 cm-1 gestaucht (Layout wie OPUS 8.5)
+        tick_px_ = {3500: 129.2, 3000: 202.5, 2500: 275.8, 2000: 349.1, 1500: 495.7, 1000: 642.4, 500: 788.9}
+        d_ = pymupdf.open()
+        pg_ = d_.new_page(width=842, height=595)
+        for v_, px_ in tick_px_.items():
+            pg_.insert_text((px_ - pymupdf.get_text_length(str(v_), fontsize=10) / 2, 548), str(v_), fontsize=10)
+        for i_, v_ in enumerate(range(70, 101, 5)):
+            pg_.insert_text((41.0 - pymupdf.get_text_length(str(v_), fontsize=10), 388.0 - 60.5 * i_), str(v_), fontsize=10)
+        cen_ = {int(w_[4]): ((w_[0] + w_[2]) / 2, (w_[1] + w_[3]) / 2) for w_ in pg_.get_text("words")}
+        tv_ = np.array(sorted(tick_px_, reverse=True), float)                 # Pixel aufsteigend = ṽ fallend
+        tp_ = np.array([cen_[int(v_)][0] for v_ in tv_])
+        yp_ = lambda t_: cen_[70][1] + (t_ - 70.0) * (cen_[100][1] - cen_[70][1]) / 30.0      # noqa: E731
+        Tpdf_ = 100 * 10 ** -bands_a_
+        xpx_ = np.interp(-xb_, -tv_, tp_, left=np.nan, right=np.nan)
+        m_ = np.isfinite(xpx_)
+        sh_ = pg_.new_shape()
+        sh_.draw_polyline([pymupdf.Point(float(a1_), float(yp_(b1_))) for a1_, b1_ in zip(xpx_[m_], Tpdf_[m_])])
+        sh_.finish(color=(0, 0, 0), width=0.9)
+        sh_.commit()
+        pg_.insert_text((380, 570), "Wavenumber cm-1", fontsize=10)
+        pg_.insert_text((5, 300), "Transmittance [%]", fontsize=10, rotate=90)
+        pg_.insert_text((600, 100), "1700.12", fontsize=8)
+        d_.save(str(irdir / "only.pdf"))
+        cv_ = IRMS.read_ir_pdf_curve(irdir / "only.pdf")
+        assert cv_["kind"] == "T" and abs(cv_["wn"].max() - 3500) < 2 and abs(cv_["wn"].min() - 500) < 2, (cv_["wn"].min(), cv_["wn"].max())
+        o_ = np.argsort(cv_["wn"])
+        assert np.abs(np.interp(xb_[m_], cv_["wn"][o_], cv_["y"][o_]) - Tpdf_[m_]).max() < 0.5
+        try:
+            IRMS.read_ir_pdf_curve(irdir / "test_ir.pdf")       # kein Spektrum/keine Achse: ablehnen
+            raise AssertionError("PDF ohne Kurve angenommen")
+        except ValueError:
+            pass
+        t_ir.clear_ir()
+        t_ir.load_ir(str(irdir / "only.pdf"))
+        t_ir.render()
+        assert t_ir.F is not None and [p_["wn"] for p_ in t_ir.peaks()] == [1700.12] and "rel" in t_ir.peaks()[0]
+        assert not t_ir.btn_thr.isEnabled()                     # mit PDF gelten dessen Peakwerte
+        t_ir.clear_ir()
+        t_ir.load_ir(str(irdir / "test_ir.pdf"))
+        t_ir.render()
+        assert t_ir.F is None and any("PDF" in n_ for n_ in t_ir._notes), t_ir._notes     # nur Peakwerte, Hinweis
+        t_ir.clear_ir()
+        t_ir.load_ir(str(irdir / "test.0"))
+        t_ir.render()
+        report.append("IR F3: OPUS-Basislinie (konkaves Gummiband, Verlauf), Schwellenlinie, Kurve aus OPUS-PDF: OK")
         w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
         t_ms.render()
         assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()

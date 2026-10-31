@@ -8,6 +8,8 @@ import struct
 from pathlib import Path
 import numpy as np
 
+from elucida.app.i18n import T
+
 
 def _opus_params(b, off, ln):
     out, p = {}, off
@@ -67,7 +69,12 @@ def read_opus(path) -> dict:
             y = y * 100.0                            # in % wie im OPUS-Ausdruck
         elif hi_ < 0.95:
             raise ValueError(f"{Path(path).name}: Einheit der Transmission unklar (Anteil oder %)")
-    return {"wn": wn, "y": y, "kind": kind, "name": Path(path).stem}
+    out = {"wn": wn, "y": y, "kind": kind, "name": Path(path).stem}
+    # Verlauf: letzte Basislinienkorrektur in OPUS (z. B. „Baseline (["::this::":TR], {BME=3, BCO=0, BPO=128, BIO=50})“)
+    hist = re.findall(rb"Baseline \(\[[^\]]*\], \{([^}]*)\}\)", b)
+    if hist:
+        out["baseline"] = {k: int(v) for k, v in re.findall(r"(\w+)=(-?\d+)", hist[-1].decode("latin-1"))}
+    return out
 
 
 def is_opus(path) -> bool:
@@ -92,3 +99,56 @@ def read_ir_pdf(path) -> list[float]:
                     if 350 <= v <= 8000:
                         vals.append(v)
     return sorted(set(vals), reverse=True)
+
+
+def _ticks(words, axis):
+    """Achsenbeschriftung: größte Gruppe ganzzahliger Werte auf einer Linie (x-Achse: gleiche Höhe, y: gleiche
+    Spalte) -> [(Wert, Pixel)] nach Pixel."""
+    groups = {}
+    for w in words:
+        if re.fullmatch(r"\d{1,4}", w[4]):
+            cx, cy = (w[0] + w[2]) / 2, (w[1] + w[3]) / 2
+            line, pos = (cy, cx) if axis == "x" else (w[2], cy)       # y-Achse: rechtsbündige Spalte
+            groups.setdefault(round(line), []).append((float(w[4]), pos))
+    best = max(groups.values(), key=len, default=[])
+    return sorted(best, key=lambda t: t[1])
+
+
+def _piecewise(px, tp, tv):
+    """Pixel -> Wert stückweise linear zwischen den Ticks, außerhalb mit dem Randabschnitt verlängert."""
+    v = np.interp(px, tp, tv)
+    lo, hi = px < tp[0], px > tp[-1]
+    v[lo] = tv[0] + (px[lo] - tp[0]) * (tv[1] - tv[0]) / (tp[1] - tp[0])
+    v[hi] = tv[-1] + (px[hi] - tp[-1]) * (tv[-1] - tv[-2]) / (tp[-1] - tp[-2])
+    return v
+
+
+def read_ir_pdf_curve(path) -> dict:
+    """OPUS-PDF ohne Messdatei -> Spektrum wie read_opus (wn, y, kind, name). Kurve = Linienzüge mit ≥ 50 Segmenten,
+    x über die Wellenzahl-Ticks stückweise linear (OPUS staucht die Achse über 2000 cm⁻¹), y linear über die
+    %T- bzw. Absorbanz-Ticks. Unbekanntes Layout -> ValueError (nicht raten)."""
+    import pymupdf
+    with pymupdf.open(str(path)) as doc:
+        pages = [(pg.get_text("words"), pg.get_drawings()) for pg in doc]
+    pages = [(w, d) for w, d in pages if any(len(d_["items"]) >= 50 for d_ in d)]
+    if len(pages) != 1:
+        raise ValueError(T("ir_pdf_layout"))
+    words, drawings = pages[0]
+    text = " ".join(w[4] for w in words)
+    kind = "T" if "Transmittance" in text else "A" if "Absorbance" in text else None
+    xt, yt = _ticks(words, "x"), _ticks(words, "y")
+    if kind is None or "Wavenumber" not in text or len(xt) < 3 or len(yt) < 3:
+        raise ValueError(T("ir_pdf_layout"))
+    xp, xv = np.array([t[1] for t in xt]), np.array([t[0] for t in xt])
+    yp, yv = np.array([t[1] for t in yt]), np.array([t[0] for t in yt])
+    fit = np.polyfit(yp, yv, 1)
+    if (np.any(np.diff(xp) <= 0) or np.any(np.diff(xv) >= 0) or fit[0] >= 0
+            or np.abs(np.polyval(fit, yp) - yv).max() > 0.01 * np.ptp(yv)):   # Wellenzahl fällt nach rechts, y linear
+        raise ValueError(T("ir_pdf_layout"))
+    pts = np.array([(p.x, p.y) for d in drawings if len(d["items"]) >= 50 and all(it[0] == "l" for it in d["items"])
+                    for it in d["items"] for p in it[1:3]])
+    if len(pts) < 100:
+        raise ValueError(T("ir_pdf_layout"))
+    wn, y = _piecewise(pts[:, 0], xp, xv), np.polyval(fit, pts[:, 1])
+    wn, i = np.unique(wn, return_index=True)
+    return {"wn": wn[::-1], "y": y[i][::-1], "kind": kind, "name": Path(path).stem, "from_pdf": True}
