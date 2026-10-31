@@ -245,7 +245,7 @@ def _export_word(tab):
 class EmptyGuide(QFrame):
     """Leerer Vorschaubereich mit Anleitung (guide_html) und optional einem Knopf für den ersten Schritt."""
 
-    def __init__(self, key, action=None):
+    def __init__(self, key, action=None, extra=None):
         super().__init__(objectName="emptyDrop")
         self.setStyleSheet("#emptyDrop { border: 1px dashed palette(mid); border-radius: 8px; }")
         v = QVBoxLayout(self)
@@ -269,6 +269,8 @@ class EmptyGuide(QFrame):
             b.clicked.connect(action[1])
             v.addSpacing(6)
             v.addWidget(b, 0, Qt.AlignHCenter)
+        if extra is not None:
+            v.addWidget(extra, 0, Qt.AlignHCenter)
         v.addStretch(1)                                     # Block genau in der Mitte der Fläche
 
     def fit_width(self):
@@ -476,6 +478,7 @@ class FigureTab(QWidget):
     X_RANGE = (100, 3500, 0, 10)         # x-Achse: min, max, Nachkommastellen, Schritt (Spektren: nm)
     GUIDE = ""                           # Schlüssel der Anleitung im leeren Tab (guide_<GUIDE>_…), "" = nur Text
     GUIDE_ACTION = None                  # (Textschlüssel, Methode) für den Knopf in der Anleitung
+    GUIDE_EXTRA = None                   # Methode -> weiteres Widget in der Anleitung (Overlay: „Aus Tabs ▾“)
     XRANGE_TEXT = "xrange"
 
     def __init__(self, main, state):
@@ -552,7 +555,8 @@ class FigureTab(QWidget):
         self.host = CanvasHost(self.canvas, self.fig)
         # Leer-Zustand: Anleitung (was herauskommt, welche Dateien, Schritte) statt einer weißen Abbildung
         act = getattr(self, self.GUIDE_ACTION[1], None) if self.GUIDE_ACTION else None
-        empty = EmptyGuide(self.GUIDE, (T(self.GUIDE_ACTION[0]), act) if act else None) if self.GUIDE else None
+        extra = getattr(self, self.GUIDE_EXTRA)() if self.GUIDE_EXTRA else None
+        empty = EmptyGuide(self.GUIDE, (T(self.GUIDE_ACTION[0]), act) if act else None, extra) if self.GUIDE else None
         if empty is None:
             empty = QLabel(T("tab_empty"), alignment=Qt.AlignCenter, wordWrap=True)
             empty.setStyleSheet(HINT_CSS + " font-size: 14px;")
@@ -1089,7 +1093,7 @@ COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half
 # ----------------------------------------------------------------------------
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
-    GUIDE, GUIDE_ACTION = "overlay", ("guide_add", "add_exp")
+    GUIDE, GUIDE_ACTION, GUIDE_EXTRA = "overlay", ("guide_add", "add_exp"), "tabs_button"
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Comparison of UV-Vis spectra of {name}."
     RESET_KEEP = ("entries", "structure")
@@ -1117,6 +1121,7 @@ class OverlayTab(FigureTab):
                 b.setToolTip(T("ov_combine_tip"))
                 self.btn_combine = b
             row.addWidget(b)
+        row.insertWidget(3, self.tabs_button(list_style=True))
         v.addLayout(row)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), T("ov_type")])
@@ -1158,6 +1163,11 @@ class OverlayTab(FigureTab):
         self.sp_d = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=100, value=1.0, singleStep=0.1)
         self.lbl_d = QLabel(T("path_length"))
         f.addRow(self.lbl_d, self.sp_d)
+        self.cmb_eps = QComboBox()                       # verknüpfte ε-Serie: welche Messung (Standard automatisch)
+        self.cmb_eps.setToolTip(T("ov_eps_pick_tip"))
+        self.lbl_eps = QLabel(T("ov_eps_pick"))
+        f.addRow(self.lbl_eps, self.cmb_eps)
+        self.cmb_eps.currentIndexChanged.connect(self.detail_changed)
         self.sp_fwhm = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=3, singleStep=0.05, value=0.3, suffix=" eV")
         self.lbl_fwhm = QLabel(T("ov_fwhm"))
         f.addRow(self.lbl_fwhm, self.sp_fwhm)
@@ -1351,6 +1361,86 @@ class OverlayTab(FigureTab):
                 self.main.error(f"{Path(p).name}: {e}")
         self.fill_table()
         self.timer.start()
+
+    def tabs_button(self, list_style=False):
+        """„Aus Tabs ▾“: ε-Serien und TD-DFT-Rechnungen des DFT-Tabs übernehmen (abgehakt = schon im Overlay)."""
+        b = STYLE.list_button(T("ov_from_tabs")) if list_style else QPushButton(T("ov_from_tabs"))
+        b.setToolTip(T("ov_from_tabs_tip"))
+        b.setMenu(QMenu(b))
+        b.menu().aboutToShow.connect(lambda m=b.menu(): self.fill_tabs_menu(m))
+        return b
+
+    def tab_sources(self):
+        """-> [(Art, Schlüssel, Anzeigename)]: Serien des ε-Tabs, Rechnungen des DFT-Tabs mit TD-DFT-Zuständen."""
+        out = [("eps", g, g) for g in (getattr(self.main, "groups", None) or {})]
+        for d in (getattr(self.main, "dft_state", None) or {}).get("entries") or []:
+            p = d.get("file")
+            if not p or Path(p).suffix.lower() not in (".out", ".log") or not Path(p).exists():
+                continue
+            try:
+                self.cache(("tddft", p), lambda p=p: X.parse_tddft(p))
+            except Exception:
+                continue                                   # Optimierung/Frequenzen ohne Anregungen
+            out.append(("calc", p, Path(p).stem))
+        return out
+
+    def linked_entry(self, kind, key):
+        for e in self.st["entries"]:
+            if (kind == "eps" and e.get("link") == "eps" and e.get("series") == key) or \
+                    (kind == "calc" and e["kind"] == "calc" and not e.get("sources") and
+                     Path(e["file"]).resolve() == Path(key).resolve()):
+                return e
+        return None
+
+    def fill_tabs_menu(self, m):
+        m.clear()
+        src = self.tab_sources()
+        for kind, key, name in src:
+            a = m.addAction(f"{name} ({T('ov_eps_linked') if kind == 'eps' else 'TD-DFT'})")
+            a.setCheckable(True)
+            a.setChecked(self.linked_entry(kind, key) is not None)
+            a.triggered.connect(lambda on, kind=kind, key=key, name=name: self.toggle_linked(kind, key, name, on))
+        if not src:
+            m.addAction(T("ov_from_tabs_none")).setEnabled(False)
+
+    def toggle_linked(self, kind, key, name, on):
+        """Eintrag hinzufügen bzw. (Haken weg) entfernen. ε: verknüpft (Messung, c, Einheit, d, M immer aus dem
+        ε-Tab); TD-DFT: dieselbe Datei wie im DFT-Tab."""
+        e = self.linked_entry(kind, key)
+        if not on:
+            if e is not None:
+                self.st["entries"].remove(e)
+        elif e is None:
+            base = {"color": self.next_color(), "visible": True, "own_norm": False, "nlo": self.st["nlo"],
+                    "nhi": self.st["nhi"]}
+            if kind == "eps":
+                self.st["entries"].append(dict(base, kind="exp", link="eps", series=key, sample=None, label=name,
+                                               conc=None, unit="mM", mw=None, d=1.0))
+            else:
+                self.st["entries"].append(dict(base, kind="calc", file=key, label=f"{name} (TD-DFT)", fwhm=0.3,
+                                               shift=0.0))
+        self.fill_table()
+        self.timer.start()
+
+    def eps_series(self, e):
+        return (getattr(self.main, "groups", None) or {}).get(e.get("series")) or []
+
+    def eps_linked(self, e):
+        """Verknüpfte ε-Serie -> (Spektrum {x, y} oder None, Eintrag mit c/Einheit/d/M aus dem ε-Tab). Messung:
+        gewählte (e["sample"]) oder automatisch die höchste Konzentration, deren Maximum ab dem Beginn der Peaksuche
+        (230 nm) den Cutoff des ε-Tabs nicht überschreitet (sonst die niedrigste)."""
+        sp = self.eps_series(e)
+        pick = next((s_ for s_ in sp if s_["name"] == e.get("sample")), None)
+        if pick is None and sp:
+            cut = (getattr(self.main, "glob", None) or {}).get("cutoff", 1.0)
+            lo = core.DEFAULTS["peak_range_nm"][0]
+            ok = [s_ for s_ in sp if np.nanmax(np.where(s_["x"] >= lo, s_["y"], -np.inf)) <= cut]
+            pick = max(ok, key=lambda s_: s_["c"]) if ok else min(sp, key=lambda s_: s_["c"])
+        if pick is None:
+            return None, e
+        mw = ((getattr(self.main, "series", None) or {}).get(e["series"]) or {}).get("mw")
+        d = (getattr(self.main, "glob", None) or {}).get("path_length", 1.0)
+        return {"x": pick["x"], "y": pick["y"]}, dict(e, conc=pick["c"], unit=pick["unit"], d=d, mw=mw)
 
     def add_sec(self):
         """Spektren aus dem SEC-Tab übernehmen, ausgewählt nach Potential. SEC-Kurven werden nur normiert
@@ -1595,8 +1685,8 @@ class OverlayTab(FigureTab):
             self.table.setItem(i, 0, it)
             self.table.setItem(i, 1, QTableWidgetItem(e["label"]))
             self.table.setCellWidget(i, 2, color_button(e["color"], lambda c, e=e: self._set_color(e, c)))
-            it = QTableWidgetItem({"exp": T("ov_exp"), "sec": "SEC", "secser": T("ov_sec_series")}.get(
-                e["kind"], "TD-DFT"))
+            it = QTableWidgetItem(T("ov_eps_linked") if e.get("link") == "eps" else
+                                  {"exp": T("ov_exp"), "sec": "SEC", "secser": T("ov_sec_series")}.get(e["kind"], "TD-DFT"))
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
         self.table.resizeColumnToContents(0)
@@ -1629,8 +1719,12 @@ class OverlayTab(FigureTab):
             w.setEnabled(self.cmb_ymode.currentData() == "norm")
         exp = e is not None and e["kind"] == "exp"
         calc = e is not None and e["kind"] == "calc"
+        linked = exp and e.get("link") == "eps"
         for w in (self.lbl_conc, self.ed_conc, self.cmb_unit, self.lbl_mw, self.ed_mw, self.lbl_d, self.sp_d):
             w.setVisible(exp or e is None)              # SEC: kein ε (Dünnschichtzelle)
+            w.setEnabled(not linked)                    # verknüpft: Werte aus dem ε-Tab (dort ändern)
+        for w in (self.lbl_eps, self.cmb_eps):
+            w.setVisible(linked)
         combined = e is not None and bool(e.get("sources"))
         for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift) + self.calc_color_widgets:
             w.setVisible(calc)
@@ -1649,6 +1743,13 @@ class OverlayTab(FigureTab):
             self.sp_lw.setValue(e.get("lw") or 0.0)
             self.cb_own.setChecked(e["own_norm"])
             self.show_norm_window(e if e["own_norm"] else None)  # ohne eigene: das geltende (globale) Fenster
+            if linked:
+                self.cmb_eps.clear()
+                self.cmb_eps.addItem(T("ov_eps_auto"), None)
+                for s_ in sorted(self.eps_series(e), key=lambda s_: s_["c"]):
+                    self.cmb_eps.addItem(f"{s_['name']} ({s_['c']:g} {s_['unit']})", s_["name"])
+                self.cmb_eps.setCurrentIndex(max(0, self.cmb_eps.findData(e.get("sample"))))
+                e = self.eps_linked(e)[1]
             if exp:
                 self.ed_conc.setText(f"{e['conc']:g}" if e.get("conc") else "")
                 self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(e.get("unit", "mM"))))
@@ -1692,7 +1793,9 @@ class OverlayTab(FigureTab):
             e.update(nlo=self.sp_elo.value(), nhi=self.sp_ehi.value())
         e.update(own_norm=own, scale=self.sp_scale.value(), offset=self.sp_offset.value(),
                  ls=self.cmb_ls.currentData(), lw=self.sp_lw.value() or None)
-        if e["kind"] == "exp":
+        if e.get("link") == "eps":
+            e["sample"] = self.cmb_eps.currentData()
+        elif e["kind"] == "exp":
             e.update(conc=parse_num(self.ed_conc.text()), unit=self.cmb_unit.currentData(),
                      mw=parse_num(self.ed_mw.text()), d=self.sp_d.value())
         elif e["kind"] == "calc":
@@ -1861,6 +1964,11 @@ class OverlayTab(FigureTab):
                         self.add_note(T("ov_sec_no_eps", name=e["label"]))
                         continue
                     s_ = self.sec_spectrum(e)
+                elif e.get("link") == "eps":
+                    s_, e = self.eps_linked(e)
+                    if s_ is None:
+                        self.add_note(T("ov_eps_gone", name=e["label"]))
+                        continue
                 else:
                     s_ = self.sample(e["file"], e["sample"])
                 if s_ is None:

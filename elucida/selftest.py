@@ -4751,6 +4751,12 @@ def selftest(outdir, with_isnet=False):
         assert w.syn_state["proc"] and w.nmr_tab.spectra()
         st_file_ = PRJ.load(out / "demo")                  # gespeichert, nicht nur im Fenster (war leer: _restoring)
         assert st_file_.get("cv", {}).get("files") and st_file_.get("eps", {}).get("files"), sorted(st_file_)
+        pump(0.4)                                         # Beispiel: Pfade zeigen auf die Kopien, nicht in den Temp-Ordner
+        w.save_project()
+        dead_ = PRJ.missing_files(PRJ.load(out / "demo"))                # gespeichert: keine toten Pfade
+        outside_ = [v_ for c_, k_, _ in PRJ._path_slots(w.get_state()) for v_ in [PRJ._get(c_, k_)]
+                    if v_ and (out / "demo").resolve() not in Path(v_).resolve().parents]
+        assert not outside_ and not dead_, (outside_[:3], dead_)
         from elucida.app import demo as DEMO_                 # Beispiel-CDXML in ChemDraw auf der ersten Seite
         import xml.etree.ElementTree as ET_c
         cdx_demo_ = [p_ for p_ in (out / "demo").rglob("*.cdxml") if ET_c.parse(p_).getroot().find(".//n") is not None]
@@ -5237,6 +5243,61 @@ def selftest(outdir, with_isnet=False):
         w.close_project()
         report.append("F1 synthesis (units in cells, n entered, ChemDraw stoichiometry table, general procedures, "
                       "group headings toggle, sample left): OK")
+
+        # F2 (FB-22): Overlay übernimmt ε-Serien (verknüpft, Messung wählbar) und TD-DFT aus dem DFT-Tab
+        w.open_project(out / "demo")
+        pump(0.4)
+        ot_ = w.ov_tab
+        ot_.ensure_rendered()
+        g_f2 = next(iter(w.groups))
+        src_f2 = ot_.tab_sources()
+        assert ("eps", g_f2, g_f2) in src_f2 and not any(k_ == "calc" for k_, _, _ in src_f2), src_f2   # Opt/Freq: nein
+        tdf_f2 = next(e_["file"] for e_ in w.ov_state["entries"] if e_["kind"] == "calc")
+        w.dft_state["entries"].append({"file": tdf_f2, "uid": "f2td"})       # TD-DFT-Ausgabe im DFT-Tab
+        assert ("calc", tdf_f2, Path(tdf_f2).stem) in ot_.tab_sources()
+        from PySide6.QtWidgets import QMenu as _QMF2
+        mn_f2 = _QMF2()
+        ot_.fill_tabs_menu(mn_f2)
+        ch_f2 = [a_.isChecked() for a_ in mn_f2.actions()]                      # ε-Serien frei, TD-DFT schon da
+        assert ch_f2 == [False] * len(w.groups) + [True], [a_.text() for a_ in mn_f2.actions()]
+        mn_f2.deleteLater()
+        n_f2 = len(w.ov_state["entries"])
+        ot_.toggle_linked("calc", tdf_f2, "x", True)                             # schon da: nicht doppelt
+        ot_.toggle_linked("eps", g_f2, g_f2, True)
+        e_f2 = w.ov_state["entries"][-1]
+        assert len(w.ov_state["entries"]) == n_f2 + 1 and e_f2["link"] == "eps" and "file" not in e_f2
+        sp_f2 = w.groups[g_f2]
+        ok_f2 = [s_ for s_ in sp_f2 if np.nanmax(s_["y"][s_["x"] >= 230]) <= w.glob["cutoff"]]
+        auto_f2 = max(ok_f2, key=lambda s_: s_["c"]) if ok_f2 else min(sp_f2, key=lambda s_: s_["c"])
+        s_f2, r_f2 = ot_.eps_linked(e_f2)
+        assert r_f2["conc"] == auto_f2["c"] and r_f2["d"] == w.glob["path_length"] and s_f2["y"] is auto_f2["y"]
+        x_f2 = np.arange(200.0, 600.0)                                           # automatisch: gesättigt fällt weg
+        w.groups["f2fake"] = [dict(x=x_f2, y=np.where(x_f2 < 230, 3.0, 0.5 * c_), c=c_, unit="mM", name=f"n{c_}")
+                              for c_ in (1.0, 1.8, 2.5)]                         # unter 230 nm zählt nicht
+        assert ot_.eps_linked(dict(series="f2fake", label="f"))[1]["conc"] == 1.8
+        w.groups["f2fake"] = w.groups["f2fake"][2:]                              # alle gesättigt: niedrigste
+        assert ot_.eps_linked(dict(series="f2fake", label="f"))[1]["conc"] == 2.5
+        del w.groups["f2fake"]
+        lo_f2 = min(sp_f2, key=lambda s_: s_["c"])
+        ot_.table.setCurrentCell(len(w.ov_state["entries"]) - 1, 1)                     # Messung im Detailfeld wählen
+        assert ot_.cmb_eps.isVisibleTo(ot_.det) and not ot_.ed_conc.isEnabled()
+        ot_.cmb_eps.setCurrentIndex(ot_.cmb_eps.findData(lo_f2["name"]))
+        assert e_f2["sample"] == lo_f2["name"] and ot_.eps_linked(e_f2)[1]["conc"] == lo_f2["c"]
+        w.conc[lo_f2["name"]] = {"conc": lo_f2["c"] * 2, "unit": lo_f2["unit"], "series": g_f2}   # verknüpft
+        w.rebuild_groups()
+        assert ot_.eps_linked(e_f2)[1]["conc"] == lo_f2["c"] * 2
+        del w.conc[lo_f2["name"]]
+        w.rebuild_groups()
+        ot_.st["mode"] = "eps"
+        ot_.render()
+        assert not any(e_f2["label"] in n_ for n_ in ot_._notes), ot_._notes    # ε ohne eigene Konzentration
+        w.save_project()
+        assert PRJ.load(out / "demo")["overlay"]["entries"][-1].get("link") == "eps"
+        ot_.toggle_linked("eps", g_f2, g_f2, False)                              # Haken weg: entfernt
+        assert len(w.ov_state["entries"]) == n_f2
+        w.dft_state["entries"].pop()
+        w.save_project()
+        report.append("F2 overlay (epsilon series linked with selectable measurement, TD-DFT from DFT tab): OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         import shiboken6 as _shb_end                                     # Beenden: alle Widgets vor dem Interpreter-

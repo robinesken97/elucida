@@ -542,6 +542,9 @@ def open_demo(w, folder=None) -> Path:
                 if f is not None and f.__qualname__.split(".")[0] != "QWidget":
                     getattr(t, fn)()
         w.save_project()
+        # Speichern kopiert die Eingaben ins Projekt, der Zustand zeigte aber weiter in den Temp-Ordner (jedes
+        # spätere Speichern schrieb dann tote Pfade): Pfade auf die Kopien übernehmen
+        w._load_state_into_ui(PRJ.load(d))
     finally:
         shutil.rmtree(inp, ignore_errors=True)            # Eingaben sind ins Projekt kopiert
     return d

@@ -808,6 +808,23 @@ TEXTS = {
                         "For this plot, load at least two scan rates per group with an analysed redox couple."),
     "ov_add_exp": ("Messung…", "Measurement…"),
     "ov_add_sec": ("SEC…", "SEC…"),
+    "ov_from_tabs": ("Aus Tabs", "From tabs"),
+    "ov_from_tabs_tip": ("Serien aus UV-Vis (ε) und TD-DFT-Rechnungen aus dem DFT-Tab übernehmen, ohne sie neu zu laden "
+                         "(Haken = schon im Overlay, Haken weg = entfernen). ε-Serien bleiben verknüpft: Messung, "
+                         "Konzentration und Schichtdicke kommen immer aus dem ε-Tab.",
+                         "Take series from UV-Vis (ε) and TD-DFT calculations from the DFT tab without loading them "
+                         "again (tick = already in the overlay, untick = remove). ε series stay linked: measurement, "
+                         "concentration and path length always come from the ε tab."),
+    "ov_from_tabs_none": ("Keine ε-Serie und keine TD-DFT-Rechnung in den Tabs",
+                          "No ε series and no TD-DFT calculation in the tabs"),
+    "ov_eps_linked": ("UV-Vis (ε)", "UV-Vis (ε)"),
+    "ov_eps_pick": ("Messung", "Measurement"),
+    "ov_eps_pick_tip": ("Welche Messung der ε-Serie gezeigt wird. Automatisch: höchste Konzentration, deren Maximum ab "
+                        "230 nm den Cutoff des ε-Tabs nicht überschreitet (gesättigte UV-Banden fallen so weg).",
+                        "Which measurement of the ε series is shown. Automatic: highest concentration whose maximum "
+                        "from 230 nm does not exceed the cutoff of the ε tab (saturated UV bands are skipped)."),
+    "ov_eps_auto": ("automatisch", "automatic"),
+    "ov_eps_gone": ("{name}: Serie nicht mehr im ε-Tab", "{name}: series no longer in the ε tab"),
     "ov_sec_none": ("Im SEC-Tab sind noch keine Spektren geladen.", "No spectra loaded in the SEC tab yet."),
     "ov_sec_pick": ("Serie: Bereich vom ersten bis zum letzten markierten Spektrum, ohne Markierung die ganze Serie; "
                     "alle Spektren mit demselben Faktor auf das Startspektrum normiert (Intensitätsverhältnisse und "

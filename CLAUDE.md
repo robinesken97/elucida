@@ -39,7 +39,9 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - TD-DFT: Gauß-Verbreiterung in Energie; Kurve und Sticks teilen **immer einen** Skalierungsfaktor
   (Modi `band` Standard, `max`, `faxis`; `faxis` seit P1: Striche wie `band` auf der linken Achse, f rechts nur als
   zweite Skala `cfg["f_axis"]`, entfällt mit Hinweis bei verschiedenen Maßstäben der Rechnungen). Overlay-y-Größe
-  `mode`: `norm` (Standard), `eps`, `abs` (Absorbanz wie gemessen, ohne TD-DFT; Nutzerfeedback „y-Achse immer ε“). ORCA 5/6-Zustandslabels („0-1A -> 1-1A“) nach „->“ splitten; SOC-Tabelle.
+  `mode`: `norm` (Standard), `eps`, `abs` (Absorbanz wie gemessen, ohne TD-DFT; Nutzerfeedback „y-Achse immer ε“). Übernahme aus Tabs (F2, „Aus Tabs ▾“):
+  ε-Serien **verknüpft** (`link` „eps“, ohne Datei; Messung/c/d/M beim Zeichnen aus dem ε-Tab, `eps_linked`; Messung
+  wählbar, automatisch = höchste Konzentration mit Maximum ab 230 nm ≤ Cutoff), TD-DFT = Datei des DFT-Tabs. ORCA 5/6-Zustandslabels („0-1A -> 1-1A“) nach „->“ splitten; SOC-Tabelle.
   Multiplizität aus dem Label („1-3A“ = Triplett), ORCA 4/5 aus dem TRIPLETS-Block, Gaussian aus „Triplet-A“;
   Tripletts (f = 0) nur als Marken, nie in der Gauß-Kurve; mit SOC keine Multiplizität (gemischte Zustände).
   Kombinieren: Übergänge mehrerer Rechnungen (`sources`, je Gewicht) erst zusammenführen, dann verbreitern.
