@@ -2172,6 +2172,10 @@ def selftest(outdir, with_isnet=False):
         assert "ir_base" in t_ir.DEFAULT_STATE and "ir_base" not in t_ir.RESET_KEEP and "ir_thr" in t_ir.RESET_KEEP
         w.undo()
         pump()
+        for _ in range(100):                                     # CI langsamer: Wiederherstellung abwarten (≤ 10 s)
+            if not w._restoring:
+                break
+            pump(0.1)
         t_ir = w.irms_tab                                        # Rückgängig ersetzt den Tab
         t_ir.render()
         assert not w.irms_state["ir_base"] and not t_ir.cb_base.isChecked(), w.irms_state["ir_base"]
@@ -2193,6 +2197,10 @@ def selftest(outdir, with_isnet=False):
         assert [round(p_[0]) for p_ in w.irms_state["ir_thr"]] == [600], w.irms_state["ir_thr"]
         w.undo()
         pump()
+        for _ in range(100):                                     # CI langsamer: Wiederherstellung abwarten (≤ 10 s)
+            if not w._restoring:
+                break
+            pump(0.1)
         t_ir = w.irms_tab
         t_ir.render()
         assert len(w.irms_state["ir_thr"]) == 2, w.irms_state["ir_thr"]
@@ -3724,6 +3732,10 @@ def selftest(outdir, with_isnet=False):
         assert F_pr_ is not None and {t_.get_text() for t_ in F_pr_.ax.texts} >= {"0.0", "19.5", "TS1¹", "f4_A"}
         w.undo()
         pump()
+        for _ in range(100):                                     # CI langsamer: Wiederherstellung abwarten (≤ 10 s)
+            if not w._restoring:
+                break
+            pump(0.1)
         t_d, pg_ = w.dft_tab, w.dft_tab.pages
         assert w.dft_state["profile"]["species"].get(w.dft_state["entries"][1]["uid"], {}).get("label") != "TS1¹"
         # IRC: Trajektorie (Reaktionskoordinate = aufsummierte Abstände, TS = 0) + Tabelle der Ausgabe
