@@ -469,6 +469,15 @@ def selftest(outdir, with_isnet=False):
         ov.show_details()
         assert (ov.sp_elo.value(), ov.sp_ehi.value()) == (w.ov_state["nlo"], w.ov_state["nhi"]), ov.sp_elo.value()
         assert not w.ov_state["entries"][0]["own_norm"]
+        ov.sp_nlo.setValue(600)                                            # globales Fenster ändern: Felder folgen
+        ov.sp_nhi.setValue(700)
+        ov.collect()
+        assert (ov.sp_elo.value(), ov.sp_ehi.value()) == (600, 700), (ov.sp_elo.value(), ov.sp_ehi.value())
+        ov.cb_own.setChecked(True)                                         # eigene an: die eigenen Grenzen
+        assert (ov.sp_elo.value(), ov.sp_ehi.value()) == (400, 300) and w.ov_state["entries"][0]["nlo"] == 400
+        ov.cb_own.setChecked(False)                                        # aus: wieder global, eigene gespeichert
+        assert (ov.sp_elo.value(), ov.sp_ehi.value()) == (600, 700) and w.ov_state["entries"][0]["nlo"] == 400
+        w.ov_state.update(nlo=450, nhi=520)
         ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("norm"))
         ov.sp_ymax.setValue(1.2)
         ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("eps"))       # ε-Skala: alte Obergrenze passt nicht
@@ -2042,12 +2051,12 @@ def selftest(outdir, with_isnet=False):
         assert np.allclose(a_[:3], [0, 1, 2]) and np.isnan(a_[3:]).all(), a_
         assert np.allclose(IRMS.to_transmission(a_[:3]), [100, 10, 1])
         yt_ = np.linspace(40.0, 100.0, 50)
-        lim_, rej_ = IRMS.y_limits(yt_, "T")                 # auto: oben immer 100
-        assert not rej_ and lim_[1] == 100.0 and lim_[0] < 40, lim_
+        lim_, rej_ = IRMS.y_limits(yt_, "T")                 # auto: oben 100 + 2 % (Basislinie sichtbar, P10)
+        assert not rej_ and abs(lim_[1] - 101.2) < 1e-9 and lim_[0] < 40, lim_
         assert IRMS.y_limits(yt_, "T", (20.0, 75.0)) == ([20.0, 75.0], False)       # exakt, keine Erweiterung
         assert IRMS.y_limits(yt_, "T", (-5.0, 150.0)) == ([0.0, 100.0], False)      # %T strikt 0-100
         lim_, rej_ = IRMS.y_limits(yt_, "T", (80.0, 50.0))  # min >= max -> auto (früher verschwand das Spektrum)
-        assert rej_ and lim_[1] == 100.0, lim_
+        assert rej_ and abs(lim_[1] - 101.2) < 1e-9, lim_
         assert IRMS.y_limits([0.1, 0.8], "A")[0][0] == 0.0
         assert t_ir.sp_ymax.isHidden() or not t_ir.sp_ymax.isVisibleTo(t_ir)
         assert (t_ir.sp_ymin.minimum(), t_ir.sp_ymax2.maximum(), t_ir.sp_ymin.decimals()) == (0.0, 100.0, 0)
@@ -2074,6 +2083,29 @@ def selftest(outdir, with_isnet=False):
             m_ = (d_ir["wn"] <= max(xd0_, xd1_)) & (d_ir["wn"] >= min(xd0_, xd1_))
             if m_.any():                                   # Linie über die ganze Labelbreite oberhalb des Labels
                 assert t_ir.F.ax.transData.transform([[0, d_ir["y"][m_].min()]])[0][1] > bb_.y1, k_
+        # Audit P10 R1: wie der OPUS-Bericht – eine Labelreihe, Hilfslinie vom Peak zur Labelmitte, ganze Zahlen
+        y0s_ = [bbs_[k_].y0 for k_ in ks_]
+        assert max(y0s_) - min(y0s_) < 1.0, y0s_
+        assert list(t_ir.F.ir_leaders) == ks_ and len(t_ir.F._ir_lines) == len(ks_), (ks_, t_ir.F.ir_leaders)
+        for k_, ln_ in zip(ks_, t_ir.F._ir_lines):
+            xs_ = ab_.x0 + np.asarray(ln_.get_xdata()) * ab_.width
+            px_ = t_ir.F.ax.transData.transform([t_ir.F.ann_items[k_].xy])[0][0]
+            assert abs(xs_[0] - px_) < 1.0 and abs(xs_[-1] - (bbs_[k_].x0 + bbs_[k_].x1) / 2) < 1.5, (k_, xs_, px_)
+            assert "." not in t_ir.F.ann_items[k_].get_text(), t_ir.F.ann_items[k_].get_text()
+        far_px_ = ab_.y0 + max(v_[3] for v_ in t_ir.F.ir_leaders.values()) * ab_.height   # oberes Ende der Hilfslinien
+        mk_ = next(l_ for l_ in t_ir.F.ax.lines if l_.get_marker() == "^")                  # Peakmarken (ms 3)
+        mk_px_ = t_ir.F.ax.transData.transform(np.c_[mk_.get_xdata(), mk_.get_ydata()])[:, 1]
+        assert mk_px_.min() - 3.0 * t_ir.F.fig.dpi / 72 > far_px_, (mk_px_.min(), far_px_)  # Marke + Rand frei
+        # Audit P10 R2 (FB-13): Farbe des Spektrums wählbar
+        w.irms_state["ir_color"] = "#00aa00"
+        t_ir.render()
+        from matplotlib.colors import to_hex as hex_
+        assert any(hex_(l_.get_color()) == "#00aa00" for l_ in t_ir.F.ax.lines), [l_.get_color() for l_ in t_ir.F.ax.lines]
+        assert t_ir.DEFAULT_STATE["ir_color"] == IRMS.IR_COLOR and "ir_color" not in t_ir.RESET_KEEP   # Darstellung
+        w.irms_state["ir_color"] = IRMS.IR_COLOR                    # Knopf folgt dem Zustand (Öffnen/Rückgängig)
+        t_ir.sync_widgets()
+        assert t_ir.btn_ircolor.property("color") == IRMS.IR_COLOR
+        t_ir.render()
         t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("A"))
         t_ir.render()
         assert w.irms_state["ir_mode"] == "A" and t_ir._ir_line == line_t_, t_ir._ir_line   # Peaks wie aus %T
@@ -2084,7 +2116,7 @@ def selftest(outdir, with_isnet=False):
             assert ann_.get_window_extent(rend_).y0 > t_ir.F.ax.transData.transform([ann_.xy])[0][1]
         t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("T"))
         t_ir.render()
-        assert t_ir.F.ax.get_ylim()[1] == 100.0                # %T auto: oben fest 100, unten Platz für Labels
+        assert 100.0 < t_ir.F.ax.get_ylim()[1] < 103.0         # %T auto: 100 + 2 % Luft (Basislinie), unten Labels
         t_ir.cb_yauto.setChecked(False)                         # Felder übernehmen den gezeigten Bereich
         assert not w.irms_state["y_auto"] and w.irms_state["y_max"] == 100.0
         t_ir.sp_ymin.setValue(20.0)
@@ -4480,7 +4512,7 @@ def selftest(outdir, with_isnet=False):
         go_("epr")
         w2.redo()
         pump(0.4)
-        assert w2._tab_key == "cv" and w2.cv_state["cap_temp"] == "-40 °C", w2._tab_key
+        assert w2.cv_state["cap_temp"] == "-40 °C"                     # Tab: Schnappschuss war schon im CV-Tab
         w2.undo()
         pump(0.4)
         assert w2._tab_key == "cv", w2._tab_key                           # Änderung im offenen Tab: bleibt

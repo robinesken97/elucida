@@ -1648,9 +1648,7 @@ class OverlayTab(FigureTab):
                 e.get("ls", "dashed" if e["kind"] == "calc" else "solid"))))
             self.sp_lw.setValue(e.get("lw") or 0.0)
             self.cb_own.setChecked(e["own_norm"])
-            src = e if e["own_norm"] else self.st              # ohne eigene: das geltende (globale) Fenster zeigen
-            self.sp_elo.setValue(src["nlo"])
-            self.sp_ehi.setValue(src["nhi"])
+            self.show_norm_window(e if e["own_norm"] else None)  # ohne eigene: das geltende (globale) Fenster
             if exp:
                 self.ed_conc.setText(f"{e['conc']:g}" if e.get("conc") else "")
                 self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(e.get("unit", "mM"))))
@@ -1687,8 +1685,12 @@ class OverlayTab(FigureTab):
             self._loading = True                   # eigenen Bereich eingestellt = eigene Normierung
             self.cb_own.setChecked(True)
             self._loading = False
-        e.update(own_norm=self.cb_own.isChecked(), nlo=self.sp_elo.value(), nhi=self.sp_ehi.value(),
-                 scale=self.sp_scale.value(), offset=self.sp_offset.value(),
+        elif self.sender() is self.cb_own:         # Felder zeigen das geltende Fenster: eigenes bzw. globales
+            self.show_norm_window(e if self.cb_own.isChecked() else None)
+        own = self.cb_own.isChecked()
+        if own:                                    # ohne eigene bleiben die eigenen Grenzen gespeichert
+            e.update(nlo=self.sp_elo.value(), nhi=self.sp_ehi.value())
+        e.update(own_norm=own, scale=self.sp_scale.value(), offset=self.sp_offset.value(),
                  ls=self.cmb_ls.currentData(), lw=self.sp_lw.value() or None)
         if e["kind"] == "exp":
             e.update(conc=parse_num(self.ed_conc.text()), unit=self.cmb_unit.currentData(),
@@ -1742,6 +1744,17 @@ class OverlayTab(FigureTab):
                        stick_mode=self.cmb_stick.currentData(), triplets=self.cb_trip.isChecked(), stack=self.cb_stack.isChecked(),
                        stack_gap=self.sp_gap.value(), y_axis=self.cmb_yaxis.currentData(),
                        curve_labels=self.cb_clabels.isChecked(), zero_lines=self.cb_zero.isChecked())
+        e = self.current_entry()
+        if e is not None and not e["own_norm"]:    # geerbtes Fenster in den Detailfeldern nachziehen
+            self.show_norm_window(None)
+
+    def show_norm_window(self, e):
+        """Detailfelder Normierungsfenster: eigenes des Eintrags e bzw. (None) das globale, ohne Änderungssignal."""
+        src = e if e is not None else self.st
+        old, self._loading = self._loading, True
+        self.sp_elo.setValue(src["nlo"])
+        self.sp_ehi.setValue(src["nhi"])
+        self._loading = old
 
     def choose_entry_structure(self):
         e = self.current_entry()

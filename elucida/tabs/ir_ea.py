@@ -256,7 +256,8 @@ Y_DEFAULT = {"T": (0.0, 100.0), "A": (0.0, 1.0)}
 
 def y_limits(y, mode, manual=None):
     """y-Grenzen [unten, oben] für das IR-Bild und ob ein eingegebener Bereich verworfen wurde.
-    auto: %T oben 100 (nur höher, wenn Messwerte darüber liegen), unten nach den Daten (Platz für Labels schafft
+    auto: %T oben 100 (bzw. höchster Messwert) + 2 % Luft, damit die Basislinie bei 100 % nicht im Rahmen verschwindet
+    (Nutzerwunsch P10), unten nach den Daten (Platz für Labels schafft
     IRFigure); Absorbanz unten 0 (bzw. tiefster Wert, falls negativ), oben nach den Daten.
     manual = (min, max): exakt übernommen, %T auf 0–100 begrenzt; min ≥ max -> verworfen (auto)."""
     y = np.asarray(y, float)
@@ -271,7 +272,7 @@ def y_limits(y, mode, manual=None):
             return [lo, hi], False
     if mode == "T":
         lo = ymin - 0.08 * span
-        hi = 100.0 if ymaxv <= 100.0 else ymaxv + 0.02 * span
+        hi = max(100.0, ymaxv) + 0.02 * span
     else:
         lo = min(0.0, ymin)
         hi = ymaxv + 0.05 * span
@@ -413,13 +414,15 @@ def spread_centers(targets, widths, lo=0.0, hi=1.0):
 
 
 class IRFigure(TABS.X.SimpleFigure):
-    """IR-Abbildung: Wellenzahl-Labels senkrecht direkt unter dem Peakminimum (Transmission) bzw. über dem Maximum
-    (Absorbanz), seitlich auseinandergeschoben statt überlappend; die y-Achse wächst, bis alle Labels hineinpassen.
-    Gespeicherte (gezogene) Positionen haben Vorrang."""
+    """IR-Abbildung wie der OPUS-Bericht (Nutzerwunsch P10, ohne Nachkommastellen): Wellenzahl-Labels senkrecht in
+    einer Reihe am unteren Rand (Transmission) bzw. oberen Rand (Absorbanz), nebeneinander so nah wie möglich an ihrem
+    Peak, dazwischen Hilfslinien zum Peak (senkrecht – schräg – senkrecht); die y-Achse wächst, bis das Spektrum
+    jenseits der Hilfslinien bleibt. Gespeicherte (gezogene) Positionen haben Vorrang (dann ohne Hilfslinie)."""
 
     def __init__(self, *a, side="below", fixed=False, **kw):
         self._ir_side, self._ir_fixed = side, fixed       # fixed: y-Bereich vom Nutzer -> nie erweitern
         self.ir_clamped = []                               # Labels, die im festen Bereich nicht ganz passen
+        self.ir_leaders, self._ir_lines = {}, []           # key -> (Peak-x, Label-x, y am Label, y am Spektrum)
         super().__init__(*a, **kw)
 
     def _make_labels(self, labels):
@@ -428,7 +431,8 @@ class IRFigure(TABS.X.SimpleFigure):
             ann.set_rotation(90)
 
     def _ir_positions(self):
-        """-> {key: (x, y)} lower-left in Achsenbruchteilen; erweitert dabei ggf. die y-Achse."""
+        """-> {key: (x, y)} lower-left in Achsenbruchteilen; erweitert dabei ggf. die y-Achse, füllt ir_leaders."""
+        self.ir_leaders = {}
         if not self.ann_items:
             return {}
         ax, below = self.ax, self._ir_side == "below"
@@ -445,48 +449,39 @@ class IRFigure(TABS.X.SimpleFigure):
             gy, gx = 2.5 * self.fig.dpi / 72 / ab.height, 1.0 * self.fig.dpi / 72 / ab.width
             x0, x1 = ax.get_xlim()
             y0, y1 = ax.get_ylim()
-            fx, fy = (X_ - x0) / (x1 - x0), (Y_ - y0) / (y1 - y0)
-            keys, tgt, ays, wid, hgt = [], [], [], [], []
+            keys, tgt, wid, hgt = [], [], [], []
             for key, ann in self.ann_items.items():
                 _, _, bw, bh = self._measure_af(ann.get_window_extent(rend))
                 keys.append(key)
                 tgt.append((ann.xy[0] - x0) / (x1 - x0))
-                ays.append((ann.xy[1] - y0) / (y1 - y0))
                 wid.append(bw + gx)
                 hgt.append(bh)
+            h = max(hgt)
+            lead = 3 * max(wid) * ab.width / ab.height     # Hilfslinie drei Labelbreiten hoch (wie OPUS)
             cen = spread_centers(tgt, wid)
-            pos, need, hs = {}, [], dict(zip(keys, hgt))
-            for key, c, ay, w, h in zip(keys, cen, ays, wid, hgt):
-                m = (fx >= c - w / 2) & (fx <= c + w / 2)
-                if below:                                # Oberkante unter der Kurve über die ganze Labelbreite
-                    top = min(float(fy[m].min()) if m.any() else ay, ay) - gy
-                    yb = top - h
-                    need.append((top, h))
-                else:
-                    yb = max(float(fy[m].max()) if m.any() else ay, ay) + gy
-                    need.append((yb, h))
-                pos[key] = (c - (w - gx) / 2, yb)
-            span = y1 - y0
-            if self._ir_fixed:
+            row = gy if below else 1 - gy - h              # Unterkante der Labelreihe
+            near = row + h + gy if below else row - gy     # Hilfslinie: Ende am Label …
+            far = near + lead if below else near - lead    # … und am Spektrum
+            pos = {k: (c - (w - gx) / 2, row) for k, c, w in zip(keys, cen, wid)}
+            self.ir_leaders = {k: (t, c, near, far) for k, t, c in zip(keys, tgt, cen)}
+            gm = gy + 2.0 * self.fig.dpi / 72 / ab.height  # Abstand + halbe Peakmarke (ms 3), Marken zählen mit
+            q = far + gm if below else far - gm            # das Spektrum bleibt jenseits davon
+            fy = (Y_ - y0) / (y1 - y0)
+            if (fy.min() >= q - 1e-9) if below else (fy.max() <= q + 1e-9):
                 break
-            if below:                                    # unten Platz schaffen: (top − Y0)/(y1 − Y0) ≥ h + Rand
-                new0 = min(y1 - (y1 - (y0 + t * span)) / (1 - (h + 0.01)) for t, h in need)
-                if new0 >= y0 - 1e-9 * span:
-                    break
-                ax.set_ylim(new0, y1)
-            else:
-                new1 = max(y0 + (y0 + b * span - y0) / (1 - (h + 0.01)) for b, h in need)
-                if new1 <= y1 + 1e-9 * span:
-                    break
-                ax.set_ylim(y0, new1)
+            if self._ir_fixed or not (q < 0.9 if below else q > 0.1):   # fest bzw. Achse zu klein: Labels melden,
+                fx = (X_ - x0) / (x1 - x0)                 # deren Spalte das Spektrum kreuzt
+                for k, t, c, w in zip(keys, tgt, cen, wid):
+                    m = (fx >= min(t, c) - w / 2) & (fx <= max(t, c) + w / 2)
+                    if m.any() and ((fy[m].min() < q) if below else (fy[m].max() > q)):
+                        self.ir_clamped.append(k)
+                break
+            if below:                                      # unten Platz schaffen: (Ymin − Y0)/(y1 − Y0) ≥ q
+                ax.set_ylim((Y_.min() - q * y1) / (1 - q), y1)
+            else:                                          # oben: (Ymax − y0)/(Y1 − y0) ≤ q
+                ax.set_ylim(y0, y0 + (Y_.max() - y0) / q)
             self._fit_axes(pad)
-        out = {}
-        for k, (x, y) in pos.items():
-            yc = min(max(y, 0.0), max(0.0, 1.0 - hs[k]))
-            if abs(yc - y) > 1e-6:
-                self.ir_clamped.append(k)
-            out[k] = (min(max(x, 0.0), 1.0), yc)
-        return out
+        return {k: (min(max(x, 0.0), 1.0), y) for k, (x, y) in pos.items()}
 
     def _place(self):
         auto = self._ir_positions()
@@ -496,6 +491,17 @@ class IRFigure(TABS.X.SimpleFigure):
             super()._place()
         finally:
             self.layout = orig
+        for ln in self._ir_lines:
+            ln.remove()
+        self._ir_lines = []
+        for k, (t, c, near, far) in self.ir_leaders.items():
+            if k in orig or k not in self.ann_items:      # gezogenes Label: keine Hilfslinie
+                continue
+            d = (near - far) / 3                           # senkrecht – schräg – senkrecht
+            ln = TABS.plt.Line2D([t, t, c, c], [far, far + d, far + 2 * d, near], transform=self.ax.transAxes,
+                                 lw=0.6, color=self.ann_items[k].get_color(), clip_on=False)
+            self.ax.add_line(ln)
+            self._ir_lines.append(ln)
 
 
 def copy_rich(plain, html):
@@ -517,7 +523,8 @@ class IRMSTab(TABS.FigureTab):
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
                          ea_solvate="", ea_found={}, ir_mode="T",     # "T" | "A"; None (alte Projekte) = wie die Datei
-                         y_auto=True, y_min=0.0, y_max=100.0)        # y-Bereich (ymax: nur alte Projekte)
+                         y_auto=True, y_min=0.0, y_max=100.0,        # y-Bereich (ymax: nur alte Projekte)
+                         ir_color=IR_COLOR)                          # Farbe des Spektrums (FB-13)
 
     def build_controls(self):
         st = self.st
@@ -558,6 +565,12 @@ class IRMSTab(TABS.FigureTab):
         self.cmb_mode.addItem(T("ir_mode_A"), "A")
         self.cmb_mode.setToolTip(T("ir_mode_tip"))
         f.addRow(T("ir_mode"), self.cmb_mode)
+
+        def pick_color(c):
+            self.st["ir_color"] = c
+            self.changed()
+        self.btn_ircolor = TABS.color_button(st.get("ir_color") or IR_COLOR, pick_color)
+        f.addRow(T("ov_color"), self.btn_ircolor)
         self.tbl_ir = QTableWidget(0, 3)
         self.tbl_ir.setHorizontalHeaderLabels(["", "ṽ [cm⁻¹]", T("ir_intensity")])
         self.tbl_ir.verticalHeader().setVisible(False)
@@ -818,6 +831,9 @@ class IRMSTab(TABS.FigureTab):
         self.sp_prom.setEnabled(self.spectrum() is not None and not st.get("ir_pdf"))
         self.cb_int.setChecked(bool(st.get("with_int")))
         self.cb_irlab.setChecked(bool(st.get("ir_labels")))
+        c_ = st.get("ir_color") or IR_COLOR
+        self.btn_ircolor.setProperty("color", c_)
+        self.btn_ircolor.setStyleSheet(f"background-color: {c_}; border: 1px solid #777;")
         self.sp_prom.setValue(st.get("prominence", 5.0))
         self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
         self.sync_yrange()
@@ -946,7 +962,7 @@ class IRMSTab(TABS.FigureTab):
         cfg["xlabel"] = "wavenumber [cm$^{-1}$]"
         cfg["ylabel"] = "transmittance [%]" if mode == "T" else "absorbance"
         cfg["legend"] = False
-        curves = [{"x": sp["wn"], "y": y, "color": IR_COLOR, "label": None, "ls": "-", "lw": 1.0}]
+        curves = [{"x": sp["wn"], "y": y, "color": st.get("ir_color") or IR_COLOR, "label": None, "ls": "-", "lw": 1.0}]
         labels = []
         if use:
             px = np.array([p["wn"] for p in use])
