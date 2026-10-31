@@ -215,7 +215,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Tab „Weitere“ (F5, `tabs/other.py`, letzter Tab): fremde PDF/SVG/PNG unverändert (PNG direkt, SVG + PNG-Ersatz, PDF
   als SVG mit Text als Pfaden), Seitenverhältnis, Unterschrift + Kapitel (SI-Kapitel oder eigene Überschrift = eigenes
   Kapitel am Ende der Gesamt-SI, `new:<Überschrift>` in den Teilen); nie im Datenpaket. .mnova nie im Datenpaket
-  (FB-10), Ablage auch je Projekt (`publication.elucida` `mnova`, Ordner `mnova/`), „In Mnova öffnen“ = Standardprogramm.
+  (FB-10), Ablage nur je Verbindung (NMR-Tab, Karte „Mnova“ oben links: Dateiname, ablegen, „In Mnova öffnen“ =
+  Standardprogramm; Nutzerwunsch, die Projekt-Ablage entfiel nach 2.4.0, alter Schlüssel `mnova` bleibt nur erhalten).
   Schnellauswertung: internes Projekt `<Datenordner>/Einzelauswertungen` (`quick_dir`), Exporte dort in einen gewählten
   Ordner (`place_exports`, QSettings `quick_export_dir`), nie automatisch löschen.
 - SI-Abbildungen (Nutzerwunsch): **immer zwei je Seite** (`SI.two_per_page`: Text vor Abbildungen beginnt eine Seite und

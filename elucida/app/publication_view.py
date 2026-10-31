@@ -218,18 +218,17 @@ class PublicationPage(QWidget):
         crumb.addWidget(b_home)
         crumb.addStretch(1)
         v.addLayout(crumb)
-        head = QHBoxLayout()
-        self.lbl_title = QLabel(wordWrap=True)
+        self.lbl_title = QLabel(wordWrap=True)              # Titel über die volle Breite, Aktionen darunter
         self.lbl_title.setTextFormat(Qt.RichText)
-        head.addWidget(self.lbl_title, 1)
+        v.addWidget(self.lbl_title)
+        head = QHBoxLayout()
         for text, slot, icon in ((T("pub_info"), self.edit_info, "compound"), (T("pub_texts"), self.edit_texts, None),
                                  (T("pub_procs"), lambda *_: edit_procedures(self, self.pdir), None),
-                                 (T("mnova_store"), self.add_mnova, None),
-                                 (T("mnova_open"), lambda *_: open_mnova(self, PUB.mnova_files(self.pdir)), None),
                                  (T("recent_reveal"), self.reveal, "reveal")):
             b = QPushButton(STYLE.icon(icon), text) if icon else QPushButton(text)
             b.clicked.connect(slot)
-            head.addWidget(b, 0, Qt.AlignTop)
+            head.addWidget(b)
+        head.addStretch(1)
         v.addLayout(head)
         row = QHBoxLayout()
         b_new = QPushButton(STYLE.icon("new", "#FFFFFF"), T("pub_new_compound"))
@@ -470,15 +469,6 @@ class PublicationPage(QWidget):
     def _remove(self, p):
         PUB.remove_compound(self.pdir, p)
         self.refresh()
-
-    def add_mnova(self):
-        """Mnova-Dokument für alle Spektren des Papers ablegen (FB-10; nie im Datenpaket)."""
-        ps, _ = QFileDialog.getOpenFileNames(self, T("mnova_store"), str(self.pdir or ""), "Mnova (*.mnova)")
-        for p in ps:
-            try:
-                PUB.add_mnova(self.pdir, p)
-            except OSError as e:
-                QMessageBox.warning(self, T("err_title"), str(e))
 
     def reveal(self):
         if self.pdir:

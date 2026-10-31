@@ -4128,6 +4128,7 @@ def selftest(outdir, with_isnet=False):
         (ndir / "TS1.mnova").write_bytes(b"MNOVA-TEST")
         mn_ = t_n.add_mnova_file(str(ndir / "TS1.mnova"))
         assert Path(mn_) == proj / "data" / "nmr" / "mnova" / "TS1.mnova" and t_n.tbl_raw.rowCount() == 5
+        assert t_n.lbl_mnova.text() == "TS1.mnova"                    # Mnova-Karte oben links zeigt den Dateinamen
         slots_ = {str(PRJ._get(c_, k_)) for c_, k_, _ in PRJ._path_slots(w.get_state())}
         assert mn_ in slots_ and sp_["HSQC"]["bruker"] in slots_
         def emf_spec(path_, texts_):                       # minimale EMF: Header (rclFrame 16 × 11 cm) + Texte
@@ -5253,14 +5254,12 @@ def selftest(outdir, with_isnet=False):
         w.ed_recent.setText("")
         assert not getattr(w, "_searching", False)
 
-        # F5: Mnova (Projekt + öffnen, nie Datenpaket), Schnellauswertung, Startbildschirm, Tab „Weitere“
+        # F5: Mnova öffnen (nur je Verbindung, nie Datenpaket), Schnellauswertung, Startbildschirm, Tab „Weitere“
         from elucida.app import publication_view as PV5
-        mnf_ = out / "f5" / "Paper.mnova"
-        mnf_.parent.mkdir(parents=True, exist_ok=True)
-        mnf_.write_bytes(b"MNOVA")
-        dst5_ = PUB.add_mnova(pub2_, mnf_)
-        assert dst5_ == Path(pub2_) / "mnova" / "Paper.mnova" and PUB.load(pub2_)["mnova"] == ["mnova/Paper.mnova"]
-        assert PUB.mnova_files(pub2_) == [dst5_] and PUB.add_mnova(pub2_, dst5_) == dst5_     # schon drin: einmal
+        dst5_ = out / "f5" / "Paper.mnova"
+        dst5_.parent.mkdir(parents=True, exist_ok=True)
+        dst5_.write_bytes(b"MNOVA")
+        assert not any("Mnova" in b_.text() for b_ in w.pub_page.findChildren(QPushButton))
         opened5_ = []
         real_open5_ = PV5.QDesktopServices                    # Standardprogramm nicht wirklich starten
         PV5.QDesktopServices = type("DS5", (), {"openUrl": staticmethod(lambda u: opened5_.append(u.toLocalFile()) or True)})
@@ -5350,7 +5349,7 @@ def selftest(outdir, with_isnet=False):
                 b_.click()
         mods_ = [r_.info["modified"] for r_ in w.recent_rows]
         assert mods_ == sorted(mods_, reverse=True)                                     # neueste zuerst
-        report.append("F5: Mnova (project, open, not in data package), quick evaluation, home screen, Other tab: OK")
+        report.append("F5: Mnova (per compound only, open, not in data package), quick evaluation, home screen, Other tab: OK")
 
         # Codex-Gegenlesen F3–F5: je Fall ein Fund, der vor dem Fix scheiterte; dazu GP-Kürzel wie Variablen
         from elucida.tabs import dft_pages as PG5
@@ -5460,15 +5459,6 @@ def selftest(outdir, with_isnet=False):
             w.go_home()
             assert p_ is not None and Path(p_).parent == tgt_ and Path(p_).exists(), p_
         chk5_("quick export synthesis", r7_)
-
-        def r8_():                                       # gleichnamige Mnova-Dokumente: nie überschreiben
-            a_ = out / "f5" / "a" / "Paper.mnova"
-            a_.parent.mkdir(parents=True, exist_ok=True)
-            a_.write_bytes(b"OTHER")
-            d2_ = PUB.add_mnova(pub2_, a_)
-            assert d2_.name == "Paper_2.mnova" and (Path(pub2_) / "mnova" / "Paper.mnova").read_bytes() == b"MNOVA"
-            assert PUB.load(pub2_)["mnova"] == ["mnova/Paper.mnova", "mnova/Paper_2.mnova"]
-        chk5_("Mnova same name", r8_)
 
         def r9_():                                       # GP-Kürzel wie Variablen: Umbenennen zieht überall mit
             import yaml

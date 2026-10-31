@@ -393,7 +393,7 @@ TEXTS = {
                         "like “(1.03 g, 5.00 mmol, 1.0 eq.)”\nEnter reagents or use “From scheme” – the amounts in the "
                         "procedure are checked\nOutput: “Export” at the bottom (Word file) or SI (Word) in the toolbar"),
     "guide_nmr_title": ('NMR: Spektren aus MestReNova mit Struktur und die NMR-Zeile', 'NMR: spectra from MestReNova with structure, and the NMR line'),
-    "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG; EMF geht unverändert nach Word), auch per Ziehen ins Fenster; optional TopSpin-Daten und Mnova-Dokumente (Reiter Rohdaten)', 'Files: SVG export from MestReNova (File → Save as → SVG; EMF goes into Word unchanged), also by dragging into the window; optionally TopSpin data and Mnova documents (Raw data tab)'),
+    "guide_nmr_files": ('Dateien: SVG-Export aus MestReNova (Datei → Speichern unter → SVG; EMF geht unverändert nach Word), auch per Ziehen ins Fenster; optional Mnova-Dokumente (links oben) und TopSpin-Daten (Reiter Rohdaten)', 'Files: SVG export from MestReNova (File → Save as → SVG; EMF goes into Word unchanged), also by dragging into the window; optionally Mnova documents (top left) and TopSpin data (Raw data tab)'),
     "guide_nmr_steps": ("SVG hinzufügen – Kern und Reihenfolge erkennt das Programm\nStruktur kommt aus dem Dialog "
                         "Verbindung; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus Mnova unter "
                         "„NMR-Zeile“ einfügen (¹³C auch „Zeile aus Peaklabels“)\nWord speichern (zwei Spektren je Seite) oder "
@@ -1801,9 +1801,8 @@ TEXTS = {
                         "Datensätzen wählen – auch per Ziehen ins Fenster",
                         "Choose an experiment (folder with acqus), a dataset (10, 11, …) or a folder with several "
                         "datasets – also by dragging into the window"),
-    "nmr_mnova": ("Mnova-Datei …", "Mnova file …"),
-    "nmr_mnova_tip": ("MestReNova-Dokument (.mnova) in die Verbindung übernehmen (data/nmr/mnova); Doppelklick öffnet es",
-                      "Copy a MestReNova document (.mnova) into the compound (data/nmr/mnova); double-click opens it"),
+    "nmr_mnova_tip": ("MestReNova-Dokument (.mnova) in die Verbindung übernehmen (data/nmr/mnova)",
+                      "Copy a MestReNova document (.mnova) into the compound (data/nmr/mnova)"),
     "nmr_raw_remove_tip": ("Eintrag aus der Liste nehmen; die Dateien im Ordner der Verbindung bleiben",
                            "Remove the entry from the list; the files in the compound folder stay"),
     "nmr_raw_open_tip": ("Doppelklick: Ordner bzw. Datei öffnen", "Double-click: open folder or file"),

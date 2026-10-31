@@ -476,6 +476,22 @@ class NMRTab(QWidget):
 
     # -- Bedienelemente -------------------------------------------------------------------
     def build_controls(self):
+        # Mnova-Dokumente der Verbindung oben in der Spalte (Nutzerwunsch: nicht im Reiter Rohdaten verstecken)
+        g = QGroupBox("Mnova")
+        v = QVBoxLayout(g)
+        self.lbl_mnova = QLabel("", wordWrap=True)
+        v.addWidget(self.lbl_mnova)
+        row = QHBoxLayout()
+        for txt, tip, fn in ((T("mnova_store"), T("nmr_mnova_tip"), self.add_mnova),
+                             (T("mnova_open"), T("mnova_open_tip"), self.open_mnova)):
+            b = QPushButton(txt)
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.lv.addWidget(g)
+
         g = QGroupBox(T("nmr_spectra"))
         v = QVBoxLayout(g)
         row = QHBoxLayout()
@@ -521,8 +537,6 @@ class NMRTab(QWidget):
         v.addWidget(self.tbl_raw)
         row = QHBoxLayout()
         for txt, tip, fn, ic in ((T("nmr_topspin"), T("nmr_topspin_tip"), self.add_topspin, "open"),
-                                 (T("nmr_mnova"), T("nmr_mnova_tip"), self.add_mnova, None),
-                                 (T("mnova_open"), T("mnova_open_tip"), self.open_mnova, None),
                                  (T("remove"), T("nmr_raw_remove_tip"), self.remove_raw, None)):
             b = QPushButton(txt)
             if ic:
@@ -840,7 +854,7 @@ class NMRTab(QWidget):
     def add_mnova(self):
         if not self.main.ensure_project():
             return
-        ps, _ = QFileDialog.getOpenFileNames(self, T("nmr_mnova"), self.main.settings.value("last_dir", ""),
+        ps, _ = QFileDialog.getOpenFileNames(self, T("mnova_store"), self.main.settings.value("last_dir", ""),
                                              f"Mnova (*.mnova);;{T('flt_all')}")
         for p in ps:
             self.add_mnova_file(p)
@@ -898,6 +912,9 @@ class NMRTab(QWidget):
                     it.setData(Qt.UserRole, row[4])
                 self.tbl_raw.setItem(i, c, it)
         self.tbl_raw.resizeColumnsToContents()
+        mn = self.st.get("mnova") or []
+        self.lbl_mnova.setText(", ".join(Path(m).name for m in mn) or T("mnova_none"))
+        self.lbl_mnova.setStyleSheet("" if mn else HINT_CSS)
 
     def remove_spectrum(self):
         s = self.current()

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 from pathlib import Path
 
 import yaml
@@ -107,7 +106,7 @@ def save(pdir, data):
         out["procedures"] = [dict(p) for p in data["procedures"]]
     if data.get("group_headings") is False:   # Gruppen nur zur Orientierung, keine Unterkapitel in der Gesamt-SI
         out["group_headings"] = False
-    if data.get("mnova"):                  # Mnova-Dokumente für alle Spektren des Papers (relativ, „mnova/…“)
+    if data.get("mnova"):                  # alte Projekte (bis 2.4.0, Mnova je Projekt): Eintrag erhalten, nicht mehr bedient
         out["mnova"] = list(data["mnova"])
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
@@ -398,39 +397,6 @@ def rename_procedures(pdir, mapping, skip=None) -> list[Path]:
             os.replace(tmp, pf)
             out.append(Path(cdir))
     return out
-
-
-MNOVA_DIR = "mnova"
-
-
-def add_mnova(pdir, src) -> Path:
-    """Mnova-Dokument im Projekt ablegen (Kopie nach <Projekt>/mnova/, Original bleibt) und im Index vermerken."""
-    pdir, src = Path(pdir), Path(src)
-    try:
-        inside = src.resolve().is_relative_to(pdir.resolve())
-    except OSError:
-        inside = False
-    if inside:
-        dst = src
-    else:
-        dst = pdir / MNOVA_DIR / src.name
-        k = 2
-        while dst.exists() and dst.read_bytes() != src.read_bytes():   # anderes Dokument gleichen Namens: nie überschreiben
-            dst = pdir / MNOVA_DIR / f"{src.stem}_{k}{src.suffix}"
-            k += 1
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if not dst.exists():
-            shutil.copy2(src, dst)
-    data = load(pdir)
-    rel = dst.resolve().relative_to(pdir.resolve()).as_posix()
-    if rel not in data["mnova"]:
-        data["mnova"].append(rel)
-        save(pdir, data)
-    return dst
-
-
-def mnova_files(pdir) -> list[Path]:
-    return [Path(pdir) / m for m in load(pdir)["mnova"] if (Path(pdir) / m).exists()]
 
 
 def unique_dest(pdir, name) -> Path:
