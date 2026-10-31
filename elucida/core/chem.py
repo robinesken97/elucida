@@ -53,13 +53,29 @@ def _xml_fragments(path) -> int:
                and f.find("n") is not None)
 
 
+def drop_label_dummies(mol):
+    """ChemDraw-Beschriftung als Fragment („Br2“ mit hinterlegter Struktur): RDKit liest die Atome darin und zusätzlich
+    ein ungebundenes Platzhalteratom „*“ (Formel „*Br2“). Nur ungebundene „*“ neben weiteren Atomen entfernen –
+    gebundene sind echte Platzhalter (R, Polymer)."""
+    from rdkit import Chem
+    idx = [a.GetIdx() for a in mol.GetAtoms() if a.GetAtomicNum() == 0 and a.GetDegree() == 0]
+    if not idx or len(idx) == mol.GetNumAtoms():
+        return mol
+    rw = Chem.RWMol(mol)
+    for i in reversed(idx):
+        rw.RemoveAtom(i)
+    out = rw.GetMol()
+    out.UpdatePropertyCache(strict=False)
+    return out
+
+
 def _load_cdxml(path) -> dict:
     """-> dict(svg, mw, formula, n_fragments, warnings)."""
     Chem, Descriptors, Draw, rdMolDescriptors, rdMolDraw2D = _rdkit()
     path = Path(path)
     warnings = []
-    mols = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=True, removeHs=False) if m]
-    raw = [m for m in Chem.MolsFromCDXMLFile(str(path), sanitize=False, removeHs=False) if m]
+    mols = [drop_label_dummies(m) for m in Chem.MolsFromCDXMLFile(str(path), sanitize=True, removeHs=False) if m]
+    raw = [drop_label_dummies(m) for m in Chem.MolsFromCDXMLFile(str(path), sanitize=False, removeHs=False) if m]
     sanitized = True
     # RDKit lässt nicht interpretierbare Fragmente weg (auch ungültige Bindungen) -> Masse sonst still zu klein
     if len(mols) < max(len(raw), _xml_fragments(path)):

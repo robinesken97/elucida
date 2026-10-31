@@ -260,7 +260,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Pfeiltexte über `scheme_reagents` (Bedingungen weg, Lösungsmittel-Kürzel → Formel). Vorschau: nur das Schema auf
   Weiß (ausgeblendet ohne Schema), Text im Theme.
   Mengenzellen dürfen eine Einheit tragen („1.03 g“, „150 µL“, „800 mM“; `UNITS`, `split_unit`), ohne Einheit gilt die
-  Spalte (alte Projekte); SI wie eingegeben; n eintragbar (`n_mmol`, zählt nur ohne m/V). ChemDraw-Reagenzientabelle
+  Spalte (alte Projekte); SI wie eingegeben; n eintragbar (`n_mmol`, zählt, wenn n nicht aus m/V berechenbar ist, z. B. Harz ohne M; SI wie eingegeben). ChemDraw-Reagenzientabelle
   (`<stoichiometrygrid>` in der Schema-CDXML, `CDX.stoich_grid`/`grid_row`): Moleküle/Formeln von dort, limitierend =
   Bezug, eingegebene Werte roh, berechnete 3 gültige Stellen, Produkt nur Produktmasse, nur leere Zellen füllen (F1).
   Allgemeine Vorschriften (Nutzerwunsch F1): im Projekt (`procedures`), je Verbindung `syn.gp` (Knopf „GP ▾“); Gesamt-SI

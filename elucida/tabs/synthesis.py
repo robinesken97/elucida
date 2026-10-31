@@ -212,7 +212,7 @@ def cell_num(x, units=None):
 
 def row_amounts(row, ref_mmol=None):
     """Zeile der Tabelle (M, m_mg, V_mL, c_M, rho, n_mmol, role) -> dict(M, mmol, eq, yld, given) (Zahlen oder None);
-    Zellen dürfen eine Einheit tragen („1.03 g“). Eingetragenes n zählt nur ohne m bzw. V (given = True)."""
+    Zellen dürfen eine Einheit tragen („1.03 g“). Eingetragenes n zählt, wenn sich n nicht aus m bzw. V berechnen lässt (given = True; z. B. Harz/Polymer ohne M)."""
     M = molar_mass(row.get("M"))
     m, V, c, rho, n_in = (cell_num(row.get(k), UNITS[k]) for k in ("m_mg", "V_mL", "c_M", "rho", "n_mmol"))
     n = None
@@ -249,7 +249,10 @@ def amount_text(row, calc):
                      else f"{V[0]} mL")
         if c:
             parts.append(f"{c[0]} {c[1] or 'M'}")
-    if calc.get("mmol") is not None:
+    n_in = ok("n_mmol") if calc.get("given") else None
+    if n_in:                                    # eingetragenes n wie eingegeben („1.23450 µmol“)
+        parts.append(f"{n_in[0]} {n_in[1] or 'mmol'}")
+    elif calc.get("mmol") is not None:
         parts.append(f"{fmt_sig(calc['mmol'])} mmol")
     if calc.get("yld") is not None:
         parts.append(f"{calc['yld']:.0f}%")
@@ -281,8 +284,10 @@ def scheme_molecules(cdxml):
         mols = Chem.MolsFromCDXMLFile(str(cdxml), sanitize=True, removeHs=False)
     except Exception:
         return out
+    from elucida.core.chem import drop_label_dummies
     for m in mols or []:
         if m is not None:
+            m = drop_label_dummies(m)                     # „*Br2“: Beschriftung mit hinterlegter Struktur
             role = ("product" if m.HasProp("CDX_PRODUCT_ID") else
                     "reactant" if m.HasProp("CDX_REAGENT_ID") else "")
             out.append((rdMolDescriptors.CalcMolFormula(m, True, True), float(Descriptors.MolWt(m)), role))  # D, [13C]
@@ -308,13 +313,13 @@ def grid_row(comp):
     mw = val(CDX.GRID_MW)[0]
     M = comp["formula"] if molar_mass(comp["formula"]) else (num(mw, True) if mw else "")
     row = dict(name="", M=M, m_mg="", V_mL="", c_M="", rho="", role="reactant")
-    c, rho = val(CDX.GRID_MOLARITY)[0], val(CDX.GRID_DENSITY)[0]
+    (c, c_ed), (rho, rho_ed) = val(CDX.GRID_MOLARITY), val(CDX.GRID_DENSITY)
     if not comp["reactant"]:
         row.update(role="product", m_mg=mass(CDX.GRID_PRODUCT_MASS))
     else:
         if val(CDX.GRID_LIMITING)[0] == 1:
             row["role"] = "ref"
-        row.update(c_M=num(c, True) if c > 0 else "", rho=num(rho, True) if rho > 0 else "")
+        row.update(c_M=num(c, c_ed) if c > 0 else "", rho=num(rho, rho_ed) if rho > 0 else "")
         V, v_ed = val(CDX.GRID_VOLUME)
         if not val(CDX.GRID_SAMPLE_MASS)[1] and V > 0 and (c > 0 or rho > 0 or v_ed):
             row["V_mL"] = f"{num(V, v_ed)} mL" if V >= 0.1 else f"{num(V * 1000, v_ed)} µL"
@@ -794,17 +799,25 @@ class SynthTab(QWidget):
         def same(a, b):                    # gleiche Formel oder gleicher Name; Isomere: Produkt trotzdem getrennt
             return prod(a.get("role")) == prod(b.get("role")) and any(
                 a.get(k) and str(a.get(k)) == str(b.get(k)) for k in ("M", "name"))
+        taken = []                     # je ChemDraw-Komponente eine Zeile (Isomere gleicher Formel getrennt)
         for new in rows:
-            old = next((r for r in tab if same(r, new)), None)
-            if old is not None:                                 # vorhanden: nur leere Mengenfelder ergänzen
-                for k in empty:
-                    if new[k] and not str(old.get(k) or "").strip():
-                        old[k] = new[k]
-                continue
+            old = next((r for r in tab if same(r, new) and not any(r is t for t in taken)), None)
             has_ref = any(r.get("role") == "ref" for r in tab)
-            new["role"] = ("ref" if new["role"] in ("ref", "reactant") and not has_ref
-                           else "reagent" if new["role"] in ("ref", "reactant") else new["role"])
-            tab.append(new)
+            if old is not None:
+                # vorhanden: Mengen nur, wenn die Zeile noch keine hat (sonst widersprüchliche Dosierung m vs. V·c)
+                if not any(str(old.get(k) or "").strip() for k in ("m_mg", "V_mL", "n_mmol")):
+                    for k in empty:
+                        if new[k] and not str(old.get(k) or "").strip():
+                            old[k] = new[k]
+                if new["role"] == "ref" and not has_ref:       # limitierend in ChemDraw, noch kein Bezug
+                    old["role"] = "ref"
+            else:
+                new["role"] = ("ref" if new["role"] in ("ref", "reactant") and not has_ref
+                               else "reagent" if new["role"] in ("ref", "reactant") else new["role"])
+                tab.append(new)
+                old = new
+            if grid:
+                taken.append(old)
         if notes:
             self.main.log_signal.emit("\n".join(notes))
             self.main.statusBar().showMessage("\n".join(notes), 8000)
@@ -879,20 +892,39 @@ class SynthTab(QWidget):
         edit_procedures(self, PUB.publication_of(self.main.project_dir))
 
     def set_gp(self, key):
-        """GP der Verbindung merken; mit GP „according to GP A“ an der Schreibmarke einfügen."""
+        """GP der Verbindung merken und den Verweis im Text pflegen: neu „according to GP A“ an der Schreibmarke,
+        Wechsel A -> B ersetzt „GP A“, „Keine GP“ entfernt „according to GP A“ (bzw. „GP A“). Ein Undo-Schritt."""
+        old = self.st.get("gp") or ""
         self.st["gp"] = key
         self.btn_gp.setText(f"GP {key}" if key else "GP")
-        if key:
+        doc = self.ed_proc.document()
+        from PySide6.QtGui import QTextDocument
+        flags = QTextDocument.FindCaseSensitively | QTextDocument.FindWholeWords
+        bold = QTextCharFormat()
+        bold.setFontWeight(_BOLD)
+        found = False
+        if old and old != key:
+            pat = f"GP {old}" if key else f"according to GP {old}"
+            cur = doc.find(pat, 0, flags)
+            while not cur.isNull():
+                found = True
+                cur.insertText(f"GP {key}" if key else "", bold if key else QTextCharFormat())
+                cur = doc.find(pat, cur, flags)
+            if not key and found:                        # Leerzeichen vor dem entfernten Verweis
+                h = doc_html(self.ed_proc)
+                self.ed_proc.setHtml(simple_to_qt(re.sub(r"\s+(?=[.,;]|$)", "", h)))
+            if not key and f"GP {old}" in self.ed_proc.toPlainText():   # anders formulierter Verweis bleibt
+                self.main.statusBar().showMessage(T("syn_gp_left", key=old), 8000)
+        if key and not found and f"GP {key}" not in self.ed_proc.toPlainText():
             cur = self.ed_proc.textCursor()
             pre = "" if not cur.position() or self.ed_proc.toPlainText()[cur.position() - 1].isspace() else " "
             cur.insertText(pre + "according to ", QTextCharFormat())
-            bold = QTextCharFormat()
-            bold.setFontWeight(_BOLD)
             cur.insertText(f"GP {key}", bold)
             cur.setCharFormat(QTextCharFormat())
             self.ed_proc.setTextCursor(cur)
             self.ed_proc.setFocus()
-        self.main.push_undo()
+        self.timer.stop()                                # Text und Zuordnung zusammen als ein Schritt
+        self.proc_changed()
 
     def gp_blocks(self):
         """Einzel-SI: gewählte allgemeine Vorschrift vor „Synthesis of …“ (Gesamt-SI: einmal, publication_si)."""

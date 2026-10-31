@@ -1651,12 +1651,12 @@ TEXTS = {
     "syn_role_other": ("sonstiges", "other"),
     "syn_table_tip": ("M als Zahl (g/mol) oder Summenformel; n aus m/M, V·c oder V·ρ/M; eq. bzw. Ausbeute bezogen auf "
                       "die Zeile „Bezug“. Die Namen dienen auch der Prüfung der Vorschrift.\nAusfüllen: m + M, V + c oder V + ρ + M "
-                      "(m hat Vorrang) oder n direkt (zählt nur ohne m/V); fehlt eine Angabe, bleiben n und eq. leer („–“)."
+                      "(m hat Vorrang) oder n direkt (zählt, wenn n nicht aus m/V berechenbar ist); fehlt eine Angabe, bleiben n und eq. leer („–“)."
                       "\nEinheit darf in der Zelle stehen („1.03 g“, „150 µL“, „800 mM“, „0.5 mol“), sonst gilt die Spalte; "
                       "in die SI kommt der Wert wie eingegeben.",
                       "M as number (g/mol) or formula; n from m/M, V·c or V·ρ/M; eq. or yield relative to the "
                       "“reference” row. The names are also used to check the procedure.\nFill in: m + M, V + c or V + ρ + M "
-                      "(m takes precedence) or n directly (only counts without m/V); if one is missing, n and eq. stay "
+                      "(m takes precedence) or n directly (counts when n cannot be computed from m/V); if one is missing, n and eq. stay "
                       "empty (“–”).\nA unit may follow the number (“1.03 g”, “150 µL”, “800 mM”, “0.5 mol”), otherwise the "
                       "column unit applies; the SI shows the value as entered."),
     "syn_gp_tip": ("Allgemeine Vorschrift (GP) des Projekts wählen und „according to GP A“ an der Schreibmarke "
@@ -1665,6 +1665,8 @@ TEXTS = {
                    "Choose a general procedure (GP) of the project and insert “according to GP A” at the cursor. The "
                    "GP precedes this compound in the SI (combined SI: once, before the first compound using it)."),
     "syn_gp_none_defined": ("Keine GP im Projekt", "No GP in the project"),
+    "syn_gp_left": ("Die Vorschrift verweist noch auf GP {key} – Text anpassen.",
+                    "The procedure still refers to GP {key} – edit the text."),
     "syn_gp_off": ("Keine GP", "No GP"),
     "syn_M_bad": ("Molmasse nicht lesbar (Zahl oder Summenformel)", "molar mass not readable (number or formula)"),
     "syn_row_add": ("Zeile +", "Row +"),

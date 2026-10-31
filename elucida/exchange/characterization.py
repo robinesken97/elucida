@@ -52,7 +52,8 @@ def structure_ids(path) -> dict:
         try:
             from rdkit import Chem, RDLogger
             RDLogger.DisableLog("rdApp.*")
-            mols = [m for m in Chem.MolsFromCDXMLFile(str(p), sanitize=True, removeHs=False) if m]
+            from elucida.core.chem import drop_label_dummies
+            mols = [drop_label_dummies(m) for m in Chem.MolsFromCDXMLFile(str(p), sanitize=True, removeHs=False) if m]
             if mols:
                 mol = mols[0]
                 for m in mols[1:]:

@@ -5060,12 +5060,17 @@ def selftest(outdir, with_isnet=False):
             SYN.amount_text(r_f1, SYN.row_amounts(r_f1))
         r_f1 = dict(M="100", n_mmol="0.5 mol", role="reagent")                  # nur n: zählt
         c_f1 = SYN.row_amounts(r_f1, 250.0)
-        assert c_f1["given"] and c_f1["mmol"] == 500 and SYN.amount_text(r_f1, c_f1) == "(500 mmol, 2.0 eq.)", c_f1
-        c_f1 = SYN.row_amounts(dict(r_f1, m_mg="100"), 250.0)                     # mit m: n aus m, eingetragenes zählt nicht
+        assert c_f1["given"] and c_f1["mmol"] == 500 and SYN.amount_text(r_f1, c_f1) == "(0.5 mol, 2.0 eq.)", c_f1
+        r_f1 = dict(M="100", n_mmol="1.23450 µmol")                              # Codex: Einheit/Stellen wie eingegeben
+        assert SYN.amount_text(r_f1, SYN.row_amounts(r_f1)) == "(1.23450 µmol)", SYN.amount_text(r_f1, SYN.row_amounts(r_f1))
+        c_f1 = SYN.row_amounts(dict(M="100", n_mmol="0.5 mol", m_mg="100"), 250.0)   # mit m: n aus m
         assert not c_f1["given"] and c_f1["mmol"] == 1.0, c_f1
+        c_f1 = SYN.row_amounts(dict(M="100", n_mmol="5", V_mL="2"))               # V ohne c/ρ: n nicht berechenbar
+        assert c_f1["given"] and c_f1["mmol"] == 5, c_f1
         assert SYN.row_amounts(dict(M="100", m_mg="5 xyz"))["mmol"] is None       # unbekannte Einheit: keine Zahl
         assert SYN.cell_num("1.5 g") is None and SYN.cell_num("1.5 g", SYN.UNITS["m_mg"]) == 1500
         w.open_project(dpub_ / "S2")
+        pump(0.4)                                                                # Undo-Verlauf nach dem Laden
         t_s = w.syn_tab
         rows_f1 = [dict(r_) for r_ in w.syn_state["reagents"]]
         w.syn_state["reagents"] = [dict(name="A", M="100", m_mg="1 g", role="ref"), dict(name="B", M="50", role="reagent")]
@@ -5102,14 +5107,38 @@ def selftest(outdir, with_isnet=False):
             dict(name="", M="Br2", m_mg="2.15 g", V_mL="", c_M="", rho="", role="reactant"),     # berechnet: 3 Stellen
             dict(name="", M="C6H5Br", m_mg="1.80 g", V_mL="", c_M="", rho="", role="product")], gr_f1
         assert [bool(n_) for _, n_ in gr_f1] == [False, False, False, True]                # Reinheit 95 %: Hinweis
+        g_f1 = SYN.grid_row(dict(grid="1", formula="NaOH", reactant=True, values={10: (0.123456789, False),
+                                                                                  9: (2.0, True)}))[0]
+        assert (g_f1["c_M"], g_f1["V_mL"]) == ("0.123", "2 mL"), g_f1             # Codex: berechnetes c 3 Stellen
         w.syn_state.update(scheme=str(cdx_f1), reagents=[dict(name="S0", M="C7H8", m_mg="500", role="ref"),
-                                                          dict(name="Brom", M="Br2", m_mg="2.0 g", role="reagent")])
+                                                          dict(name="Brom", M="Br2", V_mL="2", c_M="1", role="reagent")])
         t_s.rows_from_scheme()
         assert [(r_["M"], r_["role"], r_.get("m_mg", ""), r_.get("V_mL", "")) for r_ in w.syn_state["reagents"]] == [
-            ("C7H8", "ref", "500", ""), ("Br2", "reagent", "2.0 g", ""),           # vorhanden: nichts überschrieben
+            ("C7H8", "ref", "500", ""), ("Br2", "reagent", "", "2"),              # Dosierung V·c: keine Masse dazu
             ("C6H6", "reagent", "1 g", ""), ("AlBr3", "reagent", "", "1.60 mL"),   # Bezug bleibt die alte Zeile
             ("C6H5Br", "product", "1.80 g", "")], w.syn_state["reagents"]
-        w.syn_state["reagents"] = []
+        w.syn_state["reagents"] = [dict(name="Benzol", M="C6H6", role="reagent")]   # limitierend schon da, kein Bezug
+        t_s.rows_from_scheme()
+        assert [(r_["name"], r_["role"], r_.get("m_mg")) for r_ in w.syn_state["reagents"]][0] == ("Benzol", "ref", "1 g")
+        assert [r_["role"] for r_ in w.syn_state["reagents"]].count("ref") == 1, w.syn_state["reagents"]
+        cdx_iso = out / "input" / "f1_iso.cdxml"                                 # zwei Isomere gleicher Formel
+        cdx_iso.write_text('<?xml version="1.0"?><CDXML><page><stoichiometrygrid id="1">'
+                           + comp_f1(1, "C8H8O", sg_(4, 1), sg_(7, 0.5, True))
+                           + comp_f1(2, "C8H8O", sg_(4, 0), sg_(7, 0.6, True)) + '</stoichiometrygrid></page></CDXML>',
+                           encoding="utf-8")
+        w.syn_state.update(scheme=str(cdx_iso), reagents=[])
+        t_s.rows_from_scheme()
+        assert [r_["m_mg"] for r_ in w.syn_state["reagents"]] == ["500 mg", "600 mg"], w.syn_state["reagents"]
+        lbl_f1 = out / "input" / "f1_label.cdxml"                                # P7: Beschriftung „Br2“ mit Struktur
+        lbl_f1.write_text('<?xml version="1.0"?><CDXML><page><fragment id="1"><n id="2" p="10 10" NodeType="Fragment">'
+                          '<fragment id="3"><n id="4" p="10 10" Element="35" NumHydrogens="0"/><n id="5" p="24 10" '
+                          'Element="35" NumHydrogens="0"/><b id="6" B="4" E="5"/></fragment><t p="10 10"><s>Br2</s></t>'
+                          '</n></fragment></page></CDXML>', encoding="utf-8")
+        assert [f_ for f_, _, _ in SYN.scheme_molecules(lbl_f1)] == ["Br2"], SYN.scheme_molecules(lbl_f1)
+        from rdkit import Chem as _ChF1
+        from elucida.core.chem import drop_label_dummies
+        assert _ChF1.MolToSmiles(drop_label_dummies(_ChF1.MolFromSmiles("*CC"))) == "*CC"   # gebundener Platzhalter bleibt
+        w.syn_state.update(scheme=str(cdx_f1), reagents=[])
         t_s.rows_from_scheme()                                                   # leer: limitierend wird Bezug
         assert [r_["role"] for r_ in w.syn_state["reagents"]] == ["ref", "reagent", "reagent", "product"]
         ref_f1 = w.syn_state["reagents"][0]
@@ -5127,8 +5156,8 @@ def selftest(outdir, with_isnet=False):
         dlg_f1.deleteLater()
         data_f1 = PUB.load(dpub_)
         assert data_f1["procedures"] == [] and data_f1["group_headings"] is True      # alte Projekte
-        data_f1.update(procedures=[dict(key="A", title="Suzuki coupling", text="Para 1.\n\nPara 2 in CH2Cl2.")],
-                       group_headings=False)
+        data_f1.update(procedures=[dict(key="A", title="Suzuki coupling", text="Para 1.\n\nPara 2 in CH2Cl2."),
+                                   dict(key="B", title="", text="Other.")], group_headings=False)
         PUB.save(dpub_, data_f1)
         data_f1 = PUB.load(dpub_)
         assert data_f1["procedures"][0]["key"] == "A" and data_f1["group_headings"] is False
@@ -5136,13 +5165,23 @@ def selftest(outdir, with_isnet=False):
         acts_f1 = [a_.text() for a_ in t_s.btn_gp.menu().actions() if a_.text()]
         assert acts_f1[0] == "GP A – Suzuki coupling", acts_f1
         t_s.ed_proc.setHtml("To a solution")
+        t_s.proc_changed()
         cur_f1 = t_s.ed_proc.textCursor()
         cur_f1.movePosition(cur_f1.MoveOperation.End)
         t_s.ed_proc.setTextCursor(cur_f1)
         t_s.set_gp("A")
-        t_s.proc_changed()
         assert w.syn_state["gp"] == "A" and t_s.btn_gp.text() == "GP A"
         assert w.syn_state["proc"].endswith("To a solution according to <b>GP A</b>"), w.syn_state["proc"]
+        w.undo()                                                 # Codex: Zuordnung und Text in einem Undo-Schritt
+        assert not w.syn_state.get("gp") and w.syn_state["proc"] == "To a solution", w.syn_state
+        w.redo()
+        t_s = w.syn_tab
+        assert w.syn_state["gp"] == "A" and w.syn_state["proc"].endswith("according to <b>GP A</b>")
+        t_s.set_gp("B")                                                          # Wechsel: Verweis ersetzen
+        assert w.syn_state["proc"].endswith("according to <b>GP B</b>") and "GP A" not in w.syn_state["proc"]
+        t_s.set_gp("")                                                           # abwählen: Verweis entfernen
+        assert w.syn_state["proc"] == "To a solution" and not w.syn_state["gp"], w.syn_state["proc"]
+        t_s.set_gp("A")
         gpb_ = t_s.gp_blocks()
         assert gpb_[0] == ("heading", "General procedure A (GP A): Suzuki coupling") and len(gpb_) == 3, gpb_
         assert "CH<sub>2</sub>Cl<sub>2</sub>" in gpb_[2][1], gpb_
@@ -5150,9 +5189,18 @@ def selftest(outdir, with_isnet=False):
         assert bl_f1[0] == gpb_[0] and [b_[0] for b_ in bl_f1].index("synthesis") == 3, bl_f1[:5]
         w.save_project()
         assert PRJ.load(dpub_ / "S2")["syn"]["gp"] == "A"
-        t_s.set_gp("")
-        assert t_s.gp_blocks() == [] and t_s.btn_gp.text() == "GP"
-        w.syn_state["gp"] = "A"
+        w.open_project(dpub_ / "S3")                                             # zweite Verbindung mit GP A
+        w.syn_tab.set_gp("A")
+        w.save_project()
+        psi_f1 = w.export_publication_si(dpub_, PUB.sync(dpub_)[0], ["char"], toc=False, path=out / "f1_SI.docx")
+        with _zfp.ZipFile(psi_f1) as z_:
+            doc_f1 = z_.read("word/document.xml").decode("utf-8")
+        assert doc_f1.count("General procedure A (GP A)") == 1 and 'w:val="Heading2"' not in doc_f1
+        assert doc_f1.index("General procedure A (GP A)") < doc_f1.index(">S2<"), "GP before its first compound"
+        w.syn_tab.set_gp("")
+        assert w.syn_tab.gp_blocks() == [] and w.syn_tab.btn_gp.text() == "GP"
+        w.save_project()
+        w.open_project(dpub_ / "S2")
         ch_ = lambda n_: [("synthesis", n_), ("char", "x")]                       # noqa: E731
         comps_f1 = [("c1", dict(char=ch_("c1"), _group="G1", _gp="A")), ("c2", dict(char=ch_("c2"), _group="G2", _gp="A")),
                     ("c3", dict(char=ch_("c3"), _group="G2", _gp=None)), ("c4", dict(char=ch_("c4"), _group="G2", _gp="Z"))]
@@ -5182,6 +5230,8 @@ def selftest(outdir, with_isnet=False):
         lb_f1.deleteLater()
         assert EXCH.build(w)["compound"]["sample"] == {"available": True, "number": "JA-042-F2"}
         assert "JA-042" not in str(w.si_blocks()[0])
+        its_f1 = DP.collect(PRJ.load(dpub_ / "S2"), dpub_ / "S2")                  # Datenpaket: keine Projektdateien
+        assert its_f1 and not any(Path(i_.src).name in ("project.elucida", "elucida.json") for i_ in its_f1)
         w.set_compound({k_: v_ for k_, v_ in res_f1.items() if k_ not in ("sample", "sample_no")})
         w.save_project()
         w.close_project()
