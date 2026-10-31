@@ -162,6 +162,8 @@ Everything happens in the **compound folder** (the folder button in the toolbar 
 manager of your Linux desktop):
 
 1. **File → New compound…** – choose the project, then the name; the compound becomes a subfolder of the project.
+   For a single evaluation without a project: **Quick evaluation** on the start screen (internal project "Quick
+   evaluations", exports ask for the target folder; move it later).
 2. Load measurements, structures, photos and TD-DFT files from anywhere – they are **copied into the
    compound** (`data/<technique>/`, `structures/`; ChemDraw exports with the same name as a CDXML come along).
    Files that are already inside the compound are not copied again.
@@ -295,7 +297,10 @@ to Word or as part of the SI section.
   taken unchanged), **.cdx** (the scheme becomes an editable ChemDraw object in Word – double-click opens ChemDraw; Word
   cannot do this with a CDXML) and **.emf** (sharp vector preview of that object). Without an SVG/PDF the scheme is drawn
   from the CDXML coordinates, including arrow and conditions.
-- **Procedure** with bold, italic, sub- and superscript.
+- **Procedure** with bold, italic, sub- and superscript. **GP ▾** chooses a general procedure of the project
+  ("according to **GP A**"); in the full SI it appears once before the first compound that uses it.
+- Amounts may carry a unit in the cell ("1.03 g", "150 µL", "800 mM"), n can be entered; with a ChemDraw reagent
+  table in the scheme, **From scheme** takes its values.
 - **Amount check:** amounts written as "(1.03 g, 5.00 mmol, 1.0 eq.)", "(99%)" are compared with the reagent table
   (M or formula, mass, volume, concentration, density); deviations beyond the rounding of the given digits are flagged.
   **From scheme** fills the table with the reactants (first = reference 1.0 eq.), reagents above/below the arrow (e.g.
@@ -328,6 +333,8 @@ to Word or as part of the SI section.
   values are exactly the OPUS peak list; with the file alone Elucida picks the bands itself (adjustable
   sensitivity). Range freely selectable (default: the whole measured range); untick bands that should not be listed;
   intensities w/m/s/br optional. Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
+  **Correct baseline (as in OPUS)** subtracts the baseline like OPUS (figure and peak search only); **Set threshold**:
+  click points into the figure, peaks beyond the line. With only the OPUS PDF the spectrum is read from the PDF.
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
   m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
   says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
@@ -459,6 +466,7 @@ Compare several spectra in one figure, measured and calculated:
 
 - **Measurement…** adds spectra from CSV/TXT/DSW/BSW files (one entry per sample);
   **TD-DFT…** adds ORCA (4–6) or Gaussian output files.
+- **From tabs ▾** takes ε series of the ε tab (linked, measurement selectable) and TD-DFT calculations of the DFT tab.
 - **SEC…** takes spectra from the SEC tab, e.g. to compare a reduction or oxidation with the isolated UV-Vis
   spectrum and TD-DFT. As a **series** (all spectra or only start and end, range by potential) everything is
   normalised with **one common factor** to the start spectrum, so intensity ratios and isosbestic points are kept;
@@ -666,6 +674,22 @@ Absorption and emission in one figure, as commonly shown in papers:
   warns about aborted runs, non-converged optimisations and imaginary frequencies; with CPCM only the dielectric
   contribution is given (a solvation energy needs the gas-phase calculation). **Copy SI text**, **Save Word** (two
   columns) or via the SI section.
+- **Isosurface like IboView:** threshold type "density" (fraction of |ψ|², default 80%) or "absolute" (±ψ, default
+  0.01), decimals and step as in IboView.
+- **Energy profile** (page next to the figure): species = the opt/freq calculations of the tab, each with label, step
+  and path(s) A, B …; optional **single points** (e.g. DLPNO-CCSD(T)), matched by identical atoms and coordinates (never by
+  file name): G = E(SP) + (G − E_el). Levels with dashed connectors, ΔG/ΔH/ΔE in kcal mol⁻¹ with one decimal, caption
+  "… calculated at the <single point>//<geometry> level of theory".
+  **IRC** (ORCA): output + `<name>_IRC_Full_trj.xyz`, x = reaction coordinate in Å (TS = 0) or a bond length, several
+  IRCs in a row, barriers at the transition state.
+- **NICS** (page): Gaussian NMR outputs with ghost atoms (Bq, e.g. from py.Aroma): NICS and NICSzz (along the ring-plane
+  normal) per point, average above/below; scans as a curve over the path length (NICS black, NICSzz red).
+
+## Other tab
+
+Figures from other programs (PDF, SVG, PNG) go into the SI **unchanged**: each with a caption and a chapter – an
+existing SI chapter or a heading of your own (in the full SI an own chapter at the end). The aspect ratio is kept, two
+figures per page like all others; not in the data package.
 
 ## Appearance
 

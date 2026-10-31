@@ -18,6 +18,8 @@ from pathlib import Path
 from elucida import APP_NAME, APP_VERSION, ROOT  # noqa: F401  (Versionsnummer nur in elucida/__init__.py)
 OLD_APP_NAMES = ("Spectravolt", "UVVisTool")   # 1.16–1.25 bzw. bis 1.15: Einstellungen beim ersten Start übernehmen
 SI_PARTS = ("char", "nmr", "figs", "methods", "xray", "dft")   # Teile des SI-Exports (Auswahl im Dialog)
+WELCOME_FILTERS = ("all", "recent", "incomplete", "sample")   # Verbindungsliste des Startbildschirms (FB-2)
+PUB_TILE_COLS = 4                                              # Projektkacheln je Reihe
 SETTINGS_FILE = None      # Selbsttest: eigene INI-Datei statt der echten Benutzereinstellungen
 
 if "--selftest" in sys.argv:
@@ -38,7 +40,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QFon
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QColorDialog, QComboBox,  # noqa: E402
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
-                               QFormLayout, QFrame, QGroupBox, QHBoxLayout, QInputDialog,
+                               QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
                                QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressDialog, QPushButton, QScrollArea,
                                QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTableWidget, QTableWidgetItem, QTextBrowser,
@@ -59,6 +61,7 @@ from elucida.tabs import hrms as HRMS  # noqa: E402
 from elucida.tabs import ir_ea as IRMS  # noqa: E402
 from elucida.tabs import xray as XRAY  # noqa: E402
 from elucida.tabs import dft as DFT  # noqa: E402
+from elucida.tabs import other as OTHER  # noqa: E402
 from elucida.tabs import nmr as NMR  # noqa: E402
 from elucida.tabs import synthesis as SYN  # noqa: E402
 from elucida.si import lines as SI  # noqa: E402
@@ -576,6 +579,7 @@ class MainWindow(QMainWindow):
         self.hrms_state = {}
         self.xray_state = {}
         self.dft_state = {}
+        self.other_state = {}
         self.nmr_state = {}
         self.syn_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
@@ -1124,8 +1128,8 @@ class MainWindow(QMainWindow):
         self._update_sections()
 
     # Tabs: Schlüssel im Zustand -> (Attribut, Klasse, Attribut des Zustands, Textschlüssel); ε ist Teil des Fensters
-    _TAB_ORDER = ("syn", "nmr", "irms", "hrms", "eps", "overlay", "fluo", "cv", "sec", "epr", "xray", "dft")
-    _TAB_BUILD_ORDER = ("overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft")
+    _TAB_ORDER = ("syn", "nmr", "irms", "hrms", "eps", "overlay", "fluo", "cv", "sec", "epr", "xray", "dft", "other")
+    _TAB_BUILD_ORDER = ("overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft", "other")
 
     def _tab_spec(self, key):
         return {"overlay": ("ov_tab", TABS.OverlayTab, "ov_state", "tab_overlay"),
@@ -1138,7 +1142,8 @@ class MainWindow(QMainWindow):
                 "xray": ("xray_tab", XRAY.XrayTab, "xray_state", "tab_xray"),
                 "syn": ("syn_tab", SYN.SynthTab, "syn_state", "tab_syn"),
                 "nmr": ("nmr_tab", NMR.NMRTab, "nmr_state", "tab_nmr"),
-                "dft": ("dft_tab", DFT.DFTTab, "dft_state", "tab_dft")}[key]
+                "dft": ("dft_tab", DFT.DFTTab, "dft_state", "tab_dft"),
+                "other": ("other_tab", OTHER.OtherTab, "other_state", "tab_other")}[key]
 
     def tab_key_of(self, tab):
         """Schlüssel (cv, xray …) eines Tab-Objekts, None für Unbekanntes (baut keine Tabs)."""
@@ -1380,7 +1385,7 @@ class MainWindow(QMainWindow):
         self.render()
 
     NAV_GROUPS = (("nav_grp_syn", ("syn", "nmr", "irms", "hrms")), ("nav_grp_uv", ("eps", "overlay", "fluo")),
-                  ("nav_grp_ec", ("cv", "sec", "epr")), ("nav_grp_struct", ("xray", "dft")))
+                  ("nav_grp_ec", ("cv", "sec", "epr")), ("nav_grp_struct", ("xray", "dft", "other")))
 
     def nav_bar(self):
         """Tabs in vier Gruppen wie die SI (Leiste oben statt Reiter): kostet Höhe statt Breite – die Abbildung
@@ -1596,7 +1601,7 @@ class MainWindow(QMainWindow):
                         "current": self.current},
                 "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
-                "dft": self.dft_state, "nmr": self.nmr_state, "syn": self.syn_state,
+                "dft": self.dft_state, "other": self.other_state, "nmr": self.nmr_state, "syn": self.syn_state,
                 "compound": dict(self.compound),
                 "tab": self._tab_key,
                 "text": dict(self.text_fmt), "text_tabs": {k: dict(v) for k, v in self.tab_fmt.items()}}
@@ -1782,6 +1787,39 @@ class MainWindow(QMainWindow):
             return False
         return bool(self._undo) and self._undo[-1] != self._saved_snap
 
+    _recent_filter, _recent_limit, _pubs_all = "all", 20, False
+
+    def _set_filter(self, b):
+        self._recent_filter, self._recent_limit = b.property("filter"), 20
+        self.fill_recent_list()
+
+    def _more_recent(self):
+        self._recent_limit += 20
+        self.fill_recent_list()
+
+    def _toggle_pubs(self):
+        self._pubs_all = not self._pubs_all
+        self.fill_recent_list()
+
+    def compound_infos(self, flt):
+        """Verbindungen für die Liste des Startbildschirms, neueste zuerst: all = alle bekannten Projekte + zuletzt
+        geöffnete, recent = zuletzt geöffnete, incomplete = Checkliste offen, sample = Substanz übrig."""
+        from elucida.app import welcome as WEL
+        from elucida.app import publication as PUB
+        if flt == "recent":
+            infos = [i for i in (WEL.project_info(p) for p in self.recent()) if i is not None]
+            for info in infos:
+                pub = PUB.publication_of(info["path"])
+                if pub is not None:
+                    info["publication"] = re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(pub))) or pub.name
+            return infos
+        infos = sorted(self.search_index(), key=lambda i: i["modified"], reverse=True)
+        if flt == "incomplete":
+            infos = [i for i in infos if PUB.checklist(i["path"])["missing"]]
+        elif flt == "sample":
+            infos = [i for i in infos if i.get("sample")]
+        return infos
+
     def welcome_page(self):
         """Startbildschirm ohne Projekt: worum es geht, Neues Projekt / Öffnen / Beispielprojekt und eine Übersicht der
         zuletzt geöffneten Projekte (Verbindung, Analytik, Stand; Suche, Rechtsklick-Menü)."""
@@ -1819,7 +1857,10 @@ class MainWindow(QMainWindow):
         b_demo_pub = QPushButton(T("act_demo_pub"))
         b_demo_pub.setToolTip(T("act_demo_pub_tip"))
         b_demo_pub.clicked.connect(self.open_demo_publication)
-        for b in (b_pub, b_new, b_open, b_demo_pub, b_demo):
+        b_quick = QPushButton(STYLE.icon("new"), T("act_quick"))               # Einzelauswertung ohne Projektwahl
+        b_quick.setToolTip(T("act_quick_tip"))
+        b_quick.clicked.connect(self.quick_evaluation)
+        for b in (b_pub, b_new, b_quick, b_open, b_demo_pub, b_demo):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
@@ -1829,15 +1870,32 @@ class MainWindow(QMainWindow):
         self.ed_recent.textChanged.connect(self._filter_recent)
         v.addWidget(self.ed_recent)
         v.addSpacing(6)
+        row = QHBoxLayout()
         self.lbl_pubs = QLabel(objectName="recentHead")
-        v.addWidget(self.lbl_pubs)
-        self.pub_box = QVBoxLayout()
+        row.addWidget(self.lbl_pubs)
+        row.addStretch(1)
+        self.btn_pubs_all = QPushButton()                  # Projektkacheln: höchstens zwei Reihen, sonst „Alle“
+        self.btn_pubs_all.setFlat(True)
+        self.btn_pubs_all.clicked.connect(self._toggle_pubs)
+        row.addWidget(self.btn_pubs_all)
+        v.addLayout(row)
+        self.pub_box = QGridLayout()
         self.pub_box.setSpacing(8)
         v.addLayout(self.pub_box)
         row = QHBoxLayout()
         self.lbl_recent = QLabel(objectName="recentHead")
         row.addWidget(self.lbl_recent)
         row.addStretch(1)
+        from PySide6.QtWidgets import QButtonGroup
+        self.grp_filter = QButtonGroup(self)               # Verbindungen: Alle · Zuletzt · Unvollständig · Substanz übrig
+        for k in WELCOME_FILTERS:
+            b = QPushButton(T("welcome_f_" + k))
+            b.setCheckable(True)
+            b.setChecked(k == self._recent_filter)
+            b.setProperty("filter", k)
+            self.grp_filter.addButton(b)
+            row.addWidget(b)
+        self.grp_filter.buttonClicked.connect(self._set_filter)
         v.addLayout(row)
         self.recent_box = QVBoxLayout()
         self.recent_box.setContentsMargins(0, 0, 4, 0)
@@ -1846,6 +1904,9 @@ class MainWindow(QMainWindow):
         iv = QVBoxLayout(inner)
         iv.setContentsMargins(0, 0, 0, 0)
         iv.addLayout(self.recent_box)
+        self.btn_more = QPushButton(T("welcome_more"))
+        self.btn_more.clicked.connect(self._more_recent)
+        iv.addWidget(self.btn_more, 0, Qt.AlignHCenter)
         iv.addStretch(1)
         sa = QScrollArea()
         sa.setWidget(inner)
@@ -1878,7 +1939,7 @@ class MainWindow(QMainWindow):
         self.lbl_recent_empty.setText(T("recent_none"))
         from elucida.app import welcome as WEL
         from elucida.app import publication as PUB
-        from elucida.app.publication_view import PublicationRow, publication_info
+        from elucida.app.publication_view import PublicationTile, publication_info
         for r in self.recent_rows + self.pub_rows:
             r.setParent(None)
             r.deleteLater()
@@ -1891,28 +1952,31 @@ class MainWindow(QMainWindow):
                 info = None
             if info is not None:
                 pubs.append(info)
-        for info in pubs[:3]:
-            row = PublicationRow(info)
+        shown = pubs if self._pubs_all else pubs[:2 * PUB_TILE_COLS]     # höchstens zwei Reihen (FB-2)
+        for k, info in enumerate(shown):
+            row = PublicationTile(info)
             row.opened.connect(lambda p: self.open_publication(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
             row.customContextMenuRequested.connect(lambda pos, r=row: self._pub_menu(r, pos))
-            self.pub_box.addWidget(row)
+            self.pub_box.addWidget(row, k // PUB_TILE_COLS, k % PUB_TILE_COLS)
             self.pub_rows.append(row)
+        for c in range(PUB_TILE_COLS):
+            self.pub_box.setColumnStretch(c, 1)
         self.lbl_pubs.setText(f"<b>{T('welcome_publications')}</b>")
         self.lbl_pubs.setVisible(bool(pubs))
-        infos = [i for i in (WEL.project_info(p) for p in self.recent()) if i is not None]
-        for info in infos:
-            pub = PUB.publication_of(info["path"])
-            if pub is not None:
-                info["publication"] = re.sub(r"<[^>]+>", "", PUB.paper_title(PUB.load(pub))) or pub.name
-            row = WEL.RecentRow(info)
+        self.btn_pubs_all.setVisible(len(pubs) > 2 * PUB_TILE_COLS)
+        self.btn_pubs_all.setText(T("welcome_pubs_less") if self._pubs_all else T("welcome_pubs_all", n=len(pubs)))
+        infos = self.compound_infos(self._recent_filter)
+        for info in infos[:self._recent_limit]:
+            row = WEL.RecentRow(info, compact=True)
             row.opened.connect(lambda p: self.open_project(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
             row.customContextMenuRequested.connect(lambda pos, r=row: self._recent_menu(r, pos))
             self.recent_box.addWidget(row)
             self.recent_rows.append(row)
-        self.lbl_recent.setText(f"<b>{T('welcome_recent')}</b>" + (f"  <span style='color:gray'>{len(infos)}</span>"
-                                                                   if infos else ""))
+        self.btn_more.setVisible(len(infos) > self._recent_limit)
+        self.lbl_recent.setText(f"<b>{T('welcome_compounds')}</b>" + (f"  <span style='color:gray'>{len(infos)}</span>"
+                                                                      if infos else ""))
         self.lbl_recent_empty.setVisible(not infos)
         self._filter_recent(self.ed_recent.text())
 
@@ -1988,12 +2052,13 @@ class MainWindow(QMainWindow):
         self.lbl_pubs.setVisible(any(r.matches(t) for r in self.pub_rows))
         hits = [i for i in self._search_cache if WEL.info_matches(i, t)][:60]
         for info in hits:
-            row = WEL.RecentRow(info)
+            row = WEL.RecentRow(info, compact=True)
             row.opened.connect(lambda p: self.open_project(p))
             row.setContextMenuPolicy(Qt.CustomContextMenu)
             row.customContextMenuRequested.connect(lambda pos, r=row: self._recent_menu(r, pos))
             self.recent_box.addWidget(row)
             self.recent_rows.append(row)
+        self.btn_more.setVisible(False)
         self.lbl_recent.setText(f"<b>{T('search_hits')}</b>  <span style='color:gray'>{len(hits)}</span>")
         self.lbl_recent_empty.setText(T("search_none"))
         self.lbl_recent_empty.setVisible(not hits)
@@ -3532,11 +3597,19 @@ class MainWindow(QMainWindow):
                 parts["dft_figs"] = dt.pages.si_figures(out_dir, title)    # Energieprofil, IRC, NICS (F4)
             except Exception:
                 self.log_signal.emit(traceback.format_exc())
+        try:                                    # Tab „Weitere“: ins gewählte Kapitel oder eigenes Kapitel am Ende
+            for key, bl in self.other_tab.chapter_blocks(out_dir, title):
+                key = "dft_figs" if key == "dft" else key
+                if key.startswith("new:") or key in sections or (key == "dft_figs" and "dft" in sections):
+                    parts[key] = (parts.get(key) or []) + bl
+        except Exception:
+            self.log_signal.emit(traceback.format_exc())
         return title, parts
 
     def figure_tabs(self):
         """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
-        return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab]
+        return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab,
+                self.other_tab]
 
     def si_figure_blocks(self, out_dir, name):
         """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je
@@ -3771,8 +3844,53 @@ class MainWindow(QMainWindow):
             except PermissionError:
                 self.error(T("report_locked", p=folder_g / f"{name}_report.xlsx"))
         if folder is None:
-            written = PRJ.place_exports(self.project_dir, written)
+            written = self.place_exports(written)
         return written
+
+    # ------------------------------------------------------------ Schnellauswertung (FB-3)
+    def quick_dir(self) -> Path:
+        """Internes Projekt für Einzelauswertungen (normales Projekt im Datenordner, erscheint im Startbildschirm)."""
+        return IMG.app_data_dir() / "Einzelauswertungen"
+
+    def is_quick(self) -> bool:
+        try:
+            return bool(self.project_dir) and Path(self.project_dir).parent.resolve() == self.quick_dir().resolve()
+        except OSError:
+            return False
+
+    def quick_evaluation(self):
+        """Startbildschirm „Schnellauswertung“: neue Verbindung „Auswertung JJJJ-MM-TT“ im internen Projekt."""
+        from elucida.app import publication as PUB
+        import datetime as _dt
+        q = self.quick_dir()
+        if PUB.is_publication(q) is None:
+            q.mkdir(parents=True, exist_ok=True)
+            PUB.create(q, T("quick_title"))
+        name = PUB.unique_dest(q, core.safe_name(T("quick_name", date=_dt.date.today().isoformat()))).name
+        if not self.open_publication(q):
+            return False
+        self.add_recent_publication(q)
+        return self.new_compound_in_publication(name)
+
+    def place_exports(self, files):
+        """Exporte ablegen: im Projekt nach figures/, tables/, SI/ – in einer Schnellauswertung in einen gewählten
+        Ordner (zuletzt gewählter in QSettings „quick_export_dir“); abgebrochen -> wie sonst ins Projekt."""
+        if not self.is_quick():
+            return PRJ.place_exports(self.project_dir, files)
+        d = QFileDialog.getExistingDirectory(self, T("quick_export"), str(self.settings.value("quick_export_dir", "")
+                                                                            or Path.home()))
+        if not d:
+            return PRJ.place_exports(self.project_dir, files)
+        self.settings.setValue("quick_export_dir", d)
+        out = []
+        for f in map(Path, files):
+            if f.exists():
+                dst = Path(d) / f.name
+                if dst.exists():                                # überschreiben wie im Projekt
+                    dst.unlink()
+                shutil.move(str(f), str(dst))                   # auch über Laufwerke hinweg
+                out.append(dst)
+        return out
 
     # ------------------------------------------------------------ Drag & Drop
     def dragEnterEvent(self, ev):

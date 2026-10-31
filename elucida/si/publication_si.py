@@ -162,4 +162,11 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
                 k_sub += 1
                 body[i] = ("subsection", f"{n}.{k_sub} {b[1]}")
         blocks += [("section", f"{n}. {title}")] + body      # DFT: zweispaltig erst nach der Überschrift
+    extra = []                                              # Tab „Weitere“: eigene Überschriften als Kapitel am Ende
+    for _, parts in compounds:
+        extra += [k for k in parts if k.startswith("new:") and k not in extra]
+    for k in extra:
+        figs = [b for _, parts in compounds for b in parts.get(k) or []]
+        n += 1
+        blocks += [("section", f"{n}. {k[4:]}")] + SI.two_per_page(figs)
     return blocks

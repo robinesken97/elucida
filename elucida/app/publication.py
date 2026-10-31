@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from pathlib import Path
 
 import yaml
@@ -53,7 +54,7 @@ KIND_PROGRAMS = {"nmr": "NMR -> TopSpin, MestReNova", "ir": "IR -> Spectragryph,
 def default() -> dict:
     d = {k: "" for k, _ in FIELDS}
     d.update(format=FORMAT_VERSION, license="CC-BY-4.0", compounds=[], excluded=[], si_texts={}, groups=[], group_of={},
-             procedures=[], group_headings=True)
+             procedures=[], group_headings=True, mnova=[])
     return d
 
 
@@ -84,6 +85,7 @@ def load(pdir) -> dict:
     data["procedures"] = [{k: str(p.get(k) or "").strip() for k in ("key", "title", "text")}
                           for p in data.get("procedures") or [] if isinstance(p, dict) and str(p.get("key") or "").strip()]
     data["group_headings"] = data.get("group_headings") is not False
+    data["mnova"] = [str(m) for m in data.get("mnova") or []]          # Mnova-Dokumente des Projekts (FB-10)
     return data
 
 
@@ -105,6 +107,8 @@ def save(pdir, data):
         out["procedures"] = [dict(p) for p in data["procedures"]]
     if data.get("group_headings") is False:   # Gruppen nur zur Orientierung, keine Unterkapitel in der Gesamt-SI
         out["group_headings"] = False
+    if data.get("mnova"):                  # Mnova-Dokumente für alle Spektren des Papers (relativ, „mnova/…“)
+        out["mnova"] = list(data["mnova"])
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
         out["si_texts"] = texts
@@ -357,6 +361,34 @@ def check_label(key) -> str:
 
 
 # -- Verbindungen zwischen Projekten verschieben/kopieren (Zugehörigkeit = Ordner im Projekt) --------------------
+MNOVA_DIR = "mnova"
+
+
+def add_mnova(pdir, src) -> Path:
+    """Mnova-Dokument im Projekt ablegen (Kopie nach <Projekt>/mnova/, Original bleibt) und im Index vermerken."""
+    pdir, src = Path(pdir), Path(src)
+    try:
+        inside = src.resolve().is_relative_to(pdir.resolve())
+    except OSError:
+        inside = False
+    if inside:
+        dst = src
+    else:
+        dst = pdir / MNOVA_DIR / src.name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    data = load(pdir)
+    rel = dst.resolve().relative_to(pdir.resolve()).as_posix()
+    if rel not in data["mnova"]:
+        data["mnova"].append(rel)
+        save(pdir, data)
+    return dst
+
+
+def mnova_files(pdir) -> list[Path]:
+    return [Path(pdir) / m for m in load(pdir)["mnova"] if (Path(pdir) / m).exists()]
+
+
 def unique_dest(pdir, name) -> Path:
     """Freier Zielordner <pdir>/<name>, sonst <name>_2, <name>_3 …"""
     d = Path(pdir) / name

@@ -522,6 +522,7 @@ class NMRTab(QWidget):
         row = QHBoxLayout()
         for txt, tip, fn, ic in ((T("nmr_topspin"), T("nmr_topspin_tip"), self.add_topspin, "open"),
                                  (T("nmr_mnova"), T("nmr_mnova_tip"), self.add_mnova, None),
+                                 (T("mnova_open"), T("mnova_open_tip"), self.open_mnova, None),
                                  (T("remove"), T("nmr_raw_remove_tip"), self.remove_raw, None)):
             b = QPushButton(txt)
             if ic:
@@ -851,6 +852,14 @@ class NMRTab(QWidget):
             lst.append(dst)
         self.changed()
         return dst
+
+    def open_mnova(self):
+        """Gewähltes Mnova-Dokument (sonst alle der Verbindung zur Auswahl) im Standardprogramm öffnen."""
+        from elucida.app.publication_view import open_mnova
+        r = self.tbl_raw.currentRow()
+        sel = self.tbl_raw.item(r, 0).data(Qt.UserRole) if r >= 0 and self.tbl_raw.item(r, 0) else None
+        mn = self.st.get("mnova") or []
+        return open_mnova(self, [sel] if sel in mn else mn)
 
     def remove_raw(self):
         """Eintrag aus der Liste nehmen (die Dateien im Projektordner bleiben liegen)."""

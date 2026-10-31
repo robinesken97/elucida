@@ -165,6 +165,8 @@ Alles passiert im **Ordner der Verbindung** (der Ordner-Knopf in der Werkzeuglei
 im Dateimanager des Linux-Desktops):
 
 1. **Datei → Neue Verbindung…** – Projekt wählen, dann den Namen; die Verbindung wird ein Unterordner des Projekts.
+   Für eine einzelne Auswertung ohne Projekt: **Schnellauswertung** auf dem Startbildschirm (internes Projekt
+   „Einzelauswertungen“, Exporte fragen nach dem Zielordner; später verschieben).
 2. Messdaten, Strukturen, Fotos und TD-DFT-Dateien von beliebigen Orten laden – sie werden **in die
    Verbindung kopiert** (`data/<Analytik>/`, `structures/`; ChemDraw-Exporte mit gleichem Namen wie eine CDXML kommen
    mit). Dateien, die schon in der Verbindung liegen, werden nicht erneut kopiert.
@@ -300,7 +302,10 @@ als eigene Word-Datei oder im SI-Abschnitt.
   (Bild unverändert übernommen), **.cdx** (das Schema wird in Word ein bearbeitbares ChemDraw-Objekt – Doppelklick
   öffnet ChemDraw; mit einer CDXML kann Word das nicht) und **.emf** (scharfe Vektorvorschau dieses Objekts). Ohne
   SVG/PDF wird das Schema aus den CDXML-Koordinaten gezeichnet, mit Pfeil und Bedingungen.
-- **Vorschrift** mit fett, kursiv, tief- und hochgestellt.
+- **Vorschrift** mit fett, kursiv, tief- und hochgestellt. **GP ▾** wählt eine allgemeine Vorschrift des Projekts
+  („according to **GP A**“); in der Gesamt-SI steht sie einmal vor der ersten Verbindung, die sie benutzt.
+- Mengen dürfen eine Einheit in der Zelle tragen („1.03 g“, „150 µL“, „800 mM“), n ist eintragbar; mit einer
+  ChemDraw-Reagenzientabelle im Schema übernimmt **Aus Schema** deren Werte.
 - **Mengenprüfung:** Angaben wie „(1.03 g, 5.00 mmol, 1.0 eq.)“, „(99%)“ werden mit der Reagenzientabelle verglichen
   (M oder Summenformel, Masse, Volumen, Konzentration, Dichte); Abweichungen jenseits der Rundung der angegebenen Stellen
   werden markiert. **Aus Schema** füllt die Tabelle mit den Edukten (erstes = Bezug 1.0 eq.), den Reagenzien über/unter
@@ -337,6 +342,8 @@ als eigene Word-Datei oder im SI-Abschnitt.
   (Empfindlichkeit einstellbar). Bereich frei wählbar (Standard: der ganze gemessene Bereich); Banden, die nicht in die
   Liste sollen, abhaken; Intensitäten w/m/s/br optional. Ausgabe: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (ganze Zahlen,
   absteigend).
+  **Basislinie korrigieren (wie OPUS)** zieht die Basislinie wie OPUS ab (nur Bild und Peaksuche); **Schwelle setzen**:
+  Punkte ins Bild klicken, Peaks jenseits der Linie. Liegt nur das OPUS-PDF vor, wird das Spektrum aus dem PDF gelesen.
 - **HRMS:** den **Word-Bericht** der Massenabteilung laden; Formel, Ionisierung, Polarität und die gemessenen m/z (aus
   den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung (Warnung, wenn der
   Bericht etwas anderes sagt), das Ion ist wählbar ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), vorgewählt ist das nächste
@@ -470,6 +477,7 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 
 - **Messung…** fügt Spektren aus CSV/TXT/DSW/BSW-Dateien hinzu (ein Eintrag pro Probe);
   **TD-DFT…** fügt Ausgabedateien von ORCA (4–6) oder Gaussian hinzu.
+- **Aus Tabs ▾** übernimmt ε-Serien des ε-Tabs (verknüpft, Messung wählbar) und TD-DFT-Rechnungen des DFT-Tabs.
 - **SEC…** übernimmt Spektren aus dem SEC-Tab, z. B. um eine Reduktion oder Oxidation mit dem isolierten UV-Vis-Spektrum
   und TD-DFT zu vergleichen. Als **Serie** (alle Spektren oder nur Anfang und Ende, Bereich nach Potential) wird alles
   mit **einem gemeinsamen Faktor** auf das Startspektrum normiert, Intensitätsverhältnisse und isosbestische Punkte
@@ -685,6 +693,22 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   abgebrochenen Rechnungen, nicht konvergierter Optimierung und imaginären Frequenzen; bei CPCM steht nur der
   dielektrische Beitrag da (eine Solvatationsenergie braucht die Gasphasenrechnung). **SI-Text kopieren**, **Word
   speichern** (zweispaltig) oder über den SI-Abschnitt.
+- **Isofläche wie IboView:** Schwellentyp „Dichte“ (Anteil von |ψ|², Standard 80 %) oder „absolut“ (±ψ, Standard 0.01),
+  Stellen und Schrittweite wie in IboView.
+- **Energieprofil** (Reiter neben der Abbildung): Spezies = die Opt/Freq-Rechnungen des Tabs, je mit Label, Schritt und
+  Pfad(en) A, B …; optional **Einzelpunkte** (z. B. DLPNO-CCSD(T)), zugeordnet über gleiche Atome und Koordinaten
+  (nie über Dateinamen): G = E(SP) + (G − E_el). Stufen mit gestrichelten Verbindungen, ΔG/ΔH/ΔE in kcal mol⁻¹ mit einer
+  Nachkommastelle, Unterschrift „… calculated at the <Einzelpunkt>//<Geometrie> level of theory“.
+  **IRC** (ORCA): Ausgabe + `<Name>_IRC_Full_trj.xyz`, x = Reaktionskoordinate in Å (TS = 0) oder eine Bindungslänge, mehrere
+  IRCs nacheinander, Barrieren am Übergangszustand.
+- **NICS** (Reiter): Gaussian-NMR-Ausgaben mit Geisteratomen (Bq, z. B. aus py.Aroma): NICS und NICSzz (entlang der
+  Normalen der Ringebene) je Punkt, Mittel ober-/unterhalb; Scans als Kurve über die Weglänge (NICS schwarz, NICSzz rot).
+
+## Weitere-Tab
+
+Abbildungen aus anderen Programmen (PDF, SVG, PNG) kommen **unverändert** in die SI: je Abbildung eine Unterschrift und
+ein Kapitel – ein vorhandenes SI-Kapitel oder eine eigene Überschrift (in der Gesamt-SI ein eigenes Kapitel am Ende).
+Das Seitenverhältnis bleibt, zwei Abbildungen je Seite wie alle anderen; nicht im Datenpaket.
 
 ## Erscheinungsbild
 

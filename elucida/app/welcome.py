@@ -163,27 +163,29 @@ class RecentRow(QWidget):
     """Eine Zeile der Projektliste: Verbindung, Ordner/Pfad, Analytik-Abzeichen, zuletzt geändert."""
     opened = Signal(str)
 
-    def __init__(self, info, number=None, extra=None):
+    def __init__(self, info, number=None, extra=None, compact=False):
         super().__init__()
         self.info = info
         self.setObjectName("recentRow")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(Qt.PointingHandCursor)
         h = QHBoxLayout(self)
-        h.setContentsMargins(14, 10, 14, 10)
+        h.setContentsMargins(14, 6 if compact else 10, 14, 6 if compact else 10)
+        side = 44 if compact else 64                   # Startbildschirm (FB-2): kleines Strukturbild
         h.setSpacing(14)
         if number is not None:                         # Publikationsseite: Platz in der Reihenfolge
             h.addWidget(QLabel(str(number), objectName="recentWhen", alignment=Qt.AlignCenter), 0, Qt.AlignVCenter)
         if info.get("thumb"):                          # Struktur (beim Speichern abgelegt), auf Weiß wie in ChemDraw
             pic = QLabel(objectName="recentThumb", alignment=Qt.AlignCenter)
-            pic.setFixedSize(64, 64)
+            pic.setFixedSize(side, side)
             dpr = max(1.0, self.devicePixelRatioF())
-            pm = QPixmap(info["thumb"]).scaled(int(58 * dpr), int(58 * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pm = QPixmap(info["thumb"]).scaled(int((side - 6) * dpr), int((side - 6) * dpr), Qt.KeepAspectRatio,
+                                               Qt.SmoothTransformation)
             pm.setDevicePixelRatio(dpr)
             pic.setPixmap(pm)
         else:                                          # ohne Strukturbild: Kürzel in gleich großer Kachel
             pic = QLabel((info["name"][:2] or "?").upper(), objectName="recentMono", alignment=Qt.AlignCenter)
-            pic.setFixedSize(64, 64)
+            pic.setFixedSize(side, side)
         h.addWidget(pic)
         v = QVBoxLayout()
         v.setSpacing(2)
@@ -217,7 +219,10 @@ class RecentRow(QWidget):
         else:
             badges.addStretch(1)
         v.addLayout(title)
-        v.addWidget(sub)
+        if not compact:                                # kompakt: Pfad nur als Tooltip
+            v.addWidget(sub)
+        else:
+            self.setToolTip(info["path"])
         v.addLayout(badges)
         if extra is not None:                          # Publikation: Checkliste der Verbindung
             v.addWidget(extra)

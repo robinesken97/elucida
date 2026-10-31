@@ -10,7 +10,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
+                               QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
+                               QProgressDialog, QPushButton,
                                QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QApplication)
 from PySide6.QtCore import QUrl
 
@@ -36,7 +37,64 @@ def publication_info(path) -> dict | None:
     title = re.sub(r"<[^>]+>", "", PUB.paper_title(data)) or data.get("title") or pdir.name
     return dict(path=str(pdir), folder=pdir.name, title=title,
                 compounds=[PUB.compound_name(d) for d in dirs], thumbs=thumbs[:4],
+                complete=sum(1 for d in dirs if not PUB.checklist(d)["missing"]),      # vollständig laut Checkliste
                 modified=dt.datetime.fromtimestamp(max(times)))
+
+
+def open_mnova(parent, paths):
+    """„In Mnova öffnen“: mit dem Standardprogramm des Systems; mehrere -> Auswahl, keins/keine Zuordnung -> Hinweis."""
+    from PySide6.QtWidgets import QInputDialog
+    paths = [Path(p) for p in paths if Path(p).exists()]
+    if not paths:
+        return QMessageBox.information(parent, "Mnova", T("mnova_none"))
+    p = paths[0]
+    if len(paths) > 1:
+        name, ok = QInputDialog.getItem(parent, "Mnova", T("mnova_pick"), [x.name for x in paths], 0, False)
+        if not ok:
+            return None
+        p = next(x for x in paths if x.name == name)
+    if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))):
+        QMessageBox.warning(parent, "Mnova", T("mnova_noapp", name=p.name))
+    return p
+
+
+class PublicationTile(QWidget):
+    """Kompakte Kachel „Projekt“ auf dem Startbildschirm (FB-2): Titel, Verbindungen, Fortschritt laut Checkliste,
+    Stand."""
+    opened = Signal(str)
+
+    def __init__(self, info):
+        super().__init__()
+        self.info = info
+        self.setObjectName("recentRow")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumWidth(200)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(12, 8, 12, 8)
+        v.setSpacing(3)
+        v.addWidget(WEL.ElidedLabel(info["title"], objectName="recentTitle"))
+        n, k = len(info["compounds"]), info.get("complete", 0)
+        sub = WEL.ElidedLabel(T("pub_tile_sub", n=n, k=k), objectName="recentSub")
+        sub.setToolTip(info["path"])
+        v.addWidget(sub)
+        bar = QProgressBar()
+        bar.setRange(0, max(1, n))
+        bar.setValue(k)
+        bar.setTextVisible(False)
+        bar.setFixedHeight(6)
+        bar.setToolTip(T("pub_tile_progress", n=n, k=k))
+        v.addWidget(bar)
+        v.addWidget(QLabel(WEL.relative_time(info["modified"]), objectName="recentWhen"))
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self.opened.emit(self.info["path"])
+        super().mouseReleaseEvent(ev)
+
+    def matches(self, text):
+        t = text.strip().lower()
+        return not t or any(t in s.lower() for s in [self.info["title"], self.info["path"]] + self.info["compounds"])
 
 
 class PublicationRow(QWidget):
@@ -166,6 +224,8 @@ class PublicationPage(QWidget):
         head.addWidget(self.lbl_title, 1)
         for text, slot, icon in ((T("pub_info"), self.edit_info, "compound"), (T("pub_texts"), self.edit_texts, None),
                                  (T("pub_procs"), lambda *_: edit_procedures(self, self.pdir), None),
+                                 (T("mnova_store"), self.add_mnova, None),
+                                 (T("mnova_open"), lambda *_: open_mnova(self, PUB.mnova_files(self.pdir)), None),
                                  (T("recent_reveal"), self.reveal, "reveal")):
             b = QPushButton(STYLE.icon(icon), text) if icon else QPushButton(text)
             b.clicked.connect(slot)
@@ -410,6 +470,15 @@ class PublicationPage(QWidget):
     def _remove(self, p):
         PUB.remove_compound(self.pdir, p)
         self.refresh()
+
+    def add_mnova(self):
+        """Mnova-Dokument für alle Spektren des Papers ablegen (FB-10; nie im Datenpaket)."""
+        ps, _ = QFileDialog.getOpenFileNames(self, T("mnova_store"), str(self.pdir or ""), "Mnova (*.mnova)")
+        for p in ps:
+            try:
+                PUB.add_mnova(self.pdir, p)
+            except OSError as e:
+                QMessageBox.warning(self, T("err_title"), str(e))
 
     def reveal(self):
         if self.pdir:

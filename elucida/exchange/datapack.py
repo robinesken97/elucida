@@ -3,7 +3,6 @@ elucida/exchange/datapack.py - Datenpaket je Verbindung (Zip) für Repositorien 
 
 Aufbau wie die veröffentlichten Datensätze der Gruppe (je Verbindung ein Zip <Name>.zip mit Ordner <Name>/):
     NMR/1H/10/, NMR/13C/11/, NMR/HSQC + HMBC/12/ …   TopSpin-Experimente vollständig, Ordner = Experimentnummer
-    NMR/<Datei>.mnova                               Mnova-Dokumente
     IR/        OPUS-Datei und -PDF
     MS/        Bericht der Massenabteilung, Bruker-.d
     UV-Vis/    Messdateien des ε-Tabs
@@ -95,8 +94,7 @@ def collect(state, project_dir) -> list[Item]:
             no = name
         used[(folder, no)] = True
         add("nmr", r["path"], f"NMR/{folder}/{no}")
-    for m in nmr.get("mnova") or []:
-        add("nmr", m, f"NMR/{Path(m).name}")
+    # Mnova-Dokumente (.mnova) nie im Datenpaket (FB-10): Arbeitsdateien, Rohdaten liegen als TopSpin-Experimente bei
     for s in nmr.get("spectra") or []:                 # Mnova-Exporte (Abbildungen): wählbar, Standard aus
         add("nmr", s.get("file"), f"NMR/Spectra/{Path(s.get('file') or '').name}", )
         if items and items[-1].arc.startswith("NMR/Spectra/"):

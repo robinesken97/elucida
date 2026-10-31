@@ -1794,7 +1794,7 @@ def selftest(outdir, with_isnet=False):
         assert not w._toast.isVisible(), (w._toast.text(), w.statusBar().currentMessage())
         report.append("empty-tab guides: OK")
         # Navigation: Gruppen oben statt Reiter; Knopf wechselt den Tab, Tabwechsel markiert den Knopf
-        assert len(w.nav_buttons) == 12 and w.main_tabs.tabBar().isHidden()
+        assert len(w.nav_buttons) == 13 and w.main_tabs.tabBar().isHidden()          # 13 mit „Weitere“ (F5)
         i_cv_ = w._tab_keys.index("cv")
         w.nav_buttons[i_cv_].click()
         assert w.main_tabs.currentWidget() is w.cv_tab
@@ -4615,7 +4615,7 @@ def selftest(outdir, with_isnet=False):
         its_ = DP.collect(st_dp_, dp_)
         arcs_ = {i_.arc: i_.on for i_ in its_}
         assert arcs_ == {"NMR/1H/10": True, "NMR/HSQC + HMBC/12": True, "NMR/HSQC + HMBC/13": True,
-                         "NMR/RE-3-150.mnova": True, "IR/RE-3-150_IR.0": True, "IR/IR.pdf": True,
+                         "IR/RE-3-150_IR.0": True, "IR/IR.pdf": True,           # nie .mnova (F5, FB-10)
                          "MS/MS-Bericht.docx": True,
                          "CV/THF/RE-3-150-thf-200mVs.DTA": True, "EPR/RE-3-150_epr.txt": True}, arcs_   # ohne X-Ray
         codes_ = DP.find_codes(its_)                                    # TopSpin-Ordner „OCM-RE-3-150FC_<Datum>_…“
@@ -4625,7 +4625,8 @@ def selftest(outdir, with_isnet=False):
         rep_ = DP.write_zip(its_, zp_, "6m", dict.fromkeys(codes_, "6m"), dict.fromkeys(codes_, "Compound 6m"))
         with _zfp.ZipFile(zp_) as z_:
             names_ = set(z_.namelist())
-            assert {"6m/NMR/1H/10/acqus", "6m/NMR/1H/10/fid", "6m/NMR/1H/10/pdata/1/title", "6m/NMR/6m.mnova",
+            assert not any(n_.endswith(".mnova") for n_ in names_), sorted(names_)
+            assert {"6m/NMR/1H/10/acqus", "6m/NMR/1H/10/fid", "6m/NMR/1H/10/pdata/1/title",
                     "6m/IR/6m_IR.0", "6m/MS/MS-Bericht.docx", "6m/CV/THF/6m-thf-200mVs.DTA",
                     "6m/EPR/6m_epr.txt", "6m/NMR/HSQC + HMBC/12/acqu2s"} <= names_, sorted(names_)
             assert not any("RE-3-150" in n_ for n_ in names_)
@@ -4656,8 +4657,7 @@ def selftest(outdir, with_isnet=False):
                 assert "150 old" not in doc_ and ">Compound 6m old<" in doc_               # über zwei Runs
                 assert {i_.date_time for i_ in zm_.infolist()} == {(1980, 1, 1, 0, 0, 0)}
             assert "Compound 6m CV" in z_.read("6m/CV/THF/6m-thf-200mVs.DTA").decode("latin-1")
-            assert z_.read("6m/NMR/6m.mnova") == mn_.read_bytes()
-        assert sorted(rep_["kept"]) == ["6m/IR/IR.pdf", "6m/NMR/6m.mnova"], rep_["kept"]
+        assert sorted(rep_["kept"]) == ["6m/IR/IR.pdf"], rep_["kept"]
         with _zfp.ZipFile(zp_) as z_:                                     # PDF: nur Eigenschaften, gleiche Länge
             pdz_ = z_.read("6m/IR/IR.pdf")
             assert len(pdz_) == irp_.stat().st_size and b"Jane" not in pdz_ and b"D:2024" not in pdz_
@@ -5238,6 +5238,105 @@ def selftest(outdir, with_isnet=False):
         assert not w.recent_rows and w.lbl_recent_empty.isVisibleTo(w.lbl_recent_empty.parentWidget())
         w.ed_recent.setText("")
         assert not getattr(w, "_searching", False)
+
+        # F5: Mnova (Projekt + öffnen, nie Datenpaket), Schnellauswertung, Startbildschirm, Tab „Weitere“
+        from elucida.app import publication_view as PV5
+        mnf_ = out / "f5" / "Paper.mnova"
+        mnf_.parent.mkdir(parents=True, exist_ok=True)
+        mnf_.write_bytes(b"MNOVA")
+        dst5_ = PUB.add_mnova(pub2_, mnf_)
+        assert dst5_ == Path(pub2_) / "mnova" / "Paper.mnova" and PUB.load(pub2_)["mnova"] == ["mnova/Paper.mnova"]
+        assert PUB.mnova_files(pub2_) == [dst5_] and PUB.add_mnova(pub2_, dst5_) == dst5_     # schon drin: einmal
+        opened5_ = []
+        real_open5_ = PV5.QDesktopServices                    # Standardprogramm nicht wirklich starten
+        PV5.QDesktopServices = type("DS5", (), {"openUrl": staticmethod(lambda u: opened5_.append(u.toLocalFile()) or True)})
+        try:
+            assert PV5.open_mnova(None, [dst5_]) == dst5_ and opened5_ == [str(dst5_)]
+        finally:
+            PV5.QDesktopServices = real_open5_
+        assert any(b_.text() == T("mnova_open") for b_ in w.nmr_tab.findChildren(QPushButton))
+        # Schnellauswertung: internes Projekt, Name mit Datum, Exporte in einen gewählten Ordner
+        qd5_ = out / "f5" / "Einzelauswertungen"
+        w.quick_dir = lambda: qd5_
+        import datetime as _dt5
+        assert w.quick_evaluation() and w.is_quick() and PUB.is_publication(qd5_) is not None
+        assert Path(w.project_dir).name == core.safe_name(T("quick_name", date=_dt5.date.today().isoformat()))
+        assert w.quick_evaluation() and Path(w.project_dir).name.endswith("_2")              # freier Name
+        tgt5_ = out / "f5" / "export_here"
+        tgt5_.mkdir()
+        tmp5_ = out / "f5" / "tmp_fig.pdf"
+        tmp5_.write_bytes(b"%PDF-1.4")
+        real_dir5_ = MW.QFileDialog
+        MW.QFileDialog = type("FD5", (), {"getExistingDirectory": staticmethod(lambda *a_, **k_: str(tgt5_))})
+        try:
+            assert w.place_exports([tmp5_]) == [tgt5_ / "tmp_fig.pdf"] and not tmp5_.exists()
+            assert w.settings.value("quick_export_dir") == str(tgt5_)
+        finally:
+            MW.QFileDialog = real_dir5_
+        # Tab „Weitere“: PNG/SVG/PDF unverändert, Unterschrift, Kapitel
+        from PIL import Image as PIL5
+        ot_ = w.other_tab
+        assert w._tab_keys[-1] == "other" and MW.MainWindow.NAV_GROUPS[-1][1][-1] == "other"
+        f5d_ = out / "f5" / "figs"
+        f5d_.mkdir()
+        PIL5.new("RGB", (600, 300), "red").save(f5d_ / "dsc.png", dpi=(300, 300))
+        (f5d_ / "tga.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="200pt" height="100pt">'
+                                      '<rect width="200" height="100" fill="blue"/></svg>', encoding="utf-8")
+        d5_ = pymupdf.open()
+        pg5_ = d5_.new_page(width=300, height=200)
+        pg5_.insert_text((50, 100), "TGA", fontsize=20)
+        d5_.save(str(f5d_ / "tga.pdf"))
+        ot_.load_files([str(f5d_ / "dsc.png"), str(f5d_ / "tga.svg"), str(f5d_ / "tga.pdf"), str(f5d_ / "x.txt")])
+        assert len(w.other_state["entries"]) == 3 and ot_.F is not None
+        ot_.ed_cap.setText("DSC trace of X.")
+        ot_.ed_cap.editingFinished.emit()
+        ot_.cmb_chap.setCurrentIndex(ot_.cmb_chap.findData("new"))
+        ot_.ed_head.setText("Thermal Analysis")
+        ot_.ed_head.editingFinished.emit()
+        e5_ = w.other_state["entries"][2]
+        assert e5_["caption"] == "DSC trace of X." and e5_["heading"] == "Thermal Analysis", e5_
+        w.other_state["entries"][0].update(chapter="uvvis", caption="PNG fig.")
+        blk5_ = ot_.si_figure(out / "f5" / "si", "X")
+        assert [b_[0] for b_ in blk5_] == ["image", "figcap", "heading", "image", "figcap", "heading", "image",
+                                          "figcap"], blk5_                    # ohne Überschrift: „Further figures“
+        img_pdf_ = blk5_[-2]
+        assert Path(img_pdf_[1]).exists() and Path(img_pdf_[4]).suffix == ".svg" and abs(img_pdf_[2] / img_pdf_[3] - 1.5) < 1e-6
+        assert blk5_[0][1] == str(f5d_.parent.parent / "f5" / "figs" / "dsc.png") or Path(blk5_[0][1]).name == "dsc.png"
+        assert abs(blk5_[0][2] - 600 / 300 * 2.54) < 1e-3                         # PNG: Größe aus dpi, unverändert
+        files5_ = ot_.export_to(out / "f5" / "exp" / "X_Figure")
+        assert [f_.name for f_ in files5_] == ["X_Figure_1.png", "X_Figure_2.svg", "X_Figure_3.pdf"]
+        assert files5_[0].read_bytes() == Path(w.other_state["entries"][0]["file"]).read_bytes()
+        keys5_ = [k_ for k_, _ in ot_.chapter_blocks(out / "f5" / "si", "X")]
+        assert keys5_ == ["uvvis", "new:Further figures", "new:Thermal Analysis"], keys5_
+        psi5_ = PSI.assemble({}, [("X", {"uvvis": ot_.chapter_blocks(out / "f5" / "si", "X")[0][1],
+                                         "new:Thermal Analysis": ot_.chapter_blocks(out / "f5" / "si", "X")[2][1]})],
+                             ["uvvis"], toc=False)
+        assert [b_[1] for b_ in psi5_ if b_[0] == "section"] == ["1. UV-Vis Spectroscopy", "2. Thermal Analysis"], psi5_
+        SI.write_docx(out / "f5" / "other_si.docx", blk5_)
+        assert {Path(PRJ._get(c_, k_)).name for c_, k_, _ in PRJ._path_slots(w.get_state()) if PRJ._get(c_, k_)} >= \
+            {"dsc.png", "tga.svg", "tga.pdf"}
+        assert not any(i_.group == "other" for i_ in DP.collect(w.get_state(), Path(w.project_dir)))   # nie im Datenpaket
+        # Startbildschirm: Projektkacheln (höchstens zwei Reihen) und Filter der Verbindungen
+        w.go_home()
+        pump()
+        assert all(isinstance(r_, PV5.PublicationTile) for r_ in w.pub_rows) and w.pub_rows
+        assert all("complete" in r_.info for r_ in w.pub_rows)
+        assert len(w.pub_rows) <= 2 * MW.PUB_TILE_COLS
+        w._recent_limit = 1
+        w.fill_recent_list()
+        assert len(w.recent_rows) == 1 and w.btn_more.isVisibleTo(w.btn_more.parentWidget())
+        w._more_recent()
+        assert len(w.recent_rows) > 1 and w._recent_limit == 21
+        for b_ in w.grp_filter.buttons():
+            if b_.property("filter") == "sample":
+                b_.click()
+        assert w._recent_filter == "sample" and all(r_.info.get("sample") for r_ in w.recent_rows)
+        for b_ in w.grp_filter.buttons():
+            if b_.property("filter") == "all":
+                b_.click()
+        mods_ = [r_.info["modified"] for r_ in w.recent_rows]
+        assert mods_ == sorted(mods_, reverse=True)                                     # neueste zuerst
+        report.append("F5: Mnova (project, open, not in data package), quick evaluation, home screen, Other tab: OK")
         dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
         assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
         assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2

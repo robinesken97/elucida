@@ -113,7 +113,7 @@ GUIDE_HEAD = {"syn": ("Synthese-Tab", "Synthesis tab"), "nmr": ("NMR-Tab", "NMR 
               "cv": ("CV-Tab (Cyclovoltammetrie)", "CV tab (cyclic voltammetry)"),
               "sec": ("SEC-Tab (Spektroelektrochemie)", "SEC tab (spectroelectrochemistry)"),
               "epr": ("EPR-Tab (CW-EPR)", "EPR tab (CW EPR)"), "xray": ("X-Ray-Tab", "X-Ray tab"),
-              "dft": ("DFT-Tab", "DFT tab")}
+              "dft": ("DFT-Tab", "DFT tab"), "other": ("Weitere-Tab", "Other tab")}
 
 
 def gh_anchor(heading):
@@ -921,7 +921,7 @@ class FigureTab(QWidget):
         pdir = Path(self.main.project_dir)
         base = PRJ.staging(pdir, self.STATE_KEY) / PRJ.export_stem(self.main.export_name(), self.STATE_KEY)
         try:
-            out = PRJ.place_exports(pdir, self.export_to(base))
+            out = self.main.place_exports(self.export_to(base))
         except PermissionError as e:
             return self.main.error(T("report_locked", p=getattr(e, "filename", "") or ""))
         except Exception as e:

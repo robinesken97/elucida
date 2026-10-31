@@ -33,11 +33,12 @@ STRUCTURES = "structures"
 SI_DIR, FIGURES, TABLES, WORK = "SI", "figures", "tables", ".elucida"
 # Unterordner von data/ je Tab (Schlüssel = STATE_KEY, ε-Tab „eps“)
 DATA_SUB = {"eps": "uvvis", "overlay": "overlay", "fluorescence": "fluorescence", "cv": "cv", "sec": "sec",
-            "epr": "epr", "irms": "ir", "hrms": "hrms", "nmr": "nmr", "xray": "xray", "dft": "dft", "syn": "synthesis"}
+            "epr": "epr", "irms": "ir", "hrms": "hrms", "nmr": "nmr", "xray": "xray", "dft": "dft", "syn": "synthesis",
+            "other": "other"}
 # Teil der Exportnamen je Tab: <Verbindung>_<Label>.*
 EXPORT_LABEL = {"eps": "UV-Vis", "overlay": "Overlay", "fluorescence": "Fluorescence", "cv": "CV", "sec": "SEC",
                 "epr": "EPR", "irms": "IR", "hrms": "HRMS", "nmr": "NMR", "xray": "X-ray", "dft": "DFT",
-                "syn": "Synthesis"}
+                "syn": "Synthesis", "other": "Figure"}
 FIGURE_EXT = {".pdf", ".svg", ".png", ".tif", ".tiff", ".jpg", ".jpeg", ".emf", ".eps"}
 SI_SUFFIXES = ("_SI.txt", "_methods.txt", "_captions.txt", "_NMR.txt")
 
@@ -111,6 +112,8 @@ def _path_slots(state):
         slots += [(d, "file", data_sub("dft")), (d, "trj", data_sub("dft"))]
     nf = ((state.get("dft") or {}).get("nics") or {}).get("files") or []
     slots += [(nf, i, data_sub("dft")) for i in range(len(nf))]
+    for e in (state.get("other") or {}).get("entries") or []:   # Tab „Weitere“ (fremde Abbildungen)
+        slots.append((e, "file", data_sub("other")))
     slots.append((state.get("nmr") or {}, "structure", STRUCTURES))
     slots.append((state.get("syn") or {}, "scheme", STRUCTURES))
     for e in (state.get("nmr") or {}).get("spectra") or []:
