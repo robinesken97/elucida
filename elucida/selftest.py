@@ -3204,7 +3204,8 @@ def selftest(outdir, with_isnet=False):
             tp_.write_text(_Ch.MolToCDXMLBlock(t2_), encoding="utf-8")
             R_, inf_ = XRAY.align_to_template(mm_, tp_)
             assert inf_["rmsd"] < 0.8 and abs(np.linalg.det(R_) - 1) < 1e-9, inf_
-        chk_("template with many tBu", p4_template_core)
+        if hasattr(_Chem, "MolToCDXMLBlock"):                # macOS Intel: RDKit 2025.9 ohne CDXML-Schreiber
+            chk_("template with many tBu", p4_template_core)
         assert not fails_, "\n".join(fails_)
         report.append("audit P4 X-Ray edge cases: OK")
         # Audit P4, Codex-Gegenlesen: jeder Fall scheiterte an e4c5324
@@ -3250,7 +3251,8 @@ def selftest(outdir, with_isnet=False):
             tp_.write_text(_Ch.MolToCDXMLBlock(t2_), encoding="utf-8")
             inf_ = XRAY.align_to_template(mm_, tp_)[1]
             assert inf_["rmsd"] < 0.7, inf_          # vollständige Suche 0.57, nur Gerüst 0.85
-        chk_("template small molecule", p4r_template_small)
+        if hasattr(_Chem, "MolToCDXMLBlock"):                # macOS Intel: RDKit 2025.9 ohne CDXML-Schreiber
+            chk_("template small molecule", p4r_template_small)
         assert not fails_, "\n".join(fails_)
         report.append("audit P4 review fixes (Codex): OK")
         # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
@@ -5263,7 +5265,7 @@ def selftest(outdir, with_isnet=False):
         real_open5_ = PV5.QDesktopServices                    # Standardprogramm nicht wirklich starten
         PV5.QDesktopServices = type("DS5", (), {"openUrl": staticmethod(lambda u: opened5_.append(u.toLocalFile()) or True)})
         try:
-            assert PV5.open_mnova(None, [dst5_]) == dst5_ and opened5_ == [str(dst5_)]
+            assert PV5.open_mnova(None, [dst5_]) == dst5_ and [Path(x_) for x_ in opened5_] == [dst5_]   # Windows: „/“
         finally:
             PV5.QDesktopServices = real_open5_
         assert any(b_.text() == T("mnova_open") for b_ in w.nmr_tab.findChildren(QPushButton))
