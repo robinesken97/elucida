@@ -165,6 +165,7 @@ class PublicationPage(QWidget):
         self.lbl_title.setTextFormat(Qt.RichText)
         head.addWidget(self.lbl_title, 1)
         for text, slot, icon in ((T("pub_info"), self.edit_info, "compound"), (T("pub_texts"), self.edit_texts, None),
+                                 (T("pub_procs"), lambda *_: edit_procedures(self, self.pdir), None),
                                  (T("recent_reveal"), self.reveal, "reveal")):
             b = QPushButton(STYLE.icon(icon), text) if icon else QPushButton(text)
             b.clicked.connect(slot)
@@ -465,7 +466,7 @@ class PublicationPage(QWidget):
         return None
 
 
-OK_COLOR, MISSING_COLOR = "#3a9a4a", "#d9534f"
+OK_COLOR, MISSING_COLOR, REDO_COLOR = "#3a9a4a", "#d9534f", "#d9a400"   # gelb: Substanz übrig, nachholbar
 
 
 def check_label(ck) -> QLabel:
@@ -475,7 +476,8 @@ def check_label(ck) -> QLabel:
     for k, lab in PUB.CHECKS:
         if k in req:
             ok = k in ck["have"]
-            parts.append(f"<span style='color:{OK_COLOR if ok else MISSING_COLOR}'>{'✓' if ok else '✗'}&nbsp;{lab}</span>")
+            col = OK_COLOR if ok else REDO_COLOR if ck.get("sample") else MISSING_COLOR
+            parts.append(f"<span style='color:{col}'>{'✓' if ok else '✗'}&nbsp;{lab}</span>")
         elif k in ck["extra"]:
             parts.append(f"<span style='color:gray'>+&nbsp;{lab}</span>")
     head = ""
@@ -590,6 +592,118 @@ class PublicationTextsDialog(QDialog):
 
     def result(self):
         return {k: ed.toPlainText().strip() for k, ed in self.eds.items() if ed.toPlainText().strip()}
+
+
+def edit_procedures(parent, pdir):
+    """Allgemeine Vorschriften des Projekts bearbeiten (Projektseite, GP-Menü des Synthese-Tabs)."""
+    if not pdir:
+        return
+    dlg = ProceduresDialog(parent, PUB.load(pdir)["procedures"])
+    if dlg.exec() == QDialog.Accepted:
+        data = PUB.load(pdir)
+        data["procedures"] = dlg.result()
+        PUB.save(pdir, data)
+
+
+class ProceduresDialog(QDialog):
+    """GP A, GP B …: Kürzel, Titel und Text (Absätze durch Leerzeilen, Formeln wie in den SI-Texten). In der
+    Gesamt-SI einmal direkt vor der ersten Verbindung, die die Vorschrift benutzt."""
+
+    def __init__(self, parent, procs):
+        super().__init__(parent)
+        self.setWindowTitle(T("pub_procs"))
+        self.resize(720, 520)
+        self.procs = [dict(p) for p in procs]
+        v = QVBoxLayout(self)
+        hint = QLabel(T("pub_procs_hint"), wordWrap=True)
+        hint.setStyleSheet(HINT_CSS)
+        v.addWidget(hint)
+        h = QHBoxLayout()
+        lv = QVBoxLayout()
+        self.lst = QListWidget()
+        self.lst.currentRowChanged.connect(self._show)
+        lv.addWidget(self.lst, 1)
+        br = QHBoxLayout()
+        b = QPushButton(T("pub_procs_add"))
+        b.clicked.connect(self._add)
+        br.addWidget(b)
+        b = QPushButton(T("remove"))
+        b.clicked.connect(self._remove)
+        br.addWidget(b)
+        lv.addLayout(br)
+        h.addLayout(lv, 1)
+        f = QFormLayout()
+        self.ed_key, self.ed_title, self.ed_text = QLineEdit(), QLineEdit(), QPlainTextEdit()
+        self.ed_key.setMaximumWidth(80)
+        self.ed_title.setPlaceholderText(T("pub_procs_title_ph"))
+        self.ed_text.setPlaceholderText(T("pub_procs_text_ph"))
+        f.addRow(T("pub_procs_key"), self.ed_key)
+        f.addRow(T("pub_procs_title"), self.ed_title)
+        f.addRow(self.ed_text)
+        for ed in (self.ed_key, self.ed_title):
+            ed.textEdited.connect(self._store)
+        self.ed_text.textChanged.connect(self._store)
+        h.addLayout(f, 3)
+        v.addLayout(h, 1)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+        self._fill()
+        self.lst.setCurrentRow(0 if self.procs else -1)
+        self._show(self.lst.currentRow())
+
+    def _label(self, p):
+        return f"GP {p['key']}" + (f" – {p['title']}" if p.get("title") else "")
+
+    def _fill(self):
+        self.lst.blockSignals(True)
+        self.lst.clear()
+        self.lst.addItems([self._label(p) for p in self.procs])
+        self.lst.blockSignals(False)
+
+    def _show(self, i):
+        on = 0 <= i < len(self.procs)
+        p = self.procs[i] if on else {}
+        for ed in (self.ed_key, self.ed_title, self.ed_text):
+            ed.blockSignals(True)
+            ed.setEnabled(on)
+        self.ed_key.setText(p.get("key", ""))
+        self.ed_title.setText(p.get("title", ""))
+        self.ed_text.setPlainText(p.get("text", ""))
+        for ed in (self.ed_key, self.ed_title, self.ed_text):
+            ed.blockSignals(False)
+
+    def _store(self, *_):
+        i = self.lst.currentRow()
+        if 0 <= i < len(self.procs):
+            self.procs[i].update(key=self.ed_key.text().strip(), title=self.ed_title.text().strip(),
+                                 text=self.ed_text.toPlainText().strip())
+            self.lst.item(i).setText(self._label(self.procs[i]))
+
+    def _add(self):
+        used = {p["key"] for p in self.procs}
+        key = next(c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "".join(map(str, range(100))) if c not in used)
+        self.procs.append(dict(key=key, title="", text=""))
+        self._fill()
+        self.lst.setCurrentRow(len(self.procs) - 1)
+
+    def _remove(self):
+        i = self.lst.currentRow()
+        if 0 <= i < len(self.procs):
+            del self.procs[i]
+            self._fill()
+            self.lst.setCurrentRow(min(i, len(self.procs) - 1))
+            self._show(self.lst.currentRow())
+
+    def result(self):
+        """Ohne Kürzel fällt eine Vorschrift weg; doppelte Kürzel: die erste gilt."""
+        out, seen = [], set()
+        for p in self.procs:
+            if p["key"] and p["key"] not in seen:
+                seen.add(p["key"])
+                out.append(dict(p))
+        return out
 
 
 def _check_list(names, checked=True):
@@ -813,8 +927,13 @@ class PublicationSIDialog(QDialog):
         self.cb_toc.setChecked(str(main.settings.value("pub_si_toc", "1")) not in ("0", "false"))
         self.cb_methods = QCheckBox(T("pub_si_methods"))
         self.cb_methods.setChecked(str(main.settings.value("pub_si_methods", "1")) not in ("0", "false"))
+        self.cb_groups = QCheckBox(T("pub_si_groups"))       # Gruppen sonst nur Orientierung auf der Projektseite
+        self.cb_groups.setToolTip(T("pub_si_groups_tip"))
+        self.cb_groups.setChecked(PUB.load(pdir)["group_headings"])
+        self.pdir = pdir
         sv.addWidget(self.cb_toc)
         sv.addWidget(self.cb_methods)
+        sv.addWidget(self.cb_groups)
         sv.addStretch(1)
         h.addLayout(sv, 1)
         cv = QVBoxLayout()
@@ -836,6 +955,10 @@ class PublicationSIDialog(QDialog):
         s.setValue("pub_si_toc", int(self.toc()))
         s.setValue("pub_si_methods", int(self.methods()))
         s.setValue("pub_si_template", self.template())
+        data = PUB.load(self.pdir)
+        if data["group_headings"] != self.cb_groups.isChecked():     # gehört zum Projekt (publication.elucida)
+            data["group_headings"] = self.cb_groups.isChecked()
+            PUB.save(self.pdir, data)
         self.accept()
 
     def sections(self):

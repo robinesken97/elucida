@@ -76,6 +76,8 @@ def _compound(w, pdir):
         out["name"] = c["name"]
     if c.get("note"):                                  # Notiz im laufenden Projekt (z. B. „Radikalkation von 6m“)
         out["note"] = c["note"]
+    if c.get("sample"):                                # Substanz übrig (Characterization: sample_available/_number)
+        out["sample"] = {"available": True, **({"number": c["sample_no"]} if c.get("sample_no") else {})}
     if c.get("known"):                                 # literaturbekannt (+ Zitat/DOI)
         out["known"] = True
         if c.get("lit"):

@@ -185,19 +185,36 @@ def sig_digits(text):
     return max(2, min(5, len(t)))
 
 
-def cell_num(x):
-    """Zahlenfeld der Tabelle -> float oder None (leer oder kein Zahlenwert, z. B. „150 mg“)."""
-    try:
-        v = float(str(x or "").strip().replace(",", "."))
-    except ValueError:
+# Einheiten je Spalte (Faktor zur Spalteneinheit mg, mL, M, g/mL, mmol): „1.03 g“ in der Spalte m [mg] = 1030
+UNITS = {"m_mg": {u: f * 1000 for u, f in MASS.items()}, "V_mL": VOL, "c_M": CONC,
+         "rho": {"g/mL": 1.0, "g/cm3": 1.0, "g/cm³": 1.0, "kg/L": 1.0}, "n_mmol": AMOUNT}
+_NUM_UNIT = re.compile(r"^\s*([-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*$")
+
+
+def split_unit(x):
+    """„1,03 g“ -> („1.03“, „g“), „150“ -> („150“, „“), kein Zahlenwert -> None (µ einheitlich, „uL“ = „µL“)."""
+    m = _NUM_UNIT.match(str(x or ""))
+    if not m:
         return None
+    u = m.group(2).replace("μ", "µ")
+    return m.group(1).replace(",", "."), ("µ" + u[1:] if u in ("ug", "uL", "umol") else u)
+
+
+def cell_num(x, units=None):
+    """Zahlenfeld der Tabelle -> float in der Spalteneinheit oder None (leer, kein Zahlenwert, unbekannte Einheit).
+    units: Einheit -> Faktor (UNITS[Spalte]); ohne units nur reine Zahlen."""
+    su = split_unit(x)
+    if su is None or (su[1] and su[1] not in (units or {})):
+        return None
+    v = float(su[0]) * (units[su[1]] if su[1] else 1.0)
     return v if math.isfinite(v) else None
 
 
 def row_amounts(row, ref_mmol=None):
-    """Zeile der Tabelle (M, m_mg, V_mL, c_M, rho, role) -> dict(M, mmol, eq, yld) (Zahlen oder None)."""
+    """Zeile der Tabelle (M, m_mg, V_mL, c_M, rho, n_mmol, role) -> dict(M, mmol, eq, yld, given) (Zahlen oder None);
+    Zellen dürfen eine Einheit tragen („1.03 g“). Eingetragenes n zählt nur ohne m bzw. V (given = True)."""
     M = molar_mass(row.get("M"))
-    m, V, c, rho = (cell_num(row.get(k)) for k in ("m_mg", "V_mL", "c_M", "rho"))
+    m, V, c, rho, n_in = (cell_num(row.get(k), UNITS[k]) for k in ("m_mg", "V_mL", "c_M", "rho", "n_mmol"))
     n = None
     if m is not None and M:
         n = m / M
@@ -205,7 +222,9 @@ def row_amounts(row, ref_mmol=None):
         n = V * c
     elif V is not None and rho is not None and M:
         n = V * rho * 1000 / M
-    out = dict(M=M, mmol=n, eq=None, yld=None)
+    given = n is None and n_in is not None
+    out = dict(M=M, mmol=n_in if given else n, eq=None, yld=None, given=given)
+    n = out["mmol"]
     if n is not None and ref_mmol:
         if row.get("role") == "product":
             out["yld"] = n / ref_mmol * 100
@@ -218,18 +237,18 @@ def amount_text(row, calc):
     """Klammer im SI-Format: „(1.03 g, 5.00 mmol, 1.0 eq.)“, Lösung „(0.44 mL, 2.5 M, 1.10 mmol, 1.1 eq.)“,
     Produkt „(707 mg, 4.53 mmol, 99%)“."""
     parts = []
-    m = str(row.get("m_mg") or "").strip()
-    V = str(row.get("V_mL") or "").strip()
-    m = m if cell_num(m) is not None else ""
-    V = V if cell_num(V) is not None else ""
-    if m:                                                   # Stellen wie eingegeben; ab 1000 mg in g
-        mv = float(m.replace(",", "."))
-        parts.append(f"{fmt_sig(mv / 1000, sig_digits(m))} g" if mv >= 1000 else f"{m.replace(',', '.')} mg")
+    ok = lambda k: split_unit(row.get(k)) if cell_num(row.get(k), UNITS[k]) is not None else None  # noqa: E731
+    m, V, c = ok("m_mg"), ok("V_mL"), ok("c_M")
+    if m:                                       # Stellen und Einheit wie eingegeben; ohne Einheit ab 1000 mg in g
+        mv = float(m[0])
+        parts.append(f"{m[0]} {m[1]}" if m[1] else f"{fmt_sig(mv / 1000, sig_digits(m[0]))} g" if mv >= 1000
+                     else f"{m[0]} mg")
     if V:
-        vv = float(V.replace(",", "."))
-        parts.append(f"{fmt_sig(vv * 1000, sig_digits(V))} µL" if vv < 0.1 else f"{V.replace(',', '.')} mL")
-        if str(row.get("c_M") or "").strip():
-            parts.append(f"{row['c_M']} M")
+        vv = float(V[0])
+        parts.append(f"{V[0]} {V[1]}" if V[1] else f"{fmt_sig(vv * 1000, sig_digits(V[0]))} µL" if vv < 0.1
+                     else f"{V[0]} mL")
+        if c:
+            parts.append(f"{c[0]} {c[1] or 'M'}")
     if calc.get("mmol") is not None:
         parts.append(f"{fmt_sig(calc['mmol'])} mmol")
     if calc.get("yld") is not None:
@@ -268,6 +287,42 @@ def scheme_molecules(cdxml):
                     "reactant" if m.HasProp("CDX_REAGENT_ID") else "")
             out.append((rdMolDescriptors.CalcMolFormula(m, True, True), float(Descriptors.MolWt(m)), role))  # D, [13C]
     return out
+
+
+def grid_row(comp):
+    """Verbindung der ChemDraw-Reagenzientabelle (CDX.stoich_grid) -> (Zeile, Hinweis oder ""); Rolle "ref"
+    (limitierend), "reactant" (übrige Edukte/Reagenzien) oder "product". Eingegebene Masse -> m, sonst mit Molarität/
+    Dichte/eingegebenem Volumen -> V (+ c bzw. ρ), sonst m; Produkt: m nur aus der Produktmasse (erwartete fällt weg).
+    Eingegebene Werte wie in ChemDraw, berechnete mit 3 gültigen Stellen; Einheit in der Zelle („2.15 g“, „341 mg“, „1.60 mL“)."""
+    from elucida.formats import cdxml as CDX
+    v = comp["values"]
+    val = lambda t: v.get(t, (0.0, False))                                      # noqa: E731
+
+    def num(x, edited):
+        return f"{x:.10g}" if edited else fmt_sig(x)
+
+    def mass(t):
+        g, ed = val(t)
+        return (f"{num(g, ed)} g" if g >= 1 else f"{num(g * 1000, ed)} mg") if g > 0 else ""
+
+    mw = val(CDX.GRID_MW)[0]
+    M = comp["formula"] if molar_mass(comp["formula"]) else (num(mw, True) if mw else "")
+    row = dict(name="", M=M, m_mg="", V_mL="", c_M="", rho="", role="reactant")
+    c, rho = val(CDX.GRID_MOLARITY)[0], val(CDX.GRID_DENSITY)[0]
+    if not comp["reactant"]:
+        row.update(role="product", m_mg=mass(CDX.GRID_PRODUCT_MASS))
+    else:
+        if val(CDX.GRID_LIMITING)[0] == 1:
+            row["role"] = "ref"
+        row.update(c_M=num(c, True) if c > 0 else "", rho=num(rho, True) if rho > 0 else "")
+        V, v_ed = val(CDX.GRID_VOLUME)
+        if not val(CDX.GRID_SAMPLE_MASS)[1] and V > 0 and (c > 0 or rho > 0 or v_ed):
+            row["V_mL"] = f"{num(V, v_ed)} mL" if V >= 0.1 else f"{num(V * 1000, v_ed)} µL"
+        else:
+            row["m_mg"] = mass(CDX.GRID_SAMPLE_MASS) or mass(CDX.GRID_REACTANT_MASS)
+    impure = [k for k, t in (("%Weight", CDX.GRID_WEIGHT), ("Purity", CDX.GRID_PURITY))
+              if t in v and abs(val(t)[0] - 1) > 1e-6]
+    return row, (T("syn_grid_purity", f=comp["formula"], what=" / ".join(impure)) if impure else "")
 
 
 def scheme_drawing(cdxml):
@@ -331,7 +386,7 @@ def doc_to_html(doc):
 from PySide6.QtCore import Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QFont, QImage, QPixmap, QTextCharFormat  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame, QGroupBox,  # noqa: E402
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSplitter, QStackedWidget,
                                QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
 from elucida.app import project as PRJ  # noqa: E402
@@ -343,7 +398,7 @@ COLS = ("name", "M", "m_mg", "V_mL", "c_M", "rho", "role")          # bearbeitba
 
 class SynthTab(QWidget):
     STATE_KEY = "syn"
-    DEFAULT_STATE = dict(name="", scheme=None, proc="", reagents=[])
+    DEFAULT_STATE = dict(name="", scheme=None, proc="", reagents=[], gp="")
 
     def __init__(self, main, state):
         super().__init__()
@@ -444,6 +499,11 @@ class SynthTab(QWidget):
             b.clicked.connect(fn)
             row.addWidget(b)
         row.addStretch(1)
+        self.btn_gp = QPushButton("GP")                     # allgemeine Vorschrift des Projekts wählen + Verweis
+        self.btn_gp.setToolTip(T("syn_gp_tip"))
+        self.btn_gp.setMenu(QMenu(self.btn_gp))
+        self.btn_gp.menu().aboutToShow.connect(self.fill_gp_menu)
+        row.addWidget(self.btn_gp)
         v.addLayout(row)
         self.ed_proc = QTextEdit()
         self.ed_proc.setAcceptRichText(True)
@@ -500,6 +560,7 @@ class SynthTab(QWidget):
             self.ed_proc.setHtml(simple_to_qt(self.st.get("proc") or ""))
         self.fill_table()
         self._loading = False
+        self.btn_gp.setText(f"GP {self.st['gp']}" if self.st.get("gp") else "GP")
         self.update_scheme_info()
         self.update_check()
         self.update_preview()
@@ -522,12 +583,17 @@ class SynthTab(QWidget):
                     continue
                 self.tbl.setItem(r, c, QTableWidgetItem(str(row.get(k) or "")))
             calc = row_amounts(row, ref)
-            n = f"{calc['mmol']:.3f}" if calc["mmol"] is not None else "–"
+            # n eintragbar (zählt nur ohne m/V); berechnetes n grau
+            n = (str(row.get("n_mmol")) if calc["given"] else f"{calc['mmol']:.3f}" if calc["mmol"] is not None
+                 else str(row.get("n_mmol") or "–"))
             e = f"{calc['yld']:.0f}%" if calc["yld"] is not None else f"{calc['eq']:.2f}" if calc["eq"] is not None \
                 else ("1.00" if row.get("role") == "ref" and calc["mmol"] else "–")
             for c, val in ((len(COLS), n), (len(COLS) + 1, e)):
                 it = QTableWidgetItem(val)
-                it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                if c > len(COLS):
+                    it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                elif calc["mmol"] is not None and not calc["given"]:
+                    it.setForeground(Qt.gray)
                 self.tbl.setItem(r, c, it)
             M = calc["M"]
             if row.get("M") and M is None:
@@ -549,7 +615,8 @@ class SynthTab(QWidget):
         for row in self.st["reagents"]:
             name = str(row.get("name") or "").strip()
             if name:
-                out[name] = dict(M=molar_mass(row.get("M")), density=cell_num(row.get("rho")), conc=cell_num(row.get("c_M")))
+                out[name] = dict(M=molar_mass(row.get("M")), density=cell_num(row.get("rho"), UNITS["rho"]),
+                                 conc=cell_num(row.get("c_M"), UNITS["c_M"]))
                 out[re.sub(r"\s+", "", name)] = out[name]
         return out
 
@@ -680,41 +747,75 @@ class SynthTab(QWidget):
         self.main.push_undo()
 
     def rows_from_scheme(self):
-        """Moleküle des Schemas als Zeilen (Summenformel als M); Namen trägst du ein (z. B. S1)."""
+        """Moleküle des Schemas als Zeilen (Summenformel als M); Namen trägst du ein (z. B. S1). Mit ChemDraw-
+        Reagenzientabelle in derselben CDXML: Moleküle, Formeln und Mengen von dort (grid_row)."""
         p = self.st.get("scheme")
         if not p or Path(p).suffix.lower() != ".cdxml":
             self.main.error(T("syn_need_cdxml"))
             return
         from elucida.formats import cdxml as CDX
-        prod = lambda role: role == "product"                                   # noqa: E731
-        have = {(x, prod(r.get("role"))) for r in self.st["reagents"] for x in (str(r.get("M") or ""), r.get("name"))
-                if x}
-        mols = scheme_molecules(p)
-        # Reihenfolge wie die Vorschrift: Edukte (erstes = Bezug 1.0 eq.), Reagenzien über/unter dem Pfeil, Produkt
-        # Mit Reaktionsschritt: Moleküle ohne Rolle (über/unter dem Pfeil) sind Reagenzien, nie der Bezug
-        step = any(r for _f, _m, r in mols)
-        rows = [("", f, "reactant" if r == "reactant" or not step else "reagent")
-                for f, _m, r in sorted(mols, key=lambda x: x[2] != "reactant") if r != "product"]
+        notes = []
         try:
-            rows += [(n, f, r) for n, f, r in CDX.scheme_reagents(p)]
+            grid = CDX.stoich_grid(p)
         except Exception as ex:
             self.main.log_signal.emit(f"{Path(p).name}: {ex}")
-        rows += [("", f, "product") for f, _m, r in mols if r == "product"]
-        for name, formula, kind in rows:
-            if (formula, prod(kind)) in have or (name, prod(kind)) in have:  # Isomere: Produkt trotz gleicher Formel
+            grid = []
+        if len({c["grid"] for c in grid}) > 1:
+            notes.append(T("syn_grid_many"))
+        try:
+            texts = CDX.scheme_reagents(p)
+        except Exception as ex:
+            self.main.log_signal.emit(f"{Path(p).name}: {ex}")
+            texts = []
+        empty = dict(m_mg="", V_mL="", c_M="", rho="")
+        if grid:      # RDKit liest Formeln über dem Pfeil teils mit Platzhalteratom („*Br2“), die Tabelle nicht
+            gr = []
+            for comp in grid:
+                g, note = grid_row(comp)
+                gr.append(g)
+                notes += [note] if note else []
+            gm = [molar_mass(r["M"]) for r in gr]
+            txt = [dict(name=n, M=f, role=r, **empty) for n, f, r in texts       # Lösungsmittel u. a. aus Pfeiltexten
+                   if not (molar_mass(f) and any(m and abs(m - molar_mass(f)) < 0.01 for m in gm))]
+            rows = (sorted((r for r in gr if r["role"] != "product"), key=lambda r: r["role"] != "ref") + txt +
+                    [r for r in gr if r["role"] == "product"])
+        else:
+            mols = scheme_molecules(p)
+            # Reihenfolge wie die Vorschrift: Edukte (erstes = Bezug 1.0 eq.), Reagenzien über/unter dem Pfeil, Produkt
+            # Mit Reaktionsschritt: Moleküle ohne Rolle (über/unter dem Pfeil) sind Reagenzien, nie der Bezug
+            step = any(r for _f, _m, r in mols)
+            rows = [dict(name="", M=f, role="reactant" if r == "reactant" or not step else "reagent", **empty)
+                    for f, _m, r in sorted(mols, key=lambda x: x[2] != "reactant") if r != "product"]
+            rows += [dict(name=n, M=f, role=r, **empty) for n, f, r in texts]
+            rows += [dict(name="", M=f, role="product", **empty) for f, _m, r in mols if r == "product"]
+        tab = self.st["reagents"]
+        prod = lambda role: role == "product"                                   # noqa: E731
+
+        def same(a, b):                    # gleiche Formel oder gleicher Name; Isomere: Produkt trotzdem getrennt
+            return prod(a.get("role")) == prod(b.get("role")) and any(
+                a.get(k) and str(a.get(k)) == str(b.get(k)) for k in ("M", "name"))
+        for new in rows:
+            old = next((r for r in tab if same(r, new)), None)
+            if old is not None:                                 # vorhanden: nur leere Mengenfelder ergänzen
+                for k in empty:
+                    if new[k] and not str(old.get(k) or "").strip():
+                        old[k] = new[k]
                 continue
-            role = ("ref" if kind == "reactant" and not any(r["role"] == "ref" for r in self.st["reagents"])
-                    else "reagent" if kind == "reactant" else kind)
-            self.st["reagents"].append(dict(name=name, M=formula, m_mg="", V_mL="", c_M="", rho="", role=role))
-            have |= {(x, prod(kind)) for x in (formula, name) if x}
+            has_ref = any(r.get("role") == "ref" for r in tab)
+            new["role"] = ("ref" if new["role"] in ("ref", "reactant") and not has_ref
+                           else "reagent" if new["role"] in ("ref", "reactant") else new["role"])
+            tab.append(new)
+        if notes:
+            self.main.log_signal.emit("\n".join(notes))
+            self.main.statusBar().showMessage("\n".join(notes), 8000)
         self.fill_table()
         self.main.push_undo()
 
     def cell_changed(self, item):
         r, c = item.row(), item.column()
-        if self._loading or c >= len(COLS) or r >= len(self.st["reagents"]):
+        if self._loading or c > len(COLS) or r >= len(self.st["reagents"]):
             return
-        self.st["reagents"][r][COLS[c]] = item.text().strip()
+        self.st["reagents"][r][COLS[c] if c < len(COLS) else "n_mmol"] = item.text().strip()
         self.fill_table()
         self.update_check()
         self.main.push_undo()
@@ -747,6 +848,57 @@ class SynthTab(QWidget):
                                                                                        cur.position()].isspace()
                            else txt)
             self.ed_proc.setFocus()
+
+    def procedures(self):
+        """Allgemeine Vorschriften des Projekts (publication.elucida) -> [dict(key, title, text)]."""
+        from elucida.app import publication as PUB
+        pub = PUB.publication_of(getattr(self.main, "project_dir", None))
+        return PUB.load(pub)["procedures"] if pub else []
+
+    def fill_gp_menu(self):
+        m = self.btn_gp.menu()
+        m.clear()
+        procs = self.procedures()
+        for p in procs:
+            a = m.addAction(f"GP {p['key']}" + (f" – {p['title']}" if p["title"] else ""))
+            a.setCheckable(True)
+            a.setChecked(p["key"] == self.st.get("gp"))
+            a.triggered.connect(lambda _=False, k=p["key"]: self.set_gp(k))
+        if not procs:
+            m.addAction(T("syn_gp_none_defined")).setEnabled(False)
+        m.addSeparator()
+        m.addAction(T("syn_gp_off"), lambda: self.set_gp(""))
+        from elucida.app import publication as PUB
+        pub = PUB.publication_of(getattr(self.main, "project_dir", None))
+        a = m.addAction(T("pub_procs") + " …", self.edit_procedures)
+        a.setEnabled(pub is not None)
+
+    def edit_procedures(self):
+        from elucida.app import publication as PUB
+        from elucida.app.publication_view import edit_procedures
+        edit_procedures(self, PUB.publication_of(self.main.project_dir))
+
+    def set_gp(self, key):
+        """GP der Verbindung merken; mit GP „according to GP A“ an der Schreibmarke einfügen."""
+        self.st["gp"] = key
+        self.btn_gp.setText(f"GP {key}" if key else "GP")
+        if key:
+            cur = self.ed_proc.textCursor()
+            pre = "" if not cur.position() or self.ed_proc.toPlainText()[cur.position() - 1].isspace() else " "
+            cur.insertText(pre + "according to ", QTextCharFormat())
+            bold = QTextCharFormat()
+            bold.setFontWeight(_BOLD)
+            cur.insertText(f"GP {key}", bold)
+            cur.setCharFormat(QTextCharFormat())
+            self.ed_proc.setTextCursor(cur)
+            self.ed_proc.setFocus()
+        self.main.push_undo()
+
+    def gp_blocks(self):
+        """Einzel-SI: gewählte allgemeine Vorschrift vor „Synthesis of …“ (Gesamt-SI: einmal, publication_si)."""
+        from elucida.si.publication_si import procedure_blocks
+        p = next((p for p in self.procedures() if p["key"] == self.st.get("gp")), None)
+        return procedure_blocks(p) if p else []
 
     # -- Vorschau / SI --------------------------------------------------------------------
     def update_preview(self):
@@ -813,7 +965,7 @@ class SynthTab(QWidget):
         path = PRJ.export_dir(pdir, PRJ.SI_DIR) / (PRJ.export_stem(self.compound_name() or self.main.export_name(),
                                                                    self.STATE_KEY) + ".docx")
         try:
-            SI.write_docx(path, self.si_blocks(PRJ.work_dir(pdir, self.STATE_KEY)))
+            SI.write_docx(path, self.gp_blocks() + self.si_blocks(PRJ.work_dir(pdir, self.STATE_KEY)))
         except PermissionError:
             self.main.error(T("report_locked", p=path))
             return None

@@ -95,6 +95,7 @@ def project_info(path) -> dict | None:
     comp = g("compound") or {}
     return dict(path=str(pdir), folder=pdir.name, name=name or pdir.name, has_compound=bool(name), note=note,
                 formula=str(comp.get("formula") or ""), lit=str(comp.get("lit") or ""),
+                sample=bool(comp.get("sample")), sample_no=str(comp.get("sample_no") or ""),
                 codes=sorted(set(CODE_RE.findall(raw))),
                 modified=dt.datetime.fromtimestamp(pf.stat().st_mtime), badges=[k for k, _, _ in BADGES if has[k]],
                 thumb=str(th) if th.exists() else None)
@@ -137,7 +138,8 @@ def info_matches(info, text) -> bool:
     """Suche (Startbildschirm, Projektseite): Name/Nummer, Ordner, Notiz, Summenformel, Literatur, Projekt,
     Laborkürzel aus der Verbindung, Analytik; mehrere Wörter müssen alle passen, Groß-/Kleinschreibung egal."""
     hay = " ".join([info.get("name", ""), Path(info.get("path", "")).name, info.get("note", ""),
-                    info.get("formula", ""), info.get("lit", ""), info.get("publication", ""), info.get("group", "")]
+                    info.get("formula", ""), info.get("lit", ""), info.get("publication", ""), info.get("group", ""),
+                    info.get("sample_no", "")]
                    + list(info.get("codes") or []) + [badge_label(k) for k in info.get("badges") or []]).lower()
     return all(w in hay for w in text.lower().split())
 
@@ -189,6 +191,10 @@ class RecentRow(QWidget):
         title.setSpacing(8)
         name_lbl = QLabel(info["name"], objectName="recentTitle")
         title.addWidget(name_lbl)
+        if info.get("sample"):                         # Substanz übrig: ⚗ + Probennummer (wie Characterization)
+            sb = QLabel("⚗" + (" " + info["sample_no"] if info.get("sample_no") else ""), objectName="recentNote")
+            sb.setToolTip(T("compound_sample_badge"))
+            title.addWidget(sb)
         if info.get("note"):                           # Notiz zur Verbindung neben dem Namen
             title.addWidget(ElidedLabel("·  " + info["note"], objectName="recentNote"), 1)
         else:

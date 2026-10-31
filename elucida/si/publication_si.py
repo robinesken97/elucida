@@ -71,6 +71,12 @@ def text_blocks(txt):
     return [("char", SI.chem_html(p.strip())) for p in (txt or "").split("\n\n") if p.strip()]
 
 
+def procedure_blocks(p):
+    """Allgemeine Vorschrift: „General procedure A (GP A): Titel“ (fett) + Text."""
+    head = f"General procedure {p['key']} (GP {p['key']})" + (f": {p['title']}" if p.get("title") else "")
+    return [("heading", head)] + text_blocks(p.get("text", ""))
+
+
 def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
     """meta: Angaben der Publikation (title, authors, affiliation). compounds: [(Name, Teile)] mit Teile =
     {char, nmr, irms, uvvis, epr, cv, sec: Blöcke; xray: Blöcke ohne Kristalltabelle; crystal: (Kopf, Zeilen) | None;
@@ -81,7 +87,18 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
         blocks.append(("title", paper_title(meta), meta.get("authors", ""), meta.get("affiliation", "")))
     if toc:
         blocks.append(("toc",))
-    groups_on = any(parts.get("_group") for _, parts in compounds)   # Gruppen im Projekt -> Unterkapitel
+    groups_on = (meta.get("group_headings") is not False                 # Gruppen im Projekt -> Unterkapitel
+                 and any(parts.get("_group") for _, parts in compounds))
+    procs = {p["key"]: p for p in meta.get("procedures") or []}
+    seen_gp = set()
+
+    def char_blocks(parts):
+        bl = parts.get("char") or []
+        g = parts.get("_gp")
+        if bl and g in procs and g not in seen_gp:      # GP einmal, direkt vor der ersten Verbindung, die sie benutzt
+            seen_gp.add(g)
+            bl = procedure_blocks(procs[g]) + bl
+        return bl
 
     def grouped(blocks_of):
         """Blöcke aller Verbindungen; mit Gruppen vor jeder neuen Gruppe ein Unterkapitel (Nummer folgt später)."""
@@ -106,7 +123,7 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
             body = intro or [("char", SI.chem_html(t)) for t in setup_texts if t] or [("char", METHODS_PLACEHOLDER)]
             intro = []
         elif key == "char":                          # Synthese: Unterkapitel je Gruppe (wie die SI der Gruppe)
-            body = grouped(lambda parts: parts.get("char") or [])
+            body = grouped(char_blocks)
         elif key in FIGURE_SECTIONS:
             def fig_blocks(parts, key=key):
                 fb = [b for b in parts.get(key) or [] if b[0] != "pagebreak"]

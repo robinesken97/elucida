@@ -1651,17 +1651,36 @@ TEXTS = {
     "syn_role_other": ("sonstiges", "other"),
     "syn_table_tip": ("M als Zahl (g/mol) oder Summenformel; n aus m/M, V·c oder V·ρ/M; eq. bzw. Ausbeute bezogen auf "
                       "die Zeile „Bezug“. Die Namen dienen auch der Prüfung der Vorschrift.\nAusfüllen: m + M, V + c oder V + ρ + M "
-                      "(m hat Vorrang); fehlt eine Angabe, bleiben n und eq. leer („–“).",
+                      "(m hat Vorrang) oder n direkt (zählt nur ohne m/V); fehlt eine Angabe, bleiben n und eq. leer („–“)."
+                      "\nEinheit darf in der Zelle stehen („1.03 g“, „150 µL“, „800 mM“, „0.5 mol“), sonst gilt die Spalte; "
+                      "in die SI kommt der Wert wie eingegeben.",
                       "M as number (g/mol) or formula; n from m/M, V·c or V·ρ/M; eq. or yield relative to the "
                       "“reference” row. The names are also used to check the procedure.\nFill in: m + M, V + c or V + ρ + M "
-                      "(m takes precedence); if one is missing, n and eq. stay empty (“–”)."),
+                      "(m takes precedence) or n directly (only counts without m/V); if one is missing, n and eq. stay "
+                      "empty (“–”).\nA unit may follow the number (“1.03 g”, “150 µL”, “800 mM”, “0.5 mol”), otherwise the "
+                      "column unit applies; the SI shows the value as entered."),
+    "syn_gp_tip": ("Allgemeine Vorschrift (GP) des Projekts wählen und „according to GP A“ an der Schreibmarke "
+                   "einfügen. Die GP steht in der SI vor dieser Verbindung (Gesamt-SI: einmal, vor der ersten Verbindung, "
+                   "die sie benutzt).",
+                   "Choose a general procedure (GP) of the project and insert “according to GP A” at the cursor. The "
+                   "GP precedes this compound in the SI (combined SI: once, before the first compound using it)."),
+    "syn_gp_none_defined": ("Keine GP im Projekt", "No GP in the project"),
+    "syn_gp_off": ("Keine GP", "No GP"),
     "syn_M_bad": ("Molmasse nicht lesbar (Zahl oder Summenformel)", "molar mass not readable (number or formula)"),
     "syn_row_add": ("Zeile +", "Row +"),
     "syn_from_scheme": ("Aus Schema", "From scheme"),
     "syn_from_scheme_tip": ("Edukte (erstes = Bezug), Reagenzien und Lösungsmittel über/unter dem Pfeil und das Produkt "
-                            "als Zeilen anlegen; Bedingungen (rt, 1 h …) fallen weg, Namen der Moleküle selbst eintragen.",
+                            "als Zeilen anlegen; Bedingungen (rt, 1 h …) fallen weg, Namen der Moleküle selbst eintragen. "
+                            "Mit ChemDraw-Reagenzientabelle in derselben CDXML: Mengen daraus (nur leere Zellen, "
+                            "limitierend = Bezug).",
                             "Add reactants (first = reference), reagents and solvents above/below the arrow and the "
-                            "product as rows; conditions (rt, 1 h …) are skipped, enter the molecule names yourself."),
+                            "product as rows; conditions (rt, 1 h …) are skipped, enter the molecule names yourself. "
+                            "With a ChemDraw stoichiometry table in the same CDXML: amounts from it (empty cells only, "
+                            "limiting = reference)."),
+    "syn_grid_purity": ("{f}: {what} in ChemDraw nicht 100 % – Elucida rechnet ohne Reinheit, Menge prüfen.",
+                        "{f}: {what} in ChemDraw is not 100% – Elucida ignores purity, check the amount."),
+    "syn_grid_many": ("Mehrere ChemDraw-Reagenzientabellen in der CDXML – alle übernommen, Zeilen prüfen.",
+                      "Several ChemDraw stoichiometry tables in the CDXML – all imported, check the rows."),
     "syn_insert": ("Klammer einfügen", "Insert amounts"),
     "syn_insert_tip": ("„(1.03 g, 5.00 mmol, 1.0 eq.)“ der gewählten Zeile an der Schreibmarke einfügen",
                        "Insert “(1.03 g, 5.00 mmol, 1.0 eq.)” of the selected row at the cursor"),
@@ -2228,6 +2247,30 @@ TEXTS = {
     "pub_si_write": ("Word-Datei schreiben", "Write Word file"),
     "pub_si_writing": ("Gesamt-SI wird erstellt …", "Creating complete SI …"),
     "pub_si_compound": ("Verbindung {name} …", "Compound {name} …"),
+    "compound_sample": ("Substanz übrig", "Sample left"),
+    "compound_sample_ph": ("Probennummer (optional)", "Sample number (optional)"),
+    "compound_sample_tip": ("Noch Substanz vorhanden (nur intern: Startbildschirm, Projektseite, Suche, elucida.json; nie "
+                            "SI oder Datenpaket). Fehlende Analytik erscheint dann gelb statt rot (nachholbar).",
+                            "Some compound left (internal only: start screen, project page, search, elucida.json; never "
+                            "SI or data package). Missing analytics then show yellow instead of red (can be measured)."),
+    "compound_sample_badge": ("Noch Substanz übrig", "Sample of this compound still left"),
+    "pub_procs": ("Allgemeine Vorschriften", "General procedures"),
+    "pub_procs_hint": ("Je Reaktionstyp eine Vorschrift (GP A, GP B …). Im Synthese-Tab wählt jede Verbindung ihre GP "
+                       "(Knopf „GP“); dort stehen nur die spezifischen Angaben. In der Gesamt-SI steht die GP einmal, "
+                       "direkt vor der ersten Verbindung, die sie benutzt. Absätze durch Leerzeilen, Formeln wie CH2Cl2.",
+                       "One procedure per reaction type (GP A, GP B …). In the Synthesis tab each compound chooses its GP "
+                       "(button “GP”) and holds only the specific details. The combined SI shows each GP once, right "
+                       "before the first compound using it. Paragraphs separated by blank lines, formulas like CH2Cl2."),
+    "pub_procs_add": ("Neu", "New"),
+    "pub_procs_key": ("Kürzel", "Label"),
+    "pub_procs_title": ("Titel", "Title"),
+    "pub_procs_title_ph": ("z. B. Suzuki coupling (optional)", "e.g. Suzuki coupling (optional)"),
+    "pub_procs_text_ph": ("Text der Vorschrift (englisch, wie in der SI)", "Procedure text (as in the SI)"),
+    "pub_si_groups": ("Gruppen als Unterkapitel", "Groups as subsections"),
+    "pub_si_groups_tip": ("Aus: Gruppen ordnen nur die Projektseite, die SI hat keine Unterkapitel (Reihenfolge bleibt). "
+                          "Gilt für dieses Projekt.",
+                          "Off: groups only organise the project page, the SI has no subsections (order unchanged). "
+                          "Applies to this project."),
     "pub_texts": ("SI-Texte …", "SI texts …"),
     "pub_texts_hint": ("Texte, die zum Projekt gehören: „Materials and Methods“ und je Kapitel eine Einleitung (steht unter "
                        "der Kapitelüberschrift vor den Verbindungen). Absätze durch Leerzeilen trennen; Formeln wie CH2Cl2 "

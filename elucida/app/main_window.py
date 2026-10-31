@@ -306,6 +306,17 @@ class CompoundDialog(QDialog):
         self.ed_note.setPlaceholderText(T("compound_note_ph"))
         self.ed_note.setToolTip(T("compound_note_tip"))
         f.addRow(T("compound_note"), self.ed_note)
+        self.cb_sample = QCheckBox(T("compound_sample"))   # Substanz übrig (wie Characterization), nur intern
+        self.cb_sample.setToolTip(T("compound_sample_tip"))
+        self.cb_sample.setChecked(bool(comp.get("sample")))
+        self.ed_sample = QLineEdit(comp.get("sample_no", ""))
+        self.ed_sample.setPlaceholderText(T("compound_sample_ph"))
+        self.ed_sample.setEnabled(self.cb_sample.isChecked())
+        self.cb_sample.toggled.connect(self.ed_sample.setEnabled)
+        s_row = QHBoxLayout()
+        s_row.addWidget(self.cb_sample)
+        s_row.addWidget(self.ed_sample, 1)
+        f.addRow("", s_row)
         row = QHBoxLayout()
         self.lbl_struct = QLabel(Path(self.path).name if self.path else "–")
         b = QPushButton(T("choose"))
@@ -381,7 +392,9 @@ class CompoundDialog(QDialog):
         return {"name": self.ed_name.text().strip(), "structure": self.path,
                 "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text()),
                 "mp": self.ed_mp.text().strip(), "oil": self.cb_oil.isChecked(), "note": self.ed_note.text().strip(),
-                "known": self.cb_known.isChecked(), "lit": self.ed_lit.text().strip() if self.cb_known.isChecked() else ""}
+                "known": self.cb_known.isChecked(), "lit": self.ed_lit.text().strip() if self.cb_known.isChecked() else "",
+                "sample": self.cb_sample.isChecked(),
+                "sample_no": self.ed_sample.text().strip() if self.cb_sample.isChecked() else ""}
 
 
 def compound_from_structure(p):
@@ -2792,6 +2805,7 @@ class MainWindow(QMainWindow):
                 try:
                     name_, parts_ = self.si_compound_parts(sections, methods)
                     parts_["_group"] = PUB.group_name(pdir, d)     # Unterkapitel je Gruppe
+                    parts_["_gp"] = self.syn_tab.st.get("gp") or None  # allgemeine Vorschrift (einmal vor der ersten)
                     comps.append((name_, parts_))
                 except Exception:
                     self.log_signal.emit(traceback.format_exc())
@@ -3414,6 +3428,7 @@ class MainWindow(QMainWindow):
         blocks, missing, plain = [], [], ""
         if "char" in parts:
             blocks, missing, plain = self.si_char_blocks(comp, title)
+            blocks = self.syn_tab.gp_blocks() + blocks            # Einzel-SI: allgemeine Vorschrift davor
         elif title:
             blocks = [("heading", title)]
         self._si_plain = plain

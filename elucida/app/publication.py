@@ -52,7 +52,8 @@ KIND_PROGRAMS = {"nmr": "NMR -> TopSpin, MestReNova", "ir": "IR -> Spectragryph,
 
 def default() -> dict:
     d = {k: "" for k, _ in FIELDS}
-    d.update(format=FORMAT_VERSION, license="CC-BY-4.0", compounds=[], excluded=[], si_texts={}, groups=[], group_of={})
+    d.update(format=FORMAT_VERSION, license="CC-BY-4.0", compounds=[], excluded=[], si_texts={}, groups=[], group_of={},
+             procedures=[], group_headings=True)
     return d
 
 
@@ -79,6 +80,10 @@ def load(pdir) -> dict:
     data["groups"] = [str(g) for g in data.get("groups") or [] if str(g).strip()]       # Reihenfolge der Gruppen
     data["group_of"] = {str(k): str(v) for k, v in (data.get("group_of") or {}).items()  # Eintrag -> Gruppe
                         if str(v) in data["groups"]}
+    # Allgemeine Vorschriften (GP A …): Kürzel, Titel, Text; je Verbindung im Synthese-Tab gewählt (syn.gp)
+    data["procedures"] = [{k: str(p.get(k) or "").strip() for k in ("key", "title", "text")}
+                          for p in data.get("procedures") or [] if isinstance(p, dict) and str(p.get("key") or "").strip()]
+    data["group_headings"] = data.get("group_headings") is not False
     return data
 
 
@@ -96,6 +101,10 @@ def save(pdir, data):
         gof = {k: v for k, v in (data.get("group_of") or {}).items() if k in out["compounds"] and v in out["groups"]}
         if gof:
             out["group_of"] = gof
+    if data.get("procedures"):
+        out["procedures"] = [dict(p) for p in data["procedures"]]
+    if data.get("group_headings") is False:   # Gruppen nur zur Orientierung, keine Unterkapitel in der Gesamt-SI
+        out["group_headings"] = False
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
         out["si_texts"] = texts
@@ -338,7 +347,7 @@ def checklist(cdir) -> dict:
                             ("xray", bool(g("xray").get("entries")))) if ok}
     known = bool(comp.get("known"))
     req = REQUIRED_KNOWN if known else REQUIRED_NEW
-    return dict(known=known, lit=comp.get("lit") or "", have=have,
+    return dict(known=known, lit=comp.get("lit") or "", have=have, sample=bool(comp.get("sample")),
                 missing=[k for k, _ in CHECKS if k in req and k not in have],
                 extra=[k for k, _ in CHECKS if k not in req and k in have])
 

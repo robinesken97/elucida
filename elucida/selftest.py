@@ -4049,7 +4049,7 @@ def selftest(outdir, with_isnet=False):
                                                              "N 29.14"), SI.ea_line("C10H4D6N4", "", {})   # wie ChemDraw
         assert abs(SYN.molar_mass("CuSO4·5H2O") - 249.68) < 0.02 and abs(SYN.molar_mass("C22H24N2•+") - 316.448) < 1e-6
         assert abs(SYN.molar_mass("C6[13C]H8") - 93.133) < 0.002, SYN.molar_mass("C6[13C]H8")
-        assert SYN.row_amounts(dict(M="100", m_mg="150 mg"))["mmol"] is None
+        assert SYN.row_amounts(dict(M="100", m_mg="ca. 150"))["mmol"] is None
         it7 = SYN.parse_amounts("S1 (1,03 g, 5,00 mmol, 1,0 eq.), S2 (5 ug, 0.1 umol)")
         assert np.allclose(it7[0]["mass"], (1.025, 1.035)) and it7[0]["eq"][0] > 0.9, it7
         assert np.allclose(it7[1]["mass"], (4.5e-6, 5.5e-6)) and np.allclose(it7[1]["mmol"], (5e-5, 1.5e-4)), it7
@@ -5049,6 +5049,144 @@ def selftest(outdir, with_isnet=False):
             _QF.moveToTrash = real_trash_
         w.close_publication()
         report.append(f"publication (order, datapack {len(names_)} zips, complete SI {len(heads_)} chapters): OK")
+
+        # F1 (FB-9): Einheit in der Zelle, n eintragbar; SI zeigt Werte wie eingegeben
+        r_f1 = dict(M="100", m_mg="1,03 g", role="ref")
+        assert abs(SYN.row_amounts(r_f1)["mmol"] - 10.3) < 1e-9
+        assert SYN.amount_text(r_f1, dict(SYN.row_amounts(r_f1), eq=1.0)) == "(1.03 g, 10.3 mmol, 1.0 eq.)"
+        r_f1 = dict(M="100", V_mL="150 uL", c_M="800 mM")
+        assert abs(SYN.row_amounts(r_f1)["mmol"] - 0.12) < 1e-9
+        assert SYN.amount_text(r_f1, SYN.row_amounts(r_f1)) == "(150 µL, 800 mM, 0.120 mmol)", \
+            SYN.amount_text(r_f1, SYN.row_amounts(r_f1))
+        r_f1 = dict(M="100", n_mmol="0.5 mol", role="reagent")                  # nur n: zählt
+        c_f1 = SYN.row_amounts(r_f1, 250.0)
+        assert c_f1["given"] and c_f1["mmol"] == 500 and SYN.amount_text(r_f1, c_f1) == "(500 mmol, 2.0 eq.)", c_f1
+        c_f1 = SYN.row_amounts(dict(r_f1, m_mg="100"), 250.0)                     # mit m: n aus m, eingetragenes zählt nicht
+        assert not c_f1["given"] and c_f1["mmol"] == 1.0, c_f1
+        assert SYN.row_amounts(dict(M="100", m_mg="5 xyz"))["mmol"] is None       # unbekannte Einheit: keine Zahl
+        assert SYN.cell_num("1.5 g") is None and SYN.cell_num("1.5 g", SYN.UNITS["m_mg"]) == 1500
+        w.open_project(dpub_ / "S2")
+        t_s = w.syn_tab
+        rows_f1 = [dict(r_) for r_ in w.syn_state["reagents"]]
+        w.syn_state["reagents"] = [dict(name="A", M="100", m_mg="1 g", role="ref"), dict(name="B", M="50", role="reagent")]
+        t_s.sync_widgets()
+        nc_ = len(SYN.COLS)
+        assert t_s.tbl.item(0, nc_).text() == "10.000" and t_s.tbl.item(1, nc_).text() == "–"
+        assert t_s.tbl.item(1, nc_).flags() & Qt.ItemIsEditable and not t_s.tbl.item(1, nc_ + 1).flags() & Qt.ItemIsEditable
+        t_s.tbl.item(1, nc_).setText("20")                                       # n eintragen
+        assert w.syn_state["reagents"][1]["n_mmol"] == "20" and t_s.tbl.item(1, nc_ + 1).text() == "2.00"
+        # F1 (FB-7): ChemDraw-Reagenzientabelle (synthetisch, Aufbau wie ChemDraw 23: SGPropertyType, IsEdited)
+        def sg_(t_, v_, ed_=False, txt_=""):
+            return (f'<sgdatum SGPropertyType="{t_}" SGDataValue="{v_}"' + (' IsEdited="yes"' if ed_ else "") +
+                    f'><t><s>{txt_}</s></t></sgdatum>')
+        comp_f1 = (lambda ref_, f_, *d_, reac_=True: f'<sgcomponent ComponentReferenceID="{ref_}"' +
+                   (' ComponentIsReactant="yes"' if reac_ else "") + ">" + sg_(1, "", txt_=f_) + "".join(d_) +
+                   "</sgcomponent>")
+        cdx_f1 = out / "input" / "f1_grid.cdxml"
+        cdx_f1.write_text(
+            '<?xml version="1.0"?><CDXML><page><stoichiometrygrid id="60">'
+            '<sgcomponent ComponentIsReactant="yes" ComponentIsHeader="yes">' + sg_(1, "", txt_="Formula") + '</sgcomponent>'
+            + comp_f1(8, "C6H6", sg_(2, 78.114), sg_(4, 1), sg_(7, 1, True), sg_(12, 0.88, True), sg_(9, 1.13636),
+                      sg_(14, 1))
+            + comp_f1(58, "AlBr3", sg_(2, 266.694), sg_(4, 0), sg_(7, 0.341416), sg_(10, 0.8, True), sg_(9, 1.60023),
+                      sg_(8, 1))
+            + comp_f1(55, "Br2", sg_(2, 159.808), sg_(4, 0), sg_(6, 1.05, True), sg_(7, 2.14812), sg_(10, 0), sg_(12, 0),
+                      sg_(9, 0))
+            + comp_f1(38, "C6H5Br", sg_(2, 157.01), sg_(15, 2.01001), sg_(18, 0.95, True), sg_(19, 1.80), reac_=False)
+            + '</stoichiometrygrid></page></CDXML>', encoding="utf-8")
+        from elucida.formats import cdxml as CDXF1
+        gr_f1 = [SYN.grid_row(c_) for c_ in CDXF1.stoich_grid(cdx_f1)]
+        assert [g_ for g_, _ in gr_f1] == [
+            dict(name="", M="C6H6", m_mg="1 g", V_mL="", c_M="", rho="0.88", role="ref"),       # Masse eingegeben
+            dict(name="", M="AlBr3", m_mg="", V_mL="1.60 mL", c_M="0.8", rho="", role="reactant"),   # Lösung
+            dict(name="", M="Br2", m_mg="2.15 g", V_mL="", c_M="", rho="", role="reactant"),     # berechnet: 3 Stellen
+            dict(name="", M="C6H5Br", m_mg="1.80 g", V_mL="", c_M="", rho="", role="product")], gr_f1
+        assert [bool(n_) for _, n_ in gr_f1] == [False, False, False, True]                # Reinheit 95 %: Hinweis
+        w.syn_state.update(scheme=str(cdx_f1), reagents=[dict(name="S0", M="C7H8", m_mg="500", role="ref"),
+                                                          dict(name="Brom", M="Br2", m_mg="2.0 g", role="reagent")])
+        t_s.rows_from_scheme()
+        assert [(r_["M"], r_["role"], r_.get("m_mg", ""), r_.get("V_mL", "")) for r_ in w.syn_state["reagents"]] == [
+            ("C7H8", "ref", "500", ""), ("Br2", "reagent", "2.0 g", ""),           # vorhanden: nichts überschrieben
+            ("C6H6", "reagent", "1 g", ""), ("AlBr3", "reagent", "", "1.60 mL"),   # Bezug bleibt die alte Zeile
+            ("C6H5Br", "product", "1.80 g", "")], w.syn_state["reagents"]
+        w.syn_state["reagents"] = []
+        t_s.rows_from_scheme()                                                   # leer: limitierend wird Bezug
+        assert [r_["role"] for r_ in w.syn_state["reagents"]] == ["ref", "reagent", "reagent", "product"]
+        ref_f1 = w.syn_state["reagents"][0]
+        assert abs(SYN.row_amounts(w.syn_state["reagents"][2], SYN.row_amounts(ref_f1)["mmol"])["eq"] - 1.05) < 0.005
+        w.syn_state.update(scheme=None, reagents=rows_f1)
+        # F1 (FB-6): allgemeine Vorschriften im Projekt, GP-Knopf, Gesamt-SI einmal vor der ersten Verbindung
+        from elucida.app import publication_view as PV
+        dlg_f1 = PV.ProceduresDialog(w, [dict(key="A", title="Suzuki coupling", text="Pd(PPh3)4 …")])
+        dlg_f1._add()
+        dlg_f1.ed_title.setText("Bromination")
+        dlg_f1.ed_title.textEdited.emit("Bromination")
+        dlg_f1._add()                                                            # ohne Text bleibt sie trotzdem
+        assert [(p_["key"], p_["title"]) for p_ in dlg_f1.result()] == [("A", "Suzuki coupling"), ("B", "Bromination"),
+                                                                       ("C", "")], dlg_f1.result()
+        dlg_f1.deleteLater()
+        data_f1 = PUB.load(dpub_)
+        assert data_f1["procedures"] == [] and data_f1["group_headings"] is True      # alte Projekte
+        data_f1.update(procedures=[dict(key="A", title="Suzuki coupling", text="Para 1.\n\nPara 2 in CH2Cl2.")],
+                       group_headings=False)
+        PUB.save(dpub_, data_f1)
+        data_f1 = PUB.load(dpub_)
+        assert data_f1["procedures"][0]["key"] == "A" and data_f1["group_headings"] is False
+        t_s.fill_gp_menu()
+        acts_f1 = [a_.text() for a_ in t_s.btn_gp.menu().actions() if a_.text()]
+        assert acts_f1[0] == "GP A – Suzuki coupling", acts_f1
+        t_s.ed_proc.setHtml("To a solution")
+        cur_f1 = t_s.ed_proc.textCursor()
+        cur_f1.movePosition(cur_f1.MoveOperation.End)
+        t_s.ed_proc.setTextCursor(cur_f1)
+        t_s.set_gp("A")
+        t_s.proc_changed()
+        assert w.syn_state["gp"] == "A" and t_s.btn_gp.text() == "GP A"
+        assert w.syn_state["proc"].endswith("To a solution according to <b>GP A</b>"), w.syn_state["proc"]
+        gpb_ = t_s.gp_blocks()
+        assert gpb_[0] == ("heading", "General procedure A (GP A): Suzuki coupling") and len(gpb_) == 3, gpb_
+        assert "CH<sub>2</sub>Cl<sub>2</sub>" in gpb_[2][1], gpb_
+        bl_f1 = w.si_blocks(("char",))[0]                                         # Einzel-SI: GP vor „Synthesis of“
+        assert bl_f1[0] == gpb_[0] and [b_[0] for b_ in bl_f1].index("synthesis") == 3, bl_f1[:5]
+        w.save_project()
+        assert PRJ.load(dpub_ / "S2")["syn"]["gp"] == "A"
+        t_s.set_gp("")
+        assert t_s.gp_blocks() == [] and t_s.btn_gp.text() == "GP"
+        w.syn_state["gp"] = "A"
+        ch_ = lambda n_: [("synthesis", n_), ("char", "x")]                       # noqa: E731
+        comps_f1 = [("c1", dict(char=ch_("c1"), _group="G1", _gp="A")), ("c2", dict(char=ch_("c2"), _group="G2", _gp="A")),
+                    ("c3", dict(char=ch_("c3"), _group="G2", _gp=None)), ("c4", dict(char=ch_("c4"), _group="G2", _gp="Z"))]
+        for gh_ in (True, False):
+            bl_ = PSI.assemble(dict(data_f1, group_headings=gh_), comps_f1, ["char"], toc=False)
+            heads_f1 = [b_ for b_ in bl_ if b_[0] in ("heading", "synthesis", "subsection")]
+            gp_, c_ = ("heading", "General procedure A (GP A): Suzuki coupling"), lambda n_: ("synthesis", n_)  # noqa
+            exp_ = ([("subsection", "1.1 G1"), gp_, c_("c1"), ("subsection", "1.2 G2"), c_("c2"), c_("c3"), c_("c4")] if gh_
+                    else [gp_, c_("c1"), c_("c2"), c_("c3"), c_("c4")])           # GP einmal; unbekannte GP Z: nichts
+            assert heads_f1 == exp_, (gh_, heads_f1)
+        # F1 (FB-8): Substanz übrig (+ Probennummer): Startbildschirm, Suche, Checkliste gelb, elucida.json; nie SI
+        cdlg_f1 = MW.CompoundDialog(w, dict(w.compound or {}, sample=True, sample_no="JA-042-F2"))
+        res_f1 = cdlg_f1.result_compound()
+        cdlg_f1.deleteLater()
+        assert res_f1["sample"] and res_f1["sample_no"] == "JA-042-F2"
+        w.set_compound(res_f1)
+        w.save_project()
+        inf_f1 = WEL.project_info(dpub_ / "S2")
+        assert inf_f1["sample"] and WEL.info_matches(inf_f1, "ja-042")
+        row_f1 = WEL.RecentRow(inf_f1)
+        assert any(l_.text() == "⚗ JA-042-F2" for l_ in row_f1.findChildren(QLabel)), "sample badge"
+        row_f1.deleteLater()
+        ck_f1 = PUB.checklist(dpub_ / "S2")
+        assert ck_f1["sample"]
+        lb_f1 = PV.check_label(dict(ck_f1, have=set(), missing=["1H"]))
+        assert PV.REDO_COLOR in lb_f1.text() and PV.MISSING_COLOR not in lb_f1.text()
+        lb_f1.deleteLater()
+        assert EXCH.build(w)["compound"]["sample"] == {"available": True, "number": "JA-042-F2"}
+        assert "JA-042" not in str(w.si_blocks()[0])
+        w.set_compound({k_: v_ for k_, v_ in res_f1.items() if k_ not in ("sample", "sample_no")})
+        w.save_project()
+        w.close_project()
+        report.append("F1 synthesis (units in cells, n entered, ChemDraw stoichiometry table, general procedures, "
+                      "group headings toggle, sample left): OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         import shiboken6 as _shb_end                                     # Beenden: alle Widgets vor dem Interpreter-

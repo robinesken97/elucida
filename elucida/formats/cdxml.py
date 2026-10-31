@@ -501,3 +501,32 @@ def scheme_reagents(path):
                 (name if re.fullmatch(r"(?:[A-Z][a-z]?\d*|\((?:[A-Z][a-z]?\d*)+\)\d*)+", name) else "")
             out.append((name, formula, "reagent"))
     return out
+
+
+# ChemDraw-Reagenzientabelle: SGPropertyType -> Bedeutung (Rohwerte mol, g, mL, mol/L, g/mL; Anteile 1 = 100 %)
+GRID_MW, GRID_LIMITING, GRID_EQ, GRID_SAMPLE_MASS, GRID_WEIGHT, GRID_VOLUME, GRID_MOLARITY, GRID_DENSITY = \
+    2, 4, 6, 7, 8, 9, 10, 12
+GRID_REACTANT_MASS, GRID_PURITY, GRID_PRODUCT_MASS = 14, 18, 19
+
+
+def stoich_grid(path):
+    """Reagenzientabelle (<stoichiometrygrid>) in der CDXML des Schemas -> [dict(grid, formula, reactant, values)]
+    je Verbindung (Beschriftungsspalten fallen weg); values: Typ -> (Rohwert, vom Nutzer eingegeben)."""
+    out = []
+    for g in ET.parse(str(path)).getroot().iter("stoichiometrygrid"):
+        for c in g.iter("sgcomponent"):
+            if c.get("ComponentIsHeader") == "yes":
+                continue
+            formula, vals = "", {}
+            for d in c.iter("sgdatum"):
+                t = int(d.get("SGPropertyType") or 0)
+                if t == 1:                               # Formel nur als Text
+                    formula = "".join(s.text or "" for s in d.iter("s")).strip()
+                    continue
+                try:
+                    vals[t] = (float(d.get("SGDataValue")), d.get("IsEdited") == "yes")
+                except (TypeError, ValueError):
+                    continue
+            out.append(dict(grid=g.get("id"), formula=formula, reactant=c.get("ComponentIsReactant") == "yes",
+                            values=vals))
+    return out
