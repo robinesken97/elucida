@@ -22,7 +22,7 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, label: windows-x64 }
-          - { os: macos-14,       label: macos-arm64 }
+          - { os: macos-15,       label: macos-arm64 }     # macos-14 wird am 2026-11-02 abgeschaltet
           - { os: macos-15-intel, label: macos-x64 }     # Intel-Macs (ab macOS 14)
           - { os: ubuntu-22.04,   label: linux-x64 }
     steps:

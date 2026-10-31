@@ -470,6 +470,8 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - **pymupdf:** `get_pixmap(dpi=…)` nur mit ganzen Zahlen (die Windows-Version wirft sonst TypeError; lokal unbemerkt).
 - macOS-Build ist unsigniert (Gatekeeper: Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“).
   Trackpad-Zoom und HiDPI-Vorschau auf echter Mac-Hardware sind noch nicht verifiziert.
+- **macOS arm64:** seit 2.4.0 auf `macos-15` (GitHub schaltet `macos-14` am 2026-11-02 ab, vorher Brownouts =
+  Job sofort „cancelled“ ohne Runner; Ursache steht in den Annotations des Jobs).
 - **macOS Intel** (`macos-15-intel`-Runner): rdkit nur bis 2025.9.3, onnxruntime nur bis 1.23.2 als
   x86_64-Wheel (pip wählt sie automatisch); numpy/PySide6/opencv verlangen macOS 14. Der Runner ist
   befristet – fällt er weg, Intel-Build aus der Matrix nehmen.
