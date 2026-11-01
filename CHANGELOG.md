@@ -2,6 +2,29 @@
 
 # Changelog
 
+## 2.5.0 – 2026-11-01
+
+### New
+- **ORCA ESD (vibronic spectra):** `.spectrum` files (also `.spectrum.rootN`) of `ESD(ABS)` in the overlay ("ESD…",
+  normalised, shift in eV) and of `ESD(FLUOR)` as dashed calculated emission in the fluorescence tab (shift stated in
+  the caption). The x unit is not stored in the file: it is taken from `%ESD UNIT` in the `.inp`/`.out` next to it,
+  otherwise from the value range, and can be changed by hand.
+- **X-Ray / DFT:** "Previous view" undoes the last rotation, pan or zoom step by step; label colour "per element"
+  (dialog with one colour per element).
+- **IR:** structure of the compound in the figure (checkbox "Structure in figure", off by default).
+- **Compound:** structure preview in the compound dialog.
+- **SI (Word):** figures selectable per tab; the characterisation lines (IR, HR-MS, UV-Vis …) stay.
+
+### Fixed
+- **UV-Vis (ε):** the structure was squeezed horizontally when the inset had to move next to the (then narrower)
+  axis, e.g. with many bands; it now keeps its aspect ratio.
+- **IR:** with many peaks (raw files) the wavenumber labels ran past the right edge; like the OPUS report they are now
+  set smaller so the row stays within the axis.
+- **X-Ray:** "Reset view" was hidden in the collapsed "Atoms" card.
+- **SI (Word):** no band list after the UV-Vis method text (the values are in the characterisation line and the
+  figure). "Copy SI text" keeps it.
+- Molar-mass hint in the ε tab centred like the other hints.
+
 ## 2.4.1 – 2026-10-31
 
 ### Changed

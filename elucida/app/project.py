@@ -124,6 +124,7 @@ def _path_slots(state):
     slots += [(mn, i, data_sub("nmr") + "/mnova") for i in range(len(mn))]
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", data_sub("fluorescence")), (fl, "em_file", data_sub("fluorescence")),
+              (fl, "esd_file", data_sub("fluorescence")),
               (fl, "structure", STRUCTURES), (fl, "photo_day", STRUCTURES), (fl, "photo_uv", STRUCTURES)]
     return slots
 

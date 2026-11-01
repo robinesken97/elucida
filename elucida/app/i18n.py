@@ -517,6 +517,9 @@ TEXTS = {
                         "From the relative depth: s ≥ 60 %, m ≥ 30 %, otherwise w; br for half widths > 120 cm⁻¹. "
                         "Needs the OPUS file (spectrum)."),
     "ir_labels": ("Wellenzahlen im Bild beschriften", "Label wavenumbers in the figure"),
+    "ir_struct": ("Struktur im Bild", "Structure in figure"),
+    "ir_struct_tip": ("Struktur der Verbindung (ChemDraw) in Vorschau und Export einsetzen",
+                      "Insert the compound's structure (ChemDraw) in preview and export"),
     "ir_mode": ("y-Achse", "y axis"),
     "ir_mode_T": ("Transmission (%T)", "Transmittance (%T)"),
     "ir_mode_A": ("Absorbanz (A)", "Absorbance (A)"),
@@ -865,6 +868,27 @@ TEXTS = {
     "ov_sec_no_eps": ("„{name}“: SEC-Spektren nur normiert, nicht als ε – ausgelassen",
                       "“{name}”: SEC spectra only normalised, not as ε – skipped"),
     "ov_add_calc": ("TD-DFT…", "TD-DFT…"),
+    "ov_add_esd": ("ESD…", "ESD…"),
+    "ov_add_esd_tip": ("Vibronisches Spektrum aus ORCA ESD(ABS) (.spectrum, auch .spectrum.rootN) – fertig "
+                       "verbreitert, nur normiert vergleichbar", "Vibronic spectrum from ORCA ESD(ABS) (.spectrum, "
+                       "also .spectrum.rootN) – already broadened, comparable only when normalised"),
+    "ov_esd_unit": ("Einheit der Datei", "File unit"),
+    "ov_esd_unit_tip": ("x-Einheit der .spectrum-Datei (ORCA %ESD UNIT; steht nicht in der Datei). Beim Laden aus "
+                        "der .inp/.out daneben, sonst aus dem Wertebereich bestimmt.",
+                        "x unit of the .spectrum file (ORCA %ESD UNIT; not stored in the file). Taken from the "
+                        ".inp/.out next to it when loading, otherwise from the value range."),
+    "ov_esd_read": ("{name}: ESD-Spektrum, x in {unit} ({src})", "{name}: ESD spectrum, x in {unit} ({src})"),
+    "ov_esd_src_input": ("aus der Eingabe", "from the input"),
+    "ov_esd_src_range": ("aus dem Wertebereich – bitte prüfen", "from the value range – please check"),
+    "ov_esd_src_user": ("vorgegeben", "set by user"),
+    "ov_esd_norm_only": ("„{name}“: ESD-Intensität ohne gesicherte Einheit – nur im Modus „normiert“ gezeigt",
+                         "“{name}”: ESD intensity has no confirmed unit – shown only in “normalised” mode"),
+    "esd_bad": ("{name}: kein ORCA-ESD-Spektrum (Kopf „Energy TotalSpectrum …“ fehlt).",
+                "{name}: not an ORCA ESD spectrum (header “Energy TotalSpectrum …” missing)."),
+    "fl_esd": ("Berechnet (ESD)", "Calculated (ESD)"),
+    "fl_esd_shift_tip": ("Berechnete Emission (ORCA ESD(FLUOR), .spectrum) in der Energie verschieben; wird in der "
+                         "Bildunterschrift genannt", "Shift the calculated emission (ORCA ESD(FLUOR), .spectrum) in "
+                         "energy; stated in the caption"),
     "ov_name": ("Name", "Name"),
     "ov_color": ("Farbe", "Colour"),
     "ov_type": ("Typ", "Type"),
@@ -1486,6 +1510,11 @@ TEXTS = {
     "xr_frags_tip": ("Getrennte Fragmente (Lösungsmittel, Gegenionen) ein-/ausblenden",
                      "Show/hide separate fragments (solvent, counter-ions)"),
     "xr_main_frag": ("größtes", "largest"),
+    "xr_prev_view": ("Vorherige Ansicht", "Previous view"),
+    "xr_prev_view_tip": ("Letzte Drehung, Verschiebung oder Zoomänderung der gewählten Struktur zurücknehmen "
+                         "(mehrfach möglich).",
+                         "Undo the last rotation, pan or zoom of the selected structure (repeatable)."),
+    "xr_prev_view_none": ("Keine frühere Ansicht.", "No earlier view."),
     "xr_reset_view": ("Ansicht zurücksetzen", "Reset view"),
     "xr_reset_view_tip": ("Drehung, Zoom und Lage der Labels der gewählten Struktur auf den Start.",
                           "Rotation, zoom and label positions of the selected structure back to the start."),
@@ -1543,6 +1572,7 @@ TEXTS = {
     "xr_label_color_black": ("Schwarz", "Black"),
     "xr_label_color_atom": ("Wie das Atom", "Like the atom"),
     "xr_label_color_color": ("Eigene Farbe …", "Custom colour …"),
+    "xr_label_color_element": ("Je Element …", "Per element …"),
     "xr_label_color_pick": ("Labelfarbe", "Label colour"),
     "xr_style_mercury": ("Mercury (schattiert)", "Mercury (shaded)"),
     "xr_style_flat": ("Olex2 (flach, fette Labels)", "Olex2 (flat, bold labels)"),

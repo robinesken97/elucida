@@ -25,8 +25,8 @@ spectroelectrochemistry, EPR, X-ray and DFT – exported to Word in the layout o
 | **Synthesis** | "Synthesis of …" with the ChemDraw scheme (editable ChemDraw object in Word), procedure with formatting, amount check (mmol/eq./yield against the reagent table) |
 | **NMR** | Spectra from MestReNova (SVG or EMF), TopSpin raw data sorted by experiment, nucleus from the axis, NMR line from the Mnova report with assignments, structure placed automatically, Bruker parameters, two spectra per page in Word |
 | **UV-Vis (ε)** | Beer–Lambert fit of dilution series → ε (or a) with confidence interval; Origin-style figure with structure and cuvette photo; Excel report; UV-Vis line for the SI |
-| **UV-Vis overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets) and SEC series in one figure, normalised or as ε |
-| **Fluorescence** | Absorption and emission, Stokes shift, photos in daylight and under UV |
+| **UV-Vis overlay** | Measured spectra, TD-DFT (ORCA/Gaussian, SOC, triplets), ORCA ESD vibronic spectra and SEC series in one figure, normalised or as ε |
+| **Fluorescence** | Absorption and emission, calculated emission (ORCA ESD), Stokes shift, photos in daylight and under UV |
 | **CV** | Gamry files, E½/ΔE_p, baseline, Nicholson ratio, Randles–Ševčík with CI, reference to Fc⁺/Fc, SI text |
 | **SEC** | Spectra series with potential from the potentiostat, difference spectra, apparent Nernst fit |
 | **EPR** | Bruker BES3T, dark spectrum, baseline, S = ½ fit, EasySpin import, kinetics and thermal decay |
@@ -467,7 +467,8 @@ fit" recalculates the band in Excel.
 Compare several spectra in one figure, measured and calculated:
 
 - **Measurement…** adds spectra from CSV/TXT/DSW/BSW files (one entry per sample);
-  **TD-DFT…** adds ORCA (4–6) or Gaussian output files.
+  **TD-DFT…** adds ORCA (4–6) or Gaussian output files; **ESD…** adds ORCA ESD(ABS) spectra (`.spectrum`, normalised
+  only; x unit from `%ESD UNIT` of the input next to it or from the value range, changeable).
 - **From tabs ▾** takes ε series of the ε tab (linked, measurement selectable) and TD-DFT calculations of the DFT tab.
 - **SEC…** takes spectra from the SEC tab, e.g. to compare a reduction or oxidation with the isolated UV-Vis
   spectrum and TD-DFT. As a **series** (all spectra or only start and end, range by potential) everything is

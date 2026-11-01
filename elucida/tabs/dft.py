@@ -604,7 +604,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
-                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black",
+                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black", label_colors={},
                          cartoon_color=False,
                          orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=ORB.ISO_ABS, orb_alpha=ORB.ORB_ALPHA,
                          orb_scheme="hue", orb_labels=True,
@@ -789,7 +789,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         f.addRow(T("bg_label"), self.cmb_bg)
         self.sp_lab = XRAY.label_size_spin(self.st)
         f.addRow(T("xr_label_size"), self.sp_lab)
-        self.cmb_lcol = XRAY.label_color_combo(self.st, self.changed)
+        self.cmb_lcol = XRAY.label_color_combo(self.st, self.changed, self.elements)
         f.addRow(T("xr_label_color"), self.cmb_lcol)
         f.addRow(XRAY.reset_buttons(self))
         hint = QLabel(T("dft_mouse_hint"))
@@ -1322,6 +1322,15 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         opts = {k: self.st.get("si_" + k, v) for k, v in SI_DEFAULTS.items()}
         return si_parts(c, e.get("name") or Path(e["file"]).stem, [lines[k] for k in order], opts)
 
+    def elements(self):
+        """Elemente aller Geometrien (C, H zuerst) für die Labelfarbe je Element."""
+        els = set()
+        for e in self.entries():
+            g = self.geometry(e)
+            if g is not None:
+                els |= set(g[1])
+        return [x for x in ("C", "H") if x in els] + sorted(els - {"C", "H"})
+
     def geometry(self, e):
         """-> (Bilder, Elemente, Koordinaten des letzten Bildes, Bindungen) oder None."""
         p = e["file"]
@@ -1391,7 +1400,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     style=XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"),
                     hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
                     label_size=st.get("label_pt", 0.0), label_color=st.get("label_color", "black"),
-                    cartoon_color=st.get("cartoon_color", False),
+                    label_colors=st.get("label_colors") or {}, cartoon_color=st.get("cartoon_color", False),
                     h_radius=0.55 * r, bg=st.get("bg", "white"),
                     # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard (Standardwerte = Aussehen der Vorlage)
                     ball_scale=r / self.DEFAULT_STATE["radius"],
@@ -1563,6 +1572,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def view_changed(self, R):
         e = self.entry()
         if e is not None:
+            XRAY.remember_view(self, e)
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
             XRAY.keep_scale(e, self.F)
             self.render()
@@ -1570,12 +1580,14 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def pan_changed(self, pan):
         e = self.entry()
         if e is not None:
+            XRAY.remember_view(self, e)
             e["pan"] = [round(float(pan[0]), 3), round(float(pan[1]), 3)]
             self.render()
 
     def zoom_changed(self, z):
         e = self.entry()
         if e is not None:
+            XRAY.remember_view(self, e, "zoom")
             e["zoom"] = round(float(z), 4)
             self.timer.start()
 
@@ -1592,6 +1604,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def reset_view(self):
         e = self.entry()
         if e is not None:
+            XRAY.remember_view(self, e)
             e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
             e.pop("ext", None)
             self.render()

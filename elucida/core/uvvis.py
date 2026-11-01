@@ -1474,6 +1474,10 @@ class Figure:
         p = self.ax.get_position()
         need = (tb.width + 2 * gap) / fw
         self.ax.set_position([p.x0, p.y0, max(0.3, p.width - need), p.height])
+        k = self.ax.get_position().width / p.width
+        for a in self.axes_items.values():             # Bildgrößen sind Achsenbruchteile: Seitenverhältnis halten
+            if hasattr(a, "_img_wh"):
+                a._img_wh = (a._img_wh[0], a._img_wh[1] * k)
         # Inset-Achse in Figurenbruchteilen und Abstand der Achse zur Tight-Box (Achsenbeschriftung links, Tabelle oben)
         self._beside_box = (ib.width / fw, ib.height / fh, (ib.x0 - tb.x0 + gap) / fw, (tb.y1 - ib.y1) / fh)
         self._inset_beside = True

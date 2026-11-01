@@ -2441,7 +2441,8 @@ class XrayFigure:
             ann = self.ax.annotate(self._label_text(a, self.style in ("flat", "mercury")), xy=(it["x"], it["y"]), xycoords="data",
                                    xytext=(0, 0), textcoords="offset points", ha="center", va="center",
                                    fontsize=fs, zorder=60,
-                                   color=label_color(a["el"], o.get("colors") or {}, o.get("label_color"), self.style)
+                                   color=label_color(a["el"], o.get("colors") or {}, o.get("label_color"), self.style,
+                                                      o.get("label_colors"))
                                    or lc.get("color") or "black",
                                    annotation_clip=False, **extra)
             ann._atom = it["k"]
@@ -2825,25 +2826,26 @@ def label_size_spin(st):
 
 
 class LabelColorCombo(QComboBox):
-    """Labelfarbe (X-Ray und DFT): schwarz (Standard), wie das Atom (zu helle Farben abgedunkelt, damit lesbar) oder
-    eigene Farbe (Farbwähler, gespeichert als "#rrggbb"); schreibt st["label_color"] und meldet über on_change."""
+    """Labelfarbe (X-Ray und DFT): schwarz (Standard), wie das Atom (zu helle Farben abgedunkelt, damit lesbar),
+    eigene Farbe (Farbwähler, gespeichert als "#rrggbb") oder je Element (st["label_colors"], Dialog; Elemente ohne
+    Eintrag wie das Atom); schreibt st["label_color"] und meldet über on_change. elements() -> Elemente der Daten."""
 
-    def __init__(self, st, on_change):
+    def __init__(self, st, on_change, elements=None):
         super().__init__()
-        self.st, self.on_change = st, on_change
-        for key in ("black", "atom", "color"):
+        self.st, self.on_change, self.elements = st, on_change, elements or (lambda: [])
+        for key in ("black", "atom", "color", "element"):
             self.addItem(T("xr_label_color_" + key), key)
         self.sync()
         self.activated.connect(self._chosen)
 
     def value(self):
         v = self.st.get("label_color", "black")
-        return v if v in ("black", "atom") or (isinstance(v, str) and v.startswith("#")) else "black"
+        return v if v in ("black", "atom", "element") or (isinstance(v, str) and v.startswith("#")) else "black"
 
     def sync(self):
         from PySide6.QtGui import QColor, QIcon, QPixmap
         v = self.value()
-        kind = v if v in ("black", "atom") else "color"
+        kind = v if v in ("black", "atom", "element") else "color"
         self.setItemText(2, T("bg_color_x", c=v) if kind == "color" else T("bg_color"))
         pm = QPixmap(12, 12)
         pm.fill(QColor(v if kind == "color" else "#000000"))
@@ -2863,19 +2865,57 @@ class LabelColorCombo(QComboBox):
                 self.sync()
                 return
             kind = c.name()
-        if kind != self.value():
+        elif kind == "element":                          # jedes Mal den Dialog: dort werden die Farben gewählt
+            if not self._per_element():
+                self.sync()
+                return
+        if kind != self.value() or kind == "element":
             self.st["label_color"] = kind
             self.sync()
             self.on_change()
 
 
-def label_color_combo(st, on_change):
-    return LabelColorCombo(st, on_change)
+    def _per_element(self):
+        """Dialog: Labelfarbe je Element (Start = Atomfarbe, abgedunkelt wie „Wie das Atom“). -> übernommen?"""
+        from matplotlib.colors import to_hex
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QGridLayout, QLabel, QVBoxLayout
+        els = list(self.elements())
+        if not els:
+            return False
+        style = self.st.get("style")
+        cur = dict(self.st.get("label_colors") or {})
+        new = {el: cur.get(el) or to_hex(label_color(el, self.st.get("colors") or {}, "atom", style)) for el in els}
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("xr_label_color_pick"))
+        v = QVBoxLayout(dlg)
+        grid = QGridLayout()
+        for n, el in enumerate(els):
+            grid.addWidget(QLabel(el), n // 4, 2 * (n % 4), Qt.AlignRight | Qt.AlignVCenter)
+            b_ = TABS.color_button(new[el], lambda c, el=el: new.__setitem__(el, c))
+            b_.setFixedSize(34, STYLE.CONTROL_H)
+            grid.addWidget(b_, n // 4, 2 * (n % 4) + 1)
+        v.addLayout(grid)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return False
+        self.st["label_colors"] = dict(cur, **new)
+        return True
 
 
-def label_color(el, colors, mode, style=None):
-    """Farbe eines Atomlabels: schwarz (None), eigene Farbe ("#rrggbb") oder Atomfarbe; helle Atomfarben (H weiß,
-    Cl hellgrün) bis zur Lesbarkeit dunkler."""
+def label_color_combo(st, on_change, elements=None):
+    return LabelColorCombo(st, on_change, elements)
+
+
+def label_color(el, colors, mode, style=None, per_element=None):
+    """Farbe eines Atomlabels: schwarz (None), eigene Farbe ("#rrggbb"), je Element (per_element, sonst wie das Atom)
+    oder Atomfarbe; helle Atomfarben (H weiß, Cl hellgrün) bis zur Lesbarkeit dunkler."""
+    if mode == "element":
+        if (per_element or {}).get(el):
+            return label_color(el, colors, per_element[el], style)
+        mode = "atom"
     if isinstance(mode, str) and mode.startswith("#"):
         try:
             return to_rgb(mode)
@@ -2950,10 +2990,42 @@ def keep_scale(e, F):
         e["ext"] = [round(float(v), 6) for v in F.ext]
 
 
+VIEW_KEYS = ("view", "zoom", "pan", "ext")
+VIEW_HIST_MAX = 50
+
+
+def remember_view(tab, e, kind=""):
+    """Ansicht vor einer Änderung merken (X-Ray und DFT, „Vorherige Ansicht“; nicht im Undo, nur diese Sitzung).
+    Mausrad: eine Folge von Zoomschritten zählt als ein Schritt."""
+    import copy
+    hist = tab.__dict__.setdefault("_view_hist", [])
+    if kind and hist and hist[-1][0] is e and hist[-1][2] == kind:
+        return
+    hist.append((e, {k: copy.deepcopy(e.get(k)) for k in VIEW_KEYS}, kind))
+    del hist[:-VIEW_HIST_MAX]
+
+
+def previous_view(tab):
+    """Letzte gemerkte Ansicht der gewählten Struktur wiederherstellen."""
+    e, hist = tab.entry(), tab.__dict__.get("_view_hist") or []
+    while hist:
+        e0, snap, _ = hist.pop()
+        if e0 is e:
+            for k, v in snap.items():
+                if v is None:
+                    e.pop(k, None)
+                else:
+                    e[k] = v
+            tab.render()
+            return
+    tab.main.statusBar().showMessage(T("xr_prev_view_none"), 4000)
+
+
 def reset_buttons(tab):
-    """„Ansicht zurücksetzen“ + „Darstellung auf Standard“ (X-Ray und DFT)."""
+    """„Vorherige Ansicht“ + „Ansicht zurücksetzen“ + „Darstellung auf Standard“ (X-Ray und DFT)."""
     row = QHBoxLayout()
-    for key, fn in (("xr_reset_view", tab.reset_view), ("xr_reset_display", tab.reset_display)):
+    for key, fn in (("xr_prev_view", lambda: previous_view(tab)), ("xr_reset_view", tab.reset_view),
+                    ("xr_reset_display", tab.reset_display)):
         b = QPushButton(T(key))
         b.setToolTip(T(key + "_tip"))
         b.clicked.connect(fn)
@@ -3144,6 +3216,7 @@ class MeasureAlign:
         e = self.entry()
         if e is None:
             return
+        remember_view(self, e)
         e["view"] = [round(float(v), 6) for v in np.asarray(orthonormalize(R)).ravel()]
         e["pan"] = [0.0, 0.0]
         e.pop("ext", None)
@@ -3238,7 +3311,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
                          h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False,
-                         bg="white", label_color="black")
+                         bg="white", label_color="black", label_colors={})
 
 
     def arrange(self):
@@ -3330,8 +3403,9 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         f.addRow(T("bg_label"), self.cmb_bg)
         self.sp_lab = label_size_spin(st)
         f.addRow(T("xr_label_size"), self.sp_lab)
-        self.cmb_lcol = label_color_combo(st, self.changed)
+        self.cmb_lcol = label_color_combo(st, self.changed, self.elements)
         f.addRow(T("xr_label_color"), self.cmb_lcol)
+        f.addRow(reset_buttons(self))               # vor den Fragmenten: die wandern in die eingeklappte Karte „Atome“
         self.lst_frag = QListWidget()
         self.lst_frag.setMaximumHeight(90)
         self.lst_frag.setToolTip(T("xr_frags_tip"))
@@ -3361,7 +3435,6 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             row.addWidget(b)
         row.addStretch(1)
         f.addRow(row)
-        f.addRow(reset_buttons(self))
         hint = QLabel(T("xr_mouse_hint"))
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
@@ -3685,12 +3758,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             w_ = self.color_grid.takeAt(0).widget()
             if w_ is not None:
                 w_.deleteLater()
-        els = set()
-        for e in self.entries():
-            S = self.structure(e)
-            if S is not None:
-                els |= {a["el"] for a in S.atoms}
-        order = [x for x in ("C", "H") if x in els] + sorted(els - {"C", "H"})
+        order = self.elements()
         cols = self.st.get("colors") or {}
         for n, el in enumerate(order):
             box = QWidget()
@@ -3705,6 +3773,15 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             h.addWidget(b_)
             h.addStretch(1)
             self.color_grid.addWidget(box, n // 4, n % 4)
+
+    def elements(self):
+        """Elemente aller Strukturen (C, H zuerst) – Farbfelder und Labelfarbe je Element."""
+        els = set()
+        for e in self.entries():
+            S = self.structure(e)
+            if S is not None:
+                els |= {a["el"] for a in S.atoms}
+        return [x for x in ("C", "H") if x in els] + sorted(els - {"C", "H"})
 
     def set_color(self, el, c):
         self.st.setdefault("colors", {})[el] = c
@@ -4096,6 +4173,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     def view_changed(self, R):
         e = self.entry()
         if e is not None:
+            remember_view(self, e)
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
             keep_scale(e, self.F)
             self.render()                          # nicht verschobene Labels werden neu platziert
@@ -4103,12 +4181,14 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     def pan_changed(self, pan):
         e = self.entry()
         if e is not None:
+            remember_view(self, e)
             e["pan"] = [round(float(pan[0]), 3), round(float(pan[1]), 3)]
             self.render()
 
     def zoom_changed(self, z):
         e = self.entry()
         if e is not None:
+            remember_view(self, e, "zoom")
             e["zoom"] = round(float(z), 4)
             self.timer.start()
 
@@ -4126,6 +4206,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     def reset_view(self):
         e = self.entry()
         if e is not None:
+            remember_view(self, e)
             e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
             e.pop("ext", None)
             self.render()
@@ -4160,7 +4241,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                     hidden_atoms=e.get("hidden_atoms") or [],
                     label_on=e.get("label_on") or {}, wire=set(e.get("wire") or []), wire_h=st.get("wire_h", False),
                     label_mode=st.get("label_mode", "all"), label_size=st.get("label_pt", 0.0),
-                    label_color=st.get("label_color", "black"),
+                    label_color=st.get("label_color", "black"), label_colors=st.get("label_colors") or {},
                     rod_scale=st.get("bond_w", 0.12) / self.DEFAULT_STATE["bond_w"], bg=st.get("bg", "white"),
                     hide_kinds=[k for k, on in (("solvent", st.get("hide_solv")), ("ion", st.get("hide_ions")))
                                 if on])

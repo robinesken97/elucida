@@ -2,6 +2,29 @@
 
 # Änderungen
 
+## 2.5.0 – 01.11.2026
+
+### Neu
+- **ORCA-ESD (vibronische Spektren):** `.spectrum`-Dateien (auch `.spectrum.rootN`) aus `ESD(ABS)` im Overlay
+  („ESD…“, normiert, Verschiebung in eV) und aus `ESD(FLUOR)` als gestrichelte berechnete Emission im Tab Fluoreszenz
+  (Verschiebung in der Bildunterschrift). Die x-Einheit steht nicht in der Datei: aus `%ESD UNIT` der `.inp`/`.out`
+  daneben, sonst aus dem Wertebereich, von Hand änderbar.
+- **X-Ray / DFT:** „Vorherige Ansicht“ nimmt Drehen, Verschieben und Zoomen schrittweise zurück; Labelfarbe
+  „je Element“ (Dialog mit einer Farbe je Element).
+- **IR:** Struktur der Verbindung im Bild (Haken „Struktur im Bild“, Standard aus).
+- **Verbindung:** Strukturvorschau im Dialog „Verbindung“.
+- **SI (Word):** Abbildungen je Tab wählbar; die Zeilen der Charakterisierung (IR, HR-MS, UV-Vis …) bleiben.
+
+### Behoben
+- **UV-Vis (ε):** Die Struktur wurde waagerecht gestaucht, wenn das Inset neben die (dann schmalere) Achse rücken
+  musste, z. B. bei vielen Banden; sie behält jetzt ihr Seitenverhältnis.
+- **IR:** Bei vielen Peaks (Rohdateien) liefen die Wellenzahl-Labels über den rechten Rand; wie im OPUS-Bericht werden
+  sie jetzt kleiner gesetzt, sodass die Reihe in der Achse bleibt.
+- **X-Ray:** „Ansicht zurücksetzen“ lag versteckt in der eingeklappten Karte „Atome“.
+- **SI (Word):** keine Bandenliste mehr nach dem UV-Vis-Methodentext (Werte stehen in der Charakterisierungszeile und
+  im Bild). „SI-Text kopieren“ behält sie.
+- Hinweis zur Molmasse im ε-Tab mittig wie die übrigen Hinweise.
+
 ## 2.4.1 – 31.10.2026
 
 ### Geändert

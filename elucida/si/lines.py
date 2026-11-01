@@ -207,10 +207,11 @@ def uvvis_line(results, cfg, solvent: str = ""):
     return plain, html
 
 
-def eps_methods(cfg, results, spectra, solvent: str = ""):
+def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = True):
     """SI-Text (englisch) zur ε-Bestimmung einer Verdünnungsreihe nach prepare_series: Basislinie, Fit A/d = m·c + b
     (OLS), Cutoff, Unsicherheiten; danach die Ergebnisse je Bande (ε ± SE wie in der Tabelle gerundet, 95-%-KI, n,
-    R²). Exponenten wie in der SI als „-1“."""
+    R²; with_results=False: nur die Methode – im Word-Export doppelt zu Bild und UV-Vis-Zeile, Nutzerwunsch).
+    Exponenten wie in der SI als „-1“."""
     fitted = [r for r in results if r.get("fit")]
     if not fitted:
         return ""
@@ -253,6 +254,8 @@ def eps_methods(cfg, results, spectra, solvent: str = ""):
                 else f"{coef} was rounded to the precision of the SE."))
     if any(r.get("hidden") for r in fitted):
         m.append(f"Bands with R² < {cfg['min_r2']:g} or deselected bands are listed but not labelled in the figure.")
+    if not with_results:
+        return " ".join(x for x in m if x)
     res = []
     for r in sorted(fitted, key=lambda r: r["lam"]):
         v, e = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))

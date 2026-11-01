@@ -417,3 +417,60 @@ def parse_nics(text) -> dict:
     return dict(route=route, els=[ELEMENTS[z - 1] if 0 < z <= len(ELEMENTS) else "X" for z, _ in real],
                 xyz=np.array([p for _, p in real]), bq_xyz=np.array([atoms[i][1] for i in idx]),
                 iso=np.array([bq[i][0] for i in idx]), tensor=np.array([bq[i][1] for i in idx]))
+
+
+HC_EV_NM = 1239.84198                  # h·c in eV·nm
+ESD_UNITS = ("nm", "cm-1", "eV")
+
+
+def esd_unit(path, x) -> tuple[str, str]:
+    """x-Einheit einer ESD-Spektrendatei -> (Einheit, Quelle "input"|"range"). Die Datei selbst nennt sie nicht (nur
+    „Energy“); %ESD UNIT steht in der .inp bzw. im Eingabe-Echo der .out daneben, sonst über den Wertebereich:
+    eV < 30, cm⁻¹ > 3000 (ab 3333 nm), dazwischen nm (ORCA-Beispiel in nm: 72–1153)."""
+    p = Path(path)
+    base = p.name.split(".spectrum")[0]
+    for sib in (p.with_name(base + ".out"), p.with_name(base + ".inp")):
+        try:
+            m = re.search(r"^\s*(?:\|\s*\d+>\s*)?UNIT\s+(CM-1|NM|EV)\b", read_text(sib), re.I | re.M)
+        except OSError:
+            continue
+        if m:
+            return {"CM-1": "cm-1", "NM": "nm", "EV": "eV"}[m.group(1).upper()], "input"
+    mx = float(np.nanmax(np.abs(x)))
+    return ("eV" if mx < 30 else "cm-1" if mx > 3000 else "nm"), "range"
+
+
+def read_esd_spectrum(path, unit=None) -> dict:
+    """ORCA-ESD-Spektrum (BASENAME.spectrum, auch .spectrum.rootN): Kopf „Energy TotalSpectrum IntensityFC
+    IntensityHT“, Tabulatoren -> dict(nm, total, fc, ht (aufsteigend nach nm), unit, unit_src). Intensität ohne
+    Einheit (nur normiert vergleichen). unit: Vorgabe (ESD_UNITS), sonst esd_unit."""
+    lines = read_text(path).splitlines()
+    head = next((i for i, ln in enumerate(lines) if ln.split()[:2] == ["Energy", "TotalSpectrum"]), None)
+    if head is None:
+        raise ValueError(T("esd_bad", name=Path(path).name))
+    rows = []
+    for ln in lines[head + 1:]:
+        tok = ln.split()
+        if len(tok) < 2:
+            continue
+        try:
+            rows.append([float(v) for v in tok[:4]] + [0.0] * (4 - len(tok[:4])))
+        except ValueError:
+            break
+    a = np.array(rows, float)
+    if len(a) < 2:
+        raise ValueError(T("esd_bad", name=Path(path).name))
+    src = "user"
+    if unit not in ESD_UNITS:
+        unit, src = esd_unit(path, a[:, 0])
+    x = a[:, 0]
+    ok = x > 0
+    a, x = a[ok], x[ok]
+    nm = x if unit == "nm" else 1e7 / x if unit == "cm-1" else HC_EV_NM / x
+    o = np.argsort(nm)
+    return dict(nm=nm[o], total=a[o, 1], fc=a[o, 2], ht=a[o, 3], unit=unit, unit_src=src)
+
+
+def esd_shift(nm, shift_ev):
+    """Wellenlängen um shift_ev (eV) in der Energie verschieben (wie die TD-DFT-Verschiebung)."""
+    return HC_EV_NM / (HC_EV_NM / np.asarray(nm, float) + shift_ev) if shift_ev else np.asarray(nm, float)

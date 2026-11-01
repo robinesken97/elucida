@@ -480,6 +480,10 @@ def spread_centers(targets, widths, lo=0.0, hi=1.0):
     return out
 
 
+IR_LABEL_MIN_PT = 4.0                                    # kleinste Schrift der Wellenzahl-Labels
+IR_LABEL_FILL = 0.8                                      # Labelreihe höchstens so breit (Anteil der Achse), sonst kleiner
+
+
 class IRFigure(TABS.X.SimpleFigure):
     """IR-Abbildung wie der OPUS-Bericht (Nutzerwunsch P10, ohne Nachkommastellen): Wellenzahl-Labels senkrecht in
     einer Reihe am unteren Rand (Transmission) bzw. oberen Rand (Absorbanz), nebeneinander so nah wie möglich an ihrem
@@ -509,8 +513,8 @@ class IRFigure(TABS.X.SimpleFigure):
         ok = np.isfinite(X_) & np.isfinite(Y_)
         X_, Y_ = X_[ok], Y_[ok]
         pad = 0.01 if self.cfg.get("size_cm") else 0.06
-        pos = {}
-        for _ in range(4):
+        pos, shrunk = {}, False
+        for _ in range(5):
             rend = self._renderer()
             ab = ax.get_window_extent(rend)
             gy, gx = 2.5 * self.fig.dpi / 72 / ab.height, 1.0 * self.fig.dpi / 72 / ab.width
@@ -523,6 +527,11 @@ class IRFigure(TABS.X.SimpleFigure):
                 tgt.append((ann.xy[0] - x0) / (x1 - x0))
                 wid.append(bw + gx)
                 hgt.append(bh)
+            if sum(wid) > IR_LABEL_FILL and not shrunk:    # viele Peaks (Rohdatei): wie OPUS kleiner setzen, statt
+                shrunk = True                              # über den Rand zu schieben oder die Breite zu füllen
+                for ann in self.ann_items.values():
+                    ann.set_fontsize(max(IR_LABEL_MIN_PT, ann.get_fontsize() * IR_LABEL_FILL / sum(wid)))
+                continue
             h = max(hgt)
             lead = 3 * max(wid) * ab.width / ab.height     # Hilfslinie drei Labelbreiten hoch (wie OPUS)
             cen = spread_centers(tgt, wid)
@@ -593,7 +602,8 @@ class IRMSTab(TABS.FigureTab):
                          y_auto=True, y_min=0.0, y_max=100.0,        # y-Bereich (ymax: nur alte Projekte)
                          ir_color=IR_COLOR,                          # Farbe des Spektrums (FB-13)
                          ir_base=False,                              # OPUS-Basislinie abziehen (FB-11)
-                         ir_thr=[])                                  # Schwellenlinie [[ṽ, A], …] (FB-15)
+                         ir_thr=[],                                  # Schwellenlinie [[ṽ, A], …] (FB-15)
+                         ir_struct=False, struct_w=20.0)             # Struktur der Verbindung im Bild
 
     def build_controls(self):
         st = self.st
@@ -643,6 +653,11 @@ class IRMSTab(TABS.FigureTab):
         self.cb_irlab = QCheckBox(T("ir_labels"))
         self.cb_irlab.setChecked(st["ir_labels"])
         f.addRow(self.cb_irlab)
+        self.cb_irstruct = QCheckBox(T("ir_struct"))
+        self.cb_irstruct.setToolTip(T("ir_struct_tip"))
+        self.cb_irstruct.setChecked(st["ir_struct"])
+        f.addRow(self.cb_irstruct)
+        self.sp_struct_w = self.size_spin(f, "struct_w", "image_struktur")
         self.cmb_mode = QComboBox()
         self.cmb_mode.addItem(T("ir_mode_T"), "T")
         self.cmb_mode.addItem(T("ir_mode_A"), "A")
@@ -715,7 +730,7 @@ class IRMSTab(TABS.FigureTab):
         self.cb_full.toggled.connect(self.changed)
         for w_ in (self.sp_lo, self.sp_hi, self.sp_prom):
             w_.valueChanged.connect(self.changed)
-        for w_ in (self.cb_int, self.cb_irlab, self.cb_base):
+        for w_ in (self.cb_int, self.cb_irlab, self.cb_base, self.cb_irstruct):
             w_.toggled.connect(self.changed)
         self.cmb_mode.currentIndexChanged.connect(self.mode_changed)
         self.sync_widgets()
@@ -963,6 +978,8 @@ class IRMSTab(TABS.FigureTab):
         self.btn_thr_clear.setEnabled(bool(st.get("ir_thr")))
         self.cb_int.setChecked(bool(st.get("with_int")))
         self.cb_irlab.setChecked(bool(st.get("ir_labels")))
+        self.cb_irstruct.setChecked(bool(st.get("ir_struct")))
+        self.sp_struct_w.setValue(st.get("struct_w", 20.0))
         c_ = st.get("ir_color") or IR_COLOR
         self.btn_ircolor.setProperty("color", c_)
         self.btn_ircolor.setStyleSheet(f"background-color: {c_}; border: 1px solid #777;")
@@ -981,7 +998,7 @@ class IRMSTab(TABS.FigureTab):
                   ea_found={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found_ed.items()
                             if ed.text().strip()})
         st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked(),
-                  ir_base=self.cb_base.isChecked())
+                  ir_base=self.cb_base.isChecked(), ir_struct=self.cb_irstruct.isChecked())
         if getattr(self, "sp_ymin", None) is not None:
             lo, hi = self.sp_ymin.value(), self.sp_ymax2.value()
             if lo >= hi:                                  # min < max: das gerade nicht geänderte Feld weicht aus
@@ -1127,6 +1144,10 @@ class IRMSTab(TABS.FigureTab):
                         labels.append({"key": f"label_ir_{round(p['wn'])}", "lam": p["wn"], "y": float(yv),
                                        "side": "below" if mode == "T" else "above",
                                        "text": wn_text(p["wn"])})
+        sp_ = (self.main.compound or {}).get("structure")
+        if st.get("ir_struct") and sp_ and Path(sp_).exists():   # wie im ε-Tab: Vektorbild, Seitenverhältnis fest
+            cfg["images"] = [{"file": sp_, "id": "struktur", "width": st.get("struct_w", 20.0) / 100,
+                              "prefer": "auto", "_asset": self.structure_asset(sp_)}]
         self._ir_fig = {"side": "below" if mode == "T" else "above",
                         "fixed": manual is not None and not rejected}
         return cfg, curves, labels, []

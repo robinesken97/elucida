@@ -113,12 +113,13 @@ def collect(state, project_dir) -> list[Item]:
     for e in (state.get("overlay") or {}).get("entries") or []:   # Vergleichsspektren, ggf. anderer Verbindungen
         for f in [e.get("file")] + list(e.get("files") or []) + [x.get("file") for x in e.get("sources") or []]:
             if f:
-                tddft = Path(f).suffix.lower() in (".out", ".log")
+                tddft = Path(f).suffix.lower() in (".out", ".log") or ".spectrum" in Path(f).name   # ESD: Rechnung
                 add("dft" if tddft else "overlay", f, f"{'DFT' if tddft else 'UV-Vis'}/{Path(f).name}")
 
     fl = state.get("fluo") or {}
     for k in ("abs_file", "em_file"):
         add("fluo", fl.get(k), f"Fluorescence/{Path(fl.get(k) or '').name}")
+    add("dft", fl.get("esd_file"), f"DFT/{Path(fl.get('esd_file') or '').name}")    # ESD(FLUOR): Rechnung
 
     for e in (state.get("cv") or {}).get("files") or []:
         grp = re.sub(r'[\\/:*?"<>|]', "_", (e.get("group") or "").strip())

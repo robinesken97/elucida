@@ -47,6 +47,10 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Kombinieren: Übergänge mehrerer Rechnungen (`sources`, je Gewicht) erst zusammenführen, dann verbreitern.
   Lösungsfarbe aus TD-DFT (Overlay-Details, `calc_color`): ε mit FWHM/Verschiebung des Eintrags, A = ε·c·d, Standard
   1 mM, 1 cm (`color_c`/`color_d`); nur qualitativ.
+  ORCA-ESD (`.spectrum`, `CALC.read_esd_spectrum`, seit 2.5): Spalte TotalSpectrum, x-Einheit steht nicht in der Datei
+  (`%ESD UNIT` aus .inp/.out daneben, sonst Wertebereich; beim Laden bestimmen und im Eintrag speichern, nur die
+  .spectrum wird kopiert). Intensitätseinheit unbestätigt → nur normiert (kein ε/Absorbanz). Overlay `kind` „esd“,
+  Fluoreszenz `esd_file` (gestrichelt, Verschiebung in der Unterschrift); Verschiebung in eV wie TD-DFT.
 - CV: Strom wie aufgezeichnet (Gamry IUPAC, anodisch positiv); Paare nur im Fenster (gespeichert in gemessenen
   Potentialen, angezeigt in Achsenskala); i_pc/i_pa nach Nicholson; Referenz E_Fc = E − (E½,ref − E°ref);
   Basislinie (Standard an): Gerade durch den Vorlauf des Hinpeaks (bis 0,15 V davor **und** vor dem Anstieg der Welle,

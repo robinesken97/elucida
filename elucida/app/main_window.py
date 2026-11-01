@@ -332,6 +332,11 @@ class CompoundDialog(QDialog):
         b_cd.clicked.connect(self._chemdraw)
         row.addWidget(b_cd)
         f.addRow(T("structure"), row)
+        self.lbl_preview = QLabel()                      # Strukturbild auf Weiß (schwarze Striche, auch im dunklen Theme)
+        self.lbl_preview.setAlignment(Qt.AlignCenter)
+        self.lbl_preview.setStyleSheet("background: white; border-radius: 6px; padding: 6px;")
+        f.addRow("", self.lbl_preview)
+        self._preview()
         self.ed_formula = QLineEdit(comp.get("formula", ""))
         self.ed_formula.setPlaceholderText("C18H20N2")
         f.addRow(T("compound_formula"), self.ed_formula)
@@ -380,9 +385,22 @@ class CompoundDialog(QDialog):
             self.main.settings.setValue("last_img_dir", str(Path(p).parent))
             self.set_path(p)
 
+    def _preview(self):
+        pm = QPixmap()
+        p = self.path
+        if p and Path(p).exists() and (Path(p).suffix.lower() != ".cdxml" or PRJ.cdxml_has_content(p)):
+            try:
+                pm = rgba_to_pixmap(IMG.load_structure(p, target_px=800)["rgba"], 140).scaled(
+                    380, 140, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            except Exception:
+                pm = QPixmap()
+        self.lbl_preview.setPixmap(pm)
+        self.lbl_preview.setVisible(not pm.isNull())
+
     def set_path(self, p):
         self.path = p
         self.lbl_struct.setText(Path(p).name)
+        self._preview()
         chem = compound_from_structure(p)
         if chem.get("formula"):
             self.ed_formula.setText(chem["formula"])
@@ -810,7 +828,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.ed_mw, 1)
         row.addWidget(QLabel("g/mol"))
         f.addRow(T("molar_mass_short"), row)
-        self.lbl_chem = QLabel("")
+        self.lbl_chem = STYLE.HintLabel("")
         self.lbl_chem.setWordWrap(True)
         f.addRow("", self.lbl_chem)
         row = QHBoxLayout()
@@ -1319,8 +1337,7 @@ class MainWindow(QMainWindow):
             info = (info + "\n" if info else "") + T("mw_needed")
             warn = True
         self.ed_mw.setStyleSheet("border: 2px solid #d9534f;" if mw_missing else "")
-        self.lbl_chem.setText(info)
-        self.lbl_chem.setVisible(bool(info))          # keine leere Zeile unter der Molmasse
+        self.lbl_chem.setText(info)                   # HintLabel: ohne Text keine Zeile, mittig
         # fehlende Molmasse = Fehler (rot); Hinweise zur Zeichnung (aus CDXML statt ChemDraw-Bild) nur orange
         self.lbl_chem.setStyleSheet(WARN_CSS if mw_missing else STYLE.NOTE_CSS if warn else "")
         pa = st.get("photo_asset") if st else None
@@ -3404,7 +3421,7 @@ class MainWindow(QMainWindow):
                 out.append((g, line))
         return out
 
-    def eps_methods_text(self, groups=None):
+    def eps_methods_text(self, groups=None, with_results=True):
         """SI-Text zur ε-Bestimmung je Serie (englisch, si.lines.eps_methods)."""
         out = []
         for g in (groups or list(self.groups)):
@@ -3412,7 +3429,8 @@ class MainWindow(QMainWindow):
                 cfg2, spectra, results = core.prepare_series(self.make_cfg(g), self.groups[g], g)
             except Exception:
                 continue
-            txt = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""))
+            txt = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""),
+                                 with_results)
             if txt:
                 out.append((f"Series {g}: " if len(self.groups) > 1 and g else "") + txt)
         return "\n\n".join(out)
@@ -3432,6 +3450,19 @@ class MainWindow(QMainWindow):
                     methods=bool(self.si_methods_blocks()),
                     xray=any(xt.structure(e) is not None for e in xt.entries()),
                     dft=any(dt.calc_of(e) is not None for e in dt.entries()))
+
+    def si_figure_choices(self):
+        """[(Schlüssel, Titel)] der Tabs mit Abbildung für die Auswahl im SI-Dialog (Reihenfolge wie die SI)."""
+        out = [("eps", T("tab_eps"))] if self.groups else []
+        for t in self.figure_tabs():
+            t.ensure_rendered()
+            if t.F is not None:
+                k = self.tab_key_of(t)
+                out.append((k, T(self._tab_spec(k)[3])))
+        ds = self.dft_state
+        if ds.get("entries") or (ds.get("profile") or {}).get("irc") or (ds.get("nics") or {}).get("files"):
+            out.append(("dft", T("tab_dft")))
+        return out
 
     def export_si_dialog(self):
         """Auswahl der Teile (Charakterisierung, X-Ray, DFT), dann export_si. Die Auswahl wird gemerkt."""
@@ -3459,6 +3490,20 @@ class MainWindow(QMainWindow):
                 cb.setToolTip(T("si_part_empty"))
             cbs[k] = cb
             v.addWidget(cb)
+            if k == "figs":                                   # je Tab abwählbar (z. B. IR/MS nur als Text)
+                off = set(str(self.settings.value("si_figs_off", "") or "").split(","))
+                grid = QGridLayout()
+                grid.setContentsMargins(24, 0, 0, 0)
+                fig_cbs = {}
+                for n, (fk, title) in enumerate(self.si_figure_choices()):
+                    fcb = QCheckBox(title)
+                    fcb.setChecked(fk not in off)
+                    fig_cbs[fk] = fcb
+                    grid.addWidget(fcb, n // 3, n % 3)
+                for fcb in fig_cbs.values():
+                    fcb.setEnabled(cb.isChecked())
+                    cb.toggled.connect(fcb.setEnabled)
+                v.addLayout(grid)
         row = QHBoxLayout()                                   # Schriftart aller Word-Exporte (Größe fest 11 pt)
         cmb_font = QFontComboBox()
         cmb_font.setCurrentFont(QFont(str(self.settings.value("si_font", "Arial") or "Arial")))
@@ -3477,17 +3522,19 @@ class MainWindow(QMainWindow):
         SI.set_font(cmb_font.currentFont().family())
         self.settings.setValue("si_parts", ",".join(k for k, cb in cbs.items() if cb.isChecked() or not avail[k]
                                                    and k in saved))
+        skip = {fk for fk, fcb in fig_cbs.items() if not fcb.isChecked()}
+        self.settings.setValue("si_figs_off", ",".join(sorted(skip | (off - set(fig_cbs) - {""}))))
         if parts:
-            self.export_si(parts)
+            self.export_si(parts, skip)
 
-    def export_si(self, parts=SI_PARTS):
+    def export_si(self, parts=SI_PARTS, skip_figs=()):
         """SI-Abschnitt der Verbindung als Word-Datei: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis;
         Elementaranalyse), Kristalldaten, ausgewählte Parameter und Bildunterschriften aus dem X-Ray-Tab, DFT-Rechnungen
         (zweispaltig) – je nach Auswahl."""
         if not self.ensure_project():
             return
         try:
-            blocks, missing = self.si_blocks(parts)
+            blocks, missing = self.si_blocks(parts, skip_figs)
             pdir = Path(self.project_dir)
             name = core.safe_name(self.export_name())
             p = SI.write_docx(PRJ.export_dir(pdir, PRJ.SI_DIR) / f"{name}_SI.docx", blocks)
@@ -3503,8 +3550,9 @@ class MainWindow(QMainWindow):
             msg += "\n" + T("si_missing", parts=", ".join(missing))
         self.info(msg)
 
-    def si_blocks(self, parts=SI_PARTS):
-        """-> (Blöcke für SI.write_docx, fehlende Teile)."""
+    def si_blocks(self, parts=SI_PARTS, skip_figs=()):
+        """-> (Blöcke für SI.write_docx, fehlende Teile). skip_figs: Tabs (Schlüssel wie si_figure_choices) ohne
+        Abbildung; ihre Zeilen im Charakterisierungsabsatz bleiben."""
         comp = self.compound or {}
         title = self.syn_tab.st.get("name") or comp.get("name") or Path(self.project_dir or ".").name
         blocks, missing, plain = [], [], ""
@@ -3517,7 +3565,7 @@ class MainWindow(QMainWindow):
         if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
             blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si"))
         if "figs" in parts and self.project_dir:
-            figs = self.si_figure_blocks(PRJ.work_dir(self.project_dir, "si"), title)
+            figs = self.si_figure_blocks(PRJ.work_dir(self.project_dir, "si"), title, skip_figs)
             if figs:
                 blocks += [("pagebreak",)] + figs
         if "methods" in parts:
@@ -3536,7 +3584,8 @@ class MainWindow(QMainWindow):
     def si_methods_items(self):
         """Methodentexte der Tabs, die fitten -> [(Kapitel der Gesamt-SI, Titel, Text)] (Text leer ohne Fit)."""
         self.collect_globals()
-        items = [("uvvis", "UV-Vis absorption spectroscopy", self.eps_methods_text() if self.groups else "")]
+        items = [("uvvis", "UV-Vis absorption spectroscopy",          # Word: ohne Bandenliste (steht in Zeile/Bild)
+                  self.eps_methods_text(with_results=False) if self.groups else "")]
         for key, title, t in (("cv", "Cyclic voltammetry", self.cv_tab),
                               ("sec", "UV-Vis spectroelectrochemistry", self.sec_tab),
                               ("epr", "EPR spectroscopy", self.epr_tab)):
@@ -3624,11 +3673,13 @@ class MainWindow(QMainWindow):
         return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab,
                 self.other_tab]
 
-    def si_figure_blocks(self, out_dir, name):
+    def si_figure_blocks(self, out_dir, name, skip=()):
         """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je
         Seite (SI.two_per_page verkleinert, wo nötig), jede mit „Figure Sn: …“."""
-        figs = self.si_eps_figures(out_dir, name)
+        figs = self.si_eps_figures(out_dir, name) if "eps" not in skip else []
         for t in self.figure_tabs():
+            if self.tab_key_of(t) in skip:
+                continue
             try:
                 fb = t.si_figure(out_dir, name)
                 if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
@@ -3637,7 +3688,8 @@ class MainWindow(QMainWindow):
             except Exception:
                 self.log_signal.emit(traceback.format_exc())
         ds = self.dft_state
-        if ds.get("entries") or (ds.get("profile") or {}).get("irc") or (ds.get("nics") or {}).get("files"):   # F4
+        if "dft" not in skip and (ds.get("entries") or (ds.get("profile") or {}).get("irc")
+                                  or (ds.get("nics") or {}).get("files")):   # F4
             try:
                 figs += self.dft_tab.pages.si_figures(out_dir, name)
             except Exception:

@@ -213,6 +213,51 @@ def selftest(outdir, with_isnet=False):
         w.ov_tab.render()
         assert w.ov_tab.lbl_note.isHidden(), w.ov_tab.lbl_note.text()
         report.append("overlay notes in the tab: OK")
+        # ORCA ESD (.spectrum): Einheit aus der Eingabe bzw. dem Wertebereich, Overlay nur normiert, Fluoreszenz gestrichelt
+        from elucida.formats import calc as CALC_
+        nu_ = np.arange(14000.0, 30000.0, 20.944)                       # Raster gleichmäßig in cm-1 (wie ORCA)
+        y_esd_ = np.exp(-((nu_ - 20000.0) / 1500.0) ** 2)
+        head_ = "Energy\t\t\tTotalSpectrum\t\tIntensityFC\t\tIntensityHT"
+        def esd_file_(name, x_, unit_line=None):                       # noqa: E306
+            p_ = out / "input" / name
+            p_.write_text("\n".join([head_] + [f"{a_:.6f}\t\t{b_:.6e}\t\t{b_:.6e}\t\t0.000000e+00"
+                                                  for a_, b_ in zip(x_, y_esd_)]) + "\n", encoding="utf-8")
+            if unit_line:
+                p_.with_name(name.split(".spectrum")[0] + ".out").write_text(
+                    "|  12>   UNIT NM\n" if unit_line == "nm" else "", encoding="utf-8")
+            return p_
+        for name_, x_, unit_ in (("esd_cm.spectrum", nu_, "cm-1"), ("esd_nm.spectrum", 1e7 / nu_, "nm"),
+                                 ("esd_ev.spectrum.root1", nu_ / 8065.544, "eV")):
+            r_ = CALC_.read_esd_spectrum(esd_file_(name_, x_))
+            assert r_["unit"] == unit_ and r_["unit_src"] == "range", (name_, r_["unit"])
+            assert abs(r_["nm"][np.argmax(r_["total"])] - 500.0) < 0.5 and np.all(np.diff(r_["nm"]) > 0), name_
+        r_ = CALC_.read_esd_spectrum(esd_file_("esd_in.spectrum", 1e7 / nu_, "nm"))
+        assert (r_["unit"], r_["unit_src"]) == ("nm", "input")
+        assert abs(CALC_.esd_shift(np.array([500.0]), 0.1)[0] - 1239.84198 / (1239.84198 / 500 + 0.1)) < 1e-9
+        try:
+            CALC_.read_esd_spectrum(csv)
+            raise AssertionError("CSV als ESD gelesen")
+        except ValueError:
+            pass
+        esd_e_ = {"kind": "esd", "file": str(out / "input" / "esd_cm.spectrum"), "label": "esd", "color": "#00aa00",
+                  "visible": True, "own_norm": False, "nlo": 450, "nhi": 520, "shift": 0.0, "unit": "cm-1"}
+        w.ov_state["entries"].append(esd_e_)
+        w.ov_tab.render()
+        c_esd_ = [c_ for c_ in w.ov_tab.F.curves if c_.get("label") == "esd"]
+        assert c_esd_ and abs(np.nanmax(c_esd_[0]["y"]) - 1.0) < 1e-6 and c_esd_[0].get("ls") == "--", c_esd_
+        assert w.ov_tab.lbl_note.isHidden(), w.ov_tab.lbl_note.text()
+        esd_e_.update(nlo=200, nhi=260)                                 # nur Ausläufer im Fenster: weglassen
+        esd_e_["own_norm"] = True
+        w.ov_tab.render()
+        assert not any(c_.get("label") == "esd" for c_ in w.ov_tab.F.curves) and "esd" in w.ov_tab.lbl_note.text()
+        esd_e_["own_norm"] = False
+        w.ov_state["mode"] = "eps"
+        w.ov_tab.render()
+        assert "esd" in w.ov_tab.lbl_note.text() and not any(c_.get("label") == "esd" for c_ in w.ov_tab.F.curves)
+        w.ov_state["mode"] = "norm"
+        w.ov_state["entries"].pop()
+        w.ov_tab.render()
+        report.append("ORCA ESD spectra (units, overlay): OK")
         em = out / "input" / "emission.csv"
         xs = np.arange(400.0, 701.0, 1.0)
         em.write_text("\r\n".join(["EM ex352,,", "Wavelength (nm),Intensity (a.u.),"] +
@@ -223,6 +268,15 @@ def selftest(outdir, with_isnet=False):
                           photo_day=str(photo), bg_day="grabcut", photo_uv=str(photo), bg_uv="none")
         files = w.fl_tab.export_to(out / "fluorescence")
         assert all(f.exists() for f in files), files
+        w.fl_state.update(esd_file=str(out / "input" / "esd_cm.spectrum"), esd_unit="cm-1", esd_shift=-0.1)
+        w.fl_tab.render()
+        c_fl_ = [c_ for c_ in w.fl_tab.F.curves if c_.get("ls") == "--"]
+        assert c_fl_ and abs(c_fl_[0]["x"][np.argmax(c_fl_[0]["y"])] - 1239.84198 / (1239.84198 / 500 - 0.1)) < 1.0
+        x0_, x1_ = w.fl_tab.F.ax.get_xlim()
+        assert (min(x0_, x1_), max(x0_, x1_)) == (200.0, 1100.0), (x0_, x1_)  # x-Bereich der Messungen
+        assert "calculated vibronic emission spectrum, shifted by −0.10 eV" in w.fl_tab.si_caption("X")
+        w.fl_state.update(esd_file=None, esd_shift=0.0)
+        report.append("fluorescence: calculated ESD emission: OK")
         # Cary-Eclipse-CSV (Name in Zeile 2, λex aus den Metadaten)
         ecl = out / "input" / "eclipse.csv"
         ecl.write_text("\r\n".join(["Wavelength (nm),Intensity (a.u.),Z Axis,", ",PROBE-1-45p3µM", ",1"] +
@@ -627,12 +681,25 @@ def selftest(outdir, with_isnet=False):
         assert "ordinary least squares" in meth_ and "95% confidence interval" in meth_ and " nm: " in meth_ \
             and "M = 95.10 g mol-1" in meth_, meth_
         assert meth_.split("\n\n")[0] in w.eps_methods_text(), "SI-Text Export/Knopf verschieden"
+        assert " nm: " not in w.eps_methods_text(with_results=False)          # Word: ohne Bandenliste
+        assert all(" nm: " not in t_ for k_, _, t_ in w.si_methods_items() if k_ == "uvvis")
         from openpyxl import load_workbook
         wbk = load_workbook(rep)
         assert len(wbk.sheetnames) >= 3 and any("nm" in n for n in wbk.sheetnames), wbk.sheetnames
         fmts_x = {c_.number_format for ws_ in wbk.worksheets for row_ in ws_.iter_rows() for c_ in row_}
         assert "0.0" not in fmts_x, "Excel: SE/KI von ε mit anderer Rundung als Tabelle/SI"
         report.append("export into project + Excel report: OK")
+        # Inset neben die schmalere Achse: Struktur behält ihr Seitenverhältnis (war gestaucht)
+        F_ = w.F
+        if F_ is not None and "image_struktur" in F_.axes_items and "inset" in F_.axes_items:
+            a_ = F_.axes_items["image_struktur"]
+            asp_ = lambda: (lambda bb_: bb_.height / bb_.width)(a_.get_window_extent(F_._renderer()))  # noqa: E731
+            r0_ = asp_()
+            F_._make_room_right(F_.axes_items["inset"], F_._renderer(), 0.3, 0.5)
+            F_._place()
+            assert abs(asp_() / r0_ - 1) < 0.01, (r0_, asp_())
+            w.render()
+            report.append("UV-Vis: structure keeps aspect when the axis narrows: OK")
 
         # Textformat: λ/ε in Symbolschrift, Labels fett/farbig, Rahmen um Plot und Struktur
         w.text_fmt = dict(core.TEXT_DEFAULTS, bold=True, color="#1764e8", label_pt=12.0,
@@ -848,7 +915,8 @@ def selftest(outdir, with_isnet=False):
         mtx_ = [b_[1] for b_ in mb_[1:]]
         assert any(t_.startswith("<b>UV-Vis absorption spectroscopy.</b> ") for t_ in mtx_), mtx_
         assert any(t_.startswith("<b>Cyclic voltammetry.</b> ") and "Nicholson" in t_ for t_ in mtx_), mtx_
-        assert any("E<sub>1/2</sub> = −1.08 V" in t_ for t_ in mtx_) and "cm<sup>-1</sup>" in "".join(mtx_), mtx_
+        assert any("E<sub>1/2</sub> = −1.08 V" in t_ for t_ in mtx_) and "mL<sup>-1</sup>" in "".join(mtx_), mtx_
+        assert " nm: " not in "".join(mtx_)                 # Word: UV-Vis ohne Bandenliste (Zeile/Bild)
         assert SI.methods_html("A_red, g_lit, E1/2,app, M-1 cm-1") == \
             "A<sub>red</sub>, g<sub>lit</sub>, E<sub>1/2</sub>,app, M<sup>-1</sup> cm<sup>-1</sup>"
         b_m, _ = w.si_blocks(["methods"])
@@ -2099,6 +2167,26 @@ def selftest(outdir, with_isnet=False):
         mk_ = next(l_ for l_ in t_ir.F.ax.lines if l_.get_marker() == "^")                  # Peakmarken (ms 3)
         mk_px_ = t_ir.F.ax.transData.transform(np.c_[mk_.get_xdata(), mk_.get_ydata()])[:, 1]
         assert mk_px_.min() - 3.0 * t_ir.F.fig.dpi / 72 > far_px_, (mk_px_.min(), far_px_)  # Marke + Rand frei
+        # viele Peaks (Rohdatei): Labels kleiner statt über den Rand (wie OPUS), alle in der Achse
+        w.irms_state["prominence"] = 0.5
+        t_ir.sync_widgets()
+        t_ir.render()
+        rend_ = t_ir.F._renderer()
+        ab_ = t_ir.F.ax.get_window_extent(rend_)
+        assert all(ab_.x0 - 1 <= a_.get_window_extent(rend_).x0 and a_.get_window_extent(rend_).x1 <= ab_.x1 + 1
+                   for a_ in t_ir.F.ann_items.values()), "IR-Labels ragen aus der Achse"
+        w.irms_state["prominence"] = 5.0
+        # Struktur der Verbindung im IR-Bild (Schalter, Standard aus)
+        assert t_ir.DEFAULT_STATE["ir_struct"] is False and not any(k_.startswith("image_") for k_ in t_ir.F.axes_items)
+        st_p_ = (w.compound or {}).get("structure")
+        if st_p_ and Path(st_p_).exists():
+            w.irms_state["ir_struct"] = True
+            t_ir.sync_widgets()
+            t_ir.render()
+            assert "image_struktur" in t_ir.F.axes_items
+            w.irms_state["ir_struct"] = False
+        t_ir.sync_widgets()
+        report.append("IR: labels fit the axis, structure toggle: OK")
         # Audit P10 R2 (FB-13): Farbe des Spektrums wählbar
         w.irms_state["ir_color"] = "#00aa00"
         t_ir.render()
@@ -2971,6 +3059,31 @@ def selftest(outdir, with_isnet=False):
         assert to_rgb(n_lab_.get_color()) != (0, 0, 0)
         hc_ = XRAY.label_color("H", {}, "atom")
         assert 0.299 * hc_[0] + 0.587 * hc_[1] + 0.114 * hc_[2] <= 0.45 + 1e-9, hc_
+        # Labelfarbe je Element: eingetragene Elemente in ihrer Farbe, übrige wie das Atom
+        assert XRAY.label_color("N", {}, "element", "mercury", {"N": "#ff0000"}) == (1.0, 0.0, 0.0)
+        assert XRAY.label_color("O", {}, "element", "mercury", {"N": "#ff0000"}) == \
+            XRAY.label_color("O", {}, "atom", "mercury")
+        w.xray_state.update(label_color="element", label_colors={el_: "#0000ff"})
+        t_x.sync_widgets()
+        t_x.render()
+        assert t_x.cmb_lcol.currentData() == "element"
+        assert all(to_rgb(a_.get_color()) == (0, 0, 1) for a_ in t_x.F.ann_items.values()
+                   if getattr(a_, "_atom", None) is not None and t_x.F.mol.atoms[a_._atom]["el"] == el_)
+        assert el_ in t_x.elements()
+        w.xray_state["label_colors"] = {}
+        # Vorherige Ansicht: Drehen, Zoom (Folge = ein Schritt), Zurücksetzen – schrittweise zurück
+        e_v = t_x.entry()
+        v0_ = e_v.get("view")
+        t_x.view_changed(np.eye(3)[[1, 0, 2]] * [1, 1, -1])
+        v1_ = list(e_v["view"])
+        t_x.zoom_changed(1.2)
+        t_x.zoom_changed(1.4)
+        XRAY.previous_view(t_x)
+        assert e_v["view"] == v1_ and e_v.get("zoom", 1.0) != 1.4, e_v.get("zoom")
+        XRAY.previous_view(t_x)
+        assert e_v.get("view") == v0_, (e_v.get("view"), v0_)
+        XRAY.previous_view(t_x)                          # leer: nur Meldung
+        report.append("X-Ray label colour per element, previous view: OK")
         w.xray_state["label_color"] = "black"
         t_x.sync_widgets()
         t_x.render()
@@ -4423,6 +4536,13 @@ def selftest(outdir, with_isnet=False):
         assert "67\u00a0°C" in xml_ and "C\u00a081." in xml_                  # geschützte Leerzeichen
         assert SI.nbsp("298 nm (ε = 5 cm-1 M-1)") == "298\u00a0nm (ε\u00a0=\u00a05\u00a0cm-1\u00a0M-1)"
         assert "Courier New" not in xml_                                   # ohne DFT-Rechnung kein DFT-Teil
+        # Abbildungen je Tab abwählbar: ohne ε-Bild bleibt die UV-Vis-Zeile im Absatz
+        figs_all_ = [b_ for b_ in w.si_blocks(["char", "figs"])[0] if b_[0] != "char"]
+        figs_cut_ = [b_ for b_ in w.si_blocks(["char", "figs"], {"eps"})[0] if b_[0] != "char"]
+        assert any("_epsilon" in str(b_) for b_ in figs_all_) and not any("_epsilon" in str(b_) for b_ in figs_cut_)
+        assert any("UV-Vis" in str(b_) for b_ in w.si_blocks(["char", "figs"], {"eps"})[0] if b_[0] == "char")
+        assert {k_ for k_, _ in w.si_figure_choices()} >= {"eps"}
+        report.append("SI: figures selectable per tab: OK")
         # Teile wählbar: DFT zweispaltig hinter der Charakterisierung, ohne Charakterisierung nur Überschrift
         w.dft_tab.load_xyz(str(orf_))
         assert {k_: v_ for k_, v_ in w.si_available().items() if k_ not in ("figs", "methods")} == \

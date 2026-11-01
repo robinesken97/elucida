@@ -25,8 +25,8 @@ Spektroelektrochemie, EPR, Röntgenstruktur und DFT – als Word-Datei im Aufbau
 | **Synthese** | „Synthesis of …“ mit dem ChemDraw-Schema (bearbeitbares ChemDraw-Objekt in Word), Vorschrift mit Formatierung, Mengenprüfung (mmol/Äquivalente/Ausbeute gegen die Reagenzientabelle) |
 | **NMR** | Spektren aus MestReNova (SVG oder EMF), TopSpin-Rohdaten nach Experiment sortiert, Kern aus der Achse, NMR-Zeile aus dem Mnova-Bericht mit Zuordnungen, Struktur automatisch platziert, Bruker-Parameter, zwei Spektren je Seite in Word |
 | **UV-Vis (ε)** | Lambert-Beer-Fit von Verdünnungsreihen → ε (bzw. a) mit Konfidenzintervall; Abbildung im Origin-Stil mit Struktur und Küvettenfoto; Excel-Report; UV-Vis-Zeile für die SI |
-| **UV-Vis-Overlay** | Gemessene Spektren, TD-DFT (ORCA/Gaussian, SOC, Tripletts) und SEC-Serien in einer Abbildung, normiert oder als ε |
-| **Fluoreszenz** | Absorption und Emission, Stokes-Verschiebung, Fotos bei Tageslicht und unter UV |
+| **UV-Vis-Overlay** | Gemessene Spektren, TD-DFT (ORCA/Gaussian, SOC, Tripletts), vibronische ORCA-ESD-Spektren und SEC-Serien in einer Abbildung, normiert oder als ε |
+| **Fluoreszenz** | Absorption und Emission, berechnete Emission (ORCA ESD), Stokes-Verschiebung, Fotos bei Tageslicht und unter UV |
 | **CV** | Gamry-Dateien, E½/ΔE_p, Basislinie, Nicholson-Verhältnis, Randles-Ševčík mit KI, Bezug auf Fc⁺/Fc, SI-Text |
 | **SEC** | Spektrenserie mit Potential vom Potentiostaten, Differenzspektren, scheinbarer Nernst-Fit |
 | **EPR** | Bruker BES3T, Dunkelspektrum, Basislinie, S = ½-Fit, EasySpin-Import, Kinetik und thermischer Zerfall |
@@ -477,7 +477,8 @@ Kennzeichen in „im Fit“, rechnet Excel die Bande neu.
 Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
 
 - **Messung…** fügt Spektren aus CSV/TXT/DSW/BSW-Dateien hinzu (ein Eintrag pro Probe);
-  **TD-DFT…** fügt Ausgabedateien von ORCA (4–6) oder Gaussian hinzu.
+  **TD-DFT…** fügt Ausgabedateien von ORCA (4–6) oder Gaussian hinzu; **ESD…** fügt ORCA-ESD(ABS)-Spektren hinzu
+  (`.spectrum`, nur normiert; x-Einheit aus `%ESD UNIT` der Eingabe daneben oder aus dem Wertebereich, änderbar).
 - **Aus Tabs ▾** übernimmt ε-Serien des ε-Tabs (verknüpft, Messung wählbar) und TD-DFT-Rechnungen des DFT-Tabs.
 - **SEC…** übernimmt Spektren aus dem SEC-Tab, z. B. um eine Reduktion oder Oxidation mit dem isolierten UV-Vis-Spektrum
   und TD-DFT zu vergleichen. Als **Serie** (alle Spektren oder nur Anfang und Ende, Bereich nach Potential) wird alles

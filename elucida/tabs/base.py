@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
 from elucida.core import color as COLOR
 from elucida.core import uvvis as core
 from elucida.core import tddft as X
+from elucida.formats import calc as CALC
 from elucida.core import images as IMG
 from elucida.app import project as PRJ
 from elucida.app.i18n import T, get_lang
@@ -1116,7 +1117,8 @@ class OverlayTab(FigureTab):
         v = QVBoxLayout(g)
         row, row2 = QHBoxLayout(), QHBoxLayout()
         for txt, fn in ((T("ov_add_exp"), self.add_exp), (T("ov_add_sec"), self.add_sec),
-                        (T("ov_add_calc"), self.add_calc), (T("ov_combine"), self.combine_selected),
+                        (T("ov_add_calc"), self.add_calc), (T("ov_add_esd"), self.add_esd),
+                        (T("ov_combine"), self.combine_selected),
                         ("↑", lambda: self.move_selected(-1)), ("↓", lambda: self.move_selected(1)),
                         (T("remove"), self.remove_selected)):
             b = STYLE.list_button(txt)
@@ -1124,7 +1126,9 @@ class OverlayTab(FigureTab):
             if fn == self.combine_selected:
                 b.setToolTip(T("ov_combine_tip"))
                 self.btn_combine = b
-            (row if fn in (self.add_exp, self.add_sec, self.add_calc) else row2).addWidget(b)
+            elif fn == self.add_esd:
+                b.setToolTip(T("ov_add_esd_tip"))
+            (row if fn in (self.add_exp, self.add_sec, self.add_calc, self.add_esd) else row2).addWidget(b)
         row.addWidget(self.tabs_button(list_style=True))
         row.addStretch(1)
         row2.addStretch(1)
@@ -1182,6 +1186,13 @@ class OverlayTab(FigureTab):
         self.sp_shift = QDoubleSpinBox(decimals=2, minimum=-3, maximum=3, singleStep=0.05, value=0.0, suffix=" eV")
         self.lbl_shift = QLabel(T("ov_shift"))
         f.addRow(self.lbl_shift, self.sp_shift)
+        self.cmb_esd_unit = QComboBox()                  # ESD: Einheit der Datei (steht nicht darin)
+        for u in CALC.ESD_UNITS:
+            self.cmb_esd_unit.addItem("cm⁻¹" if u == "cm-1" else u, u)
+        self.cmb_esd_unit.setToolTip(T("ov_esd_unit_tip"))
+        self.lbl_esd_unit = QLabel(T("ov_esd_unit"))
+        f.addRow(self.lbl_esd_unit, self.cmb_esd_unit)
+        self.cmb_esd_unit.currentIndexChanged.connect(self.detail_changed)
         self.cmb_soc = QComboBox()
         self.lbl_soc = QLabel(T("ov_soc"))
         f.addRow(self.lbl_soc, self.cmb_soc)
@@ -1602,6 +1613,31 @@ class OverlayTab(FigureTab):
         self.fill_table()
         self.timer.start()
 
+    def add_esd(self):
+        """ORCA-ESD-Spektrum (ESD(ABS), BASENAME.spectrum[.rootN]): fertig verbreitert, nur normiert vergleichbar.
+        Einheit beim Hinzufügen bestimmen – die .inp/.out daneben wird nicht ins Projekt kopiert."""
+        if not self.main.ensure_project():
+            return
+        ps, _ = QFileDialog.getOpenFileNames(self, T("ov_add_esd"), self.main.settings.value("last_dir", ""),
+                                             "ORCA ESD (*.spectrum *.spectrum.root*);;" + T("flt_all"))
+        for p in ps:
+            try:
+                r = CALC.read_esd_spectrum(p)
+                self.main.log_signal.emit("  " + T("ov_esd_read", name=Path(p).name, unit=r["unit"],
+                                                   src=T("ov_esd_src_" + r["unit_src"])))
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+                self.st["entries"].append({
+                    "kind": "esd", "file": p, "label": f"{Path(p).name.split('.spectrum')[0]} (ESD)",
+                    "color": self.next_color(), "visible": True, "own_norm": False, "nlo": self.st["nlo"],
+                    "nhi": self.st["nhi"], "shift": 0.0, "unit": r["unit"]})
+            except Exception as e:
+                self.main.error(str(e))
+        self.fill_table()
+        self.timer.start()
+
+    def esd_data(self, e):
+        return self.cache(("esd", e["file"], e.get("unit")), lambda: CALC.read_esd_spectrum(e["file"], e.get("unit")))
+
     @staticmethod
     def sources(e):
         """Rechnungen eines TD-DFT-Eintrags: [dict(file, variant, weight)] (kombiniert: mehrere)."""
@@ -1695,7 +1731,8 @@ class OverlayTab(FigureTab):
             self.table.setItem(i, 1, QTableWidgetItem(e["label"]))
             self.table.setCellWidget(i, 2, color_button(e["color"], lambda c, e=e: self._set_color(e, c), cell=True))
             it = QTableWidgetItem(T("ov_eps_linked") if e.get("link") == "eps" else
-                                  {"exp": T("ov_exp"), "sec": "SEC", "secser": T("ov_sec_series")}.get(e["kind"], "TD-DFT"))
+                                  {"exp": T("ov_exp"), "sec": "SEC", "secser": T("ov_sec_series"),
+                                   "esd": "ESD"}.get(e["kind"], "TD-DFT"))
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
         self.table.resizeColumnToContents(0)
@@ -1728,6 +1765,7 @@ class OverlayTab(FigureTab):
             w.setEnabled(self.cmb_ymode.currentData() == "norm")
         exp = e is not None and e["kind"] == "exp"
         calc = e is not None and e["kind"] == "calc"
+        esd = e is not None and e["kind"] == "esd"
         linked = exp and e.get("link") == "eps"
         for w in (self.lbl_conc, self.ed_conc, self.cmb_unit, self.lbl_mw, self.ed_mw, self.lbl_d, self.sp_d):
             w.setVisible(exp or e is None)              # SEC: kein ε (Dünnschichtzelle)
@@ -1735,8 +1773,12 @@ class OverlayTab(FigureTab):
         for w in (self.lbl_eps, self.cmb_eps):
             w.setVisible(linked)
         combined = e is not None and bool(e.get("sources"))
-        for w in (self.lbl_fwhm, self.sp_fwhm, self.lbl_shift, self.sp_shift) + self.calc_color_widgets:
+        for w in (self.lbl_fwhm, self.sp_fwhm) + self.calc_color_widgets:
             w.setVisible(calc)
+        for w in (self.lbl_shift, self.sp_shift):
+            w.setVisible(calc or esd)
+        for w in (self.lbl_esd_unit, self.cmb_esd_unit):
+            w.setVisible(esd)
         for w in (self.lbl_soc, self.cmb_soc):
             w.setVisible(calc and not combined)
         for w in (self.lbl_weights, self.ed_weights):
@@ -1748,7 +1790,7 @@ class OverlayTab(FigureTab):
             self.sp_scale.setValue(e.get("scale", 1.0))
             self.sp_offset.setValue(e.get("offset", 0.0))
             self.cmb_ls.setCurrentIndex(max(0, self.cmb_ls.findData(
-                e.get("ls", "dashed" if e["kind"] == "calc" else "solid"))))
+                e.get("ls", "dashed" if e["kind"] in ("calc", "esd") else "solid"))))
             self.sp_lw.setValue(e.get("lw") or 0.0)
             self.cb_own.setChecked(e["own_norm"])
             self.show_norm_window(e if e["own_norm"] else None)  # ohne eigene: das geltende (globale) Fenster
@@ -1764,6 +1806,9 @@ class OverlayTab(FigureTab):
                 self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(e.get("unit", "mM"))))
                 self.ed_mw.setText(f"{e['mw']:g}" if e.get("mw") else "")
                 self.sp_d.setValue(e.get("d", 1.0))
+            elif esd:
+                self.sp_shift.setValue(e.get("shift", 0.0))
+                self.cmb_esd_unit.setCurrentIndex(max(0, self.cmb_esd_unit.findData(e.get("unit"))))
             elif calc:
                 self.sp_fwhm.setValue(e.get("fwhm", 0.3))
                 self.sp_shift.setValue(e.get("shift", 0.0))
@@ -1808,6 +1853,8 @@ class OverlayTab(FigureTab):
         elif e["kind"] == "exp":
             e.update(conc=parse_num(self.ed_conc.text()), unit=self.cmb_unit.currentData(),
                      mw=parse_num(self.ed_mw.text()), d=self.sp_d.value())
+        elif e["kind"] == "esd":
+            e.update(shift=self.sp_shift.value(), unit=self.cmb_esd_unit.currentData())
         elif e["kind"] == "calc":
             e.update(fwhm=self.sp_fwhm.value(), shift=self.sp_shift.value())
             if e.get("sources"):
@@ -1944,7 +1991,31 @@ class OverlayTab(FigureTab):
         for e in vis:
             lo, hi = (e["nlo"], e["nhi"]) if e["own_norm"] else (st["nlo"], st["nhi"])
             sc, off = e.get("scale", 1.0), total_off(e)
-            ls = self.LS.get(e.get("ls") or ("dashed" if e["kind"] == "calc" else "solid"), "-")
+            ls = self.LS.get(e.get("ls") or ("dashed" if e["kind"] in ("calc", "esd") else "solid"), "-")
+            if e["kind"] == "esd":
+                if eps_mode or abs_mode:             # ESD-Intensität ohne Einheit: nur normiert
+                    self.add_note(T("ov_esd_norm_only", name=e["label"]))
+                    continue
+                r = self.esd_data(e)
+                x = CALC.esd_shift(r["nm"], e.get("shift", 0.0))
+                win = (x >= min(lo, hi)) & (x <= max(lo, hi))
+                # wie TD-DFT: nur Ausläufer im Fenster (< 1 % des Maximums) nicht hochskalieren
+                ok = win.any() and r["total"][win].max() >= 0.01 * r["total"].max()
+                y = X.normalize(x, r["total"], lo, hi) if ok else None
+                if y is None:
+                    self.add_note(T("ov_no_signal", name=e["label"], lo=lo, hi=hi))
+                    continue
+                band = x[y > 0.01 * np.nanmax(y)]          # Datei reicht weit ins UV (72 nm): x-Bereich nach Signal
+                calc_x.append(np.array([band.min(), band.max()]) if band.size else x)
+                c = {"x": x, "y": y * sc + off, "val": y * sc, "color": e["color"], "label": e["label"], "ls": ls}
+                if e.get("lw"):
+                    c["lw"] = e["lw"]
+                lev = levels.get(e["uid"], len(curves))
+                if lev not in tagged:
+                    c["tag"] = e["label"]
+                    tagged.add(lev)
+                curves.append(c)
+                continue
             if e["kind"] == "secser":
                 if eps_mode:                         # Dünnschichtzelle: Schichtdicke/Konzentration unbekannt
                     self.add_note(T("ov_sec_no_eps", name=e["label"]))
@@ -2150,11 +2221,13 @@ class FluoTab(FigureTab):
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Fluorescence spectra of {name}."
     CAP_FIELDS = ("solvent", "conc", "cuvette")
-    RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv")
+    RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv",
+                  "esd_file", "esd_unit", "esd_shift")
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",
                          c_em="#e8231b", structure=None, photo_day=None, bg_day="auto", photo_uv=None,
-                         bg_uv="none", ymax=1.2, struct_w=20.0, photo_w=30.0, stokes_label=False)
+                         bg_uv="none", ymax=1.2, struct_w=20.0, photo_w=30.0, stokes_label=False,
+                         esd_file=None, esd_unit=None, esd_shift=0.0)    # berechnete Emission (ORCA ESD(FLUOR))
 
 
     def arrange(self):
@@ -2166,6 +2239,7 @@ class FluoTab(FigureTab):
         f = make_form(g)
         self.w_abs = self._file_row(f, T("fl_abs"), "abs")
         self.w_em = self._file_row(f, T("fl_em"), "em")
+        self.lbl_esd = self._esd_row(f)
         self.sp_ex = QDoubleSpinBox(decimals=0, minimum=150, maximum=1500, value=st["ex"], suffix=" nm")
         self.sp_ex.setToolTip(T("fl_ex_tip"))
         f.addRow(T("fl_ex"), self.sp_ex)
@@ -2269,6 +2343,76 @@ class FluoTab(FigureTab):
         fill()
         return lbl, cmb
 
+    def _esd_row(self, form):
+        """Berechnete Emission (ORCA ESD(FLUOR), .spectrum): Datei, Verschiebung in eV, Einheit der Datei."""
+        row = QHBoxLayout()
+        lbl = QLabel(Path(self.st["esd_file"]).name if self.st.get("esd_file") else "–")
+        b1, b2 = QPushButton(T("choose")), QPushButton(T("remove"))
+        row.addWidget(lbl, 1)
+        row.addWidget(b1)
+        row.addWidget(b2)
+        form.addRow(T("fl_esd"), row)
+        row2 = QHBoxLayout()
+        sp = QDoubleSpinBox(decimals=2, minimum=-3, maximum=3, singleStep=0.05, value=self.st.get("esd_shift", 0.0),
+                            suffix=" eV")
+        sp.setToolTip(T("fl_esd_shift_tip"))
+        cmb = QComboBox()
+        for u in CALC.ESD_UNITS:
+            cmb.addItem("cm⁻¹" if u == "cm-1" else u, u)
+        cmb.setToolTip(T("ov_esd_unit_tip"))
+        cmb.setCurrentIndex(max(0, cmb.findData(self.st.get("esd_unit"))))
+        row2.addWidget(sp, 1)
+        row2.addWidget(cmb)
+        form.addRow(T("ov_shift"), row2)
+        self.esd_widgets = (sp, cmb)
+
+        def enable():
+            for w_ in (sp, cmb):
+                w_.setEnabled(bool(self.st.get("esd_file")))
+
+        def choose():
+            if not self.main.ensure_project():
+                return
+            p, _ = QFileDialog.getOpenFileName(self, T("fl_esd"), self.main.settings.value("last_dir", ""),
+                                               "ORCA ESD (*.spectrum *.spectrum.root*);;" + T("flt_all"))
+            if not p:
+                return
+            try:
+                r = CALC.read_esd_spectrum(p)            # Einheit hier: die .inp/.out daneben wird nicht kopiert
+                p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+            except Exception as e:
+                return self.main.error(f"{Path(p).name}: {e}")
+            self.main.log_signal.emit("  " + T("ov_esd_read", name=Path(p).name, unit=r["unit"],
+                                               src=T("ov_esd_src_" + r["unit_src"])))
+            self.st.update(esd_file=p, esd_unit=r["unit"])
+            lbl.setText(Path(p).name)
+            cmb.blockSignals(True)
+            cmb.setCurrentIndex(max(0, cmb.findData(r["unit"])))
+            cmb.blockSignals(False)
+            enable()
+            self.timer.start()
+
+        def remove():
+            self.st["esd_file"] = None
+            lbl.setText("–")
+            enable()
+            self.timer.start()
+        b1.clicked.connect(choose)
+        b2.clicked.connect(remove)
+        sp.valueChanged.connect(lambda v: self._set("esd_shift", v))
+        cmb.currentIndexChanged.connect(lambda _: self._set("esd_unit", cmb.currentData()))
+        enable()
+        return lbl
+
+    def esd_curve(self):
+        """Berechnete Emission -> (nm, auf 1 normiert) oder None."""
+        p = self.st.get("esd_file")
+        if not p or not Path(p).exists():
+            return None
+        r = self.cache(("esd", p, self.st.get("esd_unit")), lambda: CALC.read_esd_spectrum(p, self.st.get("esd_unit")))
+        m = np.nanmax(r["total"])
+        return (CALC.esd_shift(r["nm"], self.st.get("esd_shift", 0.0)), r["total"] / m) if m > 0 else None
+
     def _auto_ex(self, which):
         """λex aus den Gerätemetadaten der Emissionsmessung übernehmen (Eclipse CSV/FBSW)."""
         if which != "em" or not self.st.get("em_file"):
@@ -2345,7 +2489,12 @@ class FluoTab(FigureTab):
         if st.get("cap_conc"):
             h += f" ({chem_html(st['cap_conc'])})"
         cuv = (st.get("cap_cuvette") or "1 cm").strip()
-        return h + ", measured in " + chem_html(cuv) + " quartz cuvettes."
+        h += ", measured in " + chem_html(cuv) + " quartz cuvettes."
+        if st.get("esd_file"):
+            sh = st.get("esd_shift", 0.0)
+            h += (" Dashed: calculated vibronic emission spectrum"
+                  + (f", shifted by {sh:+.2f} eV".replace("-", "−") if sh else "") + ".")
+        return h
 
     def show_info(self, pa, pe, a_ex):
         """Kennwerte unter den Daten: λabs, λem, Stokes-Verschiebung, A(λex) mit Innenfilter-Hinweis."""
@@ -2367,7 +2516,8 @@ class FluoTab(FigureTab):
         st = self.st
         a = self.sample(st["abs_file"], st["abs_sample"]) if st["abs_file"] else None
         em = self.sample(st["em_file"], st["em_sample"]) if st["em_file"] else None
-        if a is None and em is None:
+        esd = self.esd_curve()
+        if a is None and em is None and esd is None:
             return None
         cfg = self.base_cfg()
         curves, labels = [], []
@@ -2406,7 +2556,11 @@ class FluoTab(FigureTab):
                     txt += f"\nΔ$\\tilde{{\\nu}}$ =  {fmt_stokes(stokes_cm(pa, pe))} cm$^{{-1}}$"
                 labels.append({"key": "label_em", "text": txt, "lam": pe})
         self.show_info(pa, pe, a_ex)
-        xs = np.concatenate([c["x"] for c in curves])
+        if esd is not None:                              # gestrichelt in der Emissionsfarbe; x-Bereich nach Messung
+            band = esd[0][esd[1] > 0.01]
+            curves.append({"x": esd[0], "y": esd[1], "color": st["c_em"], "label": None, "ls": "--",
+                           "_xr": np.array([band.min(), band.max()]) if band.size else esd[0]})
+        xs = np.concatenate([c["x"] for c in curves if "_xr" not in c] or [c["_xr"] for c in curves])
         cfg["xlim"] = [float(xs.min()), float(xs.max())] if st["x_auto"] else [st["x_min"], st["x_max"]]
         cfg["ylim"] = [0, st["ymax"] if st["ymax"] > 0 else 1.2]
         cfg["ylabel"] = "normalized intensity [a.u.]"
