@@ -27,6 +27,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Tabelle/CSV/Excel, aber nicht im Bild. Bei 4 Punkten ist R² wenig aussagekräftig, KI zählt.
 - Konzentrationsdialog: **keine** vorbelegte Einheit/Startkonzentration (führte früher zu falschem ε). Probennamen mit führender Null
   („05mgml“: 0,5 oder aufgefüllte 5?) gelten als unbekannt, der Dialog fragt (ergab sonst negative ε, wie „p5mM“).
+- Messungen je Konzentration abwählbar (`conc`-Eintrag `off`, Liste „Messungen“): fallen aus Fit und Bild (`group_samples`), der
+  Methodentext erwähnt das bewusst nicht (Robin: im Bild sichtbar).
 - ChemDraw-Struktur **unverändert** übernehmen: gleichnamige SVG/PDF/PNG neben der CDXML hat Vorrang, aber nur wenn nicht
   älter als die CDXML (`IMG.is_fresh`, sonst veraltet nach Bearbeiten in ChemDraw; gilt auch für .cdx/.emf des Schemas);
   leere ACS-1996-Vorlagen je Verbindung (`PRJ.ensure_templates`), „In ChemDraw bearbeiten“ + `QFileSystemWatcher`
@@ -227,7 +229,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Eingabe). IRC nur ΔE_el (nie mit G-Stufen), x = Σ|ΔR| der Trajektorie (TS = 0) oder Bindungsspalte, verschiedene
   Methoden ablehnen. NICS = −σ_iso, NICSzz = −n·σ·n (n = Ebene der Schweratome < 2,5 Å um das Bq), Scan ab 10 Bq
   (NICS schwarz, NICSzz rot). Isowert-Bedienung wie IboView („Threshold Type“ density/absolute, absolut Standard 0.01).
-- Cluster (F6 Teil C, `app/cluster.py`, im Projektreiter Computerchemie: Statuskarte unter der Pfadliste, Ansicht rechts, keine Pop-ups; Ziel = Verbindung oder Reaktionspfad): nur Lesebefehle (`jobs_command`, `files_command`, `fetch_command`), nie
+- Cluster (F6 Teil C, `app/cluster.py`, im Projektreiter Computerchemie: Statuskarte unter der Pfadliste, Ansicht rechts, keine Pop-ups; Ziel = Verbindung oder Reaktionspfad): nur Lesebefehle (`jobs_command`, `files_command`, `fetch_command`), nie Nicht an einen Cluster gebunden: jeder Linux-Server mit SSH-Schlüssel, Jobliste braucht Slurm (`squeue`, `sacct`), Ordnerliste GNU-`find`; Einrichtung im Handbuch „Cluster-Anbindung“, Link unter **Zugang**.
   Jobs starten oder abbrechen, keine frei eingebbaren Befehle; System-`ssh` mit Schlüssel/Agent, `BatchMode`, `StrictHostKeyChecking=yes`,
   kein Passwort in Elucida. Host/Benutzer/Ordner nur in QSettings `cluster/*`, nie im Projekt oder Repo. Dateinamen der Gegenseite
   sind nicht vertrauenswürdig (`parse_files`), Größe nach dem Holen prüfen. Abfrage alle `POLL_MS`, solange die App offen ist (Nutzerwunsch), fertige Jobs als Einblendung.

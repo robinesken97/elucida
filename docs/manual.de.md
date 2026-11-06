@@ -364,6 +364,7 @@ linearen Regressionen und R², die Struktur und ein freigestelltes Foto der Küv
    `mgml`/`mg_ml`/`mg/ml`, `mM`, `uM`/`µM`; `p` steht für das Dezimalkomma.
    - Stehen keine Konzentrationen im Namen (z. B. `c0` … `c4`) oder ist die Zahl unklar (führende Null wie `05mgml`), öffnet sich eine Tabelle zum Eintragen.
      Die **Einheit** (mM, µM, mg/mL, M) muss ausdrücklich gewählt werden, es ist nichts vorbelegt.
+   - Unter **Messungen** lässt sich jede Konzentration einzeln abwählen: Sie fehlt dann in Bild, Fit, Tabellen und SI, die Datei bleibt unverändert.
    - „Verdünnungsreihe ausfüllen“ setzt in die markierten Zeilen (oder alle) von oben nach unten Start, Start/Faktor, … ein.
      Der Startwert gehört immer zur **obersten** markierten Zeile (meist die Stammlösung).
    - Proben ohne Wert, z. B. eine Blindprobe, werden ignoriert.
@@ -690,14 +691,89 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   y₀ = n(LUNO) und nur für natürliche Orbitale eines konvergierten Singulettzustands verfügbar. Unvollständige oder
   abgebrochene Ausgaben werden gemeldet. Im Overlay sind MR-Spektren nach Methode und Block wählbar.
 
-### Cluster (im Projekt unter Computerchemie)
+## Cluster-Anbindung
 
-Die Statuskarte unter der Pfadliste zeigt laufende und fertige Slurm-Jobs, ein Klick öffnet die Cluster-Ansicht. Host und Benutzer
-stehen nur in den lokalen Einstellungen (**Zugang**). Voraussetzung: SSH-Schlüssel im Agenten, Host einmal im Terminal bestätigt,
-von außerhalb VPN. Ein Passwort fragt Elucida nie ab. Solange die App offen ist, fragt sie alle 2 Minuten ab und meldet fertige Jobs, auch in anderen Tabs. Ist Elucida nicht im Vordergrund, kommt zusätzlich eine Mitteilung des Systems (abschaltbar unter **Zugang**).
-Job wählen, Dateien anhaken, **Ziel** wählen (Verbindung oder Reaktionspfad), **Ergebnisse holen**: Ausgaben und xyz werden dort
-als Rechnung eingetragen, alles andere liegt in `data/dft`. `.gbw` und `.hess` werden nicht angeboten. Jobs starten oder abbrechen
-lassen sich hier nicht.
+Im Projekt unter **Computerchemie** zeigt die Statuskarte unter der Pfadliste laufende und fertige Rechnungen, ein Klick öffnet
+die Cluster-Ansicht. Die Anbindung gilt nicht für einen bestimmten Cluster: Sie funktioniert mit jedem Linux-Server, auf den du
+dich per SSH-Schlüssel einloggen kannst.
+
+**Voraussetzungen**
+
+- Server: Linux, Login per SSH-Schlüssel. Ein zweiter Faktor bei jedem Login geht nicht, weil Elucida im Hintergrund abfragt.
+- Jobliste: Slurm mit `squeue` und `sacct`. Ohne Slurm (oder ohne Accounting) meldet die Abfrage einen Fehler. **Ordner zeigen**
+  und **Ergebnisse holen** gehen trotzdem, den Ordner trägst du dann von Hand ein.
+- Eigener Rechner: OpenSSH. macOS und Linux bringen es mit, unter Windows 10/11 ist es ein optionales Feature („OpenSSH-Client“).
+  PuTTY und Pageant nutzt Elucida nicht, ein PuTTY-Schlüssel (`.ppk`) muss erst ins OpenSSH-Format.
+
+**Einmal einrichten**
+
+1. Schlüssel erzeugen, falls du noch keinen hast (mit Passphrase):
+
+   ```bash
+   ssh-keygen -t ed25519
+   ```
+
+2. Den **öffentlichen** Schlüssel (`~/.ssh/id_ed25519.pub`) auf dem Server hinterlegen, wie es dein Rechenzentrum vorgibt: über
+   dessen Portal oder Antrag, sonst mit `ssh-copy-id benutzer@host`. Der private Schlüssel bleibt auf deinem Rechner.
+3. Einmal im Terminal einloggen und den Fingerabdruck des Servers bestätigen. Elucida übernimmt unbekannte Server nie von selbst.
+
+   ```bash
+   ssh benutzer@host
+   ```
+
+4. Schlüssel in den Agenten laden, damit keine Passphrase mehr abgefragt wird:
+   - macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`, und damit das einen Neustart übersteht, in `~/.ssh/config`:
+
+     ```
+     Host *
+       UseKeychain yes
+       AddKeysToAgent yes
+     ```
+
+   - Windows: PowerShell als Administrator, danach `ssh-add` als normaler Benutzer:
+
+     ```powershell
+     Get-Service ssh-agent | Set-Service -StartupType Automatic
+     Start-Service ssh-agent
+     ```
+
+   - Linux: `ssh-add` in der Desktop-Sitzung, aus der du Elucida startest.
+5. Prüfen. Zeigt der Befehl zwei Slurm-Versionen ohne jede Rückfrage, klappt es auch aus Elucida:
+
+   ```bash
+   ssh -o BatchMode=yes benutzer@host "squeue --version && sacct --version"
+   ```
+
+6. In Elucida die Cluster-Ansicht öffnen und unter **Zugang** Host und Benutzer eintragen. Muss der Server über VPN erreicht
+   werden, muss das VPN laufen.
+
+Als Host geht auch ein Name aus `~/.ssh/config`. Dort stehen dann zum Beispiel `Port`, `IdentityFile` oder `ProxyJump`.
+
+**Benutzung**
+
+Solange die App offen ist, fragt sie alle 2 Minuten ab und meldet fertige Jobs, auch in anderen Tabs. Ist Elucida nicht im
+Vordergrund, kommt zusätzlich eine Mitteilung des Systems (abschaltbar unter **Zugang**). Job wählen, Dateien anhaken, **Ziel**
+wählen (Verbindung oder Reaktionspfad), **Ergebnisse holen**: Ausgaben und xyz werden dort als Rechnung eingetragen, alles andere
+liegt in `data/dft`. `.gbw` und `.hess` werden nicht angeboten.
+
+**Was Elucida darf**
+
+Elucida ruft nur das `ssh` deines Systems auf und liest weder Schlüssel noch Passwörter. Auf dem Server laufen nur `squeue`, `sacct`,
+`find` und `cat`: Jobs starten oder abbrechen geht nicht, freie Befehle gibt es nicht. Host, Benutzer und Ordner stehen nur in den
+lokalen Einstellungen, nie im Projekt. Unter macOS und Linux bleibt die Verbindung nach der letzten Abfrage 3 Minuten offen
+(`~/.ssh/elucida-…`), das entlastet den Login-Knoten. Unter Windows ist jede Abfrage ein neuer Login.
+
+**Wenn es nicht klappt**
+
+Die Meldung von `ssh` steht unten in der Cluster-Ansicht.
+
+| Meldung | Ursache und Lösung |
+|---|---|
+| `Host key verification failed` | Server noch nicht bestätigt: Schritt 3. Hat sich sein Schlüssel geändert, erst beim Rechenzentrum nachfragen, dann `ssh-keygen -R host`. |
+| `Permission denied (publickey)` | Schlüssel nicht im Agenten (`ssh-add -l` zeigt ihn nicht: Schritt 4) oder nicht auf dem Server hinterlegt. |
+| Zeitüberschreitung, `Could not resolve hostname` | Server nicht erreichbar: VPN oder Netz prüfen. |
+| `command not found` bei `squeue` oder `sacct` | Kein Slurm auf dem Server: Ordner von Hand eintragen. |
+| `find: -printf …` | Kein GNU-`find` auf dem Server, er ist also kein Linux-System. |
 
 ## Weitere-Tab
 

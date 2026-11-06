@@ -1910,6 +1910,8 @@ def selftest(outdir, with_isnet=False):
                 assert not heads_ or (de_ in heads_["de"] and en_ in heads_["en"]), (key_, de_, en_)
                 for part_ in ("title", "files", "steps"):
                     assert T(f"guide_{key_}_{part_}") != f"guide_{key_}_{part_}", (key_, part_)
+            for lang_ in heads_:                                       # Zugang im Cluster-Reiter: Link auf die Anleitung
+                assert TEXTS_["cluster_manual_head"][0 if lang_ == "de" else 1] in heads_[lang_], lang_
             for lang_ in heads_:                                       # Startbildschirm/Hilfe: Schnellstart-Link
                 q_ = TEXTS_["readme_quickstart"][0 if lang_ == "de" else 1]
                 assert q_ in heads_[lang_], (lang_, q_)
@@ -6445,6 +6447,32 @@ def selftest(outdir, with_isnet=False):
             assert len(w.dft_state["entries"]) == n26_ + 1 and "calc.xyz" in page_.status.text()
             del page_.run
             report.append("Cluster view (read-only commands, untrusted names, finished jobs, fetch into open and closed targets): OK")
+        with section:                                        # UV-Vis: jede Konzentration ab- und anwählbar
+            w.open_project(out / "demo_pub_items" / "S2", recent=False)
+            pump(0.4)
+            g26_, lst26_ = w.current, w.lst_conc
+            n26_ = len(w.groups[g26_])
+            assert lst26_.count() == n26_ >= 3, (lst26_.count(), n26_)
+            it26_ = lst26_.item(n26_ - 1)
+            key26_ = it26_.data(Qt.UserRole)
+            it26_.setCheckState(Qt.Unchecked)
+            assert len(w.groups[g26_]) == n26_ - 1 and key26_ not in [s_["name"] for s_ in w.groups[g26_]]
+            assert w.F.spectra and len(w.F.spectra) == n26_ - 1 and lst26_.count() == n26_
+            w.save_project()
+            assert PRJ.load(out / "demo_pub_items" / "S2")["epsilon"]["conc"][key26_]["off"] if "epsilon" in PRJ.load(out / "demo_pub_items" / "S2") else True
+            w.undo()
+            for _ in range(50):
+                pump(0.1)
+                if not w._restoring:
+                    break
+            assert len(w.groups[g26_]) == n26_ and w.lst_conc.item(n26_ - 1).checkState() == Qt.Checked
+            for i_ in range(n26_):                           # die letzte bleibt
+                w.lst_conc.item(i_).setCheckState(Qt.Unchecked)
+            assert len(w.groups[g26_]) == 1 and w.lst_conc.item(n26_ - 1).checkState() == Qt.Checked
+            for i_ in range(n26_):
+                w.lst_conc.item(i_).setCheckState(Qt.Checked)
+            assert len(w.groups[g26_]) == n26_ and not any(o_.get("off") for o_ in w.conc.values())
+            report.append("UV-Vis: concentrations can be unticked per measurement, saved, undoable, one always stays: OK")
         with section:                                        # DFT, Stil IboView: Stäbe frei, Symbole abschaltbar, Knöpfe passen
             w.open_project(out / "demo_pub_items" / "S2", recent=False)
             pump(0.4)

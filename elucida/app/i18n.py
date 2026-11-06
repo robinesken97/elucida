@@ -316,6 +316,12 @@ TEXTS = {
     "grp_data": ("Daten", "Data"),
     "no_file": ("keine Datei geladen", "no file loaded"),
     "series": ("Serie", "Series"),
+    "conc_list": ("Messungen", "Measurements"),
+    "conc_list_tip": ("Abgewählte Konzentrationen zählen nirgends mit: nicht im Bild, nicht im Fit, nicht in Tabellen und SI.\n"
+                      "Die Messdatei bleibt unverändert.",
+                      "Unticked concentrations count nowhere: not in the figure, the fit, tables or the SI.\n"
+                      "The data file stays unchanged."),
+    "conc_last": ("Mindestens eine Messung bleibt in der Serie.", "At least one measurement stays in the series."),
     "grp_compound": ("Verbindung", "Compound"),
     "structure": ("Struktur", "Structure"),
     "photo": ("Küvettenfoto", "Cuvette photo"),
@@ -2308,6 +2314,9 @@ TEXTS = {
     "dft_si": ("Rechnung für die SI", "Calculation for the SI"),
     "cluster_title": ("Cluster", "Cluster"),
     "cluster_access": ("Zugang", "Access"),
+    "cluster_back": ("‹ Zum Pfad", "‹ Back to path"),
+    "cluster_guide": ("Anleitung zur Einrichtung", "Setup guide"),
+    "cluster_manual_head": ("Cluster-Anbindung", "Cluster connection"),
     "cluster_notify": ("Fertige Jobs melden", "Report finished jobs"),
     "cluster_notify_tip": ("Mitteilung des Systems, wenn Elucida gerade nicht im Vordergrund ist.",
                            "System notification when Elucida is not in the foreground."),

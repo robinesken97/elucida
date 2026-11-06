@@ -989,6 +989,10 @@ class MainWindow(QMainWindow):
         b.clicked.connect(self.edit_concentrations)
         row.addWidget(b)
         f.addRow(T("series"), row)
+        self.lst_conc = QListWidget()
+        self.lst_conc.setToolTip(T("conc_list_tip"))
+        self.lst_conc.itemChanged.connect(self.conc_toggled)
+        f.addRow(T("conc_list"), self.lst_conc)
         lv.addWidget(g)
 
         g, body = STYLE.card(T("grp_compound"))
@@ -1501,7 +1505,43 @@ class MainWindow(QMainWindow):
         self.sp_w.setEnabled(custom)
         self.sp_h.setEnabled(custom)
 
+    def fill_conc_list(self):
+        """Messungen der Serie zum Ab- und Anwählen, auch die abgewählten (die fehlen in self.groups)."""
+        self.lst_conc.blockSignals(True)
+        self.lst_conc.clear()
+        if self.samples:
+            on = {k: {a: v for a, v in o.items() if a != "off"} for k, o in self.conc.items()}
+            every = core.group_samples(self.samples, on, Path(self.csv_path).stem)[0].get(self.current, [])
+            for s_ in sorted(every, key=lambda s_: -s_["c"]):
+                it = QListWidgetItem(f"{s_['c']:g} {s_['unit'].replace('uM', 'µM')}")
+                it.setData(Qt.UserRole, s_["name"])
+                it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+                it.setCheckState(Qt.Unchecked if (self.conc.get(s_["name"]) or {}).get("off") else Qt.Checked)
+                self.lst_conc.addItem(it)
+        self.lst_conc.setFixedHeight(min(self.lst_conc.count(), 6) * 24 + 6)
+        self.lst_conc.setVisible(self.lst_conc.count() > 0)
+        self.lst_conc.blockSignals(False)
+
+    def conc_toggled(self, it):
+        key, on = it.data(Qt.UserRole), it.checkState() == Qt.Checked
+        if not on and len(self.groups.get(self.current, [])) < 2:
+            self.lst_conc.blockSignals(True)           # ganz ohne Messung gäbe es die Serie nicht mehr
+            it.setCheckState(Qt.Checked)
+            self.lst_conc.blockSignals(False)
+            self.statusBar().showMessage(T("conc_last"), 5000)
+            return
+        o = self.conc.setdefault(key, {})
+        if on:
+            o.pop("off", None)
+            if not o:
+                del self.conc[key]
+        else:
+            o["off"] = True
+        self.rebuild_groups()
+        self.render()
+
     def apply_series_widgets(self):
+        self.fill_conc_list()
         self._loading = True
         st = self.series.get(self.current)
         self.ed_mw.setText(f"{st['mw']:g}" if st and st["mw"] else "")
@@ -1756,7 +1796,10 @@ class MainWindow(QMainWindow):
         dlg = ConcDialog(self, self.samples, self.conc, Path(self.csv_path).stem)
         if dlg.exec() != QDialog.Accepted:
             return False
+        off = [k for k, o in self.conc.items() if o.get("off")]
         self.conc = dlg.overrides()
+        for k in off:
+            self.conc.setdefault(k, {})["off"] = True
         if rebuild:
             self.rebuild_groups()
             self.apply_series_widgets()

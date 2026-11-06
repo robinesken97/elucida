@@ -353,6 +353,7 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
    `mgml`/`mg_ml`/`mg/ml`, `mM`, `uM`/`µM`; `p` stands for the decimal point.
    - If the names contain no concentrations (e.g. `c0` … `c4`) or the number is unclear (leading zero as in `05mgml`), a table opens where you enter them.
      Choose the **unit** explicitly (mM, µM, mg/mL, M) – nothing is pre-selected.
+   - Under **Measurements** each concentration can be unticked: it then counts nowhere (figure, fit, tables, SI), the file stays unchanged.
    - "Fill dilution series" fills the selected rows (or all of them) with start, start/factor, … from top to bottom.
      The start value always belongs to the **top** selected row (usually the stock solution).
    - Samples without a value, e.g. a blank, are ignored.
@@ -670,13 +671,88 @@ Absorption and emission in one figure, as commonly shown in papers:
   natural orbitals of one converged singlet state. Incomplete or aborted outputs are flagged. In the overlay, MR spectra
   are selectable by method and block.
 
-### Cluster (in the project under Computational Chemistry)
+## Cluster connection
 
-The status card below the path list shows running and finished Slurm jobs, a click opens the cluster view. Host and user stay in the
-local settings (**Access**). Requirements: SSH key in the agent, host confirmed once in a terminal, VPN from outside. Elucida never
-asks for a password. While the app is open it checks every 2 minutes and reports finished jobs, in other tabs too. When Elucida is not in the foreground, a system notification follows (can be turned off under **Access**). Pick a job, tick files, choose the **Target**
-(compound or reaction path), **Fetch results**: outputs and xyz are added there as calculations, everything else goes to `data/dft`.
-`.gbw` and `.hess` are not offered. Jobs cannot be started or cancelled here.
+In the project under **Computational Chemistry**, the status card below the path list shows running and finished calculations, a
+click opens the cluster view. The connection is not tied to one cluster: it works with any Linux server you can log in to with an
+SSH key.
+
+**Requirements**
+
+- Server: Linux, login with an SSH key. A second factor on every login does not work, because Elucida checks in the background.
+- Job list: Slurm with `squeue` and `sacct`. Without Slurm (or without accounting) the check reports an error. **Show folder** and
+  **Fetch results** still work, you then enter the folder by hand.
+- Your computer: OpenSSH. macOS and Linux include it, on Windows 10/11 it is an optional feature ("OpenSSH Client"). Elucida does not
+  use PuTTY or Pageant, a PuTTY key (`.ppk`) must be converted to the OpenSSH format first.
+
+**One-time setup**
+
+1. Create a key if you have none (with a passphrase):
+
+   ```bash
+   ssh-keygen -t ed25519
+   ```
+
+2. Add the **public** key (`~/.ssh/id_ed25519.pub`) on the server the way your computing centre asks for: through its portal or
+   application form, otherwise with `ssh-copy-id user@host`. The private key stays on your computer.
+3. Log in once in a terminal and confirm the server's fingerprint. Elucida never accepts an unknown server by itself.
+
+   ```bash
+   ssh user@host
+   ```
+
+4. Load the key into the agent so that no passphrase is asked for:
+   - macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`, and so that this survives a restart, in `~/.ssh/config`:
+
+     ```
+     Host *
+       UseKeychain yes
+       AddKeysToAgent yes
+     ```
+
+   - Windows: PowerShell as administrator, then `ssh-add` as your normal user:
+
+     ```powershell
+     Get-Service ssh-agent | Set-Service -StartupType Automatic
+     Start-Service ssh-agent
+     ```
+
+   - Linux: `ssh-add` in the desktop session you start Elucida from.
+5. Check. If this prints two Slurm versions without asking anything, it also works from Elucida:
+
+   ```bash
+   ssh -o BatchMode=yes user@host "squeue --version && sacct --version"
+   ```
+
+6. In Elucida, open the cluster view and enter host and user under **Access**. If the server needs a VPN, the VPN must be running.
+
+The host can also be a name from `~/.ssh/config`, which then holds for example `Port`, `IdentityFile` or `ProxyJump`.
+
+**Use**
+
+While the app is open it checks every 2 minutes and reports finished jobs, in other tabs too. When Elucida is not in the foreground,
+a system notification follows (can be turned off under **Access**). Pick a job, tick files, choose the **Target** (compound or
+reaction path), **Fetch results**: outputs and xyz are added there as calculations, everything else goes to `data/dft`. `.gbw` and
+`.hess` are not offered.
+
+**What Elucida may do**
+
+Elucida only calls your system's `ssh` and reads neither keys nor passwords. On the server it runs only `squeue`, `sacct`, `find` and
+`cat`: jobs cannot be started or cancelled, and there are no free commands. Host, user and folder stay in the local settings, never
+in the project. On macOS and Linux the connection stays open for 3 minutes after the last check (`~/.ssh/elucida-…`), which spares
+the login node. On Windows every check is a new login.
+
+**If it does not work**
+
+The message from `ssh` is shown at the bottom of the cluster view.
+
+| Message | Cause and fix |
+|---|---|
+| `Host key verification failed` | Server not confirmed yet: step 3. If its key changed, ask the computing centre first, then `ssh-keygen -R host`. |
+| `Permission denied (publickey)` | Key not in the agent (`ssh-add -l` does not list it: step 4) or not added on the server. |
+| Timeout, `Could not resolve hostname` | Server not reachable: check VPN or network. |
+| `command not found` for `squeue` or `sacct` | No Slurm on the server: enter the folder by hand. |
+| `find: -printf …` | No GNU `find` on the server, so it is not a Linux system. |
 
 ## Other tab
 

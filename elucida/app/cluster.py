@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, 
 from elucida.app import project as PRJ
 from elucida.app import publication as PUB
 from elucida.app import style as STYLE
-from elucida.app.i18n import T
+from elucida.app.i18n import T, get_lang
 
 FETCH = (".out", ".log", ".xyz", ".molden", ".input", ".cube", ".cub", ".spectrum", ".inp")   # gbw/hess: groß, nie
 TO_TAB = (".out", ".log", ".xyz", ".molden", ".input", ".cube", ".cub")     # offene Verbindung: direkt im DFT-Tab öffnen
@@ -205,6 +205,8 @@ class ClusterPage(QWidget):
         self.lbl_login = QLabel()
         self.lbl_login.setProperty("formlabel", True)
         head.addWidget(self.lbl_login, 1)
+        self.btn_back = QPushButton(T("cluster_back"), clicked=self.back_to_path)
+        head.addWidget(self.btn_back)
         self.btn_access = QPushButton(T("cluster_access"), clicked=lambda: self.access.setVisible(not self.access.isVisible()))
         self.btn_refresh = QPushButton(T("cluster_refresh"), clicked=self.refresh)
         self.btn_refresh.setIcon(STYLE.icon("reset"))
@@ -222,6 +224,9 @@ class ClusterPage(QWidget):
         self.cb_notify.setToolTip(T("cluster_notify_tip"))
         self.cb_notify.toggled.connect(lambda on: s.setValue("cluster/notify", on))
         form.addRow(self.cb_notify)
+        from elucida.tabs import base as TABS
+        url = TABS.README_URL + TABS.MANUAL[get_lang()] + "#" + TABS.gh_anchor(T("cluster_manual_head"))
+        form.addRow(QLabel(f'<a href="{url}">{T("cluster_guide")}</a>', openExternalLinks=True))
         v.addWidget(self.access)
         body = QHBoxLayout()
         body.setSpacing(12)
@@ -279,7 +284,12 @@ class ClusterPage(QWidget):
 
     def showEvent(self, ev):
         super().showEvent(ev)
+        self.btn_back.setVisible(self.pub.path_workspace is not None)
         self.fill_targets()
+
+    def back_to_path(self):
+        self.pub.path_stack.setCurrentWidget(self.pub.path_workspace)
+        self.pub.path_rail.hide()                        # wie beim Öffnen: volle Breite fürs Canvas
 
     # -- ssh ---------------------------------------------------------------------------
     def run(self, command, done, out_file=None, timeout=TIMEOUT_MS):

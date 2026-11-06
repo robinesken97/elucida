@@ -341,6 +341,8 @@ class PublicationPage(QWidget):
         workspace.deleteLater()
         self.path_workspace = None
         self.path_rail.show()
+        self.path_stack.setCurrentIndex(0)
+        self.cluster_page.btn_back.hide()
         self.path_panel.refresh()
         self.main._update_undo_actions()
         return True

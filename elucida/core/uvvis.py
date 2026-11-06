@@ -480,6 +480,8 @@ def group_samples(samples, overrides=None, default_series="serie"):
     groups, missing = {}, []
     for s_ in samples:
         o = overrides.get(s_["key"]) or {}
+        if o.get("off"):                                 # abgewählt: bleibt in der Datei, zählt nirgends mit
+            continue
         if o.get("conc"):
             g, c, u = o.get("series") or default_series, float(o["conc"]), o.get("unit", "mM")
         elif s_["parsed"] and not o.get("skip"):
