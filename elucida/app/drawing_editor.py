@@ -176,6 +176,41 @@ def asset_url():
     return f'http://127.0.0.1:{_SERVER.server_port}/embedded.html?elucida&editor&lang={get_lang()}'
 
 
+_WEB_CLASSES = []
+
+
+def _web_classes():
+    """Created once, never per editor: a Python subclass of a Qt class that the garbage collector removes after its
+    editor was deleted crashed the app (segfault in the next allocation, macOS CI). Lazy, WebEngine is a heavy import."""
+    if not _WEB_CLASSES:
+        from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineUrlRequestInterceptor
+
+        class LocalOnly(QWebEngineUrlRequestInterceptor):
+            def __init__(self, port, parent):
+                super().__init__(parent)
+                self.port = port
+
+            def interceptRequest(self, info):
+                u = info.requestUrl()
+                allow = u.scheme() in ('qrc', 'data', 'blob') or (u.scheme() == 'http' and u.host() == '127.0.0.1' and u.port() == self.port)
+                info.block(not allow)
+
+        class Page(QWebEnginePage):
+            def __init__(self, port, profile, parent):
+                super().__init__(profile, parent)
+                self.port = port
+
+            def acceptNavigationRequest(self, u, kind, main):
+                return not main or (u.host() == '127.0.0.1' and u.port() == self.port and u.path() == '/embedded.html')
+
+            def javaScriptConsoleMessage(self, level, message, line, source):
+                if level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
+                    print(f'Octet JS: {message} ({line})')
+
+        _WEB_CLASSES.extend((LocalOnly, Page))
+    return _WEB_CLASSES
+
+
 class Bridge(QObject):
     def __init__(self, owner):
         super().__init__(owner)
@@ -314,31 +349,18 @@ class DrawingEditor(QWidget):
         self.status.setWordWrap(True)
         try:
             from PySide6.QtWebEngineWidgets import QWebEngineView
-            from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineUrlRequestInterceptor, QWebEngineScript
+            from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEngineScript
             from PySide6.QtWebChannel import QWebChannel
             url = asset_url()
             port = QUrl(url).port()
 
-            class LocalOnly(QWebEngineUrlRequestInterceptor):
-                def interceptRequest(self, info):
-                    u = info.requestUrl()
-                    allow = u.scheme() in ('qrc', 'data', 'blob') or (u.scheme() == 'http' and u.host() == '127.0.0.1' and u.port() == port)
-                    info.block(not allow)
-
-            class Page(QWebEnginePage):
-                def acceptNavigationRequest(self, u, kind, main):
-                    return not main or (u.host() == '127.0.0.1' and u.port() == port and u.path() == '/embedded.html')
-
-                def javaScriptConsoleMessage(self, level, message, line, source):
-                    if level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
-                        print(f'Octet JS: {message} ({line})')
-
+            LocalOnly, Page = _web_classes()
             self.profile = QWebEngineProfile(self)
-            self.interceptor = LocalOnly(self.profile)
+            self.interceptor = LocalOnly(port, self.profile)
             self.profile.setUrlRequestInterceptor(self.interceptor)
             self.view = QWebEngineView(self)
             self.view.setFocusPolicy(Qt.StrongFocus)
-            self.page = Page(self.profile, self.view)
+            self.page = Page(port, self.profile, self.view)
             self.view.setPage(self.page)
             # QObject deletes children in insertion order: destroy the page before its profile.
             self.profile.setParent(self.view)

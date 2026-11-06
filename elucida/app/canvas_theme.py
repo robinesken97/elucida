@@ -49,7 +49,7 @@ class CanvasInvert(QGraphicsEffect):
 
 def register(widget):
     if elucida.octet_enabled():
-        effect = CanvasInvert(widget)
+        effect = CanvasInvert()                            # setGraphicsEffect übernimmt den Besitz
         widget.setGraphicsEffect(effect)
         widget._canvas_invert = effect
         effect.setEnabled(_dark)
