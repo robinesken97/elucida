@@ -440,7 +440,7 @@ python tools/compare_figures.py vorher nachher        # Abbildungen zweier Selbs
 python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots): Cover = Startbildschirm mit Beispielprojekt, Tabs leer mit Anleitung; alles nur dunkel (Nutzerwunsch)
 ```
 - README kurz halten (Überblick, Abläufe, Download); alle Tab-Details in `docs/manual.de.md`/`docs/manual.en.md` (App-Links, Überschriften prüft der Selbsttest).
-- Neue Funktion → eigener Abschnitt im `selftest()` (`elucida/selftest.py`) (Muster: `report.append("…: OK")`).
+- Neue Funktion → eigener Abschnitt `with section:` im `selftest()` (`elucida/selftest.py`, Muster: `report.append("…: OK")` am Ende). Ein Fehler stoppt nur den Abschnitt, spätere können als Folge scheitern: den ersten FAILED zuerst lesen.
 - Der Selbsttest läuft in CI auch mit der **fertig gebauten** App auf allen drei Systemen.
 
 ## Release-Ablauf

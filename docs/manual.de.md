@@ -403,7 +403,7 @@ linearen Regressionen und R², die Struktur und ein freigestelltes Foto der Küv
    - **Zurücksetzen ▾** → „Layout zurücksetzen“ stellt die automatische Anordnung wieder her; „Alles auf Standard“ setzt
      alle Einstellungen des Tabs (Darstellung und Auswertung) auf Standard – Daten und Angaben zur Messung (Dateien,
      Referenz/Kalibrierung, Schichtdicke, eingegebene Werte, Bildunterschrift, Exportgröße) bleiben, Rückgängig holt alles
-     zurück. X-Ray und DFT haben zusätzlich „Darstellung auf Standard“ neben „Ansicht zurücksetzen“ (Stil, Ellipsoide,
+     zurück. X-Ray und DFT haben zusätzlich „Standardwerte“ neben „Startansicht“ (Stil, Ellipsoide,
      Bindungsdicke, Labels, ausgeblendete Atome …).
 6. **Exportieren:** Datei → Exportieren (oder der Knopf). Das schreibt die gewählten Formate (PDF/SVG/PNG),
    `<Serie>_results.csv` und den Excel-Report für **alle** Serien in die Verbindung (siehe unten).
@@ -622,7 +622,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   sich ausblenden und Labels **je Atom** an-/abschalten (Atomliste, Doppelklick auf das Atom oder **Shift + Rahmen
   ziehen** für mehrere Atome); Labelfarbe schwarz oder wie das Atom.
   **Ziehen dreht**, rechte Taste verschiebt, Mausrad zoomt; die Ansicht wird je Struktur gespeichert,
-  **Ansicht zurücksetzen** führt zur Standardansicht (möglichst wenig überdeckte Atome). Atomfarben je Element frei wählbar
+  **Startansicht** führt zur Standardansicht (möglichst wenig überdeckte Atome). Atomfarben je Element frei wählbar
   (Standard: Olex2-Farben).
 - Das Molekül wird **über die Symmetrie vervollständigt** (z. B. Molekül auf einem Inversionszentrum); erzeugte Atome
   tragen einen Zusatz (C1ⁱ), die Operation steht als Fußnote darunter. **Fehlordnung:** nur Hauptteil (Standard),

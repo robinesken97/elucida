@@ -775,6 +775,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.cb_explab = QCheckBox(T("dft_export_labels"))
         self.cb_explab.setToolTip(T("dft_export_labels_tip"))
         f.addRow(self.cb_explab)
+        self.cb_orb_lab = QCheckBox(T("dft_orb_labels"))
+        self.cb_orb_lab.setToolTip(T("dft_orb_labels_tip"))
+        f.addRow(self.cb_orb_lab)
         self.cmb_lstyle = QComboBox()
         for key in ("el_num", "num", "ref"):
             self.cmb_lstyle.addItem(T("dft_lab_" + key), key)
@@ -809,7 +812,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cmb_style, self.cmb_lstyle):
             w_.currentIndexChanged.connect(self.changed)
-        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_zero, self.cb_hfollow, self.cb_explab, self.cb_ccol):
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_zero, self.cb_hfollow, self.cb_explab, self.cb_ccol,
+                   self.cb_orb_lab):
             w_.toggled.connect(self.changed)
         self.pages = PAGES.DftPages(self)
         self.sync_widgets()
@@ -857,10 +861,6 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         for k in ORB.SCHEMES:
             self.cmb_scheme.addItem(T("dft_orb_scheme_" + k), k)
         f.addRow(T("dft_orb_scheme"), self.cmb_scheme)
-        self.cb_orb_lab = QCheckBox(T("dft_orb_labels"))
-        self.cb_orb_lab.setToolTip(T("dft_orb_labels_tip"))
-        self.cb_orb_lab.toggled.connect(self.changed)
-        f.addRow(self.cb_orb_lab)
         self.lbl_orb = STYLE.HintLabel("")
         self.lbl_orb.setWordWrap(True)
         self.lbl_orb.setStyleSheet(HINT_CSS)
@@ -882,6 +882,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                        h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked(),
                        label_color=self.cmb_lcol.value(), cartoon_color=self.cb_ccol.isChecked())
         self.cb_ccol.setVisible(self.st["style"] == "cartoon")
+        self.cb_orb_lab.setVisible(self.st["style"] == "iboview" or not self.cmb_style.isEnabled())
         self.update_num_status()
 
     def sync_widgets(self):
@@ -908,6 +909,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.cb_zero.setChecked(st.get("zero_based", False))
         self.cb_hfollow.setChecked(st.get("h_follow", False))
         self.cb_explab.setChecked(st.get("export_labels", False))
+        self.cb_orb_lab.setChecked(st.get("orb_labels", True))
+        self.cb_orb_lab.setVisible(st.get("style") == "iboview")
         for k, cb in self.cb_si.items():
             cb.setChecked(st.get("si_" + k, SI_DEFAULTS[k]))
         self.cmb_method.setCurrentIndex(max(0, self.cmb_method.findData(method_mode(st.get("si_method", "each")))))
@@ -1229,7 +1232,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.sync_iso_spin()
         self.sp_alpha.setValue(st.get("orb_alpha", ORB.ORB_ALPHA))
         self.cmb_scheme.setCurrentIndex(max(0, self.cmb_scheme.findData(st.get("orb_scheme", "hue"))))
-        self.cb_orb_lab.setChecked(st.get("orb_labels", True))
+        self.cb_orb_lab.setVisible(k is not None or st.get("style") == "iboview")
         self.cmb_style.setEnabled(k is None)                 # mit Orbital: Atome immer wie IboView
         self.cmb_style.setToolTip(T("dft_orb_style") if k is not None else "")
         self.update_orb_info()
@@ -1419,7 +1422,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     orbital=self.orbital_opts(e, self.orb_index(e) if orb == "cur" else orb))
         if o["orbital"] is not None:                       # Orbital: Atome wie IboView (Nutzerwunsch)
             o["style"] = "iboview"
-            o["elem_labels"] = st.get("orb_labels", True)
+        o["elem_labels"] = st.get("orb_labels", True)
         return o
 
     def build(self, fig, e=None, interactive=True, orb="cur"):

@@ -388,7 +388,7 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
    - **Reset ▾** → "Reset layout" restores the automatic arrangement; "Reset all to defaults" sets all settings of
      the tab (display and analysis) back to the defaults – data and measurement details (files, reference/calibration,
      path length, entered values, caption, export size) stay, and Undo brings everything back. X-Ray and DFT also have
-     "Reset display to defaults" next to "Reset view" (style, ellipsoids, bond thickness, labels, hidden atoms …).
+     "Defaults" next to "Reset view" (style, ellipsoids, bond thickness, labels, hidden atoms …).
    - **Hover** over the spectra: a box at the bottom right shows λ and A of the nearest data point (and its
      concentration), marked with a red circle in the preview only – handy to check the data.
      **Double-click** a point to add its wavelength as a band; double-click it again to remove it.

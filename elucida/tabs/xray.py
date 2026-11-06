@@ -2258,6 +2258,7 @@ class XrayFigure:
                             facecolor="none", edgecolor=SEL_COLOR, lw=2.2, zorder=50)
                 ax.add_patch(e)
                 self.sel_art.append((k, e))
+        self.rod_pairs = [(a, b) for _, a, b in rod_bonds]
         if rod_bonds:
             (self._build_rods_ibo if self.style == "iboview" else self._build_rods)(rod_bonds, colors)
         self._elem_labels(colors)
@@ -2473,6 +2474,12 @@ class XrayFigure:
                 f_ = np.linspace(0, 1, n_)[:, None]
                 segpts.append(a_ + f_ * (b_ - a_))
                 seghw.append(np.full(n_, ln.get_linewidth() * ppt / 2 + margin))
+        for a, b in self.rod_pairs:                      # Kugel-Stab, IboView: Stäbe statt Linien
+            a_ = tr.transform((self.scene["by_k"][a]["x"], self.scene["by_k"][a]["y"]))
+            b_ = tr.transform((self.scene["by_k"][b]["x"], self.scene["by_k"][b]["y"]))
+            n_ = max(8, int(np.hypot(*(b_ - a_)) / 2))
+            segpts.append(a_ + np.linspace(0, 1, n_)[:, None] * (b_ - a_))
+            seghw.append(np.full(n_, self.bond_w / 2 * self.pt_per_A() * ppt + margin))
         circ = np.array(circ)
         segpts = np.vstack(segpts) if segpts else np.zeros((0, 2))
         seghw = np.concatenate(seghw) if seghw else np.zeros(0)
@@ -2495,7 +2502,7 @@ class XrayFigure:
                 ox = min(x1, b[2]) - max(x0, b[0])
                 oy = min(y1, b[3]) - max(y0, b[1])
                 if ox > 0 and oy > 0:
-                    c += 0.5 * ox * oy
+                    c += 3.0 * ox * oy
             fw, fh = W, H
             if x0 < 0 or y0 < 0 or x1 > fw or y1 > fh:
                 c += 1e4
@@ -2539,7 +2546,7 @@ class XrayFigure:
             cx, cy = tr.transform((it["x"], it["y"]))
             w, h = sizes[key]
             best = None
-            for rr in (1.0, 1.35, 1.7, 2.1):
+            for rr in (1.0, 1.35, 1.7, 2.1, 2.6, 3.2):
                 for ang in np.linspace(0, 2 * np.pi, 16, endpoint=False):
                     ux, uy = math.cos(ang), math.sin(ang)
                     r_at = _radius_along(it, ux, uy)

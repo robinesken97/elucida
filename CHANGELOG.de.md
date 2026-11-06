@@ -5,6 +5,8 @@
 ## 2.6.1 – 2026-11-06
 
 ### Behoben
+- **DFT:** Atomlabels bleiben im Kugel-Stab- und IboView-Stil frei von den Stäben; Elementsymbole in den Atomen lassen sich auch
+  ohne Orbital abschalten; kürzere Ansichtsknöpfe, die deutschen Texte waren abgeschnitten.
 - **UV-Vis:** Probennamen mit führender Null wie `05mgml` wurden als 5 statt 0,5 gelesen und konnten negative ε ergeben.
   Sie sind nicht eindeutig, der Konzentrationsdialog fragt jetzt nach.
 - **UV-Vis:** Ohne Basislinienkorrektur reicht die y-Achse knapp unter die Kurven, der alte Nullpunkt bleibt sichtbar.

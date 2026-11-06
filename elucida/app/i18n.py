@@ -1734,15 +1734,15 @@ TEXTS = {
     "xr_frags_tip": ("Getrennte Fragmente (Lösungsmittel, Gegenionen) ein-/ausblenden",
                      "Show/hide separate fragments (solvent, counter-ions)"),
     "xr_main_frag": ("größtes", "largest"),
-    "xr_prev_view": ("Vorherige Ansicht", "Previous view"),
+    "xr_prev_view": ("Vorige Ansicht", "Previous view"),
     "xr_prev_view_tip": ("Letzte Drehung, Verschiebung oder Zoomänderung der gewählten Struktur zurücknehmen "
                          "(mehrfach möglich).",
                          "Undo the last rotation, pan or zoom of the selected structure (repeatable)."),
     "xr_prev_view_none": ("Keine frühere Ansicht.", "No earlier view."),
-    "xr_reset_view": ("Ansicht zurücksetzen", "Reset view"),
+    "xr_reset_view": ("Startansicht", "Reset view"),
     "xr_reset_view_tip": ("Drehung, Zoom und Lage der Labels der gewählten Struktur auf den Start.",
                           "Rotation, zoom and label positions of the selected structure back to the start."),
-    "xr_reset_display": ("Darstellung auf Standard", "Reset display to defaults"),
+    "xr_reset_display": ("Standardwerte", "Defaults"),
     "xr_reset_display_tip": ("Alle Einstellungen der Darstellung auf Standard (Stil, Ellipsoide/Radien, Bindungsdicke,\n"
                              "Labels, Labelgröße, Fehlordnung, H-Atome …) und für die gewählte Struktur Ansicht,\n"
                              "ausgeblendete Atome/Fragmente, Labels je Atom und Drahtmodell. Dateien, Namen, Nummerierung,\n"

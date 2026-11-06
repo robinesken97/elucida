@@ -5,6 +5,8 @@
 ## 2.6.1 – 2026-11-06
 
 ### Fixed
+- **DFT:** atom labels keep clear of the rods in ball-and-stick and IboView styles; element symbols inside the atoms can be
+  switched off in IboView style too; shorter view buttons, the German texts were cut off.
 - **UV-Vis:** sample names with a leading zero such as `05mgml` were read as 5 instead of 0.5 and could give negative ε.
   They are ambiguous, so the concentration dialog now asks.
 - **UV-Vis:** with baseline correction off, the y axis reaches just below the curves, so the old zero stays visible.
