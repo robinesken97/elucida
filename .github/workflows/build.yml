@@ -50,7 +50,7 @@ jobs:
         run: python tools/build_octet.py
 
       - name: Selbsttest aus dem Quellcode
-        env: { QT_QPA_PLATFORM: offscreen }
+        env: { QT_QPA_PLATFORM: offscreen, PYTHONFAULTHANDLER: "1" }
         run: python Elucida.py --selftest selftest_src --selftest-isnet
 
       - name: App bauen

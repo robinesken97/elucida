@@ -3324,6 +3324,7 @@ class MainWindow(QMainWindow):
             return True
         except Exception as e:
             self.log_signal.emit(str(e))
+            print(f"ISNet download failed: {type(e).__name__}: {e}", flush=True)
             return False
         finally:
             dlg.close()
