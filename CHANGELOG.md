@@ -2,6 +2,16 @@
 
 # Changelog
 
+## 2.6.1 – 2026-11-06
+
+### Fixed
+- **UV-Vis:** sample names with a leading zero such as `05mgml` were read as 5 instead of 0.5 and could give negative ε.
+  They are ambiguous, so the concentration dialog now asks.
+- **UV-Vis:** with baseline correction off, the y axis reaches just below the curves, so the old zero stays visible.
+- **macOS:** the title bar was lost once the drawing editor had loaded; the window buttons could also sit over the
+  toolbar in full screen.
+- **Undo** no longer goes one step too far when a preview is still pending.
+
 ## 2.6.0 – 2026-11-06
 
 ### New

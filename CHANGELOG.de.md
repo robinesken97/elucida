@@ -2,6 +2,16 @@
 
 # Änderungen
 
+## 2.6.1 – 2026-11-06
+
+### Behoben
+- **UV-Vis:** Probennamen mit führender Null wie `05mgml` wurden als 5 statt 0,5 gelesen und konnten negative ε ergeben.
+  Sie sind nicht eindeutig, der Konzentrationsdialog fragt jetzt nach.
+- **UV-Vis:** Ohne Basislinienkorrektur reicht die y-Achse knapp unter die Kurven, der alte Nullpunkt bleibt sichtbar.
+- **macOS:** Die Titelleiste ging verloren, sobald der Zeicheneditor geladen war; im Vollbild konnten die Fensterknöpfe
+  außerdem über der Werkzeugleiste liegen.
+- **Rückgängig** geht nicht mehr einen Schritt zu weit, wenn noch eine Vorschau aussteht.
+
 ## 2.6.0 – 2026-11-06
 
 ### Neu

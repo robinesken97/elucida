@@ -362,7 +362,7 @@ linearen Regressionen und R², die Struktur und ein freigestelltes Foto der Küv
 2. **Konzentrationen:** Die Konzentrationen werden aus den Probennamen gelesen, z. B.
    `ABC-1-0p5mgml_THF` → Serie `ABC-1`, 0,5 mg/mL. Erkannt werden
    `mgml`/`mg_ml`/`mg/ml`, `mM`, `uM`/`µM`; `p` steht für das Dezimalkomma.
-   - Stehen keine Konzentrationen im Namen (z. B. `c0` … `c4`), öffnet sich eine Tabelle zum Eintragen.
+   - Stehen keine Konzentrationen im Namen (z. B. `c0` … `c4`) oder ist die Zahl unklar (führende Null wie `05mgml`), öffnet sich eine Tabelle zum Eintragen.
      Die **Einheit** (mM, µM, mg/mL, M) muss ausdrücklich gewählt werden, es ist nichts vorbelegt.
    - „Verdünnungsreihe ausfüllen“ setzt in die markierten Zeilen (oder alle) von oben nach unten Start, Start/Faktor, … ein.
      Der Startwert gehört immer zur **obersten** markierten Zeile (meist die Stammlösung).

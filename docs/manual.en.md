@@ -351,7 +351,7 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
 2. **Concentrations:** Concentrations are read from the sample names, e.g.
    `ABC-1-0p5mgml_THF` → series `ABC-1`, 0.5 mg/mL. Recognised units are
    `mgml`/`mg_ml`/`mg/ml`, `mM`, `uM`/`µM`; `p` stands for the decimal point.
-   - If the names contain no concentrations (e.g. `c0` … `c4`), a table opens where you enter them.
+   - If the names contain no concentrations (e.g. `c0` … `c4`) or the number is unclear (leading zero as in `05mgml`), a table opens where you enter them.
      Choose the **unit** explicitly (mM, µM, mg/mL, M) – nothing is pre-selected.
    - "Fill dilution series" fills the selected rows (or all of them) with start, start/factor, … from top to bottom.
      The start value always belongs to the **top** selected row (usually the stock solution).
