@@ -4,7 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
-from elucida.formats.multireference import make_test_mr, parse_orca_mr, luno_indicator, spin_gap
+from elucida.formats.multireference import make_test_mr, make_test_sorci, parse_orca_mr, luno_indicator, report_lines, spin_gap
 from elucida.formats.calc import read_text
 from elucida.core.tddft import parse_tddft, tddft_variants
 
@@ -47,6 +47,26 @@ class MultireferenceTests(unittest.TestCase):
         self.assertEqual(r[-1]['convergence'], 'fixed-orbitals')
         self.assertNotEqual(r[0]['group'], r[3]['group'])
         self.assertEqual(len({x['id'] for x in r}), 6)
+
+    def test_sorci_final_step_only(self):
+        text = read_text(make_test_sorci(Path(self.tmp.name) / "sorci.out"))
+        r, = parse_orca_mr(text)
+        self.assertEqual((r["method"], r["active_electrons"], r["active_orbitals"], r["warnings"]), ("SORCI", 2, 2, []))
+        self.assertEqual([(s["multiplicity"], s["root"], s["energy"], s["excitation_ev"]) for s in r["states"]],
+                         [(1, 0, "-2.000000009", "0.000"), (1, 1, "-1.100000009", "24.490"), (3, 0, "-1.500000009", "13.606")])
+        self.assertEqual(r["states"][0]["ci_energy"], "-2.00000000")
+        self.assertEqual(r["states"][0]["configurations"][0]["occupation"], "h---h---[20]")
+        self.assertEqual(spin_gap(r, 0, 2), Decimal("-0.500000000"))
+        self.assertIn("Davidson", "\n".join(report_lines(r)))
+
+    def test_sorci_flags_damaged_orbitals_and_missing_table(self):
+        text = read_text(make_test_sorci(Path(self.tmp.name) / "sorci.out"))
+        bad = text.replace("CI-BLOCK STRUCTURE", "found -9.990255e-01 between 1 and 0  - redoing schmidt\nCI-BLOCK STRUCTURE", 1)
+        self.assertIn("not orthogonal", parse_orca_mr(bad)[0]["warnings"][0])
+        small = text.replace("CI-BLOCK STRUCTURE", "found -1.869407e-02 between 6 and 0  - redoing schmidt\nCI-BLOCK STRUCTURE", 1)
+        self.assertEqual(parse_orca_mr(small)[0]["warnings"], [])
+        cut = text[:text.rindex("TRANSITION ENERGIES")]
+        self.assertTrue(any("did not finish" in w for w in parse_orca_mr(cut)[0]["warnings"]))
 
     def test_spin_gap_sign(self):
         r = parse_orca_mr(self.text)[0]

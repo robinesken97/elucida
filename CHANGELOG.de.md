@@ -2,6 +2,20 @@
 
 # Änderungen
 
+## 2.6.3 – 2026-11-06
+
+### Neu
+- **Multireferenz:** SORCI-Ergebnisse aus ORCA 6 stehen im DFT-Tab zur Auswahl, mit Energie, CI-Energie, Korrektur und
+  Anregungsenergie je Zustand. Orbitale, die beim Einlesen nicht orthogonal waren, werden gemeldet.
+
+### Geändert
+- **Cluster:** Die Abfrage belastet den Login-Knoten weniger. `sacct` läuft nur noch beim Start, bei **Aktualisieren** und wenn sich
+  die Jobliste ändert. Unter Windows wird alle 15 Minuten abgefragt, dort ist jede Abfrage ein neuer Login.
+
+### Behoben
+- **Cluster:** Lehnt der Server den Login ab, hält Elucida die automatische Abfrage an. Wiederholte Fehlversuche können sonst die
+  eigene IP sperren lassen.
+
 ## 2.6.2 – 2026-11-06
 
 ### Neu

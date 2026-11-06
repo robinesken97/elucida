@@ -103,7 +103,7 @@ TEXTS = {
     'rp_profile_orbital_view': ('Orbitalansicht im Profil', 'Profile Orbital View'),
     'rp_the_orbital_file_changed_please_capture_a_new_view': ('Die Orbitaldatei wurde geändert. Ansicht bitte neu übernehmen.', 'The orbital file changed. Please capture a new view.'),
     'rp_include_selected_result_in_si': ('Gewähltes Ergebnis in SI', 'Include selected result in SI'),
-    'rp_no_multireference_result_selected_supported_orca_6_casscf_sc_nevpt2_an': ('Kein Multireferenzergebnis gewählt. Unterstützt: ORCA 6 CASSCF, SC-NEVPT2 und QD-SC-NEVPT2.', 'No multireference result selected. Supported: ORCA 6 CASSCF, SC-NEVPT2 and QD-SC-NEVPT2.'),
+    'rp_no_multireference_result_selected_supported_orca_6_casscf_sc_nevpt2_an': ('Kein Multireferenzergebnis gewählt. Unterstützt: ORCA 6 CASSCF, SC-NEVPT2, QD-SC-NEVPT2 und SORCI.', 'No multireference result selected. Supported: ORCA 6 CASSCF, SC-NEVPT2, QD-SC-NEVPT2 and SORCI.'),
     'rp_select_a_method_and_result_block_explicitly_energies_and_weights_retai': ('Methode und Ergebnisblock explizit wählen. Energien und Gewichte bleiben wie in der Ausgabe. Orbitalbesetzungen ohne eindeutige Zustandszuordnung werden nicht als Diradikalcharakter ausgegeben.', 'Select a method and result block explicitly. Energies and weights retain output precision. Occupations without an unambiguous state assignment are not reported as diradical character.'),
     'rp_select_result': ('Ergebnis wählen …', 'Select result …'),
     'rp_select_singlet': ('Singulett wählen …', 'Select singlet …'),
@@ -2349,6 +2349,8 @@ TEXTS = {
                        "Terminal bestätigt.",
                        "No connection: {err}. Check: VPN or university network, SSH key in the agent, host confirmed "
                        "once in a terminal."),
+    "cluster_paused": ("Automatische Abfrage angehalten, damit der Server die IP nicht sperrt. Nach dem Beheben: Aktualisieren.",
+                       "Automatic checks paused so that the server does not block your IP. After fixing it: Refresh."),
     "cluster_timeout": ("Zeitüberschreitung", "timed out"),
     "cluster_status": ("{n} Jobs laufen oder warten, {m} beendet (letzte 7 Tage).",
                        "{n} jobs running or waiting, {m} finished (last 7 days)."),

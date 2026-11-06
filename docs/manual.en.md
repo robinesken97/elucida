@@ -665,7 +665,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **NICS** (page): Gaussian NMR outputs with ghost atoms (Bq, e.g. from py.Aroma): NICS and NICSzz (along the ring-plane
   normal) per point, average above/below; scans as a curve over the path length (NICS black, NICSzz red).
 
-- **Multireference (ORCA 6):** CASSCF, SC-NEVPT2 and QD-SC-NEVPT2 results are offered per block, with energies,
+- **Multireference (ORCA 6):** CASSCF, SC-NEVPT2, QD-SC-NEVPT2 and SORCI results are offered per block, with energies,
   configuration weights and occupations as printed. The SI takes a block only on explicit choice. ΔE_ST between a chosen
   singlet and triplet of the same block, with the equation shown. The diradical indicator is y₀ = n(LUNO), and only for
   natural orbitals of one converged singlet state. Incomplete or aborted outputs are flagged. In the overlay, MR spectra
@@ -730,7 +730,7 @@ The host can also be a name from `~/.ssh/config`, which then holds for example `
 
 **Use**
 
-While the app is open it checks every 2 minutes and reports finished jobs, in other tabs too. When Elucida is not in the foreground,
+While the app is open it checks every 2 minutes (Windows: every 15 minutes) and reports finished jobs, in other tabs too. **Refresh** checks at once. When Elucida is not in the foreground,
 a system notification follows (can be turned off under **Access**). Pick a job, tick files, choose the **Target** (compound or
 reaction path), **Fetch results**: outputs and xyz are added there as calculations, everything else goes to `data/dft`. `.gbw` and
 `.hess` are not offered.
@@ -740,11 +740,12 @@ reaction path), **Fetch results**: outputs and xyz are added there as calculatio
 Elucida only calls your system's `ssh` and reads neither keys nor passwords. On the server it runs only `squeue`, `sacct`, `find` and
 `cat`: jobs cannot be started or cancelled, and there are no free commands. Host, user and folder stay in the local settings, never
 in the project. On macOS and Linux the connection stays open for 3 minutes after the last check (`~/.ssh/elucida-…`), which spares
-the login node. On Windows every check is a new login.
+the login node. On Windows every check is a new login, hence the longer interval. `sacct` only runs at start, on **Refresh** and when the job list changes.
 
 **If it does not work**
 
-The message from `ssh` is shown at the bottom of the cluster view.
+The message from `ssh` is shown at the bottom of the cluster view. If the server refuses the login, Elucida pauses the automatic
+checks, because some computing centres block an IP after a few failed attempts. After fixing it, continue with **Refresh**.
 
 | Message | Cause and fix |
 |---|---|
@@ -752,6 +753,7 @@ The message from `ssh` is shown at the bottom of the cluster view.
 | `Permission denied (publickey)` | Key not in the agent (`ssh-add -l` does not list it: step 4) or not added on the server. |
 | Timeout, `Could not resolve hostname` | Server not reachable: check VPN or network. |
 | `command not found` for `squeue` or `sacct` | No Slurm on the server: enter the folder by hand. |
+| Files missing while the job runs | The job works in a local folder of the compute node (`/scratch`). Elucida only sees shared folders, so results appear once the job has copied them back. |
 | `find: -printf …` | No GNU `find` on the server, so it is not a Linux system. |
 
 ## Other tab

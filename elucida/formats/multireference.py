@@ -13,6 +13,13 @@ NUMBER = r"[-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?"
 _CAS = re.compile(r"CAS-SCF STATES FOR BLOCK\s+(\d+)\s+MULT=\s*(\d+)(?:\s+IRREP=\s*(\S+))?\s+NROOTS=\s*(\d+)")
 _ROOT = re.compile(r"ROOT\s+(\d+):\s+E=\s*(" + NUMBER + r")\s+Eh")
 _CONFIG = re.compile(r"\s*(" + NUMBER + r")\s+\[\s*(\d+)\]:\s*([012]+)\s*$")
+_CI_STATE = re.compile(r"STATE\s+(\d+):\s+Energy=\s*(" + NUMBER + r")\s+Eh\s+RefWeight=\s*(" + NUMBER + r")\b.*")
+_CI_ROOT = re.compile(r"Root=\s*(\d+)\s+W=\s*" + NUMBER + r"\s+E0=\s*(" + NUMBER + r")\s+ECI=\s*(" + NUMBER + r")\s+DE=\s*(" + NUMBER + r")")
+_CI_UNSEL = re.compile(r"Root=\s*(\d+)\s+E\(unsel\)=\s*(" + NUMBER + r")")
+_CI_CONFIG = re.compile(r"\s*(" + NUMBER + r")\s*:\s*(\S*\[[012]+\]\S*)\s*")
+_CI_ROW = re.compile(r"(\d+)\s+(\d+)\s+(-?\d+)\s+(\d+)\s+(\d+)\s+(" + NUMBER + r")\s+(" + NUMBER + r")\s+(" + NUMBER + r")")
+_SCHMIDT = re.compile(r"found\s+(" + NUMBER + r")\s+between\s+\d+\s+and\s+\d+\s+-\s+redoing schmidt")
+MAX_SCHMIDT = 0.5                # darüber waren die eingelesenen Orbitale nicht mehr orthogonal (zerstörter Start, echte H2-Ausgabe)
 
 
 def parse_orca_mr(text):
@@ -157,7 +164,101 @@ def parse_orca_mr(text):
             r["warnings"].append(f"Incomplete {r['method']} results: {len(r['states'])} of {roots[r['group']]} states.")
         if "ORCA TERMINATED NORMALLY" not in text:
             r["warnings"].append("Output does not end with ORCA TERMINATED NORMALLY; results may be incomplete.")
-    return [r for r in out if r["states"] or r["occupations"]]
+    out = [r for r in out if r["states"] or r["occupations"]] + _sorci_results(lines)
+    if "ORCA TERMINATED NORMALLY" not in text:
+        for r in out:
+            if r["method"] == "SORCI":
+                r["warnings"].append("Output does not end with ORCA TERMINATED NORMALLY; results may be incomplete.")
+    return sorted(out, key=lambda r: r["line"])
+
+
+def _sorci_results(lines):
+    """Final (DDCI3) step of each SORCI run. The DDCI2 step only builds the natural orbitals and is never a result.
+
+    Each block prints its states twice, reference CI first, so the last print wins. Energy = the printed STATE value,
+    which the printed transition table uses too; it already holds ORCA's Davidson-type and unselected-CSF corrections.
+    """
+    out, blocks, r, schmidt = [], {}, None, None
+    block = number = state = None
+    extra, states = {}, {}
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if "JOB NUMBER" in s:
+            schmidt = None
+        m = _SCHMIDT.fullmatch(s)
+        if m:
+            schmidt = max(schmidt or 0, abs(float(m[1])))
+        if s == "CI-BLOCK STRUCTURE":
+            blocks, number = {}, None
+        m = re.fullmatch(r"CI BLOCK\s+(\d+)", s)
+        if m:
+            number = int(m[1])
+            blocks[number] = dict(multiplicity=None, irrep="", refs=[])
+        if number is not None and r is None:
+            m = re.fullmatch(r"(Multiplicity|Irrep)\s*\.\.\.\s*(-?\d+)", s)
+            if m and m[1] == "Multiplicity":
+                blocks[number]["multiplicity"] = int(m[2])
+            elif m and m[2] != "-1":                   # -1: ohne Symmetrie
+                blocks[number]["irrep"] = m[2]
+            m = re.fullmatch(r"Reference\s+\d+:\s*(\S+)", s)
+            if m:
+                blocks[number]["refs"].append(m[1])
+        if "S O R C I (DDCI3-STEP)" in s:
+            refs = {x for b in blocks.values() for x in b["refs"]}
+            cas = re.fullmatch(r"CAS\((\d+),(\d+)\)", next(iter(refs))) if len(refs) == 1 else None
+            r = dict(id=f"mr-sorci-{len(out)}", method="SORCI", line=i + 1, states=[], occupations=[],
+                     active_electrons=int(cas[1]) if cas else None, active_orbitals=int(cas[2]) if cas else None,
+                     active_start=None, group=None, active_type="unconfirmed", convergence="ci", warnings=[], expected_roots={})
+            if schmidt is not None and schmidt > MAX_SCHMIDT:
+                r["warnings"].append(f"Input orbitals were not orthogonal on reading (overlap {schmidt:.3f}); results are unreliable.")
+            out.append(r)
+            block = state = None
+            extra, states = {}, {}
+            continue
+        if r is None:
+            continue
+        m = re.fullmatch(r"\*\s*CI-BLOCK\s+(\d+)\s*\*", s)
+        if m:
+            block, state = int(m[1]), None
+            continue
+        m = _CI_ROOT.match(s)
+        if m and block is not None:
+            extra.setdefault((block, int(m[1])), {}).update(reference_energy=m[2], ci_energy=m[3], correction=m[4])
+            continue
+        m = _CI_UNSEL.match(s)
+        if m and block is not None:
+            extra.setdefault((block, int(m[1])), {})["unselected"] = m[2]
+            continue
+        m = _CI_STATE.fullmatch(s)
+        if m and block in blocks:
+            state = dict(root=int(m[1]), energy=m[2], reference_weight=m[3], line=i + 1, configurations=[], block=block,
+                         multiplicity=blocks[block]["multiplicity"], irrep=blocks[block]["irrep"],
+                         **extra.get((block, int(m[1])), {}))
+            states[block, int(m[1])] = state
+            continue
+        m = _CI_CONFIG.fullmatch(line)
+        if m and state is not None:
+            state["configurations"].append(dict(weight=m[1], index=None, occupation=m[2], line=i + 1))
+            continue
+        if s == "TRANSITION ENERGIES":
+            state, rows = None, []
+            for ln in lines[i + 1:]:
+                m = _CI_ROW.fullmatch(ln.strip())
+                if m:
+                    rows.append(m)
+                elif rows:
+                    break
+            for m in rows:                             # Spalte Block zählt ab 0, CI-BLOCK ab 1
+                if (int(m[5]) + 1, int(m[4])) in states:
+                    states[int(m[5]) + 1, int(m[4])]["excitation_ev"] = m[7]
+            r["states"] = list(states.values())
+            if len(rows) != len(states):
+                r["warnings"].append(f"Incomplete SORCI results: {len(states)} states, {len(rows)} in the transition table.")
+            r = None
+    if r is not None:                                  # abgebrochen: nichts als fertig ausgeben, aber Gefundenes zeigen
+        r["states"] = list(states.values())
+        r["warnings"].append("SORCI transition table missing; the run did not finish.")
+    return [x for x in out if x["states"]]
 
 
 def luno_indicator(r):
@@ -216,11 +317,16 @@ def report_lines(result):
     lines = [result_label(r), "Electronic state energies (Eh); root indices as printed by ORCA."]
     if r["convergence"] == "fixed-orbitals":
         lines.append("Fixed-orbital calculation (CASSCF MaxIter = 1).")
-    elif r["convergence"] != "converged":
+    elif r["convergence"] == "unconfirmed":
         lines.append("CASSCF convergence not confirmed in the output.")
+    if r["method"] == "SORCI":
+        lines.append("Final DDCI3 step; energies as printed by ORCA, including its Davidson-type and unselected-CSF corrections.")
     for s in r["states"]:
         label = f"M={s['multiplicity']}, root={s['root']}" + (f", irrep={s['irrep']}" if s.get("irrep") else "")
-        lines.append(f"{label}: {s['energy']} Eh")
+        details = "".join(f"; {name} {s[key]}{unit}" for name, key, unit in (
+            ("CI energy", "ci_energy", " Eh"), ("correction", "correction", " Eh"), ("unselected", "unselected", " Eh"),
+            ("excitation energy", "excitation_ev", " eV")) if s.get(key) is not None)
+        lines.append(f"{label}: {s['energy']} Eh{details}")
         if s["configurations"]:
             lines.append("Printed configuration weights (not renormalized): " + "; ".join(
                 f"{c['occupation']}: {c['weight']}" for c in s["configurations"]))
@@ -237,6 +343,50 @@ def report_lines(result):
                   f"LUNO: orbital {ind['luno']['orbital']}, occupation {ind['luno']['occupation']}.",
                   "NOON indicator as in doi:10.1038/s41586-025-08745-1; not a PUHF spin-projected index."]
     return lines
+
+
+def make_test_sorci(path):
+    """Synthetic numbers, layout of a real ORCA 6.0.1 SORCI output: DDCI2 step, then DDCI3 with two prints per block."""
+    from pathlib import Path
+
+    def block(n, mult_rows):
+        return f"""***************************************
+*              CI-BLOCK  {n}            *
+***************************************
+""" + "".join(f"STATE   {k}:  Energy=     -9.000000000 Eh RefWeight=  1.0000  0.00 eV      0.0 cm**-1\n" for k, _ in mult_rows) + "".join(
+            f"Root= {k} W=   0.900 E0=    -9.000000000 ECI=    {e} DE=-0.000100\n" for k, e in mult_rows) + "".join(
+            f" Root=  {k}  E(unsel)=      0.000000000\n" for k, _ in mult_rows) + "".join(
+            f"STATE   {k}:  Energy=     {e}9 Eh RefWeight=  0.9000  0.00 eV      0.0 cm**-1\n      0.9000  : h---h---[20]\n"
+            for k, e in mult_rows)
+    table = """-------------------
+TRANSITION ENERGIES
+-------------------
+
+The lowest energy is     -2.000000009 Eh
+
+State Mult Irrep Root Block    mEh          eV      1/cm
+  0    1    -1    0    0      0.000      0.000       0.0
+  1    3    -1    0    1    500.000     13.606  109737.3
+  2    1    -1    1    0    900.000     24.490  197527.2
+#
+"""
+    head = """Program Version 6.0.1  -  RELEASE   -
+JOB NUMBER  1
+CI-BLOCK STRUCTURE
+CI BLOCK 1
+Multiplicity             ...   1
+Irrep                    ...  -1
+  Reference   1: CAS(2,2)
+CI BLOCK 2
+Multiplicity             ...   3
+Irrep                    ...  -1
+  Reference   1: CAS(2,2)
+"""
+    body = block(1, [(0, "-2.00000000"), (1, "-1.10000000")]) + block(2, [(0, "-1.50000000")]) + table
+    text = (head + "# S O R C I (DDCI2-STEP) #\n" + body.replace("-2.00000000", "-7.00000000") + "# S O R C I (DDCI3-STEP) #\n" + body
+            + "FINAL SINGLE POINT ENERGY -2.000000009\n****ORCA TERMINATED NORMALLY****\n")
+    Path(path).write_text(text, encoding="utf-8")
+    return Path(path)
 
 
 def make_test_mr(path):

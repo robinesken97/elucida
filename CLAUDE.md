@@ -232,7 +232,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
 - Cluster (F6 Teil C, `app/cluster.py`, im Projektreiter Computerchemie: Statuskarte unter der Pfadliste, Ansicht rechts, keine Pop-ups; Ziel = Verbindung oder Reaktionspfad): nur Lesebefehle (`jobs_command`, `files_command`, `fetch_command`), nie Nicht an einen Cluster gebunden: jeder Linux-Server mit SSH-Schlüssel, Jobliste braucht Slurm (`squeue`, `sacct`), Ordnerliste GNU-`find`; Einrichtung im Handbuch „Cluster-Anbindung“, Link unter **Zugang**.
   Jobs starten oder abbrechen, keine frei eingebbaren Befehle; System-`ssh` mit Schlüssel/Agent, `BatchMode`, `StrictHostKeyChecking=yes`,
   kein Passwort in Elucida. Host/Benutzer/Ordner nur in QSettings `cluster/*`, nie im Projekt oder Repo. Dateinamen der Gegenseite
-  sind nicht vertrauenswürdig (`parse_files`), Größe nach dem Holen prüfen. Abfrage alle `POLL_MS`, solange die App offen ist (Nutzerwunsch), fertige Jobs als Einblendung.
+  sind nicht vertrauenswürdig (`parse_files`), Größe nach dem Holen prüfen. Abfrage alle `POLL_MS` (2 min, Windows 15 min: dort keine Sammelverbindung), solange die App offen ist (Nutzerwunsch), nur `squeue`; `sacct` nur beim Start, von Hand und wenn sich die Jobliste ändert. Fertige Jobs als Einblendung. Lehnt der Server den Login ab, stoppt die Abfrage bis „Aktualisieren“ (`login_refused`, Rechenzentren sperren sonst die IP).
 - Tab „Weitere“ (F5, `tabs/other.py`, letzter Tab): fremde PDF/SVG/PNG unverändert (PNG direkt, SVG + PNG-Ersatz, PDF
   als SVG mit Text als Pfaden), Seitenverhältnis, Unterschrift + Kapitel (SI-Kapitel oder eigene Überschrift = eigenes
   Kapitel am Ende der Gesamt-SI, `new:<Überschrift>` in den Teilen); nie im Datenpaket. .mnova nie im Datenpaket
@@ -532,5 +532,7 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering, Orbitale wie IboView). Orbitale: echte ORCA-Molden-
   Datei und ORCA-Cube noch nicht gegen orca_plot geprüft (PySCF-Molden ja, inkl. g). MR-Ausgaben (ORCA 6 CASSCF/SC-NEVPT2/QD-SC-NEVPT2,
   `formats/multireference.py`) gegen synthetische Layouts und eine öffentliche ORCA-6.1.1-Ausgabe (CASSCF + DLPNO-NEVPT2) geprüft;
-  SORCI offen (keine öffentliche Ausgabe gefunden).
+  SORCI (nur der DDCI3-Schritt, Energie = gedruckter STATE-Wert inkl. Davidson-Korrektur wie in der Übergangstabelle, CI-Energie daneben) gegen eine echte
+  H2-Ausgabe (ORCA 6.0.1) geprüft: ohne innere Orbitale, ohne Symmetrie, ohne Spektren; im Overlay nicht wählbar. Orbitale, die beim Einlesen nicht
+  orthogonal waren (`redoing schmidt`, > `MAX_SCHMIDT`), gibt der Parser als Warnung aus: ORCA endet trotzdem normal.
   Vergleichsmodus mit echter CIF noch ungeprüft (nur künstliche CIF und echte DFT-Paare).

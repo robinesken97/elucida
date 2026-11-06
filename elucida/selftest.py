@@ -4120,6 +4120,9 @@ def selftest(outdir, with_isnet=False):
             mr_[0]["states"].append(trip_)
             assert float(MR_.spin_gap(mr_[0], 0, 1, "S-T")) == .01
             assert float(MR_.spin_gap(mr_[0], 0, 1, "T-S")) == -.01
+            so_ = MR_.parse_orca_mr(DFT.read_text(MR_.make_test_sorci(out / "synthetic_sorci.out")))
+            assert [r_["method"] for r_ in so_] == ["SORCI"] and so_[0]["states"][0]["energy"] == "-2.000000009", so_
+            assert so_[0]["states"][2]["excitation_ev"] == "13.606" and "CAS(2,2)" in MR_.result_label(so_[0])
             report.append("DFT F6: MR methods, raw values, natural occupations and spin-gap convention: OK")
 
         with section:
@@ -6408,6 +6411,7 @@ def selftest(outdir, with_isnet=False):
             assert [j_["id"] for j_ in jobs_] == ["11", "10"] and jobs_[0]["live"] and jobs_[1]["state"] == "CANCELLED"
             assert CL.parse_files("12|a.out\n5|a.gbw\n7|../x.out\nboom\n3|b.xyz\n") == [("a.out", 12), ("b.xyz", 3)]
             page_ = w.pub_page.cluster_page
+            assert CL.login_refused("user@host: Permission denied (publickey).") and not CL.login_refused("Operation timed out")
             w.pub_page.set_publication(out / "demo_pub_items")
             page_.fill_targets()
             calls_ = []
@@ -6415,6 +6419,12 @@ def selftest(outdir, with_isnet=False):
             page_.reply = lambda c_, of_: "11|S2-calc|RUNNING|1:00|/work/u1/S3/calc\n---\n" if c_.startswith("squeue") else ""
             page_.refresh()
             assert page_.lst_jobs.count() == 1 and page_.live == {"11"} and "1" in w.pub_page.cluster_card.text.text()
+            assert "sacct" not in CL.live_command() and "sacct" in CL.jobs_command()
+            calls_.clear()                                     # gleiche Jobs: keine Datenbankabfrage; Job weg: vollständig
+            page_.check_live("11|S2-calc|RUNNING|2:00|/work/u1/S3/calc\n")
+            assert not calls_ and page_.jobs[0]["time"] == "2:00", calls_
+            page_.check_live("")
+            assert "sacct" in calls_[-1], calls_
             page_.reply = lambda c_, of_: "---\n11|calc|COMPLETED|2026-11-07T10:00:00|/work/u1/S3/calc\n"
             page_.refresh()
             assert "calc" in page_.status.text(), page_.status.text()              # fertig gemeldet

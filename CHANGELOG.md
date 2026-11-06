@@ -2,6 +2,20 @@
 
 # Changelog
 
+## 2.6.3 – 2026-11-06
+
+### New
+- **Multireference:** SORCI results from ORCA 6 can be selected in the DFT tab, with energy, CI energy, correction and excitation
+  energy per state. Orbitals that were not orthogonal on reading are reported.
+
+### Changed
+- **Cluster:** checks put less load on the login node. `sacct` only runs at start, on **Refresh** and when the job list changes. On
+  Windows the check runs every 15 minutes, as every check is a new login there.
+
+### Fixed
+- **Cluster:** if the server refuses the login, Elucida pauses the automatic checks. Repeated failed attempts could otherwise get
+  your IP blocked.
+
 ## 2.6.2 – 2026-11-06
 
 ### New

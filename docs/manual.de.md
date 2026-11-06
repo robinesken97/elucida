@@ -685,8 +685,9 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **NICS** (Reiter): Gaussian-NMR-Ausgaben mit Geisteratomen (Bq, z. B. aus py.Aroma): NICS und NICSzz (entlang der
   Normalen der Ringebene) je Punkt, Mittel ober-/unterhalb; Scans als Kurve über die Weglänge (NICS schwarz, NICSzz rot).
 
-- **Multireferenz (ORCA 6):** CASSCF-, SC-NEVPT2- und QD-SC-NEVPT2-Ergebnisse stehen je Block zur Auswahl, Energien,
+- **Multireferenz (ORCA 6):** CASSCF-, SC-NEVPT2-, QD-SC-NEVPT2- und SORCI-Ergebnisse stehen je Block zur Auswahl, Energien,
   Konfigurationsgewichte und Besetzungen wie in der Ausgabe. Die SI übernimmt einen Block nur auf ausdrückliche Wahl.
+  SORCI: gezeigt wird der abschließende DDCI3-Schritt, die Energien enthalten ORCAs Korrekturen, CI-Energie und Korrektur stehen daneben.
   ΔE_ST zwischen gewähltem Singulett und Triplett desselben Blocks, mit angezeigter Gleichung. Der Diradikalindikator ist
   y₀ = n(LUNO) und nur für natürliche Orbitale eines konvergierten Singulettzustands verfügbar. Unvollständige oder
   abgebrochene Ausgaben werden gemeldet. Im Overlay sind MR-Spektren nach Methode und Block wählbar.
@@ -751,7 +752,7 @@ Als Host geht auch ein Name aus `~/.ssh/config`. Dort stehen dann zum Beispiel `
 
 **Benutzung**
 
-Solange die App offen ist, fragt sie alle 2 Minuten ab und meldet fertige Jobs, auch in anderen Tabs. Ist Elucida nicht im
+Solange die App offen ist, fragt sie alle 2 Minuten ab (Windows: alle 15 Minuten) und meldet fertige Jobs, auch in anderen Tabs. **Aktualisieren** fragt sofort ab. Ist Elucida nicht im
 Vordergrund, kommt zusätzlich eine Mitteilung des Systems (abschaltbar unter **Zugang**). Job wählen, Dateien anhaken, **Ziel**
 wählen (Verbindung oder Reaktionspfad), **Ergebnisse holen**: Ausgaben und xyz werden dort als Rechnung eingetragen, alles andere
 liegt in `data/dft`. `.gbw` und `.hess` werden nicht angeboten.
@@ -761,11 +762,12 @@ liegt in `data/dft`. `.gbw` und `.hess` werden nicht angeboten.
 Elucida ruft nur das `ssh` deines Systems auf und liest weder Schlüssel noch Passwörter. Auf dem Server laufen nur `squeue`, `sacct`,
 `find` und `cat`: Jobs starten oder abbrechen geht nicht, freie Befehle gibt es nicht. Host, Benutzer und Ordner stehen nur in den
 lokalen Einstellungen, nie im Projekt. Unter macOS und Linux bleibt die Verbindung nach der letzten Abfrage 3 Minuten offen
-(`~/.ssh/elucida-…`), das entlastet den Login-Knoten. Unter Windows ist jede Abfrage ein neuer Login.
+(`~/.ssh/elucida-…`), das entlastet den Login-Knoten. Unter Windows ist jede Abfrage ein neuer Login, deshalb der längere Abstand. `sacct` läuft nur beim Start, bei **Aktualisieren** und wenn sich die Jobliste ändert.
 
 **Wenn es nicht klappt**
 
-Die Meldung von `ssh` steht unten in der Cluster-Ansicht.
+Die Meldung von `ssh` steht unten in der Cluster-Ansicht. Lehnt der Server den Login ab, hält Elucida die automatische Abfrage an,
+denn manche Rechenzentren sperren die IP nach wenigen Fehlversuchen. Nach dem Beheben geht es mit **Aktualisieren** weiter.
 
 | Meldung | Ursache und Lösung |
 |---|---|
@@ -773,6 +775,7 @@ Die Meldung von `ssh` steht unten in der Cluster-Ansicht.
 | `Permission denied (publickey)` | Schlüssel nicht im Agenten (`ssh-add -l` zeigt ihn nicht: Schritt 4) oder nicht auf dem Server hinterlegt. |
 | Zeitüberschreitung, `Could not resolve hostname` | Server nicht erreichbar: VPN oder Netz prüfen. |
 | `command not found` bei `squeue` oder `sacct` | Kein Slurm auf dem Server: Ordner von Hand eintragen. |
+| Dateien fehlen, solange der Job läuft | Der Job rechnet in einem lokalen Ordner des Rechenknotens (`/scratch`). Elucida sieht nur gemeinsame Ordner, die Ergebnisse kommen also erst, wenn der Job sie zurückkopiert hat. |
 | `find: -printf …` | Kein GNU-`find` auf dem Server, er ist also kein Linux-System. |
 
 ## Weitere-Tab

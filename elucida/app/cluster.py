@@ -29,7 +29,8 @@ AS_ENTRY = (".out", ".log", ".xyz")                # geschlossenes Ziel: Eintrag
 TICKED = (".out", ".xyz")                          # beim Öffnen eines Ordners vorgewählt
 COLOURS = {"RUNNING": "#3B82F6", "COMPLETING": "#3B82F6", "PENDING": "#9CA3AF", "COMPLETED": "#22A06B", "CANCELLED": "#D9A441"}
 FAILED_COLOUR = "#E5484D"                          # alle übrigen Slurm-Zustände
-POLL_MS = 2 * 60 * 1000          # solange die App offen ist; eine kurze Abfrage über die offene Sammelverbindung
+# solange die App offen ist; Windows-OpenSSH hat keine Sammelverbindung, dort ist jede Abfrage ein neuer Login
+POLL_MS = (15 if sys.platform == "win32" else 2) * 60 * 1000
 TIMEOUT_MS = 30 * 1000
 FETCH_TIMEOUT_MS = 10 * 60 * 1000
 DAYS = 7                         # beendete Jobs so weit zurück
@@ -46,6 +47,11 @@ def ssh_command(host, user, command):
     return [*opts, f"{user}@{host}", command]
 
 
+def login_refused(err):
+    """Server hat den Login abgelehnt: weitere automatische Versuche können die eigene IP sperren lassen."""
+    return any(x in err for x in ("Permission denied", "Too many authentication failures", "Host key verification failed"))
+
+
 def remote_dir(text):
     text = (text or "").strip()
     if not text.startswith("/") or re.search(r"[\r\n\0]", text):
@@ -53,10 +59,14 @@ def remote_dir(text):
     return text
 
 
+def live_command():
+    return "squeue -u \"$USER\" -h -o '%i|%j|%T|%M|%Z'"
+
+
 def jobs_command(today=None):
+    """Mit sacct: fragt die Slurm-Datenbank, darum nur beim Start, von Hand und wenn sich die Jobliste ändert."""
     since = ((today or datetime.date.today()) - datetime.timedelta(days=DAYS)).isoformat()
-    return ("squeue -u \"$USER\" -h -o '%i|%j|%T|%M|%Z'; echo ---; "
-            f"sacct -X -n -P -S {since} -o JobID,JobName,State,End,WorkDir")
+    return f"{live_command()}; echo ---; sacct -X -n -P -S {since} -o JobID,JobName,State,End,WorkDir"
 
 
 def files_command(folder):
@@ -280,6 +290,16 @@ class ClusterPage(QWidget):
 
     def poll(self):
         if self.configured() and not self.busy:
+            if self.live is None:
+                self.refresh()
+            else:
+                self.run(live_command(), self.check_live)
+
+    def check_live(self, text):
+        """Nur squeue: gleiche Jobs -> Zustand und Laufzeit aktualisieren, sonst vollständig nachfragen."""
+        if {j["id"] for j in parse_jobs(text)} == self.live:
+            self.show_jobs(f"{text}---{self.history}")
+        else:
             self.refresh()
 
     def showEvent(self, ev):
@@ -323,7 +343,11 @@ class ClusterPage(QWidget):
             if code == 0:
                 done(out)
             else:
-                self.fail(T("cluster_failed", err=err.splitlines()[-1] if err else T("cluster_timeout")))
+                text = T("cluster_failed", err=err.splitlines()[-1] if err else T("cluster_timeout"))
+                if login_refused(err):
+                    self.timer.stop()                  # erst nach Erfolg über „Aktualisieren“ wieder
+                    text += " " + T("cluster_paused")
+                self.fail(text)
         p.finished.connect(finished)
         p.start(ssh, args)
         limit.start()
@@ -355,6 +379,9 @@ class ClusterPage(QWidget):
         self.run(jobs_command(), self.show_jobs)
 
     def show_jobs(self, text):
+        if not self.timer.isActive():
+            self.timer.start()
+        self.history = text.partition("---")[2]
         self.jobs = parse_jobs(text)
         now = {j["id"] for j in self.jobs if j["live"]}
         ended = [j for j in self.jobs if self.live is not None and j["id"] in self.live - now]
