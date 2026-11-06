@@ -18,6 +18,7 @@ import weakref
 import xml.etree.ElementTree as ET
 
 from PySide6.QtCore import QObject, Signal, Slot, QUrl, QTimer, QEventLoop, QEvent, Qt, QFile, QIODevice
+from shiboken6 import isValid
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMessageBox, QDialog, QApplication, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox, QMenu, QFileDialog
 from elucida import ROOT
@@ -407,7 +408,8 @@ class DrawingEditor(QWidget):
         self.page.runJavaScript('!!(window.elucida && window.elucidaHost)', self._ready)
 
     def _ready(self, ok):
-        if not ok or self.ready:
+        # The answer can arrive after a tab rebuild deleted this editor (language or theme switch, undo).
+        if not ok or self.ready or not isValid(self):
             return
         self.poll.stop(); self.ready = True
         proxy = self.view.focusProxy()
@@ -418,7 +420,11 @@ class DrawingEditor(QWidget):
         self.set_canvas_dark(self.canvas_dark)
         self.status.setText(self.saved_message)
         if self._pending:
-            QTimer.singleShot(0, lambda: self.open_path(self._pending) if self._pending else None)
+            QTimer.singleShot(0, self._open_pending)
+
+    def _open_pending(self):
+        if isValid(self) and self._pending:
+            self.open_path(self._pending)
 
     def open_path(self, path):
         p = Path(path).resolve()
@@ -435,7 +441,8 @@ class DrawingEditor(QWidget):
             expected = fingerprint(p)
             lost = self._js(f'window.elucida.load({json.dumps(text)}, {json.dumps(p.stem)})') or {}
         except Exception as ex:
-            self.status.setText(str(ex))
+            if isValid(self):                              # während des Wartens kann der Tab neu gebaut worden sein
+                self.status.setText(str(ex))
             return False
         self.path, self.expected = p, expected
         self.lossy = lost
@@ -450,6 +457,7 @@ class DrawingEditor(QWidget):
         loop = QEventLoop()
         timer = QTimer(singleShot=True, interval=15000)
         timer.timeout.connect(loop.quit)
+        self.destroyed.connect(loop.quit)                  # sonst wartet die Schleife die vollen 15 s
         def done(raw):
             result.append(raw)
             loop.quit()

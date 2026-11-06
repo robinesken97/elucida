@@ -1410,7 +1410,9 @@ class MainWindow(QMainWindow):
         self.main_tabs.setCurrentIndex(cur)
         self.main_tabs.blockSignals(False)
         STYLE.tidy(new)
-        old.setParent(None)
+        # Eltern behalten: ohne sie gehört das Objekt Python, und die Speicherbereinigung könnte den Tab samt WebEngine
+        # mitten in anderem Code zerstören (Segfault, macOS Intel). deleteLater räumt in der Ereignisschleife auf.
+        old.hide()
         old.deleteLater()
         return new
 

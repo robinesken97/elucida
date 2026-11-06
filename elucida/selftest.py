@@ -413,6 +413,7 @@ def selftest(outdir, with_isnet=False):
         report.append("eps edge cases (names, snap, undefined R2, SE 0, equal c, baseline at start, ';' CSV): OK")
 
         def pump(sec=0.4):
+            sec *= 2.5 if os.environ.get("CI") else 1      # CI: WebEngine rendert in Software, alles dauert länger
             import time
             t0 = time.time()
             while time.time() - t0 < sec:
