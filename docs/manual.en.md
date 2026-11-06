@@ -670,6 +670,14 @@ Absorption and emission in one figure, as commonly shown in papers:
   natural orbitals of one converged singlet state. Incomplete or aborted outputs are flagged. In the overlay, MR spectra
   are selectable by method and block.
 
+### Cluster (in the project under Computational Chemistry)
+
+The status card below the path list shows running and finished Slurm jobs, a click opens the cluster view. Host and user stay in the
+local settings (**Access**). Requirements: SSH key in the agent, host confirmed once in a terminal, VPN from outside. Elucida never
+asks for a password. While the app is open it checks every 2 minutes and reports finished jobs, in other tabs too. When Elucida is not in the foreground, a system notification follows (can be turned off under **Access**). Pick a job, tick files, choose the **Target**
+(compound or reaction path), **Fetch results**: outputs and xyz are added there as calculations, everything else goes to `data/dft`.
+`.gbw` and `.hess` are not offered. Jobs cannot be started or cancelled here.
+
 ## Other tab
 
 Figures from other programs (PDF, SVG, PNG) go into the SI **unchanged**: each with a caption and a chapter – an

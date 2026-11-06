@@ -6210,8 +6210,7 @@ def selftest(outdir, with_isnet=False):
             assert len(w.ov_state["entries"]) == n_f2
             w.push_undo()
             ot_.toggle_linked("eps", g_f2, g_f2, True)                               # Undo nimmt die Übernahme zurück
-            assert ot_.linked_entry("eps", g_f2) is not None
-            ot_.render()                                         # erfasst den Schritt, ohne auf den Zeitgeber zu warten
+            assert ot_.linked_entry("eps", g_f2) is not None                         # auch bevor die Vorschau fertig ist
             w.undo()
             for _ in range(50):                                  # mit Editor dauert das Ersetzen der Tabs länger
                 pump(0.1)
@@ -6380,6 +6379,72 @@ def selftest(outdir, with_isnet=False):
                 raise ValueError("expected")
             assert sec_.failed == 1 and "expected" in sec_.report[0]
             report.append("selftest: a failed part does not stop the next: OK")
+        with section:                                        # Cluster: nur Lesebefehle, Gegenseite nicht vertrauenswürdig
+            from elucida.app import cluster as CL
+            w.open_project(out / "demo_pub_items" / "S2", recent=False)
+            pump(0.4)
+            args_ = CL.ssh_command("gw.example", "u1", "x")
+            assert "StrictHostKeyChecking=yes" in args_ and "BatchMode=yes" in args_ and args_[-2:] == ["u1@gw.example", "x"]
+            for host_ in ("-oProxyCommand=x", "", "a b"):
+                try:
+                    CL.ssh_command(host_, "u1", "x")
+                    raise AssertionError(host_)
+                except ValueError:
+                    pass
+            import datetime as DT26
+            cmds_ = [CL.jobs_command(DT26.date(2026, 11, 8)), CL.files_command("/work/u1/a b"), CL.fetch_command("/work/u1/a b", "x;y.out")]
+            assert "-S 2026-11-01 " in cmds_[0] and "'/work/u1/a b'" in cmds_[1] and "'/work/u1/a b/x;y.out'" in cmds_[2], cmds_
+            assert not any(re.search(r"sbatch|scancel|\brm\b", c_) for c_ in cmds_)
+            for bad_ in ("work/x", "/a\nb", ""):
+                try:
+                    CL.remote_dir(bad_)
+                    raise AssertionError(bad_)
+                except ValueError:
+                    pass
+            jobs_ = CL.parse_jobs("11|a|RUNNING|1:00|/work/u1/a\n---\n11|a|RUNNING|Unknown|/work/u1/a\n"
+                                  "10|b|CANCELLED by 5|2026-11-07T10:00:00|/work/u1/b\n")
+            assert [j_["id"] for j_ in jobs_] == ["11", "10"] and jobs_[0]["live"] and jobs_[1]["state"] == "CANCELLED"
+            assert CL.parse_files("12|a.out\n5|a.gbw\n7|../x.out\nboom\n3|b.xyz\n") == [("a.out", 12), ("b.xyz", 3)]
+            page_ = w.pub_page.cluster_page
+            w.pub_page.set_publication(out / "demo_pub_items")
+            page_.fill_targets()
+            calls_ = []
+            page_.run = lambda c_, done_, out_file=None, timeout=0: (calls_.append(c_), done_(page_.reply(c_, out_file)))
+            page_.reply = lambda c_, of_: "11|S2-calc|RUNNING|1:00|/work/u1/S3/calc\n---\n" if c_.startswith("squeue") else ""
+            page_.refresh()
+            assert page_.lst_jobs.count() == 1 and page_.live == {"11"} and "1" in w.pub_page.cluster_card.text.text()
+            page_.reply = lambda c_, of_: "---\n11|calc|COMPLETED|2026-11-07T10:00:00|/work/u1/S3/calc\n"
+            page_.refresh()
+            assert "calc" in page_.status.text(), page_.status.text()              # fertig gemeldet
+            assert page_.cb_notify.isChecked()
+            assert CL.mac_notification("t", 'x" & do shell script "y')[-1] == 'x" & do shell script "y'   # nie im Skript selbst
+            xyz_ = Path(xyzf_).read_bytes()
+
+            def reply_(c_, of_):
+                if c_.startswith("find"):
+                    return f"{len(xyz_)}|calc.xyz\n9|calc.gbw\n4|note.inp\n"
+                of_.write_bytes(b"x" * 4 if of_.suffix == ".inp" else xyz_)
+                return ""
+            page_.reply = reply_
+            page_.lst_jobs.setCurrentRow(0)
+            assert page_.lst.count() == 2 and page_.cmb_target.currentText() == "S3", page_.cmb_target.currentText()
+            page_.lst.item(1).setCheckState(Qt.Checked)
+            s3_ = out / "demo_pub_items" / "S3"                # geschlossenes Ziel: Eintrag in dessen Projektdatei
+            n26_ = len(PRJ.load(s3_).get("dft", {}).get("entries", []))
+            page_.fetch()
+            got_ = PRJ.load(s3_)["dft"]
+            assert len(got_["entries"]) == n26_ + 1 and got_["entries"][-1]["name"] == "calc", got_
+            assert (s3_ / "data" / "dft" / "note.inp").exists() and "note.inp" in page_.status.text()
+            page_.cmb_target.setCurrentIndex(page_.cmb_target.findText("S2"))     # offene Verbindung: in den Tab
+            n26_ = len(w.dft_state["entries"])
+            page_.lst.item(1).setCheckState(Qt.Unchecked)
+            page_.fetch()
+            assert len(w.dft_state["entries"]) == n26_ + 1 and w.dft_state["entries"][-1]["name"] == "calc"
+            page_.lst.item(0).setData(Qt.UserRole, ("calc.xyz", len(xyz_) + 1))
+            page_.fetch()                                    # abgebrochene Übertragung: nichts übernehmen
+            assert len(w.dft_state["entries"]) == n26_ + 1 and "calc.xyz" in page_.status.text()
+            del page_.run
+            report.append("Cluster view (read-only commands, untrusted names, finished jobs, fetch into open and closed targets): OK")
         with section:                                        # DFT, Stil IboView: Stäbe frei, Symbole abschaltbar, Knöpfe passen
             w.open_project(out / "demo_pub_items" / "S2", recent=False)
             pump(0.4)

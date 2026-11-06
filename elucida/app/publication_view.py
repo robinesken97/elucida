@@ -258,12 +258,22 @@ class PublicationPage(QWidget):
         self.project_tabs.addTab(self.paths_page, T('rp_computational_chemistry'))
         paths_layout = QHBoxLayout(self.paths_page)
         paths_layout.setContentsMargins(4, 4, 4, 4)
+        from elucida.app.cluster import ClusterCard, ClusterPage
         self.path_panel = PathPanel(self)
-        self.path_panel.setMaximumWidth(285)
-        paths_layout.addWidget(self.path_panel)
-        self.path_stack = QStackedWidget(); paths_layout.addWidget(self.path_stack, 1)
+        self.path_rail = QWidget()
+        self.path_rail.setMaximumWidth(285)
+        rail = QVBoxLayout(self.path_rail)
+        rail.setContentsMargins(0, 0, 0, 0)
+        rail.addWidget(self.path_panel, 1)
+        self.path_stack = QStackedWidget()
         hint = QLabel(T('rp_select_path'), alignment=Qt.AlignCenter, wordWrap=True)
         self.path_stack.addWidget(hint)
+        self.cluster_page = ClusterPage(self)
+        self.path_stack.addWidget(self.cluster_page)
+        self.cluster_card = ClusterCard(self)
+        rail.addWidget(self.cluster_card)
+        paths_layout.addWidget(self.path_rail)
+        paths_layout.addWidget(self.path_stack, 1)
         hrow = QHBoxLayout()
         self.lbl_head = QLabel(objectName="recentHead")
         hrow.addWidget(self.lbl_head, 1)
@@ -330,7 +340,7 @@ class PublicationPage(QWidget):
         self.path_stack.removeWidget(workspace)
         workspace.deleteLater()
         self.path_workspace = None
-        self.path_panel.show()
+        self.path_rail.show()
         self.path_panel.refresh()
         self.main._update_undo_actions()
         return True
@@ -339,6 +349,7 @@ class PublicationPage(QWidget):
         from elucida.app.reaction_paths import PathWorkspace
         if self.path_workspace and self.path_workspace.item['uid'] == item['uid']:
             self.project_tabs.setCurrentWidget(self.paths_page)
+            self.path_stack.setCurrentWidget(self.path_workspace)
             return
         if not self.close_path(): return
         workspace = PathWorkspace(self.main, self.pdir, item)
@@ -346,12 +357,15 @@ class PublicationPage(QWidget):
         workspace.closed.connect(self.close_path)
         self.path_stack.addWidget(workspace)
         self.path_stack.setCurrentWidget(workspace)
-        self.path_panel.hide()                              # offener Pfad: volle Breite, ☰ blendet die Liste wieder ein
+        self.path_rail.hide()                               # offener Pfad: volle Breite, ☰ blendet die Liste wieder ein
         self.project_tabs.setCurrentWidget(self.paths_page)
         for i in range(self.path_panel.list.count()):
             row = self.path_panel.list.item(i)
             if row.data(Qt.UserRole)['uid'] == item['uid']: self.path_panel.list.setCurrentItem(row)
         self.main._update_undo_actions()
+
+    def show_cluster(self):
+        self.path_stack.setCurrentWidget(self.cluster_page)
 
     def compound_dirs(self):
         return PUB.sync(self.pdir)[0] if self.pdir else []

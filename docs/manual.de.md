@@ -690,6 +690,15 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   y₀ = n(LUNO) und nur für natürliche Orbitale eines konvergierten Singulettzustands verfügbar. Unvollständige oder
   abgebrochene Ausgaben werden gemeldet. Im Overlay sind MR-Spektren nach Methode und Block wählbar.
 
+### Cluster (im Projekt unter Computerchemie)
+
+Die Statuskarte unter der Pfadliste zeigt laufende und fertige Slurm-Jobs, ein Klick öffnet die Cluster-Ansicht. Host und Benutzer
+stehen nur in den lokalen Einstellungen (**Zugang**). Voraussetzung: SSH-Schlüssel im Agenten, Host einmal im Terminal bestätigt,
+von außerhalb VPN. Ein Passwort fragt Elucida nie ab. Solange die App offen ist, fragt sie alle 2 Minuten ab und meldet fertige Jobs, auch in anderen Tabs. Ist Elucida nicht im Vordergrund, kommt zusätzlich eine Mitteilung des Systems (abschaltbar unter **Zugang**).
+Job wählen, Dateien anhaken, **Ziel** wählen (Verbindung oder Reaktionspfad), **Ergebnisse holen**: Ausgaben und xyz werden dort
+als Rechnung eingetragen, alles andere liegt in `data/dft`. `.gbw` und `.hess` werden nicht angeboten. Jobs starten oder abbrechen
+lassen sich hier nicht.
+
 ## Weitere-Tab
 
 Abbildungen aus anderen Programmen (PDF, SVG, PNG) kommen **unverändert** in die SI: je Abbildung eine Unterschrift und

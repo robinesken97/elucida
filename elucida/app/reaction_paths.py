@@ -160,7 +160,7 @@ class PathWorkspace(QWidget):
         row = QHBoxLayout(corner); row.setContentsMargins(0, 0, 0, 2); row.setSpacing(6)
         b = QPushButton('☰'); b.setFixedWidth(34)
         b.setToolTip(T('rp_toggle_list')); b.setAccessibleName(T('rp_toggle_list'))
-        b.clicked.connect(lambda: main.pub_page.path_panel.setVisible(not main.pub_page.path_panel.isVisible()))
+        b.clicked.connect(lambda: main.pub_page.path_rail.setVisible(not main.pub_page.path_rail.isVisible()))
         row.addWidget(b)
         b = QPushButton(T('rp_data')); b.setIcon(STYLE.icon('open'))
         b.setToolTip(T('rp_saved_automatically_in_the_project_imports_are_independent_copies'))

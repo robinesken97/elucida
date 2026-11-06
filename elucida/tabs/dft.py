@@ -597,6 +597,11 @@ def export_names(names):
     return out
 
 
+def new_entry(p):
+    return dict(uid=uuid.uuid4().hex[:8], file=p, name=Path(p).stem, order=None, view=None, zoom=1.0,
+                pan=[0.0, 0.0], layout={}, label_on={})
+
+
 class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     STATE_KEY = "dft"
     GUIDE, GUIDE_ACTION = "dft", ("guide_add", "add_xyz")
@@ -959,8 +964,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         except Exception as ex:
             self.main.error(f"{Path(p).name}: {ex}")
             return None
-        e = dict(uid=uuid.uuid4().hex[:8], file=p, name=Path(p).stem, order=None, view=None, zoom=1.0,
-                 pan=[0.0, 0.0], layout={}, label_on={})
+        e = new_entry(p)
         self.entries().append(e)
         self.st["current"] = e["uid"]
         self.stop_numbering()
