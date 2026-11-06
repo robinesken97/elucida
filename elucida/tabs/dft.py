@@ -626,6 +626,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.to_right(self.group_titled("dft_si"), T("dft_si"))
         self.to_right(self.pages.prof_group, T("dft_profile"))
         self.to_right(self.pages.nics_group, T("dft_nics"))
+        from elucida.tabs.multireference import MultireferencePage
+        self.mr_page = MultireferencePage(self)
+        self.to_right(self.mr_page, T('rp_multireference'))
+        self.mr_page.sync()
     def __init__(self, main, state):
         self.numbering = False            # Klick-Modus „Nummerieren“ (nicht im Undo)
         self.picks = []                   # angeklickte Dateiindizes in Klickreihenfolge
@@ -1215,8 +1219,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     self.cmb_mo.addItem(self.mo_label(m, i), i)
                 homo = max((i for i, mo in enumerate(m["mos"]) if mo["occ"] > 0.5 and mo["spin"] == "a"), default=0)
                 self.cmb_mo.setCurrentIndex(homo)
-            except Exception:
-                pass
+            except Exception as ex:                        # sonst leere MO-Liste ohne Grund
+                self.add_note(f"{Path(mp).name}: {ex}")
         self.row_mo.setVisible(self.cmb_mo.count() > 0)
         lab_ = self.row_mo.parentWidget().layout().labelForField(self.row_mo) if self.row_mo.parentWidget() else None
         if lab_ is not None:
@@ -1320,7 +1324,14 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         order = self.order(e, len(g[1]))
         lines = g[0][-1]["lines"]
         opts = {k: self.st.get("si_" + k, v) for k, v in SI_DEFAULTS.items()}
-        return si_parts(c, e.get("name") or Path(e["file"]).stem, [lines[k] for k in order], opts)
+        p = si_parts(c, e.get("name") or Path(e["file"]).stem, [lines[k] for k in order], opts)
+        from elucida.tabs.multireference import si_extra
+        p["extra"] += si_extra(c, e)
+        # A generic final single-point value does not identify an MR root/method.
+        # The explicitly selected MR result above is the source of state energies.
+        if c.get("multireference"):
+            p["energies"] = None
+        return p
 
     def elements(self):
         """Elemente aller Geometrien (C, H zuerst) für die Labelfarbe je Element."""
@@ -1498,6 +1509,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.update_si()
 
     def update_si(self):
+        if hasattr(self, "mr_page"):
+            self.mr_page.sync()
         e = self.entry()
         c = self.calc_of(e) if e else None
         self.btn_si_copy.setEnabled(c is not None)

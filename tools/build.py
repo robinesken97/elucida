@@ -14,6 +14,9 @@ from pathlib import Path
 
 os.chdir(Path(__file__).resolve().parent.parent)     # Pfade relativ zur Repo-Wurzel (dist/ liegt dort)
 
+# The embedded editor assets must be built before packaging.
+subprocess.run([sys.executable, "tools/build_octet.py"], check=True)
+
 # Versionsnummer nur an einer Stelle pflegen: APP_VERSION in elucida/__init__.py
 VERSION = re.search(r'^APP_VERSION = "([^"]+)"', Path("elucida/__init__.py").read_text(encoding="utf-8"), re.M).group(1)
 
@@ -38,16 +41,17 @@ args = [
     "--hidden-import", "matplotlib.backends.backend_pdf",
     "--hidden-import", "matplotlib.backends.backend_svg",
     "--exclude-module", "tkinter",
-    "--exclude-module", "PySide6.QtWebEngineCore",
+    "--hidden-import", "PySide6.QtWebEngineCore",
+    "--hidden-import", "PySide6.QtWebEngineWidgets",
+    "--hidden-import", "PySide6.QtWebChannel",
     "--exclude-module", "PySide6.Qt3DCore",
-    "--exclude-module", "PySide6.QtQuick",
-    "--exclude-module", "PySide6.QtQml",
     "--exclude-module", "PySide6.QtMultimedia",
     "--exclude-module", "PySide6.QtCharts",
     "--exclude-module", "PySide6.QtDataVisualization",
     "Elucida.py",
 ]
 if sys.platform == "darwin":
+    args[4:4] = ["--hidden-import", "AppKit", "--hidden-import", "Foundation"]
     args[4:4] = ["--osx-bundle-identifier", "de.elucida.app"]
 print(" ".join(args))
 rc = subprocess.call(args)

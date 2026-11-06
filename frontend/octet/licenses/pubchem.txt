@@ -1,0 +1,10 @@
+PubChem
+National Center for Biotechnology Information (NCBI), U.S. National Library of Medicine
+https://pubchem.ncbi.nlm.nih.gov
+
+Octet's drug and reagent names (Name to Structure and Structure to Name) give Octet's own structures, checked
+against PubChem's records read on 17 October 2026. A few complex structures (tetracyclines, steroids, paclitaxel,
+strychnine) follow PubChem's SMILES. Name to Structure's dictionary is from Wikidata; PubChem's records, read on
+27 October 2026, decided which compound a shared or doubtful name keeps. With Online search on, Name to Structure asks
+PubChem for a name or InChIKey Octet cannot read offline. NCBI places no restrictions on the use or distribution of
+PubChem data. Octet names PubChem as the source of these records.

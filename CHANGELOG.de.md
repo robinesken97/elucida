@@ -2,6 +2,33 @@
 
 # Änderungen
 
+## 2.6.0 – 2026-11-06
+
+### Neu
+- **Eingebauter Zeicheneditor (Octet Draw):** im Synthese-Tab, im Verbindungsdialog, an den Plateaus des Energieprofils und in
+  Reaktionspfaden; automatisches Speichern, Strukturprüfung, Clean-up, Name zu Struktur, Stöchiometrietabelle mit
+  ausdrücklicher Übernahme, SI nur mit der obersten Reaktion, CDX/CDXML-Begleitdateien neben Word-Exporten.
+- **Reaktionspfade:** neuer Projektreiter „Computerchemie“ mit freier Zeichenfläche, Rechendaten und 3D-/Orbitalansichten;
+  maßstäbliche oder ausdrücklich schematische Energiediagramme, auch in der Gesamt-SI.
+- **Multireferenz (ORCA 6):** CASSCF, SC-NEVPT2 und QD-SC-NEVPT2 je Block in Tab, SI und Overlay; ΔE_ST und y₀ = n(LUNO).
+- **SEC:** zusammengeführte UV/Vis/NIR-Exporte (Absorbanz oder Rohsignal, ganzer Bereich). Sie enthalten keine Zeiten:
+  Potentiale nur aus bestätigter Zuordnung (Start + Intervall oder Tabellen), Herkunft in Unterschrift und Methodentext;
+  Lücken und Sprünge werden gemeldet.
+- **CV:** Pfeil der Messrichtung ziehbar; Randles-Ševčík auch gegen v; Achsenbeschriftung v¹ᐟ² [V s⁻¹]¹ᐟ².
+- **UV-Vis:** Konzentrationen in Farben mit Legende (wahlweise).
+- **IR:** Linienbreite einstellbar, dreieckige Peakmarken entfernt.
+- **Canvas dunkel:** alle Diagramme, Vorschauen und Editoren auf reinem Schwarz, Farbtöne bleiben, dunkle Farben werden
+  aufgehellt; nur am Bildschirm.
+
+### Behoben
+- Reagenzien mit Zusatz in Klammern („THF (dry)“) werden wieder erkannt.
+- Die Gesamt-SI bricht nicht mehr ab, weil das globale Textformat geändert wurde.
+- Wiederhergestellte Stufen behalten Label, Schritt, Pfade und Bilder.
+
+### Entfernt
+- Automatischer `elucida.json`-Export für Characterization. Vorhandene Dateien bleiben erhalten;
+  Speichern, SI-Export und Datenpakete bleiben verfügbar.
+
 ## 2.5.0 – 01.11.2026
 
 ### Neu

@@ -77,7 +77,7 @@ def procedure_blocks(p):
     return [("heading", head)] + text_blocks(p.get("text", ""))
 
 
-def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
+def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, reaction_paths=()):
     """meta: Angaben der Publikation (title, authors, affiliation). compounds: [(Name, Teile)] mit Teile =
     {char, nmr, irms, uvvis, epr, cv, sec: Blöcke; xray: Blöcke ohne Kristalltabelle; crystal: (Kopf, Zeilen) | None;
     dft: Blöcke; methods_<sec>: Blöcke}. sections: gewählte Kapitel. -> Blöcke für SI.write_docx."""
@@ -152,6 +152,9 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True):
             body = [("columns", 2)] + body if body else []
             figs = [b for _, parts in compounds for b in parts.get("dft_figs") or []]   # Energieprofile usw. einspaltig
             body = SI.two_per_page(figs) + body if figs else body
+            if reaction_paths and (meta.get("reaction_paths_si") or {}).get("include") is not False:
+                paths = [("columns", 1), ("heading", "Reaction pathways")] + list(reaction_paths)
+                body = body + paths if (meta.get("reaction_paths_si") or {}).get("position") == "after" else paths + body
         if not body:
             continue
         body = intro + body                                   # DFT: Einleitung noch einspaltig

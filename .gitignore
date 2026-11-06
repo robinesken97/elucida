@@ -36,3 +36,10 @@ exports/
 
 # macOS
 .DS_Store
+
+.venv/
+node_modules/
+assets/octet/
+!frontend/octet/**/*.txt
+
+.octet-preview/

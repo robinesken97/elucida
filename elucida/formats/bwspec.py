@@ -4,8 +4,13 @@ elucida/formats/bwspec.py - Spektren aus BWSpec (B&W Tek, SEC): Wellenlänge aus
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 import numpy as np
+
+from elucida.app.i18n import T
+
+MERGED_HEAD = "Merged spectral data"
 
 
 def read_bwspec(path) -> dict:
@@ -47,6 +52,48 @@ def read_bwspec(path) -> dict:
     except ValueError:
         t = None
     return {"time": t, "lam": lam[keep][o], "A": A[keep][o], "name": Path(path).stem}
+
+
+def is_merged(path) -> bool:
+    """Zusammengeführter Export: Kopfzeile, dann nur „λ; Wert“. Gerät, Zeit und Parameter stehen nicht in der Datei."""
+    try:
+        with open(path, encoding="latin-1", errors="replace") as fh:
+            return fh.readline().strip() == MERGED_HEAD
+    except OSError:
+        return False
+
+
+def merged_quantity(path):
+    """Messgröße laut Dateiname: *.Abs8.txt -> "abs", *.Raw8.txt -> "raw", sonst None (der Inhalt sagt es nicht)."""
+    m = re.search(r"\.(abs|raw)\d*\.txt$", Path(path).name, re.I)
+    return m[1].lower() if m else None
+
+
+def read_merged(path) -> dict:
+    """Zweispaltiger Export -> dict(time=None, lam, A, name, merged=True). Werte unverändert: keine Blankkorrektur,
+    keine Glättung am Detektorübergang. Unbekanntes Format ablehnen, nicht raten."""
+    name, rows = Path(path).name, []
+    with open(path, encoding="latin-1", errors="replace") as fh:
+        if fh.readline().strip() != MERGED_HEAD:
+            raise ValueError(T("sec_merged_bad", f=name, n=1))
+        for n, ln in enumerate(fh, 2):
+            if not ln.strip():
+                continue
+            parts = ln.split(";")
+            try:
+                if len(parts) != 2:
+                    raise ValueError
+                rows.append((float(parts[0]), float(parts[1])))
+            except ValueError:
+                raise ValueError(T("sec_merged_bad", f=name, n=n)) from None
+    data = np.array(rows, float).reshape(-1, 2)
+    if len(data) < 2 or not np.isfinite(data).all() or (np.diff(data[:, 0]) <= 0).any():
+        raise ValueError(T("sec_merged_axis", f=name))
+    return {"time": None, "lam": data[:, 0], "A": data[:, 1], "name": Path(path).stem, "merged": True}
+
+
+def read_spectrum(path) -> dict:
+    return read_merged(path) if is_merged(path) else read_bwspec(path)
 
 
 def is_bwspec(path) -> bool:

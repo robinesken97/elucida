@@ -12,9 +12,11 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
                                QProgressDialog, QPushButton,
-                               QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QApplication)
+                               QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QApplication,
+                               QTabWidget, QStackedWidget)
 from PySide6.QtCore import QUrl
 
+from elucida.app.canvas_theme import register as register_canvas
 from elucida.app import publication as PUB
 from elucida.app import style as STYLE
 from elucida.app import welcome as WEL
@@ -122,6 +124,7 @@ class PublicationRow(QWidget):
             pm = QPixmap(t).scaled(int(29 * dpr), int(29 * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             pm.setDevicePixelRatio(dpr)
             lb.setPixmap(pm)
+            register_canvas(lb)
             g.addWidget(lb, k // 2, k % 2)
         if not info["thumbs"]:
             g.addWidget(QLabel(T("pub_mono"), objectName="recentMono", alignment=Qt.AlignCenter), 0, 0)
@@ -204,7 +207,13 @@ class PublicationPage(QWidget):
         super().__init__()
         self.main = main
         self.pdir = None
-        outer = QHBoxLayout(self)
+        self.path_workspace = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.project_tabs = QTabWidget(); layout.addWidget(self.project_tabs)
+        overview = QWidget()
+        self.project_tabs.addTab(overview, T('pub_compounds'))
+        outer = QHBoxLayout(overview)
         outer.setContentsMargins(24, 28, 24, 20)
         col = QWidget()
         col.setMaximumWidth(920)
@@ -244,6 +253,17 @@ class PublicationPage(QWidget):
         row.addWidget(b_si)
         self.b_pack, self.b_si = b_pack, b_si
         v.addLayout(row)
+        from elucida.app.reaction_paths import PathPanel
+        self.paths_page = QWidget()
+        self.project_tabs.addTab(self.paths_page, T('rp_computational_chemistry'))
+        paths_layout = QHBoxLayout(self.paths_page)
+        paths_layout.setContentsMargins(4, 4, 4, 4)
+        self.path_panel = PathPanel(self)
+        self.path_panel.setMaximumWidth(285)
+        paths_layout.addWidget(self.path_panel)
+        self.path_stack = QStackedWidget(); paths_layout.addWidget(self.path_stack, 1)
+        hint = QLabel(T('rp_select_path'), alignment=Qt.AlignCenter, wordWrap=True)
+        self.path_stack.addWidget(hint)
         hrow = QHBoxLayout()
         self.lbl_head = QLabel(objectName="recentHead")
         hrow.addWidget(self.lbl_head, 1)
@@ -290,11 +310,48 @@ class PublicationPage(QWidget):
         outer.addWidget(col, 12)
         outer.addStretch(1)
         self.rows = []
+        self.project_tabs.currentChanged.connect(main._update_undo_actions)
 
     # -- Inhalt -----------------------------------------------------------------------
     def set_publication(self, pdir):
+        if self.pdir != (Path(pdir) if pdir else None) and not self.close_path(): return False
         self.pdir = Path(pdir) if pdir else None
         self.refresh()
+        return True
+
+    def save_paths(self):
+        return not self.path_workspace or self.path_workspace.save()
+
+    def close_path(self):
+        workspace = self.path_workspace
+        if not workspace: return True
+        if not workspace.save(): return False
+        workspace.dispose()
+        self.path_stack.removeWidget(workspace)
+        workspace.deleteLater()
+        self.path_workspace = None
+        self.path_panel.show()
+        self.path_panel.refresh()
+        self.main._update_undo_actions()
+        return True
+
+    def open_path(self, item):
+        from elucida.app.reaction_paths import PathWorkspace
+        if self.path_workspace and self.path_workspace.item['uid'] == item['uid']:
+            self.project_tabs.setCurrentWidget(self.paths_page)
+            return
+        if not self.close_path(): return
+        workspace = PathWorkspace(self.main, self.pdir, item)
+        self.path_workspace = workspace
+        workspace.closed.connect(self.close_path)
+        self.path_stack.addWidget(workspace)
+        self.path_stack.setCurrentWidget(workspace)
+        self.path_panel.hide()                              # offener Pfad: volle Breite, ☰ blendet die Liste wieder ein
+        self.project_tabs.setCurrentWidget(self.paths_page)
+        for i in range(self.path_panel.list.count()):
+            row = self.path_panel.list.item(i)
+            if row.data(Qt.UserRole)['uid'] == item['uid']: self.path_panel.list.setCurrentItem(row)
+        self.main._update_undo_actions()
 
     def compound_dirs(self):
         return PUB.sync(self.pdir)[0] if self.pdir else []
@@ -307,6 +364,7 @@ class PublicationPage(QWidget):
         if self.pdir is None:
             return
         data = PUB.load(self.pdir)
+        self.path_panel.refresh()
         dirs, missing = PUB.sync(self.pdir)
         title = PUB.paper_title(data) or data.get("title") or self.pdir.name
         sub = " · ".join(x for x in (data.get("authors", ""), data.get("doi", "")) if x)
@@ -360,7 +418,7 @@ class PublicationPage(QWidget):
         self.lbl_missing.setText(T("pub_missing", p=", ".join(missing)))
         self.b_pack.setEnabled(bool(self.rows))
         self._filter(self.ed_filter.text())
-        self.b_si.setEnabled(bool(self.rows))
+        self.b_si.setEnabled(bool(self.rows) or bool(data.get("reaction_paths")))
 
     def _menu(self, row, pos):
         p = row.info["path"]
@@ -806,8 +864,9 @@ class PublicationPackDialog(QDialog):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self.plans = []
+            gone = []
             for d in PUB.sync(self.pdir)[0]:
-                items = DP.collect(PRJ.load(d), d)
+                items = DP.collect(PRJ.load(d), d, gone)
                 saved = saved_selection(main.settings, d)           # Auswahl aus dem Einzeldialog gilt weiter
                 for it in items:
                     it.on = bool(saved.get(it.key, it.on if it.group != "dft" else True))
@@ -815,6 +874,8 @@ class PublicationPackDialog(QDialog):
             self.codes = DP.assign_codes(self.plans)
         finally:
             QApplication.restoreOverrideCursor()
+        if gone:
+            main.error(T("dp_missing", n=len(gone), names=", ".join(gone[:8])))
         v = QVBoxLayout(self)
         hint = QLabel(T("pub_dp_hint"), wordWrap=True)
         hint.setStyleSheet(HINT_CSS)
@@ -1001,6 +1062,20 @@ class PublicationSIDialog(QDialog):
         self.cb_groups = QCheckBox(T("pub_si_groups"))       # Gruppen sonst nur Orientierung auf der Projektseite
         self.cb_groups.setToolTip(T("pub_si_groups_tip"))
         self.cb_groups.setChecked(PUB.load(pdir)["group_headings"])
+        rp_opts = PUB.load(pdir).get("reaction_paths_si") or {}
+        self.cb_paths = QCheckBox(T('rp_reaction_paths_in_computational_section'))
+        self.cb_paths.setChecked(rp_opts.get("include") is not False)
+        self.cmb_paths = QComboBox()
+        self.cmb_paths.addItem(T('rp_before_individual_calculations'), "before")
+        self.cmb_paths.addItem(T('rp_after_individual_calculations'), "after")
+        self.cmb_paths.setCurrentIndex(max(0, self.cmb_paths.findData(rp_opts.get("position", "before"))))
+        sv.addWidget(self.cb_paths); sv.addWidget(self.cmb_paths)
+        def paths_enabled():
+            self.cb_paths.setEnabled(self.cbs["dft"].isChecked())
+            self.cmb_paths.setEnabled(self.cbs["dft"].isChecked() and self.cb_paths.isChecked())
+        self.cbs["dft"].toggled.connect(paths_enabled)
+        self.cb_paths.toggled.connect(paths_enabled)
+        paths_enabled()
         self.pdir = pdir
         sv.addWidget(self.cb_toc)
         sv.addWidget(self.cb_methods)
@@ -1027,9 +1102,9 @@ class PublicationSIDialog(QDialog):
         s.setValue("pub_si_methods", int(self.methods()))
         s.setValue("pub_si_template", self.template())
         data = PUB.load(self.pdir)
-        if data["group_headings"] != self.cb_groups.isChecked():     # gehört zum Projekt (publication.elucida)
-            data["group_headings"] = self.cb_groups.isChecked()
-            PUB.save(self.pdir, data)
+        data["group_headings"] = self.cb_groups.isChecked()
+        data["reaction_paths_si"] = dict(include=self.cb_paths.isChecked(), position=self.cmb_paths.currentData())
+        PUB.save(self.pdir, data)
         self.accept()
 
     def sections(self):

@@ -1,4 +1,4 @@
-**English** | [Deutsch](epr.de.md) · [back to the overview](../../README.md#guides)
+**English** | [Deutsch](epr.de.md) · [back to the overview](../../README.md#workflows)
 
 # EPR: spectra, simulation and fit
 

@@ -486,12 +486,15 @@ def scheme_reagents(path):
     """Reagenzien und Lösungsmittel aus den Pfeiltexten -> [(Name, Formel oder "", Rolle)], Bedingungen
     (rt, 1 h, 80 °C …) fallen weg. „K2CO3 (1.2 eq.)“ -> ("K2CO3", "K2CO3", "reagent")."""
     out = []
+    from elucida.formats.reagent_labels import parse_labels
     for txt in scheme_texts(path):
-        for part in re.split(r"[,;\n]+(?![^(]*\))", txt):
-            part = part.strip()
+        for entry in parse_labels(txt):
+            part = entry["text"]
             if not part or _CONDITION.match(part):
                 continue
-            name = re.sub(r"\s*\([^)]*\)\s*$", "", part).strip()
+            name = entry["substance"]
+            if entry["equiv"] is None:              # „THF (dry)“, „NaOH (2.0 M)“; „Pd(PPh3)4“ bleibt (kein Leerzeichen)
+                name = re.sub(r"\s+\([^)]*\)\s*$", "", name).strip()
             if not name or _CONDITION.match(name):
                 continue
             if name in SOLVENTS:

@@ -10,10 +10,12 @@ Mengen: Klammern im SI-Format „S1 (1.03 g, 5.00 mmol, 1.0 eq.)“, „n-BuLi (
 Falschalarme: m/M ↔ n, V·c ↔ n, V·ρ/M ↔ n, n/n_ref ↔ eq., n_Produkt/n_ref ↔ Ausbeute.
 """
 from __future__ import annotations
+import elucida
 
 import html as _h
 import math
 import re
+import shutil
 from pathlib import Path
 
 from elucida.app.i18n import T
@@ -214,6 +216,8 @@ def row_amounts(row, ref_mmol=None):
     """Zeile der Tabelle (M, m_mg, V_mL, c_M, rho, n_mmol, role) -> dict(M, mmol, eq, yld, given) (Zahlen oder None);
     Zellen dürfen eine Einheit tragen („1.03 g“). Eingetragenes n zählt, wenn sich n nicht aus m bzw. V berechnen lässt (given = True; z. B. Harz/Polymer ohne M)."""
     M = molar_mass(row.get("M"))
+    if "octet_values" in row:
+        return dict(M=M, given=True, **row["octet_values"])
     m, V, c, rho, n_in = (cell_num(row.get(k), UNITS[k]) for k in ("m_mg", "V_mL", "c_M", "rho", "n_mmol"))
     n = None
     if m is not None and M:
@@ -222,6 +226,9 @@ def row_amounts(row, ref_mmol=None):
         n = V * c
     elif V is not None and rho is not None and M:
         n = V * rho * 1000 / M
+    label_eq = row.get("label_equiv")
+    if n is None and n_in is None and label_eq is not None and ref_mmol and row.get("role") != "product":
+        n = ref_mmol * float(label_eq)
     given = n is None and n_in is not None
     out = dict(M=M, mmol=n_in if given else n, eq=None, yld=None, given=given)
     n = out["mmol"]
@@ -230,6 +237,8 @@ def row_amounts(row, ref_mmol=None):
             out["yld"] = n / ref_mmol * 100
         else:
             out["eq"] = n / ref_mmol
+    if out["eq"] is None and label_eq is not None and row.get("role") != "product":
+        out["eq"] = float(label_eq)
     return out
 
 
@@ -392,7 +401,7 @@ from PySide6.QtCore import Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QFont, QImage, QPixmap, QTextCharFormat  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame, QGroupBox,  # noqa: E402
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSplitter, QStackedWidget,
-                               QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
+                               QInputDialog, QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
 from elucida.app import project as PRJ, style as STYLE  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS  # noqa: E402
@@ -410,6 +419,8 @@ class SynthTab(QWidget):
         self.main, self.st = main, state
         for k, v in self.DEFAULT_STATE.items():
             self.st.setdefault(k, type(v)() if isinstance(v, (list, dict)) else v)
+        import os
+        self.compact = elucida.octet_enabled()
         self._loading = False
         self.timer = QTimer(self, singleShot=True, interval=500)
         self.timer.timeout.connect(self.proc_changed)
@@ -422,7 +433,7 @@ class SynthTab(QWidget):
         ls.setWidgetResizable(True)
         ls.setFrameShape(QFrame.NoFrame)
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        ls.setMinimumWidth(max(520, left.minimumSizeHint().width() + 24))
+        ls.setMinimumWidth(340 if self.compact else max(520, left.minimumSizeHint().width() + 24))
         from elucida.tabs.base import EmptyGuide
         prev = QWidget()
         rv = QVBoxLayout(prev)
@@ -430,6 +441,8 @@ class SynthTab(QWidget):
         # Schema auf weißem Grund wie in Word (im dunklen Modus sonst kaum lesbar), nur wenn eines geladen ist;
         # der Text darunter folgt dem Erscheinungsbild
         self.lbl_prev = QLabel("", alignment=Qt.AlignCenter)
+        from elucida.app.canvas_theme import register
+        register(self.lbl_prev)
         self.lbl_prev.setStyleSheet("background: #ffffff; padding: 12px;")
         self.lbl_prev.hide()
         rv.addWidget(self.lbl_prev)
@@ -440,13 +453,26 @@ class SynthTab(QWidget):
         self.preview_stack.addWidget(EmptyGuide("syn", (T("syn_scheme_pick"), self.pick_scheme)))
         self.preview_stack.addWidget(prev)
         QVBoxLayout(right).addWidget(self.preview_stack)
+        self.drawing_editor = None
+        import os
+        if elucida.octet_enabled() and self.main.project_dir:
+            from elucida.app.drawing_editor import DrawingEditor
+            self.drawing_editor = DrawingEditor(right)
+            self.preview_stack.addWidget(self.drawing_editor)
+            self.drawing_editor.saved.connect(self._drawing_saved)
+            self.drawing_editor.set_canvas_dark(self.main.canvas_is_dark())
+            self.drawing_editor.import_requested.connect(self.pick_scheme)
+            self.drawing_editor.external_requested.connect(lambda: self.main.edit_in_chemdraw("scheme"))
+            self.drawing_editor.remove_requested.connect(self.remove_scheme)
+            self.drawing_editor.open_path(self.main.chemdraw_file("scheme"))
         from elucida.tabs.base import footer
         split = QSplitter(Qt.Horizontal)
         split.addWidget(footer(self, ls))
         split.addWidget(right)
-        split.setSizes([620, 800])
+        split.setSizes([390, 930] if self.compact else [620, 800])
         from elucida.tabs.base import fit_footer_column
-        fit_footer_column(self, split)
+        if not self.compact:
+            fit_footer_column(self, split)
         STYLE.tidy(left)                                 # Rand/Abstände der Spalte wie in den übrigen Tabs
         lay = QHBoxLayout(self)                          # kein QVBoxLayout: tidy(Tab) rückt sonst alles ein
         lay.setContentsMargins(0, 0, 0, 0)
@@ -455,10 +481,13 @@ class SynthTab(QWidget):
 
     # -- Bedienelemente -------------------------------------------------------------------
     def build_controls(self):
-        g = QGroupBox(T("syn_title_grp"))
+        g = QGroupBox("" if self.compact else T("syn_title_grp"))
+        if self.compact:
+            g.setStyleSheet("QGroupBox { padding-top: 0px; }")
+            g.setFixedHeight(58)
         v = QVBoxLayout(g)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Synthesis of"))
+        row.addWidget(QLabel(T("draw_synthesis_of") if self.compact else "Synthesis of"))
         self.ed_name = QLineEdit()
         self.ed_name.setToolTip(T("syn_name_tip"))
         self.ed_name.editingFinished.connect(self.name_changed)
@@ -468,11 +497,13 @@ class SynthTab(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
         v.addWidget(hint)
+        hint.setVisible(not self.compact)
         self.lv.addWidget(g)
 
-        g = QGroupBox(T("syn_scheme"))
+        g = QGroupBox(T("draw_files") if self.compact else T("syn_scheme"))
+        self.scheme_group = g
         v = QVBoxLayout(g)
-        row = QHBoxLayout()
+        row = QVBoxLayout() if self.compact else QHBoxLayout()
         b = QPushButton(T("syn_scheme_pick"))
         b.clicked.connect(self.pick_scheme)
         row.addWidget(b)
@@ -493,7 +524,8 @@ class SynthTab(QWidget):
         v.addWidget(hint)
         self.lv.addWidget(g)
 
-        g = QGroupBox(T("syn_proc"))
+        g = QGroupBox(T("draw_procedure") if self.compact else T("syn_proc"))
+        self.proc_group = g
         v = QVBoxLayout(g)
         row = QHBoxLayout()
         for txt, fn, tip in (("B", self.fmt_bold, T("syn_bold")), ("I", self.fmt_italic, T("syn_italic")),
@@ -513,7 +545,9 @@ class SynthTab(QWidget):
         v.addLayout(row)
         self.ed_proc = QTextEdit()
         self.ed_proc.setAcceptRichText(True)
-        self.ed_proc.setMinimumHeight(170)
+        self.ed_proc.setMinimumHeight(180)
+        if self.compact:
+            self.ed_proc.setMaximumHeight(260)
         self.ed_proc.setPlaceholderText(T("syn_proc_ph"))
         self.ed_proc.textChanged.connect(lambda: None if self._loading else self.timer.start())
         v.addWidget(self.ed_proc)
@@ -523,14 +557,17 @@ class SynthTab(QWidget):
         self.lv.addWidget(g)
 
         g = QGroupBox(T("syn_reagents"))
+        self.reagents_group = g
         v = QVBoxLayout(g)
-        self.tbl = QTableWidget(0, len(COLS) + 2)
+        self.tbl = QTableWidget(0, len(COLS) + (3 if self.compact else 2))
         self.tbl.setHorizontalHeaderLabels([T("syn_col_name"), T("syn_col_M"), "m [mg]", "V [mL]", "c [M]",
-                                            "ρ [g/mL]", T("syn_col_role"), "n [mmol]", T("syn_col_eq")])
+                                            "ρ [g/mL]", T("syn_col_role"), "n [mmol]", T("syn_col_eq")] + ([""] if self.compact else []))
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tbl.setMinimumHeight(170)
+        self.tbl.setMinimumHeight(180)
+        if self.compact:
+            self.tbl.setMaximumHeight(280)
         self.tbl.setToolTip(T("syn_table_tip"))
         self.tbl.itemChanged.connect(self.cell_changed)
         v.addWidget(self.tbl)
@@ -538,16 +575,61 @@ class SynthTab(QWidget):
         for txt, fn, tip in ((T("syn_row_add"), self.add_row, ""), (T("remove"), self.remove_row, ""),
                              (T("syn_from_scheme"), self.rows_from_scheme, T("syn_from_scheme_tip")),
                              (T("syn_insert"), self.insert_amounts, T("syn_insert_tip"))):
+            if self.compact:
+                txt = {self.add_row: "+", self.remove_row: "−", self.rows_from_scheme: T("syn_from_scheme"), self.insert_amounts: T("draw_into_text")}[fn]
             b = QPushButton(txt)
+            if self.compact and fn in (self.add_row, self.remove_row):
+                b.setFixedWidth(32)
             if tip:
                 b.setToolTip(tip)
             b.clicked.connect(fn)
             if fn == self.rows_from_scheme:
+                if self.compact:
+                    b.clicked.disconnect(fn)
+                    b.setText(T("draw_take_from"))
+                    sources = QMenu(b)
+                    sources.addAction(T("syn_from_scheme"), self.rows_from_scheme)
+                    sources.addAction(T("draw_copy_table"), self.rows_from_octet)
+                    b.setMenu(sources)
                 self.btn_from_scheme = b                  # nur mit Schema aktiv (update_scheme_info)
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
         self.lv.addWidget(g)
+
+        if self.compact:
+            self.more_columns = QPushButton(T("draw_more_amounts"))
+            self.more_columns.setCheckable(True)
+            self.more_columns.toggled.connect(self.show_amount_columns)
+            v.addWidget(self.more_columns)
+            self.show_amount_columns(False)
+            # Primary workflow first; file handling stays accessible below it.
+            self.lv.removeWidget(self.scheme_group)
+            self.scheme_group.hide()
+            self.lv.setStretch(self.lv.indexOf(self.proc_group), 2)
+            self.lv.setStretch(self.lv.indexOf(self.reagents_group), 2)
+
+    def show_amount_columns(self, shown):
+        for c in range(1, len(COLS)):
+            self.tbl.setColumnHidden(c, not shown)
+        header = self.tbl.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch if not shown else QHeaderView.ResizeToContents)
+        for c in (len(COLS), len(COLS) + 1):
+            header.setSectionResizeMode(c, QHeaderView.Fixed)
+            self.tbl.setColumnWidth(c, 78)
+        header.setSectionResizeMode(len(COLS) + 2, QHeaderView.Fixed)
+        self.tbl.setColumnWidth(len(COLS) + 2, 32)
+
+    def row_menu(self, row, button):
+        menu = QMenu(self)
+        for role in ROLES:
+            action = menu.addAction(T("syn_role_" + role))
+            action.setCheckable(True)
+            action.setChecked(self.st["reagents"][row].get("role") == role)
+            action.triggered.connect(lambda checked=False, r=role: self.role_changed(row, r))
+        menu.addSeparator()
+        menu.addAction(T("draw_more_amounts"), lambda: self.more_columns.setChecked(True))
+        menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
     # -- Zustand --------------------------------------------------------------------------
     def compound_name(self):
@@ -607,6 +689,13 @@ class SynthTab(QWidget):
                 self.tbl.item(r, 1).setForeground(Qt.red)
             elif M:
                 self.tbl.item(r, 1).setToolTip(f"M = {M:.2f} g/mol")
+            if self.compact:
+                button = QPushButton("⋮")
+                button.setStyleSheet("padding: 0px; min-width: 24px;")
+                button.setToolTip(T("draw_reagent_options"))
+                button.clicked.connect(lambda checked=False, r_=r, b_=button: self.row_menu(r_, b_))
+                self.tbl.setCellWidget(r, len(COLS) + 2, button)
+                self.tbl.item(r, 0).setToolTip(T("syn_role_" + (row.get("role") or "reagent")))
         self.tbl.blockSignals(False)
 
     def ref_mmol(self):
@@ -643,6 +732,8 @@ class SynthTab(QWidget):
 
     def set_scheme(self, p):
         """CDXML (oder Bild) ins Projekt; gleichnamige ChemDraw-Dateien (SVG/PDF/PNG/CDX/EMF) kommen mit."""
+        if self.drawing_editor and self.drawing_editor.dirty and not self.drawing_editor.save_sync():
+            return
         src = Path(p)
         newp = Path(self.main.import_file(str(src), PRJ.STRUCTURES))
         for sib in src.parent.glob(src.stem + ".*"):                # CDX und EMF zusätzlich zu den Bildern
@@ -651,12 +742,34 @@ class SynthTab(QWidget):
                 if not tgt.exists():
                     import shutil
                     shutil.copy2(sib, tgt)
+        if self.drawing_editor and newp.suffix.lower() == ".cdxml" and not self.drawing_editor.open_path(newp):
+            return
         self.st["scheme"] = str(newp)
         self.main.extra_cache.pop(("synscheme", str(newp)), None)
         self.sync_widgets()
         self.main.push_undo()
 
+    def _drawing_saved(self, path):
+        # A delayed acknowledgement of the previous document must not undo a file switch.
+        if self.drawing_editor.path != Path(path).resolve():
+            return
+        current = self.st.get("scheme")
+        if current and Path(current).suffix.lower() != ".cdxml":
+            return
+        self.set_scheme(path)
+
     def remove_scheme(self):
+        if self.drawing_editor:
+            if self.drawing_editor.dirty and not self.drawing_editor.save_sync():
+                return
+            # A fresh destination prevents reattaching the removed drawing on the next save.
+            import uuid
+            from elucida.app.project import EMPTY_CDXML
+            p = Path(self.main.project_dir) / PRJ.STRUCTURES / ("scheme-" + uuid.uuid4().hex[:8] + ".cdxml")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(EMPTY_CDXML, encoding="utf-8")
+            if not self.drawing_editor.open_path(p):
+                return
         self.st["scheme"] = None
         self.sync_widgets()
         self.main.push_undo()
@@ -728,6 +841,7 @@ class SynthTab(QWidget):
 
     def update_check(self):
         items = parse_amounts(self.st.get("proc") or "")
+        self.lbl_check.setVisible(bool(items) or not self.compact)
         if not items:
             self.lbl_check.setText(f"<span style='color:gray'>{_h.escape(T('syn_check_none'))}</span>")
             return
@@ -751,6 +865,39 @@ class SynthTab(QWidget):
         self.fill_table()
         self.update_check()
         self.main.push_undo()
+
+    def rows_from_octet(self):
+        editor = self.drawing_editor
+        if not editor or not editor.ready or not editor.save_sync():
+            return
+        import json
+        metadata = json.loads(editor.path.with_suffix('.elucida-drawing.json').read_text(encoding='utf-8'))
+        tables = metadata.get('tables', [])
+        if not tables:
+            self.main.error(T('draw_no_table'))
+            return
+        index = 0
+        if len(tables) > 1:
+            names = [f"{i+1}: " + ', '.join(c['name'] for c in t['components']) for i, t in enumerate(tables)]
+            selected, ok = QInputDialog.getItem(self, T('draw_copy_table'), T('draw_choose_table'), names, 0, False)
+            if not ok:
+                return
+            index = names.index(selected)
+        from elucida.app.drawing_data import clone_table
+        try:
+            source = editor.path.relative_to(Path(self.main.project_dir).resolve()).as_posix()
+        except ValueError:
+            source = str(editor.path)
+        # Keep the link when a project is moved; migrate copies made by the first prototype.
+        old_prefix = str(editor.path) + '#'
+        existing = [dict(r, octet_source=source + '#' + r['octet_source'][len(old_prefix):])
+                    if r.get('octet_source', '').startswith(old_prefix) else r for r in self.st['reagents']]
+        self.st['reagents'] = clone_table(existing, tables[index], source)
+        self.fill_table()
+        self.update_check()
+        self.main.push_undo()
+        if any('#' in c['key'] for c in tables[index]['components']):   # Isomere: Zuordnung nur nach Spalte
+            QMessageBox.information(self, T('draw_copy_table'), T('draw_table_isomers'))
 
     def rows_from_scheme(self):
         """Moleküle des Schemas als Zeilen (Summenformel als M); Namen trägst du ein (z. B. S1). Mit ChemDraw-
@@ -794,6 +941,12 @@ class SynthTab(QWidget):
                     for f, _m, r in sorted(mols, key=lambda x: x[2] != "reactant") if r != "product"]
             rows += [dict(name=n, M=f, role=r, **empty) for n, f, r in texts]
             rows += [dict(name="", M=f, role="product", **empty) for f, _m, r in mols if r == "product"]
+        from elucida.formats.reagent_labels import parse_labels
+        labels = [e for text in CDX.scheme_texts(p) for e in parse_labels(text) if e["equiv"] is not None]
+        for row in rows:
+            matches = [e for e in labels if e["substance"] == row.get("name")]
+            if len(matches) == 1:
+                row["label_equiv"] = matches[0]["equiv"]
         tab = self.st["reagents"]
         prod = lambda role: role == "product"                                   # noqa: E731
 
@@ -817,6 +970,8 @@ class SynthTab(QWidget):
                                else "reagent" if new["role"] in ("ref", "reactant") else new["role"])
                 tab.append(new)
                 old = new
+            if "label_equiv" in new and not any(str(old.get(k) or "").strip() for k in ("m_mg", "V_mL", "n_mmol")):
+                old["label_equiv"] = new["label_equiv"]
             if grid:
                 taken.append(old)
         if notes:
@@ -829,6 +984,8 @@ class SynthTab(QWidget):
         r, c = item.row(), item.column()
         if self._loading or c > len(COLS) or r >= len(self.st["reagents"]):
             return
+        if c != 0:  # Renaming does not change Octet's purity-corrected amounts.
+            self.st["reagents"][r].pop("octet_values", None)
         self.st["reagents"][r][COLS[c] if c < len(COLS) else "n_mmol"] = item.text().strip()
         self.fill_table()
         self.update_check()
@@ -840,6 +997,7 @@ class SynthTab(QWidget):
                 for row in self.st["reagents"]:
                     if row.get("role") == "ref":
                         row["role"] = "reagent"
+            self.st["reagents"][r].pop("octet_values", None)
             self.st["reagents"][r]["role"] = role
             QTimer.singleShot(0, self.fill_table)       # nicht während des Signals des Auswahlfelds neu aufbauen
             self.update_check()
@@ -949,7 +1107,8 @@ class SynthTab(QWidget):
             self.lbl_prev.hide()
         name = self.compound_name()
         empty = st is None and not (self.st.get("proc") or "").strip()   # noch nichts da: Anleitung statt leerer Seite
-        self.preview_stack.setCurrentIndex(0 if empty else 1)
+        editable = not self.st.get("scheme") or Path(self.st["scheme"]).suffix.lower() == ".cdxml"
+        self.preview_stack.setCurrentIndex(2 if self.drawing_editor and editable else (0 if empty else 1))
         if empty:
             return
         self.txt_prev.setHtml(f"<p>Synthesis of <b>{_h.escape(name)}</b></p><p style='text-align:justify'>"
@@ -960,6 +1119,31 @@ class SynthTab(QWidget):
         blocks = [("synthesis", self.compound_name())]
         sp = self.scheme_parts()
         st = self.scheme_asset()
+        if sp is not None and self.compact and self.st.get('scheme') and Path(self.st['scheme']).suffix.lower() == '.cdxml':
+            import json
+            from elucida.app.drawing_editor import BACKUP_DIR, DRAWING_VERSION, fingerprint, save_bundle
+            p = Path(self.st['scheme'])
+            meta = p.with_suffix('.elucida-drawing.json')
+            try:
+                data = json.loads(meta.read_text(encoding='utf-8')) if meta.exists() else {}
+            except (ValueError, OSError):
+                data = {}  # Regenerate derived metadata from the current drawing.
+            editor = self.drawing_editor
+            stale = data and (data.get('version') != DRAWING_VERSION or data.get('source_sha') != fingerprint(p))
+            if editor and (editor.dirty or stale):
+                if not editor.wait_ready() or not editor.save_sync():
+                    raise ValueError(T('draw_save_failed'))
+                data = json.loads(meta.read_text(encoding='utf-8'))
+            # Ohne Metadaten hat Octet die Datei nie gespeichert: ChemDraw-Schema unverändert übernehmen (fachliche Regel).
+            if data:
+                if data.get('source_sha') != fingerprint(p) or not data.get('si'):
+                    raise ValueError(f"{self.compound_name()}: {T('draw_no_si')}")
+                destination = Path(img_dir) / (p.stem + '_si.cdxml')
+                save_bundle(destination, data['si'], fingerprint(destination))
+                shutil.rmtree(Path(img_dir) / BACKUP_DIR, ignore_errors=True)   # Zwischenbild: kein Verlauf
+                sp = scheme_files(destination)
+                from elucida.core import images as IMG
+                st = IMG.load_structure(destination)
         if sp is not None:
             img_dir = Path(img_dir)
             img_dir.mkdir(parents=True, exist_ok=True)

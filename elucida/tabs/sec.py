@@ -17,7 +17,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox)
+                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox)
 
 from elucida.tabs import cv as CV
 from elucida.tabs import base as TABS
@@ -25,7 +25,8 @@ from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
-from elucida.formats.bwspec import (read_bwspec, is_bwspec)  # noqa: E402,F401  (Leser in elucida/formats)
+from elucida.formats.bwspec import (read_bwspec, is_bwspec, is_merged, merged_quantity,  # noqa: E402,F401
+                                    read_spectrum)                                   # (Leser in elucida/formats)
 
 F_RT = 96485.332 / (8.314462 * 298.15)          # 1/V bei 25 °C
 
@@ -54,6 +55,63 @@ def potentials(spectra, gamry, offset_s=0.0, with_outside=False):
     ts = np.array([(s["time"] - t0).total_seconds() + offset_s for s in spectra])
     out = np.interp(ts, T[o], E[o])                   # außerhalb: Start- bzw. Endpotential
     return (out, int(np.sum((ts < T.min() - 30) | (ts > T.max() + 30)))) if with_outside else out
+
+
+def file_number(name):
+    """Laufende Nummer im Dateinamen („Merge_0012.Abs8“ -> 12) oder None."""
+    m = re.search(r"(\d+)(?:\.[A-Za-z]+\d*)?$", name)
+    return int(m[1]) if m else None
+
+
+def parse_map(text):
+    """Zuordnungstabelle -> {Nr.: Wert}. Zeilen „Nr; Wert“ oder „von-bis; Wert“ (Spektren-Nr. wie im Tab)."""
+    out = {}
+    for n, ln in enumerate(text.splitlines(), 1):
+        if not ln.strip():
+            continue
+        m = re.fullmatch(r"\s*(\d+)(?:\s*-\s*(\d+))?\s*[;:\t ]\s*([-+−]?\d+(?:[.,]\d+)?)\s*", ln)
+        if not m:
+            raise ValueError(T("sec_map_bad", n=n))
+        v = float(m[3].replace(",", ".").replace("−", "-"))
+        out.update({k: v for k in range(int(m[1]), int(m[2] or m[1]) + 1)})
+    return out
+
+
+def assign_potentials(sp, gamry, st):
+    """Serien ohne Zeitstempel -> (E, Maske zugeordnet, Hinweise) oder (None, None, Hinweise).
+    Nur bestätigte Angaben zählen: nie Dateizeiten, nie gleichmäßig über die Laufzeit verteilen. Außerhalb der Messung
+    gibt es kein Potential (kein Klemmen auf Start-/Endwert wie bei echten Zeitstempeln)."""
+    mode = st["map_mode"]
+    if mode == "none" or not st["map_ok"]:
+        return None, None, []
+    n = len(sp)
+    try:
+        table = parse_map(st["map_table"]) if mode in ("time", "potential") else {}
+    except ValueError as ex:
+        return None, None, [str(ex)]
+    nums = [file_number(s["name"]) for s in sp]
+    keys = nums if None not in nums else list(range(1, n + 1))    # Dateinummer: Lücken verschieben nichts
+    if mode == "potential":
+        E = np.array([table.get(k, np.nan) for k in keys])
+        keep = np.isfinite(E)
+    else:
+        if gamry is None:
+            return None, None, [T("sec_map_no_dta")]
+        Eg = np.concatenate([c["E"] for c in gamry["cycles"]])
+        Tg = np.concatenate([c["T"] for c in gamry["cycles"]])
+        if not np.isfinite(Tg).all():
+            return None, None, [T("sec_no_time")]
+        if mode == "interval":
+            if st["map_step"] <= 0:
+                return None, None, [T("sec_map_no_step")]
+            t = st["map_start"] + (np.array(keys, float) - keys[0]) * st["map_step"]
+        else:
+            t = np.array([table.get(k, np.nan) for k in keys])
+        keep = np.isfinite(t) & (t >= Tg.min()) & (t <= Tg.max())
+        o = np.argsort(Tg)
+        E = np.interp(np.nan_to_num(t), Tg[o], Eg[o])
+    notes = [T("sec_map_partial", k=int(keep.sum()), n=n)] if not keep.all() else []
+    return (E, keep, notes) if keep.any() else (None, None, notes + [T("sec_map_empty")])
 
 
 def nernst_fit(E, A, n_range=(0.3, 3.0)):
@@ -118,12 +176,14 @@ class SECTab(TABS.FigureTab):
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
     CAP_FIELDS = ("solvent", "start", "mid", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
-    RESET_KEEP = ("spec_files", "dta", "offset_s", "e_shift", "electrode", "ref_from_cv", "mid")  # Daten, Zeit, Referenz
+    RESET_KEEP = ("spec_files", "dta", "offset_s", "e_shift", "electrode", "ref_from_cv", "mid", "quantity",
+                  "map_mode", "map_start", "map_step", "map_table", "map_ok", "import_note")  # Daten, Zeit, Referenz
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,
                          mode="spectra", first=1, last=0, highlight=True, mid="", gradient=False, diff=False,
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,
                          electrode="Ag/AgNO₃", ref_from_cv=False, cap_solvent="", cap_start="", cap_mid="",
-                         cap_end="")
+                         cap_end="", quantity="abs", map_mode="none", map_start=0.0, map_step=0.0, map_table="",
+                         map_ok=False, import_note="")
 
 
     def arrange(self):
@@ -169,6 +229,36 @@ class SECTab(TABS.FigureTab):
         self.ed_electrode = QLineEdit(st["electrode"])
         f.addRow(T("cv_electrode"), self.ed_electrode)
         self.lv.addWidget(g)
+
+        self.map_group = g = QGroupBox(T("sec_map"))
+        f = make_form(g)
+        self.cmb_map = QComboBox()
+        for key in ("none", "interval", "time", "potential"):
+            self.cmb_map.addItem(T("sec_map_" + key), key)
+        self.cmb_map.setCurrentIndex(max(0, self.cmb_map.findData(st["map_mode"])))
+        f.addRow(T("sec_map_mode"), self.cmb_map)
+        self.sp_map_start = QDoubleSpinBox(decimals=1, minimum=-100000, maximum=100000, singleStep=1, suffix=" s",
+                                           value=st["map_start"])
+        self.sp_map_start.setToolTip(T("sec_map_start_tip"))
+        f.addRow(T("sec_map_start"), self.sp_map_start)
+        self.sp_map_step = QDoubleSpinBox(decimals=2, minimum=0, maximum=100000, singleStep=1, suffix=" s",
+                                          value=st["map_step"])
+        self.sp_map_step.setToolTip(T("sec_map_step_tip"))
+        f.addRow(T("sec_map_step"), self.sp_map_step)
+        self.ed_map = QPlainTextEdit(st["map_table"])
+        self.ed_map.setPlaceholderText(T("sec_map_table_ph"))
+        self.ed_map.setFixedHeight(84)
+        f.addRow(self.ed_map)
+        self.cb_map_ok = QCheckBox(T("sec_map_ok"))
+        self.cb_map_ok.setToolTip(T("sec_map_ok_tip"))
+        self.cb_map_ok.setChecked(st["map_ok"])
+        f.addRow(self.cb_map_ok)
+        self.lv.addWidget(g)
+        self.cmb_map.currentIndexChanged.connect(self._map_mode_changed)
+        for w_ in (self.sp_map_start, self.sp_map_step):
+            w_.valueChanged.connect(self.changed)
+        self.cb_map_ok.toggled.connect(self.changed)
+        self.ed_map.textChanged.connect(self.timer.start)
 
         g = QGroupBox(T("sec_display"))
         f = make_form(g)
@@ -236,8 +326,28 @@ class SECTab(TABS.FigureTab):
 
     def _show_files(self):
         n = len(self.st["spec_files"])
-        self.lbl_spec.setText(T("sec_n_spectra", n=n) if n else "–")
+        merged = self.is_merged_series()
+        text = T("sec_n_spectra", n=n) if n else "–"
+        self.lbl_spec.setText(f"{text} ({T('sec_q_' + self.st['quantity'])})" if merged else text)
         self.lbl_dta.setText(Path(self.st["dta"]).name if self.st.get("dta") else "–")
+        self.map_group.setVisible(merged)
+        self.sp_offset_s.setEnabled(not merged)
+        self._map_mode_changed()
+
+    def is_merged_series(self):
+        files = self.st["spec_files"]
+        return bool(files) and Path(files[0]).exists() and is_merged(files[0])
+
+    def _map_mode_changed(self, *_):
+        mode = self.cmb_map.currentData()
+        for w_, on in ((self.sp_map_start, mode == "interval"), (self.sp_map_step, mode == "interval"),
+                       (self.ed_map, mode in ("time", "potential")), (self.cb_map_ok, mode != "none")):
+            w_.setVisible(on)
+            lab = w_.parentWidget().layout().labelForField(w_)
+            if lab:
+                lab.setVisible(on)
+        if _:
+            self.changed()
 
     def collect(self):
         self.st.update(offset_s=self.sp_offset_s.value(), e_shift=self.sp_shift.value(),
@@ -247,19 +357,61 @@ class SECTab(TABS.FigureTab):
                        gradient=self.cb_gradient.isChecked(),
                        diff=self.cb_diff.isChecked(), baseline=self.cb_baseline.isChecked(),
                        bands=self.ed_bands.text().strip(), trace_lams=self.ed_trace.text().strip(),
-                       fit=self.cb_fit.isChecked())
+                       fit=self.cb_fit.isChecked(), map_mode=self.cmb_map.currentData(),
+                       map_start=self.sp_map_start.value(), map_step=self.sp_map_step.value(),
+                       map_table=self.ed_map.toPlainText(), map_ok=self.cb_map_ok.isChecked())
 
     def choose_spectra(self):
         if not self.main.ensure_project():
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("sec_spectra"), self.main.settings.value("last_dir", ""),
-                                             "BWSpec (*.txt *.TXT);;" + T("flt_all"))
-        ps = [p for p in ps if is_bwspec(p)]
-        if not ps:
+                                             T("sec_flt") + " (*.txt *.TXT);;" + T("flt_all"))
+        if ps:
+            self.load_spectra(ps)
+
+    def load_spectra(self, ps):
+        """Auswahl oder abgelegte Dateien; was nicht gelesen wird, wird immer gemeldet."""
+        bw, merged = [p for p in ps if is_bwspec(p)], [p for p in ps if is_merged(p)]
+        rest = len(ps) - len(bw) - len(merged)
+        if not bw and not merged:
+            self.main.error(T("sec_none_read", n=rest))
             return
-        self.st["spec_files"] = [self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)) for p in sorted(ps, key=lambda p: _natural(Path(p).name))]
+        if bw and merged:
+            self.main.error(T("sec_mixed"))
+            return
+        quantity = "abs"
+        if merged:
+            kinds = {merged_quantity(p) for p in merged}
+            quantity = kinds.pop() if len(kinds) == 1 and None not in kinds else self._ask_quantity()
+            if quantity is None:
+                return
+            merged = [p for p in merged if merged_quantity(p) in (quantity, None)]   # nie Abs und Raw in einer Serie
+        chosen = sorted(bw or merged, key=lambda p: _natural(Path(p).name))
+        notes = [T("sec_skipped", n=rest)] if rest else []
+        notes += self._file_warnings(chosen) if merged else []
+        self.st["spec_files"] = [self.main.import_file(p, PRJ.data_sub(self.STATE_KEY)) for p in chosen]
+        self.st.update(quantity=quantity, import_note="\n".join(notes))
         self._show_files()
         self.timer.start()
+
+    def _ask_quantity(self):
+        names = [T("sec_q_abs"), T("sec_q_raw")]
+        name, ok = QInputDialog.getItem(self, T("sec_spectra"), T("sec_q_ask"), names, 0, False)
+        return ("abs", "raw")[names.index(name)] if ok else None
+
+    @staticmethod
+    def _file_warnings(paths):
+        """Nur Warnungen, keine Zuordnung: Lücken in den Nummern und Dateizeiten, die rückwärts oder weit springen
+        (Zähler neu gestartet, zwei Messungen in einem Ordner)."""
+        out = []
+        nums = [file_number(Path(p).stem) for p in paths]
+        if None not in nums and nums[-1] - nums[0] + 1 != len(set(nums)):
+            out.append(T("sec_gap", n=nums[-1] - nums[0] + 1 - len(set(nums))))
+        times = [Path(p).stat().st_mtime for p in paths]
+        for a, b, t0, t1 in zip(paths, paths[1:], times, times[1:]):
+            if t1 < t0 or t1 - t0 > 600:
+                out.append(T("sec_time_break", a=Path(a).stem, b=Path(b).stem))
+        return out
 
     def choose_dta(self):
         if not self.main.ensure_project():
@@ -273,13 +425,32 @@ class SECTab(TABS.FigureTab):
     def series(self):
         """-> (Spektren nach Zeit sortiert, Potentiale in V vs. Referenzelektrode oder None)."""
         st = self.st
-        sp = [self.cache(("bws", p), lambda p=p: read_bwspec(p)) for p in st["spec_files"] if Path(p).exists()]
+        files = [p for p in st["spec_files"] if Path(p).exists()]
+        self.gone = len(st["spec_files"]) - len(files)     # verschoben/gelöscht: melden, nicht still weglassen
+        sp = [self.cache(("bws", p), lambda p=p: read_spectrum(p)) for p in files]
         sp.sort(key=lambda s: (s["time"] is None, s["time"] or 0, _natural(s["name"])))
-        E, self.outside = None, 0
+        E, self.outside, self.map_notes = None, 0, []
+        g = None
         if st.get("dta") and Path(st["dta"]).exists() and sp:
             g = self.cache(("cv", st["dta"]), lambda: CV.read_gamry(st["dta"]))
+        if sp and sp[0].get("merged"):
+            E, keep, self.map_notes = assign_potentials(sp, g, st)
+            if E is not None:                              # ohne Potential nicht zeigen, statt eines falschen Werts
+                sp, E = [s for s, k in zip(sp, keep) if k], E[keep]
+        elif g is not None:
             E, self.outside = potentials(sp, g, st["offset_s"], with_outside=True)
         return sp, E
+
+    def map_sentence(self):
+        """Herkunft der Potentiale einer Serie ohne Zeitstempel (Methodentext, Unterschrift)."""
+        st = self.st
+        return {"interval": f"The spectra files carry no timestamps; potentials were taken from the potentiostat "
+                            f"record using a confirmed acquisition schedule (first spectrum at t = "
+                            f"{st['map_start']:g} s, one spectrum every {st['map_step']:g} s).".replace("= -", "= −"),
+                "time": "The spectra files carry no timestamps; potentials were taken from the potentiostat record "
+                        "using a confirmed table of acquisition times.",
+                "potential": "The spectra files carry no timestamps; potentials were assigned from a confirmed table "
+                             "of applied potentials."}.get(st["map_mode"], "") if st["map_ok"] else ""
 
     def e_offset(self):
         """Verschiebung der Potentialachse (E_Achse = E − Offset) und Achsenbeschriftung der Referenz."""
@@ -358,7 +529,7 @@ class SECTab(TABS.FigureTab):
                 col = TABS.PALETTE[(k + 1) % len(TABS.PALETTE)] if len(lams) > 1 else "#000000"
                 curves.append({"x": xs, "y": a, "color": col, "label": f"{lam:g} nm", "ls": "-", "lw": 1.3,
                                "marker": "o"})
-                if st["fit"] and Eax is not None:
+                if st["fit"] and Eax is not None and st["quantity"] == "abs" and len(np.unique(np.round(xs, 2))) >= 5:
                     fit = nernst_fit(xs, a)
                     if fit and fit["bound"]:
                         info.append(T("sec_fit_bound", lam=f"{lam:g}"))
@@ -376,7 +547,8 @@ class SECTab(TABS.FigureTab):
             ymin = float(min(c["y"].min() for c in curves))
             cfg["ylim"] = [ymin - 0.08 * span, st["ymax"] if st["ymax"] > 0 else ymin + 1.15 * span]
             cfg["xlabel"] = f"E [V vs. {CV.axis_ref(ref_label)}]" if Eax is not None else T("sec_index")
-            cfg["ylabel"] = ("ΔA" if st["diff"] else "A") + " [a.u.]"
+            cfg["ylabel"] = (("Δ raw signal" if st["diff"] else "raw signal") if st["quantity"] == "raw"
+                             else ("ΔA" if st["diff"] else "A")) + " [a.u.]"
         else:
             curves, labels = [], []
             mids = self.mid_indices(sel, Eax) if st["highlight"] else []
@@ -409,8 +581,9 @@ class SECTab(TABS.FigureTab):
                 # Farbe der hervorgehobenen Kurve mit der größten |A| an dieser Wellenlänge
                 col = max(ys_marked, key=lambda yc: abs(float(np.interp(lam, lam0, yc[0]))))[1]
                 labels.append({"key": f"label_sec_{lam:g}", "lam": lam, "text": f"λ =  {lam:g} nm", "color": col})
-            x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(LAM_RANGE[0], lam0.min()),
-                                                                          min(LAM_RANGE[1], lam0.max()))
+            lim = (lam0.min(), lam0.max()) if sp[0].get("merged") else LAM_RANGE   # NIR nicht abschneiden
+            x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(lim[0], lam0.min()),
+                                                                          min(lim[1], lam0.max()))
             cfg["xlim"] = [x0, x1]
             win = (lam0 >= x0) & (lam0 <= x1)
             vals = np.concatenate([c["y"][win] for c in curves])
@@ -418,8 +591,15 @@ class SECTab(TABS.FigureTab):
             ymin = min(0.0, float(vals.min()))
             cfg["ylim"] = [ymin - 0.03 * span, st["ymax"] if st["ymax"] > 0 else float(vals.max()) + 0.1 * span]
             cfg["xlabel"] = "wavelength [nm]"
-            cfg["ylabel"] = ("ΔA" if st["diff"] else "absorbance") + " [a.u.]"
-        if E is None and st.get("dta"):
+            cfg["ylabel"] = (("Δ raw signal" if st["diff"] else "raw signal") if st["quantity"] == "raw"
+                             else ("ΔA" if st["diff"] else "absorbance")) + " [a.u.]"
+        if self.gone:
+            info.append(T("sec_gone", n=self.gone))
+        if sp[0].get("merged"):
+            info += ([st["import_note"]] if st["import_note"] else []) + self.map_notes
+            if E is None:
+                info.append(T("sec_no_map"))
+        elif E is None and st.get("dta"):
             info.append(T("sec_no_time"))
         elif E is not None and self.outside:              # > 30 s außerhalb (Ruhepotential davor ist normal)
             info.append(T("sec_outside", n=self.outside))
@@ -433,15 +613,19 @@ class SECTab(TABS.FigureTab):
         import html
         from elucida.si.lines import chem_html
         st = self.st
-        title = "UV-vis-SEC" if st["mode"] != "trace" else "Absorbance at selected wavelengths during UV-vis-SEC"
+        sp, E = [], None
+        try:
+            sp, E = self.series()
+        except Exception as ex:                            # Unterschrift ohne Potentiale, aber nicht unbemerkt
+            self.main.log_signal.emit(f"SEC: {ex}")
+        method = "UV-vis-NIR-SEC" if sp and sp[0]["lam"].max() > 1100 else "UV-vis-SEC"
+        title = method if st["mode"] != "trace" else f"Absorbance at selected wavelengths during {method}"
+        if st["quantity"] == "raw":
+            title = f"Raw detector signal during {method}"
         h = f"{title} of <b>{html.escape(name)}</b>"
         if st.get("cap_solvent"):
             h += " in " + chem_html(st["cap_solvent"])
         h += "."
-        try:
-            sp, E = self.series()
-        except Exception:
-            sp, E = [], None
         sel = self.selection(len(sp)) if sp else []
         off, lab = self.e_offset()
         if st["mode"] != "trace" and st["highlight"] and not st["gradient"]:
@@ -461,18 +645,21 @@ class SECTab(TABS.FigureTab):
             fe = lambda v: f"{v:.2f}".replace("-", "−")                               # noqa: E731
             h += (f" Starting potential (vs. {ref}): {fe(E[i0] - off)} V; End potential (vs. {ref}): "
                   f"{fe(E[i1] - off)} V.")
+            if sp[0].get("merged"):
+                h += " " + self.map_sentence()
         return h
 
     def methods_text(self):
         """SI-Text zum scheinbaren Nernst-Fit (nur wenn gefittet). Ausdrücklich „apparent“: Im kontinuierlichen
         Scan hinkt die Dünnschichtzelle nach, E½ und n weichen vom CV ab; CV-Werte haben Vorrang."""
         fits = getattr(self, "fits", [])
-        if not fits:
-            return ""
         st = self.st
+        source = self.map_sentence() if self.is_merged_series() else ""
+        if not fits:
+            return source
         ref = str(self.ref_label or st["electrode"]).replace("Fc$^{0/+}$", "Fc0/+")
-        m = ["Each spectrum was assigned the potential at its acquisition time, interpolated from the time-resolved "
-             "potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
+        m = [source or "Each spectrum was assigned the potential at its acquisition time, interpolated from the "
+             "time-resolved potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
              ("Each spectrum was corrected by subtracting its mean absorbance between 780 and 820 nm. "
               if getattr(self, "_bl_applied", False) else "")
              + ("Difference spectra were obtained by subtracting the first spectrum shown. "

@@ -1,4 +1,4 @@
-**English** | [Deutsch](struktur-dft.de.md) · [back to the overview](../../README.md#guides)
+**English** | [Deutsch](struktur-dft.de.md) · [back to the overview](../../README.md#workflows)
 
 # Crystal structure and DFT
 

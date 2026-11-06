@@ -108,6 +108,12 @@ def save(pdir, data):
         out["group_headings"] = False
     if data.get("mnova"):                  # alte Projekte (bis 2.4.0, Mnova je Projekt): Eintrag erhalten, nicht mehr bedient
         out["mnova"] = list(data["mnova"])
+    if data.get("reaction_paths"):
+        out["reaction_paths"] = list(data["reaction_paths"])
+    if data.get("removed_reaction_paths"):
+        out["removed_reaction_paths"] = list(data["removed_reaction_paths"])
+    if data.get("reaction_paths_si"):
+        out["reaction_paths_si"] = dict(data["reaction_paths_si"])
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
         out["si_texts"] = texts

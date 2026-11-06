@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from elucida.app.canvas_theme import register as register_canvas
 from elucida.app import project as PRJ
 from elucida.app.i18n import T
 
@@ -181,6 +182,7 @@ class RecentRow(QWidget):
             pm = QPixmap(info["thumb"]).scaled(int(58 * dpr), int(58 * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             pm.setDevicePixelRatio(dpr)
             pic.setPixmap(pm)
+            register_canvas(pic)
         else:                                          # ohne Strukturbild: Kürzel in gleich großer Kachel
             pic = QLabel((info["name"][:2] or "?").upper(), objectName="recentMono", alignment=Qt.AlignCenter)
             pic.setFixedSize(64, 64)

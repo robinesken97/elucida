@@ -64,8 +64,9 @@ def _two_d_folder(kinds):
     return " + ".join(ks) if ks else "2D"
 
 
-def collect(state, project_dir) -> list[Item]:
-    """Alle Dateien eines Projekts, die in ein Datenpaket gehören können, mit Ziel im Zip und Standardauswahl."""
+def collect(state, project_dir, missing=None) -> list[Item]:
+    """Alle Dateien eines Projekts, die in ein Datenpaket gehören können, mit Ziel im Zip und Standardauswahl.
+    missing: Liste für eingetragene, aber fehlende Dateien (ein Datensatz darf nicht still unvollständig werden)."""
     from elucida.tabs.nmr import KINDS_2D
     pdir = Path(project_dir).resolve() if project_dir else None
     items, seen = [], set()
@@ -76,7 +77,11 @@ def collect(state, project_dir) -> list[Item]:
         p = Path(src)
         if not p.is_absolute() and pdir is not None:
             p = pdir / p
-        if not p.exists() or str(p.resolve()) in seen:
+        if not p.exists():
+            if missing is not None:
+                missing.append(p.name)
+            return
+        if str(p.resolve()) in seen:
             return
         seen.add(str(p.resolve()))
         items.append(Item(group, p, arc, GROUP_ON[group], _size(p), extra))

@@ -78,6 +78,20 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   Zerfall um bis zu 40 %, 95-%-Intervall traf bei Rauschen nur 23 %), Intervall s²(JᵀJ)⁻¹ mit n − 3 und t-Quantil, Band
   aus der Kovarianz, Kurve an den Messpunkten; „wie Skript“ (Min-Max, konstante Heizrate, √|r|) nur zum Vergleich – hängt
   stark vom Optimierer und von Spektren ohne Signal ab.
+- SEC ohne Zeitstempel (Zweispaltenexport „Merged spectral data“, Nutzerauftrag 2.6): Messgröße aus dem Dateinamen
+  (`.Abs8`/`.Raw8`, sonst Nachfrage), Abs und Raw nie in einer Serie, keine Blankkorrektur oder Glättung, Rohsignal nie
+  ins Overlay und ohne Nernst-Fit. Potential nur aus bestätigter Zuordnung (`map_mode` interval/time/potential + `map_ok`,
+  `assign_potentials`): nie Dateizeiten, nie gleichmäßig über die Laufzeit; außerhalb der Messung kein Potential (fällt
+  weg statt Klemmen). Dateizeiten nur als Warnung beim Import (`_file_warnings`). Intervall zählt über die Dateinummer
+  (Lücken verschieben nichts); Herkunft in Unterschrift/Methodentext (`map_sentence`). Nernst-Fit erst ab 5 Potentialen.
+  Geräte nicht aus Endung/Wellenlänge ableiten. `LAM_RANGE` gilt nur für BWSpec.
+- Octet Draw ist Standard (`elucida.octet_enabled()`, `ELUCIDA_OCTET=0` schaltet ab; Upstream-Stand und Änderungen in
+  `frontend/octet/UPSTREAM.md`, Details `docs/octet-integration.md`). Kein Anwendungs-Eventfilter (nativer Absturz mit
+  WebEngine, PySide 6.12/macOS): Mausrad-Schutz je Feld über `STYLE.guard_fields`. Canvas dunkel = `canvas_theme.dark_pixels`
+  (HSL-Helligkeit spiegeln, Farbton bleibt, Weiß = #000000, Nutzerwunsch „im Dunkeln alles erkennen“); nur Anzeige.
+  Reaktionspfade (`app/reaction_paths.py`, `path_composition.py`): keine Pop-up-Fenster, Höhe gehört dem Canvas
+  (Nutzerwunsch: Aktionen neben den Reitern, Pfadliste über ☰). Backups: je Speichern Rücksetzkopie, Verlauf höchstens
+  alle `BACKUP_GAP_S`, `BACKUP_KEEP` Stände.
 - Export: Standard 16 × 11 cm (halbe A4-Seite in Word, zwei Abbildungen pro Seite), minimale Ränder; PDF/SVG
   vektoriell, Text in SVG als Pfade. Exporte überschreiben im Projektordner (siehe nächster Punkt).
 - Projektordner (seit 2.1, Nutzerwunsch „nach Ergebnis“): `SI/` (Word, SI-Texte), `figures/` (PDF/SVG/PNG),
@@ -86,12 +100,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   (`EXPORT_LABEL`, ε: `<Serie>_UV-Vis`; ohne Verbindung der Ordnername). Tabs schreiben in `PRJ.staging`, `place_exports`
   sortiert nach Art (`export_kind`) – neue Exportdateien dort einordnen (Endung oder `SI_SUFFIXES`). Ordner nur bei
   Bedarf anlegen. Alte Projekte (`data/`, `images/`, `exports/`) **nie umräumen**: gespeicherte Pfade gelten weiter.
-- `elucida.json` (Characterization, Entwurf „Elucida ↔ Characterization“, Schema v1): nur in eine Richtung, Werte als Text
-  wie in der SI, Pfade relativ mit „/“, fehlende Daten = Feld fehlt, neue Felder ohne Versionssprung; atomar
-  (`.tmp` + `os.replace`), UTF-8 ohne BOM. Geschrieben beim Speichern, nach Exporten und 5 s nach dem Autosave
-  (`exchange_timer`; nicht bei offenem Menü/gedrückter Maus). Fehler nur ins Protokoll, nie das Speichern abbrechen.
-  Nichts neu rechnen, was die Tabs nicht ohnehin für die SI liefern (`si_char_parts`); SMILES/InChIKey nur ohne
-  Platzhalteratome (Abkürzungen). `project.elucida` bleibt intern.
+- `elucida.json` für Characterization wird nicht mehr erzeugt oder aktualisiert (Robin, 2026-11-04).
+  Vorhandene Dateien in Nutzerordnern nie löschen oder verändern. `project.elucida` bleibt die Projektdatei.
 - HRMS: calc. = monoisotopisch **mit Elektronenmasse** ([M+H]⁺ = M + 1.007276), calc./found immer 4 Nachkommastellen;
   ppm zur Kontrolle als found − calc (die Massenabteilung gibt das umgekehrte Vorzeichen an). IR: ganze Zahlen,
   absteigend; Bereich standardmäßig der ganze gemessene; mit OPUS-PDF gelten dessen Peakwerte.
@@ -305,7 +315,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   `PUB.rename_procedures`, offene Verbindung über ihren Zustand + Undo); Gesamt-SI
   einmal direkt vor der ersten Verbindung, die sie benutzt (nie umsortieren), Einzel-SI davor; Gruppen-Unterkapitel
   abschaltbar (`group_headings`). „Substanz übrig“ (`compound.sample`/`sample_no`, wie Characterization): nur intern
-  (Startbildschirm ⚗, Suche, Checkliste gelb statt rot, `elucida.json`), nie SI/Datenpaket.
+  (Startbildschirm ⚗, Suche, Checkliste gelb statt rot), nie SI/Datenpaket.
 - SI-Methodentexte („SI-Text kopieren“, beim Export `…_methods.txt`): jeder Tab, der fittet (ε, CV, SEC, EPR), beschreibt
   englisch **nur die tatsächlich benutzten** Schritte mit den aktuellen Parametern, dann die Ergebnisse; Aufbau/Geräte
   stehen in der SI der Gruppe und nicht im Code. Keine Unsicherheiten erfinden (EPR-S = ½-Fit: ausdrücklich keine).
@@ -329,7 +339,7 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   dort einordnen. Vorlagen (`save_setup`/`load_setup`) nur ohne diese Schlüssel und ohne `cap_*`. X-Ray/DFT: `XRAY.reset_display` (+ Ansicht/Atom-Auswahl der
   gewählten Struktur; DFT behält Nummerierung, `label_style`, `zero_based`); ε: `MainWindow.reset_defaults` (DEFAULT_GLOB ohne
   Schichtdicke/Export). Immer `push_undo`.
-- Notiz zur Verbindung (`compound.note`): nur intern (Startbildschirm, Titelleiste, `elucida.json`), nie in SI/Word/
+- Notiz zur Verbindung (`compound.note`): nur intern (Startbildschirm, Titelleiste), nie in SI/Word/
   Datenpaket.
 - **Begriffe (seit 2.3, Nutzerwunsch):** in der Oberfläche/Doku heißt der Ordner einer Verbindung **„Verbindung“**
   (früher „Projekt“), der übergeordnete Ordner **„Projekt“**. Intern bleiben die alten Namen: `project_dir`/`PRJ`/
@@ -371,7 +381,7 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 |---|---|
 | `Elucida.py` | Startdatei (`python Elucida.py`, auch `python -m elucida`); Einstieg für PyInstaller. |
 | `elucida/__init__.py` | `APP_NAME`, `APP_VERSION` (nur hier pflegen), `ROOT` (Repo-Wurzel; gebaut `sys._MEIPASS`). |
-| `app/main_window.py` | Hauptfenster, ε-Tab, Projektlogik, Undo/Redo (JSON-Snapshots von `get_state`), Autosave, `si_char_parts` (Zeilen mit Art), `write_exchange`. |
+| `app/main_window.py` | Hauptfenster, ε-Tab, Projektlogik, Undo/Redo (JSON-Snapshots von `get_state`), Autosave, `si_char_parts` (Zeilen mit Art). |
 | `selftest.py` | `selftest()`, `make_selftest_inputs` (auch für das Beispielprojekt). Neue Funktion → eigener Abschnitt. |
 | `core/uvvis.py` | `DEFAULTS`, Reader (Cary CSV, DSW/BSW/FBSW via `parseuv_lite`, Eclipse CSV), Basislinie, Peak-/Schultersuche, `linfit`, `evaluate`, `Figure` (Platzierung über FreeSpace-Raster, gespeicherte Positionen zuerst reservieren), Export, `Dragger`. |
 | `tabs/base.py` | `CanvasHost` (Vorschau maßstabsgetreu, dynamische DPI), `FigureTab` (Basis inkl. `methods_text`/`methods_button`, Export `_methods.txt`), Overlay- und Fluoreszenz-Tab. |
@@ -410,7 +420,11 @@ Format**, Uhrzeit bleibt (Nutzerwunsch P8 R2: Dateien lesbar, kein Projektverlau
 Länge (Datum, Autor); MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docProps-Personen/-Daten, EMF gleiche Länge); OPUS `scrub_binary_strings` gleiche Länge; Messwerte bytegleich; PDF/Mnova/.d nicht bearbeitbar, Kürzel darin im Bericht `kept`). Dialog `app/datapack_dialog.py` (Auswahl je Projekt in QSettings). |
 | `app/publication.py` / `app/publication_view.py` | Publikation: Index `publication.elucida`, `sync`/`add_compound`/`move_compound`/`remove_compound`, `publication_of`, `readme_text`/`license_file`; Seite `PublicationPage` (Zentrum Index 2), `PublicationRow` (Startbildschirm), Dialoge Angaben/SI-Texte/Datenpakete/Gesamt-SI. |
 | `si/publication_si.py` | Gesamt-SI: `SECTIONS` (Kapitelfolge der Gruppen-SI), `assemble`, `merge_crystal`; Blöcke `title`/`toc`/`section` in `write_docx`. |
-| `exchange/characterization.py` | `elucida.json` für Characterization (Schema v1): `build(main)` nur aus vorhandenen SI-Teilen/Zuständen, `write` atomar; `structure_ids` (SMILES/InChIKey, nicht bei Abkürzungen). |
+| `app/drawing_editor.py`, `app/drawing_clipboard.py`, `app/drawing_data.py`, `app/canvas_theme.py` | Octet im Qt-Host: WebEngine + Brücke, `save_bundle` (CDXML/CDX/SVG, Backups), Zwischenablage, Übernahme der Stöchiometrietabelle, dunkler Canvas (nur Anzeige). |
+| `app/reaction_paths.py`, `app/path_composition.py`, `tabs/diagram_layout.py`, `tabs/profile_*.py` | Projektweite Reaktionspfade: eigener Projektordner je Pfad, freie Komposition, Diagrammlayout (maßstäblich/schematisch), Bildanker, Orbitalansichten. |
+| `formats/multireference.py`, `tabs/multireference.py` | ORCA-6-CASSCF/NEVPT2-Ergebnisse (Text wie in der Ausgabe), Auswahl, SI-Zeilen. |
+| `formats/reagent_labels.py` | Mengenzusätze in Reagenzbeschriftungen; chemische Klammern bleiben. |
+| `frontend/octet/` | Octet-Draw-Quellstand (Apache-2.0) + Elucida-Anpassungen, siehe `UPSTREAM.md`; `tools/build_octet.py` baut nach `assets/octet/`, `tools/update_octet.py` staget neue Upstream-Stände. |
 | `tools/build.py` | PyInstaller-Build (wechselt selbst in die Repo-Wurzel; `--collect-submodules elucida`). |
 | `core/orbitals.py` | Orbitale (DFT-Tab): Cube-Leser/-Schreiber, Molden-Leser + `Basis` (Überlappung Obara–Saika, Konventionsprüfung, Auswertung), `molden_grid`, Orbitalenergien ORCA/Gaussian, `iso_for_fraction`, `Volume`, `render` (Raycasting), `occluder_depth`, `OrbitalImage`, IboView-Konstanten, `make_test_cube`/`make_test_molden`. |
 | `core/minao.py` | Minimalbasis MINAO (Daten aus PySCF, Apache-2.0) für IAO-Bindungsordnungen im Orbitalbild. |
@@ -424,12 +438,13 @@ python tools/build.py                                 # PyInstaller-Build (brauc
 python tools/compare_figures.py vorher nachher        # Abbildungen zweier Selbsttest-Läufe pixelgenau (UI-Änderungen)
 python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots): Cover = Startbildschirm mit Beispielprojekt, Tabs leer mit Anleitung; alles nur dunkel (Nutzerwunsch)
 ```
+- README kurz halten (Überblick, Abläufe, Download); alle Tab-Details in `docs/manual.de.md`/`docs/manual.en.md` (App-Links, Überschriften prüft der Selbsttest).
 - Neue Funktion → eigener Abschnitt im `selftest()` (`elucida/selftest.py`) (Muster: `report.append("…: OK")`).
 - Der Selbsttest läuft in CI auch mit der **fertig gebauten** App auf allen drei Systemen.
 
 ## Release-Ablauf
 1. `APP_VERSION` in `elucida/__init__.py` erhöhen.
-2. `CHANGELOG.md` **und** `CHANGELOG.de.md` ergänzen; bei sichtbaren Änderungen `README.md` **und** `README.de.md`.
+2. `CHANGELOG.md` **und** `CHANGELOG.de.md` ergänzen; bei sichtbaren Änderungen `docs/manual.en.md` **und** `docs/manual.de.md` (README nur für Neues von Gewicht).
 3. Selbsttest, commit, push, dann **ein** Lauf: `gh workflow run build.yml --ref main -f release=vX.Y.Z` (Nutzerwunsch
    2.3.2: kein Testbuild + Tag mehr; der Release-Job hat `needs: build` und legt Tag und Release nur an, wenn alle vier
    Builds grün sind). Zufällige Fehler (PySide-Event-Filter unter Windows, ETIMEDOUT beim Artefakt-Upload) mit
@@ -502,6 +517,6 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - BSW-Datei mit Sprung in Spektrum 60 (CSV-Export zum Vergleich fehlt).
 - Echte Gaussian-TD-DFT-Ausgabe noch nicht getestet (nur ORCA inkl. SOC); DFT-Tab: Gaussian-Leser mit einer Opt+Freq geprüft.
 - DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering, Orbitale wie IboView). Orbitale: echte ORCA-Molden-
-  Datei und ORCA-Cube noch nicht gegen orca_plot geprüft (PySCF-Molden ja, inkl. g). Multireferenz-Auswertung (CASSCF/NEVPT2/SORCI,
-  z. B. Diradikaloide, Triplett-Vinylidene) zurückgestellt: großer Parser, bisher Abschreiben der ORCA-Tabellen.
+  Datei und ORCA-Cube noch nicht gegen orca_plot geprüft (PySCF-Molden ja, inkl. g). MR-Ausgaben (ORCA 6 CASSCF/SC-NEVPT2/QD-SC-NEVPT2,
+  `formats/multireference.py`) nur gegen synthetische Layouts geprüft; SORCI offen.
   Vergleichsmodus mit echter CIF noch ungeprüft (nur künstliche CIF und echte DFT-Paare).

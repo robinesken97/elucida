@@ -1,4 +1,4 @@
-[English](elektrochemie.en.md) | **Deutsch** · [zurück zur Übersicht](../../README.de.md#anleitungen)
+[English](elektrochemie.en.md) | **Deutsch** · [zurück zur Übersicht](../../README.de.md#abläufe)
 
 # Elektrochemie: CV und SEC
 

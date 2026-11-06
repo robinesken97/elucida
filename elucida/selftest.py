@@ -30,7 +30,7 @@ from elucida.app.main_window import (DEFAULT_GLOB, OLD_APP_NAMES, PREVIEW_DPI, M
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app import update as UPD
-from elucida.app.i18n import T
+from elucida.app.i18n import T, get_lang
 from elucida.core import color as COLOR
 from elucida.core import images as IMG
 from elucida.core import uvvis as core
@@ -689,6 +689,13 @@ def selftest(outdir, with_isnet=False):
         fmts_x = {c_.number_format for ws_ in wbk.worksheets for row_ in ws_.iter_rows() for c_ in row_}
         assert "0.0" not in fmts_x, "Excel: SE/KI von ε mit anderer Rundung als Tabelle/SI"
         report.append("export into project + Excel report: OK")
+        w.glob["conc_colors"] = True                         # Molaritäten in Farben: nur mit Legende
+        w.render()
+        lines_ = [l_ for l_ in w.F.ax.get_lines() if not l_.get_label().startswith("_")]
+        assert w.F.legend is not None and len({l_.get_color() for l_ in lines_}) == len(lines_) >= 2, lines_
+        w.glob["conc_colors"] = False
+        w.render()
+        assert w.F.legend is None
         # Inset neben die schmalere Achse: Struktur behält ihr Seitenverhältnis (war gestaucht)
         F_ = w.F
         if F_ is not None and "image_struktur" in F_.axes_items and "inset" in F_.axes_items:
@@ -1049,7 +1056,7 @@ def selftest(outdir, with_isnet=False):
         assert offs_ == sorted(offs_, reverse=True) and offs_[0] > 0 == offs_[-1] and cfg_["y_axis"] == "no_numbers"
         assert len(labels_) == 5 and all(l_.get("y") is not None and "1/2" in l_["text"] for l_ in labels_), labels_
         t_cv.render()
-        assert all(getattr(a_, "_anchor_y", None) is not None for a_ in t_cv.F.ann_items.values())
+        assert all(getattr(a_, "_anchor_y", None) is not None for k_, a_ in t_cv.F.ann_items.items() if k_ != "arrow_scan")
         # Peakpotentiale an einzelnen Peaks, y-Achse aus, Struktur je Messung (in Kurvenfarbe)
         st_cv.update(peak_labels="both", y_axis="off")
         st_cv["files"][0].update(structure=str(cdxml), struct_color=True)
@@ -1073,7 +1080,7 @@ def selftest(outdir, with_isnet=False):
         assert sorted(l_["text"].split(" =")[0] for l_ in labels_) == ["E$_{1/2}$ (A)", "E$_{1/2}$ (B)"], labels_
         assert {round(l_["lam"], 2) for l_ in labels_} == {-1.08, -1.18}, labels_
         st_cv.update(stack=True, e12_each=True)
-        for plot_, n_series in (("dep", 2), ("rs", 4), ("loglog", 4), ("ratio", 1), ("trumpet", 4)):
+        for plot_, n_series in (("dep", 2), ("rs", 4), ("rs_v", 4), ("loglog", 4), ("ratio", 1), ("trumpet", 4)):
             st_cv["plot"] = plot_
             cfg_, curves_, _, _ = t_cv.figure_spec()
             pts_ = [c_ for c_ in curves_ if c_.get("marker")]
@@ -1083,6 +1090,10 @@ def selftest(outdir, with_isnet=False):
                 assert sorted(len(c_["x"]) for c_ in pts_) == [2, 3]
             if plot_ == "rs":
                 assert len([c_ for c_ in curves_ if c_.get("ls") == "--"]) == 2      # Gerade nur ab 3 Scanraten (A)
+                assert cfg_["xlabel"] == "v$^{1/2}$ [V s$^{-1}$]$^{1/2}$", cfg_["xlabel"]
+            if plot_ == "rs_v":
+                assert cfg_["xlabel"] == "v [V s$^{-1}$]" and max(c_["x"].max() for c_ in pts_) < 1.0   # V/s, nicht mV/s
+                assert len([c_ for c_ in curves_ if c_.get("ls") == "--"]) == 2
             if plot_ == "trumpet":
                 assert abs(min(c_["x"].min() for c_ in pts_) - np.log10(0.05)) < 1e-9
             if plot_ == "ratio":
@@ -1091,6 +1102,16 @@ def selftest(outdir, with_isnet=False):
                 fits_ = t_cv.rate_fits()
                 assert list(fits_) == [("A", 1)] and abs(fits_[("A", 1)]["ll_a"]["slope"] - 0.5) < 0.05, fits_
                 assert "log-log" in t_cv.lbl_res.text() or "log–log" in t_cv.lbl_res.text(), t_cv.lbl_res.text()
+        st_cv.update(plot="cv", arrow=True)                  # Messrichtung: ziehbar, Position bleibt gespeichert
+        t_cv.render()
+        arr_ = t_cv.F.ann_items["arrow_scan"]
+        t_cv.F.fig.canvas.draw()
+        assert "arrow_scan" in t_cv.F.current_layout() and arr_.arrow_patch is not None
+        t_cv.layout_changed({"arrow_scan": [0.3, 0.4]})
+        t_cv.render()
+        assert tuple(t_cv.F.ann_items["arrow_scan"].xyann) == (0.3, 0.4), t_cv.F.ann_items["arrow_scan"].xyann
+        t_cv.F.fig.canvas.draw()
+        st_cv["plot"] = "dep"
         files = t_cv.export_to(out / "cv_dep")
         assert all(f.exists() for f in files) and "group" in files[-1].read_text(encoding="utf-8-sig")
         assert "Couple 1 (A)" in files[-2].read_text(encoding="utf-8")
@@ -1814,7 +1835,7 @@ def selftest(outdir, with_isnet=False):
         from elucida.app.i18n import TEXTS as TEXTS_
         heads_ = {lang_: [ln_[3:].strip() for ln_ in (ROOT / f_).read_text(encoding="utf-8").splitlines()
                           if ln_.startswith("## ")]
-                  for lang_, f_ in (("de", "README.de.md"), ("en", "README.md"))
+                  for lang_, f_ in TABS.MANUAL.items()
                   if (ROOT / f_).exists()}           # im gebauten Programm fehlt die README
         for key_, (de_, en_) in TABS.GUIDE_HEAD.items():
             assert not heads_ or (de_ in heads_["de"] and en_ in heads_["en"]), (key_, de_, en_)
@@ -1832,6 +1853,9 @@ def selftest(outdir, with_isnet=False):
         for tab_, key_ in ((w.syn_tab, "syn"), (w.nmr_tab, "nmr"), (w.cv_tab, "cv")):   # überall gleich und mittig
             w.main_tabs.setCurrentWidget(tab_)
             pump(0.1)
+            if key_ == "syn" and tab_.drawing_editor:           # integrierter Zeichner statt Anleitung
+                assert tab_.preview_stack.currentWidget() is tab_.drawing_editor
+                continue
             if hasattr(tab_, "ensure_rendered"):                # erst zeichnen (verzögert beim Anzeigen), dann messen
                 tab_.ensure_rendered()
             pump(0.3)
@@ -1887,6 +1911,7 @@ def selftest(outdir, with_isnet=False):
         sa_.setWidgetResizable(True)
         sa_.resize(200, 200)
         sa_.show()
+        STYLE.guard_fields(sa_)
         pump(0.2)
         sp0_ = spins_[2]
 
@@ -1921,7 +1946,8 @@ def selftest(outdir, with_isnet=False):
         assert w.cv_tab.right_tabs is not None and w.cv_tab.right_tabs.tabText(0) == T("tab_figure")
         assert [w.xray_tab.right_tabs.tabText(i_) for i_ in range(3)] == [T("tab_figure"), T("xr_caption"), T("xr_tables")]
         assert [w.dft_tab.right_tabs.tabText(i_) for i_ in range(w.dft_tab.right_tabs.count())] == \
-            [T("tab_figure"), T("dft_si"), T("dft_profile"), T("dft_nics")] and w.hrms_tab.right_tabs is None   # F4
+            [T("tab_figure"), T("dft_si"), T("dft_profile"), T("dft_nics"),
+             "Multireference" if get_lang() == "en" else "Multireferenz"] and w.hrms_tab.right_tabs is None
         # Ergebnisseiten überall gleich: ε neben der Abbildung, Karte füllt die Seite, Hauptknopf blau rechts
         assert [w.tabs.tabText(i_) for i_ in range(w.tabs.count())] == [T("tab_figure"), T("tab_results"),
                                                                        T("tab_si_line")]
@@ -1948,6 +1974,8 @@ def selftest(outdir, with_isnet=False):
                 w.main_tabs.setCurrentIndex(i_)
                 pump(0.1)
                 page_ = w.main_tabs.widget(i_)
+                if w._tab_keys[i_] == "syn" and w.syn_tab.compact:     # Teiler frei, Spalte scrollt
+                    continue
                 cf_ = getattr(page_, "column_fit", None) or (w.column_fit if w._tab_keys[i_] == "eps" else None)
                 assert cf_ is not None, w._tab_keys[i_]
                 cf_.fit()
@@ -2000,8 +2028,9 @@ def selftest(outdir, with_isnet=False):
         # Werkzeugleiste (nach Neuaufbau nur eine; Projekt, Undo, Pfadleiste, Verbindung, SI) und Listenknöpfe mit Symbol
         bars = w.findChildren(TABS.QWidget, "mainToolbar")
         assert w.act_crumbs in w.toolbar.actions()
-        acts = [a for a in w.toolbar.actions() if not a.isSeparator() and a is not w.act_crumbs]
-        assert len(bars) == 1 and len(acts) == 8 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
+        acts = [a for a in w.toolbar.actions() if not a.isSeparator() and a is not w.act_crumbs
+                and a not in (getattr(w, "canvas_toggle", None), getattr(w, "theme_toggle", None))]   # Schalter: Text
+        assert len(bars) == 1 and len(acts) >= 8 and all(not a.icon().isNull() for a in acts), (len(bars), len(acts))
         opened_ = []                                         # Projektordner im Dateimanager (hier nur abgefangen)
         orig_open_ = QDesktopServices.openUrl
         QDesktopServices.openUrl = staticmethod(lambda u: opened_.append(u.toLocalFile()) or True)
@@ -2164,9 +2193,21 @@ def selftest(outdir, with_isnet=False):
             assert abs(xs_[0] - px_) < 1.0 and abs(xs_[-1] - (bbs_[k_].x0 + bbs_[k_].x1) / 2) < 1.5, (k_, xs_, px_)
             assert "." not in t_ir.F.ann_items[k_].get_text(), t_ir.F.ann_items[k_].get_text()
         far_px_ = ab_.y0 + max(v_[3] for v_ in t_ir.F.ir_leaders.values()) * ab_.height   # oberes Ende der Hilfslinien
-        mk_ = next(l_ for l_ in t_ir.F.ax.lines if l_.get_marker() == "^")                  # Peakmarken (ms 3)
-        mk_px_ = t_ir.F.ax.transData.transform(np.c_[mk_.get_xdata(), mk_.get_ydata()])[:, 1]
-        assert mk_px_.min() - 3.0 * t_ir.F.fig.dpi / 72 > far_px_, (mk_px_.min(), far_px_)  # Marke + Rand frei
+        assert not any(l_.get_marker() in ("^", "v") for l_ in t_ir.F.ax.lines)
+        peak_px_ = [t_ir.F.ax.transData.transform([a_.xy])[0][1] for a_ in t_ir.F.ann_items.values()]
+        assert min(peak_px_) > far_px_, (min(peak_px_), far_px_)
+        t_ir.sync_widgets()  # Earlier assertions changed state directly; keep other controls in sync.
+        t_ir.sp_ir_lw.setValue(2.35)
+        t_ir.collect()
+        t_ir.render()
+        assert abs(t_ir.F.ax.lines[0].get_linewidth() - 2.35) < 1e-9
+        from matplotlib.figure import Figure as _IRTestFigure
+        export_ir_ = t_ir.build(_IRTestFigure())
+        assert abs(export_ir_.ax.lines[0].get_linewidth() - 2.35) < 1e-9
+        assert not any(l_.get_marker() in ("^", "v") for l_ in export_ir_.ax.lines)
+        t_ir.sp_ir_lw.setValue(1.0)
+        t_ir.collect()
+        report.append("IR editable line width in preview/export, no triangle markers: OK")
         # viele Peaks (Rohdatei): Labels kleiner statt über den Rand (wie OPUS), alle in der Achse
         w.irms_state["prominence"] = 0.5
         t_ir.sync_widgets()
@@ -3855,6 +3896,23 @@ def selftest(outdir, with_isnet=False):
             pump(0.1)
         t_d, pg_ = w.dft_tab, w.dft_tab.pages
         assert w.dft_state["profile"]["species"].get(w.dft_state["entries"][1]["uid"], {}).get("label") != "TS1¹"
+        # Plateau structures use the common image/vector export without changing energies.
+        from elucida.app.demo import mol_cdxml as _profile_cdxml
+        from rdkit import Chem as _profile_chem
+        from rdkit.Chem import AllChem as _profile_allchem
+        profile_mol_ = _profile_chem.MolFromSmiles('c1ccccc1')
+        _profile_allchem.Compute2DCoords(profile_mol_)
+        profile_structure_ = ddir / 'profile_structure.cdxml'
+        profile_structure_.write_text(_profile_cdxml(profile_mol_), encoding='utf-8')
+        profile_uid_ = pg_.items()[0]['uid']
+        profile_values_ = [r_['value'] for r_ in pg_.levels_spec()[0]]
+        pg_.assign_structure(profile_uid_, profile_structure_)
+        profile_F_, _ = pg_.build(fig_f4_(), 'levels')
+        assert 'image_profile_' + profile_uid_ in profile_F_.axes_items
+        assert [r_['value'] for r_ in pg_.levels_spec()[0]] == profile_values_
+        pg_.remove_structure(profile_uid_)
+        assert 'image_profile_' + profile_uid_ not in pg_.build(fig_f4_(), 'levels')[0].axes_items
+        report.append('DFT profile: plateau structures in shared preview/export, unchanged energies: OK')
         # IRC: Trajektorie (Reaktionskoordinate = aufsummierte Abstände, TS = 0) + Tabelle der Ausgabe
         irc_out_ = ddir / "f4irc.out"
         e_irc_ = [-100.000, -99.990, -99.970, -99.990, -100.020]
@@ -3874,6 +3932,27 @@ def selftest(outdir, with_isnet=False):
         F_irc_, _ = pg_.build(fig_f4_(), "irc")
         assert any("ΔE‡ = 18.8 / 31.4" == t_.get_text() for t_ in F_irc_.ax.texts), [t_.get_text() for t_ in F_irc_.ax.texts]
         assert "B3LYP-D4/def2-SVP(CPCM:thf)" in pg_.irc_caption("X")
+        # Styling an IRC must not change quantitative coordinates or unrelated defaults.
+        from types import SimpleNamespace as NS_layout_
+        from elucida.tabs.diagram_layout import DiagramLayoutEditor as LayoutEditor_
+        from elucida.app.path_composition import profile_figure as layout_figure_
+        irc_host_ = NS_layout_(tab=pg_.tab)
+        irc_panel_ = LayoutEditor_(irc_host_, 'irc', {}, True)
+        assert not irc_panel_.presentation.isEnabled()
+        assert irc_panel_.connector.currentData() == '-'
+        assert irc_panel_.global_fields['line_width'].value() == 1.2
+        irc_panel_.global_fields['font_size'].setValue(14.)
+        irc_panel_.changed()
+        F_styled_, _ = layout_figure_(irc_host_, 'irc', True, irc_panel_.data, fig_f4_())
+        assert np.array_equal(F_styled_.ax.lines[0].get_xdata(), F_irc_.ax.lines[0].get_xdata())
+        assert np.array_equal(F_styled_.ax.lines[0].get_ydata(), F_irc_.ax.lines[0].get_ydata())
+        assert F_styled_.ax.lines[0].get_linestyle() == '-'
+        assert F_styled_.ax.lines[0].get_linewidth() == 1.2
+        assert F_styled_.ax.yaxis.label.get_fontsize() == 14.
+        irc_panel_.reset()
+        assert irc_panel_.connector.currentData() == '-' and irc_panel_.data == {}
+        irc_panel_.deleteLater()
+        report.append('IRC layout: style-only editing, unchanged coordinates and curve defaults: OK')
         # NICS: Gaussian-NMR mit Bq (Benzol in einer schiefen Ebene, Tensor in derselben Orientierung)
         ang_ = np.arange(6) * np.pi / 3
         ring_ = np.c_[1.39 * np.cos(ang_), 1.39 * np.sin(ang_), np.zeros(6)]
@@ -3926,6 +4005,99 @@ def selftest(outdir, with_isnet=False):
         w.dft_state["nics"] = json.loads(json.dumps(PG.NICS_DEFAULT))
         t_d.sync_widgets()
         report.append("DFT F4: isovalue like IboView, energy profile (SP//Opt), IRC, NICS: OK")
+
+        # F6: only synthetic data. Keep methods, raw precision and density scope separate.
+        from elucida.formats import multireference as MR_
+        mr_text_ = DFT.read_text(MR_.make_test_mr(out / "synthetic_mr.out"))
+        mr_ = MR_.parse_orca_mr(mr_text_)
+        assert [r_["method"] for r_ in mr_] == ["CASSCF", "SC-NEVPT2", "QD-SC-NEVPT2"]
+        assert mr_[0]["states"][0]["energy"] == "-10.100000000123"
+        assert mr_[0]["states"][0]["configurations"][0]["weight"] == "0.90000"
+        assert MR_.luno_indicator(mr_[0])["value"] == "0.2000"
+        assert MR_.luno_indicator(MR_.parse_orca_mr(mr_text_.replace("... natural", "... unchanged"))[0]) is None
+        assert MR_.luno_indicator(MR_.parse_orca_mr(mr_text_.replace("NROOTS= 1", "NROOTS= 2"))[0]) is None
+        from copy import deepcopy as dc_f6_
+        trip_ = dc_f6_(mr_[0]["states"][0]); trip_.update(multiplicity=3, energy="-10.110000000123")
+        mr_[0]["states"].append(trip_)
+        assert float(MR_.spin_gap(mr_[0], 0, 1, "S-T")) == .01
+        assert float(MR_.spin_gap(mr_[0], 0, 1, "T-S")) == -.01
+        report.append("DFT F6: MR methods, raw values, natural occupations and spin-gap convention: OK")
+
+        # Profile view remains editable JSON; captures drawing settings instead of live links.
+        from elucida.tabs import profile_orbitals as PO_
+        view_f6_ = PO_.snapshot(t_d, e_m, 0)
+        json.dumps(view_f6_)
+        before_f6_ = dc_f6_(view_f6_)
+        F_f6_ = PO_.build(t_d, view_f6_, fig_f4_())
+        assert F_f6_.opts["orbital"] is not None and view_f6_ == before_f6_
+        st_f6_ = {"dft": {"profile": {"annotations": [dict(kind="orbital", orbital=view_f6_)]}}}
+        assert view_f6_["source"]["file"] in {PRJ._get(c_, k_) for c_, k_, _ in PRJ._path_slots(st_f6_)}
+        report.append("DFT profile orbital views: independent serializable view and portable source: OK")
+
+        # Project-wide paths use their own files, never a compound's mutable state.
+        from elucida.app import reaction_paths as RP_, publication as RPPUB_
+        from elucida.si import publication_si as RPSI_
+        rppub_ = RPPUB_.create(out / "reaction_paths_project", "Synthetic paths")
+        rpitem_ = RP_.create(rppub_, "Synthetic path")
+        rphost_ = RP_.PathHost(w, rppub_, rpitem_)
+        try:
+            source_before_ = dc_f6_(e_m)
+            copied_ = RP_.import_entry(rphost_, e_m, dict(compound="Synthetic compound"))
+            assert copied_["uid"] != e_m["uid"] and e_m == source_before_
+            assert Path(copied_["file"]).is_relative_to(rphost_.project_dir)
+            assert rphost_.save()
+            assert PRJ.load(rphost_.project_dir)["dft"]["entries"][0]["uid"] == copied_["uid"]
+            # Free composition: vector profile, frozen geometry-only view and
+            # update fingerprints are independent of camera/display inversion.
+            from elucida.app import path_composition as PC_
+            from elucida.app.drawing_editor import asset_references as refs_
+            assert PC_.composition_blocks(rphost_) is None  # legacy plot fallback
+            rphost_.tab.load_xyz(str(DFT.make_test_orca(out / 'composition_calc.out')))
+            profile_before_ = dc_f6_(rphost_.tab.pages.prof)
+            payload_, rec_ = PC_.profile_asset(rphost_, 'levels')
+            assert '<path' in payload_['svg'] and payload_['png'].startswith('89504e47')
+            assert rphost_.tab.pages.prof == profile_before_
+            assert rec_['stamp'] == PC_.profile_stamp(rphost_, 'levels')
+            from elucida.tabs import diagram_layout as DL_
+            rows_layout_ = rphost_.tab.pages.levels_spec()[0]
+            layout_uid_ = rows_layout_[0]['uid']
+            layout_ = dict(mode='scaled', nodes={layout_uid_: dict(x=2., width=1.2, y=999., break_after=True)})
+            positioned_ = DL_.arranged(rows_layout_, layout_)
+            assert positioned_[0]['plot_y'] == rows_layout_[0]['value'] and not positioned_[0]['break_after']
+            layout_['mode'] = 'schematic'
+            positioned_ = DL_.arranged(rows_layout_, layout_)
+            assert positioned_[0]['plot_y'] == 999. and positioned_[0]['value'] == rows_layout_[0]['value']
+            F_layout_, _ = PC_.profile_figure(rphost_, 'levels', False, layout_, fig_f4_())
+            assert any(t_.get_text() == DL_.SCHEMATIC_NOTE for t_ in F_layout_.fig.texts)
+            assert any(t_.get_gid() == 'energy-'+layout_uid_ and t_.get_text() == PG.kcal(rows_layout_[0]['value']) for t_ in F_layout_.ax.texts)
+            assert rphost_.tab.pages.levels_spec()[0] == rows_layout_
+            report.append('Reaction-path layout: quantitative coordinates, explicit schematic mode and unchanged energy labels: OK')
+            calc_entry_ = rphost_.tab.entries()[-1]
+            rphost_.tab.pages.prof['species'][calc_entry_['uid']] = dict(label='Changed label', step=0)
+            assert rec_['stamp'] != PC_.profile_stamp(rphost_, 'levels')
+            geo_ = PO_.snapshot(rphost_.tab, calc_entry_, None)
+            assert not geo_['show_orbital'] and PO_.build(rphost_.tab, geo_, fig_f4_()).opts['orbital'] is None
+            rphost_.tab.pages.prof['composition_assets'] = dict(synthetic=dict(kind='orbital', orbital=geo_))
+            assert geo_['source']['file'] in {PRJ._get(c_, k_) for c_, k_, _ in PRJ._path_slots(rphost_.state)}
+            assert refs_([dict(shapeId=1, key='synthetic', kind='profile')])[0]['key'] == 'synthetic'
+            for bad_ in (None, [dict(shapeId=1, key='../file', kind='profile')], [dict(shapeId=True, key='x', kind='orbital')]):
+                try: refs_(bad_)
+                except ValueError: pass
+                else: raise AssertionError('invalid composition reference accepted')
+            report.append('Reaction-path composition: vector asset, freshness, independent 3D view and portable references: OK')
+        finally:
+            rphost_.dispose()
+        assert not RPPUB_.sync(rppub_)[0]
+        RP_.set_removed(rppub_, rpitem_["uid"], True)
+        assert not RPPUB_.load(rppub_).get("reaction_paths")
+        RP_.set_removed(rppub_, rpitem_["uid"], False)
+        assert RPPUB_.load(rppub_)["reaction_paths"] == [rpitem_]
+        for pos_ in ("before", "after"):
+            rpblocks_ = RPSI_.assemble(dict(reaction_paths_si=dict(position=pos_)),
+                                      [("C", dict(dft=[("heading", "Calculation")]))], ["dft"], toc=False,
+                                      reaction_paths=[("heading", "Path")])
+            assert (rpblocks_.index(("heading", "Path")) < rpblocks_.index(("heading", "Calculation"))) == (pos_ == "before")
+        report.append("Project reaction paths: independent imports, persistence, restore and SI position: OK")
 
         # Audit P5 (DFT, TD-DFT, Orbitale): je Fall ein Fund, der vor dem Fix scheiterte
         from elucida.formats import calc as CALC
@@ -4302,7 +4474,7 @@ def selftest(outdir, with_isnet=False):
         cdlg_ = MW.CompoundDialog(w, dict(w.compound or {}, known=True, lit="J. Org. Chem. 2020, 85, 1234"))
         cdlg_.show()
         pump(0.1)
-        hint_lb_ = [lb_ for lb_ in cdlg_.findChildren(QLabel) if lb_.text() == T("compound_hint")][0]
+        hint_lb_ = [lb_ for lb_ in cdlg_.findChildren(QLabel) if lb_.text() == T("compound_editor_hint" if cdlg_.drawing_editor else "compound_hint")][0]
         assert hint_lb_.height() >= hint_lb_.heightForWidth(hint_lb_.width()), \
             (hint_lb_.height(), hint_lb_.heightForWidth(hint_lb_.width()))
         cdlg_.reject()
@@ -4665,29 +4837,24 @@ def selftest(outdir, with_isnet=False):
         assert PRJ.import_file(old_, e4_, "data/nmr", name="MS400_10") not in (t1_, t2_)
         report.append("project folder layout (SI/figures/tables/data/structures/.elucida, old projects): OK")
 
-        # elucida.json für Characterization: atomar, UTF-8 ohne BOM, Pfade relativ, Werte als Text
-        from elucida.exchange import characterization as EXCH
+        # Retired Characterization export: saves/exports create no exchange file;
+        # an existing user-owned file must remain byte-for-byte untouched.
+        retired_ = proj / 'elucida.json'
+        assert not retired_.exists()  # includes earlier autosaves and figure exports
         w2.compound.update(mp="67 °C", structure=str(proj / "structures" / cdxml.name))
-        jx_ = w2.write_exchange()
-        assert jx_ == proj / "elucida.json" and not (proj / "elucida.json.tmp").exists(), jx_
-        raw_ = jx_.read_bytes()
-        assert not raw_.startswith(b"\xef\xbb\xbf")
-        ex_ = json.loads(raw_.decode("utf-8"))
-        assert ex_["format"] == "elucida-exchange" and ex_["schema_version"] == 1 and ex_["app"]["version"] == APP_VERSION
-        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", ex_["written_at"]), ex_["written_at"]
-        assert ex_["compound"]["name"] == "TEST-1" and ex_["compound"]["structure"] == "structures/" + cdxml.name
-        assert ex_["analytics"]["mp"] == {"text": "67 °C"} and [s_["name"] for s_ in ex_["analytics"]["uvvis"]] \
-            == ["TEST-A", "TEST-B"], ex_["analytics"]
-        assert all(not Path(f_).is_absolute() and "\\" not in f_ for f_ in ex_["analytics"]["overlay"]["files"])
-        kinds_ = [l_["kind"] for l_ in ex_["si"]["lines"]]
-        assert [l_["series"] for l_ in ex_["si"]["lines"] if l_["kind"] == "uvvis"] == ["TEST-A", "TEST-B"]
-        assert kinds_[0] == "mp" and "uvvis" in kinds_ and ex_["si"]["paragraph_html"].startswith("<b>m.p.</b> 67"), kinds_
-        fig_ = next(f_ for f_ in ex_["figures"] if f_["tab"] == "overlay")
-        assert fig_["pdf"] == "figures/TEST-1_Overlay.pdf" and fig_.get("caption_html"), fig_
-        assert any(f_["tab"] == "eps" for f_ in ex_["figures"]), ex_["figures"]
-        t0_ = time.perf_counter()
-        EXCH.build(w2)
-        report.append(f"exchange file elucida.json (schema 1, {time.perf_counter() - t0_:.2f} s): OK")
+        assert w2.save_project() and w2.maybe_save()
+        assert not retired_.exists() and not retired_.with_suffix('.json.tmp').exists()
+        legacy_bytes_ = b'{"format":"elucida-exchange","legacy":"synthetic"}\n'
+        retired_.write_bytes(legacy_bytes_)
+        legacy_mtime_ = retired_.stat().st_mtime_ns
+        assert w2.open_project(proj, ask=False, recent=False)
+        pump()
+        w2.autosave(force=True)
+        assert w2.save_project() and w2.ov_tab.export_dialog() and w2.maybe_save()
+        assert retired_.read_bytes() == legacy_bytes_ and retired_.stat().st_mtime_ns == legacy_mtime_
+        assert PRJ.load(proj)['compound']['mp'] == '67 °C'
+        assert not retired_.with_suffix('.json.tmp').exists()
+        report.append('Retired elucida.json: no new file; legacy bytes/mtime preserved on open/save/autosave/export: OK')
 
         # Datenpaket (Zip) je Verbindung wie die Datensätze der Gruppe; Laborkürzel ersetzt, Binärdateien unverändert
         from elucida.exchange import datapack as DP
@@ -5153,15 +5320,13 @@ def selftest(outdir, with_isnet=False):
                 assert r_.get("BondLength") == "14.40" and r_.find(".//fonttable") is not None
         report.append("Example CDXML on the ChemDraw page (ACS 1996 size, one arrow): OK")
         from elucida.app import welcome as WEL                 # Startbildschirm: Projektliste mit Struktur und Analytik
-        w.compound["note"] = "Radikalkation (Test)"           # Notiz zur Verbindung: Titel, Startbildschirm, elucida.json
+        w.compound["note"] = "Radikalkation (Test)"           # Notiz zur Verbindung: Titel, Startbildschirm
         w.update_title()
         pump(0.4)                                              # Ladevorgang des Beispielprojekts abgeschlossen
         w.save_project()
-        w.write_exchange()
         assert "(Radikalkation (Test))" in w.windowTitle(), w.windowTitle()
-        import json as _json
-        assert _json.loads((out / "demo" / "elucida.json").read_text(encoding="utf-8"))["compound"]["note"] == \
-            "Radikalkation (Test)"
+        assert PRJ.load(out / 'demo')['compound']['note'] == 'Radikalkation (Test)'
+        assert not (out / 'demo' / 'elucida.json').exists()
         w.add_recent(out / "demo")
         w.fill_recent_list()
         inf_ = WEL.project_info(out / "demo")
@@ -5192,16 +5357,6 @@ def selftest(outdir, with_isnet=False):
         assert MAC.TitleDrag(w).eventFilter(w.toolbar, ev_) is False
         report.append("macOS title bar (off offscreen, toolbar buttons keep clicks): OK")
         pump()                                             # Laden abgeschlossen (_restoring)
-        t0_ = time.perf_counter()
-        exd_ = json.loads(w.write_exchange().read_text(encoding="utf-8"))   # alle Tabs gefüllt
-        dt_ = time.perf_counter() - t0_
-        an_ = exd_["analytics"]
-        assert {"synthesis", "nmr", "xray", "dft"} <= set(an_), sorted(an_)   # CV: Demo-Dateien liegen noch außerhalb
-        assert an_["nmr"][0]["svg"].startswith("data/nmr/") and an_["xray"][0]["cif"].startswith("data/xray/"), an_
-        assert {l_["kind"] for l_ in exd_["si"]["lines"]} >= {"nmr_1H", "uvvis"}, exd_["si"]["lines"]
-        if "hrms" in an_ and "found" in an_["hrms"]:
-            assert re.fullmatch(r"\d+\.\d{4}", an_["hrms"]["found"]) and an_["hrms"]["ion"].endswith(("+", "\u2212"))
-        report.append(f"elucida.json for example project ({dt_:.2f} s, {len(an_)} techniques): OK")
         # Publikation: übergeordneter Ordner, Verbindungen in Reihenfolge, Datensatz (Zips + README), Gesamt-SI
         from elucida.app import publication as PUB
         from elucida.si import publication_si as PSI
@@ -5825,7 +5980,7 @@ def selftest(outdir, with_isnet=False):
             exp_ = ([("subsection", "1.1 G1"), gp_, c_("c1"), ("subsection", "1.2 G2"), c_("c2"), c_("c3"), c_("c4")] if gh_
                     else [gp_, c_("c1"), c_("c2"), c_("c3"), c_("c4")])           # GP einmal; unbekannte GP Z: nichts
             assert heads_f1 == exp_, (gh_, heads_f1)
-        # F1 (FB-8): Substanz übrig (+ Probennummer): Startbildschirm, Suche, Checkliste gelb, elucida.json; nie SI
+        # F1 (FB-8): Substanz übrig (+ Probennummer): Startbildschirm, Suche, Checkliste gelb; nie SI
         cdlg_f1 = MW.CompoundDialog(w, dict(w.compound or {}, sample=True, sample_no="JA-042-F2"))
         res_f1 = cdlg_f1.result_compound()
         cdlg_f1.deleteLater()
@@ -5842,7 +5997,7 @@ def selftest(outdir, with_isnet=False):
         lb_f1 = PV.check_label(dict(ck_f1, have=set(), missing=["1H"]))
         assert PV.REDO_COLOR in lb_f1.text() and PV.MISSING_COLOR not in lb_f1.text()
         lb_f1.deleteLater()
-        assert EXCH.build(w)["compound"]["sample"] == {"available": True, "number": "JA-042-F2"}
+        assert PRJ.load(dpub_ / 'S2')['compound']['sample_no'] == 'JA-042-F2'
         assert "JA-042" not in str(w.si_blocks()[0])
         its_f1 = DP.collect(PRJ.load(dpub_ / "S2"), dpub_ / "S2")                  # Datenpaket: keine Projektdateien
         assert its_f1 and not any(Path(i_.src).name in ("project.elucida", "elucida.json") for i_ in its_f1)
@@ -5931,11 +6086,153 @@ def selftest(outdir, with_isnet=False):
         pump(0.8)
         assert ot_.linked_entry("eps", g_f2) is not None
         w.undo()
-        pump(0.4)
+        for _ in range(50):                                  # mit Editor dauert das Ersetzen der Tabs länger
+            pump(0.1)
+            if not w._restoring:
+                break
         assert w.ov_tab.linked_entry("eps", g_f2) is None, w.ov_state["entries"]
         w.dft_state["entries"].pop()
         w.save_project()
         report.append("F2 overlay (epsilon series linked with selectable measurement, TD-DFT from DFT tab): OK")
+
+        # 2.6: Pfeiltexte: Klammerzusätze weg, chemische Klammern bleiben; Mengen aus dem Label
+        from elucida.formats import cdxml as CDX26, ole as OLE26
+        from elucida.app import canvas_theme as CT26, drawing_data as DD26
+        keep_ = CDX26.scheme_texts
+        CDX26.scheme_texts = lambda _: ["THF (dry), NaOH (2.0 M), Pd(PPh3)4 (5 mol%), K2CO3 (1,5 Äq.), rt, 1 h"]
+        got_ = CDX26.scheme_reagents("x")
+        CDX26.scheme_texts = keep_
+        assert [r_[0] for r_ in got_] == ["THF", "NaOH", "Pd(PPh3)4", "K2CO3"], got_
+        assert got_[0][2] == "other" and got_[0][1], got_
+        # berechnete Werte der Octet-Tabelle: 3 gültige Stellen, eingegebene unverändert
+        row_ = DD26.clone_table([], dict(arrow=1, components=[dict(
+            key="r:A", name="A", formula="C2H6O", mw=46.07, product=False, limiting=True, typed=dict(volume=0.12),
+            values=dict(mass=0.1234567891, moles=0.001, volume=0.12))]), "d.cdxml")[0]
+        assert row_["m_mg"] == "123" and row_["V_mL"] == "0.12", row_
+        # Word-Begleitordner: nie alte Nummern neben neuen, fremde Dateien bleiben
+        d26_ = out / "companions"
+        d26_.mkdir()
+        doc_ = d26_ / "si.docx"
+        OLE26.write_editable_companions(doc_, [dict(cdx=b"a", cdxml=b"a"), dict(cdx=b"b")])
+        (OLE26.editable_directory(doc_) / "mine.txt").write_text("x", encoding="utf-8")
+        OLE26.write_editable_companions(doc_, [dict(cdx=b"c")])
+        left_c = sorted(p_.name for p_ in OLE26.editable_directory(doc_).iterdir())
+        assert left_c == ["README.txt", "drawing_001.cdx", "mine.txt"], left_c
+        # Autosave füllt das Projekt nicht: Rücksetzkopie ja, Verlauf nur alle paar Minuten und begrenzt
+        from elucida.app import drawing_editor as DE26
+        b26_ = out / "backups"
+        for i_ in range(25):
+            p_ = b26_ / f"s-20260101-0000{i_:02d}-{i_:06x}"
+            p_.mkdir(parents=True)
+            (p_ / "s.cdxml").write_text("x", encoding="utf-8")
+            os.utime(p_, (1000 + i_ * 1000, 1000 + i_ * 1000))
+        new_ = b26_ / "s-20260101-010000-abcdef"
+        new_.mkdir()
+        (new_ / "s.cdxml").write_text("x", encoding="utf-8")
+        DE26._thin_backups(new_)
+        assert len(list(b26_.iterdir())) == DE26.BACKUP_KEEP + 1, len(list(b26_.iterdir()))
+        os.utime(new_, None)
+        recent_ = b26_ / "s-20260101-010001-abcdee"
+        recent_.mkdir()
+        (recent_ / "s.cdxml").write_text("x", encoding="utf-8")
+        DE26._thin_backups(recent_)
+        assert not recent_.exists()
+        # Dunkler Canvas: Farbton bleibt, Weiß wird #000000, dunkle Farben bleiben lesbar
+        px_ = CT26.dark_pixels(np.array([[[255, 255, 255], [0, 0, 0], [255, 0, 0], [0, 0, 255], [120, 120, 120]]], np.uint8))[0]
+        assert px_[0].tolist() == [0, 0, 0] and px_[1].tolist() == [255, 255, 255] and px_[4].tolist() == [135, 135, 135]
+        assert px_[2][0] == 255 and px_[2][1] < 128 and px_[3][2] == 255 and px_[3][0] < 128, px_
+        report.append("2.6: reagent labels, computed table values, Word companions, backups, dark canvas colours: OK")
+
+        # SEC ohne Zeitstempel (Zweispaltenexport): Messgröße, Reihenfolge, nur bestätigte Zuordnung
+        m26_ = out / "merged"
+        m26_.mkdir()
+        lam26_ = np.arange(200.0, 2500.0, 5.0)
+        for i_ in (1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12):                  # Nr. 4 fehlt
+            A26_ = 0.2 + 0.01 * i_ * np.exp(-((lam26_ - 1500) / 200) ** 2)
+            (m26_ / f"Merge_{i_:04d}.Abs8.txt").write_text(
+                "Merged spectral data\r\n\r\n" + "\r\n".join(f"{x_:8.2f};{y_:8.5f}" for x_, y_ in zip(lam26_, A26_)) + "\r\n",
+                encoding="ascii", newline="")
+        (m26_ / "Merge_0001.Raw8.txt").write_text("Merged spectral data\r\n\r\n 200.00;233.3\r\n 205.00;205.1\r\n",
+                                                  encoding="ascii", newline="")
+        bad26_ = m26_ / "Broken.Abs8.txt"
+        bad26_.write_text("Merged spectral data\n\n 200,0;0,1\n", encoding="ascii")
+        assert SECMOD.is_merged(m26_ / "Merge_0001.Abs8.txt") and not SECMOD.is_bwspec(m26_ / "Merge_0001.Abs8.txt")
+        assert SECMOD.merged_quantity("Merge_0001.Raw8.txt") == "raw" and SECMOD.merged_quantity("x.txt") is None
+        try:
+            SECMOD.read_spectrum(bad26_)
+            raise AssertionError("merged file with commas was read")
+        except ValueError as ex_:
+            assert "Broken" in str(ex_)
+        t26_ = w.sec_tab
+        keep_st = dict(t26_.st)
+        errs_ = []
+        keep_err, w.error = w.error, errs_.append
+        keep_dlg = SECMOD.QFileDialog.getOpenFileNames
+        SECMOD.QFileDialog.getOpenFileNames = staticmethod(lambda *a_, **k_: (
+            [str(p_) for p_ in sorted(m26_.glob("Merge_*"))], ""))
+        keep_ask = t26_._ask_quantity
+        t26_._ask_quantity = lambda: "abs"                               # Abs + Raw ausgewählt: Nachfrage
+        t26_.choose_spectra()
+        SECMOD.QFileDialog.getOpenFileNames = keep_dlg
+        t26_._ask_quantity = keep_ask
+        w.error = keep_err
+        assert not errs_ and len(t26_.st["spec_files"]) == 11 and t26_.st["quantity"] == "abs", (errs_, t26_.st["spec_files"])
+        assert not any("Raw8" in p_ for p_ in t26_.st["spec_files"])
+        assert T("sec_gap", n=1) in t26_.st["import_note"], t26_.st["import_note"]
+        t26_.st.update(dta=str(secdir / "sec.DTA"), mode="spectra", first=1, last=0, map_mode="none", map_ok=False)
+        sp26_, E26_ = t26_.series()
+        assert E26_ is None and [s_["name"] for s_ in sp26_][:3] == ["Merge_0001.Abs8", "Merge_0002.Abs8", "Merge_0003.Abs8"]
+        spec26_ = t26_.figure_spec()
+        assert spec26_[0]["xlim"][1] > 2000 and T("sec_no_map") in t26_.lbl_info.text()          # NIR bleibt, Lücke sichtbar
+        t26_.st.update(map_mode="interval", map_start=10.0, map_step=100.0, map_ok=False)
+        assert t26_.series()[1] is None                                  # unbestätigt: kein Potential
+        t26_.st["map_ok"] = True
+        sp26_, E26_ = t26_.series()
+        assert abs(E26_[3] - (-1.3 + 0.002 * 410.0)) < 1e-6, E26_        # Nr. 5 nach der Lücke: Nummer zählt, nicht Position
+        assert len(sp26_) == 11 and "confirmed acquisition schedule" in t26_.si_caption("X")
+        t26_.st.update(map_step=500.0)
+        sp26_, E26_ = t26_.series()                                      # jenseits der Messung: nie Endpotential
+        assert len(sp26_) == 3 and T("sec_map_partial", k=3, n=11) in t26_.map_notes, (len(sp26_), t26_.map_notes)
+        t26_.st.update(map_mode="potential", map_table="1-3; 0.4\n5-12; 0,95")
+        sp26_, E26_ = t26_.series()
+        assert E26_.tolist() == [0.4] * 3 + [0.95] * 8, E26_
+        t26_.st.update(mode="trace", trace_lams="1500")                  # zwei Stufen ergeben keinen Nernst-Fit
+        t26_.figure_spec()
+        assert not t26_.fits
+        t26_.st.update(mode="spectra", map_table="1-2; x")
+        assert t26_.series()[1] is None and T("sec_map_bad", n=1) in t26_.map_notes
+        t26_.st.update(quantity="raw", map_mode="none")
+        spec26_ = t26_.figure_spec()
+        assert "raw signal" in spec26_[0]["ylabel"] and "absorbance" not in spec26_[0]["ylabel"]
+        errs_ = []
+        keep_err, w.error = w.error, errs_.append
+        w.ov_tab.add_sec()
+        w.error = keep_err
+        assert errs_ == [T("ov_sec_raw")], errs_                         # Rohsignal nie ins Overlay
+        t26_.st.clear()
+        t26_.st.update(keep_st)
+        t26_._show_files()
+        report.append("SEC merged export (quantity, order, NIR range, confirmed assignment only, gaps, raw kept apart): OK")
+
+        # Nie still ablehnen: unlesbare Spektren, unbekannte abgelegte Dateien, fehlende Dateien im Datenpaket
+        errs_ = []
+        keep_err, w.error = w.error, errs_.append
+        junk_ = out / "junk.xyzzy"
+        junk_.write_text("x", encoding="utf-8")
+        t26_.load_spectra([str(junk_)])
+        assert errs_ == [T("sec_none_read", n=1)], errs_
+        errs_.clear()
+        from PySide6.QtCore import QUrl
+        class _Mime:
+            urls = staticmethod(lambda: [QUrl.fromLocalFile(str(junk_))])
+        w.dropEvent(type("Drop", (), {"mimeData": staticmethod(lambda: _Mime)})())
+        assert errs_ and "junk.xyzzy" in errs_[-1], errs_
+        w.error = keep_err
+        from elucida.exchange import datapack as DP26
+        gone26_ = []
+        DP26.collect({"sec": {"dta": str(out / "not_there.DTA")}}, out, gone26_)
+        assert gone26_ == ["not_there.DTA"], gone26_
+        report.append("Rejected and missing files are always reported: OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         import shiboken6 as _shb_end                                     # Beenden: alle Widgets vor dem Interpreter-

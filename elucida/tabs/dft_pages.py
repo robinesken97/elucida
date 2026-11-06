@@ -8,18 +8,23 @@ der Trajektorie (TS = 0, rückwärts negativ) oder eine Bindungslänge aus „IR
 NICS = −σ_iso, NICSzz = −n·σ·n mit n = Normale der Ebene durch die Schweratome in der Nähe des Bq.
 """
 from __future__ import annotations
+import elucida
 
 import csv
 import html
+import os
 import re
+import uuid
 from pathlib import Path
 
 import numpy as np
+from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure as MplFigure
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QListWidget, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
+from PySide6.QtWidgets import (QComboBox, QDialog, QDoubleSpinBox, QDialogButtonBox, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView,
+                               QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout)
 
 from elucida.app import project as PRJ
 from elucida.app.i18n import T
@@ -194,6 +199,8 @@ class DftPages:
         p = self.tab.st.setdefault("profile", {})
         for k, v in PROFILE_DEFAULT.items():
             p.setdefault(k, type(v)(v) if isinstance(v, (dict, list)) else v)
+        for curve in p["irc"]:
+            curve.setdefault("uid", uuid.uuid4().hex)
         return p
 
     @property
@@ -225,16 +232,27 @@ class DftPages:
             row.addWidget(w)
         row.addStretch(1)
         v.addLayout(row)
-        self.tbl_sp = QTableWidget(0, 5)
+        self.tbl_sp = QTableWidget(0, 6)
         self.tbl_sp.setHorizontalHeaderLabels([T("dft_prof_species"), T("dft_prof_label"), T("dft_prof_step"),
-                                               T("dft_prof_paths"), T("dft_prof_sp")])
+                                               T("dft_prof_paths"), T("dft_prof_sp"), T("structure")])
         self.tbl_sp.verticalHeader().setVisible(False)
         self.tbl_sp.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         self.tbl_sp.setToolTip(T("dft_prof_tbl_tip"))
         self.tbl_sp.itemChanged.connect(self.species_edited)
+        self.tbl_sp.setMaximumHeight(170)
         v.addWidget(self.tbl_sp)
+        row = QHBoxLayout()
+        self.btn_level_remove = QPushButton(T('rp_remove_level_from_profile'))
+        self.btn_level_remove.clicked.connect(self.remove_level)
+        self.btn_level_restore = QPushButton(T('rp_restore_removed_level'))
+        self.btn_level_restore.clicked.connect(self.restore_level)
+        self.cmb_level_restore = QComboBox()
+        row.addWidget(self.btn_level_remove); row.addWidget(self.cmb_level_restore)
+        row.addWidget(self.btn_level_restore); row.addStretch(1)
+        v.addLayout(row)
         self.irc_list = QListWidget()
         self.irc_list.setToolTip(T("dft_irc_tip"))
+        self.irc_list.setMaximumHeight(110)
         v.addWidget(self.irc_list)
         row = QHBoxLayout()
         self.cmb_irc_x = QComboBox()
@@ -247,9 +265,27 @@ class DftPages:
         self.color_row = QHBoxLayout()
         v.addLayout(self.color_row)
         self.canvas_fig = MplFigure(figsize=(6.3, 4.3), dpi=TABS.PREVIEW_DPI)
-        self.canvas = FigureCanvasQTAgg(self.canvas_fig)
-        self.canvas.setMinimumHeight(320)
-        v.addWidget(self.canvas, 2)
+        self.canvas = register_canvas(FigureCanvasQTAgg(self.canvas_fig))
+        self.canvas_host = TABS.CanvasHost(self.canvas, self.canvas_fig, margin=0)
+        self.canvas_host.setMinimumHeight(280)
+        from elucida.tabs.profile_workspace import ProfileWorkspace
+        self.workspace = ProfileWorkspace(self.canvas_host)
+        v.addWidget(self.workspace, 2)
+        row = QHBoxLayout()
+        self.btn_images = QPushButton(T('rp_profile_images'))
+        self.btn_images.clicked.connect(self.edit_annotations)
+        row.addWidget(self.btn_images)
+        self.btn_workspace = QPushButton(T('rp_large_workspace'))
+        self.btn_workspace.clicked.connect(self.large_workspace)
+        row.addWidget(self.btn_workspace)
+        row.addWidget(QLabel(T('rp_export_cm')))
+        self.profile_width, self.profile_height = QDoubleSpinBox(), QDoubleSpinBox()
+        size = self.prof.get("size_cm") or [16., 11.]
+        for w, value in zip((self.profile_width, self.profile_height), size):
+            w.setRange(5., 80.); w.setValue(value); w.setDecimals(1)
+            w.editingFinished.connect(self.profile_size_changed)
+            row.addWidget(w)
+        v.addLayout(row)
         self.lbl_prof = QLabel("")
         self.lbl_prof.setWordWrap(True)
         self.lbl_prof.setStyleSheet(HINT_CSS)
@@ -263,7 +299,7 @@ class DftPages:
         self.btn_irc_add.clicked.connect(self.add_irc)
         self.btn_irc_up = QPushButton(T("dft_irc_up"))
         self.btn_irc_up.clicked.connect(self.irc_up)
-        self.btn_irc_rm = QPushButton(T("remove"))
+        self.btn_irc_rm = QPushButton(T('rp_remove_irc_curve'))
         self.btn_irc_rm.clicked.connect(self.remove_irc)
         for b in (self.btn_sp_add, self.btn_sp_rm, self.btn_irc_add, self.btn_irc_up, self.btn_irc_rm):
             row.addWidget(b)
@@ -273,6 +309,41 @@ class DftPages:
         self.cmb_irc_x.currentIndexChanged.connect(self.combo_changed)
         self.cmb_irc_ref.currentIndexChanged.connect(self.combo_changed)
         return g
+
+    def profile_size_changed(self):
+        self.prof["size_cm"] = [self.profile_width.value(), self.profile_height.value()]
+        self.changed()
+
+    def edit_annotations(self):
+        from elucida.tabs.profile_annotations import AnnotationDialog
+        if not self.tab.main.ensure_project(): return
+        d = AnnotationDialog(self)
+        if d.exec() == QDialog.Accepted:
+            self.prof["annotations"] = d.items
+            self.changed()
+        d.deleteLater()
+
+    def large_workspace(self):
+        group = self.prof_group
+        parent = group.parentWidget()
+        layout = parent.layout()
+        index = layout.indexOf(group)
+        d = QDialog(self.tab)
+        d.setWindowTitle(T('rp_reaction_profile_workspace'))
+        d.resize(1450, 950); d.setSizeGripEnabled(True)
+        v = QVBoxLayout(d)
+        v.addWidget(group)
+        self.btn_workspace.setEnabled(False)
+        try:
+            d.exec()
+        finally:
+            v.removeWidget(group)
+            group.setParent(parent)
+            layout.insertWidget(index, group)
+            group.show()
+            self.btn_workspace.setEnabled(True)
+            self.workspace.fit()
+            d.deleteLater()
 
     def combo_changed(self, *_):
         if self._loading:
@@ -296,6 +367,32 @@ class DftPages:
         d.update(self.prof["species"].get(e["uid"]) or {})
         return d
 
+    def profile_entries(self):
+        removed = set(self.prof.get("removed_species", []))
+        return [e for e in self.calc_entries() if e["uid"] not in removed]
+
+    def remove_level(self):
+        row = self.tbl_sp.currentRow()
+        if row < 0: return
+        uid = self.tbl_sp.item(row, 0).data(Qt.UserRole)
+        removed = self.prof.setdefault("removed_species", [])
+        if uid not in removed: removed.append(uid)
+        # Beiseite legen, nicht wegwerfen: „Wiederherstellen“ bringt Label, Schritt, Pfade und Bilder zurück.
+        anchored = [a for a in self.prof.get("annotations", []) if a["anchor"].get("species") == uid]
+        self.prof.setdefault("removed_specs", {})[uid] = dict(spec=self.prof["species"].pop(uid, None), annotations=anchored)
+        self.prof["annotations"] = [a for a in self.prof.get("annotations", []) if a["anchor"].get("species") != uid]
+        self.sync(); self.changed()
+
+    def restore_level(self):
+        uid = self.cmb_level_restore.currentData()
+        if uid in self.prof.get('removed_species', []):
+            self.prof["removed_species"].remove(uid)
+            kept = self.prof.get("removed_specs", {}).pop(uid, None) or {}
+            if kept.get("spec") is not None:
+                self.prof["species"][uid] = kept["spec"]
+            self.prof.setdefault("annotations", []).extend(kept.get("annotations", []))
+            self.sync(); self.changed()
+
     def sp_calcs(self):
         """[(Pfad, Rechnung, Geometrie)] der geladenen Einzelpunkte (unlesbare fehlen)."""
         out = []
@@ -305,7 +402,8 @@ class DftPages:
                     c = self.tab.calc_file(p)
                     if c.get("energy") is not None:              # abgebrochener Einzelpunkt zählt nicht
                         out.append((p, c, self.tab.calc_geom(p)[0]))
-                except Exception:
+                except Exception as ex:                          # sonst fehlt die Spezies ohne Erklärung
+                    self.tab.add_note(f"{Path(p).name}: {ex}")
                     continue
         return out
 
@@ -320,13 +418,15 @@ class DftPages:
         """Eingeschaltete Spezies -> [dict(label, step, paths, opt, sp, sp_file, uid)] in Schrittfolge."""
         sps = self.sp_calcs()
         out = []
-        for i, e in enumerate(self.calc_entries()):
+        for i, e in enumerate(self.profile_entries()):
             d = self.spec(e, i)
             if not d["on"]:
                 continue
             hit = self.sp_for(e, sps)
             out.append(dict(uid=e["uid"], label=d["label"], step=int(d["step"]),
                             paths=[s.strip() for s in str(d["paths"]).split(",") if s.strip()] or ["A"],
+                            structure=d.get("structure"),
+                            structure_offset=d.get("structure_offset"), structure_width=d.get("structure_width"),
                             opt=self.tab.calc_of(e), sp=hit[1] if hit else None, sp_file=hit[0] if hit else None))
         return sorted(out, key=lambda it: it["step"])
 
@@ -345,7 +445,11 @@ class DftPages:
     def levels_spec(self):
         """-> (Zeilen, Pfade, Hinweise) für das Stufenbild."""
         items = self.items()
+        mr_items = [it for it in items if any((it.get(k) or {}).get("multireference") for k in ("opt", "sp"))]
+        items = [it for it in items if not any((it.get(k) or {}).get("multireference") for k in ("opt", "sp"))]
         rows, notes = profile_rows(items, self.prof["y"]) if items else ([], [])
+        notes += [it["label"] + ": " + T('rp_multireference_profile_requires_an_explicit_state_energy_omitted_for_n')
+                  for it in mr_items]
         paths = sorted({p for r in rows for p in r["paths"]})
         lev, mixed = self.level_text(rows)
         if mixed:
@@ -363,7 +467,7 @@ class DftPages:
             except Exception as ex:
                 notes.append(f"{Path(d['file']).name}: {ex}")
                 continue
-            out.append(dict(c, label=d.get("label") or Path(d["file"]).stem))
+            out.append(dict(c, uid=d["uid"], label=d.get("label") or Path(d["file"]).stem))
         return out, notes
 
     def irc_ref(self, curves):
@@ -379,6 +483,9 @@ class DftPages:
     # -- Abbildungen ------------------------------------------------------------------------
     def cfg(self, kind):
         cfg = TABS.FigureTab.base_cfg(self.tab)            # Größe/Formate/Textformat des DFT-Tabs
+        if kind != "nics" and self.prof.get("size_cm"):
+            cfg["figsize_in"] = [x / 2.54 for x in self.prof["size_cm"]]
+            cfg["size_cm"] = list(self.prof["size_cm"])
         TABS.core.setup_fonts(TABS.plt, cfg)
         cfg["legend"] = False
         cfg["xlabel"] = "reaction coordinate" + (" [Å]" if kind == "irc_rc" else "")
@@ -396,6 +503,49 @@ class DftPages:
         steps = [r["step"] for r in rows]
         cfg["xlim"] = [min(steps) - 0.8, max(steps) + 0.8]
         cfg["ylim"] = [min(vals) - 0.18 * span, max(vals) + 0.15 * span]
+        # Reserve space above the plateaus for explicitly assigned 2D structures.
+        # Reuse Figure's image/vector path, so screen colours never affect exports.
+        from elucida.core import images as IMG
+        structures = []
+        for r in rows:
+            path = r.get("structure")
+            if not path or (Path(path).exists() and Path(path).suffix.lower() == ".cdxml"
+                            and not PRJ.cdxml_has_content(path)):
+                continue
+            try:
+                asset = IMG.load_structure(path)
+                if asset is None:
+                    raise ValueError(T("dft_prof_structure_unreadable"))
+                structures.append((r, asset))
+            except Exception as ex:
+                notes.append(f"{r['label']}: {ex}")
+        xspan = cfg["xlim"][1] - cfg["xlim"][0]
+        if any(a["mode"] == "levels" for a in self.prof.get("annotations", [])):
+            cfg["ylim"][1] += .75 * span
+        elif structures:
+            cfg["ylim"][1] += .45 * span
+        yspan = cfg["ylim"][1] - cfg["ylim"][0]
+        placed = []
+        for r, asset in structures:
+            width = min(.22, .68 / xspan)
+            ratio = asset["rgba"].shape[0] / asset["rgba"].shape[1]
+            fw, fh = cfg["figsize_in"]
+            axratio = fw * cfg["axes_rect"][2] / (fh * cfg["axes_rect"][3])
+            height = width * ratio * axratio
+            if height > .22:
+                width *= .22 / height
+            width = r.get("structure_width") or width
+            anchor = [(r["step"]-cfg["xlim"][0])/xspan, (r["value"]-cfg["ylim"][0])/yspan]
+            offset = r.get("structure_offset") or [-width/2, .085]
+            pos = [anchor[0]+offset[0], anchor[1]+offset[1]]
+            if not r.get("structure_offset"):              # gleiche Stufe auf zwei Pfaden: nebeneinander statt übereinander
+                while any(abs(pos[0]-q[0]) < width and abs(pos[1]-q[1]) < height for q in placed):
+                    pos[0] += width * 1.05
+            placed.append(pos)
+            cfg["images"].append(dict(id="profile_" + r["uid"], file=r["structure"], _asset=asset,
+                                      width=width, frame=False, _anchor_af=anchor, pos=pos))
+        from elucida.tabs.profile_annotations import append_images
+        notes += append_images(self, cfg, {("species", r["uid"]): (r["step"], r["value"]) for r in rows}, mode="levels")
         curves = []
         for k, p in enumerate(paths):
             col = self.path_color(p, k)
@@ -429,7 +579,7 @@ class DftPages:
         if xk != "rc":
             cfg["xlabel"] = f"{xk} [Å]"
         cfg["ylabel"] = "ΔE [kcal mol$^{-1}$]"
-        curves, marks, x_end = [], [], None
+        curves, marks, x_end, anchors = [], [], None, {}
         for c in curves_:
             if xk == "rc":
                 x = c["s"] + (0.0 if x_end is None else x_end - c["s"][0])
@@ -440,6 +590,7 @@ class DftPages:
                 notes.append(T("dft_irc_no_col", name=c["label"], col=xk))
                 continue
             y = (c["E"] - e0) * HARTREE_KCAL
+            anchors.update({("irc", c["uid"], i): (xx, yy) for i, (xx, yy) in enumerate(zip(x, y))})
             curves.append(dict(x=x, y=y, color="black", ls="-", lw=1.2, label=None))
             ts = c["ts"]
             marks.append((x[ts], y[ts], (c["E"][ts] - c["E"][0]) * HARTREE_KCAL, (c["E"][ts] - c["E"][-1]) * HARTREE_KCAL))
@@ -449,7 +600,13 @@ class DftPages:
         ys = np.concatenate([c["y"] for c in curves])
         span = float(ys.max() - ys.min()) or 10.0
         cfg["xlim"] = [float(xs.min()), float(xs.max())]
+        if cfg["xlim"][0] == cfg["xlim"][1]:
+            cfg["xlim"] = [cfg["xlim"][0]-.5, cfg["xlim"][1]+.5]
         cfg["ylim"] = [float(ys.min()) - 0.08 * span, float(ys.max()) + 0.2 * span]
+        if any(a["mode"] == "irc" for a in self.prof.get("annotations", [])):
+            cfg["ylim"][1] += .5 * span
+        from elucida.tabs.profile_annotations import append_images
+        notes += append_images(self, cfg, anchors, mode="irc")
         curves.append(dict(x=np.array([m[0] for m in marks]), y=np.array([m[1] for m in marks]), color="#c0392b",
                            ls="None", marker="o", ms=4, label=None, aux=True))
         F = TABS.X.SimpleFigure(TABS.plt, cfg, curves, [], {}, fig=fig, legend=False)
@@ -487,6 +644,60 @@ class DftPages:
                 + (f" calculated at the {html.escape(meth)} level of theory." if meth else "."))
 
     # -- Aktionen ------------------------------------------------------------------------------
+    def assign_structure(self, uid, path):
+        """Copy a plateau's editable drawing into the project and persist its association."""
+        path = self.tab.main.import_file(str(path), PRJ.STRUCTURES)
+        self.prof["species"].setdefault(uid, {})["structure"] = path
+        self.sync()
+        self.changed()
+
+    def choose_structure(self, uid):
+        main = self.tab.main
+        if not main.ensure_project():
+            return
+        path, _ = QFileDialog.getOpenFileName(self.tab, T("dlg_structure"),
+                                             main.settings.value("last_img_dir", ""),
+                                             f"{T('flt_struct')};;{T('flt_all')}")
+        if path:
+            self.assign_structure(uid, path)
+
+    def draw_structure(self, uid):
+        from elucida.app.drawing_editor import DrawingDialog, DrawingEditor
+        main = self.tab.main
+        if not main.ensure_project():
+            return
+        existing = self.prof["species"].get(uid, {}).get("structure")
+        if existing and Path(existing).suffix.lower() == '.cdxml' and Path(existing).is_file():
+            path = Path(existing)
+        else:
+            path = Path(main.project_dir) / PRJ.STRUCTURES / ('profile_' + uuid.uuid4().hex[:12] + '.cdxml')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(PRJ.EMPTY_CDXML, encoding='utf-8')
+        dialog = DrawingDialog(self.tab)
+        dialog.setWindowTitle(T('dft_prof_draw_structure'))
+        dialog.resize(820, 580)
+        dialog.setSizeGripEnabled(True)
+        layout = QVBoxLayout(dialog)
+        editor = DrawingEditor(dialog, scheme_actions=False)
+        dialog.editor = editor
+        editor.set_canvas_dark(main.canvas_is_dark())
+        editor.open_path(path)
+        layout.addWidget(editor)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+        if PRJ.cdxml_has_content(path):
+            self.assign_structure(uid, path)
+        else:
+            self.changed()
+        dialog.deleteLater()
+
+    def remove_structure(self, uid):
+        self.prof["species"].setdefault(uid, {}).pop("structure", None)
+        self.sync()
+        self.changed()
+
     def add_sp(self):
         t = self.tab
         if not t.main.ensure_project():
@@ -557,6 +768,8 @@ class DftPages:
     def remove_irc(self):
         i = self.irc_list.currentRow()
         if 0 <= i < len(self.prof["irc"]):
+            uid = self.prof["irc"][i]["uid"]
+            self.prof["annotations"] = [a for a in self.prof.get("annotations", []) if a["anchor"].get("irc") != uid]
             del self.prof["irc"][i]
             self.sync()
             self.changed()
@@ -587,8 +800,10 @@ class DftPages:
         """Bedienelemente nach dem Zustand (Tabelle der Spezies, IRC-Liste, Auswahlfelder, Farben)."""
         p = self.prof
         self._loading = True
+        for w, value in zip((self.profile_width, self.profile_height), p.get("size_cm") or [16., 11.]):
+            w.setValue(value)
         sps = self.sp_calcs()
-        es = self.calc_entries()
+        es = self.profile_entries()
         self.tbl_sp.setRowCount(len(es))
         for i, e in enumerate(es):
             d = self.spec(e, i)
@@ -603,6 +818,16 @@ class DftPages:
             it = QTableWidgetItem(Path(hit[0]).name if hit else "–")
             it.setFlags(Qt.ItemIsEnabled)
             self.tbl_sp.setItem(i, 4, it)
+            button = QPushButton(T('dft_prof_structure_set') if d.get('structure') else T('dft_prof_structure_add'))
+            button.setToolTip(d.get('structure') or T('dft_prof_structure_tip'))
+            menu = QMenu(button)
+            if elucida.octet_enabled():
+                menu.addAction(T('dft_prof_draw_structure'), lambda checked=False, uid=e['uid']: self.draw_structure(uid))
+            menu.addAction(T('choose'), lambda checked=False, uid=e['uid']: self.choose_structure(uid))
+            if d.get('structure'):
+                menu.addAction(T('remove'), lambda checked=False, uid=e['uid']: self.remove_structure(uid))
+            button.setMenu(menu)
+            self.tbl_sp.setCellWidget(i, 5, button)
         self.tbl_sp.resizeColumnsToContents()
         self.irc_list.clear()
         self.irc_list.addItems([d.get("label") or Path(d["file"]).stem for d in p["irc"]])
@@ -623,7 +848,13 @@ class DftPages:
                     self.cmb_irc_ref.addItem(e.get("name") or Path(e["file"]).stem, "e:" + e["uid"])
         self.cmb_irc_ref.setCurrentIndex(max(0, self.cmb_irc_ref.findData(p["irc_ref"])))
         lv = p["mode"] == "levels"
-        for w in (self.tbl_sp, self.cmb_y, self.btn_sp_add, self.btn_sp_rm):
+        self.cmb_level_restore.clear()
+        for e in self.calc_entries():
+            if e['uid'] in p.get('removed_species', []):
+                self.cmb_level_restore.addItem(e.get('name') or Path(e['file']).stem, e['uid'])
+        self.cmb_level_restore.setVisible(lv and bool(self.cmb_level_restore.count()))
+        self.btn_level_restore.setEnabled(bool(p.get("removed_species")))
+        for w in (self.tbl_sp, self.cmb_y, self.btn_sp_add, self.btn_sp_rm, self.btn_level_remove, self.btn_level_restore):
             w.setVisible(lv)
         for w in (self.irc_list, self.cmb_irc_x, self.cmb_irc_ref, self.lbl_irc_x, self.lbl_irc_ref,
                   self.btn_irc_up, self.btn_irc_rm):
@@ -647,6 +878,12 @@ class DftPages:
 
     def refresh(self):
         """Vorschau des gewählten Modus neu zeichnen (Exportgröße des Tabs, maßstabsgetreu verkleinert)."""
+        self.tbl_sp.setMaximumHeight(170)
+        self.irc_list.setMaximumHeight(110)
+        dragger = getattr(self, "profile_dragger", None)
+        if dragger:
+            dragger.disconnect()
+            self.profile_dragger = None
         try:
             F, notes = self.build(self.canvas_fig)
         except Exception as ex:
@@ -654,8 +891,33 @@ class DftPages:
         if F is None:
             self.canvas_fig.clear()
             self.canvas_fig.text(0.5, 0.5, T("dft_prof_empty"), ha="center", va="center", color="gray")
+        else:
+            self.profile_dragger = TABS.TabDragger(F, lambda moved, F=F: self.images_moved(F, moved))
         self.lbl_prof.setText("\n".join("⚠ " + n for n in notes))
-        self.canvas.draw_idle()
+        # SimpleFigure resets inches while Qt keeps the widget's pixel dimensions.
+        # Fit both together after every rebuild (also on Retina screens).
+        self.canvas_host.set_figure_size(*self.canvas_fig.get_size_inches())
+
+    def images_moved(self, figure, moved):
+        changed = False
+        for a in self.prof.get("annotations", []):
+            key = "image_annotation_" + a["uid"]
+            image = next((im for im in figure.cfg["images"] if im.get("_id") == key), None)
+            if key in moved and image and image.get("_anchor_af"):
+                x, y, width, _ = moved[key]
+                ax, ay = image["_anchor_af"]
+                a.update(offset=[x-ax, y-ay], width=width)
+                changed = True
+        for uid, species in self.prof["species"].items():
+            key = "image_profile_" + uid
+            image = next((im for im in figure.cfg["images"] if im.get("_id") == key), None)
+            if key in moved and image and image.get("_anchor_af"):
+                x, y, width, _ = moved[key]
+                ax, ay = image["_anchor_af"]
+                species.update(structure_offset=[x-ax, y-ay], structure_width=width)
+                changed = True
+        if changed:
+            self.changed()
 
     # -- NICS ----------------------------------------------------------------------------------------
     def _nics_group(self):
@@ -679,9 +941,10 @@ class DftPages:
         self.tbl_nics.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         v.addWidget(self.tbl_nics)
         self.nics_fig = MplFigure(figsize=(6.3, 4.3), dpi=TABS.PREVIEW_DPI)
-        self.nics_canvas = FigureCanvasQTAgg(self.nics_fig)
-        self.nics_canvas.setMinimumHeight(280)
-        v.addWidget(self.nics_canvas, 2)
+        self.nics_canvas = register_canvas(FigureCanvasQTAgg(self.nics_fig))
+        self.nics_host = TABS.CanvasHost(self.nics_canvas, self.nics_fig, margin=0)
+        self.nics_host.setMinimumHeight(280)
+        v.addWidget(self.nics_host, 2)
         self.lbl_nics = QLabel("")
         self.lbl_nics.setWordWrap(True)
         self.lbl_nics.setStyleSheet(HINT_CSS)
@@ -825,7 +1088,7 @@ class DftPages:
             self.nics_fig.clear()
             self.nics_fig.text(0.5, 0.5, T("dft_nics_empty"), ha="center", va="center", color="gray")
         self.lbl_nics.setText("\n".join("⚠ " + n for n in notes))
-        self.nics_canvas.draw_idle()
+        self.nics_host.set_figure_size(*self.nics_fig.get_size_inches())
 
     # -- Export / SI ----------------------------------------------------------------------------------
     def figures(self):

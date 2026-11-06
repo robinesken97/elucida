@@ -9,12 +9,69 @@ from __future__ import annotations
 
 import struct
 import uuid
+import os
+import shutil
+from pathlib import Path
 
 SECT, MINI, CUTOFF = 512, 64, 4096
 FREESECT, ENDOFCHAIN, FATSECT, NOSTREAM = 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
 
 CHEMDRAW_CLSID = "41BA6D21-A02E-11CE-8FD9-0020AFD1F20C"
 CHEMDRAW_PROGID = "ChemDraw.Document.6.0"
+
+
+def editable_directory(docx):
+    """Portable editable drawings beside Word; macOS Word cannot activate ChemDraw OLE."""
+    path = Path(docx)
+    return path.with_name(path.stem + "_structures")
+
+
+def _drop_own(folder):
+    """Only numbered drawings and our README; files the user added stay."""
+    if folder.is_dir():
+        for p in [*folder.glob("drawing_[0-9][0-9][0-9].*"), folder / "README.txt"]:
+            p.unlink(missing_ok=True)
+
+
+def write_editable_companions(docx, drawings):
+    """Write the same CDX bytes as the OLE payload, plus CDXML when available.
+
+    Numbering follows the drawings' order in Word. Only our numbered files are
+    replaced; unrelated files in an existing export folder are left alone.
+    """
+    folder = editable_directory(docx)
+    _drop_own(folder)                                  # nie alte drawing_001.cdxml neben neuer .cdx
+    if not drawings:
+        return
+    folder.mkdir(parents=True, exist_ok=True)
+    names = []
+    for i, formats in enumerate(drawings, 1):
+        for ext, data in formats.items():
+            name = f"drawing_{i:03d}.{ext}"
+            path = folder / name
+            tmp = path.with_name(name + ".tmp")
+            tmp.write_bytes(data)
+            os.replace(tmp, path)
+            names.append(name)
+    # List the current export explicitly; never remove other/user-added files.
+    (folder / "README.txt").write_text(
+        "Editable drawings for " + Path(docx).name + "\n\n"
+        "Files in drawing order for this export:\n" + "\n".join(names) + "\n\n"
+        "Open CDX or CDXML directly in ChemDraw on macOS or Windows.\n"
+        "Word's embedded ChemDraw objects support double-click editing on Windows only.\n"
+        "These files are export snapshots; edits do not automatically update Word or Elucida.\n"
+        "On macOS, copy the edited drawing from ChemDraw back into Word.\n",
+        encoding="utf-8")
+
+
+def copy_editable_companions(source_docx, target_docx):
+    """Keep editable drawings with a DOCX moved out of an export staging folder."""
+    if Path(source_docx).suffix.lower() != ".docx":
+        return
+    source, target = editable_directory(source_docx), editable_directory(target_docx)
+    if source.is_dir() and source.resolve() != target.resolve():
+        _drop_own(target)
+        shutil.copytree(source, target, dirs_exist_ok=True)
 
 
 def _compobj(clsid, user_type, clipboard, progid):

@@ -540,7 +540,7 @@ class IRFigure(TABS.X.SimpleFigure):
             far = near + lead if below else near - lead    # … und am Spektrum
             pos = {k: (c - (w - gx) / 2, row) for k, c, w in zip(keys, cen, wid)}
             self.ir_leaders = {k: (t, c, near, far) for k, t, c in zip(keys, tgt, cen)}
-            gm = gy + 2.0 * self.fig.dpi / 72 / ab.height  # Abstand + halbe Peakmarke (ms 3), Marken zählen mit
+            gm = gy + 2.0 * self.fig.dpi / 72 / ab.height  # Abstand + kleiner Rand zum Spektrum
             q = far + gm if below else far - gm            # das Spektrum bleibt jenseits davon
             fy = (Y_ - y0) / (y1 - y0)
             if (fy.min() >= q - 1e-9) if below else (fy.max() <= q + 1e-9):
@@ -601,6 +601,7 @@ class IRMSTab(TABS.FigureTab):
                          ea_solvate="", ea_found={}, ir_mode="T",     # "T" | "A"; None (alte Projekte) = wie die Datei
                          y_auto=True, y_min=0.0, y_max=100.0,        # y-Bereich (ymax: nur alte Projekte)
                          ir_color=IR_COLOR,                          # Farbe des Spektrums (FB-13)
+                         ir_lw=1.0,                                 # gleiche Linienbreite in Ansicht und Export
                          ir_base=False,                              # OPUS-Basislinie abziehen (FB-11)
                          ir_thr=[],                                  # Schwellenlinie [[ṽ, A], …] (FB-15)
                          ir_struct=False, struct_w=20.0)             # Struktur der Verbindung im Bild
@@ -669,6 +670,9 @@ class IRMSTab(TABS.FigureTab):
             self.changed()
         self.btn_ircolor = TABS.color_button(st.get("ir_color") or IR_COLOR, pick_color)
         f.addRow(T("ov_color"), self.btn_ircolor)
+        self.sp_ir_lw = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=20.0,
+                                      singleStep=0.1, suffix=" pt", value=st.get("ir_lw", 1.0))
+        f.addRow(T("ir_linewidth"), self.sp_ir_lw)
         self.tbl_ir = QTableWidget(0, 3)
         self.tbl_ir.setHorizontalHeaderLabels(["", "ṽ [cm⁻¹]", T("ir_intensity")])
         self.tbl_ir.verticalHeader().setVisible(False)
@@ -728,7 +732,7 @@ class IRMSTab(TABS.FigureTab):
 
         self._ir_line = self._ea_line = ("", "")
         self.cb_full.toggled.connect(self.changed)
-        for w_ in (self.sp_lo, self.sp_hi, self.sp_prom):
+        for w_ in (self.sp_lo, self.sp_hi, self.sp_prom, self.sp_ir_lw):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cb_int, self.cb_irlab, self.cb_base, self.cb_irstruct):
             w_.toggled.connect(self.changed)
@@ -984,6 +988,7 @@ class IRMSTab(TABS.FigureTab):
         self.btn_ircolor.setProperty("color", c_)
         self.btn_ircolor.setStyleSheet(f"background-color: {c_}; border: 1px solid #777;")
         self.sp_prom.setValue(st.get("prominence", 5.0))
+        self.sp_ir_lw.setValue(st.get("ir_lw", 1.0))
         self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
         self.sync_yrange()
         self._loading = False
@@ -998,7 +1003,7 @@ class IRMSTab(TABS.FigureTab):
                   ea_found={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found_ed.items()
                             if ed.text().strip()})
         st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked(),
-                  ir_base=self.cb_base.isChecked(), ir_struct=self.cb_irstruct.isChecked())
+                  ir_base=self.cb_base.isChecked(), ir_struct=self.cb_irstruct.isChecked(), ir_lw=self.sp_ir_lw.value())
         if getattr(self, "sp_ymin", None) is not None:
             lo, hi = self.sp_ymin.value(), self.sp_ymax2.value()
             if lo >= hi:                                  # min < max: das gerade nicht geänderte Feld weicht aus
@@ -1113,11 +1118,10 @@ class IRMSTab(TABS.FigureTab):
         cfg["ylim"], rejected = y_limits(y[sel], mode, manual)
         if rejected:
             self.add_note(T("ir_yrange_bad"))
-        span = cfg["ylim"][1] - cfg["ylim"][0]
         cfg["xlabel"] = "wavenumber [cm$^{-1}$]"
         cfg["ylabel"] = "transmittance [%]" if mode == "T" else "absorbance"
         cfg["legend"] = False
-        curves = [{"x": sp["wn"], "y": y, "color": st.get("ir_color") or IR_COLOR, "label": None, "ls": "-", "lw": 1.0}]
+        curves = [{"x": sp["wn"], "y": y, "color": st.get("ir_color") or IR_COLOR, "label": None, "ls": "-", "lw": min(20.0, max(0.05, float(st.get("ir_lw", 1.0))))}]
         labels = []
         if getattr(self, "_preview", False) and self.btn_thr.isChecked() and st.get("ir_thr"):   # nur Vorschau
             px_, py_ = np.array(sorted(st["ir_thr"])).T
@@ -1132,12 +1136,9 @@ class IRMSTab(TABS.FigureTab):
             px = np.array([p["wn"] for p in use])
             o = np.argsort(sp["wn"])
             py = np.interp(px, sp["wn"][o], y[o])
-            dy = -0.03 * span if mode == "T" else 0.03 * span
             vis = (py >= cfg["ylim"][0]) & (py <= cfg["ylim"][1])   # fester y-Bereich: Peaks außerhalb ohne Marke/Label
             use = [p for p, v in zip(use, vis) if v]
             px, py = px[vis], py[vis]
-            curves.append({"x": px, "y": py + dy, "val": py, "color": "#14247a", "ls": "None",
-                           "marker": "^" if mode == "T" else "v", "ms": 3, "label": None})
             if st.get("ir_labels"):                     # Labels am Peak: unter dem Minimum bzw. über dem Maximum
                 for p, yv in zip(use, py):
                     if x0 <= p["wn"] <= x1 and np.isfinite(yv):

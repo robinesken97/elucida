@@ -73,6 +73,17 @@ def set_toolbar_visible(win, on):
         pass
 
 
+def hide_title(win):
+    """Qt can restore the native title when windowTitle changes; keep our toolbar clear."""
+    if not enabled():
+        return
+    try:
+        _msg(_msg(int(win.winId()), "window"), "setTitleVisibility:",
+             _NS_TITLE_HIDDEN, argtypes=(ctypes.c_long,))
+    except Exception:
+        pass
+
+
 class TitleDrag(QObject):
     """Werkzeugleiste als Titelleiste: an freien Stellen ziehen = Fenster verschieben, Doppelklick = Zoomen."""
 

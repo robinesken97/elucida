@@ -41,7 +41,10 @@ class DatapackDialog(QDialog):
         self.main = main
         self.setWindowTitle(T("dp_title"))
         self.resize(760, 680)
-        self.items = DP.collect(main.get_state(), main.project_dir)
+        gone = []
+        self.items = DP.collect(main.get_state(), main.project_dir, gone)
+        if gone:
+            main.error(T("dp_missing", n=len(gone), names=", ".join(gone[:8])))
         self._apply_saved()
         v = QVBoxLayout(self)
         hint = QLabel(T("dp_hint"), wordWrap=True)

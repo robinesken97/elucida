@@ -2,6 +2,31 @@
 
 # Changelog
 
+## 2.6.0 – 2026-11-06
+
+### New
+- **Built-in drawing editor (Octet Draw):** in the synthesis tab, the compound dialog, energy-profile plateaus and reaction
+  paths; automatic saving, structure check, clean-up, name to structure, stoichiometry table with explicit transfer,
+  SI with only the topmost reaction, CDX/CDXML companions next to Word exports.
+- **Reaction paths:** new project tab "Computational Chemistry" with free canvas, calculation data and 3D/orbital views;
+  true-to-scale or explicitly schematic energy diagrams, included in the complete SI.
+- **Multireference (ORCA 6):** CASSCF, SC-NEVPT2 and QD-SC-NEVPT2 per block in tab, SI and overlay; ΔE_ST and y₀ = n(LUNO).
+- **SEC:** merged UV/Vis/NIR exports (absorbance or raw signal, full range). They carry no times: potentials only from a
+  confirmed assignment (start + interval or tables), source stated in caption and methods text; gaps and jumps are reported.
+- **CV:** scan-direction arrow can be dragged; Randles–Ševčík also vs. v; axis label v¹ᐟ² [V s⁻¹]¹ᐟ².
+- **UV-Vis:** concentrations in colours with legend (optional).
+- **IR:** line width adjustable, triangular peak markers removed.
+- **Canvas dark:** all plots, previews and editors on pure black, hues kept and dark colours lightened; screen only.
+
+### Fixed
+- Reagent names with notes in brackets ("THF (dry)") are recognised again.
+- Full-SI export no longer stops because the global text format changed.
+- Restoring a removed level brings back its label, step, paths and images.
+
+### Removed
+- Automatic `elucida.json` export for Characterization. Existing files are preserved;
+  compound/project saving, SI export and measurement data packages remain available.
+
 ## 2.5.0 – 2026-11-01
 
 ### New

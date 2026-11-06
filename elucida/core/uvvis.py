@@ -986,6 +986,14 @@ class _ImageFrame(matplotlib.patches.FancyBboxPatch):
         return super().get_window_extent(renderer)
 
 
+def conc_ramp(concs):
+    """Konzentration -> Farbe: geordnete Größe, also eine Farbskala (viridis ohne das blasse Gelb)."""
+    from matplotlib import colormaps
+    from matplotlib.colors import to_hex
+    cs = sorted(set(concs))
+    return {c: to_hex(colormaps["viridis"](0.85 * i / max(1, len(cs) - 1))) for i, c in enumerate(cs)}
+
+
 class Figure:
     def __init__(self, plt, cfg, spectra, results, layout, fig=None):
         self.plt, self.cfg, self.spectra, self.results, self.layout = plt, cfg, spectra, results, layout
@@ -1001,12 +1009,47 @@ class Figure:
         self._inset_beside = False   # kein Platz im Bild: Inset rechts neben der (schmaleren) Achse
         self.tight_off = {}      # id -> (dx0, dy0, w, h) Tight-Box relativ zur Achsenposition
         self.ann_items = {}      # id -> Annotation
+        self.legend = None
         self._main()
         self._fit_axes(0.01 if cfg.get("size_cm") else 0.06)
         self._inset()
         self._labels()
         self._images()
         self._place()
+        self._conc_legend()
+
+    def _conc_legend(self):
+        """Farben je Konzentration brauchen eine Legende, sonst sagen sie nichts."""
+        handles = [h for h in self.ax.get_lines() if not h.get_label().startswith("_")]
+        if not handles:
+            return
+        loc = self.layout.get("legend")
+        self.legend = self.ax.legend(handles=handles, loc=tuple(loc) if loc else "best", frameon=False,
+                                     fontsize=self.cfg["font_size"] * 0.8, handlelength=1.8)
+        self.legend.set_draggable(True, use_blit=True, update="loc")
+        self._place_legend()
+
+    def _place_legend(self):
+        """Legende in freie Fläche setzen (Kurven, Bilder und Labels meiden), falls nicht verschoben."""
+        if self.legend is None or self.layout.get("legend"):
+            return
+        rend = self._renderer()
+        fs = FreeSpace()
+        fs.block_below(self._envelope(fs.n))
+        for r in self._extra_blocks(rend):
+            fs.block_rect(*r)
+        for a in self.axes_items.values():
+            fr = getattr(a, "_frame", None)
+            bb = fr.get_window_extent(rend) if fr is not None else a.get_tightbbox(rend)
+            fs.block_rect(*self._measure_af(bb))
+        for ann in self.ann_items.values():
+            fs.block_rect(*self._measure_af(ann.get_window_extent(rend)))
+        _, _, w, h = self._measure_af(self.legend.get_window_extent(rend))
+        hit = fs.find(w, h, corner_score("top-right"))
+        if hit is None:
+            hit = fs.find(w, h, corner_score("top-right"), over_curves=True)
+        if hit is not None:
+            self.legend.set_loc(tuple(hit))
 
     # -- Hauptplot -----------------------------------------------------------
     def _main(self):
@@ -1014,11 +1057,16 @@ class Figure:
         xs = np.concatenate([s["x"] for s in self.spectra])
         xlim = cfg["xlim"] or (xs.min(), xs.max())
         ylim = cfg["ylim"] or (0, cfg["max_abs_fit"])
+        ramp = conc_ramp([s["c"] for s in self.spectra]) if cfg.get("conc_colors") else {}
+        named = set()
         for s in self.spectra:
             # Kurven geometrisch an den Achsengrenzen kappen statt per Clip-Pfad:
             # manche SVG-Renderer (MuPDF, evtl. Word) ignorieren Clip-Pfade
             cx, cy = clip_polyline(s["x"], s["y"], xlim, ylim)
-            ax.plot(cx, cy, color=s.get("color") or cfg["line_color"],
+            c = s.get("c")
+            label = f"{c:g} {cfg['conc_unit'].replace('uM', 'µM')}" if c in ramp and c not in named else "_"
+            named.add(c)
+            ax.plot(cx, cy, color=ramp.get(c) or s.get("color") or cfg["line_color"], label=label,
                     lw=cfg["line_width"], solid_joinstyle="round", solid_capstyle="butt")
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
@@ -1526,6 +1574,10 @@ class Figure:
                         (x0, y0, x1 - x0, y1 - y0)]
         for key, ann in self.ann_items.items():
             out[key] = [round(float(v), 4) for v in ann.xyann]
+        if self.legend is not None and isinstance(self.legend._loc, tuple):
+            out["legend"] = [round(float(v), 4) for v in self.legend._loc]
+        elif "legend" in self.layout:
+            out["legend"] = self.layout["legend"]
         return out
 
     def export(self):

@@ -4,8 +4,10 @@ Fusion sieht auf Windows, macOS und Linux gleich aus. Die Abbildungen (matplotli
 Symbole sind kleine SVGs (Strichzeichnungen), werden in der Textfarbe gerendert und als PNG für das Stylesheet
 abgelegt (PNG braucht kein Qt-Bildformat-Plugin)."""
 from __future__ import annotations
+import elucida
 
 from pathlib import Path
+import os
 
 import shiboken6
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
@@ -498,10 +500,29 @@ def _field_edge(root):
             fill[0].setFixedWidth(W - others)
 
 
+def guard_fields(root):
+    """Wheel guard per field: an application-wide Python event filter wraps WebEngine's private QObjects while they
+    are built (native crash, PySide 6.12/macOS). Typed searches never wrap the other children."""
+    guard = getattr(QApplication.instance(), "_wheel_guard", None)
+    if guard is None or not elucida.octet_enabled():
+        return
+    for field in root.findChildren(QAbstractSpinBox) + root.findChildren(QComboBox):
+        field.installEventFilter(guard)
+        guard.eventFilter(field, QEvent(QEvent.Polish))
+
+
+def _guard_dialog(*_):
+    win = QApplication.activeWindow()
+    if isinstance(win, QDialog):                               # Dialoge laufen nicht durch tidy
+        guard_fields(win)
+        QApplication.instance()._wheel_guard.eventFilter(win, QEvent(QEvent.Polish))   # Dialogränder
+
+
 def tidy(root):
     """Linke Spalte ruhiger: Zeilenabstand 8 px, einzelne Knöpfe in Formularen in natürlicher Breite statt als
     Balken über die ganze Karte, reine Symbol-Knöpfe (↑/↓) quadratisch. Vor dem Bestimmen der Spaltenbreite aufrufen."""
     from PySide6.QtWidgets import QGroupBox
+    guard_fields(root)
     top = root.layout()
     if isinstance(top, QVBoxLayout):                          # Spalte: gleicher Rand und Abstand zwischen Karten
         top.setContentsMargins(12, 12, 12, 12)
@@ -867,7 +888,10 @@ def apply(mode, cache_dir: Path):
     app = QApplication.instance()
     if getattr(app, "_wheel_guard", None) is None:
         app._wheel_guard = _WheelGuard(app)
-        app.installEventFilter(app._wheel_guard)
+        if elucida.octet_enabled():
+            app.focusWindowChanged.connect(_guard_dialog)
+        else:
+            app.installEventFilter(app._wheel_guard)
     hints = QGuiApplication.styleHints()
     # Fensterrahmen/Titelleiste passend; "system" folgt wieder dem Betriebssystem
     hints.setColorScheme({"light": Qt.ColorScheme.Light, "dark": Qt.ColorScheme.Dark}.get(

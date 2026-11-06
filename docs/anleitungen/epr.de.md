@@ -1,4 +1,4 @@
-[English](epr.en.md) | **Deutsch** · [zurück zur Übersicht](../../README.de.md#anleitungen)
+[English](epr.en.md) | **Deutsch** · [zurück zur Übersicht](../../README.de.md#abläufe)
 
 # EPR: Spektren, Simulation und Fit
 

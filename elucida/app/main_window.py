@@ -5,6 +5,7 @@ Start:      python Elucida.py   (oder python -m elucida)
 Selbsttest: python Elucida.py --selftest AUSGABEORDNER [--selftest-isnet]
 """
 from __future__ import annotations
+import elucida
 
 import json
 import os
@@ -13,6 +14,9 @@ import sys
 import html
 import re
 import traceback
+import tempfile
+import logging
+import locale
 from pathlib import Path
 
 from elucida import APP_NAME, APP_VERSION, ROOT  # noqa: F401  (Versionsnummer nur in elucida/__init__.py)
@@ -32,6 +36,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
+from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
 from PySide6.QtCore import QEvent, QFileSystemWatcher, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
@@ -145,7 +150,7 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
                 "fmt_pdf": True, "fmt_svg": True, "fmt_png": True,
                 "x_auto": True, "x_min": 200.0, "x_max": 1100.0,
                 "bands_add": True, "shoulders": False, "show_excl": False, "inset": True,
-                "mark_sh": False, "label_index": False, "min_r2": 0.98, "color_show": False, "color_d": 1.0}
+                "mark_sh": False, "label_index": False, "conc_colors": False, "min_r2": 0.98, "color_show": False, "color_d": 1.0}
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg/mL"), ("M", "M")]
 
@@ -301,11 +306,20 @@ class CompoundDialog(QDialog):
         self.setWindowTitle(T("compound_title"))
         self.main = parent
         self.path = comp.get("structure")
-        f = make_form(self)
+        self.drawing_editor = None
+        self._drafts = []
+        self._draft = None
+        self._manual = set()                             # von Hand geändert: Zeichnung überschreibt das nicht
+        embedded = elucida.octet_enabled()
+        body = QWidget(self) if embedded else self
+        f = make_form(body)
+        if embedded:
+            f.setRowWrapPolicy(QFormLayout.WrapLongRows)
+            f.setFormAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.ed_name = QLineEdit(comp.get("name", ""))
         self.ed_name.setPlaceholderText(T("compound_name_ph"))
         f.addRow(T("compound_name"), self.ed_name)
-        self.ed_note = QLineEdit(comp.get("note", ""))                 # nur intern: Startbildschirm, Titel, elucida.json
+        self.ed_note = QLineEdit(comp.get("note", ""))                 # nur intern: Startbildschirm, Titel
         self.ed_note.setPlaceholderText(T("compound_note_ph"))
         self.ed_note.setToolTip(T("compound_note_tip"))
         f.addRow(T("compound_note"), self.ed_note)
@@ -322,6 +336,7 @@ class CompoundDialog(QDialog):
         f.addRow("", s_row)
         row = QHBoxLayout()
         self.lbl_struct = QLabel(Path(self.path).name if self.path else "–")
+        self.lbl_struct.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         b = QPushButton(T("choose"))
         b.clicked.connect(self.choose)
         row.addWidget(self.lbl_struct, 1)
@@ -330,9 +345,17 @@ class CompoundDialog(QDialog):
         b_cd = QPushButton(T("chemdraw_edit"))
         b_cd.setToolTip(T("chemdraw_edit_tip"))
         b_cd.clicked.connect(self._chemdraw)
-        row.addWidget(b_cd)
+        if not embedded:
+            row.addWidget(b_cd)
+        else:
+            b_cd.deleteLater()  # Available in the drawing's file menu.
+        if embedded:
+            self.b_draw = QPushButton(T("draw_open"))
+            self.b_draw.clicked.connect(lambda: self.set_path(str(self.main.chemdraw_file("structure"))))
+            row.addWidget(self.b_draw)
         f.addRow(T("structure"), row)
         self.lbl_preview = QLabel()                      # Strukturbild auf Weiß (schwarze Striche, auch im dunklen Theme)
+        register_canvas(self.lbl_preview)
         self.lbl_preview.setAlignment(Qt.AlignCenter)
         self.lbl_preview.setStyleSheet("background: white; border-radius: 6px; padding: 6px;")
         f.addRow("", self.lbl_preview)
@@ -342,6 +365,8 @@ class CompoundDialog(QDialog):
         f.addRow(T("compound_formula"), self.ed_formula)
         self.ed_mw = QLineEdit(f"{comp['mw']:g}" if comp.get("mw") else "")
         f.addRow(T("molar_mass"), self.ed_mw)
+        self.ed_formula.textEdited.connect(lambda: self._manual.add('formula'))
+        self.ed_mw.textEdited.connect(lambda: self._manual.add('mw'))
         self.ed_mp = QLineEdit(comp.get("mp", ""))
         self.ed_mp.setPlaceholderText(T("compound_mp_ph"))
         self.cb_oil = QCheckBox(T("compound_oil"))                    # Öl: m.p. <25 °C
@@ -362,17 +387,124 @@ class CompoundDialog(QDialog):
         self.cb_known.toggled.connect(self.ed_lit.setEnabled)
         f.addRow("", self.cb_known)
         f.addRow(T("compound_lit"), self.ed_lit)
-        hint = QLabel(T("compound_hint"))
+        hint = QLabel(T("compound_editor_hint" if embedded else "compound_hint"))
         hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignCenter)
         hint.setStyleSheet(HINT_CSS)
         f.addRow(hint)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        f.addRow(bb)
+        if not embedded:
+            f.addRow(bb)
         # Höhe über heightForWidth: resize(460, 0) nahm nur die Mindesthöhe des Formulars, die den umbrechenden
         # Hinweis mit einer Zeile rechnet – die letzte Zeile unter „Literatur“ war abgeschnitten (macOS)
         self.resize(460, max(self.sizeHint().height(), f.totalHeightForWidth(460)))
+        if embedded:
+            from elucida.app.drawing_editor import DrawingEditor
+            layout = QVBoxLayout(self)
+            columns = QHBoxLayout()
+            layout.addLayout(columns, 1)
+            scroll = QScrollArea(widgetResizable=True)
+            scroll.setWidget(body)
+            scroll.setMinimumWidth(360)
+            scroll.setMaximumWidth(400)
+            columns.addWidget(scroll, 1)
+            self.drawing_editor = DrawingEditor(self, scheme_actions=False, draft=True)
+            self.drawing_editor.export_directory = Path(self.main.project_dir) / PRJ.STRUCTURES
+            self.drawing_editor.set_canvas_dark(self.main.canvas_is_dark())
+            self.drawing_editor.saved.connect(self._drawing_saved)
+            self.drawing_editor.external_requested.connect(self._chemdraw)
+            columns.addWidget(self.drawing_editor, 2)
+            layout.addWidget(bb)
+            self._load_drawing()
+            self.setSizeGripEnabled(True)
+            self.resize(980, 600)
+            geometry = self.main.settings.value('ui/compound_geometry')
+            if geometry:
+                self.restoreGeometry(geometry)
+
+    def _load_drawing(self):
+        if self.drawing_editor is None:
+            return
+        from elucida.app.drawing_editor import fingerprint
+        source = Path(self.path or self.main.chemdraw_file("structure")).resolve()
+        editable = source.suffix.lower() == '.cdxml'
+        self.drawing_editor.setVisible(editable)
+        self.b_draw.setVisible(not editable)
+        if not editable:
+            self._draft = None
+            return
+        # Work on a temporary copy until OK; Cancel never modifies the compound file.
+        draft = tempfile.TemporaryDirectory(prefix='elucida-compound-')
+        stage = (Path(draft.name) / source.name).resolve()
+        shutil.copy2(source, stage)
+        if not self.drawing_editor.open_path(stage):
+            draft.cleanup()
+            return
+        self._drafts.append(draft)
+        self._draft = (source, stage, fingerprint(source))
+        # Existing drawings also populate missing fields before the first edit.
+        chem = compound_from_structure(stage)
+        logging.getLogger('elucida.drawing').info('Compound opened: formula=%s mass=%s', bool(chem.get('formula')), bool(chem.get('mw')))
+        formula, mw = self.ed_formula.text().strip(), self.ed_mw.text().strip()
+        if not formula:
+            self.ed_formula.setText(chem.get('formula') or '')
+        elif chem.get('formula') and formula != chem['formula']:
+            self._manual.add('formula')   # gespeicherte Abweichung = frühere Korrektur
+        if not mw and chem.get('mw'):
+            self.ed_mw.setText(f"{chem['mw']:.2f}")
+        elif mw and chem.get('mw') and abs(float(mw.replace(',', '.')) - chem['mw']) > 0.01:
+            self._manual.add('mw')
+        self.lbl_preview.hide()  # The live drawing is the full-size compound preview.
+
+    def _drawing_saved(self, path):
+        logging.getLogger('elucida.drawing').info('Compound saved callback: draft=%s matching=%s', bool(self._draft), bool(self._draft and Path(path).resolve() == self._draft[1]))
+        if self._draft and Path(path).resolve() == self._draft[1]:
+            chem = compound_from_structure(path)
+            # Leere Zeichnung: berechnete Werte weg. Nicht auswertbar (Abkürzungen): vorhandene Werte bleiben.
+            empty = not PRJ.cdxml_has_content(path)
+            if 'formula' not in self._manual and (chem.get('formula') or empty):
+                self.ed_formula.setText(chem.get('formula') or '')
+            if 'mw' not in self._manual and (chem.get('mw') or empty):
+                self.ed_mw.setText(f"{chem['mw']:.2f}" if chem.get('mw') else '')
+            if PRJ.cdxml_has_content(path) and (not chem.get('formula') or not chem.get('mw')):
+                self.drawing_editor.status.setText(T('draw_properties_unavailable'))
+
+    def done(self, result):
+        if result == QDialog.Accepted:
+            try:
+                parse_float(self.ed_mw.text())
+            except ValueError:
+                QMessageBox.warning(self, T('compound_title'), T('draw_invalid_mw'))
+                return
+        if result == QDialog.Accepted and self.drawing_editor and self._draft:
+            from elucida.app.drawing_editor import fingerprint, save_bundle
+            editor = self.drawing_editor
+            if editor.dirty and not editor.save_sync():
+                return
+            source, stage, expected = self._draft
+            if fingerprint(stage) != expected:
+                try:
+                    if fingerprint(source) != expected:
+                        raise ValueError(T('draw_conflict'))
+                    bundle = editor._js('window.elucida.snapshot()')
+                    target = Path(self.main.import_file(str(source), PRJ.STRUCTURES))
+                    save_bundle(target, bundle, fingerprint(target))
+                    self.path = str(target)
+                    # Autosave already updated the calculated fields. Keep any
+                    # manual corrections entered after the last drawing edit.
+                except Exception as ex:
+                    QMessageBox.warning(self, T('draw_title'), str(ex))
+                    return
+        if self.drawing_editor:
+            self.drawing_editor.autosave.stop()
+            self.main.settings.setValue('ui/compound_geometry', self.saveGeometry())
+        super().done(result)
+
+    def cleanup(self):
+        for draft in self._drafts:
+            draft.cleanup()
 
     def _chemdraw(self):
         self.chemdraw = True
@@ -398,7 +530,10 @@ class CompoundDialog(QDialog):
         self.lbl_preview.setVisible(not pm.isNull())
 
     def set_path(self, p):
+        if self.drawing_editor and self.drawing_editor.dirty and not self.drawing_editor.save_sync():
+            return                                       # sonst passte der Entwurf nicht mehr zum Pfad
         self.path = p
+        self._manual.clear()                             # andere Struktur: Werte kommen wieder aus ihr
         self.lbl_struct.setText(Path(p).name)
         self._preview()
         chem = compound_from_structure(p)
@@ -408,8 +543,17 @@ class CompoundDialog(QDialog):
             self.ed_mw.setText(f"{chem['mw']:.2f}")
         if not self.ed_name.text().strip():
             self.ed_name.setText(Path(p).stem)
+        self._load_drawing()
 
     def result_compound(self):
+        # Repair missing calculated fields as a final boundary check, including
+        # projects saved by older editor versions with an empty formula/mass.
+        if self.drawing_editor and self._draft and (not self.ed_formula.text().strip() or not self.ed_mw.text().strip()):
+            chem = compound_from_structure(self._draft[1])
+            if not self.ed_formula.text().strip():
+                self.ed_formula.setText(chem.get('formula') or '')
+            if not self.ed_mw.text().strip() and chem.get('mw'):
+                self.ed_mw.setText(f"{chem['mw']:.2f}")
         return {"name": self.ed_name.text().strip(), "structure": self.path,
                 "formula": self.ed_formula.text().strip().replace(" ", ""), "mw": parse_float(self.ed_mw.text()),
                 "mp": self.ed_mp.text().strip(), "oil": self.cb_oil.isChecked(), "note": self.ed_note.text().strip(),
@@ -422,13 +566,14 @@ def compound_from_structure(p):
     """Formel und Molmasse aus einer CDXML (oder der gleichnamigen CDXML neben SVG/PDF/PNG)."""
     p = Path(p)
     src = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
-    if not src.exists():
+    if not src.exists() or not PRJ.cdxml_has_content(src):
         return {}
     try:
         from elucida.core import chem as CHEM
-        c = CHEM.load_cdxml(src)
+        c = CHEM.load_cdxml(src, render=False)
         return {"formula": c.get("formula"), "mw": c.get("mw")}
     except Exception:
+        logging.getLogger('elucida.drawing').exception('Could not calculate compound properties from CDXML')
         return {}
 
 
@@ -570,6 +715,12 @@ class MainWindow(QMainWindow):
     log_signal = Signal(str)
 
     def __init__(self):
+        # QApplication adopts the system's numeric locale. Native CDXML readers
+        # expect decimal points; a German comma locale collapses RDKit coordinates
+        # and makes its preview fail. Set this once before loading data/workers;
+        # localized Qt widgets and Elucida's comma-aware input remain unchanged.
+        # https://doc.qt.io/qt-6/qcoreapplication.html#locale-settings
+        locale.setlocale(locale.LC_NUMERIC, 'C')
         super().__init__()
         self.settings = (QSettings(str(SETTINGS_FILE), QSettings.IniFormat) if SETTINGS_FILE
                          else QSettings(APP_NAME, APP_NAME))
@@ -611,15 +762,12 @@ class MainWindow(QMainWindow):
         self._saved_snap = None
 
         self.fig = MplFigure(figsize=FIGSIZE, dpi=PREVIEW_DPI)
-        self.canvas = FigureCanvasQTAgg(self.fig)
+        self.canvas = register_canvas(FigureCanvasQTAgg(self.fig))
         self.canvas.setFixedSize(int(FIGSIZE[0] * PREVIEW_DPI), int(FIGSIZE[1] * PREVIEW_DPI))
         self.timer = QTimer(self, singleShot=True, interval=400)
         self.timer.timeout.connect(self.render)
         self.autosave_timer = QTimer(self, singleShot=True, interval=800)
         self.autosave_timer.timeout.connect(self.autosave)
-        # elucida.json (Characterization) seltener als das Autosave: baut die SI-Zeilen aller Tabs neu
-        self.exchange_timer = QTimer(self, singleShot=True, interval=5000)
-        self.exchange_timer.timeout.connect(self.write_exchange)
         # ChemDraw: Struktur/Schema der Verbindung überwachen; gespeichert -> automatisch übernehmen
         self.cd_watch = QFileSystemWatcher(self)
         self.cd_watch.fileChanged.connect(self._cd_changed)
@@ -643,6 +791,7 @@ class MainWindow(QMainWindow):
         self._mac_title = MAC.enabled()
         MAC.prepare(self)                                # macOS: keine Titelleiste, Ampelknöpfe auf der Werkzeugleiste
         self._title_h = None                             # Höhe der Titelleiste (px) nach dem ersten Anzeigen
+        self.windowTitleChanged.connect(lambda _: QTimer.singleShot(0, self._hide_native_title))
         self.build_ui()
         self.setAcceptDrops(True)
         QTimer.singleShot(0, self._init_undo)
@@ -656,6 +805,13 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ UI
     def build_ui(self):
+        if not self.save_drawings():
+            return
+        old_pub = self.__dict__.get('pub_page')
+        old_path = old_pub.path_workspace.item.copy() if old_pub and old_pub.path_workspace else None
+        old_pub_tab = old_pub.project_tabs.currentIndex() if old_pub else 0
+        old_pdir = old_pub.pdir if old_pub else None
+        if old_pub and not old_pub.close_path(): return
         self.update_title()
         mb = self.menuBar()
         mb.clear()
@@ -759,6 +915,24 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _=False, c=code: self.switch_theme(c))
             grp_t.addAction(act)
             mt.addAction(act)
+        if elucida.octet_enabled():
+            canvas = mf.addMenu(T("draw_canvas"))
+            group = QActionGroup(self)
+            self.canvas_mode_actions = {}
+            for code in ("system", "light", "dark"):
+                a = QAction(T("draw_follow_theme") if code == "system" else T("theme_" + code), self,
+                            checkable=True, checked=self.settings.value("ui/canvas", "system") == code)
+                a.triggered.connect(lambda checked=False, c=code: self.set_canvas_mode(c))
+                group.addAction(a)
+                canvas.addAction(a)
+                self.canvas_mode_actions[code] = a
+            app_theme = QAction(T("menu_theme") + ": ☀ / ☾", self,
+                triggered=lambda: self.switch_theme("light" if STYLE._mode == "dark" else "dark"))
+            self.toolbar.addAction(app_theme)
+            self.theme_toggle = app_theme
+            self.canvas_toggle = QAction(T("draw_canvas_dark"), self, checkable=True, checked=self.canvas_is_dark())
+            self.canvas_toggle.triggered.connect(lambda on: self.set_canvas_mode("dark" if on else "light"))
+            self.toolbar.addAction(self.canvas_toggle)
         ml = mb.addMenu(T("menu_lang"))
         grp = QActionGroup(self)
         for code, name in (("de", "Deutsch"), ("en", "English")):
@@ -988,7 +1162,8 @@ class MainWindow(QMainWindow):
         self.cb_inset = QCheckBox(T("inset_show"))
         self.cb_tab = QCheckBox(T("inset_table"))
         self.cb_excl = QCheckBox(T("show_excl"))
-        for cb in (self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab, self.cb_excl):
+        self.cb_conc_colors = QCheckBox(T("conc_colors"))
+        for cb in (self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab, self.cb_excl, self.cb_conc_colors):
             fa.addRow(cb)
         row = QHBoxLayout()
         self.cb_pdf, self.cb_svg, self.cb_png = QCheckBox("PDF"), QCheckBox("SVG"), QCheckBox("PNG")
@@ -1124,6 +1299,9 @@ class MainWindow(QMainWindow):
         self.center.addWidget(self.pub_page)
         self.setCentralWidget(self.center)
         self.center.setCurrentIndex(self._center_index())
+        if old_pdir and str(old_pdir) == self.publication_dir:
+            self.pub_page.project_tabs.setCurrentIndex(old_pub_tab)
+            if old_path: self.pub_page.open_path(old_path)
 
         self.apply_globals()
         self.apply_series_widgets()
@@ -1140,13 +1318,13 @@ class MainWindow(QMainWindow):
         for w in (self.cmb_bl, self.cmb_r2):
             w.currentIndexChanged.connect(self.changed)
         for w in (self.cb_err, self.cb_tab, self.cb_bands_add, self.cb_shoulders, self.cb_excl, self.cb_inset,
-                  self.cb_marksh, self.cb_lidx):
+                  self.cb_marksh, self.cb_lidx, self.cb_conc_colors):
             w.toggled.connect(self.changed)
         for w in (self.sp_min, self.sp_r2):
             w.valueChanged.connect(self._update_sections)
         self.cmb_r2.currentIndexChanged.connect(self._update_sections)
         for w in (self.cb_shoulders, self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab,
-                  self.cb_excl, self.cb_pdf, self.cb_svg, self.cb_png):
+                  self.cb_excl, self.cb_conc_colors, self.cb_pdf, self.cb_svg, self.cb_png):
             w.toggled.connect(self._update_sections)
         self._update_sections()
 
@@ -1247,7 +1425,7 @@ class MainWindow(QMainWindow):
             cb.isChecked() != d[k] for cb, k in (
                 (self.cb_err, "show_err"), (self.cb_marksh, "mark_sh"), (self.cb_lidx, "label_index"),
                 (self.cb_inset, "inset"),
-                (self.cb_tab, "table"), (self.cb_excl, "show_excl"), (self.cb_pdf, "fmt_pdf"),
+                (self.cb_tab, "table"), (self.cb_excl, "show_excl"), (self.cb_conc_colors, "conc_colors"), (self.cb_pdf, "fmt_pdf"),
                 (self.cb_svg, "fmt_svg"), (self.cb_png, "fmt_png"))))
 
     def apply_globals(self):
@@ -1275,6 +1453,7 @@ class MainWindow(QMainWindow):
         self.cb_bands_add.setChecked(gl.get("bands_add", True))
         self.cb_shoulders.setChecked(gl.get("shoulders", False))
         self.cb_excl.setChecked(gl.get("show_excl", False))
+        self.cb_conc_colors.setChecked(gl.get("conc_colors", False))
         self.cb_inset.setChecked(gl.get("inset", True))
         self.cb_marksh.setChecked(gl.get("mark_sh", False))
         self.cb_lidx.setChecked(gl.get("label_index", False))
@@ -1303,7 +1482,7 @@ class MainWindow(QMainWindow):
                          fmt_pdf=self.cb_pdf.isChecked(), fmt_svg=self.cb_svg.isChecked(),
                          fmt_png=self.cb_png.isChecked(), x_auto=self.cb_xauto.isChecked(),
                          bands_add=self.cb_bands_add.isChecked(), shoulders=self.cb_shoulders.isChecked(),
-                         show_excl=self.cb_excl.isChecked(), inset=self.cb_inset.isChecked(),
+                         show_excl=self.cb_excl.isChecked(), conc_colors=self.cb_conc_colors.isChecked(), inset=self.cb_inset.isChecked(),
                          mark_sh=self.cb_marksh.isChecked(), label_index=self.cb_lidx.isChecked(),
                          x_min=self.sp_xmin.value(), x_max=self.sp_xmax.value())
 
@@ -1370,11 +1549,29 @@ class MainWindow(QMainWindow):
         self._update_size_widgets()
         self.changed()
 
+    def canvas_is_dark(self):
+        mode = self.settings.value("ui/canvas", "system")
+        return (STYLE._mode if mode == "system" else mode) == "dark"
+
+    def set_canvas_mode(self, mode):
+        self.settings.setValue("ui/canvas", mode)
+        from elucida.app.canvas_theme import configure
+        configure(self.canvas_is_dark())
+        from elucida.app.drawing_editor import DrawingEditor
+        for editor in self.findChildren(DrawingEditor):
+            editor.set_canvas_dark(self.canvas_is_dark())
+        if hasattr(self, 'canvas_toggle'):
+            self.canvas_toggle.setChecked(self.canvas_is_dark())
+        for code, action in getattr(self, 'canvas_mode_actions', {}).items():
+            action.setChecked(code == mode)
+
     def _theme_mode(self):
         return self.settings.value("ui/theme", "system") or "system"
 
     def apply_theme(self):
         STYLE.apply(self._theme_mode(), IMG.app_data_dir() / "theme")
+        from elucida.app.canvas_theme import configure
+        configure(self.canvas_is_dark())
         icon = self.app_icon()                           # Fenster-/Dock-Symbol folgt dem Theme
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
@@ -1639,6 +1836,8 @@ class MainWindow(QMainWindow):
     def set_state(self, state, partial=False):
         """Zustand übernehmen (Projekt laden, Undo/Redo). partial (Rückgängig/Wiederholen): nur geänderte Tabs neu
         aufbauen, ε nur nachziehen, statt der ganzen Oberfläche (build_ui, ~1,2 s im Beispielprojekt)."""
+        if not self.save_drawings():
+            return
         state = json.loads(json.dumps(state))          # entkoppeln
         if state.get("hrms") is None:                  # Projekte vor 1.21: MS-Teil stand im Tab IR + MS
             ir = state.get("irms") or {}
@@ -1788,19 +1987,31 @@ class MainWindow(QMainWindow):
         self._init_undo()
 
     def undo(self):
+        path = self.active_reaction_path()
+        if path: return path.undo(-1)
         if len(self._undo) > 1:
             self._redo.append(self._undo.pop())
             self._restore(self._undo[-1])
 
     def redo(self):
+        path = self.active_reaction_path()
+        if path: return path.undo(1)
         if self._redo:
             self._undo.append(self._redo.pop())
             self._restore(self._undo[-1])
 
+    def active_reaction_path(self):
+        page = self.__dict__.get('pub_page')
+        center = self.__dict__.get('center')
+        if page and center and center.currentWidget() is page and page.project_tabs.currentWidget() is page.paths_page:
+            return page.path_workspace
+        return None
+
     def _update_undo_actions(self):
         if hasattr(self, "act_undo"):
-            self.act_undo.setEnabled(len(self._undo) > 1)
-            self.act_redo.setEnabled(bool(self._redo))
+            path = bool(self.active_reaction_path())
+            self.act_undo.setEnabled(path or len(self._undo) > 1)
+            self.act_redo.setEnabled(path or bool(self._redo))
 
     def is_dirty(self):
         if self._restoring:
@@ -1934,7 +2145,7 @@ class MainWindow(QMainWindow):
         self.lbl_recent_empty = QLabel(T("recent_none"), wordWrap=True, alignment=Qt.AlignCenter)
         self.lbl_recent_empty.setStyleSheet(HINT_CSS + " padding: 24px;")
         v.addWidget(self.lbl_recent_empty)
-        hint = QLabel(T("welcome_hint", url=TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md")
+        hint = QLabel(T("welcome_hint", url=TABS.README_URL + TABS.MANUAL[get_lang()]
                         + "#" + TABS.gh_anchor(T("readme_quickstart")))
                       + f" · <a href='demo:pub'>{T('act_demo_pub')}</a> · <a href='demo:compound'>{T('act_demo')}</a>")
         hint.setWordWrap(True)
@@ -2156,7 +2367,8 @@ class MainWindow(QMainWindow):
             return False
         cur = Path(self.project_dir).resolve() if self.project_dir else None
         if cur is not None and (cur == p.resolve() or p.resolve() in cur.parents):
-            self.close_project()
+            if self.close_project() is False:
+                return False
         if self.publication_dir and Path(self.publication_dir).resolve() == p.resolve():
             self.close_publication()
         if not QFile.moveToTrash(str(p)):
@@ -2187,7 +2399,8 @@ class MainWindow(QMainWindow):
     def open_demo_publication(self, folder=None):
         """Beispielpublikation mit zwei Verbindungen (künstliche Daten) anlegen und ihre Seite zeigen."""
         from elucida.app import demo as DEMO
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             d = DEMO.open_demo_publication(self, folder)
@@ -2202,7 +2415,8 @@ class MainWindow(QMainWindow):
     def open_demo(self, folder=None):
         """Beispielprojekt mit künstlichen Daten (alle Tabs) anlegen und öffnen."""
         from elucida.app import demo as DEMO
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             d = DEMO.open_demo(self, folder)
@@ -2244,7 +2458,7 @@ class MainWindow(QMainWindow):
         box.exec()
 
     def show_quickstart(self):
-        url = (TABS.README_URL + ("README.de.md" if get_lang() == "de" else "README.md") + "#"
+        url = (TABS.README_URL + TABS.MANUAL[get_lang()] + "#"
                + TABS.gh_anchor(T("readme_quickstart")))
         QDesktopServices.openUrl(QUrl(url))
 
@@ -2272,7 +2486,14 @@ class MainWindow(QMainWindow):
         if self._title_h:
             MAC.set_toolbar_visible(self, not full)
         inset.setVisible(on)
+        # Genau die Titelleistenhöhe: macOS zentriert die Ampelknöpfe darin, sonst sitzen sie zu hoch.
         self.toolbar.setMinimumHeight(self._title_h if on else 0)
+        self.toolbar.setMaximumHeight(self._title_h if on else 16777215)
+        self._hide_native_title()
+
+    def _hide_native_title(self):
+        if self._mac_title and self._title_h:
+            MAC.hide_title(self)
 
     def update_title(self):
         if getattr(self, "center", None) is not None:
@@ -2309,11 +2530,14 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return
         dlg = CompoundDialog(self, self.compound)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        self.set_compound(dlg.result_compound())
-        if dlg.chemdraw:                                 # „In ChemDraw bearbeiten“: Dialog zu, ChemDraw auf
-            self.edit_in_chemdraw("structure")
+        try:
+            if dlg.exec() == QDialog.Accepted:
+                self.set_compound(dlg.result_compound())
+                if dlg.chemdraw:
+                    self.edit_in_chemdraw("structure")
+        finally:
+            dlg.cleanup()
+            dlg.deleteLater()
 
     # -- ChemDraw: leere Vorlagen, bearbeiten, beim Speichern übernehmen ---------------------------------------
     def watch_chemdraw(self):
@@ -2343,6 +2567,32 @@ class MainWindow(QMainWindow):
         if cur and Path(cur).suffix.lower() == ".cdxml" and Path(cur).exists():
             return Path(cur)
         return s_t if kind == "structure" else sch_t
+
+    def edit_in_elucida(self, kind):
+        if not self.ensure_project():
+            return
+        from elucida.app.drawing_editor import DrawingEditor, DrawingDialog
+        dlg = DrawingDialog(self)
+        dlg.setWindowTitle(T("draw_title"))
+        dlg.resize(1250, 850)
+        layout = QVBoxLayout(dlg)
+        editor = DrawingEditor(dlg, scheme_actions=False)
+        editor.set_canvas_dark(self.canvas_is_dark())
+        editor.external_requested.connect(lambda: self.edit_in_chemdraw(kind))
+        layout.addWidget(editor)
+        dlg.editor = editor
+        path = self.chemdraw_file(kind)
+        editor.open_path(path)
+        dlg.exec()
+        self.chemdraw_saved(str(path))
+        dlg.deleteLater()
+
+    def save_drawings(self):
+        tab = self.__dict__.get("syn_tab")
+        editor = getattr(tab, "drawing_editor", None)
+        if editor is not None and editor.dirty and not editor.save_sync(): return False
+        page = self.__dict__.get('pub_page')
+        return page is None or page.save_paths()
 
     def edit_in_chemdraw(self, kind):
         """CDXML in ChemDraw (Standardprogramm für .cdxml) öffnen; beim Speichern übernimmt Elucida sie selbst."""
@@ -2458,23 +2708,6 @@ class MainWindow(QMainWindow):
             return PRJ.work_dir(self.project_dir, "cache")
         return Path(path).parent / ".uvvis_cache"
 
-    def write_exchange(self):
-        """elucida.json für Characterization neu schreiben (nach Speichern und Exporten); Fehler nur ins Protokoll.
-        Nicht, während ein Menü/eine Liste offen ist oder die Maus gedrückt wird (Tabs aktualisieren dabei Felder)."""
-        self.exchange_timer.stop()
-        if not self.project_dir:
-            return None
-        if self._restoring or QApplication.activePopupWidget() is not None or \
-                QApplication.mouseButtons() != Qt.NoButton:
-            self.exchange_timer.start()                # später noch einmal versuchen
-            return None
-        from elucida.exchange import characterization as EXCH
-        try:
-            return EXCH.write(self.project_dir, EXCH.build(self))
-        except Exception as e:
-            self.log_signal.emit(f"{EXCH.FILE}: {type(e).__name__}: {e}")
-            return None
-
     def import_file(self, path, sub, name=None):
         if not self.project_dir:
             return str(Path(path).resolve())
@@ -2506,12 +2739,12 @@ class MainWindow(QMainWindow):
 
     def maybe_save(self):
         """Vor Neu/Öffnen/Schließen: ausstehendes automatisches Speichern sofort ausführen."""
+        if not self.save_drawings():
+            return False
         self._flush_edits()
         if self.autosave_timer.isActive():
             self.autosave_timer.stop()
             self.autosave()
-        if self.exchange_timer.isActive():
-            self.write_exchange()
         return True
 
     def autosave(self, force=False):
@@ -2525,13 +2758,13 @@ class MainWindow(QMainWindow):
             WEL.write_thumb(self.project_dir, self.thumb_structure(), self.log_signal.emit)
             self._saved_snap = self._undo[-1] if self._undo else None
             self.statusBar().showMessage(T("autosaved"), 2000)
-            self.exchange_timer.start()
         except Exception as e:
             self.log_signal.emit(f"{T('err_title')}: {e}")
 
     def new_project(self):
         """Neue Verbindung – immer in einem Projekt (Nutzerwunsch): im offenen Projekt, sonst Projekt wählen/anlegen."""
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         if not self.publication_dir:
             pub = self.choose_publication(T("choose_pub_new"))
             if pub is None:
@@ -2610,9 +2843,11 @@ class MainWindow(QMainWindow):
                 return None
         was_open = bool(self.project_dir) and Path(self.project_dir).resolve() == cdir.resolve()
         if was_open and not copy:
-            self.close_project()                       # gespeichert, Ordner frei zum Verschieben
+            if self.close_project() is False:
+                return False
         else:
-            self.maybe_save()
+            if not self.maybe_save():
+                return False
         try:
             new = PUB.copy_compound_to(cdir, target) if copy else PUB.move_compound_to(cdir, target)
         except OSError as e:
@@ -2635,7 +2870,8 @@ class MainWindow(QMainWindow):
         return new
 
     def open_project_dialog(self):
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         d = QFileDialog.getExistingDirectory(self, T("act_open_project"),
                                              self.settings.value("last_project_dir", str(Path.home())))
         if not d:
@@ -2653,7 +2889,8 @@ class MainWindow(QMainWindow):
         if pdir is None:
             self.error(T("no_project", p=path))
             return False
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         try:
             PRJ.backup(pdir)                           # Sicherung: .elucida/project.elucida.bak
             state = PRJ.load(pdir)
@@ -2683,12 +2920,15 @@ class MainWindow(QMainWindow):
             self.move_compound()
 
     def save_project(self):
+        if not self.project_dir and self.publication_dir:
+            return self.save_drawings()
         if not self.project_dir:
             return self.ensure_project()
+        if not self.save_drawings():
+            return False
         self._flush_edits()
         self.autosave_timer.stop()
         self.autosave(force=True)                      # auch direkt nach dem Laden (Beispielprojekt), sonst leer
-        self.write_exchange()
         return True
 
     def save_project_copy(self):
@@ -2713,7 +2953,6 @@ class MainWindow(QMainWindow):
             self.project_dir = str(pdir)
             self._load_state_into_ui(abs_state)
             self.add_recent(pdir)
-            self.exchange_timer.start()
         self.log_signal.emit(T("project_saved", p=pdir))
         return True
 
@@ -2778,23 +3017,27 @@ class MainWindow(QMainWindow):
         if pdir is None:
             self.error(T("no_project", p=path))
             return False
+        if not self.maybe_save(): return False
         if self.project_dir:
-            self.close_project()
+            if self.close_project() is False:
+                return False
+        if not self.pub_page.set_publication(pdir): return False
         self.publication_dir = str(pdir)
         self.add_recent_publication(pdir)
-        self.pub_page.set_publication(pdir)
         self.update_title()
         return True
 
     def close_project(self):
         """Verbindung schließen (gespeichert wird automatisch) – zurück zur Publikation bzw. zum Startbildschirm."""
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         self.project_dir = None
         self._load_state_into_ui({})
         self.watch_chemdraw()                          # nichts mehr überwachen
         self.update_title()
 
     def close_publication(self):
+        if not self.pub_page.close_path(): return False
         self.publication_dir = None
         self.pub_page.set_publication(None)
         self.update_title()
@@ -2848,9 +3091,10 @@ class MainWindow(QMainWindow):
     def go_home(self):
         """Zur Übersicht (Startbildschirm): offene Verbindung und Projekt schließen (gespeichert wird automatisch)."""
         if self.project_dir:
-            self.close_project()
+            if self.close_project() is False:
+                return False
         if self.publication_dir:
-            self.close_publication()
+            if self.close_publication() is False: return False
         self.update_title()
 
     def go_publication(self):
@@ -2884,7 +3128,8 @@ class MainWindow(QMainWindow):
         danach die vorher offene Verbindung wiederherstellen. -> Pfad der Word-Datei."""
         from elucida.app import publication as PUB
         from elucida.si import publication_si as PSI
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         prev = self.project_dir
         comps = []
         dlg = QProgressDialog(T("pub_si_writing"), T("cancel"), 0, len(compounds), self)
@@ -2917,7 +3162,15 @@ class MainWindow(QMainWindow):
             dlg.close()
         meta = PUB.load(pdir)
         setup = [str(self.settings.value(f"si_setup/{k}", "") or "").strip() for k in PSI.SETUP_KEYS]
-        blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods)
+        paths = []
+        if "dft" in sections and meta.get("reaction_paths") and (meta.get("reaction_paths_si") or {}).get("include") is not False:
+            from elucida.app.reaction_paths import si_blocks
+            try:
+                paths = si_blocks(self, pdir)
+            except Exception as ex:
+                self.error(str(ex))
+                return None
+        blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods, reaction_paths=paths)
         name = core.safe_name(Path(pdir).name)
         path = Path(path) if path else Path(pdir) / PUB.SI_DIR / f"{name}_SI.docx"
         SI.set_template(template, page_numbers=True)    # nur für diese Datei (Einzel-SI bleibt wie die Gruppe)
@@ -3140,6 +3393,7 @@ class MainWindow(QMainWindow):
         cfg["bands_add_auto"] = gl.get("bands_add", True)
         cfg["find_shoulders"] = gl.get("shoulders", False)
         cfg["inset"]["show_excluded"] = gl.get("show_excl", False)
+        cfg["conc_colors"] = gl.get("conc_colors", False)
         cfg["inset"]["show"] = gl.get("inset", True)
         cfg["labels"]["mark_shoulders"] = gl.get("mark_sh", False)
         cfg["labels"]["index"] = gl.get("label_index", False)
@@ -3414,7 +3668,9 @@ class MainWindow(QMainWindow):
         for g in self.groups:
             try:
                 cfg2, _, results = core.prepare_series(self.make_cfg(g), self.groups[g], g)
-            except Exception:
+            except Exception as ex:                    # fehlt sonst unbemerkt in der SI
+                self.log_signal.emit(T("si_series_failed", name=g, error=ex))
+                self.statusBar().showMessage(T("si_series_failed", name=g, error=ex), 12000)
                 continue
             line = SI.uvvis_line(results, cfg2, (self.series.get(g) or {}).get("solvent", ""))
             if line[0]:
@@ -3427,7 +3683,9 @@ class MainWindow(QMainWindow):
         for g in (groups or list(self.groups)):
             try:
                 cfg2, spectra, results = core.prepare_series(self.make_cfg(g), self.groups[g], g)
-            except Exception:
+            except Exception as ex:
+                self.log_signal.emit(T("si_series_failed", name=g, error=ex))
+                self.statusBar().showMessage(T("si_series_failed", name=g, error=ex), 12000)
                 continue
             txt = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""),
                                  with_results)
@@ -3544,7 +3802,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.log_signal.emit(traceback.format_exc())
             return self.error(str(e))
-        self.write_exchange()
         msg = T("si_written", p=str(p))
         if missing:
             msg += "\n" + T("si_missing", parts=", ".join(missing))
@@ -3722,7 +3979,7 @@ class MainWindow(QMainWindow):
 
     def si_char_parts(self, comp):
         """Zeilen des Charakterisierungsabsatzes in SI-Reihenfolge -> ([(Art, Klartext, HTML)], fehlende Teile).
-        Art: mp, nmr_<Kern>, ir, hrms, uvvis, ea (auch für die Austauschdatei elucida.json)."""
+        Art: mp, nmr_<Kern>, ir, hrms, uvvis, ea."""
         parts, missing = [], []
         if comp.get("oil"):                                # Öl: Schmelzpunkt unter Raumtemperatur
             parts.append(("mp", "m.p. <25 °C", "<b>m.p.</b> &lt;25 °C"))
@@ -3871,7 +4128,6 @@ class MainWindow(QMainWindow):
         except PermissionError as e:
             return self.error(T("report_locked", p=getattr(e, "filename", "") or ""))
         self.exported(p.parent for p in out)
-        self.write_exchange()
 
     def export_all(self, folder: Path = None):
         """Alle Serien exportieren: Abbildungen, Ergebnis-CSV und Excel-Report.
@@ -3951,9 +4207,14 @@ class MainWindow(QMainWindow):
         for f in map(Path, files):
             if f.exists():
                 dst = Path(d) / f.name
+                if f.resolve() == dst.resolve():
+                    out.append(dst)
+                    continue
                 if dst.exists():                                # überschreiben wie im Projekt
                     dst.unlink()
                 shutil.move(str(f), str(dst))                   # auch über Laufwerke hinweg
+                from elucida.formats.ole import copy_editable_companions
+                copy_editable_companions(f, dst)                # erst nach der Word-Datei (gesperrt = keine halbe Ablage)
                 out.append(dst)
         return out
 
@@ -3971,6 +4232,14 @@ class MainWindow(QMainWindow):
                 return
             if PUB.is_publication(p):
                 self.open_publication(p)
+                return
+        # SEC: Spektren haben kein eigenes Dateiformat-Kennzeichen außer der ersten Zeile
+        secs = [p for p in files if Path(p).is_file() and (SECMOD.is_bwspec(p) or SECMOD.is_merged(p))]
+        if secs and self.ensure_project():
+            self.sec_tab.load_spectra(secs)
+            self.main_tabs.setCurrentWidget(self.sec_tab)
+            files = [p for p in files if p not in secs]
+            if not files:
                 return
         # X-Ray: CIF-Dateien (jeder data_-Block mit Atomen wird ein Eintrag)
         cifs = [p for p in files if XRAY.is_cif(p)]
@@ -4033,6 +4302,8 @@ class MainWindow(QMainWindow):
                 self.set_structure(p)
             elif ext in IMG.RASTER_EXT:
                 self.set_photo(p)
+            else:                                     # nie still fallen lassen
+                self.error(T("drop_unknown", name=Path(p).name))
 
     # ------------------------------------------------------------ Diverses
     def error(self, msg):
@@ -4059,7 +4330,8 @@ class MainWindow(QMainWindow):
         """Datenpaket (Zip) dieser Verbindung für ein Datenrepositorium (elucida/exchange/datapack.py)."""
         if not self.ensure_project():
             return None
-        self.maybe_save()
+        if not self.maybe_save():
+            return False
         from elucida.app.datapack_dialog import DatapackDialog
         dlg = DatapackDialog(self)
         dlg.exec()

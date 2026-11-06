@@ -3,7 +3,6 @@ elucida/app/project.py - Projektordner: Zustand aller Tabs in einer Datei, Einga
 
 <Projekt>/                (seit 2.1; Ordner entstehen erst, wenn etwas hineinkommt)
     project.elucida    Zustand (YAML), Pfade relativ zum Projektordner (bis 2.0: project.uvvis, weiter lesbar)
-    elucida.json       Austausch mit Characterization (elucida/exchange)
     SI/                Word-Dateien und SI-Texte (<Name>_SI.docx, _methods.txt …)
     figures/           Abbildungen (<Name>_CV.pdf/.svg/.png …), werden beim Export überschrieben
     tables/            Tabellen und Datendateien (CSV, Excel, xyz, EasySpin-Text)
@@ -106,6 +105,18 @@ def _path_slots(state):
         slots.append((e, "molden", data_sub("dft")))         # Orbitale: Molden-Datei der Rechnung
         slots += [(o, "file", data_sub("dft")) for o in e.get("orbitals") or []]   # je Orbital Cube oder Molden
     prof = (state.get("dft") or {}).get("profile") or {}
+    slots.append((prof, "composition", STRUCTURES))
+    for asset in (prof.get("composition_assets") or {}).values():
+        source = (asset.get("orbital") or {}).get("source") or {}
+        slots.append((source, "file", data_sub("dft")))
+    for species in (prof.get("species") or {}).values():
+        slots.append((species, "structure", STRUCTURES))
+    for annotation in prof.get("annotations") or []:
+        if annotation.get("kind") == "structure":
+            slots.append((annotation, "structure", STRUCTURES))
+        elif annotation.get("kind") == "orbital":
+            source = (annotation.get("orbital") or {}).get("source") or {}
+            slots.append((source, "file", data_sub("dft")))
     sp = prof.get("sp") or []                                   # Einzelpunkte des Energieprofils
     slots += [(sp, i, data_sub("dft")) for i in range(len(sp))]
     for d in prof.get("irc") or []:                             # IRC: Ausgabe + Trajektorie
@@ -165,13 +176,17 @@ def save(project_dir, state) -> dict:
         if str(src) not in copied:
             copied[str(src)] = str(_copy_unique(src, pdir / sub))
             # zur CDXML gehörige ChemDraw-Exporte (gleicher Name) mitnehmen
-            sibs = {".cdxml": (".svg", ".pdf", ".png", ".tif", ".tiff"),           # ChemDraw-Exporte
+            sibs = {".cdxml": (".svg", ".pdf", ".png", ".tif", ".tiff", ".cdx", ".emf"),
                     ".dsc": (".dta", ".ygf", ".xml"), ".dta": (".dsc", ".ygf", ".xml")}   # Bruker BES3T
             if src.suffix.lower() in sibs:
                 target = Path(copied[str(src)])
                 for sib in src.parent.glob(src.stem + ".*"):
                     if sib.stem == src.stem and sib.suffix.lower() in sibs[src.suffix.lower()]:
                         shutil.copy2(sib, target.with_suffix(sib.suffix))
+                if src.suffix.lower() == '.cdxml':
+                    meta = src.with_suffix('.elucida-drawing.json')
+                    if meta.exists():
+                        shutil.copy2(meta, target.with_suffix('.elucida-drawing.json'))
         cont[key] = copied[str(src)]
     rel_state = copy.deepcopy(abs_state)
     for cont, key, _ in _path_slots(rel_state):
@@ -298,8 +313,11 @@ def import_file(project_dir, src, sub, name=None) -> str:
         shutil.copy2(src.with_suffix(".xyz"), target.with_suffix(".xyz"))
     if src.suffix.lower() == ".cdxml":
         for sib in src.parent.glob(src.stem + ".*"):
-            if sib.stem == src.stem and sib.suffix.lower() in (".svg", ".pdf", ".png", ".tif", ".tiff"):
+            if sib.stem == src.stem and sib.suffix.lower() in (".svg", ".pdf", ".png", ".tif", ".tiff", ".cdx", ".emf"):
                 shutil.copy2(sib, target.with_suffix(sib.suffix))
+        meta = src.with_suffix('.elucida-drawing.json')
+        if meta.exists():
+            shutil.copy2(meta, target.with_suffix('.elucida-drawing.json'))
     return str(target)
 
 
@@ -391,6 +409,8 @@ def place_exports(project_dir, files) -> list:
             continue
         dst = export_dir(project_dir, export_kind(f)) / f.name
         os.replace(f, dst)
+        from elucida.formats.ole import copy_editable_companions
+        copy_editable_companions(f, dst)               # erst nach der Word-Datei (gesperrt = keine halbe Ablage)
         out.append(dst)
         if f.parent.parent.name == "export" and not any(f.parent.iterdir()):
             f.parent.rmdir()                           # leerer Zwischenordner (.elucida/export/<Tab>)

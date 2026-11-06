@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import csv
 import html
+import math
 import re
 import traceback
 import uuid
@@ -15,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure as MplFigure
 from PySide6.QtCore import Qt, QTimer
@@ -111,7 +113,8 @@ def color_button(color, on_pick, cell=False):
 
 # ---------------------------------------------------------------------------- Anleitung im leeren Tab
 README_URL = "https://github.com/robinesken97/elucida/blob/main/"
-# README-Abschnitt je Tab (Deutsch, Englisch) – Überschriften wie in README.de.md / README.md (Selbsttest prüft das)
+MANUAL = {"de": "docs/manual.de.md", "en": "docs/manual.en.md"}
+# Handbuch-Abschnitt je Tab (Deutsch, Englisch) – Überschriften wie in docs/manual.*.md (Selbsttest prüft das)
 GUIDE_HEAD = {"syn": ("Synthese-Tab", "Synthesis tab"), "nmr": ("NMR-Tab", "NMR tab"),
               "irms": ("IR + EA-Tab", "IR + EA tab"), "hrms": ("HRMS-Tab", "HRMS tab"), "eps": ("UV-Vis-(ε)-Tab", "UV-Vis (ε) tab"),
               "overlay": ("UV-Vis-Overlay-Tab", "UV-Vis overlay tab"), "fluo": ("Fluoreszenz-Tab", "Fluorescence tab"),
@@ -128,7 +131,7 @@ def gh_anchor(heading):
 
 def guide_url(key):
     de = get_lang() == "de"
-    return README_URL + ("README.de.md" if de else "README.md") + "#" + gh_anchor(GUIDE_HEAD[key][0 if de else 1])
+    return README_URL + MANUAL["de" if de else "en"] + "#" + gh_anchor(GUIDE_HEAD[key][0 if de else 1])
 
 
 def guide_html(key):
@@ -301,6 +304,8 @@ class CanvasHost(QWidget):
     def __init__(self, canvas, fig, margin=12):
         super().__init__()
         self.canvas, self.fig, self.margin = canvas, fig, margin
+        self.fit_timer = QTimer(self, singleShot=True, interval=0)
+        self.fit_timer.timeout.connect(self.fit)
         self.fig_in = (8.0, 6.0)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -319,18 +324,23 @@ class CanvasHost(QWidget):
         ratio = getattr(self.canvas, "device_pixel_ratio", 1) or 1
         self.fig._original_dpi = dpi                       # Basis für HiDPI-Skalierung durch matplotlib
         self.fig._set_dpi(dpi * ratio, forward=False)
-        self.canvas.setFixedSize(int(round(w_in * dpi)), int(round(h_in * dpi)))
-        self.fig.set_size_inches(w_in, h_in, forward=False)
+        width, height = int(round(w_in * dpi)), int(round(h_in * dpi))
+        self.canvas.setFixedSize(width, height)
+        # Qt paints integer widget pixels; Agg truncates its floating dimensions.
+        # Match that buffer exactly, otherwise copy_from_bbox reads beyond its
+        # last column/row and paints a narrow strip of uninitialised pixels.
+        self.fig.set_size_inches((math.ceil(width * ratio) + 1e-7) / (dpi * ratio),   # ceil: 125/150 % Skalierung
+                                 (math.ceil(height * ratio) + 1e-7) / (dpi * ratio), forward=False)
         self.canvas.draw_idle()
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
-        QTimer.singleShot(0, self.fit)
+        self.fit_timer.start()
 
     def showEvent(self, ev):
         """Wieder sichtbar (Reiter „Abbildung“, Anleitung -> Abbildung): Größe kann sich verborgen geändert haben."""
         super().showEvent(ev)
-        QTimer.singleShot(0, self.fit)
+        self.fit_timer.start()
 
 
 class TabDragger(core.Dragger):
@@ -499,7 +509,7 @@ class FigureTab(QWidget):
         self.timer = QTimer(self, singleShot=True, interval=350)
         self.timer.timeout.connect(self.render)
         self.fig = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
-        self.canvas = FigureCanvasQTAgg(self.fig)
+        self.canvas = register_canvas(FigureCanvasQTAgg(self.fig))
         left = QWidget()
         self.lv = QVBoxLayout(left)
         self.build_controls()
@@ -932,7 +942,6 @@ class FigureTab(QWidget):
         except Exception as e:
             return self.main.error(str(e))
         self.main.exported(p.parent for p in out)
-        self.main.write_exchange()
         return out
 
     def export_to(self, base: Path):
@@ -1468,6 +1477,9 @@ class OverlayTab(FigureTab):
         from elucida.tabs import cv as CV
         sec = self.main.sec_tab
         sec.collect()
+        if sec.st["quantity"] == "raw":                  # Rohsignal ist keine Absorbanz
+            self.main.error(T("ov_sec_raw"))
+            return
         sp, E = sec.series()
         if not sp:
             self.main.error(T("ov_sec_none"))
@@ -1590,7 +1602,9 @@ class OverlayTab(FigureTab):
         from elucida.tabs import sec as SEC
         if not Path(e["file"]).exists():
             return None
-        s_ = self.cache(("bws", e["file"]), lambda: SEC.read_bwspec(e["file"]))
+        s_ = self.cache(("bws", e["file"]), lambda: SEC.read_spectrum(e["file"]))
+        if s_.get("merged"):
+            return {"x": s_["lam"], "y": s_["A"]}
         win = (s_["lam"] >= SEC.LAM_RANGE[0]) & (s_["lam"] <= SEC.LAM_RANGE[1])   # verrauschte Ränder weg
         return {"x": s_["lam"][win], "y": s_["A"][win]}
 
@@ -1825,8 +1839,10 @@ class OverlayTab(FigureTab):
                 except Exception:
                     variants = []
                 for v in variants or ["nosoc"]:
-                    self.cmb_soc.addItem(T("soc_" + v), v)
+                    self.cmb_soc.addItem(X.variant_label(v), v)
                 cur = e.get("variant") or (variants[0] if variants else "nosoc")
+                if any(v.startswith("mr:") for v in variants) and e.get("variant") not in variants:
+                    cur = X.parse_tddft(e["file"], e.get("variant"))["variant"]
                 self.cmb_soc.setCurrentIndex(max(0, self.cmb_soc.findData(cur)))
                 self.cmb_soc.setEnabled(len(variants) > 1)
         self._loading = False

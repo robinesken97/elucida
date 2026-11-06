@@ -283,7 +283,7 @@ class CVTab(TABS.FigureTab):
                          cap_conc="", cap_solvent="", cap_el="", cap_temp="rt")
 
     # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
-    PLOTS = ("cv", "dep", "rs", "loglog", "ratio", "trumpet")
+    PLOTS = ("cv", "dep", "rs", "rs_v", "loglog", "ratio", "trumpet")
     MARKERS = ("s", "o", "^", "v", "D", "p")
 
     # -- Bedienelemente ------------------------------------------------------------
@@ -540,6 +540,7 @@ class CVTab(TABS.FigureTab):
         self._sync_ref_widgets()
 
     CAP_TITLES = {"cv": "Cyclic voltammograms", "dep": "Reversibility plot", "rs": "Randles–Ševčík plot",
+                  "rs_v": "Peak current vs. scan rate",
                   "loglog": "Double-logarithmic plot of peak current vs. scan rate",
                   "ratio": "Peak current ratio vs. scan rate", "trumpet": "Trumpet plot"}
     CAP_REFS = {"ac2fc": "diacetylferrocene", "fc": "ferrocene"}
@@ -1033,7 +1034,7 @@ class CVTab(TABS.FigureTab):
             xr = cfg["xlim"][1] - cfg["xlim"][0]
             direction = 1.0 if np.gradient(c0["x"])[:5].mean() >= 0 else -1.0
             x0, y0 = float(c0["x"][0]), float(c0["y"][0])
-            cfg["arrows"] = [(x0, y0, x0 + direction * 0.08 * xr, y0)]
+            cfg["scan_arrow"] = (x0, y0, x0 + direction * 0.08 * xr)
         imgs = []
         for e, c_ in zip(vis, curves):                  # Struktur je Messung, optional in Kurvenfarbe
             p = e.get("structure")
@@ -1101,7 +1102,7 @@ class CVTab(TABS.FigureTab):
     def rate_plot(self, cfg, ref_label):
         """ΔE_p gegen v, Randles-Ševčík (i_p gegen √v) oder Trumpet-Plot (E_p gegen log v)."""
         st = self.st
-        ser = self.rate_series(currents=st["plot"] in ("rs", "loglog", "ratio"))
+        ser = self.rate_series(currents=st["plot"] in ("rs", "rs_v", "loglog", "ratio"))
         multi_n = len(st["couples"]) > 1
         curves = []
         for j, ((grp, n), rr) in enumerate(sorted(ser.items(), key=lambda kv: (kv[0][1], kv[0][0]))):
@@ -1112,16 +1113,17 @@ class CVTab(TABS.FigureTab):
             base = dict(color=col, ls="None", marker=mk, ms=6, lw=1.0)
             if st["plot"] == "dep":
                 curves.append(dict(base, x=v, y=np.array([r["dep"] * 1000 for r in rr]), label=name))
-            elif st["plot"] == "rs":
-                sq = np.sqrt(v / 1000.0)
+            elif st["plot"] in ("rs", "rs_v"):
+                xv = np.sqrt(v / 1000.0) if st["plot"] == "rs" else v / 1000.0     # √v oder v, beides in V/s
                 for key, tag, m_ in (("ipa", "a", "^"), ("ipc", "c", "v")):
                     ip = np.array([r[key] * 1e6 for r in rr])
                     lab = f"i$_{{p{tag}}}$" + (f" {name}" if name else "")
-                    curves.append(dict(base, x=sq, y=ip, label=lab, marker=m_))
-                    fit = randles_sevcik(v, ip)
+                    curves.append(dict(base, x=xv, y=ip, label=lab, marker=m_))
+                    fit = rate_fit(xv, ip)
                     if fit:
-                        xf = np.array([0.0, float(sq.max()) * 1.05])
-                        curves.append(dict(color=col, ls="--", lw=1.0, x=xf, y=fit[0] * xf + fit[1], label=None))
+                        xf = np.array([0.0, float(xv.max()) * 1.05])
+                        curves.append(dict(color=col, ls="--", lw=1.0, x=xf, y=fit["slope"] * xf + fit["intercept"],
+                                           label=None))
             elif st["plot"] == "loglog":
                 lv = np.log10(v / 1000.0)
                 for key, tag, m_ in (("ipa", "a", "^"), ("ipc", "c", "v")):
@@ -1151,16 +1153,17 @@ class CVTab(TABS.FigureTab):
         xs = np.concatenate([c_["x"] for c_ in curves])
         ys = np.concatenate([c_["y"] for c_ in pts])
         # Mindestspanne, sonst zoomt die Achse bei fast gleichen Werten auf Rauschen (z. B. 63,82–63,84 mV)
-        min_span = {"dep": 40.0, "rs": 1.0, "loglog": 0.3, "ratio": 0.3, "trumpet": 0.05}[st["plot"]]
+        min_span = {"dep": 40.0, "rs": 1.0, "rs_v": 1.0, "loglog": 0.3, "ratio": 0.3, "trumpet": 0.05}[st["plot"]]
         ypad = 0.1 * max(float(np.ptp(ys)), min_span) + max(0.0, min_span - float(np.ptp(ys))) / 2
         if st["plot"] == "dep":
             cfg["xlim"] = [0.0, float(xs.max()) * 1.08]
             cfg["ylim"] = [max(0.0, float(ys.min()) - ypad), float(ys.max()) + ypad]
             cfg["xlabel"], cfg["ylabel"] = "scan rate [mV/s]", "peak to peak separation ΔE$_p$ [mV]"
-        elif st["plot"] == "rs":
+        elif st["plot"] in ("rs", "rs_v"):
             cfg["xlim"] = [0.0, float(xs.max()) * 1.08]
             cfg["ylim"] = [min(0.0, float(ys.min()) - ypad), max(0.0, float(ys.max()) + ypad)]
-            cfg["xlabel"], cfg["ylabel"] = "v$^{1/2}$ [V$^{1/2}$ s$^{-1/2}$]", "i$_p$ [µA]"
+            cfg["xlabel"] = "v$^{1/2}$ [V s$^{-1}$]$^{1/2}$" if st["plot"] == "rs" else "v [V s$^{-1}$]"
+            cfg["ylabel"] = "i$_p$ [µA]"
         elif st["plot"] == "loglog":
             xpad = 0.1 * (float(np.ptp(xs)) or 1.0)
             cfg["xlim"] = [float(xs.min()) - xpad, float(xs.max()) + xpad]
@@ -1314,9 +1317,9 @@ class CVTab(TABS.FigureTab):
     def hover_text(self, x, val, name):
         plot = self.st.get("plot", "cv")
         if plot != "cv":
-            xs = {"dep": f"v = {x:.0f} mV/s", "rs": f"√v = {x:.3f} V½ s⁻½", "trumpet": f"log v = {x:.2f}",
+            xs = {"dep": f"v = {x:.0f} mV/s", "rs": f"√v = {x:.3f} V½ s⁻½", "rs_v": f"v = {x:.3f} V/s", "trumpet": f"log v = {x:.2f}",
                   "loglog": f"log v = {x:.2f}", "ratio": f"v = {x:.0f} mV/s"}[plot]
-            ys = {"dep": "ΔE_p = {:.0f} mV", "rs": "i_p = {:.2f} µA", "trumpet": "E_p = {:.3f} V",
+            ys = {"dep": "ΔE_p = {:.0f} mV", "rs": "i_p = {:.2f} µA", "rs_v": "i_p = {:.2f} µA", "trumpet": "E_p = {:.3f} V",
                   "loglog": "log i_p = {:.3f}", "ratio": "i_r/i_f = {:.2f}"}[plot]
             return f"{xs}    {ys.format(val)}    {name}" if val is not None else xs
         if val is None:

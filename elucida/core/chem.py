@@ -25,19 +25,19 @@ def _rdkit():
 _CACHE = {}                            # (Pfad, Änderungszeit, Größe) -> Ergebnis (RDKit liest dieselbe CDXML sonst oft)
 
 
-def load_cdxml(path) -> dict:
+def load_cdxml(path, *, render=True) -> dict:
     """Wie _load_cdxml, zwischengespeichert je Datei und Stand; Rückgabe ist eine Kopie."""
     p = Path(path)
     try:
         st = p.stat()
         from elucida.app.i18n import get_lang
-        key = (str(p.resolve()), st.st_mtime_ns, st.st_size, get_lang())      # Warnungen sind übersetzt
+        key = (str(p.resolve()), st.st_mtime_ns, st.st_size, get_lang(), render)      # Warnungen sind übersetzt
     except OSError:
-        return _load_cdxml(path)
+        return _load_cdxml(path, render=render)
     if key not in _CACHE:
         if len(_CACHE) >= 32:
             _CACHE.pop(next(iter(_CACHE)))
-        _CACHE[key] = _load_cdxml(path)
+        _CACHE[key] = _load_cdxml(path, render=render)
     return {k: (list(v) if isinstance(v, list) else v) for k, v in _CACHE[key].items()}
 
 
@@ -69,7 +69,7 @@ def drop_label_dummies(mol):
     return out
 
 
-def _load_cdxml(path) -> dict:
+def _load_cdxml(path, *, render=True) -> dict:
     """-> dict(svg, mw, formula, n_fragments, warnings)."""
     Chem, Descriptors, Draw, rdMolDescriptors, rdMolDraw2D = _rdkit()
     path = Path(path)
@@ -106,6 +106,14 @@ def _load_cdxml(path) -> dict:
     except Exception as e:  # pragma: no cover
         warnings.append(str(e))
 
+    properties = {"mw": mw, "formula": formula, "n_fragments": len(mols), "warnings": warnings}
+    # Properties depend on the molecular graph, not on drawable 2D coordinates.
+    # RDKit can calculate a valid molecule yet reject its preview (e.g. coincident
+    # coordinates: "Cannot normalize a zero length vector"). The embedded editor
+    # already supplies the preview, so such a failure must not discard its fields.
+    if not render:
+        return properties
+
     # Zeichnen: Koordinaten aus der CDXML behalten (auch gezeichnete H), ACS-1996-Stil
     dm = mol
     # Feste, großzügige Zeichenfläche (statt "flexicanvas"); Maßstab wie im ACS-1996-Stil
@@ -126,5 +134,4 @@ def _load_cdxml(path) -> dict:
     opts.prepareMolsBeforeDrawing = sanitized
     d.DrawMolecule(dm)
     d.FinishDrawing()
-    return {"svg": d.GetDrawingText(), "mw": mw, "formula": formula,
-            "n_fragments": len(mols), "warnings": warnings}
+    return {"svg": d.GetDrawingText(), **properties}

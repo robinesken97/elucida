@@ -60,6 +60,13 @@ def shoot_welcome(w, outdir, lang, theme, work):
         p = Path(outdir) / f"project_{theme}_{lang}.png"
         w.grab().save(str(p))
         print(p.name)
+        from elucida.app import reaction_paths as RP       # Reaktionspfad: leere Zeichenfläche im Hauptfenster
+        w.pub_page.open_path(RP.create(work / "Beispielprojekt", "Reaction path"))
+        pump(3.0)
+        p = Path(outdir) / f"paths_{theme}_{lang}.png"
+        w.grab().save(str(p))
+        print(p.name)
+        w.pub_page.close_path()
     finally:
         WEL.short_path = real
     w.open_project(keep, recent=False)               # Tab-Bilder: leere Verbindung in eigenem Projekt

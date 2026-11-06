@@ -87,12 +87,44 @@ def tddft_variants(path) -> list:
     txt = read_text(path)                          # erkennt UTF-16 (Windows-PowerShell-Umleitung)
     if _G_STATE.search(txt):
         return ["nosoc"]
+    spectra = _orca_spectra(txt.splitlines())
+    if any(s["method"] for s in spectra):
+        return list(dict.fromkeys(s["key"] for s in spectra))
     out = []
     if _ORCA_SOC_HEAD in txt:
         out.append("soc")
     if any(_ORCA_HEAD in ln and "SOC" not in ln for ln in txt.splitlines()):
         out.append("nosoc")
     return out
+
+
+def _orca_spectra(lines):
+    """Scope spectra to ORCA's explicit CASSCF/NEVPT2 property headings."""
+    method, spectra, counts = "", [], {}
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if "$new_job" in s.lower():                    # eine TD-DFT nach CASSCF ist kein CASSCF-Spektrum
+            method = ""
+        if "UV, CD spectra and dipole moments" in s:
+            method = ("QD-NEVPT2" if s.startswith("QDNEVPT2") else
+                      "NEVPT2" if "NEVPT2 diagonal energies" in s else
+                      "CASSCF" if s.startswith("CASSCF") else "")
+        if _ORCA_HEAD in s:
+            variant = "soc" if _ORCA_SOC_HEAD in s else "nosoc"
+            stem = f"mr:{method}:{variant}" if method else variant
+            occurrence = counts.get(stem, 0)
+            counts[stem] = occurrence + 1
+            key = f"{stem}:{occurrence}" if method else stem
+            spectra.append(dict(key=key, method=method, variant=variant, index=i))
+    return spectra
+
+
+def variant_label(variant):
+    from elucida.app.i18n import T
+    if variant.startswith("mr:"):
+        _, method, spin, occurrence = variant.split(":")
+        return f"{method} · {T('soc_' + spin)} · {int(occurrence) + 1}"
+    return T("soc_" + variant)
 
 
 def parse_tddft(path, variant=None) -> dict:
@@ -111,6 +143,24 @@ def parse_tddft(path, variant=None) -> dict:
         mult = [names.get(m.group(2).split("-")[0].lower()) for m in ms]
         return {"program": "Gaussian", "E": E, "f": f, "mult": mult, "variant": "nosoc"}
     lines = txt.splitlines()
+    spectra = _orca_spectra(lines)
+    if any(s["method"] for s in spectra):
+        if variant and variant.startswith("mr:"):
+            chosen = next((s for s in spectra if s["key"] == variant), None)
+            if chosen is None:
+                raise ValueError("Selected multireference spectrum is no longer present in the output")
+        else:
+            spin = variant or ("soc" if any(s["variant"] == "soc" for s in spectra) else "nosoc")
+            available = [s for s in spectra if s["variant"] == spin]
+            chosen = (available or spectra)[-1]  # preserve the result in existing projects
+        E, f, mult = _orca_table(lines[chosen["index"]:])
+        if chosen["variant"] == "soc":
+            mult = [None] * len(E)
+        if not len(E):
+            raise ValueError("Selected multireference spectrum contains no transitions")
+        return dict(program="ORCA", E=E, f=f, mult=mult, variant=chosen["key"], method=chosen["method"])
+    if variant and variant.startswith("mr:"):          # Datei ersetzt: nie still eine andere Tabelle liefern
+        raise ValueError("Selected multireference spectrum is no longer present in the output")
     soc_idx = [i for i, ln in enumerate(lines) if _ORCA_SOC_HEAD in ln]
     plain_idx = [i for i, ln in enumerate(lines) if _ORCA_HEAD in ln and "SOC" not in ln]
     if variant is None:
@@ -360,37 +410,31 @@ class SimpleFigure(core.Figure):
 
     def _place(self):
         super()._place()
+        self._scan_arrow()                                 # nach der Platzierung: der Pfeil ist kein Label
         self._place_legend()
 
-    def _place_legend(self):
-        """Legende in freie Fläche setzen (Kurven, Bilder und Labels meiden), falls nicht verschoben."""
-        if self.legend is None or self.layout.get("legend"):
+    def _scan_arrow(self):
+        """Messrichtung als ziehbares Element: Anfang in Achsenanteilen (wie Labels, Schlüssel arrow_scan), die Spitze
+        folgt dem Anfang mit fester Länge. Ohne Verschieben liegt er am ersten Messpunkt."""
+        if not self.cfg.get("scan_arrow"):
             return
-        rend = self._renderer()
-        fs = core.FreeSpace()
-        fs.block_below(self._envelope(fs.n))
-        for r in self._extra_blocks(rend):
-            fs.block_rect(*r)
-        for a in self.axes_items.values():
-            fr = getattr(a, "_frame", None)
-            bb = fr.get_window_extent(rend) if fr is not None else a.get_tightbbox(rend)
-            fs.block_rect(*self._measure_af(bb))
-        for ann in self.ann_items.values():
-            fs.block_rect(*self._measure_af(ann.get_window_extent(rend)))
-        _, _, w, h = self._measure_af(self.legend.get_window_extent(rend))
-        hit = fs.find(w, h, core.corner_score("top-right"))
-        if hit is None:
-            hit = fs.find(w, h, core.corner_score("top-right"), over_curves=True)
-        if hit is not None:
-            self.legend.set_loc(tuple(hit))
+        from matplotlib.transforms import Affine2D
+        ax, sc = self.ax, self.cfg.get("scale", 1.0)
+        x0, y0, x1 = self.cfg["scan_arrow"]
+        start, end = ax.transData.transform([(x0, y0), (x1, y0)])
+        length = end[0] - start[0]                         # Pixel: auch bei umgekehrter Achse in Messrichtung
+        pos = self.layout.get("arrow_scan") or ax.transAxes.inverted().transform(start)
+        frac = length / ax.bbox.width
 
-    def current_layout(self):
-        out = super().current_layout()
-        if self.legend is not None and isinstance(self.legend._loc, tuple):
-            out["legend"] = [round(float(v), 4) for v in self.legend._loc]
-        elif "legend" in self.layout:
-            out["legend"] = self.layout["legend"]
-        return out
+        def head(_renderer):
+            p = ax.transAxes.transform(ann.xyann)
+            return Affine2D().translate(p[0] + frac * ax.bbox.width, p[1])
+        ann = ax.annotate("     ", xy=(0, 0), xycoords=head, xytext=(float(pos[0]), float(pos[1])),
+                          textcoords="axes fraction", ha="center", va="center", annotation_clip=False, zorder=5,
+                          fontsize=self.cfg["font_size"],
+                          arrowprops=dict(arrowstyle="-|>", color="black", lw=max(0.6, 0.8 * sc), mutation_scale=10 * sc,
+                                          shrinkA=0, shrinkB=0, relpos=(0.5, 0.5)))
+        self.ann_items["arrow_scan"] = ann
 
 
 def normalize(x, y, lo, hi, min_signal=0.01):

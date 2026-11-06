@@ -595,7 +595,7 @@ _SHAPETYPE = ('<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o
 
 
 def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
-    """Eingebettetes ChemDraw-Objekt (wie von Word beim Einfügen aus ChemDraw geschrieben); Doppelklick öffnet ChemDraw."""
+    """ChemDraw-OLE-Objekt; Doppelklick-Bearbeitung wird von ChemDraw nur unter Windows unterstützt."""
     from elucida.formats import ole as OLE
     wpt, hpt = w_cm / 2.54 * 72, h_cm / 2.54 * 72
     ppr = _ppr(align="center", line=240, after=120, keep_next=True, page_before=page_break)
@@ -670,7 +670,7 @@ def write_docx(path, blocks, columns=1):
     """Blöcke:
     ("synthesis", Name)                   „Synthesis of <b>Name</b>“
     ("char", HTML)                        Charakterisierungsabsatz (Abstand davor wie in der SI)
-    ("image", PNG, Breite cm, Höhe cm[, SVG])  Abbildung zentriert (SVG = Vektor, PNG als Ersatz)
+    ("image", PNG, Breite cm, Höhe cm[, SVG[, CDX]])  Abbildung zentriert; optional bearbeitbare Begleitdateien
     ("figcap", HTML)                      „Figure Sn: …“
     ("tabcap", Markup, Name)              „Table Sn: <Markup> <b>Name</b>.“
     ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
@@ -691,7 +691,7 @@ def write_docx(path, blocks, columns=1):
     ("section", Text)                     Kapitel („1. Materials and Methods“, Überschrift 1, neue Seite)
     ("subsection", Text)                  Unterkapitel („2.1 Precursor“, Überschrift 2; Gruppen im Projekt)
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
-    body, media, svgs, oles = [], [], [], []
+    body, media, svgs, oles, editable = [], [], [], [], []
     n_fig = n_tab = 0
     def col_width(n):
         return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
@@ -716,6 +716,12 @@ def write_docx(path, blocks, columns=1):
             body.append(_para(html_runs(nbsp(b[1])), before=200))
         elif k == "image":
             media.append(Path(b[1]))
+            if len(b) > 5 and b[5]:
+                source = Path(b[5])
+                formats = {'cdx': source.read_bytes()}
+                if source.with_suffix('.cdxml').is_file():
+                    formats['cdxml'] = source.with_suffix('.cdxml').read_bytes()
+                editable.append(formats)
             svg_rid = None
             if len(b) > 4 and b[4] and Path(b[4]).exists():
                 svgs.append((len(media), Path(b[4])))
@@ -777,7 +783,14 @@ def write_docx(path, blocks, columns=1):
             body.append(_para([("", set())], line=240))
         elif k == "ole":
             from elucida.formats import ole as OLE
-            oles.append((OLE.write_cfb(OLE.chemdraw_streams(Path(b[1]).read_bytes())), Path(b[2])))
+            source = Path(b[1])
+            cdx = source.read_bytes()
+            formats = {"cdx": cdx}
+            cdxml = source.with_suffix(".cdxml")
+            if cdxml.is_file():
+                formats["cdxml"] = cdxml.read_bytes()
+            editable.append(formats)
+            oles.append((OLE.write_cfb(OLE.chemdraw_streams(cdx)), Path(b[2])))
             body.append(_ole_xml(len(oles), b[3], b[4], first=len(oles) == 1, page_break=pending_break))
             pending_break = False
         elif k == "pagebreak":
@@ -925,4 +938,9 @@ def write_docx(path, blocks, columns=1):
             z.writestr(f"word/embeddings/oleObject{i}.bin", bin_)
             z.writestr(f"word/media/ole{i}{ext}", b)
     os.replace(tmp, path)                              # atomar (Word offen: PermissionError, alte Datei bleibt)
+    from elucida.formats import ole as OLE
+    try:                                               # DOCX ist fertig: Begleitdateien dürfen sie nicht als gescheitert melden
+        OLE.write_editable_companions(path, editable)
+    except OSError as ex:
+        core.LOG(f"{OLE.editable_directory(path).name}: {ex}")
     return path

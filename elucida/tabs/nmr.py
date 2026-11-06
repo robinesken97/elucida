@@ -14,6 +14,7 @@ import re
 import uuid
 from pathlib import Path
 
+from elucida.app.canvas_theme import suspend as suspend_canvas
 from elucida.tabs import xray as XRAY
 from elucida.app.i18n import T
 from elucida.formats.topspin import (read_jcamp_params, acq_params, bruker_dir, find_experiments, experiment_kind, experiment_name, parse_nucleus)  # noqa: E402,F401  (Leser in elucida/formats)
@@ -450,6 +451,8 @@ class NMRTab(QWidget):
         rv = QVBoxLayout(prev)
         rv.setContentsMargins(0, 0, 0, 0)
         self.lbl_prev = QLabel("", alignment=Qt.AlignCenter, wordWrap=True)
+        from elucida.app.canvas_theme import register
+        register(self.lbl_prev)
         # Größe kommt vom Layout, nie vom Pixmap (sonst Mindestgröße = altes Bild: wächst nicht nach, schrumpft nicht)
         self.lbl_prev.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.lbl_prev.setMinimumSize(200, 200)
@@ -1092,9 +1095,11 @@ class NMRTab(QWidget):
         if is_emf(s["file"]):                              # EMF: keine eigene Darstellung, geht unverändert nach Word
             self.lbl_prev.setPixmap(QPixmap())
             self.lbl_prev.setText(T("nmr_emf_preview", f=Path(s["file"]).name))
+            suspend_canvas(self.lbl_prev, True)                # Text im Theme, nur Bilder werden umgefärbt
             self.lbl_cap.setText(f"<b>Figure S{n}</b>: " + caption_html(s, self.blocks(), self.compound_name()))
             return
         self.lbl_prev.setText("")
+        suspend_canvas(self.lbl_prev, False)
         import pymupdf
         # in Gerätepixeln rendern (HiDPI-Bildschirme), angezeigt in logischen Pixeln
         dpr = max(1.0, self.lbl_prev.devicePixelRatioF())

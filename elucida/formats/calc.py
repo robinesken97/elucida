@@ -214,6 +214,8 @@ def parse_orca(text) -> dict:
     kw = " ".join(c["keywords"]).upper()
     c["opt_requested"] = c["opt_requested"] or bool(re.search(r"\b\w*OPT\b", kw))
     c["freq_requested"] = bool(re.search(r"\b(NUM|AN)?FREQ\b", kw)) or c["freqs"] is not None
+    from elucida.formats.multireference import parse_orca_mr
+    c["multireference"] = parse_orca_mr(text)
     return c
 
 

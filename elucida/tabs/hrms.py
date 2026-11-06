@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure as MplFigure
 from matplotlib.widgets import SpanSelector
@@ -158,7 +159,7 @@ class HRMSTab(TABS.FigureTab):
         f.addRow(T("ms_rt"), self.rt_row)
         # Chromatogramm (Werkzeug, nicht Teil der Abbildung): Ziehen setzt den LC-Bereich
         self.cfig = MplFigure(figsize=(4.2, 1.5), dpi=100)
-        self.ccanvas = FigureCanvasQTAgg(self.cfig)
+        self.ccanvas = register_canvas(FigureCanvasQTAgg(self.cfig))
         self.ccanvas.setMinimumHeight(140)
         self.ccanvas.setMaximumHeight(170)
         self.ccanvas.setToolTip(T("ms_chrom_tip"))

@@ -243,6 +243,9 @@ class OtherTab(TABS.FigureTab):
         base.parent.mkdir(parents=True, exist_ok=True)
         files = []
         es = [e for e in self.entries() if Path(e["file"]).exists()]
+        for e in self.entries():
+            if e not in es:
+                self.main.error(T("file_gone", name=Path(e["file"]).name))
         if not es:
             raise RuntimeError(T("tab_empty"))
         for k, e in enumerate(es, 1):
