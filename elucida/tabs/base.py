@@ -156,7 +156,7 @@ def _buttons_of(w):
     lay = w.layout() if w is not None else None
     if lay is None:
         return None
-    ws = [lay.itemAt(j).widget() for j in range(lay.count()) if lay.itemAt(j).widget() is not None]
+    ws = [STYLE.item_at(lay, j).widget() for j in range(lay.count()) if STYLE.item_at(lay, j).widget() is not None]
     return ws if ws and all(isinstance(x, QPushButton) for x in ws) else None
 
 
@@ -172,7 +172,7 @@ def result_page(group):
     v = group.layout()
     actions = []
     for idx in range(v.count()):
-        it = v.itemAt(idx)
+        it = STYLE.item_at(v, idx)
         w, lay = it.widget(), it.layout()
         if isinstance(w, big):
             w.setMaximumHeight(16777215)
@@ -186,7 +186,7 @@ def result_page(group):
             v.insertLayout(idx, row)
             actions.append(row)
         elif isinstance(lay, QHBoxLayout):
-            items = [lay.itemAt(j) for j in range(lay.count())]
+            items = [STYLE.item_at(lay, j) for j in range(lay.count())]
             parts = [_buttons_of(i.widget()) for i in items if i.widget() is not None]
             if parts and all(p is not None for p in parts):  # nur Knöpfe (auch in Containern wie methods_button)
                 while lay.count():
@@ -197,7 +197,7 @@ def result_page(group):
                 actions.append(lay)
     if actions:
         last = actions[-1]
-        b = next(last.itemAt(j).widget() for j in range(last.count()) if last.itemAt(j).widget() is not None)
+        b = next(STYLE.item_at(last, j).widget() for j in range(last.count()) if STYLE.item_at(last, j).widget() is not None)
         b.setProperty("accent", True)
         if b.icon().isNull():
             b.setIcon(STYLE.icon("copy", "#FFFFFF"))

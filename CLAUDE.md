@@ -480,6 +480,10 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - **Platzierung (Nutzerwunsch 2.3):** Inset nie über Kurven – ohne freie Stelle rechts neben die schmalere Achse
   (`_make_room_right`/`_put_beside`, ohne Tabelle, nicht ins Layout gespeichert). Bandenlabels geordnet
   (`_place_labels_ordered`): Reihe mit gleicher Oberkante, sonst linksbündiger Block nach λ, erst dann einzeln.
+- **`layout.itemAt` nie direkt, immer `STYLE.item_at`:** PySide hält den Wrapper des Elements am Layout fest, Qt löscht das
+  Element aber still (z. B. mit seinem Widget). Der tote Eintrag bleibt in PySides Adresstabelle; ein später an derselben
+  Adresse angelegtes Python-Qt-Objekt stürzt ab (`SignalManager::retrieveMetaObject`, Adresse 0; zufällig je nach
+  Allokator, 2.6 traf es `CanvasInvert` auf macOS). Selbsttest „layout items“ prüft, dass keine solchen Wrapper bleiben.
 - **Mausereignisse (matplotlib):** `LocationEvent` rundet x/y auf ganze Pixel; Messpunkte liegen in der Vorschau
   < 1 px auseinander. Tests mit simulierten Klicks/Hover nur auf ±1 Messpunkt prüfen und dann, dass die Anzeige
   genau den getroffenen Punkt zeigt (CI-Systeme treffen sonst unterschiedliche Nachbarn).

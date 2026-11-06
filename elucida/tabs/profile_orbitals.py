@@ -158,7 +158,7 @@ class OrbitalViewDialog(QDialog):
         v.addLayout(row)
         if not data.get('show_orbital', True):
             for i in range(row.count()):
-                row.itemAt(i).widget().setVisible(False)
+                STYLE.item_at(row, i).widget().setVisible(False)
         self.fig = Figure(figsize=(4, 4), dpi=100)
         self.canvas = register(FigureCanvasQTAgg(self.fig))
         self.host = TABS.CanvasHost(self.canvas, self.fig)

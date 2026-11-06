@@ -82,8 +82,8 @@ def make_form(parent=None):
 
 def align_forms(forms):
     """Beschriftungsspalte aller Formulare gleich breit machen."""
-    labels = [f.itemAt(i, QFormLayout.LabelRole).widget() for f in forms for i in range(f.rowCount())
-              if f.itemAt(i, QFormLayout.LabelRole) and f.itemAt(i, QFormLayout.LabelRole).widget()]
+    labels = [item_at(f, i, QFormLayout.LabelRole).widget() for f in forms for i in range(f.rowCount())
+              if item_at(f, i, QFormLayout.LabelRole) and item_at(f, i, QFormLayout.LabelRole).widget()]
     width = max((lb.sizeHint().width() for lb in labels), default=0)
     # höchstens ~32 Zeichen breit: längere Beschriftungen brechen um, statt die Spalte (und damit die Abbildung) zu
     # verbreitern – wichtig bei breiterer Schrift (Windows)
@@ -260,12 +260,43 @@ COLUMN_W = 538                    # linke Spalte in allen Tabs gleich breit (bre
 CHECKS_IN_FIELD_COLUMN = True     # Häkchen-Zeilen in der Wertespalte (eine Kante für alle Bedienelemente)
 
 
+def _release_item(it):
+    if it is not None and it.layout() is None:
+        shiboken6.invalidate(it)
+
+
+class _Item:
+    """What callers read from a layout item (widget, sub-layout, spacer or not), without holding the item."""
+
+    def __init__(self, it):
+        self._widget, self._layout, self._spacer = it.widget(), it.layout(), it.spacerItem() is not None
+        _release_item(it)
+
+    def widget(self):
+        return self._widget
+
+    def layout(self):
+        return self._layout
+
+    def spacerItem(self):
+        return self if self._spacer else None
+
+
+def item_at(layout, *pos):
+    """layout.itemAt(...), always instead of it. The layout keeps PySide's wrapper of the item alive, and Qt deletes the
+    item without telling PySide (e.g. when its widget goes). The dead entry stays in PySide's address table, and a Python
+    Qt object created later at that address segfaults (SignalManager::retrieveMetaObject). Selftest: 'layout items'."""
+    it = layout.itemAt(*pos)
+    return None if it is None else _Item(it)
+
+
 def _fw(fl, r):
     """Breite einer Formularzeile aus Beschriftung + Feld (Hinweis für die Einrück-Regel)."""
     li, fi = fl.itemAt(r, QFormLayout.LabelRole), fl.itemAt(r, QFormLayout.FieldRole)
-    if li is None or fi is None:
-        return 0
-    return li.sizeHint().width() + fl.horizontalSpacing() + fi.sizeHint().width()
+    w = 0 if li is None or fi is None else li.sizeHint().width() + fl.horizontalSpacing() + fi.sizeHint().width()
+    _release_item(li)
+    _release_item(fi)
+    return w
 
 
 def _cell(x, w):
@@ -302,7 +333,7 @@ def _pairs(lay, ws, width, gap):
 
 def _strip_stretch(lay):
     for i in reversed(range(lay.count())):
-        if lay.itemAt(i).spacerItem() is not None:
+        if item_at(lay, i).spacerItem() is not None:
             lay.takeAt(i)
 
 
@@ -318,27 +349,27 @@ def _field_edge(root):
     for fl in [fl for fl in root.findChildren(QFormLayout) if fl.parentWidget() is not None]:
         fl.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         # Wertespalte bis zum Kartenrand (Nutzerwunsch: Breite gleichmäßig nutzen): Spalte − Ränder − Beschriftungen
-        labs = [fl.itemAt(r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
-                if fl.itemAt(r, QFormLayout.LabelRole) is not None and fl.itemAt(r, QFormLayout.LabelRole).widget()]
+        labs = [item_at(fl, r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
+                if item_at(fl, r, QFormLayout.LabelRole) is not None and item_at(fl, r, QFormLayout.LabelRole).widget()]
         lab = max((x.maximumWidth() if x.maximumWidth() < 10000 else x.sizeHint().width() for x in labs), default=0)
         span_all = COLUMN_W - 2 * 12 - 2 * 18 - 8              # ganze Kartenbreite innen
         W = max(WIDE_W, span_all - lab - fl.horizontalSpacing())
         U = (W - G) // 2
         W = 2 * U + G
-        for sp in [fl.itemAt(r, QFormLayout.FieldRole).widget() for r in range(fl.rowCount())
-                   if fl.itemAt(r, QFormLayout.FieldRole) is not None]:
+        for sp in [item_at(fl, r, QFormLayout.FieldRole).widget() for r in range(fl.rowCount())
+                   if item_at(fl, r, QFormLayout.FieldRole) is not None]:
             if isinstance(sp, QAbstractSpinBox):
                 _cell(sp, U)
         span = max(span_all, W)                               # ganze Breite (Beschriftung + Wertespalte)
         for r in reversed(range(fl.rowCount())):            # Häkchenreihen (≥ 3) zu zweit in Feld A und B
-            it = fl.itemAt(r, QFormLayout.SpanningRole)
+            it = item_at(fl, r, QFormLayout.SpanningRole)
             if it is not None and isinstance(it.widget(), QAbstractScrollArea):
                 _cell(it.widget(), span)                      # Listen/Textfelder über die ganze Breite
                 continue
             lay = it.layout() if it is not None else None
             if not isinstance(lay, QHBoxLayout):
                 continue
-            cbs = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            cbs = [item_at(lay, i).widget() for i in range(lay.count()) if item_at(lay, i).widget() is not None]
             if not lay.property("grid") and _pairs(lay, cbs, span, G):
                 lay.setProperty("grid", True)
                 continue
@@ -377,8 +408,8 @@ def _field_edge(root):
                 h.addStretch(1)
                 fl.insertRow(r, "", h)
         for r in reversed(range(fl.rowCount())):
-            it = fl.itemAt(r, QFormLayout.FieldRole)
-            if it is None or fl.itemAt(r, QFormLayout.SpanningRole) is not None:   # ganze Breite: oben erledigt
+            it = item_at(fl, r, QFormLayout.FieldRole)
+            if it is None or item_at(fl, r, QFormLayout.SpanningRole) is not None:   # ganze Breite: oben erledigt
                 continue
             w, lay = it.widget(), it.layout()
             if w is not None:
@@ -396,7 +427,7 @@ def _field_edge(root):
                     w.setWordWrap(True)                       # Hinweis zu den Feldern darüber: mittig in der Wertespalte
                     prev = None                               # unter einem Häkchen: mittig über Häkchen + Text
                     for role in (QFormLayout.FieldRole, QFormLayout.SpanningRole):
-                        pi = fl.itemAt(r - 1, role) if r else None
+                        pi = item_at(fl, r - 1, role) if r else None
                         prev = pi.widget() if pi is not None and pi.widget() is not None else prev
                     if isinstance(prev, QCheckBox):
                         ind = span_all - W if "margin-left" in (prev.styleSheet() or "") else 0
@@ -407,9 +438,9 @@ def _field_edge(root):
                     _cell(w, W)
                     il = w.layout()
                     if isinstance(il, QHBoxLayout):
-                        _pairs(il, [il.itemAt(i).widget() for i in range(il.count()) if il.itemAt(i).widget()], W, G)
+                        _pairs(il, [item_at(il, i).widget() for i in range(il.count()) if item_at(il, i).widget()], W, G)
                 continue
-            if isinstance(lay, QVBoxLayout) and any(isinstance(lay.itemAt(i).widget(), QAbstractScrollArea)
+            if isinstance(lay, QVBoxLayout) and any(isinstance(item_at(lay, i).widget(), QAbstractScrollArea)
                                                     for i in range(lay.count())):
                 res = fl.takeRow(r)                           # Tabelle mit Beschriftung: Beschriftung darüber,
                 lw = res.labelItem.widget() if res.labelItem is not None else None   # Tabelle über die ganze Breite
@@ -417,15 +448,15 @@ def _field_edge(root):
                 if lw is not None:
                     fl.insertRow(r, lw)
                 for i in range(lay.count()):
-                    if isinstance(lay.itemAt(i).widget(), QAbstractScrollArea):
-                        _cell(lay.itemAt(i).widget(), max(span_all, W))
+                    if isinstance(item_at(lay, i).widget(), QAbstractScrollArea):
+                        _cell(item_at(lay, i).widget(), max(span_all, W))
                 continue
             if not isinstance(lay, QHBoxLayout) or lay.property("grid"):
                 continue
             lay.setProperty("grid", True)
-            lw_ = fl.itemAt(r, QFormLayout.LabelRole)
+            lw_ = item_at(fl, r, QFormLayout.LabelRole)
             lw_ = lw_.widget() if lw_ is not None else None
-            bts = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            bts = [item_at(lay, i).widget() for i in range(lay.count()) if item_at(lay, i).widget() is not None]
             if bts and all(isinstance(x, QPushButton) for x in bts) and (lw_ is None or (isinstance(lw_, QLabel)
                                                                                          and not lw_.text())):
                 _strip_stretch(lay)                           # Knopfreihe ohne Beschriftung: Wertespalte, gleich breit
@@ -433,7 +464,7 @@ def _field_edge(root):
                 for x in bts:
                     x.setFixedWidth((W - 8 * (len(bts) - 1)) // len(bts))
                 continue
-            ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            ws = [item_at(lay, i).widget() for i in range(lay.count()) if item_at(lay, i).widget() is not None]
             if len(ws) >= 3 and isinstance(ws[0], QCheckBox) and isinstance(ws[1], value):
                 lay.removeWidget(ws[0])                        # „☑ gesamt“/„☑ einsetzen“ unter die Werte
                 fl.insertRow(r + 1, "", ws[0])
@@ -445,7 +476,7 @@ def _field_edge(root):
                 if len(mid.text().strip()) > 1:               # lange Zwischenbeschriftung: eigene Zeile
                     lay.removeWidget(mid)
                     lay.removeWidget(b)
-                    lab = fl.itemAt(r, QFormLayout.LabelRole)
+                    lab = item_at(fl, r, QFormLayout.LabelRole)
                     lab = lab.widget() if lab is not None else None
                     mid.setWordWrap(True)
                     mid.setProperty("formlabel", True)
@@ -534,7 +565,7 @@ def tidy(root):
         fl.setVerticalSpacing(8)
         fl.setHorizontalSpacing(12)
         for r in range(fl.rowCount()):
-            it = fl.itemAt(r, QFormLayout.SpanningRole)
+            it = item_at(fl, r, QFormLayout.SpanningRole)
             if it is not None and isinstance(it.widget(), QPushButton):
                 it.widget().setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
     for b in root.findChildren(QPushButton):
@@ -558,11 +589,11 @@ def tidy(root):
     for fl in root.findChildren(QFormLayout):
         inner = []                                           # Beschriftungen zwischen zwei Werten
         for r in range(fl.rowCount()):
-            it = fl.itemAt(r, QFormLayout.FieldRole) or fl.itemAt(r, QFormLayout.SpanningRole)
+            it = item_at(fl, r, QFormLayout.FieldRole) or item_at(fl, r, QFormLayout.SpanningRole)
             lay = it.layout() if it is not None else None
             if not isinstance(lay, QHBoxLayout):
                 continue
-            ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+            ws = [item_at(lay, i).widget() for i in range(lay.count()) if item_at(lay, i).widget() is not None]
             if not any(isinstance(x, QAbstractSpinBox) for x in ws):
                 continue
             for i, x in enumerate(ws):
@@ -577,15 +608,15 @@ def tidy(root):
                 x.setMinimumWidth(wmax)
         # „☑ Basislinie [0,15 V]“ (Zeile über die ganze Breite): Häkchen so breit wie die Beschriftungsspalte, damit
         # der Wert in der Wertespalte steht
-        labels = [fl.itemAt(r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
-                  if fl.itemAt(r, QFormLayout.LabelRole) is not None]
+        labels = [item_at(fl, r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
+                  if item_at(fl, r, QFormLayout.LabelRole) is not None]
         lab_w = max((lb.minimumWidth() or lb.sizeHint().width() for lb in labels if lb is not None), default=0)
         for r in range(fl.rowCount()):
-            it = fl.itemAt(r, QFormLayout.SpanningRole)
+            it = item_at(fl, r, QFormLayout.SpanningRole)
             lay = it.layout() if it is not None else None
             if not isinstance(lay, QHBoxLayout) or not lab_w or lay.count() < 2:
                 continue
-            first, second = lay.itemAt(0).widget(), lay.itemAt(1).widget()
+            first, second = item_at(lay, 0).widget(), item_at(lay, 1).widget()
             if isinstance(first, QCheckBox) and isinstance(second, QAbstractSpinBox):
                 lay.setSpacing(8)                             # -1 (Stil-Standard) verschob den Wert um 1 px
                 first.setMinimumWidth(lab_w + fl.horizontalSpacing() - lay.spacing())
@@ -595,11 +626,11 @@ def tidy(root):
         # Beschriftung so hoch wie ihr Feld, Text darin mittig: Qt setzt Beschriftungen sonst mit einem festen Versatz,
         # der bei den höheren Feldern 2–3 px zu hoch liegt
         for r in range(fl.rowCount()):
-            li, fi = fl.itemAt(r, QFormLayout.LabelRole), fl.itemAt(r, QFormLayout.FieldRole)
+            li, fi = item_at(fl, r, QFormLayout.LabelRole), item_at(fl, r, QFormLayout.FieldRole)
             if li is None or fi is None or not isinstance(li.widget(), QLabel):
                 continue
             fw = fi.widget()
-            parts = [fw] if fw is not None else [fi.layout().itemAt(i).widget() for i in range(fi.layout().count())]
+            parts = [fw] if fw is not None else [item_at(fi.layout(), i).widget() for i in range(fi.layout().count())]
             parts = [x for x in parts if x is not None]
             for x in parts:
                 x.ensurePolished()
@@ -614,7 +645,7 @@ def tidy(root):
             indent = lab_w + fl.horizontalSpacing()
             room = max(_fw(fl, r) for r in range(fl.rowCount())) if fl.rowCount() else 0   # nur die eigene Karte
             for r in range(fl.rowCount()):
-                it = fl.itemAt(r, QFormLayout.SpanningRole)
+                it = item_at(fl, r, QFormLayout.SpanningRole)
                 if it is None:
                     continue
                 if isinstance(it.widget(), QCheckBox):
@@ -622,7 +653,7 @@ def tidy(root):
                         it.widget().setStyleSheet(f"QCheckBox {{ margin-left: {indent}px; }}")
                 elif isinstance(it.layout(), QHBoxLayout) and it.layout().count() > 1:
                     lay = it.layout()
-                    first, second = lay.itemAt(0).widget(), lay.itemAt(1).widget()
+                    first, second = item_at(lay, 0).widget(), item_at(lay, 1).widget()
                     if (isinstance(first, QCheckBox) and not isinstance(second, QAbstractSpinBox)
                             and lay.sizeHint().width() + indent <= room):
                         lay.setContentsMargins(indent, 0, 0, 0)
@@ -648,7 +679,7 @@ def tidy(root):
             lb.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
     for lay in root.findChildren(QHBoxLayout):                # Knopfreihen in Karten: gleich breit über die Karte
         pw = lay.parentWidget()
-        ws = [lay.itemAt(i).widget() for i in range(lay.count()) if lay.itemAt(i).widget() is not None]
+        ws = [item_at(lay, i).widget() for i in range(lay.count()) if item_at(lay, i).widget() is not None]
         if (isinstance(pw, _GB) and 2 <= len(ws) <= 4 and all(isinstance(x, QPushButton) and x.text() for x in ws)
                 and not any(x.property("accent") for x in ws) and not lay.property("grid")):
             _strip_stretch(lay)
@@ -656,7 +687,7 @@ def tidy(root):
                 x.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 lay.setStretchFactor(x, 1)
     for lay in root.findChildren(QHBoxLayout):
-        items = [lay.itemAt(i) for i in range(lay.count())]
+        items = [item_at(lay, i) for i in range(lay.count())]
         if not lay.property("grid") and any(isinstance(it.widget(), (QLabel, QCheckBox)) for it in items[1:]):   # Beschriftung nicht ankleben
             lay.setSpacing(max(lay.spacing(), 8))
         ws = [it.widget() for it in items if it.widget() is not None]
@@ -770,13 +801,13 @@ def _row_of(form, w):
     """Zeile eines QFormLayout, deren Feld das Widget w ist oder enthält (Feld als Layout) -> Index oder -1."""
     for r in range(form.rowCount()):
         for role in (QFormLayout.FieldRole, QFormLayout.SpanningRole):
-            it = form.itemAt(r, role)
+            it = item_at(form, r, role)
             if it is None:
                 continue
             if it.widget() is w:
                 return r
             lay = it.layout()
-            if lay is not None and any(lay.itemAt(i).widget() is w for i in range(lay.count())):
+            if lay is not None and any(item_at(lay, i).widget() is w for i in range(lay.count())):
                 return r
     return -1
 

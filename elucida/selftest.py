@@ -6082,10 +6082,9 @@ def selftest(outdir, with_isnet=False):
         ot_.fill_table()
         ot_.show_details()
         assert len(w.ov_state["entries"]) == n_f2
-        pump(0.8)
-        ot_.toggle_linked("eps", g_f2, g_f2, True)                               # Undo nimmt die Übernahme zurück
-        pump(0.8)
-        assert ot_.linked_entry("eps", g_f2) is not None
+        w.push_undo()
+        ot_.toggle_linked("eps", g_f2, g_f2, True)                               # Undo nimmt die Übernahme zurück,
+        assert ot_.linked_entry("eps", g_f2) is not None                         # auch bevor die Vorschau fertig ist
         w.undo()
         for _ in range(50):                                  # mit Editor dauert das Ersetzen der Tabs länger
             pump(0.1)
@@ -6234,6 +6233,16 @@ def selftest(outdir, with_isnet=False):
         DP26.collect({"sec": {"dta": str(out / "not_there.DTA")}}, out, gone26_)
         assert gone26_ == ["not_there.DTA"], gone26_
         report.append("Rejected and missing files are always reported: OK")
+
+        # Tote Einträge in PySides Adresstabelle (Absturz beim nächsten Python-Qt-Objekt): STYLE.item_at statt itemAt
+        import shiboken6 as SHB
+        from PySide6.QtWidgets import QLayout, QLayoutItem
+        w.open_demo_publication(out / "demo_pub_items")
+        pump(0.5)
+        held_ = [type(o_).__name__ for o_ in SHB.getAllValidWrappers() if isinstance(o_, QLayoutItem)
+                 and not isinstance(o_, QLayout) and not SHB.createdByPython(o_)]
+        assert not held_, held_[:5]
+        report.append("layout items: no wrappers of Qt-owned items are kept: OK")
         for lang in ("en", "de"):
             w.switch_lang(lang)
         import shiboken6 as _shb_end                                     # Beenden: alle Widgets vor dem Interpreter-

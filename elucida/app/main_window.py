@@ -1411,7 +1411,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.blockSignals(False)
         STYLE.tidy(new)
         # Eltern behalten: ohne sie gehört das Objekt Python, und die Speicherbereinigung könnte den Tab samt WebEngine
-        # mitten in anderem Code zerstören (Segfault, macOS Intel). deleteLater räumt in der Ereignisschleife auf.
+        # mitten in anderem Code zerstören. deleteLater räumt in der Ereignisschleife auf.
         old.hide()
         old.deleteLater()
         return new
@@ -1991,6 +1991,9 @@ class MainWindow(QMainWindow):
     def undo(self):
         path = self.active_reaction_path()
         if path: return path.undo(-1)
+        tabs = (self.__dict__.get(self._tab_spec(k)[0]) for k in self._TAB_BUILD_ORDER)
+        if any(hasattr(t, "timer") and t.timer.isActive() for t in tabs):
+            self.push_undo()                           # Änderung, deren Vorschau noch aussteht: sonst ein Schritt zu weit
         if len(self._undo) > 1:
             self._redo.append(self._undo.pop())
             self._restore(self._undo[-1])

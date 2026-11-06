@@ -180,8 +180,7 @@ _WEB_CLASSES = []
 
 
 def _web_classes():
-    """Created once, never per editor: a Python subclass of a Qt class that the garbage collector removes after its
-    editor was deleted crashed the app (segfault in the next allocation, macOS CI). Lazy, WebEngine is a heavy import."""
+    """Created once, not per editor. Lazy, WebEngine is a heavy import."""
     if not _WEB_CLASSES:
         from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineUrlRequestInterceptor
 
