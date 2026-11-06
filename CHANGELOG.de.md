@@ -2,6 +2,18 @@
 
 # Änderungen
 
+## 2.6.2 – 2026-11-06
+
+### Neu
+- **Cluster:** Der Projektreiter „Computerchemie“ zeigt laufende und fertige Slurm-Jobs und holt Ergebnisse in eine Verbindung oder
+  einen Reaktionspfad. Abfrage alle 2 Minuten, solange die App offen ist, fertige Jobs kommen als Mitteilung. Läuft über das `ssh`
+  des Systems mit deinem Schlüssel, nur mit Lesebefehlen. Einrichtung im Handbuch unter „Cluster-Anbindung“.
+- **UV-Vis:** Unter **Messungen** lässt sich jede Konzentration einzeln abwählen. Sie zählt dann weder in Bild und Fit noch in
+  Tabellen und SI, die Datei bleibt unverändert.
+
+### Behoben
+- **Rückgängig:** Eine gerade erst gemachte Änderung im Tab wird vor dem Rückgängigmachen erfasst, vorher ging ein Schritt zu weit zurück.
+
 ## 2.6.1 – 2026-11-06
 
 ### Behoben

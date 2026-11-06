@@ -60,7 +60,7 @@ Create a **project**, add compounds, and follow the checklist. **Complete SI** w
 
 **Reaction paths across compounds**
 
-Project → **Computational Chemistry**: copy calculations in, then compose profiles, molecules and orbital views on a free canvas. Diagrams are true to scale unless you explicitly choose a schematic layout, and they go into the complete SI.
+Project → **Computational Chemistry**: copy calculations in, then compose profiles, molecules and orbital views on a free canvas. Diagrams are true to scale unless you explicitly choose a schematic layout, and they go into the complete SI. With access to a Slurm cluster the tab also shows your jobs and fetches results straight into the project ([setup](docs/manual.en.md#cluster-connection)).
 
 **Spectroelectrochemistry without timestamps**
 

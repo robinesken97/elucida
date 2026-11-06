@@ -60,7 +60,7 @@
 
 **Reaktionspfade über mehrere Verbindungen**
 
-Projekt → **Computerchemie**: Rechnungen hineinkopieren, dann Profile, Moleküle und Orbitalansichten auf einer freien Zeichenfläche anordnen. Diagramme sind maßstäblich, solange du nicht ausdrücklich schematisch wählst, und gehen in die Gesamt-SI.
+Projekt → **Computerchemie**: Rechnungen hineinkopieren, dann Profile, Moleküle und Orbitalansichten auf einer freien Zeichenfläche anordnen. Diagramme sind maßstäblich, solange du nicht ausdrücklich schematisch wählst, und gehen in die Gesamt-SI. Mit Zugang zu einem Slurm-Cluster zeigt der Reiter auch deine Jobs und holt Ergebnisse direkt ins Projekt ([Einrichtung](docs/manual.de.md#cluster-anbindung)).
 
 **Spektroelektrochemie ohne Zeitstempel**
 

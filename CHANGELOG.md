@@ -2,6 +2,18 @@
 
 # Changelog
 
+## 2.6.2 – 2026-11-06
+
+### New
+- **Cluster:** the project tab "Computational Chemistry" shows running and finished Slurm jobs and fetches results into a compound
+  or reaction path. It checks every 2 minutes while the app is open and reports finished jobs as a notification. Uses the system's
+  `ssh` with your key and read-only commands. Setup is in the manual under "Cluster connection".
+- **UV-Vis:** under **Measurements** each concentration can be unticked. It then counts nowhere (figure, fit, tables, SI), the file
+  stays unchanged.
+
+### Fixed
+- **Undo:** a change just made in a tab is recorded before undoing, undo used to go one step too far.
+
 ## 2.6.1 – 2026-11-06
 
 ### Fixed
