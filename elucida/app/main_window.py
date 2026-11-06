@@ -4472,6 +4472,8 @@ def release_widgets(app):
     Interpreter-Ende (atexit, destroyQCoreApplication) die übrigen Widgets in beliebiger Reihenfolge ab –
     macOS-Absturz 2.3.7: pure virtual in ~QObject einer QCheckBox. Liste jedes Mal neu von Qt holen."""
     import shiboken6
+    if "elucida.app.drawing_editor" in sys.modules:
+        sys.modules["elucida.app.drawing_editor"].release_pages(app)
     for _ in range(10000):
         top = [x for x in app.topLevelWidgets() if x.parentWidget() is None]
         if not top:

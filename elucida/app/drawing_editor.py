@@ -18,7 +18,7 @@ import weakref
 import xml.etree.ElementTree as ET
 
 from PySide6.QtCore import QObject, Signal, Slot, QUrl, QTimer, QEventLoop, QEvent, Qt, QFile, QIODevice
-from shiboken6 import isValid
+from shiboken6 import delete, isValid
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMessageBox, QDialog, QApplication, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox, QMenu, QFileDialog
 from elucida import ROOT
@@ -147,7 +147,7 @@ class _Assets(http.server.SimpleHTTPRequestHandler):
     def copyfile(self, source, outputfile):
         try:
             outputfile.write(source.read())   # one send: small chunks wait for the GIL while the GUI thread is busy
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:
             pass  # WebEngine cancels pending asset reads when the editor closes.
 
     def list_directory(self, path):
@@ -161,7 +161,7 @@ class _AssetServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
     def handle_error(self, request, client_address):
-        if not isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):   # Editor beim Laden geschlossen
+        if not isinstance(sys.exc_info()[1], ConnectionError):   # Editor beim Laden geschlossen
             super().handle_error(request, client_address)
 
 
@@ -578,6 +578,20 @@ class DrawingEditor(QWidget):
                         temporary.unlink(missing_ok=True)
             except Exception as ex:
                 QMessageBox.warning(self, T('draw_title'), str(ex))
+
+
+def release_pages(app):
+    """At quit, before the windows go: pages first, then give Chromium a moment. A page and its profile deleted in one
+    step while the page was still loading ended the app on Windows (0x80000003, Chromium's fatal check)."""
+    editors = [e for t in app.topLevelWidgets() for e in t.findChildren(DrawingEditor) if e.view is not None]
+    for e in editors:
+        e.poll.stop()
+        e.autosave.stop()
+        delete(e.page)
+    end = time.monotonic() + (0.3 if editors else 0)
+    while time.monotonic() < end:
+        app.processEvents()
+        time.sleep(0.01)
 
 
 class DrawingDialog(QDialog):
