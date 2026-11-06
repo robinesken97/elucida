@@ -2,6 +2,12 @@
 
 # Änderungen
 
+## 2.6.4 – 2026-11-06
+
+### Behoben
+- **DFT:** Im IboView-Stil ploppte beim Drehen der Übergang zwischen Atom und Bindung, sobald ein Stab die Bildebene kreuzte. Stäbe
+  und Kugeln gehen jetzt stetig ineinander über, auch im Ruhebild und im Export.
+
 ## 2.6.3 – 2026-11-06
 
 ### Neu

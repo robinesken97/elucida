@@ -6498,6 +6498,10 @@ def selftest(outdir, with_isnet=False):
             for a26_, b26_ in f26_.rod_pairs:
                 p26_ = tr26_.transform([(f26_.scene["by_k"][k_]["x"], f26_.scene["by_k"][k_]["y"]) for k_ in (a26_, b26_)]).mean(0)
                 assert not any(l_.get_window_extent(rend26_).contains(*p26_) for l_ in f26_.ann_items.values())
+            a26_, b26_ = f26_.rod_pairs[0]                       # Stab knapp hinter der Bildebene: Übergang zur Kugel wie davor
+            d26_ = [f26_.scene["by_k"][b26_][c_] - f26_.scene["by_k"][a26_][c_] for c_ in "xyz"]
+            f26_.set_view(XRAY.rot_between(d26_, [1, 0, -0.02]) @ f26_.R)
+            assert any(np.ptp(p_.vertices, axis=0).min() > 0 for p_ in f26_.atom_rods_over[a26_].get_paths())
             t26_.cb_orb_lab.setChecked(False)
             t26_.render()
             assert not t26_.F.elem_lab
@@ -6506,7 +6510,7 @@ def selftest(outdir, with_isnet=False):
                 w.switch_lang(lang)
                 short_ = [T(k_) for k_ in ("xr_prev_view", "xr_reset_view", "xr_reset_display")]    # drei in einer Reihe;
                 assert max(map(len, short_)) <= 14, short_       # Länge statt Pixel: Schriften im Testmodus je System anders
-            report.append("DFT IboView style: labels clear of rods, element symbols switchable, view buttons fit: OK")
+            report.append("DFT IboView style: labels clear of rods, rods meet atoms without a jump, element symbols switchable, view buttons fit: OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

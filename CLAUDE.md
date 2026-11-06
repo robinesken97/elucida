@@ -205,8 +205,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   RasMol-Farben, Stab 0.148 Å zur Mitte auf 72 % verjüngt). Nutzerwunsch „genauso wie IboView“: geprüft gegen ein
   lokal kompiliertes IboView (Scratchpad, nie ins Repo) mit gleicher Kamera – Kugeln pixelgenau (p95 < 1.2 %),
   Isowerte gleich. Kugeln = Höhenlinien der fertigen Farbe mit Löchern (`ibo_sphere_layers`), Stäbe = Längsstreifen
-  mit exakter Zylinderfarbe auch schräg (`ibo_rod_colors`); Stäbe zum Betrachter liegen VOR ihrer Kugel ab der
-  Austrittskurve (`atom_rods_over`, wie der Tiefenpuffer). Mit Molden: Bindungen/-ordnungen wie IboView = Wiberg in
+  mit exakter Zylinderfarbe auch schräg (`ibo_rod_colors`); Stäbe liegen VOR ihrer Kugel ab der Austrittskurve, sobald der
+  Austritt auf der Vorderseite liegt, auch leicht nach hinten zeigend (`atom_rods_over`, je Streifen wie der Tiefenpuffer; nur nach der Richtung zu schalten ploppte beim Drehen). Mit Molden: Bindungen/-ordnungen wie IboView = Wiberg in
   IAO (MINAO aus `core/minao`, `iao_bond_orders`, ≥ 0.2; ±0.2 an ganzer Zahl → ganz), n Stäbe à 1.4/n nebeneinander
   (Abstand 0.7 Stabradien, Richtung `ibo_tan_u`), Teilbindung < 0.8 gestrichelt; Cube: Einfachbindungen. Element-
   symbole (C/Heteroatome, 0.8 Bohr, Atomfarbe −20 %, schwarzer Rand) abschaltbar (`orb_labels`). Orbital = Rasterbild

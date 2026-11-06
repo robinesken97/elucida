@@ -2083,39 +2083,51 @@ class XrayFigure:
         u1 = np.minimum(1.0, -1 + 2 * (j + 1.6) / ns)              # leicht überlappend: keine Nähte
         r0 = np.array([s["r0"] for s in sp])[si]
         r1 = np.array([s["r1"] for s in sp])[si]
-        # Zum Betrachter zeigende Stäbe liegen vor ihrer Kugel (Tiefenpuffer in IboView): Streifen erst ab der Stelle,
-        # an der die Zylinderoberfläche die Kugel verlässt, und über dem Atom gezeichnet
+        # Wie der Tiefenpuffer in IboView: die Zylinderoberfläche liegt ab ihrem Austritt aus der Kugel vor ihr, solange der
+        # Austritt auf der Vorderseite liegt. Das gilt auch für Stäbe, die leicht nach hinten zeigen; nur nach der Richtung
+        # zu schalten ließ am Übergang eine Sichel aufploppen, sobald ein Stab die Bildebene kreuzte.
         by = self.scene["by_k"]
         own = np.array([s["k"] for s in sp])
         Ck = np.array([(by[k]["x"], by[k]["y"], by[k]["z"]) for k in own], float)
-        Rk = np.array([by[k]["w"] / 2 for k in own])
-        dseg = P1 - P0
-        toward = (dseg[:, 2] > 0)[si]
+        Rk = np.array([by[k]["w"] / 2 for k in own])[si]
+        dseg = (P1 - P0)[si]
+        toward = dseg[:, 2] > 0
 
-        def start(uu):
+        def surface(uu):                                   # Oberfläche am Stabanfang, relativ zur Kugelmitte
             n3 = uu[:, None] * wps[si] + np.sqrt(np.clip(1 - uu ** 2, 0, 1))[:, None] * wfs[si]
-            Q = P0[si] + r0[:, None] * n3 - Ck[si]
-            d = dseg[si]
+            return P0[si] + r0[:, None] * n3 - Ck[si]
+
+        def leaves(Q, d):                                  # Anteil des Stabs, ab dem |Q + t·d| = Kugelradius
             dd = np.maximum(np.einsum("ij,ij->i", d, d), 1e-12)
             qd = np.einsum("ij,ij->i", Q, d)
-            disc = qd ** 2 - dd * (np.einsum("ij,ij->i", Q, Q) - Rk[si] ** 2)
+            disc = qd ** 2 - dd * (np.einsum("ij,ij->i", Q, Q) - Rk ** 2)
             t = (-qd + np.sqrt(np.maximum(disc, 0))) / dd
             return np.clip(np.where(disc > 0, t, 0.0), 0.0, 1.0)
-        s0, s1 = np.where(toward, start(u0), 0.0), np.where(toward, start(u1), 0.0)
-        q = np.empty((len(si), 4, 2))
-        for c, (ss, uu, end) in enumerate(((s0, u0, False), (s0, u0, True), (s1, u1, True), (s1, u1, False))):
-            tt = np.ones_like(ss) if end else ss
-            P = P0[si] + tt[:, None] * dseg[si]
-            rr = r0 + tt * (r1 - r0)
-            # Punkt auf der sichtbaren Zylinderoberfläche (bei schrägen Stäben entlang der Achse verschoben)
-            n3 = uu[:, None] * wps[si] + np.sqrt(np.clip(1 - uu ** 2, 0, 1))[:, None] * wfs[si]
-            q[:, c, :] = P[:, :2] + rr[:, None] * n3[:, :2]
-        empty = np.zeros_like(q)
+
+        def corners(*edges):
+            q = np.empty((len(si), 4, 2))
+            for c, (tt, uu) in enumerate(edges):
+                P = P0[si] + tt[:, None] * dseg
+                rr = r0 + tt * (r1 - r0)
+                # Punkt auf der sichtbaren Zylinderoberfläche (bei schrägen Stäben entlang der Achse verschoben)
+                n3 = uu[:, None] * wps[si] + np.sqrt(np.clip(1 - uu ** 2, 0, 1))[:, None] * wfs[si]
+                q[:, c, :] = P[:, :2] + rr[:, None] * n3[:, :2]
+            return q
+        s0, s1 = leaves(surface(u0), dseg), leaves(surface(u1), dseg)
+        # Nach hinten zeigend: über der Kugel nur bis zu ihrem Umriss, danach gilt die Tiefe des Stabs (Schicht unter dem Atom)
+        # (etwas darüber hinaus, sonst bleibt der geglättete Kugelrand als feine Linie auf dem Stab stehen)
+        rim = 1.5 * self.data_per_px() / np.maximum(np.hypot(dseg[:, 0], dseg[:, 1]), 1e-9)
+        e0 = np.where(toward, 1.0, np.minimum(1.0, leaves(surface(u0) * [1, 1, 0], dseg * [1, 1, 0]) + rim))
+        e1 = np.where(toward, 1.0, np.minimum(1.0, leaves(surface(u1) * [1, 1, 0], dseg * [1, 1, 0]) + rim))
+        uc = (u0 + u1) / 2
+        Qc = surface(uc)
+        over = toward | (Qc[:, 2] + leaves(Qc, dseg) * dseg[:, 2] > 0)
+        zero, one = np.zeros(len(si)), np.ones(len(si))
+        q_over = np.where(over[:, None, None], corners((s0, u0), (e0, u0), (e1, u1), (s1, u1)), 0.0)
+        q_under = np.where(toward[:, None, None], 0.0, corners((zero, u0), (one, u0), (one, u1), (zero, u1)))
         fc = cols[si, j]
         for k, sl in r["slices"].items():
-            tw = toward[sl][:, None, None]
-            for pc, qq in ((self.atom_rods[k][0], np.where(tw, empty[sl], q[sl])),
-                           (self.atom_rods_over[k], np.where(tw, q[sl], empty[sl]))):
+            for pc, qq in ((self.atom_rods[k][0], q_under[sl]), (self.atom_rods_over[k], q_over[sl])):
                 pc.set_verts(qq)
                 pc.set_facecolors(fc[sl])
 

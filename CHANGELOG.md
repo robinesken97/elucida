@@ -2,6 +2,12 @@
 
 # Changelog
 
+## 2.6.4 – 2026-11-06
+
+### Fixed
+- **DFT:** in IboView style the junction between atom and bond popped while rotating, whenever a rod crossed the image plane. Rods
+  and spheres now meet continuously, in the still image and the export too.
+
 ## 2.6.3 – 2026-11-06
 
 ### New
