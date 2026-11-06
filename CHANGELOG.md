@@ -10,7 +10,6 @@
 - **UV-Vis:** with baseline correction off, the y axis reaches just below the curves, so the old zero stays visible.
 - **macOS:** the title bar was lost once the drawing editor had loaded; the window buttons could also sit over the
   toolbar in full screen.
-- **Undo** no longer goes one step too far when a preview is still pending.
 
 ## 2.6.0 – 2026-11-06
 

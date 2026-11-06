@@ -6088,8 +6088,9 @@ def selftest(outdir, with_isnet=False):
         ot_.show_details()
         assert len(w.ov_state["entries"]) == n_f2
         w.push_undo()
-        ot_.toggle_linked("eps", g_f2, g_f2, True)                               # Undo nimmt die Übernahme zurück,
-        assert ot_.linked_entry("eps", g_f2) is not None                         # auch bevor die Vorschau fertig ist
+        ot_.toggle_linked("eps", g_f2, g_f2, True)                               # Undo nimmt die Übernahme zurück
+        assert ot_.linked_entry("eps", g_f2) is not None
+        ot_.render()                                         # erfasst den Schritt, ohne auf den Zeitgeber zu warten
         w.undo()
         for _ in range(50):                                  # mit Editor dauert das Ersetzen der Tabs länger
             pump(0.1)

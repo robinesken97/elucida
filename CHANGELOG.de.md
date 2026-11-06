@@ -10,7 +10,6 @@
 - **UV-Vis:** Ohne Basislinienkorrektur reicht die y-Achse knapp unter die Kurven, der alte Nullpunkt bleibt sichtbar.
 - **macOS:** Die Titelleiste ging verloren, sobald der Zeicheneditor geladen war; im Vollbild konnten die Fensterknöpfe
   außerdem über der Werkzeugleiste liegen.
-- **Rückgängig** geht nicht mehr einen Schritt zu weit, wenn noch eine Vorschau aussteht.
 
 ## 2.6.0 – 2026-11-06
 
