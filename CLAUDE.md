@@ -25,7 +25,8 @@ Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Date
   spezifischer Koeffizient a in L g⁻¹ cm⁻¹). 95-%-KI = t(0,975; n−2)·SE (eigene `t_quantile`).
 - Cutoff global (Standard A = 1) und pro Bande; Banden mit R² < `min_r2` (einstellbar, Standard 0,98) stehen in
   Tabelle/CSV/Excel, aber nicht im Bild. Bei 4 Punkten ist R² wenig aussagekräftig, KI zählt.
-- Konzentrationsdialog: **keine** vorbelegte Einheit/Startkonzentration (führte früher zu falschem ε).
+- Konzentrationsdialog: **keine** vorbelegte Einheit/Startkonzentration (führte früher zu falschem ε). Probennamen mit führender Null
+  („05mgml“: 0,5 oder aufgefüllte 5?) gelten als unbekannt, der Dialog fragt (ergab sonst negative ε, wie „p5mM“).
 - ChemDraw-Struktur **unverändert** übernehmen: gleichnamige SVG/PDF/PNG neben der CDXML hat Vorrang, aber nur wenn nicht
   älter als die CDXML (`IMG.is_fresh`, sonst veraltet nach Bearbeiten in ChemDraw; gilt auch für .cdx/.emf des Schemas);
   leere ACS-1996-Vorlagen je Verbindung (`PRJ.ensure_templates`), „In ChemDraw bearbeiten“ + `QFileSystemWatcher`
@@ -480,6 +481,8 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 - **Platzierung (Nutzerwunsch 2.3):** Inset nie über Kurven – ohne freie Stelle rechts neben die schmalere Achse
   (`_make_room_right`/`_put_beside`, ohne Tabelle, nicht ins Layout gespeichert). Bandenlabels geordnet
   (`_place_labels_ordered`): Reihe mit gleicher Oberkante, sonst linksbündiger Block nach λ, erst dann einzeln.
+- **macOS, natives Fenster:** Der erste Zeicheneditor (WebEngine) lässt Qt das NSWindow neu anlegen, Titelleiste und NSToolbar
+  sind dann weg. `MainWindow.event` richtet sie bei `WinIdChange` neu ein (`_restore_title_bar`).
 - **`layout.itemAt` nie direkt, immer `STYLE.item_at`:** PySide hält den Wrapper des Elements am Layout fest, Qt löscht das
   Element aber still (z. B. mit seinem Widget). Der tote Eintrag bleibt in PySides Adresstabelle; ein später an derselben
   Adresse angelegtes Python-Qt-Objekt stürzt ab (`SignalManager::retrieveMetaObject`, Adresse 0; zufällig je nach

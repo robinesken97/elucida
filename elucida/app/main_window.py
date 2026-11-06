@@ -2481,8 +2481,19 @@ class MainWindow(QMainWindow):
         if ev.type() == QEvent.WindowStateChange and getattr(self, "_mac_title", False):
             self._fit_title_bar()
 
+    def event(self, ev):
+        # Der erste Zeicheneditor lässt Qt das native Fenster neu anlegen: Titelleiste neu einrichten, sonst fehlt sie.
+        if ev.type() == QEvent.WinIdChange and getattr(self, "_mac_title", False) and self._title_h is not None:
+            QTimer.singleShot(0, self._restore_title_bar)
+        return super().event(ev)
+
+    def _restore_title_bar(self):
+        self._title_h = MAC.finish(self)
+        self._fit_title_bar()
+
     def _fit_title_bar(self):
-        """macOS: Werkzeugleiste so hoch wie die Titelleiste; im Vollbild (ohne Ampelknöpfe) kein Einzug."""
+        """macOS: Werkzeugleiste so hoch wie die Titelleiste. Einzug auch im Vollbild: Fährt dort die Menüleiste ein,
+        erscheinen die Ampelknöpfe über der Werkzeugleiste."""
         inset = getattr(self, "_title_inset", None)
         if inset is None or self._title_h is None:
             return
@@ -2490,7 +2501,7 @@ class MainWindow(QMainWindow):
         on = bool(self._title_h) and not full
         if self._title_h:
             MAC.set_toolbar_visible(self, not full)
-        inset.setVisible(on)
+        inset.setVisible(bool(self._title_h))
         # Genau die Titelleistenhöhe: macOS zentriert die Ampelknöpfe darin, sonst sitzen sie zu hoch.
         self.toolbar.setMinimumHeight(self._title_h if on else 0)
         self.toolbar.setMaximumHeight(self._title_h if on else 16777215)

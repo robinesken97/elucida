@@ -125,6 +125,12 @@ def conc_factor(cfg):
     return CONC_TO_M[cfg["conc_unit"]]
 
 
+def axis_floor(spectra, xlim):
+    """Untere Achsengrenze ohne Basislinie: 0 oder knapp unter den Kurven. 5. Perzentil: Rauschen im fernen UV zählt nicht."""
+    low = min(np.percentile(s["y"][(s["x"] >= xlim[0]) & (s["x"] <= xlim[1])], 5) for s in spectra)
+    return min(0.0, math.floor(low * 120) / 100)
+
+
 def clip_polyline(x, y, xlim, ylim):
     """Linienzug auf das Rechteck xlim×ylim beschneiden: Schnittpunkte mit dem Rand
     einfügen, Teile außerhalb durch NaN-Lücken ersetzen."""
@@ -381,6 +387,8 @@ def parse_sample_name(name):
         return None
     if m.start() and name[m.start() - 1] in "pP" and not name[:m.start() - 1][-1:].isdigit():
         return None                                  # „p5mM“: 0,5 oder 5? Nicht raten, Dialog fragt
+    if re.match(r"0\d", m.group(1)):
+        return None                                  # „05mgml“: 0,5 oder aufgefüllte 5? Ebenso (ergab negative ε)
     conc = float(m.group(1).lower().replace("p", ".").replace(",", "."))
     unit = _UNIT_MAP.get(m.group(2).lower().replace(" ", ""), m.group(2))
     group = name[:m.start()].rstrip("-_ ") or "probe"
@@ -1057,6 +1065,8 @@ class Figure:
         xs = np.concatenate([s["x"] for s in self.spectra])
         xlim = cfg["xlim"] or (xs.min(), xs.max())
         ylim = cfg["ylim"] or (0, cfg["max_abs_fit"])
+        if cfg["baseline_nm"] is None and ylim[0] == 0:    # ohne Korrektur liegt der Nullpunkt oft leicht darunter
+            ylim = (axis_floor(self.spectra, xlim), ylim[1])
         ramp = conc_ramp([s["c"] for s in self.spectra]) if cfg.get("conc_colors") else {}
         named = set()
         for s in self.spectra:

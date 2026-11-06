@@ -345,6 +345,11 @@ def selftest(outdir, with_isnet=False):
         assert core.fmt_ve(9.4802, 0.0123) == ("9.480", "0.012")                       # a nach Unsicherheit
         assert core.fmt_ve(12345.0, 0.0, max_decimals=0) == ("12345", "1")              # SE 0: eine Einheit
         assert core.parse_sample_name("probe-p5mM") is None                            # 0,5 oder 5? nicht raten
+        x_af = np.linspace(200, 1100, 500)
+        assert core.axis_floor([{"x": x_af, "y": x_af * 0 - 0.02}], (200, 1100)) == -0.03     # Nullpunkt bleibt sichtbar
+        assert core.axis_floor([{"x": x_af, "y": x_af * 0 + 0.02}], (200, 1100)) == 0
+        assert core.parse_sample_name("S_05mgml") is None and core.parse_sample_name("S_00625mgml3") is None   # ebenso
+        assert core.parse_sample_name("S_0.5mgml")[1] == 0.5 and core.parse_sample_name("S_10mM")[1] == 10
         same_c = [dict(x=x_a, y=np.full_like(x_a, 0.2), c=1.0) for _ in range(3)]
         r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500]), same_c)[0]
         assert r_a["fit"] is None and "eps" not in r_a, r_a              # gleiche c: kein ε statt Absturz
