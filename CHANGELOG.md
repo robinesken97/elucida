@@ -11,6 +11,10 @@
   on chairs, a Sequence tool for peptides and nucleic acids, Ctrl-click and Ctrl-drag as in ChemDraw on Windows and Linux.
 - Examples in the interface, manual and changelog use invented compound numbers, lab codes and values.
 
+### Fixed
+- **Drawing:** a trackpad pinch in Octet zoomed the whole editor, so the tool bars grew and left the window. It now zooms the
+  drawing, like Ctrl/⌘ + scroll.
+
 ## 2.6.4 – 2026-11-06
 
 ### Fixed

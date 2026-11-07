@@ -12,6 +12,10 @@
   in ChemDraw unter Windows und Linux.
 - Beispiele in Oberfläche, Handbuch und Änderungsliste verwenden erfundene Verbindungsnummern, Laborkürzel und Werte.
 
+### Behoben
+- **Zeichnen:** Zwei Finger auf dem Trackpad zoomten in Octet den ganzen Editor, die Werkzeugleisten wuchsen aus dem Fenster.
+  Jetzt wird die Zeichnung gezoomt, wie mit Strg/⌘ + Scrollen.
+
 ## 2.6.4 – 2026-11-06
 
 ### Behoben

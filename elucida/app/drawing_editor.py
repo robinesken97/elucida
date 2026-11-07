@@ -6,6 +6,7 @@ import functools
 import hashlib
 import http.server
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -404,6 +405,17 @@ class DrawingEditor(QWidget):
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Enter:
             self.focus_canvas_if_idle()
+        # A trackpad pinch (macOS) reaches Chromium as page zoom, which scales Octet's panels off screen. Hand it to
+        # Octet as Ctrl+wheel instead, which zooms the drawing (Octet: zoom = exp(-deltaY / 100)).
+        if event.type() == QEvent.NativeGesture and getattr(self, "page", None) is not None and event.gestureType() in (
+                Qt.ZoomNativeGesture, Qt.SmartZoomNativeGesture):
+            if event.gestureType() == Qt.ZoomNativeGesture and event.value() > -1:
+                p = event.position()
+                self.page.runJavaScript(
+                    f'document.elementFromPoint({p.x():.1f}, {p.y():.1f})?.dispatchEvent(new WheelEvent("wheel", '
+                    f'{{ctrlKey: true, bubbles: true, cancelable: true, clientX: {p.x():.1f}, clientY: {p.y():.1f}, '
+                    f'deltaY: {-100 * math.log1p(event.value()):.3f}}}))')
+            return True
         # Keep drawing shortcuts in the web view; global Qt Undo/Save must not take them.
         if event.type() == QEvent.ShortcutOverride and self.view and (obj is self.view or isinstance(obj, QWidget) and self.view.isAncestorOf(obj)):
             event.accept()
