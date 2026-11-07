@@ -31,13 +31,12 @@ const local = (v: string) => v.replace(/url\(\s*(["']?)[^#"')]*#([^"')]+)\1\s*\)
 
 // The drawing on `canvas` (an <svg> whose first <g> holds the drawing in px at 100%, as the editor's canvas does)
 // as a standalone SVG: only what is inside `bounds` (px, in that <g>'s frame), at true size with 1 user unit = 1 pt
-// (`ptPerPx` points per px), its edges rounded outward to whole points. Octet's own layers are left out. Colours
+// (`ptPerPx` points per px), its edges rounded outward to hundredths of a point (frameOf). Octet's own layers are left out. Colours
 // are written out as on white paper (the light theme's ink and paper), so CSS variables and classes are no longer
 // needed. Everything in the canvas inside the bounds is drawn: for a part of the drawing, pass a canvas showing
 // only that part.
 export function standaloneSvg(canvas: SVGSVGElement, bounds: [number, number, number, number], ptPerPx: number): string {
-  const [x0, y0] = [Math.floor(bounds[0] * ptPerPx), Math.floor(bounds[1] * ptPerPx)];
-  const [w, h] = [Math.max(1, Math.ceil(bounds[2] * ptPerPx) - x0), Math.max(1, Math.ceil(bounds[3] * ptPerPx) - y0)];
+  const [x0, y0, w, h] = frameOf(bounds, ptPerPx);
   // The light theme for a moment: nothing is painted before the attributes go back. The colours go back through
   // element.style, as the CSP allows no style attribute.
   const saved = ["data-theme", "class"].map((a) => [a, canvas.getAttribute(a)] as const);
@@ -112,21 +111,76 @@ export function standaloneSvg(canvas: SVGSVGElement, bounds: [number, number, nu
   }
 }
 
+// A picture's view box in pt (x, y, width, height) for `bounds` in px: rounded outward to hundredths of a point, at
+// least one hundredth across. Issue 20: whole points made the frame up to 2 pt larger than the ink; ChemDraw's is
+// within 0.2 pt of it.
+export function frameOf(bounds: [number, number, number, number], ptPerPx: number): [number, number, number, number] {
+  const [x0, y0] = [Math.floor(bounds[0] * ptPerPx * 100 + 1e-6), Math.floor(bounds[1] * ptPerPx * 100 + 1e-6)];
+  const [x1, y1] = [Math.ceil(bounds[2] * ptPerPx * 100 - 1e-6), Math.ceil(bounds[3] * ptPerPx * 100 - 1e-6)];
+  return [x0 / 100, y0 / 100, Math.max(1, x1 - x0) / 100, Math.max(1, y1 - y0) / 100];
+}
+
+// The ink of a <text>'s glyphs in its own frame (x0, y0, x1, y1). getBBox gives the line box instead, the font's
+// ascent to its descent: some 2 pt above a capital and 2 pt below the baseline at 10 pt (issue 20: a pasted picture
+// was 4.6 pt taller than its drawing). Each character is measured (`ink`: its glyph's box about its origin, in the
+// font of the element that holds it) where the browser placed it. Undefined if it cannot be done (characters the
+// browser collapsed or turned, text with a line through or under it, or nothing to measure): use getBBox.
+export type GlyphInk = (ch: string, el: Element) => [number, number, number, number] | undefined;
+export function inkOfText(text: SVGTextElement, ink: GlyphInk): [number, number, number, number] | undefined {
+  const chars: [string, Element][] = [];
+  const walk = (n: Node) => n.childNodes.forEach((c) => {
+    if (c.nodeType === 3) for (const ch of c.nodeValue ?? "") chars.push([ch, n as Element]);
+    else if (c.nodeType === 1) walk(c);
+  });
+  walk(text);
+  if (!chars.length || chars.length !== text.getNumberOfChars()) return undefined;
+  let box: [number, number, number, number] | undefined;
+  for (let i = 0; i < chars.length; i++) {
+    const [ch, el] = chars[i];
+    if (/\s/.test(ch)) continue;
+    if (text.getRotationOfChar(i)) return undefined;
+    const g = ink(ch, el), at = text.getStartPositionOfChar(i);
+    if (!g) return undefined;
+    const b: [number, number, number, number] = [at.x + g[0], at.y + g[1], at.x + g[2], at.y + g[3]];
+    box = box ? [Math.min(box[0], b[0]), Math.min(box[1], b[1]), Math.max(box[2], b[2]), Math.max(box[3], b[3])] : b;
+  }
+  return box;
+}
+// A glyph's ink about its origin, as the browser draws it in `el`'s font (canvas measureText); undefined for text with
+// a decoration line, whose ink measureText leaves out, and for text on a baseline other than the alphabetic one (an
+// atom's number and R or S sit on the middle one), which Chromium leaves out of getStartPositionOfChar.
+let measurer: CanvasRenderingContext2D | null | undefined;
+export const glyphInk: GlyphInk = (ch, el) => {
+  measurer ??= document.createElement("canvas").getContext("2d");
+  const s = getComputedStyle(el), text = el.closest("text");
+  if (!measurer || s.textDecorationLine !== "none" || (text && getComputedStyle(text).textDecorationLine !== "none")) return undefined;
+  if (!/^(auto|alphabetic)$/.test(s.dominantBaseline || "auto") || !/^(auto|baseline|alphabetic)$/.test(s.alignmentBaseline || "auto")) return undefined;
+  measurer.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+  const m = measurer.measureText(ch);
+  return [-m.actualBoundingBoxLeft, -m.actualBoundingBoxAscent, m.actualBoundingBoxRight, m.actualBoundingBoxDescent];
+};
+
 // Copy: the picture (standaloneSvg of the selection, with the selection's CDXML hidden in it: on the Mac a PDF, on
 // Windows an EMF, on Linux a PNG), then CDX, the CDXML as its own type (cdxmlType), its molfile, SMILES and Octet's
-// JSON, on the clipboard as ChemDraw puts them on each system (src-tauri/src/clipboard.rs). Each left out is not put
-// on. Call it from the copy event after preventDefault(), and set nothing on clipboardData: plain text would make
-// ChemDraw paste a caption. With `text`, only that text goes on (Edit > Copy As).
+// JSON, on the clipboard under ChemDraw's names on each system (src-tauri/src/clipboard.rs). ChemDraw itself puts no
+// CDXML type on; ChemDraw JS does. Each left out is not put on. Call it from the copy event after preventDefault(),
+// and set nothing on clipboardData: plain text would make ChemDraw paste a caption. With `text`, only that text goes
+// on (Edit > Copy As).
 // dpi: the export resolution, which the PNG and bitmap on Windows and Linux take (as ChemDraw's Copy As PNG takes
 // its Save As PNG resolution), at most 16 million pixels.
 export const copyToClipboard = (c: { dpi?: number; svg?: string; cdxml?: string; cdxmlType?: boolean; cdx?: string; molfile?: string; smiles?: string; octetJson?: string; text?: string }) =>
   EMBEDDED ? host<void>("copy", c) : invoke<void>("copy_to_clipboard", c);
 
-// What paste can use from the clipboard, each null when absent: Octet's JSON; CDXML (ChemDraw's CDXML type, or
-// hidden in a pasted picture: Octet's, ChemDraw's, or either copied back out of Word); ChemDraw's CDX as base64;
-// a molfile or RXN file; SMILES. All of it comes from another program: read it as a hostile file.
-export type Clipboard = { octet: string | null; cdxml: string | null; cdx: string | null; molfile: string | null; smiles: string | null; text: string | null; picture: string | null; spectrum?: [string, string] | null };
+// What paste can use from the clipboard, each null when absent: Octet's JSON; CDXML (the CDXML type Octet and
+// ChemDraw JS write, or hidden in a pasted picture: Octet's, ChemDraw's PDF on the Mac, or either copied back out of
+// Word); ChemDraw's CDX as base64; a molfile or RXN file; SMILES. All of it comes from another program: read it as a
+// hostile file. filled: the clipboard holds something, usable or not.
+export type Clipboard = { octet: string | null; cdxml: string | null; cdx: string | null; molfile: string | null; smiles: string | null; text: string | null; picture: string | null; spectrum?: [string, string] | null; filled?: boolean };
 export const readClipboard = () => EMBEDDED ? host<Clipboard>("paste") : invoke<Clipboard>("read_clipboard");
+// What Paste says when nothing on the clipboard pasted: why the text is not a structure, else that it cannot read
+// what is there (a ChemDraw picture copied back out of Word on Windows, issue 23). Nothing for an empty clipboard.
+export const pasteRefused = (clip: Pick<Clipboard, "filled">, text: string | undefined, why: string) =>
+  text?.trim() ? `Octet cannot read this structure. ${why}` : clip.filled ? "Octet cannot read what is on the clipboard." : undefined;
 
 export type ExportFormat = "oct" | "pdf" | "svg" | "png" | "emf" | "eps" | "tif" | "jpg" | "gif" | "cdxml" | "cdx" | "mol" | "mol2000" | "sdf" | "sdf2000" | "rxn" | "rxn2000" | "rdf" | "rdf2000" | "smi" | "inchi";
 // The pictures: vector (PDF, SVG, EMF, EPS) and pixels at a resolution (PNG, TIFF, JPEG, GIF; JPEG is always on white).
@@ -145,9 +199,9 @@ export const EXPORT_FORMATS: [ExportFormat, string][] = [["oct", "Octet drawing 
   ["sdf", "SDF"], ["sdf2000", "SDF V2000"], ["rxn", "RXN"], ["rxn2000", "RXN V2000"], ["rdf", "RDF"], ["rdf2000", "RDF V2000"], ["smi", "SMILES"], ["inchi", "InChI"]];
 // A picture from standaloneSvg with a margin of `pt` all round: its size and view box grow by that much.
 export function withMargin(svg: string, pt: number): string {
-  const m = Math.max(0, Math.min(72, pt));
+  const m = Math.max(0, Math.min(72, pt)), n = (v: number) => +v.toFixed(4);
   return svg.replace(/^(<svg[^>]*?)\swidth="([\d.]+)pt"\sheight="([\d.]+)pt"\sviewBox="([-\d.]+) ([-\d.]+) ([\d.]+) ([\d.]+)"/, (_, head, w, h, x, y, vw, vh) =>
-    `${head} width="${+w + 2 * m}pt" height="${+h + 2 * m}pt" viewBox="${+x - m} ${+y - m} ${+vw + 2 * m} ${+vh + 2 * m}"`);
+    `${head} width="${n(+w + 2 * m)}pt" height="${n(+h + 2 * m)}pt" viewBox="${n(+x - m)} ${n(+y - m)} ${n(+vw + 2 * m)} ${n(+vh + 2 * m)}"`);
 }
 // Raster resolution: any dpi from 36 to 2400 (Rust clamps to the same), with these as quick picks (1440 is ChemDraw's
 // highest). A picture has at most 100 million pixels and 20,000 on a side (draw in src-tauri/src/export.rs).

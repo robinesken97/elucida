@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { addCaption, extractSelection } from "./edit.ts";
 import type { Atom, Bond, Mol } from "./render.ts";
 import { addSet, addSetOf, addTo, changePalette, closePalette, duplicateTemplate, freeSetName, loadTemplates, MOST_PALETTES, moveTemplate, MY_SET, newTemplate, openPalette, ownId, PALETTE_COLUMNS, placeTemplate,
-  readPalettes, readSize, removeSet, removeTemplate, renameSet, renameTemplate, TEMPLATE_SIZES, templateKind, templateToEnd, templateToStart, updateTemplate, type Kept, type TemplateSize } from "./templates.ts";
+  readPalettes, readSize, removeSet, removeTemplate, renameSet, renameTemplate, TEMPLATE_SIZES, templateKind, templateToEnd, templateToStart, updateTemplate, legible, type Kept, type TemplateSize } from "./templates.ts";
 
 const atom = (label: string, x: number, y: number, more: Partial<Atom> = {}): Atom => ({ label, location: [x, y, 0], ...more });
 const bond = (a: number, b: number, type = 1, more: Partial<Bond> = {}): Bond => ({ atoms: [a, b], type, ...more });
@@ -376,6 +376,33 @@ const clashing = items.filter((t) => t.mol.atoms.length).flatMap((t) => { const 
 assert.deepEqual(clashing, [], "labels clear of each other and of other atoms' bonds");
 console.log(`templates: the labels of all ${items.filter((t) => t.mol.atoms.length).length} structure templates are clear of each other and of other bonds ok`);
 
+// The nucleobases face one way: the N that bonds to the sugar (N9 of a purine, N1 of a pyrimidine) is the NH next to a
+// ring CH, the lowest atom, with its two ring bonds level so the sugar's bond would point straight down; the
+// Watson-Crick edge's O and NH2 (and every other O and N outside the rings) are on the right; the ring CH atoms of the
+// other edge (C8, or C5 and C6) and thymine's methyl are on the left.
+{
+  const bases = LIBRARY.find((c) => c.name === "Nucleobases")!.items;
+  assert.deepEqual(bases.map((t) => t.name), ["Adenine", "Guanine", "Cytosine", "Thymine", "Uracil"]);
+  for (const { name, mol } of bases) {
+    const near = (i: number) => mol.bonds.filter((b) => b.atoms.includes(i)).map((b) => ({ j: b.atoms[0] === i ? b.atoms[1] : b.atoms[0], order: b.type ?? 1 }));
+    const degree = (i: number) => near(i).length, x = (i: number) => mol.atoms[i].location[0], y = (i: number) => mol.atoms[i].location[1];
+    const ch = (i: number) => mol.atoms[i].label === "C" && degree(i) === 2;
+    const sugar = mol.atoms.flatMap((a, i) => (a.label === "N" && near(i).length === 2 && near(i).every((n) => n.order === 1) && near(i).some((n) => ch(n.j)) ? [i] : []));
+    assert.equal(sugar.length, 1, `${name}: one NH next to a ring CH (the 9H purine or 1H pyrimidine)`);
+    const n = sugar[0], [p, q] = near(n).map((m) => m.j);
+    assert.ok(mol.atoms.every((_, i) => y(i) >= y(n) - 0.005), `${name}: the sugar's N is lowest`);
+    assert.ok(Math.abs(y(p) - y(q)) < 0.005 && Math.abs((x(p) + x(q)) / 2 - x(n)) < 0.005 && y(p) > y(n), `${name}: the sugar's bond points straight down`);
+    const outside = mol.atoms.flatMap((a, i) => (degree(i) === 1 && a.label !== "C" ? [i] : []));
+    assert.ok(outside.length && outside.every((i) => x(i) >= x(n) - 0.005), `${name}: the Watson-Crick edge on the right`);
+    assert.ok(outside.some((i) => x(i) > x(n) + 0.5), `${name}: and some of it well to the right`);
+    // The ring CH next to the sugar's N (C8, or C6), a ring CH next to that (C5) and a methyl.
+    const first = near(n).filter((m) => ch(m.j)).map((m) => m.j), back = [...first, ...first.flatMap((i) => near(i).filter((m) => ch(m.j)).map((m) => m.j)),
+      ...mol.atoms.flatMap((a, i) => (a.label === "C" && degree(i) === 1 ? [i] : []))];
+    assert.ok(back.length && back.every((i) => x(i) < x(n)), `${name}: the other edge on the left`);
+  }
+  console.log("templates: the nucleobases face one way (sugar's N down, Watson-Crick edge right) ok");
+}
+
 const dir = new URL("./vendor/opsin/", import.meta.url);
 if (!existsSync(new URL("opsin.js", dir))) { console.log("templates: chemistry skipped (no OPSIN build)"); process.exit(0); }
 // chem.ts reads the drawing tokens and loads Indigo's wasm as a browser does; these stand in for the browser.
@@ -387,6 +414,30 @@ gl.self = { location: { origin: "file://" } };
 gl.fetch = async (u: URL | string) => new Response(readFileSync(new URL(String(u))), { headers: { "content-type": "application/wasm" } });
 const chem = await import("./chem.ts");
 await chem.ready;
+// Every template placed by the Template tool (or Ring tool, or the command palette) keeps its own bonds: a click on
+// the canvas, and a click on a methyl carbon, which the template's first atom (R) joins. Azide stays N=N⁺=N⁻ with no
+// H on its last two N (it was drawn N=N⁺H–N⁻H, issue: Add Azide), and diazo, isocyanate, isothiocyanate, sulfone and
+// the other cumulated or hypervalent groups keep both double bonds. A ring fused onto a ring still never gives an
+// atom two double bonds (edit.check.ts, naphthalene).
+{
+  const { addTemplate } = await import("./edit.ts");
+  const { problems } = await import("./check.ts");
+  const methyl: Mol = { atoms: [atom("C", 0, 0), atom("C", 1, 0)], bonds: [bond(0, 1)] };
+  for (const t of LIBRARY.flatMap((c) => c.items).filter((x) => x.category === "Functional groups" || x.category === "Heterocycles" || x.category === "Ligands")) {
+    const types = (m: Mol) => m.bonds.map((b) => b.type).sort().join("");
+    const alone = addTemplate({ atoms: [], bonds: [] }, t.mol, { point: [0, 0] });
+    assert.equal(types(alone), types(t.mol), `${t.name}: placed on the canvas, its bonds as drawn`);
+    if (t.category !== "Functional groups") continue;
+    const on = addTemplate(methyl, t.mol, { atom: 1, point: [1, 0] });
+    assert.equal(types(on), types({ atoms: [], bonds: [...methyl.bonds, ...t.mol.bonds] }), `${t.name}: on an atom, its bonds as drawn`);
+    assert.deepEqual(problems(on).map((p) => p.message), [], `${t.name}: on an atom, no warnings`);
+  }
+  const azide = addTemplate(methyl, libraryItem("lib:Azide")!.mol, { atom: 1, point: [1, 0] });
+  assert.equal(chem.toSmiles(azide), "CCN=[N+]=[N-]");
+  assert.equal(chem.analyse(azide)?.[0].formula, "C2H5N3");
+  assert.equal(chem.toInchi(azide), "InChI=1S/C2H5N3/c1-2-4-5-3/h2H2,1H3");
+  console.log("templates: functional groups, heterocycles and ligands placed keep their bonds (azide N=N+=N-, no stray H) ok");
+}
 const pack = readFileSync(new URL("opsin-data.bin", dir)), files = new Map<string, Int8Array>();
 for (let p = 0; ; ) {
   const n = pack.readUInt16BE(p); p += 2;
@@ -473,7 +524,7 @@ console.log(`templates: ${stereo} templates with stereocentres or E/Z bonds are 
 // Names: Structure to Name as the editor runs it. Each name is read back to the template's own structure, and the
 // templates no name is given to are these (an R group, M or L; a carbene; a metal the namer leaves; r and s centres;
 // a cage). Lab items have no structure.
-const UNNAMED = new Set(["cis-Decalin", "trans-Decalin", "Cubane", "IMes", "IPr", "Cp2TiCl2", "Cp2ZrCl2", "(Benzene)Cr(CO)3", "CpMn(CO)3", "Bis(benzene)chromium",
+const UNNAMED = new Set(["cis-Decalin", "trans-Decalin", "Cubane", "IMes", "IPr", "Cp2TiCl2", "Cp2ZrCl2", "CpMn(CO)3",
   "Rh2(O2CR)4", "Rh2(O2CR)4L2", "Mo2(OAc)4", ...LIBRARY.filter((c) => c.name === "Functional groups" || c.name === "Cp and arene rings").flatMap((c) => c.items.map((t) => t.name))]);
 let named = 0;
 for (const t of molecular) {
@@ -484,8 +535,8 @@ for (const t of molecular) {
   const plain = name!.replace(/ \([^()]*(\([^()]*\)[^()]*)*\)$/, (s) => (nameToSmiles(name!.slice(0, -s.length)) ? "" : s));
   const p = sandwichIons(t.mol) ?? t.mol, smiles = nameToSmiles(plain);
   named++;
-  // A coordination compound's name with κ, which OPSIN does not read, was checked in parts (complexes.ts).
-  if (!smiles && /κ/.test(name!)) continue;
+  // A coordination compound's name with κ or η, which OPSIN does not read, was checked in parts (complexes.ts).
+  if (!smiles && /[κη]/.test(name!)) continue;
   assert.equal(withoutRingEZ(inchiOf(smiles!)), withoutRingEZ(inchiOf(p)), `${t.name}: "${name}" is its structure`);
 }
 for (const [name, want] of [["Ferrocene", "ferrocene"], ["Decamethylferrocene", "1,1',2,2',3,3',4,4',5,5'-decamethylferrocene"], ["Rh2(OAc)4", "tetrakis(μ-acetato-κO:κO')dirhodium(Rh—Rh)"],
@@ -517,3 +568,46 @@ for (const t of molecular) {
 for (const name of ["Cyclohexane chair", "Newman projection, anti", "Sawhorse projection, anti", "α-D-Glucopyranose (Haworth)", "β-D-Glucopyranose (chair)", "D-Glucose (Fischer)", "Rh2(OAc)4", "Ferrocene", "Cubane"])
   assert.ok(libraryItem(`lib:${name}`)!.mol.atoms.some((a) => a.location[2] || a.centre), `${name} is drawn in perspective`);
 console.log(`templates: Clean Up leaves ${kept} perspective and π templates as drawn and keeps ${cleaned} others whole ok`);
+
+// Issue 29: the Template button shows the last template used only while it reads at toolbar size. One ring system of
+// up to 14 atoms, or up to 9 atoms, does; two ring systems (adenosine: a purine and a ribose) or a bigger one do not.
+{
+  const lib = (name: string) => libraryItem(`lib:${name}`)!.mol;
+  for (const name of ["Benzene", "Naphthalene", "Anthracene", "Indole", "α-D-Glucopyranose", "Phenylalanine"]) assert.ok(legible(lib(name)), `${name} reads at toolbar size`);
+  for (const name of ["Biphenyl", "Pyrene", "Porphyrin", "PPh3"]) assert.ok(!legible(lib(name)), `${name} shows the books`);
+  const a = lib("Adenine"), r = lib("β-D-Ribofuranose"), n = a.atoms.length;
+  const adenosine: Mol = { atoms: [...a.atoms, ...r.atoms], bonds: [...a.bonds, ...r.bonds.map((b) => ({ ...b, atoms: [b.atoms[0] + n, b.atoms[1] + n] as [number, number] }))] };
+  assert.ok(!legible(adenosine), "adenosine shows the books");
+  assert.ok(legible({ atoms: [], bonds: [] }), "a template of arrows or text keeps its own icon");
+  console.log("templates: the Template button's icon reads at toolbar size ok");
+}
+
+// Issue 36: generic stereocentres come first in the Stereocentres set, before the named compounds. Each is a carbon
+// with a wedge and a hash (or one of them, the H left out) whose narrow ends are at the carbon, or a Fischer cross; it
+// gives no warning bare, and with its ends labelled F, Cl, Br and I in turn it is a stereocentre Indigo reads as set,
+// R or S. The four turned drawings are one configuration; the wedge and hash three-bond drawings are mirror images.
+{
+  const { problems } = await import("./check.ts");
+  const set = LIBRARY.find((c) => c.name === "Stereocentres")!.items, generic = set.slice(0, 7);
+  assert.deepEqual(generic.map((t) => t.name), ["Stereocentre, plain bonds up", "Stereocentre, plain bonds down", "Stereocentre, plain bonds left", "Stereocentre, plain bonds right",
+    "Stereocentre, three bonds, wedge", "Stereocentre, three bonds, hash", "Fischer projection, one centre"]);
+  assert.equal(set[7].name, "(R)-Bromochlorofluoromethane", "then the named compounds");
+  const config = (m: Mol) => {
+    const c = m.atoms.findIndex((_, i) => m.bonds.filter((b) => b.atoms.includes(i)).length >= 3);
+    for (const b of m.bonds) if (b.stereo) assert.equal(b.atoms[0], c, "the narrow end at the carbon");
+    assert.deepEqual(problems(m, chem.stereoFacts(m)), [], "no warning bare");
+    const ends = m.bonds.map((b) => b.atoms[1]), halo = ["F", "Cl", "Br", "I"];
+    const x: Mol = { ...m, atoms: m.atoms.map((a, i) => (ends.includes(i) ? { ...a, label: halo[ends.indexOf(i)] } : a)) };
+    // Indigo's warnings read wedges; a Fischer cross is read from its atoms' places, so its InChI must set the centre.
+    const facts = chem.stereoFacts(x);
+    if (m.bonds.some((b) => b.stereo)) assert.ok(facts.centres.has(c) && !facts.unset.has(c) && !facts.conflict.has(c), "a set stereocentre");
+    else assert.match(chem.toInchi(x) ?? "", /\/t1-\/m[01]\/s1/, "a set stereocentre");
+    return chem.cipOf(x).atoms[c];
+  };
+  const [up, down, left, right, wedge, hash, fischer] = generic.map((t) => config(t.mol));
+  assert.ok(up === "R" || up === "S", up);
+  assert.deepEqual([down, left, right], [up, up, up], "turned, the same configuration");
+  assert.ok((wedge === "R" && hash === "S") || (wedge === "S" && hash === "R"), "mirror images");
+  assert.ok(fischer === "R" || fischer === "S", fischer);
+  console.log("templates: generic stereocentres first, each a set stereocentre ok");
+}

@@ -125,7 +125,8 @@ assert.deepEqual(said(table), [["shape", "Table, two rows, two columns", "Entry,
 assert.deepEqual(said(addShape({ atoms: [], bonds: [] }, { kind: "brackets", from: [0, 0], to: [2, 2], polymer: { usage: "sru" } })[0]), [["shape", "Brackets, SRU n"]]);
 assert.deepEqual(said(addShape({ atoms: [], bonds: [] }, { kind: "oval", from: [0, 0], to: [2, 2], dashed: true })[0]), [["shape", "Oval, dashed"]]);
 assert.deepEqual(said(addCaption({ atoms: [], bonds: [] }, { text: "Scheme 1\nSynthesis of aspirin", x: 0, y: 0 })[0]), [["text", "Scheme 1, Synthesis of aspirin"]]);
-// A spectrum added to the drawing (Editor.tsx addSpectrum) is one integral group, read by its title.
+// A spectrum added to the drawing (Editor.tsx addSpectrum) is one group, read by its title, as a click picks it whole.
+// Pick as one makes no difference.
 let spectrum: Mol = { atoms: [], bonds: [] };
 const parts: number[] = [];
 for (const add of [
@@ -134,6 +135,7 @@ for (const add of [
   (m: Mol) => addCaption(m, { text: "¹H NMR (400 MHz, CDCl3), predicted", x: 0, y: 4 }),
 ]) { const [m, id] = add(spectrum); spectrum = m; parts.push(id); }
 const [grouped, gid] = groupSelection(spectrum, new Set(), new Set(parts))!;
+assert.deepEqual(said(grouped), [["spectrum", "¹H NMR (400 MHz, CDCl3), predicted"]]);
 spectrum = { ...grouped, groups: grouped.groups!.map((g) => (g.id === gid ? { ...g, integral: true as const } : g)) };
 assert.deepEqual(said(spectrum), [["spectrum", "¹H NMR (400 MHz, CDCl3), predicted"]]);
 

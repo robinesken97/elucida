@@ -72,10 +72,11 @@ export function Dialog({ title, action, onClose, onAction = onClose, plain, disa
   const top = useModal(backdrop, !leaving);
   // The first field (a text box, a list or a choice) takes the focus when the dialog opens, and only then: a dialog
   // draws again as its fields change, and the focus stays in the field being typed in. With no field, the action has
-  // it, never the third choice (Don't Save, Replace): Space on it would lose work.
+  // it, never the third choice (Don't Save, Replace): Space on it would lose work. What's new's section names are not
+  // fields: Close has the focus there.
   useEffect(() => {
     const c = card.current;
-    (c?.querySelector<HTMLElement>("textarea, input, select, .dialog-body button:not([tabindex='-1'])") ?? c?.querySelector<HTMLElement>(".dialog-button.primary"))?.focus();
+    (c?.querySelector<HTMLElement>("textarea, input, select, .dialog-body button:not([tabindex='-1']):not(.notes-tab)") ?? c?.querySelector<HTMLElement>(".dialog-button.primary"))?.focus();
   }, []);
   useEffect(() => {
     if (leaving) return;

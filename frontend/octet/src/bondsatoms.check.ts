@@ -130,6 +130,21 @@ console.log("bondsatoms.check: crossing bonds and bond order ok");
 }
 console.log("bondsatoms.check: label alignment ok");
 
+// A label Octet has no abbreviation for reads right to left by its words, never letter by letter: ODMT with its bond on
+// the right is DMTO (it was TMDO), NPhth is PhthN, CH2ODMT is DMTOH2C, and a generic or unknown word (SEM, ALK) reads as
+// typed. Flush Left keeps ODMT as typed, and that alignment is saved (CDXML LabelJustification, so .oct too).
+{
+  const drawn = (text: string, align?: Atom["align"]) => render({ atoms: [A("O", 0, 0, { text, ...(align ? { align } : {}) }), A("C", 1, 0)], bonds: [b(0, 1)] }, S, ink).labels.slice().sort((p, q) => p.x - q.x).map((l) => l.text).join("");
+  for (const [text, shown] of [["ODMT", "DMTO"], ["NPhth", "PhthN"], ["CH2ODMT", "DMTOH2C"], ["OMe", "MeO"], ["NHBoc", "BocHN"], ["SEM", "SEM"], ["ALK", "ALK"], ["OR", "RO"]] as const)
+    assert.equal(drawn(text), shown, `${text} read right to left`);
+  assert.equal(drawn("ODMT", "left"), "ODMT", "flush left: as typed");
+  const flush = { atoms: [A("O", 0, 0, { text: "ODMT", align: "left" as const }), A("C", 1, 0)], bonds: [b(0, 1)] };
+  assert.match(toCdxml(flush, DEFAULT_STYLE), /LabelJustification="Left"/);
+  assert.equal(roundTrip(flush).atoms[0].align, "left");
+  assert.equal(parse(serialize(flush)).atoms[0].align, "left");
+}
+console.log("bondsatoms.check: unknown abbreviations read right to left by word ok");
+
 // CD-21. Interpret Chemically off: the label is its text (an N with two H stays NH2), saved as an Unspecified node
 // whose label is InterpretChemically="no", as ChemDraw saves it. On again, a label that reads as its element with its
 // usual H goes back to the element.

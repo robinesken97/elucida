@@ -35,6 +35,28 @@ export function condensedSmiles(text: string): string | undefined {
   return g && smilesOf(g);
 }
 
+// SMILES for an atom label written as a condensed formula from its attachment atom (CH2N3, SO2Me, CH2CN, CH2NO2,
+// CH2CO2Me), its first atom first, or undefined when it is not one Octet can read in one way. The label is read as a
+// whole formula with the bond to the drawing as one more substituent of its first atom, so every valence is used:
+// N3 and NO2 are azide and nitro, SO2 a sulfone, a short bond along the chain a double or triple bond.
+export function condensedLabel(text: string): string | undefined {
+  if (text.length > 40 || !/^[A-Z][A-Za-z0-9()]*$/.test(text)) return undefined;
+  const tokens = tokenise(text);
+  if (!tokens?.length || tokens[0].t !== "atom") return undefined;
+  const g = assemble([{ t: "group", smiles: "[*]" }, ...tokens], 0);
+  // A label leaves out what a chemist takes as read (SiOMe, SCMe, CCO2H): a double or triple bond only where the group
+  // written always has one, C=O, N=O, P=O, S=O, C=S and P=S, and C≡N, C≡C or C=N along the chain, and never O–O.
+  // Others are read left to right instead (labelSmiles).
+  const el = (i: number) => g!.nodes[i].el ?? "", pair = (a: number, b: number) => el(a) + el(b);
+  const fine = (b: Bond) => b.order === 1 ? pair(b.a, b.b) !== "OO" : b.fixed ? /^([CNPS]O|[CP]S)$/.test(pair(b.a, b.b)) : /^[CN][CN]$/.test(pair(b.a, b.b));
+  if (!g?.bonds.every(fine)) return undefined;
+  const smiles = smilesOf(g);
+  if (!smiles?.startsWith(`[${tokens[0].el}`)) return undefined;
+  // The bond to the drawing goes; hydrogens are left to valence, as the rest of Octet's label SMILES has them.
+  const out = smiles.replace(/\(\[\*\]\)|\[\*\]/, "").replace(/\[(Cl|Br|[BCNOPSFI])(?:H\d*)?\]/g, "$1");
+  return out.includes("*") ? undefined : out;
+}
+
 // The text as tokens: atoms with their hydrogens, groups, brackets (inner tokens, repeated by the count after them) and
 // bonds. Undefined for anything that is not a formula.
 function tokenise(text: string, depth = 0): Token[] | undefined {

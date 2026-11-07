@@ -1,6 +1,6 @@
 // Writes src-tauri/licences/third-party.txt, the licence notices of everything the app ships (REL-12): the Rust
 // crates in the binary on the Mac, Windows and Linux, the npm packages in the page, the libraries inside Indigo's
-// WASM (src-tauri/licences/indigo-wasm.txt, written by hand), and OPSIN's, nmrshiftdb2's, Wikidata's and PubChem's notices. The app bundles the file and About > Licences opens it. Run it after a dependency changes:
+// WASM (src-tauri/licences/indigo-wasm.txt, written by hand), and OPSIN's, nmrshiftdb2's, Wikidata's, the FDA's and PubChem's notices. The app bundles the file and About > Licences opens it. Run it after a dependency changes:
 //   node scripts/licences.mjs
 // It needs cargo, and the crates' sources (cargo downloads them).
 import { execFileSync } from "node:child_process";
@@ -116,7 +116,7 @@ const rule = "=".repeat(80);
 let out = `Octet includes the software and data below. Each part keeps its own licence.\nOctet itself is under the Apache License 2.0.\n` +
   `The source code of each Rust crate is on crates.io, and of each npm package on npmjs.com.\n\n`;
 for (const [text, list] of groups) out += `${rule}\n${list.map((p) => `${p.name} (${p.licence})`).join("\n")}\n${rule}\n\n${text}\n\n`;
-for (const [name, file] of [["The libraries inside Indigo's WASM", "src-tauri/licences/indigo-wasm.txt"], ["OPSIN and the libraries in its build", "src/vendor/opsin/NOTICES.txt"], ["nmrshiftdb2 data", "data/nmr/LICENCE.txt"], ["Wikidata data", "data/names/NOTICE.txt"], ["PubChem data", "src-tauri/licences/pubchem.txt"]])
+for (const [name, file] of [["The libraries inside Indigo's WASM", "src-tauri/licences/indigo-wasm.txt"], ["OPSIN and the libraries in its build", "src/vendor/opsin/NOTICES.txt"], ["nmrshiftdb2 data", "data/nmr/LICENCE.txt"], ["Wikidata and FDA UNII data", "data/names/NOTICE.txt"], ["PubChem data", "src-tauri/licences/pubchem.txt"]])
   out += `${rule}\n${name}\n${rule}\n\n${read(join(root, file))}\n\n`;
 writeFileSync(join(root, "src-tauri/licences/third-party.txt"), out);
 console.log(`${parts.length} packages, ${groups.size} texts, ${(out.length / 1024).toFixed(0)} KB`);

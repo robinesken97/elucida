@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { graphOf } from "./naming.ts";
 import { iupacNameWhy } from "./namer.ts";
 import { sandwichIons } from "./metals.ts";
-import { addGroupAt } from "./edit.ts";
+import { addGroupAt, dragBond } from "./edit.ts";
 import { cipLabels } from "./cip.ts";
 import type { Mol } from "./render.ts";
 
@@ -185,6 +185,16 @@ for (const [metal, want] of [["Fe", "ferrocene"], ["Ru", "ruthenocene"], ["Os", 
   const ions = sandwichIons(m)!, name = iupacNameWhy(graphOf(ions)!).name;
   assert.equal(name, want);
   assert.equal(ketInchi(ions), convert(opsin.parseToSmiles(want), "inchi"), `${want} drawn with j`);
+}
+// Ferrocene as issue 26 drew it: Fe, two cyclopentadiene rings from the Ring tool, and a bond from Fe to the middle of
+// each, which joins the ring through a multi-centre point.
+{
+  const cp = (cy: number, base: number): Mol => ({ atoms: [0, 1, 2, 3, 4].map((k) => ({ label: "C", location: [0.85 * Math.cos(((90 + 72 * k) * Math.PI) / 180), cy + 0.85 * Math.sin(((90 + 72 * k) * Math.PI) / 180), 0] as [number, number, number] })),
+    bonds: [2, 1, 2, 1, 1].map((type, k) => ({ type, atoms: [base + k, base + ((k + 1) % 5)] as [number, number] })) });
+  const [low, high] = [cp(-2, 1), cp(2, 6)];
+  let m: Mol = { atoms: [{ label: "Fe", location: [0, 0, 0] }, ...low.atoms, ...high.atoms], bonds: [...low.bonds, ...high.bonds] };
+  m = dragBond(dragBond(m, 0, [0, -2]), 0, [0, 2]);
+  assert.equal(iupacNameWhy(graphOf(sandwichIons(m)!)!).name, "ferrocene");
 }
 // Not a sandwich: one Cp ring on the metal, or an η6 arene.
 let half: Mol = { atoms: [{ label: "Fe", location: [0, 0, 0] }], bonds: [] };

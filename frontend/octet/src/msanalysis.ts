@@ -5,7 +5,7 @@
 import { HBOND, hydrogens, orderOf, type Mol } from "./render.ts";
 import { isotopePattern, isotopesOf } from "./mass.ts";
 import { ELEMENTS } from "./labels.ts";
-import type { Figure } from "./spectrumplot.ts";
+import { inkOf, pageLabels, type Figure } from "./spectrumplot.ts";
 import { crossedBonds } from "./masscut.ts";
 
 type P = [number, number];
@@ -282,30 +282,24 @@ export function mzRange(mzs: number[]): [number, number] {
 // The stick spectrum as a figure for the page (as spectrumFigure's): an axis with m/z ticks, each ion's isotope
 // peaks over 1% as sticks in its colour, and each labelled with its monoisotopic m/z (or its most intense peak's, with
 // label "top"). width and height in bond lengths; em: the labels' size in bond lengths.
-export function msFigure(o: { ions: { ion: IonOf; colour?: string }[]; range: [number, number]; width: number; height: number; em: number; label?: "mono" | "top"; decimals?: number }): Figure {
+export function msFigure(o: { ions: { ion: IonOf; colour?: string }[]; range: [number, number]; width: number; height: number; em: number; pt?: number; label?: "mono" | "top"; decimals?: number; measure?: (t: string) => number }): Figure {
   const [lo, hi] = o.range, W = o.width, H = o.height, em = o.em, x = (mz: number) => ((mz - lo) / (hi - lo)) * W;
   const out: Figure = { lines: [{ from: [0, 0], to: [W, 0] }], curves: [], texts: [] };
   for (const v of mzTicks(lo, hi, W, 4 * em)) {
     out.lines.push({ from: [x(v), 0], to: [x(v), -0.15] });
-    out.texts.push({ text: String(v), at: [x(v), -0.15 - 0.85 * em], align: "centre", size: 0.9 });
+    out.texts.push({ text: String(v), at: [x(v), -0.15 - 0.85 * em], align: "centre" });
   }
-  out.texts.push({ text: "m/z", at: [W, -0.15 - 1.9 * em], align: "right", size: 0.9 });
-  const tops: { at: number; mz: number; colour?: string }[] = [];
-  for (const { ion, colour } of o.ions) {
-    for (const p of ion.pattern ?? []) if (p.rel >= 1 && p.mz >= lo && p.mz <= hi) out.lines.push({ from: [x(p.mz), 0], to: [x(p.mz), (p.rel / 100) * H], colour });
+  out.texts.push({ text: "m/z", at: [W, -0.15 - 1.9 * em], align: "right", role: "unit" });
+  const labels: Parameters<typeof pageLabels>[1] = [], drawn: [number, number][] = [];
+  o.ions.forEach(({ ion, colour }, k) => {
+    for (const p of ion.pattern ?? []) if (p.rel >= 1 && p.mz >= lo && p.mz <= hi) { out.lines.push({ from: [x(p.mz), 0], to: [x(p.mz), (p.rel / 100) * H], colour }); drawn.push([x(p.mz), (p.rel / 100) * H]); }
     const m = o.label === "top" ? ion.top : ion.mono;
-    if (m !== undefined && m >= lo && m <= hi) tops.push({ at: x(m), mz: m, colour });
-  }
-  // Labels over the peaks, spread apart, each on a leader to its peak.
-  const gap = em * 0.6 * 8, order = tops.map((t, i) => ({ t, i })).sort((a, b) => a.t.at - b.t.at), placed: number[] = [];
-  order.forEach((o2, k) => { placed[k] = Math.max(o2.t.at, k ? placed[k - 1] + gap : gap / 2); });
-  for (let k = order.length - 1; k >= 0; k--) placed[k] = Math.min(placed[k], k < order.length - 1 ? placed[k + 1] - gap : W - gap / 2);
-  const base = H + 0.45;
-  order.forEach(({ t }, k) => {
-    out.lines.push({ from: [placed[k], base], to: [placed[k], base - 0.12], colour: t.colour });
-    out.lines.push({ from: [placed[k], base - 0.12], to: [t.at, H + 0.08], colour: t.colour });
-    out.texts.push({ text: t.mz.toFixed(o.decimals ?? 4), at: [placed[k], base + 0.3 * em], align: "centre", size: 0.9, colour: t.colour });
+    if (m === undefined || m < lo || m > hi) return;
+    const text = m.toFixed(o.decimals ?? 4);
+    labels.push({ x: x(m), a: x(m), b: x(m), across: [text], turned: text, colour, role: `peak:${k}` });
   });
+  // Labels in a row over the peaks, each on a leader to its peak (the one label layout every spectrum uses).
+  pageLabels(out, labels, { width: W, height: H, em, pt: o.pt ?? 1 / 14.4, turn: "horizontal", ink: inkOf(drawn), measure: o.measure });
   return out;
 }
 

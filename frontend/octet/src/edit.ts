@@ -2,10 +2,10 @@
 // Coordinates are in bond lengths with y up, the same as KET.
 import { AROMATIC, HBOND, H_FIRST, hydrogens, lonePairs, orderOf, placedAt, QUADRUPLE, settleShape, tableLayout, tableRow, type Arrow, type Head, type Atom, type Bond, type Box, type Caption, type Curve, type Kept, type CurvePoint, type Mol, type Shape, type Spot, type Table } from "./render.ts";
 import { keepAngles, mapBranches, type Cycle } from "./cycle.ts";
-import { anchorElement, isElement, labelSmiles } from "./labels.ts";
+import { anchorElement, chemicalText, isElement, labelSmiles } from "./labels.ts";
 import type { DocStyle } from "./docstyle.ts";
 import { aromaticAtoms, rings as ringsOf } from "./rings.ts";
-import { whole } from "./richtext.ts";
+import { plainOf, styled, whole, without, type TextRun } from "./richtext.ts";
 import { OCENES } from "./metals.ts";
 
 export type P = [number, number];
@@ -92,6 +92,8 @@ function withBond(m: Mol, i: number, j: number, spec: BondSpec = SINGLE): Mol {
 // Direction for a new bond from atom i: 30° on a lone atom, a zig-zag off a chain end,
 // away from both bonds at a degree-2 atom, otherwise into the widest gap.
 export function nextDirection(m: Mol, i: number): P {
+  const chair = chairWay(m, i);
+  if (chair) return chair.d;
   const here = pos(m, i), ns = neighbours(m, i), dirs = ns.map((j) => unit(sub(pos(m, j), here)));
   if (!dirs.length) return [Math.cos(30 * deg), Math.sin(30 * deg)];
   // sp atoms (a triple bond, or two double bonds) carry straight on.
@@ -123,6 +125,57 @@ export function nextDirection(m: Mol, i: number): P {
   return [Math.cos(mid), Math.sin(mid)];
 }
 
+// A new bond off a ring atom of a chair cyclohexane, as chemists draw one (issue 35): the first axial, parallel to the
+// chair's upright axis and away from the atom's ring neighbours (so up and down in turn round the ring), the second
+// equatorial, parallel to the ring bonds once removed and pointing out of the ring. A chair is a six-membered ring
+// with three pairs of parallel bonds that turns both ways round (a flat hexagon turns one way); its upright axis is
+// square to the middle of its two shallowest pairs. Undefined for an atom of no chair, one with other bonds, or one
+// whose third bond is neither axial nor equatorial. z: in a chair drawn with depth (the Conformers templates), the new
+// atom's depth, so it is axial or equatorial in 3D too.
+export function chairWay(m: Mol, i: number): { d: P; z?: number } | undefined {
+  const ns = neighbours(m, i);
+  if (ns.length < 2 || ns.length > 3) return undefined;
+  for (const a of ns) for (const b of ns) {
+    if (a >= b) continue;
+    for (const p of neighbours(m, a)) for (const q of neighbours(m, p)) for (const r of neighbours(m, q)) {
+      const ring = [i, a, p, q, r, b];
+      if (new Set(ring).size < 6 || bondIndex(m, r, b) < 0) continue;
+      const way = chairAt6(m, ring, ns.find((x) => x !== a && x !== b));
+      if (way) return way;
+    }
+  }
+  return undefined;
+}
+function chairAt6(m: Mol, ring: number[], other: number | undefined): { d: P; z?: number } | undefined {
+  const pts = ring.map((x) => pos(m, x)), e = pts.map((p, k) => sub(pts[(k + 1) % 6], p)), u = e.map(unit), mean = e.reduce((s, v) => s + len(v), 0) / 6;
+  if (e.some((v) => Math.abs(len(v) - mean) > 0.25 * mean)) return undefined;
+  for (let k = 0; k < 3; k++) if (Math.abs(cross(u[k], u[k + 3])) > Math.sin(10 * deg) || dot(u[k], u[k + 3]) > 0) return undefined;
+  const turns = u.map((v, k) => cross(v, u[(k + 1) % 6]));
+  if (turns.some((t) => Math.abs(t) < 0.05) || turns.every((t) => t > 0) || turns.every((t) => t < 0)) return undefined;
+  // The two pairs nearest parallel to each other are the shallow ones; the upright axis is square to their middle.
+  const pairs: [number, number][] = [[0, 1], [0, 2], [1, 2]], [j, k] = pairs.reduce((x, y) => (Math.abs(dot(u[y[0]], u[y[1]])) > Math.abs(dot(u[x[0]], u[x[1]])) ? y : x));
+  const mid = unit(add(u[j], mul(u[k], Math.sign(dot(u[j], u[k])) || 1))), axis: P = [-mid[1], mid[0]];
+  const s1 = dot(sub(pts[1], pts[0]), axis), s5 = dot(sub(pts[5], pts[0]), axis);
+  if (Math.sign(s1) !== Math.sign(s5) || Math.abs(s1) < 0.05 * mean) return undefined;
+  const axial = mul(axis, s1 > 0 ? -1 : 1), c = mul(pts.reduce((s, p) => add(s, p), [0, 0] as P), 1 / 6);
+  let equatorial = u[1];
+  if (dot(equatorial, sub(pts[0], c)) < 0) equatorial = mul(equatorial, -1);
+  let d = axial;
+  if (other !== undefined) {
+    const o = unit(sub(pos(m, other), pts[0]));
+    if (dot(o, axial) > Math.cos(35 * deg)) d = equatorial;
+    else if (dot(o, equatorial) <= Math.cos(35 * deg)) return undefined;
+  }
+  // Depth: the axial bond square to the plane of alternate ring atoms, the equatorial one parallel to the ring bond
+  // once removed, each in 3D, taken one bond length across the page.
+  const z3 = ring.map((x) => m.atoms[x].location[2] ?? 0);
+  if (z3.every((z) => !z)) return { d };
+  const v3 = (x: number, y: number) => [pts[y][0] - pts[x][0], pts[y][1] - pts[x][1], z3[y] - z3[x]];
+  const [f, g] = [v3(0, 2), v3(0, 4)], n = [f[1] * g[2] - f[2] * g[1], f[2] * g[0] - f[0] * g[2], f[0] * g[1] - f[1] * g[0]];
+  const w = d === axial ? n : v3(1, 2), across = w[0] * d[0] + w[1] * d[1];
+  return Math.abs(across) < 0.2 * Math.hypot(...w) ? { d } : { d, z: z3[0] + w[2] / across };
+}
+
 // A bond from atom i (or from a new atom at a point) to point q. Joins an existing atom at q. A new atom takes the
 // scale of the atom the bond starts from. A wedge's narrow end is at the start.
 export function bondTo(m: Mol, from: number | P, q: P, spec: BondSpec = SINGLE): Mol {
@@ -138,6 +191,12 @@ export function bondTo(m: Mol, from: number | P, q: P, spec: BondSpec = SINGLE):
 // under the label, so the other zig-zag direction is taken when it is clear.
 export function sprout(m: Mol, from: number | P, spec: BondSpec = SINGLE, text = 0): Mol {
   if (typeof from !== "number") return bondTo(m, from, add(from, [Math.cos(30 * deg), Math.sin(30 * deg)]), spec);
+  // Off a chair drawn with depth, the new atom takes its axial or equatorial depth.
+  const chair = chairWay(m, from);
+  if (chair?.z !== undefined) {
+    const out = bondTo(m, from, add(pos(m, from), mul(chair.d, scaleAt(m, from))), spec), n = out.atoms.length - 1;
+    return n < m.atoms.length ? out : { ...out, atoms: out.atoms.map((a, k) => (k === n ? { ...a, location: [a.location[0], a.location[1], chair.z!] } : a)) };
+  }
   let d = nextDirection(m, from);
   const ns = neighbours(m, from), into = (v: P) => v[0] * text > Math.cos(60 * deg);
   if (text && into(d) && ns.length <= 1) {
@@ -234,15 +293,51 @@ export const showCarbon = (m: Mol, i: number) => setAtom(m, i, { label: "C", tex
 export const keyElement = (m: Mol, i: number, label: string) => (label === "C" ? showCarbon(m, i) : setElement(m, i, label));
 // Sets what an atom reads as. One element symbol makes it that element; anything else (OMe, CO2Et, Ph) is a
 // written label attached through its first element, or through carbon for a group. Empty text clears it to carbon.
+// A residue label (its bonds say which kept atom each joins) given another name: the new residue's atoms when the
+// name is one (sequence.ts relabel, set up by the editor, which has the chemistry); else its kept atoms and the bonds'
+// links go, and the label is read from its text as any other.
+export const labelHooks: { relabel?: (m: Mol, i: number, text: string) => Mol | undefined } = {};
+const portedAt = (m: Mol, i: number) => !!m.atoms[i]?.inner?.atoms.length && m.bonds.some((b) => b.ports && b.atoms.some((k, e) => k === i && b.ports![e] >= 0));
 export function setLabel(m: Mol, i: number, text: string): Mol {
   // A label of more than one line (Option-Return as it is typed) keeps its lines, each trimmed, empty ones left out.
   const t = text.split("\n").map((s) => s.trim()).filter(Boolean).join("\n");
+  if (portedAt(m, i) && t !== m.atoms[i].text) {
+    const r = labelHooks.relabel?.(m, i, t);
+    if (r) return r;
+    m = { ...setAtom(m, i, { inner: undefined, align: undefined }), bonds: m.bonds.map((b) => {
+      if (!b.ports || !b.atoms.includes(i)) return b;
+      const ports = b.atoms.map((k, e) => (k === i ? -1 : b.ports![e])) as [number, number], { ports: _, ...plain } = b;
+      return ports.some((p) => p >= 0) ? { ...plain, ports } : plain;
+    }) };
+  }
   // A label that becomes an element leaves its contracted group behind.
   if (m.atoms[i].inner && (!t || t === "C" || isElement(t))) m = setAtom(m, i, { inner: undefined });
   if (!t) return setElement(m, i, "C");
   if (t === "C") return showCarbon(m, i);
   if (isElement(t)) return setElement(m, i, t);
   return setAtom(m, i, { label: anchorElement(t) ?? "C", text: t, runs: undefined });
+}
+// A written label's runs (issue 44): set on the label, and the label attaches through the part chemistry reads
+// (the Fe of Fe with III raised). Runs that do not join to the label's text, or carry no style, are left off.
+export function setLabelRuns(m: Mol, i: number, runs: TextRun[] | undefined): Mol {
+  const a = m.atoms[i], ok = !!a.text && !!runs && styled(runs) && plainOf(runs) === a.text;
+  return setAtom(m, i, { runs: ok ? runs : undefined, ...(ok && runs!.some((r) => r.script) ? { label: anchorElement(chemicalText(a.text, runs)!) ?? a.label } : {}) });
+}
+// Superscript or subscript on whole labels (Text > Superscript with atoms selected, issue 44): each label (an
+// element's as it shows, OH) all in that script; or, when every one is already, all back to plain. A label back to
+// plain that reads as its element with its usual H is the element again.
+export function scriptLabels(m: Mol, ids: number[], to: "sub" | "super", hideH = false): Mol {
+  const has = (a: Atom) => !!a.text && !!a.runs?.length && plainOf(a.runs) === a.text && a.runs.every((r) => r.script === to);
+  const off = ids.every((i) => has(m.atoms[i])), used = bondOrders(m);
+  return ids.reduce((out, i) => {
+    const a = out.atoms[i];
+    if (off) {
+      const back = setLabelRuns(out, i, without(a.runs!, ["script"]));
+      return a.chemical === false ? back : interpretLabels(back, [i], true, hideH);
+    }
+    const text = a.text ?? labelWords(out, i, hideH, used[i]), runs = a.text && a.runs && plainOf(a.runs) === a.text ? a.runs : [{ text }];
+    return setLabelRuns(setAtom(out, i, { text }), i, runs.map((r) => ({ ...r, script: to })));
+  }, m);
 }
 // What an atom's label shows, with its H (NH2; a lone O as H2O), as Octet draws it. hideH: the document leaves off H.
 export function labelWords(m: Mol, i: number, hideH = false, used = bondOrders(m)[i]): string {
@@ -438,7 +533,8 @@ export const setBondSpec = (m: Mol, i: number, spec: BondSpec) => (spec.type ===
 // A double bond's second line on one side, centred, or (unset) placed automatically.
 export const setPosition = (m: Mol, i: number, position?: "left" | "centre" | "right") => setBondAt(m, i, { position });
 // Swaps a bond's ends, so a wedge points the other way.
-export const flipBond = (m: Mol, i: number) => setBondAt(m, i, { atoms: [m.bonds[i].atoms[1], m.bonds[i].atoms[0]] });
+// The links to kept atoms (a residue label's) go with their ends.
+export const flipBond = (m: Mol, i: number) => setBondAt(m, i, { atoms: [m.bonds[i].atoms[1], m.bonds[i].atoms[0]], ...(m.bonds[i].ports ? { ports: [m.bonds[i].ports![1], m.bonds[i].ports![0]] as [number, number] } : {}) });
 
 // The bond tools on an existing bond, as ChemDraw 26.1 changes it (its ChangeBondType and bond tracker).
 // A bond style with a narrow and a wide end (a wedge, a hashed or hollow wedge, a dative arrow).
@@ -487,6 +583,8 @@ export function clickBond(m: Mol, k: number, spec: BondSpec, at: P, side = 0, tr
   const b = m.bonds[k], cycle = () => setPosition(m, k, nextSide(m, k, side));
   if (triple && b.type === 2 && !b.display && !b.stereo && spec.type === 1 && !spec.display && !spec.stereo) return setBondSpec(m, k, { type: 3 });
   if (b.type === 10) return m; // a hydrogen bond (KET's type 10) stays as it is, as in ChemDraw
+  // A bond to a multi-centre point (an η ring's) has no order to raise (issue 26); its style still changes.
+  if (b.atoms.some((x) => m.atoms[x].centre) && (spec.type > 1 || (b.type === 1 && sameStyle(b, spec) && !pointed(spec)))) return m;
   if (spec.type > 1) return spec.type === 2 && sameStyle(b, spec) ? cycle() : sameStyle(b, spec) ? m : setBondSpec(m, k, spec);
   if (b.type === 1 && sameStyle(b, spec) && !pointed(spec)) return setBondSpec(m, k, { type: 2, ...(spec.display === "bold" || spec.display === "dashed" ? { display: spec.display } : {}) });
   if (b.type !== 2) return keyBond(m, k, spec, at); // the bond keys' rule, so a click and a key cannot differ here
@@ -518,9 +616,268 @@ export function overBond(m: Mol, k: number, spec: BondSpec, from = m.bonds[k].at
   return setBondSpec(m, k, { type: 2, ...(d ? { display: d } : {}) });
 }
 // A bond dragged from atom i (or a point) to q: on to i's neighbour it is drawn over their bond; otherwise as bondTo.
+// A bond between a metal and the middle of a ring (either way round) joins the ring through a new multi-centre point,
+// as ChemDraw's Add Multi-Center Attachment and a bond from it do in two steps (issue 26). A bond from the metal to
+// one of the ring's atoms (or to several) goes: the ring is η bonded now. A drag along a bond to a multi-centre point
+// changes nothing: such a bond has no order to raise.
 export function dragBond(m: Mol, from: number | P, q: P, spec: BondSpec = SINGLE): Mol {
   const j = typeof from === "number" ? atomAt(m, q, 0.1) : undefined, k = j === undefined ? -1 : bondIndex(m, from as number, j);
-  return k >= 0 ? overBond(m, k, spec, from as number) : bondTo(m, from, q, spec);
+  if (k >= 0) return m.bonds[k].atoms.some((x) => m.atoms[x].centre) ? m : overBond(m, k, spec, from as number);
+  const metal = typeof from === "number" ? from : atomAt(m, q, 0.1), ring = metal === undefined ? undefined : etaRing(m, metal, typeof from === "number" ? q : from);
+  if (metal !== undefined && ring) {
+    // The point is the ring's middle, in depth too (a ring turned in 3D).
+    const c = ring.reduce((s, i) => add(s, pos(m, i)), [0, 0] as P), z = ring.reduce((s, i) => s + (m.atoms[i].location[2] ?? 0), 0), at = m.atoms.length;
+    const own = new Set(ring), direct = (b: Bond) => b.atoms.includes(metal) && own.has(b.atoms[0] === metal ? b.atoms[1] : b.atoms[0]);
+    m = { ...m, atoms: [...m.atoms, { label: "C", location: [c[0] / ring.length, c[1] / ring.length, z / ring.length], centre: { atoms: ring } }], bonds: m.bonds.filter((b) => !direct(b)) };
+    return withBond(m, metal, at, spec);
+  }
+  return bondTo(m, from, q, spec);
+}
+// The ring a bond from metal atom i let go at p joins as an η ligand: a ring of three to eight atoms with a double or
+// delocalised bond, its middle within a third of a bond length of p, and no atom there (a multi-centre point already
+// there takes the bond as any atom does). Undefined for any other atom or place, so an ordinary bond is never taken.
+const ringLists = new WeakMap<Mol["bonds"], number[][]>();
+export function etaRing(m: Mol, i: number, p: P): number[] | undefined {
+  const a = m.atoms[i];
+  if (!a || !isMetal(a) || a.centre || atomAt(m, p, 0.1) !== undefined) return undefined;
+  const s = scaleAt(m, i);
+  return ringsIn(m).find((r) => {
+    if (r.length < 3 || r.length > 8 || r.includes(i) || r.some((x) => m.atoms[x].centre)) return false;
+    const c = mul(r.reduce((t, x) => add(t, pos(m, x)), [0, 0] as P), 1 / r.length);
+    return len(sub(c, p)) < 0.34 * s && r.some((x, n) => [2, 4].includes(m.bonds[bondIndex(m, x, r[(n + 1) % r.length])]?.type));
+  });
+}
+
+// The drawing's rings (the smallest through each bond), kept for its bonds. Bonds in no ring (ringBonds) are left out
+// first, so each search stays in its own ring system and a long chain (a peptide) costs little.
+function ringsIn(m: Mol): number[][] {
+  let found = ringLists.get(m.bonds);
+  if (!found) {
+    const keep = ringBonds(m);
+    ringLists.set(m.bonds, (found = ringsOf({ atoms: m.atoms.map(() => ({ el: "C", charge: 0, h: 0 })), bonds: m.bonds.flatMap((b, k) => (keep[k] ? [{ a: b.atoms[0], b: b.atoms[1], order: 1 as const }] : [])) })));
+  }
+  return found;
+}
+// Whether the drawing may have a chair (chairOf): a cheap test, run before any ring search, so a drawing with none
+// (nearly every drawing) costs one pass over its bonds. Each ring chairAt6 passes has a corner where its two ring bonds
+// meet at under 94°: its opposite bonds are parallel to 10°, so any three turns in a row round it add up to 180° ± 10°,
+// and it turns both ways (each turn at least 2.9°), so some three in a row mix the two ways and one of them turns at
+// least 86.4°. Only six-membered cycles through a corner under 95° are tested, by chairAt6's tests of parallel bonds
+// and turns.
+// Kept for the last drawing, so perspectiveBonds and chairHydrogens on one drawing test it once.
+let chairTest: [Mol["bonds"], Mol["atoms"], boolean] | undefined;
+const SHARP = Math.cos(95 * deg), SIN10 = Math.sin(10 * deg);
+// The most bonds neighbourSlots keeps for an atom.
+export const WIDE = 6;
+export function mayHaveChair(m: Mol): boolean {
+  if (chairTest?.[0] !== m.bonds || chairTest[1] !== m.atoms) chairTest = [m.bonds, m.atoms, findChair(m)];
+  return chairTest[2];
+}
+// Each atom's neighbours, at most WIDE of them (undefined when an atom has more), in one pass over the bonds: atom i's
+// are near[WIDE * i] to near[WIDE * i + deg[i] - 1]. A bond from an atom to itself or to no atom is left out.
+export type Slots = { deg: Uint8Array; near: Int32Array };
+export function neighbourSlots(m: Mol): Slots | undefined {
+  const n = m.atoms.length, bonds = m.bonds, deg = new Uint8Array(n), near = new Int32Array(WIDE * n);
+  for (let k = 0; k < bonds.length; k++) {
+    const ends = bonds[k].atoms, i = ends[0], j = ends[1];
+    if (i === j || !(i >= 0 && i < n && j >= 0 && j < n)) continue;
+    if (deg[i] === WIDE || deg[j] === WIDE) return undefined;
+    near[WIDE * i + deg[i]++] = j;
+    near[WIDE * j + deg[j]++] = i;
+  }
+  return { deg, near };
+}
+// Whether any of bonds ks may be a bond of a chair: a six-membered cycle through it that passes chairAt6's tests of
+// parallel bonds and turns. Reads the positions of only the atoms near those bonds, so a few bonds in a large drawing
+// cost little. An atom with more than WIDE bonds (a metal's) is left to the full test (true).
+export function mayBeChairBond(m: Mol, ks: number[], slots = neighbourSlots(m)): boolean {
+  if (!slots) return true;
+  const n = m.atoms.length, bonds = m.bonds, { deg, near } = slots, xy = new Float64Array(2 * n).fill(NaN);
+  const at = (i: number) => { if (xy[2 * i] !== xy[2 * i]) { const p = m.atoms[i].location; xy[2 * i] = p[0]; xy[2 * i + 1] = p[1]; } };
+  // Bonds p-q and r-t point opposite ways, parallel to 10° (as chairAt6 has a chair's opposite bonds).
+  const opposite = (p: number, q: number, r: number, t: number) => {
+    at(p); at(q); at(r); at(t);
+    const ux = xy[2 * q] - xy[2 * p], uy = xy[2 * q + 1] - xy[2 * p + 1], wx = xy[2 * t] - xy[2 * r], wy = xy[2 * t + 1] - xy[2 * r + 1], c = ux * wy - uy * wx;
+    return ux * wx + uy * wy <= 0 && c * c <= SIN10 * SIN10 * (ux * ux + uy * uy) * (wx * wx + wy * wy);
+  };
+  // Each cycle i j x y z w through each bond i-j.
+  for (const k of ks) {
+    const i = bonds[k].atoms[0], j = bonds[k].atoms[1];
+    if (i === j || !(i >= 0 && i < n && j >= 0 && j < n)) continue;
+    for (let p = WIDE * j; p < WIDE * j + deg[j]; p++) {
+      const x = near[p];
+      if (x === i) continue;
+      for (let q = WIDE * x; q < WIDE * x + deg[x]; q++) {
+        const y = near[q];
+        if (y === i || y === j) continue;
+        for (let r = WIDE * i; r < WIDE * i + deg[i]; r++) {
+          const w = near[r];
+          if (w === j || w === x || w === y || !opposite(x, y, w, i)) continue;
+          for (let t = WIDE * w; t < WIDE * w + deg[w]; t++) {
+            const z = near[t];
+            if (z === i || z === j || z === x || z === y || !opposite(i, j, y, z) || !opposite(j, x, z, w)) continue;
+            let joined = false;
+            for (let u = WIDE * y; u < WIDE * y + deg[y]; u++) if (near[u] === z) joined = true;
+            if (!joined) continue;
+            if (turnsBothWays(xy, [i, j, x, y, z, w])) return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+// The last of chairAt6's tests of a ring whose opposite bonds are parallel (xy: the atoms' places, x then y): it turns
+// both ways, at least a little at each atom. Passing it, the ring may be a chair.
+function turnsBothWays(xy: Float64Array, ring: number[]): boolean {
+  let allLeft = true, allRight = true;
+  for (let k = 0; k < 6; k++) {
+    const p = ring[k], q = ring[(k + 1) % 6], r = ring[(k + 2) % 6];
+    const ux = xy[2 * q] - xy[2 * p], uy = xy[2 * q + 1] - xy[2 * p + 1], wx = xy[2 * r] - xy[2 * q], wy = xy[2 * r + 1] - xy[2 * q + 1];
+    const t = (ux * wy - uy * wx) / Math.sqrt((ux * ux + uy * uy) * (wx * wx + wy * wy));
+    if (Math.abs(t) < 0.05) return false;
+    if (!(t > 0)) allLeft = false;
+    if (!(t < 0)) allRight = false;
+  }
+  return !allLeft && !allRight;
+}
+// The lists findChair fills, kept from one drawing to the next.
+let scratch = { deg: new Uint8Array(0), near: new Int32Array(0), way: new Float64Array(0), xy: new Float64Array(0) };
+function findChair(m: Mol): boolean {
+  const n = m.atoms.length, bonds = m.bonds, at = m.atoms;
+  if (n < 6 || bonds.length < 6) return false;
+  // One pass over the bonds: each atom's first WIDE bonds (the atom at the other end, and the way to it), and the
+  // sharp corners (a, v, b) between them.
+  if (scratch.deg.length < n) scratch = { deg: new Uint8Array(2 * n), near: new Int32Array(2 * WIDE * n), way: new Float64Array(4 * WIDE * n), xy: new Float64Array(4 * n) };
+  const { deg, near, way, xy } = scratch, sharp: number[] = [];
+  deg.fill(0, 0, n);
+  for (let i = 0; i < n; i++) { const p = at[i].location; xy[2 * i] = p[0]; xy[2 * i + 1] = p[1]; }
+  for (let k = 0; k < bonds.length; k++) {
+    const ends = bonds[k].atoms, i = ends[0], j = ends[1], dx = xy[2 * j] - xy[2 * i], dy = xy[2 * j + 1] - xy[2 * i + 1], l = Math.sqrt(dx * dx + dy * dy);
+    if (!l) continue;
+    const x = dx / l, y = dy / l;
+    // An atom with more bonds (a metal's) is left to the full test.
+    if (deg[i] === WIDE || deg[j] === WIDE) return true;
+    for (let s = WIDE * i, e = s + deg[i]; s < e; s++) if (way[2 * s] * x + way[2 * s + 1] * y > SHARP) sharp.push(near[s] - 1, i, j);
+    for (let s = WIDE * j, e = s + deg[j]; s < e; s++) if (-way[2 * s] * x - way[2 * s + 1] * y > SHARP) sharp.push(near[s] - 1, j, i);
+    let s = WIDE * i + deg[i]++;
+    near[s] = j + 1; way[2 * s] = x; way[2 * s + 1] = y;
+    s = WIDE * j + deg[j]++;
+    near[s] = i + 1; way[2 * s] = -x; way[2 * s + 1] = -y;
+  }
+  // Each cycle v a x y z b through a sharp corner whose opposite bonds are parallel (to 10°, as chairAt6 has them),
+  // tested for turns as chairAt6 tests them.
+  const parallel = (p: number, q: number, r: number, t: number) => {
+    const ux = xy[2 * q] - xy[2 * p], uy = xy[2 * q + 1] - xy[2 * p + 1], wx = xy[2 * t] - xy[2 * r], wy = xy[2 * t + 1] - xy[2 * r + 1], c = ux * wy - uy * wx;
+    return ux * wx + uy * wy <= 0 && c * c <= SIN10 * SIN10 * (ux * ux + uy * uy) * (wx * wx + wy * wy);
+  };
+  for (let c = 0; c < sharp.length; c += 3) {
+    const a = sharp[c], v = sharp[c + 1], b = sharp[c + 2];
+    for (let i = WIDE * a; i < WIDE * a + deg[a]; i++) {
+      const x = near[i] - 1;
+      if (x === v || x === b) continue;
+      for (let j = WIDE * b; j < WIDE * b + deg[b]; j++) {
+        const z = near[j] - 1;
+        if (z === v || z === a || z === x || !parallel(a, x, z, b)) continue;
+        for (let k = WIDE * x; k < WIDE * x + deg[x]; k++) {
+          const y = near[k] - 1;
+          if (y === v || y === a || y === b || y === z || !parallel(v, a, y, z) || !parallel(x, y, b, v)) continue;
+          let joined = false;
+          for (let l = WIDE * y; l < WIDE * y + deg[y]; l++) if (near[l] - 1 === z) joined = true;
+          if (!joined) continue;
+          if (turnsBothWays(xy, [v, a, x, y, z, b])) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+// A six-membered ring drawn as a chair (issue 46): chairAt6's test passes at every atom, and its upright axis is
+// within 45° of up the page. up: that axis, pointing up the page; axial: each ring atom's axial direction (up or down
+// in turn round the ring). Undefined for any other ring, so a flat ring is never read as a chair.
+export function chairOf(m: Mol, ring: number[]): { up: P; axial: P[] } | undefined {
+  // A bridged ring (tropane's, a bicyclo[2.2.2]octane's) is drawn flat whatever it looks like: another ring may share
+  // one atom with it, or one bond (a fused chair, decalin's), but no more.
+  if (ring.length !== 6) return undefined;
+  const axial: P[] = [];
+  for (let k = 0; k < 6; k++) {
+    const way = chairAt6(m, [0, 1, 2, 3, 4, 5].map((n) => ring[(k + n) % 6]), undefined);
+    if (!way) return undefined;
+    axial.push(unit(way.d));
+  }
+  const own = new Set(ring);
+  if (ringsIn(m).some((r) => { const n = r.filter((x) => own.has(x)).length; return n < r.length && n > 1 && (n > 2 || bondIndex(m, ...(r.filter((x) => own.has(x)) as [number, number])) < 0); })) return undefined;
+  const up = mul(axial[0], Math.sign(axial[0][1]) || 1);
+  if (up[1] < Math.cos(45 * deg) || axial.some((d, k) => dot(d, up) * (k % 2 ? -1 : 1) * Math.sign(dot(axial[0], up)) < Math.cos(10 * deg))) return undefined;
+  return { up, axial };
+}
+// Ring bonds that draw a ring in perspective, not stereochemistry (issue 46): the wedges, hashes and bold bonds of a
+// chair, and of a ring with a bold bond and a wedge or hash beside it (a Haworth projection's front edge). A wedge on
+// any other ring bond still sets a stereocentre.
+export function perspectiveBonds(m: Mol): Set<number> {
+  const out = new Set<number>(), edge = (b: Bond) => b.stereo === 1 || b.stereo === 6 || b.display === "bold";
+  // Only a ring with a wedge or hash on one of its own bonds is looked at, and only in a drawing with a possible chair
+  // or a bold bond.
+  if (!m.bonds.some((b) => b.stereo === 1 || b.stereo === 6) || (!mayHaveChair(m) && !m.bonds.some((b) => b.display === "bold"))) return out;
+  const pair = (i: number, j: number) => `${Math.min(i, j)} ${Math.max(i, j)}`, wedged = new Set(m.bonds.flatMap((b) => (b.stereo === 1 || b.stereo === 6 ? [pair(...b.atoms)] : [])));
+  if (!wedged.size) return out;
+  for (const ring of ringsIn(m)) {
+    if (!ring.some((x, n) => wedged.has(pair(x, ring[(n + 1) % ring.length])))) continue;
+    const own = ring.map((x, n) => bondIndex(m, x, ring[(n + 1) % ring.length])), front = own.filter((k) => k >= 0 && edge(m.bonds[k]));
+    if (!front.some((k) => m.bonds[k].stereo)) continue;
+    const bold = front.filter((k) => m.bonds[k].display === "bold" && !m.bonds[k].stereo);
+    const haworth = bold.some((k) => front.some((j) => j !== k && m.bonds[j].stereo && m.bonds[j].atoms.some((x) => m.bonds[k].atoms.includes(x))));
+    if (haworth || chairOf(m, ring)) for (const k of front) out.add(k);
+  }
+  return out;
+}
+// Stereochemistry read from a chair drawn flat (issue 46), as an H on each ring carbon with a wedge or hash: what
+// Indigo and the CIP labeller read. Each ring carbon with one other bond (to a substituent) and one H: the substituent
+// is axial (along the atom's axial direction) or equatorial (as chairAt6 places the bond after an axial one), and so
+// up or down: an axial one the way it points, an equatorial one the other way from its atom's axial bond. The chair
+// is seen from a little above it, as chemists draw one: its lower edge is nearest (its bold edge says which, when it
+// has one). Only chairs drawn flat with no wedge, hash or wavy bond off the ring; any substituent neither axial nor
+// equatorial sets nothing. Each H: its carbon, its place (in the widest gap at the carbon) and its bond's stereo.
+export function chairHydrogens(m: Mol): { centre: number; at: P; stereo: 1 | 6 }[] {
+  const out: { centre: number; at: P; stereo: 1 | 6 }[] = [];
+  if (m.atoms.length < 6 || m.bonds.length < 6 || !mayHaveChair(m)) return out;
+  const near = bondedTo(m), perspective = perspectiveBonds(m);
+  for (const ring of ringsIn(m)) {
+    // A chair with depth (the Conformers templates, Structure Perspective) is read in 3D as it is.
+    if (ring.length !== 6 || ring.some((i) => m.atoms[i].text || m.atoms[i].centre || m.atoms[i].location[2])) continue;
+    const chair = chairOf(m, ring);
+    if (!chair) continue;
+    const own = new Set(ring), off = ring.flatMap((i) => near[i].filter((j) => !own.has(j)).map((j) => m.bonds[bondIndex(m, i, j)]));
+    if (off.some((b) => b.stereo || b.display === "wavy" || b.type !== 1)) continue;
+    const { up, axial } = chair, mean = ring.reduce((t, i, n) => t + len(sub(pos(m, ring[(n + 1) % 6]), pos(m, i))), 0) / 6;
+    const pucker = axial.map((d) => Math.sign(dot(d, up)));
+    // The ring's turn seen from above it: the turn of the triangle of its up atoms (and of its down atoms), in ring order.
+    const turn = (k: number) => { const [p, q, r] = [k, k + 2, k + 4].map((n) => pos(m, ring[n % 6])); return cross(sub(q, p), sub(r, p)); };
+    const upFirst = pucker[0] > 0 ? 0 : 1, t1 = turn(upFirst), t2 = turn(1 - upFirst);
+    if (Math.sign(t1) !== Math.sign(t2) || Math.abs(t1) < 0.1 * mean * mean || Math.abs(t2) < 0.1 * mean * mean) continue;
+    // Seen from below when the bold or wedged edge is drawn above the middle of the ring.
+    const middle = mul(ring.reduce((t, i) => add(t, pos(m, i)), [0, 0] as P), 1 / 6);
+    const front = ring.flatMap((i, n) => { const k = bondIndex(m, i, ring[(n + 1) % 6]); return perspective.has(k) ? [dot(sub(mul(add(pos(m, i), pos(m, ring[(n + 1) % 6])), 0.5), middle), up)] : []; });
+    const o = Math.sign(t1) * (front.length && front.reduce((a, b) => a + b, 0) > 0 ? -1 : 1);
+    ring.forEach((c, k) => {
+      const subs = near[c].filter((j) => !own.has(j));
+      if (m.atoms[c].label !== "C" || m.atoms[c].charge || m.atoms[c].radical || subs.length !== 1 || m.atoms[c].implicitHCount !== undefined) return;
+      const s = subs[0], here = pos(m, c), d = unit(sub(pos(m, s), here)), rot = [0, 1, 2, 3, 4, 5].map((n) => ring[(k + n) % 6]);
+      const eq = chairAt6(m, rot, s);
+      const face = dot(d, axial[k]) > Math.cos(35 * deg) ? pucker[k] : eq && dot(unit(eq.d), axial[k]) > 0.99 ? -pucker[k] : 0;
+      if (!face) return;
+      // Up (face 1) is towards the viewer of the ring seen from above. With the H wedged (towards the viewer of the
+      // page) the centre's hand is the turn of its ring neighbours and the substituent on the page, negated.
+      const a = pos(m, ring[(k + 5) % 6]), b = pos(m, ring[(k + 1) % 6]), area = cross(sub(b, a), sub(pos(m, s), a));
+      if (Math.abs(area) < 0.05 * mean * mean) return;
+      const dirs = [a, b, pos(m, s)].map((p) => Math.atan2(p[1] - here[1], p[0] - here[0])).sort((x, y) => x - y);
+      const gaps = dirs.map((t, n) => (n + 1 < 3 ? dirs[n + 1] : dirs[0] + 2 * Math.PI) - t), g = gaps.indexOf(Math.max(...gaps)), mid = dirs[g] + gaps[g] / 2;
+      out.push({ centre: c, at: add(here, mul([Math.cos(mid), Math.sin(mid)], 0.7 * mean)), stereo: Math.sign(area) === face * o ? 1 : 6 });
+    });
+  }
+  // A carbon where two chairs join (decalin's, a steroid's) is read from each ring: it takes one H, and none when the
+  // two rings read it differently.
+  return out.filter((h, n) => out.every((x, k) => x.centre !== h.centre || (k >= n ? k === n || x.stereo === h.stereo : false)));
 }
 
 // Kept ChemDraw data on a caption (a live property) with its atoms renumbered by `to`; atoms `to` leaves out drop out,
@@ -697,7 +1054,7 @@ export function tidyGroups(m: Mol, frags = m.groups?.length ? fragments(m) : [])
     gone.add(k);
     if (integral[k] && n === 1 && kids[k].length === 1) integral[kids[k][0]] = true;
   }
-  const out = gs.flatMap((g, k) => (gone.has(k) ? [] : [{ id: g.id, atoms: g.atoms, items: g.items, ...(integral[k] ? { integral: true as const } : {}), ...(g.annotations ? { annotations: g.annotations } : {}) }]));
+  const out = gs.flatMap((g, k) => (gone.has(k) ? [] : [{ id: g.id, atoms: g.atoms, items: g.items, ...(integral[k] ? { integral: true as const } : {}), ...(g.annotations ? { annotations: g.annotations } : {}), ...(g.plot ? { plot: g.plot } : {}) }]));
   const same = out.length === m.groups.length && out.every((g, k) => {
     const o = m.groups![k];
     return g.id === o.id && !!g.integral === !!o.integral && g.atoms.length === o.atoms.length && g.atoms.every((i, n) => i === o.atoms[n]) && g.items.length === o.items.length && g.items.every((id, n) => id === o.items[n]);
@@ -890,13 +1247,26 @@ export const deleteAtoms = (m: Mol, ids: Set<number>) => removeAtoms(m, new Set(
 // its first atom the attachment point: it is turned to point away from i's neighbour and joined where the label was.
 // way: the direction from the group's first atom to the rest of the structure, when the group says it (an R-group
 // fragment's attachment mark).
+// A residue label (sequence.ts) draws out its kept atoms as they were, moved onto the label, and each bond goes to the
+// atom it joins (its port): a residue's N on one side, its C=O on the other.
 export function expandLabel(m: Mol, i: number, frag: Mol, way?: P): Mol {
   if (!frag.atoms.length) return m;
-  const rest = frag.atoms.slice(1), place = labelPlacer(m, i, frag, way);
+  const ported = m.bonds.some((b) => b.ports && b.atoms.some((k, e) => k === i && b.ports![e] >= 0));
+  const at0 = frag.atoms[0].location, here = m.atoms[i].location;
+  const rest = frag.atoms.slice(1), place = ported ? (q: [number, number, number]): [number, number, number] => [q[0] - at0[0] + here[0], q[1] - at0[1] + here[1], 0] : labelPlacer(m, i, frag, way);
   const base = m.atoms.length, to = (k: number) => (k === 0 ? i : base + k - 1);
   const atoms = m.atoms.map((a, k) => (k === i ? { ...a, label: frag.atoms[0].label, text: undefined, charge: frag.atoms[0].charge, inner: undefined } : a));
   for (const a of rest) atoms.push({ ...a, location: place(a.location) });
-  return { ...m, atoms, bonds: [...m.bonds, ...frag.bonds.map((b) => ({ ...b, atoms: [to(b.atoms[0]), to(b.atoms[1])] as [number, number] }))] };
+  const bonds = !ported ? m.bonds : m.bonds.map((b) => {
+    if (!b.ports || !b.atoms.includes(i)) return b;
+    const e = b.atoms[0] === i ? 0 : 1, p = b.ports[e] >= 0 && b.ports[e] < frag.atoms.length ? b.ports[e] : 0;
+    const ends = [...b.atoms] as [number, number], ports = [...b.ports] as [number, number];
+    ends[e] = to(p);
+    ports[e] = -1;
+    const { ports: _, ...plain } = b;
+    return { ...plain, atoms: ends, ...(ports[1 - e] >= 0 ? { ports } : {}) };
+  });
+  return { ...m, atoms, bonds: [...bonds, ...frag.bonds.map((b) => ({ ...b, atoms: [to(b.atoms[0]), to(b.atoms[1])] as [number, number] }))] };
 }
 // Where a label's group goes when it is drawn out: its first atom on the label atom i, the rest turned to point away
 // from i's neighbour, along the bisector of the first atom's own bonds (C(=O)OEt: between =O and OEt).
@@ -909,14 +1279,25 @@ export function labelPlacer(m: Mol, i: number, frag: Mol, way?: P): (q: [number,
   return (q) => { const dx = q[0] - a0[0], dy = q[1] - a0[1]; return [at[0] + dx * c - dy * s, at[1] + dx * s + dy * c, 0]; };
 }
 // Contract Label: the atoms in `group` other than `keep` go, and `keep` (the one bonded to the rest) carries the label.
-// The group stays with the label (inner), so Expand Label gives it back whatever the label says.
+// The group stays with the label (inner), so Expand Label gives it back whatever the label says. A group bonded to the
+// rest more than once (a residue in a chain: its N on one side, its C=O on the other) keeps each bond, moved onto the
+// label with the kept atom it joins (its port), as a residue label is drawn (sequence.ts).
 export function contractLabel(m: Mol, keep: number, group: Set<number>, text: string): Mol {
   const order = [keep, ...[...group].filter((k) => k !== keep)], at = new Map(order.map((k, n) => [k, n]));
   const inner: Mol = {
     atoms: order.map((k) => { const { inner: _, text: __, ...a } = m.atoms[k]; return a; }),
     bonds: m.bonds.filter((b) => at.has(b.atoms[0]) && at.has(b.atoms[1])).map((b) => ({ ...b, atoms: [at.get(b.atoms[0])!, at.get(b.atoms[1])!] as [number, number] })),
   };
-  const labelled = { ...m, atoms: m.atoms.map((a, k) => (k === keep ? { ...a, text, label: anchorElement(text) ?? a.label, charge: undefined, inner } : a)) };
+  const out = (b: Mol["bonds"][number]) => group.has(b.atoms[0]) !== group.has(b.atoms[1]), many = m.bonds.filter(out).length > 1;
+  const bonds = !many ? m.bonds : m.bonds.map((b) => {
+    if (!out(b)) return b;
+    const e = group.has(b.atoms[0]) ? 0 : 1, ends = [...b.atoms] as [number, number], ports = (b.ports ? [...b.ports] : [-1, -1]) as [number, number];
+    ports[e] = at.get(b.atoms[e])!;
+    ends[e] = keep;
+    return { ...b, atoms: ends, ports };
+  });
+  // Bonded on more than one side, the label is centred, so it reads as written whichever side its bonds are on.
+  const labelled = { ...m, bonds, atoms: m.atoms.map((a, k) => (k === keep ? { ...a, text, label: many ? a.label : anchorElement(text) ?? a.label, charge: undefined, inner, ...(many ? { align: "centre" as const } : {}) } : a)) };
   return removeAtoms(labelled, new Set([...group].filter((k) => k !== keep)));
 }
 export function moveAtoms(m: Mol, ids: Set<number>, d: P): Mol {
@@ -1535,11 +1916,50 @@ export function flipAtoms(m: Mol, ids: Set<number>, axis: "horizontal" | "vertic
   };
 }
 
-// Lines up whole structures in a selection: their centres on one line, or evenly spaced along it.
+// The box Align and Distribute line a structure up by (drawing units, y up: [left, bottom, right, top]) when only part
+// of it is selected: the box of the selected atoms' centres, a point for one atom. As ChemDraw's Object > Align, the
+// part sets where the structure goes and the whole structure moves. Undefined when all of it or none is selected.
+export function partBox(m: Mol, g: number[], ids: Set<number>): Box | undefined {
+  const sel = g.filter((i) => ids.has(i));
+  if (!sel.length || sel.length === g.length) return undefined;
+  const xs = sel.map((i) => pos(m, i)[0]), ys = sel.map((i) => pos(m, i)[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+// How far each thing moves for Object > Align and Distribute, from its box (y up: [left, bottom, right, top]). Align
+// lines each thing up with the highest one, as ChemDraw. Distribute keeps the first and last in place and makes the
+// gaps between neighbours equal.
+export type Arrange = "left" | "centre" | "right" | "top" | "middle" | "bottom" | "across" | "down";
+export function arrangeShifts(boxes: Box[], how: Arrange): P[] {
+  const shifts = boxes.map((): P => [0, 0]);
+  if (how === "across" || how === "down") {
+    const k = how === "across" ? 0 : 1, order = boxes.map((_, n) => n).sort((p, q) => (boxes[p][k] + boxes[p][k + 2]) - (boxes[q][k] + boxes[q][k + 2]));
+    const span = boxes[order[order.length - 1]][k + 2] - boxes[order[0]][k], sizes = order.reduce((s, n) => s + boxes[n][k + 2] - boxes[n][k], 0), gap = (span - sizes) / (order.length - 1);
+    let at = boxes[order[0]][k + 2] + gap;
+    for (const n of order.slice(1, -1)) { shifts[n][k] = at - boxes[n][k]; at += boxes[n][k + 2] - boxes[n][k] + gap; }
+    return shifts;
+  }
+  const top = boxes.reduce((p, b, n) => (b[3] > boxes[p][3] ? n : p), 0), t = boxes[top], mid = (b: Box, k: number) => (b[k] + b[k + 2]) / 2;
+  boxes.forEach((b, n) => {
+    if (n === top) return;
+    if (how === "left") shifts[n][0] = t[0] - b[0];
+    else if (how === "right") shifts[n][0] = t[2] - b[2];
+    else if (how === "centre") shifts[n][0] = mid(t, 0) - mid(b, 0);
+    else if (how === "top") shifts[n][1] = t[3] - b[3];
+    else if (how === "bottom") shifts[n][1] = t[1] - b[1];
+    else shifts[n][1] = mid(t, 1) - mid(b, 1);
+  });
+  return shifts;
+}
+
+// Lines up whole structures in a selection: their centres on one line, or evenly spaced along it. A structure
+// selected only in part lines up by that part (partBox) and moves whole.
 export function alignFragments(m: Mol, ids: Set<number>, how: "row" | "column" | "spread-row" | "spread-column"): Mol {
   const groups = fragments(m).filter((g) => g.some((i) => ids.has(i)));
   if (groups.length < 2) return m;
-  const boxes = groups.map((g) => {
+  const boxes = groups.map((g): Box => {
+    const part = partBox(m, g, ids);
+    if (part) return part;
     const xs = g.map((i) => pos(m, i)[0]), ys = g.map((i) => pos(m, i)[1]);
     return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
   });
@@ -2033,8 +2453,9 @@ export function inRing(m: Mol, k: number): boolean {
 
 // Places a template (a structure drawn at bond length 1): fused along a clicked bond, on the open side; sharing a
 // clicked atom (the template's first atom), pointing away from that atom's bonds; or centred on a point. On a bond
-// or atom it takes their scale. Template atoms that land on existing atoms join them, and a double bond that would
-// give an atom two is single. The template's atoms and bonds keep their own look (colour, labels, marks), and its
+// or atom it takes their scale. Template atoms that land on existing atoms join them, and a template double bond on an
+// atom that already had a double bond in the drawing is single (a benzene fused onto a benzene). The template's own
+// cumulated double bonds stay (azide, diazo, isocyanate, sulfone). The template's atoms and bonds keep their own look (colour, labels, marks), and its
 // other objects (text, arrows, shapes, cycles, groups and ring fills) come with it, moved as its atoms move (CD-33).
 export function addTemplate(m: Mol, t: Mol, target: { bond?: number; atom?: number; point?: P }): Mol {
   if (!t.atoms.length) return t.captions?.length || t.arrows?.length || t.shapes?.length ? withObjects(m, t, [], (q) => add(target.point ?? [0, 0], q), 1, false) : m;
@@ -2085,7 +2506,7 @@ export function addTemplate(m: Mol, t: Mol, target: { bond?: number; atom?: numb
   }
   // A multi-centre point names the atoms of its ring by number: they take their numbers in the drawing.
   t.atoms.forEach((a, k) => { if (a.centre) m = { ...m, atoms: m.atoms.map((x, n) => (n === ids[k] && x.centre ? { ...x, centre: { ...a.centre!, atoms: a.centre!.atoms.map((i) => ids[i]) } } : x)) }; });
-  const hasDouble = (i: number) => m.bonds.some((b) => b.type === 2 && b.atoms.includes(i));
+  const drawnBonds = m.bonds, hasDouble = (i: number) => drawnBonds.some((b) => b.type === 2 && b.atoms.includes(i));
   for (const b of t.bonds) {
     const [i, j] = [ids[b.atoms[0]], ids[b.atoms[1]]];
     const type = b.type === 2 && (hasDouble(i) || hasDouble(j)) ? 1 : b.type;
@@ -2297,10 +2718,13 @@ export function extractSelection(m: Mol, atoms: Set<number>, items: Set<number>,
 }
 // Paste: another drawing added to this one, moved by offset, with new ids for its objects. Returns the drawing, the
 // new atoms and the new objects' ids, and each old id's new one. A drawing that comes with measured spectra of its own
-// (a ChemDraw file) brings no spectrum, so its atoms and bonds let go of their links to them.
+// (a ChemDraw file) brings no spectrum, so its atoms and bonds let go of their links to them. A part of a page spectrum
+// keeps its role (pageplot.ts) only when its group comes too: a label copied alone (Option-drag, Copy and Paste) is
+// plain text, so the original's role stays its own and the original still takes its leader.
 export function insertMol(m: Mol, add: Mol, offset: P = [0, 0]) {
   const base = m.atoms.length, at = (i: number) => base + i;
   const own = !!add.spectra?.length, unlink = <T extends { peaks?: number[] }>(x: T): T => { if (!own || !x.peaks) return x; const { peaks: _, ...rest } = x; return rest as T; };
+  const grouped = new Set((add.groups ?? []).flatMap((g) => g.items)), plain = <T extends { id: number; role?: unknown }>(x: T): T => { if (!x.role || grouped.has(x.id)) return x; const { role: _, ...rest } = x; return rest as T; };
   let id = nextId(m);
   const ids = new Map<number, number>();
   for (const x of [...(add.captions ?? []), ...(add.arrows ?? []), ...(add.shapes ?? []), ...(add.cycles ?? []), ...(add.groups ?? [])]) ids.set(x.id, id++);
@@ -2309,11 +2733,11 @@ export function insertMol(m: Mol, add: Mol, offset: P = [0, 0]) {
     ...m,
     atoms: [...m.atoms, ...add.atoms.map((a) => renumberCentre(unlink({ ...a, location: [a.location[0] + offset[0], a.location[1] + offset[1], a.location[2] ?? 0] as [number, number, number] }), at))],
     bonds: [...m.bonds, ...add.bonds.map((b) => unlink({ ...b, atoms: [at(b.atoms[0]), at(b.atoms[1])] as [number, number] }))],
-    arrows: [...(m.arrows ?? []), ...(add.arrows ?? []).map((a) => ({ ...a, id: ids.get(a.id)!, from: by(a.from), to: by(a.to),
+    arrows: [...(m.arrows ?? []), ...(add.arrows ?? []).map(plain).map((a) => ({ ...a, id: ids.get(a.id)!, from: by(a.from), to: by(a.to),
       ...(a.curve ? { curve: { ...a.curve, points: a.curve.points.map((q) => ({ at: by(q.at), ...(q.c1 ? { c1: by(q.c1) } : {}), ...(q.c2 ? { c2: by(q.c2) } : {}) })) } } : {}) }))],
     shapes: [...(m.shapes ?? []), ...(add.shapes ?? []).map((x) => remapKept({ ...x, id: ids.get(x.id)!, from: by(x.from), to: by(x.to) }, at))],
     cycles: [...(m.cycles ?? []), ...(add.cycles ?? []).map((c) => ({ ...mapBranches(c, at), id: ids.get(c.id)!, centre: by(c.centre), nodes: c.nodes.map((n) => n.map(at)) }))],
-    captions: [...(m.captions ?? []), ...(add.captions ?? []).map((c) => remapKept({
+    captions: [...(m.captions ?? []), ...(add.captions ?? []).map(plain).map((c) => remapKept({
       ...c, id: ids.get(c.id)!, x: c.x + offset[0], y: c.y + offset[1], ...(c.under ? { under: c.under.map(at) } : {}),
       ...(c.on ? { on: { ...c.on, arrow: ids.get(c.on.arrow) ?? c.on.arrow } } : {}), ...(c.cycle ? { cycle: { ...c.cycle, cycle: ids.get(c.cycle.cycle) ?? c.cycle.cycle } } : {}),
     }, at))],

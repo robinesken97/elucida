@@ -6,6 +6,7 @@
 // Every file is hostile: its size and its pixel count are checked before it is decoded, and only the webview's image
 // decoder reads it.
 import { hex, toBase64 } from "./cdx.ts";
+import { PICTURE_HEX } from "./cdxml.ts";
 import { EMPTY } from "./edit.ts";
 import type { Mol } from "./render.ts";
 
@@ -80,8 +81,8 @@ export async function readPicture(bytes: Uint8Array): Promise<{ picture: Record<
   return { picture: { [turned ? "JPEG" : "PNG"]: hex(made) }, w, h };
 }
 
-// The bytes of picture data a drawing holds.
-export const pictureBytes = (m: Mol) => (m.shapes ?? []).reduce((n, sh) => n + Object.values(sh.picture ?? {}).reduce((k, v) => k + v.length / 2, 0), 0);
+// The bytes of picture data a drawing holds (held as hex), its sizes and turns left out.
+export const pictureBytes = (m: Mol) => (m.shapes ?? []).reduce((n, sh) => n + PICTURE_HEX.reduce((k, key) => k + (sh.picture?.[key]?.length ?? 0) / 2, 0), 0);
 
 // A drawing of the picture alone, centred on 0,0, at 1 pt per pixel in a style whose bond is `bond` points long.
 export function pictureMol(picture: Record<string, string>, w: number, h: number, bond: number): Mol {

@@ -4,6 +4,7 @@
 // The same code makes the codes when the table is built and when a structure is predicted, so lookups always match.
 import type { Graph } from "./naming.ts";
 import { aromaticAtoms } from "./rings.ts";
+import { isMetal } from "./metals.ts";
 
 export type Nucleus = "1H" | "13C";
 // One signal: the atoms it belongs to (graph indices; for ¹H, the heavy atoms whose hydrogens these are), its shift
@@ -11,9 +12,10 @@ export type Nucleus = "1H" | "13C";
 // coupling constant in Hz with the number of equivalent hydrogens it couples to), whether it is broad (OH, NH), and
 // how sure the prediction is (the spread of the shifts it was based on, in ppm, and how many there were).
 // group: what the signal comes from, as chemists name it ("CH3", "2 × CH"); level: how many spheres of the atom's
-// surroundings matched the table (1 to 6); each coupling also names the groups it couples to (graph indices).
+// surroundings matched the table (0, the atom alone, to 6); each coupling also names the groups it couples to (graph indices).
 // solvent: the shift comes from spectra measured in the solvent asked for (unset: from spectra in any solvent).
-export type Signal = { atoms: number[]; shift: number; nuclei: number; couplings: { j: number; n: number; with?: number[] }[]; broad?: boolean; sd: number; based: number; group?: string; level?: number; solvent?: string };
+// code: a hash of the atoms' longest code (their class), the same however the structure is drawn or numbered.
+export type Signal = { atoms: number[]; shift: number; nuclei: number; couplings: { j: number; n: number; with?: number[] }[]; broad?: boolean; sd: number; based: number; group?: string; level?: number; solvent?: string; code?: string };
 export type Prediction = { nucleus: Nucleus; signals: Signal[] };
 
 export const LEVELS = 6; // spheres in the longest code
@@ -21,7 +23,9 @@ export const LEVELS = 6; // spheres in the longest code
 // --- The molecule as HOSE codes see it ---------------------------------------------------------------------------
 
 // Hydrogens drawn as atoms become counts on the atoms they are bonded to. `from` gives each heavy atom's index in
-// the graph it came from.
+// the graph it came from. Atoms η-bonded to a metal (hapto) are written one way, however they were drawn: no charge,
+// and a carbon has the hydrogens of a ring or alkene carbon beside the metal (CH in a Cp or arene ring), so a Cp ring
+// drawn with two double bonds, as its anion, or with a bond to the metal from each atom, gives the same codes.
 export function heavy(g: Graph): { g: Graph; from: number[] } {
   const keep = g.atoms.map((a) => a.el !== "H"), to: number[] = [], from: number[] = [];
   g.atoms.forEach((_, i) => { if (keep[i]) { to[i] = from.length; from.push(i); } });
@@ -31,11 +35,39 @@ export function heavy(g: Graph): { g: Graph; from: number[] } {
     if (keep[b.a] && keep[b.b]) bonds.push({ ...b, a: to[b.a], b: to[b.b] });
     else if (keep[b.a] !== keep[b.b]) atoms[to[keep[b.a] ? b.a : b.b]].h += 1;
   }
-  return { g: { atoms, bonds }, from };
+  const out = { atoms, bonds }, eta = hapto(out);
+  if (eta.some((m) => m >= 0)) atoms.forEach((a, i) => {
+    if (eta[i] < 0) return;
+    a.charge = 0;
+    if (a.el !== "C") return;
+    // A carbon beside the metal: four bonds, one of them to the metal, then one to each η neighbour and its other bonds.
+    let used = 1;
+    for (const b of bonds) if (b.a === i || b.b === i) { const o = b.a === i ? b.b : b.a; if (!metalLike(atoms[o].el)) used += eta[o] === eta[i] ? 1 : b.order; }
+    a.h = Math.max(0, 4 - used);
+  });
+  return { g: out, from };
+}
+
+// Atoms that hold η ligands: metals, and "*" (a template's M).
+const metalLike = (el: string) => el === "*" || isMetal(el);
+// Each atom's metal when it is η-bonded to one (hapto: bonded to the metal and to another atom bonded to it, as a Cp
+// or arene ring's atoms or an alkene's are), else -1.
+export function hapto(g: Graph): number[] {
+  const out = g.atoms.map(() => -1), metalOf = new Map<number, number[]>();
+  g.bonds.forEach((b) => {
+    for (const [m, x] of [[b.a, b.b], [b.b, b.a]]) if (metalLike(g.atoms[m].el) && !metalLike(g.atoms[x].el) && g.atoms[x].el !== "H") metalOf.set(x, [...(metalOf.get(x) ?? []), m]);
+  });
+  if (!metalOf.size) return out;
+  for (const b of g.bonds) {
+    const shared = metalOf.get(b.a)?.find((m) => metalOf.get(b.b)?.includes(m));
+    if (shared !== undefined) out[b.a] = out[b.b] = shared;
+  }
+  return out;
 }
 
 type Edge = { to: number; bond: string };
-export type Env = { g: Graph; edges: Edge[][]; label: string[]; cls: number[]; aromatic: boolean[] };
+// eta: each atom's metal when it is η-bonded to one (hapto), else -1.
+export type Env = { g: Graph; edges: Edge[][]; label: string[]; cls: number[]; aromatic: boolean[]; eta: number[] };
 
 // Bonds in no ring (bridges), by Tarjan's method, without recursion.
 function bridges(n: number, adj: { to: number; k: number }[][]): Set<number> {
@@ -62,13 +94,20 @@ function bridges(n: number, adj: { to: number; k: number }[][]): Set<number> {
   return out;
 }
 
-// Each atom's neighbours with their bond (= double, % triple, * aromatic, nothing for single), its label (element and
-// charge), and its symmetry class: atoms in one class are equivalent in the graph (refined Morgan invariants).
+// Each atom's neighbours with their bond (= double, % triple, * aromatic, ~ between atoms η-bonded to one metal, ^
+// from such an atom to its metal, nothing for single), its label (element and charge), and its symmetry class: atoms
+// in one class are equivalent in the graph (refined Morgan invariants). An η ring is not aromatic here, whichever
+// Kekulé form or charges it was drawn with, so all five atoms of a Cp ring are alike.
 export function environment(g: Graph): Env {
   const n = g.atoms.length, adj: { to: number; k: number }[][] = g.atoms.map(() => []);
   g.bonds.forEach((b, k) => { adj[b.a].push({ to: b.b, k }); adj[b.b].push({ to: b.a, k }); });
-  const aromatic = aromaticAtoms(g), bridge = bridges(n, adj);
-  const sym = (k: number) => { const b = g.bonds[k]; return aromatic[b.a] && aromatic[b.b] && !bridge.has(k) ? "*" : b.order === 2 ? "=" : b.order === 3 ? "%" : ""; };
+  const eta = hapto(g), aromatic = aromaticAtoms(g).map((x, i) => x && eta[i] < 0), bridge = bridges(n, adj);
+  const sym = (k: number) => {
+    const b = g.bonds[k];
+    if (eta[b.a] >= 0 && eta[b.a] === eta[b.b]) return "~";
+    if (eta[b.a] === b.b || eta[b.b] === b.a) return "^";
+    return aromatic[b.a] && aromatic[b.b] && !bridge.has(k) ? "*" : b.order === 2 ? "=" : b.order === 3 ? "%" : "";
+  };
   const edges = adj.map((list) => list.map(({ to, k }) => ({ to, bond: sym(k) })));
   const label = g.atoms.map((a) => `${a.el}${a.charge > 0 ? "+" : a.charge < 0 ? "-" : ""}`);
   // Classes: start from what each atom is, then split by what its neighbours are until nothing more splits.
@@ -80,7 +119,7 @@ export function environment(g: Graph): Env {
     if (more === count) break;
     count = more;
   }
-  return { g, edges, label, cls, aromatic };
+  return { g, edges, label, cls, aromatic, eta };
 }
 
 // An atom's codes, one per level (sphere 1 to `levels`), in the spirit of HOSE codes: the centre's label and
@@ -112,6 +151,10 @@ export function hose(env: Env, centre: number, levels = LEVELS): string[] {
   }
   return out;
 }
+// An atom's codes from level 0 to the longest, indexed by level. Level 0 is the atom alone: its label, its hydrogens
+// and whether it is η-bonded to a metal (^), so a Cp or arene ring on a metal the table has never seen gets the shifts
+// of such rings on other metals. It is the last resort, so every atom gets a shift, rated rough when it comes from it.
+export const codes = (env: Env, centre: number): string[] => [`${env.label[centre]}H${env.g.atoms[centre].h}${env.eta[centre] >= 0 ? "^" : ""}`, ...hose(env, centre)];
 // A description as 8 hex digits, so codes stay short however deep they go.
 const short = (s: string) => codeHash("1H", s).toString(16).padStart(8, "0");
 
@@ -173,16 +216,16 @@ function find(t: Table, h: number) {
   }
   return -1;
 }
-// An atom's shift: from its longest code the table has, as measured in `solvent` where the solvent table has that
-// code. Undefined when not even its first sphere is there.
+// An atom's shift: from its longest code the table has (level 0 at the least), as measured in `solvent` where the
+// solvent table has that code. Undefined when not even the atom alone is there.
 export function lookup(env: Env, nucleus: Nucleus, atom: number, solvent?: string): { shift: number; sd: number; based: number; level: number; solvent?: string } | undefined {
   const t = tables[nucleus], st = solvent ? solventTables[nucleus] : undefined;
   if (!t) return undefined;
-  const codes = hose(env, atom);
-  for (let level = codes.length; level >= 1; level--) {
-    const i = find(t, codeHash(nucleus, codes[level - 1]));
+  const all = codes(env, atom);
+  for (let level = all.length - 1; level >= 0; level--) {
+    const i = find(t, codeHash(nucleus, all[level]));
     if (i < 0) continue;
-    const j = st ? find(st, codeHash(nucleus, solventCode(solvent!, codes[level - 1]))) : -1;
+    const j = st ? find(st, codeHash(nucleus, solventCode(solvent!, all[level]))) : -1;
     if (j >= 0) return { shift: st!.shift[j] / 100, sd: st!.sd[j] / 100, based: st!.n[j], level, solvent };
     return { shift: t.shift[i] / 100, sd: t.sd[i] / 100, based: t.n[i], level };
   }
@@ -205,9 +248,15 @@ export function nmrReady(): Promise<void> {
 
 // Typical ¹H–¹H couplings (Hz) between hydrogens on neighbouring atoms: aromatic ortho, vinylic (cis and trans
 // averaged; Octet's graph has no geometry), next to an aldehyde, and otherwise vicinal sp³. Meta coupling on a ring
-// is 2 Hz. Hydrogens on O, N and S exchange and do not couple.
+// is 2 Hz. Round a ring η-bonded to a metal: 2.5 Hz in a Cp ring, 6.5 Hz in an arene's. Hydrogens on O, N and S
+// exchange and do not couple.
 function vicinal(env: Env, a: number, b: number): number {
   const e = env.edges[a].find((x) => x.to === b)!;
+  if (e.bond === "~") {
+    const ring = new Set([a]);
+    for (const i of ring) for (const x of env.edges[i]) if (x.bond === "~") ring.add(x.to);
+    return ring.size === 5 ? 2.5 : 6.5;
+  }
   if (e.bond === "*") return 8;
   if (e.bond === "=") return 12;
   const sp2 = (i: number) => env.edges[i].some((x) => x.bond === "=" || x.bond === "*");
@@ -251,6 +300,7 @@ export function predict(drawn: Graph, nucleus: Nucleus, solvent?: string): Predi
       atoms: members.map((i) => from[i]), shift: found.shift, nuclei, couplings: couplings.sort((a, b) => b.j - a.j),
       ...(nucleus === "1H" && exchange(c) ? { broad: true } : {}), sd: found.sd, based: found.based, level: found.level, ...(found.solvent ? { solvent: found.solvent } : {}),
       group: `${members.length > 1 ? `${members.length} × ` : ""}${g.atoms[c].el}${g.atoms[c].h ? `H${g.atoms[c].h > 1 ? g.atoms[c].h : ""}` : ""}`,
+      code: codeHash(nucleus, hose(env, c)[LEVELS - 1]).toString(36),
     });
   }
   return signals.length ? { nucleus, signals: signals.sort((a, b) => b.shift - a.shift) } : undefined;

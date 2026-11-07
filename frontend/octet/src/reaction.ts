@@ -391,12 +391,13 @@ export function cleanUpReaction(m: Mol, r: Reaction, arrows: Arrow[], o: Layout,
     return { step: s, own, full, lo: 0, length: full[2] - full[0], up: flat ? (n[1] > 0 ? hiC : loC) : 0, down: flat ? (n[1] > 0 ? loC : hiC) : 0 };
   });
 
-  // Lines: one, unless the row is wider than the page. A line breaks before an arrow (or, failing that, a plus sign);
-  // the fewest lines, then the most even.
+  // Lines: one, unless the row is wider than the page. A line breaks before an arrow (or, failing that, a plus sign)
+  // after the first arrow, so the first line holds the starting materials and their arrow (a line of starting
+  // materials alone would read as no reaction); the fewest lines, then the most even.
   const widthOf = (from: number, to: number) => parts.slice(from, to).reduce((w, p) => w + p.length, 0) + gap * Math.max(0, to - from - 1);
   let breaks: number[] = [];
   if (flat && o.width && widthOf(0, parts.length) > o.width) {
-    const at = (kind: string) => parts.flatMap((p, k) => (k && p.step.kind === kind ? [k] : []));
+    const firstArrow = parts.findIndex((p) => p.step.kind === "arrow"), at = (kind: string) => parts.flatMap((p, k) => (k > firstArrow && p.step.kind === kind ? [k] : []));
     for (const candidates of [at("arrow"), [...new Set([...at("arrow"), ...at("plus")])].sort((p, q) => p - q)]) {
       // best[k]: the fewest lines, then the narrowest widest line, for parts 0..k-1 broken at candidates.
       const ends = [...candidates, parts.length], best = new Map<number, { lines: number; widest: number; cuts: number[] }>([[0, { lines: 0, widest: 0, cuts: [] }]]);

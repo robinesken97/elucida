@@ -1,7 +1,7 @@
 // Checks a drawing the way a chemist would at a glance: ChemDraw 26.1's chemical warnings (Check Structure and the
 // marks on the drawing), and messy geometry. Messages follow the brief's style: what is wrong, the rule, then what to do.
-import { bondedTo, bondOrders, fragments, freePairs, LARGE, neighbours, pos, type P } from "./edit.ts";
-import { labelSmiles, units } from "./labels.ts";
+import { bondedTo, bondOrders, fragments, freePairs, LARGE, mayBeChairBond, neighbourSlots, neighbours, perspectiveBonds, pos, WIDE, type P } from "./edit.ts";
+import { chemicalText, labelSmiles, units } from "./labels.ts";
 import { HBOND, isBracket, orderOf, type Bond, type Mol } from "./render.ts";
 
 // The kinds of warning, as ChemDraw 26.1's Settings > Warnings lists them, each with its switch's default (all on but
@@ -138,17 +138,19 @@ export function problems(m: Mol, stereo?: StereoFacts, all = false): Problem[] {
   const atomOf = (i: number, p: Omit<Problem, "atom">) => { if (all || !m.atoms[i].ignoreWarnings) out.push({ atom: i, ...p, ...(m.atoms[i].ignoreWarnings ? { hidden: true as const } : {}) }); };
   const bondOf = (k: number, p: Omit<Problem, "bond">) => { if (all || !m.bonds[k].ignoreWarnings) out.push({ bond: k, ...p, ...(m.bonds[k].ignoreWarnings ? { hidden: true as const } : {}) }); };
   const name = (i: number) => `${m.atoms[i].text ?? m.atoms[i].label}${i + 1}`;
-  // A plain carbon: not a label, an attachment mark or bead, or a multi-centre or variable attachment.
-  const plain = (i: number) => !m.atoms[i].text && m.atoms[i].label === "C" && !m.atoms[i].attach && !m.atoms[i].bead && !m.atoms[i].centre;
+  // A plain carbon: not a label (a carbon shown as C is one), an attachment mark or bead, or a multi-centre or variable
+  // attachment.
+  const plain = (i: number) => !m.atoms[i].text && !m.atoms[i].shown && m.atoms[i].label === "C" && !m.atoms[i].attach && !m.atoms[i].bead && !m.atoms[i].centre;
   m.atoms.forEach((a, i) => {
     const charge = a.charge ?? 0, radical = a.radical === 1 ? 1 : a.radical ? 2 : 0;
     if (a.text) {
       // A label: its brackets, an isotope written before it (13CH3), and its attachment atom's valence with the
       // hydrogens the label writes and the bonds drawn to it.
-      if (!balanced(a.text)) atomOf(i, { type: "parens", message: `The label ${a.text} has unbalanced parentheses. Add or remove a parenthesis.` });
-      const iso = /^(\d+)([A-Z][a-z]?)/.exec(a.text);
+      const t = chemicalText(a.text, a.runs)!;
+      if (!balanced(t)) atomOf(i, { type: "parens", message: `The label ${a.text} has unbalanced parentheses. Add or remove a parenthesis.` });
+      const iso = /^(\d+)([A-Z][a-z]?)/.exec(t);
       if (iso && !knownIsotope(iso[2], Number(iso[1]))) atomOf(i, { type: "isotopes", message: `${a.text} has an isotope that is not known: ${NAMES[iso[2]] ?? iso[2]} has no isotope of mass ${iso[1]}. Change the mass number.` });
-      const first = firstAtom(a.text), vs = first && !a.query?.valence && valences(first.element, first.charge + charge), h = labelHydrogens(a.text);
+      const first = firstAtom(t), vs = first && !a.query?.valence && valences(first.element, first.charge + charge), h = labelHydrogens(t);
       if (!first || !vs || h === undefined) return;
       const own = first.inside + h + radical, room = vs[vs.length - 1] - own, n = orders[i];
       if (own + n > vs[vs.length - 1] + 1e-9) atomOf(i, { type: "valence", message: n ? `${a.text} has ${plural(n, "bond")}. It can have ${room > 0 ? room : "no bonds"}. ${room > 0 ? "Remove a bond." : "Remove its bonds or change the label."}` : `An atom in ${a.text} has too many bonds. Change the label.` });
@@ -182,18 +184,21 @@ export function problems(m: Mol, stereo?: StereoFacts, all = false): Problem[] {
   // Unlabelled atoms very close to a bond they are not part of. The atoms go in a grid (one bond length square); each
   // bond tests the atoms in the cells its box, grown by NEAR, covers (a long bond, every atom). In a structure turned
   // in 3D the distance counts depth too: an atom that is only in line with a bond as seen (one behind it) is not close.
+  // A bond to a multi-centre point crosses its own ring by design, so the ring's atoms are not close to it.
   const NEAR = 0.15, grid = new Map<number, number[]>(), key = (x: number, y: number) => x * 4194304 + y, xy = m.atoms.map((a) => a.location);
+  let centred = false;
   m.atoms.forEach((a, i) => {
-    if (a.text || a.label !== "C" || !count[i] || a.centre) return;
+    if (a.centre) centred = true;
+    if (a.text || a.shown || a.label !== "C" || !count[i] || a.centre) return;
     const k = key(Math.floor(xy[i][0]), Math.floor(xy[i][1])), cell = grid.get(k);
     if (cell) cell.push(i); else grid.set(k, [i]);
   });
   const close = new Set<number>();
   for (const b of m.bonds) {
-    const [s, t] = [xy[b.atoms[0]], xy[b.atoms[1]]], dx = t[0] - s[0], dy = t[1] - s[1], l = dx * dx + dy * dy;
+    const [s, t] = [xy[b.atoms[0]], xy[b.atoms[1]]], dx = t[0] - s[0], dy = t[1] - s[1], l = dx * dx + dy * dy, own = centred ? (m.atoms[b.atoms[0]].centre ?? m.atoms[b.atoms[1]].centre)?.atoms : undefined;
     const x0 = Math.floor(Math.min(s[0], t[0]) - NEAR), x1 = Math.floor(Math.max(s[0], t[0]) + NEAR), y0 = Math.floor(Math.min(s[1], t[1]) - NEAR), y1 = Math.floor(Math.max(s[1], t[1]) + NEAR);
     const test = (i: number) => {
-      if (i === b.atoms[0] || i === b.atoms[1]) return;
+      if (i === b.atoms[0] || i === b.atoms[1] || own?.includes(i)) return;
       const p = xy[i], f = l ? Math.max(0, Math.min(1, ((p[0] - s[0]) * dx + (p[1] - s[1]) * dy) / l)) : 0;
       if (Math.hypot(s[0] + f * dx - p[0], s[1] + f * dy - p[1], (s[2] ?? 0) + f * ((t[2] ?? 0) - (s[2] ?? 0)) - (p[2] ?? 0)) < NEAR) close.add(i);
     };
@@ -297,17 +302,54 @@ export function showWarnedHydrogens(m: Mol): Mol {
 // The stereochemistry warnings, from Indigo's facts. As in ChemDraw, unset and conflicting stereocentres are warned
 // about only where Show Stereochemistry is on.
 function stereoProblems(m: Mol, s: StereoFacts, atomOf: (i: number, p: Omit<Problem, "atom">) => void, bondOf: (k: number, p: Omit<Problem, "bond">) => void) {
-  const wedge = (b: Bond) => b.stereo === 1 || b.stereo === 6;
-  const wedged = new Set(m.bonds.filter(wedge).flatMap((b) => b.atoms));
-  m.bonds.forEach((b, k) => {
-    if (!wedge(b)) return;
-    const [narrow, wide] = b.atoms;
-    if (s.centres.has(narrow) && s.centres.has(wide)) bondOf(k, { type: "between", message: "This wedge or hash joins two stereocentres, so it is not clear which one it sets. Start it at one stereocentre only." });
-    else if (!s.centres.has(narrow) && s.centres.has(wide)) bondOf(k, { type: "backwards", message: "This wedge or hash starts at an atom that cannot be a stereocentre. Put its narrow end on the stereocentre.", fix: { label: "Swap the ends", command: `flip_bond:${k}` } });
+  // The wedges and hashes, by bond number.
+  const all: number[] = [];
+  m.bonds.forEach((b, k) => { if (b.stereo === 1 || b.stereo === 6) all.push(k); });
+  // A wedge or hash that draws a ring in perspective (a chair's or Haworth projection's front edge) sets nothing.
+  // Only the wedges the warnings below can turn on are looked at: one with a stereocentre at its wide end, one that
+  // starts where such a wedge between two stereocentres ends, and one at a stereocentre with no configuration. When
+  // none of those can be a chair's (and no bond is bold, as a Haworth projection's front edge is), the perspective
+  // bonds change nothing here, and are not found.
+  // Each atom's facts as flags, read many times below.
+  const n = m.atoms.length, centre = new Uint8Array(n), open = new Uint8Array(n), ends = new Uint8Array(n);
+  for (const i of s.centres) if (i < n) centre[i] = 1;
+  for (const i of s.unset) if (m.atoms[i]?.cip && !s.conflict.has(i)) open[i] = 1;
+  for (const k of all) { const e = m.bonds[k].atoms; if (centre[e[0]] && centre[e[1]]) ends[e[1]] = 1; }
+  const need = all.filter((k) => { const e = m.bonds[k].atoms; return centre[e[1]] || ends[e[0]] || open[e[0]] || open[e[1]]; });
+  const slots = need.length ? neighbourSlots(m) : undefined;
+  const flat = need.length && (m.bonds.some((b) => b.display === "bold") || mayBeChairBond(m, need, slots)) ? perspectiveBonds(m) : undefined;
+  const own = flat?.size ? all.filter((k) => !flat.has(k)) : all, wedges = own.map((k) => m.bonds[k]);
+  const wedged = new Uint8Array(n);
+  for (const w of wedges) { wedged[w.atoms[0]] = 1; wedged[w.atoms[1]] = 1; }
+  // Each wedge's narrow end with a neighbour that is no stereocentre (1), found once for the wedges that join two.
+  let lone: Uint8Array | undefined, starts: Set<number> | undefined;
+  const loneAt = (i: number) => {
+    if (!lone) {
+      lone = new Uint8Array(m.atoms.length);
+      const ask = new Uint8Array(m.atoms.length);
+      for (const w of wedges) if (centre[w.atoms[0]] && centre[w.atoms[1]]) ask[w.atoms[0]] = 1;
+      if (slots) {
+        for (let p = 0; p < ask.length; p++) if (ask[p]) for (let r = WIDE * p; r < WIDE * p + slots.deg[p]; r++) if (!centre[slots.near[r]]) lone[p] = 1;
+      } else for (const b of m.bonds) {
+        const p = b.atoms[0], q = b.atoms[1];
+        if (ask[p] && !s.centres.has(q)) lone[p] = 1;
+        if (ask[q] && !s.centres.has(p)) lone[q] = 1;
+      }
+    }
+    return lone[i] === 1;
+  };
+  own.forEach((k, n) => {
+    const narrow = wedges[n].atoms[0], wide = wedges[n].atoms[1];
+    // A stereocentre whose neighbours are all stereocentres (a quaternary carbon in a cage: ginkgolide's, aconitine's)
+    // can only be set by a bond to one of them. Read at its narrow end, as wedges are, the bond sets only that centre,
+    // so it is clear where the wide end's centre is set by its own wedge or hash.
+    if (centre[narrow] && centre[wide] && !((starts ??= new Set(wedges.map((w) => w.atoms[0]))).has(wide) && !loneAt(narrow))) bondOf(k, { type: "between", message: "This wedge or hash joins two stereocentres, so it is not clear which one it sets. Start it at one stereocentre only." });
+    else if (!centre[narrow] && centre[wide]) bondOf(k, { type: "backwards", message: "This wedge or hash starts at an atom that cannot be a stereocentre. Put its narrow end on the stereocentre.", fix: { label: "Swap the ends", command: `flip_bond:${k}` } });
   });
   m.atoms.forEach((a, i) => {
+    if (!a.cip && !a.enhanced) return;
     const name = `${a.text ?? a.label}${i + 1}`;
-    if (a.cip && (s.conflict.has(i) || (s.unset.has(i) && wedged.has(i)))) atomOf(i, { type: "ambiguous", message: `The wedge and hash bonds at ${name} conflict, or do not set its configuration. Change a wedge or hash.` });
+    if (a.cip && (s.conflict.has(i) || (s.unset.has(i) && wedged[i]))) atomOf(i, { type: "ambiguous", message: `The wedge and hash bonds at ${name} conflict, or do not set its configuration. Change a wedge or hash.` });
     else if (a.cip && s.unset.has(i)) atomOf(i, { type: "unspecified", message: `${name} is a stereocentre with no wedge or hash bond. Add one to set its configuration.` });
     if (a.enhanced && !s.centres.has(i)) atomOf(i, { type: "enhanced", message: `${name} has the stereo flag ${a.enhanced}, but it is not a stereocentre. Remove the flag.` });
   });
@@ -315,7 +357,8 @@ function stereoProblems(m: Mol, s: StereoFacts, atomOf: (i: number, p: Omit<Prob
   // flagged atom.
   const told = new Set<string>();
   m.atoms.forEach((a, i) => {
-    const kind = /^&/.test(a.enhanced ?? "") ? "racemic" : /^or/.test(a.enhanced ?? "") ? "relative" : undefined;
+    if (!a.enhanced) return;
+    const kind = /^&/.test(a.enhanced) ? "racemic" : /^or/.test(a.enhanced) ? "relative" : undefined;
     if (!kind || !s.achiral.has(i) || told.has(kind)) return;
     told.add(kind);
     atomOf(i, { type: "enhanced", message: `This compound cannot be ${kind}: it is not chiral. Remove its stereo flags.` });

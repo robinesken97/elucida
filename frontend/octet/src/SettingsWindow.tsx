@@ -11,7 +11,8 @@ import { Select } from "./Select";
 import { FontPick } from "./Actions";
 import { listOpen } from "./Menu";
 import { NumberField, Segmented, Switch } from "./Fields";
-import { RULER_UNITS, SELECT_COLOURS, type RulerUnit, type SelectColour, type Swatch } from "./settings";
+import { RULER_UNITS, type RulerUnit, type Swatch } from "./settings";
+import { SELECT_DEFAULT } from "./selectcolour";
 import { EXPORT_FORMATS, PICTURES, type ExportFormat } from "./export";
 import { BACKDROPS, DpiField } from "./ExportDialog";
 import { BACKGROUNDS, COLOURS, elementColours, FONTS, GRID_IN, GRID_MM, PAGE_NAMES, PAGES, PRESETS, PURPOSES, pageSize, pickPage, presetAt, presetOf, withScale, type DocStyle, type PageName } from "./docstyle";
@@ -69,8 +70,8 @@ type Props = {
   onOnlineSearch: (on: boolean) => void;
   rulerUnit: RulerUnit; // View > Show Rulers: the rulers' unit, for every drawing
   onRulerUnit: (unit: RulerUnit) => void;
-  selectColour: SelectColour; // the selection's colour on the canvas, in every window
-  onSelectColour: (colour: SelectColour) => void;
+  selectColour: string; // the selection's colour, #RRGGBB, in every window
+  onSelectColour: (colour: string) => void;
   outlines: boolean; // Page edges: the other sizes' outlines show with the page's edge, for every drawing
   onOutlines: (on: boolean) => void;
   menuKeys: [string, string][]; // the menu commands that have a shortcut: name, shortcut as this platform shows it
@@ -315,6 +316,25 @@ function Backgrounds({ value, onChange }: { value: DocStyle["background"]; onCha
   );
 }
 
+// The selection's colour: Octet's blue, then a colour of the user's own, as the page backgrounds are chosen. Its button
+// opens the colour picker by it; Default gives the blue back.
+function SelectionColour({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
+  const [open, setOpen] = useState<DOMRect>();
+  const button = useRef<HTMLButtonElement>(null), own = value !== SELECT_DEFAULT ? value : undefined;
+  return (
+    <span className="paper-choices" role="radiogroup" aria-label="Selection colour">
+      <button role="radio" aria-checked={!own} aria-label="Default" data-tip="Default" className="paper-choice colour default" onClick={() => onChange(SELECT_DEFAULT)}>
+        <span />
+      </button>
+      <button ref={button} role="radio" aria-checked={!!own} aria-label="Custom colour" data-tip="Custom colour" aria-haspopup="dialog" aria-expanded={!!open} className="paper-choice colour own"
+        onClick={() => setOpen(open ? undefined : button.current!.getBoundingClientRect())}>
+        <span style={own ? { background: own } : undefined}>{!own && <Plus size={12} aria-hidden />}</span>
+      </button>
+      <Exit>{open && <ColourPop anchor={open} keep={button.current} label="Selection colour" value={value} onChange={onChange} onClose={() => setOpen(undefined)} />}</Exit>
+    </span>
+  );
+}
+
 // ——— Settings as data, so search can find and show any of them ———
 
 // head: the control goes in the section's head, beside its title, not in a row.
@@ -514,7 +534,7 @@ export function SettingsWindow(p: Props) {
       // pages) in every drawing, as ChemDraw's slide boundary guides are one setting for every document. A template being
       // made keeps its own switch, as Page only is Octet's.
       d("document", "Page", "Page edges", "page edges outline outlines guides columns sizes frame", p.template ? <Switch on={style.edges} label="Page edges" onChange={(on) => change({ edges: on })} /> : (
-        <Select label="Page edges" value={!style.edges ? "none" : p.outlines ? "all" : "page"} options={[["all", "All"], ["page", "Page only"], ["none", "None"]]}
+        <Select label="Page edges" value={!style.edges ? "none" : p.outlines ? "all" : "page"} options={[["all", "All sizes"], ["page", "Page only"], ["none", "None"]]}
           onChange={(v) => { if (v !== "none") p.onOutlines(v === "all"); if ((v !== "none") !== style.edges) change({ edges: v !== "none" }); }} />
       )),
       d("document", "Page", "Background", "background page colour custom dark mode night white system engineering paper blueprint blue grid", (
@@ -553,8 +573,8 @@ export function SettingsWindow(p: Props) {
         d("files", "Copy", name, `clipboard copy paste ${words}`, <Switch on={files.clipboard[k]} label={name} onChange={(on) => setFiles({ clipboard: { ...files.clipboard, [k]: on } })} />)),
       d("general", "Windows", "Open each drawing in a new window", "windows multiple multi window tabs home new open drawing each own single", <Switch on={p.windows} label="Open each drawing in a new window" onChange={p.onWindows} />),
       d("general", "Cursor", "Colour", "cursor pointer mouse colour black white automatic crosshair i-beam visible contrast", <Segmented label="Cursor colour" value={p.cursor} options={CURSOR_INKS} onChange={p.onCursor} />),
-      d("general", "Selection", "Colour", "selection selected highlight colour tint marquee lasso handles blue slate grey gray", (
-        <Segmented label="Selection colour" value={p.selectColour} options={SELECT_COLOURS} onChange={(v) => p.onSelectColour(v as SelectColour)} />
+      d("general", "Selection", "Colour", "selection selected highlight colour color tint marquee lasso handles frame blue custom default", (
+        <SelectionColour value={p.selectColour} onChange={p.onSelectColour} />
       )),
       d("general", "Updates", "Check automatically", "updates update check automatically new version internet", <Switch on={p.updates} label="Check for updates automatically" onChange={p.onUpdates} />),
       d("appearance", "Colours", "Octet's colours", "colour colours palette swatch built in", (

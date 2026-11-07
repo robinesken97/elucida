@@ -16,7 +16,8 @@ import { useMovable } from "./movable";
 import { holdCursor } from "./cursor";
 import { useLeaving } from "./motion";
 import { HIGHLIGHT_COLOURS } from "./docstyle";
-import { spread } from "./spectrumplot";
+import { inkOf } from "./spectrumplot";
+import { panelRow, rowSize, RowText, type RowLabel } from "./Spectrum";
 import { cutPoints } from "./masscut";
 import {
   fragmentsOf, fragmentWith, hrmsLine, ionChoices, ionName, ionOf, MODES, mzRange, mzTicks, nearest, parsePeaks, patternMatch, ppm, SOURCES, structureOf, TOLERANCES,
@@ -131,8 +132,10 @@ export function MassSpecPanel(p: Props) {
 
   // Each ion labelled at its calculated m/z (monoisotopic or most intense, as chosen), the labels spread apart.
   const shown = rows.map((r, k) => { const m = calc(r); return m !== undefined && m >= lo && m <= hi ? k : -1; }).filter((k) => k >= 0);
-  const places = hi - lo < 30 ? 4 : hi - lo < 300 ? 2 : 1, placed = spread(shown.map((k) => x(calc(rows[k])!)), places > 2 ? 64 : 48, width), labelAt: number[] = [];
-  shown.forEach((k, i) => { labelAt[k] = placed[i]; });
+  // The one label layout every spectrum uses: across, each on a leader that drops to the top of its peak.
+  const places = hi - lo < 30 ? 4 : hi - lo < 300 ? 2 : 1, labels: RowLabel[] = shown.map((k) => ({ x: x(calc(rows[k])!), a: x(calc(rows[k])!), b: x(calc(rows[k])!), shift: calc(rows[k])!.toFixed(places), rest: "" }));
+  const drawn: [number, number][] = mirror ? peaks.map((q) => [x(q.mz), axis - up(q.i)]) : rows.flatMap((r) => (r.ion.pattern ?? []).filter((q) => q.rel >= 1).map((q): [number, number] => [x(q.mz), axis - up(q.rel)]));
+  const row = shown.length ? panelRow(labels, rowSize(labels, "horizontal", width), width, { top: TOP, bottom: axis }, inkOf(drawn)) : undefined;
   const ticks = mzTicks(lo, hi, width - 2 * PAD), tickPlaces = ticks.length > 1 && ticks[1] - ticks[0] < 1 ? 2 : 0;
 
   return (
@@ -205,12 +208,13 @@ export function MassSpecPanel(p: Props) {
                 {(r.ion.pattern ?? []).map((q, i) => q.rel >= 1 && q.mz >= lo && q.mz <= hi && <line key={i} className="massspec-stick" x1={x(q.mz)} x2={x(q.mz)} y1={axis} y2={mirror ? down(q.rel) : up(q.rel)} />)}
               </g>
             ))}
-            {shown.map((k) => {
-              const r = rows[k], tip = mirror ? axis : up(100), ly = TOP - 18;
+            {row && row.brackets.map((b) => <path key={`b${b.peaks.join()}`} className="spectrum-leader" d={b.d} />)}
+            {row && shown.map((k, i) => {
+              const r = rows[k];
               return (
                 <g key={`l${k}`} className={`massspec-label${lit(k) ? " lit" : ""}${chosen === k ? " chosen" : ""}`} style={{ fill: r.colour }} data-tip={`${r.ion.label} ${r.ion.formula}`}>
-                  <path className="spectrum-leader" d={`M${labelAt[k]} ${ly + 4}L${labelAt[k]} ${ly + 8}L${x(calc(r)!)} ${Math.max(ly + 9, tip - 3)}`} />
-                  <text x={labelAt[k]} y={ly} textAnchor="middle">{calc(r)!.toFixed(places)}</text>
+                  {row.paths[i] && <path className="spectrum-leader" d={row.paths[i]} />}
+                  <RowText l={labels[i]} at={row.at[i]} base={row.base} vertical={false} />
                 </g>
               );
             })}

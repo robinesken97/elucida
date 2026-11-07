@@ -3,6 +3,8 @@
 // Drawn left to right from the attached atom; when the bond comes from the right, the units are reversed
 // (OMe becomes MeO, CO2Et becomes EtO2C), as ChemDraw does in its ACS 1996 output.
 
+import { condensedLabel } from "./condensed.ts";
+
 const SYMBOLS = (
   "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr " +
   "Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt " +
@@ -41,8 +43,41 @@ export const isGeneric = (label: string) => GENERIC_NAMES.has(label) || /^R([1-9
 
 export type Unit = { text: string; count?: string; kind: "element" | "group" | "bracket" | "other" };
 
-// Splits a label into units. Groups win over elements where both fit (so "Bu" is butyl, not boron-u).
+// Splits a label into units. Groups win over elements where both fit (so "Bu" is butyl, not boron-u). A label is
+// split once and kept (units are read on every frame): callers must not change what comes back.
+const split = new Map<string, Unit[]>();
 export function units(label: string): Unit[] {
+  let out = split.get(label);
+  if (!out) {
+    if (split.size >= 2000) split.clear();
+    split.set(label, (out = unitsOf(label)));
+  }
+  return out;
+}
+// The next element or group at the start of rest: a group, a two-letter element, or one character.
+function token(rest: string): Unit {
+  const group = GROUP_NAMES.find((g) => rest.startsWith(g) && !/[a-z]/.test(rest[g.length] ?? ""));
+  const two = rest.slice(0, 2), text = group ?? (ELEMENTS.has(two) && /^[A-Z][a-z]$/.test(two) ? two : rest[0]);
+  return { text, kind: group ? "group" : ELEMENTS.has(text) ? "element" : "other" };
+}
+// A word (capitals and the small letters after them) that is not all elements and groups is an abbreviation Octet
+// does not know (DMT, SEM, Phth): one unit, so a label read right to left never reverses it letter by letter (ODMT
+// reads DMTO, not TMDO). R and X are read as groups (OR, CH2X). The word's first element (not H, D or T), with an H
+// after it, is a unit of its own when what follows is an abbreviation: three letters or more, a capital and a small
+// letter (Nf), or two capitals after the H (NHPG reads PGHN). Else the whole word is one unit (SEM, BOM, PG).
+// Undefined for a word that reads as elements and groups.
+function word(w: string): Unit[] | undefined {
+  const ts: Unit[] = [];
+  for (let k = 0; k < w.length; ) { const t = token(w.slice(k)); ts.push(t); k += t.text.length; }
+  if (!ts.some((t) => t.kind === "other" && t.text !== "R" && t.text !== "X")) return undefined;
+  const head = ts[0].kind === "element" && !/^[HDT]$/.test(ts[0].text) ? [ts[0], ...(ts[1]?.text === "H" ? [ts[1]] : [])] : [];
+  const rest = w.slice(head.reduce((n, t) => n + t.text.length, 0));
+  const ok = head.length && (rest.length >= 3 || /^[A-Z][a-z]$/.test(rest) || (head.length === 2 && /^[A-Z]{2}$/.test(rest)));
+  return ok ? [...head, { text: rest, kind: "other" }] : [{ text: w, kind: "other" }];
+}
+function unitsOf(label: string): Unit[] {
+  // A generic label (ALK, CYC, Q) is one unit: it is never read as atoms.
+  if (isGeneric(label) && !/\d/.test(label)) return [{ text: label, kind: "other" }];
   const out: Unit[] = [];
   let i = 0;
   const digits = () => { const m = /^\d+/.exec(label.slice(i)); if (m) i += m[0].length; return m?.[0]; };
@@ -55,12 +90,33 @@ export function units(label: string): Unit[] {
       out.push({ text: inner, count: digits(), kind: "bracket" });
       continue;
     }
-    const group = GROUP_NAMES.find((g) => rest.startsWith(g) && !/[a-z]/.test(rest[g.length] ?? ""));
-    const two = rest.slice(0, 2), one = rest[0];
-    const token = group ?? (ELEMENTS.has(two) && /^[A-Z][a-z]$/.test(two) ? two : one);
-    i += token.length;
-    out.push({ text: token, count: digits(), kind: group ? "group" : ELEMENTS.has(token) ? "element" : "other" });
+    const w = /^[A-Z]/.test(rest) && !/[A-Z]/.test(label[i - 1] ?? "") ? /^[A-Z]+[a-z]*/.exec(rest)![0] : "", unknown = w ? word(w) : undefined;
+    if (unknown) {
+      i += w.length;
+      out.push(...unknown.slice(0, -1), { ...unknown[unknown.length - 1], count: digits() });
+      continue;
+    }
+    const t = token(rest);
+    i += t.text.length;
+    out.push({ ...t, count: digits() });
   }
+  return out;
+}
+
+// How a unit is drawn (issue 44): the counts inside a bracket are subscripts as in running text (formulaRuns), so
+// N(CH3)2 and C(O)OCH3 draw as ChemDraw draws them from CDXML. A bracket becomes pieces, each with its count; their
+// text and counts, in order, are the unit's. Other units are drawn as they are.
+export function pieces(u: Unit): Unit[] {
+  if (u.kind !== "bracket") return [u];
+  const out: Unit[] = [];
+  for (const r of formulaRuns(u.text)) {
+    const last = out[out.length - 1];
+    if (r.sub && last) last.count = r.text;
+    else out.push(r.sub ? { text: "", count: r.text, kind: "bracket" } : { text: r.text, kind: "bracket" });
+  }
+  const last = out[out.length - 1];
+  if (u.count && last && !last.count) last.count = u.count;
+  else if (u.count) out.push({ text: "", count: u.count, kind: "bracket" });
   return out;
 }
 
@@ -80,11 +136,27 @@ export function writtenOxidation(label: string): { el: string; ox: number } | un
   return x && ELEMENTS.has(x[1]) ? { el: x[1], ox: ROMAN.indexOf(x[2]) } : undefined;
 }
 
+// A written label as chemistry reads it (issue 44). Characters set in superscript or subscript by hand are drawn
+// that way but not read, except a mass number before an element (13CH3), a charge (NH4+) and a count (CH3). A Roman
+// numeral in superscript after a lone element is its oxidation state, read as Fe(III). A label all in a script is
+// read as it is. runs: the label's runs (their text must join to the label's).
+export function chemicalText(text: string | undefined, runs?: { text: string; script?: "sub" | "super" }[]): string | undefined {
+  if (!text || !runs?.some((r) => r.script) || runs.map((r) => r.text).join("") !== text) return text;
+  let out = "", roman = "";
+  runs.forEach((r, k) => {
+    const next = runs.slice(k + 1).map((x) => x.text).join("");
+    if (!r.script || /^\d+$/.test(r.text) && (r.script === "sub" || /^[A-Z]/.test(next)) || (r.script === "super" && /^(\d*[+\-−]|[+\-−]\d*)$/.test(r.text))) out += r.text;
+    else if (r.script === "super" && k === runs.length - 1 && ROMAN.includes(r.text)) roman = r.text;
+  });
+  if (!out) return text;
+  return roman && ELEMENTS.has(out) ? `${out}(${roman})` : out;
+}
+
 // Formulas whose bonding a left-to-right reading gets wrong (CN is a nitrile, not an amine).
 const FORMULAS: Record<string, string> = {
   CN: "C#N", NC: "[N+]#[C-]", CHO: "C=O", CO2H: "C(=O)O", COOH: "C(=O)O", CO2: "C(=O)[O-]", NO2: "[N+](=O)[O-]", NO: "N=O",
   N3: "N=[N+]=[N-]", SO3H: "S(=O)(=O)O", SO2: "S(=O)=O", SO2Ph: "S(=O)(=O)c1ccccc1", COMe: "C(C)=O", COPh: "C(=O)c1ccccc1",
-  CONH2: "C(N)=O", OCN: "OC#N", SCN: "SC#N", NCO: "N=C=O", NCS: "N=C=S",
+  CONH2: "C(N)=O", OCN: "OC#N", SCN: "SC#N", NCO: "N=C=O", NCS: "N=C=S", CHN2: "C=[N+]=[N-]", PO3H2: "P(=O)(O)O",
 };
 
 // The label as SMILES with its attachment point first, for chemistry (SMILES export, formulas).
@@ -105,6 +177,10 @@ export function labelSmiles(label: string): string | undefined {
   const back = [...us].reverse(), last = back[0];
   const reverse = back.map((u) => u.text + (u.count ?? "")).join("");
   if (FORMULAS[reverse]) return FORMULAS[reverse];
+  // Read from its attachment atom as a condensed formula, every valence used (CH2N3 an azide, SO2Me a sulfone, CH2CN a
+  // nitrile), when it can be read in one way; else left to right as below.
+  const whole = us[0].kind === "element" && us[0].text !== "H" && us.length > 1 ? condensedLabel(label) : undefined;
+  if (whole && !crowded(whole)) return whole;
   if (us.length > 1 && us[0].kind === "group" && last.kind === "element" && last.text !== "H" && !last.count) us = back;
   let smiles = "";
   const atom = (sym: string) => (["B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"].includes(sym) ? sym : `[${sym}]`);
@@ -177,8 +253,10 @@ export function formulaRuns(text: string): Run[] {
   for (const m of text.matchAll(/\d+/g)) {
     const before = text.slice(0, m.index), word = /\S*$/.exec(before)![0] + /^\S*/.exec(text.slice(m.index))![0];
     const letters = /[A-Za-z]{1,5}$/.exec(before)?.[0] ?? "";
+    // A generic group (L, R, X, Ar) counts within a formula (Pd(0)L2, HNR2, PdX2), not as a word of its own (L1, R2).
+    const own = /\S*$/.exec(before)![0], generic = /(?:Ar|L|R|X)$/.exec(own)?.[0];
     const counted = !NOT_FORMULA.test(word) && /[A-Za-z]/.test(word)
-      && (/[A-Za-z0-9][)\]]$/.test(before) || Array.from({ length: letters.length }, (_, k) => letters.slice(k)).some((s) => COUNTED.has(s)));
+      && (/[A-Za-z0-9][)\]]$/.test(before) || Array.from({ length: letters.length }, (_, k) => letters.slice(k)).some((s) => COUNTED.has(s)) || (!!generic && own.length > generic.length));
     if (!counted) continue;
     push(text.slice(at, m.index));
     push(m[0], true);
@@ -187,3 +265,9 @@ export function formulaRuns(text: string): Run[] {
   push(text.slice(at));
   return out;
 }
+
+// Text Octet draws as a formula when it has no runs of its own (issue 31): conditions on an arrow, and a cycle's
+// reagents, products, centre label and text intermediates, not its steps' names. The editor draws it, and the CDXML
+// writer writes it, with formulaTextRuns, so the file shows what the page shows.
+export const formulaCaption = (c: { on?: unknown; cycle?: { side: string } }) => !!c.on || (!!c.cycle && c.cycle.side !== "name");
+export const formulaTextRuns = (text: string): { text: string; script?: "sub" }[] => formulaRuns(text).map((r) => (r.sub ? { text: r.text, script: "sub" } : { text: r.text }));

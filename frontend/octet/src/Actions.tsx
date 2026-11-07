@@ -11,7 +11,7 @@ import {
   AlignBottomSimple, AlignTopSimple, ArrowLineDown, ArrowLineUp, CursorText, DotsThree, DotsThreeVertical, Faders, Polygon, Rectangle, ArrowArcLeft, ArrowArcRight, ArrowsCounterClockwise, ArrowUDownLeft, CircleDashed, CornersOut, MagnifyingGlass, Swap,
   ArrowUUpLeft, ClipboardText, CopySimple, IdentificationBadge, Key, Target, LineSegments, Minus, Plus, Stack, StackSimple, Eye, FileArrowDown, FlipHorizontal, FlipVertical, GearSix, House, LinkBreak, LinkSimple, ListNumbers, Hash, MagicWand, MinusCircle,
   PencilSimpleLine, PlusCircle, SelectionAll, SlidersHorizontal, SquareSplitHorizontal, TagSimple, TextAlignCenter, TextAlignLeft,
-  TextAlignJustify, TextAlignRight, Tag, TextB, TextItalic, TextUnderline, Trash, Warning, X, Plus as PlusIcon, Rows, RowsPlusBottom, RowsPlusTop, Columns, ColumnsPlusRight, ColumnsPlusLeft, ArrowsInLineHorizontal, Backspace, Broom, CirclesThree, FlowArrow, Subtitles, Textbox, WarningCircle, WaveSine, Circle, TextSubscript, TextSuperscript, Cube, Square, BoundingBox, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, ArrowsOutLineHorizontal, ArrowsOutLineVertical, BezierCurve, LineSegment, ArrowsMerge, ArrowsInCardinal, FadersHorizontal, Copy, ListDashes, Percent,
+  TextAlignJustify, TextAlignRight, Tag, TextB, TextItalic, TextUnderline, Trash, Warning, X, Plus as PlusIcon, Rows, RowsPlusBottom, RowsPlusTop, Columns, ColumnsPlusRight, ColumnsPlusLeft, ArrowsInLineHorizontal, Backspace, Broom, CirclesThree, FlowArrow, Subtitles, Textbox, WarningCircle, WaveSine, Circle, TextSubscript, TextSuperscript, Cube, Square, BoundingBox, SelectionSlash, AlignLeft, AlignRight, AlignTop, AlignBottom, ArrowsOutLineHorizontal, ArrowsOutLineVertical, BezierCurve, LineSegment, ArrowsMerge, ArrowsInCardinal, Crosshair, FadersHorizontal, Copy, ListDashes, Percent,
   EyeSlash, Angle, Resize, Unite, SelectionPlus, Paragraph, Checkerboard, CubeTransparent, CircleHalf, ClockCounterClockwise, Shuffle, ArrowBendDownRight, Path, Scissors, CircleNotch,
   Question, EyeClosed, BellSlash, ArrowsInLineVertical, BracketsRound, TreeStructure, Asterisk, AsteriskSimple, BracketsSquare, SquaresFour, StarFour, TextTSlash,
 } from "@phosphor-icons/react";
@@ -23,25 +23,47 @@ import { setItems } from "./TemplateLibrary";
 import { ColourPop } from "./ColourPicker";
 import { Exit, reduced, timing } from "./motion";
 import { NumberField } from "./Fields";
-import { ARROW_KINDS, curved, isBracket, isLine, ORBITAL_SHAPES, PHASES, SWEEPS, TABLE_LINES, type TableLine, type ArrowKind, type Head, type HeadShape, type OrbitalShape, type Phase, type ShapeKind } from "./render";
+import { ARROW_KINDS, arrowKind, arrowPicks, curved, isBracket, isLine, ORBITAL_SHAPES, PHASES, TABLE_LINES, type ArrowPick, type ArrowSize, type CurveFill, type LineStyle, type TableLine, type ArrowKind, type Head, type HeadShape, type OrbitalShape, type Phase, type ShapeKind } from "./render";
 import { BracketGlyph, ElementGlyph, OrbitalGlyph, orbitalName, shapeName, FillGlyph, LineGlyph } from "./elements";
 import { invoke } from "@tauri-apps/api/core";
 import { COLOURS, fontStack, HIGHLIGHT_COLOURS, RING_FILLS, roundPt, TINTS } from "./docstyle";
 import { ArrowGlyph, arrowName, ARROWS, BondGlyph, BONDS, RingGlyph, ShapeGlyph, SHAPES, SideGlyph, STRAIGHT, TlcGlyph, withSize, type BondKind } from "./tools";
 
-// The heads an arrow's or a cycle's side arrow's ends can take, as the Start and End picks list them.
-const HEADS = [["none", "None"], ["full", "Arrowhead"], ["left", "Half, left"], ["right", "Half, right"]] as const;
+// Each pick's choices (arrowPicks lists them) drawn as themselves, for the Actions panel and the right-click menu alike.
+const choices = (p: ArrowPick, c: Context) => p.options.map(([id, name]) => ({ id, name, glyph: pickGlyph(p, id, c) }));
+function pickGlyph(p: ArrowPick, id: string, c: Context): React.ReactNode {
+  const arrow = c.kind === "arrow" ? c.arrow : undefined;
+  switch (p.command) {
+    case "arrow.style": return <LineGlyph style={id as LineStyle} />;
+    case "arrow.start": case "cycle.side.start": return <LineGlyph start={id as Head} head={p.head} />;
+    case "arrow.end": case "cycle.side.end": return <LineGlyph end={id as Head} head={p.head} />;
+    case "arrow.head": case "cycle.head": return <LineGlyph end={arrow === "equilibrium" ? "left" : "full"} head={id as HeadShape} />;
+    case "arrow.sweep": return arrow === "arc" ? <ElementGlyph v={`arc-${id}`} /> : <ArrowGlyph kind={`${arrow && curved({ kind: arrow }) ? arrow : "curved"}-${id}`} />;
+    case "arrow.size": case "cycle.size": return <ArrowGlyph kind={id === "own" ? "reaction" : withSize(arrow === "block" ? "block" : "reaction", id as ArrowSize)} />;
+    case "arrow.fill": return <FillGlyph fill={id as CurveFill} />;
+    case "cycle.side.ends": return <SideGlyph ends={id as CycleSide["ends"]} />;
+    default: return id === "back" ? <span className="pick-turned"><ArrowGlyph kind="unbalanced" /></span> : <ArrowGlyph kind={id === "equal" ? "equilibrium" : "unbalanced"} />; // a step's balance
+  }
+}
+// The arrow kinds, as the kind chips and the right-click menu's Kind list them.
+const kindChoices = (c: Context) => [...STRAIGHT, ...ARROW_KINDS.filter((k) => curved({ kind: k }))].map((id) => ({
+  id, name: arrowName(id) ?? ARROWS[id as ArrowKind], glyph: <ArrowGlyph kind={curved({ kind: id as ArrowKind }) ? `${id}-${(c.kind === "arrow" && c.sweep) || 120}` : id} /> }));
+// An atom label's alignments, as ChemDraw's Text menu sets them on a label: the Actions panel's label chips and the
+// Alignment menu on a label's right-click menu list the same ones.
+const labelAligns = (size: number) => [["left", "Flush left", <TextAlignLeft size={size} />], ["centre", "Centred", <TextAlignCenter size={size} />],
+  ["right", "Flush right", <TextAlignRight size={size} />], ["above", "Stacked above", <ArrowLineUp size={size} />], ["auto", "Automatic", <span className="glyph-text">A</span>]] as const;
 // A selected atom label's text style (the first labelled atom's, for a structure), for the label style buttons.
 export type LabelText = { bold: boolean; italic: boolean; underline: boolean; font: string; size: number; align?: string; chemical?: boolean }; // align and chemical: an atom label's
 // A cycle's side arrow: the ends it has, inside the circle (undefined: all its ends are structures), moved from where
 // Octet puts it, and its heads.
-export type CycleSide = { ends: "both" | "in" | "out"; inside?: boolean; moved: boolean; start: Head; end: Head };
+export type CycleSide = { ends: "both" | "in" | "out"; inside?: boolean; moved: boolean; start: Head; end: Head; head: HeadShape; size: string };
 export type Context =
   | { kind: "empty" }
   | { kind: "drawing"; nameable: boolean; generic?: boolean }
   // Different kinds of thing picked together: count things; atoms, when structures are among them.
-  | { kind: "selection"; count: number; atoms: boolean; width?: number; joinable?: boolean } // width: lines picked together (no structures or text); joinable: Join applies (atoms or bonds in two structures)
-  | { kind: "structure"; text?: LabelText; atoms: number; structures: number; next: string; nameable: boolean; joinable?: boolean; pairs?: "shown" | "hidden"; stereo?: "absolute" | "racemic" | "relative" | "mixed"; depth?: boolean; cip?: boolean; numbers?: boolean; circles?: boolean; halo?: string; fill?: string; hydrogens?: boolean; properties?: boolean; generic?: boolean }
+  // A group selected whole counts as one object. name: a lone whole group's name ("¹H NMR spectrum", "Group").
+  | { kind: "selection"; count: number; name?: string; atoms: boolean; width?: number; joinable?: boolean } // width: lines picked together (no structures or text); joinable: Join applies (atoms or bonds in two structures)
+  | { kind: "structure"; text?: LabelText; atoms: number; structures: number; next: string; nameable: boolean; joinable?: boolean; pairs?: "shown" | "hidden"; stereo?: "absolute" | "racemic" | "relative" | "mixed"; depth?: boolean; cip?: boolean; numbers?: boolean; roman?: boolean; circles?: boolean; halo?: string; fill?: string; hydrogens?: boolean; properties?: boolean; generic?: boolean }
   // mode: picked captions, the text being typed, or the style the next text starts with (Text tool in hand).
   | { kind: "caption"; mode: "picked" | "typing" | "next"; convertible: boolean; count: number; colour: string; bold: boolean; italic: boolean; underline: boolean; size: number; align: "left" | "centre" | "right" | "justify"; attached: boolean; attachable: boolean;
       // labelable: Octet can read a picked caption as an atom label (Make element). chemical: their Interpret chemically,
@@ -53,7 +75,7 @@ export type Context =
   // size: the heads' palette size ("own" for a size set by hand), when the arrows have heads. ratio: an equilibrium's.
   // fillable: closed curves and block arrows, which take a fill.
   | { kind: "arrow"; count: number; arrow: ArrowKind; curved: boolean; sweep?: number; style: string; orbital?: { shape: OrbitalShape; phase: Phase };
-      heads: boolean; start: Head; end: Head; head: HeadShape; closed?: boolean; fill: string; width: number; size?: string; ratio: number; fillable: boolean;
+      heads: boolean; shaped: boolean; start: Head; end: Head; head: HeadShape; closed?: boolean; fill: string; width: number; size?: string; ratio: number; fillable: boolean;
       point?: "add" | "remove" | "bent" } // one straight arrow or line: it can take a point, or has one (bent: and bends)
   | { kind: "shape"; count: number; shape: ShapeKind; dashed: boolean; boldLine: boolean; colour: string; style: string; side: string; mark: string; rf: boolean; lines: TableLine[]; cellAlign?: string; weight: number; cell: boolean; hide?: string[];
       shade: { depth: number; blur: number; opacity: number; pt: number }; text?: LabelText;
@@ -61,11 +83,11 @@ export type Context =
   // step: one step of the cycle is picked; reversible, balance, shaped and hidden are that step's (shaped: it has a lead,
   // trail, bow or balance to reset; hidden: its arc is not drawn). arcs: some step's arc is hidden. side: one of its side
   // arrows is picked.
-  | { kind: "cycle"; clockwise: boolean; steps: number; centre: boolean; width: number; gap: number; step: boolean; reversible: boolean; balance: "equal" | "forward" | "back"; shaped: boolean; hidden: boolean; arcs: boolean; named: boolean; side?: CycleSide }
-  | { kind: "reaction"; steps: number; structures: number; clean: boolean; mapped: boolean; grid: boolean }
+  | { kind: "cycle"; clockwise: boolean; steps: number; centre: boolean; width: number; gap: number; step: boolean; reversible: boolean; balance: "equal" | "forward" | "back"; shaped: boolean; hidden: boolean; arcs: boolean; named: boolean; side?: CycleSide; head: HeadShape; size: string }
+  | { kind: "reaction"; steps: number; structures: number; clean: boolean; mapped: boolean; grid: boolean; roman?: boolean }
   // A stoichiometry grid's cell picked: its column a product or a reactant (the limiting one or not), and whether any
   // of the grid's rows or columns are hidden.
-  | { kind: "grid"; product: boolean; limiting: boolean; hidden: boolean }
+  | { kind: "grid"; product: boolean; limiting: boolean; hidden: boolean; rows: boolean }
   // groups: the and and or group numbers its structure uses, and the lowest new one of each.
   | { kind: "atom"; text?: LabelText; label: string; charge: number; terminal: boolean; carbon: boolean; centre: boolean; enhanced?: string; groups?: { and: number[]; or: number[] }; halo?: string; fill?: string; numbered?: boolean; repeat?: string }
   | { kind: "bond"; style: BondKind | undefined; double: boolean; flippable: boolean; halo?: string; fill?: string; ring?: boolean }
@@ -253,13 +275,13 @@ const SET_ICONS: Record<SetId, React.ReactNode> = { table: <Table size={18} />, 
 const SET_FOR: Record<string, SetId> = { table: "table", plate: "plate", cycle: "cycle", analysis: "analysis", search: "search", arrange: "arrange", group: "group", frame: "frame", file: "file", view: "view", turn: "turn", marks: "more", other: "more", library: "more", delete: "delete" };
 const MORE_GROUPS = ["marks", "other", "library"];
 const KIND_OF: Record<string, string> = {
-  select_all: "view", zoom_fit: "view", import: "file", select_structure: "view",
+  select_all: "view", zoom_fit: "view", centre_view: "view", import: "file", select_structure: "view",
   "shape.row.before": "table", "shape.col.before": "table", "shape.row.delete": "table", "shape.col.delete": "table", "shape.fit": "table", "shape.clear": "table", "shape.dashed": "table",
   "shape.hide.origin": "plate", "shape.hide.front": "plate", "shape.hide.border": "plate", "shape.ticks": "plate", "shape.transparent": "plate", "cycle.reverse": "cycle", "cycle.remove": "cycle",
   structure_to_name: "analysis", properties: "analysis", show_stereo: "analysis", predict_1h: "analysis", predict_13c: "analysis",
   search_reaxys: "search", search_reaxys_exact: "search", search_pubchem: "search", search_pubchem_sub: "search",
   "rotate.cw15": "turn", "rotate.ccw15": "turn", flip_h: "turn", flip_v: "turn", mirror_h: "turn", mirror_v: "turn", structure_perspective: "turn", flatten: "turn", clean_3d: "turn", clean_reaction_augmented: "turn", rotate_dialog: "turn", scale_dialog: "turn",
-  pairs: "marks", number: "marks", atom_numbers: "marks", show_warnings: "marks", hide_warnings: "marks", explain_warning: "marks", "caption.add": "marks", colour_by_element: "marks", aromatic_display: "marks", hydrogen_display: "marks", contract_label: "marks",
+  pairs: "marks", number: "marks", "numbers.roman": "marks", atom_numbers: "marks", show_warnings: "marks", hide_warnings: "marks", explain_warning: "marks", "caption.add": "marks", colour_by_element: "marks", aromatic_display: "marks", hydrogen_display: "marks", contract_label: "marks",
   "cycle.make": "arrange", "align.row": "arrange", "align.column": "arrange", "align.spread-row": "arrange", group: "group", ungroup: "group", group_integral: "group",
   arrange_left: "arrange", arrange_centre: "arrange", arrange_right: "arrange", arrange_top: "arrange", arrange_middle: "arrange", arrange_bottom: "arrange",
   arrange_across: "arrange", arrange_down: "arrange", bring_front: "arrange", send_back: "arrange", centre_page: "arrange", join: "arrange",
@@ -283,6 +305,8 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
   const sideItems = (c: CycleSide) => [it(<Shuffle size={18} />, "Swap in and out", "cycle.side.swap"), ...(c.inside !== undefined ? [it(<CircleHalf size={18} />, c.inside ? "Put outside the cycle" : "Put inside the cycle", "cycle.side.inside")] : []),
     ...(c.moved ? [it(<ClockCounterClockwise size={18} />, "Reset position", "cycle.side.reset")] : []), it(<Scissors size={18} />, "Remove the side arrow", "cycle.side.remove")];
   const small = (i: Item): Item => ({ ...i, small: true });
+  // The compound numbers in roman or arabic numerals (issue 34), when the drawing has some.
+  const numerals = (roman?: boolean) => (roman === undefined ? [] : [small(it(<span className="glyph-text">{roman ? "1" : "I"}</span>, roman ? "Use arabic numbers" : "Use roman numerals", "numbers.roman"))]);
   const clean = it(<MagicWand size={18} />, "Clean up structure", "clean_up", messy);
   const nameIt = { ...it(<TagSimple size={18} />, "Convert structure to name", "structure_to_name"), short: "Structure to name" };
   const toStructure = { ...it(<Atom size={18} />, "Convert name to structure", "name_to_structure"), short: "Name to structure" };
@@ -305,10 +329,12 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
   // Join (a main action when the selection can join).
   const rotate = small(it(<Angle size={18} />, "Rotate…", "rotate_dialog")), scale = small(it(<Resize size={18} />, "Scale…", "scale_dialog"));
   const centre = small(it(<ArrowsInCardinal size={18} />, "Centre on page", "centre_page"));
+  // View > Centre in Window, for every selection and the whole drawing: the view pans to it, at the same zoom.
+  const inWindow = small(it(<Crosshair size={18} />, "Centre in window", "centre_view"));
   const frames = ([["frame_brackets", "Brackets", <BracketGlyph v="brackets" />], ["frame_parens", "Parentheses", <BracketGlyph v="parens" />], ["frame_braces", "Braces", <BracketGlyph v="braces" />],
     ["frame_box", "Rectangle", <ElementGlyph v="box-plain" />], ["frame_rounded", "Rounded rectangle", <ElementGlyph v="rounded-plain" />], ["frame_box_shadow", "Rectangle with shadow", <ElementGlyph v="box-shadow" />],
     ["frame_rounded_shadow", "Rounded with shadow", <ElementGlyph v="rounded-shadow" />]] as const).map(([command, name, icon]) => small(it(icon, name, command)));
-  const objects = [rotate, scale, centre];
+  const objects = [rotate, scale, centre, inWindow];
   const join = (context.kind === "structure" || context.kind === "selection") && context.joinable ? [it(<ArrowsMerge size={18} />, "Join", "join")] : [];
   // Any selection as a template, with its text, arrows and shapes (CD-33); on an atom or a bond, its whole structure.
   const keep = small(it(<BookmarkSimple size={18} />, "Add to templates", "template.add"));
@@ -329,7 +355,7 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
     case "drawing":
       items.push(clean, ...(context.nameable ? [nameIt] : []), ...(context.generic ? [expandIt] : []), toStructure, ...flips,
         small(it(<CopySimple size={18} />, "Copy as SMILES", "copy_smiles")), small(it(<IdentificationBadge size={18} />, "Copy as InChI", "copy_inchi")), small(it(<Key size={18} />, "Copy as InChIKey", "copy_inchikey")), ...searches, small(it(<FileArrowDown size={18} />, "Import a structure…", "import")),
-        small(it(<SelectionAll size={18} />, "Select all", "select_all")), small(it(<CornersOut size={18} />, "Fit to window", "zoom_fit")), centre, ...warnings());
+        small(it(<SelectionAll size={18} />, "Select all", "select_all")), small(it(<CornersOut size={18} />, "Fit to window", "zoom_fit")), inWindow, centre, ...warnings());
       break;
     case "selection":
       items.push(...join, ...(context.atoms ? [clean] : []), it(<CopySimple size={18} />, "Copy", "copy"), ...warnings(), ...turnsAndFlips, ...objects, ...order, ...frames, keep, ...(context.atoms ? [dict] : []), del);
@@ -339,7 +365,7 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
       // what is shown on it, the clipboard and library, and Delete in another.
       items.push(...join, clean, ...(context.nameable ? [nameIt] : []), ...(context.generic ? [expandIt] : []), ...flips, ...order);
       if (context.pairs) items.push(small(it(<span className="glyph-text">N:</span>, context.pairs === "shown" ? "Hide lone pairs" : "Show lone pairs", "pairs")));
-      items.push(small({ ...it(<ListNumbers size={18} />, context.structures > 1 ? "Number these compounds" : "Number this compound", "number"), short: context.structures > 1 ? "Number compounds" : undefined }),
+      items.push(small({ ...it(<ListNumbers size={18} />, context.structures > 1 ? "Number these compounds" : "Number this compound", "number"), short: context.structures > 1 ? "Number compounds" : undefined }), ...numerals(context.roman),
         small(it(<Hash size={18} />, context.numbers ? "Hide atom numbers" : "Show atom numbers", "atom_numbers")),
         ...warnings(),
         small(it(<Subtitles size={18} />, "Add a caption", "caption.add")),
@@ -357,12 +383,12 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
     case "atom":
       items.push(it(<CursorText size={18} />, "Type a label", "atom.label"), ...(context.repeat ? [it(<Repeat size={18} />, `Repeat ${context.repeat}`, "repeat_label")] : []), it(<PlusCircle size={18} />, "Add a positive charge", "charge.plus"), it(<MinusCircle size={18} />, "Add a negative charge", "charge.minus"),
         ...((context.label.length > 2 || !/^[A-Z][a-z]?$/.test(context.label)) && context.text?.chemical !== false && !queryLabel(context.label) ? [it(<ArrowsOutSimple size={18} />, "Expand label", "expand_label")] : []), it(<Faders size={18} />, "Atom properties…", "atom_properties"), it(<Hash size={18} />, context.numbered ? "Hide atom number" : "Show atom number", "atom_numbers"),
-        ...warnings(true), ...order, whole, keep, dict, del);
+        ...warnings(true), ...order, whole, inWindow, keep, dict, del);
       break;
     case "bond":
       if (context.double) items.push({ ...it(<span className="glyph-text">A</span>, "Second line placed automatically", "bond.auto"), short: "Automatic position" }, it(<span className="glyph-text">L</span>, "Second line on the left", "bond.left"), it(<span className="glyph-text">C</span>, "Centre the double bond", "bond.centre"), it(<span className="glyph-text">R</span>, "Second line on the right", "bond.right"));
       if (context.flippable) items.push(it(<ArrowUDownLeft size={18} />, "Point the other way", "bond.flip"));
-      items.push(it(<FadersHorizontal size={18} />, "Bond properties…", "bond_properties"), ...warnings(true), ...order, whole, keep, dict, del);
+      items.push(it(<FadersHorizontal size={18} />, "Bond properties…", "bond_properties"), ...warnings(true), ...order, whole, inWindow, keep, dict, del);
       break;
     case "caption":
       if (context.mode !== "picked") break;
@@ -374,18 +400,20 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
       if (context.cycleName?.moved) items.push(it(<ClockCounterClockwise size={18} />, "Reset position", "cycle.side.reset"));
       if (context.attached) items.push(it(<LinkBreak size={18} />, "Un-tie from structure", "caption.detach"));
       else if (context.attachable) items.push(it(<LinkSimple size={18} />, "Tie to structure", "caption.attach"));
-      items.push(...warnings(), small(it(<Paragraph size={18} />, "Line spacing…", "line_spacing")), ...turnings, rotate, centre, ...order, keep, del);
+      items.push(...warnings(), small(it(<Paragraph size={18} />, "Line spacing…", "line_spacing")), ...turnings, rotate, centre, inWindow, ...order, keep, del);
       break;
     case "reaction":
       items.push(it(<Broom size={18} />, "Clean up reaction", "clean_reaction", !context.clean), small(it(<StarFour size={18} />, "Augmented clean up reaction", "clean_reaction_augmented")),
-        { ...it(<ListNumbers size={18} />, "Number these compounds", "number"), short: "Number compounds" }, small(it(<CopySimple size={18} />, "Copy as SMILES", "copy_smiles")), small(it(<IdentificationBadge size={18} />, "Copy as InChI", "copy_inchi")), small(it(<Key size={18} />, "Copy as InChIKey", "copy_inchikey")),
+        { ...it(<ListNumbers size={18} />, "Number these compounds", "number"), short: "Number compounds" }, ...numerals(context.roman), small(it(<CopySimple size={18} />, "Copy as SMILES", "copy_smiles")), small(it(<IdentificationBadge size={18} />, "Copy as InChI", "copy_inchi")), small(it(<Key size={18} />, "Copy as InChIKey", "copy_inchikey")),
         it(<FlowArrow size={18} />, "Map atoms", "map_reaction"), it(<Table size={18} />, context.grid ? "Remove stoichiometry" : "Analyse stoichiometry", "stoichiometry"), ...(context.mapped ? [small(it(<X size={18} />, "Clear atom map", "clear_reaction_map"))] : []), ...warnings(), ...turnsAndFlips, ...objects, ...order, ...frames, keep, del);
       break;
     case "grid":
       // ChemDraw's grid menu: Set Limiting, Hide Row, Hide Column, Show All (and Colors, the colour row).
       items.push(...(!context.product && !context.limiting ? [it(<Target size={18} />, "Set as limiting", "grid.limiting")] : []),
         it(<ArrowsInLineVertical size={18} />, "Hide row", "grid.hide.row"), it(<EyeClosed size={18} />, "Hide column", "grid.hide.col"),
-        ...(context.hidden ? [it(<Eye size={18} />, "Show all rows and columns", "grid.show")] : []), del);
+        ...(context.hidden ? [it(<Eye size={18} />, "Show all rows and columns", "grid.show")] : []),
+        // A reagent on each row and the products under them, or a column for each (issue 34).
+        it(context.rows ? <Columns size={18} /> : <Rows size={18} />, context.rows ? "Show as columns" : "Show as rows", "grid.layout"), inWindow, del);
       break;
     case "cycle":
       if (context.side) {
@@ -415,7 +443,7 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
           small(it(<AlignTopSimple size={18} />, hidden("front") ? "Show the solvent front" : "Hide the solvent front", "shape.hide.front")),
           small(it(<Rectangle size={18} />, hidden("border") ? "Show the border" : "Hide the border", "shape.hide.border")),
           small(it(<ListDashes size={18} />, context.ticks ? "Hide the side ticks" : "Show the side ticks", "shape.ticks")),
-          small(it(<Checkerboard size={18} />, context.transparent ? "Make opaque" : "Make transparent", "shape.transparent")), scale, centre, ...order, keep, del);
+          small(it(<Checkerboard size={18} />, context.transparent ? "Make opaque" : "Make transparent", "shape.transparent")), scale, centre, inWindow, ...order, keep, del);
         break;
       }
       if (context.shape === "table") {
@@ -424,7 +452,7 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
           small(it(<RowsPlusTop size={18} />, "Add a row above", "shape.row.before")), small(it(<ColumnsPlusLeft size={18} />, "Add a column before", "shape.col.before")),
           small(it(<Rows size={18} />, context.cell ? "Delete the row" : "Delete the last row", "shape.row.delete")), small(it(<Columns size={18} />, context.cell ? "Delete the column" : "Delete the last column", "shape.col.delete")),
           small(it(<ArrowsInLineHorizontal size={18} />, "Size to fit contents", "shape.fit")), small(it(<Backspace size={18} />, "Clear contents", "shape.clear")),
-          small(it(<LineSegments size={18} />, context.dashed ? "Solid lines" : "Dashed lines", "shape.dashed")), scale, centre, ...order, keep, del);
+          small(it(<LineSegments size={18} />, context.dashed ? "Solid lines" : "Dashed lines", "shape.dashed")), scale, centre, inWindow, ...order, keep, del);
         break;
       }
       if (isBracket({ kind: context.shape })) items.push(it(<BracketsRound size={18} />, "Bracket properties…", "bracket_properties"), it(<LineSegments size={18} />, context.dashed ? "Solid lines" : "Dashed lines", "shape.dashed"), ...warnings());
@@ -432,7 +460,7 @@ export function actionItems(context: Context, messy: boolean, hiddenWarnings = f
       items.push(...turnsAndFlips, ...objects, ...order, keep, del);
       break;
     case "spot":
-      items.push(it(<Percent size={18} />, "Set Rf…", "spot.setrf"), it(<span className="glyph-text">Rf</span>, context.rf ? "Hide its Rf" : "Show its Rf", "spot.rf"), del);
+      items.push(it(<Percent size={18} />, "Set Rf…", "spot.setrf"), it(<span className="glyph-text">Rf</span>, context.rf ? "Hide its Rf" : "Show its Rf", "spot.rf"), inWindow, del);
       break;
     case "arrow":
       if (context.arrow === "orbital") { items.push(it(<Swap size={18} />, "Swap the phases", "orbital.swap"), ...turnsAndFlips, ...objects, ...order, keep, del); break; }
@@ -469,15 +497,18 @@ export function arrangedActions(context: Context, messy: boolean, hiddenWarnings
   });
   // By default the main actions come first as rows, and the ones marked small follow as small buttons, set by set.
   if (!mine) items.sort((a, b) => Number(!!a.small) - Number(!!b.small) || (a.small ? SETS.indexOf(setOf(a.command)) - SETS.indexOf(setOf(b.command)) : 0));
-  // A lone small action is a row with its name: one icon on its own does not say what it does. Delete stays the
-  // panel's last small button.
-  const small = items.filter((i) => i.small), lone = small.length === 1 && small[0].command !== "delete";
-  const split = Math.min(items.length, mine ? mine.rows : items.length - (lone ? 0 : small.length));
+  const split = Math.min(items.length, mine ? mine.rows : items.length - items.filter((i) => i.small).length);
   const rows = items.slice(0, split), tray = items.slice(split);
   // The small actions set by set, whatever order they were arranged in.
-  const sets = SETS.map((s) => [s, tray.filter((i) => setOf(i.command) === s)
+  const all = SETS.map((s) => [s, tray.filter((i) => setOf(i.command) === s)
     .sort((a, b) => (s === "more" ? MORE_GROUPS.indexOf(kindOf(a.command)) - MORE_GROUPS.indexOf(kindOf(b.command)) : 0))] as const).filter(([, list]) => list.length);
-  return { items, rows, sets };
+  // One rule for the whole panel (Sam, 4 November 2026): an action that stands alone is a row with its name, as one
+  // icon on its own does not say what it does, and a set of two or more is a titled section of small buttons. So by
+  // default a set of one joins the rows. Delete is the only exception: it stays the panel's last small button, with no
+  // title, always on show. A panel the user has arranged keeps their split, and a set of one there still has its title.
+  const alone = mine ? [] : all.filter(([s, list]) => list.length === 1 && s !== "delete").map(([, list]) => list[0]);
+  const sets = all.filter(([, list]) => !alone.includes(list[0]));
+  return { items: [...rows, ...alone, ...tray.filter((i) => !alone.includes(i))], rows: [...rows, ...alone], sets };
 }
 
 function Row({ icon, name, command, hint, run, accent }: { icon: React.ReactNode; name: string; command: string; hint?: string; run: (c: string) => void; accent?: boolean }) {
@@ -553,6 +584,7 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
   const [carry, setCarry] = useState<{ command: string; x: number; y: number; to?: { rows: boolean; index: number } }>();
   const dragged = useRef(false);
   const panel = useRef<HTMLElement>(null);
+  const kindNow = arrowKind(context);
   const [settled, setSettled] = useState<string>();
   // Closing plays the panel's exit before it leaves the page; the Actions button then comes in where it was.
   const [shown, setShown] = useState(open);
@@ -624,7 +656,7 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
   const title = {
     empty: "Actions",
     drawing: "Whole drawing",
-    selection: context.kind === "selection" ? `${context.count} objects` : "Objects",
+    selection: context.kind !== "selection" ? "Objects" : context.name ?? `${context.count} objects`,
     structure: context.kind === "structure" && context.structures > 1 ? `${context.structures} structures` : "Structure",
     atom: "Atom",
     bond: "Bond",
@@ -813,6 +845,7 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
             <button key={id} className="chip" aria-pressed={on} aria-label={name} data-tip={name} data-key={hint(`caption.${id}`)} onClick={() => run(`caption.${id}`)}>{icon}</button>
           ))}
           <button className="chip" aria-label="Formula" data-tip="Formula: counts become subscripts" data-key={hint("caption.formula")} onClick={() => run("caption.formula")}><span className="glyph-text">H<sub>2</sub>O</span></button>
+          <button className="chip" aria-label="Character map" data-tip="Character map" onClick={() => run("char_map")}><span className="glyph-text">αβ</span></button>
           {context.fonts && <div className="size font"><FontPick label="Font" font={context.font ?? context.fonts[0]} fonts={context.fonts} onPick={(f) => run(`caption.font.${f}`)} /></div>}
           <SizeButton size={context.size} sizes={sizes} run={run} />
           {([["left", "Flush left", <TextAlignLeft size={16} />], ["centre", "Centre text", <TextAlignCenter size={16} />], ["right", "Flush right", <TextAlignRight size={16} />], ["justify", "Justified", <TextAlignJustify size={16} />]] as const).map(([id, name, icon]) => (
@@ -833,11 +866,11 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
           <div className="size font"><FontPick label="Font" font={context.text.font} fonts={fonts} onPick={(f) => run(`caption.font.${f}`)} /></div>
           <SizeButton size={context.text.size} sizes={sizes} run={run} />
           {/* Alignment and Interpret Chemically are a label's own: a table's cells and a plate's Rf values have neither. */}
-          {context.kind !== "shape" && ([["left", "Flush left", <TextAlignLeft size={16} />], ["centre", "Centred", <TextAlignCenter size={16} />], ["right", "Flush right", <TextAlignRight size={16} />],
-            ["above", "Stacked above", <ArrowLineUp size={16} />], ["auto", "Automatic", <span className="glyph-text">A</span>]] as const).map(([id, name, icon]) => (
+          {context.kind !== "shape" && labelAligns(16).map(([id, name, icon]) => (
             <button key={id} className="chip" aria-pressed={context.text!.align === id} aria-label={name} data-tip={name} onClick={() => run(`caption.align.${id}`)}>{icon}</button>
           ))}
           {context.kind !== "shape" && <button className="chip" aria-pressed={context.text.chemical} aria-label="Interpret chemically" data-tip="Interpret chemically" onClick={() => run("interpret")}><Graph size={16} /></button>}
+          <button className="chip" aria-label="Character map" data-tip="Character map" onClick={() => run("char_map")}><span className="glyph-text">αβ</span></button>
         </div>
       )}
 
@@ -964,59 +997,23 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
           </>
         );
       })()}
-      {context.kind === "arrow" && !isLine({ kind: context.arrow }) && context.arrow !== "orbital" && (
+      {kindNow && (
         // The arrow's kind, the choice made most: reaction, equilibrium (and unbalanced), resonance, retrosynthetic,
         // no-go, dipole, block, then the curved ones.
         <div className="chips arrows" role="group" aria-label="Arrow">
-          {[...STRAIGHT, ...ARROW_KINDS.filter((k) => curved({ kind: k }))].map((kind) => (
-            <button key={kind} className="chip" aria-pressed={kind === "unbalanced" ? context.arrow === "equilibrium" && context.ratio !== 1 : context.arrow === kind && (kind !== "equilibrium" || context.ratio === 1)}
-              aria-label={arrowName(kind) ?? ARROWS[kind as ArrowKind]} data-tip={arrowName(kind) ?? ARROWS[kind as ArrowKind]} onClick={() => run(`arrow.kind.${kind}`)}>
-              <ArrowGlyph kind={curved({ kind: kind as ArrowKind }) ? `${kind}-${context.sweep ?? 120}` : kind} />
-            </button>
+          {kindChoices(context).map((o) => (
+            <button key={o.id} className="chip" aria-pressed={kindNow === o.id} aria-label={o.name} data-tip={o.name} onClick={() => run(`arrow.kind.${o.id}`)}>{o.glyph}</button>
           ))}
         </div>
       )}
-      {context.kind === "arrow" && (context.heads || context.curved || context.fillable || context.size !== undefined || context.arrow === "orbital") && (() => {
-        // The rest of ChemDraw's Curves menu, one small button each: the line, the head at each end, the heads' shape,
-        // the curve's sweep and a closed curve's fill. Each shows its choice; a click opens the others. An orbital's
-        // line is plain, dashed or bold, as ChemDraw's drawing element menu has it.
-        const c = context, orbital = c.arrow === "orbital";
-        return (
-          <div className="picks" role="group" aria-label="Line and arrowheads">
-            {(c.heads || orbital) && <PickButton label="Line" value={c.style ?? "plain"} onPick={(v) => run(`arrow.style.${v}`)}
-              options={([["plain", "Plain"], ["dashed", "Dashed"], ["bold", "Bold"], ["doubled", "Double"], ["wavy", "Wavy"]] as const).filter(([id]) => !orbital || id === "plain" || id === "dashed" || id === "bold").map(([id, name]) => ({ id, name, glyph: <LineGlyph style={id} /> }))} />}
-            {c.heads && <PickButton label="Start" value={c.start ?? "none"} onPick={(v) => run(`arrow.start.${v}`)} options={HEADS.map(([id, name]) => ({ id, name, glyph: <LineGlyph start={id} head={c.head} /> }))} />}
-            {c.heads && <PickButton label="End" value={c.end ?? "none"} onPick={(v) => run(`arrow.end.${v}`)} options={HEADS.map(([id, name]) => ({ id, name, glyph: <LineGlyph end={id} head={c.head} /> }))} />}
-            {c.heads && (c.start !== "none" || c.end !== "none") && <PickButton label="Heads" value={c.head ?? "solid"} onPick={(v) => run(`arrow.head.${v}`)}
-              options={([["solid", "Solid"], ["hollow", "Hollow"], ["angled", "Open"]] as const).map(([id, name]) => ({ id, name, glyph: <LineGlyph end="full" head={id} /> }))} />}
-            {c.curved && <PickButton label="Curve" value={String(c.sweep ?? 120)} onPick={(v) => run(`arrow.sweep.${v}`)}
-              options={SWEEPS.map((sweep) => ({ id: String(sweep), name: `${sweep}°`, glyph: c.arrow === "arc" ? <ElementGlyph v={`arc-${sweep}`} /> : <ArrowGlyph kind={`${curved({ kind: c.arrow }) ? c.arrow : "curved"}-${sweep}`} /> }))} />}
-            {c.size !== undefined && <PickButton label="Size" value={c.size} onPick={(v) => run(`arrow.size.${v}`)}
-              options={[...(c.arrow === "block" ? ["large", "medium"] : ["large", "medium", "small"]).map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1), glyph: <ArrowGlyph kind={withSize(c.arrow === "block" ? "block" : "reaction", id as "large")} /> })),
-                ...(c.size === "own" ? [{ id: "own", name: "Own size", glyph: <ArrowGlyph kind="reaction" /> }] : [])]} />}
-            {c.fillable && <PickButton label="Fill" value={c.fill ?? "none"} onPick={(v) => run(`arrow.fill.${v}`)}
-              options={([["none", "None"], ["solid", "Filled"], ["shaded", "Shaded"], ["faded", "Faded"]] as const).map(([id, name]) => ({ id, name, glyph: <FillGlyph fill={id} /> }))} />}
-          </div>
-        );
-      })()}
-      {(() => {
-        // A cycle's side arrow: which ends it has, and the heads at its start and end (as an arrow's).
-        const c = context.kind === "cycle" ? context.side : context.kind === "caption" ? context.cycleSide : undefined;
-        return c && (
-          <div className="picks" role="group" aria-label="Side arrow">
-            <PickButton label="Ends" value={c.ends} onPick={(v) => run(`cycle.side.ends.${v}`)} options={([["both", "Reagent and product"], ["in", "Reagent"], ["out", "Product"]] as const).map(([id, name]) => ({ id, name, glyph: <SideGlyph ends={id} /> }))} />
-            <PickButton label="Start" value={c.start} onPick={(v) => run(`cycle.side.start.${v}`)} options={HEADS.map(([id, name]) => ({ id, name, glyph: <LineGlyph start={id} /> }))} />
-            <PickButton label="End" value={c.end} onPick={(v) => run(`cycle.side.end.${v}`)} options={HEADS.map(([id, name]) => ({ id, name, glyph: <LineGlyph end={id} /> }))} />
-          </div>
-        );
-      })()}
-      {context.kind === "cycle" && context.step && context.reversible && (
-        // A reversible step's balance: which half is longer, as an unbalanced equilibrium's.
-        <div className="picks" role="group" aria-label="Step">
-          <PickButton label="Balance" value={context.balance} onPick={(v) => run(`cycle.step.balance.${v}`)}
-            options={([["equal", "Equal", "equilibrium"], ["forward", "Forward longer", "unbalanced"], ["back", "Back longer", "unbalanced"]] as const).map(([id, name, kind]) => ({ id, name, glyph: id === "back" ? <span className="pick-turned"><ArrowGlyph kind={kind} /></span> : <ArrowGlyph kind={kind} /> }))} />
+      {arrowPicks(context).map((g) => (
+        // The rest of ChemDraw's Curves menu, one small button each (arrowPicks): the line, the head at each end, the
+        // heads' shape, the curve's sweep, the size and a closed curve's fill; a cycle's side arrow, its heads and a
+        // step's balance. Each shows its choice; a click opens the others.
+        <div key={g.label} className="picks" role="group" aria-label={g.label}>
+          {g.picks.map((p) => <PickButton key={p.command} label={p.label} value={p.value} onPick={(v) => run(`${p.command}.${v}`)} options={choices(p, context)} />)}
         </div>
-      )}
+      ))}
       {((context.kind === "shape" && context.shape !== "highlight" && context.shape !== "table" && context.style !== "solid" && context.style !== "shaded") || context.kind === "arrow" || context.kind === "cycle" || (context.kind === "selection" && context.width !== undefined)) && (
         // The width of the lines, for every object drawn in lines, and for lines picked together (a table's is with its
         // lines, above).
@@ -1111,9 +1108,10 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
             ))}
             </div>
             );
-            // A set of one button needs no title: its tooltip names it.
-            return set.length > 1 ? <Fold key={s} id={s} title={SET_TITLES[s]} className="tray-set" folded={folded.includes(s)} onFold={onFold} folds={folds}>{buttons}</Fold>
-              : <div key={s} className="tray-set" role="group" aria-label={SET_TITLES[s]}>{buttons}</div>;
+            // Every section of small buttons has its title and folds, however many buttons it has. Delete is the one
+            // exception (Sam, 4 November 2026): the panel's last small button, with no title, always on show.
+            return s === "delete" ? <div key={s} className="tray-set delete-set" role="group" aria-label={SET_TITLES[s]}>{buttons}</div>
+              : <Fold key={s} id={s} title={SET_TITLES[s]} className="tray-set" folded={folded.includes(s)} onFold={onFold} folds={folds}>{buttons}</Fold>;
           })}
         </div>
       )}
@@ -1139,7 +1137,8 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
 // Right-click (or Control-click, or the Menu key or Shift+F10): the Actions panel as a short menu at the pointer, so
 // nothing lives only here (Sam: no options buried under right-click). Its rows come first, then each set of small
 // actions as one row that opens the set beside it, then Add to templates (which opens My templates and the user's
-// sets), Add to dictionary…, Colour and Delete.
+// sets), Add to dictionary…, Colour, a label's Alignment and Delete. An arrow's, a cycle's or a cycle's side arrow's picks
+// (Kind, Line, Start, End, Heads, Size, Fill and so on, as the panel shows them) come before Add to templates.
 type MenuProps = Pick<Props, "context" | "messy" | "hiddenWarnings" | "warned" | "grouping" | "layout" | "hint" | "run" | "colour" | "palette" | "online"> & { at: { x: number; y: number }; keyboard?: boolean; templateSets: string[]; onClose: () => void };
 export function ActionsMenu({ at, keyboard, context, messy, hiddenWarnings, warned, grouping, layout, hint, run, colour, palette, online, templateSets, onClose }: MenuProps) {
   const { rows, sets } = arrangedActions(context, messy, hiddenWarnings, warned, grouping, layout, online);
@@ -1147,11 +1146,23 @@ export function ActionsMenu({ at, keyboard, context, messy, hiddenWarnings, warn
   const keep = (list: readonly Item[]) => list.filter((i) => i.command !== "template.add" && i.command !== "dictionary.add");
   const all = [...rows, ...sets.flatMap(([, list]) => list)], kept = all.find((i) => i.command === "template.add"), dict = all.find((i) => i.command === "dictionary.add");
   const del = sets.find(([s]) => s === "delete")?.[1] ?? [];
-  const groups: MenuItem[][] = [keep(rows).map(item), sets.filter(([s, list]) => s !== "delete" && keep(list).length).map(([s]) => ({ key: `set:${s}`, name: SET_TITLES[s], icon: SET_ICONS[s], more: true })),
-    [...(kept ? [{ key: "templates", name: kept.name, icon: kept.icon, more: true }] : []), ...(dict ? [item(dict)] : []), ...(colour ? [{ key: "set:colour", name: "Colour", icon: <Palette size={18} />, more: true }] : []), ...del.map(item)]];
+  // Selected atom labels: their alignment (the label chips' own, as a menu).
+  const aligned = (context.kind === "atom" || context.kind === "structure") && context.text ? context.text.align ?? "auto" : undefined;
+  // An arrow's kind and its picks, a cycle's and its side arrow's: the Actions panel's, from the same lists, each as a
+  // row that opens its choices with the one picked ticked.
+  const kind = arrowKind(context), picks = arrowPicks(context).flatMap((g) => g.picks), kinds = kind ? kindChoices(context) : [];
+  const pickRows: MenuItem[] = [...(kind ? [{ key: "pick:arrow.kind", name: "Kind", icon: kinds.find((o) => o.id === kind)?.glyph, more: true }] : []),
+    ...picks.map((p) => ({ key: `pick:${p.command}`, name: p.label, icon: choices(p, context).find((o) => o.id === p.value)?.glyph, more: true }))];
+  const groups: MenuItem[][] = [keep(rows).map(item), sets.filter(([s, list]) => s !== "delete" && keep(list).length).map(([s]) => ({ key: `set:${s}`, name: SET_TITLES[s], icon: SET_ICONS[s], more: true })), pickRows,
+    [...(kept ? [{ key: "templates", name: kept.name, icon: kept.icon, more: true }] : []), ...(dict ? [item(dict)] : []), ...(colour ? [{ key: "set:colour", name: "Colour", icon: <Palette size={18} />, more: true }] : []),
+    ...(aligned ? [{ key: "set:align", name: "Alignment", icon: <TextAlignLeft size={18} />, more: true }] : []), ...del.map(item)]];
   // The open set's actions (Display and copy in its kinds' groups), the sets a template can go in, or the colours.
   const sub = (key: string) => {
     if (key === "templates") return { label: "Add to templates", groups: setItems(templateSets, (set) => `template.add:${set}`, "template.add.new") };
+    if (key === "pick:arrow.kind") return { label: "Kind", groups: [kinds.map((o) => ({ key: `arrow.kind.${o.id}`, name: o.name, icon: o.glyph, checked: kind === o.id }))] };
+    const p = picks.find((q) => `pick:${q.command}` === key);
+    if (p) return { label: p.label, groups: [choices(p, context).map((o) => ({ key: `${p.command}.${o.id}`, name: o.name, icon: o.glyph, checked: p.value === o.id }))] };
+    if (key === "set:align") return { label: "Alignment", groups: [labelAligns(18).map(([id, name, icon]) => ({ key: `caption.align.${id}`, name, icon, checked: aligned === id }))] };
     if (key === "set:colour") return { label: "Colour", groups: [[...(colour?.tints ? TINTS : COLOURS), ...palette.map((c): [string, string] => [c.name, c.hex])].map(([name, hex]) => ({ key: `colour.${hex}`, name, icon: <span className="pick-swatch" style={{ background: hex }} />, checked: colour?.value.toLowerCase() === hex.toLowerCase() }))] };
     const list = keep(sets.find(([s]) => `set:${s}` === key)?.[1] ?? []);
     return { label: SET_TITLES[key.slice(4) as SetId], groups: key === "set:more" ? MORE_GROUPS.map((k) => list.filter((i) => kindOf(i.command) === k).map(item)) : [list.map(item)] };

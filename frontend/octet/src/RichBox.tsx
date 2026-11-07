@@ -4,6 +4,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { edited, normalise, plainOf, styleOf, type RunStyle, type TextRun } from "./richtext";
 import { offerFor } from "./richpaste.ts";
+import { inMap } from "./CharMap";
 
 export type RichApi = { range: () => [number, number] | undefined; select: (start: number, end: number) => void };
 
@@ -150,7 +151,8 @@ export function RichBox(p: Props) {
         if ((e.metaKey || e.ctrlKey) && ["b", "i", "u"].includes(e.key.toLowerCase())) e.preventDefault();
         p.onKeyDown(e);
       }}
-      onBlur={p.onBlur}
+      // Focus moved into the Character Map keeps the text open: the map types into it.
+      onBlur={(e) => { if (!inMap(e.relatedTarget)) p.onBlur(); }}
     />
   );
 }

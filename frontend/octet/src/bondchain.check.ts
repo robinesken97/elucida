@@ -188,3 +188,63 @@ console.log("bondchain.check: hotspot to the next structure ok");
   assert.equal(angleAt(pos(end, 0), pos(end, 1), first), 110);
   console.log("bondchain.check: chain angle ok");
 }
+
+// Issue 35: off a ring atom of a chair cyclohexane the first new bond is axial (upright, away from the atom's two ring
+// neighbours, so up and down in turn round the ring) and the second equatorial (parallel to the ring bonds once
+// removed, out of the ring). Each of the six atoms of the Ring tool's two chairs, the same turned, and the Conformers
+// templates' chairs drawn with depth, where the new atom's depth must be the template's own axial or equatorial H's.
+{
+  const { addChair, addRing, neighbours } = await import("./edit.ts");
+  const { readFileSync } = await import("node:fs");
+  const library = JSON.parse(readFileSync(new URL("library.json", import.meta.url), "utf8")) as { name: string; items: { name: string; mol: Mol }[] }[];
+  const template = (name: string) => library.find((s) => s.name === "Conformers")!.items.find((t) => t.name === name)!.mol;
+  const unitOf = (v: P): P => { const l = Math.hypot(v[0], v[1]); return [v[0] / l, v[1] / l]; };
+  const way = (m: Mol, i: number, j: number) => unitOf([pos(m, j)[0] - pos(m, i)[0], pos(m, j)[1] - pos(m, i)[1]]);
+  const parallel = (a: P, b: P) => Math.abs(Math.abs(a[0] * b[0] + a[1] * b[1]) - 1) < 1e-6;
+  // up: the chair's upright axis on the page; ring: its six atoms in order.
+  const check = (m: Mol, ring: number[], up: P, label: string) => {
+    const c: P = [ring.reduce((s, i) => s + pos(m, i)[0], 0) / 6, ring.reduce((s, i) => s + pos(m, i)[1], 0) / 6], sides: number[] = [];
+    ring.forEach((i, k) => {
+      const one = sprout(m, i), a = one.atoms.length - 1, d = way(one, i, a);
+      assert.ok(parallel(d, up), `${label}, atom ${k}: the first bond is axial`);
+      const side = Math.sign(d[0] * up[0] + d[1] * up[1]);
+      for (const n of neighbours(m, i)) assert.ok(Math.sign((pos(m, n)[0] - pos(m, i)[0]) * up[0] + (pos(m, n)[1] - pos(m, i)[1]) * up[1]) === -side, `${label}, atom ${k}: away from the ring`);
+      sides.push(side);
+      const two = sprout(one, i), b = two.atoms.length - 1, e = way(two, i, b), once = way(m, ring[(k + 1) % 6], ring[(k + 2) % 6]);
+      assert.ok(parallel(e, once), `${label}, atom ${k}: the second bond is equatorial`);
+      assert.ok(e[0] * (pos(m, i)[0] - c[0]) + e[1] * (pos(m, i)[1] - c[1]) > 0, `${label}, atom ${k}: out of the ring`);
+      assert.ok(Math.abs(Math.hypot(pos(two, b)[0] - pos(m, i)[0], pos(two, b)[1] - pos(m, i)[1]) - 1) < 1e-9, "one bond length");
+      // A third click goes into the widest gap, as at any atom.
+      assert.equal(sprout(two, i).atoms.length, two.atoms.length + 1);
+    });
+    assert.deepEqual(sides.map((s, k) => s * sides[(k + 1) % 6]), [-1, -1, -1, -1, -1, -1], `${label}: up and down in turn`);
+  };
+  for (const which of [1, 2] as const) for (const turn of [0, 0.7, -2.1]) {
+    const m = addChair(EMPTY, which, { point: [3, 1], turn });
+    check(m, [0, 1, 2, 3, 4, 5], [-Math.sin(turn), Math.cos(turn)], `chair ${which} turned ${turn}`);
+    // An axial bond first drawn by hand: the next is equatorial; an equatorial one first: the next is axial.
+    const ax = sprout(m, 0), eq = sprout(ax, 0);
+    const handEq = { ...m, atoms: [...m.atoms, eq.atoms[eq.atoms.length - 1]], bonds: [...m.bonds, { type: 1, atoms: [0, m.atoms.length] as [number, number] }] };
+    assert.ok(parallel(way(sprout(handEq, 0), 0, handEq.atoms.length), [-Math.sin(turn), Math.cos(turn)]), "after an equatorial bond, an axial one");
+  }
+  // The Conformers templates, with depth.
+  for (const [name, withH] of [["Cyclohexane chair", "Chair, axial and equatorial H"], ["Cyclohexane chair (flipped)", "Chair, axial and equatorial H (flipped)"]]) {
+    const m = template(name), h = template(withH);
+    check(m, [0, 1, 2, 3, 4, 5], [0, 1], name);
+    for (let i = 0; i < 6; i++) {
+      // The template's H atoms on ring atom i: the axial one first (chairWith), then the equatorial one.
+      const hs = h.bonds.flatMap((b) => (b.atoms[0] === i && h.atoms[b.atoms[1]].label === "H" ? [b.atoms[1]] : []));
+      const one = sprout(m, i), two = sprout(one, i);
+      for (const [mol, hAt] of [[one, hs[0]], [two, hs[1]]] as const) {
+        const z = mol.atoms[mol.atoms.length - 1].location[2], want = h.atoms[hAt].location[2] - h.atoms[i].location[2];
+        assert.ok(Math.sign(z - m.atoms[i].location[2]) === Math.sign(want) && Math.abs(z - m.atoms[i].location[2] - want) < 0.2, `${name}, atom ${i}: depth ${z} as the template's H (${want})`);
+      }
+    }
+  }
+  // Not a chair: a flat cyclohexane and a benzene keep the widest gap (away from both ring bonds).
+  for (const flat of [addRing(EMPTY, 6, false, { point: [0, 0] }), addRing(EMPTY, 6, true, { point: [0, 0] })]) {
+    const one = sprout(flat, 0), d = way(one, 0, one.atoms.length - 1), out = unitOf([pos(flat, 0)[0], pos(flat, 0)[1]]);
+    assert.ok(parallel(d, out) && d[0] * out[0] + d[1] * out[1] > 0, "a flat ring's bond points out from its middle");
+  }
+  console.log("bondchain.check: axial and equatorial bonds off a chair ok");
+}

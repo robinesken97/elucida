@@ -11,6 +11,7 @@ import { readAtomQuery, readBondQuery, readPolymer, readRgroup } from "./query.t
 import { ALL_ARROW_KINDS, HBOND, isBracket, ORBITAL_SHAPES, QUADRUPLE, PHASES, SHAPE_KINDS, type Annotation, type CurveFill, type Head, type HeadShape, type Arrow, type ArrowKind, type LineStyle, type OrbitalShape, type Phase, type Shape, type ShapeKind, type Shade, type Curve, type Table, type TableLine, type CellAlign, type Tlc, type Atom, type Bond, type Caption, type Display, type Kept, type Mol, type HeadSize } from "./render.ts";
 import { readGrid } from "./stoich.ts";
 import { keyOf, readMeasured, writeMeasured } from "./measured.ts";
+import { readPart, readPlot, type PlotPart } from "./pageplot.ts";
 import pkg from "../package.json" with { type: "json" };
 
 export const FORMAT = "octet";
@@ -21,16 +22,34 @@ const DISPLAYS: Display[] = ["bold", "dashed", "hashed", "wavy", "dative", "holl
 const MAX_CAPTIONS = 10_000, MAX_TEXT = 2_000;
 const HEADS: Head[] = ["none", "full", "left", "right"];
 
+// A label's kept group (Contract Label's, or a residue label's): its atoms (element, place, charge) and bonds (order,
+// wedge or hash). At most 256 atoms and 512 bonds, as a ChemDraw file's.
+const innerOut = (m: Mol) => ({ atoms: m.atoms.map((x) => ({ label: x.label, x: round(x.location[0]), y: round(x.location[1]), ...(x.charge ? { charge: x.charge } : {}) })),
+  bonds: m.bonds.map((b) => ({ atoms: b.atoms, type: b.type, ...(b.stereo ? { stereo: b.stereo } : {}) })) });
+function innerIn(v: unknown): Mol | undefined {
+  const num = (x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x) < 1e6, int = (x: unknown, lo: number, hi: number) => Number.isInteger(x) && (x as number) >= lo && (x as number) <= hi;
+  const o = v as { atoms?: unknown; bonds?: unknown } | undefined;
+  if (!o || !Array.isArray(o.atoms) || !Array.isArray(o.bonds) || !o.atoms.length || o.atoms.length > 256 || o.bonds.length > 512) return undefined;
+  const atoms = (o.atoms as Record<string, unknown>[]).map((x) => (typeof x?.label === "string" && /^[A-Z][a-z]{0,2}$/.test(x.label) && num(x.x) && num(x.y) && (x.charge === undefined || int(x.charge, -9, 9))
+    ? { label: x.label, location: [x.x as number, x.y as number, 0] as [number, number, number], ...(x.charge ? { charge: x.charge as number } : {}) } : undefined));
+  const n = atoms.length, bonds = (o.bonds as Record<string, unknown>[]).map((b) => {
+    const e = b?.atoms as unknown[];
+    return Array.isArray(e) && e.length === 2 && e.every((i) => int(i, 0, n - 1)) && e[0] !== e[1] && int(b.type, 1, 3) && (b.stereo === undefined || b.stereo === 1 || b.stereo === 6)
+      ? { atoms: [e[0], e[1]] as [number, number], type: b.type as number, ...(b.stereo ? { stereo: b.stereo as number } : {}) } : undefined;
+  });
+  return atoms.every(Boolean) && bonds.every(Boolean) ? { atoms: atoms as Mol["atoms"], bonds: bonds as Mol["bonds"] } : undefined;
+}
+
 export function serialize(mol: Mol): string {
   const atoms = mol.atoms.map((a) => ({ label: a.label, x: round(a.location[0]), y: round(a.location[1]), ...(round(a.location[2] ?? 0) ? { z: round(a.location[2]) } : {}), ...(a.shade ? { shade: true } : {}), ...(a.charge ? { charge: a.charge } : {}), ...(a.text ? { text: a.text } : {}),
     ...(a.text && a.runs && plainOf(a.runs) === a.text ? { runs: a.runs } : {}), ...(a.centre ? { centre: a.centre } : {}),
     ...(a.radical ? { radical: a.radical } : {}), ...(a.isotope ? { isotope: a.isotope } : {}), ...(a.pairs ? { pairs: a.pairs } : {}), ...(a.circled ? { circled: true } : {}), ...(a.partial ? { partial: a.partial } : {}),
     ...(a.hmark ? { hmark: a.hmark } : {}), ...(a.attach ? { attach: a.attach } : {}), ...(a.bead ? { bead: true } : {}), ...(a.map ? { map: a.map } : {}), ...(a.enhanced ? { enhanced: a.enhanced } : {}), ...(a.colour ? { colour: a.colour } : {}), ...(a.cip ? { cip: true } : {}), ...(a.halo ? { halo: a.halo } : {}), ...(a.circle ? { circle: true } : {}), ...(a.number ? { number: a.number } : {}), ...(a.hiddenNumber ? { hiddenNumber: a.hiddenNumber } : {}), ...(a.shown ? { shown: true } : {}), ...(a.ignoreWarnings ? { ignoreWarnings: true } : {}), ...(a.align ? { align: a.align } : {}), ...(a.labelAngle ? { labelAngle: round(a.labelAngle) } : {}), ...(a.hidden ? { hidden: true } : {}), ...(a.bars ? { bars: true } : {}), ...(a.angles ? { angles: a.angles } : {}), ...(a.chemical === false ? { chemical: false } : {}),
     ...(a.font ? { font: a.font } : {}), ...(a.size ? { size: a.size } : {}), ...(a.bold ? { bold: true } : {}), ...(a.italic ? { italic: true } : {}), ...(a.underline ? { underline: true } : {}), ...(a.order ? { order: a.order } : {}),
-    ...(a.query ? { query: a.query } : {}), ...(a.peaks?.length ? { peaks: a.peaks } : {}), ...scaled(a) }));
+    ...(a.query ? { query: a.query } : {}), ...(a.peaks?.length ? { peaks: a.peaks } : {}), ...(a.inner?.atoms.length ? { inner: innerOut(a.inner) } : {}), ...scaled(a) }));
   const bonds = mol.bonds.map((b) => ({ atoms: b.atoms, type: b.type, ...(b.stereo ? { stereo: b.stereo } : {}), ...(b.display ? { display: b.display } : {}), ...(b.position ? { position: b.position } : {}), ...(b.colour ? { colour: b.colour } : {}), ...(b.halo ? { halo: b.halo } : {}), ...(b.ignoreWarnings ? { ignoreWarnings: true } : {}),
     ...(b.query ? { query: b.query } : {}), ...(b.topology ? { topology: b.topology } : {}), ...(b.rxn ? { rxn: b.rxn } : {}),
-    ...(b.spacing !== undefined ? { spacing: b.spacing } : {}), ...(b.own ? { own: b.own } : {}), ...(b.peaks?.length ? { peaks: b.peaks } : {}) }));
+    ...(b.spacing !== undefined ? { spacing: b.spacing } : {}), ...(b.own ? { own: b.own } : {}), ...(b.peaks?.length ? { peaks: b.peaks } : {}), ...(b.ports ? { ports: b.ports } : {}) }));
   // Captions are saved in id order and arrows in their drawing order; ids are not saved. Conditions name their arrow
   // by its place in the list.
   const arrowList = [...(mol.arrows ?? [])];
@@ -38,11 +57,11 @@ export function serialize(mol: Mol): string {
   // Structure ends are also saved as sides, so Octet 1.0.29 still draws them.
   const sidesOf = (c: Cycle) => (c.branches ?? []).flatMap((b) => (["in", "out"] as const).flatMap((side) => (b[side]?.atoms?.length ? [{ atoms: b[side]!.atoms!, side }] : []))).slice(0, 32);
   const cycles = cycleList.map((c) => ({ x: round(c.centre[0]), y: round(c.centre[1]), radius: round(c.radius), ...(c.clockwise ? {} : { anticlockwise: true }), nodes: c.nodes, ...(c.at ? { at: c.at.map(round) } : {}), ...(c.colour ? { colour: c.colour } : {}), ...(c.order ? { order: c.order } : {}), ...(c.width ? { width: c.width } : {}), ...(c.gap !== undefined ? { gap: c.gap } : {}),
-    ...(c.steps?.some(Boolean) ? { steps: c.steps } : {}), ...(c.branches?.length ? { branches: c.branches, ...(sidesOf(c).length ? { sides: sidesOf(c) } : {}) } : {}), ...scaled(c) }));
+    ...(c.head ? { head: c.head } : {}), ...(c.arrowSize ? { arrowSize: c.arrowSize } : {}), ...(c.steps?.some(Boolean) ? { steps: c.steps } : {}), ...(c.branches?.length ? { branches: c.branches, ...(sidesOf(c).length ? { sides: sidesOf(c) } : {}) } : {}), ...scaled(c) }));
   const arrows = arrowList.map((a) => ({ kind: a.kind, x1: round(a.from[0]), y1: round(a.from[1]), x2: round(a.to[0]), y2: round(a.to[1]), ...(a.bend ? { bend: round(a.bend) } : {}),
     ...(a.style ? { style: a.style } : {}), ...(a.orbital ? { orbital: a.orbital } : {}), ...(a.colour ? { colour: a.colour } : {}),
     ...(a.start ? { start: a.start } : {}), ...(a.end ? { end: a.end } : {}), ...(a.head ? { head: a.head } : {}), ...(a.curve ? { curve: a.curve } : {}), ...(a.fill ? { fill: a.fill } : {}), ...(a.order ? { order: a.order } : {}), ...(a.width ? { width: a.width } : {}),
-    ...(a.headSize ? { headSize: { length: round(a.headSize.length), centre: round(a.headSize.centre), width: round(a.headSize.width) } } : {}), ...(a.ratio ? { ratio: round(a.ratio) } : {}), ...(a.shaft ? { shaft: round(a.shaft) } : {}), ...(a.point ? { point: true } : {}), ...scaled(a) }));
+    ...(a.headSize ? { headSize: { length: round(a.headSize.length), centre: round(a.headSize.centre), width: round(a.headSize.width) } } : {}), ...(a.ratio ? { ratio: round(a.ratio) } : {}), ...(a.shaft ? { shaft: round(a.shaft) } : {}), ...(a.point ? { point: true } : {}), ...scaled(a), ...partOf(a) }));
   // Shapes keep their order in the list, which is the order they are drawn in within their layer (order.ts).
   const shapes = (mol.shapes ?? []).map((x) => ({ kind: x.kind, x1: round(x.from[0]), y1: round(x.from[1]), x2: round(x.to[0]), y2: round(x.to[1]), ...(x.dashed ? { dashed: true } : {}), ...(x.colour ? { colour: x.colour } : {}),
     ...(x.fill ? { fill: x.fill } : {}), ...(x.shadow ? { shadow: true } : {}), ...(x.side ? { side: x.side } : {}), ...(x.mark ? { mark: x.mark } : {}), ...(x.tlc ? { tlc: x.tlc } : {}), ...(x.table ? { table: x.table } : {}), ...(x.shade ? { shade: x.shade } : {}), ...(x.order ? { order: x.order } : {}),
@@ -52,10 +71,11 @@ export function serialize(mol: Mol): string {
   const captions = [...(mol.captions ?? [])].sort((a, b) => a.id - b.id).map((c) => ({
     text: c.text, x: round(c.x), y: round(c.y), ...(c.bold ? { bold: true } : {}), ...(c.italic ? { italic: true } : {}), ...(c.underline ? { underline: true } : {}),
     ...(c.size ? { size: c.size } : {}), ...(c.align ? { align: c.align } : {}), ...(c.under ? { under: c.under } : {}), ...(c.colour ? { colour: c.colour } : {}),
-    ...(c.font ? { font: c.font } : {}), ...(c.runs ? { runs: c.runs } : {}), ...(c.property ? { property: c.property } : {}), ...(c.angle ? { angle: round(c.angle) } : {}), ...(c.order ? { order: c.order } : {}), ...(c.lineHeight ? { lineHeight: c.lineHeight } : {}), ...(c.width ? { width: round(c.width) } : {}), ...(c.chemical === false ? { chemical: false } : {}),
+    ...(c.font ? { font: c.font } : {}), ...(c.runs ? { runs: c.runs } : {}), ...(c.property ? { property: c.property } : {}), ...(c.angle ? { angle: round(c.angle) } : {}), ...(c.order ? { order: c.order } : {}), ...(c.lineHeight ? { lineHeight: c.lineHeight } : {}), ...(c.width ? { width: round(c.width) } : {}), ...(c.chemical === false ? { chemical: false } : {}), ...(c.auto ? { auto: true } : {}),
     ...(c.on ? { on: { arrow: arrowList.findIndex((a) => a.id === c.on!.arrow), side: c.on.side } } : {}),
     ...(c.on && c.placed ? { placed: { at: c.placed.at.map(round), arrow: c.placed.arrow.map(round) } } : {}),
     ...(c.cycle ? { cycle: { cycle: cycleList.findIndex((x) => x.id === c.cycle!.cycle), step: c.cycle.step, side: c.cycle.side, ...(c.cycle.branch !== undefined ? { branch: c.cycle.branch } : {}), ...(c.cycle.at !== undefined ? { at: c.cycle.at } : {}), ...(c.cycle.reach !== undefined ? { reach: c.cycle.reach } : {}), ...(c.cycle.off ? { off: c.cycle.off } : {}) } } : {}),
+    ...partOf(c),
   }));
   // Groups name their objects by kind and place in the lists above: c caption, a arrow, s shape, y cycle.
   const captionList = [...(mol.captions ?? [])].sort((a, b) => a.id - b.id), shapeList = mol.shapes ?? [];
@@ -63,12 +83,14 @@ export function serialize(mol: Mol): string {
     for (const [kind, list] of [["c", captionList], ["a", arrowList], ["s", shapeList], ["y", cycleList]] as const) { const k = (list as { id: number }[]).findIndex((x) => x.id === id); if (k >= 0) return [kind, k]; }
     return undefined;
   };
-  const groups = (mol.groups ?? []).map((g) => ({ atoms: g.atoms, items: g.items.map(ref).filter(Boolean), ...(g.integral ? { integral: true } : {}), ...(g.annotations?.length ? { annotations: g.annotations } : {}) }));
+  const groups = (mol.groups ?? []).map((g) => ({ atoms: g.atoms, items: g.items.map(ref).filter(Boolean), ...(g.integral ? { integral: true } : {}), ...(g.annotations?.length ? { annotations: g.annotations } : {}), ...(g.plot ? { plot: g.plot } : {}) }));
   // Stoichiometry grids name their arrow by its place in the list above.
   const grids = (mol.grids ?? []).map((g) => ({ ...g, arrow: arrowList.findIndex((a) => a.id === g.arrow) })).filter((g) => g.arrow >= 0);
   return JSON.stringify({ format: FORMAT, version: VERSION, app: pkg.version, structure: { atoms, bonds }, ...(arrows.length ? { arrows } : {}), ...(cycles.length ? { cycles } : {}), ...(shapes.length ? { shapes } : {}), ...(captions.length ? { captions } : {}), ...(groups.length ? { groups } : {}), ...(grids.length ? { grids } : {}), ...(mol.fills?.length ? { fills: mol.fills } : {}), ...(mol.annotations?.length ? { annotations: mol.annotations } : {}), ...(mol.style ? { style: mol.style } : {}), ...(mol.guides ? { guides: mol.guides } : {}), ...(mol.spectra?.length ? { spectra: mol.spectra.map(writeMeasured) } : {}) }, null, 1) + "\n";
 }
 const round = (n: number) => Math.round(n * 1e4) / 1e4;
+// A page spectrum's part (pageplot.ts): its role and where Octet put it. Octet 1.1.0 leaves both out.
+const partOf = (x: { role?: PlotPart }) => (x.role ? { role: { role: x.role.role, at: x.role.at.map(round) } } : {});
 // A thing's draw order (order.ts): a whole number other than zero; anything else is left out.
 const orderOf = (v: unknown) => (Number.isInteger(v) && v !== 0 && Math.abs(v as number) <= 1e6 ? { order: v as number } : {});
 // An object's scale against the document style (decision 0007), saved when it is not 1; read back when it is 0.01 to 100.
@@ -177,8 +199,8 @@ export function parse(text: string): Mol {
       || (a.attach !== undefined && typeof a.attach !== "boolean" && a.attach !== "diamond" && a.attach !== "star") || (a.bead !== undefined && typeof a.bead !== "boolean") || (a.map !== undefined && !int(a.map, 1, 9999))
       || (a.enhanced !== undefined && !(typeof a.enhanced === "string" && /^(abs|&[1-9]\d?|or[1-9]\d?)$/.test(a.enhanced))) || badColour(a.colour) || (a.z !== undefined && !num(a.z)) || (a.depth !== undefined && a.depth !== false) || (a.shade !== undefined && a.shade !== true) || (a.cip !== undefined && a.cip !== true) || badColour(a.halo) || badColour(a.fill) || (a.circle !== undefined && a.circle !== true) || (a.shown !== undefined && a.shown !== true)
       || [a.number, a.hiddenNumber].some((x) => x !== undefined && !(typeof x === "string" && /^[\w'′*-]{1,8}$/.test(x))) || !isScale(a.scale)
-      // A written label's runs: its text, with only bold, italic and underline.
-      || (a.runs !== undefined && (typeof a.text !== "string" || !readRuns(a.runs, a.text)?.every((r) => Object.keys(r).every((k) => ["text", "bold", "italic", "underline"].includes(k)))))) throw new Error("This drawing is damaged.");
+      // A written label's runs: its text, with only bold, italic, underline and superscript or subscript.
+      || (a.runs !== undefined && (typeof a.text !== "string" || !readRuns(a.runs, a.text)?.every((r) => Object.keys(r).every((k) => ["text", "bold", "italic", "underline", "script"].includes(k)))))) throw new Error("This drawing is damaged.");
     const atom: Atom = { label: a.label, location: [a.x as number, a.y as number, (a.z as number | undefined) ?? 0] };
     // depth: false (older files: a 3D structure drawn flat) is how such a structure is drawn now.
     if (a.shade) atom.shade = true;
@@ -232,6 +254,7 @@ export function parse(text: string): Mol {
         || !list.every((i) => int(i, 0, atoms.length - 1) && i !== out.atoms.length && (atoms as Record<string, unknown>[])[i as number]?.centre === undefined)) throw new Error("This drawing is damaged.");
       atom.centre = { atoms: [...new Set(list as number[])], ...(!Array.isArray(centre) && centre?.variable === true ? { variable: true as const } : {}) };
     }
+    if (a.inner !== undefined) { const inner = innerIn(a.inner); if (!inner) throw new Error("This drawing is damaged."); atom.inner = inner; }
     out.atoms.push(atom);
   }
   for (const b of bonds as Record<string, unknown>[]) {
@@ -248,6 +271,12 @@ export function parse(text: string): Mol {
     if (b.colour) bond.colour = b.colour as string;
     if (b.ignoreWarnings === true) bond.ignoreWarnings = true;
     if (Array.isArray(b.peaks) && b.peaks.length <= 64 && b.peaks.every((k) => int(k, 1, 1e9))) bond.peaks = [...new Set(b.peaks as number[])];
+    // The kept atom each end joins, at a label that keeps its atoms (-1: none).
+    if (b.ports !== undefined) {
+      const p = b.ports as unknown[];
+      if (!Array.isArray(p) || p.length !== 2 || !p.every((x, e) => x === -1 || int(x, 0, (out.atoms[bond.atoms[e]].inner?.atoms.length ?? 0) - 1))) throw new Error("This drawing is damaged.");
+      if (p.some((x) => x !== -1)) bond.ports = [p[0] as number, p[1] as number];
+    }
     // A query bond's type; an earlier Octet file held ChemDraw's orders for it ("1 2").
     Object.assign(bond, readBondQuery({ ...b, query: ({ "1 2": "sd", "1 1.5": "sa", "2 1.5": "da" } as Record<string, string>)[b.query as string] ?? b.query }));
     out.bonds.push(bond);
@@ -288,7 +317,8 @@ export function parse(text: string): Mol {
         ...(a.style ? { style: a.style as LineStyle } : {}), ...(orb ? { orbital: { shape: orb.shape as OrbitalShape, phase: orb.phase as Phase } } : {}), ...(a.colour ? { colour: a.colour as string } : {}),
         ...(a.start ? { start: a.start as Head } : {}), ...(a.end ? { end: a.end as Head } : {}), ...(a.head ? { head: a.head as HeadShape } : {}),
         ...(a.curve ? { curve: readCurve(a.curve)! } : {}), ...(a.fill ? { fill: a.fill as CurveFill } : {}), ...orderOf(a.order), ...(a.width ? { width: a.width as number } : {}),
-        ...(a.headSize ? { headSize: readHead(a.headSize)! } : {}), ...(a.ratio ? { ratio: a.ratio as number } : {}), ...(a.shaft ? { shaft: a.shaft as number } : {}), ...(a.point ? { point: true as const } : {}), ...scaled(a as { scale?: number }) };
+        ...(a.headSize ? { headSize: readHead(a.headSize)! } : {}), ...(a.ratio ? { ratio: a.ratio as number } : {}), ...(a.shaft ? { shaft: a.shaft as number } : {}), ...(a.point ? { point: true as const } : {}), ...scaled(a as { scale?: number }),
+        ...(readPart(a.role) ? { role: readPart(a.role)! } : {}) };
     });
   }
   // Cycles take ids after the arrows'.
@@ -305,7 +335,7 @@ export function parse(text: string): Mol {
       const steps = c.steps === undefined ? undefined : readSteps(c.steps), branches = c.branches === undefined ? undefined : readBranches(c.branches, nodes.length, (i) => (int(i, 0, out.atoms.length - 1) ? (i as number) : undefined));
       if ((c.steps !== undefined && !steps) || (c.branches !== undefined && !branches)) throw new Error("This drawing is damaged.");
       return { id: captionCount + (out.arrows?.length ?? 0) + k + 1, centre: [c.x as number, c.y as number], radius: c.radius as number, clockwise: c.anticlockwise !== true, nodes: nodes as number[][], ...(at ? { at } : {}), ...(c.colour ? { colour: c.colour as string } : {}), ...orderOf(c.order), ...(c.width ? { width: c.width as number } : {}), ...(typeof c.gap === "number" && c.gap >= 0 && c.gap <= 100 ? { gap: c.gap } : {}),
-        ...(steps?.some(Boolean) ? { steps } : {}), ...(branches?.length ? { branches } : {}), ...(sides?.length ? { sides: sides as CycleSide[] } : {}), ...scaled(c as { scale?: number }) } as Cycle;
+        ...(c.head === "hollow" || c.head === "angled" ? { head: c.head } : {}), ...(c.arrowSize === "large" || c.arrowSize === "medium" ? { arrowSize: c.arrowSize } : {}), ...(steps?.some(Boolean) ? { steps } : {}), ...(branches?.length ? { branches } : {}), ...(sides?.length ? { sides: sides as CycleSide[] } : {}), ...scaled(c as { scale?: number }) } as Cycle;
     });
   }
   // Shapes take ids after the cycles'.
@@ -364,7 +394,8 @@ export function parse(text: string): Mol {
       if (!Array.isArray(atoms) || !Array.isArray(items) || !atoms.every((i) => int(i, 0, out.atoms.length - 1)) || (g.integral !== undefined && g.integral !== true)
         || !items.every((r) => Array.isArray(r) && r.length === 2 && typeof r[0] === "string" && lists[r[0]] && int(r[1], 0, lists[r[0]].length - 1))) throw new Error("This drawing is damaged.");
       const annotations = g.annotations === undefined ? undefined : readAnnotations(g.annotations);
-      return { id: next++, atoms: atoms as number[], items: (items as [string, number][]).map(([kind, k]) => lists[kind][k].id), ...(g.integral ? { integral: true as const } : {}), ...(annotations ? { annotations } : {}) };
+      const plot = g.plot === undefined ? undefined : readPlot(g.plot);
+      return { id: next++, atoms: atoms as number[], items: (items as [string, number][]).map(([kind, k]) => lists[kind][k].id), ...(g.integral ? { integral: true as const } : {}), ...(annotations ? { annotations } : {}), ...(plot ? { plot } : {}) };
     });
   }
   if (d.annotations !== undefined) out.annotations = readAnnotations(d.annotations);
@@ -430,6 +461,9 @@ function readCaptions(raw: unknown, out: Mol, num: (v: unknown) => boolean, int:
     // A width from half a bond length to 1000 bond lengths; anything else leaves the caption unwrapped.
     if (typeof c.width === "number" && c.width >= 0.5 && c.width <= 1000) caption.width = c.width;
     if (c.chemical === false) caption.chemical = false;
+    if (c.auto === true) caption.auto = true;
+    const role = readPart(c.role);
+    if (role) caption.role = role;
     if (under) caption.under = under as number[];
     if (on) caption.on = { arrow: out.arrows![on.arrow as number].id, side: on.side as "above" | "below" };
     if (placed) caption.placed = { at: placed.at as [number, number], arrow: placed.arrow as [number, number] };

@@ -13,6 +13,7 @@
 // repository. --check compares that many random names with PubChem's structure for each and reports the agreement.
 // English words come from /usr/share/dict/words (macOS, and Linux's wamerican package).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { gzipSync } from "node:zlib";
 import { COMMON, commonKey } from "../src/common.ts";
 import { DRUGS } from "../src/drugs.ts";
@@ -201,6 +202,46 @@ for (const it of items.values()) {
 }
 console.log(`structures: ${entries.length} (${noStructure} unreadable, ${conflicting} with SMILES that disagree with their InChIKey)`);
 
+// ——— FDA's UNII list ———
+// The FDA's Global Substance Registration System (public domain): CAS numbers and names of reagents and building
+// blocks Wikidata lacks (carbic anhydride, 129-64-6). Where a substance has Wikidata's structure (the same InChIKey),
+// its CAS number and names join that compound; otherwise it is a compound of its own when it has a CAS number and a
+// small structure (SMILES of up to 80 characters: reagents, not proteins or natural products). Names only: no codes
+// (NSC-3999), no CAS index names ("..., 3A,4,7,7A-TETRAHYDRO-"), and no source tags ("[MI]"). UNII writes names in
+// capitals, so they go in lower case, with N, R, S, E, Z, D and L as stereo and locant letters in capitals.
+const UNII = "https://precision.fda.gov/uniisearch/archive/latest/";
+function unzipped(zip: string, file: RegExp): string {
+  if (!existsSync(cached(zip))) execFileSync("curl", ["-sfL", "-A", AGENT, "-o", cached(zip), `${UNII}${zip}`]);
+  const name = execFileSync("unzip", ["-Z1", cached(zip)], { encoding: "utf8" }).split("\n").find((n) => file.test(n));
+  if (!name) throw new Error(`UNII: no ${file} in ${zip}`);
+  return execFileSync("unzip", ["-p", cached(zip), name], { encoding: "utf8", maxBuffer: 1 << 30 });
+}
+const uniiCase = (s: string) => s.toLowerCase().replace(/\.(alpha|beta|gamma|delta)\./g, "$1").replace(/(^|[(,\s])([rsez])(?=[),])/g, (_, a, l) => a + l.toUpperCase())
+  .replace(/^([dl])-/, (_, l) => `${l.toUpperCase()}-`).replace(/\bn(?=,n|')|(?<=,)n(?=-)/g, "N");
+const byKey = new Map(entries.map((e) => [e.key, e]));
+const unii = new Map<string, Entry>();
+let uniiJoined = 0, uniiOwn = 0, uniiUnread = 0;
+for (const line of unzipped("UNII_Data.zip", /^UNII_Records.*\.txt$/).split("\n").slice(1)) {
+  const f = line.replace(/\r$/, "").split("\t");
+  const [id, rn, key, smiles, kind] = [f[0], f[2], f[20], f[21], f[24]];
+  if (kind !== "chemical" || !smiles || /\s/.test(smiles) || !/^[A-Z]{14}-[A-Z]{10}-[A-Z]$/.test(key ?? "")) continue;
+  const cas = casValid(rn ?? "") ? [String(rn)] : [], same = byKey.get(key);
+  if (same) { same.cas = [...new Set([...same.cas, ...cas])]; unii.set(id, same); uniiJoined++; continue; }
+  if (!cas.length || smiles.length > 80) continue;
+  // UNII's own SMILES, where Indigo reads it as UNII's InChIKey.
+  if (convert(smiles, "inchi-key") !== key) { uniiUnread++; continue; }
+  const e: Entry = { id: `U${id}`, smiles, key, names: [], cas, suggest: [] };
+  entries.push(e); byKey.set(key, e); unii.set(id, e); uniiOwn++;
+}
+for (const line of unzipped("UNIIs.zip", /^UNII_Names.*\.txt$/).split("\n").slice(1)) {
+  const [raw, type, id] = line.replace(/\r$/, "").split("\t"), e = unii.get(id ?? "");
+  if (!e || !raw || type === "cd") continue;
+  const name = raw.replace(/\s*\[[^\]]*\]$/, "").trim();
+  if (/, [^,]*-$|, \(/.test(name)) continue;
+  e.names.push(uniiCase(name));
+}
+console.log(`UNII: ${uniiJoined} substances join Wikidata's compounds, ${uniiOwn} compounds of their own (${uniiUnread} with SMILES Indigo reads as another InChIKey)`);
+
 // ——— Names ———
 // Kept: names a chemist types. Left out: names over 80 characters, molecular formulas (C6H6 has more than one
 // structure), formulas with charges or subscripts (Zn2+, As₂O₃), atomic numbers with symbols (11Na), SMILES, InChI,
@@ -238,12 +279,15 @@ for (const e of entries) {
     const k = commonKey(name);
     if (own.has(k)) { ownShadow++; continue; }
     if (kept.some((n) => commonKey(n) === k)) continue;
+    // A name with endo, exo, syn or anti on a structure without stereo would draw what the name does not say.
+    if (/\b(?:endo|exo|syn|anti)\b/i.test(name) && !e.smiles.includes("@")) continue;
     const read = opsinSmiles(name);
     if (read) {
       const key = convert(read, "inchi-key") ?? "";
       if (key === e.key) opsinSame++;
       else if (key.slice(0, 14) === e.key.slice(0, 14)) opsinStereo++;
-      else differs.push({ name, e, opsin: key });
+      // UNII's names OPSIN reads otherwise stay with OPSIN: PubChem is asked about Wikidata's only.
+      else if (!e.id.startsWith("U")) differs.push({ name, e, opsin: key });
       // The compound's own name, and a short name without locants, when OPSIN reads it as this compound, is kept for
       // suggestions only ("benzaldehide" to benzaldehyde, "acetylsalicilic acid" to acetylsalicylic acid).
       if ((name === label && name.length <= 40) || (key === e.key && name.length <= 30 && !/[\d(),[\]]/.test(name))) e.suggest.push(name);
@@ -311,7 +355,8 @@ for (const e of entries) {
   if (same) for (const f of ["names", "cas", "suggest"] as const) same[f] = [...new Set([...same[f], ...e[f]])];
   else lines.set(e.key, e);
 }
-const kept = [...lines.values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+// Wikidata's compounds by item number, then UNII's by their UNII.
+const kept = [...lines.values()].sort((a, b) => Number(a.id[0] === "U") - Number(b.id[0] === "U") || (a.id[0] === "U" ? (a.id < b.id ? -1 : 1) : Number(a.id.slice(1)) - Number(b.id.slice(1))));
 const text = kept.map((e) => [e.smiles, e.names.join("|"), e.cas.join("|"), e.key, e.suggest.join("|")].join("\t").trimEnd()).join("\n") + "\n";
 const out = new URL("../data/names/", import.meta.url);
 mkdirSync(out, { recursive: true });

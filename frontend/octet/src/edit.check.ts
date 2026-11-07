@@ -1,6 +1,6 @@
 // Run: node src/edit.check.ts. Fails loudly if an editing rule breaks.
 import assert from "node:assert/strict";
-import { EMPTY, LARGE, bondOrders, freePairs, addCaption, addTemplate, normalise, addChair, addGroup, nextNumber, addRing, alignFragments, atomsInPolygon, flipAtoms, atomAt, atomsIn, bondTo, chainTo, complete, flipBond, rotateAtoms, setBondSpec, cycleBond, deleteAtom, deleteAtoms, deleteBond, erase, fragments, joinOverlaps, merge, moveAtoms, nextDirection, onSelection, pos, setElement, sprout, subset, levelTurn, newTable, resizeTable, setTableCell, expandLabel, contractLabel, spliceTable, sizeTable, fitTable, clearTable, pairMap, clearMap, tiltAtoms, turnAboutBond, flattenAtoms, hingeOf, duplicateSelection, extractSelection, insertMol, inRing, ringBonds, markDirections, neighbours, extent, stack, wholeGroups, wholeIntegral, groupSelection, addArrow, addShape, addCycle, ungroupSelection, groupParents, groupTargets, groupsOf, outermost, selectedGroups, tidyGroups, deleteGraphics, pivotOf, addGroupAt, type Group, walkHot, jumpHot, farBond, keepHot, transformParts, splitCurve, nearestOnCurve, moveCurvePoint, removeCurvePoint, appendCurvePoint, nextGroup, setEnhanced, clickBond } from "./edit.ts";
+import { EMPTY, LARGE, bondOrders, freePairs, addCaption, addTemplate, normalise, addChair, addGroup, nextNumber, addRing, alignFragments, arrangeShifts, partBox, atomsInPolygon, flipAtoms, atomAt, atomsIn, bondTo, chainTo, complete, flipBond, rotateAtoms, setBondSpec, cycleBond, deleteAtom, deleteAtoms, deleteBond, erase, fragments, joinOverlaps, merge, moveAtoms, nextDirection, onSelection, pos, setElement, sprout, subset, levelTurn, newTable, resizeTable, setTableCell, expandLabel, contractLabel, spliceTable, sizeTable, fitTable, clearTable, pairMap, clearMap, tiltAtoms, turnAboutBond, flattenAtoms, hingeOf, duplicateSelection, extractSelection, insertMol, inRing, ringBonds, markDirections, neighbours, extent, stack, wholeGroups, wholeIntegral, groupSelection, addArrow, addShape, addCycle, ungroupSelection, groupParents, groupTargets, groupsOf, outermost, selectedGroups, tidyGroups, deleteGraphics, pivotOf, addGroupAt, type Group, walkHot, jumpHot, farBond, keepHot, transformParts, splitCurve, nearestOnCurve, moveCurvePoint, removeCurvePoint, appendCurvePoint, nextGroup, setEnhanced, clickBond, scriptLabels, setLabelRuns } from "./edit.ts";
 import { curvePath, inDrawn, inShape, settleShape, shapeBounds, shapeCorners, tableLayout, type Mol, type Shape } from "./render.ts";
 import { distToPath } from "./hit.ts";
 const sub = (a: number[], b: number[]) => [a[0] - b[0], a[1] - b[1]], cross = (a: number[], b: number[]) => a[0] * b[1] - a[1] * b[0];
@@ -203,6 +203,50 @@ const row = alignFragments(pair, new Set([0, 1, 2, 3]), "row");
 const cy = (m: typeof row, a: number, b: number) => (pos(m, a)[1] + pos(m, b)[1]) / 2;
 assert.ok(Math.abs(cy(row, 0, 1) - cy(row, 2, 3)) < 1e-9, "centres share one y");
 console.log("edit.check: align ok");
+
+// Align by part (as ChemDraw's Object > Align): a structure selected only in part lines up by its selected atoms' box
+// (one atom: its centre) and moves whole and rigidly. A structure selected whole lines up by its own box, as before.
+{
+  // Two propanes: A from (0,0) to (2,1), B shifted by (5,-3). One atom picked on each: A's atom 1, B's atom 0.
+  const prop = bondTo(bondTo(sprout(EMPTY, [0, 0]), 1, [2, 1]), 0, [-1, 1]);
+  const two = merge(prop, prop, [5, -3]), n = prop.atoms.length;
+  const a = [0, 1, 2], b = [n, n + 1, n + 2], pick = new Set([1, n]);
+  assert.equal(partBox(two, a, new Set(a)), undefined, "a whole structure has no part box");
+  assert.equal(partBox(two, a, new Set([n])), undefined, "none of it selected");
+  assert.deepEqual(partBox(two, a, pick), [...pos(two, 1), ...pos(two, 1)], "one atom: a point at its centre");
+  const both = partBox(two, a, new Set([1, 2]))!;
+  assert.deepEqual(both, [Math.min(pos(two, 1)[0], pos(two, 2)[0]), Math.min(pos(two, 1)[1], pos(two, 2)[1]), Math.max(pos(two, 1)[0], pos(two, 2)[0]), Math.max(pos(two, 1)[1], pos(two, 2)[1])]);
+  const boxes = [partBox(two, a, pick)!, partBox(two, b, pick)!];
+  const apply = (d: [number, number][]) => { let m = two; [a, b].forEach((g, k) => { m = moveAtoms(m, new Set(g), d[k]); }); return m; };
+  const near = (x: number, y: number) => Math.abs(x - y) < 1e-9;
+  // Every align option: the picked atoms share the line; the other atoms keep their places relative to them.
+  for (const how of ["left", "centre", "right", "top", "middle", "bottom"] as const) {
+    const out = apply(arrangeShifts(boxes, how)), k = how === "left" || how === "centre" || how === "right" ? 0 : 1;
+    assert.ok(near(pos(out, 1)[k], pos(out, n)[k]), `${how}: the picked atoms line up`);
+    assert.ok(near(pos(out, 1)[k], pos(two, 1)[k]), `${how}: the highest (A) stays`);
+    for (const g of [a, b]) for (const i of g) for (const j of g) for (const q of [0, 1])
+      assert.ok(near(pos(out, i)[q] - pos(out, j)[q], pos(two, i)[q] - pos(two, j)[q]), `${how}: the structure moves rigidly`);
+    assert.ok(near(pos(out, n)[1 - k], pos(two, n)[1 - k]), `${how}: no move across the line`);
+  }
+  // Whole structures: unchanged, by their boxes (left edges meet).
+  const whole = (g: number[]): [number, number, number, number] => { const xs = g.map((i) => pos(two, i)[0]), ys = g.map((i) => pos(two, i)[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+  const left = apply(arrangeShifts([whole(a), whole(b)], "left"));
+  assert.ok(near(Math.min(...b.map((i) => pos(left, i)[0])), Math.min(...a.map((i) => pos(left, i)[0]))));
+  // Distribute: three single atoms on three structures end up evenly spaced; the ends stay.
+  const three = merge(two, prop, [11, 4]), c = [2 * n, 2 * n + 1, 2 * n + 2], pick3 = new Set([1, n, 2 * n + 2]);
+  const bx = [a, b, c].map((g) => partBox(three, g, pick3)!);
+  const d = arrangeShifts(bx, "across"), xs = [1, n, 2 * n + 2].map((i, k) => pos(three, i)[0] + d[k][0]);
+  const sorted = [...xs].sort((p, q) => p - q);
+  assert.ok(near(sorted[1] - sorted[0], sorted[2] - sorted[1]), "the picked atoms are evenly spaced");
+  assert.ok(d.every((s) => s[1] === 0), "distribute across does not move up or down");
+  // Line up in a row (Actions panel) by the picked atoms, the structures whole.
+  const row = alignFragments(two, pick, "row");
+  assert.ok(near(pos(row, 1)[1], pos(row, n)[1]), "row: the picked atoms share one y");
+  assert.ok(near(pos(row, n + 1)[1] - pos(row, n)[1], pos(two, n + 1)[1] - pos(two, n)[1]), "row: B moves whole");
+  const wholeRow = alignFragments(two, new Set([...a, ...b]), "row");
+  assert.ok(near((Math.min(...a.map((i) => pos(wholeRow, i)[1])) + Math.max(...a.map((i) => pos(wholeRow, i)[1]))) / 2, (Math.min(...b.map((i) => pos(wholeRow, i)[1])) + Math.max(...b.map((i) => pos(wholeRow, i)[1]))) / 2), "row: whole structures by their centres, as before");
+  console.log("edit.check: align by part ok");
+}
 
 // Captions follow their structure's atoms through deletes and merges, and go when the structure goes.
 {
@@ -910,4 +954,19 @@ console.log("edit.check: align ok");
   const two = clickBond(clickBond(chain, 2, S, at, 0, true), 2, S, at, 0, true);
   assert.equal(two.bonds[2].type, 3);
   assert.equal(clickBond(two, 2, S, at, 0, true).bonds[2].type, 1);
+}
+
+// Text > Superscript and Subscript on selected atoms (issue 44): all of each label in that script, its element's label
+// as it shows (OH); again, back to plain, and an element's label is the element again. Runs on a written label set
+// the atom it attaches through to what chemistry reads (Fe of Fe with III raised).
+{
+  const m: Mol = { atoms: [{ label: "C", location: [0, 0, 0] }, { label: "O", location: [1, 0, 0] }, { label: "O", text: "OMe", location: [2, 0, 0] }], bonds: [{ type: 1, atoms: [0, 1] }, { type: 1, atoms: [0, 2] }] };
+  const up = scriptLabels(m, [1, 2], "super");
+  assert.deepEqual(up.atoms.slice(1).map((a) => [a.text, a.runs]), [["OH", [{ text: "OH", script: "super" }]], ["OMe", [{ text: "OMe", script: "super" }]]]);
+  const back = scriptLabels(up, [1, 2], "super");
+  assert.deepEqual(back.atoms.slice(1).map((a) => [a.label, a.text, a.runs]), [["O", undefined, undefined], ["O", "OMe", undefined]]);
+  assert.deepEqual(scriptLabels(up, [1], "sub").atoms[1].runs, [{ text: "OH", script: "sub" }]);
+  const fe = setLabelRuns({ atoms: [{ label: "C", text: "FeIII", location: [0, 0, 0] }], bonds: [] }, 0, [{ text: "Fe" }, { text: "III", script: "super" }]);
+  assert.deepEqual([fe.atoms[0].label, fe.atoms[0].runs?.length], ["Fe", 2]);
+  assert.equal(setLabelRuns(fe, 0, [{ text: "FeIII" }]).atoms[0].runs, undefined);
 }

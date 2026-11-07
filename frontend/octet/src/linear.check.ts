@@ -66,18 +66,19 @@ const stretches = (d: Drawing, mol: Mol, i: number, j: number, polys: P[][]): [n
 };
 
 // Each structure, with its bonds with an unlabelled end drawn as long as before label-to-label bonds kept a third of
-// their length (pt, summed; the same mirrored).
+// their length (pt, summed; the same mirrored). The middle carbon of two double bonds (an isocyanate's, a ketene's,
+// an allene's, CO2's) shows its label, so its bonds are between labels.
 const structures: [string, string, number][] = [
   ["methyl 2-diazo-2-phenylacetate", "COC(=O)C(=[N+]=[N-])c1ccccc1", 202.94],
   ["ethyl diazoacetate", "CCOC(=O)C=[N+]=[N-]", 82.06],
   ["phenyl azide", "[N-]=[N+]=Nc1ccccc1", 131.91],
   ["benzonitrile oxide", "[O-][N+]#Cc1ccccc1", 165.43],
-  ["phenyl isocyanate", "O=C=Nc1ccccc1", 163.84],
-  ["phenyl isothiocyanate", "S=C=Nc1ccccc1", 163.87],
-  ["dimethylketene", "CC(C)=C=O", 77.38],
-  ["penta-2,3-diene", "CC=C=CC", 87.9],
-  ["carbon dioxide", "O=C=O", 35.89], // cleaned exactly straight, so its double bonds are centred
-  ["dicyclohexylcarbodiimide", "C1CCC(CC1)N=C=NC1CCCCC1", 227.32],
+  ["phenyl isocyanate", "O=C=Nc1ccccc1", 131.91],
+  ["phenyl isothiocyanate", "S=C=Nc1ccccc1", 131.91],
+  ["dimethylketene", "CC(C)=C=O", 49.03],
+  ["penta-2,3-diene", "CC=C=CC", 61.66],
+  ["carbon dioxide", "O=C=O", 0],
+  ["dicyclohexylcarbodiimide", "C1CCC(CC1)N=C=NC1CCCCC1", 195.38],
   ["benzonitrile", "N#Cc1ccccc1", 165.43],
   ["1-phenylpropyne", "CC#Cc1ccccc1", 194.35],
   ["benzenediazonium", "N#[N+]c1ccccc1", 131.91],

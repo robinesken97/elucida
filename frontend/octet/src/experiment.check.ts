@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { MAX_START, PURPOSES, outlines, pageSize, purposeStyle, readPurposes, styleFor } from "./docstyle.ts";
-import { FIELDS, MAX_MARKUP, detailsLayout, detailsOf, experimentPage, markupCaption, markupRuns, newExperiment, newGrids, templateOf, today, withDetails } from "./experiment.ts";
+import { FIELDS, MAX_MARKUP, detailsLayout, detailsOf, experimentPage, growScheme, markupCaption, markupRuns, newExperiment, newGrids, schemeLanding, schemeSpan, templateOf, today, withDetails } from "./experiment.ts";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
 import { parse, serialize } from "./file.ts";
 import type { Mol } from "./render.ts";
@@ -66,9 +66,30 @@ assert.equal(experimentPage(undefined, undefined, withDetails(undefined, details
 {
   const page = pageSize(purposeStyle("experiment")), start = newExperiment(page, 14.4, undefined, "2026-11-04");
   assert.deepEqual(detailsOf(start.annotations), { date: "2026-11-04" });
-  const heading = start.captions![0], k = 72 / 25.4 / 14.4;
+  const heading = start.captions!.find((c) => c.text === "Procedure")!, k = 72 / 25.4 / 14.4;
   assert.deepEqual([heading.text, heading.bold, heading.align], ["Procedure", true, "left"]);
   assert.ok(Math.abs(heading.x - (15 - 105) * k) < 1e-9 && heading.y < 0 && heading.y > (-page[1] / 2) * k);
+  // Issue 34: a bold heading for the reaction scheme and the procedure, each with an outlined box under it inside the
+  // margins, below the details block. They are ordinary text and boxes, so they edit, move and delete as any other.
+  assert.deepEqual(start.captions!.map((c) => [c.text, c.bold]), [["Reaction scheme", true], ["Procedure", true]]);
+  assert.equal(start.shapes?.length, 2);
+  const ids = [...start.captions!, ...start.shapes!].map((x) => x.id);
+  assert.equal(new Set(ids).size, ids.length, "every heading and box has its own id");
+  const block = detailsLayout({ title: "x".repeat(200), ...details }, page, 14.4, 10, (t, size) => t.length * size * 0.5).box;
+  start.shapes!.forEach((box, j) => {
+    const h = start.captions![j], [x0, x1] = [Math.min(box.from[0], box.to[0]), Math.max(box.from[0], box.to[0])], [y0, y1] = [Math.min(box.from[1], box.to[1]), Math.max(box.from[1], box.to[1])];
+    assert.equal(box.kind, "box");
+    assert.ok(Math.abs(x0 - (15 - 105) * k) < 1e-9 && Math.abs(x1 - (105 - 15) * k) < 1e-9, "the box spans the margins");
+    assert.ok(h.y > y1 && h.y - y1 < 4 * k, "the heading sits just above its box");
+    assert.ok(y1 < block[1] && y0 >= (15 - page[1] / 2) * k - 1e-9, "below the details, above the bottom margin");
+  });
+  assert.ok(Math.max(start.shapes![1].from[1], start.shapes![1].to[1]) < Math.min(start.shapes![0].from[1], start.shapes![0].to[1]), "the boxes do not overlap");
+  // Saved and opened again, through .oct and CDXML, they come back as text and boxes.
+  const page1 = { atoms: [], bonds: [], ...start } as Mol;
+  assert.deepEqual(parse(serialize(page1)).shapes?.map((x) => x.kind), ["box", "box"]);
+  const read = fromCdxml(toCdxml(page1, purposeStyle("experiment"))).mol;
+  assert.deepEqual(read.captions?.map((c) => [c.text, c.bold]).sort(), [["Procedure", true], ["Reaction scheme", true]]);
+  assert.deepEqual(read.shapes?.map((x) => x.kind), ["box", "box"]);
   const drawing: Mol = { atoms: [], bonds: [], annotations: withDetails(undefined, details),
     captions: [{ id: 1, text: "Procedure", x: 0, y: 0 }, { id: 2, text: "NaBH4", x: 0, y: 0, on: { arrow: 9, side: "above" } }] };
   const template = parse(serialize(templateOf(drawing)));
@@ -78,6 +99,10 @@ assert.equal(experimentPage(undefined, undefined, withDetails(undefined, details
   const again = newExperiment(page, 14.4, template, "2026-12-01");
   assert.deepEqual(detailsOf(again.annotations), { ...details, date: "2026-12-01" });
   assert.deepEqual(again.captions?.map((c) => c.text), ["Procedure"]);
+  assert.equal(again.shapes, undefined, "a template with no boxes gives none");
+  // A template keeps its boxes and tables, not a TLC plate or a picture.
+  const boxed = templateOf({ ...drawing, shapes: [{ id: 5, kind: "box", from: [0, 0], to: [4, 3] }, { id: 6, kind: "tlc", from: [0, 0], to: [2, 3] }] });
+  assert.deepEqual(newExperiment(page, 14.4, parse(serialize(boxed))).shapes?.map((x) => x.kind), ["box"]);
   // An own template keeps what it starts with, within limits.
   const own = (start: string) => readPurposes({ ownPurposes: [{ id: "u1", name: "My experiment", kind: "experiment", style: purposeStyle("experiment"), start }] }).ownPurposes[0];
   assert.equal(own(serialize(template)).start, serialize(template));
@@ -143,9 +168,22 @@ assert.equal(experimentPage(undefined, undefined, withDetails(undefined, details
   assert.ok(markupRuns([{ text: deep }]).map((r) => r.text).join("").includes("x"));
   const long = "*a ".repeat(MAX_MARKUP);
   assert.equal(markupRuns([{ text: long }])[0].text, long);
-  const t0 = performance.now();
-  markupRuns([{ text: "*a *".repeat(MAX_MARKUP / 4 - 1) }]);
-  assert.ok(performance.now() - t0 < 2000, "markup over long text is quick");
+  // Unpaired marks and braces are the worst case: each looks ahead to the end of its line or text. The look-ahead is
+  // worked out once for the whole text, so the work grows in step with the length. Timed against itself in the same
+  // run, so a busy machine does not fail it: the whole cap takes about 4 times as long as a quarter of it (linear),
+  // never 16 (square). Median of 5, the two sizes in turn.
+  const worsts: [string, string][] = [["*a ", "unpaired stars"], ["**a ", "unpaired double stars"], ["$a $", "unpaired dollars"], ["\\textit{a", "unclosed commands"], ["$^{a", "unclosed braces in math"], ["*a\\", "stars before escapes"]];
+  for (const [unit, what] of worsts) {
+    const worst = (n: number) => [{ text: unit.repeat(Math.floor(n / unit.length) - 1) }];
+    const quarter: number[] = [], whole: number[] = [];
+    for (let k = 0; k < 5; k++) for (const [n, out] of [[MAX_MARKUP / 4, quarter], [MAX_MARKUP, whole]] as const) {
+      const t0 = performance.now();
+      markupRuns(worst(n));
+      out.push(performance.now() - t0);
+    }
+    const median = (xs: number[]) => xs.sort((p, q) => p - q)[2], ratio = median(whole) / median(quarter);
+    assert.ok(ratio < 8, `markup over long text with ${what}: ${median(whole).toFixed(0)} ms, ${ratio.toFixed(1)} times as long as a quarter of the text (linear)`);
+  }
   // A caption: its text and runs, or nothing to do.
   assert.deepEqual(markupCaption({ id: 1, text: "H$_2$O", x: 0, y: 0 }), { id: 1, text: "H2O", x: 0, y: 0, runs: [{ text: "H" }, { text: "2", script: "sub" }, { text: "O" }] });
   assert.equal(markupCaption({ id: 1, text: "plain text", x: 0, y: 0 }), undefined);
@@ -160,4 +198,48 @@ assert.equal(experimentPage(undefined, undefined, withDetails(undefined, details
   assert.match(editor, /if \(tool === "select" && t\.atom === undefined && [^\n]*detailsAt\(/);
   // Markup kept as typed (an escape, or Undo of the change) stays as typed when the caption is edited again.
   assert.match(editor, /if \(!\(expPage && markupCaption\(old\)\)\) marked\(m, w\.id\);/);
+}
+
+// A reaction inserted on a new page (Name to Structure, paste, import) lands inside the Reaction scheme box, at its top
+// and centred across it, wherever the pointer was. One inserted after it goes under it and its table. The box grows
+// to hold a table that runs past its bottom, and the Procedure heading and box move down with it; a table that fits
+// leaves the page as it was. A page with no Reaction scheme heading (any other page) gets nothing from these.
+{
+  const page = pageSize(purposeStyle("experiment")), start = { atoms: [], bonds: [], ...newExperiment(page, 14.4, undefined, "2026-11-05") } as Mol;
+  const box = schemeSpan(start)!, inside = (b: number[]) => b[0] >= box[0] && b[2] <= box[2] && b[1] >= box[1] && b[3] <= box[3];
+  assert.ok(box && box[3] > box[1]);
+  // A reaction 14 bond lengths wide and 3 high, about to land in the middle of a view scrolled off the page.
+  const ink = [43, -31.5, 57, -28.5];
+  assert.ok(!inside(ink), "the middle of the view is not in the box");
+  const off = schemeLanding(start, ink, [])!, landed = [ink[0] + off[0], ink[1] + off[1], ink[2] + off[0], ink[3] + off[1]];
+  assert.ok(inside(landed), "it lands inside the box");
+  assert.ok(Math.abs((landed[0] + landed[2]) / 2 - (box[0] + box[2]) / 2) < 1e-9, "centred across the box");
+  assert.ok(box[3] - landed[3] > 0 && box[3] - landed[3] <= 1.5, "at the top of the box");
+  // Its table, under it: the reagent table runs 40 bond lengths down, past the bottom of the box.
+  const table = [landed[0], landed[1] - 40.5, landed[2], landed[1] - 0.5];
+  assert.ok(table[1] < box[1], "the table runs past the bottom of the box");
+  const procedure = start.captions!.find((c) => c.text === "Procedure")!, lower = start.shapes!.find((x) => x.id !== start.shapes![0].id)!;
+  const grown = growScheme(start, table[1]), after = schemeSpan(grown)!;
+  assert.ok(after[1] < table[1], "the box holds the table");
+  assert.deepEqual([after[0], after[2], after[3]], [box[0], box[2], box[3]], "only the bottom moves");
+  const drop = box[1] - after[1], moved = grown.captions!.find((c) => c.id === procedure.id)!, movedBox = grown.shapes!.find((x) => x.id === lower.id)!;
+  assert.ok(Math.abs(procedure.y - moved.y - drop) < 1e-9, "the Procedure heading moves down as far");
+  assert.ok(Math.abs(lower.from[1] - movedBox.from[1] - drop) < 1e-9 && Math.abs(lower.to[1] - movedBox.to[1] - drop) < 1e-9, "and its box");
+  assert.equal(grown.captions!.find((c) => c.text === "Reaction scheme")!.y, start.captions!.find((c) => c.text === "Reaction scheme")!.y);
+  assert.equal(growScheme(start, box[1] + 5), start, "a table that fits changes nothing");
+  // The next reaction goes under the first and its table.
+  const next = schemeLanding(grown, ink, [landed, table])!;
+  assert.ok(ink[3] + next[1] < table[1], "under the table");
+  // Any other page: nothing.
+  const plain: Mol = { atoms: [], bonds: [], shapes: [{ id: 1, kind: "box", from: [-10, 10], to: [10, -10] }], captions: [{ id: 2, text: "Notes", bold: true, x: -10, y: 11 }] };
+  assert.equal(schemeLanding(plain, ink, []), undefined);
+  assert.equal(growScheme(plain, -50), plain);
+  // The editor puts inserted structures and reactions in the box on an experiment page, and grows it for a table in
+  // the same undo step as the edit (amend).
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /const schemeAt = \(frag: Mol, base: Mol, at\?: P\) => \(expPage && !\(at && inSpan\(schemeSpan\(base\), at\)\) \? schemeLanding\(base, /);
+  assert.match(editor, /const scheme = schemeAt\(frag, base, at\);/);
+  // Name to Structure's preview lands where the insert does: in the box, not after the drawing.
+  assert.match(editor, /const ghost = useMemo\(\(\) => shownNamed && shownNamed\.atoms\.length \? render\(moveAtoms\(shownNamed, .*, schemeAt\(shownNamed, doc, namingAt\.current\) \?\? landing\(shownNamed, namingAt\.current\)\)/);
+  assert.match(editor, /dispatch\(\{ type: "amend", mol: grown \}\)/);
 }

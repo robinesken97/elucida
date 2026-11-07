@@ -12,6 +12,36 @@ export const MY_SET = "My templates";
 // The tool a template is used with: the Ring tool (its Templates row) or the Template tool.
 export type TemplateTool = "ring" | "template";
 
+// A big template with rings (a pyranose, a ligand) reads best at icon size as its rings alone: the bonds in rings and
+// their atoms. A bond is in a ring when its ends stay joined without it.
+export function ringsOnly(m: Mol): Mol {
+  if (m.atoms.length <= 9) return m;
+  const joined = (skip: number, a: number, b: number) => {
+    const seen = new Set([a]), todo = [a];
+    while (todo.length) {
+      const x = todo.pop()!;
+      if (x === b) return true;
+      m.bonds.forEach((bd, k) => { if (k === skip || !bd.atoms.includes(x)) return; const y = bd.atoms[0] === x ? bd.atoms[1] : bd.atoms[0]; if (!seen.has(y)) { seen.add(y); todo.push(y); } });
+    }
+    return false;
+  };
+  const ring = m.bonds.filter((b, k) => joined(k, b.atoms[0], b.atoms[1]));
+  if (!ring.length) return m;
+  const keep = [...new Set(ring.flatMap((b) => b.atoms))], at = new Map(keep.map((i, k) => [i, k]));
+  return { atoms: keep.map((i) => m.atoms[i]), bonds: ring.map((b) => ({ ...b, atoms: [at.get(b.atoms[0])!, at.get(b.atoms[1])!] as [number, number] })) };
+}
+
+// A template's icon reads at toolbar size (20 px) when it is small: at most 9 atoms, or as its rings alone (ringsOnly)
+// at most 14 atoms in one ring system. Adenosine (a purine and a ribose) does not (issue 29).
+export function legible(whole: Mol): boolean {
+  if (whole.atoms.length <= 9) return true;
+  const m = ringsOnly(whole);
+  if (m.atoms.length > 14) return false;
+  const root = m.atoms.map((_, i) => i), find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
+  for (const b of m.bonds) root[find(b.atoms[0])] = find(b.atoms[1]);
+  return new Set(m.atoms.map((_, i) => find(i))).size <= 1;
+}
+
 // A template's variant name in the Ring tool's list.
 export const templateKind = (id: string) => `custom:${id}`;
 // The id of one of the user's templates from its kind, or undefined for a built-in one.

@@ -26,6 +26,7 @@ const crowded: [string, string][] = [
   ["75 diphenylmethylenes in a chain (977 atoms)", "C" + "C(c1ccccc1)(c1ccccc1)".repeat(75) + "C"],
   ["a branched dendrimer (364 atoms)", dendrimer],
   ["a 1,000-atom chain", "C".repeat(1000)],
+  ["PCBM, a fullerene written aromatic", "COC(=O)CCCC1(c2ccccc2)C23c4c5c6c7c8c9c(c%10c%11c2c2c%12c4c4c%13c5c5c7c7c8c8c%14c9c%10c9c%10c%11c2c2c%11c%12c4c4c%12c%13c5c5c7c7c8c8c%14c9c9c%10c2c2c%11c4c4c%12c5c7c5c8c9c2c45)C613"],
   ["20,000 characters on one line that are not chemistry", "x".repeat(20_000)],
   ["a 300,000-character file that is not chemistry", "<" + "abc def\n".repeat(37_500).slice(1)],
 ];

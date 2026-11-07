@@ -3,13 +3,13 @@
 // products keep their steps, and all of it survives a save.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addBranch, addSide, addStop, attachBeside, breakAt, clearAt, cycleAtoms, dragEnd, dragMeet, dropOnCycle, endFor, followArcs, labelEnd, layoutCycles, migrateCycles, pullBranch, removeEnd, removeStop, resizeCycle, roleFor, setBranch, setEnd, setEnds, setStep, sideChoices, stepAt, stepFor, swapBranch, withEnd, type Cycle, type OldText } from "./cycle.ts";
+import { addBranch, addSide, addStop, attachBeside, breakAt, clearAt, cycleAtoms, dragEnd, dragMeet, dropOnCycle, endFor, followArcs, labelEnd, layoutCycles, migrateCycles, pullBranch, removeEnd, removeStop, resizeCycle, roleFor, setBranch, setEnd, setEnds, setStep, sideChoices, stepAt, stepFor, swapBranch, withEnd, type Cycle, type CycleText, type OldText } from "./cycle.ts";
 import { DEFAULT_STYLE } from "./docstyle.ts";
 import { addCaption, addCycle, addRing, deleteAtoms, deleteGraphics, EMPTY, extractSelection, fragments, insertMol, transformParts } from "./edit.ts";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
 import { parse, serialize } from "./file.ts";
 import { readOct, writeOct } from "./oct.ts";
-import { bendPoint, type Box, type Caption, type Mol } from "./render.ts";
+import { arrowPath, bendPoint, placeCaptions, type Box, type Caption, type Mol } from "./render.ts";
 
 // Ink: each atom's position as a box a third of a bond across (px, y down).
 const L = 30, ink = (m: Mol) => (atoms: number[]): Box | undefined => {
@@ -731,3 +731,33 @@ console.log("cycle tidy ok");
   assert.deepEqual(attachBeside(said, { text: 50 }).captions![0].cycle, { cycle: 1, step: 0, side: "out", branch: 1 });
 }
 console.log("cycle side arrow tool ok");
+
+// Step names placed clear (the Suzuki cycle from the MCP test): three intermediates, side arrows with text on every
+// step and long names, so the names go inside where they fit, else outside. No name overlaps another, the centre
+// label, a side arrow or its text or an intermediate, and none crosses the circle. Text is half an em per character, as Arial is near enough.
+{
+  const pt = L / 14.4, wide = (t: string, c: Caption) => t.length * 0.5 * (c.size ?? 10) * pt, d = { ink: [], scale: L };
+  const atom = (x: number, y: number) => ({ label: "C", location: [x, y, 0] as [number, number, number] });
+  const at = (a: number, r = 4): [number, number] => [r * Math.cos(a), r * Math.sin(a)], [rx, ry] = at(-Math.PI / 6), [lx, ly] = at((-5 * Math.PI) / 6);
+  // Pd at the top; Ph–Pd–Br lower right; Ph–Pd–Ph lower left, its right ring reaching towards the bottom.
+  const atoms = [atom(0, 4), atom(rx - 1.5, ry - 0.9), atom(rx + 1.5, ry + 0.9), atom(lx - 2.8, ly - 0.9), atom(lx + 2.8, ly + 0.9)];
+  const cap = (id: number, text: string, step: number, side: CycleText["side"], branch?: number): Caption => ({ id, text, x: 0, y: 0, cycle: { cycle: 1, step, side, ...(branch ? { branch } : {}) } });
+  const suzuki: Mol = { atoms, bonds: [], cycles: [{ id: 1, centre: [0, 0], radius: 4, clockwise: true, nodes: [[0], [1, 2], [3, 4]], branches: [{ id: 1, step: 0, in: {} }, { id: 2, step: 1, in: {}, out: {} }, { id: 3, step: 2, out: {} }] }],
+    captions: [cap(10, "Pd(PPh3)4", 0, "centre"), cap(11, "PhBr", 0, "in", 1), cap(12, "PhB(OH)2, base", 1, "in", 2), cap(13, "BrB(OH)2", 1, "out", 2), cap(14, "Ph–Ph", 2, "out", 3),
+      cap(20, "oxidative addition", 0, "name"), cap(21, "transmetalation", 1, "name"), cap(22, "reductive elimination", 2, "name")] };
+  const frame = (id: number, anchor: "start" | "middle" | "end", wrap?: number) => placeCaptions({ ...suzuki, captions: suzuki.captions!.filter((c) => c.id === id) }, d, wide, [], pt, 10, new Map([[id, { x: 0, y: 0, anchor, wrap }]]), wide)[0]?.box;
+  const lay = layoutCycles(suzuki, L, pt, ink(suzuki), () => undefined, frame), drawn = placeCaptions(suzuki, d, wide, [], pt, 10, lay.anchors, wide);
+  const swoops = lay.arrows.filter((a) => a.branch !== undefined).flatMap((a) => arrowPath(a, L)), box = (id: number) => drawn.find((p) => p.id === id)!.box, meet = (p: Box, q: Box) => p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3];
+  const others: [string, Box][] = [...[10, 11, 12, 13, 14].map((id): [string, Box] => [`text ${id}`, box(id)]), ...suzuki.cycles![0].nodes.map((n, j): [string, Box] => [`node ${j}`, ink(suzuki)(n)!])];
+  for (const id of [20, 21, 22]) {
+    const b = box(id);
+    for (const [what, o] of [...others, ...[20, 21, 22].filter((x) => x !== id).map((x): [string, Box] => [`name ${x}`, box(x)])]) assert.ok(!meet(b, o), `name ${id} meets ${what}: ${JSON.stringify([b, o])}`);
+    const far = Math.max(...[[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]].map(([x, y]) => Math.hypot(x, y))), near = Math.hypot(Math.max(b[0], 0, -b[2]), Math.max(b[1], 0, -b[3]));
+    assert.ok(far < 4 * L || near > 4 * L, `name ${id} crosses the circle`);
+    assert.ok(!swoops.some(([x, y]) => x > b[0] && x < b[2] && y > b[1] && y < b[3]), `name ${id} crosses a side arrow`);
+  }
+  // A name dragged into place keeps it; one with no frame to measure by keeps the place it always had.
+  const moved = { ...suzuki, captions: suzuki.captions!.map((c) => (c.id === 20 ? { ...c, cycle: { ...c.cycle!, at: 0.5, reach: -0.6 } } : c)) };
+  assert.deepEqual(layoutCycles(moved, L, pt, ink(moved), () => undefined, frame).anchors.get(20), layoutCycles(suzuki, L, pt, ink(suzuki)).anchors.get(20));
+}
+console.log("cycle step names ok");

@@ -20,3 +20,10 @@ Rebuild: `node scripts/nmr-table.ts <path to nmrshiftdb2withsignals.sd>`. Add `-
 molecule in ten held out (16 October 2026: ¹³C mean absolute error 2.27 ppm, median 0.90; ¹H 0.25 ppm, median 0.09.
 18 October 2026: for ¹³C shifts measured in a known solvent, 2.12 ppm from every solvent and 2.08 with the solvent
 table).
+
+5 November 2026: codes start at level 0 (the atom alone, with ^ when it is η-bonded to a metal), so every atom gets
+a shift. Atoms η-bonded to a metal (Cp and arene rings) are written one way however the molfile draws them (no
+charge, the hydrogens of a ring carbon beside the metal, ~ and ^ bonds), so ferrocene's ten carbons are alike. A
+¹H spectrum that gives one atom more different shifts than it has hydrogens leaves that atom out. Held-out tenth:
+¹³C 2.29 ppm (36,581 shifts, 22 of them only at level 0), ¹H 0.25 ppm (13,189 shifts, 9 at level 0); the shifts
+covered before give the same errors as before, within 0.001 ppm.

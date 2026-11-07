@@ -10,13 +10,14 @@
 //   that glyph stays on the atom if the label ends with it (OMe as MeO); if not (Br), the label's ink ends as far
 //   right of the atom as it starts left of it read left to right.
 
-import { units } from "./labels.ts";
+import { pieces, units } from "./labels.ts";
 import { atomIndicator, bondIndicator, queryLabel } from "./query.ts";
 import { aromaticAtoms, rings as ringsOf } from "./rings.ts";
 import { lines as richLines, plainOf, runsOf, styleOf, wrap, type RunStyle, type TextRun } from "./richtext.ts";
 import type { DocStyle, Guides } from "./docstyle.ts";
 import type { Cycle, CycleText } from "./cycle.ts";
 import type { Measured } from "./measured.ts";
+import type { Plot, PlotPart } from "./pageplot.ts";
 
 type P = [number, number];
 // text: a label that is not one element (OMe, CO2Et, Ph). label then holds the element it attaches through.
@@ -117,6 +118,9 @@ export type Bond = {
   spacing?: number; // a double bond's own spacing (% of the bond length, as ChemDraw's BondSpacing); unset is the document's
   own?: Record<string, string>; // ChemDraw's own settings on the bond that Octet does not turn into a scale, written back as they came
   peaks?: number[]; // the measured multiplets the user linked this bond to, as an atom's (an IR band to its C=O)
+  // At each end that is a label keeping its atoms (inner), the atom of that group the bond joins; -1 is none. A residue
+  // label (Ala) bonds on both sides, to its N and to its C=O (ChemDraw's BeginExternalNum and EndExternalNum).
+  ports?: [number, number];
 };
 // Bond types: 1 to 3 by order, 4 aromatic and 10 a hydrogen bond (KET's numbers), and 14 a quadruple bond (KET has
 // none; 14 keeps clear of KET's types). A hydrogen bond is drawn dotted and adds nothing to an atom's valence.
@@ -151,6 +155,10 @@ export type Caption = {
   // edited, as ChemDraw keeps a text's anchor). Once the arrow is lengthened, shortened or turned, or Clean Up
   // Reaction runs, Octet lays the text out (placedAt).
   placed?: { at: [number, number]; arrow: [number, number] };
+  role?: PlotPart; // a page spectrum's part: its role and where Octet put it (pageplot.ts)
+  // A compound number Octet gave (Number these compounds): an experiment page keeps it in reading order. Text the user
+  // typed or edited, and every number in a file from Octet 1.1.0 or ChemDraw, has none and is never changed.
+  auto?: true;
 };
 // Where conditions placed by hand go (their anchor, bond lengths): undefined when they are not placed by hand, or
 // their arrow has changed length or direction since.
@@ -192,6 +200,7 @@ export type Arrow = {
   order?: number; // draw order (order.ts)
   width?: number; // the line width in points; unset uses the document's. The scale multiplies it.
   scale?: number; // the arrow's size against the document style (decision 0007); unset is 1
+  role?: PlotPart; // a page spectrum's part: its role and where Octet put it (pageplot.ts)
 };
 // An arrowhead's size in line widths, as CDXML keeps it in hundredths (HeadSize, ArrowheadCenterSize, ArrowheadWidth):
 // how far back from the tip it reaches, how far back its notch is, and how far each barb stands off the shaft.
@@ -224,11 +233,71 @@ export const curved = (a: Pick<Arrow, "kind">) => a.kind === "curved" || a.kind 
 // Arrows that carry reaction conditions and make up reactions: straight ones with heads.
 export const straightArrow = (a: Pick<Arrow, "kind">) => !curved(a) && a.kind !== "line" && a.kind !== "orbital" && a.kind !== "cut" && a.kind !== "curve";
 export const isLine = (a: Pick<Arrow, "kind">) => a.kind === "line" || a.kind === "arc" || a.kind === "curve";
-// Lines that take the Curves menu's heads: everything drawn as one shaft (not equilibrium, retrosynthetic, block or
-// no-reaction and dipole arrows, orbitals or fragmentation cuts).
-export const takesHeads = (a: Pick<Arrow, "kind">) => !["equilibrium", "retro", "nogo", "hash", "dipole", "block", "orbital", "cut"].includes(a.kind);
-// Arrows drawn as one shaft with a mark on it: no-go (a cross or two slashes) and dipole (a bar at the tail).
-export const marked = (a: Pick<Arrow, "kind">) => a.kind === "nogo" || a.kind === "hash" || a.kind === "dipole";
+// Lines that take the Curves menu's heads: everything drawn as one shaft, no-go and dipole arrows too (not equilibrium,
+// retrosynthetic or block arrows, orbitals or fragmentation cuts).
+export const takesHeads = (a: Pick<Arrow, "kind">) => !["equilibrium", "retro", "block", "orbital", "cut"].includes(a.kind);
+// Arrows whose heads can be Solid, Hollow or Angled (ChemDraw's names, used in the Actions panel and the Curves menu):
+// those that take heads, and an equilibrium's two half heads. A retrosynthetic arrow's head is angled and a block
+// arrow's is its outline, by their kind.
+export const shapesHeads = (a: Pick<Arrow, "kind">) => takesHeads(a) || a.kind === "equilibrium";
+// Whether picked arrows' heads have a shape to choose: their heads all take one, and they have a head now (an
+// equilibrium's come with its kind). The Actions panel shows Heads, and the Curves menu turns on its shapes, only then.
+export const headShaped = (c: { shaped?: boolean; heads?: boolean; start?: Head; end?: Head }) => !!c.shaped && (c.start !== "none" || c.end !== "none" || !c.heads);
+// Curves > Solid, Hollow and Angled Arrowhead for what is picked (the Actions panel's context): on for arrows whose
+// heads have a shape to choose (headShaped), and for a catalytic cycle or its side arrow's text (cycle: the cycle.head
+// commands, as in the Actions panel), with the shape they have ticked. Off for anything else.
+export const HEAD_SHAPES: HeadShape[] = ["solid", "hollow", "angled"];
+export function headMenu(c: { kind: string; shaped?: boolean; heads?: boolean; start?: Head; end?: Head; head?: HeadShape; cycleSide?: { head: HeadShape } } | undefined): { head?: HeadShape; cycle?: boolean } {
+  if (c?.kind === "arrow") return headShaped(c) ? { head: c.head } : {};
+  if (c?.kind === "cycle") return { head: c.head, cycle: true };
+  if (c?.kind === "caption" && c.cycleSide) return { head: c.cycleSide.head, cycle: true };
+  return {};
+}
+// The picks for an arrow, a catalytic cycle and a cycle's side arrow (ChemDraw's arrow menu has the line, the heads at
+// each end, the fill and the kind). The Actions panel shows each as a small button and the right-click menu as a row
+// that opens its choices, so both offer the same ones. command: the action each choice runs, with its id after a dot.
+// head: the shape an end's choices are drawn with.
+export type ArrowPick = { label: string; command: string; value: string; options: readonly (readonly [string, string])[]; head?: HeadShape };
+type PickSide = { ends: string; start: Head; end: Head; head: HeadShape; size: string };
+// The Actions panel's contexts these read (Context in Actions.tsx).
+type ArrowContext = { kind: "arrow"; arrow: string; ratio: number; heads: boolean; shaped: boolean; curved: boolean; fillable: boolean; size?: string; style: string; start: Head; end: Head; head: HeadShape; sweep?: number; fill: string };
+type CycleContext = { kind: "cycle"; side?: PickSide; head: HeadShape; size: string; step: boolean; reversible: boolean; balance: string };
+const END_HEADS = [["none", "None"], ["full", "Arrowhead"], ["left", "Half, left"], ["right", "Half, right"]] as const;
+const HEAD_NAMES = [["solid", "Solid"], ["hollow", "Hollow"], ["angled", "Angled"]] as const;
+const LINE_STYLES = [["plain", "Plain"], ["dashed", "Dashed"], ["bold", "Bold"], ["doubled", "Double"], ["wavy", "Wavy"]] as const;
+const HEAD_SIZES = [["large", "Large"], ["medium", "Medium"], ["small", "Small"]] as const;
+const FILLS = [["none", "None"], ["solid", "Filled"], ["shaded", "Shaded"], ["faded", "Faded"]] as const;
+export function arrowPicks(context: { kind: string } | undefined): { label: string; picks: ArrowPick[] }[] {
+  const groups: { label: string; picks: ArrowPick[] }[] = [];
+  const c = context?.kind === "arrow" ? context as ArrowContext : undefined, y = context?.kind === "cycle" ? context as CycleContext : undefined;
+  const t = context?.kind === "caption" ? (context as { cycleSide?: PickSide }).cycleSide : undefined; // a side arrow's text
+  if (c && (c.heads || c.curved || c.fillable || c.size !== undefined || c.arrow === "orbital")) {
+    // An orbital's line is plain, dashed or bold, as ChemDraw's drawing element menu has it.
+    const orbital = c.arrow === "orbital", picks: ArrowPick[] = [];
+    if (c.heads || orbital) picks.push({ label: "Line", command: "arrow.style", value: c.style ?? "plain", options: LINE_STYLES.filter(([id]) => !orbital || id === "plain" || id === "dashed" || id === "bold") });
+    if (c.heads) picks.push({ label: "Start", command: "arrow.start", value: c.start ?? "none", options: END_HEADS, head: c.head }, { label: "End", command: "arrow.end", value: c.end ?? "none", options: END_HEADS, head: c.head });
+    if (headShaped(c)) picks.push({ label: "Heads", command: "arrow.head", value: c.head ?? "solid", options: HEAD_NAMES });
+    if (c.curved) picks.push({ label: "Curve", command: "arrow.sweep", value: String(c.sweep ?? 120), options: SWEEPS.map((s) => [String(s), `${s}°`] as const) });
+    if (c.size !== undefined) picks.push({ label: "Size", command: "arrow.size", value: c.size, options: [...(c.arrow === "block" ? HEAD_SIZES.slice(0, 2) : HEAD_SIZES), ...(c.size === "own" ? [["own", "Own size"] as const] : [])] });
+    if (c.fillable) picks.push({ label: "Fill", command: "arrow.fill", value: c.fill ?? "none", options: FILLS });
+    groups.push({ label: "Line and arrowheads", picks });
+  }
+  const side = y ? y.side : t;
+  if (side) groups.push({ label: "Side arrow", picks: [{ label: "Ends", command: "cycle.side.ends", value: side.ends, options: [["both", "Reagent and product"], ["in", "Reagent"], ["out", "Product"]] },
+    { label: "Start", command: "cycle.side.start", value: side.start, options: END_HEADS, head: side.head }, { label: "End", command: "cycle.side.end", value: side.end, options: END_HEADS, head: side.head }] });
+  // The heads of all of a cycle's arrows, arcs and side arrows: their shape and size, as an arrow's.
+  const all = y ?? t;
+  if (all) groups.push({ label: "Arrowheads", picks: [{ label: "Heads", command: "cycle.head", value: all.head, options: HEAD_NAMES }, { label: "Size", command: "cycle.size", value: all.size, options: HEAD_SIZES }] });
+  // A reversible step's balance: which half is longer, as an unbalanced equilibrium's.
+  if (y?.step && y.reversible) groups.push({ label: "Step", picks: [{ label: "Balance", command: "cycle.step.balance", value: y.balance, options: [["equal", "Equal"], ["forward", "Forward longer"], ["back", "Back longer"]] }] });
+  return groups;
+}
+// The arrow kind picked arrows have, as the kind chips and the right-click menu's Kind tick it (an equilibrium with
+// unequal halves is "unbalanced"). Undefined for lines, orbitals and anything that is not an arrow: they have no kinds.
+export function arrowKind(context: { kind: string } | undefined) {
+  const c = context?.kind === "arrow" ? context as ArrowContext : undefined;
+  return !c || isLine({ kind: c.arrow as ArrowKind }) || c.arrow === "orbital" ? undefined : c.arrow === "equilibrium" && c.ratio !== 1 ? "unbalanced" : c.arrow;
+}
 // A line's heads: the ones set by hand, or its kind's.
 export function headsOf(a: Pick<Arrow, "kind" | "bend" | "start" | "end">): { start: Head; end: Head } {
   const own: Record<string, [Head, Head]> = {
@@ -377,16 +446,19 @@ export type Annotation = { keyword: string; content: string };
 // each component, in base units, and the limiting reactant. A component's key is its side and what it is ("r:C7H8O" a
 // reactant structure by its formula, 'r:"NaBH4"' a reagent written as text, "p:…" a product; "#2" on a second one the
 // same), so typed values stay with their compound when the reaction changes ("r0", "p0" in drawings from before).
-// hidden: rows (by id) and columns (by key) hidden with Hide Row and Hide Column; colour: the grid's ink.
-// Everything else is worked out from the reaction as it is drawn (stoich.ts).
+// hidden: rows (by id) and columns (by key) hidden with Hide Row and Hide Column; colour: the grid's ink. layout
+// "rows": each reagent on a row of its own and the products in a section of their own under them (issue 34); unset,
+// a column under each component, as ChemDraw's grid. Everything else is worked out from the reaction as it is drawn
+// (stoich.ts).
 export type Grid = {
   arrow: number; typed: Record<string, Partial<Record<"mass" | "moles" | "equiv" | "volume" | "density" | "molarity" | "purity" | "measured", number>>>; limiting?: string;
-  hidden?: { rows?: string[]; cols?: string[] }; colour?: string;
+  hidden?: { rows?: string[]; cols?: string[] }; colour?: string; layout?: "rows";
 };
 // A group (Object > Group): atoms and other objects (captions, arrows, shapes, cycles, by id) that select and move as
 // one. Groups nest: a group lists everything in it, the groups inside it too (edit.ts, tidyGroups). An integral group
 // is never split: a click on any part picks all of it.
-export type Group = { id: number; atoms: number[]; items: number[]; integral?: true; annotations?: Annotation[] };
+// plot: a page spectrum's record (pageplot.ts).
+export type Group = { id: number; atoms: number[]; items: number[]; integral?: true; annotations?: Annotation[]; plot?: Plot };
 // Sizes in px: bond length, line width, bold width, double-bond spacing, hash spacing, label margin, label font size.
 // terminal, carbons: label carbons at chain ends (CH3), or every other carbon too; hideH: labels leave off implicit H.
 // labelPt: the document's label size in pt, which an atom's own label size is measured against.
@@ -668,6 +740,16 @@ const placedPoints = (shape: Piece[]): P[] => shape.flatMap(({ pts, x, y, f }) =
 // zRange: the depth range of the whole drawing for depth shading (renderParts gives it for each structure it draws);
 // by default the range of mol's own atoms.
 export function render(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, scale?: number, zRange?: [number, number] | null): Drawing {
+  return drawn(mol, s, measure, scale, zRange) as Drawing;
+}
+// Each atom's label ink box (a Drawing's label) and the scale, with the labels placed as render() places them but no
+// bonds or marks drawn: a sixth of render()'s time, for a repair that moves atoms a step at a time (chem.ts). scale:
+// as render()'s.
+export const labelInk = (mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, scale?: number) => drawn(mol, s, measure, scale, undefined, true);
+// The box round a label's glyph boxes.
+const around = (bs: Box[]): Box | undefined => (bs.length ? bs.reduce((b, c) => [Math.min(b[0], c[0]), Math.min(b[1], c[1]), Math.max(b[2], c[2]), Math.max(b[3], c[3])]) : undefined);
+// only: stop once the labels are placed (labelInk).
+function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, scale?: number, zRange?: [number, number] | null, only = false): Drawing | Pick<Drawing, "label" | "scale"> {
   const raw = mol.bonds.map((b) => len(sub(mol.atoms[b.atoms[0]].location as unknown as P, mol.atoms[b.atoms[1]].location as unknown as P)));
   const median = [...raw].sort((x, y) => x - y)[Math.floor(raw.length / 2)] || 1;
   const k = scale ?? s.bond / median;
@@ -767,38 +849,60 @@ export function render(mol: Mol, s: Style, measure: (text: string, face?: Face) 
     // A written label with some characters bold, italic or underlined (its runs): each character's style, by its place
     // in the text. Text from place at is measured and drawn piece by piece, each piece in its own style.
     const styled = a.text && a.runs && plainOf(a.runs) === a.text ? a.runs.flatMap((x) => x.text.split("").map(() => x)) : undefined;
-    const stylePieces = (text: string, at?: number): { text: string; look: typeof look; m: Ink }[] => {
-      if (!styled || at === undefined) return [{ text, look, m: M(text) }];
-      const out: { text: string; look: typeof look }[] = [];
+    // A piece in superscript or subscript (issue 44) is drawn as a mass number or count is: k its size against the
+    // rest, dy how far its baseline moves (down is positive). Text already drawn small (a count, a charge) is not
+    // moved again: script applies at full size only (f 1).
+    const stylePieces = (text: string, at?: number, f = 1): { text: string; look: typeof look; m: Ink; k: number; dy: number }[] => {
+      if (!styled || at === undefined) return [{ text, look, m: M(text), k: 1, dy: 0 }];
+      const out: { text: string; look: typeof look; script?: "sub" | "super" }[] = [];
       for (let k = 0; k < text.length; k++) {
         const st = styled[at + k], last = out[out.length - 1];
         if (last && k && styled[at + k - 1] === st) { last.text += text[k]; continue; }
-        out.push({ text: text[k], look: { ...look, ...(st?.bold ? { bold: true } : {}), ...(st?.italic ? { italic: true } : {}), ...(st?.underline ? { underline: true } : {}) } });
+        out.push({ text: text[k], look: { ...look, ...(st?.bold ? { bold: true } : {}), ...(st?.italic ? { italic: true } : {}), ...(st?.underline ? { underline: true } : {}) }, ...(st?.script && f === 1 ? { script: st.script } : {}) });
       }
-      return out.map((p) => {
+      return out.map(({ script, ...p }) => {
         const fc = p.look.font || p.look.bold || p.look.italic ? { font: p.look.font, bold: p.look.bold, italic: p.look.italic } : undefined;
-        return { ...p, m: !fc && r === 1 ? measure(p.text) : grown(measure(p.text, fc), r) };
+        return { ...p, m: !fc && r === 1 ? measure(p.text) : grown(measure(p.text, fc), r), k: script ? SUB : 1, dy: script === "super" ? -RISE * S : script === "sub" ? DROP * S : 0 };
       });
     };
     // Text measured as drawn: from place at in a written label, each piece in its own style.
-    const Mx = (text: string, at?: number): Ink => {
-      const ps = stylePieces(text, at);
-      if (ps.length === 1) return ps[0].m;
+    const Mx = (text: string, at?: number, f = 1): Ink => {
+      const ps = stylePieces(text, at, f);
+      if (ps.length === 1 && ps[0].k === 1) return ps[0].m;
       let x = 0;
       const outline: P[] = [];
-      for (const p of ps) { for (const [px, py] of p.m.outline) outline.push([x + px, py]); x += p.m.width; }
-      return { width: x, ascent: Math.max(...ps.map((p) => p.m.ascent)), outline };
+      for (const p of ps) { for (const [px, py] of p.m.outline) outline.push([x + px * p.k, py * p.k + p.dy]); x += p.m.width * p.k; }
+      return { width: x, ascent: Math.max(...ps.map((p) => p.m.ascent * p.k - p.dy)), outline };
+    };
+    // Units with superscript or subscript set by hand (issue 44). A count in a script is drawn in it, so it joins the
+    // unit's text (13 raised before C is not a count of 1). from: the place of the first unit in the label's text.
+    const scripted = (n: number) => !!styled?.[n]?.script;
+    const fix = <U extends { text: string; count?: string }>(list: U[], from = 0): U[] => {
+      if (!styled) return list;
+      let n = from;
+      return list.map((u) => { const at = n; n += u.text.length + (u.count?.length ?? 0); return u.count && scripted(at + u.text.length) ? { ...u, text: u.text + u.count, count: undefined } : u; });
+    };
+    // The units read right to left: a unit all in a script (the III of Fe with III raised) stays after the unit before it.
+    const backwards = <U extends { text: string; count?: string }>(list: U[]): U[] => {
+      const groups: U[][] = [];
+      let n = 0;
+      for (const u of list) {
+        const len = u.text.length + (u.count?.length ?? 0), all = !!styled && len > 0 && Array.from({ length: len }, (_, k) => scripted(n + k)).every(Boolean);
+        n += len;
+        if (all && groups.length) groups[groups.length - 1].push(u); else groups.push([u]);
+      }
+      return groups.reverse().flat();
     };
     // A run of text from x on baseline y at size f, on a line of the label (-1: raised, a charge or mass number). at: its
     // place in a written label's text, for the style of each character.
     const run = (text: string, x: number, y: number, f = 1, line = 0, at?: number): Run | undefined => {
       let px = x;
-      for (const p of stylePieces(text, at)) {
-        labels.push({ text: p.text, x: px, y, size: S * f, colour: a.colour, ...p.look });
+      for (const p of stylePieces(text, at, f)) {
+        labels.push({ text: p.text, x: px, y: y + p.dy, size: S * f * p.k, colour: a.colour, ...p.look });
         labelAtom.set(labels[labels.length - 1], i);
-        px += p.m.width * f;
+        px += p.m.width * f * p.k;
       }
-      const m = Mx(text, at);
+      const m = Mx(text, at, f);
       if (!m.outline.length) return undefined;
       const r = { line, text, width: m.width, p: { pts: m.outline, x, y, f } };
       shape.push(r.p);
@@ -855,16 +959,17 @@ export function render(mol: Mol, s: Style, measure: (text: string, face?: Face) 
       // its first glyph centred on it, or read right to left its last glyph, or centred (or stacked), the whole line.
       // The other lines go a caption's automatic line spacing apart, lined up with it: the same start, the same end
       // read right to left, centred on the atom when centred or stacked. Bonds stop at the box round each line.
-      const rows = a.text.split("\n"), k0 = align === "above" ? rows.length - 1 : 0, own = rows[k0] || "H", us = rows.map((t) => units(t));
+      const rows = a.text.split("\n"), k0 = align === "above" ? rows.length - 1 : 0, own = rows[k0] || "H";
+      const us = rows.map((t, j) => fix(units(t).flatMap(pieces), rows.slice(0, j).reduce((n, r) => n + r.length + 1, 0)));
       // Each unit's place in the text, for its style.
       const at = new Map<(typeof us)[number][number], number>();
       let place = 0;
       us.forEach((line) => { for (const u of line) { at.set(u, place); place += u.text.length + (u.count?.length ?? 0); } place++; });
-      const wide = (u: (typeof us)[number][number]) => Mx(u.text, at.get(u)).width + (u.count ? Mx(u.count, at.get(u)! + u.text.length).width * SUB : 0);
+      const wide = (u: (typeof us)[number][number]) => Mx(u.text, at.get(u)).width + (u.count ? Mx(u.count, at.get(u)! + u.text.length, SUB).width * SUB : 0);
       const widths = us.map((line) => line.reduce((w, u) => w + wide(u), 0)), tail = us[k0][us[k0].length - 1];
       const just = align === "centre" || align === "above" || align === "below" ? "centre" : align === "right" || (!align && rtl) ? "right" : "left";
       const o = rows.slice(0, k0).reduce((n, t) => n + t.length + 1, 0), last = o + own.length - 1;
-      const first = Mx(own[0], o), base = y + first.ascent / 2, start = x - first.width / 2, end = x + (tail?.count ? Mx(tail.count.slice(-1), last).width * SUB : Mx(own[own.length - 1], last).width) / 2;
+      const first = Mx(own[0], o), base = y + first.ascent / 2, start = x - first.width / 2, end = x + (tail?.count ? Mx(tail.count.slice(-1), last, SUB).width * SUB : Mx(own[own.length - 1], last).width) / 2;
       const from = (j: number) => (just === "centre" ? x - widths[j] / 2 : just === "right" ? end - widths[j] : start);
       us.forEach((line, j) => {
         let ux = from(j);
@@ -881,24 +986,31 @@ export function render(mol: Mol, s: Style, measure: (text: string, face?: Face) 
     if (a.text) {
       // A written label: units in order, reversed when it reads right to left (OMe as MeO). Centred, the whole label
       // sits on the atom; stacked, each unit after the first goes one line further up (or down), centred over the atom.
-      const us = units(a.text), at = new Map<(typeof us)[number], number>();
+      const us = fix(units(a.text)), at = new Map<(typeof us)[number], number>();
       // Each unit's place in the text, for its style (a label's runs).
       us.reduce((n, u) => { at.set(u, n); return n + u.text.length + (u.count?.length ?? 0); }, 0);
+      // Units as drawn, each piece of a bracket with its own place (labels.ts pieces).
+      const split = (list: typeof us) => list.flatMap((u) => { let n = at.get(u)!; return pieces(u).map((q) => { at.set(q, n); n += q.text.length + (q.count?.length ?? 0); return q; }); });
       const W = (u: (typeof us)[number]) => Mx(u.text, at.get(u)).width, count = (u: (typeof us)[number]) => at.get(u)! + u.text.length;
-      const width = (u: (typeof us)[number]) => W(u) + (u.count ? Mx(u.count, count(u)).width * SUB : 0);
+      const width = (u: (typeof us)[number]) => W(u) + (u.count ? Mx(u.count, count(u), SUB).width * SUB : 0);
       const first = Mx(us[0].text[0], 0), base = y + first.ascent / 2, same = !us[0].count && [...us[0].text].length === 1;
       if (align === "above" || align === "below") {
         const pitch = STACK * M('H').ascent * (align === "above" ? -1 : 1);
+        const wide = (u: (typeof us)[number]) => split([u]).reduce((w, q) => w + width(q), 0);
         us.forEach((u, k) => {
-          const ux = k ? x - width(u) / 2 : x - first.width / 2, uy = base + k * pitch;
-          const r = run(u.text, ux, uy, 1, k, at.get(u));
-          if (!k && same) meets[i] = r;
-          if (u.count) run(u.count, ux + W(u), uy + DROP * S, SUB, k, count(u));
+          let ux = k ? x - wide(u) / 2 : x - first.width / 2;
+          const uy = base + k * pitch;
+          split([u]).forEach((q, j) => {
+            const r = run(q.text, ux, uy, 1, k, at.get(q));
+            if (!k && !j && same) meets[i] = r;
+            if (q.count) run(q.count, ux + W(q), uy + DROP * S, SUB, k, count(q));
+            ux += width(q);
+          });
         });
-        charged(x - first.width / 2, x - first.width / 2 + width(us[0]), base, false);
+        charged(x - first.width / 2, x - first.width / 2 + wide(us[0]), base, false);
         return shape;
       }
-      const order = rtl ? [...us].reverse() : us, total = us.reduce((w, u) => w + width(u), 0);
+      const order = split(rtl ? backwards(us) : us), total = order.reduce((w, u) => w + width(u), 0);
       let ux = 0, right = -Infinity;
       for (const u of order) { right = Math.max(right, ux + inkOf(u.text)[1], u.count ? ux + W(u) + inkOf(u.count)[1] * SUB : -Infinity); ux += width(u); }
       let cx = align === "centre" ? x - total / 2 : !rtl ? x - first.width / 2 : same ? x + first.width / 2 - total : x + near(us[0].text[0]) - right;
@@ -954,6 +1066,7 @@ export function render(mol: Mol, s: Style, measure: (text: string, face?: Face) 
     for (const l of labels) if (labelAtom.get(l) === i) Object.assign(l, { angle: a.labelAngle, pivot });
     return true;
   });
+  if (only) return { label: shapes.map((shape) => around(shape.map(pieceBox))), scale: k };
   // Bonds stop at the letter they meet; where that letter changes with the reading direction, at the label's box.
   // The letter (O of OH and HO, a ring's O, N or S) is its outline and that outline turned over about its middle, so
   // bonds from either side stop alike; the rest of the label is its glyph outlines. The box runs round each line of
@@ -1527,11 +1640,9 @@ export function render(mol: Mol, s: Style, measure: (text: string, face?: Face) 
   pts.forEach(([x, y], i) => { if (!mol.atoms[i].hidden) take(x, y); });
   for (const poly of polygons) for (const [x, y] of poly) take(x, y);
   const pad = s.bond / 2;
-  const label = labelBoxes.map((bs): Box | undefined => {
-    if (!bs.length) return undefined;
-    const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
-    for (const [a, c, d, e] of bs) { if (a < b[0]) b[0] = a; if (c < b[1]) b[1] = c; if (d > b[2]) b[2] = d; if (e > b[3]) b[3] = e; }
-    take(b[0], b[1]); take(b[2], b[3]);
+  const label = labelBoxes.map((bs) => {
+    const b = around(bs);
+    if (b) { take(b[0], b[1]); take(b[2], b[3]); }
     return b;
   });
   // Map numbers, as ChemDraw draws them: in the label's face at three quarters of its size. After a label that reads
@@ -1695,10 +1806,10 @@ function turnOf(drawn: Atom[], atoms: Atom[], px: number): { at: P; k: number; t
 // Captions, placed in the drawing's px frame (y down). Sizes are in pt; 1 pt is 4/3 px.
 // ACS 1996: a caption under a structure is centred on the structure's ink box, its baseline 15 pt below the
 // box. Left and right alignment line it up with the box's edges instead. Captions under the same atoms stack
-// one line apart: the compound number first (bold digits, as ACS sets them), then the rest in id order.
-// LINE (1.2 em) is provisional until it is measured against ChemDraw.
+// one line apart: the compound number first (bold digits or roman numerals, as ACS sets them), then the rest in id
+// order. LINE (1.2 em) is provisional until it is measured against ChemDraw.
 export const CAPTION_PT = 10;
-export const isNumber = (c: Caption) => !!c.bold && /^\d+[a-z]?$/.test(c.text);
+export const isNumber = (c: Caption) => !!c.bold && (/^\d+[a-z]?$/.test(c.text) || (!!c.under?.length && /^(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})[a-z]?$/.test(c.text)));
 export const GAP_PT = 15, GAP_ARROW_PT = 3, LINE = 1.2, ASCENT = 0.905, DESCENT = 0.212; // Arial's ascent and descent, in em
 // A turned caption (angle) turns about its anchor on the first baseline (pivot, px); frame is its box before the turn,
 // and box the box round it turned.
@@ -1733,7 +1844,7 @@ export function turnPx(q: P, pivot: P, degrees: number): P {
 // in a run's style (px), for captions with a width; without it they do not wrap. extent: how far a piece of text
 // reaches above and below its baseline (px), for Variable line spacing.
 export function placeCaptions(mol: Mol, d: Pick<Drawing, "ink" | "scale">, width: (text: string, c: Caption, line: number) => number, arrows: Arrow[] = mol.arrows ?? [], pt = 4 / 3, defaultSize = CAPTION_PT,
-  fixed: Map<number, { x: number; y: number; anchor: Placed["anchor"] }> = new Map(), measure?: (text: string, c: Caption, style: RunStyle) => number,
+  fixed: Map<number, { x: number; y: number; anchor: Placed["anchor"]; wrap?: number }> = new Map(), measure?: (text: string, c: Caption, style: RunStyle) => number,
   extent?: (text: string, c: Caption, style: RunStyle) => [number, number]): Placed[] {
   const k = d.scale, below = new Map<string, number>(); // the next free baseline under each structure
   const beside = new Map<string, number>(); // how far the conditions on each side of each arrow already reach
@@ -1744,8 +1855,9 @@ export function placeCaptions(mol: Mol, d: Pick<Drawing, "ink" | "scale">, width
   for (const c of sorted) if (!done.has(c.id)) done.set(c.id, place(c));
   return sorted.flatMap((c) => done.get(c.id)!);
   function place(given: Caption): Placed[] {
-    // A caption with a width wraps to it: its soft breaks become lines here, and the lines they end are justified.
-    const wrapped = given.width && measure ? wrap(runsOf(given), given.width * k, (t, s) => measure(t, given, s)) : undefined;
+    // A caption with a width wraps to it: its soft breaks become lines here, and the lines they end are justified. A
+    // cycle's step name can wrap to the width its layout gives it (px).
+    const max = given.width ? given.width * k : fixed.get(given.id)?.wrap, wrapped = max && measure ? wrap(runsOf(given), max, (t, s) => measure(t, given, s)) : undefined;
     const c = wrapped?.soft.length ? { ...given, text: plainOf(wrapped.runs), ...(given.runs ? { runs: wrapped.runs } : {}) } : given;
     const softLines = new Set((wrapped?.soft ?? []).map((p) => c.text.slice(0, p).split("\n").length - 1));
     const size = (c.size ?? defaultSize) * pt, lines = c.text.split("\n"), align = c.align ?? "centre";
@@ -1800,7 +1912,7 @@ export function placeCaptions(mol: Mol, d: Pick<Drawing, "ink" | "scale">, width
       below.set(key, y + offs[offs.length - 1] + LINE * size);
     } else [x, y] = [c.x * k, -c.y * k];
     const at = anchorOverride ?? anchor;
-    const widths = lines.map((t, j) => width(t, c, j)), full = align === "justify" && softLines.size ? c.width! * k : 0, w = Math.max(full, ...widths);
+    const widths = lines.map((t, j) => width(t, c, j)), full = align === "justify" && softLines.size ? max! : 0, w = Math.max(full, ...widths);
     const runLines = c.runs ? richLines(c.runs) : undefined;
     const left = at === "start" ? x : at === "end" ? x - w : x - w / 2;
     // A justified line (one a soft break ends) spreads its spaces to fill the width.
@@ -1936,7 +2048,7 @@ export function arrowShapes(a: Arrow, s: Style, k: number): P[][] {
   const path = arrowPath(a, k), [S, T] = [path[0], path[path.length - 1]];
   // A closed curve ends where it starts: its marks have no direction to go by, and it needs none.
   const u: P = len(sub(T, S)) > 1e-9 ? unit(sub(T, S)) : [1, 0], n = perp(u);
-  if (takesHeads(a) || marked(a)) {
+  if (takesHeads(a)) {
     // One shaft, and a head at either end as set (the Curves menu) or as the kind has them.
     const { start, end } = headsOf(a), reversed = [...path].reverse();
     line(cut(cut(path, takes(end)).reverse(), takes(start)).reverse(), 0);
@@ -1993,7 +2105,7 @@ export function arrowShapes(a: Arrow, s: Style, k: number): P[][] {
 export function headBarb(a: Arrow, s: Style, k: number): P | undefined {
   if (scaleOf(a) !== 1) s = { ...s, line: s.line * scaleOf(a) };
   const end = headsOf(a).end, S: P = [a.from[0] * k, -a.from[1] * k], T: P = [a.to[0] * k, -a.to[1] * k];
-  if (a.bend || end === "none" || !(takesHeads(a) || marked(a)) || a.kind === "curve" || len(sub(T, S)) < 1e-9) return undefined;
+  if (a.bend || end === "none" || !(takesHeads(a)) || a.kind === "curve" || len(sub(T, S)) < 1e-9) return undefined;
   const u = unit(sub(T, S)), size = headSize(a), f = headFit(a, s, k);
   return add(add(T, mul(u, -size.length * s.line * f)), mul(perp(u), (end === "left" ? -1 : 1) * size.width * s.line * f));
 }

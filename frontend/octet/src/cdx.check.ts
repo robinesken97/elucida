@@ -3,7 +3,7 @@
 // polymer brackets) through CDXML, CDX, Octet's own file and editing.
 import assert from "node:assert/strict";
 import { BASE64_MAGIC, MAGIC, NOT_CDX, cdxToXml, fromBase64, hexToBase64, toBase64, xmlToCdx } from "./cdx.ts";
-import { DAMAGED, TOO_BIG, fromCdxml, parseXml, toCdxml, type Xml } from "./cdxml.ts";
+import { DAMAGED, TOO_BIG, fontCharset, fromCdxml, parseXml, toCdxml, type Xml } from "./cdxml.ts";
 import { DEFAULT_STYLE } from "./docstyle.ts";
 import { parse, serialize } from "./file.ts";
 import { deleteAtoms, extractSelection, insertMol } from "./edit.ts";
@@ -240,4 +240,35 @@ const kept: Mol = {
   // ChemDraw's CDX read and written again keeps its values.
   assert.equal(every(cdxToXml(xmlToCdx(tree))).find((x) => x.name === "spectrum")!.text, sp.text);
   console.log("cdx.check: spectra as ChemDraw's spectrum object ok");
+}
+
+// Charsets (issue #18). The font table says iso-8859-1 on Windows and Linux and x-mac-roman on the Mac, as ChemDraw
+// for each system writes it, and the CDX's legacy text is in that charset: the degree sign is 0xB0 in iso-8859-1
+// (Windows code page 1252) and 0xA1 in Mac Roman, é 0xE9 and 0x8E. Neither has α, so the legacy copy stops there.
+{
+  assert.deepEqual(["Win32", "Linux x86_64", "MacIntel", ""].map(fontCharset), ["iso-8859-1", "iso-8859-1", "x-mac-roman", "x-mac-roman"]);
+  const has = (b: Uint8Array, seq: number[]) => Buffer.from(b).includes(Buffer.from(seq));
+  const words = "25 °C, café α-D";
+  for (const [cs, deg, e] of [["iso-8859-1", 0xb0, 0xe9], ["x-mac-roman", 0xa1, 0x8e]] as const) {
+    // The second text has no font: it takes the document's caption font's charset.
+    const b = xmlToCdx(parseXml(`<CDXML CaptionFont="3"><fonttable><font id="3" charset="${cs}" name="Arial"/></fonttable><page><t p="0 0"><s font="3" size="10">${words}</s></t><t p="0 20"><s size="10">°é</s></t></page></CDXML>`));
+    assert.ok(has(b, [...ascii("25 "), deg, ...ascii("C, caf"), e, 0x20]) && !has(b, [...ascii("C, caf"), e, 0x20, 0xce]), cs);
+    assert.ok(has(b, [3, 0, deg, e]), `${cs}: the run with no font`);
+    const back = cdxToXml(b).kids.find((k) => k.name === "page")!.kids.map((t) => t.kids[0].text);
+    assert.deepEqual(back, [words, "°é"]);
+  }
+  // A Windows ChemDraw file's legacy text, read in iso-8859-1, and written back in it.
+  const win = file(prop(0x0100, [...u16(1), ...u16(1), ...u16(3), ...u16(1252), ...u16(5), ...ascii("Arial")]),
+    obj(0x8001, 1, obj(0x8006, 2, prop(0x0200, [...coord(0), ...coord(0)]), prop(0x0700, text([[0, 3, 0, 200, 3]], [...ascii("25 "), 0xb0, ...ascii("C caf"), 0xe9])))));
+  const x = cdxToXml(win);
+  assert.equal(x.kids[0].kids[0].attrs.charset, "iso-8859-1");
+  assert.equal(x.kids[1].kids[0].kids[0].text, "25 °C café");
+  assert.ok(has(xmlToCdx(x), [...ascii("25 "), 0xb0, ...ascii("C caf"), 0xe9]));
+  // Octet's own drawing through CDXML and CDX: the charset is this system's, and the text comes back whole.
+  const mol: Mol = { atoms: [], bonds: [], captions: [{ id: 1, text: words + ", Ω µ ±", x: 0, y: 0, align: "left" }] };
+  const cdxml = toCdxml(mol, DEFAULT_STYLE);
+  assert.ok(cdxml.includes(`charset="${fontCharset(navigator.platform)}"`) && !cdxml.includes(`charset="${fontCharset(navigator.platform.startsWith("Mac") ? "Win32" : "MacIntel")}"`));
+  assert.equal(fromCdxml(cdxml).mol.captions![0].text, words + ", Ω µ ±");
+  assert.equal(fromCdxml(cdxToXml(xmlToCdx(parseXml(cdxml)))).mol.captions![0].text, words + ", Ω µ ±");
+  console.log("cdx.check: charsets ok");
 }

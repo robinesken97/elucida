@@ -3,8 +3,9 @@
 // Document Annotations: ChemDraw shows and keeps them, and the CDXML and .oct readers already check them as hostile
 // input. The page draws them as a block at its top (detailsLayout), each reaction drawn on it gets its stoichiometry
 // grid at once (newGrids), and text typed on it turns its markup into rich text (markupRuns).
-import { straightArrow, type Annotation, type Caption, type Grid, type Mol } from "./render.ts";
+import { straightArrow, type Annotation, type Caption, type Grid, type Mol, type Shape } from "./render.ts";
 import { normalise, plainOf, runsOf, styled, styleOf, type RunStyle, type TextRun } from "./richtext.ts";
+import { ESCAPES } from "./escapes.ts";
 
 // The details, each kept as an annotation whose keyword is its name here.
 export const FIELDS = [
@@ -47,21 +48,64 @@ export function dateKey(date: string): string {
 export const experimentPage = (kind: string | undefined, purpose: string | undefined, annotations?: Annotation[]) =>
   kind === "experiment" || (kind === undefined && !!purpose && Object.keys(detailsOf(annotations)).length > 0);
 
-// A new experiment page: its details from the template (Date today), and the template's text (an own template's, else
-// a bold Procedure heading at the left margin, 190 mm down the page). page: the page in mm; bond: the bond length in pt.
+// A new experiment page: its details from the template (Date today), and the template's text and boxes (an own
+// template's, else HEADINGS: each a bold heading at the left margin with an outlined box under it, both ordinary text
+// and an ordinary box the user can edit, move or delete; issue 34). The reaction's table of reagents and products is
+// drawn under the reaction, so the scheme's box has room for both. page: the page in mm; bond: the bond length in pt.
 export const MARGIN = 15; // mm
+// Each heading and how far down the page its box starts and ends, in mm.
+export const HEADINGS: [string, number, number][] = [["Reaction scheme", 60, 200], ["Procedure", 212, 282]];
 const perMm = (bond: number) => 72 / 25.4 / bond; // drawing units (bond lengths) in a mm
-export function newExperiment(page: [number, number], bond: number, template?: Mol, date = today()): Pick<Mol, "annotations" | "captions"> {
-  const k = perMm(bond), details = { ...detailsOf(template?.annotations), date };
-  const captions = template ? template.captions : [{ id: 0, text: "Procedure", bold: true, align: "left" as const, x: (MARGIN - page[0] / 2) * k, y: (page[1] / 2 - 190) * k }];
-  return { annotations: withDetails(template?.annotations, details), ...(captions?.length ? { captions } : {}) };
+export function newExperiment(page: [number, number], bond: number, template?: Mol, date = today()): Pick<Mol, "annotations" | "captions" | "shapes"> {
+  const k = perMm(bond), details = { ...detailsOf(template?.annotations), date }, left = (MARGIN - page[0] / 2) * k, right = (page[0] / 2 - MARGIN) * k, down = (mm: number) => (page[1] / 2 - mm) * k;
+  const captions = template ? template.captions : HEADINGS.map(([text, top], j) => ({ id: 2 * j, text, bold: true, align: "left" as const, x: left, y: down(top - 2) }));
+  const shapes: Shape[] | undefined = template ? template.shapes : HEADINGS.map(([, top, bottom], j) => ({ id: 2 * j + 1, kind: "box" as const, from: [left, down(top)], to: [right, down(bottom)] }));
+  return { annotations: withDetails(template?.annotations, details), ...(captions?.length ? { captions } : {}), ...(shapes?.length ? { shapes } : {}) };
 }
-// What an own template made from an experiment page keeps: its details but the date, and its free text (headings, a
-// procedure to start from). Structures, arrows and text tied to them stay with the drawing.
+// The Reaction scheme box: the box (or rounded box) under the Reaction scheme heading, the nearest below it that spans
+// the heading's start. As [left, bottom, right, top] in drawing units; undefined with no such heading or box (any
+// other page, or a template without them).
+const spanOf = (x: Shape): [number, number, number, number] => [Math.min(x.from[0], x.to[0]), Math.min(x.from[1], x.to[1]), Math.max(x.from[0], x.to[0]), Math.max(x.from[1], x.to[1])];
+function schemeShape(m: Mol): Shape | undefined {
+  const h = (m.captions ?? []).find((c) => !c.under && !c.on && !c.cycle && /^reaction scheme$/i.test(c.text.trim()));
+  if (!h) return undefined;
+  const near = (m.shapes ?? []).filter((x) => (x.kind === "box" || x.kind === "rounded") && !x.angle).filter((x) => { const b = spanOf(x); return b[3] <= h.y + 1e-6 && b[0] <= h.x + 1e-6 && b[2] > h.x; });
+  return near.sort((p, q) => spanOf(q)[3] - spanOf(p)[3])[0];
+}
+export const schemeSpan = (m: Mol) => { const x = schemeShape(m); return x && spanOf(x); };
+export const inSpan = (b: number[] | undefined, p: [number, number]) => !!b && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+// Where a structure or reaction inserted on an experiment page goes (issue 34): inside the Reaction scheme box, a bond
+// length (pad) under its top, or under whatever is in the box already (taken: its ink and tables), centred across the
+// box (from its left when wider than the box). The offset to move `ink` by; undefined with no box.
+export function schemeLanding(m: Mol, ink: number[], taken: number[][], pad = 1): [number, number] | undefined {
+  const b = schemeSpan(m);
+  if (!b) return undefined;
+  const there = taken.filter((t) => t[0] < b[2] && t[2] > b[0] && t[1] < b[3] && t[3] > b[1]);
+  const top = Math.min(b[3], ...there.map((t) => t[1])) - pad, w = ink[2] - ink[0];
+  const x = w > b[2] - b[0] - 2 * pad ? b[0] + pad - ink[0] : (b[0] + b[2]) / 2 - (ink[0] + ink[2]) / 2;
+  return [x, top - ink[3]];
+}
+// The Reaction scheme box grown down to hold what reaches `bottom` (a reagent table, a scheme), a bond length (pad)
+// clear. Free text and boxes under it (the Procedure heading and box) move down as far, so nothing overlaps. The same
+// drawing when it fits already, or with no box.
+export function growScheme(m: Mol, bottom: number, pad = 1): Mol {
+  const s = schemeShape(m), b = s && spanOf(s);
+  if (!s || !b) return m;
+  const d = b[1] - (bottom - pad);
+  if (d <= 1e-6) return m;
+  const down = (p: [number, number]): [number, number] => [p[0], p[1] - d];
+  const shapes = m.shapes!.map((x) => (x === s ? { ...x, ...(x.from[1] < x.to[1] ? { from: down(x.from) } : { to: down(x.to) }) } : spanOf(x)[3] < b[1] + 1e-6 ? { ...x, from: down(x.from), to: down(x.to) } : x));
+  const captions = m.captions?.map((c) => (!c.under && !c.on && !c.cycle && c.y < b[1] ? { ...c, y: c.y - d } : c));
+  return { ...m, shapes, ...(captions ? { captions } : {}) };
+}
+
+// What an own template made from an experiment page keeps: its details but the date, its free text (headings, a
+// procedure to start from) and its plain boxes and tables. Structures, arrows and text tied to them stay with the drawing.
 export const templateOf = (m: Mol): Mol => {
   const { date: _, ...kept } = detailsOf(m.annotations), annotations = withDetails(undefined, kept);
   const captions = (m.captions ?? []).filter((c) => !c.under && !c.on && !c.cycle && !c.property);
-  return { atoms: [], bonds: [], ...(captions.length ? { captions } : {}), ...(annotations ? { annotations } : {}) };
+  const shapes = (m.shapes ?? []).filter((x) => x.kind === "box" || x.kind === "rounded" || x.kind === "table");
+  return { atoms: [], bonds: [], ...(captions.length ? { captions } : {}), ...(shapes.length ? { shapes } : {}), ...(annotations ? { annotations } : {}) };
 };
 
 // The details block at the top of the page: the title in bold, larger, then the other details two to a row, each
@@ -118,12 +162,8 @@ const COMMANDS: Record<string, RunStyle> = {
   mathit: { italic: true }, mathbf: { bold: true }, mathrm: {}, text: {}, textrm: {}, textup: {}, mbox: {},
 };
 const ROMAN = new Set(["mathrm", "mathbf", "text", "textrm", "textup", "mbox"]);
-const SYMBOLS: Record<string, string> = {
-  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", eta: "η", theta: "θ", kappa: "κ", lambda: "λ", mu: "μ", nu: "ν", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", phi: "φ", chi: "χ", psi: "ψ", omega: "ω",
-  Gamma: "Γ", Delta: "Δ", Lambda: "Λ", Sigma: "Σ", Phi: "Φ", Omega: "Ω",
-  circ: "°", degree: "°", textdegree: "°", pm: "±", mp: "∓", times: "×", cdot: "·", approx: "≈", sim: "∼", le: "≤", leq: "≤", ge: "≥", geq: "≥", ne: "≠", neq: "≠", infty: "∞",
-  to: "→", rightarrow: "→", leftarrow: "←", leftrightarrow: "↔", rightleftharpoons: "⇌", uparrow: "↑", downarrow: "↓", ddagger: "‡", dagger: "†", AA: "Å", ldots: "…",
-};
+const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+const SYMBOLS = ESCAPES; // escapes.ts: the names typed anywhere in Octet
 const ESCAPED = "$*_%&#{}";
 export const MAX_MARKUP = 20_000;
 type Ch = { ch: string; s: RunStyle };
@@ -134,28 +174,55 @@ export function markupRuns(runs: TextRun[]): TextRun[] {
 }
 const over = (cs: Ch[], s: RunStyle) => cs.map((c) => ({ ch: c.ch, s: { ...c.s, ...s } }));
 const word = (cs: Ch[], i: number) => /^[A-Za-z]+/.exec(cs.slice(i, i + 40).map((x) => x.ch).join(""))?.[0];
-// The place of the brace that closes the one at i, or -1.
+// A scan from place j steps over a backslash and the character after it, so it goes from j to step(j). A scan that
+// goes on for more than LOOK places finishes with a table of where a scan from each place stops, worked out once for the
+// whole text from its end back, so markup stays quick however many marks are left unpaired. Kept with each text, as
+// walk takes slices of it.
+const LOOK = 64;
+const step = (cs: Ch[], j: number) => j + (cs[j].ch === "\\" ? 2 : 1);
+const tables = new WeakMap<Ch[], Map<string, Int32Array>>();
+function table(cs: Ch[], key: string, stop: (j: number, after: Int32Array) => number) {
+  let m = tables.get(cs);
+  if (!m) tables.set(cs, (m = new Map()));
+  let at = m.get(key);
+  if (!at) {
+    m.set(key, (at = new Int32Array(cs.length + 2).fill(-1)));
+    for (let j = cs.length - 1; j >= 0; j--) at[j] = stop(j, at);
+  }
+  return at;
+}
+// The place of the brace that closes the one at i, or -1. In the table: the first unmatched "}" from each place.
 function closing(cs: Ch[], i: number): number {
-  for (let j = i + 1, depth = 0; j < cs.length; j++) {
-    if (cs[j].ch === "\\") { j++; continue; }
+  let depth = 0, j = i + 1;
+  for (let k = 0; j < cs.length; k++, j = step(cs, j)) {
+    if (k === LOOK) {
+      const braces = table(cs, "}", (q, at) => { const c = cs[q].ch, r = step(cs, q); return c === "}" ? q : c !== "{" ? at[r] : at[r] < 0 ? -1 : at[at[r] + 1]; });
+      let at = braces[j];
+      for (; at >= 0 && depth > 0; depth--) at = braces[at + 1];
+      return at;
+    }
     if (cs[j].ch === "{") depth++;
     else if (cs[j].ch === "}" && depth-- === 0) return j;
   }
   return -1;
 }
-// The place where the mark (*, ** or $) that opens at i closes on the same line, or -1.
+// The place where the mark (*, ** or $) that opens at i closes on the same line, or -1. In the table: the first line
+// break or place that could close the mark, from each place.
 function pair(cs: Ch[], i: number, mark: string): number {
   const n = mark.length, star = mark[0] === "*", space = (j: number) => !cs[j] || /\s/.test(cs[j].ch);
   const alnum = (j: number) => !!cs[j] && /[\p{L}\p{N}]/u.test(cs[j].ch);
   // A star pair inside one word on both sides (a*b*c) stays as typed; one side is fine (*t*BuOK, 1*H*-indole).
   const inWord = star && alnum(i - 1);
   if (space(i + n) || (star && (cs[i + n].ch === "*" || !alnum(i + n)))) return -1;
-  for (let j = i + n + 1; j <= cs.length - n; j++) {
+  const closes = (j: number) => cs[j].ch === mark[0] && !(n === 2 && cs[j + 1].ch !== mark[1]) && !space(j - 1) && !(inWord && alnum(j + n)) &&
+    !(n === 1 && star && (cs[j + 1]?.ch === "*" || cs[j - 1].ch === "*"));
+  for (let j = i + n + 1, k = 0; j <= cs.length - n; k++, j = step(cs, j)) {
+    if (k === LOOK) {
+      const end = table(cs, mark + inWord, (q, at) => (q > cs.length - n ? -1 : cs[q].ch === "\n" || closes(q) ? q : at[step(cs, q)]))[j];
+      return end >= 0 && cs[end].ch !== "\n" ? end : -1;
+    }
     if (cs[j].ch === "\n") return -1;
-    if (cs[j].ch === "\\") { j++; continue; }
-    if (cs[j].ch !== mark[0] || (n === 2 && cs[j + 1].ch !== mark[1]) || space(j - 1) || (inWord && alnum(j + n))) continue;
-    if (n === 1 && star && (cs[j + 1]?.ch === "*" || cs[j - 1].ch === "*")) continue;
-    return j;
+    if (closes(j)) return j;
   }
   return -1;
 }
@@ -169,11 +236,11 @@ function walk(cs: Ch[], math: boolean, roman: boolean, depth: number): Ch[] {
       const next = cs[i + 1]?.ch, name = word(cs, i + 1);
       if (next !== undefined && ESCAPED.includes(next)) { out.push(cs[i + 1]); i++; continue; }
       if (next === ",") { out.push({ ch: "\u2009", s: cs[i].s }); i++; continue; }
-      if (name && name in COMMANDS && cs[i + 1 + name.length]?.ch === "{") {
+      if (name && has(COMMANDS, name) && cs[i + 1 + name.length]?.ch === "{") {
         const open = i + 1 + name.length, end = closing(cs, open);
         if (end > 0) { out.push(...over(walk(cs.slice(open + 1, end), math, roman || ROMAN.has(name), depth + 1), COMMANDS[name])); i = end; continue; }
       }
-      if (name && name in SYMBOLS) {
+      if (name && has(SYMBOLS, name)) {
         out.push({ ch: SYMBOLS[name], s: cs[i].s });
         i += name.length;
         if (cs[i + 1]?.ch === "{" && cs[i + 2]?.ch === "}") i += 2; // \circ{} and \AA{}
@@ -193,7 +260,7 @@ function walk(cs: Ch[], math: boolean, roman: boolean, depth: number): Ch[] {
       if (end > 0) { out.push(...over(walk(cs.slice(i + 2, end), true, roman, depth + 1), script)); i = end; continue; }
       if (cs[i + 1].ch !== "{") {
         // One character, or one symbol (\circ).
-        const name = cs[i + 1].ch === "\\" ? word(cs, i + 2) : undefined, one = cs.slice(i + 1, i + 2 + (name && name in SYMBOLS ? name.length : 0));
+        const name = cs[i + 1].ch === "\\" ? word(cs, i + 2) : undefined, one = cs.slice(i + 1, i + 2 + (name && has(SYMBOLS, name) ? name.length : 0));
         out.push(...over(walk(one, true, roman, depth + 1), script));
         i += one.length;
         continue;

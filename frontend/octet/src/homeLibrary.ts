@@ -130,10 +130,11 @@ export function useHomeLibrary({ active, recents, notice }: { active: boolean; r
     // Add Drawings… in a project: the Open dialog for drawings.
     addPicked: (id: string) => void call<string[]>("home_pick_drawings", { many: true }).then((paths) => { if (paths.length) return add(id, paths.map((path) => ({ path }))); })
       .catch((e) => notice(failure("Octet cannot add these drawings.", e))),
-    // Remove from folder: the drawing stays where it is on disk and on Home's recent list.
-    removeDrawing: (id: string, path: string) => {
-      const p = projectOf(held.current, id), name = p?.drawings.find((d) => d.path === path)?.name ?? drawingName(path);
-      return commit((s) => removeDrawing(s, id, path, now())).then((ok) => { if (ok && p) notice(`Removed ${name} from ${p.name}.`, "done"); });
+    // Remove from folder: the drawings stay where they are on disk and on Home's recent list.
+    removeDrawing: (id: string, paths: string[]) => {
+      const p = projectOf(held.current, id), name = paths.length === 1 ? p?.drawings.find((d) => d.path === paths[0])?.name ?? drawingName(paths[0]) : `${paths.length} drawings`;
+      return commit((s) => paths.reduce((r, path) => { const x = removeDrawing(r.store, id, path, now()); return { store: x.store, drop: [...r.drop, ...x.drop] }; }, { store: s, drop: [] as string[] }))
+        .then((ok) => { if (ok && p) notice(`Removed ${name} from ${p.name}.`, "done"); });
     },
     // Locate…: the drawing's new place, picked in the Open dialog, in every project.
     locate: (path: string) => void call<string[]>("home_pick_drawings", { many: false }).then(async ([to]) => {

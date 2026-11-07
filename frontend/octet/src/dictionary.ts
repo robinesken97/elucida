@@ -3,15 +3,12 @@
 // scripts/build-dictionary.ts), condensed formulas (condensed.ts), and lists of names.
 import { commonKey } from "./common.ts";
 import { condensedSmiles } from "./condensed.ts";
+import { NameTable } from "./nametable.ts";
 
-// Each compound's SMILES, and the compound for each name key, CAS number and InChIKey. beforeOpsin: names OPSIN reads
-// as another compound than the one Wikidata and PubChem give (tropicamide), marked "!" in the table.
-let smiles: string[] = [];
-let byName = new Map<string, number>(), beforeOpsin = new Map<string, number>(), byCas = new Map<string, number>(), byKey = new Map<string, number>();
-// The names as written and in lower case, each one's compound, and the names with each trigram (for completion,
-// search and spelling mistakes), by index.
-let written: string[] = [], lower: string[] = [], compound: number[] = [];
-let grams = new Map<string, number[]>();
+// The table, kept small (nametable.ts): each compound's SMILES, the compound for each name key, CAS number and
+// InChIKey, names OPSIN reads as another compound than the one Wikidata and PubChem give (tropicamide, marked "!"),
+// and the names with each trigram (for completion, search and spelling mistakes).
+let table: NameTable | undefined;
 
 // Loads the table (once), gzipped next to the app. names.ts starts it with OPSIN.
 let loading: Promise<void> | undefined;
@@ -20,49 +17,24 @@ export function loadDictionary(): Promise<void> {
     const raw = new Uint8Array(await (await fetch(new URL("../data/names/dictionary.tsv.gz", import.meta.url))).arrayBuffer());
     // A server may have unzipped it already.
     const zipped = raw[0] === 0x1f && raw[1] === 0x8b;
-    const text = zipped ? await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip"))).text() : new TextDecoder().decode(raw);
-    await attachDictionary(text, true);
+    const bytes = zipped ? new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()) : raw;
+    await attachDictionary(bytes, true);
   })().catch((e) => { loading = undefined; throw e; });
   return loading;
 }
 
 // The table: a compound a line, its SMILES, names (| between), CAS numbers (| between), InChIKey, and names OPSIN
-// reads (for suggestions only), tab-separated.
-// sliced: read 2,000 lines at a time with a pause between, so typing and drawing never wait. The checks read it whole.
-export async function attachDictionary(text: string, sliced = false) {
-  const next: string[] = [], names = new Map<string, number>(), first = new Map<string, number>(), cas = new Map<string, number>(), keys = new Map<string, number>();
-  const shown = new Map<string, [string, number]>(), show = (name: string, n: number) => { const l = name.toLowerCase(); if (!shown.has(l)) shown.set(l, [name, n]); };
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (sliced && i % 2000 === 1999) await pause();
-    const [s, ns, cs, key, read] = lines[i].split("\t");
-    if (!s || s.length > 4000) continue;
-    const n = next.push(s) - 1;
-    for (const raw of ns ? ns.split("|") : []) {
-      const name = raw.replace(/^!/, ""), k = commonKey(name);
-      if (raw !== name) first.set(k, n);
-      if (k && !names.has(k)) { names.set(k, n); show(name, n); }
-    }
-    for (const c of cs ? cs.split("|") : []) if (!cas.has(c)) cas.set(c, n);
-    if (key && !keys.has(key)) keys.set(key, n);
-    for (const name of read ? read.split("|") : []) show(name, n);
-  }
-  const index = new Map<string, number[]>(), l: string[] = [], w: string[] = [], c: number[] = [];
-  for (const [low, [name, n]] of shown) {
-    const i = l.push(low) - 1;
-    w.push(name);
-    c.push(n);
-    if (sliced && i % 3000 === 2999) await pause();
-    for (const g of trigrams(low)) { const list = index.get(g); if (list) list.push(i); else index.set(g, [i]); }
-  }
-  [smiles, byName, beforeOpsin, byCas, byKey, grams, lower, written, compound] = [next, names, first, cas, keys, index, l, w, c];
+// reads (for suggestions only), tab-separated. A line with no SMILES, or one over 4,000 bytes, is left out.
+// sliced: a pause every few thousand lines, so typing and drawing never wait. The checks read it whole.
+// Sliced, it returns once names, CAS numbers and InChIKeys read, and suggestions follow a moment later.
+export async function attachDictionary(text: string | Uint8Array, sliced = false) {
+  table = await NameTable.read(typeof text === "string" ? new TextEncoder().encode(text) : text, sliced);
+  if (!sliced) await table.suggested;
 }
-const pause = () => new Promise((ok) => setTimeout(ok, 0));
 
 // SMILES for a name OPSIN misreads (names.ts asks this before OPSIN).
 export function beforeOpsinSmiles(text: string): string | undefined {
-  const i = text.length <= 200 ? beforeOpsin.get(commonKey(text)) : undefined;
-  return i === undefined ? undefined : smiles[i];
+  return table && text.length <= 200 ? table.smiles(table.nameCompound(commonKey(text), true)) : undefined;
 }
 
 // ——— CAS registry numbers ———
@@ -98,13 +70,15 @@ export const inchiKeyOf = (text: string): string | undefined => INCHIKEY.exec(te
 // for the systematic name of a peptide.
 export function dictionarySmiles(text: string, read?: (name: string) => string | undefined): string | undefined {
   const s = text.trim();
-  if (!s || s.length > 200) return undefined;
-  const at = (i: number | undefined) => (i === undefined ? undefined : smiles[i]);
-  if (casParts(s)) return at(byCas.get(casNumber(s) ?? ""));
-  const key = inchiKeyOf(s);
-  if (key) return at(byKey.get(key));
+  // A peptide of 60 residues runs to about 250 characters (H-Ala-…-OH); anything else stops at 200.
+  if (!s || s.length > 300) return undefined;
   const systematic = read && peptideName(s);
-  return at(byName.get(commonKey(s))) ?? condensedSmiles(s) ?? (systematic ? read(systematic) : undefined);
+  if (s.length > 200) return systematic ? read(systematic) : undefined;
+  const t = table, number = casParts(s) && casNumber(s);
+  if (casParts(s)) return t && number ? t.smiles(t.casCompound(number)) : undefined;
+  const key = inchiKeyOf(s);
+  if (key) return t?.smiles(t.keyCompound(key));
+  return t?.smiles(t.nameCompound(commonKey(s))) ?? condensedSmiles(s) ?? (systematic ? read(systematic) : undefined);
 }
 
 // ——— Peptides and amino acids ———
@@ -119,13 +93,13 @@ const RESIDUES: Record<string, [string, string, boolean]> = {
   Tyr: ["tyrosyl", "tyrosine", true], Val: ["valyl", "valine", true],
 };
 // The systematic name of a peptide written as a sequence of three-letter codes ("Ala-Gly-Ser", "H-Ala-D-Phe-OH",
-// "Ac-Ala-Gly-NH2"), each residue L unless D- comes before it; or of an amino acid written "alpha alanine" or
-// "beta alanine". Undefined for anything else.
+// "Ac-Ala-Gly-NH2"), each residue L unless D- comes before it, up to 60 residues; or of an amino acid written "alpha
+// alanine" or "beta alanine". Undefined for anything else.
 export function peptideName(text: string): string | undefined {
   const greek = /^(alpha|beta|gamma)[\s-]+([a-z]+)$/i.exec(text);
   if (greek) return greek[1].toLowerCase() === "alpha" ? greek[2] : `${greek[1].toLowerCase()}-${greek[2]}`;
   const parts = text.split("-");
-  if (parts.length > 60) return undefined;
+  if (parts.length > 2 * 60 + 2) return undefined;
   const acetyl = /^Ac$/i.test(parts[0]), capped = acetyl || /^H$/i.test(parts[0]);
   if (capped) parts.shift();
   const end = parts[parts.length - 1], amide = /^NH2$/i.test(end);
@@ -137,7 +111,7 @@ export function peptideName(text: string): string | undefined {
     if (!RESIDUES[code]) return undefined;
     residues.push([...RESIDUES[code], hand]);
   }
-  if (residues.length < (capped || amide ? 1 : 2)) return undefined;
+  if (residues.length < (capped || amide ? 1 : 2) || residues.length > 60) return undefined;
   const named = residues.map(([acyl, acid, chiral, hand], i) => {
     const last = i === residues.length - 1, word = last ? (amide ? (acid.endsWith("ine") ? `${acid.slice(0, -1)}amide` : acid.endsWith("an") ? `${acid}amide` : "") : acid) : acyl;
     return word && (chiral ? `${hand}-${word}` : word);
@@ -160,24 +134,33 @@ export function nameList(text: string, read: (name: string) => string | undefine
 
 // ——— Suggestions ———
 // The shortest dictionary name that starts with what was typed (lower case).
-// The names that start with it all start with its first trigram (a space and its first two letters).
+// The names that start with it all have its first trigram (a space and its first two letters) and its first three
+// letters: the shorter list is read.
 export function completeName(typed: string): string | undefined {
   let best: string | undefined;
-  if (typed.length >= 2) for (const i of grams.get(` ${typed.slice(0, 2)}`) ?? []) if (lower[i].startsWith(typed) && (!best || lower[i].length < best.length)) best = lower[i];
+  const t = table;
+  if (typed.length < 2 || !t) return best;
+  const lengths = t.lengths();
+  const head = ` ${typed.slice(0, 2)}`, three = typed.slice(0, 3);
+  t.forGram(three.length === 3 && t.gramSize(three) < t.gramSize(head) ? three : head, (i) => {
+    if (lengths[i] + 1 < typed.length || (best && lengths[i] > best.length + 1)) return;
+    const l = t.lower(i);
+    if (l.startsWith(typed) && (!best || l.length < best.length)) best = l;
+  });
   return best;
 }
 // Dictionary names, as written, that begin as typed (compared as keys are, so "acetyl salicylic" finds acetylsalicylic
 // acid): one for each compound, the shortest first. At most most. For the template library's search and the command
 // palette, after Octet's own names (names.ts namesStarting).
 export function dictionaryStarting(typed: string, most: number): string[] {
-  const q = commonKey(typed.trim()), head = typed.trim().toLowerCase().slice(0, 2);
-  if (q.length < 2 || head.length < 2 || most <= 0) return [];
-  const found = (grams.get(` ${head}`) ?? []).filter((i) => commonKey(lower[i]).startsWith(q)).sort((a, b) => lower[a].length - lower[b].length || (lower[a] < lower[b] ? -1 : 1));
+  const q = commonKey(typed.trim()), head = typed.trim().toLowerCase().slice(0, 2), t = table;
+  if (q.length < 2 || head.length < 2 || most <= 0 || !t) return [];
+  const found = [...new Set(t.withGram(` ${head}`))].filter((i) => commonKey(t.lower(i)).startsWith(q)).sort((a, b) => t.lower(a).length - t.lower(b).length || (t.lower(a) < t.lower(b) ? -1 : 1));
   const seen = new Set<number>(), out: string[] = [];
   for (const i of found) {
-    if (seen.has(compound[i])) continue;
-    seen.add(compound[i]);
-    out.push(written[i]);
+    if (seen.has(t.compound(i))) continue;
+    seen.add(t.compound(i));
+    out.push(t.written(i));
     if (out.length >= most) break;
   }
   return out;
@@ -185,11 +168,14 @@ export function dictionaryStarting(typed: string, most: number): string[] {
 // Dictionary names that could be what was typed (lower case) with up to `most` mistakes: those sharing enough of its
 // trigrams. A mistake changes at most three trigrams.
 export function nearNames(typed: string, most: number): string[] {
-  const mine = trigrams(typed), need = Math.max(1, mine.length - 3 * most), touched: number[] = [], out: string[] = [];
-  if (counts.length < lower.length) counts = new Uint8Array(lower.length);
-  for (const g of new Set(mine)) for (const i of grams.get(g) ?? []) if (counts[i]++ === 0) touched.push(i);
+  const mine = trigrams(typed), need = Math.max(1, mine.length - 3 * most), touched: number[] = [], out: string[] = [], t = table;
+  if (!t) return out;
+  if (counts.length < t.size) counts = new Uint8Array(t.size);
+  // Only names near its length are counted: lower case can lengthen a name by a character (İ), hence the 1 to spare.
+  const lengths = t.lengths(), long = typed.length;
+  for (const g of new Set(mine)) t.forGram(g, (i) => { if (Math.abs(lengths[i] - long) <= most + 1 && counts[i]++ === 0) touched.push(i); });
   for (const i of touched) {
-    if (counts[i] >= need && Math.abs(lower[i].length - typed.length) <= most) out.push(lower[i]);
+    if (counts[i] >= need && Math.abs(t.lower(i).length - typed.length) <= most) out.push(t.lower(i));
     counts[i] = 0;
   }
   return out;

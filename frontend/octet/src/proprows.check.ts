@@ -1,5 +1,6 @@
 // Run: node src/proprows.check.ts. Fails loudly if Decimals or the properties report go wrong.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { Structure } from "./chem.ts";
 import { PROPERTY_ROWS, propertyReport, propertyValues } from "./proprows.ts";
 
@@ -27,13 +28,22 @@ for (const r of PROPERTY_ROWS.flat()) assert.ok(r.method.length > 10, `${r.key} 
 const report = propertyReport(propertyValues([aspirin, { ...aspirin, formula: "C2H6O", weight: 46.07, exact: 46.0419 }]), new Date(2026, 9, 18));
 const lines = report.split("\n");
 assert.equal(lines[0], "Chemical properties");
-assert.equal(lines[1], "Calculated by Octet on 18 October 2026. These values are estimates.");
+assert.equal(lines[1], "Calculated by Octet on 18 October 2026. Values marked (predicted) come from a model. They are not measured.");
+// A predicted value is never shown or copied as a plain one: the report, Copy, Add to drawing and the panel's heading.
+assert.ok(lines.includes("logP (predicted)\t1.31") && lines.includes("Formula\tC9H8O4"));
+const predicted = PROPERTY_ROWS.flat().filter((r) => r.predicted).map((r) => r.key);
+assert.deepEqual(predicted, ["tb", "tm", "tc", "pc", "vc", "hf", "gf", "henry", "logp", "mr", "logs", "pka"]);
+assert.ok(PROPERTY_ROWS.every((g) => g.every((r) => r.predicted) || g.every((r) => !r.predicted)), "each group is all predicted or none");
+const panel = readFileSync(new URL("Properties.tsx", import.meta.url), "utf8"), editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+assert.match(panel, /g\.every\(\(r\) => r\.predicted\) && <h3 className="prop-heading">Predicted<\/h3>/);
+assert.match(panel, /onCopy\(`\$\{rowLabel\(row\)\}: /);
+assert.match(editor, /runs\.push\(\{ text: `\$\{rowLabel\(r\)\}: ` \}\)/);
 assert.ok(lines.includes("Structure 1") && lines.includes("Structure 2"));
 assert.ok(lines.includes("Formula\tC9H8O4") && lines.includes("Formula\tC2H6O"));
 assert.ok(lines.includes("Exact mass\t46.0419"));
 const methods = lines.slice(lines.indexOf("Methods") + 1);
-assert.equal(methods.filter((l) => l.startsWith("logP: ")).length, 1);
-assert.ok(methods.some((l) => l.startsWith("logP: Wildman–Crippen")));
+assert.equal(methods.filter((l) => l.startsWith("logP (predicted): ")).length, 1);
+assert.ok(methods.some((l) => l.startsWith("logP (predicted): Wildman–Crippen")));
 // A single structure is not numbered.
 assert.ok(propertyReport(propertyValues([aspirin])).split("\n").includes("Structure"));
 console.log("proprows.check: ok");

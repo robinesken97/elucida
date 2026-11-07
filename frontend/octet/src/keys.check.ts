@@ -1,6 +1,6 @@
 // Run: node src/keys.check.ts. Fails loudly if shortcut lookup breaks.
 import assert from "node:assert/strict";
-import { actionFor, clashes, controlTakes, feedbackChord, keyOf, keymap, menuRuns, textEntry, textKey, tileTo } from "./keys.ts";
+import { actionFor, addsToSelection, clashes, controlTakes, copyDrag, skipsCycle, feedbackChord, keyOf, keymap, menuRuns, textEntry, textKey, tileTo } from "./keys.ts";
 
 const press = (key: string, mods: Partial<{ shiftKey: boolean; altKey: boolean; metaKey: boolean; ctrlKey: boolean }> = {}) =>
   keyOf({ key, shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, ...mods });
@@ -129,15 +129,14 @@ assert.equal(textEntry({ tagName: "TEXTAREA" }), true);
 assert.equal(textEntry({ tagName: "DIV", isContentEditable: true }), true);
 assert.equal(textEntry({ tagName: "DIV", isContentEditable: false }), false);
 // ChemDraw's text keys in a caption or label box (⌘B, ⌘I, ⌘U, ⌘T and so on): a label takes the style keys, as a
-// caption does, but not Formula, Subscript or Superscript (its counts are subscripts already); ⇧⌘N in either.
-for (const [key, command] of [["b", "caption.bold"], ["I", "caption.italic"], ["u", "caption.underline"], ["t", "caption.plain"]]) {
+// caption does, but not Formula; ⇧⌘N in either. Subscript and Superscript go to a label too (issue 44: Fe with III
+// raised).
+for (const [key, command] of [["b", "caption.bold"], ["I", "caption.italic"], ["u", "caption.underline"], ["t", "caption.plain"], ["-", "caption.sub"], ["=", "caption.super"], ["+", "caption.super"]]) {
   assert.equal(textKey({ key, shiftKey: false }, true), command, key);
   assert.equal(textKey({ key, shiftKey: false }, false), command, key);
 }
-for (const [key, command] of [["f", "caption.formula"], ["-", "caption.sub"], ["=", "caption.super"], ["+", "caption.super"]]) {
-  assert.equal(textKey({ key, shiftKey: false }, false), command, key);
-  assert.equal(textKey({ key, shiftKey: false }, true), undefined, key);
-}
+assert.equal(textKey({ key: "f", shiftKey: false }, false), "caption.formula");
+assert.equal(textKey({ key: "f", shiftKey: false }, true), undefined);
 assert.deepEqual([textKey({ key: "N", shiftKey: true }, true), textKey({ key: "n", shiftKey: true }, false), textKey({ key: "c", shiftKey: false }, false)], ["name_to_structure", "name_to_structure", undefined]);
 assert.equal(textEntry({ tagName: "BUTTON" }), false);
 assert.equal(textEntry(null), false);
@@ -168,10 +167,10 @@ assert.equal(tileTo("ArrowDown", -1, home), 0);
 assert.equal(tileTo("Enter", 3, home), undefined);
 assert.equal(tileTo("ArrowDown", -1, []), undefined);
 // Home blocks the drawing's menu commands as a dialog does. New (and New For), Open, Settings, About and the tutorial
-// still run; Undo, Redo and Select All run on the text of the name box.
+// still run, and Select All selects Home's drawings; Undo, Redo and Select All run on the text of the name box.
 const onHome = { home: true, modal: false, typing: false };
-for (const id of ["select_all", "flip_h", "mirror_v", "clean_up", "zoom_in", "export", "save", "import", "command_palette", "colour_0"]) assert.equal(menuRuns(id, onHome), false, id);
-for (const id of ["new", "new_quick", "new_paper", "new_own_0", "open", "settings", "about", "tutorial", "home", "recent_0", "recent_clear", "check_updates", "quit"]) assert.equal(menuRuns(id, onHome), true, id);
+for (const id of ["flip_h", "mirror_v", "clean_up", "zoom_in", "export", "save", "import", "command_palette", "colour_0"]) assert.equal(menuRuns(id, onHome), false, id);
+for (const id of ["new", "new_quick", "new_paper", "new_own_0", "open", "settings", "about", "tutorial", "home", "recent_0", "recent_clear", "check_updates", "quit", "select_all"]) assert.equal(menuRuns(id, onHome), true, id);
 // Quit and Close Window ask about unsaved changes over any dialog (the Dock's Quit too).
 for (const id of ["quit", "close"]) assert.equal(menuRuns(id, { home: false, modal: true, typing: false }), true, id);
 // Cut, Copy and Paste (Octet's own on Linux) run everywhere: on a field's text, or on the drawing, which takes them only
@@ -184,3 +183,39 @@ assert.equal(menuRuns("new", { home: false, modal: true, typing: false }), false
 assert.equal(menuRuns("undo", { home: false, modal: true, typing: true }), true);
 assert.equal(menuRuns("flip_h", { home: false, modal: false, typing: false }), true);
 assert.equal(menuRuns("text_bold", { home: false, modal: false, typing: true }), true);
+
+// Copy-drag (issues 33, 45): Option on the Mac only; Ctrl or Alt on Windows and Linux.
+const mods = (o: Partial<{ altKey: boolean; ctrlKey: boolean; metaKey: boolean }>) => ({ altKey: false, ctrlKey: false, metaKey: false, ...o });
+assert.equal(copyDrag(mods({ altKey: true }), true), true);
+assert.equal(copyDrag(mods({ ctrlKey: true }), true), false);
+assert.equal(copyDrag(mods({}), true), false);
+assert.equal(copyDrag(mods({ ctrlKey: true }), false), true);
+assert.equal(copyDrag(mods({ altKey: true }), false), true);
+assert.equal(copyDrag(mods({}), false), false);
+// Ctrl during a move keeps it off a catalytic cycle, unless Ctrl started the drag as a copy.
+assert.equal(skipsCycle(mods({ ctrlKey: true }), false), true);
+assert.equal(skipsCycle(mods({ ctrlKey: true }), true), false);
+assert.equal(skipsCycle(mods({ metaKey: true }), true), true);
+assert.equal(skipsCycle(mods({}), false), false);
+
+// Issue 32: on Windows and Linux Ctrl-click adds to the selection (or takes out what was all selected) as Shift-click
+// does; on the Mac Control-click is the right-click and adds nothing. Shift adds everywhere.
+const keysOf = (o: Partial<{ shiftKey: boolean; ctrlKey: boolean }>) => ({ shiftKey: false, ctrlKey: false, ...o });
+assert.equal(addsToSelection(keysOf({ ctrlKey: true }), false), true, "Ctrl-click adds on Windows and Linux");
+assert.equal(addsToSelection(keysOf({ ctrlKey: true }), true), false, "not on the Mac");
+for (const mac of [true, false]) {
+  assert.equal(addsToSelection(keysOf({ shiftKey: true }), mac), true);
+  assert.equal(addsToSelection(keysOf({}), mac), false);
+}
+// The click adds; the press stays Ctrl-drag's, which moves a copy (copyDrag), and is made with Shift alone but on bare
+// canvas, where a Ctrl press starts a box that adds as Shift's does. Shift and Ctrl reach the click the same way.
+{
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8"), at = editor.indexOf('    if (tool === "select") {\n      // Ctrl-click');
+  assert.ok(at > 0, "found the Select press");
+  const block = editor.slice(at, editor.indexOf("\n    }", at));
+  assert.match(block, /pressMods\.current = \{ shift: adds, alt: e\.altKey/);
+  assert.match(block, /return pressSelect\(p, t, e\.shiftKey \|\| bare, screen, copy\)/);
+  assert.equal((editor.match(/pressMods\.current = \{ shift: e\.shiftKey/g) ?? []).length, 0, "every Select press counts Ctrl as Shift for its click");
+  assert.ok(editor.indexOf("if (MAC && e.ctrlKey) {") < at, "the Mac's Control-click goes to the context menu first");
+}
+console.log("keys.check: Ctrl-click adds to the selection on Windows and Linux ok");

@@ -7,7 +7,8 @@
 // arrow keys that walk the bonds (edit.ts walkHot) can be chosen by ear.
 import { ARROWS, BONDS, SHAPES } from "./kinds.ts";
 import { atomAt, bondAt, fragments, pos, type BondSpec } from "./edit.ts";
-import { HBOND, curved, hydrogens, isBracket, orderOf, straightArrow, type Arrow, type Atom, type Bond, type Box, type Mol, type Shape } from "./render.ts";
+import { HBOND, curved, hydrogens, isBracket, orderOf, straightArrow, type Arrow, type Atom, type Bond, type Box, type Group, type Mol, type Shape } from "./render.ts";
+import { plotName } from "./pageplot.ts";
 import { ELEMENTS } from "./metals.ts";
 import { rings } from "./rings.ts";
 import { USAGES, polymerLabel } from "./query.ts";
@@ -202,18 +203,18 @@ export function readingOrder(boxes: (Box | undefined)[]): number[] {
   return [...rows.flatMap((r) => r.ids.sort((p, q) => boxes[p]![0] - boxes[q]![0])), ...boxes.flatMap((b, k) => (b ? [] : [k]))];
 }
 
-// Every object on the canvas, in reading order. An integral group (a spectrum) is one object, as a click selects it
-// whole. Text that belongs to something (a compound number under its structure, conditions kept on an arrow, a cycle's
+// Every object on the canvas, in reading order. A group (a spectrum) is one object, as a click picks the whole
+// outermost group. Text that belongs to something (a compound number under its structure, conditions kept on an arrow, a cycle's
 // labels) comes straight after it.
 export function describe(m: Mol, s: Sources): Item[] {
   const atomsTaken = new Set<number>(), itemsTaken = new Set<number>(), primary: Item[] = [];
   const add = (x: Omit<Item, "box">) => { const it = { ...x, box: s.box(x.atoms, x.items) }; primary.push(it); return it; };
-  const integral = (m.groups ?? []).filter((g) => g.integral).sort((p, q) => q.atoms.length + q.items.length - p.atoms.length - p.items.length);
-  for (const g of integral) {
+  const groups = [...(m.groups ?? [])].sort((p, q) => q.atoms.length + q.items.length - p.atoms.length - p.items.length);
+  for (const g of groups) {
     if (g.atoms.some((i) => atomsTaken.has(i)) || g.items.some((i) => itemsTaken.has(i))) continue;
     g.atoms.forEach((i) => atomsTaken.add(i));
     g.items.forEach((i) => itemsTaken.add(i));
-    add({ key: `g${g.id}`, ...groupText(m, g.atoms, g.items, s), atoms: g.atoms, items: g.items });
+    add({ key: `g${g.id}`, ...(g.plot ? { role: "spectrum", name: g.plot.title } : groupText(m, g.atoms, g.items, s)), atoms: g.atoms, items: g.items });
   }
   const owner = new Map<number, string>(), frags = fragments(m), piece = new Map<number, number>(), bonds: Mol["bonds"][] = frags.map(() => []);
   frags.forEach((f, k) => f.forEach((i) => piece.set(i, k)));
@@ -240,11 +241,25 @@ export function describe(m: Mol, s: Sources): Item[] {
     return [x, ...readingOrder(more.map((y) => y.box)).map((j) => more[j])];
   });
 }
+// A spectrum's title caption, when a group's items are a spectrum (a title and a trace).
+function spectrumTitle(m: Mol, items: number[]) {
+  const ids = new Set(items), title = (m.captions ?? []).find((c) => ids.has(c.id) && /\b(NMR|IR|MS|HRMS|UV)\b/.test(c.text));
+  return title && m.arrows?.some((a) => ids.has(a.id) && a.kind === "curve") ? title : undefined;
+}
+// A figure's axis unit, when a group is a figure Octet placed (a mass spectrum has no title or record).
+const unitOf = (m: Mol, items: number[]) => { const ids = new Set(items); return (m.captions ?? []).find((c) => ids.has(c.id) && c.role?.role === "unit"); };
+// A whole group's name as one object, for the Actions panel's title: a page spectrum by what it plots, a mass
+// spectrum by its m/z axis, another spectrum as a spectrum, any other group as a group.
+export function groupTitle(m: Mol, g: Group): string {
+  if (g.plot) return plotName(g.plot);
+  const unit = unitOf(m, g.items);
+  return unit?.text === "m/z" ? "Mass spectrum" : unit || spectrumTitle(m, g.items) ? "Spectrum" : "Group";
+}
 // A group's name: a spectrum by its title, else its parts.
 function groupText(m: Mol, atoms: number[], items: number[], s: Sources): { role: string; name: string } {
-  const ids = new Set(items), caps = (m.captions ?? []).filter((c) => ids.has(c.id));
-  const title = caps.find((c) => /\b(NMR|IR|MS|HRMS|UV)\b/.test(c.text));
-  if (title && m.arrows?.some((a) => ids.has(a.id) && a.kind === "curve")) return { role: "spectrum", name: plain(title.text) };
+  const ids = new Set(items), caps = (m.captions ?? []).filter((c) => ids.has(c.id)), title = spectrumTitle(m, items);
+  if (title) return { role: "spectrum", name: plain(title.text) };
+  if (unitOf(m, items)) return { role: "spectrum", name: groupTitle(m, { id: 0, atoms, items }) };
   const inside = new Set(atoms), parts = [...fragments(m).filter((f) => f.every((i) => inside.has(i))).map((f) => structureText(m, f, s).name), ...caps.map((c) => plain(c.text))];
   const rest = items.length - caps.length;
   if (rest > 0) parts.push(count(rest, "other object"));

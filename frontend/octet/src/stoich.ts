@@ -59,8 +59,9 @@ const UNITS: Record<Field, Record<string, number>> = {
 };
 // A typed amount in base units: "250 mg", "1.2 eq", "0.5 mL", "98%". A bare number is taken in the field's usual unit
 // (mg, mmol, mL, g/mL, M, eq, %). Undefined when it is not a finite number of 0 or more, with a unit the field takes.
+// Greek mu (μ, as \mu types it) is the micro sign.
 export function parseAmount(text: string, field: Field): number | undefined {
-  const m = /^\s*(\d+(?:\.\d+)?|\.\d+)(?:e([+-]?\d+))?\s*([a-zA-Zµ%/0-9]*)\s*$/.exec(text.replace(",", "."));
+  const m = /^\s*(\d+(?:\.\d+)?|\.\d+)(?:e([+-]?\d+))?\s*([a-zA-Zµ%/0-9]*)\s*$/.exec(text.replace(",", ".").replace(/\u03bc/g, "µ"));
   if (!m) return undefined;
   const value = Number(m[1]) * 10 ** Number(m[2] ?? 0), unit = m[3], units = UNITS[field];
   const plain: Record<Field, string> = { mass: "mg", measured: "mg", moles: "mmol", volume: "mL", density: "g/mL", molarity: "M", equiv: "eq", purity: "%" };
@@ -91,6 +92,21 @@ const WEIGHT: Record<string, number> = {
   Ni: 58.693, Cu: 63.546, Zn: 65.38, Se: 78.971, Br: 79.904, Rb: 85.468, Ru: 101.07, Rh: 102.91, Pd: 106.42, Ag: 107.87,
   Sn: 118.71, I: 126.9, Cs: 132.91, Ir: 192.22, Pt: 195.08, Au: 196.97, Hg: 200.59, Pb: 207.2, Os: 190.23, W: 183.84,
 };
+// A line of conditions as its items: split at commas, semicolons and line breaks outside brackets, so
+// "toluene/EtOH/H2O (4:1:1, 30 mL)" stays one item.
+export function conditionItems(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0, item = "";
+  for (const ch of text) {
+    if ("([{".includes(ch)) depth++;
+    else if (")]}".includes(ch)) depth = Math.max(0, depth - 1);
+    if (!depth && /[,;\n]/.test(ch)) { out.push(item.trim()); item = ""; } else item += ch;
+  }
+  out.push(item.trim());
+  return out.filter(Boolean);
+}
+// The gas a reaction runs under (N2, Ar, air): not a reagent, so it has no column in the table.
+export const inert = (text: string) => /^(?:under\s+)?(?:N2|N₂|Ar|argon|nitrogen|He|helium|air)(?:\s*\(?(?:atm|balloon)\)?)?$/i.test(text.trim());
 // A formula's molar mass, brackets and dots allowed ("Cu(OAc)2" is not a formula; "Pd(PPh3)4" needs its groups
 // written out). Undefined if it has anything unknown.
 export function formulaWeight(text: string): number | undefined {
@@ -117,7 +133,7 @@ export function formulaWeight(text: string): number | undefined {
 }
 
 // A saved grid read as a hostile file is: typed amounts finite and not negative under known fields, keys short, at most
-// 60 components and the rows Octet has; undefined when it is damaged.
+// 60 components and the rows Octet has, and a layout only when it is "rows"; undefined when it is damaged.
 const FIELDS = ["mass", "moles", "equiv", "volume", "density", "molarity", "purity", "measured"];
 const KEY = /^(?:[rp]\d{1,2}|[rp]:[^\n\r]{1,80})$/;
 export const GRID_ROW_IDS = ["formula", "mw", "limiting", "equiv", "mass", "moles", "volume", "density", "molarity", "purity", "expected", "expectedMoles", "measured", "yield"];
@@ -130,7 +146,7 @@ export function readGrid(raw: unknown, arrow: number): Grid | undefined {
   const rows = Array.isArray(h?.rows) ? (h!.rows as unknown[]).filter((x): x is string => typeof x === "string" && GRID_ROW_IDS.includes(x)).slice(0, 20) : [];
   const cols = Array.isArray(h?.cols) ? (h!.cols as unknown[]).filter((x): x is string => typeof x === "string" && KEY.test(x)).slice(0, 60) : [];
   const colour = typeof g.colour === "string" && /^#[0-9a-f]{6}$/i.test(g.colour) ? g.colour : undefined;
-  return { arrow, typed: typed as Grid["typed"], ...(g.limiting ? { limiting: g.limiting as string } : {}), ...(rows.length || cols.length ? { hidden: { ...(rows.length ? { rows } : {}), ...(cols.length ? { cols } : {}) } } : {}), ...(colour ? { colour } : {}) };
+  return { arrow, typed: typed as Grid["typed"], ...(g.limiting ? { limiting: g.limiting as string } : {}), ...(rows.length || cols.length ? { hidden: { ...(rows.length ? { rows } : {}), ...(cols.length ? { cols } : {}) } } : {}), ...(colour ? { colour } : {}), ...(g.layout === "rows" ? { layout: "rows" as const } : {}) };
 }
 
 // Each grid column's key (its side and what it is: "r:C7H8O", 'r:"NaBH4"', and "#2" on the next one the same) and what

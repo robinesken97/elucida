@@ -4,7 +4,7 @@
 // to 16 bits, so a saved drawing opens with the spectrum, its multiplets and its assignments as they were.
 import { MAX_POINTS, type JcampSpectrum, type Kind } from "./jcamp.ts";
 import { multiplicity } from "./nmr.ts";
-import { solventPeaks, spread, ticks, traceColumns, type Figure } from "./spectrumplot.ts";
+import { FIT, fitCurve, inkOf, pageLabels, piecesOf, solventPeaks, ticks, traceColumns, type Figure, type LabelTurn, type PageLabel } from "./spectrumplot.ts";
 
 // A multiplet (for ¹H) or a peak: its range in x units, lo to hi. manual: the user drew its range (Shift-drag), so new
 // peak picking keeps it.
@@ -354,36 +354,51 @@ export function groupText(m: Measured, g: Analysed): string {
 }
 
 // The measured spectrum as a figure for the page (Add to drawing > Spectrum), as spectrumFigure draws a predicted one:
-// the axis and its ticks, the trace (each of 480 columns' lowest and highest point, so it stays one curve) or the
-// sticks, the solvent and TMS named in grey, and each multiplet's label in its colour, over the range shown.
-export function measuredFigure(o: { m: Measured; a: Analysis; range: [number, number]; colour: (id: number) => string | undefined; width: number; height: number; em: number }): Figure {
+// the axis and its ticks, the trace (COLUMNS columns' lowest and highest points, as few as keep every one within FIT
+// of the curve, in pieces of at most 1000) or the sticks, the solvent and TMS named in grey, and each multiplet's label
+// in its colour, over the range shown.
+// Columns across a measured trace on the page: about 1.5 Hz each over 0 to 12 ppm at 500 MHz, so multiplets keep their
+// lines, and a noisy trace stays at 8000 points or fewer.
+const COLUMNS = 4000;
+export function measuredFigure(o: {
+  m: Measured; a: Analysis; range: [number, number]; colour: (id: number) => string | undefined; width: number; height: number; em: number;
+  pt?: number; labels?: LabelTurn; measure?: (t: string) => number; base?: number;
+}): Figure {
   const { m, a, width: W, height: H, em } = o, [lo, hi] = o.range, rev = reversed(m), h1 = m.kind === "nmr" && m.nucleus === "1H";
-  const x = (v: number) => ((rev ? hi - v : v - lo) / (hi - lo)) * W, shown = (v: number) => v >= lo && v <= hi, N = 480;
-  const { v, base } = levels(m), out: Figure = { lines: [], curves: [], texts: [] };
+  const x = (v: number) => ((rev ? hi - v : v - lo) / (hi - lo)) * W, shown = (v: number) => v >= lo && v <= hi;
+  const lv = levels(m), v = lv.v, base = o.base ?? lv.base, out: Figure = { lines: [], curves: [], texts: [] };
   // Scaled to the tallest point in range that is not the solvent's; taller ones are cut at the top.
   const others = a.groups.filter((g) => g.other);
   let top = 0;
   for (let i = 0; i < v.length; i++) { const xv = xAt(m, i); if (shown(xv) && !others.some((g) => xv >= g.lo && xv <= g.hi)) top = Math.max(top, v[i] - base); }
   top = top > 0 ? top * 1.05 : 1;
   const y = (val: number) => Math.max(-0.05 * H, Math.min(H, ((val - base) / top) * H));
-  out.lines.push({ from: [0, 0], to: [W, 0] });
+  out.lines.push({ from: [0, 0], to: [W, 0], role: "axis" });
   const { out: tickAt, places } = ticks(lo, hi, W, 4 * em);
-  for (const t of tickAt) { out.lines.push({ from: [x(t), 0], to: [x(t), -0.15] }); out.texts.push({ text: t.toFixed(places), at: [x(t), -0.15 - 0.85 * em], align: "centre", size: 0.9 }); }
-  out.texts.push({ text: m.xUnit, at: [W, -0.15 - 1.9 * em], align: "right", size: 0.9 });
-  if (m.sticks) v.forEach((val, i) => { const xv = xAt(m, i); if (shown(xv)) out.lines.push({ from: [x(xv), 0], to: [x(xv), y(val)] }); });
-  else out.curves.push({ points: traceColumns({ first: m.first, last: m.last, y: v, xs: m.xs }, (xv) => (x(xv) / W) * N, N).filter(([c]) => c >= 0 && c <= N).map(([c, val]) => [(c / N) * W, y(val)]) });
-  const peakTop = (g: Analysed) => y(base + Math.max(...g.peaks.map((p) => p.h)));
-  for (const g of others) if (shown(g.shift)) out.texts.push({ text: g.other!, at: [x(g.shift), Math.min(H, peakTop(g)) + 0.2], align: "centre", size: 0.8, grey: true });
-  const own = a.groups.filter((g) => !g.other && shown(g.shift)), dp = h1 ? 2 : m.kind === "nmr" ? 1 : 0;
-  const label = (g: Analysed) => (h1 ? `${g.name}, ${Math.max(1, Math.round(g.n))}H` : "");
-  const gap = em * 0.6 * Math.max(4, ...own.map((g) => label(g).length * 0.8)) + 0.2, placed = spread(own.map((g) => x(g.shift)), gap, W), lb = H + 0.45;
-  own.forEach((g, i) => {
-    const lx = placed[i], c = o.colour(g.id), second = label(g), tip = peakTop(g);
-    out.lines.push({ from: [lx, lb], to: [lx, lb - 0.12], colour: c });
-    out.lines.push({ from: [lx, lb - 0.12], to: [x(g.shift), Math.max(tip + 0.08, Math.min(lb - 0.3, tip + 0.4))], colour: c });
-    if (second) out.texts.push({ text: second, at: [lx, lb + 0.3 * em], align: "centre", size: 0.8, colour: c });
-    out.texts.push({ text: g.shift.toFixed(dp), at: [lx, lb + (second ? 1.25 : 0.3) * em], align: "centre", size: 1, colour: c });
+  for (const t of tickAt) { out.lines.push({ from: [x(t), 0], to: [x(t), -0.15], role: `tick:${t}` }); out.texts.push({ text: t.toFixed(places), at: [x(t), -0.15 - 0.85 * em], align: "centre", role: `tick:${t}/n` }); }
+  out.texts.push({ text: m.xUnit, at: [W, -0.15 - 1.9 * em], align: "right", role: "unit" });
+  // The ink as drawn, [x, height] in x order: the sticks, or the trace's columns. Its top from a to b places the leaders.
+  const drawn: [number, number][] = [];
+  if (m.sticks) v.forEach((val, i) => { const xv = xAt(m, i); if (shown(xv)) { out.lines.push({ from: [x(xv), 0], to: [x(xv), y(val)], role: "trace" }); drawn.push([x(xv), y(val)]); } });
+  else {
+    // Each of COLUMNS columns' lowest and highest point (as the panel draws a trace), held inside the plot as y holds
+    // it, then fitted as the predicted trace is. The columns keep a noisy trace to a few curves.
+    const cols = traceColumns({ first: m.first, last: m.last, y: v, xs: m.xs }, (xv) => (x(xv) / W) * COLUMNS, COLUMNS).filter(([c]) => c >= 0 && c <= COLUMNS);
+    const held = (val: number) => Math.max(base - 0.05 * top, Math.min(base + top, val));
+    const t = { x: Float64Array.from(cols, (c) => c[0]), y: Float64Array.from(cols, (c) => held(c[1])) };
+    for (const ps of piecesOf(fitCurve(t, FIT * top))) out.curves.push({ points: ps.map((q) => ({ at: [(q.at[0] / COLUMNS) * W, y(q.at[1])] })), role: "trace" });
+    for (const [c, val] of cols) drawn.push([(c / COLUMNS) * W, y(val)]);
+  }
+  const ink = inkOf(drawn);
+  // Each multiplet's label in a row over the tallest peak, in its colour (¹H across: the shift over the multiplicity
+  // and hydrogens; turned: one line in ACS order). The solvent and TMS join the row in grey.
+  const dp = h1 ? 2 : m.kind === "nmr" ? 1 : 0, page2 = (g: Analysed) => { const [a, b] = [x(g.lo), x(g.hi)]; return { a: Math.min(a, b), b: Math.max(a, b) }; };
+  const labels: PageLabel[] = a.groups.filter((g) => shown(g.shift)).map((g): PageLabel => {
+    if (g.other) return { x: x(g.shift), ...page2(g), across: [g.other], turned: g.other, grey: true, plain: true, role: `solvent:${g.other}` };
+    const shift = g.shift.toFixed(dp), second = h1 ? `${g.name}, ${Math.max(1, Math.round(g.n))}H` : "";
+    return { x: x(g.shift), ...page2(g), across: second ? [second, shift] : [shift], turned: second ? `${shift} (${second})` : shift, colour: o.colour(g.id), role: `peak:${g.id}` };
   });
+  pageLabels(out, labels, { width: W, height: H, em, pt: o.pt ?? 1 / 14.4, turn: o.labels ?? "auto", ink, measure: o.measure });
   return out;
 }
 

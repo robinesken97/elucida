@@ -24,9 +24,6 @@
   --tooltip: #0F172A;
   --on-tooltip: #FFFFFF;
   --selection: rgba(63, 107, 255, 0.14);
-  --select-blue: #5B83F1;
-  --select-slate: #7B89A8;
-  --select-grey: #898989;
   --backdrop: rgba(15, 23, 42, 0.16);
   --success: #22775B;
   --warning: #8B4E18;
@@ -67,9 +64,6 @@
     --tooltip: #24335A;
     --on-tooltip: #FFFFFF;
     --selection: rgba(63, 107, 255, 0.30);
-    --select-blue: #4064CE;
-    --select-slate: #5E6B89;
-    --select-grey: #6B6B6B;
     --backdrop: rgba(0, 0, 0, 0.45);
     --success: #46B993;
     --warning: #E6C5A8;
@@ -110,9 +104,6 @@
   --tooltip: #24335A;
   --on-tooltip: #FFFFFF;
   --selection: rgba(63, 107, 255, 0.30);
-  --select-blue: #4064CE;
-  --select-slate: #5E6B89;
-  --select-grey: #6B6B6B;
   --backdrop: rgba(0, 0, 0, 0.45);
   --success: #46B993;
   --warning: #E6C5A8;

@@ -90,8 +90,11 @@ class Grid {
 }
 
 // One of Indigo's passes over a connected structure: `xy` (x, y for each atom) is moved in place. `external` picks the
-// second pass. The pass stops at `deadline` (a performance.now time), as Indigo's stops after 2 s.
-function pass(xy: Float64Array, bonds: readonly (readonly [number, number, number])[], external: boolean, deadline: number) {
+// second pass. The pass stops after `rounds`, or once it has done `budget` work (counted below), so a drawing always
+// comes out the same, however busy the computer is. `deadline` (a performance.now time) is a last resort for a
+// structure the count misjudges: a pass that reaches it stops with the best step yet, and can then come out differently
+// from run to run.
+function pass(xy: Float64Array, bonds: readonly (readonly [number, number, number])[], external: boolean, budget: number, rounds: number, deadline: number) {
   const n = xy.length / 2, E = bonds.length, nei: number[][] = Array.from({ length: n }, () => []), neiE: number[][] = Array.from({ length: n }, () => []);
   bonds.forEach(([a, b], e) => { nei[a].push(b); neiE[a].push(e); nei[b].push(a); neiE[b].push(e); });
   if (xy.every((v) => v === 0)) return;
@@ -382,6 +385,26 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
     }
     return [v, { edges: [...edges], around: [...around] }];
   }));
+  // The work, in energy terms worked out: each round's gradient (four shifts of each base atom's group, each summing
+  // the bonds, angles and close pairs it touches), then each energy along its step (every atom, bond, angle and
+  // following atom at 1.5 a term, every pair it checks at 0.5), and n² for the setup above. An angle of the second pass
+  // at an atom of d bonds costs d + d²/4 (its bonds are sorted by angle). Fitted to the times of src/cleanup.check.ts's
+  // and src/cleanup-geometry.check.ts's structures, a unit takes 6 to 13 ns on an M1 Pro.
+  const angleCost = (i: number) => (external ? nei[i].length * (1 + nei[i].length / 4) : angles[i].length / 2);
+  const shared = new Float64Array(n);
+  let fixed = 2 * n, evalCost = n + E;
+  for (const v of uniq) {
+    const m = moves.get(v)!, { edges, around } = touched.get(v)!;
+    fixed += 4 * (4 + m.length / 3 + edges.length + around.reduce((s, i) => s + angleCost(i), 0));
+    for (let k = 0; k < m.length; k += 3) shared[m[k]] += 4;
+  }
+  for (const i of centres) evalCost += angleCost(i);
+  for (const t of terms) evalCost += t.length / 3;
+  const gradWork = () => {
+    let r = fixed;
+    for (let u = 0; u < n; u++) r += shared[u] * (starts[u + 1] - starts[u]);
+    return r;
+  };
   const mark = new Int32Array(n).fill(-1), saved = new Float64Array(2 * n);
   // The energy terms that moving base atom v's group changes.
   const local = (v: number) => {
@@ -422,9 +445,10 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
   const last = new Float64Array(2 * B), dir = new Float64Array(2 * B);
   let lastLen = 0, settling = false;
   update();
-  let round = 0;
-  for (; round < ROUNDS; round++) {
+  let work = n * n;
+  for (let round = 0; round < rounds; round++) {
     collect(reach * H);
+    work += gradWork();
     for (const v of uniq) [grads[2 * v], grads[2 * v + 1]] = diff(v);
     let len = 0, over = 0;
     base.forEach((v, j) => { g[2 * j] = grads[2 * v]; g[2 * j + 1] = grads[2 * v + 1]; len += g[2 * j] ** 2 + g[2 * j + 1] ** 2; over += g[2 * j] * last[2 * j] + g[2 * j + 1] * last[2 * j + 1]; });
@@ -446,15 +470,16 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
     for (let v = 0; v < n; v++) far = Math.max(far, Math.hypot(pos[2 * v] - start[2 * v], pos[2 * v + 1] - start[2 * v + 1]));
     pos.set(start);
     collect(far * (1 + 1e-9));
-    // A crowded structure's round can take a while, so the search also stops at the deadline, with the best step yet.
+    // A pass that has done its work (or reaches the deadline) stops its search with the best step yet.
     let tried = 0, best = 0;
     while (tried <= HALVINGS) {
       step(SHRINK[tried]);
       update();
       energies[tried] = energy();
+      work += 1.5 * evalCost + 0.5 * starts[n];
       pos.set(start);
       if (energies[tried] < energies[best]) best = tried;
-      if (++tried > 1 && performance.now() > deadline) break;
+      if (++tried > 1 && (work > budget || performance.now() > deadline)) break;
     }
     if (!best) {
       if (!beta) break;
@@ -467,19 +492,20 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
     if (far * SHRINK[best] < 0.01 * T) settling = true;
     // Finished: every bond and angle exact to about 1e-9, or the round lowered the energy by less than a part in 10^12
     // (a strained structure creeps on for ever).
-    if (energies[best] < 1e-18 || energies[0] - energies[best] < 1e-12 * energies[0] || performance.now() > deadline) break;
+    if (energies[best] < 1e-18 || energies[0] - energies[best] < 1e-12 * energies[0] || work > budget || performance.now() > deadline) break;
   }
   update();
   xy.set(pos);
 }
 
 // Indigo's clean-up of one connected structure: `points` are the atoms' x and y, `bonds` their atoms and orders (1 to
-// 3). Each pass may take `ms`. Returns the new points, or the points as they were if the clean-up fails.
-export function clean2d(points: readonly (readonly number[])[], bonds: readonly { atoms: readonly [number, number]; order: number }[], ms: number): [number, number][] {
+// 3). Each pass may do `work` (see pass) and `rounds`, and stops at `ms` whatever it has done. Returns the new points,
+// or the points as they were if the clean-up fails.
+export function clean2d(points: readonly (readonly number[])[], bonds: readonly { atoms: readonly [number, number]; order: number }[], work: number, ms: number, rounds = ROUNDS): [number, number][] {
   const xy = Float64Array.from(points.flatMap((p) => [p[0], p[1]]));
   const graph = bonds.map((b) => [b.atoms[0], b.atoms[1], b.order === 2 ? 2 : b.order >= 3 ? 3 : 1] as const);
-  pass(xy, graph, false, performance.now() + ms);
-  pass(xy, graph, true, performance.now() + ms);
+  pass(xy, graph, false, work, rounds, performance.now() + ms);
+  pass(xy, graph, true, work, rounds, performance.now() + ms);
   // A straight chain drawn with its ends on one point has no line to lie on, and its atoms would fall onto that point.
   const collapsed = graph.some(([a, b]) => xy[2 * a] === xy[2 * b] && xy[2 * a + 1] === xy[2 * b + 1]);
   if (collapsed || !xy.every(Number.isFinite)) return points.map((p) => [p[0], p[1]]);

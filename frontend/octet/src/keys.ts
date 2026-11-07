@@ -197,7 +197,7 @@ export function toAccelerator(key: string): string {
 // and Close Window run everywhere: they ask about unsaved changes over any dialog (src-tauri/src/quit.rs). Cut, Copy and
 // Paste (Octet's own items on Linux) run everywhere too: they work on the text being typed, and the drawing takes them
 // only when nothing covers it.
-const HOME_COMMANDS = ["home", "new", "open", "settings", "about", "tutorial", "shortcuts", "report_problem", "check_updates"];
+const HOME_COMMANDS = ["home", "new", "open", "settings", "about", "tutorial", "shortcuts", "report_problem", "check_updates", "select_all"];
 export function menuRuns(id: string, over: { home: boolean; modal: boolean; typing: boolean }) {
   if (["quit", "close", "cut", "copy", "paste"].includes(id)) return true;
   if (over.typing && ["undo", "redo", "select_all"].includes(id)) return true;
@@ -229,6 +229,18 @@ export function clashes(map: Keymap, id: string, key: string): string[] {
   return ACTIONS.filter((a) => a.id !== id && near(a.place) && map[a.id]?.includes(key)).map((a) => a.id);
 }
 
+// A drag that moves a copy of the selection (issues 33 and 45): Option-drag on the Mac; on Windows and Linux,
+// Ctrl-drag as in ChemDraw for Windows, and Alt-drag too (Linux window managers often take Alt-drag for themselves).
+export const copyDrag = (e: { altKey: boolean; ctrlKey: boolean }, mac = MAC) => e.altKey || (!mac && e.ctrlKey);
+// A click that adds to the selection, or takes out what was all selected: Shift-click, and on Windows and Linux
+// Ctrl-click too, as in Explorer (issue 32). On the Mac Control-click is the right-click. Only the click adds: a Ctrl
+// press that then drags still moves a copy (copyDrag).
+export const addsToSelection = (e: { shiftKey: boolean; ctrlKey: boolean }, mac = MAC) => e.shiftKey || (!mac && e.ctrlKey);
+// ⌘ (Ctrl on Windows and Linux) held during a move keeps what moves off any catalytic cycle. A drag that started as a
+// Ctrl-drag copy keeps Ctrl as the copy key: Ctrl held from the press does not also keep the copy off a cycle. The
+// Windows key (meta) still does, and so does Ctrl on an Alt-drag copy.
+export const skipsCycle = (e: { metaKey: boolean; ctrlKey: boolean }, ctrlCopy: boolean) => e.metaKey || (e.ctrlKey && !ctrlCopy);
+
 // The focused element, as much of it as the key checks read.
 type Focus = { tagName: string; type?: string; isContentEditable?: boolean } | null | undefined;
 
@@ -238,14 +250,14 @@ const TEXT_INPUTS = ["text", "search", "number", "email", "url", "tel", "passwor
 export const textEntry = (el: Focus) => !!el && (el.tagName === "TEXTAREA" || el.isContentEditable === true || (el.tagName === "INPUT" && TEXT_INPUTS.includes(el.type ?? "text")));
 
 // ChemDraw's text keys with ⌘ (Ctrl on Windows and Linux) in a caption or atom label box: the command each runs. A label
-// takes Bold, Italic, Underline and Plain (its counts are subscripts already); a caption takes Formula, Subscript and
-// Superscript too. ⇧⌘N in either is Convert Name to Structure.
+// takes Bold, Italic, Underline, Plain, Subscript and Superscript (Fe with III raised, issue 44); a caption takes
+// Formula too. ⇧⌘N in either is Convert Name to Structure.
 const TEXT_KEYS: Record<string, string> = { b: "caption.bold", i: "caption.italic", u: "caption.underline", t: "caption.plain", f: "caption.formula", "-": "caption.sub", "=": "caption.super", "+": "caption.super" };
 export function textKey(e: { key: string; shiftKey: boolean }, label: boolean): string | undefined {
   const k = e.key.toLowerCase();
   if (e.shiftKey && k === "n") return "name_to_structure";
   const command = TEXT_KEYS[k];
-  return label && command && !["b", "i", "u", "t"].includes(k) ? undefined : command;
+  return label && command && !["b", "i", "u", "t", "-", "=", "+"].includes(k) ? undefined : command;
 }
 
 // A control the keyboard moved to (Tab) keeps the keys it uses: Space and Return press a button, and the arrow keys,

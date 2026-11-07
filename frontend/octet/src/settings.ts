@@ -17,13 +17,15 @@ import { DEFAULT_FILES, type FilePrefs } from "./SettingsWindow";
 import { DPI_MIN, DPI_MAX, PICTURES } from "./export";
 import { WARNING_TYPES, type WarningType } from "./check";
 import { MS_DEFAULTS, readMsPrefs, type MsPrefs } from "./msanalysis";
+import type { LabelTurn } from "./spectrumplot";
 import { readLayout, type HomeLayout } from "./homeLayout";
 import { CURSOR_INKS, type CursorInk } from "./cursor";
+import { readSelectColour, SELECT_DEFAULT } from "./selectcolour";
 
 const inRange = (n: unknown, lo: number, hi: number) => typeof n === "number" && n >= lo && n <= hi;
 
 export type Settings = {
-  snap: boolean; snapGrid: boolean; guides: { grid: boolean; rulers: boolean; crosshair: boolean }; rulerUnit: RulerUnit; eraser: number; keys: Record<string, string[]>; variants: { select: string; bond: string; ring: string; template: string; symbol: string; orbital: string; arrow: string; cycle: string; shape: string; bracket: string; more: string };
+  snap: boolean; snapGrid: boolean; guides: { grid: boolean; rulers: boolean; crosshair: boolean }; rulerUnit: RulerUnit; eraser: number; keys: Record<string, string[]>; variants: { select: string; bond: string; ring: string; template: string; symbol: string; orbital: string; arrow: string; cycle: string; sequence: string; shape: string; bracket: string; more: string };
   strips: Record<string, number>; actions: boolean; templates: SavedTemplate[]; pinned: string[];
   actionLayout: Record<string, { order: string[]; rows: number }>;
   layoutVersion: number; // the Actions panel's layout scheme the saved actionLayout was made for
@@ -41,7 +43,7 @@ export type Settings = {
   warningTypes: Partial<Record<WarningType, boolean>>; // Settings > Warnings: each kind switched on or off (unset: its default)
   checkCopy: boolean; // ChemDraw's "Check Structure When Copying to Clipboard or Exporting"
   pairBars: boolean; // new lone pairs drawn as bars (lines), as some countries draw Lewis structures; Option-click still switches
-  outlines: boolean; // Settings > Page edges: All (the other sizes the purpose gives, such as journal columns, show with the page) or Page only
+  outlines: boolean; // Settings > Page edges: All sizes (the other sizes the purpose gives, such as journal columns, show with the page) or Page only
   windows: boolean; // each drawing in a window of its own, with Home in its own (decision 0020); off: one window
   // What new drawings are for (IDEA-SIZE-1): Quick start or the purpose ⌘N starts (the last one picked; Return on
   // Home starts Quick start), the style of Quick start and of each built-in purpose when the user made it their own
@@ -63,6 +65,7 @@ export type Settings = {
   propertyRows: string[]; // the rows Add to drawing writes under a structure
   decimals?: number; // Properties > Decimals: places for the exact mass, molecular weight and m/z (0 to 8); unset is 4, 2 and 2
   nmrMhz: number; nmrSolvent: string; nmrSolventPeaks: boolean; nmrDetails: boolean; // the predicted spectrum's frequency (¹H, MHz), solvent, and whether its peaks show
+  nmrLabels: LabelTurn; // the Spectrum panel's Labels: peak labels across, turned (read bottom to top) or Auto (turned when crowded)
   massSpec: MsPrefs; // the Mass spec panel's mode, ion, charge state, source, calculated peak and match tolerance
   scaleLabels: boolean; // Scale…'s Labels and lines: label sizes and line widths scale with the positions (decision 0007)
   onlineSearch: boolean; // Search Reaxys and Search PubChem are offered (decision 0008); off hides them everywhere
@@ -78,15 +81,13 @@ export type Settings = {
   // each structure as the file has it).
   autoMap: boolean; stereoParens: boolean; hideAbs: boolean; mdlFlags: boolean; aromaticOnOpen: "" | "kekule" | "circles";
   cursor: CursorInk; // Settings > General > Cursor: Octet's cursors black, white, or the one that shows on the page
-  selectColour: SelectColour; // Settings > General > Selection: the selection's colour on the canvas (--select-* in brand/tokens.css)
+  selectColour: string; // Settings > General > Selection: the selection's colour, #RRGGBB (selectcolour.ts)
+  sequenceLabels: boolean; // the name field's Residue labels: a sequence drawn as H–Ala–Cys–OH (sequence.ts residues)
 };
-// The selection colours to choose from, each a token pair in brand/tokens.css that stands 3:1 off the page.
-export type SelectColour = "blue" | "slate" | "grey";
-export const SELECT_COLOURS: [SelectColour, string][] = [["blue", "Blue"], ["slate", "Slate"], ["grey", "Grey"]];
 export type Swatch = { name: string; hex: string };
 export type RulerUnit = "mm" | "cm" | "in" | "pt" | "pc";
 export const RULER_UNITS: [RulerUnit, string][] = [["mm", "Millimetres"], ["cm", "Centimetres"], ["in", "Inches"], ["pt", "Points"], ["pc", "Picas"]];
-const DEFAULTS: Settings = { snap: true, snapGrid: false, guides: { grid: false, rulers: false, crosshair: false }, rulerUnit: "mm", eraser: 0.15, keys: {}, variants: { select: "box", bond: "single", ring: "benzene", template: "lib:Alanine", symbol: "plus", orbital: "p-shaded", arrow: "reaction", cycle: "circle", shape: "box-plain", bracket: "brackets", more: "tlc" }, strips: {}, actions: true, templates: [], pinned: [], actionLayout: {}, layoutVersion: 3, folded: [], panelMenus: false, captionOptionReturn: false, userName: null, tutorialDone: false, seenNotes: "", homeLayout: readLayout([], []), updates: true, warnings: true, warningTypes: {}, checkCopy: false, pairBars: false, outlines: true, windows: true, lastSeen: 0, purpose: QUICK, purposeStyles: {}, ownPurposes: [], files: DEFAULT_FILES, settingsModule: "document", curvedArrows: ["curved-120", "fishhook-120"], libraryRings: [], palettes: [], librarySize: "medium", dictionary: [], templateSets: [], nameHistory: [], paletteWide: false, palette: [], elementColours: {}, properties: false, propertyRows: ["formula", "weight"], nmrMhz: 400, nmrSolvent: "CDCl₃", nmrSolventPeaks: true, nmrDetails: false, massSpec: MS_DEFAULTS, scaleLabels: true, onlineSearch: true, fixedLengths: true, fixedAngles: true, sproutRings: false, clickTriple: false, interpretation: false, autoMap: true, stereoParens: true, hideAbs: false, mdlFlags: false, aromaticOnOpen: "", cursor: "auto", selectColour: "blue" };
+const DEFAULTS: Settings = { snap: true, snapGrid: false, guides: { grid: false, rulers: false, crosshair: false }, rulerUnit: "mm", eraser: 0.15, keys: {}, variants: { select: "box", bond: "single", ring: "benzene", template: "lib:Alanine", symbol: "plus", orbital: "p-shaded", arrow: "reaction", cycle: "circle", sequence: "peptide", shape: "box-plain", bracket: "brackets", more: "tlc" }, strips: {}, actions: true, templates: [], pinned: [], actionLayout: {}, layoutVersion: 3, folded: [], panelMenus: false, captionOptionReturn: false, userName: null, tutorialDone: false, seenNotes: "", homeLayout: readLayout([], []), updates: true, warnings: true, warningTypes: {}, checkCopy: false, pairBars: false, outlines: true, windows: true, lastSeen: 0, purpose: QUICK, purposeStyles: {}, ownPurposes: [], files: DEFAULT_FILES, settingsModule: "document", curvedArrows: ["curved-120", "fishhook-120"], libraryRings: [], palettes: [], librarySize: "medium", dictionary: [], templateSets: [], nameHistory: [], paletteWide: false, palette: [], elementColours: {}, properties: false, propertyRows: ["formula", "weight"], nmrMhz: 400, nmrSolvent: "CDCl₃", nmrSolventPeaks: true, nmrDetails: false, nmrLabels: "auto", massSpec: MS_DEFAULTS, scaleLabels: true, onlineSearch: true, fixedLengths: true, fixedAngles: true, sproutRings: false, clickTriple: false, interpretation: false, autoMap: true, stereoParens: true, hideAbs: false, mdlFlags: false, aromaticOnOpen: "", cursor: "auto", selectColour: SELECT_DEFAULT, sequenceLabels: false };
 export const SETTINGS_KEY = "octet.settings";
 const KEY = SETTINGS_KEY;
 
@@ -128,12 +129,13 @@ export function loadSettings(): Settings {
       nmrSolvent: typeof saved.nmrSolvent === "string" && saved.nmrSolvent.length < 20 ? saved.nmrSolvent : DEFAULTS.nmrSolvent,
       nmrSolventPeaks: saved.nmrSolventPeaks !== false,
       nmrDetails: saved.nmrDetails === true,
+      nmrLabels: saved.nmrLabels === "horizontal" || saved.nmrLabels === "vertical" ? saved.nmrLabels : "auto",
       massSpec: readMsPrefs(saved.massSpec),
       fixedLengths: saved.fixedLengths !== false, fixedAngles: saved.fixedAngles !== false, sproutRings: saved.sproutRings === true, clickTriple: saved.clickTriple === true,
       autoMap: saved.autoMap !== false, stereoParens: saved.stereoParens !== false, hideAbs: saved.hideAbs === true, mdlFlags: saved.mdlFlags === true,
       aromaticOnOpen: saved.aromaticOnOpen === "kekule" || saved.aromaticOnOpen === "circles" ? saved.aromaticOnOpen : "",
       cursor: CURSOR_INKS.some(([c]) => c === saved.cursor) ? saved.cursor : DEFAULTS.cursor,
-      selectColour: SELECT_COLOURS.find(([c]) => c === saved.selectColour)?.[0] ?? DEFAULTS.selectColour,
+      selectColour: readSelectColour(saved.selectColour),
       scaleLabels: saved.scaleLabels !== false,
       onlineSearch: saved.onlineSearch !== false,
       interpretation: saved.interpretation === true,

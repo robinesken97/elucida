@@ -6,12 +6,13 @@ import { RELEASES } from "./releases.ts";
 
 for (const r of RELEASES) {
   const md = readFileSync(new URL(`../docs/release-notes/${r.version}.md`, import.meta.url), "utf8").replace(/\\([*_])/g, "$1");
-  for (const text of [r.intro, ...r.sections.flatMap((s) => s.items)]) {
+  for (const text of [r.intro, ...(r.summary ?? []), ...(r.summary ? [r.thanks] : []), ...r.sections.flatMap((s) => s.items)]) {
     assert.ok(md.includes(text), `${r.version}: GitHub's notes have "${text}"`);
     assert.doesNotMatch(text, /—/, "no em dash");
     for (const sentence of text.split(/(?<=\.) /)) assert.ok(sentence.split(/\s+/).length <= 22, `short sentence: "${sentence}"`);
   }
   assert.ok(md.includes(`# Octet Draw ${r.version}`));
+  if (r.summary) assert.ok(r.summary.length <= 6 && md.includes("## Highlights"), `${r.version}: a short summary at the top`);
 }
 assert.deepEqual(RELEASES.map((r) => r.version), [...RELEASES.map((r) => r.version)].sort((a, b) => b.localeCompare(a, undefined, { numeric: true })), "newest first");
 const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");

@@ -2,7 +2,7 @@
 // are joined through, stop working: drawing, deleting, copying, CDXML and chemistry.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EMPTY, addGroupAt, deleteAtoms, extractSelection, fragments, insertMol, moveAtoms, neighbours, placeCentres, pos, sandwich, sprout, toFront } from "./edit.ts";
+import { EMPTY, addGroupAt, bondTo, clickBond, deleteAtoms, dragBond, extractSelection, fragments, insertMol, moveAtoms, neighbours, placeCentres, pos, sandwich, sprout, toFront } from "./edit.ts";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
 import { parse, serialize } from "./file.ts";
 import { DEFAULT_STYLE } from "./docstyle.ts";
@@ -179,7 +179,8 @@ g.getComputedStyle = () => ({ getPropertyValue: () => "10" });
 g.window = globalThis;
 g.self = { location: { origin: "file://" } };
 g.fetch = async (u: URL | string) => new Response(readFileSync(new URL(String(u))), { headers: { "content-type": "application/wasm" } });
-const { analyse, expandLabels, parseStructure, ready, toInchi } = await import("./chem.ts");
+const { analyse, expandLabels, parseStructure, ready, stereoFacts, toInchi, toSmiles } = await import("./chem.ts");
+const { problems } = await import("./check.ts");
 const { sandwichIons } = await import("./metals.ts");
 await ready;
 assert.equal(expandLabels(ferrocene).atoms.length, ferrocene.atoms.length - 2);
@@ -216,3 +217,85 @@ for (const smiles of ["[Fe+2].[cH-]1cccc1", "[Fe+2].[cH-]1cccc1.[cH-]1cccc1.[cH-
   assert.equal(sandwich(m), m, smiles);
 }
 console.log("ligand.check: metallocene names ok");
+
+// Issue 26: a bond from a metal let go over the middle of a ring (or from the middle of a ring to a metal) joins the
+// ring through a new multi-centre point, as Add Multi-Centre Attachment and a bond from it do. A ring here is drawn
+// flat, as the Ring tool draws it: n atoms round centre c, bond types in turn.
+function flatRing(m: Mol, c: [number, number], types: number[]): Mol {
+  const n = types.length, R = 1 / (2 * Math.sin(Math.PI / n)), base = m.atoms.length;
+  const atoms = types.map((_, k): Mol["atoms"][number] => ({ label: "C", location: [c[0] + R * Math.cos((2 * Math.PI * k) / n + Math.PI / 2), c[1] + R * Math.sin((2 * Math.PI * k) / n + Math.PI / 2), 0] }));
+  return { ...m, atoms: [...m.atoms, ...atoms], bonds: [...m.bonds, ...types.map((t, k) => ({ type: t, atoms: [base + k, base + ((k + 1) % n)] as [number, number] }))] };
+}
+const CP = [2, 1, 2, 1, 1], BENZENE = [2, 1, 2, 1, 2, 1], CYCLOHEXANE = [1, 1, 1, 1, 1, 1];
+{
+  // Ferrocene as the issue drew it: Fe, two cyclopentadiene rings, a bond from Fe to the middle of each.
+  let fc = flatRing(flatRing(iron, [0, -2], CP), [0, 2], CP);
+  fc = dragBond(fc, 0, [0, -2.1]);
+  fc = dragBond(fc, [0.1, 2.05], [0.02, 0.03]);
+  assert.equal(centres(fc).length, 2, "two multi-centre points");
+  assert.deepEqual(centres(fc).map((c) => fc.atoms[c].centre!.atoms.length), [5, 5]);
+  assert.deepEqual(neighbours(fc, 0).sort((x, y) => x - y), centres(fc), "the metal is bonded to the two points, no stray atom");
+  assert.ok(Math.hypot(...(pos(fc, centres(fc)[0]) as [number, number, number]).slice(0, 2).map((v, k) => v - [0, -2][k])) < 1e-9, "the point is the ring's middle");
+  assert.equal(fragments(fc).length, 1);
+  assert.deepEqual(analyse(fc)?.map((a) => a.formula), ["C10H10Fe"]);
+  // Its SMILES is the ions, as OPSIN and PubChem write it: [Fe+2].[CH-]1C=CC=C1.[CH-]1C=CC=C1.
+  assert.ok(toSmiles(fc).startsWith("[Fe+2].") && toSmiles(fc).split("[CH-]").length === 3, toSmiles(fc));
+  assert.equal(toInchi(fc), toInchi(parseStructure("[Fe+2].[CH-]1C=CC=C1.[CH-]1C=CC=C1")));
+  assert.deepEqual(problems(fc, stereoFacts(fc)), [], "no warnings");
+  // The j key's ferrocene reads the same.
+  assert.equal(toInchi(ferrocene), toInchi(fc));
+  // (η6-benzene)tricarbonylchromium: one compound, the metal bonded to each ring atom, each CH keeping its H.
+  let cr: Mol = flatRing({ atoms: [{ label: "Cr", location: [0, 0, 0] }], bonds: [] }, [0, -2], BENZENE);
+  cr = dragBond(cr, 0, [0.05, -2]);
+  for (const t of [30, 90, 150]) {
+    const d: [number, number] = [Math.cos((t * Math.PI) / 180), Math.sin((t * Math.PI) / 180)];
+    cr = bondTo(cr, 0, d, { type: 2 });
+    cr = bondTo(cr, cr.atoms.length - 1, [2 * d[0], 2 * d[1]], { type: 2 });
+    cr = { ...cr, atoms: cr.atoms.map((a, i) => (i === cr.atoms.length - 1 ? { ...a, label: "O" } : a)) };
+  }
+  assert.equal(centres(cr).length, 1);
+  const flat = expandLabels(cr), crIndex = flat.atoms.findIndex((a) => a.label === "Cr");
+  assert.equal(flat.bonds.filter((b) => b.atoms.includes(crIndex)).length, 9, "six η bonds and three carbonyls");
+  assert.deepEqual(analyse(cr)?.map((a) => a.formula), ["C9H6CrO3"]);
+  assert.equal(fragments(cr).length, 1);
+  assert.ok(problems(cr, stereoFacts(cr)).every((x) => x.type !== "near"), "no stray atom");
+  // The j key's delocalised ring reads the same as the Ring tool's.
+  const [jcr] = addGroupAt({ atoms: [{ label: "Cr", location: [0, 0, 0] }], bonds: [] }, 0, "phenylLigand");
+  assert.equal(toInchi(jcr), toInchi(parseStructure("[Cr].c1ccccc1")), "C6H6 and Cr, as the standard InChI splits a metal off");
+  assert.ok(problems(jcr, stereoFacts(jcr)).length === 0, "the ring's perspective wedges set no stereocentre");
+  // Not taken: a bond from a carbon, a bond from a metal to the middle of a saturated ring, a bond from a metal let go
+  // away from the middle, and a ring that already has its point (the bond goes to that point, as to any atom).
+  const ring = flatRing({ atoms: [{ label: "C", location: [0, 0, 0] }], bonds: [] }, [0, -2], BENZENE);
+  assert.equal(centres(dragBond(ring, 0, [0, -2])).length, 0, "a carbon's bond is a bond");
+  const cy = flatRing(iron, [0, -2], CYCLOHEXANE);
+  assert.equal(centres(dragBond(cy, 0, [0, -2])).length, 0, "no η bond to a saturated ring");
+  const cpOnly = flatRing(iron, [0, -2], CP), off = dragBond(cpOnly, 0, [0.5, -1.6]);
+  assert.equal(centres(off).length, 0, "away from the middle, an ordinary bond");
+  assert.equal(off.atoms.length, cpOnly.atoms.length + 1);
+  const again = dragBond(fc, 0, pos(fc, centres(fc)[0]) as unknown as [number, number]);
+  assert.equal(centres(again).length, 2, "a point already there takes the bond");
+  assert.equal(again, fc, "a drag along the metal's bond to its point changes nothing (no double bond)");
+  assert.equal(dragBond(fc, centres(fc)[0], pos(fc, 0) as unknown as [number, number]), fc, "nor from the point to the metal");
+  const toPoint = fc.bonds.findIndex((b) => b.atoms.includes(centres(fc)[0]));
+  assert.equal(clickBond(fc, toPoint, { type: 1 }, [0, -1]), fc, "a click with the Solid bond tool keeps it single");
+  assert.equal(clickBond(fc, toPoint, { type: 2 }, [0, -1]), fc, "and the Double bond tool too");
+  assert.equal(clickBond(fc, toPoint, { type: 1, display: "dashed" }, [0, -1]).bonds[toPoint].display, "dashed", "its style still changes");
+  // A metal already bonded to one ring atom (or several), dragged to the ring's middle: the ring is η bonded, through
+  // a point, and the bonds to its atoms go (issue 26: no second bond on top).
+  for (const to of [[1], [1, 2, 3]]) {
+    let one = flatRing(iron, [0, -2], CP);
+    for (const r of to) one = { ...one, bonds: [...one.bonds, { type: 1, atoms: [0, r] }] };
+    const eta = dragBond(one, 0, [0, -2]);
+    assert.equal(centres(eta).length, 1, `η from ${to.length} bond`);
+    assert.deepEqual(neighbours(eta, 0), centres(eta), "the metal's only bond is to the point");
+    assert.equal(eta.bonds.length, 5 + 1);
+    assert.equal(toInchi(eta), toInchi(dragBond(flatRing(iron, [0, -2], CP), 0, [0, -2])), "the same as a ring with no bond first");
+    // From the middle to the metal, the same.
+    assert.deepEqual(neighbours(dragBond(one, [0.02, -2.03], [0, 0.02]), 0).length, 1);
+  }
+  // A ring turned in 3D: the point is its middle in depth too.
+  const deep = flatRing(iron, [0, -2], CP), tilted = { ...deep, atoms: deep.atoms.map((a, i) => (i ? { ...a, location: [a.location[0], a.location[1], 0.5 + 0.1 * i] as [number, number, number] } : a)) };
+  const lifted = dragBond(tilted, 0, [0, -2]), point = lifted.atoms[centres(lifted)[0]];
+  assert.ok(Math.abs((point.location[2] ?? 0) - (0.5 + 0.1 * 3)) < 1e-9, `the point's depth: ${point.location[2]}`);
+}
+console.log("ligand.check: bonds to a ring's middle ok");

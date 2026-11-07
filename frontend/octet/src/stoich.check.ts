@@ -1,6 +1,11 @@
 // Run: node src/stoich.check.ts. Fails loudly if the stoichiometry sums break.
 import assert from "node:assert/strict";
-import { keyColumns, readGrid, formatAmount, formulaWeight, parseAmount, solve } from "./stoich.ts";
+import { readFileSync } from "node:fs";
+import { conditionItems, inert, keyColumns, readGrid, formatAmount, formulaWeight, parseAmount, solve } from "./stoich.ts";
+import { fromCdxml, toCdxml } from "./cdxml.ts";
+import { parse, serialize } from "./file.ts";
+import { DEFAULT_STYLE } from "./docstyle.ts";
+import type { Mol } from "./render.ts";
 
 const near = (a: number | undefined, b: number, what: string) => assert.ok(a !== undefined && Math.abs(a - b) < 1e-6 * Math.max(1, Math.abs(b)), `${what}: ${a} for ${b}`);
 // Benzaldehyde (106.12) 1.06 g is 10 mmol and limiting; NaBH4 (37.83) at 1.5 eq is 15 mmol, 567 mg; benzyl alcohol
@@ -72,5 +77,32 @@ assert.equal(formulaWeight("THF"), undefined, "an abbreviation is not a formula"
   assert.equal(readGrid({ typed: { "r:x": { mass: -1 } } }, 3), undefined, "a negative amount");
   assert.equal(readGrid({ typed: { "x\ny": { mass: 1 } } }, 3), undefined, "a key with a line break");
   assert.equal(readGrid({ typed: {}, limiting: "p:C7H8O" }, 3), undefined, "a product cannot be limiting");
+  // A table of rows (issue 34) is kept; any other layout reads as the columns ChemDraw's grid has.
+  assert.equal(readGrid({ typed: {}, layout: "rows" }, 3)?.layout, "rows");
+  for (const other of ["columns", "ROWS", 1, {}]) assert.equal(readGrid({ typed: {}, layout: other }, 3)?.layout, undefined, String(other));
+  assert.ok(!("layout" in readGrid({ typed: {} }, 3)!));
 }
+// The layout goes through Octet's own file and through CDXML (Octet's data on the arrow), with what was typed.
+{
+  const m: Mol = { atoms: [], bonds: [], arrows: [{ id: 4, kind: "reaction", from: [0, 0], to: [3, 0] }], grids: [{ arrow: 4, typed: { "r:C7H6O": { mass: 1.06 } }, layout: "rows" }] };
+  const opened = parse(serialize(m));
+  assert.deepEqual(opened.grids, [{ arrow: opened.arrows![0].id, typed: { "r:C7H6O": { mass: 1.06 } }, layout: "rows" }]);
+  const back = fromCdxml(toCdxml(m, DEFAULT_STYLE)).mol;
+  assert.deepEqual(back.grids, [{ arrow: back.arrows![0].id, typed: { "r:C7H6O": { mass: 1.06 } }, layout: "rows" }]);
+  assert.equal(fromCdxml(toCdxml({ ...m, grids: [{ arrow: 4, typed: {} }] }, DEFAULT_STYLE)).mol.grids?.[0].layout, undefined, "columns stay the default");
+}
+// The editor lays out a table of rows from the same sums (solve) as the columns, with the reagents and the products in
+// sections of their own, and Hide row hides what shows as a row.
+{
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /if \(g\.layout === "rows"\) \{/);
+  assert.match(editor, /\[\[false, "Reagents"\], \[true, "Products"\]\]/);
+  assert.match(editor, /if \(what === "layout"\) return changeGrid\(arrow, \(g\) => \(\{ layout: g\.layout \? undefined : "rows" \}\)\);/);
+  assert.match(editor, /hideKey = what === \(rowsLayout \? "hide\.row" : "hide\.col"\)/);
+  assert.match(readFileSync(new URL("Actions.tsx", import.meta.url), "utf8"), /context\.rows \? "Show as columns" : "Show as rows", "grid\.layout"/);
+}
+// A line of conditions splits at commas outside brackets; the atmosphere's gas is not a reagent.
+assert.deepEqual(conditionItems("toluene/EtOH/H2O (4:1:1, 30 mL), 80 °C; 12 h"), ["toluene/EtOH/H2O (4:1:1, 30 mL)", "80 °C", "12 h"]);
+for (const gas of ["N2", "Ar", "argon", "air", "under N2"]) assert.ok(inert(gas), gas);
+for (const reagent of ["H2", "O2", "CO", "NH3"]) assert.ok(!inert(reagent), reagent);
 console.log("stoich.check: ok");

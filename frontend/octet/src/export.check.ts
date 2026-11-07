@@ -2,7 +2,7 @@
 // picture.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { CARRY_CDXML, dpiFor, pictureAs, pixelsAt, tooLarge, UI, withBackground, withMargin } from "./export.ts";
+import { CARRY_CDXML, dpiFor, frameOf, glyphInk, inkOfText, pasteRefused, pictureAs, pixelsAt, tooLarge, UI, withBackground, withMargin } from "./export.ts";
 import { EMPTY, extractSelection, sprout } from "./edit.ts";
 
 // Export, Copy and Print take the canvas, less the layers UI names. An aria-hidden element on the canvas is one of
@@ -103,4 +103,55 @@ assert.match(body("exportPart"), /cdxml: make\("cdxml", "cdxml", \.\.\.CARRY_CDX
 assert.match(body("quickExport"), /cdxml: CARRY_CDXML\.includes\(format\)/, "Quick export puts the CDXML in the pictures that carry it");
 // Octet's PNG dropped on a tile on Home is the tile's thumbnail, a picture: the app is told it went on a tile.
 assert.match(editor, /"take_opened", \{ insert, project: into && "project" in into \}/, "a picture dropped on any tile is a thumbnail");
+// Issue 20: a picture's frame fits its ink, as ChemDraw's does (within 0.2 pt): rounded outward to hundredths of a
+// point, and a label counts by its glyphs' ink.
+assert.deepEqual(frameOf([-44.13, -28.72, 30.81, 20.0], 0.75), [-33.1, -21.54, 56.21, 36.54]);
+assert.deepEqual(frameOf([0, 0, 100, 40], 0.75), [0, 0, 75, 30], "an exact size stays exact");
+assert.deepEqual(frameOf([5, 5, 5, 5], 0.75), [3.75, 3.75, 0.01, 0.01], "at least a hundredth across");
+assert.match(editor, /const t = el instanceof SVGTextElement \? inkOfText\(el, glyphInk\) : undefined;/, "Copy and Export measure labels by their ink");
+{
+  // A text as the browser lays it out: characters in text nodes (some in a tspan), each at a start position.
+  type Fake = { nodeType: number; nodeValue?: string; childNodes: Fake[] };
+  const node = (kids: (string | Fake)[]): Fake => ({ nodeType: 1, childNodes: kids.map((k) => (typeof k === "string" ? { nodeType: 3, nodeValue: k, childNodes: [] } : k)) });
+  const text = (kids: (string | Fake)[], at: [number, number][], turned = -1, count = at.length) =>
+    Object.assign(node(kids), { getNumberOfChars: () => count, getRotationOfChar: (i: number) => (i === turned ? 30 : 0), getStartPositionOfChar: (i: number) => ({ x: at[i][0], y: at[i][1] }) }) as unknown as SVGTextElement;
+  // Capitals 9.55 px above the baseline, 1 px in from each side of their 9.63 px advance; a smaller subscript 3.
+  const sub = node(["3"]);
+  const glyph = (ch: string, el: Element): [number, number, number, number] => ((el as unknown) === sub ? [0.5, -7.2, 5, 0.1] : ch === "O" ? [0.6, -9.8, 9.8, 0.2] : [1, -9.55, 8.63, 0]);
+  const ink = (t: SVGTextElement) => inkOfText(t, glyph)?.map((v) => +v.toFixed(6));
+  assert.deepEqual(ink(text(["NH"], [[10, 20], [19.63, 20]])), [11, 10.45, 28.26, 20], "NH: from the N's stem to the H's, cap height to baseline");
+  assert.deepEqual(ink(text(["CH", sub], [[0, 20], [9.63, 20], [19.26, 22.83]])), [1, 10.45, 24.26, 22.93], "the subscript where it sits");
+  assert.deepEqual(ink(text(["O H"], [[0, 20], [10.7, 20], [14.4, 20]])), [0.6, 10.2, 23.03, 20.2], "a space has no ink");
+  assert.equal(inkOfText(text(["NH"], [[10, 20], [19.63, 20]], 1), glyph), undefined, "a turned character: getBBox");
+  assert.equal(inkOfText(text(["N  H"], [[10, 20], [19.63, 20], [22, 20]], -1, 3), glyph), undefined, "collapsed spaces: getBBox");
+  assert.equal(inkOfText(text(["NH"], [[10, 20], [19.63, 20]]), () => undefined), undefined, "text with a line under it: getBBox");
+}
+{
+  // glyphInk in a stand-in browser: an atom's number or R and S on the middle baseline, which Chromium's
+  // getStartPositionOfChar does not move to, and underlined text count by getBBox; plain text by measureText.
+  type Style = Record<string, string>;
+  const g = globalThis as unknown as { document: unknown; getComputedStyle: (el: { style: Style }) => Style };
+  g.document = { createElement: () => ({ getContext: () => ({ font: "", measureText: () => ({ actualBoundingBoxLeft: -1, actualBoundingBoxAscent: 9.55, actualBoundingBoxRight: 8.63, actualBoundingBoxDescent: 0 }) }) }) };
+  g.getComputedStyle = (el) => ({ textDecorationLine: "none", dominantBaseline: "auto", alignmentBaseline: "auto", ...el.style });
+  const el = (style: Style) => ({ style, closest: () => null }) as unknown as Element;
+  assert.deepEqual(glyphInk("N", el({})), [1, -9.55, 8.63, 0]);
+  assert.deepEqual(glyphInk("N", el({ dominantBaseline: "alphabetic" })), [1, -9.55, 8.63, 0]);
+  for (const style of [{ dominantBaseline: "middle" }, { dominantBaseline: "central" }, { alignmentBaseline: "middle" }, { textDecorationLine: "underline" }]) assert.equal(glyphInk("R", el(style)), undefined, JSON.stringify(style));
+}
+assert.equal(withMargin('<svg width="56.21pt" height="36.55pt" viewBox="-33.1 -21.54 56.21 36.55"><g/></svg>', 7.2), '<svg width="70.61pt" height="50.95pt" viewBox="-40.3 -28.74 70.61 50.95"><g/></svg>', "no rounding noise");
+// Issue 23: a paste that finds nothing it can use says so when the clipboard holds something (a ChemDraw picture
+// copied back out of Word on Windows: an EMF with no CDXML and OLE formats), and nothing for an empty clipboard. Text
+// that is not a structure keeps its own reason. The app's paste calls it after every other route fails.
+assert.equal(pasteRefused({ filled: true }, undefined, "why"), "Octet cannot read what is on the clipboard.");
+assert.equal(pasteRefused({ filled: false }, undefined, "why"), undefined);
+assert.equal(pasteRefused({}, " ", "why"), undefined);
+assert.equal(pasteRefused({ filled: true }, "xyzzy", "Paste a name."), "Octet cannot read this structure. Paste a name.");
+assert.match(editor, /if \(picture\) return pastePicture\(picture\);\s+const say = pasteRefused\(clip, text, why\);\s+if \(say\) setNotice\(say\);/);
+// The size of an export comes from what is drawn, never from what only shapes it: a shadowed box's mask is a square
+// 200,000 px wide, and measured it made an A4 drawing 52,919 mm across.
+{
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+  const ink = /function canvasInk\([\s\S]*?\n  \}\n/.exec(editor)?.[0] ?? "";
+  assert.match(ink, /el\.closest\("defs, mask, clipPath, pattern, marker, symbol, filter"\)\) continue;/, "canvasInk leaves out defs and masks");
+}
 console.log("export.check: ok");

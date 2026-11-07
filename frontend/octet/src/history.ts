@@ -6,7 +6,9 @@
 import type { Mol } from "./render.ts";
 
 export type History = { stack: Mol[]; at: number; merge?: string };
-export type Action = { type: "set"; mol: Mol; merge?: string } | { type: "undo" } | { type: "redo" } | { type: "reset"; h: History };
+// amend: the step now showing changed, with no step of its own (an experiment page's box grown for the table an edit
+// made, so one Undo takes back both).
+export type Action = { type: "set"; mol: Mol; merge?: string } | { type: "amend"; mol: Mol } | { type: "undo" } | { type: "redo" } | { type: "reset"; h: History };
 export const MOST_STEPS = 1000, FEWEST_STEPS = 200, MOST_OBJECTS = 2_000_000;
 
 const objects = (m: Mol) => Object.values(m).reduce((n: number, v) => n + (Array.isArray(v) ? v.length : 0), 1);
@@ -22,6 +24,7 @@ export function history(h: History, a: Action): History {
   if (a.type === "reset") return a.h;
   if (a.type === "undo") return { ...h, at: Math.max(0, h.at - 1), merge: undefined };
   if (a.type === "redo") return { ...h, at: Math.min(h.stack.length - 1, h.at + 1), merge: undefined };
+  if (a.type === "amend") return a.mol === h.stack[h.at] ? h : { ...h, stack: h.stack.map((m, k) => (k === h.at ? a.mol : m)) };
   if (a.mol === h.stack[h.at]) return h;
   if (a.merge && a.merge === h.merge && h.at === h.stack.length - 1 && h.at > 0) return { stack: [...h.stack.slice(0, h.at), a.mol], at: h.at, merge: a.merge };
   return trimmed({ stack: [...h.stack.slice(0, h.at + 1), a.mol], at: h.at + 1, merge: a.merge });

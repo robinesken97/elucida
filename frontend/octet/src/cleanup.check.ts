@@ -6,6 +6,10 @@
 // of its lowest energy and aims every ring angle at 120° (caffeine's five-membered ring comes out irregular), and
 // Octet does neither (src/clean2d.ts, src/cleanup-geometry.check.ts). The structures are drawn by hand: each atom is
 // moved up to 0.3 bond lengths from where Indigo lays it out.
+// A large structure, whose passes stop after a fixed amount of work, must come out the same each time, and the same on
+// a computer SLOWER times slower than the one running the check (the clock runs that much faster): Clean Up's geometry
+// may not depend on how busy the computer is. GitHub's machines are already about 3 times slower than an M1 Pro, so 3
+// there is about 8 times slower than a laptop. At 8 there, a 145-atom pass runs into the 1 s safety stop (chem.ts SAFETY).
 // The structures run in a worker thread, so a clean-up that never ends stops the check instead of hanging it.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -67,7 +71,7 @@ if (isMainThread) {
   worker.on("message", (m: { start?: string; bound?: number; done?: string; ms?: number; outcome?: string; end?: true }) => {
     if (m.start) { current = m.start; arm(m.bound!); }
     if (m.done) { clearTimeout(timer); console.log(`cleanup.check: ${m.done}: ${m.ms} ms, ${m.outcome}`); }
-    if (m.end) console.log("cleanup.check: Clean Up cannot stop the editor, and small structures come out Indigo's shape, exact");
+    if (m.end) console.log("cleanup.check: Clean Up cannot stop the editor, small structures come out Indigo's shape, exact, and large ones the same however slow the computer");
   });
   worker.on("error", (e) => { clearTimeout(timer); console.error(e); process.exitCode = 1; });
 } else {
@@ -166,6 +170,15 @@ if (isMainThread) {
       return `bond lengths ${bondError(out).toFixed(2)} out (drawn ${bondError(mol).toFixed(2)})`;
     });
     timed(`${name}, cleaned again`, REAL, () => cleanUp(out), (again) => `bond lengths ${bondError(again).toFixed(2)} out`);
+  }
+  const now = performance.now.bind(performance), SLOWER = 3;
+  for (const [name, smiles] of [crowded[2], crowded[3], crowded[5], large[2], large[7], large[8]]) {
+    const mol = drawn(smiles), first = points(cleanUp(mol)), again = points(cleanUp(mol));
+    performance.now = () => now() * SLOWER;
+    let slow: number[][];
+    try { slow = points(cleanUp(mol)); } finally { performance.now = now; }
+    assert.deepEqual(again, first, `${name} cleans up the same each time`);
+    assert.deepEqual(slow, first, `${name} cleans up the same on a computer ${SLOWER} times slower`);
   }
   post({ end: true });
 }

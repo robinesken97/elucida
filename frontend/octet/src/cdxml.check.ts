@@ -6,10 +6,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { DAMAGED, NOT_CDXML, TOO_BIG, arialGlyph, fmt, fmtAngle, fmtColour, fmtSize, fromCdxml, parseXml, toCdxml, type Xml } from "./cdxml.ts";
 import { cdxToXml, xmlToCdx } from "./cdx.ts";
+import { readCdx, readOct, writeCdx, writeOct } from "./oct.ts";
 import { DEFAULT_STYLE, PRESETS, readStyle, withScale, type DocStyle } from "./docstyle.ts";
 import { parse, serialize } from "./file.ts";
 import { addCaption, contractLabel, deleteAtoms, deleteChosen, deleteGraphics, duplicateSelection, expandLabel, extractSelection, fitSizes, insertMol, setLabel } from "./edit.ts";
-import { HIGHLIGHT, bendPoint, ellipseArrow, fitArrows, headOfLength, headsOf, placeCaptions, placedAt, render, takesHeads, tlcLayout, type Arrow, type Atom, type Bond, type Caption, type Ink, type Mol, type Placed, type Shape } from "./render.ts";
+import { HIGHLIGHT, bendPoint, ellipseArrow, fitArrows, headOfLength, headsOf, placeCaptions, placedAt, render, takesHeads, shapesHeads, tlcLayout, type Arrow, type Atom, type Bond, type Caption, type Ink, type Mol, type Placed, type Shape } from "./render.ts";
 import { layoutCycles, migrateCycles } from "./cycle.ts";
 import { analyse, fromJcamp, measuredText, type Measured } from "./measured.ts";
 
@@ -135,7 +136,7 @@ function canon(m: Mol): Mol {
     captions: [...(m.captions ?? [])].sort((p, q) => p.id - q.id).map((c) => ({ ...c, align: c.align === "centre" ? undefined : c.align, colour: ink(c.colour) })),
     arrows: [...(m.arrows ?? [])].sort((p, q) => p.id - q.id).map((a) => {
       const own = headsOf({ kind: a.kind, bend: a.bend }), heads = takesHeads(a);
-      return { ...a, colour: ink(a.colour), start: heads && a.start !== own.start ? a.start : undefined, end: heads && a.end !== own.end ? a.end : undefined, head: heads && a.head !== "solid" ? a.head : undefined };
+      return { ...a, colour: ink(a.colour), start: heads && a.start !== own.start ? a.start : undefined, end: heads && a.end !== own.end ? a.end : undefined, head: shapesHeads(a) && a.head !== "solid" ? a.head : undefined };
     }),
     shapes: (m.shapes ?? []).map((s) => {
       const t = s.tlc && tlcLayout(s);
@@ -248,6 +249,24 @@ console.log("cdxml.check: every object kind round trips");
     assert.ok(sides.every((x) => x.attrs.ArrowheadTail === undefined));
     const chemdraw = fromCdxml(xml.replace(/ Octet="\{&quot;d&quot;:1[^"]*"/g, "")).mol.arrows!.find((a) => a.kind === "equilibrium" && a.point);
     assert.ok(chemdraw && chemdraw.point && chemdraw.bend && chemdraw.ratio === 3, JSON.stringify(chemdraw));
+  }
+  // Issue 30: a part writes only the arrows of its own cycles. The editor gives every cycle's arrows; a copy of one
+  // cycle carries that cycle's arrows, and a copy of a structure carries none.
+  {
+    const one = drawing.cycles![0], two = { ...one, id: 301, centre: [30, 0] as [number, number] }, m: Mol = { ...drawing, cycles: [one, two] };
+    const all = layoutCycles(m, 30, 1, () => undefined).arrows, mine = all.filter((a) => a.cycle === two.id).length;
+    // The arrows written from a cycle (Octet's "d" mark), and the cycles written (their ids in this file).
+    const of = (xml: string) => {
+      const arrows: string[] = [], walk = (x: Xml) => { if (x.name === "arrow" && x.attrs.Octet?.includes('"d":1')) arrows.push(x.attrs.Octet); x.kids.forEach(walk); };
+      walk(parseXml(xml));
+      return arrows;
+    };
+    assert.ok(mine && mine < all.length);
+    const copied = of(toCdxml({ ...m, cycles: [two] }, DEFAULT_STYLE, { derived: all }));
+    assert.equal(copied.length, mine, "only the copied cycle's arrows");
+    assert.ok(copied.every((o) => o.includes('"cycle":')), "each names its cycle");
+    assert.deepEqual(of(toCdxml(m, DEFAULT_STYLE, { derived: all, selection: { atoms: [0, 1, 2], items: [] } })), [], "a structure alone has no cycle arrows");
+    assert.equal(of(toCdxml(m, DEFAULT_STYLE, { derived: all })).length, all.length, "the whole drawing has both cycles' arrows");
   }
   // A label Octet can expand goes to ChemDraw as an abbreviation with its own atoms; Octet keeps the label.
   const phenyl: Mol = { atoms: [0, 1, 2, 3, 4, 5].map((k) => A("C", Math.cos((k * Math.PI) / 3), Math.sin((k * Math.PI) / 3))), bonds: [0, 1, 2, 3, 4, 5].map((k) => b(k, (k + 1) % 6, { type: k % 2 ? 1 : 2 })) };
@@ -1114,11 +1133,32 @@ No</s><s font="3" size="10" color="4" face="3"> ISC</s></t></n></fragment><fragm
   }
   // Runs in Octet's own file must spell the label's text, with only bold, italic and underline.
   const bad = JSON.parse(serialize(m));
-  for (const r of [[{ text: "OH", bold: true }], [{ text: "OMe", script: "sub" }], [{ text: "OMe", colour: "#ff0000" }]]) { bad.structure.atoms[0].runs = r; assert.throws(() => parse(JSON.stringify(bad)), /damaged/, JSON.stringify(r)); }
+  for (const r of [[{ text: "OH", bold: true }], [{ text: "OMe", script: "mid" }], [{ text: "OMe", font: "Georgia" }], [{ text: "OMe", colour: "#ff0000" }]]) { bad.structure.atoms[0].runs = r; assert.throws(() => parse(JSON.stringify(bad)), /damaged/, JSON.stringify(r)); }
   // ChemDraw's own: OR with a bold R, and a label all bold (its own bold, no runs).
   const cd = fromCdxml(`<CDXML BondLength="14.40"><page id="1"><fragment id="2"><n id="3" p="100 100" NodeType="Unspecified"><t p="97 104"><s font="3" size="10" face="96">O</s><s font="3" size="10" face="97">R</s></t></n><n id="4" p="200 100" NodeType="Unspecified"><t p="197 104"><s font="3" size="10" face="97">O</s><s font="3" size="10" face="97">Me</s></t></n></fragment></page></CDXML>`);
   assert.deepEqual(cd.mol.atoms.map((a) => [a.text, a.bold, a.runs]), [["OR", undefined, [{ text: "O" }, { text: "R", bold: true }]], ["OMe", true, undefined]]);
   console.log("cdxml.check: labels with styled characters ok");
+}
+
+// A label with part raised or lowered (issue 44, Fe with III raised): written as <s> runs with the superscript face
+// (0x40) or subscript face (0x20) in place of Formula, read back as the same runs from CDXML, CDX and .oct. An isotope
+// and a charge on an element's label are written as before.
+{
+  const every = (x: Xml): Xml[] => [x, ...x.kids.flatMap(every)];
+  const fe = A("Fe", 0, 0, { text: "FeIII", runs: [{ text: "Fe" }, { text: "III", script: "super" }] }), ome = A("O", 3, 0, { text: "OMea", runs: [{ text: "OMe" }, { text: "a", script: "sub" }] });
+  const m: Mol = { atoms: [fe, A("C", 1, 0), ome, A("C", 4, 0), A("C", 6, 0, { isotope: 13 }), A("N", 8, 0, { charge: 1 })], bonds: [b(0, 1), b(2, 3)] };
+  const xml = toCdxml(m, DEFAULT_STYLE), ts = every(parseXml(xml)).filter((x) => x.name === "t");
+  const runs = (t: Xml) => t.kids.filter((k) => k.name === "s").map((k) => [k.text, Number(k.attrs.face)]);
+  assert.deepEqual(runs(ts[0]), [["Fe", 0x60], ["III", 0x40]]);
+  assert.deepEqual(runs(ts[1]), [["OMe", 0x60], ["a", 0x20]]);
+  assert.deepEqual(runs(ts[2]), [["13", 0x40], ["CH4", 0x60]]);
+  assert.deepEqual(runs(ts[3]).map(([, f]) => f), [0x60, 0x40]);
+  for (const back of [fromCdxml(xml).mol, fromCdxml(cdxToXml(xmlToCdx(parseXml(xml)))).mol, parse(serialize(fromCdxml(xml).mol)), readOct(writeOct(m, DEFAULT_STYLE)).mol, readCdx(writeCdx(m, DEFAULT_STYLE)).mol]) {
+    assert.deepEqual([back.atoms[0].label, back.atoms[0].text, back.atoms[0].runs], ["Fe", "FeIII", fe.runs]);
+    assert.deepEqual([back.atoms[2].label, back.atoms[2].text, back.atoms[2].runs], ["O", "OMea", ome.runs]);
+    assert.deepEqual([back.atoms[4].isotope, back.atoms[4].text, back.atoms[5].charge, back.atoms[5].text], [13, undefined, 1, undefined]);
+  }
+  console.log("cdxml.check: labels with superscript and subscript ok");
 }
 
 // Sam's corpus (on this Mac only): every text ChemDraw keeps above or below an arrow is written back where it was.
@@ -1264,4 +1304,83 @@ No</s><s font="3" size="10" color="4" face="3"> ISC</s></t></n></fragment><fragm
   const loose = lay(deleteChosen(laid, new Set(), new Set([1, 2]), undefined, (c) => [anchor(q(c)) / 14.4, -q(c).lines[0].y / 14.4], (c) => ({ start: "left", middle: "centre", end: "right" } as const)[q(c).anchor]));
   assert.deepEqual(loose.map((q) => q.box), drawn.map((q) => q.box), "freed text stays where it is drawn");
   console.log("cdxml.check: deleting one thing leaves the text it was not given ok");
+}
+
+// ChemDraw's predicted shifts (Predict 13C-NMR Shifts): each is an assignment tag on the atom's node holding a text at
+// its own place, 7.5 pt, coloured. Opened, each number is a caption at that place with its text and style, and nothing
+// is lost. A file built here in that shape: octane-3,5-dione with its eight carbon shifts.
+{
+  const shift = [13.7, 17.1, 45.4, 205.2, 57.9, 204.9, 36.7, 7.7], carbons = shift.map((_, k): [number, number] => [100 + 12.47 * k, k % 2 ? 196.4 : 203.6]);
+  const tag = (k: number, value = `${shift[k]}-${shift[k]},`, text: string | null = String(shift[k])) =>
+    `<objecttag id="${100 + k}" TagType="String" Name="/CS/CD/assign" Value="${value}">${text === null ? "" : `<t id="${200 + k}" p="${carbons[k][0] + 3} ${carbons[k][1] + (k % 2 ? -5 : 11)}"><s font="3" size="7.5" color="5">${text}</s></t>`}</objecttag>`;
+  const nodes = (more: (k: number) => string) => carbons.map(([x, y], k) => `<n id="${10 + k}" p="${x} ${y}">${more(k)}</n>`).join("")
+    + `<n id="30" p="${carbons[3][0]} ${carbons[3][1] + 14.4}" Element="8"/><n id="31" p="${carbons[5][0]} ${carbons[5][1] + 14.4}" Element="8"/>`;
+  const bonds = carbons.slice(1).map((_, k) => `<b id="${40 + k}" B="${10 + k}" E="${11 + k}"/>`).join("") + `<b id="50" B="13" E="30" Order="2"/><b id="51" B="15" E="31" Order="2"/>`;
+  const file = (more: (k: number) => string, extra = "") => `<?xml version="1.0" encoding="UTF-8" ?><CDXML BondLength="14.40" CaptionFont="3" CaptionSize="10"><colortable><color r="1" g="1" b="1"/><color r="0" g="0" b="0"/><color r="1" g="0" b="0"/><color r="0" g="0" b="1"/></colortable><fonttable><font id="3" name="Arial"/></fonttable><page id="1" BoundingBox="0 0 540 720"><fragment id="2">${nodes(more)}${bonds}</fragment>${extra}</page></CDXML>`;
+  const read = fromCdxml(file(tag)), caps = read.mol.captions ?? [];
+  assert.deepEqual(read.lost, {}, "nothing lost");
+  assert.deepEqual(caps.map((c) => c.text), shift.map(String), "every number shows");
+  // Where ChemDraw puts it from its atom (its p less the node's p, y down there), as the drawing has the atom.
+  caps.forEach((c, k) => { const [x, y] = read.mol.atoms[k].location; assert.ok(Math.abs(c.x - x - 3 / 14.4) < 1e-9 && Math.abs(c.y - y + (k % 2 ? -5 : 11) / 14.4) < 1e-9, `${c.text} at its place`); });
+  assert.ok(caps.every((c) => c.size === 7.5 && c.colour === "#0000FF" && c.align === "left"), "in its size and colour");
+  assert.ok(read.mol.atoms.every((a) => !a.peaks), "no spectrum, so no links");
+  // The same drawing as a CDX file.
+  const cdx = fromCdxml(cdxToXml(xmlToCdx(parseXml(file(tag)))));
+  assert.deepEqual([cdx.lost, cdx.mol.captions?.map((c) => [c.text, c.size, c.colour])], [{}, shift.map((v) => [String(v), 7.5, "#0000FF"])]);
+  // Hidden text stays hidden; a tag with no text gives no caption, and with no spectrum it is lost as before.
+  const hidden = fromCdxml(file((k) => (k === 0 ? tag(0).replace("<t ", `<t Visible="no" `) : k === 1 ? tag(1, undefined, null) : "")));
+  assert.deepEqual([hidden.mol.captions?.length, hidden.lost], [undefined, { "spectrum assignment": 1 }]);
+  // With a measured spectrum in the file: a plain tag of the spectrum's value links the atom to its multiplet, and a text
+  // tag whose value no spectrum carries gives a caption and no second link, even inside the spectrum's range.
+  const y = Float64Array.from({ length: 2000 }, (_, i) => { const x = 12 - (12 * i) / 1999; return 1 / (1 + ((x - 2.5) / 0.01) ** 2); });
+  const ms = fromJcamp({ title: "Dione", kind: "nmr", nucleus: "1H", mhz: 400, solvent: "CDCl₃", xUnit: "ppm", yUnit: "", first: 12, last: 0, y }, 1);
+  const g = ms.groups[0], value = `${g.lo}-${g.hi},`;
+  const written = parseXml(toCdxml({ atoms: [], bonds: [], spectra: [ms] }, DEFAULT_STYLE)), every = (x: Xml): Xml[] => [x, ...x.kids.flatMap(every)];
+  const sp = every(written).find((x) => x.name === "spectrum")!, spText = `<spectrum ${Object.entries(sp.attrs).filter(([k]) => k !== "Octet").map(([k, v]) => `${k}="${v}"`).join(" ")}>${sp.text}<objecttag TagType="String" Name="/CS/CD/assign" Value="${value}"/></spectrum>`;
+  const both = fromCdxml(file((k) => (k === 4 ? tag(4, value, null) + tag(4, "2.5-2.5,", "2.50") : ""), spText));
+  assert.deepEqual(both.lost, {});
+  assert.deepEqual([both.mol.atoms[4].peaks?.length, both.mol.captions?.map((c) => c.text)], [1, ["2.50"]], "one link and one caption");
+  assert.equal(both.mol.spectra?.[0].groups.length, ms.groups.length, "the text tag makes no multiplet of its own");
+  // A text tag of exactly the spectrum's value is a link too (ChemDraw's own assignment), with its caption.
+  const same = fromCdxml(file((k) => (k === 4 ? tag(4, value, "2.50") : ""), spText));
+  assert.deepEqual([same.mol.atoms[4].peaks?.length, same.mol.captions?.map((c) => c.text), same.lost], [1, ["2.50"], {}]);
+  console.log("cdxml.check: ChemDraw's predicted shifts open as captions ok");
+}
+
+// Issue 31: text Octet draws as a formula (conditions on an arrow, a cycle's text) is written as the runs the page
+// shows, so ChemDraw shows Pd(PPh₃)₄ too, and Octet reads it back as the plain text it was, editable as typed. A
+// caption with runs of its own, and a ChemDraw file's runs, read back unchanged. The same holds through CDX. (A cycle
+// with no structures is not kept, so the round trip above checks a cycle's ArB(OH)2.)
+{
+  const on = (id: number, text: string, more: Partial<Caption> = {}): Caption => ({ id, text, x: 0, y: 0, on: { arrow: 101, side: id % 2 ? "above" : "below" }, ...more });
+  const m: Mol = { atoms: [], bonds: [], arrows: [arrow(101, "reaction", [0, 0], [4, 0])], captions: [
+    on(1, "Pd(PPh3)4"), on(2, "CH2Cl2"), on(3, "10 mol%"), on(4, "SO4^2-"),
+    on(5, "SO42−", { runs: [{ text: "SO" }, { text: "4", script: "sub" }, { text: "2−", script: "super" }] }),
+    on(7, "Pd(0)L2"),
+    { id: 9, text: "Pd(PPh3)4", x: 0, y: 6 },
+  ] };
+  const xml = toCdxml(m, DEFAULT_STYLE);
+  // Each <t>'s runs as text and face.
+  const texts = parseXml(xml).kids.flatMap(function all(k: Xml): Xml[] { return [k, ...k.kids.flatMap(all)]; }).filter((k) => k.name === "t")
+    .map((t) => t.kids.filter((s) => s.name === "s").map((s) => `${s.text}${s.attrs.face ? `/${s.attrs.face}` : ""}`).join("|"));
+  for (const want of ["Pd(PPh|3/32|)|4/32", "CH|2/32|Cl|2/32", "10 mol%", "SO|4/32|^2-", "SO|4/32|2−/64", "Pd(0)L|2/32", "Pd(PPh3)4"]) assert.ok(texts.includes(want), `${want} is written as the page draws it: ${texts.join(", ")}`);
+  // CDX has no place for Octet's own data, so ChemDraw reads the runs; Octet's .cdx and .oct read back as typed.
+  const cdxTexts = cdxToXml(xmlToCdx(parseXml(xml))).kids.flatMap(function all(k: Xml): Xml[] { return [k, ...k.kids.flatMap(all)]; }).filter((k) => k.name === "t")
+    .map((t) => t.kids.filter((s) => s.name === "s").map((s) => `${s.text}${s.attrs.face ? `/${s.attrs.face}` : ""}`).join("|"));
+  assert.ok(cdxTexts.includes("Pd(PPh|3/32|)|4/32"), `CDX: ${cdxTexts.join(", ")}`);
+  for (const [what, back] of [["CDXML", fromCdxml(xml)], [".oct", readOct(writeOct(m, DEFAULT_STYLE), true)], ["Octet's .cdx", readCdx(writeCdx(m, DEFAULT_STYLE))]] as const) {
+    const read = (id: number) => { const want = m.captions!.find((c) => c.id === id)!; return back.mol.captions!.find((c) => c.text === want.text && !!c.on === !!want.on)!; };
+    for (const id of [1, 2, 3, 4, 7, 9]) assert.deepEqual([read(id).text, read(id).runs], [m.captions!.find((c) => c.id === id)!.text, undefined], `${what}: caption ${id} reads back as plain text`);
+    assert.deepEqual(read(5).runs, m.captions![4].runs, `${what}: runs of its own stay`);
+    assert.deepEqual(back.lost, {});
+  }
+  // Runs changed elsewhere so they are no longer the formula's stay; a ChemDraw file's runs read unchanged.
+  const kept = fromCdxml(xml.replace(/<s font="(\d+)" size="10">Cl<\/s>/, '<s font="$1" size="10" face="1">Cl</s>')).mol.captions!.find((c) => c.text === "CH2Cl2")!;
+  assert.deepEqual(kept.runs, [{ text: "CH" }, { text: "2", script: "sub" }, { text: "Cl", bold: true }, { text: "2", script: "sub" }]);
+  const chemdraw = fromCdxml('<CDXML BondLength="14.4"><page><t p="0 0"><s font="3" size="10">CH</s><s font="3" size="10" face="32">2</s><s font="3" size="10">Cl</s><s font="3" size="10" face="32">2</s></t></page></CDXML>').mol.captions![0];
+  assert.deepEqual(chemdraw.runs, [{ text: "CH" }, { text: "2", script: "sub" }, { text: "Cl" }, { text: "2", script: "sub" }], "ChemDraw's runs read unchanged");
+  // Turned conditions read back as free text, which is not drawn as a formula: they keep the runs, so H₂O stays H₂O.
+  const turned = fromCdxml(toCdxml({ ...m, captions: [on(1, "H2O", { angle: 30 })] }, DEFAULT_STYLE)).mol.captions![0];
+  assert.deepEqual([turned.on, turned.runs], [undefined, [{ text: "H" }, { text: "2", script: "sub" }, { text: "O" }]], "turned conditions keep their subscripts");
+  console.log("cdxml.check: formula text written as drawn, read back as typed ok");
 }

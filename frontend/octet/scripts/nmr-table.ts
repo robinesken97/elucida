@@ -9,7 +9,7 @@ import { createInterface } from "node:readline";
 import { gzipSync } from "node:zlib";
 import { hydrogens } from "../src/render.ts";
 import type { Graph } from "../src/naming.ts";
-import { codeHash, environment, heavy, hose, lookup, solventCode, useTables, writeTables, type Nucleus, type Table } from "../src/nmr.ts";
+import { codeHash, codes, environment, heavy, lookup, solventCode, useTables, writeTables, type Nucleus, type Table } from "../src/nmr.ts";
 
 const [file, flag] = process.argv.slice(2), test = flag === "--test";
 if (!file) throw new Error("Usage: node scripts/nmr-table.ts <nmrshiftdb2withsignals.sd> [--test]");
@@ -82,7 +82,9 @@ function observations(mol: Molecule) {
       if (k === undefined || (s.nucleus === "13C" ? g.atoms[k].el !== "C" : g.atoms[k].h === 0)) continue;
       byAtom.set(k, [...(byAtom.get(k) ?? []), p.shift]);
     }
-    for (const [atom, shifts] of byAtom) out.push({ nucleus: s.nucleus, atom, shift: shifts.reduce((a, b) => a + b, 0) / shifts.length, solvent: s.solvent });
+    // A hydrogen-bearing atom given more different ¹H shifts in one spectrum than it has hydrogens (four on one CH) is a
+    // slip in the assignment: its shifts there are left out.
+    for (const [atom, shifts] of byAtom) if (s.nucleus === "13C" || new Set(shifts).size <= g.atoms[atom].h) out.push({ nucleus: s.nucleus, atom, shift: shifts.reduce((a, b) => a + b, 0) / shifts.length, solvent: s.solvent });
   }
   return { g, out };
 }
@@ -105,7 +107,7 @@ for (const mol of molecules) {
   if (test && mol.id % 10 === 0) { held.push({ mol, g, out }); continue; }
   let env;
   try { env = environment(g); } catch { continue; }
-  for (const o of out) for (const code of hose(env, o.atom)) {
+  for (const o of out) for (const code of codes(env, o.atom)) {
     const h = codeHash(o.nucleus, code), list = seen[o.nucleus].get(h);
     if (list) list.push(o.shift); else seen[o.nucleus].set(h, [o.shift]);
     if (!o.solvent) continue;
@@ -159,7 +161,7 @@ if (test) {
     }
     errors.sort((a, b) => a - b);
     const mae = errors.reduce((a, b) => a + b, 0) / errors.length, mean = (v: number[]) => (v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(3) : "–");
-    console.log(`${nucleus}: ${errors.length} shifts, MAE ${mae.toFixed(2)} ppm, median ${errors[errors.length >> 1].toFixed(2)}, 90% within ${errors[Math.floor(errors.length * 0.9)].toFixed(2)}, not covered ${missed}, by level ${levels.slice(1).join("/")}`);
+    console.log(`${nucleus}: ${errors.length} shifts, MAE ${mae.toFixed(2)} ppm, median ${errors[errors.length >> 1].toFixed(2)}, 90% within ${errors[Math.floor(errors.length * 0.9)].toFixed(2)}, not covered ${missed}, by level ${levels.join("/")}`);
     console.log(`  in a known solvent: ${known.any.length} shifts, MAE ${mean(known.any)} from every solvent, ${mean(known.own)} with the solvent's table; on O, N and S: ${known.anyX.length}, ${mean(known.anyX)} and ${mean(known.ownX)}`);
   }
 } else {

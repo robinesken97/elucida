@@ -33,14 +33,13 @@ The mark is a regular octagon with a regular hexagon cut out of it (same centre,
 | --- | --- | --- | --- |
 | `brand` | #213C99 | #7299FF | Primary actions, active tool, brand text. Light is Logo Blue |
 | `brand-hover` | #1A317F | #89ABFF | Hover and pressed brand fills |
-| `brand-bright` | #3F6BFF | #3F6BFF | Focus, snap guides |
+| `brand-bright` | #3F6BFF | #3F6BFF | Focus, selection handles, snap guides |
 | `brand-mist` | #DCE4F6 | #24335A | Selected tool, active row, soft tint |
 | `on-brand` | #FFFFFF | #000E2F | Text and icons on brand fills |
 | `navy` | #000E2F | #000E2F | Footers, ground for the white mark |
 | `canvas` | #FFFFFF | #000B24 | Drawing area |
 | `surface` | #F8FAFC | #0D1D40 | App chrome and page ground |
 | `ink` | #0F172A | #ECF0F8 | Text and bonds |
-| `select-blue` | #5B83F1 | #4064CE | The selection on the canvas: tint, frame and handles. Slate and Grey are the other choices in Settings |
 
 Rules:
 

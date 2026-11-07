@@ -303,6 +303,16 @@ export function outlines(s: DocStyle, kind?: PurposeKind, others = true): [strin
   return [page, ...(series as PageName[]).filter((n) => n !== s.page).map((n) => named(n))];
 }
 
+// The outline whose edge is within `near` of a point p (mm from the page's middle, y either way), among those that
+// show: none when the drawing's page edges are off (Settings > Page edges > None), so an edge that does not show
+// takes no click.
+export function edgeAt(shown: [string, number, number][], p: [number, number], near: number): [string, number, number] | undefined {
+  return shown.find(([, w, h]) => {
+    const [x, y] = [w / 2, h / 2], dx = Math.abs(Math.abs(p[0]) - x), dy = Math.abs(Math.abs(p[1]) - y);
+    return (dx < near && Math.abs(p[1]) <= y + near) || (dy < near && Math.abs(p[0]) <= x + near);
+  });
+}
+
 // The drawing frame keeps every structure at `frame` px per bond length. A style with other lengths changes the
 // widths and sizes relative to that, and the view's zoom shows it at its true size.
 export function frameStyle(d: DocStyle, frame: number): Style & { k: number } {

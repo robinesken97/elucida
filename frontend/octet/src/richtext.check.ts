@@ -52,7 +52,7 @@ assert.deepEqual(normalise([{ text: "" }]), [{ text: "" }]);
   assert.equal(plainOf(trimLines(typed)), "OMe\nCH3");
   assert.deepEqual(labelStyle(trimLines(typed)), { runs: [{ text: "O", bold: true }, { text: "Me\n" }, { text: "CH3", italic: true }] });
   assert.deepEqual(labelStyle([{ text: "OM", bold: true, underline: true }, { text: "e", bold: true }]), { bold: true, runs: [{ text: "OM", underline: true }, { text: "e" }] });
-  assert.deepEqual(labelStyle([{ text: "OMe", italic: true, script: "sub" }]), { italic: true });
+  assert.deepEqual(labelStyle([{ text: "OMe", italic: true, script: "sub" }]), { italic: true, runs: [{ text: "OMe", script: "sub" }] });
   assert.deepEqual(labelStyle([{ text: "OMe" }]), {});
 }
 console.log("richtext.check: ok");

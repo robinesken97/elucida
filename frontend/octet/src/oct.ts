@@ -83,10 +83,15 @@ export function readCdx(bytes: Uint8Array): { mol: Mol; lost: Record<string, num
   return { mol: { ...read.mol, style: read.style }, lost: read.lost, foreign: true };
 }
 
+// The program that last saved a CDXML file, from its CDXML element: "ChemDraw 25.5.0.5789", or "".
+const programOf = (text: string) => /\sCreationProgram="([^"]*)"/.exec(/<CDXML\s[^>]*/.exec(text.slice(0, 65536))?.[0] ?? "")?.[1] ?? "";
+
 // A drawing from a file: Octet's own drawing when the CDXML around it is unchanged, otherwise the CDXML (with what
 // Octet could not hold counted in `lost`, and `foreign` set), or an old .octet file's JSON. A .cdx file comes as its
-// bytes in base64 (from the app, which reads it).
-export function readOct(text: string): { mol: Mol; lost: Record<string, number>; foreign?: true } {
+// bytes in base64 (from the app, which reads it). oct: the file is named .oct, so Octet wrote it. `resaved` is set
+// when Octet wrote the file (its comment is there, or the name is .oct) and ChemDraw saved it last: ChemDraw 25.5
+// drops Octet's comment and attributes when it saves (issue 19), so Octet's own extras are gone.
+export function readOct(text: string, oct = false): { mol: Mol; lost: Record<string, number>; foreign?: true; resaved?: true } {
   if (text.startsWith(BASE64_MAGIC)) return readCdx(bytesOf(text));
   if (/^\s*\{/.test(text)) return { mol: parse(text), lost: {} };
   const at = text.lastIndexOf(MARK);
@@ -96,8 +101,8 @@ export function readOct(text: string): { mol: Mol; lost: Record<string, number>;
       try { return { mol: parse(fromBase64(m[2])), lost: {} }; } catch { /* a damaged copy: read the CDXML */ }
     }
   }
-  const read = fromCdxml(text);
-  return { mol: { ...read.mol, style: read.style }, lost: read.lost, foreign: true };
+  const read = fromCdxml(text), resaved = (at >= 0 || oct) && /ChemDraw/i.test(programOf(text));
+  return { mol: { ...read.mol, style: read.style }, lost: read.lost, foreign: true, ...(resaved ? { resaved: true as const } : {}) };
 }
 
 // Whether a file's text is a drawing readOct reads (a .oct, CDXML, CDX or an old .octet file), not a structure file

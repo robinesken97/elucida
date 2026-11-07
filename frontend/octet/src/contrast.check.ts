@@ -4,6 +4,7 @@
 // a sunken or mist fill or types a colour by hand outside the page papers and the colour picker.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readSelectColour, SELECT_DEFAULT, SELECT_TINTS, selectTints } from "./selectcolour.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const tokensCss = read("../brand/tokens.css"), css = read("./editor.css"), json = JSON.parse(read("../brand/tokens.json"));
@@ -63,17 +64,6 @@ for (const [name, theme] of [["light", light], ["dark", dark]] as const)
       const r = contrast(theme[fg], theme[bg]);
       assert.ok(r >= need, `${name}: --${fg} on --${bg} is ${r.toFixed(2)}:1, under ${need}:1`);
     }
-// Every selection colour in Settings (settings.ts SELECT_COLOURS) is a token pair that stands 3:1 off the page and the
-// chrome in both themes, with ink on it (a selected atom's label) at 4.5:1. The canvas draws the selection in it.
-const choices = [...(/SELECT_COLOURS[^=]*=\s*\[(.*)\];/.exec(read("./settings.ts"))?.[1] ?? "").matchAll(/\["(\w+)", "[^"]+"\]/g)].map((m) => m[1]);
-assert.deepEqual(choices, ["blue", "slate", "grey"], "the selection colours in settings.ts");
-for (const [name, theme] of [["light", light], ["dark", dark]] as const)
-  for (const c of choices) {
-    const v = theme[`select-${c}`];
-    assert.ok(v, `${name}: --select-${c} in tokens.css`);
-    for (const bg of ["canvas", "surface"]) assert.ok(contrast(v, theme[bg]) >= 3, `${name}: --select-${c} on --${bg} is ${contrast(v, theme[bg]).toFixed(2)}:1, under 3:1`);
-    assert.ok(contrast(theme.ink, v) >= 4.5, `${name}: --ink on --select-${c} is ${contrast(theme.ink, v).toFixed(2)}:1, under 4.5:1`);
-  }
 // Dark swatches (black, ink) on a dark panel keep a 3:1 edge.
 assert.ok(contrast(dark["swatch-edge"], dark["surface-raised"]) >= 3, "dark: swatch edge on surface-raised");
 // The backdrop dims the window in both themes: never lighter than what is under it.
@@ -98,15 +88,35 @@ for (const r of rules) {
   const typed = r.body.match(/#[0-9a-f]{3,8}\b|rgba?\(/gi);
   assert.ok(!typed, `${r.selector}: a colour typed by hand (${typed}); use a token from brand/tokens.css`);
 }
-// The canvas draws the selection in the colour chosen, Blue unless set.
-for (const sel of [".selection-marks circle", ".selection-marks line", ".selection-marks rect", ".selection-marks .arrow-mark", ".box", ".selection-frame", ".resize-handle", ".handle"])
+// The selection (Settings > General > Selection, selectcolour.ts): by default Octet's blue and --selection's tint, as
+// 1.0 drew it; a colour of the user's own has tints at --selection's opacities, so it looks as the blue does.
+for (const theme of [light, dark]) assert.equal(theme["brand-bright"], SELECT_DEFAULT, "the default selection colour is --brand-bright");
+assert.deepEqual(selectTints(SELECT_DEFAULT).map(rgba), [light.selection, dark.selection].map(rgba), "the default's tints are --selection, light and dark");
+assert.deepEqual(selectTints("#0A10FF"), ["rgba(10, 16, 255, 0.14)", "rgba(10, 16, 255, 0.3)"]);
+// A stored colour is a #RRGGBB; 1.1.0's choices are read (Blue is the default); anything else is the default.
+assert.equal(readSelectColour("#a1b2c3"), "#A1B2C3");
+assert.equal(readSelectColour("blue"), SELECT_DEFAULT);
+assert.equal(readSelectColour("slate"), "#7B89A8");
+assert.equal(readSelectColour("grey"), "#898989");
+for (const bad of [undefined, null, 7, "", "red", "#abc", "#abcdefg", "#ggg000", "constructor", "__proto__", "url(x)", { hex: "#FFFFFF" }, ["#FFFFFF"]])
+  assert.equal(readSelectColour(bad), SELECT_DEFAULT, `${JSON.stringify(bad)} reads as the default`);
+// Every mark of the selection is drawn in it: the tint under selected objects, the hover, the marquee and lasso, the
+// frame, handles, picked grid cells, TLC spots and lanes, and the rulers' band.
+for (const sel of [".selection-marks circle", ".selection-marks line", ".selection-marks rect", ".selection-marks .arrow-mark", ".group-frame rect", ".box", ".selection-frame", ".resize-handle", ".turn-handle circle", ".handle", ".grid-pick", ".spot-picked", ".lane-picked", ".ruler-edge"])
   assert.ok(rules.some((r) => r.selector === sel && /:\s*var\(--select\)/.test(r.body)), `${sel} is drawn in the selection colour`);
-// Blue unless set, on the canvas and on the Spectrum panel's copy of the drawing (a <use> of the canvas's, which
-// inherits from the panel, so with no --select there its marks would fill black); each other choice on both.
-for (const [c, sel] of choices.map((c) => [c, c === "blue" ? ".canvas, .spectrum-inset" : `.editor[data-select="${c}"] :is(.canvas, .spectrum-inset)`]))
-  assert.ok(rules.some((r) => r.selector === sel && new RegExp(`--select:\\s*var\\(--select-${c}\\)`).test(r.body)), `${sel} takes --select-${c}`);
-assert.match(read("./Editor.tsx"), /className=\{[^}]*"editor"\} data-select=\{settings\.selectColour\}/, "the editor carries the selection colour chosen");
-// The selection is multiplied into a light page and screened on a dark one, so what is drawn under it still shows.
-assert.ok(rules.some((r) => r.selector === ".selection-marks" && /mix-blend-mode:\s*multiply/.test(r.body)), "the selection multiplies on a light page, and in the Spectrum panel's copy");
-assert.ok(rules.some((r) => r.selector === '.canvas[data-theme="dark"] .selection-marks' && /mix-blend-mode:\s*screen/.test(r.body)), "the selection screens on a dark page");
+for (const sel of [".mark", ".box", ".grid-pick", ".ruler-band"])
+  assert.ok(rules.some((r) => r.selector === sel && /fill:\s*var\(--select-tint\)/.test(r.body)), `${sel} is filled with the selection's tint`);
+// The default on the canvas (the page's theme), the Spectrum panel's copy of the drawing and the rulers (the window's).
+const rule = (sel: string) => rules.find((r) => r.selector.replace(/,\s*/g, ", ") === sel)?.body ?? "";
+assert.match(rule(".canvas, .spectrum-inset, .rulers"), /--select:\s*var\(--brand-bright\);\s*--select-tint:\s*var\(--selection\)/, "the default is --brand-bright and --selection");
+assert.match(rule(".editor[data-select] :is(.canvas, .spectrum-inset, .rulers)"), /--select:\s*var\(--select-own\);\s*--select-tint:\s*var\(--select-own-tint\)/, "a colour of the user's own");
+assert.match(rule('.editor[data-select] .canvas[data-theme="dark"]'), /--select-tint:\s*var\(--select-own-tint-dark\)/, "its tint on a dark page");
+assert.match(css, /@media \(prefers-color-scheme: dark\) \{\s*\.editor\[data-select\] :is\(\.spectrum-inset, \.rulers\) \{\s*--select-tint:\s*var\(--select-own-tint-dark\)/, "its tint in a dark window");
+for (const [sel, pc] of [[".editor[data-select] :is(.resize-handle.hot, .turn-handle.hot circle)", 14], ['.editor[data-select] .canvas[data-theme="dark"] :is(.resize-handle.hot, .turn-handle.hot circle)', 30]] as const)
+  assert.match(rule(sel), new RegExp(`fill:\\s*color-mix\\(in srgb, var\\(--select\\) ${pc}%, var\\(--canvas\\)\\)`), `${sel}: a handle under the pointer takes the tint`);
+assert.deepEqual(SELECT_TINTS, [0.14, 0.3], "the hot handles' mixes in editor.css follow SELECT_TINTS");
+assert.match(read("./Editor.tsx"), /className=\{[^}]*"editor"\} data-select=\{ownSelect \? "own" : undefined\} style=\{selectStyle\}/, "the editor carries the user's colour");
+// The selection's marks are a tint: the whole layer at 0.28, as in 1.0, with nothing blended.
+assert.match(rule(".selection-marks"), /^\s*opacity:\s*0\.28;\s*$/, "the selection's marks show at 0.28");
+assert.ok(!rules.some((r) => /selection-marks/.test(r.selector) && /mix-blend-mode/.test(r.body)), "the selection is not blended");
 console.log("contrast.check: ok");

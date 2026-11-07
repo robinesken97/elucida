@@ -4,6 +4,12 @@ import { COMMON, commonKey } from "./common.ts";
 // Beyond OPSIN and Octet's own tables: the dictionary (common and trade names, CAS numbers, InChIKeys), condensed
 // formulas and lists of names (dictionary.ts).
 import { beforeOpsinSmiles, completeName, dictionarySmiles, dictionaryStarting, loadDictionary, nameList, nearNames } from "./dictionary.ts";
+// endo, exo, syn and anti on a bicycle, which OPSIN does not read (endoexo.ts).
+import { endoExoSmiles } from "./endoexo.ts";
+// Peptides typed as one-letter codes after "peptide:" (peptide.ts).
+import { PEPTIDE, peptideText } from "./peptide.ts";
+// RNA and DNA typed as one-letter codes after "rna:" or "dna:" (nucleic.ts).
+import { NUCLEIC, nucleicText } from "./nucleic.ts";
 
 type Opsin = typeof import("./vendor/opsin/opsin.js");
 let opsin: Opsin | undefined;
@@ -192,7 +198,13 @@ export function nameToSmiles(name: string): string | undefined {
   if (!s || s.length > 1000) return undefined;
   const mine = own.get(commonKey(s));
   if (mine) return mine.smiles;
+  // "rna: AACGUU" and "dna: ATGC" are built as SMILES, without OPSIN.
+  const nucleic = nucleicText(s);
+  if (nucleic) return "smiles" in nucleic ? nucleic.smiles : undefined;
   if (!opsin) return undefined;
+  // "peptide: ACDEFG" is read as the three-letter sequence, Ala-Cys-Asp-Glu-Phe-Gly, so both give the same structure.
+  const peptide = peptideText(s);
+  if (peptide) return "sequence" in peptide ? one(peptide.sequence) : undefined;
   return one(s) ?? salt(s) ?? parts(s) ?? nameList(s, nameToSmiles)?.join(".");
 }
 
@@ -202,7 +214,7 @@ function one(s: string): string | undefined {
   const known = common.get(commonKey(s));
   if (known) return known.startsWith("smiles:") ? known.slice(7) : read(known);
   const tidied = tidy(s);
-  return beforeOpsinSmiles(s) ?? read(s) ?? (tidied !== s ? read(tidied) : undefined) ?? dictionarySmiles(s, read);
+  return beforeOpsinSmiles(s) ?? read(s) ?? (tidied !== s ? read(tidied) : undefined) ?? endoExoSmiles(s, nameToAtoms, read) ?? dictionarySmiles(s, read);
 }
 
 // Acid addition salts and hydrates of a name, as the name and the acid (or water) side by side, as PubChem draws them.
@@ -269,7 +281,8 @@ function tidy(s: string): string {
 // thorough: also try every name one keystroke away (30 to 90 ms), not just the list of common names.
 export function suggestName(typed: string, thorough = true): string | undefined {
   const s = typed.trim(), lower = s.toLowerCase();
-  if (!opsin || s.length < 3 || s.length > 80 || nameToSmiles(s)) return undefined;
+  // Text after "peptide:", "rna:" or "dna:" is codes, never a name with a slip in it.
+  if (!opsin || s.length < 3 || s.length > 80 || PEPTIDE.test(s) || NUCLEIC.test(s) || nameToSmiles(s)) return undefined;
   // The rest of a common name: the shortest one that starts with what was typed.
   let lo = 0, hi = names.length;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (names[mid] < lower) lo = mid + 1; else hi = mid; }

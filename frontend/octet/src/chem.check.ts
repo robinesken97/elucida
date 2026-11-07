@@ -67,6 +67,20 @@ for (const p of [1, 20]) {
 pd.atoms.push({ label: "Cl", location: [0, -1, 0] }, { label: "Cl", location: [0, 1, 0] });
 pd.bonds.push({ type: 1, atoms: [0, 39] }, { type: 1, atoms: [0, 40] });
 assert.equal(formula(pd), "C36H30Cl2P2Pd");
+// Part of a label raised or lowered by hand (issue 44) is drawn, not read: Fe with III raised is iron, with no charge
+// (FeIII typed plain is still Fe and three iodines). A raised mass number reads as it did; so does a whole label in a
+// script.
+const feCl3 = (text: string, runs?: Mol["atoms"][number]["runs"]): Mol => ({ atoms: [{ label: "Fe", text, runs, location: [0, 0, 0] }, ...[0, 1, 2].map((k) => ({ label: "Cl", location: [Math.cos(2 * k), Math.sin(2 * k), 0] as [number, number, number] }))], bonds: [0, 1, 2].map((k) => ({ type: 1, atoms: [0, k + 1] as [number, number] })) });
+const fe3 = feCl3("FeIII", [{ text: "Fe" }, { text: "III", script: "super" }]);
+assert.equal(formula(fe3), "Cl3Fe");
+assert.equal(analyse(fe3)?.[0].exact, analyse(feCl3("Fe"))?.[0].exact);
+assert.equal(expandWithOrigins(fe3).mol.atoms.find((a) => a.label === "Fe")?.charge, undefined);
+assert.equal(expandWithOrigins(fe3).mol.atoms.find((a) => a.label === "Fe")?.ox, 3);
+assert.equal(toSmiles(fe3), toSmiles(feCl3("Fe")));
+assert.notEqual(formula(feCl3("FeIII")), "Cl3Fe");
+const c13 = (runs?: Mol["atoms"][number]["runs"]): Mol => ({ ...onEthyl("13CH3"), atoms: onEthyl("13CH3").atoms.map((a, i) => (i === 2 ? { ...a, runs } : a)) });
+assert.equal(analyse(c13([{ text: "13", script: "super" }, { text: "CH3" }]))?.[0].exact, analyse(c13())?.[0].exact);
+assert.equal(formula({ ...onEthyl("OH"), atoms: onEthyl("OH").atoms.map((a, i) => (i === 2 ? { ...a, label: "O", runs: [{ text: "OH", script: "super" }] } : a)) }), "C2H6O");
 console.log("chem.check: labels ok");
 
 // An attachment point (wavy, diamond or star) is not an atom: it counts in no formula, mass or analysis, and its bond

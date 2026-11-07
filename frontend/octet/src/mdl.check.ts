@@ -74,6 +74,22 @@ assert.equal(parseStructure(rdf).atoms.length, r2.atoms.length);
 const r3 = parseStructure("CC(=O)O.OCC>[H+]>CC(=O)OCC.O");
 assert.equal(r3.arrows?.length, 1);
 assert.equal(r3.captions?.filter((c) => c.text === "+").length, 2);
+// Issue 23: ChemDraw for Windows puts reaction SMILES on the clipboard when the drawing has an arrow, with an empty
+// side ("O=C(O)[C@H]1NCCC1>>" for proline and an arrow). Every SMILES path (Paste, Import, Name to Structure) reads it
+// as the structure and its arrow.
+for (const read of [importStructure, parseStructure]) {
+  const p = read("O=C(O)[C@H]1NCCC1>>"), [arrow] = p.arrows ?? [];
+  assert.deepEqual([p.atoms.length, p.bonds.length, p.bonds.filter((x) => x.stereo).length, p.arrows?.length, arrow?.kind], [8, 8, 1, 1, "reaction"], read.name);
+  assert.ok(p.atoms.every((x) => x.location[0] < Math.min(arrow.from[0], arrow.to[0])), "proline is left of the arrow");
+  const q = read(">>O=C(O)[C@H]1NCCC1"), [back] = q.arrows ?? [];
+  assert.equal(q.arrows?.length, 1);
+  assert.ok(q.atoms.length === 8 && q.atoms.every((x) => x.location[0] > Math.max(back.from[0], back.to[0])), "proline is right of the arrow");
+  const r = read("CC>O>CO"), [over] = r.arrows ?? [], o = r.atoms.filter((x) => x.label === "O" && !r.bonds.some((b) => b.atoms.includes(r.atoms.indexOf(x))));
+  assert.equal(r.arrows?.length, 1);
+  assert.ok(o.length === 1 && o[0].location[1] > over.from[1] && o[0].location[0] > over.from[0] && o[0].location[0] < over.to[0], "the agent is over the arrow");
+  const s = read("CC.O>>CO");
+  assert.deepEqual([s.arrows?.length, s.captions?.filter((c) => c.text === "+").length], [1, 1]);
+}
 // A bond's Rxn mark (reaction centre, from Map Reaction Atoms) goes in RXN files and comes back.
 const marked: Mol = { ...m, bonds: m.bonds.map((x, k) => (k === 4 ? { ...x, rxn: "change" as const } : x)) };
 assert.match(toReaction(marked, [step], "rxn"), /RXCTR=8/);
@@ -105,4 +121,19 @@ const { analyse } = await import("./chem.ts");
 const weight = (mol: Mol) => analyse(mol)![0].weight;
 assert.equal(weight(tritiated), weight({ ...tritiated, atoms: [A("C", 0, 0), A("H", 1, 0, { isotope: 3 }), A("H", -1, 0, { isotope: 2 })] }));
 
+// A V2000 alias ("A  n", then the label) is the atom's label, and the file's coordinates are kept, as it was drawn.
+const aliased = ["", "  test", "", "  3  2  0  0  0  0  0  0  0  0999 V2000",
+  "    0.0000    0.0000    0.0000 Ce  0  0  0  0  0  0  0  0  0  0  0  0", "    1.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0", "   -1.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+  "  1  2  1  0", "  1  3  1  0", "A    1", "MIV", "A    3", "OSi\u0007<b>", "M  END"].join("\n");
+const read = importStructure(aliased);
+assert.deepEqual(read.atoms.map((a) => [a.label, a.text]), [["Ce", "MIV"], ["O", undefined], ["O", "OSib"]], "aliases kept as labels, as plain text");
+assert.ok(read.atoms[1].location[0] > read.atoms[2].location[0], "the file's own drawing is kept, not laid out again");
+// An aromatic ring with a C=O on it, which Indigo leaves aromatic, is drawn with Kekulé bonds: no bond is left
+// aromatic, and the ring has its double bonds (caffeine's C8=N9 and C4=C5).
+for (const [smiles, doubles] of [["Cn1cnc2c1c(=O)n(C)c(=O)n2C", 4], ["O=c1cc[nH]cc1", 3], ["O=c1ccc2ccccc2o1", 5], ["O=c1cc[nH]c(=O)[nH]1", 3], ["c1ccc2[nH]ccc2c1", 4]] as const) {
+  const k = parseStructure(smiles);
+  assert.ok(!k.bonds.some((x) => x.type === 4), `${smiles}: no aromatic bond left`);
+  assert.equal(k.bonds.filter((x) => x.type === 2).length, doubles, `${smiles}: ${doubles} double bonds`);
+  assert.equal(toSmiles(k) !== undefined, true);
+}
 console.log("mdl ok");

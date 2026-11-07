@@ -44,4 +44,15 @@ let dragged: History = { stack: [drawing(1, 0), drawing(1, 1)], at: 1 };
 for (let n = 0; n < 2000; n++) dragged = history(dragged, { type: "set", mol: drawing(1, n), merge: "slider" });
 assert.equal(dragged.stack.length, 3);
 
+// An amend changes the step just made, with no step of its own: Undo goes back past both (an experiment page's box
+// grown for a table, Editor.tsx).
+{
+  let h: History = { stack: [{ atoms: [], bonds: [] }], at: 0 };
+  h = history(h, { type: "set", mol: { atoms: [], bonds: [], captions: [] } });
+  const amended: Mol = { atoms: [], bonds: [], shapes: [] };
+  h = history(h, { type: "amend", mol: amended });
+  assert.deepEqual([h.stack.length, h.at, h.stack[1]], [2, 1, amended]);
+  assert.equal(history(h, { type: "undo" }).at, 0);
+}
+
 console.log("history: ok");

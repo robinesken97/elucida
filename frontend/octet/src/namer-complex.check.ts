@@ -317,6 +317,12 @@ assert.equal(complexName(phen, api), "tris(1,10-phenanthroline-κ2N1,N10)osmium(
 assert.equal(complexNameReads("tris(1,10-phenanthroline-κ2N1,N10)osmium(III)", phen, api), false, "Os(II) label, III");
 assert.equal(complexName(drawn("[NH3][Pt]([NH3])(Cl)Cl", "Pt(II)"), api), "cis-diamminedichloridoplatinum(II)", "Pt(II) label");
 assert.equal(complexName(drawn("[NH3][Pt]([NH3])(Cl)Cl", "Pt(IV)"), api), undefined, "Pt(IV) label");
+// The same with the number raised, as Text > Superscript sets it (issue 44): Os with II raised is Os(II).
+{
+  const m = labelled(SAM.find((x) => x[0] === "Os(phen)3")![1], "OsII"), k = m.atoms.findIndex((a) => a.text === "OsII");
+  m.atoms[k] = { ...m.atoms[k], runs: [{ text: "Os" }, { text: "II", script: "super" }] };
+  assert.equal(complexName(chem.expandLabels(m), api), "tris(1,10-phenanthroline-κ2N1,N10)osmium(II)", "Os with II raised");
+}
 console.log("namer-complex.check: metals labelled with an oxidation number named with it");
 
 // Configuration at the metal (IR-9.3): the donor atoms placed by hand round the metal, in the order of the metal's
@@ -563,3 +569,24 @@ const times = [9, 10, 11].map((n) => {
 const best = Math.min(...times.map((x) => x.dt));
 assert.ok(best < 50, `a complex of ${times[2].atoms} atoms took ${best.toFixed(1)} ms`);
 console.log(`namer-complex.check: a complex of ${times[2].atoms} atoms named in ${best.toFixed(1)} ms`);
+
+// η ligands drawn through a multi-centre point (Structure > Add Multi-Centre Attachment, the j keys, or a bond from a
+// metal to the middle of a ring, issue 26) read as a bond to each ring atom, so they take the same names.
+{
+  const { addGroupAt, bondTo, dragBond } = await import("./edit.ts");
+  const carbonyls = (m: Mol) => [30, 90, 150].reduce((x, t) => {
+    const d: [number, number] = [Math.cos((t * Math.PI) / 180), Math.sin((t * Math.PI) / 180)];
+    x = bondTo(bondTo(x, 0, d, { type: 2 }), x.atoms.length, [2 * d[0], 2 * d[1]], { type: 2 });
+    return { ...x, atoms: x.atoms.map((a, i) => (i === x.atoms.length - 1 ? { ...a, label: "O" } : a)) };
+  }, m);
+  const chromium: Mol = { atoms: [{ label: "Cr", location: [0, 0, 0] }], bonds: [] };
+  // The Ring tool's benzene below the metal, and a bond from Cr to its middle.
+  const ring: Mol = { atoms: [...chromium.atoms, ...[0, 1, 2, 3, 4, 5].map((k): Mol["atoms"][number] => ({ label: "C", location: [Math.cos((k * Math.PI) / 3), -2 + Math.sin((k * Math.PI) / 3), 0] }))],
+    bonds: [0, 1, 2, 3, 4, 5].map((k) => ({ type: k % 2 ? 1 : 2, atoms: [1 + k, 1 + ((k + 1) % 6)] as [number, number] })) };
+  const drawnByBond = carbonyls(dragBond(ring, 0, [0, -2]));
+  assert.ok(drawnByBond.atoms.some((a) => a.centre), "the bond made a multi-centre point");
+  assert.equal(complexName(chem.expandLabels(drawnByBond), api), "(η6-benzene)tricarbonylchromium");
+  // Shift+J's delocalised ring, drawn in perspective with wedges.
+  assert.equal(complexName(chem.expandLabels(carbonyls(addGroupAt(chromium, 0, "phenylLigand")[0])), api), "(η6-benzene)tricarbonylchromium");
+}
+console.log("namer-complex.check: η ligands through a multi-centre point named");

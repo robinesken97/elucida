@@ -1,7 +1,10 @@
 # Octet's window, menus and clipboard on Windows, for scripts/drive/drive.mjs. Run with powershell.exe -STA (the
 # clipboard needs it).
 #
-#   windows.ps1 clip-set TEXT         put text on the clipboard
+#   windows.ps1 clip-set              put the text on standard input (UTF-8) on the clipboard, as a long text (a
+#                                     drawing's CDXML) is too long for a command line
+#   windows.ps1 clip-set-data FORMAT BASE64
+#                                     put bytes on the clipboard under a format's name
 #   windows.ps1 clip-formats          the clipboard's formats, one a line
 #   windows.ps1 clip-get FORMAT       a format's bytes in base64 (text as UTF-8)
 #   windows.ps1 menu Edit Paste       click a menu in the menu bar, then an item in it, with the mouse; New* is the
@@ -270,7 +273,16 @@ function Click-Menu([string[]]$path) {
 }
 
 switch ($Command) {
-    'clip-set' { [System.Windows.Forms.Clipboard]::SetText($Rest[0]) }
+    'clip-set' {
+        $in = New-Object System.IO.MemoryStream
+        [Console]::OpenStandardInput().CopyTo($in)
+        [System.Windows.Forms.Clipboard]::SetText([Text.Encoding]::UTF8.GetString($in.ToArray()))
+    }
+    'clip-set-data' {
+        $d = New-Object System.Windows.Forms.DataObject
+        $d.SetData($Rest[0], $false, (New-Object System.IO.MemoryStream(, [Convert]::FromBase64String($Rest[1]))))
+        [System.Windows.Forms.Clipboard]::SetDataObject($d, $true)
+    }
     'clip-formats' { [System.Windows.Forms.Clipboard]::GetDataObject().GetFormats() }
     'clip-get' {
         $d = [System.Windows.Forms.Clipboard]::GetData($Rest[0])

@@ -2,12 +2,13 @@
 // selection (or the drawing; values for several structures are separated by semicolons, as ChemDraw does). A
 // click on a value copies its row; the boxes choose the rows Add to drawing writes under each structure. Decimals
 // sets the places of the exact mass, molecular weight and m/z (ChemDraw's Analysis window: 0 to 8, those three
-// rows only); Copy report copies every value with the method and source it comes from (ChemDraw's Report…).
+// rows only); Copy report copies every value with the method and source it comes from (ChemDraw's Report…). The
+// groups of predicted values have a Predicted heading, and every copy of their values says (predicted).
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Check, CopySimple, X } from "@phosphor-icons/react";
 import { useMovable } from "./movable";
 import { Select } from "./Select";
-import { propertyReport, type PropertyValues } from "./proprows";
+import { propertyReport, rowLabel, type PropertyValues } from "./proprows";
 import { useLeaving } from "./motion";
 
 const SUB = "₀₁₂₃₄₅₆₇₈₉";
@@ -46,15 +47,16 @@ export function Properties({ values, chosen, onChoose, onCopy, onAdd, onClose, s
       <div className="prop-list">
         {groups.map((g, k) => (
           <div key={k} className="prop-group">
+            {g.every((r) => r.predicted) && <h3 className="prop-heading">Predicted</h3>}
             {g.map((row) => {
               const text = row.values.map((v) => (v === undefined ? "–" : v)).join("; "), on = chosen.includes(row.key);
               return (
                 <div key={row.key} className={`prop-row${text.length > 18 ? " long" : ""}`}>
-                  <button className="prop-check" role="checkbox" aria-checked={on} aria-label={`Add ${row.name} to the drawing`} data-tip="Add to drawing" onClick={() => onChoose(row.key)}>
+                  <button className="prop-check" role="checkbox" aria-checked={on} aria-label={`Add ${rowLabel(row)} to the drawing`} data-tip="Add to drawing" onClick={() => onChoose(row.key)}>
                     {on && <Check size={12} />}
                   </button>
                   <span className="prop-name">{row.name}</span>
-                  <button className={row.key === "formula" ? "prop-value formula" : "prop-value"} data-tip="Copy" onClick={() => onCopy(`${row.name}: ${text}`)}>{show(row.key, text)}</button>
+                  <button className={row.key === "formula" ? "prop-value formula" : "prop-value"} data-tip="Copy" onClick={() => onCopy(`${rowLabel(row)}: ${text}`)}>{show(row.key, text)}</button>
                 </div>
               );
             })}

@@ -172,6 +172,18 @@ for (const id of [first, second]) {
   assert.ok(levels.every((y, k) => !k || y < levels[k - 1]), "each line below the one before");
 }
 
+// One step too wide for the page (A + B + C → D): it stays on one line, as a line of starting materials alone would
+// read as no reaction; a line breaks only after the first arrow.
+{
+  let t: Mol = EMPTY, x = 0, arrow = 0;
+  for (let k = 0; k < 3; k++) { t = addRing(t, 6, false, { point: [x, 0] }); x += 4; }
+  [t, arrow] = addArrow(t, { kind: "reaction", from: [x - 1.4, 0], to: [x + 1.4, 0] });
+  t = addRing(t, 6, false, { point: [x + 4, 0] });
+  const done = clean(t, find(t, arrow), 12), levels = new Set(fragments(done).map((g) => Math.round(middle(ink(done)(g))[1] * 100) / 100));
+  assert.equal(levels.size, 1, "one line");
+  assert.equal(find(done, arrow)?.steps[0].kind, "structure", "it still starts with its starting materials");
+}
+
 // Two reactions that share a structure (C ← A → B): laid out one after the other, A stays where the first put it.
 {
   let t: Mol = addRing(EMPTY, 6, false, { point: [0, 0] });

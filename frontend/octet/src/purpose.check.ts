@@ -1,7 +1,7 @@
 // Run: node src/purpose.check.ts. Fails loudly if a purpose (Paper, Thesis, Slides, Poster or the user's own template)
 // stops giving its sizes, page and outlines (IDEA-SIZE-1 to 15), or Quick start stops being the seamless default.
 import assert from "node:assert/strict";
-import { DEFAULT_STYLE, PAGES, PRESETS, PURPOSES, QUICK, QUICK_STYLE, forPurpose, outlines, pageSize, pickPage, presetOf, purposeOf, purposeStyle, readPurposes, readStyle, styleFor, withScale } from "./docstyle.ts";
+import { DEFAULT_STYLE, PAGES, edgeAt, PRESETS, PURPOSES, QUICK, QUICK_STYLE, forPurpose, outlines, pageSize, pickPage, presetOf, purposeOf, purposeStyle, readPurposes, readStyle, styleFor, withScale } from "./docstyle.ts";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
 import { readFileSync } from "node:fs";
 
@@ -67,9 +67,18 @@ assert.deepEqual(pickPage({ ...DEFAULT_STYLE, landscape: true }, "A3"), { page: 
   assert.deepEqual(names(outlines(purposeStyle("paper"), "paper", false)), ["A4"], "Page only hides the ACS columns");
   assert.deepEqual(outlines(purposeStyle("poster"), "poster", false), [["A0", 841, 1189]]);
   assert.deepEqual(names(outlines(DEFAULT_STYLE, undefined, false)), ["A4"]);
+  // An edge takes a click (it fits that page) only where it shows: near the A4 edge or a column's with All sizes, the
+  // A4 edge alone with Page only, and nothing with None.
+  const all = outlines(purposeStyle("paper"), "paper"), acs1 = all[1][1] / 2;
+  assert.equal(edgeAt(all, [105, 0], 1)?.[0], "A4");
+  assert.equal(edgeAt(all, [acs1 + 0.5, 0], 1)?.[0], "ACS 1-column");
+  assert.equal(edgeAt(outlines(purposeStyle("paper"), "paper", false), [acs1, 0], 1), undefined, "Page only: a hidden column takes no click");
+  assert.equal(edgeAt([], [105, 0], 1), undefined, "None: no edge takes a click");
+  assert.equal(edgeAt(all, [0, 0], 1), undefined, "the middle of the page is no edge");
   // Page only is Octet's, for every drawing: a template being made keeps its own Page edges switch, as with Ruler units.
   const edges = /d\("document", "Page", "Page edges", "[^"]*", (.*)\n/.exec(readFileSync(new URL("SettingsWindow.tsx", import.meta.url), "utf8"))?.[1];
   assert.match(edges ?? "", /^p\.template \? <Switch on=\{style\.edges\}/, "a template being made shows its own Page edges switch");
+  assert.match(readFileSync(new URL("SettingsWindow.tsx", import.meta.url), "utf8"), /<Select label="Page edges" [^\n]*\[\["all", "All sizes"\], \["page", "Page only"\], \["none", "None"\]\]/, "the choices name what shows");
 }
 
 // An open drawing given a purpose takes its sizes and page, and keeps its own background and label choices.

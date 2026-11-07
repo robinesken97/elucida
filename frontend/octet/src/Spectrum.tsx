@@ -18,7 +18,8 @@ import { useMovable } from "./movable";
 import { holdCursor } from "./cursor";
 import { useLeaving } from "./motion";
 import { HIGHLIGHT_COLOURS } from "./docstyle";
-import { fullRange, lines, lorentz as traceAt, solventPeaks, spread, ticks, traceColumns, SOLVENTS } from "./spectrumplot";
+import { columnsOf, fullRange, inkOf, labelRow, peakIn, sample, solventPeaks, spectrumLines, ticks, traceColumns, turned, NOTICE, SOLVENTS, type LabelTurn, type Line, type Trace } from "./spectrumplot";
+import { textWidth } from "./chem";
 
 const FIELDS = [60, 80, 90, 200, 300, 400, 500, 600, 700, 800];
 const HEIGHT = 184, STACKED = 320, TOP = 44, BASE = 26, PAD = 14; // px: the plot docked (one lane, two), room for labels above a lane and the axis below, and its ends
@@ -29,6 +30,34 @@ const PEAKS = ["Blue", "Orange", "Green", "Red", "Purple", "Teal", "Pink", "Gold
 export const PEAK_COLOURS = PEAKS.map(([, hex]) => hex);
 
 export type Show = "predicted" | "measured" | "stacked" | "overlaid";
+
+// A lane's peak labels, laid out as the page's are (spectrumplot's labelRow): each label's x, the x its lines run from
+// and to, its shift and the rest (multiplicity and hydrogens), and plain: a name (the solvent's or TMS's).
+export type RowLabel = { x: number; a: number; b: number; shift: string; rest: string; plain?: boolean };
+const FONT = 11, GAP = 3, BAND = 10, STUB = 3; // px: the labels' size, the gap over the ink, the slants' band, the stubs
+const oneLine = (l: RowLabel) => (l.rest ? `${l.shift} (${l.rest})` : l.shift);
+// A label's width in px in the font the panel draws it in, with its digits all as wide (tabular, as the plot sets them).
+const PANEL_FONT = getComputedStyle(document.documentElement).getPropertyValue("--font-sans");
+const widthOf = (t: string, size: number) => textWidth(t.replace(/\d/g, "0"), size, false, false, PANEL_FONT);
+// Whether a lane's labels turn (Labels), their widths across the row, and the room they need over the lane. dot: room
+// for the linked mark over a turned label.
+export function rowSize(ls: RowLabel[], turn: LabelTurn, width: number, dot = 0) {
+  const across = ls.map((l) => Math.max(widthOf(l.shift, FONT), widthOf(l.rest, FONT)) + 8), vertical = turned(turn, ls.map((l) => l.x), across, 2, width - 2, ls.map((l) => l.plain));
+  const room = 2 * GAP + BAND + STUB + (vertical ? Math.max(0, ...ls.map((l) => widthOf(oneLine(l), FONT))) + 4 + dot : 29);
+  return { vertical, widths: vertical ? ls.map(() => 15) : across, room };
+}
+// The label row in the panel's own px (y down): lane is the lane's top and bottom, ink the ink's height over its bottom.
+export function panelRow(ls: RowLabel[], size: ReturnType<typeof rowSize>, width: number, lane: { top: number; bottom: number }, ink: (a: number, b: number) => number) {
+  const row = labelRow(ls.map((l, i) => ({ x: l.x, a: l.a, b: l.b, width: size.widths[i], plain: l.plain })), { lo: 2, hi: width - 2, ceiling: lane.bottom - lane.top, ink, pt: 1, gap: GAP, band: BAND, stub: STUB });
+  const path = (pts: [number, number][]) => pts.map(([px, h], k) => `${k ? "L" : "M"}${px.toFixed(1)} ${(lane.bottom - h).toFixed(1)}`).join("");
+  return { ...row, base: lane.bottom - row.base, paths: row.leaders.map(path), brackets: row.brackets.map((b) => ({ peaks: b.peaks, d: path(b.points) })) };
+}
+// A row's label: across, the shift over the rest; turned, one line read bottom to top.
+export function RowText({ l, at, base, vertical }: { l: RowLabel; at: number; base: number; vertical: boolean }) {
+  if (vertical) return <text x={at + 4} y={base - 2} transform={`rotate(-90 ${at + 4} ${base - 2})`}>{l.shift}{l.rest && <tspan className="spectrum-integral"> ({l.rest})</tspan>}</text>;
+  return <><text x={at} y={l.rest ? base - 15 : base - 3} textAnchor="middle">{l.shift}</text>{l.rest && <text className="spectrum-integral" x={at} y={base - 3} textAnchor="middle">{l.rest}</text>}</>;
+}
+type PanelRow = ReturnType<typeof panelRow>;
 // A key's name on its button: ¹H, ¹³C, ¹⁹F, IR, UV-Vis, MS.
 const keyName = (k: string) => (/^\d/.test(k) ? nucleusText(k) : nameOf(k));
 
@@ -43,6 +72,7 @@ type Props = {
   onAdd: (what: "spectrum" | "shifts" | "key", range: [number, number]) => void;
   inset?: [number, number, number, number]; // the structure's box on the canvas (px), shown beside the spectrum when expanded
   onMhz: (mhz: number) => void; onSolvent: (s: string) => void; onSolventPeaks: (on: boolean) => void;
+  labels: LabelTurn; onLabels: (t: LabelTurn) => void; // the peak labels across, turned, or Auto (turned when crowded)
   onPoint: (atoms?: number[]) => void; onCopy: (text: string) => void; onClose: () => void;
   // The measured spectrum and its analysis, how the two show, and its multiplets: those lit from the canvas, each
   // one's colour (its atoms' highlight), number of linked atoms and bonds and of bonds alone, and the one being linked.
@@ -84,9 +114,6 @@ export function SpectrumPanel(p: Props) {
   const H = expanded ? tall : docked;
   const h1M = !!m && m.kind === "nmr" && m.nucleus === "1H";
   const base = showM && h1M ? 42 : BASE, axisY = H - base;
-  // The lanes: one, or the predicted spectrum above the measured one.
-  const laneP = show === "stacked" ? { top: TOP, bottom: TOP + (axisY - 2 * TOP) / 2 } : { top: TOP, bottom: axisY };
-  const laneM = show === "stacked" ? { top: laneP.bottom + TOP, bottom: axisY } : { top: TOP, bottom: axisY };
 
   // The x range to show all: the prediction's, the measured spectrum's, or both. NMR and IR run high to low.
   const rev = m && showM ? reversed(m) : true;
@@ -105,8 +132,13 @@ export function SpectrumPanel(p: Props) {
   const x = (v: number) => PAD + ((rev ? hi - v : v - lo) / (hi - lo)) * (width - 2 * PAD), at = (px: number) => (rev ? hi - ((px - PAD) / (width - 2 * PAD)) * (hi - lo) : lo + ((px - PAD) / (width - 2 * PAD)) * (hi - lo));
   const signals = useMemo(() => (showP ? p.prediction?.signals ?? [] : []), [p.prediction, showP]);
   const shown = (s: Signal) => s.shift >= lo && s.shift <= hi;
-  // Each signal's lines (¹³C: one), computed once.
-  const split = useMemo(() => signals.map((s) => (nucleus === "1H" ? lines(s, p.mhz) : [{ ppm: s.shift, h: s.nuclei }])), [signals, nucleus, p.mhz]);
+  // Overlaid on a measured spectrum the prediction is drawn faint, unlabelled. The solvent's own peaks, in grey: the
+  // residual peak (and water) in ¹H, the deuterated carbons in ¹³C.
+  const faint = show === "overlaid";
+  const solvent = useMemo(() => (showP && !faint && p.solventPeaks && nucleus ? solventPeaks(p.solvent, nucleus, p.mhz) : []), [p.solvent, p.solventPeaks, nucleus, p.mhz, showP, faint]);
+  // Every line (¹³C: one for each signal), and each signal's, computed once.
+  const lineList = useMemo(() => (nucleus ? spectrumLines(signals, nucleus, p.mhz, solvent) : []), [signals, nucleus, p.mhz, solvent]);
+  const split = useMemo(() => { const out: Line[][] = signals.map(() => []); for (const l of lineList) if (l.signal >= 0) out[l.signal].push(l); return out; }, [signals, lineList]);
   const [pointed, setPointed] = useState<number>();
   const [pointedGroup, setPointedGroup] = useState<number>();
   const [chosen, setChosen] = useState<number>(); // the predicted peak clicked, to colour
@@ -118,27 +150,39 @@ export function SpectrumPanel(p: Props) {
   const clip = useId();
   const anyColour = showM ? (a?.groups ?? []).some((g) => p.groupColour(g.id)) : p.colours.some(Boolean);
 
+  // The lowest and highest shift of some lines.
+  const span = (ls: { ppm: number }[]) => [Math.min(...ls.map((l) => l.ppm)), Math.max(...ls.map((l) => l.ppm))] as const;
+  const pxSpan = (ls: { ppm: number }[]) => { const [a, b] = span(ls).map(x); return { a: Math.min(a, b), b: Math.max(a, b) }; };
+  const inRange = faint ? [] : signals.map((s, k) => (shown(s) ? k : -1)).filter((k) => k >= 0), solventIn = solvent.filter((s) => s.ppm >= lo && s.ppm <= hi);
+  const labelsP: RowLabel[] = [
+    ...inRange.map((k) => { const s = signals[k]; return { x: x(s.shift), ...pxSpan(split[k]), shift: s.shift.toFixed(nucleus === "1H" ? 2 : 1), rest: nucleus === "1H" ? `${multiplicity(s)}, ${s.nuclei}H` : s.nuclei > 1 ? `${s.nuclei}C` : "" }; }),
+    ...solventIn.map((s) => ({ x: x(s.ppm), ...pxSpan(s.lines), shift: s.name, rest: "", plain: true })),
+  ];
+  const groups = useMemo(() => (showM ? a!.groups.filter((g) => g.shift >= lo && g.shift <= hi) : []), [a, showM, lo, hi]);
+  const ownGroups = groups.filter((g) => !g.other);
+  const dp = m?.kind === "nmr" ? (m.nucleus === "1H" ? 2 : 1) : m?.kind === "ms" && !ownGroups.every((g) => Math.abs(g.shift - Math.round(g.shift)) < 0.05) ? 1 : 0;
+  const second = (g: Analysis["groups"][number]) => (h1M ? `${g.name}, ${Math.max(1, Math.round(g.n))}H` : "");
+  const pxRange = (g: { lo: number; hi: number }) => ({ a: Math.min(x(g.lo), x(g.hi)), b: Math.max(x(g.lo), x(g.hi)) });
+  const labelsM: RowLabel[] = groups.map((g) => (g.other ? { x: x(g.shift), ...pxRange(g), shift: g.other, rest: "", plain: true } : { x: x(g.shift), ...pxRange(g), shift: g.shift.toFixed(dp), rest: second(g) }));
+  // The labels over each lane, and so the room each lane leaves for them; then the lanes: one, or the predicted
+  // spectrum above the measured one.
+  const sizeP = rowSize(labelsP, p.labels, width), sizeM = rowSize(labelsM, p.labels, width, 8);
+  // The measured lane's marks stand up to 10 px over it. Each lane keeps at least 32 px, however long the labels.
+  const lanes = show === "stacked" ? 2 : 1, room = Math.min(Math.max(TOP, (axisY - 32 * lanes) / lanes), Math.max(TOP, showP && !faint ? sizeP.room : 0, showM ? sizeM.room + 10 : 0));
+  const laneP = show === "stacked" ? { top: room, bottom: room + (axisY - 2 * room) / 2 } : { top: room, bottom: axisY };
+  const laneM = show === "stacked" ? { top: laneP.bottom + room, bottom: axisY } : { top: room, bottom: axisY };
+
   // --- The predicted spectrum --------------------------------------------------------------------------------------
-  // ¹H as Lorentzian lines summed at each pixel (at least a pixel and a half wide, so narrow lines show at any zoom);
-  // ¹³C as sticks, as tall as the carbons they count. Overlaid on a measured spectrum it is drawn faint, unlabelled.
-  const faint = show === "overlaid";
-  const lorentz = (ls: { ppm: number; h: number; w: number }[]) => traceAt(Array.from({ length: width + 1 }, (_, px) => at(px)), ls);
-  const least = (0.75 * (hi - lo)) / width;
-  const trace = useMemo(() => {
-    if (nucleus !== "1H" || !signals.length) return undefined;
-    return lorentz(signals.flatMap((s, k) => split[k].map((l) => ({ ...l, w: Math.max((s.broad ? 12 : 0.6) / p.mhz, least) }))));
-  }, [split, signals, nucleus, p.mhz, lo, hi, width, rev]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The solvent's own peaks, in grey: the residual peak (and water) in ¹H, the deuterated carbons in ¹³C.
-  const solvent = useMemo(() => (showP && !faint && p.solventPeaks && nucleus ? solventPeaks(p.solvent, nucleus, p.mhz) : []), [p.solvent, p.solventPeaks, nucleus, p.mhz, showP, faint]);
-  const solventTrace = useMemo(() => (nucleus === "1H" && solvent.length ? lorentz(solvent.flatMap((s) => s.lines.map((l) => ({ ...l, w: Math.max((s.broad ? 6 : 0.6) / p.mhz, least) })))) : undefined),
-    [solvent, nucleus, p.mhz, lo, hi, width, rev]); // eslint-disable-line react-hooks/exhaustive-deps
-  const top = nucleus === "1H" ? Math.max(1e-9, ...(trace ?? [0]), ...(solventTrace ?? [0])) : Math.max(1, ...signals.map((s) => s.nuclei), ...solvent.flatMap((s) => s.lines.map((l) => l.h)));
+  // ¹H as the lines summed (sample), each pixel column drawn from its lowest to its highest value, so every line shows
+  // at any zoom; ¹³C as sticks, as tall as the carbons they count. step: two points a pixel when zoomed in close.
+  const step = (hi - lo) / (2 * width), pxPpm = (hi - lo) / (width - 2 * PAD);
+  const trace = useMemo(() => (nucleus === "1H" && signals.length ? sample(lineList.filter((l) => l.signal >= 0), lo, hi, step) : undefined), [lineList, signals, nucleus, lo, hi, width]); // eslint-disable-line react-hooks/exhaustive-deps
+  const solventTrace = useMemo(() => (nucleus === "1H" && solvent.length ? sample(lineList.filter((l) => l.signal < 0), lo, hi, step) : undefined), [lineList, solvent, nucleus, lo, hi, width]); // eslint-disable-line react-hooks/exhaustive-deps
+  const top = nucleus === "1H" ? Math.max(1e-9, trace ? peakIn(trace) : 0, solventTrace ? peakIn(solventTrace) : 0) : Math.max(1, ...signals.map((s) => s.nuclei), ...solvent.flatMap((s) => s.lines.map((l) => l.h)));
   const y = (v: number) => laneP.bottom - (v / top) * (laneP.bottom - laneP.top);
-  const pathOf = (ys?: number[]) => (ys ? ys.map((v, px) => `${px ? "L" : "M"}${px} ${y(v).toFixed(1)}`).join("") : "");
+  const to = ([px, v]: [number, number]) => `${px.toFixed(1)} ${y(v).toFixed(1)}`;
+  const pathOf = (t?: Trace) => (t ? columnsOf(t, x, width).map((q, i) => `${i ? "L" : "M"}${to(q)}`).join("") : "");
   const path = pathOf(trace);
-  const inRange = signals.map((s, k) => (shown(s) ? k : -1)).filter((k) => k >= 0), placed = spread(inRange.map((k) => x(signals[k].shift)), nucleus === "1H" ? 44 : 38, width);
-  const labels: number[] = [];
-  inRange.forEach((k, i) => { labels[k] = placed[i]; });
   const on = (s: Signal, k: number) => pointed === k || s.atoms.some((atom) => p.lit.has(atom));
   // What a measured multiplet is linked to, in words: "2 atoms and 1 bond".
   const linkedWords = (id: number) => {
@@ -163,13 +207,16 @@ export function SpectrumPanel(p: Props) {
     return best > 0 ? best * 1.05 : Math.max(1e-30, lv.top);
   }, [m, lv, a, lo, hi]);
   const yM = (v: number) => laneM.bottom - ((v - (lv?.base ?? 0)) / mTop) * (laneM.bottom - laneM.top);
-  const groups = useMemo(() => (showM ? a!.groups.filter((g) => g.shift >= lo && g.shift <= hi) : []), [a, showM, lo, hi]);
-  const ownGroups = groups.filter((g) => !g.other);
-  const dp = m?.kind === "nmr" ? (m.nucleus === "1H" ? 2 : 1) : m?.kind === "ms" && !ownGroups.every((g) => Math.abs(g.shift - Math.round(g.shift)) < 0.05) ? 1 : 0;
-  const second = (g: Analysis["groups"][number]) => (h1M ? `${g.name}, ${Math.max(1, Math.round(g.n))}H` : "");
-  const placedM = spread(ownGroups.map((g) => x(g.shift)), h1M ? 48 : 38, width);
-  const labelOf = new Map(ownGroups.map((g, i) => [g.id, placedM[i]]));
   const groupOn = (id: number) => pointedGroup === id || p.chosenGroup === id || p.litGroups.has(id);
+  // Each lane's label row: the ink's height over the lane's bottom from a to b px places the leaders.
+  const rowP: PanelRow | undefined = labelsP.length ? panelRow(labelsP, sizeP, width, laneP, nucleus === "1H"
+    ? (a0, b0) => { const [u, v] = [at(a0), at(b0)]; return (Math.max(trace ? peakIn(trace, u, v) : 0, solventTrace ? peakIn(solventTrace, u, v) : 0) / top) * (laneP.bottom - laneP.top); }
+    : inkOf([...signals.map((q): [number, number] => [x(q.shift), (q.nuclei / top) * (laneP.bottom - laneP.top)]), ...solvent.flatMap((q) => q.lines.map((l): [number, number] => [x(l.ppm), (l.h / top) * (laneP.bottom - laneP.top)]))])) : undefined;
+  const rowM: PanelRow | undefined = labelsM.length && m && lv ? panelRow(labelsM, sizeM, width, laneM, inkOf([
+    ...(m.sticks && m.xs ? Array.from(m.xs, (xv, i): [number, number] => [x(xv), lv.v[i]]) : cols ?? []).map(([q, v]): [number, number] => [q, Math.min(laneM.bottom - laneM.top, laneM.bottom - yM(v))]),
+    // The mark over each peak.
+    ...(m.sticks ? [] : a!.peaks.map((pk): [number, number] => [x(pk.x), Math.min(laneM.bottom - laneM.top + 10, laneM.bottom - yM(lv.base + pk.h) + 7)])),
+  ])) : undefined;
   // The multiplet under the pointer: the nearest whose range spans it, within 6 px.
   const groupAt = (px: number, py: number) => {
     if (!showM || (show === "stacked" && py < laneP.bottom + 4)) return undefined;
@@ -219,6 +266,7 @@ export function SpectrumPanel(p: Props) {
         {showP && <Select label="Frequency" value={String(p.mhz)} options={FIELDS.map((f) => [String(f), `${f} MHz`])} onChange={(v) => p.onMhz(Number(v))} />}
         {(showP || m?.kind === "nmr") && <Select label="Solvent" value={p.solvent} options={[...new Set([...SOLVENTS, p.solvent])].map((s) => [s, s])} onChange={p.onSolvent} />}
         {showP && !faint && <button className="spectrum-button" aria-pressed={p.solventPeaks} onClick={() => p.onSolventPeaks(!p.solventPeaks)} data-tip={p.solventPeaks ? "Hide the solvent's peaks" : "Show the solvent's peaks"}>Solvent peaks</button>}
+        <Segmented label="Labels" value={p.labels} options={[["auto", "Auto"], ["horizontal", "Horizontal"], ["vertical", "Vertical"]]} onChange={p.onLabels} />
         {showP && !showM && <button className="spectrum-button" aria-pressed={p.details} onClick={() => p.onDetails(!p.details)} data-tip={p.details ? "Hide the details" : "How each shift was predicted, and how far to trust it"}>Details</button>}
         {showM && m && <span className="spectrum-threshold"><Slider name="Threshold" value={Math.round(m.threshold * 1000) / 10} min={0.5} max={50} step={0.5} show={(v) => `${v}%`} onChange={(v) => p.onThreshold(v / 100)} /></span>}
         <span className="spectrum-gap" />
@@ -314,14 +362,6 @@ export function SpectrumPanel(p: Props) {
           <g className={faint ? "spectrum-overlay" : undefined}>
             {solventTrace && <path className="spectrum-solvent" d={pathOf(solventTrace)} />}
             {nucleus === "13C" && solvent.flatMap((s, k) => s.lines.map((l, i) => l.ppm >= lo && l.ppm <= hi && <line key={`sv${k}-${i}`} className="spectrum-solvent" x1={x(l.ppm)} x2={x(l.ppm)} y1={laneP.bottom} y2={y(l.h)} />))}
-            {solvent.map((s, k) => {
-              if (s.ppm < lo || s.ppm > hi) return null;
-              // Above whatever is tallest there, the compound's peaks included.
-              const px = (ppm: number) => Math.round(x(ppm)), around = s.lines.flatMap((l) => [px(l.ppm) - 4, px(l.ppm), px(l.ppm) + 4]);
-              const tip = nucleus === "1H" ? y(Math.max(...around.map((q) => Math.max(solventTrace?.[q] ?? 0, trace?.[q] ?? 0))))
-                : y(Math.max(...s.lines.map((l) => l.h), ...signals.filter((q) => Math.abs(x(q.shift) - x(s.ppm)) < 6).map((q) => q.nuclei)));
-              return <text key={`sl${k}`} className="spectrum-solvent-label" x={x(s.ppm)} y={tip - 5} textAnchor="middle">{s.name}</text>;
-            })}
             {!faint && signals.map((s, k) => {
               if (!on(s, k)) return null;
               const xs = split[k].map((l) => x(l.ppm)), xa = Math.min(...xs), xb = Math.max(...xs);
@@ -331,23 +371,24 @@ export function SpectrumPanel(p: Props) {
               // A coloured peak: its own lines, filled in its colour under the whole trace.
               const c = p.colours[k];
               if (!c || !shown(s)) return null;
-              const own = lorentz(split[k].map((l) => ({ ...l, w: Math.max((s.broad ? 12 : 0.6) / p.mhz, least) })));
-              const xs = split[k].map((l) => x(l.ppm)), xa = Math.max(0, Math.floor(Math.min(...xs) - 40)), xb = Math.min(width, Math.ceil(Math.max(...xs) + 40));
-              const d = `M${xa} ${y(0)}` + own.slice(xa, xb + 1).map((v, i) => `L${xa + i} ${y(v).toFixed(1)}`).join("") + `L${xb} ${y(0)}Z`;
+              const [a, b] = span(split[k]), own = columnsOf(sample(split[k], Math.max(lo, a - 40 * pxPpm), Math.min(hi, b + 40 * pxPpm), step), x, width);
+              if (!own.length) return null;
+              const d = `M${to([own[0][0], 0])}L${own.map(to).join("L")}L${to([own[own.length - 1][0], 0])}Z`;
               return <path key={`c${k}`} d={d} fill={c} fillOpacity={0.35} stroke={c} strokeWidth={1} />;
             })}
             {trace && <path className="spectrum-trace" d={path} />}
             {nucleus === "13C" && signals.map((s, k) => shown(s) && <line key={k} className={`spectrum-stick${on(s, k) ? " lit" : ""}`} x1={x(s.shift)} x2={x(s.shift)} y1={laneP.bottom} y2={y(s.nuclei)} style={p.colours[k] ? { stroke: p.colours[k] } : undefined} />)}
-            {!faint && signals.map((s, k) => {
-              if (!shown(s)) return null;
-              const xs = split[k].map((l) => x(l.ppm)), ly = laneP.top - 22;
-              const tip = nucleus === "1H" ? y(Math.max(...xs.map((px) => trace?.[Math.round(px)] ?? 0))) : y(s.nuclei);
+            {rowP && rowP.brackets.map((b) => <path key={`b${b.peaks.join()}`} className="spectrum-leader" d={b.d} />)}
+            {rowP && labelsP.map((l, i) => {
+              const at = rowP.at[i], k = inRange[i], leader = rowP.paths[i] && <path className="spectrum-leader" d={rowP.paths[i]} />;
+              // The solvent's names, in grey; then each peak's label in its colour.
+              if (k === undefined) return <g key={`sl${i}`} className="spectrum-solvent-label">{leader}<RowText l={l} at={at} base={rowP.base} vertical={sizeP.vertical} /></g>;
+              const s = signals[k];
               return (
                 <g key={k} className={`spectrum-signal${on(s, k) ? " lit" : ""}${chosen === k ? " chosen" : ""}`} style={p.colours[k] ? { fill: p.colours[k] } : undefined}
                   data-tip={nucleus === "1H" ? `${s.shift.toFixed(2)} ppm, ${multiplicity(s)}${s.couplings.length ? `, J = ${s.couplings.map((c) => c.j.toFixed(1)).join(", ")} Hz` : ""}, ${s.nuclei}H` : `${s.shift.toFixed(1)} ppm, ${s.nuclei} C`}>
-                  <path className="spectrum-leader" d={`M${labels[k]} ${ly + 17}L${labels[k]} ${ly + 21}L${x(s.shift)} ${Math.min(tip - 3, ly + 28)}`} />
-                  <text x={labels[k]} y={ly} textAnchor="middle">{s.shift.toFixed(nucleus === "1H" ? 2 : 1)}</text>
-                  <text className="spectrum-integral" x={labels[k]} y={ly + 12} textAnchor="middle">{nucleus === "1H" ? `${multiplicity(s)}, ${s.nuclei}H` : s.nuclei > 1 ? `${s.nuclei}C` : ""}</text>
+                  {leader}
+                  <RowText l={l} at={at} base={rowP.base} vertical={sizeP.vertical} />
                 </g>
               );
             })}
@@ -376,22 +417,19 @@ export function SpectrumPanel(p: Props) {
                 {m.sticks && m.xs && Array.from(m.xs, (xv, i) => (xv >= lo && xv <= hi ? <line key={`st${i}`} className="spectrum-stick" x1={x(xv)} x2={x(xv)} y1={laneM.bottom} y2={yM(lv.v[i])} /> : null))}
               </g>
               {!m.sticks && a!.peaks.map((pk, i) => (pk.x >= lo && pk.x <= hi ? <line key={`pk${i}`} className="spectrum-peak" x1={x(pk.x)} x2={x(pk.x)} y1={Math.max(laneM.top - 6, yM(lv.base + pk.h) - 3)} y2={Math.max(laneM.top - 10, yM(lv.base + pk.h) - 7)} /> : null))}
-              {groups.filter((g) => g.other).map((g) => {
-                // Above whatever is tallest within 12 px, the compound's peaks included.
-                const gx = x(g.shift), near = (cols ?? []).filter(([q]) => Math.abs(q - gx) <= 12).map(([, v]) => v);
-                const tall = Math.max(lv.base + Math.max(...g.peaks.map((q) => q.h)), ...near);
-                return <text key={`o${g.id}`} className="spectrum-solvent-label" x={gx} y={Math.max(laneM.top - 2, yM(tall) - 6)} textAnchor="middle">{g.other}</text>;
-              })}
-              {ownGroups.map((g) => {
-                const lx = labelOf.get(g.id)!, ly = laneM.top - 22, c = p.groupColour(g.id), linked = p.linkedCount(g.id) > 0;
-                const tip = Math.max(laneM.top - 4, yM(lv.base + Math.max(...g.peaks.map((q) => q.h))) - 10), label = g.shift.toFixed(dp);
+              {rowM && rowM.brackets.map((b) => <path key={`b${b.peaks.join()}`} className="spectrum-leader" d={b.d} />)}
+              {rowM && groups.map((g, i) => {
+                const lx = rowM.at[i], l = labelsM[i], leader = rowM.paths[i] && <path className="spectrum-leader" d={rowM.paths[i]} />;
+                if (g.other) return <g key={`o${g.id}`} className="spectrum-solvent-label">{leader}<RowText l={l} at={lx} base={rowM.base} vertical={sizeM.vertical} /></g>;
+                const c = p.groupColour(g.id), linked = p.linkedCount(g.id) > 0, label = l.shift;
+                // A linked multiplet's mark: left of its label across, over it turned.
+                const mark = sizeM.vertical ? [lx, rowM.base - 6 - widthOf(oneLine(l), FONT)] : [lx - Math.max(widthOf(l.shift, FONT), widthOf(l.rest, FONT)) / 2 - 5, rowM.base - (l.rest ? 19 : 7)];
                 return (
                   <g key={g.id} className={`spectrum-signal${groupOn(g.id) ? " lit" : ""}${p.chosenGroup === g.id ? " chosen" : ""}`} style={c ? { fill: c } : undefined}
                     data-tip={`${h1M && g.name === "m" && g.peaks.length > 1 ? `${g.peaks[0].x.toFixed(2)}–${g.peaks[g.peaks.length - 1].x.toFixed(2)}` : label} ${m.xUnit}${h1M ? `, ${g.name}${g.js.length ? `, J = ${g.js.map((j) => j.toFixed(1)).join(", ")} Hz` : ""}, ${g.n.toFixed(2)}H` : ""}${linked ? `, linked to ${linkedWords(g.id)}` : ""}`}>
-                    <path className="spectrum-leader" d={`M${lx} ${ly + (h1M ? 17 : 5)}L${lx} ${ly + (h1M ? 21 : 9)}L${x(g.shift)} ${Math.max(ly + (h1M ? 22 : 10), tip)}`} />
-                    {linked && <circle className="spectrum-linked" cx={lx - label.length * 3.1 - 6} cy={ly - 4} r={2.5} style={c ? { fill: c } : undefined} />}
-                    <text x={lx} y={ly} textAnchor="middle">{label}</text>
-                    {h1M && <text className="spectrum-integral" x={lx} y={ly + 12} textAnchor="middle">{second(g)}</text>}
+                    {leader}
+                    {linked && <circle className="spectrum-linked" cx={mark[0]} cy={mark[1]} r={2.5} style={c ? { fill: c } : undefined} />}
+                    <RowText l={l} at={lx} base={rowM.base} vertical={sizeM.vertical} />
                   </g>
                 );
               })}
@@ -454,7 +492,7 @@ export function SpectrumPanel(p: Props) {
       })()}
       <footer className="spectrum-foot">
         <p className="spectrum-text">{text}</p>
-        {showP && <span className="spectrum-credit" data-tip="Contains information from nmrshiftdb2 (www.nmrshiftdb.org), made available under the nmrshiftdb2 Database License">nmrshiftdb2</span>}
+        {showP && <span className="spectrum-credit" data-tip={NOTICE}>nmrshiftdb2</span>}
       </footer>
     </section>
   );

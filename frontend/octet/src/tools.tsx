@@ -6,7 +6,7 @@ import { ArrowClockwise, ArrowCounterClockwise, CaretLeft, CaretRight, Cube, Era
 import { chairPoints, type SymbolKind } from "./edit";
 import { ARROW_SIZES, curvePath, headOfLength, SWEEPS, type ArrowKind, type ArrowSize, type HeadSize, type Mol, type ShapeKind } from "./render";
 import { ARROWS, BONDS, SHAPES, type BondKind } from "./kinds";
-import { closePalette, kindName, MY_SET, templateKind, type FloatingPalette, type Template, type TemplateSize } from "./templates";
+import { closePalette, kindName, legible, MY_SET, ringsOnly, templateKind, type FloatingPalette, type Template, type TemplateSize } from "./templates";
 import type { TemplateActions, TemplateSetActions, TemplateTool } from "./TemplateLibrary";
 import { LIBRARY, libraryItem, type LibraryItem } from "./library";
 import { FloatingTemplates, LibraryPanel } from "./TemplateLibrary";
@@ -14,7 +14,7 @@ import { columnsFor, DEFAULT_COLUMNS, Menu, menuWidth, type MenuItem } from "./M
 import { Exit, reduced, timing } from "./motion";
 import { BracketGlyph, BRACKETS, ElementGlyph, ORBITAL_GRID, OrbitalGlyph, orbitalName, SHAPE_EXTRA, SHAPE_GRID, shapeName } from "./elements";
 
-export type Tool = "select" | "bond" | "chain" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "shape" | "bracket" | "tlc" | "table" | "fragment" | "massspec" | "synthesis" | "retro" | "map" | "text" | "erase";
+export type Tool = "select" | "bond" | "chain" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "sequence" | "shape" | "bracket" | "tlc" | "table" | "fragment" | "massspec" | "synthesis" | "retro" | "map" | "text" | "erase";
 
 // The bond, arrow and shape kinds' names are in kinds.ts, so the canvas for screen readers (access.ts) shares them.
 export { ARROWS, BONDS, SHAPES, type BondKind };
@@ -73,6 +73,12 @@ export const withSize = (v: string, size: ArrowSize) => {
 // a step, or add a side arrow (a reagent or product) to a step.
 export const CYCLES: Record<string, string> = { circle: "Catalytic cycle", reversible: "Reversible step", name: "Step name", side: "Side arrow" };
 
+// The Sequence tool (issue 27): click where the structure goes, then type its one-letter codes. As in ChemDraw's HELM
+// Monomers toolbar, peptides and nucleic acids are drawn from the toolbar, with a click where the sequence starts.
+export const SEQUENCES: Record<string, { name: string; prefix: string }> = {
+  peptide: { name: "Peptide", prefix: "peptide: " }, rna: { name: "RNA", prefix: "rna: " }, dna: { name: "DNA", prefix: "dna: " },
+};
+
 export const SELECTS = { box: { name: "Box" }, lasso: { name: "Lasso" }, perspective: { name: "Structure perspective" } };
 
 // Marks the Symbols tool puts on an atom.
@@ -85,11 +91,11 @@ export type SelectKind = keyof typeof SELECTS;
 
 // ring is a RingKind, or a template's kind (custom:id).
 // template: a library template ("lib:name") or one of the user's own ("custom:id").
-export type Variants = { select: SelectKind; bond: BondKind; ring: string; template: string; symbol: SymbolKind; orbital: string; arrow: string; cycle: string; shape: string; bracket: string; more: string };
+export type Variants = { select: SelectKind; bond: BondKind; ring: string; template: string; symbol: SymbolKind; orbital: string; arrow: string; cycle: string; sequence: string; shape: string; bracket: string; more: string };
 // Specialist tools share one slot at the bottom of the toolbar, which shows the one last used.
 const SPECIAL: Tool[] = ["tlc", "table", "fragment", "massspec", "synthesis", "retro", "map"];
-type Strip = "select" | "bond" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "shape" | "bracket" | "more";
-const isStrip = (t: Tool): t is Exclude<Strip, "more"> => t === "select" || t === "bond" || t === "ring" || t === "template" || t === "symbol" || t === "orbital" || t === "arrow" || t === "cycle" || t === "shape" || t === "bracket";
+type Strip = "select" | "bond" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "sequence" | "shape" | "bracket" | "more";
+const isStrip = (t: Tool): t is Exclude<Strip, "more"> => t === "select" || t === "bond" || t === "ring" || t === "template" || t === "symbol" || t === "orbital" || t === "arrow" || t === "cycle" || t === "sequence" || t === "shape" || t === "bracket";
 // Strips laid out as a grid of icons (named on hover): each row a shape across its styles.
 // One hold time for every press and hold (FEEL-37): a tool pressed this long opens its strip, and on the canvas Select
 // takes over from a drawing tool.
@@ -281,6 +287,15 @@ export const SideGlyph = ({ ends }: { ends: "both" | "in" | "out" }) => (
   </Icon>
 );
 
+// The Sequence tool's icons: a peptide as residues on a chain; RNA as one strand with its bases; DNA as two strands.
+export const SequenceGlyph = ({ v }: { v: string }) => {
+  if (v === "peptide") return <Icon><polyline points="40,168 96,96 160,160 216,88" />{[[40, 168], [96, 96], [160, 160], [216, 88]].map(([x, y]) => <circle key={x} cx={x} cy={y} r={20} fill="var(--surface-raised)" />)}</Icon>;
+  const strand = (o: number) => `M40,${128 + o} C80,${56 + o} 112,${56 + o} 128,${128 + o} S176,${200 + o} 216,${128 + o}`;
+  return v === "dna"
+    ? <Icon><path d="M64,32 C192,96 192,160 64,224" /><path d="M192,32 C64,96 64,160 192,224" /><path d="M96,64H160M96,192H160" /></Icon>
+    : <Icon><path d={strand(-24)} /><path d="M76,88V128M180,120V160" /></Icon>;
+};
+
 // A TLC plate: its outline, origin, dashed front and two spots.
 export const TlcGlyph = () => (
   <Icon>
@@ -368,25 +383,6 @@ function CurvedGlyph({ kind, sweep }: { kind: ArrowKind; sweep: number }) {
       {kind === "double" && <polyline points={line(barbs(pts[0], pts[4], false))} />}
     </Icon>
   );
-}
-
-// A big template with rings (a pyranose, a ligand) reads best at icon size as its rings alone: the bonds in rings and
-// their atoms. A bond is in a ring when its ends stay joined without it.
-function ringsOnly(m: Mol): Mol {
-  if (m.atoms.length <= 9) return m;
-  const joined = (skip: number, a: number, b: number) => {
-    const seen = new Set([a]), todo = [a];
-    while (todo.length) {
-      const x = todo.pop()!;
-      if (x === b) return true;
-      m.bonds.forEach((bd, k) => { if (k === skip || !bd.atoms.includes(x)) return; const y = bd.atoms[0] === x ? bd.atoms[1] : bd.atoms[0]; if (!seen.has(y)) { seen.add(y); todo.push(y); } });
-    }
-    return false;
-  };
-  const ring = m.bonds.filter((b, k) => joined(k, b.atoms[0], b.atoms[1]));
-  if (!ring.length) return m;
-  const keep = [...new Set(ring.flatMap((b) => b.atoms))], at = new Map(keep.map((i, k) => [i, k]));
-  return { atoms: keep.map((i) => m.atoms[i]), bonds: ring.map((b) => ({ ...b, atoms: [at.get(b.atoms[0])!, at.get(b.atoms[1])!] as [number, number] })) };
 }
 
 // A template's icon: its bonds as strokes in the tool icons' style, and heteroatoms as letters with the bonds
@@ -603,7 +599,7 @@ export function Palette(p: PaletteProps) {
   // A template found by name has its name once its structure can be drawn (the names engine has loaded).
   const named = (kind: string) => (p.named(kind) ? kindName(kind) : undefined);
   const nameOf = (tool: Strip, kind: string) =>
-    tool === "more" ? SPECIAL_TOOLS[kind]?.name : tool === "bond" ? BONDS[kind as BondKind]?.name : tool === "template" ? (template(kind)?.name ?? libraryItem(kind)?.name ?? named(kind)) : tool === "symbol" ? SYMBOLS[kind as SymbolKind] : tool === "shape" ? shapeName(kind) : tool === "orbital" ? orbitalName(kind) : tool === "bracket" ? BRACKETS[kind] : tool === "cycle" ? CYCLES[kind] : tool === "ring" ? (RINGS[kind as RingKind]?.name ?? template(kind)?.name ?? libraryItem(kind)?.name ?? named(kind))
+    tool === "more" ? SPECIAL_TOOLS[kind]?.name : tool === "bond" ? BONDS[kind as BondKind]?.name : tool === "template" ? (template(kind)?.name ?? libraryItem(kind)?.name ?? named(kind)) : tool === "symbol" ? SYMBOLS[kind as SymbolKind] : tool === "shape" ? shapeName(kind) : tool === "orbital" ? orbitalName(kind) : tool === "bracket" ? BRACKETS[kind] : tool === "cycle" ? CYCLES[kind] : tool === "sequence" ? SEQUENCES[kind]?.name : tool === "ring" ? (RINGS[kind as RingKind]?.name ?? template(kind)?.name ?? libraryItem(kind)?.name ?? named(kind))
       : tool === "arrow" ? arrowName(kind) : SELECTS[kind as SelectKind]?.name;
   const iconOf = (tool: Strip, kind: string) => {
     if (tool === "more") return SPECIAL_TOOLS[kind]?.icon;
@@ -616,11 +612,12 @@ export function Palette(p: PaletteProps) {
     if (tool === "orbital") return <OrbitalGlyph v={kind} />;
     if (tool === "bracket") return <BracketGlyph v={kind} />;
     if (tool === "cycle") return <CycleGlyph v={kind} />;
+    if (tool === "sequence") return <SequenceGlyph v={kind} />;
     const mol = shapeOf(kind);
     return mol ? <TemplateGlyph mol={mol} /> : <RingGlyph kind={kind as RingKind} />;
   };
   const options = (tool: Strip) =>
-    tool === "bond" ? Object.keys(BONDS) : tool === "template" ? [p.variants.template] : tool === "symbol" ? Object.keys(SYMBOLS) : tool === "shape" ? [...SHAPE_GRID.flat(), ...SHAPE_EXTRA] : tool === "orbital" ? ORBITAL_GRID.flat() : tool === "bracket" ? Object.keys(BRACKETS) : tool === "cycle" ? Object.keys(CYCLES) : tool === "select" ? Object.keys(SELECTS) : tool === "arrow" ? [...STRAIGHT.map((k) => (!arrowSize || (k === "block" && arrowSize === "small") ? k : withSize(k, arrowSize))), ...p.curvedArrows.filter((v) => arrowVariant(v)?.sweep)] : [...Object.keys(RINGS), ...p.templates.map((t) => templateKind(t.id)), ...p.libraryRings.filter((k) => libraryItem(k) || p.named(k))];
+    tool === "bond" ? Object.keys(BONDS) : tool === "template" ? [p.variants.template] : tool === "symbol" ? Object.keys(SYMBOLS) : tool === "shape" ? [...SHAPE_GRID.flat(), ...SHAPE_EXTRA] : tool === "orbital" ? ORBITAL_GRID.flat() : tool === "bracket" ? Object.keys(BRACKETS) : tool === "cycle" ? Object.keys(CYCLES) : tool === "sequence" ? Object.keys(SEQUENCES) : tool === "select" ? Object.keys(SELECTS) : tool === "arrow" ? [...STRAIGHT.map((k) => (!arrowSize || (k === "block" && arrowSize === "small") ? k : withSize(k, arrowSize))), ...p.curvedArrows.filter((v) => arrowVariant(v)?.sweep)] : [...Object.keys(RINGS), ...p.templates.map((t) => templateKind(t.id)), ...p.libraryRings.filter((k) => libraryItem(k) || p.named(k))];
   // A menu's groups: shapes across their styles, then lines, arcs and the rest; each orbital across its phases;
   // one group for everything else.
   // The Arrow strip's last group: the sizes of the straight arrow in hand, as ChemDraw's Large, Medium and Small rows.
@@ -642,7 +639,9 @@ export function Palette(p: PaletteProps) {
     { id: "bond", name: `${BONDS[p.variants.bond].name} bond`, icon: <BondGlyph kind={p.variants.bond} /> },
     { id: "chain", name: "Chain", icon: <ChainGlyph /> },
     { id: "ring", name: nameOf("ring", p.variants.ring) ?? "Ring", icon: iconOf("ring", p.variants.ring) },
-    { id: "template", name: `${nameOf("template", p.variants.template) ?? "Template"}. Templates`, icon: iconOf("template", p.variants.template) },
+    // The button shows the last template used, or the books when it is too big to read at this size (issue 29).
+    { id: "template", name: `${nameOf("template", p.variants.template) ?? "Template"}. Templates`, icon: legible(shapeOf(p.variants.template) ?? { atoms: [], bonds: [] }) ? iconOf("template", p.variants.template) : <BooksGlyph /> },
+    { id: "sequence", name: SEQUENCES[p.variants.sequence]?.name ?? "Peptide", icon: <SequenceGlyph v={p.variants.sequence} /> },
     { id: "orbital", name: orbitalName(p.variants.orbital) ?? "Orbital", icon: <OrbitalGlyph v={p.variants.orbital} /> },
     { id: "symbol", name: SYMBOLS[p.variants.symbol], icon: <SymbolGlyph kind={p.variants.symbol} /> },
     { id: "arrow", name: `${arrowName(p.variants.arrow) ?? "Reaction"} arrow`, icon: <ArrowGlyph kind={p.variants.arrow} /> },

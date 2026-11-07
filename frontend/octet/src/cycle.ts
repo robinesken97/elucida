@@ -1,7 +1,7 @@
 // Catalytic cycles. A cycle holds its intermediates (sets of atoms) in order around a circle. Its arc arrows,
 // and the side arrows for reagents coming in and products going out, are worked out afresh from where the
 // intermediates are, so editing an intermediate keeps every arrow fitted to it.
-import type { Arrow, Box, Caption, Head, Mol } from "./render.ts";
+import { arrowPath, sizedHead, type Arrow, type ArrowKind, type Box, type Caption, type Head, type HeadShape, type Mol } from "./render.ts";
 
 // A step's own settings (step s runs from node s to node s + 1). Unset is the default.
 // kind: "equilibrium" draws the step as a reversible pair; ratio: as Arrow.ratio. lead and trail: extra clear space in
@@ -24,8 +24,10 @@ export type CycleSide = { atoms: number[]; side: "in" | "out" };
 // clicked on the circle, or a piece of text (a caption on that node); a node whose atoms all go becomes a break. A
 // cycle can have any number of nodes (none is a whole circle).
 // gap: the clear space between an arc's ends and an intermediate, in points; unset is GAP_PT.
+// head and arrowSize: the heads of all its arrows (arcs and side arrows), as an arrow's: their shape (unset is solid) and
+// palette size (unset is small, each arrow kind's own).
 export type Cycle = { id: number; centre: [number, number]; radius: number; clockwise: boolean; nodes: number[][]; at: number[]; colour?: string; order?: number; scale?: number; width?: number; gap?: number;
-  steps?: (CycleStep | null)[]; branches?: CycleBranch[]; sides?: CycleSide[] };
+  head?: HeadShape; arrowSize?: "large" | "medium"; steps?: (CycleStep | null)[]; branches?: CycleBranch[]; sides?: CycleSide[] };
 // A cycle with its structures' atoms renumbered by `to` (undefined: the atom went). An end whose structure has gone is
 // a bare end.
 export function mapBranches(c: Cycle, to: (i: number) => number | undefined): Cycle {
@@ -75,11 +77,13 @@ export type CycleLayout = {
   // p0 through sw (with the flow), and o is 1 where its outside is the cycle's outside, else -1. lead, trail and bow:
   // its handles (drawing units), at its start, its end and its middle.
   spans: { cycle: number; step: number; centre: P; R: number; a0: number; dir: number; from: number; to: number; from0: number; to0: number; O: P; Rs: number; p0: number; sw: number; o: number; lead: P; trail: P; bow: P }[];
-  anchors: Map<number, { x: number; y: number; anchor: "start" | "middle" | "end" }>; // caption id → anchor (px)
+  anchors: Map<number, { x: number; y: number; anchor: "start" | "middle" | "end"; wrap?: number }>; // caption id → anchor (px), and the width (px) it wraps to
 };
 
-// k: px per bond length; pt: px per point. ink: an intermediate's ink box in px (y down); text: a caption's.
-export function layoutCycles(m: Mol, k: number, pt: number, ink: (atoms: number[]) => Box | undefined, text: (id: number) => Box | undefined = () => undefined): CycleLayout {
+// k: px per bond length; pt: px per point. ink: an intermediate's ink box in px (y down); text: a caption's. frame: a
+// caption's box as drawn with its anchor at 0, 0, wrapped to wrap px. Without it, step names keep a fixed place.
+export function layoutCycles(m: Mol, k: number, pt: number, ink: (atoms: number[]) => Box | undefined, text: (id: number) => Box | undefined = () => undefined,
+  frame?: (id: number, anchor: "start" | "middle" | "end", wrap?: number) => Box | undefined): CycleLayout {
   const out: CycleLayout = { arrows: [], anchors: new Map(), spans: [], branches: [] };
   let next = DERIVED;
   for (const c of m.cycles ?? []) {
@@ -90,6 +94,9 @@ export function layoutCycles(m: Mol, k: number, pt: number, ink: (atoms: number[
     const nodes = c.nodes.length ? c.nodes : [[]], boxes = nodes.map((n, i) => (n.length ? ink(n) : said(i)) ?? (c.at?.[i] !== undefined ? point(c.at[i]) : !c.nodes.length ? point(Math.PI / 2) : undefined));
     const angle = (b: Box | undefined, i: number) => (b ? Math.atan2((b[1] + b[3]) / 2 - centre[1], (b[0] + b[2]) / 2 - centre[0]) : -Math.PI / 2 + (dir * 2 * Math.PI * i) / nodes.length);
     const angles = boxes.map(angle);
+    // What a step's name keeps clear of (px), and the names still to place: side, 1 outside and -1 inside; at, a place
+    // g along the step r bond lengths out from the arc, and the way it faces there.
+    const taken: Box[] = boxes.filter((x): x is Box => !!x), names: { id: number; g0: number; side: number; at: (g: number, r: number) => [P, number] }[] = [];
     const at = (a: number, r = R): P => [centre[0] + r * Math.cos(a), centre[1] + r * Math.sin(a)];
     const clear = (c.gap ?? GAP_PT) * f * pt;
     const inside = (p: P, b: Box | undefined) => !!b && p[0] > b[0] - clear && p[0] < b[2] + clear && p[1] > b[1] - clear && p[1] < b[3] + clear;
@@ -128,10 +135,12 @@ export function layoutCycles(m: Mol, k: number, pt: number, ink: (atoms: number[
       out.spans.push({ cycle: c.id, step: s, centre, R, a0, dir, from, to, from0, to0, O, Rs, p0: pA, sw, o, lead: toDoc(A), trail: toDoc(B), bow: toDoc(at(aM, Math.max(0, R + bow - BOW_IN * b))) });
       // A place on the arc's own circle at angle ph, or g along the arc, dr out from it (out of the cycle).
       const ring = (ph: number, dr = 0): P => [O[0] + (Rs + o * dr) * Math.cos(ph), O[1] + (Rs + o * dr) * Math.sin(ph)], on = (g: number, dr = 0) => ring(pA + sw * g, dr);
-      const style = { cycle: c.id, step: s, ...(c.colour ? { colour: c.colour } : {}), ...(c.order ? { order: c.order } : {}), ...own, ...(c.width ? { width: c.width } : {}) };
+      const style = { cycle: c.id, step: s, ...(c.colour ? { colour: c.colour } : {}), ...(c.order ? { order: c.order } : {}), ...own, ...(c.width ? { width: c.width } : {}), ...(c.head ? { head: c.head } : {}) };
+      // The cycle's head size, for an arrow of this kind (an arc's small head is smaller than a straight arrow's).
+      const sized = (kind: ArrowKind) => (c.arrowSize ? { headSize: sizedHead({ kind }, c.arrowSize) } : {});
       // A reversible step is a pair of half-headed arcs either side of the circle (render.ts); a hidden one has none.
       const pair = st.kind === "equilibrium", ratio = pair && st.ratio && st.ratio !== 1 ? { ratio: st.ratio } : {};
-      if (to > from && !st.hidden) out.arrows.push({ id: next--, kind: pair ? "equilibrium" : "curved", from: toDoc(A), to: toDoc(B), bend: bendFor(A, B, mid), ...(pair ? { point: true as const, ...ratio } : {}), ...style });
+      if (to > from && !st.hidden) out.arrows.push({ id: next--, kind: pair ? "equilibrium" : "curved", from: toDoc(A), to: toDoc(B), bend: bendFor(A, B, mid), ...(pair ? { point: true as const, ...ratio } : {}), ...style, ...sized(pair ? "equilibrium" : "curved") });
       // Side arrows: each meets its step at T, along the arc there (flow t), and swoops out to each end E on a circle
       // through E that touches the arc at T. A reagent's half runs in to T; a product's leaves it.
       const mine = (c.branches ?? []).filter((x) => x.step === s), label = (br: CycleBranch, part: "in" | "out") => (m.captions ?? []).find((x) => x.cycle?.cycle === c.id && x.cycle.branch === br.id && x.cycle.side === part);
@@ -175,7 +184,7 @@ export function layoutCycles(m: Mol, k: number, pt: number, ink: (atoms: number[
           return { E, M, away: [(on * r[0]) / lr, (on * r[1]) / lr] as P };
         };
         const [h0, h1] = branchHeads(br), heads = (h: Head, e: Head) => ({ ...(h !== "none" ? { start: h } : {}), ...(e !== "full" ? { end: e } : {}) });
-        const drawn = { ...style, ...(br.colour ? { colour: br.colour } : {}), branch: br.id }, ei = endAt("in"), eo = endAt("out"), li = label(br, "in"), lo = label(br, "out");
+        const drawn = { ...style, ...sized("curved"), ...(br.colour ? { colour: br.colour } : {}), branch: br.id }, ei = endAt("in"), eo = endAt("out"), li = label(br, "in"), lo = label(br, "out");
         // On a reversible step, T moves onto the half of the pair facing the ends.
         const E0 = ei ?? eo;
         if (pair && E0) { const g = (Math.sign((E0[0] - T[0]) * up[0] + (E0[1] - T[1]) * up[1]) || 1) * 0.11 * b; T = [T[0] + up[0] * g, T[1] + up[1] * g]; }
@@ -189,14 +198,57 @@ export function layoutCycles(m: Mol, k: number, pt: number, ink: (atoms: number[
           if (E && w && cap) place(cap.id, [E[0] + w[0] * clear, E[1] + w[1] * clear], Math.atan2(w[1], w[0]));
         }
       }
-      // A step's name: half way along it, outside, or inside where a side arrow is outside.
+      // A step's name: half way along it, outside, or inside where a side arrow is outside. One placed by hand (reach
+      // set) goes where it was put; the others go once everything else on the cycle is placed.
       for (const cap of m.captions ?? []) {
         if (cap.cycle?.cycle !== c.id || cap.cycle.step !== s || cap.cycle.side !== "name") continue;
-        const reach = cap.cycle.reach ?? (mine.some((x) => [x.in, x.out].some((e) => e && facing(e) > 0)) ? -0.6 : 0.6), pN = pA + sw * sideAt(cap.cycle), aN = Math.atan2(o * Math.sin(pN), o * Math.cos(pN));
-        place(cap.id, on(sideAt(cap.cycle), reach * b), reach < 0 ? aN + Math.PI : aN);
+        const reach = cap.cycle.reach ?? (mine.some((x) => [x.in, x.out].some((e) => e && facing(e) > 0)) ? -0.6 : 0.6), g0 = sideAt(cap.cycle);
+        const way = (g: number, r: number) => { const pN = pA + sw * g, aN = Math.atan2(o * Math.sin(pN), o * Math.cos(pN)); return r < 0 ? aN + Math.PI : aN; };
+        if (cap.cycle.reach === undefined && frame) names.push({ id: cap.id, g0, side: Math.sign(reach), at: (g, r) => [on(g, r * b), way(g, r)] });
+        else place(cap.id, on(g0, reach * b), way(g0, reach));
       }
+      for (const br of mine) for (const e of [br.in, br.out]) { const bx = e?.atoms?.length ? ink(e.atoms) : undefined; if (bx) taken.push(bx); }
     }
     for (const cap of m.captions ?? []) if (cap.cycle?.cycle === c.id && cap.cycle.side === "centre") { const o = cap.cycle.off ?? [0, 0]; out.anchors.set(cap.id, { x: centre[0] + o[0] * f * k, y: centre[1] - o[1] * f * k + 3.5 * f * pt, anchor: "middle" }); }
+    // The names left: each clear of the intermediates, the side arrows and their structures and text, the centre
+    // label, the names placed before it and the circle. A name tries its own side of the arc, then the other, on one
+    // line or wrapped onto two or three, along its step and out from the arc. Of the places that are clear it takes the
+    // one nearest half way along its own side, on the fewest lines; where none is, the one that overlaps least.
+    if (!names.length) continue;
+    for (const cap of m.captions ?? []) { const a = cap.cycle?.cycle === c.id ? out.anchors.get(cap.id) : undefined, fb = a && frame!(cap.id, a.anchor, a.wrap); if (fb) taken.push([fb[0] + a.x, fb[1] + a.y, fb[2] + a.x, fb[3] + a.y]); }
+    const pad = clear / 2, area = (p: Box, q: Box) => Math.max(0, Math.min(p[2], q[2]) - Math.max(p[0], q[0]) + pad) * Math.max(0, Math.min(p[3], q[3]) - Math.max(p[1], q[1]) + pad);
+    // The side arrows' points, all but where they run along the circle (keeping clear of that is the circle's job).
+    const swoops = out.arrows.filter((a) => a.cycle === c.id && a.branch !== undefined).flatMap((a) => arrowPath(a, k)).filter((p) => Math.abs(Math.hypot(p[0] - centre[0], p[1] - centre[1]) - R) > pad);
+    for (const n of names) {
+      const one = frame!(n.id, "middle");
+      if (!one) continue;
+      const w0 = one[2] - one[0], words = (m.captions!.find((x) => x.id === n.id)!.text.trim().match(/ /g) ?? []).length;
+      const wraps = [undefined, ...(words ? [0.6 * w0] : []), ...(words > 1 ? [0.4 * w0] : [])];
+      let best: { a: { x: number; y: number; anchor: "middle"; wrap?: number }; box: Box; cost: number } | undefined;
+      wraps.forEach((wrap, wi) => {
+        const fb = wrap ? frame!(n.id, "middle", wrap) : one;
+        if (!fb) return;
+        const hw = (fb[2] - fb[0]) / 2, hh = (fb[3] - fb[1]) / 2;
+        for (const side of [n.side, -n.side]) for (const dg of [0, -0.1, 0.1, -0.2, 0.2, -0.3, 0.3]) {
+          const g = Math.min(0.9, Math.max(0.1, n.g0 + dg)), [q, a] = n.at(g, 0.6 * side), u: P = [Math.cos(a), Math.sin(a)];
+          const boxAt = (d: number): Box => [q[0] + u[0] * d - hw, q[1] + u[1] * d - hh, q[0] + u[0] * d + hw, q[1] + u[1] * d + hh];
+          // Wholly on its side of the circle: inside, every corner within it; outside, its nearest point beyond it.
+          const across = (x: Box) => side < 0 ? Math.max(...[[x[0], x[1]], [x[2], x[1]], [x[0], x[3]], [x[2], x[3]]].map(([p, q]) => Math.hypot(p - centre[0], q - centre[1]))) > R - pad
+            : Math.hypot(Math.max(x[0] - centre[0], 0, centre[0] - x[2]), Math.max(x[1] - centre[1], 0, centre[1] - x[3])) < R + pad;
+          // Its middle steps away from the arc from q until it is wholly on its side, then tries further out, up to 2 bond
+          // lengths (past a side arrow's text, where that is all that is clear).
+          let d0 = 0;
+          while (d0 < 2 * R && across(boxAt(d0))) d0 += 2;
+          for (const deep of [0, 0.4, 0.8, 1.2, 1.6, 2]) {
+            const d = d0 + deep * f * k, box = boxAt(d), C: P = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+            const hit = taken.reduce((sum, t) => sum + area(box, t), 0) + swoops.filter((p) => p[0] > box[0] - pad && p[0] < box[2] + pad && p[1] > box[1] - pad && p[1] < box[3] + pad).length * pad * pad + (across(box) ? hw * hh : 0);
+            const cost = hit * 1e3 + wi + Math.abs(dg) * 10 + (d / (f * k)) * 3 + (side === n.side ? 0 : 5);
+            if (!best || cost < best.cost) best = { a: { x: C[0] - (fb[0] + fb[2]) / 2, y: C[1] - (fb[1] + fb[3]) / 2, anchor: "middle", ...(wrap ? { wrap } : {}) }, box, cost };
+          }
+        }
+      });
+      if (best) { out.anchors.set(n.id, best.a); taken.push(best.box); }
+    }
   }
   return out;
 }

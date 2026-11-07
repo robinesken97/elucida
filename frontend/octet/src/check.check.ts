@@ -119,6 +119,12 @@ assert.deepEqual(said(star("C", 5)), ["valence: C1 has 5 bonds. Carbon has a max
   const facts = (centres: number[], unset: number[] = [], conflict: number[] = [], achiral: number[] = []): StereoFacts => ({ centres: new Set(centres), unset: new Set(unset), conflict: new Set(conflict), achiral: new Set(achiral) });
   const m2: Mol = { atoms: [0, 1, 2, 3].map((x) => ({ label: "C", location: [x, x % 2 ? 0.5 : 0, 0] as [number, number, number] })), bonds: [{ type: 1, atoms: [0, 1] }, { type: 1, atoms: [1, 2], stereo: 1 }, { type: 1, atoms: [2, 3] }] };
   assert.deepEqual(said(m2, facts([1, 2])), ["between: This wedge or hash joins two stereocentres, so it is not clear which one it sets. Start it at one stereocentre only."]);
+  // A centre whose neighbours are all centres (C2 here) has no other bond to wedge: no warning where the wide end (C3)
+  // is set by its own wedge, as it would be in a cage (ginkgolide's quaternary carbons).
+  const cage: Mol = { ...m2, bonds: [m2.bonds[0], m2.bonds[1], { ...m2.bonds[2], stereo: 6 }] };
+  assert.deepEqual(said(cage, facts([0, 1, 2])), []);
+  assert.equal(said(m2, facts([0, 1, 2])).length, 1, "C3 has no wedge of its own");
+  assert.equal(said(cage, facts([1, 2])).length, 1, "C1 is not a stereocentre, so C2 could be wedged to it");
   const back = problems(m2, facts([2]));
   assert.deepEqual(back.map((p) => [p.type, p.bond, p.fix?.command]), [["backwards", 1, "flip_bond:1"]]);
   assert.deepEqual(said(m2, facts([1])), [], "the narrow end is on the stereocentre");

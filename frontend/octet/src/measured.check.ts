@@ -1,7 +1,9 @@
 // Run: node src/measured.check.ts. Fails loudly if a measured spectrum's peaks, multiplets, integrals, text line or
 // assignments go wrong, or do not survive saving and opening again. The spectra are made here from known lines.
 import assert from "node:assert/strict";
-import { readJcamp } from "./jcamp.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { readBruker, readJcamp } from "./jcamp.ts";
 import { analyse, assignGroups, assignRanges, assignValue, defineGroup, firstOrder, fromJcamp, fromSpectrumObject, keepIds, keyOf, measuredFigure, measuredHead, measuredText, msPeaks, nameOf, nextGroupId, pickPeaks, readMeasured, regroup, spectrumObject, writeMeasured, type Measured } from "./measured.ts";
 import { parse, serialize } from "./file.ts";
 import { nearest } from "./msanalysis.ts";
@@ -159,15 +161,55 @@ assert.equal(an.groups.find((g) => Math.abs(g.shift - 7.24) < 0.01)?.name, "d");
 assert.equal(an.groups.find((g) => Math.abs(g.shift - 7.26) < 0.003)?.other, "CDCl₃");
 assert.match(measuredText(near, an), /δ 7\.24 \(d, J = 8\.2 Hz, 2H\), 2\.05 \(s, 3H\)\.$/);
 
-// The figure for the page: one curve of at most 1000 points (a pen curve's limit) inside its box, each multiplet's
-// label in its colour above it, the solvent in grey, and the unit under the axis.
-const fig = measuredFigure({ m, a, range: [-0.5, 8], colour: (id) => (id === q0 ? "#2F6FED" : undefined), width: 14, height: 3.5, em: 0.55 });
-assert.equal(fig.curves.length, 1);
-assert.ok(fig.curves[0].points.length <= 1000 && fig.curves[0].points.length > 400);
-assert.ok(fig.curves[0].points.every(([px, py]) => px >= 0 && px <= 14 && py <= 3.5 + 1e-9));
+// The figure for the page: the trace in pen curves of at most 1000 points (a pen curve's limit) inside its box, each
+// multiplet's label in its colour above it, the solvent in grey, and the unit under the axis.
+const fig = measuredFigure({ m, a, range: [-0.5, 8], colour: (id) => (id === q0 ? "#2F6FED" : undefined), width: 14, height: 3.5, em: 0.55, labels: "horizontal" });
+assert.ok(fig.curves.length >= 1 && fig.curves.every((c) => c.points.length <= 1000));
+assert.ok(fig.curves.every((c) => c.points.every(({ at: [px, py], c1, c2 }) => px >= -1e-9 && px <= 14 + 1e-9 && py <= 3.5 + 1e-9 && !c1 && !c2)));
+// The page keeps the splitting (the same curve fit as a predicted trace): the triplet, the quartet and the dd show all
+// their maxima. The pieces are corners, so the maxima are among their points.
+const ink = fig.curves.flatMap((c) => c.points.map((q) => q.at)).sort((p, q) => p[0] - q[0]);
+const pageX = (ppm: number) => ((8 - ppm) / 8.5) * 14;
+function maximaIn(pts: [number, number][], lo: number, hi: number, rise: number) {
+  let n = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x, v] = pts[i];
+    if (x < lo || x > hi || !(v >= pts[i - 1][1] && v > pts[i + 1][1])) continue;
+    let left = v, right = v;
+    for (let j = i - 1; j >= 0 && pts[j][1] <= v; j--) left = Math.min(left, pts[j][1]);
+    for (let j = i + 1; j < pts.length && pts[j][1] <= v; j++) right = Math.min(right, pts[j][1]);
+    if (v - Math.max(left, right) >= rise) n++;
+  }
+  return n;
+}
+const widthOf = (g: { lo: number; hi: number }) => [pageX(g.hi + 0.005), pageX(g.lo - 0.005)] as const;
+assert.equal(maximaIn(ink, ...widthOf(at(1.26)), 0.035), 3);
+assert.equal(maximaIn(ink, ...widthOf(at(4.12)), 0.035), 4);
+assert.equal(maximaIn(ink, ...widthOf(at(6.5)), 0.035), 4);
+// A noisy trace (noise 5% of its one peak, 262,144 points) stays a few curves: 4000 columns' lowest and highest.
+{
+  let s = 5;
+  const r = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff - 0.5; };
+  const noisy: Measured = { ...m, y: Float32Array.from({ length: 1 << 18 }, (_, i) => 1 / (1 + ((i - 70000) / 20) ** 2) + 0.05 * r()), xs: undefined, groups: [] };
+  const t0 = performance.now(), nf = measuredFigure({ m: noisy, a: { groups: [] } as unknown as typeof a, range: [LO, HI], colour: () => undefined, width: 14, height: 3.5, em: 0.55 });
+  const points = nf.curves.reduce((n, c) => n + c.points.length, 0);
+  assert.ok(points <= 2 * 4001 + nf.curves.length && nf.curves.length <= 9 && performance.now() - t0 < 500, `${nf.curves.length} curves of ${points} points`);
+}
 assert.equal(fig.texts.find((t) => t.text === "4.12")?.colour, "#2F6FED");
 assert.ok(fig.texts.some((t) => t.text === "q, 2H") && fig.texts.some((t) => t.text === "TMS" && t.grey) && fig.texts.some((t) => t.text === "ppm"));
 assert.ok(fig.texts.find((t) => t.text === "4.12")!.at[0] < fig.texts.find((t) => t.text === "1.26")!.at[0]);
+// The labels use the one layout (spectrumplot's labelRow): the solvent and TMS join the row in grey, and no two
+// leaders meet, across or turned.
+for (const labels of ["horizontal", "vertical"] as const) {
+  const f = measuredFigure({ m, a, range: [-0.5, 8], colour: () => undefined, width: 14, height: 3.5, em: 0.55, labels });
+  const ls = f.lines.filter((l) => l.role?.startsWith("leader:")), side = (o: number[], p: number[], q: number[]) => Math.sign((p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]));
+  const cross = (u: typeof ls[number], v: typeof ls[number]) => side(u.from, u.to, v.from) * side(u.from, u.to, v.to) <= 0 && side(v.from, v.to, u.from) * side(v.from, v.to, u.to) <= 0
+    && Math.max(u.from[0], u.to[0]) >= Math.min(v.from[0], v.to[0]) && Math.max(v.from[0], v.to[0]) >= Math.min(u.from[0], u.to[0])
+    && Math.max(u.from[1], u.to[1]) >= Math.min(v.from[1], v.to[1]) && Math.max(v.from[1], v.to[1]) >= Math.min(u.from[1], u.to[1]);
+  assert.ok(ls.length > 4);
+  assert.ok(ls.every((u, i) => ls.every((v, j) => j <= i || u.role === v.role || !cross(u, v))), `${labels}: leaders meet`);
+  assert.ok(f.texts.some((t) => t.role?.split("/")[0] === "solvent:TMS" && t.grey && (labels === "vertical") === (t.angle === 90)));
+}
 assert.equal(measuredHead(m), "¹H NMR (400 MHz, CDCl₃)");
 
 // --- ¹³C, IR and MS ----------------------------------------------------------------------------------------------
@@ -216,4 +258,17 @@ assert.ok(own.m.groups.some((g) => g.id === 900 && g.manual));
 // Where ChemDraw had the spectrum is saved with the drawing; a bad place is refused.
 assert.deepEqual(readMeasured(writeMeasured({ ...m, box: [1, -8, 16, -2] })).box, [1, -8, 16, -2]);
 assert.throws(() => readMeasured({ ...writeMeasured(m), box: [1, 2, 3] }), /damaged/);
+
+// A real ¹H spectrum on this computer (OCTET_BRUKER names a Bruker experiment folder; it stays out of the repository):
+// on the page at its full range, every triplet Octet finds keeps its 3 maxima.
+const folder = process.env.OCTET_BRUKER;
+if (folder) {
+  const real = fromJcamp(readBruker(readFileSync(join(folder, "pdata/1/procs"), "latin1"), readFileSync(join(folder, "pdata/1/1r")), readFileSync(join(folder, "acqus"), "latin1")), 1), ra = analyse(real);
+  const [lo, hi] = [Math.min(real.first, real.last), Math.max(real.first, real.last)], page = measuredFigure({ m: real, a: ra, range: [lo, hi], colour: () => undefined, width: 14, height: 3.5, em: 0.55 });
+  const pts = page.curves.flatMap((c) => c.points.map((q) => q.at)).sort((p, q) => p[0] - q[0]), px = (ppm: number) => ((hi - ppm) / (hi - lo)) * 14;
+  const triplets = ra.groups.filter((g) => g.name === "t" && !g.other);
+  assert.ok(page.curves.every((c) => c.points.length <= 1000));
+  for (const g of triplets) assert.equal(maximaIn(pts, px(g.hi + 0.003), px(g.lo - 0.003), 0.0175), 3, `the triplet at ${g.shift.toFixed(2)} ppm`);
+  console.log(`measured.check: ${triplets.length} triplets at ${real.mhz?.toFixed(0)} MHz keep 3 maxima, ${page.curves.length} curves of ${page.curves.reduce((n, c) => n + c.points.length, 0)} points`);
+}
 console.log("measured.check: ok");

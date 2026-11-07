@@ -1,8 +1,8 @@
 # Octet source snapshot for Elucida
 
 Source: https://github.com/SamChemMan/Octet-Draw
-Commit: f11487e97ee3970c1dc5678a5adbcd610144c04e.
-Version: 1.1.0 (pinned source commit; no automatic tracking of main).
+Commit: 934719abf213e0a8c9725256338bcbc0f305cab6.
+Version: 1.1.1 (pinned source commit; no automatic tracking of main).
 License: Apache-2.0; copyright Sam Ellis and contributors. See LICENSE and THIRD_PARTY.md.
 
 This directory contains a source snapshot, not an independent git repository.
@@ -46,3 +46,10 @@ screen-coordinate frame for nested SVG viewports and excludes glyph definitions;
 otherwise pan/zoom can corrupt the exported bounds. The Python host keeps immutable
 asset revisions and independent orbital settings in its project. Review this bridge,
 sanitizer and native roundtrip when updating upstream.
+
+Update on November 7: merged 1.1.0 -> 1.1.1 with tools/update_octet.py. Upstream moved the legacy
+decoders to charset.ts; the explicit Mac Roman table moved there with them. Conflicts in Editor.tsx,
+export.ts and export.check.ts were resolved to retain Qt clipboard, screen-frame canvasInk, reagent
+equivalents (reagentLabels replaces conditionItems) and density/volume/molarity rows. The host does
+not report `filled`, so an unreadable clipboard stays silent in Elucida.
+src-tauri/src/main.rs is vendored unused: the upstream checks of 1.1.1 read the native menu text from it.
