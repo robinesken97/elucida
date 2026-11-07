@@ -92,7 +92,7 @@ def project_info(path) -> dict | None:
     name = (g("compound", "name") or g("syn", "name") or "").strip()
     note = (g("compound", "note") or "").strip()
     th = thumb_path(pdir)
-    from elucida.exchange.datapack import CODE_RE      # Laborkürzel (RE-3-150) in Dateinamen, Vorschrift … – für die Suche
+    from elucida.exchange.datapack import CODE_RE      # Laborkürzel (AB-1-234) in Dateinamen, Vorschrift … – für die Suche
     comp = g("compound") or {}
     return dict(path=str(pdir), folder=pdir.name, name=name or pdir.name, has_compound=bool(name), note=note,
                 formula=str(comp.get("formula") or ""), lit=str(comp.get("lit") or ""),

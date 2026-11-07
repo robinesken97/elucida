@@ -45,7 +45,7 @@ REF_NAMES_EN = {"fc": ("ferrocene", "Fc"), "ac2fc": ("1,1'-diacetylferrocene", "
 # Basislinie endet so weit vor dem Hinpeak: Fuß einer reversiblen Welle bei E½ − 0,12 V < 1 % des Peakstroms
 BL_GAP = 0.15
 # … und spätestens am Anstieg der Welle: Strom (geglättet) 2 % der Peakhöhe über dem Anfangsstrom des Fensters.
-# Nötig für breite Wellen (iR-Abfall, quasi-reversibel; echte THF-Daten mit ΔE_p ≈ 240 mV): dort beginnt der Anstieg
+# Nötig für breite Wellen (iR-Abfall, quasi-reversibel): dort beginnt der Anstieg
 # weit mehr als 0,15 V vor dem Peak, und eine Gerade durch den Fuß überkorrigiert i_p massiv.
 BL_ONSET = 0.02
 # Nicholson gilt nur, wenn zwischen Hinpeak und Umkehrpotential kein weiterer Prozess liegt (sonst ist i_sp und der

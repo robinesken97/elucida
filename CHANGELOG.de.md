@@ -235,7 +235,7 @@
   ChemDraw wird automatisch übernommen (Struktur mit Formel und Molmasse, Schema).
 - **Verbindungen sortieren** im Projekt per Ziehen der Zeilen oder mit **Nach Name sortieren** (1a, 1b, 2a … 10a).
 - **Suche** auf dem Startbildschirm über alle Verbindungen aller bekannten Projekte – Name/Nummer, Laborkürzel (z. B.
-  RE-3-150, auch aus Dateinamen und Vorschriften), Summenformel, Notiz, Literatur, Projekt (mehrere Wörter: alle müssen
+  AB-1-234, auch aus Dateinamen und Vorschriften), Summenformel, Notiz, Literatur, Projekt (mehrere Wörter: alle müssen
   passen); Filter auf der Projektseite; Bearbeiten → Verbindung suchen (Strg+F).
 
 ### Geändert
@@ -292,7 +292,7 @@
 - Dialog Verbindung: **Öl** neben dem Schmelzpunkt – in der SI steht dann „m.p. <25 °C“.
 - **Beispielprojekt** (Menü Hilfe, Startbildschirm) mit zwei Verbindungen und künstlichen Daten; Schnellstart für
   Projekte im README.
-- **Notiz zur Verbindung** (Dialog Verbindung), z. B. „Radikalkation von 6m“ neben der Laborbuchnummer: steht auf dem
+- **Notiz zur Verbindung** (Dialog Verbindung), z. B. „Radikalkation von 3b“ neben der Laborbuchnummer: steht auf dem
   Startbildschirm und in der Titelleiste, durchsuchbar, geht an Characterization (`elucida.json`) – nie in SI,
   Word-Export oder Datenpaket.
 
@@ -351,12 +351,12 @@
 
 ### Neu
 - **Datenpaket (Zip) je Verbindung** (Datei → Datenpaket exportieren): die Rohdaten für ein Datenrepositorium wie
-  TUDOdata, aufgebaut wie veröffentlichte Datensätze – `6m.zip` mit `6m/NMR/1H/10/` (TopSpin-Experimente vollständig),
+  TUDOdata, aufgebaut wie veröffentlichte Datensätze – `3b.zip` mit `3b/NMR/1H/10/` (TopSpin-Experimente vollständig),
   `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (Bericht, Bruker-.d), `UV-Vis/`, `Fluorescence/`, `CV/<Lösungsmittel>/`, `SEC/`,
   `EPR/`; DFT und die eigenen Abbildungen/SI wahlweise, X-Ray und Synthese nicht. Jede Datei ist abwählbar, die Auswahl
   wird je Projekt gemerkt.
-- **Laborkürzel und Datum entfernt:** Kürzel wie `RE-3-150` werden automatisch gefunden und ersetzt – in Namen durch die
-  Verbindung, im Inhalt durch „Compound 6m“ –, Datum und Uhrzeit werden gelöscht: in Textdateien (CSV, Gamry-DTA, EPR,
+- **Laborkürzel und Datum entfernt:** Kürzel wie `AB-1-234` werden automatisch gefunden und ersetzt – in Namen durch die
+  Verbindung, im Inhalt durch „Compound 3b“ –, Datum und Uhrzeit werden gelöscht: in Textdateien (CSV, Gamry-DTA, EPR,
   TopSpin-Parameter, -Titel und -Prüfprotokoll), im MS-Bericht (Text, Ersteller und Datum der Datei, Beschriftungen der
   Spektren) und in OPUS-Dateien. Die Messwerte bleiben bytegleich; Kürzel in nicht bearbeitbaren Dateien (PDF, Mnova,
   Bruker-.d) nennt das Protokoll.

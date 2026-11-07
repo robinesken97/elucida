@@ -103,7 +103,7 @@ def _ascii_xy(path):
 
 def read_ascii(path, unit=None) -> dict:
     """Zweispaltiger Text (MS400-Export, EasySpin-Simulation): B, I. Einheit aus der Kopfzeile ('[mT]', '[G]')
-    oder geschätzt (Median > 1500 -> G). Mikrowellenfrequenz aus Dateinamen wie '…-9p404368-…' (GHz)."""
+    oder geschätzt (Median > 1500 -> G). Mikrowellenfrequenz aus Dateinamen wie '…-9p412345-…' (GHz)."""
     p = Path(path)
     B, I = _ascii_xy(p)
     head = _text(p)[:300].lower()
@@ -112,7 +112,7 @@ def read_ascii(path, unit=None) -> dict:
                                                           ("g" if np.median(B) > 1500 else "mt"))
     B = B / 10.0 if unit == "g" else B
     o = np.argsort(B)
-    # „9p402995GHz“ zuerst, dann Zahlen mit ≥ 3 Nachkommastellen (MS400: „-9p404368-“, vor „Cpd1p5“), sonst wie früher
+    # „9p402995GHz“ zuerst, dann Zahlen mit ≥ 3 Nachkommastellen (MS400: „-9p412345-“, vor „Probe1p5“), sonst wie früher
     mw = None
     for pat in (r"(?<![\d.])(\d{1,3})p(\d+)GHz", r"(?<![\d.])(\d{1,3})p(\d{3,})(?![\d])",
                 r"(?<![\d.])(\d{1,3})p(\d+)(?![\d])"):

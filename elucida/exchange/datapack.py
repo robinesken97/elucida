@@ -10,7 +10,7 @@ Aufbau wie die veröffentlichten Datensätze der Gruppe (je Verbindung ein Zip <
     DFT/, Elucida/ (Abbildungen, SI)           wählbar, Standard aus
 X-Ray (CCDC) und Synthese gehören nicht hinein. Nur Dateien, auf die der Projektzustand zeigt (nichts Internes).
 
-Nutzerwunsch: außer „Compound XX“ und ohne Datum unveränderte Rohdaten, überall. Laborkürzel (z. B. „RE-3-150“) in
+Nutzerwunsch: außer „Compound XX“ und ohne Datum unveränderte Rohdaten, überall. Laborkürzel (z. B. „AB-1-234“) in
 Datei- und Ordnernamen immer ersetzt; im Inhalt (wahlweise, Standard an) Kürzel -> „Compound XX“ und Datum/Uhrzeit
 gelöscht: alle Textdateien (keine Nullbytes; auch TopSpin-Parameter, title, audita.txt, ##$DATE= -> 0), Word-Berichte
 (Absätze, Dateieigenschaften, EMF-Beschriftungen), OPUS-Binärdateien auf gleicher Länge (Strings mit Leerzeichen).
@@ -24,7 +24,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Laborkürzel „Initialen-Buch-Seite“, z. B. RE-3-150, RE-12-7a, RE-2-142FC (TopSpin-Datensatz „OCM-RE-2-142FC_…“)
+# Laborkürzel „Initialen-Buch-Seite“, z. B. AB-1-234, AB-12-7a, AB-2-142FC (TopSpin-Datensatz „OCM-AB-2-142FC_…“)
 CODE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{1,4}-\d{1,3}-\d{1,4}(?:[a-z]|[A-Z]{1,3})?)(?![A-Za-z0-9])")
 TEXT_MAX = 50_000_000            # größere Dateien nie als Text behandeln
 BINARY_EXT = {".pdf", ".0", ".1", ".2", ".mnova", ".docx", ".xlsx", ".png", ".jpg", ".emf", ".baf", ".sqlite", ".gbw",
@@ -176,7 +176,7 @@ def find_codes(items, read_text=True, limit=2_000_000) -> list[str]:
     """Laborkürzel in Namen (und im Inhalt kleiner Textdateien) aller Einträge, sortiert."""
     found = set()
     for it in items:
-        found |= set(CODE_RE.findall(it.arc)) | set(CODE_RE.findall(it.src.name))   # Ordner im Projekt: RE-3-150_10
+        found |= set(CODE_RE.findall(it.arc)) | set(CODE_RE.findall(it.src.name))   # Ordner im Projekt: AB-1-234_10
         files = [it.src] if it.src.is_file() else [f for f in it.src.rglob("*") if f.is_file()]
         for f in files:
             found |= set(CODE_RE.findall(f.name))
@@ -310,8 +310,8 @@ def scrub_pdf(data: bytes) -> bytes:
 
 
 def _scrub_word_xml(xml: str, repl: dict, dates: bool) -> str:
-    """Absätze eines WordprocessingML-Teils: Text je Absatz zusammensetzen (Word teilt ihn in Runs, z. B. „RE-3-“ +
-    „150“), Kürzel/Datum ersetzen; geänderter Absatz -> ganzer Text im ersten Run, übrige Runs leer."""
+    """Absätze eines WordprocessingML-Teils: Text je Absatz zusammensetzen (Word teilt ihn in Runs, z. B. „AB-1-“ +
+    „234“), Kürzel/Datum ersetzen; geänderter Absatz -> ganzer Text im ersten Run, übrige Runs leer."""
     import html as _h
 
     def runs(tag):
@@ -533,7 +533,7 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
 # -- Publikation: alle Verbindungen auf einmal (elucida/app/publication.py) ---------------------------------------
 @dataclass
 class Plan:
-    name: str                  # Name der Verbindung = Zip-Name (z. B. „6m“)
+    name: str                  # Name der Verbindung = Zip-Name (z. B. „3b“)
     pdir: Path
     items: list
 

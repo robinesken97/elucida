@@ -228,7 +228,7 @@
   1996 settings); **Edit in ChemDraw** (Compound dialog, synthesis tab) opens them, and saving in ChemDraw is taken
   over automatically (structure with formula and molar mass, scheme).
 - **Sort compounds** in a project by dragging the rows or with **Sort by name** (1a, 1b, 2a … 10a).
-- **Search** on the welcome page across all compounds of all known projects – name/number, lab code (e.g. RE-3-150,
+- **Search** on the welcome page across all compounds of all known projects – name/number, lab code (e.g. AB-1-234,
   also from file names and procedures), formula, note, reference, project (several words: all must match); filter on
   the project page; Edit → Find compound (Ctrl+F).
 
@@ -285,7 +285,7 @@
 - Compound dialog: **Oil** next to the melting point – the SI then reads "m.p. <25 °C".
 - **Example project** (Help menu, welcome page) with two compounds and artificial data; quick start for
   projects in the README.
-- **Note for the compound** (dialog Compound), e.g. "radical cation of 6m" next to the lab number: shown on the
+- **Note for the compound** (dialog Compound), e.g. "radical cation of 3b" next to the lab number: shown on the
   welcome page and in the title bar, searchable, passed to Characterization (`elucida.json`) – never into the SI,
   Word export or data package.
 
@@ -343,12 +343,12 @@
 
 ### New
 - **Data package (zip) per compound** (File → Export data package): the raw data for a data repository such as
-  TUDOdata, laid out like published datasets – `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments),
+  TUDOdata, laid out like published datasets – `3b.zip` with `3b/NMR/1H/10/` (complete TopSpin experiments),
   `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`;
   DFT and Elucida's own figures/SI optional, X-ray and synthesis not included. Every file can be deselected, the
   choice is remembered per project.
-- **Lab codes and dates removed:** codes such as `RE-3-150` are found automatically and replaced – in names by the
-  compound, in the contents by „Compound 6m“ – and dates and times are deleted: in text files (CSV, Gamry DTA, EPR,
+- **Lab codes and dates removed:** codes such as `AB-1-234` are found automatically and replaced – in names by the
+  compound, in the contents by „Compound 3b“ – and dates and times are deleted: in text files (CSV, Gamry DTA, EPR,
   TopSpin parameters, title and audit trail), in the MS report (text, file author and dates, labels in its spectra)
   and in OPUS files. The measured values stay byte-identical; codes left in files that cannot be edited (PDF, Mnova,
   Bruker .d) are listed in the log.

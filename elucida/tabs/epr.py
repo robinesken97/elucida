@@ -1021,8 +1021,8 @@ class EPRTab(TABS.FigureTab):
         return "\n".join(parts)
 
     def si_caption(self, name):
-        """Wie in der SI: „X-Band EPR spectrum of <b>6m•+</b> in THF (1 mM). Fitting parameters: g = 2.0026;
-        ΔBpp = 0.284 mT; hyperfine coupling: 1×14N: 2.39 MHz; …“. Band aus der Mikrowellenfrequenz, Parameter nur aus
+        """Wie in der SI: „X-Band EPR spectrum of <b>X</b> in <Lösungsmittel> (<c>). Fitting parameters: g = …;
+        ΔBpp = … mT; hyperfine coupling: 1×14N: … MHz; …“. Band aus der Mikrowellenfrequenz, Parameter nur aus
         eigenen S = ½-Fits (ohne Fehler, siehe methods_text), Spezies/Lösungsmittel/Konzentration aus den Feldern."""
         import html
         from elucida.si.lines import chem_html

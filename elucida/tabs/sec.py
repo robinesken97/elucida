@@ -607,7 +607,7 @@ class SECTab(TABS.FigureTab):
         return cfg, curves, labels, []
 
     def si_caption(self, name):
-        """Wie in der SI: „UV-vis-SEC of <b>6m</b> in THF. Color coding: <b>neutral</b> (blue), <b>dication</b> (red).
+        """Wie in der SI: „UV-vis-SEC of <b>3b</b> in THF. Color coding: <b>neutral</b> (blue), <b>dication</b> (red).
         Starting potential (vs. Ag/AgNO3): −1.30 V; End potential (vs. Ag/AgNO3): 0.70 V.“ Potentiale aus dem Scan
         (erstes/letztes gezeigtes Spektrum), Namen der Spezies und Lösungsmittel aus den Feldern."""
         import html

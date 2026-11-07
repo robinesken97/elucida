@@ -473,14 +473,14 @@ TEXTS = {
                            "For the checklist of the project: known compounds only need ¹H and ¹³C NMR"),
     "compound_lit": ("Literatur", "Reference"),
     "compound_lit_ph": ("Zitat oder DOI, z. B. J. Org. Chem. 2020, 85, 1234", "Citation or DOI, e.g. J. Org. Chem. 2020, 85, 1234"),
-    "compound_note_ph": ("z. B. Radikalkation von 6m", "e.g. radical cation of 6m"),
+    "compound_note_ph": ("z. B. Radikalkation von 3b", "e.g. radical cation of 3b"),
     "compound_note_tip": ("Was ist das? Steht auf dem Startbildschirm und in der Titelleiste – "
                           "nicht in SI, Word-Export oder Datenpaket.",
                           "What is it? Shown on the welcome page and in the title bar – "
                           "not into the SI, Word export or data package."),
-    "recent_search_ph": ("Suchen in allen Projekten: Name/Nummer, Laborkürzel (z. B. RE-3-150), Summenformel, Notiz, "
+    "recent_search_ph": ("Suchen in allen Projekten: Name/Nummer, Laborkürzel (z. B. AB-1-234), Summenformel, Notiz, "
                          "Projekt …",
-                         "Search all projects: name/number, lab code (e.g. RE-3-150), formula, note, project …"),
+                         "Search all projects: name/number, lab code (e.g. AB-1-234), formula, note, project …"),
     "search_hits": ("Treffer", "Results"),
     "act_search": ("Verbindung suchen …", "Find compound …"),
     "search_none": ("Keine Verbindung gefunden.", "No compound found."),
@@ -743,8 +743,8 @@ TEXTS = {
                 "like NMR/1H/10, IR, MS, UV-Vis, CV/<solvent>, EPR. X-ray (CCDC) and synthesis are not included. "
                 "Lab codes are replaced by the compound in names and text files."),
     "dp_name": ("Name (Zip und Ordner)", "Name (zip and folder)"),
-    "dp_name_tip": ("Wie in der Publikation, z. B. 6m – ergibt 6m.zip mit dem Ordner 6m/",
-                    "As in the publication, e.g. 6m – gives 6m.zip with the folder 6m/"),
+    "dp_name_tip": ("Wie in der Publikation, z. B. 3b – ergibt 3b.zip mit dem Ordner 3b/",
+                    "As in the publication, e.g. 3b – gives 3b.zip with the folder 3b/"),
     "dp_col_file": ("Im Zip", "In the zip"),
     "dp_col_size": ("Größe", "Size"),
     "dp_codes": ("Laborkürzel ersetzen", "Replace lab codes"),
@@ -818,8 +818,8 @@ TEXTS = {
                     "(g, ΔB_pp, couplings in MHz) only from own S = ½ fits, without uncertainties. Please add "
                     "EasySpin simulations yourself."),
     "cap_species": ("Spezies", "Species"),
-    "cap_species_ph": ("leer = Verbindung; z. B. 6m^{•+} (^{…} hochgestellt)",
-                       "empty = compound; e.g. 6m^{•+} (^{…} superscript)"),
+    "cap_species_ph": ("leer = Verbindung; z. B. 3b^{•+} (^{…} hochgestellt)",
+                       "empty = compound; e.g. 3b^{•+} (^{…} superscript)"),
     "cap_el": ("Leitsalz", "Electrolyte"),
     "cap_el_ph": ("z. B. 0.1 M n-Bu4NPF6 (wird gemerkt)", "e.g. 0.1 M n-Bu4NPF6 (remembered)"),
     "cap_temp": ("Temperatur", "Temperature"),
@@ -2140,7 +2140,7 @@ TEXTS = {
     "other_up": ("↑", "↑"),
     "other_details": ('Gewählte Abbildung', 'Selected Figure'),
     "other_cap": ("Unterschrift", "Caption"),
-    "other_cap_ph": ("z. B. DSC trace of 6m (10 K min-1).", "e.g. DSC trace of 6m (10 K min-1)."),
+    "other_cap_ph": ("z. B. DSC trace of 3b (10 K min-1).", "e.g. DSC trace of 3b (10 K min-1)."),
     "other_cap_tip": ("Englisch wie die übrigen Unterschriften; „Figure Sn:“ setzt der Export davor.",
                       "English like the other captions; the export adds “Figure Sn:”."),
     "other_chapter": ("Kapitel", "Chapter"),
@@ -2629,8 +2629,8 @@ TEXTS = {
     "act_to_overview": ("Zur Übersicht", "Back to overview"),
     "nav_switch_tip": ("Zu einer anderen Verbindung des Projekts wechseln", "Switch to another compound of the project"),
     "pub_new_compound": ("Neue Verbindung", "New compound"),
-    "pub_new_compound_q": ("Name der Verbindung (auch Ordnername), z. B. 6m:",
-                           "Name of the compound (also the folder name), e.g. 6m:"),
+    "pub_new_compound_q": ("Name der Verbindung (auch Ordnername), z. B. 3b:",
+                           "Name of the compound (also the folder name), e.g. 3b:"),
     "pub_add_project": ("Verbindung hinzufügen …",
                         "Add compound …"),
     "pub_add_project_tip": ("Vorhandene Verbindung aufnehmen (der Ordner bleibt, wo er ist). Verbindungen in Unterordnern des "

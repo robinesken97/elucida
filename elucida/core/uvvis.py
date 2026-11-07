@@ -764,7 +764,7 @@ def fmt_lam(lam) -> str:
 
 def fmt_ve(v, e=None, digits="auto", max_decimals=None):
     """Wert ± Fehler, gerundet nach Unsicherheit. max_decimals=0 (ε): ganzzahlig, auch bei großem Fehler
-    (wie in den Publikationen der Gruppe: 9525 ± 455, nicht 9500 ± 500)."""
+    (wie in den Publikationen der Gruppe: 7264 ± 318, nicht 7300 ± 300)."""
     d = ve_decimals(v, e, digits, max_decimals)
     vs = f"{round(v, d):.{max(d, 0)}f}"
     es = None

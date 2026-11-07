@@ -70,7 +70,7 @@ project folder.
 2. **Fill in the details:** **Details …** – title of the paper (title page of the SI; italics with `<i>…</i>`), authors,
    affiliation, DOI of the dataset, related publication, descriptions, license. They end up in `README.txt` of the
    dataset and on the title page.
-3. **Add compounds:** **New compound** creates a subfolder (name = compound, e.g. `6m`); click a
+3. **Add compounds:** **New compound** creates a subfolder (name = compound, e.g. `3b`); click a
    compound to open it and work as in the quick start above. The path at the left of the tab bar,
    **⌂ Overview › <project> › <compound> ▾**, leads back to the project or the overview and switches directly to another
    compound of the project (also File → Back to project, Ctrl+Shift+P; File → Back to overview, Ctrl+Shift+H).
@@ -78,7 +78,7 @@ project folder.
    into a group); in the complete SI the groups become sub-chapters of synthesis and NMR (2.1, 2.2 …).
    Drag the rows or use **Sort by name** to change the order – it is the order in the SI and in the dataset. The
    search field at the top of the welcome page finds compounds in all your projects (name/number, lab code such as
-   RE-3-150, formula, note); Ctrl+F jumps there. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
+   AB-1-234, formula, note); Ctrl+F jumps there. Each compound shows a **checklist**: ¹H, ¹³C, 2D NMR, HRMS, IR and
    m.p. are required; for compounds marked **known from the literature** in the Compound dialog (with the reference)
    only ¹H and ¹³C. **Oil** next to the melting point gives "m.p. <25 °C".
 4. **SI texts:** **SI texts …** – "Materials and Methods" (or insert the setup texts stored in the tabs) and an
@@ -142,11 +142,11 @@ or by dragging the folder onto the window. **File → Save compound copy** write
 an intermediate state). **Edit → Undo / Redo** (⌘Z / ⌘⇧Z, Ctrl+Z / Ctrl+Y) covers all tabs.
 
 **File → Export data package (zip)** writes the raw data of the compound for a data repository (e.g. TUDOdata), laid
-out like published datasets: `6m.zip` with `6m/NMR/1H/10/` (complete TopSpin experiments), `NMR/HSQC + HMBC/12/`,
+out like published datasets: `3b.zip` with `3b/NMR/1H/10/` (complete TopSpin experiments), `NMR/HSQC + HMBC/12/`,
 `IR/`, `MS/` (report, Bruker .d), `UV-Vis/`, `Fluorescence/`, `CV/<solvent>/`, `SEC/`, `EPR/`; DFT and Elucida's own
 figures/SI optional. X-ray (CCDC) and synthesis are not included. Every file can be deselected; the choice is
-remembered per compound. **Lab codes** such as `RE-3-150` are found automatically and replaced – in file and folder
-names by the compound (`6m`), in the contents by „Compound 6m“ (both editable) – and **dates and times are deleted**:
+remembered per compound. **Lab codes** such as `AB-1-234` are found automatically and replaced – in file and folder
+names by the compound (`3b`), in the contents by „Compound 3b“ (both editable) – and **dates and times are deleted**:
 in all text files (CSV, Gamry DTA, EPR, TopSpin parameters, title and audit trail), in the MS report (text, file
 author and dates, labels in its spectra) and in OPUS files (same length). The measured values (FID, ser, spectra) stay
 byte-identical. PDF, Mnova and Bruker .d cannot be edited; if a code remains in one of them, the log names it.
@@ -169,7 +169,7 @@ elsewhere into the project.
   e.g. when the same compound appears in two papers. Compounds from older versions without a project are offered for
   assignment when they are opened (path: "⚠ no project").
 - **Search:** the field at the top of the welcome page searches all compounds of all known projects by name/number,
-  lab code (e.g. RE-3-150, also from file names and procedures), formula, note, reference or project; the project page
+  lab code (e.g. AB-1-234, also from file names and procedures), formula, note, reference or project; the project page
   has a filter; Ctrl+F jumps there.
 - **Move to trash …** (right-click in the overview) removes a compound or a whole project after a question with the
   number of files and the size; it can be restored from the trash.
@@ -221,7 +221,7 @@ mass, pictures) or the scheme by itself.
 (characterisation, NMR spectra, figures of all tabs, X-ray, DFT) and collects everything that is ready for the compound into
 `SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from **Compound …**, UV-Vis line from the **SI line** page of the
-UV-Vis (ε) tab: *λ*_max: 331 nm (*ε* = 8443 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε as an integer), followed by the crystal-data table, the selected parameters and the captions of the
+UV-Vis (ε) tab: *λ*_max: 350 nm (*ε* = 12000 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε as an integer), followed by the crystal-data table, the selected parameters and the captions of the
 X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
 and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
 
@@ -406,7 +406,7 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
   uses the full data range, independent of the displayed λ range.
 - **Fit cutoff:** points above the cutoff (default A = 1.0) are excluded from the fit.
 - **Bands:** found automatically within the displayed λ range, or entered as a list.
-- **Rounding:** ε (M⁻¹ cm⁻¹) and its errors are shown as integers (e.g. 9525 ± 455), the same in the table,
+- **Rounding:** ε (M⁻¹ cm⁻¹) and its errors are shown as integers (e.g. 7264 ± 318), the same in the table,
   figure, SI line, methods text and Excel report; the specific coefficient a is rounded to the precision of its
   standard error. The results CSV keeps the full values.
 - **Warnings** (results table and log): fewer than 4 fit points, significant intercept (> t(0.975; n−2)·SE),
@@ -561,7 +561,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 
 - Reads **Bruker BES3T** (.dsc + .DTA, e.g. Magnettech ESR5000/ESRStudio, Elexsys; 2D files give one spectrum
   per row) and **two-column text** (Magnettech MS400 export; microwave frequency from file names like
-  `…-9p404368-…`). Frequency, temperature, modulation and power are shown per spectrum.
+  `…-9p412345-…`). Frequency, temperature, modulation and power are shown per spectrum.
 - **Dark spectrum:** the measurement before irradiation can be subtracted from each spectrum (light − k·dark,
   interpolated onto the same field grid); a warning appears if frequency, modulation or power differ.
 - **Processing:** polynomial baseline (order 0–5) from the outer edges of the sweep or from chosen signal-free

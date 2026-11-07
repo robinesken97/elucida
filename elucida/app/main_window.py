@@ -2572,7 +2572,7 @@ class MainWindow(QMainWindow):
         name = Path(self.project_dir).name if self.project_dir else T("no_project_title")
         if self.compound.get("name"):
             name = f"{self.compound['name']} · {name}"
-        if self.compound.get("note"):                  # Notiz zur Verbindung (z. B. „Radikalkation von 6m“)
+        if self.compound.get("note"):                  # Notiz zur Verbindung (z. B. „Radikalkation“)
             name = f"{name} ({self.compound['note']})"
         if self.publication_dir:                         # Teil einer Publikation
             name = f"{name} – {self.publication_title()}"

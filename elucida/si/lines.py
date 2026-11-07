@@ -1,7 +1,7 @@
 """SI-Zeilen und SI-Export: UV-Vis-Zeile (ε-Tab), Elementaranalyse, Word-Datei (docx ohne Zusatzpaket).
 
 Stil wie in den SI der Arbeitsgruppe: „m.p. …; IR [cm-1]: ṽ = …; HR-MS-ESI(+) calc. …; found …;
-UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), …“. Die Elementaranalyse ist aufgebaut wie die HR-MS-Zeile:
+UV-Vis: λmax: 350 nm (ε = 12000 cm-1 M-1), …“. Die Elementaranalyse ist aufgebaut wie die HR-MS-Zeile:
 „Elemental analysis (%) calc. C18H20N2: C 81.78, H 7.63, N 10.60; found C 81.52, H 7.70, N 10.41“ (wie HR-MS).
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ _UNITS = ("°C|K|°|Å|nm|pm|mm|cm|µm|μm|m|mg|µg|μg|g|kg|mmol|µmol|μmol|mo
           "ppm|kHz|MHz|GHz|Hz|mT|mV|V|eV|Eh|E<sub>h</sub>|kcal|kJ|atm|mbar|bar|Torr|Da|wt%|%")
 _NB_RULES = [
     (re.compile(r"(?<=\d)[ ]+(?=(?:" + _UNITS + r")(?![A-Za-z0-9]))"), NBSP),          # Zahl ↔ Einheit: 67 °C, 0.82 mmol
-    (re.compile(r"[ ]+([=±≈])[ ]+"), NBSP + r"\1" + NBSP),                            # ε = 8443, 7.39 ± 0.01
+    (re.compile(r"[ ]+([=±≈])[ ]+"), NBSP + r"\1" + NBSP),                            # ε = 12000, 7.39 ± 0.01
     (re.compile(r"(?<=</sup>)[ ]+(?=[A-Za-zµμ]+<sup>)"), NBSP),                        # cm<sup>-1</sup> M<sup>-1</sup>
     (re.compile(r"(?<=-1)[ ]+(?=[A-Za-zµμ]+-1\b)"), NBSP),                             # cm-1 M-1 (Klartext)
     (re.compile(r"(?<=⁻¹)[ ]+(?=[A-Za-zµμ]+⁻¹)"), NBSP),                               # cm⁻¹ M⁻¹
@@ -181,7 +181,7 @@ def ea_line(formula: str, solvate: str, found: dict):
 
 # ---------------------------------------------------------------------------- UV-Vis
 def uvvis_line(results, cfg, solvent: str = ""):
-    """ε-Ergebnisse -> (Klartext, HTML): UV-Vis: λmax: 331 nm (ε = 8443 cm-1 M-1), … Nur Banden, die auch im Bild
+    """ε-Ergebnisse -> (Klartext, HTML): UV-Vis: λmax: 350 nm (ε = 12000 cm-1 M-1), … Nur Banden, die auch im Bild
     stehen (nicht abgewählt, R² ≥ Schwelle); ε gerundet auf die Genauigkeit des Standardfehlers (wie in der Tabelle,
     ohne ±). Ohne Molmasse: a in L g-1 cm-1."""
     molar = bool(core.conc_factor(cfg))

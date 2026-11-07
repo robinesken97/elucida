@@ -73,14 +73,14 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    Adresse, DOI des Datensatzes, zugehörige Publikation, Beschreibungen, Lizenz. Sie landen in `README.txt` des
    Datensatzes und auf dem Titelblatt.
 3. **Verbindungen anlegen:** **Neue Verbindung** legt einen Unterordner an (Name = Verbindung, z. B.
-   `6m`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. Der Pfad links in der
+   `3b`); ein Klick auf eine Verbindung öffnet sie, gearbeitet wird wie im Schnellstart oben. Der Pfad links in der
    Tab-Leiste, **⌂ Übersicht › <Projekt> › <Verbindung> ▾**, führt zurück zum Projekt oder zur Übersicht und wechselt
    direkt zu einer anderen Verbindung des Projekts (auch Datei → Zum Projekt, Strg+Umschalt+P; Datei → Zur Übersicht,
    Strg+Umschalt+H). **Neue Gruppe …** gliedert die Verbindungen (z. B.
    Precursor, Salze, NHOs; Rechtsklick auf eine Verbindung → Gruppe, oder in eine Gruppe ziehen); in der Gesamt-SI werden
    die Gruppen zu Unterkapiteln von Synthese und NMR (2.1, 2.2 …). Zeilen ziehen oder **Nach Name sortieren** ändert die
    Reihenfolge – sie gilt für SI und Datensatz. Das Suchfeld oben
-   auf dem Startbildschirm findet Verbindungen in allen deinen Projekten (Name/Nummer, Laborkürzel wie RE-3-150,
+   auf dem Startbildschirm findet Verbindungen in allen deinen Projekten (Name/Nummer, Laborkürzel wie AB-1-234,
    Summenformel, Notiz); Strg+F springt dorthin. Jede Verbindung zeigt eine **Checkliste**: Pflicht sind ¹H,
    ¹³C, 2D-NMR, HRMS, IR und m.p.; für im Dialog Verbindung als **literaturbekannt** markierte Verbindungen (mit Literatur)
    nur ¹H und ¹³C. **Öl** neben dem Schmelzpunkt ergibt „m.p. <25 °C“.
@@ -146,11 +146,11 @@ eine vollständige Kopie an (z. B. als Zwischenstand). **Bearbeiten → Rückgä
 (⌘Z / ⌘⇧Z, Strg+Z / Strg+Y) gilt für alle Tabs.
 
 **Datei → Datenpaket (Zip) exportieren** schreibt die Rohdaten der Verbindung für ein Datenrepositorium (z. B.
-TUDOdata), aufgebaut wie veröffentlichte Datensätze: `6m.zip` mit `6m/NMR/1H/10/` (TopSpin-Experimente vollständig),
+TUDOdata), aufgebaut wie veröffentlichte Datensätze: `3b.zip` mit `3b/NMR/1H/10/` (TopSpin-Experimente vollständig),
 `NMR/HSQC + HMBC/12/`, `IR/`, `MS/` (Bericht, Bruker-.d), `UV-Vis/`, `Fluorescence/`, `CV/<Lösungsmittel>/`, `SEC/`,
 `EPR/`; DFT und die eigenen Abbildungen/SI wahlweise. X-Ray (CCDC) und Synthese gehören nicht hinein. Jede Datei ist
-abwählbar, die Auswahl wird je Verbindung gemerkt. **Laborkürzel** wie `RE-3-150` werden automatisch gefunden und ersetzt –
-in Datei- und Ordnernamen durch die Verbindung (`6m`), im Inhalt durch „Compound 6m“ (beides änderbar) –, und **Datum
+abwählbar, die Auswahl wird je Verbindung gemerkt. **Laborkürzel** wie `AB-1-234` werden automatisch gefunden und ersetzt –
+in Datei- und Ordnernamen durch die Verbindung (`3b`), im Inhalt durch „Compound 3b“ (beides änderbar) –, und **Datum
 und Uhrzeit werden gelöscht**: in allen Textdateien (CSV, Gamry-DTA, EPR, TopSpin-Parameter, -Titel und -Prüfprotokoll),
 im MS-Bericht (Text, Ersteller und Datum der Datei, Beschriftungen der Spektren) und in OPUS-Dateien (auf gleicher
 Länge). Die Messwerte (FID, ser, Spektren) bleiben bytegleich. PDF, Mnova und Bruker-.d lassen sich nicht bearbeiten;
@@ -183,7 +183,7 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
   legt eine unabhängige Kopie an, z. B. wenn dieselbe Verbindung in zwei Papern vorkommt. Verbindungen aus älteren
   Versionen ohne Projekt bietet das Programm beim Öffnen zum Zuordnen an (Pfad: „⚠ ohne Projekt“).
 - **Suchen:** Das Feld oben auf dem Startbildschirm durchsucht alle Verbindungen aller bekannten Projekte nach
-  Name/Nummer, Laborkürzel (z. B. RE-3-150, auch aus Dateinamen und Vorschriften), Summenformel, Notiz, Literatur oder
+  Name/Nummer, Laborkürzel (z. B. AB-1-234, auch aus Dateinamen und Vorschriften), Summenformel, Notiz, Literatur oder
   Projekt; die Projektseite hat einen Filter; Strg+F springt dorthin.
 - **In den Papierkorb verschieben …** (Rechtsklick in der Übersicht) entfernt eine Verbindung oder ein ganzes Projekt
   nach einer Nachfrage mit Anzahl der Dateien und Größe; aus dem Papierkorb lässt sich alles wiederherstellen.
@@ -227,7 +227,7 @@ die Struktur (Formel, Molmasse, Bilder) bzw. das Schema von selbst.
 sollen (Charakterisierung, NMR-Spektren, Abbildungen aller Tabs, X-Ray, DFT), und sammelt alles Fertige zur Verbindung in
 `SI/<Verbindung>_SI.docx`, im Stil der SI: ein Charakterisierungsabsatz **m.p. …; IR …; HR-MS …; UV-Vis …;
 Elemental analysis …** (Schmelzpunkt aus **Verbindung …**, UV-Vis-Zeile von der Seite **SI-Zeile** im Tab UV-Vis (ε):
-*λ*_max: 331 nm (*ε* = 8443 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε ganzzahlig), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
+*λ*_max: 350 nm (*ε* = 12000 cm⁻¹ M⁻¹), … mit den Banden wie im Bild, aufsteigend, ε ganzzahlig), danach Kristalldaten-Tabelle, ausgewählte Parameter und Bildunterschriften aus dem
 X-Ray-Tab und die DFT-Rechnungen (zweispaltig). Was noch fehlt, wird nach dem Export aufgezählt. Zahl und Einheit sind
 durch geschützte Leerzeichen verbunden, Word trennt also nie „298 nm“ oder „ε = 8440“.
 
@@ -418,7 +418,7 @@ linearen Regressionen und R², die Struktur und ein freigestelltes Foto der Küv
   Die Basislinie nutzt immer den vollen Datenbereich, unabhängig vom dargestellten λ-Bereich.
 - **Fit-Cutoff:** Punkte oberhalb des Cutoffs (Standard A = 1,0) gehen nicht in den Fit ein.
 - **Banden:** automatisch im dargestellten λ-Bereich gesucht oder als Liste vorgegeben.
-- **Rundung:** ε (M⁻¹ cm⁻¹) und seine Fehler erscheinen ganzzahlig (z. B. 9525 ± 455), gleich in Tabelle, Bild,
+- **Rundung:** ε (M⁻¹ cm⁻¹) und seine Fehler erscheinen ganzzahlig (z. B. 7264 ± 318), gleich in Tabelle, Bild,
   SI-Zeile, Methodentext und Excel-Bericht; der spezifische Koeffizient a wird auf die Genauigkeit seines
   Standardfehlers gerundet. Die Ergebnis-CSV enthält die vollen Werte.
 - **Warnungen** (Ergebnistabelle und Protokoll): weniger als 4 Fitpunkte, signifikanter
@@ -574,7 +574,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 ## EPR-Tab (CW-EPR)
 
 - Liest **Bruker BES3T** (.dsc + .DTA, z. B. Magnettech ESR5000/ESRStudio, Elexsys; 2D-Dateien ergeben ein Spektrum pro
-  Zeile) und **zweispaltigen Text** (Magnettech-MS400-Export; Mikrowellenfrequenz aus Dateinamen wie `…-9p404368-…`).
+  Zeile) und **zweispaltigen Text** (Magnettech-MS400-Export; Mikrowellenfrequenz aus Dateinamen wie `…-9p412345-…`).
   Frequenz, Temperatur, Modulation und Leistung werden pro Spektrum angezeigt.
 - **Dunkelspektrum:** Die Messung vor dem Bestrahlen lässt sich von jedem Spektrum abziehen (hell − k·dunkel, auf
   dasselbe Feldraster interpoliert); Warnung, wenn Frequenz, Modulation oder Leistung abweichen.

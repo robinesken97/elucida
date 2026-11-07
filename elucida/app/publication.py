@@ -4,7 +4,7 @@ elucida/app/publication.py - Publikation: übergeordneter Ordner mit den Verbind
 <Publikation>/
     publication.elucida   Angaben (Titel, Autoren, DOI, Lizenz, Beschreibungen), Reihenfolge der Verbindungen und
                           Texte der Gesamt-SI (Materials and Methods, Einleitung je Kapitel) (YAML)
-    1a/, 6m/ …            Verbindungsprojekte wie bisher (project.elucida), jedes für sich lauffähig
+    1a/, 3b/ …            Verbindungsprojekte wie bisher (project.elucida), jedes für sich lauffähig
     SI/                   Gesamt-SI (Word)
     datapack/             Datenpakete: je Verbindung <Name>.zip, CompChem.zip, README.txt, Lizenz
 

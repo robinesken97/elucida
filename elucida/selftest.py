@@ -374,7 +374,7 @@ def selftest(outdir, with_isnet=False):
             prop = [dict(x=x_a, y=0.125 * c * np.ones_like(x_a), c=c) for c in (1.0, 2.0, 3.0, 4.0)]
             r_a = core.evaluate(dict(cfg_a, wavelengths_nm=[500], fit_intercept=False), prop)[0]
             assert core.fmt_ve(r_a["eps"], r_a["eps_err"], max_decimals=0)[1] != "0"   # nie „± 0“
-            assert core.fmt_ve(9525.4, 455.15, max_decimals=0) == ("9525", "455")         # ε ganzzahlig wie publiziert
+            assert core.fmt_ve(7264.4, 318.15, max_decimals=0) == ("7264", "318")         # ε ganzzahlig wie publiziert
             assert core.fmt_ve(9.4802, 0.0123) == ("9.480", "0.012")                       # a nach Unsicherheit
             assert core.fmt_ve(12345.0, 0.0, max_decimals=0) == ("12345", "1")              # SE 0: eine Einheit
             assert core.parse_sample_name("probe-p5mM") is None                            # 0,5 oder 5? nicht raten
@@ -1069,7 +1069,7 @@ def selftest(outdir, with_isnet=False):
             # zu wenig Vorlauf im Fenster: Fallback von null, markiert
             r4_ = CVMOD.analyze_couple(E_, I_c, -1.08, -0.8, use_baseline=True)
             assert r4_ is not None and r4_["bl_fail"] and r4_["ipa"] == r4_["ipa_raw"], r4_
-            # breite Welle (iR-Abfall, wie THF mit ΔE_p ≈ 240 mV): Basislinie endet vor dem Anstieg, nicht im Fuß
+            # breite Welle (iR-Abfall): Basislinie endet vor dem Anstieg, nicht im Fuß
             upw_ = np.arange(-1.6, -0.3, 0.002)
             Ew_ = np.concatenate([upw_, upw_[::-1]])
             fww_ = np.r_[np.ones(len(upw_)), np.zeros(len(upw_))].astype(bool)
@@ -1752,11 +1752,11 @@ def selftest(outdir, with_isnet=False):
                                                                   for k in range(12)), encoding="utf-8")
             rk6 = EPRMOD.read_ascii(p6 / "komma.txt")
             assert abs(rk6["B"][1] - 330.5) < 1e-9 and abs(rk6["I"][0] - 1.25) < 1e-9, (rk6["B"][:2], rk6["I"][:2])
-            pm6 = p6 / "Cpd1p5_ox-9p404368-339p0230-10p0708.txt"
+            pm6 = p6 / "Probe1p5_ox-9p412345-331p0000-10p0000.txt"
             pm6.write_text("﻿" + "\n".join(f"{330 + k:.1f}\t{MINUS if k % 2 else ''}{k}" for k in range(12)),
                            encoding="utf-8")
             rm6 = EPRMOD.read_ascii(pm6)
-            assert len(rm6["B"]) == 12 and rm6["I"][1] == -1 and abs(rm6["meta"]["mw_GHz"] - 9.404368) < 1e-9, rm6
+            assert len(rm6["B"]) == 12 and rm6["I"][1] == -1 and abs(rm6["meta"]["mw_GHz"] - 9.412345) < 1e-9, rm6
 
             def bes6(stem, extra=(), xwid=99.0, ny=1, yv=None, yfmt="D"):
                 h = ["BSEQ\tLIT", "IKKF\tREAL", "XTYP\tIDX", "IRFMT\tD", "XPTS\t100", f"YPTS\t{ny}", "XMIN\t3300",
@@ -4978,55 +4978,55 @@ def selftest(outdir, with_isnet=False):
             from elucida.exchange import datapack as DP
             import zipfile as _zfp
             dp_ = out / "datapack" / "proj"
-            ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "RE-3-150_10", nuc="1H")
+            ex_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "1H" / "AB-1-234_10", nuc="1H")
             with open(ex_ / "acqus", "a", encoding="latin-1", newline="") as fh_:   # Windows: \n bleibt \n
-                fh_.write("$$ 2024-03-12 14:35:12.123 +0100  jdoe@nmr\n$$ /opt/topspin/data/RE-3-150/nmr/RE-3-150/10/acqus\n"
+                fh_.write("$$ 2024-03-12 14:35:12.123 +0100  jdoe@nmr\n$$ /opt/topspin/data/AB-1-234/nmr/AB-1-234/10/acqus\n"
                           "##OWNER= jdoe\n"
-                          "##$DATE= 1710251712\n$$ /NMR-Daten/OCM-RE-3-150FC_2024-03-12_14-35-12_AV500/10/acqus\n")
+                          "##$DATE= 1710251712\n$$ /NMR-Daten/OCM-AB-1-234FC_2024-03-12_14-35-12_AV500/10/acqus\n")
             (ex_ / "uxnmr.info").write_text("Date         : Fri Mar  8 08:29:16 2024\nUser         : jdoe (Jane Doe (jdoe))\n",
                                             encoding="latin-1", newline="")
             fid_ = bytes(range(256)) * 4
             (ex_ / "fid").write_bytes(fid_)
             (ex_ / "pdata" / "1").mkdir(parents=True)
-            (ex_ / "pdata" / "1" / "title").write_text("RE-3-150 in CDCl3 12.03.2024\n", encoding="latin-1", newline="")
-            hs_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HSQC" / "RE-3-150_12", nuc="1H", nuc2="13C",
+            (ex_ / "pdata" / "1" / "title").write_text("AB-1-234 in CDCl3 12.03.2024\n", encoding="latin-1", newline="")
+            hs_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HSQC" / "AB-1-234_12", nuc="1H", nuc2="13C",
                                       pulprog="hsqcedetgpsisp2.3")
-            hm_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HMBC" / "RE-3-150_13", nuc="1H", nuc2="13C",
+            hm_ = NMR.make_test_acqus(dp_ / "data" / "nmr" / "HMBC" / "AB-1-234_13", nuc="1H", nuc2="13C",
                                       pulprog="hmbcgplpndqf")
-            mn_ = dp_ / "data" / "nmr" / "mnova" / "RE-3-150.mnova"
+            mn_ = dp_ / "data" / "nmr" / "mnova" / "AB-1-234.mnova"
             mn_.parent.mkdir(parents=True)
-            mn_.write_bytes(b"\0MNOVA\0RE-3-150\0")                        # binär: bleibt, wird gemeldet
-            ir0_ = dp_ / "data" / "ir" / "RE-3-150_IR.0"
+            mn_.write_bytes(b"\0MNOVA\0AB-1-234\0")                        # binär: bleibt, wird gemeldet
+            ir0_ = dp_ / "data" / "ir" / "AB-1-234_IR.0"
             ir0_.parent.mkdir(parents=True)
-            ir0_bytes_ = b"\x0a\x0a\x00OPUS\x00SNM\x00RE-3-150\x00CNM\x00\x02\x00\x04\x00Admin\x00\x00\x00DAT\x0012/03/2024\x00\xff\x01"
+            ir0_bytes_ = b"\x0a\x0a\x00OPUS\x00SNM\x00AB-1-234\x00CNM\x00\x02\x00\x04\x00Admin\x00\x00\x00DAT\x0012/03/2024\x00\xff\x01"
             ir0_.write_bytes(ir0_bytes_)
             msr_ = dp_ / "data" / "hrms" / "MS-Bericht.docx"
             msr_.parent.mkdir(parents=True)
             with _zfp.ZipFile(msr_, "w") as z_:                               # Bericht: Kürzel in Runs geteilt, Datum
-                z_.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>sample name: RE-3-</w:t></w:r>'
-                            '<w:r><w:t>150</w:t></w:r></w:p><w:p><w:r><w:t>date: 12.03.2024</w:t></w:r></w:p>'
+                z_.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>sample name: AB-1-</w:t></w:r>'
+                            '<w:r><w:t>234</w:t></w:r></w:p><w:p><w:r><w:t>date: 12.03.2024</w:t></w:r></w:p>'
                             '<w:p><w:r><w:t>exact mass: 264.1626</w:t></w:r></w:p><w:p><w:del w:id="1" w:author="Jane Doe" '
-                            'w:date="2024-03-12T10:00:00Z"><w:r><w:delText>RE-3-</w:delText></w:r><w:r><w:delText>150 old'
+                            'w:date="2024-03-12T10:00:00Z"><w:r><w:delText>AB-1-</w:delText></w:r><w:r><w:delText>234 old'
                             '</w:delText></w:r></w:del></w:p>'
                             '</w:body></w:document>')
                 z_.writestr("docProps/core.xml", "<cp:coreProperties><dc:creator>Jane Doe</dc:creator>"
                             "<dcterms:created>2024-03-12T10:00:00Z</dcterms:created><dc:title>MS</dc:title>"
-                            "<dc:subject>RE-3-150 12.03.2024</dc:subject>"
+                            "<dc:subject>AB-1-234 12.03.2024</dc:subject>"
                             "</cp:coreProperties>")
-                z_.writestr("word/media/image1.emf", b"\x01\0\0\0" + "RE-3-150 12.03.2024".encode("utf-16-le"))
+                z_.writestr("word/media/image1.emf", b"\x01\0\0\0" + "AB-1-234 12.03.2024".encode("utf-16-le"))
             irp_ = dp_ / "data" / "ir" / "IR.pdf"                              # Kürzel nur im komprimierten Inhalt
             import pymupdf as _pm
             pdd_ = _pm.open()
-            pdd_.new_page().insert_text((72, 72), "sample RE-3-150")
+            pdd_.new_page().insert_text((72, 72), "sample AB-1-234")
             pdd_.set_metadata({"author": "Jane Doe", "creationDate": "D:20240312101500+01'00'"})
             pdd_.save(irp_, deflate=True)
-            assert DP.find_codes([DP.Item("ir", irp_, "IR/IR.pdf")]) == ["RE-3-150"]    # nur im komprimierten Text
-            cvf_ = dp_ / "data" / "cv" / "RE-3-150-thf-200mVs.DTA"
+            assert DP.find_codes([DP.Item("ir", irp_, "IR/IR.pdf")]) == ["AB-1-234"]    # nur im komprimierten Text
+            cvf_ = dp_ / "data" / "cv" / "AB-1-234-thf-200mVs.DTA"
             cvf_.parent.mkdir(parents=True)
-            cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tRE-3-150 CV\tTest\n", encoding="latin-1", newline="")
-            epr_ = dp_ / "data" / "epr" / "RE-3-150_epr.txt"
+            cvf_.write_text("EXPLAIN\nTITLE\tLABEL\tAB-1-234 CV\tTest\n", encoding="latin-1", newline="")
+            epr_ = dp_ / "data" / "epr" / "AB-1-234_epr.txt"
             epr_.parent.mkdir(parents=True)
-            epr_.write_text("B [G]\tRE-3-150\tmeasured 2024-03-12 09:15\n3380\t0.1\n", encoding="utf-8", newline="")
+            epr_.write_text("B [G]\tAB-1-234\tmeasured 2024-03-12 09:15\n3380\t0.1\n", encoding="utf-8", newline="")
             cif_ = dp_ / "data" / "xray" / "s.cif"
             cif_.parent.mkdir(parents=True)
             cif_.write_text("data_x\n", encoding="utf-8")
@@ -5038,82 +5038,82 @@ def selftest(outdir, with_isnet=False):
             its_ = DP.collect(st_dp_, dp_)
             arcs_ = {i_.arc: i_.on for i_ in its_}
             assert arcs_ == {"NMR/1H/10": True, "NMR/HSQC + HMBC/12": True, "NMR/HSQC + HMBC/13": True,
-                             "IR/RE-3-150_IR.0": True, "IR/IR.pdf": True,           # nie .mnova (F5, FB-10)
+                             "IR/AB-1-234_IR.0": True, "IR/IR.pdf": True,           # nie .mnova (F5, FB-10)
                              "MS/MS-Bericht.docx": True,
-                             "CV/THF/RE-3-150-thf-200mVs.DTA": True, "EPR/RE-3-150_epr.txt": True}, arcs_   # ohne X-Ray
-            codes_ = DP.find_codes(its_)                                    # TopSpin-Ordner „OCM-RE-3-150FC_<Datum>_…“
-            assert codes_ == ["RE-3-150", "RE-3-150FC"], codes_
+                             "CV/THF/AB-1-234-thf-200mVs.DTA": True, "EPR/AB-1-234_epr.txt": True}, arcs_   # ohne X-Ray
+            codes_ = DP.find_codes(its_)                                    # TopSpin-Ordner „OCM-AB-1-234FC_<Datum>_…“
+            assert codes_ == ["AB-1-234", "AB-1-234FC"], codes_
             import zipfile as _zfp
-            zp_ = out / "datapack" / "6m.zip"
-            rep_ = DP.write_zip(its_, zp_, "6m", dict.fromkeys(codes_, "6m"), dict.fromkeys(codes_, "Compound 6m"))
+            zp_ = out / "datapack" / "3b.zip"
+            rep_ = DP.write_zip(its_, zp_, "3b", dict.fromkeys(codes_, "3b"), dict.fromkeys(codes_, "Compound 3b"))
             with _zfp.ZipFile(zp_) as z_:
                 names_ = set(z_.namelist())
                 assert not any(n_.endswith(".mnova") for n_ in names_), sorted(names_)
-                assert {"6m/NMR/1H/10/acqus", "6m/NMR/1H/10/fid", "6m/NMR/1H/10/pdata/1/title",
-                        "6m/IR/6m_IR.0", "6m/MS/MS-Bericht.docx", "6m/CV/THF/6m-thf-200mVs.DTA",
-                        "6m/EPR/6m_epr.txt", "6m/NMR/HSQC + HMBC/12/acqu2s"} <= names_, sorted(names_)
-                assert not any("RE-3-150" in n_ for n_ in names_)
-                assert z_.read("6m/NMR/1H/10/fid") == fid_                        # Rohdaten bytegleich
-                assert b"Compound 6m in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title")
-                acq_txt_ = z_.read("6m/NMR/1H/10/acqus").decode("latin-1")
-                assert "RE-3-150" not in acq_txt_ and "/Compound 6m/10/acqus" in acq_txt_ and "##$PULPROG= <zg30>" in acq_txt_
+                assert {"3b/NMR/1H/10/acqus", "3b/NMR/1H/10/fid", "3b/NMR/1H/10/pdata/1/title",
+                        "3b/IR/3b_IR.0", "3b/MS/MS-Bericht.docx", "3b/CV/THF/3b-thf-200mVs.DTA",
+                        "3b/EPR/3b_epr.txt", "3b/NMR/HSQC + HMBC/12/acqu2s"} <= names_, sorted(names_)
+                assert not any("AB-1-234" in n_ for n_ in names_)
+                assert z_.read("3b/NMR/1H/10/fid") == fid_                        # Rohdaten bytegleich
+                assert b"Compound 3b in CDCl3" in z_.read("3b/NMR/1H/10/pdata/1/title")
+                acq_txt_ = z_.read("3b/NMR/1H/10/acqus").decode("latin-1")
+                assert "AB-1-234" not in acq_txt_ and "/Compound 3b/10/acqus" in acq_txt_ and "##$PULPROG= <zg30>" in acq_txt_
                 assert "2024" not in acq_txt_ and "##$DATE= 0" in acq_txt_ and "1980-01-01 14:35:12.123 +0100  user@nmr" \
                     in acq_txt_ and "jdoe" not in acq_txt_ and "##OWNER= user" in acq_txt_, acq_txt_   # Nutzer weg (R1)
-                assert "RE-3" not in acq_txt_ and "OCM-Compound 6m_1980-01-01_14-35-12_AV500" in acq_txt_
-                ux_ = z_.read("6m/NMR/1H/10/uxnmr.info").decode("latin-1")                  # ctime (TopSpin)
+                assert "AB-1" not in acq_txt_ and "OCM-Compound 3b_1980-01-01_14-35-12_AV500" in acq_txt_
+                ux_ = z_.read("3b/NMR/1H/10/uxnmr.info").decode("latin-1")                  # ctime (TopSpin)
                 assert "Tue Jan  1 08:29:16 1980" in ux_ and "User         : user\n" in ux_ and "Jane" not in ux_, ux_
                 assert {i_.date_time for i_ in z_.infolist()} == {(1980, 1, 1, 0, 0, 0)}   # Messdatum nicht als Zeitstempel
-                assert z_.read("6m/NMR/1H/10/pdata/1/title") == b"Compound 6m in CDCl3 01.01.1980\n"   # Platzhalter (R2)
-                assert "2024" not in z_.read("6m/EPR/6m_epr.txt").decode("utf-8")
-                ir_z_ = z_.read("6m/IR/6m_IR.0")                                # OPUS: gleiche Länge, Rest bytegleich
-                assert len(ir_z_) == len(ir0_bytes_) and b"RE-3-150" not in ir_z_ and b"2024" not in ir_z_
+                assert z_.read("3b/NMR/1H/10/pdata/1/title") == b"Compound 3b in CDCl3 01.01.1980\n"   # Platzhalter (R2)
+                assert "2024" not in z_.read("3b/EPR/3b_epr.txt").decode("utf-8")
+                ir_z_ = z_.read("3b/IR/3b_IR.0")                                # OPUS: gleiche Länge, Rest bytegleich
+                assert len(ir_z_) == len(ir0_bytes_) and b"AB-1-234" not in ir_z_ and b"2024" not in ir_z_
                 assert b"Admin" not in ir_z_ and b"\x00user\x00" in ir_z_ and b"01/01/1980" in ir_z_   # Operator weg
-                assert ir_z_.startswith(b"\x0a\x0a\0OPUS\0SNM\x006m      \0") and ir_z_.endswith(b"\0\xff\x01")
-                ms_txt_ = DP.docx_text(z_.read("6m/MS/MS-Bericht.docx"))
-                assert "sample name: Compound 6m" in ms_txt_ and "2024" not in ms_txt_ and "264.1626" in ms_txt_
-                with _zfp.ZipFile(__import__("io").BytesIO(z_.read("6m/MS/MS-Bericht.docx"))) as zm_:
+                assert ir_z_.startswith(b"\x0a\x0a\0OPUS\0SNM\x003b      \0") and ir_z_.endswith(b"\0\xff\x01")
+                ms_txt_ = DP.docx_text(z_.read("3b/MS/MS-Bericht.docx"))
+                assert "sample name: Compound 3b" in ms_txt_ and "2024" not in ms_txt_ and "264.1626" in ms_txt_
+                with _zfp.ZipFile(__import__("io").BytesIO(z_.read("3b/MS/MS-Bericht.docx"))) as zm_:
                     core_ = zm_.read("docProps/core.xml").decode("utf-8")
                     assert "Jane Doe" not in core_ and "dcterms:created" not in core_ and "<dc:title>MS</dc:title>" in core_
-                    assert "RE-3" not in core_ and "2024" not in core_, core_
+                    assert "AB-1" not in core_ and "2024" not in core_, core_
                     doc_ = zm_.read("word/document.xml").decode("utf-8")              # Änderungsverfolgung
-                    assert "RE-3" not in doc_ and "Jane Doe" not in doc_ and "2024" not in doc_ and "<w:delText" in doc_, doc_
-                    assert "150 old" not in doc_ and ">Compound 6m old<" in doc_               # über zwei Runs
+                    assert "AB-1" not in doc_ and "Jane Doe" not in doc_ and "2024" not in doc_ and "<w:delText" in doc_, doc_
+                    assert "234 old" not in doc_ and ">Compound 3b old<" in doc_               # über zwei Runs
                     assert {i_.date_time for i_ in zm_.infolist()} == {(1980, 1, 1, 0, 0, 0)}
-                assert "Compound 6m CV" in z_.read("6m/CV/THF/6m-thf-200mVs.DTA").decode("latin-1")
-            assert sorted(rep_["kept"]) == ["6m/IR/IR.pdf"], rep_["kept"]
+                assert "Compound 3b CV" in z_.read("3b/CV/THF/3b-thf-200mVs.DTA").decode("latin-1")
+            assert sorted(rep_["kept"]) == ["3b/IR/IR.pdf"], rep_["kept"]
             with _zfp.ZipFile(zp_) as z_:                                     # PDF: nur Eigenschaften, gleiche Länge
-                pdz_ = z_.read("6m/IR/IR.pdf")
+                pdz_ = z_.read("3b/IR/IR.pdf")
                 assert len(pdz_) == irp_.stat().st_size and b"Jane" not in pdz_ and b"D:2024" not in pdz_
                 assert _pm.open(stream=pdz_, filetype="pdf").metadata["creationDate"].startswith("D:19800101")
-            dx_ = DP.scrub_docx(msr_.read_bytes(), {"RE-3-150": "A&B"})        # Ersatz mit „&“: XML bleibt gültig
+            dx_ = DP.scrub_docx(msr_.read_bytes(), {"AB-1-234": "A&B"})        # Ersatz mit „&“: XML bleibt gültig
             with _zfp.ZipFile(__import__("io").BytesIO(dx_)) as zm_:
                 for n_ in ("docProps/core.xml", "word/document.xml"):
                     __import__("xml.parsers.expat").parsers.expat.ParserCreate().Parse(zm_.read(n_), True)   # wohlgeformt
             assert DP.scrub_text("DATE\tLABEL\t8/7/2024\tDate\nTIME\tLABEL\t16:41:11\tTime", {}, True) == \
                 "DATE\tLABEL\t1/1/1980\tDate\nTIME\tLABEL\t16:41:11\tTime"          # Gamry bleibt lesbar (SEC)
             assert DP.scrub_text("changer/20/20.95/data", {}, True) == "changer/20/20.95/data"   # Wechslerplatz, kein Datum
-            assert not (out / "datapack" / "6m.zip.tmp").exists()
+            assert not (out / "datapack" / "3b.zip.tmp").exists()
             assert DP.scrub_text("measured on 12.03.2024. Next", {}, True) == "measured on 01.01.1980. Next"   # Satzende
-            uvd_ = dp_ / "data" / "uvvis" / "RE-3-150_2024-03-12_14-35-12.csv"     # Datum im Dateinamen
+            uvd_ = dp_ / "data" / "uvvis" / "AB-1-234_2024-03-12_14-35-12.csv"     # Datum im Dateinamen
             uvd_.parent.mkdir(parents=True)
             uvd_.write_text("nm,A\n300,0.1\n", encoding="utf-8", newline="")
             __import__("os").utime(uvd_, (0, 0))                             # mtime vor 1980 (ZipInfo.from_file warf)
-            opd_ = dp_ / "data" / "ir" / "RE-3-150_2024-03-12.0"                 # OPUS-Endung
+            opd_ = dp_ / "data" / "ir" / "AB-1-234_2024-03-12.0"                 # OPUS-Endung
             opd_.write_bytes(b"\0OPUS\0")
-            msd_ = [dp_ / "data" / "hrms" / f"RE-3-150_2024-03-1{k_}.d" for k_ in (2, 3)]   # zwei Messungen, Datum im Namen
+            msd_ = [dp_ / "data" / "hrms" / f"AB-1-234_2024-03-1{k_}.d" for k_ in (2, 3)]   # zwei Messungen, Datum im Namen
             for k_, d_ in enumerate(msd_):
                 d_.mkdir(parents=True)
                 (d_ / "analysis.baf").write_bytes(bytes([k_]) * 8)
             DP.write_zip([DP.Item("uvvis", uvd_, f"UV-Vis/{uvd_.name}"), DP.Item("ir", opd_, f"IR/{opd_.name}")] +
-                         [DP.Item("ms", d_, f"MS/{d_.name}") for d_ in msd_], out / "datapack" / "uv.zip", "6m",
-                         {"RE-3-150": "6m"}, None)
+                         [DP.Item("ms", d_, f"MS/{d_.name}") for d_ in msd_], out / "datapack" / "uv.zip", "3b",
+                         {"AB-1-234": "3b"}, None)
             with _zfp.ZipFile(out / "datapack" / "uv.zip") as z_:
-                assert sorted(z_.namelist()) == ["6m/IR/6m_.0", "6m/MS/6m_.d/analysis.baf", "6m/MS/6m__2.d/analysis.baf",
-                                                 "6m/UV-Vis/6m_.csv"], z_.namelist()
-                assert z_.read("6m/MS/6m__2.d/analysis.baf") == bytes([1]) * 8
-            rep2_ = DP.write_zip(its_, out / "datapack" / "6m_raw.zip", "6m", {"RE-3-150": "6m"}, None)   # Inhalt unverändert
-            with _zfp.ZipFile(out / "datapack" / "6m_raw.zip") as z_:
-                assert b"RE-3-150 in CDCl3" in z_.read("6m/NMR/1H/10/pdata/1/title") and not rep2_["text_replaced"]
+                assert sorted(z_.namelist()) == ["3b/IR/3b_.0", "3b/MS/3b_.d/analysis.baf", "3b/MS/3b__2.d/analysis.baf",
+                                                 "3b/UV-Vis/3b_.csv"], z_.namelist()
+                assert z_.read("3b/MS/3b__2.d/analysis.baf") == bytes([1]) * 8
+            rep2_ = DP.write_zip(its_, out / "datapack" / "3b_raw.zip", "3b", {"AB-1-234": "3b"}, None)   # Inhalt unverändert
+            with _zfp.ZipFile(out / "datapack" / "3b_raw.zip") as z_:
+                assert b"AB-1-234 in CDCl3" in z_.read("3b/NMR/1H/10/pdata/1/title") and not rep2_["text_replaced"]
             from elucida.app.datapack_dialog import DatapackDialog          # Dialog mit dem Projekt des Selbsttests
             dd_ = DatapackDialog(w2)
             assert dd_.ed_name.text() == w2.export_name() and dd_.tree.topLevelItemCount() >= 1
@@ -5489,22 +5489,22 @@ def selftest(outdir, with_isnet=False):
             _sh.rmtree(pub_, ignore_errors=True)
             pub_.mkdir()
             w.save_project()
-            _sh.copytree(out / "demo", pub_ / "6m")
+            _sh.copytree(out / "demo", pub_ / "3b")
             PUB.create(pub_, "Test publication")
-            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["6m"], PUB.load(pub_)
+            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["3b"], PUB.load(pub_)
             w.open_publication(pub_)
             assert w.center.currentIndex() == 2 and w.project_dir is None and len(w.pub_page.rows) == 1
             assert w.new_compound_in_publication("2a") and Path(w.project_dir) == pub_ / "2a"
             assert Path(w.publication_dir) == pub_ and "Test publication" in w.windowTitle(), w.windowTitle()
             assert w.act_to_pub.isEnabled()
             PUB.move_compound(pub_, pub_ / "2a", -1)
-            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "6m"]
+            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "3b"]
             assert PUB.compound_name(pub_ / "2a") == "2a"
             w.go_publication()
             assert w.project_dir is None and w.center.currentIndex() == 2 and len(w.pub_page.rows) == 2
             PUB.remove_compound(pub_, pub_ / "2a")                     # Ordner bleibt, kommt nicht von selbst zurück
-            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["6m"] and (pub_ / "2a").is_dir()
-            assert PUB.publication_of(pub_ / "2a") is None and PUB.publication_of(pub_ / "6m") == pub_
+            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["3b"] and (pub_ / "2a").is_dir()
+            assert PUB.publication_of(pub_ / "2a") is None and PUB.publication_of(pub_ / "3b") == pub_
             PUB.add_compound(pub_, pub_ / "2a")
             PUB.move_compound(pub_, pub_ / "2a", -1)
             d_ = PUB.load(pub_)
@@ -5516,13 +5516,13 @@ def selftest(outdir, with_isnet=False):
             w.add_recent_publication(pub_)
             w.fill_recent_list()
             assert w.center.currentIndex() == 0 and any(r_.info["path"] == str(pub_) for r_ in w.pub_rows)
-            n6_ = PUB.compound_name(pub_ / "6m")                       # Verbindung des kopierten Beispielprojekts
+            n6_ = PUB.compound_name(pub_ / "3b")                       # Verbindung des kopierten Beispielprojekts
             assert w.pub_rows[0].info["compounds"] == ["2a", n6_], w.pub_rows[0].info["compounds"]
-            w.add_recent(pub_ / "6m")
+            w.add_recent(pub_ / "3b")
             w.fill_recent_list()
             assert any(r_.info.get("publication") == "Test publication" for r_ in w.recent_rows)
-            rd_ = PUB.readme_text(PUB.load(pub_), {"nmr", "cv", "dft"}, ["2a", "6m"])
-            assert PUB.SCRUB_NOTE not in rd_ and PUB.SCRUB_NOTE in PUB.readme_text(PUB.load(pub_), {"nmr"}, ["6m"], True)
+            rd_ = PUB.readme_text(PUB.load(pub_), {"nmr", "cv", "dft"}, ["2a", "3b"])
+            assert PUB.SCRUB_NOTE not in rd_ and PUB.SCRUB_NOTE in PUB.readme_text(PUB.load(pub_), {"nmr"}, ["3b"], True)
             assert rd_.startswith("TITLE:\nTest publication") and "https://doi.org/10.1234/test" in rd_
             assert "CC-BY 4.0" in rd_ and "CompChem.zip" in rd_ and "NMR -> TopSpin" in rd_, rd_
             assert PUB.dataset_title({"paper_title": "Imidazo[1,5-<i>a</i>]pyridines"}) == \
@@ -5541,11 +5541,11 @@ def selftest(outdir, with_isnet=False):
                 assert all(n_.startswith(f"CompChem/{n6_}/") for n_ in z_.namelist()), z_.namelist()[:5]
             with _zfp.ZipFile(out / "pubpack" / f"{n6_}.zip") as z_:
                 assert not any("/DFT/" in n_ for n_ in z_.namelist())
-            PUB.set_group(pub_, pub_ / "6m", "NHOs")                            # Gruppen im Projekt
+            PUB.set_group(pub_, pub_ / "3b", "NHOs")                            # Gruppen im Projekt
             PUB.set_group(pub_, pub_ / "2a", "Precursor")
             PUB.move_group(pub_, "Precursor", -1)
             assert [(g_, [d_.name for d_ in ds_]) for g_, ds_ in PUB.grouped(pub_)] == [("Precursor", ["2a"]),
-                                                                                        ("NHOs", ["6m"])]
+                                                                                        ("NHOs", ["3b"])]
             st_pub_ = PUB.load(pub_)                                            # Verschieben scheitert: Index bleibt
             mv_ = _sh.move
 
@@ -5560,18 +5560,18 @@ def selftest(outdir, with_isnet=False):
                 _sh.move = mv_
             assert PUB.load(pub_)["compounds"] == st_pub_["compounds"] and \
                 PUB.load(pub_)["group_of"] == st_pub_["group_of"], PUB.load(pub_)
-            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "6m"]
+            assert [d_.name for d_ in PUB.sync(pub_)[0]] == ["2a", "3b"]
             w.open_publication(pub_)
             assert [g_ for _, g_ in w.pub_page.headers] == ["Precursor", "NHOs"] and \
                 [r_.group for r_ in w.pub_page.rows] == ["Precursor", "NHOs"]
             w.pub_page.ed_filter.setText("NHOs")                                 # Filter findet auch die Gruppe
             assert [r_.isVisibleTo(r_.parentWidget()) for r_ in w.pub_page.rows] == [False, True]
             w.pub_page.ed_filter.setText("")
-            w.open_project(pub_ / "6m")
+            w.open_project(pub_ / "3b")
             pump(0.3)
             psi_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], [k_ for k_, _, _ in PSI.SECTIONS],
                                            path=out / "pub_SI.docx")
-            assert Path(w.project_dir) == pub_ / "6m", w.project_dir          # vorher offene Verbindung wieder da
+            assert Path(w.project_dir) == pub_ / "3b", w.project_dir          # vorher offene Verbindung wieder da
             with _zfp.ZipFile(psi_) as z_:
                 doc_ = z_.read("word/document.xml").decode("utf-8")
                 set_ = z_.read("word/settings.xml").decode("utf-8")
@@ -5651,7 +5651,7 @@ def selftest(outdir, with_isnet=False):
             assert [r_.info["name"] for r_ in w.recent_rows] == ["9z", "9z"], [r_.info["path"] for r_ in w.recent_rows]
             assert all(r_.info.get("publication") for r_ in w.recent_rows)
             w.ed_recent.setText("C5H5N 9z")                                   # mehrere Wörter: alle müssen passen
-            w.ed_recent.setText("RE-9-999")
+            w.ed_recent.setText("AB-9-999")
             assert not w.recent_rows and w.lbl_recent_empty.isVisibleTo(w.lbl_recent_empty.parentWidget())
             w.ed_recent.setText("")
             assert not getattr(w, "_searching", False)
