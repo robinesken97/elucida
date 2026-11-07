@@ -2,6 +2,16 @@
 
 # Änderungen
 
+## 2.6.5 – 2026-11-07
+
+### Geändert
+- **Zeichnen:** Octet Draw auf 1.1.1 aktualisiert. ChemDraw-Dateien öffnen mit griechischen Buchstaben wie hν, Bildern aus Windows
+  und Ac/Pr-Labels; Tiefstellungen in Bedingungen wie Pd(PPh₃)₄ bleiben erhalten; Labels wie N(CH3)2 und SO2Me sowie die Vorlagen
+  für Azid, Diazo und Sulfon ergeben die richtige Struktur; die Reagenzientabelle lässt N₂, Ar und Luft weg. Neu: Metallocene,
+  axiale und äquatoriale Bindungen am Sessel, ein Sequenz-Werkzeug für Peptide und Nukleinsäuren, Strg-Klick und Strg-Ziehen wie
+  in ChemDraw unter Windows und Linux.
+- Beispiele in Oberfläche, Handbuch und Änderungsliste verwenden erfundene Verbindungsnummern, Laborkürzel und Werte.
+
 ## 2.6.4 – 2026-11-06
 
 ### Behoben

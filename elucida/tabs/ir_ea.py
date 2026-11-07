@@ -74,7 +74,7 @@ def _formula_part(s: str) -> dict:
 
 
 def parse_formula(text: str) -> dict:
-    """'C31H21N3' / 'C18H20N2+' / 'Ca(OH)2' / 'C18H20N2·2H2O' / '[13C]H4' (Isotope wie RDKit) -> {'C': 31, …,
+    """'C20H15N3' / 'C18H18N2O+' / 'Ca(OH)2' / 'C18H18N2O·2H2O' / '[13C]H4' (Isotope wie RDKit) -> {'C': 20, …,
     '[13C]': 1}; Ladung am Ende wird ignoriert (kommt vom Addukt). Nicht lesbare Teile -> ValueError."""
     text = re.sub(r"[+\-−]+\d*$", "", str(text).replace(" ", ""))
     out = {}
@@ -418,7 +418,7 @@ def nearest(mz_list, calc, max_ppm=20.0):
 
 
 def ms_line(formula, adduct, found, ionisation="ESI"):
-    """-> (Klartext, HTML): HR-MS-ESI(+) calc. C18H21N2+ [M+H]+ 265.1699; found 265.1703."""
+    """-> (Klartext, HTML): HR-MS-ESI(+) calc. C18H19N2O+ [M+H]+ 279.1492; found 279.1496."""
     f_ion, z, calc, label = ion(formula, adduct)
     sign = "+" if z > 0 else "−"
     lab_plain = label.replace("$_4$", "4")

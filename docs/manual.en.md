@@ -307,8 +307,8 @@ to Word or as part of the SI section.
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
   m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
   says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
-  preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₂₁N₂⁺ [M+H]⁺ 265.1699;
-  found 265.1703. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
+  preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₁₉N₂O⁺ [M+H]⁺ 279.1492;
+  found 279.1496. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
   **ChemDraw object embedded in the report**; without a compound set, **Take the compound from the MS report**
   sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).
 - **HRMS from raw data:** alternatively (or in addition) load the Bruker **measurement folder** (`.d`, e.g. timsTOF;
@@ -321,7 +321,7 @@ to Word or as part of the SI section.
 - **Elemental analysis:** formula from the compound, optionally plus a solvate (`0.5 CH2Cl2`, several
   separated by commas); calculated values with conventional mean atomic masses, enter the found C/H/N/S values.
   Deviations above 0.4 % are flagged (the usual limit of the journals). Output, built like the HR-MS line: **Elemental analysis**
-  (%) calc. C₁₈H₂₀N₂: C 81.78, H 7.63, N 10.60; found C 81.52, H 7.70, N 10.41. The elemental analysis is always
+  (%) calc. C₁₈H₁₈N₂O: C 77.67, H 6.52, N 10.06; found C 77.41, H 6.59, N 9.87. The elemental analysis is always
   optional (not reported as missing).
 - **Copy to clipboard** keeps bold, sub- and superscripts when pasting into Word. Export writes the spectrum figure
   and `…_SI.txt` with all lines.

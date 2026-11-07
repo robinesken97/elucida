@@ -2,6 +2,15 @@
 
 # Changelog
 
+## 2.6.5 – 2026-11-07
+
+### Changed
+- **Drawing:** Octet Draw updated to 1.1.1. ChemDraw files open with Greek letters such as hν, pictures from Windows and Ac/Pr
+  labels; subscripts in conditions such as Pd(PPh₃)₄ are kept; labels such as N(CH3)2 and SO2Me and the azide, diazo and sulfone
+  templates give the correct structure; the reagent table leaves out N₂, Ar and air. New: metallocenes, axial and equatorial bonds
+  on chairs, a Sequence tool for peptides and nucleic acids, Ctrl-click and Ctrl-drag as in ChemDraw on Windows and Linux.
+- Examples in the interface, manual and changelog use invented compound numbers, lab codes and values.
+
 ## 2.6.4 – 2026-11-06
 
 ### Fixed

@@ -2,7 +2,7 @@
 
 Stil wie in den SI der Arbeitsgruppe: „m.p. …; IR [cm-1]: ṽ = …; HR-MS-ESI(+) calc. …; found …;
 UV-Vis: λmax: 350 nm (ε = 12000 cm-1 M-1), …“. Die Elementaranalyse ist aufgebaut wie die HR-MS-Zeile:
-„Elemental analysis (%) calc. C18H20N2: C 81.78, H 7.63, N 10.60; found C 81.52, H 7.70, N 10.41“ (wie HR-MS).
+„Elemental analysis (%) calc. C18H18N2O: C 77.67, H 6.52, N 10.06; found C 77.41, H 6.59, N 9.87“ (wie HR-MS).
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ _NB_RULES = [
     (re.compile(r"(?<=</sup>)[ ]+(?=[A-Za-zµμ]+<sup>)"), NBSP),                        # cm<sup>-1</sup> M<sup>-1</sup>
     (re.compile(r"(?<=-1)[ ]+(?=[A-Za-zµμ]+-1\b)"), NBSP),                             # cm-1 M-1 (Klartext)
     (re.compile(r"(?<=⁻¹)[ ]+(?=[A-Za-zµμ]+⁻¹)"), NBSP),                               # cm⁻¹ M⁻¹
-    (re.compile(r"(?<![\w.])([A-Z][a-z]?)[ ]+(?=\d{1,3}\.\d{2}\b)"), r"\1" + NBSP),     # Elementaranalyse: C 81.78
+    (re.compile(r"(?<![\w.])([A-Z][a-z]?)[ ]+(?=\d{1,3}\.\d{2}\b)"), r"\1" + NBSP),     # Elementaranalyse: C 77.67
     (re.compile(r"\bm\.p\.[ ]+"), "m.p." + NBSP),
 ]
 
@@ -104,7 +104,7 @@ def _num(n):
 
 
 def ea_formula_label(formula: str, solvate: str = "") -> str:
-    """'C18H20N2·0.5CH2Cl2' (Klartext)."""
+    """'C18H18N2O·0.5CH2Cl2' (Klartext)."""
     f = formula_str(parse_formula(formula))
     for n, s in parse_solvate(solvate):
         f += "·" + ("" if n == 1 else _num(n)) + s
@@ -155,7 +155,7 @@ def methods_html(text):
 
 
 def ea_line(formula: str, solvate: str, found: dict):
-    """-> (Klartext, HTML, Hinweise). found: {'C': '81.52', …}; nur gemessene Elemente stehen bei found."""
+    """-> (Klartext, HTML, Hinweise). found: {'C': '77.41', …}; nur gemessene Elemente stehen bei found."""
     comp = ea_composition(formula, solvate)
     els = [el for el in EA_ELEMENTS if el in comp or (found or {}).get(el)]
     calc = ", ".join(f"{el} {comp.get(el, 0.0):.2f}" for el in els if el in comp)

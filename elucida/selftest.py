@@ -2196,27 +2196,27 @@ def selftest(outdir, with_isnet=False):
                     out_ += bytes(rec)
                 return out_
             xml_ = "".join(f"<w:p><w:r><w:t>{t_}</w:t></w:r></w:p>" for t_ in
-                           ("sample name:", "TEST-1", "molecular formula:", "C18H20N2", "exact mass:", "264.1626",
+                           ("sample name:", "TEST-1", "molecular formula:", "C18H18N2O", "exact mass:", "278.1419",
                             "method of Ionisation:", "ESI ☒ APCI ☐ HESI ☐"))
             with _zf.ZipFile(irdir / "ms.docx", "w") as z_:
                 z_.writestr("word/document.xml", f"<w:document><w:body>{xml_}</w:body></w:document>")
                 z_.writestr("word/media/image1.emf", emf(["Chemical Formula:", "C", "18", "Exact Mass:", "264,1626"]))
-                z_.writestr("word/media/image2.emf", emf(["265.1703", "266.1735", "x.d: +MS, 0.1-0.4min", "m/z"]))
+                z_.writestr("word/media/image2.emf", emf(["279.1496", "280.1528", "x.d: +MS, 0.1-0.4min", "m/z"]))
             rep_ = IRMS.read_ms_docx(irdir / "ms.docx")
-            assert rep_["formula"] == "C18H20N2" and rep_["mz"] == [265.1703, 266.1735] and rep_["polarity"] == "+", rep_
-            plain_, html_, calc_ = IRMS.ms_line("C18H20N2", "M+H", 265.1703)
-            assert plain_ == "HR-MS-ESI(+) calc. C18H21N2+ [M+H]+ 265.1699; found 265.1703." and "<sub>21</sub>" in html_
-            assert abs(IRMS.ion("C18H20N2", "M+Na")[2] - 287.1519) < 1e-4 and IRMS.ion("C18H20N2", "M-H")[1] == -1
+            assert rep_["formula"] == "C18H18N2O" and rep_["mz"] == [279.1496, 280.1528] and rep_["polarity"] == "+", rep_
+            plain_, html_, calc_ = IRMS.ms_line("C18H18N2O", "M+H", 279.1496)
+            assert plain_ == "HR-MS-ESI(+) calc. C18H19N2O+ [M+H]+ 279.1492; found 279.1496." and "<sub>19</sub>" in html_
+            assert abs(IRMS.ion("C18H18N2O", "M+Na")[2] - 301.1311) < 1e-4 and IRMS.ion("C18H18N2O", "M-H")[1] == -1
             t_ir = w.irms_tab
             t_ms = w.hrms_tab
             assert w.main_tabs.indexOf(t_ir) + 1 == w.main_tabs.indexOf(t_ms)      # IR + EA vor HRMS (wie die SI)
             t_ir.load_ir(str(irdir / "test.0"))
             t_ms.load_ms(str(irdir / "ms.docx"))
-            w.compound["formula"] = "C18H20N2"
+            w.compound["formula"] = "C18H18N2O"
             t_ir.render()
             t_ms.render()
             assert t_ir._ir_line[0].startswith("IR [cm-1]: ṽ = 3350, 2961, 1678, 1501, 1105, 758"), t_ir._ir_line[0]
-            assert t_ms._ms_line[0].endswith("265.1699; found 265.1703."), t_ms._ms_line[0]
+            assert t_ms._ms_line[0].endswith("279.1492; found 279.1496."), t_ms._ms_line[0]
             assert t_ms.F is None                                    # ohne Rohdaten kein Spektrum
             w.irms_state["ir_off"] = [1105]
             w.irms_state["with_int"] = True
@@ -2466,7 +2466,7 @@ def selftest(outdir, with_isnet=False):
             t_ir.render()
             report.append("IR F3: OPUS-Basislinie (konkaves Gummiband, Verlauf), Schwellenlinie, Kurve aus OPUS-PDF: OK")
         with section:
-            w.compound["formula"] = "C18H22N2"                 # falsche Verbindung -> Warnung
+            w.compound["formula"] = "C18H20N2O"                 # falsche Verbindung -> Warnung
             t_ms.render()
             assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
             files = t_ir.export_to(out / "irms") + t_ms.export_to(out / "hrms")
@@ -2476,18 +2476,18 @@ def selftest(outdir, with_isnet=False):
             # ChemDraw-Objekt im Bericht: Abgleich und Übernahme der Verbindung (künstliche Struktur, kein CDX-Schreiber)
             from rdkit import Chem as _Chem
             rep_ = t_ms.ms_report()
-            rep_["structure"] = {"formula": "C18H20N2", "mw": 264.37, "n_fragments": 1,
+            rep_["structure"] = {"formula": "C18H18N2O", "mw": 278.35, "n_fragments": 1,
                                  "cdxml": _Chem.MolToCDXMLBlock(_Chem.MolFromSmiles("CC(C)(C)c1ccc2nc(-c3ccccc3)n(C)c2c1"))
                                  if hasattr(_Chem, "MolToCDXMLBlock") else None}          # macOS Intel: RDKit 2025.9
             w.compound = {}
             t_ms.render()
-            assert t_ms.formula() == ("C18H20N2", "report_struct") == t_ir.formula(), t_ms.formula()
+            assert t_ms.formula() == ("C18H18N2O", "report_struct") == t_ir.formula(), t_ms.formula()
             assert not t_ms.btn_take.isHidden()
-            rep_["formula"] = "C18H21N2"                       # Formelfeld vertippt -> Hinweis
+            rep_["formula"] = "C18H19N2O"                       # Formelfeld vertippt -> Hinweis
             t_ms.render()
             assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
             t_ms.take_compound()
-            assert w.compound["formula"] == "C18H20N2" and w.compound["name"] == "TEST-1", w.compound
+            assert w.compound["formula"] == "C18H18N2O" and w.compound["name"] == "TEST-1", w.compound
             if rep_["structure"]["cdxml"]:
                 assert Path(w.compound["structure"]).exists() and "aus_MS-Bericht" in Path(w.compound["structure"]).name
             w.irms_state.update(ir_file=None, ir_pdf=None, ir_off=[], with_int=False)
@@ -2514,7 +2514,7 @@ def selftest(outdir, with_isnet=False):
             def to_idx(m):
                 m1 = np.asarray(m, float) + cal_[6]
                 return (cal_[2] + np.sqrt(1e12 * m1 / cal_[3]) + cal_[4] * m1 - cal_[0]) / cal_[1]
-            calc_ = IRMS.ion("C18H20N2", "M+H")[2]
+            calc_ = IRMS.ion("C18H18N2O", "M+H")[2]
             rts_ = np.arange(0.0, 120.0, 10.0)
             offs_ = 1e-4 * np.array([3, -2, 4, -3, 2, 1, -1, 3, -4, 2, 0, 1])            # Streuung je Scan
             amp_ = 1e5 * np.exp(-0.5 * ((rts_ - 60) / 12) ** 2)
@@ -2561,7 +2561,7 @@ def selftest(outdir, with_isnet=False):
                 raise AssertionError("unbekannte Kalibrier-Variante nicht abgelehnt")
             except ValueError:
                 pass
-            w.compound = {"formula": "C18H20N2"}
+            w.compound = {"formula": "C18H18N2O"}
             t_ms.load_raw(str(ddir))
             t_ms.render()
             assert w.hrms_state["ms_raw"] and t_ms._ms_line[0].endswith(f"found {exp_:.4f}."), t_ms._ms_line[0]
@@ -2570,7 +2570,7 @@ def selftest(outdir, with_isnet=False):
             if w.project_dir:                                  # aus dem .d nur Rohdaten + Index übernommen
                 assert sorted(x.name for x in Path(w.hrms_state["ms_raw"]).iterdir()) == ["analysis.baf", "analysis.sqlite"]
             # Spektrum: gemittelt über den LC-Bereich, Isotopenmuster aus der Formel, Peak per Klick
-            pat_ = HRMS.isotope_pattern("C18H21N2", 1)
+            pat_ = HRMS.isotope_pattern("C18H19N2O", 1)
             assert abs(pat_[0][0] - calc_) < 2e-5 and pat_[0][1] == 100 and 19.5 < pat_[1][1] < 22.5, pat_[:3]
             assert t_ms.F is not None and len(t_ms._sticks[0]) >= 2, t_ms._sticks
             lo_, hi_ = t_ms.view_range()
@@ -2591,7 +2591,7 @@ def selftest(outdir, with_isnet=False):
             w.hrms_state["found"] = None
             t_ms.load_ms(str(irdir / "ms.docx"))               # Bericht + Rohdaten: Bericht vorgewählt, Rohdaten wählbar
             t_ms.render()
-            assert t_ms._ms_line[0].endswith("found 265.1703.") and t_ms.cmb_found.findData("raw") >= 0
+            assert t_ms._ms_line[0].endswith("found 279.1496.") and t_ms.cmb_found.findData("raw") >= 0
             assert any(k_ == "ms_raw" and c_ is w.hrms_state for c_, k_, _ in PRJ._path_slots(w.get_state()))
             w.hrms_state.update(ms_file=None, ms_raw=None, ms_rt=None, found=None, found_pick=None)
             w.compound = {}
@@ -2607,8 +2607,8 @@ def selftest(outdir, with_isnet=False):
                     fails_.append(f"{name}: {type(e_).__name__} {e_}"[:160])
             def p3_formula():
                 assert IRMS.parse_formula("Ca(OH)2") == {"Ca": 1, "O": 2, "H": 2}
-                assert IRMS.parse_formula("C18H20N2·2H2O") == {"C": 18, "H": 24, "N": 2, "O": 2}
-                for bad_ in ("C18H20n2", "C18H20N2(", "C18H20N2 (264.16)"):
+                assert IRMS.parse_formula("C18H18N2O·2H2O") == {"C": 18, "H": 22, "N": 2, "O": 3}
+                for bad_ in ("C18H18n2O", "C18H18N2O(", "C18H18N2O (278.14)"):
                     try:
                         IRMS.parse_formula(bad_)
                         raise AssertionError(f"{bad_} angenommen")
@@ -2629,7 +2629,7 @@ def selftest(outdir, with_isnet=False):
             chk_("isotope labels", p3_isotope)
             def p3_ea_nan():
                 try:
-                    SI.ea_line("C18H20N2", "", {"C": "NaN"})
+                    SI.ea_line("C18H18N2O", "", {"C": "NaN"})
                     raise AssertionError("NaN angenommen")
                 except ValueError:
                     pass
@@ -2690,28 +2690,28 @@ def selftest(outdir, with_isnet=False):
             par_ = lambda t_: f"<w:p><w:r><w:t>{t_}</w:t></w:r></w:p>"
             def p3_report():
                 rep_ = IRMS.read_ms_docx(ms_docx_(irdir / "p3_del.docx", [
-                    par_("molecular formula:"), '<w:p><w:del w:id="1"><w:r><w:delText>C18H22N2</w:delText></w:r></w:del>'
-                    '<w:ins w:id="2"><w:r><w:t>C18H20N2</w:t></w:r></w:ins></w:p>',
-                    par_("method of Ionisation:"), par_("ESI ☐ APCI ☑ HESI ☐")], ["265.1703"], ["HR-MS"]))
-                assert rep_["formula"] == "C18H20N2" and rep_["ionisation"] == "APCI" and rep_["polarity"] == "+", rep_
+                    par_("molecular formula:"), '<w:p><w:del w:id="1"><w:r><w:delText>C18H20N2O</w:delText></w:r></w:del>'
+                    '<w:ins w:id="2"><w:r><w:t>C18H18N2O</w:t></w:r></w:ins></w:p>',
+                    par_("method of Ionisation:"), par_("ESI ☐ APCI ☑ HESI ☐")], ["279.1496"], ["HR-MS"]))
+                assert rep_["formula"] == "C18H18N2O" and rep_["ionisation"] == "APCI" and rep_["polarity"] == "+", rep_
             chk_("MS report tracked changes/checkbox/HR-MS", p3_report)
             def set_adduct_(a_):                             # Combobox kann nach Zustandstests abweichen
                 t_ms.cmb_adduct.setCurrentIndex(t_ms.cmb_adduct.findData(a_))
                 w.hrms_state["adduct"] = a_
             def p3_adduct():                                 # Wechsel M+H -> M+Na: found des neuen Ions
-                w.compound = {"formula": "C18H20N2"}
+                w.compound = {"formula": "C18H18N2O"}
                 set_adduct_("M+H")
-                t_ms.load_ms(str(ms_docx_(irdir / "p3_na.docx", [par_("molecular formula:"), par_("C18H20N2")],
-                                          ["265.1703", "287.1519"], ["+MS"])))
+                t_ms.load_ms(str(ms_docx_(irdir / "p3_na.docx", [par_("molecular formula:"), par_("C18H18N2O")],
+                                          ["279.1496", "301.1311"], ["+MS"])))
                 t_ms.render()
-                assert t_ms._ms_line[0].endswith("found 265.1703."), t_ms._ms_line[0]
+                assert t_ms._ms_line[0].endswith("found 279.1496."), t_ms._ms_line[0]
                 t_ms.cmb_adduct.setCurrentIndex(t_ms.cmb_adduct.findData("M+Na"))
                 t_ms.render()
-                assert t_ms._ms_line[0].endswith("found 287.1519."), t_ms._ms_line[0]
+                assert t_ms._ms_line[0].endswith("found 301.1311."), t_ms._ms_line[0]
             chk_("HRMS adduct change", p3_adduct)
             def p3_nomatch():                                # kein passender Wert: found bleibt leer
                 set_adduct_("M+H")
-                t_ms.load_ms(str(ms_docx_(irdir / "p3_none.docx", [par_("molecular formula:"), par_("C18H20N2")],
+                t_ms.load_ms(str(ms_docx_(irdir / "p3_none.docx", [par_("molecular formula:"), par_("C18H18N2O")],
                                           ["100.0000", "200.0000"], ["+MS"])))
                 t_ms.render()
                 t_ms.cb_calc.toggle()
@@ -2757,7 +2757,7 @@ def selftest(outdir, with_isnet=False):
             def p3_polarity():                               # Polaritätswechsel: nur Scans des Addukts
                 d_ = make_d_(irdir / "p3mixed.d", sorted(scans_))
                 assert IRMS.read_bruker_d(d_)["polarity"] == "±"
-                w.compound = {"formula": "C18H20N2"}
+                w.compound = {"formula": "C18H18N2O"}
                 set_adduct_("M+H")
                 t_ms.load_raw(str(d_))
                 t_ms.render()
@@ -2789,9 +2789,9 @@ def selftest(outdir, with_isnet=False):
                 assert "C 75.94, H 7.26, N 16.80" in pl_, pl_
                 assert abs(IRMS.ion("C20[13C]H24N4", "M")[2] + 0.000548579909 - 333.2035) < 5e-5
             chk_("EA isotopes like ChemDraw", r3_chemdraw)
-            def r2_printed():                                # Warnung nach den gedruckten Werten (calc 81.78)
-                assert SI.ea_line("C18H20N2", "", {"C": "82.18"})[2] == []
-                assert SI.ea_line("C18H20N2", "", {"C": "82.19"})[2]
+            def r2_printed():                                # Warnung nach den gedruckten Werten (calc 77.67)
+                assert SI.ea_line("C18H18N2O", "", {"C": "78.07"})[2] == []
+                assert SI.ea_line("C18H18N2O", "", {"C": "78.08"})[2]
             chk_("EA warning on printed values", r2_printed)
             def r1_tags():                                   # w/m/s: Tiefe in T, ganzes Spektrum, auch für A-Dateien
                 x_ = np.arange(4000.0, 399.0, -2.0)
@@ -2805,9 +2805,9 @@ def selftest(outdir, with_isnet=False):
             def c1_del():                                    # gelöschte Absatzmarke <w:del/>: Text danach bleibt
                 rep_ = IRMS.read_ms_docx(ms_docx_(irdir / "p3_delmark.docx", [
                     par_("molecular formula:"), '<w:p><w:pPr><w:rPr><w:del w:id="3" w:author="x"/></w:rPr></w:pPr>'
-                    '<w:r><w:t>C18H20N2</w:t></w:r></w:p>', '<w:p><w:del w:id="4"><w:r><w:delText>alt</w:delText>'
-                    '</w:r></w:del></w:p>'], ["265.1703"], ["+MS"]))
-                assert rep_["formula"] == "C18H20N2", rep_["formula"]
+                    '<w:r><w:t>C18H18N2O</w:t></w:r></w:p>', '<w:p><w:del w:id="4"><w:r><w:delText>alt</w:delText>'
+                    '</w:r></w:del></w:p>'], ["279.1496"], ["+MS"]))
+                assert rep_["formula"] == "C18H18N2O", rep_["formula"]
             chk_("MS report deleted paragraph mark", c1_del)
             def c2_batch():                                  # A.0, A.pdf, B.0: B ohne das PDF von A
                 (irdir / "A.0").write_bytes((irdir / "test.0").read_bytes())
@@ -2839,7 +2839,7 @@ def selftest(outdir, with_isnet=False):
                 sp_ = [(t_, np.array([calc_]), np.array([1e4])) for t_ in (13.0, 14.0, 15.002)]
                 assert IRMS.lc_found(sp_, calc_, rt=[60 * (13.0 / 60), 60 * (15.002 / 60)])["n"] == 3   # 15.0019999…
                 d_ = make_d_(irdir / "p3mixed2.d", sorted(scans_))
-                w.compound = {"formula": "C18H20N2"}
+                w.compound = {"formula": "C18H18N2O"}
                 set_adduct_("M+H")
                 t_ms.load_raw(str(d_))
                 t_ms.render()
@@ -4786,13 +4786,13 @@ def selftest(outdir, with_isnet=False):
             t_d.render()
 
             # SI-Zeilen: Elementaranalyse, UV-Vis, SI-Abschnitt als Word-Datei
-            comp_ = SI.ea_composition("C18H20N2")
-            assert [round(comp_[e_], 2) for e_ in "CHN"] == [81.78, 7.63, 10.60], comp_
-            assert SI.ea_formula_label("C18H20N2", "0.5 CH2Cl2") == "C18H20N2·0.5CH2Cl2"
-            assert abs(SI.ea_composition("C18H20N2", "0.5 CH2Cl2")["C"] - 72.42) < 0.01
-            pl_, ht_, nt_ = SI.ea_line("C18H20N2", "", {"C": "81.52", "H": "7.70", "N": "10.10"})
-            assert pl_ == "Elemental analysis (%) calc. C18H20N2: C 81.78, H 7.63, N 10.60; found C 81.52, " \
-                          "H 7.70, N 10.10", pl_
+            comp_ = SI.ea_composition("C18H18N2O")
+            assert [round(comp_[e_], 2) for e_ in "CHN"] == [77.67, 6.52, 10.06], comp_
+            assert SI.ea_formula_label("C18H18N2O", "0.5 CH2Cl2") == "C18H18N2O·0.5CH2Cl2"
+            assert abs(SI.ea_composition("C18H18N2O", "0.5 CH2Cl2")["C"] - 69.26) < 0.01
+            pl_, ht_, nt_ = SI.ea_line("C18H18N2O", "", {"C": "77.41", "H": "6.59", "N": "9.56"})
+            assert pl_ == "Elemental analysis (%) calc. C18H18N2O: C 77.67, H 6.52, N 10.06; found C 77.41, " \
+                          "H 6.59, N 9.56", pl_
             assert [e_ for e_, _ in nt_] == ["N"] and "<sub>18</sub>" in ht_       # N weicht um 0.50 % ab
             cfg_uv = dict(core.DEFAULTS, conc_unit="mM")
             res_uv = [{"lam": 412.0, "fit": {"n": 5}, "eps": 12345.6, "eps_err": 120.0},
@@ -4803,7 +4803,7 @@ def selftest(outdir, with_isnet=False):
             assert uvp_ == "UV-Vis (THF): λmax: 298 nm (ε = 24100 cm-1 M-1), 412 nm (ε = 12346 cm-1 M-1)", uvp_
             assert "<b>λ<sub>max</sub></b>" in uvh_ and "cm<sup>-1</sup>" in uvh_, uvh_
             assert SI.join_lines([("m.p. 67 °C", "m.p. 67 °C"), (uvp_, uvh_)])[0].endswith("M-1).")
-            w.compound = {"name": "TEST-1", "formula": "C18H20N2", "mp": "67 °C"}
+            w.compound = {"name": "TEST-1", "formula": "C18H18N2O", "mp": "67 °C"}
             w.irms_state.update(ea_found={"C": "81.70", "H": "7.60", "N": "10.55"}, ea_solvate="")
             w.irms_tab.sync_widgets()
             blocks_, missing_ = w.si_blocks()
@@ -5005,7 +5005,7 @@ def selftest(outdir, with_isnet=False):
             with _zfp.ZipFile(msr_, "w") as z_:                               # Bericht: Kürzel in Runs geteilt, Datum
                 z_.writestr("word/document.xml", '<w:document><w:body><w:p><w:r><w:t>sample name: AB-1-</w:t></w:r>'
                             '<w:r><w:t>234</w:t></w:r></w:p><w:p><w:r><w:t>date: 12.03.2024</w:t></w:r></w:p>'
-                            '<w:p><w:r><w:t>exact mass: 264.1626</w:t></w:r></w:p><w:p><w:del w:id="1" w:author="Jane Doe" '
+                            '<w:p><w:r><w:t>exact mass: 278.1419</w:t></w:r></w:p><w:p><w:del w:id="1" w:author="Jane Doe" '
                             'w:date="2024-03-12T10:00:00Z"><w:r><w:delText>AB-1-</w:delText></w:r><w:r><w:delText>234 old'
                             '</w:delText></w:r></w:del></w:p>'
                             '</w:body></w:document>')
@@ -5070,7 +5070,7 @@ def selftest(outdir, with_isnet=False):
                 assert b"Admin" not in ir_z_ and b"\x00user\x00" in ir_z_ and b"01/01/1980" in ir_z_   # Operator weg
                 assert ir_z_.startswith(b"\x0a\x0a\0OPUS\0SNM\x003b      \0") and ir_z_.endswith(b"\0\xff\x01")
                 ms_txt_ = DP.docx_text(z_.read("3b/MS/MS-Bericht.docx"))
-                assert "sample name: Compound 3b" in ms_txt_ and "2024" not in ms_txt_ and "264.1626" in ms_txt_
+                assert "sample name: Compound 3b" in ms_txt_ and "2024" not in ms_txt_ and "278.1419" in ms_txt_
                 with _zfp.ZipFile(__import__("io").BytesIO(z_.read("3b/MS/MS-Bericht.docx"))) as zm_:
                     core_ = zm_.read("docProps/core.xml").decode("utf-8")
                     assert "Jane Doe" not in core_ and "dcterms:created" not in core_ and "<dc:title>MS</dc:title>" in core_

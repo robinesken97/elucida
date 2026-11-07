@@ -361,7 +361,7 @@ class CompoundDialog(QDialog):
         f.addRow("", self.lbl_preview)
         self._preview()
         self.ed_formula = QLineEdit(comp.get("formula", ""))
-        self.ed_formula.setPlaceholderText("C18H20N2")
+        self.ed_formula.setPlaceholderText("C18H18N2O")
         f.addRow(T("compound_formula"), self.ed_formula)
         self.ed_mw = QLineEdit(f"{comp['mw']:g}" if comp.get("mw") else "")
         f.addRow(T("molar_mass"), self.ed_mw)
