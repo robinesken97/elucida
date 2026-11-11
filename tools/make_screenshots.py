@@ -1,0 +1,146 @@
+"""Screenshots für das README (docs/screenshots/<tab>_<light|dark>_<de|en>.png).
+
+Startet das Hauptfenster (1600 × 1000; unter macOS als echtes Fenster, sonst QT_QPA_PLATFORM=offscreen) mit einem **leeren Projekt** und
+speichert je Tab ein Bild über QWidget.grab: die zentrierte Anleitung des leeren Tabs (was herauskommt, Dateien,
+Schritte, Knopf für den ersten Schritt). Nutzerwunsch: keine Daten in den README-Bildern, auch keine Beispieldaten.
+Ausnahme Coverbild (Nutzerwunsch): Startbildschirm (welcome_<theme>_<lang>.png) mit dem Beispielprojekt (zwei
+erfundene Verbindungen, nur Namen, Strukturen und Analytik-Abzeichen; Pfade als ~/Documents/…).
+Das Werkzeug selbst gehört nicht in den PyInstaller-Build.
+
+    python tools/make_screenshots.py [Zielordner]
+"""
+import os
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+# Ohne Bildschirm zeichnet der Zeicheneditor (WebEngine) nicht (weiße Fläche in Synthese und Reaktionspfad) und die
+# Bilder haben nur einfache Auflösung: unter macOS deshalb mit echtem Fenster.
+if sys.platform != "darwin":
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
+
+from elucida.app import main_window as G  # noqa: E402
+
+SIZE = (1600, 1000)
+# (Dateiname, Tab-Schlüssel, Themes) in der Reihenfolge der Tabs
+# Alle README-Bilder dunkel (Nutzerwunsch), auch das Coverbild
+SHOTS = tuple((name, key, ("dark",)) for name, key in (
+    ("synthesis", "syn"), ("nmr", "nmr"), ("irms", "irms"), ("hrms", "hrms"), ("eps", "eps"), ("overlay", "overlay"),
+    ("fluorescence", "fluo"), ("cv", "cv"), ("sec", "sec"), ("epr", "epr"), ("xray", "xray"), ("dft", "dft")))
+
+
+def pump(sec=0.6):
+    t0 = time.time()
+    while time.time() - t0 < sec:
+        QApplication.processEvents()
+        time.sleep(0.02)
+
+
+def clear_toast(w):
+    """Einblendungen nicht im Bild (auch die Meldung des beim Sprachwechsel verworfenen Zeicheneditors)."""
+    w.statusBar().clearMessage()
+    pump(0.1)
+
+
+def shoot_welcome(w, outdir, lang, theme, work):
+    """Coverbild: Startbildschirm mit dem Beispielprojekt (Projekte + zuletzt geöffnete Verbindungen), dazu die Seite
+    des Beispielprojekts (Verbindungen mit Checkliste) für den Projekt-Abschnitt."""
+    from elucida.app import welcome as WEL
+    keep = w.project_dir
+    w.go_home()
+    real = WEL.short_path
+    base = str(Path(work).resolve())                   # macOS: /var -> /private/var
+    WEL.short_path = lambda p: "~/Documents/" + Path(p).resolve().relative_to(base).as_posix() if str(
+        Path(p).resolve()).startswith(base) else real(p)
+    try:
+        w.fill_recent_list()
+        pump(2.5)                                         # Karten und Projektliste erscheinen mit echtem Fenster erst nach > 1 s
+        p = Path(outdir) / f"welcome_{theme}_{lang}.png"
+        clear_toast(w)
+        w.grab().save(str(p))
+        print(p.name)
+        w.open_publication(work / "Beispielprojekt")
+        pump(0.8)
+        p = Path(outdir) / f"project_{theme}_{lang}.png"
+        clear_toast(w)
+        w.grab().save(str(p))
+        print(p.name)
+        from elucida.app import reaction_paths as RP       # Reaktionspfad: leere Zeichenfläche im Hauptfenster
+        w.pub_page.open_path(RP.create(work / "Beispielprojekt", "Reaction path"))
+        pump(3.0)
+        p = Path(outdir) / f"paths_{theme}_{lang}.png"
+        clear_toast(w)
+        w.grab().save(str(p))
+        print(p.name)
+        w.pub_page.close_path()
+    finally:
+        WEL.short_path = real
+    w.open_project(keep, recent=False)               # Tab-Bilder: leere Verbindung in eigenem Projekt
+    pump(0.5)
+
+
+
+def shoot(w, outdir, lang, theme):
+    for name, key, themes in SHOTS:
+        if theme not in themes:
+            continue
+        idx = w._tab_keys.index(key)
+        w.main_tabs.setCurrentIndex(idx)                  # Tabs werden erst beim Anzeigen gebaut (Platzhalter)
+        pump(0.3)
+        page = w.main_tabs.widget(idx)
+        for fn in ("sync_widgets", "update_preview", "render"):
+            if getattr(type(page), fn, None) not in (None, QWidget.render):    # nicht QWidget.render
+                getattr(page, fn)()
+        if key == "eps":
+            w.render()
+        pump(1.2)
+        clear_toast(w)                                    # Einblendung („Projekt gespeichert“) nicht im Bild
+        p = Path(outdir) / f"{name}_{theme}_{lang}.png"
+        w.grab().save(str(p))
+        print(p.name)
+
+
+def main(outdir=ROOT / "docs" / "screenshots"):
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="elucida_shots_"))
+    try:
+        G.SETTINGS_FILE = work / "settings.ini"           # nicht die echten Benutzereinstellungen
+        app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
+        QApplication.setApplicationVersion(G.APP_VERSION)
+        w = G.MainWindow()
+        w.settings.setValue("update_auto", False)
+        w.resize(*SIZE)
+        w.show()
+        import json
+        from elucida.app import publication as PUB
+        w.open_demo_publication(work / "Beispielprojekt")      # Coverbild und Projektseite
+        w.go_home()
+        PUB.create(work / "My project", "My project")                    # Tab-Bilder: leere Verbindung in eigenem Projekt
+        w.open_publication(work / "My project")
+        assert w.new_compound_in_publication("1a")
+        w.settings.setValue("recent_projects", json.dumps(      # Übersicht: nur das Beispielprojekt
+            [str((work / "Beispielprojekt" / n).resolve()) for n in ("S3", "S2")]))
+        w.settings.setValue("recent_publications", json.dumps([str((work / "Beispielprojekt").resolve())]))
+        for lang in ("de", "en"):
+            w.switch_lang(lang)
+            for theme in ("dark",):
+                w.switch_theme(theme)
+                w.resize(*SIZE)
+                pump(0.5)
+                shoot_welcome(w, outdir, lang, theme, work)
+                shoot(w, outdir, lang, theme)
+        w.switch_theme("system")
+        w.close()
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:2])

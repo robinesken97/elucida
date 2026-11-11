@@ -1,0 +1,45 @@
+build/
+dist/
+venv/
+__pycache__/
+*.spec
+selftest_*/
+.uvvis_cache/
+*.uvvis.yaml
+# Messdaten nicht ins Repository (öffentliche Repos!):
+*.[Cc][Ss][Vv]
+*.heic
+*.HEIC
+*.[Cc][Dd][Xx][Mm][Ll]
+*.out
+*.log
+*.[Dd][Ss][Ww]
+*.[Bb][Ss][Ww]
+*.[Ff][Bb][Ss][Ww]
+*.txt
+!requirements.txt
+*.xlsx
+*.uvvis
+exports/
+# Fotos/Bilder nur in assets/ (Programmsymbol)
+*.[Pp][Nn][Gg]
+*.[Jj][Pp][Gg]
+*.[Jj][Pp][Ee][Gg]
+*.[Tt][Ii][Ff]
+*.[Tt][Ii][Ff][Ff]
+!assets/*.png
+!assets/png/*.png
+!docs/screenshots/*.png
+
+# Lizenztexte für Datensätze (CC-Texte selbst CC0)
+!assets/licenses/*.txt
+
+# macOS
+.DS_Store
+
+.venv/
+node_modules/
+assets/octet/
+!frontend/octet/**/*.txt
+
+.octet-preview/

@@ -1,0 +1,13 @@
+numpy
+matplotlib
+pyyaml
+pillow
+PySide6
+pymupdf
+rdkit
+pillow-heif
+onnxruntime
+opencv-python-headless
+olefile
+openpyxl
+pyobjc-framework-Cocoa; sys_platform == 'darwin'

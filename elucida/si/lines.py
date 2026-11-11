@@ -1,0 +1,964 @@
+"""SI-Zeilen und SI-Export: UV-Vis-Zeile (ε-Tab), Elementaranalyse, Word-Datei (docx ohne Zusatzpaket).
+
+Stil wie in den SI der Arbeitsgruppe: „m.p. …; IR [cm-1]: ṽ = …; HR-MS-ESI(+) calc. …; found …;
+UV-Vis: λmax: 350 nm (ε = 12000 cm-1 M-1), …“. Die Elementaranalyse ist aufgebaut wie die HR-MS-Zeile:
+„Elemental analysis (%) calc. C18H18N2O: C 77.67, H 6.52, N 10.06; found C 77.41, H 6.59, N 9.87“ (wie HR-MS).
+"""
+from __future__ import annotations
+
+import html as _html
+import math
+import os
+import re
+import zipfile
+from pathlib import Path
+
+from elucida.core import uvvis as core
+from elucida.formats.elements import ELEMENTS
+from elucida.tabs.ir_ea import element_of_key, formula_str, mono_mass, parse_formula
+
+# Mittlere Atommassen (IUPAC 2021, konventionelle Werte) für die Elementaranalyse
+AVG = {"H": 1.008, "D": 2.014, "Li": 6.94, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998,
+       "Na": 22.990, "Mg": 24.305, "Al": 26.982, "Si": 28.085, "P": 30.974, "S": 32.06, "Cl": 35.45, "K": 39.098,
+       "Ca": 40.078, "Ti": 47.867, "V": 50.942, "Cr": 51.996, "Mn": 54.938, "Fe": 55.845, "Co": 58.933,
+       "Ni": 58.693, "Cu": 63.546, "Zn": 65.38, "Ga": 69.723, "Ge": 72.630, "As": 74.922, "Se": 78.971,
+       "Br": 79.904, "Rb": 85.468, "Sr": 87.62, "Y": 88.906, "Zr": 91.224, "Mo": 95.95, "Ru": 101.07,
+       "Rh": 102.906, "Pd": 106.42, "Ag": 107.868, "Cd": 112.414, "In": 114.818, "Sn": 118.710, "Sb": 121.760,
+       "Te": 127.60, "I": 126.904, "Cs": 132.905, "Ba": 137.327, "La": 138.905, "Hf": 178.49, "W": 183.84,
+       "Re": 186.207, "Os": 190.23, "Ir": 192.217, "Pt": 195.084, "Au": 196.967, "Hg": 200.592, "Tl": 204.38,
+       "Pb": 207.2, "Bi": 208.980}
+EA_ELEMENTS = ("C", "H", "N", "S")          # was CHNS-Analysatoren messen
+EA_TOL = 0.4                                # übliche Grenze der Journals (absolut, in %)
+
+
+# ---------------------------------------------------------------------------- Geschützte Leerzeichen
+NBSP = "\u00a0"
+_UNITS = ("°C|K|°|Å|nm|pm|mm|cm|µm|μm|m|mg|µg|μg|g|kg|mmol|µmol|μmol|mol|mL|µL|μL|L|mM|µM|μM|M|N|equiv|eq|h|min|ms|s|"
+          "ppm|kHz|MHz|GHz|Hz|mT|mV|V|eV|Eh|E<sub>h</sub>|kcal|kJ|atm|mbar|bar|Torr|Da|wt%|%")
+_NB_RULES = [
+    (re.compile(r"(?<=\d)[ ]+(?=(?:" + _UNITS + r")(?![A-Za-z0-9]))"), NBSP),          # Zahl ↔ Einheit: 67 °C, 0.82 mmol
+    (re.compile(r"[ ]+([=±≈])[ ]+"), NBSP + r"\1" + NBSP),                            # ε = 12000, 7.39 ± 0.01
+    (re.compile(r"(?<=</sup>)[ ]+(?=[A-Za-zµμ]+<sup>)"), NBSP),                        # cm<sup>-1</sup> M<sup>-1</sup>
+    (re.compile(r"(?<=-1)[ ]+(?=[A-Za-zµμ]+-1\b)"), NBSP),                             # cm-1 M-1 (Klartext)
+    (re.compile(r"(?<=⁻¹)[ ]+(?=[A-Za-zµμ]+⁻¹)"), NBSP),                               # cm⁻¹ M⁻¹
+    (re.compile(r"(?<![\w.])([A-Z][a-z]?)[ ]+(?=\d{1,3}\.\d{2}\b)"), r"\1" + NBSP),     # Elementaranalyse: C 77.67
+    (re.compile(r"\bm\.p\.[ ]+"), "m.p." + NBSP),
+]
+
+
+def nbsp(text):
+    """Geschützte Leerzeichen (U+00A0) zwischen Zahl und Einheit, um =/±, in zusammengesetzten Einheiten und in der
+    Elementaranalyse – Word bricht dort nicht mehr um. Funktioniert für Klartext und das kleine HTML der SI-Zeilen."""
+    for rx, rep in _NB_RULES:
+        text = rx.sub(rep, text)
+    return text
+
+
+# ---------------------------------------------------------------------------- Elementaranalyse
+def mp_text(text: str) -> str:
+    """Schmelzpunkt wie in der SI: „m.p.“ davor weg, nur Zahl/Bereich (auch „>300“) -> „ °C“ ergänzen."""
+    mp = re.sub(r"(?i)^m\.?\s*p\.?\s*", "", text or "").strip()
+    mp = re.sub(r"(?<=\d),(?=\d)", ".", mp)          # englische SI: Dezimalpunkt (auch „120,5 °C“)
+    if re.fullmatch(r"[<>≤≥~]?\s*\d+(?:[.,]\d+)?(?:\s*[-–−]\s*\d+(?:[.,]\d+)?)?", mp):
+        mp += " °C"
+    return mp
+
+
+def parse_solvate(text: str) -> list[tuple[float, str]]:
+    """'0.5 CH2Cl2, H2O' / '0.5CH2Cl2·H2O' -> [(0.5, 'CH2Cl2'), (1.0, 'H2O')]."""
+    out = []
+    for part in re.split(r"[,;·•+]|\s{2,}", text or ""):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d+(?:[.,]\d+)?)?\s*([A-Z].*)", part)
+        if not m:
+            raise ValueError(f"Solvat nicht lesbar: {part}")
+        n = float(m.group(1).replace(",", ".")) if m.group(1) else 1.0
+        parse_formula(m.group(2))                  # prüft die Formel
+        out.append((n, m.group(2).replace(" ", "")))
+    return out
+
+
+def ea_composition(formula: str, solvate: str = "") -> dict:
+    """Massenanteile in % (Formel + Solvat, mittlere Atommassen)."""
+    counts = dict(parse_formula(formula))
+    for n, f in parse_solvate(solvate):
+        for el, k in parse_formula(f).items():
+            counts[el] = counts.get(el, 0) + n * k
+    missing = [el for el in counts if el not in AVG and not el.startswith("[")]
+    if missing:
+        raise ValueError("keine Atommasse für " + ", ".join(missing))
+    # Isotope ([13C], D) wie ChemDraw: beim Element, mit der Masse des Isotops (C20[13C]H24N4: C 75.94; D bei H)
+    mass = {el: AVG[el] if el in AVG else mono_mass(el) for el in counts}
+    mw = sum(mass[el] * k for el, k in counts.items())
+    out = {}
+    for el, k in counts.items():
+        e = "H" if el == "D" else element_of_key(el)
+        out[e] = out.get(e, 0.0) + 100 * mass[el] * k / mw
+    return out
+
+
+def _num(n):
+    return f"{n:g}"
+
+
+def ea_formula_label(formula: str, solvate: str = "") -> str:
+    """'C18H18N2O·0.5CH2Cl2' (Klartext)."""
+    f = formula_str(parse_formula(formula))
+    for n, s in parse_solvate(solvate):
+        f += "·" + ("" if n == 1 else _num(n)) + s
+    return f
+
+
+def _sub_html(f):
+    h = re.sub(r"(?<=[A-Za-z\)])(\d+(?:\.\d+)?)", r"<sub>\1</sub>", _html.escape(f))
+    return re.sub(r"\[(\d+)([A-Z][a-z]?)\]", r"<sup>\1</sup>\2", h)          # Isotope wie RDKit: [13C]
+
+
+# Formelteile in Freitext: Elementsymbole und übliche Abkürzungen (n-Bu4NPF6, Et2O, (CH3)2); zwei Buchstaben zuerst
+_FORMULA_SYMS = sorted(set(ELEMENTS) | {"D", "Me", "Et", "Pr", "Bu", "Ph", "Cp", "Ac", "Tf", "Ts", "Ms", "Bn", "Bz",
+                                        "Py", "Fc", "Cy", "Mes", "Dipp"}, key=len, reverse=True)
+_FORMULA_RE = re.compile(r"(?:(?:" + "|".join(_FORMULA_SYMS) + r")\d{0,3}|\(|\)\d{0,3})+")
+_GASES = {"H", "N", "O", "F", "Cl", "Br", "I"}          # ein Symbol mit kleiner Zahl nur so (N2, O2), nicht „S1“, „D3“
+_REF_WORD = re.compile(r"(?:Figures?|Fig\.|Tables?|Schemes?|Charts?|Eqs?\.|Equations?|Sections?)\s*$")
+
+
+def _formula_sub(m):
+    tok = m.group(0)
+    units = re.findall(r"[A-Z][a-z]*", tok)
+    nums = [int(n) for n in re.findall(r"\d+", tok)]
+    if not nums or not _FORMULA_RE.fullmatch(tok) or max(nums) > 99 and len(nums) < 2:
+        return tok                                     # B3LYP, def2-SVP, PBE0, M06-2X, SP300 (C100H202 ja)
+    if len(units) == 1 and not (units[0] in _GASES or units[0] != "D" and nums[0] >= 4
+                                and not _REF_WORD.search(m.string[:m.start()])):
+        return tok                                     # S1/T1 (Zustände), D3/D4 (Grimme), Figure S12; S8, C60 ja
+    return re.sub(r"(?<=[A-Za-z\)])(\d+)", r"<sub>\1</sub>", tok)
+
+
+def chem_html(text):
+    """Freitext -> HTML wie in der SI: „mL-1“/„s-1“ hochgestellt, Zahlen in Formeln (CH2Cl2, n-Bu4NPF6, AgNO3)
+    tiefgestellt; Zahlen nach Leerzeichen (0.1 M, 200 mV) und in Namen (B3LYP, Figure S12) bleiben."""
+    h = _html.escape(text or "", quote=False)
+    h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
+    return re.sub(r"(?<![A-Za-z0-9])[A-Z(][A-Za-z0-9()]*", _formula_sub, h)
+
+
+_LOCANT = re.compile(r"(?<![A-Za-z>])((?:[NOSP](?:,[NOSP])*)|tert|sec|cis|trans|[nitompEZRS])(?=-[A-Za-z(\[<])")
+
+
+def chem_name_html(text):
+    """Name oder Formel eines Stoffs wie im Satz: Zahlen in Formeln tief (PdCl2(PPh3)2), Lokanten und Vorsilben kursiv
+    (N,N-, tert-, n-, o-/m-/p-, cis-/trans-, (E)-/(Z)-, (R)-/(S)-). Nur Anzeige – gespeichert bleibt der reine Text."""
+    h = chem_html(text)
+    h = re.sub(r"\((E|Z|R|S)\)(?=-)", r"(<i>\1</i>)", h)
+    return _LOCANT.sub(lambda m: ",".join(f"<i>{x}</i>" for x in m.group(1).split(",")), h)
+
+
+def chem_plain(text):
+    """Wie chem_html, aber als reiner Text mit tiefgestellten Ziffern (für Felder, die kein Rich-Text können)."""
+    sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+    h = re.sub(r"<sub>(\d+)</sub>", lambda m: m.group(1).translate(sub), chem_html(text))
+    return _html.unescape(re.sub(r"<[^>]+>", "", h))
+
+
+def methods_html(text):
+    """Methodentext (Klartext wie „SI-Text kopieren“) -> HTML für Word: Einheiten „cm-1“ hochgestellt, „E1/2“ und
+    Indizes mit Unterstrich (A_red, g_lit, n_app) tiefgestellt. Keine Formel-Regel wie chem_html (E1/2 ≠ E₁/2)."""
+    h = _html.escape(text or "", quote=False)
+    h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
+    h = re.sub(r"\bE1/2", "E<sub>1/2</sub>", h)
+    h = h.replace("Fc0/+", "Fc<sup>0/+</sup>")         # wie die CV-Achse und die Unterschrift
+    return re.sub(r"(?<=[A-Za-zνΔ])_([A-Za-z0-9]+)", r"<sub>\1</sub>", h)
+
+
+def ea_line(formula: str, solvate: str, found: dict):
+    """-> (Klartext, HTML, Hinweise). found: {'C': '77.41', …}; nur gemessene Elemente stehen bei found."""
+    comp = ea_composition(formula, solvate)
+    els = [el for el in EA_ELEMENTS if el in comp or (found or {}).get(el)]
+    calc = ", ".join(f"{el} {comp.get(el, 0.0):.2f}" for el in els if el in comp)
+    fv = {}
+    for el in els:
+        v = str((found or {}).get(el) or "").strip().replace(",", ".")
+        if v:
+            fv[el] = float(v)
+            if not math.isfinite(fv[el]):
+                raise ValueError(f"found {el}: {v}")
+    notes = []
+    for el, v in fv.items():                       # wie gedruckt verglichen (2 Nachkommastellen)
+        d = float(f"{v:.2f}") - float(f"{comp.get(el, 0.0):.2f}")
+        if abs(d) > EA_TOL + 1e-9:
+            notes.append((el, d))
+    label = ea_formula_label(formula, solvate)
+    fnd = ", ".join(f"{el} {v:.2f}" for el, v in fv.items()) if fv else "–"
+    # gleich aufgebaut wie die HR-MS-Zeile („calc. … ; found …“, Nutzerwunsch)
+    plain = f"Elemental analysis (%) calc. {label}: {calc}; found {fnd}"
+    html = f"<b>Elemental analysis</b> (%) calc. {_sub_html(label)}: {calc}; found {fnd}"
+    return plain, html, notes
+
+
+# ---------------------------------------------------------------------------- UV-Vis
+def uvvis_line(results, cfg, solvent: str = ""):
+    """ε-Ergebnisse -> (Klartext, HTML): UV-Vis: λmax: 350 nm (ε = 12000 cm-1 M-1), … Nur Banden, die auch im Bild
+    stehen (nicht abgewählt, R² ≥ Schwelle); ε gerundet auf die Genauigkeit des Standardfehlers (wie in der Tabelle,
+    ohne ±). Ohne Molmasse: a in L g-1 cm-1."""
+    molar = bool(core.conc_factor(cfg))
+    items_p, items_h = [], []
+    xl = cfg.get("xlim")
+    for r in sorted(results, key=lambda r: r["lam"]):
+        if not r.get("fit") or r.get("hidden") or (xl and not min(xl) <= r["lam"] <= max(xl)):   # wie das Bild
+            continue
+        v, _ = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))
+        sh = ", sh" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
+        lam = core.fmt_lam(r["lam"])
+        if molar:
+            items_p.append(f"{lam} nm (ε = {v} cm-1 M-1{sh})")
+            items_h.append(f"{lam} nm (ε = {v} cm<sup>-1</sup> M<sup>-1</sup>{sh})")
+        else:
+            items_p.append(f"{lam} nm (a = {v} L g-1 cm-1{sh})")
+            items_h.append(f"{lam} nm (<i>a</i> = {v} L g<sup>-1</sup> cm<sup>-1</sup>{sh})")
+    if not items_p:
+        return "", ""
+    head = "UV-Vis" + (f" ({solvent})" if solvent else "")
+    plain = f"{head}: λmax: " + ", ".join(items_p)
+    html = f"<b>{_html.escape(head)}</b>: <b>λ<sub>max</sub></b>: " + ", ".join(items_h)
+    return plain, html
+
+
+def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = True):
+    """SI-Text (englisch) zur ε-Bestimmung einer Verdünnungsreihe nach prepare_series: Basislinie, Fit A/d = m·c + b
+    (OLS), Cutoff, Unsicherheiten; danach die Ergebnisse je Bande (ε ± SE wie in der Tabelle gerundet, 95-%-KI, n,
+    R²; with_results=False: nur die Methode – im Word-Export doppelt zu Bild und UV-Vis-Zeile, Nutzerwunsch).
+    Exponenten wie in der SI als „-1“."""
+    fitted = [r for r in results if r.get("fit")]
+    if not fitted:
+        return ""
+    molar = bool(core.conc_factor(cfg))
+    unit = {"uM": "µM", "mg/mL": "mg mL-1"}.get(cfg["conc_unit"], cfg["conc_unit"])
+    cs = sorted({s_["c"] for s_ in spectra})
+    coef, cunit = ("ε", "cm-1 M-1") if molar else ("a", "L g-1 cm-1")
+    m = ["Molar absorption coefficients were determined from a dilution series" if molar else
+         "Specific absorption coefficients a (no molar mass given) were determined from a dilution series",
+         ""]
+    m[0] += (f"{' in ' + solvent if solvent else ''} ({len(cs)} concentrations, {cs[0]:g}–{cs[-1]:g} {unit}, "
+             f"path length {cfg['path_length_cm']:g} cm" + (f"; mass concentrations converted with M = "
+                                                            f"{float(cfg['molar_mass_g_mol']):.2f} g mol-1"
+                                                            if molar and cfg["conc_unit"] == "mg/mL" else "") + ").")
+    bl = cfg.get("_baseline_info")
+    if bl:
+        a, b = bl["window"]
+        txt = (f"Each spectrum was baseline-corrected by its median absorbance between {a:.0f} and {b:.0f} nm "
+               "(the range of lowest absorbance of the most concentrated solution)")
+        if cfg.get("baseline_mode") == "series" and len(spectra) >= 3:
+            txt += ("; a contribution proportional to the concentration in this range (linear regression of the "
+                    "window absorbance against c, kept if the slope exceeded twice its standard error) was retained")
+        m[1] = txt + "."
+    sampling = "interpolated at the band wavelength"
+    if cfg.get("avg_window_nm"):
+        sampling = f"averaged over ±{cfg['avg_window_nm']:g} nm around the band wavelength"
+    snap = (f", which was set to the local maximum within ±{cfg['snap_window_nm']:g} nm of the most concentrated "
+            "unsaturated spectrum" if cfg.get("snap_window_nm") else "")
+    cuts = sorted({float(r["cutoff"]) for r in fitted})
+    cut_txt = (f"A ≤ {cuts[0]:g}" if len(cuts) == 1 else
+               f"A ≤ {cfg['max_abs_fit']:g} (band-specific limits: " + ", ".join(
+                   f"{core.fmt_lam(r['lam'])} nm: {r['cutoff']:g}" for r in fitted if r["cutoff"] != cfg["max_abs_fit"]) + ")")
+    model = "A/d = " + coef + "·c + b" if cfg["fit_intercept"] else "A/d = " + coef + "·c"
+    dof = "n − 2" if cfg["fit_intercept"] else "n − 1"
+    m.append(f"At each band, the absorbance ({sampling}{snap}) divided by the path length was fitted against the "
+             f"concentration by ordinary least squares ({model}), using only points with {cut_txt} to stay in "
+             f"the linear range; {coef} is the slope. Uncertainties are given as standard error (SE) and 95% "
+             f"confidence interval (t(0.975; {dof})·SE); "
+             + (f"{coef} and its uncertainties are given as integers." if molar
+                else f"{coef} was rounded to the precision of the SE."))
+    if any(r.get("hidden") for r in fitted):
+        m.append(f"Bands with R² < {cfg['min_r2']:g} or deselected bands are listed but not labelled in the figure.")
+    if not with_results:
+        return " ".join(x for x in m if x)
+    res = []
+    for r in sorted(fitted, key=lambda r: r["lam"]):
+        v, e = core.fmt_ve(r["eps"], r["eps_err"], max_decimals=core.eps_max_decimals(cfg))
+        ci = r.get("eps_ci95")
+        _, ci_s = core.fmt_ve(r["eps"], ci, max_decimals=core.eps_max_decimals(cfg)) if ci == ci else (None, None)
+        sh = " (sh)" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
+        txt = f"{core.fmt_lam(r['lam'])} nm{sh}: {coef} = {v}" + (f" ± {e}" if e else "") + f" {cunit}"
+        txt += f" (SE; 95% CI ± {ci_s}" if ci_s else " ("
+        txt += f"{'; ' if ci_s else ''}n = {r['fit']['n']}, R² = {core.r2_text(r['fit']['r2'])})"
+        if r.get("hidden"):
+            txt += " [not in figure]"
+        res.append(txt)
+    return " ".join(x for x in m if x) + "\n\n" + "; ".join(res) + "."
+
+
+# ---------------------------------------------------------------------------- Absatz und Word-Datei
+def join_lines(parts):
+    """Teilzeilen (Klartext, HTML) zu einem Absatz im SI-Stil: durch „; “ getrennt, Punkt am Ende."""
+    parts = [(p.rstrip(" .;"), h.rstrip(" .;")) for p, h in parts if p]
+    if not parts:
+        return "", ""
+    return "; ".join(p for p, _ in parts) + ".", "; ".join(h for _, h in parts) + "."
+
+
+def html_runs(h):
+    """Kleines HTML (b, i, sub, sup, br) -> [(Text, {b, i, sub, sup, br})]."""
+    out, st = [], {"b": 0, "i": 0, "sub": 0, "sup": 0}
+    for tok in re.split(r"(<[^>]+>)", h or ""):
+        m = re.fullmatch(r"<(/?)(b|i|sub|sup)\s*>", tok)
+        if m:
+            st[m.group(2)] += -1 if m.group(1) else 1
+        elif re.fullmatch(r"<br\s*/?>", tok):
+            out.append(("", {"br"}))
+        elif tok.startswith("<"):
+            continue
+        elif tok:
+            out.append((_html.unescape(tok), {k for k, v in st.items() if v > 0}))
+    return out
+
+
+def markup_runs(markup, bold=False):
+    """Tabellen-Markup des X-Ray-Tabs (*kursiv*, _{tief}, ^{hoch}, ~{Überstrich}, Zeilenumbruch \n) -> Läufe."""
+    from elucida.tabs import xray as XRAY
+    out = []
+    for li, line in enumerate(str(markup).split("\n")):
+        if li:
+            out.append(("", {"br"}))
+        for t, s_ in XRAY.runs(line):
+            st = {k for k, c in (("i", "i"), ("sub", "s"), ("sup", "p"), ("ov", "o")) if c in s_}
+            out.append((t, st | ({"b"} if bold else set())))
+    return out
+
+
+# ---------------------------------------------------------------------------- docx (Stil der SI)
+# Gemessen an einer SI der Arbeitsgruppe (Word): A4, Ränder 2.5 cm, Arial 11 pt, Blocksatz, 1.5-zeilig, Hoch-/Tiefstellung
+# 7 pt (Word: vertAlign), Dreilinien-Tabellen, Unterschriften „Figure Sn: …“ / „Table Sn: …“ (fett bis zum Doppelpunkt).
+_FONT = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>'   # set_font ändert sie
+TEXT_W = 11906 - 2 * 1417                  # Textbreite in twips (A4, 2.5 cm Rand)
+COL_GAP = 425                              # Abstand zweier Spalten (0.75 cm)
+_MONO = '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:eastAsia="Courier New"/>'
+
+
+# Vorlagen der Gesamt-SI: Kopf des Titelblatts und Bezeichnung von Abbildungen/Tabellen (Verlage schreiben für die SI
+# kaum etwas vor; „group“ = SI der Gruppe, Angewandte/Wiley). colon: Trennzeichen nach der Nummer.
+TEMPLATES = {
+    # Gruppe: wie die eigene Angewandte-SI (gemessen)
+    "group": dict(header="Supplementary Materials for", fig="Figure S", tab="Table S", colon=":", page=""),
+    # Wiley: „Supporting Information“, muss mit einem Inhaltsverzeichnis beginnen (Notice to Authors Angewandte)
+    "wiley": dict(header="Supporting Information for", fig="Figure S", tab="Table S", colon=".", page=""),
+    # ACS: Inhaltsverzeichnis mit Seitenzahlen verlangt (JOC); Seiten wie üblich S1, S2 …
+    "acs": dict(header="Supporting Information for", fig="Figure S", tab="Table S", colon=".", page="S"),
+    # RSC: „Fig. 1 Caption“ wie im Artikel, ohne Satzzeichen nach der Nummer
+    "rsc": dict(header="Supplementary Information for", fig="Fig. S", tab="Table S", colon="", page=""),
+    # Nature: „Supplementary Figure 1“, eigene Zählung, Legende wie im Artikel („|“)
+    "nature": dict(header="Supplementary Information for", fig="Supplementary Figure ", tab="Supplementary Table ",
+                   colon=" |", page=""),
+}
+_TEMPLATE = "group"
+_PAGE_NUMBERS = False
+
+
+def set_template(key, page_numbers=False):
+    """Vorlage für die folgenden Word-Exporte (Standard „group“; die Gesamt-SI setzt sie und danach zurück).
+    page_numbers: Seitenzahl in der Fußzeile (Gesamt-SI; ACS mit „S“ davor)."""
+    global _TEMPLATE, _PAGE_NUMBERS
+    _TEMPLATE = key if key in TEMPLATES else "group"
+    _PAGE_NUMBERS = bool(page_numbers)
+
+
+def set_font(name):
+    """Schriftart aller Word-Exporte (Standard Arial wie die SI der Gruppe); die Größe bleibt 11 pt, weil
+    two_per_page mit dieser Zeilenhöhe rechnet."""
+    global _FONT
+    n = _html.escape((name or "").strip() or "Arial", quote=True)
+    _FONT = f'<w:rFonts w:ascii="{n}" w:hAnsi="{n}" w:cs="{n}" w:eastAsia="{n}"/>'
+
+
+def _run_xml(text, st, size=22):
+    if "br" in st:
+        return "<w:r><w:br/></w:r>"
+    if "ov" in st:                          # Überstrich: Formelobjekt „Balken oben“, Text als Arial (m:nor)
+        wr = _FONT + ("<w:b/>" if "b" in st else "") + ("<w:i/>" if "i" in st else "") + \
+            f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
+        t = _html.escape(text, quote=False)
+        return ('<m:oMath><m:bar><m:barPr><m:pos m:val="top"/><m:ctrlPr><w:rPr>' + wr + '</w:rPr></m:ctrlPr>'
+                '</m:barPr><m:e><m:r><m:rPr><m:nor/></m:rPr><w:rPr>' + wr + f'</w:rPr><m:t>{t}</m:t></m:r></m:e>'
+                '</m:bar></m:oMath>')
+    if "\t" in text and text.strip("\t") == "":
+        return "<w:r>" + "<w:tab/>" * len(text) + "</w:r>"
+    props = (_MONO if "mono" in st else _FONT) + ("<w:b/><w:bCs/>" if "b" in st else "") + \
+        ("<w:i/><w:iCs/>" if "i" in st else "")
+    if "sub" in st:
+        props += '<w:vertAlign w:val="subscript"/>'
+    elif "sup" in st:
+        props += '<w:vertAlign w:val="superscript"/>'
+    props += f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
+    t = _html.escape(text, quote=False)
+    return f'<w:r><w:rPr>{props}</w:rPr><w:t xml:space="preserve">{t}</w:t></w:r>'
+
+
+def _seq_xml(kind, num, size=22):
+    """Word-Feld SEQ (Abbildungs-/Tabellennummer), fett, mit fortlaufendem Vorgabewert; in einer SI mit eigenen
+    SEQ-Feldern zählt Word beim Aktualisieren (F9) einfach weiter."""
+    props = _FONT + f'<w:b/><w:bCs/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
+    return (f'<w:fldSimple w:instr=" SEQ {kind} \\* ARABIC "><w:r><w:rPr>{props}</w:rPr><w:t>{num}</w:t></w:r>'
+            '</w:fldSimple>')
+
+
+# Seitenfüllung: Textfläche A4 (oben 2.5 cm, unten 2.0 cm) mit Reserve; Arial 11 pt, 1.5-zeilig ≈ 0.67 cm je Zeile,
+# im Mittel ≈ 0.19 cm je Zeichen
+PAGE_BODY_CM = 29.7 - 2.5 - 2.0 - 0.7
+MIN_FIG_CM = 7.0           # kleiner nie: dann kommen die Abbildungen auf die nächste Seite
+LINE_CM, CHAR_CM = 0.67, 0.19
+
+
+def _text_cm(markup, prefix=0, extra=0.0):
+    """Geschätzte Höhe eines Absatzes über die ganze Textbreite (HTML ohne Tags, prefix = „Figure S12: “)."""
+    plain = re.sub(r"<[^>]+>", "", markup or "")
+    per_line = max(20, int(TEXT_W / 567 / CHAR_CM))
+    return math.ceil((len(plain) + prefix) / per_line) * LINE_CM + extra
+
+
+HEADING_CM = 1.6            # Überschrift (Unter-)Kapitel inkl. Abstand davor/danach (in Word gemessen ~1.5 cm)
+
+
+def _block_cm(t):
+    """Höhe eines Textblocks vor Abbildungen; Überschriften mit ihrem Abstand."""
+    if t[0] in ("subsection", "heading", "section"):
+        return HEADING_CM
+    return _text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35)
+
+
+def two_per_page(blocks, per_page=2):
+    """Abbildungen (image + figcap) seitenweise zu je per_page setzen; vorangehender Text (z. B. Aufbau-Absatz)
+    beginnt eine neue Seite und zählt mit. Bilder werden – im Seitenverhältnis – so verkleinert, dass alles auf die
+    Seite passt (16 × 11 cm mit zweizeiliger Unterschrift sind zu zweit sonst ≈ 1 cm zu hoch)."""
+    pages, cur = [], {"text": [], "figs": []}
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b[0] == "image":
+            cap = blocks[i + 1] if i + 1 < len(blocks) and blocks[i + 1][0] == "figcap" else None
+            if len(cur["figs"]) >= per_page:
+                pages.append(cur)
+                cur = {"text": [], "figs": []}
+            cur["figs"].append([list(b), cap])
+            i += 2 if cap else 1
+            continue
+        if b[0] == "pagebreak":
+            i += 1
+            continue
+        if cur["figs"]:                                  # Text nach Abbildungen: neue Seite
+            pages.append(cur)
+            cur = {"text": [], "figs": []}
+        cur["text"].append(b)
+        i += 1
+    if cur["text"] or cur["figs"]:
+        pages.append(cur)
+    split = []
+    for pg in pages:                                    # langer Text davor (Gesamt-SI: Auswertung je Verbindung):
+        used = sum(_block_cm(t) for t in pg["text"])
+        caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
+        if pg["text"] and pg["figs"] and (PAGE_BODY_CM - used - caps) / per_page < MIN_FIG_CM:
+            split += [{"text": pg["text"], "figs": []}, {"text": [], "figs": pg["figs"]}]   # Bilder auf neue Seite
+        else:
+            split.append(pg)
+    pages = split
+    out = []
+    for k, pg in enumerate(pages):
+        if k:
+            out.append(("pagebreak",))
+        used = sum(_block_cm(t) for t in pg["text"])
+        caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
+        if pg["figs"]:
+            hmax = (PAGE_BODY_CM - used - caps) / per_page
+            for img, _ in pg["figs"]:
+                if img[3] > hmax > 0:
+                    f = hmax / img[3]
+                    img[2], img[3] = img[2] * f, hmax
+        out += pg["text"]
+        for img, cap in pg["figs"]:
+            out.append(tuple(img))
+            if cap:
+                out.append(cap)
+    return out
+
+
+def _ppr(align="both", line=360, before=0, after=0, keep_next=False, tabs="", style="", page_before=False, ind=0):
+    """Absatzeigenschaften in der Reihenfolge des OOXML-Schemas (Word ist da streng): pStyle, keepNext,
+    pageBreakBefore, tabs, spacing, ind, jc."""
+    x = f'<w:pStyle w:val="{style}"/>' if style else ""
+    x += "<w:keepNext/>" if keep_next else ""
+    x += "<w:pageBreakBefore/>" if page_before else ""
+    x += f"<w:tabs>{tabs}</w:tabs>" if tabs else ""
+    x += f'<w:spacing w:before="{before}" w:after="{after}" w:line="{line}" w:lineRule="auto"/>'
+    x += f'<w:ind w:left="{ind}"/>' if ind else ""
+    return f"<w:pPr>{x}<w:jc w:val=\"{align}\"/></w:pPr>"
+
+
+_PBB_AT = re.compile(r"<w:pPr>((?:<w:pStyle [^>]*/>)?(?:<w:keepNext/>)?(?:<w:keepLines/>)?)")
+
+
+def _page_break_before(xml):
+    """„Seitenumbruch oberhalb“ an der richtigen Stelle in die erste Absatz-Eigenschaft setzen."""
+    if "<w:pageBreakBefore/>" in xml[:300]:
+        return xml
+    if xml.startswith("<w:p>") and xml[5:12] == "<w:pPr>":
+        return _PBB_AT.sub(lambda m: "<w:pPr>" + m.group(1) + "<w:pageBreakBefore/>", xml, count=1)
+    if xml.startswith("<w:p>"):
+        return "<w:p><w:pPr><w:pageBreakBefore/></w:pPr>" + xml[5:]
+    return None
+
+
+def _para(runs, size=22, **kw):
+    return "<w:p>" + _ppr(**kw) + "".join(_run_xml(t, s, size) for t, s in runs) + "</w:p>"
+
+
+def _label_para(kind, num, runs, **kw):
+    """„Figure S1: …“ / „Table S1: …“ – Kürzel und Nummer fett, Doppelpunkt bei Tabellen fett, bei Abbildungen nicht
+    (wie in der SI)."""
+    tpl = TEMPLATES[_TEMPLATE]
+    lab = _run_xml(tpl["fig"] if kind == "Figure" else tpl["tab"], {"b"})
+    if _TEMPLATE == "group":                   # SI der Gruppe: Doppelpunkt nur bei Tabellen fett
+        colon = _run_xml(":", {"b"} if kind == "Table" else set())
+    else:
+        colon = _run_xml(tpl["colon"], {"b"}) if tpl["colon"] else ""
+    return "<w:p>" + _ppr(**kw) + lab + _seq_xml(kind, num) + colon + _run_xml(" ", set()) + \
+        "".join(_run_xml(t, s) for t, s in runs) + "</w:p>"
+
+
+def _border(sides):
+    b = "".join(f'<w:{s} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for s in sides)
+    return f"<w:tcBorders>{b}</w:tcBorders>" if b else ""
+
+
+def _head_runs(text):
+    """Tabellenkopf: ganz fett (wie in der SI)."""
+    return markup_runs(text, bold=True)
+
+
+# Spaltenbreiten der SI-Tabellen (gemessen: 4.76 / 3.49 / 3.99 / 3.49 cm, weitere abwechselnd), twips
+COL_PATTERN = (2700, 1980, 2265, 1980)
+
+
+def col_widths(n):
+    w = list(COL_PATTERN[:n]) + [COL_PATTERN[2 + (i % 2)] for i in range(max(0, n - len(COL_PATTERN)))]
+    tot = sum(w)
+    return [int(x * TEXT_W / tot) for x in w] if tot > TEXT_W else w
+
+
+def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal=(), width=None, size=20):
+    """Dreilinien-Tabelle, alles zentriert. widths: Spaltenbreiten (twips). span_equal: Zeilenindizes, deren gleiche
+    Werte über alle Spalten zusammengefasst werden (z. B. Refinement method). bold_rows: Zeilen mit fetten Werten."""
+    tw = width or sum(widths)
+    grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths)
+    x = (f'<w:tbl><w:tblPr><w:tblW w:w="{tw}" w:type="dxa"/><w:jc w:val="center"/>'
+         '<w:tblLayout w:type="fixed"/>'
+         '<w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+         f'<w:tblGrid>{grid}</w:tblGrid>')
+
+    def cell(runs, w, sides, span=1, head=False):
+        tcpr = f'<w:tcW w:w="{w}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + \
+            _border(sides) + '<w:vAlign w:val="center"/>'
+        sp = dict(line=240, after=0) if head else dict(line=line, before=row_after // 2, after=row_after // 2)
+        return f"<w:tc><w:tcPr>{tcpr}</w:tcPr>" + _para(runs, size=size, align="center", **sp) + "</w:tc>"
+    x += '<w:tr><w:trPr><w:tblHeader/></w:trPr>' + "".join(
+        cell(_head_runs(h), widths[j], ("top", "bottom"), head=True) for j, h in enumerate(header)) + "</w:tr>"
+    n = len(rows)
+    for i, r in enumerate(rows):
+        sides = ("bottom",) if i == n - 1 else ()
+        x += "<w:tr><w:trPr><w:cantSplit/></w:trPr>"
+        vals = r[1:]
+        if i in span_equal and len(vals) > 1 and len(set(vals)) == 1:
+            x += cell(markup_runs(r[0]), widths[0], sides) + cell(markup_runs(vals[0]), sum(widths[1:]), sides,
+                                                                    span=len(vals))
+        else:
+            x += "".join(cell(markup_runs(c or "", bold=(j > 0 and i in bold_rows)), widths[j], sides)
+                         for j, c in enumerate(r))
+        x += "</w:tr>"
+    return x + "</w:tbl>"
+
+
+def _media_ext(p):
+    """Endung eines Bildes in word/media: EMF bleibt EMF (Vektor, z. B. NMR aus Mnova), sonst PNG."""
+    return ".emf" if Path(p).suffix.lower() == ".emf" else ".png"
+
+
+def _image_xml(rid, n, w_cm, h_cm, svg_rid=None, page_break=False):
+    cx, cy = int(w_cm * 360000), int(h_cm * 360000)
+    # „Seitenumbruch oberhalb“ statt eigenem Absatz (der sonst überläuft); Reihenfolge nach Schema in _ppr
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True, page_before=page_break)
+    return ('<w:p>' + ppr +
+            '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            f'<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Picture {n}"/>'
+            '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            f'<pic:nvPicPr><pic:cNvPr id="{n}" name="image{n}.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+            f'<pic:blipFill><a:blip r:embed="{rid}">' +
+            ('<a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip '
+             'xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" '
+             f'r:embed="{svg_rid}"/></a:ext></a:extLst>' if svg_rid else "") +
+            '</a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+            '</wp:inline></w:drawing></w:r></w:p>')
+
+
+_SHAPETYPE = ('<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" '
+              'path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas>'
+              '<v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/>'
+              '<v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/>'
+              '<v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/>'
+              '<v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/>'
+              '</v:formulas><v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/>'
+              '<o:lock v:ext="edit" aspectratio="t"/></v:shapetype>')
+
+
+def _ole_xml(n, w_cm, h_cm, first=False, page_break=False):
+    """ChemDraw-OLE-Objekt; Doppelklick-Bearbeitung wird von ChemDraw nur unter Windows unterstützt."""
+    from elucida.formats import ole as OLE
+    wpt, hpt = w_cm / 2.54 * 72, h_cm / 2.54 * 72
+    ppr = _ppr(align="center", line=240, after=120, keep_next=True, page_before=page_break)
+    return (f'<w:p>{ppr}<w:r><w:object w:dxaOrig="{int(wpt * 20)}" w:dyaOrig="{int(hpt * 20)}">'
+            + (_SHAPETYPE if first else "") +
+            f'<v:shape id="_x0000_iOle{n}" type="#_x0000_t75" style="width:{wpt:.2f}pt;height:{hpt:.2f}pt" o:ole="">'
+            f'<v:imagedata r:id="rIdOlePrev{n}" o:title=""/></v:shape>'
+            f'<o:OLEObject Type="Embed" ProgID="{OLE.CHEMDRAW_PROGID}" ShapeID="_x0000_iOle{n}" '
+            f'DrawAspect="Content" ObjectID="_18{54180700 + n:08d}" r:id="rIdOle{n}"/></w:object></w:r></w:p>')
+
+
+def toc_entries(blocks):
+    """Kapitel („section“) mit geschätzter Seite fürs Inhaltsverzeichnis: Seiten wie in write_docx gezählt
+    (Titelblatt, Verzeichnis, jedes Kapitel neue Seite, Seitenumbrüche, Text-/Bildhöhen grob). Word aktualisiert die
+    Zahlen beim Öffnen, OnlyOffice über „Inhaltsverzeichnis aktualisieren“."""
+    page, used, cols, out = 0, 0.0, 1, []
+    body = 29.7 - 2.5 - 2.0 + 0.8                      # Textfläche + Toleranz (Zeilenhöhen grob geschätzt)
+
+    def add(h):
+        nonlocal page, used
+        h /= cols
+        if used + h > body:
+            page += 1 + int((used + h - body) // body)
+            used = (used + h - body) % body
+        else:
+            used += h
+    brk = False
+    for b in blocks:
+        k = b[0]
+        if k in ("title", "toc", "section") or (brk and k != "pagebreak" and k != "subsection"):   # Umbruch wirkt auf den nächsten Block
+            page, used, brk = page + 1, 0.0, False
+        if k == "section":
+            out.append((b[1], page, 1))
+            add(1.2)
+        elif k == "subsection":                         # Unterkapitel (Gruppe), steht auf der Seite des Folgenden
+            if brk:
+                page, used, brk = page + 1, 0.0, False
+            out.append((b[1], page, 2))
+            add(HEADING_CM)
+        elif k == "columns":
+            cols = b[1]
+        elif k == "pagebreak":
+            brk = True
+        elif k == "image":                               # wie two_per_page: Bild + Abstand, Unterschrift
+            add(b[3] + 0.21 + 0.42)
+        elif k == "figcap":
+            add(_text_cm(b[1], prefix=12))
+        elif k in ("char", "text"):
+            add(_text_cm(b[1] if isinstance(b[1], str) else "", extra=0.35))
+        elif k in ("crystal", "params", "coords", "energies"):   # Zellen brechen um: Zeilen je Tabellenzeile zählen
+            w_cell = 30 if k == "crystal" else 40
+            lines = sum(max(1 + str(c).count("\n") + len(str(c)) // w_cell for c in row) for row in b[2])
+            add(0.5 * (lines + 1) + 0.6 * cols)
+        elif k == "mono":
+            add(0.42 * len(b[1]))
+        elif k in ("synthesis", "heading", "tabcap", "fields", "gap", "note"):
+            add(0.9)
+        elif k == "ole":
+            add(b[4] + 0.6)
+    return out
+
+
+def _sect(columns):
+    """Abschnittseigenschaften (A4, Ränder wie in der SI), fortlaufend, mit Spaltenzahl."""
+    foot = '<w:footerReference w:type="default" r:id="rIdFooter1"/>' if _PAGE_NUMBERS else ""   # Schema: zuerst
+    return ('<w:sectPr>' + foot + '<w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" '
+            'w:right="1417" w:bottom="1134" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/>' +
+            (f'<w:cols w:num="{columns}" w:space="{COL_GAP}"/>' if columns > 1 else "") + '</w:sectPr>')
+
+
+def write_docx(path, blocks, columns=1):
+    """Blöcke:
+    ("synthesis", Name)                   „Synthesis of <b>Name</b>“
+    ("char", HTML)                        Charakterisierungsabsatz (Abstand davor wie in der SI)
+    ("image", PNG, Breite cm, Höhe cm[, SVG[, CDX]])  Abbildung zentriert; optional bearbeitbare Begleitdateien
+    ("figcap", HTML)                      „Figure Sn: …“
+    ("tabcap", Markup, Name)              „Table Sn: <Markup> <b>Name</b>.“
+    ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
+    ("params", Kopf, Zeilen)              Ausgewählte Bindungen/Winkel
+    ("note", Markup)                      Fußnote unter einer Tabelle
+    ("heading", Text)                     fette Überschrift (DFT: Name der Rechnung)
+    ("text", HTML)                        linksbündiger Absatz, einzeilig (DFT-Angaben)
+    ("coords", Kopf, Zeilen)              kompakte Tabelle (Konvergenz)
+    ("fields", [HTML, …])                 eine Zeile, Felder auf Tabstopps verteilt (Charge / Multiplicity / Point group)
+    ("mono", [Zeilen])                    Festbreitenschrift, Größe so, dass die längste Zeile in die Spalte passt
+    ("energies", Köpfe, Zeilen)           Energietabelle über die Spaltenbreite
+    ("columns", n)                        ab hier n Spalten (fortlaufender Abschnittswechsel, z. B. DFT zweispaltig)
+    ("pagebreak",)                        Seitenumbruch (NMR: zwei Spektren je Seite)
+    ("ole", CDX, Vorschau, Breite cm, Höhe cm)  bearbeitbares ChemDraw-Objekt (CDX), Vorschau EMF (Vektor) oder PNG
+    ("gap",)                              Leerzeile
+    ("title", Titel, Autoren, Adresse)    Titelseite der Gesamt-SI („Supplementary Materials for“)
+    ("toc",)                              „Table of Contents“ + Verzeichnisfeld (Word aktualisiert beim Öffnen)
+    ("section", Text)                     Kapitel („1. Materials and Methods“, Überschrift 1, neue Seite)
+    ("subsection", Text)                  Unterkapitel („2.1 Precursor“, Überschrift 2; Gruppen im Projekt)
+    columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
+    body, media, svgs, oles, editable = [], [], [], [], []
+    n_fig = n_tab = 0
+    def col_width(n):
+        return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n
+    col_w = col_width(columns)
+    pending_break = False
+    toc_used = False
+    n_sec = 0
+    for b in blocks:
+        k = b[0]
+        force_break = pending_break and k != "image"   # kein Bild danach: Umbruch am nächsten Absatz
+        if force_break:
+            pending_break = False
+        n_before = len(body)
+        if k == "columns":
+            if b[1] != columns:                  # Abschnitt mit der bisherigen Spaltenzahl beenden
+                body.append(f"<w:p><w:pPr>{_sect(columns)}</w:pPr></w:p>")
+                columns = b[1]
+                col_w = col_width(columns)
+        elif k == "synthesis":
+            body.append(_para([("Synthesis of ", set()), (b[1], {"b"})], keep_next=True))
+        elif k == "char":
+            body.append(_para(html_runs(nbsp(b[1])), before=200))
+        elif k == "image":
+            media.append(Path(b[1]))
+            if len(b) > 5 and b[5]:
+                source = Path(b[5])
+                formats = {'cdx': source.read_bytes()}
+                if source.with_suffix('.cdxml').is_file():
+                    formats['cdxml'] = source.with_suffix('.cdxml').read_bytes()
+                editable.append(formats)
+            svg_rid = None
+            if len(b) > 4 and b[4] and Path(b[4]).exists():
+                svgs.append((len(media), Path(b[4])))
+                svg_rid = f"rIdSvg{len(media)}"
+            w_cm = min(b[2], col_w / 567.0)
+            body.append(_image_xml(f"rIdImg{len(media)}", len(media), w_cm, b[3] * w_cm / b[2], svg_rid,
+                                   page_break=pending_break))
+            pending_break = False
+        elif k == "figcap":
+            n_fig += 1
+            body.append(_label_para("Figure", n_fig, html_runs(nbsp(b[1])), after=240))
+        elif k == "tabcap":
+            n_tab += 1
+            body.append(_label_para("Table", n_tab, markup_runs(b[1]) + [(" ", set()), (b[2] + ".", {"b"})],
+                                    before=120, after=120, keep_next=True))
+        elif k == "crystal":
+            header, rows = b[1], b[2]
+            widths = col_widths(len(header))
+            ref_row = [i for i, r in enumerate(rows) if r[0] == "Internal reference"]
+            meth = [i for i, r in enumerate(rows) if r[0] == "Refinement method"]
+            body.append(_table(header, rows, widths, row_after=64, bold_rows=ref_row, span_equal=meth))
+        elif k == "params":
+            header, rows = b[1], b[2]
+            body.append(_table(header, rows, col_widths(len(header)), row_after=260))
+        elif k == "note":
+            body.append(_para(markup_runs(b[1]), size=18, line=240, after=0))
+        elif k == "heading":
+            body.append(_para([(b[1], {"b"})], align="left", before=240, after=120, keep_next=True))
+        elif k == "text":
+            body.append(_para(html_runs(nbsp(b[1])), align="left", line=240 if columns > 1 else 276, after=60,
+                              size=18 if columns > 1 else 22))
+        elif k == "coords":
+            header, rows = b[1], b[2]
+            n = len(header)
+            w = [int(col_w * 0.27)] + [int(col_w * 0.6 / (n - 2))] * (n - 2) + [int(col_w * 0.13)] if n > 2 else \
+                [col_w // n] * n
+            body.append(_table(header, rows, w, line=240, size=14 if columns > 1 else 18))
+            body.append(_para([("", set())], line=240))
+        elif k == "fields":
+            n = max(1, len(b[1]))
+            tabs = "".join(f'<w:tab w:val="left" w:pos="{int(col_w * i / n)}"/>' for i in range(1, n))
+            runs = []
+            for i, h in enumerate(b[1]):
+                if i:
+                    runs.append(("\t", set()))
+                runs += html_runs(h)
+            body.append(_para(runs, align="left", line=240, before=60, after=60, tabs=tabs, size=18))
+        elif k == "mono":
+            lines = b[1] or [""]
+            longest = max(len(ln) for ln in lines)
+            # Courier: Zeichenbreite 0.6 × Schriftgröße; halbe Punkte, höchstens 8 pt
+            size = max(10, min(16, int(2 * col_w / 20 / (0.6 * max(1, longest)))))
+            for ln in lines:
+                body.append(_para([(ln, {"mono"})], size=size, align="left", line=240))
+        elif k == "energies":
+            header, rows = b[1], b[2]
+            n = len(header)
+            body.append(_table(header, rows, [col_w // n] * n, line=240, size=16 if columns > 1 else 18))
+            body.append(_para([("", set())], line=240))
+        elif k == "ole":
+            from elucida.formats import ole as OLE
+            source = Path(b[1])
+            cdx = source.read_bytes()
+            formats = {"cdx": cdx}
+            cdxml = source.with_suffix(".cdxml")
+            if cdxml.is_file():
+                formats["cdxml"] = cdxml.read_bytes()
+            editable.append(formats)
+            oles.append((OLE.write_cfb(OLE.chemdraw_streams(cdx)), Path(b[2])))
+            body.append(_ole_xml(len(oles), b[3], b[4], first=len(oles) == 1, page_break=pending_break))
+            pending_break = False
+        elif k == "pagebreak":
+            pending_break = True                 # am nächsten Bild als „Seitenumbruch oberhalb“
+        elif k == "gap":
+            body.append(_para([("", set())]))
+        elif k == "title":                       # Titelblatt wie die SI der Gruppe (gemessen: 18 pt, Rest 11 pt)
+            body.append(_para([(TEMPLATES[_TEMPLATE]["header"], set())], size=36, align="center", before=1200,
+                              after=720))
+            body.append(_para(html_runs("<b>" + nbsp(b[1]) + "</b>"), align="center", after=600))
+            if len(b) > 2 and b[2]:
+                body.append(_para(html_runs(nbsp(b[2])), align="center", after=600))
+            for ln in (b[3] if len(b) > 3 and b[3] else "").splitlines():
+                body.append(_para(html_runs(nbsp(ln)), align="center"))
+        elif k == "toc":                         # Einträge schon eingetragen (OnlyOffice/Vorschau aktualisieren
+            toc_used = True                      # Felder nicht selbst), Seiten geschätzt; Word setzt sie beim Öffnen
+            body.append(_para([("Table of Contents", {"b"})], size=24, align="left", after=240, page_before=True))
+            entries = toc_entries(blocks)
+            fld_b = ('<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText '
+                     'xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r>'
+                     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>')
+            fld_e = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+            if not entries:
+                body.append("<w:p>" + fld_b + fld_e + "</w:p>")
+            for j, (title, page, lvl) in enumerate(entries):
+                num = TEMPLATES[_TEMPLATE]["page"] + str(page)
+                body.append(f'<w:p><w:pPr><w:pStyle w:val="TOC{lvl}"/><w:tabs><w:tab w:val="right" w:leader="dot" '
+                            f'w:pos="{TEXT_W}"/></w:tabs><w:spacing w:after="60" w:line="360" w:lineRule="auto"/>'
+                            '</w:pPr>' + (fld_b if j == 0 else "") +
+                            f'<w:hyperlink w:anchor="_Toc{j + 1}" w:history="1">' + _run_xml(title, set()) +
+                            _run_xml("\t", set()) +
+                            '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> '
+                            f'PAGEREF _Toc{j + 1} \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/>'
+                            '</w:r>' + _run_xml(num, set()) + '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+                            '</w:hyperlink>' + (fld_e if j == len(entries) - 1 else "") + '</w:p>')
+        elif k == "subsection":                      # Unterkapitel (Gruppe im Projekt), Überschrift 2
+            n_sec += 1
+            body.append(_para([(b[1], {"b"})], align="left", style="Heading2", before=240, after=200,
+                              keep_next=True, ind=357).replace(
+                "</w:pPr>", f'</w:pPr><w:bookmarkStart w:id="{n_sec}" w:name="_Toc{n_sec}"/>'
+                            f'<w:bookmarkEnd w:id="{n_sec}"/>', 1))
+        elif k == "section":
+            n_sec += 1
+            body.append(_para([(b[1], {"b"})], align="left", style="Heading1", page_before=True, after=240,
+                              keep_next=True, ind=357).replace(
+                "</w:pPr>", f'</w:pPr><w:bookmarkStart w:id="{n_sec}" w:name="_Toc{n_sec}"/>'
+                            f'<w:bookmarkEnd w:id="{n_sec}"/>', 1))
+        if force_break and len(body) > n_before:   # „Seitenumbruch oberhalb“ statt leerem Absatz (der rutschte bei
+            new = _page_break_before(body[n_before])   # voller Seite selbst auf die nächste -> leere Seite)
+            if new is not None:
+                body[n_before] = new
+            else:                                # Tabelle o. Ä.: wie bisher eigener Umbruch-Absatz
+                body.insert(n_before, '<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+    ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+          'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+          'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+          'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+          'xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"')
+    doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+           f'<w:document {ns}><w:body>' + "".join(body) + _sect(columns) + '</w:body></w:document>')
+    styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+              '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults>'
+              f'<w:rPrDefault><w:rPr>{_FONT}<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-GB"/></w:rPr>'
+              '</w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr>'
+              '</w:pPrDefault></w:docDefaults>'
+              # Kapitel der Gesamt-SI: wie Fließtext fett, Gliederungsebene 1 (Inhaltsverzeichnis)
+              '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
+              '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>'
+              '<w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr>'
+              '<w:rPr><w:b/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>'
+              '<w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="1"/></w:pPr>'
+              '<w:rPr><w:b/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/>'
+              '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9061"/></w:tabs></w:pPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/><w:basedOn w:val="Normal"/>'
+              '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9061"/></w:tabs><w:ind w:left="357"/></w:pPr>'
+              '</w:style>'
+              '</w:styles>')
+    ctypes = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+              '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+              '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+              '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'
+              '<Default Extension="svg" ContentType="image/svg+xml"/><Default Extension="emf" ContentType="image/x-emf"/>'
+              '<Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>'
+              '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.'
+              'wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/'
+              'vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" '
+              'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>' +
+              ('<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.'
+               'wordprocessingml.footer+xml"/>' if _PAGE_NUMBERS else '') + '</Types>')
+    # Word 2013+ (sonst öffnet Word das Dokument im Kompatibilitätsmodus)
+    settings = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+                ('<w:updateFields w:val="true"/>' if toc_used else '') +       # Schema: updateFields vor compat
+                '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/'
+                'word" w:val="15"/></w:compat></w:settings>')
+    rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+            'officeDocument" Target="word/document.xml"/></Relationships>')
+    drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+             '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+             'styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/'
+             'officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
+             ('<Relationship Id="rIdFooter1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+              'relationships/footer" Target="footer1.xml"/>' if _PAGE_NUMBERS else '') +
+             "".join(f'<Relationship Id="rIdImg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/image{i}{_media_ext(m)}"/>' for i, m in enumerate(media, 1)) +
+             "".join(f'<Relationship Id="rIdSvg{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/image{i}.svg"/>' for i, _ in svgs) +
+             "".join(f'<Relationship Id="rIdOle{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/oleObject" Target="embeddings/oleObject{i}.bin"/>'
+                     f'<Relationship Id="rIdOlePrev{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                     f'relationships/image" Target="media/ole{i}{pv.suffix.lower()}"/>'
+                     for i, (_, pv) in enumerate(oles, 1)) +
+             '</Relationships>')
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    media_b = [m.read_bytes() for m in media]          # fehlt ein Bild: Fehler, bevor die alte Datei weg ist
+    svgs_b = [(i, sv.read_bytes()) for i, sv in svgs]
+    oles_b = [(bin_, pv.suffix.lower(), pv.read_bytes()) for bin_, pv in oles]
+    tmp = path.with_name(path.name + ".tmp")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", ctypes)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("word/document.xml", doc)
+        z.writestr("word/styles.xml", styles)
+        z.writestr("word/settings.xml", settings)
+        if _PAGE_NUMBERS:                        # Seitenzahl unten mittig (ACS: S1, S2 …)
+            pre = _run_xml(TEMPLATES[_TEMPLATE]["page"], set(), 18) if TEMPLATES[_TEMPLATE]["page"] else ""
+            z.writestr("word/footer1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                       '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                       '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>' + pre +
+                       '<w:fldSimple w:instr=" PAGE "><w:r><w:rPr>' + _FONT + '<w:sz w:val="18"/></w:rPr>'
+                       '<w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>')
+        z.writestr("word/_rels/document.xml.rels", drels)
+        for i, (m, b) in enumerate(zip(media, media_b), 1):
+            z.writestr(f"word/media/image{i}{_media_ext(m)}", b)
+        for i, b in svgs_b:
+            z.writestr(f"word/media/image{i}.svg", b)
+        for i, (bin_, ext, b) in enumerate(oles_b, 1):
+            z.writestr(f"word/embeddings/oleObject{i}.bin", bin_)
+            z.writestr(f"word/media/ole{i}{ext}", b)
+    os.replace(tmp, path)                              # atomar (Word offen: PermissionError, alte Datei bleibt)
+    from elucida.formats import ole as OLE
+    try:                                               # DOCX ist fertig: Begleitdateien dürfen sie nicht als gescheitert melden
+        OLE.write_editable_companions(path, editable)
+    except OSError as ex:
+        core.LOG(f"{OLE.editable_directory(path).name}: {ex}")
+    return path

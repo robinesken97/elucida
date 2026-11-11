@@ -1,0 +1,26 @@
+/* Elucida chrome surrounds the drawing. Keep print canvas white. */
+:root { --canvas: #ffffff; }
+.canvas { background: var(--canvas); }
+.canvas[data-theme="light"] { --ink: #000000; }
+/* Elucida uses a free drawing surface without paper frames or guide lines. */
+.canvas .pages, .canvas .guide { display: none; }
+.home-button, .feedback-link { display: none !important; }
+/* Neutral tools around the black canvas, never the upstream navy panels. */
+[data-theme="dark"] {
+  --surface: #171717;
+  --surface-raised: #222222;
+  --surface-sunken: #101010;
+  --hairline: #393939;
+  --ink-muted: #c0c0c0;
+  --ink-faint: #929292;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #171717;
+    --surface-raised: #222222;
+    --surface-sunken: #101010;
+    --hairline: #393939;
+    --ink-muted: #c0c0c0;
+    --ink-faint: #929292;
+  }
+}

@@ -1,0 +1,1981 @@
+"""elucida/tabs/dft.py - DFT-Geometrien (xyz): Ansicht wie im X-Ray-Tab, Atome per Klick umnummerieren, xyz speichern.
+
+xyz:   Atomzahl, Kommentarzeile, je Atom „El x y z“ (Symbol, Label wie „C12“ oder Ordnungszahl); mehrere Bilder
+       hintereinander (ORCA-Trajektorie) werden alle gelesen, gezeigt wird das letzte. Beim Speichern bleiben die
+       Atomzeilen Zeichen für Zeichen erhalten (nur umsortiert, keine Rundung); die Reihenfolge gilt für alle Bilder.
+Bindungen: kovalente Radien wie im X-Ray-Tab (d < r1 + r2 + 0.45 Å, keine H–H).
+Nummerierung: `order` = Atomindizes der Datei in der aktuellen Reihenfolge (None = wie in der Datei). Angeklickte
+       Atome kommen der Reihe nach nach vorn, der Rest behält seine Reihenfolge (wahlweise H direkt hinter ihrem Atom).
+"""
+from __future__ import annotations
+
+import re
+import uuid
+from pathlib import Path
+
+import numpy as np
+
+from elucida.core import orbitals as ORB
+from elucida.tabs import xray as XRAY
+from elucida.tabs import dft_pages as PAGES
+from elucida.formats.elements import element_of
+from elucida.app.i18n import T
+from elucida.formats.calc import (parse_xyz, read_text, read_xyz, is_orca, is_gaussian, parse_orca, parse_gaussian, read_calc, is_xyz, is_calc, ELEMENTS, ORCA_THERMO, decode)  # noqa: E402,F401  (Leser in elucida/formats)
+
+H_ELS = ("H", "D")
+
+
+# ---------------------------------------------------------------------------- xyz lesen/schreiben
+
+
+# ---------------------------------------------------------------------------- Rechnungen (ORCA 6, Gaussian)
+
+
+def calc_frame(c, comment="", partner=None):
+    """Geometrie einer Rechnung als xyz-Bild (Zeilen wie in der Ausgabe). partner = gleichnamige xyz neben der Ausgabe
+    (ORCA schreibt sie mit 14 statt 6 Nachkommastellen): ihre Zeilen gelten, wenn Elemente und Koordinaten
+    (± 1e-4 Å) zur letzten Geometrie der Ausgabe passen – sonst (z. B. Startgeometrie) wird sie ignoriert.
+    -> (Bild, Partner benutzt)"""
+    rows = c["geometry"]
+    fr = dict(comment=comment, lines=[r[0] for r in rows], els=[element_of(r[1][0], r[1][0]) for r in rows],
+              xyz=np.array([[float(v) for v in r[1][1:4]] for r in rows], float))
+    if partner is not None and Path(partner).is_file():
+        try:
+            px = read_xyz(partner)[-1]
+        except ValueError:
+            return fr, False
+        if px["els"] == fr["els"] and np.abs(px["xyz"] - fr["xyz"]).max() < 1e-4:
+            return dict(fr, lines=px["lines"], xyz=px["xyz"]), True
+    return fr, False
+
+
+def imaginary(c):
+    return [f for f in (c.get("freqs") or []) if float(f) < 0]
+
+
+def calc_warnings(c):
+    """Hinweise für die Anzeige (nicht für den SI-Text)."""
+    w = []
+    if not c["normal"]:
+        w.append(T("dft_w_abnormal"))
+    if c["opt_requested"] and not c["opt_converged"]:
+        w.append(T("dft_w_not_converged"))
+    elif c["opt_converged"] and any(r[3] == "NO" for r in c["conv"]):
+        w.append(T("dft_w_partly"))
+    if not c["opt_requested"]:
+        w.append(T("dft_w_no_opt"))
+    if c["program"] == "ORCA" and not c["version"].startswith("6"):
+        w.append(T("dft_w_orca_version", v=c["version"] or "?"))
+    if c["freq_requested"] and not c["freqs"]:
+        w.append(T("dft_w_no_freq"))
+    im = imaginary(c)
+    if im:
+        w.append(T("dft_w_imag", n=len(im), v=", ".join(XRAY.minus(f) for f in im)))
+    if c["freqs"] and not c["thermo"].get("G"):
+        w.append(T("dft_w_no_thermo"))
+    s = c.get("solvation")
+    if s:
+        w.append(T("dft_w_solv_smd" if s["model"] == "SMD" else "dft_w_solv_cpcm"))
+    return w
+
+
+CONV_NAMES = {"Energy change": "Energy change", "RMS gradient": "RMS gradient", "MAX gradient": "Max. gradient",
+              "RMS step": "RMS step", "MAX step": "Max. step", "Maximum Force": "Max. force", "RMS Force": "RMS force",
+              "Maximum Displacement": "Max. displacement", "RMS Displacement": "RMS displacement"}
+
+
+SI_DEFAULTS = dict(method="each", conv=True, freq=True, zpe=False)
+METHOD_MODES = ("each", "top", "off")            # Methode je Struktur / einmal oben („Computational details“) / gar nicht
+
+
+def method_mode(v):
+    """Gespeicherter Wert -> Modus (frühere Fassung: True/False)."""
+    return "each" if v is True else "off" if v is False else v if v in METHOD_MODES else "each"
+
+
+def method_line(c):
+    prog = c["program"] + (f" {c['version']}" if c["version"] else "")
+    return prog, " ".join(c["keywords"])
+
+
+def computational_details(items):
+    """items = [(Name, Rechnung)] -> [(Klartext, HTML)]: je verschiedener Eingabezeile ein Absatz; bei mehreren
+    Methoden mit den Strukturen dahinter (wie „Sample Input Files“ in der SI, aber ohne Platzhalter)."""
+    import html as _h
+    groups = {}
+    for name, c in items:
+        if c["keywords"]:
+            groups.setdefault(method_line(c), []).append(name)
+    out = []
+    for (prog, kw), names in groups.items():
+        t = f"{prog}: {kw}"
+        h = f"{_h.escape(prog)}: {_h.escape(kw)}"
+        if len(groups) > 1:
+            t += f" ({', '.join(names)})"
+            h += f" ({_h.escape(', '.join(names))})"
+        elif len(names) > 1:
+            t, h = "All calculations: " + t, "All calculations: " + h
+        out.append((t, h))
+    return out
+
+
+def pg_html(pg):
+    """Punktgruppe mit tiefgestelltem Rest: C2h -> C<sub>2h</sub> (Gaussian schreibt C2H)."""
+    pg = (pg or "").strip()
+    return f"{pg[0].upper()}<sub>{pg[1:].lower()}</sub>" if len(pg) > 1 else pg
+
+
+def mono_lines(lines):
+    """Koordinatenzeilen für Festbreitenschrift: gemeinsamen Einzug entfernen, sonst unverändert."""
+    lines = [ln.rstrip() for ln in lines]
+    ind = min((len(ln) - len(ln.lstrip()) for ln in lines if ln.strip()), default=0)
+    return [ln[ind:] for ln in lines]
+
+
+def si_parts(c, name, coord_lines, opts=None):
+    """SI-Block (englisch, Aufbau wie die SI der Gruppe): Name, Abbildung, „Charge/Multiplicity/Point group“,
+    wahlweise Methode/Konvergenz/Frequenzen, Koordinaten (Festbreite, Zeilen unverändert), Energietabelle.
+    -> dict(name, fields, extra=[(Klartext, HTML)], conv, conv_at, coords=[Zeilen], energies=(Köpfe, Werte))"""
+    import html as _h
+    o = dict(SI_DEFAULTS, **(opts or {}))
+    o["method"] = method_mode(o["method"])
+    mi = XRAY.minus
+    f_pl, f_ht = [], []
+    if c["charge"] is not None:
+        f_pl.append(f"Charge: {mi(str(c['charge']))}")
+    if c["mult"] is not None:
+        f_pl.append(f"Multiplicity: {c['mult']}")
+    f_ht = [_h.escape(x) for x in f_pl]
+    if c.get("point_group"):
+        f_pl.append(f"Point group: {c['point_group']}")
+        f_ht.append(f"Point group: <i>{pg_html(c['point_group'])}</i>")
+    extra, conv_at = [], 0
+    s = c.get("solvation")
+    if o["method"] == "each":
+        prog, kw = method_line(c)
+        if kw:
+            extra.append((f"{prog}: {kw}", f"{_h.escape(prog)}: {_h.escape(kw)}"))
+        if s:
+            bits = [x for x in (s["solvent"].lower() if s["solvent"] else "",
+                                f"ε = {s['eps']}" if s["eps"] else "") if x]
+            t = f"Solvation: {s['model']}" + (f" ({', '.join(bits)})" if bits else "") + "."
+            extra.append((t, _h.escape(t)))
+    if o["conv"] and c["opt_requested"]:
+        # nicht konvergiert: nur Hinweis in der Anzeige, im SI-Text neutral die letzte Tabelle
+        t = "Geometry optimisation converged (final cycle):" if c["opt_converged"] and c["conv"] else \
+            "Geometry optimisation converged." if c["opt_converged"] else \
+            "Final geometry optimisation cycle:" if c["conv"] else ""
+        if t:
+            extra.append((t, _h.escape(t)))
+    conv_at = len(extra)                                   # Konvergenztabelle direkt unter dieser Zeile
+    th = c["thermo"]
+    if o["freq"] and c["freqs"]:                          # leerer Block (abgebrochen): keine Aussage
+        im = imaginary(c)
+        if not im:
+            t = "Frequency calculation: no imaginary frequencies."
+        else:
+            t = (f"Frequency calculation: {len(im)} imaginary frequenc{'y' if len(im) == 1 else 'ies'} "
+                 f"({', '.join(mi(f) for f in im)} cm-1).")
+        if th.get("G") and th.get("T"):
+            t = t[:-1] + f"; thermochemistry at {th['T']} K" + (f" and {th['P']} atm" if th.get("P") else "") + \
+                (" (quasi-RRHO)" if th.get("qrrho") else "") + "."
+        extra.append((t, _h.escape(t).replace("cm-1", "cm<sup>-1</sup>")))
+    if o["method"] != "off" and s and s.get("e_diel"):
+        t = f"{s['model'] if s['model'] == 'CPCM' else 'CPCM/SMD'} dielectric energy (included in E(el)): " \
+            f"{mi(s['e_diel'])} Eh"
+        if s.get("e_cds"):
+            t += f"; SMD cavity/dispersion term: {mi(s['e_cds'])} Eh"
+        extra.append((t + ".", _h.escape(t).replace("Eh", "E<sub>h</sub>") + "."))
+    conv = (["Item", "Value", "Threshold", "Conv."],
+            [[CONV_NAMES.get(r[0], r[0]), mi(r[1]), r[2], r[3].lower()] for r in c["conv"]]) \
+        if o["conv"] and c["conv"] else None
+    e_el = th.get("E_el") or c["energy"]
+    cols = [(k, v) for k, v in (("E_el", e_el), ("ZPE", th.get("ZPE") if o["zpe"] else None), ("H", th.get("H")),
+                                ("G", th.get("G"))) if v]
+    energies = None
+    if cols:
+        head = {"E_el": ("*E*_{el} [E_{h}]", "E_el [Eh]"), "ZPE": ("ZPE [E_{h}]", "ZPE [Eh]"),
+                "H": ("*H* [E_{h}]", "H [Eh]"), "G": ("*G* [E_{h}]", "G [Eh]")}
+        energies = ([head[k][0] for k, _ in cols], [head[k][1] for k, _ in cols], [mi(v) for _, v in cols])
+    return dict(name=name, fields=(f_pl, f_ht), extra=extra, conv=conv, conv_at=conv_at,
+                coords=[mi(ln) for ln in mono_lines(coord_lines)], energies=energies)
+
+
+def si_plain(p):
+    """SI-Block als Text (Tabellen mit Tabulatoren, lassen sich in Word in eine Tabelle umwandeln)."""
+    k = p["conv_at"]
+    out = [p["name"], "\t".join(p["fields"][0])] + [pl for pl, _ in p["extra"][:k]]
+    if p["conv"]:
+        out += ["\t".join(p["conv"][0])] + ["\t".join(r) for r in p["conv"][1]]
+    out += [pl for pl, _ in p["extra"][k:]] + [""] + p["coords"]
+    if p["energies"]:
+        out += ["", "\t".join(p["energies"][1]), "\t".join(p["energies"][2])]
+    return "\n".join(out)
+
+
+def si_html(p):
+    import html as _h
+
+    def table(head, rows, raw_head=False):
+        return ("<table cellspacing='0' cellpadding='2'><tr>" +
+                "".join(f"<th>{h if raw_head else _h.escape(h)}</th>" for h in head) + "</tr>" +
+                "".join("<tr>" + "".join(f"<td align='right'>{_h.escape(v)}</td>" for v in r) + "</tr>"
+                        for r in rows) + "</table>")
+    k = p["conv_at"]
+    out = [f"<p><b>{_h.escape(p['name'])}</b></p>", "<p>" + "&nbsp;&nbsp;&nbsp;&nbsp;".join(p["fields"][1]) + "</p>"]
+    out += [f"<p>{h}</p>" for _, h in p["extra"][:k]]
+    if p["conv"]:
+        out.append(table(*p["conv"]))
+    out += [f"<p>{h}</p>" for _, h in p["extra"][k:]]
+    out.append("<pre style='font-size:8pt'>" + _h.escape("\n".join(p["coords"])) + "</pre>")
+    if p["energies"]:
+        heads = [XRAY.to_html(h) for h in p["energies"][0]]
+        out.append(table(heads, [p["energies"][2]], raw_head=True))
+    return "".join(out)
+
+
+def write_xyz(path, frames, order=None):
+    """Alle Bilder in der Reihenfolge order (Atomindizes der Datei) schreiben; Zeilen unverändert."""
+    n = len(frames[0]["lines"])
+    order = list(range(n)) if order is None else list(order)
+    if sorted(order) != list(range(n)):
+        raise ValueError("order is not a permutation of the atoms")
+    out = []
+    for f in frames:
+        out += [str(n), f["comment"]] + [f["lines"][k] for k in order]
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(out) + "\n")
+    return path
+
+
+# ---------------------------------------------------------------------------- Modell
+def bonds_of(els, xyz, chunk=400):
+    """Bindungen aus kovalenten Radien (wie X-Ray): [(i, j)] mit i < j."""
+    xyz = np.asarray(xyz, float)
+    rad = np.array([XRAY.COV.get(e, 1.5) for e in els])
+    isH = np.array([e in H_ELS for e in els])
+    out = []
+    for s in range(0, len(els), chunk):                  # zeilenweise in Blöcken: Speicher bleibt klein
+        d = np.linalg.norm(xyz[s:s + chunk, None, :] - xyz[None, :, :], axis=2)
+        cut = rad[s:s + chunk, None] + rad[None, :] + XRAY.BOND_TOL
+        hit = (d > 0.4) & (d < cut) & ~(isH[s:s + chunk, None] & isH[None, :])
+        for a, b in np.argwhere(hit):
+            if s + a < b:
+                out.append((int(s + a), int(b)))
+    return out
+
+
+class XyzMolecule(XRAY.Molecule):
+    """Molekül aus einer xyz-Geometrie mit der Schnittstelle von X-Ray (XrayFigure, default_view, Fragmente).
+    Atomindex = Index in der Datei, Schlüssel „a<Index>“ bleibt beim Umnummerieren gleich."""
+
+    def __init__(self, els, xyz, bonds, labels, uiso=0.0264):
+        self.S, self.truncated, self.ops = None, False, {}
+        self.atoms = [dict(asu=i, label=labels[i], el=e, xyz=np.asarray(xyz[i], float), U=None, uiso=uiso, part=0,
+                           generated=False, sym="", opkey="", key=f"a{i}") for i, e in enumerate(els)]
+        self.bonds = sorted(bonds)
+        self._fragments()
+
+
+def renumber(order, picked, els=None, nbrs=None):
+    """Neue Reihenfolge: angeklickte Atome (Dateiindizes) zuerst, Rest in der bisherigen Reihenfolge. Mit nbrs
+    (Nachbarn je Atom): erst alle übrigen Schweratome, dann die nicht angeklickten H nach ihrem Atom geordnet – die
+    angeklickten Atome behalten die Nummern der Klickreihenfolge (wie C1, C2 … mit H1A, H1B … in der Kristallographie)."""
+    order = list(order)
+    inside = set(order)
+    picked = [k for k in dict.fromkeys(picked) if k in inside]
+    chosen = set(picked)
+    rest = [k for k in order if k not in chosen]
+    if nbrs is None or els is None:
+        return picked + rest
+    pos = {k: i for i, k in enumerate(order)}
+    seq = picked + [r for r in rest if els[r] not in H_ELS]
+    placed = set(seq)
+    for k in list(seq):
+        for h in sorted(nbrs.get(k, ()), key=pos.get):
+            if els[h] in H_ELS and h not in placed:
+                seq.append(h)
+                placed.add(h)
+    return seq + [k for k in rest if k not in placed]
+
+
+# ---------------------------------------------------------------------------- Vergleichsmodus (Nummerierung übernehmen)
+def _graph(els, idx, bonds):
+    """RDKit-Molekül nur aus Elementen und Verknüpfung (Einfachbindungen, keine impliziten H)."""
+    from rdkit import Chem
+    pt = Chem.GetPeriodicTable()
+    pos = {k: i for i, k in enumerate(idx)}
+    rw = Chem.RWMol()
+    for k in idx:
+        a = Chem.Atom(pt.GetAtomicNumber(els[k]))
+        a.SetNoImplicit(True)
+        rw.AddAtom(a)
+    for a, b in bonds:
+        if a in pos and b in pos and rw.GetBondBetweenAtoms(pos[a], pos[b]) is None:
+            rw.AddBond(pos[a], pos[b], Chem.BondType.SINGLE)
+    m = rw.GetMol()
+    m.UpdatePropertyCache(strict=False)
+    Chem.FastFindRings(m)
+    return m
+
+
+def kabsch(P, Q):
+    """Beste Überlagerung von P auf Q (n×3); Spiegelung nur bei deutlich besserer Passung (Enantiomer im Kristall)
+    -> (RMSD, R, cP, cQ)."""
+    cP, cQ = P.mean(axis=0), Q.mean(axis=0)
+    U, _, Vt = np.linalg.svd((P - cP).T @ (Q - cQ))
+    d0 = np.sign(np.linalg.det(Vt.T @ U.T)) or 1.0
+
+    def fit(d):
+        R = Vt.T @ np.diag([1.0, 1.0, d]) @ U.T
+        return float(np.sqrt(np.mean(np.sum(((R @ (P - cP).T).T - (Q - cQ)) ** 2, axis=1)))), R
+    # echte Drehung (det = +1); Spiegelung nur, wenn sie deutlich besser passt – bei ebenen Schweratomen passen
+    # beide gleich gut, dann zählt die Drehung (sonst werden H-Atome ober- und unterhalb der Ebene vertauscht);
+    # „deutlich“ = halbe Abweichung und mindestens AMBIG_TOL besser (Koordinatenrauschen ≫ 1e-3 Å)
+    rp, Rp = fit(d0)
+    rm, Rm = fit(-d0)
+    return (rm, Rm, cP, cQ) if rm < min(0.5 * rp, rp - AMBIG_TOL) else (rp, Rp, cP, cQ)
+
+
+MATCH_MAX = 20000            # Obergrenze für Zuordnungen (symmetrische Gruppen: tBu, Phenyl … vervielfachen sie)
+AMBIG_TOL = 0.05             # Å: zweite Zuordnung praktisch so gut wie die beste -> als mehrdeutig warnen
+
+
+def match_reference(ref, tgt):
+    """Nummerierung einer Vorlage auf eine Geometrie übertragen. ref/tgt = dict(els, xyz, bonds, order, labels?).
+    Schweratome über die Verknüpfung (Substruktur, sonst gemeinsamer Teil ≥ 80 %), bei mehreren Zuordnungen die mit
+    der kleinsten Abweichung nach Überlagerung; H über ihr Schweratom und den Abstand nach Überlagerung.
+    -> dict(order, labels, n_heavy, n_ref_heavy, n_tgt_heavy, n_h, rmsd, rmsd_alt (nächstbeste andere Zuordnung bei
+    symmetrischem Bindungsnetz), ambiguous=[Vorlagen-Labels, wenn rmsd_alt ≤ rmsd + AMBIG_TOL], partial, truncated);
+    ValueError, wenn nichts passt."""
+    from rdkit import Chem
+    from rdkit.Chem import rdFMCS
+    rH = [k for k, e in enumerate(ref["els"]) if e not in H_ELS]
+    tH = [k for k, e in enumerate(tgt["els"]) if e not in H_ELS]
+    rg, tg = _graph(ref["els"], rH, ref["bonds"]), _graph(tgt["els"], tH, tgt["bonds"])
+    small_ref = len(rH) <= len(tH)
+    q, m = (rg, tg) if small_ref else (tg, rg)
+    hits = m.GetSubstructMatches(q, uniquify=False, maxMatches=MATCH_MAX, useChirality=False)
+    partial = False
+    if hits:
+        pairs = [list(zip(range(len(h)), h)) for h in hits]           # (Index in q, Index in m)
+    else:
+        res = rdFMCS.FindMCS([q, m], timeout=10, atomCompare=rdFMCS.AtomCompare.CompareElements,
+                             bondCompare=rdFMCS.BondCompare.CompareAny, ringMatchesRingOnly=False)
+        if not res.numAtoms or res.numAtoms < max(3, 0.8 * q.GetNumAtoms()):
+            raise ValueError(T("dft_match_none"))
+        sm = Chem.MolFromSmarts(res.smartsString)
+        qm = q.GetSubstructMatch(sm)
+        mm = m.GetSubstructMatches(sm, uniquify=False, maxMatches=MATCH_MAX)
+        pairs = [list(zip(qm, h)) for h in mm]
+        partial = True
+    truncated = len(pairs) >= MATCH_MAX
+    rxyz, txyz = np.asarray(ref["xyz"], float), np.asarray(tgt["xyz"], float)
+    scored = []
+    for pr in pairs:
+        mp = {(rH[a] if small_ref else rH[b]): (tH[b] if small_ref else tH[a]) for a, b in pr}   # ref -> tgt
+        rk = list(mp)
+        r, R, cP, cQ = kabsch(txyz[[mp[k] for k in rk]], rxyz[rk])
+        scored.append((r, mp, R, cP, cQ))
+    scored.sort(key=lambda s: s[0])
+    rmsd, best, R, cP, cQ = scored[0]
+    # symmetrisches Bindungsnetz: nächstbeste andere Zuordnung immer melden (gewählt wird nach Geometrie)
+    alt = next(((r2, mp2) for r2, mp2, *_ in scored[1:] if mp2 != best), None)
+    amb = {k for r2, mp2, *_ in scored[1:] if r2 - rmsd <= AMBIG_TOL       # alle praktisch gleich guten, nicht nur
+           for k in best if mp2.get(k) != best[k]}                       # die nächstbeste (unabhängige Gruppen)
+    # H: je zugeordnetem Schweratom die H-Nachbarn nach Abstand (Ziel auf die Vorlage überlagert)
+    def h_nbrs(g, k):
+        return [j for a, b in g["bonds"] for j in ((b,) if a == k else (a,) if b == k else ())
+                if g["els"][j] in H_ELS]
+    t_al = (R @ (txyz - cP).T).T + cQ
+    full = dict(best)
+    used = set(best.values())
+    for rk, tk in best.items():
+        rh, th = h_nbrs(ref, rk), [j for j in h_nbrs(tgt, tk) if j not in used]
+        cand = sorted((float(np.linalg.norm(t_al[j] - rxyz[i])), i, j) for i in rh for j in th)
+        for _, i, j in cand:                           # gierig nach Abstand (je Atom höchstens 3–4 H)
+            if i not in full and j not in used:
+                full[i] = j
+                used.add(j)
+    ref_order = list(ref.get("order") or range(len(ref["els"])))
+    new = [full[k] for k in ref_order if k in full]
+    new += [k for k in (tgt.get("order") or range(len(tgt["els"]))) if k not in used]
+    labels = {full[k]: ref["labels"][k] for k in full} if ref.get("labels") else {}
+    rl = ref.get("labels") or {}
+    return dict(order=new, labels=labels, n_heavy=len(best), n_ref_heavy=len(rH), n_tgt_heavy=len(tH),
+                n_h=len(full) - len(best), rmsd=rmsd, rmsd_alt=alt[0] if alt else None, partial=partial,
+                truncated=truncated,
+                ambiguous=sorted((rl.get(k) or f"{ref['els'][k]}{ref_order.index(k) + 1}" for k in amb),
+                                 key=lambda s: (re.sub(r"\d.*", "", s), len(s), s)))
+
+
+def number_of(order, base=1):
+    """Dateiindex -> angezeigte Nummer."""
+    return {k: i + base for i, k in enumerate(order)}
+
+
+CUBE_EXT = (".cube", ".cub")
+
+
+def is_cube(path):
+    return Path(path).suffix.lower() in CUBE_EXT and Path(path).is_file()
+
+
+def cube_frame(c, comment=""):
+    """Geometrie eines Cubes als xyz-Bild (Å, 8 Nachkommastellen; der Cube speichert Bohr mit 6 Stellen)."""
+    lines = [f"{el:<2s} {x:16.8f} {y:16.8f} {z:16.8f}" for el, (x, y, z) in zip(c["els"], c["xyz"])]
+    return dict(comment=comment or c["comment"].strip(), lines=lines, els=list(c["els"]), xyz=np.array(c["xyz"]))
+
+
+def is_molden(path):
+    """Molden-Datei (ORCA: orca_2mkl name -molden -> name.molden.input), sonst am Kopf „[Molden Format]“ erkannt."""
+    p = Path(path)
+    if not p.is_file():
+        return False
+    n = p.name.lower()
+    if n.endswith(".molden") or n.endswith(".molden.input"):
+        return True
+    if p.suffix.lower() not in (".input", ".mold", ".txt"):
+        return False
+    with open(p, "rb") as fh:
+        return b"[molden format]" in fh.read(400).lower()
+
+
+def molden_frame(m, comment=""):
+    """Geometrie einer Molden-Datei als xyz-Bild (Å)."""
+    return cube_frame(dict(els=m["els"], xyz=np.asarray(m["xyz"]) * ORB.BOHR, comment=m["title"].strip()), comment)
+
+
+def cube_fits(frame, c, tol=0.02):
+    """Gehört der Cube zu dieser Geometrie? Gleiche Elemente in gleicher Reihenfolge, Koordinaten ± tol Å."""
+    return list(frame["els"]) == list(c["els"]) and np.abs(np.asarray(frame["xyz"]) - c["xyz"]).max() < tol
+
+
+def make_test_xyz(path):
+    """Künstliches Molekül für den Selbsttest (Chlorethan, Bindungslängen gerundet, zwei Bilder wie eine kurze
+    Trajektorie, Windows-Zeilenenden). Kein echter Datensatz."""
+    atoms = [("H", 1.48, 0.0, -1.60), ("C", 0.0, 0.0, 0.0), ("Cl", 0.0, 0.0, 1.79), ("C", 1.43, 0.0, -0.51),
+             ("H", -0.51, 0.89, -0.36), ("H", -0.51, -0.89, -0.36), ("H", 1.96, 0.89, -0.15),
+             ("H", 1.96, -0.89, -0.15)]           # erstes Atom = H am zweiten C: Reihenfolge absichtlich „unordentlich“
+    lines = []
+    for title, dz in (("start geometry", 0.05), ("E -539.123456789 (test)", 0.0)):
+        lines += [str(len(atoms)), title]
+        lines += [f"  {el:<2s} {x:12.6f} {y:12.6f} {z + (dz if el == 'Cl' else 0.0):12.6f}" for el, x, y, z in atoms]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("\r\n".join(lines) + "\r\n")                 # Windows-Zeilenenden wie aus ORCA unter Windows
+    return Path(path)
+
+
+_TEST_GEOM = [("C", "0.000000", "0.000000", "0.000000"), ("Cl", "0.000000", "0.000000", "1.790000"),
+              ("C", "1.430000", "0.000000", "-0.510000"), ("H", "-0.510000", "0.890000", "-0.360000"),
+              ("H", "-0.510000", "-0.890000", "-0.360000"), ("H", "1.960000", "0.890000", "-0.150000"),
+              ("H", "1.960000", "-0.890000", "-0.150000"), ("H", "1.480000", "0.000000", "-1.600000")]
+
+
+def make_test_orca(path):
+    """Künstliche ORCA-6-Ausgabe (nur die gelesenen Abschnitte, Format wie ORCA 6.1; Zahlen erfunden) als UTF-16 mit
+    CRLF wie aus der Windows-PowerShell: Opt + Freq mit CPCM, eine imaginäre Frequenz. Kein echter Datensatz."""
+    geo = [f"  {el:<2s}  {x:>12s} {y:>12s} {z:>12s}" for el, x, y, z in _TEST_GEOM]
+    L = ["", "                                 *****************", "                                 * O   R   C   A *",
+         "                                 *****************", "", "                 Program Version 6.1.1 -  RELEASE  -",
+         "", "================================================================================",
+         "                                       INPUT FILE",
+         "================================================================================", "NAME = test.inp",
+         "|  1> %pal nprocs 4 end", "|  2> ! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)", "|  3> * xyz 0 1"]
+    L += [f"|{i + 4:3d}> {g.strip()}" for i, g in enumerate(geo)]
+    L += [f"|{len(geo) + 4:3d}> *", "|{0:3d}> ".format(len(geo) + 5) + "                        ****END OF INPUT****",
+          "", " Total Charge           Charge          ....    0", " Multiplicity           Mult            ....    1",
+          "", "CPCM SOLVATION MODEL", "--------------------", "CPCM parameters:",
+          "  Epsilon                                         ...       7.5650",
+          "Solvent:                                          ... TETRAHYDROFURAN", "",
+          "CPCM Dielectric    :         -0.00412345678901 Eh              -0.11221 eV", "",
+          "          ----------------------|Geometry convergence|-------------------------",
+          "          Item                value                   Tolerance       Converged",
+          "          ---------------------------------------------------------------------",
+          "          Energy change      -0.0000002000            0.0000010000      YES",
+          "          RMS gradient        0.0000150000            0.0000300000      YES",
+          "          MAX gradient        0.0000500000            0.0001000000      YES",
+          "          RMS step            0.0002000000            0.0006000000      YES",
+          "          MAX step            0.0008000000            0.0010000000      YES",
+          "          ---------------------------------------------------------------------", "",
+          "                    ***********************HURRAY********************",
+          "                    ***        THE OPTIMIZATION HAS CONVERGED     ***", "",
+          "---------------------------------", "CARTESIAN COORDINATES (ANGSTROEM)",
+          "---------------------------------"] + geo + ["", "-------------------------   --------------------",
+                                                         "FINAL SINGLE POINT ENERGY      -539.987654321098",
+                                                         "", "-----------------------", "VIBRATIONAL FREQUENCIES",
+                                                         "-----------------------", ""]
+    fr = ["0.00"] * 6 + ["-31.20", "245.10", "330.40", "655.70", "790.00", "980.30", "1010.50", "1080.20", "1260.30",
+                         "1290.80", "1450.10", "1460.40", "1470.20", "1480.90", "3010.20", "3050.70", "3080.10",
+                         "3110.60"]
+    L += [f"   {i:2d}:   {v:>9s} cm**-1" + ("  ***imaginary mode***" if v.startswith("-") else "")
+          for i, v in enumerate(fr)]
+    L += ["", "--------------------------", "THERMOCHEMISTRY AT 298.15K", "--------------------------", "",
+          "Temperature         ...   298.15 K", "Pressure            ...     1.00 atm",
+          "Quasi RRHO          ...     True",
+          "Electronic energy                ...   -539.98765432 Eh",
+          "Zero point energy                ...      0.06543210 Eh      41.06 kcal/mol",
+          "Total thermal energy                   -539.91765432 Eh",
+          "Total Enthalpy                    ...   -539.91670987 Eh",
+          "Point Group:  C1, Symmetry Number:   1  ",
+          "Final entropy term                ...      0.03012345 Eh     18.90 kcal/mol",
+          "Final Gibbs free energy         ...   -539.94683332 Eh",
+          "G-E(el)                           ...      0.04082100 Eh     25.62 kcal/mol", "",
+          "                             ****ORCA TERMINATED NORMALLY****"]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(b"\xff\xfe" + ("\r\n".join(L) + "\r\n").encode("utf-16-le"))
+    return Path(path)
+
+
+def make_test_gaussian(path):
+    """Künstliche Gaussian-Ausgabe (Format nach Gaussian 16 aus dem Gedächtnis, Zahlen erfunden): Opt + Freq mit
+    SCRF/SMD. Kein echter Datensatz."""
+    Z = {"H": 1, "C": 6, "Cl": 17}
+    L = [" Entering Gaussian System, Link 0=g16", " Gaussian 16:  ES64L-G16RevC.01  3-Jul-2019",
+         " ----------------------------------------------------------------------",
+         " #p B3LYP/def2SVP opt freq scrf=(smd,solvent=thf)",
+         " ----------------------------------------------------------------------",
+         " Charge =  0 Multiplicity = 1"]
+    orient = [" " + "-" * 69, " Center     Atomic      Atomic             Coordinates (Angstroms)",
+              " Number     Number       Type             X           Y           Z", " " + "-" * 69]
+    orient += [f" {i + 1:6d} {Z[el]:10d} {0:11d} {x:>13s} {y:>11s} {z:>11s}" for i, (el, x, y, z) in
+               enumerate(_TEST_GEOM)] + [" " + "-" * 69]
+    L += ["                         Standard orientation:"] + orient
+    L += [" SCF Done:  E(RB3LYP) =  -539.987000000     A.U. after   10 cycles",
+          "         Item               Value     Threshold  Converged?",
+          " Maximum Force            0.000012     0.000450     YES",
+          " RMS     Force            0.000004     0.000300     YES",
+          " Maximum Displacement     0.000210     0.001800     YES",
+          " RMS     Displacement     0.000070     0.001200     YES", "    -- Stationary point found.",
+          " Optimization completed.", " Full point group                 CS      NOp   2"]
+    L += ["                         Standard orientation:"] + orient
+    L += [" SCF Done:  E(RB3LYP) =  -539.987654321     A.U. after    1 cycles",
+          " Frequencies --    245.1023               330.4012               655.7034",
+          " Frequencies --    790.0011               980.3022              1010.5013",
+          " Temperature   298.150 Kelvin.  Pressure   1.00000 Atm.",
+          " Zero-point correction=                           0.065432 (Hartree/Particle)",
+          " Sum of electronic and thermal Enthalpies=           -539.916710",
+          " Sum of electronic and thermal Free Energies=        -539.946833",
+          " Normal termination of Gaussian 16 at Thu Oct 22 10:00:00 2026."]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    return Path(path)
+
+
+# ---------------------------------------------------------------------------- Tab
+import matplotlib.patheffects as PE  # noqa: E402
+from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
+from matplotlib.figure import Figure as MplFigure  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,  # noqa: E402
+                               QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QStackedWidget, QTableWidget,
+                               QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
+
+from elucida.core import uvvis as core  # noqa: E402
+from elucida.app import project as PRJ  # noqa: E402
+from elucida.tabs import base as TABS  # noqa: E402
+from elucida.app import style as STYLE  # noqa: E402
+from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
+
+PICK_COLOR = XRAY.SEL_COLOR
+OLD_COLOR = "#9a9a9a"
+
+
+def export_names(names):
+    """Dateinamen je Geometrie: eindeutig (gleiche Namen sonst überschrieben: _2, _3 …) und ohne Punkt (with_suffix
+    schnitte „opt.1“ zu „opt“ ab)."""
+    out = []
+    for n in names:
+        name = first = core.safe_name(n).replace(".", "_")
+        k = 2
+        while name in out:
+            name, k = f"{first}_{k}", k + 1
+        out.append(name)
+    return out
+
+
+def new_entry(p):
+    return dict(uid=uuid.uuid4().hex[:8], file=p, name=Path(p).stem, order=None, view=None, zoom=1.0,
+                pan=[0.0, 0.0], layout={}, label_on={})
+
+
+class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
+    SI_PAGE = False                    # Bildunterschrift/SI stehen hier in eigenen Reitern
+    DRAG_HINT = "drag_hint_plain"      # keine Kurven: kein Satz zur Einblendung am Mauszeiger
+    STATE_KEY = "dft"
+    GUIDE, GUIDE_ACTION = "dft", ("guide_add", "add_xyz")
+    TEXT_OPTS = ("fonts", "labels")               # Labelgröße hat der Tab selbst
+    DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
+                         layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
+                         label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",
+                         h_follow=False, x_auto=True, x_min=0.0, x_max=1.0, ymax=0.0, bg="white", label_color="black", label_colors={},
+                         cartoon_color=False,
+                         orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=ORB.ISO_ABS, orb_alpha=ORB.ORB_ALPHA,
+                         orb_scheme="hue", orb_labels=True,
+                         profile=PAGES.PROFILE_DEFAULT, nics=PAGES.NICS_DEFAULT)   # Reiter Energieprofil/NICS (F4)
+
+    # Größe/Formate wie im X-Ray-Tab (keine Achsen)
+    common_box = XRAY.XrayTab.common_box
+    _sync_common = XRAY.XrayTab._sync_common
+    collect_common = XRAY.XrayTab.collect_common
+
+    MEASURE_ESD = False                   # Werte aus der berechneten Geometrie (keine esd wie in einer CIF)
+
+
+    def arrange(self):
+        super().arrange()
+        self.fold(self.group_titled("dft_numbering"), "numbering")
+        self.fold(self.group_titled("dft_measure"), "measure")
+        self.fold(self.group_titled("xr_align"), "align")
+        self.to_right(self.group_titled("dft_si"), T("dft_si"))
+        self.to_right(self.pages.prof_group, T("dft_profile"))
+        self.to_right(self.pages.nics_group, T("dft_nics"))
+        from elucida.tabs.multireference import MultireferencePage
+        self.mr_page = MultireferencePage(self)
+        self.to_right(self.mr_page, T('rp_multireference'))
+        self.mr_page.sync()
+    def __init__(self, main, state):
+        self.numbering = False            # Klick-Modus „Nummerieren“ (nicht im Undo)
+        self.picks = []                   # angeklickte Dateiindizes in Klickreihenfolge
+        self.sel = []                     # Auswahl zum Messen/Ausrichten (Atom-Schlüssel a<Index>), nicht im Undo
+        super().__init__(main, state)
+        # Die Seite „Energieprofil“ bringt ihre eigene Spalte mit: solange sie offen ist, weicht die Spalte der 3D-Ansicht
+        self.right_tabs.currentChanged.connect(self._profile_column)
+        self.show_profile_tab()
+
+    def _profile_column(self, *_):
+        self._split.widget(0).setVisible(self.right_tabs.currentWidget() is not self.pages.prof_group)
+
+    def show_profile_tab(self):
+        """Ein Energieprofil vergleicht mehrere Verbindungen und gehört in den Reaktionspfad des Projekts (Nutzerwunsch
+        2026-11-11): im DFT-Tab einer Verbindung steht der Reiter nur noch, wenn sie schon ein Profil gespeichert hat
+        (nichts geht verloren, nichts wird umgeräumt)."""
+        rt = getattr(self, "right_tabs", None)
+        i = rt.indexOf(self.pages.prof_group) if rt is not None else -1
+        if i >= 0:                                           # nie mehr im DFT-Tab einer Verbindung (Nutzerwunsch): gespeicherte
+            rt.removeTab(i)                                  # Profildaten bleiben in der Projektdatei, nur der Reiter fehlt
+            # (herausgenommen statt verborgen: eine verborgene Seite zählt weiter zur Mindestbreite des Fensters)
+
+    # -- Bedienelemente -------------------------------------------------------------------
+    def build_controls(self):
+        st = self.st
+        g = QGroupBox(T("dft_structures"))
+        v = QVBoxLayout(g)
+        row = QHBoxLayout()
+        for txt, fn in ((T("dft_add"), self.add_xyz), (T("remove"), self.remove_entry)):
+            b = QPushButton(txt)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.tbl = QTableWidget(0, 2)
+        self.tbl.setHorizontalHeaderLabels([T("dft_name"), T("dft_file")])
+        self.tbl.verticalHeader().setVisible(False)
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)   # Name und Datei gleich breit
+        self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tbl.setMinimumHeight(100)
+        self.tbl.itemChanged.connect(self.entry_edited)
+        self.tbl.itemSelectionChanged.connect(self.entry_selected)
+        v.addWidget(self.tbl)
+        STYLE.hide_when_empty(self.tbl)
+        self.lbl_info = STYLE.HintLabel("")
+        self.lbl_info.setWordWrap(True)
+        self.lbl_info.setStyleSheet(HINT_CSS)
+        v.addWidget(self.lbl_info)
+        self.lv.addWidget(g)
+        self.lv.addWidget(self.orbital_box())
+
+        # Seite „Rechnung für die SI“ wie die übrigen SI-Karten (Nutzerwunsch 2026-11-11): Optionen als Feld und Chips,
+        # Platzhalter groß in der Mitte, „Kopieren“ und „Word speichern“ oben rechts auf der Titelzeile
+        g = QGroupBox(T("dft_si"))
+        v = QVBoxLayout(g)
+        self.lbl_warn = STYLE.SciLabel("")                   # „ΔG_solv“, „E(el)“ wie im Satz
+        self.lbl_warn.setWordWrap(True)
+        self.lbl_warn.setStyleSheet(WARN_CSS)
+        v.addWidget(self.lbl_warn)
+        f = STYLE.make_form()
+        self.cmb_method = QComboBox()
+        for k in METHOD_MODES:
+            self.cmb_method.addItem(T("dft_method_" + k), k)
+        self.cmb_method.setToolTip(T("dft_method_tip"))
+        self.cmb_method.currentIndexChanged.connect(self.si_opts_changed)
+        f.addRow(T("dft_si_with").rstrip(":"), self.cmb_method)
+        self.cb_si = {}
+        for k in ("conv", "freq", "zpe"):
+            cb = QCheckBox(T("dft_si_" + k))
+            cb.setChecked(self.st.get("si_" + k, SI_DEFAULTS[k]))
+            cb.toggled.connect(self.si_opts_changed)
+            self.cb_si[k] = cb
+            f.addRow(cb)
+        v.addLayout(f)
+        self.txt_si = QTextBrowser()
+        self.txt_si.setMinimumHeight(180)
+        self.lbl_si_none = STYLE.SciLabel("", T("dft_si_hint"))     # ohne Rechnung: Platzhalter statt leerem Textfeld
+        self.lbl_si_none.setWordWrap(True)
+        self.si_stack = QStackedWidget()
+        self.si_stack.addWidget(self.lbl_si_none)
+        self.si_stack.addWidget(self.txt_si)
+        v.addWidget(self.si_stack, 1)
+        self.btn_si_copy = STYLE.copy_button(T("dft_si_copy_tip"))
+        self.btn_si_copy.clicked.connect(self.copy_si)
+        self.btn_si_word = QPushButton(T("dft_si_word"))
+        self.btn_si_word.setToolTip(T("dft_si_word_tip"))
+        self.btn_si_word.clicked.connect(lambda: self.save_docx())
+        STYLE.card_actions(g, self.btn_si_word, self.btn_si_copy)
+        self.lv.addWidget(g)
+
+        g = QGroupBox(T("dft_numbering"))                 # im Raster der Spalte (grafische Sichtung 2026-11-11):
+        f = make_form(g)                                  # Knopfreihen gleich breit in der Wertespalte, Vorlage als Feld
+        self.btn_num = QPushButton(T("dft_num_start"))
+        self.btn_num.setCheckable(True)
+        self.btn_num.setToolTip(T("dft_num_tip"))
+        self.btn_num.toggled.connect(self.set_numbering)
+        self.btn_undo_pick = QPushButton(T("dft_num_back"))
+        self.btn_undo_pick.clicked.connect(self.undo_pick)
+        self.btn_apply = QPushButton(T("dft_num_apply"))
+        self.btn_apply.clicked.connect(self.apply_numbering)
+        self.btn_num.setFixedWidth(STYLE.VALUE_W)         # einzelner Knopf: ganze Wertespalte wie die Paare darunter
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self.btn_num)
+        f.addRow(row)
+        self.lbl_num = STYLE.HintLabel("")
+        self.lbl_num.setWordWrap(True)
+        f.addRow(self.lbl_num)
+        row = QHBoxLayout()
+        row.addWidget(self.btn_undo_pick)
+        row.addWidget(self.btn_apply)
+        f.addRow(row)
+        self.cb_hfollow = QCheckBox(T("dft_h_follow"))
+        self.cb_hfollow.setToolTip(T("dft_h_follow_tip"))
+        self.cb_hfollow.setChecked(st.get("h_follow", False))
+        f.addRow(self.cb_hfollow)
+        self.cmb_ref = QComboBox()
+        self.cmb_ref.setToolTip(T("dft_ref_tip"))
+        self.btn_ref = QPushButton(T("dft_ref_apply"))
+        self.btn_ref.setToolTip(T("dft_ref_apply_tip"))
+        self.btn_ref.clicked.connect(self.apply_reference)
+        ref_w = 100                                       # Auswahl + Knopf zusammen genau die Wertespalte
+        self.cmb_ref.setFixedWidth(STYLE.VALUE_W - 8 - ref_w)
+        self.btn_ref.setFixedWidth(ref_w)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(self.cmb_ref)
+        row.addWidget(self.btn_ref)
+        f.addRow(T("dft_ref"), row)
+        self.lbl_ref = STYLE.HintLabel("")
+        self.lbl_ref.setWordWrap(True)
+        f.addRow(self.lbl_ref)
+        row = QHBoxLayout()
+        b = QPushButton(T("dft_order_reset"))
+        b.setToolTip(T("dft_order_reset_tip"))
+        b.clicked.connect(self.reset_order)
+        row.addWidget(b)
+        b = QPushButton(T("dft_save_xyz"))
+        b.setToolTip(T("dft_save_xyz_tip"))
+        b.clicked.connect(lambda: self.save_xyz())
+        row.addWidget(b)
+        f.addRow(row)
+        self.lv.addWidget(g)
+
+        g = QGroupBox(T("xr_display"))
+        f = make_form(g)
+        self.cmb_style = QComboBox()
+        for key in XRAY.DFT_STYLES:
+            self.cmb_style.addItem(T("xr_style_" + key), key)
+        f.addRow(T("xr_style"), self.cmb_style)
+        self.cb_ccol = QCheckBox(T("dft_cartoon_color"))      # Strichzeichnung: Kugeln in Elementfarben (Standard weiß)
+        self.cb_ccol.setToolTip(T("dft_cartoon_color_tip"))
+        f.addRow("", self.cb_ccol)
+        self.cb_h = QCheckBox(T("xr_show_h"))
+        self.cb_lab = QCheckBox(T("xr_labels"))
+        self.cb_hlab = QCheckBox(T("xr_h_labels"))
+        row = QHBoxLayout()
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab):
+            row.addWidget(w_)
+        row.addStretch(1)
+        f.addRow(row)
+        self.cb_explab = QCheckBox(T("dft_export_labels"))
+        self.cb_explab.setToolTip(T("dft_export_labels_tip"))
+        f.addRow(self.cb_explab)
+        self.cb_orb_lab = QCheckBox(T("dft_orb_labels"))
+        self.cb_orb_lab.setToolTip(T("dft_orb_labels_tip"))
+        f.addRow(self.cb_orb_lab)
+        self.cmb_lstyle = QComboBox()
+        for key in ("el_num", "num", "ref"):
+            self.cmb_lstyle.addItem(T("dft_lab_" + key), key)
+        self.cmb_lstyle.setToolTip(T("dft_lab_ref_tip"))
+        f.addRow(T("dft_label_style"), self.cmb_lstyle)
+        self.cb_zero = QCheckBox(T("dft_zero_based"))
+        self.cb_zero.setProperty("chip_here", True)      # gehört zum Feld darüber
+        self.cb_zero.setToolTip(T("dft_zero_based_tip"))
+        f.addRow(self.cb_zero)
+        self.sp_rad = QDoubleSpinBox(decimals=2, minimum=0.05, maximum=0.8, singleStep=0.01, suffix=" Å")
+        self.sp_rad.setToolTip(T("ball_rel_tip", std=f"{self.DEFAULT_STATE['radius']:g}"))
+        f.addRow(T("dft_radius"), self.sp_rad)
+        self.sp_bond = QDoubleSpinBox(decimals=2, minimum=0.02, maximum=0.4, singleStep=0.01, suffix=" Å")
+        self.sp_bond.setToolTip(T("ball_rel_tip", std=f"{self.DEFAULT_STATE['bond_w']:g}"))
+        f.addRow(T("xr_bond_lw"), self.sp_bond)
+        self.cmb_bg = XRAY.BackgroundCombo(self.st, self.changed)
+        f.addRow(T("bg_label"), self.cmb_bg)
+        self.sp_lab = XRAY.label_size_spin(self.st)
+        f.addRow(T("xr_label_size"), self.sp_lab)
+        self.cmb_lcol = XRAY.label_color_combo(self.st, self.changed, self.elements)
+        f.addRow(T("xr_label_color"), self.cmb_lcol)
+        f.addRow(XRAY.reset_buttons(self))
+        hint = QLabel(T("dft_mouse_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(HINT_CSS)
+        f.addRow(hint)
+        self.lv.addWidget(g)
+        g, _ = self.measure_box(T("dft_measure"))           # Messen und Ausrichten wie im Tab X-Ray
+        self.lv.addWidget(g)
+        self.lv.addWidget(self.align_box())
+
+        for w_ in (self.sp_rad, self.sp_bond, self.sp_lab):
+            w_.valueChanged.connect(self.changed)
+        for w_ in (self.cmb_style, self.cmb_lstyle):
+            w_.currentIndexChanged.connect(self.changed)
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_zero, self.cb_hfollow, self.cb_explab, self.cb_ccol,
+                   self.cb_orb_lab):
+            w_.toggled.connect(self.changed)
+        self.pages = PAGES.DftPages(self)
+        self.sync_widgets()
+
+    def orbital_box(self):
+        """Karte „Orbitale“: Cube-Dateien der gewählten Geometrie, Auswahl, Isowert, Deckkraft, Farben (IboView)."""
+        g = QGroupBox(T("dft_orbitals"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        for txt, tip, fn in ((T("dft_orb_add"), T("dft_orb_add_tip"), self.add_orbital),
+                             (T("remove"), "", self.remove_orbital)):
+            b = QPushButton(txt)
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        f.addRow(row)
+        self.cmb_orb = QComboBox()
+        self.cmb_orb.setToolTip(T("dft_orb_select_tip"))
+        self.cmb_orb.currentIndexChanged.connect(self.orbital_selected)
+        f.addRow(T("dft_orb_select"), self.cmb_orb)
+        self.row_mo = QWidget()
+        rm = QHBoxLayout(self.row_mo)
+        rm.setContentsMargins(0, 0, 0, 0)
+        self.cmb_mo = QComboBox()
+        self.cmb_mo.setToolTip(T("dft_orb_mo_tip"))
+        self.cmb_mo.setMaxVisibleItems(20)
+        b = QPushButton(T("dft_orb_mo_add"))
+        b.clicked.connect(self.add_molden_mo)
+        rm.addWidget(self.cmb_mo, 1)
+        rm.addWidget(b)
+        f.addRow(T("dft_orb_mo"), self.row_mo)
+        self.cmb_iso = QComboBox()                     # wie IboView „Iso Surface Settings“ (FB-20)
+        for k in ("frac", "abs"):
+            self.cmb_iso.addItem(T("dft_orb_iso_" + k), k)
+        self.cmb_iso.setToolTip(T("dft_orb_iso_tip"))
+        f.addRow(T("dft_orb_iso"), self.cmb_iso)
+        self.sp_iso = QDoubleSpinBox(decimals=4, minimum=0.0001, maximum=99.99, singleStep=1.0)
+        self.sp_iso.setToolTip(T("dft_orb_iso_tip"))
+        f.addRow(T("dft_orb_thr"), self.sp_iso)
+        self.sp_alpha = QDoubleSpinBox(decimals=2, minimum=0.1, maximum=1.0, singleStep=0.05)
+        self.sp_alpha.setToolTip(T("dft_orb_alpha_tip"))
+        f.addRow(T("dft_orb_alpha"), self.sp_alpha)
+        self.cmb_scheme = QComboBox()
+        for k in ORB.SCHEMES:
+            self.cmb_scheme.addItem(T("dft_orb_scheme_" + k), k)
+        f.addRow(T("dft_orb_scheme"), self.cmb_scheme)
+        self.lbl_orb = STYLE.HintLabel("")
+        self.lbl_orb.setWordWrap(True)
+        self.lbl_orb.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_orb)
+        self.cmb_iso.currentIndexChanged.connect(self.iso_mode_changed)
+        self.sp_iso.valueChanged.connect(self.changed)
+        self.sp_alpha.valueChanged.connect(self.changed)
+        self.cmb_scheme.currentIndexChanged.connect(self.changed)
+        return g
+
+    def collect(self):
+        mode = self.cmb_iso.currentData()
+        self.st.update(orb_iso_mode=mode, orb_alpha=self.sp_alpha.value(), orb_scheme=self.cmb_scheme.currentData(),
+                       orb_labels=self.cb_orb_lab.isChecked(),
+                       **{"orb_frac" if mode == "frac" else "orb_abs": self.sp_iso.value()})
+        self.st.update(show_h=self.cb_h.isChecked(), labels=self.cb_lab.isChecked(), h_labels=self.cb_hlab.isChecked(),
+                       label_style=self.cmb_lstyle.currentData(), zero_based=self.cb_zero.isChecked(),
+                       radius=self.sp_rad.value(), bond_w=self.sp_bond.value(), label_pt=self.sp_lab.value(), style=self.cmb_style.currentData(),
+                       h_follow=self.cb_hfollow.isChecked(), export_labels=self.cb_explab.isChecked(),
+                       label_color=self.cmb_lcol.value(), cartoon_color=self.cb_ccol.isChecked())
+        self.cb_ccol.setVisible(self.st["style"] == "cartoon")
+        self.cb_orb_lab.setVisible(self.st["style"] == "iboview" or not self.cmb_style.isEnabled())
+        self.update_num_status()
+
+    def sync_widgets(self):
+        self._loading = True
+        st = self.st
+        self.cmb_bg.sync()
+        es = self.entries()
+        self.tbl.setRowCount(len(es))
+        for r, e in enumerate(es):
+            self.tbl.setItem(r, 0, QTableWidgetItem(e.get("name") or ""))
+            it = QTableWidgetItem(Path(e["file"]).name)
+            it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+            self.tbl.setItem(r, 1, it)
+        cur = self.entry()
+        if cur is not None:
+            self.tbl.selectRow(es.index(cur))
+        self.cmb_style.setCurrentIndex(max(0, self.cmb_style.findData(XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"))))
+        self.cmb_lstyle.setCurrentIndex(max(0, self.cmb_lstyle.findData(st.get("label_style", "el_num"))))
+        self.cb_ccol.setChecked(st.get("cartoon_color", False))
+        self.cb_ccol.setVisible(XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth") == "cartoon")
+        self.cb_h.setChecked(st["show_h"])
+        self.cb_lab.setChecked(st["labels"])
+        self.cb_hlab.setChecked(st["h_labels"])
+        self.cb_zero.setChecked(st.get("zero_based", False))
+        self.cb_hfollow.setChecked(st.get("h_follow", False))
+        self.cb_explab.setChecked(st.get("export_labels", False))
+        self.cb_orb_lab.setChecked(st.get("orb_labels", True))
+        self.cb_orb_lab.setVisible(st.get("style") == "iboview")
+        for k, cb in self.cb_si.items():
+            cb.setChecked(st.get("si_" + k, SI_DEFAULTS[k]))
+        self.cmb_method.setCurrentIndex(max(0, self.cmb_method.findData(method_mode(st.get("si_method", "each")))))
+        self.sp_rad.setValue(st.get("radius", 0.25))
+        self.sp_bond.setValue(st.get("bond_w", 0.08))
+        self.sp_lab.setValue(st.get("label_pt", 0.0))
+        self.cmb_lcol.sync()
+        self.fill_refs()
+        self.sync_orbitals()
+        self._loading = False
+        self.update_num_status()
+        self.pages.sync()
+        self.pages.sync_nics()
+        self.pages.refresh()
+
+    # -- Einträge -------------------------------------------------------------------------
+    def entries(self):
+        return self.st["entries"]
+
+    def entry(self):
+        es = self.entries()
+        cur = self.st.get("current")
+        for e in es:
+            if e["uid"] == cur:
+                return e
+        return es[0] if es else None
+
+    def add_xyz(self):
+        if not self.main.ensure_project():
+            return
+        ps, _ = QFileDialog.getOpenFileNames(self, T("dft_add"), self.main.settings.value("last_dir", ""),
+                                             f"{T('dft_flt')} (*.xyz *.out *.log *.cube *.cub *.molden *.input);;"
+                                             f"{T('flt_all')}")
+        for p in ps:
+            self.load_xyz(p)
+
+    def load_xyz(self, p):
+        """xyz oder Ausgabe einer Rechnung (ORCA 6, Gaussian); Name = Dateiname ohne Endung. Cube: Orbital."""
+        if Path(p).suffix.lower() in CUBE_EXT:
+            return self.load_cube(p)
+        if is_molden(p):
+            return self.load_molden(p)
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+        try:
+            self.frames_of(p)
+        except Exception as ex:
+            self.main.error(f"{Path(p).name}: {ex}")
+            return None
+        e = new_entry(p)
+        self.entries().append(e)
+        self.st["current"] = e["uid"]
+        self.stop_numbering()
+        self.sync_widgets()
+        self.render()
+        return e
+
+    # -- Orbitale (Cube) ---------------------------------------------------------------------
+    def add_orbital(self):
+        if not self.main.ensure_project():
+            return
+        ps, _ = QFileDialog.getOpenFileNames(self, T("dft_orb_add"), self.main.settings.value("last_dir", ""),
+                                             f"{T('dft_orb_flt')} (*.cube *.cub *.molden *.input);;{T('flt_all')}")
+        for p in ps:
+            (self.load_molden if is_molden(p) else self.load_cube)(p)
+
+    def cube_of(self, p):
+        return self.cache(("cube", p), lambda: ORB.read_cube(p))
+
+    def entry_for(self, p, frame):
+        """Geometrie, an die Orbitale aus p gehören: die gewählte, wenn Atome und Koordinaten passen, sonst neu."""
+        e = self.entry()
+        g = self.geometry(e) if e is not None else None
+        if g is not None and cube_fits(g[0][-1], frame):
+            return e
+        if e is not None:
+            self.main.statusBar().showMessage(T("dft_orb_new_entry", f=Path(p).name), 8000)
+        e = dict(uid=uuid.uuid4().hex[:8], file=p, name=Path(p).name.split(".")[0], order=None, view=None,
+                 zoom=1.0, pan=[0.0, 0.0], layout={}, label_on={})
+        self.entries().append(e)
+        self.st["current"] = e["uid"]
+        return e
+
+    def molden_of(self, p):
+        return self.cache(("molden", p), lambda: ORB.parse_molden(read_text(p)))
+
+    def basis_of(self, p):
+        """Basis der Molden-Datei mit geprüfter Konvention (CᵀSC = 1), sonst ValueError."""
+        def make():
+            b = ORB.Basis(self.molden_of(p))
+            err = b.setup()
+            if err > ORB.Basis.MAX_ORTH_ERR:
+                raise ValueError(T("dft_orb_molden_conv", err=f"{err:.1e}"))
+            return b
+        return self.cache(("basis", p), make)
+
+    def load_molden(self, p):
+        """Molden-Datei: alle MOs verfügbar, HOMO und LUMO werden gleich angelegt (weitere über die Liste)."""
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+        try:
+            m = self.molden_of(p)
+            self.basis_of(p)
+        except Exception as ex:
+            self.main.error(f"{Path(p).name}: {ex}")
+            return None
+        e = self.entry_for(p, molden_frame(m))
+        e["molden"] = p
+        orbs = e.setdefault("orbitals", [])
+        tab = ORB.molden_table(m)
+        spin = "" if "" in tab else "a"
+        homo = max((n for n, o, _ in tab[spin] if o > 0.5), default=None)
+        for no in (homo, None if homo is None else homo + 1):
+            i = ORB.molden_index(m, no, spin) if no is not None else None
+            if i is not None and not any(it.get("mo") == i and it["file"] == p for it in orbs):
+                orbs.append(dict(file=p, mo=i))
+        hi = ORB.molden_index(m, homo, spin) if homo is not None else None
+        e["orb_cur"] = next((k for k, it in enumerate(orbs) if it["file"] == p and it.get("mo") == hi),
+                            len(orbs) - 1)                       # HOMO, auch wenn er schon in der Liste war
+        self.stop_numbering()
+        self.sync_widgets()
+        self.render()
+        return e
+
+    def add_molden_mo(self):
+        """MO aus der Liste der Molden-Datei als weiteres Orbital anlegen und zeigen."""
+        e = self.entry()
+        i = self.cmb_mo.currentData()
+        if e is None or i is None or not e.get("molden"):
+            return
+        orbs = e.setdefault("orbitals", [])
+        k = next((k for k, it in enumerate(orbs) if it.get("mo") == i and it["file"] == e["molden"]), None)
+        if k is None:
+            orbs.append(dict(file=e["molden"], mo=i))
+            k = len(orbs) - 1
+        e["orb_cur"] = k
+        self.sync_widgets()
+        self.render()
+
+    def mo_label(self, m, i):
+        """Bezeichnung des i-ten MOs einer Molden-Datei: „HOMO (MO 7, −12.05 eV)“."""
+        mo = m["mos"][i]
+        tab = ORB.molden_table(m)
+        spin = mo["spin"] if "" not in tab else ""
+        rows = tab[spin]
+        k = sum(1 for x in m["mos"][:i] if x["spin"] == mo["spin"])
+        no = rows[k][0]
+        fr = ORB.frontier_name(no, spin, tab)
+        sp = {"a": " α", "b": " β"}.get(spin, "")
+        bits = f"MO {no}{sp}, " + f"{mo['energy'] * ORB.HARTREE_EV:.2f} eV".replace("-", "\u2212")
+        return f"{fr}{sp} ({bits})" if fr else bits
+
+    def load_cube(self, p):
+        """Cube an die gewählte Geometrie hängen, wenn Atome und Koordinaten passen; sonst neue Geometrie aus dem
+        Cube. Mehrere Orbitale in einem Cube (Gaussian) -> je Orbital ein Eintrag."""
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+        try:
+            c = self.cube_of(p)
+        except Exception as ex:
+            self.main.error(f"{Path(p).name}: {ex}")
+            return None
+        e = self.entry_for(p, c)
+        orbs = e.setdefault("orbitals", [])
+        for j in range(len(c["data"])):
+            orbs.append(dict(file=p, idx=j))
+        e["orb_cur"] = len(orbs) - 1
+        self.stop_numbering()
+        self.sync_widgets()
+        self.render()
+        return e
+
+    def remove_orbital(self):
+        e = self.entry()
+        k = self.orb_index(e)
+        if k is None:
+            return
+        e["orbitals"].pop(k)
+        e["orb_cur"] = min(k, len(e["orbitals"]) - 1) if e["orbitals"] else None
+        self.sync_widgets()
+        self.render()
+
+    def orb_index(self, e):
+        """Index des gezeigten Orbitals der Geometrie oder None."""
+        if e is None:
+            return None
+        k = e.get("orb_cur")
+        return k if isinstance(k, int) and 0 <= k < len(e.get("orbitals") or []) else None
+
+    def orb_table(self, e):
+        """Orbitalenergien der Rechnung dieser Geometrie (ORCA/Gaussian-Ausgabe) oder {}."""
+        p = e["file"] if e else None
+        if not p or Path(p).suffix.lower() not in (".out", ".log") or not Path(p).exists():
+            return {}
+        return self.cache(("orbE", p), lambda: ORB.orbital_energies(read_text(p)))
+
+    def orb_name(self, e, item):
+        """Bezeichnung eines Orbitals: „HOMO−1 (MO 20, −9.87 eV)“, sonst MO-Nummer oder Dateiname."""
+        if "mo" in item:
+            return self.mo_label(self.molden_of(item["file"]), item["mo"])
+        c = self.cube_of(item["file"])
+        mo, spin = ORB.cube_mo(item["file"], c) if len(c["data"]) == 1 else (c["mos"][item.get("idx", 0)], "")
+        tab = self.orb_table(e)
+        fr = ORB.frontier_name(mo, spin, tab) if mo is not None else None
+        en = ORB.orbital_energy(mo, spin, tab) if mo is not None else None
+        sp = {"a": " α", "b": " β"}.get(spin, "")
+        bits = [f"MO {mo}{sp}"] if mo is not None else []
+        if en is not None:
+            bits.append(f"{en:.2f} eV".replace("-", "\u2212"))
+        if fr:
+            return fr + sp + (f" ({', '.join(bits)})" if bits else "")
+        return ", ".join(bits) or Path(item["file"]).stem
+
+    def orb_short(self, e, item):
+        """Kurzname für Dateien: HOMO-1, LUMO, MO20 …"""
+        n = self.orb_name(e, item).split(" (")[0].replace("\u2212", "-").replace(" α", "a").replace(" β", "b")
+        return core.safe_name(n.replace(", ", "_").replace(" ", ""))
+
+    def orb_volume(self, item):
+        if "mo" in item:                                    # Molden: MO auf dem Gitter auswerten (gecacht)
+            def make():
+                b = self.basis_of(item["file"])
+                data, origin, axes = ORB.molden_grid(b, b.m["mos"][item["mo"]]["c"], ORB.MOLDEN_SPACING)
+                return ORB.Volume(data, origin, axes)
+            return self.cache(("orbvol", item["file"], "mo", item["mo"]), make)
+        return self.cache(("orbvol", item["file"], item.get("idx", 0)),
+                          lambda: ORB.Volume(self.cube_of(item["file"])["data"][item.get("idx", 0)],
+                                             self.cube_of(item["file"])["origin"], self.cube_of(item["file"])["axes"]))
+
+    def orb_iso(self, item, vol):
+        st = self.st
+        if st.get("orb_iso_mode", "frac") == "abs":
+            return float(st.get("orb_abs", ORB.ISO_ABS))
+        frac = float(st.get("orb_frac", ORB.ISO_FRACTION))
+        return self.cache(("orbiso", item["file"], item.get("idx", 0), item.get("mo"), frac),
+                          lambda: ORB.iso_for_fraction(vol.data, frac))
+
+    def orbital_opts(self, e, k):
+        """Orbital k der Geometrie für XrayFigure (opts["orbital"]) oder None."""
+        orbs = e.get("orbitals") or []
+        if k is None or not 0 <= k < len(orbs):
+            return None
+        item = orbs[k]
+        if not Path(item["file"]).exists():
+            self.add_note(T("dft_orb_missing", f=Path(item["file"]).name))
+            return None
+        vol = self.orb_volume(item)
+        plus, minus, alpha = ORB.orbital_colors(k, self.st.get("orb_scheme", "hue"))
+        a = float(self.st.get("orb_alpha", ORB.ORB_ALPHA)) * alpha / ORB.ORB_ALPHA
+        return dict(vol=vol, iso=self.orb_iso(item, vol), plus=plus, minus=minus, alpha=min(1.0, a))
+
+    def bond_orders(self, e):
+        """IAO-Wiberg-Bindungsordnungen (≥ 0.2) aus der Molden-Datei der Geometrie wie IboView, sonst None (Cube:
+        Einfachbindungen nach Abstand, wie IboView ohne Wellenfunktion)."""
+        mp = (e or {}).get("molden")
+        if not mp or not Path(mp).exists():
+            return None
+        try:
+            return self.cache(("bondorders", mp), lambda: ORB.iao_bond_orders(self.basis_of(mp)))
+        except Exception as ex:
+            self.add_note(str(ex))
+            return None
+
+    def orbital_selected(self, _i=None):
+        if self._loading:
+            return
+        e = self.entry()
+        if e is None:
+            return
+        e["orb_cur"] = self.cmb_orb.currentData()
+        self.sync_widgets()
+        self.render()
+
+    def iso_mode_changed(self, _i=None):
+        if self._loading:
+            return
+        mode = self.cmb_iso.currentData()
+        self.st["orb_iso_mode"] = mode
+        self._loading = True
+        self.sync_iso_spin()
+        self._loading = False
+        self.changed()
+
+    def sync_iso_spin(self):
+        frac = self.st.get("orb_iso_mode", "frac") == "frac"
+        # Stellen/Bereich/Schritt wie IboView: Hauptfenster (Dichte %) bzw. „Compute Surface“ (absolut)
+        self.sp_iso.setDecimals(4 if frac else 5)
+        self.sp_iso.setRange(0.0001, 99.99) if frac else self.sp_iso.setRange(0.00001, 100000.0)
+        self.sp_iso.setSingleStep(1.0 if frac else 0.001)
+        self.sp_iso.setSuffix(" %" if frac else " a.u.")
+        self.sp_iso.setValue(self.st.get("orb_frac", ORB.ISO_FRACTION) if frac else self.st.get("orb_abs", ORB.ISO_ABS))
+
+    def sync_orbitals(self):
+        """Orbital-Karte nach dem Zustand (nur innerhalb von sync_widgets)."""
+        st, e = self.st, self.entry()
+        self.cmb_orb.clear()
+        self.cmb_orb.addItem(T("dft_orb_none"), None)
+        for k, item in enumerate((e or {}).get("orbitals") or []):
+            try:
+                self.cmb_orb.addItem(self.orb_name(e, item), k)
+            except Exception:
+                self.cmb_orb.addItem(Path(item["file"]).name, k)
+        k = self.orb_index(e)
+        self.cmb_orb.setCurrentIndex(0 if k is None else k + 1)
+        self.cmb_mo.clear()
+        mp = (e or {}).get("molden")
+        if mp and Path(mp).exists():
+            try:
+                m = self.molden_of(mp)
+                for i in range(len(m["mos"])):
+                    self.cmb_mo.addItem(self.mo_label(m, i), i)
+                homo = max((i for i, mo in enumerate(m["mos"]) if mo["occ"] > 0.5 and mo["spin"] == "a"), default=0)
+                self.cmb_mo.setCurrentIndex(homo)
+            except Exception as ex:                        # sonst leere MO-Liste ohne Grund
+                self.add_note(f"{Path(mp).name}: {ex}")
+        self.row_mo.setVisible(self.cmb_mo.count() > 0)
+        lab_ = self.row_mo.parentWidget().layout().labelForField(self.row_mo) if self.row_mo.parentWidget() else None
+        if lab_ is not None:
+            lab_.setVisible(self.cmb_mo.count() > 0)
+        self.cmb_iso.setCurrentIndex(max(0, self.cmb_iso.findData(st.get("orb_iso_mode", "frac"))))
+        self.sync_iso_spin()
+        self.sp_alpha.setValue(st.get("orb_alpha", ORB.ORB_ALPHA))
+        self.cmb_scheme.setCurrentIndex(max(0, self.cmb_scheme.findData(st.get("orb_scheme", "hue"))))
+        self.cb_orb_lab.setVisible(k is not None or st.get("style") == "iboview")
+        self.cmb_style.setEnabled(k is None)                 # mit Orbital: Atome immer wie IboView
+        self.cmb_style.setToolTip(T("dft_orb_style") if k is not None else "")
+        self.update_orb_info()
+
+    def update_orb_info(self):
+        e = self.entry()
+        k = self.orb_index(e)
+        if k is None:
+            self.lbl_orb.setText(T("dft_orb_hint") if not (e or {}).get("orbitals") else "")
+            return
+        item = e["orbitals"][k]
+        try:
+            vol = self.orb_volume(item)
+        except Exception as ex:
+            self.lbl_orb.setText(str(ex))
+            return
+        iso = self.orb_iso(item, vol)
+        bits = [T("dft_orb_info", iso=f"{iso:.4f}", n="×".join(str(x) for x in vol.n),
+                  h=f"{vol.step:.3f}")]
+        if "mo" in item:
+            b = self.basis_of(item["file"])
+            bits.append(T("dft_orb_molden_ok", v=" / ".join(b.variant), err=f"{b.err:.0e}"))
+        norm = self.cache(("orbnorm", item["file"], item.get("idx", 0), item.get("mo")),
+                          lambda: ORB.grid_norm(vol.data, vol.axes))
+        if self.st.get("orb_iso_mode", "frac") == "frac" and not 0.9 <= norm <= 1.1:
+            bits.append(T("dft_orb_norm", v=f"{norm:.2f}"))
+        if vol.step > 0.25:
+            bits.append(T("dft_orb_coarse", h=f"{vol.step:.2f}"))
+        self.lbl_orb.setText("\n".join(bits))
+
+    def remove_entry(self):
+        e = self.entry()
+        if e is None:
+            return
+        self.st["entries"] = [x for x in self.entries() if x["uid"] != e["uid"]]
+        self.st["current"] = self.entries()[0]["uid"] if self.entries() else None
+        self.stop_numbering()
+        self.sync_widgets()
+        self.render()
+
+    def entry_edited(self, item):
+        if self._loading or item.column() != 0:
+            return
+        es = self.entries()
+        if item.row() < len(es):
+            es[item.row()]["name"] = item.text().strip()
+            self.main.push_undo()
+
+    def entry_selected(self):
+        if self._loading:
+            return
+        rows = self.tbl.selectionModel().selectedRows()
+        es = self.entries()
+        if rows and rows[0].row() < len(es) and es[rows[0].row()]["uid"] != self.st.get("current"):
+            self.st["current"] = es[rows[0].row()]["uid"]
+            self.stop_numbering()
+            self.sel = []
+            self.update_measure()
+            self.sync_widgets()
+            self.render()
+
+    # -- Modell ---------------------------------------------------------------------------
+    def frames_of(self, p):
+        if Path(p).suffix.lower() == ".xyz":
+            return self.cache(("xyz", p), lambda: read_xyz(p))
+        if Path(p).suffix.lower() in CUBE_EXT:
+            return self.cache(("cubexyz", p), lambda: [cube_frame(self.cube_of(p))])
+        if is_molden(p):
+            return self.cache(("moldenxyz", p), lambda: [molden_frame(self.molden_of(p))])
+        return [self.calc_geom(p)[0]]
+
+    def calc_geom(self, p):
+        """-> (Bild, Partner-xyz benutzt) einer Rechnung."""
+        c = self.calc_file(p)
+        return self.cache(("calcxyz", p), lambda: calc_frame(c, Path(p).stem, Path(p).with_suffix(".xyz")))
+
+    def calc_file(self, p):
+        return self.cache(("calc", p), lambda: read_calc(p))
+
+    def calc_of(self, e):
+        """Ausgewertete Rechnung eines Eintrags oder None (reine xyz/Cube)."""
+        p = e["file"] if e else None
+        if not p or Path(p).suffix.lower() not in (".out", ".log") or not Path(p).exists():
+            return None
+        return self.calc_file(p)
+
+    def si_of(self, e):
+        c = self.calc_of(e)
+        if c is None:
+            return None
+        g = self.geometry(e)
+        order = self.order(e, len(g[1]))
+        lines = g[0][-1]["lines"]
+        opts = {k: self.st.get("si_" + k, v) for k, v in SI_DEFAULTS.items()}
+        p = si_parts(c, e.get("name") or Path(e["file"]).stem, [lines[k] for k in order], opts)
+        from elucida.tabs.multireference import si_extra
+        p["extra"] += si_extra(c, e)
+        # A generic final single-point value does not identify an MR root/method.
+        # The explicitly selected MR result above is the source of state energies.
+        if c.get("multireference"):
+            p["energies"] = None
+        return p
+
+    def elements(self):
+        """Elemente aller Geometrien (C, H zuerst) für die Labelfarbe je Element."""
+        els = set()
+        for e in self.entries():
+            g = self.geometry(e)
+            if g is not None:
+                els |= set(g[1])
+        return [x for x in ("C", "H") if x in els] + sorted(els - {"C", "H"})
+
+    def geometry(self, e):
+        """-> (Bilder, Elemente, Koordinaten des letzten Bildes, Bindungen) oder None."""
+        p = e["file"]
+        if not p or not Path(p).exists():
+            return None
+        frames = self.frames_of(p)
+        last = frames[-1]
+        bonds = self.cache(("xyzbonds", p), lambda: bonds_of(last["els"], last["xyz"]))
+        return frames, last["els"], last["xyz"], bonds
+
+    def order(self, e, n):
+        o = e.get("order")
+        return list(o) if o and sorted(o) == list(range(n)) else list(range(n))
+
+    def base(self):
+        return 0 if self.st.get("zero_based") else 1
+
+    def label_text(self, el, num, k=None, e=None):
+        """Label eines Atoms: Element + Nummer, nur Nummer oder (Stil „ref“) das Label der Vorlage, z. B. aus der CIF."""
+        style = self.st.get("label_style")
+        if style == "ref" and k is not None:
+            lab = ((e or self.entry() or {}).get("ref_labels") or {}).get(str(k))
+            if lab:
+                return lab
+        return str(num) if style == "num" else f"{el}{num}"
+
+    def molecule(self, e, interactive=True):
+        g = self.geometry(e)
+        if g is None:
+            return None
+        _, els, xyz, bonds = g
+        num = number_of(self.order(e, len(els)), self.base())
+        picked = set()
+        if interactive and self.numbering:                         # angeklickte Atome: neue Nummer
+            for i, k in enumerate(self.picks):
+                num[k] = i + self.base()
+            picked = set(self.picks)
+        labels = [f"{el}{num[k]}" if k in picked else self.label_text(el, num[k], k, e) for k, el in enumerate(els)]
+        r = self.st.get("radius", 0.25)
+        return XyzMolecule(els, xyz, bonds, labels, uiso=(r / XRAY.chi2_scale(0.5)) ** 2)
+
+    def view_of(self, e, mol):
+        v = e.get("view")
+        if v and len(v) == 9:
+            return np.array(v, float).reshape(3, 3)
+        # anders als bei X-Ray mit H: beim Nummerieren muss jedes Atom anklickbar sein (nichts verdeckt)
+        return XRAY.default_view(mol, use=list(range(len(mol.atoms))))
+
+    def layout(self):
+        e = self.entry()
+        if e is None:
+            return {}
+        return e.setdefault("layout", {}).setdefault(self.size_key(), {})
+
+    # -- Abbildung ------------------------------------------------------------------------
+    def opts(self, e, interactive=True, orb="cur"):
+        st = self.st
+        label_on = dict(e.get("label_on") or {})
+        numbering = interactive and self.numbering
+        if numbering:
+            label_on.update({f"a{k}": True for k in self.picks})
+        r = st.get("radius", 0.25)
+        # Labels: Vorschau wie eingestellt (zum Nummerieren), Export/Word nur mit „Labels im Export“
+        labels = st["labels"] if interactive else st.get("export_labels", False)
+        o = dict(prob=50, show_h=st["show_h"], labels=labels or numbering, h_labels=st["h_labels"],
+                    colors={}, bond_w=st.get("bond_w", 0.08), hidden_frags=[],
+                    style=XRAY.allowed_style(st.get("style", "mercury"), XRAY.DFT_STYLES, "depth"),
+                    hidden_atoms=[], label_on=label_on, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
+                    label_size=st.get("label_pt", 0.0), label_color=st.get("label_color", "black"),
+                    label_colors=st.get("label_colors") or {}, cartoon_color=st.get("cartoon_color", False),
+                    h_radius=0.55 * r, bg=st.get("bg", "white"),
+                    # Kugel-Stab: Atomradius/Bindungsdicke relativ zum Standard (Standardwerte = Aussehen der Vorlage)
+                    ball_scale=r / self.DEFAULT_STATE["radius"],
+                    rod_scale=st.get("bond_w", 0.08) / self.DEFAULT_STATE["bond_w"],
+                    orbital=self.orbital_opts(e, self.orb_index(e) if orb == "cur" else orb))
+        if o["orbital"] is not None:                       # Orbital: Atome wie IboView (Nutzerwunsch)
+            o["style"] = "iboview"
+        o["elem_labels"] = st.get("orb_labels", True)
+        return o
+
+    def build(self, fig, e=None, interactive=True, orb="cur"):
+        e = e or self.entry()
+        if e is None:
+            return None
+        mol = self.molecule(e, interactive)
+        if mol is None or not mol.atoms:
+            return None
+        cfg = self.base_cfg()
+        core.setup_fonts(TABS.plt, cfg)
+        lay = e.setdefault("layout", {}).setdefault(self.size_key(), {})
+        if interactive and self.numbering:
+            sel = list(self.picks)
+        else:
+            sel = [i for i in (mol.find_key(k) for k in self.sel) if i is not None] if interactive else []
+        o = self.opts(e, interactive, orb)
+        if o["orbital"] is not None:                       # wie IboView: Bindungen/-ordnungen aus der Wellenfunktion
+            bo = self.bond_orders(e)
+            if bo is not None:
+                mol.bonds = sorted(bo)
+                mol._fragments()
+                o["bond_orders"] = bo
+        F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), o, lay, fig, selection=sel,
+                            zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0), ext=e.get("ext"))
+        if interactive and self.numbering:
+            # neu vergeben: Nummer mittig auf dem Atom (der Auswahlring belegt den Platz daneben), nicht anklickbar,
+            # damit ein erneuter Klick das Atom trifft; noch nicht vergebene Labels grau
+            picked = {f"lbl_a{k}" for k in self.picks}
+            for key, ann in F.ann_items.items():
+                if key in picked:
+                    ann.xyann = (0.0, 0.0)
+                    ann.set_color("white")
+                    ann.set_fontweight("bold")
+                    ann.set_path_effects([PE.withStroke(linewidth=3.5, foreground=PICK_COLOR)])
+                    ann.contains = lambda ev: (False, {})
+                else:
+                    ann.set_color(OLD_COLOR)
+        return F
+
+    def render(self, push=True):
+        self.notes_begin()
+        try:
+            if self.dragger:
+                self.dragger.disconnect()
+                self.dragger = None
+            cfg = self.base_cfg()
+            self.host.set_figure_size(*cfg["figsize_in"])
+            self.F = self.build(self.fig)
+            self.preview_stack.setCurrentIndex(0 if self.F is None else 1)
+            if self.F is None:
+                self.fig.clear()
+            else:
+                self.dragger = XRAY.XrayMouse(self.F, self)
+            self.update_info()
+            self.canvas.draw_idle()
+            self.notes_show()
+        except Exception as ex:
+            import traceback
+            self.main.log_signal.emit(traceback.format_exc())
+            self.main.statusBar().showMessage(f"{T('err_title')}: {ex}", 8000)
+            self.notes_show(error=ex)
+        if push:                                       # auch wenn das Bild scheitert: Änderung speichern/rückgängig
+            self.main.push_undo()
+
+    def update_info(self):
+        e = self.entry()
+        g = self.geometry(e) if e else None
+        if g is None:
+            self.lbl_info.setText("")
+            self.update_si()
+            return
+        frames, els, _, _ = g
+        from elucida.si.lines import chem_plain              # Summenformel mit tiefgestellten Zahlen
+        bits = [T("dft_info", n=len(els), formula=chem_plain(XRAY.hill(els)))]
+        if len(frames) > 1:
+            bits.append(T("dft_frames", n=len(frames)))
+        if self.calc_of(e) is not None:
+            bits.append(T("dft_partner_used") if self.calc_geom(e["file"])[1] else T("dft_partner_none"))
+        if frames[-1]["comment"].strip():
+            bits.append(T("dft_comment", c=frames[-1]["comment"].strip()[:120]))
+        mol = self.F.mol if self.F is not None else None
+        if mol is not None and len(mol.fragments) > 1:
+            bits.append(T("dft_fragments", n=len(mol.fragments)))
+        bits.append(T("dft_renumbered") if e.get("order") else T("dft_file_order"))
+        self.lbl_info.setText("\n".join(bits))
+        self.update_orb_info()
+        self.update_si()
+
+    def update_si(self):
+        if hasattr(self, "mr_page"):
+            self.mr_page.sync()
+        e = self.entry()
+        c = self.calc_of(e) if e else None
+        self.btn_si_copy.setEnabled(c is not None)
+        self.btn_si_word.setEnabled(any(self.calc_of(x) is not None for x in self.entries()))
+        self.lbl_warn.setVisible(c is not None and bool(calc_warnings(c)))
+        self.si_stack.setCurrentIndex(0 if c is None else 1)
+        if c is None:
+            self.lbl_warn.setText("")
+            self.txt_si.setHtml("")
+            return
+        self.lbl_warn.setText("\n".join(calc_warnings(c)))
+        self.txt_si.setHtml(si_html(self.si_of(e)))
+
+    def si_opts_changed(self, *_):
+        if self._loading:
+            return
+        for k, cb in self.cb_si.items():
+            self.st["si_" + k] = cb.isChecked()
+        self.st["si_method"] = self.cmb_method.currentData()
+        self.update_si()
+        self.main.push_undo()
+
+    def copy_si(self):
+        e = self.entry()
+        p = self.si_of(e)
+        if p is not None:
+            from elucida.tabs.ir_ea import copy_rich
+            pl, ht = si_plain(p), si_html(p)
+            if method_mode(self.st.get("si_method")) == "top":
+                det = computational_details([(p["name"], self.calc_of(e))])
+                pl = "\n".join(t for t, _ in det) + "\n\n" + pl
+                ht = "".join(f"<p>{h}</p>" for _, h in det) + ht
+            copy_rich(pl, ht)
+            self.main.statusBar().showMessage(T("dft_si_copied"), 4000)
+
+    # -- Maus (Schnittstelle von XrayMouse) -----------------------------------------------
+    def hover_atom(self, k):
+        if self.F is None or k is None:
+            self.main.show_hover("")
+            return
+        e = self.entry()
+        a = self.F.mol.atoms[k]
+        cur = number_of(self.order(e, len(self.F.mol.atoms)), self.base())[k]
+        txt = self.label_text(a["el"], cur, k, e)
+        if e.get("order"):
+            txt += "   " + T("dft_hover_file", lab=f"{a['el']}{k + self.base()}")
+        self.main.show_hover(txt)
+
+    def atom_clicked(self, k):
+        """Im Modus „Nummerieren“: Atom erhält die nächste Nummer; erneuter Klick nimmt es wieder heraus.
+        Sonst: Auswahl zum Messen/Ausrichten wie im Tab X-Ray."""
+        if not self.numbering:
+            self.toggle_atom(k)
+            return
+        if self.F is None or k is None:
+            return
+        if k in self.picks:
+            self.picks.remove(k)
+        else:
+            self.picks.append(k)
+        self.update_num_status()
+        self.render(push=False)
+
+    def atom_double_clicked(self, k):
+        """Doppelklick: Label an/aus (beim Nummerieren nicht – dort zählt jeder Klick einzeln)."""
+        if self.numbering or self.F is None:
+            return
+        e = self.entry()
+        a = self.F.mol.atoms[k]
+        e.setdefault("label_on", {})[a["key"]] = not XRAY.label_shown(a, self.opts(e))
+        self.render()
+
+    def view_changed(self, R):
+        e = self.entry()
+        if e is not None:
+            XRAY.remember_view(self, e)
+            e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
+            XRAY.keep_scale(e, self.F)
+            self.render()
+
+    def pan_changed(self, pan):
+        e = self.entry()
+        if e is not None:
+            XRAY.remember_view(self, e)
+            e["pan"] = [round(float(pan[0]), 3), round(float(pan[1]), 3)]
+            self.render()
+
+    def zoom_changed(self, z):
+        e = self.entry()
+        if e is not None:
+            XRAY.remember_view(self, e, "zoom")
+            e["zoom"] = round(float(z), 4)
+            self.timer.start()
+
+    def labels_moved(self, layout):
+        e = self.entry()
+        if e is None or self.F is None or self.numbering:          # beim Nummerieren stehen Nummern auf den Atomen
+            return
+        lay = self.layout()
+        for key, pos in layout.items():
+            if key in lay or pos != self.F.auto_pos.get(key):
+                lay[key] = pos
+        self.main.push_undo()
+
+    def reset_view(self):
+        e = self.entry()
+        if e is not None:
+            XRAY.remember_view(self, e)
+            e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={})
+            e.pop("ext", None)
+            self.render()
+
+    def reset_display(self):
+        """Darstellung auf Standard (Stil, Radien, Bindungsdicke, Labels …; Ansicht und Labels je Atom der gewählten
+        Geometrie). Dateien, Namen, Nummerierung (order, Labelstil, Zählung ab 0) und SI-Auswahl bleiben."""
+        XRAY.reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout", "label_style",
+                                  "zero_based"), dict(label_on={}))
+
+    reset_defaults = reset_display
+
+    def reset_layout(self):
+        e = self.entry()
+        if e is not None:
+            e["layout"] = {}
+        self.render()
+
+    # -- Nummerieren ----------------------------------------------------------------------
+    def set_numbering(self, on):
+        self.numbering = bool(on) and self.entry() is not None
+        self.picks = []
+        if self.numbering and self.sel:                       # Klicks nummerieren jetzt, Messauswahl weg
+            self.sel = []
+            self.update_measure()
+        if self.btn_num.isChecked() != self.numbering:
+            self.btn_num.blockSignals(True)
+            self.btn_num.setChecked(self.numbering)
+            self.btn_num.blockSignals(False)
+        self.btn_num.setText(T("dft_num_cancel" if self.numbering else "dft_num_start"))
+        self.update_num_status()
+        self.render(push=False)
+
+    def stop_numbering(self):
+        if self.numbering or self.picks:
+            self.numbering, self.picks = False, []
+            self.btn_num.blockSignals(True)
+            self.btn_num.setChecked(False)
+            self.btn_num.blockSignals(False)
+            self.btn_num.setText(T("dft_num_start"))
+        self.update_num_status()
+
+    def undo_pick(self):
+        if self.picks:
+            self.picks.pop()
+            self.update_num_status()
+            self.render(push=False)
+
+    def update_num_status(self):
+        if not hasattr(self, "lbl_num"):
+            return
+        e = self.entry()
+        g = self.geometry(e) if e else None
+        n = len(g[1]) if g else 0
+        self.btn_undo_pick.setEnabled(self.numbering and bool(self.picks))
+        self.btn_apply.setEnabled(self.numbering and bool(self.picks))
+        if not self.numbering:
+            self.lbl_num.setText(T("dft_num_hint"))
+            self.lbl_num.setStyleSheet(HINT_CSS)
+            return
+        b = self.base()
+        txt = T("dft_num_next", next=len(self.picks) + b, k=len(self.picks), n=n)
+        if self.picks and len(self.picks) < n:
+            txt += "\n" + T("dft_num_rest_h" if self.st.get("h_follow") else "dft_num_rest",
+                            a=len(self.picks) + b, b=n - 1 + b)
+        self.lbl_num.setText(txt)
+        self.lbl_num.setStyleSheet("")
+
+    def apply_numbering(self):
+        e = self.entry()
+        g = self.geometry(e) if e else None
+        if g is None or not self.picks:
+            return
+        _, els, _, bonds = g
+        nbrs = None
+        if self.st.get("h_follow"):
+            nbrs = {k: [] for k in range(len(els))}
+            for a, b in bonds:
+                nbrs[a].append(b)
+                nbrs[b].append(a)
+        new = renumber(self.order(e, len(els)), self.picks, els, nbrs)
+        e["order"] = None if new == list(range(len(els))) else new
+        self.stop_numbering()
+        self.main.statusBar().showMessage(T("dft_num_done"), 6000)
+        self.render()
+
+    def reset_order(self):
+        e = self.entry()
+        if e is not None and (e.get("order") or e.get("ref_labels")):
+            e.update(order=None, ref_labels={}, ref_name="")
+            self.lbl_ref.setText("")
+            self.stop_numbering()
+            self.render()
+
+    # -- Vergleichsmodus: Nummerierung einer Vorlage übernehmen -------------------------------
+    def fill_refs(self):
+        """Vorlagen: die anderen Geometrien dieses Tabs und die Strukturen des X-Ray-Tabs (CIF)."""
+        cur = self.entry()
+        keep = self.cmb_ref.currentData()
+        self.cmb_ref.blockSignals(True)
+        self.cmb_ref.clear()
+        for x in self.entries():
+            if cur is not None and x["uid"] != cur["uid"]:
+                self.cmb_ref.addItem(f"DFT: {x.get('name') or Path(x['file']).stem}", f"dft:{x['uid']}")
+        xt = getattr(self.main, "xray_tab", None)
+        for x in (xt.entries() if xt is not None else []):
+            self.cmb_ref.addItem(f"X-Ray: {x.get('name') or x['block']}", f"xray:{x['uid']}")
+        if keep is not None and self.cmb_ref.findData(keep) >= 0:
+            self.cmb_ref.setCurrentIndex(self.cmb_ref.findData(keep))
+        self.cmb_ref.blockSignals(False)
+        self.btn_ref.setEnabled(cur is not None and self.cmb_ref.count() > 0)
+
+    def reference(self, data):
+        """-> (dict(els, xyz, bonds, order, labels), Name) einer Vorlage. CIF: Hauptmolekül (Fragment 0), Labels wie
+        in der CIF (erzeugte Atome mit Symmetriezusatz)."""
+        kind, uid = data.split(":", 1)                   # „dft:<uid>“ bzw. „xray:<uid>“
+        if kind == "dft":
+            x = next(x for x in self.entries() if x["uid"] == uid)
+            g = self.geometry(x)
+            if g is None:
+                raise ValueError(T("dft_ref_missing"))
+            return dict(els=g[1], xyz=g[2], bonds=g[3], order=self.order(x, len(g[1])), labels=None), \
+                x.get("name") or Path(x["file"]).stem
+        xt = self.main.xray_tab
+        x = next(x for x in xt.entries() if x["uid"] == uid)
+        mol = xt.molecule(x)
+        if mol is None:
+            raise ValueError(T("dft_ref_missing"))
+        idx = [k for k, a in enumerate(mol.atoms) if a.get("frag") == 0]
+        pos = {k: i for i, k in enumerate(idx)}
+        return dict(els=[mol.atoms[k]["el"] for k in idx], xyz=np.array([mol.atoms[k]["xyz"] for k in idx]),
+                    bonds=[(pos[a], pos[b]) for a, b in mol.bonds if a in pos and b in pos], order=None,
+                    labels={i: XRAY.atom_name(mol.atoms[k]) for i, k in enumerate(idx)}), x.get("name") or x["block"]
+
+    def apply_reference(self):
+        """Nummerierung der gewählten Vorlage auf die aktuelle Geometrie übertragen (Undo möglich)."""
+        e = self.entry()
+        g = self.geometry(e) if e else None
+        data = self.cmb_ref.currentData()
+        if g is None or data is None:
+            return
+        try:
+            ref, name = self.reference(data)
+            r = match_reference(ref, dict(els=g[1], xyz=g[2], bonds=g[3], order=self.order(e, len(g[1]))))
+        except (ValueError, StopIteration) as ex:
+            self.lbl_ref.setText(T("dft_ref_fail", err=str(ex)))
+            self.lbl_ref.setStyleSheet(WARN_CSS)
+            return
+        self.stop_numbering()
+        e["order"] = None if r["order"] == list(range(len(g[1]))) else r["order"]
+        e["ref_labels"] = {str(k): v for k, v in r["labels"].items()}
+        e["ref_name"] = name
+        bits = [T("dft_ref_done", ref=name, n=r["n_heavy"], nr=r["n_ref_heavy"], nt=r["n_tgt_heavy"], nh=r["n_h"],
+                  rmsd=f"{r['rmsd']:.2f}")]
+        warn = r["partial"] or bool(r["ambiguous"]) or r["truncated"]
+        if r["rmsd_alt"] is not None:
+            bits.append(T("dft_ref_sym", alt=f"{r['rmsd_alt']:.2f}"))
+        if r["ambiguous"]:
+            bits.append(T("dft_ref_amb", atoms=", ".join(r["ambiguous"][:12]) + (" …" if len(r["ambiguous"]) > 12 else "")))
+        if r["partial"]:
+            bits.append(T("dft_ref_partial"))
+        if r["truncated"]:
+            bits.append(T("dft_ref_truncated", n=MATCH_MAX))
+        rest = len(g[1]) - r["n_heavy"] - r["n_h"]
+        if rest:
+            bits.append(T("dft_ref_rest", n=rest))
+        if r["labels"]:
+            self.st["label_style"] = "ref"                    # CIF-Vorlage: Labels der Kristallstruktur zeigen
+            self.cmb_lstyle.blockSignals(True)
+            self.cmb_lstyle.setCurrentIndex(self.cmb_lstyle.findData("ref"))
+            self.cmb_lstyle.blockSignals(False)
+        self.lbl_ref.setText("\n".join(bits))
+        self.lbl_ref.setStyleSheet(WARN_CSS if warn else HINT_CSS)
+        self.render()
+
+    # -- Speichern / Export ---------------------------------------------------------------
+    def default_xyz_path(self, e):
+        name = core.safe_name(e.get("name") or Path(e["file"]).stem)
+        if self.main.project_dir:
+            return PRJ.export_dir(self.main.project_dir, PRJ.TABLES) / f"{name}.xyz"
+        return Path(e["file"]).with_name(f"{name}_renumbered.xyz")
+
+    def save_xyz(self, path=None):
+        """Aktuelle Reihenfolge als xyz; die Datei im Projekt (data/) wird nie überschrieben."""
+        e = self.entry()
+        g = self.geometry(e) if e else None
+        if g is None:
+            return None
+        if path is None:
+            path, _ = QFileDialog.getSaveFileName(self, T("dft_save_xyz"), str(self.default_xyz_path(e)),
+                                                  "xyz (*.xyz)")
+            if not path:
+                return None
+        path = Path(path)
+        if path.suffix.lower() != ".xyz":
+            path = path.with_suffix(".xyz")
+        if path.resolve() == Path(e["file"]).resolve():
+            self.main.error(T("dft_no_overwrite"))
+            return None
+        write_xyz(path, g[0], self.order(e, len(g[1])))
+        self.main.log_signal.emit(T("saved", p=str(path)))
+        self.main.statusBar().showMessage(T("saved", p=str(path)), 6000)
+        return path
+
+    def export_to(self, base: Path):
+        """Je Geometrie eine Abbildung (eigene Ansicht) und die xyz-Datei in der aktuellen Reihenfolge."""
+        base = Path(base).resolve()
+        base.parent.mkdir(parents=True, exist_ok=True)
+        es = [e for e in self.entries() if self.geometry(e) is not None]
+        extra = self.pages.export_to(base)               # Energieprofil, IRC, NICS (F4)
+        if not es:
+            if extra:
+                return extra
+            raise RuntimeError(T("tab_empty"))
+        files = []
+        names = export_names([e.get("name") or Path(e["file"]).stem for e in es])
+        for e, nm in zip(es, names):
+            name = base.name + ("_" + nm if len(es) > 1 else "")
+            stem = base.with_name(name)
+            fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+            FigureCanvasAgg(fig)
+            F = self.build(fig, e, interactive=False, orb=None)
+            if F is not None:
+                F.cfg["output"] = str(stem.with_suffix("." + F.cfg["_main_fmt"]))
+                files += F.export()
+            for k, item in enumerate(e.get("orbitals") or []):          # je Orbital eine Abbildung
+                if not Path(item["file"]).exists():
+                    continue
+                fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+                FigureCanvasAgg(fig)
+                F = self.build(fig, e, interactive=False, orb=k)
+                if F is not None:
+                    o = stem.with_name(stem.name + "_" + self.orb_short(e, item))
+                    F.cfg["output"] = str(o.with_suffix("." + F.cfg["_main_fmt"]))
+                    files += F.export()
+            g = self.geometry(e)
+            files.append(write_xyz(stem.with_suffix(".xyz"), g[0], self.order(e, len(g[1]))))
+        if any(self.calc_of(e) is not None for e in es):
+            files.append(self.save_docx(base.with_name(base.name + "_SI.docx")))
+            si = [si_plain(self.si_of(e)) for e in es if self.calc_of(e) is not None]
+            txt = base.with_name(base.name + "_SI.txt")
+            txt.write_text("\n\n\n".join(si) + "\n", encoding="utf-8")
+            files.append(txt)
+        return files + extra
+
+    def docx_blocks(self, img_dir):
+        """Blöcke für SI.write_docx: je Rechnung Name, Abbildung (eng beschnitten), Text, Konvergenz, Koordinaten."""
+        blocks = []
+        if method_mode(self.st.get("si_method")) == "top":
+            items = [(e.get("name") or Path(e["file"]).stem, self.calc_of(e)) for e in self.entries()
+                     if self.calc_of(e) is not None]
+            det = computational_details(items)
+            if det:
+                blocks.append(("heading", "Computational details"))
+                blocks += [("text", h) for _, h in det]
+        for n, e in enumerate(self.entries()):
+            p = self.si_of(e) if self.geometry(e) is not None else None
+            if p is None:
+                continue
+            if blocks:
+                blocks.append(("gap",))
+            blocks.append(("heading", p["name"]))
+            fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+            FigureCanvasAgg(fig)
+            F = self.build(fig, e, interactive=False, orb=None)
+            if F is not None:
+                svg = Path(img_dir) / f"{n}_{core.safe_name(p['name'])}_dft.svg"  # Namen können gleich sein
+                blocks.append(("image",) + XRAY.save_tight(F, svg))
+            blocks.append(("fields", p["fields"][1]))
+            k = p["conv_at"]
+            blocks += [("text", h) for _, h in p["extra"][:k]]
+            if p["conv"]:
+                blocks.append(("coords",) + tuple(p["conv"]))
+            blocks += [("text", h) for _, h in p["extra"][k:]]
+            blocks.append(("mono", p["coords"]))
+            if p["energies"]:
+                blocks.append(("energies", p["energies"][0], [p["energies"][2]]))
+            blocks += self.orbital_blocks(e, p["name"], img_dir, n)
+        return blocks
+
+    def orbital_caption(self, e, item, name):
+        """Unterschrift (HTML, englisch): „HOMO (−5.43 eV) of <b>X</b>, isosurface enclosing 80% of the orbital
+        density.“ bzw. mit absolutem Isowert."""
+        lab = self.orb_name(e, item)
+        if self.st.get("orb_iso_mode", "frac") == "abs":
+            iso = f"isovalue ±{self.st.get('orb_abs', ORB.ISO_ABS):g} a.u."
+        else:
+            iso = f"isosurface enclosing {self.st.get('orb_frac', ORB.ISO_FRACTION):g}% of the orbital density"
+        return f"{lab} of <b>{name}</b>, {iso}."
+
+    def orbital_blocks(self, e, name, img_dir, n=0):
+        """Word: je Orbital der Geometrie ein Bild (eng beschnitten) mit Unterschrift."""
+        out = []
+        for k, item in enumerate(e.get("orbitals") or []):
+            if not Path(item["file"]).exists():
+                continue
+            fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+            FigureCanvasAgg(fig)
+            F = self.build(fig, e, interactive=False, orb=k)
+            if F is None:
+                continue
+            svg = Path(img_dir) / f"{n}_{core.safe_name(name)}_{self.orb_short(e, item)}.svg"
+            out.append(("image",) + XRAY.save_tight(F, svg))
+            out.append(("text", self.orbital_caption(e, item, name)))
+        return out
+
+    def save_docx(self, path=None):
+        """SI-Abschnitt aller Rechnungen als Word-Datei (Stil wie die SI der Gruppe)."""
+        from elucida.si import lines as SI
+        if path is None:
+            if not self.main.ensure_project():
+                return None
+            path, _ = QFileDialog.getSaveFileName(
+                self, T("dft_si_word"), str(PRJ.export_dir(self.main.project_dir, PRJ.SI_DIR) /
+                                            (PRJ.export_stem(self.main.export_name(), self.STATE_KEY) + ".docx")),
+                "Word (*.docx)")
+            if not path:
+                return None
+        path = Path(path)
+        img_dir = (PRJ.work_dir(self.main.project_dir, self.STATE_KEY) if self.main.project_dir
+                   else path.parent / "si_images")
+        img_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            out = SI.write_docx(path, self.docx_blocks(img_dir), columns=2)     # zweispaltig wie die SI der Gruppe
+        except PermissionError:
+            self.main.error(T("report_locked", p=path))
+            return None
+        self.main.log_signal.emit(T("saved", p=str(out)))
+        return out

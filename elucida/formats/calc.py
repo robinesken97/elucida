@@ -1,0 +1,478 @@
+"""
+elucida/formats/calc.py - Geometrien und Rechnungen: xyz (auch Trajektorien, Ordnungszahlen), ORCA-6- und Gaussian-Ausgaben (Werte als Text wie in der Ausgabe), Kodierung (UTF-16 aus PowerShell).
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+import numpy as np
+from elucida.app.i18n import T
+from elucida.formats.elements import ELEMENTS, element_of
+
+
+
+
+def parse_xyz(text) -> list[dict]:
+    """-> [dict(comment, lines, els, xyz)] je Bild; lines = Atomzeilen unverändert (ohne Zeilenende)."""
+    lines = text.splitlines()
+    frames, i = [], 0
+    while i < len(lines):
+        head = lines[i].strip()
+        if not head:
+            i += 1
+            continue
+        try:
+            n = int(head.split()[0])
+        except ValueError:
+            raise ValueError(T("dft_bad_xyz", line=i + 1)) from None
+        if n <= 0 or i + 2 + n > len(lines):
+            raise ValueError(T("dft_short_xyz", n=n, line=i + 1))
+        comment = lines[i + 1]
+        raw = lines[i + 2:i + 2 + n]
+        els, xyz = [], []
+        for j, ln in enumerate(raw):
+            tok = ln.split()
+            try:
+                if len(tok) < 4:
+                    raise ValueError
+                xyz.append([float(t.replace("D", "E").replace("d", "e")) for t in tok[1:4]])
+            except ValueError:
+                raise ValueError(T("dft_bad_atom", line=i + 3 + j)) from None
+            s = tok[0]
+            if s.isdigit():
+                z = int(s)
+                if not 1 <= z <= len(ELEMENTS):
+                    raise ValueError(T("dft_bad_atom", line=i + 3 + j))
+                els.append(ELEMENTS[z - 1])
+            else:
+                els.append(element_of(s, s))
+        frames.append(dict(comment=comment, lines=[ln.rstrip("\r\n") for ln in raw], els=els,
+                           xyz=np.array(xyz, float)))
+        i += 2 + n
+    if not frames:
+        raise ValueError(T("dft_no_atoms"))
+    if any(f["els"] != frames[0]["els"] for f in frames):
+        raise ValueError(T("dft_frames_differ"))
+    return frames
+
+
+def read_text(path) -> str:
+    """Text mit Kodierungserkennung: ORCA unter Windows-PowerShell („orca x.inp > x.out“) schreibt UTF-16."""
+    return decode(Path(path).read_bytes())
+
+
+def decode(raw: bytes) -> str:
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    if raw[:3] == b"\xef\xbb\xbf":
+        return raw[3:].decode("utf-8", errors="replace")
+    head = raw[:4000]
+    if head and head.count(b"\x00") > len(head) // 4:            # UTF-16 ohne BOM
+        return raw.decode("utf-16-le" if head[1:2] == b"\x00" else "utf-16-be", errors="replace")
+    return raw.decode("utf-8", errors="replace")
+
+
+def read_xyz(path) -> list[dict]:
+    return parse_xyz(read_text(path))
+
+
+# Werte bleiben Text wie in der Ausgabe (keine Rundung), Zahlen zusätzlich als float, wo gerechnet wird.
+_E = r"(-?\d+\.\d+)"
+
+
+ORCA_THERMO = (("E_el", "Electronic energy"), ("ZPE", "Zero point energy"), ("U", "Total thermal energy"),
+               ("H", "Total Enthalpy"), ("TS", "Final entropy term"), ("G", "Final Gibbs free energy"),
+               ("G_E", "G-E(el)"))
+
+
+def _calc():
+    return dict(program="", version="", keywords=[], charge=None, mult=None, point_group="", solvation=None,
+                opt_requested=False,
+                opt_converged=None, conv=[], freq_requested=False, freqs=None, thermo={}, energy=None,
+                normal=False, geometry=None)
+
+
+def is_orca(text):
+    return "O   R   C   A" in text[:20000] or "Program Version 6" in text[:20000]
+
+
+def is_gaussian(text):
+    return "Entering Gaussian System" in text[:20000] or "Gaussian, Inc." in text[:20000]
+
+
+def parse_orca(text) -> dict:
+    """ORCA 6: Eingabezeile(n) „!“, Ladung/Multiplizität, CPCM/SMD, letzte Konvergenztabelle der Optimierung,
+    letzte Koordinaten, Frequenzen, Thermochemie. Abgebrochene Dateien liefern, was vorhanden ist (normal = False)."""
+    c = _calc()
+    c["program"] = "ORCA"
+    L = text.splitlines()
+    n = len(L)
+    in_input, input_done, solv = False, False, None
+    i = 0
+    while i < n:
+        ln = L[i]
+        s = ln.strip()
+        if not c["version"] and "Program Version" in ln:
+            m = re.search(r"Program Version\s+(\S+)", ln)
+            c["version"] = m.group(1) if m else ""
+        elif s == "INPUT FILE" and not input_done:
+            in_input = True
+        elif in_input:
+            if "END OF INPUT" in ln:
+                in_input, input_done = False, True
+            m = re.match(r"\|\s*\d+>\s?(.*)$", ln)
+            if m and m.group(1).lstrip().startswith("!"):
+                c["keywords"].append(m.group(1).split("#")[0].strip())          # „#“ = Kommentar
+        elif s.startswith("Total Charge") and "...." in s and c["charge"] is None:
+            c["charge"] = int(s.split()[-1])
+        elif s.startswith("Multiplicity") and "...." in s and c["mult"] is None:
+            c["mult"] = int(s.split()[-1])
+        elif s.startswith("FINAL SINGLE POINT ENERGY"):
+            m = re.search(_E, s)                 # danach evtl. „(Wavefunction not fully converged!)“
+            c["energy"] = m.group(1) if m else c["energy"]
+        elif "|Geometry convergence|" in ln:
+            rows, j = [], i + 1
+            while j < n and j < i + 15:
+                m = re.match(r"^\s*([A-Za-z][A-Za-z ]*?)\s+(-?\d\S*)\s+(\d\S*)\s+(YES|NO)\s*$", L[j])
+                if m:
+                    rows.append(m.groups())
+                elif rows and L[j].strip().startswith("---"):
+                    break
+                j += 1
+            c["conv"] = rows
+            c["opt_requested"] = True
+        elif "THE OPTIMIZATION HAS CONVERGED" in ln:
+            c["opt_converged"] = True
+        elif "OPTIMIZATION DID NOT CONVERGE" in ln.upper() or "maximum number of optimization cycles" in ln:
+            c["opt_converged"] = False
+        elif s == "CARTESIAN COORDINATES (ANGSTROEM)":
+            rows, j = [], i + 1
+            while j < n:
+                tok = L[j].split()
+                if len(tok) != 4:
+                    if rows or not (not tok or set(L[j].strip()) == {"-"}):     # Kopf: Strichlinie/Leerzeile
+                        break
+                    j += 1
+                    continue
+                rows.append((L[j].rstrip(), tok))
+                j += 1
+            if rows:
+                c["geometry"] = rows
+            i = j
+            continue
+        elif s == "VIBRATIONAL FREQUENCIES":
+            fr, j = [], i + 1
+            while j < n and j < i + 6 + 3 * 2000:
+                m = re.match(r"^\s*\d+:\s+" + _E + r"\s+cm\*\*-1", L[j])
+                if m:
+                    fr.append(m.group(1))
+                elif fr and L[j].strip():
+                    break
+                j += 1
+            c["freqs"] = fr
+            i = j
+            continue
+        elif s == "CPCM SOLVATION MODEL" or s.startswith("SMD"):
+            solv = c["solvation"] = c["solvation"] or dict(model="CPCM", solvent="", eps="", e_diel=None,
+                                                           e_cds=None)
+            if "SMD" in s:
+                solv["model"] = "SMD"
+        elif solv is not None and s.startswith("Solvent:") and not solv["solvent"]:
+            solv["solvent"] = s.split("...")[-1].strip()
+        elif solv is not None and s.startswith("Epsilon ") and "..." in s and not solv["eps"]:
+            solv["eps"] = s.split()[-1]
+        elif solv is not None and re.match(r"SMD.*(true|TRUE|\bON\b)", s):
+            solv["model"] = "SMD"
+        elif s.startswith("CPCM Dielectric"):
+            m = re.search(_E + r"\s*Eh", s)
+            if m and solv is not None:
+                solv["e_diel"] = m.group(1)
+        elif s.startswith("Free-energy (cav+disp)"):
+            m = re.search(_E + r"\s*Eh", s)
+            if m and solv is not None:
+                solv["e_cds"] = m.group(1)
+        elif s.startswith("THERMOCHEMISTRY AT"):
+            c["thermo"] = {}
+        elif s.startswith("Temperature") and "..." in s and "K" in s:
+            c["thermo"]["T"] = s.split("...")[-1].replace("K", "").strip()
+        elif s.startswith("Pressure") and "..." in s:
+            c["thermo"]["P"] = s.split("...")[-1].replace("atm", "").strip()
+        elif s.startswith("Point Group:"):
+            c["point_group"] = s.split(":", 1)[1].split(",")[0].strip()
+        elif s.startswith("Quasi RRHO"):
+            c["thermo"]["qrrho"] = s.split("...")[-1].strip().lower() == "true"
+        elif "ORCA TERMINATED NORMALLY" in ln:
+            c["normal"] = True
+        else:
+            for key, lab in ORCA_THERMO:
+                if s.startswith(lab):
+                    m = re.match(re.escape(lab) + r"\s+(?:\.\.\.)?\s*" + _E + r"\s*Eh", s)
+                    if m:
+                        c["thermo"][key] = m.group(1)
+                    break
+        i += 1
+    kw = " ".join(c["keywords"]).upper()
+    c["opt_requested"] = c["opt_requested"] or bool(re.search(r"\b\w*OPT\b", kw))
+    c["freq_requested"] = bool(re.search(r"\b(NUM|AN)?FREQ\b", kw)) or c["freqs"] is not None
+    from elucida.formats.multireference import parse_orca_mr
+    c["multireference"] = parse_orca_mr(text)
+    return c
+
+
+def parse_gaussian(text) -> dict:
+    """Gaussian (nicht mit echten Ausgaben geprüft): Route, Ladung/Multiplizität, letzte Standard-/Input-Orientierung,
+    letzte Konvergenztabelle, Frequenzen, Thermochemie, SCF-Energie, SCRF aus der Route."""
+    c = _calc()
+    c["program"] = "Gaussian"
+    L = text.splitlines()
+    n = len(L)
+    i = 0
+    while i < n:
+        ln = L[i]
+        s = ln.strip()
+        if not c["version"]:
+            m = re.search(r"Gaussian (\d\d), Revision ([A-Z]\.\d+)", ln) or re.search(r"Gaussian (\d\d):", ln)
+            if m:
+                c["version"] = m.group(1) + (f" Rev. {m.group(2)}" if m.lastindex and m.lastindex > 1 else "")
+        if s.startswith("#") and not c["keywords"] and i > 0 and L[i - 1].strip().startswith("---"):
+            route, j = [], i
+            while j < n and not L[j].strip().startswith("---"):
+                route.append(L[j][1:] if L[j].startswith(" ") else L[j])  # Umbruch auch mitten im Wort
+                j += 1
+            c["keywords"] = ["".join(route).strip()]
+            i = j
+            continue
+        if s.startswith("Charge =") and "Multiplicity =" in s and c["charge"] is None:
+            m = re.match(r"Charge\s*=\s*(-?\d+)\s+Multiplicity\s*=\s*(\d+)", s)
+            if m:
+                c["charge"], c["mult"] = int(m.group(1)), int(m.group(2))
+        elif s in ("Standard orientation:", "Input orientation:"):
+            rows, j = [], i + 5
+            while j < n and not L[j].strip().startswith("---"):
+                tok = L[j].split()
+                if len(tok) == 6 and tok[1].isdigit():
+                    z = int(tok[1])
+                    el = ELEMENTS[z - 1] if 1 <= z <= len(ELEMENTS) else "X"
+                    rows.append((f"  {el:<2s} {tok[3]:>14s} {tok[4]:>14s} {tok[5]:>14s}", [el] + tok[3:6]))
+                j += 1
+            if rows and (s == "Standard orientation:" or c.get("_orient") != "std"):
+                c["geometry"] = rows
+                c["_orient"] = "std" if s == "Standard orientation:" else "inp"
+            i = j
+            continue
+        elif s.startswith("SCF Done:"):
+            m = re.search(r"=\s*" + _E, s)
+            if m:
+                c["energy"] = m.group(1)
+        elif s.startswith("Item") and "Value" in s and "Threshold" in s:
+            rows = []
+            for j in range(i + 1, min(n, i + 6)):
+                m = re.match(r"^\s*(Maximum Force|RMS\s+Force|Maximum Displacement|RMS\s+Displacement)\s+(\S+)\s+"
+                             r"(\S+)\s+(YES|NO)", L[j])
+                if m:
+                    rows.append((re.sub(r"\s+", " ", m.group(1)),) + m.groups()[1:])
+            c["conv"] = rows
+            c["opt_requested"] = True
+        elif s.startswith("Full point group"):
+            tok = s.split()
+            c["point_group"] = tok[3] if len(tok) > 3 else ""
+        elif "Optimization completed." in s:
+            c["opt_converged"] = True
+        elif "Optimization stopped." in s:
+            c["opt_converged"] = False
+        elif s.startswith("Frequencies --") and not s.startswith("Frequencies ---"):    # „---“: hpmodes-Kopie
+            if not c.get("_fjob"):               # erste Frequenzzeile dieses Jobs: Werte eines früheren Jobs verwerfen
+                c["freqs"], c["thermo"], c["_fjob"] = [], {}, True
+                c.pop("_e_th", None)
+            c["freqs"] += s.split("--")[1].split()
+        elif s.startswith("Temperature") and "Kelvin" in s:
+            m = re.match(r"Temperature\s+(\S+)\s+Kelvin\.\s+Pressure\s+(\S+)\s+Atm", s)
+            if m:
+                c["thermo"].update(T=m.group(1), P=m.group(2))
+        elif s.startswith("Zero-point correction="):
+            c["thermo"]["ZPE"] = s.split("=")[1].split()[0]
+        elif s.startswith("Sum of electronic and thermal Enthalpies="):
+            c["thermo"]["H"] = s.split("=")[1].split()[0]
+        elif s.startswith("Sum of electronic and thermal Free Energies="):
+            c["thermo"]["G"] = s.split("=")[1].split()[0]
+            c["_e_th"] = c["energy"]             # E(el) desselben Jobs (spätere Single Points: andere Methode)
+        elif "Normal termination of Gaussian" in s:
+            c["normal"] = True
+        elif s.startswith(("Initial command:", "Link1:")) or "Error termination" in s:
+            c["normal"] = False                  # neuer Job (opt freq = zwei Jobs) bzw. Abbruch: gilt erst am Ende
+            if not s.startswith("Error"):        # neuer Job: eigene Orientierung/Frequenzen
+                c.pop("_orient", None)
+                c["_fjob"] = False
+        i += 1
+    route = " ".join(c["keywords"]).lower()
+    c["opt_requested"] = c["opt_requested"] or bool(re.search(r"\bopt\b", route))
+    c["freq_requested"] = bool(re.search(r"\bfreq\b", route)) or c["freqs"] is not None
+    m = re.search(r"scrf\s*=?\s*\(?([^)\s]*)", route)
+    if m:
+        opts = m.group(1)
+        sm = re.search(r"solvent\s*=\s*([\w,-]+)", opts)
+        c["solvation"] = dict(model="SMD" if "smd" in opts else "PCM", solvent=sm.group(1) if sm else "", eps="",
+                              e_diel=None, e_cds=None)
+    if c["energy"] is not None:
+        c["thermo"].setdefault("E_el", c.get("_e_th") or c["energy"])
+    for k in ("_orient", "_fjob", "_e_th"):
+        c.pop(k, None)
+    return c
+
+
+def read_calc(path) -> dict:
+    text = read_text(path)
+    if is_orca(text):
+        c = parse_orca(text)
+    elif is_gaussian(text):
+        c = parse_gaussian(text)
+    else:
+        raise ValueError(T("dft_not_calc"))
+    if not c["geometry"]:
+        raise ValueError(T("dft_no_geometry"))
+    return c
+
+
+def is_xyz(path):
+    return Path(path).suffix.lower() == ".xyz" and Path(path).is_file()
+
+
+def is_calc(path):
+    """ORCA-/Gaussian-Ausgabe (.out/.log, am Kopf erkannt)."""
+    p = Path(path)
+    if p.suffix.lower() not in (".out", ".log") or not p.is_file():
+        return False
+    try:
+        with open(p, "rb") as fh:
+            head = decode(fh.read(60000))
+    except OSError:
+        return False
+    return is_orca(head) or is_gaussian(head)
+
+
+def parse_irc(text) -> dict:
+    """ORCA-IRC (Ausgabe): Tabelle „IRC PATH SUMMARY“ -> dict(steps, E (Eh, Text), cols {Name: [Werte]}, ts (Index)).
+    Spalten nach max/RMS(G) sind Bindungslängen wie „B(C 26,H 23)“; die TS-Zeile trägt „<= TS“."""
+    L = text.splitlines()
+    k = max((i for i, ln in enumerate(L) if ln.strip() == "IRC PATH SUMMARY"), default=None)
+    if k is None:
+        raise ValueError(T("dft_irc_none"))
+    head = next((i for i in range(k, min(k + 10, len(L))) if L[i].lstrip().startswith("Step")), None)
+    if head is None:
+        raise ValueError(T("dft_irc_none"))
+    names = re.findall(r"[A-Za-z]+\([^)]*\)|\S+", L[head])[4:]       # Step, E(Eh), dE(kcal/mol), max(|G|), RMS(G)
+    names = names[1:] if names and names[0].startswith("RMS") else names
+    steps, E, cols, ts = [], [], {n: [] for n in names}, None
+    for ln in L[head + 1:]:
+        tok = ln.split()
+        if not tok or not tok[0].isdigit():
+            if steps:
+                break
+            continue
+        steps.append(int(tok[0]))
+        E.append(tok[1])
+        for n, v in zip(names, tok[5:5 + len(names)]):
+            cols[n].append(float(v))
+        if "<= TS" in ln:
+            ts = len(steps) - 1
+    if not steps or ts is None:
+        raise ValueError(T("dft_irc_none"))
+    return dict(steps=steps, E=E, cols=cols, ts=ts)
+
+
+def parse_nics(text) -> dict:
+    """Gaussian-NMR mit Geisteratomen (Bq, z. B. aus py.Aroma) -> dict(route, els, xyz (echte Atome), bq_xyz,
+    iso [ppm], tensor [3×3, ppm]). Mehrere Jobs (Link1): der letzte NMR-Block; Lagen aus der letzten Orientierung
+    davor (Ordnungszahl 0 = Bq), Tensor in derselben Orientierung, Route des Jobs davor."""
+    L = text.splitlines()
+    k = max((i for i, ln in enumerate(L) if "Magnetic shielding tensor (ppm)" in ln), default=None)
+    if k is None:
+        raise ValueError(T("dft_nics_none"))
+    route = ""
+    for i in range(k):
+        if L[i].strip().startswith("#") and i > 0 and L[i - 1].strip().startswith("---"):
+            j, parts = i, []
+            while j < len(L) and not L[j].strip().startswith("---"):
+                parts.append(L[j].strip())
+                j += 1
+            route = "".join(parts)                       # letzte Route vor dem Block = Job des Blocks
+    o = max((i for i in range(k) if L[i].strip() in ("Input orientation:", "Standard orientation:")), default=None)
+    if o is None:
+        raise ValueError(T("dft_nics_none"))
+    atoms = []
+    for ln in L[o + 5:]:
+        tok = ln.split()
+        if len(tok) != 6:
+            break
+        atoms.append((int(tok[1]), [float(v) for v in tok[3:6]]))
+    bq = {}
+    for i in range(k, len(L) - 3):
+        m = re.match(r"^\s*(\d+)\s+Bq\s+Isotropic =\s*" + _E, L[i])
+        if m:
+            vals = [float(v) for ln in L[i + 1:i + 4] for v in re.findall(r"=\s*" + _E, ln)]
+            if len(vals) == 9:
+                bq[int(m.group(1)) - 1] = (float(m.group(2)), np.array(vals).reshape(3, 3))
+    idx = [i for i, (z, _) in enumerate(atoms) if z == 0]
+    if not idx or any(i not in bq for i in idx):
+        raise ValueError(T("dft_nics_none"))
+    real = [(z, p) for z, p in atoms if z > 0]
+    return dict(route=route, els=[ELEMENTS[z - 1] if 0 < z <= len(ELEMENTS) else "X" for z, _ in real],
+                xyz=np.array([p for _, p in real]), bq_xyz=np.array([atoms[i][1] for i in idx]),
+                iso=np.array([bq[i][0] for i in idx]), tensor=np.array([bq[i][1] for i in idx]))
+
+
+HC_EV_NM = 1239.84198                  # h·c in eV·nm
+ESD_UNITS = ("nm", "cm-1", "eV")
+
+
+def esd_unit(path, x) -> tuple[str, str]:
+    """x-Einheit einer ESD-Spektrendatei -> (Einheit, Quelle "input"|"range"). Die Datei selbst nennt sie nicht (nur
+    „Energy“); %ESD UNIT steht in der .inp bzw. im Eingabe-Echo der .out daneben, sonst über den Wertebereich:
+    eV < 30, cm⁻¹ > 3000 (ab 3333 nm), dazwischen nm (ORCA-Beispiel in nm: 72–1153)."""
+    p = Path(path)
+    base = p.name.split(".spectrum")[0]
+    for sib in (p.with_name(base + ".out"), p.with_name(base + ".inp")):
+        try:
+            m = re.search(r"^\s*(?:\|\s*\d+>\s*)?UNIT\s+(CM-1|NM|EV)\b", read_text(sib), re.I | re.M)
+        except OSError:
+            continue
+        if m:
+            return {"CM-1": "cm-1", "NM": "nm", "EV": "eV"}[m.group(1).upper()], "input"
+    mx = float(np.nanmax(np.abs(x)))
+    return ("eV" if mx < 30 else "cm-1" if mx > 3000 else "nm"), "range"
+
+
+def read_esd_spectrum(path, unit=None) -> dict:
+    """ORCA-ESD-Spektrum (BASENAME.spectrum, auch .spectrum.rootN): Kopf „Energy TotalSpectrum IntensityFC
+    IntensityHT“, Tabulatoren -> dict(nm, total, fc, ht (aufsteigend nach nm), unit, unit_src). Intensität ohne
+    Einheit (nur normiert vergleichen). unit: Vorgabe (ESD_UNITS), sonst esd_unit."""
+    lines = read_text(path).splitlines()
+    head = next((i for i, ln in enumerate(lines) if ln.split()[:2] == ["Energy", "TotalSpectrum"]), None)
+    if head is None:
+        raise ValueError(T("esd_bad", name=Path(path).name))
+    rows = []
+    for ln in lines[head + 1:]:
+        tok = ln.split()
+        if len(tok) < 2:
+            continue
+        try:
+            rows.append([float(v) for v in tok[:4]] + [0.0] * (4 - len(tok[:4])))
+        except ValueError:
+            break
+    a = np.array(rows, float)
+    if len(a) < 2:
+        raise ValueError(T("esd_bad", name=Path(path).name))
+    src = "user"
+    if unit not in ESD_UNITS:
+        unit, src = esd_unit(path, a[:, 0])
+    x = a[:, 0]
+    ok = x > 0
+    a, x = a[ok], x[ok]
+    nm = x if unit == "nm" else 1e7 / x if unit == "cm-1" else HC_EV_NM / x
+    o = np.argsort(nm)
+    return dict(nm=nm[o], total=a[o, 1], fc=a[o, 2], ht=a[o, 3], unit=unit, unit_src=src)
+
+
+def esd_shift(nm, shift_ev):
+    """Wellenlängen um shift_ev (eV) in der Energie verschieben (wie die TD-DFT-Verschiebung)."""
+    return HC_EV_NM / (HC_EV_NM / np.asarray(nm, float) + shift_ev) if shift_ev else np.asarray(nm, float)
