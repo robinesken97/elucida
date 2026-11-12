@@ -72,10 +72,14 @@ paths:
 - Molmasse überall mit 2 Nachkommastellen, auch gespeichert (Nutzerwunsch 2026-11-10; nur die exakte Masse der HRMS hat
   mehr): Rechnung, Feld, Methodentext und Excel benutzen dieselbe Zahl. Schon gespeicherte Werte alter Verbindungen nicht
   nachträglich runden (ε könnte sich in der letzten Stelle ändern).
-- Beispielprojekt (`app/demo.py`, Nutzerwunsch 2026-11-10 „zusammenpassende Beispieldaten“): zwei **erfundene** Verbindungen,
-  S2 (Vorstufe: Synthese, NMR, IR, EA, HRMS, UV-Vis, X-Ray) und S3 (Produkt, alle Tabs); alle Daten einer Verbindung gehören
-  zu demselben Molekül und passen zueinander (`COMPOUNDS`, Generatoren `uvvis_csv`, `tddft_out`, `cv_cycles`, `make_cif`,
-  `make_orca` …; Geometrie aus RDKit mit festem Startwert). Dateinamen tragen den Verbindungsnamen. Neue Tabs/Formate dort
-  mit passenden Daten für S3 ergänzen, nie Fixtures des Selbsttests (`make_selftest_inputs`, `make_test_cif`,
-  `make_test_orca`) wiederverwenden und nie echte Messwerte.
+- Beispielprojekt (`app/demo.py`, Nutzerwunsch 2026-11-10 „zusammenpassende Beispieldaten“, 2026-11-12 „für jeden
+  einzelnen Tab“): zwei **erfundene** Verbindungen, S2 (Vorstufe: Synthese, NMR, IR, EA, HRMS, UV-Vis, X-Ray) und S3
+  (Produkt, **jeder** Tab: auch HRMS-Bericht + Bruker-.d mit demselben found, HOMO/LUMO-Cubes und NICS-Scan auf der
+  ORCA-Geometrie, Abbildung unter „Weitere“, H-Zelle um das E½ des CV); alle Daten einer Verbindung gehören zu demselben
+  Molekül und passen zueinander (`COMPOUNDS`, Generatoren `uvvis_csv`, `tddft_out`, `cv_cycles`, `make_cif`, `make_orca`,
+  `make_bruker_d` …; Geometrie aus RDKit mit festem Startwert). Der Selbsttest prüft die Zusammenhänge (HRMS ≤ 5 ppm,
+  EA ≤ 0.4, Hauptbande ±2 nm in ε/Overlay/SEC/Kinetik, E½ im SEC- und H-Zellen-Bereich, EPR-Kerne in der Formel).
+  Dateinamen tragen den Verbindungsnamen. Neue Tabs/Formate dort mit passenden Daten für S3 ergänzen, nie Fixtures des
+  Selbsttests (`make_selftest_inputs`, `make_test_cif`, `make_test_orca`) wiederverwenden und nie echte Messwerte. Die
+  README-Bilder (`tools/make_screenshots.py`) zeigen S3 mit diesen Daten.
 - Laborbuchnummer (`compound.labbook`): nur intern (Übersicht, Suche), nie in SI/Word/Datenpaket.

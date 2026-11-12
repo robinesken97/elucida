@@ -23,6 +23,9 @@
   several Cary files: acquisition times from the file, a series per spectrum, spectra coloured along time or absorbance
   at λ against time (optionally the maximum within ± n nm, relative to the first spectrum), first-order fit with k,
   95 % interval and half-life.
+- **SEC: "Heatmap" view.** The whole spectral series in one picture: wavelength against spectrum order, absorbance or
+  ΔA to the first spectrum as colour with a colour bar; the y axis shows the potential, without potentials the time or
+  the number.
 
 ### Changed
 - Fields with "auto" or "off" (all tabs): a symbol in the field resets with one click; a cleared field counts as
@@ -35,6 +38,9 @@
 - EPR: view and settings of the intensity evaluation sit in one card with a single view selector.
 - EPR: "Use this dark spectrum for all measurements" hides the dark spectrum itself in the figure; its check box in
   the list shows it again.
+- Example project: the product fills every tab with coherent invented data (now also HRMS raw data with spectrum
+  and chromatogram, HOMO/LUMO and a NICS scan in DFT, a figure in "Other"; H-Cell cycles around the same E½ as
+  the CV); the README screenshots show the tabs with these data.
 
 ### Fixed
 From a check of all calculations against the literature (formulas, constants and statistics were correct; these points

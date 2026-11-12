@@ -60,14 +60,23 @@ Information that has to be consistent. Elucida keeps all of it in one place.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/eps_dark_en.png" alt="UV-Vis tab"><br><sub>UV-Vis: every tab starts with a short guide</sub></td>
-    <td width="50%"><img src="docs/screenshots/project_dark_en.png" alt="Project page"><br><sub>Project with checklists</sub></td>
+    <td width="50%"><img src="docs/screenshots/eps_dark_en.png" alt="UV-Vis tab"><br><sub>UV-Vis: ε from the dilution series</sub></td>
+    <td width="50%"><img src="docs/screenshots/overlay_dark_en.png" alt="Overlay tab"><br><sub>Overlay: measured spectrum and TD-DFT</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/synthesis_dark_en.png" alt="Synthesis tab"><br><sub>Synthesis with the drawing editor</sub></td>
+    <td><img src="docs/screenshots/hrms_dark_en.png" alt="HRMS tab"><br><sub>HRMS: spectrum, isotope pattern and LC trace</sub></td>
+    <td><img src="docs/screenshots/cv_dark_en.png" alt="CV tab"><br><sub>CV: E½ and Nicholson ratio</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/epr_dark_en.png" alt="EPR tab"><br><sub>EPR: radical cation with fitted simulation</sub></td>
     <td><img src="docs/screenshots/xray_dark_en.png" alt="X-ray tab"><br><sub>X-ray</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/dft_dark_en.png" alt="DFT tab"><br><sub>DFT: geometry with the HOMO</sub></td>
+    <td><img src="docs/screenshots/project_dark_en.png" alt="Project page"><br><sub>Project with checklists</sub></td>
+  </tr>
 </table>
+<sub>All screenshots show the example project (Help → Open example project) with invented data.</sub>
 
 ## Download
 

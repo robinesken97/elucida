@@ -24,6 +24,9 @@
   einer oder mehreren Cary-Dateien: Aufnahmezeiten aus der Datei, je Spektrum eine Reihe, Spektren im Farbverlauf der
   Zeit oder Absorbanz bei λ gegen die Zeit (wahlweise Maximum im Bereich ± n nm, relativ zum ersten Spektrum), Fit
   erster Ordnung mit k, 95-%-Intervall und Halbwertszeit.
+- **SEC: Ansicht „Heatmap“.** Die ganze Spektrenserie in einem Bild: Wellenlänge gegen Spektrenfolge, Absorbanz oder
+  ΔA zum ersten Spektrum als Farbe mit Farbskala; die y-Achse zeigt das Potential, ohne Potentiale die Zeit oder die
+  Nummer.
 
 ### Geändert
 - Felder mit „auto“ oder „aus“ (alle Tabs): ein Symbol im Feld stellt mit einem Klick zurück; ein geleertes Feld gilt
@@ -36,6 +39,9 @@
 - EPR: Ansicht und Einstellungen der Intensitätsauswertung stehen in einer Karte mit einer Ansichtswahl.
 - EPR: „Dunkelspektrum für alle Messungen übernehmen“ blendet das Dunkelspektrum selbst im Bild aus; das Häkchen in
   der Liste zeigt es wieder.
+- Beispielprojekt: Das Produkt füllt jeden Tab mit zusammenpassenden erfundenen Daten (jetzt auch HRMS-Rohdaten mit
+  Spektrum und Chromatogramm, HOMO/LUMO und ein NICS-Scan im DFT-Tab, eine Abbildung unter „Weitere“; die H-Zelle
+  zykelt um dasselbe E½ wie das CV); die README-Bilder zeigen die Tabs mit diesen Daten.
 
 ### Behoben
 Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und Statistik stimmten; diese Punkte nicht):

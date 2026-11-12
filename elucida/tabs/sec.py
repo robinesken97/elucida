@@ -15,7 +15,8 @@ from pathlib import Path
 
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from PySide6.QtCore import Qt
+from matplotlib.ticker import MaxNLocator, NullLocator
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox)
 
@@ -25,6 +26,7 @@ from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
+from elucida.core import tddft as X
 from elucida.formats.bwspec import (read_bwspec, is_bwspec, is_merged, merged_quantity,  # noqa: E402,F401
                                     read_spectrum)                                   # (Leser in elucida/formats)
 
@@ -149,6 +151,8 @@ START_COLOR, END_COLOR = "#1764e8", "#e8231b"          # wie üblich: Ausgangssp
 # die englischen Namen stehen in der Bildunterschrift
 MID_COLORS = (("#2e9e3e", "green"), ("#f28e1c", "orange"), ("#8a2be2", "purple"), ("#17a2b8", "teal"))
 LAM_RANGE = (250.0, 850.0)                              # brauchbarer Bereich des Spektrometers (Ränder verrauscht)
+SEQ_CMAPS = ("viridis", "cividis", "magma")             # Heatmap A: sequentiell
+DIV_CMAPS = ("RdBu_r", "PuOr_r", "coolwarm")            # Heatmap ΔA: divergierend, Mitte = 0
 
 
 def _hex(c):
@@ -170,6 +174,73 @@ def _floats(text):
     return out
 
 
+class SECFigure(X.SimpleFigure):
+    """SimpleFigure + Heatmap (cfg["heatmap"]): ein Rasterbild genau im Achsenbereich (kein Clip nötig, MuPDF
+    ignoriert Clip-Pfade), y-Teilstriche mit E/t/Nr., Farbskala rechts neben der dafür schmaleren Achse."""
+    cax = None
+
+    def _plot(self, sticks):
+        super()._plot(sticks)
+        h = self.cfg.get("heatmap")
+        if not h:
+            return
+        cfg, ax = self.cfg, self.ax
+        im = ax.imshow(h["img"], extent=h["extent"], origin="lower", aspect="auto", cmap=h["cmap"], vmin=h["vmin"],
+                       vmax=h["vmax"], interpolation="antialiased", zorder=0.5)
+        ax.set_xlim(h["extent"][:2])
+        ax.set_ylim(h["extent"][2:])
+        ax.yaxis.set_minor_locator(NullLocator())         # Nebenstriche gälten der Reihenfolge, nicht E oder t
+        ax.set_yticks(h["yticks"])
+        ax.set_yticklabels(h["yticklabels"])
+        self.cax = self.fig.add_axes([0.9, 0.1, 0.02, 0.8])
+        cb = self.fig.colorbar(im, cax=self.cax)
+        cb.set_label(TABS.core.fmt_text(h["clabel"], cfg), fontsize=cfg["font_size"] * 1.3)
+        sc = cfg.get("scale", 1.0)
+        self.cax.tick_params(direction=cfg["tick_direction"], length=3 * sc, width=max(0.5, 0.8 * sc))
+        cb.outline.set_linewidth(ax.spines["left"].get_linewidth())
+
+    def _fit_axes(self, pad_in=0.06):
+        super()._fit_axes(pad_in)
+        if self.cax is None:
+            return
+        rend = self._renderer()
+        fw = self.fig.get_size_inches()[0] * self.fig.dpi
+        p = self.ax.get_position()
+        bar, gap = 0.14 * self.fig.dpi / fw, 0.12 * self.fig.dpi / fw
+        self.cax.set_position([p.x1, p.y0, bar, p.height])           # vorläufig: Breite der Beschriftung messen
+        over = (self.cax.get_tightbbox(rend).x1 - self.cax.get_window_extent(rend).x1) / fw
+        width = p.width - bar - gap - over
+        self.ax.set_position([p.x0, p.y0, width, p.height])
+        self.cax.set_position([p.x0 + width + gap, p.y0, bar, p.height])
+
+
+class HeatHover:
+    """Maus über der Heatmap: λ, Spektrum (E, t oder Nr.) und Wert am nächsten Messpunkt (nicht am Bildpixel)."""
+
+    def __init__(self, F, heat, on_text):
+        self.F, self.h, self.on_text = F, heat, on_text
+        c = F.fig.canvas
+        self.cids = [c.mpl_connect("motion_notify_event", self.move),
+                     c.mpl_connect("figure_leave_event", lambda _e: on_text(""))]
+
+    def disconnect(self):
+        for cid in self.cids:
+            self.F.fig.canvas.mpl_disconnect(cid)
+        self.on_text("")
+
+    def text_at(self, x, y):
+        h = self.h
+        j = int(np.clip(round(y) - 1, 0, len(h["Z"]) - 1))
+        k = int(np.argmin(np.abs(h["lam"] - x)))
+        return T("sec_hover_heat", lam=float(h["lam"][k]), y=h["hover"][j], q=h["q"],
+                 v=f"{float(h['Z'][j, k]):.4f}".replace("-", "−"))
+
+    def move(self, ev):
+        if ev.inaxes is not self.F.ax or ev.xdata is None:
+            return self.on_text("")
+        self.on_text(self.text_at(ev.xdata, ev.ydata))
+
+
 class SECTab(TABS.FigureTab):
     STATE_KEY = "sec"
     GUIDE, GUIDE_ACTION = "sec", ("guide_add", "choose_spectra")
@@ -183,7 +254,7 @@ class SECTab(TABS.FigureTab):
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,
                          electrode="Ag/AgNO₃", ref_from_cv=False, cap_solvent="", cap_start="", cap_mid="",
                          cap_end="", quantity="abs", map_mode="none", map_start=0.0, map_step=0.0, map_table="",
-                         map_ok=False, import_note="")
+                         map_ok=False, import_note="", hm_cmap="viridis", hm_cmap_d="RdBu_r", hm_cmax=0.0)
 
 
     def arrange(self):
@@ -263,7 +334,7 @@ class SECTab(TABS.FigureTab):
         g = QGroupBox(T("sec_display"))
         f = make_form(g)
         self.cmb_mode = QComboBox()
-        for key in ("spectra", "trace"):
+        for key in ("spectra", "trace", "heatmap"):
             self.cmb_mode.addItem(T("sec_mode_" + key), key)
         self.cmb_mode.setCurrentIndex(max(0, self.cmb_mode.findData(st["mode"])))
         f.addRow(T("sec_mode"), self.cmb_mode)
@@ -290,13 +361,31 @@ class SECTab(TABS.FigureTab):
                 self.ed_mid = QLineEdit(st["mid"])
                 self.ed_mid.setPlaceholderText(T("sec_mid_ph_e"))
                 self.ed_mid.setToolTip(T("sec_mid_tip"))
-                f.addRow(T("sec_mid"), self.ed_mid)
+                self.lbl_mid = QLabel(T("sec_mid"))
+                f.addRow(self.lbl_mid, self.ed_mid)
         self.ed_bands = QLineEdit(st["bands"])
         self.ed_bands.setPlaceholderText(T("sec_bands_ph"))
-        f.addRow(T("sec_bands"), self.ed_bands)
+        self.lbl_bands = QLabel(T("sec_bands"))
+        f.addRow(self.lbl_bands, self.ed_bands)
         self.ed_trace = QLineEdit(st["trace_lams"])
         self.ed_trace.setPlaceholderText(T("sec_trace_ph"))
-        f.addRow(T("sec_trace"), self.ed_trace)
+        self.lbl_trace = QLabel(T("sec_trace"))
+        f.addRow(self.lbl_trace, self.ed_trace)
+        self.cmb_hm_value = QComboBox()                  # Heatmap: A oder ΔA – derselbe Schlüssel diff wie der Chip
+        for key in ("abs", "diff"):
+            self.cmb_hm_value.addItem(T("sec_hm_" + key), key)
+        self.cmb_hm_value.setCurrentIndex(int(bool(st["diff"])))
+        self.lbl_hm_value = QLabel(T("sec_hm_value"))
+        f.addRow(self.lbl_hm_value, self.cmb_hm_value)
+        self.cmb_hm_cmap = QComboBox()                   # Heatmap: Liste folgt A/ΔA (_fill_cmaps)
+        self.cmb_hm_cmap.setToolTip(T("sec_hm_cmap_tip"))
+        self.lbl_hm_cmap = QLabel(T("sec_hm_cmap"))
+        f.addRow(self.lbl_hm_cmap, self.cmb_hm_cmap)
+        self.sp_hm_cmax = QDoubleSpinBox(decimals=3, minimum=0, maximum=1e6, singleStep=0.05, value=st["hm_cmax"])
+        self.sp_hm_cmax.setSpecialValueText(T("auto"))
+        self.sp_hm_cmax.setToolTip(T("sec_hm_cmax_tip"))
+        self.lbl_hm_cmax = QLabel(T("sec_hm_cmax"))
+        f.addRow(self.lbl_hm_cmax, self.sp_hm_cmax)
         self.cb_fit = QCheckBox(T("sec_fit"))
         self.cb_fit.setToolTip(T("sec_fit_tip"))
         self.cb_fit.setChecked(st["fit"])
@@ -314,9 +403,50 @@ class SECTab(TABS.FigureTab):
             w_.valueChanged.connect(self.changed)
         self.cb_from_cv.toggled.connect(self.changed)
         self.cmb_mode.currentIndexChanged.connect(self.changed)
+        self.cmb_mode.currentIndexChanged.connect(self._view_fields)
+        self._fill_cmaps()
+        self.cmb_hm_value.currentIndexChanged.connect(lambda i: self.cb_diff.setChecked(bool(i)))
+        self.cb_diff.toggled.connect(self._sync_hm_value)
+        self.cmb_hm_cmap.currentIndexChanged.connect(self.changed)
+        self.sp_hm_cmax.valueChanged.connect(self.changed)
         for ed in (self.ed_mid, self.ed_bands, self.ed_trace, self.ed_electrode):
             ed.editingFinished.connect(self.changed)
         self._show_files()
+        QTimer.singleShot(0, self._view_fields)           # nach tidy (Chip-Zeilen) und der Karte „Achsen“ (sp_ymax)
+
+    def _view_fields(self, *_):
+        """Nur die Felder der gewählten Ansicht zeigen (Muster EPR); Chip-Zeilen ohne sichtbaren Chip entfallen von
+        selbst (ChipRow.sync)."""
+        v = self.cmb_mode.currentData()
+        own = {"spectra": (self.cb_highlight, self.cb_gradient, self.lbl_mid, self.ed_mid, self.lbl_bands,
+                           self.ed_bands),
+               "trace": (self.lbl_trace, self.ed_trace, self.cb_fit),
+               "heatmap": (self.lbl_hm_value, self.cmb_hm_value, self.lbl_hm_cmap, self.cmb_hm_cmap, self.lbl_hm_cmax,
+                           self.sp_hm_cmax)}
+        for key, ws in own.items():
+            for w_ in ws:
+                w_.setVisible(key == v)
+        self.cb_diff.setVisible(v != "heatmap")            # dort steht A/ΔA als Auswahl in der Karte Darstellung
+        form = self.sp_ymax.parentWidget().layout()        # y-Maximum gilt nicht für die Heatmap (y = Reihenfolge)
+        if isinstance(form, QFormLayout) and form.indexOf(self.sp_ymax) >= 0:
+            form.setRowVisible(self.sp_ymax, v != "heatmap")
+
+    def _sync_hm_value(self, on):
+        self.cmb_hm_value.blockSignals(True)
+        self.cmb_hm_value.setCurrentIndex(int(on))
+        self.cmb_hm_value.blockSignals(False)
+
+    def _fill_cmaps(self):
+        """Farbskalen passend zur Größe: A sequentiell, ΔA divergierend (Mitte 0); jede Liste merkt ihre Wahl."""
+        names, cur = (DIV_CMAPS, self.st["hm_cmap_d"]) if self.cb_diff.isChecked() else (SEQ_CMAPS, self.st["hm_cmap"])
+        if [self.cmb_hm_cmap.itemData(i) for i in range(self.cmb_hm_cmap.count())] == list(names):
+            return
+        self.cmb_hm_cmap.blockSignals(True)
+        self.cmb_hm_cmap.clear()
+        for n_ in names:
+            self.cmb_hm_cmap.addItem(n_.removesuffix("_r"), n_)
+        self.cmb_hm_cmap.setCurrentIndex(max(0, self.cmb_hm_cmap.findData(cur)))
+        self.cmb_hm_cmap.blockSignals(False)
 
     def _set(self, k, v):
         self.st[k] = v
@@ -359,7 +489,12 @@ class SECTab(TABS.FigureTab):
                        bands=self.ed_bands.text().strip(), trace_lams=self.ed_trace.text().strip(),
                        fit=self.cb_fit.isChecked(), map_mode=self.cmb_map.currentData(),
                        map_start=self.sp_map_start.value(), map_step=self.sp_map_step.value(),
-                       map_table=self.ed_map.toPlainText(), map_ok=self.cb_map_ok.isChecked())
+                       map_table=self.ed_map.toPlainText(), map_ok=self.cb_map_ok.isChecked(),
+                       hm_cmax=self.sp_hm_cmax.value())
+        cm = self.cmb_hm_cmap.currentData()                  # Liste kann noch die der anderen Größe sein
+        if cm:
+            self.st["hm_cmap_d" if cm in DIV_CMAPS else "hm_cmap"] = cm
+        self._fill_cmaps()
 
     def choose_spectra(self):
         if not self.main.ensure_project():
@@ -495,6 +630,7 @@ class SECTab(TABS.FigureTab):
         sp, E = self.series()
         self.fits = []                                     # (λ, Nernst-Fit) für den SI-Text
         self.ref_label = None
+        self._heat = None                                  # Heatmap: Daten für Hover, CSV und Methodentext
         if not sp:
             self.lbl_info.setText("")
             return None
@@ -520,6 +656,9 @@ class SECTab(TABS.FigureTab):
                if Eax is not None else T("sec_range_info", n=len(sel)))
         self.lbl_range.setText(rng)
         info = []
+        lim = (lam0.min(), lam0.max()) if sp[0].get("merged") else LAM_RANGE   # NIR nicht abschneiden
+        x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(lim[0], lam0.min()),
+                                                                      min(lim[1], lam0.max()))
         if st["mode"] == "trace":
             lams = _floats(st["trace_lams"]) or [float(lam0[np.argmax(np.abs(ys(sp[sel[-1]]) - ys(sp[sel[0]])))])]
             xs = Eax[sel] if Eax is not None else np.arange(1, len(sel) + 1, dtype=float)
@@ -549,6 +688,11 @@ class SECTab(TABS.FigureTab):
             cfg["xlabel"] = f"E [V vs. {CV.axis_ref(ref_label)}]" if Eax is not None else T("sec_index")
             cfg["ylabel"] = (("Δ raw signal" if st["diff"] else "raw signal") if st["quantity"] == "raw"
                              else ("ΔA" if st["diff"] else "A")) + " [a.u.]"
+        elif st["mode"] == "heatmap":
+            curves, labels = [], []
+            cfg["heatmap"] = self._heatmap(sp, sel, Eax, ref_label, lam0, ys, x0, x1)
+            cfg["xlim"], cfg["ylim"] = list(cfg["heatmap"]["extent"][:2]), list(cfg["heatmap"]["extent"][2:])
+            cfg["xlabel"], cfg["ylabel"] = "wavelength [nm]", self._heat["ylabel"]
         else:
             curves, labels = [], []
             mids = self.mid_indices(sel, Eax) if st["highlight"] else []
@@ -581,9 +725,6 @@ class SECTab(TABS.FigureTab):
                 # Farbe der hervorgehobenen Kurve mit der größten |A| an dieser Wellenlänge
                 col = max(ys_marked, key=lambda yc: abs(float(np.interp(lam, lam0, yc[0]))))[1]
                 labels.append({"key": f"label_sec_{lam:g}", "lam": lam, "text": f"λ =  {lam:g} nm", "color": col})
-            lim = (lam0.min(), lam0.max()) if sp[0].get("merged") else LAM_RANGE   # NIR nicht abschneiden
-            x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(lim[0], lam0.min()),
-                                                                          min(lim[1], lam0.max()))
             cfg["xlim"] = [x0, x1]
             win = (lam0 >= x0) & (lam0 <= x1)
             vals = np.concatenate([c["y"][win] for c in curves])
@@ -606,6 +747,88 @@ class SECTab(TABS.FigureTab):
         self.lbl_info.setText("\n".join(info))
         return cfg, curves, labels, []
 
+    def _heatmap(self, sp, sel, Eax, ref_label, lam0, ys, x0, x1):
+        """Heatmap: Zeilen = gezeigte Spektren in Messreihenfolge (erstes unten), Spalten = λ. Das Bild liegt genau im
+        Datenbereich [x0, x1] × [0.5, n + 0.5] (MuPDF ignoriert Clip-Pfade): Pixelmitten auf einem gleichmäßigen Raster,
+        linear interpoliert. y-Beschriftung: E (nur wenn Potentiale da sind), sonst Zeit seit dem ersten gezeigten
+        Spektrum aus den Dateien, sonst die Nummer – nie erfunden."""
+        st = self.st
+        win = (lam0 >= x0) & (lam0 <= x1)
+        lam_w = lam0[win]
+        Z = np.array([ys(sp[i])[win] for i in sel])
+        m = max(2, len(lam_w))
+        grid = x0 + (np.arange(m) + 0.5) * (x1 - x0) / m
+        img = np.array([np.interp(grid, lam_w, z) for z in Z])
+        n = len(sel)
+        fin = Z[np.isfinite(Z)]
+        raw = st["quantity"] == "raw"
+        q = ("Δ raw signal" if st["diff"] else "raw signal") if raw else ("ΔA" if st["diff"] else "absorbance")
+        if st["diff"]:                                     # Mitte der divergierenden Skala = 0
+            top = st["hm_cmax"] if st["hm_cmax"] > 0 else (float(np.max(np.abs(fin))) if fin.size else 0.0) or 1.0
+            vmin, vmax = -top, top
+            cmap = st["hm_cmap_d"] if st["hm_cmap_d"] in DIV_CMAPS else DIV_CMAPS[0]
+        else:
+            vmax = st["hm_cmax"] if st["hm_cmax"] > 0 else (float(fin.max()) if fin.size else 1.0)
+            vmin = min(float(fin.min()) if fin.size else 0.0, vmax)
+            cmap = st["hm_cmap"] if st["hm_cmap"] in SEQ_CMAPS else SEQ_CMAPS[0]
+        if Eax is not None:
+            kind, yv = "E", np.array([Eax[i] for i in sel])
+            ylab = [f"{v:.2f}".replace("-", "−") for v in yv]
+            hover = [f"E = {CV._fmt_e(v)} V" for v in yv]
+            ylabel = f"E [V vs. {CV.axis_ref(ref_label)}]"
+        elif all(sp[i]["time"] is not None for i in sel):
+            kind = "t"
+            yv = np.array([(sp[i]["time"] - sp[sel[0]]["time"]).total_seconds() for i in sel])
+            unit, f_, nd = ("min", 60.0, 1) if yv.max() >= 600 else ("s", 1.0, 0)
+            ylab = [f"{v / f_:.{nd}f}" for v in yv]
+            hover = [f"t = {v:.0f} s" for v in yv]
+            ylabel = f"t [{unit}]"
+        else:
+            kind, yv = "n", np.array([i + 1 for i in sel], float)
+            ylab = [str(i + 1) for i in sel]
+            hover = [f"{T('sec_index')} {i + 1}" for i in sel]
+            ylabel = T("sec_index")
+        ticks = [int(v) for v in MaxNLocator(nbins=8, integer=True).tick_values(1, n) if 1 <= v <= n] or [1]
+        self._heat = dict(kind=kind, lam=lam_w, Z=Z, yv=yv, hover=hover, q=q, m=m, x0=x0, x1=x1, ylabel=ylabel,
+                          nums=[i + 1 for i in sel])
+        return dict(img=img, extent=(float(x0), float(x1), 0.5, n + 0.5), cmap=cmap, vmin=vmin, vmax=vmax,
+                    clabel=q + " [a.u.]", yticks=ticks, yticklabels=[ylab[k - 1] for k in ticks])
+
+    def build(self, fig):
+        quiet = TABS.core.LOG
+        TABS.core.LOG = lambda *a: None
+        try:
+            spec = self.figure_spec()
+        finally:
+            TABS.core.LOG = quiet
+        if spec is None:
+            return None
+        cfg, curves, labels, sticks = spec
+        TABS.core.setup_fonts(TABS.plt, cfg)
+        return SECFigure(TABS.plt, cfg, curves, labels, self.layout(), fig=fig, sticks=sticks)
+
+    def render(self):
+        super().render()
+        if self.F is not None and self.F.cfg.get("heatmap") and self.hover is not None:
+            self.hover.disconnect()                        # Kurven-Hover hat hier nichts: eigener für die Pixel
+            self.hover = HeatHover(self.F, self._heat, self.main.show_hover)
+
+    def export_to(self, base):
+        out = super().export_to(base)
+        h = self._heat if self.st["mode"] == "heatmap" else None
+        if h:                                              # Daten der Heatmap statt einer leeren Kurventabelle
+            import csv
+            data = next(p for p in out if p.name.endswith("_data.csv"))
+            ycol = h["kind"] != "n"
+            head = ["spectrum no."] + ([TABS._plain(h["ylabel"])] if ycol else []) + [f"{v:.10g} nm" for v in h["lam"]]
+            with open(data, "w", newline="", encoding="utf-8-sig") as fh:
+                w_ = csv.writer(fh)
+                w_.writerow(head)
+                for k, z in enumerate(h["Z"]):
+                    w_.writerow([h["nums"][k]] + ([f"{h['yv'][k]:.10g}"] if ycol else []) +
+                                [f"{v:.10g}" if np.isfinite(v) else "" for v in z])
+        return out
+
     def si_caption(self, name):
         """Wie in der SI: „UV-Vis-SEC of <b>3b</b> in THF. Color coding: <b>neutral</b> (blue), <b>dication</b> (red).
         Starting potential (vs. Ag/AgNO3): −1.30 V; End potential (vs. Ag/AgNO3): 0.70 V.“ Potentiale aus dem Scan
@@ -622,13 +845,25 @@ class SECTab(TABS.FigureTab):
         title = method if st["mode"] != "trace" else f"Absorbance at selected wavelengths during {method}"
         if st["quantity"] == "raw":
             title = f"Raw detector signal during {method}"
+        heat = st["mode"] == "heatmap"
+        if heat:
+            raw = st["quantity"] == "raw"
+            what = (("change of the raw detector signal" if raw else "absorbance change (Δ<i>A</i>)")
+                    + " relative to the first spectrum shown") if st["diff"] else \
+                ("raw detector signal" if raw else "absorbance")
+            title = f"Color map of the {what} during {method}"
         h = f"{title} of <b>{html.escape(name)}</b>"
         if st.get("cap_solvent"):
             h += " in " + chem_html(st["cap_solvent"])
         h += "."
         sel = self.selection(len(sp)) if sp else []
         off, lab = self.e_offset()
-        if st["mode"] != "trace" and st["highlight"] and not st["gradient"]:
+        if heat and sel:
+            label = ("the applied potential" if E is not None else
+                     "the time since the first spectrum shown" if all(sp[i]["time"] is not None for i in sel) else
+                     "the spectrum number")
+            h += f" Spectra are arranged from bottom to top in the order of acquisition and labeled with {label}."
+        if st["mode"] == "spectra" and st["highlight"] and not st["gradient"]:
             # nur Farben, die im Bild vorkommen: Zwischenspektren nur, wenn sie hervorgehoben sind
             mids = self.mid_indices(sel, None if E is None else E - off, with_pos=True) if sel else []
             names = [x.strip() for x in st.get("cap_mid", "").split(";")]
@@ -659,15 +894,24 @@ class SECTab(TABS.FigureTab):
         fits = getattr(self, "fits", [])
         st = self.st
         source = self.map_sentence() if self.is_merged_series() else ""
+        clock = ("Each spectrum was assigned the potential at its acquisition time, interpolated from the "
+                 "time-resolved potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "")
+                 + ".")
+        q = "raw signal" if st["quantity"] == "raw" else "absorbance"
+        steps = ((f"Each spectrum was corrected by subtracting its mean {q} between 780 and 820 nm. "
+                  if getattr(self, "_bl_applied", False) else "")
+                 + ("Difference spectra were obtained by subtracting the first spectrum shown. " if st["diff"] else ""))
+        heat = getattr(self, "_heat", None) if st["mode"] == "heatmap" else None
+        if heat:                                           # Heatmap: nur Schritte, die das Bild wirklich benutzt
+            return " ".join(x for x in (
+                (source or clock) if heat["kind"] == "E" else "", steps.strip(),
+                f"For the color map, each spectrum was linearly interpolated onto an evenly spaced grid of {heat['m']} "
+                f"wavelengths between {heat['x0']:g} and {heat['x1']:g} nm.") if x)
         if not fits:
             return source
         ref = str(self.ref_label or st["electrode"]).replace("Fc$^{0/+}$", "Fc0/+")
-        m = [source or "Each spectrum was assigned the potential at its acquisition time, interpolated from the "
-             "time-resolved potentiostat record" + (f" (time offset {st['offset_s']:g} s)" if st["offset_s"] else "") + ".",
-             ("Each spectrum was corrected by subtracting its mean absorbance between 780 and 820 nm. "
-              if getattr(self, "_bl_applied", False) else "")
-             + ("Difference spectra were obtained by subtracting the first spectrum shown. "
-                if st["diff"] else "")
+        m = [source or clock,
+             steps
              + "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "
              "A(E) = A_red + (A_ox − A_red)/[1 + exp(−nF(E − E1/2)/RT)] (T = 298.15 K); E1/2 and n were obtained by a "
              "grid search (E1/2 in 2 mV steps, n = 0.30–3.00 in steps of 0.05) with A_red and A_ox determined by "

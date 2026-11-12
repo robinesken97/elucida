@@ -19,6 +19,7 @@ from elucida.tabs import epr as EPR
 from elucida.core import images as IMG
 from elucida.tabs import sec as SEC
 from elucida.tabs import xray as XRAY
+from elucida.formats.bruker_ms import BAF_LINE_MAGIC
 
 
 def write_dta(path, cycles, rate, cycle_col=False, times=None):
@@ -406,10 +407,12 @@ def make_cif(path, name, m, P, cell, place):
     return Path(path)
 
 
-def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("thf", "7.2500", "TETRAHYDROFURAN")):
+def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("thf", "7.2500", "TETRAHYDROFURAN"),
+              homo_lumo=(-5.12, -1.62)):
     """ORCA-6-Ausgabe (nur die gelesenen Abschnitte, Format wie `DFT.make_test_orca`; Zahlen erfunden) einer
     Optimierung + Frequenzrechnung mit der Geometrie P: Minimum (keine imaginäre Frequenz), Nullpunktsenergie aus
-    den Frequenzen, Enthalpie und freie Enthalpie daraus fortgeschrieben. Kein echter Datensatz."""
+    den Frequenzen, Enthalpie und freie Enthalpie daraus fortgeschrieben, Orbitalenergien mit HOMO/LUMO in eV
+    (`homo_lumo`). Kein echter Datensatz."""
     el = [a.GetSymbol() for a in m.GetAtoms()]
     n = len(el)
     geo = [f"  {e:<2s}  {x:12.6f} {y:12.6f} {z:12.6f}" for e, (x, y, z) in zip(el, P)]
@@ -447,6 +450,15 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
           "                    ***        THE OPTIMIZATION HAS CONVERGED     ***", "",
           "---------------------------------", "CARTESIAN COORDINATES (ANGSTROEM)",
           "---------------------------------"] + geo
+    # Orbitalenergien (ORCA, Nummern ab 0): Rümpfe, Valenzleiter bis zum HOMO, virtuelle ab dem LUMO; erfunden
+    n_occ = sum(a.GetAtomicNum() for a in m.GetAtoms()) // 2
+    core = sorted((-14.35 if e == "N" else -10.21) - 0.004 * k for k, e in enumerate(el) if e != "H")
+    occ = core + list(np.linspace(-1.02, homo_lumo[0] / 27.211386, n_occ - len(core)))
+    virt = homo_lumo[1] / 27.211386 + 0.031 * np.arange(12) ** 1.1
+    L += ["", "----------------", "ORBITAL ENERGIES", "----------------", "",
+          "  NO   OCC          E(Eh)            E(eV) "]
+    L += [f"{k:4d}   {2.0 if k < n_occ else 0.0:.4f}   {e:14.6f}   {e * 27.211386:14.4f}"
+          for k, e in enumerate(occ + list(virt))]
     L += ["", "-------------------------   --------------------", f"FINAL SINGLE POINT ENERGY     {energy:.12f}", "",
           "-----------------------", "VIBRATIONAL FREQUENCIES", "-----------------------", ""]
     L += [f"   {i:3d}:   {v:9.2f} cm**-1" for i, v in enumerate(fr)]
@@ -715,8 +727,9 @@ E_FC, E_OX = 0.09, 0.47         # CV/SEC von S3 wie gemessen (V gegen Ag/AgNO₃
 
 
 def load_data(w, inp, name="S3"):
-    """Tabs mit den künstlichen Daten einer Verbindung füllen: Synthese, NMR, IR, EA, HRMS, UV-Vis und X-Ray für beide,
-    Overlay, Fluoreszenz, CV, SEC, EPR und DFT nur für das Produkt S3 (`load_product`)."""
+    """Tabs mit den künstlichen Daten einer Verbindung füllen: Synthese, NMR, IR, EA, HRMS (Bericht + .d), UV-Vis und
+    X-Ray für beide, Overlay, Kinetik, Fluoreszenz, CV, SEC, H-Zelle, EPR, DFT und Weitere nur für das Produkt S3
+    (`load_product`)."""
     from rdkit import Chem
     from rdkit.Chem import AllChem
     from elucida.core import color as COLOR
@@ -759,6 +772,7 @@ def load_data(w, inp, name="S3"):
     # IR (künstliche OPUS-Datei), HRMS (künstlicher Bericht der Massenabteilung), Elementaranalyse (erfundene Werte)
     w.irms_tab.load_ir(str(make_opus(inp / "irms" / f"{name}_IR.0", c["ir"])))
     w.hrms_tab.load_ms(str(make_ms_report(inp / "irms" / f"{name}_HRMS.docx", name, c["formula"])))
+    w.hrms_tab.load_raw(str(make_bruker_d(inp / "irms" / f"{name}_HRMS.d", name, c["formula"])))   # Spektrum + LC
     w.irms_state["ea_found"] = dict(c["ea"])
     w.nmr_state["text"] = c["nmr_text"]
     w.nmr_state["current"] = t_n.spectra()[0]["uid"]
@@ -840,12 +854,14 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                               oxidised=[(505, 0.24, 1100), (760, 0.13, 1500), (334, 0.11, 1800), (262, 0.14, 2000)])
     w.sec_state.update(spec_files=sec_files, dta=str(dta), mode="spectra", bands=f"{lam0}, 505, 760", trace_lams=f"{lam0}, 505, 760", mid="",
                        ref_from_cv=True, cap_solvent="CH2Cl2", cap_start="neutral", cap_end="radical cation")
-    # H-Zelle: symmetrisches Laden/Entladen derselben Oxidation (Konstantstrom), 40 Zyklen mit langsamem Kapazitätsverlust
+    # H-Zelle: symmetrisches Laden/Entladen derselben Oxidation (Konstantstrom, Plateau bei E½ wie im CV, Abbruch
+    # ±0.3 V darum), 40 Zyklen mit langsamem Kapazitätsverlust
     rng = np.random.default_rng(7)
     k_ = np.arange(40)
     main_ = write_cycling(inp / "hcell" / f"{name}_cycling", f"{name}_cycling", 0.5, 0.002,
-                          0.88 - 0.0018 * k_ + rng.normal(0, 0.002, 40), 0.996 + rng.normal(0, 0.0015, 40))
-    w.hcell_state.update(cap_conc="5 mM", cap_solvent="MeCN, 0.1 M n-Bu4NPF6", ref="Ag0/+")   # vor dem Bau des Tabs
+                          0.88 - 0.0018 * k_ + rng.normal(0, 0.002, 40), 0.996 + rng.normal(0, 0.0015, 40),
+                          e12=E_OX, cuts=(E_OX + 0.3, E_OX - 0.3))
+    w.hcell_state.update(cap_conc="5 mM", cap_solvent="CH2Cl2, 0.1 M n-Bu4NPF6", ref="Ag0/+")   # vor dem Bau des Tabs
     w.hcell_tab.load_files([str(main_)])
     # EPR: Radikalkation (isotrop, S = ½: 1 × 14N, 6 × 1H der NMe2-Gruppe) mit eigener Simulation und Fit
     Bt = np.linspace(328.0, 343.0, 6001)
@@ -866,8 +882,21 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     t_e.table.selectRow(1)
     t_e.fit_current()
     w.epr_state.update(cap_species=f"{name}^{{•+}}", cap_solvent="CH2Cl2", cap_conc="1 mM")
-    # DFT: ORCA-Ausgabe (Optimierung + Frequenzen) mit der Geometrie des Kristalls
+    # DFT: ORCA-Ausgabe (Optimierung + Frequenzen) mit der Geometrie des Kristalls, dazu HOMO und LUMO als Cube
+    # (Namen wie orca_plot, Nummern ab 0; HOMO zuletzt, damit es gezeigt wird)
     w.dft_tab.load_xyz(str(make_orca(inp / "dft" / f"{name}_opt_freq.out", f"{name}_opt_freq", m3, P, -729.512846)))
+    atoms, homo, lumo = huckel_frontier(m3, P)
+    n_homo = sum(a.GetAtomicNum() for a in m3.GetAtoms()) // 2 - 1
+    for no, coef in ((n_homo + 1, lumo), (n_homo, homo)):
+        w.dft_tab.load_cube(str(orbital_cube(inp / "dft" / f"{name}_opt_freq.mo{no}a.cube", m3, P, atoms, coef)))
+    w.dft_tab.pages.load_nics([str(make_nics(inp / "dft" / f"{name}_NICS-scan.log", m3, P))])     # Reiter NICS
+    w.dft_tab.pages.nics["geom"] = "B3LYP-D4/def2-TZVP"
+    w.dft_state["h_labels"] = False                   # Orbitalbild: nur Schweratome beschriftet (H bleiben anklickbar)
+    # Weitere: Abbildung aus einem anderen Programm (Lippert-Mataga-Auftragung der Emission in fünf Lösungsmitteln)
+    w.other_tab.load_files([str(lippert_png(inp / f"{name}_Lippert-Mataga.png"))])
+    w.other_state["entries"][-1].update(
+        chapter="uvvis", caption=f"Lippert–Mataga plot of {name} (Stokes shift against the orientation "
+                                 "polarizability Δf of the solvent).")
 
 
 DEMO_DIRS = ("Beispielverbindung", "Beispielprojekt", "Beispielpublikation")   # im Datenordner (alte Namen mit)
@@ -931,6 +960,163 @@ def make_ms_report(path, name, formula, adduct="M+H", shift=0.0004) -> Path:
     return Path(path)
 
 
+BAF_CAL = (20000.0, 0.2, 302.5, 159870.0, 2.61e-4, 0.0, -0.0009)   # erfundene Kalibrierung: Delay, Takt, c0, c1, c2, –, c6
+
+
+def make_bruker_d(d, name, formula, adduct="M+H", shift=0.0004, seed=0) -> Path:
+    """Künstlicher Bruker-Messordner (.d: analysis.baf + analysis.sqlite im Baf2Sql-Schema, nur MS1-Linienspektren):
+    LC-Lauf über 2 min, Ion der Formel mit dem berechneten Isotopenmuster im LC-Peak bei 0.9 min, gemessen um `shift`
+    (Da, wie im Bericht) neben calc. mit Streuung je Scan, dazu zwei Untergrundionen. Flugzeit-Indizes über die
+    Umkehrung der Kalibrierung (`BAF_CAL`, Variante int 10 wie `formats.bruker_ms`). Kein echter Datensatz."""
+    import sqlite3
+    import struct
+    from elucida.tabs import hrms as HRMS
+    from elucida.tabs import ir_ea as IRMS
+    f_ion, z, calc, _ = IRMS.ion(formula, adduct)
+    pat = HRMS.isotope_pattern(f_ion, z)
+    delay, step, c0, c1, c2, _c5, c6 = BAF_CAL
+
+    def to_idx(mz):
+        m = np.asarray(mz, float) + c6
+        return (c0 + np.sqrt(1e12 * m / c1) + c2 * m - delay) / step
+    rng = np.random.default_rng(seed)
+    d = Path(d)
+    d.mkdir(parents=True, exist_ok=True)
+    baf, rows = bytearray(64), []
+    for k, rt in enumerate(np.arange(0.0, 120.1, 3.0)):
+        amp = 2.4e5 * np.exp(-0.5 * ((rt - 54.0) / 6.0) ** 2)
+        mz = [149.0233, 391.2843] + [m + shift + rng.normal(0, 3e-4) for m, r in pat if amp * r > 5000]
+        it = [3.1e3 * rng.normal(1, 0.08), 6.5e3 * rng.normal(1, 0.08)] + [amp * r / 100 * rng.normal(1, 0.03)
+                                                                         for m, r in pat if amp * r > 5000]
+        n, o = len(mz), np.argsort(mz)                  # Linienspektren nach m/z sortiert wie vom Gerät
+        mz, it = np.asarray(mz)[o], np.asarray(it)[o]
+        body = (struct.pack("<4I", n, 16, 16 + 8 * n, 16 + 12 * n) + to_idx(mz).astype("<f8").tobytes()
+                + np.asarray(it, "<f4").tobytes() + np.full(n, 0.012, "<f4").tobytes())
+        head = bytearray(52)
+        struct.pack_into("<III", head, 0, 52 + len(body), BAF_LINE_MAGIC, 52)
+        rows.append((k + 1, float(rt), (0x10 << 56) | len(baf)))
+        baf += head + body
+    (d / "analysis.baf").write_bytes(bytes(baf))
+    blob = struct.pack("<i7d", 10, *BAF_CAL)
+    con = sqlite3.connect(d / "analysis.sqlite")
+    con.executescript("create table Properties (Key text, Value text); create table AcquisitionKeys (Id integer, "
+                      "Polarity integer); create table Spectra (Id integer, Rt real, TransformatorId integer, "
+                      "LineIndexId integer, AcquisitionKey integer); create table Steps (TargetSpectrum integer); "
+                      "create table Transformators (Id integer, Blob blob);")
+    con.executemany("insert into Properties values (?, ?)", [("SchemaType", "Baf2Sql"), ("SampleName", name),
+                                                            ("InstrumentName", "timsTOF (demo)")])
+    con.execute("insert into AcquisitionKeys values (0, 0)")
+    con.executemany("insert into Spectra values (?, ?, 1, ?, 0)", rows)
+    con.execute("insert into Transformators values (1, ?)", (blob + bytes(112 - len(blob)),))
+    con.commit()
+    con.close()
+    return d
+
+
+def huckel_frontier(m, P):
+    """HOMO und LUMO des π-Systems aus einer Hückel-Rechnung (Heteroatome nach Streitwieser: Pyridin-N h = 0.5,
+    Amin-N h = 1.5, k(C–N) = 0.8), als p-Orbitale senkrecht zur Molekülebene (z der Hauptachsen von P) -> (Atome des
+    π-Systems, Koeffizienten HOMO, LUMO). Nur für das Aussehen der Orbitale im Beispiel, keine Rechnung."""
+    pi = [a.GetIdx() for a in m.GetAtoms() if a.GetAtomicNum() in (6, 7) and (
+        a.GetIsAromatic() or any(b.GetBondTypeAsDouble() == 3 for b in a.GetBonds())
+        or (a.GetAtomicNum() == 7 and any(x.GetIsAromatic() for x in a.GetNeighbors())))]
+    amine = {i for i in pi if m.GetAtomWithIdx(i).GetAtomicNum() == 7 and not m.GetAtomWithIdx(i).GetIsAromatic()}
+    pos = {i: k for k, i in enumerate(pi)}
+    H = np.zeros((len(pi), len(pi)))
+    for i in pi:
+        H[pos[i], pos[i]] = 1.5 if i in amine else (0.5 if m.GetAtomWithIdx(i).GetAtomicNum() == 7 else 0.0)
+    for b in m.GetBonds():
+        i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+        if i in pos and j in pos:
+            H[pos[i], pos[j]] = H[pos[j], pos[i]] = 0.8 if amine & {i, j} else 1.0
+    x, C = np.linalg.eigh(H)                           # E = α + xβ (β < 0): großes x = tief
+    n_occ = (len(pi) + len(amine)) // 2                 # ein π-Elektron je C/Pyridin-N, zwei am Amin-N
+    order = np.argsort(-x)
+    return pi, C[:, order[n_occ - 1]], C[:, order[n_occ]]
+
+
+def orbital_cube(path, m, P, atoms, coef, step=0.2, pad=3.5, alpha=1.6):
+    """Cube (Bohr, wie ORCA) eines π-Orbitals: Σ c·(z − z_i)·exp(−α r²) an den Atomen, normiert, auf einem Gitter um
+    die Geometrie P (dieselben Atome und Koordinaten wie die ORCA-Ausgabe, damit der DFT-Tab den Cube anhängt)."""
+    from elucida.core import orbitals as ORB
+    lo, hi = P.min(0) - pad, P.max(0) + pad
+    g = [np.arange(lo[k], hi[k] + step / 2, step) for k in range(3)]
+    X, Y, Z = np.meshgrid(*g, indexing="ij")
+    psi = np.zeros(X.shape)
+    for i, c in zip(atoms, coef):
+        x0, y0, z0 = P[i]
+        psi += c * (Z - z0) * np.exp(-alpha * ((X - x0) ** 2 + (Y - y0) ** 2 + (Z - z0) ** 2))
+    psi /= np.sqrt(np.sum(psi ** 2) * (step / ORB.BOHR) ** 3)
+    ORB.write_cube(path, [a.GetSymbol() for a in m.GetAtoms()], P, lo, np.eye(3) * step, psi.astype(np.float32),
+                   title="Elucida demo orbital", comment="pi orbital (Hueckel model)")
+    return Path(path)
+
+
+def make_nics(path, m, P, height=1.0, step=0.25, depth=(-27.0, -24.0)):
+    """Gaussian-NMR-Ausgabe (nur die gelesenen Abschnitte wie `formats.calc.parse_nics`: Route, Eingabeorientierung mit
+    Bq, Abschirmtensoren der Bq) eines NICS-Scans `height` Å über der Molekülebene (z der Hauptachsen von P) von 2 Å vor
+    dem ersten bis 2 Å hinter dem letzten Sechsring. Werte erfunden: NICSzz je Ring als Gaußmulde (Tiefe `depth`,
+    Pyridin etwas aromatischer als der Donorring), NICS = 0.36·NICSzz − 0.4. Kein echter Datensatz."""
+    from elucida.formats.elements import ELEMENTS
+    rings = [np.asarray(r) for r in m.GetRingInfo().AtomRings() if len(r) == 6]
+    cen = [P[r].mean(0) for r in rings]
+    a, b = cen[0], cen[-1]
+    u = (b - a) / np.linalg.norm(b - a)
+    s = np.arange(-2.0, np.linalg.norm(b - a) + 2.0 + step / 2, step)
+    bq = a + np.outer(s, u)
+    bq[:, 2] = np.mean([c[2] for c in cen]) + height
+    zz = sum(dp * np.exp(-(np.linalg.norm((bq - c)[:, :2], axis=1) / 1.25) ** 2) for c, dp in zip(cen, depth)) - 1.5
+    iso = 0.36 * zz - 0.4
+    Z = {e: i + 1 for i, e in enumerate(ELEMENTS)}
+    els = [x.GetSymbol() for x in m.GetAtoms()]
+    dash = " " + "-" * 69
+    L = [" Entering Gaussian System, Link 0=g16", dash, " #p nmr=giao b3lyp/6-311+g(2d,p) scrf=(smd,solvent=thf)", dash,
+         "", "                          Input orientation:", dash,
+         " Center     Atomic      Atomic             Coordinates (Angstroms)",
+         " Number     Number       Type             X           Y           Z", dash]
+    L += [f" {k + 1:6d} {Z[e]:10d} {0:11d} {x:15.6f} {y:11.6f} {z:11.6f}" for k, (e, (x, y, z)) in enumerate(zip(els, P))]
+    L += [f" {len(els) + k + 1:6d} {0:10d} {0:11d} {x:15.6f} {y:11.6f} {z:11.6f}" for k, (x, y, z) in enumerate(bq)]
+    L += [dash, "", " SCF GIAO Magnetic shielding tensor (ppm):"]
+    for k, (si, sz) in enumerate(zip(-iso, -zz)):
+        sx = (3 * si - sz) / 2                           # in der Ebene gleich, Spur = 3·σ_iso
+        L += [f" {len(els) + k + 1:6d}  Bq   Isotropic = {si:12.4f}   Anisotropy = {sz - sx:12.4f}",
+              f"   XX= {sx:12.4f}   YX= {0.0:12.4f}   ZX= {0.0:12.4f}",
+              f"   XY= {0.0:12.4f}   YY= {sx:12.4f}   ZY= {0.0:12.4f}",
+              f"   XZ= {0.0:12.4f}   YZ= {0.0:12.4f}   ZZ= {sz:12.4f}"]
+    L += [" Normal termination of Gaussian 16."]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    return Path(path)
+
+
+# Emission in fünf Lösungsmitteln (Lippert-Mataga): Δf aus ε und n (Literaturkonstanten), λ_abs erfunden, λ_em aus einer
+# erfundenen Geraden durch den THF-Punkt der Tabs ε/Fluoreszenz (372 → 458 nm)
+SOLVENTS = (("cyclohexane", 2.02, 1.426, 366), ("toluene", 2.38, 1.497, 371), ("THF", 7.58, 1.407, 372),
+            ("CH$_2$Cl$_2$", 8.93, 1.424, 375), ("MeCN", 35.9, 1.344, 370))
+
+
+def lippert_png(path, em_thf=458.0, slope=9500.0):
+    """Lippert-Mataga-Auftragung (Stokes-Verschiebung gegen Δf) als PNG für den Tab „Weitere“ (anderes Programm)."""
+    from matplotlib.figure import Figure
+    df = np.array([(e - 1) / (2 * e + 1) - (n * n - 1) / (2 * n * n + 1) for _, e, n, _ in SOLVENTS])
+    lab = np.array([s[3] for s in SOLVENTS], float)
+    s_thf = 1e7 / 372 - 1e7 / em_thf
+    stokes = s_thf + slope * (df - df[2]) + np.array([60.0, -90.0, 0.0, 70.0, -40.0])
+    fig = Figure(figsize=(16 / 2.54, 11 / 2.54), dpi=200)
+    ax = fig.add_axes((0.14, 0.15, 0.82, 0.8))
+    k, b = np.polyfit(df, stokes, 1)
+    xs = np.array([df.min() - 0.02, df.max() + 0.02])
+    ax.plot(xs, k * xs + b, color="0.5", lw=1)
+    ax.plot(df, stokes, "o", color="#1764e8")
+    offsets = ((-10, 8), (6, -12), (6, -14), (8, 2), (-34, -14))           # Beschriftungen frei von Punkten und Linie
+    for (s, *_), x, y, o in zip(SOLVENTS, df, stokes, offsets):
+        ax.annotate(s, (x, y), xytext=o, textcoords="offset points", fontsize=9)
+    ax.set_xlabel(r"$\Delta f$")
+    ax.set_ylabel(r"Stokes shift [cm$^{-1}$]")
+    fig.savefig(path)
+    return Path(path)
+
+
 def demo_dir() -> Path:
     return IMG.app_data_dir() / "Beispielverbindung"
 
@@ -959,7 +1145,7 @@ def open_demo(w, folder=None, name="S3") -> Path:
         w.render()
         tabs = ("nmr_tab", "irms_tab", "hrms_tab", "xray_tab")
         if name == "S3":                                   # die Vorstufe hat diese Tabs nicht
-            tabs += ("ov_tab", "uvkin_tab", "fl_tab", "cv_tab", "sec_tab", "hcell_tab", "epr_tab", "dft_tab")
+            tabs += ("ov_tab", "uvkin_tab", "fl_tab", "cv_tab", "sec_tab", "hcell_tab", "epr_tab", "dft_tab", "other_tab")
         for t in (getattr(w, a) for a in tabs):
             for fn in ("sync_widgets", "update_preview", "render"):
                 f = getattr(type(t), fn, None)

@@ -1671,6 +1671,19 @@ TEXTS = {
     "sec_mode": ("Ansicht", "View"),
     "sec_mode_spectra": ("Spektrenserie", "Spectral series"),
     "sec_mode_trace": ("A bei λ gegen E", "A at λ vs. E"),
+    "sec_mode_heatmap": ("Heatmap (λ gegen Verlauf)", "Heatmap (λ vs. course)"),
+    "sec_hm_value": ("Farbe zeigt", "Colour shows"),
+    "sec_hm_abs": ("Werte wie gemessen", "values as measured"),
+    "sec_hm_diff": ("Differenz zum ersten Spektrum (Δ)", "difference to first spectrum (Δ)"),
+    "sec_hm_cmap": ("Farbskala", "Colour map"),
+    "sec_hm_cmap_tip": ("Absorbanz: sequentielle Skala. ΔA (Differenzspektren an): divergierende Skala mit 0 in der "
+                        "Mitte.", "Absorbance: sequential map. ΔA (difference spectra on): diverging map centred "
+                        "at 0."),
+    "sec_hm_cmax": ("Farbe bis", "Colour up to"),
+    "sec_hm_cmax_tip": ("Oberes Ende der Farbskala; auto = größter Wert. Bei ΔA gilt der Bereich symmetrisch "
+                        "−Wert … +Wert.", "Upper end of the colour map; auto = largest value. For ΔA the range "
+                        "is symmetric, −value … +value."),
+    "sec_hover_heat": ("λ = {lam:.1f} nm    {y}    {q} = {v}", "λ = {lam:.1f} nm    {y}    {q} = {v}"),
     "sec_range": ("Spektren (Nr.)", "Spectra (no.)"),
     "sec_last_all": ("bis Ende", "to end"),
     "sec_range_info_e": ("{n} Spektren, {a} V → {b} V", "{n} spectra, {a} V → {b} V"),

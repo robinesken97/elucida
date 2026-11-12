@@ -655,6 +655,13 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **A bei λ gegen E** mit scheinbarem Nernst-Fit (E½, n). Bei kontinuierlichem Scan hinkt die Elektrolyse in der
   Dünnschichtzelle nach (E½ verschoben, n < 1); echte Nernst-Werte brauchen Potentialstufen im Gleichgewicht –
   CV-Werte haben Vorrang.
+- **Heatmap:** die ganze Serie in einem Bild – x = Wellenlänge (Bereich wie bei der Spektrenserie), y = Spektren in
+  Messreihenfolge von unten nach oben, Farbe = Absorbanz wie gemessen oder Differenz zum ersten gezeigten Spektrum (ΔA,
+  divergierende Farbskala mit 0 in der Mitte). Die y-Achse bleibt die Reihenfolge; beschriftet ist sie mit dem Potential
+  (auch wenn es hin- und zurückläuft), ohne Potentiale mit der Zeit seit dem ersten Spektrum aus den Dateien, sonst mit
+  der Nummer. Farbskala wählbar (viridis, cividis, magma bzw. RdBu, PuOr, coolwarm), oberes Ende „auto“ oder fest.
+  Rohsignal-Serien heißen auch hier „raw signal“. Die Maus zeigt λ, Spektrum und Wert; der CSV-Export enthält die
+  Matrix (Zeilen = Spektren, Spalten = λ).
 - Potentialachse wie gemessen, um E(Fc⁺/Fc) verschoben oder mit der Referenzierung des CV-Tabs.
 
 ## H-Cell-Tab (Laden und Entladen)

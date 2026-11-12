@@ -41,6 +41,8 @@ Im Tab **SEC** die Spektrenserie und die Potentialdatei wählen. Jedes Spektrum 
 Uhrzeit (ggf. **Zeitversatz** einstellen). **Ansicht:** Spektrenserie, Differenzspektren oder A bei λ gegen E mit
 scheinbarem Nernst-Fit – bei kontinuierlichem Scan hinkt die Dünnschichtzelle nach, die CV-Werte haben Vorrang.
 Zwischenspezies hebst du über ihr Potential hervor.
+Die Ansicht **Heatmap** zeigt die ganze Serie in einem Bild: Wellenlänge gegen Spektrenfolge, Absorbanz (oder ΔA zum
+ersten Spektrum) als Farbe.
 
 ## 6. H-Zelle: Laden und Entladen
 

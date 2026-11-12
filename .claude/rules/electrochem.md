@@ -53,3 +53,11 @@ paths:
   weg statt Klemmen). Dateizeiten nur als Warnung beim Import (`_file_warnings`). Intervall zählt über die Dateinummer
   (Lücken verschieben nichts); Herkunft in Unterschrift/Methodentext (`map_sentence`). Nernst-Fit erst ab 5 Potentialen.
   Geräte nicht aus Endung/Wellenlänge ableiten. `LAM_RANGE` gilt nur für BWSpec.
+- SEC-Heatmap (Ansicht `mode` „heatmap“, Nutzerauftrag 2026-11-12; `_heatmap`, `SECFigure`, `HeatHover`): x = λ wie die
+  Spektrenserie, y = Reihenfolge der gezeigten Spektren (erstes unten), nie E oder t als Achse (Hin- und Rückscan).
+  Beschriftung der y-Teilstriche: E nur aus `series()` (Zeitstempel oder bestätigte Zuordnung), sonst Zeit seit dem
+  ersten gezeigten Spektrum aus den Dateien, sonst Nummer – nie erfunden. Farbe = gemessene Größe oder Differenz zum
+  ersten gezeigten Spektrum (Schlüssel `diff`, wie der Chip); ΔA divergierend und symmetrisch um 0 (`hm_cmap_d`), A
+  sequentiell (`hm_cmap`), `hm_cmax` 0 = auto. Das Bild liegt genau im Datenbereich [x0, x1] × [0.5, n + 0.5] (MuPDF
+  ignoriert Clip-Pfade), linear auf ein gleichmäßiges λ-Raster gebracht (Methodentext nennt es); Hover und CSV nehmen
+  die Messwerte. Keine Labels, Legende oder Bilder; das Layout der anderen Ansichten bleibt. Rohsignal heißt „raw signal“.

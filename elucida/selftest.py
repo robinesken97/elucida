@@ -1171,6 +1171,15 @@ def selftest(outdir, with_isnet=False):
             # zu wenig Vorlauf im Fenster: Fallback von null, markiert
             r4_ = CVMOD.analyze_couple(E_, I_c, -1.08, -0.8, use_baseline=True)
             assert r4_ is not None and r4_["bl_fail"] and r4_["ipa"] == r4_["ipa_raw"], r4_
+            # Vorlauf: reicht er für 0,20 V, normale Gerade; nur für 0,15 V: Rückfall, gekennzeichnet; sonst keine Basislinie
+            for start_, short_, fail_ in ((-0.40, False, False), (-0.19, True, False), (-0.16, False, True)):
+                ups_ = np.arange(start_, 0.3, 0.002)
+                Es_ = np.concatenate([ups_, ups_[::-1]])
+                fws_ = np.r_[np.ones(len(ups_)), np.zeros(len(ups_))].astype(bool)
+                Is_ = np.where(fws_, 100 * np.exp(-(Es_ / 0.03) ** 2), -80 * np.exp(-((Es_ + 0.06) / 0.03) ** 2)) + 10 * Es_
+                rs_ = CVMOD.analyze_couple(Es_, Is_, start_, 0.3, use_baseline=True)
+                assert (rs_["bl_short"], rs_["bl_fail"]) == (short_, fail_), (start_, rs_["bl_short"], rs_["bl_fail"])
+                assert fail_ or abs(rs_["bl"]["e1"] + (0.15 if short_ else 0.20)) < 1e-9, rs_["bl"]
             # breite Welle (iR-Abfall): Basislinie endet vor dem Anstieg, nicht im Fuß
             upw_ = np.arange(-1.6, -0.3, 0.002)
             Ew_ = np.concatenate([upw_, upw_[::-1]])
@@ -1237,8 +1246,7 @@ def selftest(outdir, with_isnet=False):
             assert st_cv["bl_gap"] == CVMOD.BL_GAP == 0.20 and CVMOD.BL_GAP_MIN == 0.15
             sh_ = [r_ for r_ in t_cv.results if r_.get("bl_short")]
             assert all(r_["bl"] is not None and not r_["bl_fail"] for r_ in sh_)
-            if sh_:
-                assert T("cv_bl_short", n=len(sh_), gap="0.15") in t_cv.lbl_res.text() or True
+            assert (T("cv_bl_short", n=len(sh_), gap="0.15") in t_cv.lbl_res.text()) == bool(sh_), t_cv.lbl_res.text()
             t_cv.render()
             assert len(t_cv.hover.curves) == len(curves_) - len(aux_), (len(t_cv.hover.curves), len(curves_))
             st_cv["show_bl"] = False
@@ -6784,6 +6792,65 @@ def selftest(outdir, with_isnet=False):
                     assert r_.get("BondLength") == "14.40" and r_.find(".//fonttable") is not None
             report.append("Example CDXML on the ChemDraw page (ACS 1996 size, one arrow): OK")
         with section:
+            # Beispiel S3: jeder Tab hat Daten und eine Abbildung; alle Daten gehoeren zu derselben Verbindung
+            from elucida.formats.bwspec import read_bwspec as _rbw
+            from elucida.formats.gamry import read_gamry as _rgam
+            from elucida.formats.gamry_cycling import read_cycling as _rcyc
+            st_x_ = w.get_state()
+            formula_x_ = w.compound["formula"]
+            assert w.compound.get("structure") and w.syn_state["proc"] and w.nmr_tab.spectra() and w.groups
+            no_fig_ = []
+            for key_ in w._TAB_ORDER:
+                if key_ in ("compound", "syn", "nmr", "eps"):
+                    continue
+                t_x_ = getattr(w, w._tab_spec(key_)[0])
+                t_x_.render()
+                if t_x_.F is None:
+                    no_fig_.append(key_)
+            assert not no_fig_, f"example tabs without figure: {no_fig_}"
+            e_dft_ = w.dft_state["entries"][0]
+            assert len(e_dft_.get("orbitals") or []) == 2 and w.dft_tab.pages.nics["files"], "DFT orbitals/NICS missing"
+            assert [w.dft_tab.orb_name(e_dft_, o_).split()[0] for o_ in e_dft_["orbitals"]] == ["LUMO", "HOMO"]
+            calc_x_ = IRMS.ion(formula_x_, "M+H")[2]                     # HRMS: Bericht und Rohdaten
+            rep_x_ = IRMS.nearest(w.hrms_tab.ms_report()["mz"], calc_x_)
+            lc_x_ = w.hrms_tab.raw_found(calc_x_)
+            assert rep_x_ and lc_x_ and abs(rep_x_ - calc_x_) / calc_x_ * 1e6 < 5 and \
+                abs(lc_x_["mz"] - calc_x_) / calc_x_ * 1e6 < 5, (calc_x_, rep_x_, lc_x_ and lc_x_["mz"])
+            ea_calc_ = SI.ea_composition(formula_x_)                      # EA: found innerhalb 0.4 Punkte
+            assert all(abs(float(v_) - ea_calc_[k_]) < 0.4 for k_, v_ in w.irms_state["ea_found"].items()), ea_calc_
+
+            def lam_max_(x_, y_, lo_=320.0, hi_=450.0):                  # Hauptbande des Chromophors
+                x_, y_ = np.asarray(x_, float), np.asarray(y_, float)
+                m_ = (x_ >= lo_) & (x_ <= hi_)
+                return float(x_[m_][np.argmax(y_[m_])])
+            eps_s_ = core.read_cary_samples(st_x_["eps"]["files"][0])
+            lam_x_ = {"eps": lam_max_(eps_s_[0]["x"], eps_s_[0]["y"])}
+            ov_e_ = next(e_ for e_ in w.ov_state["entries"] if e_["kind"] == "exp")
+            ov_s_ = next(s_ for s_ in core.read_cary_samples(ov_e_["file"]) if s_["name"] == ov_e_["sample"])
+            lam_x_["overlay"] = lam_max_(ov_s_["x"], ov_s_["y"])
+            sec_s_ = _rbw(w.sec_state["spec_files"][0])
+            lam_x_["sec"] = lam_max_(sec_s_["lam"], sec_s_["A"])
+            kin_e_ = w.uvkin_state["entries"][0]
+            kin_s_ = core.read_cary_samples(kin_e_["file"])[kin_e_["idx"]]
+            lam_x_["uvkin"] = lam_max_(kin_s_["x"], kin_s_["y"])
+            assert max(lam_x_.values()) - min(lam_x_.values()) <= 2.0, lam_x_
+            cv_f_ = _rgam(w.cv_state["files"][1]["file"])["cycles"][0]  # CV-E1/2 im Potentialbereich von SEC und H-Zelle
+            lo_x_, hi_x_ = w.cv_state["couples"][0]
+            e12_ = CVMOD.analyze_couple(cv_f_["E"], cv_f_["I"], lo_x_, hi_x_)["e12"]
+            sec_E_ = np.concatenate([c_["E"] for c_ in _rgam(w.sec_state["dta"])["cycles"]])
+            hc_ = _rcyc(w.hcell_state["entries"][0]["file"])["meta"]
+            assert sec_E_.min() < e12_ < sec_E_.max() and hc_["discharge_cut_V"] < e12_ < hc_["charge_cut_V"], (
+                e12_, sec_E_.min(), sec_E_.max(), hc_)
+            have_x_ = SI.parse_formula(formula_x_)                       # EPR: nur Kerne, die die Formel hat
+            for e_ in w.epr_state["entries"]:
+                for part_ in (e_.get("nuclei") or "").split(";"):
+                    if part_.strip():
+                        n_, iso_ = part_.split()[:2]
+                        el_ = re.sub(r"^\d+", "", iso_)
+                        assert int(n_) <= have_x_.get(el_, 0), (part_, have_x_)
+            report.append(f"Example S3 coherent (all tabs with figure; HRMS {calc_x_:.4f} found {lc_x_['mz']:.4f}; "
+                          f"lambda max {sorted(set(lam_x_.values()))} nm; E1/2 {e12_:.3f} V): OK")
+        with section:
             from elucida.app import welcome as WEL                 # Startbildschirm: Projektliste mit Struktur und Analytik
             w.compound["note"] = "Radikalkation (Test)"           # Notiz zur Verbindung: Titel, Startbildschirm
             w.update_title()
@@ -7785,6 +7852,104 @@ def selftest(outdir, with_isnet=False):
             report.append("SEC merged export (quantity, order, NIR range, confirmed assignment only, gaps, raw kept apart): OK")
 
         with section:
+            # SEC-Heatmap: y = Reihenfolge der Spektren, Beschriftung E (Zeitstempel oder bestätigte Zuordnung), sonst
+            # Zeit aus den Dateien, sonst Nummer; A oder ΔA; Bild genau im Datenbereich; Layout der Spektren bleibt
+            th_ = w.sec_tab
+            keep_hm_ = json.loads(json.dumps(th_.st))
+            T_cv = np.arange(0.0, 1150.0, 2.0)
+            E_cv = np.where(T_cv <= 520, -1.3 + 0.002 * T_cv, -1.3 + 0.002 * (1040 - T_cv))   # hin und zurück
+            write_dta(secdir / "sec_cv.DTA", [(E_cv, 1.0 + 0 * E_cv)], 2.0, cycle_col=True, times=T_cv)
+            th_.st.update(spec_files=sec_files, dta=str(secdir / "sec_cv.DTA"), mode="spectra", first=1, last=0,
+                          diff=False, baseline=False, quantity="abs", hm_cmax=0.0, x_auto=True, bands="432",
+                          offset_s=0.0, e_shift=0.0, ref_from_cv=False)
+            th_.st["layout"][th_.size_key()] = {"label_sec_432": [0.3, 0.8], "legend": [0.7, 0.7]}
+            th_.render()
+            lay_spec_ = json.dumps(th_.layout(), sort_keys=True)
+            th_.st["mode"] = "heatmap"
+            th_.render()
+            F_ = th_.F
+            h_ = F_.cfg["heatmap"]
+            im_ = F_.ax.get_images()[0]
+            assert h_["extent"] == (250.0, 850.0, 0.5, 70.5), h_["extent"]
+            assert tuple(im_.get_extent()) == tuple(F_.ax.get_xlim()) + tuple(F_.ax.get_ylim()) == h_["extent"]
+            assert not F_.ann_items and F_.legend is None and not F_.axes_items and not F_.curves  # keine Labels/Legende
+            assert F_.cfg["ylabel"].startswith("E [V vs."), F_.cfg["ylabel"]
+            e_rows_ = np.interp(np.arange(70) * 15.0 + 5.0, T_cv, E_cv)
+            labs_ = [x_.get_text() for x_ in F_.ax.get_yticklabels()]
+            assert labs_ == [f"{e_rows_[k_ - 1]:.2f}".replace("-", "−") for k_ in h_["yticks"]], labs_
+            ev_ = [float(x_.replace("−", "-")) for x_ in labs_]
+            assert max(ev_) > ev_[0] and max(ev_) > ev_[-1], ev_                 # E steigt und fällt, Achse bleibt Reihenfolge
+            hov_ = th_.hover.text_at(432, 1)
+            assert "absorbance = " in hov_ and "E = " in hov_ and "432" in hov_, hov_
+            def view_(key_):                                                 # Auswahl ohne collect (Zustand oben gesetzt)
+                th_.cmb_mode.blockSignals(True)
+                th_.cmb_mode.setCurrentIndex(th_.cmb_mode.findData(key_))
+                th_.cmb_mode.blockSignals(False)
+                th_._view_fields()
+            view_("heatmap")
+            assert not th_.cmb_hm_value.isHidden() and th_.cb_highlight.isHidden() and th_.cb_diff.isHidden()
+            cap_h_ = th_.si_caption("TEST-1")
+            assert "Color map of the absorbance during UV-Vis-SEC" in cap_h_ and "applied potential" in cap_h_, cap_h_
+            meth_h_ = th_.methods_text()
+            assert "potentiostat record" in meth_h_ and "evenly spaced grid" in meth_h_ and "Elucida" not in meth_h_
+            files_h_ = th_.export_to(out / "sec_heatmap")
+            assert all(f_.exists() for f_ in files_h_) and files_h_[0].suffix == ".pdf", files_h_
+            png_h_ = next(f_ for f_ in files_h_ if f_.suffix == ".png")
+            from PIL import Image as PILH
+            with PILH.open(png_h_) as im_png_:
+                arr_ = np.asarray(im_png_.convert("RGB"), float)
+            mid_ = arr_[arr_.shape[0] // 4: 3 * arr_.shape[0] // 4, arr_.shape[1] // 4: arr_.shape[1] // 2]
+            assert mid_.std() > 10 and (np.abs(mid_ - 255).sum(axis=2) > 30).mean() > 0.9, mid_.std()  # Plotfläche farbig
+            csv_h_ = next(f_ for f_ in files_h_ if f_.name.endswith("_data.csv")).read_text(encoding="utf-8-sig").splitlines()
+            assert csv_h_[0].startswith("spectrum no.,E [V vs.") and len(csv_h_) == 71, csv_h_[0][:60]
+            th_._loading = True                                                  # ΔA: derselbe Schlüssel wie der Chip
+            th_.cmb_hm_value.setCurrentIndex(1)
+            th_._loading = False
+            th_.st["diff"] = True
+            th_._fill_cmaps()
+            assert th_.cb_diff.isChecked() and th_.cmb_hm_cmap.currentData() == "RdBu_r"
+            th_.render()
+            n_ = th_.F.ax.get_images()[0].norm
+            assert np.all(th_._heat["Z"][0] == 0) and n_.vmin == -n_.vmax and n_.vmax > 0, (n_.vmin, n_.vmax)
+            assert th_.F.cfg["heatmap"]["clabel"].startswith("ΔA") and "Δ<i>A</i>" in th_.si_caption("TEST-1")
+            th_.st["hm_cmax"] = 0.1
+            th_.render()
+            n_ = th_.F.ax.get_images()[0].norm
+            assert (n_.vmin, n_.vmax) == (-0.1, 0.1), (n_.vmin, n_.vmax)
+            th_.st.update(dta=None, diff=False, hm_cmax=0.0)                    # ohne Potential: Zeit aus den Dateien
+            th_.render()
+            assert th_.F.cfg["ylabel"] == "t [min]"                              # 15 s je Spektrum, t = 0 beim ersten
+            assert [x_.get_text() for x_ in th_.F.ax.get_yticklabels()] == \
+                [f"{(k_ - 1) * 0.25:.1f}" for k_ in th_.F.cfg["heatmap"]["yticks"]]
+            assert "time since the first spectrum" in th_.si_caption("TEST-1")
+            assert "potentiostat" not in th_.methods_text()
+            merged_ = [str(p_) for p_ in sorted(m26_.glob("Merge_*.Abs8.txt"))]
+            th_.st.update(spec_files=merged_, dta=str(secdir / "sec.DTA"), map_mode="none", map_ok=False, x_auto=True)
+            th_.render()                                                         # ohne Zeit und Zuordnung: Nummer
+            assert th_.F.cfg["ylabel"] == T("sec_index") and "spectrum number" in th_.si_caption("TEST-1")
+            assert th_._heat["nums"] == list(range(1, 12))
+            th_.st.update(map_mode="potential", map_table="1-3; 0.4\n5-12; 0,95", map_ok=True)
+            th_.render()                                                         # bestätigte Zuordnung: Potentiale
+            assert th_.F.cfg["ylabel"].startswith("E [V vs.") and "confirmed table" in th_.methods_text()
+            assert {x_.get_text() for x_ in th_.F.ax.get_yticklabels()} <= {"0.40", "0.95"}
+            th_.st.update(quantity="raw", map_mode="none", map_ok=False)
+            th_.render()
+            assert th_.F.cfg["heatmap"]["clabel"] == "raw signal [a.u.]" and "raw detector signal" in th_.si_caption("X")
+            th_.st.update(spec_files=sec_files, dta=str(secdir / "sec_cv.DTA"), quantity="abs", mode="spectra")
+            th_.render()
+            assert json.dumps(th_.layout(), sort_keys=True) == lay_spec_, (th_.layout(), lay_spec_)
+            view_("spectra")
+            assert th_.cmb_hm_value.isHidden() and not th_.cb_highlight.isHidden() and not th_.cb_diff.isHidden()
+            th_.st.clear()
+            th_.st.update(keep_hm_)
+            th_._loading = True                                                  # Felder wieder wie der Zustand
+            th_.cb_diff.setChecked(bool(keep_hm_["diff"]))
+            th_._loading = False
+            view_(keep_hm_["mode"])
+            th_._show_files()
+            report.append("SEC heatmap (E/t/no. on y, CV-type scan, A and dA, extent, export, layout kept, caption): OK")
+
+        with section:
             # Nie still ablehnen: unlesbare Spektren, unbekannte abgelegte Dateien, fehlende Dateien im Datenpaket
             errs_ = []
             keep_err, w.error = w.error, errs_.append
@@ -7927,7 +8092,17 @@ def selftest(outdir, with_isnet=False):
             w.open_project(out / "demo_pub_items" / "S3", recent=False)
             pump()
             assert not w.side.isVisibleTo(w.side.parentWidget()) and w.act_crumbs.isVisible()
-            assert w.nav_buttons[w._tab_keys.index("nmr")].has_data and not w.nav_buttons[w._tab_keys.index("other")].has_data
+            assert w.nav_buttons[w._tab_keys.index("nmr")].has_data and w.other_state["entries"] and \
+                w.nav_buttons[w._tab_keys.index("other")].has_data            # Beispiel S3: auch „Weitere“ hat Daten
+            ent7_, chip7_ = w.other_state["entries"], w.comp_tab.si_figs["other"]   # ohne Einträge matt, Chip im Tab Verbindung folgt
+            w.other_state["entries"] = []
+            try:
+                w._update_nav_dots()
+                assert not w.nav_buttons[w._tab_keys.index("other")].has_data and chip7_.isHidden()
+            finally:
+                w.other_state["entries"] = ent7_
+                w._update_nav_dots()
+            assert not chip7_.isHidden()
             wid7_ = {}                                                  # Symmetrie: linke Spalte in allen Tabs gleich breit
             for i_, k_ in enumerate(w._tab_keys):
                 w.main_tabs.setCurrentIndex(i_)

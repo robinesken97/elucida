@@ -1,10 +1,10 @@
 """Screenshots für das README (docs/screenshots/<tab>_<light|dark>_<de|en>.png).
 
-Startet das Hauptfenster (1600 × 1000; unter macOS als echtes Fenster, sonst QT_QPA_PLATFORM=offscreen) mit einem **leeren Projekt** und
-speichert je Tab ein Bild über QWidget.grab: die zentrierte Anleitung des leeren Tabs (was herauskommt, Dateien,
-Schritte, Knopf für den ersten Schritt). Nutzerwunsch: keine Daten in den README-Bildern, auch keine Beispieldaten.
-Ausnahme Coverbild (Nutzerwunsch): Startbildschirm (welcome_<theme>_<lang>.png) mit dem Beispielprojekt (zwei
-erfundene Verbindungen, nur Namen, Strukturen und Analytik-Abzeichen; Pfade als ~/Documents/…).
+Startet das Hauptfenster (1600 × 1000; unter macOS als echtes Fenster, sonst QT_QPA_PLATFORM=offscreen) mit dem
+**Beispielprojekt** (erfundene Daten, `app/demo.py`) und speichert über QWidget.grab je Tab ein Bild der Verbindung S3
+mit geladenen Daten (Nutzerwunsch 2026-11-12, vorher leere Tabs mit Anleitung): Abbildung rechts, links der Schritt
+mit den aussagekräftigsten Einstellungen (`SHOTS`). Coverbild: Startbildschirm (welcome_<theme>_<lang>.png) mit dem
+Beispielprojekt (Pfade als ~/Documents/…), dazu Projektseite und Reaktionspfad.
 Das Werkzeug selbst gehört nicht in den PyInstaller-Build.
 
     python tools/make_screenshots.py [Zielordner]
@@ -28,11 +28,14 @@ from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 from elucida.app import main_window as G  # noqa: E402
 
 SIZE = (1600, 1000)
-# (Dateiname, Tab-Schlüssel, Themes) in der Reihenfolge der Tabs
+SHOW = "S3"                                       # Verbindung des Beispielprojekts mit Daten in allen Tabs
+# (Dateiname, Tab-Schlüssel, Themes, Schritt der linken Spalte) in der Reihenfolge der Tabs
 # Alle README-Bilder dunkel (Nutzerwunsch), auch das Coverbild
-SHOTS = tuple((name, key, ("dark",)) for name, key in (
-    ("synthesis", "syn"), ("nmr", "nmr"), ("irms", "irms"), ("hrms", "hrms"), ("eps", "eps"), ("overlay", "overlay"),
-    ("uvkin", "uvkin"), ("fluorescence", "fluo"), ("cv", "cv"), ("sec", "sec"), ("hcell", "hcell"), ("epr", "epr"), ("xray", "xray"), ("dft", "dft")))
+SHOTS = tuple((name, key, ("dark",), step) for name, key, step in (
+    ("compound", "compound", 0), ("synthesis", "syn", 0), ("nmr", "nmr", 0), ("irms", "irms", 0), ("hrms", "hrms", 0),
+    ("eps", "eps", 1), ("overlay", "overlay", 0), ("uvkin", "uvkin", 1), ("fluorescence", "fluo", 0), ("cv", "cv", 1),
+    ("sec", "sec", 0), ("hcell", "hcell", 0), ("epr", "epr", 1), ("xray", "xray", 0), ("dft", "dft", 0),
+    ("other", "other", 0)))
 
 
 def pump(sec=0.6):
@@ -52,7 +55,6 @@ def shoot_welcome(w, outdir, lang, theme, work):
     """Coverbild: Startbildschirm mit dem Beispielprojekt (Projekte + zuletzt geöffnete Verbindungen), dazu die Seite
     des Beispielprojekts (Verbindungen mit Checkliste) für den Projekt-Abschnitt."""
     from elucida.app import welcome as WEL
-    keep = w.project_dir
     w.go_home()
     real = WEL.short_path
     base = str(Path(work).resolve())                   # macOS: /var -> /private/var
@@ -81,25 +83,34 @@ def shoot_welcome(w, outdir, lang, theme, work):
         w.pub_page.close_path()
     finally:
         WEL.short_path = real
-    w.open_project(keep, recent=False)               # Tab-Bilder: leere Verbindung in eigenem Projekt
+    w.open_project(work / "Beispielprojekt" / SHOW, recent=False)     # Tab-Bilder: Verbindung mit Daten
     pump(0.5)
 
 
 
 def shoot(w, outdir, lang, theme):
-    for name, key, themes in SHOTS:
+    for name, key, themes, step in SHOTS:
         if theme not in themes:
             continue
         idx = w._tab_keys.index(key)
         w.main_tabs.setCurrentIndex(idx)                  # Tabs werden erst beim Anzeigen gebaut (Platzhalter)
         pump(0.3)
         page = w.main_tabs.widget(idx)
-        for fn in ("sync_widgets", "update_preview", "render"):
+        steps = w.steps if key == "eps" else getattr(page, "steps", None)
+        if steps is not None:
+            steps.set_step(step, remember=False)
+        w._update_nav_dots()                              # Tabs mit Daten (Abbildungs-Chips im Tab Verbindung)
+        for fn in ("sync_si_export", "sync_widgets", "update_preview", "render"):
             if getattr(type(page), fn, None) not in (None, QWidget.render):    # nicht QWidget.render
                 getattr(page, fn)()
         if key == "eps":
             w.render()
-        pump(1.2)
+        pump(3.0 if key in ("compound", "syn", "dft") else 1.2)   # Zeichner (WebEngine), Orbitale
+        ed = getattr(page, "drawing_editor", None)
+        if ed is not None:                                # Zeichnung nach dem Auslegen der Seite neu mittig setzen
+            ed._unplaced = True                           # (sonst je nach Ladezeit seitlich verschoben)
+            ed.place()
+            pump(1.0)
         clear_toast(w)                                    # Einblendung („Projekt gespeichert“) nicht im Bild
         p = Path(outdir) / f"{name}_{theme}_{lang}.png"
         w.grab().save(str(p))
@@ -119,12 +130,8 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         w.resize(*SIZE)
         w.show()
         import json
-        from elucida.app import publication as PUB
-        w.open_demo_publication(work / "Beispielprojekt")      # Coverbild und Projektseite
+        w.open_demo_publication(work / "Beispielprojekt")      # Coverbild, Projektseite und alle Tabs (S3)
         w.go_home()
-        PUB.create(work / "My project", "My project")                    # Tab-Bilder: leere Verbindung in eigenem Projekt
-        w.open_publication(work / "My project")
-        assert w.new_compound_in_publication("1a")
         w.settings.setValue("recent_projects", json.dumps(      # Übersicht: nur das Beispielprojekt
             [str((work / "Beispielprojekt" / n).resolve()) for n in ("S3", "S2")]))
         w.settings.setValue("recent_publications", json.dumps([str((work / "Beispielprojekt").resolve())]))

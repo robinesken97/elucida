@@ -40,7 +40,7 @@ python Elucida.py                                     # App starten (oder python
 QT_QPA_PLATFORM=offscreen python Elucida.py --selftest selftest_out   # MUSS vor jedem Commit „OK“ melden
 python tools/build.py                                 # PyInstaller-Build (braucht: pip install pyinstaller)
 python tools/compare_figures.py vorher nachher        # Abbildungen zweier Selbsttest-Läufe pixelgenau (UI-Änderungen)
-python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots): Cover = Startbildschirm mit Beispielprojekt, Tabs leer mit Anleitung; alles nur dunkel (Nutzerwunsch)
+python tools/make_screenshots.py                       # README-Screenshots (docs/screenshots): Cover = Startbildschirm mit Beispielprojekt, jeder Tab mit den Daten von S3 (Beispielprojekt); alles nur dunkel (Nutzerwunsch)
 ```
 - README kurz halten (Überblick, Abläufe, Download); alle Tab-Details in `docs/manual.de.md`/`docs/manual.en.md` (App-Links, Überschriften prüft der Selbsttest).
 - Neue Funktion → eigener Abschnitt `with section:` im `selftest()` (`elucida/selftest.py`, Muster: `report.append("…: OK")` am Ende). Ein Fehler stoppt nur den Abschnitt, spätere können als Folge scheitern: den ersten FAILED zuerst lesen.

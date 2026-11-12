@@ -60,14 +60,23 @@ Supporting Information, in der alles zusammenpassen muss. Elucida hält das an e
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/eps_dark_de.png" alt="UV-Vis-Tab"><br><sub>UV-Vis: Jeder Tab beginnt mit einer kurzen Anleitung</sub></td>
-    <td width="50%"><img src="docs/screenshots/project_dark_de.png" alt="Projektseite"><br><sub>Projekt mit Checklisten</sub></td>
+    <td width="50%"><img src="docs/screenshots/eps_dark_de.png" alt="UV-Vis-Tab"><br><sub>UV-Vis: ε aus der Verdünnungsreihe</sub></td>
+    <td width="50%"><img src="docs/screenshots/overlay_dark_de.png" alt="Overlay-Tab"><br><sub>Overlay: Messung und TD-DFT</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/synthesis_dark_de.png" alt="Synthese-Tab"><br><sub>Synthese mit dem Zeicheneditor</sub></td>
+    <td><img src="docs/screenshots/hrms_dark_de.png" alt="HRMS-Tab"><br><sub>HRMS: Spektrum, Isotopenmuster und LC-Spur</sub></td>
+    <td><img src="docs/screenshots/cv_dark_de.png" alt="CV-Tab"><br><sub>CV: E½ und Nicholson-Verhältnis</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/epr_dark_de.png" alt="EPR-Tab"><br><sub>EPR: Radikalkation mit gefitteter Simulation</sub></td>
     <td><img src="docs/screenshots/xray_dark_de.png" alt="X-Ray-Tab"><br><sub>X-Ray</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/dft_dark_de.png" alt="DFT-Tab"><br><sub>DFT: Geometrie mit dem HOMO</sub></td>
+    <td><img src="docs/screenshots/project_dark_de.png" alt="Projektseite"><br><sub>Projekt mit Checklisten</sub></td>
+  </tr>
 </table>
+<sub>Alle Bilder zeigen das Beispielprojekt (Hilfe → Beispielprojekt ansehen) mit erfundenen Daten.</sub>
 
 ## Herunterladen
 

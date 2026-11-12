@@ -40,6 +40,8 @@ In the **SEC** tab choose the spectrum series and the potential file. Every spec
 time (set a **time offset** if needed). **View:** spectrum series, difference spectra or A at λ versus E with an
 apparent Nernst fit – with a continuous scan the thin-layer cell lags behind, the CV values take precedence. Highlight
 intermediate species by their potential.
+The **Heatmap** view shows the whole series in one picture: wavelength against spectrum order, absorbance (or ΔA to
+the first spectrum) as colour.
 
 ## 6. H-cell: charge and discharge
 

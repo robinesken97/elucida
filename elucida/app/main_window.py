@@ -3006,9 +3006,13 @@ class MainWindow(QMainWindow):
         self._dots_dir = self.project_dir
         info = WEL.project_info(self.project_dir) if self.project_dir else None
         have = {WEL.TAB_OF[k] for k in info["badges"]} if info else set()
+        if info:                                          # Overlay/Weitere haben kein Analytik-Abzeichen
+            have |= {k for k, st in (("overlay", self.ov_state), ("other", self.other_state)) if st.get("entries")}
         for i, b in self.nav_buttons.items():
             if self._tab_keys[i] != "compound":           # NameTab: hell, sobald es eine Summenformel gibt
                 b.set_data(self._tab_keys[i] in have)
+        if self._built("compound"):                       # offener Tab „Verbindung“: Abbildungs-Chips folgen den Punkten
+            self.comp_tab.sync_si_export()                # (nach Sprachwechsel entstand er vor den Punkten)
         self.sync_main_button()
 
     def _fill_comp_menu(self):

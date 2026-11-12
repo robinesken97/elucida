@@ -635,6 +635,13 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **A at λ vs. E** with an apparent Nernst fit (E½, n). In a continuous scan the electrolysis in the thin-layer
   cell lags behind (E½ shifted, n < 1); true Nernst values need potential steps at equilibrium – CV values take
   precedence.
+- **Heatmap:** the whole series in one picture – x = wavelength (range as for the spectral series), y = spectra in the
+  order of acquisition from bottom to top, colour = absorbance as measured or the difference to the first spectrum shown
+  (ΔA, diverging colour map with 0 in the middle). The y axis stays the order; it is labelled with the potential (also
+  when it goes up and comes back), without potentials with the time since the first spectrum from the files, otherwise
+  with the number. Colour map selectable (viridis, cividis, magma or RdBu, PuOr, coolwarm), upper end "auto" or fixed.
+  Raw-signal series are called "raw signal" here as well. The mouse shows λ, spectrum and value; the CSV export holds
+  the matrix (rows = spectra, columns = λ).
 - Potential axis as measured, shifted by E(Fc⁺/Fc) or with the referencing of the CV tab.
 
 ## H-Cell tab (charge–discharge cycling)
