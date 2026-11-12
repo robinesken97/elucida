@@ -547,6 +547,12 @@ Absorption and emission in one figure, as commonly shown in papers:
   little current before the peak, this is flagged and the measurement is left out of the regressions.
 - From 3 scan rates per group and couple: regression of **i_p vs. √v** (Randles–Ševčík) and **log i_p vs. log v**
   (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**.
+- **Diffusion coefficient** (evaluation step, card "Diffusion Coefficient"): with the number of electrons n, the area
+  A of the working electrode, the concentration c and the temperature, the program calculates D from the
+  Randles–Ševčík slope of the forward peak (i_p = 0.4463·n·F·A·c·√(n·F·v·D/RT), reversible, freely diffusing couple). Without area or
+  concentration there is no D; the area is never taken from the measurement file. The interval carries only the
+  uncertainty of the slope, not that of area and concentration. The result appears on the Results tab and in the
+  methods text.
 - **Copy** (Methods Text card on the SI Text tab): English paragraph on the data evaluation (referencing, peak determination, baseline, Nicholson,
   regressions) to append to the setup paragraph "Cyclic Voltammetry" of the SI, plus the results per redox couple.
 - **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
@@ -610,8 +616,8 @@ Absorption and emission in one figure, as commonly shown in papers:
   - **Smooth:** follows a broad background (e.g. the resonator in wide sweeps) and keeps narrow lines; no dark
     spectrum is needed and the noise stays that of the single measurement. The only value is the **width**:
     narrower features stay as signal, broader ones are subtracted as background. It must be larger than the
-    broadest real line, otherwise broad parts of the spectrum vanish too; one-sided lines lose some height (about
-    6 % at one twelfth of the width). Calculation: Whittaker smoother (least squares with a penalty on the second
+    broadest real line, otherwise broad parts of the spectrum vanish too; one-sided lines lose some height, depending on
+    line shape and noise (at one twelfth of the width: Gaussian line up to about 4 %, Lorentzian line up to about 10 %). Calculation: Whittaker smoother (least squares with a penalty on the second
     differences) with one robust reweighting step; the methods text states method, width and reference.
   - **Spline:** natural cubic spline through the means of the signal-free ranges (at least two, keep them short),
     like the baseline with set points in instrument software.

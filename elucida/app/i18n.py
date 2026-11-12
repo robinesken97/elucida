@@ -571,6 +571,7 @@ TEXTS = {
     "grp_export": ('Achsen, Größe und Formate', 'Axes, Size and Formats'),
     "grp_export_size": ('Größe und Formate', 'Size and Formats'),
     "grp_refs": ("Referenzierung", "Referencing"),
+    "grp_diffusion": ("Diffusionskoeffizient", "Diffusion Coefficient"),
     "grp_more_display": ('Weitere Darstellung', 'More Display Options'),
     "grp_highlight": ('Hervorheben und Labels', 'Highlighting and Labels'),
     "grp_intensity": ('Intensität und Kinetik', 'Intensity and Kinetics'),
@@ -1568,6 +1569,20 @@ TEXTS = {
                         "⚠ No electrode area in {files} – current instead of current density."),
     "cv_cycle_missing": ("⚠ {files}: Zyklus {n} fehlt – letzter Zyklus ausgewertet.",
                          "⚠ {files}: cycle {n} missing – last cycle evaluated."),
+    "cv_rs_n": ("Elektronen n", "Electrons n"),
+    "cv_rs_area": ("Fläche A", "Area A"),
+    "cv_rs_area_tip": ("Geometrische Fläche der Arbeitselektrode. Wird nie aus der Messdatei übernommen: dort steht\n"
+                       "oft der Vorgabewert der Messsoftware.",
+                       "Geometric area of the working electrode. Never taken from the measurement file: it often\n"
+                       "holds the default of the measurement software."),
+    "cv_rs_conc": ("Konzentration c", "Concentration c"),
+    "cv_rs_temp": ("Temperatur", "Temperature"),
+    "cv_rs_hint": ("D aus der Randles–Ševčík-Steigung des Hinpeaks (reversibles, frei diffundierendes Paar, ab drei Scanraten). "
+                   "Erst mit Fläche und Konzentration; das Ergebnis steht im Reiter Ergebnisse.",
+                   "D from the Randles–Ševčík slope of the forward peak (reversible, freely diffusing couple, from three scan rates). "
+                   "Only with area and concentration; the result is shown in the Results tab."),
+    "cv_D_line": ("Paar {n}, aus dem Hinpeak (i_p{p}): D = {D} cm² s⁻¹ (95 %: {ci}; nur aus der Unsicherheit der Steigung)",
+                  "Couple {n}, from the forward peak (i_p{p}): D = {D} cm² s⁻¹ (95 %: {ci}; from the uncertainty of the slope only)"),
     "cv_fit_line": ("Paar {n}, i_p{p} ({k} Scanraten): gegen √v Steigung {m} µA (V s⁻¹)^-½, Achsenabschnitt {b} µA, "
                     "R² = {r2}; log-log-Steigung {ll} (95-%-KI)",
                     "Couple {n}, i_p{p} ({k} scan rates): vs. √v slope {m} µA (V s⁻¹)^-½, intercept {b} µA, "
@@ -1892,6 +1907,10 @@ TEXTS = {
                           "Fit all S = ½ simulations assigned to the same measurement at once.\n"
                           "Start values are their current values: set or fit them roughly one by one first."),
     "epr_fit_joint_note": ("(gemeinsam, {n} Spezies)", "(joint, {n} species)"),
+    "epr_fit_stale": ("⚠ Vor einer Änderung der Feldkalibrierung oder Referenzfrequenz gefittet: g gilt für die alte "
+                      "Feldachse und wird nicht berichtet. Bitte neu fitten.",
+                      "⚠ Fitted before the field calibration or reference frequency was changed: g belongs to the "
+                      "old field axis and is not reported. Please fit again."),
     "epr_kin_tip": ("Gegen Zeit: isotherm, je Temperatur I(t) = I0·exp(−k·t) (die Auswahl rechts gilt dort nicht);\n"
                     "die Ansicht 1/T (Arrhenius) fittet immer, auch wenn hier „aus“ steht.\n"
                     "Gegen Temperatur (Rampe): I(T) = exp(−A·∫exp(−E_a/RT)/β dT), erste Ordnung; Heizrate β aus mittlerem\n"

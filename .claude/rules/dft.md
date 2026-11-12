@@ -101,3 +101,7 @@ paths:
   Eingabe). IRC nur ΔE_el (nie mit G-Stufen), x = Σ|ΔR| der Trajektorie (TS = 0) oder Bindungsspalte, verschiedene
   Methoden ablehnen. NICS = −σ_iso, NICSzz = −n·σ·n (n = Ebene der Schweratome < 2,5 Å um das Bq), Scan ab 10 Bq
   (NICS schwarz, NICSzz rot). Isowert-Bedienung wie IboView („Threshold Type“ density/absolute, absolut Standard 0.01).
+- Gaussian-Energie (Literaturprüfung 2026-11-12): bei MP2, Doppelhybriden und CCSD(T) ist `energy` die letzte
+  Gesamtenergie mit Korrelationsanteil („EUMP2 =“, „E(B2PLYP) =“ nach „E2(“, „CCSD(T)=“; Ziffern wie gedruckt, nur der
+  D-Exponent aufgelöst), nicht „SCF Done“. Formate aus dem Gedächtnis, nur mit künstlichen Zeilen geprüft: echte
+  Gaussian-MP2-/Doppelhybrid-Ausgabe steht aus. ORCA nimmt weiter FINAL SINGLE POINT ENERGY.

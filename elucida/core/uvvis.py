@@ -120,6 +120,12 @@ _UNIT_TEXT = {"uM": "µM", "mg/mL": "mg mL⁻¹"}
 R2_DIGITS = 2                    # Nachkommastellen von R² in Tabelle, Bild und SI-Texten (ε-Tab → Erweitert, je Verbindung)
 
 
+def sci_text(v, digits=3):
+    """1.23e-04 -> „1.23 × 10^-4“ (Ergebniszeilen und Methodentexte; die Anzeige setzt den Exponenten hoch)."""
+    mant, ex = f"{v:.{digits - 1}e}".split("e")
+    return f"{mant} × 10^{int(ex)}"
+
+
 def r2_text(r2):
     """R² mit der gewählten Stellenzahl – überall dieselbe Zahl (Tabelle, Bild, SI-Text, Methodentext)."""
     return f"{r2:.{R2_DIGITS}f}"
@@ -840,6 +846,14 @@ def ve_decimals(v, e=None, digits="auto", max_decimals=None):
     return d
 
 
+def round_half_up(x, decimals=0):
+    """Kaufmännisch runden (5 weg von der Null) auf `decimals` Stellen, auch negative (Zehner). Python rundet sonst
+    halb-gerade (7264.5 -> 7264), anders als λ (`fmt_lam`) und Excel: überall dieselbe Regel (Literaturprüfung 2026-11;
+    DIN 1333 / ISO 80000-1 Anhang B)."""
+    from decimal import Decimal, ROUND_HALF_UP
+    return float(Decimal(repr(float(x))).quantize(Decimal(1).scaleb(-int(decimals)), rounding=ROUND_HALF_UP))
+
+
 def fmt_lam(lam) -> str:
     """λ in Bild, Tabelle, SI, Excel immer ganzzahlig (Nutzerwunsch P8 R3), 330.5 -> 331 (nicht halb-gerade)."""
     return str(math.floor(float(lam) + 0.5))
@@ -849,10 +863,10 @@ def fmt_ve(v, e=None, digits="auto", max_decimals=None):
     """Wert ± Fehler, gerundet nach Unsicherheit. max_decimals=0 (ε): ganzzahlig, auch bei großem Fehler
     (wie in den Publikationen der Gruppe: 7264 ± 318, nicht 7300 ± 300)."""
     d = ve_decimals(v, e, digits, max_decimals)
-    vs = f"{round(v, d):.{max(d, 0)}f}"
+    vs = f"{round_half_up(v, d):.{max(d, 0)}f}"
     es = None
     if e is not None and np.isfinite(e):
-        er = round(e, d)
+        er = round_half_up(e, d)
         if er == 0 and e >= 0:                         # z. B. ε ganzzahlig, SE = 0,65 -> „± 1“ statt „± 0“
             er = 10.0 ** (-d)
         es = f"{er:.{max(d, 0)}f}"

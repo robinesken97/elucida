@@ -567,6 +567,11 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Regressionen genommen.
 - Ab 3 Scanraten je Gruppe und Paar: Regression **i_p gegen √v** (Randles-Ševčík) und **log i_p gegen log v**
   (Steigung 0,5 = diffusionskontrolliert, 1 = adsorbiert), jeweils mit **95-%-Konfidenzintervall**.
+- **Diffusionskoeffizient** (Schritt Auswertung, Karte „Diffusionskoeffizient“): mit Elektronenzahl n, Fläche A der
+  Arbeitselektrode, Konzentration c und Temperatur rechnet das Programm D aus der Randles-Ševčík-Steigung des Hinpeaks
+  (i_p = 0,4463·n·F·A·c·√(n·F·v·D/RT), reversibles, frei diffundierendes Paar). Ohne Fläche oder Konzentration gibt es
+  kein D; die Fläche wird nie aus der Messdatei übernommen. Das Intervall trägt nur die Unsicherheit der Steigung,
+  nicht die von Fläche und Konzentration. Ergebnis im Reiter Ergebnisse und im Methodentext.
 - **Kopieren** (Karte „Methodentext“ im Reiter SI-Text): englischer Absatz zur Auswertung (Referenzierung, Peakbestimmung, Basislinie, Nicholson,
   Regressionen) zum Anhängen an den Aufbau-Absatz „Cyclic Voltammetry“ der SI, dazu die Ergebnisse je Redoxpaar.
 - **Referenzierung:** wie gemessen (Referenzelektrode, z. B. Ag/AgNO₃), **intern** (Fc- oder Ac₂Fc-Paar in einer
@@ -631,7 +636,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
     stehen; ein Dunkelspektrum ist nicht nötig, das Rauschen bleibt das der Einzelmessung. Einziger Wert ist die
     **Breite**: was schmaler ist, bleibt Signal, was breiter ist, wird als Untergrund abgezogen. Sie muss größer
     sein als die breiteste echte Linie, sonst verschwinden auch breite Anteile des Spektrums; einseitige Linien
-    verlieren etwas Höhe (bei einem Zwölftel der Breite etwa 6 %). Rechnung: Whittaker-Glätter (kleinste Quadrate mit
+    verlieren etwas Höhe, je nach Linienform und Rauschen (bei einem Zwölftel der Breite: Gauß-Linie bis etwa 4 %,
+    Lorentz-Linie bis etwa 10 %). Rechnung: Whittaker-Glätter (kleinste Quadrate mit
     Strafterm auf den zweiten Differenzen) mit einem robusten Gewichtungsschritt; der Methodentext nennt Verfahren,
     Breite und Literaturstelle.
   - **Spline:** natürlicher kubischer Spline durch die Mittel der signalfreien Bereiche (mindestens zwei, kurz

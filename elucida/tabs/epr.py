@@ -40,7 +40,7 @@ def g_text(g):
 
 def hfc_texts(a_mT, g):
     """Aufspaltung a [mT] -> (Text in mT, Text in MHz); A = (µ_B/h)·g·a."""
-    return f"{a_mT:.{A_MT_DIGITS}f}", f"{a_mT * MHZ_PER_MT_FREE * g / 2.0023:.{A_MHZ_DIGITS}f}"
+    return f"{a_mT:.{A_MT_DIGITS}f}", f"{a_mT * MU_B_H * g:.{A_MHZ_DIGITS}f}"      # GHz/T = MHz/mT
 
 
 # ----------------------------------------------------------------------------
@@ -113,7 +113,8 @@ def smooth_baseline(B, I, width):
     in erster Ableitung). Nur ein Schritt: bis zur Konvergenz iteriert schließt das Verfahren immer größere Teile
     eines stark gekrümmten Untergrunds aus und läuft davon (an echten und künstlichen Spektren gemessen).
     width [mT]: Periode, die der Glätter auf die Hälfte dämpft – Schmaleres bleibt Signal, Breiteres gilt als
-    Untergrund; eine einseitige Linie von 5 mT Breite verliert bei 60 mT etwa 6 % ihrer Höhe."""
+    Untergrund; eine einseitige Linie von 5 mT Breite verliert bei 60 mT je nach Linienform und Rauschen Höhe
+    (Gauß bis ~4 %, Lorentz bis ~10 %; Literaturprüfung 2026-11)."""
     use = np.isfinite(I)
     if use.sum() < 8 or not width > 0:
         return np.zeros_like(I)
@@ -326,15 +327,25 @@ def gauss_lin_fit(B, I, center, c_lo, c_hi, width=8.5, w_lo=3.0, w_hi=50.0, max_
 R_GAS = 8.314462618                    # J mol⁻¹ K⁻¹ (wie EasySpin molgas)
 
 
+DECAY_SUB = 20                         # Teilschritte je Messintervall für ∫exp(−Ea/RT)dt (Zeit-Modus)
+
+
 def decay_model(T, A, Ea, beta, time=None):
-    """Zerfall erster Ordnung: I = exp(−A·∫ exp(−Ea/RT) dt), I(erster Punkt) = 1. Integral per Trapezregel über die
-    Messpunkte: mit time (s) über die gemessene Zeit (beliebiges Temperaturprogramm, auch Haltephasen/Abkühlen),
-    sonst wie cumtrapz im MATLAB-Skript über T bei konstanter Heizrate β (K/s), dt = dT/β."""
+    """Zerfall erster Ordnung: I = exp(−A·∫ exp(−Ea/RT) dt), I(erster Punkt) = 1. Mit time (s): Integral über die
+    gemessene Zeit (beliebiges Temperaturprogramm, auch Haltephasen/Abkühlen), T zwischen zwei Spektren linear
+    interpoliert und jedes Intervall in DECAY_SUB Teile zerlegt – die Trapezregel nur über die Messpunkte überschätzt
+    das Integral (exp(−Ea/RT) ist konvex): bei 10 K Abstand E_a +1,4 %, das Intervall verfehlt den wahren Wert
+    (Literaturprüfung 2026-11). Ohne time wie cumtrapz im MATLAB-Skript über T bei konstanter Heizrate β (K/s)."""
     T = np.asarray(T, float)
-    f = np.exp(-Ea / (R_GAS * T))
-    x = np.asarray(time, float) if time is not None else T / beta
-    integral = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(x))])
-    return np.exp(-A * integral)
+    if time is None:
+        f = np.exp(-Ea / (R_GAS * T))
+        integral = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(T / beta))])
+        return np.exp(-A * integral)
+    x = np.asarray(time, float)
+    w = np.linspace(0.0, 1.0, DECAY_SUB + 1)
+    f = np.exp(-Ea / (R_GAS * (T[:-1, None] + np.diff(T)[:, None] * w[None, :])))
+    seg = (0.5 * (f[:, 1:] + f[:, :-1])).sum(1) * np.diff(x) / DECAY_SUB
+    return np.exp(-A * np.concatenate([[0.0], np.cumsum(seg)]))
 
 
 def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script", time=None):
@@ -523,10 +534,7 @@ def fit_arrhenius(T, k):
     return out
 
 
-def sci_text(v, digits=3):
-    """1.23e-04 -> „1.23 × 10^-4“ (Methodentext, wie die übrigen Exponenten)."""
-    mant, ex = f"{v:.{digits - 1}e}".split("e")
-    return f"{mant} × 10^{int(ex)}"
+sci_text = core.sci_text               # 1.23e-04 -> „1.23 × 10^-4“
 
 
 def decay_band(T, r, beta, time=None):
@@ -1314,7 +1322,7 @@ class EPRTab(TABS.FigureTab):
                     vary_lorentz=e.get("fit_lorentz", False))
         e.update(g=round(r["g"], 6), lw=round(r["lw"], 5), lorentz=round(r["lorentz"], 3),
                  nuclei=nuclei_with_a(e.get("nuclei", ""), [a for (_, _, a) in r["groups"]]),
-                 fit={"r2": r["r2"], "rms": r["rms"], "mw": mw})
+                 fit={"r2": r["r2"], "rms": r["rms"], "mw": mw, "dB": self.fit_axis(e)[1]})
         self.show_details()
         self.timer.start()
 
@@ -1343,9 +1351,26 @@ class EPRTab(TABS.FigureTab):
         for x, r in zip(mates, res):
             x.update(g=round(r["g"], 6), lw=round(r["lw"], 5), lorentz=round(r["lorentz"], 3),
                      nuclei=nuclei_with_a(x.get("nuclei", ""), [a for (_, _, a) in r["groups"]]),
-                     fit={"r2": r2, "rms": rms, "mw": mw, "joint": len(mates)})
+                     fit={"r2": r2, "rms": rms, "mw": mw, "joint": len(mates), "dB": self.fit_axis(x)[1]})
         self.show_details()
         self.timer.start()
+
+    def fit_axis(self, e):
+        """Feldachse, auf der die Simulation e gefittet wird: (Achsenfrequenz, ΔB der Feldkalibrierung ihrer Messung)."""
+        target = next((x for x in self.st["entries"] if x["uid"] == e.get("fit_to")), None)
+        dB, calib_t = self.calibration_shift()
+        return self.axis_mw(target), (0.0 if target is None or target["uid"] == calib_t else round(dB, 5))
+
+    def fit_ok(self, e):
+        """Fit-Ergebnis von e gilt noch: gefittet auf der heutigen Feldachse. Nach einer Änderung der Kalibrierung
+        (Referenz, g_lit) oder der Referenzfrequenz gehört das gespeicherte g zur alten Achse (0,1 mT ≙ 6·10⁻⁴ in g):
+        dann nicht mehr berichten, sondern neu fitten lassen (Literaturprüfung 2026-11)."""
+        r = e.get("fit")
+        if not r:
+            return False
+        mw, dB = self.fit_axis(e)
+        return (abs(r.get("dB", dB) - dB) < 1e-4
+                and (not r.get("mw") or not mw or abs(r["mw"] - mw) < 1e-6 * mw))
 
     def fit_text(self, e):
         r = e.get("fit")
@@ -1357,6 +1382,8 @@ class EPRTab(TABS.FigureTab):
         if r:
             parts.append(f"R² = {core.r2_text(r['r2'])}" + (" " + T("epr_fit_joint_note", n=r["joint"])
                                                              if r.get("joint") else ""))
+            if not self.fit_ok(e):
+                parts.append(T("epr_fit_stale"))
         return "\n".join(parts)
 
     def si_caption(self, name):
@@ -1382,7 +1409,7 @@ class EPRTab(TABS.FigureTab):
             h += f" ({chem_html(st['cap_conc'])})"
         h += "."
         dB, calib_t = self.calibration_shift()
-        isos = [e for e in vis if e["kind"] == "iso" and e.get("fit") and not (dB and e.get("fit_to") == calib_t)]
+        isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e) and not (dB and e.get("fit_to") == calib_t)]
         for e in isos:
             parts = [f"g = {g_text(e['g'])}", f"ΔB<sub>pp</sub> = {e['lw']:.3f} mT"]
             hfc = [f"{n}×{nucleus_html(nm)}: {hfc_texts(a, e['g'])[1]} MHz"
@@ -2097,7 +2124,7 @@ class EPRTab(TABS.FigureTab):
             m.append("Simulations assigned to a measured spectrum were scaled to it by linear least squares, all "
                      "components of a spectrum simultaneously (one factor each); relative contributions were "
                      "obtained from the double integrals of the scaled components.")
-        isos = [e for e in vis if e["kind"] == "iso" and e.get("fit")]
+        isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e)]
         if isos:
             lor = any(e.get("fit_lorentz") for e in isos)
             m.append("Isotropic S = 1/2 spectra were simulated to first order (lines of groups of equivalent nuclei "
@@ -2178,8 +2205,9 @@ class EPRTab(TABS.FigureTab):
                 lsq = st.get("kin_norm", "lsq") == "lsq"
                 if lsq:
                     m.append("The decay was analysed as a first-order process, I(t) = I0·exp[−A∫exp(−Ea/RT(t′))dt′] "
-                             "from the first spectrum, with the integral evaluated by the trapezoidal rule over the "
-                             "recorded times and temperatures (no constant heating rate assumed). Ea and ln A were "
+                             "from the first spectrum, with the integral evaluated numerically over the recorded times "
+                             "and the temperature interpolated linearly between successive spectra (no constant "
+                             "heating rate assumed). Ea and ln A were "
                              "fitted to the measured intensities by Levenberg–Marquardt least squares, with I0 determined "
                              "linearly, starting from a grid over Ea with ln A chosen to reproduce the measured "
                              "half-decay point; 95% confidence intervals were obtained from s²(JᵀJ)⁻¹ with "

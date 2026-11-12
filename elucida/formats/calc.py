@@ -264,6 +264,16 @@ def parse_gaussian(text) -> dict:
             m = re.search(r"=\s*" + _E, s)
             if m:
                 c["energy"] = m.group(1)
+        elif "EUMP2" in s or "E2(" in s or s.startswith("CCSD(T)="):
+            # MP2, Doppelhybride, CCSD(T): „SCF Done“ ist nur der SCF-Anteil; die Gesamtenergie steht danach als
+            # „EUMP2 = -0.76…D+02“, „E2(B2PLYP) = … E(B2PLYP) = -0.76…D+02“ bzw. „CCSD(T)= -0.76…D+02“ (Literaturprüfung
+            # 2026-11: sonst fehlt Einzelpunkten die Korrelationsenergie). Die Ziffern bleiben, nur der Exponent entfällt.
+            m = (re.search(r"EUMP2\s*=\s*(-?\d*\.\d+D[+-]\d+)", s)
+                 or re.search(r"E2\([^)]*\)\s*=\s*\S+\s+E\([^)]*\)\s*=\s*(-?\d*\.\d+D[+-]\d+)", s)
+                 or re.search(r"^CCSD\(T\)=\s*(-?\d*\.\d+D[+-]\d+)", s))
+            if m:
+                from decimal import Decimal
+                c["energy"] = format(Decimal(m.group(1).replace("D", "E")), "f")
         elif s.startswith("Item") and "Value" in s and "Threshold" in s:
             rows = []
             for j in range(i + 1, min(n, i + 6)):

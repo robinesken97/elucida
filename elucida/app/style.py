@@ -1300,14 +1300,15 @@ _SCI = [(r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<
         (r"\(([tT])\)", r"(<i>\1</i>)"), (r"·t\b", "·<i>t</i>"), (r"\bEa\b", "<i>E</i><sub>a</sub>"),
         (r"10\^(-?)(\d+)", lambda m: "10<sup>" + ("−" if m.group(1) else "") + m.group(2) + "</sup>"),
         (r"/RT\b", "/<i>RT</i>"), (r"β(?= = )", "<i>β</i>"), (r"(?<= of )k\b", "<i>k</i>"),
+        (r"\bcm2\b", "cm²"), (r"(?<![A-Za-zäöüÄÖÜß>_])D(?= = )", "<i>D</i>"),                         # D = … cm2 s-1
         (r"(?<=Cutoff )A\b", "<i>A</i>"), (r"\b([BWH]) × (H)\b", r"<i>\1</i> × <i>\2</i>"),            # B × H
         (r"\((Δ?)A\)", r"(\1<i>A</i>)"), (r"%T\b", "%<i>T</i>"), (r"\|([A-Za-z])\|", r"|<i>\1</i>|"),   # (ΔA), %T, |E|
         (r"\bD(?= (?:und|and) \|)", "<i>D</i>"), (r"(?<=× )T\b", "<i>T</i>"), (r"(?<=/)T$", "<i>T</i>"),
-        (r"(?<=[a-zäöüß] )([jf])$", r"<i>\1</i>"),                                                    # „Stromdichte j“
+        (r"(?<=[a-zäöüß] )([jfnAc])$", r"<i>\1</i>"),                                                    # „Stromdichte j“
         (r"(?<=gegen )(√?)([EvνT])\b", r"\1<i>\2</i>"), (r"(?<=against )(√?)([EvνTc])\b", r"\1<i>\2</i>"),
         (r"(?<=log )([vi])\b", r"<i>\1</i>"), (r"√([vν])", r"√<i>\1</i>"),
         (r"·c\b", "·<i>c</i>"), (r"(?<=\+ )b\b", "<i>b</i>"), (r"\bk(?=·)", "<i>k</i>"),               # A/d = ε·c + b
-        (r"\(g, a, ", "(<i>g</i>, <i>a</i>, "), (r"\ba(?=/mT)", "<i>a</i>"), (r"^T(?= aus | from )", "<i>T</i>"),
+        (r"\(g, a, ", "(<i>g</i>, <i>a</i>, "), (r"\ba(?=/mT)", "<i>a</i>"), (r"^([TD])(?= aus | from )", r"<i>\1</i>"),
         (r"^([xyz])(?=[+−]$)", r"<i>\1</i>"), (r"^([cdgn])$", r"<i>\1</i>"), (r"^Δ([A-Z])$", r"Δ<i>\1</i>"),
         (r"\bA(?= bei | at )", "<i>A</i>"), (r"\bM(?= / )", "<i>M</i>"), (r"\bn/n\(", "<i>n</i>/<i>n</i>("),
         (r"\b([xy])(?=-Achse|-Größe|-Bereich| axis| range)", r"<i>\1</i>"),              # E [V], M = …, E-Bereich, y-Achse

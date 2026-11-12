@@ -30,7 +30,8 @@ def cdx_structure(blob: bytes) -> dict | None:
     import tempfile
     try:
         from rdkit import Chem
-        from rdkit.Chem import Descriptors, rdMolDescriptors
+        from rdkit.Chem import rdMolDescriptors
+        from elucida.core.chem import mol_weight
         if not Chem.HasChemDrawCDXSupport():
             return None
         with tempfile.TemporaryDirectory() as td:
@@ -46,7 +47,7 @@ def cdx_structure(blob: bytes) -> dict | None:
     mol = mols[0]
     for m in mols[1:]:
         mol = Chem.CombineMols(mol, m)
-    return {"formula": rdMolDescriptors.CalcMolFormula(mol, True, True), "mw": float(Descriptors.MolWt(mol)),
+    return {"formula": rdMolDescriptors.CalcMolFormula(mol, True, True), "mw": mol_weight(mol),
             "cdxml": Chem.MolToCDXMLBlock(mol) if hasattr(Chem, "MolToCDXMLBlock") else None,   # ältere RDKit
             "n_fragments": len(mols)}
 

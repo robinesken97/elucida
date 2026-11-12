@@ -19,6 +19,7 @@ import shutil
 from pathlib import Path
 
 from elucida.app.i18n import T
+from elucida.core import uvvis as core
 
 # Massen (g), Volumen (mL), Stoffmengen (mmol): Umrechnungsfaktoren
 MASS = {"kg": 1000.0, "g": 1.0, "mg": 1e-3, "µg": 1e-6, "μg": 1e-6, "ug": 1e-6}
@@ -264,9 +265,9 @@ def amount_text(row, calc):
     elif calc.get("mmol") is not None:
         parts.append(f"{fmt_sig(calc['mmol'])} mmol")
     if calc.get("yld") is not None:
-        parts.append(f"{calc['yld']:.0f}%")
+        parts.append(f"{core.round_half_up(calc['yld'], 0):.0f}%")       # kaufmännisch wie überall
     elif calc.get("eq") is not None:
-        e = f"{calc['eq']:.2f}"                             # 1.05 eq., aber 1.1/1.0 eq. (Nutzerwunsch P7 R1)
+        e = f"{core.round_half_up(calc['eq'], 2):.2f}"      # 1.05 eq., aber 1.1/1.0 eq. (Nutzerwunsch P7 R1)
         parts.append(f"{e[:-1] if e.endswith('0') else e} eq.")
     return f"({', '.join(parts)})" if parts else ""
 
@@ -293,13 +294,13 @@ def scheme_molecules(cdxml):
         mols = Chem.MolsFromCDXMLFile(str(cdxml), sanitize=True, removeHs=False)
     except Exception:
         return out
-    from elucida.core.chem import drop_label_dummies
+    from elucida.core.chem import drop_label_dummies, mol_weight
     for m in mols or []:
         if m is not None:
             m = drop_label_dummies(m)                     # „*Br2“: Beschriftung mit hinterlegter Struktur
             role = ("product" if m.HasProp("CDX_PRODUCT_ID") else
                     "reactant" if m.HasProp("CDX_REAGENT_ID") else "")
-            out.append((rdMolDescriptors.CalcMolFormula(m, True, True), float(Descriptors.MolWt(m)), role))  # D, [13C]
+            out.append((rdMolDescriptors.CalcMolFormula(m, True, True), mol_weight(m), role))  # D, [13C]
     return out
 
 

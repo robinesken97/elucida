@@ -12,7 +12,9 @@ paths:
   auf die SE-Genauigkeit „7300 ± 300“; `core.fmt_ve`/`ve_decimals`, `eps_max_decimals`); spezifisches a weiter auf die
   Genauigkeit des SE. Sehr kleine Fehler auf 1 Einheit aufrunden, nie „± 0“. Dieselbe Zahl überall (Nutzerwunsch):
   Tabelle, Bild, SI-Zeile, Methodentext und Excel-Zahlenformat (`excel._coef_fmts`); nur die CSV behält Rohwerte.
-  λ überall ganzzahlig, kaufmännisch gerundet (`core.fmt_lam`, Nutzerwunsch P8 R3).
+  λ überall ganzzahlig, kaufmännisch gerundet (`core.fmt_lam`, Nutzerwunsch P8 R3); seit der Literaturprüfung
+  2026-11-12 runden auch ε/a und ihre Fehler kaufmännisch (`core.round_half_up`, nie Pythons `round`), ebenso
+  Äquivalente und Ausbeuten; Molmassen aus Zeichnungen über `chem.mol_weight` (dieselbe Tabelle `SI.AVG` wie EA).
 - Fit: A/d = m·c + b (OLS); ε = m / f_c (f_c: mM 1e-3, µM 1e-6, M 1; mg/mL über die Molmasse; ohne Molmasse
   spezifischer Koeffizient a in L g⁻¹ cm⁻¹). 95-%-KI = t(0,975; n−2)·SE (eigene `t_quantile`).
 - R² überall mit derselben Stellenzahl (`core.r2_text`, `core.R2_DIGITS`; Nutzerwunsch 2026-11-11: Standard **2**,

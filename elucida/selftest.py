@@ -1263,6 +1263,23 @@ def selftest(outdir, with_isnet=False):
                     fits_ = t_cv.rate_fits()
                     assert list(fits_) == [("A", 1)] and abs(fits_[("A", 1)]["ll_a"]["slope"] - 0.5) < 0.05, fits_
                     assert "log-log" in t_cv.lbl_res.text() or "log–log" in t_cv.lbl_res.text(), t_cv.lbl_res.text()
+                    # Diffusionskoeffizient aus der Randles-Sevcik-Steigung: erst mit Flaeche und Konzentration
+                    m_ = 0.4463 * 96485.33212 * 0.0707 * 1e-6 * np.sqrt(96485.33212 * 1e-5 / (8.314462618 * 298.15))
+                    assert abs(CVMOD.diffusion_coefficient(m_, 1, 0.0707, 1.0, 25.0) / 1e-5 - 1) < 1e-9
+                    assert CVMOD.diffusion_coefficient(m_, 1, 0.0, 1.0) is None and CVMOD.diffusion_coefficient(m_, 1, 0.07, 0.0) is None
+                    assert "D = " not in t_cv.lbl_res.text() and "Diffusion coefficients" not in t_cv.methods_text()
+                    st_cv.update(rs_area=0.0707, rs_conc=1.0, rs_n=1, rs_temp=25.0)
+                    t_cv.render()
+                    D_ = t_cv.diffusion(fits_[("A", 1)])          # nur aus dem Hinpeak, nie aus dem Rueckpeak
+                    fw_ = fits_[("A", 1)]["fwd"]
+                    assert D_ and D_[1] < D_[0] < D_[2] and D_[3] == fw_ and fw_ in ("a", "c"), (D_, fw_)
+                    assert abs(D_[0] / CVMOD.diffusion_coefficient(fits_[("A", 1)]["rs_" + fw_]["slope"] * 1e-6, 1, 0.0707, 1.0) - 1) < 1e-12
+                    assert t_cv.lbl_res.text().count("D = ") == 1, t_cv.lbl_res.text()
+                    mt_ = t_cv.methods_text()
+                    assert "D = " in t_cv.lbl_res.text() and "Diffusion coefficients" in mt_ and "A = 0.0707 cm2" in mt_ \
+                        and f"cm2 s-1 from ip{fw_}" in mt_ and "forward peak" in mt_, (t_cv.lbl_res.text(), mt_)
+                    st_cv.update(rs_area=0.0, rs_conc=0.0)
+                    t_cv.render()
             st_cv.update(plot="cv", arrow=True)                  # Messrichtung: ziehbar, Position bleibt gespeichert
             t_cv.render()
             arr_ = t_cv.F.ann_items["arrow_scan"]
@@ -1969,6 +1986,59 @@ def selftest(outdir, with_isnet=False):
             report.append("auto/off fields (reset symbol, cleared field, ranges, every built tab): OK")
 
         with section:
+            # Literaturpruefung 2026-11: Rundung, Atommassen, Kopplung in MHz, Rampenintegral, veralteter Fit, Gaussian
+            from rdkit import Chem as Chem_a_
+            from elucida.core import chem as CHEM_a_
+            from elucida.si import excel as XL_a_
+            assert core.fmt_ve(7264.5, 318, max_decimals=0) == ("7265", "318") and core.fmt_ve(7265.5, 0.3, max_decimals=0) \
+                == ("7266", "1"), "eps not rounded half up"
+            assert core.round_half_up(1.125, 2) == 1.13 and core.round_half_up(62.5) == 63.0 and core.round_half_up(7264, -1) == 7260
+            assert XL_a_._err_fmt("0") == '[<0.5]"1";0' and XL_a_._err_fmt("0.00") == '[<0.005]"0.01";0.00'
+            for smi_, mw_ in (("ClC1=CC=C(Cl)C(CCCC)=C1", 203.106), ("CS(=O)(=O)C1=CC=C(Cl)C=C1", 190.641),
+                              ("[2H]C([2H])([2H])O", 35.060)):
+                assert abs(CHEM_a_.mol_weight(Chem_a_.MolFromSmiles(smi_)) - mw_) < 0.0015, smi_   # wie SI.AVG / EA
+            assert EPRMOD.hfc_texts(1.0, 2.0023) == ("1.000", "28.02") and EPRMOD.hfc_texts(20.0, 2.1)[1] == "587.84"
+            Ea_, lnA_, beta_ = 80e3, 30.0, 2.0 / 60.0                 # Rampe 2 K/min, Referenz fein integriert
+            tf_ = np.linspace(0.0, 3600.0, 36001)
+            Tf_ = 250.0 + beta_ * tf_
+            ff_ = np.exp(-Ea_ / (EPRMOD.R_GAS * Tf_))
+            If_ = np.exp(-np.exp(lnA_) * np.concatenate([[0.0], np.cumsum(0.5 * (ff_[1:] + ff_[:-1]) * np.diff(tf_))]))
+            ix_ = np.arange(0, len(tf_), 3000)                         # nur alle 10 K ein Spektrum
+            ix_ = ix_[If_[ix_] > 0.02]
+            rd_ = EPRMOD.fit_decay(Tf_[ix_], If_[ix_], beta_, norm="lsq", time=tf_[ix_])
+            assert abs(rd_["Ea"] / Ea_ - 1) < 5e-4, f"ramp integral biased at sparse sampling: {rd_['Ea']}"
+            t_e = w.epr_tab                                            # Fit gehoert zu seiner Feldachse
+            np.savetxt(eprdir / "achse-9p400000.txt", np.column_stack([np.linspace(330.0, 340.0, 801),
+                       EPRMOD.iso_spectrum(np.linspace(330.0, 340.0, 801), 9.4, 2.0050, [], 0.2)]), delimiter="\t")
+            ex_ = t_e._new("exp", str(eprdir / "achse-9p400000.txt"))
+            w.epr_state.update(entries=[ex_], mode="spectra", bl_order=-1, smooth=0.0, normalize=False, calib_uid=None,
+                               ref_freq=0.0)
+            t_e.fill_table()
+            t_e.table.selectRow(0)
+            t_e.add_iso()
+            is_ = w.epr_state["entries"][1]
+            t_e.table.selectRow(1)
+            t_e.fit_current()
+            assert t_e.fit_ok(is_) and is_["fit"]["dB"] == 0.0 and abs(is_["g"] - 2.0050) < 2e-5, is_
+            assert T("epr_fit_stale") not in t_e.fit_text(is_) and "g = 2.0050" in t_e.methods_text()
+            is_["fit"]["dB"] = 0.1                                     # wie nach einer geaenderten Kalibrierung
+            assert not t_e.fit_ok(is_) and T("epr_fit_stale") in t_e.fit_text(is_)
+            assert "g = 2.0050" not in t_e.methods_text() and "g = 2.0050" not in t_e.si_caption("X")
+            w.epr_state.update(entries=[], bl_order=1, normalize=True)
+            t_e.fill_table()
+            from elucida.formats import calc as CALC_a_
+            gtxt_ = Path(DFT.make_test_gaussian(out / "gtest_audit.log")).read_text(encoding="utf-8")
+            scf_ = float(CALC_a_.parse_gaussian(gtxt_)["energy"])
+            mp2_ = "\n".join(ln_ + ("\n E2 =    -0.1234567890D+00 EUMP2 =    -0.54011111111111D+03" if ln_.startswith(" SCF Done")
+                                     else "") for ln_ in gtxt_.splitlines())
+            assert CALC_a_.parse_gaussian(mp2_)["energy"] == "-540.11111111111" and scf_ != -540.11111111111
+            dh_ = "\n".join(ln_ + ("\n E2(B2PLYP) =    -0.1234567890D+00 E(B2PLYP) =    -0.54022222222222D+03"
+                                    if ln_.startswith(" SCF Done") else "") for ln_ in gtxt_.splitlines())
+            assert CALC_a_.parse_gaussian(dh_)["energy"] == "-540.22222222222"
+            report.append("literature audit 2026-11 (half-up rounding, one atomic-weight table, hfc in MHz, ramp integral, "
+                          "fit axis, Gaussian correlated energy): OK")
+
+        with section:
             # EPR S = ½: TEMPO-artiges Spektrum mit Feldfehler +0.25 mT fitten -> Kalibrierung; zwei Spezies 70:30
             mw_ = 9.40
             Bt = np.linspace(330.0, 345.0, 6001)
@@ -2039,7 +2109,8 @@ def selftest(outdir, with_isnet=False):
             Ea_true, lnA_true = 50e3, 45.0
             temps = np.arange(100.0, 135.01, 0.5)
             beta_ = 0.5 / 120.0                                         # 0,5 K alle 2 min
-            I_true = EPRMOD.decay_model(temps, np.exp(lnA_true), Ea_true, beta_)
+            # wahre Kurve: Integral ueber die Zeit mit T(t) linear zwischen den Spektren (wie der Fit rechnet)
+            I_true = EPRMOD.decay_model(temps, np.exp(lnA_true), Ea_true, beta_, np.arange(len(temps)) * 120.0)
             Bk = Bg                                                       # G, 440–510 mT
             kin_entries = []
             for j, (Tk, Ik) in enumerate(zip(temps, I_true)):
@@ -2154,7 +2225,8 @@ def selftest(outdir, with_isnet=False):
             x6 = sp6[1][0]["x"]
             fit6 = sp6[1][1]
             assert np.allclose(np.interp(x6, fit6["x"], fit6["y"]),
-                               EPRMOD.decay_model(x6, r6["A"], r6["Ea"], r6["beta"]), atol=1e-9), fit6
+                               EPRMOD.decay_model(x6, r6["A"], r6["Ea"], r6["beta"], (x6 - x6[0]) / r6["beta"]),
+                               atol=1e-9), fit6
             band6 = EPRMOD.decay_band(x6, r6, r6["beta"], (x6 - x6[0]) / r6["beta"])   # gezeichnetes Band = Kovarianz
             assert np.allclose(sp6[1][2]["y"], band6[0], atol=1e-9) and np.allclose(sp6[1][3]["y"], band6[1], atol=1e-9)
             rng6 = np.random.default_rng(6)

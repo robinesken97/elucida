@@ -43,6 +43,13 @@ def _coef_fmts(r, cfg):
     return f(r.get("eps_err")), f(r.get("eps_ci95"))
 
 
+def _err_fmt(fmt):
+    """Zahlenformat für SE/KI: ein Fehler, der auf 0 runden würde, zeigt wie `core.fmt_ve` die kleinste Einheit
+    („± 1“, nie „± 0“); der Zellwert bleibt die Formel bzw. die Zahl."""
+    d = len(fmt.split(".")[1]) if "." in fmt else 0
+    return f'[<{0.5 * 10.0 ** -d:.{d + 1}f}]"{10.0 ** -d:.{d}f}";{fmt}'
+
+
 # ---------------------------------------------------------------------------- Aussehen (nur hier)
 FONT = "Arial"
 INK, MUTED, ACCENT = "1A1A1A", "7A7A7A", "1F4E79"
@@ -360,7 +367,7 @@ def _calc_sheet(cs, cfg, spectra, results, unit, sym, coef_unit):
                      se_m=f'=IFERROR({v["s"]}/SQRT(SUMPRODUCT({W},{X},{X})),"")', se_b='="–"')
         f_v, f_ci = _coef_fmts(r, cfg)
         sci_ = "0.000E+00"                                  # Steigung und Fehler: Größenordnung hängt von der Einheit ab
-        fmts = {"n": "0", "m": sci_, "b": sci_, "r2": "0.0000", "eps": f_v, "se_eps": f_v, "ci": f_ci, "sxx": sci_,
+        fmts = {"n": "0", "m": sci_, "b": sci_, "r2": "0.0000", "eps": f_v, "se_eps": _err_fmt(f_v), "ci": _err_fmt(f_ci), "sxx": sci_,
                 "sxy": sci_, "rss": sci_, "s": sci_, "se_m": sci_, "se_b": sci_, "t": "0.000"}
         for k_ in REG_ROWS:
             for cc in (c0, c0 + 2):
@@ -410,8 +417,8 @@ def _results_sheet(ws, cs, calc, spec, cfg, results, series, files, version, uni
         ft = r["fit"]
         f_v, f_ci = _coef_fmts(r, cfg)
         notes = ([t("sh").capitalize()] if r.get("shoulder") else []) + list(r.get("warnings") or [])
-        vals = [(_num(r["lam"]), "0", F_BOLD), (_num(r.get("eps")), f_v, F_KEY), (_num(r.get("eps_err")), f_v, F_BASE),
-                (_num(r.get("eps_ci95")), f_ci, F_BASE), (_num(ft and ft["r2"]), r2_fmt, F_BASE),
+        vals = [(_num(r["lam"]), "0", F_BOLD), (_num(r.get("eps")), f_v, F_KEY), (_num(r.get("eps_err")), _err_fmt(f_v), F_BASE),
+                (_num(r.get("eps_ci95")), _err_fmt(f_ci), F_BASE), (_num(ft and ft["r2"]), r2_fmt, F_BASE),
                 (ft["n"] if ft else len(r["used"]), "0", F_BASE)]
         for j, (v, fmt, font) in enumerate(vals):
             _put(ws, row, 2 + j, "–" if v is None else v, font, fmt=fmt, border=ROW_LINE,

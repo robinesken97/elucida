@@ -19,6 +19,13 @@ paths:
   „aus“ bleibt `bl_order` −1 bei jedem Verfahren (ältere Stände lesen das weiter). Der Methodentext nennt Verfahren,
   Breite und Literaturstelle; „Dunkelspektrum für alle“ blendet das Dunkelspektrum selbst aus (es wird nicht
   korrigiert und bestimmte sonst das Bild; t = 0 und Abzug bleiben).
+- Aus der Literaturprüfung 2026-11-12 (Rechnungen gegen Lehrbuch/CODATA, alle Konstanten und Linienformen stimmten):
+  (1) Rampen-Zerfall im Zeit-Modus: ∫exp(−E_a/RT)dt mit linear interpolierter Temperatur zwischen den Spektren
+  (`DECAY_SUB` Teilschritte; Trapez nur über die Messpunkte ergab bei 10 K Abstand E_a +1,4 %); „wie Skript“ bleibt wie
+  das Skript. (2) Ein Fit gehört zu seiner Feldachse (`fit["dB"]`, `fit["mw"]`, `fit_ok`): nach Änderung von Referenz,
+  g_lit oder Referenzfrequenz wird sein g nicht mehr berichtet (Unterschrift, Methodentext), die Fit-Anzeige verlangt
+  einen neuen Fit. (3) a in MHz = a[mT]·(µ_B/h)·g mit dem gefitteten g (`MU_B_H`; EasySpins `mt2mhz` nimmt g_e).
+  Konventionen, die so bleiben: Pseudo-Voigt (Summe, keine Faltung), nur erste Ordnung, keine Isotopologen-Gewichtung.
 - Stellen wie berichtet (Nutzerwunsch 2026-11-11 „wissenschaftliche Konvention“, IUPAC 1989 Pure Appl. Chem. 61, 2195):
   g-Faktor (nicht „g-Wert“) überall **vier** Nachkommastellen (`g_text`; maßgeblich ist die Messgenauigkeit, X-Band mit
   Frequenzzähler und Feldkalibrierung ≈ ±0.0001–0.0002, nicht die Präzision des Fits), Aufspaltung a in mT drei, Kopplung

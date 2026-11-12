@@ -17,6 +17,16 @@ paths:
   Nicholson nur ohne weiteren Prozess zwischen Hinpeak und Umkehrpotential (Strom steigt um > 10 % der Peakhöhe wieder
   an → „–“). E½ im Bild und alle Mittelwerte je Gruppe, nie über Lösungsmittel gemittelt.
   Ac₂Fc-Vorgabe +0,49 V vs. Fc⁺/Fc, immer änderbar lassen.
+- Diffusionskoeffizient (F8, Nutzerauftrag 2026-11-12; `diffusion_coefficient`, `CVTab.diffusion`): aus der
+  Randles–Ševčík-Steigung **des Hinpeaks** (nie des Rückpeaks: gegen die verschobene Hin-Basislinie gemessen ergäbe er
+  ein um ~40 % zu kleines D, Literaturprüfung 2026-11) für ein reversibles, frei diffundierendes Paar, i_p = 0,4463·n·F·A·c·√(n·F·v·D/RT); Angaben
+  `rs_n`, `rs_area`, `rs_conc`, `rs_temp` (Karte „Diffusionskoeffizient“, bleiben bei „Alles auf Standard“). Fläche und
+  Konzentration sind **nie** vorbelegt und die Fläche kommt nie aus der Gamry-Datei (dort steht oft die Vorgabe 1 cm²):
+  ohne beide kein D. Das 95-%-Intervall trägt nur die Unsicherheit der Steigung; Ergebniszeile und Methodentext sagen das.
+- Umkehrpunkt (Literaturprüfung 2026-11-12): der Messpunkt am Umkehrpunkt zählt zu keiner der beiden Geraden für den
+  Ladestromsprung (ob er zum Hin- oder Rücklauf gehört, steht in keiner Datei). Offen, nicht geändert (Regel): die
+  Basislinie endet bei E½ − 0,12 V, wo der Fuß einer reversiblen Welle noch ~2 % von i_p trägt → i_p 1–4,5 % zu klein,
+  D 2–9 % zu klein, Nicholson-Verhältnis ~+0,015; Ac₂Fc +0,49 V ist ein CH₂Cl₂-Wert (Connelly & Geiger 1996).
 - SEC-Farben wie die SI: Start blau, Zwischenstufen (`mid`, Potential in Achsenskala → nächstes gezeigtes Spektrum, ohne
   Potentiale Nummer) grün/`MID_COLORS`, Ende rot; Unterschrift nennt nur Farben, die im Bild vorkommen (`cap_mid`, „;“).
 - SEC: Nernst-Fit aus kontinuierlichem Scan nur als „scheinbar“ ausweisen (Nachhinken in der Dünnschichtzelle:

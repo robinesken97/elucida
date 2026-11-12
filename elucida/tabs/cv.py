@@ -104,8 +104,10 @@ def baseline(E, I, k_f, k_turn, fmask, s, gap=BL_GAP):
     a, b = np.polyfit(E[pre], I[pre], 1)
     # Umkehrpunkt: Gerade durch je 6 Punkte davor/danach, beide bei E_umkehr ausgewertet
     n = len(E)
-    before = np.arange(max(0, k_turn - 6), k_turn + 1)
-    after = np.arange(k_turn + 1, min(n, k_turn + 8))       # Umkehrpunkt selbst gehört zum Hinlauf
+    # Der Messpunkt am Umkehrpunkt zählt zu keiner Seite: ob er noch den Ladestrom des Hinlaufs trägt oder schon den des
+    # Rücklaufs, steht in keiner Datei – mitgefittet halbierte er im zweiten Fall den Sprung (Literaturprüfung 2026-11)
+    before = np.arange(max(0, k_turn - 6), k_turn)
+    after = np.arange(k_turn + 1, min(n, k_turn + 8))
     i_b = _line_at(E, I, before, E[k_turn])
     i_a = _line_at(E, I, after, E[k_turn])
     step = max(0.0, s * (i_b - i_a)) if i_b is not None and i_a is not None else 0.0
@@ -230,6 +232,16 @@ def randles_sevcik(rates_mVs, ipa):
     return (f["slope"], f["intercept"], f["r2"]) if f else None
 
 
+def diffusion_coefficient(slope_A, n, area_cm2, conc_mM, temp_C=25.0):
+    """Randles–Ševčík für ein reversibles, frei diffundierendes Paar: i_p = 0.4463·n·F·A·c·√(n·F·v·D/(R·T)), also
+    D = (m/(0.4463·n·F·A·c))²·R·T/(n·F) mit der Steigung m = di_p/d√v [A (V s⁻¹)^-½], A [cm²], c [mM] → D [cm² s⁻¹].
+    Ohne Fläche oder Konzentration: None (nie die Fläche aus der Messdatei annehmen: dort steht oft die Vorgabe 1 cm²)."""
+    if not (area_cm2 > 0 and conc_mM > 0 and n > 0):
+        return None
+    F, R = 96485.33212, 8.314462618
+    return (slope_A / (0.4463 * n * F * area_cm2 * conc_mM * 1e-6)) ** 2 * R * (temp_C + 273.15) / (n * F)
+
+
 def loglog_fit(rates_mVs, ip):
     """log|i_p| gegen log v: Steigung 0,5 = diffusionskontrolliert, 1 = an der Oberfläche gebunden."""
     v, ip = np.asarray(rates_mVs, float), np.abs(np.asarray(ip, float))
@@ -273,13 +285,15 @@ class CVTab(TABS.FigureTab):
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
     RESET_KEEP = ("files", "couples", "ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value",
-                  "ref_offset", "ref_electrode", "cycle")  # Messungen, Zyklus, Redoxpaare und Referenzierung bleiben
+                  "ref_offset", "ref_electrode", "cycle",  # Messungen, Zyklus, Redoxpaare und Referenzierung bleiben
+                  "rs_n", "rs_area", "rs_conc", "rs_temp")   # Angaben zur Messung für den Diffusionskoeffizienten
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
                          gradient=True, density=False, show_e12=True, arrow=True, invert=False,
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
                          struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False,
+                         rs_n=1, rs_area=0.0, rs_conc=0.0, rs_temp=25.0,
                          cap_conc="", cap_solvent="", cap_el="", cap_temp="rt")
 
     # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
@@ -293,6 +307,8 @@ class CVTab(TABS.FigureTab):
         g = STYLE.split_group(self.group_titled("cv_analysis"), self.cmb_ref, self.ed_electrode, T("grp_refs"))
         self.fold(g, "refs", ("ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value", "ref_offset",
                               "ref_electrode"))
+        g = STYLE.split_group(self.group_titled("cv_analysis"), self.sp_rs_n, self.lbl_rs_hint, T("grp_diffusion"))
+        self.fold(g, "diffusion", ("rs_n", "rs_area", "rs_conc", "rs_temp"))
         g = STYLE.split_group(self.group_titled("cv_display"), self.cb_gradient, self.cb_invert, T("grp_more_display"))
         self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "invert"))
         self.to_right(self.group_titled("cv_results"), T("cv_results"))
@@ -454,6 +470,25 @@ class CVTab(TABS.FigureTab):
         f.addRow(self.lbl_offset, self.sp_offset)
         self.ed_electrode = QLineEdit(st["ref_electrode"])
         f.addRow(T("cv_electrode"), self.ed_electrode)
+        # ab hier eigene Klappkarte „Diffusionskoeffizient“ (arrange): Angaben für D aus der Randles–Ševčík-Steigung
+        self.sp_rs_n = QSpinBox(minimum=1, maximum=6, value=st["rs_n"])
+        self.sp_rs_area = QDoubleSpinBox(decimals=4, minimum=0, maximum=100, singleStep=0.01, value=st["rs_area"],
+                                         suffix=" cm²")
+        self.sp_rs_conc = QDoubleSpinBox(decimals=3, minimum=0, maximum=1000, singleStep=0.1, value=st["rs_conc"],
+                                         suffix=" mM")
+        for sp_ in (self.sp_rs_area, self.sp_rs_conc):     # nichts vorbelegen: ohne Angabe kein D
+            sp_.setSpecialValueText(T("off"))
+        self.sp_rs_area.setToolTip(T("cv_rs_area_tip"))
+        self.sp_rs_temp = QDoubleSpinBox(decimals=1, minimum=-100, maximum=200, singleStep=1, value=st["rs_temp"],
+                                         suffix=" °C")
+        f.addRow(T("cv_rs_n"), self.sp_rs_n)
+        f.addRow(T("cv_rs_area"), self.sp_rs_area)
+        f.addRow(T("cv_rs_conc"), self.sp_rs_conc)
+        f.addRow(T("cv_rs_temp"), self.sp_rs_temp)
+        self.lbl_rs_hint = STYLE.HintLabel(T("cv_rs_hint"))
+        self.lbl_rs_hint.setStyleSheet(STYLE.HINT_CSS)
+        self.lbl_rs_hint.setWordWrap(True)
+        f.addRow(self.lbl_rs_hint)
         self.lv.addWidget(g)
 
         g = QGroupBox(T("cv_display"))
@@ -491,6 +526,8 @@ class CVTab(TABS.FigureTab):
         for w_ in (self.cmb_peaklab, self.cmb_yaxis):
             w_.currentIndexChanged.connect(self.changed)
         self.cmb_plot.currentIndexChanged.connect(self.changed)
+        for sp_ in (self.sp_rs_n, self.sp_rs_area, self.sp_rs_conc, self.sp_rs_temp):
+            sp_.valueChanged.connect(self.changed)
         self.sp_gap.valueChanged.connect(self.changed)
         for cb in (self.cb_stack, self.cb_e12_each):
             cb.toggled.connect(self.changed)
@@ -636,7 +673,9 @@ class CVTab(TABS.FigureTab):
                   stack=self.cb_stack.isChecked(), stack_gap=self.sp_gap.value(),
                   e12_each=self.cb_e12_each.isChecked(), y_axis=self.cmb_yaxis.currentData(),
                   peak_labels=self.cmb_peaklab.currentData(), baseline=self.cb_baseline.isChecked(),
-                  bl_gap=self.sp_bl_gap.value(), show_bl=self.cb_show_bl.isChecked())
+                  bl_gap=self.sp_bl_gap.value(), show_bl=self.cb_show_bl.isChecked(),
+                  rs_n=self.sp_rs_n.value(), rs_area=self.sp_rs_area.value(), rs_conc=self.sp_rs_conc.value(),
+                  rs_temp=self.sp_rs_temp.value())
         self._sync_ref_widgets()
 
     # -- Dateien -------------------------------------------------------------------
@@ -1094,10 +1133,30 @@ class CVTab(TABS.FigureTab):
             if len(set(v)) < 3:
                 continue
             ia, ic = [r["ipa"] * 1e6 for r in rr], [r["ipc"] * 1e6 for r in rr]
+            first = {bool(r["anodic_first"]) for r in rr}     # Hinpeak: nur er folgt Randles–Ševčík (für D)
             out[key] = dict(rs_a=rate_fit(np.sqrt(np.array(v) / 1000.0), ia),
                             rs_c=rate_fit(np.sqrt(np.array(v) / 1000.0), ic),
-                            ll_a=loglog_fit(v, ia), ll_c=loglog_fit(v, ic), rates=sorted(set(v)))
+                            ll_a=loglog_fit(v, ia), ll_c=loglog_fit(v, ic), rates=sorted(set(v)),
+                            fwd=("a" if first == {True} else "c" if first == {False} else None))
         return out
+
+    def diffusion(self, fits):
+        """D [cm² s⁻¹] mit 95-%-Grenzen aus der Randles–Ševčík-Regression des **Hinpeaks** eines Paars (`rate_fits`-
+        Eintrag; Steigung in µA (V s⁻¹)^-½). Nie aus dem Rückpeak: er wird gegen die verschobene Hin-Basislinie
+        gemessen (Nicholsons (i_p)0) und ergäbe ein um etwa 40 % zu kleines D (Literaturprüfung 2026-11, Bard &
+        Faulkner §6.2/6.5). Die Grenzen tragen nur die Unsicherheit der Steigung.
+        -> (D, lo, hi, "a"|"c") oder None (Angaben fehlen, keine Regression, Richtung der Messungen gemischt)."""
+        st = self.st
+        tag = fits.get("fwd") if fits else None
+        fit = fits.get("rs_" + tag) if tag else None
+        if not fit:
+            return None
+        d = lambda m: diffusion_coefficient(m * 1e-6, st["rs_n"], st["rs_area"], st["rs_conc"], st["rs_temp"])  # noqa: E731
+        D = d(fit["slope"])
+        if D is None:
+            return None
+        lo, hi = abs(fit["slope"]) - fit["ci"], abs(fit["slope"]) + fit["ci"]
+        return D, (d(lo) if lo > 0 else None), d(hi), tag
 
     def rate_plot(self, cfg, ref_label):
         """ΔE_p gegen v, Randles-Ševčík (i_p gegen √v) oder Trumpet-Plot (E_p gegen log v)."""
@@ -1218,6 +1277,10 @@ class CVTab(TABS.FigureTab):
                     lines.append(T("cv_fit_line", n=name, p=tag, m=fmt_ci(rs["slope"], rs["ci"]),
                                    b=fmt_ci(rs["intercept"], rs["ci_b"]), r2=core.r2_text(rs['r2']),
                                    ll=fmt_ci(ll["slope"], ll["ci"]), k=rs["n"]))
+            D = self.diffusion(f)
+            if D:
+                lines.append(T("cv_D_line", n=name, p=D[3], D=core.sci_text(D[0]),
+                               ci=(core.sci_text(D[1]) if D[1] else "0") + "–" + core.sci_text(D[2])))
         self.lbl_res.setText("\n".join(lines))
 
     def _ref_sentence(self):
@@ -1304,6 +1367,11 @@ class CVTab(TABS.FigureTab):
                      "(Randles–Ševčík) and of log|ip| vs. log v (slope 0.5: diffusion-controlled, 1: surface-"
                      "confined species); uncertainties are given as 95% confidence intervals (t-distribution, "
                      "n − 2 degrees of freedom).")
+            if any(self.diffusion(f_) for f_ in fits.values()):
+                m.append("Diffusion coefficients were calculated from the Randles–Ševčík slope of the forward peak for "
+                         "a reversible, freely diffusing couple, ip = 0.4463·n·F·A·c·(n·F·v·D/RT)1/2, with n = "
+                         f"{st['rs_n']}, A = {st['rs_area']:g} cm2, c = {st['rs_conc']:g} mM and T = "
+                         f"{st['rs_temp']:g} °C; their intervals reflect the uncertainty of the slope only.")
         res = []
         for (grp, n), rr in sorted(self.rate_series().items(), key=lambda kv: (kv[0][1], kv[0][0])):
             refs = {r["ref"] for r in rr}
@@ -1321,6 +1389,10 @@ class CVTab(TABS.FigureTab):
             if f and f["ll_a"] and f["ll_c"]:
                 txt += (f"; log–log slopes {fmt_ci(f['ll_a']['slope'], f['ll_a']['ci'])} (ipa) and "
                         f"{fmt_ci(f['ll_c']['slope'], f['ll_c']['ci'])} (ipc)")
+            D = self.diffusion(f)
+            if D:
+                txt += (f"; D = {core.sci_text(D[0])} cm2 s-1 from ip{D[3]} (95% interval "
+                        f"{core.sci_text(D[1]) if D[1] else '0'} to {core.sci_text(D[2])} cm2 s-1)")
             res.append(txt + ".")
         out = " ".join(x for x in m if x)
         return out + ("\n\n" + " ".join(res) if res else "")

@@ -11,6 +11,19 @@ from pathlib import Path
 from elucida.app.i18n import T
 
 
+def mol_weight(mol):
+    """Molmasse eines RDKit-Moleküls mit denselben mittleren Atommassen wie Elementaranalyse und eingetippte Formeln
+    (`SI.AVG`, IUPAC 2021); markierte Atome (D, 13C) mit ihrer Isotopenmasse. RDKits `MolWt` trägt ältere Werte
+    (S 32.067, Cl 35.453 …): dieselbe Verbindung hatte so zwei Molmassen, die sich in der 2. Nachkommastelle
+    unterschieden (Literaturprüfung 2026-11). Element nicht in der Tabelle: RDKits Wert."""
+    from elucida.si.lines import AVG
+    total = 0.0
+    for a in mol.GetAtoms():
+        total += a.GetMass() if a.GetIsotope() else AVG.get(a.GetSymbol(), a.GetMass())
+        total += a.GetTotalNumHs() * AVG["H"]
+    return float(total)
+
+
 def _rdkit():
     try:
         from rdkit import Chem, RDLogger
@@ -99,7 +112,7 @@ def _load_cdxml(path, *, render=True) -> dict:
     mw = formula = None
     try:
         if sanitized:
-            mw = float(Descriptors.MolWt(mol))
+            mw = mol_weight(mol)
             formula = rdMolDescriptors.CalcMolFormula(mol, True, True)   # Isotope: D statt [2H]
         if dummies:
             mw = None        # Masse wäre zu klein -> lieber keine als eine falsche
