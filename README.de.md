@@ -56,7 +56,7 @@ Supporting Information, in der alles zusammenpassen muss. Elucida hält das an e
 | **UV-Vis & Photophysik** | UV-Vis (ε) · Overlay · Kinetik · Fluoreszenz | Lambert-Beer-Fit mit Konfidenzintervall, TD-DFT-Overlay, Spektren über die Zeit mit Fit erster Ordnung, ORCA ESD |
 | **Elektrochemie & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles-Ševčík, UV/Vis/NIR-SEC, H-Zelle (Kapazität, Coulomb-Effizienz), S = ½-Fit, thermischer Zerfall |
 | **Struktur & Rechnung** | X-Ray · DFT · Reaktionspfade | ORTEP im Mercury-Stil, ORCA und Gaussian, Orbitale, Multireferenz, Energiediagramme |
-| **Projekt** | Übersicht · Gesamt-SI · Datenpakete | Checkliste je Verbindung, Suche, Gesamt-SI für das ganze Paper, Datensatz fürs Repositorium |
+| **Projekt** | Übersicht · Vergleich · Gesamt-SI · Datenpakete | Checkliste je Verbindung, Suche, CV-Stapel, Spektren und Eigenschaftstabellen über die Verbindungen, Gesamt-SI für das ganze Paper, Datensatz fürs Repositorium |
 
 <table>
   <tr>

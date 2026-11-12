@@ -281,7 +281,8 @@ GUIDE_HEAD = {"compound": ("Verbindung", "Compound"), "syn": ("Synthese-Tab", "S
               "sec": ("SEC-Tab (Spektroelektrochemie)", "SEC tab (spectroelectrochemistry)"),
               "hcell": ("H-Cell-Tab (Laden und Entladen)", "H-Cell tab (charge–discharge cycling)"),
               "epr": ("EPR-Tab (CW-EPR)", "EPR tab (CW EPR)"), "xray": ("X-Ray-Tab", "X-Ray tab"),
-              "dft": ("DFT-Tab", "DFT tab"), "other": ("Weitere-Tab", "Other tab")}
+              "dft": ("DFT-Tab", "DFT tab"), "other": ("Weitere-Tab", "Other tab"),
+              "compare": ("Vergleich (Projekt)", "Comparison (project)")}
 
 
 def gh_anchor(heading):
@@ -406,7 +407,8 @@ STEP_TITLES = {
     1: ("Rechenweg", "Auswertung", "Verarbeitung", "Referenzierung", "Diffusionskoeffizient", "Simulationen",
         "Intensität und Kinetik", "Normierung",
         "Elementaranalyse", "Ausgewählte Parameter", "Messen (Abstand, Winkel, Diederwinkel)",
-        "NMR-Zeile (MNova-Multiplettbericht)", "Reagenzien (Mengen berechnen)", "Verbinder"),
+        "NMR-Zeile (MNova-Multiplettbericht)", "Reagenzien (Mengen berechnen)", "Verbinder", "Größen",
+        "Weitere Verbindungen", "Zellen und Anordnung"),
     2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate",
         "Größe und Formate", "Stapeln und Achsen", "Hervorheben und Labels", "Bilder", "Atome und Fragmente",
         "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen"),
@@ -1140,7 +1142,7 @@ class FigureTab(QWidget):
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # Fußleisten bleiben sichtbar, auch wenn die Spalte gescrollt wird. Links: Zurücksetzen ▾ · Vorlagen ▾ … Weiter;
         # rechts unter der Abbildung: Bildunterschrift … Exportieren (Entwurf 2026-11)
-        b_reset = reset_button(self.reset_layout, self.reset_defaults)
+        b_reset = self.btn_reset = reset_button(self.reset_layout, self.reset_defaults)
         b = QPushButton(T("tab_presets"))
         b.setToolTip(T("tab_presets_tip"))
         m = QMenu(b)

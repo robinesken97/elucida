@@ -2460,8 +2460,8 @@ QDialog QPushButton:default:enabled {{ background: {c['accent']}; color: {c['on_
     font-weight: 600; }}
 QDialog QPushButton:default:enabled:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
 QTabWidget::pane {{ border: 1px solid {c['border']}; border-radius: 12px; background: {c['window']}; top: -1px; }}
-QTabWidget#resultTabs::pane {{ border: none; top: 0; }}
-QTabWidget#resultTabs::tab-bar {{ left: 14px; }}
+QTabWidget#resultTabs::pane, QTabWidget#projectTabs::pane {{ border: none; top: 0; }}
+QTabWidget#resultTabs::tab-bar, QTabWidget#projectTabs::tab-bar {{ left: 14px; }}
 /* Reiter mittig auf der Höhe der Schrittleiste links (34 hoch) und Seite darunter auf der Höhe der ersten Karte */
 QTabWidget#resultTabs > QTabBar::tab {{ margin: 3px 2px 13px 0; }}
 QTabBar::tab {{ background: transparent; color: {c['text2']}; border: 1px solid transparent; border-radius: 6px;

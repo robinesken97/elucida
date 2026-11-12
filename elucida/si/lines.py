@@ -544,9 +544,12 @@ def col_widths(n):
     return [int(x * TEXT_W / tot) for x in w] if tot > TEXT_W else w
 
 
-def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal=(), width=None, size=20):
+def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal=(), width=None, size=20,
+           bold_cols=(), top=None):
     """Dreilinien-Tabelle, alles zentriert. widths: Spaltenbreiten (twips). span_equal: Zeilenindizes, deren gleiche
-    Werte über alle Spalten zusammengefasst werden (z. B. Refinement method). bold_rows: Zeilen mit fetten Werten."""
+    Werte über alle Spalten zusammengefasst werden (z. B. Refinement method). bold_rows: Zeilen mit fetten Werten.
+    bold_cols: Spalten mit fetten Werten (Namen der Verbindungen). top: Gruppenkopf über dem Kopf [(Markup, Spalten)]
+    (Linie darüber, kurze Linie unter beschrifteten Gruppen)."""
     tw = width or sum(widths)
     grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in widths)
     x = (f'<w:tbl><w:tblPr><w:tblW w:w="{tw}" w:type="dxa"/><w:jc w:val="center"/>'
@@ -559,8 +562,16 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
             _border(sides) + '<w:vAlign w:val="center"/>'
         sp = dict(line=240, after=0) if head else dict(line=line, before=row_after // 2, after=row_after // 2)
         return f"<w:tc><w:tcPr>{tcpr}</w:tcPr>" + _para(runs, size=size, align="center", **sp) + "</w:tc>"
+    if top:
+        x += '<w:tr><w:trPr><w:tblHeader/></w:trPr>'
+        j = 0
+        for t, span in top:
+            x += cell(_head_runs(t), sum(widths[j:j + span]), ("top", "bottom") if t else ("top",), span=span, head=True)
+            j += span
+        x += "</w:tr>"
     x += '<w:tr><w:trPr><w:tblHeader/></w:trPr>' + "".join(
-        cell(_head_runs(h), widths[j], ("top", "bottom"), head=True) for j, h in enumerate(header)) + "</w:tr>"
+        cell(_head_runs(h), widths[j], ("bottom",) if top else ("top", "bottom"), head=True)
+        for j, h in enumerate(header)) + "</w:tr>"
     n = len(rows)
     for i, r in enumerate(rows):
         sides = ("bottom",) if i == n - 1 else ()
@@ -570,7 +581,7 @@ def _table(header, rows, widths, row_after=0, line=240, bold_rows=(), span_equal
             x += cell(markup_runs(r[0]), widths[0], sides) + cell(markup_runs(vals[0]), sum(widths[1:]), sides,
                                                                     span=len(vals))
         else:
-            x += "".join(cell(markup_runs(c or "", bold=(j > 0 and i in bold_rows)), widths[j], sides)
+            x += "".join(cell(markup_runs(c or "", bold=(j > 0 and i in bold_rows) or j in bold_cols), widths[j], sides)
                          for j, c in enumerate(r))
         x += "</w:tr>"
     return x + "</w:tbl>"
@@ -692,7 +703,7 @@ def write_docx(path, blocks, columns=1):
     ("figcap", HTML)                      „Figure Sn: …“
     ("tabcap", Markup, Name)              „Table Sn: <Markup> <b>Name</b>.“
     ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
-    ("params", Kopf, Zeilen)              Ausgewählte Bindungen/Winkel
+    ("params", Kopf, Zeilen[, Optionen])  Ausgewählte Bindungen/Winkel; Optionen dict(bold_cols, top) (Vergleich)
     ("note", Markup)                      Fußnote unter einer Tabelle
     ("heading", Text)                     fette Überschrift (DFT: Name der Rechnung)
     ("text", HTML)                        linksbündiger Absatz, einzeilig (DFT-Angaben)
@@ -753,7 +764,8 @@ def write_docx(path, blocks, columns=1):
             body.append(_label_para("Figure", n_fig, html_runs(nbsp(b[1])), after=240))
         elif k == "tabcap":
             n_tab += 1
-            body.append(_label_para("Table", n_tab, markup_runs(b[1]) + [(" ", set()), (b[2] + ".", {"b"})],
+            name = [(" ", set()), (b[2] + ".", {"b"})] if b[2] else [(".", set())]   # ohne Namen: nur der Punkt
+            body.append(_label_para("Table", n_tab, markup_runs(b[1]) + name,
                                     before=120, after=120, keep_next=True))
         elif k == "crystal":
             header, rows = b[1], b[2]
@@ -762,8 +774,8 @@ def write_docx(path, blocks, columns=1):
             meth = [i for i, r in enumerate(rows) if r[0] == "Refinement method"]
             body.append(_table(header, rows, widths, row_after=64, bold_rows=ref_row, span_equal=meth))
         elif k == "params":
-            header, rows = b[1], b[2]
-            body.append(_table(header, rows, col_widths(len(header)), row_after=260))
+            header, rows = b[1], b[2]                      # optional b[3]: dict(bold_cols, top) (Vergleichstabelle)
+            body.append(_table(header, rows, col_widths(len(header)), row_after=260, **(b[3] if len(b) > 3 else {})))
         elif k == "note":
             body.append(_para(markup_runs(b[1]), size=18, line=240, after=0))
         elif k == "heading":

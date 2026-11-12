@@ -498,9 +498,15 @@ def sample_label(info):
     return lab
 
 
+MORE_W = (230, 520)                # Spalte „Weitere Analytik“: schmal 230, in breiten Fenstern bis 520 (alle Methoden lesbar)
+
+
 def fit_more(row):
-    """Spalte „Weitere Analytik“ nur, wenn sie passt."""
+    """Spalte „Weitere Analytik“ nur, wenn sie passt; in breiten Fenstern bekommt sie den freien Platz neben dem Namen
+    (Kopf und Zeilen rechnen gleich: gleiche Breite, gleiche Spalte), sonst stand die Liste der Methoden abgeschnitten
+    neben viel leerer Fläche (Nutzerwunsch 2026-11-12)."""
     row.more.setVisible(row.width() >= MORE_MIN_W)
+    row.more.setFixedWidth(max(MORE_W[0], min(MORE_W[1], MORE_W[0] + row.width() - 950)))
 
 
 class MatrixHeader(QWidget):

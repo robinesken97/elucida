@@ -59,6 +59,7 @@ Länge (Datum, Autor); MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docP
 | `si/publication_si.py` | Gesamt-SI: `SECTIONS` (Kapitelfolge der Gruppen-SI), `assemble`, `merge_crystal`; Blöcke `title`/`toc`/`section` in `write_docx`. |
 | `app/drawing_editor.py`, `app/drawing_clipboard.py`, `app/drawing_data.py`, `app/canvas_theme.py` | Octet im Qt-Host: WebEngine + Brücke, `save_bundle` (CDXML/CDX/SVG, Backups), Zwischenablage, Übernahme der Stöchiometrietabelle, dunkler Canvas (nur Anzeige). |
 | `app/reaction_paths.py`, `app/path_composition.py`, `tabs/diagram_layout.py`, `tabs/profile_*.py` | Projektweite Reaktionspfade: eigener Projektordner je Pfad, freie Komposition, Diagrammlayout (maßstäblich/schematisch), Bildanker, Orbitalansichten. |
+| `app/comparison.py` | Vergleich auf der Projektseite: Stand je Verbindung (`.elucida/compare.json`, beim Speichern), CV-Stapel, Spektren-Overlay und Eigenschaftstabelle als `FigureTab` im Gastgeber `CompareHost`; Regeln in `project.md` |
 | `formats/multireference.py`, `tabs/multireference.py` | ORCA-6-CASSCF/NEVPT2-Ergebnisse (Text wie in der Ausgabe), Auswahl, SI-Zeilen. |
 | `formats/reagent_labels.py` | Mengenzusätze in Reagenzbeschriftungen; chemische Klammern bleiben. |
 | `frontend/octet/` | Octet-Draw-Quellstand (Apache-2.0) + Elucida-Anpassungen, siehe `UPSTREAM.md`; `tools/build_octet.py` baut nach `assets/octet/`, `tools/update_octet.py` staget neue Upstream-Stände. |

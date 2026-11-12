@@ -117,6 +117,8 @@ def save(pdir, data):
         out["removed_reaction_paths"] = list(data["removed_reaction_paths"])
     if data.get("reaction_paths_si"):
         out["reaction_paths_si"] = dict(data["reaction_paths_si"])
+    if data.get("comparisons"):           # Seite „Vergleich“: benannte Vergleiche über die Verbindungen
+        out["comparisons"] = list(data["comparisons"])
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
         out["si_texts"] = texts

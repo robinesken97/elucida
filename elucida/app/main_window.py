@@ -2654,9 +2654,14 @@ class MainWindow(QMainWindow):
         if not self.project_dir or (self._restoring and not force):
             return
         try:
-            PRJ.write(self.project_dir, self.get_state())
+            saved = PRJ.write(self.project_dir, self.get_state())
             from elucida.app import welcome as WEL       # Strukturbild für den Startbildschirm (nur wenn neuer)
             WEL.write_thumb(self.project_dir, self.thumb_structure(), self.log_signal.emit)
+            try:                                          # Stand für den Vergleich im Projekt: nie das Speichern stören
+                from elucida.app import comparison as CMP
+                CMP.write_snapshot(self, saved)
+            except Exception:
+                self.log_signal.emit(T("cmp_snapshot_failed") + "\n" + traceback.format_exc())
             self._update_nav_dots()
             self._saved_snap = self._undo[-1] if self._undo else None
             self.statusBar().showMessage(T("autosaved"), 2000)

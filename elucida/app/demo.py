@@ -1186,6 +1186,19 @@ def open_demo_publication(w, folder=None) -> Path:
                 si_texts={"methods": "All reactions were carried out under argon using standard Schlenk techniques. "
                                      "NMR spectra were recorded at 298 K; chemical shifts are given in ppm.",
                           "cv": "Cyclic voltammograms were recorded with ferrocene as internal reference."})
+    # Seite „Vergleich“: UV-Vis beider Verbindungen (ε wie im Overlay) und eine Eigenschaftstabelle (Werte aus den Tabs,
+    # dazu eine freie Spalte mit der C≡C-Bande der erfundenen IR-Spektren)
+    members = [dict(dir=n, on=True, key=f"m{n}", color=c) for n, c in (("S2", "#000000"), ("S3", "#e8231b"))]
+    data["comparisons"] = [
+        dict(uid="demo0spectra", name="UV-Vis S2 / S3", kind="spectra",
+             st=dict(members=[dict(m) for m in members], content="eps")),
+        dict(uid="demo00table", name="Properties", kind="table", st=dict(members=[dict(m) for m in members], table=dict(
+            cols=[dict(id="c1", kind="auto", key="formula", group=""), dict(id="c2", kind="auto", key="mw", group=""),
+                  dict(id="c3", kind="auto", key="uv_lam", group="UV-Vis"),
+                  dict(id="c4", kind="auto", key="uv_eps", group="UV-Vis"),
+                  dict(id="c5", kind="free", head="IR (C≡C)", unit="cm-1", group="")],
+            rows=[], cells={f"m{n}|c5": f"{COMPOUNDS[n]['ir'][k][0]:.0f}" for n, k in (("S2", 1), ("S3", 4))},
+            transpose=False)))]
     PUB.save(d, data)
     PUB.set_group(d, d / "S2", "Precursors")          # Gruppen im Projekt zeigen
     PUB.set_group(d, d / "S3", "Products")

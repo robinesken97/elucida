@@ -56,7 +56,7 @@ Information that has to be consistent. Elucida keeps all of it in one place.
 | **UV-Vis & photophysics** | UV-Vis (ε) · Overlay · Kinetics · Fluorescence | Beer–Lambert fit with confidence interval, TD-DFT overlay, spectra over time with first-order fit, ORCA ESD |
 | **Electrochemistry & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles–Ševčík, UV/Vis/NIR SEC, H-cell cycling (capacity, Coulombic efficiency), S = ½ fit, thermal decay |
 | **Structure & computation** | X-Ray · DFT · Reaction paths | Mercury-style ORTEP, ORCA and Gaussian, orbitals, multireference, energy diagrams |
-| **Project** | Overview · Complete SI · Data packages | Checklist per compound, search, complete SI for the whole paper, dataset for the repository |
+| **Project** | Overview · Comparison · Complete SI · Data packages | Checklist per compound, search, CV stacks, spectra and property tables across compounds, complete SI for the whole paper, dataset for the repository |
 
 <table>
   <tr>

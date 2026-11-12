@@ -5174,7 +5174,7 @@ def selftest(outdir, with_isnet=False):
             keep_pd_ = pp_.pdir
             pp_.set_publication(pd_)
             ip_ = pp_.info_page
-            assert pp_.project_tabs.indexOf(ip_) == 2 and pp_.project_tabs.tabText(2) == T("pub_details_tab")
+            assert pp_.project_tabs.indexOf(ip_) == 3 and pp_.project_tabs.tabText(3) == T("pub_details_tab")
             pp_.edit_info()
             assert pp_.project_tabs.currentWidget() is ip_
             ip_.eds["authors"].setText("A. Author, B. Author")
@@ -8507,6 +8507,246 @@ def selftest(outdir, with_isnet=False):
                 pump(0.2)
             report.append(f"Reaction-path view: page margins, symmetric caption row, toast instead of status line; "
                           f"scheme placement {placed_pv_}: OK")
+        with section:
+            # Vergleich (Projektseite): Stand je Verbindung beim Speichern, dieselben Zahlen wie im Tab, veraltet erkannt
+            import time as time_c_
+            import yaml as yaml_c_
+            from elucida.app import comparison as CMP
+            from elucida.app import publication as PUB_c_
+
+            def pump_c_(sec=0.3):
+                t0_ = time_c_.time()
+                while time_c_.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time_c_.sleep(0.02)
+            dcmp_ = out / "demo_cmp"
+            w.open_demo_publication(dcmp_)                    # schreibt beim Speichern je Verbindung den Stand
+            for n_ in ("S2", "S3"):
+                assert CMP.snapshot_path(dcmp_ / n_).exists(), n_
+            size_c_ = CMP.snapshot_path(dcmp_ / "S3").stat().st_size
+            assert size_c_ < 200_000, size_c_                 # ausgedünnte Kurven: Datei bleibt klein
+            r3_ = CMP.read_compound(dcmp_ / "S3")
+            assert set(r3_["tabs"]) == {"eps", "cv", "fluo", "epr"} and not r3_["stale"] and not r3_["missing"], r3_
+            w.open_project(dcmp_ / "S3")
+            w.cv_tab.render()
+            f0_ = r3_["tabs"]["cv"]["files"][0]
+            r0_ = next(r_ for r_ in w.cv_tab.results if r_["n"] == 1 and r_["uid"] == f0_["uid"])
+            c0_ = f0_["couples"][0]
+            assert c0_["t_e12"] == CVMOD._fmt_e(r0_["e12"]) and c0_["t_dep"] == f"{r0_['dep'] * 1000:.0f}", (c0_, r0_)
+            assert CMP.auto_value("cv1_e12", r3_, {}) == CVMOD._fmt_e(r0_["e12"])
+            g_c_ = next(iter(w.groups))
+            cfg_c_, _sp, res_c_ = core.prepare_series(w.make_cfg(g_c_), w.groups[g_c_], g_c_)
+            line_ = SI.uvvis_line(res_c_, cfg_c_, w.series[g_c_].get("solvent", ""))[0]
+            lam_ = CMP.auto_value("uv_lam", r3_, {})
+            assert lam_ and all(f"{x_.strip()} nm" in line_ for x_ in lam_.split(",")), (lam_, line_)
+            for x_ in CMP.auto_value("uv_eps", r3_, {}).split(", "):
+                assert f"= {x_} cm-1" in line_, (x_, line_)
+            w.fl_tab.render()
+            assert CMP.auto_value("fl_em", r3_, {}) == f"{w.fl_tab.info['lam_em']:.0f}"
+            iso_ = next(e_ for e_ in w.epr_tab.st["entries"] if e_["kind"] == "iso")
+            assert CMP.auto_value("epr_g", r3_, {}) == EPRMOD.g_text(iso_["g"])
+            # veraltet: gespeicherter Zustand geändert, Stand nicht -> Eintrag gilt nicht mehr
+            w.close_project()
+            pf_ = dcmp_ / "S3" / "project.elucida"
+            raw_ = yaml_c_.safe_load(pf_.read_text(encoding="utf-8"))
+            raw_["cv"]["cycle"] = 1 if raw_["cv"].get("cycle") != 1 else 2
+            pf_.write_text(yaml_c_.safe_dump(raw_, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            r3_ = CMP.read_compound(dcmp_ / "S3")
+            assert r3_["stale"] == ["cv"] and "cv" not in r3_["tabs"] and CMP.status(r3_, "cv") == "outdated", r3_
+            assert CMP.auto_value("cv1_e12", r3_, {}) == ""   # veraltet: kein Wert (nie der alte)
+            # ohne Stand (z. B. ältere Verbindung): fehlt -> Aktualisieren öffnet sie kurz
+            CMP.snapshot_path(dcmp_ / "S2").unlink()
+            r2_ = CMP.read_compound(dcmp_ / "S2")
+            assert r2_["missing"] == ["eps"] and CMP.status(r2_, "table") == "missing", r2_
+            w.open_publication(dcmp_)
+            pp_c_ = w.pub_page
+            cp_ = pp_c_.compare_page
+            pp_c_.project_tabs.setCurrentWidget(cp_)
+            t_open_ = time_c_.time()
+            cp_.load()
+            open_s_ = time_c_.time() - t_open_
+            assert pp_c_.project_tabs.indexOf(cp_) == 2 and pp_c_.project_tabs.tabText(2) == T("pub_compare_tab")
+            assert [x_["kind"] for x_ in cp_.items()] == ["spectra", "table"]       # Beispielprojekt
+            cp_.open("demo00table")
+            assert isinstance(cp_.tab, CMP.TableTab) and not cp_.tab.btn_refresh.isHidden()   # nur sichtbar, wenn nötig
+            assert cp_.refresh_snapshots() == 2
+            assert pp_c_.project_tabs.currentWidget() is cp_ and w.project_dir is None
+            for n_ in ("S2", "S3"):
+                r_ = cp_.records[n_]
+                assert not r_["stale"] and not r_["missing"], (n_, r_)
+            assert cp_.tab.btn_refresh.isHidden()
+            report.append(f"Comparison snapshots (written on save, same numbers as the tabs, {size_c_ // 1024} kB; "
+                          f"outdated fingerprint, refresh of compounds without snapshot; tab opened in "
+                          f"{open_s_:.2f} s): OK")
+        with section:
+            # Vergleich: Tabelle (Wert aus dem Tab, freie Spalte, überschrieben, freie Zeile, Gruppenkopf, gedreht, Export)
+            import csv as csv_c_
+            import zipfile as zip_c_
+            from openpyxl import load_workbook as lwb_c_
+            tt_ = cp_.tab
+            tb_ = tt_.tb
+            assert [c_["kind"] for c_ in tb_["cols"]] == ["auto", "auto", "auto", "auto", "free"]
+            groups_, heads_, rows_ = tt_.logical()
+            assert groups_ and groups_[2] == groups_[3] == "UV-Vis" and heads_[2] == "*λ*_{max} / nm", (groups_, heads_)
+            assert [r_[1] for r_ in rows_] == ["S2", "S3"]
+            s3_ = rows_[1][2]
+            assert s3_[1][0] == f"{float(cp_.records['S3']['mw']):.2f}" and s3_[1][1] == "auto"
+            assert "372" in s3_[2][0] and s3_[4][1:] == ("free", None) and s3_[4][0].isdigit(), s3_
+            assert CMP.head_markup("D", "cm-1") == "*D* / cm^{−1}" and CMP.head_markup("IR (CN2)", "") == "IR (CN2)"
+            # Zelle eines Tab-Werts überschreiben: markiert, zurücksetzbar
+            mat_, n_head_ = tt_.matrix()
+            assert n_head_ == 2 and len(mat_) == 4 and len(mat_[0]) == 6, (n_head_, len(mat_), len(mat_[0]))
+            it_ = tt_.grid.item(3, 2)                            # S3, Molmasse
+            assert it_.data(Qt.UserRole)[0] == "auto"
+            key_ = "|".join(it_.data(Qt.UserRole)[1:])
+            it_.setText("999.99")
+            pump_c_(0.2)
+            assert tb_["cells"].get(key_) == "999.99" and tt_.grid.item(3, 2).data(Qt.UserRole)[0] == "over"
+            tt_.grid.setCurrentCell(3, 2)
+            assert tt_.btn_reset_cell.isEnabled()
+            tt_.reset_cell()
+            assert key_ not in tb_["cells"] and tt_.grid.item(3, 2).data(Qt.UserRole)[0] == "auto"
+            tt_.grid.item(3, 2).setText("999.99")                # bleibt überschrieben für den Export
+            pump_c_(0.2)
+            tt_.add_row()                                         # weitere Verbindung (z. B. Literatur): Zeile, dann Name
+            assert tb_["rows"][-1]["name"] == T("cmp_row_name") + " 1" and tt_.tbl_rows.rowCount() == 1
+            tt_.ed_row.setText("Lit. 1")
+            tt_.rename_row()
+            assert tb_["rows"][-1]["name"] == "Lit. 1" and tt_.grid.rowCount() == 5
+            assert tt_.tbl_rows.item(0, 0).text() == "Lit. 1"
+            # Größen als Tabelle (Größe, Einheit, Gruppenkopf, Herkunft); Tab-Werte zeigen Kopf und Einheit nur an
+            assert tt_.tbl_cols.rowCount() == 5 and tt_.tbl_cols.item(2, 2).text() == "UV-Vis"
+            assert tt_.tbl_cols.item(2, 1).text() == "nm" and tt_.tbl_cols.item(2, 3).text() == "UV-Vis"
+            assert tt_.tbl_cols.item(4, 3).text() == T("cmp_src_own")
+            tt_.tbl_cols.setCurrentCell(2, 0)
+            assert not tt_.ed_head.isEnabled() and tt_.ed_unit.text() == "nm" and tt_.ed_group.isEnabled()
+            tt_.tbl_cols.setCurrentCell(4, 0)
+            assert tt_.ed_head.isEnabled() and tt_.ed_unit.isEnabled()
+            n_cols_ = len(tb_["cols"])
+            tt_.add_auto("mp")                                    # aus dem Menü „Aus den Tabs“, dann wieder weg
+            assert len(tb_["cols"]) == n_cols_ + 1 and tt_.tbl_cols.currentRow() == n_cols_
+            tt_.remove_col()
+            assert len(tb_["cols"]) == n_cols_ and tt_.btn_auto.menu().actions()
+            assert len(tt_.steps.pages) == 2 and tt_.btn_presets.isHidden()   # kein leerer Schritt „Darstellung“
+            tt_.grid.item(4, 5).setText("2100")                   # freie Spalte, freie Zeile
+            pump_c_(0.2)
+            assert tb_["cells"][f"{tb_['rows'][-1]['id']}|c5"] == "2100"
+            files_ = tt_.export_dialog()
+            assert files_ and {p_.suffix for p_ in files_} == {".docx", ".xlsx", ".csv"}, files_
+            assert all(p_.parent.parent == (dcmp_ / "comparisons").resolve() or
+                       p_.parent.parent == dcmp_ / "comparisons" for p_ in files_), files_
+            doc_ = zip_c_.ZipFile(next(p_ for p_ in files_ if p_.suffix == ".docx")).read("word/document.xml").decode()
+            assert "Properties" in doc_ and 'w:gridSpan w:val="2"' in doc_ and "999.99" in doc_ and "Lit. 1" in doc_
+            ws_ = lwb_c_(next(p_ for p_ in files_ if p_.suffix == ".xlsx")).active
+            vals_ = [str(c_.value) for r_ in ws_.iter_rows() for c_ in r_ if c_.value is not None]
+            assert "Lit. 1" in vals_ and "999.99" in vals_ and "UV-Vis" in vals_, vals_
+            with open(next(p_ for p_ in files_ if p_.suffix == ".csv"), newline="", encoding="utf-8-sig") as fh_:
+                rows_csv_ = list(csv_c_.reader(fh_))
+            assert rows_csv_[0][3:5] == ["UV-Vis", "UV-Vis"] and rows_csv_[1][0] == "Compound", rows_csv_[:2]
+            assert [r_[0] for r_ in rows_csv_[2:]] == ["S2", "S3", "Lit. 1"] and rows_csv_[3][2] == "999.99", rows_csv_
+            tt_.cb_transpose.setChecked(True)                     # Verbindungen als Spalten
+            mat_, _n = tt_.matrix()
+            assert len(mat_) == 6 and len(mat_[0]) == 5 and [t_ for t_, *_r in mat_[0][2:]] == ["S2", "S3", "Lit. 1"]
+            header_, rows_t_, top_, _b = tt_.export_table()
+            assert header_[2:] == ["S2", "S3", "Lit. 1"] and top_ is None and rows_t_[2][0] == "UV-Vis" \
+                and rows_t_[3][0] == "", (header_, rows_t_)
+            tt_.copy_table()
+            md_ = QApplication.clipboard().mimeData()
+            assert "<table" in md_.html() and "999.99" in md_.text()
+            QApplication.clipboard().clear()                      # offscreen: QMimeData beim Beenden -> Absturz (139)
+            tt_.reset_defaults()                                  # „Alles auf Standard“ behält Auswahl und Tabelle
+            assert cp_.tab is not tt_ and cp_.tab.tb["cells"][key_] == "999.99" and cp_.tab.tb["transpose"] is True
+            cp_.save()
+            data_ = PUB_c_.load(dcmp_)                            # Projektdatei: Vergleiche bleiben beim Speichern
+            PUB_c_.save(dcmp_, data_)
+            again_ = PUB_c_.load(dcmp_)["comparisons"]
+            assert again_ == data_["comparisons"] and again_[1]["st"]["table"]["transpose"] is True
+            assert again_[1]["st"]["table"]["cells"][key_] == "999.99"
+            report.append("Comparison table (auto + free columns, overwritten cell reset, free row, group header, "
+                          "transposed, Word/Excel/CSV, rich-text copy, project file round trip): OK")
+        with section:
+            # Vergleich: Spektren (ε wie im Overlay, eine Legende je Verbindung) und CV-Stapel aus drei erfundenen
+            # Verbindungen (Generatoren des Beispielprojekts), dazu eine auf einer anderen Referenzskala (abgelehnt)
+            from rdkit import Chem as Chem_c_
+            from rdkit.Chem import AllChem as AllChem_c_
+            from elucida.app import demo as DEMO_c_
+            cp_.open("demo0spectra")
+            st_ = cp_.tab
+            spec_ = st_.figure_spec()
+            assert spec_ is not None and [c_["label"] for c_ in spec_[1]] == ["S2", "S3"]
+            assert "varepsilon" in spec_[0]["ylabel"] and 25 < float(np.nanmax(spec_[1][1]["y"])) < 31
+            assert "UV-Vis absorption spectra" in st_.si_caption("x") and "<b>S3</b>" in st_.si_caption("x")
+            st_.cmb_content.setCurrentIndex(st_.cmb_content.findData("abs_em"))
+            spec_ = st_.figure_spec()
+            assert [c_.get("ls") for c_ in spec_[1]] == ["-", "-", "--"], [c_.get("ls") for c_ in spec_[1]]
+            assert abs(float(np.nanmax(spec_[1][1]["y"])) - 1) < 1e-9
+            cvp_ = out / "cmp_cv"
+            PUB_c_.create(cvp_, "CV stack test")
+            inp_c_ = out / "cmp_cv_input"
+            inp_c_.mkdir(exist_ok=True)
+            e12s_ = {"T1": -0.70, "T2": -0.40, "T3": -0.10, "T4": -0.25}
+            for name_, smi_ in (("T1", "c1ccc2ccccc2c1"), ("T2", "c1ccc(-c2ccccc2)cc1"), ("T3", "O=C1C=CC(=O)C=C1"),
+                                ("T4", "c1ccncc1")):
+                assert w.create_project(cvp_ / name_)
+                m_ = Chem_c_.MolFromSmiles(smi_)
+                AllChem_c_.Compute2DCoords(m_)
+                cdx_ = inp_c_ / f"{name_}.cdxml"
+                cdx_.write_text(DEMO_c_.acs_cdxml(DEMO_c_.mol_cdxml(m_)), encoding="utf-8")
+                w.set_compound({"name": name_, "structure": str(cdx_)})
+                dta_ = inp_c_ / f"{name_}_CV.DTA"
+                cyc_, t_ = DEMO_c_.cv_cycles([(e12s_[name_] + 0.09, 20.0)], 100, e12s_[name_] - 0.4, e12s_[name_] + 0.5,
+                                             seed=1)
+                DEMO_c_.write_dta(dta_, cyc_, 100, times=t_)
+                w.cv_state["files"] = [{"file": str(dta_), "uid": "f1", "visible": True, "color": "#000000",
+                                        "label": "100 mV s-1"}]
+                w.cv_state.update(couples=[[e12s_[name_] - 0.11, e12s_[name_] + 0.29]], cycle=1, ref_offset=0.09,
+                                  ref_mode="none" if name_ == "T4" else "manual",
+                                  cap_solvent="THF" if name_ == "T2" else "CH2Cl2", cap_el="0.1 M n-Bu4NPF6")
+                w.cv_tab.fill_table()
+                w.cv_tab.fill_couples()
+                w.cv_tab.render()
+                w.save_project()
+                PUB_c_.add_compound(cvp_, cvp_ / name_)
+            w.close_project()
+            w.open_publication(cvp_)
+            pp_c_.project_tabs.setCurrentWidget(cp_)
+            pump_c_(0.3)
+            assert cp_.items() == [] and isinstance(cp_.tab, CMP.CompareEmpty) and not cp_.tab.btn_export.isEnabled()
+            cp_.add("cv")
+            ct_ = cp_.tab
+            assert isinstance(ct_, CMP.CVStackTab) and [m_["on"] for m_ in ct_.st["members"]] == [True] * 4
+            ct_.notes_begin()
+            cfg_, curves_, labels_, _s = ct_.figure_spec()
+            assert any("T4" in n_ for n_ in ct_._notes), ct_._notes                 # andere Referenz: abgelehnt
+            assert [c_["label"] for c_ in curves_] == ["T1", "T2", "T3"]
+            offs_ = [float(np.nanmean(c_["y"] - c_["val"])) for c_ in curves_]
+            assert offs_[0] > offs_[1] > offs_[2] == 0.0, offs_                      # oberster Eintrag oben
+            snaps_ = [cp_.records[n_]["tabs"]["cv"]["files"][0]["couples"][0] for n_ in ("T1", "T2", "T3")]
+            assert [l_["text"] for l_ in labels_] == [f"{c_[c_['fwd']]:.2f} V".replace("-", "−") for c_ in snaps_]
+            assert [round(c_["e12"], 2) for c_ in snaps_] == [-0.70, -0.40, -0.10], snaps_
+            assert len(cfg_["images"]) == 3 and len(cfg_["scan_arrows"]) == 3 and cfg_["y_axis"] == "no_numbers"
+            assert "Fc$^{0/+}$" in cfg_["xlabel"]
+            cap_ = ct_.si_caption("x")
+            assert "<b>T1</b>, <b>T2</b> and <b>T3</b>" in cap_ and "THF (<b>T2</b>)" in cap_ and "T4" not in cap_, cap_
+            ct_.render()
+            pump_c_(0.3)
+            lay_ = ct_.F.current_layout()
+            keys_ = [m_["key"] for m_ in ct_.members()[:3]]
+            assert all(f"arrow_scan_{k_}" in lay_ and f"image_struktur_{k_}" in lay_ for k_ in keys_), sorted(lay_)
+            ys_ = [lay_[f"image_struktur_{k_}"][1] for k_ in keys_]
+            assert ys_[0] > ys_[1] > ys_[2], ys_                                      # Struktur neben ihrer Kurve
+            ct_.move_row(2, 0)                                    # Reihenfolge = Liste: T3 jetzt oben
+            assert [c_["label"] for c_ in ct_.figure_spec()[1]] == ["T3", "T1", "T2"]
+            ct_.cb["normalize"].setChecked(True)
+            assert all(abs(float(np.nanmax(np.abs(c_["val"]))) - 1) < 1e-9 for c_ in ct_.figure_spec()[1])
+            assert "normalized" in ct_.si_caption("x")
+            out_cv_ = ct_.export_dialog()
+            assert out_cv_ and {p_.suffix for p_ in out_cv_} >= {".pdf", ".svg", ".png"}, out_cv_
+            cp_.save()
+            assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["normalize"] is True
+            w.close_publication()
+            report.append("Comparison CV stack (three synthetic compounds: offsets, peak labels, structures beside "
+                          "the curves, one scan arrow each, other reference refused) and spectra overlay: OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

@@ -83,3 +83,29 @@ paths:
   Selbsttests (`make_selftest_inputs`, `make_test_cif`, `make_test_orca`) wiederverwenden und nie echte Messwerte. Die
   README-Bilder (`tools/make_screenshots.py`) zeigen S3 mit diesen Daten.
 - Laborbuchnummer (`compound.labbook`): nur intern (Übersicht, Suche), nie in SI/Word/Datenpaket.
+- Vergleich (Projektseite, Nutzerauftrag 2026-11-12; `app/comparison.py`, Reiter vor „Angaben“): benannte Vergleiche in
+  `publication.elucida` unter `comparisons` (uid, name, kind cv/spectra/table, st = Zustand des `FigureTab` samt
+  `members`/`table`), Bedienung als `FigureTab` im Gastgeber `CompareHost` (Schritte, Karten, Export unten rechts, keine
+  Popups). **Nichts wird neu ausgewertet:** `autosave` → `write_snapshot` schreibt `.elucida/compare.json` (Version 1;
+  Kurven ≤ `MAX_POINTS`; Werte als Text genau wie im Tab: `fmt_lam`/`fmt_ve` mit dem Filter von `uvvis_line`,
+  `CV._fmt_e`, ΔE_p in mV, `g_text`, `hfc_texts`, D und |E/D| wie `zfs_summary`). Neu ausgelesen wird nur ein gebauter
+  Tab mit geändertem Fingerabdruck (`fingerprint`: Zustand mit relativen Pfaden); ein Fehler darin stört das Speichern
+  nie. Ein Eintrag, dessen Fingerabdruck nicht zur Projektdatei passt, gilt als veraltet und liefert keinen Wert;
+  „Aktualisieren“ (nur sichtbar, wenn nötig) öffnet die Verbindung kurz und speichert sie. CV-Stapel: eine andere
+  Referenzskala als die erste Kurve wird abgelehnt, nie umgerechnet; Peak am Fensterrand ergibt keine Zahl; Unterschrift
+  nur aus den `cap_*` der Verbindungen (gleiche Angaben einmal, verschiedene je Verbindung), normiert = Satz in der
+  Unterschrift. Spektren: ε wie im Overlay (`eps_linked`, gleiche Basislinie); ohne Konzentration oder Molmasse keine
+  Kurve. Tabelle (Nutzerwunsch „übersichtlich“): Karten „Größen“ (Liste als Tabelle; „Aus den Tabs“ = Menü der Werte,
+  „Eigene“ = frei; Name/Einheit der Tab-Werte stehen fest), „Weitere Verbindungen“ (Zeilen außerhalb des Projekts),
+  „Zellen und Anordnung“; kein Schritt „Darstellung“. Tab-Werte leer, wenn sie fehlen; von Hand überschriebene Zellen
+  markiert und rücksetzbar; Kopf „Größe / Einheit“ als Markup, Ausgabe englisch, Namen fett; die Linie unter einem
+  Gruppenkopf steht nur unter seinen Spalten (`GroupRule`, wie im Word-Export). Exporte nach `<Projekt>/comparisons/`
+  (figures/tables/SI), Name = Name des Vergleichs. „Entfernen“ nimmt nur den Eintrag aus der Projektdatei. Nicht in der
+  Gesamt-SI.
+- Projektseite, Raster (Nutzerwunsch 2026-11-12): Kopf, Reiter und alle Seiten rücken selbst um `IN` (= `COL_PAD`) ein,
+  die Reiterseite ist um `IN` breiter (`PAGE_MARGINS`) – so stehen die Karten des eingebetteten Vergleichs auf der Kante
+  des Titels. Keine Linie über den Reitern (`projectTabs`); `center_corner` erst nach den Reitern (sonst Höhe 0, Knöpfe
+  unsichtbar). Senkrecht: Untertitel – Fortschritt – Reiter je 16 sichtbar, Reiter – Seitenkopf – erste Überschrift
+  je ~24, Überschrift – Tabelle 8, Tabelle – nächste Überschrift 20 (`HEAD_GAP`). Ein Hauptknopf (blau): mit offenem
+  Vergleich dessen „Exportieren“, sonst „Gesamt-SI“ (`sync_main_button`). „Weitere Analytik“ wächst in breiten Fenstern
+  (`WEL.fit_more`, `MORE_W`).

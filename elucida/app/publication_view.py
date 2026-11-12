@@ -161,15 +161,22 @@ class PublicationRow(QWidget):
         return not t or any(t in s.lower() for s in [self.info["title"], self.info["path"]] + self.info["compounds"])
 
 
+IN = STYLE.COL_PAD                # Einzug der Projektseite: Kopf, Reiter und Seiten bündig mit den Karten des Vergleichs
+PAGE_MARGINS = (28 - IN, 24, 28 - IN, 16)    # (der eingebettete Tab bringt seinen Spaltenrand selbst mit)
+HEAD_GAP = 14                     # Abstand Tabelle – nächste Gruppenüberschrift (mit dem Listenabstand 20)
+
+
 class GroupHeader(QWidget):
     """Überschrift einer Gruppe auf der Projektseite (Name, Anzahl, vollständig); Rechtsklick: umbenennen, verschieben,
     auflösen. Auch Ziel beim Ziehen (alles unterhalb gehört zur Gruppe)."""
 
-    def __init__(self, group, n):
+    def __init__(self, group, n, first=True):
         super().__init__()
         self.group = group
         h = QHBoxLayout(self)
-        h.setContentsMargins(0, 10, 4, 2)                   # bündig mit „Verbindungen“ und den Zeilen
+        # bündig mit „Verbindungen“ und den Zeilen; senkrecht ein Raster (Nutzerwunsch 2026-11-12): Überschrift –
+        # Tabelle 8, Tabelle – nächste Überschrift 20, wie Reiter – Seitenkopf und Seitenkopf – erste Überschrift
+        h.setContentsMargins(0, 0 if first else HEAD_GAP, 4, 2)
         self.lbl = QLabel(objectName="recentHead")
         h.addWidget(self.lbl, 1)
         self.set_count(n, 0)
@@ -244,12 +251,12 @@ class PublicationPage(QWidget):
         self.path_workspace = None
         layout = QVBoxLayout(self)
         self.outer = layout
-        layout.setContentsMargins(28, 24, 28, 16)
-        layout.setSpacing(18)
+        layout.setContentsMargins(*PAGE_MARGINS)
+        layout.setSpacing(12)                               # Fortschrittszeile – Reiter sichtbar 16, wie Untertitel – Fortschritt
         # Kopf: Titel, Autoren, Fortschritt; rechts die beiden Exporte (nur der wichtigste blau)
         self.head = QWidget()
         hd = QHBoxLayout(self.head)
-        hd.setContentsMargins(0, 0, 0, 0)
+        hd.setContentsMargins(IN, 0, IN, 0)
         hd.setSpacing(24)
         tv = QVBoxLayout()
         tv.setSpacing(4)
@@ -266,7 +273,7 @@ class PublicationPage(QWidget):
         self.lbl_progress = QLabel(objectName="recentSub")
         pr.addWidget(self.lbl_progress)
         pr.addStretch(1)
-        tv.addSpacing(8)
+        tv.addSpacing(10)
         tv.addLayout(pr)
         hd.addLayout(tv, 1)
         b_pack = QPushButton(STYLE.icon("export"), T("pub_datapack"), objectName="barBtn")
@@ -282,6 +289,8 @@ class PublicationPage(QWidget):
         layout.addWidget(self.head)
         self.project_tabs = QTabWidget()
         self.project_tabs.setDocumentMode(True)
+        self.project_tabs.setObjectName("projectTabs")      # ohne Rahmenlinie über den Reitern (war an den Knöpfen
+        self.project_tabs.tabBar().setDrawBase(False)       # rechts gebrochen und versetzt)
         layout.addWidget(self.project_tabs, 1)
         corner = QWidget()
         cr = QHBoxLayout(corner)
@@ -293,19 +302,25 @@ class PublicationPage(QWidget):
             b.clicked.connect(slot)
             cr.addWidget(b)
         self.project_tabs.setCornerWidget(corner, Qt.TopRightCorner)
-        STYLE.center_corner(self.project_tabs)
         overview = QWidget()
         self.project_tabs.addTab(overview, T('pub_compounds'))
         v = QVBoxLayout(overview)
-        v.setContentsMargins(0, 12, 0, 0)
+        v.setContentsMargins(IN, 12, IN, 0)
         v.setSpacing(8)
         from elucida.app.reaction_paths import PathPanel
         self.paths_page = QWidget()
         self.project_tabs.addTab(self.paths_page, T('rp_computational_chemistry'))
-        self.info_page = PublicationInfoPage(self)          # Angaben (früher Dialog): dritte Seite
+        from elucida.app.comparison import ComparePage
+        self.compare_page = ComparePage(self)               # Vergleich über die Verbindungen (vor „Angaben“)
+        self.project_tabs.addTab(self.compare_page, T("pub_compare_tab"))
+        self.info_page = PublicationInfoPage(self)          # Angaben (früher Dialog): letzte Seite
         self.project_tabs.addTab(self.info_page, T("pub_details_tab"))
+        STYLE.center_corner(self.project_tabs)              # erst mit Reitern: vorher ist die Leiste 0 hoch und die
+        # Knöpfe rechts (SI-Texte, Vorschriften, Ordner) blieben unsichtbar
+        corner.layout().setContentsMargins(0, 0, IN, 8)     # 8: Schrift auf der Mittellinie der Reiter
         paths_layout = QHBoxLayout(self.paths_page)
-        paths_layout.setContentsMargins(0, 12, 0, 0)
+        paths_layout.setContentsMargins(IN, 12, IN, 0)
+        self.paths_layout = paths_layout
         from elucida.app.cluster import ClusterCard, ClusterPage
         self.path_panel = PathPanel(self)
         self.path_rail = QWidget()
@@ -370,7 +385,7 @@ class PublicationPage(QWidget):
         hrow.addWidget(b_new)
         v.addLayout(hrow)
         self.box = QVBoxLayout()
-        self.box.setContentsMargins(0, 0, 0, 0)
+        self.box.setContentsMargins(0, 4, 0, 0)             # Seitenkopf – erste Überschrift/Tabelle wie Reiter – Seitenkopf
         self.box.setSpacing(6)
         inner = self.drop_area = _DropArea(self._dropped)   # Verbindungen per Ziehen umsortieren
         iv = QVBoxLayout(inner)
@@ -390,6 +405,7 @@ class PublicationPage(QWidget):
         v.addWidget(hint)
         self.rows = []
         self.project_tabs.currentChanged.connect(main._update_undo_actions)
+        self.project_tabs.currentChanged.connect(self.sync_main_button)
 
     # -- Inhalt -----------------------------------------------------------------------
     def set_publication(self, pdir):
@@ -424,8 +440,15 @@ class PublicationPage(QWidget):
         self.project_tabs.tabBar().setVisible(not on)
         if self.project_tabs.cornerWidget(Qt.TopRightCorner) is not None:
             self.project_tabs.cornerWidget(Qt.TopRightCorner).setVisible(not on)
-        self.outer.setContentsMargins(*((0, 0, 0, 0) if on else (28, 24, 28, 16)))   # Pfad: Ränder wie in den Tabs (PathWorkspace)
+        self.outer.setContentsMargins(*((0, 0, 0, 0) if on else PAGE_MARGINS))       # Pfad: Ränder wie in den Tabs (PathWorkspace)
+        self.paths_layout.setContentsMargins(*((0, 12, 0, 0) if on else (IN, 12, IN, 0)))
         self.main._update_crumbs()
+
+    def sync_main_button(self, *_):
+        """Ein Hauptknopf (blau) je Ansicht: mit offenem Vergleich ist es dessen „Exportieren“, sonst die Gesamt-SI."""
+        cmp_open = self.project_tabs.currentWidget() is self.compare_page and self.compare_page.item is not None
+        if bool(self.b_si.property("accent")) == cmp_open:
+            STYLE.set_accent(self.b_si, not cmp_open, "export")
 
     def open_path(self, item):
         from elucida.app.reaction_paths import PathWorkspace
@@ -459,10 +482,12 @@ class PublicationPage(QWidget):
             r.deleteLater()
         self.rows, self.headers, self.panels = [], [], []
         if self.pdir is None:
+            self.compare_page.set_publication(None)
             return
         data = PUB.load(self.pdir)
         self.path_panel.refresh()
         self._fill_paths(data)
+        self.compare_page.set_publication(self.pdir)
         dirs, missing = PUB.sync(self.pdir)
         title = PUB.paper_title(data) or data.get("title") or self.pdir.name
         sub = " · ".join(x for x in (data.get("authors", ""), data.get("doi", "")) if x)
@@ -476,7 +501,7 @@ class PublicationPage(QWidget):
         for g, ds in groups:
             head = None
             if with_heads:
-                head = GroupHeader(g, len(ds))
+                head = GroupHeader(g, len(ds), first=not self.headers)
                 head.setContextMenuPolicy(Qt.CustomContextMenu)
                 head.customContextMenuRequested.connect(lambda pos, h=head: self._group_menu(h, pos))
                 self.box.addWidget(head)
@@ -777,7 +802,7 @@ class PublicationInfoPage(QWidget):
         v.addWidget(g)
         v.addStretch(1)
         STYLE.tidy(inner)
-        v.setContentsMargins(0, 12, 0, 0)
+        v.setContentsMargins(IN, 12, IN, 0)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(scrolled(inner))

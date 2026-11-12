@@ -4,7 +4,7 @@ Startet das Hauptfenster (1600 × 1000; unter macOS als echtes Fenster, sonst QT
 **Beispielprojekt** (erfundene Daten, `app/demo.py`) und speichert über QWidget.grab je Tab ein Bild der Verbindung S3
 mit geladenen Daten (Nutzerwunsch 2026-11-12, vorher leere Tabs mit Anleitung): Abbildung rechts, links der Schritt
 mit den aussagekräftigsten Einstellungen (`SHOTS`). Coverbild: Startbildschirm (welcome_<theme>_<lang>.png) mit dem
-Beispielprojekt (Pfade als ~/Documents/…), dazu Projektseite und Reaktionspfad.
+Beispielprojekt (Pfade als ~/Documents/…), dazu Projektseite, Vergleich (Eigenschaftstabelle) und Reaktionspfad.
 Das Werkzeug selbst gehört nicht in den PyInstaller-Build.
 
     python tools/make_screenshots.py [Zielordner]
@@ -73,6 +73,7 @@ def shoot_welcome(w, outdir, lang, theme, work):
         clear_toast(w)
         w.grab().save(str(p))
         print(p.name)
+        shoot_comparison(w, outdir, lang, theme)
         from elucida.app import reaction_paths as RP       # Reaktionspfad: leere Zeichenfläche im Hauptfenster
         w.pub_page.open_path(RP.create(work / "Beispielprojekt", "Reaction path"))
         pump(3.0)
@@ -86,6 +87,21 @@ def shoot_welcome(w, outdir, lang, theme, work):
     w.open_project(work / "Beispielprojekt" / SHOW, recent=False)     # Tab-Bilder: Verbindung mit Daten
     pump(0.5)
 
+
+
+def shoot_comparison(w, outdir, lang, theme):
+    """Projektseite → Vergleich: Eigenschaftstabelle des Beispielprojekts (Schritt „Tabelle“ links)."""
+    page = w.pub_page
+    page.project_tabs.setCurrentWidget(page.compare_page)
+    pump(0.5)
+    page.compare_page.open("demo00table")
+    page.compare_page.tab.steps.set_step(1, remember=False)
+    pump(0.8)
+    p = Path(outdir) / f"comparison_{theme}_{lang}.png"
+    clear_toast(w)
+    w.grab().save(str(p))
+    print(p.name)
+    page.project_tabs.setCurrentIndex(0)
 
 
 def shoot(w, outdir, lang, theme):

@@ -5,6 +5,13 @@
 ## 1.1.0 – 2026-11-12
 
 ### New
+- **Project page: Comparison.** Any number of named comparisons across the compounds of a project: a CV stack (one
+  voltammogram per compound, peak potential at the peak, structure beside the curve, scan arrow per curve; other
+  reference scales are refused, never converted), UV-Vis and emission spectra in one figure, and a property table
+  (values from the tabs, own quantities and further compounds, group headers, overwritten cells marked, transposable; Word, Excel,
+  CSV, rich-text copy). Nothing is evaluated again: each compound writes a small snapshot of its tabs on saving;
+  outdated or missing snapshots are shown and renewed with "Refresh". The example project contains a spectra
+  comparison and a table.
 - **EPR: choice of baseline.** Besides the polynomial there are "Smooth" (follows a broad background, keeps narrow
   lines, needs no dark spectrum; the only value is the width) and "Spline" (through the means of the signal-free
   ranges). The methods text and the exported spectra state the method.
@@ -51,6 +58,10 @@ were not):
 - **EPR, nuclei:** ⁶Li, ⁷Li, ⁹Be, ¹⁰B, ¹¹B, ²³Na, ²⁷Al and further isotopes up to ²⁰⁹Bi were missing from the table;
   "I=3/2" (spin as a fraction) is read now.
 - **Compound tab:** the chips "Figures from" stayed empty after a language switch.
+- **Project page:** the buttons "SI texts …", "General procedures" and "Show in folder" next to the tabs were invisible
+  (height 0); the line above the tabs was broken and offset at that position and is gone. Header, tabs and all pages
+  now start at the same left and right edge, the vertical distances follow one grid, and "Further analytics" uses
+  the free width in wide windows (all methods readable instead of cut off).
 - **EPR, decay under a temperature ramp:** the integral was evaluated at the measured points only; with few spectra
   (10 K apart) E_a came out about 1.4 % too high. The temperature is now interpolated between the spectra. Values from
   densely measured ramps practically do not change.

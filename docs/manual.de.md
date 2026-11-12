@@ -235,6 +235,56 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
   beim Öffnen, ONLYOFFICE über „Inhaltsverzeichnis aktualisieren“). Die SI einer einzelnen Verbindung bleibt im Stil
   der Gruppe.
 
+## Vergleich (Projekt)
+
+<p align="center"><img src="screenshots/comparison_dark_de.png" alt="Seite Vergleich mit einer Eigenschaftstabelle" width="800"></p>
+
+Der Reiter **Vergleich** der Projektseite stellt Verbindungen des Projekts nebeneinander, beliebig viele benannte
+Vergleiche (**+ CV-Stapel**, **+ Spektren**, **+ Tabelle**; Name, **Entfernen** nimmt nur den Eintrag aus dem Projekt,
+exportierte Dateien bleiben). Links die Schritte wie in den Tabs, rechts Abbildung bzw. Tabelle, **Exportieren** unten
+rechts. Gespeichert wird in `publication.elucida`.
+
+**Nichts wird neu ausgewertet.** Jede Verbindung legt beim Speichern einen kleinen Stand ihrer Auswertungen in
+`.elucida/compare.json` ab (Kurven ausgedünnt, Werte als Text genau wie im Tab: λ und ε ganzzahlig wie in der Tabelle des
+ε-Tabs, E½ und ΔE_p wie in den CV-Ergebnissen, g mit vier Stellen). Der Vergleich liest nur diese Stände, öffnet also keine
+Verbindung. Hat sich eine Verbindung seit ihrem Stand geändert oder fehlt er (z. B. ein Tab, der in der Sitzung nicht
+geöffnet war, oder eine Verbindung aus einer älteren Version), steht sie in der Liste als **veraltet** bzw. **fehlt** und
+ihre Werte bleiben leer. **Aktualisieren** öffnet diese Verbindungen kurz nacheinander, schreibt den Stand neu und kehrt
+zur Seite zurück.
+
+- **CV-Stapel:** je Verbindung ein Cyclovoltammogramm, versetzt übereinander (oben in der Liste = oberste Kurve, Ziehen
+  oder Pfeile ordnen um, **Abstand** in Vielfachen der größten Kurvenhöhe). Unter „Gewählte Verbindung“: Messung (Standard:
+  die erste sichtbare, im Zyklus des CV-Tabs), Redoxpaar und Beschriftung am Peak (Hinpeak, E_pa, E_pc, E½ oder keine; die
+  Zahl aus den Ergebnissen des CV-Tabs). Die Struktur der Verbindung steht neben ihrer Kurve (ziehbar, wahlweise in
+  Kurvenfarbe), ein Pfeil zeigt je Kurve die Messrichtung, die y-Achse hat keine Zahlen. **Normiert** teilt jede Kurve
+  durch ihren größten Betrag; die Bildunterschrift sagt das. Verbindungen auf einer anderen Referenzskala als die erste
+  werden nicht gezeigt (Hinweis unter dem Bild), nie umgerechnet. Die Bildunterschrift entsteht aus den Angaben der
+  Verbindungen (Lösungsmittel, Leitsalz, Konzentration, Vorschub): gleiche einmal, verschiedene je Verbindung.
+- **Spektren:** UV-Vis als ε (dieselbe Messung und Basislinie wie im Overlay, ohne Konzentration oder Molmasse keine
+  Kurve) oder auf das Maximum normiert, Emission normiert wie im Fluoreszenz-Tab, beides zusammen (Emission
+  gestrichelt); übereinander oder gestapelt, ein Legendeneintrag je Verbindung. Bei mehreren ε-Serien wählt man die Serie
+  je Verbindung.
+- **Tabelle:** Zeilen = Verbindungen in der Reihenfolge des Projekts (im Schritt „Daten“ abwählbar). Im Schritt
+  „Tabelle“ stehen links drei Karten:
+  - **Größen:** was verglichen wird, als Liste mit Größe, Einheit, Gruppenkopf und Herkunft. **Aus den Tabs** fügt
+    einen Wert hinzu, den die Verbindungen selbst liefern (Summenformel, Molmasse, Schmelzpunkt, UV-Vis λ_max/ε/
+    Lösungsmittel, Fluoreszenz λ_abs/λ_em/Stokes, CV E½/E_pa/E_pc/ΔE_p je Redoxpaar und Referenz, EPR g, Kopplungen, D
+    und |E/D|); Name und Einheit stehen dann fest. **Eigene** fügt eine Größe zum Eintippen hinzu (z. B. „IR (CN2)“ und
+    „cm-1“, Rechnung, Literatur); der Kopf wird in Normschreibweise „Größe / Einheit“ gesetzt. **Gruppenkopf** setzt
+    einen zweiten Kopf über benachbarte Größen (z. B. „Experimental“ / „Computational“).
+  - **Weitere Verbindungen:** Zeilen für Verbindungen, die nicht im Projekt liegen (z. B. aus der Literatur); ihre
+    Werte tippt man in der Tabelle ein.
+  - **Zellen und Anordnung:** **Verbindungen als Spalten** dreht die Tabelle. Zellen bearbeitet man direkt in der
+    Tabelle rechts (Doppelklick); ein überschriebener Wert aus einem Tab steht orange, **Wert des Tabs** stellt ihn
+    zurück.
+
+  Export als Word (Dreilinien-Tabelle wie in der SI, Namen fett), Excel und CSV; **Kopieren** legt sie als
+  formatierten Text in die Zwischenablage.
+
+Abbildungen landen als PDF/SVG/PNG in `comparisons/figures/`, Tabellen als Excel/CSV in `comparisons/tables/` und als
+Word in `comparisons/SI/` des Projektordners, Dateiname = Name des Vergleichs. In die Gesamt-SI kommen Vergleiche
+(noch) nicht.
+
 ## Verbindung
 
 Ein Verbindungsordner steht meist für **eine Verbindung** (oder einen Vergleich). Der Tab **Verbindung** ist der erste in der

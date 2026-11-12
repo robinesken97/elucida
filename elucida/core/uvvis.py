@@ -1055,6 +1055,8 @@ class FreeSpace:
 
 
 def corner_score(prefer):
+    if callable(prefer):                             # eigene Wertung (Vergleich: Struktur neben ihrer Kurve)
+        return prefer
     return {
         "top-right": lambda X, Y, w, h: (1 - X - w) + (1 - Y - h),
         "top-left": lambda X, Y, w, h: X + (1 - Y - h),

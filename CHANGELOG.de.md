@@ -5,6 +5,13 @@
 ## 1.1.0 – 2026-11-12
 
 ### Neu
+- **Projektseite: Vergleich.** Beliebig viele benannte Vergleiche über die Verbindungen eines Projekts: CV-Stapel
+  (je Verbindung ein Cyclovoltammogramm, Peakpotential am Peak, Struktur neben der Kurve, Scanpfeil je Kurve;
+  andere Referenzskalen werden abgelehnt, nie umgerechnet), UV-Vis- und Emissionsspektren in einem Bild und eine
+  Eigenschaftstabelle (Werte aus den Tabs, eigene Größen und Zeilen, Gruppenkopf, überschriebene Zellen markiert,
+  drehbar; Word, Excel, CSV, Kopieren als formatierter Text). Nichts wird neu ausgewertet: jede Verbindung legt beim
+  Speichern einen kleinen Stand ihrer Tabs ab; veraltete oder fehlende Stände werden angezeigt und mit
+  „Aktualisieren“ erneuert. Das Beispielprojekt enthält einen Spektrenvergleich und eine Tabelle.
 - **EPR: Basislinie nach Wahl.** Neben dem Polynom gibt es „Glatt“ (folgt breitem Untergrund, lässt schmale Linien
   stehen, kommt ohne Dunkelspektrum aus; einziger Wert ist die Breite) und „Spline“ (durch die Mittel der
   signalfreien Bereiche). Methodentext und exportierte Spektren nennen das Verfahren.
@@ -51,6 +58,10 @@ Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und
 - **EPR, Kerne:** ⁶Li, ⁷Li, ⁹Be, ¹⁰B, ¹¹B, ²³Na, ²⁷Al und weitere Isotope bis ²⁰⁹Bi fehlten in der Tabelle; „I=3/2“
   (Spin als Bruch) wird jetzt gelesen.
 - **Tab „Verbindung“:** Die Chips „Abbildungen von“ blieben nach einem Sprachwechsel leer.
+- **Projektseite:** Die Knöpfe „SI-Texte …“, „Allgemeine Vorschriften“ und „Im Ordner zeigen“ neben den Reitern waren
+  unsichtbar (Höhe 0); die Linie über den Reitern war an dieser Stelle gebrochen und versetzt und entfällt. Kopf,
+  Reiter und alle Seiten beginnen jetzt auf derselben linken und rechten Kante, die senkrechten Abstände folgen einem
+  Raster, und „Weitere Analytik“ nutzt in breiten Fenstern den freien Platz (alle Methoden lesbar statt abgeschnitten).
 - **EPR, Zerfall unter einer Temperaturrampe:** Das Integral wurde nur an den Messpunkten ausgewertet; bei wenigen
   Spektren (10 K Abstand) lag E_a dadurch etwa 1,4 % zu hoch. Jetzt wird die Temperatur zwischen den Spektren
   interpoliert. Werte aus eng gemessenen Rampen ändern sich praktisch nicht.

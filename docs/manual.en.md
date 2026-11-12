@@ -224,6 +224,53 @@ elsewhere into the project.
   Word updates them when opening, ONLYOFFICE via "Update table of contents"). The SI of a single compound keeps the
   group's style.
 
+## Comparison (project)
+
+<p align="center"><img src="screenshots/comparison_dark_en.png" alt="Comparison page with a property table" width="800"></p>
+
+The **Comparison** tab of the project page puts compounds of the project side by side, with any number of named
+comparisons (**+ CV Stack**, **+ Spectra**, **+ Table**; name, **Remove** only takes the entry out of the project,
+exported files stay). Steps on the left as in the tabs, figure or table on the right, **Export** bottom right. Everything
+is saved in `publication.elucida`.
+
+**Nothing is evaluated again.** When a compound is saved it writes a small snapshot of its evaluations to
+`.elucida/compare.json` (thinned curves, values as text exactly as the tab shows them: λ and ε as integers like the table
+of the ε tab, E½ and ΔE_p like the CV results, g with four decimals). The comparison reads only these snapshots and opens
+no compound. If a compound changed since its snapshot or has none (e.g. a tab that was not opened in the session, or a
+compound from an older version), the list shows it as **outdated** or **missing** and its values stay empty. **Refresh**
+opens these compounds briefly one after another, writes the snapshot again and returns to the page.
+
+- **CV stack:** one cyclic voltammogram per compound, offset vertically (top of the list = top curve, drag or arrows to
+  reorder, **Gap** in multiples of the largest curve height). Under "Selected Compound": measurement (default: the first
+  visible one, in the cycle of the CV tab), redox couple and label at the peak (forward peak, E_pa, E_pc, E½ or none; the
+  number from the results of the CV tab). The structure of the compound stands beside its curve (draggable, optionally in
+  the curve colour), an arrow per curve shows the scan direction, the y axis has no numbers. **Normalized** divides each
+  curve by its largest absolute current; the caption says so. Compounds on a different reference scale than the first one
+  are not shown (note below the figure), never converted. The caption is built from the details of the compounds
+  (solvent, electrolyte, concentration, scan rate): common ones once, differing ones per compound.
+- **Spectra:** UV-Vis as ε (the same measurement and baseline as the overlay; without concentration or molar mass no
+  curve) or normalized to the maximum, emission normalized as in the fluorescence tab, or both (emission dashed);
+  overlaid or stacked, one legend entry per compound. With several ε series, choose the series per compound.
+- **Table:** rows = compounds in project order (can be deselected in the step "Data"). The step "Table" has three
+  cards on the left:
+  - **Quantities:** what is compared, as a list with quantity, unit, group header and source. **From the Tabs** adds a
+    value the compounds provide themselves (formula, molar mass, melting point, UV-Vis λ_max/ε/solvent, fluorescence
+    λ_abs/λ_em/Stokes shift, CV E½/E_pa/E_pc/ΔE_p per redox couple and reference, EPR g, hyperfine couplings, D and
+    |E/D|); name and unit are then fixed. **Own** adds a quantity to type in (e.g. "IR (CN2)" and "cm-1", calculation,
+    literature); the header is set in standard notation "quantity / unit". **Group header** puts a second header
+    above neighbouring quantities (e.g. "Experimental" / "Computational").
+  - **Further Compounds:** rows for compounds that are not in the project (e.g. from the literature); type their
+    values into the table.
+  - **Cells and Layout:** **Compounds as columns** transposes the table. Edit cells directly in the table on the right
+    (double-click); an overwritten value from a tab is shown in orange, **Value of the tab** resets it.
+
+  Export as Word (three-line table as in the SI, names bold), Excel and CSV; **Copy** puts it on the clipboard as rich
+  text.
+
+Figures go to `comparisons/figures/` as PDF/SVG/PNG, tables to `comparisons/tables/` as Excel/CSV and to
+`comparisons/SI/` as Word in the project folder, file name = name of the comparison. Comparisons are not (yet) part of
+the combined SI.
+
 ## Compound
 
 A compound folder usually stands for **one compound** (or one comparison). The **Compound** tab is the first in the tab row

@@ -482,14 +482,18 @@ class SimpleFigure(core.Figure):
     def _scan_arrow(self):
         """Messrichtung als ziehbares Element: Anfang in Achsenanteilen (wie Labels, Schlüssel arrow_scan), die Spitze
         folgt dem Anfang mit fester Länge. Ohne Verschieben liegt er am ersten Messpunkt."""
-        if not self.cfg.get("scan_arrow"):
-            return
+        # cfg["scan_arrows"]: mehrere Pfeile [(Schlüssel, x0, y0, x1, Farbe)] (Vergleich: einer je Kurve)
+        arrows = [("arrow_scan", *self.cfg["scan_arrow"], "black")] if self.cfg.get("scan_arrow") else []
+        arrows += list(self.cfg.get("scan_arrows") or [])
+        for key, x0, y0, x1, color in arrows:
+            self._one_scan_arrow(key, x0, y0, x1, color)
+
+    def _one_scan_arrow(self, key, x0, y0, x1, color):
         from matplotlib.transforms import Affine2D
         ax, sc = self.ax, self.cfg.get("scale", 1.0)
-        x0, y0, x1 = self.cfg["scan_arrow"]
         start, end = ax.transData.transform([(x0, y0), (x1, y0)])
         length = end[0] - start[0]                         # Pixel: auch bei umgekehrter Achse in Messrichtung
-        pos = self.layout.get("arrow_scan") or ax.transAxes.inverted().transform(start)
+        pos = self.layout.get(key) or ax.transAxes.inverted().transform(start)
         frac = length / ax.bbox.width
 
         def head(_renderer):
@@ -498,9 +502,9 @@ class SimpleFigure(core.Figure):
         ann = ax.annotate("     ", xy=(0, 0), xycoords=head, xytext=(float(pos[0]), float(pos[1])),
                           textcoords="axes fraction", ha="center", va="center", annotation_clip=False, zorder=5,
                           fontsize=self.cfg["font_size"],
-                          arrowprops=dict(arrowstyle="-|>", color="black", lw=max(0.6, 0.8 * sc), mutation_scale=10 * sc,
+                          arrowprops=dict(arrowstyle="-|>", color=color, lw=max(0.6, 0.8 * sc), mutation_scale=10 * sc,
                                           shrinkA=0, shrinkB=0, relpos=(0.5, 0.5)))
-        self.ann_items["arrow_scan"] = ann
+        self.ann_items[key] = ann
 
 
 def normalize(x, y, lo, hi, min_signal=0.01):
