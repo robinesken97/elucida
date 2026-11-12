@@ -1562,6 +1562,162 @@ def selftest(outdir, with_isnet=False):
             report.append("SEC spectra in overlay: OK")
 
         with section:
+            # H-Zelle: Gamry Cyclic Charge Discharge + Schrittdateien, Kapazität/Effizienz, Potential gegen Zeit
+            from elucida.app import demo as DEMO_hc
+            from elucida.formats import gamry_cycling as GC
+            from elucida.tabs import hcell as HC
+            hcdir = out / "input" / "hcell"
+            k_hc = np.arange(6)
+            fa_ = 0.9 - 0.01 * k_hc
+            main_a = DEMO_hc.write_cycling(hcdir / "A", "cellA", 0.8, 0.002, fa_, np.full(6, 0.99),
+                                           skip=(("discharge", 4),))
+            main_b = DEMO_hc.write_cycling(hcdir / "B", "cellB", 2.0, 0.005, 0.6 - 0.02 * k_hc, np.full(6, 0.97))
+            other_ = (main_a.parent / "CHARGE_DISCHARGE" / "CHARGE_#1.DTA").read_text(encoding="latin-1")
+            (main_a.parent / "CHARGE_DISCHARGE" / "first_charge.DTA").write_text(other_, encoding="latin-1",
+                                                                                 newline="")   # anderes Experiment
+            d_hc = GC.read_cycling(main_a)
+            m_hc = d_hc["meta"]
+            assert abs(m_hc["capacity_mAh"] - 0.8) < 1e-9 and m_hc["charge_cut_V"] == 1.0 and m_hc["discharge_cut_V"] == 0.2
+            assert abs(m_hc["charge_A"] - 0.002) < 1e-12 and len(d_hc["halves"]) == 12, m_hc
+            assert abs(d_hc["halves"][0]["charge_C"] - 0.9 * 0.8 * 3.6) < 1e-5, d_hc["halves"][0]
+            rows_hc = HC.cycle_rows(d_hc["halves"], 0.8)
+            assert abs(rows_hc[0]["pct_ch"] - 90.0) < 1e-3 and abs(rows_hc[0]["ce"] - 99.0) < 1e-3, rows_hc[0]
+            assert abs(rows_hc[0]["q_dis"] - 0.9 * 0.99 * 0.8) < 1e-5
+            s_hc = HC.summary(rows_hc, d_hc["halves"])
+            assert abs(s_hc["retention"] - 100 * fa_[-1] / fa_[0]) < 1e-3 and abs(s_hc["ce_mean"] - 99.0) < 1e-3
+            assert abs(s_hc["hours"] - d_hc["halves"][-1]["end_s"] / 3600) < 1e-9
+            names_hc = [p_.name for p_ in GC.step_files(main_a)]
+            assert len(names_hc) == 11 and "first_charge.DTA" not in names_hc, names_hc
+            assert HC.auto_cycles(6) == [1, 2, 3, 5, 6] and HC.auto_cycles(100) == [1, 2, 35, 67, 100]
+            assert HC.auto_cycles(3) == [1, 2, 3] and HC.parse_cycles("1, 3-4, x") == ([1, 3, 4], ["x"])
+            assert HC.ref_axis("Ag0/+") == "Ag$^{0/+}$", HC.ref_axis("Ag0/+")
+            # andere Varianten ablehnen: anderer TAG, fehlende Tabelle, Schrittdatei statt Hauptdatei
+            bad_hc = hcdir / "cv.DTA"
+            bad_hc.write_text(main_a.read_text(encoding="latin-1").replace("PWR800_CYCLICCHARGEDISCHARGE", "CV"),
+                              encoding="latin-1", newline="")
+            no_tab_hc = hcdir / "notable.DTA"
+            no_tab_hc.write_text(main_a.read_text(encoding="latin-1").replace("CAPACITYCURVE\tTABLE", "OTHER\tTABLE"),
+                                 encoding="latin-1", newline="")
+            for p_, msg_ in ((bad_hc, T("hcell_bad_tag", f="cv.DTA", tag="CV")),
+                             (no_tab_hc, T("hcell_no_table", f="notable.DTA", t="CAPACITYCURVE")),
+                             (main_a.parent / "CHARGE_DISCHARGE" / "CHARGE_#1.DTA", None)):
+                try:
+                    GC.read_cycling(p_)
+                    raise AssertionError(f"accepted {p_.name}")
+                except ValueError as ex_:
+                    assert msg_ is None or str(ex_) == msg_, str(ex_)
+            try:
+                GC.read_step(main_a)
+                raise AssertionError("main file read as step")
+            except ValueError:
+                pass
+            st_hc = w.hcell_state
+            t_hc = w.hcell_tab
+            t_hc.load_files([str(bad_hc)])
+            assert not st_hc["entries"]                         # abgelehnt, nichts angelegt
+            t_hc.load_files([str(main_a)])
+            e_a = st_hc["entries"][0]
+            assert Path(e_a["file"]).parent == Path(w.project_dir) / "data" / "hcell" / "cellA", e_a["file"]
+            assert len(e_a["steps"]) == 11 and all(Path(p_).parent.name == "CHARGE_DISCHARGE" and Path(p_).exists()
+                                                   for p_ in e_a["steps"])
+            assert not (Path(w.project_dir) / "data" / "hcell" / "cellA" / "CHARGE_DISCHARGE" / "first_charge.DTA").exists()
+            # Kapazität: %, mAh, eigene theoretische Kapazität je Messung
+            st_hc.update(view="capacity", unit="pct", show_ce=True)
+            cfg_hc, cv_hc, _, _ = t_hc.figure_spec()
+            pts_hc = [c_ for c_ in cv_hc if not c_.get("aux")]
+            assert cfg_hc["ylabel"] == "capacity [%]" and len(pts_hc) == 3 and cfg_hc["right_axis"][1] == "efficiency [%]"
+            assert abs(pts_hc[0]["y"][0] - 90.0) < 1e-3 and pts_hc[0]["marker"] == "s" and pts_hc[0]["color"] == "#000000"
+            assert len(pts_hc[1]["x"]) == 6 and abs(pts_hc[2]["val"][0] - 99.0) < 1e-3
+            st_hc["unit"] = "mAh"
+            cfg_hc, cv_hc, _, _ = t_hc.figure_spec()
+            assert cfg_hc["ylabel"] == "capacity [mAh]" and abs(cv_hc[0]["y"][0] - 0.72) < 1e-5
+            st_hc["unit"] = "pct"
+            t_hc.table.setCurrentCell(0, 1)
+            t_hc.sp_qtheo.setValue(0.9)                         # eigener Wert gilt für die gewählte Messung
+            assert e_a["q_theo"] == 0.9
+            cfg_hc, cv_hc, _, _ = t_hc.figure_spec()
+            assert abs(cv_hc[0]["y"][0] - 80.0) < 1e-3, cv_hc[0]["y"][0]
+            assert "0.900 mAh (as entered)" in t_hc.methods_text(), t_hc.methods_text()
+            t_hc.sp_qtheo.setValue(0.0)
+            assert e_a["q_theo"] == 0.0 and t_hc.sp_qtheo.specialValueText() == T("hcell_from_file")
+            t_hc.figure_spec()                                  # Ergebnisse folgen dem Zeichnen
+            assert "0.800 mAh (as set in the cycling method)" in t_hc.methods_text()
+            # zwei Messungen mit verschiedener theoretischer Kapazität in einem Bild
+            t_hc.load_files([str(main_b)])
+            assert len(st_hc["entries"]) == 2
+            cfg_hc, cv_hc, _, _ = t_hc.figure_spec()
+            pts_hc = [c_ for c_ in cv_hc if not c_.get("aux")]
+            heads_hc = [c_["label"] for c_ in cv_hc if c_.get("aux")]
+            assert heads_hc == ["cellA", "cellB"] and len(pts_hc) == 6, heads_hc
+            assert len({c_["color"] for c_ in pts_hc[:3]}) == 1 and pts_hc[0]["color"] != pts_hc[3]["color"]
+            assert pts_hc[1]["mfc"] == "none" and pts_hc[2]["marker"] == "^"
+            assert abs(pts_hc[3]["y"][0] - 60.0) < 1e-3, pts_hc[3]["y"][0]       # cellB: 0.6 × 2.0 mAh -> 60 % von 2.0
+            t_hc.render()
+            F_hc = t_hc.F
+            lb_hc = F_hc.legend.get_window_extent(F_hc._renderer())
+            xy_hc = np.concatenate([F_hc.ax.transData.transform(np.column_stack([c_["x"], c_["y"]])) for c_ in pts_hc])
+            assert not any(lb_hc.contains(x_, y_) for x_, y_ in xy_hc), "legend on the points"
+            cap_hc = t_hc.si_caption("TEST-1")
+            assert "<b>cellA</b> and <b>cellB</b>" in cap_hc and "H-cell cycling" in cap_hc, cap_hc
+            st_hc.update(cap_conc="5 mM", cap_solvent="MeCN")
+            assert "(5 mM active material in MeCN)" in t_hc.si_caption("TEST-1"), t_hc.si_caption("TEST-1")
+            meth_hc = t_hc.methods_text()
+            assert "cellA: 0.800 mAh" in meth_hc and "cellB: 2.000 mAh" in meth_hc and "Elucida" not in meth_hc
+            assert t_hc.kpis()[0][1] == f"{s_hc['retention']:.1f} %", t_hc.kpis()
+            # Potential gegen Zeit: eine Messung (die gewählte), automatische und eigene Zyklen, fehlende Schrittdatei
+            st_hc.update(view="potential", cycles="")
+            t_hc.notes_begin()
+            cfg_hc, cv_hc, lab_hc, _ = t_hc.figure_spec()
+            assert [l_["text"] for l_ in lab_hc] == ["#1", "#2", "#3", "#5", "#6"], lab_hc
+            assert T("hcell_first_only", name="cellA") in t_hc._notes and len(cfg_hc["xbreaks"]) == 1, t_hc._notes
+            assert cfg_hc["xlabel"] == "t [h]" and cfg_hc["ylabel"] == "E [V]" and len(cv_hc) == 10
+            assert all(np.all(np.diff(c_["x"]) > 0) for c_ in cv_hc)
+            st_hc.update(cycles="4, 6", ref="Ag0/+")
+            t_hc.notes_begin()
+            cfg_hc, cv_hc, lab_hc, _ = t_hc.figure_spec()
+            assert len(cv_hc) == 3 and cfg_hc["ylabel"] == "E [V vs. Ag$^{0/+}$]", (len(cv_hc), cfg_hc["ylabel"])
+            assert T("hcell_step_missing", n=4, kind=T("hcell_discharge"), f="DISCHARGE_#4.DTA") in t_hc._notes
+            st_hc.update(cycles="99")
+            t_hc.notes_begin()
+            assert t_hc.figure_spec() is None and T("hcell_no_cycle", n=99) in t_hc._notes
+            st_hc.update(cycles="1, 6")
+            cap_hc = t_hc.si_caption("TEST-1")
+            assert cap_hc == ("Potential over time during the cycling of <b>TEST-1</b>; cut-off potentials for charge "
+                              "1 V and discharge 0.2 V, constant-current electrolysis with 2 mA."), cap_hc
+            t_hc.render()
+            assert t_hc.F is not None and t_hc.hover_text(0.01, 0.5, "").startswith("t = ")
+            # Export: Abbildung + Zyklustabelle (beide Messungen), keine Kurven-CSV
+            st_hc["view"] = "capacity"
+            files_hc = t_hc.export_to(out / "hcell_cap")
+            assert all(f_.exists() for f_ in files_hc) and not any(f_.name.endswith("_data.csv") for f_ in files_hc)
+            csv_hc = next(f_ for f_ in files_hc if f_.name.endswith("_cycles.csv")).read_text(encoding="utf-8-sig")
+            assert csv_hc.count("cellA;") == 6 and csv_hc.count("cellB;") == 6, csv_hc[:300]
+            assert any(f_.suffix == ".pdf" for f_ in files_hc)
+            # Speichern/Laden: Pfade im Projekt, Schrittdateien bleiben im Ordner der Messung
+            w.save_project()
+            ld_hc = PRJ.load(w.project_dir)["hcell"]
+            assert len(ld_hc["entries"]) == 2 and all(Path(p_).exists() for e_ in ld_hc["entries"]
+                                                      for p_ in [e_["file"]] + e_["steps"])
+            assert ld_hc["cycles"] == "1, 6" and ld_hc["ref"] == "Ag0/+"
+            slots_hc = PRJ._path_slots({"hcell": st_hc})
+            assert any(sub_.endswith("cellA/CHARGE_DISCHARGE") for _, _, sub_ in slots_hc)
+            from elucida.exchange import datapack as DP_hc
+            arcs_hc = [i_.arc for i_ in DP_hc.collect({"hcell": st_hc}, out, [])]
+            assert "H-Cell/cellA/cellA.DTA" in arcs_hc and "H-Cell/cellA/CHARGE_DISCHARGE/CHARGE_#1.DTA" in arcs_hc, arcs_hc
+            # „Alles auf Standard“ behält Messungen, Q_theo je Messung, Zyklen und Referenz
+            st_hc["entries"][1]["q_theo"] = 1.5
+            st_hc.update(unit="mAh", show_ce=False)
+            t_hc.reset_defaults()
+            st_hc = w.hcell_state
+            assert len(st_hc["entries"]) == 2 and st_hc["entries"][1]["q_theo"] == 1.5 and st_hc["cycles"] == "1, 6"
+            assert st_hc["unit"] == "pct" and st_hc["show_ce"] and st_hc["cap_conc"] == "5 mM"
+            assert "hcell" in MW.MainWindow._TAB_ORDER and MW.MainWindow._TAB_ORDER.index("hcell") == \
+                MW.MainWindow._TAB_ORDER.index("sec") + 1
+            st_hc.update(entries=[], current=None, cycles="", ref="", cap_conc="", cap_solvent="", view="capacity")
+            w.replace_tab("hcell")
+            report.append("H-Cell cycling (reader, capacity/efficiency, two cells, broken time axis, export, reset): OK")
+
+        with section:
             # EPR: BES3T lesen (G -> mT), Dunkelspektrum, Basislinie, Ausblenden, Simulation anpassen, EasySpin-Parameter
             eprdir = out / "input" / "epr"
             eprdir.mkdir(parents=True, exist_ok=True)
@@ -1940,6 +2096,130 @@ def selftest(outdir, with_isnet=False):
                 t_e.fill_table()
             report.append("EPR isothermal decays (k per temperature, loss limit, Arrhenius), joint S = 1/2 fit, one view "
                           "selector: OK")
+
+        with section:
+            # UV-Vis-Kinetik: Aufnahmezeiten aus dem Cary-CSV nach Reihenfolge, Reihen, beide Ansichten, Fit, Export
+            import datetime as dt_k
+            from PySide6.QtCore import QItemSelectionModel
+            from elucida.app import demo as DEMO_k
+            from elucida.tabs import uvkin as UVK
+            kd_ = out / "input" / "uvkin"
+            wl_k = np.arange(700.0, 299.0, -1.0)
+            band_k = np.exp(-((wl_k - 450.0) / 30.0) ** 2)
+            us_ = lambda t: (f"{t.month}/{t.day}/{t.year} {(t.hour - 1) % 12 + 1}:{t:%M:%S} "   # noqa: E731
+                             f"{'PM' if t.hour >= 12 else 'AM'}")
+            t0_k = dt_k.datetime(2026, 4, 1, 12, 30, 0)          # 12:30 PM: Mittag richtig gelesen
+            # Leser: doppelter Name -> Zeiten nach Reihenfolge, deutsches Datum, unlesbare Zeit, Basislinien
+            dup_ = DEMO_k.cary_csv(kd_ / "dup.csv", [("Baseline 100%T", wl_k, band_k, us_(t0_k)),
+                                                    ("same", wl_k, band_k, us_(t0_k + dt_k.timedelta(minutes=2))),
+                                                    ("same", wl_k, band_k, us_(t0_k + dt_k.timedelta(minutes=9)))])
+            r_ = core.read_cary_samples(dup_)
+            assert [s_["name"] for s_ in r_] == ["Baseline 100%T", "same", "same"], [s_["name"] for s_ in r_]
+            assert r_[1]["time"] == t0_k + dt_k.timedelta(minutes=2) and r_[2]["time"] == t0_k + dt_k.timedelta(minutes=9)
+            assert r_[0]["time"] == t0_k and r_[0]["time"].hour == 12
+            de_f = DEMO_k.cary_csv(kd_ / "de.csv", [("a", wl_k, band_k, "02.04.2026 17:05:09")])
+            assert core.read_cary_samples(de_f)[0]["time"] == dt_k.datetime(2026, 4, 2, 17, 5, 9)
+            bad_ = DEMO_k.cary_csv(kd_ / "bad.csv", [("KIN-20uM late", wl_k, 0.5 * band_k, "2026-04-09 10:00")])
+            assert core.read_cary_samples(bad_)[0]["time"] is None
+            assert core._collection_time("13/40/2026 1:00:00 PM") is None and core._collection_time("31.02.2026 1:00:00") is None
+            # Tab: fünf Tage, je Datei zwei Proben; 20 µM mit Rauschen, „05uM“ ist mehrdeutig (keine Reihe)
+            rng_k = np.random.default_rng(11)
+            k_true = 0.05                                        # d-1
+            days_ = [0.0, 1.0, 2.0, 3.5, 5.0]
+            files_k, fs_k = [], []
+            for i_, d_ in enumerate(days_):
+                t_ = t0_k + dt_k.timedelta(days=d_)
+                f_ = 0.8 * np.exp(-k_true * d_) * (1 + rng_k.normal(0, 0.004))
+                fs_k.append(f_)
+                cols_ = [("KIN-20uM", wl_k, f_ * band_k, us_(t_) if i_ != 2 else f"{t_:%d.%m.%Y %H:%M:%S}"),
+                         ("KIN-05uM", wl_k, 0.4 * np.exp(-k_true * d_) * band_k, us_(t_ + dt_k.timedelta(minutes=4)))]
+                files_k.append(str(DEMO_k.cary_csv(kd_ / f"day{i_}.csv", cols_)))
+            t_k = w.uvkin_tab
+            keep_k = {k_: w.uvkin_state[k_] for k_ in ("entries", "view", "fit", "lam", "win", "y", "t_unit", "series")}
+            try:
+                t_k.load_files(files_k + [str(bad_), str(dup_)])
+                es_k = w.uvkin_state["entries"]
+                assert len(es_k) == 2 * len(days_) + 1 + 2, [e_["label"] for e_ in es_k]   # ohne Basislinie
+                assert not any(UVK.is_baseline(e_["label"]) for e_ in es_k)
+                assert all(Path(e_["file"]).parent == proj / "data" / "uvvis-kinetics" for e_ in es_k)
+                ser_ = {e_["label"]: e_["series"] for e_ in es_k}
+                assert ser_["KIN-20uM"] == "20 µM" and ser_["KIN-05uM"] == "" and ser_["same"] == "", ser_
+                assert ser_["KIN-20uM late"] == "20 µM"                # ohne Zeit: in Ansicht 1, nicht in Ansicht 2
+                assert t_k.lbl_rows.text() == T("uvkin_no_series", n=len(days_) + 2)
+                assert t_k.table.item(0, 3).text() == t0_k.strftime("%Y-%m-%d %H:%M")
+                assert t_k.view() == "trace" and t_k.cmb_view.currentData() == "trace"
+                # zwei Zeilen markieren, Reihe für beide setzen (kein Dialog): zwei Punkte -> kein Fit
+                sm_ = t_k.table.selectionModel()
+                t_k.table.clearSelection()
+                for r_i in (1, 3):
+                    sm_.select(t_k.table.model().index(r_i, 0), QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                t_k.ed_series.setText("two")
+                t_k.apply_series()
+                assert [e_["series"] for e_ in es_k[:4]] == ["20 µM", "two", "20 µM", "two"]
+                t_k.sp_lam.setValue(450)
+                t_k.cb_fit.setChecked(True)
+                t_k.render()
+                d_k = t_k.rows_data["20 µM"]
+                assert t_k.unit_used == "d" and list(d_k["t"] / 86400) == days_, d_k["t"]
+                assert np.allclose(d_k["A"], fs_k, rtol=0, atol=1e-6), (d_k["A"], fs_k)     # Bande genau bei 450 nm
+                assert abs(d_k["rel"][0] - 100.0) < 1e-9 and abs(d_k["rel"][-1] - 100 * d_k["A"][-1] / d_k["A"][0]) < 1e-9
+                assert T("uvkin_untimed", n=1) in t_k._notes, t_k._notes
+                assert T("uvkin_fit_short", s="two", n=2) in t_k._notes and t_k.fits["two"] is None
+                s_k = t_k.series_summary("20 µM")
+                assert abs(s_k["fit"]["k"] / k_true - 1) < 0.05 and s_k["fit"]["ci"][0] <= k_true <= s_k["fit"]["ci"][1], s_k
+                assert abs(s_k["fit"]["half"] - np.log(2) / s_k["fit"]["k"]) < 1e-9
+                kp_ = dict(t_k.kpis())
+                assert kp_["t½"] == f"{s_k['fit']['half']:.3g} d" and UVK.fmt_pct(s_k["rest"]) in kp_[T("uvkin_kpi_rest", s="20 µM")]
+                assert t_k.res_table.rowCount() == len(days_) + 2 and t_k.res_table.item(0, 3).text() == f"{d_k['A'][0]:.3f}"
+                # Ablesen: genau bei λ (interpoliert) oder Maximum im Fenster
+                x_, y_ = wl_k[::-1], band_k[::-1]
+                assert abs(UVK.value_at(x_, y_, 460.0) - np.exp(-(10 / 30) ** 2)) < 1e-12
+                assert abs(UVK.value_at(x_, y_, 460.0, 15.0) - 1.0) < 1e-12 and np.isnan(UVK.value_at(x_, y_, 900.0))
+                t_k.sp_lam.setValue(460)
+                t_k.sp_win.setValue(15)
+                t_k.render()
+                assert abs(t_k.rows_data["20 µM"]["A"][0] - d_k["A"][0]) < 1e-12        # Maximum bei 450 nm gefunden
+                assert "within 460 ± 15 nm" in t_k.si_caption("X") and "maximum absorbance as measured" in t_k.methods_text()
+                t_k.sp_win.setValue(0)
+                t_k.sp_lam.setValue(450)
+                assert UVK.auto_unit(3600) == "min" and UVK.auto_unit(10 * 3600) == "h" and UVK.auto_unit(4 * 86400) == "d"
+                t_k.cmb_unit.setCurrentIndex(t_k.cmb_unit.findData("h"))
+                t_k.cmb_y.setCurrentIndex(t_k.cmb_y.findData("rel"))
+                t_k.render()
+                assert t_k.unit_used == "h" and t_k.F.cfg["xlabel"] == "t [h]" and "relative" in t_k.F.cfg["ylabel"]
+                assert abs(t_k.series_summary("20 µM")["fit"]["k"] - s_k["fit"]["k"] / 24) < 1e-12
+                cap_ = t_k.si_caption("X")
+                meth_ = t_k.methods_text()
+                assert cap_.startswith("Absorbance of <b>X</b> at 450 nm") and "relative to the first spectrum" in cap_
+                assert "first-order decay" in meth_ and "read at 450 nm" in meth_ and "in percent of the absorbance" in meth_
+                assert f"{s_k['fit']['half'] * 24:.3g} h" in meth_ and "Elucida" not in cap_ + meth_, meth_
+                files_x = t_k.export_to(out / "uvkin")
+                assert all(Path(f_).exists() for f_ in files_x) and Path(out / "uvkin.pdf") in files_x
+                rows_x = (out / "uvkin_kinetics.csv").read_text(encoding="utf-8-sig").splitlines()
+                assert rows_x[0].startswith("series,name,t [h]") and len(rows_x) == 1 + len(days_) + 2, rows_x
+                # Ansicht 1: Spektren einer Reihe im Farbverlauf, beschriftet mit der Zeit; ohne Zeit mit Namen
+                t_k.cmb_view.setCurrentIndex(t_k.cmb_view.findData("spectra"))
+                t_k.render()
+                labs_ = [c_["label"] for c_ in t_k.F.curves]
+                assert labs_[0] == "0 h" and labs_[-1] == "KIN-20uM late" and len(labs_) == len(days_) + 1, labs_
+                assert t_k.si_caption("X") == "UV-Vis spectra of <b>X</b> recorded over 120 h." and t_k.methods_text() == ""
+                # Zustand: speichern/laden, Neuaufbau, „Alles auf Standard“ behält Spektren und Reihen
+                w.save_project()
+                ld_ = PRJ.load(proj)["uvkin"]
+                assert [(e_["label"], e_["series"]) for e_ in ld_["entries"]] == [(e_["label"], e_["series"]) for e_ in es_k]
+                assert ld_["view"] == "spectra" and ld_["fit"] and ld_["t_unit"] == "h"
+                w.replace_tab("uvkin")
+                t_k = w.uvkin_tab
+                assert t_k.table.rowCount() == len(es_k) and t_k.cmb_view.currentData() == "spectra" and t_k.cb_fit.isChecked()
+                t_k.reset_defaults()
+                t_k = w.uvkin_tab
+                assert len(w.uvkin_state["entries"]) == len(es_k) and w.uvkin_state["entries"][1]["series"] == "two"
+                assert w.uvkin_state["view"] == "" and not w.uvkin_state["fit"] and t_k.view() == "trace"
+            finally:
+                w.uvkin_state.update(keep_k)
+                w.replace_tab("uvkin")
+            report.append("UV-Vis kinetics (times by order, series, both views, window, units, first-order fit, export, "
+                          "state, reset): OK")
 
         with section:
             # Felder mit "auto"/"aus": ein Klick auf das Symbol im Feld oder ein geleertes Feld stellt zurueck (alle Tabs)
@@ -2474,7 +2754,7 @@ def selftest(outdir, with_isnet=False):
             report.append("empty-tab guides: OK")
         with section:
             # Navigation: Gruppen oben statt Reiter; Knopf wechselt den Tab, Tabwechsel markiert den Knopf
-            assert len(w.nav_buttons) == 14 and w.main_tabs.tabBar().isHidden()          # 14 mit „Verbindung“ und „Weitere“
+            assert len(w.nav_buttons) == 16 and w.main_tabs.tabBar().isHidden()          # 16 mit „Verbindung“, „UV-Vis-Kinetik“, „H-Cell“ und „Weitere“
             i_cv_ = w._tab_keys.index("cv")
             w.nav_buttons[i_cv_].click()
             assert w.main_tabs.currentWidget() is w.cv_tab
@@ -4769,7 +5049,7 @@ def selftest(outdir, with_isnet=False):
                 pl_ = steps_.display_page.layout()
                 ws_ = [STYLE.item_at(pl_, i_).widget() for i_ in range(pl_.count())]
                 return [x_ for x_ in ws_ if isinstance(x_, QGroupBox) or (x_ is not None and x_.objectName() == "card")][-1]
-            for key_ in ("overlay", "fluo", "cv", "sec", "epr", "irms", "hrms", "xray", "dft"):
+            for key_ in ("overlay", "uvkin", "fluo", "cv", "sec", "epr", "irms", "hrms", "xray", "dft"):
                 t_ = getattr(w, w._tab_spec(key_)[0])
                 assert isinstance(t_.tf_card, TABS.TextFormatCard) and t_.tf_card.key == t_.STATE_KEY, key_
                 assert last_card_d(t_.steps) is t_.tf_card.box and isinstance(t_.tf_card.box, QGroupBox), key_

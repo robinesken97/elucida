@@ -61,6 +61,7 @@ from elucida.core import color as COLOR  # noqa: E402
 from elucida.tabs import compound as COMP  # noqa: E402
 from elucida.tabs import cv as CVMOD  # noqa: E402
 from elucida.tabs import sec as SECMOD  # noqa: E402
+from elucida.tabs import hcell as HCELL  # noqa: E402
 from elucida.tabs import epr as EPRMOD  # noqa: E402
 from elucida.tabs import hrms as HRMS  # noqa: E402
 from elucida.tabs import ir_ea as IRMS  # noqa: E402
@@ -69,6 +70,7 @@ from elucida.tabs import dft as DFT  # noqa: E402
 from elucida.tabs import other as OTHER  # noqa: E402
 from elucida.tabs import nmr as NMR  # noqa: E402
 from elucida.tabs import synthesis as SYN  # noqa: E402
+from elucida.tabs import uvkin as UVKIN  # noqa: E402
 from elucida.si import lines as SI  # noqa: E402
 from elucida.app import style as STYLE  # noqa: E402
 from elucida.app import macos as MAC  # noqa: E402
@@ -260,8 +262,10 @@ class MainWindow(QMainWindow):
         self._loading = False
         self.glob = dict(DEFAULT_GLOB)
         self.extra_cache = {}
-        self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}  # leer
+        self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}
+        self.hcell_state = {}  # leer
         self.irms_state = {}
+        self.uvkin_state = {}
         self.hrms_state = {}
         self.xray_state = {}
         self.dft_state = {}
@@ -933,15 +937,17 @@ class MainWindow(QMainWindow):
         self._update_sections()
 
     # Tabs: Schlüssel im Zustand -> (Attribut, Klasse, Attribut des Zustands, Textschlüssel); ε ist Teil des Fensters
-    _TAB_ORDER = ("compound", "syn", "nmr", "irms", "hrms", "eps", "overlay", "fluo", "cv", "sec", "epr", "xray", "dft", "other")
-    _TAB_BUILD_ORDER = ("compound", "overlay", "fluo", "cv", "sec", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft", "other")
+    _TAB_ORDER = ("compound", "syn", "nmr", "irms", "hrms", "eps", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "xray", "dft", "other")
+    _TAB_BUILD_ORDER = ("compound", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft", "other")
 
     def _tab_spec(self, key):
         return {"compound": ("comp_tab", COMP.CompoundTab, "compound", "tab_compound"),   # Zustand = self.compound
                 "overlay": ("ov_tab", TABS.OverlayTab, "ov_state", "tab_overlay"),
                 "fluo": ("fl_tab", TABS.FluoTab, "fl_state", "tab_fluo"),
+                "uvkin": ("uvkin_tab", UVKIN.UVKinTab, "uvkin_state", "tab_uvkin"),
                 "cv": ("cv_tab", CVMOD.CVTab, "cv_state", "tab_cv"),
                 "sec": ("sec_tab", SECMOD.SECTab, "sec_state", "tab_sec"),
+                "hcell": ("hcell_tab", HCELL.HCellTab, "hcell_state", "tab_hcell"),
                 "epr": ("epr_tab", EPRMOD.EPRTab, "epr_state", "tab_epr"),
                 "hrms": ("hrms_tab", HRMS.HRMSTab, "hrms_state", "tab_hrms"),
                 "irms": ("irms_tab", IRMS.IRMSTab, "irms_state", "tab_irms"),
@@ -1388,8 +1394,8 @@ class MainWindow(QMainWindow):
         self.build_ui()
         self.render()
 
-    NAV_GROUPS = (("nav_grp_compound", ("compound",)), ("nav_grp_syn", ("syn", "nmr", "irms", "hrms")), ("nav_grp_uv", ("eps", "overlay", "fluo")),
-                  ("nav_grp_ec", ("cv", "sec", "epr")), ("nav_grp_struct", ("xray", "dft", "other")))
+    NAV_GROUPS = (("nav_grp_compound", ("compound",)), ("nav_grp_syn", ("syn", "nmr", "irms", "hrms")), ("nav_grp_uv", ("eps", "overlay", "uvkin", "fluo")),
+                  ("nav_grp_ec", ("cv", "sec", "hcell", "epr")), ("nav_grp_struct", ("xray", "dft", "other")))
 
     def nav_bar(self):
         """Tabs in vier Gruppen wie die SI (Leiste oben statt Reiter): kostet Höhe statt Breite – die Abbildung
@@ -1604,7 +1610,7 @@ class MainWindow(QMainWindow):
                         "series": dict(held.get("series", {}),
                                        **{g: {k: st.get(k) for k in keys} for g, st in self.series.items()}),
                         "current": self.current},
-                "overlay": self.ov_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "epr": self.epr_state,
+                "overlay": self.ov_state, "uvkin": self.uvkin_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "hcell": self.hcell_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
                 "dft": self.dft_state, "other": self.other_state, "nmr": self.nmr_state, "syn": self.syn_state,
                 "compound": dict(self.compound),
@@ -3518,7 +3524,7 @@ class MainWindow(QMainWindow):
                 if tf.get(k_) and core.first_font([tf[k_]], None) is None:
                     self.log_signal.emit("  " + T("tf_missing", name=tf[k_]))
         self.render()
-        for key in ("overlay", "fluo", "cv", "sec", "epr", "irms", "hrms", "xray", "dft"):
+        for key in ("overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "irms", "hrms", "xray", "dft"):
             if self._built(key):                       # ungebaute zeichnen beim Bauen mit dem neuen Format
                 getattr(self, self._tab_spec(key)[0]).render()
         self.sync_text_cards()
@@ -3863,8 +3869,9 @@ class MainWindow(QMainWindow):
         self.collect_globals()
         items = [("uvvis", "UV-Vis absorption spectroscopy",          # Word: ohne Bandenliste (steht in Zeile/Bild)
                   self.eps_methods_text(with_results=False) if self.groups else "")]
-        for key, title, t in (("cv", "Cyclic voltammetry", self.cv_tab),
+        for key, title, t in (("uvvis", "UV-Vis kinetics", self.uvkin_tab), ("cv", "Cyclic voltammetry", self.cv_tab),
                               ("sec", "UV-Vis spectroelectrochemistry", self.sec_tab),
+                              ("hcell", "H-cell charge–discharge cycling", self.hcell_tab),
                               ("epr", "EPR spectroscopy", self.epr_tab)):
             try:
                 txt = t.methods_text() if t.figure_spec() is not None else ""   # Ergebnisse/Fits aktuell
@@ -3911,14 +3918,15 @@ class MainWindow(QMainWindow):
         if "irms" in sections:
             parts["irms"] = figs([self.irms_tab, self.hrms_tab])
         if "uvvis" in sections:
-            parts["uvvis"] = self.si_eps_figures(out_dir, title) + figs([self.ov_tab, self.fl_tab])
-        for key, tab in (("epr", self.epr_tab), ("cv", self.cv_tab), ("sec", self.sec_tab)):
+            parts["uvvis"] = self.si_eps_figures(out_dir, title) + figs([self.ov_tab, self.uvkin_tab, self.fl_tab])
+        for key, tab in (("epr", self.epr_tab), ("cv", self.cv_tab), ("sec", self.sec_tab), ("hcell", self.hcell_tab)):
             if key in sections:
                 parts[key] = figs([tab])
         if methods:
             for key, mtitle, txt in self.si_methods_items():
                 if key in sections and txt:
-                    parts["methods_" + key] = self._methods_paras(f"{mtitle} ({title})", txt)
+                    parts["methods_" + key] = (parts.get("methods_" + key) or []) + \
+                        self._methods_paras(f"{mtitle} ({title})", txt)   # UV-Vis: ε und Kinetik
         xt = self.xray_tab
         es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in sections else []
         if es:
@@ -3947,8 +3955,8 @@ class MainWindow(QMainWindow):
 
     def figure_tabs(self):
         """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
-        return [self.irms_tab, self.hrms_tab, self.ov_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.epr_tab,
-                self.other_tab]
+        return [self.irms_tab, self.hrms_tab, self.ov_tab, self.uvkin_tab, self.fl_tab, self.cv_tab, self.sec_tab, self.hcell_tab,
+                self.epr_tab, self.other_tab]
 
     def si_figure_blocks(self, out_dir, name, skip=()):
         """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je

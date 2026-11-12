@@ -53,8 +53,8 @@ Information that has to be consistent. Elucida keeps all of it in one place.
 |---|---|---|
 | **Compound** | Compound | Name, formula and drawing in one place; built-in structure editor (Octet Draw), ChemDraw files keep working |
 | **Synthesis & analysis** | Synthesis · NMR · IR + EA · HRMS | Scheme, procedure and amount check; Mnova and TopSpin data; OPUS; Bruker `.d` |
-| **UV-Vis & photophysics** | UV-Vis (ε) · Overlay · Fluorescence | Beer–Lambert fit with confidence interval, TD-DFT overlay, ORCA ESD |
-| **Electrochemistry & EPR** | CV · SEC · EPR | E½, Nicholson, Randles–Ševčík, UV/Vis/NIR SEC, S = ½ fit, thermal decay |
+| **UV-Vis & photophysics** | UV-Vis (ε) · Overlay · Kinetics · Fluorescence | Beer–Lambert fit with confidence interval, TD-DFT overlay, spectra over time with first-order fit, ORCA ESD |
+| **Electrochemistry & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles–Ševčík, UV/Vis/NIR SEC, H-cell cycling (capacity, Coulombic efficiency), S = ½ fit, thermal decay |
 | **Structure & computation** | X-Ray · DFT · Reaction paths | Mercury-style ORTEP, ORCA and Gaussian, orbitals, multireference, energy diagrams |
 | **Project** | Overview · Complete SI · Data packages | Checklist per compound, search, complete SI for the whole paper, dataset for the repository |
 
@@ -114,7 +114,7 @@ No data at hand? **Help → Open example compound** fills all tabs with artifici
 Step-by-step guides with pictures:
 [synthesis to SI](docs/anleitungen/synthese-bis-si.en.md) ·
 [UV-Vis ε](docs/anleitungen/uvvis-epsilon.en.md) ·
-[CV and SEC](docs/anleitungen/elektrochemie.en.md) ·
+[CV, SEC and H-cell](docs/anleitungen/elektrochemie.en.md) ·
 [EPR](docs/anleitungen/epr.en.md) ·
 [crystal structure and DFT](docs/anleitungen/struktur-dft.en.md)
 
@@ -140,7 +140,7 @@ number and assigns potentials only after you confirm a schedule or a table, and 
 | IR | Bruker **OPUS** files and the OPUS PDF |
 | HRMS | Report of the MS department (`.docx`), Bruker **`.d`** |
 | UV-Vis, fluorescence | **Cary** CSV/TXT, `.DSW`/`.BSW`, Cary **Eclipse** CSV and `.FBSW` |
-| CV, SEC | **Gamry** `.DTA`, **B&W Tek BWSpec** |
+| CV, SEC, H-Cell | **Gamry** `.DTA` (H-Cell: Cyclic Charge Discharge with `CHARGE_DISCHARGE`), **B&W Tek BWSpec** |
 | EPR | Bruker **BES3T**, Magnettech MS400 text, **EasySpin** simulations |
 | X-ray | **CIF** (Olex2/SHELXL, CCDC) |
 | Computation | **xyz**, **ORCA** and **Gaussian** outputs (incl. TD-DFT), **Molden** and **cube** files |

@@ -484,9 +484,51 @@ def parse_sample_name(name):
     return group, conc, unit
 
 
+_US_TIME = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) ([AP]M)", re.I)
+_DE_TIME = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4}) (\d{1,2}):(\d{2}):(\d{2})")
+
+
+def _collection_time(text):
+    """„5/31/2026 12:02:46 PM“ (Cary, US) oder „31.05.2026 12:02:46“ (deutsche Windows-Einstellung) -> datetime, sonst
+    None (nie raten). Ohne strptime-%p: das hängt von der Spracheinstellung ab (Qt setzt sie unter Linux)."""
+    import datetime
+    text = text.strip()
+    try:
+        m = _US_TIME.fullmatch(text)
+        if m:
+            mo, d, y, h, mi, s = map(int, m.groups()[:6])
+            if not 1 <= h <= 12:
+                return None
+            h = h % 12 + (12 if m[7].upper() == "PM" else 0)
+            return datetime.datetime(y, mo, d, h, mi, s)
+        m = _DE_TIME.fullmatch(text)
+        if m:
+            d, mo, y, h, mi, s = map(int, m.groups())
+            return datetime.datetime(y, mo, d, h, mi, s)
+    except ValueError:                                  # 31.02. o. ä.
+        return None
+    return None
+
+
+def cary_times(lines, n):
+    """Aufnahmezeiten der n Spalten eines Cary-Exports aus den Metadatenblöcken nach den Daten (je Probe „<Name>,“,
+    dann „<Name>“, dann „Collection Time: …“), **nach Reihenfolge** zugeordnet (Namen können doppelt vorkommen).
+    Stimmt die Zahl der Blöcke nicht, gibt es keine Zeiten (None je Spalte)."""
+    starts = [i for i in range(len(lines) - 1)
+              if lines[i].rstrip().endswith(",") and lines[i].rstrip()[:-1].strip() == lines[i + 1].strip()
+              and lines[i + 1].strip()]
+    if len(starts) != n:
+        return [None] * n
+    out = []
+    for a, b in zip(starts, starts[1:] + [len(lines)]):
+        hit = next((ln.split(":", 1)[1] for ln in lines[a:b] if ln.strip().startswith("Collection Time:")), None)
+        out.append(_collection_time(hit) if hit else None)
+    return out
+
+
 def read_cary_samples(path):
     """Cary-Export: Zeile 1 = Probennamen (je 2 Spalten), danach λ/Abs-Paare.
-    -> Liste von dict(key, name, x, y, parsed=(serie, c, einheit) | None)."""
+    -> Liste von dict(key, name, x, y, parsed=(serie, c, einheit) | None, time=datetime | None)."""
     text = _read_text(path)
     lines = [ln for ln in text.splitlines() if ln.strip()]      # Leerzeilen (z. B. \r\r\n) ignorieren
     first = lines[0] if lines else ""
@@ -498,6 +540,10 @@ def read_cary_samples(path):
         delim = max((",", ";", "\t"), key=probe.count)         # können selbst Kommas enthalten)
         names = [n.strip() for n in next(csv.reader([first], delimiter=delim), [])[0::2]]
     ex_list = [float(v) for v in _EX_RE.findall(text)]
+    n_named = len(names)
+    while n_named and not names[n_named - 1]:                  # Zeile 1 endet mit „,,“: leerer letzter Name
+        n_named -= 1
+    times = cary_times(lines, n_named) + [None] * (len(names) - n_named)
     arr = read_table(path)
     samples, seen = [], {}
     for k, name in enumerate(names):
@@ -510,7 +556,7 @@ def read_cary_samples(path):
         if len(x) < 5:
             continue
         samples.append({"key": key, "name": name, "x": x, "y": y, "parsed": parse_sample_name(name),
-                        "ex": ex_list[k] if k < len(ex_list) else None})
+                        "ex": ex_list[k] if k < len(ex_list) else None, "time": times[k]})
     return samples
 
 
@@ -533,7 +579,8 @@ def read_binary_samples(path):
             out.append({"key": sp.title, "name": sp.title, "x": x, "y": y,
                         "parsed": parse_sample_name(sp.title),
                         "ex": ex_list[k] if len(ex_list) == len(spectra) else
-                        (ex_list[0] if len(set(ex_list)) == 1 else None)})
+                        (ex_list[0] if len(set(ex_list)) == 1 else None),
+                        "time": None})                 # parseuv kennt nur die Methodenzeit, keine je Spektrum
     return out
 
 

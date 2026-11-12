@@ -27,6 +27,19 @@ paths:
   Ladestromsprung (ob er zum Hin- oder Rücklauf gehört, steht in keiner Datei). Offen, nicht geändert (Regel): die
   Basislinie endet bei E½ − 0,12 V, wo der Fuß einer reversiblen Welle noch ~2 % von i_p trägt → i_p 1–4,5 % zu klein,
   D 2–9 % zu klein, Nicholson-Verhältnis ~+0,015; Ac₂Fc +0,49 V ist ein CH₂Cl₂-Wert (Connelly & Geiger 1996).
+- H-Zelle (Tab „H-Cell“, `tabs/hcell.py`, Leser `formats/gamry_cycling.py`, Nutzerauftrag 2026-11-12): Gamry „Cyclic
+  Charge Discharge“ (TAG `PWR800_CYCLICCHARGEDISCHARGE`) + Schrittdateien nur `CHARGE_#n`/`DISCHARGE_#n.DTA` aus
+  `CHARGE_DISCHARGE/` daneben (andere Dateien dort = andere Experimente). Kopfwerte/Spalten nach Namen; andere TAGs,
+  fehlende Tabellen, unbekannte Type-Werte und doppelte Halbzyklen werden abgelehnt. Kapazität = Spalte Charge
+  (C/3,6 → mAh), % nur mit Q_theo **je Messung** (Kopf CAPACITY oder eingegebener Wert `entries[].q_theo`, gilt nur für
+  die gewählte Messung). CE = Q_dis/Q_ch desselben Zyklus; Zyklen mit nur einer Hälfte zählen nicht. Keine Glättung,
+  keine Fits, keine Unsicherheiten. Kapazität gegen Zyklus: alle sichtbaren Messungen in einem Bild (Nutzerwunsch
+  „Overlay wie Panel B“); eine Messung ohne eigene Farbe im Stil der SI (Quadrat schwarz, Kreis rot, Dreieck blau),
+  sonst Farbe je Messung (Laden gefüllter Kreis, Entladen offener Kreis, CE Dreieck), Legende als Block je Messung, nie
+  auf den Punkten. Potential gegen Zeit: nur die gewählte Messung, echte Zeit = `STARTTIMEOFFSET` + T, Achse zwischen
+  nicht benachbarten Zyklen unterbrochen; fehlende Schrittdatei → Hinweis, nie rekonstruieren. Messungen liegen je in
+  `data/hcell/<Name>/` (+ `CHARGE_DISCHARGE/`), damit die Paarung bleibt. Geprüft mit einer echten Messung (150 Zyklen);
+  andere Gamry-Varianten und der Word-Export des SI-Kapitels ungeprüft.
 - SEC-Farben wie die SI: Start blau, Zwischenstufen (`mid`, Potential in Achsenskala → nächstes gezeigtes Spektrum, ohne
   Potentiale Nummer) grün/`MID_COLORS`, Ende rot; Unterschrift nennt nur Farben, die im Bild vorkommen (`cap_mid`, „;“).
 - SEC: Nernst-Fit aus kontinuierlichem Scan nur als „scheinbar“ ausweisen (Nachhinken in der Dünnschichtzelle:

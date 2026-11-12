@@ -1291,12 +1291,13 @@ _SCI = [(r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<
         (r"R²", "<i>R</i>²"), (r"\bm/z\b", "<i>m</i>/<i>z</i>"), (r"ε(?![a-zäöü])", "<i>ε</i>"), (r"λ(?![a-zäöü<])", "<i>λ</i>"),
         (r"\bA/d\b", "<i>A</i>/<i>d</i>"), (r"\bE°", "<i>E</i>°"), (r"ṽ", "<i>ṽ</i>"), (r"ν(?![a-zäöü])", "<i>ν</i>"),
         # Größe vor ihrer Einheit „E [V]“, „m [mg]“, „ρ [g mL⁻¹]“ (nicht S: „S [%]“ ist Schwefel) und vor „=“/„≤“
-        (r"(?<![A-Za-zäöüÄÖÜß>])([EMTJnjcdgvBVmhItiaAfkUDρδ])(?= \[|-Bereich| range|-Korrektur| correction)", r"<i>\1</i>"),
+        (r"(?<![A-Za-zäöüÄÖÜß>])([EMTJnjcdgvBVmhItiaAfkUDQρδ])(?= \[|-Bereich| range|-Korrektur| correction)", r"<i>\1</i>"),
         # nicht nach „_“: „E_a = …“ gehört der Indexregel am Ende (sonst blieb der Unterstrich stehen)
         (r"(?<![A-Za-zäöüÄÖÜß>_])([EMTJnjcdgvBSDaAkIt])(?= = | ≤ | ≥ | &gt; | &lt; )", r"<i>\1</i>"),
         # Kinetik (EPR-Zerfälle, Arrhenius): t½, 1/T, ln k, I0, I(t), Ea, 10^-4
         (r"\bt½", "<i>t</i><sub>1/2</sub>"), (r"\b1/T\b", "1/<i>T</i>"), (r"(?<=ln )([kA])\b", r"<i>\1</i>"),
         (r"(?<=ln\()A\b", "<i>A</i>"), (r"\bI0\b", "<i>I</i><sub>0</sub>"), (r"\bI(?=\([tT]\))", "<i>I</i>"),
+        (r"\bA0\b", "<i>A</i><sub>0</sub>"), (r"\bA(?=\(t\))", "<i>A</i>"),                    # UV-Vis-Kinetik
         (r"\(([tT])\)", r"(<i>\1</i>)"), (r"·t\b", "·<i>t</i>"), (r"\bEa\b", "<i>E</i><sub>a</sub>"),
         (r"10\^(-?)(\d+)", lambda m: "10<sup>" + ("−" if m.group(1) else "") + m.group(2) + "</sup>"),
         (r"/RT\b", "/<i>RT</i>"), (r"β(?= = )", "<i>β</i>"), (r"(?<= of )k\b", "<i>k</i>"),

@@ -1,6 +1,6 @@
 [English](elektrochemie.en.md) | **Deutsch** · [zurück zur Übersicht](../../README.de.md#abläufe)
 
-# Elektrochemie: CV und SEC
+# Elektrochemie: CV, SEC und H-Zelle
 
 **Was herauskommt:** Cyclovoltammogramme mit E½, ΔEₚ und Peakstromverhältnis (Nicholson), Auswertung über die
 Scanrate (Randles-Ševčík mit Konfidenzintervall), die Referenzierung gegen Fc⁺/Fc und daraus die Abbildungen mit
@@ -42,7 +42,15 @@ Uhrzeit (ggf. **Zeitversatz** einstellen). **Ansicht:** Spektrenserie, Differenz
 scheinbarem Nernst-Fit – bei kontinuierlichem Scan hinkt die Dünnschichtzelle nach, die CV-Werte haben Vorrang.
 Zwischenspezies hebst du über ihr Potential hervor.
 
-## 6. Export und SI
+## 6. H-Zelle: Laden und Entladen
+
+Im Tab **H-Cell** die Gamry-Hauptdatei „Cyclic Charge Discharge“ hinzufügen; die Schrittdateien
+`CHARGE_#n`/`DISCHARGE_#n.DTA` aus dem Ordner `CHARGE_DISCHARGE` daneben kommen mit (andere Dateien dort bleiben weg).
+**Ansicht:** Kapazität gegen Zyklus (Laden, Entladen, Coulomb-Effizienz rechts; mehrere Messungen in einem Bild, Farbe je
+Messung) oder Potential gegen Zeit für gewählte Zyklen, z. B. `1, 2, 20, 40` (leer = automatisch). Die theoretische
+Kapazität kommt aus der Datei; ein eigener Wert gilt nur für die gewählte Messung.
+
+## 7. Export und SI
 
 **Exportieren** schreibt Abbildung, Ergebnisse (CSV) und den Methodenabsatz. Die Felder der **Bildunterschrift**
 (Konzentration, Lösungsmittel, Leitsalz) ausfüllen – dann entsteht die Unterschrift wie in der SI der Gruppe.

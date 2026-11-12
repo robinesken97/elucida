@@ -32,7 +32,7 @@ BINARY_EXT = {".pdf", ".0", ".1", ".2", ".mnova", ".docx", ".xlsx", ".png", ".jp
 # Reihenfolge und Ordner im Zip; on = Standardauswahl
 GROUPS = (("nmr", "NMR", True), ("ir", "IR", True), ("ms", "MS", True), ("uvvis", "UV-Vis", True),
           ("overlay", "UV-Vis", False), ("fluo", "Fluorescence", True), ("cv", "CV", True), ("sec", "SEC", True),
-          ("epr", "EPR", True), ("dft", "DFT", False), ("elucida", "Elucida", False))
+          ("hcell", "H-Cell", True),           ("epr", "EPR", True), ("dft", "DFT", False), ("elucida", "Elucida", False))
 GROUP_ON = {g: on for g, _, on in GROUPS}
 BES3T = (".dsc", ".dta", ".ygf", ".xml")
 
@@ -121,6 +121,10 @@ def collect(state, project_dir, missing=None) -> list[Item]:
                 tddft = Path(f).suffix.lower() in (".out", ".log") or ".spectrum" in Path(f).name   # ESD: Rechnung
                 add("dft" if tddft else "overlay", f, f"{'DFT' if tddft else 'UV-Vis'}/{Path(f).name}")
 
+    for f in dict.fromkeys(e.get("file") for e in (state.get("uvkin") or {}).get("entries") or []):
+        if f:                                          # UV-Vis-Kinetik: jede Datei einmal (mehrere Spektren je Datei)
+            add("uvvis", f, f"UV-Vis/Kinetics/{Path(f).name}")
+
     fl = state.get("fluo") or {}
     for k in ("abs_file", "em_file"):
         add("fluo", fl.get(k), f"Fluorescence/{Path(fl.get(k) or '').name}")
@@ -134,6 +138,11 @@ def collect(state, project_dir, missing=None) -> list[Item]:
     add("sec", sec.get("dta"), f"SEC/{Path(sec.get('dta') or '').name}")
     for f in sec.get("spec_files") or []:
         add("sec", f, f"SEC/{Path(f).name}")
+    for e in (state.get("hcell") or {}).get("entries") or []:   # Hauptdatei + CHARGE_DISCHARGE/ je Messung
+        stem = Path(e.get("file") or "").stem
+        add("hcell", e.get("file"), f"H-Cell/{stem}/{Path(e.get('file') or '').name}")
+        for f in e.get("steps") or []:
+            add("hcell", f, f"H-Cell/{stem}/CHARGE_DISCHARGE/{Path(f).name}")
 
     for e in (state.get("epr") or {}).get("entries") or []:
         for f in (e.get("file"), e.get("params")):

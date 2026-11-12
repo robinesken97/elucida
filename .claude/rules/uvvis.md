@@ -28,3 +28,13 @@ paths:
   Methodentext erwähnt das bewusst nicht (Robin: im Bild sichtbar).
 - „(sh)“ für Schultern ist abschaltbar; Indizes λ₁/ε₁ … (`label_index`, Standard aus, aufsteigend nach λ, nur Banden
   im Bild; SI-Zeile ohne Indizes); Molmasse aus CDXML inkl. Isotopen.
+- UV-Vis-Kinetik (`tabs/uvkin.py`, Nutzerauftrag 2026-11-12): Aufnahmezeit nur aus der Messdatei (Cary-CSV „Collection
+  Time“, Blöcke nach **Reihenfolge** der Spalten, nie nach Namen; US-Form mit AM/PM per Regex statt strptime-%p,
+  deutsche Form; sonst None), nie Dateiname/Dateidatum; .DSW/.BSW ohne Zeit (parseuv kennt nur die Methodenzeit).
+  Gerätebasislinien nie als Spektren. Reihe nur vorbelegt, wenn `parse_sample_name` eine Konzentration eindeutig nennt;
+  ohne Reihe keine Auswertung (Hinweis). Absorbanz wie gemessen (keine Schichtdicken-/Konzentrationskorrektur), bei λ
+  linear interpoliert oder Maximum in λ ± n nm; Zeit relativ zum ersten Spektrum der Reihe; Zerfall über
+  `EPR.fit_first_order` auf den gemessenen Werten, k und t½ in der gewählten Zeiteinheit, k < 0 = keine Halbwertszeit.
+  Spektren ohne Zeit nur in „Spektren über die Zeit“ (Hinweis in der anderen Ansicht). Gesättigte Spektren nicht
+  automatisch erkennen. Durchgehende Kinetik des Cary-Kinetikprogramms (eine Wellenlänge gegen Zeit) wird nicht
+  gelesen (kein Beispiel).

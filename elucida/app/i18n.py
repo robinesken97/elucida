@@ -481,6 +481,7 @@ TEXTS = {
     "tab_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
     "tab_overlay": ("UV-Vis-Overlay", "UV-Vis overlay"),
     "tab_fluo": ("Fluoreszenz", "Fluorescence"),
+    "tab_uvkin": ("UV-Vis-Kinetik", "UV-Vis Kinetics"),
     "tab_save": ("Vorlage speichern …", "Save preset …"),
     "tab_load": ("Vorlage laden …", "Load preset …"),
     "tab_presets": ("Vorlagen", "Presets"),
@@ -639,6 +640,22 @@ TEXTS = {
     "guide_cv_steps": ('Eine oder mehrere Messungen hinzufügen, z. B. eine Scanraten-Serie\nRedoxpaare: „Vorschlagen“ oder Fenster von Hand (von–bis)\nReferenz: wie gemessen, intern (Fc oder Ac₂Fc) oder feste Verschiebung\nAuftragung wählen, SI-Text kopieren, Exportieren', 'Add one or more measurements, e.g. a scan-rate series\nRedox couples: “Suggest” or windows by hand (from–to)\nReference: as measured, internal (Fc or Ac₂Fc) or a fixed shift\nChoose the plot, copy the SI text, Export'),
     "guide_sec_title": ('SEC: UV-Vis-Spektren während eines Potentialscans', 'SEC: UV-Vis spectra during a potential scan'),
     "guide_sec_files": ('Dateien: Spektrenserie aus B&W-Tek-BWSpec (Textexport) und die Gamry-.DTA des Potentialscans', 'Files: spectrum series from B&W Tek BWSpec (text export) and the Gamry .DTA of the potential scan'),
+    "guide_uvkin_title": ('UV-Vis-Kinetik: wie sich die Spektren einer Lösung über die Zeit ändern',
+                          'UV-Vis kinetics: how the spectra of a solution change over time'),
+    "guide_uvkin_files": ('Dateien: Cary-Exporte als CSV (Aufnahmezeit je Spektrum aus „Collection Time“), auch mehrere '
+                          'Dateien, z. B. eine je Tag; .DSW/.BSW ohne Zeit',
+                          'Files: Cary exports as CSV (acquisition time per spectrum from “Collection Time”), also several '
+                          'files, e.g. one per day; .DSW/.BSW without time'),
+    "guide_uvkin_steps": ('Dateien hinzufügen – jedes Spektrum wird eine Zeile mit seiner Aufnahmezeit\n'
+                          'Reihe eintragen (z. B. Konzentration), mehrere Zeilen markieren und „Für die Auswahl setzen“; '
+                          'gesättigte Spektren abwählen\n'
+                          'Ansicht: Spektren einer Reihe über die Zeit oder Absorbanz bei λ gegen die Zeit, optional '
+                          'Zerfall erster Ordnung fitten\nExportieren',
+                          'Add files – each spectrum becomes a row with its acquisition time\n'
+                          'Enter the series (e.g. concentration), select several rows and “Set for selection”; uncheck '
+                          'saturated spectra\n'
+                          'View: spectra of one series over time or absorbance at λ against time, optionally fit a '
+                          'first-order decay\nExport'),
     "guide_sec_steps": ('Spektren und Potentialdatei wählen – jedes Spektrum bekommt sein Potential über die Uhrzeit\nAnsicht: Spektrenserie, Differenzspektren oder A bei λ gegen E (scheinbarer Nernst-Fit)\nZwischenspezies über ihr Potential hervorheben, Felder der Bildunterschrift ausfüllen\nExportieren', 'Choose spectra and potential file – each spectrum gets its potential from the clock time\nView: spectrum series, difference spectra or A at λ versus E (apparent Nernst fit)\nHighlight intermediate species by their potential, fill in the caption fields\nExport'),
     "guide_epr_title": ('EPR: CW-EPR-Spektren mit Simulation, S = ½-Fit und Kinetik', 'EPR: CW EPR spectra with simulation, S = ½ fit and kinetics'),
     "guide_epr_files": ('Dateien: Bruker BES3T (.dsc + .DTA) oder zweispaltiger Text (z. B. MS400); Simulationen aus EasySpin als Text', 'Files: Bruker BES3T (.dsc + .DTA) or two-column text (e.g. MS400); simulations from EasySpin as text'),
@@ -1695,6 +1712,90 @@ TEXTS = {
                       "not determinable, not reported."),
     "sec_no_time": ("⚠ Keine Zeitangaben – Potentiale nicht zuordenbar.", "⚠ No time stamps – potentials cannot be assigned."),
     "sec_index": ("Spektrum Nr.", "Spectrum no."),
+    # ---- H-Zelle (Laden/Entladen) ---------------------------------------------
+    "tab_hcell": ("H-Cell", "H-Cell"),
+    "dp_grp_hcell": ("H-Cell", "H-Cell"),
+    "guide_hcell_title": ("H-Cell: Kapazität und Coulomb-Effizienz beim Laden und Entladen",
+                          "H-Cell: capacity and Coulombic efficiency during charge–discharge cycling"),
+    "guide_hcell_files": ("Dateien: Gamry-.DTA „Cyclic Charge Discharge“ (Hauptdatei) mit dem Ordner CHARGE_DISCHARGE "
+                          "daneben (CHARGE_#n/DISCHARGE_#n.DTA)",
+                          "Files: Gamry .DTA “Cyclic Charge Discharge” (main file) with the folder CHARGE_DISCHARGE "
+                          "next to it (CHARGE_#n/DISCHARGE_#n.DTA)"),
+    "guide_hcell_steps": ("Hauptdatei hinzufügen – die Schrittdateien kommen mit\nAnsicht: Kapazität gegen Zyklus oder "
+                          "Potential gegen Zeit\nTheoretische Kapazität prüfen (aus der Datei oder eigener Wert)\n"
+                          "Felder der Bildunterschrift ausfüllen, Exportieren",
+                          "Add the main file – the step files come along\nView: capacity vs. cycle or potential vs. "
+                          "time\nCheck the theoretical capacity (from the file or your own value)\nFill in the caption "
+                          "fields, Export"),
+    "hcell_cap_tip": ("Unterschrift wie in der SI der Gruppe. Kapazität: Konzentration und Elektrolyt aus den Feldern; "
+                      "Potential: Abbruchpotentiale und Strom aus der Datei.",
+                      "Caption as in the group's SI. Capacity: concentration and electrolyte from the fields; "
+                      "potential: cut-off potentials and current from the file."),
+    "hcell_cap_solvent": ("Elektrolyt", "Electrolyte"),
+    "hcell_cap_solvent_ph": ("z. B. MeCN, 0.1 M n-Bu4NClO4", "e.g. MeCN, 0.1 M n-Bu4NClO4"),
+    "hcell_cap_conc_ph": ("z. B. 10 mM", "e.g. 10 mM"),
+    "hcell_xrange": ("Zyklen (Achse)", "Cycles (axis)"),
+    "hcell_data": ("Messungen", "Measurements"),
+    "hcell_add": ("Messung …", "Measurement …"),
+    "hcell_n_cycles": ("Zyklen", "Cycles"),
+    "hcell_eval": ("Auswertung", "Evaluation"),
+    "hcell_view_capacity": ("Kapazität gegen Zyklus", "Capacity vs. cycle"),
+    "hcell_view_potential": ("Potential gegen Zeit", "Potential vs. time"),
+    "hcell_from_file": ("aus Datei", "from file"),
+    "hcell_qtheo": ("Q_theo", "Q_theo"),
+    "hcell_qtheo_long": ("Theoretische Kapazität Q_theo", "Theoretical capacity Q_theo"),
+    "hcell_qtheo_tip": ("Theoretische Kapazität der gewählten Messung (100 %). „aus Datei“ = Wert, der im Gerät\n"
+                        "eingestellt war (CAPACITY). Gilt nur für die gewählte Messung.",
+                        "Theoretical capacity of the selected measurement (100 %). “from file” = value set in the\n"
+                        "instrument (CAPACITY). Applies only to the selected measurement."),
+    "hcell_unit": ("Kapazität", "Capacity"),
+    "hcell_cycles": ("Zyklen", "Cycles"),
+    "hcell_cycles_ph": ("leer = automatisch (1, 2 … letzter)", "empty = automatic (1, 2 … last)"),
+    "hcell_cycles_tip": ("Gezeigte Zyklen, z. B. 1, 2, 50, 100 oder 1-3. Leer: erster, zweiter und gleichmäßig\n"
+                         "verteilt bis zum letzten (höchstens fünf).",
+                         "Cycles shown, e.g. 1, 2, 50, 100 or 1-3. Empty: first, second and evenly spaced up to\n"
+                         "the last (at most five)."),
+    "hcell_ref": ("Referenz", "Reference"),
+    "hcell_ref_ph": ("leer = E [V], z. B. Ag0/+", "empty = E [V], e.g. Ag0/+"),
+    "hcell_ref_tip": ("Referenz der Potentialachse wie im CV-Tab („Ag0/+“ wird zu Ag⁰/⁺). Leer: E [V].",
+                      "Reference of the potential axis as in the CV tab (“Ag0/+” becomes Ag⁰/⁺). Empty: E [V]."),
+    "hcell_show_ce": ("Coulomb-Effizienz", "Coulombic efficiency"),
+    "hcell_results": ("Ergebnisse je Zyklus", "Results per Cycle"),
+    "hcell_results_none": ("Noch keine Messung.", "No measurement yet."),
+    "hcell_meas": ("Messung", "Measurement"),
+    "hcell_pct_col": ("Kapazität [%]", "Capacity [%]"),
+    "hcell_pct_tip": ("Entladekapazität relativ zur theoretischen Kapazität dieser Messung",
+                      "Discharge capacity relative to the theoretical capacity of this measurement"),
+    "hcell_ce_tip": ("Coulomb-Effizienz = Q_discharge / Q_charge desselben Zyklus",
+                     "Coulombic efficiency = Q_discharge / Q_charge of the same cycle"),
+    "hcell_gone": ("Datei fehlt: {f}", "File missing: {f}"),
+    "hcell_no_qtheo": ("Keine theoretische Kapazität (Datei ohne CAPACITY, kein eigener Wert): Kapazität in mAh.",
+                       "No theoretical capacity (file without CAPACITY, no own value): capacity in mAh."),
+    "hcell_cycles_bad": ("Zyklen nicht verstanden: {t}", "Cycles not understood: {t}"),
+    "hcell_first_only": ("Potential gegen Zeit zeigt nur die gewählte Messung ({name}).",
+                         "Potential vs. time shows only the selected measurement ({name})."),
+    "hcell_no_cycle": ("Zyklus {n} gibt es in der Messung nicht.", "Cycle {n} is not in the measurement."),
+    "hcell_step_missing": ("Zyklus {n}: {kind} fehlt ({f}) – nicht gezeichnet.",
+                           "Cycle {n}: {kind} missing ({f}) – not drawn."),
+    "hcell_charge": ("Ladekurve", "charge curve"),
+    "hcell_discharge": ("Entladekurve", "discharge curve"),
+    "hcell_no_curves": ("Keine Schrittdateien für die gewählten Zyklen.", "No step files for the selected cycles."),
+    "hcell_sum_qtheo": ("Q_theo = {q} mAh ({src})", "Q_theo = {q} mAh ({src})"),
+    "hcell_src_file": ("aus Datei", "from file"),
+    "hcell_src_entered": ("eingegeben", "entered"),
+    "hcell_sum_dis": ("Entladen: Zyklus {a} {qa} mAh ({pa} %), Zyklus {b} {qb} mAh ({pb} %)",
+                      "discharge: cycle {a} {qa} mAh ({pa} %), cycle {b} {qb} mAh ({pb} %)"),
+    "hcell_sum_rest": ("Erhalt {ret} %, mittlere Coulomb-Effizienz {ce} %, {n} Zyklen in {h} h",
+                       "retention {ret} %, mean Coulombic efficiency {ce} %, {n} cycles in {h} h"),
+    "hcell_kpi_ret": ("Erhalt", "Retention"),
+    "hcell_kpi_ce": ("Coulomb-Eff.", "Coulombic eff."),
+    "hcell_bad_tag": ("{f}: keine Gamry-Lade/Entlade-Datei (TAG {tag}). Erwartet: Cyclic Charge Discharge (Hauptdatei).",
+                      "{f}: not a Gamry charge–discharge file (TAG {tag}). Expected: Cyclic Charge Discharge (main file)."),
+    "hcell_no_table": ("{f}: Tabelle {t} fehlt oder unvollständig.", "{f}: table {t} missing or incomplete."),
+    "hcell_bad_type": ("{f}: unbekannte Variante der Kapazitätstabelle (Art oder Zyklus).",
+                       "{f}: unknown variant of the capacity table (type or cycle)."),
+    "hcell_no_offset": ("{f}: STARTTIMEOFFSET fehlt – keine echte Zeitachse.",
+                        "{f}: STARTTIMEOFFSET missing – no true time axis."),
     # ---- EPR ---------------------------------------------------------------
     "tab_epr": ("EPR", "EPR"),
     "off": ("aus", "off"),
@@ -3135,6 +3236,74 @@ TEXTS = {
     "si_parts_without_data": ("Ohne Daten, nicht exportiert: {parts}", "No data, not exported: {parts}"),
     "pub_details_tab": ("Angaben", "Details"),
     "pub_details_grp": ("Angaben zum Projekt", "Project Details"),
+    # UV-Vis-Kinetik (tabs/uvkin.py)
+    "uvkin_spectra": ("Spektren", "Spectra"),
+    "uvkin_series": ("Reihe", "Series"),
+    "uvkin_series_tip": ("Reihe, zu der das Spektrum gehört (z. B. Konzentration), frei wählbar. Vorbelegt nur, wenn der "
+                         "Probenname eine Konzentration eindeutig nennt; ohne Reihe wird die Zeile nicht ausgewertet.",
+                         "Series the spectrum belongs to (e.g. concentration), free text. Prefilled only when the sample "
+                         "name states a concentration unambiguously; rows without a series are not evaluated."),
+    "uvkin_time": ("Aufnahme", "Recorded"),
+    "uvkin_time_tip": ("Aufnahmezeit aus der Messdatei (Cary-CSV „Collection Time“); „–“: die Datei nennt keine Zeit "
+                       "(.DSW/.BSW, andere Exporte). Nie aus Dateinamen oder Dateidatum.",
+                       "Acquisition time from the measurement file (Cary CSV “Collection Time”); “–”: the file states no "
+                       "time (.DSW/.BSW, other exports). Never from file names or file dates."),
+    "uvkin_sel": ("Auswahl", "Selection"),
+    "uvkin_series_ph": ("z. B. 0.5 mM", "e.g. 0.5 mM"),
+    "uvkin_series_apply": ("Für die Auswahl setzen", "Set for Selection"),
+    "uvkin_series_apply_tip": ("Reihe für alle markierten Zeilen der Tabelle setzen (Strg/Shift-Klick markiert mehrere).",
+                               "Set the series for all selected rows of the table (Ctrl/Shift-click selects several)."),
+    "uvkin_eval": ("Auswertung", "Evaluation"),
+    "uvkin_view_spectra": ("Spektren über die Zeit", "Spectra over time"),
+    "uvkin_view_trace": ("Absorbanz gegen Zeit", "Absorbance against time"),
+    "uvkin_view_tip": ("Spektren einer Reihe im Farbverlauf der Zeit, oder die Absorbanz bei λ aller Reihen gegen die Zeit "
+                       "seit ihrem ersten Spektrum.",
+                       "Spectra of one series coloured along time, or the absorbance at λ of all series against the time "
+                       "since their first spectrum."),
+    "uvkin_series_pick_tip": ("Reihe, deren Spektren die Abbildung zeigt.", "Series whose spectra the figure shows."),
+    "uvkin_lam": ("Wellenlänge", "Wavelength"),
+    "uvkin_lam_tip": ("Wellenlänge, bei der die Absorbanz abgelesen wird (ganzzahlig). auto: Maximum des ersten Spektrums "
+                      "der ersten Reihe im gezeigten Bereich (ab 300 nm).",
+                      "Wavelength at which the absorbance is read (integer). auto: maximum of the first spectrum of the "
+                      "first series within the shown range (from 300 nm)."),
+    "uvkin_win": ("Maximum ±", "Maximum ±"),
+    "uvkin_win_long": ("Maximum im Bereich ± n nm", "Maximum within ± n nm"),
+    "uvkin_win_tip": ("aus: Wert genau bei der Wellenlänge (linear interpoliert). Sonst das Maximum jedes Spektrums im "
+                      "Bereich λ ± n nm (folgt einer leicht wandernden Bande).",
+                      "off: value exactly at the wavelength (linearly interpolated). Otherwise the maximum of each spectrum "
+                      "within λ ± n nm (follows a slightly shifting band)."),
+    "uvkin_y": ("y-Achse", "y axis"),
+    "uvkin_y_abs": ("Absorbanz wie gemessen", "Absorbance as measured"),
+    "uvkin_y_rel": ("Relativ zum ersten Spektrum [%]", "Relative to the first spectrum [%]"),
+    "uvkin_unit": ("Zeiteinheit", "Time unit"),
+    "uvkin_fit_tip": ("Je Reihe A(t) = A0·exp(−k·t) an die gemessenen Absorbanzen (kleinste Quadrate, 95-%-Intervall); "
+                      "ab drei Punkten. Steigt die Reihe, ist k < 0 und es gibt keine Halbwertszeit.",
+                      "Per series A(t) = A0·exp(−k·t) fitted to the measured absorbances (least squares, 95% interval); "
+                      "from three points. If the series rises, k < 0 and there is no half-life."),
+    "uvkin_cap_tip": ("Bildunterschrift für den SI-Export.", "Caption for the SI export."),
+    "uvkin_results_none": ("Noch keine Reihe mit Aufnahmezeiten.", "No series with acquisition times yet."),
+    "uvkin_rel_col": ("relativ [%]", "relative [%]"),
+    "uvkin_read_fail": ("Nicht gelesen:\n{files}", "Not read:\n{files}"),
+    "uvkin_missing": ("Datei fehlt oder ist nicht lesbar.", "File missing or unreadable."),
+    "uvkin_no_series": ("{n} Spektren ohne Reihe werden nicht ausgewertet – Reihe in der Tabelle oder unter „Auswahl“ "
+                        "eintragen.",
+                        "{n} spectra without a series are not evaluated – enter the series in the table or under "
+                        "“Selection”."),
+    "uvkin_gone": ("{n} Spektren: Datei fehlt (verschoben oder gelöscht).", "{n} spectra: file missing (moved or deleted)."),
+    "uvkin_untimed": ("{n} Spektren ohne Aufnahmezeit in der Datei fehlen in dieser Ansicht.",
+                      "{n} spectra without an acquisition time in the file are left out of this view."),
+    "uvkin_fit_short": ("Reihe {s}: {n} Punkte – kein Fit (mindestens drei nötig).",
+                        "Series {s}: {n} points – no fit (at least three needed)."),
+    "uvkin_no_time": ("Keine Reihe hat Spektren mit Aufnahmezeit – die Ansicht „Spektren über die Zeit“ zeigt sie.",
+                      "No series has spectra with an acquisition time – the view “Spectra over time” shows them."),
+    "uvkin_sum_none": ("{s}: keine Spektren mit Aufnahmezeit", "{s}: no spectra with acquisition time"),
+    "uvkin_sum": ("{s}: A = {a0} → {a1}, {rest} % nach {dur} {u} ({n} Spektren)",
+                  "{s}: A = {a0} → {a1}, {rest} % after {dur} {u} ({n} spectra)"),
+    "uvkin_sum_fit": ("k = {k} {u}⁻¹ (95 %: {ci})", "k = {k} {u}⁻¹ (95%: {ci})"),
+    "uvkin_sum_half": ("t½ = {h} {u}", "t½ = {h} {u}"),
+    "uvkin_sum_rise": ("Absorbanz steigt (k < 0): keine Halbwertszeit", "absorbance rises (k < 0): no half-life"),
+    "uvkin_sum_nofit": ("kein Fit (weniger als drei Punkte)", "no fit (fewer than three points)"),
+    "uvkin_kpi_rest": ("Rest {s}", "Remaining {s}"),
 }
 # Langformen gekürzter Chips (Tooltip über long_form): dieselben Texte wie zuvor im Dialog
 for _k in ("char", "nmr", "figs", "methods", "xray", "dft"):

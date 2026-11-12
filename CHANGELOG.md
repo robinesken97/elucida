@@ -14,6 +14,15 @@
 - **CV: diffusion coefficient** from the Randles–Ševčík slope (with number of electrons, electrode area, concentration
   and temperature; interval from the uncertainty of the slope).
 - **EPR: joint fit of several S = ½ species.** "Fit together" refines all simulations of one measurement at once.
+- **New tab H-Cell (charge–discharge cycling).** Reads Gamry "Cyclic Charge Discharge" files with their
+  CHARGE_DISCHARGE step files: capacity per cycle (charge, discharge, percent of the theoretical capacity from the file
+  or entered per measurement) with Coulombic efficiency on a second axis, several measurements in one figure; or
+  potential against the true time for selected cycles with a broken time axis. Results per cycle, retention and mean
+  efficiency as tiles, caption and methods text for the SI, CSV of the cycle table.
+- **New tab "UV-Vis Kinetics".** Spectra of one solution over time (stability over days, or a reaction), from one or
+  several Cary files: acquisition times from the file, a series per spectrum, spectra coloured along time or absorbance
+  at λ against time (optionally the maximum within ± n nm, relative to the first spectrum), first-order fit with k,
+  95 % interval and half-life.
 
 ### Changed
 - Fields with "auto" or "off" (all tabs): a symbol in the field resets with one click; a cleared field counts as

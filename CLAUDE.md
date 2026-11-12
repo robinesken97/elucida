@@ -3,7 +3,7 @@
 PySide6-Desktop-App (Windows wichtigste Plattform, dazu macOS arm64, macOS Intel ab 14 und Linux) für UV-Vis-Verdünnungsreihen:
 Lambert-Beer-Auswertung (ε bzw. a) und Abbildung im Origin-Stil (Spektren, λ/ε-Labels, Inset mit Regression
 und Tabelle, ChemDraw-Struktur, Küvettenfoto). Dazu Tabs für Synthese (Schema, Vorschrift, Mengenprüfung), NMR (Mnova-SVG), IR + EA, HRMS, Overlay (gemessen + TD-DFT),
-Fluoreszenz, CV, SEC, EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Datei.
+UV-Vis-Kinetik, Fluoreszenz, CV, SEC, H-Cell (Laden/Entladen), EPR, X-Ray (CIF) und DFT (xyz); SI-Abschnitt als Word-Datei.
 Öffentliches Repo, AGPL-3.0. Maintainer: Robin (Chemiker, kein Softwareentwickler; Git-Einsteiger).
 
 ## Zusammenarbeit

@@ -44,9 +44,12 @@ LICENSES = {   # Schlüssel -> (Name, URL, Datei in assets/licenses, Erklärung 
 KIND_TEXT = {"nmr": "NMR spectra (NMR)", "ir": "IR spectra (IR)", "ms": "mass spectra (MS)",
              "uvvis": "UV-Vis data (UV-Vis)", "overlay": "UV-Vis data (UV-Vis)",
              "fluo": "fluorescence data (Fluorescence)", "cv": "cyclic voltammograms (CV)",
-             "sec": "spectroelectrochemical data (SEC)", "epr": "EPR data (EPR)", "dft": "DFT output files (CompChem)"}
+             "sec": "spectroelectrochemical data (SEC)",
+             "hcell": "H-cell charge-discharge cycling data (H-Cell)", "epr": "EPR data (EPR)",
+             "dft": "DFT output files (CompChem)"}
 KIND_PROGRAMS = {"nmr": "NMR -> TopSpin, MestReNova", "ir": "IR -> Spectragryph, Bruker OPUS",
                  "ms": "MS -> Bruker DataAnalysis, OpenMS", "cv": "CV -> Gamry Echem Analyst",
+                 "hcell": "H-Cell -> Gamry Echem Analyst",
                  "epr": "EPR -> Bruker Xenon, EasySpin", "dft": "DFT -> ORCA, Avogadro, Chemcraft"}
 
 

@@ -40,6 +40,50 @@ def write_dta(path, cycles, rate, cycle_col=False, times=None):
     Path(path).write_text("\r\n".join(head + body) + "\r\n", encoding="latin-1", newline="")
 
 
+def write_cycling(d, name, q_theo_mAh, current_A, fractions, ce, e12=0.6, cuts=(1.0, 0.2), points=40, skip=()):
+    """Künstliche Gamry-Lade/Entlade-Messung (Cyclic Charge Discharge) in Ordner d: Hauptdatei <name>.DTA mit
+    Kapazitätstabelle + CHARGE_DISCHARGE/CHARGE_#n.DTA, DISCHARGE_#n.DTA (Nernst-Form, Sprung zum Abbruchpotential am
+    Ende). fractions: geladener Anteil von Q_theo je Zyklus, ce: Entladen/Laden je Zyklus. skip: (Art, Zyklus)
+    ohne Schrittdatei. -> Pfad der Hauptdatei."""
+    d = Path(d)
+    (d / "CHARGE_DISCHARGE").mkdir(parents=True, exist_ok=True)
+    head = ["EXPLAIN", "TAG\t{tag}", "TITLE\tLABEL\t{title}\tTest &Identifier", "DATE\tLABEL\t1/1/2026\tDate",
+            "TIME\tLABEL\t12:00:00\tTime", "PSTAT\tPSTAT\tDEMO-1\tPotentiostat",
+            f"CAPACITY\tQUANT\t{q_theo_mAh / 1000:.5E}\tCapacity (A-hr)", f"CYCLES\tIQUANT\t{len(fractions)}\tNumber of Cycles",
+            f"CHARGEMODE\tMULTIPARAM\t0\t{current_A:.5E}\tCharge Mode\tConstant Current\tAmp(s)",
+            f"CHARGECURRENT\tQUANT\t{current_A}\tCharge Current (A)",
+            f"CHARGESTOPAT1\tMULTIPARAM\t4\t{cuts[0]:.5E}\tCharge Stop At &1\tVoltage > Limit\tV",
+            f"DISCHARGEMODE\tMULTIPARAM\t0\t{current_A:.5E}\t&Discharge Mode\tConstant Current\tAmp(s)",
+            f"DISCHARGESTOPAT1\tMULTIPARAM\t3\t{cuts[1]:.5E}\tDischarge Stop At &1\tVoltage < Limit\tV"]
+    t, pt, rows = 0.0, 1, []
+    for n, (fr, c) in enumerate(zip(fractions, ce), 1):
+        for kind, typ, q in (("CHARGE", 0, fr * q_theo_mAh * 3.6), ("DISCHARGE", 1, fr * c * q_theo_mAh * 3.6)):
+            dur = q / current_A
+            x = np.linspace(0.03, 0.97, points)
+            sign = 1 if typ == 0 else -1
+            E = e12 + sign * (0.0257 * np.log(x / (1 - x)) + 0.03)
+            E[-1] = cuts[typ]
+            ts = np.linspace(dur / points, dur, points)
+            if (kind.lower(), n) not in skip:
+                body = [f"CURVE\tTABLE\t{points}", "\tPt\tT\tVf\tIm\tVu\tPwr\tSig\tAch\tTemp\tIERange\tOver",
+                        "\t#\ts\tV\tA\tV\tW\tV\tV\tdeg C\t#\tbits"]
+                body += [f"\t{k}\t{tk:.3f}\t{ek:.5E}\t{sign * current_A:.5E}\t0\t0\t0\t0\t0\t9\t..........a"
+                         for k, (tk, ek) in enumerate(zip(ts, E))]
+                body.append(f"STARTTIMEOFFSET\tQUANT\t{t:.4f}\tStart Time Offset (s)")
+                txt = "\r\n".join([h.format(tag=f"PWR800_{kind}", title=f"{name} - {kind.title()} Step")
+                                   for h in head] + body) + "\r\n"
+                (d / "CHARGE_DISCHARGE" / f"{kind}_#{n}.DTA").write_text(txt, encoding="latin-1", newline="")
+            t += dur
+            rows.append(f"\t{pt}\t{t:.0f}\t{typ}\t{n}\t{q:.6f}\t{dur:.3f}\t{E[0]:.5f}\t{E[-1]:.5f}\t0\t0\t0\t..........a")
+            pt += 1
+    main = [h.format(tag="PWR800_CYCLICCHARGEDISCHARGE", title=name) for h in head]
+    main += ["CAPACITYCURVE\tTABLE", "\tPt\tTime\tType\tCycle\tCharge\tDuration\tVstart\tVend\tEnergy\tTstart\tTend\tOver",
+             "\t#\ts\t#\t#\tC\ts\tV\tV\tJ\tdeg C\tdeg C\tbits"] + rows + ["STOPREASON\tLABEL\tCycle Limit\tStop Reason"]
+    p = d / f"{name}.DTA"
+    p.write_text("\r\n".join(main) + "\r\n", encoding="latin-1", newline="")
+    return p
+
+
 def band_sum(lam, bands):
     """Summe von Gaußbanden (λ_max in nm, Höhe, Breite σ in cm⁻¹): Gauß über der Wellenzahl, wie gemessene
     Banden über der Wellenlänge leicht unsymmetrisch."""
@@ -103,6 +147,18 @@ def uvvis_csv(path, name, bands, concs, solvent="THF", seed=0):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text("\r\n".join(lines), encoding="utf-8", newline="")
     return Path(path), names
+
+
+def cary_csv(path, cols):
+    """Cary-WinUV-Export mit Metadaten: cols = [(Name, λ, A, Aufnahmezeit als Text oder None)]; nach den Daten je Probe
+    ein Block „<Name>,“ / „<Name>“ / „Collection Time: …“ in der Reihenfolge der Spalten (wie das Gerät)."""
+    lines = ["".join(f"{n}," + "," for n, *_ in cols), "".join("Wavelength (nm),Abs," for _ in cols)]
+    lines += ["".join(f"{c[1][i]:.6f},{c[2][i]:.8f}," for c in cols) for i in range(len(cols[0][1]))]
+    for n, _, _, t in cols:
+        lines += ["", f"{n},", n] + ([f"Collection Time: {t}"] if t else []) + ["Instrument  Cary 60", "Y Mode  Abs"]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\r\n".join(lines) + "\r\n", encoding="utf-8", newline="")
+    return Path(path)
 
 
 def cuvette_photo(path, liquid, uv=False):
@@ -742,6 +798,25 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                       ex=float(lam0), alo=lam0 - 42, ahi=lam0 + 48, eps=f"{eps:.0f}", stokes_label=True,
                       photo_day=str(photo), bg_day="grabcut", bg_uv="none",
                       photo_uv=str(cuvette_photo(inp / f"{name}_cuvette_UV.png", (70, 150, 255), uv=True)))
+    # UV-Vis-Kinetik: Stabilität der Lösung über eine Woche, je Tag eine Datei mit zwei Konzentrationen (Zerfall erster
+    # Ordnung, k = 0.04 d⁻¹), Aufnahmezeiten im Cary-Format
+    from elucida.tabs import uvkin as UVKIN
+    wl = np.arange(800.0, 229.0, -1.0)
+    eps_ = band_sum(wl, c["uv"])
+    rng = np.random.default_rng(7)
+    t0 = dt.datetime(2026, 3, 2, 10, 15, 0)
+    entries = []
+    for day in (0, 1, 2, 3, 5, 7):
+        cols = []
+        for k, conc in enumerate((20, 10)):
+            t = t0 + dt.timedelta(days=day, minutes=3 * k + 7 * day)
+            us = f"{t.month}/{t.day}/{t.year} {(t.hour - 1) % 12 + 1}:{t:%M:%S} {'PM' if t.hour >= 12 else 'AM'}"
+            A = eps_ * conc * 1e-6 * np.exp(-0.04 * (t - t0).total_seconds() / 86400) * rng.normal(1, 0.003)
+            cols.append((f"{name}-{conc}uM_THF", wl, A + rng.normal(0, 0.0015) + rng.normal(0, 1e-4, wl.size), us))
+        p = w.import_file(str(cary_csv(inp / "uvkin" / f"{name}_stability_day{day}.csv", cols)), PRJ.data_sub("uvkin"))
+        entries += [{"uid": f"kin{day}_{k}", "file": p, "idx": k, "label": f"{n_} day {day}",
+                     "series": UVKIN.series_from_name(n_), "use": True} for k, (n_, *_) in enumerate(cols)]
+    w.uvkin_state.update(entries=entries, fit=True, cap_solvent="THF")
     # CV: drei Vorschubgeschwindigkeiten + Messung mit Ferrocen als internem Standard (1 mM, D = 1·10⁻⁵ cm² s⁻¹)
     files = []
     for rate in (50, 100, 200):
@@ -765,6 +840,13 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                               oxidised=[(505, 0.24, 1100), (760, 0.13, 1500), (334, 0.11, 1800), (262, 0.14, 2000)])
     w.sec_state.update(spec_files=sec_files, dta=str(dta), mode="spectra", bands=f"{lam0}, 505, 760", trace_lams=f"{lam0}, 505, 760", mid="",
                        ref_from_cv=True, cap_solvent="CH2Cl2", cap_start="neutral", cap_end="radical cation")
+    # H-Zelle: symmetrisches Laden/Entladen derselben Oxidation (Konstantstrom), 40 Zyklen mit langsamem Kapazitätsverlust
+    rng = np.random.default_rng(7)
+    k_ = np.arange(40)
+    main_ = write_cycling(inp / "hcell" / f"{name}_cycling", f"{name}_cycling", 0.5, 0.002,
+                          0.88 - 0.0018 * k_ + rng.normal(0, 0.002, 40), 0.996 + rng.normal(0, 0.0015, 40))
+    w.hcell_state.update(cap_conc="5 mM", cap_solvent="MeCN, 0.1 M n-Bu4NPF6", ref="Ag0/+")   # vor dem Bau des Tabs
+    w.hcell_tab.load_files([str(main_)])
     # EPR: Radikalkation (isotrop, S = ½: 1 × 14N, 6 × 1H der NMe2-Gruppe) mit eigener Simulation und Fit
     Bt = np.linspace(328.0, 343.0, 6001)
     I_ = EPR.iso_spectrum(Bt, 9.40, 2.0031, [(1, 1.0, 0.86), (6, 0.5, 0.93)], 0.14)
@@ -877,7 +959,7 @@ def open_demo(w, folder=None, name="S3") -> Path:
         w.render()
         tabs = ("nmr_tab", "irms_tab", "hrms_tab", "xray_tab")
         if name == "S3":                                   # die Vorstufe hat diese Tabs nicht
-            tabs += ("ov_tab", "fl_tab", "cv_tab", "sec_tab", "epr_tab", "dft_tab")
+            tabs += ("ov_tab", "uvkin_tab", "fl_tab", "cv_tab", "sec_tab", "hcell_tab", "epr_tab", "dft_tab")
         for t in (getattr(w, a) for a in tabs):
             for fn in ("sync_widgets", "update_preview", "render"):
                 f = getattr(type(t), fn, None)

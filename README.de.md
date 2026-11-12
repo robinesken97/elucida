@@ -53,8 +53,8 @@ Supporting Information, in der alles zusammenpassen muss. Elucida hält das an e
 |---|---|---|
 | **Verbindung** | Verbindung | Name, Formel und Zeichnung an einer Stelle; eingebauter Struktureditor (Octet Draw), ChemDraw-Dateien funktionieren weiter |
 | **Synthese & Analytik** | Synthese · NMR · IR + EA · HRMS | Schema, Vorschrift und Mengenprüfung; Mnova- und TopSpin-Daten; OPUS; Bruker `.d` |
-| **UV-Vis & Photophysik** | UV-Vis (ε) · Overlay · Fluoreszenz | Lambert-Beer-Fit mit Konfidenzintervall, TD-DFT-Overlay, ORCA ESD |
-| **Elektrochemie & EPR** | CV · SEC · EPR | E½, Nicholson, Randles-Ševčík, UV/Vis/NIR-SEC, S = ½-Fit, thermischer Zerfall |
+| **UV-Vis & Photophysik** | UV-Vis (ε) · Overlay · Kinetik · Fluoreszenz | Lambert-Beer-Fit mit Konfidenzintervall, TD-DFT-Overlay, Spektren über die Zeit mit Fit erster Ordnung, ORCA ESD |
+| **Elektrochemie & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles-Ševčík, UV/Vis/NIR-SEC, H-Zelle (Kapazität, Coulomb-Effizienz), S = ½-Fit, thermischer Zerfall |
 | **Struktur & Rechnung** | X-Ray · DFT · Reaktionspfade | ORTEP im Mercury-Stil, ORCA und Gaussian, Orbitale, Multireferenz, Energiediagramme |
 | **Projekt** | Übersicht · Gesamt-SI · Datenpakete | Checkliste je Verbindung, Suche, Gesamt-SI für das ganze Paper, Datensatz fürs Repositorium |
 
@@ -115,7 +115,7 @@ Keine Daten zur Hand? **Hilfe → Beispielverbindung öffnen** füllt alle Tabs 
 Schritt für Schritt mit Bildern:
 [Synthese bis SI](docs/anleitungen/synthese-bis-si.de.md) ·
 [UV-Vis ε](docs/anleitungen/uvvis-epsilon.de.md) ·
-[CV und SEC](docs/anleitungen/elektrochemie.de.md) ·
+[CV, SEC und H-Zelle](docs/anleitungen/elektrochemie.de.md) ·
 [EPR](docs/anleitungen/epr.de.md) ·
 [Kristallstruktur und DFT](docs/anleitungen/struktur-dft.de.md)
 
@@ -142,7 +142,7 @@ in der SI.
 | IR | Bruker **OPUS**-Dateien und das OPUS-PDF |
 | HRMS | Bericht der Massenabteilung (`.docx`), Bruker **`.d`** |
 | UV-Vis, Fluoreszenz | **Cary** CSV/TXT, `.DSW`/`.BSW`, Cary **Eclipse** CSV und `.FBSW` |
-| CV, SEC | **Gamry** `.DTA`, **B&W Tek BWSpec** |
+| CV, SEC, H-Cell | **Gamry** `.DTA` (H-Cell: Cyclic Charge Discharge mit `CHARGE_DISCHARGE`), **B&W Tek BWSpec** |
 | EPR | Bruker **BES3T**, Magnettech-MS400-Text, **EasySpin**-Simulationen |
 | X-Ray | **CIF** (Olex2/SHELXL, CCDC) |
 | Rechnungen | **xyz**, Ausgaben von **ORCA** und **Gaussian** (auch TD-DFT), **Molden**- und **Cube**-Dateien |

@@ -69,3 +69,11 @@ into the figure part. Enter the solvent for that under **Analysis**.
 
 **Copy** in the Methods Text card gives an English paragraph describing exactly the evaluation steps used (baseline, model, cutoff,
 errors) – to append to the methods section.
+
+## 8. Stability and kinetics
+
+If the solution changes over hours or days, the spectra belong in the **UV-Vis Kinetics** tab (group UV-Vis &
+photophysics): add Cary CSV files (one per day is common), enter a **series** per spectrum (e.g. the concentration), then
+**Absorbance against time** at one wavelength, optionally relative to the first spectrum and with **Fit decay**
+(first order, k with 95% interval and half-life). The times come from the measurement file; more in the
+[manual](../manual.en.md#uv-vis-kinetics-tab).

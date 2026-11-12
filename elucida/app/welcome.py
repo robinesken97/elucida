@@ -23,8 +23,9 @@ from elucida.app.i18n import T
 
 # Analytik im Projekt -> Abzeichen (Reihenfolge wie die Tabs/SI)
 BADGES = (("syn", "Synthese", "Synthesis"), ("nmr", "NMR", "NMR"), ("ir", "IR", "IR"), ("ms", "MS", "MS"),
-          ("uvvis", "UV-Vis", "UV-Vis"), ("fluo", "Fluoreszenz", "Fluorescence"), ("cv", "CV", "CV"),
-          ("sec", "SEC", "SEC"), ("epr", "EPR", "EPR"), ("xray", "X-Ray", "X-ray"), ("dft", "DFT", "DFT"))
+          ("uvvis", "UV-Vis", "UV-Vis"), ("uvkin", "UV-Vis-Kinetik", "UV-Vis kinetics"),
+          ("fluo", "Fluoreszenz", "Fluorescence"), ("cv", "CV", "CV"),
+          ("sec", "SEC", "SEC"), ("hcell", "H-Cell", "H-Cell"), ("epr", "EPR", "EPR"), ("xray", "X-Ray", "X-ray"), ("dft", "DFT", "DFT"))
 
 
 THUMB = "thumb.png"                   # in .elucida/: Struktur der Verbindung, beim Speichern erzeugt
@@ -34,7 +35,7 @@ CARD_W, CARD_H, CARD_GAP = 236, 244, 14
 THUMB_H = 148                         # Strukturbild der Galerie
 CHECK_W, MORE_MIN_W = 40, 860         # Matrix: Spaltenbreite, ab dieser Zeilenbreite „Weitere Analytik“
 SHORT = {"1H": "¹H", "13C": "¹³C", "2D": "2D", "ms": "HRMS", "ir": "IR", "mp": "m.p."}
-MORE = ("uvvis", "fluo", "cv", "sec", "epr", "xray", "dft")
+MORE = ("uvvis", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "xray", "dft")
 REDO_COLOR = "#d9a400"                # Pflichtteil fehlt, Substanz ist aber noch da
 _SUB = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
@@ -96,9 +97,11 @@ def project_info(path) -> dict | None:
         "ir": bool(g("irms", "ir_file") or g("irms", "ir_pdf")),
         "ms": bool(g("hrms", "ms_file") or g("hrms", "ms_raw") or g("irms", "ms_file") or g("irms", "ms_raw")),
         "uvvis": bool(g("eps", "files")),
+        "uvkin": bool(g("uvkin", "entries")),
         "fluo": bool(g("fluo", "abs_file") or g("fluo", "em_file")),
         "cv": bool(g("cv", "files")),
         "sec": bool(g("sec", "spec_files") or g("sec", "dta")),
+        "hcell": bool(g("hcell", "entries")),
         "epr": bool(g("epr", "entries")),
         "xray": bool(g("xray", "entries")),
         "dft": bool(g("dft", "entries")),
@@ -250,8 +253,8 @@ class SideRow(QPushButton):
         h.addWidget(self.count)
 
 
-TAB_OF = {"syn": "syn", "nmr": "nmr", "ir": "irms", "ms": "hrms", "uvvis": "eps", "fluo": "fluo", "cv": "cv",
-          "sec": "sec", "epr": "epr", "xray": "xray", "dft": "dft"}      # Abzeichen -> Tab
+TAB_OF = {"syn": "syn", "nmr": "nmr", "ir": "irms", "ms": "hrms", "uvvis": "eps", "uvkin": "uvkin", "fluo": "fluo", "cv": "cv",
+          "sec": "sec", "hcell": "hcell", "epr": "epr", "xray": "xray", "dft": "dft"}      # Abzeichen -> Tab
 
 
 class NavTab(QPushButton):

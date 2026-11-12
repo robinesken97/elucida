@@ -260,7 +260,7 @@ paths:
   Tabellen). Selbsttest „step pages follow …“.
 - Listen mit mehreren Einträgen (Overlay, CV, EPR, X-Ray, Weitere): Umsortieren mit Pfeilen **und** durch Ziehen einer Zeile
   (`TABS.RowDrag` + `move_row(von, nach)` des Tabs, Nutzerwunsch 2026-11-10); Qt verschiebt dabei nichts selbst.
-- Tab-Reihenfolge wie die SI, davor die Verbindung selbst: Verbindung · Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · Fluoreszenz · CV · SEC · EPR ·
+- Tab-Reihenfolge wie die SI, davor die Verbindung selbst: Verbindung · Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · UV-Vis-Kinetik · Fluoreszenz · CV · SEC · H-Cell · EPR ·
   X-Ray · DFT · Weitere; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
 - „Alles auf Standard“ (`FigureTab.reset_defaults`): alle Schlüssel von DEFAULT_STATE außer `RESET_KEEP` des Tabs, Exportgröße/
   -formate und `cap_*`. In `RESET_KEEP` gehört, was Daten oder Angaben zur Messung sind (Dateien, Referenz/Kalibrierung,

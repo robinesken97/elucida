@@ -276,8 +276,10 @@ MANUAL = {"de": "docs/manual.de.md", "en": "docs/manual.en.md"}
 GUIDE_HEAD = {"compound": ("Verbindung", "Compound"), "syn": ("Synthese-Tab", "Synthesis tab"), "nmr": ("NMR-Tab", "NMR tab"),
               "irms": ("IR + EA-Tab", "IR + EA tab"), "hrms": ("HRMS-Tab", "HRMS tab"), "eps": ("UV-Vis-(ε)-Tab", "UV-Vis (ε) tab"),
               "overlay": ("UV-Vis-Overlay-Tab", "UV-Vis overlay tab"), "fluo": ("Fluoreszenz-Tab", "Fluorescence tab"),
+              "uvkin": ("UV-Vis-Kinetik-Tab", "UV-Vis kinetics tab"),
               "cv": ("CV-Tab (Cyclovoltammetrie)", "CV tab (cyclic voltammetry)"),
               "sec": ("SEC-Tab (Spektroelektrochemie)", "SEC tab (spectroelectrochemistry)"),
+              "hcell": ("H-Cell-Tab (Laden und Entladen)", "H-Cell tab (charge–discharge cycling)"),
               "epr": ("EPR-Tab (CW-EPR)", "EPR tab (CW EPR)"), "xray": ("X-Ray-Tab", "X-Ray tab"),
               "dft": ("DFT-Tab", "DFT tab"), "other": ("Weitere-Tab", "Other tab")}
 

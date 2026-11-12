@@ -100,7 +100,7 @@ Step by step through one workflow, with pictures:
 - [Synthesis and characterisation to the SI](anleitungen/synthese-bis-si.en.md) – scheme, procedure, NMR, IR,
   HRMS, elemental analysis, SI section
 - [UV-Vis: ε from a dilution series](anleitungen/uvvis-epsilon.en.md)
-- [Electrochemistry: CV and SEC](anleitungen/elektrochemie.en.md)
+- [Electrochemistry: CV, SEC and H-cell](anleitungen/elektrochemie.en.md)
 - [EPR: spectra, simulation and fit](anleitungen/epr.en.md)
 - [Crystal structure and DFT](anleitungen/struktur-dft.en.md)
 
@@ -158,7 +158,7 @@ in all text files (CSV, Gamry DTA, EPR, TopSpin parameters, title and audit trai
 author and dates, labels in its spectra) and in OPUS files (same length). The measured values (FID, ser, spectra) stay
 byte-identical. PDF, Mnova and Bruker .d cannot be edited; if a code remains in one of them, the log names it.
 
-Every export from the Overlay, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
+Every export from the Overlay, UV-Vis Kinetics, Fluorescence, CV, SEC and EPR tabs also writes `…_data.csv` with exactly the
 plotted curves (one x/y column pair per curve, values without stacking offset) – for Origin, Excel or MATLAB.
 
 ### Projects
@@ -259,7 +259,7 @@ UV-Vis (ε) tab: *λ*_max: 350 nm (*ε* = 12000 cm⁻¹ M⁻¹), … with bands 
 X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
 and units are joined by non-breaking spaces, so Word never separates "298 nm" or "ε = 8440".
 
-**Figures:** the figures of all tabs with data (UV-Vis (ε) per series, IR, HR-MS, overlay, fluorescence, CV, SEC, EPR)
+**Figures:** the figures of all tabs with data (UV-Vis (ε) per series, IR, HR-MS, overlay, UV-Vis kinetics, fluorescence, CV, SEC, EPR)
 and the NMR spectra always come **two per page**; where figure and caption would not fit, both figures of the page are
 scaled down (aspect ratio kept). Captions follow the SI: UV-Vis "UV-Vis spectra of **X** in THF, measured in 0.1 cm
 quartz cuvettes." (solvent under Analysis in the ε tab); CV, SEC and EPR take scan rate, iR compensation, reference,
@@ -337,7 +337,8 @@ to Word or as part of the SI section.
 - **IR:** load a Bruker **OPUS** file (`*.0`, spectrum) and/or the **OPUS PDF** print-out (peak labels). With the PDF the
   values are exactly the OPUS peak list; with the file alone Elucida picks the bands itself (adjustable
   sensitivity). Range freely selectable (default: the whole measured range); untick bands that should not be listed;
-  intensities w/m/s/br optional. Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
+  intensities w/m/s/br optional (relative to the strongest band: s from 60 %, m from 30 %, otherwise w; br from a
+  full width at half maximum of 120 cm⁻¹). Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
   **Correct baseline (as in OPUS)** subtracts the baseline like OPUS (figure and peak search only); **Set threshold**:
   click points into the figure, peaks beyond the line. With only the OPUS PDF the spectrum is read from the PDF.
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
@@ -445,6 +446,8 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
 - **Rounding:** ε (M⁻¹ cm⁻¹) and its errors are shown as integers (e.g. 7264 ± 318), the same in the table,
   figure, SI line, methods text and Excel report; the specific coefficient a is rounded to the precision of its
   standard error. The results CSV keeps the full values.
+- **Conventions:** rounding is half up (7264.5 → 7265). R² refers to the mean also for a fit through the origin
+  (1 − RSS/SST); Excel's LINEST without a constant reports a different, larger value there.
 - **Warnings** (results table and log): fewer than 4 fit points, significant intercept (> t(0.975; n−2)·SE),
   R² below the threshold (default 0.98, adjustable under Analysis → "min. R² for figure"; 0 = show
   all; the band stays in the table – R² cell marked red –, CSV and Excel report but is not shown in the
@@ -513,6 +516,30 @@ Compare several spectra in one figure, measured and calculated:
   ticks (default when stacked – offset curves make the numbers misleading) or hidden. Optionally
   the **names are written at the curves** instead of a legend, and a dashed zero line marks each level.
 
+## UV-Vis kinetics tab
+
+How the spectra of one solution change over time – stability over days, or a reaction:
+
+- **Add files** (several at once, more later, e.g. one file per day): each spectrum becomes a row with name
+  (renamable), **series** and **acquisition time**. The time comes only from the measurement file (Cary CSV: “Collection
+  Time” per sample, assigned by the order of the columns; US and German date format), never from the file name or the
+  file date. .DSW/.BSW contain no time per spectrum: they appear only in the view “Spectra over time”, with their name.
+  Instrument baselines (“Baseline 100%T/0%T”) are not offered.
+- The **series** (e.g. the concentration) is prefilled only when the sample name states a concentration unambiguously
+  (“…-20uM”); otherwise enter it – in the table, or for several selected rows at once under “Selection”. Rows without a
+  series are not evaluated (hint). Saturated spectra are not detected: uncheck them.
+- **View** (Evaluation step): “Spectra over time” shows one series coloured along time, labelled with the time since its
+  first spectrum. “Absorbance against time” shows for each series the absorbance at the **wavelength** (integer; auto =
+  maximum of the first spectrum) against the time since its first spectrum; with **Maximum ±** the maximum within
+  λ ± n nm instead of the value exactly at λ. y axis as measured or relative to the first spectrum in %, time unit
+  min/h/d or auto (by duration).
+- **Fit decay**: per series A(t) = A0·exp(−k·t) fitted to the measured absorbances (least squares, as for the
+  isothermal EPR decays) with the 95% interval of k and the half-life t½ = ln 2/k; from three points. If a series rises,
+  k < 0 and there is no half-life.
+- No correction for path length or concentration: absorbance as measured.
+- Right: figure, **Results** (table per data point, summary per series: first and last value, remaining %, duration,
+  k and t½), SI text. Export: figure and `…_kinetics.csv` (series, name, time, A, relative).
+
 ## Fluorescence tab
 
 Absorption and emission in one figure, as commonly shown in papers:
@@ -553,6 +580,12 @@ Absorption and emission in one figure, as commonly shown in papers:
   concentration there is no D; the area is never taken from the measurement file. The interval carries only the
   uncertainty of the slope, not that of area and concentration. The result appears on the Results tab and in the
   methods text.
+- **Conventions of the CV calculation:** the Nicholson ratio uses baseline-corrected currents (the original uses the
+  zero-current axis) and scatters by about ±3 % even for ideally reversible couples, depending on the switching
+  potential. The baseline ends 0.15 V before the peak; for an ideally reversible wave about 2 % of the peak current
+  is still present there, so i_p comes out 1–4 % too small (D accordingly 2–9 %). The default Ac₂Fc +0.49 V is a
+  value for CH₂Cl₂ (Connelly, Geiger, Chem. Rev. 1996, 96, 877); enter your own value for other solvents. E½ equals
+  the formal potential only if both forms have the same diffusion coefficient.
 - **Copy** (Methods Text card on the SI Text tab): English paragraph on the data evaluation (referencing, peak determination, baseline, Nicholson,
   regressions) to append to the setup paragraph "Cyclic Voltammetry" of the SI, plus the results per redox couple.
 - **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
@@ -602,6 +635,30 @@ Absorption and emission in one figure, as commonly shown in papers:
   precedence.
 - Potential axis as measured, shifted by E(Fc⁺/Fc) or with the referencing of the CV tab.
 
+## H-Cell tab (charge–discharge cycling)
+
+- Reads **Gamry "Cyclic Charge Discharge" files** (main file with the capacity table) and the step files
+  `CHARGE_#n.DTA`/`DISCHARGE_#n.DTA` from the folder `CHARGE_DISCHARGE` next to it. Other files in that folder belong
+  to other experiments and are not imported; other Gamry types are rejected with a message. Each measurement gets its
+  own folder in the project (`data/hcell/<name>/`) so the step files stay together.
+- **Capacity vs. cycle:** charge and discharge capacity per cycle (column "Charge" of the file, C → mAh) on the left,
+  in % of the theoretical capacity or in mAh; Coulombic efficiency (discharge/charge of the same cycle) on the right,
+  can be switched off. One measurement: black squares, red circles, blue triangles as in the group's SI. Several visible
+  measurements share one figure, one colour each from the list (charge filled circle, discharge open circle, efficiency
+  triangle); the legend has one block per measurement.
+- **Theoretical capacity:** from the file (CAPACITY, set in the instrument); your own value applies only to the
+  measurement selected in the list, so cells with different capacities can be compared in %.
+- **Potential vs. time:** charge (black) and discharge curves (red) of the selected cycles over the true time in h; the
+  time axis is broken between non-adjacent cycles (break marks, numbers = true time), each cycle is labelled "#n".
+  Empty "Cycles" field = first, second and evenly spaced up to the last (at most five). A missing step file is noted
+  under the preview; only what exists is drawn. The selected measurement is shown. Optional reference for the axis,
+  e.g. `Ag0/+`.
+- **Results:** table per cycle of the selected measurement (Q_charge, Q_discharge, capacity in %, efficiency) and, for
+  every visible measurement, first/last discharge capacity, retention (last/first), mean efficiency and duration;
+  retention and mean efficiency as tiles. No smoothing, no fits, no uncertainties.
+- **Export:** figure and the cycle table as CSV (`…_cycles.csv`); caption (concentration, electrolyte) and methods text
+  in the SI Text tab.
+
 ## EPR tab (CW EPR)
 
 - Reads **Bruker BES3T** (.dsc + .DTA, e.g. Magnettech ESR5000/ESRStudio, Elexsys; 2D files give one spectrum
@@ -642,6 +699,11 @@ Absorption and emission in one figure, as commonly shown in papers:
   one measurement, **Fit together** fits all simulations assigned to it at once (one linear amplitude per species).
   Start values are the current values and there is no coarse search: set each species roughly or fit it on its own
   first. The fit reports no uncertainties.
+- **Conventions of the EPR calculation:** couplings in MHz = a [mT] · (µ_B/h) · g with the fitted g (EasySpin uses
+  g_e; the difference is g/g_e). Line shape pseudo-Voigt: sum of a Gaussian and a Lorentzian derivative of equal
+  ΔB_pp, no convolution; the Lorentzian fraction is not comparable with EasySpin widths. Hyperfine patterns to first
+  order only (for large couplings, e.g. ⁵¹V, ⁵⁵Mn, Cu, g and a shift), no weighting of isotopologues. A g fitted
+  before the field calibration or reference frequency was changed is reported again only after a new fit.
 - **Field calibration with TEMPO** (or another reference): fit the reference with an S = ½ simulation, choose it as
   calibration with its literature g (default 2.0055, TEMPO in MeCN); ΔB = B(g_fit) − B(g_lit) is subtracted from all
   other measurements, whose fits then give calibrated g-factors.
@@ -737,7 +799,7 @@ Absorption and emission in one figure, as commonly shown in papers:
   and path(s) A, B …; optional **single points** (e.g. DLPNO-CCSD(T)), matched by identical atoms and coordinates (never by
   file name): G = E(SP) + (G − E_el). Levels with dashed connectors, ΔG/ΔH/ΔE in kcal mol⁻¹ with one decimal, caption
   "… calculated at the <single point>//<geometry> level of theory".
-  **IRC** (ORCA): output + `<name>_IRC_Full_trj.xyz`, x = reaction coordinate in Å (TS = 0) or a bond length, several
+  **IRC** (ORCA): output + `<name>_IRC_Full_trj.xyz`, x = reaction coordinate in Å (sum of the Cartesian displacements, not mass-weighted; TS = 0) or a bond length, several
   IRCs in a row, barriers at the transition state.
 - **NICS** (page): Gaussian NMR outputs with ghost atoms (Bq, e.g. from py.Aroma): NICS and NICSzz (along the ring-plane
   normal) per point, average above/below; scans as a curve over the path length (NICS black, NICSzz red).

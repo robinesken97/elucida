@@ -69,3 +69,11 @@ cuvettes.“) in den Abbildungsteil. Das Lösungsmittel dafür trägst du unter 
 
 **Kopieren** in der Karte „Methodentext“ liefert einen englischen Absatz, der genau die benutzten Auswerteschritte beschreibt (Basislinie,
 Modell, Cutoff, Fehler) – zum Anhängen an den Methodenteil.
+
+## 8. Stabilität und Kinetik
+
+Ändert sich die Lösung über Stunden oder Tage, gehören die Spektren in den Tab **UV-Vis-Kinetik** (Gruppe UV-Vis &
+Photophysik): Cary-CSV-Dateien hinzufügen (eine je Tag ist üblich), je Spektrum eine **Reihe** eintragen (z. B. die
+Konzentration), dann **Absorbanz gegen Zeit** bei einer Wellenlänge, wahlweise relativ zum ersten Spektrum und mit
+**Zerfall fitten** (erste Ordnung, k mit 95-%-Intervall und Halbwertszeit). Die Zeiten kommen aus der Messdatei; mehr im
+[Handbuch](../manual.de.md#uv-vis-kinetik-tab).

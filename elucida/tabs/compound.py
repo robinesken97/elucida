@@ -20,7 +20,7 @@ from elucida.tabs import base as TABS
 
 TEXT_KEYS = ("name", "labbook", "note", "sample_no", "formula", "mp", "lit")     # Textfelder = Schlüssel der Verbindung
 # Abbildungen im SI-Export je Tab (Schlüssel wie MainWindow.si_figure_choices, Reihenfolge wie die SI)
-SI_FIG_KEYS = ("eps", "irms", "hrms", "overlay", "fluo", "cv", "sec", "epr", "other", "dft")
+SI_FIG_KEYS = ("eps", "irms", "hrms", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "other", "dft")
 
 
 def _filled(comp):

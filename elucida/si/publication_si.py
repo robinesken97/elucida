@@ -25,12 +25,13 @@ SECTIONS = (("methods", "Materials and Methods", True),
             ("epr", "EPR Spectroscopy", True),
             ("cv", "Cyclic Voltammetry", True),
             ("sec", "Spectroelectrochemistry", True),
+            ("hcell", "H-Cell Cycling", True),
             ("xray", "X-Ray Characterization Data", True),
             ("dft", "Computational Section", True))
-FIGURE_SECTIONS = ("nmr", "irms", "uvvis", "epr", "cv", "sec")
+FIGURE_SECTIONS = ("nmr", "irms", "uvvis", "epr", "cv", "sec", "hcell")
 CRYSTAL_COLS = 3
 # Aufbau-Texte (lokal hinterlegt, si_setup/<Tab>) in „Materials and Methods“, in der Reihenfolge der SI
-SETUP_KEYS = ("irms", "hrms", "overlay", "fluorescence", "epr", "cv", "sec")
+SETUP_KEYS = ("irms", "hrms", "overlay", "uvkin", "fluorescence", "epr", "cv", "sec")
 METHODS_PLACEHOLDER = "[General information: solvents, reagents and instruments.]"
 
 

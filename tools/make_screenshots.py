@@ -32,7 +32,7 @@ SIZE = (1600, 1000)
 # Alle README-Bilder dunkel (Nutzerwunsch), auch das Coverbild
 SHOTS = tuple((name, key, ("dark",)) for name, key in (
     ("synthesis", "syn"), ("nmr", "nmr"), ("irms", "irms"), ("hrms", "hrms"), ("eps", "eps"), ("overlay", "overlay"),
-    ("fluorescence", "fluo"), ("cv", "cv"), ("sec", "sec"), ("epr", "epr"), ("xray", "xray"), ("dft", "dft")))
+    ("uvkin", "uvkin"), ("fluorescence", "fluo"), ("cv", "cv"), ("sec", "sec"), ("hcell", "hcell"), ("epr", "epr"), ("xray", "xray"), ("dft", "dft")))
 
 
 def pump(sec=0.6):

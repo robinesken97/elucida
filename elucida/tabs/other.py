@@ -22,7 +22,7 @@ EXTS = (".pdf", ".svg", ".png")
 # Kapitel der SI (Schlüssel wie si/publication_si.SECTIONS) für fremde Abbildungen; „new“ = eigene Überschrift
 CHAPTERS = (("nmr", "NMR Spectra"), ("irms", "IR and Mass Spectra"), ("uvvis", "UV-Vis Spectroscopy"),
             ("epr", "EPR Spectroscopy"), ("cv", "Cyclic Voltammetry"), ("sec", "Spectroelectrochemistry"),
-            ("xray", "X-Ray Characterization Data"), ("dft", "Computational Section"), ("new", ""))
+            ("hcell", "H-Cell Cycling"),             ("xray", "X-Ray Characterization Data"), ("dft", "Computational Section"), ("new", ""))
 RENDER_DPI = 200
 
 

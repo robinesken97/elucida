@@ -1,6 +1,6 @@
 **English** | [Deutsch](elektrochemie.de.md) · [back to the overview](../../README.md#workflows)
 
-# Electrochemistry: CV and SEC
+# Electrochemistry: CV, SEC and H-cell
 
 **What you get:** cyclic voltammograms with E½, ΔEₚ and peak current ratio (Nicholson), the analysis versus scan rate
 (Randles–Ševčík with confidence interval), referencing against Fc⁺/Fc and from that the figures with SI caption and a
@@ -41,7 +41,15 @@ time (set a **time offset** if needed). **View:** spectrum series, difference sp
 apparent Nernst fit – with a continuous scan the thin-layer cell lags behind, the CV values take precedence. Highlight
 intermediate species by their potential.
 
-## 6. Export and SI
+## 6. H-cell: charge and discharge
+
+In the **H-Cell** tab add the Gamry main file "Cyclic Charge Discharge"; the step files `CHARGE_#n`/`DISCHARGE_#n.DTA`
+from the folder `CHARGE_DISCHARGE` next to it come along (other files there are left out). **View:** capacity versus
+cycle (charge, discharge, Coulombic efficiency on the right; several measurements in one figure, one colour each) or
+potential versus time for selected cycles, e.g. `1, 2, 20, 40` (empty = automatic). The theoretical capacity comes from
+the file; your own value applies only to the selected measurement.
+
+## 7. Export and SI
 
 **Export** writes the figure, the results (CSV) and the methods paragraph. Fill in the **figure caption** fields
 (concentration, solvent, electrolyte) – the caption then reads like the group's SI. **Copy** in the Methods Text card gives the English
