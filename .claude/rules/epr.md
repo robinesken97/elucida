@@ -67,3 +67,8 @@ paths:
   beide **nur aus der Messdatei** (BES3T DATE/TIME, STMP; nie aus dem Dateinamen, nie geschätzt), fehlt die Angabe: Namen +
   Hinweis. Farbverlauf `ramp` (aus/Viridis/Plasma/Turbo) in Listenreihenfolge, Standard aus; „Umkehren“ dreht die ganze Liste.
   Basislinie rechnet über den gültigen Bereich (NaN-Ränder bei schmalerem Dunkelspektrum, sonst fiel sie still weg).
+- Textdateien ohne Feldeinheit im Kopf (Nutzerauftrag 2026-11-12, „was wird geraten?“): die Einheit wird weiter angenommen
+  (Median > 1500 -> G, damit gespeicherte Auswertungen gleich bleiben), aber nie stillschweigend: `meta["unit_src"]`
+  = `assumed` steht als Hinweis bei der Messung, „Feldeinheit der Datei“ (`field_unit` je Messung, `funit_changed`)
+  bestätigt oder ändert sie und verwirft Fits an dieser Messung; eine Einheit im Kopf geht immer vor. Kerntabelle
+  `NUCLEAR_SPIN`: nur Kernspins (erste Ordnung braucht kein γ), Spin auch als `I=3/2`; unbekannte Einträge melden.

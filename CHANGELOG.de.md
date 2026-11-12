@@ -45,6 +45,12 @@
 
 ### Behoben
 Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und Statistik stimmten; diese Punkte nicht):
+- **EPR, Feldeinheit von Textdateien:** Stand die Einheit nicht im Kopf, wurde sie stillschweigend geraten (Feldwerte
+  über 1500 = Gauß); W-Band-Daten in mT oder ein Tieffeld-Ausschnitt in G lagen damit um den Faktor 10 daneben. Die
+  Annahme steht jetzt bei der Messung und lässt sich unter „Feldeinheit der Datei“ bestätigen oder ändern.
+- **EPR, Kerne:** ⁶Li, ⁷Li, ⁹Be, ¹⁰B, ¹¹B, ²³Na, ²⁷Al und weitere Isotope bis ²⁰⁹Bi fehlten in der Tabelle; „I=3/2“
+  (Spin als Bruch) wird jetzt gelesen.
+- **Tab „Verbindung“:** Die Chips „Abbildungen von“ blieben nach einem Sprachwechsel leer.
 - **EPR, Zerfall unter einer Temperaturrampe:** Das Integral wurde nur an den Messpunkten ausgewertet; bei wenigen
   Spektren (10 K Abstand) lag E_a dadurch etwa 1,4 % zu hoch. Jetzt wird die Temperatur zwischen den Spektren
   interpoliert. Werte aus eng gemessenen Rampen ändern sich praktisch nicht.

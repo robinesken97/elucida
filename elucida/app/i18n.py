@@ -1830,6 +1830,15 @@ TEXTS = {
     "epr_kind_exp": ("Messung", "Measured"),
     "epr_kind_sim": ("Simulation", "Simulation"),
     "epr_none": ("– keine –", "– none –"),
+    "epr_funit": ("Feldeinheit der Datei", "Field unit of the file"),
+    "epr_funit_tip": ("Die Textdatei nennt die Einheit des Magnetfelds nicht. Die Wahl hier gilt für diese Messung;\n"
+                      "Fits an dieser Messung werden danach verworfen.",
+                      "The text file does not state the unit of the magnetic field. The choice applies to this "
+                      "measurement;\nfits to this measurement are discarded afterwards."),
+    "epr_funit_assumed": ("Feldeinheit steht nicht in der Datei: als {unit} angenommen (Feldwerte über 1500 gelten "
+                          "als G). Bitte unter „Feldeinheit der Datei“ bestätigen oder ändern.",
+                          "The file does not state the field unit: {unit} assumed (field values above 1500 count "
+                          "as G). Please confirm or change it under “Field unit of the file”."),
     "epr_dark": ("Dunkelspektrum", "Dark spectrum"),
     "epr_dark_tip": ("Messung vor dem Bestrahlen (ohne Triplett) als Hintergrund: hell − k·dunkel, auf das Feldraster\n"
                      "der Messung interpoliert. Gleiche Frequenz, Modulation und Leistung nötig (sonst Warnung).",
@@ -1965,9 +1974,9 @@ TEXTS = {
     "epr_fit_lor": ("mitfitten", "fit as well"),
     "epr_nuclei": ("Kerne (a/mT)", "Nuclei (a/mT)"),
     "epr_nuclei_ph": ("z. B. 2 14N 0.65; 4 1H 0.32", "e.g. 2 14N 0.65; 4 1H 0.32"),
-    "epr_nuclei_tip": ("Gruppen äquivalenter Kerne: Anzahl, Isotop (1H, 2H, 13C, 14N, 15N, 19F, 31P, 63Cu, …) oder I=…,\n"
+    "epr_nuclei_tip": ("Gruppen äquivalenter Kerne: Anzahl, Isotop (1H, 2H, 11B, 13C, 14N, 15N, 19F, 31P, 63Cu, …) oder I=… (auch I=3/2),\n"
                        "Kopplung a in mT; Gruppen mit ';' trennen. Erste Ordnung, isotrop (Lösung, schnelle Rotation).",
-                       "Groups of equivalent nuclei: number, isotope (1H, 2H, 13C, 14N, 15N, 19F, 31P, 63Cu, …) or I=…,\n"
+                       "Groups of equivalent nuclei: number, isotope (1H, 2H, 11B, 13C, 14N, 15N, 19F, 31P, 63Cu, …) or I=… (also I=3/2),\n"
                        "coupling a in mT; separate groups with ';'. First order, isotropic (solution, fast tumbling)."),
     "epr_fit_btn": ("An Messung fitten (g, a, ΔB_pp)", "Fit to measurement (g, a, ΔB_pp)"),
     "epr_iso_need_exp": ("Bitte zuerst eine Messung laden bzw. auswählen.", "Please load or select a measurement first."),

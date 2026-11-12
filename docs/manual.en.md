@@ -672,7 +672,10 @@ Absorption and emission in one figure, as commonly shown in papers:
 
 - Reads **Bruker BES3T** (.dsc + .DTA, e.g. Magnettech ESR5000/ESRStudio, Elexsys; 2D files give one spectrum
   per row) and **two-column text** (Magnettech MS400 export; microwave frequency from file names like
-  `…-9p412345-…`). Frequency, temperature, modulation and power are shown per spectrum.
+  `…-9p412345-…`). Frequency, temperature, modulation and power are shown per spectrum. If a text file does not
+  state the field unit (no "[mT]" or "[G]" in the header), the unit is assumed (field values above 1500 count as G)
+  and this is shown with the measurement; **Field unit of the file** confirms or changes it (needed e.g. for W-band
+  data in mT).
 - **Dark spectrum:** the measurement before irradiation can be subtracted from each spectrum (light − k·dark,
   interpolated onto the same field grid); a warning appears if frequency, modulation or power differ.
 - **Processing:** a baseline of your choice, then hide field ranges (e.g. the sharp radical signal) and
@@ -703,7 +706,8 @@ Absorption and emission in one figure, as commonly shown in papers:
   (measured − sum) – i.e. subtraction of individual species. Non-linear parameters (g, A, D/E, linewidths of
   powder spectra) are fitted in EasySpin; Elucida only determines the fractions.
 - **Own isotropic S = ½ simulation and fit** (solution, first order): g, groups of equivalent nuclei (e.g.
-  `2 14N 0.65; 4 1H 0.32`, a in mT), peak-to-peak linewidth and Lorentzian fraction; "Fit" refines g, a and
+  `2 14N 0.65; 4 1H 0.32`, a in mT; isotopes from ¹H to ²⁰⁹Bi, e.g. ¹¹B, ⁷Li, ²³Na, ²⁷Al, or the nuclear spin
+  directly as `I=3/2`), peak-to-peak linewidth and Lorentzian fraction; "Fit" refines g, a and
   ΔB_pp (Levenberg–Marquardt after a coarse grid search, amplitude linear). If several S = ½ species overlap in
   one measurement, **Fit together** fits all simulations assigned to it at once (one linear amplitude per species).
   Start values are the current values and there is no coarse search: set each species roughly or fit it on its own

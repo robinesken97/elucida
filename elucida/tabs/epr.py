@@ -9,6 +9,7 @@ eine Messung angepasst. Felder intern in mT.
 from __future__ import annotations
 
 import re
+from fractions import Fraction
 import uuid
 from pathlib import Path
 
@@ -563,10 +564,19 @@ def measured_at(meta):
 # ----------------------------------------------------------------------------
 # Isotrope S = ½-Simulation (erste Ordnung) und Fit
 # ----------------------------------------------------------------------------
-NUCLEAR_SPIN = {"1H": 0.5, "2H": 1.0, "D": 1.0, "13C": 0.5, "14N": 1.0, "15N": 0.5, "17O": 2.5, "19F": 0.5,
-                "29Si": 0.5, "31P": 0.5, "33S": 1.5, "35Cl": 1.5, "37Cl": 1.5, "79Br": 1.5, "81Br": 1.5,
-                "51V": 3.5, "55Mn": 2.5, "57Fe": 0.5, "59Co": 3.5, "61Ni": 1.5, "63Cu": 1.5, "65Cu": 1.5,
-                "107Ag": 0.5, "109Ag": 0.5, "117Sn": 0.5, "119Sn": 0.5, "195Pt": 0.5, "199Hg": 0.5}
+# Kernspins der gebräuchlichen Isotope (Grundzustand; Literaturprüfung 2026-11: Li, B, Na, Al … fehlten)
+NUCLEAR_SPIN = {"1H": 0.5, "2H": 1.0, "D": 1.0, "6Li": 1.0, "7Li": 1.5, "9Be": 1.5, "10B": 3.0, "11B": 1.5,
+                "13C": 0.5, "14N": 1.0, "15N": 0.5, "17O": 2.5, "19F": 0.5, "23Na": 1.5, "25Mg": 2.5, "27Al": 2.5,
+                "29Si": 0.5, "31P": 0.5, "33S": 1.5, "35Cl": 1.5, "37Cl": 1.5, "39K": 1.5, "43Ca": 3.5, "45Sc": 3.5,
+                "47Ti": 2.5, "49Ti": 3.5, "51V": 3.5, "53Cr": 1.5, "55Mn": 2.5, "57Fe": 0.5, "59Co": 3.5,
+                "61Ni": 1.5, "63Cu": 1.5, "65Cu": 1.5, "67Zn": 2.5, "69Ga": 1.5, "71Ga": 1.5, "73Ge": 4.5,
+                "75As": 1.5, "77Se": 0.5, "79Br": 1.5, "81Br": 1.5, "85Rb": 2.5, "87Rb": 1.5, "89Y": 0.5,
+                "91Zr": 2.5, "93Nb": 4.5, "95Mo": 2.5, "97Mo": 2.5, "99Ru": 2.5, "101Ru": 2.5, "103Rh": 0.5,
+                "105Pd": 2.5, "107Ag": 0.5, "109Ag": 0.5, "111Cd": 0.5, "113Cd": 0.5, "115In": 4.5, "117Sn": 0.5,
+                "119Sn": 0.5, "121Sb": 2.5, "123Sb": 3.5, "125Te": 0.5, "127I": 2.5, "133Cs": 3.5, "139La": 3.5,
+                "183W": 0.5, "185Re": 2.5, "187Re": 2.5, "187Os": 0.5, "189Os": 1.5, "191Ir": 1.5, "193Ir": 1.5,
+                "195Pt": 0.5, "197Au": 1.5, "199Hg": 0.5, "201Hg": 1.5, "203Tl": 0.5, "205Tl": 0.5, "207Pb": 0.5,
+                "209Bi": 4.5}
 MHZ_PER_MT_FREE = 28.02495             # g_e·µ_B/h in MHz/mT (Umrechnung a [mT] <-> A [MHz] für g ≈ 2.0023)
 
 
@@ -577,7 +587,7 @@ def _nuc_tokens(part):
 
 def parse_nuclei(text):
     """'2 14N 0.65; 4 1H 0.32' -> [(2, 1.0, 0.65), (4, 0.5, 0.32)] (Anzahl äquivalenter Kerne, Kernspin, a in mT).
-    Auch 'I=1' statt Isotop möglich: '2 I=1 0.65'."""
+    Auch 'I=1' oder 'I=3/2' statt Isotop möglich: '2 I=1 0.65'."""
     out = []
     for part in re.split(r"[;\n]+", str(text)):
         tok = _nuc_tokens(part)
@@ -590,7 +600,12 @@ def parse_nuclei(text):
             continue
         nuc = tok[1]
         if nuc.lower().startswith("i="):
-            I = float(nuc[2:])
+            try:                                       # auch als Bruch („I=3/2“); nur halb- oder ganzzahlig
+                I = float(Fraction(nuc[2:]))
+            except (ValueError, ZeroDivisionError):
+                continue
+            if I <= 0 or (2 * I) % 1:
+                continue
         elif nuc in NUCLEAR_SPIN:
             I = NUCLEAR_SPIN[nuc]
         else:
@@ -965,6 +980,14 @@ class EPRTab(TABS.FigureTab):
             w_.valueChanged.connect(self.detail_changed)
         self.cb_fit_lor.toggled.connect(self.detail_changed)
         self.ed_nuclei.editingFinished.connect(self.detail_changed)
+        # Feldeinheit einer Textdatei, die sie nicht nennt: sichtbar nur dort; bis zur Wahl gilt die Annahme (Hinweis)
+        self.lbl_funit = QLabel(T("epr_funit"))
+        self.cmb_funit = QComboBox()
+        for u_ in ("mT", "G"):
+            self.cmb_funit.addItem(u_, u_)
+        self.cmb_funit.setToolTip(T("epr_funit_tip"))
+        self.cmb_funit.activated.connect(self.funit_changed)      # nur Nutzerwahl, nicht das Füllen der Karte
+        f.addRow(self.lbl_funit, self.cmb_funit)
         self.lbl_meta = QLabel("")
         self.lbl_meta.setWordWrap(True)
         self.lbl_meta.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -1217,11 +1240,12 @@ class EPRTab(TABS.FigureTab):
                        ramp=self.cmb_ramp.currentData())
 
     # -- Einträge ------------------------------------------------------------------
-    def data(self, path):
-        return self.cache(("epr", path), lambda: read_any(path))
+    def data(self, path, unit=None):
+        """unit: vom Nutzer gewählte Feldeinheit einer Textdatei ohne Angabe im Kopf (`field_unit` der Messung)."""
+        return self.cache(("epr", path) + ((unit,) if unit else ()), lambda: read_any(path, unit))
 
     def spectrum(self, e):
-        d = self.data(e["file"])
+        d = self.data(e["file"], e.get("field_unit"))
         return d[min(e.get("slice", 0), len(d) - 1)]
 
     def axis_mw(self, e):
@@ -1547,6 +1571,11 @@ class EPRTab(TABS.FigureTab):
                 self.ed_nuclei.setText(e.get("nuclei", ""))
                 self.lbl_fit.setText(self.fit_text(e))
             self.lbl_meta.setText(self.meta_text(e) if e["kind"] != "iso" else "")
+        m_ = self.spectrum(e)["meta"] if e and e["kind"] != "iso" else {}
+        for w_ in (self.lbl_funit, self.cmb_funit):
+            w_.setVisible(m_.get("unit_src") in ("assumed", "user"))
+        if m_.get("unit"):
+            self.cmb_funit.setCurrentIndex(max(0, self.cmb_funit.findData(m_["unit"])))
         self._loading = False
 
     def meta_text(self, e):
@@ -1559,6 +1588,8 @@ class EPRTab(TABS.FigureTab):
         if m.get("date") or m.get("time"):
             parts.append(f"{m.get('date', '')} {m.get('time', '')}".strip())
         txt = ", ".join(parts)
+        if m.get("unit_src") == "assumed":                 # nicht stillschweigend: Einheit stand nicht in der Datei
+            txt = T("epr_funit_assumed", unit=m["unit"]) + ("\n" + txt if txt else "")
         if e.get("params"):
             try:
                 pr = parse_easyspin(Path(e["params"]).read_text(encoding="utf-8", errors="replace"))
@@ -1591,6 +1622,19 @@ class EPRTab(TABS.FigureTab):
         else:
             e.update(fit_to=self.cmb_fit.currentData(), scale=self.sp_scale.value(), shift=self.sp_shift.value())
             self.sp_scale.setEnabled(not e["fit_to"])
+        self.timer.start()
+
+    def funit_changed(self, *_):
+        """Feldeinheit der Datei gewählt (auch als Bestätigung der Annahme): Feldachse neu, Fits an dieser Messung
+        gelten nicht mehr (ihr g hinge an der alten Achse)."""
+        e = self.current()
+        if e is None or e["kind"] == "iso":
+            return
+        e["field_unit"] = self.cmb_funit.currentData()
+        for x in self.st["entries"]:
+            if x["kind"] == "iso" and x.get("fit_to") == e["uid"]:
+                x["fit"] = None
+        self.show_details()
         self.timer.start()
 
     def dark_for_all(self):

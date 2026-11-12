@@ -102,14 +102,23 @@ def _ascii_xy(path):
 
 
 def read_ascii(path, unit=None) -> dict:
-    """Zweispaltiger Text (MS400-Export, EasySpin-Simulation): B, I. Einheit aus der Kopfzeile ('[mT]', '[G]')
-    oder geschätzt (Median > 1500 -> G). Mikrowellenfrequenz aus Dateinamen wie '…-9p412345-…' (GHz)."""
+    """Zweispaltiger Text (MS400-Export, EasySpin-Simulation): B, I. Einheit aus der Kopfzeile ('[mT]', '[G]'), sonst
+    die übergebene (`unit` "mT"/"G": Angabe des Nutzers), sonst **angenommen** (Median > 1500 -> G) und in
+    meta["unit_src"] als "assumed" gekennzeichnet: der Tab zeigt das und lässt die Einheit wählen (W-Band in mT oder
+    ein Tieffeld-Ausschnitt in G lägen sonst um den Faktor 10 daneben). Mikrowellenfrequenz aus Dateinamen wie
+    '…-9p412345-…' (GHz)."""
     p = Path(path)
     B, I = _ascii_xy(p)
     head = _text(p)[:300].lower()
-    if unit is None:
-        unit = "g" if ("[g]" in head or "(g)" in head) else ("mt" if "mt" in head else
-                                                          ("g" if np.median(B) > 1500 else "mt"))
+    src = "header"
+    if "[g]" in head or "(g)" in head:
+        unit = "g"
+    elif "mt" in head:
+        unit = "mt"
+    elif unit:
+        unit, src = unit.lower(), "user"
+    else:
+        unit, src = ("g" if np.median(B) > 1500 else "mt"), "assumed"
     B = B / 10.0 if unit == "g" else B
     o = np.argsort(B)
     # „9p402995GHz“ zuerst, dann Zahlen mit ≥ 3 Nachkommastellen (MS400: „-9p412345-“, vor „Probe1p5“), sonst wie früher
@@ -123,14 +132,16 @@ def read_ascii(path, unit=None) -> dict:
                 break
         if mw:
             break
-    return {"B": B[o], "I": I[o], "meta": {"mw_GHz": mw, "title": p.stem, "device": "ASCII"}}
+    return {"B": B[o], "I": I[o], "meta": {"mw_GHz": mw, "title": p.stem, "device": "ASCII",
+                                           "unit": "G" if unit == "g" else "mT", "unit_src": src}}
 
 
-def read_any(path) -> list:
+def read_any(path, unit=None) -> list:
+    """unit: Feldeinheit einer Textdatei ohne Angabe im Kopf (Wahl des Nutzers); BES3T nennt sie selbst."""
     p = Path(path)
     if p.suffix.lower() in (".dsc", ".dta"):
         return read_bes3t(p)
-    return [read_ascii(p)]
+    return [read_ascii(p, unit)]
 
 
 def parse_easyspin(text) -> dict:

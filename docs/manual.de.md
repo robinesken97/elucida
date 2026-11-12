@@ -692,7 +692,9 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 
 - Liest **Bruker BES3T** (.dsc + .DTA, z. B. Magnettech ESR5000/ESRStudio, Elexsys; 2D-Dateien ergeben ein Spektrum pro
   Zeile) und **zweispaltigen Text** (Magnettech-MS400-Export; Mikrowellenfrequenz aus Dateinamen wie `…-9p412345-…`).
-  Frequenz, Temperatur, Modulation und Leistung werden pro Spektrum angezeigt.
+  Frequenz, Temperatur, Modulation und Leistung werden pro Spektrum angezeigt. Nennt eine Textdatei die Feldeinheit
+  nicht (kein „[mT]“ oder „[G]“ im Kopf), wird sie angenommen (Feldwerte über 1500 gelten als G) und das steht bei der
+  Messung; unter **Feldeinheit der Datei** lässt sie sich bestätigen oder ändern (nötig z. B. für W-Band in mT).
 - **Dunkelspektrum:** Die Messung vor dem Bestrahlen lässt sich von jedem Spektrum abziehen (hell − k·dunkel, auf
   dasselbe Feldraster interpoliert); Warnung, wenn Frequenz, Modulation oder Leistung abweichen.
 - **Verarbeitung:** Basislinie nach Wahl, dann Feldbereiche ausblenden (z. B. das scharfe Radikalsignal) und Glätten
@@ -725,7 +727,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   (Messung − Summe) – also die Subtraktion einzelner Spezies. Nichtlineare Parameter (g, A, D/E, Linienbreiten von
   Pulverspektren) werden in EasySpin gefittet; Elucida bestimmt nur die Anteile.
 - **Eigene isotrope S = ½-Simulation mit Fit** (Lösung, erste Ordnung): g, Gruppen äquivalenter Kerne (z. B.
-  `2 14N 0.65; 4 1H 0.32`, a in mT), Peak-zu-Peak-Linienbreite und Lorentz-Anteil; „Fitten“ verfeinert g, a und ΔB_pp
+  `2 14N 0.65; 4 1H 0.32`, a in mT; Isotope von ¹H bis ²⁰⁹Bi, z. B. ¹¹B, ⁷Li, ²³Na, ²⁷Al, oder der Kernspin direkt als
+  `I=3/2`), Peak-zu-Peak-Linienbreite und Lorentz-Anteil; „Fitten“ verfeinert g, a und ΔB_pp
   (Levenberg-Marquardt nach einer Grobsuche, Amplitude linear). Überlagern sich mehrere S = ½-Spezies in einer
   Messung, fittet **Gemeinsam fitten** alle ihr zugeordneten Simulationen gleichzeitig (eine lineare Amplitude je
   Spezies). Startwerte sind die aktuellen Werte, eine Grobsuche gibt es dabei nicht: jede Spezies vorher grob

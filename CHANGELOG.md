@@ -45,6 +45,12 @@
 ### Fixed
 From a check of all calculations against the literature (formulas, constants and statistics were correct; these points
 were not):
+- **EPR, field unit of text files:** if the header did not state the unit, it was guessed silently (field values
+  above 1500 = gauss); W-band data in mT or a low-field section in G were off by a factor of 10. The assumption is
+  now shown with the measurement and can be confirmed or changed under "Field unit of the file".
+- **EPR, nuclei:** ⁶Li, ⁷Li, ⁹Be, ¹⁰B, ¹¹B, ²³Na, ²⁷Al and further isotopes up to ²⁰⁹Bi were missing from the table;
+  "I=3/2" (spin as a fraction) is read now.
+- **Compound tab:** the chips "Figures from" stayed empty after a language switch.
 - **EPR, decay under a temperature ramp:** the integral was evaluated at the measured points only; with few spectra
   (10 K apart) E_a came out about 1.4 % too high. The temperature is now interpolated between the spectra. Values from
   densely measured ramps practically do not change.

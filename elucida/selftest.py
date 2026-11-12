@@ -2652,6 +2652,43 @@ def selftest(outdir, with_isnet=False):
             w.epr_state["smooth"] = 0.05
             assert "moving average over 0.05 mT" in t_e.methods_text(), t_e.methods_text()
             w.epr_state.update(entries=[], smooth=0.0, normalize=True)
+            # Feldeinheit: aus dem Kopf, sonst angenommen und gekennzeichnet; die Wahl des Nutzers geht vor der Annahme
+            assert (rk6["meta"]["unit"], rk6["meta"]["unit_src"]) == ("mT", "header"), rk6["meta"]
+            assert (rm6["meta"]["unit"], rm6["meta"]["unit_src"]) == ("mT", "assumed"), rm6["meta"]
+            pw6 = p6 / "wband-94p000000.txt"                 # W-Band in mT: die Annahme (G) liegt um den Faktor 10 daneben
+            pw6.write_text("\n".join(f"{3340 + k:.1f}\t{k}" for k in range(12)), encoding="utf-8")
+            rw6 = EPRMOD.read_ascii(pw6)
+            assert (rw6["meta"]["unit"], rw6["meta"]["unit_src"]) == ("G", "assumed") and abs(rw6["B"][0] - 334.0) < 1e-9
+            ru6 = EPRMOD.read_any(pw6, "mT")[0]
+            assert ru6["meta"]["unit_src"] == "user" and abs(ru6["B"][0] - 3340.0) < 1e-9, ru6["B"][:2]
+            assert EPRMOD.read_ascii(p6 / "komma.txt", "G")["meta"]["unit"] == "mT"       # Kopfzeile geht vor
+            eW, iW = t_e._new("exp", str(pw6)), t_e._new("exp", str(pw6))                 # Tab: Hinweis, Wahl, Fit verworfen
+            iW.update(kind="iso", fit_to=eW["uid"], g=2.0, lw=0.1, nuclei="", fit={"r2": 1.0})
+            w.epr_state.update(entries=[eW, iW])
+            t_e.fill_table()
+            t_e.table.selectRow(0)
+            t_e.show_details()
+            assert not t_e.cmb_funit.isHidden() and t_e.cmb_funit.currentData() == "G"
+            assert T("epr_funit_assumed", unit="G") in t_e.lbl_meta.text(), t_e.lbl_meta.text()
+            t_e.cmb_funit.setCurrentIndex(t_e.cmb_funit.findData("mT"))
+            t_e.funit_changed()
+            assert eW["field_unit"] == "mT" and abs(t_e.spectrum(eW)["B"][0] - 3340.0) < 1e-9 and iW["fit"] is None
+            assert T("epr_funit_assumed", unit="G") not in t_e.lbl_meta.text() and not t_e.cmb_funit.isHidden()
+            eK = t_e._new("exp", str(p6 / "komma.txt"))                                   # Einheit im Kopf: keine Auswahl
+            w.epr_state.update(entries=[eK])
+            t_e.fill_table()
+            t_e.table.selectRow(0)
+            t_e.show_details()
+            assert t_e.cmb_funit.isHidden() and t_e.lbl_funit.isHidden()
+            w.epr_state.update(entries=[])
+            t_e.fill_table()
+            # Kerne: ergänzte Isotope (Li, B, Na, Al ...), Spin auch als Bruch, Unsinn bleibt gemeldet
+            assert EPRMOD.parse_nuclei("1 11B 0.4; 1 10B 0.13; 2 7Li 0.1; 1 23Na 0.05; 1 27Al 0.6") == [
+                (1, 1.5, 0.4), (1, 3.0, 0.13), (2, 1.5, 0.1), (1, 1.5, 0.05), (1, 2.5, 0.6)]
+            assert EPRMOD.parse_nuclei("2 I=3/2 0.4") == [(2, 1.5, 0.4)] == EPRMOD.parse_nuclei("2 I=1.5 0.4")
+            assert EPRMOD.unknown_nuclei("1 I=1/3 0.4; 1 I=x 0.4; 1 I=0 0.2; 1 I=1/0 0.2") == [
+                "1 I=1/3 0.4", "1 I=x 0.4", "1 I=0 0.2", "1 I=1/0 0.2"]
+            assert all(v_ > 0 and (2 * v_) % 1 == 0 for v_ in EPRMOD.NUCLEAR_SPIN.values())
             report.append("EPR audit P6 (reference frequency, dark axis, decay band, readers, import): OK")
 
         with section:
