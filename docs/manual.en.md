@@ -570,7 +570,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Baseline** (on by default): i_p against a straight line through the current before the forward peak (charging
   current + background), extrapolated beneath the peak; for the reverse peak shifted by the step of the charging current
   at the switching potential (2·C·v), the decaying forward current is corrected by Nicholson. Distance to the peak is
-  adjustable (default 0.15 V), baselines optionally in the figure. Peak potentials are unchanged. If the window has too
+  adjustable (default 0.20 V; compounds created before version 1.1 keep 0.15 V), baselines optionally in the figure. Peak potentials are unchanged. If the window has too
   little current before the peak, this is flagged and the measurement is left out of the regressions.
 - From 3 scan rates per group and couple: regression of **i_p vs. √v** (Randles–Ševčík) and **log i_p vs. log v**
   (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**.
@@ -582,8 +582,10 @@ Absorption and emission in one figure, as commonly shown in papers:
   methods text.
 - **Conventions of the CV calculation:** the Nicholson ratio uses baseline-corrected currents (the original uses the
   zero-current axis) and scatters by about ±3 % even for ideally reversible couples, depending on the switching
-  potential. The baseline ends 0.15 V before the peak; for an ideally reversible wave about 2 % of the peak current
-  is still present there, so i_p comes out 1–4 % too small (D accordingly 2–9 %). The default Ac₂Fc +0.49 V is a
+  potential. The baseline ends 0.20 V before the peak; for an ideally reversible wave about 0.3 % of the peak current
+  is still present there, so i_p comes out at most 1 % too small (with the former 0.15 V it was 1–3 %, D accordingly
+  2–6 %). If the range before the wave is too short for that, the baseline ends 0.15 V before the peak as before; the
+  program says so, and i_p can then be up to about 6 % too small. The default Ac₂Fc +0.49 V is a
   value for CH₂Cl₂ (Connelly, Geiger, Chem. Rev. 1996, 96, 877); enter your own value for other solvents. E½ equals
   the formal potential only if both forms have the same diffusion coefficient.
 - **Copy** (Methods Text card on the SI Text tab): English paragraph on the data evaluation (referencing, peak determination, baseline, Nicholson,

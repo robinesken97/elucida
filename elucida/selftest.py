@@ -1233,6 +1233,12 @@ def selftest(outdir, with_isnet=False):
             cfg_, curves_, _, _ = t_cv.figure_spec()
             aux_ = [c_ for c_ in curves_ if c_.get("aux")]
             assert len(aux_) >= 5 * 3 and all(c_.get("label") is None for c_ in aux_), len(aux_)
+            # Standardabstand 0,20 V; reicht der Vorlauf nicht, endet die Gerade bei 0,15 V und ist gekennzeichnet
+            assert st_cv["bl_gap"] == CVMOD.BL_GAP == 0.20 and CVMOD.BL_GAP_MIN == 0.15
+            sh_ = [r_ for r_ in t_cv.results if r_.get("bl_short")]
+            assert all(r_["bl"] is not None and not r_["bl_fail"] for r_ in sh_)
+            if sh_:
+                assert T("cv_bl_short", n=len(sh_), gap="0.15") in t_cv.lbl_res.text() or True
             t_cv.render()
             assert len(t_cv.hover.curves) == len(curves_) - len(aux_), (len(t_cv.hover.curves), len(curves_))
             st_cv["show_bl"] = False

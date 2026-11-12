@@ -27,7 +27,10 @@ VOL = {"L": 1000.0, "mL": 1.0, "µL": 1e-3, "μL": 1e-3, "uL": 1e-3}
 AMOUNT = {"mol": 1000.0, "mmol": 1.0, "µmol": 1e-3, "μmol": 1e-3, "umol": 1e-3}
 CONC = {"M": 1.0, "mM": 1e-3, "mol/L": 1.0, "mol L-1": 1.0}
 _BOLD = 700
-TOL = 0.005            # zusätzlicher Spielraum (relativ) über die Rundung hinaus: Atommassen, gerundete Molmassen
+# Spielraum (relativ) über die Rundungsintervalle hinaus: nur noch, was Atommassen-Tabellen sich unterscheiden (< 0,01 %).
+# Früher 0,5 % (Äquivalente/Ausbeute 1 %): unstimmige Angaben bis zu dieser Größe fielen nicht auf (Literaturprüfung
+# 2026-11, Nutzerentscheidung). Die Rundung selbst steckt schon in den Intervallen (1.03 g = 1.025–1.035 g).
+TOL = 1e-4
 
 
 def formula_mw(formula):
@@ -158,12 +161,12 @@ def check_amounts(items, table=None):
                 res.append(("info", T("syn_chk_vol_unknown", name=name)))
         if ref is not None and it is not ref and n and it["eq"]:
             r = div(n, ref["mmol"])
-            ok = overlaps(r, it["eq"], rel=0.01)
+            ok = overlaps(r, it["eq"])
             res.append(("ok" if ok else "warn", T("syn_chk_eq_ok" if ok else "syn_chk_eq_bad", name=name,
                                                    eq=f"{mid(r):.2f}", ref=ref["name"])))
         if ref is not None and it is not ref and n and it["yld"]:
             y = (n[0] / ref["mmol"][1] * 100, n[1] / ref["mmol"][0] * 100)
-            ok = overlaps(y, it["yld"], rel=0.01)
+            ok = overlaps(y, it["yld"])
             res.append(("ok" if ok else "warn", T("syn_chk_yield_ok" if ok else "syn_chk_yield_bad", name=name,
                                                    y=f"{mid(y):.1f}", ref=ref["name"])))
         if not n and (it["eq"] or it["yld"]):

@@ -28,6 +28,11 @@
 ### Geändert
 - Felder mit „auto“ oder „aus“ (alle Tabs): ein Symbol im Feld stellt mit einem Klick zurück; ein geleertes Feld gilt
   ebenfalls als „auto“/„aus“.
+- **CV-Basislinie** endet in neuen Verbindungen 0,20 V vor dem Peak statt 0,15 V: Der Peakstrom ideal reversibler Wellen
+  fällt damit höchstens 1 % zu klein aus (vorher 1–3 %). Gespeicherte Verbindungen behalten ihren Wert.
+- **CV-Stromdichte** nimmt die eingetragene Elektrodenfläche; ohne Eintrag die der Messdatei, mit Hinweis.
+- **Mengenprüfung (Synthese)** lässt über die Rundung hinaus nur noch 0,01 % Spielraum (vorher 0,5 %).
+- **Kristalldaten-Tabelle** in Normschreibweise („Density (calc.) / g cm⁻³“, „Formula weight / g mol⁻¹“).
 - EPR: Ansicht und Einstellungen der Intensitätsauswertung stehen in einer Karte mit einer Ansichtswahl.
 - EPR: „Dunkelspektrum für alle Messungen übernehmen“ blendet das Dunkelspektrum selbst im Bild aus; das Häkchen in
   der Liste zeigt es wieder.

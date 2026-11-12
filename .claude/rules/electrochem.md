@@ -10,7 +10,9 @@ paths:
 
 - CV: Strom wie aufgezeichnet (Gamry IUPAC, anodisch positiv); Paare nur im Fenster (gespeichert in gemessenen
   Potentialen, angezeigt in Achsenskala); i_pc/i_pa nach Nicholson; Referenz E_Fc = E − (E½,ref − E°ref);
-  Basislinie (Standard an): Gerade durch den Vorlauf des Hinpeaks (bis 0,15 V davor **und** vor dem Anstieg der Welle,
+  Basislinie (Standard an): Gerade durch den Vorlauf des Hinpeaks (bis 0,20 V davor – seit 1.1, Nutzerentscheidung 2026-11-12 „das wissenschaftlich Korrekte“: i_p-Fehler < 1 % an ideal
+  reversiblen Wellen, vorher 0,15 V mit 1–3 %; gespeicherte Verbindungen behalten ihren Wert; reicht der Vorlauf nicht, Rückfall auf 0,15 V mit Kennzeichnung `bl_short`
+  (i_p bis ~6 % zu klein) statt gar keiner Basislinie – **und** vor dem Anstieg der Welle,
   2 % der Peakhöhe – sonst überkorrigiert sie breite Wellen), Rückbasislinie = dieselbe minus
   Ladestromsprung am Umkehrpunkt (2·C·v); Nicholson auf die korrigierten Ströme, **keine** zusätzliche extrapolierte
   Rückbasislinie (doppelt korrigiert); Peakpotentiale aus dem Rohstrom. Regressionen gegen v je Gruppe, mit 95-%-KI.
@@ -24,9 +26,9 @@ paths:
   Konzentration sind **nie** vorbelegt und die Fläche kommt nie aus der Gamry-Datei (dort steht oft die Vorgabe 1 cm²):
   ohne beide kein D. Das 95-%-Intervall trägt nur die Unsicherheit der Steigung; Ergebniszeile und Methodentext sagen das.
 - Umkehrpunkt (Literaturprüfung 2026-11-12): der Messpunkt am Umkehrpunkt zählt zu keiner der beiden Geraden für den
-  Ladestromsprung (ob er zum Hin- oder Rücklauf gehört, steht in keiner Datei). Offen, nicht geändert (Regel): die
-  Basislinie endet bei E½ − 0,12 V, wo der Fuß einer reversiblen Welle noch ~2 % von i_p trägt → i_p 1–4,5 % zu klein,
-  D 2–9 % zu klein, Nicholson-Verhältnis ~+0,015; Ac₂Fc +0,49 V ist ein CH₂Cl₂-Wert (Connelly & Geiger 1996).
+  Ladestromsprung (ob er zum Hin- oder Rücklauf gehört, steht in keiner Datei). Stromdichte: eingetragene Fläche (`rs_area`) vor der
+  Fläche der Gamry-Datei, die nur mit Hinweis unter der Vorschau benutzt wird. Ac₂Fc +0,49 V ist ein CH₂Cl₂-Wert
+  (Connelly & Geiger 1996).
 - H-Zelle (Tab „H-Cell“, `tabs/hcell.py`, Leser `formats/gamry_cycling.py`, Nutzerauftrag 2026-11-12): Gamry „Cyclic
   Charge Discharge“ (TAG `PWR800_CYCLICCHARGEDISCHARGE`) + Schrittdateien nur `CHARGE_#n`/`DISCHARGE_#n.DTA` aus
   `CHARGE_DISCHARGE/` daneben (andere Dateien dort = andere Experimente). Kopfwerte/Spalten nach Namen; andere TAGs,

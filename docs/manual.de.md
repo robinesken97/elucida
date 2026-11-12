@@ -590,7 +590,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   reversibel). Peaks am Fensterrand werden rot markiert.
 - **Basislinie** (Standard an): i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund),
   extrapoliert unter den Peak; für den Rückpeak um den Sprung des Ladestroms am Umkehrpunkt (2·C·v) verschoben, den
-  abklingenden Hinlaufstrom korrigiert Nicholson. Abstand zum Peak einstellbar (Standard 0,15 V), Basislinien optional im
+  abklingenden Hinlaufstrom korrigiert Nicholson. Abstand zum Peak einstellbar (Standard 0,20 V; vor Version 1.1 angelegte Verbindungen behalten 0,15 V), Basislinien optional im
   Bild. Peakpotentiale bleiben unverändert. Fehlt Vorlauf im Fenster, wird das markiert und die Messung nicht in die
   Regressionen genommen.
 - Ab 3 Scanraten je Gruppe und Paar: Regression **i_p gegen √v** (Randles-Ševčík) und **log i_p gegen log v**
@@ -602,8 +602,10 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   nicht die von Fläche und Konzentration. Ergebnis im Reiter Ergebnisse und im Methodentext.
 - **Konventionen der CV-Rechnung:** Das Nicholson-Verhältnis rechnet mit basislinienkorrigierten Strömen (im Original
   gegen die Nulllinie) und streut auch bei ideal reversiblen Paaren um etwa ±3 %, je nach Umkehrpotential. Die
-  Basislinie endet 0,15 V vor dem Peak; bei einer ideal reversiblen Welle liegen dort noch etwa 2 % des Peakstroms,
-  i_p fällt dadurch 1–4 % zu klein aus (D entsprechend 2–9 %). Die Vorgabe Ac₂Fc +0,49 V ist ein Wert für CH₂Cl₂
+  Basislinie endet 0,20 V vor dem Peak; bei einer ideal reversiblen Welle liegen dort noch etwa 0,3 % des Peakstroms,
+  i_p fällt dadurch höchstens 1 % zu klein aus (mit den früheren 0,15 V waren es 1–3 %, D entsprechend 2–6 %). Reicht
+  der Vorlauf im Fenster dafür nicht, endet die Basislinie wie früher 0,15 V vor dem Peak; das Programm meldet es, i_p
+  kann dann bis etwa 6 % zu klein sein. Die Vorgabe Ac₂Fc +0,49 V ist ein Wert für CH₂Cl₂
   (Connelly, Geiger, Chem. Rev. 1996, 96, 877); in anderen Lösungsmitteln den eigenen Wert eintragen. E½ ist nur bei
   gleichen Diffusionskoeffizienten beider Formen das Formalpotential.
 - **Kopieren** (Karte „Methodentext“ im Reiter SI-Text): englischer Absatz zur Auswertung (Referenzierung, Peakbestimmung, Basislinie, Nicholson,

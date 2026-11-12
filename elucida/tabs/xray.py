@@ -1264,11 +1264,12 @@ def _dec(s):
     return len(s.split(".")[1]) if "." in s else 0
 
 
-CRYSTAL_ROWS = [                                   # Beschriftung wie in den SI der Arbeitsgruppe
+CRYSTAL_ROWS = [                                   # „Größe / Einheit“ nach Norm (Nutzerentscheidung 2026-11-12; vorher
+                                                   # wie in den SI der Gruppe „Density (calc.) g / cm^3“, „hole/e. Å^-3“)
     ("ref", "Internal reference"),
     ("ccdc", "CCDC number"),
     ("formula", "Formula"),
-    ("fw", "Formula weight"),
+    ("fw", "Formula weight / g mol^{-1}"),
     ("temp", "Temperature / K"),
     ("system", "Crystal system"),
     ("sg", "Space group"),
@@ -1276,10 +1277,10 @@ CRYSTAL_ROWS = [                                   # Beschriftung wie in den SI 
     ("alpha", "*α* / °"), ("beta", "*β* / °"), ("gamma", "*γ* / °"),
     ("vol", "Volume / Å^{3}"),
     ("z", "*Z*"),
-    ("rho", "Density (calc.) g / cm^{3}"),
+    ("rho", "Density (calc.) / g cm^{-3}"),
     ("mu", "Absorption coefficient / mm^{-1}"),
     ("f000", "*F*(000)"),
-    ("size", "Crystal size / mm"),
+    ("size", "Crystal size / mm^{3}"),
     ("rad", "Radiation"),
     ("theta", "2*θ* range for data collection / °"),
     ("index", "Index ranges"),
@@ -1290,7 +1291,7 @@ CRYSTAL_ROWS = [                                   # Beschriftung wie in den SI 
     ("gof", "Goodness-of-fit on *F*^{2}"),
     ("rgt", "Final *R* indices [*I*>2*σ*(I)]"),     # Schwelle aus der CIF: rgt_label/crystal_table
     ("rall", "*R* indices (all data)"),
-    ("diff", "Largest diff. peak and hole/e. Å^{-3}"),
+    ("diff", "Largest diff. peak and hole / e Å^{-3}"),
 ]
 
 

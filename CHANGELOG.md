@@ -27,6 +27,11 @@
 ### Changed
 - Fields with "auto" or "off" (all tabs): a symbol in the field resets with one click; a cleared field counts as
   "auto"/"off" too.
+- **CV baseline** ends 0.20 V before the peak instead of 0.15 V in new compounds: the peak current of ideally reversible
+  waves comes out at most 1 % too small (1–3 % before). Saved compounds keep their value.
+- **CV current density** uses the entered electrode area; without an entry that of the measurement file, with a note.
+- **Amount check (synthesis)** allows only 0.01 % beyond the rounding (0.5 % before).
+- **Crystal-data table** in standard notation ("Density (calc.) / g cm⁻³", "Formula weight / g mol⁻¹").
 - EPR: view and settings of the intensity evaluation sit in one card with a single view selector.
 - EPR: "Use this dark spectrum for all measurements" hides the dark spectrum itself in the figure; its check box in
   the list shows it again.

@@ -10,6 +10,8 @@ paths:
 - Synthese-Tab: Schema über `scheme_files` (CDXML + gleichnamige SVG/PDF, .cdx, .emf). Word-OLE nur mit CDX (CDXML
   öffnet Word nicht als ChemDraw-Objekt, vom Nutzer geprüft); Vorschau EMF (Vektor) sonst PNG; OLE-Container eigener
   CFB-Schreiber (`formats/ole.py`). Mengenprüfung mit Rundungsintervallen der angegebenen Stellen (1.03 g = 1.025–1.035 g),
+  darüber hinaus nur 0,01 % Spielraum (`TOL`, Atommassen-Tabellen; bis 1.0 waren es 0,5 % bzw. 1 % bei Äquivalenten und
+  Ausbeute, Nutzerentscheidung 2026-11-12),
   Bezug = erste Zeile mit 1.0 eq.; eingefügte eq. mit zwei Stellen, eine Null am Ende weg (1.05, 1.1; Nutzerwunsch P7) „Aus Schema“: Rollen aus dem Reaktionsschritt (RDKit `CDX_PRODUCT_ID`/`CDX_REAGENT_ID`),
   Pfeiltexte über `scheme_reagents` (Bedingungen weg, Lösungsmittel-Kürzel → Formel). Vorschau: nur das Schema auf
   Weiß (ausgeblendet ohne Schema), Text im Theme.

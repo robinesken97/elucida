@@ -42,8 +42,15 @@ from elucida.formats.gamry import (read_gamry)  # noqa: E402,F401  (Leser in elu
 REFERENCES = {"fc": ("Fc", 0.0), "ac2fc": ("Ac₂Fc", 0.49)}
 REF_NAMES_EN = {"fc": ("ferrocene", "Fc"), "ac2fc": ("1,1'-diacetylferrocene", "Ac₂Fc")}
 
-# Basislinie endet so weit vor dem Hinpeak: Fuß einer reversiblen Welle bei E½ − 0,12 V < 1 % des Peakstroms
-BL_GAP = 0.15
+# Basislinie endet so weit vor dem Hinpeak. 0,20 V = E½ − 0,17 V: dort trägt eine ideal reversible Welle (n = 1, 25 °C)
+# etwa 0,3 % von i_p, der Fehler von i_p bleibt unter 1 % (simuliert: 0,2–0,8 % je nach Fensterbeginn). Mit den
+# früheren 0,15 V (E½ − 0,12 V, noch 2 % von i_p) lag die Gerade auf dem Fuß: i_p 1–3 % zu klein, Nicholson +0,015
+# (Literaturprüfung 2026-11, Nutzerentscheidung „das wissenschaftlich Korrekte“). Gespeicherte Verbindungen behalten
+# ihren Wert.
+BL_GAP = 0.20
+# Reicht der Vorlauf im Fenster dafür nicht, endet die Gerade wie früher 0,15 V vor dem Peak (gekennzeichnet, `bl_short`:
+# i_p dort bis etwa 6 % zu klein, simuliert) – sonst bekäme eine Messung mit kurzem Vorlauf gar keine Basislinie mehr.
+BL_GAP_MIN = 0.15
 # … und spätestens am Anstieg der Welle: Strom (geglättet) 2 % der Peakhöhe über dem Anfangsstrom des Fensters.
 # Nötig für breite Wellen (iR-Abfall, quasi-reversibel): dort beginnt der Anstieg
 # weit mehr als 0,15 V vor dem Peak, und eine Gerade durch den Fuß überkorrigiert i_p massiv.
@@ -143,7 +150,7 @@ def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
     k_f, k_r = (ka, kc) if anodic_first else (kc, ka)
     turn = k_f + int(np.argmax(E[k_f:k_r + 1]) if anodic_first else np.argmin(E[k_f:k_r + 1]))
     s = 1 if anodic_first else -1
-    bl, fail = None, False
+    bl, fail, short = None, False, False
     ia, ic, i_sp = ipa, ipc, float(I[turn])
     if use_baseline:
         # Vorlauf nur aus dem Abschnitt des Hinpeaks (gleiche Richtung ab dem vorigen Umkehrpunkt)
@@ -151,6 +158,9 @@ def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
         seg = np.zeros(len(E), bool)
         seg[(other[-1] + 1 if len(other) else 0):turn + 1] = True
         bl = baseline(E, I, k_f, turn, (fw if anodic_first else bw) & seg, s, gap)
+        if bl is None and gap > BL_GAP_MIN:
+            bl = baseline(E, I, k_f, turn, (fw if anodic_first else bw) & seg, s, BL_GAP_MIN)
+            short = bl is not None
         if bl is None:
             fail = True
         else:
@@ -172,7 +182,7 @@ def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
         ratio = float("nan")
     return {"epa": epa, "epc": epc, "e12": (epa + epc) / 2, "dep": epa - epc, "ipa": ia, "ipc": ic,
             "ipa_raw": ipa, "ipc_raw": ipc, "ratio": ratio, "ratio_ok": bool(ratio_ok), "edge": bool(edge),
-            "bl": bl, "bl_fail": fail,
+            "bl": bl, "bl_fail": fail, "bl_short": bool(short),
             "anodic_first": bool(anodic_first)}
 
 
@@ -965,10 +975,14 @@ class CVTab(TABS.FigureTab):
         curves, self.results, notes, labels_ref = [], [], [note] if note else [], set()
         grad_colors = {}
         # Stromdichte nur, wenn alle Messungen eine Fläche haben (sonst Strom und Dichte unter einer Achse)
-        no_area = [e["label"] for e in vis if not self.data(e["file"])["meta"]["area"]]
+        area_in = st.get("rs_area", 0.0)                # eingetragene Fläche gilt für Stromdichte und D
+        no_area = [] if area_in > 0 else [e["label"] for e in vis if not self.data(e["file"])["meta"]["area"]]
         density = self._density = st["density"] and not no_area
         if st["density"] and no_area:
             notes.append(T("cv_area_missing", files=", ".join(no_area)))
+        elif st["density"] and not area_in > 0:           # Fläche der Messdatei: oft die Vorgabe der Messsoftware
+            areas = sorted({self.data(e["file"])["meta"]["area"] for e in vis})
+            notes.append(T("cv_area_from_file", A=", ".join(f"{a:g}" for a in areas)))
         short = [e["label"] for e in vis if len(self.data(e["file"])["cycles"]) < st["cycle"]]
         if short:
             notes.append(T("cv_cycle_missing", files=", ".join(short), n=st["cycle"]))
@@ -981,7 +995,7 @@ class CVTab(TABS.FigureTab):
                 notes.append(f"{e['label']}: {n_}")
             E = c["E"] - off
             if density:
-                fac, unit = sign * 1e3 / d["meta"]["area"], "mA"              # mA cm⁻²
+                fac, unit = sign * 1e3 / (area_in if area_in > 0 else d["meta"]["area"]), "mA"   # mA cm⁻²
             else:
                 fac, unit = sign * 1e6, "µA"
             y = fac * c["I"]
@@ -1270,6 +1284,9 @@ class CVTab(TABS.FigureTab):
         lines = [self.note] if getattr(self, "note", "") else []
         if any(r.get("bl_fail") for r in res):
             lines.append(T("cv_bl_fail"))
+        n_short = sum(1 for r in res if r.get("bl_short"))
+        if n_short:
+            lines.append(T("cv_bl_short", n=n_short, gap=f"{BL_GAP_MIN:.2f}"))
         for (grp, n), f in sorted(self.rate_fits().items(), key=lambda kv: (kv[0][1], kv[0][0])):
             name = f"{n}" + (f" ({grp})" if grp else "")
             for tag, rs, ll in (("a", f["rs_a"], f["ll_a"]), ("c", f["rs_c"], f["ll_c"])):
@@ -1345,6 +1362,10 @@ class CVTab(TABS.FigureTab):
                      f"peak potential and before the current exceeded {BL_ONSET * 100:.0f}% of the peak height) and "
                      "extrapolated beneath the peak. For the reverse peak, this baseline was shifted "
                      "by the change of the capacitive current at the switching potential (current step of 2C·v).")
+            n_short = sum(1 for r in self.results if r.get("bl_short"))
+            if n_short:
+                m.append(f"For {n_short} of {len(self.results)} peak pairs the scan before the wave was too short for "
+                         f"this distance; their baseline ended {BL_GAP_MIN * 1000:.0f} mV before the peak potential.")
             n_fail = sum(1 for r in self.results if r.get("bl_fail"))
             if n_fail:
                 m.append(f"For {n_fail} of {len(self.results)} peak pairs the scan before the wave was too short for "
