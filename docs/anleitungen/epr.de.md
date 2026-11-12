@@ -33,7 +33,8 @@ Welche Basislinie?
 - **Simulation…** lädt eine fertige Simulation aus EasySpin (zweispaltig, B in mT). Sie wird an die gewählte Messung
   angepasst; mehrere Simulationen je Messung werden gemeinsam skaliert (Anteile der Spezies).
 - **S = ½-Simulation** legt eine eigene isotrope Simulation an: g, Kerne (z. B. `2 14N 0.65; 4 1H 0.32`, a in mT),
-  Linienbreite. **An Messung fitten (g, a, ΔB_pp)** verfeinert die Werte.
+  Linienbreite. **An Messung fitten (g, a, ΔB_pp)** verfeinert die Werte. Bei zwei überlagerten Spezies: für jede
+  eine Simulation anlegen, grob einstellen, dann **Gemeinsam fitten**.
 
 ## 4. Feldkalibrierung (optional)
 
@@ -45,6 +46,14 @@ liefern.
 
 **Intensität und Kinetik** (Schritt **Auswertung**) wertet Doppelintegral oder Peak-zu-Peak je Spektrum aus – gegen Zeit oder
 Temperatur, optional × T (Curie) und mit Zerfallsfit.
+
+Alles steht in dieser einen Karte; das Feld **Ansicht** wählt, was die Abbildung zeigt.
+
+- **Rampe** (Temperatur steigt): Ansicht „Intensität gegen Temperatur“ und **Zerfall fitten** → E_a und A aus einer
+  Messreihe.
+- **Isotherm** (mehrere Serien bei festen Temperaturen): alle Spektren laden, Ansicht „Intensität gegen Zeit“ und
+  **Zerfall fitten** → k je Temperatur. Danach Ansicht „Arrhenius“ → E_a und ln A. Die Temperatur kommt aus der
+  Messdatei.
 
 ## 6. Export und SI
 

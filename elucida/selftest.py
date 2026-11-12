@@ -1800,6 +1800,175 @@ def selftest(outdir, with_isnet=False):
                           "methods text): OK")
 
         with section:
+            # isotherme Zerfaelle erster Ordnung je Temperatur, Arrhenius; gemeinsamer Fit zweier S = 1/2-Spezies
+            keep_e_ = {k_: w.epr_state[k_] for k_ in ("mode", "int_window", "int_method", "int_x", "kin_fit", "kin_loss",
+                                                    "normalize", "bl_order", "smooth", "exclude", "T_offset",
+                                                    "int_curie", "calib_uid", "ref_freq")}
+            try:
+                tt_ = np.arange(0.0, 1800.0, 120.0)
+                q_ = EPRMOD.fit_first_order(tt_, 4.0 * np.exp(-1.5e-3 * tt_))
+                assert abs(q_["k"] / 1.5e-3 - 1) < 1e-6 and abs(q_["I0"] - 4.0) < 1e-6 and q_["n"] == len(tt_), q_
+                q_ = EPRMOD.fit_first_order(tt_, 4.0 * np.exp(-1.5e-3 * tt_), 40)       # nur bis 40 % Verlust: drei Punkte
+                assert q_["n"] == 3 and q_["n_all"] == len(tt_) and abs(q_["k"] / 1.5e-3 - 1) < 1e-6, q_
+                assert EPRMOD.fit_first_order(tt_, 4.0 * np.exp(-1.5e-3 * tt_), 30) is None, "fit from two points"
+                assert EPRMOD.fit_first_order(tt_[:2], [1.0, 0.9]) is None
+                rng_ = np.random.default_rng(3)
+                hit_ = 0
+                for _ in range(200):                                                     # Intervall trifft wie angegeben
+                    q_ = EPRMOD.fit_first_order(tt_, 4.0 * np.exp(-1.5e-3 * tt_) + rng_.normal(0.0, 0.08, len(tt_)))
+                    hit_ += q_["ci_k"][0] <= 1.5e-3 <= q_["ci_k"][1]
+                assert 180 <= hit_ <= 198, f"95 % interval of k covers the truth in {hit_} of 200 runs"
+                Ts_ = np.array([100.0, 104.0, 108.0])
+                Ea_, lnA_ = 20e3, 16.0
+                ks_ = np.exp(lnA_ - Ea_ / (EPRMOD.R_GAS * Ts_))
+                a_ = EPRMOD.fit_arrhenius(Ts_, ks_)
+                assert abs(a_["Ea"] - Ea_) < 1e-6 and abs(a_["lnA"] - lnA_) < 1e-9 and a_["ci_Ea"] is not None, a_
+                a_ = EPRMOD.fit_arrhenius(Ts_[:2], ks_[:2])
+                assert abs(a_["Ea"] - Ea_) < 1e-6 and a_["ci_Ea"] is None and a_["ci_lnA"] is None, "interval from two points"
+                assert EPRMOD.fit_arrhenius(Ts_[:1], ks_[:1]) is None and EPRMOD.fit_arrhenius(Ts_, -ks_) is None
+                # im Tab: drei Temperaturen aus der Messdatei, je sechs Spektren im 2-Minuten-Takt; eine vierte mit zwei
+                iso_ = []
+                for j_, (T_, k_) in enumerate(zip(list(Ts_) + [112.0], list(ks_) + [3e-3])):
+                    for i_ in range(6 if j_ < 3 else 2):
+                        write_bes3t(f"iso{j_}_{i_}", np.exp(-k_ * 120.0 * i_) * signal, time=f"{12 + j_}:{2 * i_:02d}:15",
+                                    temp=T_ + 0.01 * i_)
+                        iso_.append(t_e._new("exp", str(eprdir / f"iso{j_}_{i_}.dsc")))
+                w.epr_state.update(entries=iso_, mode="intensity", int_window="455-485", int_method="pp", int_x="time",
+                                   kin_fit=True, kin_loss=100.0, normalize=True, bl_order=-1, smooth=0.0, exclude="",
+                                   T_offset=0.0, int_curie=False)
+                t_e.fill_table()
+                F_e = t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
+                ir_ = t_e.iso_results
+                assert [round(r_["T"]) for r_ in ir_] == [100, 104, 108, 112] and ir_[3]["fit"] is None, ir_
+                assert all(abs(r_["fit"]["k"] / k_ - 1) < 0.01 and r_["fit"]["n"] == 6 for r_, k_ in zip(ir_, ks_)), ir_
+                assert T("epr_iso_short", T="112 K", n=2) in t_e.lbl_info.text(), t_e.lbl_info.text()
+                mt_ = t_e.methods_text()
+                assert "Isothermal decays" in mt_ and "ln k against 1/T" not in mt_ and "T = 104.0 K: k = " in mt_ \
+                    and "Elucida" not in mt_, mt_
+                w.epr_state.update(int_x="arr")
+                F_e = t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
+                ar_ = t_e.arr_result
+                assert abs(ar_["Ea"] / Ea_ - 1) < 0.02 and ar_["n"] == 3 and ar_["ci_Ea"][0] < ar_["Ea"] < ar_["ci_Ea"][1], ar_
+                assert "K$^{-1}$" in F_e.ax.get_xlabel() and len(t_e.series_values) == 3
+                mt_ = t_e.methods_text()
+                assert "ln k against 1/T" in mt_ and "Ea = " in mt_ and "n = 3 temperatures" in mt_, mt_
+                files = t_e.export_to(out / "epr_arr")
+                csv_ = next(f_ for f_ in files if f_.name.endswith("_intensity.csv")).read_text(encoding="utf-8-sig")
+                assert csv_.count("# isothermal first-order decay") == 3 and "# Arrhenius (ln k vs 1/T): Ea = " in csv_, csv_
+                w.epr_state.update(kin_loss=50.0, int_x="time")       # Anfangsphase: weniger Punkte, Satz im Methodentext
+                t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
+                assert [r_["fit"]["n"] for r_ in t_e.iso_results[:3]] == [6, 6, 4], t_e.iso_results
+                assert "intensity loss of 50%" in t_e.methods_text()
+                w.epr_state.update(int_x="arr", entries=iso_[:6])      # eine Temperatur: kein Arrhenius, Hinweis statt Bild
+                assert t_e.figure_spec() is None and T("epr_arr_need") in t_e.lbl_info.text()
+                # gemeinsamer Fit: zwei ueberlagerte Spezies, Startwerte daneben
+                Bj_ = np.linspace(330.0, 340.0, 2001)
+                yj_ = (1.0 * EPRMOD.iso_spectrum(Bj_, 9.4, 2.0060, [(1, 1.0, 1.5)], 0.15)
+                       + 0.6 * EPRMOD.iso_spectrum(Bj_, 9.4, 2.0030, [], 0.40))
+                res_, r2_, _ = EPRMOD.fit_iso_joint(Bj_, yj_, 9.4, [
+                    {"g": 2.0058, "groups": [(1, 1.0, 1.45)], "lw": 0.18, "lorentz": 0.0},
+                    {"g": 2.0033, "groups": [], "lw": 0.35, "lorentz": 0.0}])
+                assert abs(res_[0]["g"] - 2.0060) < 2e-6 and abs(res_[0]["groups"][0][2] - 1.5) < 1e-3 \
+                    and abs(res_[1]["g"] - 2.0030) < 2e-6 and abs(res_[1]["lw"] - 0.40) < 1e-3 and r2_ > 0.99999, res_
+                assert abs(res_[0]["amp"] - 1.0) < 1e-3 and abs(res_[1]["amp"] - 0.6) < 1e-3, res_
+                np.savetxt(eprdir / "zwei-9p400000.txt", np.column_stack([Bj_, yj_]), delimiter="\t")
+                ez_ = t_e._new("exp", str(eprdir / "zwei-9p400000.txt"))
+                w.epr_state.update(entries=[ez_], mode="spectra", int_x="time", kin_fit=False, kin_loss=100.0,
+                                   normalize=False, calib_uid=None, ref_freq=0.0)
+                t_e.fill_table()
+                t_e.table.selectRow(0)
+                t_e.add_iso()
+                assert not t_e.btn_fit_joint.isEnabled(), "joint fit offered for a single species"
+                assert t_e.lbl_joint._plain == T("epr_fit_joint_need"), "no hint why the joint fit is disabled"
+                t_e.table.selectRow(0)
+                t_e.add_iso()
+                ia_, ib_ = w.epr_state["entries"][1:]
+                ia_.update(g=2.0058, lw=0.18, nuclei="1 14N 1.45")
+                ib_.update(g=2.0033, lw=0.35, nuclei="")
+                t_e.table.selectRow(1)
+                assert t_e.btn_fit_joint.isEnabled() and len(t_e.iso_mates(ia_)) == 2 and not t_e.lbl_joint._plain
+                t_e.fit_joint()
+                assert abs(ia_["g"] - 2.0060) < 5e-6 and "1.5" in ia_["nuclei"] and abs(ib_["lw"] - 0.40) < 2e-3, (ia_, ib_)
+                assert ia_["fit"]["joint"] == 2 and ib_["fit"]["joint"] == 2 and ia_["fit"]["r2"] > 0.9999
+                assert T("epr_fit_joint_note", n=2) in t_e.fit_text(ia_)
+                mt_ = t_e.methods_text()
+                assert "optimized simultaneously" in mt_ and "coarse grid search" not in mt_, mt_
+                t_e.table.selectRow(1)
+                t_e.fit_current()                                      # Einzelfit danach: wieder ohne den Zusatz
+                assert not ia_["fit"].get("joint") and "coarse grid search" in t_e.methods_text()
+                # eine Ansichtswahl in der Karte (statt Ansicht + Gegen): Felder folgen ihr, Zustand bleibt mode + int_x
+                w.replace_tab("epr")
+                t_e = w.epr_tab
+                view_ = lambda k_: t_e.cmb_view.setCurrentIndex(t_e.cmb_view.findData(k_))
+                rows_ = lambda: {k_ for k_, (l_, f_) in t_e._int_rows.items() if not f_.isHidden() and not l_.isHidden()}
+                es_ = w.epr_state
+                assert t_e.cmb_view.currentData() == "spectra" and not rows_() and t_e.cb_kin.isHidden()
+                view_("time")
+                assert (es_["mode"], es_["int_x"]) == ("intensity", "time") and rows_() == {"window", "method", "loss"}
+                assert not t_e.cb_kin.isHidden() and not es_["kin_fit"]
+                view_("T")
+                t_e.cb_kin.setChecked(True)
+                assert es_["int_x"] == "T" and es_["kin_fit"] and rows_() == {"window", "method", "norm"}, rows_()
+                t_e.cmb_int_method.setCurrentIndex(t_e.cmb_int_method.findData("gauss"))
+                assert rows_() == {"window", "method", "center", "norm"}, rows_()
+                t_e.cb_kin.setChecked(False)
+                view_("arr")                                           # Arrhenius fittet immer: der Schalter zeigt es
+                assert es_["int_x"] == "arr" and es_["kin_fit"] and t_e.cb_kin.isChecked() and "loss" in rows_()
+                view_("index")
+                assert es_["int_x"] == "index" and t_e.cb_kin.isHidden() and "loss" not in rows_()
+                view_("spectra")
+                assert es_["mode"] == "spectra" and es_["int_x"] == "index" and not rows_()
+            finally:                                               # spaetere Abschnitte nie mit diesem Zustand
+                w.epr_state.update(keep_e_, entries=[])
+                t_e.fill_table()
+            report.append("EPR isothermal decays (k per temperature, loss limit, Arrhenius), joint S = 1/2 fit, one view "
+                          "selector: OK")
+
+        with section:
+            # Felder mit "auto"/"aus": ein Klick auf das Symbol im Feld oder ein geleertes Feld stellt zurueck (alle Tabs)
+            from PySide6.QtGui import QFocusEvent
+            from PySide6.QtTest import QTest
+            t_e = w.epr_tab
+            sp_ = t_e.sp_smooth
+            rs_ = sp_._special_reset
+            sp_.setValue(0.0)
+            assert not rs_.act.isVisible() and sp_.text() == T("off")
+            sp_.setValue(1.5)
+            assert rs_.act.isVisible() and w.epr_state["smooth"] == 1.5
+            rs_.act.trigger()
+            assert w.epr_state["smooth"] == 0.0 and not rs_.act.isVisible(), "reset symbol does not switch off"
+            for how_ in ("leave", "enter"):
+                sp_.setValue(2.0)
+                sp_.lineEdit().clear()
+                if how_ == "leave":
+                    QApplication.sendEvent(sp_, QFocusEvent(QEvent.FocusOut))
+                else:
+                    QTest.keyClick(sp_, Qt.Key_Return)
+                assert w.epr_state["smooth"] == 0.0 and sp_.text() == T("off"), f"cleared field ({how_}) keeps the value"
+            sp_.setValue(2.0)
+            sp_.lineEdit().setText("3 mT")
+            QTest.keyClick(sp_, Qt.Key_Return)
+            assert w.epr_state["smooth"] == 3.0, "typed value lost"
+            sp_.setValue(0.0)
+            ar_ = next(c_ for c_ in t_e.findChildren(STYLE.AutoRange))            # Bereich mit "auto" (Kaestchen als Traeger)
+            ar_.cb.setChecked(False)
+            assert all(x_._special_reset.act.isVisible() for x_ in ar_.spins)
+            ar_.spins[0]._special_reset.act.trigger()
+            assert ar_.cb.isChecked() and not any(x_._special_reset.act.isVisible() for x_ in ar_.spins)
+            ar_.cb.setChecked(False)
+            ar_.spins[1].lineEdit().clear()
+            QApplication.sendEvent(ar_.spins[1], QFocusEvent(QEvent.FocusOut))
+            assert ar_.cb.isChecked(), "cleared range field does not return to auto"
+            miss_ = []
+            for key_ in w._tab_keys:                                              # kein Sondertext-Feld ohne das Symbol
+                if key_ == "eps" or w._built(key_):
+                    tab_ = w if key_ == "eps" else getattr(w, w._tab_spec(key_)[0])
+                    miss_ += [f"{key_}: {x_.specialValueText()}" for x_ in tab_.findChildren(QAbstractSpinBox)
+                              if x_.specialValueText() and getattr(x_, "_special_reset", None) is None]
+            assert not miss_, miss_
+            report.append("auto/off fields (reset symbol, cleared field, ranges, every built tab): OK")
+
+        with section:
             # EPR S = ½: TEMPO-artiges Spektrum mit Feldfehler +0.25 mT fitten -> Kalibrierung; zwei Spezies 70:30
             mw_ = 9.40
             Bt = np.linspace(330.0, 345.0, 6001)

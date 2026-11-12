@@ -94,6 +94,12 @@ paths:
   automatisch). Programmatische Änderungen erreichen die Ersatzfelder auch bei blockierten Signalen (`_watch`). Ausnahme:
   Eigenschaft `nochip`. Kästchen bleiben in Tabellenzeilen und Dialogen. Der Selbsttest verlangt: kein sichtbares Kästchen
   in einer linken Spalte.
+- Felder mit „auto“ oder „aus“ (Nutzerwunsch 2026-11-12 „schwer, wieder auf auto zu stellen“, gilt in allen Tabs):
+  jedes Zahlenfeld mit Sondertext und jeder `AutoRange`-Bereich trägt `STYLE.SpecialReset` – ein Rücksetz-Symbol im Feld,
+  sichtbar nur bei eigenem Wert, ein Klick stellt zurück; ein geleertes Feld gilt beim Verlassen oder mit Enter ebenfalls
+  als „auto“/„aus“ (Filter am Zahlenfeld selbst: Fokus und Tasten erreichen sein Textfeld nicht). `tidy` hängt es
+  zentral an (`special_resets`, nach `_chips`); nie je Tab nachbauen. Der Selbsttest verlangt: kein Feld mit Sondertext
+  ohne das Symbol.
 - Schreibweise wie im Satz (Nutzerwunsch 2026-11-11, „wissenschaftlich korrekt“): Größen kursiv, Indizes tief, Einheiten steil
   und mit negativem Exponenten (mg mL⁻¹, mV s⁻¹, g mol⁻¹), nie mit Schrägstrich. Zentral in `STYLE.sci` (`_SCI`: E₁/₂, ΔEₚ,
   λₑₘ, R², m/z, „E [V]“, „g_lit“ …): `tidy` setzt alle Beschriftungen, `HintLabel`/`SciLabel` bei jedem `setText`,

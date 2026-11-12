@@ -632,7 +632,10 @@ Absorption and emission in one figure, as commonly shown in papers:
   powder spectra) are fitted in EasySpin; Elucida only determines the fractions.
 - **Own isotropic S = ½ simulation and fit** (solution, first order): g, groups of equivalent nuclei (e.g.
   `2 14N 0.65; 4 1H 0.32`, a in mT), peak-to-peak linewidth and Lorentzian fraction; "Fit" refines g, a and
-  ΔB_pp (Levenberg–Marquardt after a coarse grid search, amplitude linear).
+  ΔB_pp (Levenberg–Marquardt after a coarse grid search, amplitude linear). If several S = ½ species overlap in
+  one measurement, **Fit together** fits all simulations assigned to it at once (one linear amplitude per species).
+  Start values are the current values and there is no coarse search: set each species roughly or fit it on its own
+  first. The fit reports no uncertainties.
 - **Field calibration with TEMPO** (or another reference): fit the reference with an S = ½ simulation, choose it as
   calibration with its literature g (default 2.0055, TEMPO in MeCN); ΔB = B(g_fit) − B(g_lit) is subtracted from all
   other measurements, whose fits then give calibrated g-factors.
@@ -647,6 +650,17 @@ Absorption and emission in one figure, as commonly shown in papers:
   **E_a and A** from I(T) = exp(−A·∫exp(−E_a/RT)/β dT) with β from the mean temperature and time steps.
   Objective least squares (default; reliable 95 % interval with t quantile) or "as script" (√|r|, for comparison
   with old numbers – sensitive to the optimiser, its interval strongly underestimates the uncertainty). E_a and ln A are almost fully correlated.
+- **Where:** step **Evaluation**, card **Intensity and Kinetics**. The field **View** chooses what the figure
+  shows: spectra, intensity against time, against temperature, Arrhenius or against the number. The fields below
+  belong to the chosen view; the others are hidden.
+- **Isothermal decays and Arrhenius:** the view "Intensity against time" with **Fit decay** fits a first-order decay per
+  temperature, I(t) = I₀·exp(−k·t) (least squares on the intensities, 95 % interval of k with the t quantile). A
+  series consists of the measurements whose temperature **from the measurement file** agrees after rounding to 1 K;
+  fitting starts at three spectra, otherwise a note appears. **Fit up to loss** restricts the fit to the start of
+  each series (e.g. 15 %: until the intensity is 15 % below the first point). The view "Arrhenius" plots ln k
+  against 1000/T and gives E_a and ln A from an unweighted straight-line fit, one point per temperature; a 95 %
+  interval exists only from three temperatures on. The bars at the points are the intervals of k. Peak-to-peak
+  underestimates k once the signal disappears in the noise; use the double integral or "Fit up to loss" then.
 - **Export for EasySpin:** besides the figure, every measurement is written as a two-column text file (B in mT,
   intensity) in full resolution after dark spectrum, baseline and smoothing – without normalisation or hidden
   ranges – with `%` header lines documenting frequency, temperature and processing (`load(...)` in MATLAB, ready
@@ -824,7 +838,7 @@ figures per page like all others; not in the data package.
 The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently, as
 does the moon/sun button in the toolbar (the icon shows the current state).
 The left column of every tab is split into steps (usually **Data · Evaluation · Display**): the bar at the top switches the step, a dot on it marks changed values, **Next: …** at the bottom leads to the next one. Lists with several entries (spectra, measurements, structures) are reordered with the arrow buttons or by dragging a row.
-In the evaluation step the **Processing Chain** card shows which steps of the calculation are in use. To the right of the tabs the most important results appear as tiles; the **SI Text** tab holds the caption with its fields and the methods text, each ready to copy. Quantities are typeset properly: symbols in italics, indices as subscripts, units upright and with negative exponents (mg mL⁻¹, mV s⁻¹); names and formulas with subscript numbers and italic locants. Drop-down lists and chips cannot do this and stay upright. Switches are **chips**: clicking a pill turns it on (blue) or off; the tooltip gives the long form. A field that shows **"off"** switches its function on with the first step up (with the value used last) and off again at the lower end. Ranges that show **"auto"** cover all data: a click into the field sets your own limits, a cleared field switches back to automatic.
+In the evaluation step the **Processing Chain** card shows which steps of the calculation are in use. To the right of the tabs the most important results appear as tiles; the **SI Text** tab holds the caption with its fields and the methods text, each ready to copy. Quantities are typeset properly: symbols in italics, indices as subscripts, units upright and with negative exponents (mg mL⁻¹, mV s⁻¹); names and formulas with subscript numbers and italic locants. Drop-down lists and chips cannot do this and stay upright. Switches are **chips**: clicking a pill turns it on (blue) or off; the tooltip gives the long form. A field that shows **"off"** switches its function on with the first step up (with the value used last) and off again at the lower end. Ranges that show **"auto"** cover all data: a click into the field sets your own limits, a cleared field switches back to automatic. Every field with "auto" or "off" shows a small reset arrow while it holds a value of its own: one click returns to "auto"/"off", and so does clearing the field and leaving it or pressing Enter.
 Rarely used cards of the left column are collapsed (click the title to open them); a title with **"(changed)"** means
 that a value there differs from the default. Results, tables and SI texts sit in tabs next to the figure. The mouse
 wheel scrolls the column and only changes a field after it has been clicked. Notes while drawing (e.g. curves left out)

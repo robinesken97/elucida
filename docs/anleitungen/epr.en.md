@@ -33,7 +33,8 @@ Which baseline?
 - **Simulation…** loads a finished simulation from EasySpin (two columns, B in mT). It is scaled to the chosen
   measurement; several simulations per measurement are scaled together (shares of the species).
 - **S = ½ simulation** creates an own isotropic simulation: g, nuclei (e.g. `2 14N 0.65; 4 1H 0.32`, a in mT),
-  linewidth. **Fit to measurement (g, a, ΔB_pp)** refines the values.
+  linewidth. **Fit to measurement (g, a, ΔB_pp)** refines the values. For two overlapping species: create one
+  simulation each, set them roughly, then **Fit together**.
 
 ## 4. Field calibration (optional)
 
@@ -44,6 +45,13 @@ with its literature g. The shift is subtracted from all other measurements, whos
 
 **Intensity and kinetics** (step **Evaluation**) evaluates the double integral or peak-to-peak per spectrum – versus time or
 temperature, optionally × T (Curie) and with a decay fit.
+
+Everything is in this one card; the field **View** chooses what the figure shows.
+
+- **Ramp** (temperature rises): view "Intensity against temperature" and **Fit decay** → E_a and A from one series.
+- **Isothermal** (several series at fixed temperatures): load all spectra, view "Intensity against time" and **Fit
+  decay** → k per temperature. Then the view "Arrhenius" → E_a and ln A. The temperature is read from the
+  measurement file.
 
 ## 6. Export and SI
 

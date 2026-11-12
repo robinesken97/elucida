@@ -1385,6 +1385,7 @@ TEXTS = {
     "auto_range_tip": ("Automatisch: ganzer Bereich. Klicken für eigene Grenzen.",
                        "Automatic: full range. Click to set your own limits."),
     "auto_range_clear_tip": ("Feld leeren = wieder automatisch", "Clear the field = automatic again"),
+    "reset_special_tip": ("Zurück auf „{what}“ (oder das Feld leeren)", "Back to '{what}' (or clear the field)"),
     "chips_figure": ("Im Bild", "In Figure"),
     "img_size": ("Größe [% Plotbreite]", "Size [% of plot width]"),
     "xrange": ("λ-Bereich [nm]", "λ range [nm]"),
@@ -1780,8 +1781,6 @@ TEXTS = {
                          "Das Dunkelspektrum selbst wird im Bild ausgeblendet; das Häkchen in der Liste zeigt es wieder.",
                          "Sets dark spectrum and factor of this entry for all other measurements (e.g. a kinetic series).\n"
                          "The dark spectrum itself is hidden in the figure; its check box in the list shows it again."),
-    "epr_mode_spectra": ("Spektren", "Spectra"),
-    "epr_mode_intensity": ("Intensität gegen Zeit/T", "Intensity vs. time/T"),
     "epr_int_window": ("Feldfenster", "Field window"),
     "epr_int_window_ph": ("z. B. 445-500 (mT), leer = ganzer Sweep", "e.g. 445-500 (mT), empty = whole sweep"),
     "epr_int_window_tip": ("Bereich, über den integriert bzw. Peak-zu-Peak bestimmt wird (mT). Ausgeblendete Bereiche zählen mit;\n"
@@ -1791,9 +1790,22 @@ TEXTS = {
     "epr_int_method": ("Größe", "Quantity"),
     "epr_int_double": ("Doppelintegral", "double integral"),
     "epr_int_pp": ("Peak-zu-Peak", "peak-to-peak"),
-    "epr_against": ("Gegen", "Against"),
     "epr_x_time": ("Zeit [min]", "time [min]"),
     "epr_x_T": ("Temperatur [K]", "temperature [K]"),
+    "epr_view_spectra": ("Spektren", "Spectra"),
+    "epr_view_time": ("Intensität gegen Zeit", "Intensity against time"),
+    "epr_view_T": ("Intensität gegen Temperatur", "Intensity against temperature"),
+    "epr_view_arr": ("Arrhenius (ln k gegen 1/T)", "Arrhenius (ln k against 1/T)"),
+    "epr_view_index": ("Intensität gegen Nr.", "Intensity against no."),
+    "epr_view_tip": ("Was die Abbildung zeigt. Intensität: ein Wert je sichtbarer Messung (Feldfenster und Größe darunter).\n"
+                     "Gegen Zeit mit „Zerfall fitten“: isotherm, k je Temperatur. Gegen Temperatur mit „Zerfall fitten“:\n"
+                     "Rampe (E_a, A). Arrhenius: ln k gegen 1/T aus den isothermen Zerfällen.",
+                     "What the figure shows. Intensity: one value per visible measurement (field window and quantity below).\n"
+                     "Against time with 'Fit decay': isothermal, k per temperature. Against temperature with 'Fit decay':\n"
+                     "ramp (E_a, A). Arrhenius: ln k against 1/T from the isothermal decays."),
+    "epr_kin_norm_label": ("Zielfunktion", "Objective"),
+    "epr_fit_joint_need": ("Braucht zwei S = ½-Simulationen an derselben Messung.",
+                           "Needs two S = ½ simulations assigned to the same measurement."),
     "epr_x_index": ("Nr.", "no."),
     "epr_curie": ("× T (Curie-Korrektur)", "× T (Curie correction)"),
     "epr_curie_tip": ("Intensität mal Temperatur: bei Curie-Verhalten konstant, solange die Spezies erhalten bleibt\n"
@@ -1855,13 +1867,41 @@ TEXTS = {
     "epr_int_center": ("Merkmal bei", "Feature at"),
     "epr_int_center_tip": ("Lage des Merkmals für den Gauß-Fit", "Position of the feature for the Gaussian fit"),
     "epr_kin_fit": ("Zerfall fitten", "Fit decay"),
-    "epr_kin_fit_long": ("Zerfall fitten (Arrhenius, konstante Heizrate)", "Fit decay (Arrhenius, constant heating rate)"),
-    "epr_kin_tip": ("I(T) = exp(−A·∫exp(−E_a/RT)/β dT), erste Ordnung; Heizrate β aus mittlerem T- und Zeitschritt.\n"
-                    "Intensität vorher min-max normiert (wie im MATLAB-Skript); nur mit x-Achse Temperatur.\n"
+    "epr_kin_fit_long": ("Zerfall fitten: gegen Temperatur die Rampe (E_a, A), gegen Zeit isotherm (k je Temperatur)",
+                         "Fit decay: against temperature the ramp (E_a, A), against time isothermal (k per temperature)"),
+    "epr_kin_loss": ("Fit bis Verlust", "Fit up to loss"),
+    "epr_kin_loss_tip": ("Isotherme Zerfälle (gegen Zeit, Arrhenius): nur die Punkte vom Anfang einer Serie, bis die\n"
+                         "Intensität um diesen Anteil unter den ersten Punkt gefallen ist. 100 % = alle Punkte.",
+                         "Isothermal decays (against time, Arrhenius): only the points from the start of a series until\n"
+                         "the intensity has dropped by this share below the first point. 100 % = all points."),
+    "epr_iso_result": ("{T}: k = {k} s⁻¹ (95 %: {ci}), t½ = {half} min, {n} von {of} Punkten",
+                       "{T}: k = {k} s⁻¹ (95 %: {ci}), t½ = {half} min, {n} of {of} points"),
+    "epr_iso_short": ("{T}: {n} Punkte – kein Fit (mindestens drei nötig).",
+                      "{T}: {n} points – no fit (at least three needed)."),
+    "epr_arr_result": ("Arrhenius: E_a = {Ea} kJ mol⁻¹ = {kcal} kcal mol⁻¹ (95 %: {ci}), ln A = {lnA}, "
+                       "{n} Temperaturen, R² = {r2}",
+                       "Arrhenius: E_a = {Ea} kJ mol⁻¹ = {kcal} kcal mol⁻¹ (95 %: {ci}), ln A = {lnA}, "
+                       "{n} temperatures, R² = {r2}"),
+    "epr_arr_need": ("Arrhenius braucht Zerfälle bei mindestens zwei Temperaturen (je mindestens drei Spektren, k > 0); "
+                     "die Temperatur kommt aus der Messdatei.",
+                     "Arrhenius needs decays at two or more temperatures (at least three spectra each, k > 0); the "
+                     "temperature is read from the measurement file."),
+    "epr_fit_joint": ("Gemeinsam fitten", "Fit together"),
+    "epr_fit_joint_tip": ("Alle S = ½-Simulationen, die derselben Messung zugeordnet sind, gleichzeitig fitten.\n"
+                          "Startwerte sind ihre aktuellen Werte: vorher einzeln grob einstellen oder fitten.",
+                          "Fit all S = ½ simulations assigned to the same measurement at once.\n"
+                          "Start values are their current values: set or fit them roughly one by one first."),
+    "epr_fit_joint_note": ("(gemeinsam, {n} Spezies)", "(joint, {n} species)"),
+    "epr_kin_tip": ("Gegen Zeit: isotherm, je Temperatur I(t) = I0·exp(−k·t) (die Auswahl rechts gilt dort nicht);\n"
+                    "die Ansicht 1/T (Arrhenius) fittet immer, auch wenn hier „aus“ steht.\n"
+                    "Gegen Temperatur (Rampe): I(T) = exp(−A·∫exp(−E_a/RT)/β dT), erste Ordnung; Heizrate β aus mittlerem\n"
+                    "T- und Zeitschritt; bei „wie Skript“ Intensität vorher min-max normiert (wie im MATLAB-Skript).\n"
                     "Die gepunkteten Grenzen setzen beide Intervallenden von E_a und ln A ein (wie im Skript) – wegen der\n"
                     "starken Kopplung liegen sie fast auf der Kurve und sind kein Unsicherheitsband der Kurve.",
-                    "I(T) = exp(−A·∫exp(−E_a/RT)/β dT), first order; heating rate β from mean T and time step.\n"
-                    "Intensity min–max normalised first (like the MATLAB script); only with temperature as x axis.\n"
+                    "Against time: isothermal, per temperature I(t) = I0·exp(−k·t) (the choice on the right does not apply);\n"
+                    "the view 1/T (Arrhenius) always fits, even if this says 'off'.\n"
+                    "Against temperature (ramp): I(T) = exp(−A·∫exp(−E_a/RT)/β dT), first order; heating rate β from mean T\n"
+                    "and time step; with 'as script' the intensity is min–max normalised first (like the MATLAB script).\n"
                     "The dotted limits insert both interval ends of E_a and ln A (as in the script) – because of the strong\n"
                     "coupling they lie almost on the curve and are not an uncertainty band of the curve."),
     "epr_kin_script": ("wie Skript (√|r|)", "as script (√|r|)"),
@@ -1885,7 +1925,6 @@ TEXTS = {
                        "correlation E_a/ln A = {corr} [{how}]"),
     "epr_gauss_edge": ("⚠ {n} Spektren: Gauß-Zentrum am Rand des Messbereichs – dort kein klares Merkmal (Rauschen).",
                        "⚠ {n} spectra: Gaussian centre at the edge of the measured range – no clear feature there (noise)."),
-    "epr_kin_need_T": ("Zerfallsfit nur mit x-Achse Temperatur.", "Decay fit only with temperature as x axis."),
     # ---- Farbe der Lösung ---------------------------------------------------
     "color_show": ("Farbe in Lösung", "Colour in solution"),
     "color_show_long": ("Farbe in Lösung anzeigen (Vorhersage)", "Show colour in solution (prediction)"),

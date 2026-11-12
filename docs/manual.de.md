@@ -653,7 +653,10 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Pulverspektren) werden in EasySpin gefittet; Elucida bestimmt nur die Anteile.
 - **Eigene isotrope S = ½-Simulation mit Fit** (Lösung, erste Ordnung): g, Gruppen äquivalenter Kerne (z. B.
   `2 14N 0.65; 4 1H 0.32`, a in mT), Peak-zu-Peak-Linienbreite und Lorentz-Anteil; „Fitten“ verfeinert g, a und ΔB_pp
-  (Levenberg-Marquardt nach einer Grobsuche, Amplitude linear).
+  (Levenberg-Marquardt nach einer Grobsuche, Amplitude linear). Überlagern sich mehrere S = ½-Spezies in einer
+  Messung, fittet **Gemeinsam fitten** alle ihr zugeordneten Simulationen gleichzeitig (eine lineare Amplitude je
+  Spezies). Startwerte sind die aktuellen Werte, eine Grobsuche gibt es dabei nicht: jede Spezies vorher grob
+  einstellen oder einzeln fitten. Unsicherheiten gibt der Fit nicht aus.
 - **Feldkalibrierung mit TEMPO** (oder einer anderen Referenz): Referenz mit einer S = ½-Simulation fitten, als
   Kalibrierung mit ihrem Literatur-g wählen (Vorgabe 2,0055, TEMPO in MeCN); ΔB = B(g_fit) − B(g_lit) wird von allen
   anderen Messungen abgezogen, deren Fits dann kalibrierte g-Faktoren liefern.
@@ -668,6 +671,17 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   I(T) = exp(−A·∫exp(−E_a/RT)/β dT), β aus dem mittleren Temperatur- und Zeitschritt. Zielfunktion kleinste Quadrate (Standard;
   belastbares 95-%-Intervall mit t-Quantil) oder „wie Skript“ (√|r|, zum Vergleich mit alten Zahlen – empfindlich
   gegenüber dem Optimierer, ihr Intervall unterschätzt die Unsicherheit stark). E_a und ln A sind fast vollständig korreliert.
+- **Wo:** Schritt **Auswertung**, Karte **Intensität und Kinetik**. Das Feld **Ansicht** wählt, was die Abbildung
+  zeigt: Spektren, Intensität gegen Zeit, gegen Temperatur, Arrhenius oder gegen die Nummer. Die Felder darunter
+  gehören zur gewählten Ansicht; die übrigen sind ausgeblendet.
+- **Isotherme Zerfälle und Arrhenius:** Ansicht „Intensität gegen Zeit“ mit **Zerfall fitten** legt je Temperatur einen Zerfall
+  erster Ordnung an, I(t) = I₀·exp(−k·t) (kleinste Quadrate auf den Intensitäten, 95-%-Intervall von k mit
+  t-Quantil). Eine Serie sind die Messungen, deren Temperatur **aus der Messdatei** auf 1 K gerundet gleich ist; ab
+  drei Spektren wird gefittet, sonst steht ein Hinweis. **Fit bis Verlust** beschränkt den Fit auf den Anfang jeder
+  Serie (z. B. 15 %: bis die Intensität 15 % unter dem ersten Punkt liegt). Die Ansicht „Arrhenius“ trägt ln k
+  gegen 1000/T auf und liefert E_a und ln A aus einer ungewichteten Ausgleichsgeraden, ein Punkt je Temperatur; ein
+  95-%-Intervall gibt es erst ab drei Temperaturen. Die Striche an den Punkten sind die Intervalle von k. Peak-zu-Peak
+  unterschätzt k, sobald das Signal im Rauschen verschwindet; dann das Doppelintegral oder „Fit bis Verlust“ nehmen.
 - **Export für EasySpin:** Neben der Abbildung wird jede Messung als zweispaltige Textdatei (B in mT, Intensität) in
   voller Auflösung nach Dunkelspektrum, Basislinie und Glättung geschrieben – ohne Normierung und ohne ausgeblendete
   Bereiche – mit `%`-Kopfzeilen zu Frequenz, Temperatur und Verarbeitung (`load(...)` in MATLAB, direkt für `esfit`).
@@ -851,7 +865,7 @@ Das Seitenverhältnis bleibt, zwei Abbildungen je Seite wie alle anderen; nicht 
 ## Erscheinungsbild
 
 Das Programm folgt dem hellen oder dunklen Modus des Systems; unter **Format → Erscheinungsbild** lässt sich dauerhaft
-hell oder dunkel wählen, ebenso mit dem Mond-/Sonnen-Knopf in der Werkzeugleiste (das Symbol zeigt den aktuellen Zustand). Die linke Spalte jedes Tabs ist in Schritte geteilt (meist **Daten · Auswertung · Darstellung**): die Leiste oben wechselt den Schritt, ein Punkt daran zeigt geänderte Werte, **Weiter: …** unten führt zum nächsten. Listen mit mehreren Einträgen (Spektren, Messungen, Strukturen) lassen sich mit den Pfeilknöpfen oder durch Ziehen einer Zeile umsortieren. Im Schritt Auswertung zeigt die Karte **Rechenweg**, welche Schritte der Rechnung gerade benutzt werden. Rechts neben den Reitern stehen die wichtigsten Ergebnisse als Kacheln; der Reiter **SI-Text** enthält die Bildunterschrift mit ihren Feldern und den Methodentext, jeweils zum Kopieren. Größen stehen wie im Satz: Formelzeichen kursiv, Indizes tiefgestellt, Einheiten steil und mit negativem Exponenten (mg mL⁻¹, mV s⁻¹); Namen und Summenformeln mit tiefgestellten Zahlen und kursiven Lokanten. Auswahllisten und Chips können das technisch nicht und bleiben steil. Schalter sind **Chips**: eine Pille anklicken schaltet sie an (blau) oder aus; der Tooltip nennt die Langform. Ein Feld, das **„aus“** zeigt, schaltet seine Funktion mit dem ersten Schritt nach oben ein (mit dem zuletzt benutzten Wert) und am unteren Ende wieder aus. Bereiche, die **„auto“** zeigen, gelten für die ganzen Daten: ein Klick ins Feld setzt eigene Grenzen, ein geleertes Feld stellt wieder auf automatisch. Selten gebrauchte Karten der linken Spalte sind eingeklappt (Klick auf den Titel klappt sie
+hell oder dunkel wählen, ebenso mit dem Mond-/Sonnen-Knopf in der Werkzeugleiste (das Symbol zeigt den aktuellen Zustand). Die linke Spalte jedes Tabs ist in Schritte geteilt (meist **Daten · Auswertung · Darstellung**): die Leiste oben wechselt den Schritt, ein Punkt daran zeigt geänderte Werte, **Weiter: …** unten führt zum nächsten. Listen mit mehreren Einträgen (Spektren, Messungen, Strukturen) lassen sich mit den Pfeilknöpfen oder durch Ziehen einer Zeile umsortieren. Im Schritt Auswertung zeigt die Karte **Rechenweg**, welche Schritte der Rechnung gerade benutzt werden. Rechts neben den Reitern stehen die wichtigsten Ergebnisse als Kacheln; der Reiter **SI-Text** enthält die Bildunterschrift mit ihren Feldern und den Methodentext, jeweils zum Kopieren. Größen stehen wie im Satz: Formelzeichen kursiv, Indizes tiefgestellt, Einheiten steil und mit negativem Exponenten (mg mL⁻¹, mV s⁻¹); Namen und Summenformeln mit tiefgestellten Zahlen und kursiven Lokanten. Auswahllisten und Chips können das technisch nicht und bleiben steil. Schalter sind **Chips**: eine Pille anklicken schaltet sie an (blau) oder aus; der Tooltip nennt die Langform. Ein Feld, das **„aus“** zeigt, schaltet seine Funktion mit dem ersten Schritt nach oben ein (mit dem zuletzt benutzten Wert) und am unteren Ende wieder aus. Bereiche, die **„auto“** zeigen, gelten für die ganzen Daten: ein Klick ins Feld setzt eigene Grenzen, ein geleertes Feld stellt wieder auf automatisch. Jedes Feld mit „auto“ oder „aus“ zeigt einen kleinen Rücksetz-Pfeil, solange ein eigener Wert gilt: ein Klick stellt auf „auto“/„aus“ zurück, ebenso ein geleertes Feld beim Verlassen oder mit Enter. Selten gebrauchte Karten der linken Spalte sind eingeklappt (Klick auf den Titel klappt sie
 auf); ein Titel mit **„(geändert)“** bedeutet, dass dort ein Wert vom Standard abweicht. Ergebnisse, Tabellen und
 SI-Texte stehen als Reiter neben der Abbildung. Das Mausrad scrollt die Spalte; ein Feld ändert es erst, wenn es
 angeklickt ist. Hinweise beim Zeichnen (z. B. ausgelassene Kurven) stehen unter der Vorschau, **Hilfe → Protokoll…**

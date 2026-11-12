@@ -1071,6 +1071,49 @@ def _watch(obj, name, fn):
     setattr(obj, name, wrapped)
 
 
+class SpecialReset(QObject):
+    """Zahlenfeld, dessen unterster Wert „auto“ oder „aus“ heißt (Nutzerwunsch 2026-11-12: „schwer, wieder auf auto
+    zu stellen“): ein Symbol im Feld stellt mit einem Klick zurück – sichtbar nur, solange ein eigener Wert gilt –, und
+    ein geleertes Feld gilt beim Verlassen oder mit Enter ebenfalls als „auto“/„aus“ (Qt holte sonst still den alten
+    Wert zurück). `tidy` hängt es an jedes Zahlenfeld mit Sondertext; AutoRange übergibt Zustand und Rücksetzen selbst."""
+
+    def __init__(self, spin, is_special=None, reset=None, name=None):
+        super().__init__(spin)
+        from elucida.app.i18n import T
+        self.spin = spin
+        self.is_special = is_special or (lambda: spin.value() <= spin.minimum() + 1e-9)
+        self.reset = reset or (lambda: spin.setValue(spin.minimum()))
+        self.act = spin.lineEdit().addAction(icon("reset", colors()["text2"]), QLineEdit.TrailingPosition)
+        self.act.setToolTip(T("reset_special_tip", what=name or spin.specialValueText() or T("auto")))
+        self.act.triggered.connect(self.clicked)
+        spin.valueChanged.connect(self.sync)
+        spin.installEventFilter(self)                          # Fokus und Tasten gehen an das Zahlenfeld, nicht an sein Textfeld
+        spin._special_reset = self
+        self.sync()
+
+    def clicked(self, *_):
+        self.reset()
+        self.sync()
+
+    def sync(self, *_):
+        self.act.setVisible(not self.is_special())
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t == QEvent.FocusOut or (t == QEvent.KeyPress and ev.key() in (Qt.Key_Return, Qt.Key_Enter)):
+            if not self.spin.lineEdit().text().replace(self.spin.suffix(), "").replace(self.spin.prefix(), "").strip() \
+                    and not self.is_special():
+                self.clicked()                                 # Feld geleert: wieder „auto“/„aus“
+        return False
+
+
+def special_resets(root):
+    """Jedes Zahlenfeld mit Sondertext („auto“, „aus“) bekommt das Rücksetz-Symbol (`SpecialReset`), einmal."""
+    for sp in root.findChildren(QAbstractSpinBox):
+        if sp.specialValueText() and getattr(sp, "_special_reset", None) is None and hasattr(sp, "minimum"):
+            SpecialReset(sp)
+
+
 class AutoRange(QObject):
     """Bereich ohne Kästchen „gesamt/auto“ (Nutzerwunsch 2026-11-10): ist der Bereich automatisch, zeigen beide Felder
     „auto“; ein Klick hinein schaltet auf eigene Grenzen (die zuletzt benutzten Werte), ein geleertes Feld zurück auf
@@ -1096,6 +1139,7 @@ class AutoRange(QObject):
             sp.setToolTip((sp.toolTip() + "\n" if sp.toolTip() else "") + T("auto_range_clear_tip"))
             sp.installEventFilter(self)
             sp.lineEdit().installEventFilter(self)
+            SpecialReset(sp, cb.isChecked, lambda: cb.setChecked(True), T("auto"))   # ein Klick zurück auf „auto“
         cb.toggled.connect(self.sync)
         _watch(cb, "setChecked", self.sync)
         self.sync()
@@ -1108,6 +1152,8 @@ class AutoRange(QObject):
             g.parentWidget().setGeometry(sp.rect())
             g.parentWidget().setVisible(auto)
             g.parentWidget().raise_()
+            if getattr(sp, "_special_reset", None) is not None:
+                sp._special_reset.sync()
 
     def eventFilter(self, obj, ev):
         t = ev.type()
@@ -1246,7 +1292,14 @@ _SCI = [(r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<
         (r"\bA/d\b", "<i>A</i>/<i>d</i>"), (r"\bE°", "<i>E</i>°"), (r"ṽ", "<i>ṽ</i>"), (r"ν(?![a-zäöü])", "<i>ν</i>"),
         # Größe vor ihrer Einheit „E [V]“, „m [mg]“, „ρ [g mL⁻¹]“ (nicht S: „S [%]“ ist Schwefel) und vor „=“/„≤“
         (r"(?<![A-Za-zäöüÄÖÜß>])([EMTJnjcdgvBVmhItiaAfkUDρδ])(?= \[|-Bereich| range|-Korrektur| correction)", r"<i>\1</i>"),
-        (r"(?<![A-Za-zäöüÄÖÜß>])([EMTJnjcdgvBSDaA])(?= = | ≤ | ≥ )", r"<i>\1</i>"),
+        # nicht nach „_“: „E_a = …“ gehört der Indexregel am Ende (sonst blieb der Unterstrich stehen)
+        (r"(?<![A-Za-zäöüÄÖÜß>_])([EMTJnjcdgvBSDaAkIt])(?= = | ≤ | ≥ | &gt; | &lt; )", r"<i>\1</i>"),
+        # Kinetik (EPR-Zerfälle, Arrhenius): t½, 1/T, ln k, I0, I(t), Ea, 10^-4
+        (r"\bt½", "<i>t</i><sub>1/2</sub>"), (r"\b1/T\b", "1/<i>T</i>"), (r"(?<=ln )([kA])\b", r"<i>\1</i>"),
+        (r"(?<=ln\()A\b", "<i>A</i>"), (r"\bI0\b", "<i>I</i><sub>0</sub>"), (r"\bI(?=\([tT]\))", "<i>I</i>"),
+        (r"\(([tT])\)", r"(<i>\1</i>)"), (r"·t\b", "·<i>t</i>"), (r"\bEa\b", "<i>E</i><sub>a</sub>"),
+        (r"10\^(-?)(\d+)", lambda m: "10<sup>" + ("−" if m.group(1) else "") + m.group(2) + "</sup>"),
+        (r"/RT\b", "/<i>RT</i>"), (r"β(?= = )", "<i>β</i>"), (r"(?<= of )k\b", "<i>k</i>"),
         (r"(?<=Cutoff )A\b", "<i>A</i>"), (r"\b([BWH]) × (H)\b", r"<i>\1</i> × <i>\2</i>"),            # B × H
         (r"\((Δ?)A\)", r"(\1<i>A</i>)"), (r"%T\b", "%<i>T</i>"), (r"\|([A-Za-z])\|", r"|<i>\1</i>|"),   # (ΔA), %T, |E|
         (r"\bD(?= (?:und|and) \|)", "<i>D</i>"), (r"(?<=× )T\b", "<i>T</i>"), (r"(?<=/)T$", "<i>T</i>"),
@@ -1858,6 +1911,7 @@ def tidy(root):
     from PySide6.QtWidgets import QGroupBox
     guard_fields(root)
     _chips(root)
+    special_resets(root)                                      # nach _chips: die „aus“-Felder entstehen dort
     top = root.layout()
     if isinstance(top, QVBoxLayout):                          # Spalte: gleicher Rand und Abstand zwischen Karten
         top.setContentsMargins(COL_PAD, COL_PAD, 0, COL_PAD)   # rechts: Bildlaufleiste (ColumnFit), zusammen COL_PAD

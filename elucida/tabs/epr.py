@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QSpinBox,
                                QTableWidget, QTableWidgetItem, QVBoxLayout)
@@ -448,6 +448,87 @@ def fit_decay(T, I, beta, start=(40e3, np.log(1e15)), max_iter=400, norm="script
             "ci_lnA": (float(p[1] - z * se[1]), float(p[1] + z * se[1])), "resnorm": cost, "corr": corr}
 
 
+ISO_T_STEP = 1.0                       # K: Messungen mit gleicher gerundeter Temperatur bilden eine isotherme Serie
+
+
+def fit_first_order(t, I, loss=100.0):
+    """Isothermer Zerfall erster Ordnung, I(t) = I0·exp(−k·t): kleinste Quadrate auf den gemessenen Intensitäten
+    (nicht logarithmiert, I0 linear). loss < 100 [%]: nur die Punkte vom Anfang, bis die Intensität erstmals um loss %
+    unter den ersten Punkt gefallen ist (Anfangsphase, wie in der SI der Gruppe „erste 15 %“). 95-%-Intervall aus
+    s²(JᵀJ)⁻¹ mit s² = SSR/(n − 2) und t(0,975; n − 2). Weniger als drei Punkte: kein Fit (None), nichts schätzen.
+    -> dict(k [1/s], I0, se_k, ci_k (lo, hi), n, n_all, t0 (Zeit des ersten Punkts), r2)."""
+    t, I = np.asarray(t, float), np.asarray(I, float)
+    o = np.argsort(t, kind="stable")
+    t0 = float(t[o][0]) if len(t) else 0.0
+    t, I = t[o] - t0, I[o]
+    n = len(t)
+    if loss < 100 and n and I[0] != 0:
+        below = np.flatnonzero(I / I[0] < 1.0 - loss / 100.0)
+        if len(below):
+            n = int(below[0])
+    if n < 3 or not t[n - 1] > 0:
+        return None
+    tu, Iu = t[:n], I[:n]
+
+    def ssr(k):
+        e = np.exp(-k * tu)
+        den = float(e @ e)
+        I0 = float(e @ Iu) / den if den > 0 else 0.0
+        r = Iu - I0 * e
+        return float(r @ r), I0
+    grid = np.logspace(-3, 2, 101) / tu[-1]                  # k·t_Ende von 0,001 bis 100; Anstieg (k < 0) bis −10
+    grid = np.concatenate([-grid[grid * tu[-1] <= 10][::-1], [0.0], grid])
+    k = float(min(grid, key=lambda v: ssr(v)[0]))
+    for _ in range(60):                                      # Gauß-Newton mit Schritthalbierung
+        c, I0 = ssr(k)
+        e = np.exp(-k * tu)
+        d = np.linalg.lstsq(np.column_stack([-I0 * tu * e, e]), Iu - I0 * e, rcond=None)[0]
+        step = float(d[0])
+        while abs(step) > 1e-14 / tu[-1] and ssr(k + step)[0] > c:
+            step /= 2.0
+        k += step
+        if abs(step) < 1e-10 * max(abs(k), 1.0 / tu[-1]):
+            break
+    c, I0 = ssr(k)
+    e = np.exp(-k * tu)
+    J = np.column_stack([-I0 * tu * e, e])
+    se = ci = None
+    try:
+        cov = c / (n - 2) * np.linalg.inv(J.T @ J)
+        se = float(np.sqrt(cov[0, 0]))
+        z = core.t_quantile(0.975, n - 2)
+        ci = (k - z * se, k + z * se)
+    except np.linalg.LinAlgError:
+        pass
+    ss = float(np.sum((Iu - Iu.mean()) ** 2))
+    return {"k": k, "I0": I0, "se_k": se, "ci_k": ci, "n": n, "n_all": len(t), "t0": t0,
+            "r2": 1 - c / ss if ss > 0 else float("nan")}
+
+
+def fit_arrhenius(T, k):
+    """ln k = ln A − Ea/(R·T): gewöhnliche kleinste Quadrate, ein Punkt je Temperatur, ohne Gewichte. 95-%-Intervalle
+    aus der Streuung um die Gerade mit t(0,975; n − 2), also erst ab drei Temperaturen (sonst None: nichts erfinden).
+    -> dict(Ea [J/mol], lnA, ci_Ea, ci_lnA, n, r2) oder None (weniger als zwei Temperaturen mit k > 0)."""
+    T, k = np.asarray(T, float), np.asarray(k, float)
+    ok = np.isfinite(T) & np.isfinite(k) & (k > 0) & (T > 0)
+    r = core.linfit(1.0 / T[ok], np.log(k[ok])) if ok.sum() >= 2 else None
+    if r is None:
+        return None
+    out = {"Ea": -r["slope"] * R_GAS, "lnA": r["intercept"], "ci_Ea": None, "ci_lnA": None, "n": int(r["n"]),
+           "r2": r["r2"]}
+    if r["n"] > 2 and np.isfinite(r["se_slope"]):
+        z = core.t_quantile(0.975, r["n"] - 2)
+        out["ci_Ea"] = (out["Ea"] - z * r["se_slope"] * R_GAS, out["Ea"] + z * r["se_slope"] * R_GAS)
+        out["ci_lnA"] = (out["lnA"] - z * r["se_intercept"], out["lnA"] + z * r["se_intercept"])
+    return out
+
+
+def sci_text(v, digits=3):
+    """1.23e-04 -> „1.23 × 10^-4“ (Methodentext, wie die übrigen Exponenten)."""
+    mant, ex = f"{v:.{digits - 1}e}".split("e")
+    return f"{mant} × 10^{int(ex)}"
+
+
 def decay_band(T, r, beta, time=None):
     """Band (Faktor r["t"] wie die Intervalle) um das Modell aus der Kovarianz von (E_a, ln A), linear fortgepflanzt:
     sd = √(J·cov·Jᵀ). Die Randwerte der Einzelintervalle taugen dafür nicht (Korrelation ≈ 1). -> (unten, oben)."""
@@ -582,29 +663,37 @@ def iso_spectrum(B, mw_GHz, g, groups, lw_pp, lorentz=0.0):
     return y
 
 
-def fit_iso(B, I, mw_GHz, g, groups, lw_pp, lorentz=0.0, vary_lorentz=False, max_iter=60):
-    """Levenberg-Marquardt für g, Kopplungen a_k, Linienbreite (und Lorentz-Anteil); Amplitude linear.
-    -> dict(g, groups, lw, lorentz, amp, r2, rms)."""
+def fit_iso_joint(B, I, mw_GHz, species, max_iter=60):
+    """Eine oder mehrere isotrope S = ½-Spezies gleichzeitig an eine Messung: Levenberg-Marquardt über g, Kopplungen
+    a_k und Linienbreite (und Lorentz-Anteil) aller Spezies, die Amplituden linear (kleinste Quadrate, eine je
+    Spezies). species: Liste dict(g, groups, lw, lorentz, vary_lorentz); Startwerte sind diese Werte.
+    -> (Liste dict(g, groups, lw, lorentz, amp), r2, rms)."""
     ok = np.isfinite(I)
     B, I = np.asarray(B, float)[ok], np.asarray(I, float)[ok]
     if len(B) > 4000:                                        # schneller fitten, Linienform bleibt erhalten
         f = int(np.ceil(len(B) / 4000))
         B, I = B[::f], I[::f]
-    n_a = len(groups)
-    g, groups = _coarse_start(B, I, mw_GHz, g, groups, lw_pp, lorentz)
+    p, steps, where = [], [], []
+    for sp in species:
+        vary = bool(sp.get("vary_lorentz"))
+        where.append((len(p), sp["groups"], vary, sp.get("lorentz", 0.0)))
+        p += [sp["g"], sp["lw"]] + [a for (_, _, a) in sp["groups"]] + ([sp.get("lorentz", 0.0)] if vary else [])
+        steps += [1e-5, 1e-3] + [1e-3] * len(sp["groups"]) + ([1e-2] if vary else [])
+    p, steps = np.array(p, float), np.array(steps)
 
-    def model(p):
-        gg = [(n, Ii, p[2 + k]) for k, (n, Ii, _) in enumerate(groups)]
-        lor = min(max(p[2 + n_a], 0.0), 1.0) if vary_lorentz else lorentz
-        return iso_spectrum(B, mw_GHz, p[0], gg, abs(p[1]), lor)
+    def unpack(p):
+        out = []
+        for i0, groups, vary, lor in where:
+            n_a = len(groups)
+            out.append({"g": float(p[i0]), "lw": float(abs(p[i0 + 1])),
+                        "groups": [(n, Ii, float(p[i0 + 2 + k])) for k, (n, Ii, _) in enumerate(groups)],
+                        "lorentz": float(min(max(p[i0 + 2 + n_a], 0.0), 1.0)) if vary else float(lor)})
+        return out
 
     def residual(p):
-        y = model(p)
-        den = float(y @ y)
-        amp = float(y @ I) / den if den > 0 else 0.0
-        return I - amp * y, amp
-    p = np.array([g, lw_pp] + [a for (_, _, a) in groups] + ([lorentz] if vary_lorentz else []), float)
-    steps = np.array([1e-5, 1e-3] + [1e-3] * n_a + ([1e-2] if vary_lorentz else []))
+        Y = np.column_stack([iso_spectrum(B, mw_GHz, q["g"], q["groups"], q["lw"], q["lorentz"]) for q in unpack(p)])
+        amp, *_ = np.linalg.lstsq(Y, I, rcond=None)
+        return I - Y @ amp, amp
     r, amp = residual(p)
     cost, lam = float(r @ r), 1e-3
     for _ in range(max_iter):
@@ -630,10 +719,22 @@ def fit_iso(B, I, mw_GHz, g, groups, lw_pp, lorentz=0.0, vary_lorentz=False, max
         if not improved or np.all(np.abs(delta) < steps * 1e-3):
             break
     ss = float(np.sum((I - I.mean()) ** 2))
-    return {"g": float(p[0]), "lw": float(abs(p[1])),
-            "groups": [(n, Ii, float(p[2 + k])) for k, (n, Ii, _) in enumerate(groups)],
-            "lorentz": float(min(max(p[2 + n_a], 0), 1)) if vary_lorentz else float(lorentz), "amp": amp,
-            "r2": 1 - cost / ss if ss > 0 else float("nan"), "rms": float(np.sqrt(cost / len(I)))}
+    out = [dict(q, amp=float(a)) for q, a in zip(unpack(p), amp)]
+    return out, (1 - cost / ss if ss > 0 else float("nan")), float(np.sqrt(cost / len(I)))
+
+
+def fit_iso(B, I, mw_GHz, g, groups, lw_pp, lorentz=0.0, vary_lorentz=False, max_iter=60):
+    """Levenberg-Marquardt für g, Kopplungen a_k, Linienbreite (und Lorentz-Anteil); Amplitude linear; davor die
+    Grobsuche (`_coarse_start`). -> dict(g, groups, lw, lorentz, amp, r2, rms)."""
+    ok = np.isfinite(I)
+    B, I = np.asarray(B, float)[ok], np.asarray(I, float)[ok]
+    if len(B) > 4000:
+        f = int(np.ceil(len(B) / 4000))
+        B, I = B[::f], I[::f]
+    g, groups = _coarse_start(B, I, mw_GHz, g, groups, lw_pp, lorentz)
+    sp, r2, rms = fit_iso_joint(B, I, mw_GHz, [{"g": g, "groups": groups, "lw": lw_pp, "lorentz": lorentz,
+                                                "vary_lorentz": vary_lorentz}], max_iter)
+    return dict(sp[0], r2=r2, rms=rms)
 
 
 def _coarse_start(B, I, mw_GHz, g, groups, lw_pp, lorentz):
@@ -716,6 +817,7 @@ class EPRTab(TABS.FigureTab):
                          mode="spectra", int_window="", int_method="double", int_x="time", int_curie=False,
                          show_sum=True, show_residual=False, calib_uid=None, calib_g=2.0055,
                          ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq",
+                         kin_loss=100.0,
                          trace_label="name", ramp="", cap_species="", cap_solvent="", cap_conc="")
 
 
@@ -724,9 +826,9 @@ class EPRTab(TABS.FigureTab):
         # Fit-Ergebnis + „SI-Text kopieren“ als Reiter neben der Abbildung wie in CV (nicht mitten in „Darstellung“)
         self.to_right(STYLE.split_group(self.group_titled("epr_display"), self.lbl_info, None, T("tab_results"), n=1),
                       T("tab_results"))
-        g = STYLE.split_group(self.group_titled("epr_display"), self.ed_int_window, self.cb_curie, T("grp_intensity"))
-        self.fold(g, "intensity", ("int_window", "int_method", "int_x", "int_center", "kin_fit", "kin_norm",
-                                   "int_curie"))
+        g = STYLE.split_group(self.group_titled("epr_display"), self.cmb_view, self.cb_curie, T("grp_intensity"))
+        self.fold_int = self.fold(g, "intensity", ("mode", "int_window", "int_method", "int_x", "int_center", "kin_fit",
+                                                   "kin_norm", "kin_loss", "int_curie"))
         g = STYLE.split_group(self.group_titled("epr_display"), self.cb_sum, self.cb_params, T("grp_simulation"))
         self.fold(g, "simulation", ("show_sum", "show_residual", "show_params"))
         g = STYLE.split_group(self.group_titled("epr_processing"), self.sp_ref_freq, self.sp_T_offset, T("grp_refs"))
@@ -837,8 +939,16 @@ class EPRTab(TABS.FigureTab):
         fi.addRow(T("epr_nuclei"), self.ed_nuclei)
         self.btn_fit = QPushButton(T("epr_fit_btn"))
         self.btn_fit.clicked.connect(self.fit_current)
-        fi.addRow(self.btn_fit)
-        self.lbl_fit = QLabel("")
+        self.btn_fit_joint = QPushButton(T("epr_fit_joint"))  # alle Spezies derselben Messung gleichzeitig
+        self.btn_fit_joint.setToolTip(T("epr_fit_joint_tip"))
+        self.btn_fit_joint.clicked.connect(self.fit_joint)
+        fi.addRow("", self.btn_fit)                       # beide in der Wertespalte
+        fi.addRow("", self.btn_fit_joint)
+        self.lbl_joint = STYLE.HintLabel("")              # warum der Knopf grau ist (leer = keine Zeile)
+        self.lbl_joint.setStyleSheet(STYLE.HINT_CSS)
+        self.lbl_joint.setWordWrap(True)
+        fi.addRow("", self.lbl_joint)
+        self.lbl_fit = STYLE.HintLabel("")               # Formelzeichen gesetzt (g, a, ΔBpp, R²), leer = keine Zeile
         self.lbl_fit.setWordWrap(True)
         self.lbl_fit.setTextInteractionFlags(Qt.TextSelectableByMouse)
         fi.addRow(self.lbl_fit)
@@ -919,11 +1029,6 @@ class EPRTab(TABS.FigureTab):
 
         g = QGroupBox(T("epr_display"))
         f = make_form(g)
-        self.cmb_mode = QComboBox()
-        for key in ("spectra", "intensity"):
-            self.cmb_mode.addItem(T("epr_mode_" + key), key)
-        self.cmb_mode.setCurrentIndex(max(0, self.cmb_mode.findData(st["mode"])))
-        f.addRow(T("sec_mode"), self.cmb_mode)
         self.cmb_unit = QComboBox()
         for u in ("mT", "G"):
             self.cmb_unit.addItem(u, u)
@@ -971,41 +1076,48 @@ class EPRTab(TABS.FigureTab):
         self.cb_params = QCheckBox(T("epr_show_params"))
         self.cb_params.setChecked(st["show_params"])
         f.addRow(self.cb_params)
+        # Karte „Intensität und Kinetik“ (arrange): eine Ansichtswahl statt „Ansicht“ (Darstellung) + „Gegen“; die
+        # Felder darunter folgen ihr (_view_fields). Zustand bleibt mode + int_x.
+        self.cmb_view = QComboBox()
+        for key in ("spectra", "time", "T", "arr", "index"):
+            self.cmb_view.addItem(T("epr_view_" + key), key)
+        self.cmb_view.setCurrentIndex(max(0, self.cmb_view.findData(st["int_x"] if st["mode"] == "intensity"
+                                                                   else "spectra")))
+        self.cmb_view.setToolTip(T("epr_view_tip"))
+        f.addRow(T("sec_mode"), self.cmb_view)
         self.ed_int_window = QLineEdit(st["int_window"])
         self.ed_int_window.setPlaceholderText(T("epr_int_window_ph"))
         self.ed_int_window.setToolTip(T("epr_int_window_tip"))
-        f.addRow(T("epr_int_window"), self.ed_int_window)
-        row = QHBoxLayout()
         self.cmb_int_method = QComboBox()
         for key in ("double", "pp", "gauss"):
             self.cmb_int_method.addItem(T("epr_int_" + key), key)
         self.cmb_int_method.setToolTip(T("epr_int_method_tip"))
         self.cmb_int_method.setCurrentIndex(max(0, self.cmb_int_method.findData(st["int_method"])))
-        self.cmb_int_x = QComboBox()
-        for key in ("time", "T", "index"):
-            self.cmb_int_x.addItem(T("epr_x_" + key), key)
-        self.cmb_int_x.setCurrentIndex(max(0, self.cmb_int_x.findData(st["int_x"])))
-        row.addWidget(self.cmb_int_method, 1)
-        row.addWidget(QLabel(T("epr_against")))
-        row.addWidget(self.cmb_int_x, 1)
-        f.addRow(T("epr_int_method"), row)
         self.sp_int_center = QDoubleSpinBox(decimals=1, minimum=0, maximum=20000, singleStep=0.5,
                                             value=st["int_center"], suffix=" mT")
         self.sp_int_center.setSpecialValueText(T("auto"))
         self.sp_int_center.setToolTip(T("epr_int_center_tip"))
-        f.addRow(T("epr_int_center"), self.sp_int_center)
-        row = QHBoxLayout()
-        self.cb_kin = QCheckBox(T("epr_kin_fit"))
-        self.cb_kin.setToolTip(T("epr_kin_tip"))
-        self.cb_kin.setChecked(st["kin_fit"])
         self.cmb_kin_norm = QComboBox()
         for key in ("lsq", "script"):                     # Standard: kleinste Quadrate (belastbares Intervall)
             self.cmb_kin_norm.addItem(T("epr_kin_" + key), key)
         self.cmb_kin_norm.setCurrentIndex(max(0, self.cmb_kin_norm.findData(st["kin_norm"])))
         self.cmb_kin_norm.setToolTip(T("epr_kin_norm_tip"))
-        row.addWidget(self.cb_kin)
-        row.addWidget(self.cmb_kin_norm, 1)
-        f.addRow(row)
+        self.sp_kin_loss = QDoubleSpinBox(decimals=0, minimum=1, maximum=100, singleStep=5, value=st["kin_loss"],
+                                          suffix=" %")
+        self.sp_kin_loss.setToolTip(T("epr_kin_loss_tip"))
+        self._int_rows = {}
+        for key_, lab_, w_ in (("window", "epr_int_window", self.ed_int_window),
+                               ("method", "epr_int_method", self.cmb_int_method),
+                               ("center", "epr_int_center", self.sp_int_center),
+                               ("norm", "epr_kin_norm_label", self.cmb_kin_norm),
+                               ("loss", "epr_kin_loss", self.sp_kin_loss)):
+            l_ = QLabel(T(lab_))
+            f.addRow(l_, w_)
+            self._int_rows[key_] = (l_, w_)
+        self.cb_kin = QCheckBox(T("epr_kin_fit"))         # Schalter; die Zielfunktion darüber gilt nur für die Rampe
+        self.cb_kin.setToolTip(T("epr_kin_tip"))
+        self.cb_kin.setChecked(st["kin_fit"])
+        f.addRow(self.cb_kin)
         self.cb_curie = QCheckBox(T("epr_curie"))
         self.cb_curie.setToolTip(T("epr_curie_tip"))
         self.cb_curie.setChecked(st["int_curie"])
@@ -1025,13 +1137,17 @@ class EPRTab(TABS.FigureTab):
             w_.toggled.connect(self.changed)
         self.cmb_calib.currentIndexChanged.connect(self.changed)
         self.sp_calib_g.valueChanged.connect(self.changed)
-        for w_ in (self.sp_ref_freq, self.sp_T_offset, self.sp_int_center):
+        for w_ in (self.sp_ref_freq, self.sp_T_offset, self.sp_int_center, self.sp_kin_loss):
             w_.valueChanged.connect(self.changed)
         self.cb_kin.toggled.connect(self.changed)
         self.cmb_kin_norm.currentIndexChanged.connect(self.changed)
-        for w_ in (self.cmb_unit, self.cmb_yaxis, self.cmb_mode, self.cmb_int_method, self.cmb_int_x,
-                   self.cmb_trace, self.cmb_ramp):
+        self.cmb_view.currentIndexChanged.connect(self._view_changed)
+        self.cmb_int_method.currentIndexChanged.connect(self._view_fields)
+        self.cb_kin.toggled.connect(self._view_fields)
+        for w_ in (self.cmb_unit, self.cmb_yaxis, self.cmb_view, self.cmb_int_method, self.cmb_trace, self.cmb_ramp):
             w_.currentIndexChanged.connect(self.changed)
+        self._view_fields()
+        QTimer.singleShot(0, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
         for ed in (self.ed_bl_regions, self.ed_exclude, self.ed_labels, self.ed_int_window):
             ed.editingFinished.connect(self.changed)
         self.fill_table()
@@ -1044,8 +1160,36 @@ class EPRTab(TABS.FigureTab):
             for w_ in pair:
                 w_.setVisible(show[key_])
 
+    def _view_fields(self, *_):
+        """Karte „Intensität und Kinetik“: nur die Felder zeigen, die zur Ansicht gehören."""
+        v = self.cmb_view.currentData()
+        inten = v != "spectra"
+        show = {"window": inten, "method": inten, "center": inten and self.cmb_int_method.currentData() == "gauss",
+                "norm": v == "T" and self.cb_kin.isChecked(), "loss": v in ("time", "arr")}
+        for key_, pair in self._int_rows.items():
+            for w_ in pair:
+                w_.setVisible(show[key_])
+        self.cb_kin.setVisible(v in ("time", "T", "arr"))
+        self.cb_curie.setVisible(inten)
+        row = self.cb_curie.parentWidget()                # Zeile „Optionen“ (tidy): ohne sichtbaren Chip ganz weg
+        if isinstance(row, STYLE.ChipRow) and hasattr(row.parentWidget().layout(), "labelForField"):
+            for w_ in (row, row.parentWidget().layout().labelForField(row)):
+                if w_ is not None:
+                    w_.setVisible(inten)
+
+    def _view_changed(self, *_):
+        v = self.cmb_view.currentData()
+        if v == "arr" and not self.cb_kin.isChecked():    # Arrhenius fittet immer: der Schalter zeigt es auch
+            self.cb_kin.blockSignals(True)
+            self.cb_kin.setChecked(True)
+            self.cb_kin.blockSignals(False)
+        if v != "spectra" and getattr(self, "fold_int", None) is not None:
+            self.fold_int.set_open(True, remember=False)  # die Einstellungen der gewählten Ansicht sichtbar
+        self._view_fields()
+
     def collect(self):
-        bl = self.cmb_bl.currentData()                   # „aus“ = Grad −1, das Verfahren bleibt gemerkt
+        bl = self.cmb_bl.currentData()
+        view = self.cmb_view.currentData()                   # „aus“ = Grad −1, das Verfahren bleibt gemerkt
         self.st.update(unit=self.cmb_unit.currentData(), bl_order=-1 if bl == "off" else self.sp_bl_order.value(),
                        bl_method=self.st.get("bl_method", "poly") if bl == "off" else bl,
                        bl_width=self.sp_bl_width.value(),
@@ -1053,13 +1197,14 @@ class EPRTab(TABS.FigureTab):
                        exclude=self.ed_exclude.text().strip(), smooth=self.sp_smooth.value(),
                        normalize=self.cb_norm.isChecked(), stack=self.cb_stack.isChecked(), gap=self.sp_gap.value(),
                        y_axis=self.cmb_yaxis.currentData(), labels=self.ed_labels.text().strip(),
-                       show_params=self.cb_params.isChecked(), mode=self.cmb_mode.currentData(),
+                       show_params=self.cb_params.isChecked(), mode="spectra" if view == "spectra" else "intensity",
                        int_window=self.ed_int_window.text().strip(), int_method=self.cmb_int_method.currentData(),
-                       int_x=self.cmb_int_x.currentData(), int_curie=self.cb_curie.isChecked(),
+                       int_x=self.st["int_x"] if view == "spectra" else view, int_curie=self.cb_curie.isChecked(),
                        show_sum=self.cb_sum.isChecked(), show_residual=self.cb_res.isChecked(),
                        calib_uid=self.cmb_calib.currentData(), calib_g=self.sp_calib_g.value(),
                        ref_freq=self.sp_ref_freq.value(), T_offset=self.sp_T_offset.value(),
                        int_center=self.sp_int_center.value(), kin_fit=self.cb_kin.isChecked(),
+                       kin_loss=self.sp_kin_loss.value(),
                        kin_norm=self.cmb_kin_norm.currentData(), trace_label=self.cmb_trace.currentData(),
                        ramp=self.cmb_ramp.currentData())
 
@@ -1173,6 +1318,35 @@ class EPRTab(TABS.FigureTab):
         self.show_details()
         self.timer.start()
 
+    def iso_mates(self, e):
+        """Eigene S = ½-Simulationen, die derselben Messung zugeordnet sind wie e (e eingeschlossen)."""
+        if e is None or e["kind"] != "iso" or not e.get("fit_to"):
+            return []
+        return [x for x in self.st["entries"] if x["kind"] == "iso" and x.get("fit_to") == e["fit_to"]]
+
+    def fit_joint(self):
+        """Alle S = ½-Spezies einer Messung gleichzeitig fitten (Startwerte = ihre aktuellen Werte)."""
+        mates = self.iso_mates(self.current())
+        if len(mates) < 2:
+            return
+        target = next((x for x in self.st["entries"] if x["uid"] == mates[0]["fit_to"]), None)
+        mw = self.axis_mw(target)
+        if target is None or not mw:
+            return self.main.error(T("epr_iso_need_mw"))
+        bad = [b_ for x in mates for b_ in unknown_nuclei(x.get("nuclei", ""))]
+        if bad:
+            return self.main.error(T("epr_nuclei_unknown", parts="; ".join(bad)))
+        B, I = self.processed(target, {})
+        res, r2, rms = fit_iso_joint(B, I, mw, [{"g": x["g"], "groups": self.iso_groups(x), "lw": x["lw"],
+                                                 "lorentz": x.get("lorentz", 0.0),
+                                                 "vary_lorentz": x.get("fit_lorentz", False)} for x in mates])
+        for x, r in zip(mates, res):
+            x.update(g=round(r["g"], 6), lw=round(r["lw"], 5), lorentz=round(r["lorentz"], 3),
+                     nuclei=nuclei_with_a(x.get("nuclei", ""), [a for (_, _, a) in r["groups"]]),
+                     fit={"r2": r2, "rms": rms, "mw": mw, "joint": len(mates)})
+        self.show_details()
+        self.timer.start()
+
     def fit_text(self, e):
         r = e.get("fit")
         groups = self.iso_groups(e)
@@ -1181,7 +1355,8 @@ class EPRTab(TABS.FigureTab):
             mt, mhz = hfc_texts(a, e["g"])
             parts.append(f"{n}× (I = {I_:g}): a = {mt} mT ≙ {mhz} MHz")
         if r:
-            parts.append(f"R² = {core.r2_text(r['r2'])}")
+            parts.append(f"R² = {core.r2_text(r['r2'])}" + (" " + T("epr_fit_joint_note", n=r["joint"])
+                                                             if r.get("joint") else ""))
         return "\n".join(parts)
 
     def si_caption(self, name):
@@ -1321,6 +1496,8 @@ class EPRTab(TABS.FigureTab):
         for w_ in self._w_sim:
             w_.setVisible(e is not None and e["kind"] == "sim")
         self.w_iso.setVisible(iso)
+        self.btn_fit_joint.setEnabled(iso and len(self.iso_mates(e)) > 1)
+        self.lbl_joint.setText(T("epr_fit_joint_need") if iso and len(self.iso_mates(e)) < 2 else "")
         others = [x for x in self.st["entries"] if e is None or x["uid"] != e["uid"]]
         for cmb, key in ((self.cmb_dark, "dark"), (self.cmb_fit, "fit_to")):
             cmb.clear()
@@ -1634,9 +1811,11 @@ class EPRTab(TABS.FigureTab):
             info.append(T("epr_calib_info", dB=f"{dB:+.4f}", g=g_text(ref['g']), glit=g_text(st['calib_g'])))
         return data, extra
 
-    def intensity_series(self, entries):
-        """-> (x-Werte, Intensitäten, x-Beschriftung, Einträge mit Wert) für die Intensitätsansicht."""
+    def intensity_series(self, entries, x_mode=None):
+        """-> (x-Werte, Intensitäten, x-Beschriftung, Einträge mit Wert) für die Intensitätsansicht.
+        x_mode: andere x-Größe als im Zustand (isotherme Zerfälle rechnen immer gegen die Zeit)."""
         st, cache = self.st, {}
+        x_mode = x_mode or st["int_x"]
         win = (ranges(st["int_window"]) or [None])[0]
         xs, ys, used = [], [], []
         self._edge_hits = 0
@@ -1665,9 +1844,9 @@ class EPRTab(TABS.FigureTab):
                 v = (double_integral(B, I, win) if st["int_method"] == "double" else peak_to_peak(B, I, win))
                 if st["int_curie"] and T_K:
                     v *= T_K
-            if st["int_x"] == "T":
+            if x_mode == "T":
                 x = T_K
-            elif st["int_x"] == "time":
+            elif x_mode == "time":
                 t = measured_at(meta)
                 x = (t - t0).total_seconds() / 60.0 if (t and t0) else None
             else:
@@ -1679,13 +1858,113 @@ class EPRTab(TABS.FigureTab):
             used.append(e)
             self._times = getattr(self, "_times", {})
             self._times[e["uid"]] = measured_at(meta)
-        xlabel = {"T": "T [K]", "time": "t [min]", "index": T("sec_index")}[st["int_x"]]
+        xlabel = {"T": "T [K]", "time": "t [min]", "index": T("sec_index")}[x_mode]
         return np.array(xs), np.array(ys), xlabel, used
+
+    def isothermal_spec(self, entries):
+        """Isotherme Zerfälle: je Temperatur (auf ISO_T_STEP gerundet, aus der Messdatei) ein Fit erster Ordnung gegen
+        die Zeit; Ansicht „arr“: ln k gegen 1/T mit Ausgleichsgerade (E_a, ln A)."""
+        st = self.st
+        x, y, xlabel, used = self.intensity_series(entries, "time")
+        if len(x) == 0:
+            self.lbl_info.setText(T("epr_int_none"))
+            return None
+        if st["normalize"] and np.nanmax(np.abs(y)) > 0:
+            y = y / y[np.nanargmax(np.abs(y))]
+        temps = [self.spectrum(e)["meta"].get("T_K") for e in used]
+        temps = [t_ + st.get("T_offset", 0.0) if t_ else None for t_ in temps]
+        groups = {}
+        for i, t_ in enumerate(temps):
+            groups.setdefault(None if t_ is None else round(t_ / ISO_T_STEP) * ISO_T_STEP, []).append(i)
+        res = []
+        for key in sorted(groups, key=lambda v: (v is None, v or 0.0)):
+            ii = np.array(groups[key])
+            ii = ii[np.argsort(x[ii], kind="stable")]
+            res.append({"T": None if key is None else float(np.mean([temps[i] for i in ii])), "idx": ii,
+                        "fit": fit_first_order(x[ii] * 60.0, y[ii], st["kin_loss"])})
+        self.iso_results = res
+        cfg = self.base_cfg()
+        cfg["y_axis"], cfg["legend"] = "numbers", True
+        many = len(res) > 1
+        from matplotlib import colormaps
+        from matplotlib.colors import to_hex
+        cols = [to_hex(colormaps["viridis"](0.85 * i / max(1, len(res) - 1))) for i in range(len(res))]
+        name_T = lambda r: f"{r['T']:.0f} K" if r["T"] is not None else T("epr_kin_data")
+        info = [T("epr_int_info", n=len(x), method=T("epr_int_" + st["int_method"]))]
+        for r in res:
+            f = r["fit"]
+            if f is None:
+                info.append(T("epr_iso_short", T=name_T(r), n=len(r["idx"])))
+                continue
+            ci = f["ci_k"]
+            info.append(T("epr_iso_result", T=name_T(r), k=f"{f['k']:.3g}",
+                          ci=f"{ci[0]:.3g}–{ci[1]:.3g}" if ci else "–",
+                          half=f"{np.log(2) / f['k'] / 60:.3g}" if f["k"] > 0 else "–", n=f["n"], of=f["n_all"]))
+        curves = []
+        if st["int_x"] == "arr":
+            pts = [r for r in res if r["fit"] and r["fit"]["k"] > 0 and r["T"]]
+            self.arr_result = a = fit_arrhenius([r["T"] for r in pts], [r["fit"]["k"] for r in pts])
+            if a is None:
+                self.series_values = []
+                self.lbl_info.setText("\n".join(info + [T("epr_arr_need")]))
+                return None
+            xa = np.array([1000.0 / r["T"] for r in pts])
+            ya = np.array([np.log(r["fit"]["k"]) for r in pts])
+            for xv, r in zip(xa, pts):                       # 95-%-Intervall von k je Temperatur als Strich
+                ci = r["fit"]["ci_k"]
+                if ci and ci[0] > 0:
+                    curves.append({"x": np.array([xv, xv]), "y": np.log(np.array(ci)), "color": "#000000",
+                                   "label": None, "ls": "-", "lw": 0.8})
+            pad = 0.08 * (np.ptp(xa) or 0.1 * xa[0])
+            xl = np.array([xa.min() - pad, xa.max() + pad])
+            curves.append({"x": xa, "y": ya, "color": "#000000", "label": T("epr_kin_data"), "ls": "none", "lw": 0.8,
+                           "marker": "o"})
+            curves.append({"x": xl, "y": a["lnA"] - a["Ea"] / R_GAS * xl / 1000.0, "color": "#1764e8",
+                           "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
+            ally = np.concatenate([c["y"] for c in curves])
+            cfg["xlim"] = [float(xl[0]), float(xl[1])] if st["x_auto"] else [st["x_min"], st["x_max"]]
+            ypad = 0.08 * (np.ptp(ally) or 1.0)
+            cfg["ylim"] = [float(ally.min() - ypad), float(ally.max() + ypad)]
+            cfg["xlabel"], cfg["ylabel"] = "1000/T [K$^{-1}$]", "ln($\\mathit{k}$/s$^{-1}$)"
+            self.series_values = [(float(xv), float(yv), f"{r['T']:.2f} K") for xv, yv, r in zip(xa, ya, pts)]
+            ciE = a["ci_Ea"]
+            info.append(T("epr_arr_result", Ea=f"{a['Ea'] / 1000:.1f}", kcal=f"{a['Ea'] / 4184:.2f}",
+                          ci=f"{ciE[0] / 4184:.2f}–{ciE[1] / 4184:.2f}" if ciE else "–", lnA=f"{a['lnA']:.2f}",
+                          n=a["n"], r2=core.r2_text(a["r2"])))
+        else:
+            self.arr_result = None
+            for r, c_ in zip(res, cols):
+                ii, f = r["idx"], r["fit"]
+                col = c_ if many else "#000000"
+                curves.append({"x": x[ii], "y": y[ii], "color": col, "label": name_T(r), "ls": "none", "lw": 0.8,
+                               "marker": "o"})
+                if f is not None:
+                    tf = np.linspace(0.0, x[ii][f["n"] - 1] * 60.0 - f["t0"], 100)
+                    curves.append({"x": (tf + f["t0"]) / 60.0, "y": f["I0"] * np.exp(-f["k"] * tf),
+                                   "color": col if many else "#1764e8", "label": None if many else T("epr_kin_fitcurve"),
+                                   "ls": "-", "lw": 1.6})
+            pad = 0.05 * (np.ptp(x) or 1.0)
+            cfg["xlim"] = [float(x.min() - pad), float(x.max() + pad)] if st["x_auto"] else [st["x_min"], st["x_max"]]
+            top = float(np.nanmax(y))
+            cfg["ylim"] = [min(0.0, float(np.nanmin(y))) - 0.05 * abs(top), st["ymax"] if st["ymax"] > 0 else 1.1 * top]
+            cfg["xlabel"] = xlabel
+            name = ("normalized " if st["normalize"] else "") + "EPR intensity" + (" (I × T)" if st["int_curie"] else "")
+            cfg["ylabel"] = name + ("" if st["normalize"] else " [arb. u.]")
+            o = np.argsort(x, kind="stable")
+            self.series_values = list(zip(x[o], y[o], [used[i]["label"] for i in o]))
+        if getattr(self, "_edge_hits", 0):
+            info.append(T("epr_gauss_edge", n=self._edge_hits))
+        self.lbl_info.setText("\n".join(info))
+        return cfg, curves, [], []
 
     def intensity_spec(self, entries):
         st = self.st
         if not entries:
             return None
+        self.iso_results = self.arr_result = None
+        if st["int_x"] == "arr" or (st["int_x"] == "time" and st.get("kin_fit")):
+            self.kin_result = None
+            return self.isothermal_spec(entries)
         x, y, xlabel, used = self.intensity_series(entries)
         if len(x) == 0:
             self.lbl_info.setText(T("epr_int_none"))
@@ -1741,8 +2020,6 @@ class EPRTab(TABS.FigureTab):
                              lo=f"{r['ci_Ea'][0] / 4184:.2f}", hi=f"{r['ci_Ea'][1] / 4184:.2f}", A=f"{r['A']:.2e}",
                              beta=f"{r['beta'] * 60:.3f}", corr=f"{r['corr']:.4f}",
                              how=T("epr_kin_" + st.get("kin_norm", "lsq")))
-        elif st.get("kin_fit") and st["int_x"] != "T":
-            info += "\n" + T("epr_kin_need_T")
         if getattr(self, "_edge_hits", 0):
             info += "\n" + T("epr_gauss_edge", n=self._edge_hits)
         self.lbl_info.setText(info)
@@ -1827,9 +2104,15 @@ class EPRTab(TABS.FigureTab):
                      "with binomial/multinomial intensities, first-derivative pseudo-Voigt line shape with "
                      "peak-to-peak width ΔBpp). g, the hyperfine coupling constants a and ΔBpp"
                      + (" and the Lorentzian fraction" if lor else "") + " were optimized by Levenberg–Marquardt "
-                     "least squares after a coarse grid search over the field position and a common scaling factor "
-                     "of the coupling constants; the amplitude was determined linearly. Parameter uncertainties "
-                     "were not derived from the fit (residuals of a digitized spectrum are correlated).")
+                     "least squares"
+                     + (" after a coarse grid search over the field position and a common scaling factor of the "
+                        "coupling constants" if any(not e["fit"].get("joint") for e in isos) else "")
+                     + "; the amplitude was determined linearly."
+                     + (" Where several S = 1/2 species were assigned to one spectrum, the parameters of all species "
+                        "were optimized simultaneously, starting from the parameters of the individual simulations, "
+                        "with one linear amplitude per species." if any(e["fit"].get("joint") for e in isos) else "")
+                     + " Parameter uncertainties were not derived from the fit (residuals of a digitized spectrum "
+                     "are correlated).")
             if not dB:
                 m.append("g-factors were calculated from the microwave frequency and the field axis as recorded "
                          "(hν = g·µB·B); no field calibration against a g standard was applied.")
@@ -1863,6 +2146,33 @@ class EPRTab(TABS.FigureTab):
                          + (" before fitting." if meth == "gauss" else "."))
             if st.get("T_offset"):
                 m.append(f"Temperatures were corrected by {st['T_offset']:+g} K.".replace("-", "−"))
+            iso = [q for q in (getattr(self, "iso_results", None) or []) if q["fit"]]
+            if iso:
+                loss = st["kin_loss"]
+                m.append("Isothermal decays were analysed as first-order processes, I(t) = I0·exp(−k·t), by least squares "
+                         "on the measured intensities (I0 determined linearly), separately for each temperature "
+                         f"(spectra whose recorded temperature agrees after rounding to {ISO_T_STEP:g} K)"
+                         + (f"; only the data up to an intensity loss of {loss:g}% relative to the first spectrum of "
+                            "a series were fitted" if loss < 100 else "")
+                         + ". 95% confidence intervals of k were obtained from s²(JᵀJ)⁻¹ with s² = SSR/(n − 2) and "
+                         "t(0.975; n − 2).")
+                for q in iso:
+                    f = q["fit"]
+                    res.append((f"T = {q['T']:.1f} K: " if q["T"] is not None else "")
+                               + f"k = {sci_text(f['k'])} s-1"
+                               + (f" (95% interval {sci_text(f['ci_k'][0])} to {sci_text(f['ci_k'][1])} s-1)"
+                                  if f["ci_k"] else "") + f", n = {f['n']}")
+                a = getattr(self, "arr_result", None)
+                if a:
+                    m.append("Activation parameters were obtained from an unweighted linear least-squares fit of ln k "
+                             "against 1/T (ln k = ln A − Ea/RT), one point per temperature"
+                             + ("; 95% confidence intervals from the scatter about the line with t(0.975; n − 2)."
+                                if a["ci_Ea"] else "; with two temperatures no confidence interval can be given."))
+                    ci = a["ci_Ea"]
+                    res.append(f"Ea = {a['Ea'] / 1000:.1f} kJ mol-1 ({a['Ea'] / 4184:.1f} kcal mol-1"
+                               + (f"; 95% interval {ci[0] / 1000:.1f} to {ci[1] / 1000:.1f} kJ mol-1" if ci else "")
+                               + f"), ln(A/s-1) = {a['lnA']:.2f}, n = {a['n']} temperatures, "
+                               f"R² = {core.r2_text(a['r2'])}")
             r = getattr(self, "kin_result", None)
             if r:
                 lsq = st.get("kin_norm", "lsq") == "lsq"
@@ -1930,6 +2240,20 @@ class EPRTab(TABS.FigureTab):
                 fh.write("x;intensity;spectrum\n")
                 for x, y, lab in self.series_values:
                     fh.write(f"{x:.6g};{y:.6g};{lab}\n")
+                for q in getattr(self, "iso_results", None) or []:
+                    f = q["fit"]
+                    if f:
+                        fh.write("# isothermal first-order decay" + (f", T = {q['T']:.3f} K" if q["T"] is not None else "")
+                                 + f": k = {f['k']:.6g} 1/s"
+                                 + (f" [{f['ci_k'][0]:.6g}, {f['ci_k'][1]:.6g}]" if f["ci_k"] else "")
+                                 + f", I0 = {f['I0']:.6g}, n = {f['n']} of {f['n_all']}\n")
+                a = getattr(self, "arr_result", None)
+                if a:
+                    fh.write(f"# Arrhenius (ln k vs 1/T): Ea = {a['Ea']:.6g} J/mol"
+                             + (f" [{a['ci_Ea'][0]:.6g}, {a['ci_Ea'][1]:.6g}]" if a["ci_Ea"] else "")
+                             + f", lnA = {a['lnA']:.6g}"
+                             + (f" [{a['ci_lnA'][0]:.6g}, {a['ci_lnA'][1]:.6g}]" if a["ci_lnA"] else "")
+                             + f", n = {a['n']}, R2 = {a['r2']:.6f}\n")
                 r = getattr(self, "kin_result", None)
                 if r:
                     fh.write(f"# Arrhenius first-order decay ({st.get('kin_norm', 'lsq')}): "

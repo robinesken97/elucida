@@ -27,6 +27,25 @@ paths:
 - EPR S = ½: nur isotrop, erste Ordnung; Fit = Grobsuche (Lage, Kopplungsfaktor) + LM; Amplitude linear. Mehrere
   Komponenten je Messung immer gemeinsam linear skalieren. Kalibrierung: ΔB = B(g_fit, ν_ref) − B(g_lit, ν_ref),
   von allen Messungen außer der Referenz abziehen.
+- Mehrere S = ½-Spezies an einer Messung (F7, Nutzerwunsch 2026-11-12): „Gemeinsam fitten“ (`fit_joint` →
+  `fit_iso_joint`) optimiert g, Kopplungen, Linienbreite (und Lorentz-Anteil) aller zugeordneten eigenen Simulationen
+  gleichzeitig, je Spezies eine lineare Amplitude, **keine** geteilten Parameter, **keine** Grobsuche (sie setzte jede
+  Spezies auf das stärkste Signal; Startwerte = aktuelle Werte), keine Unsicherheiten. Der Einzelfit läuft über dieselbe
+  Schleife (`fit_iso` = Grobsuche + `fit_iso_joint` mit einer Spezies). Der Methodentext nennt den gemeinsamen Fit.
+  Geprüft nur an künstlichen Spektren (es gibt keine Messung mit zwei überlagerten Spezies).
+- Isotherme Zerfälle (F7, 2026-11-12; wie die SI der Gruppe): Intensität gegen Zeit mit „Zerfall fitten“ → je
+  Temperatur I(t) = I0·exp(−k·t), kleinste Quadrate auf den Intensitäten, I0 linear, 95-%-Intervall s²(JᵀJ)⁻¹ mit
+  n − 2 und t-Quantil (`fit_first_order`); weniger als drei Punkte: kein Fit, Hinweis. Serie = Messungen mit gleicher
+  auf 1 K gerundeter Temperatur **aus der Messdatei** (`ISO_T_STEP`; nie aus Namen). „Fit bis Verlust“ (`kin_loss`,
+  Standard 100 %): nur Punkte, bis die Intensität erstmals um diesen Anteil unter dem ersten Punkt liegt. Ansicht
+  „1/T (Arrhenius)“ (`int_x` „arr“): ln k gegen 1/T, ungewichtete Gerade (`fit_arrhenius` über `core.linfit`), ein
+  Punkt je Temperatur, Intervall aus der Streuung erst ab drei Temperaturen (bei zwei ausdrücklich keines). Mit echten
+  Daten nur der Fit einer 100-K-Serie geprüft (k ≈ 0); eine echte Messreihe über mehrere Temperaturen fehlt.
+  Bedienung (Nutzerwunsch 2026-11-12 „intuitiv, leicht zu finden“): **eine** Ansichtswahl oben in der Karte
+  „Intensität und Kinetik“ (`cmb_view`: Spektren · gegen Zeit · gegen Temperatur · Arrhenius · gegen Nr.; Zustand
+  bleibt `mode` + `int_x`), die Karte klappt beim Wählen auf, nur die Felder der Ansicht sind sichtbar (`_view_fields`),
+  „Zerfall fitten“ ist ein Schalter (Zielfunktion nur bei der Rampe), Arrhenius schaltet ihn ein. Kein Feld „Ansicht“
+  mehr in „Darstellung“. Unter dem grauen Knopf „Gemeinsam fitten“ steht, was fehlt.
 - EPR-Zerfall (Nachbau des MATLAB-Skripts der Arbeitsgruppe): Gauß+Gerade, Zentrum nur innerhalb der Messpunkte (sonst beliebige
   Amplitude bei Spektren ohne Signal); Fit-Start per Raster über E_a mit ln A aus T₅₀ (direkter Start scheitert an der
   Korrelation ≈ 1; ohne Halbwert aus dem Stand am Ende). Standard (Nutzerwunsch P6 R1 „akkurat und physikalisch
