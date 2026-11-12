@@ -343,7 +343,8 @@ class Ticks(QWidget):
 
 
 class CheckDot(QWidget):
-    """Zelle der Matrix: gefüllt mit Haken = vorhanden, Kreis = fehlt, Strich = nicht nötig (Form, nicht nur Farbe)."""
+    """Zelle der Matrix: gefüllt mit Haken = vorhanden, Kreis = fehlt, Strich = nicht nötig, feiner Punkt = weitere
+    Methode ohne Daten (Form, nicht nur Farbe)."""
 
     def __init__(self, state, tip, redo=False):
         super().__init__()
@@ -356,7 +357,11 @@ class CheckDot(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         m = QPointF(self.width() / 2, self.height() / 2)
-        if self.state == "na":
+        if self.state == "none":                             # weitere Methode ohne Daten: ruhiger Platzhalter im Raster
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(c["border_strong"]))
+            p.drawEllipse(m, 1.8, 1.8)
+        elif self.state == "na":
             p.setPen(QPen(QColor(c["border_strong"]), 1.5))
             p.drawLine(m + QPointF(-4.5, 0), m + QPointF(4.5, 0))
         elif self.state == "off":
@@ -498,15 +503,37 @@ def sample_label(info):
     return lab
 
 
-MORE_W = (230, 520)                # Spalte „Weitere Analytik“: schmal 230, in breiten Fenstern bis 520 (alle Methoden lesbar)
+# Matrix der Verbindungsliste (Nutzerwunsch 2026-11-12, „stimmig“): rechts vom Namen ein einziges Raster mittiger
+# Spalten – Pflichtteile, dann jede weitere Methode als eigene Spalte mit Punkt (statt eines freien Textes), „Geändert“.
+# Links die Verbindung selbst (Nummer, Bild, Name) linksbündig wie ein Zeilenkopf.
+SHORT_MORE = {"uvvis": "UV-Vis", "uvkin": ("Kinetik", "Kinet."), "fluo": "Fluor.", "cv": "CV", "sec": "SEC",
+              "hcell": "H-Cell", "epr": "EPR", "xray": "X-Ray", "dft": "DFT"}      # (DE, EN), wo sie sich unterscheiden
+
+
+def short_more(key):
+    from elucida.app.i18n import get_lang
+    v = SHORT_MORE[key]
+    return v if isinstance(v, str) else v[0 if get_lang() == "de" else 1]
+GROUP_GAP = 10                     # Luft zwischen Pflichtteilen und weiteren Methoden
+CHECK_W_MAX = 56                   # breite Fenster: Spalten wachsen bis hierher, erst danach der Name
+NAME_MIN, NAME_TARGET = 140, 260   # Platz für Name und Formel: mindestens / bevor die Spalten wachsen
 
 
 def fit_more(row):
-    """Spalte „Weitere Analytik“ nur, wenn sie passt; in breiten Fenstern bekommt sie den freien Platz neben dem Namen
-    (Kopf und Zeilen rechnen gleich: gleiche Breite, gleiche Spalte), sonst stand die Liste der Methoden abgeschnitten
-    neben viel leerer Fläche (Nutzerwunsch 2026-11-12)."""
-    row.more.setVisible(row.width() >= MORE_MIN_W)
-    row.more.setFixedWidth(max(MORE_W[0], min(MORE_W[1], MORE_W[0] + row.width() - 950)))
+    """Raster der Zeile (Kopf und Zeilen rechnen gleich): passen alle Methoden als Spalten, stehen sie als Punkte da
+    und teilen sich mit den Pflichtteilen eine Spaltenbreite, die mit dem Fenster wächst; in schmalen Fenstern
+    stattdessen die Methoden als gekürzter Text („Weitere Analytik“), darunter gar nicht."""
+    w, n = row.width(), len(row.dots) + len(row.opt)
+
+    def base(cells, cw):                                 # Breite der Zeile ohne den Namen
+        return 28 + (34 if row.numbered else 0) + 84 + 96 + 12 * (cells + 2) + GROUP_GAP + cells * cw
+    matrix = base(n, CHECK_W) + NAME_MIN <= w
+    cw = max(CHECK_W, min(CHECK_W_MAX, (w - base(n, 0) - NAME_TARGET) // n)) if matrix else CHECK_W
+    for d in row.opt:
+        d.setVisible(matrix)
+    row.more.setVisible(not matrix and w >= MORE_MIN_W)
+    for d in row.dots + row.opt:
+        d.setFixedWidth(cw)
 
 
 class MatrixHeader(QWidget):
@@ -514,6 +541,7 @@ class MatrixHeader(QWidget):
 
     def __init__(self, numbered=False):
         super().__init__()
+        self.numbered = numbered
         self.setFixedHeight(32)
         h = QHBoxLayout(self)
         h.setContentsMargins(14, 0, 14, 0)
@@ -522,14 +550,24 @@ class MatrixHeader(QWidget):
             h.addSpacing(22 + 12)
         h.addSpacing(84 + 12)
         h.addWidget(QLabel(T("col_compound"), objectName="recentHint"), 1)
+        self.dots = []
         for k in PUB.REQUIRED_NEW:
             lab = QLabel(SHORT[k], objectName="recentHint", alignment=Qt.AlignCenter)
             lab.setFixedWidth(CHECK_W)
             h.addWidget(lab)
-        self.more = QLabel(T("col_more"), objectName="recentHint")
+            self.dots.append(lab)
+        h.addSpacing(GROUP_GAP)
+        self.opt = []                                    # weitere Methoden: je eine Spalte (Kurzname, ganzer im Tooltip)
+        for k in MORE:
+            lab = QLabel(short_more(k), objectName="recentHint", alignment=Qt.AlignCenter)
+            lab.setToolTip(badge_label(k))
+            lab.setFixedWidth(CHECK_W)
+            h.addWidget(lab)
+            self.opt.append(lab)
+        self.more = QLabel(T("col_more"), objectName="recentHint", alignment=Qt.AlignCenter)   # schmale Fenster: Text
         self.more.setFixedWidth(230)                     # „UV-Vis · Fluoreszenz · CV“ ungekürzt
         h.addWidget(self.more)
-        when = QLabel(T("col_changed"), objectName="recentHint")
+        when = QLabel(T("col_changed"), objectName="recentHint", alignment=Qt.AlignCenter)
         when.setFixedWidth(96)
         h.addWidget(when)
 
@@ -543,6 +581,7 @@ class RecentRow(ClickCard):
 
     def __init__(self, info, number=None):
         super().__init__()
+        self.numbered = number is not None
         self._setup(info)
         self.setObjectName("matrixRow")
         h = QHBoxLayout(self)
@@ -581,16 +620,25 @@ class RecentRow(ClickCard):
         v.addWidget(sub)
         h.addLayout(v, 1)
         need = required(check)
+        self.dots = []
         for k in PUB.REQUIRED_NEW:
             have, req = k in check["have"], k in need
             state, key = ("on", "check_have") if have else ("off", "check_missing") if req else ("na", "check_na")
-            h.addWidget(CheckDot(state, T(key, item=SHORT[k]), redo=bool(check.get("sample"))))
+            self.dots.append(CheckDot(state, T(key, item=SHORT[k]), redo=bool(check.get("sample"))))
+            h.addWidget(self.dots[-1])
+        h.addSpacing(GROUP_GAP)
+        self.opt = []                                    # weitere Methoden: Haken = Daten da, feiner Punkt = keine
+        for k in MORE:
+            on = k in info["badges"]
+            self.opt.append(CheckDot("on" if on else "none", T("check_have" if on else "check_none", item=badge_label(k))))
+            h.addWidget(self.opt[-1])
         self.more = EndElided(" · ".join(badge_label(k) for k in MORE if k in info["badges"]) or "–", objectName="recentSub")
         self.more.setFixedWidth(230)                     # „UV-Vis · Fluoreszenz · CV“ ungekürzt
         self.more.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)      # „Ignored“ bekäme neben Dehnfeldern 0 px
         self.more.setToolTip(self.more._full)
+        self.more.setAlignment(Qt.AlignCenter)
         h.addWidget(self.more)
-        when = QLabel(relative_time(info["modified"]), objectName="recentWhen")
+        when = QLabel(relative_time(info["modified"]), objectName="recentWhen", alignment=Qt.AlignCenter)
         when.setFixedWidth(96)
         when.setToolTip(info["modified"].strftime("%d.%m.%Y %H:%M"))
         h.addWidget(when)

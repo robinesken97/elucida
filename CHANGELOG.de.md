@@ -61,7 +61,12 @@ Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und
 - **Projektseite:** Die Knöpfe „SI-Texte …“, „Allgemeine Vorschriften“ und „Im Ordner zeigen“ neben den Reitern waren
   unsichtbar (Höhe 0); die Linie über den Reitern war an dieser Stelle gebrochen und versetzt und entfällt. Kopf,
   Reiter und alle Seiten beginnen jetzt auf derselben linken und rechten Kante, die senkrechten Abstände folgen einem
-  Raster, und „Weitere Analytik“ nutzt in breiten Fenstern den freien Platz (alle Methoden lesbar statt abgeschnitten).
+  Raster.
+  Die Verbindungsliste zeigt jede weitere Methode (UV-Vis, Kinetik, Fluoreszenz, CV, SEC, H-Cell, EPR, X-Ray, DFT) als
+  eigene Spalte mit Punkt statt als abgeschnittenen Text; alle Spalten stehen mittig in einem Raster.
+- **Word-Export:** Unter einem längeren Methodentext steht jetzt noch eine Abbildung, solange sie mindestens 7 cm
+  hoch bleibt (vorher blieb der Rest der Seite leer). Ein Energieprofil mit nur einer Rechnung (ein Strich bei 0) kommt nicht
+  mehr in die SI.
 - **EPR, Zerfall unter einer Temperaturrampe:** Das Integral wurde nur an den Messpunkten ausgewertet; bei wenigen
   Spektren (10 K Abstand) lag E_a dadurch etwa 1,4 % zu hoch. Jetzt wird die Temperatur zwischen den Spektren
   interpoliert. Werte aus eng gemessenen Rampen ändern sich praktisch nicht.

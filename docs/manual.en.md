@@ -308,7 +308,8 @@ and units are joined by non-breaking spaces, so Word never separates "298 nm" or
 
 **Figures:** the figures of all tabs with data (UV-Vis (ε) per series, IR, HR-MS, overlay, UV-Vis kinetics, fluorescence, CV, SEC, EPR)
 and the NMR spectra always come **two per page**; where figure and caption would not fit, both figures of the page are
-scaled down (aspect ratio kept). Captions follow the SI: UV-Vis "UV-Vis spectra of **X** in THF, measured in 0.1 cm
+scaled down (aspect ratio kept). Below a longer text one more figure follows on the same page as long as it stays at
+least 7 cm high. Captions follow the SI: UV-Vis "UV-Vis spectra of **X** in THF, measured in 0.1 cm
 quartz cuvettes." (solvent under Analysis in the ε tab); CV, SEC and EPR take scan rate, iR compensation, reference,
 potential range, band, g and couplings from the data and concentration, solvent, electrolyte or species from the
 fields on the **SI Text** tab (formulas show subscript digits already in the field; the texts are justified and typeset as

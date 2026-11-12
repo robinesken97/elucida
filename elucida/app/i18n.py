@@ -2621,6 +2621,7 @@ TEXTS = {
     "col_changed": ("Geändert", "Changed"),
     "tag_known": ("bekannt", "known"),
     "check_have": ("{item}: vorhanden", "{item}: present"),
+    "check_none": ("{item}: keine Daten", "{item}: no data"),
     "check_missing": ("{item}: fehlt", "{item}: missing"),
     "check_na": ("{item}: nicht nötig (bekannte Verbindung)", "{item}: not needed (known compound)"),
     "rp_changed": ("Geändert {t}", "Changed {t}"),

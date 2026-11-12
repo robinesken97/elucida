@@ -426,17 +426,29 @@ def _block_cm(t):
     return _text_cm(t[1] if len(t) > 1 and isinstance(t[1], str) else "", extra=0.35)
 
 
+CAP_EST_CM = 0.21 + 0.42 + LINE_CM   # Unterschrift einer Abbildung, solange ihr Text noch nicht feststeht (eine Zeile)
+
+
+def _fig_capacity(text_blocks, per_page):
+    """Wie viele Abbildungen nach diesem Text noch auf dieselbe Seite kommen: so viele (höchstens per_page), wie mit
+    mindestens MIN_FIG_CM Höhe je Bild samt Unterschrift Platz haben – also auch **eine** allein, wo zwei zu klein
+    würden (vorher blieb unter einem langen Methodentext der Rest der Seite leer, Nutzerwunsch 2026-11-12)."""
+    rest = PAGE_BODY_CM - sum(_block_cm(t) for t in text_blocks)
+    return next((n for n in range(per_page, 0, -1) if (rest - n * CAP_EST_CM) / n >= MIN_FIG_CM), 0)
+
+
 def two_per_page(blocks, per_page=2):
     """Abbildungen (image + figcap) seitenweise zu je per_page setzen; vorangehender Text (z. B. Aufbau-Absatz)
     beginnt eine neue Seite und zählt mit. Bilder werden – im Seitenverhältnis – so verkleinert, dass alles auf die
-    Seite passt (16 × 11 cm mit zweizeiliger Unterschrift sind zu zweit sonst ≈ 1 cm zu hoch)."""
+    Seite passt (16 × 11 cm mit zweizeiliger Unterschrift sind zu zweit sonst ≈ 1 cm zu hoch); keine Abbildung mit
+    Unterschrift nimmt mehr als die halbe Seite ein."""
     pages, cur = [], {"text": [], "figs": []}
     i = 0
     while i < len(blocks):
         b = blocks[i]
         if b[0] == "image":
             cap = blocks[i + 1] if i + 1 < len(blocks) and blocks[i + 1][0] == "figcap" else None
-            if len(cur["figs"]) >= per_page:
+            if len(cur["figs"]) >= (_fig_capacity(cur["text"], per_page) if cur["text"] else per_page):
                 pages.append(cur)
                 cur = {"text": [], "figs": []}
             cur["figs"].append([list(b), cap])
@@ -456,7 +468,7 @@ def two_per_page(blocks, per_page=2):
     for pg in pages:                                    # langer Text davor (Gesamt-SI: Auswertung je Verbindung):
         used = sum(_block_cm(t) for t in pg["text"])
         caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
-        if pg["text"] and pg["figs"] and (PAGE_BODY_CM - used - caps) / per_page < MIN_FIG_CM:
+        if pg["text"] and pg["figs"] and (PAGE_BODY_CM - used - caps) / len(pg["figs"]) < MIN_FIG_CM:
             split += [{"text": pg["text"], "figs": []}, {"text": [], "figs": pg["figs"]}]   # Bilder auf neue Seite
         else:
             split.append(pg)
@@ -469,6 +481,9 @@ def two_per_page(blocks, per_page=2):
         caps = sum(0.21 + 0.42 + (_text_cm(c[1], prefix=12) if c else 0.0) for _, c in pg["figs"])
         if pg["figs"]:
             hmax = (PAGE_BODY_CM - used - caps) / per_page
+            if pg["text"]:                               # neben Text: die Bilder teilen sich den Rest, jedes mit seiner
+                n = len(pg["figs"])                      # Unterschrift höchstens eine halbe Seite
+                hmax = min((PAGE_BODY_CM - used - caps) / n, PAGE_BODY_CM / per_page - caps / n)
             for img, _ in pg["figs"]:
                 if img[3] > hmax > 0:
                     f = hmax / img[3]
@@ -536,6 +551,16 @@ def _head_runs(text):
 
 # Spaltenbreiten der SI-Tabellen (gemessen: 4.76 / 3.49 / 3.99 / 3.49 cm, weitere abwechselnd), twips
 COL_PATTERN = (2700, 1980, 2265, 1980)
+
+
+def fit_widths(header, rows):
+    """Spaltenbreiten nach dem Inhalt (Vergleichstabelle: Köpfe wie „IR (C≡C) / cm⁻¹“ brachen in gleich breiten
+    Spalten um): längster Text je Spalte ohne Markup-Zeichen, Kopf fett etwas breiter; nie breiter als der Satzspiegel."""
+    def n(t):
+        return len(re.sub(r"[*_^{}]", "", str(t or "")))
+    w = [max([int(n(h) * 1.3)] + [n(r[j]) for r in rows if j < len(r)] + [5]) * 115 + 320 for j, h in enumerate(header)]
+    tot = sum(w)
+    return [int(x * TEXT_W / tot) for x in w] if tot > TEXT_W else w
 
 
 def col_widths(n):
@@ -703,7 +728,7 @@ def write_docx(path, blocks, columns=1):
     ("figcap", HTML)                      „Figure Sn: …“
     ("tabcap", Markup, Name)              „Table Sn: <Markup> <b>Name</b>.“
     ("crystal", Kopf, Zeilen)             Kristalldaten (erste Spalte breiter, Referenz fett, Methode zusammengefasst)
-    ("params", Kopf, Zeilen[, Optionen])  Ausgewählte Bindungen/Winkel; Optionen dict(bold_cols, top) (Vergleich)
+    ("params", Kopf, Zeilen[, Optionen])  Ausgewählte Bindungen/Winkel; Optionen dict(bold_cols, top, fit) (Vergleich)
     ("note", Markup)                      Fußnote unter einer Tabelle
     ("heading", Text)                     fette Überschrift (DFT: Name der Rechnung)
     ("text", HTML)                        linksbündiger Absatz, einzeilig (DFT-Angaben)
@@ -775,7 +800,9 @@ def write_docx(path, blocks, columns=1):
             body.append(_table(header, rows, widths, row_after=64, bold_rows=ref_row, span_equal=meth))
         elif k == "params":
             header, rows = b[1], b[2]                      # optional b[3]: dict(bold_cols, top) (Vergleichstabelle)
-            body.append(_table(header, rows, col_widths(len(header)), row_after=260, **(b[3] if len(b) > 3 else {})))
+            opts = dict(b[3]) if len(b) > 3 else {}        # fit: Breiten nach Inhalt statt des festen Musters
+            w = fit_widths(header, rows) if opts.pop("fit", False) else col_widths(len(header))
+            body.append(_table(header, rows, w, row_after=260, **opts))
         elif k == "note":
             body.append(_para(markup_runs(b[1]), size=18, line=240, after=0))
         elif k == "heading":

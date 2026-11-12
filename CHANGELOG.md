@@ -60,8 +60,12 @@ were not):
 - **Compound tab:** the chips "Figures from" stayed empty after a language switch.
 - **Project page:** the buttons "SI texts …", "General procedures" and "Show in folder" next to the tabs were invisible
   (height 0); the line above the tabs was broken and offset at that position and is gone. Header, tabs and all pages
-  now start at the same left and right edge, the vertical distances follow one grid, and "Further analytics" uses
-  the free width in wide windows (all methods readable instead of cut off).
+  now start at the same left and right edge, the vertical distances follow one grid. The compound list shows every further method
+  (UV-Vis, kinetics, fluorescence, CV, SEC, H-cell, EPR, X-ray, DFT) as its own column with a dot instead of a
+  truncated text; all columns are centred in one grid.
+- **Word export:** below a longer methods text there is now one more figure as long as it stays at least 7 cm high
+  (the rest of the page stayed empty before). An energy profile with a single calculation (one line at 0) is no longer
+  part of the SI.
 - **EPR, decay under a temperature ramp:** the integral was evaluated at the measured points only; with few spectra
   (10 K apart) E_a came out about 1.4 % too high. The temperature is now interpolated between the spectra. Values from
   densely measured ramps practically do not change.

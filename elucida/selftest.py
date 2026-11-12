@@ -5362,6 +5362,14 @@ def selftest(outdir, with_isnet=False):
             assert {"X_DFT_profile.pdf", "X_DFT_IRC.pdf", "X_DFT_NICS.pdf", "X_DFT_NICS.csv"} <= set(files_f4_), files_f4_
             si_f4_ = pg_.si_figures(out / "dft_f4", "X")
             assert [b_[0] for b_ in si_f4_] == ["image", "figcap"] * 3, [b_[0] for b_ in si_f4_]
+            lev_f4_ = pg_.levels_spec                             # eine einzige Stufe ist kein Profil: nicht in der SI
+            pg_.levels_spec = lambda: (lev_f4_()[0][:1],) + tuple(lev_f4_()[1:])
+            try:
+                si_one_ = pg_.si_figures(out / "dft_f4", "X")
+            finally:
+                del pg_.levels_spec
+            assert [b_[0] for b_ in si_one_] == ["image", "figcap"] * 2 and \
+                not any("profile" in str(b_[1]) for b_ in si_one_ if b_[0] == "image"), si_one_
             names_f4_ = {Path(str(PRJ._get(c_, k_))).name for c_, k_, _ in PRJ._path_slots(w.get_state()) if PRJ._get(c_, k_)}
             assert {"f4_sp_X.out", "f4_sp_Y.out", "f4nics.log", "f4scan.log", "f4irc.out",
                     "f4irc_IRC_Full_trj.xyz"} <= names_f4_, names_f4_                 # im Projekt gespeichert/kopiert
@@ -7040,6 +7048,15 @@ def selftest(outdir, with_isnet=False):
             tp_ = SI.two_per_page([("char", "x " * 3000), ("image", "a.png", 16.0, 10.9), ("figcap", "c")])
             assert [b_[0] for b_ in tp_] == ["char", "pagebreak", "image", "figcap"] and tp_[2][3] == 10.9, \
                 [b_[0] for b_ in tp_]                                            # langer Text: Bild auf neue Seite
+            img_tp_, cap_tp_ = ("image", "a.png", 16.0, 11.0), ("figcap", "c")           # Text bis zur halben Seite: eine
+            tp_ = SI.two_per_page([("char", "word " * 250)] + [img_tp_, cap_tp_] * 3)    # Abbildung in voller Größe dazu
+            assert [b_[0] for b_ in tp_] == ["char", "image", "figcap", "pagebreak", "image", "figcap", "image", "figcap"], \
+                [b_[0] for b_ in tp_]
+            assert 10.9 <= tp_[1][3] <= 11.0 and SI._block_cm(tp_[0]) <= SI.PAGE_BODY_CM / 2
+            assert tp_[1][3] + 0.63 + SI._text_cm("c", prefix=12) <= SI.PAGE_BODY_CM / 2 + 1e-9     # Bild + Unterschrift: halbe Seite
+            fw_ = SI.fit_widths(["Compound", "*M* / g mol^{−1}", "IR (C≡C) / cm^{−1}"], [["S2", "117.15", "2104"]])
+            assert fw_[2] > fw_[1] > fw_[0] and sum(fw_) <= SI.TEXT_W, fw_               # Breiten nach Inhalt (Vergleich)
+            assert sum(SI.fit_widths(["x" * 40] * 6, [])) <= SI.TEXT_W
             psi2_ = w.export_publication_si(pub_, PUB.sync(pub_)[0], ["char", "nmr"], path=out / "pub_SI_nature.docx",
                                             template="nature")
             with _zfp.ZipFile(psi2_) as z_:
@@ -7588,6 +7605,25 @@ def selftest(outdir, with_isnet=False):
             assert ck_f1["sample"]
             row_f1 = WEL.RecentRow(dict(inf_f1, check=dict(ck_f1, have=set(), missing=["1H"])))    # nachholbar: markiert
             assert all(d_.redo for d_ in row_f1.findChildren(WEL.CheckDot) if d_.state == "off")
+            row_f1.deleteLater()
+            # Matrix: je weitere Methode eine Spalte mit Punkt (Haken = Daten, feiner Punkt = keine), Kopf und Zeile im
+            # selben Raster; in schmalen Fenstern stattdessen der Text
+            hd_f1 = WEL.MatrixHeader(numbered=True)
+            row_f1 = WEL.RecentRow(dict(inf_f1, badges=["uvvis", "xray"]), number=1)
+            for x_ in (hd_f1, row_f1):
+                x_.resize(1300, 60)
+                WEL.fit_more(x_)
+            assert len(hd_f1.opt) == len(row_f1.opt) == len(WEL.MORE)
+            assert [d_.state for d_ in row_f1.opt] == ["on" if k_ in ("uvvis", "xray") else "none" for k_ in WEL.MORE]
+            assert row_f1.more.isHidden() and not row_f1.opt[0].isHidden() and not hd_f1.opt[0].isHidden()
+            cw_f1 = {d_.width() for x_ in (hd_f1, row_f1) for d_ in x_.dots + x_.opt}
+            assert len(cw_f1) == 1 and WEL.CHECK_W <= min(cw_f1) <= WEL.CHECK_W_MAX, cw_f1
+            for x_ in (hd_f1, row_f1):
+                x_.resize(1000, 60)
+                WEL.fit_more(x_)
+            assert row_f1.opt[0].isHidden() and hd_f1.opt[0].isHidden() and not row_f1.more.isHidden()
+            assert {d_.width() for d_ in row_f1.dots} == {WEL.CHECK_W}
+            hd_f1.deleteLater()
             row_f1.deleteLater()
             assert PRJ.load(dpub_ / 'S2')['compound']['sample_no'] == 'JA-042-F2'
             assert "JA-042" not in str(w.si_blocks()[0])

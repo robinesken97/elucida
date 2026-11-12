@@ -1578,6 +1578,8 @@ class DftPages:
         from matplotlib.backends.backend_agg import FigureCanvasAgg
         out = []
         for key, build, cap in self.figures():
+            if key == "profile" and len(self.levels_spec()[0]) < 2:
+                continue                                  # eine einzige Stufe ist kein Profil (ein Strich bei 0): nicht in die SI
             fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
             FigureCanvasAgg(fig)
             F = build(fig)

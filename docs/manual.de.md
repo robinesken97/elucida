@@ -323,7 +323,8 @@ durch geschützte Leerzeichen verbunden, Word trennt also nie „298 nm“ oder 
 
 **Abbildungen:** Die Abbildungen aller Tabs mit Daten (UV-Vis (ε) je Serie, IR, HR-MS, Overlay, UV-Vis-Kinetik, Fluoreszenz, CV, SEC,
 EPR) und die NMR-Spektren stehen immer **zu zweit auf einer Seite**; passen Bild und Unterschrift nicht, werden beide
-Abbildungen der Seite verkleinert (Seitenverhältnis bleibt). Unterschriften wie in der SI: UV-Vis „UV-Vis spectra of
+Abbildungen der Seite verkleinert (Seitenverhältnis bleibt). Unter einem längeren Text folgt noch eine
+Abbildung auf derselben Seite, solange sie mindestens 7 cm hoch bleibt. Unterschriften wie in der SI: UV-Vis „UV-Vis spectra of
 **X** in THF, measured in 0.1 cm quartz cuvettes.“ (Lösungsmittel unter „Auswertung“ im ε-Tab); CV, SEC und EPR nehmen
 Vorschub, iR-Kompensation, Referenz, Potentialbereich, Band, g und Kopplungen aus den Daten und Konzentration,
 Lösungsmittel, Leitsalz bzw. Spezies aus den Feldern im Reiter **SI-Text** des Tabs (Formeln stehen dort schon im Feld mit

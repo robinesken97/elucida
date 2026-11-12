@@ -12,7 +12,10 @@ paths:
   (sonst Kompatibilitätsmodus).
 - SI-Abbildungen (Nutzerwunsch): **immer zwei je Seite** (`SI.two_per_page`: Text vor Abbildungen beginnt eine Seite und
   zählt mit; Bilder im Seitenverhältnis verkleinern, bis Bild + Unterschrift passen – 16 × 11 cm mit zweizeiliger
-  Unterschrift sind zu zweit zu hoch). Reihenfolge `figure_tabs` (IR, HRMS, ε je Serie, Overlay, Fluoreszenz, CV, SEC,
+  Unterschrift sind zu zweit zu hoch; keine Abbildung mit Unterschrift über die halbe Seite). Nach Text (`_fig_capacity`,
+  Nutzerwunsch 2026-11-12): so viele (höchstens zwei), wie mit ≥ `MIN_FIG_CM` je Bild Platz haben – also auch **eine** allein,
+  wo zwei zu klein würden (vorher blieb der Rest der Seite leer); sonst beginnen die Abbildungen die nächste Seite.
+  Ein Energieprofil mit nur einer Stufe kommt nicht in die SI (`dft_pages.si_figures`). Reihenfolge `figure_tabs` (IR, HRMS, ε je Serie, Overlay, Fluoreszenz, CV, SEC,
   EPR). Unterschriften je Tab (`si_caption`): ε „UV-Vis spectra of **X** in THF, measured in 0.1 cm quartz cuvettes.“
   (Lösungsmittel je Serie im Abschnitt Auswertung); CV/SEC/EPR wie die SI der Gruppe aus den Daten (Vorschub,
   iR-Kompensation nur wenn für alle gleich, interne Referenz, Start-/Endpotential, Band aus ν, g/ΔBpp/Kopplungen nur aus

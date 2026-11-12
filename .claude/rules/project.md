@@ -107,5 +107,9 @@ paths:
   des Titels. Keine Linie über den Reitern (`projectTabs`); `center_corner` erst nach den Reitern (sonst Höhe 0, Knöpfe
   unsichtbar). Senkrecht: Untertitel – Fortschritt – Reiter je 16 sichtbar, Reiter – Seitenkopf – erste Überschrift
   je ~24, Überschrift – Tabelle 8, Tabelle – nächste Überschrift 20 (`HEAD_GAP`). Ein Hauptknopf (blau): mit offenem
-  Vergleich dessen „Exportieren“, sonst „Gesamt-SI“ (`sync_main_button`). „Weitere Analytik“ wächst in breiten Fenstern
-  (`WEL.fit_more`, `MORE_W`).
+  Vergleich dessen „Exportieren“, sonst „Gesamt-SI“ (`sync_main_button`). Verbindungsliste als Matrix (`WEL.fit_more`,
+  Nutzerwunsch „stimmig“): links die Verbindung (Nummer, Bild, Name) linksbündig wie ein Zeilenkopf, rechts ein einziges
+  Raster mittiger Spalten – Pflichtteile, dann **jede weitere Methode als eigene Spalte** (`MORE`, Kurzname `SHORT_MORE`,
+  Haken = Daten, feiner Punkt = keine), „Geändert“. Spaltenbreite in Kopf und Zeilen gleich, wächst mit dem Fenster bis
+  `CHECK_W_MAX`; passen die Spalten nicht (Name behielte weniger als `NAME_MIN`), steht stattdessen der gekürzte Text
+  „Weitere Analytik“. Neue Tabs mit Abzeichen in `MORE` und `SHORT_MORE` eintragen. Word-Tabelle des Vergleichs: Spaltenbreiten nach Inhalt (`SI.fit_widths`).

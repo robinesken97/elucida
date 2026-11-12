@@ -1613,7 +1613,7 @@ class TableTab(CompareTab):
             raise RuntimeError(T("cmp_table_empty"))
         name = self.page.item["name"]
         docx = base.with_suffix(".docx")
-        SI.write_docx(docx, [("tabcap", _esc(name), ""), ("params", header, rows, dict(bold_cols=bold, top=top))])
+        SI.write_docx(docx, [("tabcap", _esc(name), ""), ("params", header, rows, dict(bold_cols=bold, top=top, fit=True))])
         from openpyxl import Workbook
         wb = Workbook()
         ws = wb.active
