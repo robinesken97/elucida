@@ -603,8 +603,20 @@ Absorption and emission in one figure, as commonly shown in papers:
   `…-9p412345-…`). Frequency, temperature, modulation and power are shown per spectrum.
 - **Dark spectrum:** the measurement before irradiation can be subtracted from each spectrum (light − k·dark,
   interpolated onto the same field grid); a warning appears if frequency, modulation or power differ.
-- **Processing:** polynomial baseline (order 0–5) from the outer edges of the sweep or from chosen signal-free
-  ranges, hide field ranges (e.g. the sharp radical signal), moving-average smoothing.
+- **Processing:** a baseline of your choice, then hide field ranges (e.g. the sharp radical signal) and
+  moving-average smoothing. Baseline methods:
+  - **Polynomial** (order 0–5) from the outer edges of the sweep or from chosen signal-free ranges: for weakly
+    curved baselines.
+  - **Smooth:** follows a broad background (e.g. the resonator in wide sweeps) and keeps narrow lines; no dark
+    spectrum is needed and the noise stays that of the single measurement. The only value is the **width**:
+    narrower features stay as signal, broader ones are subtracted as background. It must be larger than the
+    broadest real line, otherwise broad parts of the spectrum vanish too; one-sided lines lose some height (about
+    6 % at one twelfth of the width). Calculation: Whittaker smoother (least squares with a penalty on the second
+    differences) with one robust reweighting step; the methods text states method, width and reference.
+  - **Spline:** natural cubic spline through the means of the signal-free ranges (at least two, keep them short),
+    like the baseline with set points in instrument software.
+  - A **dark spectrum** remains the choice when the background is about as narrow as the signal; it doubles the
+    noise power (factor √2 in the noise), though, and removes whatever signal the dark spectrum already contains.
 - **EasySpin simulations** as two-column text (B in mT, intensity), e.g. `writematrix([B(:) spc(:)], 'sim.txt',
   'Delimiter', '\t')`; scaled by least squares to a measurement (or by hand) and shifted in field; drawn dashed on
   the same level. A **parameter file** (the MATLAB lines `Sys.D = [D E]; …`) is shown with D and |E| converted to
@@ -627,7 +639,8 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Intensity vs. time or temperature** (e.g. illumination kinetics, thermal decay): double integral or
   peak-to-peak in a field window for every visible measurement (after dark spectrum and baseline), optionally
   × T (Curie), normalised; time counts from the earliest spectrum in the tab (e.g. the dark spectrum). "Use this
-  dark spectrum for all measurements" sets the background for a whole series at once.
+  dark spectrum for all measurements" sets the background for a whole series at once and hides the dark spectrum
+  itself in the figure (its check box in the list shows it again).
 - **Thermal decay at constant heating rate** (port of the group's MATLAB script): intensity per spectrum as
   peak-to-peak, double integral or **Gaussian + line fitted to a feature** (e.g. the X feature at 487 mT), × T,
   field scaled to a reference frequency (e.g. 9.3 GHz) and a temperature correction (e.g. −1.5 K); then

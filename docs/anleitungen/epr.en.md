@@ -17,9 +17,16 @@ spectrum.
 
 ## 2. Process
 
-Click a measurement: field **Dark spectrum** (light − k·dark). Under **Processing**: polynomial baseline from the
-edges or from signal-free ranges, mask ranges, smooth. The order is fixed: dark spectrum → baseline → masking →
-smoothing → normalisation.
+Click a measurement: field **Dark spectrum** (light − k·dark). Under **Processing**: choose a baseline, mask ranges,
+smooth. The order is fixed: dark spectrum → baseline → masking → smoothing → normalisation.
+
+Which baseline?
+- **Polynomial** (from the edges or from signal-free ranges): the normal case for narrow sweeps.
+- **Smooth:** for wide sweeps with a broad resonator background, e.g. triplet spectra. Choose the **width** larger
+  than the broadest real line; a dark spectrum is then not needed.
+- **Spline:** if you want to set the anchors yourself (at least two short signal-free ranges).
+- **Dark spectrum** instead of a baseline when the background is about as narrow as the signal. "Use this dark
+  spectrum for all measurements" sets it for the whole series and hides it in the figure.
 
 ## 3. Simulation
 

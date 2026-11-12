@@ -1710,13 +1710,36 @@ TEXTS = {
                       "Field shift of this simulation only (not the field calibration)"),
     "epr_params": ("EasySpin-Parameter", "EasySpin parameters"),
     "epr_processing": ("Verarbeitung", "Processing"),
-    "epr_bl_order": ("Basislinie (Grad)", "Baseline (order)"),
-    "epr_bl_edge": ("Ränder", "edges"),
+    "epr_bl_method": ("Basislinie", "Baseline"),
+    "epr_bl_method_tip": ("Polynom: durch signalfreie Bereiche oder die Ränder des Sweeps.\n"
+                          "Glatt: folgt breitem Untergrund (Resonator) und lässt schmale Linien stehen; kein "
+                          "Dunkelspektrum nötig.\n"
+                          "Spline: durch die Mittel der signalfreien Bereiche (mindestens zwei).",
+                          "Polynomial: through signal-free ranges or the edges of the sweep.\n"
+                          "Smooth: follows a broad background (resonator) and keeps narrow lines; no dark spectrum "
+                          "needed.\n"
+                          "Spline: through the means of the signal-free ranges (at least two)."),
+    "epr_bl_poly": ("Polynom", "Polynomial"),
+    "epr_bl_smooth": ("Glatt", "Smooth"),
+    "epr_bl_spline": ("Spline", "Spline"),
+    "epr_bl_order": ("Grad", "Order"),
+    "epr_bl_edge": ("Ränder", "Edges"),
+    "epr_bl_edge_tip": ("Ohne Bereiche: Anteil des Sweeps links und rechts, durch den das Polynom gelegt wird.",
+                        "Without ranges: share of the sweep on the left and right that the polynomial is fitted to."),
+    "epr_bl_width": ("Breite", "Width"),
+    "epr_bl_width_tip": ("Was schmaler ist, bleibt Signal; was breiter ist, gilt als Untergrund und wird abgezogen.\n"
+                         "Größer wählen als die breiteste echte Linie – auch breite Triplett-Anteile verschwinden sonst.",
+                         "Narrower features stay as signal; broader ones count as background and are subtracted.\n"
+                         "Choose it larger than the broadest real line - broad triplet features vanish otherwise."),
+    "epr_bl_spline_need": ("Spline-Basislinie: mindestens zwei signalfreie Bereiche angeben (noch keine Basislinie abgezogen).",
+                           "Spline baseline: enter at least two signal-free ranges (no baseline subtracted yet)."),
     "epr_bl_regions": ("Basislinie: Bereiche", "Baseline ranges"),
     "epr_bl_regions_tip": ("Signalfreie Feldbereiche für die Basislinie (Achseneinheit mT), z. B. '400-430, 560-600'.\n"
-                           "Leer: die äußeren Ränder des Sweeps (Prozent links und rechts).",
+                           "Polynom, leer: die äußeren Ränder des Sweeps. Spline: je Bereich eine Stützstelle "
+                           "(kurze Bereiche wählen).",
                            "Signal-free field ranges for the baseline (axis unit mT), e.g. '400-430, 560-600'.\n"
-                           "Empty: the outer edges of the sweep (percent left and right)."),
+                           "Polynomial, empty: the outer edges of the sweep. Spline: one anchor per range "
+                           "(choose short ranges)."),
     "epr_regions_ph": ("z. B. 330-340, 480-485 (mT)", "e.g. 330-340, 480-485 (mT)"),
     "epr_exclude": ("Bereiche ausblenden", "Hide ranges"),
     "epr_exclude_tip": ("Feldbereiche, die nicht gezeichnet werden (mT), z. B. das scharfe Radikalsignal bei g ≈ 2.",
@@ -1753,8 +1776,10 @@ TEXTS = {
     "epr_no_trace_value": ("Zeit bzw. Temperatur steht nicht in den Messdateien – Namen gezeigt.",
                            "Time or temperature is not in the measurement files – names shown."),
     "epr_dark_all": ("Dunkelspektrum für alle Messungen übernehmen", "Use this dark spectrum for all measurements"),
-    "epr_dark_all_tip": ("Setzt Dunkelspektrum und Faktor dieses Eintrags bei allen anderen Messungen (z. B. Kinetik-Serie).",
-                         "Sets dark spectrum and factor of this entry for all other measurements (e.g. a kinetic series)."),
+    "epr_dark_all_tip": ("Setzt Dunkelspektrum und Faktor dieses Eintrags bei allen anderen Messungen (z. B. Kinetik-Serie).\n"
+                         "Das Dunkelspektrum selbst wird im Bild ausgeblendet; das Häkchen in der Liste zeigt es wieder.",
+                         "Sets dark spectrum and factor of this entry for all other measurements (e.g. a kinetic series).\n"
+                         "The dark spectrum itself is hidden in the figure; its check box in the list shows it again."),
     "epr_mode_spectra": ("Spektren", "Spectra"),
     "epr_mode_intensity": ("Intensität gegen Zeit/T", "Intensity vs. time/T"),
     "epr_int_window": ("Feldfenster", "Field window"),

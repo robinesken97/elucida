@@ -1608,10 +1608,14 @@ def selftest(outdir, with_isnet=False):
                 series.append(ek)
             w.epr_state.update(entries=series, exclude="", labels="", show_params=False, mode="intensity",
                                int_window="455-485", int_method="double", int_x="time", normalize=True)
+            ed["visible"] = True
             t_e.fill_table()
             t_e.table.selectRow(1)
             series[1]["dark"] = ed["uid"]
             t_e.dark_for_all()
+            # das Dunkelspektrum selbst verschwindet aus dem Bild (es wird nicht korrigiert), der Abzug bleibt
+            assert not ed["visible"] and t_e.table.item(0, 0).checkState() == Qt.Unchecked, "dark spectrum still shown"
+            assert all(e_["dark"] == ed["uid"] and e_["visible"] for e_ in series[1:]), "dark not set for all"
             files = w.epr_tab.export_to(out / "epr_kin")
             xs_ = [v[0] for v in t_e.series_values]
             ys_ = [v[1] for v in t_e.series_values]
@@ -1703,9 +1707,97 @@ def selftest(outdir, with_isnet=False):
             ok_ = np.isfinite(In_)
             assert abs(Bn_[ok_][0] - 450.0) < 0.02 and abs(Bn_[ok_][-1] - 500.0) < 0.02, (Bn_[ok_][0], Bn_[ok_][-1])
             assert np.max(np.abs(In_[ok_] - signal[ok_])) < 0.02 * np.ptp(signal), "Basislinie nach Dunkelspektrum"
+            # dichte, verrauschte Kurven (mehr Punkte als das Suchraster): die Huelle ist das Maximum je Abschnitt,
+            # sonst rutschen Rauschspitzen durch und die Legende liegt ueber den Kurven
+            rng_ = np.random.default_rng(5)
+            for k_ in (1, 2, 3):
+                write_bes3t(f"noise{k_}", rng_.normal(0.0, 1.0, len(Bg)), time=f"11:4{k_}:15")
+            en_ = [t_e._new("exp", str(eprdir / f"noise{k_}.dsc")) for k_ in (1, 2, 3)]
+            w.epr_state.update(entries=en_, trace_label="name", stack=False, bl_order=1, bl_regions="", smooth=0.0,
+                               normalize=True, x_min=440.0, x_max=510.0)
+            F_e, rend_ = fig_e()
+            xl_, yl_ = F_e.ax.get_xlim(), F_e.ax.get_ylim()
+            env_, top_ = F_e._envelope(240), np.full(240, -np.inf)
+            for c_ in F_e.spectra:
+                x_, y_ = np.asarray(c_["x"], float), np.asarray(c_["y"], float)
+                k_ = np.floor((x_ - xl_[0]) / (xl_[1] - xl_[0]) * 240).astype(int)
+                in_ = (k_ >= 0) & (k_ < 240) & np.isfinite(y_)
+                np.maximum.at(top_, k_[in_], (y_[in_] - yl_[0]) / (yl_[1] - yl_[0]))
+            got_ = np.isfinite(top_)
+            assert got_.sum() > 200 and np.all(env_[got_] >= np.clip(top_[got_], -1, 1)), "envelope below the noise"
+            lb_ = F_e.legend.get_window_extent(rend_)
+            pts_ = np.vstack([F_e.ax.transData.transform(np.column_stack([c_["x"], c_["y"]])) for c_ in F_e.spectra])
+            pts_ = pts_[np.isfinite(pts_).all(1)]
+            hit_ = ((pts_[:, 0] > lb_.x0) & (pts_[:, 0] < lb_.x1) & (pts_[:, 1] > lb_.y0) & (pts_[:, 1] < lb_.y1)).sum()
+            assert hit_ == 0, f"legend over {hit_} points of noisy curves"
             w.epr_state.update(entries=[], stack=False, normalize=True, trace_label="name", ramp="")
             t_e.fill_table()
-            report.append("EPR series (labels beside traces, rename, time from file, gradient, reverse, dark + baseline): OK")
+            report.append("EPR series (labels beside traces, rename, time from file, gradient, reverse, dark + baseline, "
+                          "legend off dense noise): OK")
+
+        with section:
+            # Basislinienverfahren: glatt (Whittaker, ein robuster Schritt) und Spline durch signalfreie Bereiche
+            Bm_ = Bg / 10.0
+            bgb_ = 40.0 * np.sin(2 * np.pi * (Bm_ - 440.0) / 140.0) + 0.5 * (Bm_ - 475.0)      # breiter Untergrund
+            lin_ = 10.0 * -(Bm_ - 475.0) / 0.8 * np.exp(-((Bm_ - 475.0) / 0.8) ** 2)           # Linie, 1. Ableitung
+            one_ = 10.0 * np.exp(-((Bm_ - 460.0) / 1.0) ** 2)                                  # einseitige Linie
+            y_ = bgb_ + lin_ + one_ + np.random.default_rng(7).normal(0.0, 0.05, len(Bm_))
+            in_ = (Bm_ > 445) & (Bm_ < 505)
+            z_ = EPRMOD.smooth_baseline(Bm_, y_, 30.0)
+            c_ = y_ - z_
+            assert np.max(np.abs((z_ - bgb_)[in_])) < 0.5 and np.max(np.abs(z_ - bgb_)) < 1.5, "smooth baseline off"
+            assert abs(np.ptp(c_[(Bm_ > 472) & (Bm_ < 478)]) / np.ptp(lin_) - 1) < 0.03, "line changed by baseline"
+            assert c_[(Bm_ > 458) & (Bm_ < 462)].max() > 9.5, "one-sided line lost in the baseline"
+            regs_ = "441-444, 450-453, 466-469, 482-485, 495-498, 505-508"
+            zs_ = EPRMOD.spline_baseline(Bm_, y_, EPRMOD.ranges(regs_))
+            assert np.max(np.abs((zs_ - bgb_)[in_])) < 0.3, "spline baseline off"
+            xs_ = np.linspace(0.0, 10.0, 50)
+            assert np.allclose(EPRMOD.spline_baseline(xs_, 2 * xs_ + 1, [(0, 1), (4, 5), (9, 10)]), 2 * xs_ + 1)
+            assert not EPRMOD.spline_baseline(Bm_, y_, [(441, 444)]).any(), "spline from one range"
+            # im Tab: Verfahren aus dem Zustand, Rechenweg, Methodentext, Kopf des exportierten Spektrums
+            write_bes3t("blm", y_, time="11:50:15")
+            eb_ = t_e._new("exp", str(eprdir / "blm.dsc"))
+            w.epr_state.update(entries=[eb_], mode="spectra", trace_label="name", stack=False, normalize=False, smooth=0.0,
+                               exclude="", bl_order=1, bl_method="smooth", bl_width=30.0, bl_regions="", calib_uid=None,
+                               ref_freq=0.0, x_min=440.0, x_max=510.0)
+            t_e.fill_table()
+            Bp_, Ip_ = t_e.processed(eb_, {})
+            assert np.max(np.abs((Ip_ - lin_ - one_)[in_])) < 1.0, "smooth baseline not applied in the tab"
+            assert dict(t_e.chain())[T("chain_baseline")] and EPRMOD.bl_method(w.epr_state) == "smooth"
+            mt_ = t_e.methods_text()
+            assert "Whittaker" in mt_ and "30 mT" in mt_ and "polynomial" not in mt_ and "Elucida" not in mt_, mt_
+            assert "Whittaker" in EPRMOD.bl_summary(w.epr_state)
+            w.epr_state.update(bl_method="spline", bl_regions=regs_)
+            Bp_, Ip_ = t_e.processed(eb_, {})
+            assert np.max(np.abs((Ip_ - lin_ - one_)[in_])) < 0.6, "spline baseline not applied in the tab"
+            assert "cubic spline" in t_e.methods_text() and "Whittaker" not in t_e.methods_text()
+            w.epr_state.update(bl_regions="")                      # ohne Bereiche: nichts abziehen, Hinweis, kein Satz
+            t_e.notes_begin()
+            t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
+            assert T("epr_bl_spline_need") in t_e._notes, t_e._notes
+            assert np.allclose(t_e.processed(eb_, {})[1], y_) and "spline" not in t_e.methods_text()
+            w.epr_state.update(bl_order=-1, bl_method="smooth")    # aus bleibt Grad -1, bei jedem Verfahren
+            assert EPRMOD.bl_method(w.epr_state) == "off" and np.allclose(t_e.processed(eb_, {})[1], y_)
+            assert not dict(t_e.chain())[T("chain_baseline")]
+            # Auswahl in der Karte: Felder folgen dem Verfahren, der Zustand bleibt fuer aeltere Staende lesbar
+            w.epr_state.update(bl_order=1, bl_method="poly")
+            w.replace_tab("epr")
+            t_e = w.epr_tab
+            pick_ = lambda k_: t_e.cmb_bl.setCurrentIndex(t_e.cmb_bl.findData(k_))
+            shown_ = lambda: {k_ for k_, (l_, f_) in t_e._bl_rows.items() if not f_.isHidden() and not l_.isHidden()}
+            assert t_e.cmb_bl.currentData() == "poly" and shown_() == {"order", "edge", "regions"}, shown_()
+            pick_("smooth")
+            assert w.epr_state["bl_method"] == "smooth" and w.epr_state["bl_order"] >= 0 and shown_() == {"width"}
+            pick_("spline")
+            assert w.epr_state["bl_method"] == "spline" and shown_() == {"regions"}, shown_()
+            pick_("off")
+            assert w.epr_state["bl_order"] == -1 and w.epr_state["bl_method"] == "spline" and not shown_()
+            pick_("poly")
+            assert w.epr_state["bl_order"] == 1 and w.epr_state["bl_method"] == "poly"
+            w.epr_state.update(entries=[], bl_width=60.0, normalize=True)
+            t_e.fill_table()
+            report.append("EPR baselines (smooth Whittaker with one robust step, spline through ranges, off, fields, "
+                          "methods text): OK")
 
         with section:
             # EPR S = ½: TEMPO-artiges Spektrum mit Feldfehler +0.25 mT fitten -> Kalibrierung; zwei Spezies 70:30

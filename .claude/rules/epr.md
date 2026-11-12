@@ -9,6 +9,16 @@ paths:
 - EPR: Reihenfolge hell − k·dunkel → Basislinie → Ausblenden → Glätten → Normieren; Simulation mit dem
   Normierungsfaktor ihrer Messung (Verhältnis bleibt). Triplett-Simulation nicht selbst rechnen (EasySpin), nur
   importieren. Projekte kopieren BES3T-Partnerdateien (.dsc/.DTA/.YGF/.xml) mit.
+- Basislinie (Nutzerwunsch 2026-11-12 „alle gängigen und sinnvollen“; `bl_method`, Auswahl in der Karte Verarbeitung,
+  Felder folgen dem Verfahren): **Polynom** (Ränder oder signalfreie Bereiche), **Glatt** (`smooth_baseline`:
+  Whittaker-Glätter nach Eilers 2003 auf Abschnittsmitteln + **genau ein** robuster Schritt mit symmetrischen
+  Bisquare-Gewichten; bis zur Konvergenz iteriert läuft es bei stark gekrümmtem Untergrund davon, gemessen; Wert
+  `bl_width` = Periode mit halbem Durchlass), **Spline** (natürlicher kubischer Spline durch die Mittel der Bereiche,
+  ohne zwei Bereiche keine Basislinie + Hinweis, nie Stützstellen raten). Bewusst **nicht**: asymmetrische Verfahren
+  (AsLS, airPLS, arPLS) – sie setzen einseitige Peaks voraus, Spektren in erster Ableitung gehen nach oben und unten.
+  „aus“ bleibt `bl_order` −1 bei jedem Verfahren (ältere Stände lesen das weiter). Der Methodentext nennt Verfahren,
+  Breite und Literaturstelle; „Dunkelspektrum für alle“ blendet das Dunkelspektrum selbst aus (es wird nicht
+  korrigiert und bestimmte sonst das Bild; t = 0 und Abzug bleiben).
 - Stellen wie berichtet (Nutzerwunsch 2026-11-11 „wissenschaftliche Konvention“, IUPAC 1989 Pure Appl. Chem. 61, 2195):
   g-Faktor (nicht „g-Wert“) überall **vier** Nachkommastellen (`g_text`; maßgeblich ist die Messgenauigkeit, X-Band mit
   Frequenzzähler und Feldkalibrierung ≈ ±0.0001–0.0002, nicht die Präzision des Fits), Aufspaltung a in mT drei, Kopplung

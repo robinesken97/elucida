@@ -95,10 +95,103 @@ def ranges(text):
     return out
 
 
-def baseline(B, I, order=1, edge=0.05, regions=None):
-    """Polynom der Ordnung order an signalfreie Punkte: gewählte Bereiche oder die äußeren edge-Anteile."""
-    if order < 0:
+BL_METHODS = ("off", "poly", "smooth", "spline")
+
+
+def bl_method(st):
+    """Verfahren der Basislinie. „aus“ ist wie bisher Grad −1 (`bl_order`), bei jedem Verfahren: ältere Stände kennen
+    nur das Polynom und lesen eine ausgeschaltete Basislinie so weiterhin richtig."""
+    return "off" if st.get("bl_order", 1) < 0 else st.get("bl_method", "poly")
+
+
+def smooth_baseline(B, I, width):
+    """Glatte Basislinie für scharfe Linien auf breitem Untergrund (Resonator): Whittaker-Glätter (kleinste Quadrate
+    mit Strafterm auf den zweiten Differenzen; Eilers, Anal. Chem. 2003, 75, 3631) auf Abschnittsmitteln, danach
+    **ein** Schritt mit symmetrischen robusten Gewichten (Tukey-Bisquare, c = 4.685, Skala = MAD der Reste; Idee der
+    robusten Basislinie: Ruckstuhl et al., JQSRT 2001, 68, 179): Linien ziehen die Kurve kaum mit, egal ob nach oben
+    oder unten (die asymmetrischen Varianten AsLS/arPLS setzen einseitige Peaks voraus und passen nicht zu Spektren
+    in erster Ableitung). Nur ein Schritt: bis zur Konvergenz iteriert schließt das Verfahren immer größere Teile
+    eines stark gekrümmten Untergrunds aus und läuft davon (an echten und künstlichen Spektren gemessen).
+    width [mT]: Periode, die der Glätter auf die Hälfte dämpft – Schmaleres bleibt Signal, Breiteres gilt als
+    Untergrund; eine einseitige Linie von 5 mT Breite verliert bei 60 mT etwa 6 % ihrer Höhe."""
+    use = np.isfinite(I)
+    if use.sum() < 8 or not width > 0:
         return np.zeros_like(I)
+    lo, hi = B[use].min(), B[use].max()
+    if not hi > lo:
+        return np.zeros_like(I)
+    nb = int(np.clip(round(30 * (hi - lo) / width), 16, 500))      # ≥ 30 Abschnitte je Breite, dicht lösbar
+    edges = np.linspace(lo, hi, nb + 1)
+    k = np.clip(np.searchsorted(edges, B[use], side="right") - 1, 0, nb - 1)
+    cnt = np.bincount(k, minlength=nb)
+    have = cnt > 0
+    y = np.zeros(nb)
+    y[have] = np.bincount(k, weights=I[use], minlength=nb)[have] / cnt[have]
+    period = max(4.0, width / ((hi - lo) / nb))                     # in Abschnitten
+    lam = 1.0 / (2.0 - 2.0 * np.cos(2.0 * np.pi / period)) ** 2     # Durchlass 1/(1 + λ(2 − 2cos ω)²) = ½
+    D = np.diff(np.eye(nb), 2, axis=0)
+    H = lam * D.T @ D
+    w = have.astype(float)
+    z = np.linalg.solve(np.diag(w) + H, w * y)
+    r = (y - z)[have]
+    sc = 1.4826 * np.median(np.abs(r - np.median(r)))
+    if sc > 0:
+        w = have * (1.0 - np.clip(np.abs(y - z) / (4.685 * sc), 0.0, 1.0) ** 2) ** 2
+        z = np.linalg.solve(np.diag(w) + H, w * y)
+    xc = np.concatenate([[lo], 0.5 * (edges[:-1] + edges[1:]), [hi]])   # halber Abschnitt am Rand: linear fortsetzen
+    z = np.concatenate([[z[0] - 0.5 * (z[1] - z[0])], z, [z[-1] + 0.5 * (z[-1] - z[-2])]])
+    return np.interp(B, xc, z)
+
+
+def spline_baseline(B, I, regions):
+    """Natürlicher kubischer Spline durch die Mittel (Feld, Intensität) der signalfreien Bereiche, außerhalb der
+    äußeren Stützstellen linear fortgesetzt (wie die Spline-Basislinie der Gerätesoftware mit gesetzten Punkten).
+    Weniger als zwei Bereiche mit Daten: keine Basislinie."""
+    pts = {}
+    for a, b in regions or ():
+        m = (B >= a) & (B <= b) & np.isfinite(I)
+        if m.any():
+            pts[float(B[m].mean())] = float(I[m].mean())
+    if len(pts) < 2:
+        return np.zeros_like(I)
+    x = np.array(sorted(pts))
+    y = np.array([pts[v] for v in x])
+    n, h = len(x), np.diff(x)
+    M = np.zeros(n)                                                 # zweite Ableitungen, an den Enden 0
+    if n > 2:
+        A = np.diag(2.0 * (h[:-1] + h[1:])) + np.diag(h[1:-1], 1) + np.diag(h[1:-1], -1)
+        M[1:-1] = np.linalg.solve(A, 6.0 * (np.diff(y[1:]) / h[1:] - np.diff(y[:-1]) / h[:-1]))
+    j = np.clip(np.searchsorted(x, B) - 1, 0, n - 2)
+    t0, t1, hj = x[j + 1] - B, B - x[j], h[j]
+    out = ((M[j] * t0 ** 3 + M[j + 1] * t1 ** 3) / (6.0 * hj) + (y[j] / hj - M[j] * hj / 6.0) * t0
+           + (y[j + 1] / hj - M[j + 1] * hj / 6.0) * t1)
+    left, right = B < x[0], B > x[-1]
+    out[left] = y[0] + ((y[1] - y[0]) / h[0] - h[0] * M[1] / 6.0) * (B[left] - x[0])
+    out[right] = y[-1] + ((y[-1] - y[-2]) / h[-1] + h[-1] * M[-2] / 6.0) * (B[right] - x[-1])
+    return out
+
+
+def bl_summary(st):
+    """Basislinie in einer Zeile (Kopf der exportierten Spektren, englisch)."""
+    m, regs = bl_method(st), str(st.get("bl_regions", "")).strip()
+    if m == "poly":
+        return f"polynomial of order {st['bl_order']}, " + (f"ranges {regs}" if regs else f"edges {st['bl_edge']:g} %")
+    if m == "smooth":
+        return f"smooth (Whittaker smoother, one robust reweighting step), width {st['bl_width']:g} mT"
+    if m == "spline":
+        return f"natural cubic spline through the means of the ranges {regs}" if regs else "none (spline without ranges)"
+    return "none"
+
+
+def baseline(B, I, order=1, edge=0.05, regions=None, method="poly", width=60.0):
+    """Basislinie nach Verfahren: Polynom der Ordnung order an signalfreie Punkte (gewählte Bereiche oder die
+    äußeren edge-Anteile), glatt (`smooth_baseline`) oder Spline durch die Bereiche (`spline_baseline`)."""
+    if method == "off" or order < 0:
+        return np.zeros_like(I)
+    if method == "smooth":
+        return smooth_baseline(B, I, width)
+    if method == "spline":
+        return spline_baseline(B, I, regions)
     if regions:
         m = np.zeros(len(B), bool)
         for a, b in regions:
@@ -617,7 +710,8 @@ class EPRTab(TABS.FigureTab):
     XRANGE_TEXT = "epr_xrange"
     RESET_KEEP = ("entries", "calib_uid", "calib_g", "T_offset", "ref_freq")   # Spektren/Simulationen, Kalibrierung
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=300.0, x_max=360.0, ymax=0.0, entries=[], unit="mT",
-                         bl_order=1, bl_edge=5.0, bl_regions="", exclude="", smooth=0.0, normalize=True,
+                         bl_order=1, bl_edge=5.0, bl_regions="", bl_method="poly", bl_width=60.0, exclude="", smooth=0.0,
+                         normalize=True,
                          stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers",
                          mode="spectra", int_window="", int_method="double", int_x="time", int_curie=False,
                          show_sum=True, show_residual=False, calib_uid=None, calib_g=2.0055,
@@ -766,19 +860,30 @@ class EPRTab(TABS.FigureTab):
 
         g = QGroupBox(T("epr_processing"))
         f = make_form(g)
-        row = QHBoxLayout()
-        self.sp_bl_order = QSpinBox(minimum=-1, maximum=5, value=st["bl_order"])
-        self.sp_bl_order.setSpecialValueText(T("off"))
+        self.cmb_bl = QComboBox()                        # Verfahren; die Felder darunter folgen ihm (_bl_fields)
+        for k_ in BL_METHODS:
+            self.cmb_bl.addItem(T("off") if k_ == "off" else T("epr_bl_" + k_), k_)
+        self.cmb_bl.setCurrentIndex(max(0, self.cmb_bl.findData(bl_method(st))))
+        self.cmb_bl.setToolTip(T("epr_bl_method_tip"))
+        f.addRow(T("epr_bl_method"), self.cmb_bl)
+        self.sp_bl_order = QSpinBox(minimum=0, maximum=5,
+                                    value=st["bl_order"] if st["bl_order"] >= 0 else self.DEFAULT_STATE["bl_order"])
         self.sp_bl_edge = QDoubleSpinBox(decimals=1, minimum=1, maximum=45, singleStep=1, value=st["bl_edge"],
                                          suffix=" %")
-        row.addWidget(self.sp_bl_order)
-        row.addWidget(QLabel(T("epr_bl_edge")))
-        row.addWidget(self.sp_bl_edge)
-        f.addRow(T("epr_bl_order"), row)
+        self.sp_bl_edge.setToolTip(T("epr_bl_edge_tip"))
+        self.sp_bl_width = QDoubleSpinBox(decimals=0, minimum=5, maximum=2000, singleStep=10, value=st["bl_width"],
+                                          suffix=" mT")
+        self.sp_bl_width.setToolTip(T("epr_bl_width_tip"))
         self.ed_bl_regions = QLineEdit(st["bl_regions"])
         self.ed_bl_regions.setPlaceholderText(T("epr_regions_ph"))
         self.ed_bl_regions.setToolTip(T("epr_bl_regions_tip"))
-        f.addRow(T("epr_bl_regions"), self.ed_bl_regions)
+        self._bl_rows = {}
+        for key_, lab_, w_ in (("order", "epr_bl_order", self.sp_bl_order), ("edge", "epr_bl_edge", self.sp_bl_edge),
+                               ("width", "epr_bl_width", self.sp_bl_width),
+                               ("regions", "epr_bl_regions", self.ed_bl_regions)):
+            l_ = QLabel(T(lab_))
+            f.addRow(l_, w_)
+            self._bl_rows[key_] = (l_, w_)
         self.ed_exclude = QLineEdit(st["exclude"])
         self.ed_exclude.setPlaceholderText(T("epr_regions_ph"))
         self.ed_exclude.setToolTip(T("epr_exclude_tip"))
@@ -911,8 +1016,11 @@ class EPRTab(TABS.FigureTab):
         f.addRow(self.lbl_info)                          # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(g)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
-        for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_smooth, self.sp_gap):
+        for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_bl_width, self.sp_smooth, self.sp_gap):
             w_.valueChanged.connect(self.changed)
+        self.cmb_bl.currentIndexChanged.connect(self._bl_fields)
+        self.cmb_bl.currentIndexChanged.connect(self.changed)
+        self._bl_fields()
         for w_ in (self.cb_norm, self.cb_stack, self.cb_params, self.cb_curie, self.cb_sum, self.cb_res):
             w_.toggled.connect(self.changed)
         self.cmb_calib.currentIndexChanged.connect(self.changed)
@@ -928,8 +1036,19 @@ class EPRTab(TABS.FigureTab):
             ed.editingFinished.connect(self.changed)
         self.fill_table()
 
+    def _bl_fields(self, *_):
+        """Nur die Felder des gewählten Basislinienverfahrens zeigen."""
+        m = self.cmb_bl.currentData()
+        show = {"order": m == "poly", "edge": m == "poly", "width": m == "smooth", "regions": m in ("poly", "spline")}
+        for key_, pair in self._bl_rows.items():
+            for w_ in pair:
+                w_.setVisible(show[key_])
+
     def collect(self):
-        self.st.update(unit=self.cmb_unit.currentData(), bl_order=self.sp_bl_order.value(),
+        bl = self.cmb_bl.currentData()                   # „aus“ = Grad −1, das Verfahren bleibt gemerkt
+        self.st.update(unit=self.cmb_unit.currentData(), bl_order=-1 if bl == "off" else self.sp_bl_order.value(),
+                       bl_method=self.st.get("bl_method", "poly") if bl == "off" else bl,
+                       bl_width=self.sp_bl_width.value(),
                        bl_edge=self.sp_bl_edge.value(), bl_regions=self.ed_bl_regions.text().strip(),
                        exclude=self.ed_exclude.text().strip(), smooth=self.sp_smooth.value(),
                        normalize=self.cb_norm.isChecked(), stack=self.cb_stack.isChecked(), gap=self.sp_gap.value(),
@@ -1278,6 +1397,14 @@ class EPRTab(TABS.FigureTab):
         for x in self.st["entries"]:
             if x["kind"] == "exp" and x["uid"] != e.get("dark") and x is not e:
                 x.update(dark=e.get("dark"), dark_k=e.get("dark_k", 1.0))
+        # Das Dunkelspektrum selbst wird nicht korrigiert: zwischen den Differenzen bestimmte es Maßstab und Bild
+        # (Nutzerwunsch 2026-11-12); t = 0 und der Abzug bleiben, das Häkchen in der Liste holt es zurück
+        for i, x in enumerate(self.st["entries"]):
+            if e.get("dark") and x["uid"] == e["dark"] and x["visible"]:
+                x["visible"] = False
+                self._loading = True
+                self.table.item(i, 0).setCheckState(Qt.Unchecked)
+                self._loading = False
         self.timer.start()
 
     def choose_params(self):
@@ -1329,7 +1456,8 @@ class EPRTab(TABS.FigureTab):
             dB, calib_target = self.calibration_shift()
             if dB and e["uid"] != calib_target:
                 B = B - dB                                 # Feldkorrektur aus der Referenz (z. B. TEMPO)
-            I = I - baseline(B, I, st["bl_order"], st["bl_edge"] / 100.0, ranges(st["bl_regions"]) or None)
+            I = I - baseline(B, I, st["bl_order"], st["bl_edge"] / 100.0, ranges(st["bl_regions"]) or None,
+                             bl_method(st), st["bl_width"])
             if hide:
                 for a, b in ranges(st["exclude"]):
                     I[(B >= a) & (B <= b)] = np.nan
@@ -1347,6 +1475,8 @@ class EPRTab(TABS.FigureTab):
         if not vis:
             self.lbl_info.setText("")
             return None
+        if bl_method(st) == "spline" and len(ranges(st["bl_regions"])) < 2:
+            self.add_note(T("epr_bl_spline_need"))            # nichts raten: ohne Stützbereiche keine Basislinie
         if st["mode"] == "intensity":
             return self.intensity_spec([e for e in vis if e["kind"] == "exp"])
         cfg = self.base_cfg()
@@ -1620,7 +1750,7 @@ class EPRTab(TABS.FigureTab):
 
     def chain(self):
         st = self.st
-        return [(T("chain_dark"), any(e.get("dark") for e in st["entries"])), (T("chain_baseline"), st["bl_order"] >= 0),
+        return [(T("chain_dark"), any(e.get("dark") for e in st["entries"])), (T("chain_baseline"), bl_method(st) != "off"),
                 (T("chain_mask"), bool(str(st.get("exclude", "")).strip())), (T("chain_smooth"), st["smooth"] > 0),
                 (T("chain_norm"), bool(st["normalize"]))]
 
@@ -1654,12 +1784,22 @@ class EPRTab(TABS.FigureTab):
         if darks:
             steps.append("a dark spectrum was subtracted (I_light − k·I_dark, k = " + ", ".join(f"{k:g}" for k in darks)
                          + "; interpolated onto the field axis of the measurement)")
-        if st["bl_order"] >= 0:
-            regs = ranges(st["bl_regions"])
+        bm, regs = bl_method(st), ranges(st["bl_regions"])
+        if bm == "poly":
             where = (f"the signal-free field ranges {fmt_r(regs)} mT" if regs
                      else f"the outer {st['bl_edge']:g}% of the field sweep on each side")
             steps.append(f"a polynomial baseline of order {st['bl_order']} was fitted by least squares to {where} "
                          "and subtracted")
+        elif bm == "smooth":
+            steps.append("a smooth baseline was subtracted, obtained with a penalised least-squares (Whittaker) "
+                         "smoother with a second-difference penalty (P. H. C. Eilers, Anal. Chem. 2003, 75, 3631), "
+                         "followed by one reweighting step with symmetric bisquare weights (tuning constant 4.685, "
+                         "scale from the median absolute deviation of the residuals); the smoothing parameter was set "
+                         f"such that a sinusoidal variation with a period of {st['bl_width']:g} mT is reduced to half "
+                         "its amplitude, so that narrower features remain in the spectrum")
+        elif bm == "spline" and len(regs) >= 2:
+            steps.append("a natural cubic spline through the mean field and mean intensity of the signal-free field "
+                         f"ranges {fmt_r(regs)} mT was subtracted as baseline")
         if ranges(st["exclude"]):
             steps.append(f"the field range(s) {fmt_r(ranges(st['exclude']))} mT were excluded")
         win = sorted({round(n * float(np.median(np.diff(B))), 4) for B in (self.spectrum(e)["B"] for e in exps)
@@ -1772,9 +1912,7 @@ class EPRTab(TABS.FigureTab):
                     f"% mwFreq [GHz]: {self.axis_mw(e)}; T [K]: {m.get('T_K')}; ModAmp [mT]: {m.get('mod_mT')}; "
                     f"Power [mW]: {m.get('power_mW')}",
                     f"% dark spectrum: {dark['label'] + ' x ' + format(e.get('dark_k', 1.0), 'g') if dark else 'none'}; "
-                    f"baseline: order {st['bl_order']}, " + (f"ranges {st['bl_regions']}" if st['bl_regions']
-                                                           else f"edges {st['bl_edge']:g} %") +
-                    f"; smoothing: {st['smooth']:g} mT",
+                    f"baseline: {bl_summary(st)}; smoothing: {st['smooth']:g} mT",
                     "% B [mT]\tI [arb. u.]"]
             safe = re.sub(r"[^\w.+-]+", "_", e["label"]).strip("_") or e["uid"]
             p, n = base.with_name(f"{base.name}_{safe}.txt"), 1

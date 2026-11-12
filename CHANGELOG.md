@@ -2,6 +2,20 @@
 
 # Changelog
 
+## 1.1.0 – 2026-11-12
+
+### New
+- **EPR: choice of baseline.** Besides the polynomial there are "Smooth" (follows a broad background, keeps narrow
+  lines, needs no dark spectrum; the only value is the width) and "Spline" (through the means of the signal-free
+  ranges). The methods text and the exported spectra state the method.
+
+### Changed
+- EPR: "Use this dark spectrum for all measurements" hides the dark spectrum itself in the figure; its check box in
+  the list shows it again.
+
+### Fixed
+- With very dense, noisy curves the legend was placed on top of the curves; it now moves beside the axis as intended.
+
 ## 1.0.0 – 2026-11-11
 
 First stable version.

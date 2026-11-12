@@ -1345,7 +1345,10 @@ class Figure:
             x, y = x[ok], y[ok]
             if len(x) < 2:
                 continue
-            if np.all(np.diff(x) > 0):
+            # dichter als das Raster (verrauschte EPR-Spektren, 60 000 Punkte): Abtasten an 4·n Stellen ließ die
+            # Rauschspitzen durchrutschen, die Fläche galt als frei und die Legende lag über den Kurven
+            dense = np.count_nonzero((x >= min(x0, x1)) & (x <= max(x0, x1))) > len(fine)
+            if np.all(np.diff(x) > 0) and not dense:
                 yi = np.interp(xd, x, y, left=-np.inf, right=-np.inf)
             else:
                 # nicht monoton (z. B. CV mit Hin- und Rücklauf, absteigende Wellenlängen): Maximum je Abschnitt

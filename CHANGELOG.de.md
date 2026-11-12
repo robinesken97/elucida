@@ -2,6 +2,20 @@
 
 # Änderungen
 
+## 1.1.0 – 2026-11-12
+
+### Neu
+- **EPR: Basislinie nach Wahl.** Neben dem Polynom gibt es „Glatt“ (folgt breitem Untergrund, lässt schmale Linien
+  stehen, kommt ohne Dunkelspektrum aus; einziger Wert ist die Breite) und „Spline“ (durch die Mittel der
+  signalfreien Bereiche). Methodentext und exportierte Spektren nennen das Verfahren.
+
+### Geändert
+- EPR: „Dunkelspektrum für alle Messungen übernehmen“ blendet das Dunkelspektrum selbst im Bild aus; das Häkchen in
+  der Liste zeigt es wieder.
+
+### Behoben
+- Die Legende lag bei sehr dichten, verrauschten Kurven über den Kurven; sie rückt jetzt wie vorgesehen neben die Achse.
+
 ## 1.0.0 – 2026-11-11
 
 Erste stabile Version.

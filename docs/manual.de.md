@@ -623,8 +623,21 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Frequenz, Temperatur, Modulation und Leistung werden pro Spektrum angezeigt.
 - **Dunkelspektrum:** Die Messung vor dem Bestrahlen lässt sich von jedem Spektrum abziehen (hell − k·dunkel, auf
   dasselbe Feldraster interpoliert); Warnung, wenn Frequenz, Modulation oder Leistung abweichen.
-- **Verarbeitung:** Polynom-Basislinie (Grad 0–5) aus den Rändern des Sweeps oder aus gewählten signalfreien Bereichen,
-  Feldbereiche ausblenden (z. B. das scharfe Radikalsignal), Glätten per gleitendem Mittelwert.
+- **Verarbeitung:** Basislinie nach Wahl, dann Feldbereiche ausblenden (z. B. das scharfe Radikalsignal) und Glätten
+  per gleitendem Mittelwert. Verfahren der Basislinie:
+  - **Polynom** (Grad 0–5) aus den Rändern des Sweeps oder aus gewählten signalfreien Bereichen: für schwach
+    gekrümmte Basislinien.
+  - **Glatt:** folgt einem breiten Untergrund (z. B. dem Resonator bei weiten Sweeps) und lässt schmale Linien
+    stehen; ein Dunkelspektrum ist nicht nötig, das Rauschen bleibt das der Einzelmessung. Einziger Wert ist die
+    **Breite**: was schmaler ist, bleibt Signal, was breiter ist, wird als Untergrund abgezogen. Sie muss größer
+    sein als die breiteste echte Linie, sonst verschwinden auch breite Anteile des Spektrums; einseitige Linien
+    verlieren etwas Höhe (bei einem Zwölftel der Breite etwa 6 %). Rechnung: Whittaker-Glätter (kleinste Quadrate mit
+    Strafterm auf den zweiten Differenzen) mit einem robusten Gewichtungsschritt; der Methodentext nennt Verfahren,
+    Breite und Literaturstelle.
+  - **Spline:** natürlicher kubischer Spline durch die Mittel der signalfreien Bereiche (mindestens zwei, kurz
+    wählen), wie die Basislinie mit gesetzten Punkten in der Gerätesoftware.
+  - Ein **Dunkelspektrum** bleibt die Wahl, wenn der Untergrund ähnlich schmal ist wie das Signal; es verdoppelt
+    aber die Rauschleistung (Faktor √2 im Rauschen) und entfernt, was schon im Dunkelspektrum an Signal steckt.
 - **EasySpin-Simulationen** als zweispaltiger Text (B in mT, Intensität), z. B. `writematrix([B(:) spc(:)], 'sim.txt',
   'Delimiter', '\t')`; per kleinsten Quadraten an eine Messung angepasst (oder von Hand skaliert) und im Feld
   verschiebbar; gestrichelt auf derselben Ebene. Eine **Parameterdatei** (die MATLAB-Zeilen `Sys.D = [D E]; …`) wird
@@ -647,7 +660,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Intensität gegen Zeit oder Temperatur** (z. B. Belichtungskinetik, thermischer Zerfall): Doppelintegral oder
   Peak-zu-Peak in einem Feldfenster für jede sichtbare Messung (nach Dunkelspektrum und Basislinie), optional × T
   (Curie), normiert; die Zeit zählt ab dem frühesten Spektrum im Tab (z. B. dem Dunkelspektrum). „Dunkelspektrum für
-  alle Messungen übernehmen“ setzt den Hintergrund für eine ganze Serie auf einmal.
+  alle Messungen übernehmen“ setzt den Hintergrund für eine ganze Serie auf einmal und blendet das Dunkelspektrum
+  selbst im Bild aus (das Häkchen in der Liste zeigt es wieder).
 - **Thermischer Zerfall bei konstanter Heizrate** (Nachbau des MATLAB-Skripts der Gruppe): Intensität je Spektrum als
   Peak-zu-Peak, Doppelintegral oder **Gauß + Gerade an ein Merkmal** (z. B. das X-Merkmal bei 487 mT), × T, Feld auf eine
   Referenzfrequenz skaliert (z. B. 9,3 GHz) und Temperaturkorrektur (z. B. −1,5 K); dann **E_a und A** aus

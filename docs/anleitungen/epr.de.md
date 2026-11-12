@@ -17,9 +17,16 @@ Spektrum dabei.
 
 ## 2. Verarbeiten
 
-Messung anklicken: Feld **Dunkelspektrum** (hell − k·dunkel). Unter **Verarbeitung**: Polynom-Basislinie aus den
-Rändern oder aus signalfreien Bereichen, Bereiche ausblenden, glätten. Die Reihenfolge ist fest: Dunkelspektrum →
-Basislinie → Ausblenden → Glätten → Normieren.
+Messung anklicken: Feld **Dunkelspektrum** (hell − k·dunkel). Unter **Verarbeitung**: Basislinie wählen, Bereiche
+ausblenden, glätten. Die Reihenfolge ist fest: Dunkelspektrum → Basislinie → Ausblenden → Glätten → Normieren.
+
+Welche Basislinie?
+- **Polynom** (aus den Rändern oder aus signalfreien Bereichen): der Normalfall bei schmalen Sweeps.
+- **Glatt:** bei weiten Sweeps mit breitem Untergrund des Resonators, z. B. Triplett-Spektren. Die **Breite** größer
+  wählen als die breiteste echte Linie; ein Dunkelspektrum ist dann nicht nötig.
+- **Spline:** wenn du die Stützstellen selbst setzen willst (mindestens zwei kurze signalfreie Bereiche).
+- **Dunkelspektrum** statt Basislinie, wenn der Untergrund ähnlich schmal ist wie das Signal. „Dunkelspektrum für alle
+  Messungen übernehmen“ setzt es für die ganze Serie und blendet es selbst im Bild aus.
 
 ## 3. Simulation
 
