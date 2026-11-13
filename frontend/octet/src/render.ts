@@ -18,6 +18,7 @@ import type { DocStyle, Guides } from "./docstyle.ts";
 import type { Cycle, CycleText } from "./cycle.ts";
 import type { Measured } from "./measured.ts";
 import type { Plot, PlotPart } from "./pageplot.ts";
+import type { Risk } from "./riskassess.ts";
 
 type P = [number, number];
 // text: a label that is not one element (OMe, CO2Et, Ph). label then holds the element it attaches through.
@@ -39,13 +40,15 @@ export type Atom = {
   colour?: string; // #rrggbb for the atom's label and marks; unset draws in the document's ink
   // location[2] is the atom's depth (z, in bond lengths; nearer the viewer is larger), from a turn in 3D (Structure
   // Perspective), 3D Clean Up or a file. shade: depth shading is on for the atom's structure (ChemDraw's Structure >
-  // Structure Perspective, ShowPerspective in CDXML): further bonds and labels are drawn fainter.
-  shade?: true;
+  // Structure Perspective, ShowPerspective in CDXML): further bonds and labels are drawn fainter. A number is also an
+  // opacity set by hand (the Actions panel's Opacity, 0.2 to 0.9): the atom, its label and its bonds are drawn that
+  // much fainter again. Turning depth shading off or Flatten takes it away.
+  shade?: true | number;
   // The label's text style (ChemDraw's Text menu on a selected label). Unset uses the document's label font and size.
   font?: string; size?: number; bold?: true; italic?: true; underline?: true;
-  // A written label's characters that are bold, italic or underlined where the rest are not (styled as it is typed, as
-  // ChemDraw's label runs): its text in runs, each with only those styles; text is always their text joined. The label's
-  // own bold, italic and underline go on all of it.
+  // A written label's characters that are bold, italic, underlined or in a colour where the rest are not (styled as it
+  // is typed, as ChemDraw's label runs): its text in runs, each with only those styles; text is always their text
+  // joined. The label's own bold, italic, underline and colour go on all of it, and a run's colour is drawn over it.
   runs?: TextRun[];
   ignoreWarnings?: true; // Display Warnings off for this atom (ChemDraw's IgnoreWarnings): its problems are not marked
   cip?: true; // Show Stereochemistry is on for this atom's structure: its R/S (and its double bonds' E/Z) labels show
@@ -54,6 +57,7 @@ export type Atom = {
   number?: string; // Show Atom Number: the number drawn beside the atom
   hiddenNumber?: string; // a number the atom keeps but does not show (ChemDraw's AtomNumber with Show Atom Number off)
   peaks?: number[]; // the measured multiplets (Group ids in the drawing's spectra) the user linked this atom to
+  session?: number; // the spectrum session (Editor.tsx, plan B1.12) this atom's structure is open in: never saved, copied or duplicated
   // The label's alignment set by hand (ChemDraw's Flush Left, Centered, Flush Right and Stacked Above on a label;
   // LabelDisplay in CDXML): left reads from the atom, right ends at it (MeO, H2N), centre sits on it, above and below
   // stack the rest of the label over or under the atom's own unit. Unset is Automatic: it reads away from the bonds.
@@ -116,6 +120,9 @@ export type Bond = {
   type: number; atoms: [number, number]; stereo?: number; display?: Display; position?: "left" | "centre" | "right"; colour?: string; halo?: string; ignoreWarnings?: true;
   query?: "any" | "sd" | "sa" | "da"; topology?: "ring" | "chain" | "either"; rxn?: "centre" | "makebreak" | "change" | "makechange" | "not" | "nochange" | "unmapped";
   spacing?: number; // a double bond's own spacing (% of the bond length, as ChemDraw's BondSpacing); unset is the document's
+  // The bond's own line and bold widths in points (Settings > Pro > Selection, ChemDraw's Object Settings); unset uses
+  // the document's. The scale multiplies them.
+  line?: number; bold?: number;
   own?: Record<string, string>; // ChemDraw's own settings on the bond that Octet does not turn into a scale, written back as they came
   peaks?: number[]; // the measured multiplets the user linked this bond to, as an atom's (an IR band to its C=O)
   // At each end that is a label keeping its atoms (inner), the atom of that group the bond joins; -1 is none. A residue
@@ -140,7 +147,9 @@ export type Caption = {
   angle?: number; // turned anticlockwise about its anchor (the start, middle or end of its first baseline), in degrees (ChemDraw's RotationAngle)
   font?: string; // the caption's font; unset uses the document's caption font
   runs?: TextRun[]; // the text in runs, each with its own style (rich text); text is always their text joined
-  property?: Kept; // ChemDraw's live property text (its name, formula or mass) for these atoms, kept and written back
+  // A live property text for these atoms: ChemDraw's (its name, formula or mass), kept and written back, or Octet's own
+  // (attrs.rows: the Properties rows it shows, worked out again as the structure changes; proprows.ts liveValues).
+  property?: Kept;
   order?: number; // draw order (order.ts)
   width?: number; // the caption's width (bond lengths): its lines wrap to it, and justified lines fill it
   // Line spacing (ChemDraw's Text > Line Spacing): unset is Automatic (every line as far apart as the caption's
@@ -159,6 +168,9 @@ export type Caption = {
   // A compound number Octet gave (Number these compounds): an experiment page keeps it in reading order. Text the user
   // typed or edited, and every number in a file from Octet 1.1.0 or ChemDraw, has none and is never changed.
   auto?: true;
+  // On an experiment page: the text is this detail's value (experiment.ts FIELDS: "date", "notebook"), so the detail is
+  // what the text says, wherever the text is moved to.
+  field?: string;
 };
 // Where conditions placed by hand go (their anchor, bond lengths): undefined when they are not placed by hand, or
 // their arrow has changed length or direction since.
@@ -172,13 +184,13 @@ export type Kept = { attrs: Record<string, string>; atoms: number[] };
 // An arrow from one point to another (drawing coordinates). bend: how far a curved arrow's middle sits off the
 // straight line, as a fraction of its length, to the left looking from start to end.
 // line and arc are drawing elements with no head; they share the arrows' handles. style: how the shaft is drawn
-// (dashed suits a proposed step; wavy and bold are for lines).
+// (dashed suits a proposed step; wavy and bold are for lines; membrane draws a line as a lipid bilayer, membrane()).
 // orbital: an atomic or hybrid orbital drawn from its nucleus (from) to the tip of its main lobe (to).
 // cut: a fragmentation line across bonds (the Mass spec analysis tool's), whose pieces the Mass spec panel analyses.
 // nogo and hash: a reaction arrow crossed out, or struck through with two slashes (ChemDraw's No-Go Cross and Hash).
 // dipole: an arrow with a bar across its tail. block: a hollow block arrow (a wide shaft and head drawn as an outline).
 export type ArrowKind = "reaction" | "equilibrium" | "resonance" | "retro" | "nogo" | "hash" | "dipole" | "block" | "curved" | "fishhook" | "double" | "line" | "arc" | "orbital" | "cut" | "curve";
-export type LineStyle = "dashed" | "bold" | "wavy" | "doubled";
+export type LineStyle = "dashed" | "bold" | "wavy" | "doubled" | "membrane";
 // The Curves model, as ChemDraw's Curves menu: a head at either end of a line (none, full, or a half head with its
 // barb on the left or right, looking the way the head points), the heads' shape, and a closed curve's fill.
 export type Head = "none" | "full" | "left" | "right";
@@ -241,13 +253,14 @@ export const takesHeads = (a: Pick<Arrow, "kind">) => !["equilibrium", "retro", 
 // arrow's is its outline, by their kind.
 export const shapesHeads = (a: Pick<Arrow, "kind">) => takesHeads(a) || a.kind === "equilibrium";
 // Whether picked arrows' heads have a shape to choose: their heads all take one, and they have a head now (an
-// equilibrium's come with its kind). The Actions panel shows Heads, and the Curves menu turns on its shapes, only then.
-export const headShaped = (c: { shaped?: boolean; heads?: boolean; start?: Head; end?: Head }) => !!c.shaped && (c.start !== "none" || c.end !== "none" || !c.heads);
+// equilibrium's come with its kind; a membrane draws none). The Actions panel shows Heads, and the Curves menu turns on
+// its shapes, only then.
+export const headShaped = (c: { shaped?: boolean; heads?: boolean; start?: Head; end?: Head; style?: string }) => !!c.shaped && c.style !== "membrane" && (c.start !== "none" || c.end !== "none" || !c.heads);
 // Curves > Solid, Hollow and Angled Arrowhead for what is picked (the Actions panel's context): on for arrows whose
 // heads have a shape to choose (headShaped), and for a catalytic cycle or its side arrow's text (cycle: the cycle.head
 // commands, as in the Actions panel), with the shape they have ticked. Off for anything else.
 export const HEAD_SHAPES: HeadShape[] = ["solid", "hollow", "angled"];
-export function headMenu(c: { kind: string; shaped?: boolean; heads?: boolean; start?: Head; end?: Head; head?: HeadShape; cycleSide?: { head: HeadShape } } | undefined): { head?: HeadShape; cycle?: boolean } {
+export function headMenu(c: { kind: string; shaped?: boolean; heads?: boolean; start?: Head; end?: Head; style?: string; head?: HeadShape; cycleSide?: { head: HeadShape } } | undefined): { head?: HeadShape; cycle?: boolean } {
   if (c?.kind === "arrow") return headShaped(c) ? { head: c.head } : {};
   if (c?.kind === "cycle") return { head: c.head, cycle: true };
   if (c?.kind === "caption" && c.cycleSide) return { head: c.cycleSide.head, cycle: true };
@@ -264,7 +277,7 @@ type ArrowContext = { kind: "arrow"; arrow: string; ratio: number; heads: boolea
 type CycleContext = { kind: "cycle"; side?: PickSide; head: HeadShape; size: string; step: boolean; reversible: boolean; balance: string };
 const END_HEADS = [["none", "None"], ["full", "Arrowhead"], ["left", "Half, left"], ["right", "Half, right"]] as const;
 const HEAD_NAMES = [["solid", "Solid"], ["hollow", "Hollow"], ["angled", "Angled"]] as const;
-const LINE_STYLES = [["plain", "Plain"], ["dashed", "Dashed"], ["bold", "Bold"], ["doubled", "Double"], ["wavy", "Wavy"]] as const;
+const LINE_STYLES = [["plain", "Plain"], ["dashed", "Dashed"], ["bold", "Bold"], ["doubled", "Double"], ["wavy", "Wavy"], ["membrane", "Membrane"]] as const;
 const HEAD_SIZES = [["large", "Large"], ["medium", "Medium"], ["small", "Small"]] as const;
 const FILLS = [["none", "None"], ["solid", "Filled"], ["shaded", "Shaded"], ["faded", "Faded"]] as const;
 export function arrowPicks(context: { kind: string } | undefined): { label: string; picks: ArrowPick[] }[] {
@@ -274,12 +287,13 @@ export function arrowPicks(context: { kind: string } | undefined): { label: stri
   if (c && (c.heads || c.curved || c.fillable || c.size !== undefined || c.arrow === "orbital")) {
     // An orbital's line is plain, dashed or bold, as ChemDraw's drawing element menu has it.
     const orbital = c.arrow === "orbital", picks: ArrowPick[] = [];
-    if (c.heads || orbital) picks.push({ label: "Line", command: "arrow.style", value: c.style ?? "plain", options: LINE_STYLES.filter(([id]) => !orbital || id === "plain" || id === "dashed" || id === "bold") });
-    if (c.heads) picks.push({ label: "Start", command: "arrow.start", value: c.start ?? "none", options: END_HEADS, head: c.head }, { label: "End", command: "arrow.end", value: c.end ?? "none", options: END_HEADS, head: c.head });
+    // A membrane is for lines, arcs and pen curves, and has no heads.
+    if (c.heads || orbital) picks.push({ label: "Line", command: "arrow.style", value: c.style ?? "plain", options: LINE_STYLES.filter(([id]) => (!orbital || id === "plain" || id === "dashed" || id === "bold") && (id !== "membrane" || isLine({ kind: c.arrow as ArrowKind }))) });
+    if (c.heads && c.style !== "membrane") picks.push({ label: "Start", command: "arrow.start", value: c.start ?? "none", options: END_HEADS, head: c.head }, { label: "End", command: "arrow.end", value: c.end ?? "none", options: END_HEADS, head: c.head });
     if (headShaped(c)) picks.push({ label: "Heads", command: "arrow.head", value: c.head ?? "solid", options: HEAD_NAMES });
     if (c.curved) picks.push({ label: "Curve", command: "arrow.sweep", value: String(c.sweep ?? 120), options: SWEEPS.map((s) => [String(s), `${s}°`] as const) });
     if (c.size !== undefined) picks.push({ label: "Size", command: "arrow.size", value: c.size, options: [...(c.arrow === "block" ? HEAD_SIZES.slice(0, 2) : HEAD_SIZES), ...(c.size === "own" ? [["own", "Own size"] as const] : [])] });
-    if (c.fillable) picks.push({ label: "Fill", command: "arrow.fill", value: c.fill ?? "none", options: FILLS });
+    if (c.fillable && c.style !== "membrane") picks.push({ label: "Fill", command: "arrow.fill", value: c.fill ?? "none", options: FILLS });
     groups.push({ label: "Line and arrowheads", picks });
   }
   const side = y ? y.side : t;
@@ -316,7 +330,7 @@ export const sweepOf = (bend: number) => (4 * Math.atan(2 * Math.abs(bend)) * 18
 // fill: shaded (lit from the top left) or solid in the colour. shadow: a grey shadow down and to the right, with the
 // shape filled white over it. side: one bracket only. mark: a sign at a bracket's top right (‡, †, a charge, n).
 // picture: a picture from a ChemDraw file (its embedded PNG, PDF, TIFF and so on), drawn in its box and written back.
-export type ShapeKind = "box" | "rounded" | "oval" | "highlight" | "brackets" | "parens" | "braces" | "tlc" | "table" | "picture";
+export type ShapeKind = "box" | "rounded" | "oval" | "highlight" | "brackets" | "parens" | "braces" | "tlc" | "gel" | "plasmid" | "table" | "picture";
 // A table's cells, row by row (the first row is the header), and its rules: journal style (top, header and bottom
 // rules only) or a full grid.
 // widths and heights: every column's width and every row's height once a border has been dragged (bond lengths; a
@@ -339,7 +353,18 @@ export type Curve = { points: CurvePoint[]; closed?: boolean };
 // the plate, from the bottom and the top), and parts hidden, as ChemDraw's TLC tool.
 // ticks: Rf ticks along both sides (ChemDraw's Show Side Ticks). transparent: what is behind the plate shows through
 // it (ChemDraw's Transparent); otherwise the plate is the page's colour.
-export type Tlc = { lanes: number; spots: Spot[]; rf?: boolean; origin?: number; front?: number; hide?: ("origin" | "front" | "border")[]; ticks?: true; transparent?: true };
+// A gel is a plate too, as ChemDraw's Gel Electrophoresis tool: its wells at the top are its origin and its bands run
+// down the lanes. A band's rf is how far it ran, from its size on a log scale across the gel's range (the sizes at rf
+// 1 and rf 0, kDa or bp), so it may fall outside 0 to 1 and is then not drawn. names: each lane's name. The wells are
+// hidden as "origin"; "names" and "scale" hide the lane names and the size scale.
+export type Tlc = { lanes: number; spots: Spot[]; rf?: boolean; origin?: number; front?: number; hide?: ("origin" | "front" | "border" | "names" | "scale")[]; ticks?: true; transparent?: true;
+  names?: string[]; unit?: "kDa" | "bp"; range?: [number, number] };
+// A plasmid map, as ChemDraw's: its length in base pairs and name, its regions and its markers. A region runs from
+// its start to its end base pair (through 1 when the end comes first), with its arrowhead at the end (unset), at the
+// start (reverse) or none. A marker names one base pair.
+export type Region = { start: number; end: number; name?: string; dir?: "reverse" | "none"; colour?: string };
+export type Marker = { at: number; name: string; colour?: string };
+export type Plasmid = { bp: number; name?: string; regions: Region[]; markers: Marker[] };
 // A spot: its lane and Rf, and when set by hand its colour, style, half-width and half-height, the smear below it
 // (bond lengths), and its own Rf label. style is its fill (unset: filled); dashed and bold are its outline's, and
 // doubled draws a second outline round it (ChemDraw's spot styles: Filled, Hollow, Dashed, Bold, Doubled).
@@ -347,17 +372,17 @@ export type Spot = { lane: number; rf: number; colour?: string; style?: "hollow"
 // faded: a fill fading to nothing at the bottom right (as a closed curve's).
 export type Shape = {
   id: number; kind: ShapeKind; from: [number, number]; to: [number, number]; dashed?: boolean; colour?: string;
-  fill?: "shaded" | "solid" | "faded"; shadow?: boolean; side?: "left" | "right"; mark?: string; tlc?: Tlc; table?: Table;
+  fill?: "shaded" | "solid" | "faded"; shadow?: boolean; side?: "left" | "right"; mark?: string; tlc?: Tlc; table?: Table; plasmid?: Plasmid;
   shade?: Shade; // a shadow's look, when it differs from SHADE
   boldLine?: true; // the outline in the bold width (ChemDraw's Bold line)
   picture?: Record<string, string>; // a picture's data as CDXML holds it: each format's bytes in hex, and its turn
   elucida?: import("./elucida-assets.ts").ElucidaAsset;
   order?: number; // draw order (order.ts)
-  angle?: number; // degrees anticlockwise: the box from and to span is drawn turned about its middle (not TLC plates, tables or pictures)
+  angle?: number; // degrees anticlockwise: the box from and to span is drawn turned about its middle (not plates, plasmid maps, tables or pictures)
   width?: number; // the line width in points; unset uses the document's. The scale multiplies it.
   radius?: number; // a rounded box's corner radius in bond lengths, from ChemDraw's CornerRadius; unset is 0.3
-  // The text of a table's cells or a TLC plate's Rf values, as the Text menu sets it; unset is the document's caption
-  // style (an Rf value is 0.8 of its size). The scale multiplies the size.
+  // The text of a table's cells, a plate's Rf values or sizes, or a plasmid map's labels, as the Text menu sets it;
+  // unset is the document's caption style (a plate's text is 0.8 of its size). The scale multiplies the size.
   font?: string; size?: number; bold?: true; italic?: true; underline?: true;
   ignoreWarnings?: true; // Display Warnings off for a pair of brackets (ChemDraw's IgnoreWarnings): its problem is not marked
   polymer?: Polymer; // a pair of brackets' meaning (ChemDraw's Bracket Properties)
@@ -379,9 +404,11 @@ export type Polymer = { usage: BracketUsage; label?: string; order?: number; pat
 export type Shade = { depth: number; blur: number; opacity: number };
 export const SHADE: Shade = { depth: 0.12, blur: 0, opacity: 0.35 };
 export const isBracket = (sh: Pick<Shape, "kind">) => sh.kind === "brackets" || sh.kind === "parens" || sh.kind === "braces";
-// Boxes, ovals, highlights and brackets turn with a selection, as ChemDraw's graphics do. TLC plates, tables and
-// pictures stay upright and move by their middle (ChemDraw cannot turn a table; Octet keeps a picture as ChemDraw had it).
-export const turns = (sh: Pick<Shape, "kind">) => sh.kind !== "tlc" && sh.kind !== "table" && sh.kind !== "picture";
+// Boxes, ovals, highlights and brackets turn with a selection, as ChemDraw's graphics do. Plates, plasmid maps, tables
+// and pictures stay upright and move by their middle (ChemDraw cannot turn a table; Octet keeps a picture as ChemDraw had it).
+export const turns = (sh: Pick<Shape, "kind">) => sh.kind !== "tlc" && sh.kind !== "gel" && sh.kind !== "plasmid" && sh.kind !== "table" && sh.kind !== "picture";
+// A TLC plate or a gel: lanes and spots (a gel's bands).
+export const isPlate = (sh: Pick<Shape, "kind">) => sh.kind === "tlc" || sh.kind === "gel";
 // A point turned about c by degrees, anticlockwise (drawing units, y up).
 export const turnPoint = (q: [number, number], c: [number, number], degrees: number): [number, number] => {
   const r = (degrees * Math.PI) / 180, cs = Math.cos(r), sn = Math.sin(r), dx = q[0] - c[0], dy = q[1] - c[1];
@@ -429,12 +456,15 @@ export function settleShape(sh: Shape): Shape {
   if (!isBracket(sh) && near(Math.abs(a), 90)) return quarter(out, Math.sign(a));
   return { ...out, angle: Math.round(a * 1e6) / 1e6 };
 }
-export const SHAPE_KINDS: ShapeKind[] = ["box", "rounded", "oval", "highlight", "brackets", "parens", "braces", "tlc", "table", "picture"];
+export const SHAPE_KINDS: ShapeKind[] = ["box", "rounded", "oval", "highlight", "brackets", "parens", "braces", "tlc", "gel", "plasmid", "table", "picture"];
 export const HIGHLIGHT = "#DCE4F6";
 // Captions, arrows, shapes and cycles share one set of ids.
 // guides: what the file asks the window to show (grid, rulers, crosshair), when Octet saved it; files only.
 // spectra: measured spectra (measured.ts), at most one for each key (¹H, ¹³C, IR and so on), shown in the Spectrum panel.
-export type Mol = { atoms: Atom[]; bonds: Bond[]; captions?: Caption[]; arrows?: Arrow[]; shapes?: Shape[]; cycles?: Cycle[]; groups?: Group[]; grids?: Grid[]; fills?: RingFill[]; annotations?: Annotation[]; style?: DocStyle; guides?: Guides; spectra?: Measured[] };
+export type Mol = { atoms: Atom[]; bonds: Bond[]; captions?: Caption[]; arrows?: Arrow[]; shapes?: Shape[]; cycles?: Cycle[]; groups?: Group[]; grids?: Grid[]; fills?: RingFill[]; annotations?: Annotation[]; style?: DocStyle; guides?: Guides; spectra?: Measured[];
+  // An experiment page whose details are text on the page (Octet 1.1.2; experiment.ts withHeader). A page without it,
+  // from Octet 1.1.1, gets that text when it opens.
+  fields?: true };
 // A ring fill (ChemDraw's Ring Fill colours, its ColoredMolecularArea): one ring, by its atoms in ring order, filled
 // with the colour at 30% opacity behind the bonds. Each ring keeps its own fill, so fused rings can differ. A fill
 // whose ring is broken is not drawn.
@@ -450,15 +480,25 @@ export type Annotation = { keyword: string; content: string };
 // "rows": each reagent on a row of its own and the products in a section of their own under them (issue 34); unset,
 // a column under each component, as ChemDraw's grid. Everything else is worked out from the reaction as it is drawn
 // (stoich.ts).
+// Fields added after Octet 1.1.2, each at the top level (Octet 1.1.1 calls a grid damaged when typed holds a field it
+// does not know, and leaves out the rest): roles, each reactant-side column's role by its key (a table Octet makes has
+// roles, even empty, and there a known solvent not listed is a solvent; a table with no roles, from an older Octet, has
+// every column a reactant until the user sets one); taken, the amount measured out for a column, its mass or its
+// volume (drawn red and underlined); conc, the concentration typed (mol/L), which gives the volume of the solvent with
+// no amount typed; conditions, the lines of the block beside the table; step, the table covers its own arrow only (one
+// table for each step of a scheme); at, the table moved on its own: its corner from its arrow's tail (gridview.ts).
+export type GridRole = "reactant" | "catalyst" | "solvent";
+export type GridConditions = Partial<Record<"temperature" | "time" | "atmosphere" | "other", string>>;
 export type Grid = {
   arrow: number; typed: Record<string, Partial<Record<"mass" | "moles" | "equiv" | "volume" | "density" | "molarity" | "purity" | "measured", number>>>; limiting?: string;
   hidden?: { rows?: string[]; cols?: string[] }; colour?: string; layout?: "rows";
+  roles?: Record<string, GridRole>; taken?: Record<string, "mass" | "volume">; conc?: number; conditions?: GridConditions; step?: true; at?: [number, number];
 };
 // A group (Object > Group): atoms and other objects (captions, arrows, shapes, cycles, by id) that select and move as
 // one. Groups nest: a group lists everything in it, the groups inside it too (edit.ts, tidyGroups). An integral group
 // is never split: a click on any part picks all of it.
-// plot: a page spectrum's record (pageplot.ts).
-export type Group = { id: number; atoms: number[]; items: number[]; integral?: true; annotations?: Annotation[]; plot?: Plot };
+// plot: a page spectrum's record (pageplot.ts). risk: an experiment page's risk assessment's record (riskassess.ts).
+export type Group = { id: number; atoms: number[]; items: number[]; integral?: true; annotations?: Annotation[]; plot?: Plot; risk?: Risk };
 // Sizes in px: bond length, line width, bold width, double-bond spacing, hash spacing, label margin, label font size.
 // terminal, carbons: label carbons at chain ends (CH3), or every other carbon too; hideH: labels leave off implicit H.
 // labelPt: the document's label size in pt, which an atom's own label size is measured against.
@@ -483,6 +523,9 @@ export type Box = [number, number, number, number];
 export type MapNumber = { atom: number; text: string; at: P; size: number; h: number };
 export type Drawing = {
   sides?: number[]; // each bond's second line as drawn, for a double bond: -1 left, 1 right of its first atom to its second on screen, 0 centred
+  // What drew each polygon: a bond's index, or below zero an aromatic circle (-1 - k), a π ligand's ellipse
+  // (-100000 - atom) or an atom's symbol (-200000 - atom). The fast glide (glideplan.ts) slides each one's polygons.
+  owners?: number[];
   polygons: P[][]; colours: (string | undefined)[]; alphas: number[]; labels: Label[]; box: Box; ink: Box[]; label: (Box | undefined)[]; scale: number;
   electrons: { atom: number; at: P; key?: string }[]; beads: { at: P; r: number }[]; labelAt: P[]; maps: MapNumber[];
 };
@@ -780,6 +823,14 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
     return z;
   };
   const atomZ = mol.atoms.map((a) => zOf(scaleOf(a)));
+  // A bond's lengths with its own settings: its double-bond spacing (% of the bond), and its line and bold widths
+  // (points; drawn when the style gives its points, as an atom's own label size is).
+  const ptPx = s.labelPt ? s.size / s.labelPt : 0;
+  const ownZ = (b: Bond, z: Z): Z => (b.spacing === undefined && !(ptPx && (b.line || b.bold)) ? z : {
+    ...z, ...(b.spacing !== undefined ? { spacing: (b.spacing / 100) * z.L } : {}),
+    ...(ptPx && b.line ? { hw: (b.line * ptPx * z.L) / s.bond / 2 } : {}),
+    ...(ptPx && b.bold ? { bold: (b.bold * ptPx * z.L) / s.bond, wide: (0.75 * b.bold * ptPx * z.L) / s.bond } : {}),
+  });
   const deg = (i: number) => nbrs[i].length;
   const dir = (i: number, j: number) => unit(sub(pts[j], pts[i]));
 
@@ -843,11 +894,12 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
       }
       return [];
     }
-    const look = { ...(a.font ? { font: a.font } : {}), ...(a.bold ? { bold: true } : {}), ...(a.italic ? { italic: true } : {}), ...(a.underline ? { underline: true } : {}) };
+    const look: { font?: string; bold?: true; italic?: true; underline?: true; colour?: string } = { ...(a.font ? { font: a.font } : {}), ...(a.bold ? { bold: true } : {}), ...(a.italic ? { italic: true } : {}), ...(a.underline ? { underline: true } : {}) };
     const shape: Piece[] = [];
     capAt[i] = M('H').ascent;
-    // A written label with some characters bold, italic or underlined (its runs): each character's style, by its place
-    // in the text. Text from place at is measured and drawn piece by piece, each piece in its own style.
+    // A written label with some characters bold, italic, underlined or in their own colour (its runs): each character's
+    // style, by its place in the text. Text from place at is measured and drawn piece by piece, each piece in its own
+    // style. Colour is not measured, so a red N takes the room a black one does.
     const styled = a.text && a.runs && plainOf(a.runs) === a.text ? a.runs.flatMap((x) => x.text.split("").map(() => x)) : undefined;
     // A piece in superscript or subscript (issue 44) is drawn as a mass number or count is: k its size against the
     // rest, dy how far its baseline moves (down is positive). Text already drawn small (a count, a charge) is not
@@ -858,7 +910,7 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
       for (let k = 0; k < text.length; k++) {
         const st = styled[at + k], last = out[out.length - 1];
         if (last && k && styled[at + k - 1] === st) { last.text += text[k]; continue; }
-        out.push({ text: text[k], look: { ...look, ...(st?.bold ? { bold: true } : {}), ...(st?.italic ? { italic: true } : {}), ...(st?.underline ? { underline: true } : {}) }, ...(st?.script && f === 1 ? { script: st.script } : {}) });
+        out.push({ text: text[k], look: { ...look, ...(st?.bold ? { bold: true } : {}), ...(st?.italic ? { italic: true } : {}), ...(st?.underline ? { underline: true } : {}), ...(st?.colour ? { colour: st.colour } : {}) }, ...(st?.script && f === 1 ? { script: st.script } : {}) });
       }
       return out.map(({ script, ...p }) => {
         const fc = p.look.font || p.look.bold || p.look.italic ? { font: p.look.font, bold: p.look.bold, italic: p.look.italic } : undefined;
@@ -1221,8 +1273,7 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
   const plans: Plan[] = mol.bonds.map((bond) => {
     const [a, b] = bond.atoms, p = pts[a], q = pts[b];
     const length = len(sub(q, p)), u = unit(sub(q, p)), n = perp(u);
-    // A bond with its own double-bond spacing (from ChemDraw) keeps it.
-    const z0 = zOf((scaleOf(mol.atoms[a]) + scaleOf(mol.atoms[b])) / 2), z = bond.spacing === undefined ? z0 : { ...z0, spacing: (bond.spacing / 100) * z0.L }, { L, hw } = z;
+    const z = ownZ(bond, zOf((scaleOf(mol.atoms[a]) + scaleOf(mol.atoms[b])) / 2)), { L, hw } = z;
     const plan: Plan = { a, b, u, n, length, kind: 'line', lines: [], cut: [0, 0], z, ...(mol.atoms[a].hidden || mol.atoms[b].hidden ? { hidden: true } : {}) };
     if (endOn.has(bond)) return { ...plan, u: [1, 0] as P, n: [0, 1] as P, hidden: true };
     const side = (j: number) => Math.sign(dot(sub(pts[j], p), n));
@@ -1524,9 +1575,12 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
   // vanishing point), every bond style as it is, at the document's widths. Its depth (z) decides which bond is in
   // front where two cross. Depth shading (ChemDraw's Structure Perspective, on after 3D Clean Up or Structure >
   // Structure Perspective) also draws objects further back paler: ChemDraw fades their colour towards the paper, as
-  // an alpha over the paper does.
-  const range = zRange === undefined ? depthRange(mol) : zRange;
-  const fade = (...atoms: number[]) => (range && atoms.some((x) => mol.atoms[x].shade) ? shadeAt(atoms.reduce((t, x) => t + (mol.atoms[x].location[2] ?? 0), 0) / atoms.length, range) : 1);
+  // an alpha over the paper does. An opacity set by hand on an atom (shade) fades it further, and a bond by the fainter
+  // of its two atoms.
+  const range = zRange === undefined ? depthRange(mol) : zRange, hand = mol.atoms.some((a) => typeof a.shade === "number");
+  const own = (x: number) => { const s = mol.atoms[x].shade; return typeof s === "number" ? s : 1; };
+  const fade = (...atoms: number[]) => ((range || hand) && atoms.some((x) => mol.atoms[x].shade)
+    ? (range ? shadeAt(atoms.reduce((t, x) => t + (mol.atoms[x].location[2] ?? 0), 0) / atoms.length, range) : 1) * (hand ? atoms.reduce((m, x) => Math.min(m, own(x)), 1) : 1) : 1);
   // Crossing bonds (ChemDraw's Bond Crossing): a section of the bond behind is cut out round the bond in front. As
   // ChemDraw decides, the bond whose middle is nearer is in front, so Bring to Front does nothing where bonds have
   // depth; at the same depth (a flat drawing) the bond drawn later is (Bring to Front and the f key move a bond to the
@@ -1560,24 +1614,25 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
     for (const f of fronts[i]) polygons.push(...polygons.splice(from).flatMap((poly) => without(poly, cutter(plans[f], margin(plans[i])))));
   };
   // Each polygon's colour (its bond's, or for a mark, its atom's) and how strongly it is drawn (fainter further back).
-  const colours: (string | undefined)[] = [], alphas: number[] = [];
+  const colours: (string | undefined)[] = [], alphas: number[] = [], owners: number[] = [];
   plans.forEach((pl, i) => {
     const before = polygons.length, alpha = fade(pl.a, pl.b);
     drawPlan(pl, i);
     cutFronts(i, before);
-    for (const poly of polygons.slice(before)) { colours.push(mol.bonds[i].colour); alphas.push(alpha); for (const q of poly) { grow(pl.a, q); grow(pl.b, q); } }
+    for (const poly of polygons.slice(before)) { colours.push(mol.bonds[i].colour); alphas.push(alpha); owners.push(i); for (const q of poly) { grow(pl.a, q); grow(pl.b, q); } }
   });
   // The aromatic circles, each as a ring of short bars in the line width.
-  for (const r of circled) {
+  circled.forEach((r, ring) => {
     const c = mul(r.reduce<P>((m, i) => add(m, pts[i]), [0, 0]), 1 / r.length);
     const edge = Math.min(...r.map((x, k) => len(sub(pts[r[(k + 1) % r.length]], pts[x]))));
     const radius = ringCircleRadius(r.length, edge, s.spacing / s.bond), steps = 72, before = polygons.length;
+    const first = bondAt.get(key(r[0], r[1])), hw = (first ? ownZ(first, atomZ[r[0]]) : atomZ[r[0]]).hw; // the ring's own line width
     for (let k = 0; k < steps; k++) {
       const a0 = (2 * Math.PI * k) / steps, a1 = (2 * Math.PI * (k + 1.05)) / steps, S = add(c, [Math.cos(a0) * radius, Math.sin(a0) * radius]), E = add(c, [Math.cos(a1) * radius, Math.sin(a1) * radius]);
-      bar(S, E, perp(unit(sub(E, S))), atomZ[r[0]].hw);
+      bar(S, E, perp(unit(sub(E, S))), hw);
     }
-    for (const poly of polygons.slice(before)) { colours.push(mol.atoms[r[0]].colour); alphas.push(fade(...r)); for (const q of poly) grow(r[0], q); }
-  }
+    for (const poly of polygons.slice(before)) { colours.push(mol.atoms[r[0]].colour); alphas.push(fade(...r)); owners.push(-1 - ring); for (const q of poly) grow(r[0], q); }
+  });
   // A π ligand (a ring of delocalised bonds round a multi-centre point) has an ellipse inside, sized as an aromatic
   // circle for the ring and flattened as the ring is (ligandEllipse).
   mol.atoms.forEach((a, i) => {
@@ -1585,8 +1640,9 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
     if (r.length < 3 || !r.every((x) => r.filter((y) => bondAt.get(key(x, y))?.type === 4).length === 2)) return;
     const c = pts[i], { across, along, ra, rb } = ligandEllipse(r.map((x) => pts[x]), c, nbrs[i].length ? pts[nbrs[i][0]] : undefined, s.spacing / s.bond);
     const at = (t: number) => add(c, add(mul(across, Math.cos(t) * ra), mul(along, Math.sin(t) * rb))), steps = 72, before = polygons.length;
-    for (let k = 0; k < steps; k++) { const S = at((2 * Math.PI * k) / steps), E = at((2 * Math.PI * (k + 1.05)) / steps); bar(S, E, perp(unit(sub(E, S))), atomZ[r[0]].hw); }
-    for (const poly of polygons.slice(before)) { colours.push(mol.atoms[r[0]].colour); alphas.push(fade(...r)); for (const q of poly) grow(r[0], q); }
+    const hw = ownZ(r.map((y) => bondAt.get(key(r[0], y))).find((b) => b?.type === 4)!, atomZ[r[0]]).hw; // the ring's own line width, as an aromatic circle's
+    for (let k = 0; k < steps; k++) { const S = at((2 * Math.PI * k) / steps), E = at((2 * Math.PI * (k + 1.05)) / steps); bar(S, E, perp(unit(sub(E, S))), hw); }
+    for (const poly of polygons.slice(before)) { colours.push(mol.atoms[r[0]].colour); alphas.push(fade(...r)); owners.push(-100000 - i); for (const q of poly) grow(r[0], q); }
   });
   // A bond's query indicators (S/D, Rng, Rxn), small, beside its middle: inside its smallest ring, else on the side with
   // more room. Where that covers a label, an atom's indicator, another bond's indicator or another bond, a little along
@@ -1627,7 +1683,7 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
   const labelBoxes = shapes.map((shape) => shape.map(pieceBox));
   labelBoxes.forEach((bs, i) => bs.forEach(([a, b, c, d]) => { grow(i, [a, b]); grow(i, [c, d]); }));
   marks.forEach((mark, i) => mark.forEach((q) => grow(i, q)));
-  symbols.forEach((polys, i) => polys.forEach((poly) => { polygons.push(poly); colours.push(mol.atoms[i].colour); alphas.push(fade(i)); poly.forEach((q) => grow(i, q)); }));
+  symbols.forEach((polys, i) => polys.forEach((poly) => { polygons.push(poly); colours.push(mol.atoms[i].colour); alphas.push(fade(i)); owners.push(-200000 - i); poly.forEach((q) => grow(i, q)); }));
   // Labels in a structure with depth shading fade with their atom's depth too.
   for (const l of labels) {
     const i = labelAtom.get(l);
@@ -1683,7 +1739,7 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
     for (const q of [[at[0] - w / 2, at[1] - h / 2], [at[0] + w / 2, at[1] + h / 2]] as P[]) { grow(i, q); take(q[0], q[1]); }
   });
   const labelAt = labels.map((l): P => pts[labelAtom.get(l) ?? -1] ?? [l.x, l.y]);
-  return { polygons, colours, alphas, labels, box: [x0 - pad, y0 - pad, x1 + pad, y1 + pad], ink, label, scale: k, electrons, beads, labelAt, maps, sides: plans.map((pl) => pl.side ?? 0) };
+  return { polygons, colours, alphas, labels, box: [x0 - pad, y0 - pad, x1 + pad, y1 + pad], ink, label, scale: k, electrons, beads, labelAt, maps, sides: plans.map((pl) => pl.side ?? 0), owners };
 }
 
 // The same drawing as render's, made structure by structure. Each structure's drawing stays in `cache` while its
@@ -1753,6 +1809,28 @@ export function renderParts(mol: Mol, s: Style, measure: (text: string, face?: F
   }
   cache.last = last;
   return out;
+}
+// A structure's ink for a picture that leaves Octet (Copy, Export; structurePaths in Editor.tsx): one list of shapes
+// for each line of a bond (each line of a double bond, each hash), ring circle and symbol, as [colour|alpha|owner|n,
+// shapes]. ChemDraw's PDF draws each line on its own, and Inkscape makes each path an object the user can move. A
+// shape inside a larger one of the same owner (the hole of a ring circle) goes with that one, in any order, so it is
+// still a hole. Without owners: none.
+export function apartShapes(d: Drawing): [string, P[][]][] {
+  if (!d.owners) return [];
+  const shapes = d.polygons.map((poly, i) => {
+    const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
+    return { key: `${d.colours[i] ?? ""}|${(Math.round(d.alphas[i] * 20) / 20).toFixed(2)}|${d.owners![i]}`, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Box, poly };
+  });
+  const inside = (a: Box, b: Box) => b[0] <= a[0] && b[1] <= a[1] && b[2] >= a[2] && b[3] >= a[3];
+  const area = (b: Box) => (b[2] - b[0]) * (b[3] - b[1]);
+  const out = new Map<number, P[][]>();
+  shapes.forEach((sh, i) => {
+    // The largest shape of the same owner that holds this one; of two with the same box, the first.
+    let at = i;
+    shapes.forEach((o, j) => { if (j !== i && o.key === sh.key && inside(sh.box, o.box) && (area(o.box) > area(shapes[at].box) || (area(o.box) === area(shapes[at].box) && j < at))) at = j; });
+    out.set(at, [...(out.get(at) ?? []), sh.poly]);
+  });
+  return [...out].sort((a, b) => a[0] - b[0]).map(([i, polys]) => [`${shapes[i].key}|${i}`, polys]);
 }
 // A drawing moved by x, y (px).
 function shifted(d: Drawing, [x, y]: P): Drawing {
@@ -1983,18 +2061,33 @@ export function arrowPath(a: Arrow, k: number): P[] {
   return Array.from({ length: n + 1 }, (_, i) => (i === 0 ? S : i === n ? T : [O[0] + r * Math.cos(a0 + (sweep * i) / n), O[1] + r * Math.sin(a0 + (sweep * i) / n)] as P));
 }
 
-// How much of its own size a straight arrow's head is drawn at: ChemDraw keeps a head to two thirds of the arrow.
-// Arcs and pen curves keep their whole head (a curve's ends can be close together).
-const headFit = (a: Arrow, s: Style, k: number) => (a.bend || a.kind === "curve" ? 1 : Math.min(1,(2 * Math.hypot(a.to[0] - a.from[0], a.to[1] - a.from[1]) * k) / 3 / (headSize(a).length * s.line || 1)));
+// A path's length, along it.
+const pathLength = (q: P[]) => { let sum = 0; for (let i = 1; i < q.length; i++) { const dx = q[i][0] - q[i - 1][0], dy = q[i][1] - q[i - 1][1]; sum += Math.sqrt(dx * dx + dy * dy); } return sum; };
+// How much of its own size an arrow's head is drawn at: ChemDraw keeps a head to two thirds of the arrow, measured
+// along its path (px): round an arc or a pen curve, so a loop whose ends are close keeps its whole head and a short
+// arc's head stays on its arc. A path is never shorter than the line between its ends, so one whose ends are far
+// enough apart is not measured round.
+const headFit = (size: HeadSize, s: Style, path: P[]) => {
+  const need = 1.5 * size.length * s.line;
+  return len(sub(path[path.length - 1], path[0])) >= need ? 1 : Math.min(1, pathLength(path) / (need || 1));
+};
 // An arrow as filled polygons in px (y down). Heads are drawn as ChemDraw draws them, at their size (headSize) in
 // line widths: the tip, the barbs their length back and their width off the shaft, and the notch between.
 export function arrowShapes(a: Arrow, s: Style, k: number): P[][] {
   const f = scaleOf(a);
   if (f !== 1) s = { ...s, line: s.line * f, bold: s.bold * f, bond: s.bond * f };
-  const size = headSize(a), fit = headFit(a, s, k);
+  const path = arrowPath(a, k), size = headSize(a), fit = headFit(size, s, path);
   const hw = s.line / 2, H = size.length * s.line * fit, C = size.centre * s.line * fit, W = size.width * s.line * fit;
   const out: P[][] = [];
   const bar = (p: P, q: P, w = hw) => { const u = unit(sub(q, p)), n = perp(u); out.push([add(p, mul(n, w)), add(q, mul(n, w)), add(q, mul(n, -w)), add(p, mul(n, -w))]); };
+  // A membrane: each tail as one outline, so it has no open wedge where it turns, and each head a ring (its inner edge
+  // wound against its outer edge and the tails, so its middle stays clear).
+  if (a.style === "membrane") {
+    const { heads, tails } = membrane(a, k), ring = (c: P, r: number, way: number) => Array.from({ length: 24 }, (_, i): P => add(c, mul([Math.cos((way * Math.PI * i) / 12), Math.sin((way * Math.PI * i) / 12)], r)));
+    for (const t of tails) out.push(...strokeOutline(t, hw));
+    for (const h of heads) out.push(ring(h.at, h.r + hw, -1), ring(h.at, Math.max(0, h.r - hw), 1));
+    return out;
+  }
   // Points shortened at their end by `trim` (where a head takes over).
   const cut = (pts: P[], trim: number) => {
     const path = [...pts];
@@ -2008,52 +2101,84 @@ export function arrowShapes(a: Arrow, s: Style, k: number): P[][] {
   };
   // A shaft along points, stopping `trim` short of the end, drawn in the arrow's style: dashes of 0.15 bond lengths
   // with gaps of 0.1, a wave 0.06 bond lengths high every 0.2, the bold width, or two lines 0.1 bond lengths apart.
-  const line = (pts: P[], trim: number) => {
+  // A closed pen curve (no heads) is one loop, with no ends.
+  const line = (pts: P[], trim: number, closed = false) => {
     const path = cut(pts, trim);
     if (a.style === "doubled") {
       const g = 0.05 * s.bond;
-      for (const side of [-1, 1]) { const o = offsetPath(path, side * g); for (let i = 0; i + 1 < o.length; i++) if (len(sub(o[i + 1], o[i])) > 1e-9) bar(o[i], o[i + 1]); }
+      for (const side of [-1, 1]) out.push(...strokeOutline(offsetPath(path, side * g), hw, closed));
       return;
     }
     if (a.style === "dashed" || a.kind === "cut") return dashes(path, 0.15 * s.bond, 0.1 * s.bond).forEach(([p, q]) => bar(p, q));
-    if (a.style === "wavy") {
-      const wave = waveAlong(path, 0.06 * s.bond, 0.2 * s.bond);
-      for (let i = 0; i + 1 < wave.length; i++) bar(wave[i], wave[i + 1]);
-      return;
-    }
-    for (let i = 0; i + 1 < path.length; i++) if (len(sub(path[i + 1], path[i])) > 1e-9) bar(path[i], path[i + 1], a.style === "bold" ? s.bold / 2 : hw);
+    if (a.style === "wavy") return void out.push(...strokeOutline(waveAlong(path, 0.06 * s.bond, 0.2 * s.bond), hw));
+    out.push(...strokeOutline(path, a.style === "bold" ? s.bold / 2 : hw, closed));
   };
   // A head at the end of pts: full, or half (the barb on the left side looking along the arrow, or the right),
-  // solid, hollow (its outline) or angled (open barbs). On a curve it points along the chord of its own length,
-  // so it sits on the arc.
+  // solid, hollow (its outline) or angled (open barbs). It is laid along its shaft: a point x back from the tip and y
+  // across is x back along the shaft and y off it there. So on a curve the head bends with its shaft, and the two draw
+  // as one smooth line at any length; on a straight shaft that is the same as along the arrow.
   const shape = a.head ?? "solid";
   const head = (pts: P[], half?: "left" | "right") => {
-    const T = pts[pts.length - 1], back = cut(pts, H).pop()!, u = unit(sub(T, back)), n = perp(u);
-    const base = add(T, mul(u, -H)), notch = add(T, mul(u, -C));
+    // The shaft from the tip back to H: its own points, then the point H back (ps), how far back each is (ds) and the
+    // way across the shaft from there (ns).
+    const ps: P[] = [], ds: number[] = [], ns: P[] = [];
+    for (let i = pts.length - 1, x = 0; i > 0; i--) {
+      const p = pts[i], dx = p[0] - pts[i - 1][0], dy = p[1] - pts[i - 1][1], l = Math.sqrt(dx * dx + dy * dy);
+      if (!l && i > 1) continue;
+      const n: P = [-dy / l, dx / l];
+      // At a corner (a pen point clicked, not dragged) the shaft turns more than a drawn curve does in one step. A head
+      // is not bent round it: it is a straight dart from the point H back to the tip.
+      if (ns.length && dot(n, ns[ns.length - 1]) < 0.94) return head([cut(pts, H).pop()!, pts[pts.length - 1]], half);
+      ps.push(p); ds.push(x); ns.push(n);
+      if (x + l >= H || i === 1) { const f = (x - H) / l; ps.push([p[0] + dx * f, p[1] + dy * f]); ds.push(H); ns.push(n); break; }
+      x += l;
+    }
+    if (!ps.length) return; // no shaft to sit on (a pen curve of one point)
+    // A point x back along the shaft and y across it: from the shaft's last point before x, b further back, then across.
+    const at = (x: number, y: number): P => {
+      let j = ds.length - 1;
+      while (ds[j] > x) j--;
+      const [px, py] = ps[j], [nx, ny] = ns[j], b = x - ds[j];
+      return [px - ny * b + nx * y, py + nx * b + ny * y];
+    };
+    // The tip to (x, y), through the shaft's points on the way. A line of bars takes all of them, so its joins close as
+    // the shaft's do. A filled edge takes only those it needs to stay within a thirty-second of a line width of the
+    // shaft's curve: a chord strays from a curve by about an eighth of its length times its turn.
+    const edge = (x: number, y: number, all = false) => {
+      const e: P[] = [ps[0]];
+      for (let j = 1, m = ns[0], dm = 0; j < ds.length && ds[j] < x; j++) {
+        const n = ns[j], f = (y * ds[j]) / x;
+        if (all || (ds[j] - dm) * Math.abs(cross(m, n)) >= hw / 2) { e.push([ps[j][0] + n[0] * f, ps[j][1] + n[1] * f]); m = n; dm = ds[j]; }
+      }
+      e.push(at(x, y));
+      return e;
+    };
+    const bars = (e: P[]) => out.push(...strokeOutline(e, hw));
     const barbs = half ? [half === "left" ? -1 : 1] : [1, -1];
-    if (shape === "angled") { for (const side of barbs) bar(T, add(base, mul(n, side * W))); return; }
+    if (shape === "angled") { for (const side of barbs) bars(edge(H, side * W, true)); return; }
     if (shape === "hollow") {
-      for (const side of barbs) { bar(T, add(base, mul(n, side * W))); bar(add(base, mul(n, side * W)), half ? base : base); }
-      if (!half) bar(add(base, mul(n, W)), add(base, mul(n, -W)));
+      for (const side of barbs) { bars(edge(H, side * W, true)); bar(at(H, side * W), at(H, 0)); }
+      if (!half) bar(at(H, W), at(H, -W));
       return;
     }
-    // Wound the way the bars are, so where a head and a line overlap (its own shaft, or an arrow joined at its tip)
-    // the fill adds up and leaves no hole.
-    if (!half) out.push([T, add(base, mul(n, -W)), notch, add(base, mul(n, W))]);
-    else if (half === "left") out.push([T, add(base, mul(n, -W)), add(notch, mul(n, -hw))]);
-    else out.push([T, add(notch, mul(n, hw)), add(base, mul(n, W))]);
+    // One edge out from the tip and the other back to it, wound the way the bars are, so where a head and a line
+    // overlap (its own shaft, or an arrow joined at its tip) the fill adds up and leaves no hole.
+    const join = (e: P[], f: P[]) => { for (let j = f.length - 1; j > 0; j--) e.push(f[j]); out.push(e); };
+    if (!half) { const e = edge(H, -W); e.push(at(C, 0)); join(e, edge(H, W)); }
+    else if (half === "left") join(edge(H, -W), edge(C, -hw));
+    else join(edge(C, hw), edge(H, W));
   };
   // How far a head takes over the shaft: to its notch (solid), its base (hollow), or not at all (angled).
   const takes = (h: Head) => (h === "none" ? 0 : shape === "angled" ? hw : shape === "hollow" ? H : h === "full" ? C : 0);
-  const path = arrowPath(a, k), [S, T] = [path[0], path[path.length - 1]];
+  const [S, T] = [path[0], path[path.length - 1]];
   // A closed curve ends where it starts: its marks have no direction to go by, and it needs none.
   const u: P = len(sub(T, S)) > 1e-9 ? unit(sub(T, S)) : [1, 0], n = perp(u);
   if (takesHeads(a)) {
     // One shaft, and a head at either end as set (the Curves menu) or as the kind has them.
-    const { start, end } = headsOf(a), reversed = [...path].reverse();
-    line(cut(cut(path, takes(end)).reverse(), takes(start)).reverse(), 0);
+    const { start, end } = headsOf(a);
+    line(cut(cut(path, takes(end)).reverse(), takes(start)).reverse(), 0, !!a.curve?.closed && start === "none" && end === "none");
     if (end !== "none") head(path, end === "full" ? undefined : end);
-    if (start !== "none") head(reversed, start === "full" ? undefined : start);
+    if (start !== "none") head([...path].reverse(), start === "full" ? undefined : start);
     // ChemDraw's marks, d (twice the head's half-width) each way: on the middle of the shaft a cross, or two
     // parallel slashes (hash); across the tail, at the notch's depth from it, a dipole's bar as wide as the head.
     const m = a.bend ? path[Math.floor(path.length / 2)] : mul(add(S, T), 0.5), d = 2 * W, at = (p: P, x: number, y: number) => add(add(p, mul(u, x * d)), mul(n, y * d));
@@ -2071,10 +2196,10 @@ export function arrowShapes(a: Arrow, s: Style, k: number): P[][] {
       // about the middle, as ChemDraw does: above 1 the back arrow, to its notch plus the rest over the ratio; below 1
       // the forward arrow, to the ratio of the whole. A bent one (from its point) is two arcs beside its own, and a
       // short one sweeps the ratio of its arc (ChemDraw's curved equilibrium).
-      const g = 0.11 * s.bond, along = (q: P[]) => q.slice(1).reduce((sum, p, i) => sum + len(sub(p, q[i])), 0), whole = along(path), r = a.ratio ?? 1;
+      const g = 0.11 * s.bond, whole = pathLength(path), r = a.ratio ?? 1;
       const ahead = r < 1 ? whole * r : whole, back = r > 1 ? (a.bend ? whole / r : C + (whole - C) / r) : whole;
       // Part of a path about its middle: the fraction f of its length.
-      const middle = (q: P[], f: number) => { const t = ((1 - f) / 2) * along(q); return cut(cut(q, t).reverse(), t).reverse(); };
+      const middle = (q: P[], f: number) => { const t = ((1 - f) / 2) * pathLength(q); return cut(cut(q, t).reverse(), t).reverse(); };
       const top = middle(offsetPath(path, -g), ahead / (whole || 1)), bottom = middle(offsetPath(path, g), back / (whole || 1)).reverse();
       line(top, 0);
       head(top, "left");
@@ -2106,7 +2231,7 @@ export function headBarb(a: Arrow, s: Style, k: number): P | undefined {
   if (scaleOf(a) !== 1) s = { ...s, line: s.line * scaleOf(a) };
   const end = headsOf(a).end, S: P = [a.from[0] * k, -a.from[1] * k], T: P = [a.to[0] * k, -a.to[1] * k];
   if (a.bend || end === "none" || !(takesHeads(a)) || a.kind === "curve" || len(sub(T, S)) < 1e-9) return undefined;
-  const u = unit(sub(T, S)), size = headSize(a), f = headFit(a, s, k);
+  const u = unit(sub(T, S)), size = headSize(a), f = headFit(size, s, [S, T]);
   return add(add(T, mul(u, -size.length * s.line * f)), mul(perp(u), (end === "left" ? -1 : 1) * size.width * s.line * f));
 }
 
@@ -2116,11 +2241,42 @@ export function blockOutline(a: Arrow, s: Style, k: number): P[] {
   if (scaleOf(a) !== 1) s = { ...s, line: s.line * scaleOf(a) };
   const S: P = [a.from[0] * k, -a.from[1] * k], T: P = [a.to[0] * k, -a.to[1] * k];
   if (len(sub(T, S)) < 1e-9) return [];
-  const u = unit(sub(T, S)), n = perp(u), size = headSize(a), fit = headFit(a, s, k);
+  const u = unit(sub(T, S)), n = perp(u), size = headSize(a), fit = headFit(size, s, [S, T]);
   const H = size.length * s.line * fit, C = size.centre * s.line * fit, o = ((a.shaft ?? size.length) * s.line) / 2;
   const t = C > 0 ? Math.min(1, Math.max(0, 1 - o / C)) : 1, back = H - t * (H - C);
   const at = (along: number, across: number): P => add(add(T, mul(u, -along)), mul(n, across));
   return [add(S, mul(n, o)), at(back, o), at(H, C), T, at(H, -C), at(back, -o), add(S, mul(n, -o))];
+}
+
+// A line along points (px) at half-width w, as one outline that winds the way a bar does: its left side out and its
+// right side back, its ends square across it. Where it turns, the outside is mitred (rounded past a turn of 120°, so a
+// sharp turn has no spike) and the inside cuts across, or goes through the turning point where the cut would reach past
+// a step. Filled nonzero, it is the line's whole width with no seams at any zoom, where a bar for each step left a wedge
+// outside every turn. A closed line is two loops: its left side, and its right side back.
+export function strokeOutline(pts: P[], w: number, closed = false): P[][] {
+  const ps: P[] = [], apart = (p: P, q: P) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 > 1e-18;
+  for (const p of pts) if (!ps.length || apart(p, ps[ps.length - 1])) ps.push(p);
+  if (closed && ps.length > 1 && !apart(ps[0], ps[ps.length - 1])) ps.pop();
+  const n = ps.length, ring = closed && n > 2, m = ring ? n : n - 1;
+  if (m < 1) return [];
+  // Each step's direction (ux, uy) and length; its normal is (-uy, ux), the left side.
+  const ux = new Float64Array(m), uy = new Float64Array(m), d = new Float64Array(m), left: P[] = [], right: P[] = [];
+  for (let i = 0; i < m; i++) { const p = ps[i], q = ps[(i + 1) % n], dx = q[0] - p[0], dy = q[1] - p[1], l = Math.sqrt(dx * dx + dy * dy); ux[i] = dx / l; uy[i] = dy / l; d[i] = l; }
+  const across = (side: P[], p: P, i: number, k: number) => side.push([p[0] - uy[i] * k, p[1] + ux[i] * k]);
+  // At point p, from step a to step b: c is the cosine of the turn and s the side it turns to (1 the left).
+  const join = (p: P, a: number, b: number) => {
+    const c = ux[a] * ux[b] + uy[a] * uy[b], x = ux[a] * uy[b] - uy[a] * ux[b], s = x > 0 ? 1 : -1, sin = Math.abs(x);
+    const [inside, outside] = s > 0 ? [left, right] : [right, left], f = w / (1 + c), mx = -(uy[a] + uy[b]) * f, my = (ux[a] + ux[b]) * f;
+    if (1 + c > 1e-9 && w * Math.max(sin / (1 + c), sin) <= Math.min(d[a], d[b])) inside.push([p[0] + s * mx, p[1] + s * my]);
+    else { across(inside, p, a, s * w); inside.push(p); across(inside, p, b, s * w); }
+    if (c >= -0.5) { outside.push([p[0] - s * mx, p[1] - s * my]); return; }
+    const t = s * Math.acos(Math.max(-1, c)), steps = Math.ceil(Math.abs(t) / (Math.PI / 16)), vx = s * uy[a] * w, vy = -s * ux[a] * w;
+    for (let j = 0; j <= steps; j++) { const r = (t * j) / steps, cs = Math.cos(r), sn = Math.sin(r); outside.push([p[0] + vx * cs - vy * sn, p[1] + vx * sn + vy * cs]); }
+  };
+  if (!ring) { across(left, ps[0], 0, w); across(right, ps[0], 0, -w); }
+  for (let i = ring ? 0 : 1; i < (ring ? n : n - 1); i++) join(ps[i], (i + m - 1) % m, i);
+  if (!ring) { across(left, ps[n - 1], m - 1, w); across(right, ps[n - 1], m - 1, -w); }
+  return ring ? [left, right.reverse()] : [[...left, ...right.reverse()]];
 }
 
 // A path moved sideways by d (px) at every point, along the path's own normal there.
@@ -2130,6 +2286,35 @@ function offsetPath(path: P[], d: number): P[] {
     return len(t) < 1e-9 ? p : add(p, mul(perp(unit(t)), d));
   });
 }
+
+// A membrane (a line, arc or pen curve in the Membrane style; ChemDraw's membrane line, arc and ellipse): a lipid
+// bilayer along it, drawn as the library's lipids are. In bond lengths at the arrow's scale, each lipid is a head of
+// radius 0.105 whose middle is 0.565 from the line, and two tails 0.45 long and 0.09 apart that zigzag in towards the
+// line. Each side has its lipids evenly along its own length, about 0.25 apart: a longer line gets more lipids of the
+// same size, and a curve gets fewer on its inside. At most 2000 a side (a membrane 500 bond lengths long), so a file
+// cannot make one that takes too long to draw. px (y down), at k px per bond length.
+export const LIPID_HEAD = "#C9D6F4"; // the heads' fill: the library's light tint (tools/library/lab.mjs)
+export function membrane(a: Arrow, k: number): { heads: { at: P; r: number }[]; tails: P[][] } {
+  const b = k * scaleOf(a), r = 0.105 * b, path = arrowPath(a, k), closed = !!a.curve?.closed, heads: { at: P; r: number }[] = [], tails: P[][] = [];
+  for (const side of [1, -1]) {
+    const leaf = offsetPath(path, side * 0.565 * b), run = [0];
+    for (let i = 1; i < leaf.length; i++) run.push(run[i - 1] + len(sub(leaf[i], leaf[i - 1])));
+    const total = run[run.length - 1], n = Math.min(2000, closed ? Math.max(3, Math.round(total / (0.25 * b))) : Math.round(total / (0.25 * b)) + 1);
+    for (let j = 0, i = 0; j < n; j++) {
+      const at = closed ? (total * j) / n : n > 1 ? (total * j) / (n - 1) : total / 2;
+      while (i < leaf.length - 2 && run[i + 1] < at) i++;
+      const d = sub(leaf[i + 1] ?? leaf[i], leaf[i]), l = len(d);
+      if (l < 1e-9) continue;
+      // u along the side, v in towards the line; a tail's corners stand 0.035 off its axis, one way then the other.
+      const u = mul(d, 1 / l), v = mul(perp(u), -side), c = add(leaf[i], mul(u, at - run[i]));
+      heads.push({ at: c, r });
+      for (const o of [-0.045, 0.045]) tails.push([0, 1, 2, 3, 4].map((m) => add(c, add(mul(v, r + (0.45 * b * m) / 4), mul(u, (o + (m ? (m % 2 ? 0.035 : -0.035) : 0)) * b)))));
+    }
+  }
+  return { heads, tails };
+}
+// A membrane's heads as SVG path data (px, y down), for their fill.
+export const membraneHeads = (a: Arrow, k: number) => membrane(a, k).heads.map(({ at: [x, y], r }) => `M${x + r} ${y}A${r} ${r} 0 1 1 ${x - r} ${y}A${r} ${r} 0 1 1 ${x + r} ${y}Z`).join("");
 
 // A shape's lines in px (y down), as paths: the outline of a box or oval, or each bracket of a pair. A highlight's
 // outline is its edge. Rounded corners have a radius of 0.3 bond lengths (or the box's own); bracket ends reach 0.25
@@ -2148,6 +2333,8 @@ function uprightPaths(sh: Shape, k: number, bond: number): P[][] {
     Array.from({ length: n + 1 }, (_, i) => [c[0] + r[0] * Math.cos(a0 + ((a1 - a0) * i) / n), c[1] + r[1] * Math.sin(a0 + ((a1 - a0) * i) / n)] as P);
   switch (sh.kind) {
     case "oval": return [arc([(x0 + x1) / 2, (y0 + y1) / 2], [w / 2, h / 2], 0, 2 * Math.PI, 72)];
+    // A plasmid map's ring.
+    case "plasmid": { const R = plasmidLayout(sh, 0).R * k; return [arc([(x0 + x1) / 2, (y0 + y1) / 2], [R, R], 0, 2 * Math.PI, 96)]; }
     case "rounded": {
       const r = Math.min((sh.radius ?? 0.3) * bond, w / 2, h / 2);
       return [[...arc([x1 - r, y0 + r], [r, r], -Math.PI / 2, 0), ...arc([x1 - r, y1 - r], [r, r], 0, Math.PI / 2), ...arc([x0 + r, y1 - r], [r, r], Math.PI / 2, Math.PI), ...arc([x0 + r, y0 + r], [r, r], Math.PI, 1.5 * Math.PI), [x1 - r, y0]]];
@@ -2289,24 +2476,133 @@ export function orbitalPaths(a: Arrow, k: number): { path: P[]; second: boolean 
     }
   }
 }
+// An orbital's outline (px): its width, at the bold width when bold, and its dashes when dashed, as a shape's (0.2 bond
+// lengths on and off). Both follow the orbital's scale.
+export const orbitalLine = (a: Pick<Arrow, "style" | "scale">, s: Style) =>
+  ({ width: (a.style === "bold" ? s.bold : s.line) * scaleOf(a), dash: a.style === "dashed" ? 0.2 * s.bond * scaleOf(a) : undefined });
 
-// A TLC plate's layout (drawing units): its box, the origin and solvent front heights, each lane's middle, and
-// where a spot of a given Rf sits.
+// A plate's layout (drawing units): its box, the origin and solvent front heights (a gel's wells and the bottom of its
+// range), each lane's middle, where a spot of a given Rf sits, and the Rf a press at a height gives (to 0.01, or a
+// gel's size to two figures).
 export const TLC_ORIGIN = 0.12, TLC_FRONT = 0.1; // the origin's height and the front's depth, as fractions of the plate
+const GEL_WELLS = 0.1, GEL_FOOT = 0.04; // a gel's wells' depth and the bottom of its range, as fractions of the gel
 export function tlcLayout(sh: Shape) {
-  const x0 = Math.min(sh.from[0], sh.to[0]), x1 = Math.max(sh.from[0], sh.to[0]), y0 = Math.min(sh.from[1], sh.to[1]), y1 = Math.max(sh.from[1], sh.to[1]);
-  const lanes = Math.max(1, sh.tlc?.lanes ?? 1), origin = y0 + (y1 - y0) * (sh.tlc?.origin ?? TLC_ORIGIN), front = y1 - (y1 - y0) * (sh.tlc?.front ?? TLC_FRONT);
+  const x0 = Math.min(sh.from[0], sh.to[0]), x1 = Math.max(sh.from[0], sh.to[0]), y0 = Math.min(sh.from[1], sh.to[1]), y1 = Math.max(sh.from[1], sh.to[1]), gel = sh.kind === "gel";
+  const lanes = Math.max(1, sh.tlc?.lanes ?? 1), origin = gel ? y1 - (y1 - y0) * GEL_WELLS : y0 + (y1 - y0) * (sh.tlc?.origin ?? TLC_ORIGIN), front = gel ? y0 + (y1 - y0) * GEL_FOOT : y1 - (y1 - y0) * (sh.tlc?.front ?? TLC_FRONT);
   const lane = (k: number) => x0 + ((x1 - x0) * (k + 0.5)) / lanes;
   const width = (x1 - x0) / lanes;
-  // A spot's half-width and half-height (bond lengths): set by hand, or 30% of a lane (at most 0.34) by 0.15; drawn
-  // times the plate's scale.
-  const f = scaleOf(sh), size = (x: Spot) => ({ rx: (x.w ?? Math.min((0.3 * width) / f, 0.34)) * f, ry: (x.h ?? 0.15) * f });
-  return { x0, x1, y0, y1, origin, front, lanes, width, lane, size, f, at: (rf: number) => origin + (front - origin) * rf };
+  // A spot's half-width and half-height (bond lengths): set by hand, or 30% of a lane (at most 0.34) by 0.15 (a band
+  // 38% of a lane, at most 0.6, by 0.06); drawn times the plate's scale.
+  const f = scaleOf(sh), size = (x: Spot) => ({ rx: (x.w ?? Math.min(((gel ? 0.38 : 0.3) * width) / f, gel ? 0.6 : 0.34)) * f, ry: (x.h ?? (gel ? 0.06 : 0.15)) * f });
+  // A band's size rounded past an end of the range keeps it at that end, so it stays drawn.
+  const inside = (rf: number) => Math.min(1, Math.max(0, rf));
+  const snap = (y: number) => { const rf = inside((y - origin) / (front - origin)); return gel ? inside(bandRf(sh.tlc, Number(bandSize(sh.tlc, rf).toPrecision(2)))) : Math.round(rf * 100) / 100; };
+  // A gel's wells: the top and bottom of each, as wide as a band.
+  const wells = [y1 - (y1 - y0) * 0.035, y1 - (y1 - y0) * 0.07];
+  return { x0, x1, y0, y1, origin, front, lanes, width, lane, size, f, gel, snap, wells, at: (rf: number) => origin + (front - origin) * rf };
 }
-// A spot's outline (drawing units): an ellipse, drawn out below into a smear when it has a tail. grow: how far out
-// (a doubled spot's second outline).
+// A gel's sizes: kDa for proteins, bp for DNA. Each unit's range (the sizes at the bottom and the top) and the ladder a
+// new gel has in its first lane.
+export const GEL: Record<"kDa" | "bp", { range: [number, number]; ladder: number[] }> = {
+  kDa: { range: [5, 400], ladder: [250, 150, 100, 75, 50, 37, 25, 20, 15, 10] },
+  bp: { range: [300, 15000], ladder: [10000, 8000, 6000, 5000, 4000, 3000, 2000, 1500, 1000, 500] },
+};
+export const gelRange = (t?: Tlc): [number, number] => t?.range ?? GEL[t?.unit ?? "kDa"].range;
+// A band's Rf from its size, and its size from its Rf: log size falls in step with how far the band runs. An Rf is
+// kept between -100 and 100, the most Octet's file reads, so a very narrow range still saves a drawing Octet opens.
+export const bandRf = (t: Tlc | undefined, size: number) => { const [lo, hi] = gelRange(t); return Math.min(100, Math.max(-100, Math.log(hi / size) / Math.log(hi / lo))); };
+export const bandSize = (t: Tlc | undefined, rf: number) => { const [lo, hi] = gelRange(t); return hi * (lo / hi) ** rf; };
+// A size as shown: four figures at most (37.5, 2686, 10000).
+export const sizeText = (n: number) => String(Number(n.toPrecision(4)));
+// A gel's scale: the sizes of its first lane's bands (its ladder), or 1, 2 and 5 times the powers of ten in its range;
+// from the top down, each at least gap (a line of its text) below the last one kept.
+export function gelScale(sh: Shape, gap: number): number[] {
+  const t = sh.tlc, [lo, hi] = gelRange(t), ladder = (t?.spots ?? []).filter((x) => x.lane === 0 && x.rf >= 0 && x.rf <= 1).map((x) => bandSize(t, x.rf)), all: number[] = [];
+  if (ladder.length) all.push(...[...new Set(ladder.map((n) => Number(n.toPrecision(4))))].sort((a, b) => b - a));
+  // p > 0: a size so small that a tenth of it is 0 would never end the loop.
+  else for (let p = 10 ** Math.ceil(Math.log10(hi)); p > 0 && p >= lo / 10 && all.length < 40; p /= 10) for (const m of [5, 2, 1]) if (m * p >= lo && m * p <= hi) all.push(m * p);
+  const at = tlcLayout(sh).at, out: number[] = [];
+  for (const n of all) if (!out.length || at(bandRf(t, out[out.length - 1])) - at(bandRf(t, n)) >= gap) out.push(n);
+  return out;
+}
+// Whether a gel's lane names are turned 45°: when one is wider than its lane. width: a name's width (drawing units).
+export const namesTurn = (sh: Shape, width: (name: string) => number) => (sh.tlc?.names ?? []).some((n) => width(n) > 0.9 * tlcLayout(sh).width);
+// A plasmid map's layout (drawing units), worked out from its base pairs: the ring in the middle of its box with base
+// pair 1 at the top and the rest clockwise, each region as an arrow along the ring (one that overlaps another goes out
+// on a track of its own), each marker as a tick across the ring, and every name outside the ring, spread so no two
+// overlap and joined to its place by a leader. line: a label's line height.
+const PLASMID_BAND = 0.1, PLASMID_TRACK = 0.3; // a region's half-width, and the step out to the next track
+export function plasmidLayout(sh: Shape, line: number) {
+  const x0 = Math.min(sh.from[0], sh.to[0]), x1 = Math.max(sh.from[0], sh.to[0]), y0 = Math.min(sh.from[1], sh.to[1]), y1 = Math.max(sh.from[1], sh.to[1]);
+  const p = sh.plasmid ?? { bp: 1000, regions: [], markers: [] }, bp = Math.max(1, p.bp), f = scaleOf(sh), c: P = [(x0 + x1) / 2, (y0 + y1) / 2];
+  const angle = (b: number) => Math.PI / 2 - (2 * Math.PI * (b - 1)) / bp, at = (b: number, r: number): P => [c[0] + r * Math.cos(angle(b)), c[1] + r * Math.sin(angle(b))];
+  // Each region's run (base pairs past its start), and its track: the first one where it overlaps no region already there.
+  const run = (r: Region) => (((r.end - r.start) % bp) + bp) % bp, tracks: number[] = [], taken: [number, number][][] = [];
+  const meets = (a: [number, number], b: [number, number]) => [0, bp, -bp].some((o) => a[0] < b[0] + b[1] + o && b[0] + o < a[0] + a[1]);
+  p.regions.map((_, k) => k).sort((a, b) => p.regions[a].start - p.regions[b].start || run(p.regions[b]) - run(p.regions[a])).forEach((k) => {
+    const span: [number, number] = [p.regions[k].start, run(p.regions[k]) + 1];
+    let t = 0;
+    while (taken[t]?.some((o) => meets(o, span))) t++;
+    (taken[t] ??= []).push(span);
+    tracks[k] = t;
+  });
+  const hw = PLASMID_BAND * f, step = PLASMID_TRACK * f, outer = Math.max(0, taken.length - 1) * step + hw;
+  // The ring leaves room round it for the names (1.4 bond lengths), whatever their size.
+  const R = Math.max(0.4 * f, Math.min(x1 - x0, y1 - y0) / 2 - outer - 1.4 * f);
+  // A region's outline: the band along its arc, narrowing to a head at its end (or start) as long as its run allows.
+  const ray = (a: number, r: number): P => [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
+  const arc = (a0: number, a1: number, r: number): P[] => { const n = Math.max(1, Math.ceil((Math.abs(a1 - a0) / (2 * Math.PI)) * 120)); return Array.from({ length: n + 1 }, (_, i) => ray(a0 + ((a1 - a0) * i) / n, r)); };
+  const regions = p.regions.map((g, k) => {
+    const r = R + tracks[k] * step, a0 = angle(g.start), a1 = a0 - (2 * Math.PI * (run(g) + 1)) / bp, head = Math.min((2.4 * hw) / r, Math.abs(a1 - a0) / 2);
+    const path = g.dir === "none" ? [...arc(a0, a1, r + hw), ...arc(a1, a0, r - hw)]
+      : g.dir === "reverse" ? [...arc(a0 - head, a1, r + hw), ...arc(a1, a0 - head, r - hw), ray(a0 - head, r - 1.8 * hw), ray(a0, r), ray(a0 - head, r + 1.8 * hw)]
+      : [...arc(a0, a1 + head, r + hw), ray(a1 + head, r + 1.8 * hw), ray(a1, r), ray(a1 + head, r - 1.8 * hw), ...arc(a1 + head, a0, r - hw)];
+    return { path, mid: (a0 + a1) / 2, edge: r + hw };
+  });
+  const markers = p.markers.map((m) => ({ tick: [at(m.at, R - 1.2 * hw), at(m.at, R + outer + 0.6 * hw)] as [P, P], mid: angle(m.at), edge: R + outer + 0.6 * hw }));
+  // The names, each at its place's angle on a circle outside the ring, then spread a line apart down each side: names
+  // that would overlap go in a block centred on where they would be, and blocks that then meet join, as long as any
+  // do. Each then slides round the circle to its new height.
+  const RL = R + outer + 0.35 * f, labels = [
+    ...p.regions.flatMap((g, k) => (g.name ? [{ text: g.name, a: regions[k].mid, edge: regions[k].edge, region: k, marker: -1 }] : [])),
+    ...p.markers.map((m, k) => ({ text: `${m.name} (${m.at})`, a: markers[k].mid, edge: markers[k].edge, region: -1, marker: k })),
+  ].map((x) => ({ ...x, right: Math.cos(x.a) >= -1e-9, y: c[1] + RL * Math.sin(x.a) }));
+  for (const side of [true, false]) {
+    const blocks = labels.filter((x) => x.right === side).sort((a, b) => b.y - a.y).map((x) => ({ list: [x], top: x.y }));
+    for (let k = 1; k < blocks.length; k++) {
+      const a = blocks[k - 1], b = blocks[k];
+      if (a.top - a.list.length * line >= b.top - 1e-9) continue;
+      // b joins a: the block is centred on the mean of where its names would be.
+      a.list.push(...b.list);
+      a.top = a.list.reduce((sum, x) => sum + x.y, 0) / a.list.length + ((a.list.length - 1) * line) / 2;
+      blocks.splice(k, 1);
+      k = Math.max(0, k - 2);
+    }
+    for (const b of blocks) b.list.forEach((x, k) => { x.y = b.top - k * line; });
+  }
+  return {
+    c, R, f, at, regions, markers,
+    labels: labels.map((x) => {
+      // Off the top or bottom of the circle, a name keeps its place's distance across.
+      const dy = x.y - c[1], dx = Math.max(Math.sqrt(Math.max(0, RL * RL - dy * dy)), Math.abs(RL * Math.cos(x.a))) * (x.right ? 1 : -1), to: P = [c[0] + dx + (x.right ? 0.05 : -0.05) * f, x.y];
+      return { ...x, anchor: x.right ? "start" as const : "end" as const, at: [to[0] + (x.right ? 0.08 : -0.08) * f, x.y - 0.32 * line] as P, from: [c[0] + x.edge * Math.cos(x.a), c[1] + x.edge * Math.sin(x.a)] as P, to };
+    }),
+  };
+}
+// A spot's outline (drawing units): an ellipse, drawn out below into a smear when it has a tail (a gel's band: a bar
+// with rounded corners, its lower edge drawn out by the tail). grow: how far out (a doubled spot's second outline).
 export function spotPath(t: ReturnType<typeof tlcLayout>, x: Spot, grow = 0): [number, number][] {
   const cx = t.lane(x.lane), cy = t.at(x.rf), size = t.size(x), [rx, ry] = [size.rx + grow, size.ry + grow], tail = (x.tail ?? 0) * t.f, n = 32, out: [number, number][] = [];
+  if (t.gel) {
+    const r = Math.min(rx, ry) / 2, corner = (ax: number, ay: number, a0: number) => { for (let i = 0; i <= 8; i++) { const a = a0 + (Math.PI / 2) * (i / 8); out.push([ax + r * Math.cos(a), ay + r * Math.sin(a)]); } };
+    const narrow = tail ? 0.15 * rx * Math.min(1, tail / (ry * 4)) : 0;
+    corner(cx + rx - r, cy + ry - r, 0);
+    corner(cx - rx + r, cy + ry - r, Math.PI / 2);
+    corner(cx - rx + r + narrow, cy - ry + r - tail, Math.PI);
+    corner(cx + rx - r - narrow, cy - ry + r - tail, 1.5 * Math.PI);
+    out.push(out[0]);
+    return out;
+  }
   for (let i = 0; i <= n; i++) {
     const a = (Math.PI * 2 * i) / n, sin = Math.sin(a);
     // The lower half stretches down by the tail, narrowing a little, so a smear reads as a streak.

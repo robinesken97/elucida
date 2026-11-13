@@ -4,14 +4,16 @@
 // peak table) is drawn under the sticks, mirrored, and each ion is matched to its peaks. Docked as the Spectrum panel
 // is; pointing at a row or a peak lights its fragment's atoms, and pointing at an atom lights its fragments (Tab goes
 // from one to the next).
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsIn, ArrowsOut, ChartBar, CopySimple, Article, Tag, Table, X } from "@phosphor-icons/react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChartBar, CopySimple, Article, Tag, Table } from "@phosphor-icons/react";
+import { PanelControls, ResizeEdge, type Sizing } from "./PanelControls";
 import type { Mol } from "./render";
 import { expandWithOrigins } from "./chem";
 import { subset } from "./edit";
 import { Select } from "./Select";
 import { NumberField, Segmented } from "./Fields";
 import { listOpen, Pick } from "./Menu";
+import { formula } from "./Actions";
 import { useMovable } from "./movable";
 import { holdCursor } from "./cursor";
 import { useLeaving } from "./motion";
@@ -38,26 +40,30 @@ type Props = {
   peaks?: Peak[]; // a measured peak list from elsewhere (an opened spectrum); a pasted one takes its place
   tab?: { atoms: number[]; n: number }; // Tab pressed n + 1 times on the canvas, on these atoms (an atom, or a bond's two)
   onPrefs: (p: MsPrefs) => void; onPoint: (atoms?: number[]) => void; onCopy: (text: string) => void; onAdd: (a: MsAdd) => void; onClose: () => void;
+  sizing: Sizing; // as the Spectrum panel's
+  hidden?: boolean; expanded: boolean; onExpanded: (on: boolean) => void; onMinimise: (keyboard?: boolean) => void; // as the Spectrum panel's
 };
 
-export function MassSpecPanel(p: Props) {
-  const box = useRef<HTMLDivElement>(null), [width, setWidth] = useState(600), [expanded, setExpanded] = useState(false), [tall, setTall] = useState(HEIGHT);
+// While it is minimised the panel does not draw again.
+export const MassSpecPanel = memo(Panel, (a, b) => !!a.hidden && !!b.hidden);
+function Panel(p: Props) {
+  const box = useRef<HTMLDivElement>(null), [width, setWidth] = useState(600), [tall, setTall] = useState(HEIGHT), expanded = p.expanded, setExpanded = p.onExpanded;
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const fit = () => { setWidth(el.clientWidth); setTall(Math.max(HEIGHT, el.clientHeight)); };
+    const fit = () => { if (el.clientWidth) { setWidth(el.clientWidth); setTall(Math.max(60, el.clientHeight)); } };
     fit();
     const watch = new ResizeObserver(fit);
     watch.observe(el);
     return () => watch.disconnect();
   }, [expanded]);
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || p.hidden) return;
     const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !listOpen()) { e.stopPropagation(); setExpanded(false); } };
     addEventListener("keydown", key, true);
     return () => removeEventListener("keydown", key, true);
-  }, [expanded]);
-  const move = useMovable("massspec", expanded), leaving = useLeaving(), H = expanded ? tall : HEIGHT;
+  }, [expanded, p.hidden]); // eslint-disable-line react-hooks/exhaustive-deps
+  const move = useMovable("massspec", expanded), leaving = useLeaving(), H = tall; // the room the panel gives the plot
   const set = (change: Partial<MsPrefs>) => p.onPrefs({ ...p.prefs, ...change });
 
   // The structure, its fragmentation lines and its fragments.
@@ -123,7 +129,10 @@ export function MassSpecPanel(p: Props) {
   const [typed, setTyped] = useState<number>();
   useLayoutEffect(() => setTyped(undefined), [one?.ion.label, one?.ion.formula]);
   const measured = one && found(one), foundMz = typed ?? measured?.mz, oneCalc = one && calc(one);
-  const line = one && oneCalc !== undefined ? hrmsLine({ source: p.prefs.source, label: one.ion.label, formula: one.ion.formula, calcd: oneCalc, found: foundMz }) : "";
+  // The HRMS line: plain text to copy or add to the drawing (a caption makes its own subscripts), and shown with the
+  // formula's subscripts, as the Actions panel shows a formula.
+  const hrms = one && oneCalc !== undefined ? { source: p.prefs.source, label: one.ion.label, formula: one.ion.formula, calcd: oneCalc, found: foundMz } : undefined;
+  const line = hrms ? hrmsLine(hrms) : "";
   const table = () => [["Ion", "Formula", "m/z", ...(mirror ? ["Found", "Error (ppm)"] : [])].join("\t"), ...rows.map((r) => {
     const m = calc(r), f = found(r);
     return [r.ion.label, r.ion.formula, fmt(m), ...(mirror ? [f ? f.mz.toFixed(d) : "", f && m ? ppm(f.mz, m).toFixed(1) : ""] : [])].join("\t");
@@ -139,13 +148,11 @@ export function MassSpecPanel(p: Props) {
   const ticks = mzTicks(lo, hi, width - 2 * PAD), tickPlaces = ticks.length > 1 && ticks[1] - ticks[0] < 1 ? 2 : 0;
 
   return (
-    <section className={["spectrum", "massspec", expanded && "expanded", leaving && "leaving"].filter(Boolean).join(" ")} aria-label="Mass spec" style={move.style} inert={leaving}>
+    <section className={["spectrum", "massspec", expanded ? "expanded" : "sized", p.hidden && "minimised", leaving && "leaving"].filter(Boolean).join(" ")} role="region" aria-label="Mass spec" style={expanded ? move.style : { ...move.style, height: p.sizing.height }} inert={leaving || p.hidden}
+      onKeyDown={(e) => { if (e.key === "Escape" && !listOpen() && !e.defaultPrevented) { e.stopPropagation(); p.onMinimise(true); } }}>
+      {!expanded && <ResizeEdge sizing={p.sizing} onMinimise={p.onMinimise} />}
       <header onPointerDown={move.onPointerDown}>
         <h2>Mass spec</h2>
-        <span className="spectrum-head-buttons">
-          <button className="actions-close" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "Leave full screen" : "Full screen"} data-tip={expanded ? "Leave full screen" : "Full screen"}>{expanded ? <ArrowsIn size={12} /> : <ArrowsOut size={12} />}</button>
-          <button className="actions-close" onClick={p.onClose} aria-label="Close mass spec" data-tip="Close mass spec"><X size={12} /></button>
-        </span>
       </header>
       <div className="spectrum-controls">
         <Segmented label="Fragments" value={p.prefs.mode} options={MODES.map(([m, name]) => [m, name])} onChange={(mode) => set({ mode })} />
@@ -232,7 +239,7 @@ export function MassSpecPanel(p: Props) {
                   <tr key={k} className={[lit(k) && "lit", chosen === k && "chosen"].filter(Boolean).join(" ") || undefined}
                     onPointerEnter={() => point(k)} onPointerLeave={() => point(undefined)} onClick={() => setChosen(k)}>
                     <td><span className="dot" style={{ background: r.colour }} />{r.ion.label}</td>
-                    <td className="formula">{r.ion.formula}</td>
+                    <td className="formula">{formula(r.ion.formula)}</td>
                     <td className="num">{fmt(m)}</td>
                     {mirror && <><td className="num">{f ? f.mz.toFixed(d) : "–"}</td><td className="num">{f && m ? ppm(f.mz, m).toFixed(1) : "–"}</td><td className="num">{fit === undefined ? "–" : `${Math.round(fit)}%`}</td></>}
                   </tr>
@@ -243,7 +250,7 @@ export function MassSpecPanel(p: Props) {
         </div>
       </div>
       <footer className="spectrum-foot massspec-foot">
-        <p className="spectrum-text">{line}</p>
+        <p className="spectrum-text">{hrms && hrmsLine({ ...hrms, formula: formula(hrms.formula) })}</p>
         <span className="spectrum-gap" />
         <Select label="Source" value={p.prefs.source} options={SOURCES.map((s) => [s, s])} onChange={(source) => set({ source })} />
         <label className="massspec-found">Found
@@ -252,6 +259,8 @@ export function MassSpecPanel(p: Props) {
         <span className="massspec-ppm" aria-live="polite">{foundMz !== undefined && oneCalc ? `${ppm(foundMz, oneCalc) >= 0 ? "+" : "−"}${Math.abs(ppm(foundMz, oneCalc)).toFixed(1)} ppm` : ""}</span>
       </footer>
       {one && <p className="massspec-pattern">{pattern(one)}</p>}
+      {/* Last in the tab order (B1.14), at the top right of the header. */}
+      <PanelControls minimise={p.onMinimise} full={{ on: expanded, toggle: () => setExpanded(!expanded) }} close={p.onClose} />
     </section>
   );
 }

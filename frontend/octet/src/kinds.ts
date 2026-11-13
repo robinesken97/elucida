@@ -30,5 +30,5 @@ export const ARROWS: Record<ArrowKind, string> = {
 };
 
 export const SHAPES: Record<ShapeKind, string> = {
-  box: "Box", rounded: "Rounded box", oval: "Oval", highlight: "Highlight", brackets: "Brackets", parens: "Parentheses", braces: "Braces", tlc: "TLC plate", table: "Table", picture: "Picture",
+  box: "Box", rounded: "Rounded box", oval: "Oval", highlight: "Highlight", brackets: "Brackets", parens: "Parentheses", braces: "Braces", tlc: "TLC plate", gel: "Gel", plasmid: "Plasmid map", table: "Table", picture: "Picture",
 };

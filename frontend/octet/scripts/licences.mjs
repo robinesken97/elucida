@@ -113,7 +113,7 @@ for (const p of parts) {
   groups.set(key, [...(groups.get(key) ?? []), p]);
 }
 const rule = "=".repeat(80);
-let out = `Octet includes the software and data below. Each part keeps its own licence.\nOctet itself is under the Apache License 2.0.\n` +
+let out = `${read(join(root, "NOTICE"))}\n\nOctet includes the software and data below. Each part keeps its own licence.\nOctet itself is under the Apache License 2.0.\n` +
   `The source code of each Rust crate is on crates.io, and of each npm package on npmjs.com.\n\n`;
 for (const [text, list] of groups) out += `${rule}\n${list.map((p) => `${p.name} (${p.licence})`).join("\n")}\n${rule}\n\n${text}\n\n`;
 for (const [name, file] of [["The libraries inside Indigo's WASM", "src-tauri/licences/indigo-wasm.txt"], ["OPSIN and the libraries in its build", "src/vendor/opsin/NOTICES.txt"], ["nmrshiftdb2 data", "data/nmr/LICENCE.txt"], ["Wikidata and FDA UNII data", "data/names/NOTICE.txt"], ["PubChem data", "src-tauri/licences/pubchem.txt"]])

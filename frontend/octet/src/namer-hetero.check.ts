@@ -153,7 +153,7 @@ must("S oxoacids", [
   "benzenesulfinamide", "benzenesulfinyl chloride", "4-sulfinobenzoic acid", "4-sulfinamoylbenzoic acid", "4-(methoxysulfonyl)benzoic acid",
   "4-(chlorosulfonyl)benzoic acid", "piperidine-1-sulfonic acid", "morpholine-4-sulfonamide", "piperidine-1-sulfonyl chloride",
   "1-(methanesulfonyl)piperidine", "4-[(piperidin-1-yl)sulfonyl]benzoic acid", "dimethyl sulfate", "ethyl hydrogen sulfate", "sulfuric acid",
-  "sulfamic acid", "phenylsulfamic acid", "methyl sulfamate", "methyl dimethylsulfamate", "sulfuric diamide", "N,N'-dimethylsulfuric diamide",
+  "sulfamic acid", "phenylsulfamic acid", "methyl sulfamate", "methyl dimethylsulfamate", "sulfuric diamide", "N,N'-dimethylsulfuric diamide", "smiles:ClCCN(CCCl)S(=O)(=O)N(CCCl)CCCl",
   "dimethylsulfamoyl chloride", "methyl sulfurochloridate", "sulfuryl dichloride", "sulfurous dichloride", "dimethyl sulfite",
   "4-(sulfooxy)benzoic acid", "4-(sulfamoyloxy)benzoic acid", "4-[(methoxysulfonyl)oxy]benzoic acid", "4-(sulfoamino)benzoic acid",
   "(S)-(methanesulfinyl)benzene", "1-[(R)-methanesulfinyl]-4-methylbenzene", "L-methionine (S)-S-oxide", "2-[(S)-methanesulfinyl]acetic acid",

@@ -2,41 +2,51 @@
 // modules (General, Document, Keyboard shortcuts, Import and export) under a search field that is always there. With text
 // in it, every matching setting from every module shows on the right, grouped by module and ready to use.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowCounterClockwise, BookOpenText, CaretDown, Check, FileText, Files, GearSix, Keyboard, MagnifyingGlass, PencilSimpleLine, Plus, Swatches, Warning, X } from "@phosphor-icons/react";
-import { ColourPicker, ColourPop } from "./ColourPicker";
+import { ArrowCounterClockwise, BookOpenText, CaretDown, Check, FileText, Files, GearSix, Keyboard, MagnifyingGlass, PencilSimpleLine, Plus, Swatches, Toolbox, Warning, X } from "@phosphor-icons/react";
+import { ColourPick, ColourPicker, ColourPop } from "./ColourPicker";
+import { OWN_MOST } from "./colours";
 import { Dialog, useModal } from "./Dialog";
 import { CURSOR_INKS, holdCursor, type CursorInk } from "./cursor";
 import { Exit, useLeaving } from "./motion";
 import { Select } from "./Select";
 import { FontPick } from "./Actions";
 import { listOpen } from "./Menu";
-import { NumberField, Segmented, Switch } from "./Fields";
+import { NumberField, Segmented, Switch, TextField } from "./Fields";
+import { PROPERTIES, detailsOf, withDetails } from "./experiment";
+import type { Annotation } from "./render";
 import { RULER_UNITS, type RulerUnit, type Swatch } from "./settings";
 import { SELECT_DEFAULT } from "./selectcolour";
 import { EXPORT_FORMATS, PICTURES, type ExportFormat } from "./export";
 import { BACKDROPS, DpiField } from "./ExportDialog";
-import { BACKGROUNDS, COLOURS, elementColours, FONTS, GRID_IN, GRID_MM, PAGE_NAMES, PAGES, PRESETS, PURPOSES, pageSize, pickPage, presetAt, presetOf, withScale, type DocStyle, type PageName } from "./docstyle";
+import { BACKGROUNDS, COLOURS, elementColours, FONTS, GRID_IN, GRID_MM, LIMITS, PAGE_NAMES, PAGES, PRESETS, PURPOSES, pageSize, pickPage, presetAt, presetOf, withScale, type DocStyle, type PageName } from "./docstyle";
+import type { ObjectSettings } from "./edit";
 import { ACTIONS, clashes, keyOf, keymap, label as keyLabel, type Keymap } from "./keys";
 import { WARNING_TYPES, type WarningType } from "./check";
 
-export type ModuleId = "general" | "document" | "drawing" | "keys" | "appearance" | "files" | "warnings" | "dictionary";
+export type ModuleId = "general" | "document" | "drawing" | "keys" | "appearance" | "files" | "warnings" | "dictionary" | "pro";
 // How the drawing tools draw (ChemDraw's Object > Fixed Lengths and Fixed Angles, and its Building/Display setting),
 // and ChemDraw's other preferences that change the drawing or what opening a file gives (settings.ts, CH-34).
 export type DrawingPrefs = {
   fixedLengths: boolean; fixedAngles: boolean; sproutRings: boolean; clickTriple: boolean; pairBars: boolean;
-  autoMap: boolean; stereoParens: boolean; hideAbs: boolean; mdlFlags: boolean; aromaticOnOpen: "" | "kekule" | "circles";
+  autoMap: boolean; stereoParens: boolean; hideAbs: boolean; mdlFlags: boolean; aromaticOnOpen: "" | "kekule" | "circles"; massUnit: "g" | "mg";
+  riskNew: boolean; // a new experiment page gets a risk assessment (riskassess.ts)
 };
 export type FilePrefs = {
   format: ExportFormat; dpi: number; background: "white" | "transparent" | "page"; margin: number; quality: number; // JPEG, 1 to 100
-  clipboard: { pdf: boolean; cdx: boolean; cdxml: boolean; mol: boolean; smiles: boolean }; keepStyle: boolean;
+  clipboard: { office: boolean; pdf: boolean; cdx: boolean; cdxml: boolean; mol: boolean; smiles: boolean }; keepStyle: boolean;
   saveAs: "oct" | "cdxml" | "cdx"; // the format Save offers first for a new drawing (ChemDraw's Use Default File Format)
   quick: ExportFormat; // Quick export's picture format: PNG, or SVG for Office, PDF for LaTeX, and the others
 };
 const MAC = navigator.platform.startsWith("Mac");
+// Office object: on Windows only, Copy puts an Octet Drawing object first, which Word, PowerPoint and Excel keep and
+// open in Octet (decision 0023).
+const WINDOWS = navigator.platform.startsWith("Win");
+// Add to LibreOffice: on Linux only, Octet's extension for LibreOffice (tools/libreoffice).
+const LINUX = navigator.platform.startsWith("Linux");
 // The picture Copy puts on the clipboard (Settings > Import and export > Copy).
-const PICTURE = MAC ? "PDF, with the structure inside" : navigator.platform.startsWith("Linux") ? "PNG and SVG" : "EMF, with the structure inside";
+const PICTURE = MAC ? "PDF, with the structure inside" : LINUX ? "PDF, PNG and SVG" : "EMF, with the structure inside";
 // 600 dpi by default (Sam, 21 October 2026: PNGs at 350 dpi looked soft on slides).
-export const DEFAULT_FILES: FilePrefs = { format: "pdf", dpi: 600, background: "transparent", margin: 4, quality: 95, clipboard: { pdf: true, cdx: true, cdxml: true, mol: true, smiles: true }, keepStyle: true, saveAs: "oct", quick: "png" };
+export const DEFAULT_FILES: FilePrefs = { format: "pdf", dpi: 600, background: "transparent", margin: 4, quality: 95, clipboard: { office: true, pdf: true, cdx: true, cdxml: true, mol: true, smiles: true }, keepStyle: true, saveAs: "oct", quick: "png" };
 
 type Props = {
   module: ModuleId;
@@ -53,7 +63,10 @@ type Props = {
   ownTemplates: { id: string; name: string }[]; // the user's own templates, to rename and remove here
   onRenameTemplate: (id: string, name: string) => void;
   onRemoveTemplate: (id: string) => void;
-  onApplyFile?: () => void; // the open drawing takes another drawing's style (File > Apply Settings From File…)
+  onApplyFile?: () => void; // the open drawing takes a drawing's or a style sheet's style (File > Apply Settings From File…)
+  onSaveFile?: () => void; // the open drawing's style as a ChemDraw style sheet (.cds)
+  annotations?: Annotation[]; // the open drawing's, which hold its title, author and keywords (PROPERTIES)
+  onAnnotations: (annotations: Annotation[] | undefined) => void;
   keys: Keymap; // the user's changes to the shortcuts
   onKeys: (keys: Keymap) => void;
   files: FilePrefs;
@@ -66,8 +79,13 @@ type Props = {
   onLabelReturnNewLine: (on: boolean) => void;
   panelMenus: boolean; // the Actions panel's sets as menus, not sections
   onPanelMenus: (menus: boolean) => void;
-  onlineSearch: boolean; // Search Reaxys and Search PubChem are offered (decision 0008)
+  onlineSearch: boolean; // The online searches are offered (decision 0008)
   onOnlineSearch: (on: boolean) => void;
+  moreFormats: boolean; // File > More Formats is in the File menu
+  onMoreFormats: (on: boolean) => void;
+  // The selection's own settings (Pro > Selection, ChemDraw's Object Settings), while something is selected: a change
+  // gives it to the selection, Copy settings keeps them, and Paste settings gives the kept ones to the selection.
+  selection?: { settings: ObjectSettings; onChange: (o: ObjectSettings) => void; onCopy: () => void; onPaste?: () => void };
   rulerUnit: RulerUnit; // View > Show Rulers: the rulers' unit, for every drawing
   onRulerUnit: (unit: RulerUnit) => void;
   selectColour: string; // the selection's colour, #RRGGBB, in every window
@@ -92,7 +110,10 @@ type Props = {
   adding?: boolean; // opened to add a colour: a new one is made, ready to set
   updates: boolean; // check for updates when Octet opens (decision 0010)
   onUpdates: (on: boolean) => void;
+  wordClick: boolean; // the Mac: a double-click on a structure in Word opens it in Octet (src-tauri/src/word.rs)
+  onWordClick: (on: boolean) => void;
   onCheckUpdates: () => void;
+  onAddToLibreOffice: () => void; // Linux: opens Octet's extension for LibreOffice, and says so when it cannot
   // The user's own dictionary (Add to dictionary): each name to change or remove here, and the whole list exported or
   // imported as a SMILES file.
   dictionary: { name: string; smiles: string }[];
@@ -104,12 +125,12 @@ type Props = {
 };
 
 // The user's colours: each one's swatch, name and remove button; the one chosen opens Octet's picker under it.
-// Add a colour makes a new one from the last colour picked and opens it. With no colours yet, Add a colour stands
-// where the list goes.
+// Add colour makes a new one from the last colour picked and opens it. With no colours yet, Add colour stands where
+// the list goes. Every colour menu lists them too, and renames, moves and removes them (ColourPick).
 function PaletteEditor({ palette, onPalette, adding }: { palette: Swatch[]; onPalette: (p: Swatch[]) => void; adding?: boolean }) {
   const [open, setOpen] = useState<number>();
   const add = () => {
-    if (palette.length >= 20) return;
+    if (palette.length >= OWN_MOST) return;
     onPalette([...palette, { name: `Colour ${palette.length + 1}`, hex: palette[palette.length - 1]?.hex ?? "#213C99" }]);
     setOpen(palette.length);
   };
@@ -128,7 +149,7 @@ function PaletteEditor({ palette, onPalette, adding }: { palette: Swatch[]; onPa
           {open === k && <ColourPicker value={c.hex} onChange={(hex) => change(k, { hex })} />}
         </div>
       ))}
-      {palette.length < 20 && <button className="palette-add" onClick={add}><Plus size={12} aria-hidden /> Add a colour</button>}
+      {palette.length < OWN_MOST && <button className="palette-add" onClick={add}><Plus size={12} aria-hidden /> Add colour</button>}
     </div>
   );
 }
@@ -340,15 +361,17 @@ function SelectionColour({ value, onChange }: { value: string; onChange: (hex: s
 // head: the control goes in the section's head, beside its title, not in a row.
 type Def = { module: ModuleId; section: string; label: string; keywords: string; control: React.ReactNode; wide?: boolean; head?: boolean };
 const MODULES: { id: ModuleId; name: string; icon: React.ReactNode; words: string }[] = [
-  { id: "general", name: "General", icon: <GearSix size={16} />, words: "general updates version check structure" },
-  { id: "document", name: "Document", icon: <FileText size={16} />, words: "document style page text" },
-  { id: "drawing", name: "Drawing", icon: <PencilSimpleLine size={16} />, words: "drawing tools bonds rings draw" },
-  { id: "keys", name: "Keyboard shortcuts", icon: <Keyboard size={16} />, words: "keyboard shortcut hotkey keys" },
+  { id: "general", name: "General", icon: <GearSix size={18} />, words: "general updates version check structure" },
+  { id: "document", name: "Document", icon: <FileText size={18} />, words: "document style page text" },
+  { id: "drawing", name: "Drawing", icon: <PencilSimpleLine size={18} />, words: "drawing tools bonds rings draw" },
+  { id: "keys", name: "Keyboard shortcuts", icon: <Keyboard size={18} />, words: "keyboard shortcut hotkey keys" },
   // The Actions panel's one setting and the colours share a module, so no module holds a single setting.
-  { id: "appearance", name: "Appearance", icon: <Swatches size={16} />, words: "appearance look actions panel side menus sections colour colours palette custom swatch named" },
-  { id: "files", name: "Import and export", icon: <Files size={16} />, words: "import export file clipboard" },
-  { id: "warnings", name: "Warnings", icon: <Warning size={16} />, words: "warnings chemical check structure errors problems" },
-  { id: "dictionary", name: "Dictionary", icon: <BookOpenText size={16} />, words: "dictionary names name to structure own words abbreviations add structure" },
+  { id: "appearance", name: "Appearance", icon: <Swatches size={18} />, words: "appearance look actions panel side menus sections colour colours palette custom swatch named" },
+  { id: "files", name: "Import and export", icon: <Files size={18} />, words: "import export file clipboard" },
+  { id: "warnings", name: "Warnings", icon: <Warning size={18} />, words: "warnings chemical check structure errors problems" },
+  { id: "dictionary", name: "Dictionary", icon: <BookOpenText size={18} />, words: "dictionary names name to structure own words abbreviations add structure" },
+  // The settings few people need, such as the rare formats in the File menu.
+  { id: "pro", name: "Pro", icon: <Toolbox size={18} />, words: "pro advanced expert rare" },
 ];
 // The module saved last time, as a module that is there now (Actions panel and Colours became Appearance).
 export const moduleOf = (id: string): ModuleId => (id === "panel" || id === "colours" ? "appearance" : MODULES.find((m) => m.id === id)?.id ?? "document");
@@ -471,13 +494,22 @@ export function SettingsWindow(p: Props) {
 
   const defs: Def[] = useMemo(() => {
     const d = (module: ModuleId, section: string, label: string, keywords: string, control: React.ReactNode, wide?: boolean): Def => ({ module, section, label, keywords, control, wide });
+    const properties = detailsOf(p.annotations, PROPERTIES);
     const num = (k: keyof DocStyle, label: string, unit: string, words: string, section = "Style") =>
       d("document", section, label, words, <NumberField label={label} unit={unit} value={style[k] as number} onChange={(n) => change({ [k]: n })} />);
+    // The selection's own settings: a row for each one something selected has, to 0.01 pt (typed values count on Return).
+    const own = p.selection?.settings ?? {}, put = (o: ObjectSettings) => p.selection?.onChange(o), words = "selection selected object objects own settings";
+    const ownPt = (k: "bond" | "line" | "bold" | "labelSize" | "captionSize", label: string, keywords: string, [min, max]: [number, number]) => (own[k] === undefined ? []
+      : [d("pro", "Selection", label, `${words} ${keywords}`, <NumberField label={label} unit="pt" lazy min={min} max={max} value={Math.round(own[k]! * 100) / 100} onChange={(n) => put({ [k]: n })} />)]);
+    const ownFont = (k: "labelFont" | "captionFont", label: string, name: string, keywords: string) => (own[k] === undefined ? []
+      : [d("pro", "Selection", label, `${words} ${keywords}`, <FontPick label={name} font={own[k]!} fonts={FONTS} onPick={(v) => put({ [k]: v })} className="select-field" />)]);
     return [
       // What the drawing is for (IDEA-SIZE-8): a purpose sets the style, its scale and the page in one step.
       { ...d("document", "For", "For", "template for paper thesis slides poster experiment notebook talk presentation new size page", (
         <Segmented className="purposes" label="For" value={style.purpose ?? ""} options={p.purposes.map((x): [string, string] => [x.id, x.name])} onChange={p.onPurpose} />
       )), head: true },
+      // Experiment pages: each new one gets a risk assessment on page 2, unless this is off (riskassess.ts).
+      d("document", "For", "Add a risk assessment to new experiment pages", "risk assessment experiment page new hazards safety coshh lab book", <Switch on={p.drawing.riskNew} label="Add a risk assessment to new experiment pages" onChange={(on) => p.onDrawing({ riskNew: on })} />),
       // One size for the whole style (decision 0007): every length and text size times it, the preset kept. 10% to 1000%.
       d("document", "Style", "Scale", "scale size bigger smaller poster slides percent proportion", (
         <NumberField label="Scale" unit="%" lazy step={1} value={Math.round(style.scale * 1000) / 10} onChange={(n) => p.onStyle(withScale(style, Math.min(10, Math.max(0.1, n / 100))))} />
@@ -504,14 +536,7 @@ export function SettingsWindow(p: Props) {
       // ChemDraw's Interpret Chemically When Possible (Document Settings > Text Captions): captions that read as
       // chemistry (Rh, CH3OH) count in the formula, names and warnings, and bonds join them.
       d("document", "Text", "Interpret chemically", "interpret chemically when possible captions text chemistry formula mass analysis bonds valence", <Switch on={style.interpret} label="Interpret chemically" onChange={(on) => change({ interpret: on })} />),
-      d("document", "Text", "Colour", "text colour caption", (
-        <span className="swatches" role="radiogroup" aria-label="Text colour">
-          {[...COLOURS, ...p.palette.map((c): [string, string] => [c.name, c.hex])].map(([name, hex]) => (
-            <button key={`${name}${hex}`} role="radio" aria-checked={style.colour.toLowerCase() === hex.toLowerCase()} aria-label={name} data-tip={name} className="swatch" style={{ background: hex }} onClick={() => change({ colour: hex })} />
-          ))}
-          {!p.template && <button className="swatch custom" data-tip="Add a colour" aria-label="Add a colour" onClick={() => p.onModule("appearance")}><Plus size={12} aria-hidden /></button>}
-        </span>
-      ), true),
+      d("document", "Text", "Colour", "text colour caption", <ColourPick field label="Text colour" value={style.colour} presets={COLOURS} own={p.palette} onOwn={p.onPalette} onPick={(colour) => change({ colour })} />),
       ...(p.ownTemplates.length && !p.template ? [d("document", "Your templates", "Your templates", "template templates purpose purposes named style styles stationery saved own rename remove",
         <OwnTemplates list={p.ownTemplates} onRename={p.onRenameTemplate} onRemove={p.onRemoveTemplate} />, true)] : []),
       d("document", "Page", "Size", "page paper size a4 a3 letter custom half column", <PageSize style={style} change={change} />),
@@ -540,6 +565,14 @@ export function SettingsWindow(p: Props) {
       d("document", "Page", "Background", "background page colour custom dark mode night white system engineering paper blueprint blue grid", (
         <Backgrounds value={style.background} onChange={(background) => change({ background })} />
       )),
+      // The drawing's title, author and keywords, saved in the file and written in a PDF's document information. A
+      // template being made has none.
+      ...(p.template ? [] : PROPERTIES.map(([k, name]) => d("document", "Properties", name, `document properties ${name} metadata pdf file info creator name tags`, (
+        <TextField label={name} value={properties[k] ?? ""} onChange={(v) => {
+          const next = withDetails(p.annotations, { ...properties, [k]: v }, PROPERTIES);
+          if (JSON.stringify(next) !== JSON.stringify(p.annotations)) p.onAnnotations(next);
+        }} />
+      )))),
       d("appearance", "Actions panel", "Small actions", "actions panel small actions show as menus sections pop out buttons", (
         <Segmented label="Show small actions as" value={p.panelMenus ? "menus" : "sections"} onChange={(v) => p.onPanelMenus(v === "menus")} options={[["sections", "Sections"], ["menus", "Menus"]]} />
       )),
@@ -550,6 +583,10 @@ export function SettingsWindow(p: Props) {
       // The same for atom labels, where ChemDraw asks for Option-Return unless told otherwise.
       d("keys", "Typing", "New line in labels", "atom label text new line return enter option", (
         <Select label="New line in labels" value={p.labelReturnNewLine ? "return" : "option"} options={[["option", "⌥ Return"], ["return", "Return"]]} onChange={(v) => p.onLabelReturnNewLine(v === "return")} />
+      )),
+      // A number typed with no unit in a stoichiometry table's mass cell: grams, as ChemDraw takes it, or milligrams.
+      d("keys", "Typing", "Mass without a unit", "stoichiometry table mass unit number grams milligrams g mg", (
+        <Select label="Mass without a unit" value={p.drawing.massUnit} options={[["g", "Grams"], ["mg", "Milligrams"]]} onChange={(v) => p.onDrawing({ massUnit: v === "mg" ? "mg" : "g" })} />
       )),
       // The menu commands' shortcuts, as the menus show them (fixed, as ChemDraw's), so a search finds them here too.
       ...p.menuKeys.map(([name, keys]) => d("keys", "Menu commands", name, `${name} menu command shortcut ${keys}`, <kbd className="menu-key">{keys}</kbd>)),
@@ -567,15 +604,27 @@ export function SettingsWindow(p: Props) {
       d("files", "Export", "Background", "background transparent white page colour color png tiff jpeg gif", <Select label="Background" value={files.background} options={BACKDROPS} onChange={(v) => setFiles({ background: v as FilePrefs["background"] })} />),
       d("files", "Export", "JPEG quality", "jpeg jpg quality compression", <NumberField label="JPEG quality" unit="%" min={1} max={100} step={5} value={files.quality} onChange={(n) => setFiles({ quality: Math.round(n) })} />),
       d("files", "Export", "Margin", "export margin padding border", <NumberField label="Margin" unit="pt" min={0} max={72} step={1} value={files.margin} onChange={(n) => setFiles({ margin: n })} />),
-      // What Copy puts on the clipboard for other programs (Octet's own form always goes on). The picture is a PDF on
-      // the Mac, a PNG on Windows, and a PNG and an SVG on Linux (src-tauri/src/clipboard.rs).
-      ...([["pdf", PICTURE, "picture image pdf png svg word powerpoint keynote office"], ["cdx", "CDX", "cdx chemdraw binary"], ["cdxml", "CDXML", "cdxml chemdraw"], ["mol", "MOL", "mol molfile"], ["smiles", "SMILES", "smiles text"]] as const).map(([k, name, words]) =>
+      // What Copy puts on the clipboard for other programs (Octet's own form always goes on). The picture is Office's
+      // own copy of it (a zip with an EMF) and a PDF on the Mac, an EMF on Windows, and a PDF, a PNG and an SVG on
+      // Linux (src-tauri/src/clipboard.rs).
+      ...([...(WINDOWS ? [["office", "Office object", "office object ole embed word powerpoint excel edit double click"]] as const : []), ["pdf", PICTURE, "picture image pdf png svg word powerpoint keynote office"], ["cdx", "CDX", "cdx chemdraw binary"], ["cdxml", "CDXML", "cdxml chemdraw"], ["mol", "MOL", "mol molfile"], ["smiles", "SMILES", "smiles text"]] as const).map(([k, name, words]) =>
         d("files", "Copy", name, `clipboard copy paste ${words}`, <Switch on={files.clipboard[k]} label={name} onChange={(on) => setFiles({ clipboard: { ...files.clipboard, [k]: on } })} />)),
       d("general", "Windows", "Open each drawing in a new window", "windows multiple multi window tabs home new open drawing each own single", <Switch on={p.windows} label="Open each drawing in a new window" onChange={p.onWindows} />),
       d("general", "Cursor", "Colour", "cursor pointer mouse colour black white automatic crosshair i-beam visible contrast", <Segmented label="Cursor colour" value={p.cursor} options={CURSOR_INKS} onChange={p.onCursor} />),
       d("general", "Selection", "Colour", "selection selected highlight colour color tint marquee lasso handles frame blue custom default", (
         <SelectionColour value={p.selectColour} onChange={p.onSelectColour} />
       )),
+      // Word for Mac has no OLE for other programs, so Octet watches for the double-click itself (word.rs). Off until
+      // the user turns it on: Octet watches no mouse and asks Word nothing before then. The group is named Word, as
+      // File > Edit Picture from Word and Update in Word name the program.
+      ...(MAC ? [d("general", "Word", "Double-click opens a structure in Octet", "microsoft word double click open edit structure picture drawing object office ole", (
+        <Switch on={p.wordClick} label="Double-click opens a structure in Octet" onChange={p.onWordClick} />
+      ))] : []),
+      // Opens Octet's extension, which LibreOffice's Extension Manager adds: a double-click on a structure in Writer,
+      // Impress or Draw then opens it in Octet.
+      ...(LINUX ? [d("general", "LibreOffice", "Edit structures in LibreOffice", "libreoffice writer impress draw extension oxt add install double click edit office document", (
+        <button className="text-button" onClick={p.onAddToLibreOffice}>Add to LibreOffice</button>
+      ))] : []),
       d("general", "Updates", "Check automatically", "updates update check automatically new version internet", <Switch on={p.updates} label="Check for updates automatically" onChange={p.onUpdates} />),
       d("appearance", "Colours", "Octet's colours", "colour colours palette swatch built in", (
         <span className="swatches" role="list" aria-label="Octet's colours">
@@ -601,12 +650,20 @@ export function SettingsWindow(p: Props) {
         <Switch on={p.warningTypes[w.id] ?? w.on} label={w.name} onChange={(on) => p.onWarningTypes({ ...p.warningTypes, [w.id]: on })} />
       ))),
       d("general", "Check Structure", "Check when copying or exporting", "check structure copy export clipboard warnings", <Switch on={p.checkCopy} label="Check when copying or exporting" onChange={p.onCheckCopy} />),
-      // Off hides Search Reaxys and Search PubChem everywhere (decision 0008).
-      d("files", "Online", "Online search", "online search reaxys pubchem internet web browser network privacy offline", <Switch on={p.onlineSearch} label="Online search" onChange={p.onOnlineSearch} />),
+      // Off hides the online searches and the Properties panel's Find hazards everywhere (decision 0008).
+      d("files", "Online", "Online search", "online search reaxys pubchem scifinder google scholar patents internet web browser network privacy offline hazards ghs safety", <Switch on={p.onlineSearch} label="Online search" onChange={p.onOnlineSearch} />),
+      // ChemDraw's Object Settings: the selection's own bond length, widths and text. Each row shows the first selected
+      // thing's value and sets it on every selected thing it fits. A row shows when something selected has it.
+      ...ownPt("bond", "Bond length", "bond length fixed size scale", LIMITS.bond), ...ownPt("line", "Line width", "line width bonds arrows weight lighter", LIMITS.line),
+      ...ownPt("bold", "Bold width", "bold width wedge", LIMITS.bold), ...ownFont("labelFont", "Atom labels", "Atom label font", "atom label font typeface"),
+      ...ownPt("labelSize", "Label size", "atom label font size", LIMITS.labelSize), ...ownFont("captionFont", "Captions", "Caption font", "caption text font typeface"),
+      ...ownPt("captionSize", "Caption size", "caption text font size", LIMITS.captionSize),
+      // On shows File > More Formats, with the rare formats to import and export.
+      d("pro", "File menu", "More formats", "more formats rare file import export open save menu submenu extra", <Switch on={p.moreFormats} label="More formats" onChange={p.onMoreFormats} />),
       // ChemDraw's Add Structure to Dictionary keeps names; here they are renamed, removed, exported and imported.
       d("dictionary", "Names", "Your names", "dictionary names name to structure own words abbreviations rename remove export import smiles", <OwnDictionary list={p.dictionary} onRename={p.onRenameName} onRemove={p.onRemoveName} />, true),
     ];
-  }, [style, map, recording, note, files, p.palette, p.elementColours, p.adding, p.panelMenus, p.captionOptionReturn, p.labelReturnNewLine, p.onlineSearch, p.rulerUnit, p.selectColour, p.outlines, p.menuKeys.length, p.purposes, p.ownTemplates, p.drawing, p.template, p.updates, p.warnings, p.warningTypes, p.checkCopy, p.windows, p.cursor, p.dictionary]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [style, map, recording, note, files, p.palette, p.elementColours, p.adding, p.panelMenus, p.captionOptionReturn, p.labelReturnNewLine, p.onlineSearch, p.moreFormats, p.selection, p.rulerUnit, p.selectColour, p.outlines, p.menuKeys.length, p.purposes, p.ownTemplates, p.drawing, p.template, p.updates, p.wordClick, p.warnings, p.warningTypes, p.checkCopy, p.windows, p.cursor, p.dictionary, p.annotations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const found = query.trim() ? defs.filter((def) => matches(def, query) && (!p.template || def.module === "document")) : [];
   const counts = new Map(MODULES.map((m) => [m.id, found.filter((f) => f.module === m.id).length]));
@@ -623,7 +680,8 @@ export function SettingsWindow(p: Props) {
         {!query && (
           <div className="settings-foot">
             {p.template ? <button className="dialog-button primary" onClick={p.onClose}>Done</button> : <>
-              {p.onApplyFile && <button className="text-button" onClick={p.onApplyFile}>Apply settings from file…</button>}
+              {p.onApplyFile && <button className="text-button" onClick={p.onApplyFile}>Apply from file…</button>}
+              {p.onSaveFile && <button className="text-button" onClick={p.onSaveFile}>Save to file…</button>}
               {p.onSavePurpose && <button className="text-button" onClick={() => setNaming("")}>Save as template…</button>}
               {p.isDefault
                 ? <span className="quiet-note"><Check size={16} aria-hidden /> Default for new documents</span>
@@ -644,6 +702,14 @@ export function SettingsWindow(p: Props) {
     return <>{sections(module, list).map((s) => <Section key={s} title={s} defs={list.filter((x) => x.module === module && x.section === s)}
       aside={s === "Updates" ? <button className="text-button" onClick={p.onCheckUpdates}>Check Now</button> : s === "Names" && !query ? (
         <span className="section-buttons"><button className="text-button" onClick={p.onImportNames}>Import…</button><button className="text-button" onClick={p.onExportNames} disabled={!p.dictionary.length}>Export…</button></span>
+      ) : s === "Selection" && !query && p.selection ? (
+        // Reset to document: the selection takes the document's settings, with none of its own (ChemDraw's Apply Object
+        // Settings from > Current Document).
+        <span className="section-buttons">
+          <button className="text-button" onClick={p.selection.onCopy}>Copy settings</button>
+          <button className="text-button" onClick={p.selection.onPaste} disabled={!p.selection.onPaste}>Paste settings</button>
+          <button className="text-button" onClick={() => p.selection!.onChange({ bond: style.bond, line: null, bold: null, labelFont: null, labelSize: null, captionFont: null, captionSize: null })}>Reset to document</button>
+        </span>
       ) : undefined} />)}</>;
   };
 

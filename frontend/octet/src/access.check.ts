@@ -118,8 +118,14 @@ assert.deepEqual(said(addArrow(ch2o, { kind: "curved", from: [1.3, 0.3], to: [0.
 assert.deepEqual(said(addArrow(ch2o, { kind: "fishhook", from: [5, 5], to: [6, 5] })[0], { formulas: false }).filter(([role]) => role !== "structure"), [["fishhook arrow", "Fishhook"]]);
 assert.deepEqual(said(addArrow({ atoms: [], bonds: [] }, { kind: "line", from: [0, 0], to: [2, 0], style: "dashed" })[0]), [["shape", "Dashed line"]]);
 assert.deepEqual(said(addArrow({ atoms: [], bonds: [] }, { kind: "orbital", from: [0, 0], to: [1, 0], orbital: { shape: "p", phase: "shaded" } })[0]), [["shape", "p orbital, shaded"]]);
+assert.deepEqual(said(addArrow({ atoms: [], bonds: [] }, { kind: "orbital", from: [0, 0], to: [1, 0], orbital: { shape: "d", phase: "plain" }, style: "dashed" })[0]), [["shape", "d orbital, dashed"]]);
 const plate = addShape({ atoms: [], bonds: [] }, { kind: "tlc", from: [0, 0], to: [3, 4], tlc: { lanes: 2, spots: [{ lane: 0, rf: 0.6 }, { lane: 0, rf: 0.3 }, { lane: 1, rf: 0.45 }] } })[0];
 assert.deepEqual(said(plate), [["shape", "TLC plate, two lanes, three spots", "Lane 1: Rf 0.3, 0.6. Lane 2: Rf 0.45"]]);
+// A gel by its lanes' names and their bands' sizes, largest first; a plasmid map by its length, regions and markers.
+const gel = addShape({ atoms: [], bonds: [] }, { kind: "gel", from: [0, 0], to: [3, 4], tlc: { lanes: 2, names: ["M", "WT"], range: [10, 1000], spots: [{ lane: 1, rf: 0.5 }, { lane: 1, rf: 0 }] } })[0];
+assert.deepEqual(said(gel), [["shape", "Gel, two lanes, two bands", "Lane M: no bands. Lane WT: 1000, 100 kDa"]]);
+const plasmid = addShape({ atoms: [], bonds: [] }, { kind: "plasmid", from: [0, 0], to: [8, 8], plasmid: { bp: 2686, name: "pUC19", regions: [{ start: 1626, end: 2486, name: "AmpR", dir: "reverse" }], markers: [{ at: 396, name: "EcoRI" }] } })[0];
+assert.deepEqual(said(plasmid), [["shape", "Plasmid map pUC19, 2686 bp, one region, one marker", "AmpR 1626 to 2486, reverse. EcoRI at 396"]]);
 const table = addShape({ atoms: [], bonds: [] }, { kind: "table", from: [0, 0], to: [4, 2], table: { cells: [["Entry", "Yield"], ["1", "85%"]] } })[0];
 assert.deepEqual(said(table), [["shape", "Table, two rows, two columns", "Entry, Yield; 1, 85%"]]);
 assert.deepEqual(said(addShape({ atoms: [], bonds: [] }, { kind: "brackets", from: [0, 0], to: [2, 2], polymer: { usage: "sru" } })[0]), [["shape", "Brackets, SRU n"]]);

@@ -2,6 +2,7 @@
 // ChemDraw draws them, lose their depth, or stop taking new atoms at their depth.
 import assert from "node:assert/strict";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
+import { clean3d } from "./clean3d.ts";
 import { DEFAULT_STYLE } from "./docstyle.ts";
 import { parse, serialize } from "./file.ts";
 import { messy, problems } from "./check.ts";
@@ -180,3 +181,28 @@ console.log("perspective.check: Newman projections ok");
   assert.equal(zs(chemdraw)[1][0], 0.5, "ChemDraw's negative z is nearer");
 }
 console.log("perspective.check: files keep depth and shading ok");
+
+// An opacity set by hand (the Actions panel's Opacity) on an atom of a structure with depth shading: its label and its
+// bonds fade by it over the depth shading, a bond by the fainter of its two atoms. It stays on the same atoms when the
+// structure turns and through 3D Clean Up, files keep it, and Flatten takes it away.
+{
+  const m: Mol = { atoms: [A("O", 0, 0, 0.8, { shade: true }), A("N", 1, 0, 0, { shade: 0.4 }), A("Cl", 2, 0, -0.8, { shade: true }), A("C", 2, 1, 0.3, { shade: true })], bonds: [b(0, 1), b(1, 2), b(2, 3)] };
+  const shaded = (x: Mol) => render({ ...x, atoms: x.atoms.map((a) => ({ ...a, shade: true as const })) }, S, ink);
+  const bondAlpha = (d: ReturnType<typeof render>, k: number) => d.alphas[d.owners.indexOf(k)], labelAlpha = (d: ReturnType<typeof render>, t: string) => d.labels.find((l) => l.text === t)!.alpha ?? 1;
+  const auto = shaded(m), hand = render(m, S, ink);
+  assert.deepEqual([0, 1, 2].map((k) => bondAlpha(hand, k)), [bondAlpha(auto, 0) * 0.4, bondAlpha(auto, 1) * 0.4, bondAlpha(auto, 2)], "both bonds of the faded atom fade, the other does not");
+  assert.deepEqual(["O", "N", "Cl"].map((t) => labelAlpha(hand, t)), [labelAlpha(auto, "O"), labelAlpha(auto, "N") * 0.4, labelAlpha(auto, "Cl")], "its label fades with it");
+  const turned = tiltAtoms(m, new Set([0, 1, 2, 3]), [1, 0, 0], 70, 20);
+  assert.deepEqual(turned.atoms.map((a) => a.shade), [true, 0.4, true, true], "turned, the opacity stays on the same atom");
+  assert.equal(labelAlpha(render(turned, S, ink), "N"), labelAlpha(shaded(turned), "N") * 0.4, "and fades it over its new depth");
+  assert.equal(clean3d(m, [0, 1, 2, 3]).atoms[1].shade, 0.4, "3D Clean Up keeps it");
+  assert.ok(flattenAtoms(m, new Set([1])).atoms.every((a) => a.shade === true), "Flatten takes it away");
+  const json = serialize(m);
+  assert.match(json, /"shade": true,\s*"opacity": 0.4/, "beside shade: true, so older Octets still read the file");
+  assert.deepEqual(parse(json).atoms.map((a) => a.shade), [true, 0.4, true, true]);
+  assert.throws(() => parse(json.replace('"opacity": 0.4', '"opacity": 5')), "a damaged opacity is refused");
+  const xml = toCdxml(m, DEFAULT_STYLE);
+  assert.deepEqual(fromCdxml(xml).mol.atoms.map((a) => a.shade), [true, 0.4, true, true], "CDXML keeps it");
+  assert.deepEqual(fromCdxml(xml.replace(/ Octet='[^']*'/g, "").replace(/ Octet="[^"]*"/g, "")).mol.atoms.map((a) => a.shade), [true, true, true, true], "ChemDraw's CDXML has depth shading only");
+}
+console.log("perspective.check: opacity set by hand ok");

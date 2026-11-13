@@ -43,7 +43,7 @@ export function NoticeBar({ notice, onGone }: { notice: Notice; onGone: () => vo
       {ICONS[notice.kind]}
       <span className="notice-text text-ui">{notice.text}</span>
       {notice.action && <button className="text-button" onClick={() => { notice.action!.run(); onGone(); }}>{notice.action.label}</button>}
-      <button className="notice-close" aria-label="Close" onClick={onGone}><X size={12} /></button>
+      <button className="actions-close" aria-label="Close" data-tip="Close" onClick={onGone}><X size={12} /></button>
     </div>
   );
 }

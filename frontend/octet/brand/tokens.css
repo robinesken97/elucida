@@ -38,8 +38,10 @@
   --atom-b: #B0475F;
   --atom-si: #85622B;
   --atom-metal: #6B35B8;
+  --knob: #FFFFFF;
   --shadow-float: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.10);
   --shadow-focus: 0 0 0 2px #3F6BFF;
+  --shadow-knob: 0 1px 2px rgba(15, 23, 42, 0.20);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -78,8 +80,10 @@
     --atom-b: #F5A3B5;
     --atom-si: #E0BE8A;
     --atom-metal: #C8B3E6;
+    --knob: #FFFFFF;
     --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.40), 0 8px 24px rgba(0, 0, 0, 0.45);
     --shadow-focus: 0 0 0 2px #3F6BFF;
+    --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.40);
   }
 }
 [data-theme="dark"] {
@@ -118,8 +122,10 @@
   --atom-b: #F5A3B5;
   --atom-si: #E0BE8A;
   --atom-metal: #C8B3E6;
+  --knob: #FFFFFF;
   --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.40), 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-focus: 0 0 0 2px #3F6BFF;
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.40);
 }
 :root {
   --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
@@ -128,16 +134,40 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
   --space-16: 64px;
+  --radius-2xs: 2px;
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-icon: 22.37%;
   --radius-pill: 9999px;
+  --size-action: 18px;
+  --size-control-sm: 24px;
+  --size-control: 28px;
+  --size-row: 30px;
+  --size-tool: 32px;
+  --size-cell: 36px;
+  --press-small: 0.92;
+  --press: 0.97;
+  --press-large: 0.98;
+  --disabled: 0.45;
+  --z-panel: 1;
+  --z-strip: 2;
+  --z-notice: 3;
+  --z-palette: 4;
+  --z-home: 5;
+  --z-modal: 6;
+  --z-menu: 7;
+  --z-command: 8;
+  --z-tip: 9;
+  --z-drag: 40;
+  --z-link: 50;
+  --z-eyedropper: 100;
   --bond-length: 14.4pt;
   --bond-width: 0.6pt;
   --bond-bold: 2pt;

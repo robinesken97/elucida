@@ -79,6 +79,10 @@ assert.deepEqual(said(star("C", 5)), ["valence: C1 has 5 bonds. Carbon has a max
   const bracket = (x1: number): Mol => ({ ...chain, shapes: [{ id: 1, kind: "brackets", from: [-0.5, -1], to: [x1, 1] }] });
   assert.deepEqual(said(bracket(1.5)), ["parens: These brackets cross 1 bond on the left and 0 on the right. Make the two sides cross the same bonds."]);
   assert.deepEqual(said(bracket(0.5)), []);
+  // The same drawing turned a quarter turn, brackets and all: the same warning (the brackets' own frame).
+  const turned = (x1: number): Mol => ({ ...chain, atoms: chain.atoms.map((a) => ({ ...a, location: [x1 / 2 - 0.25 - a.location[1], a.location[0] - (x1 / 2 - 0.25), 0] as [number, number, number] })), shapes: [{ id: 1, kind: "brackets", from: [-0.5, -1], to: [x1, 1], angle: 90 }] });
+  assert.deepEqual(said(turned(1.5)), said(bracket(1.5)));
+  assert.deepEqual(said(turned(0.5)), []);
 }
 // Hidden warnings: an atom or bond with Display Warnings off has no problem marked, but Check Structure (all) sees it.
 {

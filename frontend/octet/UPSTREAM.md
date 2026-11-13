@@ -1,8 +1,8 @@
 # Octet source snapshot for Elucida
 
 Source: https://github.com/SamChemMan/Octet-Draw
-Commit: 934719abf213e0a8c9725256338bcbc0f305cab6.
-Version: 1.1.1 (pinned source commit; no automatic tracking of main).
+Commit: 6395bd582d2c5ba9404e9ddaf175e52e2a9f387c.
+Version: 1.1.2 (pinned source commit; no automatic tracking of main).
 License: Apache-2.0; copyright Sam Ellis and contributors. See LICENSE and THIRD_PARTY.md.
 
 This directory contains a source snapshot, not an independent git repository.
@@ -20,7 +20,7 @@ remain visible in embedded tables. The display-only dark canvas uses pure black.
 Embedded CSS hides page frames and guide lines. Import reports unsupported objects
 to the host so that it can protect the original and offer export to a separate copy.
 The Tauri application and upstream release tooling are not vendored; npm test includes checks
-for those omitted files. Use npm run test:embed for 94 drawing/embedding checks; seven standalone host/release checks are explicitly excluded in scripts/check-embed.mjs. Native Tauri clipboard assertions are skipped in export.check.ts when its Rust host is absent; the Python host has separate tests.
+for those omitted files. Use npm run test:embed for the drawing/embedding checks (140 at 1.1.2); 13 standalone host/release checks are explicitly excluded in scripts/check-embed.mjs. Native Tauri clipboard assertions are skipped in export.check.ts when its Rust host is absent; the Python host has separate tests.
 
 November 4 fixes: include `exporting` in the displayed drawing's memo dependencies so
 the SI SVG shows the same filtered reaction as CDX/CDXML. Embedded SVG exports position
@@ -53,3 +53,13 @@ export.ts and export.check.ts were resolved to retain Qt clipboard, screen-frame
 equivalents (reagentLabels replaces conditionItems) and density/volume/molarity rows. The host does
 not report `filled`, so an unreadable clipboard stays silent in Elucida.
 src-tauri/src/main.rs is vendored unused: the upstream checks of 1.1.1 read the native menu text from it.
+
+Update on November 13: merged 1.1.1 -> 1.1.2 with tools/update_octet.py. Upstream moved the reagent table out of
+Editor.tsx into gridview.ts and now reads equivalents from the reagent text itself (stoich.ts reagentEquiv), so the
+Elucida block in Editor.tsx is gone; two small changes remain there: reagentEquiv also accepts "Äq." and a decimal
+comma, and gridview.ts keeps the Molarity row visible when embedded (Volume and Density are always shown upstream now).
+Conflicts in Editor.tsx, export.ts and export.check.ts were resolved to retain the Qt clipboard, the export margin and
+the hidden Export button; the new `oct` clipboard field and Word object windows (`office`) are Tauri-only.
+src-tauri/src/*.rs and tauri.conf.json are vendored unused because the upstream checks read them. Excluded in
+scripts/check-embed.mjs: flatpak, libreoffice, word (packaging), ui (reads upstream's CLAUDE.md), inventory (needs
+upstream Git tags) and depth (depends on machine speed, fails in unmodified upstream on a fast Mac).

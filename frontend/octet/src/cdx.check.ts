@@ -2,11 +2,12 @@
 // bad file; also checks what Octet keeps from ChemDraw files (pictures, highlights, query bonds, property text and
 // polymer brackets) through CDXML, CDX, Octet's own file and editing.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { BASE64_MAGIC, MAGIC, NOT_CDX, cdxToXml, fromBase64, hexToBase64, toBase64, xmlToCdx } from "./cdx.ts";
 import { DAMAGED, TOO_BIG, fontCharset, fromCdxml, parseXml, toCdxml, type Xml } from "./cdxml.ts";
-import { DEFAULT_STYLE } from "./docstyle.ts";
+import { DEFAULT_STYLE, presetAt, readStyle } from "./docstyle.ts";
 import { parse, serialize } from "./file.ts";
-import { deleteAtoms, extractSelection, insertMol } from "./edit.ts";
+import { EMPTY, deleteAtoms, extractSelection, insertMol } from "./edit.ts";
 import { isDrawingText, readCdx, readOct, writeCdx } from "./oct.ts";
 import type { Mol } from "./render.ts";
 import { analyse, fromJcamp, measuredText } from "./measured.ts";
@@ -121,8 +122,9 @@ const kept: Mol = {
   for (const n of ["embeddedobject", "chemicalproperty", "bracketedgroup", "bracketattachment", "crossingbond"]) assert.ok(names.includes(n), n);
   assert.match(cdxml, /Order="1 2"/);
   assert.match(cdxml, /highlightColor=/);
-  // Read back from CDXML, and from CDX as ChemDraw would see it (no Octet data): everything kept, nothing lost.
-  for (const read of [fromCdxml(cdxml), fromCdxml(cdxToXml(xmlToCdx(root)))]) {
+  // Read back from CDXML, from CDX, and from CDX as ChemDraw saves it (no Octet data): everything kept, nothing lost.
+  const bare = (x: Xml): Xml => ({ ...x, attrs: Object.fromEntries(Object.entries(x.attrs).filter(([k]) => k !== "Octet")), kids: x.kids.map(bare) });
+  for (const read of [fromCdxml(cdxml), fromCdxml(cdxToXml(xmlToCdx(root))), fromCdxml(cdxToXml(xmlToCdx(bare(root))))]) {
     const m = read.mol;
     assert.deepEqual(read.lost, {});
     assert.deepEqual(m.bonds.map((b) => [b.type, b.query, b.halo]), [[1, "sd", undefined], [2, undefined, "#FFD966"], [1, undefined, undefined], [1, undefined, undefined]]);
@@ -183,6 +185,54 @@ const kept: Mol = {
   assert.equal(clip.arrows?.[0].curve?.points.length, 1);
   assert.equal(readCdx(writeCdx(clip, DEFAULT_STYLE)).foreign, undefined);
   console.log("cdx.check: Octet's .cdx files ok");
+}
+
+// Octet's own data through CDX: a drawing exported as CDX and opened again is the drawing its CDXML gives. Each
+// compound number keeps its structure, a caption gains no font or size, and a table and a TLC plate come back whole.
+// The data is under a user-defined tag (0x4F44) that ChemDraw 22.2 reads past and leaves out when it saves.
+{
+  const m: Mol = {
+    atoms: [A("C", 0, 0), A("C", 1, 0), A("O", 2, 0), A("C", 6, 0), A("C", 7, 0), A("O", 8, 0)],
+    bonds: [{ type: 1, atoms: [0, 1] }, { type: 1, atoms: [1, 2] }, { type: 1, atoms: [3, 4] }, { type: 2, atoms: [4, 5] }],
+    arrows: [{ id: 1, kind: "reaction", from: [3, 0], to: [5, 0] }],
+    captions: [{ id: 2, text: "1", x: 0, y: 0, bold: true, under: [0, 1, 2] }, { id: 3, text: "2", x: 0, y: 0, bold: true, under: [3, 4, 5] }, { id: 4, text: "25 °C → Ω", x: 4, y: 3, align: "left", italic: true }],
+    shapes: [
+      { id: 5, kind: "table", from: [0, -4], to: [4, -6], table: { cells: [["Entry", "Yield"], ["1", "85 % at 25 °C, Ω"]] } },
+      { id: 6, kind: "tlc", from: [10, 0], to: [13, 4], tlc: { lanes: 2, spots: [{ lane: 0, rf: 0.3, w: 0.3, h: 0.2 }, { lane: 1, rf: 0.6, tail: 0.4 }] } },
+    ],
+  };
+  const xml = toCdxml(m, DEFAULT_STYLE), tree = parseXml(xml), bytes = xmlToCdx(tree), direct = fromCdxml(xml), back = fromCdxml(cdxToXml(bytes));
+  assert.deepEqual(direct.mol.captions!.map((c) => c.under), [[0, 1, 2], [3, 4, 5], undefined]);
+  assert.deepEqual(back.mol.captions!.map((c) => c.under), [[0, 1, 2], [3, 4, 5], undefined], "each number keeps its structure as CDX");
+  assert.deepEqual(back.mol.captions!.map((c) => [c.font, c.size]), [[undefined, undefined], [undefined, undefined], [undefined, undefined]], "no font or size of the document's on a caption");
+  assert.deepEqual(back, direct, "CDX gives the drawing CDXML gives");
+  assert.equal(back.mol.shapes!.find((s) => s.kind === "table")!.table!.cells[1][1], "85 % at 25 °C, Ω");
+  // The tree itself: the same Octet data on every object, and no style part the CDXML did not give.
+  const every = (x: Xml): Xml[] => [x, ...x.kids.flatMap(every)], data = (x: Xml) => every(x).map((k) => k.attrs.Octet);
+  const read = cdxToXml(bytes), parts = (x: Xml) => every(x).filter((k) => k.name === "t" || k.name === "CDXML").map((k) => Object.keys(k.attrs).filter((a) => /^(Label|Caption)(Font|Face|Size|Color)$/.test(a)).sort());
+  assert.deepEqual(data(read), data(tree));
+  assert.deepEqual(parts(read), parts(tree));
+  // As ChemDraw saves it (the tags gone): its own drawing, with nothing lost, and no tie Octet did not read.
+  const bare = (x: Xml): Xml => ({ ...x, attrs: Object.fromEntries(Object.entries(x.attrs).filter(([k]) => k !== "Octet")), kids: x.kids.map(bare) });
+  const saved = fromCdxml(cdxToXml(xmlToCdx(bare(tree))));
+  assert.deepEqual(saved.lost, {});
+  assert.ok(saved.mol.captions!.every((c) => !c.under));
+  // A TLC spot's size is whole 1/65536 pt in CDX as in CDXML: the same spots from both, with Octet's data and without.
+  const spots = (r: { mol: Mol }) => r.mol.shapes!.find((s) => s.kind === "tlc")!.tlc!.spots;
+  assert.deepEqual(spots(saved), spots(fromCdxml(bare(tree))));
+  assert.ok(Math.abs(spots(saved)[0].w! - 0.3) < 1e-3 && Math.abs(spots(saved)[0].h! - 0.2) < 1e-3);
+  // Hostile data under Octet's tags: bytes that are not UTF-8 are left out, text that is not Octet's JSON is ignored,
+  // forged values are checked as CDXML's are, and a marker of the wrong length does nothing.
+  const forged = file(prop(0x4f44, ascii('{"v":1}')), prop(0x0805, coord(14.4)), obj(0x8001, 1,
+    obj(0x8003, 2, obj(0x8004, 3, prop(0x0200, [...coord(100), ...coord(100)])), obj(0x8004, 4, prop(0x0200, [...coord(100), ...coord(114.4)]))),
+    obj(0x8006, 5, prop(0x0200, [...coord(150), ...coord(100)]), prop(0x4f44, ascii('{"under":[1e99,"x",3,99],"xy":["a",1],"cycle":{"cycle":7,"step":99}}')), prop(0x4f45, [1, 2]), prop(0x0700, text([], ascii("1")))),
+    obj(0x8006, 6, prop(0x0200, [...coord(170), ...coord(100)]), prop(0x4f44, [0xff, 0xfe, 0x7b]), prop(0x0700, text([], ascii("2")))),
+    obj(0x8006, 7, prop(0x0200, [...coord(190), ...coord(100)]), prop(0x4f44, ascii("[1,2] not JSON")), prop(0x4f45, [0]), prop(0x0700, text([], ascii("3"))))));
+  const ft = cdxToXml(forged), fm = fromCdxml(ft).mol;
+  assert.deepEqual(every(ft).filter((x) => x.name === "t").map((x) => x.attrs.Octet), ['{"under":[1e99,"x",3,99],"xy":["a",1],"cycle":{"cycle":7,"step":99}}', undefined, "[1,2] not JSON"]);
+  assert.deepEqual(fm.captions!.map((c) => [c.text, c.under, c.cycle]), [["1", [0], undefined], ["2", undefined, undefined], ["3", undefined, undefined]]);
+  assert.ok(fm.captions!.every((c) => Number.isFinite(c.x) && Number.isFinite(c.y)));
+  console.log("cdx.check: Octet's own data as CDX ok");
 }
 
 // REL-15: as CDX too, turned text keeps its turn (RotationAngle), a Bold rectangle stays Bold, and a bond keeps its
@@ -271,4 +321,46 @@ const kept: Mol = {
   assert.equal(fromCdxml(cdxml).mol.captions![0].text, words + ", Ω µ ±");
   assert.equal(fromCdxml(cdxToXml(xmlToCdx(parseXml(cdxml)))).mol.captions![0].text, words + ", Ω µ ±");
   console.log("cdx.check: charsets ok");
+}
+
+// Style sheets (.cds, issue 74): a CDX file with the document's settings and an empty page. Settings > Document > Save
+// to file… writes the style as one (writeCdx of an empty drawing); Apply Settings From File… reads it, or ChemDraw's.
+{
+  // Octet's own: the whole style back exactly, and ChemDraw (which keeps no Octet data) still reads its settings.
+  const own = readStyle({ ...DEFAULT_STYLE, ...presetAt("RSC", 2), scale: 2, page: "Slide169", landscape: true, background: "dark", captionFont: "Helvetica", palette: [{ name: "Lab red", hex: "#B42323" }] });
+  const sheet = writeCdx(EMPTY, own);
+  assert.deepEqual(readOct(toBase64(sheet)).mol.style, own);
+  const chemdraw = readCdx(xmlToCdx(parseXml(toCdxml(EMPTY, own)))).mol.style!;
+  for (const k of ["bond", "line", "bold", "margin", "hash", "spacing", "labelFont", "labelSize", "captionFont", "captionSize", "chainAngle"] as const) assert.equal(chemdraw[k], own[k], k);
+  // ChemDraw's: an empty page whose box is 0 0 0 0 takes its size from its Width and Height (368.5 by 720.91 pt and
+  // an inch of margin), and one of -2 -2 2 2 with neither is ChemDraw's default page, US Letter.
+  const pageOf = (...page: number[][]) => readOct(toBase64(file(
+    prop(0x0805, coord(17)), prop(0x0807, coord(1)), prop(0x0804, u16(180)),
+    prop(0x0100, [...u16(1), ...u16(1), ...u16(3), ...u16(10000), ...u16(5), ...ascii("Arial")]),
+    prop(0x080a, [...u16(3), ...u16(0), ...u16(200), ...u16(3)]), prop(0x080b, [...u16(3), ...u16(0), ...u16(240), ...u16(3)]),
+    obj(0x8001, 1, ...page),
+  ))).mol.style!;
+  const old = pageOf(prop(0x0204, [0, 0, 0, 0].flatMap(coord)), prop(0x0812, coord(368.5)), prop(0x0813, coord(720.91)));
+  assert.deepEqual([old.bond, old.line, old.spacing, old.labelFont, old.labelSize, old.captionSize], [17, 1, 18, "Arial", 10, 12]);
+  assert.deepEqual([old.page, old.custom], ["Custom", [155.4, 279.72]]);
+  assert.equal(pageOf(prop(0x0204, [-2, -2, 2, 2].flatMap(coord))).page, "Letter");
+  // A page with something on it keeps its own box, however small (a paste from ChemDraw, say).
+  assert.deepEqual(fromCdxml('<CDXML><page id="1" BoundingBox="0 0 10 10" Width="540" Height="720"><t p="5 5"><s>x</s></t></page></CDXML>').style.custom, [28.93, 28.93]);
+  // Both ends: Apply Settings From File… takes .cds files, Save to file… sends the style sheet as cds, and Export
+  // writes it.
+  const rust = (f: string) => readFileSync(new URL(`../src-tauri/src/${f}`, import.meta.url), "utf8");
+  assert.match(readFileSync(new URL("Editor.tsx", import.meta.url), "utf8"), /"export_file", \{ export: \{ name, cds: toBase64\(writeCdx\(EMPTY, savedStyle\(\)\)\) \} \}/);
+  assert.match(rust("main.rs"), /const STYLES: [^\n]*"cds"[\s\S]*fn pick_style_file[^}]*add_filter\(STYLES\.0, STYLES\.1\)/);
+  assert.match(rust("export.rs"), /\("cds", "ChemDraw Style Sheet \(CDS\)", &\["cds"\]\)[\s\S]*"cds" => e\.cds\.is_some\(\)[\s\S]*"cds" => base64[^\n]*e\.cds/);
+  console.log("cdx.check: style sheets ok");
+}
+
+// A big-endian file (ChemDraw 4 on the Mac) reads its signed numbers as a little-endian one does: a charge of −1.
+{
+  const b16 = (v: number) => [(v >> 8) & 0xff, v & 0xff], b32 = (v: number) => [...b16(v >>> 16), ...b16(v & 0xffff)];
+  const bprop = (tag: number, data: number[]) => [...b16(tag), ...b16(data.length), ...data];
+  const bobj = (tag: number, id: number, ...inner: number[][]) => [...b16(tag), ...b32(id), ...inner.flat(), 0, 0];
+  const big = new Uint8Array([...ascii(MAGIC), 1, 2, 3, 4, ...new Array(10).fill(0), ...bobj(0x8000, 0, bobj(0x8001, 1, bobj(0x8003, 2, bobj(0x8004, 3, bprop(0x0421, [0xff])))))]);
+  assert.equal(cdxToXml(big).kids.find((k) => k.name === "page")!.kids[0].kids[0].attrs.Charge, "-1");
+  console.log("cdx.check: big-endian signs ok");
 }

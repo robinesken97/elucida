@@ -860,7 +860,7 @@ function letterPrefixes(list: { loc: string; name: Name }[]): string {
   const groups = new Map<string, { name: Name; locs: string[] }>();
   for (const p of list) { const g = groups.get(p.name.text) ?? { name: p.name, locs: [] }; g.locs.push(p.loc); groups.set(p.name.text, g); }
   return [...groups.values()].sort((x, y) => alphaKey(x.name.text).localeCompare(alphaKey(y.name.text))).map((g) => {
-    const m = g.locs.length, word = m > 1 ? (g.name.compound ? `${["", "", "bis", "tris"][m]}${enclose(g.name)}` : MULT[m] + g.name.text) : enclose(g.name);
+    const m = g.locs.length, word = m > 1 ? (g.name.compound ? MULT_COMPLEX[m] + enclose(g.name) : MULT[m] + g.name.text) : enclose(g.name);
     return `${g.locs.sort().join(",")}-${word}`;
   }).join("-");
 }

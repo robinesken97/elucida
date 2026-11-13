@@ -5,6 +5,7 @@ import { EMBEDDED, host } from "./elucida.ts";
 // structure, and reads structures back on paste.
 
 import { invoke } from "@tauri-apps/api/core";
+import type { Properties } from "./experiment.ts";
 
 // Octet's own layers, not part of the drawing: page marks and grid, selection (its frame and resize handles too),
 // hover, reaction interpretation, NMR shifts, problems, handles, guides, the rubber band, the eraser and the rest.
@@ -160,32 +161,35 @@ export const glyphInk: GlyphInk = (ch, el) => {
   return [-m.actualBoundingBoxLeft, -m.actualBoundingBoxAscent, m.actualBoundingBoxRight, m.actualBoundingBoxDescent];
 };
 
-// Copy: the picture (standaloneSvg of the selection, with the selection's CDXML hidden in it: on the Mac a PDF, on
-// Windows an EMF, on Linux a PNG), then CDX, the CDXML as its own type (cdxmlType), its molfile, SMILES and Octet's
+// Copy: the picture (standaloneSvg of the selection, with the selection's CDXML hidden in it: on the Mac Office's
+// copy and a PDF, on Windows an EMF, on Linux a PNG), then CDX, the CDXML as its own type (cdxmlType), its molfile, SMILES and Octet's
 // JSON, on the clipboard under ChemDraw's names on each system (src-tauri/src/clipboard.rs). ChemDraw itself puts no
 // CDXML type on; ChemDraw JS does. Each left out is not put on. Call it from the copy event after preventDefault(),
 // and set nothing on clipboardData: plain text would make ChemDraw paste a caption. With `text`, only that text goes
 // on (Edit > Copy As).
 // dpi: the export resolution, which the PNG and bitmap on Windows and Linux take (as ChemDraw's Copy As PNG takes
 // its Save As PNG resolution), at most 16 million pixels.
-export const copyToClipboard = (c: { dpi?: number; svg?: string; cdxml?: string; cdxmlType?: boolean; cdx?: string; molfile?: string; smiles?: string; octetJson?: string; text?: string }) =>
+// oct: the selection as a .oct file, on Windows for the Octet Drawing object that goes on first (decision 0023).
+export const copyToClipboard = (c: { dpi?: number; svg?: string; cdxml?: string; cdxmlType?: boolean; cdx?: string; molfile?: string; smiles?: string; octetJson?: string; text?: string; oct?: string }) =>
   EMBEDDED ? host<void>("copy", c) : invoke<void>("copy_to_clipboard", c);
 
 // What paste can use from the clipboard, each null when absent: Octet's JSON; CDXML (the CDXML type Octet and
 // ChemDraw JS write, or hidden in a pasted picture: Octet's, ChemDraw's PDF on the Mac, or either copied back out of
 // Word); ChemDraw's CDX as base64; a molfile or RXN file; SMILES. All of it comes from another program: read it as a
 // hostile file. filled: the clipboard holds something, usable or not.
-export type Clipboard = { octet: string | null; cdxml: string | null; cdx: string | null; molfile: string | null; smiles: string | null; text: string | null; picture: string | null; spectrum?: [string, string] | null; filled?: boolean };
+// oct: an Octet Drawing object's drawing, copied out of Word on Windows (decision 0023).
+export type Clipboard = { octet: string | null; oct?: string | null; cdxml: string | null; cdx: string | null; molfile: string | null; smiles: string | null; text: string | null; picture: string | null; spectrum?: [string, string] | null; filled?: boolean };
 export const readClipboard = () => EMBEDDED ? host<Clipboard>("paste") : invoke<Clipboard>("read_clipboard");
 // What Paste says when nothing on the clipboard pasted: why the text is not a structure, else that it cannot read
 // what is there (a ChemDraw picture copied back out of Word on Windows, issue 23). Nothing for an empty clipboard.
 export const pasteRefused = (clip: Pick<Clipboard, "filled">, text: string | undefined, why: string) =>
   text?.trim() ? `Octet cannot read this structure. ${why}` : clip.filled ? "Octet cannot read what is on the clipboard." : undefined;
 
-export type ExportFormat = "oct" | "pdf" | "svg" | "png" | "emf" | "eps" | "tif" | "jpg" | "gif" | "cdxml" | "cdx" | "mol" | "mol2000" | "sdf" | "sdf2000" | "rxn" | "rxn2000" | "rdf" | "rdf2000" | "smi" | "inchi";
+export type ExportFormat = "oct" | "pdf" | "svg" | "png" | "emf" | "eps" | "tif" | "jpg" | "gif" | "bmp" | "cdxml" | "cdx" | "mol" | "mol2000" | "sdf" | "sdf2000" | "rxn" | "rxn2000" | "rdf" | "rdf2000" | "smi" | "inchi";
 // The pictures: vector (PDF, SVG, EMF, EPS) and pixels at a resolution (PNG, TIFF, JPEG, GIF; JPEG is always on white).
+// BMP, in File > More Formats only, is pixels on white too.
 export const PICTURES: ExportFormat[] = ["pdf", "png", "svg", "emf", "eps", "tif", "jpg", "gif"];
-export const RASTERS: ExportFormat[] = ["png", "tif", "jpg", "gif"];
+export const RASTERS: ExportFormat[] = ["png", "tif", "jpg", "gif", "bmp"];
 // The pictures that carry the drawing's CDXML (the PDF as ChemDraw's does, the EMF in a comment, the PNG in a chunk), so
 // they open, drop and paste back into Octet as the drawing, from a file or copied back out of Word.
 export const CARRY_CDXML: ExportFormat[] = ["pdf", "png", "emf"];
@@ -219,19 +223,22 @@ export function withBackground(svg: string, hex: string): string {
   return box ? `${box[0]}<rect x="${box[1]}" y="${box[2]}" width="${box[3]}" height="${box[4]}" fill="${hex}"/>${svg.slice(box[0].length)}` : svg;
 }
 // A picture as a format saves it: with the margin, and for a raster format its background. Transparent only where the
-// format has it (JPEG has none); "page" is the drawing's own page colour (`page`), and white when it has none.
+// format has it (JPEG and BMP have none); "page" is the drawing's own page colour (`page`), and white when it has none.
 export function pictureAs(svg: string, f: { format: ExportFormat; margin: number; background: "white" | "transparent" | "page" }, page?: string): { svg: string; transparent: boolean } {
   const m = withMargin(svg, f.margin), raster = RASTERS.includes(f.format);
   if (raster && f.background === "page" && page) return { svg: withBackground(m, page), transparent: false };
-  return { svg: m, transparent: raster && f.format !== "jpg" && f.background === "transparent" };
+  return { svg: m, transparent: raster && f.format !== "jpg" && f.format !== "bmp" && f.background === "transparent" };
 }
 // File > Export…: the drawing in every form the page has (svg from standaloneSvg). The app asks where to save,
 // offering those formats (or only `format`), and writes the one the file name's extension asks for. The PDF, PNG
 // and EMF carry the CDXML (CARRY_CDXML), as on the clipboard. PNG at `dpi` of true size (300 if not given), white unless
-// `transparent`; JPEG at `quality` (1 to 100, 95 if not given). mdl: the text of the MDL format asked for; csv: Home's
-// Experiments list. Resolves to the path written, or null if cancelled.
+// `transparent`; JPEG at `quality` (1 to 100, 95 if not given). mdl: the text of the MDL format asked for, or of CML or a
+// connection table (File > More Formats); csv: Home's Experiments list; model: a 3MF file's 3D model (src/model3mf.ts);
+// tex: chemfig code (chemfig.ts); info: the drawing's title, author and keywords, for a PDF's document information;
+// pages: a PDF's pages, each a standalone SVG of one page (an experiment page and its risk assessment), in place of svg.
+// Resolves to the path written, or null if cancelled.
 export type ExportRequest = {
-  name: string; format?: ExportFormat | "csv"; csv?: string; oct?: string; svg?: string; cdxml?: string; cdx?: string; mdl?: string; smiles?: string; inchi?: string;
-  dpi?: number; transparent?: boolean; quality?: number;
+  name: string; format?: ExportFormat | "csv" | "3mf" | "tex" | "cml" | "ct"; csv?: string; model?: string; tex?: string; oct?: string; svg?: string; cdxml?: string; cdx?: string; mdl?: string; smiles?: string; inchi?: string;
+  dpi?: number; transparent?: boolean; quality?: number; info?: Properties; pages?: string[];
 };
 export const exportFile = (request: ExportRequest) => invoke<string | null>("export_file", { export: request });

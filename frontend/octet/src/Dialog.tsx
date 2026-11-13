@@ -1,7 +1,8 @@
 // Octet's one dialog: a small card over the window with a title, its fields, and Cancel and the action. Return
-// does the action, Escape cancels, and the first field has the focus (with no field, the action has it, never Don't
-// Save). Every dialog uses it (brand/CLAUDE.md). With no action it only shows something (About Octet): one Close
-// button, which Return presses too. plain: the body carries its own heading, so the title is only read out.
+// does the action (on a button that is not a field, it presses that button), Escape cancels, and the first field has
+// the focus (with no field, the action has it, never Don't Save). Every dialog uses it (brand/CLAUDE.md). With no
+// action it only shows something (About Octet): one Close button, which Return presses too. plain: the body carries
+// its own heading, so the title is only read out.
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { listOpen } from "./Menu";
 import { useLeaving } from "./motion";
@@ -9,6 +10,8 @@ import { useLeaving } from "./motion";
 // The modals open now (dialogs, Settings, the command palette, Home), the top one last. Only the top one takes keys.
 const open: React.RefObject<HTMLElement | null>[] = [];
 const FOCUSABLE = "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])";
+// A button that is a field: a list (Select) or a choice (Segmented, Switch).
+const FIELD = "button[role], button[aria-haspopup]";
 // Each modal stacks over the ones opened before it, at its own z-index or higher, so the top one shows over the
 // others: Quit's "Save changes" question shows over Export, not under it.
 const restack = () => {
@@ -64,34 +67,41 @@ export function useModal(ref: React.RefObject<HTMLElement | null>, on = true): (
 
 // alt: a third choice, before Cancel (Don't Save). cancel: Cancel's name, when the dialog's own word is better (Stop).
 // disabled: the action has nothing to do yet (Return does nothing).
-type Props = { title: string; action?: string; onAction?: () => void; onClose: () => void; plain?: boolean; disabled?: boolean; alt?: { label: string; onClick: () => void }; cancel?: string; children: React.ReactNode };
+// wide: a dialog laid out as the page it edits (Experiment details).
+type Props = { title: string; action?: string; onAction?: () => void; onClose: () => void; plain?: boolean; disabled?: boolean; alt?: { label: string; onClick: () => void }; cancel?: string; wide?: boolean; children: React.ReactNode };
 
-export function Dialog({ title, action, onClose, onAction = onClose, plain, disabled, alt, cancel = "Cancel", children }: Props) {
+export function Dialog({ title, action, onClose, onAction = onClose, plain, disabled, alt, cancel = "Cancel", wide, children }: Props) {
   // Leaving (motion.tsx, Exit), it gives the window back at once and takes no keys.
   const card = useRef<HTMLDivElement>(null), backdrop = useRef<HTMLDivElement>(null), leaving = useLeaving();
   const top = useModal(backdrop, !leaving);
   // The first field (a text box, a list or a choice) takes the focus when the dialog opens, and only then: a dialog
   // draws again as its fields change, and the focus stays in the field being typed in. With no field, the action has
-  // it, never the third choice (Don't Save, Replace): Space on it would lose work. What's new's section names are not
-  // fields: Close has the focus there.
+  // it, never the third choice (Don't Save, Replace): Space on it would lose work. A button that is not a field
+  // (What's new's section names, About's links) never has it: Return would press it.
   useEffect(() => {
     const c = card.current;
-    (c?.querySelector<HTMLElement>("textarea, input, select, .dialog-body button:not([tabindex='-1']):not(.notes-tab)") ?? c?.querySelector<HTMLElement>(".dialog-button.primary"))?.focus();
+    (c?.querySelector<HTMLElement>(`textarea, input, select, .dialog-body :is(${FIELD}):not([tabindex='-1'])`) ?? c?.querySelector<HTMLElement>(".dialog-button.primary"))?.focus();
   }, []);
   useEffect(() => {
     if (leaving) return;
     const key = (e: KeyboardEvent) => {
       if (!top() || listOpen()) return; // only the top modal; an open list takes its own keys
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
-      // Return in a text area makes a new line; ⌘Return (Ctrl+Enter) sends.
-      if (e.key === "Enter" && (!(e.target instanceof HTMLTextAreaElement) || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); if (!disabled) onAction(); }
+      // Return in a text area makes a new line; ⌘Return (Ctrl+Enter) sends. Return on a button in the dialog that is
+      // not a field presses that button, so Return on Cancel cancels (issue 129).
+      if (e.key === "Enter" && (!(e.target instanceof HTMLTextAreaElement) || e.metaKey || e.ctrlKey)) {
+        e.preventDefault(); e.stopPropagation();
+        const t = e.target;
+        if (t instanceof HTMLButtonElement && card.current?.contains(t) && !t.matches(FIELD)) t.click();
+        else if (!disabled) onAction();
+      }
     };
     addEventListener("keydown", key, true);
     return () => removeEventListener("keydown", key, true);
   }, [onAction, onClose, disabled, leaving]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div ref={backdrop} className={leaving ? "modal-backdrop leaving" : "modal-backdrop"} inert={leaving} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={card} className="dialog" role="dialog" aria-modal={!leaving} aria-label={title}>
+      <div ref={card} className={wide ? "dialog wide" : "dialog"} role="dialog" aria-modal={!leaving} aria-label={title}>
         {!plain && <h2>{title}</h2>}
         <div className="dialog-body">{children}</div>
         <div className="dialog-buttons">

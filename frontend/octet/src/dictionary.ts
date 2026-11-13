@@ -56,7 +56,7 @@ export function casProblem(text: string): string | undefined {
   return `Not a CAS number. The last digit must be ${checkDigit(m[1] + m[2])}.`;
 }
 // The number as the table keeps it (no leading zeros), or undefined.
-function casNumber(text: string): string | undefined {
+export function casNumber(text: string): string | undefined {
   const m = casParts(text);
   return m && checkDigit(m[1] + m[2]) === Number(m[3]) ? `${Number(m[1])}-${m[2]}-${m[3]}` : undefined;
 }
@@ -64,6 +64,9 @@ function casNumber(text: string): string | undefined {
 // ——— InChIKeys ———
 const INCHIKEY = /^(?:InChIKey=)?([A-Z]{14}-[A-Z]{10}-[A-Z])$/i;
 export const inchiKeyOf = (text: string): string | undefined => INCHIKEY.exec(text.trim())?.[1].toUpperCase();
+// The CAS numbers of the compound with this InChIKey, for the Properties panel ("50-78-2"; a comma between two).
+// Undefined when the dictionary has none, or has not loaded.
+export const dictionaryCas = (key: string): string | undefined => (table?.casNumbers(table.keyCompound(key)).join(", ") || undefined);
 
 // SMILES for a name from the dictionary, a CAS number, an InChIKey the dictionary has, a condensed formula (PhCH2OH),
 // a peptide sequence (Ala-Gly-Ser) or an amino acid written "alpha alanine". Undefined for anything else. read: OPSIN,

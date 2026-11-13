@@ -224,7 +224,6 @@ type Assembly = { rings: [number[], number[]]; junction: [number, number] };
 // A parent: a chain or ring (or ring assembly), a hydrazine or diazene (hetero), or a chain whose carboxylic groups hang
 // on it as "carbo…" suffixes (attached: propane-1,2,3-tricarboxylic acid).
 type Parent = { atoms: number[]; ring: boolean; assembly?: Assembly; hetero?: string; attached?: boolean };
-const HYDRO = [...MULT, "undeca", "dodeca", "trideca", "tetradeca"];
 
 // Retained names used in preferred IUPAC names (P-65, P-66, P-63): parent ring or chain, principal group, name.
 const RETAINED: Record<string, string> = {
@@ -261,6 +260,31 @@ const CATENATE = new Set(["Si", "Ge", "Sn", "Pb", "B"]);
 // Senior parent hydrides (P-44.1.2): the senior atom in this order, carbon last. Mercury, a metal, first.
 const PARENT_ORDER = ["Hg", "N", "P", "As", "Sb", "Bi", "Si", "Ge", "Sn", "Pb", "B", "Al", "Ga", "In", "Tl", "O", "S", "Se", "Te"];
 
+// Whether an amine N (atom i) is a bridgehead whose R or S follows from the other bridgehead's: three bridges of one
+// atom or more join it to an atom with R or S (labelled), and every ring through the two has seven atoms at most, too
+// small to turn a bridgehead in. OPSIN and InChI do not read R or S on such an N, so the name leaves it out: ajmaline's
+// N15. An N at a ring fusion inverts, and Tröger's base, whose bridgeheads are both N, keeps its labels (no name).
+function lockedN(adj: number[][], i: number, labelled: (j: number) => boolean): boolean {
+  if (adj[i].length !== 3) return false;
+  // The shortest way from each neighbour to each atom up to five bonds away, not through N.
+  const ways = adj[i].map((x) => {
+    const prev = new Map([[x, -1]]);
+    for (let front = [x], d = 0; d < 5; d++) {
+      const next: number[] = [];
+      for (const a of front) for (const b of adj[a]) if (b !== i && !prev.has(b)) { prev.set(b, a); next.push(b); }
+      front = next;
+    }
+    return prev;
+  });
+  const path = (w: Map<number, number>, p: number) => { const out: number[] = []; for (let a = p; a >= 0; a = w.get(a)!) out.push(a); return out; };
+  return [...ways[0].keys()].some((p) => {
+    if (!labelled(p) || !ways[1].has(p) || !ways[2].has(p)) return false;
+    const [a, b, c] = ways.map((w) => path(w, p));
+    return a.length > 1 && b.length > 1 && c.length > 1 && new Set([...a, ...b, ...c]).size === a.length + b.length + c.length - 2
+      && a.length + b.length <= 7 && a.length + c.length <= 7 && b.length + c.length <= 7;
+  });
+}
+
 class Namer {
   n: number; el: string[]; h: number[]; q: number[]; adj: number[][]; bond = new Map<string, number>();
   inRing: boolean[]; rings: number[][] = []; ringOf: number[];
@@ -286,6 +310,7 @@ class Namer {
   het = new Map<number, string>(); // atoms of groups built on N, O, S, P and the halogens, by role (namer-hetero.ts)
   ions = new Set<number>(); ionBonds = new Set<string>(); onium: number[] = []; azanide: number[] = []; // atoms named as ions, their hetero bonds, onium S, P, O, azanide N
   esterIon?: { x: number; word: string; ors: number[]; ohs: number }; // an ester anion of an inorganic acid: methyl sulfate
+  bridgeheadBonds = false; // a von Baeyer system's double bond from a bridgehead takes a compound locant (nameOf)
 
   // opaque: atoms that stand for a group named elsewhere (metals.ts: ferrocenyl), cited by that name and in no chain.
   opaque: Map<number, Name>;
@@ -302,7 +327,8 @@ class Namer {
       this.bond.set(this.key(b.a, b.b), b.order);
       if (b.cip) this.cipBond.set(this.key(b.a, b.b), b.cip);
     }
-    this.cip = g.atoms.map((a) => a.cip);
+    const rs = (j: number) => g.atoms[j].el !== "N" && /^[RS]$/.test(g.atoms[j].cip ?? "");
+    this.cip = g.atoms.map((a, i) => (a.cip && a.el === "N" && !a.charge && !a.h && lockedN(this.adj, i, rs) ? undefined : a.cip));
     this.iso = g.atoms.map((a) => a.iso);
     this.hx = g.atoms.map((a) => a.hx ?? []);
     this.isotopic = g.atoms.some((a) => a.iso || a.hx?.length);
@@ -1350,9 +1376,10 @@ class Namer {
     };
     const bridged = info?.bridged;
     const multiple = (num: number[], o?: number) => bridged ? bridged.bonds.flatMap(([a, b]) => {
-      // A double bond between atoms with locants that do not follow on (a bridgehead's) cannot be cited this way.
+      // A double bond between atoms with locants that do not follow on (a bridgehead's) takes a compound locant, 1(9),
+      // and ranks after the others: 1000 + the lower locant + the higher one / 1000.
       const ord = this.ord(a, b), x = loc(num, a), y = loc(num, b);
-      return ord > 1 && (o === undefined || ord === o) ? [Math.abs(x - y) === 1 ? Math.min(x, y) : 1000 + Math.min(x, y)] : [];
+      return ord > 1 && (o === undefined || ord === o) ? [Math.abs(x - y) === 1 ? Math.min(x, y) : 1000 + Math.min(x, y) + Math.max(x, y) / 1000] : [];
     }).sort((a, b) => a - b) : num.flatMap((a, k) => {
       const b = num[(k + 1) % num.length];
       if (k === num.length - 1 && !p.ring) return [];
@@ -1441,7 +1468,7 @@ class Namer {
     else if (fused) {
       // Hydro prefixes, then indicated hydrogen, in front of the parent (P-31.1.4.2.4): 2,3-dihydro-1H-indole.
       const { hydro } = sat(num), x = xs(sat(num));
-      const h = !hydro.length ? "" : `${hydro.length === fused.cn.length && !fused.tpl.bridges ? "" : hydro.map((a) => label(num, a)).join(",") + "-"}${HYDRO[hydro.length]}hydro`;
+      const h = !hydro.length ? "" : `${hydro.length === fused.cn.length && !fused.tpl.bridges ? "" : hydro.map((a) => label(num, a)).join(",") + "-"}${MULT[hydro.length]}hydro`;
       const dh = fused.dehydro?.flat().map((a) => label(num, a)).sort(locOrder) ?? [];
       // Bridges of a bridged fused system go in front of the parent: 4,7-methanoindene. λ-atoms follow indicated
       // hydrogen (lambdaName): 10H-10λ⁵-dibenzo[b,e][1,4]oxarsinine, 1λ⁶,2-benzothiazine.
@@ -1454,8 +1481,9 @@ class Namer {
     } else if (p.ring && info!.ring) parent = (info!.ring.hydrogen && (!opts.attach || opts.sulfo || opts.acyl) ? info!.ring.hydrogen : "") + info!.ring.name;
     else if (bridged) {
       // A large monocycle's double bond from its last atom to atom 1 takes a compound locant (P-31.1.4.2.4): 1(13).
-      const closure = (l: number[]) => l.map((x) => (x > 999 ? `${x - 1000}(${size})` : String(x))).sort((a, b) => parseInt(a) - parseInt(b));
-      if (multiple(num).some((l) => l > 999) && bridged.prefix !== "cyclo") throw new Error("bridgehead double bond");
+      // So does a von Baeyer system's double bond from a bridgehead, where nameOf asks for one: bicyclo[3.3.1]non-1(9)-ene.
+      const closure = (l: number[]) => l.map((x) => (x > 999 ? `${Math.floor(x) - 1000}(${Math.round((x % 1) * 1000)})` : String(x))).sort((a, b) => parseInt(a) - parseInt(b));
+      if (multiple(num).some((l) => l > 999) && bridged.prefix !== "cyclo" && !this.bridgeheadBonds) throw new Error("bridgehead double bond");
       // Replacement prefixes in front: 8-azabicyclo[3.2.1]octane, 1,4-dioxaspiro[4.5]decane, and azonia for an N+
       // (P-73.1.2): 1,4-diazoniabicyclo[2.2.2]octane.
       const replaced = [...REPLACE, ["N+", "azonia"]].map(([e, word]) => {
@@ -1505,14 +1533,22 @@ class Namer {
       const c = this.cipBond.get(this.key(st.group, this.imineN(st.group)!));
       if (c === "E" || c === "Z") stereo.push({ at: loc(num, st.atom), text: `${label(num, st.atom)}${c}` });
     }
-    // E and Z on an ylidene's double bond, at the parent atom's locant: (2E)-2-ethylidenecyclohexan-1-one.
+    // E and Z on an ylidene's or imino group's double bond, at the parent atom's locant: (2E)-2-ethylidenecyclohexan-1-one,
+    // cefotaxime's [(2Z)-2-(2-amino-1,3-thiazol-4-yl)-2-(methoxyimino)acetyl]. A hydrazinylidene group cites its own
+    // (namer-hetero.ts): [(E)-2-phenylhydrazinylidene].
     for (const a of new Set(prefixes.filter((x) => !x.n).map((x) => x.atom))) for (const y of this.adj[a]) {
       const free = opts.attach && a === opts.attach[0] && y === opts.attach[1]; // cited by the parent the group is on
-      const c = !inParent.has(y) && !free && this.el[y] === "C" && this.ord(a, y) === 2 ? this.cipBond.get(this.key(a, y)) : undefined;
+      const c = !inParent.has(y) && !free && (this.el[y] === "C" || (this.el[y] === "N" && this.het.get(y) !== "hz")) && this.ord(a, y) === 2 ? this.cipBond.get(this.key(a, y)) : undefined;
       if (c === "E" || c === "Z") stereo.push({ at: loc(num, a), text: `${label(num, a)}${c}` });
     }
-    if (fused || assembly) {
+    if (assembly) {
       if (atoms.some((a) => this.adj[a].some((b) => inParent.has(b) && /^[EZ]$/.test(this.cipBond.get(this.key(a, b)) ?? "")))) throw new Error("ring E/Z");
+    } else if (fused) {
+      // E and Z on a double bond in a large ring of a fused system, at its lower locant: brefeldin A's (2E,10E).
+      for (const a of atoms) for (const b of this.adj[a]) {
+        const c = inParent.has(b) && loc(num, a) < loc(num, b) ? this.cipBond.get(this.key(a, b)) : undefined;
+        if (c === "E" || c === "Z") stereo.push({ at: loc(num, a), text: `${label(num, a)}${c}` });
+      }
     } else if (p.hetero) {
       const e = this.cipBond.get(this.key(atoms[0], atoms[1])); // (E)-diazene-1,2-dicarboxylate
       if (e === "E" || e === "Z") stereo.push({ at: 0, text: e });
@@ -1547,7 +1583,7 @@ class Namer {
     if (ring) return at === "1" && !unsaturated && !info?.bridged ? parent.replace(/ane$/, "yl") : `${parent.replace(/e$/, "")}-${at}-yl`;
     if (!unsaturated && at === "1") return parent.replace(/ane$/, "yl");
     if (size === 2 && at === "1") return parent.replace(/e$/, "yl"); // ethenyl, ethynyl
-    return `${parent.replace(/e$/, "")}-${at}-yl`.replace(/an-(\d+)-yl$/, "an-$1-yl");
+    return `${parent.replace(/e$/, "")}-${at}-yl`;
   }
 
   // ——— Substituent prefixes ———
@@ -1664,9 +1700,8 @@ class Namer {
       return { text: `${inner}carbamoyl`, compound: true };
     }
     if (kind === "ester") {
-      const o = this.esterO.get(x)!, r = this.adj[o].find((j) => j !== x)!;
+      const o = this.esterO.get(x)!;
       const alkoxy = this.substituent(o, x); // named from the oxygen
-      void r;
       return { text: `${enclose(alkoxy)}carbonyl`, compound: true }; // methoxycarbonyl, [(benzyloxy)carbonyl]
     }
     if (this.carbonylO[x] >= 0) return this.acylName(x, from);
@@ -1738,7 +1773,7 @@ class Namer {
   paths(start: number, from: number, fromStart: boolean, nitrile = false, avoid?: Set<number>): number[][] {
     const ok = (j: number) => this.el[j] === "C" && !this.inRing[j] && j !== from && (nitrile || !this.isNitrileC(j)) && !avoid?.has(j) && !this.opaque.has(j) && !this.het.has(j);
     const walk = (a: number, seen: Set<number>): number[][] => {
-      const next = this.adj[a].filter((j) => ok(j) && !seen.has(j) && (j === start || this.carbonylO[j] < 0 || true));
+      const next = this.adj[a].filter((j) => ok(j) && !seen.has(j));
       const ends = next.flatMap((j) => walk(j, new Set([...seen, j])).map((p) => [j, ...p]));
       return ends.length ? ends : [[]];
     };
@@ -2122,12 +2157,16 @@ class Namer {
     // A compound alkyl group after its locants goes in enclosing marks (P-16.5.1): 1-methyl 5-(2-methylpropyl) pentanedioate.
     const alkyls = sorted.map((g) => (sorted.length > 1 ? `${g.sites.map(acid.label!).sort(locOrder).join(",")}-` : "")
       + (sorted.length > 1 && g.sites.length === 1 && (g.name.compound || /^[\d(]/.test(g.name.text)) ? enclose(g.name) : times(g.sites.length, g.name)));
-    return `${alkyls.join(" ")} ${acid.text}`;
+    // A thioate's alkyl names the atom it is on, as in esterName; with more than one alkyl group that is not covered.
+    const vs = esters.filter((c) => site(c) !== undefined).map((c) => groupVariant(this, c)).filter((v) => v === "S" || v === "O");
+    if (vs.length && (sorted.length > 1 || sorted[0].sites.length > 1)) throw new Error("several thioesters");
+    return `${vs.length ? `${vs[0]}-${enclose(sorted[0].name)}` : alkyls.join(" ")} ${acid.text}`;
   }
   // Esters of a polyol (P-65.6.3.2.2): cut at each ester's C–O bond, one part holds every ester O and no ester carbon,
   // and the acids are all the same: ethane-1,2-diyl diacetate. The polyol's name (ethane-1,2-diol) gives the
   // alkyl's (ethane-1,2-diyl).
   polyolEster(esters: number[]): string | undefined {
+    if (esters.some((c) => groupVariant(this, c))) return undefined; // thioates: S-methyl, O-methyl (esterName)
     const os = esters.map((c) => this.esterO.get(c)!), yl = this.polyolYl(os, esters);
     if (!yl) return undefined;
     const acids = esters.map((c) => {
@@ -2757,16 +2796,21 @@ function fragments(g: Graph): number[][] {
 // A structure's name: one with metal atoms (metals.ts), a simple species, one structure, or a salt.
 function nameOf(g: Graph): string | undefined {
   const parts = fragments(g);
-  const named = (h: Graph) => metalName(h, parts, METAL_API) ?? (parts.length === 1 ? speciesName(h) ?? nOxideName(h) ?? new Namer(h).name() : saltName(h, parts));
+  const named = (h: Graph, bridgeheadBonds = false) => metalName(h, parts, METAL_API) ?? (parts.length === 1 ? speciesName(h) ?? nOxideName(h) ?? Object.assign(new Namer(h), { bridgeheadBonds }).name() : saltName(h, parts));
+  const bridgehead = (e: unknown) => e instanceof Error && e.message === "bridgehead double bond" && parts.length === 1;
   try { return named(g); } catch (e) {
-    // A von Baeyer name cannot cite a double bond between bridgeheads; the benzene rings drawn the other way round
-    // avoid it: bicyclo[4.2.0]octa-1,3,5-triene.
-    const other = e instanceof Error && e.message === "bridgehead double bond" && parts.length === 1 ? otherKekule(g) : undefined;
-    if (!other) throw e;
-    return named(other);
+    // A von Baeyer name cites a double bond from a bridgehead with a compound locant (P-31.1.4.2.4) only where the
+    // benzene rings drawn the other way round do not avoid it: bicyclo[4.2.0]octa-1,3,5-triene, but galantamine's
+    // 11-oxa-4-azatetracyclo[8.6.1.0¹,¹².0⁶,¹⁷]heptadeca-6,8,10(17),15-tetraene. Then both ways round are named and
+    // the name with the lower locants is kept, so galantamine has one name however its benzene ring is drawn.
+    if (!bridgehead(e)) throw e;
+    const other = otherKekule(g);
+    if (other) try { return named(other); } catch (f) { if (!bridgehead(f)) throw f; }
+    const names = [g, other].flatMap((h) => { const name = h && named(h, true); return name ? [name] : []; });
+    return names.sort((a, b) => compare(locantsOf(a), locantsOf(b)))[0];
   }
 }
 
 // For namer-hetero.ts, which names groups built on N, O, S, P and the halogens.
-export { Namer, enclose, substituted, assemblePrefixes, alphaKey, alkylWords, times, joinPrefixes, MULT, MULT_COMPLEX, HALO, SENIORITY, CARBON_GROUP, chainStem, citedLabels };
+export { Namer, enclose, substituted, assemblePrefixes, alphaKey, alkylWords, times, joinPrefixes, MULT, MULT_COMPLEX, HALO, SENIORITY, CARBON_GROUP, chainStem, citedLabels, compare, locantsOf };
 export type { Name, Kind };

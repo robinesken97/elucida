@@ -66,14 +66,19 @@ assert.match(editor, /centre_view: \["Centre in window", `⌥\$\{MOD\}\/`/);
 // From a key the view moves at once; from the pointer it glides (moveView).
 assert.match(editor, /if \(performance\.now\(\) - keyAt\.current > 500\) return moveView\(to\);/);
 // Every Actions panel that has Centre on Page, and the atom, bond, grid and spot ones, offer Centre in Window too.
-assert.equal(actions.match(/\bcentre, inWindow\b|\binWindow, centre\b/g)?.length, 5); // the object list, the drawing, captions and both shape panels
-assert.equal(actions.match(/whole, inWindow, keep/g)?.length, 2);
+assert.equal(actions.match(/\bcentre, inWindow\b|\binWindow, centre\b/g)?.length, 7); // the object list, the drawing, captions, and the TLC plate's, gel's, plasmid map's and table's panels
+assert.equal(actions.match(/\[whole\]\), inWindow, keep/g)?.length, 2);
 assert.match(actions, /"grid\.layout"\), inWindow, del\)/);
 assert.match(actions, /"spot\.rf"\), inWindow, del\)/);
 assert.match(actions, /centre_view: "view"/);
 // The pointer: Shift and a mouse wheel scroll across; the middle button drags the view with every tool; the scroll
 // bars show over the canvas but not on Home.
 assert.match(editor, /across = e\.shiftKey && !zooming && !e\.deltaX/);
+// A pinch zooms with no key held: as Ctrl + scroll (Chromium, Windows) and as WebKit's gesture events (the Mac), which
+// zoom by the change in scale since the last one. Ctrl + scroll waits while a gesture goes on, so a pinch never counts twice.
+assert.match(editor, /const gestures = \["gesturestart", "gesturechange", "gestureend"\]/);
+assert.match(editor, /zoomAt\(g\.clientX, g\.clientY, g\.scale \/ pinched\)/);
+assert.match(editor, /if \(zooming && pinched\) return;/);
 assert.match(editor, /if \(e\.button === 1\) \{/);
 assert.match(editor, /\{!home && \(\n\s*<Scrollbars views=\{views\}/);
 // The bars follow the view from its store, with no React render for each pan or zoom step.

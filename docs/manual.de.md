@@ -811,7 +811,9 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Mehrere Spezies:** Alle einer Messung zugeordneten Simulationen (EasySpin oder eigene S = ½) werden *gemeinsam* per
   linearen kleinsten Quadraten skaliert; die Anteile (Doppelintegral) werden angezeigt, optional die Summe und der Rest
   (Messung − Summe) – also die Subtraktion einzelner Spezies. Nichtlineare Parameter (g, A, D/E, Linienbreiten von
-  Pulverspektren) werden in EasySpin gefittet; Elucida bestimmt nur die Anteile.
+  Pulverspektren) werden in EasySpin gefittet; Elucida bestimmt nur die Anteile. Gestapelt liegt eine Simulation auf
+  ihrer Messung; **Simulation unter der Messung** zeichnet sie auf einer eigenen Ebene direkt darunter (Wert = Abstand als
+  Vielfaches des Stapelabstands).
 - **Eigene isotrope S = ½-Simulation mit Fit** (Lösung, erste Ordnung): g, Gruppen äquivalenter Kerne (z. B.
   `2 14N 0.65; 4 1H 0.32`, a in mT; Isotope von ¹H bis ²⁰⁹Bi, z. B. ¹¹B, ⁷Li, ²³Na, ²⁷Al, oder der Kernspin direkt als
   `I=3/2`), Peak-zu-Peak-Linienbreite und Lorentz-Anteil; „Fitten“ verfeinert g, a und ΔB_pp

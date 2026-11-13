@@ -838,7 +838,7 @@ class EPRTab(TABS.FigureTab):
                          normalize=True,
                          stack=False, gap=1.2, labels="", show_params=False, y_axis="no_numbers",
                          mode="spectra", int_window="", int_method="double", int_x="time", int_curie=False,
-                         show_sum=True, show_residual=False, calib_uid=None, calib_g=2.0055,
+                         show_sum=True, show_residual=False, sim_below=False, sim_gap=1.0, calib_uid=None, calib_g=2.0055,
                          ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq",
                          kin_loss=100.0,
                          trace_label="name", ramp="", cap_species="", cap_solvent="", cap_conc="")
@@ -852,7 +852,7 @@ class EPRTab(TABS.FigureTab):
         self.fold_int = self.fold(g, "intensity", ("mode", "int_window", "int_method", "int_x", "int_center", "kin_fit",
                                                    "kin_norm", "kin_loss", "int_curie"))
         g = STYLE.split_group(self.group_titled("epr_display"), self.cb_sum, self.cb_params, T("grp_simulation"))
-        self.fold(g, "simulation", ("show_sum", "show_residual", "show_params"))
+        self.fold(g, "simulation", ("show_sum", "show_residual", "sim_below", "sim_gap", "show_params"))
         g = STYLE.split_group(self.group_titled("epr_processing"), self.sp_ref_freq, self.sp_T_offset, T("grp_refs"))
         self.fold(g, "refs", ("ref_freq", "calib_uid", "calib_g", "T_offset"))
 
@@ -1103,6 +1103,17 @@ class EPRTab(TABS.FigureTab):
         row.addWidget(self.cb_res)
         row.addStretch(1)
         f.addRow(row)
+        self.cb_sim_below = QCheckBox(T("epr_sim_below"))  # gestapelt: Simulation unter statt auf ihrer Messung
+        self.cb_sim_below.setChecked(st.get("sim_below", False))
+        self.cb_sim_below.setToolTip(T("epr_sim_below_tip"))
+        self.sp_sim_gap = QDoubleSpinBox(decimals=2, minimum=0.1, maximum=20, singleStep=0.1, value=st.get("sim_gap", 1.0))
+        self.sp_sim_gap.setToolTip(T("epr_sim_gap_tip"))
+        row = QHBoxLayout()                              # wie „Gestapelt“: tidy macht daraus ein Feld mit „aus“
+        row.addWidget(self.cb_sim_below)
+        row.addWidget(QLabel(T("ov_gap")))
+        row.addWidget(self.sp_sim_gap)
+        row.addStretch(1)
+        f.addRow(row)
         self.cb_params = QCheckBox(T("epr_show_params"))
         self.cb_params.setChecked(st["show_params"])
         f.addRow(self.cb_params)
@@ -1165,12 +1176,12 @@ class EPRTab(TABS.FigureTab):
         rv.addWidget(self.lbl_info)                      # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(self.grp_results)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
-        for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_bl_width, self.sp_smooth, self.sp_gap):
+        for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_bl_width, self.sp_smooth, self.sp_gap, self.sp_sim_gap):
             w_.valueChanged.connect(self.changed)
         self.cmb_bl.currentIndexChanged.connect(self._bl_fields)
         self.cmb_bl.currentIndexChanged.connect(self.changed)
         self._bl_fields()
-        for w_ in (self.cb_norm, self.cb_stack, self.cb_params, self.cb_curie, self.cb_sum, self.cb_res):
+        for w_ in (self.cb_norm, self.cb_stack, self.cb_params, self.cb_curie, self.cb_sum, self.cb_res, self.cb_sim_below):
             w_.toggled.connect(self.changed)
         self.cmb_calib.currentIndexChanged.connect(self.changed)
         self.sp_calib_g.valueChanged.connect(self.changed)
@@ -1238,6 +1249,7 @@ class EPRTab(TABS.FigureTab):
                        int_window=self.ed_int_window.text().strip(), int_method=self.cmb_int_method.currentData(),
                        int_x=self.st["int_x"] if view == "spectra" else view, int_curie=self.cb_curie.isChecked(),
                        show_sum=self.cb_sum.isChecked(), show_residual=self.cb_res.isChecked(),
+                       sim_below=self.cb_sim_below.isChecked(), sim_gap=self.sp_sim_gap.value(),
                        calib_uid=self.cmb_calib.currentData(), calib_g=self.sp_calib_g.value(),
                        ref_freq=self.sp_ref_freq.value(), T_offset=self.sp_T_offset.value(),
                        int_center=self.sp_int_center.value(), kin_fit=self.cb_kin.isChecked(),
@@ -1804,10 +1816,16 @@ class EPRTab(TABS.FigureTab):
             norm[e["uid"]] = (1.0 / mx) if (st["normalize"] and mx > 0) else 1.0
         levels, lev = {}, -1
         shown = {e["uid"] for e in vis}
+        tied = lambda e: e["kind"] in ("sim", "iso") and e.get("fit_to") in shown   # noqa: E731
         for e in vis:                                     # Simulation auf der Ebene ihrer Messung, auch wenn sie in
-            if not (e["kind"] in ("sim", "iso") and e.get("fit_to") in shown):   # der Liste davor steht (Umkehren)
-                lev += 1
-                levels[e["uid"]] = lev
+            if tied(e):                                   # der Liste davor steht (Umkehren)
+                continue
+            lev += 1
+            levels[e["uid"]] = lev
+            for s in vis if st.get("sim_below") else ():  # Nutzerwunsch: Simulation auf eigener Ebene direkt darunter
+                if tied(s) and s["fit_to"] == e["uid"]:
+                    lev += st.get("sim_gap", 1.0)         # Abstand zur Messung als Vielfaches des Stapelabstands
+                    levels[s["uid"]] = lev
         for e in vis:
             levels.setdefault(e["uid"], levels.get(e.get("fit_to")))
         n_lev = lev + 1

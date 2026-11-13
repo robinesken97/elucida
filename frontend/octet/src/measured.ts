@@ -3,7 +3,7 @@
 // assigned to (Atom.peaks), so assignments move, copy and undo with the atoms. The drawing keeps the trace, quantised
 // to 16 bits, so a saved drawing opens with the spectrum, its multiplets and its assignments as they were.
 import { MAX_POINTS, type JcampSpectrum, type Kind } from "./jcamp.ts";
-import { multiplicity } from "./nmr.ts";
+import { guessNucleus, isNucleus, multiplicity, NUCLEI, shiftText } from "./nmr.ts";
 import { FIT, fitCurve, inkOf, pageLabels, piecesOf, solventPeaks, ticks, traceColumns, type Figure, type LabelTurn, type PageLabel } from "./spectrumplot.ts";
 
 // A multiplet (for ¹H) or a peak: its range in x units, lo to hi. manual: the user drew its range (Shift-drag), so new
@@ -23,6 +23,10 @@ export const MAX_GROUPS = 2000;
 export const THRESHOLD = 0.02; // the default: peaks from 2% of the tallest
 const MAX_J = 18; // Hz: peaks further apart than this are in different multiplets
 
+// NMR spectra whose peaks group into multiplets in Hz (¹H, ¹⁹F, ³¹P), and those drawn as a trace with integrals
+// whose text gives each multiplet's count (¹H, ¹⁹F).
+const split = (m: { kind: Kind; nucleus?: string }) => m.kind === "nmr" && (m.nucleus === "1H" || m.nucleus === "19F" || m.nucleus === "31P");
+const traced = (m: { kind: Kind; nucleus?: string }) => m.kind === "nmr" && (m.nucleus === "1H" || m.nucleus === "19F");
 // The Spectrum panel's key for a spectrum: its nucleus for NMR ("1H", "13C"), otherwise its kind.
 export const keyOf = (m: { kind: Kind; nucleus?: string }) => (m.kind === "nmr" ? m.nucleus ?? "1H" : m.kind);
 // Its name, as the panel's title and the text line give it: ¹H NMR, ¹³C NMR, IR, UV-Vis, MS.
@@ -130,8 +134,9 @@ export function pickPeaks(m: Measured, threshold = m.threshold): Peak[] {
 // The solvent's, water's and TMS's peaks where a spectrum in this solvent has them: each one's name, its lines (ppm)
 // and how near a peak must be to be one of them.
 export function marksOf(m: Measured, solvent = m.solvent ?? ""): { name: string; at: number[]; near: number }[] {
+  // ¹⁹F and ³¹P spectra have no solvent peaks, and their 0 is CFCl₃ or H₃PO₄, which is seldom in the tube.
   if (m.kind !== "nmr" || (m.nucleus !== "1H" && m.nucleus !== "13C")) return [];
-  const h1 = m.nucleus === "1H", mhz = m.mhz ? (h1 ? m.mhz : m.mhz / 0.25145) : 400;
+  const h1 = m.nucleus === "1H", mhz = m.mhz ? m.mhz / NUCLEI[m.nucleus].ratio : 400;
   return [...solventPeaks(solvent, m.nucleus, mhz).map((s) => ({ name: s.name, at: s.lines.map((x) => x.ppm), near: h1 ? (s.broad ? 0.03 : 0.004) : 0.2 })), { name: "TMS", at: [0], near: h1 ? 0.01 : 0.2 }];
 }
 
@@ -140,7 +145,7 @@ export function marksOf(m: Measured, solvent = m.solvent ?? ""): { name: string;
 export function autoGroups(m: Measured, peaks: Peak[]): Omit<Group, "id">[] {
   if (!peaks.length) return [];
   const sorted = [...peaks].sort((a, b) => a.x - b.x), runs: Peak[][] = [];
-  const hz = m.kind === "nmr" && m.nucleus === "1H" && m.mhz ? m.mhz : 0;
+  const hz = m.kind === "nmr" && split(m) && m.mhz ? m.mhz : 0;
   const marks = m.kind === "nmr" ? marksOf(m) : [], markOf = (p: Peak) => marks.findIndex((k) => k.at.some((x) => Math.abs(x - p.x) <= k.near));
   const own = new Map<number, Peak[]>();
   for (const p of sorted) {
@@ -225,7 +230,7 @@ export type Analysed = Group & { peaks: Peak[]; shift: number; name: string; js:
 export type Analysis = { peaks: Peak[]; groups: Analysed[]; per: number; base: number; noise: number };
 
 export function analyse(m: Measured, solvent = m.solvent ?? ""): Analysis {
-  const peaks = pickPeaks(m), { v, base, noise } = levels(m), h1 = m.kind === "nmr" && m.nucleus === "1H", mhz = m.mhz ?? 0;
+  const peaks = pickPeaks(m), { v, base, noise } = levels(m), h1 = split(m), mhz = m.mhz ?? 0;
   const step = m.y.length > 1 ? Math.abs(m.last - m.first) / (m.y.length - 1) : 0, tol = Math.max(0.3, 0.75 * step * mhz);
   const marks = marksOf(m, solvent);
   const groups = m.groups.map((g): Analysed => {
@@ -260,7 +265,7 @@ export function analyse(m: Measured, solvent = m.solvent ?? ""): Analysis {
     return { ...g, peaks: own, shift, name, js, area, n: 0, ...(other ? { other } : {}) };
   });
   const counted = groups.filter((g) => !g.other && g.area > 0);
-  const per = m.per ?? (h1 ? autoPer(counted.map((g) => g.area)) : Math.max(1e-30, ...counted.map((g) => g.area)));
+  const per = m.per ?? (traced(m) ? autoPer(counted.map((g) => g.area)) : Math.max(1e-30, ...counted.map((g) => g.area)));
   for (const g of groups) g.n = per > 0 ? g.area / per : 0;
   return { peaks, groups, per, base, noise };
 }
@@ -347,10 +352,13 @@ export function measuredHead(m: Measured, solvent = m.solvent ?? ""): string {
 // One multiplet as the text line gives it: ¹H "7.26 (d, J = 8.0 Hz, 2H)" or "7.35–7.20 (m, 5H)"; otherwise its shift.
 export function groupText(m: Measured, g: Analysed): string {
   if (m.kind !== "nmr") return g.shift.toFixed(m.kind === "ms" && Math.abs(g.shift - Math.round(g.shift)) >= 0.05 ? 1 : 0);
-  if (m.nucleus !== "1H") return g.shift.toFixed(1);
-  const n = `${Math.max(1, Math.round(g.n))}H`;
-  if (g.name === "m" && g.peaks.length > 1) return `${g.peaks[0].x.toFixed(2)}–${g.peaks[g.peaks.length - 1].x.toFixed(2)} (m, ${n})`;
-  return `${g.shift.toFixed(2)} (${g.name}${g.js.length ? `, J = ${g.js.map((j) => j.toFixed(1)).join(", ")} Hz` : ""}, ${n})`;
+  const n = isNucleus(m.nucleus) ? m.nucleus : "1H", t = (v: number) => shiftText(v, n), js = g.js.length ? `, J = ${g.js.map((j) => j.toFixed(1)).join(", ")} Hz` : "";
+  if (!split(m)) return t(g.shift);
+  // ³¹P as sticks: its shift, and the multiplet when F splits it. ¹H and ¹⁹F: the multiplet and the count.
+  if (!traced(m)) return g.name && g.name !== "s" ? `${t(g.shift)} (${g.name}${js})` : t(g.shift);
+  const count = `${Math.max(1, Math.round(g.n))}${NUCLEI[n].el}`;
+  if (g.name === "m" && g.peaks.length > 1) return `${t(g.peaks[0].x)}–${t(g.peaks[g.peaks.length - 1].x)} (m, ${count})`;
+  return `${t(g.shift)} (${g.name}${js}, ${count})`;
 }
 
 // The measured spectrum as a figure for the page (Add to drawing > Spectrum), as spectrumFigure draws a predicted one:
@@ -364,7 +372,7 @@ export function measuredFigure(o: {
   m: Measured; a: Analysis; range: [number, number]; colour: (id: number) => string | undefined; width: number; height: number; em: number;
   pt?: number; labels?: LabelTurn; measure?: (t: string) => number; base?: number;
 }): Figure {
-  const { m, a, width: W, height: H, em } = o, [lo, hi] = o.range, rev = reversed(m), h1 = m.kind === "nmr" && m.nucleus === "1H";
+  const { m, a, width: W, height: H, em } = o, [lo, hi] = o.range, rev = reversed(m), h1 = traced(m);
   const x = (v: number) => ((rev ? hi - v : v - lo) / (hi - lo)) * W, shown = (v: number) => v >= lo && v <= hi;
   const lv = levels(m), v = lv.v, base = o.base ?? lv.base, out: Figure = { lines: [], curves: [], texts: [] };
   // Scaled to the tallest point in range that is not the solvent's; taller ones are cut at the top.
@@ -392,10 +400,10 @@ export function measuredFigure(o: {
   const ink = inkOf(drawn);
   // Each multiplet's label in a row over the tallest peak, in its colour (¹H across: the shift over the multiplicity
   // and hydrogens; turned: one line in ACS order). The solvent and TMS join the row in grey.
-  const dp = h1 ? 2 : m.kind === "nmr" ? 1 : 0, page2 = (g: Analysed) => { const [a, b] = [x(g.lo), x(g.hi)]; return { a: Math.min(a, b), b: Math.max(a, b) }; };
+  const dp = m.kind === "nmr" ? NUCLEI[isNucleus(m.nucleus) ? m.nucleus : "1H"].decimals : 0, page2 = (g: Analysed) => { const [a, b] = [x(g.lo), x(g.hi)]; return { a: Math.min(a, b), b: Math.max(a, b) }; };
   const labels: PageLabel[] = a.groups.filter((g) => shown(g.shift)).map((g): PageLabel => {
     if (g.other) return { x: x(g.shift), ...page2(g), across: [g.other], turned: g.other, grey: true, plain: true, role: `solvent:${g.other}` };
-    const shift = g.shift.toFixed(dp), second = h1 ? `${g.name}, ${Math.max(1, Math.round(g.n))}H` : "";
+    const shift = m.kind === "nmr" ? shiftText(g.shift, isNucleus(m.nucleus) ? m.nucleus : "1H") : g.shift.toFixed(dp), second = h1 ? `${g.name}, ${Math.max(1, Math.round(g.n))}${NUCLEI[isNucleus(m.nucleus) ? m.nucleus : "1H"].el}` : "";
     return { x: x(g.shift), ...page2(g), across: second ? [second, shift] : [shift], turned: second ? `${shift} (${second})` : shift, colour: o.colour(g.id), role: `peak:${g.id}` };
   });
   pageLabels(out, labels, { width: W, height: H, em, pt: o.pt ?? 1 / 14.4, turn: o.labels ?? "auto", ink, measure: o.measure });
@@ -490,7 +498,7 @@ export function fromSpectrumObject(attrs: Record<string, string | undefined>, te
   let o: Record<string, unknown> = {};
   try { const v = own === undefined ? undefined : JSON.parse(own); if (v && typeof v === "object" && !Array.isArray(v)) o = v; } catch { /* ChemDraw's object alone */ }
   const fine = (x: unknown, most: number): x is string => typeof x === "string" && x.length <= most && !/[\u0000-\u001f]/.test(x);
-  const nucleus = kind !== "nmr" ? undefined : typeof o.nucleus === "string" && /^\d{1,3}[A-Z][a-z]?$/.test(o.nucleus) ? o.nucleus : Math.abs(last - first) > 40 ? "13C" : "1H";
+  const nucleus = kind !== "nmr" ? undefined : typeof o.nucleus === "string" && /^\d{1,3}[A-Z][a-z]?$/.test(o.nucleus) ? o.nucleus : guessNucleus(first, last, typeof o.mhz === "number" ? o.mhz : undefined);
   let s: JcampSpectrum = {
     title: fine(o.title, 200) ? o.title : "", kind, xUnit: X_UNIT[attrs.XType ?? ""] ?? DEFAULT_X[kind], yUnit: Y_UNIT[attrs.YType ?? ""] ?? "", first, last, y,
     ...(nucleus ? { nucleus } : {}), ...(typeof o.mhz === "number" && o.mhz > 0 && o.mhz < 3000 ? { mhz: o.mhz } : {}), ...(fine(o.solvent, 40) && o.solvent ? { solvent: o.solvent } : {}),

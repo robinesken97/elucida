@@ -21,6 +21,7 @@ import type { LabelTurn } from "./spectrumplot";
 import { readLayout, type HomeLayout } from "./homeLayout";
 import { CURSOR_INKS, type CursorInk } from "./cursor";
 import { readSelectColour, SELECT_DEFAULT } from "./selectcolour";
+import { OWN_MOST } from "./colours";
 
 const inRange = (n: unknown, lo: number, hi: number) => typeof n === "number" && n >= lo && n <= hi;
 
@@ -39,6 +40,7 @@ export type Settings = {
   userName: string | null; tutorialDone: boolean; lastSeen: number; homeLayout: HomeLayout;
   seenNotes: string; // the version whose notes (releases.ts) the user has seen, so they show once after an update
   updates: boolean; // check for updates when Octet opens: on unless the user turns it off in Settings (decision 0010)
+  wordClick: boolean; // the Mac: a double-click on a structure in Word opens it in Octet (Settings > General); off unless the user turns it on
   warnings: boolean; // View > Show Chemical Warnings: problems marked on the drawing and listed in Actions
   warningTypes: Partial<Record<WarningType, boolean>>; // Settings > Warnings: each kind switched on or off (unset: its default)
   checkCopy: boolean; // ChemDraw's "Check Structure When Copying to Clipboard or Exporting"
@@ -48,7 +50,11 @@ export type Settings = {
   // What new drawings are for (IDEA-SIZE-1): Quick start or the purpose ⌘N starts (the last one picked; Return on
   // Home starts Quick start), the style of Quick start and of each built-in purpose when the user made it their own
   // with "Use for new documents", and the user's own purposes (templates).
-  purpose: string; purposeStyles: Partial<Record<PurposeKind | typeof QUICK, DocStyle>>; ownPurposes: OwnPurpose[];
+  purpose: string; purposeStyles: Partial<Record<PurposeKind | typeof QUICK, DocStyle>>; ownPurposes: OwnPurpose[]; experimentStart?: string;
+  lastNumber?: string; // the experiment number a new experiment page last had: the next page has the one after it (nextNumber)
+  experimentNoted: boolean; // the notice on the first experiment page shown (Octet 1.1.2) was given: Use for new documents keeps its layout
+  riskNew: boolean; // Settings > Document: a new experiment page gets a risk assessment on page 2 (riskassess.ts)
+  riskNoted: boolean; // the notice the first time Octet added a risk assessment by itself was given
   files: FilePrefs; // export, copy and import preferences
   settingsModule: string; // the Settings module last open
   curvedArrows: string[];
@@ -59,16 +65,19 @@ export type Settings = {
   templateSets: string[]; // the user's named template sets, in order (My templates is always first and not listed)
   nameHistory: { name: string; smiles: string }[]; // names drawn with Name to structure, newest first (50 at most), each with its structure
   paletteWide: boolean; // the toolbar in two columns
-  palette: Swatch[]; // the user's own colours, named, after Octet's in every colour row and the Colour menu (20 at most)
+  palette: Swatch[]; // the user's own colours, named, after Octet's in every colour menu and the Colour menu (OWN_MOST at most)
   elementColours: Record<string, string>; // Colour by Element: the user's colour for an element, where it differs from Octet's
   properties: boolean; // the Chemical Properties panel is open
   propertyRows: string[]; // the rows Add to drawing writes under a structure
   decimals?: number; // Properties > Decimals: places for the exact mass, molecular weight and m/z (0 to 8); unset is 4, 2 and 2
   nmrMhz: number; nmrSolvent: string; nmrSolventPeaks: boolean; nmrDetails: boolean; // the predicted spectrum's frequency (¹H, MHz), solvent, and whether its peaks show
   nmrLabels: LabelTurn; // the Spectrum panel's Labels: peak labels across, turned (read bottom to top) or Auto (turned when crowded)
+  nmrDecouple?: Partial<Record<"1H" | "13C" | "19F" | "31P", boolean>>; // Decouple ¹H set for a nucleus (¹⁹F, ³¹P); unset: the nucleus's default (nmr.ts NUCLEI)
+  stripHeight?: number; // the height (px) the user gave the spectrum strip by its top edge (plan B1.3); unset: 35% of the window
   massSpec: MsPrefs; // the Mass spec panel's mode, ion, charge state, source, calculated peak and match tolerance
   scaleLabels: boolean; // Scale…'s Labels and lines: label sizes and line widths scale with the positions (decision 0007)
-  onlineSearch: boolean; // Search Reaxys and Search PubChem are offered (decision 0008); off hides them everywhere
+  onlineSearch: boolean; // The online searches are offered (decision 0008); off hides them everywhere
+  moreFormats: boolean; // Settings > Pro: File > More Formats, the rare formats, is in the File menu (off by default)
   interpretation: boolean; // View > Show Reaction Interpretation: pointing at a reaction shows what each part of it is
   // ChemDraw's Object > Fixed Lengths and Fixed Angles: a dragged bond, ring or arrow is one bond length long and at a
   // 15° step (Option frees it while it is held). sproutRings: ChemDraw's "Sprout Rings Instead of Spiro When Clicking".
@@ -80,6 +89,7 @@ export type Settings = {
   // aromaticOnOpen: Normalize Aromatic Display (on opening and importing: alternating bonds or circles; "" leaves
   // each structure as the file has it).
   autoMap: boolean; stereoParens: boolean; hideAbs: boolean; mdlFlags: boolean; aromaticOnOpen: "" | "kekule" | "circles";
+  massUnit: "g" | "mg"; // Settings > Typing > Mass without a unit: a number typed with no unit in a stoichiometry table's mass cell
   cursor: CursorInk; // Settings > General > Cursor: Octet's cursors black, white, or the one that shows on the page
   selectColour: string; // Settings > General > Selection: the selection's colour, #RRGGBB (selectcolour.ts)
   sequenceLabels: boolean; // the name field's Residue labels: a sequence drawn as H–Ala–Cys–OH (sequence.ts residues)
@@ -87,7 +97,7 @@ export type Settings = {
 export type Swatch = { name: string; hex: string };
 export type RulerUnit = "mm" | "cm" | "in" | "pt" | "pc";
 export const RULER_UNITS: [RulerUnit, string][] = [["mm", "Millimetres"], ["cm", "Centimetres"], ["in", "Inches"], ["pt", "Points"], ["pc", "Picas"]];
-const DEFAULTS: Settings = { snap: true, snapGrid: false, guides: { grid: false, rulers: false, crosshair: false }, rulerUnit: "mm", eraser: 0.15, keys: {}, variants: { select: "box", bond: "single", ring: "benzene", template: "lib:Alanine", symbol: "plus", orbital: "p-shaded", arrow: "reaction", cycle: "circle", sequence: "peptide", shape: "box-plain", bracket: "brackets", more: "tlc" }, strips: {}, actions: true, templates: [], pinned: [], actionLayout: {}, layoutVersion: 3, folded: [], panelMenus: false, captionOptionReturn: false, userName: null, tutorialDone: false, seenNotes: "", homeLayout: readLayout([], []), updates: true, warnings: true, warningTypes: {}, checkCopy: false, pairBars: false, outlines: true, windows: true, lastSeen: 0, purpose: QUICK, purposeStyles: {}, ownPurposes: [], files: DEFAULT_FILES, settingsModule: "document", curvedArrows: ["curved-120", "fishhook-120"], libraryRings: [], palettes: [], librarySize: "medium", dictionary: [], templateSets: [], nameHistory: [], paletteWide: false, palette: [], elementColours: {}, properties: false, propertyRows: ["formula", "weight"], nmrMhz: 400, nmrSolvent: "CDCl₃", nmrSolventPeaks: true, nmrDetails: false, nmrLabels: "auto", massSpec: MS_DEFAULTS, scaleLabels: true, onlineSearch: true, fixedLengths: true, fixedAngles: true, sproutRings: false, clickTriple: false, interpretation: false, autoMap: true, stereoParens: true, hideAbs: false, mdlFlags: false, aromaticOnOpen: "", cursor: "auto", selectColour: SELECT_DEFAULT, sequenceLabels: false };
+const DEFAULTS: Settings = { snap: true, snapGrid: false, guides: { grid: false, rulers: false, crosshair: false }, rulerUnit: "mm", eraser: 0.15, keys: {}, variants: { select: "box", bond: "single", ring: "benzene", template: "lib:Alanine", symbol: "plus", orbital: "p-shaded", arrow: "reaction", cycle: "circle", sequence: "peptide", shape: "box-plain", bracket: "brackets", more: "tlc" }, strips: {}, actions: true, templates: [], pinned: [], actionLayout: {}, layoutVersion: 3, folded: [], panelMenus: false, captionOptionReturn: false, userName: null, tutorialDone: false, experimentNoted: false, riskNew: true, riskNoted: false, seenNotes: "", homeLayout: readLayout([], []), updates: true, wordClick: false, warnings: true, warningTypes: {}, checkCopy: false, pairBars: false, outlines: true, windows: true, lastSeen: 0, purpose: QUICK, purposeStyles: {}, ownPurposes: [], files: DEFAULT_FILES, settingsModule: "document", curvedArrows: ["curved-120", "fishhook-120"], libraryRings: [], palettes: [], librarySize: "medium", dictionary: [], templateSets: [], nameHistory: [], paletteWide: false, palette: [], elementColours: {}, properties: false, propertyRows: ["formula", "weight"], nmrMhz: 400, nmrSolvent: "CDCl₃", nmrSolventPeaks: true, nmrDetails: false, nmrLabels: "auto", massSpec: MS_DEFAULTS, scaleLabels: true, onlineSearch: true, moreFormats: false, fixedLengths: true, fixedAngles: true, sproutRings: false, clickTriple: false, interpretation: false, autoMap: true, stereoParens: true, hideAbs: false, mdlFlags: false, aromaticOnOpen: "", massUnit: "g", cursor: "auto", selectColour: SELECT_DEFAULT, sequenceLabels: false };
 export const SETTINGS_KEY = "octet.settings";
 const KEY = SETTINGS_KEY;
 
@@ -130,19 +140,23 @@ export function loadSettings(): Settings {
       nmrSolventPeaks: saved.nmrSolventPeaks !== false,
       nmrDetails: saved.nmrDetails === true,
       nmrLabels: saved.nmrLabels === "horizontal" || saved.nmrLabels === "vertical" ? saved.nmrLabels : "auto",
+      ...(saved.nmrDecouple && typeof saved.nmrDecouple === "object" ? { nmrDecouple: Object.fromEntries(["1H", "13C", "19F", "31P"].filter((n) => typeof (saved.nmrDecouple as Record<string, unknown>)[n] === "boolean").map((n) => [n, (saved.nmrDecouple as Record<string, boolean>)[n]])) } : {}),
+      ...(typeof saved.stripHeight === "number" && saved.stripHeight >= 100 && saved.stripHeight <= 4000 ? { stripHeight: Math.round(saved.stripHeight) } : {}),
       massSpec: readMsPrefs(saved.massSpec),
       fixedLengths: saved.fixedLengths !== false, fixedAngles: saved.fixedAngles !== false, sproutRings: saved.sproutRings === true, clickTriple: saved.clickTriple === true,
       autoMap: saved.autoMap !== false, stereoParens: saved.stereoParens !== false, hideAbs: saved.hideAbs === true, mdlFlags: saved.mdlFlags === true,
       aromaticOnOpen: saved.aromaticOnOpen === "kekule" || saved.aromaticOnOpen === "circles" ? saved.aromaticOnOpen : "",
+      massUnit: saved.massUnit === "mg" ? "mg" : "g",
       cursor: CURSOR_INKS.some(([c]) => c === saved.cursor) ? saved.cursor : DEFAULTS.cursor,
       selectColour: readSelectColour(saved.selectColour),
       scaleLabels: saved.scaleLabels !== false,
       onlineSearch: saved.onlineSearch !== false,
+      moreFormats: saved.moreFormats === true,
       interpretation: saved.interpretation === true,
       decimals: Number.isInteger(saved.decimals) && saved.decimals >= 0 && saved.decimals <= 8 ? saved.decimals : undefined,
       propertyRows: Array.isArray(saved.propertyRows) ? list<string>(saved.propertyRows, (k) => typeof k === "string" && k.length < 20).slice(0, 30) : DEFAULTS.propertyRows,
       elementColours: Object.fromEntries(Object.entries(typeof saved.elementColours === "object" && saved.elementColours ? saved.elementColours : {}).filter(([k, v]) => /^[A-Z][a-z]?$/.test(k) && typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v))) as Record<string, string>,
-      palette: list<Swatch>(saved.palette, (c) => typeof c === "object" && c !== null && typeof (c as Swatch).name === "string" && /^#[0-9a-f]{6}$/i.test((c as Swatch).hex)).slice(0, 20),
+      palette: list<Swatch>(saved.palette, (c) => typeof c === "object" && c !== null && typeof (c as Swatch).name === "string" && /^#[0-9a-f]{6}$/i.test((c as Swatch).hex)).slice(0, OWN_MOST),
       // Layouts arranged before the panel's sub-menus (17 October 2026) start again from the new defaults.
       actionLayout: saved.layoutVersion === 3 && typeof saved.actionLayout === "object" && saved.actionLayout !== null && !Array.isArray(saved.actionLayout) ? saved.actionLayout : {},
       layoutVersion: 3,
@@ -152,9 +166,14 @@ export function loadSettings(): Settings {
       labelReturnNewLine: saved.labelReturnNewLine === true,
       userName: typeof saved.userName === "string" ? saved.userName.slice(0, 40) : null,
       tutorialDone: saved.tutorialDone === true,
+      experimentNoted: saved.experimentNoted === true,
+      riskNew: saved.riskNew !== false,
+      riskNoted: saved.riskNoted === true,
+      ...(typeof saved.lastNumber === "string" && saved.lastNumber.length <= 200 ? { lastNumber: saved.lastNumber } : {}),
       seenNotes: typeof saved.seenNotes === "string" && saved.seenNotes.length <= 20 ? saved.seenNotes : "",
       homeLayout: readLayout(saved.homeLayout?.order, saved.homeLayout?.folded),
       updates: typeof saved.updates === "boolean" ? saved.updates : true,
+      wordClick: saved.wordClick === true,
       lastSeen: typeof saved.lastSeen === "number" && Number.isFinite(saved.lastSeen) ? saved.lastSeen : 0,
     };
   } catch {

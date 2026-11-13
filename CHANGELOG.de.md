@@ -2,7 +2,7 @@
 
 # Änderungen
 
-## 1.1.0 – 2026-11-12
+## 1.1.0 – 2026-11-13
 
 ### Neu
 - **X-Ray: Vergleich mit einer berechneten Geometrie.** Im Schritt „Auswertung“ wird eine Geometrie aus dem DFT-Tab
@@ -58,6 +58,8 @@
   und Temperatur; Intervall aus der Unsicherheit der Steigung).
 - **EPR: gemeinsamer Fit mehrerer S = ½-Spezies.** „Gemeinsam fitten“ verfeinert alle Simulationen einer Messung
   gleichzeitig.
+- **EPR: Simulation unter der Messung.** Gestapelt liegt eine Simulation bisher auf ihrer Messung; der neue Schalter
+  in der Karte „Simulationen“ zeichnet sie auf einer eigenen Ebene direkt darunter (gemessen oben, simuliert unten); der Abstand der beiden ist einstellbar.
 - **Neuer Tab H-Cell (Laden und Entladen).** Liest Gamry-Dateien „Cyclic Charge Discharge“ mit ihren
   Schrittdateien aus CHARGE_DISCHARGE: Kapazität je Zyklus (Laden, Entladen, Anteil der theoretischen Kapazität aus der
   Datei oder je Messung eingegeben) mit Coulomb-Effizienz auf zweiter Achse, mehrere Messungen in einem Bild; oder
@@ -108,6 +110,8 @@
 - **Word-Export:** Methodentexte setzen Zehnerpotenzen und t½ richtig (vorher wörtlich „10^-2“ und „t1/2“ bei
   UV-Vis-Kinetik, EPR-Zerfällen und dem Diffusionskoeffizienten, „cm2“ ohne Hochstellung); die Unterschrift des
   Energieprofils schreibt kcal mol⁻¹ hochgestellt. Die Eigenschaftstabelle im Vergleich füllt wieder die Seite.
+- **Octet Draw 1.1.2** (bisher 1.1.1) als Zeichenprogramm: unter anderem liest die Reagenzientabelle Äquivalente
+  aus dem Text über dem Pfeil, und sie lässt sich an jeder Stelle greifen und verschieben.
 
 ### Behoben
 Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und Statistik stimmten; diese Punkte nicht):

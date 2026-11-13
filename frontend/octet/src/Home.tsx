@@ -21,7 +21,9 @@
 // Several drawings at once, as in Finder: ⌘-click (Ctrl-click on Windows and Linux) adds a drawing's tile to the
 // selection or takes it out, Shift-click and Shift with an arrow key select the run from the last one, ⌘A selects every
 // drawing on the page (Recent, or the open folder) and Escape or a click on the page clears it. A plain click still
-// opens a drawing. The right-click menu on a selected tile, Delete and a drag to a folder act on all of them.
+// opens a drawing. A box dragged from the page's background selects the drawings it touches, as the Select tool's box
+// does on the canvas. The right-click menu on a selected tile, Delete, Remove N beside the drawings and a drag to a
+// folder act on all of them.
 // Keys: the arrow keys move between tiles, across sections. Tab goes from section to section (its heading, then one
 // stop for its tiles, the tile last focused there, then that tile's buttons), and each section is a region named by
 // its heading, for screen readers.
@@ -38,9 +40,11 @@ import markSmall from "../brand/logos/octet-mark-small.svg";
 import markWhite from "../brand/logos/octet-mark-white.svg";
 import lockup from "../brand/logos/octet-lockup.svg";
 import lockupWhite from "../brand/logos/octet-lockup-white.svg";
-import { ColourPop } from "./ColourPicker";
+import { ColourPop, colourItems, pickColour } from "./ColourPicker";
+import { ADD, addColour, colourOptions, PICK, rememberColour } from "./colours";
+import type { Swatch } from "./settings";
 import { Dialog, useModal } from "./Dialog";
-import { tileTo } from "./keys";
+import { boxPicks, tileTo } from "./keys";
 import { ContextMenu, menuAt, menuKey, type MenuItem } from "./Menu";
 import { Exit, reduced, timing } from "./motion";
 import { colourOf, folderOf, folderTones, projectOf, PROJECT_COLOUR, tilde, UNTITLED, type Project } from "./projects";
@@ -50,6 +54,7 @@ import type { HomeLibrary, ThumbTarget, TilePicture } from "./homeLibrary";
 import { STARTERS } from "./starters";
 import { experimentRows, type ExperimentEntry, type ExperimentSort } from "./experiment";
 import { formatAmount } from "./stoich";
+import { HOLD_MS } from "./tools";
 
 export type RecentEntry = { path: string; name: string; at: number; thumb?: string; found: boolean };
 // A drawing open in a window of its own (src-tauri/src/windows.rs), with its picture as an SVG when it has one.
@@ -197,7 +202,7 @@ type Props = {
   onStarter: (text: string) => void; // opens an example drawing as a new drawing
   lib: HomeLibrary; // the projects and thumbnails
   drops?: boolean; // files from Finder can be dropped on a tile (the app; the UI-only preview takes pictures by the browser's drop)
-  palette?: { name: string; hex: string }[]; // the user's own colours, after Octet's, as in every colour row
+  palette?: Swatch[]; onPalette?: (palette: Swatch[]) => void; // the user's own colours, after Octet's, as in every colour menu
   layout: HomeLayout; onLayout: (layout: HomeLayout) => void; // the sections' order and the folded ones (settings)
   experiments: ExperimentEntry[]; onRemoveExperiment: (path: string) => void; onExportExperiments: (list: ExperimentEntry[]) => void;
   selectAll: { current?: () => void }; // Edit > Select All (⌘A) over Home
@@ -234,8 +239,9 @@ export function Home(p: Props) {
   // A project being named: a new one (with the drawings it takes when it is made), or one being renamed.
   const [naming, setNaming] = useState<{ id?: string; value: string; then?: { path: string; name?: string }[] }>();
   const [deleting, setDeleting] = useState<Project>();
-  // A project's colour being picked freely (Custom colour…): shown on its folder as it changes, kept when it closes.
-  const [picking, setPicking] = useState<{ id: string; hex: string; anchor: DOMRect; keep: HTMLElement | null }>();
+  // A project's colour being picked freely (Add colour…): shown on its folder as it changes, kept when it closes, and
+  // kept with the user's own colours when it changed.
+  const [picking, setPicking] = useState<{ id: string; from: string; hex: string; anchor: DOMRect; keep: HTMLElement | null }>();
   const open = projectOf(lib.store, lib.open);
   // The Experiments list, open in Home's place, with its search and sort.
   const [lab, setLab] = useState(false), [search, setSearch] = useState(""), [sort, setSort] = useState<ExperimentSort>({ by: "date", down: true });
@@ -479,6 +485,71 @@ export function Home(p: Props) {
     addEventListener("blur", away);
   };
 
+  // A box dragged from the background selects the drawings it touches, as the Select tool's box does on the canvas: it
+  // starts when the press moves 4 px, or at once after a hold of HOLD_MS, and it is drawn as that box. Shift adds to the
+  // selection and ⌘ (Ctrl) turns each drawing over, as clicks do. Escape, the window losing the focus, or a press taken
+  // for a scroll (touch) puts the selection back.
+  const boxEl = useRef<SVGSVGElement>(null), boxAt = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const [boxing, setBoxing] = useState(false);
+  const placeBox = () => { const s = boxEl.current?.style, b = boxAt.current; if (s) Object.assign(s, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.width}px`, height: `${b.height}px` }); };
+  useLayoutEffect(placeBox, [boxing]);
+  const sweep = (e: React.PointerEvent) => {
+    // A press on the page itself: not on a tile, a control or the scroll bar, nor on a menu or dialog over Home (their
+    // presses reach here too).
+    const el = page.current, r = el?.getBoundingClientRect(), target = e.target as Element;
+    if (e.button !== 0 || !el || !r || !pickable.length || e.clientX >= r.left + el.clientWidth) return;
+    if ((target !== el && !target.closest(".home-inner")) || target.closest("button, input, a, .home-slot")) return;
+    // y in the page (down from its top), so the box keeps its start as Home scrolls under it.
+    const off = () => el.scrollTop - r.top, x0 = e.clientX, y0 = e.clientY + off(), before = chosen, how = e.shiftKey ? "add" : toggles(e) ? "turn" : undefined;
+    const tiles = [...el.querySelectorAll<HTMLElement>("button.home-tile")].filter((t) => pickable.includes(t.dataset.tile!))
+      .map((t) => { const b = t.getBoundingClientRect(); return { key: t.dataset.tile!, x: b.x, y: b.y + off(), width: b.width, height: b.height }; });
+    let on = false, at = { x: x0, y: e.clientY }, was: string | undefined, stop = () => {};
+    const step = () => {
+      const y = at.y + off(), box = { x: Math.min(x0, at.x), y: Math.min(y0, y), width: Math.abs(at.x - x0), height: Math.abs(y - y0) };
+      boxAt.current = { ...box, y: box.y - off() };
+      placeBox();
+      const next = boxPicks(box, tiles, before, how), key = [...next].join("\n");
+      if (key !== was) { was = key; setChosen(next); }
+    };
+    const begin = () => { on = true; clearTimeout(hold); step(); setBoxing(true); stop = edgeScroll(() => at.y, step); };
+    const hold = setTimeout(begin, HOLD_MS);
+    const move = (ev: PointerEvent) => {
+      at = { x: ev.clientX, y: ev.clientY };
+      if (on) step();
+      else if (Math.hypot(ev.clientX - x0, ev.clientY - e.clientY) >= 4) begin();
+    };
+    const end = (keep: boolean) => {
+      clearTimeout(hold);
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", up);
+      removeEventListener("pointercancel", away);
+      removeEventListener("keydown", escape, true);
+      removeEventListener("blur", away);
+      stop();
+      if (!on) return;
+      stray.current = true; // the click that ends the box does not clear the selection
+      setTimeout(() => (stray.current = false));
+      setBoxing(false);
+      if (!keep) setChosen(before);
+    };
+    const up = () => end(true), away = () => end(false);
+    // Escape takes the box away at once, but the press ends when the button is let go, so that click clears nothing.
+    const escape = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || !on) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      removeEventListener("pointermove", move);
+      stop();
+      setBoxing(false);
+      setChosen(before);
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+    addEventListener("pointercancel", away);
+    addEventListener("keydown", escape, true);
+    addEventListener("blur", away);
+  };
+
   // ——— The sections as modules ———
   // While a section is dragged, the order it would drop in; the sections it passes slide out of its way.
   const [drag, setDrag] = useState<{ id: SectionId; order: SectionId[] }>();
@@ -589,15 +660,10 @@ export function Home(p: Props) {
       [item("folder:new", "New folder…", <FolderSimplePlus size={18} />), ...(now ? [item("out", "Remove from folder", <FolderSimpleMinus size={18} />)] : [])]].filter((g) => g.length);
   };
   const thumbGroups = (own: boolean): MenuItem[][] => [[item("thumb", "Choose picture…", <ImageSquare size={18} />), ...(own ? [item("auto", "Use automatic thumbnail", <ArrowCounterClockwise size={18} />)] : [])]];
-  // A folder's colours: the document's colours, then the user's own, then Custom colour… (as the Actions panel's colour
-  // row has them).
+  // A folder's colours: Octet's colour menu (colourOptions), as every colour menu has them.
   const colourGroups = (id: string): MenuItem[][] => {
     const x = projectOf(lib.store, id), now = x ? colourOf(x) : PROJECT_COLOUR;
-    const list = [...COLOURS, ...(p.palette ?? []).map((c): [string, string] => [c.name, c.hex])], known = list.some(([, hex]) => hex.toUpperCase() === now);
-    return [
-      [...list.map(([name, hex]) => item(`colour:${hex}`, name, swatch(hex), false, hex.toUpperCase() === now)), ...(known ? [] : [item(`colour:${now}`, "Custom", swatch(now), false, true)])],
-      [item("colour:custom", "Custom colour…", <Palette size={18} />)],
-    ];
+    return colourItems(colourOptions(COLOURS, p.palette ?? [], now), (o) => `colour:${o.hex ?? o.key}`, now);
   };
   const menuGroups = (m: MenuFor): MenuItem[][] => {
     if (m.kind === "drawing") {
@@ -688,12 +754,13 @@ export function Home(p: Props) {
       if (key === "thumb") return void lib.chooseThumb({ project: m.id });
       if (key === "auto") return void lib.resetThumb({ project: m.id });
       if (key === "delete") return setDeleting(projectOf(lib.store, m.id));
-      if (key === "colour:custom") {
+      if (key === `colour:${ADD}`) {
         const x = projectOf(lib.store, m.id), tile = tileOf(m.id);
-        if (x && tile) setPicking({ id: x.id, hex: colourOf(x), anchor: tile.getBoundingClientRect(), keep: tile });
+        if (x && tile) setPicking({ id: x.id, from: colourOf(x), hex: colourOf(x), anchor: tile.getBoundingClientRect(), keep: tile });
         return;
       }
-      if (key.startsWith("colour:")) return void lib.colour(m.id, key.slice(7));
+      if (key === `colour:${PICK}`) return void pickColour().then((hex) => { if (hex) void lib.colour(m.id, hex); });
+      if (key.startsWith("colour:")) { rememberColour(key.slice(7)); return void lib.colour(m.id, key.slice(7)); }
     }
     if (m.kind === "section") {
       if (key === "fold") return fold(m.id);
@@ -888,11 +955,20 @@ export function Home(p: Props) {
       </div>
     ),
   };
+  // Remove N, beside the drawings while some are selected: what Delete does.
+  const removeButton = (
+    <Exit>{pickedCount > 0 && (
+      <button className="home-open home-remove-picked" aria-label={`Remove ${drawings(pickedCount)}`} onClick={() => removePicked()}>
+        <MinusCircle size={16} aria-hidden />Remove {pickedCount}
+      </button>
+    )}</Exit>
+  );
   const titleOf = (id: SectionId) => (id === "recent" && !p.recents.length && !p.recovered.length ? "Examples" : TITLES[id]);
   const section = (id: SectionId) => (
     <Section key={id} id={id} title={titleOf(id)}
       action={id === "recent" && (
         <span className="home-actions">
+          {removeButton}
           {p.experiments.length > 0 && <button className="home-open" data-experiments onClick={openLab}><Flask size={16} aria-hidden />Experiments</button>}
           <button className="home-open" onClick={p.onOpen}><FolderOpen size={16} aria-hidden />Open…{p.openKey && <kbd>{p.openKey}</kbd>}</button>
         </span>
@@ -947,7 +1023,7 @@ export function Home(p: Props) {
         <button className="home-more" aria-label={`${open.name} options`} data-tip="Options" aria-haspopup="menu"
           onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ kind: "project", id: open.id, at: { x: r.left, y: r.bottom + 4 }, keyboard: e.detail === 0 }); }}><DotsThree size={20} /></button>
       </div>
-      <Section id="project" title={open.drawings.length ? drawings(open.drawings.length) : "No drawings"} className="home-project">
+      <Section id="project" title={open.drawings.length ? drawings(open.drawings.length) : "No drawings"} className="home-project" action={removeButton}>
         <div className="home-grid" data-project={open.id}>
           {open.drawings.map((d, k) => drawingTile({ path: d.path, name: d.name, found: !lib.missing.has(d.path), project: open.id, when: opened(d.path, d.added) }, k))}
           <div className="home-slot">
@@ -982,6 +1058,7 @@ export function Home(p: Props) {
             <MagnifyingGlass size={16} aria-hidden />
             <input type="search" aria-label="Search experiments" placeholder="Search" spellCheck={false} maxLength={200} value={search} onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (search) setSearch(""); else closeLab(); } }} />
+            {search && <button className="search-clear" onClick={(e) => { setSearch(""); (e.currentTarget.previousElementSibling as HTMLElement).focus(); }} aria-label="Clear search"><X size={12} /></button>}
           </label>
           {rows.length > 0 && <button className="home-open" onClick={() => p.onExportExperiments(rows)}><Export size={16} aria-hidden />Export CSV…</button>}
         </span>
@@ -1020,7 +1097,7 @@ export function Home(p: Props) {
   const menuLabel = (m: MenuFor) => (m.kind === "many" ? drawings(pickedCount) : m.kind === "project" ? (m.only === "colour" ? "Colour" : m.only === "thumb" ? "Thumbnail" : projectOf(lib.store, m.id)?.name ?? "Folder") : m.kind === "drawing" && m.only ? (m.only === "thumb" ? "Thumbnail" : "Folder") : "name" in m ? m.name : "entry" in m ? m.entry.name : "Drawing");
   return (
     <main ref={page} className={[p.leaving ? "home leaving" : "home", carried && "carrying", drag && "sorting"].filter(Boolean).join(" ")} aria-label="Home" inert={p.leaving}
-      onFocus={focused} onClickCapture={(e) => { if (stray.current) { e.preventDefault(); e.stopPropagation(); } }}
+      onFocus={focused} onClickCapture={(e) => { if (stray.current) { e.preventDefault(); e.stopPropagation(); } }} onPointerDown={sweep}
       onClick={(e) => { if (!(e.target as HTMLElement).closest("button, input, a, .home-slot")) clearPicks(); }}>
       <span id="home-chosen" className="visually-hidden">Selected</span>
       <div className="home-inner">
@@ -1036,6 +1113,7 @@ export function Home(p: Props) {
           {project || experimentList || main}
         </div>
       </div>
+      {boxing && <svg ref={boxEl} className="home-box" aria-hidden><rect className="box" width="100%" height="100%" /></svg>}
       {carried && createPortal(
         <div ref={ghost} className="home-carry" aria-hidden>
           <DrawingPicture name={carried.name} picture={carried.picture} />
@@ -1044,7 +1122,7 @@ export function Home(p: Props) {
       {menu && <ContextMenu label={menuLabel(menu)} at={menu.at} keyboard={menu.keyboard} groups={menuGroups(menu).filter((g) => g.length)} sub={sub} onChoose={choose} onClose={() => setMenu(undefined)} />}
       <Exit>{picking && (
         <ColourPop anchor={picking.anchor} keep={picking.keep} label="Folder colour" value={picking.hex} onChange={(hex) => setPicking((x) => x && { ...x, hex })}
-          onClose={() => { void lib.colour(picking.id, picking.hex); setPicking(undefined); }} />
+          onClose={() => { void lib.colour(picking.id, picking.hex); setPicking(undefined); if (picking.hex !== picking.from) { rememberColour(picking.hex); p.onPalette?.(addColour(p.palette ?? [], picking.hex)); } }} />
       )}</Exit>
       <Exit>{deleting && (
         <Dialog title={`Delete “${deleteName}”?`} action="Delete" onClose={() => setDeleting(undefined)} onAction={() => { const id = deleting.id; setDeleting(undefined); void lib.remove(id); }}>

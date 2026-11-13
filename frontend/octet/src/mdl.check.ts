@@ -11,6 +11,7 @@ g.window = globalThis;
 g.self = { location: { origin: "file://" } };
 g.fetch = async (u: URL | string) => new Response(readFileSync(new URL(String(u))), { headers: { "content-type": "application/wasm" } });
 const { importStructure, parseStructure, ready, toMolfile, toReaction, toSdf, toSmiles } = await import("./chem.ts");
+const { expandGeneric, MOST, MOST_SDF } = await import("./expand.ts");
 type Mol = import("./render.ts").Mol;
 type Atom = import("./render.ts").Atom;
 await ready;
@@ -49,6 +50,24 @@ assert.deepEqual(lone.split("$$$$\n").slice(0, -1).map((r) => /COUNTS (\d+)/.exe
 const lab: Mol = { atoms: [A("C", 0, 0), A("F", 0, 1), A("Cl", 0.87, -0.5), A("Br", 0.3, -0.9), A("C", -0.87, -0.5, { text: "OMe" })], bonds: [{ type: 1, atoms: [0, 1], stereo: 1 }, { type: 1, atoms: [0, 2] }, { type: 1, atoms: [0, 3] }, { type: 1, atoms: [0, 4] }] };
 const out: Mol = { atoms: [...lab.atoms.slice(0, 4), A("O", -0.87, -0.5), A("C", -1.74, 0)], bonds: [...lab.bonds, { type: 1, atoms: [4, 5] }] };
 assert.equal(toSmiles(lab), toSmiles(out));
+
+// Expand Generic Structure to SDF…: the structures the page would hold, past its MOST, up to MOST_SDF, one record
+// each. A benzene ring with R1 (OMe, or an ethyl) and two element lists of 16 stands for 512 structures; every record
+// has 10 atoms and 10 bonds, as R1's OMe is drawn out and no generic label is left.
+{
+  const list = "[F,Cl,Br,I,O,S,N,P,B,C,Si,Se,Te,As,Ge,Sn]", ring = [0, 1, 2, 3, 4, 5].map((k) => A("C", Math.cos((k * Math.PI) / 3), Math.sin((k * Math.PI) / 3)));
+  const generic: Mol = {
+    atoms: [...ring, A("C", 2, 0, { text: "R1" }), A("C", -1, 1.7, { text: list }), A("C", -1, -1.7, { text: list }), A("O", 10, 0, { text: "OMe" }), A("C", 10, -2), A("C", 11, -2)],
+    bonds: [...ring.map((_, k) => ({ type: k % 2 ? 1 : 2, atoms: [k, (k + 1) % 6] as [number, number] })), { type: 1, atoms: [0, 6] }, { type: 1, atoms: [2, 7] }, { type: 1, atoms: [4, 8] }, { type: 1, atoms: [10, 11] }],
+    shapes: [{ id: 1, kind: "box", from: [9, 1], to: [12, -3], rgroup: { name: "R1" } }],
+  };
+  const atoms = [0, 1, 2, 3, 4, 5, 6, 7, 8], page = expandGeneric(generic, atoms), file = expandGeneric(generic, atoms, MOST_SDF);
+  assert.deepEqual([page.mols.length, page.total, file.mols.length, file.total], [MOST, 512, 512, 512]);
+  const records = file.mols.map((x) => toSdf(x)).join("").split("$$$$\n").slice(0, -1);
+  assert.equal(records.length, 512, "one record for each structure");
+  assert.ok(records.every((r) => /COUNTS 10 10 /.test(r)), "each structure whole, its labels drawn out");
+  assert.ok(!importStructure(records[0]).atoms.some((a) => a.text), "no R or list label is left");
+}
 
 // Reactions: an RXN file of one step, an RD file of every step, and reaction SMILES, with map numbers.
 const step = { reactants: [[0, 1, 2, 3, 4]], products: [[5, 6]], agents: [] };
@@ -136,4 +155,15 @@ for (const [smiles, doubles] of [["Cn1cnc2c1c(=O)n(C)c(=O)n2C", 4], ["O=c1cc[nH]
   assert.equal(k.bonds.filter((x) => x.type === 2).length, doubles, `${smiles}: ${doubles} double bonds`);
   assert.equal(toSmiles(k) !== undefined, true);
 }
+// Hydrogens set by hand (issue 125) go out as the atom's valence (VAL) and come back: a bare O and a CH2 at chain
+// ends, V3000 and V2000, and, in a query molfile (Octet's own), a lone Br+ with none. A valence that leaves the usual
+// hydrogens (PPh3 on Pd) sets nothing.
+const fewH: Mol = { atoms: [A("C", 0, 0), A("O", 1, 0, { implicitHCount: 0 }), A("C", 3, 0, { shown: true, implicitHCount: 2 }), A("C", 4, 0), A("Br", 6, 0, { charge: 1, implicitHCount: 0 })],
+  bonds: [{ type: 1, atoms: [0, 1] }, { type: 1, atoms: [2, 3] }] };
+const handH = (x: Mol) => x.atoms.map((a) => [a.label, a.implicitHCount, a.shown]);
+assert.match(toMolfile(fewH), /O [-\d. ]+ 0 VAL=1\n[^]*CHG=1 VAL=-1/);
+for (const v2 of [false, true]) assert.deepEqual(handH(importStructure(toMolfile(fewH, v2))).slice(0, 4), handH(fewH).slice(0, 4), `MOL ${v2 ? "V2000" : "V3000"}`);
+const queried: Mol = { ...fewH, atoms: [...fewH.atoms, A("C", 9, 0, { text: "R1" })] };
+for (const v2 of [false, true]) assert.deepEqual(handH(importStructure(toMolfile(queried, v2))), handH(queried), `query MOL ${v2 ? "V2000" : "V3000"}`);
+assert.equal(importStructure(toMolfile(parseStructure("P(c1ccccc1)(c1ccccc1)(c1ccccc1)[Pd]"))).atoms.some((a) => a.implicitHCount !== undefined), false);
 console.log("mdl ok");

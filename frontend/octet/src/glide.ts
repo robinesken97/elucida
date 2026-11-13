@@ -3,8 +3,6 @@
 import type { Mol } from "./render";
 
 type P = [number, number];
-// At most this many atoms (and objects) glide. With more, the drawing changes at once, so a big drawing stays quick.
-export const MOST_GLIDE = 300;
 
 const near = (p: readonly number[], q: readonly number[]) => Math.abs(p[0] - q[0]) < 1e-9 && Math.abs(p[1] - q[1]) < 1e-9;
 // How many atoms b moves from where a has them, and how many arrows, shapes, captions and cycles it changes; undefined
@@ -56,4 +54,21 @@ export function between(a: Mol, b: Mol, t: number): Mol | undefined {
   };
   if (out.arrows?.some((y, k) => length(y.from, y.to) < 0.25 * length(b.arrows![k].from, b.arrows![k].to))) return undefined;
   return out;
+}
+
+// Whether the glide from a to b is squeezed at t (the middle of Rotate 180°), as between() finds it, but without
+// making the drawing: the bonds' and arrows' ends are kept once, so a frame of a large glide makes no garbage.
+export function squeezed(a: Mol, b: Mol): (t: number) => boolean {
+  if (a.atoms.length !== b.atoms.length) return () => false;
+  const bonds = new Float64Array(b.bonds.length * 5);
+  b.bonds.forEach((bd, k) => {
+    const [i, j] = bd.atoms, p0 = a.atoms[i]?.location ?? b.atoms[i].location, q0 = a.atoms[j]?.location ?? b.atoms[j].location, p1 = b.atoms[i].location, q1 = b.atoms[j].location;
+    bonds.set([q0[0] - p0[0], q0[1] - p0[1], q1[0] - p1[0], q1[1] - p1[1], 0.25 * length(p1, q1)], k * 5);
+  });
+  const was = new Map((a.arrows ?? []).map((x) => [x.id, x]));
+  const arrows = (b.arrows ?? []).flatMap((y) => { const x = was.get(y.id); return x && x !== y ? [[x.to[0] - x.from[0], x.to[1] - x.from[1], y.to[0] - y.from[0], y.to[1] - y.from[1], 0.25 * length(y.from, y.to)]] : []; });
+  return (t) => {
+    for (let k = 0; k < bonds.length; k += 5) if (Math.hypot(bonds[k] + (bonds[k + 2] - bonds[k]) * t, bonds[k + 1] + (bonds[k + 3] - bonds[k + 1]) * t) < bonds[k + 4]) return true;
+    return arrows.some(([x0, y0, x1, y1, least]) => Math.hypot(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t) < least);
+  };
 }

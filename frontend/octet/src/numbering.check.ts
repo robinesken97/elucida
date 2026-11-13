@@ -120,9 +120,10 @@ const auto = (id: number, text: string, under: number[]): Caption => ({ ...num(i
 // numerals where Number these compounds is.
 const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8"), actions = readFileSync(new URL("Actions.tsx", import.meta.url), "utf8");
 assert.match(editor, /text: nextCompound\(m\), x: 0, y: 0, bold: true, under: g, auto: true/);
-// A number edited by hand becomes the user's: committing new text drops Octet's mark.
-assert.match(editor, /updateCaption\(doc, w\.id, \{ text, \.\.\.st, runs, \.\.\.\(text !== old\.text \? \{ auto: undefined \} : \{\}\) \}\)/);
-assert.match(editor, /expPage && mol\.style === doc\.style \? renumber\(newGrids\(doc, ordered\)\) : ordered/);
+// A number edited by hand becomes the user's: committing new text drops Octet's mark (and live values stop following
+// their structure).
+assert.match(editor, /updateCaption\(doc, w\.id, \{ text, \.\.\.st, runs, \.\.\.\(text !== old\.text \? \{ auto: undefined, \.\.\.\(old\.property\?\.attrs\.rows \? \{ property: undefined \} : \{\}\) \} : \{\}\) \}\)/);
+assert.match(editor, /expPage && mol\.style === doc\.style \? syncDetails\(doc, renumber\(newGrids\(doc, ordered\)\), sheetOf\(style\)\) : ordered/);
 assert.match(editor, /command === "numbers\.roman"\) return set\(setRoman\(doc, !romanNumbers\(doc\)\), true\)/);
 assert.equal(actions.match(/\.\.\.numerals\(context\.roman\)/g)?.length, 2, "on a structure and on a reaction");
 

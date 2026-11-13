@@ -49,6 +49,16 @@ for (const label of ["A", "AH", "Q", "QH", "M", "MH", "X", "XH"]) {
 // Reaxys looks for substructures by default, as ChemDraw does; PubChem for the same structure.
 assert.deepEqual(SEARCHES.search_reaxys, ["reaxys", false]);
 assert.deepEqual(SEARCHES.search_pubchem, ["pubchem", true]);
+// Google Patents looks for the same structure; SciFinder and Google Scholar are there too.
+assert.deepEqual(SEARCHES.search_patents, ["patents", true]);
+assert.deepEqual(SEARCHES.search_scifinder[0], "scifinder");
+assert.deepEqual(SEARCHES.search_scholar[0], "scholar");
+// Google Scholar: each structure's name as a phrase, and the InChIKey of one Octet cannot name.
+{
+  const { scholarText } = await import("./search.ts");
+  assert.equal(scholarText([{ bare: "2-acetyloxybenzoic acid", mol: parseStructure("CC(=O)Oc1ccccc1C(=O)O") }, { mol: parseStructure("CCO") }]),
+    '"2-acetyloxybenzoic acid" "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"');
+}
 // A held key repeats the command: one search a second at most.
 {
   const { searchNow } = await import("./search.ts");

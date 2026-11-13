@@ -1,0 +1,101 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Octet Draw",
+  "version": "../package.json",
+  "identifier": "io.github.samchemman.octet-draw",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Octet Draw",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 620
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "resources": { "../src/vendor/opsin/NOTICES.txt": "licences/opsin.txt", "../data/nmr/LICENCE.txt": "licences/nmrshiftdb2.txt", "licences/third-party.txt": "licences/third-party.txt" },
+    "targets": ["app", "dmg", "nsis", "deb", "rpm", "appimage"],
+    "publisher": "Sam Ellis",
+    "copyright": "© 2026 Sam Ellis",
+    "category": "Education",
+    "shortDescription": "Draw chemical structures and reactions",
+    "longDescription": "Octet Draw is a free, open-source app to draw chemical structures and reactions. It opens and saves ChemDraw files (CDXML and CDX), and it works with no internet connection.",
+    "homepage": "https://github.com/SamChemMan/Octet-Draw",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["oct"],
+        "name": "Octet Drawing",
+        "description": "Octet drawing",
+        "role": "Editor",
+        "rank": "Owner",
+        "mimeType": "application/x-octet-drawing",
+        "exportedType": { "identifier": "io.github.samchemman.octet.drawing", "conformsTo": ["public.xml", "public.data"] },
+        "contentTypes": ["io.github.samchemman.octet.drawing"]
+      },
+      {
+        "ext": ["cdxml"],
+        "name": "ChemDraw Drawing",
+        "description": "ChemDraw drawing (CDXML)",
+        "role": "Editor",
+        "rank": "Default",
+        "mimeType": "chemical/x-cdxml"
+      },
+      {
+        "ext": ["cdx"],
+        "name": "ChemDraw Document",
+        "description": "ChemDraw drawing (CDX)",
+        "role": "Editor",
+        "rank": "Default",
+        "mimeType": "chemical/x-cdx"
+      },
+      {
+        "ext": ["ctp", "cts"],
+        "name": "ChemDraw Templates",
+        "description": "ChemDraw template file",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
+    "linux": {
+      "deb": { "desktopTemplate": "linux/octet.desktop", "files": { "/usr/share/mime/packages/octet.xml": "linux/octet-mime.xml" } },
+      "rpm": { "desktopTemplate": "linux/octet.desktop", "files": { "/usr/share/mime/packages/octet.xml": "linux/octet-mime.xml" } }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist",
+      "minimumSystemVersion": "12.0"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "tsp": true,
+      "nsis": { "installerHooks": "windows/hooks.nsh" }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1NUUxQTZCQTg2RjE4QjYKUldTMkdHK29heHBlTmJMeHM4YytxN2gxMVVaWm8rWFdaUEtmZm5SdjhKVGE1d3diOW8yb0dYOFQK",
+      "endpoints": ["https://github.com/SamChemMan/Octet-Draw/releases/latest/download/latest.json"]
+    }
+  }
+}

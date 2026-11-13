@@ -202,7 +202,28 @@ run("bridged fused", [
   "1,2,3,4,4a,9,10,10a-octahydro-10,4a-(epiminoethano)phenanthrene", "aconitane",
   "6,11-dimethyl-3-(3-methylbut-2-en-1-yl)-1,2,3,4,5,6-hexahydro-2,6-methano-3-benzazocin-8-ol",
   "quinolizin-5-ium", "indolizin-4-ium", "1-methyl-1H-imidazo[1,2-a]pyridin-4-ium", "pyrido[1,2-a]pyrimidin-5-ium", "2,3-dihydro-1H-pyrrolizin-4-ium",
+  "ajmalane", "ajmalene", "ajmalyne",
 ]);
+// R or S on an amine N at a bridgehead (Octet's own drawing of ajmalene from its name has a wedge there) follows from
+// the other bridgehead's: the name leaves it out, as OPSIN and InChI do. Tröger's base, whose bridgeheads are both N,
+// and the N of a ring fusion, which inverts, keep theirs, so they get no name.
+{
+  const withN = (input: string, labels: string[]) => {
+    const smiles = input.startsWith("smiles:") ? input.slice(7) : opsin.parseToSmiles(input), g = graphOf(molOf(smiles), cipOf(smiles))!;
+    const nb = (i: number) => g.bonds.filter((b) => b.a === i || b.b === i);
+    const ns = g.atoms.flatMap((a, i) => (a.el === "N" && nb(i).length === 3 && nb(i).every((b) => nb(b.a === i ? b.b : b.a).length > 1) ? [i] : []));
+    assert.equal(ns.length, labels.length, `${input}: ring N atoms`);
+    return { plain: iupacNameWhy(g).name, labelled: iupacNameWhy({ ...g, atoms: g.atoms.map((a, i) => (ns.includes(i) ? { ...a, cip: labels[ns.indexOf(i)] } : a)) }).name };
+  };
+  for (const input of ["ajmalene", "ajmalane", "ajmalyne", "smiles:C=C[C@H]1C[N]2CC[C@H]1C[C@@H]2CO"]) {
+    const { plain, labelled } = withN(input, ["R"]);
+    assert.ok(plain, `${input} is named`);
+    assert.equal(labelled, plain, `${input}: its bridgehead N's R or S is left out`);
+  }
+  assert.match(withN("smiles:Cc1ccc2c(c1)CN1CN2Cc2cc(C)ccc21", ["R", "R"]).labelled!, /^\(5R,11R\)-/, "Tröger's base keeps R and S on its N");
+  assert.match(withN("smiles:C1CC[N]2CCC[C@@H]2C1", ["S"]).labelled!, /\b4S\b/, "an N at a ring fusion keeps its R or S");
+}
+console.log("namer-fused.check: R or S on a bridgehead amine N left out where the other bridgehead sets it ok");
 // Spiro unions with a polycyclic component (P-24.5): components in alphabetical order, the second primed; identical
 // components as spirobi[...]; saturated monocyclic components by their saturated names.
 run("spiro", [
@@ -221,6 +242,14 @@ run("large rings", [
   "benzo[18]annulene", "cyclododeca[b]pyridine", "benzo[10]annulene", "6,7,8,9,10,11-hexahydro-5H-benzo[9]annulene",
   "2,3,5,6,8,9,11,12,14,15-decahydro-1,4,7,10,13,16-benzohexaoxacyclooctadecine",
 ]);
+// E and Z on a double bond in a large ring of a fused system, at its lower locant: brefeldin A's (2E,10E). Indigo lays
+// out such a ring's E double bond as Z, so these take E and Z from the SMILES.
+for (const input of ["(10E)-6,7,8,9-tetrahydro-5H-benzo[9]annulene", "(10Z)-6,7,8,9-tetrahydro-5H-benzo[9]annulene",
+  "(1R,2E,6S,10E,11aS,13S,14aR)-1,13-dihydroxy-6-methyl-1,6,7,8,9,11a,12,13,14,14a-decahydro-4H-cyclopenta[f][1]oxacyclotridecin-4-one"]) {
+  const smiles = opsin.parseToSmiles(input), g = graphOf(molOf(smiles), { atoms: cipOf(smiles).atoms, bonds: parsed(smiles).bonds.map((b) => b.cip) })!;
+  assert.equal(iupacNameWhy(g).name, input);
+}
+console.log("namer-fused.check: E and Z in large fused rings ok");
 // Acyl groups on fused and other rings, numbered as the ring (these once failed with "Cannot read properties of
 // undefined (reading 'indexOf')"): folic acid, methotrexate, carbonyldiimidazole and imidazole acids.
 run("ring acyl groups", [

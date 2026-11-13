@@ -2,7 +2,7 @@
 // was, end where it is, keep what did not move, and leave out a frame that does not draw well.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { between, MOST_GLIDE, moving } from "./glide.ts";
+import { between, moving, squeezed } from "./glide.ts";
 import type { Mol } from "./render.ts";
 
 // Ethanol and a reaction arrow. The clean-up moves the oxygen and the arrow; the first carbon stays.
@@ -20,7 +20,6 @@ const b: Mol = {
 assert.equal(moving(a, b), 3, "two atoms and the arrow move");
 assert.equal(moving(a, { ...a }), 0, "nothing moves");
 assert.equal(moving(a, { ...b, atoms: b.atoms.slice(1) }), undefined, "a drawing with an atom less does not glide");
-assert.ok(MOST_GLIDE === 300);
 
 const start = between(a, b, 0)!, end = between(a, b, 1)!, mid = between(a, b, 0.5)!;
 assert.deepEqual(start.atoms.map((x) => x.location), a.atoms.map((x) => x.location), "it starts where the atoms were");
@@ -38,6 +37,9 @@ const turned: Mol = { ...flat, atoms: [{ label: "C", location: [0.5, 0, 0] }, { 
 assert.equal(between(flat, turned, 0.5), undefined, "a bond squeezed to nothing is left out");
 assert.equal(between(flat, turned, 0.45), undefined, "and one squeezed to a tenth");
 assert.ok(between(flat, turned, 0.3), "a bond at two fifths of its length draws");
+// squeezed() finds the same frames without making the drawing.
+const squeeze = squeezed(flat, turned);
+for (const t of [0, 0.3, 0.38, 0.45, 0.5, 0.55, 0.62, 0.7, 1]) assert.equal(squeeze(t), !between(flat, turned, t), `squeezed at ${t} as between finds`);
 const arrowFlat: Mol = { atoms: [], bonds: [], arrows: [{ id: 1, kind: "reaction", from: [-1, 0], to: [1, 0] }] };
 assert.equal(between(arrowFlat, { ...arrowFlat, arrows: [{ id: 1, kind: "reaction", from: [1, 0], to: [-1, 0] }] }, 0.5), undefined, "so is an arrow");
 // A catalytic cycle tidied: its circle grows and its break turns round to its new place the short way, with the

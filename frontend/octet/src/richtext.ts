@@ -88,12 +88,13 @@ export function trimLines(runs: TextRun[]): TextRun[] {
   return normalise(out);
 }
 
-// An atom label's text styles from its runs as typed: bold, italic and underline only. What every character has is the
-// label's own; the rest stays in runs (none when no character differs). A label is never partly another font or size.
-export function labelStyle(runs: TextRun[]): { bold?: true; italic?: true; underline?: true; runs?: TextRun[] } {
+// An atom label's text styles from its runs as typed: bold, italic, underline and colour (issue 64) only. What every
+// character has is the label's own; the rest stays in runs (none when no character differs). A label is never partly
+// another font or size.
+export function labelStyle(runs: TextRun[]): { bold?: true; italic?: true; underline?: true; colour?: string; runs?: TextRun[] } {
   // Superscript and subscript (issue 44) stay on the characters: a label has no script of its own.
-  const only = normalise(runs.map((r) => ({ text: r.text, ...(r.bold ? { bold: true as const } : {}), ...(r.italic ? { italic: true as const } : {}), ...(r.underline ? { underline: true as const } : {}), ...(r.script ? { script: r.script } : {}) })));
-  const { script: _, ...all } = common(only, 0, plainOf(only).length) as { bold?: true; italic?: true; underline?: true; script?: string }, rest = without(only, Object.keys(all));
+  const only = normalise(runs.map((r) => ({ text: r.text, ...(r.bold ? { bold: true as const } : {}), ...(r.italic ? { italic: true as const } : {}), ...(r.underline ? { underline: true as const } : {}), ...(r.script ? { script: r.script } : {}), ...(r.colour ? { colour: r.colour } : {}) })));
+  const { script: _, ...all } = common(only, 0, plainOf(only).length) as { bold?: true; italic?: true; underline?: true; colour?: string; script?: string }, rest = without(only, Object.keys(all));
   return { ...all, ...(styled(rest) ? { runs: rest } : {}) };
 }
 

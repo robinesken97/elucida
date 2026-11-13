@@ -48,7 +48,7 @@ const isYield = (text: string) => !!text.trim() && text.split("\n").every((t) =>
 //    - A curved arrow (electrons pushed) with its ends on two structures of the row stretches between them; one with an
 //      end on one structure moves with it, and brings what its other end is on (a hydroxide ion attacking it).
 // A reaction needs a structure in its row, or conditions on an arrow.
-export function findReaction(m: Mol, arrowId: number, arrows: Arrow[], ink: (atoms: number[]) => Box | undefined, captionBox: (id: number) => Box | undefined): Reaction | undefined {
+function findRow(m: Mol, arrowId: number, arrows: Arrow[], ink: (atoms: number[]) => Box | undefined, captionBox: (id: number) => Box | undefined): Reaction | undefined {
   const a = arrows.find((x) => x.id === arrowId);
   if (!a || !straightArrow(a)) return undefined;
   // The row's line: through the arrow's middle, along it, or across or down the page when the arrow is within 20° of
@@ -268,6 +268,45 @@ export function findReaction(m: Mol, arrowId: number, arrows: Arrow[], ink: (ato
   const inRow = new Set(atoms), own = new Set([...steps, ...condSteps].flatMap((s) => (s.kind === "plus" || s.kind === "text" ? [s.id] : [])).concat(carries.flatMap((k) => k.captions)));
   const captions = (m.captions ?? []).filter((c) => own.has(c.id) || (c.on && arrowIds.includes(c.on.arrow)) || (c.under && c.under.every((i) => inRow.has(i)))).map((c) => c.id);
   return { steps, arrows: arrowIds, atoms, captions, carried: [...new Set(carries.flatMap((k) => [...k.arrows, ...k.shapes, ...k.ends.map((e) => e[0])]))], conditions };
+}
+// A reaction wrapped onto lines (as Clean Up Reaction wraps one wider than the page) reads as one reaction: a line that
+// starts with an arrow continues the line above it that ends with a structure, when that line is of arrows the same
+// way across the page, no more than LINES bond lengths above (Clean Up Reaction puts lines 2 bond lengths apart, plus
+// the reach of their text and structures), and overlaps it along the page. findReaction gives the whole reaction from
+// an arrow on any of its lines.
+const LINES = 10;
+export function findReaction(m: Mol, arrowId: number, arrows: Arrow[], ink: (atoms: number[]) => Box | undefined, captionBox: (id: number) => Box | undefined): Reaction | undefined {
+  const rows = new Map<number, Reaction | undefined>();
+  const row = (id: number) => { if (!rows.has(id)) rows.set(id, findRow(m, id, arrows, ink, captionBox)); return rows.get(id); };
+  const first = row(arrowId);
+  if (!first) return undefined;
+  const way = (r: Reaction) => { const a = arrows.find((x) => x.id === r.arrows[0])!, dx = a.to[0] - a.from[0], dy = a.to[1] - a.from[1]; return Math.abs(dx) > 3 * Math.abs(dy) ? Math.sign(dx) : 0; };
+  const span = (r: Reaction) => union([...r.steps, ...[...r.conditions.values()].flatMap((c) => [...c.above, ...c.below])].map((x) => x.box));
+  const starts = (r: Reaction) => r.steps[0]?.kind === "arrow", ends = (r: Reaction) => r.steps[r.steps.length - 1]?.kind === "structure";
+  // The line above or below a line of the same reaction (below: the next one down the page).
+  const next = (r: Reaction, down: boolean): Reaction | undefined => {
+    const w = way(r);
+    if (!w || (down ? !ends(r) : !starts(r))) return undefined;
+    const b = span(r);
+    let best: Reaction | undefined, gap = Infinity;
+    for (const a of arrows) {
+      if (!straightArrow(a) || r.arrows.includes(a.id) || (down ? Math.max(a.from[1], a.to[1]) > b[1] : Math.min(a.from[1], a.to[1]) < b[3])) continue;
+      const o = row(a.id);
+      if (!o || way(o) !== w || (down ? !starts(o) : !ends(o)) || o.arrows.some((id) => r.arrows.includes(id))) continue;
+      const c = span(o), d = down ? b[1] - c[3] : c[1] - b[3];
+      if (d < -0.5 || d > LINES || c[0] > b[2] || c[2] < b[0] || d >= gap) continue;
+      best = o; gap = d;
+    }
+    return best;
+  };
+  let top = first;
+  for (let k = 0, up = next(top, false); up && k < 50; k++, up = next(top, false)) top = up;
+  let out = top, last = top;
+  for (let k = 0, down = next(last, true); down && k < 50 && !down.arrows.some((id) => out.arrows.includes(id)); k++, down = next(last, true)) {
+    out = { steps: [...out.steps, ...down.steps], arrows: [...out.arrows, ...down.arrows], atoms: [...new Set([...out.atoms, ...down.atoms])], captions: [...new Set([...out.captions, ...down.captions])], carried: [...new Set([...out.carried, ...down.carried])], conditions: new Map([...out.conditions, ...down.conditions]) };
+    last = down;
+  }
+  return out;
 }
 const union = (bs: Box[]): Box => [Math.min(...bs.map((b) => b[0])), Math.min(...bs.map((b) => b[1])), Math.max(...bs.map((b) => b[2])), Math.max(...bs.map((b) => b[3]))];
 // Whether a reaction has a structure with a bond in its row (ChemDraw reads a reaction only from parts with atoms).
@@ -514,11 +553,13 @@ export function cleanUpReaction(m: Mol, r: Reaction, arrows: Arrow[], o: Layout,
 // reactions it laid out, and how many it left as drawn.
 // A reaction laid out later can move text that an earlier one read (a spectrum's labels, with every arrow picked).
 // Thus the layout runs again on its result until nothing moves (4 times at most), and a second Clean Up Reaction
-// moves nothing.
+// moves nothing. A reaction that wrapped onto lines reads as one reaction for each line after it: those pieces of a
+// reaction the first run laid out whole are not laid out again (each would pull its line back to where it was).
 export function cleanUpReactions(drawn: Mol, arrows: Arrow[], inkOf: (mol: Mol) => (atoms: number[]) => Box | undefined, o: Layout, pick: (r: Reaction) => boolean): { mol: Mol; count: number; kept: number } {
   let out = layOutReactions(drawn, drawn, arrows, inkOf, o, pick);
+  const whole = out.laid, piece = (r: Reaction) => whole.some((g) => r.arrows.length < g.length && r.arrows.every((id) => g.includes(id)));
   for (let k = 0; k < 3 && out.count; k++) {
-    const again = layOutReactions(out.mol, drawn, arrows, inkOf, o, pick);
+    const again = layOutReactions(out.mol, drawn, arrows, inkOf, o, (r) => pick(r) && !piece(r));
     if (samePlaces(out.mol, again.mol)) break;
     out = { ...again, count: Math.max(out.count, again.count) };
   }
@@ -531,9 +572,11 @@ const samePlaces = (p: Mol, q: Mol) => {
   return a.length === b.length && a.every((v, k) => Math.abs(v - b[k]) < 1e-9);
 };
 // One pass of cleanUpReactions over m. drawn: the drawing that arrows and o.captionBox measure.
-function layOutReactions(m: Mol, drawn: Mol, arrows: Arrow[], inkOf: (mol: Mol) => (atoms: number[]) => Box | undefined, o: Layout, pick: (r: Reaction) => boolean): { mol: Mol; count: number; kept: number } {
+// laid: the arrows of each reaction laid out.
+function layOutReactions(m: Mol, drawn: Mol, arrows: Arrow[], inkOf: (mol: Mol) => (atoms: number[]) => Box | undefined, o: Layout, pick: (r: Reaction) => boolean): { mol: Mol; count: number; kept: number; laid: number[][] } {
   const fixed = new Set<number>(), done = new Set<number>(), middle = (x?: Arrow): P => (x ? [(x.from[0] + x.to[0]) / 2, (x.from[1] + x.to[1]) / 2] : [0, 0]);
   let ink = inkOf(m), count = 0, kept = 0;
+  const laid: number[][] = [];
   for (const a of arrows.filter((x) => straightArrow(x))) {
     if (done.has(a.id)) continue;
     // The arrows as drawn (grown to fit their text), or as the last reaction left them.
@@ -543,6 +586,12 @@ function layOutReactions(m: Mol, drawn: Mol, arrows: Arrow[], inkOf: (mol: Mol) 
     const was = m, lo: Layout = { ...o, captionBox: (id) => {
       const b = o.captionBox(id), c = was.captions?.find((x) => x.id === id), d = drawn.captions?.find((x) => x.id === id), q = o.plusBox;
       if (c && !d && c.text === "+") return [c.x + q[0], c.y + q[1], c.x + q[2], c.y + q[3]];
+      // A number or name under a structure is drawn where its structure is: it has moved as far as its atoms.
+      if (b && c?.under?.length && d) {
+        const mid = (mol: Mol) => c.under!.reduce((s, i) => [s[0] + (mol.atoms[i]?.location[0] ?? 0), s[1] + (mol.atoms[i]?.location[1] ?? 0)], [0, 0]).map((v) => v / c.under!.length);
+        const [p, q2] = [mid(was), mid(drawn)];
+        return [b[0] + p[0] - q2[0], b[1] + p[1] - q2[1], b[2] + p[0] - q2[0], b[3] + p[1] - q2[1]];
+      }
       if (!b || !c || !d || c === d) return b;
       const [p0, p1] = c.on ? middle(was.arrows?.find((x) => x.id === c.on!.arrow)) : [c.x, c.y], [d0, d1] = c.on ? middle(drawn.arrows?.find((x) => x.id === c.on!.arrow)) : [d.x, d.y];
       return [b[0] + p0 - d0, b[1] + p1 - d1, b[2] + p0 - d0, b[3] + p1 - d1];
@@ -565,8 +614,9 @@ function layOutReactions(m: Mol, drawn: Mol, arrows: Arrow[], inkOf: (mol: Mol) 
     r.atoms.forEach((i) => fixed.add(i));
     ink = inkNext;
     count++;
+    laid.push(r.arrows);
   }
-  return { mol: m, count, kept };
+  return { mol: m, count, kept, laid };
 }
 // Whether a layout (m to next) moves a structure, text or straight arrow on to one it does not move and was clear of.
 function covers(m: Mol, next: Mol, ink: (atoms: number[]) => Box | undefined, inkNext: (atoms: number[]) => Box | undefined, captionBox: (id: number) => Box | undefined): boolean {

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { numbered, placeBeside, type Beside, type Room, type Spot } from "./beside.ts";
 import { parse } from "./file.ts";
-import { LIBRARY } from "./library.ts";
+import { LIBRARY, loadMore } from "./library.ts";
 import { orderOf, render, type Box, type Ink, type Mol } from "./render.ts";
 import { rings } from "./rings.ts";
 import { widthOf } from "./arial.ts";
@@ -60,7 +60,10 @@ const withH = (m: Mol) => carbons(m).filter((i) => m.bonds.filter((b) => b.atoms
 
 // The corpus: the three starter drawings and the first structures of each template set, 50 in all.
 const starters = ["structure", "reaction", "cycle"].map((n) => parse(readFileSync(new URL(`./starters/${n}.json`, import.meta.url), "utf8")));
-const sets = LIBRARY.map((c) => c.items.map((t) => t.mol).filter((m) => m.atoms.some((a) => a.label === "C") && m.bonds.length && !m.atoms.some((a) => a.location[2])));
+await loadMore();
+// The Carbon set is left out: its graphene flake has a number on each of 54 carbons, 36 of them bonded to three
+// others with no room beside them (a predicted shift on every atom of graphene is not a drawing anyone makes).
+const sets = LIBRARY.filter((c) => c.name !== "Carbon").map((c) => c.items.map((t) => t.mol).filter((m) => m.atoms.some((a) => a.label === "C") && m.bonds.length && !m.atoms.some((a) => a.location[2])));
 const corpus = [...starters];
 for (let k = 0; corpus.length < 50; k++) for (const s of sets) if (s[k] && corpus.length < 50) corpus.push(s[k]);
 assert.equal(corpus.length, 50);

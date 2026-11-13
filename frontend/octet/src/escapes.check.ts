@@ -58,7 +58,7 @@ assert.match(body("commitCell"), /const value = expandEscapes\(w\.value, keptTex
 assert.match(body("commitGridCell"), /text = expandEscapes\(typed, keptText\(gridEdit\?\.value\)\)/);
 assert.match(editor, /const typed = trimLines\(expandRuns\(editing\.runs \?\? \[\{ text: editing\.value \}\], keptText\(a\.text\)\)\)/);
 assert.match(editor, /set\(setLabel\(doc, editing\.atom, expandEscapes\(editing\.value, keptText\(doc\.atoms\[editing\.atom\]\.text\)\)\)\)/);
-assert.match(editor, /withDetails\(doc\.annotations, Object\.fromEntries\(Object\.entries\(dialog\.values\)\.map\(\(\[k, v\]\) => \[k, v && expandEscapes\(v, keptText\(detailsOf\(doc\.annotations\)\[k as keyof Details\]\)\)\]\)\)\)/);
+assert.match(editor, /const typed = Object\.fromEntries\(Object\.entries\(values\)\.map\(\(\[k, v\]\) => \[k, v && expandRuns\(v, keptText\(plainOf\(runs\[k as DetailField\]\)\)\)\]\)\);\n\s*const next = withDetailRuns\(doc, typed, sheet\)/);
 assert.match(editor, /openWriting\(\{ value: "", cycle: \{ cycle: id, step, side: "name" \}/, "a step name is typed as a caption");
 
 // The Character Map: the characters Sam listed, each with a name for screen readers, none twice in a group.

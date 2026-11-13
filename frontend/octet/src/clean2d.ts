@@ -19,7 +19,7 @@
 // pushed apart. Each round is a step along the gradient (or the conjugate direction), scaled to at most one bond length
 // and halved up to 20 times to the lowest energy.
 
-const ROUNDS = 1000, HALVINGS = 20;
+const ROUNDS = 1000, HALVINGS = 20, MEMORY = 8;
 const SHRINK = Array.from({ length: HALVINGS + 1 }, (_, i) => (i ? 0.5 ** (i - 1) : 0));
 // The angle inside a regular polygon of s atoms; Indigo's 120° for a ring of more than 8 (a macrocycle).
 const polygon = (s: number) => (s <= 8 ? Math.PI - (2 * Math.PI) / s : (2 * Math.PI) / 3);
@@ -213,7 +213,7 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
   const lens = bonds.map(([a, b]) => Math.hypot(xy[2 * a] - xy[2 * b], xy[2 * a + 1] - xy[2 * b + 1])).sort((p, q) => p - q);
   const T = lens.length % 2 ? lens[lens.length >> 1] : (lens[lens.length / 2] + lens[lens.length / 2 - 1]) / 2;
   if (!(T > 0)) return;
-  const H = T * 1e-5; // the gradient's step
+  const H = T * 1e-5; // the room round each pair search (collect)
   // Pairs of atoms in one block (they are not pushed apart), and pairs in one biconnected block (ring angles).
   const pairsOf = (comps: Uint8Array[]) => {
     const same = new Uint8Array(n * n);
@@ -340,28 +340,34 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
   const centres: number[] = [], centre = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (art[i] && (external || angles[i].length)) { centres.push(i); centre[i] = 1; }
   // The atoms (not in one block) that could come closer than a bond while each atom moves up to `by`: for atom i,
-  // partners[starts[i]] to partners[starts[i + 1] - 1].
-  const grid = new Grid(n), found = new Int32Array(n), starts = new Int32Array(n + 1);
+  // partners[starts[i]] to partners[starts[i + 1] - 1], each pair once (j > i). paired[i]: how many pairs atom i is in,
+  // and pairs: how many in all, both ways (for the work count).
+  const grid = new Grid(n), found = new Int32Array(n), starts = new Int32Array(n + 1), pairCount = new Int32Array(n);
+  let pairs = 0;
   let partners = new Int32Array(16 * n);
   const collect = (by: number) => {
     const r = T + 2 * by;
     grid.fill(pos, n, r);
     let k = 0;
+    pairCount.fill(0);
     for (let i = 0; i < n; i++) {
       starts[i] = k;
       const c = grid.near(i, found);
       if (k + c > partners.length) partners = Int32Array.from({ length: 2 * (k + c) }, (_, q) => partners[q] ?? 0);
       for (let q = 0; q < c; q++) {
-        const j = found[q], dx = pos[2 * i] - pos[2 * j], dy = pos[2 * i + 1] - pos[2 * j + 1];
-        if (j !== i && !same[i * n + j] && dx * dx + dy * dy < r * r) partners[k++] = j;
+        const j = found[q];
+        if (j <= i || same[i * n + j]) continue;
+        const dx = pos[2 * i] - pos[2 * j], dy = pos[2 * i + 1] - pos[2 * j + 1];
+        if (dx * dx + dy * dy < r * r) { partners[k++] = j; pairCount[i]++; pairCount[j]++; }
       }
     }
     starts[n] = k;
+    pairs = 2 * k;
   };
   const energy = () => {
     let r = 0;
     for (let e = 0; e < E; e++) r += edgeTerm(e);
-    for (let i = 0; i < n; i++) for (let q = starts[i]; q < starts[i + 1]; q++) if (partners[q] > i) r += pairTerm(i, partners[q]);
+    for (let i = 0; i < n; i++) for (let q = starts[i]; q < starts[i + 1]; q++) r += pairTerm(i, partners[q]);
     for (const i of centres) r += angleTerm(i);
     return r;
   };
@@ -385,11 +391,13 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
     }
     return [v, { edges: [...edges], around: [...around] }];
   }));
-  // The work, in energy terms worked out: each round's gradient (four shifts of each base atom's group, each summing
-  // the bonds, angles and close pairs it touches), then each energy along its step (every atom, bond, angle and
-  // following atom at 1.5 a term, every pair it checks at 0.5), and n² for the setup above. An angle of the second pass
-  // at an atom of d bonds costs d + d²/4 (its bonds are sorted by angle). Fitted to the times of src/cleanup.check.ts's
-  // and src/cleanup-geometry.check.ts's structures, a unit takes 6 to 13 ns on an M1 Pro.
+  // The work, in energy terms worked out: each round's gradient (counted as four shifts of each base atom's group,
+  // each summing the bonds, angles and close pairs it touches, as the gradient was measured up to 1.1.1), then each
+  // energy along its step (every atom, bond, angle and following atom at 1.5 a term, every pair it checks at 0.5), and
+  // n² for the setup above. An angle of the second pass at an atom of d bonds costs d + d²/4 (its bonds are sorted by
+  // angle). Fitted to the times of src/cleanup.check.ts's and src/cleanup-geometry.check.ts's structures, a unit took
+  // 6 to 13 ns on an M1 Pro. The exact gradient (gradient, after 1.1.1) and a line search that stops at its lowest point
+  // make a unit about twice as quick, and L-BFGS needs fewer rounds; the count is kept as the budget's measure.
   const angleCost = (i: number) => (external ? nei[i].length * (1 + nei[i].length / 4) : angles[i].length / 2);
   const shared = new Float64Array(n);
   let fixed = 2 * n, evalCost = n + E;
@@ -402,62 +410,136 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
   for (const t of terms) evalCost += t.length / 3;
   const gradWork = () => {
     let r = fixed;
-    for (let u = 0; u < n; u++) r += shared[u] * (starts[u + 1] - starts[u]);
+    for (let u = 0; u < n; u++) r += shared[u] * pairCount[u];
     return r;
   };
-  const mark = new Int32Array(n).fill(-1), saved = new Float64Array(2 * n);
-  // The energy terms that moving base atom v's group changes.
-  const local = (v: number) => {
-    const m = moves.get(v)!, { edges, around } = touched.get(v)!;
-    let r = 0;
-    for (const e of edges) r += edgeTerm(e);
-    for (const i of around) r += angleTerm(i);
-    for (let k = 0; k < m.length; k += 3) {
-      const u = m[k];
-      for (let q = starts[u]; q < starts[u + 1]; q++) { const j = partners[q]; if (!(mark[j] >= 0 && mark[j] < k)) r += pairTerm(u, j); }
+  // The energy's exact gradient for every atom (ga), in one sweep over the terms: the same as moving each atom a
+  // little each way and measuring (diff), with no step to choose. Then each base atom's gradient: its group moves with
+  // it, each atom turned and scaled by its coefficients.
+  const ga = new Float64Array(2 * n), turns = new Float64Array(n + 1), turnAtoms = new Int32Array(n + 1), pulls = new Float64Array(n + 1);
+  const turnOf = (ix: number, iy: number, w: number, k: number) => {
+    // d(angle of w seen from i) / d(position of w), times k, onto w and (negated) onto i.
+    const x = pos[2 * w] - ix, y = pos[2 * w + 1] - iy, r2 = x * x + y * y;
+    return [(-y / r2) * k, (x / r2) * k];
+  };
+  const gradient = () => {
+    ga.fill(0);
+    for (let e = 0; e < E; e++) {
+      const a = ea[e], b = eb[e], dx = pos[2 * a] - pos[2 * b], dy = pos[2 * a + 1] - pos[2 * b + 1], l = Math.sqrt(dx * dx + dy * dy);
+      if (!l) continue;
+      const k = (2 * (l - T)) / (T * T * l);
+      ga[2 * a] += k * dx; ga[2 * a + 1] += k * dy; ga[2 * b] -= k * dx; ga[2 * b + 1] -= k * dy;
     }
-    return r;
-  };
-  const diff = (v: number): [number, number] => {
-    const m = moves.get(v)!;
-    for (let k = 0; k < m.length; k += 3) { const u = m[k]; mark[u] = k; saved[2 * u] = pos[2 * u]; saved[2 * u + 1] = pos[2 * u + 1]; }
-    const shift = (sx: number, sy: number) => {
-      for (let k = 0; k < m.length; k += 3) {
-        const u = m[k];
-        pos[2 * u] = saved[2 * u] + (m[k + 1] * sx - m[k + 2] * sy) * H;
-        pos[2 * u + 1] = saved[2 * u + 1] + (m[k + 1] * sy + m[k + 2] * sx) * H;
+    for (let i = 0; i < n; i++)
+      for (let q = starts[i]; q < starts[i + 1]; q++) {
+        const j = partners[q];
+        const dx = pos[2 * i] - pos[2 * j], dy = pos[2 * i + 1] - pos[2 * j + 1], d2 = dx * dx + dy * dy;
+        if (d2 >= T * T || !d2) continue;
+        const l = Math.sqrt(d2), k = (2 * (l - T)) / (T * T * l);
+        ga[2 * i] += k * dx; ga[2 * i + 1] += k * dy; ga[2 * j] -= k * dx; ga[2 * j + 1] -= k * dy;
       }
-      const r = local(v);
-      for (let k = 0; k < m.length; k += 3) { const u = m[k]; pos[2 * u] = saved[2 * u]; pos[2 * u + 1] = saved[2 * u + 1]; }
-      return r;
+    const push = (i: number, w: number, k: number) => {
+      const [gx, gy] = turnOf(pos[2 * i], pos[2 * i + 1], w, k);
+      ga[2 * w] += gx; ga[2 * w + 1] += gy; ga[2 * i] -= gx; ga[2 * i + 1] -= gy;
     };
-    const dx = shift(1, 0) - shift(-1, 0), dy = shift(0, 1) - shift(0, -1);
-    for (let k = 0; k < m.length; k += 3) mark[m[k]] = -1;
-    return [dx / (2 * H), dy / (2 * H)];
+    for (const i of centres) {
+      const ix = pos[2 * i], iy = pos[2 * i + 1];
+      if (external) {
+        const deg = nei[i].length;
+        if (deg === 2) {
+          const [v, w] = nei[i], x1 = pos[2 * v] - ix, y1 = pos[2 * v + 1] - iy, x2 = pos[2 * w] - ix, y2 = pos[2 * w + 1] - iy;
+          const alpha = Math.atan2(x1 * y2 - y1 * x2, x1 * x2 + y1 * y2), d0 = Math.abs(alpha), d1 = 2 * Math.PI - d0;
+          const [p0, p1] = straight[i] ? [Math.PI, Math.PI] : [(2 * Math.PI) / 3, (4 * Math.PI) / 3];
+          // E = (d0 - p0)² + (d1 - p1)², d1 = 2π - d0, d0 = |alpha|, alpha = angle(w) - angle(v).
+          const k = (2 * (d0 - p0) - 2 * (d1 - p1)) * Math.sign(alpha);
+          push(i, w, k); push(i, v, -k);
+          continue;
+        }
+        // The bonds by angle (as angleTerm sorts them), then each angle starts one gap and ends the one before it.
+        for (let k = 0; k < deg; k++) {
+          const w = nei[i][k], a = Math.atan2(pos[2 * w + 1] - iy, pos[2 * w] - ix);
+          let q = k;
+          for (; q > 0 && turns[q - 1] > a; q--) { turns[q] = turns[q - 1]; turnAtoms[q] = turnAtoms[q - 1]; }
+          turns[q] = a; turnAtoms[q] = w;
+        }
+        const target = (2 * Math.PI) / deg, gap = (k: number) => (k === deg - 1 ? turns[0] + 2 * Math.PI : turns[k + 1]) - turns[k] - target;
+        for (let k = 0; k < deg; k++) pulls[k] = 2 * gap((k + deg - 1) % deg) - 2 * gap(k);
+        // Bonds at exactly one angle could be sorted either way: each takes the mean of their pulls, as a measured
+        // gradient finds, so a symmetric drawing stays so.
+        for (let k = 0; k < deg; ) {
+          let e = k + 1, sum = pulls[k];
+          for (; e < deg && turns[e] === turns[k]; e++) sum += pulls[e];
+          for (let q = k; q < e; q++) push(i, turnAtoms[q], sum / (e - k));
+          k = e;
+        }
+        continue;
+      }
+      const a = angles[i], goal = goals[i];
+      for (let k = 0; k < a.length; k += 2) {
+        const v1 = a[k], v2 = a[k + 1], x1 = pos[2 * v1] - ix, y1 = pos[2 * v1 + 1] - iy, x2 = pos[2 * v2] - ix, y2 = pos[2 * v2 + 1] - iy;
+        const alpha = Math.atan2(x1 * y2 - y1 * x2, x1 * x2 + y1 * y2);
+        const target = straight[i] ? (alpha > 0 ? Math.PI : -Math.PI) : alpha < 0 ? -goal[k >> 1] : goal[k >> 1];
+        // At exactly 0 (two atoms on one point) the target flips between +goal and -goal: the push is the mean of both
+        // sides, none, as a measured gradient finds, so a drawing laid out symmetrically stays so ([Rh(cod)Cl]2).
+        const c = alpha === 0 ? 0 : 2 * (alpha - target);
+        push(i, v2, c); push(i, v1, -c);
+      }
+    }
+    for (const v of uniq) {
+      const m = moves.get(v)!;
+      let gx = 0, gy = 0;
+      for (let k = 0; k < m.length; k += 3) { const u = m[k], c = m[k + 1], s = m[k + 2]; gx += ga[2 * u] * c + ga[2 * u + 1] * s; gy += ga[2 * u + 1] * c - ga[2 * u] * s; }
+      grads[2 * v] = gx; grads[2 * v + 1] = gy;
+    }
   };
 
   const B = base.length, g = new Float64Array(2 * B), grads = new Float64Array(2 * n), start = new Float64Array(2 * n), energies = new Float64Array(HALVINGS + 1);
   const step = (by: number) => { for (let j = 0; j < B; j++) { const b = 2 * base[j]; pos[b] -= g[2 * j] * by; pos[b + 1] -= g[2 * j + 1] * by; } };
-  // Once the atoms move less than 1% of a bond a round, each step follows conjugate gradients (Polak–Ribière), as plain
-  // gradient steps creep along a long valley: the last round's gradient and direction. A conjugate step that finds
-  // nothing lower starts again from the gradient. (Conjugate steps from the start can carry a tangled drawing, such as
-  // a porphyrin with a pyrrole folded in, into a worse shape.)
-  const last = new Float64Array(2 * B), dir = new Float64Array(2 * B);
-  let lastLen = 0, settling = false;
+  // Once the atoms move less than 1% of a bond a round, each step follows L-BFGS: the last MEMORY steps and how the
+  // gradient changed over each give the valley's shape, so a step goes along a long valley where plain gradient
+  // steps creep. A step that finds nothing lower forgets them and starts again from the gradient. (Such steps from the
+  // start can carry a tangled drawing, such as a porphyrin with a pyrrole folded in, into a worse shape.)
+  const dir = new Float64Array(2 * B), was = new Float64Array(2 * B), moved = new Float64Array(2 * B), change = new Float64Array(2 * B), alphas = new Float64Array(MEMORY);
+  // The steps (ms) and gradient changes (my), MEMORY of each in a ring: the oldest is at `oldest`, `held` in all.
+  const ms = Array.from({ length: MEMORY }, () => new Float64Array(2 * B)), my = Array.from({ length: MEMORY }, () => new Float64Array(2 * B)), rhos = new Float64Array(MEMORY);
+  let oldest = 0, held = 0;
+  const slot = (k: number) => (oldest + k) % MEMORY;
+  let settling = false, curved = false, known = false;
+  const dot = (a: Float64Array, b: Float64Array) => { let r = 0; for (let j = 0; j < a.length; j++) r += a[j] * b[j]; return r; };
+  // Whether the close pairs (collect) still hold every pair within a bond: the line search's list does, after a step no
+  // longer than the one it was made for, so a round needs only that one search.
+  let paired = false;
   update();
   let work = n * n;
   for (let round = 0; round < rounds; round++) {
-    collect(reach * H);
+    if (!paired) collect(reach * H);
     work += gradWork();
-    for (const v of uniq) [grads[2 * v], grads[2 * v + 1]] = diff(v);
-    let len = 0, over = 0;
-    base.forEach((v, j) => { g[2 * j] = grads[2 * v]; g[2 * j + 1] = grads[2 * v + 1]; len += g[2 * j] ** 2 + g[2 * j + 1] ** 2; over += g[2 * j] * last[2 * j] + g[2 * j + 1] * last[2 * j + 1]; });
-    const beta = settling && lastLen ? Math.max(0, (len - over) / lastLen) : 0;
-    let down = 0, size = 0;
-    for (let j = 0; j < 2 * B; j++) { dir[j] = g[j] + beta * dir[j]; down += dir[j] * g[j]; }
-    if (!(down > 0)) dir.set(g);
-    last.set(g);
-    lastLen = len;
+    gradient();
+    base.forEach((v, j) => { g[2 * j] = grads[2 * v]; g[2 * j + 1] = grads[2 * v + 1]; });
+    // The last step and how the gradient changed over it.
+    if (settling && known) {
+      let sy = 0;
+      for (let j = 0; j < 2 * B; j++) { change[j] = g[j] - was[j]; sy += moved[j] * change[j]; }
+      if (sy > 1e-30) {
+        const at = held < MEMORY ? slot(held) : oldest;
+        ms[at].set(moved);
+        my[at].set(change);
+        rhos[at] = 1 / sy;
+        if (held < MEMORY) held++; else oldest = (oldest + 1) % MEMORY;
+      }
+    }
+    was.set(g);
+    known = true;
+    dir.set(g);
+    curved = settling && held > 0;
+    if (curved) {
+      for (let k = held - 1; k >= 0; k--) { const at = slot(k), s = ms[at], y = my[at], a = rhos[at] * dot(s, dir); alphas[k] = a; for (let j = 0; j < 2 * B; j++) dir[j] -= a * y[j]; }
+      const newest = slot(held - 1), scale = dot(ms[newest], my[newest]) / dot(my[newest], my[newest]);
+      for (let j = 0; j < 2 * B; j++) dir[j] *= scale;
+      for (let k = 0; k < held; k++) { const at = slot(k), s = ms[at], y = my[at], b = rhos[at] * dot(y, dir); for (let j = 0; j < 2 * B; j++) dir[j] += (alphas[k] - b) * s[j]; }
+      if (!(dot(dir, g) > 0)) { dir.set(g); curved = false; held = oldest = 0; }
+    }
+    let size = 0;
     for (let j = 0; j < 2 * B; j++) size += dir[j] ** 2;
     const factor = Math.min(T / Math.sqrt(size), 1);
     if (!Number.isFinite(factor)) break;
@@ -470,23 +552,27 @@ function pass(xy: Float64Array, bonds: readonly (readonly [number, number, numbe
     for (let v = 0; v < n; v++) far = Math.max(far, Math.hypot(pos[2 * v] - start[2 * v], pos[2 * v + 1] - start[2 * v + 1]));
     pos.set(start);
     collect(far * (1 + 1e-9));
+    paired = true;
     // A pass that has done its work (or reaches the deadline) stops its search with the best step yet.
     let tried = 0, best = 0;
     while (tried <= HALVINGS) {
       step(SHRINK[tried]);
       update();
       energies[tried] = energy();
-      work += 1.5 * evalCost + 0.5 * starts[n];
+      work += 1.5 * evalCost + 0.5 * pairs;
       pos.set(start);
       if (energies[tried] < energies[best]) best = tried;
+      else if (best && tried > best) break; // past the lowest point: smaller steps only climb back
       if (++tried > 1 && (work > budget || performance.now() > deadline)) break;
     }
     if (!best) {
-      if (!beta) break;
-      [lastLen, round] = [0, round - 1];
-      dir.fill(0);
+      if (!curved) break;
+      held = oldest = 0;
+      known = false;
+      round--;
       continue;
     }
+    for (let j = 0; j < 2 * B; j++) moved[j] = -g[j] * SHRINK[best];
     step(SHRINK[best]);
     update();
     if (far * SHRINK[best] < 0.01 * T) settling = true;

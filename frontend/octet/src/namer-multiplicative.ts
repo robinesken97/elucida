@@ -20,7 +20,7 @@
 // pyridine-2,6-diyl. Branch components are numbered from the end nearest the unit and cite the locant towards the
 // centre first: oxybis(ethane-2,1-diyl). Where the rules leave a choice of form, the one OPSIN reads: azanylylidene
 // and methanylylidene for -N= and -CH= (salen ligands), bis(oxy) and dinitrilo.
-import { Namer, CARBON_GROUP, MULT, MULT_COMPLEX, alphaKey, assemblePrefixes, chainStem, citedLabels, enclose, joinPrefixes, substituted, times, type Kind, type Name } from "./namer.ts";
+import { Namer, CARBON_GROUP, MULT, MULT_COMPLEX, alphaKey, assemblePrefixes, chainStem, citedLabels, compare, enclose, joinPrefixes, locantsOf, substituted, times, type Kind, type Name } from "./namer.ts";
 import { groupVariant } from "./namer-hetero.ts";
 
 type Cand = { atoms: number[]; ring: boolean; groups: number; subs: number; assembly?: { rings: [number[], number[]]; junction: [number, number] } };
@@ -33,15 +33,24 @@ type Branch = { text: string; units: number[]; unit?: boolean; plain?: boolean }
 type Named = { text: string; order: Valence[]; plain?: boolean };
 const SIMPLE_HET = new Set(["oxy", "sulfanediyl", "sulfinyl", "sulfonyl", "selanediyl", "tellanediyl", "disulfanediyl", "trisulfanediyl", "diselanediyl", "peroxy", "azanediyl", "nitrilo", "methylene", "carbonyl", "carbonothioyl", "methanetriyl", "methanetetrayl", "silanediyl"]);
 
-const compare = (a: number[], b: number[]) => {
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if (a[i] === undefined) return -1;
-    if (b[i] === undefined) return 1;
-    if (a[i] !== b[i]) return a[i] - b[i];
+// The atoms on no unit, in connected parts, each with the units it touches.
+function restParts(n: Namer, unitOf: Map<number, number>): { atoms: number[]; units: Set<number> }[] {
+  const part = new Map<number, number>(), parts: { atoms: number[]; units: Set<number> }[] = [];
+  for (let s = 0; s < n.n; s++) {
+    if (unitOf.has(s) || part.has(s)) continue;
+    const p = { atoms: [s], units: new Set<number>() }, stack = [s];
+    part.set(s, parts.length);
+    while (stack.length) {
+      const i = stack.pop()!;
+      for (const j of n.adj[i]) {
+        if (unitOf.has(j)) p.units.add(unitOf.get(j)!);
+        else if (!part.has(j)) { part.set(j, parts.length); p.atoms.push(j); stack.push(j); }
+      }
+    }
+    parts.push(p);
   }
-  return 0;
-};
-const locantsOf = (name: string) => (name.match(/\d+/g) ?? []).map(Number);
+  return parts;
+}
 
 // Off while substitutively() runs: complexes.ts names ligands substitutively, as its κ terms cite donor atoms by the
 // locants of the parent and its substituent groups, and a multiplying group has neither.
@@ -171,20 +180,7 @@ function attempt(n: Namer, kind: Kind | undefined, skip: Set<number>, units: Can
   }
   // The rest of the molecule in connected parts: a part on one unit is that unit's substituent; the one part on every
   // unit is the multiplying group.
-  const part = new Map<number, number>(), parts: { atoms: number[]; units: Set<number> }[] = [];
-  for (let s = 0; s < n.n; s++) {
-    if (unitOf.has(s) || part.has(s)) continue;
-    const p = { atoms: [s], units: new Set<number>() }, stack = [s];
-    part.set(s, parts.length);
-    while (stack.length) {
-      const i = stack.pop()!;
-      for (const j of n.adj[i]) {
-        if (unitOf.has(j)) p.units.add(unitOf.get(j)!);
-        else if (!part.has(j)) { part.set(j, parts.length); p.atoms.push(j); stack.push(j); }
-      }
-    }
-    parts.push(p);
-  }
+  const parts = restParts(n, unitOf);
   const linkers = parts.filter((p) => p.units.size > 1);
   if (linkers.length !== 1 || linkers[0].units.size !== units.length) return undefined;
   const L = new Set(linkers[0].atoms);
@@ -320,20 +316,7 @@ function ureaUnits(n: Namer, cs: number[]): string | undefined {
     ns.push(nn);
   }
   // The rest in connected parts: one part on every unit (the multiplying group), the others each on one unit.
-  const part = new Map<number, number>(), parts: { atoms: number[]; units: Set<number> }[] = [];
-  for (let s = 0; s < n.n; s++) {
-    if (unitOf.has(s) || part.has(s)) continue;
-    const p = { atoms: [s], units: new Set<number>() }, stack = [s];
-    part.set(s, parts.length);
-    while (stack.length) {
-      const i = stack.pop()!;
-      for (const j of n.adj[i]) {
-        if (unitOf.has(j)) p.units.add(unitOf.get(j)!);
-        else if (!part.has(j)) { part.set(j, parts.length); p.atoms.push(j); stack.push(j); }
-      }
-    }
-    parts.push(p);
-  }
+  const parts = restParts(n, unitOf);
   const linkers = parts.filter((p) => p.units.size > 1);
   if (linkers.length !== 1 || linkers[0].units.size !== cs.length) return undefined;
   const L = new Set(linkers[0].atoms), attach: [number, number][] = [];

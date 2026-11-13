@@ -1,6 +1,7 @@
-// Run: node src/lab.check.ts. The library's Lab group (tools/library/lab.mjs): each lamp and piece of glassware is one
-// integral group of pen curves and lines that goes where it is placed, takes the document's line width, and comes
-// back whole from CDXML and from a .oct file.
+// Run: node src/lab.check.ts. The library's Lab group (tools/library/lab.mjs and glassware.mjs) and its drawn sets (Lab
+// equipment, Biomolecules, Cells, BioArt, Anatomy, Organisms, Bugs, Symbols): each drawing is one integral group of pen curves and lines that goes where it is
+// placed, takes the document's line width, and comes back whole from CDXML and from a .oct file. A membrane in one (a
+// line or curve in the Membrane style) stays out of the group, so a drag on its end makes it longer.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
@@ -10,15 +11,36 @@ import { readOct, writeOct } from "./oct.ts";
 import type { Arrow, Group, Mol } from "./render.ts";
 
 type Item = { name: string; also?: string; atoms: unknown[]; bonds: unknown[]; arrows: Arrow[]; groups: Group[]; icon: number[]; mol?: Mol };
-const library: { name: string; items: Item[] }[] = JSON.parse(readFileSync(new URL("./library.json", import.meta.url), "utf8"));
+// Both files: the sets read at start and the ones loaded later (library.ts loadMore), Lab's later items joined to it.
+const json = (file: string) => JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8"));
+const library: { name: string; items: Item[] }[] = json("./library.json");
+for (const set of (json("./library-more.json") as { sets: { name: string; items: Item[] }[] }).sets) {
+  const have = library.find((c) => c.name === set.name);
+  if (have) have.items.push(...set.items); else library.push(set);
+}
 const all = library.find((c) => c.name === "Lab")!;
 assert.deepEqual(all.items.map((t) => t.name), ["Light bulb", "LED", "Round-bottom flask", "Beaker", "Conical flask", "Reflux condenser", "Separatory funnel", "Test tube",
-  "Schlenk flask", "Vial", "Syringe", "Chromatography column", "Heating mantle", "Hotplate stirrer", "Stirrer bar", "TLC plate"]);
+  "Schlenk flask", "Vial", "Syringe", "Chromatography column", "Heating mantle", "Hotplate stirrer", "Stirrer bar", "TLC plate",
+  "Two-neck flask", "Three-neck flask", "Pear-shaped flask", "Volumetric flask", "Büchner flask", "Büchner funnel", "Filter funnel", "Dropping funnel",
+  "Liebig condenser", "Vigreux column", "Dean-Stark trap", "Distillation head", "Claisen adapter", "Receiver adapter", "Thermometer", "Measuring cylinder",
+  "Burette", "Pasteur pipette", "Drying tube", "Balloon", "Bubbler", "Watch glass", "Crystallising dish", "Ice bath", "Desiccator", "Retort stand",
+  "Bunsen burner", "NMR tube", "Cuvette", "Schlenk line", "Photoreactor"]);
+// The illustration sets drawn the same way (tools/library/equipment.mjs and bio.mjs): checked as the Lab group is.
+const DRAWN = ["Lab equipment", "Biomolecules", "Cells", "BioArt", "Anatomy", "Organisms", "Bugs", "Symbols"];
+for (const name of DRAWN) assert.ok(library.find((c) => c.name === name)?.items.length, `the ${name} set`);
+// The library shows Lab and the drawn sets as Clip art, and every other set as Structures (library.ts ART_SETS).
+{
+  const { LIBRARY, ART_SETS, loadMore } = await import("./library.ts");
+  await loadMore();
+  for (const c of LIBRARY) assert.equal(ART_SETS.has(c.name), ["Lab", ...DRAWN].includes(c.name), `${c.name} is ${ART_SETS.has(c.name) ? "" : "not "}clip art (a drawn set goes in DRAWN)`);
+}
+// The rest of an apparatus (issue 98): these four, and the Lab group's Schlenk line and photoreactor.
+assert.deepEqual(library.find((c) => c.name === "Lab equipment")!.items.slice(-4).map((t) => t.name), ["Rotary evaporator", "Syringe pump", "Fraction collector", "Spectrometer light path"]);
 // The TLC plate is Octet's own TLC object (the TLC tool's), so its lanes and spots stay editable.
 const plate = all.items.find((t) => t.name === "TLC plate")!.mol!;
 assert.deepEqual(plate.shapes?.map((x) => [x.kind, x.tlc?.lanes]), [["tlc", 3]]);
 assert.equal(plate.atoms.length + (plate.arrows?.length ?? 0), 0);
-const lab = { items: all.items.filter((t) => !t.mol) };
+const lab = { items: [...all.items.filter((t) => !t.mol), ...library.filter((c) => DRAWN.includes(c.name)).flatMap((c) => c.items)] };
 
 const box = (arrows: Arrow[]) => {
   const qs = arrows.flatMap((a) => (a.curve ? a.curve.points.map((p) => p.at) : [a.from, a.to])), xs = qs.map((q) => q[0]), ys = qs.map((q) => q[1]);
@@ -31,6 +53,7 @@ const sameArrow = (a: Arrow, b: Arrow, d: number) => {
   assert.equal(!!b.curve?.closed, !!a.curve?.closed);
   assert.equal(b.fill, a.fill);
   assert.equal(b.colour?.toUpperCase(), a.colour?.toUpperCase());
+  assert.equal(b.style, a.style);
   const qs = (x: Arrow) => (x.curve ? x.curve.points.flatMap((p) => [p.at, p.c1 ?? p.at, p.c2 ?? p.at]) : [x.from, x.to]);
   const [p, q] = [qs(a), qs(b)];
   assert.equal(q.length, p.length);
@@ -42,7 +65,8 @@ for (const t of lab.items) {
   // Drawn with Octet's own objects, all in one group, centred like every template.
   assert.equal(t.atoms.length + t.bonds.length, 0, t.name);
   assert.ok(t.arrows.every((a) => a.kind === "curve" || a.kind === "line"), t.name);
-  assert.deepEqual(t.groups.map((g) => [g.atoms.length, [...g.items].sort((x, y) => x - y), g.integral]), [[0, t.arrows.map((a) => a.id).sort((x, y) => x - y), true]], t.name);
+  const grouped = t.arrows.filter((a) => a.style !== "membrane").map((a) => a.id).sort((x, y) => x - y);
+  assert.deepEqual(t.groups.map((g) => [g.atoms.length, [...g.items].sort((x, y) => x - y), g.integral]), grouped.length ? [[0, grouped, true]] : [], t.name);
   const [x0, y0, x1, y1] = box(t.arrows);
   assert.ok(near((x0 + x1) / 2, 0, 0.002) && near((y0 + y1) / 2, 0, 0.002), `${t.name} is centred`);
   // Sized against each other: a flask 2 to 5.5 bond lengths tall, a stirrer bar a third of one across.
@@ -55,6 +79,17 @@ for (const t of lab.items) {
   // Its icon draws some of its lines (never a fill), and a detailed item leaves its fine parts out.
   assert.ok(t.icon.length && t.icon.every((id) => t.arrows.some((a) => a.id === id && !a.fill)), t.name);
   if (["Light bulb", "LED", "Reflux condenser"].includes(t.name)) assert.ok(t.icon.length < t.arrows.filter((a) => !a.fill).length, t.name);
+  // Where two lines end at one point and no third does, they run on there as one line (the two halves of a drawing of
+  // one line), so the join is smooth. Any other two lines that meet end to end are drawn as one, turning at the join.
+  const ends = t.arrows.filter((a) => !a.fill && !a.curve?.closed).flatMap((a) => {
+    const ps = a.curve?.points ?? [{ at: a.from }, { at: a.to }], f = ps[0], l = ps[ps.length - 1], fine = !t.icon.includes(a.id);
+    const out = (p: [number, number], q: [number, number]) => { const n = Math.hypot(p[0] - q[0], p[1] - q[1]); return [(p[0] - q[0]) / n, (p[1] - q[1]) / n]; };
+    return [{ fine, at: f.at, out: out(f.at, f.c2 ?? ps[1].at) }, { fine, at: l.at, out: out(l.at, l.c1 ?? ps[ps.length - 2].at) }];
+  });
+  if (!all.items.slice(0, 16).includes(t)) for (const e of ends) { // not the 16 Lab items 1.1 shipped, which stay as they were
+    const [p, q, more] = ends.filter((x) => near(x.at[0], e.at[0], 1e-6) && near(x.at[1], e.at[1], 1e-6));
+    if (q && !more && p.fine === q.fine) assert.ok(t.arrows.length === 2 && p.out[0] * q.out[0] + p.out[1] * q.out[1] < -0.999, `${t.name}: two lines meet at ${e.at}`);
+  }
 
   // Placed at a point, its middle is there, with new ids in a new group.
   const placed = addTemplate(addRing(EMPTY, 6, false, { point: [-6, 0] }), mol, { point: [10, 5] });
@@ -63,8 +98,8 @@ for (const t of lab.items) {
   assert.ok(near((a0 + a1) / 2, 10, 0.002) && near((b0 + b1) / 2, 5, 0.002), `${t.name} goes where it is placed`);
   // It keeps its way up: every point moves by the same step, so a lamp's rays stay above its glass.
   placed.arrows!.forEach((a, i) => assert.ok(near(a.from[0], t.arrows[i].from[0] + 10) && near(a.from[1], t.arrows[i].from[1] + 5), `${t.name} keeps its way up`));
-  assert.equal(placed.groups?.length, 1);
-  assert.deepEqual(new Set(placed.groups![0].items), ids);
+  assert.equal(placed.groups?.length ?? 0, t.groups.length);
+  if (t.groups.length) assert.deepEqual(new Set(placed.groups![0].items), new Set(placed.arrows!.filter((a) => a.style !== "membrane").map((a) => a.id)));
   // A click on a bond or atom with it in hand puts it at the click, not at the drawing's origin.
   const onBond = addTemplate(placed, mol, { bond: 0, point: [20, -5] }), mine = onBond.arrows!.filter((a) => !ids.has(a.id));
   const [c0, d0, c1, d1] = box(mine);
@@ -75,15 +110,17 @@ for (const t of lab.items) {
   assert.deepEqual(read.lost, {}, t.name);
   assert.equal(read.mol.atoms.length, 6);
   assert.equal(read.mol.arrows?.length, placed.arrows!.length, `${t.name}: every object comes back`);
-  // The writer may put the fills first (they draw behind): each object matches the nearest of its kind that came back.
-  const first = (a: Arrow) => a.curve?.points[0].at ?? a.from, gap = (a: Arrow, b: Arrow) => Math.hypot(first(a)[0] - first(b)[0], first(a)[1] - first(b)[1]);
+  // The writer may put the fills first (they draw behind): each object matches the nearest of its kind that came back,
+  // by all its points (two halves of one outline can start at the same point).
+  const pts = (a: Arrow) => a.curve?.points.flatMap((q) => [q.at, q.c1 ?? q.at, q.c2 ?? q.at]) ?? [a.from, a.to];
+  const gap = (a: Arrow, b: Arrow) => pts(a).reduce((t, q, k) => t + Math.hypot(q[0] - pts(b)[k][0], q[1] - pts(b)[k][1]), 0);
   for (const a of placed.arrows!) {
     const like = read.mol.arrows!.filter((b) => b.kind === a.kind && !!b.fill === !!a.fill && (b.curve?.points.length ?? 2) === (a.curve?.points.length ?? 2)).sort((p, q) => gap(a, p) - gap(a, q));
     sameArrow(a, like[0] ?? assert.fail(`${t.name}: a ${a.kind} is lost`), 0.002);
   }
-  assert.equal(read.mol.groups?.length, 1, `${t.name}: one group`);
-  assert.equal(read.mol.groups![0].items.length, placed.arrows!.length);
-  assert.ok(read.mol.groups![0].integral, "a click picks all of it, as ChemDraw's clip art");
+  assert.equal(read.mol.groups?.length ?? 0, t.groups.length, `${t.name}: its group`);
+  if (t.groups.length) assert.equal(read.mol.groups![0].items.length, t.groups[0].items.length);
+  if (t.groups.length) assert.ok(read.mol.groups![0].integral, "a click picks all of it, as ChemDraw's clip art");
   // A .oct file gives it back as it was.
   const oct = readOct(writeOct(placed, DEFAULT_STYLE)).mol;
   assert.equal(oct.arrows?.length, placed.arrows!.length);
@@ -92,4 +129,7 @@ for (const t of lab.items) {
 }
 // Search words for the names other labs use.
 assert.match(lab.items.find((t) => t.name === "Conical flask")!.also ?? "", /Erlenmeyer/);
-console.log(`lab.check: ${lab.items.length} lab templates place, keep one line width and round-trip through CDXML and .oct ok`);
+// Every name in the drawn sets is its own, so the library's search finds each one.
+const names = lab.items.map((t) => t.name);
+assert.equal(new Set(names).size, names.length, "names used once");
+console.log(`lab.check: ${lab.items.length} drawn templates (Lab and the ${DRAWN.length} drawn sets) place, keep one line width and round-trip through CDXML and .oct ok`);

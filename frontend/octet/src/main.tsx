@@ -11,6 +11,8 @@ import App from "./App";
 import { watchErrors } from "./crashlog";
 
 watchErrors();
+// In development the app measures its own controls and says so in the console when they do not match (lookwatch.ts).
+if (import.meta.env.DEV) void import("./lookwatch").then((m) => m.watchLook());
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

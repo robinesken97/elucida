@@ -65,6 +65,7 @@ Why Instrument Sans: it is a clean, precise grotesque with the polish of San Fra
 - 4px base grid. Toolbars use `space-2` gaps, panels `space-4` padding.
 - Controls use `radius-sm` (6px). Buttons and popovers `radius-md`. Panels and dialogs `radius-lg`.
 - One elevation only: `shadow-float`, for floating palettes and menus. Panels sit flat, divided by `hairline`.
+  A knob (switch, slider, colour picker) has `shadow-knob` under it, so it shows on any fill.
 - Every control shows `shadow-focus` on keyboard focus.
 - Motion is short and soft: 150–200ms ease-out fades and slides. No bounce, no spring overshoot. Use the motion
   tokens (`motion-fast`, `motion`, `motion-slow`, `ease-out`), never a duration or curve typed by hand. Whatever
@@ -72,6 +73,81 @@ Why Instrument Sans: it is a clean, precise grotesque with the polish of San Fra
   One exception, from Sam (16 October 2026): dragging an option onto the toolbar. The item settles into
   its slot and the other icons ripple a 2px bounce. It gives toolbar customising some character; it
   never touches the drawing. Reduced motion turns it off.
+
+## Controls
+
+Each kind of control has one look, on every page and in every panel. The values are tokens (`tokens.json`: `size`, `state`, `layer`, `radius`, `spacing`). `src/ui.check.ts` fails the test run if a value is typed by hand.
+
+### Size
+
+| Token | Height | Use |
+| --- | --- | --- |
+| `size-action` | 18px | A small action on an item: the X of a pill, a tab or a chip, the remove and keep badges |
+| `size-control-sm` | 24px | A panel's Minimise, Full screen and Close, a button in a notice or a table row, a pill |
+| `size-control` | 28px | Every button with text, field, select and segmented control |
+| `size-row` | 30px | A row in a list (Actions, Settings' sidebar, a list menu), and the chips in the Actions panel |
+| `size-tool` | 32px | Toolbar tools, the Actions panel's icon buttons, the pills on the canvas (Export, Feedback, Actions) |
+| `size-cell` | 36px | A menu option and a command palette row |
+
+Controls in one row have one height. A new control takes the height of its kind from this table.
+
+The segments of one segmented control have one width: the width of the widest segment. Tabs are segments. The + at the end of the tabs is a segment too, as wide as a tab.
+
+### Shape, spacing and layers
+
+- Corners are a `radius` token. Marks under 12px use `radius-2xs`.
+- Every gap, padding and margin is a `space` token. 1px and 2px are lines and can be typed.
+- A `z-index` is a `z-` token (`layer` in `tokens.json`, low to high). Inside one component, a small number puts a part in front of or behind its siblings.
+
+### Fill
+
+- A field is a well: `canvas` fill, `hairline` edge. Fields are selects, number fields, search fields and segmented controls.
+- A button with an edge has the `surface-raised` fill.
+- A button with no edge is clear.
+
+### States
+
+| State | Look |
+| --- | --- |
+| Hover | `surface-sunken` fill and `ink` text. On a sunken ground the fill is `hairline`. The rule is inside `@media (hover: hover) and (pointer: fine)` |
+| Press | The control scales to `press` (0.97). A control of 24px or less uses `press-small` (0.92). A full-width row or a tile uses `press-large` (0.98) |
+| Focus | `shadow-focus` |
+| Selected, on, current | `brand-mist` fill and `link` text. A switch and a tick box are on with the `brand` fill |
+| Disabled | Opacity `disabled` (0.45). Nothing else changes |
+
+Hover, press and a change of state fade over `motion-fast` on every button. A row in a list or a menu has the press only, so its highlight follows the pointer with no delay.
+
+A toggle that sits beside fields and segmented controls (the Spectrum and Mass spec panels) is a segmented control of one: a well, with a `brand-mist` segment inside it when it is on. Chips, tools, rows and menu options fill their whole shape when they are on.
+
+A tab that can close has the same room on each side of its name. The X shows in the room on the right when the pointer or the focus is on the tab. The name stays in the middle and the X never covers it.
+
+### Small actions
+
+- A panel's own controls (Minimise, Full screen, Close) are 24px, clear, with `radius-sm` corners.
+- A small action in a row (forget a name, hide a problem, the X of a pill or a tab) is 18px, clear, with `radius-sm` corners.
+- A small action on a tile, a key or a menu option (remove, keep) is an 18px circle with the `surface-raised` fill and a `hairline` edge, so it shows on any content.
+- The button that clears a search field is a 16px filled circle.
+
+### Shortcuts
+
+A shortcut beside a command is plain 11px text in `ink-faint`. Only the tutorial card draws a key cap, because it shows a key to push.
+
+### How overlays come and go
+
+- An overlay comes in from scale 0.97 and from 4px away at most. It goes out to 0.98.
+- A glyph that pops (the Select tool, a carried option, a tick) starts at 0.85.
+- Menus, lists and panels use `motion-fast`. Bars and panes use `motion`. Dialogs, Settings and the tutorial card use `motion-slow`. Everything goes out on `motion-fast`.
+- Motion uses `transform`, `translate` and `opacity`. `src/ui.check.ts` lists the few controls that change layout as they move, each with its reason.
+
+### Before you add or change a control
+
+1. Find the control that does the same job. Use its component or its class.
+2. Take every size, corner, space, colour, shadow and time from a token.
+3. Run the app. Measure the new control and the controls beside it: height, width of each segment, corners, font, icon size. They must be equal. In development the app measures its own controls (`src/lookwatch.ts`). Read the console: an error that starts with `look:` is a control that does not match.
+4. Look at hover, press, focus, selected and disabled, in the light theme and the dark theme.
+5. Run `npm test`.
+6. On a Mac, run `npm run look` with the dev server running. It loads the app in WebKit (the engine the Mac app runs in), goes through its panels, dialogs and pages, and fails if a control does not match. A browser preview is a different engine: it is not enough alone. When you add a panel, a dialog or a page, add it to `scripts/look/sweep.js`.
+7. Tell Sam what you measured. Do not give Sam a list of things you did not check: check them first.
 
 ## Iconography
 

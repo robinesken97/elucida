@@ -1,6 +1,6 @@
 // The tutorial: a few steps done on a real drawing, as ChemDraw's own tutorials teach (Help > Tutorials: draw a
 // bond, click its end, point at an atom and type O, add a ring to a bond), then Octet's hold to select and move,
-// Clean up and Copy. A card at the top of the page says what to do. Each step is done when the user does it, and the
+// Clean up, keeping a tool on the toolbar, and Copy. A card at the top of the page says what to do. Each step is done when the user does it, and the
 // next one comes. It shows once after the name box, and from Help > Tutorial, always on a Paper drawing (its steps
 // are made for a manuscript's sizes). Skip is at the card's bottom right.
 import { useEffect, useRef, useState } from "react";
@@ -13,9 +13,10 @@ import { keyOf, label } from "./keys";
 import mark from "../brand/logos/octet-mark.svg";
 import markWhite from "../brand/logos/octet-mark-white.svg";
 
-// Counts of what the editor saw happen: a selection area finished, a selection moved, Clean up, Copy.
-export type Seen = { select: number; move: number; clean: number; copy: number };
-export const NOTHING_SEEN: Seen = { select: 0, move: 0, clean: 0, copy: 0 };
+// Counts of what the editor saw happen: a selection area finished, a selection moved, Clean up, an option dragged onto
+// the toolbar, Copy.
+export type Seen = { select: number; move: number; clean: number; pin: number; copy: number };
+export const NOTHING_SEEN: Seen = { select: 0, move: 0, clean: 0, pin: 0, copy: 0 };
 
 type Now = { doc: Mol; selected: number; seen: Seen };
 const ringCount = (m: Mol) => rings({ atoms: m.atoms.map(() => ({ el: "C", charge: 0, h: 0 })), bonds: m.bonds.map((b) => ({ a: b.atoms[0], b: b.atoms[1], order: 1 as const })) }).length;
@@ -30,6 +31,8 @@ const steps = (keys: { clean: string; copy: string }): Step[] => [
   { title: "Hold to select", text: "Press and hold on the page until Select takes over. Then drag a box round the structure.", done: (n, f) => n.seen.select > f.seen.select && n.selected > 0 },
   { title: "Hold to move", text: "Press and hold on the selected structure. Then drag it to a new place.", done: (n, f) => n.seen.move > f.seen.move },
   { title: "Tidy", text: <>Press <kbd>{keys.clean}</kbd> to clean up the structure.</>, key: keys.clean, done: (n, f) => n.seen.clean > f.seen.clean },
+  // An option from a tool's menu, dragged onto the toolbar, stays there (Sam, 12 November 2026).
+  { title: "Your toolbar", text: "Hold the Arrow tool until its menu opens. Drag an arrow from the menu onto the toolbar. It stays there.", tool: "arrow", done: (n, f) => n.seen.pin > f.seen.pin },
   { title: "Share", text: <>Press <kbd>{keys.copy}</kbd> to copy the drawing. Paste it into Word, PowerPoint or Keynote.</>, key: keys.copy, done: (n, f) => n.seen.copy > f.seen.copy },
 ];
 

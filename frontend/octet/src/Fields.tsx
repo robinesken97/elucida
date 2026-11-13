@@ -48,6 +48,22 @@ export function NumberField({ value, unit, label, onChange, min = 0.001, max = 1
   );
 }
 
+// A line of text, used on Return or when the field is left (as a lazy NumberField), so a word typed is one change.
+export function TextField({ value, label, onChange }: { value: string; label: string; onChange: (text: string) => void }) {
+  const [text, setText] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setText(value); }, [value]);
+  return (
+    <span className="unit-field text">
+      <input aria-label={label} value={text} maxLength={200} spellCheck={false}
+        onFocus={() => { focused.current = true; }}
+        onBlur={() => { focused.current = false; if (text !== value) onChange(text); }}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.blur(); } }} />
+    </span>
+  );
+}
+
 // A short choice, as a row of buttons: one is on (or none, when the value is none of them; Tab then reaches the
 // first). Left and Right move along it. An option marked off is dimmed and skipped.
 export function Segmented<T extends string>({ label, value, options, onChange, className }: {

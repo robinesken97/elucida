@@ -2,7 +2,7 @@
 // twice, takes a drawing with a project that goes, leaves a thumbnail file behind, reads a damaged or newer store as
 // anything but empty, keeps a colour that is not #RRGGBB, or takes a picture for a thumbnail that is too large; if a
 // drawing's project dots move or lose the projects it is in; if Home's sections lose one, read back wrong or stop
-// pairing New and Templates; or if Home's keys, tooltips or menus change.
+// pairing New and Templates; or if Home's keys, tooltips, menus or selection box change.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
@@ -13,7 +13,7 @@ import {
 import { moveSection, readLayout, rowsOf, SECTIONS } from "./homeLayout.ts";
 import { cover, inputProblem, INPUT_TOO_LARGE, MAX_INPUT, sizeProblem, THUMB_H, THUMB_W } from "./thumbs.ts";
 import { NOT_PICTURE, TOO_MANY_PIXELS } from "./picture.ts";
-import { tileTo } from "./keys.ts";
+import { boxPicks, tileTo } from "./keys.ts";
 
 const T1 = "0123456789abcdef", T2 = "fedcba9876543210", T3 = "00000000000000aa", T4 = "00000000000000bb";
 const A = "/Users/sam/Thesis/aspirin.oct", B = "/Users/sam/Thesis/scheme 1.cdxml", C = "C:\\Users\\sam\\cycle.cdx";
@@ -253,4 +253,26 @@ assert.equal(tileTo("ArrowDown", 0, tiles), 4, "down from New into Recent");
 assert.equal(tileTo("ArrowDown", 1, tiles), 5, "to the nearest tile in the row below");
 assert.equal(tileTo("ArrowDown", 5, tiles), 7, "down from Recent into Projects");
 assert.equal(tileTo("ArrowUp", 7, tiles), 4);
+// A box dragged from Home's background: a plain box takes the drawings it touches only, Shift adds them, ⌘ (Ctrl)
+// turns each one over, and the gaps between tiles take nothing.
+const drawn = [rect(0, 0), rect(200, 0), rect(0, 300)].map((r, k) => ({ ...r, key: `drawing:${k}` })), before = new Set(["drawing:0", "drawing:2"]);
+assert.deepEqual([...boxPicks(rect(100, 50, 200, 40), drawn, before)], ["drawing:0", "drawing:1"], "a plain box takes what it touches, only");
+assert.deepEqual([...boxPicks(rect(100, 50, 200, 40), drawn, before, "add")].sort(), ["drawing:0", "drawing:1", "drawing:2"], "Shift adds");
+assert.deepEqual([...boxPicks(rect(100, 50, 200, 40), drawn, before, "turn")].sort(), ["drawing:1", "drawing:2"], "⌘ turns each one over");
+assert.deepEqual([...boxPicks(rect(160, 150, 30, 100), drawn, before)], [], "a box in the gaps takes nothing");
+assert.deepEqual([...boxPicks(rect(160, 150, 30, 100), drawn, before, "add")].sort(), [...before], "nor drops what Shift keeps");
+// It starts as the canvas's box does: the tools' own hold time, not a copy, and 4 px.
+assert.match(home, /import \{ HOLD_MS \} from "\.\/tools";/, "Home's hold is the canvas's HOLD_MS");
+assert.ok(!/HOLD_MS\s*=/.test(home), "not a copy of it");
+assert.match(home, /setTimeout\(begin, HOLD_MS\)/);
+assert.match(home, /ev\.clientY - e\.clientY\) >= 4\) begin\(\)/, "4 px, as on the canvas");
+assert.match(home, /<rect className="box" /, "the Select tool's box");
+// Escape takes the box away but waits for the release, so its click does not clear the selection Escape put back. A
+// press the browser takes for a scroll (touch) ends the box, so its hold cannot start one later.
+const sweep = home.slice(home.indexOf("const sweep = "), home.indexOf("// ——— The sections as modules"));
+const boxEscape = sweep.slice(sweep.indexOf("const escape = "), sweep.indexOf("\n    addEventListener(", sweep.indexOf("const escape = ")));
+assert.ok(boxEscape.includes("setChosen(before)") && !boxEscape.includes("end("), "Escape puts the selection back and leaves the release to end the box");
+assert.match(sweep, /addEventListener\("pointercancel", away\)/, "a press taken for a scroll ends the box");
+// Remove N does what Delete does, and is a real button with the drawings in its name.
+assert.match(home, /aria-label=\{`Remove \$\{drawings\(pickedCount\)\}`\} onClick=\{\(\) => removePicked\(\)\}/);
 console.log("projects.check: ok");

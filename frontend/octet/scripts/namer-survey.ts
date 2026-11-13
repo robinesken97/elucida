@@ -63,10 +63,11 @@ await chem.ready;
 let otherOrder = 0;
 const cipOf = (smiles: string) => {
   const p = parsed(smiles), m = chem.parseStructure(smiles), cip = chem.cipOf(m), key = (b: { atoms: number[] }) => `${Math.min(...b.atoms)} ${Math.max(...b.atoms)}`;
-  if (m.atoms.length !== p.atoms.length || m.atoms.some((a, i) => a.label !== p.atoms[i].label)) { otherOrder++; throw new Error("atom order"); }
+  // The drawing may add H atoms after the structure's own (a steroid's ring-fusion H, drawn to carry its wedge).
+  if (m.atoms.length < p.atoms.length || m.atoms.some((a, i) => a.label !== (p.atoms[i]?.label ?? "H"))) { otherOrder++; throw new Error("atom order"); }
   const bond = new Map(m.bonds.map((b, k) => [key(b), k]));
   // A drawn double bond always has a geometry; one the SMILES leaves open (Indigo gives it no label) has no E or Z.
-  return { atoms: cip.atoms, bonds: p.bonds.map((b) => (b.cip ? cip.bonds[bond.get(key(b)) ?? -1] : undefined)) };
+  return { atoms: cip.atoms.slice(0, p.atoms.length), bonds: p.bonds.map((b) => (b.cip ? cip.bonds[bond.get(key(b)) ?? -1] : undefined)) };
 };
 // The hydrogens in the input (Indigo's gross formula). A name that reads back wrong for a structure drawn with a
 // different count from the input's is not counted: the drawing is not the input. withHydrogens() below gives each

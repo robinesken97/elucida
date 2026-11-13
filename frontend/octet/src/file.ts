@@ -4,14 +4,15 @@ import { fontName, readGuides, readStyle } from "./docstyle.ts";
 import { readAsset } from "./elucida-assets.ts";
 import { normalise, plainOf, type TextRun } from "./richtext.ts";
 import { rings } from "./rings.ts";
-import { MAX_ANNOTATIONS, MAX_CONTENT, MAX_KEYWORD, OWN_BOND_ATTRS, PROPERTY_ATTRS, readPictureData } from "./cdxml.ts";
-import { oldLigands, tidyGroups } from "./edit.ts";
+import { LIVE_ATTRS, MAX_ANNOTATIONS, MAX_CONTENT, MAX_KEYWORD, OWN_BOND_ATTRS, PROPERTY_ATTRS, readPictureData, readPlasmid, readPlate } from "./cdxml.ts";
+import { oldLigands, settleHydrogens, tidyGroups } from "./edit.ts";
 import { migrateCycles, readBranches, readSteps, type Cycle, type CycleSide, type CycleText } from "./cycle.ts";
 import { readAtomQuery, readBondQuery, readPolymer, readRgroup } from "./query.ts";
-import { ALL_ARROW_KINDS, HBOND, isBracket, ORBITAL_SHAPES, QUADRUPLE, PHASES, SHAPE_KINDS, type Annotation, type CurveFill, type Head, type HeadShape, type Arrow, type ArrowKind, type LineStyle, type OrbitalShape, type Phase, type Shape, type ShapeKind, type Shade, type Curve, type Table, type TableLine, type CellAlign, type Tlc, type Atom, type Bond, type Caption, type Display, type Kept, type Mol, type HeadSize } from "./render.ts";
+import { ALL_ARROW_KINDS, HBOND, isBracket, ORBITAL_SHAPES, QUADRUPLE, PHASES, SHAPE_KINDS, type Annotation, type CurveFill, type Head, type HeadShape, type Arrow, type ArrowKind, type LineStyle, type OrbitalShape, type Phase, type Shape, type ShapeKind, type Shade, type Curve, type Table, type TableLine, type CellAlign, type Atom, type Bond, type Caption, type Display, type Kept, type Mol, type HeadSize } from "./render.ts";
 import { readGrid } from "./stoich.ts";
 import { keyOf, readMeasured, writeMeasured } from "./measured.ts";
 import { readPart, readPlot, type PlotPart } from "./pageplot.ts";
+import { readRisk } from "./riskassess.ts";
 import pkg from "../package.json" with { type: "json" };
 
 export const FORMAT = "octet";
@@ -41,15 +42,15 @@ function innerIn(v: unknown): Mol | undefined {
 }
 
 export function serialize(mol: Mol): string {
-  const atoms = mol.atoms.map((a) => ({ label: a.label, x: round(a.location[0]), y: round(a.location[1]), ...(round(a.location[2] ?? 0) ? { z: round(a.location[2]) } : {}), ...(a.shade ? { shade: true } : {}), ...(a.charge ? { charge: a.charge } : {}), ...(a.text ? { text: a.text } : {}),
+  const atoms = mol.atoms.map((a) => ({ label: a.label, x: round(a.location[0]), y: round(a.location[1]), ...(round(a.location[2] ?? 0) ? { z: round(a.location[2]) } : {}), ...(a.shade ? { shade: true } : {}), ...(typeof a.shade === "number" ? { opacity: a.shade } : {}), ...(a.charge ? { charge: a.charge } : {}), ...(a.text ? { text: a.text } : {}),
     ...(a.text && a.runs && plainOf(a.runs) === a.text ? { runs: a.runs } : {}), ...(a.centre ? { centre: a.centre } : {}),
     ...(a.radical ? { radical: a.radical } : {}), ...(a.isotope ? { isotope: a.isotope } : {}), ...(a.pairs ? { pairs: a.pairs } : {}), ...(a.circled ? { circled: true } : {}), ...(a.partial ? { partial: a.partial } : {}),
-    ...(a.hmark ? { hmark: a.hmark } : {}), ...(a.attach ? { attach: a.attach } : {}), ...(a.bead ? { bead: true } : {}), ...(a.map ? { map: a.map } : {}), ...(a.enhanced ? { enhanced: a.enhanced } : {}), ...(a.colour ? { colour: a.colour } : {}), ...(a.cip ? { cip: true } : {}), ...(a.halo ? { halo: a.halo } : {}), ...(a.circle ? { circle: true } : {}), ...(a.number ? { number: a.number } : {}), ...(a.hiddenNumber ? { hiddenNumber: a.hiddenNumber } : {}), ...(a.shown ? { shown: true } : {}), ...(a.ignoreWarnings ? { ignoreWarnings: true } : {}), ...(a.align ? { align: a.align } : {}), ...(a.labelAngle ? { labelAngle: round(a.labelAngle) } : {}), ...(a.hidden ? { hidden: true } : {}), ...(a.bars ? { bars: true } : {}), ...(a.angles ? { angles: a.angles } : {}), ...(a.chemical === false ? { chemical: false } : {}),
+    ...(a.hmark ? { hmark: a.hmark } : {}), ...(a.attach ? { attach: a.attach } : {}), ...(a.bead ? { bead: true } : {}), ...(a.map ? { map: a.map } : {}), ...(a.enhanced ? { enhanced: a.enhanced } : {}), ...(a.colour ? { colour: a.colour } : {}), ...(a.cip ? { cip: true } : {}), ...(a.halo ? { halo: a.halo } : {}), ...(a.circle ? { circle: true } : {}), ...(a.number ? { number: a.number } : {}), ...(a.hiddenNumber ? { hiddenNumber: a.hiddenNumber } : {}), ...(a.shown ? { shown: true } : {}), ...(a.implicitHCount !== undefined ? { implicitHCount: a.implicitHCount } : {}), ...(a.ignoreWarnings ? { ignoreWarnings: true } : {}), ...(a.align ? { align: a.align } : {}), ...(a.labelAngle ? { labelAngle: round(a.labelAngle) } : {}), ...(a.hidden ? { hidden: true } : {}), ...(a.bars ? { bars: true } : {}), ...(a.angles ? { angles: a.angles } : {}), ...(a.chemical === false ? { chemical: false } : {}),
     ...(a.font ? { font: a.font } : {}), ...(a.size ? { size: a.size } : {}), ...(a.bold ? { bold: true } : {}), ...(a.italic ? { italic: true } : {}), ...(a.underline ? { underline: true } : {}), ...(a.order ? { order: a.order } : {}),
     ...(a.query ? { query: a.query } : {}), ...(a.peaks?.length ? { peaks: a.peaks } : {}), ...(a.inner?.atoms.length ? { inner: innerOut(a.inner) } : {}), ...scaled(a) }));
   const bonds = mol.bonds.map((b) => ({ atoms: b.atoms, type: b.type, ...(b.stereo ? { stereo: b.stereo } : {}), ...(b.display ? { display: b.display } : {}), ...(b.position ? { position: b.position } : {}), ...(b.colour ? { colour: b.colour } : {}), ...(b.halo ? { halo: b.halo } : {}), ...(b.ignoreWarnings ? { ignoreWarnings: true } : {}),
     ...(b.query ? { query: b.query } : {}), ...(b.topology ? { topology: b.topology } : {}), ...(b.rxn ? { rxn: b.rxn } : {}),
-    ...(b.spacing !== undefined ? { spacing: b.spacing } : {}), ...(b.own ? { own: b.own } : {}), ...(b.peaks?.length ? { peaks: b.peaks } : {}), ...(b.ports ? { ports: b.ports } : {}) }));
+    ...(b.spacing !== undefined ? { spacing: b.spacing } : {}), ...(b.line ? { line: b.line } : {}), ...(b.bold ? { bold: b.bold } : {}), ...(b.own ? { own: b.own } : {}), ...(b.peaks?.length ? { peaks: b.peaks } : {}), ...(b.ports ? { ports: b.ports } : {}) }));
   // Captions are saved in id order and arrows in their drawing order; ids are not saved. Conditions name their arrow
   // by its place in the list.
   const arrowList = [...(mol.arrows ?? [])];
@@ -64,14 +65,14 @@ export function serialize(mol: Mol): string {
     ...(a.headSize ? { headSize: { length: round(a.headSize.length), centre: round(a.headSize.centre), width: round(a.headSize.width) } } : {}), ...(a.ratio ? { ratio: round(a.ratio) } : {}), ...(a.shaft ? { shaft: round(a.shaft) } : {}), ...(a.point ? { point: true } : {}), ...scaled(a), ...partOf(a) }));
   // Shapes keep their order in the list, which is the order they are drawn in within their layer (order.ts).
   const shapes = (mol.shapes ?? []).map((x) => ({ kind: x.kind, x1: round(x.from[0]), y1: round(x.from[1]), x2: round(x.to[0]), y2: round(x.to[1]), ...(x.dashed ? { dashed: true } : {}), ...(x.colour ? { colour: x.colour } : {}),
-    ...(x.fill ? { fill: x.fill } : {}), ...(x.shadow ? { shadow: true } : {}), ...(x.side ? { side: x.side } : {}), ...(x.mark ? { mark: x.mark } : {}), ...(x.tlc ? { tlc: x.tlc } : {}), ...(x.table ? { table: x.table } : {}), ...(x.shade ? { shade: x.shade } : {}), ...(x.order ? { order: x.order } : {}),
+    ...(x.fill ? { fill: x.fill } : {}), ...(x.shadow ? { shadow: true } : {}), ...(x.side ? { side: x.side } : {}), ...(x.mark ? { mark: x.mark } : {}), ...(x.tlc ? { tlc: x.tlc } : {}), ...(x.table ? { table: x.table } : {}), ...(x.plasmid ? { plasmid: x.plasmid } : {}), ...(x.shade ? { shade: x.shade } : {}), ...(x.order ? { order: x.order } : {}),
     ...(x.boldLine ? { boldLine: true } : {}), ...(x.angle ? { angle: round(x.angle) } : {}), ...(x.width ? { width: x.width } : {}), ...(x.radius !== undefined ? { radius: x.radius } : {}),
     ...(x.font ? { font: x.font } : {}), ...(x.size ? { size: x.size } : {}), ...(x.bold ? { bold: true } : {}), ...(x.italic ? { italic: true } : {}), ...(x.underline ? { underline: true } : {}), ...(x.ignoreWarnings ? { ignoreWarnings: true } : {}), ...scaled(x),
     ...(x.picture ? { picture: x.picture } : {}), ...(x.elucida ? { elucida: x.elucida } : {}), ...(x.polymer ? { polymer: x.polymer } : {}), ...(x.bracketed ? { bracketed: true } : {}), ...(x.rgroup ? { rgroup: x.rgroup } : {}) }));
   const captions = [...(mol.captions ?? [])].sort((a, b) => a.id - b.id).map((c) => ({
     text: c.text, x: round(c.x), y: round(c.y), ...(c.bold ? { bold: true } : {}), ...(c.italic ? { italic: true } : {}), ...(c.underline ? { underline: true } : {}),
     ...(c.size ? { size: c.size } : {}), ...(c.align ? { align: c.align } : {}), ...(c.under ? { under: c.under } : {}), ...(c.colour ? { colour: c.colour } : {}),
-    ...(c.font ? { font: c.font } : {}), ...(c.runs ? { runs: c.runs } : {}), ...(c.property ? { property: c.property } : {}), ...(c.angle ? { angle: round(c.angle) } : {}), ...(c.order ? { order: c.order } : {}), ...(c.lineHeight ? { lineHeight: c.lineHeight } : {}), ...(c.width ? { width: round(c.width) } : {}), ...(c.chemical === false ? { chemical: false } : {}), ...(c.auto ? { auto: true } : {}),
+    ...(c.font ? { font: c.font } : {}), ...(c.runs ? { runs: c.runs } : {}), ...(c.property ? { property: c.property } : {}), ...(c.angle ? { angle: round(c.angle) } : {}), ...(c.order ? { order: c.order } : {}), ...(c.lineHeight ? { lineHeight: c.lineHeight } : {}), ...(c.width ? { width: round(c.width) } : {}), ...(c.chemical === false ? { chemical: false } : {}), ...(c.auto ? { auto: true } : {}), ...(c.field ? { field: c.field } : {}),
     ...(c.on ? { on: { arrow: arrowList.findIndex((a) => a.id === c.on!.arrow), side: c.on.side } } : {}),
     ...(c.on && c.placed ? { placed: { at: c.placed.at.map(round), arrow: c.placed.arrow.map(round) } } : {}),
     ...(c.cycle ? { cycle: { cycle: cycleList.findIndex((x) => x.id === c.cycle!.cycle), step: c.cycle.step, side: c.cycle.side, ...(c.cycle.branch !== undefined ? { branch: c.cycle.branch } : {}), ...(c.cycle.at !== undefined ? { at: c.cycle.at } : {}), ...(c.cycle.reach !== undefined ? { reach: c.cycle.reach } : {}), ...(c.cycle.off ? { off: c.cycle.off } : {}) } } : {}),
@@ -83,10 +84,10 @@ export function serialize(mol: Mol): string {
     for (const [kind, list] of [["c", captionList], ["a", arrowList], ["s", shapeList], ["y", cycleList]] as const) { const k = (list as { id: number }[]).findIndex((x) => x.id === id); if (k >= 0) return [kind, k]; }
     return undefined;
   };
-  const groups = (mol.groups ?? []).map((g) => ({ atoms: g.atoms, items: g.items.map(ref).filter(Boolean), ...(g.integral ? { integral: true } : {}), ...(g.annotations?.length ? { annotations: g.annotations } : {}), ...(g.plot ? { plot: g.plot } : {}) }));
+  const groups = (mol.groups ?? []).map((g) => ({ atoms: g.atoms, items: g.items.map(ref).filter(Boolean), ...(g.integral ? { integral: true } : {}), ...(g.annotations?.length ? { annotations: g.annotations } : {}), ...(g.plot ? { plot: g.plot } : {}), ...(g.risk ? { risk: g.risk } : {}) }));
   // Stoichiometry grids name their arrow by its place in the list above.
   const grids = (mol.grids ?? []).map((g) => ({ ...g, arrow: arrowList.findIndex((a) => a.id === g.arrow) })).filter((g) => g.arrow >= 0);
-  return JSON.stringify({ format: FORMAT, version: VERSION, app: pkg.version, structure: { atoms, bonds }, ...(arrows.length ? { arrows } : {}), ...(cycles.length ? { cycles } : {}), ...(shapes.length ? { shapes } : {}), ...(captions.length ? { captions } : {}), ...(groups.length ? { groups } : {}), ...(grids.length ? { grids } : {}), ...(mol.fills?.length ? { fills: mol.fills } : {}), ...(mol.annotations?.length ? { annotations: mol.annotations } : {}), ...(mol.style ? { style: mol.style } : {}), ...(mol.guides ? { guides: mol.guides } : {}), ...(mol.spectra?.length ? { spectra: mol.spectra.map(writeMeasured) } : {}) }, null, 1) + "\n";
+  return JSON.stringify({ format: FORMAT, version: VERSION, app: pkg.version, structure: { atoms, bonds }, ...(arrows.length ? { arrows } : {}), ...(cycles.length ? { cycles } : {}), ...(shapes.length ? { shapes } : {}), ...(captions.length ? { captions } : {}), ...(groups.length ? { groups } : {}), ...(grids.length ? { grids } : {}), ...(mol.fills?.length ? { fills: mol.fills } : {}), ...(mol.annotations?.length ? { annotations: mol.annotations } : {}), ...(mol.style ? { style: mol.style } : {}), ...(mol.guides ? { guides: mol.guides } : {}), ...(mol.fields ? { fields: true } : {}), ...(mol.spectra?.length ? { spectra: mol.spectra.map(writeMeasured) } : {}) }, null, 1) + "\n";
 }
 const round = (n: number) => Math.round(n * 1e4) / 1e4;
 // A page spectrum's part (pageplot.ts): its role and where Octet put it. Octet 1.1.0 leaves both out.
@@ -158,29 +159,11 @@ function readTable(v: unknown): Table | undefined {
     ...(t.lines ? { lines: [...new Set(t.lines as TableLine[])] } : {}), ...(t.align ? { align: t.align as CellAlign[] } : {}), ...(t.weight !== undefined ? { weight: t.weight as number } : {}),
   };
 }
-// A TLC plate's lanes and spots, if they are sound.
-function readTlc(v: unknown): Tlc | undefined {
-  const t = v as { lanes?: unknown; spots?: unknown; rf?: unknown; origin?: unknown; front?: unknown; hide?: unknown; ticks?: unknown; transparent?: unknown };
-  const frac = (n: unknown) => n === undefined || (typeof n === "number" && n >= 0 && n <= 0.9), len = (n: unknown) => n === undefined || (typeof n === "number" && n >= 0 && n <= 5);
-  if (typeof t !== "object" || !t || !Number.isInteger(t.lanes) || (t.lanes as number) < 1 || (t.lanes as number) > 40 || !Array.isArray(t.spots) || t.spots.length > 400
-    || !frac(t.origin) || !frac(t.front) || (t.hide !== undefined && !(Array.isArray(t.hide) && t.hide.every((h) => ["origin", "front", "border"].includes(h))))) return undefined;
-  const spots = (t.spots as Record<string, unknown>[]).filter((x) => Number.isInteger(x?.lane) && (x.lane as number) >= 0 && (x.lane as number) < (t.lanes as number) && typeof x.rf === "number" && x.rf >= 0 && x.rf <= 1
-    && (x.colour === undefined || (typeof x.colour === "string" && /^#[0-9a-f]{6}$/i.test(x.colour))) && (x.style === undefined || x.style === "hollow" || x.style === "shaded")
-    && len(x.w) && len(x.h) && len(x.tail) && [x.showRf, x.dashed, x.bold, x.doubled].every((f) => f === undefined || f === true));
-  if (spots.length !== t.spots.length) return undefined;
-  return {
-    lanes: t.lanes as number,
-    spots: spots.map((x) => ({ lane: x.lane as number, rf: x.rf as number, ...Object.fromEntries(["colour", "style", "dashed", "bold", "doubled", "w", "h", "tail", "showRf"].filter((k) => x[k] !== undefined).map((k) => [k, x[k]])) }) as Tlc["spots"][number]),
-    ...(t.rf === true ? { rf: true } : {}), ...(t.origin !== undefined ? { origin: t.origin as number } : {}), ...(t.front !== undefined ? { front: t.front as number } : {}),
-    ...(t.hide ? { hide: t.hide as Tlc["hide"] } : {}), ...(t.ticks === true ? { ticks: true } : {}), ...(t.transparent === true ? { transparent: true } : {}),
-  };
-}
-
 // Throws an Error with a message for the user if the file is not a drawing this version can read.
 export function parse(text: string): Mol {
   let data: unknown;
   try { data = JSON.parse(text); } catch { throw new Error("This file is not an Octet drawing."); }
-  const d = data as { format?: unknown; version?: unknown; app?: unknown; structure?: { atoms?: unknown; bonds?: unknown }; captions?: unknown; arrows?: unknown; style?: unknown; cycles?: unknown; shapes?: unknown; groups?: unknown; grids?: unknown; fills?: unknown; annotations?: unknown; guides?: unknown; spectra?: unknown };
+  const d = data as { format?: unknown; version?: unknown; app?: unknown; structure?: { atoms?: unknown; bonds?: unknown }; captions?: unknown; arrows?: unknown; style?: unknown; cycles?: unknown; shapes?: unknown; groups?: unknown; grids?: unknown; fills?: unknown; annotations?: unknown; guides?: unknown; fields?: unknown; spectra?: unknown };
   if (d?.format !== FORMAT) throw new Error("This file is not an Octet drawing.");
   if (typeof d.version !== "number" || d.version > VERSION) throw new Error("This drawing comes from a newer version of Octet. Update Octet to open it.");
   const atoms = d.structure?.atoms, bonds = d.structure?.bonds;
@@ -197,13 +180,14 @@ export function parse(text: string): Mol {
       || (a.radical !== undefined && !int(a.radical, 0, 3)) || (a.isotope !== undefined && !int(a.isotope, 1, 300)) || (a.pairs !== undefined && !int(a.pairs, 0, 4)) || (a.circled !== undefined && typeof a.circled !== "boolean")
       || (a.partial !== undefined && a.partial !== "+" && a.partial !== "-") || (a.hmark !== undefined && a.hmark !== "dot" && a.hmark !== "dash")
       || (a.attach !== undefined && typeof a.attach !== "boolean" && a.attach !== "diamond" && a.attach !== "star") || (a.bead !== undefined && typeof a.bead !== "boolean") || (a.map !== undefined && !int(a.map, 1, 9999))
-      || (a.enhanced !== undefined && !(typeof a.enhanced === "string" && /^(abs|&[1-9]\d?|or[1-9]\d?)$/.test(a.enhanced))) || badColour(a.colour) || (a.z !== undefined && !num(a.z)) || (a.depth !== undefined && a.depth !== false) || (a.shade !== undefined && a.shade !== true) || (a.cip !== undefined && a.cip !== true) || badColour(a.halo) || badColour(a.fill) || (a.circle !== undefined && a.circle !== true) || (a.shown !== undefined && a.shown !== true)
+      || (a.enhanced !== undefined && !(typeof a.enhanced === "string" && /^(abs|&[1-9]\d?|or[1-9]\d?)$/.test(a.enhanced))) || badColour(a.colour) || (a.z !== undefined && !num(a.z)) || (a.depth !== undefined && a.depth !== false) || (a.shade !== undefined && a.shade !== true) || (a.opacity !== undefined && !(typeof a.opacity === "number" && a.opacity >= 0.01 && a.opacity <= 0.99)) || (a.cip !== undefined && a.cip !== true) || badColour(a.halo) || badColour(a.fill) || (a.circle !== undefined && a.circle !== true) || (a.shown !== undefined && a.shown !== true)
       || [a.number, a.hiddenNumber].some((x) => x !== undefined && !(typeof x === "string" && /^[\w'′*-]{1,8}$/.test(x))) || !isScale(a.scale)
-      // A written label's runs: its text, with only bold, italic, underline and superscript or subscript.
-      || (a.runs !== undefined && (typeof a.text !== "string" || !readRuns(a.runs, a.text)?.every((r) => Object.keys(r).every((k) => ["text", "bold", "italic", "underline", "script"].includes(k)))))) throw new Error("This drawing is damaged.");
+      // A written label's runs: its text, with only bold, italic, underline, superscript or subscript, and colour.
+      || (a.runs !== undefined && (typeof a.text !== "string" || !readRuns(a.runs, a.text)?.every((r) => Object.keys(r).every((k) => ["text", "bold", "italic", "underline", "script", "colour"].includes(k)))))) throw new Error("This drawing is damaged.");
     const atom: Atom = { label: a.label, location: [a.x as number, a.y as number, (a.z as number | undefined) ?? 0] };
     // depth: false (older files: a 3D structure drawn flat) is how such a structure is drawn now.
-    if (a.shade) atom.shade = true;
+    // opacity: an opacity set by hand (the atom's shade), written beside shade: true so that older Octets still read it.
+    if (a.shade) atom.shade = (a.opacity as number | undefined) ?? true;
     if (a.charge) atom.charge = a.charge as number;
     if (a.text) atom.text = a.text as string;
     if (a.runs) atom.runs = readRuns(a.runs, a.text as string);
@@ -223,6 +207,7 @@ export function parse(text: string): Mol {
     if (a.fill) legacy.set(out.atoms.length, a.fill as string);
     if (a.circle) atom.circle = true;
     if (a.shown) atom.shown = true;
+    if (int(a.implicitHCount, 0, 14)) atom.implicitHCount = a.implicitHCount as number;
     if (a.number) atom.number = a.number as string;
     if (a.hiddenNumber) atom.hiddenNumber = a.hiddenNumber as string;
     // Measured multiplets by id: kept when the drawing's spectra have them (below).
@@ -260,10 +245,12 @@ export function parse(text: string): Mol {
   for (const b of bonds as Record<string, unknown>[]) {
     const ends = b?.atoms as unknown[];
     if (!Array.isArray(ends) || ends.length !== 2 || !ends.every((i) => int(i, 0, out.atoms.length - 1)) || ends[0] === ends[1] || !(int(b.type, 1, 4) || b.type === HBOND || b.type === QUADRUPLE) || (b.stereo !== undefined && b.stereo !== 1 && b.stereo !== 6) || (b.display !== undefined && !DISPLAYS.includes(b.display as Display)) || (b.position !== undefined && !["left", "centre", "right"].includes(b.position as string)) || badColour(b.colour) || badColour(b.halo)
-      || (b.spacing !== undefined && !(num(b.spacing) && (b.spacing as number) >= 0 && (b.spacing as number) <= 100)) || (b.own !== undefined && !ownSettings(b.own))) throw new Error("This drawing is damaged.");
+      || (b.spacing !== undefined && !(num(b.spacing) && (b.spacing as number) >= 0 && (b.spacing as number) <= 100)) || badWidth(b.line) || badWidth(b.bold) || (b.own !== undefined && !ownSettings(b.own))) throw new Error("This drawing is damaged.");
     const bond: Bond = { type: b.type as number, atoms: [ends[0] as number, ends[1] as number] };
     if (b.halo) bond.halo = b.halo as string;
     if (b.spacing !== undefined) bond.spacing = b.spacing as number;
+    if (b.line) bond.line = b.line as number;
+    if (b.bold) bond.bold = b.bold as number;
     if (b.own) bond.own = b.own as Record<string, string>;
     if (b.stereo) bond.stereo = b.stereo as number;
     if (b.display) bond.display = b.display as Display;
@@ -298,6 +285,7 @@ export function parse(text: string): Mol {
   }
   if (d.style !== undefined) out.style = readStyle(d.style);
   if (d.guides !== undefined) out.guides = readGuides(d.guides);
+  if (d.fields === true) out.fields = true;
   // Arrows take ids after the captions'.
   const captionCount = Array.isArray(d.captions) ? d.captions.length : 0;
   if (d.arrows !== undefined) {
@@ -305,7 +293,7 @@ export function parse(text: string): Mol {
     out.arrows = (d.arrows as Record<string, unknown>[]).map((a, k): Arrow => {
       const orb = a?.orbital as { shape?: unknown; phase?: unknown } | undefined;
       if (!ALL_ARROW_KINDS.includes(a?.kind as ArrowKind) || ![a.x1, a.y1, a.x2, a.y2].every(num) || (a.bend !== undefined && !(num(a.bend) && Math.abs(a.bend as number) <= 5))
-        || (a.style !== undefined && !["dashed", "bold", "wavy", "doubled"].includes(a.style as string))
+        || (a.style !== undefined && !["dashed", "bold", "wavy", "doubled", "membrane"].includes(a.style as string))
         || (a.start !== undefined && !HEADS.includes(a.start as Head)) || (a.end !== undefined && !HEADS.includes(a.end as Head))
         || (a.head !== undefined && !["solid", "hollow", "angled"].includes(a.head as string)) || (a.fill !== undefined && !["solid", "shaded", "faded"].includes(a.fill as string))
         // A pen curve has points; so may a fragmentation line (its corners), and nothing else.
@@ -356,7 +344,7 @@ export function parse(text: string): Mol {
         || (x.fill !== undefined && x.fill !== "shaded" && x.fill !== "solid" && x.fill !== "faded") || (x.shadow !== undefined && typeof x.shadow !== "boolean")
         || (x.boldLine !== undefined && x.boldLine !== true)
         || (x.side !== undefined && x.side !== "left" && x.side !== "right") || (x.mark !== undefined && !(typeof x.mark === "string" && x.mark.length <= 8))
-        || (x.tlc !== undefined && !readTlc(x.tlc)) || (x.table !== undefined && !readTable(x.table)) || (x.shade !== undefined && !readShade(x.shade))
+        || (x.tlc !== undefined && !readPlate(x.tlc, x.kind === "gel")) || (x.table !== undefined && !readTable(x.table)) || (x.plasmid !== undefined && !readPlasmid(x.plasmid)) || ((x.kind === "plasmid") !== (x.plasmid !== undefined)) || (x.shade !== undefined && !readShade(x.shade))
         || (x.picture !== undefined && !readPictureData(x.picture)) || ((x.kind === "picture") !== (x.picture !== undefined))
         || (x.elucida !== undefined && (x.kind !== "picture" || !readAsset(x.elucida)))
         || (x.angle !== undefined && !(num(x.angle) && Math.abs(x.angle as number) <= 360)) || badWidth(x.width) || (x.radius !== undefined && !(num(x.radius) && (x.radius as number) >= 0 && (x.radius as number) <= 10))
@@ -364,7 +352,7 @@ export function parse(text: string): Mol {
         || [x.bold, x.italic, x.underline].some((v) => v !== undefined && typeof v !== "boolean") || !isScale(x.scale)) throw new Error("This drawing is damaged.");
       return { id: first + k, kind: x.kind as ShapeKind, from: [x.x1 as number, x.y1 as number], to: [x.x2 as number, x.y2 as number], ...(x.dashed ? { dashed: true } : {}), ...(x.colour ? { colour: x.colour as string } : {}),
         ...(x.fill ? { fill: x.fill as "shaded" | "solid" | "faded" } : {}), ...(x.shadow ? { shadow: true } : {}), ...(x.side ? { side: x.side as "left" | "right" } : {}), ...(x.mark ? { mark: x.mark as string } : {}),
-        ...(x.tlc ? { tlc: readTlc(x.tlc)! } : {}), ...(x.table ? { table: readTable(x.table)! } : {}), ...(x.shade ? { shade: readShade(x.shade)! } : {}), ...orderOf(x.order),
+        ...(x.tlc ? { tlc: readPlate(x.tlc, x.kind === "gel")! } : {}), ...(x.table ? { table: readTable(x.table)! } : {}), ...(x.plasmid ? { plasmid: readPlasmid(x.plasmid)! } : {}), ...(x.shade ? { shade: readShade(x.shade)! } : {}), ...orderOf(x.order),
         ...(x.boldLine ? { boldLine: true as const } : {}), ...(x.angle ? { angle: x.angle as number } : {}), ...(x.width ? { width: x.width as number } : {}), ...(x.radius !== undefined ? { radius: x.radius as number } : {}),
         ...(x.font ? { font: x.font as string } : {}), ...(x.size ? { size: x.size as number } : {}), ...(x.bold ? { bold: true as const } : {}), ...(x.italic ? { italic: true as const } : {}), ...(x.underline ? { underline: true as const } : {}),
         ...(x.ignoreWarnings === true ? { ignoreWarnings: true as const } : {}),
@@ -394,8 +382,8 @@ export function parse(text: string): Mol {
       if (!Array.isArray(atoms) || !Array.isArray(items) || !atoms.every((i) => int(i, 0, out.atoms.length - 1)) || (g.integral !== undefined && g.integral !== true)
         || !items.every((r) => Array.isArray(r) && r.length === 2 && typeof r[0] === "string" && lists[r[0]] && int(r[1], 0, lists[r[0]].length - 1))) throw new Error("This drawing is damaged.");
       const annotations = g.annotations === undefined ? undefined : readAnnotations(g.annotations);
-      const plot = g.plot === undefined ? undefined : readPlot(g.plot);
-      return { id: next++, atoms: atoms as number[], items: (items as [string, number][]).map(([kind, k]) => lists[kind][k].id), ...(g.integral ? { integral: true as const } : {}), ...(annotations ? { annotations } : {}), ...(plot ? { plot } : {}) };
+      const plot = g.plot === undefined ? undefined : readPlot(g.plot), risk = g.risk === undefined ? undefined : readRisk(g.risk);
+      return { id: next++, atoms: atoms as number[], items: (items as [string, number][]).map(([kind, k]) => lists[kind][k].id), ...(g.integral ? { integral: true as const } : {}), ...(annotations ? { annotations } : {}), ...(plot ? { plot } : {}), ...(risk ? { risk } : {}) };
     });
   }
   if (d.annotations !== undefined) out.annotations = readAnnotations(d.annotations);
@@ -410,8 +398,9 @@ export function parse(text: string): Mol {
   const known = new Set((out.spectra ?? []).flatMap((s) => s.groups.map((g) => g.id)));
   for (const a of [...out.atoms, ...out.bonds]) if (a.peaks) { const kept = a.peaks.filter((k) => known.has(k)); if (kept.length) a.peaks = kept; else delete a.peaks; }
   // Groups as an edit leaves them: each atom and object once, nested or apart, and two or more things in each. Cycles
-  // as this version keeps them, and π rings from 1.0.x as ligand() orders them.
-  return tidyGroups(migrateCycles(d.app === undefined ? oldLigands(out) : out));
+  // as this version keeps them, and π rings from 1.0.x as ligand() orders them. Hydrogens set by hand only where they
+  // are fewer than usual (settleHydrogens).
+  return settleHydrogens(tidyGroups(migrateCycles(d.app === undefined ? oldLigands(out) : out)));
 }
 
 // Annotations (keyword and content pairs from ChemDraw), checked as the CDXML reader checks them.
@@ -443,7 +432,7 @@ function readCaptions(raw: unknown, out: Mol, num: (v: unknown) => boolean, int:
       || (placed !== undefined && (on === undefined || !pair(placed?.at) || !pair(placed.arrow)))
       || (c.font !== undefined && !fontName(c.font)) || (c.runs !== undefined && readRuns(c.runs, c.text) === undefined)
       || (c.angle !== undefined && !(num(c.angle) && Math.abs(c.angle as number) <= 360))
-      || (c.property !== undefined && !readKept(c.property, PROPERTY_ATTRS, out.atoms.length))) throw new Error("This drawing is damaged.");
+      || (c.property !== undefined && !readKept(c.property, [...PROPERTY_ATTRS, ...LIVE_ATTRS], out.atoms.length))) throw new Error("This drawing is damaged.");
     const caption: Caption = { id: k + 1, text: c.text, x: c.x as number, y: c.y as number };
     if (c.bold) caption.bold = true;
     if (c.italic) caption.italic = true;
@@ -454,7 +443,7 @@ function readCaptions(raw: unknown, out: Mol, num: (v: unknown) => boolean, int:
     if (c.font) caption.font = c.font as string;
     if (c.runs) caption.runs = readRuns(c.runs, c.text);
     if (c.angle) caption.angle = c.angle as number;
-    if (c.property) caption.property = readKept(c.property, PROPERTY_ATTRS, out.atoms.length);
+    if (c.property) caption.property = readKept(c.property, [...PROPERTY_ATTRS, ...LIVE_ATTRS], out.atoms.length);
     Object.assign(caption, orderOf(c.order));
     // Line spacing: variable, or fixed from 1 to 400 pt; anything else is Automatic.
     if (c.lineHeight === "variable" || isSize(c.lineHeight)) caption.lineHeight = c.lineHeight as number | "variable";
@@ -462,6 +451,7 @@ function readCaptions(raw: unknown, out: Mol, num: (v: unknown) => boolean, int:
     if (typeof c.width === "number" && c.width >= 0.5 && c.width <= 1000) caption.width = c.width;
     if (c.chemical === false) caption.chemical = false;
     if (c.auto === true) caption.auto = true;
+    if (typeof c.field === "string" && /^[a-z][a-z0-9:]{0,39}$/.test(c.field)) caption.field = c.field;
     const role = readPart(c.role);
     if (role) caption.role = role;
     if (under) caption.under = under as number[];

@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { readSelectColour, SELECT_DEFAULT, SELECT_TINTS, selectTints } from "./selectcolour.ts";
+import { HIGHLIGHT_COLOURS } from "./docstyle.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const tokensCss = read("../brand/tokens.css"), css = read("./editor.css"), json = JSON.parse(read("../brand/tokens.json"));
@@ -102,7 +103,7 @@ for (const bad of [undefined, null, 7, "", "red", "#abc", "#abcdefg", "#ggg000",
   assert.equal(readSelectColour(bad), SELECT_DEFAULT, `${JSON.stringify(bad)} reads as the default`);
 // Every mark of the selection is drawn in it: the tint under selected objects, the hover, the marquee and lasso, the
 // frame, handles, picked grid cells, TLC spots and lanes, and the rulers' band.
-for (const sel of [".selection-marks circle", ".selection-marks line", ".selection-marks rect", ".selection-marks .arrow-mark", ".group-frame rect", ".box", ".selection-frame", ".resize-handle", ".turn-handle circle", ".handle", ".grid-pick", ".spot-picked", ".lane-picked", ".ruler-edge"])
+for (const sel of [".selection-marks circle", ".selection-marks line", ".selection-marks rect", ".selection-marks .selected-atoms", ".selection-marks .selected-bonds", ".selection-marks .arrow-mark", ".group-frame rect", ".box", ".selection-frame", ".resize-handle", ".turn-handle circle", ".handle", ".grid-pick", ".spot-picked", ".lane-picked", ".ruler-edge"])
   assert.ok(rules.some((r) => r.selector === sel && /:\s*var\(--select\)/.test(r.body)), `${sel} is drawn in the selection colour`);
 for (const sel of [".mark", ".box", ".grid-pick", ".ruler-band"])
   assert.ok(rules.some((r) => r.selector === sel && /fill:\s*var\(--select-tint\)/.test(r.body)), `${sel} is filled with the selection's tint`);
@@ -119,4 +120,21 @@ assert.match(read("./Editor.tsx"), /className=\{[^}]*"editor"\} data-select=\{ow
 // The selection's marks are a tint: the whole layer at 0.28, as in 1.0, with nothing blended.
 assert.match(rule(".selection-marks"), /^\s*opacity:\s*0\.28;\s*$/, "the selection's marks show at 0.28");
 assert.ok(!rules.some((r) => /selection-marks/.test(r.selector) && /mix-blend-mode/.test(r.body)), "the selection is not blended");
+// The spectrum panels and their pills (plan B1.18). A pill reads on any page, as it carries its own surface: its icon
+// (--brand) stands out 3:1 and its name (--ink-muted) and count (--link on --brand-mist) 4.5:1, in both themes. Each
+// peak colour stands out 3:1 from the panel: as it is on the light panel, and mixed 30% toward white on the dark one
+// (Spectrum.tsx lighter, onPanel).
+for (const [name, theme] of [["light", light], ["dark", dark]] as const) {
+  assert.ok(contrast(theme.brand, theme["surface-raised"]) >= 3, `${name}: the pill's icon`);
+  assert.ok(contrast(theme["ink-muted"], theme["surface-raised"]) >= 4.5, `${name}: the pill's name`);
+  assert.ok(contrast(theme.link, theme["brand-mist"]) >= 4.5, `${name}: the pill's count`);
+}
+const spectrumTsx = read("./Spectrum.tsx");
+assert.match(spectrumTsx, /parseInt\(hex\.slice\(i, i \+ 2\), 16\) \* 0\.7 \+ 255 \* 0\.3/, "the dark panel's mix is 30% white");
+const lighter = (hex: string) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.7 + 255 * 0.3).toString(16).padStart(2, "0")).join("")}`;
+for (const peak of ["Blue", "Orange", "Green", "Red", "Purple", "Teal", "Pink", "Gold", "Brown", "Slate"]) {
+  const hex = HIGHLIGHT_COLOURS.find(([n]) => n === peak)![1];
+  assert.ok(contrast(lighter(hex), dark["surface-raised"]) >= 3, `dark: peak ${peak} on the panel is ${contrast(lighter(hex), dark["surface-raised"]).toFixed(2)}:1`);
+}
+for (const use of ["onPanel(p.colours[k])", "fill: onPanel(p.colours[k])", "onPanel(p.groupColour(g.id))"]) assert.ok(spectrumTsx.includes(use), `the panel draws ${use}`);
 console.log("contrast.check: ok");

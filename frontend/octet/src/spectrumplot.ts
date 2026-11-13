@@ -1,7 +1,7 @@
 // A predicted spectrum as the Spectrum panel draws it, and as a figure for the page (Add to drawing): the lines of each
 // ¹H multiplet, the solvent's peaks, the axis ticks and the peak labels. The figure is in bond lengths, y up, with the
 // axis along y = 0 from x = 0 (the high-shift end) to its width.
-import { multiplicity, type Nucleus, type Prediction, type Signal } from "./nmr.ts";
+import { countText, frequency, multiplicity, shiftText, NUCLEI, type Nucleus, type Prediction, type Signal } from "./nmr.ts";
 import type { CurvePoint, Mol } from "./render.ts";
 import { widthOf } from "./arial.ts";
 import { addArrow, addCaption, groupSelection } from "./edit.ts";
@@ -28,31 +28,39 @@ function deuterated(ppm: number, n: number, j: number, mhz: number, total: numbe
   return row.map((h, i) => ({ ppm: ppm + ((i - n) * j) / mhz, h: (h / sum) * total }));
 }
 export type SolventPeak = { name: string; ppm: number; lines: { ppm: number; h: number }[]; broad: boolean };
-// The solvent's own peaks: the residual peak (and water) in ¹H, the deuterated carbons in ¹³C. mhz: the ¹H frequency.
+// The solvent's own peaks: the residual peak (and water) in ¹H, the deuterated carbons in ¹³C; none in ¹⁹F or ³¹P.
+// mhz: the ¹H frequency.
 export function solventPeaks(solvent: string, nucleus: Nucleus, mhz: number): SolventPeak[] {
   const s = SOLVENT_PEAKS[solvent];
-  if (!s) return [];
-  const f = nucleus === "1H" ? mhz : mhz * 0.25145;
+  if (!s || (nucleus !== "1H" && nucleus !== "13C")) return [];
+  const f = frequency(nucleus, mhz);
   return nucleus === "1H"
     ? [...s.h.map(([ppm, n, j]) => ({ name: solvent, ppm, lines: deuterated(ppm, n, j, f, 1), broad: false })), ...(s.water !== undefined ? [{ name: "H₂O", ppm: s.water, lines: deuterated(s.water, 0, 0, f, 0.8), broad: true }] : [])]
     : s.c.map(([ppm, n, j]) => ({ name: solvent, ppm, lines: deuterated(ppm, n, j, f, 1.5), broad: false }));
 }
 
 const binomial = (n: number) => { const row = [1]; for (let k = 1; k <= n; k++) row.push((row[k - 1] * (n - k + 1)) / k); return row; };
-// A ¹H signal's lines: first-order splitting by each coupling (n + 1 lines with binomial heights, J apart), the
-// heights adding up to the signal's number of hydrogens.
-export function lines(s: Signal, mhz: number): { ppm: number; h: number }[] {
+// A signal's lines: first-order splitting by each coupling (n + 1 lines with binomial heights, J apart), the
+// heights adding up to the signal's number of nuclei. f: the observed nucleus's frequency (MHz), which turns J (Hz)
+// into ppm; for ¹H it is the ¹H frequency.
+export function lines(s: Signal, f: number): { ppm: number; h: number }[] {
   let out = [{ ppm: s.shift, h: s.nuclei }];
   for (const c of s.couplings) {
-    const w = binomial(c.n), step = c.j / mhz, total = 2 ** c.n;
+    const w = binomial(c.n), step = c.j / f, total = 2 ** c.n;
     out = out.flatMap((l) => w.map((k, i) => ({ ppm: l.ppm + (i - c.n / 2) * step, h: (l.h * k) / total })));
   }
   return out;
 }
 // The shift range to show all of a spectrum: 0 to 10 ppm for ¹H and 0 to 200 for ¹³C, wider if a shift is outside.
-export function fullRange(p: Prediction | undefined, nucleus: Nucleus): [number, number] {
-  const shifts = p?.signals.map((s) => s.shift) ?? [], [lo, hi] = nucleus === "1H" ? [0, 10] : [0, 200], pad = nucleus === "1H" ? 0.5 : 10;
-  return [Math.min(lo, ...shifts.map((x) => x - pad)), Math.max(hi, ...shifts.map((x) => x + pad))];
+// ¹⁹F and ³¹P shifts spread over hundreds of ppm, so their range fits the signals with padding, at least 20 ppm wide
+// (NUCLEI's range when there are none); each signal counts with its multiplet's outer lines, as a ¹J(P,F) septet is
+// tens of ppm wide. mhz: the ¹H frequency.
+export function fullRange(p: Prediction | undefined, nucleus: Nucleus, mhz = 400): [number, number] {
+  const shifts = p?.signals.map((s) => s.shift) ?? [], { range: [lo, hi], pad } = NUCLEI[nucleus];
+  if (nucleus === "1H" || nucleus === "13C" || !shifts.length) return [Math.min(lo, ...shifts.map((x) => x - pad)), Math.max(hi, ...shifts.map((x) => x + pad))];
+  const f = frequency(nucleus, mhz), half = (s: Signal) => s.couplings.reduce((w, c) => w + (c.n * c.j) / 2, 0) / f;
+  const a = Math.min(...p!.signals.map((s) => s.shift - half(s))) - pad, b = Math.max(...p!.signals.map((s) => s.shift + half(s))) + pad, more = Math.max(0, 20 - (b - a)) / 2;
+  return [a - more, b + more];
 }
 // Axis ticks: the first step that gives at most one label per `room` (64 px in the panel), up to an IR range's.
 export function ticks(lo: number, hi: number, width: number, room = 64) {
@@ -182,12 +190,12 @@ const SHARP = 0.6, BROAD = 12, WATER = 6;
 // A Lorentzian line: its shift and height, its half width (ppm), and its signal (an index into the signals; the
 // solvent's peak k is -1 - k).
 export type Line = { ppm: number; h: number; w: number; signal: number };
-// Every line of a predicted spectrum: ¹H each multiplet's lines, ¹³C one for each signal, then the solvent's.
-// mhz: the ¹H frequency.
+// Every line of a predicted spectrum: each multiplet's lines (one line for an unsplit ¹³C or ³¹P signal), then the
+// solvent's. mhz: the ¹H frequency.
 export function spectrumLines(signals: Signal[], nucleus: Nucleus, mhz: number, solvent: SolventPeak[] = []): Line[] {
-  const f = nucleus === "1H" ? mhz : mhz * 0.25145;
+  const f = frequency(nucleus, mhz);
   return [
-    ...signals.flatMap((s, k) => (nucleus === "1H" ? lines(s, mhz) : [{ ppm: s.shift, h: s.nuclei }]).map((l) => ({ ...l, w: (s.broad ? BROAD : SHARP) / f, signal: k }))),
+    ...signals.flatMap((s, k) => lines(s, f).map((l) => ({ ...l, w: (s.broad ? BROAD : SHARP) / f, signal: k }))),
     ...solvent.flatMap((s, k) => s.lines.map((l) => ({ ...l, w: (s.broad ? WATER : SHARP) / f, signal: -1 - k }))),
   ];
 }
@@ -374,13 +382,13 @@ export function spectrumFigure(o: {
   prediction: Prediction; nucleus: Nucleus; mhz: number; solvent: string; solventPeaks: boolean; range: [number, number];
   colours: (string | undefined)[]; width: number; height: number; em: number; pt?: number; labels?: LabelTurn; measure?: (t: string) => number; keys?: string[];
 }): Figure {
-  const { prediction: p, nucleus, mhz, width: W, height: H, em } = o, [lo, hi] = o.range, h1 = nucleus === "1H";
+  const { prediction: p, nucleus, mhz, width: W, height: H, em } = o, [lo, hi] = o.range, h1 = NUCLEI[nucleus].trace;
   const x = (ppm: number) => ((hi - ppm) / (hi - lo)) * W, shown = (ppm: number) => ppm >= lo && ppm <= hi;
   const out: Figure = { lines: [], curves: [], texts: [] };
   const solvent = o.solventPeaks ? solventPeaks(o.solvent, nucleus, mhz) : [];
   const all = spectrumLines(p.signals, nucleus, mhz, solvent), own = all.filter((l) => l.signal >= 0);
   const trace = h1 ? sample(own, lo, hi) : undefined, solventTrace = h1 && solvent.length ? sample(all.filter((l) => l.signal < 0), lo, hi) : undefined;
-  const top = h1 ? Math.max(1e-9, trace ? peakIn(trace) : 0, solventTrace ? peakIn(solventTrace) : 0) : Math.max(1, ...p.signals.map((s) => s.nuclei), ...solvent.flatMap((s) => s.lines.map((l) => l.h)));
+  const top = h1 ? Math.max(1e-9, trace ? peakIn(trace) : 0, solventTrace ? peakIn(solventTrace) : 0) : Math.max(1e-9, ...own.map((l) => l.h), ...solvent.flatMap((s) => s.lines.map((l) => l.h)));
   const y = (v: number) => (v / top) * H;
   // A signal's lines, and the shifts they run from and to.
   const linesOf = (k: number) => own.filter((l) => l.signal === k), span = (ls: { ppm: number }[]) => [Math.min(...ls.map((l) => l.ppm)), Math.max(...ls.map((l) => l.ppm))] as const;
@@ -394,7 +402,7 @@ export function spectrumFigure(o: {
   const { out: tickAt, places } = ticks(lo, hi, W, 4 * em);
   for (const v of tickAt) {
     out.lines.push({ from: [x(v), 0], to: [x(v), -0.15], role: `tick:${v}` });
-    out.texts.push({ text: v.toFixed(places), at: [x(v), -0.15 - 0.85 * em], align: "centre", role: `tick:${v}/n` });
+    out.texts.push({ text: v.toFixed(places).replace("-", "−"), at: [x(v), -0.15 - 0.85 * em], align: "centre", role: `tick:${v}/n` });
   }
   out.texts.push({ text: "ppm", at: [W, -0.15 - 1.9 * em], align: "right", role: "unit" });
   // The traces: ¹H as curves, the solvent's in grey, under them each coloured peak filled from its own lines out to
@@ -412,16 +420,17 @@ export function spectrumFigure(o: {
   if (trace) for (const ps of piecesOf(fitCurve(trace, FIT * top))) out.curves.push({ points: ps.map(page), role: "trace" });
   if (!h1) {
     for (const s of solvent) for (const l of s.lines) if (shown(l.ppm)) out.lines.push({ from: [x(l.ppm), 0], to: [x(l.ppm), y(l.h)], grey: true, role: `trace:${s.name}` });
-    p.signals.forEach((s, k) => { if (shown(s.shift)) out.lines.push({ from: [x(s.shift), 0], to: [x(s.shift), y(s.nuclei)], colour: o.colours[k], role: `trace:${key(k)}` }); });
+    // A split stick (¹³C by F or P, ³¹P by F) is one stick per line.
+    p.signals.forEach((s, k) => { if (shown(s.shift)) for (const l of linesOf(k)) if (shown(l.ppm)) out.lines.push({ from: [x(l.ppm), 0], to: [x(l.ppm), y(l.h)], colour: o.colours[k], role: `trace:${key(k)}` }); });
   }
   // Each peak's label in a row over the tallest peak: the shift, and for ¹H the multiplicity and the number of
   // hydrogens (across, two lines; turned, one in ACS order). The solvent's names join the row in grey.
-  const label = (s: Signal) => (h1 ? `${multiplicity(s)}, ${s.nuclei}H` : s.nuclei > 1 ? `${s.nuclei}C` : "");
+  const label = (s: Signal) => (h1 ? `${multiplicity(s)}, ${countText(s, nucleus)}` : [s.couplings.length ? multiplicity(s) : "", s.nuclei > 1 ? countText(s, nucleus) : ""].filter(Boolean).join(", "));
   const page2 = (ls: { ppm: number }[]) => { const [a, b] = span(ls); return { a: x(b), b: x(a) }; };
   const labels: PageLabel[] = [
     ...p.signals.flatMap((s, k): PageLabel[] => {
       if (!shown(s.shift)) return [];
-      const second = label(s), shift = s.shift.toFixed(h1 ? 2 : 1);
+      const second = label(s), shift = shiftText(s.shift, nucleus);
       return [{ x: x(s.shift), ...page2(linesOf(k)), across: second ? [second, shift] : [shift], turned: second ? `${shift} (${second})` : shift, colour: o.colours[k], role: `peak:${key(k)}` }];
     }),
     ...solvent.flatMap((s): PageLabel[] => (shown(s.ppm) ? [{ x: x(s.ppm), ...page2(s.lines), across: [s.name], turned: s.name, grey: true, plain: true, role: `solvent:${s.name}` }] : [])),
@@ -431,7 +440,7 @@ export function spectrumFigure(o: {
   const ink = (a: number, b: number) => {
     const [u, v] = [ppmOf(b), ppmOf(a)];
     if (h1) return y(Math.max(trace ? peakIn(trace, u, v) : 0, solventTrace ? peakIn(solventTrace, u, v) : 0));
-    return y(Math.max(0, ...p.signals.filter((s) => s.shift >= u && s.shift <= v).map((s) => s.nuclei), ...solvent.flatMap((s) => s.lines).filter((l) => l.ppm >= u && l.ppm <= v).map((l) => l.h)));
+    return y(Math.max(0, ...own.filter((l) => l.ppm >= u && l.ppm <= v).map((l) => l.h), ...solvent.flatMap((s) => s.lines).filter((l) => l.ppm >= u && l.ppm <= v).map((l) => l.h)));
   };
   pageLabels(out, labels, { width: W, height: H, em, pt: o.pt ?? 1 / 14.4, turn: o.labels ?? "auto", ink, measure: o.measure });
   return out;

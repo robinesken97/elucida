@@ -1,6 +1,7 @@
 // Run: node src/scale.check.ts. Fails loudly if a document scale or an object's scale stops keeping sizes in
 // proportion (decision 0007).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { DEFAULT_STYLE, PRESETS, SIZES, presetAt, presetOf, readStyle, roundPt, sizesAt, withScale } from "./docstyle.ts";
 import { fitSizes, fitTable, medianBond, scaleSettings, scaleSizes, sizeTable, transformParts } from "./edit.ts";
 import { handlePoint, percentOf, resizeBy, sideAt, SIDES, type Box } from "./resize.ts";
@@ -189,4 +190,14 @@ console.log("scale.check: text sizes ok");
   assert.equal(scaleSizes(m, 2).cycles![0].width, 2.4);
   assert.equal(fitSizes(m, { bond: 30, labelSize: 10, captionSize: 10 }, { bond: 15, labelSize: 10, captionSize: 10 }).cycles![0].width, 0.6);
   console.log("scale.check: cycle line width ok");
+}
+
+// A half-point size (7.5 pt) is one Edit > Repeat runs again, and Escape in Other size… leaves the size as it was.
+{
+  const src = (f: string) => readFileSync(new URL(f, import.meta.url), "utf8");
+  const repeats = new RegExp(/const REPEATS = \/(.+)\/;/.exec(src("Editor.tsx"))![1]);
+  for (const pt of [12, 7.5, 4.3]) assert.ok(repeats.test(`caption.size.${roundPt(pt)}`), `Repeat takes ${pt} pt`);
+  assert.ok(!repeats.test("caption.size.") && !repeats.test("caption.size.7."));
+  assert.ok(src("Actions.tsx").includes('if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); endTyping(e.key === "Enter"); }'), "Escape does not keep the typed size");
+  console.log("scale.check: sizes typed and repeated ok");
 }

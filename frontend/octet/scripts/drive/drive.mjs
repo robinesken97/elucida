@@ -328,7 +328,7 @@ const steps = [
     check(shifts.length > 0 && texts.every((t, k) => has[k] === had[k] + shifts.filter((s) => s === t).length), `shifts ${JSON.stringify(shifts)}: ${JSON.stringify(had)} on the page before, ${JSON.stringify(has)} after`);
     system.menu("Edit", "Undo");
     await until("the shifts in the panel again", async () => (await overlay()).length === shifts.length);
-    await page(`document.querySelector('button[aria-label="Close spectrum"]').click()`);
+    await page(`document.querySelector('section.spectrum button[aria-label="Close"]').click()`);
     await until("the panel closed", () => page("return !document.querySelector('section.spectrum')"));
     // Select's double-click picks a part of a group. With a drawing tool (the Bond tool is in hand in a new drawing), a
     // double-click on a caption opens its text at once.

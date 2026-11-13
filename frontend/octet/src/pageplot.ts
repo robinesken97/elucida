@@ -10,7 +10,7 @@ import { addArrow, addCaption, groupSelection } from "./edit.ts";
 import { addTitle, GREY, spectrumFigure, traceColumns, type Figure, type LabelTurn } from "./spectrumplot.ts";
 import { keyOf, levels, measuredFigure, nameOf, xAt, type Analysed, type Analysis, type Measured } from "./measured.ts";
 import type { Kind } from "./jcamp.ts";
-import type { Nucleus, Signal } from "./nmr.ts";
+import { frequency, isNucleus, NUCLEI, type Nucleus, type Signal } from "./nmr.ts";
 
 type P = [number, number];
 // A part's role ("axis", "tick:7", "tick:7/n", "trace", "fill:k", "peak:k/0", "leader:peak:k", "title", "notice"; a
@@ -325,11 +325,11 @@ export function readPlot(v: unknown): Plot | undefined {
   if (o.signals !== undefined) {
     const ss = o.signals as Record<string, unknown>[];
     if (!Array.isArray(ss) || ss.length > 2000 || !ss.every((s) => s && str(s.key, 40) && num(s.shift) && num(s.nuclei, 0, 1000) && colour(s.colour) && (s.broad === undefined || s.broad === true)
-      && Array.isArray(s.couplings) && s.couplings.length <= 16 && (s.couplings as Record<string, unknown>[]).every((c) => c && num(c.j, 0, 1000) && Number.isInteger(c.n) && num(c.n, 0, 64)))) return undefined;
-    // A ¹H trace is sampled every 0.3 Hz, and each coupling multiplies its signal's lines, so a record that would make
+      && Array.isArray(s.couplings) && s.couplings.length <= 16 && (s.couplings as Record<string, unknown>[]).every((c) => c && num(c.j, 0, 2000) && Number.isInteger(c.n) && num(c.n, 0, 64)))) return undefined;
+    // A trace (¹H, ¹⁹F) is sampled every 0.3 Hz, and each coupling multiplies its signal's lines, so a record that would make
     // more than a million points or MAX_LINES lines is left out.
     const many = ss.reduce((n, s) => n + (s.couplings as { n: number }[]).reduce((k, c) => Math.min(k * (c.n + 1), MAX_LINES + 1), 1), 0);
-    if (!["1H", "13C"].includes(o.nucleus as string) || !num(o.mhz, 20, 1500) || many > MAX_LINES || (o.nucleus === "1H" && (o.range[1] - o.range[0]) * (o.mhz as number) > 3e5)) return undefined;
+    if (!isNucleus(o.nucleus) || !num(o.mhz, 20, 1500) || many > MAX_LINES || (NUCLEI[o.nucleus].trace && (o.range[1] - o.range[0]) * frequency(o.nucleus, o.mhz as number) > 3e5)) return undefined;
     out.signals = ss.map((s) => ({ key: s.key as string, shift: s.shift as number, nuclei: s.nuclei as number, couplings: (s.couplings as { j: number; n: number }[]).map((c) => ({ j: c.j, n: c.n })), ...(s.broad ? { broad: true as const } : {}), ...(s.colour ? { colour: s.colour as string } : {}) }));
   }
   if (o.trace !== undefined) {

@@ -66,7 +66,7 @@ export function expandRuns(runs: TextRun[], keep = ""): TextRun[] {
 
 // Text pasted into each text box still open (a box that has closed is gone from the page, and its pastes with it).
 const pastes: { box: Element; text: string }[] = [];
-if (typeof document !== "undefined") document.addEventListener("paste", (e) => {
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.addEventListener("paste", (e) => {
   const text = e.clipboardData?.getData("text/plain"), box = e.target instanceof Element ? e.target.closest("input, textarea, [contenteditable]") : null;
   if (box && text?.includes("\\")) pastes.push({ box, text });
 }, true);

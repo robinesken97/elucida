@@ -1,7 +1,8 @@
 // Run: node scripts/cdxml-corpus.ts [folder]. Reads every ChemDraw CDXML file in the folder (Sam's corpus by
 // default; it stays on Sam's Mac and never enters this repository), writes each back with Octet's writer, reads
 // that again, and reports per file what came in, what Octet could not hold, and anything the second pass lost.
-// It also writes each drawing as CDX (decision 0009) and reads that back, as ChemDraw's file and as Octet's own.
+// It also writes each drawing as CDX (decision 0009) and reads that back, as ChemDraw's file, with Octet's own data on
+// its objects, and as Octet's own .cdx.
 import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -74,7 +75,8 @@ for (const name of readdirSync(dir).filter((f) => f.endsWith(".cdxml")).sort()) 
     const tree = foreign(parseXml(toCdxml(first.mol, first.style, { name })));
     const viaCdxml = fromCdxml(tree), viaCdx = fromCdxml(cdxToXml(xmlToCdx(tree))), own = readCdx(writeCdx(first.mol, first.style, { name }));
     // Octet's own .cdx holds its file's JSON, which numbers objects afresh as .oct does.
-    const cdxChanges = [...diff(viaCdxml.mol, viaCdx.mol), ...diff(parse(serialize({ ...first.mol, style: first.style })), own.mol)];
+    const full = parseXml(toCdxml(first.mol, first.style, { name }));
+    const cdxChanges = [...diff(viaCdxml.mol, viaCdx.mol), ...diff(fromCdxml(full).mol, fromCdxml(cdxToXml(xmlToCdx(full))).mol), ...diff(parse(serialize({ ...first.mol, style: first.style })), own.mol)];
     if (!cdxChanges.length && JSON.stringify(viaCdx.lost) === JSON.stringify(viaCdxml.lost)) cdxSame++;
     console.log(`  as CDX: ${cdxChanges.length ? `${cdxChanges.length} differences` : "the same"}`);
     for (const d of cdxChanges.slice(0, 8)) console.log(`    ${d}`);

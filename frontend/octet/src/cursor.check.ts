@@ -27,6 +27,7 @@ assert.equal(rule('.canvas[data-tool="select"]'), "var(--cursor-select, default)
 assert.equal(rule('.canvas[data-tool="text"]'), "var(--cursor-text, text)");
 assert.equal(rule(".picker-square"), "var(--cursor-cross, crosshair)");
 assert.equal(rule(".spectrum-plot"), "var(--cursor-cross, crosshair)");
+assert.equal(rule(".eyedropper"), "var(--cursor-cross, crosshair)");
 // The boxes a label, a caption or a table cell is typed in, on the page, take the Text tool's I-beam.
 for (const box of [".label-box", ".caption-box", ".cell-box"]) assert.equal(rule(box), "var(--cursor-text, text)", `${box} uses Octet's I-beam`);
 

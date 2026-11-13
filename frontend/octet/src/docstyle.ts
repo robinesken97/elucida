@@ -94,7 +94,7 @@ export const DEFAULT_STYLE: DocStyle = { preset: "ACS Document 1996", page: "A4"
 export const SCALED = ["bond", "line", "bold", "margin", "hash", "labelSize", "captionSize"] as const;
 // The values readStyle keeps for each of them (pt); anything else falls back to the default. Lengths reach 10 times
 // the old limits each way, so a scale of 10% to 1000% keeps every preset in proportion.
-const LIMITS: Record<(typeof SCALED)[number], [number, number]> = {
+export const LIMITS: Record<(typeof SCALED)[number], [number, number]> = {
   bond: [0.4, 720], line: [0.01, 60], bold: [0.02, 120], margin: [0, 100], hash: [0.05, 100], labelSize: [0.1, 999], captionSize: [0.1, 999],
 };
 const round = (n: number) => Math.round(n * 1e4) / 1e4;
@@ -243,7 +243,9 @@ export function forPurpose(s: DocStyle, p: DocStyle): DocStyle {
 // The purposes from saved settings (settings.ts). A default style saved before purposes (docStyle) becomes Paper's.
 // purpose: the one picked last (Quick start or a purpose), which ⌘N starts. purposeStyles: the user's style for Quick
 // start and each built-in purpose ("Use for new documents").
-export type Purposes = { purpose: string; purposeStyles: Partial<Record<PurposeKind | typeof QUICK, DocStyle>>; ownPurposes: OwnPurpose[] };
+// experimentStart: what a new Experiment page starts with ("Use for new documents" on an experiment page), as an own
+// template's start; unset, Octet's.
+export type Purposes = { purpose: string; purposeStyles: Partial<Record<PurposeKind | typeof QUICK, DocStyle>>; ownPurposes: OwnPurpose[]; experimentStart?: string };
 export function readPurposes(saved: Record<string, unknown>): Purposes {
   const styles = (typeof saved.purposeStyles === "object" && saved.purposeStyles ? saved.purposeStyles : {}) as Record<string, unknown>, purposeStyles: Purposes["purposeStyles"] = {};
   for (const kind of Object.keys(PURPOSES) as PurposeKind[]) if (styles[kind]) purposeStyles[kind] = { ...readStyle(styles[kind]), purpose: kind };
@@ -258,7 +260,7 @@ export function readPurposes(saved: Record<string, unknown>): Purposes {
       ? [{ id: o.id, name: o.name.trim().slice(0, 40), kind: o.kind, style: { ...readStyle(o.style), purpose: o.id }, ...(typeof o.start === "string" && o.start.length <= MAX_START ? { start: o.start } : {}) }] : [];
   }).slice(0, MAX_PURPOSES);
   const purpose = typeof saved.purpose === "string" && (saved.purpose === QUICK || isKind(saved.purpose) || ownPurposes.some((p) => p.id === saved.purpose)) ? saved.purpose : QUICK;
-  return { purpose, purposeStyles, ownPurposes };
+  return { purpose, purposeStyles, ownPurposes, ...(typeof saved.experimentStart === "string" && saved.experimentStart.length <= MAX_START ? { experimentStart: saved.experimentStart } : {}) };
 }
 export const MAX_PURPOSES = 12;
 // Two styles the same in every value, whatever their purpose and preset name.
@@ -325,12 +327,13 @@ export function frameStyle(d: DocStyle, frame: number): Style & { k: number } {
 
 // Print: the pages a box (in any unit, y down) covers when pages w by h tile the plane from a page centred on the
 // origin, as [column, row] (the origin's page is [0, 0]), row by row from the top. A box within `slack` of a page's
-// edge does not reach the next page. count: how many pages that is; pages is empty past MAX_PRINT_PAGES.
+// edge does not reach the next page. count: how many pages that is; cols: how many across; pages is empty past
+// MAX_PRINT_PAGES.
 export const MAX_PRINT_PAGES = 64;
-export function pagesOver(box: [number, number, number, number], w: number, h: number, slack = 1): { count: number; pages: [number, number][] } {
+export function pagesOver(box: [number, number, number, number], w: number, h: number, slack = 1): { count: number; cols: number; pages: [number, number][] } {
   const first = (lo: number, size: number) => Math.floor((lo + slack) / size + 0.5), last = (hi: number, size: number) => Math.ceil((hi - slack) / size - 0.5);
   const [i0, j0] = [first(box[0], w), first(box[1], h)], [i1, j1] = [Math.max(i0, last(box[2], w)), Math.max(j0, last(box[3], h))];
-  const count = (i1 - i0 + 1) * (j1 - j0 + 1), pages: [number, number][] = [];
+  const cols = i1 - i0 + 1, count = cols * (j1 - j0 + 1), pages: [number, number][] = [];
   if (count <= MAX_PRINT_PAGES) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) pages.push([i, j]);
-  return { count, pages };
+  return { count, cols, pages };
 }

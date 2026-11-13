@@ -45,16 +45,16 @@ const paths = (rows: ExperimentEntry[]) => rows.map((r) => r.name);
   const csv = experimentsCsv(list);
   assert.ok(csv.startsWith("\uFEFF"), "a byte-order mark, so Excel reads °C as UTF-8");
   const lines = csv.slice(1).split("\r\n");
-  assert.equal(lines[0], "Title,Date,Notebook,Project,Author,Temperature,Time,Pressure,Solvent,Yield (%),File");
-  assert.equal(lines[1], "Boc protection,2026-11-01,SE-012-034,Peptides,,,,,,91.3,/lab/boc.oct");
-  assert.equal(lines[3], ",,SE-010-007,,,,,,,,/lab/old.oct", "no yield, no title");
-  assert.equal(lines[4], '"Grignard, -78 °C",2026-10-22,,Biaryls,,,,,,,/lab/grignard.oct');
+  assert.equal(lines[0], "Title,Exp. number,Date,Notebook,Project,Author,Temperature,Time,Pressure,Solvent,Yield (%),File");
+  assert.equal(lines[1], "Boc protection,,2026-11-01,SE-012-034,Peptides,,,,,,91.3,/lab/boc.oct");
+  assert.equal(lines[3], ",,,SE-010-007,,,,,,,,/lab/old.oct", "no yield, no title");
+  assert.equal(lines[4], '"Grignard, -78 °C",,2026-10-22,,Biaryls,,,,,,,/lab/grignard.oct');
   assert.equal(lines.length, list.length + 2, "a line for each, and the file ends with a line break");
   // The app sends "yield": null for an experiment with no yield; it is an empty cell, not 0.0.
-  assert.equal(experimentsCsv(JSON.parse('[{"path":"/a.oct","name":"a","at":0,"found":true,"details":{"title":"T"},"yield":null}]')).split("\r\n")[1], "T,,,,,,,,,,/a.oct");
+  assert.equal(experimentsCsv(JSON.parse('[{"path":"/a.oct","name":"a","at":0,"found":true,"details":{"title":"T"},"yield":null}]')).split("\r\n")[1], "T,,,,,,,,,,,/a.oct");
   const hostile = experimentsCsv([{ path: "/x.oct", name: "x", at: 0, found: true, details: { title: '=HYPERLINK("http://x","y")', notebook: "+1+1", project: "@SUM(A1)", author: "-1+cmd|' /C calc'!A0", temperature: "-78 °C", time: "-2 h", solvent: 'say "hi"' } }]).split("\r\n")[1];
-  assert.equal(hostile, `"'=HYPERLINK(""http://x"",""y"")",,'+1+1,'@SUM(A1),'-1+cmd|' /C calc'!A0,-78 °C,-2 h,,"say ""hi""",,/x.oct`);
-  assert.equal(experimentsCsv([]), "\uFEFFTitle,Date,Notebook,Project,Author,Temperature,Time,Pressure,Solvent,Yield (%),File\r\n");
+  assert.equal(hostile, `"'=HYPERLINK(""http://x"",""y"")",,,'+1+1,'@SUM(A1),'-1+cmd|' /C calc'!A0,-78 °C,-2 h,,"say ""hi""",,/x.oct`);
+  assert.equal(experimentsCsv([]), "\uFEFFTitle,Exp. number,Date,Notebook,Project,Author,Temperature,Time,Pressure,Solvent,Yield (%),File\r\n");
 }
 
 // The app keeps the same details the page has (src-tauri/src/recent.rs), with the same limit, checks each record, and

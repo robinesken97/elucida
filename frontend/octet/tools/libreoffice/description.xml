@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Octet Draw for LibreOffice (octet_draw.py). The version is Octet's own: src-tauri/build.rs writes package.json's
+     version here when it makes octet-draw.oxt. -->
+<description xmlns="http://openoffice.org/extensions/description/2006" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <identifier value="io.github.samchemman.octet-draw"/>
+  <version value="0.0.0"/>
+  <display-name>
+    <name lang="en">Octet Draw</name>
+  </display-name>
+  <publisher>
+    <name xlink:href="https://octet.software" lang="en">Octet</name>
+  </publisher>
+</description>

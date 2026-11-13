@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ArrowClockwise, ArrowCounterClockwise, CaretLeft, CaretRight, Cube, Eraser, Lasso, Plus, PushPin, Selection, TextT, Trash, X } from "@phosphor-icons/react";
 import { chairPoints, type SymbolKind } from "./edit";
-import { ARROW_SIZES, curvePath, headOfLength, SWEEPS, type ArrowKind, type ArrowSize, type HeadSize, type Mol, type ShapeKind } from "./render";
+import { ARROW_SIZES, curvePath, headOfLength, membrane, SWEEPS, type ArrowKind, type ArrowSize, type HeadSize, type Mol, type ShapeKind } from "./render";
 import { ARROWS, BONDS, SHAPES, type BondKind } from "./kinds";
 import { closePalette, kindName, legible, MY_SET, ringsOnly, templateKind, type FloatingPalette, type Template, type TemplateSize } from "./templates";
 import type { TemplateActions, TemplateSetActions, TemplateTool } from "./TemplateLibrary";
@@ -13,8 +13,10 @@ import { FloatingTemplates, LibraryPanel } from "./TemplateLibrary";
 import { columnsFor, DEFAULT_COLUMNS, Menu, menuWidth, type MenuItem } from "./Menu";
 import { Exit, reduced, timing } from "./motion";
 import { BracketGlyph, BRACKETS, ElementGlyph, ORBITAL_GRID, OrbitalGlyph, orbitalName, SHAPE_EXTRA, SHAPE_GRID, shapeName } from "./elements";
+import { elementFacts } from "./periodic.ts";
+import { PeriodicTable } from "./PeriodicTable";
 
-export type Tool = "select" | "bond" | "chain" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "sequence" | "shape" | "bracket" | "tlc" | "table" | "fragment" | "massspec" | "synthesis" | "retro" | "map" | "text" | "erase";
+export type Tool = "select" | "bond" | "chain" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "sequence" | "shape" | "bracket" | "tlc" | "gel" | "plasmid" | "table" | "fragment" | "massspec" | "synthesis" | "retro" | "map" | "text" | "erase";
 
 // The bond, arrow and shape kinds' names are in kinds.ts, so the canvas for screen readers (access.ts) shares them.
 export { ARROWS, BONDS, SHAPES, type BondKind };
@@ -85,7 +87,7 @@ export const SELECTS = { box: { name: "Box" }, lasso: { name: "Lasso" }, perspec
 export const SYMBOLS: Record<SymbolKind, string> = {
   plus: "Positive charge", minus: "Negative charge", circledPlus: "Circled positive", circledMinus: "Circled negative",
   radical: "Radical", pair: "Lone pair", partialPlus: "Partial positive", partialMinus: "Partial negative",
-  radicalCation: "Radical cation", radicalAnion: "Radical anion", hDot: "H dot", hDash: "H dash", attach: "Attachment point", attachDiamond: "Attachment point, diamond", attachStar: "Attachment point, star", bead: "Polymer bead",
+  radicalCation: "Radical cation", radicalAnion: "Radical anion", hDot: "H dot", hDash: "H dash", attach: "Attachment point", attachDiamond: "Diamond attachment", attachStar: "Star attachment", bead: "Polymer bead",
 };
 export type SelectKind = keyof typeof SELECTS;
 
@@ -93,7 +95,7 @@ export type SelectKind = keyof typeof SELECTS;
 // template: a library template ("lib:name") or one of the user's own ("custom:id").
 export type Variants = { select: SelectKind; bond: BondKind; ring: string; template: string; symbol: SymbolKind; orbital: string; arrow: string; cycle: string; sequence: string; shape: string; bracket: string; more: string };
 // Specialist tools share one slot at the bottom of the toolbar, which shows the one last used.
-const SPECIAL: Tool[] = ["tlc", "table", "fragment", "massspec", "synthesis", "retro", "map"];
+const SPECIAL: Tool[] = ["tlc", "gel", "plasmid", "table", "fragment", "massspec", "synthesis", "retro", "map"];
 type Strip = "select" | "bond" | "ring" | "template" | "symbol" | "orbital" | "arrow" | "cycle" | "sequence" | "shape" | "bracket" | "more";
 const isStrip = (t: Tool): t is Exclude<Strip, "more"> => t === "select" || t === "bond" || t === "ring" || t === "template" || t === "symbol" || t === "orbital" || t === "arrow" || t === "cycle" || t === "sequence" || t === "shape" || t === "bracket";
 // Strips laid out as a grid of icons (named on hover): each row a shape across its styles.
@@ -101,10 +103,11 @@ const isStrip = (t: Tool): t is Exclude<Strip, "more"> => t === "select" || t ==
 // takes over from a drawing tool.
 export const HOLD_MS = 350;
 
-// Tool icons in Phosphor's style (256 grid, 16-unit round strokes). Each one draws the real object.
-function Icon({ children }: { children: React.ReactNode }) {
+// Tool icons in Phosphor's style (256 grid, 16-unit round strokes). Each one draws the real object. size: 18 for a
+// row's icon (BRAND.md Iconography).
+function Icon({ children, size = 20 }: { children: React.ReactNode; size?: number }) {
   return (
-    <svg width={20} height={20} viewBox="0 0 256 256" fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 256 256" fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       {children}
     </svg>
   );
@@ -242,6 +245,8 @@ export function ShapeGlyph({ kind }: { kind: ShapeKind }) {
     case "parens": return <Icon><path d="M84,40 Q36,128 84,216" /><path d="M172,40 Q220,128 172,216" /></Icon>;
     case "braces": return <Icon><path d="M88,40 Q64,40 64,64 L64,108 Q64,128 44,128 Q64,128 64,148 L64,192 Q64,216 88,216" /><path d="M168,40 Q192,40 192,64 L192,108 Q192,128 212,128 Q192,128 192,148 L192,192 Q192,216 168,216" /></Icon>;
     case "tlc": return <TlcGlyph />;
+    case "gel": return <GelGlyph />;
+    case "plasmid": return <PlasmidGlyph />;
     case "table": return <TableGlyph />;
     default: return <Icon><rect x={40} y={64} width={176} height={128} /></Icon>;
   }
@@ -307,6 +312,24 @@ export const TlcGlyph = () => (
   </Icon>
 );
 
+// A gel: its outline, a well at the top of each lane, a ladder of bands in the first lane and a band in each other.
+export const GelGlyph = () => (
+  <Icon>
+    <rect x={40} y={32} width={176} height={192} rx={8} />
+    <path d="M64,64H96M112,64H144M160,64H192" strokeWidth={10} />
+    <path d="M64,104H96M64,144H96M64,184H96M112,124H144M160,164H192" strokeWidth={14} />
+  </Icon>
+);
+
+// A plasmid map: its ring, a region along it and a marker across it.
+export const PlasmidGlyph = () => (
+  <Icon>
+    <circle cx={128} cy={128} r={80} />
+    <path d="M179.4,66.7 A80,80 0 0 1 189.3,179.4" strokeWidth={32} strokeLinecap="butt" />
+    <line x1={71.6} y1={107.5} x2={34} y2={93.8} />
+  </Icon>
+);
+
 // A table in journal style: top, header and bottom rules, and its columns of text as short strokes.
 export const TableGlyph = () => (
   <Icon>
@@ -345,6 +368,19 @@ export const MassSpecGlyph = () => (
   </Icon>
 );
 
+// Add multi-centre attachment and Add variable attachment, at 18 px as the Phosphor icons beside them: a ring with a
+// bond from its centre. A multi-centre attachment (an η bond, to all the ring's atoms) has a dot at the centre; a
+// variable one has a dashed arc over some of the ring's atoms (one of them takes the bond).
+const AttachmentRing = ({ children }: { children: React.ReactNode }) => (
+  <Icon size={18}>
+    <polygon points="128,62 190.4,98 190.4,170 128,206 65.6,170 65.6,98" />
+    <line x1={128} y1={134} x2={187} y2={32} />
+    {children}
+  </Icon>
+);
+export const MultiAttachmentGlyph = () => <AttachmentRing><circle cx={128} cy={134} r={24} fill="currentColor" stroke="none" /></AttachmentRing>;
+export const VariableAttachmentGlyph = () => <AttachmentRing><path d="M93.8,228A100,100 0 0 1 41.4,84" strokeDasharray="16 36.8" /></AttachmentRing>;
+
 // Synthesis and Retrosynthesis: the cut chain under the arrow each draws (a reaction arrow, or a retrosynthetic one).
 export const SynthesisGlyph = ({ retro }: { retro?: boolean }) => (
   <Icon>
@@ -355,7 +391,7 @@ export const SynthesisGlyph = ({ retro }: { retro?: boolean }) => (
 );
 
 // The specialist tools' names and icons.
-const SPECIAL_TOOLS: Record<string, { name: string; icon: React.ReactNode }> = { tlc: { name: "TLC plate", icon: <TlcGlyph /> }, table: { name: "Table", icon: <TableGlyph /> }, fragment: { name: "Mass fragmentation", icon: <FragmentGlyph /> },
+const SPECIAL_TOOLS: Record<string, { name: string; icon: React.ReactNode }> = { tlc: { name: "TLC plate", icon: <TlcGlyph /> }, gel: { name: "Gel", icon: <GelGlyph /> }, plasmid: { name: "Plasmid map", icon: <PlasmidGlyph /> }, table: { name: "Table", icon: <TableGlyph /> }, fragment: { name: "Mass fragmentation", icon: <FragmentGlyph /> },
   massspec: { name: "Mass spec analysis", icon: <MassSpecGlyph /> },
   synthesis: { name: "Synthesis", icon: <SynthesisGlyph /> }, retro: { name: "Retrosynthesis", icon: <SynthesisGlyph retro /> }, map: { name: "Atom map", icon: <MapGlyph /> } };
 
@@ -389,10 +425,11 @@ function CurvedGlyph({ kind, sweep }: { kind: ArrowKind; sweep: number }) {
 // stopping short of them, as in a drawn structure.
 export function TemplateGlyph({ mol: whole }: { mol: Mol }) {
   // A template with no structure (arrows, pen curves, shapes, text): its arrows and shapes as lines, a pen curve along
-  // its path, or its text as a T.
+  // its path, a membrane as its lipids' heads, or its text as a T.
   if (!whole.atoms.length) {
     const lines = [
-      ...(whole.arrows ?? []).map((a) => (a.curve ? curvePath(a.curve, 1).map(([x, y]) => [x, -y]).concat(a.curve.closed ? [a.curve.points[0].at] : []) : [a.from, a.to])),
+      ...(whole.arrows ?? []).flatMap((a) => (a.style === "membrane" ? membrane(a, 1).heads.map(({ at: [x, y], r }) => Array.from({ length: 9 }, (_, i): [number, number] => [x + r * Math.cos((i * Math.PI) / 4), -y + r * Math.sin((i * Math.PI) / 4)]))
+        : [a.curve ? curvePath(a.curve, 1).map(([x, y]) => [x, -y]).concat(a.curve.closed ? [a.curve.points[0].at] : []) : [a.from, a.to]])),
       ...(whole.shapes ?? []).flatMap((x) => [[x.from, [x.to[0], x.from[1]]], [[x.to[0], x.from[1]], x.to], [x.to, [x.from[0], x.to[1]]], [[x.from[0], x.to[1]], x.from]]),
     ];
     if (!lines.length) return <TextT size={20} />;
@@ -454,6 +491,8 @@ type PaletteProps = {
   findNamed: (query: string, read: boolean) => LibraryItem[]; // names and abbreviations for the library's search
   onTool: (t: Tool) => void;
   onVariant: (t: keyof Variants, kind: string) => void;
+  element?: string; // the element the Text tool puts on atoms, chosen from its periodic table
+  onElement: (el?: string) => void; // an element chosen there (the Text tool in hand), or Text again
   onPinned: (pinned: string[]) => void;
   onAddName: (name: string) => boolean;
   onAdd: (set: string, tool: TemplateTool) => void; // the selection into a set, or with nothing selected, a structure picked next
@@ -648,7 +687,8 @@ export function Palette(p: PaletteProps) {
     { id: "cycle", name: CYCLES[p.variants.cycle] ?? "Catalytic cycle", icon: <CycleGlyph v={p.variants.cycle} /> },
     { id: "shape", name: shapeName(p.variants.shape) ?? "Shape", icon: <ElementGlyph v={p.variants.shape} /> },
     { id: "bracket", name: BRACKETS[p.variants.bracket] ?? "Brackets", icon: <BracketGlyph v={p.variants.bracket} /> },
-    { id: "text", name: "Text", icon: <TextT size={20} /> },
+    // The Text tool shows the element it puts on atoms, when one was chosen from its periodic table.
+    { id: "text", name: p.element ? `${elementFacts(p.element).name}. Text` : "Text", icon: p.element ? <Icon><text x={128} y={128} dy="0.35em" textAnchor="middle" fill="currentColor" stroke="none" style={{ font: `600 ${p.element.length > 1 ? 136 : 176}px var(--font-sans)` }}>{p.element}</text></Icon> : <TextT size={20} /> },
     { id: "erase", name: "Eraser ([ and ] change its size)", icon: <Eraser size={20} /> },
   ];
   // The specialist slot: the special tool in hand, or the one last used.
@@ -760,7 +800,7 @@ export function Palette(p: PaletteProps) {
       <span ref={indicator} className="indicator" style={{ transform: lit && litAt ? `translate(${litAt[0]}px, ${litAt[1]}px)` : wide ? `translate(${(active % 2) * 36}px, ${Math.floor(active / 2) * 36}px)` : `translateY(${active * 36}px)`, opacity: active < 0 && !lit ? 0 : 1 }} aria-hidden />
       {tools.map((t, i) => {
         const group = SPECIAL.includes(t.id);
-        const strip = group ? SPECIAL : isStrip(t.id) ? options(t.id) : undefined;
+        const strip = group ? SPECIAL : isStrip(t.id) ? options(t.id) : t.id === "text" ? [] : undefined; // the Text tool's is its periodic table
         return (
           <div key={t.id} className="slot" data-col={wide ? i % 2 : undefined} style={{ "--d": Math.abs(i - (tools.length + 1 + pins.findIndex((x) => x.key === landed?.key))) } as React.CSSProperties}>
             <button
@@ -797,6 +837,10 @@ export function Palette(p: PaletteProps) {
               <Menu label="More tools" groups={[SPECIAL.map((id) => ({ key: id, name: SPECIAL_TOOLS[id].name, icon: SPECIAL_TOOLS[id].icon, checked: p.tool === id }))]}
                 columns={columnsOf("more")} onColumns={(n) => p.onStripWidth("more", menuWidth(n))}
                 onPress={(e, id) => startCarry(e, `more:${id}`)} onChoose={(id) => { if (!dragged.current) choose("more", id); }} onRelease={(id) => { if (held) choose("more", id); }} />
+            )}</Exit>
+            <Exit>{t.id === "text" && open === "text" && (
+              <PeriodicTable current={p.element} onChoose={(el) => { p.onElement(el); setOpen(undefined); }}
+                onRelease={(el) => { if (held) { p.onElement(el); setOpen(undefined); } }} />
             )}</Exit>
             <Exit>{t.id === "template" && open === "template" && (
               <LibraryPanel current={p.variants.template} mine={mine} {...own("template")}

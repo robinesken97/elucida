@@ -3,13 +3,15 @@
 import { COMMON, commonKey } from "./common.ts";
 // Beyond OPSIN and Octet's own tables: the dictionary (common and trade names, CAS numbers, InChIKeys), condensed
 // formulas and lists of names (dictionary.ts).
-import { beforeOpsinSmiles, completeName, dictionarySmiles, dictionaryStarting, loadDictionary, nameList, nearNames } from "./dictionary.ts";
+import { beforeOpsinSmiles, casNumber, completeName, dictionarySmiles, dictionaryStarting, loadDictionary, nameList, nearNames } from "./dictionary.ts";
 // endo, exo, syn and anti on a bicycle, which OPSIN does not read (endoexo.ts).
 import { endoExoSmiles } from "./endoexo.ts";
 // Peptides typed as one-letter codes after "peptide:" (peptide.ts).
 import { PEPTIDE, peptideText } from "./peptide.ts";
 // RNA and DNA typed as one-letter codes after "rna:" or "dna:" (nucleic.ts).
 import { NUCLEIC, nucleicText } from "./nucleic.ts";
+// Octet's abbreviations by standard InChI. The stoichiometry table reads them too, so they load at start-up (stoich.ts).
+import ABBREVIATIONS from "./abbreviations.json" with { type: "json" };
 
 type Opsin = typeof import("./vendor/opsin/opsin.js");
 let opsin: Opsin | undefined;
@@ -22,9 +24,8 @@ export function loadNames(): Promise<void> {
     // The dictionary loads alongside. Without it, names still read.
     const dictionary = loadDictionary().catch(() => undefined);
     // The drug names and the index load with the engine, so start-up does not wait for them.
-    const [mod, { default: pack }, { default: list }, { default: known }, { DRUGS }, { default: cites }] = await Promise.all([import("./vendor/opsin/opsin.js"),
-      import("./vendor/opsin/opsin-data.bin?url"), import("./vendor/opsin/names.txt?url"), import("./nameindex.json"), import("./drugs.ts"),
-      import("./abbreviations.json")]);
+    const [mod, { default: pack }, { default: list }, { default: known }, { DRUGS }] = await Promise.all([import("./vendor/opsin/opsin.js"),
+      import("./vendor/opsin/opsin-data.bin?url"), import("./vendor/opsin/names.txt?url"), import("./nameindex.json"), import("./drugs.ts")]);
     const [data, words] = await Promise.all([fetch(pack).then((r) => r.arrayBuffer()), fetch(list).then((r) => r.text())]);
     // The pack: [name length (u16), name (latin1), size (i32), bytes] repeated, ending with a zero length.
     const view = new DataView(data), files = new Map<string, Int8Array>(), latin1 = new TextDecoder("latin1");
@@ -37,7 +38,7 @@ export function loadNames(): Promise<void> {
     }
     (globalThis as { opsinResource?: (name: string) => Int8Array | null }).opsinResource = (name) => files.get(name) ?? null;
     mod.init();
-    attachOpsin(mod, words, known, DRUGS, cites);
+    attachOpsin(mod, words, known, DRUGS, ABBREVIATIONS);
     await dictionary;
   })();
   return loading;
@@ -89,7 +90,8 @@ export function setOwnNames(list: OwnName[]) {
     const k = commonKey(n.name);
     if (!k || names.has(k)) continue;
     names.set(k, n);
-    if (n.inchi && !byInchi.has(n.inchi)) byInchi.set(n.inchi, n.name);
+    // A CAS number in the dictionary (one PubChem gave a structure for) never names a structure.
+    if (n.inchi && !casNumber(n.name) && !byInchi.has(n.inchi)) byInchi.set(n.inchi, n.name);
   }
   [own, ownByInchi] = [names, byInchi];
 }
@@ -196,7 +198,9 @@ export function nameToAtoms(name: string): string | undefined {
 export function nameToSmiles(name: string): string | undefined {
   const s = name.trim();
   if (!s || s.length > 1000) return undefined;
-  const mine = own.get(commonKey(s));
+  // A CAS number is looked for as the number alone ("CAS 64-17-5" and "[64-17-5]" are 64-17-5): the user's dictionary
+  // keeps each one PubChem gave a structure for, so it reads offline from then on.
+  const cas = casNumber(s), mine = own.get(commonKey(s)) ?? (cas ? own.get(commonKey(cas)) : undefined);
   if (mine) return mine.smiles;
   // "rna: AACGUU" and "dna: ATGC" are built as SMILES, without OPSIN.
   const nucleic = nucleicText(s);
@@ -214,7 +218,56 @@ function one(s: string): string | undefined {
   const known = common.get(commonKey(s));
   if (known) return known.startsWith("smiles:") ? known.slice(7) : read(known);
   const tidied = tidy(s);
-  return beforeOpsinSmiles(s) ?? read(s) ?? (tidied !== s ? read(tidied) : undefined) ?? endoExoSmiles(s, nameToAtoms, read) ?? dictionarySmiles(s, read);
+  return hoopSmiles(s) ?? beforeOpsinSmiles(s) ?? read(s) ?? (tidied !== s ? read(tidied) : undefined) ?? endoExoSmiles(s, nameToAtoms, read) ?? dictionarySmiles(s, read) ?? familySmiles(s);
+}
+
+// [n]cycloparaphenylene: n benzene rings joined para in one ring, C(6n)H(4n). OPSIN does not read it, and the
+// dictionary's one entry ([8], from Wikidata) had the structure of [12]. Also "[8]CPP", "8-cyclo-p-phenylene" and
+// "[8]cyclo-1,4-phenylene". 4 to 40 rings.
+function hoopSmiles(s: string): string | undefined {
+  // "CPP" alone needs its brackets: 4-CPP is a chlorophenylpiperazine.
+  const m = /^(?:\[(\d{1,2})\][\s-]*cpp|\[?(\d{1,2})\]?[\s-]*cyclo[\s-]*\(?(?:para|p|1,4)[\s-]*phenylene\)?)$/i.exec(s), n = m ? Number(m[1] ?? m[2]) : 0;
+  return n >= 4 && n <= 40 ? `c1cc2ccc1${"-c1ccc(cc1)".repeat(n - 2)}-c1ccc2cc1` : undefined;
+}
+
+// "[n]helicene", "[n]circulene", "[n]radialene", "[n]cyclacene", "[n]cyclophenacene" and the cyclophanes ("[2.2]-
+// metacyclophane", "[6]paracyclophane", "[2.2.2]paracyclophane", "[2.2]metaparacyclophane"), which neither OPSIN nor
+// the dictionary reads. Read last, so a name that reads already keeps its structure. Exported for names.check.ts.
+// The largest n is where Indigo's layout still takes a second or less ([16]helicene 1.4 s; [18]helicene and [20]cyclacene 7 s).
+const label = (k: number) => (k < 10 ? `${k}` : `%${k}`);
+const FAMILIES = new Map<string, [number, number, (n: number) => string | undefined]>(Object.entries({
+  // n benzene rings fused angularly, all the same way: the outer rim, then the inner rim back. C(4n+2)H(2n+4).
+  helicene: [3, 16, (n) => {
+    let s = "c1ccc";
+    for (let k = 1; k < n; k++) s += `c${label(k + 1)}${k < n - 1 ? "cc" : "cccc"}`;
+    for (let k = n - 1; k >= 1; k--) s += `c${label(k + 1)}`;
+    return `${s}1`;
+  }],
+  // n benzene rings round an n-membered ring: the rim, each spoke with its atom of the inner ring. C(4n)H(2n).
+  circulene: [3, 12, (n) => Array.from({ length: n }, (_, k) => `c${k ? "" : "1"}(c${k ? (k % 2 ? 3 : 4) : 2}${k === n - 1 ? 2 : k % 2 ? 4 : 3})cc`).join("") + "1"],
+  // An n-membered ring with =CH2 on every atom. C(2n)H(2n).
+  radialene: [3, 8, (n) => `C=C1${"C(=C)".repeat(n - 2)}C1=C`],
+  // The belts are written with their Kekulé bonds (each rim alternating), as Indigo leaves aromatic bonds in them.
+  // n benzene rings fused linearly round a belt: the top rim, each rung with the bottom rim's CH. C(4n)H(2n).
+  cyclacene: [5, 16, (n) => Array.from({ length: n }, (_, k) => `C${k ? "" : "1"}(C${k ? (k % 2 ? 3 : 4) : 2}=C${k === n - 1 ? 2 : k % 2 ? 4 : 3})=C`).join("") + "1"],
+  // n benzene rings in a belt, each fused angularly and the turns alternating (the phenacenes, picene, closed): the
+  // armchair belt, [10] from C60's equator (C40H20). n is the number of rings, and is even. C(4n)H(2n).
+  cyclophenacene: [6, 16, (n) => n % 2 ? undefined : Array.from({ length: n }, (_, k) => (k % 2 ? `=C(C3${k === n - 1 ? 2 : "=4"})C=C` : `C${k ? "" : "1"}(C${k ? 4 : "=2"}C=C3)`)).join("") + "1"],
+}));
+export function familySmiles(s: string): string | undefined {
+  const m = /^\[?(\d{1,2})\]?[\s-]*([a-z]+)$/i.exec(s), family = m && FAMILIES.get(m[2].toLowerCase()), n = m ? Number(m[1]) : 0;
+  if (family) return n >= family[0] && n <= family[1] ? family[2](n) : undefined;
+  // Cyclophanes: one benzene ring per number, each joined to the next (a ring alone, to itself) by that many CH2, meta
+  // (1,3) or para (1,4). "metapara" gives the first ring meta, the second para.
+  const c = /^\[?(\d{1,2}(?:[.,]\d{1,2}){0,3})\]?[\s-]*((?:meta|para)+)[\s-]*cyclophane$/i.exec(s);
+  if (!c) return undefined;
+  const bridges = c[1].split(/[.,]/).map(Number), kinds = c[2].toLowerCase().match(/meta|para/g)!;
+  if (kinds.length !== 1 && kinds.length !== bridges.length) return undefined;
+  if (bridges.some((b) => b < (bridges.length === 1 ? 4 : 1) || b > (bridges.length === 1 ? 20 : 12))) return undefined;
+  return bridges.map((b, i) => {
+    const ring = (kinds[i] ?? kinds[0]) === "meta" ? "cccc(c1)" : "ccc(cc1)";
+    return `c1${i ? "" : "2"}${ring}${"C".repeat(b)}`;
+  }).join("") + "2";
 }
 
 // Acid addition salts and hydrates of a name, as the name and the acid (or water) side by side, as PubChem draws them.
@@ -262,7 +315,8 @@ const smiles = (s: string) => {
 };
 export function looksLikeSmiles(text: string): boolean {
   const t = text.trim().replace(/\s+\|[^|]*\|$/, ""), first = t.split(/\s/)[0];
-  return /^InChI=1S?\//.test(t) || smiles(t) || (first !== t && smiles(first) && /[\d()[\]=#/\\]/.test(first));
+  // A SMILES of generic atoms only (*(*)(*)*: a metal and its ligands, each labelled after) has no element to know it by.
+  return /^InChI=1S?\//.test(t) || smiles(t) || (first !== t && smiles(first) && /[\d()[\]=#/\\]/.test(first)) || /^\*(?:[()=#\d]*\*)+[()\d]*$/.test(t);
 }
 
 // Catalogue and supplier quirks: brackets round a plain multiplied group ("10,15,20-(triphenyl)porphyrin"),

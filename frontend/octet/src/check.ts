@@ -2,7 +2,7 @@
 // marks on the drawing), and messy geometry. Messages follow the brief's style: what is wrong, the rule, then what to do.
 import { bondedTo, bondOrders, fragments, freePairs, LARGE, mayBeChairBond, neighbourSlots, neighbours, perspectiveBonds, pos, WIDE, type P } from "./edit.ts";
 import { chemicalText, labelSmiles, units } from "./labels.ts";
-import { HBOND, isBracket, orderOf, type Bond, type Mol } from "./render.ts";
+import { HBOND, isBracket, orderOf, turnPoint, type Bond, type Mol } from "./render.ts";
 
 // The kinds of warning, as ChemDraw 26.1's Settings > Warnings lists them, each with its switch's default (all on but
 // enhanced stereochemistry).
@@ -228,8 +228,10 @@ export function problems(m: Mol, stereo?: StereoFacts, all = false): Problem[] {
   for (const sh of m.shapes ?? []) {
     if (!isBracket(sh) || sh.side || (sh.ignoreWarnings && !all)) continue;
     const [x0, x1] = [Math.min(sh.from[0], sh.to[0]), Math.max(sh.from[0], sh.to[0])], [y0, y1] = [Math.min(sh.from[1], sh.to[1]), Math.max(sh.from[1], sh.to[1])];
+    // In the brackets' own (upright) frame, as enclosed() counts them (query.ts): brackets turn with a selection.
+    const mid: P = [(sh.from[0] + sh.to[0]) / 2, (sh.from[1] + sh.to[1]) / 2], up = (i: number): P => (sh.angle ? turnPoint(pos(m, i), mid, -sh.angle) : pos(m, i));
     const crosses = (x: number) => m.bonds.filter((b) => {
-      const [p, q] = [pos(m, b.atoms[0]), pos(m, b.atoms[1])];
+      const [p, q] = [up(b.atoms[0]), up(b.atoms[1])];
       if ((p[0] - x) * (q[0] - x) >= 0) return false;
       const y = p[1] + ((x - p[0]) / (q[0] - p[0])) * (q[1] - p[1]);
       return y > y0 && y < y1;

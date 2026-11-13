@@ -481,10 +481,12 @@ ${t(' id="10"', "100 100", "A")}${t(' id="10"', "100 130", "B")}${t("", "100 160
   for (const [file, message] of refused) assert.throws(() => fromCdxml(file), (e: Error) => e.message === message, file.slice(0, 60));
   // Entity tricks: declared entities are never expanded, external ones never fetched.
   const laughs = `<?xml version="1.0"?><!DOCTYPE CDXML [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;"><!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;"><!ENTITY x SYSTEM "file:///etc/passwd">]>
-<CDXML __proto__="x" constructor="y"><page><t p="0 0"><s font="3" size="10">&c;&x;ok</s></t></page></CDXML>`;
+<CDXML __proto__="x" constructor="y"><page><t p="0 0"><s font="3" size="10">&c;&x;&constructor;&toString;&__proto__;ok</s></t></page></CDXML>`;
   const read = fromCdxml(laughs);
   assert.equal(read.mol.captions?.[0].text, "ok");
-  assert.equal(({} as Record<string, unknown>).x, undefined);
+  // Attributes named as an object's own members are kept as attributes, on an object with no prototype.
+  const odd = parseXml('<CDXML __proto__="x" constructor="y"/>').attrs;
+  assert.deepEqual([Object.getPrototypeOf(odd), odd.__proto__, odd.constructor], [null, "x", "y"]);
   // Bad numbers, ids and references: those objects are dropped and counted, the rest read.
   const bad = fromCdxml(`<CDXML><page><fragment><n id="1" p="NaN 0"/><n id="2" p="1e999 0"/><n id="3" p="10 10" Charge="99" Element="999"/><n id="4" p="20 10"/><b B="3" E="7"/><b B="3" E="3"/><b B="3" E="4"/><b B="4" E="3"/></fragment>
 <t p="0 0"><s font="3" size="5000">a\u0001b\tc</s></t><arrow id="9" Head3D="x"/><curve CurvePoints="1 2 3"/><graphic GraphicType="Rectangle" BoundingBox="0 0"/><unknownthing/></page></CDXML>`);
@@ -1131,13 +1133,43 @@ No</s><s font="3" size="10" color="4" face="3"> ISC</s></t></n></fragment><fragm
     assert.deepEqual([back.atoms[0].runs, back.atoms[0].bold], [[{ text: "O", bold: true }, { text: "Me" }], undefined]);
     assert.deepEqual([back.atoms[2].runs, back.atoms[2].italic], [[{ text: "OMe\n" }, { text: "CH3", underline: true }], true]);
   }
-  // Runs in Octet's own file must spell the label's text, with only bold, italic and underline.
+  // Runs in Octet's own file must spell the label's text, with only bold, italic, underline, script and a sound colour.
   const bad = JSON.parse(serialize(m));
-  for (const r of [[{ text: "OH", bold: true }], [{ text: "OMe", script: "mid" }], [{ text: "OMe", font: "Georgia" }], [{ text: "OMe", colour: "#ff0000" }]]) { bad.structure.atoms[0].runs = r; assert.throws(() => parse(JSON.stringify(bad)), /damaged/, JSON.stringify(r)); }
+  for (const r of [[{ text: "OH", bold: true }], [{ text: "OMe", script: "mid" }], [{ text: "OMe", font: "Georgia" }], [{ text: "OMe", size: 12 }], [{ text: "OMe", colour: "red" }]]) { bad.structure.atoms[0].runs = r; assert.throws(() => parse(JSON.stringify(bad)), /damaged/, JSON.stringify(r)); }
   // ChemDraw's own: OR with a bold R, and a label all bold (its own bold, no runs).
   const cd = fromCdxml(`<CDXML BondLength="14.40"><page id="1"><fragment id="2"><n id="3" p="100 100" NodeType="Unspecified"><t p="97 104"><s font="3" size="10" face="96">O</s><s font="3" size="10" face="97">R</s></t></n><n id="4" p="200 100" NodeType="Unspecified"><t p="197 104"><s font="3" size="10" face="97">O</s><s font="3" size="10" face="97">Me</s></t></n></fragment></page></CDXML>`);
   assert.deepEqual(cd.mol.atoms.map((a) => [a.text, a.bold, a.runs]), [["OR", undefined, [{ text: "O" }, { text: "R", bold: true }]], ["OMe", true, undefined]]);
   console.log("cdxml.check: labels with styled characters ok");
+}
+
+// A label in more than one colour (issue 64, the N of NMe2 in red): each <s> run in the colour it is drawn in, read
+// back as the same runs from CDXML, CDX and .oct. Black in a coloured label is #000000. ChemDraw draws a label in its
+// runs' colours: a colour every run has is the label's own, whatever the node's.
+{
+  const every = (x: Xml): Xml[] => [x, ...x.kids.flatMap(every)];
+  const red = "#B42323", blue = "#1D4E89";
+  const m: Mol = { atoms: [A("N", 0, 0, { text: "NMe2", runs: [{ text: "N", colour: red }, { text: "Me2" }] }), A("C", 1, 0),
+    A("O", 3, 0, { text: "OMe\nCH3", colour: blue, runs: [{ text: "OMe\n" }, { text: "CH", colour: "#000000" }, { text: "3", colour: red }] }), A("C", 4, 0)], bonds: [b(0, 1), b(2, 3)] };
+  const xml = toCdxml(m, DEFAULT_STYLE), doc = parseXml(xml), ts = every(doc).filter((x) => x.name === "t");
+  const table = every(doc).find((x) => x.name === "colortable")!.kids.map((c) => `#${["r", "g", "b"].map((k) => Math.round(Number(c.attrs[k]) * 255).toString(16).padStart(2, "0")).join("")}`.toUpperCase());
+  const hue = (k: Xml) => (k.attrs.color === undefined ? undefined : k.attrs.color === "0" ? "#000000" : table[Number(k.attrs.color) - 2]);
+  assert.deepEqual(ts[0].kids.map((k) => [k.text, hue(k)]), [["N", red], ["Me2", undefined]]);
+  assert.deepEqual(ts[1].kids.map((k) => [k.text, hue(k)]), [["OMe\n", blue], ["CH", "#000000"], ["3", red]]);
+  for (const back of [fromCdxml(xml).mol, fromCdxml(cdxToXml(xmlToCdx(doc))).mol, parse(serialize(fromCdxml(xml).mol))]) {
+    assert.deepEqual([back.atoms[0].colour, back.atoms[0].runs], [undefined, m.atoms[0].runs]);
+    assert.deepEqual([back.atoms[2].colour, back.atoms[2].runs], [blue, m.atoms[2].runs]);
+  }
+  // ChemDraw's own: a red O on a black node (its Text tool colours the runs), and MeO with the O red on a blue node.
+  const cd = fromCdxml(`<CDXML BondLength="14.40"><colortable><color r="1" g="1" b="1"/><color r="0" g="0" b="0"/><color r="1" g="0" b="0"/><color r="0" g="0" b="1"/></colortable><page id="1"><fragment id="2"><n id="3" p="100 100" Element="8" NumHydrogens="0"><t p="97 104"><s font="3" size="10" color="4" face="96">O</s></t></n><n id="4" p="114.4 100"/><n id="5" p="200 100" NodeType="Unspecified" color="5"><t p="197 104" color="5"><s font="3" size="10" color="5" face="96">Me</s><s font="3" size="10" color="4" face="96">O</s></t></n><n id="6" p="214.4 100"/><b id="7" B="3" E="4"/><b id="8" B="5" E="6"/></fragment></page></CDXML>`).mol;
+  assert.deepEqual([cd.atoms[0].label, cd.atoms[0].colour, cd.atoms[0].runs], ["O", "#FF0000", undefined]);
+  assert.deepEqual([cd.atoms[2].text, cd.atoms[2].colour, cd.atoms[2].runs], ["MeO", "#0000FF", [{ text: "Me" }, { text: "O", colour: "#FF0000" }]]);
+  // A label in one colour still has no runs, and keeps its colour.
+  const one = fromCdxml(toCdxml({ atoms: [A("O", 0, 0, { text: "OMe", colour: red }), A("C", 1, 0)], bonds: [b(0, 1)] }, DEFAULT_STYLE)).mol.atoms[0];
+  assert.deepEqual([one.colour, one.runs], [red, undefined]);
+  // Runs in two colours on a node in a third: the label keeps the node's colour, and the run in another its own.
+  const two = fromCdxml(`<CDXML BondLength="14.40"><colortable><color r="1" g="1" b="1"/><color r="0" g="0" b="0"/><color r="1" g="0" b="0"/><color r="0" g="0" b="1"/></colortable><page id="1"><fragment id="2"><n id="3" p="100 100" NodeType="Unspecified" color="5"><t p="97 104" color="4"><s font="3" size="10" color="4" face="96">Me</s><s font="3" size="10" color="5" face="96">O</s></t></n><n id="4" p="114.4 100"/><b id="5" B="3" E="4"/></fragment></page></CDXML>`).mol.atoms[0];
+  assert.deepEqual([two.colour, two.runs], ["#0000FF", [{ text: "Me", colour: "#FF0000" }, { text: "O" }]]);
+  console.log("cdxml.check: labels in more than one colour ok");
 }
 
 // A label with part raised or lowered (issue 44, Fe with III raised): written as <s> runs with the superscript face
@@ -1383,4 +1415,22 @@ No</s><s font="3" size="10" color="4" face="3"> ISC</s></t></n></fragment><fragm
   const turned = fromCdxml(toCdxml({ ...m, captions: [on(1, "H2O", { angle: 30 })] }, DEFAULT_STYLE)).mol.captions![0];
   assert.deepEqual([turned.on, turned.runs], [undefined, [{ text: "H" }, { text: "2", script: "sub" }, { text: "O" }]], "turned conditions keep their subscripts");
   console.log("cdxml.check: formula text written as drawn, read back as typed ok");
+}
+
+// Hydrogens set by hand (issue 125): a bare O and a CH2 at chain ends and a lone Br+ go out as NumHydrogens and come
+// back, through CDXML (with Hide Implicit Hydrogens too), CDX, .oct and Octet's .cdx. ChemDraw's bare O (NumHydrogens
+// 0) opens as one; a text that shows fewer H than NumHydrogens says (the file's Hide Implicit Hydrogens) and a hostile
+// count do not change the atom.
+{
+  const few: Mol = { atoms: [A("C", 0, 0), A("O", 0.866, 0.5, { implicitHCount: 0 }), A("C", 3, 0, { shown: true, implicitHCount: 2 }), A("C", 3.866, 0.5), A("Br", 6, 0, { charge: 1, implicitHCount: 0 })], bonds: [b(0, 1), b(2, 3)] };
+  const hs = (m: Mol) => m.atoms.map((a) => [a.label, a.text, a.implicitHCount, a.shown]), xml = toCdxml(few, DEFAULT_STYLE);
+  for (const back of [fromCdxml(xml), fromCdxml(toCdxml(few, { ...DEFAULT_STYLE, hideH: true })), fromCdxml(cdxToXml(xmlToCdx(parseXml(xml)))), readOct(writeOct(few, DEFAULT_STYLE)), readCdx(writeCdx(few, DEFAULT_STYLE))]) assert.deepEqual(hs(back.mol), hs(few));
+  const chemdraw = (attrs: string, text: string) => fromCdxml(`<CDXML BondLength="14.40"><page BoundingBox="0 0 540 720"><fragment id="1"><n id="2" p="100 100" ${attrs}><t p="100 100"><s font="3" size="10" face="96">${text}</s></t></n><n id="3" p="114.4 100"/><b id="4" B="2" E="3"/></fragment></page></CDXML>`).mol.atoms[0];
+  assert.deepEqual([chemdraw('Element="8" NumHydrogens="0"', "O").implicitHCount, chemdraw('Element="8" NumHydrogens="0"', "O").text], [0, undefined], "ChemDraw's bare O");
+  for (const attrs of ['Element="8" NumHydrogens="1"', 'Element="8" NumHydrogens="-1"', 'Element="8"']) assert.equal(chemdraw(attrs, "O").implicitHCount, undefined, attrs);
+  // A pyridine's N (NumHydrogens 0) in ChemDraw's delocalised ring has its usual none once the ring is made Kekulé.
+  const ring = [0, 1, 2, 3, 4, 5].map((k) => [100 + 14.4 * Math.cos((k * Math.PI) / 3), 100 + 14.4 * Math.sin((k * Math.PI) / 3)].map((v) => v.toFixed(2)).join(" "));
+  const pyridine = fromCdxml(`<CDXML BondLength="14.40"><page BoundingBox="0 0 540 720"><fragment id="1">${ring.map((p, k) => `<n id="${k + 2}" p="${p}"${k ? "/>" : ` Element="7" NumHydrogens="0"><t p="${p}"><s font="3" size="10" face="96">N</s></t></n>`}`).join("")}${ring.map((_, k) => `<b id="${k + 10}" B="${k + 2}" E="${((k + 1) % 6) + 2}" Order="1.5"/>`).join("")}</fragment></page></CDXML>`).mol;
+  assert.deepEqual([pyridine.atoms[0].implicitHCount, pyridine.bonds.filter((x) => x.type === 2).length], [undefined, 3], "a pyridine's N");
+  console.log("cdxml.check: hydrogens set by hand ok");
 }

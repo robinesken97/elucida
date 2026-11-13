@@ -45,6 +45,7 @@ type Unit = { text?: string; label: string; from?: number; to?: number; in?: num
 const atomsOf = (smiles: string) => [...smiles.matchAll(/\[([A-Z][a-z]?)[^\]]*\]|Br|Cl|[BCNOPSFI]/g)].map((m) => m[1] ?? m[0]);
 // Rows of 10 labels, the next row back the other way, 2.6 bond lengths apart: about a bond length shows between labels.
 const ROW = 10, STEP = 2.6, ROW_GAP = 1.8;
+const rowAt = (k: number): [number, number] => { const row = Math.floor(k / ROW); return [(row % 2 ? ROW - 1 - (k % ROW) : k % ROW) * STEP, -row * ROW_GAP]; };
 
 // The residue labels for a sequence from the structure drawn (full), or, when its atoms are not in the order of its
 // SMILES (a quick preview's layout), from its SMILES read again (parse): the labels are laid out here either way.
@@ -68,8 +69,10 @@ export function residueName(m: Mol, group: Set<number>, inchi: (x: Mol | string)
   const keep = [...group, ...caps.keys()].sort((p, q) => p - q);
   const capped = pickAtoms({ ...m, atoms: m.atoms.map((a, i) => (caps.has(i) ? { label: caps.get(i)!, location: a.location } : a)) }, keep);
   const want = inchi(capped);
-  return want ? residueTexts().find(([smiles]) => inchi(smiles) === want)?.[1] : undefined;
+  return want ? residueTexts().find(([smiles]) => (refs.has(smiles) ? refs : refs.set(smiles, inchi(smiles))).get(smiles) === want)?.[1] : undefined;
 }
+// Each residue's InChI, read once (Copy As HELM reads every residue of a chain).
+const refs = new Map<string, string | undefined>();
 export function residueTexts(): [smiles: string, text: string][] {
   return [
     ...Object.keys(CODES).map((c): [string, string] => [`${residueSmiles(c)}O`, CODES[c]]),
@@ -136,14 +139,35 @@ export function residues(full: Mol, text: string): Mol | undefined {
   }
   if (!codes || full.atoms.length !== expect.length || full.atoms.some((a, k) => a.label !== expect[k])) return undefined;
   const atoms: Mol["atoms"] = units.map((u, k) => {
-    const row = Math.floor(k / ROW), col = row % 2 ? ROW - 1 - (k % ROW) : k % ROW;
     const inner = u.from === undefined ? undefined : pickAtoms(full, Array.from({ length: u.to! - u.from }, (_, n) => u.from! + n));
     // The atoms that bond out count their hydrogens again, beside the bonds they have now.
     if (inner) for (const p of [u.in, u.out]) if (p !== undefined) { const { implicitHCount: _, ...a } = inner.atoms[p]; inner.atoms[p] = a; }
     // A residue's label is centred, so it reads as written in a row that runs right to left (never "alA"); an end
     // (OH, NH2) turns as any label does (HO).
-    return { label: u.label, location: [col * STEP, -row * ROW_GAP, 0], ...(u.text ? { text: u.text } : {}), ...(inner ? { inner, align: "centre" as const } : {}) };
+    return { label: u.label, location: [...rowAt(k), 0], ...(u.text ? { text: u.text } : {}), ...(inner ? { inner, align: "centre" as const } : {}) };
   });
   const bonds: Mol["bonds"] = units.slice(1).map((u, k) => ({ type: 1, atoms: [k, k + 1], ports: [units[k].out ?? -1, u.in ?? -1] }));
   return { atoms, bonds };
+}
+
+// A sequence drawn as residue labels (frag: one structure's atoms), in order from the end that starts it (H or Ac, else
+// the left end). Undefined for any other structure.
+let known: Set<string> | undefined;
+export function labelPath(m: Mol, frag: number[]): number[] | undefined {
+  known ??= new Set([...residueTexts().map(([, t]) => t), "H", "OH", "NH2", "Ac"]);
+  // The H end is an H atom; every other is a label.
+  const text = (i: number) => m.atoms[i].text ?? (m.atoms[i].label === "H" ? "H" : "");
+  if (frag.length < 3 || frag.some((i) => !known!.has(text(i)))) return undefined;
+  const inside = new Set(frag), near = new Map(frag.map((i) => [i, [] as number[]]));
+  for (const b of m.bonds) if (inside.has(b.atoms[0])) { near.get(b.atoms[0])!.push(b.atoms[1]); near.get(b.atoms[1])!.push(b.atoms[0]); }
+  const ends = frag.filter((i) => near.get(i)!.length === 1);
+  if (ends.length !== 2 || frag.some((i) => near.get(i)!.length > 2)) return undefined;
+  const left = (i: number) => m.atoms[i].location[0], path = [ends.find((i) => ["H", "Ac"].includes(text(i))) ?? (left(ends[0]) <= left(ends[1]) ? ends[0] : ends[1])];
+  while (path.length < frag.length) path.push(near.get(path[path.length - 1])!.find((j) => j !== path[path.length - 2])!);
+  return path;
+}
+// Clean Up of a sequence drawn as residue labels (chem.ts cleanUp): the labels in rows again, as residues() lays them
+// out.
+export function labelRows(m: Mol, frag: number[]): Map<number, [number, number]> | undefined {
+  return labelPath(m, frag)?.reduce((out, i, k) => out.set(i, rowAt(k)), new Map<number, [number, number]>());
 }

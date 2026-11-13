@@ -4,12 +4,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
 import { DEFAULT_STYLE } from "./docstyle.ts";
-import { deleteAtoms, extractSelection, fragments, insertMol, merge, subset } from "./edit.ts";
+import { deleteAtoms, extractSelection, fragments, insertMol, merge, placeCentres, subset } from "./edit.ts";
 import { parse, serialize } from "./file.ts";
 import { isQueryMolfile, readV3000, writeV3000 } from "./molv3.ts";
 import { expandGeneric, layoutGrid } from "./expand.ts";
 import {
-  altGroup, atomIndicator, bondIndicator, stepSubstituents, elementList, enclosed, GENERICS, hasQuery, isGeneric, linkNode, massText, placeAttachments, polymerLabel, polymerTags, queryLabel, repeatCount, rgroupMembers,
+  altGroup, atomIndicator, bondIndicator, stepSubstituents, elementList, enclosed, GENERICS, hasQuery, isGeneric, linkNode, massText, polymerLabel, polymerTags, queryLabel, repeatCount, rgroupMembers,
 } from "./query.ts";
 import { labelSmiles } from "./labels.ts";
 import { messy, problems } from "./check.ts";
@@ -121,12 +121,12 @@ assert.deepEqual(copy.atoms[6].centre!.atoms, [0, 1, 2]);
 assert.deepEqual(merge(drawing, copy, [0, 0]).atoms[drawing.atoms.length + 6].centre!.atoms, [34, 35, 36]);
 assert.deepEqual(insertMol(drawing, copy, [5, 5]).mol.atoms[drawing.atoms.length + 6].centre!.atoms, [34, 35, 36]);
 assert.deepEqual(subset(drawing, new Set([12, 13])).atoms.map((a) => a.label), ["Br"], "an attachment without its atoms is not copied");
-const moved = placeAttachments({ ...drawing, atoms: drawing.atoms.map((a, i) => (i >= 14 && i <= 18 ? { ...a, location: [a.location[0] + 1, a.location[1], 0] } : a)) });
+const moved = placeCentres({ ...drawing, atoms: drawing.atoms.map((a, i) => (i >= 14 && i <= 18 ? { ...a, location: [a.location[0] + 1, a.location[1], 0] } : a)) });
 assert.deepEqual(moved.atoms[24].location.slice(0, 2).map((v) => +v.toFixed(6)), [9, 1.5]);
 // Warnings: an attachment sits among its atoms and its bonds cross its ring by design, an R-group fragment's
 // attachment mark is not a carbon, and Abnormal Valence allowed turns the valence warning off.
 {
-  const placed = placeAttachments(drawing);
+  const placed = placeCentres(drawing);
   assert.equal(messy(placed), false);
   const found = problems(placed);
   assert.ok(!found.some((p) => p.atom !== undefined && placed.atoms[p.atom].centre), "no warning on an attachment");
@@ -166,6 +166,9 @@ console.log("query.check: attachments through edits ok");
     assert.deepEqual(out.map((x) => x.atoms.map((a) => a.label).join("")), ["CCO", "CCC"]);
     assert.deepEqual(out.map((x) => angle(x, 1)), [120, 120], "not a straight line at the joining atom");
   }
+  // A fragment drawn as a label (OMe) joins as that label, not as its element alone.
+  const ome: Mol = { atoms: [A("C", 0, 0), A("C", 1, 0, { text: "R1" }), A("O", 5, 0, { text: "OMe" })], bonds: [b(0, 1)], shapes: [{ id: 1, kind: "box", from: [4, 1], to: [6, -1], rgroup: { name: "R1" } }] };
+  assert.deepEqual(expandGeneric(ome, [0, 1]).mols.map((x) => x.atoms.map((a) => a.text ?? a.label)), [["C", "OMe"]]);
   // A wavy bond stands for a wedge and a hash.
   const wavy = expandGeneric({ atoms: [A("C", 0, 0), A("C", 1, 0), A("O", 1.5, 0.866), A("N", 1.5, -0.866), A("C", 2, 0)], bonds: [b(0, 1), b(1, 2), b(1, 3), b(1, 4, { display: "wavy" })] }, [0]);
   assert.deepEqual(wavy.mols.map((x) => x.bonds[3].stereo), [1, 6]);

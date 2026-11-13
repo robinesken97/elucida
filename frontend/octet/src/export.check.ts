@@ -2,6 +2,7 @@
 // picture.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { apartShapes, type Drawing } from "./render.ts";
 import { CARRY_CDXML, dpiFor, frameOf, glyphInk, inkOfText, pasteRefused, pictureAs, pixelsAt, tooLarge, UI, withBackground, withMargin } from "./export.ts";
 import { EMPTY, extractSelection, sprout } from "./edit.ts";
 
@@ -110,6 +111,14 @@ assert.deepEqual(frameOf([0, 0, 100, 40], 0.75), [0, 0, 75, 30], "an exact size 
 assert.deepEqual(frameOf([5, 5, 5, 5], 0.75), [3.75, 3.75, 0.01, 0.01], "at least a hundredth across");
 assert.match(editor, /const t = el instanceof SVGTextElement \? inkOfText\(el, glyphInk\) : undefined;/, "Copy and Export measure labels by their ink");
 {
+  // Issue 55: Word reads the bounds of an EMF with text in it at 96 dpi, so the EMF's reference device is 96 dpi and
+  // a device px is a whole number of its 1/20 pt logical units (src-tauri/src/vector.rs; its tests read the header).
+  const vector = readFileSync(new URL("../src-tauri/src/vector.rs", import.meta.url), "utf8");
+  const emf = Object.fromEntries([...vector.matchAll(/^const (UNIT|PER_PX|DEVICE|DEVICE_MM): [^=]+= \(?([^)]+?)\)?;$/gm)].map((m) => [m[1], m[2].split(", ").map((v) => Number(v.replaceAll("_", "")))]));
+  assert.deepEqual(emf.DEVICE.map((px, i) => (px * 254) / (emf.DEVICE_MM[i] * 10)), [96, 96], "the reference device is 96 dpi");
+  assert.equal(emf.PER_PX[0] * 96, emf.UNIT[0] * 72, "a device px is 15 logical units");
+}
+{
   // A text as the browser lays it out: characters in text nodes (some in a tspan), each at a start position.
   type Fake = { nodeType: number; nodeValue?: string; childNodes: Fake[] };
   const node = (kids: (string | Fake)[]): Fake => ({ nodeType: 1, childNodes: kids.map((k) => (typeof k === "string" ? { nodeType: 3, nodeValue: k, childNodes: [] } : k)) });
@@ -153,5 +162,17 @@ assert.match(editor, /if \(picture\) return pastePicture\(picture\);\s+const say
   const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
   const ink = /function canvasInk\([\s\S]*?\n  \}\n/.exec(editor)?.[0] ?? "";
   assert.match(ink, /el\.closest\("defs, mask, clipPath, pattern, marker, symbol, filter"\)\) continue;/, "canvasInk leaves out defs and masks");
+}
+// A picture that leaves Octet (Copy, Export) draws each line of a bond, ring circle, symbol and arrow as a path of its own, as
+// ChemDraw's PDF does, so Inkscape and Illustrator can move each one. The canvas keeps one path per colour.
+{
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /function structurePaths\(d: Drawing, apart = false\): \[string, string\]\[\] \{\n  if \(apart && d\.owners\) \{\n    return apartShapes\(d\)/, "structurePaths uses apartShapes");
+  // A double bond (owner 0) gives two paths; a ring circle (owner -1) keeps its hole, listed before the circle.
+  const sq = (x: number, y: number, w: number, h: number): [number, number][] => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  const shapes = apartShapes({ polygons: [sq(0, 0, 10, 1), sq(1, 3, 8, 1), sq(23, 3, 4, 4), sq(20, 0, 10, 10)], colours: [undefined, undefined, undefined, undefined], alphas: [1, 1, 1, 1], owners: [0, 0, -1, -1] } as unknown as Drawing);
+  assert.deepEqual(shapes.map(([key, polys]) => [key, polys.length]), [["|1.00|0|0", 1], ["|1.00|0|1", 1], ["|1.00|-1|3", 2]], "each line apart, the hole with its circle");
+  assert.match(editor, /const structureInk = useMemo\([^\n]*structurePaths\(d, !!exporting\)[^\n]*\[drawing, exporting\]\)/, "structures apart when exporting");
+  assert.match(editor, /if \(exporting\) each\.push\(\[key, path\]\);/, "arrows apart when exporting");
 }
 console.log("export.check: ok");

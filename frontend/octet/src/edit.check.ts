@@ -402,6 +402,9 @@ console.log("edit.check: align ok");
   assert.equal(withGrid.grids?.length, 2);
   assert.deepEqual(withGrid.grids![1], { arrow: withGrid.arrows![1].id, typed: { r0: { mass: 0.5 } }, limiting: "r0" });
   assert.deepEqual(extractSelection(gridded, new Set([0, 1, 2]), new Set()).grids, []);
+  // A table moved on its own keeps its place from its arrow (Grid.at), so it comes where its pasted arrow is.
+  const placed = { ...m, grids: [{ arrow: 10, typed: {}, at: [-1, -2] as [number, number] }] };
+  assert.deepEqual(insertMol(placed, extractSelection(placed, new Set([0, 1, 2]), new Set([10])), [1, -1]).mol.grids![1].at, [-1, -2]);
   // A caption tied to a structure or an arrow, picked on its own, copies as free text where it is drawn (Sam, 27 October
   // 2026: text tied to a molecule would not copy). Picked with its structure, it stays tied.
   const at = (c: { id: number }) => (c.id === 12 ? [5, -2] as [number, number] : c.id === 11 ? [4, 1] as [number, number] : undefined);
@@ -814,6 +817,19 @@ console.log("edit.check: align ok");
   assert.equal(setElement(keyElement(chain, 0, "C"), 0, "C").atoms[0].shown, undefined);
   assert.deepEqual([keyElement(chain, 0, "N").atoms[0].label, keyElement(chain, 0, "N").atoms[0].shown], ["N", undefined]);
   console.log("edit.check: shown carbons ok");
+  // The element key again on that element takes off one hydrogen, and after none gives the usual ones back (issue
+  // 125): o twice at a chain end is a bare O, and c on a lone CH4 gives CH3, CH2, CH, C, then CH4. Another element, or
+  // a bond that leaves no room for fewer, makes it a usual atom again.
+  const { settleHydrogens } = await import("./edit.ts");
+  const bare = keyElement(keyElement(chain, 2, "O"), 2, "O"), counts: (number | undefined)[] = [];
+  assert.deepEqual([bare.atoms[2].label, bare.atoms[2].implicitHCount, keyElement(bare, 2, "O").atoms[2].implicitHCount, keyElement(bare, 2, "N").atoms[2].implicitHCount], ["O", 0, undefined, undefined]);
+  let lone: Mol = { atoms: [{ label: "C", location: [0, 0, 0] }], bonds: [] };
+  for (let k = 0; k < 5; k++) { lone = keyElement(lone, 0, "C"); counts.push(lone.atoms[0].implicitHCount); }
+  assert.deepEqual([counts, lone.atoms[0].shown], [[3, 2, 1, 0, undefined], true]);
+  assert.equal(keyElement(keyElement(chain, 1, "O"), 1, "O").atoms[1].implicitHCount, undefined, "an ether O has no H to take off");
+  assert.equal(settleHydrogens(bare), bare);
+  assert.equal(settleHydrogens(bondTo(bare, 2, [5, 5])).atoms[2].implicitHCount, undefined);
+  console.log("edit.check: hydrogens set by hand ok");
   // A label typed on more than one line (Option-Return) keeps its lines, each trimmed, empty ones left out; one line
   // left is a label as before.
   assert.equal(setLabel(chain, 0, " Direct, \n\n No ISC \n").atoms[0].text, "Direct,\nNo ISC");

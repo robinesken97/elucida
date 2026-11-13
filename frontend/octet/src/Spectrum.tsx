@@ -5,10 +5,11 @@
 // band to its C=O) by a click on it and then on them, or by a drag from it to one. The wheel zooms the shift axis, a
 // drag pans it, a Shift-drag makes one multiplet of the peaks it covers, and a double-click shows all of it. Expanded,
 // the panel fills the canvas with the structure beside the spectrum (the canvas's own drawing, shown again).
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowsIn, ArrowsOut, ChartLine, CopySimple, LinkBreak, ListBullets, Tag, Trash, X } from "@phosphor-icons/react";
-import { acsText, detailsTable, multiplicity, quality, type Nucleus, type Prediction, type Signal } from "./nmr";
+import { ChartLine, CopySimple, LinkBreak, ListBullets, Plus, Tag, Trash } from "@phosphor-icons/react";
+import { CloseX, PanelControls, ResizeEdge, type Sizing } from "./PanelControls";
+import { acsText, countText, detailsTable, isNucleus, multiplicity, NUCLEI, quality, shiftText, type Nucleus, type Prediction, type Signal } from "./nmr";
 import { levels, measuredText, nameOf, nucleusText, reversed, type Analysis, type Measured } from "./measured";
 import { Select } from "./Select";
 import { NumberField, Segmented } from "./Fields";
@@ -28,6 +29,11 @@ const HEIGHT = 184, STACKED = 320, TOP = 44, BASE = 26, PAD = 14; // px: the plo
 // neighbouring peaks far apart.
 const PEAKS = ["Blue", "Orange", "Green", "Red", "Purple", "Teal", "Pink", "Gold", "Brown", "Slate"].map((name) => HIGHLIGHT_COLOURS.find(([n]) => n === name)!);
 export const PEAK_COLOURS = PEAKS.map(([, hex]) => hex);
+// A peak's colour as the panel draws it (B1.18): the atom's own colour, mixed 30% toward white in a dark window, so
+// every peak colour stands out 3:1 from the dark panel (contrast.check.ts). The page keeps the colour as it is.
+export const lighter = (hex: string) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.7 + 255 * 0.3).toString(16).padStart(2, "0")).join("")}`;
+const darkWindow = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+const onPanel = (c?: string) => (c && /^#[0-9a-f]{6}$/i.test(c) && darkWindow() ? lighter(c) : c);
 
 export type Show = "predicted" | "measured" | "stacked" | "overlaid";
 
@@ -59,6 +65,8 @@ export function RowText({ l, at, base, vertical }: { l: RowLabel; at: number; ba
 }
 type PanelRow = ReturnType<typeof panelRow>;
 // A key's name on its button: ¹H, ¹³C, ¹⁹F, IR, UV-Vis, MS.
+// Multiplicities in words, for screen readers.
+const MULTIPLETS: Record<string, string> = { s: "singlet", d: "doublet", t: "triplet", q: "quartet", quint: "quintet", sext: "sextet", sept: "septet", m: "multiplet", "br s": "broad singlet" };
 const keyName = (k: string) => (/^\d/.test(k) ? nucleusText(k) : nameOf(k));
 
 type Props = {
@@ -82,11 +90,26 @@ type Props = {
   onThreshold: (t: number) => void; onDefine: (lo: number, hi: number) => void; onCount: (id: number, n: number) => void;
   onLinkHover: (at?: [number, number]) => void; onLinkAt: (id: number, at: [number, number]) => void; onUnlink: (id: number) => void;
   onGroupColour: (id: number, colour?: string) => void; onGroupColourAll: (on: boolean) => void; onRemove: () => void;
+  // Minimised to its pill (B1.5): the panel stays, hidden, so it comes back exactly as it was. Full screen, Minimise,
+  // and the panel's name for screen readers ("¹H NMR spectrum").
+  hidden?: boolean; expanded: boolean; onExpanded: (on: boolean) => void; onMinimise: (keyboard?: boolean) => void; label: string;
+  // The session's structure by name or formula (pointing at it lights the structure), its spectra as tabs (keys), the
+  // kinds a new tab can be (+), and a tab's close (B1.8). noStructure: the structure is gone (B1.12).
+  sizing: Sizing; // the strip's height, set by its top edge (B1.3)
+  // Decouple ¹H for the nucleus shown (¹⁹F, ³¹P), from its setting: a structure with no F or P has no prediction to
+  // read it from.
+  decoupled: boolean; onDecouple: (on: boolean) => void;
+  title: string; formulaTitle?: boolean; onPointTitle: (on: boolean) => void; addable: string[]; onAddKey: (key: string) => void; onCloseTab: (key: string) => void; noStructure?: boolean;
 };
 
-export function SpectrumPanel(p: Props) {
-  const box = useRef<HTMLDivElement>(null), [width, setWidth] = useState(600), [expanded, setExpanded] = useState(false), [tall, setTall] = useState(HEIGHT);
-  const nucleus: Nucleus | undefined = p.spectrumKey === "1H" || p.spectrumKey === "13C" ? p.spectrumKey : undefined;
+// While it is minimised the panel does not draw again: nothing of it shows.
+export const SpectrumPanel = memo(Panel, (a, b) => !!a.hidden && !!b.hidden);
+function Panel(p: Props) {
+  const box = useRef<HTMLDivElement>(null), [width, setWidth] = useState(600), [tall, setTall] = useState(HEIGHT), expanded = p.expanded, setExpanded = p.onExpanded;
+  // A predicted nucleus's key starts with its mass number (1H, 13C); a measured spectrum's is its kind (ir, ms).
+  const nucleus: Nucleus | undefined = isNucleus(p.spectrumKey) ? p.spectrumKey : undefined;
+  // ¹H and ¹⁹F are drawn as a trace with integrals, ¹³C and ³¹P as sticks (nmr.ts NUCLEI).
+  const traced = !!nucleus && NUCLEI[nucleus].trace;
   const m = p.measured, a = p.analysis;
   const show: Show = !m ? "predicted" : !nucleus ? "measured" : p.show;
   const showP = show !== "measured" && !!nucleus, showM = show !== "predicted" && !!m && !!a;
@@ -94,7 +117,7 @@ export function SpectrumPanel(p: Props) {
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const fit = () => { setWidth(el.clientWidth); setTall(Math.max(docked, el.clientHeight)); };
+    const fit = () => { if (el.clientWidth) { setWidth(el.clientWidth); setTall(Math.max(60, el.clientHeight)); } };
     fit();
     const watch = new ResizeObserver(fit);
     watch.observe(el);
@@ -102,7 +125,7 @@ export function SpectrumPanel(p: Props) {
   }, [expanded, docked]);
   // Escape lets go of the multiplet being linked, then leaves full screen.
   useEffect(() => {
-    if (!expanded && p.chosenGroup === undefined) return;
+    if (p.hidden || (!expanded && p.chosenGroup === undefined)) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || listOpen()) return;
       e.stopPropagation();
@@ -110,16 +133,16 @@ export function SpectrumPanel(p: Props) {
     };
     addEventListener("keydown", key, true);
     return () => removeEventListener("keydown", key, true);
-  }, [expanded, p.chosenGroup]); // eslint-disable-line react-hooks/exhaustive-deps
-  const H = expanded ? tall : docked;
-  const h1M = !!m && m.kind === "nmr" && m.nucleus === "1H";
+  }, [expanded, p.chosenGroup, p.hidden]); // eslint-disable-line react-hooks/exhaustive-deps
+  const H = tall; // the room the panel gives the plot, docked at its height or full screen
+  const h1M = !!m && m.kind === "nmr" && isNucleus(m.nucleus) && NUCLEI[m.nucleus].trace;
   const base = showM && h1M ? 42 : BASE, axisY = H - base;
 
   // The x range to show all: the prediction's, the measured spectrum's, or both. NMR and IR run high to low.
   const rev = m && showM ? reversed(m) : true;
   const all = useMemo((): [number, number] => {
     const r: [number, number][] = [];
-    if (showP) r.push(fullRange(p.prediction, nucleus!));
+    if (showP) r.push(fullRange(p.prediction, nucleus!, p.mhz));
     if (showM && m) {
       const lo = Math.min(m.first, m.last), hi = Math.max(m.first, m.last), pad = m.sticks ? 0.05 * (hi - lo) || 1 : 0;
       r.push([lo - pad, hi + pad]);
@@ -155,12 +178,12 @@ export function SpectrumPanel(p: Props) {
   const pxSpan = (ls: { ppm: number }[]) => { const [a, b] = span(ls).map(x); return { a: Math.min(a, b), b: Math.max(a, b) }; };
   const inRange = faint ? [] : signals.map((s, k) => (shown(s) ? k : -1)).filter((k) => k >= 0), solventIn = solvent.filter((s) => s.ppm >= lo && s.ppm <= hi);
   const labelsP: RowLabel[] = [
-    ...inRange.map((k) => { const s = signals[k]; return { x: x(s.shift), ...pxSpan(split[k]), shift: s.shift.toFixed(nucleus === "1H" ? 2 : 1), rest: nucleus === "1H" ? `${multiplicity(s)}, ${s.nuclei}H` : s.nuclei > 1 ? `${s.nuclei}C` : "" }; }),
+    ...inRange.map((k) => { const s = signals[k]; return { x: x(s.shift), ...pxSpan(split[k]), shift: shiftText(s.shift, nucleus!), rest: traced ? `${multiplicity(s)}, ${countText(s, nucleus!)}` : [s.couplings.length ? multiplicity(s) : "", s.nuclei > 1 ? countText(s, nucleus!) : ""].filter(Boolean).join(", ") }; }),
     ...solventIn.map((s) => ({ x: x(s.ppm), ...pxSpan(s.lines), shift: s.name, rest: "", plain: true })),
   ];
   const groups = useMemo(() => (showM ? a!.groups.filter((g) => g.shift >= lo && g.shift <= hi) : []), [a, showM, lo, hi]);
   const ownGroups = groups.filter((g) => !g.other);
-  const dp = m?.kind === "nmr" ? (m.nucleus === "1H" ? 2 : 1) : m?.kind === "ms" && !ownGroups.every((g) => Math.abs(g.shift - Math.round(g.shift)) < 0.05) ? 1 : 0;
+  const dp = m?.kind === "nmr" ? (isNucleus(m.nucleus) ? NUCLEI[m.nucleus].decimals : 1) : m?.kind === "ms" && !ownGroups.every((g) => Math.abs(g.shift - Math.round(g.shift)) < 0.05) ? 1 : 0;
   const second = (g: Analysis["groups"][number]) => (h1M ? `${g.name}, ${Math.max(1, Math.round(g.n))}H` : "");
   const pxRange = (g: { lo: number; hi: number }) => ({ a: Math.min(x(g.lo), x(g.hi)), b: Math.max(x(g.lo), x(g.hi)) });
   const labelsM: RowLabel[] = groups.map((g) => (g.other ? { x: x(g.shift), ...pxRange(g), shift: g.other, rest: "", plain: true } : { x: x(g.shift), ...pxRange(g), shift: g.shift.toFixed(dp), rest: second(g) }));
@@ -176,9 +199,10 @@ export function SpectrumPanel(p: Props) {
   // ¹H as the lines summed (sample), each pixel column drawn from its lowest to its highest value, so every line shows
   // at any zoom; ¹³C as sticks, as tall as the carbons they count. step: two points a pixel when zoomed in close.
   const step = (hi - lo) / (2 * width), pxPpm = (hi - lo) / (width - 2 * PAD);
-  const trace = useMemo(() => (nucleus === "1H" && signals.length ? sample(lineList.filter((l) => l.signal >= 0), lo, hi, step) : undefined), [lineList, signals, nucleus, lo, hi, width]); // eslint-disable-line react-hooks/exhaustive-deps
-  const solventTrace = useMemo(() => (nucleus === "1H" && solvent.length ? sample(lineList.filter((l) => l.signal < 0), lo, hi, step) : undefined), [lineList, solvent, nucleus, lo, hi, width]); // eslint-disable-line react-hooks/exhaustive-deps
-  const top = nucleus === "1H" ? Math.max(1e-9, trace ? peakIn(trace) : 0, solventTrace ? peakIn(solventTrace) : 0) : Math.max(1, ...signals.map((s) => s.nuclei), ...solvent.flatMap((s) => s.lines.map((l) => l.h)));
+  const trace = useMemo(() => (traced && signals.length ? sample(lineList.filter((l) => l.signal >= 0), lo, hi, step) : undefined), [lineList, signals, nucleus, lo, hi, width]); // eslint-disable-line react-hooks/exhaustive-deps
+  const solventTrace = useMemo(() => (traced && solvent.length ? sample(lineList.filter((l) => l.signal < 0), lo, hi, step) : undefined), [lineList, solvent, nucleus, lo, hi, width]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sticks: as tall as their lines (a split signal's lines are lower than its count).
+  const top = traced ? Math.max(1e-9, trace ? peakIn(trace) : 0, solventTrace ? peakIn(solventTrace) : 0) : Math.max(1e-9, ...lineList.map((l) => l.h));
   const y = (v: number) => laneP.bottom - (v / top) * (laneP.bottom - laneP.top);
   const to = ([px, v]: [number, number]) => `${px.toFixed(1)} ${y(v).toFixed(1)}`;
   const pathOf = (t?: Trace) => (t ? columnsOf(t, x, width).map((q, i) => `${i ? "L" : "M"}${to(q)}`).join("") : "");
@@ -209,7 +233,7 @@ export function SpectrumPanel(p: Props) {
   const yM = (v: number) => laneM.bottom - ((v - (lv?.base ?? 0)) / mTop) * (laneM.bottom - laneM.top);
   const groupOn = (id: number) => pointedGroup === id || p.chosenGroup === id || p.litGroups.has(id);
   // Each lane's label row: the ink's height over the lane's bottom from a to b px places the leaders.
-  const rowP: PanelRow | undefined = labelsP.length ? panelRow(labelsP, sizeP, width, laneP, nucleus === "1H"
+  const rowP: PanelRow | undefined = labelsP.length ? panelRow(labelsP, sizeP, width, laneP, traced
     ? (a0, b0) => { const [u, v] = [at(a0), at(b0)]; return (Math.max(trace ? peakIn(trace, u, v) : 0, solventTrace ? peakIn(solventTrace, u, v) : 0) / top) * (laneP.bottom - laneP.top); }
     : inkOf([...signals.map((q): [number, number] => [x(q.shift), (q.nuclei / top) * (laneP.bottom - laneP.top)]), ...solvent.flatMap((q) => q.lines.map((l): [number, number] => [x(l.ppm), (l.h / top) * (laneP.bottom - laneP.top)]))])) : undefined;
   const rowM: PanelRow | undefined = labelsM.length && m && lv ? panelRow(labelsM, sizeM, width, laneM, inkOf([
@@ -247,26 +271,46 @@ export function SpectrumPanel(p: Props) {
     if (k !== pointed) { setPointed(k); p.onPoint(k === undefined ? undefined : signals[k].atoms); }
     if (g !== pointedGroup) { setPointedGroup(g); p.onPointGroup(g); }
   };
+  // The peaks by keyboard (B1.15): a list, one stop in the tab order, the arrow keys move along it. Each is named as a
+  // chemist reads it ("4.12 ppm, quartet, J 7.1 Hz, 2 H"); focus lights its atoms, as pointing does; Return chooses it.
+  const element = nucleus ? nucleus.replace(/^\d+/, "") : "";
+  const peaks = [
+    ...inRange.map((k, j) => {
+      const s0 = signals[k], c = [...s0.couplings].sort((u, v) => v.j - u.j), word = MULTIPLETS[multiplicity(s0)] ?? multiplicity(s0);
+      return { id: `p${k}`, name: `${labelsP[j].shift} ppm, ${word}${c.length ? `, J ${c.map((x) => x.j.toFixed(1)).join(", ")} Hz` : ""}, ${s0.nuclei} ${element}`, point: () => setPoint(k, undefined), choose: () => setChosen(k) };
+    }),
+    ...(m ? ownGroups.map((g) => ({ id: `m${g.id}`, name: `${g.shift.toFixed(dp)} ${m.xUnit}${second(g) ? `, ${second(g)}` : ""}`, point: () => setPoint(undefined, g.id), choose: () => p.onChooseGroup(g.id) })) : []),
+  ];
+  const [roving, setRoving] = useState(0), [peakFocus, setPeakFocus] = useState(false), at0 = Math.min(roving, peaks.length - 1);
   const outside = (cx: number, cy: number) => { const r = box.current?.closest("section")?.getBoundingClientRect(); return !r || cx < r.left || cx > r.right || cy < r.top || cy > r.bottom; };
 
   return (
-    <section className={["spectrum", expanded && "expanded", leaving && "leaving"].filter(Boolean).join(" ")} aria-label="Spectrum" style={move.style} inert={leaving}>
+    <section className={["spectrum", expanded ? "expanded" : "sized", p.hidden && "minimised", leaving && "leaving"].filter(Boolean).join(" ")} role="region" aria-label={p.label} style={expanded ? move.style : { ...move.style, height: p.sizing.height }} inert={leaving || p.hidden}
+      // Escape with the focus in the panel: an open list closes, then the multiplet being linked, then full screen
+      // (those three take it first), then the panel minimises to its pill.
+      onKeyDown={(e) => { if (e.key === "Escape" && !listOpen() && !e.defaultPrevented) { e.stopPropagation(); p.onMinimise(true); } }}>
       {/* The shared panel header (as Actions and Properties): the title at the left, the close button at the top right.
           The controls sit in a row of their own under it. */}
+      {!expanded && <ResizeEdge sizing={p.sizing} onMinimise={p.onMinimise} />}
       <header onPointerDown={move.onPointerDown}>
-        <h2>{nameOf(p.spectrumKey)}{m && showM && m.title && <span className="spectrum-title">{m.title}</span>}</h2>
-        <span className="spectrum-head-buttons">
-          <button className="actions-close" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "Leave full screen" : "Full screen"} data-tip={expanded ? "Leave full screen" : "Full screen"}>{expanded ? <ArrowsIn size={12} /> : <ArrowsOut size={12} />}</button>
-          <button className="actions-close" onClick={p.onClose} aria-label="Close spectrum" data-tip="Close spectrum"><X size={12} /></button>
-        </span>
+        <h2 onPointerEnter={() => p.onPointTitle(true)} onPointerLeave={() => p.onPointTitle(false)}>{p.title ? (p.formulaTitle ? <span className="formula">{p.title}</span> : p.title) : nameOf(p.spectrumKey)}{m && showM && m.title && <span className="spectrum-title">{m.title}</span>}</h2>
       </header>
       <div className="spectrum-controls">
-        <Segmented label="Spectrum" value={p.spectrumKey} options={p.keys.map((k) => [k, keyName(k)])} onChange={p.onKey} />
+        <Tabs keys={p.keys} value={p.spectrumKey} onKey={p.onKey} onClose={p.onCloseTab}>
+          {p.addable.length > 0 && (
+            <Pick label="Add spectrum" value="" className="tab-add" title="Add spectrum" groups={[p.addable.map((k) => ({ key: k, name: keyName(k), icon: <ChartLine size={18} /> }))]} onPick={p.onAddKey}>
+              <Plus size={12} aria-hidden />
+            </Pick>
+          )}
+        </Tabs>
+        {p.noStructure && <span className="spectrum-none" role="status">No structure</span>}
         {m && nucleus && <Segmented label="Show" value={show} options={[["predicted", "Predicted"], ["measured", "Measured"], ["stacked", "Stacked"], ["overlaid", "Overlaid"]]} onChange={p.onShow} />}
         {showP && <Select label="Frequency" value={String(p.mhz)} options={FIELDS.map((f) => [String(f), `${f} MHz`])} onChange={(v) => p.onMhz(Number(v))} />}
         {(showP || m?.kind === "nmr") && <Select label="Solvent" value={p.solvent} options={[...new Set([...SOLVENTS, p.solvent])].map((s) => [s, s])} onChange={p.onSolvent} />}
         {showP && !faint && <button className="spectrum-button" aria-pressed={p.solventPeaks} onClick={() => p.onSolventPeaks(!p.solventPeaks)} data-tip={p.solventPeaks ? "Hide the solvent's peaks" : "Show the solvent's peaks"}>Solvent peaks</button>}
         <Segmented label="Labels" value={p.labels} options={[["auto", "Auto"], ["horizontal", "Horizontal"], ["vertical", "Vertical"]]} onChange={p.onLabels} />
+        {/* ¹⁹F and ³¹P with or without their ¹H couplings (¹³C is always decoupled). */}
+        {showP && nucleus && nucleus !== "1H" && nucleus !== "13C" && <button className="spectrum-button" aria-pressed={p.decoupled} onClick={() => p.onDecouple(!p.decoupled)} data-tip={p.decoupled ? "Show the couplings to ¹H" : "Take away the couplings to ¹H"}>Decouple ¹H</button>}
         {showP && !showM && <button className="spectrum-button" aria-pressed={p.details} onClick={() => p.onDetails(!p.details)} data-tip={p.details ? "Hide the details" : "How each shift was predicted, and how far to trust it"}>Details</button>}
         {showM && m && <span className="spectrum-threshold"><Slider name="Threshold" value={Math.round(m.threshold * 1000) / 10} min={0.5} max={50} step={0.5} show={(v) => `${v}%`} onChange={(v) => p.onThreshold(v / 100)} /></span>}
         <span className="spectrum-gap" />
@@ -295,11 +339,24 @@ export function SpectrumPanel(p: Props) {
         {m && <button className="spectrum-button" onClick={p.onRemove} data-tip="Remove the measured spectrum from the drawing" aria-label="Remove measured spectrum"><Trash size={16} /></button>}
       </div>
       <div className="spectrum-body">
-      <div ref={box} className="spectrum-plot">
+      <div className="visually-hidden" role="listbox" aria-label="Peaks">
+        {peaks.map((q, i) => (
+          <div key={q.id} role="option" aria-selected={false} aria-label={q.name} tabIndex={i === at0 ? 0 : -1}
+            onFocus={() => { setRoving(i); setPeakFocus(true); q.point(); }} onBlur={() => { setPeakFocus(false); setPoint(undefined, undefined); }}
+            onKeyDown={(e) => {
+              const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1, Home: -i, End: peaks.length - 1 - i }[e.key];
+              if (e.key === "Enter") { e.preventDefault(); q.choose(); return; }
+              if (step === undefined) return;
+              e.preventDefault();
+              ((e.currentTarget.parentElement?.children[Math.max(0, Math.min(peaks.length - 1, i + step))]) as HTMLElement | undefined)?.focus();
+            }} />
+        ))}
+      </div>
+      <div ref={box} className={peakFocus ? "spectrum-plot peak-focus" : "spectrum-plot"}>
         <svg
           width={width} height={H} role="img" aria-label={text || "No spectrum"}
           onWheel={(e) => {
-            const pin = at(e.nativeEvent.offsetX), k = Math.exp(e.deltaY * 0.002), fewest = showM && m ? Math.abs(m.last - m.first) / 2000 : nucleus === "1H" ? 0.05 : 1;
+            const pin = at(e.nativeEvent.offsetX), k = Math.exp(e.deltaY * 0.002), fewest = showM && m ? Math.abs(m.last - m.first) / 2000 : !nucleus || NUCLEI[nucleus].decimals > 1 ? 0.05 : nucleus === "13C" ? 1 : 0.5;
             const span = Math.min(all[1] - all[0], Math.max(fewest, (hi - lo) * k)), f = (hi - pin) / (hi - lo);
             const h = Math.min(all[1], Math.max(all[0] + span, pin + f * span));
             setRange([h - span, h]);
@@ -352,7 +409,7 @@ export function SpectrumPanel(p: Props) {
           {tickAt.map((v) => (
             <g key={v} className="spectrum-tick">
               <line x1={x(v)} x2={x(v)} y1={axisY} y2={axisY + 4} />
-              <text x={x(v)} y={axisY + (showM && h1M ? 32 : 16)} textAnchor="middle">{v.toFixed(places)}</text>
+              <text x={x(v)} y={axisY + (showM && h1M ? 32 : 16)} textAnchor="middle">{v.toFixed(places).replace("-", "−")}</text>
             </g>
           ))}
           <text className="spectrum-unit" x={width - 2} y={H - 2} textAnchor="end">{showM && m ? m.xUnit : "ppm"}</text>
@@ -367,9 +424,9 @@ export function SpectrumPanel(p: Props) {
               const xs = split[k].map((l) => x(l.ppm)), xa = Math.min(...xs), xb = Math.max(...xs);
               return <rect key={k} className="spectrum-lit" x={xa - 4} y={laneP.top - 2} width={xb - xa + 8} height={laneP.bottom - laneP.top + 2} rx={3} />;
             })}
-            {nucleus === "1H" && !faint && signals.map((s, k) => {
+            {traced && !faint && signals.map((s, k) => {
               // A coloured peak: its own lines, filled in its colour under the whole trace.
-              const c = p.colours[k];
+              const c = onPanel(p.colours[k]);
               if (!c || !shown(s)) return null;
               const [a, b] = span(split[k]), own = columnsOf(sample(split[k], Math.max(lo, a - 40 * pxPpm), Math.min(hi, b + 40 * pxPpm), step), x, width);
               if (!own.length) return null;
@@ -377,7 +434,8 @@ export function SpectrumPanel(p: Props) {
               return <path key={`c${k}`} d={d} fill={c} fillOpacity={0.35} stroke={c} strokeWidth={1} />;
             })}
             {trace && <path className="spectrum-trace" d={path} />}
-            {nucleus === "13C" && signals.map((s, k) => shown(s) && <line key={k} className={`spectrum-stick${on(s, k) ? " lit" : ""}`} x1={x(s.shift)} x2={x(s.shift)} y1={laneP.bottom} y2={y(s.nuclei)} style={p.colours[k] ? { stroke: p.colours[k] } : undefined} />)}
+            {/* Sticks: one for each line of a signal, so a C–F quartet or the PF₆⁻ septet shows. */}
+            {!!nucleus && !traced && split.map((ls, k) => shown(signals[k]) && ls.map((l, i) => <line key={`${k}-${i}`} className={`spectrum-stick${on(signals[k], k) ? " lit" : ""}`} x1={x(l.ppm)} x2={x(l.ppm)} y1={laneP.bottom} y2={y(l.h)} style={p.colours[k] ? { stroke: onPanel(p.colours[k]) } : undefined} />))}
             {rowP && rowP.brackets.map((b) => <path key={`b${b.peaks.join()}`} className="spectrum-leader" d={b.d} />)}
             {rowP && labelsP.map((l, i) => {
               const at = rowP.at[i], k = inRange[i], leader = rowP.paths[i] && <path className="spectrum-leader" d={rowP.paths[i]} />;
@@ -385,8 +443,8 @@ export function SpectrumPanel(p: Props) {
               if (k === undefined) return <g key={`sl${i}`} className="spectrum-solvent-label">{leader}<RowText l={l} at={at} base={rowP.base} vertical={sizeP.vertical} /></g>;
               const s = signals[k];
               return (
-                <g key={k} className={`spectrum-signal${on(s, k) ? " lit" : ""}${chosen === k ? " chosen" : ""}`} style={p.colours[k] ? { fill: p.colours[k] } : undefined}
-                  data-tip={nucleus === "1H" ? `${s.shift.toFixed(2)} ppm, ${multiplicity(s)}${s.couplings.length ? `, J = ${s.couplings.map((c) => c.j.toFixed(1)).join(", ")} Hz` : ""}, ${s.nuclei}H` : `${s.shift.toFixed(1)} ppm, ${s.nuclei} C`}>
+                <g key={k} className={`spectrum-signal${on(s, k) ? " lit" : ""}${chosen === k ? " chosen" : ""}`} style={p.colours[k] ? { fill: onPanel(p.colours[k]) } : undefined}
+                  data-tip={`${shiftText(s.shift, nucleus!)} ppm${traced || s.couplings.length ? `, ${multiplicity(s)}` : ""}${s.couplings.length ? `, J = ${s.couplings.map((c) => c.j.toFixed(1)).join(", ")} Hz` : ""}, ${traced ? countText(s, nucleus!) : `${s.nuclei} ${NUCLEI[nucleus!].el}`}`}>
                   {leader}
                   <RowText l={l} at={at} base={rowP.base} vertical={sizeP.vertical} />
                 </g>
@@ -407,7 +465,7 @@ export function SpectrumPanel(p: Props) {
               <g clipPath={`url(#${clip})`}>
                 {ownGroups.map((g) => {
                   // A coloured multiplet: its part of the trace, filled in its colour.
-                  const c = p.groupColour(g.id);
+                  const c = onPanel(p.groupColour(g.id));
                   if (!c || !cols) return null;
                   const xa = Math.min(x(g.lo), x(g.hi)), xb = Math.max(x(g.lo), x(g.hi)), part = cols.filter(([q]) => q >= xa && q <= xb);
                   if (!part.length) return null;
@@ -421,7 +479,7 @@ export function SpectrumPanel(p: Props) {
               {rowM && groups.map((g, i) => {
                 const lx = rowM.at[i], l = labelsM[i], leader = rowM.paths[i] && <path className="spectrum-leader" d={rowM.paths[i]} />;
                 if (g.other) return <g key={`o${g.id}`} className="spectrum-solvent-label">{leader}<RowText l={l} at={lx} base={rowM.base} vertical={sizeM.vertical} /></g>;
-                const c = p.groupColour(g.id), linked = p.linkedCount(g.id) > 0, label = l.shift;
+                const c = onPanel(p.groupColour(g.id)), linked = p.linkedCount(g.id) > 0, label = l.shift;
                 // A linked multiplet's mark: left of its label across, over it turned.
                 const mark = sizeM.vertical ? [lx, rowM.base - 6 - widthOf(oneLine(l), FONT)] : [lx - Math.max(widthOf(l.shift, FONT), widthOf(l.rest, FONT)) / 2 - 5, rowM.base - (l.rest ? 19 : 7)];
                 return (
@@ -463,7 +521,7 @@ export function SpectrumPanel(p: Props) {
           <div className="spectrum-details">
             <table>
               <thead>
-                <tr><th>Group</th><th>δ (ppm)</th>{nucleus === "1H" ? <><th>Multiplicity</th><th>J (Hz)</th><th>Integral</th></> : <th>Carbons</th>}<th>Based on</th><th>Quality</th></tr>
+                <tr><th>Group</th><th>δ (ppm)</th>{traced || signals.some((q) => q.couplings.length) ? <><th>Multiplicity</th><th>J (Hz)</th><th>{traced ? "Integral" : "Atoms"}</th></> : <th>{nucleus === "13C" ? "Carbons" : "Atoms"}</th>}<th>Based on</th><th>Quality</th></tr>
               </thead>
               <tbody>
                 {order.map((k) => {
@@ -471,15 +529,15 @@ export function SpectrumPanel(p: Props) {
                   return (
                     <tr key={k} className={pointed === k ? "lit" : undefined} onPointerEnter={() => { setPointed(k); p.onPoint(s.atoms); }} onPointerLeave={() => { setPointed(undefined); p.onPoint(undefined); }}>
                       <td>{p.colours[k] && <span className="dot" style={{ background: p.colours[k] }} />}{s.group}</td>
-                      <td className="num">{s.shift.toFixed(nucleus === "1H" ? 2 : 1)}</td>
-                      {nucleus === "1H" ? (
+                      <td className="num">{shiftText(s.shift, nucleus!)}</td>
+                      {traced || signals.some((q) => q.couplings.length) ? (
                         <>
                           <td>{multiplicity(s)}</td>
                           <td>{s.couplings.length ? s.couplings.map((c) => `${c.j.toFixed(1)} to ${[...new Set((c.with ?? []).map(groupOf))].join(", ")}`).join("; ") : "–"}</td>
-                          <td className="num">{s.nuclei}H</td>
+                          <td className="num">{countText(s, nucleus!)}</td>
                         </>
                       ) : <td className="num">{s.nuclei}</td>}
-                      <td>{s.level} {s.level === 1 ? "sphere" : "spheres"} matched, {s.based} measured in {s.solvent ?? "any solvent"}, ±{s.sd.toFixed(nucleus === "1H" ? 2 : 1)}</td>
+                      <td>{s.level} {s.level === 1 ? "sphere" : "spheres"} matched, {s.based} measured in {s.solvent ?? "any solvent"}, ±{s.sd.toFixed(NUCLEI[nucleus!].decimals)}</td>
                       <td><span className={`quality ${q}`}>{q[0].toUpperCase() + q.slice(1)}</span></td>
                     </tr>
                   );
@@ -494,6 +552,36 @@ export function SpectrumPanel(p: Props) {
         <p className="spectrum-text">{text}</p>
         {showP && <span className="spectrum-credit" data-tip={NOTICE}>nmrshiftdb2</span>}
       </footer>
+      {/* Last in the tab order (B1.14), at the top right of the header. */}
+      <PanelControls minimise={p.onMinimise} full={{ on: expanded, toggle: () => setExpanded(!expanded) }} close={p.onClose} />
     </section>
+  );
+}
+
+// A session's spectra as tabs (B1.8): the arrow keys move between them. With two or more, each has a close button in
+// room of its own beside its name, shown on hover or focus; Delete or Backspace on a tab closes it. One spectrum alone
+// closes with the panel's Close. children: the + that adds a spectrum, the last segment of the same control.
+function Tabs({ keys, value, onKey, onClose, children }: { keys: string[]; value: string; onKey: (k: string) => void; onClose: (k: string) => void; children?: React.ReactNode }) {
+  const closable = keys.length > 1;
+  return (
+    <span className="segmented spectrum-tabs" style={children ? { gridTemplateColumns: `${keys.length}fr 1fr` } : undefined}>
+    <span role="tablist" aria-label="Spectra"
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const next = keys[(keys.indexOf(value) + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
+        onKey(next);
+        e.currentTarget.querySelector<HTMLElement>(`[data-key="${next}"]`)?.focus();
+      }}>
+      {keys.map((k) => (
+        <span key={k} className={closable ? "spectrum-tab closable" : "spectrum-tab"}>
+          <button type="button" role="tab" data-key={k} aria-selected={k === value} tabIndex={k === value ? 0 : -1} onClick={() => onKey(k)}
+            onKeyDown={(e) => { if (closable && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); e.stopPropagation(); onClose(k); } }}>{keyName(k)}</button>
+          {closable && <CloseX name={keyName(k)} onClose={() => onClose(k)} />}
+        </span>
+      ))}
+    </span>
+    {children}
+    </span>
   );
 }

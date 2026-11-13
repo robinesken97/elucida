@@ -509,8 +509,7 @@ function monocycle(els: string[]): { name: string; prefix: string; stem: string;
 // Seniority of a component (FR-2.3): nitrogen, then the first heteroatom in F, Cl, Br, I, O, S ... order; more rings;
 // larger rings; more heteroatoms; more kinds; more of each in order; lower heteroatom locants; lower locants in order;
 // lower fusion carbon locants.
-const FR23A = ["F", "Cl", "Br", "I", "O", "S", "Se", "Te", "P", "As", "Sb", "Bi", "Si", "Ge", "Sn", "Pb", "B", "Hg"];
-const FR23F = ["F", "Cl", "Br", "I", "O", "S", "Se", "Te", "N", "P", "As", "Sb", "Bi", "Si", "Ge", "Sn", "Pb", "B", "Hg"];
+const FR23A = HW_ORDER.filter((e) => e !== "N"), FR23F = HW_ORDER;
 function seniority(el: string[], labels: string[], sizes: number[], fusion: boolean[], row = sizes.length > 1 ? 2 : 1): number[] {
   const hetero = el.map((e, i) => (e !== "C" ? i : -1)).filter((i) => i >= 0), has = (e: string) => hetero.some((i) => el[i] === e);
   const first = has("N") ? 0 : FR23A.findIndex(has) + 1 || 99;

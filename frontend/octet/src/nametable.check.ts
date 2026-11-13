@@ -85,6 +85,16 @@ if (existsSync(file)) {
     await NameTable.read(bytes, false);
     now.push(performance.now() - t0);
   }
+  // Read in slices, as the app reads it: every pause is a message, never a timer. WebKit holds a covered window's
+  // timers to about one a second, and a window covered while it opened waited 76 s for the dictionary.
+  {
+    const timer = globalThis.setTimeout, t0 = performance.now();
+    let timers = 0;
+    globalThis.setTimeout = ((...a: Parameters<typeof setTimeout>) => { timers++; return timer(...a); }) as typeof setTimeout;
+    try { await (await NameTable.read(bytes, true)).suggested; } finally { globalThis.setTimeout = timer; }
+    assert.equal(timers, 0, "the dictionary read in slices starts no timer");
+    console.log(`nametable.check: in slices ${Math.round(performance.now() - t0)} ms, no timer`);
+  }
   const median = (a: number[]) => a.sort((x, y) => x - y)[1];
   assert.ok(median(now) < median(old) / 2, `the small tables read in ${Math.round(median(now))} ms, the strings in ${Math.round(median(old))} ms`);
   console.log(`nametable.check: ok (the dictionary in ${Math.round(median(now))} ms; as strings ${Math.round(median(old))} ms)`);

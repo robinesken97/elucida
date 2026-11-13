@@ -16,7 +16,7 @@ const STYLES = ["plain", "dashed", "shaded", "solid", "shadow"] as const;
 const LINES = ["plain", "dashed", "wavy", "bold"] as const;
 const ARCS = [270, 180, 120, 90];
 export const SHAPE_GRID: string[][] = SHAPE_ROWS.map((row, i) => [...STYLES.map((st) => `${row}-${st}`), `line-${LINES[i]}`, `arc-${ARCS[i]}`, `arc-${ARCS[i]}-dashed`]);
-export const SHAPE_EXTRA = ["highlight", "pen", "pen-edit", "rgroup"];
+export const SHAPE_EXTRA = ["highlight", "pen", "pen-edit", "rgroup", "line-membrane"];
 
 // What a Shape tool variant draws: a shape (a circle is an oval drawn out from its middle), or a line or arc.
 export type ElementSpec =
@@ -39,7 +39,7 @@ export function shapeSpec(v: string): ElementSpec | undefined {
       ...(st === "dashed" ? { dashed: true } : {}), ...(st === "shaded" || st === "solid" || st === "faded" ? { fill: st } : {}), ...(st === "shadow" ? { shadow: true } : {}), ...(st === "bold" ? { bold: true } : {}),
     } as ElementSpec;
   }
-  m = /^line-(plain|dashed|wavy|bold)$/.exec(v);
+  m = /^line-(plain|dashed|wavy|bold|membrane)$/.exec(v);
   if (m) return { line: "line", ...(m[1] !== "plain" ? { style: m[1] as LineStyle } : {}) };
   m = /^arc-(90|120|180|270)(-dashed)?$/.exec(v);
   if (m) return { line: "arc", sweep: Number(m[1]), ...(m[2] ? { style: "dashed" as const } : {}) };
@@ -57,8 +57,8 @@ export function shapeName(v: string): string | undefined {
     const n = SHAPE_NAMES[m[1] as keyof typeof SHAPE_NAMES], st = m[2] ?? "plain";
     return st === "plain" ? cap(n) : `${cap(st === "solid" ? "filled" : st === "shadow" ? "shadowed" : st)} ${n}`;
   }
-  m = /^line-(plain|dashed|wavy|bold)$/.exec(v);
-  if (m) return m[1] === "plain" ? "Line" : `${cap(m[1])} line`;
+  m = /^line-(plain|dashed|wavy|bold|membrane)$/.exec(v);
+  if (m) return m[1] === "plain" ? "Line" : m[1] === "membrane" ? "Membrane" : `${cap(m[1])} line`;
   m = /^arc-(90|120|180|270)(-dashed)?$/.exec(v);
   if (m) return `${m[2] ? "Dashed arc" : "Arc"}, ${m[1]}°`;
   return undefined;
@@ -112,6 +112,7 @@ export function ElementGlyph({ v }: { v: string }) {
       const cx = 128 - ((Math.max(...xs) + Math.min(...xs)) / 2) * k, cy = 128 - ((Math.max(...ys) + Math.min(...ys)) / 2) * k;
       return <Icon><polyline points={raw.map(([x, y]) => `${(cx + x * k).toFixed(1)},${(cy + y * k).toFixed(1)}`).join(" ")} strokeDasharray={dash} /></Icon>;
     }
+    if (spec.style === "membrane") return <LineGlyph style="membrane" />;
     if (spec.style === "wavy") {
       const pts = Array.from({ length: 33 }, (_, i) => { const t = i / 32, x = 48 + 160 * t, y = 208 - 160 * t, w = 18 * Math.sin(t * 6 * Math.PI); return `${(x + w * 0.7071).toFixed(1)},${(y + w * 0.7071).toFixed(1)}`; });
       return <Icon><polyline points={pts.join(" ")} /></Icon>;
@@ -214,6 +215,8 @@ export function LineGlyph({ start = "none", end = "none", head = "solid", style 
   };
   const x0 = start === "none" || head === "angled" ? 32 : 76, x1 = end === "none" || head === "angled" ? 224 : 180;
   const shaft = style === "doubled" ? <><line x1={x0} y1={116} x2={x1} y2={116} strokeWidth={10} /><line x1={x0} y1={140} x2={x1} y2={140} strokeWidth={10} /></>
+    // A membrane: two rows of lipids, heads out and tails in.
+    : style === "membrane" ? <g strokeWidth={12}>{[52, 104, 152, 204].map((x) => <g key={x}><circle cx={x} cy={62} r={18} /><line x1={x} y1={80} x2={x} y2={114} /><circle cx={x} cy={194} r={18} /><line x1={x} y1={142} x2={x} y2={176} /></g>)}</g>
     : style === "wavy" ? <polyline points={Array.from({ length: 25 }, (_, i) => `${(x0 + ((x1 - x0) * i) / 24).toFixed(1)},${(128 + 14 * Math.sin((i / 24) * 6 * Math.PI)).toFixed(1)}`).join(" ")} />
       : <line x1={x0} y1={128} x2={x1} y2={128} strokeDasharray={style === "dashed" ? "24 18" : undefined} strokeWidth={style === "bold" ? 30 : 16} strokeLinecap={style === "bold" ? "butt" : "round"} />;
   return <Icon>{shaft}{tip(224, 1, end)}{tip(32, -1, start)}</Icon>;

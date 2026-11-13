@@ -39,7 +39,8 @@ export const setComplexNamer = (n: typeof complexNamer) => { complexNamer = n; }
 // a name from Octet's own tables (known), checked the same way. Else a coordination compound's name (complexNamer).
 // In a fused macrocycle whose pyrrole-type N atoms all point into the ring (macrocycle), the E and Z of the macrocycle's
 // own bonds are the ones its name implies (21H,23H-porphyrin cites none): they are left out of the namer's graph and of
-// both InChIs. Drawn any other way, they count as every E and Z does, and the namer gives no name.
+// both InChIs. Drawn any other way, they count as every E and Z does: the name must cite them, as an N-confused
+// porphyrin's von Baeyer name does.
 export function checkedName(drawn: Mol, expanded: Mol, read: (name: string) => string | undefined, inchi: (s: Mol | string) => string | undefined, cip?: (m: Mol) => Cip | undefined, known?: (inchi: string) => string | undefined): string | undefined {
   const raw = inchi(drawn);
   if (!raw) return undefined;

@@ -219,3 +219,23 @@ for (const mac of [true, false]) {
   assert.ok(editor.indexOf("if (MAC && e.ctrlKey) {") < at, "the Mac's Control-click goes to the context menu first");
 }
 console.log("keys.check: Ctrl-click adds to the selection on Windows and Linux ok");
+
+// Issue 60: the circled charges take a key in Settings, over an atom, and have none by default. A charge key on one
+// atom and on a selection both go through keyCharge, and the circled pair mark the charge as the Symbols tool does.
+import { keyCharge } from "./edit.ts";
+import type { Mol } from "./render.ts";
+{
+  const charges = ACTIONS.filter((a) => a.id.startsWith("charge."));
+  assert.deepEqual(charges.map((a) => [a.id, a.place, map[a.id] ?? []]),
+    [["charge.plus", "atom", ["+"]], ["charge.minus", "atom", ["-"]], ["charge.circledPlus", "atom", []], ["charge.circledMinus", "atom", []]]);
+  assert.equal(actionFor(keymap({ "charge.circledPlus": ["("] }), "(", "atom"), "charge.circledPlus");
+  assert.deepEqual(clashes(map, "charge.circledMinus", ")"), []);
+  const n: Mol = { atoms: [{ label: "N", location: [0, 0, 0] }], bonds: [] }, mark = (m: Mol, arg: string) => keyCharge(m, 0, arg).atoms[0];
+  assert.deepEqual(charges.map((a) => { const x = mark(n, a.id.slice(7)); return [x.charge, x.circled]; }), [[1, undefined], [-1, undefined], [1, true], [-1, true]]);
+  const circled = keyCharge(n, 0, "circledPlus");
+  assert.deepEqual([mark(circled, "circledPlus").charge, mark(circled, "circledMinus").circled], [2, undefined], "a second circled key adds up, or takes the charge off");
+  assert.equal(mark(circled, "plus").circled, true, "+ on a circled charge keeps the circle, as before");
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+  assert.equal(editor.match(/if \(kind === "charge"[^\n]*keyCharge\(\w+, \w+, arg\)/g)?.length, 2, "a charge key on an atom and on a selection");
+}
+console.log("keys.check: circled charges on a key ok");

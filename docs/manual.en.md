@@ -786,7 +786,9 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Several species:** all simulations assigned to a measurement (EasySpin or own S = ½) are scaled *together* by
   linear least squares; the fractions (double integral) are shown, optionally the sum and the residual
   (measured − sum) – i.e. subtraction of individual species. Non-linear parameters (g, A, D/E, linewidths of
-  powder spectra) are fitted in EasySpin; Elucida only determines the fractions.
+  powder spectra) are fitted in EasySpin; Elucida only determines the fractions. When stacked, a simulation lies on
+  its measurement; **Simulation below the measurement** draws it on a level of its own directly below (value = distance as a
+  multiple of the stack gap).
 - **Own isotropic S = ½ simulation and fit** (solution, first order): g, groups of equivalent nuclei (e.g.
   `2 14N 0.65; 4 1H 0.32`, a in mT; isotopes from ¹H to ²⁰⁹Bi, e.g. ¹¹B, ⁷Li, ²³Na, ²⁷Al, or the nuclear spin
   directly as `I=3/2`), peak-to-peak linewidth and Lorentzian fraction; "Fit" refines g, a and

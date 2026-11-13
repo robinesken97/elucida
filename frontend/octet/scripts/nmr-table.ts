@@ -1,21 +1,25 @@
-// Builds data/nmr/shifts.bin.gz, Octet's NMR shift table, from nmrshiftdb2's SD file of assigned spectra
-// (nmrshiftdb2withsignals.sd, which is not in this repository). Only measured spectra go in: the spectra the file
-// marks as predicted (in its Program and NMRProgram fields) are left out. Spectra whose solvent the file names (one
-// of the Spectrum panel's) also go in that solvent's table, where their shifts differ from the shifts in every solvent.
+// Builds data/nmr/shifts.bin.gz, Octet's NMR shift table (¹H, ¹³C, ¹⁹F and ³¹P), from nmrshiftdb2's SD file of
+// assigned spectra (nmrshiftdb2withsignals.sd, which is not in this repository). Only measured spectra go in: the
+// spectra the file marks as predicted (in its Program and NMRProgram fields) are left out. Spectra whose solvent the
+// file names (one of the Spectrum panel's) also go in that solvent's table, where their shifts differ from the
+// shifts in every solvent.
 // Run: node scripts/nmr-table.ts <nmrshiftdb2withsignals.sd> [--test]
 // --test builds the table from nine molecules in ten and reports how well it predicts the tenth; nothing is written.
+// The tenth is chosen by the first block of the InChIKey (the skeleton), so stereoisomers and isotopomers of a held-out
+// molecule are held out with it.
 import { createReadStream, mkdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { gzipSync } from "node:zlib";
 import { hydrogens } from "../src/render.ts";
 import type { Graph } from "../src/naming.ts";
-import { codeHash, codes, environment, heavy, lookup, solventCode, useTables, writeTables, type Nucleus, type Table } from "../src/nmr.ts";
+import { codeHash, codes, environment, heavy, lookup, quality, solventCode, useTables, writeTables, NUCLEI, NUCLEUS_LIST, type Nucleus, type Table } from "../src/nmr.ts";
+import { isMetal } from "../src/metals.ts";
 
 const [file, flag] = process.argv.slice(2), test = flag === "--test";
 if (!file) throw new Error("Usage: node scripts/nmr-table.ts <nmrshiftdb2withsignals.sd> [--test]");
 
 type Peak = { shift: number; atom: number };
-type Molecule = { id: number; graph: Graph; spectra: { nucleus: Nucleus; peaks: Peak[]; solvent?: string }[] };
+type Molecule = { id: number; key: string; graph: Graph; spectra: { nucleus: Nucleus; peaks: Peak[]; solvent?: string }[] };
 // nmrshiftdb2's names for the Spectrum panel's solvents (spectrumplot.ts).
 const SOLVENT: Record<string, string> = {
   "Chloroform-D1 (CDCl3)": "CDCl₃", "CDCL3,TMS": "CDCl₃", "Dimethylsulphoxide-D6 (DMSO-D6, C2D6SO)": "DMSO-d₆", "DMSO": "DMSO-d₆", "(CD3)2SO": "DMSO-d₆",
@@ -26,7 +30,10 @@ const SOLVENT: Record<string, string> = {
 // solvent as n / (n + 3) for n shifts in the solvent, so a few shifts move a prediction only a little. ¹H has no
 // solvent table: on the held-out tenth (18 October 2026) it made ¹H shifts in a known solvent worse (MAE 0.238 to
 // 0.240 ppm, 1,730 shifts; on O, N and S 1.23 to 1.27 ppm, 67 shifts), and ¹³C better (2.118 to 2.078 ppm, 6,147).
-const SOLVENT_DIFF: Record<Nucleus, number> = { "13C": 0.5, "1H": Infinity }, SHRINK = 3;
+const SOLVENT_DIFF: Record<Nucleus, number> = { "13C": 0.5, "1H": Infinity, "19F": Infinity, "31P": Infinity }, SHRINK = 3;
+// ¹⁹F shifts outside this range (ppm) are slips (a wrong reference or sign) and are left out, as are shifts more than
+// four median absolute deviations from their code's median (the plan for ¹⁹F and ³¹P, 4 November 2026).
+const F_RANGE = [-300, 250], MADS = 4;
 const CHARGE: Record<number, number> = { 1: 3, 2: 2, 3: 1, 5: -1, 6: -2, 7: -3 };
 
 // One SD record: the molfile (V2000) as a graph with hydrogen counts, and its measured ¹H and ¹³C spectra.
@@ -59,17 +66,17 @@ function read(lines: string[]): Molecule | undefined {
   for (const m of (fields.get("Solvent") ?? "").matchAll(/(\d+):(\S[^:]*?)(?=\s+\d+:|$)/g)) if (SOLVENT[m[2].trim()]) solvents.set(m[1], SOLVENT[m[2].trim()]);
   const spectra: Molecule["spectra"] = [];
   for (const [key, value] of fields) {
-    const m = /^Spectrum (1H|13C) (\d+)$/.exec(key);
+    const m = /^Spectrum (1H|13C|19F|31P) (\d+)$/.exec(key);
     if (!m || predicted.has(m[2])) continue;
     const peaks = value.split("|").filter(Boolean).map((p) => { const [s, , at] = p.split(";"); return { shift: Number(s), atom: Number(at) }; })
       .filter((p) => Number.isFinite(p.shift) && Number.isInteger(p.atom) && p.atom >= 0 && p.atom < na);
     if (peaks.length) spectra.push({ nucleus: m[1] as Nucleus, peaks, solvent: solvents.get(m[2]) });
   }
-  return { id: Number(fields.get("nmrshiftdb2 ID")), graph: { atoms, bonds }, spectra };
+  return { id: Number(fields.get("nmrshiftdb2 ID")), key: fields.get("INChI key") ?? "", graph: { atoms, bonds }, spectra };
 }
 
-// Each molecule's measured shifts as (heavy atom, shift) pairs on its heavy-atom graph: ¹³C on carbons; ¹H on the
-// atom carrying the hydrogen, averaged within a spectrum.
+// Each molecule's measured shifts as (heavy atom, shift) pairs on its heavy-atom graph: ¹³C, ¹⁹F and ³¹P on their
+// own atoms; ¹H on the atom carrying the hydrogen, averaged within a spectrum.
 function observations(mol: Molecule) {
   const { g, from } = heavy(mol.graph), to = new Map(from.map((old, k) => [old, k])), out: { nucleus: Nucleus; atom: number; shift: number; solvent?: string }[] = [];
   const carrier = (i: number) => (mol.graph.atoms[i].el === "H" ? mol.graph.bonds.find((b) => b.a === i || b.b === i) : undefined);
@@ -77,14 +84,15 @@ function observations(mol: Molecule) {
     const byAtom = new Map<number, number[]>();
     for (const p of s.peaks) {
       let at = p.atom;
-      if (mol.graph.atoms[at].el === "H") { if (s.nucleus === "13C") continue; const b = carrier(at); if (!b) continue; at = b.a === at ? b.b : b.a; }
+      if (mol.graph.atoms[at].el === "H") { if (s.nucleus !== "1H") continue; const b = carrier(at); if (!b) continue; at = b.a === at ? b.b : b.a; }
       const k = to.get(at);
-      if (k === undefined || (s.nucleus === "13C" ? g.atoms[k].el !== "C" : g.atoms[k].h === 0)) continue;
+      if (k === undefined || (s.nucleus === "1H" ? g.atoms[k].h === 0 : g.atoms[k].el !== NUCLEI[s.nucleus].el)) continue;
+      if (s.nucleus === "19F" && (p.shift < F_RANGE[0] || p.shift > F_RANGE[1])) continue;
       byAtom.set(k, [...(byAtom.get(k) ?? []), p.shift]);
     }
     // A hydrogen-bearing atom given more different ¹H shifts in one spectrum than it has hydrogens (four on one CH) is a
     // slip in the assignment: its shifts there are left out.
-    for (const [atom, shifts] of byAtom) if (s.nucleus === "13C" || new Set(shifts).size <= g.atoms[atom].h) out.push({ nucleus: s.nucleus, atom, shift: shifts.reduce((a, b) => a + b, 0) / shifts.length, solvent: s.solvent });
+    for (const [atom, shifts] of byAtom) if (s.nucleus !== "1H" || new Set(shifts).size <= g.atoms[atom].h) out.push({ nucleus: s.nucleus, atom, shift: shifts.reduce((a, b) => a + b, 0) / shifts.length, solvent: s.solvent });
   }
   return { g, out };
 }
@@ -98,16 +106,18 @@ console.log(`${molecules.length} molecules with measured spectra`);
 
 // The table: every level of every observed atom's code, with the shifts seen there; and in its solvent's table too,
 // with the hash of the code in every solvent.
-const seen: Record<Nucleus, Map<number, number[]>> = { "13C": new Map(), "1H": new Map() };
-const seenIn: Record<Nucleus, Map<number, { all: number; shifts: number[] }>> = { "13C": new Map(), "1H": new Map() };
+const seen = Object.fromEntries(NUCLEUS_LIST.map((n) => [n, new Map()])) as Record<Nucleus, Map<number, number[]>>;
+const seenIn = Object.fromEntries(NUCLEUS_LIST.map((n) => [n, new Map()])) as Record<Nucleus, Map<number, { all: number; shifts: number[] }>>;
+// The held-out tenth: by the InChIKey's first block (else the nmrshiftdb2 ID).
+const heldOut = (mol: Molecule) => (mol.key ? codeHash("1H", mol.key.slice(0, 14)) % 10 === 0 : mol.id % 10 === 0);
 const held: { mol: Molecule; g: Graph; out: ReturnType<typeof observations>["out"] }[] = [];
 for (const mol of molecules) {
   const { g, out } = observations(mol);
   if (!out.length) continue;
-  if (test && mol.id % 10 === 0) { held.push({ mol, g, out }); continue; }
+  if (test && heldOut(mol)) { held.push({ mol, g, out }); continue; }
   let env;
   try { env = environment(g); } catch { continue; }
-  for (const o of out) for (const code of codes(env, o.atom)) {
+  for (const o of out) for (const [code] of codes(env, o.atom, o.nucleus)) {
     const h = codeHash(o.nucleus, code), list = seen[o.nucleus].get(h);
     if (list) list.push(o.shift); else seen[o.nucleus].set(h, [o.shift]);
     if (!o.solvent) continue;
@@ -115,13 +125,20 @@ for (const mol of molecules) {
     if (there) there.shifts.push(o.shift); else seenIn[o.nucleus].set(hs, { all: h, shifts: [o.shift] });
   }
 }
-const table = (m: Map<number, number[]>): Table => {
-  const keys = [...m.keys()].sort((a, b) => a - b), t = { hash: new Uint32Array(keys), shift: new Int16Array(keys.length), sd: new Uint16Array(keys.length), n: new Uint16Array(keys.length) };
+// A nucleus's table: each code's median, spread and count, × scale (100 for ¹H and ¹³C, 10 for ¹⁹F and ³¹P, whose
+// shifts run past ±327 ppm). outliers: leave out shifts more than MADS median absolute deviations from the median.
+const table = (m: Map<number, number[]>, scale = 100, outliers = false): Table => {
+  const keys = [...m.keys()].sort((a, b) => a - b), t = { hash: new Uint32Array(keys), shift: new Int16Array(keys.length), sd: new Uint16Array(keys.length), n: new Uint16Array(keys.length), scale };
+  const top = 32767 / scale, mid = (v: number[]) => { const h = v.length >> 1; return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2; };
   keys.forEach((k, i) => {
-    const v = m.get(k)!.sort((a, b) => a - b), mid = v.length >> 1, median = v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
-    const mean = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
-    t.shift[i] = Math.round(Math.max(-327, Math.min(327, median)) * 100);
-    t.sd[i] = Math.round(Math.min(655, sd) * 100);
+    let v = m.get(k)!.sort((a, b) => a - b);
+    if (outliers && v.length >= 3) {
+      const c = mid(v), mad = mid(v.map((x) => Math.abs(x - c)).sort((a, b) => a - b));
+      if (mad > 0) v = v.filter((x) => Math.abs(x - c) <= MADS * mad);
+    }
+    const median = mid(v), mean = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
+    t.shift[i] = Math.round(Math.max(-top, Math.min(top, median)) * scale);
+    t.sd[i] = Math.round(Math.min(65535 / scale, sd) * scale);
     t.n[i] = Math.min(65535, v.length);
   });
   return t;
@@ -134,13 +151,13 @@ const differing = (nucleus: Nucleus) => new Map([...seenIn[nucleus]].flatMap(([h
   // The shrunk shift, as many times as there were shifts (table() keeps their median and count).
   return [[h, x.shifts.map(() => all + (d * x.shifts.length) / (x.shifts.length + SHRINK))]];
 }));
-const tables = { "13C": table(seen["13C"]), "1H": table(seen["1H"]), solvent: { "13C": table(differing("13C")), "1H": table(differing("1H")) } };
-console.log(`¹³C codes: ${tables["13C"].hash.length}, ¹H codes: ${tables["1H"].hash.length}; in one solvent: ¹³C ${tables.solvent["13C"].hash.length}, ¹H ${tables.solvent["1H"].hash.length}`);
+const tables = { "13C": table(seen["13C"]), "1H": table(seen["1H"]), "19F": table(seen["19F"], 10, true), "31P": table(seen["31P"], 10, true), solvent: { "13C": table(differing("13C")), "1H": table(differing("1H")) } };
+console.log(`codes: ${NUCLEUS_LIST.map((n) => `${n} ${tables[n].hash.length}`).join(", ")}; in one solvent: ¹³C ${tables.solvent["13C"].hash.length}, ¹H ${tables.solvent["1H"].hash.length}`);
 
 if (test) {
   useTables(tables);
-  for (const nucleus of ["13C", "1H"] as Nucleus[]) {
-    const errors: number[] = [], levels = new Array(7).fill(0);
+  for (const nucleus of NUCLEUS_LIST) {
+    const errors: number[] = [], levels = new Array(7).fill(0), rated: Record<string, number[]> = { good: [], medium: [], rough: [] };
     // Shifts measured in a known solvent, predicted from every solvent and from that solvent's table: all of them, and
     // those of hydrogens on O, N and S.
     const known = { any: [] as number[], own: [] as number[], anyX: [] as number[], ownX: [] as number[] };
@@ -153,15 +170,19 @@ if (test) {
         if (!p) { missed++; continue; }
         errors.push(Math.abs(p.shift - o.shift));
         levels[p.level]++;
+        const metal = nucleus !== "1H" && nucleus !== "13C" && env.edges[o.atom].some((e) => isMetal(g.atoms[e.to].el)), x = ["O", "N", "S"].includes(g.atoms[o.atom].el);
+        rated[quality({ atoms: [], shift: p.shift, nuclei: 1, couplings: [], sd: p.sd, based: p.based, level: p.level, ...(metal ? { metal: true as const } : {}), ...(nucleus === "1H" && x ? { broad: true } : {}) }, nucleus)].push(Math.abs(p.shift - o.shift));
         if (!o.solvent) continue;
-        const q = lookup(env, nucleus, o.atom, o.solvent)!, x = ["O", "N", "S"].includes(g.atoms[o.atom].el);
+        const q = lookup(env, nucleus, o.atom, o.solvent)!;
         known.any.push(Math.abs(p.shift - o.shift)); known.own.push(Math.abs(q.shift - o.shift));
         if (x) { known.anyX.push(Math.abs(p.shift - o.shift)); known.ownX.push(Math.abs(q.shift - o.shift)); }
       }
     }
     errors.sort((a, b) => a - b);
     const mae = errors.reduce((a, b) => a + b, 0) / errors.length, mean = (v: number[]) => (v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(3) : "–");
-    console.log(`${nucleus}: ${errors.length} shifts, MAE ${mae.toFixed(2)} ppm, median ${errors[errors.length >> 1].toFixed(2)}, 90% within ${errors[Math.floor(errors.length * 0.9)].toFixed(2)}, not covered ${missed}, by level ${levels.join("/")}`);
+    if (!errors.length) { console.log(`${nucleus}: no held-out shifts`); continue; }
+    console.log(`${nucleus}: ${errors.length} shifts, MAE ${mae.toFixed(2)} ppm, median ${errors[errors.length >> 1].toFixed(2)}, 90% within ${errors[Math.floor(errors.length * 0.9)].toFixed(2)}, not covered ${missed} (coverage ${((100 * errors.length) / (errors.length + missed)).toFixed(1)}%), by level ${levels.join("/")}`);
+    console.log(`  by quality: ${Object.entries(rated).map(([q, v]) => `${q} ${((100 * v.length) / errors.length).toFixed(0)}% MAE ${mean(v)}`).join(", ")}`);
     console.log(`  in a known solvent: ${known.any.length} shifts, MAE ${mean(known.any)} from every solvent, ${mean(known.own)} with the solvent's table; on O, N and S: ${known.anyX.length}, ${mean(known.anyX)} and ${mean(known.ownX)}`);
   }
 } else {

@@ -164,7 +164,8 @@ const FORMULAS: Record<string, string> = {
 // atom joins the chain, H and counts are left to valence, a repeated element (CF3) and any group or bracket
 // hang off the atom before them, and CO2R or COOR becomes an ester. Undefined if Octet cannot read it.
 // A label written right to left (HO2C, OHC, MeO, Et3N) is read from its end, as ChemDraw reads a label it shows
-// reversed: when its reverse is a formula above, or when it starts with a group and ends with one heavy atom.
+// reversed: when its reverse is a formula above, or when it starts with a group and ends with one heavy atom, or with
+// one heteroatom and its H (MeO, AcOH: acetic acid, not C(C)=OO).
 export function labelSmiles(label: string): string | undefined {
   if (GROUPS[label]) return GROUPS[label];
   if (isGeneric(label)) return undefined;
@@ -181,7 +182,8 @@ export function labelSmiles(label: string): string | undefined {
   // nitrile), when it can be read in one way; else left to right as below.
   const whole = us[0].kind === "element" && us[0].text !== "H" && us.length > 1 ? condensedLabel(label) : undefined;
   if (whole && !crowded(whole)) return whole;
-  if (us.length > 1 && us[0].kind === "group" && last.kind === "element" && last.text !== "H" && !last.count) us = back;
+  const end = last.text === "H" && us.length > 2 && back[1].text !== "C" ? back[1] : last;
+  if (us.length > 1 && us[0].kind === "group" && end.kind === "element" && end.text !== "H" && !end.count) us = back;
   let smiles = "";
   const atom = (sym: string) => (["B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"].includes(sym) ? sym : `[${sym}]`);
   // The first heavy atom or group starts the chain (never a bare branch, which is not SMILES: H2O2 is OO).

@@ -2,7 +2,7 @@
 // element and NOT lists, link nodes, anonymous alternative groups), the indicators ChemDraw draws for atom and bond
 // query properties, R-group definitions, and what a polymer bracket encloses and is labelled.
 import { ELEMENTS, isGeneric } from "./labels.ts";
-import { inShape, isBracket, turnPoint, type Atom, type AtomQuery, type Bond, type BracketUsage, type Mol, type Polymer, type Shape } from "./render.ts";
+import { inShape, isBracket, turnPoint, type AtomQuery, type Bond, type BracketUsage, type Mol, type Polymer, type Shape } from "./render.ts";
 
 export { GENERICS, isGeneric } from "./labels.ts";
 
@@ -191,24 +191,6 @@ export function rgroupMembers(m: Mol, frags: number[][]): { sh: Shape; members: 
 }
 // The R number of an R label: R1 to R99 (R alone is not numbered).
 export const rNumber = (text?: string) => { const m = /^R([1-9]\d?)$/.exec(text ?? ""); return m ? Number(m[1]) : undefined; };
-// A multi-centre or variable attachment's place: the centre of its atoms.
-export function attachmentCentre(m: Mol, a: Atom): [number, number] | undefined {
-  const at = (a.centre?.atoms ?? []).filter((i) => m.atoms[i]);
-  if (!at.length) return undefined;
-  return [at.reduce((s, i) => s + m.atoms[i].location[0], 0) / at.length, at.reduce((s, i) => s + m.atoms[i].location[1], 0) / at.length];
-}
-// Every attachment set at the centre of its atoms, so it stays there as its atoms move.
-export function placeAttachments(m: Mol): Mol {
-  if (!m.atoms.some((a) => a.centre)) return m;
-  let changed = false;
-  const atoms = m.atoms.map((a) => {
-    const c = a.centre && attachmentCentre(m, a);
-    if (!c || (Math.abs(c[0] - a.location[0]) < 1e-9 && Math.abs(c[1] - a.location[1]) < 1e-9)) return a;
-    changed = true;
-    return { ...a, location: [c[0], c[1], a.location[2] ?? 0] as [number, number, number] };
-  });
-  return changed ? { ...m, atoms } : m;
-}
 // A mass as Analysis shows it; a polymer's as its end groups plus its repeat unit with its label: 30.07 + (28.05)n.
 type Repeated = { weight: number; exact: number; repeat?: { label: string; weight: number; exact: number; ends?: { weight: number; exact: number } } };
 export function massText(v: Repeated, key: "weight" | "exact", places: number): string {

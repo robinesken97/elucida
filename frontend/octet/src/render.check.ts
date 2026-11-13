@@ -1,8 +1,10 @@
 // Run: node src/render.check.ts. Fails loudly if the ACS drawing rules break.
 import assert from "node:assert/strict";
-import { ALL_ARROW_KINDS, SHAPE_KINDS, arrowShapes, blockOutline, ellipseArrow, fitArrows, headOfLength, headSize, lineOffsets, markAt, placeCaptions, render, renderParts, shapeInk, shapePaths, sizeOf, spotPath, tableLayout, tlcLayout, turnedWith, type Arrow, type Atom, type Bond, type Box, type Caption, type Drawing, type Face, type Ink, type Mol, type PartCache, type Shape } from "./render.ts";
+import { ALL_ARROW_KINDS, SHAPE_KINDS, SWEEPS, arrowPath, arrowShapes, blockOutline, ellipseArrow, fitArrows, headOfLength, headSize, lineOffsets, markAt, orbitalLine, placeCaptions, render, renderParts, shapeInk, shapePaths, sizeOf, spotPath, sweepBend, tableLayout, tlcLayout, turnedWith, waveAlong, type Arrow, type Atom, type Bond, type Box, type Caption, type Drawing, type Face, type Ink, type Mol, type PartCache, type Shape } from "./render.ts";
+import { readFileSync } from "node:fs";
 import { layoutCycles, type Cycle } from "./cycle.ts";
 import { arialGlyph } from "./cdxml.ts";
+import { distToPath } from "./hit.ts";
 
 type P = [number, number];
 const pt = 4 / 3;
@@ -281,6 +283,10 @@ console.log("render.check: written labels ok");
   assert.deepEqual(styledAt("OMe", [-1, 0], [{ text: "OH", bold: true }]).map((l) => [l.text, !!l.bold]), [["O", false], ["Me", false]]);
   const two = styledAt("OMe\nCH2Cl2", [-1, 0], [{ text: "OMe\n" }, { text: "CH2", bold: true }, { text: "Cl2" }]);
   assert.deepEqual(two.filter((l) => l.bold).map((l) => l.text).sort(), ["2", "C", "H"], "C, H and the first 2 bold on the second line");
+  // A part in its own colour (issue 64) is drawn in it over the label's colour, and takes the room it takes in black.
+  const hued = render({ atoms: [{ label: "O", text: "OMe", colour: "#1D4E89", runs: [{ text: "O", colour: "#B42323" }, { text: "Me" }], location: [0, 0, 0] }, { label: "C", location: [-1, 0, 0] }], bonds: [{ type: 1, atoms: [0, 1] }] }, S, wider);
+  assert.deepEqual(hued.labels.map((l) => [l.text, l.colour]), [["O", "#B42323"], ["Me", "#1D4E89"]]);
+  assert.deepEqual(hued.labels.map((l) => l.x), styledAt("OMe", [-1, 0], undefined).map((l) => l.x));
   console.log("render.check: labels with styled characters ok");
 }
 
@@ -340,7 +346,8 @@ console.log("render.check: written labels ok");
   // A bent equilibrium (a point, then its middle dragged): two arcs beside its own, each with its half head; with a
   // ratio of 3 the back arc sweeps a third of the forward one.
   const bentEq = arrowShapes({ ...a, kind: "equilibrium", point: true, bend: 0.3 }, S, k), bentShort = arrowShapes({ ...a, kind: "equilibrium", point: true, bend: 0.3, ratio: 3 }, S, k);
-  assert.ok(Math.min(...ys(bentEq)) < -0.3 * 4 * k + 0.2 * k && bentShort.length < bentEq.length, "curved equilibrium");
+  const across = (p: [number, number][]) => Math.max(...xs([p])) - Math.min(...xs([p]));
+  assert.ok(Math.min(...ys(bentEq)) < -0.3 * 4 * k + 0.2 * k && across(bentShort[2]) < 0.5 * across(bentEq[2]), "curved equilibrium");
   // A block arrow: shaft 12 line widths wide, barbs 12 off the axis and 12 back from the tip.
   const o = blockOutline({ ...a, kind: "block" }, S, k);
   const X = (4 * k) / lw, round = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
@@ -351,15 +358,62 @@ console.log("render.check: written labels ok");
   assert.ok(pts.length === 4 && Math.hypot(pts[0][0], pts[0][1]) < 1e-9 && Math.hypot(pts[3][0] - 0.5, pts[3][1] - 1.2) < 1e-9 && e.end === "full");
   const c = [(pts[0][0] + pts[2][0]) / 2, (pts[0][1] + pts[2][1]) / 2], long = Math.hypot(pts[0][0] - c[0], pts[0][1] - c[1]), shortAxis = Math.hypot(pts[3][0] - c[0], pts[3][1] - c[1]);
   assert.ok(Math.abs(shortAxis / long - 0.4) < 1e-9, "axes 0.4");
-  // A closed pen curve (it ends where it starts) is still drawn.
-  assert.equal(arrowShapes({ id: 2, kind: "curve", from: [0, 0], to: [0, 0], curve: { points: [{ at: [0, 0] }, { at: [1, 0] }, { at: [0, 1] }], closed: true } }, S, k).length, 3);
-  // A pen curve whose ends are close together (a loop) keeps its whole head: only straight arrows are kept to two thirds.
-  const loop = arrowShapes({ id: 3, kind: "curve", from: [0, 0], to: [0.3, 0], end: "full", curve: { points: [{ at: [0, 0], c2: [-2, 2] }, { at: [0.3, 0], c1: [2.3, 2] }] } }, S, k);
-  const loopHead = loop[loop.length - 1];
-  assert.ok(Math.abs(Math.hypot(loopHead[2][0] - loopHead[0][0], loopHead[2][1] - loopHead[0][1]) - 8.75 * lw) < 1e-6, "a curve's whole head");
+  // A closed pen curve (it ends where it starts) is still drawn: one loop each side, with no ends.
+  const triangle: Arrow = { id: 2, kind: "curve", from: [0, 0], to: [0, 0], curve: { points: [{ at: [0, 0] }, { at: [1, 0] }, { at: [0, 1] }], closed: true } };
+  assert.equal(arrowShapes(triangle, S, k).length, 2);
+  // A pen curve is one outline, filled nonzero: every point within its half-width of the line is inked, round every
+  // bend and corner (a bar for each step left a wedge outside every turn, which showed as seams), and no corner spikes
+  // out past twice its half-width. A clip-art curve, a tight hairpin, corners of a closed curve, and a wavy line.
+  const wind = (polys: P[][], q: P) => polys.reduce((sum, p) => sum + p.reduce((w, a, i) => {
+    const b = p[(i + 1) % p.length], side = (b[0] - a[0]) * (q[1] - a[1]) - (q[0] - a[0]) * (b[1] - a[1]);
+    return w + (a[1] <= q[1] ? (b[1] > q[1] && side > 0 ? 1 : 0) : (b[1] <= q[1] && side < 0 ? -1 : 0));
+  }, 0), 0);
+  const smooth: Arrow = { id: 6, kind: "curve", from: [0, 0], to: [2, 0], curve: { points: [{ at: [0, 0], c2: [0.5, 1] }, { at: [1, 0], c1: [0.6, -0.8], c2: [1.4, 0.8] }, { at: [2, 0], c1: [1.5, -1] }] } };
+  const hairpin: Arrow = { id: 7, kind: "curve", from: [0, 0], to: [0, 0.02], curve: { points: [{ at: [0, 0], c2: [1, 0] }, { at: [0, 0.02], c1: [1, 0.02] }] } };
+  const wavy: Arrow = { ...smooth, style: "wavy" };
+  for (const [c, path] of [[smooth, arrowPath(smooth, k)], [hairpin, arrowPath(hairpin, k)], [triangle, arrowPath(triangle, k)], [wavy, waveAlong(arrowPath(smooth, k), 0.06 * k, 0.2 * k)]] as [Arrow, P[]][]) {
+    const drawn = arrowShapes(c, S, k), w = 0.95 * (lw / 2), ring = !!c.curve?.closed;
+    path.forEach((p, i) => {
+      const q = path[i + 1], d = q ? Math.hypot(q[0] - p[0], q[1] - p[1]) : 0;
+      if (d > 1e-9) for (const f of [0.1, 0.5, 0.9]) {
+        const n: P = [-(q[1] - p[1]) / d, (q[0] - p[0]) / d], m: P = [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+        for (const s of [-1, 1]) assert.notEqual(wind(drawn, [m[0] + n[0] * s * w, m[1] + n[1] * s * w]), 0, `pen curve ${c.id} ${c.style ?? ""}: inked across its width`);
+      }
+      if (ring || (i > 0 && i + 1 < path.length)) for (let j = 0; j < 24; j++) assert.notEqual(wind(drawn, [p[0] + w * Math.cos((j * Math.PI) / 12), p[1] + w * Math.sin((j * Math.PI) / 12)]), 0, `pen curve ${c.id} ${c.style ?? ""}: inked round its turns`);
+    });
+    assert.ok(drawn.flat().every((q) => distToPath(q, path) <= lw + 1e-9), `pen curve ${c.id} ${c.style ?? ""}: no spikes`);
+  }
+  // About two points for each point of the line (a bar for each step had four), so the page has half the path to draw.
+  assert.ok(arrowShapes(smooth, S, k).flat().length <= 2 * arrowPath(smooth, k).length, "a pen curve's outline is small");
+  // A pen curve of one point (a file can hold one) has no shaft for a head to sit on, and draws nothing.
+  assert.deepEqual(arrowShapes({ id: 2, kind: "curve", from: [0, 0], to: [0, 0], end: "full", curve: { points: [{ at: [0, 0] }] } }, S, k), []);
+  // A pen curve whose ends are close together (a loop) keeps its whole head: a head is kept to two thirds of the arrow
+  // measured round its curve, so its barbs stand the head's whole width (2.5 line widths) off the curve.
+  const loopArrow: Arrow = { id: 3, kind: "curve", from: [0, 0], to: [0.3, 0], end: "full", curve: { points: [{ at: [0, 0], c2: [-2, 2] }, { at: [0.3, 0], c1: [2.3, 2] }] } };
+  const loop = arrowShapes(loopArrow, S, k), loopPath = arrowPath(loopArrow, k);
+  assert.ok(Math.abs(Math.max(...loop[loop.length - 1].map((q) => distToPath(q, loopPath))) - 2.5 * lw) < 1e-6, "a curve's whole head");
+  // A pen curve with a corner (a point clicked, not dragged) just before its tip: its head is a straight dart (both
+  // barbs as far from the tip), not bent round the corner.
+  const corner = arrowShapes({ id: 5, kind: "curve", from: [0, 0], to: [0.8, 0.2], end: "full", curve: { points: [{ at: [0, 0] }, { at: [0.8, 0] }, { at: [0.8, 0.2] }] } }, S, k);
+  const cornerHead = corner[corner.length - 1], fromTip = (q: P) => Math.hypot(q[0] - cornerHead[0][0], q[1] - cornerHead[0][1]);
+  assert.ok(cornerHead.length === 4 && Math.abs(fromTip(cornerHead[1]) - fromTip(cornerHead[3])) < 1e-9, "a head at a corner");
+  // An arc's head is laid along its arc (#63), so head and shaft draw as one curve at any length: every point of the
+  // head is within its width of the arc, a full head's notch is on the arc and a half head's inner corner is on the
+  // shaft's edge. A short arc's head is kept to two thirds of the arc, as a straight arrow's is (its width is a quarter
+  // of its length). Drawn along the head's chord instead, a small fishhook's barb crossed its own shaft.
+  for (const sweep of SWEEPS) for (const bend of [sweepBend(sweep), -sweepBend(sweep)]) for (const L of [0.2, 0.35, 0.6, 1.5]) for (const kind of ["curved", "fishhook", "double"] as const) {
+    const arc: Arrow = { id: 4, kind, from: [0, 0], to: [L, 0], bend }, line = arrowPath(arc, k), drawn = arrowShapes(arc, S, k);
+    const along = line.slice(1).reduce((sum, q, i) => sum + Math.hypot(q[0] - line[i][0], q[1] - line[i][1]), 0), W = Math.min(2 * lw, along / 6);
+    for (const h of drawn.slice(kind === "double" ? -2 : -1)) {
+      const off = h.map((q) => distToPath(q, line)), what = `${kind} ${sweep}° ${bend > 0 ? "up" : "down"} ${L}`;
+      assert.ok(off.every((d) => d <= W + 1e-9) && Math.max(...off) > 0.99 * W, `${what}: the head along its arc`);
+      assert.ok(kind === "fishhook" ? off.some((d) => Math.abs(d - lw / 2) < 1e-9) : off.slice(1).some((d) => d < 1e-9), `${what}: the head joins its shaft`);
+    }
+  }
   // Every polygon winds the same way, so a head over its shaft, or over an arrow joined at its tip, leaves no hole.
   const area = (p: [number, number][]) => p.reduce((s, q, i) => s + q[0] * p[(i + 1) % p.length][1] - p[(i + 1) % p.length][0] * q[1], 0);
-  for (const more of [{}, { headSize: headOfLength(22.5) }, { style: "bold" }, { kind: "equilibrium" }, { kind: "resonance" }, { end: "right" }, { start: "left" }, { kind: "nogo" }, { kind: "block" }] as Partial<Arrow>[])
+  for (const more of [{}, { headSize: headOfLength(22.5) }, { style: "bold" }, { kind: "equilibrium" }, { kind: "resonance" }, { end: "right" }, { start: "left" }, { kind: "nogo" }, { kind: "block" },
+    { kind: "curved", bend: sweepBend(270) }, { kind: "fishhook", to: [0.4, 0], bend: sweepBend(120) }, { kind: "fishhook", bend: -sweepBend(90) }, { kind: "double", to: [0.6, 0], bend: sweepBend(180) }] as Partial<Arrow>[])
     assert.ok(arrowShapes({ ...a, ...more }, S, k).every((p) => area(p) < 0), `winding: ${JSON.stringify(more)}`);
   console.log("render.check: arrow sizes and kinds ok");
 }
@@ -621,6 +675,14 @@ console.log("render.check: written labels ok");
     twice(shapeInk(sh, S, S.bond), shapeInk(bigger, S, S.bond), `${kind} shape${angle ? " turned" : ""}`);
     const m1 = markAt(sh, S.bond), m2 = markAt(bigger, S.bond);
     assert.ok(close(m2.x, 2 * m1.x) && close(m2.y, 2 * m1.y), `${kind} mark`);
+  }
+  // An orbital's outline (issue 139): bold at the bold width, dashed 0.2 bond lengths on and off as a shape, any other
+  // line plain; twice as wide and twice as long at scale 2. Every lobe on the canvas (so every export) takes it.
+  assert.match(readFileSync(new URL("Editor.tsx", import.meta.url), "utf8"), /line = orbitalLine\(a, lined\(a\.width\)\);\s+return <path [^>]*strokeWidth=\{line\.width\} strokeDasharray=\{line\.dash\} \/>/, "orbital lobes take their line");
+  for (const style of [undefined, "dashed", "bold", "doubled", "wavy"] as const) {
+    const o = orbitalLine({ style }, S), o2 = orbitalLine({ style, scale: 2 }, S);
+    assert.deepEqual(o, { width: style === "bold" ? S.bold : S.line, dash: style === "dashed" ? 0.2 * S.bond : undefined }, `${style ?? "plain"} orbital`);
+    assert.ok(close(o2.width, 2 * o.width) && (o.dash === undefined ? o2.dash === undefined : close(o2.dash!, 2 * o.dash)), `${style ?? "plain"} orbital at scale 2`);
   }
   const plate: Shape = { id: 1, kind: "tlc", from: [0, 3], to: [2, 0], tlc: { lanes: 2, spots: [{ lane: 0, rf: 0.3 }, { lane: 1, rf: 0.6, w: 0.2, h: 0.1, tail: 0.3 }] } };
   const plate2: Shape = { ...plate, from: two(plate.from), to: two(plate.to), scale: 2 };

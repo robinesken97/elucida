@@ -1,12 +1,13 @@
 // Editing operations on a drawing. Each returns a new Mol and leaves the old one alone, so undo is a list of Mols.
 // Coordinates are in bond lengths with y up, the same as KET.
-import { AROMATIC, HBOND, H_FIRST, hydrogens, lonePairs, orderOf, placedAt, QUADRUPLE, settleShape, tableLayout, tableRow, type Arrow, type Head, type Atom, type Bond, type Box, type Caption, type Curve, type Kept, type CurvePoint, type Mol, type Shape, type Spot, type Table } from "./render.ts";
+import { AROMATIC, bandRf, bandSize, GEL, HBOND, H_FIRST, hydrogens, lonePairs, orderOf, placedAt, QUADRUPLE, scaleOf, settleShape, tableLayout, tableRow, type Arrow, type Head, type Atom, type Bond, type Box, type Caption, type Curve, type Kept, type CurvePoint, type Mol, type Shape, type Spot, type Table, type Tlc } from "./render.ts";
 import { keepAngles, mapBranches, type Cycle } from "./cycle.ts";
 import { anchorElement, chemicalText, isElement, labelSmiles } from "./labels.ts";
 import type { DocStyle } from "./docstyle.ts";
 import { aromaticAtoms, rings as ringsOf } from "./rings.ts";
 import { plainOf, styled, whole, without, type TextRun } from "./richtext.ts";
 import { OCENES } from "./metals.ts";
+import { keepHands } from "./cip.ts";
 
 export type P = [number, number];
 export const EMPTY: Mol = { atoms: [], bonds: [] };
@@ -68,7 +69,7 @@ export function bondAt(m: Mol, p: P, r = 0.2): number | undefined {
 // An atom's scale (decision 0007). Bonds, chains, rings and templates drawn from an atom take it, so they match the
 // bonds already there (ChemDraw's sprouted bonds take the structure's own bond length too).
 export const scaleAt = (m: Mol, i: number) => m.atoms[i]?.scale ?? 1;
-const withAtom = (m: Mol, p: P, label = "C", scale = 1): [Mol, number] => [{ ...m, atoms: [...m.atoms, { label, location: [p[0], p[1], 0], ...(scale !== 1 ? { scale } : {}) }] }, m.atoms.length];
+export const withAtom = (m: Mol, p: P, label = "C", scale = 1): [Mol, number] => [{ ...m, atoms: [...m.atoms, { label, location: [p[0], p[1], 0], ...(scale !== 1 ? { scale } : {}) }] }, m.atoms.length];
 // The atom at p, or a new carbon there at this scale.
 function atomOrNew(m: Mol, p: P, scale = 1): [Mol, number] {
   const i = atomAt(m, p, 0.1 * Math.min(1, scale));
@@ -286,11 +287,32 @@ const setAtom = (m: Mol, i: number, change: Partial<Atom>): Mol => ({ ...m, atom
 export const setAtomMarks = (m: Mol, i: number, change: Pick<Partial<Atom>, "hmark" | "attach" | "bead">) => setAtom(m, i, change);
 const setBondAt = (m: Mol, i: number, change: Partial<Bond>): Mol => ({ ...m, bonds: m.bonds.map((b, k) => (k === i ? { ...b, ...change } : b)) });
 
-export const setElement = (m: Mol, i: number, label: string) => setAtom(m, i, { label, text: undefined, runs: undefined, shown: undefined });
+export const setElement = (m: Mol, i: number, label: string) => setAtom(m, i, { label, text: undefined, runs: undefined, shown: undefined, implicitHCount: undefined });
 // ChemDraw's c key, or C typed as a label: a carbon whose label shows with its hydrogens (CH3, CH2, CH).
-export const showCarbon = (m: Mol, i: number) => setAtom(m, i, { label: "C", text: undefined, runs: undefined, shown: true });
-// An element key (or an element picked from a menu) on an atom: that element. C shows the carbon's label.
-export const keyElement = (m: Mol, i: number, label: string) => (label === "C" ? showCarbon(m, i) : setElement(m, i, label));
+export const showCarbon = (m: Mol, i: number) => setAtom(m, i, { label: "C", text: undefined, runs: undefined, shown: true, implicitHCount: undefined });
+// An element key (or an element picked from a menu) on an atom: that element. C shows the carbon's label. On an atom
+// that is that element already (a carbon, once its label shows), the key takes off one hydrogen, and after none gives
+// back its usual hydrogens: CH4, CH3, CH2, CH, C, as in ChemDraw. So a bare O or a Br+ can be drawn (issue 125).
+export function keyElement(m: Mol, i: number, label: string): Mol {
+  const a = m.atoms[i], again = !a.text && a.label === label && (label !== "C" || !!a.shown || !neighbours(m, i).length);
+  const out = label === "C" ? showCarbon(m, i) : setElement(m, i, label);
+  if (!again) return out;
+  const h = a.implicitHCount ?? hydrogens(label, a.charge ?? 0, bondOrders(m)[i], a.radical);
+  return setAtom(out, i, { implicitHCount: h ? h - 1 : undefined });
+}
+// Hydrogens set by hand (keyElement) stay while they are fewer than the atom's usual number. A bond, charge or
+// radical that leaves no more room, or a written label, makes it a usual atom again.
+export function settleHydrogens(m: Mol): Mol {
+  if (!m.atoms.some((a) => a.implicitHCount !== undefined)) return m;
+  const used = bondOrders(m), over = (a: Atom, i: number) => a.implicitHCount !== undefined && (!!a.text || a.implicitHCount >= hydrogens(a.label, a.charge ?? 0, used[i], a.radical));
+  return m.atoms.some(over) ? { ...m, atoms: m.atoms.map((a, i) => (over(a, i) ? { ...a, implicitHCount: undefined } : a)) } : m;
+}
+// An atom read with a valence (a molfile's VAL, used: its bond orders added up): the hydrogens that leaves, when fewer
+// than usual, set by hand. A carbon so set shows its label, as keyElement shows it.
+export function withValence(a: Atom, valence: number, used: number): Atom {
+  const h = valence - used;
+  return !a.text && Number.isInteger(h) && h >= 0 && h < hydrogens(a.label, a.charge ?? 0, used, a.radical) ? { ...a, implicitHCount: h, ...(a.label === "C" ? { shown: true as const } : {}) } : a;
+}
 // Sets what an atom reads as. One element symbol makes it that element; anything else (OMe, CO2Et, Ph) is a
 // written label attached through its first element, or through carbon for a group. Empty text clears it to carbon.
 // A residue label (its bonds say which kept atom each joins) given another name: the new residue's atoms when the
@@ -438,6 +460,9 @@ export function addSymbol(m: Mol, i: number, kind: SymbolKind, bar = false, bars
     case "bead": return setAtom(m, i, { bead: !a.bead || undefined });
   }
 }
+// A charge key (charge.<arg>) on an atom: + and - add to the charge as it is drawn; the circled pair do what the
+// Symbols tool's circled marks do.
+export const keyCharge = (m: Mol, i: number, arg: string) => (arg.startsWith("circled") ? addSymbol(m, i, arg as SymbolKind) : addCharge(m, i, arg === "plus" ? 1 : -1));
 const SINGLETS = new Set(["C", "Si", "N", "P", "As"]);
 // The mark (a charge, radical or lone pair, by its Atom.angles key) at p: within r bond lengths of where it is drawn
 // (electrons, px at L px per bond length) and nearer it than its atom, so a press on the atom still takes the atom. A
@@ -1054,7 +1079,7 @@ export function tidyGroups(m: Mol, frags = m.groups?.length ? fragments(m) : [])
     gone.add(k);
     if (integral[k] && n === 1 && kids[k].length === 1) integral[kids[k][0]] = true;
   }
-  const out = gs.flatMap((g, k) => (gone.has(k) ? [] : [{ id: g.id, atoms: g.atoms, items: g.items, ...(integral[k] ? { integral: true as const } : {}), ...(g.annotations ? { annotations: g.annotations } : {}), ...(g.plot ? { plot: g.plot } : {}) }]));
+  const out = gs.flatMap((g, k) => (gone.has(k) ? [] : [{ id: g.id, atoms: g.atoms, items: g.items, ...(integral[k] ? { integral: true as const } : {}), ...(g.annotations ? { annotations: g.annotations } : {}), ...(g.plot ? { plot: g.plot } : {}), ...(g.risk ? { risk: g.risk } : {}) }]));
   const same = out.length === m.groups.length && out.every((g, k) => {
     const o = m.groups![k];
     return g.id === o.id && !!g.integral === !!o.integral && g.atoms.length === o.atoms.length && g.atoms.every((i, n) => i === o.atoms[n]) && g.items.length === o.items.length && g.items.every((id, n) => id === o.items[n]);
@@ -1389,6 +1414,16 @@ export function fragments(m: Mol, attached = true): number[][] {
     out.push(group);
   });
   return out;
+}
+
+// Whether the atoms ids are one whole molecule: a structure with one or more bonds (ethane drawn as one bond), or one
+// labelled atom (H2O, Na). An attachment point, a polymer bead or a label read as text only is no molecule.
+export function wholeMolecule(m: Mol, ids: number[]): boolean {
+  // A bond out of the atoms (an atom or bond picked in a larger structure) answers at once, with no fragments made.
+  const inside = new Set(ids);
+  if (m.bonds.some((b) => inside.has(b.atoms[0]) !== inside.has(b.atoms[1]))) return false;
+  const g = fragments(m).find((x) => x.includes(ids[0])), a = m.atoms[ids[0]];
+  return g?.length === ids.length && ids.every((i) => g.includes(i)) && (g.length > 1 || (!a.centre && !a.attach && !a.bead && a.chemical !== false));
 }
 
 // After a move: each moved atom that sits exactly on another atom joins it, so no atom hides under another.
@@ -2075,6 +2110,8 @@ const scaled = <T extends { scale?: number }>(x: T, k: number): T => {
   return (f === 1 ? rest : { ...rest, scale: f }) as T;
 };
 const points = (pt: number) => Math.min(999, Math.max(0.1, Math.round(pt * 100) / 100));
+// A line or bold width in points: 4 decimals, from 0.005 to 200 pt (what Octet's file takes).
+const widthPt = (pt: number) => Math.min(200, Math.max(0.005, times(pt, 1)));
 // A caption's size (its own, or `size` when it has none and size is given), its runs' sizes and a fixed line spacing
 // times k.
 const caption = (c: Caption, k: number, size?: number): Caption => {
@@ -2088,6 +2125,11 @@ const pointsOf = <T extends Arrow | Shape | Cycle>(x: T, k: number): T => ({
   ...x, ...(x.width ? { width: Math.round(x.width * k * 1e4) / 1e4 } : {}), ...("size" in x && x.size ? { size: points(x.size * k) } : {}),
   ...("table" in x && x.table?.weight ? { table: { ...x.table, weight: Math.round(x.table.weight * k * 1e4) / 1e4 } } : {}),
 });
+// A bond's own line and bold widths times k.
+const bondPoints = (b: Bond, k: number): Bond => (b.line || b.bold ? { ...b, ...(b.line ? { line: widthPt(b.line * k) } : {}), ...(b.bold ? { bold: widthPt(b.bold * k) } : {}) } : b);
+// The line width an arrow, shape or cycle is drawn with, at its scale: its own, a table's rules', or the document's
+// line (a filled pen curve's outline is a hairline unless set; curveFill).
+export const lineWidth = (x: Arrow | Shape | Cycle, line: number) => (("table" in x && x.table ? x.table.weight : x.width) ?? ("curve" in x && x.curve?.closed && x.fill ? 0.05 : line)) * scaleOf(x);
 // Scale… with Labels and lines on: the chosen atoms', arrows', shapes' and cycles' scales times k, and the sizes of
 // the chosen captions and of the captions that go with them (under those atoms, on those arrows, in those cycles).
 // captionSize: the document's caption size, for captions that have none of their own. Positions move elsewhere.
@@ -2111,6 +2153,7 @@ export function scaleSizes(m: Mol, r: number): Mol {
   return {
     ...m,
     atoms: m.atoms.map((a) => (a.size ? { ...a, size: points(a.size * r) } : a)),
+    bonds: m.bonds.map((b) => bondPoints(b, r)),
     captions: m.captions?.map((c) => (c.size || c.runs?.some((x) => x.size) || typeof c.lineHeight === "number" ? caption(c, r) : c)),
     arrows: m.arrows?.map((a) => pointsOf(a, r)),
     shapes: m.shapes?.map((x) => pointsOf(x, r)),
@@ -2181,10 +2224,57 @@ export function fitSizes(m: Mol, from: Pick<DocStyle, "bond" | "labelSize" | "ca
   return {
     ...m,
     atoms: m.atoms.map((a) => (a.size ? { ...a, size: points(a.size * label) } : a)),
+    bonds: m.bonds.map((b) => bondPoints(b, k)),
     captions: m.captions?.map(fitted),
     arrows: m.arrows?.map((a) => pointsOf(a, k)),
     shapes: m.shapes?.map((x) => pointsOf(x, k)),
     cycles: m.cycles?.map((c) => pointsOf(c, k)),
+  };
+}
+// ChemDraw's Object Settings (Settings > Pro > Selection): the bond length, line and bold widths, and label and caption
+// fonts and sizes of some atoms and objects, as drawn (points). Each is the first chosen thing's that has one; unset
+// when nothing chosen has one. The bond length is the document's times the scale. Given as null (Reset to document),
+// a width, font or size is the document's: none of its own.
+export type ObjectSettings = { bond?: number; line?: number | null; bold?: number | null; labelFont?: string | null; labelSize?: number | null; captionFont?: string | null; captionSize?: number | null };
+export function objectSettings(m: Mol, s: DocStyle, atoms: Set<number>, items: Set<number>): ObjectSettings {
+  const a = m.atoms[atoms.values().next().value ?? -1], b = m.bonds.find((x) => atoms.has(x.atoms[0]) && atoms.has(x.atoms[1]));
+  const x = [...(m.arrows ?? []), ...(m.shapes ?? []), ...(m.cycles ?? [])].find((y) => items.has(y.id)), c = m.captions?.find((y) => items.has(y.id));
+  const f = b ? (scaleAt(m, b.atoms[0]) + scaleAt(m, b.atoms[1])) / 2 : 1;
+  return {
+    ...(a || x ? { bond: times(s.bond, scaleOf(a ?? x!)) } : {}),
+    ...(b ? { line: times(b.line ?? s.line, f), bold: times(b.bold ?? s.bold, f) } : x ? { line: times(lineWidth(x, s.line), 1) } : {}),
+    ...(a ? { labelFont: a.font ?? s.labelFont, labelSize: times(a.size ?? s.labelSize, scaleOf(a)) } : {}),
+    ...(c ? { captionFont: c.font ?? s.captionFont, captionSize: c.size ?? s.captionSize } : {}),
+  };
+}
+// The chosen atoms and objects given these settings: widths on the bonds between chosen atoms (and a line width on
+// chosen arrows, shapes and cycles; a table's rules 0.1 pt at least), a label font and size on chosen atoms, and a
+// caption font and size on chosen captions. Each keeps a size over its scale, within what Octet's file takes, and has
+// none of its own where it is the document's. The bond length is a scale, made elsewhere, as positions move with it.
+export function withObjectSettings(m: Mol, s: DocStyle, atoms: Set<number>, items: Set<number>, o: ObjectSettings): Mol {
+  const own = (v: number | null | undefined, f: number, doc: number, was?: number, fit = widthPt) => {
+    if (v === undefined) return was;
+    const w = v === null ? doc : fit(v / f);
+    return Math.abs(w - doc) < 1e-4 ? undefined : w;
+  };
+  const font = (v: string | null | undefined, doc: string, was?: string) => (v === undefined ? was : v === null || v === doc ? undefined : v);
+  // A line width on an arrow, shape or cycle: none of its own where it is the one it has without (lineWidth), so a
+  // filled pen curve goes back to its hairline.
+  const lined = <T extends Arrow | Shape | Cycle>(x: T): T => (o.line === undefined || !items.has(x.id) ? x
+    : "table" in x && x.table ? { ...x, table: { ...x.table, weight: o.line === null ? undefined : widthPt(Math.max(0.1, o.line) / scaleOf(x)) } }
+    : { ...x, width: own(o.line, scaleOf(x), lineWidth({ ...x, width: undefined, scale: 1 }, s.line)) });
+  const labels = o.labelFont !== undefined || o.labelSize !== undefined, widths = o.line !== undefined || o.bold !== undefined, text = o.captionFont !== undefined || o.captionSize !== undefined;
+  const lines = o.line !== undefined;
+  return {
+    ...m,
+    atoms: !labels ? m.atoms : m.atoms.map((a, i) => (atoms.has(i) ? { ...a, font: font(o.labelFont, s.labelFont, a.font), size: own(o.labelSize, scaleOf(a), s.labelSize, a.size, points) } : a)),
+    bonds: !widths ? m.bonds : m.bonds.map((b) => {
+      if (!atoms.has(b.atoms[0]) || !atoms.has(b.atoms[1])) return b;
+      const f = (scaleAt(m, b.atoms[0]) + scaleAt(m, b.atoms[1])) / 2;
+      return { ...b, line: own(o.line, f, s.line, b.line), bold: own(o.bold, f, s.bold, b.bold) };
+    }),
+    arrows: lines ? m.arrows?.map(lined) : m.arrows, shapes: lines ? m.shapes?.map(lined) : m.shapes, cycles: lines ? m.cycles?.map(lined) : m.cycles,
+    captions: !text ? m.captions : m.captions?.map((c) => (items.has(c.id) ? { ...c, font: font(o.captionFont, s.captionFont, c.font), size: own(o.captionSize, 1, s.captionSize, c.size, points) } : c)),
   };
 }
 // Atom maps. Pairing two atoms gives both the first one's number, or the second's, or the next free number; the
@@ -2266,21 +2356,24 @@ export function nextGroup(m: Mol, atoms: number[], kind: "&" | "or", moving = ne
 // TLC plate lanes, as ChemDraw's Add Lane, Duplicate Lane, Delete Lane and a drag of a lane's origin tick. A lane
 // added or taken away widens or narrows the plate on its right by one lane, so every lane keeps its width, and spots
 // stay in their lanes. at: where the new lane goes (0 is first); copy: the lane whose spots it takes (Duplicate).
-const TLC_LANES = 40;
+// A gel's lane names go with their lanes; a new lane is named by the number of lanes before it, a copy as its lane.
+// A plate has 40 lanes at most, the most Octet's file reads.
+export const TLC_LANES = 40;
 const widen = (sh: Shape, d: number): Shape => (sh.to[0] >= sh.from[0] ? { ...sh, to: [sh.to[0] + d, sh.to[1]] } : { ...sh, from: [sh.from[0] + d, sh.from[1]] });
 export function addLane(sh: Shape, at: number, copy?: number): Shape {
   const tlc = sh.tlc ?? { lanes: 1, spots: [] };
   if (tlc.lanes >= TLC_LANES) return sh;
   const k = Math.max(0, Math.min(tlc.lanes, at)), w = Math.abs(sh.to[0] - sh.from[0]) / tlc.lanes;
   const spots = [...tlc.spots.map((x) => (x.lane >= k ? { ...x, lane: x.lane + 1 } : x)), ...(copy === undefined ? [] : tlc.spots.filter((x) => x.lane === copy).map((x) => ({ ...x, lane: k })))];
-  return { ...widen(sh, w), tlc: { ...tlc, lanes: tlc.lanes + 1, spots } };
+  const names = tlc.names && [...tlc.names.slice(0, k), copy === undefined ? String(tlc.lanes) : tlc.names[copy] ?? "", ...tlc.names.slice(k)];
+  return { ...widen(sh, w), tlc: { ...tlc, lanes: tlc.lanes + 1, spots, ...(names ? { names } : {}) } };
 }
 // A lane and its spots taken away (a plate keeps one lane).
 export function deleteLane(sh: Shape, k: number): Shape {
   const tlc = sh.tlc ?? { lanes: 1, spots: [] };
   if (tlc.lanes <= 1 || k < 0 || k >= tlc.lanes) return sh;
   const w = Math.abs(sh.to[0] - sh.from[0]) / tlc.lanes;
-  return { ...widen(sh, -w), tlc: { ...tlc, lanes: tlc.lanes - 1, spots: tlc.spots.filter((x) => x.lane !== k).map((x) => (x.lane > k ? { ...x, lane: x.lane - 1 } : x)) } };
+  return { ...widen(sh, -w), tlc: { ...tlc, lanes: tlc.lanes - 1, spots: tlc.spots.filter((x) => x.lane !== k).map((x) => (x.lane > k ? { ...x, lane: x.lane - 1 } : x)), ...(tlc.names ? { names: tlc.names.filter((_, j) => j !== k) } : {}) } };
 }
 // A lane moved to another place among the lanes, with its spots; the others close up behind it.
 export function moveLane(sh: Shape, from: number, to: number): Shape {
@@ -2288,7 +2381,22 @@ export function moveLane(sh: Shape, from: number, to: number): Shape {
   if (from === to || from < 0 || to < 0 || from >= tlc.lanes || to >= tlc.lanes) return sh;
   const order = Array.from({ length: tlc.lanes }, (_, k) => k).filter((k) => k !== from);
   order.splice(to, 0, from);
-  return { ...sh, tlc: { ...tlc, spots: tlc.spots.map((x) => ({ ...x, lane: order.indexOf(x.lane) })) } };
+  return { ...sh, tlc: { ...tlc, spots: tlc.spots.map((x) => ({ ...x, lane: order.indexOf(x.lane) })), ...(tlc.names ? { names: order.map((k) => tlc.names![k] ?? "") } : {}) } };
+}
+// A new gel, as wide as its lanes allow (40 lanes at most, so a wider gel has wider lanes): its first lane named M
+// with the unit's ladder in it, the others numbered.
+export function newGel(from: [number, number], to: [number, number], unit: "kDa" | "bp" = "kDa"): Omit<Shape, "id"> {
+  const lanes = Math.min(TLC_LANES, Math.max(2, Math.round(Math.abs(to[0] - from[0]) / 1.2))), tlc: Tlc = { lanes, spots: [], unit, names: ["M", ...Array.from({ length: lanes - 1 }, (_, k) => String(k + 1))] };
+  return { kind: "gel", from, to, tlc: { ...tlc, spots: GEL[unit].ladder.map((n) => ({ lane: 0, rf: bandRf(tlc, n) })) } };
+}
+// Bands added to a gel's lane at sizes (kDa or bp, as ChemDraw's Add Bands), the gel's range changed with its bands
+// kept at their sizes (ChemDraw's Set Range: ones outside it are not drawn), and its first lane given the ladder of a
+// unit, the gel's sizes then read in that unit.
+export const addBands = (t: Tlc, lane: number, sizes: number[]): Tlc => ({ ...t, spots: [...t.spots, ...sizes.filter((n) => n > 0 && Number.isFinite(n)).slice(0, 400 - t.spots.length).map((n) => ({ lane, rf: bandRf(t, n) }))] });
+export const setRange = (t: Tlc, range: [number, number]): Tlc => ({ ...t, range, spots: t.spots.map((x) => ({ ...x, rf: bandRf({ ...t, range }, bandSize(t, x.rf)) })) });
+export function withLadder(t: Tlc, unit: "kDa" | "bp"): Tlc {
+  const { range: _, ...rest } = t, next: Tlc = { ...rest, unit };
+  return { ...next, spots: [...t.spots.filter((x) => x.lane !== 0), ...GEL[unit].ladder.map((n) => ({ lane: 0, rf: bandRf(next, n) }))] };
 }
 
 // A TLC spot's style, as ChemDraw's spot styles go together: Filled, Hollow and Octet's Shaded are its fill; Dashed
@@ -2493,10 +2601,15 @@ export function addTemplate(m: Mol, t: Mol, target: { bond?: number; atom?: numb
   // How much f grows the template. One drawn in perspective (a chair, a Newman projection) keeps its depth, grown as
   // much; mirrored, it turns over in 3D, so its depth changes sign and its stereochemistry is kept.
   const kz =(target.bond !== undefined && edge ? len(sub(f([1, 0]), f([0, 0]))) : scale) * (mirrored ? -1 : 1);
+  // A template atom joins an atom that was drawn before, never another atom of the template, and no drawn atom twice:
+  // a Newman projection's front and back carbon are at one place on the page.
+  const drawn = m;
   for (const [k, p] of at0.map(f).entries()) {
     const before = m.atoms.length;
     let id: number;
-    [m, id] = atomOrNew(m, p, scale);
+    const on = atomAt(drawn, p, 0.1 * Math.min(1, scale));
+    if (on === undefined || ids.includes(on)) [m, id] = withAtom(m, p, "C", scale);
+    else id = on;
     if (id >= before) {
       // A new atom takes the template atom's label, marks and look; its place and size are the drawing's.
       const { location: [, , z = 0], scale: __, order: ___, ...own } = t.atoms[k];
@@ -2529,8 +2642,8 @@ function withObjects(m: Mol, t: Mol, ids: number[], f: (q: P) => P, k: number, m
   for (const x of objects) to.set(x.id, id++);
   const out: Mol = {
     ...m,
-    ...(t.captions?.length ? { captions: [...(m.captions ?? []), ...t.captions.map((c) => ({ ...c, id: to.get(c.id)!, ...(c.under ? { under: c.under.map(atom) } : {}),
-      ...(c.on ? { on: { ...c.on, arrow: to.get(c.on.arrow) ?? c.on.arrow } } : {}), ...(c.cycle ? { cycle: { ...c.cycle, cycle: to.get(c.cycle.cycle) ?? c.cycle.cycle } } : {}) }))] } : {}),
+    ...(t.captions?.length ? { captions: [...(m.captions ?? []), ...t.captions.map((c) => remapKept({ ...c, id: to.get(c.id)!, ...(c.under ? { under: c.under.map(atom) } : {}),
+      ...(c.on ? { on: { ...c.on, arrow: to.get(c.on.arrow) ?? c.on.arrow } } : {}), ...(c.cycle ? { cycle: { ...c.cycle, cycle: to.get(c.cycle.cycle) ?? c.cycle.cycle } } : {}) }, atom))] } : {}),
     ...(t.arrows?.length ? { arrows: [...(m.arrows ?? []), ...t.arrows.map((a) => ({ ...a, id: to.get(a.id)! }))] } : {}),
     ...(t.shapes?.length ? { shapes: [...(m.shapes ?? []), ...t.shapes.map((x) => ({ ...x, id: to.get(x.id)! }))] } : {}),
     ...(t.cycles?.length ? { cycles: [...(m.cycles ?? []), ...t.cycles.map((c) => ({ ...mapBranches(c, atom), id: to.get(c.id)!, nodes: c.nodes.map((n) => n.map(atom)) }))] } : {}),
@@ -2637,10 +2750,15 @@ export function turnAboutBond(m: Mol, ids: Set<number>, from: number, to: number
     }),
   };
 }
-// Object > Flatten: atoms keep where they are drawn and lose their depth. As in ChemDraw, depth shading stays set (it
-// shows again if the structure is turned again).
+// Object > Flatten: atoms keep where they are drawn and lose their depth, and each of their wedged centres still reads
+// as it did with its depth (keepHands). As in ChemDraw, depth shading stays set (it shows again if the structure is
+// turned again); an opacity set by hand goes.
 export const flattenAtoms = (m: Mol, ids: Set<number>): Mol =>
-  ({ ...m, atoms: m.atoms.map((a, i) => (ids.has(i) ? { ...a, location: [a.location[0], a.location[1], 0] as [number, number, number] } : a)) });
+  keepHands(m, { ...m, atoms: m.atoms.map((a, i) => {
+    if (!ids.has(i)) return a;
+    const location: [number, number, number] = [a.location[0], a.location[1], 0];
+    return typeof a.shade === "number" ? { ...a, shade: true, location } : { ...a, location };
+  }) }, ids);
 // The axis part of a structure turns about in 3D, as [atom, atom]: the one bond joining the part to the rest of its
 // structure ([inside atom, outside atom]), or, when its bonds to the rest all go to the same two atoms (a
 // carboxylate bridging a metal–metal bond, a ring fused on a bond), the line through those two. Else none.
@@ -2731,7 +2849,8 @@ export function insertMol(m: Mol, add: Mol, offset: P = [0, 0]) {
   const by = (q: [number, number]): [number, number] => [q[0] + offset[0], q[1] + offset[1]];
   const mol: Mol = {
     ...m,
-    atoms: [...m.atoms, ...add.atoms.map((a) => renumberCentre(unlink({ ...a, location: [a.location[0] + offset[0], a.location[1] + offset[1], a.location[2] ?? 0] as [number, number, number] }), at))],
+    // A copy is a new structure: it is in no spectrum session (Editor.tsx), whatever the original is in.
+    atoms: [...m.atoms, ...add.atoms.map(({ session: _, ...a }) => renumberCentre(unlink({ ...a, location: [a.location[0] + offset[0], a.location[1] + offset[1], a.location[2] ?? 0] as [number, number, number] }), at))],
     bonds: [...m.bonds, ...add.bonds.map((b) => unlink({ ...b, atoms: [at(b.atoms[0]), at(b.atoms[1])] as [number, number] }))],
     arrows: [...(m.arrows ?? []), ...(add.arrows ?? []).map(plain).map((a) => ({ ...a, id: ids.get(a.id)!, from: by(a.from), to: by(a.to),
       ...(a.curve ? { curve: { ...a.curve, points: a.curve.points.map((q) => ({ at: by(q.at), ...(q.c1 ? { c1: by(q.c1) } : {}), ...(q.c2 ? { c2: by(q.c2) } : {}) })) } } : {}) }))],

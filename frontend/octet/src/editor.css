@@ -4,6 +4,43 @@
 body {
   margin: 0;
   background: var(--surface);
+  font-family: var(--font-sans);
+}
+/* A button's text is in Octet's font, as the text beside it is, not the system's (menus are on body, so it has it too). */
+button {
+  font-family: inherit;
+}
+/* One look for each state on every control (brand/BRAND.md, Controls; src/ui.check.ts). A button's text is 13 px unless
+   its class sets a size. Hover, press and a change of state fade over the short token; a row in a list or a menu
+   keeps only the press, so the highlight follows the pointer at once. A control that does not apply now is dimmed, and
+   nothing else about it changes. */
+button,
+input,
+select,
+textarea {
+  font-size: 13px;
+}
+button {
+  transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+button:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  opacity: var(--disabled);
+}
+/* Every button goes down a little under the pointer. :where() keeps this as weak as a class, so a class that sets its
+   own transform (a small or a large control, or one that stays still) wins. */
+:where(button:not(:disabled)):active {
+  transform: scale(var(--press));
+}
+/* A small action on an item (remove, keep, forget) under the pointer: the sunken fill and full ink, as every button. */
+@media (hover: hover) and (pointer: fine) {
+  .variant-action:hover,
+  .key-remove:hover,
+  .name-forget:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
 }
 
 /* No page selection anywhere: WebKit (the Mac and Linux app) needs the prefixed property too. */
@@ -171,6 +208,15 @@ circle.mark {
   stroke: var(--select);
   stroke-linecap: round;
 }
+/* The selected atoms and bonds, one path each (Editor.tsx selectedPaths). */
+.selection-marks .selected-atoms {
+  fill: var(--select);
+}
+.selection-marks .selected-bonds {
+  fill: none;
+  stroke: var(--select);
+  stroke-linecap: round;
+}
 
 /* A group wholly selected: a dotted frame round it, a hairline at any zoom. */
 .group-frame rect {
@@ -243,7 +289,7 @@ circle.mark {
   position: absolute;
   min-width: 7em;
   width: max-content;
-  padding: 1px 4px;
+  padding: 1px var(--space-1);
   transform: translateX(-50%);
   line-height: 1.2;
   white-space: pre;
@@ -318,8 +364,10 @@ circle.mark {
   transition: transform var(--motion-fast) var(--ease-out);
 }
 /* A handle under the pointer grows a little. */
-.handle:hover {
-  transform: scale(1.25);
+@media (hover: hover) and (pointer: fine) {
+  .handle:hover {
+    transform: scale(1.25);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .handle {
@@ -461,7 +509,7 @@ rect.mark {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-float);
   isolation: isolate;
-  z-index: 4; /* above notices, the tutorial card and the panels, so its strips open over them */
+  z-index: var(--z-palette); /* above notices, the tutorial card and the panels, so its strips open over them */
 }
 
 /* The active tool's background slides between tools, so a switch reads as one move. */
@@ -490,7 +538,7 @@ rect.mark {
 
 @keyframes pop {
   from {
-    transform: scale(0.6);
+    transform: scale(0.85);
     opacity: 0;
   }
 }
@@ -519,7 +567,7 @@ rect.mark {
   position: absolute;
   top: calc(-1 * var(--space-1) - 1px);
   left: calc(100% + var(--space-3));
-  z-index: 2;
+  z-index: var(--z-strip);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -536,7 +584,7 @@ rect.mark {
 @keyframes strip-in {
   from {
     opacity: 0;
-    transform: scale(0.96) translateX(-4px);
+    transform: scale(0.97) translateX(-4px);
   }
 }
 
@@ -588,13 +636,14 @@ rect.mark {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  height: 36px;
+  height: var(--size-cell);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
   text-align: left;
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 .variant > svg {
   flex: none;
@@ -619,16 +668,21 @@ rect.mark {
   right: var(--space-1);
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-top: -10px;
+  width: var(--size-action);
+  height: var(--size-action);
+  margin-top: calc(var(--size-action) / -2);
   padding: 0;
-  border: 0;
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
-  background: var(--surface-sunken);
+  background: var(--surface-raised);
   color: var(--ink-muted);
   opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  box-sizing: border-box;
+}
+/* In a list (the user's own colours in a colour menu) the name keeps clear of the button, so it never runs under it. */
+.strip.list .variant-cell:has(> .variant-action) > .variant {
+  padding-right: calc(var(--size-action) + var(--space-2));
 }
 .variant-cell:hover .variant-action,
 .library-cell:hover .variant-action,
@@ -682,7 +736,7 @@ button.variant.add {
 /* The dragged option lifts off, leans with the pull, and flies into its slot or fades where it is let go. */
 .carry {
   position: fixed;
-  z-index: 3;
+  z-index: var(--z-notice);
   display: grid;
   place-items: center;
   width: 32px;
@@ -868,8 +922,8 @@ button.variant.add {
 }
 
 .tool {
-  width: 32px;
-  height: 32px;
+  width: var(--size-tool);
+  height: var(--size-tool);
   display: grid;
   place-items: center;
   padding: 0;
@@ -888,16 +942,13 @@ button.variant.add {
 }
 
 .tool:active:not(:disabled) {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 
 .tool[aria-pressed="true"] {
   color: var(--link);
 }
 
-.tool:disabled {
-  color: var(--outline);
-}
 
 .tool:focus-visible {
   outline: none;
@@ -934,10 +985,10 @@ button.variant.add {
    wraps before it reaches either. Its icon takes the colour of its kind. */
 .notice {
   position: absolute;
-  bottom: var(--space-6);
+  bottom: calc(var(--space-6) + var(--dock, 0px));
   left: calc(var(--space-4) * 2 + 48px);
   right: calc(var(--space-4) * 2 + 248px);
-  z-index: 3;
+  z-index: var(--z-notice);
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -979,34 +1030,16 @@ button.variant.add {
   color: var(--success);
 }
 .notice-text {
-  padding: 3px 0;
+  padding: var(--space-1) 0;
   text-wrap: pretty;
 }
 .notice .text-button {
   flex: none;
   font-weight: 500;
 }
-.notice-close {
-  display: grid;
+/* The notice's X is a panel's Close (.actions-close), kept at its size beside long text. */
+.notice .actions-close {
   flex: none;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--ink-muted);
-}
-@media (hover: hover) and (pointer: fine) {
-  .notice-close:hover {
-    background: var(--surface-sunken);
-    color: var(--ink);
-  }
-}
-.notice-close:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus);
 }
 @media (prefers-reduced-motion: reduce) {
   .notice {
@@ -1049,7 +1082,7 @@ button.variant.add {
   position: absolute;
   right: var(--space-4);
   bottom: var(--space-4);
-  z-index: 1;
+  z-index: var(--z-panel);
   width: 248px;
   padding: var(--space-1) var(--space-1) var(--space-2);
   background: var(--surface-raised);
@@ -1073,12 +1106,13 @@ button.variant.add {
 @keyframes panel-out {
   to {
     opacity: 0;
-    transform: scale(0.94);
+    transform: scale(0.98);
   }
 }
 .actions-reopen {
   transform-origin: bottom right;
   animation: panel-in var(--motion-fast) var(--ease-out);
+  font: 500 13px/18px var(--font-sans);
 }
 @keyframes panel-in {
   from {
@@ -1102,8 +1136,8 @@ button.variant.add {
 .actions-close {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: var(--size-control-sm);
+  height: var(--size-control-sm);
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
@@ -1118,7 +1152,7 @@ button.variant.add {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 30px;
+  height: var(--size-row);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
@@ -1126,6 +1160,7 @@ button.variant.add {
   color: var(--ink);
   font-size: 13px;
   text-align: left;
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 .action > svg,
 .glyph-text {
@@ -1172,16 +1207,18 @@ button.variant.add {
 .chip {
   display: grid;
   place-items: center;
-  height: 30px;
+  height: var(--size-row);
+  box-sizing: border-box;
   padding: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--surface-raised);
   color: var(--ink);
   font-family: var(--atom-label-font);
   font-size: 13px;
 }
-.chip[aria-pressed="true"] {
+.chip[aria-pressed="true"],
+.chip[aria-checked="true"] {
   background: var(--brand-mist);
   border-color: transparent;
   color: var(--link);
@@ -1191,7 +1228,7 @@ button.variant.add {
   position: absolute;
   top: var(--space-4);
   left: 50%;
-  z-index: 2;
+  z-index: var(--z-strip);
   width: 360px;
   height: 40px;
   margin-left: -180px;
@@ -1230,7 +1267,7 @@ button.variant.add {
   position: absolute;
   top: calc(var(--space-4) + 44px);
   left: 50%;
-  z-index: 2;
+  z-index: var(--z-strip);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1254,7 +1291,7 @@ button.variant.add {
   position: absolute;
   top: calc(var(--space-4) + 44px);
   left: 50%;
-  z-index: 2;
+  z-index: var(--z-strip);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-1);
@@ -1279,7 +1316,7 @@ button.variant.add {
   background: var(--surface-sunken);
 }
 .name-options button {
-  padding: 3px 10px;
+  padding: 0 var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -1287,13 +1324,15 @@ button.variant.add {
   font: 13px/18px var(--font-sans);
   white-space: nowrap;
   transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  height: var(--size-control-sm);
+  box-sizing: border-box;
 }
 .name-options > button {
   border-color: var(--hairline);
 }
 .name-kinds button[aria-checked="true"] {
-  border-color: var(--hairline);
-  background: var(--surface-raised);
+  border-color: transparent;
+  background: var(--brand-mist);
   color: var(--link);
 }
 .name-options > button[aria-pressed="true"] {
@@ -1311,7 +1350,7 @@ button.variant.add {
   }
 }
 .name-options button:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 .name-suggestion.lower {
   top: calc(var(--space-4) + 118px);
@@ -1323,7 +1362,7 @@ button.variant.add {
 .name-suggestion mark {
   background: var(--brand-mist);
   color: var(--link);
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
 }
 .name-suggestion kbd {
   font-family: var(--font-sans);
@@ -1386,7 +1425,7 @@ button.variant.add {
   transform-origin: top right;
 }
 .tray-title {
-  padding: 0 6px;
+  padding: 0 var(--space-1);
   color: var(--ink-muted);
   font: 600 11px/14px var(--font-sans);
 }
@@ -1412,8 +1451,8 @@ button.variant.add {
   padding: 0 var(--space-2);
 }
 /* A titled section folds to its title row (Fold in Actions.tsx). The title is a button with a caret that always shows,
-   so every section reads as one that folds: it points right when the section is folded, and down when it is open. The
-   section opens and folds with its height and opacity. */
+   so every section reads as one that folds: it points right when the section is closed, and down when it is open, on
+   hover too. The section opens and folds with its height and opacity. */
 .fold-title {
   display: flex;
   align-items: center;
@@ -1421,7 +1460,7 @@ button.variant.add {
   width: 100%;
   height: 20px;
   /* 4px, so the title's first letter lines up with the icons in the rows and buttons above and below it. */
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1434,7 +1473,7 @@ button.variant.add {
   color: var(--ink-faint);
   transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
 }
-.fold[data-folded] .fold-caret {
+.fold-title[aria-expanded="false"] .fold-caret {
   transform: rotate(-90deg);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -1477,16 +1516,22 @@ button.variant.add {
   flex-wrap: wrap;
   gap: 2px;
 }
+/* Two buttons that never wrap apart (the attachment pair). */
+.tray-pair {
+  display: flex;
+  gap: 2px;
+}
 .tray-button {
   display: grid;
   place-items: center;
   width: 32px;
-  height: 32px;
+  height: var(--size-tool);
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
+  font-size: 13px;
   transition: transform var(--motion-fast) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -1503,7 +1548,7 @@ button.variant.add {
   box-shadow: var(--shadow-focus);
 }
 .tray-button:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 /* Arranging the Actions panel: any action can be dragged along the rows, along the small buttons, or between them. */
 .action-slot {
@@ -1518,7 +1563,7 @@ button.variant.add {
   right: var(--space-2);
   top: -1px;
   height: 2px;
-  border-radius: 1px;
+  border-radius: var(--radius-pill);
   background: var(--brand-bright);
   animation: fade-in var(--motion-fast) var(--ease-out);
 }
@@ -1550,11 +1595,11 @@ button.variant.add {
 }
 .action-carry {
   position: fixed;
-  z-index: 5;
+  z-index: var(--z-home);
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 6px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
   box-shadow: var(--shadow-float);
@@ -1578,7 +1623,7 @@ button.variant.add {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 9;
+  z-index: var(--z-tip);
   display: flex;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
@@ -1616,7 +1661,7 @@ button.variant.add {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-family: var(--font-sans);
   font-size: 13px;
 }
@@ -1685,11 +1730,13 @@ button.variant.add {
   max-height: none;
 }
 .strip.list .variant {
-  height: 30px;
+  height: var(--size-row);
 }
-.strip.list .variant:hover {
-  background: var(--surface-sunken);
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .strip.list .variant:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
 }
 .strip.list .variant[aria-checked="true"] {
   background: var(--brand-mist);
@@ -1703,14 +1750,14 @@ button.variant.add {
 }
 .list-find {
   width: 100%;
-  height: 30px;
+  height: var(--size-control);
   box-sizing: border-box;
   padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--canvas);
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   outline: none;
 }
 .list-find:focus-visible {
@@ -1732,22 +1779,22 @@ button.variant.add {
   position: absolute;
   right: var(--space-4);
   bottom: var(--space-4);
-  z-index: 1;
+  z-index: var(--z-panel);
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  height: 32px;
+  height: var(--size-tool);
+  box-sizing: border-box;
   padding: 0 var(--space-3);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   box-shadow: var(--shadow-float);
   color: var(--ink-muted);
-  font-size: 13px;
 }
 @media (hover: hover) and (pointer: fine) {
   .action:hover,
-  .chip:hover:not([aria-pressed="true"]),
+  .chip:hover:not([aria-pressed="true"], [aria-checked="true"]),
   .actions-close:hover,
   .actions-reopen:hover {
     background: var(--surface-sunken);
@@ -1762,9 +1809,15 @@ button.variant.add {
   box-shadow: var(--shadow-focus);
 }
 .action:active,
+.variant:active,
+.module:active,
+.library-category:active,
+.library-item:active {
+  transform: scale(var(--press-large));
+}
 .chip:active,
 .actions-reopen:active {
-  transform: scale(0.98);
+  transform: scale(var(--press));
 }
 @media (prefers-reduced-motion: reduce) {
   .actions {
@@ -1795,7 +1848,11 @@ button.variant.add {
   }
 }
 .facts:active {
-  transform: scale(0.98);
+  transform: scale(var(--press-large));
+}
+/* No formula (a dash): nothing to copy. */
+div.facts {
+  pointer-events: none;
 }
 /* The abbreviation Octet knows for the structure (TREN), then its formula: cut short with an ellipsis, never the mass. */
 .facts-what {
@@ -1815,7 +1872,8 @@ button.variant.add {
 }
 /* Every formula in the panels uses the formula token (text-formula): IBM Plex Mono, 13 px, weight 500. */
 .facts .formula,
-.prop-value.formula {
+.prop-value.formula,
+.spectrum h2 .formula {
   font: 500 13px/18px var(--font-mono);
   color: var(--ink);
 }
@@ -1838,14 +1896,14 @@ button.variant.add {
 .problem-hide {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: var(--size-action);
+  height: var(--size-action);
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--ink-faint);
-  transition: transform var(--motion-fast) var(--ease-out);
+  color: var(--ink-muted);
+  transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
   .problem-hide:hover {
@@ -1853,8 +1911,17 @@ button.variant.add {
     color: var(--ink);
   }
 }
-.problem-hide:active {
-  transform: scale(0.9);
+.problem-hide:active,
+.actions-close:active,
+.close-x:active,
+.segmented button.close-x:active,
+.floating-size:active,
+.variant-action:active,
+.name-forget:active,
+.key-remove:active,
+.key-add:active,
+.library-keep:active {
+  transform: scale(var(--press-small));
 }
 .problem-hide:focus-visible {
   outline: none;
@@ -1878,8 +1945,9 @@ button.variant.add {
 .problem-buttons button {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 24px;
+  gap: var(--space-1);
+  height: var(--size-control-sm);
+  box-sizing: border-box;
   padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
@@ -1894,7 +1962,7 @@ button.variant.add {
   }
 }
 .problem-buttons button:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 .more-problems {
   align-self: flex-start;
@@ -1930,8 +1998,8 @@ button.variant.add {
 .action {
   height: auto;
   min-height: 30px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
 }
 .chips.groups {
   grid-template-columns: repeat(4, 1fr);
@@ -1945,7 +2013,7 @@ button.variant.add {
 .badge {
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--error);
   color: var(--on-brand);
@@ -1966,7 +2034,7 @@ button.variant.add {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 6;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   background: var(--backdrop);
@@ -1990,7 +2058,7 @@ button.variant.add {
 @keyframes modal-in {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.98);
+    transform: translateY(4px) scale(0.97);
   }
 }
 .modal header {
@@ -2057,14 +2125,14 @@ button.variant.add {
 .setting-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 /* A number with its unit inside the field, right aligned in tabular figures. */
 .unit-field {
   display: inline-flex;
   align-items: center;
   width: 84px;
-  height: 28px;
+  height: var(--size-control);
   box-sizing: border-box;
   padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
@@ -2084,18 +2152,19 @@ button.variant.add {
   outline: none;
   background: transparent;
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   font-variant-numeric: tabular-nums;
   text-align: right;
   -webkit-user-select: text;
   user-select: text;
 }
 /* A field that does not apply now (Scale to the document's bond length): its value shows, faint. */
+/* The field is dimmed as one: its input does not dim a second time. */
 .unit-field[aria-disabled] {
-  background: var(--surface);
+  opacity: var(--disabled);
 }
 .unit-field input:disabled {
-  color: var(--ink-faint);
+  opacity: 1;
 }
 /* A field for text, such as an element or label. */
 .unit-field.text {
@@ -2105,7 +2174,7 @@ button.variant.add {
   text-align: left;
 }
 .unit-field .unit {
-  margin-left: 4px;
+  margin-left: var(--space-1);
   color: var(--ink-faint);
   font-size: 11px;
 }
@@ -2115,14 +2184,15 @@ button.variant.add {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  height: 28px;
+  height: var(--size-control);
+  box-sizing: border-box;
   min-width: 112px;
-  padding: 0 9px 0 var(--space-2);
+  padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--canvas);
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   text-align: left;
   transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
@@ -2150,9 +2220,12 @@ button.variant.add {
   }
 }
 /* Orientation: two small pages. */
+/* The segments of one control have one width, the widest's: equal columns (BRAND.md, Controls). */
 .segmented {
-  display: inline-flex;
-  height: 28px;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: var(--size-control);
   padding: 2px;
   box-sizing: border-box;
   border: 1px solid var(--hairline);
@@ -2168,6 +2241,7 @@ button.variant.add {
   border-radius: var(--radius-xs);
   background: transparent;
   color: var(--ink-muted);
+  font-size: 13px;
   transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 .segmented button[aria-checked="true"] {
@@ -2175,27 +2249,21 @@ button.variant.add {
   color: var(--link);
 }
 @media (hover: hover) and (pointer: fine) {
-  .segmented button:hover:not([aria-checked="true"]) {
+  .segmented button:hover:not([aria-checked="true"], [aria-selected="true"]) {
     background: var(--surface-sunken);
     color: var(--ink);
   }
 }
 .segmented button:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 /* An option or switch that does not apply now (Scale… with no bond chosen, or text alone): faint. */
-.segmented button:disabled {
-  color: var(--ink-faint);
-}
-.switch:disabled {
-  opacity: 0.5;
-}
 .page-glyph {
   width: 9px;
   height: 12px;
   box-sizing: border-box;
   border: 1.5px solid currentColor;
-  border-radius: 1.5px;
+  border-radius: var(--radius-2xs);
 }
 .page-glyph.wide {
   width: 12px;
@@ -2219,8 +2287,8 @@ button.variant.add {
   width: 14px;
   height: 14px;
   border-radius: var(--radius-pill);
-  background: #fff;
-  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 25%, transparent);
+  background: var(--knob);
+  box-shadow: var(--shadow-knob);
   transition: transform var(--motion-fast) var(--ease-out);
 }
 .switch[aria-checked="true"] {
@@ -2246,7 +2314,7 @@ button.variant.add {
 .swatches {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .swatch {
   position: relative;
@@ -2258,20 +2326,11 @@ button.variant.add {
   border-radius: var(--radius-pill);
   transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
-.swatch[aria-checked="true"],
-.swatch.custom[data-checked] {
+.swatch[aria-checked="true"] {
   box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 3.5px var(--brand-bright);
 }
 .swatch:active {
-  transform: scale(0.92);
-}
-/* Add a colour: an empty swatch with a +, on the raised surface in both themes. */
-.swatch.custom {
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: var(--surface-raised);
-  color: var(--ink-muted);
+  transform: scale(var(--press-small));
 }
 .modal footer {
   display: flex;
@@ -2283,23 +2342,23 @@ button.variant.add {
   border-top: 1px solid var(--hairline);
 }
 .text-button {
-  height: 28px;
+  height: var(--size-control);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--link);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
 }
 @media (hover: hover) and (pointer: fine) {
   .text-button:hover:not(:disabled) {
-    background: var(--brand-mist);
+    background: var(--surface-sunken);
   }
 }
 .quiet-note {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   color: var(--ink-faint);
 }
 /* The grid (View > Show Grid, and engineering paper): one device pixel per line, a lighter line at each step and a
@@ -2334,30 +2393,20 @@ button.variant.add {
   }
 }
 
-/* Text colour in the Actions panel: the same swatches, smaller. */
-.swatches.small {
-  gap: 6px;
-  margin: 0;
-  padding: 2px var(--space-2) var(--space-2);
-}
-.swatches.small .swatch {
-  width: 20px;
-  height: 20px;
-}
-
 /* Page size: a button, and a panel that pops out below it with every size drawn to scale. */
 .page-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 28px;
+  gap: var(--space-2);
+  height: var(--size-control);
+  box-sizing: border-box;
   min-width: 112px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--canvas);
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   transition: border-color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 .page-button span:not(.page-thumb) {
@@ -2380,18 +2429,18 @@ button.variant.add {
   box-shadow: var(--shadow-focus);
 }
 .page-button:active {
-  transform: scale(0.98);
+  transform: scale(var(--press));
 }
 .page-thumb {
   display: inline-block;
   box-sizing: border-box;
   border: 1.25px solid currentColor;
-  border-radius: 1.5px;
+  border-radius: var(--radius-2xs);
   color: var(--ink-muted);
 }
 .page-menu {
   position: fixed;
-  z-index: 7;
+  z-index: var(--z-menu);
   width: 400px;
   padding: var(--space-2);
   box-sizing: border-box;
@@ -2400,7 +2449,7 @@ button.variant.add {
   background: var(--surface-raised);
   box-shadow: var(--shadow-float);
   transform-origin: top center;
-  animation: page-menu-in var(--motion) var(--ease-out);
+  animation: page-menu-in var(--motion-fast) var(--ease-out);
 }
 .page-menu.above {
   transform: translateY(-100%);
@@ -2410,25 +2459,25 @@ button.variant.add {
 @keyframes page-menu-in {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.96);
+    transform: translateY(-4px) scale(0.97);
   }
 }
 @keyframes page-menu-in-above {
   from {
     opacity: 0;
-    transform: translateY(calc(-100% + 4px)) scale(0.96);
+    transform: translateY(calc(-100% + 4px)) scale(0.97);
   }
 }
 .page-options {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-  gap: 4px;
+  gap: var(--space-1);
 }
 .page-option {
   display: grid;
   justify-items: center;
-  gap: 3px;
-  padding: var(--space-2) 4px 6px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2473,7 +2522,7 @@ button.variant.add {
 .page-custom {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin-top: var(--space-2);
   padding: var(--space-2) var(--space-1) 2px;
   border-top: 1px solid var(--hairline);
@@ -2492,15 +2541,23 @@ button.variant.add {
   color: var(--ink-faint);
 }
 /* Settings > Document > For: one button for each purpose, on more lines when there are many. */
+/* The purposes go onto more lines when the user has added their own, so each has one set width; a long name is cut
+   short with an ellipsis. */
 .segmented.purposes {
+  display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   height: auto;
-  min-height: 28px;
+  min-height: var(--size-control);
 }
 .segmented.purposes button {
+  display: block;
+  flex: none;
+  width: calc(var(--space-16) + var(--space-6));
   height: 22px;
-  font: 13px var(--font-sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .segmented.units button {
   width: 28px;
@@ -2543,11 +2600,15 @@ button.variant.add {
   border-right: 1px solid var(--hairline);
   background: var(--surface);
 }
-.settings-search {
+/* Every search field (Settings, Templates, Home's Experiments): one look, 28 px, and the same clear button
+   (.search-clear) once it has text, in place of the platform's own. */
+.settings-search,
+.library-search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
+  gap: var(--space-2);
+  height: var(--size-control);
+  box-sizing: border-box;
   margin-bottom: var(--space-2);
   padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
@@ -2556,11 +2617,16 @@ button.variant.add {
   color: var(--ink-faint);
   transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
-.settings-search:focus-within {
+.library-search {
+  margin-bottom: var(--space-1);
+}
+.settings-search:focus-within,
+.library-search:focus-within {
   border-color: var(--brand-bright);
   box-shadow: var(--shadow-focus);
 }
-.settings-search input {
+.settings-search input,
+.library-search input {
   flex: 1;
   min-width: 0;
   padding: 0;
@@ -2568,13 +2634,14 @@ button.variant.add {
   outline: none;
   background: transparent;
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   -webkit-appearance: none;
   appearance: none;
   -webkit-user-select: text;
   user-select: text;
 }
-.settings-search input::-webkit-search-cancel-button {
+.settings-search input::-webkit-search-cancel-button,
+.library-search input::-webkit-search-cancel-button {
   display: none;
 }
 .search-clear {
@@ -2593,15 +2660,15 @@ button.variant.add {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 32px;
+  height: var(--size-row);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   text-align: left;
-  transition: background var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+  transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
 }
 .module svg {
   flex: none;
@@ -2631,7 +2698,7 @@ button.variant.add {
 }
 .module-count {
   min-width: 18px;
-  padding: 0 5px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--brand-mist);
   color: var(--link);
@@ -2688,6 +2755,7 @@ button.variant.add {
 }
 .settings-foot {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-4);
   padding-top: var(--space-2);
@@ -2699,7 +2767,7 @@ button.variant.add {
 .search-group h4 {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   margin: 0;
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--hairline);
@@ -2717,7 +2785,7 @@ button.variant.add {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .key-chip {
   position: relative;
@@ -2725,8 +2793,9 @@ button.variant.add {
 }
 .key-chip > button:first-child {
   min-width: 28px;
-  height: 24px;
-  padding: 0 7px;
+  height: var(--size-control-sm);
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-bottom-width: 2px;
   border-radius: var(--radius-xs);
@@ -2747,19 +2816,20 @@ button.variant.add {
 }
 .key-remove {
   position: absolute;
-  top: -5px;
-  right: -5px;
+  top: -7px;
+  right: -7px;
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
+  width: var(--size-action);
+  height: var(--size-action);
   padding: 0;
-  border: 0;
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
-  background: var(--ink-muted);
-  color: var(--canvas);
+  background: var(--surface-raised);
+  color: var(--ink-muted);
   opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  box-sizing: border-box;
 }
 .key-chip:hover .key-remove,
 .key-remove:focus-visible {
@@ -2768,8 +2838,9 @@ button.variant.add {
 .key-add {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: var(--size-control-sm);
+  height: var(--size-control-sm);
+  box-sizing: border-box;
   padding: 0;
   border: 1px dashed var(--hairline);
   border-radius: var(--radius-xs);
@@ -2791,7 +2862,7 @@ button.variant.add {
 .key-note {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin-left: var(--space-2);
   color: var(--warning);
   font-size: 11px;
@@ -2809,13 +2880,13 @@ button.variant.add {
   align-items: center;
   gap: var(--space-2);
   flex: 1;
-  height: 32px;
+  height: var(--size-tool);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: 0 0 0 var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   text-align: left;
 }
 .actions-settings span {
@@ -2829,7 +2900,7 @@ button.variant.add {
 .actions-home {
   flex: none;
   justify-content: center;
-  width: 32px;
+  width: var(--size-tool);
   padding: 0;
   border-radius: 0 0 var(--radius-sm) 0;
   transition: transform var(--motion-fast) var(--ease-out);
@@ -2842,7 +2913,7 @@ button.variant.add {
   }
 }
 .actions-home:active {
-  transform: scale(0.94);
+  transform: scale(var(--press));
 }
 .actions-home:focus-visible,
 .actions-settings:focus-visible {
@@ -2867,16 +2938,19 @@ button.variant.add {
 .setting-control .page-button {
   width: 140px;
 }
+.setting-control .text-button {
+  white-space: nowrap;
+}
 
 /* The template library opens beside the Ring strip: categories and search down the side, templates in a grid. */
 .library {
   position: absolute;
   top: -1px;
   left: calc(100% + var(--space-2));
-  z-index: 2; /* over the floating palettes, as the strips are */
+  z-index: var(--z-strip); /* over the floating palettes, as the strips are */
   display: grid;
-  grid-template-columns: 150px 1fr;
-  width: 560px;
+  grid-template-columns: 180px 1fr;
+  width: 590px;
   height: 420px;
   background: var(--surface-raised);
   border: 1px solid var(--hairline);
@@ -2932,15 +3006,15 @@ button.variant.add {
   margin: 0;
   overflow: hidden;
   color: var(--ink);
-  font: 600 13px var(--font-sans);
+  font: 600 13px/18px var(--font-sans);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .library-keep {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--size-control-sm);
+  height: var(--size-control-sm);
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
@@ -2966,7 +3040,7 @@ button.variant.add {
   top: 6px;
   bottom: 6px;
   width: 2px;
-  border-radius: 1px;
+  border-radius: var(--radius-pill);
   background: var(--brand-bright);
   pointer-events: none;
 }
@@ -2983,7 +3057,7 @@ button.variant.add {
 .floating-layer {
   position: fixed;
   inset: 0;
-  z-index: 1;
+  z-index: var(--z-panel);
   pointer-events: none;
 }
 .floating-templates {
@@ -3021,22 +3095,19 @@ button.variant.add {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* The template size button and the close button: small round buttons on the bar. */
-.floating-size,
-.floating-close {
+/* The template size button on the bar: the look of the panel controls (.actions-close), as the palette's X beside it. */
+.floating-size {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: var(--size-control-sm);
+  height: var(--size-control-sm);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 .floating-size:focus-visible,
-.floating-close:focus-visible,
 .floating-item:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
@@ -3045,7 +3116,7 @@ button.variant.add {
   display: grid;
   gap: 2px;
   min-height: 0;
-  padding: 4px 4px 14px;
+  padding: var(--space-1) var(--space-1) var(--space-4);
   overflow-y: auto;
 }
 /* A template's square: its thumbnail (--thumb, the palette's template size) and 4 px round it. */
@@ -3054,7 +3125,7 @@ button.variant.add {
   place-items: center;
   width: calc(var(--thumb, 52px) + 8px);
   height: calc(var(--thumb, 52px) + 8px);
-  padding: 4px;
+  padding: var(--space-1);
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-sm);
@@ -3077,12 +3148,10 @@ button.variant.add {
 }
 @media (hover: hover) and (pointer: fine) {
   .floating-item:not([aria-checked="true"]):hover,
-  .floating-size:hover,
-  .floating-close:hover {
+  .floating-size:hover {
     background: var(--surface-sunken);
   }
-  .floating-size:hover,
-  .floating-close:hover {
+  .floating-size:hover {
     color: var(--ink);
   }
 }
@@ -3091,48 +3160,41 @@ button.variant.add {
     animation: fade-in var(--motion-fast) var(--ease-out);
   }
 }
-.library-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
+/* Structures or Clip art, under the search field: two halves the side's width. */
+.segmented.library-kind {
+  display: grid;
   margin-bottom: var(--space-1);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  background: var(--canvas);
-  color: var(--ink-faint);
-  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
-.library-search:focus-within {
-  border-color: var(--brand-bright);
-  box-shadow: var(--shadow-focus);
+.segmented.library-kind button {
+  padding: 0 var(--space-1);
+  font: 13px/18px var(--font-sans);
 }
-.library-search input {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--ink);
-  font: 13px var(--font-sans);
-  -webkit-user-select: text;
-  user-select: text;
+/* Search results, in a group for each kind under its name, as the Actions panel names its sections. */
+.library-group {
+  display: contents;
+}
+.library-group-name {
+  grid-column: 1 / -1;
+  padding: var(--space-1) var(--space-1) 2px;
+  color: var(--ink-muted);
+  font: 600 11px/14px var(--font-sans);
+}
+.library-group + .library-group .library-group-name {
+  padding-top: var(--space-3);
 }
 .library-category {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 30px;
+  height: var(--size-row);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   text-align: left;
-  transition: background var(--motion-fast) var(--ease-out);
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 .library-category span {
   color: var(--ink-muted);
@@ -3168,11 +3230,12 @@ button.variant.add {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  padding: var(--space-1) var(--space-1) 6px;
+  padding: var(--space-1) var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 .library-item .thumb {
   width: var(--thumb, 72px);
@@ -3217,7 +3280,7 @@ button.variant.add {
 }
 .library-new {
   justify-content: flex-start;
-  gap: 6px;
+  gap: var(--space-1);
   color: var(--ink-muted);
 }
 .library-set-name {
@@ -3231,7 +3294,7 @@ button.variant.add {
   background: var(--canvas);
   box-shadow: var(--shadow-focus);
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
 }
 /* Add: the first tile in My templates and each set of the user's, the size of a template, with a dashed outline where
    the template will be. */
@@ -3260,9 +3323,9 @@ button.variant.add {
   min-width: 0;
   height: 18px;
   box-sizing: border-box;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border: 1px solid var(--brand-bright);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   outline: none;
   background: var(--canvas);
   box-shadow: var(--shadow-focus);
@@ -3321,7 +3384,7 @@ button.variant.add {
 .command-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 8;
+  z-index: var(--z-command);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -3369,7 +3432,7 @@ button.variant.add {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 36px;
+  height: var(--size-cell);
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   color: var(--ink);
@@ -3412,14 +3475,8 @@ button.variant.add {
 }
 .command kbd {
   flex: none;
-  min-width: 20px;
-  padding: 1px 6px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  background: var(--canvas);
-  color: var(--ink-muted);
+  color: var(--ink-faint);
   font: 11px var(--font-sans);
-  text-align: center;
 }
 .command-none {
   margin: var(--space-4) var(--space-3);
@@ -3438,7 +3495,7 @@ button.variant.add {
   position: absolute;
   top: calc(var(--space-4) + 44px);
   left: 50%;
-  z-index: 2;
+  z-index: var(--z-strip);
   width: 360px;
   margin-left: -180px;
   padding: var(--space-1);
@@ -3480,7 +3537,7 @@ button.variant.add {
   font-size: 13px;
 }
 .name-recent[aria-selected="true"] {
-  background: var(--surface-sunken);
+  background: var(--brand-mist);
 }
 .name-thumb {
   display: grid;
@@ -3505,15 +3562,15 @@ button.variant.add {
   display: grid;
   flex: none;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: var(--size-action);
+  height: var(--size-action);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 .name-recent:hover .name-forget,
 .name-forget:focus-visible {
@@ -3644,7 +3701,7 @@ button.variant.add {
 /* The background choices in Settings: each a small page of itself. */
 .paper-choices {
   display: inline-flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .paper-choice {
   display: grid;
@@ -3660,7 +3717,7 @@ button.variant.add {
   width: 18px;
   height: 22px;
   border: 1px solid var(--swatch-edge);
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
 }
 .paper-choice[aria-checked="true"] {
   border-color: var(--brand-bright);
@@ -3749,11 +3806,13 @@ button.variant.add {
 .atom-map {
   fill: var(--brand);
 }
-/* Short text standing in for an icon (L, C, R, Rf, R/S) fits the icon's square. */
+/* Short text standing in for an icon (L, C, R, Rf, R/S) fits the icon's square. It is in Octet's font wherever it sits,
+   so the A for Automatic is the same in a label's chips (the atom label font) as in its Alignment menu. */
 .glyph-text {
   display: inline-block;
   width: auto;
   min-width: 18px;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -3767,7 +3826,7 @@ button.variant.add {
   width: 18px;
 }
 
-/* Search Reaxys and Search PubChem: the magnifier, then the site's letter (a letter in the lens reads as ®). */
+/* The online searches: the magnifier, then the site's letter (a letter in the lens reads as ®). */
 .search-glyph {
   display: inline-flex;
   align-items: center;
@@ -3797,12 +3856,29 @@ button.variant.add {
   stroke-width: 1.4px;
   vector-effect: non-scaling-stroke;
 }
-/* A stoichiometry grid's cell picked with Select. */
+/* The amount measured out in a stoichiometry grid: red text with a red line under it. */
+.stoich text.taken {
+  fill: var(--error);
+}
+.stoich line.taken {
+  stroke: var(--error);
+}
+
+/* A stoichiometry grid's cell picked with Select. It glides to the next cell as the keys move it (Excel's cell cursor
+   does the same), fades in where it is first picked, and its transform places it (Editor.tsx gridPickMark). */
 .grid-pick {
   fill: var(--select-tint);
   stroke: var(--select);
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
+  transform-origin: 0 0;
+  transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+}
+@starting-style {
+  .grid-pick { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .grid-pick { transition: opacity var(--motion-fast) var(--ease-out); }
 }
 /* Show Reaction Interpretation: each part of the reaction under the pointer boxed and named, in the brand's blues. */
 .interpretation rect {
@@ -3858,9 +3934,9 @@ button.variant.add {
   width: 14px;
   height: 14px;
   margin: -7px 0 0 -7px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25), 0 1px 3px rgb(0 0 0 / 0.25);
+  border: 2px solid var(--knob);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 1px var(--swatch-edge), var(--shadow-knob);
   pointer-events: none;
 }
 .picker-square:focus-visible,
@@ -3870,7 +3946,7 @@ button.variant.add {
 }
 .picker-hex {
   width: 96px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -3879,8 +3955,31 @@ button.variant.add {
   -webkit-user-select: text;
   user-select: text;
 }
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+/* The window's own eyedropper (pickColour in ColourPicker.tsx): Octet's crosshair over the whole window, and the colour
+   under it beside the pointer. */
+.eyedropper {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-eyedropper);
+  cursor: var(--cursor-cross, crosshair);
+}
+.eyedropper span {
+  position: fixed;
+  width: 24px;
+  height: 24px;
+  margin: var(--space-3) 0 0 var(--space-3);
+  border: 1px solid var(--swatch-edge);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-float);
+  pointer-events: none;
+}
 
-/* Settings > Colours: Octet's colours, then the user's, each with its name; Add a colour under them. */
+/* Settings > Colours: Octet's colours, then the user's, each with its name; Add colour under them. */
 .palette-editor {
   display: grid;
   gap: var(--space-2);
@@ -3921,7 +4020,7 @@ button.variant.add {
   position: absolute;
   top: var(--space-4);
   left: 50%;
-  z-index: 2;
+  z-index: var(--z-strip);
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -3932,10 +4031,10 @@ button.variant.add {
   box-shadow: var(--shadow-float);
   translate: -50% 0;
   animation: bar-in var(--motion) var(--ease-out);
-  transition: top var(--motion) var(--ease-out);
+  transition: translate var(--motion) var(--ease-out);
 }
 .template-bar.low {
-  top: calc(var(--space-4) + 52px);
+  translate: -50% 52px;
 }
 .template-bar-name {
   display: flex;
@@ -3945,7 +4044,7 @@ button.variant.add {
   margin-right: var(--space-2);
   overflow: hidden;
   color: var(--ink);
-  font: 500 13px var(--font-sans);
+  font: 500 13px/18px var(--font-sans);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -3963,7 +4062,7 @@ button.variant.add {
 @keyframes bar-in {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(-4px);
   }
 }
 @keyframes bar-out {
@@ -3989,7 +4088,7 @@ button.variant.add {
 .palette-name {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -4007,8 +4106,8 @@ button.variant.add {
   justify-self: start;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
@@ -4022,7 +4121,7 @@ button.variant.add {
   }
 }
 .palette-add:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 
 /* Octet's slider: name, track and value on one row. The track fills in brand blue up to the thumb. */
@@ -4060,9 +4159,9 @@ button.variant.add {
   width: 14px;
   height: 14px;
   border: 1px solid var(--outline);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--surface-raised);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.2);
+  box-shadow: var(--shadow-knob);
   transition: transform var(--motion-fast) var(--ease-out);
 }
 .slider input[type="range"]:active::-webkit-slider-thumb {
@@ -4151,7 +4250,7 @@ button.variant.add {
 .about-link:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
 }
 .about-credits {
   margin-top: var(--space-2) !important;
@@ -4166,13 +4265,15 @@ button.variant.add {
 }
 .dialog-button {
   min-width: 80px;
-  padding: 6px 14px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
   color: var(--ink);
   font: 13px/18px var(--font-sans);
   transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  height: var(--size-control);
+  box-sizing: border-box;
 }
 .dialog-button.primary {
   border-color: var(--brand);
@@ -4189,14 +4290,9 @@ button.variant.add {
   }
 }
 .dialog-button:active:not(:disabled) {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 /* Disabled: faded, with no hover or press. */
-.dialog-button:disabled,
-.text-button:disabled,
-.spectrum-button:disabled {
-  opacity: 0.45;
-}
 .dialog-button:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
@@ -4230,7 +4326,7 @@ button.variant.add {
   left: calc(var(--space-4) * 2 + 48px);
   right: calc(var(--space-4) * 2 + 248px);
   bottom: var(--space-4);
-  z-index: 1;
+  z-index: var(--z-panel);
   display: flex;
   flex-direction: column;
   max-height: 40%;
@@ -4243,8 +4339,8 @@ button.variant.add {
   animation: panel-in var(--motion-fast) var(--ease-out);
 }
 .properties.stacked {
-  bottom: calc(var(--space-4) * 2 + var(--below, 0px));
-  max-height: min(40%, calc(100% - var(--below, 0px) - var(--space-4) * 4));
+  bottom: calc(var(--space-4) * 3 + 32px + var(--below, 0px));
+  max-height: min(40%, calc(100% - var(--below, 0px) - var(--space-4) * 5 - 32px));
 }
 /* A full-screen Spectrum leaves no room above it, so Properties waits until it is docked again. */
 .spectrum.expanded ~ .properties {
@@ -4301,9 +4397,11 @@ button.variant.add {
 .prop-row.long {
   grid-template-columns: 16px 1fr;
 }
-.prop-row.long .prop-value {
+.prop-row.long .prop-value,
+.prop-row.long .prop-links {
   grid-column: 2;
   text-align: left;
+  justify-content: flex-start;
 }
 .prop-name {
   font: 13px/18px var(--font-sans);
@@ -4323,8 +4421,74 @@ button.variant.add {
   overflow-wrap: anywhere;
   cursor: copy;
 }
-.prop-value:hover {
-  background: var(--surface-sunken);
+@media (hover: hover) and (pointer: fine) {
+  .prop-value:hover {
+    background: var(--surface-sunken);
+  }
+}
+/* GHS pictograms (Find hazards), each structure's set apart from the next. */
+.ghs-set {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
+.ghs-set + .ghs-set {
+  margin-left: var(--space-2);
+}
+.ghs {
+  width: 22px;
+  height: 22px;
+}
+.ghs path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ghs .ghs-diamond {
+  stroke: var(--error);
+  stroke-width: 6;
+}
+.ghs .ghs-solid {
+  fill: var(--ink);
+  stroke: none;
+}
+/* Hazard statements, one to a line. */
+.prop-lines {
+  display: block;
+}
+.prop-lines > span {
+  display: block;
+}
+.prop-lines + .prop-lines {
+  margin-top: var(--space-1);
+}
+/* A PubChem CID: a link to the compound's page, one for each structure. */
+.prop-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-1);
+  font: 13px/18px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.prop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+}
+@media (hover: hover) and (pointer: fine) {
+  .prop-link:hover {
+    background: var(--surface-sunken);
+  }
 }
 .prop-check {
   display: grid;
@@ -4358,20 +4522,22 @@ button.variant.add {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--surface-raised);
   color: var(--ink);
   font: 13px/18px var(--font-sans);
+  height: var(--size-control);
+  box-sizing: border-box;
 }
-.prop-add:hover:not(:disabled) {
-  background: var(--surface-sunken);
-}
-.prop-add:disabled {
-  color: var(--ink-faint);
+@media (hover: hover) and (pointer: fine) {
+  .prop-add:hover:not(:disabled) {
+    background: var(--surface-sunken);
+  }
 }
 .prop-value:focus-visible,
+.prop-link:focus-visible,
 .prop-check:focus-visible,
 .prop-add:focus-visible {
   outline: none;
@@ -4383,13 +4549,15 @@ button.variant.add {
   }
 }
 
-/* The Spectrum panel: docked along the bottom of the canvas, between the toolbar and the Actions panel. */
+/* The Spectrum and Mass spec panels: docked along the bottom of the canvas, from the toolbar to the window's right
+   edge, just above the Actions pill (plan B1.2). Actions and the panel take turns: one shows, the other is its pill.
+   Minimised, a panel is hidden and its pill shows beside its structure. */
 .spectrum {
   position: absolute;
-  left: calc(var(--space-4) * 2 + 48px);
-  right: calc(var(--space-4) * 2 + 248px);
-  bottom: var(--space-4);
-  z-index: 1;
+  left: var(--strip-left, calc(var(--space-4) * 2 + 48px));
+  right: var(--space-4);
+  bottom: calc(var(--space-4) * 2 + 32px);
+  z-index: var(--z-panel);
   display: flex;
   flex-direction: column;
   padding: var(--space-1) var(--space-2) var(--space-2);
@@ -4407,9 +4575,117 @@ button.variant.add {
   margin-right: calc(-1 * var(--space-1));
   padding: var(--space-1);
 }
-.spectrum-head-buttons {
+.spectrum.minimised {
+  display: none;
+}
+/* Docked at the user's height (B1.3): the plot takes the room the header, controls and footer leave, and the canvas
+   keeps at least 96 px over the strip. The top edge sets the height. */
+.spectrum.sized {
+  max-height: calc(100% - 96px - var(--space-4) * 3 - 32px);
+}
+.spectrum.sized .spectrum-body {
+  flex: 1;
+}
+.resize-edge {
+  position: absolute;
+  top: -4px;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 8px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.resize-edge:focus-visible {
+  outline: none;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-focus);
+}
+/* Minimise, Full screen and Close (PanelControls.tsx), at the top right of every panel's header. The strip's come
+   last in its tab order, so they sit over its header's corner. */
+.panel-controls {
   display: flex;
   gap: 2px;
+}
+/* The X that closes a pill or a spectrum tab (CloseX in PanelControls.tsx): one look, the panel controls' (no fill,
+   muted ink, sunken under the pointer with the controls' 6 px corners, the small press) at 18 px, so it fits a 24 px pill or
+   tab. It shows on hover and focus of its pill or tab, and always for touch and pen. ".segmented button.close-x"
+   outranks the segmented control's own button rules, so a tab's X looks the same as a pill's. */
+.close-x,
+.segmented button.close-x {
+  display: none;
+  place-items: center;
+  width: var(--size-action);
+  min-width: 0;
+  height: var(--size-action);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+}
+:is(.pill, .spectrum-tab):is(:hover, :focus-within) .close-x {
+  display: grid;
+}
+@media (hover: none), (pointer: coarse) {
+  .close-x,
+  .segmented button.close-x {
+    display: grid;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .close-x:hover,
+  .segmented button.close-x:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+}
+.close-x:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.spectrum > .panel-controls {
+  position: absolute;
+  top: calc(var(--space-1) + 2px);
+  right: var(--space-1);
+}
+.spectrum header {
+  min-height: 26px;
+  padding-right: calc(3 * var(--size-control-sm) + var(--space-3));
+}
+/* A session's spectra as tabs (Spectrum.tsx Tabs), each with its close button on hover or focus, and + to add one. */
+/* The tabs are one width, and the + at their end is as wide as a tab: the tab list has equal columns, and the control
+   gives it one share for each tab and the + one share (Spectrum.tsx Tabs). */
+.spectrum-tab {
+  position: relative;
+  display: grid;
+}
+.spectrum-tabs [role="tablist"] {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+.spectrum-tabs button[role="tab"] {
+  height: 100%;
+}
+.spectrum-tab.closable button[role="tab"] {
+  padding: 0 calc(var(--size-action) + var(--space-1) + 2px);
+}
+.spectrum-tabs button[aria-selected="true"] {
+  background: var(--brand-mist);
+  color: var(--link);
+}
+/* A tab's X (CloseX) sits in the tab's own room at its right end, 4 px clear of the name. The tab has the same room
+   on the name's left, so the name is in the middle of its tab with or without the X. */
+.spectrum-tab .close-x {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2px;
+  margin: auto 0;
+}
+.spectrum-none {
+  color: var(--ink-muted);
+  font-size: 13px;
 }
 .spectrum-controls {
   display: flex;
@@ -4424,8 +4700,8 @@ button.variant.add {
 /* Full screen: the panel fills the canvas beside the toolbar, the spectrum grows, and the structure sits beside it. */
 .spectrum.expanded {
   top: var(--space-4);
-  right: var(--space-4);
-  z-index: 3;
+  bottom: var(--space-4);
+  z-index: var(--z-notice);
 }
 .spectrum-body {
   display: flex;
@@ -4434,6 +4710,11 @@ button.variant.add {
 }
 .spectrum.expanded .spectrum-body {
   flex: 1;
+}
+/* A peak has the keyboard's focus (the peaks' list, B1.15): the plot shows the ring, and the peak is lit. */
+.spectrum-plot.peak-focus {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-focus);
 }
 .spectrum-body .spectrum-plot {
   flex: 1;
@@ -4456,7 +4737,7 @@ button.variant.add {
 .spectrum-swatches {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .spectrum-swatches .swatch {
   width: 16px;
@@ -4466,15 +4747,34 @@ button.variant.add {
   background: linear-gradient(135deg, transparent 45%, var(--ink-faint) 45% 55%, transparent 55%), var(--canvas);
 }
 .spectrum-signal.chosen text:first-of-type {
-  font-weight: 700;
+  font-weight: 600;
 }
 .spectrum-signal[style] text {
   fill: inherit;
 }
+/* A toggle (Solvent peaks, Details, Decouple ¹H, Peak list) is a segmented control of one, as it sits beside them: a
+   well, with its one segment (::before, 2 px in from the edge, the segment's corners) tinted when it is on. Its name
+   is as far inside the segment as a segmented control's. */
+.spectrum-button[aria-pressed] {
+  position: relative;
+  isolation: isolate;
+  padding: 0 calc(var(--space-2) + 2px);
+  background: var(--canvas);
+  color: var(--ink-muted);
+}
+.spectrum-button[aria-pressed]::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  border-radius: var(--radius-xs);
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
 .spectrum-button[aria-pressed="true"] {
-  background: var(--brand-mist);
-  border-color: transparent;
   color: var(--link);
+}
+.spectrum-button[aria-pressed="true"]::before {
+  background: var(--brand-mist);
 }
 .spectrum-gap {
   flex: 1;
@@ -4483,17 +4783,26 @@ button.variant.add {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  height: 28px;
+  height: var(--size-control);
+  box-sizing: border-box;
   padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--surface-raised);
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   white-space: nowrap;
 }
-.spectrum-button:hover:not(:disabled) {
-  background: var(--surface-sunken);
+@media (hover: hover) and (pointer: fine) {
+  .spectrum-button:hover:not(:disabled, [aria-pressed]) {
+    background: var(--surface-sunken);
+  }
+  .spectrum-button[aria-pressed="false"]:hover:not(:disabled) {
+    color: var(--ink);
+  }
+  .spectrum-button[aria-pressed="false"]:hover:not(:disabled)::before {
+    background: var(--surface-sunken);
+  }
 }
 .spectrum-plot {
   min-width: 0;
@@ -4595,7 +4904,7 @@ button.variant.add {
   inset: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 50;
+  z-index: var(--z-link);
   pointer-events: none;
 }
 .spectrum-link line {
@@ -4741,7 +5050,7 @@ button.variant.add {
   width: 8px;
   height: 8px;
   margin-right: var(--space-1);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
 }
 .spectrum-details > .spectrum-button {
   position: sticky;
@@ -4761,55 +5070,21 @@ button.variant.add {
   color: var(--error);
   fill: var(--error);
 }
+/* A colour in a colour menu (ColourPick), as it is, with the swatch edge, so a white or a pale colour shows on the menu.
+   In a menu it stands in an icon's 18 px, so the names line up. */
 .pick-swatch {
   display: inline-block;
+  flex: none;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  opacity: 0.7;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--swatch-edge);
 }
-/* Highlight and ring fill colours: a grid of swatches, then Custom colour… and the picker. */
-.size-menu.swatch-menu {
-  min-width: 0;
-  width: max-content;
-}
-.swatch-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 28px);
-  gap: 2px;
-}
-.swatch-grid button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-}
-.swatch-grid button[aria-checked="true"] {
-  box-shadow: inset 0 0 0 1.5px var(--brand);
-}
-.swatch-grid .pick-swatch {
-  width: 18px;
-  height: 18px;
-}
-.swatch-menu .swatch-custom {
-  margin-top: 4px;
-  padding-top: 0;
-  border-top: 1px solid var(--hairline);
-  border-radius: 0 0 var(--radius-xs) var(--radius-xs);
-  color: var(--ink-muted);
-}
-.swatch-menu .colour-picker {
-  width: 172px;
-  padding: var(--space-2) 2px 2px;
-}
-.swatch-menu .picker-square {
-  height: 100px;
+.variant > .pick-swatch {
+  margin: 0 2px;
 }
 .pick-swatch.none {
   background: linear-gradient(135deg, transparent 45%, var(--ink-faint) 45% 55%, transparent 55%);
-  border: 1px solid var(--hairline);
-  opacity: 1;
 }
 /* Printing: only the page Print laid out, at true size. */
 .print-root {
@@ -4822,36 +5097,86 @@ button.variant.add {
   .print-root {
     display: block;
   }
+  /* A page is never taller or wider than what the printer prints on: macOS prints inside the printer's own margins, and
+     a picture one sheet tall spilled its foot onto a second, blank sheet. Where the margins allow, it is at true size. */
+  .print-root img {
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain;
+  }
+}
+/* Print's preview on Linux: the pages in their rows and columns on a grey ground, at most 260 px tall. */
+.print-preview {
+  display: grid;
+  justify-self: stretch;
+  place-items: center;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.print-sheets {
+  display: grid;
+  gap: var(--space-1);
+  width: min(100%, calc(260px * var(--across)));
+}
+.print-sheets img {
+  display: block;
+  width: 100%;
+  height: auto;
+  outline: 1px solid var(--hairline);
+  background: var(--canvas);
 }
 
-/* Export: a pill that stays at the top right of the window, its menu under it, and the Export dialog's preview. */
+/* Export: a pill that stays at the top right of the window, its menu under it, and the Export dialog's preview. In an
+   object window, Update in Word comes first: the brand's primary action once there is a change, a quiet pill before. */
 .export {
   position: absolute;
   top: var(--space-4);
   right: var(--space-4);
-  z-index: 2;
+  z-index: var(--z-strip);
+  display: flex;
+  gap: var(--space-2);
+}
+.export-button.primary:not(:disabled) {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
 }
 .export-button {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  height: 32px;
+  height: var(--size-tool);
+  box-sizing: border-box;
   padding: 0 var(--space-3);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   box-shadow: var(--shadow-float);
   color: var(--ink);
-  font: 500 13px var(--font-sans);
+  font: 500 13px/18px var(--font-sans);
   transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
 }
+/* Update's name comes from the other program, so it can be long: it stays on one line and is cut short with an
+   ellipsis (its tip has the whole name). A block, as an ellipsis does not show in a flex box. */
+.export-button.primary {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 @media (hover: hover) and (pointer: fine) {
-  .export-button:hover {
+  .export-button:hover:not(:disabled) {
     background: var(--surface-sunken);
   }
+  .export-button.primary:hover:not(:disabled) {
+    border-color: var(--brand-hover);
+    background: var(--brand-hover);
+  }
 }
-.export-button:active {
-  transform: scale(0.97);
+.export-button:active:not(:disabled) {
+  transform: scale(var(--press));
 }
 .export-button:focus-visible {
   outline: none;
@@ -4926,17 +5251,18 @@ button.variant.add {
   position: absolute;
   top: var(--space-4);
   left: 64px;
-  z-index: 2;
+  z-index: var(--z-strip);
   display: flex;
   align-items: center;
-  height: 32px;
-  padding: 0 7px;
+  height: var(--size-tool);
+  box-sizing: border-box;
+  padding: 0 calc((var(--size-tool) - 18px) / 2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   box-shadow: var(--shadow-float);
   color: var(--ink-muted);
-  font: 500 13px var(--font-sans);
+  font: 500 13px/18px var(--font-sans);
   white-space: nowrap;
   transition: transform var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), padding var(--motion) var(--ease-out);
 }
@@ -4949,7 +5275,7 @@ button.variant.add {
 }
 .feedback-link:hover,
 .feedback-link:focus-visible {
-  padding: 0 var(--space-3) 0 7px;
+  padding: 0 var(--space-3) 0 calc((var(--size-tool) - 18px) / 2);
   color: var(--ink);
 }
 .feedback-link:hover span,
@@ -4959,7 +5285,7 @@ button.variant.add {
   opacity: 1;
 }
 .feedback-link:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 .feedback-link:focus-visible {
   outline: none;
@@ -4977,7 +5303,7 @@ button.variant.add {
 .home {
   position: fixed;
   inset: 0;
-  z-index: 5;
+  z-index: var(--z-home);
   overflow-y: auto;
   background: var(--surface);
   color: var(--ink);
@@ -5042,7 +5368,7 @@ button.variant.add {
 .home ~ .notice {
   left: var(--space-4);
   right: var(--space-4);
-  z-index: 5;
+  z-index: var(--z-home);
 }
 .home-inner {
   max-width: 1080px;
@@ -5113,9 +5439,9 @@ button.variant.add {
 .home-heading {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0 0 0 calc(-1 * var(--space-2));
-  padding: 3px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
@@ -5144,7 +5470,7 @@ button.variant.add {
   transform: rotate(-90deg);
 }
 .home-heading:active {
-  transform: scale(0.98);
+  transform: scale(var(--press-large));
 }
 .home-heading:focus-visible {
   outline: none;
@@ -5188,14 +5514,15 @@ button.variant.add {
 .home-open {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
+  gap: var(--space-1);
+  height: var(--size-control);
+  box-sizing: border-box;
   padding: 0 var(--space-3);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
   color: var(--ink);
-  font: 13px var(--font-sans);
+  font: 13px/18px var(--font-sans);
   transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -5214,7 +5541,7 @@ button.variant.add {
   font: 11px var(--font-sans);
 }
 .home-open:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 .home-open:focus-visible {
   outline: none;
@@ -5223,7 +5550,7 @@ button.variant.add {
 .home-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-  gap: var(--space-6) 20px;
+  gap: var(--space-6) var(--space-5);
 }
 .home-slot {
   position: relative;
@@ -5231,7 +5558,7 @@ button.variant.add {
 .home-tile {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: var(--space-2);
   width: 100%;
   padding: 0;
   border: 0;
@@ -5241,7 +5568,7 @@ button.variant.add {
   transition: transform var(--motion-fast) var(--ease-out);
 }
 .home-tile:active {
-  transform: scale(0.98);
+  transform: scale(var(--press-large));
 }
 .home-tile:focus-visible {
   outline: none;
@@ -5386,7 +5713,7 @@ button.variant.add {
   place-items: center;
   aspect-ratio: 210 / 297;
   border: 1px dashed var(--outline);
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   transform: translateX(-50%);
   transition: border-color var(--motion-fast) var(--ease-out);
 }
@@ -5412,19 +5739,20 @@ button.variant.add {
 }
 .home-remove {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--space-2);
+  right: var(--space-2);
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: var(--size-action);
+  height: var(--size-action);
   padding: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   color: var(--ink-muted);
   opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  box-sizing: border-box;
 }
 @media (hover: hover) and (pointer: fine) {
   .home-remove:hover {
@@ -5433,7 +5761,7 @@ button.variant.add {
   }
 }
 .home-remove:active {
-  transform: scale(0.9);
+  transform: scale(var(--press-small));
 }
 .home-slot:hover .home-remove,
 .home-slot:focus-within .home-remove {
@@ -5620,15 +5948,16 @@ button.variant.add {
   display: flex;
   gap: var(--space-1);
   min-width: 0;
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 .home-act {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   min-width: 0;
-  height: 24px;
+  height: var(--size-control-sm);
+  box-sizing: border-box;
   padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
@@ -5661,7 +5990,7 @@ button.variant.add {
   }
 }
 .home-act:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 .home-act:focus-visible {
   outline: none;
@@ -5670,7 +5999,7 @@ button.variant.add {
 /* A drawing on its way into a folder: a copy of its picture, over everything, that flies to the folder (Home.tsx). */
 .home-fly {
   position: fixed;
-  z-index: 40;
+  z-index: var(--z-drag);
   margin: 0;
   box-shadow: var(--shadow-float);
   pointer-events: none;
@@ -5720,13 +6049,31 @@ button.variant.add {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 40;
+  z-index: var(--z-drag);
   width: 132px;
   pointer-events: none;
   animation: carry-in var(--motion-fast) var(--ease-out);
 }
 .home-carry .home-thumb {
   box-shadow: var(--shadow-float);
+}
+/* The selection box dragged from Home's background (Home.tsx): the Select tool's box (.box), over the page (a
+   folder's front too), in Octet's blue always, as Home's selected drawings are. */
+.home-box {
+  position: fixed;
+  z-index: var(--z-home);
+  overflow: visible;
+  pointer-events: none;
+  --select: var(--brand-bright);
+  --select-tint: var(--selection);
+}
+/* Remove N, beside the drawings while some are selected: it fades in, and out a little faster. */
+.home-remove-picked {
+  animation: fade-in var(--motion) var(--ease-out);
+}
+.home-remove-picked.leaving {
+  pointer-events: none;
+  animation: fade-out var(--motion-fast) var(--ease-out) forwards;
 }
 /* How many drawings a drag carries, when it is more than one. */
 .home-carry-count {
@@ -5735,7 +6082,7 @@ button.variant.add {
   right: -8px;
   min-width: 22px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--brand);
   color: var(--on-brand);
@@ -5778,7 +6125,7 @@ button.variant.add {
   box-sizing: border-box;
   width: 100%;
   height: 26px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border: 1px solid var(--brand-bright);
   border-radius: var(--radius-sm);
   outline: none;
@@ -5805,14 +6152,14 @@ button.variant.add {
 .home-more {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
+  gap: var(--space-1);
+  height: var(--size-control);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--ink-muted);
-  font: 500 13px var(--font-sans);
+  font: 500 13px/18px var(--font-sans);
   transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 .home-back {
@@ -5833,7 +6180,7 @@ button.variant.add {
 }
 .home-back:active,
 .home-more:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 .home-back:focus-visible,
 .home-more:focus-visible {
@@ -5915,7 +6262,7 @@ button.variant.add {
 .home-sort {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   max-width: 100%;
   padding: 0;
   border: 0;
@@ -5950,6 +6297,7 @@ button.variant.add {
 @media (prefers-reduced-motion: reduce) {
   .home-view:not(.home-arrive),
   .home-carry,
+  .home-remove-picked,
   .home-section.unfolding > .home-body {
     animation: none;
   }
@@ -5967,7 +6315,7 @@ button.variant.add {
 .name-box-inner {
   display: grid;
   justify-items: center;
-  gap: 20px;
+  gap: var(--space-5);
   width: min(420px, 100%);
   padding: var(--space-8);
 }
@@ -6017,6 +6365,104 @@ button.variant.add {
   align-items: center;
   gap: var(--space-3);
 }
+/* Experiment details (DetailsSheet.tsx): a wide dialog with the text controls over a sheet laid out as the page's
+   header, at the page's sizes. Each value is a field drawn as text on paper: a line under it, which turns blue as it
+   is typed in. */
+.dialog.wide {
+  width: min(680px, calc(100vw - 32px));
+}
+/* The controls in one calm row, as a text toolbar: square chips, then the font, size and colour. */
+.sheet-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: stretch;
+}
+.sheet-tools > .chip {
+  width: var(--size-control);
+  height: var(--size-control);
+  padding: 0;
+}
+.sheet-tools .size {
+  width: auto;
+}
+.sheet-tools .size .chip {
+  width: auto;
+  min-width: 64px;
+  padding: 0 var(--space-2);
+}
+.sheet-tools .font .chip {
+  min-width: 104px;
+}
+.sheet-colour {
+  margin-left: auto;
+  min-width: 128px;
+}
+.sheet-page {
+  display: grid;
+  gap: var(--space-4);
+  justify-self: stretch;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--canvas);
+  color: var(--ink);
+}
+/* Names and values in the page's two columns: the values of a column start at one x, as on the page. */
+.sheet-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3) var(--space-3);
+}
+.sheet-row {
+  display: contents;
+}
+.sheet-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sheet-row:nth-child(even) .sheet-name {
+  padding-left: var(--space-3);
+}
+.sheet-value {
+  min-width: 0;
+  min-height: 1.3em;
+  padding: 1px 0;
+  border-bottom: 1px solid var(--hairline);
+  outline: none;
+  white-space: pre;
+  overflow: hidden;
+  caret-color: var(--brand-bright);
+  -webkit-user-select: text;
+  user-select: text;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+.sheet-value:focus {
+  border-bottom-color: var(--brand-bright);
+}
+/* The title with no text says Title, faint, as the page does. */
+.sheet-title {
+  position: relative;
+  line-height: 1.25;
+}
+.sheet-title:has(> br:only-child)::before {
+  content: attr(aria-label);
+  position: absolute;
+  left: 0;
+  color: var(--ink-faint);
+  font-weight: 600;
+  pointer-events: none;
+}
+@media (max-width: 560px) {
+  .sheet-grid {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+  .sheet-row:nth-child(even) .sheet-name {
+    padding-left: 0;
+  }
+}
 .dialog-note {
   margin: 0;
   color: var(--ink-muted);
@@ -6031,7 +6477,7 @@ button.variant.add {
   position: absolute;
   top: var(--space-4);
   left: 50%;
-  z-index: 3;
+  z-index: var(--z-notice);
   width: min(380px, calc(100% - 2 * var(--space-6)));
   transform: translateX(-50%);
   border: 1px solid var(--hairline);
@@ -6044,7 +6490,7 @@ button.variant.add {
 @keyframes coach-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -6px);
+    transform: translate(-50%, -4px);
   }
 }
 /* While Name to structure is open at the top, the card waits at the bottom, and comes back when the field closes.
@@ -6052,14 +6498,14 @@ button.variant.add {
    panel in a narrow window. */
 .coach.low {
   top: auto;
-  bottom: var(--space-4);
+  bottom: calc(var(--space-4) + var(--dock, 0px));
   left: calc(50% + (48px - 248px) / 2);
   animation-name: coach-low;
 }
 @keyframes coach-low {
   from {
     opacity: 0;
-    transform: translate(-50%, 6px);
+    transform: translate(-50%, 4px);
   }
 }
 .coach-body {
@@ -6087,7 +6533,7 @@ button.variant.add {
 @keyframes coach-tick {
   from {
     opacity: 0;
-    transform: scale(0.8);
+    transform: scale(0.85);
   }
 }
 .coach p {
@@ -6098,7 +6544,7 @@ button.variant.add {
 }
 .coach kbd {
   display: inline-block;
-  padding: 1px 5px;
+  padding: 1px var(--space-1);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
@@ -6157,7 +6603,7 @@ button.variant.add {
 .coach-dots span {
   width: 14px;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   background: var(--hairline);
   transition: background-color var(--motion-slow) var(--ease-out);
 }
@@ -6270,7 +6716,7 @@ button.variant.add {
 .rulers {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: var(--z-panel);
   pointer-events: none;
 }
 .ruler {
@@ -6333,8 +6779,10 @@ button.variant.add {
   pointer-events: auto;
   cursor: pointer;
 }
-.ruler-corner:hover {
-  color: var(--brand);
+@media (hover: hover) and (pointer: fine) {
+  .ruler-corner:hover {
+    color: var(--brand);
+  }
 }
 .ruler-corner:focus-visible {
   outline: none;
@@ -6345,24 +6793,26 @@ button.variant.add {
    the caption box, quickly, and only fades with reduced motion. */
 .paste-offer {
   position: absolute;
-  z-index: 5;
-  padding: 3px;
+  z-index: var(--z-home);
+  padding: var(--space-1);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
   box-shadow: var(--shadow-float);
   transform-origin: top left;
   animation: paste-offer-in var(--motion-fast) var(--ease-out);
 }
-.paste-offer .segmented { border: 0; background: transparent; }
-.paste-offer .segmented button { font: 500 13px/18px var(--font-sans); }
+/* The offer is a segmented control on its own card: no well and no edge to see, and its segments are the size and
+   the type of every other control's (the edge stays, clear, so the segments keep their height). */
+.paste-offer .segmented { border-color: transparent; background: transparent; }
 @keyframes paste-offer-in {
-  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
 }
 @media (prefers-reduced-motion: reduce) {
   .paste-offer { animation: paste-offer-fade var(--motion-fast) linear; }
   @keyframes paste-offer-fade { from { opacity: 0; } }
 }
-/* What's new (WhatsNew.tsx): the notes scroll inside the dialog; each section a short list. */
+/* What's new (WhatsNew.tsx): the notes scroll inside the dialog. The big changes come first, each a name and one line;
+   then each other section is one row, folded, with the number of its changes. */
 .notes {
   position: relative;
   max-height: min(64vh, 560px);
@@ -6377,88 +6827,104 @@ button.variant.add {
 .notes p {
   margin: 0 0 var(--space-2);
 }
-.notes h3 {
-  margin: var(--space-3) 0 var(--space-1);
-  font-size: 13px;
-  font-weight: 600;
-}
 .notes ul {
   margin: 0;
-  padding-left: 16px;
+  padding-left: var(--space-4);
 }
 .notes li + li {
-  margin-top: 2px;
+  margin-top: var(--space-1);
 }
 .dialog:has(.notes) {
   width: min(520px, calc(100vw - 32px));
 }
-/* The section names: a row of small pills that stays at the top of the notes as they scroll. The name of the
-   section in view is marked in the brand's mist, as a pressed chip is. */
-.notes-nav {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-bottom: var(--space-2);
-  padding: 2px 2px var(--space-2);
-  background: var(--surface-raised);
-  box-shadow: 0 1px 0 var(--hairline);
-}
-.notes-tab {
-  padding: 3px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--ink);
-  font: 11px/16px var(--font-sans);
-  transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .notes-tab:hover:not([aria-current]) {
-    background: var(--surface-sunken);
-  }
-}
-.notes-tab[aria-current] {
-  border-color: transparent;
-  background: var(--brand-mist);
-  color: var(--link);
-}
-.notes-tab:active {
-  transform: scale(0.97);
-}
-.notes-tab:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus);
-}
-/* The highlights: a tinted box at the top. Its lines come in one after another as the window opens. */
-.notes-highlights {
-  padding: var(--space-2) var(--space-3);
+/* The highlights: a tinted box, each change its name in bold and one line under it. They come in one after another
+   as the window opens. */
+.notes .notes-highlights {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--brand-mist);
-}
-.notes-highlights h3 {
-  margin-top: 0;
+  list-style: none;
 }
 .notes-highlights li {
+  display: grid;
+  gap: 2px;
   animation: notes-in var(--motion-slow) var(--ease-out) both;
+}
+.notes-highlights li + li {
+  margin-top: var(--space-3);
+}
+.notes-highlights strong {
+  font-weight: 600;
+}
+.notes-highlights span {
+  color: var(--ink-muted);
 }
 .notes-highlights li:nth-child(2) { animation-delay: 40ms; }
 .notes-highlights li:nth-child(3) { animation-delay: 80ms; }
 .notes-highlights li:nth-child(4) { animation-delay: 120ms; }
 .notes-highlights li:nth-child(5) { animation-delay: 160ms; }
 .notes-highlights li:nth-child(6) { animation-delay: 200ms; }
+.notes-highlights li:nth-child(7) { animation-delay: 240ms; }
+.notes-highlights li:nth-child(8) { animation-delay: 280ms; }
+/* A highlight with no name: its line in the text colour. */
+.notes-highlights li:not(:has(strong)) span {
+  color: var(--ink);
+}
 @keyframes notes-in {
   from { opacity: 0; transform: translateY(4px); }
 }
-.notes-thanks {
-  margin-top: var(--space-3) !important;
+.notes-more {
+  margin: 0 0 var(--space-1);
+  font-size: 13px;
+  font-weight: 600;
+}
+/* Each other section: the Actions panel's fold (.fold-title, .fold-caret, .fold-body) at the notes' text size, one
+   row each with a hairline between. The number of changes sits at the right. */
+.notes-fold + .notes-fold {
+  border-top: 1px solid var(--hairline);
+}
+/* The right padding keeps the number clear of the scroll bar. */
+.notes-fold .fold-title {
+  height: 32px;
+  padding-right: var(--space-3);
+  color: var(--ink);
+  font: 500 13px/18px var(--font-sans);
+}
+.notes-count {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* A line under a section's name, before its changes. */
+.notes-note {
   color: var(--ink-muted);
+  font-style: italic;
+}
+.notes-fold ul {
+  padding-bottom: var(--space-3);
+}
+.notes-thanks {
+  margin-top: var(--space-4) !important;
+  color: var(--ink-muted);
+}
+/* Under the first line, above the highlights: Octet Draw is free, and a donation is only for those who want to help. */
+.notes-donate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3) !important;
+  color: var(--ink-muted);
+}
+.notes-donate .dialog-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .notes-highlights li { animation: fade-in var(--motion-fast) var(--ease-out) both; }
-  .notes-tab { transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out); }
 }
 /* Text > Character Map (CharMap.tsx): a small window beside the toolbar that stays open while text is typed, clear of
    the Actions panel and Export. */
@@ -6502,6 +6968,50 @@ button.variant.add {
   height: 30px;
   font-family: var(--font-sans);
   font-size: 15px;
+}
+
+/* The Text tool's periodic table (PeriodicTable.tsx): 18 groups across, La to Lu and Ac to Lr under a gap, and the
+   element pointed at in the gap over groups 3 to 12: its number, symbol, name and weight, then its isotopes. */
+.periodic {
+  display: grid;
+  grid-template-columns: repeat(18, minmax(0, 1fr));
+  grid-template-rows: repeat(7, 30px) var(--space-2) repeat(2, 30px);
+  gap: 2px;
+}
+.element-facts {
+  grid-row: 1 / 4;
+  grid-column: 3 / 13;
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 0 var(--space-2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.element-tile {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  margin: 0;
+}
+.element-tile b {
+  color: var(--ink);
+  font: 600 20px/24px var(--atom-label-font);
+}
+.element-isotopes {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 0 var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.element-isotopes sup {
+  vertical-align: 0.4em;
+  line-height: 0;
 }
 
 /* The canvas's scroll bars (Scrollbars.tsx), as the Mac's overlay ones: along the right and bottom edges, clear of the
@@ -6563,4 +7073,95 @@ button.variant.add {
 }
 .scrollbar.dragging .scroll-thumb {
   background: color-mix(in oklab, var(--ink) 58%, transparent);
+}
+
+/* A glide (decision 0024, GlideLayer.tsx): the canvas waits, hidden, under the glide layer, which draws every frame of
+   the glide; without a copy of the rest of the canvas, only the structures wait. */
+#world.gliding > :not(.glide-layer),
+#world.gliding-structures [data-glide="structure"] { visibility: hidden; }
+
+/* A minimised panel's pill (PanelControls.tsx Pills): beside its structure, placed from the view with no redraw, so
+   it follows pan and zoom and is never scaled by the zoom; a structure off screen keeps its pill at the canvas edge. It is not part of the drawing: it never prints,
+   exports or copies. Its X shows on hover and focus, and always for touch and pen. It joins the pill's right end: the
+   pill is placed by its left edge, so nothing under the pointer moves, and at rest the pill has no empty room. */
+.pills {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-panel);
+  overflow: hidden;
+  pointer-events: none;
+}
+.pill {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  height: var(--size-control-sm);
+  box-sizing: border-box;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-float);
+  outline: 1px solid transparent;
+  pointer-events: auto;
+  animation: fade-in var(--motion-fast) var(--ease-out);
+}
+.pill.docked {
+  left: calc(var(--space-4) * 2 + 48px);
+  top: auto;
+  bottom: calc(var(--space-4) + var(--row) * 28px);
+}
+.pill-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 100%;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-muted);
+  font: 13px/1 var(--font-sans);
+}
+.pill-open svg {
+  color: var(--brand);
+}
+/* More than one spectrum: how many, on a neutral badge (.badge is the error style). */
+.pill-count {
+  min-width: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--brand-mist);
+  color: var(--link);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+.pill .close-x {
+  margin-right: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .pill-open:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+}
+.pill-open:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.pill-open:active {
+  transform: scale(var(--press));
+}
+
+/* An experiment page's details (Editor.tsx): a box at each one's place, on screen only, and the empty title's name. */
+.fields {
+  pointer-events: none;
+}
+.fields rect {
+  fill: none;
+  stroke: var(--outline);
+  stroke-width: 0.75;
+}
+.fields text {
+  fill: var(--ink-faint);
 }

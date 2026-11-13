@@ -89,11 +89,12 @@ assert.match(worker, /postMessage\(quickMol\(ask\.smiles\)\)/);
 assert.match(worker, /postMessage\(ask\.pieces\.map\(\(p\) => fullMol\(p, ask\.ions\)\)\)/);
 
 // Return's structure: the same as the page made before Return moved to the worker (Editor.tsx structureFor:
-// sandwich(parseStructure(smiles))). A 30-nt RNA reads the same SMILES, so it is the same drawing. A peptide is laid
-// out from the SMILES built here (peptideSmiles) and not OPSIN's, so it is the same structure (same standard InChI).
+// sandwich(parseStructure(smiles))), along a straight backbone (fullMol, chain.ts). A 30-nt RNA reads the same SMILES,
+// so it is the same structure. A peptide is laid out from the SMILES built here (peptideSmiles) and not OPSIN's, so it
+// is the same structure (same standard InChI).
 const RNA_SMILES = laterSmiles(RNA_30, undefined)!;
 const rnaBefore = sandwich(parseStructure(RNA_SMILES)), rnaAfter = (await fullLayout([RNA_SMILES], true).result)![0];
-assert.deepEqual(rnaAfter, rnaBefore, "30-nt RNA: the same drawing");
+assert.deepEqual(rnaAfter, fullMol(RNA_SMILES), "30-nt RNA: the same drawing");
 assert.equal(toInchi(rnaAfter), toInchi(rnaBefore), "30-nt RNA: the same InChI");
 const pepAfter = (await fullLayout([laterSmiles(PEPTIDE_60, undefined)!], true).result)![0];
 assert.equal(pepAfter.atoms.length, quickMol(laterSmiles(PEPTIDE_60, undefined)!)!.atoms.length, "60-residue peptide: every atom");
@@ -133,7 +134,7 @@ await workerScope.onmessage!({ data: { smiles: ASPIRIN } });
 await workerScope.onmessage!({ data: { pieces: [RNA_SMILES], ions: true } });
 await workerScope.onmessage!({ data: { pieces: ["not smiles((("], ions: true } });
 assert.equal((posted[0] as { atoms: unknown[] }).atoms.length, 13, "a preview");
-assert.deepEqual(posted[1], [rnaBefore], "Return's structure, the same as on the page");
+assert.deepEqual(posted[1], [rnaAfter], "Return's structure, the same as on the page");
 assert.equal(posted[2], undefined);
 // A worker whose Indigo did not load still answers (undefined), so the queue moves on and the field is not busy for ever.
 assert.match(worker, /try \{\n\s+await ready;[\s\S]*\} catch \{ postMessage\(undefined\); \}/);

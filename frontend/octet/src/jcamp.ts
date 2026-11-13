@@ -3,6 +3,7 @@
 // NTUPLES pages of a processed NMR spectrum (the real part). Also Bruker's processed data (procs and 1r) and Galactic
 // SPC files. Every file is hostile: sizes, point counts and nesting are limited, and a file that breaks a rule is
 // refused with a plain message, never half read.
+import { guessNucleus } from "./nmr.ts";
 
 export type Kind = "nmr" | "ir" | "uv" | "ms" | "other";
 // A spectrum as read: evenly spaced from `first` to `last` (x units), or at `xs` when it is not; `sticks` for a peak
@@ -149,7 +150,7 @@ export function solventName(raw: string): string | undefined {
   if (!s) return undefined;
   return solventNames.find(([re]) => re.test(s))?.[1] ?? s.slice(0, 40);
 }
-// A nucleus as "1H" or "13C" from ^1H, 1H, <13C>, C13.
+// A nucleus as "1H", "13C" or "19F" from ^1H, 1H, <13C>, C13, ^19F.
 function nucleusOf(raw: string | undefined): string | undefined {
   const s = raw?.replace(/[\^<>\s]/g, "") ?? "";
   const m = /^(\d{1,3})([A-Z][a-z]?)$/.exec(s) ?? /^([A-Z][a-z]?)(\d{1,3})$/.exec(s)?.slice(0, 3).reverse();
@@ -244,7 +245,7 @@ function spectrumOf(b: Block, inherited: Map<string, string>): JcampSpectrum | u
     ...(xs ? { xs: Float64Array.from(xs) } : {}), ...(sticks ? { sticks: true as const } : {}), ...(peaks?.length ? { peaks } : {}),
   };
   if (![out.first, out.last].every(Number.isFinite)) damaged("FIRSTX or LASTX is not a number");
-  if (out.kind === "nmr" && !out.nucleus) out.nucleus = Math.abs(out.last - out.first) > 40 ? "13C" : "1H";
+  if (out.kind === "nmr" && !out.nucleus) out.nucleus = guessNucleus(out.first, out.last, out.mhz);
   return out;
 }
 
@@ -384,7 +385,7 @@ export function readSpc(b: Uint8Array, name = "SPC spectrum"): JcampSpectrum[] {
   return [{
     title: (comment.replace(/[\u0000-\u001f]/g, " ").trim() || name.replace(/[\u0000-\u001f]/g, " ")).slice(0, 200), kind, xUnit,
     yUnit: ytype === 2 ? "A" : ytype === 128 ? (top <= 1.5 ? "T" : "%T") : ytype === 11 ? "%" : "", first: x0, last: x1, y,
-    ...(xs ? { xs } : {}), ...(kind === "ms" && xy ? { sticks: true as const } : {}), ...(kind === "nmr" ? { nucleus: Math.abs(x1 - x0) > 40 ? "13C" : "1H" } : {}),
+    ...(xs ? { xs } : {}), ...(kind === "ms" && xy ? { sticks: true as const } : {}), ...(kind === "nmr" ? { nucleus: guessNucleus(x0, x1) } : {}),
   }];
 }
 // An SPC file as the app hands it to the page (src-tauri/src/spectrum.rs): this line, then JSON with the file's name

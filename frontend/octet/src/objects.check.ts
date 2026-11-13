@@ -88,6 +88,119 @@ import type { Shape } from "./render.ts";
   console.log("objects.check: TLC lanes, spot styles, side ticks and transparency ok");
 }
 
+// Issue 96: gels and plasmid maps, laid out from their data. A gel's bands sit by their sizes on a log scale and keep
+// their sizes when its range changes; its lane names go with their lanes. A plasmid map puts base pair 1 at the top,
+// overlapping regions on tracks of their own, and its names a line apart. Both survive .oct and CDXML.
+import { addBands, newGel, setRange, withLadder } from "./edit.ts";
+import { bandRf, bandSize, gelScale, namesTurn, plasmidLayout, tlcLayout } from "./render.ts";
+{
+  const close = (a: number, b: number) => Math.abs(a - b) < 1e-6 * Math.max(1, Math.abs(b));
+  const made = { id: 3, ...newGel([0, 0], [6, -6]) } as Shape, t = made.tlc!, sizes = (x: Shape, lane: number) => x.tlc!.spots.filter((s) => s.lane === lane).map((s) => Number(bandSize(x.tlc, s.rf).toPrecision(6)));
+  assert.deepEqual([made.kind, t.lanes, t.unit, t.names], ["gel", 5, "kDa", ["M", "1", "2", "3", "4"]]);
+  assert.deepEqual(sizes(made, 0), [250, 150, 100, 75, 50, 37, 25, 20, 15, 10], "a new gel's first lane is the protein ladder");
+  const lay = tlcLayout(made);
+  assert.ok(t.spots.every((s, k) => s.rf > 0 && s.rf < 1 && (k === 0 || lay.at(s.rf) < lay.at(t.spots[k - 1].rf))), "smaller bands run further down");
+  assert.ok(close(bandSize(t, bandRf(t, 42)), 42) && lay.at(0) > lay.at(1) && lay.at(0) < lay.y1);
+  assert.ok(close(bandSize(t, lay.snap(lay.at(bandRf(t, 63.4)))), 63), "a press gives a size to two figures");
+  const loaded = { ...made, tlc: addBands(t, 2, [66, 45, 0, -3]) };
+  assert.deepEqual(sizes(loaded, 2), [66, 45], "Add Bands takes only sizes above 0");
+  // Set Range: bands keep their sizes; one outside the range is kept, not drawn.
+  const narrow = { ...loaded, tlc: setRange(loaded.tlc!, [20, 120]) };
+  assert.deepEqual(sizes(narrow, 2), [66, 45]);
+  assert.ok(narrow.tlc!.spots.filter((s) => s.lane === 0).some((s) => s.rf < 0) && narrow.tlc!.spots.filter((s) => s.lane === 0).some((s) => s.rf > 1));
+  // A very narrow range (or a tiny size) still saves a drawing Octet can open; a band rounded past an end stays drawn.
+  const tight = { ...loaded, tlc: addBands(setRange(loaded.tlc!, [100, 101]), 1, [1e-200]) };
+  assert.doesNotThrow(() => parse(serialize({ atoms: [], bonds: [], shapes: [tight] })));
+  const odd = tlcLayout({ ...made, tlc: setRange(t, [5.55, 400]) });
+  assert.ok(odd.snap(odd.front) <= 1 && odd.snap(odd.origin) >= 0);
+  const dna = { ...made, tlc: withLadder(made.tlc!, "bp") };
+  assert.deepEqual([dna.tlc!.unit, sizes(dna, 0)], ["bp", [10000, 8000, 6000, 5000, 4000, 3000, 2000, 1500, 1000, 500]]);
+  // Lane names go with their lanes: a new lane is named by the lanes before it, a copy as its lane.
+  assert.deepEqual(addLane(loaded, 5).tlc!.names, ["M", "1", "2", "3", "4", "5"]);
+  assert.deepEqual(addLane(loaded, 1, 0).tlc!.names, ["M", "M", "1", "2", "3", "4"]);
+  assert.deepEqual(deleteLane(loaded, 1).tlc!.names, ["M", "2", "3", "4"]);
+  assert.deepEqual(moveLane(loaded, 0, 4).tlc!.names, ["1", "2", "3", "4", "M"]);
+  // The scale names the ladder, thinned to a line apart from the top down; long names turn.
+  assert.deepEqual(gelScale(made, 0), [250, 150, 100, 75, 50, 37, 25, 20, 15, 10]);
+  const thin = gelScale(made, 0.5);
+  assert.ok(thin[0] === 250 && thin.length < 10 && thin.every((n, k) => k === 0 || lay.at(bandRf(t, thin[k - 1])) - lay.at(bandRf(t, n)) >= 0.5));
+  assert.deepEqual(gelScale({ ...made, tlc: { ...t, spots: [] } }, 0), [200, 100, 50, 20, 10, 5], "no ladder: 1, 2 and 5 in the range");
+  assert.deepEqual([namesTurn(made, (n) => n.length * 0.4), namesTurn(made, (n) => n.length * 2)], [false, true]);
+  // The plasmid map: base pair 1 at the top, clockwise; overlapping regions on tracks; one through 1 wraps.
+  const map: Shape = { id: 4, kind: "plasmid", from: [0, 0], to: [8, -8], plasmid: { bp: 4000, name: "pX", regions: [{ start: 100, end: 900, name: "a" }, { start: 800, end: 1200, name: "b", dir: "reverse" }, { start: 3800, end: 50, name: "c", dir: "none" }],
+    markers: [{ at: 1000, name: "EcoRI" }, { at: 1010, name: "BamHI" }, { at: 1020, name: "XhoI" }] } };
+  const m = plasmidLayout(map, 0.8);
+  assert.ok(close(m.at(1, 2)[0], 4) && close(m.at(1, 2)[1], -2) && close(m.at(1001, 2)[0], 6), "bp 1 at the top and a quarter of the way on at the right");
+  assert.ok(m.regions[1].path.some((q) => Math.hypot(q[0] - m.c[0], q[1] - m.c[1]) > m.R + 0.2), "an overlapping region goes out on a track of its own");
+  assert.ok(m.regions[2].path.every((q) => Math.abs(Math.hypot(q[0] - m.c[0], q[1] - m.c[1]) - m.R) < 0.11), "c shares the first track with a, through bp 1");
+  const right = m.labels.filter((x) => x.right).sort((a, b) => b.y - a.y);
+  assert.equal(right.length, 5);
+  assert.ok(right.every((x, k) => k === 0 || right[k - 1].y - x.y >= 0.8 - 1e-9), "names are spread a line apart");
+  // Saved and read back, in Octet's own file and in CDXML; a marker past the end is a damaged file.
+  const both = { atoms: [], bonds: [], shapes: [loaded, map] };
+  assert.deepEqual(parse(serialize(both)).shapes!.map((x) => [x.tlc, x.plasmid]), [[loaded.tlc, undefined], [undefined, map.plasmid]]);
+  const read = fromCdxml(toCdxml(both, DEFAULT_STYLE));
+  assert.deepEqual([read.lost, read.mol.shapes!.map((x) => [x.kind, x.tlc, x.plasmid])], [{}, [["gel", loaded.tlc, undefined], ["plasmid", undefined, map.plasmid]]]);
+  assert.throws(() => parse(serialize({ atoms: [], bonds: [], shapes: [{ ...map, plasmid: { ...map.plasmid!, markers: [{ at: 4001, name: "x" }] } }] })), /damaged/);
+  assert.throws(() => parse(serialize({ atoms: [], bonds: [], shapes: [{ id: 5, kind: "tlc", from: [0, 0], to: [1, 1], tlc: { lanes: 1, spots: [], names: ["A"] } }] })), /damaged/, "lane names are a gel's");
+  console.log("objects.check: gels and plasmid maps ok");
+}
+
+// A gel or plasmid map Octet saves, Octet opens again, whatever was typed, dragged or picked with it; and a file with
+// a range no dialog gives is refused, not drawn for ever.
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { oneLine } from "./experiment.ts";
+import { readOct, writeOct } from "./oct.ts";
+import { isPlate, turns } from "./render.ts";
+{
+  const gel = { id: 3, ...newGel([0, 0], [6, -6]) } as Shape, t = gel.tlc!;
+  const map: Shape = { id: 4, kind: "plasmid", from: [0, 0], to: [8, -8], plasmid: { bp: 4000, regions: [], markers: [] } };
+  const opened = (shapes: Shape[]) => { const back = readOct(writeOct({ atoms: [], bonds: [], shapes }, DEFAULT_STYLE), true); return [back.foreign, back.lost, back.mol.shapes?.map((x) => x.kind)]; };
+  const editor = readFileSync(new URL("Editor.tsx", import.meta.url), "utf8");
+  // A range whose sizes are so small that a tenth of one is 0: the file is damaged, and the scale of such a gel
+  // (run apart, with a time limit) ends at once.
+  const tiny: Shape = { ...gel, tlc: { ...t, spots: [], range: [5e-324, 1e-323] } };
+  assert.throws(() => parse(serialize({ atoms: [], bonds: [], shapes: [tiny] })), /damaged/, "a range below the dialog's least is refused");
+  assert.doesNotThrow(() => parse(serialize({ atoms: [], bonds: [], shapes: [{ ...gel, tlc: { ...t, range: [0.001, 1e9] } }] })), "the dialog's widest range is read");
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import { gelScale } from ${JSON.stringify(new URL("render.ts", import.meta.url).href)}; gelScale(${JSON.stringify(tiny)}, 0.2);`], { timeout: 20_000, encoding: "utf8" });
+  assert.equal(run.status, 0, `a gel's scale ends for any range: ${run.error?.message ?? run.stderr}`);
+  // A name pasted with a tab in it is one line where the dialogs apply it, so the gel and the map are still there
+  // when the file is opened again. (A control character in a name is a damaged file.)
+  const tab = "WT\tKO", named = (name: string): Shape[] => [{ ...gel, tlc: { ...t, names: t.names!.map((n, k) => (k === 1 ? name : n)) } }, { ...map, plasmid: { bp: 4000, name, regions: [{ start: 1, end: 900, name }], markers: [{ at: 1000, name }] } }];
+  assert.equal(oneLine(tab), "WT KO");
+  assert.deepEqual(opened(named(oneLine(tab))), [undefined, {}, ["gel", "plasmid"]]);
+  assert.throws(() => parse(serialize({ atoms: [], bonds: [], shapes: named(tab) })), /damaged/);
+  assert.match(editor, /\(k === dialog\.lane \? oneLine\(dialog\.value\) : /, "the lane name");
+  assert.match(editor, /plasmid: \{ \.\.\.pl, bp, name: oneLine\(dialog\.name\) \|\| undefined,/, "the plasmid's name");
+  assert.match(editor, / region: Region = \{ start, end, \.\.\.\(name \? \{ name \} : \{\}\),/, "a region's name");
+  assert.match(editor, /const marker: Marker = \{ at, name, /, "a marker's name");
+  assert.equal(editor.match(/name = oneLine\(dialog\.name\)/g)?.length, 2, "the region and marker dialogs clean the name once each");
+  // A gel dragged wider than 40 lanes' worth has 40 lanes, the most a file holds; the TLC plate tool stops there too.
+  const wide = { id: 5, ...newGel([0, 0], [50, -6]) } as Shape;
+  assert.deepEqual([wide.tlc!.lanes, wide.tlc!.names!.length], [40, 40]);
+  assert.deepEqual(opened([wide]), [undefined, {}, ["gel"]]);
+  assert.match(editor, /kind: "tlc", from, to, tlc: \{ lanes: Math\.min\(TLC_LANES, Math\.max\(1, /);
+  // The shape chips (Box, Oval…) change only shapes that take a kind: a gel or map picked with a box keeps its kind,
+  // because an oval that holds gel data is a damaged file. Boxes, ovals, highlights and brackets all take one.
+  assert.deepEqual((["box", "rounded", "oval", "highlight", "brackets", "parens", "braces", "tlc", "gel", "plasmid", "table", "picture"] as const).filter((kind) => !turns({ kind })), ["tlc", "gel", "plasmid", "table", "picture"]);
+  assert.throws(() => parse(serialize({ atoms: [], bonds: [], shapes: [{ ...gel, kind: "oval" }] })), /damaged/);
+  assert.match(editor, /return each\(\(x\) => \(turns\(x\) \? \{ kind: arg as ShapeKind, [^\n]* : \{\}\)\);/);
+  // The plate actions change plates only: a plasmid map or box picked with a gel is given no lanes or spots.
+  assert.deepEqual([isPlate(gel), isPlate({ kind: "tlc" }), isPlate(map), isPlate({ kind: "box" })], [true, true, false, false]);
+  assert.throws(() => parse(serialize({ atoms: [], bonds: [], shapes: [{ ...map, tlc: { rf: true } as never }] })), /damaged/);
+  assert.match(editor, /const plates = \(f: \(x: Shape\) => Partial<Shape>\) => each\(\(x\) => \(isPlate\(x\) \? f\(x\) : \{\}\)\);/);
+  for (const what of ["lanes", "rf", "hide", "spots"]) assert.match(editor, new RegExp(`if \\(what === "${what}"\\) return plates\\(`), what);
+  assert.match(editor, /if \(what === "ticks" \|\| what === "transparent"\) return plates\(/);
+  // A double-click on a caption, atom or bond goes to it, also over a gel's lane names or in a plasmid map's box; a
+  // map takes the double-click only on a region, a marker or its middle.
+  assert.match(editor, /const named = tool !== "erase" && bare \? laneNameAt\(/);
+  assert.match(editor, /const map = tool !== "erase" && bare \? plasmidAt\(/);
+  assert.match(editor, /const bare = t\.caption === undefined && t\.atom === undefined && t\.bond === undefined;/);
+  assert.match(editor, /if \(map && \(part\.region !== undefined \|\| part\.marker !== undefined \|\| part\.centre\)\) return openPart\(map, part\);/);
+  console.log("objects.check: gels and plasmid maps stay readable ok");
+}
+
 // CD-33: a template keeps the whole selection (its text, arrows, shapes and look) and goes where it is placed.
 import { addTemplate, extractSelection, normalise } from "./edit.ts";
 import { loadTemplates, newTemplate } from "./templates.ts";

@@ -45,12 +45,16 @@ assert.deepEqual(normalise([{ text: "" }]), [{ text: "" }]);
   assert.deepEqual(without(part.runs, ["align"]), part.runs);
 }
 // An atom label typed with styles: each line trimmed and empty lines left out, each character keeping its style; what
-// every character has is the label's own, the rest its runs (bold, italic and underline only).
+// every character has is the label's own, the rest its runs (bold, italic, underline and colour).
 {
   const typed: TextRun[] = [{ text: " O", bold: true }, { text: "Me \n\n" }, { text: "CH", italic: true }, { text: "3 ", italic: true, colour: "#ff0000" }];
   assert.deepEqual(trimLines(typed), [{ text: "O", bold: true }, { text: "Me\n" }, { text: "CH", italic: true }, { text: "3", italic: true, colour: "#ff0000" }]);
   assert.equal(plainOf(trimLines(typed)), "OMe\nCH3");
-  assert.deepEqual(labelStyle(trimLines(typed)), { runs: [{ text: "O", bold: true }, { text: "Me\n" }, { text: "CH3", italic: true }] });
+  assert.deepEqual(labelStyle(trimLines(typed)), { runs: [{ text: "O", bold: true }, { text: "Me\n" }, { text: "CH", italic: true }, { text: "3", italic: true, colour: "#ff0000" }] });
+  // Part of a label in its own colour (issue 64, the N of NMe2 in red) stays in a run; a colour on every character is
+  // the label's own.
+  assert.deepEqual(labelStyle([{ text: "N", colour: "#B42323" }, { text: "Me2" }]), { runs: [{ text: "N", colour: "#B42323" }, { text: "Me2" }] });
+  assert.deepEqual(labelStyle([{ text: "N", colour: "#B42323", italic: true }, { text: "Me2", colour: "#B42323" }]), { colour: "#B42323", runs: [{ text: "N", italic: true }, { text: "Me2" }] });
   assert.deepEqual(labelStyle([{ text: "OM", bold: true, underline: true }, { text: "e", bold: true }]), { bold: true, runs: [{ text: "OM", underline: true }, { text: "e" }] });
   assert.deepEqual(labelStyle([{ text: "OMe", italic: true, script: "sub" }]), { italic: true, runs: [{ text: "OMe", script: "sub" }] });
   assert.deepEqual(labelStyle([{ text: "OMe" }]), {});

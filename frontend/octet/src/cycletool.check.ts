@@ -3,7 +3,7 @@
 // products keep their steps, and all of it survives a save.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addBranch, addSide, addStop, attachBeside, breakAt, clearAt, cycleAtoms, dragEnd, dragMeet, dropOnCycle, endFor, followArcs, labelEnd, layoutCycles, migrateCycles, pullBranch, removeEnd, removeStop, resizeCycle, roleFor, setBranch, setEnd, setEnds, setStep, sideChoices, stepAt, stepFor, swapBranch, withEnd, type Cycle, type CycleText, type OldText } from "./cycle.ts";
+import { addBranch, addSide, addStop, attachBeside, breakAt, clearAt, cycleAtoms, dragEnd, dragMeet, dropOnCycle, endFor, followArcs, labelEnd, layoutCycles, migrateCycles, pullBranch, removeEnd, removeStop, resizeCycle, roleFor, setBranch, setEnd, setEnds, setStep, sideChoices, spreadCycle, stepAt, stepFor, swapBranch, withEnd, type Cycle, type CycleText, type OldText } from "./cycle.ts";
 import { DEFAULT_STYLE } from "./docstyle.ts";
 import { addCaption, addCycle, addRing, deleteAtoms, deleteGraphics, EMPTY, extractSelection, fragments, insertMol, transformParts } from "./edit.ts";
 import { fromCdxml, toCdxml } from "./cdxml.ts";
@@ -732,7 +732,7 @@ console.log("cycle tidy ok");
 }
 console.log("cycle side arrow tool ok");
 
-// Step names placed clear (the Suzuki cycle from the MCP test): three intermediates, side arrows with text on every
+// Step names placed clear (a Suzuki cycle): three intermediates, side arrows with text on every
 // step and long names, so the names go inside where they fit, else outside. No name overlaps another, the centre
 // label, a side arrow or its text or an intermediate, and none crosses the circle. Text is half an em per character, as Arial is near enough.
 {
@@ -761,3 +761,18 @@ console.log("cycle side arrow tool ok");
   assert.deepEqual(layoutCycles(moved, L, pt, ink(moved), () => undefined, frame).anchors.get(20), layoutCycles(suzuki, L, pt, ink(suzuki)).anchors.get(20));
 }
 console.log("cycle step names ok");
+
+// Tidy the cycle leaves each intermediate half a bond clear of a wide centre text.
+{
+  const four: Cycle = { id: 1, centre: [0, 0], radius: 3, clockwise: true, nodes: [[0], [1], [2], [3]], at: [] };
+  const box = (): Box => [-10, -10, 10, 10];
+  const plain = spreadCycle(four, L, box).radius, middle: Box = [-9 * L, -L / 2, 9 * L, L / 2];
+  const { radius, shifts } = spreadCycle(four, L, box, middle);
+  assert.ok(radius > plain, `${radius} > ${plain}`);
+  shifts.forEach(([dx, dy]) => {
+    const b = [-10 + dx * L, -10 - dy * L, 10 + dx * L, 10 - dy * L];
+    const gap = Math.max(middle[0] - b[2], b[0] - middle[2], middle[1] - b[3], b[1] - middle[3]);
+    assert.ok(gap >= L / 2 - 1e-6, `gap ${gap}`);
+  });
+}
+console.log("cycle centre text ok");

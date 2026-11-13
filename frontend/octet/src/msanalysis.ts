@@ -5,7 +5,7 @@
 import { HBOND, hydrogens, orderOf, type Mol } from "./render.ts";
 import { isotopePattern, isotopesOf } from "./mass.ts";
 import { ELEMENTS } from "./labels.ts";
-import { inkOf, pageLabels, type Figure } from "./spectrumplot.ts";
+import { inkOf, pageLabels, ticks, type Figure } from "./spectrumplot.ts";
 import { crossedBonds } from "./masscut.ts";
 
 type P = [number, number];
@@ -266,12 +266,7 @@ export function patternMatch(peaks: Peak[], pattern: { mz: number; rel: number }
 }
 
 // Ticks for an m/z axis: a round step that leaves `room` between labels.
-export function mzTicks(lo: number, hi: number, width: number, room = 64): number[] {
-  const step = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000].find((s) => (hi - lo) / s <= width / room) ?? 10000;
-  const out: number[] = [];
-  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v / step) * step);
-  return out;
-}
+export const mzTicks = (lo: number, hi: number, width: number, room = 64): number[] => ticks(lo, hi, width, room).out;
 // A range that shows every m/z with a margin, at least 10 wide.
 export function mzRange(mzs: number[]): [number, number] {
   if (!mzs.length) return [0, 100];

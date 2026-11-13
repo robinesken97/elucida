@@ -4,21 +4,65 @@ import { AROMATIC, HBOND, hydrogens, labelInk, NONMETAL, orderOf, QUADRUPLE, sca
 import { arialInk } from "./cdxml.ts";
 import { fontStack } from "./docstyle.ts";
 import { chemicalText, labelSmiles, writtenOxidation } from "./labels.ts";
-import { bondedTo, chairHydrogens, fragments, insertMol, labelPlacer, levelTurn, perspectiveBonds, pickAtoms, renumberCentre, sandwich, subset } from "./edit.ts";
+import { bondedTo, chairHydrogens, fragments, insertMol, labelPlacer, levelTurn, perspectiveBonds, pickAtoms, renumberCentre, sandwich, subset, withValence } from "./edit.ts";
 import { graphOf, type Graph } from "./naming.ts";
 import { clean2d } from "./clean2d.ts";
+import { chainLayout } from "./chain.ts";
+import { labelRows } from "./sequence.ts";
 import { kekulise } from "./rings.ts";
 import { counts } from "./mass.ts";
 import { hasQuery, polymerBrackets, polymerLabel, repeatCount } from "./query.ts";
 import { isQueryMolfile, readV3000, RXCTR, writeV3000 } from "./molv3.ts";
+import { isCif, readCif } from "./cif.ts";
 import { axialLabels } from "./axial.ts";
 import { sandwichIons } from "./metals.ts";
 import { cipLabels } from "./cip.ts";
 import type { StereoFacts } from "./check.ts";
 
 type IndigoModule = Awaited<ReturnType<typeof Indigo>>;
-let indigo: IndigoModule | undefined;
-export const ready: Promise<void> = Indigo().then((m: IndigoModule) => { indigo = m; });
+// Each Indigo call that fails leaks some of Indigo's memory, as its error skips Indigo's own clean-up: about 50 bytes
+// of its 64 KB stack and 50 KB of its heap. After about 1,270 failed calls the stack runs into Indigo's own data, and
+// then any call can fail, give a wrong answer or never end. One call can do the same: the InChI of a large fused ring
+// system overflows the stack. So each call is watched. After 500 failed calls a fresh Indigo loads and takes over. A
+// failure that is not Indigo's own message (a string) means Indigo is damaged or out of memory: it is not called
+// again, and Octet works as while Indigo loads at start. ready is then the fresh one, and onRestart's f is told why.
+// ready rejects when Indigo cannot load.
+let indigo: IndigoModule | undefined, fails = 0, fresh: Promise<void> | undefined;
+const load = () => Indigo().then((m: IndigoModule) => { indigo = watched(m); });
+export let ready: Promise<void> = load();
+const MOST_FAILS = 500, restarts = new Set<(e: unknown) => void>();
+export const onRestart = (f: (e: unknown) => void) => { restarts.add(f); return () => void restarts.delete(f); };
+// Indigo reads a structure's stereocentres from its depth (z) with a symmetry search that has no limit. With many
+// like groups (isopropyl, trimethylsilyl, CF3), most of all with their hydrogens drawn as atoms, it runs for minutes
+// (src/depth.check.ts). So each call has Indigo's own timeout. A read it stops is read again as a query structure,
+// with no error and the wrong masses, so a call that took that long fails here. The ceiling is 10 seconds: a 3D MOL
+// file of TIPS-protected adenosine with its hydrogens takes 2 seconds to read on a fast Mac, and must still open.
+// ponytail: one ceiling for every call. A structure past it gets no SMILES, InChI or file from Indigo, and the name,
+// abbreviation and CAS number, which read the depth, stop the window for 10 seconds each time it changes. If that
+// matters, give the InChI library the depth itself (a molfile read with skip-3d-chirality).
+const MOST_MS = 10_000;
+function watched(m: IndigoModule): IndigoModule {
+  const out: IndigoModule = {};
+  for (const [k, f] of Object.entries(m)) out[k] = typeof f !== "function" ? f : function (...a: unknown[]) {
+    if (indigo !== out) throw new Error("Indigo is not loaded yet");
+    for (const x of a) if (x instanceof m.MapStringString) (x as { set(k: string, v: string): void }).set("timeout", String(MOST_MS));
+    const t = performance.now();
+    let r: unknown;
+    try { r = new.target ? Reflect.construct(f, a) : f(...a); } catch (e) { failed(e); throw e; }
+    if (performance.now() - t >= MOST_MS) throw new RangeError(`It takes more than ${MOST_MS / 1000} seconds to work out.`);
+    return r;
+  };
+  return out;
+}
+function failed(e: unknown) {
+  if (typeof e === "string" && ++fails < MOST_FAILS) return;
+  const next = (fresh ??= load().finally(() => { fresh = undefined; fails = 0; }));
+  next.catch(() => {}); // the old Indigo stays, or onRestart's f is told
+  if (typeof e === "string" || !indigo) return;
+  indigo = undefined;
+  ready = next;
+  queueMicrotask(() => restarts.forEach((f) => f(e)));
+}
 
 // Drawing sizes come from brand/tokens.css (ACS 1996). The layout worker (layout.worker.ts) has no page: it lays out
 // with Indigo alone and reads none of them.
@@ -104,7 +148,7 @@ function engine() {
 
 // A KET atom as Octet's: KET radicals 2 and 3 are one and two unpaired electrons. A map number and an enhanced
 // stereo flag (abs, &n, orn) are kept.
-type KetAtom = { label: string; location: [number, number, number]; charge?: number; radical?: number; isotope?: number; mapping?: number; stereoLabel?: string; alias?: string };
+type KetAtom = { label: string; location: [number, number, number]; charge?: number; radical?: number; isotope?: number; mapping?: number; stereoLabel?: string; alias?: string; implicitHCount?: number; explicitValence?: number };
 // A MOL file's alias ("A  n" and the label on the next line) is the atom's label, as Octet writes it, kept to 40
 // characters of plain text as the CDXML reader keeps a label.
 const aliasOf = (a: KetAtom) => { const t = typeof a.alias === "string" ? a.alias.replace(/[\u0000-\u001f\u007f<>]/g, "").trim().slice(0, 40) : ""; return t && t !== a.label ? { text: t } : {}; };
@@ -112,6 +156,25 @@ const atomOfKet = (a: KetAtom): Mol["atoms"][number] =>
   ({ label: a.label, location: a.location, charge: a.charge, ...aliasOf(a), ...(a.radical ? { radical: a.radical === 1 ? 3 : a.radical - 1 } : {}), ...(a.isotope ? { isotope: a.isotope } : {}),
     ...(Number.isInteger(a.mapping) && a.mapping! > 0 && a.mapping! <= 9999 ? { map: a.mapping } : {}),
     ...(/^(abs|&[1-9]\d?|or[1-9]\d?)$/.test(a.stereoLabel ?? "") ? { enhanced: a.stereoLabel } : {}) });
+
+// Indigo cannot Kekulé every aromatic ring it reads: a ring with a C=O on it (caffeine, uracil, 4-pyridone, coumarin)
+// stays aromatic, and Octet would draw its bonds single. Each bond left aromatic is made single or double here, as the
+// CDXML reader does for ChemDraw's delocalised bonds: an atom takes a double bond when its valence has room after its
+// other bonds and its hydrogens (Indigo gives an NH's), and the most double bonds are placed (kekulise).
+const ROOM: Record<string, number> = { C: 4, Si: 4, N: 3, P: 3, B: 3, O: 2, S: 2, Se: 2 };
+function kekuleLeft(atoms: KetAtom[], bonds: { type: number; atoms: number[] }[]): number[] {
+  const loose = bonds.flatMap((b, k) => (b.type === 4 ? [k] : []));
+  if (!loose.length) return bonds.map((b) => b.type);
+  // A bond to a metal (a pyridine's N on Ru) gives the atom no less room: it is a dative bond.
+  const used = atoms.map(() => 0), metal = (i: number) => !NONMETAL.has(atoms[i].label);
+  for (const b of bonds) if (!b.atoms.some(metal)) for (const i of b.atoms) used[i] += b.type === 4 ? 1 : orderOf(b.type);
+  const room = (i: number) => { const a = atoms[i], v = ROOM[a.label], q = a.charge ?? 0; return v === undefined ? 0 : (a.label === "C" || a.label === "B" || a.label === "Si" ? v - Math.abs(q) : v + q) - used[i] - (a.implicitHCount ?? 0); };
+  const can = [...new Set(loose.flatMap((k) => bonds[k].atoms))].filter((i) => room(i) >= 1).sort((p, q) => Number(atoms[p].label !== "C") - Number(atoms[q].label !== "C") || p - q);
+  const out = bonds.map((b) => (b.type === 4 ? 1 : b.type)), paired = new Set<number>();
+  kekulise(loose.map((k) => bonds[k].atoms as [number, number]), can).forEach((on, n) => { if (on) { out[loose[n]] = 2; bonds[loose[n]].atoms.forEach((i) => paired.add(i)); } });
+  // An atom that needs a double bond and has none: no Kekulé structure fits, so the ring stays aromatic, as Indigo read it.
+  return can.every((i) => paired.has(i)) ? out : bonds.map((b) => b.type);
+}
 
 // Pasted, typed and imported text can stop the editor, as Indigo runs on the main thread: it reads very long text
 // slowly, and its layout can tidy a crowded structure (a ring atom with five phenyls, a dense dendrimer) for minutes.
@@ -126,14 +189,15 @@ const over = (most: number, what: string) => new RangeError(`It has more than ${
 // Atoms in a SMILES (bracket atoms and the organic subset), up to the first space (CXSMILES and names come after it).
 export const smilesAtoms = (smiles: string) => smiles.split(/\s/)[0].match(/\[[^\]]*\]|Br|Cl|[BCNOPSFIbcnops*]/g)?.length ?? 0;
 
-// A structure file (MOL, SDF, RXN, RDF, CDXML, KET, SMILES), keeping the file's own drawing where it has one.
+// A structure file (MOL, SDF, RXN, RDF, CDXML, KET, SMILES, CIF), keeping the file's own drawing where it has one.
 // Coordinates are scaled so the median bond is one bond length; SMILES (no drawing) is laid out. A reaction keeps its
-// arrows and plus signs; an RD file's reactions stand one under another.
+// arrows and plus signs; an RD file's reactions stand one under another. A CIF or mmCIF file (cif.ts) has its own limits.
 // Throws a RangeError, with the reason to show, for text over Octet's limits.
 // An MDL file (MOL, SDF, RXN, RDF) whose only enhanced stereochemistry is its chiral flag: no V3000 stereo collections.
 // Indigo reads the flag as abs (1) or &1 (0) on every stereocentre.
 export const chiralFlagOnly = (text: string) => /V2000|V3000/.test(text) && !/MDLV30\/STE(ABS|RAC|REL)/.test(text);
 export function importStructure(text: string): Mol {
+  if (isCif(text)) return readCif(text);
   if (text.length > MOST_CHARACTERS) throw over(MOST_CHARACTERS, "characters");
   const ind = engine(), opts = new ind.MapStringString();
   try {
@@ -182,7 +246,14 @@ function fromKet(ket: Record<string, unknown> & { root: { nodes: Record<string, 
       mol.atoms.push(...frag.atoms.map(atomOfKet));
       // A bond's reacting centre (KET "center", the MDL code) is its Rxn mark.
       const rxnOf = (b: { center?: number }) => Object.keys(RXCTR).find((k) => RXCTR[k] === b.center) as Mol["bonds"][number]["rxn"];
-      mol.bonds.push(...frag.bonds.map((b) => { const rxn = rxnOf(b as { center?: number }); return { type: b.type, atoms: [b.atoms[0] + base, b.atoms[1] + base] as [number, number], stereo: b.stereo, ...(rxn ? { rxn } : {}) }; }));
+      const orders = kekuleLeft(frag.atoms, frag.bonds);
+      mol.bonds.push(...frag.bonds.map((b, k) => { const rxn = rxnOf(b as { center?: number }); return { type: orders[k], atoms: [b.atoms[0] + base, b.atoms[1] + base] as [number, number], stereo: b.stereo, ...(rxn ? { rxn } : {}) }; }));
+      // A molfile's valences (VAL): hydrogens set by hand where they leave fewer than usual (withValence).
+      if (frag.atoms.some((a) => a.explicitValence !== undefined)) {
+        const used = frag.atoms.map(() => 0);
+        frag.bonds.forEach((b, k) => b.atoms.forEach((i) => (used[i] += orderOf(orders[k]))));
+        frag.atoms.forEach((a, i) => { if (a.explicitValence !== undefined) mol.atoms[base + i] = withValence(mol.atoms[base + i], a.explicitValence, used[i]); });
+      }
     } else if (node.type === "plus" && Array.isArray(node.location)) {
       const [x, y] = (node.location as number[]).map(Number);
       if (Number.isFinite(x) && Number.isFinite(y)) captions.push({ id: id++, text: "+", x, y, align: "centre" });
@@ -260,13 +331,34 @@ export function parseStructure(text: string, tidy = true): Mol {
   return out.captions ? { ...out, captions: out.captions.map((c) => ({ ...c, y: c.y - 0.25 })) } : out;
 }
 // The structure Name to Structure draws for SMILES, fully tidied: a metallocene as a sandwich (ions: true, for a name;
-// SMILES typed as it is keeps its ions). Return's layout of a sequence or a large structure, made in the layout worker
-// (namepreview.ts fullLayout). Throws when the SMILES does not read.
-export const fullMol = (smiles: string, ions = true): Mol => (ions ? sandwich(parseStructure(smiles)) : parseStructure(smiles));
-// Indigo's layout of SMILES without the tidy, as Name to Structure draws it (a metallocene as a sandwich): the name
-// field's live preview of a large structure (namepreview.ts, layout.worker.ts). Undefined when it does not read.
+// SMILES typed as it is keeps its ions), and a peptide or oligonucleotide along a straight backbone. Return's layout of
+// a sequence or a large structure, made in the layout worker (namepreview.ts fullLayout). Throws when the SMILES does
+// not read.
+export const fullMol = (smiles: string, ions = true): Mol => straightened(ions ? sandwich(parseStructure(smiles)) : parseStructure(smiles));
+// Indigo's layout of SMILES without the tidy, as Name to Structure draws it (a metallocene as a sandwich, a chain
+// straight): the name field's live preview of a large structure (namepreview.ts, layout.worker.ts). Undefined when it
+// does not read.
 export function quickMol(smiles: string): Mol | undefined {
-  try { const m = sandwich(parseStructure(smiles, false)); return m.atoms.length ? m : undefined; } catch { return undefined; }
+  try { const m = straightened(sandwich(parseStructure(smiles, false))); return m.atoms.length ? m : undefined; } catch { return undefined; }
+}
+// The centre of points: their mean x and y.
+const centre = (pts: readonly (readonly number[])[]) => [0, 1].map((k) => pts.reduce((sum, p) => sum + p[k], 0) / pts.length);
+// Each peptide or oligonucleotide along a straight backbone (chain.ts), where it was. Anything else as it is.
+function straightened(m: Mol): Mol {
+  const atoms = [...m.atoms];
+  for (const frag of fragments(m)) {
+    const laid = chainLayout(m, frag);
+    if (!laid) continue;
+    const [ox, oy] = centre(frag.map((i) => m.atoms[i].location)), [cx, cy] = centre([...laid.values()]);
+    for (const [i, [x, y]] of laid) atoms[i] = { ...atoms[i], location: [ox + x - cx, oy + y - cy, 0] };
+  }
+  return atoms.every((a, i) => a === m.atoms[i]) ? m : keptHands(m, { ...m, atoms });
+}
+// A new layout's wedges and hashes, so each centre keeps the hand they drew before (from): where a centre now lies the
+// other way round, its wedges become hashes and its hashes wedges.
+function keptHands(from: Mol, to: Mol): Mol {
+  const was = wedgeHands(from), now = wedgeHands(to);
+  return { ...to, bonds: to.bonds.map((b) => ((b.stereo === 1 || b.stereo === 6) && now.get(b.atoms[0]) === -was.get(b.atoms[0])! ? { ...b, stereo: b.stereo === 1 ? 6 : 1 } : b)) };
 }
 // Indigo's own layout of a SMILES or file of so many atoms, its rounds of tidying capped for the size (MOST_ATOMS
 // above). smart: with Indigo's ring templates. A reaction (reactants>agents>products) keeps its arrow and plus signs.
@@ -921,7 +1013,8 @@ const tetrahedral = (c: number, bonds: Mol["bonds"]) => bonds.length >= 3 && bon
 // Each such centre's handedness as its wedges and hashes draw it (1 or -1), by atom.
 function wedgeHands(m: Mol): Map<number, number> {
   const out = new Map<number, number>(), at = bondedTo(m);
-  m.atoms.forEach((_, c) => {
+  // Only an atom a wedge or hash starts at can be such a centre.
+  new Set(m.bonds.filter((b) => b.stereo === 1 || b.stereo === 6).map((b) => b.atoms[0])).forEach((c) => {
     const bonds = m.bonds.filter((b) => b.atoms.includes(c));
     if (!tetrahedral(c, bonds)) return;
     const z = (j: number) => { const b = bonds.find((x) => x.atoms[0] === c && x.atoms[1] === j); return b?.stereo === 1 ? 1 : b?.stereo === 6 ? -1 : 0; };
@@ -1126,10 +1219,12 @@ export function expandWithOrigins(mol: Mol, bonded = false): { mol: Mol; from: n
 // A drawing as KET, with labels expanded into atoms. KET has no bond display styles (bold, wavy and so on).
 // Hydrogen bonds are left out (they are not chemistry Indigo works out), unless hbonds asks for them; a quadruple
 // bond, which Indigo has no type for, goes as a single bond. Without wedges (wedges false), Indigo also reads a
-// drawing whose wedges it rejects: formulas and masses do not need them. keep: each atom's map number and enhanced
+// drawing whose wedges it rejects: formulas and masses do not need them, nor the depth, which Indigo reads as
+// stereochemistry (slowly, see watched), so it goes flat. keep: each atom's map number and enhanced
 // stereo flag, and each bond's Rxn mark, go too, for MDL and reaction files. mol: the molecule with its labels
 // expanded already.
 type KetOptions = { wedges?: boolean; keep?: boolean; hbonds?: boolean; mol?: Mol };
+const flat = (p: number[]): [number, number, number] => [p[0], p[1], 0];
 function ketOf(drawn: Mol, { wedges = true, keep = false, hbonds = false, mol }: KetOptions = {}): string {
   const expanded = mol ?? expandLabels(hbonds || !drawn.bonds.some((b) => b.type === HBOND) ? drawn : { ...drawn, bonds: drawn.bonds.filter((b) => b.type !== HBOND) });
   return JSON.stringify({ root: { nodes: [{ $ref: "mol0" }] }, mol0: ketMol(expanded, wedges, keep) });
@@ -1146,7 +1241,7 @@ function ketMol(mol: Mol, wedges: boolean, keep: boolean) {
   // KET radicals: 1 a singlet, 2 one unpaired electron (doublet), 3 two (triplet). KET's stereo labels are Octet's
   // flags ("abs", "&1", "or1"). An atom with its hydrogens set (a caption read as an element, edit.ts withCaptionAtoms)
   // goes with its valence too, so Bi stays Bi and is not BiH3.
-  const atoms = mol.atoms.map((a, i) => ({ label: a.label, location: a.location, ...(a.charge ? { charge: a.charge } : {}), ...(a.radical ? { radical: a.radical === 3 ? 1 : a.radical + 1 } : {}), ...(a.isotope ? { isotope: a.isotope } : {}),
+  const atoms = mol.atoms.map((a, i) => ({ label: a.label, location: wedges ? a.location : flat(a.location), ...(a.charge ? { charge: a.charge } : {}), ...(a.radical ? { radical: a.radical === 3 ? 1 : a.radical + 1 } : {}), ...(a.isotope ? { isotope: a.isotope } : {}),
     ...((metalled[i] && NONMETAL.has(a.label)) || a.implicitHCount !== undefined ? { explicitValence: valence(i, a) } : {}),
     ...(keep && a.map ? { mapping: a.map } : {}), ...(keep && /^(abs|&\d+|or\d+)$/.test(a.enhanced ?? "") ? { stereoLabel: a.enhanced } : {}) }));
   return { type: "molecule", atoms, bonds };
@@ -1162,6 +1257,9 @@ function convert(input: string, format: string, options: Record<string, string> 
   }
 }
 export const toSmiles = (drawn: Mol): string => convert(ketOf(drawn), "smiles");
+// The drawing's molecules as CML (issue 78), as Indigo writes it: each atom's element, place, charge, isotope and
+// radical, each bond's order and wedge. Import reads it back.
+export const toCml = (drawn: Mol): string => convert(ketOf(drawn), "cml");
 // The drawing's molecules as a molfile: V3000, as ChemDraw 26.1 saves it and Edit > Copy As MOL Text gives it, or
 // V2000 (as ChemDraw puts it on the clipboard). A hydrogen bond is bond type 10 and a quadruple bond single, as
 // ChemDraw writes them. Map numbers and enhanced stereo go too; V2000 has no enhanced stereo. A query or Markush structure is
@@ -1174,6 +1272,16 @@ export function toMolfile(drawn: Mol, v2000 = false): string {
   return v2000 ? convert(v3, "molfile", mode) : v3;
 }
 export const toInchiKey = (drawn: Mol): string => convert(ketOf(drawn), "inchi-key");
+// A structure's standard InChIKey, for the Properties panel's CAS row. It is kept by the structure as drawn, wherever
+// it is on the page (stereo comes from where the atoms are), so a structure moved, or drawn again the same, is not
+// worked out again. Only its atoms and bonds make the key: a part keeps the rest of the drawing (captions, pictures,
+// spectra), which is no chemistry and can be megabytes. Undefined, kept too, when Indigo cannot make one.
+const drawnKeys = new Map<string, string | undefined>();
+export function drawnInchiKey(part: Mol): string | undefined {
+  const o = part.atoms[0]?.location ?? [];
+  const shape = JSON.stringify([part.atoms, part.bonds], (k, v) => (k === "location" ? v.map((c: number, i: number) => Math.round((c - (o[i] ?? 0)) * 1000)) : v));
+  return remembered(drawnKeys, shape, () => { try { return toInchiKey(part) || undefined; } catch { return undefined; } });
+}
 // An SD file: one record for each structure, as ChemDraw saves one. A drawing with R-group definitions is one record,
 // so its definitions stay with it. A lone atom (methane, a label such as MeOH) is a record too; polymer brackets go
 // with each record, where they enclose its atoms.
@@ -1313,7 +1421,8 @@ export function toInchi(drawn: Mol | string): string | undefined {
   try {
     // An aromatic SMILES is made Kekulé as indigoLayout makes it (in a second, not a millisecond, for a fullerene).
     if (typeof drawn === "string") return lastUsed(textInchis, 8, drawn, () => convert(drawn, "inchi", { "dearomatize-on-load": "true", "dearomatize-verification": "false" })) || undefined;
-    return convert(ketOf(drawn), "inchi") || undefined;
+    // InChI takes at most 1,023 atoms: Indigo is not asked for a larger one, as the call would only fail (watched).
+    return drawn.atoms.length > 1023 ? undefined : convert(ketOf(drawn), "inchi") || undefined;
   } catch {
     return undefined;
   }
@@ -1347,10 +1456,12 @@ export function stereoFacts(drawn: Mol, chiral = false): StereoFacts {
   groups.forEach((group, k) => {
     if (!group.some((i) => wedged.has(i) || drawn.atoms[i].cip || drawn.atoms[i].enhanced)) return;
     const flagged = chiral && group.some((i) => /^(&|or)/.test(drawn.atoms[i].enhanced ?? ""));
-    // The structure on its own (atoms in drawing order), and its key: what Indigo's answer depends on.
+    // The structure on its own (atoms in drawing order), and its key: what Indigo's answer depends on. Places are
+    // relative to its first atom, so a structure moved is not read again.
     const ids = [...group].sort((a, b) => a - b), local = new Map(ids.map((d, j) => [d, j]));
     const part: Mol = { atoms: ids.map((i) => renumberCentre(drawn.atoms[i], local)), bonds: bondsOf[k].map((b) => ({ ...b, atoms: [local.get(b.atoms[0])!, local.get(b.atoms[1])!] as [number, number] })) };
-    const key = JSON.stringify([part.atoms.map((a) => [a.label, chemicalText(a.text, a.runs), a.charge, a.isotope, a.radical, a.location[0], a.location[1]]), part.bonds.map((b) => [b.type, b.atoms, b.stereo]), flagged]);
+    const o = part.atoms[0].location, at = (a: Mol["atoms"][number], d: number) => Math.round((a.location[d] - o[d]) * 1e4);
+    const key = JSON.stringify([part.atoms.map((a) => [a.label, chemicalText(a.text, a.runs), a.charge, a.isotope, a.radical, at(a, 0), at(a, 1)]), part.bonds.map((b) => [b.type, b.atoms, b.stereo]), flagged]);
     let f = factsKept.get(key);
     if (!f) {
       // Read with labels expanded; kept by the structure's own atoms (an atom inside a label is left out).
@@ -1561,7 +1672,17 @@ export function cleanUp(mol: Mol, ids?: Set<number>, work = WORK, rounds?: numbe
   // messy (check.ts). Flatten first to clean one up.
   const pi = new Set(mol.atoms.flatMap((a) => a.centre?.atoms ?? []));
   const groups = fragments(mol, false).filter((frag) => frag.length > 1 && frag.length <= MOST_CLEAN && (!ids?.size || frag.some((i) => ids.has(i))) && !frag.some((i) => mol.atoms[i].centre || mol.atoms[i].location[2] || pi.has(i)));
+  let chains = false;
   for (const frag of groups) {
+    const [ox, oy] = centre(frag.map((i) => mol.atoms[i].location));
+    // A peptide or oligonucleotide: as residue labels, in rows (sequence.ts); drawn out, cleaned and then along a
+    // straight backbone (chain.ts), each residue as cleaned.
+    const placeAt = (laid: Map<number, [number, number]>) => {
+      const own = ownScale(frag), [cx, cy] = centre([...laid.values()]);
+      for (const [i, [x, y]] of laid) atoms[i] = { ...atoms[i], location: [ox + (x - cx) * own, oy + (y - cy) * own, 0] };
+    };
+    const rows = labelRows(mol, frag);
+    if (rows) { placeAt(rows); continue; }
     const local = new Map(frag.map((i, k) => [i, k]));
     const bonds = mol.bonds.filter((b) => local.has(b.atoms[0]) && local.has(b.atoms[1]));
     const out = clean2d(frag.map((i) => mol.atoms[i].location), bonds.map((b) => ({ atoms: [local.get(b.atoms[0])!, local.get(b.atoms[1])!], order: shapeType(b.type) })), work * Math.min(1, 2 / groups.length), SAFETY * Math.min(1, 2 / groups.length), rounds);
@@ -1569,13 +1690,13 @@ export function cleanUp(mol: Mol, ids?: Set<number>, work = WORK, rounds?: numbe
       const [p, q] = [out[local.get(b.atoms[0])!], out[local.get(b.atoms[1])!]];
       return Math.hypot(q[0] - p[0], q[1] - p[1]);
     }).sort((a, b) => a - b);
-    const scale = ownScale(frag) / (lengths[Math.floor(lengths.length / 2)] || 1);
-    const centre = (pts: readonly (readonly number[])[]) => [0, 1].map((k) => pts.reduce((sum, p) => sum + p[k], 0) / pts.length);
-    const [ox, oy] = centre(frag.map((i) => mol.atoms[i].location)), [nx, ny] = centre(out);
+    const scale = ownScale(frag) / (lengths[Math.floor(lengths.length / 2)] || 1), [nx, ny] = centre(out);
     frag.forEach((i, k) => {
       const [x, y] = out[k];
       atoms[i] = { ...atoms[i], location: [ox + (x - nx) * scale, oy + (y - ny) * scale, 0] };
     });
+    const chain = chainLayout({ ...mol, atoms }, frag);
+    if (chain) { placeAt(chain); chains = true; continue; }
     // As ChemDraw's clean up leaves it: a ring structure turned so its bottom ring bond is level, and a structure
     // without rings turned so the most bonds lie at a multiple of 30°.
     const turn = levelTurn({ ...mol, atoms }, frag);
@@ -1584,15 +1705,17 @@ export function cleanUp(mol: Mol, ids?: Set<number>, work = WORK, rounds?: numbe
       frag.forEach((i) => { const [x, y] = atoms[i].location; atoms[i] = { ...atoms[i], location: [ox + (x - ox) * c - (y - oy) * s, oy + (x - ox) * s + (y - oy) * c, 0] }; });
     }
   }
+  // A chain's centres keep their hands (keptHands).
+  const kept = chains ? keptHands(mol, { ...mol, atoms }).bonds : mol.bonds;
   if (labels) for (const frag of groups) {
     const own = ownScale(frag), local = new Map(frag.map((i, k) => [i, k]));
     const piece: Mol = { atoms: frag.map((i) => ({ ...atoms[i], location: [atoms[i].location[0] / own, atoms[i].location[1] / own, 0], scale: scaleOf(atoms[i]) / own })),
-      bonds: mol.bonds.filter((b) => local.has(b.atoms[0]) && local.has(b.atoms[1])).map((b) => ({ ...b, atoms: [local.get(b.atoms[0])!, local.get(b.atoms[1])!] })) };
+      bonds: kept.filter((b) => local.has(b.atoms[0]) && local.has(b.atoms[1])).map((b) => ({ ...b, atoms: [local.get(b.atoms[0])!, local.get(b.atoms[1])!] })) };
     if (!inkHits(piece, inkBoxes(piece)).length) continue;
     const moved = nudged(piece), was = toInchi(piece);
     if (was && moved !== piece && toInchi(moved) === was) frag.forEach((i, k) => { atoms[i] = { ...atoms[i], location: [moved.atoms[k].location[0] * own, moved.atoms[k].location[1] * own, 0] }; });
   }
-  return { ...mol, atoms };
+  return { ...mol, atoms, bonds: kept };
   function ownScale(frag: number[]) { return frag.map((i) => scaleOf(mol.atoms[i])).sort((a, b) => a - b)[Math.floor(frag.length / 2)]; }
 }
 
@@ -1600,7 +1723,7 @@ export function cleanUp(mol: Mol, ids?: Set<number>, work = WORK, rounds?: numbe
 // in the whole molecule (a homolytic cleavage). Each piece that a cut bond touched, with its formula and exact mass.
 export function fragmentMasses(mol: Mol, cut: number[]): { atoms: number[]; formula: string; exact: number }[] | undefined {
   if (!indigo || !cut.length) return undefined;
-  const ind = indigo, full = expandLabels(mol), cutSet = new Set(cut);
+  const full = expandLabels(mol), cutSet = new Set(cut);
   const used = full.atoms.map(() => 0);
   full.bonds.forEach((b) => b.atoms.forEach((i) => (used[i] += orderOf(b.type))));
   const h = full.atoms.map((a, i) => a.implicitHCount ?? hydrogens(a.label, a.charge ?? 0, used[i], a.radical));
@@ -1612,17 +1735,13 @@ export function fragmentMasses(mol: Mol, cut: number[]): { atoms: number[]; form
   for (const r of touched) {
     const atoms = full.atoms.map((_, i) => i).filter((i) => find(i) === r), local = new Map(atoms.map((i, k) => [i, k]));
     const ket = JSON.stringify({ root: { nodes: [{ $ref: "mol0" }] }, mol0: { type: "molecule",
-      atoms: atoms.map((i) => ({ label: full.atoms[i].label, location: full.atoms[i].location, implicitHCount: h[i], ...(full.atoms[i].charge ? { charge: full.atoms[i].charge } : {}) })),
+      atoms: atoms.map((i) => ({ label: full.atoms[i].label, location: flat(full.atoms[i].location), implicitHCount: h[i], ...(full.atoms[i].charge ? { charge: full.atoms[i].charge } : {}) })),
       bonds: full.bonds.filter((b, k) => !cutSet.has(k) && local.has(b.atoms[0]) && local.has(b.atoms[1])).map((b) => ({ type: b.type === QUADRUPLE ? 1 : b.type, atoms: [local.get(b.atoms[0]), local.get(b.atoms[1])] })) } });
-    const opts = new ind.MapStringString(), sel = new ind.VectorInt();
     try {
-      const res = JSON.parse(ind.calculate(ket, opts, sel));
+      const res = calculate(ket);
       out.push({ atoms: atoms.filter((i) => i < mol.atoms.length), formula: String(res["gross-formula"]).replace(/\s+/g, ""), exact: Number(res["monoisotopic-mass"]) });
     } catch {
       return undefined;
-    } finally {
-      opts.delete();
-      sel.delete();
     }
   }
   return out;
@@ -1664,35 +1783,33 @@ export type Structure = { formula: string; weight: number; exact: number; compos
 const structured = new Map<string, Structure | undefined>();
 export function structures(mol: Mol, groups = fragments(mol)): (Structure | undefined)[] | undefined {
   if (!indigo || !mol.atoms.length) return undefined;
-  const ind = indigo, opts = new ind.MapStringString(), sel = new ind.VectorInt(), out: (Structure | undefined)[] = [];
-  // Indigo reports a failed logP or MR as -1.
-  const num = (s: string) => (s.trim() === "-1.000000" ? undefined : Number(s));
-  try {
-    for (const ids of groups.slice(0, 12)) {
-      const part = subset(mol, new Set(ids));
-      // A polymer: its repeat units counted as its brackets say (no logP or properties for a polymer).
-      const polymer = polymerValues(part);
-      if (polymer) { out.push(polymer); continue; }
-      out.push(remembered(structured, contentOf(part), () => {
-        try {
-          const ket = ketOf(part, { wedges: false }), calc = JSON.parse(ind.calculate(ket, opts, sel));
-          const heavy = expandLabels(part).atoms.filter((a) => a.label !== "H").length;
-          // Ferrocene's pieces (its multi-centre attachments are left out of the chemistry) as one compound.
-          const one = summed(calc);
-          return {
-            formula: one.formula, weight: one.weight, exact: one.exact, composition: one.composition,
-            // ChemDraw stops at 150 heavy atoms for logP and 1,000 atoms for the rest; so does Octet.
-            ...(heavy <= 150 ? { logP: num(ind.logp(ket, opts)), mr: num(ind.molarRefractivity(ket, opts)) } : {}),
-            graph: heavy <= 1000 ? graphOf(expandLabels(part)) : undefined,
-          };
-        } catch { return undefined; } // a structure Indigo cannot read has no values
-      }));
-    }
-    return out.some(Boolean) ? out : undefined;
-  } finally {
-    opts.delete();
-    sel.delete();
+  const out: (Structure | undefined)[] = [];
+  // Wildman–Crippen logP and MR. Indigo reports a failed logP or MR as -1.
+  const crippen = (ket: string) => {
+    const ind = engine(), opts = new ind.MapStringString(), num = (s: string) => (s.trim() === "-1.000000" ? undefined : Number(s));
+    try { return { logP: num(ind.logp(ket, opts)), mr: num(ind.molarRefractivity(ket, opts)) }; } finally { opts.delete(); }
+  };
+  for (const ids of groups.slice(0, 12)) {
+    const part = subset(mol, new Set(ids));
+    // A polymer: its repeat units counted as its brackets say (no logP or properties for a polymer).
+    const polymer = polymerValues(part);
+    if (polymer) { out.push(polymer); continue; }
+    out.push(remembered(structured, contentOf(part), () => {
+      try {
+        const ket = ketOf(part, { wedges: false }), calc = calculate(ket);
+        const heavy = expandLabels(part).atoms.filter((a) => a.label !== "H").length;
+        // Ferrocene's pieces (its multi-centre attachments are left out of the chemistry) as one compound.
+        const one = summed(calc);
+        return {
+          formula: one.formula, weight: one.weight, exact: one.exact, composition: one.composition,
+          // ChemDraw stops at 150 heavy atoms for logP and 1,000 atoms for the rest; so does Octet.
+          ...(heavy <= 150 ? crippen(ket) : {}),
+          graph: heavy <= 1000 ? graphOf(expandLabels(part)) : undefined,
+        };
+      } catch { return undefined; } // a structure Indigo cannot read has no values
+    }));
   }
+  return out.some(Boolean) ? out : undefined;
 }
 
 // Formula and masses for the drawing or a selection, one entry for each structure in it (the first limit of them),
@@ -1701,12 +1818,17 @@ export function structures(mol: Mol, groups = fragments(mol)): (Structure | unde
 // standard InChI (names.ts abbreviationOf), given as each structure's abbreviation (TREN).
 export type Analysis = { formula: string; weight: number; exact: number; repeat?: Repeat; abbreviation?: string }[];
 const analysed = new Map<string, Analysis | undefined>(), inchis = new Map<string, string | undefined>();
+// The largest structure Octet asks a name or an abbreviation for by its InChI (here, and the names for screen readers
+// in Editor.tsx). The InChI of a larger fused ring system can take seconds, or overflow Indigo's stack (watched) and
+// never end. Octet's own abbreviations have up to 77 atoms. Here hydrogens drawn as atoms do not count, so Pd(PPh3)4
+// read from a file with its 60 hydrogens is still cited.
+export const MOST_NAMED = 120;
 export function analyse(mol: Mol, limit = Infinity, cite?: (inchi: string | undefined) => string | undefined): Analysis | undefined {
   if (!indigo || !mol.atoms.length) return undefined;
-  const out: Analysis = [], parts = pieces(mol);
+  const out: Analysis = [], parts = pieces(mol), named = (m: Mol) => m.atoms.filter((a) => a.label !== "H").length <= MOST_NAMED;
   // Pieces that are one compound together, as a salt ([Ru(bpy)3]Cl2), a complex with its ligands apart (Ni(cod)2) or
   // ferrocene's ions (dppf), are one entry when they are all there is and have an abbreviation.
-  if (cite && parts.length > 1 && parts.length <= 12 && mol.atoms.length <= 300 && !mol.shapes?.some((sh) => sh.polymer)) {
+  if (cite && parts.length > 1 && parts.length <= 12 && named(mol) && !mol.shapes?.some((sh) => sh.polymer)) {
     const abbreviation = cite(remembered(inchis, contentOf(mol), () => toInchi(mol)));
     const entries = abbreviation ? parts.flatMap((part) => remembered(analysed, contentOf(part), () => analyseAll(part)) ?? []) : [];
     if (abbreviation && entries.length) {
@@ -1720,7 +1842,7 @@ export function analyse(mol: Mol, limit = Infinity, cite?: (inchi: string | unde
     const polymer = mol.shapes?.some((sh) => sh.polymer) ? polymerValues({ ...part, shapes: mol.shapes }) : undefined;
     if (polymer) { out.push(polymer); continue; }
     const entries = remembered(analysed, contentOf(part), () => analyseAll(part)) ?? [];
-    const abbreviation = cite && entries.length === 1 ? cite(remembered(inchis, contentOf(part), () => toInchi(part))) : undefined;
+    const abbreviation = cite && entries.length === 1 && named(part) ? cite(remembered(inchis, contentOf(part), () => toInchi(part))) : undefined;
     // A structure held together by multi-centre attachments (ferrocene) is one compound, not its pieces.
     if (entries.length > 1 && part.atoms.some((a) => a.centre)) {
       const total: Record<string, number> = {};
@@ -1730,6 +1852,8 @@ export function analyse(mol: Mol, limit = Infinity, cite?: (inchi: string | unde
   }
   return out.length ? out.slice(0, limit) : undefined;
 }
+// A structure's standard InChI, kept by its content as analyse keeps it (the reagent table asks for a known liquid's).
+export const keptInchi = (mol: Mol) => remembered(inchis, contentOf(mol), () => toInchi(mol));
 // Indigo's values for a molecule as one compound: its pieces ("C5 H5; C5 H5; Fe") added together.
 function summed(calc: Record<string, unknown>): { formula: string; weight: number; exact: number; composition: string } {
   const split = (key: string) => String(calc[key]).split(";").map((v) => v.trim());
@@ -1752,7 +1876,7 @@ type Values = { formula: string; weight: number; exact: number; composition: str
 function polymerValues(part: Mol): Values | undefined {
   const brackets = polymerBrackets(part).filter((b) => ["sru", "mult", "param"].includes(b.sh.polymer!.usage));
   if (!brackets.length || !indigo) return undefined;
-  const ind = indigo, { mol: x, from } = expandWithOrigins(part), used = x.atoms.map(() => 0), deg = part.atoms.map(() => 0);
+  const { mol: x, from } = expandWithOrigins(part), used = x.atoms.map(() => 0), deg = part.atoms.map(() => 0);
   x.bonds.forEach((b) => b.atoms.forEach((i) => (used[i] += orderOf(b.type))));
   part.bonds.forEach((b) => b.atoms.forEach((i) => deg[i]++));
   const h = x.atoms.map((a, i) => a.implicitHCount ?? hydrogens(a.label, a.charge ?? 0, used[i], a.radical === 3 ? 2 : a.radical));
@@ -1767,18 +1891,17 @@ function polymerValues(part: Mol): Values | undefined {
     if (!atoms.length) return { counts: {} as Record<string, number>, weight: 0, exact: 0, masses: {} as Record<string, number> };
     const local = new Map(atoms.map((i, k) => [i, k]));
     const ket = JSON.stringify({ root: { nodes: [{ $ref: "mol0" }] }, mol0: { type: "molecule",
-      atoms: atoms.map((i) => ({ label: x.atoms[i].label, location: x.atoms[i].location, implicitHCount: h[i], ...(x.atoms[i].charge ? { charge: x.atoms[i].charge } : {}), ...(x.atoms[i].isotope ? { isotope: x.atoms[i].isotope } : {}) })),
+      atoms: atoms.map((i) => ({ label: x.atoms[i].label, location: flat(x.atoms[i].location), implicitHCount: h[i], ...(x.atoms[i].charge ? { charge: x.atoms[i].charge } : {}), ...(x.atoms[i].isotope ? { isotope: x.atoms[i].isotope } : {}) })),
       bonds: x.bonds.filter((b) => local.has(b.atoms[0]) && local.has(b.atoms[1])).map((b) => ({ type: Math.min(3, b.type), atoms: [local.get(b.atoms[0]), local.get(b.atoms[1])] })) } });
-    const opts = new ind.MapStringString(), sel = new ind.VectorInt();
     try {
       // Indigo gives each piece apart ("C H3; C H3"): their sums.
-      const r = JSON.parse(ind.calculate(ket, opts, sel)), split = (key: string) => String(r[key]).split(";").map((v) => v.trim());
+      const r = calculate(ket), split = (key: string) => String(r[key]).split(";").map((v) => v.trim());
       const weights = split("molecular-weight").map(Number), exacts = split("monoisotopic-mass").map(Number), masses: Record<string, number> = {}, counts: Record<string, number> = {};
       split("mass-composition").forEach((c, j) => { const t = c.split(/\s+/); for (let k = 0; k + 1 < t.length; k += 2) masses[t[k]] = (masses[t[k]] ?? 0) + (Number(t[k + 1]) * weights[j]) / 100; });
       for (const f of split("gross-formula")) { const c = formulaCounts(f); if (!c) return undefined; for (const [el, n] of Object.entries(c)) counts[el] = (counts[el] ?? 0) + n; }
       const weight = weights.reduce((a, b) => a + b, 0), exact = exacts.reduce((a, b) => a + b, 0);
       return Number.isFinite(weight) ? { counts, weight, exact, masses } : undefined;
-    } catch { return undefined; } finally { opts.delete(); sel.delete(); }
+    } catch { return undefined; }
   };
   const ends = calc(x.atoms.map((_, j) => j).filter((j) => !inOf.has(from[j]) && !open.has(from[j])));
   const units = brackets.map((b, k) => ({ p: b.sh.polymer!, v: calc(x.atoms.map((_, j) => j).filter((j) => inOf.get(from[j]) === k)) }));
@@ -1841,32 +1964,40 @@ function pieces(mol: Mol): Mol[] {
 }
 // A structure's content as text: what its formula, masses and properties come from (not where it is drawn).
 const contentOf = (m: Mol) => JSON.stringify([m.atoms.map((a) => [a.label, chemicalText(a.text, a.runs), a.charge, a.isotope, a.radical, a.implicitHCount, a.chemical, a.attach, a.bead, a.centre]), m.bonds.map((b) => [b.type, b.stereo, b.atoms])]);
-// A value kept by its key, so it is worked out only once. The store is cleared when it grows large.
+// A value kept by its key, so it is worked out only once. The store is cleared when it grows large. A value worked
+// out with no Indigo (while a fresh one loads, see watched) is not kept.
 function remembered<T>(store: Map<string, T>, key: string, make: () => T): T {
   if (store.has(key)) return store.get(key) as T;
   if (store.size >= 500) store.clear();
-  const value = make();
-  store.set(key, value);
+  const on = !!indigo, value = make();
+  if (on) store.set(key, value);
   return value;
+}
+// Indigo's formula, masses and composition for KET or SMILES, each structure apart ("C8 H9 N O2; C4 H12 N"). Throws
+// when Indigo cannot read it.
+function calculate(input: string): Record<string, unknown> {
+  const ind = engine(), opts = new ind.MapStringString(), sel = new ind.VectorInt();
+  try {
+    return JSON.parse(ind.calculate(input, opts, sel));
+  } finally {
+    opts.delete();
+    sel.delete();
+  }
 }
 // Formula and masses for each structure Indigo finds in a molecule, in one call. A structure with no formula or no
 // weight (a label Indigo cannot read, alone) has no entry. Indigo gives no exact mass for a structure it reads as a
 // bad valence: its exact mass is then not a number.
 function analyseAll(mol: Mol): Analysis | undefined {
-  const ind = engine(), opts = new ind.MapStringString(), sel = new ind.VectorInt();
   try {
     // A hydrogen bond goes too, so two molecules joined by one are one structure, as drawn.
     const ket = ketOf(mol, { wedges: false, hbonds: true });
     // Indigo reports each structure separately ("C8 H9 N O2; C4 H12 N"): one entry per structure.
-    const out = JSON.parse(ind.calculate(ket, opts, sel));
+    const out = calculate(ket);
     const split = (key: string) => String(out[key]).split(";").map((x) => x.trim());
     const formulas = split("gross-formula").map((f) => f.replace(/\s+/g, "")), weights = split("molecular-weight").map(Number), exacts = split("monoisotopic-mass").map(Number);
     return formulas.map((formula, k) => ({ formula, weight: weights[k], exact: exacts[k] })).filter((a) => a.formula && Number.isFinite(a.weight));
   } catch {
     return undefined;
-  } finally {
-    opts.delete();
-    sel.delete();
   }
 }
 
@@ -1875,9 +2006,7 @@ function analyseAll(mol: Mol): Analysis | undefined {
 const reagents = new Map<string, { formula: string; weight: number } | undefined>();
 export function smilesWeight(smiles: string): { formula: string; weight: number } | undefined {
   if (!indigo) return undefined;
-  const ind = indigo;
   return remembered(reagents, smiles, () => {
-    const opts = new ind.MapStringString(), sel = new ind.VectorInt();
-    try { const one = summed(JSON.parse(ind.calculate(smiles, opts, sel))); return Number.isFinite(one.weight) && one.weight > 0 ? { formula: one.formula, weight: one.weight } : undefined; } catch { return undefined; } finally { opts.delete(); sel.delete(); }
+    try { const one = summed(calculate(smiles)); return Number.isFinite(one.weight) && one.weight > 0 ? { formula: one.formula, weight: one.weight } : undefined; } catch { return undefined; }
   });
 }

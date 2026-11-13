@@ -33,6 +33,9 @@ export const ACTIONS: Action[] = [
   { id: "atom.nickname", name: "Choose a nickname for the atom", group: "Atoms", place: "atom" },
   { id: "charge.plus", name: "Add a positive charge", group: "Atoms", place: "atom" },
   { id: "charge.minus", name: "Add a negative charge", group: "Atoms", place: "atom" },
+  // The Symbols tool's circled charges (issue 60). No key by default: ChemDraw's CHARGE command has only + and -.
+  { id: "charge.circledPlus", name: "Add a circled positive charge", group: "Atoms", place: "atom" },
+  { id: "charge.circledMinus", name: "Add a circled negative charge", group: "Atoms", place: "atom" },
   group("chain", "Add a bond (zig-zag)"), group("other", "Add a bond the other way"), group("acetyl", "Add an acetyl, or make C=O"),
   group("phenyl", "Add a phenyl"), group("wedgeMe", "Add a wedged methyl"), group("hashMe", "Add a hashed methyl"),
   group("cyclohexyl", "Add a cyclohexyl"), group("cyclopentyl", "Add a cyclopentyl"), group("cyclobutyl", "Add a cyclobutyl"),
@@ -197,7 +200,7 @@ export function toAccelerator(key: string): string {
 // and Close Window run everywhere: they ask about unsaved changes over any dialog (src-tauri/src/quit.rs). Cut, Copy and
 // Paste (Octet's own items on Linux) run everywhere too: they work on the text being typed, and the drawing takes them
 // only when nothing covers it.
-const HOME_COMMANDS = ["home", "new", "open", "settings", "about", "tutorial", "shortcuts", "report_problem", "check_updates", "select_all"];
+const HOME_COMMANDS = ["home", "new", "open", "edit_word", "settings", "about", "tutorial", "shortcuts", "report_problem", "check_updates", "select_all"];
 export function menuRuns(id: string, over: { home: boolean; modal: boolean; typing: boolean }) {
   if (["quit", "close", "cut", "copy", "paste"].includes(id)) return true;
   if (over.typing && ["undo", "redo", "select_all"].includes(id)) return true;
@@ -287,6 +290,17 @@ export function tileTo(key: string, from: number, tiles: Rect[]): number | undef
   const top = step > 0 ? Math.min(...next.map(({ r }) => r.y)) : Math.max(...next.map(({ r }) => r.y));
   const row = next.filter(({ r }) => Math.abs(r.y - top) < half), off = (r: Rect) => Math.abs(mid(r) - mid(at));
   return row.reduce((a, b) => (off(b.r) < off(a.r) - 0.5 ? b : a)).k;
+}
+
+// A selection box dragged over Home's tiles: the tiles it touches (by key), with the ones selected before it began.
+// how: Shift adds them, ⌘ (Ctrl on Windows and Linux) turns each one over, as clicks do. A plain box takes its own only.
+export function boxPicks(box: Rect, tiles: (Rect & { key: string })[], before: ReadonlySet<string>, how?: "add" | "turn"): Set<string> {
+  const out = new Set(how ? before : []);
+  for (const t of tiles) {
+    if (t.x >= box.x + box.width || box.x >= t.x + t.width || t.y >= box.y + box.height || box.y >= t.y + t.height) continue;
+    if (how !== "turn" || !out.delete(t.key)) out.add(t.key);
+  }
+  return out;
 }
 
 // Feedback's keys (for testers, REL-8): ⌘ (Ctrl on Windows and Linux) held, with 1, 2 and 3 all pressed within

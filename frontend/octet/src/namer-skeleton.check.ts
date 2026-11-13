@@ -117,6 +117,12 @@ run("von Baeyer", [
   "pentacyclo[4.3.0.0^{2,5}.0^{3,8}.0^{4,7}]nonane = pentacyclo[4.3.0.0²,⁵.0³,⁸.0⁴,⁷]nonane",
   "smiles:CN1[C@@H]2CC(C[C@H]1[C@H]1[C@@H]2O1)OC(=O)[C@H](CO)c1ccccc1 = (1S,2S,4R,5R)-9-methyl-3-oxa-9-azatricyclo[3.3.1.0²,⁴]nonan-7-yl (2S)-3-hydroxy-2-phenylpropanoate",
   "ajmalene = (1R,9R,10S,12S,13S,16S)-13-ethyl-8-methyl-8,15-diazahexacyclo[14.2.1.0¹,⁹.0²,⁷.0¹⁰,¹⁵.0¹²,¹⁷]nonadeca-2,4,6,17-tetraene",
+  // A double bond from a bridgehead takes a compound locant (P-31.1.4.2.4) where the benzene ring drawn the other way
+  // round does not avoid it; galantamine has the same name drawn either way round.
+  "bicyclo[3.3.1]non-1(9)-ene = bicyclo[3.3.1]non-1(9)-ene", "bicyclo[4.2.0]oct-1(6)-ene = bicyclo[4.2.0]oct-1(6)-ene",
+  "smiles:C1CC2=C1C=CC=C2 = bicyclo[4.2.0]octa-1,3,5-triene", "smiles:C1CC2=CC=CC=C12 = bicyclo[4.2.0]octa-1,3,5-triene",
+  "smiles:COC1=CC=C2CN(CC[C@]34[C@@H](OC1=C42)C[C@H](C=C3)O)C = (1S,12S,14R)-9-methoxy-4-methyl-11-oxa-4-azatetracyclo[8.6.1.0¹,¹².0⁶,¹⁷]heptadeca-6,8,10(17),15-tetraen-14-ol",
+  "smiles:COC1C=CC=2CN(CC[C@]34[C@@H](OC=1C42)C[C@H](C=C3)O)C = (1S,12S,14R)-9-methoxy-4-methyl-11-oxa-4-azatetracyclo[8.6.1.0¹,¹².0⁶,¹⁷]heptadeca-6,8,10(17),15-tetraen-14-ol",
 ]);
 
 // A ring triple bond in a fused system: a double bond of the parent made triple by didehydro, cited with the hydro
@@ -183,6 +189,12 @@ run("drugs", [
   "smiles:NC(N)=NS(=O)(=O)c1ccccc1 = N''-(benzenesulfonyl)guanidine", "smiles:CN/C(NCC)=N\\C#N = (E)-N''-cyano-N-ethyl-N'-methylguanidine",
   "smiles:CN/C(NCCSCc1nc[nH]c1C)=N\\C#N", "smiles:C1OC2COC3OCOC3C2O1 = 5,5a,8a,8b-tetrahydro-2H,3aH,7H-bis[1,3]dioxolo[4,5-b:4',5'-d]pyran",
   "smiles:CC1(C)O[C@@H]2CO[C@@]3(COS(N)(=O)=O)OC(C)(C)O[C@H]3[C@@H]2O1",
+  // E and Z on an imino prefix's C=N, at the parent atom's locant: the cephalosporins' (2Z)-methoxyiminoacetyl group.
+  "smiles:CO\\N=C(/C(=O)N[C@H]1[C@H]2SCC(COC(C)=O)=C(N2C1=O)C(O)=O)c1csc(N)n1 = (6R,7R)-3-[(acetyloxy)methyl]-7-{[(2Z)-(2-amino-1,3-thiazol-4-yl)(methoxyimino)acetyl]amino}-8-oxo-5-thia-1-azabicyclo[4.2.0]oct-2-ene-2-carboxylic acid",
+  "smiles:O/N=C(\\C)C(=O)O = (2E)-2-(hydroxyimino)propanoic acid", "smiles:O\\N=C(\\C)C(=O)O = (2Z)-2-(hydroxyimino)propanoic acid",
+  // A thioate's alkyl names the atom it is on with more than one ester too (tiomesterone); not diacetate.
+  "smiles:CC(=O)SC1CCC(SC(C)=O)CC1 = S-[4-(acetylsulfanyl)cyclohexyl] ethanethioate",
+  "smiles:CC(=O)S[C@@H]1CC2=CC(=O)C[C@@H]([C@@]2([C@@H]3[C@@H]1[C@@H]4CC[C@]([C@]4(CC3)C)(C)O)C)SC(=O)C = S-[(1S,7R,8S,9S,10R,13S,14S,17S)-1-(acetylsulfanyl)-17-hydroxy-10,13,17-trimethyl-3-oxo-2,3,6,7,8,9,10,11,12,13,14,15,16,17-tetradecahydro-1H-cyclopenta[a]phenanthren-7-yl] ethanethioate",
 ]);
 
 // Ring imines, as ring ketones are (with indicated and added hydrogen), and nitroso on a carbonyl carbon.

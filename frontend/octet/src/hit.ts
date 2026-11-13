@@ -1,7 +1,7 @@
 // Hit testing against arrows, orbitals and shapes. An edit replaces an arrow or shape and never changes it, so its
 // paths are kept with it: a pointer move does not make every path again, and a path whose box is not near the
 // pointer is passed over without a distance check.
-import { arrowPath, orbitalPaths, shapePaths, type Arrow, type Box, type Shape } from "./render.ts";
+import { arrowPath, membrane, orbitalPaths, shapePaths, type Arrow, type Box, type Shape } from "./render.ts";
 import type { P } from "./edit.ts";
 
 // A value kept with the object it is made from, for one `by` (a scale or a document style). Made again for another.
@@ -28,8 +28,13 @@ function traced(paths: P[][]): Traced {
 }
 const arrowTraces = new WeakMap<Arrow, [unknown, Traced]>(), shapeTraces = new WeakMap<Shape, [unknown, Traced]>();
 const lobeTraces = new WeakMap<Arrow, [unknown, { path: P[]; second: boolean }[]]>();
-// An arrow's path (arrowPath) at k px per bond length.
-export const arrowTrace = (a: Arrow, k: number) => kept(arrowTraces, a, k, () => traced([arrowPath(a, k)]));
+// An arrow's path (arrowPath) at k px per bond length, always first. A membrane's tails and heads (a diagonal each)
+// come after it, so its box takes in all of it and a click on a lipid picks it at any zoom.
+export const arrowTrace = (a: Arrow, k: number) => kept(arrowTraces, a, k, () => {
+  if (a.style !== "membrane") return traced([arrowPath(a, k)]);
+  const { heads, tails } = membrane(a, k);
+  return traced([arrowPath(a, k), ...tails, ...heads.map(({ at: [x, y], r }) => [[x - r, y - r], [x + r, y + r]] as P[])]);
+});
 // A shape's outline (shapePaths) at k px per bond length.
 export const shapeTrace = (sh: Shape, k: number, bond: number) => kept(shapeTraces, sh, `${k} ${bond}`, () => traced(shapePaths(sh, k, bond)));
 // An orbital's lobes (orbitalPaths) at k px per bond length.

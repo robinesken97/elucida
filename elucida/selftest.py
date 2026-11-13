@@ -1882,6 +1882,16 @@ def selftest(outdir, with_isnet=False):
             F_e, rend_ = fig_e()
             off_ = [float(np.nanmedian(c_["y"] - c_["val"])) for c_ in F_e.curves]      # Sim., Messung 2, Messung 1
             assert F_e.legend is not None and abs(off_[0] - off_[1]) < 1e-9 and off_[2] < off_[1], off_
+            w.epr_state["sim_below"] = True                    # Schalter: Simulation auf eigener Ebene direkt darunter
+            F_e, rend_ = fig_e()
+            off_ = [float(np.nanmedian(c_["y"] - c_["val"])) for c_ in F_e.curves]
+            assert off_[2] < off_[0] < off_[1], off_
+            d1_ = off_[1] - off_[0]
+            w.epr_state["sim_gap"] = 0.5                       # Abstand Messung-Simulation einstellbar
+            F_e, rend_ = fig_e()
+            off_ = [float(np.nanmedian(c_["y"] - c_["val"])) for c_ in F_e.curves]
+            assert abs((off_[1] - off_[0]) - 0.5 * d1_) < 1e-6 * abs(d1_), (off_, d1_)
+            w.epr_state.update(sim_below=False, sim_gap=1.0)
             # ohne Zeit in der Datei (ASCII): Namen bleiben, Hinweis statt geschaetzter Werte
             ea_ = [t_e._new("exp", str(eprdir / "sim.txt")) for _ in range(2)]
             w.epr_state.update(entries=ea_, trace_label="time")
@@ -5551,7 +5561,8 @@ def selftest(outdir, with_isnet=False):
                      if not l_.startswith(("Program Version", "****ORCA"))]
             t_mr_ = DFT.read_text(f4_orca("f4_mr_tmp.out", 0, 0, "1.790000", sp=-10.31))
             k_mr_ = t_mr_.index("                             ****ORCA TERMINATED NORMALLY****")
-            (ddir / "f4_mr_A.out").write_text(t_mr_[:k_mr_] + "\n".join(body_) + "\n" + t_mr_[k_mr_:], encoding="utf-8")
+            (ddir / "f4_mr_A.out").write_text(t_mr_[:k_mr_] + "\n".join(body_) + "\n" + t_mr_[k_mr_:], encoding="utf-8",
+                                                 newline="")              # Vorlage hat schon \r\n (Windows: sonst \r\r\n)
             pg_.prof["mode"], pg_.prof["y"] = "levels", "G"
             pg_.load_sp([sp_f4_[0], str(ddir / "f4_mr_A.out")])          # DLPNO auf TS, Multireferenz auf A
             rows_mr_ = pg_.levels_spec()[0]
@@ -7887,6 +7898,7 @@ def selftest(outdir, with_isnet=False):
                 xs_f1 = [d_.x() for d_ in x_.dots + x_.opt]
                 assert len({b_ - a_ for a_, b_ in zip(xs_f1, xs_f1[1:])}) == 1, xs_f1
             for x_ in (hd_f1, row_f1):
+                x_.setMinimumSize(0, 0)                            # activate() oben setzt die Mindestbreite des Layouts
                 x_.resize(1000, 60)
                 WEL.fit_more(x_)
             assert row_f1.opt[0].isHidden() and hd_f1.opt[0].isHidden() and not row_f1.more.isHidden()
@@ -8527,7 +8539,8 @@ def selftest(outdir, with_isnet=False):
                 for x_ in root_.findChildren(PB31_):                 # Knopf nur mit Symbol: Symbol mittig (icon(lone=True))
                     if not x_.text() and not x_.icon().isNull() and x_.icon().cacheKey() not in STYLE._LONE:
                         bad31_.append((where_, "icon not centred", x_.toolTip() or x_.objectName()))
-                for lb_ in root_.findChildren(LB31_):
+                # Windows ohne Bildschirm (offscreen) hat keine echte Schrift: alles misst dort viel zu breit
+                for lb_ in root_.findChildren(LB31_) if sys.platform != "win32" else ():
                     if lb_.wordWrap() and lb_.maximumWidth() == STYLE.LABEL_W and lb_.text() and "<" not in lb_.text() and \
                             max(lb_.fontMetrics().horizontalAdvance(t_) for t_ in lb_.text().split()) > STYLE.LABEL_W:
                         bad31_.append((where_, "word", lb_.text()))

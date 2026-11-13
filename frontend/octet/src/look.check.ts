@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { elementColours, HIGHLIGHT_COLOURS, RING_FILLS } from "./docstyle.ts";
+import { widthOf } from "./arial.ts";
 
 const src = new URL(".", import.meta.url);
 const read = (name: string) => readFileSync(new URL(name, src), "utf8");
@@ -39,7 +40,7 @@ for (const [file, text] of tsx) {
 }
 // Every close button in a panel header says Close.
 for (const [file, text] of tsx) {
-  for (const m of text.matchAll(/className="actions-close"[^>]*aria-label="([^"]+)"/g)) assert.ok(/^(Close|Full screen)/.test(m[1]), `${file}: close button "${m[1]}"`);
+  for (const m of text.matchAll(/className="actions-close"[^>]*aria-label="([^"]+)"/g)) assert.ok(/^(Close|Full screen|Leave full screen|Minimise)/.test(m[1]), `${file}: close button "${m[1]}"`);
 }
 // One icon for one action (BRAND.md Iconography): across the Actions panel, the menu commands and the palette's own
 // rows, an icon stands for one command. Three pairs share an icon but never show together: Copy (a mixed selection) and
@@ -83,6 +84,37 @@ for (const line of css.split("\n")) {
   if (!m || /\.home-wordmark|\.nmr-shift/.test(selector)) continue;
   assert.ok([11, 13, 15, 20, 32, 64].includes(Number(m[1])), `editor.css: ${selector.trim()} uses ${m[1]} px`);
 }
+// Instrument Sans for every button's text (a button takes the system's font otherwise): menus, segmented controls and
+// the Actions panel's rows read in the same font as the text beside them. Menus open on body, so body has it too.
+assert.match(css, /^body \{\n  margin: 0;\n  background: var\(--surface\);\n  font-family: var\(--font-sans\);\n\}/m);
+assert.match(css, /^button \{\n  font-family: inherit;\n\}/m);
+// No text in the Actions panel takes the platform's button size (11 px in WebKit, 13.33 px in Chromium on Windows): its
+// small buttons (the Analyse row's R/S, ¹H, ¹³C, ¹⁹F, ³¹P) are 13 px like its rows and chips, and every text icon in
+// them is 11 px.
+for (const sel of ["tray-button", "chip", "action"]) assert.match(css, new RegExp(`^\\.${sel} \\{[^}]*\\n  font-size: 13px;`, "m"), `.${sel} has its own font size`);
+assert.match(css, /^\.glyph-text \{[^}]*\n  font-size: 11px;/m);
+// A text icon is in Octet's font wherever it sits: a chip's text is the atom label font (Arial), so without this the A
+// for Automatic in a label's chips was Arial and the same A in its Alignment menu Instrument Sans.
+assert.match(css, /^\.glyph-text \{[^}]*\n  font-family: var\(--font-sans\);/m);
+// Every search field (Settings, Templates, Home's Experiments) has one look and the same clear button once it has text,
+// and never the platform's own.
+assert.match(css, /^\.settings-search,\n\.library-search \{[^}]*\n  height: var\(--size-control\);/m);
+assert.match(css, /^\.settings-search input::-webkit-search-cancel-button,\n\.library-search input::-webkit-search-cancel-button \{\n  display: none;/m);
+assert.equal(css.match(/(?<!,\n)^\.(settings|library)-search \{[^}]*\n  height:/gm), null, "no second search field size");
+for (const [file, label, value] of [["SettingsWindow.tsx", "settings-search", "query"], ["TemplateLibrary.tsx", "library-search", "query"], ["Home.tsx", "library-search home-search", "search"]]) {
+  const field = new RegExp(`<label className="${label}">[\\s\\S]*?</label>`).exec(read(file))?.[0] ?? "";
+  assert.match(field, new RegExp(`\\{${value} && <button className="search-clear" [^\\n]*? aria-label="Clear search"><X size=\\{12\\} /></button>\\}`), `${file}: the search field's clear button`);
+}
+
+// Menu names fit the cell (brand/CLAUDE.md Menus: shorten the name, never the cell). The Symbols tool's cell has 148 px
+// for a name at 13 px; Arial runs about 7% narrower than Instrument Sans, so 138 px in Arial (arial.ts) is the limit.
+// "Attachment point, diamond" (165 px) became "Diamond attachment", beside "Star attachment".
+{
+  const symbols = /export const SYMBOLS: Record<SymbolKind, string> = \{([^}]+)\}/.exec(read("tools.tsx"))![1];
+  const names = [...symbols.matchAll(/\w+: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(names.length >= 16 && names.includes("Diamond attachment") && names.includes("Star attachment"));
+  for (const name of names) assert.ok(widthOf(name, 13) <= 138, `Symbols menu: "${name}" is cut off`);
+}
 
 // One list of highlight colours (and ring fills after them), each with its own name and colour.
 assert.equal(new Set(RING_FILLS.map(([n]) => n)).size, RING_FILLS.length);
@@ -104,5 +136,10 @@ for (const e of ["C", "H", "Ph", "Pr", "Ac", "Me"]) assert.equal(by[e], undefine
 // The tokens are there to read, in both themes.
 const tokens = read("../brand/tokens.css");
 for (const name of ["n", "o", "s", "p", "halogen", "br", "i", "b", "si", "metal"]) assert.equal(tokens.match(new RegExp(`--atom-${name}:`, "g"))?.length, 3);
+
+// File > Edit Picture from Word is a menu command on the Mac only, so the command palette lists it there only. Its
+// icon is its own (the loop over the commands' icons above fails if another command has it).
+assert.ok(editorTsx.includes('...(TAURI && MAC ? { edit_word: ["Edit picture from Word", "", <FileDoc size={18} />] }'), "the palette has Edit picture from Word on the Mac");
+assert.ok(uses.some(([icon, command]) => icon === "FileDoc" && command === "edit_word"), "look.check reads its icon");
 
 console.log("look: ok");

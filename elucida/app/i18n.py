@@ -2055,6 +2055,11 @@ TEXTS = {
                        "Field correction ΔB = {dB} mT (reference g_fit = {g} → g_lit = {glit})."),
     "epr_show_sum": ("Summe der Komponenten", "Sum of components"),
     "epr_show_residual": ("Rest (Messung − Summe)", "Residual (measured − sum)"),
+    "epr_sim_below": ("Simulation unter der Messung", "Simulation below the measurement"),
+    "epr_sim_below_tip": ("Gestapelt: jede Simulation auf einer eigenen Ebene direkt unter ihrer Messung statt auf ihr.",
+                          "Stacked: each simulation on a level of its own directly below its measurement instead of on it."),
+    "epr_sim_gap_tip": ("Abstand zwischen Messung und Simulation als Vielfaches des Stapelabstands.",
+                        "Distance between measurement and simulation as a multiple of the stack gap."),
     "epr_sum": ("Summe", "sum"),
     "epr_residual": ("Rest", "residual"),
     "epr_negative_weight": ("{name}: eine Komponente hat ein negatives Gewicht – keine Anteile angegeben (Komponenten "

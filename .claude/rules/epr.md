@@ -61,6 +61,8 @@ paths:
   Zerfall um bis zu 40 %, 95-%-Intervall traf bei Rauschen nur 23 %), Intervall s²(JᵀJ)⁻¹ mit n − 3 und t-Quantil, Band
   aus der Kovarianz, Kurve an den Messpunkten; „wie Skript“ (Min-Max, konstante Heizrate, √|r|) nur zum Vergleich – hängt
   stark vom Optimierer und von Spektren ohne Signal ab.
+- Gestapelt liegt eine Simulation auf der Ebene ihrer Messung; `sim_below` (Nutzerwunsch 2026-11-13) legt sie auf eine
+  eigene Ebene direkt darunter, unabhängig von der Listenreihenfolge; Abstand `sim_gap` × Stapelabstand.
 - Messreihen (Zeit, Temperatur; Nutzerwunsch 2026-11-10): gestapelt stehen die Namen rechts neben jeder Kurve
   (`cfg["right_ticks"]`), sonst Legende, nie über den Kurven (ohne freie Stelle neben der Achse, `legend_beside`). Beschriftung
   `trace_label`: Name (umbenennbar per Doppelklick in der Liste), Zeit seit dem frühesten Spektrum [min] oder Temperatur [K],

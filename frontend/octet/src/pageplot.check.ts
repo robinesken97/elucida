@@ -314,7 +314,10 @@ assert.deepEqual(parts(m2).caps.map((c) => [role(c), c.text, c.x, c.y, c.angle])
   assert.equal(readPlot({ ...p0, signals: [{ key: "a", shift: 5, nuclei: 1, couplings: Array.from({ length: 16 }, () => ({ j: 7, n: 64 })) }] }), undefined);
   assert.equal(readPlot({ ...p0, mhz: 1500, range: [-1e5, 1e5] }), undefined);
   assert.equal(readPlot({ ...p0, mhz: 0 }), undefined);
-  assert.equal(readPlot({ ...p0, nucleus: "19F" }), undefined);
+  // ¹⁹F and ³¹P page spectra read back with their nucleus (B3.11); a nucleus Octet does not predict does not.
+  assert.equal(readPlot({ ...p0, nucleus: "19F" })?.nucleus, "19F");
+  assert.equal(readPlot({ ...p0, nucleus: "31P" })?.nucleus, "31P");
+  assert.equal(readPlot({ ...p0, nucleus: "15N" }), undefined);
   assert.deepEqual(readPlot(JSON.parse(JSON.stringify(p0))), p0);
 }
 

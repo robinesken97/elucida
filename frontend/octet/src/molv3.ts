@@ -4,7 +4,7 @@
 // EXACHG, INVRET, RGROUPS, ATTCHPT), query bond types 5 to 8 and TOPO and RXCTR, ENDPTS with ATTACH, LINKNODE,
 // S-groups, R-group blocks with RLOGIC, and enhanced stereo collections. Coordinates are in bond lengths, as Octet's
 // other molfiles. A file is hostile: sizes are capped and every number checked.
-import { expandLabel, fragments } from "./edit.ts";
+import { expandLabel, fragments, withValence } from "./edit.ts";
 import { ELEMENTS, isElement } from "./labels.ts";
 import { altGroup, elementList, enclosed, linkNode, queryLabel, rgroupMembers, rNumber, USAGES, USAGE_KINDS } from "./query.ts";
 import { HBOND, hydrogens, NONMETAL, orderOf, QUADRUPLE, type Atom, type AtomQuery, type Bond, type BracketUsage, type Mol, type Polymer, type Shape } from "./render.ts";
@@ -86,7 +86,7 @@ function ctab(m: Mol, shapes: Shape[], member = false): string[] {
   const nbrs: number[][] = m.atoms.map(() => []), used = m.atoms.map(() => 0);
   m.bonds.forEach((b) => { nbrs[b.atoms[0]].push(b.atoms[1]); nbrs[b.atoms[1]].push(b.atoms[0]); used[b.atoms[0]] += orderOf(b.type); used[b.atoms[1]] += orderOf(b.type); });
   // A nonmetal bonded to a metal has the hydrogens the drawing shows (PPh3 on Pd is P, not PH): its valence, as
-  // Octet's other molfiles write it.
+  // Octet's other molfiles write it. So has an atom with hydrogens set by hand (a bare O). A valence of none is -1.
   const plain = (a: Atom) => !a.text && !a.centre && !a.attach && !a.bead;
   const metalled = m.atoms.map((a, i) => plain(a) && NONMETAL.has(a.label) && nbrs[i].some((j) => plain(m.atoms[j]) && !NONMETAL.has(m.atoms[j].label)));
   // An R-group fragment's attachment points: the atoms its attach marks are bonded to, else its first atom. The marks
@@ -127,7 +127,7 @@ function ctab(m: Mol, shapes: Shape[], member = false): string[] {
     if (aq?.unsat === "present") extra.push("UNSAT=1");
     if (aq?.change) extra.push("EXACHG=1");
     if (aq?.stereo) extra.push(`INVRET=${aq.stereo === "inversion" ? 1 : 2}`);
-    if (metalled[i]) extra.push(`VAL=${Math.round(used[i]) + (a.implicitHCount ?? hydrogens(a.label, a.charge ?? 0, used[i], a.radical === 3 ? 2 : a.radical))}`);
+    if (metalled[i] || (plain(a) && a.implicitHCount !== undefined)) extra.push(`VAL=${Math.round(used[i]) + (a.implicitHCount ?? hydrogens(a.label, a.charge ?? 0, used[i], a.radical === 3 ? 2 : a.radical)) || -1}`);
     if (attachAt.has(i)) extra.push(`ATTCHPT=${attachAt.get(i)}`);
     atomLines.push(...lines(`${index[i]} ${type} ${f4(x)} ${f4(y)} ${f4(z ?? 0)} ${a.map ?? 0}${extra.length ? " " + extra.join(" ") : ""}`));
   });
@@ -216,7 +216,7 @@ const keyed = (fs: string[]) => Object.fromEntries(fs.filter((f) => f.includes("
 const ints = (v?: string) => { const m = /^\((.*)\)$/.exec(v ?? ""); const xs = (m ? m[1] : "").trim().split(/\s+/).map(Number); return xs.length > 1 && xs.every(Number.isInteger) ? xs.slice(1, 1 + xs[0]) : []; };
 const finite = (v?: string) => { const x = Number(v); return v !== undefined && v !== "" && Number.isFinite(x) && Math.abs(x) < 1e5 ? x : undefined; };
 
-type Table = { atoms: Atom[]; bonds: Bond[]; ids: Map<number, number>; attach: Map<number, number>; sgroups: { type: string; kv: Record<string, string>; brk: number[][] }[]; links: number[][]; collections: [string, number[]][] };
+type Table = { atoms: Atom[]; bonds: Bond[]; ids: Map<number, number>; attach: Map<number, number>; vals: Map<number, number>; sgroups: { type: string; kv: Record<string, string>; brk: number[][] }[]; links: number[][]; collections: [string, number[]][] };
 
 // A V3000 molfile as a drawing: the scaffold, each R-group's fragments in a box to the right, polymer brackets round
 // their S-groups. Throws an Error with a message for the user when the file is not a V3000 molfile or is damaged.
@@ -238,7 +238,7 @@ export function readV3000(text: string): Mol {
   let at = 0;
   // A connection table from BEGIN CTAB on.
   const table = (): Table => {
-    const t: Table = { atoms: [], bonds: [], ids: new Map(), attach: new Map(), sgroups: [], links: [], collections: [] };
+    const t: Table = { atoms: [], bonds: [], ids: new Map(), attach: new Map(), vals: new Map(), sgroups: [], links: [], collections: [] };
     let block = "";
     for (; at < body.length; at++) {
       const l = body[at].trim();
@@ -253,8 +253,10 @@ export function readV3000(text: string): Mol {
         if (!Number.isInteger(id) || x === undefined || y === undefined || !fs[1]) throw bad();
         t.ids.set(id, t.atoms.length);
         t.atoms.push(atomOf(fs[1], [x, y, z], Number(fs[5]) || 0, kv));
-        const ap = Number(kv.ATTCHPT);
+        const ap = Number(kv.ATTCHPT), val = Number(kv.VAL);
         if (ap === 1 || ap === 2 || ap === -1) t.attach.set(t.atoms.length - 1, ap);
+        // A valence: -1 is none, 0 is the usual.
+        if (val === -1 || (Number.isInteger(val) && val > 0 && val <= 14)) t.vals.set(t.atoms.length - 1, Math.max(0, val));
       } else if (block === "BOND") {
         const type = Number(fs[1]), i = t.ids.get(Number(fs[2])), j = t.ids.get(Number(fs[3]));
         if (i === undefined || j === undefined || i === j || !(type >= 1 && type <= 10)) throw bad();
@@ -317,7 +319,13 @@ export function readV3000(text: string): Mol {
       if (i === undefined || !(l[0] >= 1 && l[1] >= l[0] && l[1] <= 99)) continue;
       const a = mol.atoms[base + i], used = t.bonds.reduce((s, b) => s + (b.atoms.includes(i) ? orderOf(b.type) : 0), 0);
       const h = a.text ? 0 : hydrogens(a.label, a.charge ?? 0, used), inner = a.text ?? `${a.label}${h ? `H${h > 1 ? h : ""}` : ""}`;
-      mol.atoms[base + i] = { ...a, label: a.text ? a.label : a.label, text: `[${inner}]${l[0]}-${l[1]}` };
+      mol.atoms[base + i] = { ...a, text: `[${inner}]${l[0]}-${l[1]}` };
+    }
+    // Valences: hydrogens set by hand where they leave fewer than usual (withValence).
+    if (t.vals.size) {
+      const used = t.atoms.map(() => 0);
+      for (const b of t.bonds) for (const i of b.atoms) used[i] += orderOf(b.type);
+      for (const [i, v] of t.vals) mol.atoms[base + i] = withValence(mol.atoms[base + i], v, used[i]);
     }
     // Enhanced stereochemistry.
     for (const [name, ids] of t.collections) {

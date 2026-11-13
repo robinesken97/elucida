@@ -8,8 +8,8 @@
 // 3. Derivatives written by hand from the figures' Kekulé structures (walked from another atom than OPSIN's SMILES),
 //    with a chlorine at one position and a methyl at each other: OPSIN's reading of each name must be that structure.
 // Then the free bases as drawn: Structure to Name gives 21H,23H-porphyrin, 29H,31H-phthalocyanine and
-// 21H,22H,23H-corrole names when every pyrrole N points into the ring, and none for an N-confused porphyrin or a
-// pyrrole drawn turned out (naming.ts macrocycle).
+// 21H,22H,23H-corrole names when every pyrrole N points into the ring, none for a pyrrole drawn turned out, and a
+// von Baeyer name that cites its E and Z for an N-confused porphyrin (naming.ts macrocycle).
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import type { Mol } from "./render.ts";
@@ -137,14 +137,14 @@ assert.equal(macrocycle(turned)?.inward, false, "turned out");
 assert.notEqual(inchiOf(turned), inchiOf(drawn(porphyrin(PH))), "turned out: another stereoisomer");
 assert.equal(editorName(turned), undefined, "turned out");
 // N-confused tetraphenylporphyrin: its first ring is joined to the macrocycle through C1 and C4 with C21 between them
-// inside and N2 outside. Not pyrrole-type, so its E and Z count.
+// inside and N2 outside. Not pyrrole-type, so its E and Z count, and its von Baeyer name cites them.
 const nConfused = drawn(`C12NC=C(C=1)C(${PH})=C1C=CC(=N1)C(${PH})=C1C=CC(N1)=C(${PH})C=1C=CC(N1)=C2${PH}`);
 assert.equal(macrocycle(nConfused)?.inward, false, "N-confused");
-assert.equal(editorName(nConfused), undefined, "N-confused");
+assert.equal(editorName(nConfused), "(1Z,7Z,12Z,16Z)-2,7,12,17-tetraphenyl-4,21,22,23-tetraazapentacyclo[16.2.1.1³,⁶.1⁸,¹¹.1¹³,¹⁶]tetracosa-1,3(24),5,7,9,11(23),12,14,16,18(21),19-undecaene", "N-confused");
 // Large rings with no fused smaller ring have no macrocycle bonds: their E and Z always count (namer-complex.check.ts
 // names (Z)- and (E)-cyclooctene).
 assert.equal(macrocycle(drawn("C1=CCCCCCC1")), undefined);
 assert.equal(macrocycle(drawn("O=C1CC=CCCCCCCCCO1")), undefined);
 const coe = "InChI=1S/C8H14/c1-2-4-6-8-7-5-3-1/h1-2H,3-8H2/b2-1-";
 assert.equal(withoutRingEZ(coe), coe);
-console.log(`macrocycles.check: ${FREE.length} free bases named, a pyrrole turned out and an N-confused porphyrin not named`);
+console.log(`macrocycles.check: ${FREE.length} free bases named, a pyrrole turned out not named, an N-confused porphyrin named with its E and Z`);

@@ -2,7 +2,7 @@
 
 # Changelog
 
-## 1.1.0 – 2026-11-12
+## 1.1.0 – 2026-11-13
 
 ### New
 - **X-ray: comparison with a calculated geometry.** In the step "Evaluation", a geometry from the DFT tab or a file
@@ -54,6 +54,8 @@
 - **CV: diffusion coefficient** from the Randles–Ševčík slope (with number of electrons, electrode area, concentration
   and temperature; interval from the uncertainty of the slope).
 - **EPR: joint fit of several S = ½ species.** "Fit together" refines all simulations of one measurement at once.
+- **EPR: simulation below the measurement.** When stacked, a simulation used to lie on its measurement; the new switch
+  in the card "Simulations" draws it on a level of its own directly below (measured on top, simulated underneath); the distance between the two is adjustable.
 - **New tab H-Cell (charge–discharge cycling).** Reads Gamry "Cyclic Charge Discharge" files with their
   CHARGE_DISCHARGE step files: capacity per cycle (charge, discharge, percent of the theoretical capacity from the file
   or entered per measurement) with Coulombic efficiency on a second axis, several measurements in one figure; or
@@ -104,6 +106,8 @@
 - **Word export:** methods texts typeset powers of ten and t½ correctly (previously literal "10^-2" and "t1/2" for
   UV-Vis kinetics, EPR decays and the diffusion coefficient, "cm2" without superscript); the caption of the energy
   profile writes kcal mol⁻¹ with a superscript. The property table of a comparison fills the page again.
+- **Octet Draw 1.1.2** (was 1.1.1) as the drawing editor: among other things the reagent table reads equivalents
+  from the text above the arrow and can be dragged from anywhere on it.
 
 ### Fixed
 From a check of all calculations against the literature (formulas, constants and statistics were correct; these points

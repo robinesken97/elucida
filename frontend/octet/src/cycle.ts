@@ -46,7 +46,6 @@ export type OldText = CycleText & { through?: boolean; meet?: number; tail?: [nu
 export const sideAt = (t: CycleText) => t.at ?? 0.5;
 // A reagent or product (with an arrow); one of those or a step's name (placed along a step).
 export const isSide = (t?: CycleText) => t?.side === "in" || t?.side === "out";
-export const onStep = (t?: CycleText) => isSide(t) || t?.side === "name";
 // Where a branch meets its step, unset: half way with both ends, before the middle for a reagent alone, after it for a
 // product alone.
 export const meetOf = (b: CycleBranch) => b.meet ?? (b.in && b.out ? 0.5 : b.in ? 0.4 : 0.6);
@@ -268,15 +267,22 @@ function bendFor(A: P, B: P, M: P): number {
 }
 
 // Where each intermediate should go: evenly round a circle, starting at the top and turning the cycle's way, on a
-// radius big enough that no two intermediates come closer than about two bonds. Returns each node's shift (drawing
-// units) and the radius (bond lengths).
-export function spreadCycle(c: Cycle, k: number, ink: (atoms: number[], i: number) => Box | undefined): { shifts: P[]; radius: number } {
-  const n = c.nodes.length, boxes = c.nodes.map((x, i) => ink(x, i));
+// radius big enough that no two intermediates come closer than about two bonds, and that each stands half a bond
+// clear of the centre text (its box, `middle`, as ink is: a wide title in the middle met the intermediate beside it).
+// Returns each node's shift (drawing units) and the radius (bond lengths).
+export function spreadCycle(c: Cycle, k: number, ink: (atoms: number[], i: number) => Box | undefined, middle?: Box): { shifts: P[]; radius: number } {
+  const n = c.nodes.length, boxes = c.nodes.map((x, i) => ink(x, i)), way = (i: number) => -Math.PI / 2 + ((c.clockwise ? 1 : -1) * 2 * Math.PI * i) / n;
   const size = Math.max(...boxes.map((b) => (b ? Math.hypot(b[2] - b[0], b[3] - b[1]) / 2 : k)));
-  const radius = Math.max(2.5 * k, (2 * size + 2 * k) / (2 * Math.sin(Math.PI / Math.max(n, 2)))) / k;
   const centre: P = [c.centre[0] * k, -c.centre[1] * k];
+  // Out along its way, a node clears the text once it is past it across or up and down, whichever comes first.
+  const clear = (b: Box | undefined, i: number) => {
+    if (!b || !middle) return 0;
+    const u = [Math.cos(way(i)), Math.sin(way(i))], half = [(b[2] - b[0]) / 2, (b[3] - b[1]) / 2];
+    return Math.min(...[0, 1].map((x) => (Math.abs(u[x]) < 1e-6 ? Infinity : ((u[x] > 0 ? middle[x + 2] - centre[x] : centre[x] - middle[x]) + half[x] + k / 2) / Math.abs(u[x]))));
+  };
+  const radius = Math.max(2.5 * k, (2 * size + 2 * k) / (2 * Math.sin(Math.PI / Math.max(n, 2))), ...boxes.map(clear)) / k;
   const shifts = boxes.map((b, i): P => {
-    const a = -Math.PI / 2 + ((c.clockwise ? 1 : -1) * 2 * Math.PI * i) / n;
+    const a = way(i);
     const target: P = [centre[0] + radius * k * Math.cos(a), centre[1] + radius * k * Math.sin(a)];
     const now: P = b ? [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2] : target;
     return [(target[0] - now[0]) / k, -(target[1] - now[1]) / k];
@@ -290,7 +296,8 @@ export function orderAround(centre: P, items: { atoms: number[]; middle: P }[]):
   return [...items].sort((a, b) => angle(a.middle) - angle(b.middle)).map((x) => x.atoms);
 }
 
-export const isCycleText = (c: Caption) => !!c.cycle;
+// The text in the middle of a cycle.
+export const centreText = (m: Mol, c: Cycle) => m.captions?.find((t) => t.cycle?.cycle === c.id && t.cycle.side === "centre");
 
 // The Cycle tool. A structure's atoms' box and its middle (drawing units).
 const boxOf = (m: Mol, atoms: number[]): Box | undefined => {

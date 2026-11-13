@@ -12,7 +12,7 @@ const recent = (): string[] => { try { const v = JSON.parse(localStorage.getItem
 const remember = (id: string) => { try { localStorage.setItem(RECENT, JSON.stringify([id, ...recent().filter((x) => x !== id)].slice(0, 8))); } catch { /* storage is optional */ } };
 
 // How well a command matches what is typed: the whole name, its start, a word's start, anywhere in it, its other
-// words, then its letters in order, where letters that start words or follow each other count for more (so "cln"
+// words (or words in a row, as "clip art"), then its letters in order, where letters that start words or follow each other count for more (so "cln"
 // finds Clean up before Decalin, and "flh" Flip horizontal).
 function score(query: string, c: Command): number {
   const q = query.trim().toLowerCase(), n = c.name.toLowerCase();
@@ -21,7 +21,7 @@ function score(query: string, c: Command): number {
   if (n.startsWith(q)) return 90 - n.length / 100;
   if (n.split(/[\s,()/-]+/).some((w) => w.startsWith(q))) return 70 - n.length / 100;
   if (n.includes(q)) return 50;
-  if (c.words?.toLowerCase().split(/\s+/).some((w) => w.startsWith(q))) return 40;
+  if (c.words && ` ${c.words.toLowerCase()}`.includes(` ${q}`)) return 40;
   let i = 0, points = 0, first = -1, last = -2;
   for (let k = 0; k < n.length && i < q.length; k++) {
     if (n[k] !== q[i]) continue;
