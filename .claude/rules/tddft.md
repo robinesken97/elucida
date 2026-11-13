@@ -26,3 +26,5 @@ paths:
   (`%ESD UNIT` aus .inp/.out daneben, sonst Wertebereich; beim Laden bestimmen und im Eintrag speichern, nur die
   .spectrum wird kopiert). Intensitätseinheit unbestätigt → nur normiert (kein ε/Absorbanz). Overlay `kind` „esd“,
   Fluoreszenz `esd_file` (gestrichelt, Verschiebung in der Unterschrift); Verschiebung in eV wie TD-DFT.
+- SORCI im Overlay nur aus einer Absorptionstabelle nach „S O R C I (DDCI3-STEP)“ und nur, wenn jede Zeile E·λ = hc
+  erfüllt; DDCI2 nie; Tabellen nach dem ersten SORCI-Marker nie als TD-DFT lesen. Layout nur synthetisch geprüft.

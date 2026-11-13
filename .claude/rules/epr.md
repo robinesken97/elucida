@@ -72,3 +72,6 @@ paths:
   = `assumed` steht als Hinweis bei der Messung, „Feldeinheit der Datei“ (`field_unit` je Messung, `funit_changed`)
   bestätigt oder ändert sie und verwirft Fits an dieser Messung; eine Einheit im Kopf geht immer vor. Kerntabelle
   `NUCLEAR_SPIN`: nur Kernspins (erste Ordnung braucht kein γ), Spin auch als `I=3/2`; unbekannte Einträge melden.
+- Unterschrift der Intensitätsansichten (`intensity_caption`, 2026-11-13): Größe, Feldfenster, Normierung, I·T,
+  Temperaturen aus der Datei; nur gezeigte Fits (k, t½ je Temperatur; E_a/A der Rampe; Arrhenius E_a und ln A), ohne
+  Intervalle; nie „EPR spectra of …“ für diese Ansichten.

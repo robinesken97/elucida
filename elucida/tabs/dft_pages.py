@@ -60,6 +60,12 @@ def kcal(v) -> str:
     return "0.0" if s == "-0.0" else s.replace("-", "−")
 
 
+# Gaussian: Wörter der Route, die keine Methode oder Basis sind (für Routen ohne „Methode/Basis“)
+_G_JOB_KW = frozenset("opt freq sp nmr td tda irc scan pop gfinput gfprint nosymm symm force stable polar volume test geom "
+                      "guess scf int integral counterpoise density output cphf punch prop field scrf "
+                      "empiricaldispersion temperature pressure sparse trackio archive symmetry".split())
+
+
 def level_of_theory(c) -> str:
     """Rechnung -> Methode wie in Veröffentlichungen: ORCA „! CAM-B3LYP D4 def2-TZVPP … SMD(Toluene)“ ->
     „CAM-B3LYP-D4/def2-TZVPP(SMD:Toluene)“; Gaussian: Token mit „/“ der Route. Schreibweise wie in der Eingabe."""
@@ -68,7 +74,13 @@ def level_of_theory(c) -> str:
     words = " ".join(c.get("keywords") or []).replace("!", " ").split()
     solv = ""
     if c.get("program") == "Gaussian":
-        meth = [w for w in words if "/" in w and not w.startswith("#")][:1]
+        # „#b3lyp/6-31g*“ (Methode direkt am #) zählt, „iop(10/93=1)“ und andere Optionen mit „/“ nicht
+        meth = [w for w in (re.sub(r"^#[pntPNT]?", "", x) for x in words)
+                if "/" in w and "=" not in w.split("/")[0] and "(" not in w.split("/")[0]][:1]
+        if not meth:                                     # „#p opt freq b3lyp def2svp …“: Methode und Basis getrennt
+            rest = [w for w in (re.sub(r"^#[pntPNT]?", "", x) for x in words)
+                    if w and "=" not in w and "(" not in w and w.lower() not in _G_JOB_KW]
+            meth = ["/".join(rest)] if len(rest) == 2 else []   # nur wenn genau zwei Wörter bleiben, sonst nichts raten
         s = c.get("solvation") or {}
         solv = f"({s['model']}:{s['solvent']})" if s.get("solvent") else ""
         return (meth[0] + solv) if meth else ""
@@ -82,6 +94,36 @@ def level_of_theory(c) -> str:
         elif not _JOB_KW.match(w) and not w.startswith("%"):
             parts.append(w)
     return "/".join(parts) + solv if parts else ""
+
+
+def mr_results(c):
+    """Multireferenz-Ergebnisse einer Rechnung mit Zuständen (ORCA 6: CASSCF, NEVPT2-Varianten, SORCI)."""
+    return [r for r in ((c or {}).get("multireference") or []) if r["states"]]
+
+
+def mr_rank(method):
+    """Höchste Theorie zuerst: QD-NEVPT2 vor NEVPT2 vor SORCI vor CASSCF."""
+    return (3 if "NEVPT2" in method and method.startswith("QD-") else 2 if "NEVPT2" in method
+            else 1 if method == "SORCI" else 0)
+
+
+def mr_choice(c, spec):
+    """Gewähltes (Ergebnis, Zustandsindex) einer Multireferenz-Rechnung: gespeichert `mr_result`/`mr_state`, sonst
+    die höchste Theorie der Datei (bei gleicher die letzte) und der erste gedruckte Zustand (Wurzel 0)."""
+    rs = mr_results(c)
+    if not rs:
+        return None, None
+    r = next((x for x in rs if x["id"] == spec.get("mr_result")), None)
+    if r is None:
+        r = max(enumerate(rs), key=lambda kr: (mr_rank(kr[1]["method"]), kr[0]))[1]
+    k = spec.get("mr_state") if r["id"] == spec.get("mr_result") else None
+    return r, k if isinstance(k, int) and 0 <= k < len(r["states"]) else 0
+
+
+def mr_state_text(r, k):
+    """„SC-NEVPT2, root 0 (multiplicity 1)“ für Unterschrift und Hinweise (englisch, Wurzel wie gedruckt)."""
+    s = r["states"][k]
+    return f"{r['method']}, root {s['root']} (multiplicity {s['multiplicity']})"
 
 
 def same_geometry(f1, f2, tol=0.02):
@@ -118,6 +160,9 @@ def profile_rows(items, kind):
     rows = []
     for it in items:
         en = species_energies(it["opt"], it["sp"])
+        if kind not in en and it.get("mr") and "E" in en:     # Multireferenz ohne Frequenzrechnung: nur E, gemeldet
+            rows.append(dict(it, abs=en["E"], el_only=True))
+            continue
         if kind not in en:
             notes.append(T("dft_prof_no_kind", name=it["label"], kind=KINDS[kind][0]))
             continue
@@ -159,11 +204,26 @@ def nics_points(n):
     for p, iso, t in zip(n["bq_xyz"], n["iso"], n["tensor"]):
         near = heavy[np.linalg.norm(heavy - p, axis=1) < NICS_NEAR]
         c, nv = plane(near) if len(near) >= 3 else g
+        nv = -nv if np.dot(nv, g[1]) < 0 else nv           # Vorzeichen der SVD ist beliebig: eine Seite für alle Bq
         ts = (t + t.T) / 2
         h.append(float(np.dot(p - c, nv)))
         nics.append(-float(iso))
         zz.append(-float(nv @ ts @ nv))
     return dict(h=np.array(h), nics=np.array(nics), zz=np.array(zz), xyz=np.asarray(n["bq_xyz"], float))
+
+
+def nics_geometry(pts):
+    """Lage eines Scans zur Molekülebene aus den Bq-Koordinaten (nie aus Dateinamen): („plane“, h) = Weg in einer
+    Höhe parallel zur Ebene, („normal“, h_min, h_max) = Weg entlang der Ebenennormalen, („path“,) = keins von beiden."""
+    h = pts["h"]
+    s = float(np.sum(np.linalg.norm(np.diff(pts["xyz"], axis=0), axis=1)))
+    if s <= 0:
+        return ("path",)
+    if float(np.ptp(h)) < max(0.1, 0.05 * s):                  # Höhe bleibt gleich
+        return ("plane", float(np.median(np.abs(h))))
+    if float(np.ptp(h)) > 0.95 * s:                            # Weg ändert nur die Höhe
+        return ("normal", float(h.min()), float(h.max()))
+    return ("path",)
 
 
 def nics_pairs(pts):
@@ -302,6 +362,14 @@ class DftPages:
         self.lbl_level.setWordWrap(True)
         self.lbl_level.setStyleSheet(STYLE.HINT_CSS)
         f.addRow(self.lbl_level)
+        # Multireferenz-Plateau: Methode und Zustand, deren Gesamtenergie das Profil nimmt (nur bei solchen Rechnungen)
+        self.cmb_level_mr, self.cmb_level_root = QComboBox(), QComboBox()
+        self.cmb_level_mr.setToolTip(T("rp_level_mr_tip"))
+        self.cmb_level_root.setToolTip(T("rp_level_root_tip"))
+        f.addRow(T("rp_level_mr"), self.cmb_level_mr)
+        f.addRow(T("rp_level_root"), self.cmb_level_root)
+        self.cmb_level_mr.currentIndexChanged.connect(lambda *_: self.level_mr_changed(False))
+        self.cmb_level_root.currentIndexChanged.connect(lambda *_: self.level_mr_changed(True))
         self.level_spins = {}
         for key, text, low, high in (("x", "rp_layout_x", -1000, 1000), ("width", "rp_plateau_width", .05, 20),
                                      ("y", "rp_layout_height", -10000, 10000)):
@@ -787,17 +855,58 @@ class DftPages:
             b = self.btn_level_color
             b.setProperty("color", color)
             b.setStyleSheet(f"{b.property('cellcss')}background-color: {color}; border: 1px solid #777;")
+        mr_calc = self._level_mr_calc(uid) if uid else None
+        if mr_calc is not None:
+            from elucida.formats.multireference import result_label
+            r, k = mr_choice(mr_calc, self.prof["species"].get(uid) or {})
+            self.cmb_level_mr.clear()
+            for x in mr_results(mr_calc):
+                self.cmb_level_mr.addItem(result_label(x), x["id"])
+            self.cmb_level_mr.setCurrentIndex(max(0, self.cmb_level_mr.findData(r["id"])))
+            self.cmb_level_root.clear()
+            for j, s in enumerate(r["states"]):
+                self.cmb_level_root.addItem(T("rp_level_root_item", root=s["root"], mult=s["multiplicity"],
+                                              E=s["energy"].replace("-", "−")), j)
+            self.cmb_level_root.setCurrentIndex(k)
         self._loading = was
         for w in (*self.level_spins.values(), self.cb_level_break, self.btn_level_color):
             w.setEnabled(row is not None)
         self.btn_level_auto.setEnabled(any(k in node for k in self.LEVEL_KEYS))
         lv = self.prof["mode"] == "levels"
-        self.lbl_level.setText(T("rp_level_of", name=row["label"]) if row else T("rp_level_pick"))
+        self.lbl_level.setText(T("rp_level_of_mr" if mr_calc is not None else "rp_level_of", name=row["label"]) if row
+                               else T("rp_level_pick"))
         for w in (self.lbl_level, self.level_spins["x"], self.level_spins["width"], self.row_level_color,
                   self.btn_level_auto):
             self.form_levels.setRowVisible(w, lv)
+        for w in (self.cmb_level_mr, self.cmb_level_root):              # nur bei einer Multireferenz-Rechnung
+            self.form_levels.setRowVisible(w, lv and mr_calc is not None)
         self.form_levels.setRowVisible(self.level_spins["y"], lv and schematic)   # Höhe frei nur im schematischen Bild
         self.cb_level_break.setVisible(lv and schematic)    # Chip: seine Zeile folgt ihm (`ChipRow.sync`)
+
+    def _level_mr_calc(self, uid):
+        """Multireferenz-Rechnung des Plateaus (Einzelpunkt vor der Rechnung selbst, wie `mr_item`) oder None."""
+        it = next((x for x in self.items() if x["uid"] == uid), None)
+        return next((it[k] for k in ("sp", "opt") if mr_results(it.get(k))), None) if it else None
+
+    def level_mr_changed(self, root):
+        """Methode oder Zustand des gewählten Multireferenz-Plateaus; die Vorgabe (höchste Theorie, Wurzel 0) wird
+        nicht gespeichert, eine andere Methode beginnt beim ersten Zustand."""
+        if self._loading:
+            return
+        uid, _, _ = self._level_row()
+        c = self._level_mr_calc(uid) if uid else None
+        if c is None:
+            return
+        spec = self.prof["species"].setdefault(uid, {})
+        rid = self.cmb_level_mr.currentData()
+        k = self.cmb_level_root.currentData() if root else 0
+        auto_r, auto_k = mr_choice(c, {})
+        spec.pop("mr_result", None)
+        spec.pop("mr_state", None)
+        if (rid, k) != (auto_r["id"], auto_k):
+            spec.update(mr_result=rid, mr_state=k)
+        self.level_selected()
+        self.changed()
 
     def _level_node(self):
         uid, row, _ = self._level_row()
@@ -887,21 +996,43 @@ class DftPages:
 
     def level_text(self, items):
         """„<SP>//<Opt>“ (übliche Reihenfolge Einzelpunkt//Geometrie) bzw. nur die Opt-Methode; verschiedene -> erste."""
-        opt = {level_of_theory(it["opt"]) for it in items} - {""}
-        sp = {level_of_theory(it["sp"]) for it in items if it["sp"] is not None} - {""}
+        lot = lambda c: c.get("mr_level") or level_of_theory(c)      # noqa: E731  (Multireferenz: Methode des Zustands)
+        opt = {lot(it["opt"]) for it in items} - {""}
+        sp = {lot(it["sp"]) for it in items if it["sp"] is not None} - {""}
         lev = sorted(opt)[0] if opt else ""
         if sp:
             lev = sorted(sp)[0] + "//" + lev
         return lev, len(opt) > 1 or len(sp) > 1
 
+    def mr_item(self, it):
+        """Plateau mit Multireferenz-Rechnung (Einzelpunkt oder die Rechnung selbst): Energie = Gesamtenergie des
+        gewählten Zustands (`mr_choice`), Methode für die Unterschrift; thermische Korrektur nur aus einer eigenen
+        Frequenzrechnung (G = E(Zustand) + (G − E_el)), sonst bleibt nur E."""
+        key = next((k for k in ("sp", "opt") if mr_results(it.get(k))), None)
+        if key is None:
+            return it
+        c = it[key]
+        r, k = mr_choice(c, self.prof["species"].get(it["uid"]) or {})
+        e = r["states"][k]["energy"].replace("D", "E").replace("d", "e")
+        n, m = r.get("active_electrons"), r.get("active_orbitals")
+        lev = r["method"] + (f"({n},{m})" if n is not None and m is not None else "")
+        base = level_of_theory(c)
+        c = dict(c, energy=e, mr_level=lev + ("/" + base if base else ""))
+        if key == "opt":                                       # eigene Thermochemie auf die Zustandsenergie beziehen
+            th = dict(c.get("thermo") or {})
+            if th.get("E_el"):
+                for q in ("H", "G"):
+                    if th.get(q):
+                        th[q] = repr(float(e) + float(th[q]) - float(th["E_el"]))
+            th["E_el"] = e
+            c["thermo"] = th
+        return dict(it, **{key: c}, mr=mr_state_text(r, k))
+
     def levels_spec(self):
         """-> (Zeilen, Pfade, Hinweise) für das Stufenbild."""
-        items = self.items()
-        mr_items = [it for it in items if any((it.get(k) or {}).get("multireference") for k in ("opt", "sp"))]
-        items = [it for it in items if not any((it.get(k) or {}).get("multireference") for k in ("opt", "sp"))]
+        items = [self.mr_item(it) for it in self.items()]
         rows, notes = profile_rows(items, self.prof["y"]) if items else ([], [])
-        notes += [it["label"] + ": " + T('rp_multireference_profile_requires_an_explicit_state_energy_omitted_for_n')
-                  for it in mr_items]
+        notes += [T("dft_prof_mr_el", name=r["label"], kind=KINDS[self.prof["y"]][0]) for r in rows if r.get("el_only")]
         paths = sorted({p for r in rows for p in r["paths"]})
         lev, mixed = self.level_text(rows)
         if mixed:
@@ -1023,7 +1154,18 @@ class DftPages:
         cond = f"; T = {th['T']} K, p = {th['P']} atm" if y != "E" and th.get("T") and th.get("P") else ""
         txt = (f"Calculated {KINDS[y][1]} profile of <b>{html.escape(name)}</b> ({KINDS[y][0]} in kcal mol-1, relative "
                f"to {html.escape(rows[0]['label'])}{cond})")
-        return txt + (f" calculated at the {html.escape(lev)} level of theory." if lev else ".")
+        txt += f" calculated at the {html.escape(lev)} level of theory." if lev else "."
+        mr = [(html.escape(r["label"]), html.escape(r["mr"])) for r in rows if r.get("mr")]
+        if mr:                                                 # Methode und Wurzel je Multireferenz-Plateau
+            if len({d for _, d in mr}) == 1:
+                txt += f" Multireference energies: {mr[0][1]} for " + (
+                    "all levels." if len(mr) == len(rows) else ", ".join(lb for lb, _ in mr) + ".")
+            else:
+                txt += " Multireference energies: " + "; ".join(f"{lb}, {d}" for lb, d in mr) + "."
+        el = [html.escape(r["label"]) for r in rows if r.get("el_only")]
+        if el:
+            txt += f" For {', '.join(el)}, the electronic energy is shown (no frequency calculation)."
+        return txt
 
     def irc_caption(self, name):
         curves, _ = self.irc_data()
@@ -1470,11 +1612,30 @@ class DftPages:
         scans = [d for d in data if d["scan"]]
         if not scans:
             return ""
-        hs = " and ".join(f"{float(np.median(np.abs(d['pts']['h']))):.1f}" for d in scans)
+        geo = [nics_geometry(d["pts"]) for d in scans]
+        parts = []
+        hs = [g[1] for g in geo if g[0] == "plane"]
+        if [h for h in hs if h >= 0.05]:
+            parts.append(" and ".join(f"{h:.1f}" for h in hs if h >= 0.05) + " Å above the molecular plane")
+        if [h for h in hs if h < 0.05]:
+            parts.append("in the molecular plane")
+        for g in geo:
+            if g[0] == "normal":
+                lo, hi = g[1], g[2]
+                if lo < -0.05 and hi > 0.05:                   # durch die Ebene hindurch
+                    parts.append(f"along the normal of the molecular plane from {lo:.1f} to {hi:.1f} Å, passing "
+                                 "through the plane".replace("-", "−"))
+                else:
+                    a, b = sorted((abs(lo), abs(hi)))
+                    parts.append(f"along the normal of the molecular plane from {a:.1f} to {b:.1f} Å above the plane")
+        if any(g[0] == "path" for g in geo):
+            parts.append("along the scan path")
         lev = nics_method(scans[0]["route"])
         geom = self.nics["geom"].strip()
         lev = f"{lev}//{geom}" if lev and geom else lev
-        return (f"NICS (black) and NICSzz (red) scan of <b>{html.escape(name)}</b> at {hs} Å above the molecular plane"
+        where = " and ".join(dict.fromkeys(parts))
+        where = ("at " if where[0].isdigit() else "") + where
+        return (f"NICS (black) and NICSzz (red) scan of <b>{html.escape(name)}</b> {where}"
                 + (f" calculated at the {html.escape(lev)} level of theory." if lev else "."))
 
     def add_nics(self):

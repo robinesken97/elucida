@@ -104,6 +104,8 @@ def _path_slots(state):
     slots += [(hr, "ms_file", data_sub("hrms")), (hr, "ms_raw", data_sub("hrms"))]
     for e in (state.get("xray") or {}).get("entries") or []:
         slots.append((e, "file", data_sub("xray")))
+        if e.get("calc"):                                    # berechnete Geometrie zum Vergleich (Stufe 3)
+            slots.append((e["calc"], "file", data_sub("xray")))
     for e in (state.get("dft") or {}).get("entries") or []:
         slots.append((e, "file", data_sub("dft")))
         slots.append((e, "molden", data_sub("dft")))         # Orbitale: Molden-Datei der Rechnung

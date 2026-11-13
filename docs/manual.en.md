@@ -181,7 +181,7 @@ elsewhere into the project.
 - **Move to trash …** (right-click in the overview) removes a compound or a whole project after a question with the
   number of files and the size; it can be restored from the trash.
 
-<p align="center"><img src="screenshots/paths_dark_en.png" alt="Reaction path with the free canvas" width="80%"></p>
+<p align="center"><img src="screenshots/paths_dark_en.png" alt="Reaction path of the example project: calculation data and energy profile" width="80%"></p>
 
 - **Computational Chemistry (reaction paths):** a tab of the project for energy profiles and IRCs across several
   compounds, without touching them: calculations are copied in. **Design** is a free canvas (Octet) for profiles,
@@ -790,6 +790,8 @@ Absorption and emission in one figure, as commonly shown in papers:
   against 1000/T and gives E_a and ln A from an unweighted straight-line fit, one point per temperature; a 95 %
   interval exists only from three temperatures on. The bars at the points are the intervals of k. Peak-to-peak
   underestimates k once the signal disappears in the noise; use the double integral or "Fit up to loss" then.
+  The caption of these views says what is plotted (quantity, field window, normalisation, temperatures) and gives only
+  values of fits shown in the figure (k and half-life per temperature, E_a and A of a ramp, the Arrhenius line).
 - **Export for EasySpin:** besides the figure, every measurement is written as a two-column text file (B in mT,
   intensity) in full resolution after dark spectrum, baseline and smoothing – without normalisation or hidden
   ranges – with `%` header lines documenting frequency, temperature and processing (`load(...)` in MATLAB, ready
@@ -826,6 +828,18 @@ Absorption and emission in one figure, as commonly shown in papers:
   number editable) and selected bond lengths, angles and torsion angles (same atom names side by side). **Copy**
   keeps italics and sub-/superscripts in Word; export also writes CSV and Excel. Table labels are in English
   (as usual for an SI).
+- **Comparison with calculation** (step Evaluation): under **Calculation** choose a geometry from the DFT tab or load
+  an xyz file or ORCA/Gaussian output with **File …**. Atoms are assigned via the bond network only: same formula, same
+  connectivity of the heavy atoms, same number of H on every heavy atom. If something does not match, the hint names it
+  (formulas, differing atoms) and nothing is assigned – never by distance or order. If the crystal contains further
+  molecules (solvent, counter-ions) or disorder, choose the part that corresponds to the calculation under **Fragment**,
+  or one part under Display → Disorder. With several equivalent assignments (symmetry) the one with the smallest
+  heavy-atom RMSD after superposition is used; if equally good assignments give different values, the hint names the
+  parameters. The **Assignment** (CIF label ↔ number and element in the calculation file) is stored with the compound.
+  The parameter table gets the calculated column (header = level of theory, "calc." for a bare xyz; bond lengths with 3,
+  angles with 1 decimal, no s.u.), optionally a **Δ column** (calc. − X-ray); the same in Excel/CSV and Word, with a note
+  on the geometry (gas phase or solvated, as stated by the calculation) and the RMSD. With a calculation, the values
+  are always given in the table, not in the caption.
 - Export: one figure per structure (PDF/SVG vector, PNG) plus `…_crystal_data.csv`, `…_parameters.csv` and
   `…_tables.xlsx`. The label size can be set per tab and the **background** chosen (white, transparent, colour; also
   for Word).
@@ -860,16 +874,24 @@ Absorption and emission in one figure, as commonly shown in papers:
   and path(s) A, B …; optional **single points** (e.g. DLPNO-CCSD(T)), matched by identical atoms and coordinates (never by
   file name): G = E(SP) + (G − E_el). Levels with dashed connectors, ΔG/ΔH/ΔE in kcal mol⁻¹ with one decimal, caption
   "… calculated at the <single point>//<geometry> level of theory".
+  **Multireference levels** (ORCA 6 CASSCF/NEVPT2/SORCI, as single point or as the calculation itself): the fields
+  **Method** and **State** below the table choose which state energy the level shows (default: the highest level of
+  theory in the file, NEVPT2 before CASSCF, root 0). Only the total electronic energy of that state is used; G and H
+  add the thermal correction of the level's own frequency calculation. Without one, the level shows its electronic
+  energy, with a note and a sentence in the caption. The caption names method and root.
   **IRC** (ORCA): output + `<name>_IRC_Full_trj.xyz`, x = reaction coordinate in Å (sum of the Cartesian displacements, not mass-weighted; TS = 0) or a bond length, several
   IRCs in a row, barriers at the transition state.
 - **NICS** (page): Gaussian NMR outputs with ghost atoms (Bq, e.g. from py.Aroma): NICS and NICSzz (along the ring-plane
-  normal) per point, average above/below; scans as a curve over the path length (NICS black, NICSzz red).
+  normal) per point, average above/below; scans as a curve over the path length (NICS black, NICSzz red). The caption
+  describes the scan from the ghost-atom coordinates: parallel to the molecular plane at a height, along the plane
+  normal (height range), or neutrally "along the scan path".
 
 - **Multireference (ORCA 6):** CASSCF, SC-NEVPT2, QD-SC-NEVPT2 and SORCI results are offered per block, with energies,
   configuration weights and occupations as printed. The SI takes a block only on explicit choice. ΔE_ST between a chosen
   singlet and triplet of the same block, with the equation shown. The diradical indicator is y₀ = n(LUNO), and only for
   natural orbitals of one converged singlet state. Incomplete or aborted outputs are flagged. In the overlay, MR spectra
-  are selectable by method and block.
+  are selectable by method and block; SORCI only when the output prints an absorption table for the final (DDCI3) step
+  (transition energies and oscillator strengths as printed, nothing derived).
 
 ## Cluster connection
 

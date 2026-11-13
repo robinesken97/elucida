@@ -22,6 +22,17 @@ TEXTS = {
     "rp_level_of": ("Plateau „{name}“: Lage, Breite und Farbe", "Level “{name}”: position, width and colour"),
     "rp_level_pick": ("Plateau in der Tabelle wählen, um Lage, Breite und Farbe zu ändern.",
                       "Select a level in the table to change its position, width and colour."),
+    "rp_level_of_mr": ("Plateau „{name}“: Zustand, Lage, Breite und Farbe",
+                       "Level “{name}”: state, position, width and colour"),
+    "rp_level_mr": ("Methode", "Method"),
+    "rp_level_mr_tip": ("Multireferenz-Ergebnis, dessen Zustandsenergie das Plateau zeigt (Vorgabe: höchste Theorie der "
+                        "Datei, NEVPT2 vor CASSCF).",
+                        "Multireference result whose state energy the level shows (default: highest level of theory in "
+                        "the file, NEVPT2 before CASSCF)."),
+    "rp_level_root": ("Zustand", "State"),
+    "rp_level_root_tip": ("Zustand (Wurzel wie gedruckt); das Profil nimmt seine Gesamtenergie, nur elektronisch.",
+                          "State (root as printed); the profile uses its total energy, electronic only."),
+    "rp_level_root_item": ("Wurzel {root} · M = {mult} · {E} Eh", "Root {root} · M = {mult} · {E} Eh"),
     'rp_auto_level': ('Plateau automatisch', 'Automatic level'),
     'rp_auto_level_tip': ('Lage, Breite, Höhe und Farbe dieses Plateaus wieder automatisch (Beschriftungen: „Beschriftungen zurücksetzen“).', 'Position, width, height and colour of this level back to automatic (labels: “Reset labels”).'),
     'rp_3d_orbitals': ('3D / Orbitale', '3D / Orbitals'),
@@ -102,7 +113,6 @@ TEXTS = {
     'rp_add_level': ('Stufe hinzufügen', 'Add Level'),
     'rp_export_cm': ('Export [cm]', 'Export [cm]'),
     'rp_large_workspace': ('Große Arbeitsfläche …', 'Large workspace …'),
-    'rp_multireference_profile_requires_an_explicit_state_energy_omitted_for_n': ('Multireferenz: Profil benötigt eine explizite Zustandsenergie; vorerst ausgelassen.', 'Multireference: profile requires an explicit state energy; omitted for now.'),
     'rp_profile_images': ('Bilder im Profil …', 'Profile images …'),
     'rp_reaction_profile_workspace': ('Reaktionsprofil – Arbeitsfläche', 'Reaction Profile Workspace'),
     'rp_remove_irc_curve': ('IRC-Kurve entfernen', 'Remove IRC curve'),
@@ -2193,6 +2203,81 @@ TEXTS = {
     "xr_colors": ('Atomfarben', 'Atom Colours'),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
     "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
+    "xr_calc": ("Vergleich mit Rechnung", "Comparison with Calculation"),
+    "xr_calc_src": ("Rechnung", "Calculation"),
+    "xr_calc_src_tip": ("Berechnete Geometrie derselben Verbindung: aus dem DFT-Tab oder als Datei (xyz, ORCA, Gaussian)",
+                        "Calculated geometry of the same compound: from the DFT tab or as a file (xyz, ORCA, Gaussian)"),
+    "xr_calc_none": ("keine", "none"),
+    "xr_calc_file": ("Datei …", "File …"),
+    "xr_calc_file_tip": ("Berechnete Geometrie laden (xyz, ORCA- oder Gaussian-Ausgabe); die Datei bleibt unverändert",
+                         "Load a calculated geometry (xyz, ORCA or Gaussian output); the file is not changed"),
+    "xr_calc_file_item": ("Datei: ", "File: "),
+    "xr_calc_flt": ("Geometrie oder Rechnung", "Geometry or calculation"),
+    "xr_calc_frag": ("Fragment", "Fragment"),
+    "xr_calc_frag_tip": ("Teil der Kristallstruktur, der der Rechnung entspricht; weitere Moleküle (Lösungsmittel, "
+                         "Gegenionen) bleiben dann unberücksichtigt",
+                         "Part of the crystal structure that corresponds to the calculation; further molecules "
+                         "(solvent, counter-ions) are then ignored"),
+    "xr_calc_frag_pick": ("Wählen …", "Choose …"),
+    "xr_calc_map": ("Zuordnung", "Assignment"),
+    "xr_calc_map_tip": ("Atom der Kristallstruktur ↔ Atom der Rechnung (Nummer wie in der Datei)",
+                        "Atom of the crystal structure ↔ atom of the calculation (number as in the file)"),
+    "xr_calc_map_cif": ("CIF", "CIF"),
+    "xr_calc_map_no": ("Nr. (Rechnung)", "No. (calc.)"),
+    "xr_calc_map_el": ("Element", "Element"),
+    "xr_calc_cols": ("Spalte Rechnung", "Calc. column"),
+    "xr_calc_cols_long": ("Rechenwerte als Spalte neben den Kristallwerten (Tabellen, Excel/CSV, Word)",
+                          "Calculated values as a column next to the crystal values (tables, Excel/CSV, Word)"),
+    "xr_calc_delta": ("Spalte Δ", "Δ column"),
+    "xr_calc_delta_long": ("Zusätzliche Spalte Δ = Rechnung − Kristall", "Additional column Δ = calc. − X-ray"),
+    "xr_calc_done": ("{nh} Schweratome und {nH} H über das Bindungsnetz zugeordnet; RMSD der Schweratome nach "
+                     "Überlagerung {rmsd} Å.",
+                     "{nh} heavy atoms and {nH} H assigned via the bond network; heavy-atom RMSD after superposition "
+                     "{rmsd} Å."),
+    "xr_calc_equiv": ("{n} gleichwertige Zuordnungen (Symmetrie des Moleküls): die gewählten Parameter sind für alle "
+                      "gleich.",
+                      "{n} equivalent assignments (molecular symmetry): the selected parameters are identical for "
+                      "all of them."),
+    "xr_calc_amb": ("Gleich gute Zuordnungen ergeben verschiedene Werte für: {params}. Die Zuordnung mit der "
+                    "kleinsten Abweichung ist gewählt – bitte prüfen.",
+                    "Equally good assignments give different values for: {params}. The assignment with the smallest "
+                    "deviation is used – please check."),
+    "xr_calc_next": ("Nächstbeste Zuordnung: RMSD {alt} Å.", "Next best assignment: RMSD {alt} Å."),
+    "xr_calc_mirror": ("Die Rechnung ist das Spiegelbild der Kristallstruktur: Torsionswinkel haben das umgekehrte "
+                       "Vorzeichen.",
+                       "The calculation is the mirror image of the crystal structure: torsion angles have the "
+                       "opposite sign."),
+    "xr_calc_formula": ("Zusammensetzung verschieden: Kristall {cif}, Rechnung {calc}. Nicht zugeordnet.",
+                        "Different composition: crystal {cif}, calculation {calc}. Not assigned."),
+    "xr_calc_graph": ("Bindungsnetz verschieden (Kristall {nr}, Rechnung {nt} Bindungen zwischen Schweratomen); "
+                      "abweichend: {atoms}. Nicht zugeordnet.",
+                      "Different bond network (crystal {nr}, calculation {nt} bonds between heavy atoms); "
+                      "differing: {atoms}. Not assigned."),
+    "xr_calc_h": ("{atom}: {nr} H im Kristall, {nt} in der Rechnung. Nicht zugeordnet.",
+                  "{atom}: {nr} H in the crystal, {nt} in the calculation. Not assigned."),
+    "xr_calc_same_geom": ("Die Geometrie der Rechnung ist praktisch die Kristallgeometrie (RMSD {rmsd} Å): vermutlich "
+                          "ein Einzelpunkt auf den Kristallkoordinaten. Die Spalte vergleicht dann nichts; für den "
+                          "Vergleich die optimierte Geometrie wählen.",
+                          "The geometry of the calculation is practically the crystal geometry (RMSD {rmsd} Å): "
+                          "probably a single point on the crystal coordinates. The column then compares nothing; "
+                          "choose the optimised geometry for the comparison."),
+    "xr_calc_hdiff": ("Zahl der H-Atome verschieden – {atoms}. Das Gerüst ist zugeordnet, überzählige H bleiben ohne "
+                      "Partner. Prüfen, ob es dieselbe Spezies ist (in hinterlegten CIFs fehlt manchmal ein H).",
+                      "Number of H atoms differs – {atoms}. The framework is assigned, surplus H stay without a "
+                      "partner. Check that it is the same species (deposited CIFs sometimes lack an H)."),
+    "xr_calc_hdiff_at": ("{atom}: Kristall {nr}, Rechnung {nt}", "{atom}: crystal {nr}, calculation {nt}"),
+    "xr_calc_h_free": ("{n} H-Atome ohne Bindung zu einem Schweratom. Nicht zugeordnet.",
+                       "{n} H atoms not bonded to a heavy atom. Not assigned."),
+    "xr_calc_need_frag": ("Die Kristallstruktur hat {n} Fragmente (z. B. Lösungsmittel, Gegenionen): Fragment wählen, "
+                          "das der Rechnung entspricht.",
+                          "The crystal structure has {n} fragments (e.g. solvent, counter-ions): choose the fragment "
+                          "that corresponds to the calculation."),
+    "xr_calc_dis_hint": ("Fehlordnung: unter Darstellung → Fehlordnung einen Teil wählen, nicht alle Teile.",
+                         "Disorder: choose one part under Display → Disorder, not all parts."),
+    "xr_calc_no_cif": ("Kristallstruktur nicht lesbar.", "Crystal structure not readable."),
+    "xr_calc_missing": ("Datei der Rechnung fehlt: {f}", "Calculation file missing: {f}"),
+    "xr_calc_stale": ("Die Zuordnung passt nicht zur gezeigten Struktur: Rechnung neu wählen.",
+                      "The assignment does not fit the structure shown: choose the calculation again."),
     "dft_measure": ('Messen (Abstand, Winkel, Diederwinkel)', 'Measure (Distance, Angle, Dihedral)'),
     "xr_select_hint": ("Atome in der Abbildung anklicken.", "Click atoms in the figure."),
     "xr_take": ("In Liste übernehmen", "Add to list"),
@@ -2702,6 +2787,10 @@ TEXTS = {
                        "No single point, left out of the profile (never mixed): {names}"),
     "dft_prof_no_kind": ("{name}: {kind} fehlt (Frequenzrechnung nötig), nicht im Profil",
                          "{name}: {kind} missing (frequency calculation needed), left out"),
+    "dft_prof_mr_el": ("{name}: Multireferenz ohne Frequenzrechnung – nur die elektronische Energie statt {kind} "
+                       "(steht in der Unterschrift)",
+                       "{name}: multireference without frequency calculation – electronic energy instead of {kind} "
+                       "(stated in the caption)"),
     "dft_prof_mixed": ("Spezies mit verschiedenen Methoden – Unterschrift nennt nur die erste.",
                        "Species with different methods – the caption names only the first."),
     "dft_prof_sp_solv": ("Einzelpunkt ohne Lösungsmittel, Geometrie mit SMD/CPCM: Solvatation ist in E(SP) nicht "

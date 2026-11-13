@@ -96,12 +96,20 @@ def tddft_variants(path) -> list:
     spectra = _orca_spectra(txt.splitlines())
     if any(s["method"] for s in spectra):
         return list(dict.fromkeys(s["key"] for s in spectra))
+    lines = _before_sorci(txt.splitlines())
     out = []
-    if _ORCA_SOC_HEAD in txt:
+    if any(_ORCA_SOC_HEAD in ln for ln in lines):
         out.append("soc")
-    if any(_ORCA_HEAD in ln and "SOC" not in ln for ln in txt.splitlines()):
+    if any(_ORCA_HEAD in ln and "SOC" not in ln for ln in lines):
         out.append("nosoc")
     return out
+
+
+def _before_sorci(lines):
+    """Zeilen vor dem ersten SORCI-Schritt: Tabellen danach gehören zu SORCI (nur über `_orca_spectra`, geprüft),
+    nie als TD-DFT lesen."""
+    k = next((i for i, ln in enumerate(lines) if "S O R C I (DDCI" in ln), None)
+    return lines if k is None else lines[:k]
 
 
 def _orca_spectra(lines):
@@ -115,6 +123,12 @@ def _orca_spectra(lines):
             method = ("QD-NEVPT2" if s.startswith("QDNEVPT2") else
                       "NEVPT2" if "NEVPT2 diagonal energies" in s else
                       "CASSCF" if s.startswith("CASSCF") else "")
+        if "S O R C I (DDCI" in s:                     # nur der DDCI3-Schritt ist ein Ergebnis (DDCI2 baut die Orbitale)
+            method = "SORCI" if "DDCI3" in s else "DDCI2"
+        if _ORCA_HEAD in s and method == "DDCI2":
+            continue
+        if _ORCA_HEAD in s and method == "SORCI" and not _ev_nm_consistent(lines[i:]):
+            continue                                   # unbekannte Tabellenform: nicht anbieten statt raten
         if _ORCA_HEAD in s:
             variant = "soc" if _ORCA_SOC_HEAD in s else "nosoc"
             stem = f"mr:{method}:{variant}" if method else variant
@@ -123,6 +137,14 @@ def _orca_spectra(lines):
             key = f"{stem}:{occurrence}" if method else stem
             spectra.append(dict(key=key, method=method, variant=variant, index=i))
     return spectra
+
+
+def _ev_nm_consistent(lines):
+    """SORCI-Tabelle (Layout nur synthetisch geprüft): jede Zeile „a -> b  eV  cm-1  nm  fosc …“ muss E·λ = hc
+    erfüllen, sonst ist die Spaltenfolge eine andere und nichts wird gelesen."""
+    rows = [[float(v) for v in _FLOAT.findall(ln.partition("->")[2])] for ln in lines[1:60] if "->" in ln]
+    rows = [r for r in rows if len(r) >= 4]
+    return bool(rows) and all(r[0] > 0 and abs(r[0] * r[2] / 1239.842 - 1) < 0.01 for r in rows)
 
 
 def variant_label(variant):
@@ -168,8 +190,9 @@ def parse_tddft(path, variant=None) -> dict:
         return dict(program="ORCA", E=E, f=f, mult=mult, variant=chosen["key"], method=chosen["method"])
     if variant and variant.startswith("mr:"):          # Datei ersetzt: nie still eine andere Tabelle liefern
         raise ValueError("Selected multireference spectrum is no longer present in the output")
-    soc_idx = [i for i, ln in enumerate(lines) if _ORCA_SOC_HEAD in ln]
-    plain_idx = [i for i, ln in enumerate(lines) if _ORCA_HEAD in ln and "SOC" not in ln]
+    head = _before_sorci(lines)
+    soc_idx = [i for i, ln in enumerate(head) if _ORCA_SOC_HEAD in ln]
+    plain_idx = [i for i, ln in enumerate(head) if _ORCA_HEAD in ln and "SOC" not in ln]
     if variant is None:
         variant = "soc" if soc_idx else "nosoc"
     idx = soc_idx if variant == "soc" else plain_idx

@@ -2032,9 +2032,20 @@ def selftest(outdir, with_isnet=False):
                 mt_ = t_e.methods_text()
                 assert "Isothermal decays" in mt_ and "ln k against 1/T" not in mt_ and "T = 104.0 K: k = " in mt_ \
                     and "Elucida" not in mt_, mt_
+                # Unterschrift sagt, was aufgetragen ist (keine „EPR spectra“), k und t1/2 nur der gefitteten Serien
+                w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
+                cap_i_ = t_e.si_caption("X")
+                assert cap_i_.startswith("Normalized peak-to-peak amplitude of the EPR signal of <b>X</b> within 455–485 mT "
+                                         "against time at 100, 104, 108 and 112 K.") and "EPR spectra" not in cap_i_, cap_i_
+                assert "first-order fits" in cap_i_ and "104 K: k = " in cap_i_ and "112 K: k" not in cap_i_ \
+                    and "t<sub>1/2</sub> = " in cap_i_ and "±" not in cap_i_ and "interval" not in cap_i_, cap_i_
                 w.epr_state.update(int_x="arr")
                 F_e = t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
                 ar_ = t_e.arr_result
+                cap_a_ = t_e.si_caption("X")
+                assert cap_a_.startswith("Arrhenius plot (ln k against 1/T) of the first-order rate constants k of the "
+                                         "isothermal EPR decays of <b>X</b> at 100, 104 and 108 K.") and \
+                    f"E<sub>a</sub> = {ar_['Ea'] / 1000:.1f} kJ" in cap_a_ and "Vertical bars" in cap_a_, cap_a_
                 assert abs(ar_["Ea"] / Ea_ - 1) < 0.02 and ar_["n"] == 3 and ar_["ci_Ea"][0] < ar_["Ea"] < ar_["ci_Ea"][1], ar_
                 assert "K$^{-1}$" in F_e.ax.get_xlabel() and len(t_e.series_values) == 3
                 mt_ = t_e.methods_text()
@@ -2427,6 +2438,12 @@ def selftest(outdir, with_isnet=False):
             assert "Gaussian on a linear baseline" in meth_ and "t(0.975; n − 3)" in meth_ and "Ea = 5" in meth_ \
                 and "multiplied by the temperature (I·T) before fitting" in meth_ and "± 0.01 kJ" in meth_ \
                 and " × 10^" in meth_, meth_
+            w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
+            cap_k_ = t_e.si_caption("X")                       # Rampe: Größe, Gauß-Fit, I·T, Fit mit Ea/A, Band
+            assert cap_k_.startswith("Normalized EPR intensity (amplitude of a Gaussian fit) of <b>X</b> within 470–510 mT, "
+                                     "multiplied by the temperature, against temperature.") and \
+                f"E<sub>a</sub> = {r_['Ea'] / 1000:.1f} kJ" in cap_k_ and "confidence band" in cap_k_ \
+                and "EPR spectra" not in cap_k_, cap_k_
             w.epr_state["kin_norm"] = "script"
             w.epr_tab.export_to(out / "epr_decay_script")
             assert abs(t_e.kin_result["Ea"] - Ea_true) / Ea_true < 0.02, t_e.kin_result
@@ -4259,6 +4276,9 @@ def selftest(outdir, with_isnet=False):
             chk_("plane from collinear atoms", p4_plane_collinear)
             class _XS:                                   # Tab-Attrappe für Tabellen (nur Modell)
                 _sym_ops = XRAY.XrayTab._sym_ops
+                st = {}
+                calc_on = staticmethod(lambda e_: False)      # ohne Rechnung (Stufe 3)
+                calc_notes = staticmethod(lambda e_: [])
                 def __init__(s_, S_x, m_, params):
                     s_.e_ = dict(name="t", block="t", params=params)
                     s_.S_x, s_.m_ = S_x, m_
@@ -5380,6 +5400,26 @@ def selftest(outdir, with_isnet=False):
             assert abs(max(F_n_.ax.lines[0].get_xdata()) - 2.75) < 1e-6
             w.dft_state["nics"]["geom"] = "r2SCAN-3c"
             assert "GIAO-b3lyp/6-311+g(2d,p)//r2SCAN-3c level of theory." in pg_.nics_caption("X"), pg_.nics_caption("X")
+            assert "at 1.0 Å above the molecular plane" in pg_.nics_caption("X"), pg_.nics_caption("X")
+            # Lage des Scans aus den Bq: entlang der Normalen (Höhe 0 -> 3.3 Å) und schräg (weder noch)
+            geo_n_ = lambda bq_: PG.nics_points(dict(xyz=ring_, els=["C"] * 6, bq_xyz=np.array(bq_),   # noqa: E731
+                                                     iso=np.zeros(len(bq_)), tensor=[sig_] * len(bq_)))
+            perp_ = geo_n_([nrm_ * 0.3 * i_ for i_ in range(12)])
+            diag_ = geo_n_([nrm_ * (0.5 + 0.2 * i_) + Rt_ @ np.array([0.2 * i_, 0.0, 0.0]) for i_ in range(12)])
+            g_p_ = PG.nics_geometry(perp_)
+            assert g_p_[0] == "normal" and np.allclose(sorted(abs(v_) for v_ in g_p_[1:]), [0.0, 3.3]), g_p_
+            assert PG.nics_geometry(diag_) == ("path",), PG.nics_geometry(diag_)
+            nd_ = pg_.nics_data
+            try:
+                pg_.nics_data = lambda: ([dict(file="p", route=" #p nmr=giao b3lyp/6-311+g(2d,p)", pts=perp_, scan=True)], [])
+                cap_p_ = pg_.nics_caption("X")
+                assert "along the normal of the molecular plane from 0.0 to 3.3 Å above the plane" in cap_p_ \
+                    and "Å above the molecular plane" not in cap_p_, cap_p_
+                pg_.nics_data = lambda: ([dict(file="p", route=" #p nmr=giao b3lyp/6-311+g(2d,p)", pts=diag_, scan=True)], [])
+                cap_d_ = pg_.nics_caption("X")
+                assert "scan of <b>X</b> along the scan path calculated" in cap_d_, cap_d_
+            finally:
+                pg_.nics_data = nd_
             # Export, SI, Projektpfade
             files_f4_ = [Path(f_).name for f_ in t_d.export_to(out / "dft_f4" / "X_DFT")]
             assert {"X_DFT_profile.pdf", "X_DFT_IRC.pdf", "X_DFT_NICS.pdf", "X_DFT_NICS.csv"} <= set(files_f4_), files_f4_
@@ -5401,6 +5441,54 @@ def selftest(outdir, with_isnet=False):
             w.dft_state["nics"] = json.loads(json.dumps(PG.NICS_DEFAULT))
             t_d.sync_widgets()
             report.append("DFT F4: isovalue like IboView, energy profile (SP//Opt), IRC, NICS: OK")
+        with section:
+            # Multireferenz im Stufenbild: Einzelpunkt (CASSCF/SC-NEVPT2/QD-SC-NEVPT2, synthetisch) auf der Geometrie
+            # von f4_A; Vorgabe = höchste Theorie, Wurzel 0; Methode/Zustand in der Karte des Plateaus
+            from elucida.formats import multireference as MRp_
+            t_d = w.dft_tab
+            keep_e_ = list(w.dft_state["entries"])
+            w.dft_state["entries"] = []
+            for q_ in opt_f4_:
+                t_d.load_xyz(q_)
+            pg_ = t_d.pages
+            body_ = [l_ for l_ in MRp_.make_test_mr(ddir / "f4_mr_body.out").read_text(encoding="utf-8").splitlines()
+                     if not l_.startswith(("Program Version", "****ORCA"))]
+            t_mr_ = DFT.read_text(f4_orca("f4_mr_tmp.out", 0, 0, "1.790000", sp=-10.31))
+            k_mr_ = t_mr_.index("                             ****ORCA TERMINATED NORMALLY****")
+            (ddir / "f4_mr_A.out").write_text(t_mr_[:k_mr_] + "\n".join(body_) + "\n" + t_mr_[k_mr_:], encoding="utf-8")
+            pg_.prof["mode"], pg_.prof["y"] = "levels", "G"
+            pg_.load_sp([sp_f4_[0], str(ddir / "f4_mr_A.out")])          # DLPNO auf TS, Multireferenz auf A
+            rows_mr_ = pg_.levels_spec()[0]
+            r_a_ = next(r_ for r_ in rows_mr_ if r_["label"] == "f4_A")
+            th_a_ = DFT.read_calc(opt_f4_[0])["thermo"]
+            corr_a_ = float(th_a_["G"]) - float(th_a_["E_el"])
+            assert r_a_["mr"] == "QD-SC-NEVPT2, root 0 (multiplicity 1)" and abs(r_a_["abs"] - (-10.31 + corr_a_)) < 1e-9, r_a_
+            row_a_ = next(i_ for i_ in range(pg_.tbl_sp.rowCount()) if pg_.tbl_sp.item(i_, 6).text() == "f4_A")
+            row_ts_ = next(i_ for i_ in range(pg_.tbl_sp.rowCount()) if pg_.tbl_sp.item(i_, 6).text() == "f4_TS")
+            pg_.tbl_sp.setCurrentCell(row_a_, 1)
+            assert not pg_.cmb_level_mr.isHidden() and not pg_.cmb_level_root.isHidden()
+            assert pg_.cmb_level_mr.currentText().startswith("QD-SC-NEVPT2") and pg_.cmb_level_mr.count() == 3
+            pg_.cmb_level_mr.setCurrentIndex(pg_.cmb_level_mr.findText("CASSCF", Qt.MatchStartsWith))
+            spec_a_ = pg_.prof["species"][r_a_["uid"]]
+            assert spec_a_.get("mr_result") and spec_a_.get("mr_state") == 0, spec_a_
+            r_a_ = next(r_ for r_ in pg_.levels_spec()[0] if r_["label"] == "f4_A")
+            assert r_a_["mr"] == "CASSCF, root 0 (multiplicity 1)" and abs(r_a_["abs"] - (-10.1 + corr_a_)) < 1e-6, r_a_
+            cap_mr_ = pg_.levels_caption("X")
+            assert "Multireference energies: CASSCF, root 0 (multiplicity 1) for f4_A." in cap_mr_, cap_mr_
+            assert "for all levels" not in cap_mr_ and "electronic energy is shown" not in cap_mr_, cap_mr_
+            pg_.cmb_level_mr.setCurrentIndex(pg_.cmb_level_mr.findText("QD-SC-NEVPT2", Qt.MatchStartsWith))
+            assert "mr_result" not in pg_.prof["species"][r_a_["uid"]]          # Vorgabe wird nicht gespeichert
+            pg_.tbl_sp.setCurrentCell(row_ts_, 1)
+            assert pg_.cmb_level_mr.isHidden() and pg_.cmb_level_root.isHidden()  # nur bei Multireferenz
+            # Multireferenz ohne eigene Frequenzrechnung: G nicht erfunden, E mit Hinweis
+            mr_only_ = dict(label="M", step=0, paths=["A"], uid="m", mr="CASSCF, root 0 (multiplicity 1)",
+                            opt=dict(energy="-10.0", thermo={}), sp=None)
+            rows_el_, notes_el_ = PG.profile_rows([mr_only_, dict(mr_only_, mr=None, uid="n", label="N")], "G")
+            assert [r_["label"] for r_ in rows_el_] == ["M"] and rows_el_[0]["el_only"], rows_el_
+            w.dft_state["entries"] = keep_e_
+            w.dft_state["profile"] = json.loads(json.dumps(PG.PROFILE_DEFAULT))
+            t_d.sync_widgets()
+            report.append("DFT profile: multireference state energies (method and root per level): OK")
 
         with section:
             # F6: only synthetic data. Keep methods, raw precision and density scope separate.
@@ -5422,6 +5510,39 @@ def selftest(outdir, with_isnet=False):
             assert [r_["method"] for r_ in so_] == ["SORCI"] and so_[0]["states"][0]["energy"] == "-2.000000009", so_
             assert so_[0]["states"][2]["excitation_ev"] == "13.606" and "CAS(2,2)" in MR_.result_label(so_[0])
             report.append("DFT F6: MR methods, raw values, natural occupations and spin-gap convention: OK")
+        with section:
+            # SORCI im Overlay: nur mit gedruckter Absorptionstabelle des DDCI3-Schritts (DDCI2 nie), Zahlen wie gedruckt;
+            # ohne Tabelle oder mit unbekannter Spaltenfolge nicht wählbar (synthetisches Layout wie TD-DFT in ORCA 6)
+            from elucida.core import tddft as XTs_
+            from elucida.formats import multireference as MRs_
+            so_p_ = MRs_.make_test_sorci(out / "sorci_plain.out")
+            assert XTs_.tddft_variants(so_p_) == [], XTs_.tddft_variants(so_p_)          # keine Tabelle: nichts anbieten
+            try:
+                XTs_.parse_tddft(so_p_)
+                raise AssertionError("SORCI without spectrum must not be read")
+            except ValueError:
+                pass
+            dash_ = "-" * 100
+
+            def so_tab_(f_, nm_="50.6"):
+                return "\n".join([dash_, "ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", dash_,
+                                  "     Transition      Energy     Energy  Wavelength fosc(D2)      D2        DX        DY        DZ",
+                                  "                      (eV)      (cm-1)    (nm)                 (au**2)    (au)      (au)      (au)",
+                                  dash_, f"  0-1A  ->  1-1A   24.490000  197527.2    {nm_}   {f_}   0.10000   0.30000   0.10000   0.00000",
+                                  "", ""])
+            so_t_ = so_p_.read_text(encoding="utf-8")
+            k2_, kf_ = so_t_.index("# S O R C I (DDCI3-STEP)"), so_t_.index("FINAL SINGLE POINT")
+            so_s_ = out / "sorci_spectrum.out"
+            so_s_.write_text(so_t_[:k2_] + so_tab_("0.900000000") + so_t_[k2_:kf_] + so_tab_("0.600000000")
+                             + so_t_[kf_:], encoding="utf-8")
+            assert XTs_.tddft_variants(so_s_) == ["mr:SORCI:nosoc:0"], XTs_.tddft_variants(so_s_)
+            r_so_ = XTs_.parse_tddft(so_s_)
+            assert r_so_["method"] == "SORCI" and list(r_so_["E"]) == [24.49] and list(r_so_["f"]) == [0.6], r_so_
+            assert "SORCI" in XTs_.variant_label(r_so_["variant"])
+            so_b_ = out / "sorci_badcols.out"                                          # Spaltenfolge passt nicht: ablehnen
+            so_b_.write_text(so_t_[:k2_] + so_t_[k2_:kf_] + so_tab_("0.600000000", nm_="80.6") + so_t_[kf_:], encoding="utf-8")
+            assert XTs_.tddft_variants(so_b_) == [], XTs_.tddft_variants(so_b_)
+            report.append("Overlay: SORCI (DDCI3) spectra selectable only with a printed absorption table: OK")
 
         with section:
             # Profile view remains editable JSON; captures drawing settings instead of live links.
@@ -6879,6 +7000,16 @@ def selftest(outdir, with_isnet=False):
             e_dft_ = w.dft_state["entries"][0]
             assert len(e_dft_.get("orbitals") or []) == 2 and w.dft_tab.pages.nics["files"], "DFT orbitals/NICS missing"
             assert [w.dft_tab.orb_name(e_dft_, o_).split()[0] for o_ in e_dft_["orbitals"]] == ["LUMO", "HOMO"]
+            assert w.dft_tab.entry() is e_dft_                                   # gezeigt: Opt/Freq mit Orbitalen
+            # Multireferenz: eigene Rechnung auf derselben Geometrie, SC-NEVPT2 gewählt, die Seite zeigt sie
+            e_mr_ = next(e_ for e_ in w.dft_state["entries"] if (w.dft_tab.calc_of(e_) or {}).get("multireference"))
+            assert [r_["method"] for r_ in w.dft_tab.calc_of(e_mr_)["multireference"]] == ["CASSCF", "SC-NEVPT2"]
+            w.dft_state["current"] = e_mr_["uid"]
+            w.dft_tab.mr_page.sync()
+            assert w.dft_tab.mr_page.stack.currentWidget() is w.dft_tab.mr_page.text and \
+                "SC-NEVPT2" in w.dft_tab.mr_page.text.toPlainText(), "example multireference page empty"
+            w.dft_state["current"] = e_dft_["uid"]
+            w.dft_tab.mr_page.sync()
             calc_x_ = IRMS.ion(formula_x_, "M+H")[2]                     # HRMS: Bericht und Rohdaten
             rep_x_ = IRMS.nearest(w.hrms_tab.ms_report()["mz"], calc_x_)
             lc_x_ = w.hrms_tab.raw_found(calc_x_)
@@ -7375,6 +7506,20 @@ def selftest(outdir, with_isnet=False):
             assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
             assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2
             assert PUB.load(dpub_)["si_texts"]["methods"].startswith("All reactions")
+            # Computerchemie: ein Reaktionspfad mit vier Plateaus (TS mit genau einer imaginären Frequenz) und Vorschau
+            from elucida.app import reaction_paths as RPd_
+            from elucida.tabs import dft as DFTd_
+            rp_d_ = PUB.load(dpub_)["reaction_paths"]
+            assert len(rp_d_) == 1 and len(w.pub_page.path_cards) == 1, rp_d_
+            assert (RPd_.directory(dpub_, rp_d_[0]["uid"]) / "preview.png").exists()
+            h_d_ = RPd_.PathHost(w, dpub_, rp_d_[0], readonly=True)
+            try:
+                rows_d_ = h_d_.tab.pages.levels_spec()[0]
+                assert [r_["label"] for r_ in rows_d_] == ["S3·H2O", "TS", "Enol", "Ketone"], rows_d_
+                assert rows_d_[1]["value"] > 20 and rows_d_[3]["value"] < rows_d_[2]["value"] < 0, rows_d_
+                assert [len(DFTd_.imaginary(h_d_.tab.calc_of(e_))) for e_ in h_d_.tab.entries()] == [0, 1, 0, 0]
+            finally:
+                h_d_.dispose()
             ck_ = PUB.checklist(dpub_ / "S2")                                 # Checkliste: neue Verbindung
             assert {"1H", "13C", "2D", "ms", "ir", "mp"} <= ck_["have"] and not ck_["missing"], ck_   # Beispiel vollständig
             w.open_project(dpub_ / "S3")
@@ -8807,6 +8952,194 @@ def selftest(outdir, with_isnet=False):
             w.close_publication()
             report.append("Comparison CV stack (three synthetic compounds: offsets, peak labels, structures beside "
                           "the curves, one scan arrow each, other reference refused) and spectra overlay: OK")
+        with section:
+            # X-Ray Stufe 3: Kristall gegen Rechnung. Alles künstlich: Kristall = RDKit-Geometrie in P1, Rechnung =
+            # dieselbe 1.02-fach skaliert, gedreht, verschoben, Atome umsortiert -> RMSD = 0.02 x rms-Radius der
+            # Schweratome, Bindungen x 1.02, Winkel/Torsionen gleich
+            from rdkit import Chem as _Ch3
+            from rdkit.Chem import AllChem as _ACh3
+
+            def mol3_(smi_):
+                m_ = _Ch3.AddHs(_Ch3.MolFromSmiles(smi_))
+                _ACh3.EmbedMolecule(m_, randomSeed=7)
+                _ACh3.MMFFOptimizeMolecule(m_)
+                p_ = m_.GetConformer().GetPositions()
+                return [a_.GetSymbol() for a_ in m_.GetAtoms()], p_ - p_.mean(axis=0)
+
+            def cif3_(path_, parts_, cell_=14.0):
+                ln_ = ["data_calc3", f"_cell_length_a {cell_}", f"_cell_length_b {cell_}", f"_cell_length_c {cell_}",
+                       "_cell_angle_alpha 90", "_cell_angle_beta 90", "_cell_angle_gamma 90", "loop_",
+                       "_space_group_symop_operation_xyz", "'x, y, z'", "loop_", "_atom_site_label",
+                       "_atom_site_type_symbol", "_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z",
+                       "_atom_site_U_iso_or_equiv", "_atom_site_adp_type"]
+                cnt_, lab_ = {}, []
+                for els_, xyz_, off_ in parts_:
+                    for e_, p_ in zip(els_, xyz_):
+                        cnt_[e_] = cnt_.get(e_, 0) + 1
+                        lab_.append(f"{e_}{cnt_[e_]}")
+                        f_ = (np.asarray(p_) + off_) / cell_
+                        ln_.append(f"{lab_[-1]} {e_} {f_[0]:.7f} {f_[1]:.7f} {f_[2]:.7f} 0.03 Uiso")
+                Path(path_).write_text("\n".join(ln_) + "\n", encoding="utf-8", newline="\n")
+                return lab_
+
+            rng3_ = np.random.default_rng(3)
+            q3_, _ = np.linalg.qr(rng3_.normal(size=(3, 3)))
+            q3_[:, 0] *= np.sign(np.linalg.det(q3_))               # echte Drehung (kein Spiegelbild)
+
+            def xyz3_(path_, els_, xyz_):
+                perm_ = rng3_.permutation(len(els_))
+                c_ = (1.02 * np.asarray(xyz_)) @ q3_.T + [1.0, -2.0, 3.0]
+                Path(path_).write_text(f"{len(els_)}\nsynthetic\n" + "".join(
+                    f"{els_[i_]} {c_[i_][0]:.8f} {c_[i_][1]:.8f} {c_[i_][2]:.8f}\n" for i_ in perm_), encoding="utf-8")
+                return perm_
+
+            d3_ = out / "calc3"
+            d3_.mkdir(exist_ok=True)
+            els3_, xyz3 = mol3_("OCC(Cl)C(=O)N")
+            mid3_ = np.array([7.0, 7.0, 7.0])
+            lab3_ = cif3_(d3_ / "a.cif", [(els3_, xyz3, mid3_)])
+            perm3_ = xyz3_(d3_ / "a.xyz", els3_, xyz3)
+            assert w.create_project(out / "calc3_prj")
+            t3_ = w.xray_tab
+            w.main_tabs.setCurrentWidget(t3_)
+            t3_.load_cif(str(d3_ / "a.cif"))
+            pump(0.2)
+            e3_ = t3_.entry()
+            mol3 = t3_.molecule(e3_)
+            k3_ = {a_["label"]: a_["key"] for a_ in mol3.atoms}
+            nb3_ = mol3.neighbors()
+            cl_ = mol3.find_key(k3_["Cl1"])
+            c_cl_ = nb3_[cl_][0]
+            c_o_ = [j_ for j_ in nb3_[c_cl_] if mol3.atoms[j_]["el"] == "C" and any(
+                mol3.atoms[x_]["el"] == "O" for x_ in nb3_[j_])]
+            keys3_ = [mol3.atoms[i_]["key"] for i_ in (cl_, c_cl_)]
+            ang3_ = [mol3.atoms[i_]["key"] for i_ in (cl_, c_cl_, c_o_[0])]
+            tor3_ = [mol3.atoms[i_]["key"] for i_ in (cl_, c_cl_, c_o_[0], [x_ for x_ in nb3_[c_o_[0]] if x_ != c_cl_][0])]
+            e3_["params"] = [{"atoms": keys3_}, {"atoms": ang3_}, {"atoms": tor3_}]
+            t3_.load_calc_file(e3_, str(d3_ / "a.xyz"))
+            pump(0.2)
+            c3_ = e3_["calc"]
+            assert c3_.get("map") and not c3_.get("error"), c3_.get("error")
+            idx3_ = {lab_: i_ for i_, lab_ in enumerate(lab3_)}
+            assert all(perm3_[c3_["map"][a_["key"]]] == idx3_[a_["label"]] for a_ in mol3.atoms), "Zuordnung falsch"
+            hv3_ = np.array([p_ for e_, p_ in zip(els3_, xyz3) if e_ != "H"])
+            rms3_ = 0.02 * float(np.sqrt(np.mean(np.sum((hv3_ - hv3_.mean(axis=0)) ** 2, axis=1))))
+            assert abs(c3_["rmsd"] - rms3_) < 2e-4 and not c3_["mirror"] and not c3_["alts"], (c3_["rmsd"], rms3_)
+            assert c3_["level"] == "" and t3_.tbl_map.rowCount() == len(els3_)
+            assert "RMSD" in t3_.lbl_calc.text() and f"{c3_['rmsd']:.3f}" in t3_.lbl_calc.text()
+            h3_, r3_, n3_ = t3_.params_table()
+            assert h3_ == ["", "a", "calc."], h3_
+            d_cl_ = XRAY.distance([mol3.atoms[i_]["xyz"] for i_ in (cl_, c_cl_)])
+            row_b_ = next(r_ for r_ in r3_ if r_[0] == XRAY.param_label(keys3_))
+            assert row_b_[1].startswith(f"{d_cl_:.3f}") and row_b_[2] == f"{1.02 * d_cl_:.3f}", (row_b_, d_cl_)
+            row_a_ = next(r_ for r_ in r3_ if r_[0] == XRAY.param_label(ang3_))
+            assert row_a_[1].split("^")[0] == row_a_[2], row_a_              # Winkel: Skalierung ändert nichts
+            row_t_ = next(r_ for r_ in r3_ if r_[0] == XRAY.param_label(tor3_))
+            assert row_t_[1].split("^")[0] == row_t_[2], row_t_
+            assert any("supplied calculated geometry" in n_ and "RMSD" in n_ for n_ in n3_), n3_
+            assert not any(n_.startswith("Symmetry") for n_ in n3_), n3_
+            assert "Selected" not in t3_.caption(e3_)[0]                  # Werte stehen mit Rechnung in der Tabelle
+            t3_.cb_calc_delta.setChecked(True)                            # Chip „Spalte Δ“
+            pump(0.2)
+            h3d_, r3d_, _ = t3_.params_table()
+            row_bd_ = next(r_ for r_ in r3d_ if r_[0] == XRAY.param_label(keys3_))
+            dl_ = float(row_bd_[3].replace("−", "-"))
+            assert h3d_[-1] == "Δ" and abs(dl_ - 0.02 * d_cl_) < 1.1e-3 and row_bd_[3].startswith("+"), row_bd_
+            pt3_ = t3_.param_tables(e3_)
+            assert pt3_ and pt3_[0][2][-3:] == ["Length (X-ray) / Å", "Length (calc.) / Å", "Δ / Å"], pt3_[0][2]
+            blk3_ = w.si_xray_blocks([e3_])
+            assert any(b_[0] == "params" and len(b_) > 3 for b_ in blk3_)
+            assert any(b_[0] == "note" and "RMSD" in b_[1] for b_ in blk3_)
+            with __import__("zipfile").ZipFile(SI.write_docx(d3_ / "calc3.docx", blk3_)) as z_:
+                doc3_ = z_.read("word/document.xml").decode("utf-8")
+            assert "Length (calc.) / Å" in doc3_ and f"{1.02 * d_cl_:.3f}" in doc3_, "Word ohne Spalte calc."
+            files3_ = t3_.export_to(d3_ / "exp" / "a")
+            csv3_ = next(p_ for p_ in files3_ if str(p_).endswith("_parameters.csv"))
+            txt3_ = Path(csv3_).read_text(encoding="utf-8")
+            assert "calc." in txt3_ and f"{1.02 * d_cl_:.3f}" in txt3_ and "RMSD" in txt3_, txt3_[:300]
+            # wieder öffnen: gespeicherte Zuordnung, gleiche Tabelle (ohne neue Zuordnung)
+            map3_, tab3_ = dict(c3_["map"]), t3_.params_table()
+            w.save_project()
+            w.close_project()
+            assert w.open_project(out / "calc3_prj", ask=False)
+            pump(0.3)
+            e3b_ = w.xray_tab.entry()
+            assert e3b_["calc"]["map"] == map3_ and w.xray_tab.params_table() == tab3_
+            assert w.xray_tab.tbl_map.rowCount() == len(els3_)
+            t3_ = w.xray_tab
+            # aus dem DFT-Tab: Eintrag im Zustand, Auswahl in der Liste
+            w.dft_tab.load_xyz(str(d3_ / "a.xyz"))
+            t3_.fill_calc()
+            i3_ = next(i_ for i_ in range(t3_.cmb_calc.count()) if str(t3_.cmb_calc.itemData(i_)).startswith("dft:"))
+            t3_.cmb_calc.setCurrentIndex(i3_)
+            t3_.calc_source_chosen()
+            assert e3b_["calc"]["src"] == "dft" and e3b_["calc"]["map"] == map3_
+            # andere Zusammensetzung: abgelehnt, keine Zuordnung
+            xyz3_(d3_ / "br.xyz", ["Br" if e_ == "Cl" else e_ for e_ in els3_], xyz3)
+            t3_.load_calc_file(e3b_, str(d3_ / "br.xyz"))
+            assert not e3b_["calc"].get("map") and "Br" in e3b_["calc"]["error"], e3b_["calc"]
+            assert t3_.tbl_map.rowCount() == 0 and t3_.params_table()[0] == ["", "a"]
+            # symmetrisches Molekül (Cl-CH2-CH2-Cl, exakt zentrosymmetrisch): zwei gleich gute Zuordnungen
+            els4_, xyz4_ = mol3_("ClCCCl")
+            cc_ = [i_ for i_, e_ in enumerate(els4_) if e_ == "C"]
+            xyz4_ = xyz4_ - xyz4_[cc_].mean(axis=0)
+            twin_ = [min((j_ for j_ in range(len(els4_)) if els4_[j_] == els4_[i_]),
+                         key=lambda j_: float(np.linalg.norm(xyz4_[j_] + xyz4_[i_]))) for i_ in range(len(els4_))]
+            xyz4_ = np.array([(xyz4_[i_] - xyz4_[twin_[i_]]) / 2 for i_ in range(len(els4_))])
+            cif3_(d3_ / "sym.cif", [(els4_, xyz4_, mid3_)])
+            xyz3_(d3_ / "sym.xyz", els4_, xyz4_)
+            t3_.load_cif(str(d3_ / "sym.cif"))
+            e4_ = t3_.entry()
+            m4_ = t3_.molecule(e4_)
+            k4_ = {a_["label"]: a_["key"] for a_ in m4_.atoms}
+            e4_["params"] = [{"atoms": [k4_["Cl1"], m4_.atoms[m4_.neighbors()[m4_.find_key(k4_["Cl1"])][0]]["key"]]}]
+            t3_.load_calc_file(e4_, str(d3_ / "sym.xyz"))
+            c4_ = e4_["calc"]
+            assert c4_.get("map") and len(c4_["alts"]) == 1 and not t3_.calc_differs(e4_, m4_), c4_
+            assert T("xr_calc_equiv", n=2) in t3_.lbl_calc.text(), t3_.lbl_calc.text()
+            # Kristall mit Lösungsmittel: ohne Wahl des Fragments keine Zuordnung, mit Wahl ohne das Wasser
+            wat_ = (["O", "H", "H"], np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]))
+            cif3_(d3_ / "solv.cif", [(els3_, xyz3, mid3_), (wat_[0], wat_[1], np.array([1.5, 1.5, 1.5]))])
+            t3_.load_cif(str(d3_ / "solv.cif"))
+            e5_ = t3_.entry()
+            m5_ = t3_.molecule(e5_)
+            assert len(m5_.fragments) == 2
+            t3_.load_calc_file(e5_, str(d3_ / "a.xyz"))
+            assert not e5_["calc"].get("map") and e5_["calc"]["error"] == T("xr_calc_need_frag", n=2)
+            assert not t3_._calc_form.isRowVisible(t3_.tbl_map) and t3_._calc_form.isRowVisible(t3_.cmb_cfrag)
+            t3_.cmb_cfrag.setCurrentIndex(t3_.cmb_cfrag.findData(0))
+            t3_.calc_frag_chosen()
+            m5map_ = e5_["calc"].get("map") or {}
+            assert len(m5map_) == len(els3_) and not any(m5_.atoms[m5_.find_key(k_)]["frag"] for k_ in m5map_)
+            w.close_project()
+            # Echte Daten (geprüft 2026-11-13 an einer hinterlegten CIF, der ein H fehlte, mit NICS-/ACID-Ausgaben): dem
+            # Kristall fehlt ein H -> Gerüst zuordnen und die Stelle melden statt ablehnen; Geisteratome der Rechnung
+            # (Bq) gehören nicht zum Molekül; Methode der Gaussian-Route nicht aus „iop(10/93=1)“
+            els5_, xyz5 = mol3_("OCC(Cl)C(=O)N")
+            drop5_ = max(i_ for i_, e_ in enumerate(els5_) if e_ == "H")
+            keep5_ = [i_ for i_ in range(len(els5_)) if i_ != drop5_]
+            cif3_(d3_ / "h.cif", [([els5_[i_] for i_ in keep5_], xyz5[keep5_], mid3_)])
+            (d3_ / "h.xyz").write_text(f"{len(els5_) + 3}\nwith ghost atoms\n" + "".join(
+                f"{e_} {p_[0]:.8f} {p_[1]:.8f} {p_[2]:.8f}\n" for e_, p_ in zip(els5_, 1.02 * xyz5))
+                + "Bq 0.0 0.0 1.0\nBq 0.0 0.0 2.0\nX 0.0 0.0 3.0\n", encoding="utf-8")
+            g5_ = XRAY.read_calc_geometry(d3_ / "h.xyz")
+            assert g5_["els"] == els5_ and len(g5_["xyz"]) == len(els5_), g5_["els"]
+            m5_ = XRAY.Molecule(XRAY.Structure(XRAY.structure_blocks(d3_ / "h.cif")[0]), "main")
+            r5_ = XRAY.match_calc(m5_, m5_.atoms[0]["frag"], g5_["els"], g5_["xyz"])
+            assert len(r5_["h_diff"]) == 1 and r5_["h_diff"][0][1] + 1 == r5_["h_diff"][0][2], r5_["h_diff"]
+            assert len(r5_["map"]) == len(els5_) - 1 and r5_["n_h"] == els5_.count("H") - 1 and drop5_ not in r5_["map"].values()
+            r6_ = XRAY.match_calc(m5_, m5_.atoms[0]["frag"], [els5_[i_] for i_ in keep5_], 1.02 * xyz5[keep5_])
+            assert not r6_["h_diff"] and len(r6_["map"]) == len(keep5_)                    # gleiche H-Zahl: nichts zu melden
+            from elucida.tabs import dft_pages as PG3_
+            assert PG3_.level_of_theory({"program": "Gaussian", "keywords": ["#b3lyp/6-31g* nmr=csgt iop(10/93=1)"]}) \
+                == "b3lyp/6-31g*"
+            assert PG3_.level_of_theory({"program": "Gaussian", "keywords": ["#p opt freq cam-b3lyp/def2svp"]}) \
+                == "cam-b3lyp/def2svp"
+            assert PG3_.level_of_theory({"program": "Gaussian", "keywords": [
+                "#p opt freq b3lyp def2svp empiricaldispersion=gd3bj gfinput iop(6/7=3)"]}) == "b3lyp/def2svp"
+            assert PG3_.level_of_theory({"program": "Gaussian", "keywords": ["#p opt freq oniom b3lyp def2svp"]}) == ""
+            report.append("X-ray vs. calculation (graph assignment, Kabsch RMSD as constructed, calc./Delta columns, "
+                          "symmetric molecule, composition refused, fragment choice, reopen, Word/CSV): OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

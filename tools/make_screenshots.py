@@ -74,8 +74,10 @@ def shoot_welcome(w, outdir, lang, theme, work):
         w.grab().save(str(p))
         print(p.name)
         shoot_comparison(w, outdir, lang, theme)
-        from elucida.app import reaction_paths as RP       # Reaktionspfad: leere Zeichenfläche im Hauptfenster
-        w.pub_page.open_path(RP.create(work / "Beispielprojekt", "Reaction path"))
+        from elucida.app import publication as PUB         # Reaktionspfad des Beispielprojekts: Rechnungen + Profil
+        w.pub_page.open_path(PUB.load(work / "Beispielprojekt")["reaction_paths"][0])
+        ws = w.pub_page.path_workspace
+        ws.tabs.setCurrentWidget(ws.calc_page)
         pump(3.0)
         p = Path(outdir) / f"paths_{theme}_{lang}.png"
         clear_toast(w)

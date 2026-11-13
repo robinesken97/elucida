@@ -49,3 +49,21 @@ paths:
   (`SOLVENTS`/`IONS`, auch ohne H); gleiche Schweratomformel wie das Hauptmolekül = Z′ > 1, nie automatisch ausblenden.
   Ausblenden/Drahtmodell ändern nur das Bild, nie Tabellen oder Messwerte; die Bildunterschrift (`caption`) folgt dem Bild.
 - Labelgröße je Tab (`label_pt`, 0 = Textformat) in X-Ray und DFT über `label_size` in den opts von `XrayFigure`.
+- X-Ray Stufe 3 (Vergleich mit Rechnung, Karte im Schritt Auswertung, Nutzerauftrag 2026-11-13): Geometrie aus dem
+  Zustand des DFT-Tabs (`dft_state`, nie der Tab) oder als Datei (xyz, ORCA, Gaussian; Kopie in data/xray). Geisteratome
+  (Bq/X aus NICS/ACID) fallen beim Lesen weg (`read_calc_geometry`). Zuordnung nur über den Graphen (`match_calc`):
+  gleiche Schweratome, isomorphes Bindungsnetz der Schweratome; nie nach Abstand oder Reihenfolge. Passt das Gerüst
+  nicht: ablehnen und die Stelle nennen (Formeln, abweichende Atome über MCS). **Andere H-Zahl an einem Schweratom wird
+  gemeldet, nicht abgelehnt** (`h_diff`, Hinweis im Tab und Fußnote der Tabelle; geprüft an einer hinterlegten CIF, der
+  ein H fehlte – es kann aber auch eine andere Spezies sein, deshalb nie still): überzählige H bleiben ohne Partner,
+  Parameter mit ihnen bleiben leer. Mehrere Fragmente (Lösungsmittel, Ionen, Z′ > 1): Fragment wählen lassen, sonst keine
+  Zuordnung; Fehlordnung: Teil über „Fehlordnung“. Unter mehreren Graph-Zuordnungen die mit der kleinsten Kabsch-RMSD der
+  Schweratome (Spiegelung nur wie `DFT.kabsch`, dann Hinweis Torsionsvorzeichen); gleichwertige innerhalb `CALC_TOL`
+  speichern (≤ `CALC_ALTS`) und melden, ob die gewählten Parameter gleich sind (`CALC_SAME`). RMSD unter
+  `CALC_SAME_GEOM` (0.01 Å): Hinweis, dass die Rechnung ein Einzelpunkt auf den Kristallkoordinaten ist und nichts
+  vergleicht. Zuordnung (`entry["calc"]["map"]`, Atom-Schlüssel → Dateiindex) wird gespeichert und beim Öffnen
+  unverändert benutzt. Rechenwerte ohne Standardabweichung mit fester Stellenzahl (`CALC_DEC`: Bindungen 3
+  Nachkommastellen in Å, Winkel/Torsionen 1 in °), Δ = Rechnung − Kristall wahlweise (Standard aus). Kopf = Methode wie
+  `level_of_theory`, reine xyz „calc.“; Fußnote: Geometrie wie die Rechnung angibt (optimiert nur bei konvergierter
+  Optimierung, Gasphase oder solvatisiert) und RMSD der Schweratome; nie das Programm. Mit Rechnung stehen die Werte
+  immer in der Tabelle (auch ≤ `CAPTION_MAX`), nicht in der Bildunterschrift.

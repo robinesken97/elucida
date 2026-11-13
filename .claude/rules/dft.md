@@ -105,3 +105,14 @@ paths:
   Gesamtenergie mit Korrelationsanteil („EUMP2 =“, „E(B2PLYP) =“ nach „E2(“, „CCSD(T)=“; Ziffern wie gedruckt, nur der
   D-Exponent aufgelöst), nicht „SCF Done“. Formate aus dem Gedächtnis, nur mit künstlichen Zeilen geprüft: echte
   Gaussian-MP2-/Doppelhybrid-Ausgabe steht aus. ORCA nimmt weiter FINAL SINGLE POINT ENERGY.
+- Multireferenz im Stufenbild (Nutzerauftrag 2026-11-13): Plateaus mit CASSCF/NEVPT2/SORCI-Ergebnis (Einzelpunkt vor der
+  Rechnung selbst) nehmen die Gesamtenergie eines Zustands; Wahl je Plateau in der Karte (`mr_result`/`mr_state` in
+  `prof["species"][uid]`, Vorgabe nicht gespeichert: höchste Theorie QD-NEVPT2 > NEVPT2 > SORCI > CASSCF, bei gleicher
+  die letzte, Wurzel 0). Nur elektronisch; G/H = E(Zustand) + Korrektur der eigenen Frequenzrechnung, ohne sie E_el mit
+  Hinweis und Satz in der Unterschrift (`el_only`). Unterschrift nennt Methode, Wurzel und Multiplizität. Nur
+  synthetisch geprüft.
+- NICS-Unterschrift aus den Bq (`nics_geometry`, nie aus Dateinamen): ptp(h) < max(0.1 Å, 5 % des Wegs) = in einer Höhe,
+  ptp(h) > 95 % des Wegs = entlang der Normalen, sonst „along the scan path“. Die lokale Normale zeigt zur Seite der
+  globalen.
+- Gaussian-Methode (`level_of_theory`): Token „Methode/Basis“ der Route, auch direkt am „#“; Optionen mit „/“ wie
+  `iop(10/93=1)` nie. Ein Energieprofil mit einer einzigen Stufe kommt nicht in die SI.

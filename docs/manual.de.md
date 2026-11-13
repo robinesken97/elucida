@@ -168,7 +168,7 @@ gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) �
 
 ### Projekte
 
-<p align="center"><img src="screenshots/paths_dark_de.png" alt="Reaktionspfad mit freier Zeichenfläche" width="80%"></p>
+<p align="center"><img src="screenshots/paths_dark_de.png" alt="Reaktionspfad des Beispielprojekts: Rechendaten und Energieprofil" width="80%"></p>
 
 **Computerchemie (Reaktionspfade):** Ein Reiter des Projekts für Energieprofile und IRCs über mehrere Verbindungen, ohne
 diese zu verändern (Rechnungen werden hineinkopiert). **Gestalten** ist eine freie Zeichenfläche (Octet) für Profile,
@@ -815,6 +815,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   gegen 1000/T auf und liefert E_a und ln A aus einer ungewichteten Ausgleichsgeraden, ein Punkt je Temperatur; ein
   95-%-Intervall gibt es erst ab drei Temperaturen. Die Striche an den Punkten sind die Intervalle von k. Peak-zu-Peak
   unterschätzt k, sobald das Signal im Rauschen verschwindet; dann das Doppelintegral oder „Fit bis Verlust“ nehmen.
+  Die Bildunterschrift dieser Ansichten sagt, was aufgetragen ist (Größe, Feldfenster, Normierung, Temperaturen), und
+  nennt nur Werte gezeigter Fits (k und Halbwertszeit je Temperatur, E_a und A der Rampe, die Arrhenius-Gerade).
 - **Export für EasySpin:** Neben der Abbildung wird jede Messung als zweispaltige Textdatei (B in mT, Intensität) in
   voller Auflösung nach Dunkelspektrum, Basislinie und Glättung geschrieben – ohne Normierung und ohne ausgeblendete
   Bereiche – mit `%`-Kopfzeilen zu Frequenz, Temperatur und Verarbeitung (`load(...)` in MATLAB, direkt für `esfit`).
@@ -855,6 +857,19 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   CCDC-Nummer editierbar) und ausgewählte Bindungslängen, Winkel und Diederwinkel (gleichnamige Atome nebeneinander).
   **Kopieren** behält Kursivschrift und Hoch-/Tiefstellung in Word; der Export schreibt zusätzlich CSV und Excel.
   Die Tabellen sind englisch beschriftet (wie in SI üblich).
+- **Vergleich mit Rechnung** (Schritt Auswertung): unter **Rechnung** eine Geometrie aus dem DFT-Tab wählen oder über
+  **Datei …** eine xyz-Datei bzw. ORCA-/Gaussian-Ausgabe laden. Die Atome werden nur über das Bindungsnetz zugeordnet:
+  gleiche Summenformel, gleiche Verknüpfung der Schweratome, gleich viele H an jedem Schweratom. Passt etwas nicht,
+  nennt der Hinweis die Stelle (Summenformeln, abweichende Atome) und es gibt keine Zuordnung – nie nach Abstand oder
+  Reihenfolge. Enthält der Kristall weitere Moleküle (Lösungsmittel, Gegenionen) oder Fehlordnung, unter **Fragment**
+  den Teil wählen, der der Rechnung entspricht, bzw. unter Darstellung → Fehlordnung einen Teil. Bei mehreren
+  gleichwertigen Zuordnungen (Symmetrie) gilt die mit der kleinsten RMSD der Schweratome nach Überlagerung; ergeben gleich
+  gute Zuordnungen verschiedene Werte, nennt der Hinweis die Parameter. Die **Zuordnung** (CIF-Label ↔ Nummer und Element
+  in der Datei der Rechnung) wird mit der Verbindung gespeichert. Die Parametertabelle bekommt die Spalte der Rechnung
+  (Kopf = Methode, bei einer reinen xyz „calc.“; Bindungslängen mit 3, Winkel mit 1 Nachkommastelle, ohne
+  Standardabweichung), wahlweise **Spalte Δ** (Rechnung − Kristall); dasselbe in Excel/CSV und Word, dort mit einer
+  Fußnote zur Geometrie (Gasphase oder solvatisiert, wie die Rechnung angibt) und der RMSD. Mit Rechnung stehen die
+  Werte immer in der Tabelle, nicht in der Bildunterschrift.
 - Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv` und
   `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar, der **Hintergrund** wählbar (weiß, transparent, Farbe; gilt
   auch für Word).
@@ -891,17 +906,26 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Pfad(en) A, B …; optional **Einzelpunkte** (z. B. DLPNO-CCSD(T)), zugeordnet über gleiche Atome und Koordinaten
   (nie über Dateinamen): G = E(SP) + (G − E_el). Stufen mit gestrichelten Verbindungen, ΔG/ΔH/ΔE in kcal mol⁻¹ mit einer
   Nachkommastelle, Unterschrift „… calculated at the <Einzelpunkt>//<Geometrie> level of theory“.
+  **Multireferenz-Plateaus** (ORCA 6 CASSCF/NEVPT2/SORCI, als Einzelpunkt oder als Rechnung selbst): die Felder
+  **Methode** und **Zustand** unter der Tabelle wählen, welche Zustandsenergie das Plateau zeigt (Vorgabe: höchste Theorie
+  der Datei, NEVPT2 vor CASSCF, Wurzel 0). Genommen wird nur die elektronische Gesamtenergie dieses Zustands; G und H
+  addieren die thermische Korrektur der eigenen Frequenzrechnung des Plateaus. Fehlt sie, zeigt das Plateau seine
+  elektronische Energie, mit Hinweis und Satz in der Unterschrift. Die Unterschrift nennt Methode und Wurzel.
   **IRC** (ORCA): Ausgabe + `<Name>_IRC_Full_trj.xyz`, x = Reaktionskoordinate in Å (Summe der kartesischen Verschiebungen, nicht massengewichtet; TS = 0) oder eine Bindungslänge, mehrere
   IRCs nacheinander, Barrieren am Übergangszustand.
 - **NICS** (Reiter): Gaussian-NMR-Ausgaben mit Geisteratomen (Bq, z. B. aus py.Aroma): NICS und NICSzz (entlang der
   Normalen der Ringebene) je Punkt, Mittel ober-/unterhalb; Scans als Kurve über die Weglänge (NICS schwarz, NICSzz rot).
+  Die Unterschrift beschreibt den Scan aus den Koordinaten der Bq: parallel zur Molekülebene in einer Höhe, entlang der
+  Ebenennormalen (Höhenbereich) oder neutral „along the scan path“.
 
 - **Multireferenz (ORCA 6):** CASSCF-, SC-NEVPT2-, QD-SC-NEVPT2- und SORCI-Ergebnisse stehen je Block zur Auswahl, Energien,
   Konfigurationsgewichte und Besetzungen wie in der Ausgabe. Die SI übernimmt einen Block nur auf ausdrückliche Wahl.
   SORCI: gezeigt wird der abschließende DDCI3-Schritt, die Energien enthalten ORCAs Korrekturen, CI-Energie und Korrektur stehen daneben.
   ΔE_ST zwischen gewähltem Singulett und Triplett desselben Blocks, mit angezeigter Gleichung. Der Diradikalindikator ist
   y₀ = n(LUNO) und nur für natürliche Orbitale eines konvergierten Singulettzustands verfügbar. Unvollständige oder
-  abgebrochene Ausgaben werden gemeldet. Im Overlay sind MR-Spektren nach Methode und Block wählbar.
+  abgebrochene Ausgaben werden gemeldet. Im Overlay sind MR-Spektren nach Methode und Block wählbar; SORCI nur, wenn die
+  Ausgabe für den abschließenden DDCI3-Schritt eine Absorptionstabelle druckt (Anregungsenergien und Oszillatorstärken wie
+  gedruckt, nichts abgeleitet).
 
 ## Cluster-Anbindung
 

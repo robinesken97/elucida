@@ -5,6 +5,15 @@
 ## 1.1.0 – 2026-11-12
 
 ### New
+- **X-ray: comparison with a calculated geometry.** In the step "Evaluation", a geometry from the DFT tab or a file
+  (xyz, ORCA or Gaussian output) is assigned to the crystal structure via the bond network only (same formula, same
+  connectivity of the heavy atoms, same number of H per atom; never by distance or order). Among symmetry-equivalent
+  assignments the one with the smallest heavy-atom RMSD after superposition is used and the RMSD is shown; if equally
+  good assignments give different values, the parameters are named. Different composition or connectivity is refused
+  with the atoms that do not match; with solvent or counter-ions the fragment is chosen. The assignment is shown as a
+  table and stored with the compound. The table of selected parameters gets a column with the calculated value (bond
+  lengths 3, angles 1 decimal, no s.u.), optionally Δ = calc. − X-ray, in the app, Excel/CSV and Word; the header names
+  the level of theory, a note states the geometry (gas phase or solvated) and the RMSD.
 - **Project page: Comparison.** Any number of named comparisons across the compounds of a project: a CV stack (one
   voltammogram per compound, peak potential at the peak, structure beside the curve, scan arrow per curve; other
   reference scales are refused, never converted), UV-Vis and emission spectra in one figure, and a property table
@@ -30,6 +39,12 @@
   several Cary files: acquisition times from the file, a series per spectrum, spectra coloured along time or absorbance
   at λ against time (optionally the maximum within ± n nm, relative to the first spectrum), first-order fit with k,
   95 % interval and half-life.
+- **Energy profile with multireference levels.** CASSCF/NEVPT2/SORCI calculations (single point or the calculation
+  itself) are no longer left out: per level, **Method** and **State** choose the state energy (default: highest level
+  of theory in the file, root 0); the caption names method and root. Without an own frequency calculation the level
+  shows its electronic energy, with a note.
+- **Overlay: SORCI spectra** can be chosen like the other excited-state methods, if the output prints an absorption
+  table for the final DDCI3 step.
 - **SEC: "Heatmap" view.** The whole spectral series in one picture: wavelength against spectrum order, absorbance or
   ΔA to the first spectrum as colour with a colour bar; the y axis shows the potential, without potentials the time or
   the number.
@@ -47,7 +62,9 @@
   the list shows it again.
 - Example project: the product fills every tab with coherent invented data (now also HRMS raw data with spectrum
   and chromatogram, HOMO/LUMO and a NICS scan in DFT, a figure in "Other"; H-Cell cycles around the same E½ as
-  the CV); the README screenshots show the tabs with these data.
+  the CV); the README screenshots show the tabs with these data. The project now also contains a reaction path
+  (four species with a transition state) under Computational Chemistry and a CASSCF/NEVPT2 calculation of the product
+  for the DFT page "Multireference".
 
 ### Fixed
 From a check of all calculations against the literature (formulas, constants and statistics were correct; these points
@@ -57,6 +74,13 @@ were not):
   now shown with the measurement and can be confirmed or changed under "Field unit of the file".
 - **EPR, nuclei:** ⁶Li, ⁷Li, ⁹Be, ¹⁰B, ¹¹B, ²³Na, ²⁷Al and further isotopes up to ²⁰⁹Bi were missing from the table;
   "I=3/2" (spin as a fraction) is read now.
+- **EPR captions** of the views intensity against time/temperature/number and Arrhenius said "EPR spectra of …";
+  they now say what is plotted and give only values of the fits shown.
+- **NICS caption:** a scan along the normal of the ring plane was described as a path at one height above the plane;
+  the geometry is now taken from the ghost-atom coordinates (in-plane, along the normal, or neutral "along the scan
+  path"). The side of a point (above/below, for the average of pairs) no longer depends on the arbitrary sign of the
+  local plane normal.
+- **Overlay:** an absorption table printed after a SORCI step was read as a TD-DFT spectrum.
 - **Compound tab:** the chips "Figures from" stayed empty after a language switch.
 - **Project page:** the buttons "SI texts …", "General procedures" and "Show in folder" next to the tabs were invisible
   (height 0); the line above the tabs was broken and offset at that position and is gone. Header, tabs and all pages

@@ -1417,21 +1417,19 @@ class EPRTab(TABS.FigureTab):
         import html
         from elucida.si.lines import chem_html
         st = self.st
-        if st["mode"] != "spectra":
-            return super().si_caption(name)
         sp = st.get("cap_species") or name
         sp = re.sub(r"\^\{([^}]*)\}", r"<sup>\1</sup>", html.escape(sp, quote=False))
+        where = (" in " + chem_html(st["cap_solvent"]) if st.get("cap_solvent") else "") + \
+            (f" ({chem_html(st['cap_conc'])})" if st.get("cap_conc") else "")
         vis = [e for e in st["entries"] if e["visible"]]
         exps = [e for e in vis if e["kind"] == "exp"]
+        if st["mode"] == "intensity":
+            return self.intensity_caption(sp, where, exps)
         mw = next((self.spectrum(e)["meta"].get("mw_GHz") for e in exps if self.spectrum(e)["meta"].get("mw_GHz")),
                   None)
         band = band_name(st.get("ref_freq") or mw)
         h = (f"{band}-Band " if band else "") + ("EPR spectra" if len(exps) > 1 else "EPR spectrum") + f" of <b>{sp}</b>"
-        if st.get("cap_solvent"):
-            h += " in " + chem_html(st["cap_solvent"])
-        if st.get("cap_conc"):
-            h += f" ({chem_html(st['cap_conc'])})"
-        h += "."
+        h += where + "."
         dB, calib_t = self.calibration_shift()
         isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e) and not (dB and e.get("fit_to") == calib_t)]
         for e in isos:
@@ -1444,6 +1442,64 @@ class EPRTab(TABS.FigureTab):
                 "; ".join(parts) + "."
         if dB:
             h += f" The magnetic field was referenced to a standard (g = {g_text(st['calib_g'])})."
+        return h
+
+    def intensity_caption(self, sp, where, exps):
+        """Unterschrift der Intensitätsansichten: was aufgetragen ist (Größe, Feldfenster, Normierung, Temperaturen) und
+        nur gezeigte Fits mit ihren Werten (k und t½ je Temperatur, E_a/A der Rampe, Arrhenius-Gerade), ohne Intervalle
+        – dieselben Zahlen wie in der Anzeige unter der Abbildung."""
+        from elucida.si.lines import chem_html
+        st = self.st
+        sup = lambda v: core.sci_text(v).replace("-", "−").replace("^", "<sup>") + "</sup>"   # noqa: E731
+        s1, kj = chem_html("s-1"), chem_html("kJ mol-1")
+        T_list = lambda ts: (", ".join(ts[:-1]) + " and " + ts[-1] if len(ts) > 1 else ts[0]) + " K"   # noqa: E731
+        temps = sorted({round((self.spectrum(e)["meta"]["T_K"] + st.get("T_offset", 0.0)) / ISO_T_STEP) * ISO_T_STEP
+                        for e in exps if self.spectrum(e)["meta"].get("T_K")})
+        win = (ranges(st["int_window"]) or [None])[0]
+        wtxt = f" within {win[0]:g}–{win[1]:g} mT" if win else ""
+        if st["int_x"] == "arr":
+            pts = [r for r in (getattr(self, "iso_results", None) or [])
+                   if r["fit"] and r["fit"]["k"] > 0 and r["T"]]
+            h = (f"Arrhenius plot (ln k against 1/T) of the first-order rate constants k of the isothermal EPR "
+                 f"decays of <b>{sp}</b>{where}")
+            if pts:
+                h += " at " + T_list([f"{r['T']:.0f}" for r in pts])
+            h += "."
+            if any(r["fit"]["ci_k"] and r["fit"]["ci_k"][0] > 0 for r in pts):
+                h += " Vertical bars: 95% confidence intervals of k."
+            a = getattr(self, "arr_result", None)
+            if a:
+                h += (f" Solid line: linear least-squares fit, E<sub>a</sub> = {a['Ea'] / 1000:.1f} {kj}"
+                      f", ln(A/{s1}) = {a['lnA']:.2f}.".replace("= -", "= −"))
+            return h
+        what = {"double": "Double-integrated EPR intensity", "pp": "Peak-to-peak amplitude of the EPR signal",
+                "gauss": "EPR intensity (amplitude of a Gaussian fit)"}[st["int_method"]]
+        if st["normalize"]:
+            what = "Normalized " + (what[0].lower() + what[1:] if what[1].islower() else what)
+        h = f"{what} of <b>{sp}</b>{where}{wtxt}"
+        if st["int_curie"]:
+            h += ", multiplied by the temperature,"
+        h += {"time": " against time", "T": " against temperature", "index": " for successive spectra"}[st["int_x"]]
+        if st["int_x"] != "T" and temps:
+            h += " at " + T_list([f"{t:.0f}" for t in temps])
+        h += "."
+        iso = [r for r in (getattr(self, "iso_results", None) or []) if r["fit"]] if st["int_x"] == "time" else []
+        if iso:
+            vals = []
+            for r in iso:
+                f = r["fit"]
+                v = f"k = {sup(f['k'])} {s1}" + (f", t<sub>1/2</sub> = {np.log(2) / f['k'] / 60:.3g} min"
+                                                if f["k"] > 0 else "")
+                vals.append((f"{r['T']:.0f} K: " if r["T"] is not None and len(iso) > 1 else "") + v)
+            h += (" Solid line" + ("s" if len(iso) > 1 else "") + ": first-order fit" + ("s" if len(iso) > 1 else "")
+                  + ", I(t) = I<sub>0</sub>·exp(−kt)"
+                  + (f", up to an intensity loss of {st['kin_loss']:g}%" if st["kin_loss"] < 100 else "")
+                  + " (" + "; ".join(vals) + ").")
+        r = getattr(self, "kin_result", None) if st["int_x"] == "T" else None
+        if r:
+            h += (" Solid line: fit of a first-order decay with Arrhenius temperature dependence"
+                  f" (E<sub>a</sub> = {r['Ea'] / 1000:.1f} {kj}, A = {sup(r['A'])} {s1})")
+            h += ("; dotted lines: 95% confidence band." if np.isfinite(r["cov"]).all() else ".")
         return h
 
     def calibration_shift(self):

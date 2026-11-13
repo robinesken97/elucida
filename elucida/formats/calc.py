@@ -44,6 +44,8 @@ def parse_xyz(text) -> list[dict]:
                 if not 1 <= z <= len(ELEMENTS):
                     raise ValueError(T("dft_bad_atom", line=i + 3 + j))
                 els.append(ELEMENTS[z - 1])
+            elif s.lower() in ("bq", "gh", "x", "xx", "du") or s.lower().startswith("bq-"):
+                els.append("X")                              # Geisteratom (NICS): nie als Bor lesen („Bq“ -> „B“)
             else:
                 els.append(element_of(s, s))
         frames.append(dict(comment=comment, lines=[ln.rstrip("\r\n") for ln in raw], els=els,

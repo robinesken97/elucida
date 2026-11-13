@@ -791,6 +791,161 @@ def param_label(keys):
     return "–".join(out)
 
 
+# ---------------------------------------------------------------------------- Vergleich mit einer Rechnung (Stufe 3)
+CALC_DEC = {"bond": 3, "angle": 1, "torsion": 1}   # feste Stellen der Rechenwerte (ohne s.u.): Å bzw. °
+CALC_SAME_GEOM = 0.01   # Å: darunter ist die „Rechnung“ praktisch die Kristallgeometrie (Einzelpunkt darauf)
+CALC_TOL = 0.05              # Å: andere Zuordnung so gut wie die beste (wie DFT.AMBIG_TOL) -> gleichwertig
+CALC_SAME = {"bond": 5e-4, "angle": 0.05, "torsion": 0.05}   # gleichwertige Zuordnungen: Werte gelten als gleich
+CALC_ALTS = 24               # so viele gleichwertige Zuordnungen werden gespeichert (tBu, Phenyl … vervielfachen sie)
+
+
+def read_calc_geometry(path):
+    """xyz (letztes Bild) oder ORCA-/Gaussian-Ausgabe (letzte Geometrie, Leser des DFT-Tabs) ->
+    dict(els, xyz, calc = ausgewertete Rechnung oder None). Geisteratome (Bq/X einer NICS- oder ACID-Rechnung, bis zu
+    Tausende) gehören nicht zum Molekül und fallen weg; die echten Atome behalten ihre Reihenfolge."""
+    from elucida.formats.calc import read_calc
+    from elucida.formats.elements import ELEMENTS
+    from elucida.tabs import dft as DFT
+    c = None
+    if Path(path).suffix.lower() == ".xyz":
+        from elucida.formats.calc import read_xyz
+        fr = read_xyz(path)[-1]
+    else:
+        c = read_calc(path)
+        fr = DFT.calc_frame(c, "", Path(path).with_suffix(".xyz"))[0]
+    real = [i for i, e in enumerate(fr["els"]) if e in ELEMENTS or e in DFT.H_ELS]
+    xyz = np.asarray(fr["xyz"], float)
+    return dict(els=[fr["els"][i] for i in real], xyz=xyz[real], calc=c)
+
+
+def calc_level(c):
+    """Methode wie im DFT-Tab (Energieprofil): „B3LYP-D3/def2-SVP(SMD:THF)“; '' ohne Rechnung (reine xyz)."""
+    from elucida.tabs import dft_pages as PAGES
+    return PAGES.level_of_theory(c) if c else ""
+
+
+def calc_geometry_note(c, level):
+    """Satz für Tabellen und SI: worauf sich die Rechenwerte beziehen, nur mit dem, was die Rechnung selbst angibt."""
+    if c is None:
+        return "Calculated values (calc.) refer to the supplied calculated geometry; the level of theory is not stated."
+    s = c.get("solvation") or {}
+    env = ("solvated (" + s["model"] + (", " + s["solvent"] if s.get("solvent") else "") + ")") if s else "gas-phase"
+    geo = "optimised " if c.get("opt_converged") else ""
+    return f"Calculated values refer to the {geo}{env} geometry" + (f" at the {level} level of theory." if level else ".")
+
+
+def _nbrs(n, bonds):
+    nb = {k: [] for k in range(n)}
+    for a, b in bonds:
+        nb[a].append(b)
+        nb[b].append(a)
+    return nb
+
+
+def match_calc(mol, frag, els, xyz):
+    """Atome des CIF-Fragments `frag` den Atomen einer berechneten Geometrie zuordnen – nur über den Graphen, nie über
+    Abstände oder Reihenfolge: gleiche Schweratome, gleiches Bindungsnetz der Schweratome (Isomorphie). Mehrere
+    Zuordnungen (Symmetrie des Graphen): die mit der kleinsten Kabsch-Abweichung der Schweratome; H je Schweratom nach
+    Abstand nach der Überlagerung (topologisch gleichwertig). Trägt ein Schweratom im Kristall weniger oder mehr H als
+    in der Rechnung (hinterlegte CIFs lassen einzelne H weg; es kann aber auch eine andere Spezies sein), wird das
+    Gerüst trotzdem zugeordnet und die Stelle gemeldet (`h_diff`), statt abzulehnen: geprüft an einer echten CIF, der
+    ein H fehlte. Überzählige H bleiben ohne Partner.
+    -> dict(map {Atom-Schlüssel: Index der Rechnung}, rmsd, mirror, n_heavy, n_h, h_diff [(Atom, H Kristall, H
+    Rechnung)], alts [gleich gute andere Zuordnungen innerhalb CALC_TOL], rmsd_alt, truncated); ValueError mit der
+    Stelle, die nicht passt."""
+    from elucida.tabs import dft as DFT
+    H = DFT.H_ELS
+    idx = [k for k, a in enumerate(mol.atoms) if a.get("frag") == frag]
+    pos = {k: i for i, k in enumerate(idx)}
+    r_els = [mol.atoms[k]["el"] for k in idx]
+    r_xyz = np.array([mol.atoms[k]["xyz"] for k in idx], float)
+    r_bonds = [(pos[a], pos[b]) for a, b in mol.bonds if a in pos and b in pos]
+    t_els, t_xyz = list(els), np.asarray(xyz, float)
+    if hill([e for e in r_els if e not in H]) != hill([e for e in t_els if e not in H]):
+        raise ValueError(T("xr_calc_formula", cif=hill(r_els), calc=hill(t_els)))
+    t_bonds = DFT.bonds_of(t_els, t_xyz)
+    rH = [i for i, e in enumerate(r_els) if e not in H]
+    tH = [i for i, e in enumerate(t_els) if e not in H]
+    rg, tg = DFT._graph(r_els, rH, r_bonds), DFT._graph(t_els, tH, t_bonds)
+    hits = () if rg.GetNumBonds() != tg.GetNumBonds() else tg.GetSubstructMatches(
+        rg, uniquify=False, maxMatches=DFT.MATCH_MAX, useChirality=False)
+    if not hits:                                     # gleiche Atome, gleich viele Bindungen -> Teilgraph = Isomorphie
+        from rdkit import Chem
+        from rdkit.Chem import rdFMCS
+        res = rdFMCS.FindMCS([rg, tg], timeout=5, atomCompare=rdFMCS.AtomCompare.CompareElements,
+                             bondCompare=rdFMCS.BondCompare.CompareAny, ringMatchesRingOnly=False)
+        inside = set(rg.GetSubstructMatch(Chem.MolFromSmarts(res.smartsString))) if res.numAtoms else set()
+        off = [atom_name(mol.atoms[idx[rH[i]]]) for i in range(len(rH)) if i not in inside]
+        raise ValueError(T("xr_calc_graph", nr=rg.GetNumBonds(), nt=tg.GetNumBonds(),
+                           atoms=", ".join(off[:12]) + (" …" if len(off) > 12 else "") or "–"))
+    scored = []
+    for h in hits:
+        mp = {rH[i]: tH[j] for i, j in enumerate(h)}
+        rk = list(mp)
+        r, R, cP, cQ = DFT.kabsch(t_xyz[[mp[k] for k in rk]], r_xyz[rk])
+        scored.append((r, mp, R, cP, cQ))
+    scored.sort(key=lambda s: s[0])
+    r_nb, t_nb = _nbrs(len(r_els), r_bonds), _nbrs(len(t_els), t_bonds)
+
+    h_diff = []
+
+    def with_h(mp, R, cP, cQ, note=False):
+        al = (R @ (t_xyz - cP).T).T + cQ
+        full = dict(mp)
+        for ri, ti in mp.items():
+            rh = [j for j in r_nb[ri] if r_els[j] in H]
+            th = [j for j in t_nb[ti] if t_els[j] in H]
+            if len(rh) != len(th) and note:
+                h_diff.append((atom_name(mol.atoms[idx[ri]]), len(rh), len(th)))
+            k = min(len(rh), len(th))
+            if k:                                    # die gemeinsamen H: beste Paarung nach der Überlagerung
+                pairs = ([list(zip(rh, p)) for p in itertools.permutations(th, k)] if len(rh) <= len(th) else
+                         [list(zip(p, th)) for p in itertools.permutations(rh, k)])
+                full.update(min(pairs, key=lambda pr: sum(float(np.linalg.norm(al[j] - r_xyz[i])) for i, j in pr)))
+        bound = {j for ri in mp for j in r_nb[ri] if r_els[j] in H}
+        free = len(r_els) - len(mp) - len(bound)     # H ohne Schweratom (z. B. freies H₂O-H ohne Bindung)
+        if free:
+            raise ValueError(T("xr_calc_h_free", n=free))
+        return {mol.atoms[idx[i]]["key"]: int(j) for i, j in full.items()}
+    rmsd, best, R, cP, cQ = scored[0]
+    amap = with_h(best, R, cP, cQ, note=True)
+    alts, seen, rmsd_alt = [], [best], None
+    for r2, mp2, R2, cP2, cQ2 in scored[1:]:
+        if mp2 in seen:
+            continue
+        seen.append(mp2)
+        rmsd_alt = r2 if rmsd_alt is None else rmsd_alt
+        if r2 - rmsd > CALC_TOL or len(alts) >= CALC_ALTS:
+            break
+        alts.append(with_h(mp2, R2, cP2, cQ2))
+    return dict(map=amap, rmsd=float(rmsd), mirror=bool(np.linalg.det(R) < 0), n_heavy=len(rH),
+                n_h=len(amap) - len(rH), h_diff=h_diff, alts=alts, rmsd_alt=rmsd_alt,
+                truncated=len(hits) >= DFT.MATCH_MAX)
+
+
+def calc_measure(keys, amap, xyz):
+    """Derselbe Parameter in der berechneten Geometrie (Atome über die Zuordnung) -> float oder None."""
+    ix = [amap.get(k) for k in keys]
+    if None in ix or len(ix) not in (2, 3, 4) or max(ix) >= len(xyz):
+        return None
+    return {2: distance, 3: angle, 4: torsion}[len(ix)]([np.asarray(xyz[i], float) for i in ix])
+
+
+def calc_text(kind, v):
+    """Rechenwert mit fester Stellenzahl (CALC_DEC), echtes Minus, kein „−0.0“."""
+    t = f"{v:.{CALC_DEC[kind]}f}"
+    return minus(t.lstrip("-") if float(t) == 0 else t)
+
+
+def delta_text(kind, calc, exp):
+    """Δ = Rechnung − Kristall mit Vorzeichen; Torsionen auf (−180°, 180°]."""
+    d = calc - exp
+    if kind == "torsion":
+        d = -((-d + 180.0) % 360.0 - 180.0)
+    t = f"{d:+.{CALC_DEC[kind]}f}"
+    return minus(t[1:] if float(t) == 0 else t)
+
+
 def _fib_dirs(n):
     """n gleichmäßig verteilte Richtungen auf der oberen Halbkugel (Gegenrichtung zeigt dieselbe Überdeckung)."""
     i = np.arange(n) + 0.5
@@ -3374,7 +3529,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                          layout={}, entries=[], current=None, prob=50, show_h=True, disorder="main", labels=True,
                          h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False,
-                         bg="white", label_color="black", label_colors={})
+                         bg="white", label_color="black", label_colors={}, calc_cols=True, calc_delta=False)
 
 
     def arrange(self):
@@ -3566,6 +3721,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         row.addStretch(1)
         v.addLayout(row)
         self.lv.addWidget(g)
+        self.lv.addWidget(self.calc_box())
 
         g = QGroupBox(T("xr_caption"))
         g.setProperty("hug", True)                        # Reiter rechts: Karte so hoch wie der Text, wie „SI-Text“
@@ -3599,10 +3755,299 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.sp_lab.valueChanged.connect(self.changed)
         self.cmb_dis.currentIndexChanged.connect(self.disorder_changed)
         self.cmb_style.currentIndexChanged.connect(self.changed)
-        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_wire_h, self.cb_solv, self.cb_ions):
+        for w_ in (self.cb_h, self.cb_lab, self.cb_hlab, self.cb_wire_h, self.cb_solv, self.cb_ions, self.cb_calc_cols,
+                   self.cb_calc_delta):
             w_.toggled.connect(self.changed)
         self.cmb_labmode.currentIndexChanged.connect(self.changed)
         self.sync_widgets()
+
+    def calc_box(self):
+        """Karte „Vergleich mit Rechnung“ (Schritt Auswertung): Geometrie aus dem DFT-Tab oder einer Datei, Fragment der
+        Kristallstruktur, Zuordnung als Tabelle, Spalten der Parametertabelle als Chips."""
+        g = QGroupBox(T("xr_calc"))
+        f = self._calc_form = make_form(g)
+        self.cmb_calc = QComboBox()
+        self.cmb_calc.setToolTip(T("xr_calc_src_tip"))
+        self.cmb_calc.activated.connect(self.calc_source_chosen)
+        self.btn_calc_file = QPushButton(T("xr_calc_file"))
+        self.btn_calc_file.setToolTip(T("xr_calc_file_tip"))
+        self.btn_calc_file.clicked.connect(self.add_calc_file)
+        file_w = 100                                       # Auswahl + Knopf zusammen genau die Wertespalte (wie DFT „Vorlage“)
+        self.cmb_calc.setFixedWidth(STYLE.VALUE_W - 8 - file_w)
+        self.btn_calc_file.setFixedWidth(file_w)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(self.cmb_calc)
+        row.addWidget(self.btn_calc_file)
+        f.addRow(T("xr_calc_src"), row)
+        self.cmb_cfrag = QComboBox()
+        self.cmb_cfrag.setToolTip(T("xr_calc_frag_tip"))
+        self.cmb_cfrag.activated.connect(self.calc_frag_chosen)
+        f.addRow(T("xr_calc_frag"), self.cmb_cfrag)
+        self.lbl_calc = STYLE.HintLabel("")
+        self.lbl_calc.setWordWrap(True)
+        f.addRow(self.lbl_calc)
+        self.tbl_map = QTableWidget(0, 3)
+        self.tbl_map.setHorizontalHeaderLabels([T("xr_calc_map_cif"), T("xr_calc_map_no"), T("xr_calc_map_el")])
+        self.tbl_map.verticalHeader().setVisible(False)
+        self.tbl_map.verticalHeader().setDefaultSectionSize(STYLE.CHECK_ROW_H)
+        self.tbl_map.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)      # gleich breite Spalten
+        self.tbl_map.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tbl_map.setFocusPolicy(Qt.NoFocus)
+        self.tbl_map.setToolTip(T("xr_calc_map_tip"))
+        f.addRow(T("xr_calc_map"), self.tbl_map)
+        self.cb_calc_cols = QCheckBox(T("xr_calc_cols"))
+        self.cb_calc_cols.setToolTip(T("xr_calc_cols_long"))
+        self.cb_calc_delta = QCheckBox(T("xr_calc_delta"))
+        self.cb_calc_delta.setToolTip(T("xr_calc_delta_long"))
+        row = QHBoxLayout()
+        row.addWidget(self.cb_calc_cols)
+        row.addWidget(self.cb_calc_delta)
+        row.addStretch(1)
+        f.addRow(row)
+        return g
+
+    # -- Vergleich mit Rechnung ---------------------------------------------------------------
+    def dft_sources(self):
+        """Geometrien des DFT-Tabs derselben Verbindung, aus dessen Zustand gelesen (nicht aus dem Tab: der wird nach
+        X-Ray gebaut und liest selbst X-Ray)."""
+        out = []
+        for d in (getattr(self.main, "dft_state", None) or {}).get("entries") or []:
+            p = d.get("file") or ""
+            if Path(p).suffix.lower() in (".xyz", ".out", ".log") and Path(p).exists():
+                out.append(d)
+        return out
+
+    def calc_geom(self, e):
+        """Berechnete Geometrie der Zuordnung einer Struktur -> dict(els, xyz, calc) oder None."""
+        c = (e or {}).get("calc") or {}
+        p = c.get("file")
+        if not p or not Path(p).exists():
+            return None
+        try:
+            return self.cache(("calcgeom", p), lambda: read_calc_geometry(p))
+        except Exception:
+            return None
+
+    def calc_on(self, e):
+        """Spalte „Rechnung“ für diese Struktur: zugeordnet, Datei lesbar und Chip an."""
+        return bool(self.st.get("calc_cols", True) and ((e or {}).get("calc") or {}).get("map")
+                    and self.calc_geom(e) is not None)
+
+    def calc_cells(self, e, keys, kind, exp_text):
+        """[Rechnung] (+ [Δ]) als Text für einen Parameter; „–“, wenn ein Atom nicht zugeordnet ist."""
+        c, g = e["calc"], self.calc_geom(e)
+        v = calc_measure(keys, c["map"], g["xyz"])
+        out = [calc_text(kind, v) if v is not None else "–"]
+        if self.st.get("calc_delta"):
+            x = num(exp_text.replace("−", "-"))
+            out.append(delta_text(kind, v, x) if v is not None and x is not None else "–")
+        return out
+
+    def calc_head(self, e):
+        """Kopf der Spalte: Methode wie im DFT-Tab, bei einer reinen xyz „calc.“."""
+        return esc_markup(e["calc"].get("level") or "calc.")
+
+    def calc_notes(self, e):
+        """Satz zur Rechnung (Geometrie, Methode), RMSD der Überlagerung, Δ – für Tabelle, Excel/CSV und Word."""
+        if not self.calc_on(e):
+            return []
+        c = e["calc"]
+        txt = c.get("note") or ""
+        if c.get("rmsd") is not None:
+            txt += f" RMSD of the superposed non-hydrogen atoms (calc. vs. X-ray): {c['rmsd']:.3f} Å."
+        if self.st.get("calc_delta"):
+            txt += " Δ = calc. − X-ray."
+        if c.get("h_diff"):
+            txt += (" The number of hydrogen atoms differs between crystal structure and calculation ("
+                    + "; ".join(f"{a}: {nr} vs. {nt}" for a, nr, nt in c["h_diff"][:6])
+                    + (" …" if len(c["h_diff"]) > 6 else "") + "); only the atoms present in both are compared.")
+        return [esc_markup(minus(txt.strip()))]
+
+    def calc_differs(self, e, mol):
+        """Ausgewählte Parameter, deren Rechenwert sich zwischen gleichwertigen Zuordnungen unterscheidet."""
+        c, g = e.get("calc") or {}, self.calc_geom(e)
+        if not c.get("alts") or g is None or mol is None:
+            return []
+        out = []
+        for p in e.get("params") or []:
+            m = measure(mol, p["atoms"])
+            v = calc_measure(p["atoms"], c["map"], g["xyz"])
+            if m is None or v is None:
+                continue
+            for alt in c["alts"]:
+                w = calc_measure(p["atoms"], alt, g["xyz"])
+                d = None if w is None else abs(v - w) if m["kind"] != "torsion" else abs((v - w + 180) % 360 - 180)
+                if d is None or d > CALC_SAME[m["kind"]]:
+                    out.append(param_name(mol, p["atoms"]))
+                    break
+        return out
+
+    def calc_source_chosen(self, _i=None):
+        e = self.entry()
+        data = self.cmb_calc.currentData()
+        if e is None or data == "file" or (data and data == "dft:" + ((e.get("calc") or {}).get("dft") or "")):
+            return
+        if data is None:
+            e.pop("calc", None)
+        else:
+            d = next((x for x in self.dft_sources() if x["uid"] == data[4:]), None)
+            if d is None:
+                return
+            e["calc"] = dict(src="dft", dft=d["uid"], file=d["file"], name=d.get("name") or Path(d["file"]).stem,
+                             frag=(e.get("calc") or {}).get("frag"))
+            self.assign_calc(e)
+        self.fill_calc()
+        self.render()
+
+    def add_calc_file(self):
+        e = self.entry()
+        if e is None or not self.main.ensure_project():
+            return
+        p, _ = QFileDialog.getOpenFileName(self, T("xr_calc_file_tip"), self.main.settings.value("last_dir", ""),
+                                           f"{T('xr_calc_flt')} (*.xyz *.out *.log);;{T('flt_all')}")
+        if p:
+            self.load_calc_file(e, p)
+
+    def load_calc_file(self, e, p):
+        """Geometrie aus einer Datei (Kopie in data/xray, das Original bleibt unverändert) zuordnen."""
+        p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+        try:
+            read_calc_geometry(p)
+        except Exception as ex:
+            self.main.error(f"{Path(p).name}: {ex}")
+            return
+        e["calc"] = dict(src="file", file=p, name=Path(p).stem, frag=(e.get("calc") or {}).get("frag"))
+        self.assign_calc(e)
+        self.fill_calc()
+        self.render()
+
+    def calc_frag_chosen(self, _i=None):
+        e = self.entry()
+        if e is None or not e.get("calc") or self.cmb_cfrag.currentData() == e["calc"].get("frag"):
+            return
+        e["calc"]["frag"] = self.cmb_cfrag.currentData()
+        self.assign_calc(e)
+        self.fill_calc()
+        self.render()
+
+    def assign_calc(self, e):
+        """Zuordnung neu bestimmen und in der Struktur speichern (beim Öffnen gilt die gespeicherte: gleiche Tabelle).
+        Passt nichts, bleibt nur die Meldung – nie eine Zuordnung nach Abstand oder Reihenfolge."""
+        c = e["calc"]
+        for k in ("map", "alts", "rmsd", "rmsd_alt", "mirror", "n_heavy", "n_h", "h_diff", "level", "note", "truncated"):
+            c.pop(k, None)
+        c["error"] = ""
+        mol = self.molecule(e)
+        try:
+            self.main.extra_cache.pop(("calcgeom", c["file"]), None)       # Datei neu lesen
+            g = self.calc_geom(e)
+            if g is None:
+                g = read_calc_geometry(c["file"])                         # Fehlermeldung des Lesers zeigen
+            if mol is None:
+                raise ValueError(T("xr_calc_no_cif"))
+            frag = c.get("frag")
+            if frag is None and len(mol.fragments) > 1:
+                raise ValueError(T("xr_calc_need_frag", n=len(mol.fragments)))
+            frag = frag or 0
+            if frag >= len(mol.fragments):
+                raise ValueError(T("xr_calc_need_frag", n=len(mol.fragments)))
+            r = match_calc(mol, frag, g["els"], g["xyz"])
+        except Exception as ex:
+            msg = str(ex)
+            if mol is not None and mol.S.parts() and self.st.get("disorder") == "all":
+                msg += " " + T("xr_calc_dis_hint")
+            c["error"] = msg
+            return
+        lvl = calc_level(g["calc"])
+        c.update(map=r["map"], alts=r["alts"], rmsd=round(r["rmsd"], 4), mirror=r["mirror"], n_heavy=r["n_heavy"],
+                 n_h=r["n_h"], h_diff=[list(x) for x in r["h_diff"]], level=lvl,
+                 note=calc_geometry_note(g["calc"], lvl), truncated=r["truncated"],
+                 rmsd_alt=None if r["rmsd_alt"] is None else round(r["rmsd_alt"], 4))
+
+    def fill_calc(self):
+        """Karte „Vergleich mit Rechnung“ aus dem Zustand der gewählten Struktur."""
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        c = (e or {}).get("calc") or {}
+        cur = "file" if c.get("src") == "file" else ("dft:" + c["dft"]) if c.get("src") == "dft" else None
+        cmb = self.cmb_calc
+        cmb.blockSignals(True)
+        cmb.clear()
+        cmb.addItem(T("xr_calc_none"), None)
+        for d in self.dft_sources():
+            cmb.addItem(f"DFT: {d.get('name') or Path(d['file']).stem}", "dft:" + d["uid"])
+        if cur is not None and cmb.findData(cur) < 0:        # Datei, oder Eintrag im DFT-Tab inzwischen entfernt
+            cmb.addItem((T("xr_calc_file_item") if cur == "file" else "DFT: ") + (c.get("name") or ""), cur)
+        cmb.setCurrentIndex(max(0, cmb.findData(cur)))
+        cmb.blockSignals(False)
+        for w_ in (cmb, self.btn_calc_file):
+            w_.setEnabled(mol is not None)
+        frags = mol.fragments if mol is not None else []
+        self.cmb_cfrag.blockSignals(True)
+        self.cmb_cfrag.clear()
+        if len(frags) > 1:
+            self.cmb_cfrag.addItem(T("xr_calc_frag_pick"), None)
+            from elucida.si import lines as SI_
+            kinds = {"main": T("xr_main_frag"), "molecule": T("xr_kind_molecule"), "solvent": T("xr_kind_solvent"),
+                     "ion": T("xr_kind_ion")}
+            for i, fr in enumerate(frags):
+                kind = kinds.get(fr.get("kind"), "")
+                self.cmb_cfrag.addItem(f"{i + 1} · {SI_.chem_plain(fr['formula'])}" + (f" · {kind}" if kind else ""), i)
+            self.cmb_cfrag.setCurrentIndex(max(0, self.cmb_cfrag.findData(c.get("frag"))))
+        self.cmb_cfrag.blockSignals(False)
+        self._calc_form.setRowVisible(self.cmb_cfrag, cur is not None and len(frags) > 1)
+        amap, g = c.get("map") or {}, self.calc_geom(e)
+        rows = [] if mol is None or g is None else [(atom_name(a), amap[a["key"]]) for a in mol.atoms
+                                                    if a["key"] in amap and amap[a["key"]] < len(g["els"])]
+        self.tbl_map.setRowCount(len(rows))
+        for r, (lab, j) in enumerate(rows):
+            for col, txt in enumerate((lab, str(j + 1), g["els"][j])):
+                it = QTableWidgetItem(txt)
+                it.setFlags(Qt.ItemIsEnabled)
+                self.tbl_map.setItem(r, col, it)
+        hh = self.tbl_map.horizontalHeader().sizeHint().height()      # so hoch wie die Zeilen, ab 6 scrollen
+        self.tbl_map.setFixedHeight(hh + min(len(rows), 6) * STYLE.CHECK_ROW_H + 2)
+        self._calc_form.setRowVisible(self.tbl_map, bool(rows))
+        chips = self.cb_calc_cols.parentWidget()         # Zeile „Optionen“ (von tidy) nur mit Zuordnung
+        if isinstance(chips, STYLE.ChipRow):
+            self._calc_form.setRowVisible(chips, bool(rows))
+        # Hinweis
+        warn = False
+        if cur is None:
+            txt = ""
+        elif c.get("error"):
+            txt, warn = c["error"], True
+        elif g is None:
+            txt, warn = T("xr_calc_missing", f=Path(c.get("file") or "").name), True
+        elif mol is not None and any(mol.find_key(k) is None for k in amap):
+            txt, warn = T("xr_calc_stale"), True
+        else:
+            bits = [T("xr_calc_done", nh=c.get("n_heavy", 0), nH=c.get("n_h", 0), rmsd=f"{c.get('rmsd') or 0:.3f}")]
+            if c.get("mirror"):
+                bits.append(T("xr_calc_mirror"))
+            if (c.get("rmsd") or 1.0) < CALC_SAME_GEOM:      # Einzelpunkt auf den Kristallkoordinaten: kein Vergleich
+                warn = True
+                bits.append(T("xr_calc_same_geom", rmsd=f"{c['rmsd']:.3f}"))
+            if c.get("h_diff"):                              # nicht still: andere H-Zahl kann eine andere Spezies sein
+                warn = True
+                bits.append(T("xr_calc_hdiff", atoms="; ".join(T("xr_calc_hdiff_at", atom=a, nr=nr, nt=nt)
+                                                               for a, nr, nt in c["h_diff"][:6])
+                              + (" …" if len(c["h_diff"]) > 6 else "")))
+            diff = self.calc_differs(e, mol)
+            if diff:
+                warn = True
+                bits.append(T("xr_calc_amb", params=", ".join(diff[:8]) + (" …" if len(diff) > 8 else "")))
+            elif c.get("alts"):
+                bits.append(T("xr_calc_equiv", n=len(c["alts"]) + 1))
+            elif c.get("rmsd_alt") is not None:
+                bits.append(T("xr_calc_next", alt=f"{c['rmsd_alt']:.3f}"))
+            if c.get("truncated"):
+                from elucida.tabs.dft import MATCH_MAX
+                bits.append(T("dft_ref_truncated", n=MATCH_MAX))
+            txt = "\n".join(bits)
+        self.lbl_calc.setText(minus(txt))
+        self.lbl_calc.setStyleSheet(WARN_CSS if warn else HINT_CSS)
 
     def common_box(self):
         """Nur Größe und Formate (keine Achsen)."""
@@ -3664,7 +4109,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                        bond_w=self.sp_bond.value(), style=self.cmb_style.currentData(), label_pt=self.sp_lab.value(),
                        label_mode=self.cmb_labmode.currentData(), wire_h=self.cb_wire_h.isChecked(),
                        label_color=self.cmb_lcol.value(),
-                       hide_solv=self.cb_solv.isChecked(), hide_ions=self.cb_ions.isChecked())
+                       hide_solv=self.cb_solv.isChecked(), hide_ions=self.cb_ions.isChecked(),
+                       calc_cols=self.cb_calc_cols.isChecked(), calc_delta=self.cb_calc_delta.isChecked())
         self.cmb_labmode.setEnabled(self.cb_lab.isChecked())
 
     # -- Einträge -------------------------------------------------------------------------
@@ -3826,6 +4272,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.cb_wire_h.setChecked(st.get("wire_h", False))
         self.cb_solv.setChecked(st.get("hide_solv", False))
         self.cb_ions.setChecked(st.get("hide_ions", False))
+        self.cb_calc_cols.setChecked(st.get("calc_cols", True))
+        self.cb_calc_delta.setChecked(st.get("calc_delta", False))
         self.cmb_labmode.setCurrentIndex(max(0, self.cmb_labmode.findData(st.get("label_mode", "all"))))
         self.cmb_labmode.setEnabled(st["labels"])
         self.cmb_lcol.sync()
@@ -3837,6 +4285,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.fill_atoms()
         self.fill_frags()
         self.fill_params()
+        self.fill_calc()
         self._loading = False
 
     def fill_colors(self):
@@ -4005,8 +4454,12 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             return
         self.sel = []
         self.changed()
+        for e in self.entries():                      # anderes Modell (Fehlordnungsteil): Zuordnung neu bestimmen
+            if e.get("calc"):
+                self.assign_calc(e)
         self._loading = True
         self.fill_frags()
+        self.fill_calc()
         self._loading = False
 
     def fill_params(self):
@@ -4153,7 +4606,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             sent = " and ".join(clauses) + " for clarity."
             tail += " " + sent[0].upper() + sent[1:]
         vals = self.param_values(e, mol)
-        if vals and len(vals) <= CAPTION_MAX:
+        if vals and len(vals) <= CAPTION_MAX and not self.calc_on(e):     # mit Rechnung: Werte in der Tabelle
             kinds = [k for k in ("bond", "angle", "torsion") if any(v[0] == k for v in vals)]
             what = {("bond",): "bond lengths in [Å]", ("angle",): "angles in [°]", ("torsion",): "torsion angles in [°]",
                     ("bond", "angle"): "bond lengths and angles in [Å] and [°]",
@@ -4196,22 +4649,29 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         if mol is None:
             return []
         vals = self.param_values(e, mol)
-        if len(vals) <= CAPTION_MAX:
+        calc = self.calc_on(e)
+        if len(vals) <= CAPTION_MAX and not (calc and vals):
             return []
         name = e.get("name") or e["block"]
         out = []
-        for kind, title, unit, n in (("bond", "Selected bond lengths", "Length / Å", 2),
-                                     ("angle", "Selected bond angles", "Angle / °", 3),
-                                     ("torsion", "Selected torsion angles", "Torsion angle / °", 4)):
+        for kind, title, qty, unit, n in (("bond", "Selected bond lengths", "Length", "Å", 2),
+                                          ("angle", "Selected bond angles", "Angle", "°", 3),
+                                          ("torsion", "Selected torsion angles", "Torsion angle", "°", 4)):
             rows = []
             for pp in e.get("params") or []:
                 m = measure(mol, pp["atoms"])
                 if m is None or m["kind"] != kind:
                     continue
-                names = [atom_name(mol.atoms[mol.find_key(k)]) for k in cif_order(mol, pp["atoms"])]
-                rows.append(names + [minus(m["text"]) + ("^{a}" if m["source"] == "calc" else "")])
+                keys = cif_order(mol, pp["atoms"])
+                names = [atom_name(mol.atoms[mol.find_key(k)]) for k in keys]
+                rows.append(names + [minus(m["text"]) + ("^{a}" if m["source"] == "calc" else "")]
+                            + (self.calc_cells(e, keys, kind, minus(m["text"])) if calc else []))
             if rows:
-                out.append((f"{title} for", name, ["Atom"] * n + [unit], rows))
+                head = [f"{qty} / {unit}"]
+                if calc:                                # Größe (Herkunft) / Einheit
+                    head = [f"{qty} (X-ray) / {unit}", f"{qty} ({self.calc_head(e)}) / {unit}"] + \
+                        ([f"Δ / {unit}"] if self.st.get("calc_delta") else [])
+                out.append((f"{title} for", name, ["Atom"] * n + head, rows))
         return out
 
     def _sym_ops(self, e):
@@ -4361,6 +4821,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 self.dragger = XrayMouse(self.F, self)
             self.update_info()
             self.update_tables()
+            self.fill_calc()                           # Geometrien des DFT-Tabs können sich geändert haben
             if not self._loading:
                 self.fill_atoms()
             self.canvas.draw_idle()
@@ -4426,7 +4887,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         """Zeilen = gewählte Parameter (gleichnamige Atome in einer Zeile), Spalten = Verbindungen."""
         es = [e for e in self.entries() if self.structure(e) is not None]
         rows_by_kind = {"bond": [], "angle": [], "torsion": []}
-        cells, calc_used, notes = {}, False, []
+        cells, calc_used, notes, calc_cells = {}, False, [], {}
+        calc_on = [self.calc_on(e) for e in es]
         for ci, e in enumerate(es):
             mol = self.molecule(e)
             used_ops = {}
@@ -4460,19 +4922,34 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                         syms.append(mol.atoms[i]["sym"])
                         used_ops[mol.atoms[i]["sym"]] = mol.atoms[i]["opkey"]
                 cells[(key, ci)] = txt + ("" if not syms else " (" + ",".join("*" + s + "*" for s in syms) + ")")
+                if calc_on[ci]:                          # Rechnung (+ Δ) gleich daneben
+                    calc_cells[(key, ci)] = self.calc_cells(e, p["atoms"], m["kind"], minus(m["text"]))
             if used_ops:
                 notes.append(f"{e.get('name') or e['block']}: " + "; ".join(f"{r}: {op}" for r, op in used_ops.items()))
-        header = [""] + [esc_markup(e.get("name") or e["block"]) for e in es]
+        n_calc = 2 if self.st.get("calc_delta") else 1
+        header = [""]
+        for ci, e in enumerate(es):
+            header.append(esc_markup(e.get("name") or e["block"]))
+            if calc_on[ci]:
+                header += [self.calc_head(e)] + (["Δ"] if n_calc == 2 else [])
         rows = []
         for kind in ("bond", "angle", "torsion"):
             if rows_by_kind[kind]:
-                rows.append([KIND_HEAD[kind]] + [""] * len(es))
+                rows.append([KIND_HEAD[kind]] + [""] * (len(header) - 1))
                 for key in rows_by_kind[kind]:
-                    rows.append([key[1]] + [cells.get((key, ci), "–") for ci in range(len(es))])
-        if calc_used:
-            notes.append("^{a} " + CALC_NOTE)
+                    row = [key[1]]
+                    for ci in range(len(es)):
+                        row.append(cells.get((key, ci), "–"))
+                        if calc_on[ci]:
+                            row += calc_cells.get((key, ci), ["–"] * n_calc)
+                    rows.append(row)
         if notes and any("(" in c for r in rows for c in r[1:]):
             notes.insert(0, "Symmetry codes:")
+        if calc_used:
+            notes.append("^{a} " + CALC_NOTE)
+        for ci, e in enumerate(es):                      # worauf sich die Rechenwerte beziehen, RMSD
+            notes += [(f"{esc_markup(e.get('name') or e['block'])}: " if len(es) > 1 else "") + n_
+                      for n_ in self.calc_notes(e)]
         return header, rows, notes
 
     def crystal_clip(self):

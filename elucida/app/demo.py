@@ -408,11 +408,12 @@ def make_cif(path, name, m, P, cell, place):
 
 
 def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("thf", "7.2500", "TETRAHYDROFURAN"),
-              homo_lumo=(-5.12, -1.62)):
+              homo_lumo=(-5.12, -1.62), imag=None):
     """ORCA-6-Ausgabe (nur die gelesenen Abschnitte, Format wie `DFT.make_test_orca`; Zahlen erfunden) einer
     Optimierung + Frequenzrechnung mit der Geometrie P: Minimum (keine imaginäre Frequenz), Nullpunktsenergie aus
     den Frequenzen, Enthalpie und freie Enthalpie daraus fortgeschrieben, Orbitalenergien mit HOMO/LUMO in eV
-    (`homo_lumo`). Kein echter Datensatz."""
+    (`homo_lumo`). imag [cm⁻¹]: Übergangszustand, die tiefste Mode wird diese eine imaginäre Frequenz (zählt nicht
+    zur Nullpunktsenergie). Kein echter Datensatz."""
     el = [a.GetSymbol() for a in m.GetAtoms()]
     n = len(el)
     geo = [f"  {e:<2s}  {x:12.6f} {y:12.6f} {z:12.6f}" for e, (x, y, z) in zip(el, P)]
@@ -422,7 +423,9 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
                   + rng.uniform(-6, 6, 3 * n - 6 - n_ch - n_cc))
     fr = np.r_[np.zeros(6), np.abs(low), 2190.0 + 25.0 * np.arange(n_cc),
                np.sort(2935.0 + 265.0 * rng.uniform(0, 1, n_ch))]
-    zpe = fr.sum() / 2 / 219474.63
+    if imag:
+        fr[6] = -abs(imag)
+    zpe = fr[fr > 0].sum() / 2 / 219474.63
     u = energy + zpe + 0.00072 * n                       # thermische Korrektur grob je Atom
     h = u + 0.00094421
     ts = 0.0235 + 0.00093 * n
@@ -461,7 +464,7 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
           for k, e in enumerate(occ + list(virt))]
     L += ["", "-------------------------   --------------------", f"FINAL SINGLE POINT ENERGY     {energy:.12f}", "",
           "-----------------------", "VIBRATIONAL FREQUENCIES", "-----------------------", ""]
-    L += [f"   {i:3d}:   {v:9.2f} cm**-1" for i, v in enumerate(fr)]
+    L += [f"   {i:3d}:   {v:9.2f} cm**-1" + ("  ***imaginary mode***" if v < 0 else "") for i, v in enumerate(fr)]
     L += ["", "--------------------------", "THERMOCHEMISTRY AT 298.15K", "--------------------------", "",
           "Temperature         ...   298.15 K", "Pressure            ...     1.00 atm",
           "Quasi RRHO          ...     True",
@@ -478,6 +481,108 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
     return Path(path)
+
+
+# CASSCF(4,4)/SC-NEVPT2 von S3 (erfunden): je Multiplizität (Wurzel, E_CASSCF, E_NEVPT2 [Eh], Konfigurationen). S1
+# liegt mit NEVPT2 3.40 eV über S0 (nahe der Bande bei 372 nm), T1 2.60 eV; CASSCF überschätzt die Abstände wie üblich.
+MR_STATES = {1: [(0, -721.152340, -723.598120, ((0.88213, 0, "2200"), (0.05871, 5, "2020"))),
+                 (1, -721.001640, -723.473170, ((0.84102, 1, "2110"), (0.07330, 3, "1210"))),
+                 (2, -720.968640, -723.440120, ((0.79855, 3, "1210"), (0.10234, 1, "2110")))],
+             3: [(0, -721.042140, -723.502620, ((0.95521, 0, "2110"),)),
+                 (1, -721.005340, -723.469520, ((0.93017, 1, "1210"),))]}
+
+
+def make_mr(path, name, m, P):
+    """ORCA-6-Ausgabe einer CASSCF(4,4)-Rechnung (3 Singuletts, 2 Tripletts, natürliche Orbitale) mit SC-NEVPT2 auf der
+    Geometrie P, nur die Abschnitte, die `formats.multireference.parse_orca_mr` und `formats.calc` lesen; alle Zahlen
+    erfunden (`MR_STATES`), kein echter Datensatz."""
+    el = [a.GetSymbol() for a in m.GetAtoms()]
+    geo = [f"  {e:<2s}  {x:12.6f} {y:12.6f} {z:12.6f}" for e, (x, y, z) in zip(el, P)]
+    n_occ = sum(a.GetAtomicNum() for a in m.GetAtoms()) // 2
+    n = len(el)
+    L = ["", "                 Program Version 6.1.1 -  RELEASE  -", "", "=" * 80, "                                       INPUT FILE",
+         "=" * 80, f"NAME = {name}.inp", "|  1> %pal nprocs 16 end", "|  2> ! def2-TZVP def2-TZVP/C RIJCOSX",
+         "|  3> %casscf nel 4 norb 4 mult 1,3 nroots 3,2 PTMethod SC_NEVPT2 ActOrbs NatOrbs end", "|  4> * xyz 0 1"]
+    L += [f"|{i + 5:3d}> {g.strip()}" for i, g in enumerate(geo)]
+    L += [f"|{n + 5:3d}> *", f"|{n + 6:3d}> " + "                        ****END OF INPUT****", "",
+          " Total Charge           Charge          ....    0", " Multiplicity           Mult            ....    1", "",
+          "---------------------------------", "CARTESIAN COORDINATES (ANGSTROEM)", "---------------------------------"]
+    L += geo + ["", "ORCA-CASSCF", "", "Number of active electrons          ... 4",
+                "Number of active orbitals           ... 4", f"Active {n_occ - 2} - {n_occ + 1} (4 orbitals)",
+                "Max. number of iterations           ... 100", "Active Orbitals                     ... natural",
+                "A PT2 calculation will be performed (PT2 = SC-NEVPT2)", "",
+                "           ---- THE CAS-SCF ENERGY   HAS CONVERGED ----", "", "---------------", "CASSCF RESULTS",
+                "---------------", "", f"Final CASSCF energy       : {MR_STATES[1][0][1]:.10f} Eh", ""]
+    for blk, (mult, states) in enumerate(MR_STATES.items()):
+        L += ["", "---------------------------------------------",
+              f"CAS-SCF STATES FOR BLOCK  {blk + 1} MULT= {mult} NROOTS= {len(states)}",
+              "---------------------------------------------", ""]
+        for root, e_cas, _, conf in states:
+            L += [f"ROOT   {root}:  E=    {e_cas:.10f} Eh"] + [f"      {w:.5f} [{k:5d}]: {o}" for w, k, o in conf] + [""]
+    L += ["", "=" * 80, "                  NEVPT2 Results", "=" * 80, ""]
+    for mult, states in MR_STATES.items():
+        for root, e_cas, e_pt, _ in states:
+            L += ["---------------", f"MULT {mult}, ROOT {root}", "---------------",
+                  f"Reference Energy                 : E0 = {e_cas:.12f}",
+                  f"Total Energy Correction          : dE = {e_pt - e_cas:.12f}",
+                  f"Total Energy (E0+dE)             : E = {e_pt:.12f}", ""]
+    L += ["TIMINGS NEVPT2", "", "-------------------------   --------------------",
+          f"FINAL SINGLE POINT ENERGY     {MR_STATES[1][0][2]:.12f}", "",
+          "                             ****ORCA TERMINATED NORMALLY****"]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    return Path(path)
+
+
+# Reaktionspfad des Beispielprojekts (erfunden): Hydratisierung von S3 zum Keton über das Enol, ΔE_el [kcal/mol]
+# relativ zum Komplex S3·H2O (ΔG folgt mit den erfundenen Frequenzen: 0.0, 34.8, −6.2, −21.6); Übergangszustand mit
+# genau einer imaginären Frequenz. Name, SMILES, ΔE_el, imaginäre Frequenz [cm⁻¹].
+PATH_SPECIES = (("S3·H2O", "Cc1ccc(C#Cc2ccc(N(C)C)cc2)nc1.O", 0.0, None),
+                ("TS", None, 36.8, 1432.6),
+                ("Enol", "Cc1ccc(/C=C(\\O)c2ccc(N(C)C)cc2)nc1", -4.2, None),
+                ("Ketone", "Cc1ccc(CC(=O)c2ccc(N(C)C)cc2)nc1", -19.6, None))
+PATH_E0 = -805.981234           # E_el des Komplexes [Eh], erfunden
+
+
+def make_path(w, pdir, inp):
+    """Reaktionspfad „Hydration of S3“ im Projekt: vier ORCA-Ausgaben (Opt/Freq, erfunden) als Plateaus in Schrittfolge,
+    ΔG-Profil und Vorschau der Karte. Der Übergangszustand ist die Enol-Geometrie mit gestreckter C–O-Bindung."""
+    from elucida.app import reaction_paths as RP
+    item = RP.create(pdir, "Hydration of S3")
+    host = RP.PathHost(w, pdir, item)
+    try:
+        geos = {}
+        for label, smi, _, _ in PATH_SPECIES:
+            if smi:
+                geos[label] = mol_3d(smi)
+        m, P = geos["Enol"]                                # TS: O–H des Enols 0.55 Å vom Kohlenstoff weg
+        P = P.copy()
+        o = next(a for a in m.GetAtoms() if a.GetSymbol() == "O")
+        c = next(a.GetIdx() for a in o.GetNeighbors() if a.GetSymbol() == "C")
+        v = (P[o.GetIdx()] - P[c]) / np.linalg.norm(P[o.GetIdx()] - P[c])
+        P[[o.GetIdx()] + [a.GetIdx() for a in o.GetNeighbors() if a.GetSymbol() == "H"]] += 0.55 * v
+        geos["TS"] = (m, P)
+        from elucida.tabs.dft import new_entry
+        for k, (label, _, dg, imag) in enumerate(PATH_SPECIES):         # wie „Rechnungen laden“, ohne je Datei zu zeichnen
+            stem = f"S3_hydration_{k + 1}_{label.replace('·', '-')}"
+            p = make_orca(inp / "path" / f"{stem}.out", stem, *geos[label], PATH_E0 + dg / 627.5095, imag=imag)
+            host.tab.entries().append(new_entry(host.import_file(str(p), PRJ.data_sub("dft"))))
+        host.tab.st["current"] = host.tab.entries()[0]["uid"]
+        prof = host.tab.pages.prof
+        prof["species"] ={e["uid"]: dict(label=s[0], step=k) for k, (e, s) in enumerate(zip(host.tab.entries(),
+                                                                                             PATH_SPECIES))}
+        prof.update(mode="levels", y="G")
+        host.save()
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        fig = Figure()
+        FigureCanvasAgg(fig)
+        F, _ = host.tab.pages.build(fig)
+        if F:                                              # Vorschau der Karte wie beim Schließen eines Pfads
+            fig.savefig(host.project_dir / "preview.png", dpi=70, facecolor="white")
+    finally:
+        host.dispose()
+    return item
 
 
 PAGE_W, PAGE_H, PAGE_MARGIN = 540.0, 720.0, 36.0   # ChemDraw-Seite wie PRJ.EMPTY_CDXML (ACS 1996)
@@ -889,6 +994,14 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     n_homo = sum(a.GetAtomicNum() for a in m3.GetAtoms()) // 2 - 1
     for no, coef in ((n_homo + 1, lumo), (n_homo, homo)):
         w.dft_tab.load_cube(str(orbital_cube(inp / "dft" / f"{name}_opt_freq.mo{no}a.cube", m3, P, atoms, coef)))
+    # Reiter Multireferenz: CASSCF/SC-NEVPT2 auf derselben Geometrie als eigene Rechnung, Ergebnis SC-NEVPT2 gewählt;
+    # gezeigt bleibt die Opt/Freq-Rechnung mit ihren Orbitalen (die Seite folgt der gewählten Rechnung)
+    opt_uid = w.dft_state["current"]
+    w.dft_tab.load_xyz(str(make_mr(inp / "dft" / f"{name}_CASSCF-NEVPT2.out", f"{name}_CASSCF-NEVPT2", m3, P)))
+    e_mr = w.dft_tab.entry()
+    e_mr["mr_result"] = next(r["id"] for r in w.dft_tab.calc_of(e_mr)["multireference"] if r["method"] == "SC-NEVPT2")
+    e_mr.update(mr_singlet=0, mr_triplet=len(MR_STATES[1]))          # ΔE_ST zwischen S0 und T1 (Indizes im Block)
+    w.dft_state["current"] = opt_uid
     w.dft_tab.pages.load_nics([str(make_nics(inp / "dft" / f"{name}_NICS-scan.log", m3, P))])     # Reiter NICS
     w.dft_tab.pages.nics["geom"] = "B3LYP-D4/def2-TZVP"
     w.dft_state["h_labels"] = False                   # Orbitalbild: nur Schweratome beschriftet (H bleiben anklickbar)
@@ -1202,5 +1315,10 @@ def open_demo_publication(w, folder=None) -> Path:
     PUB.save(d, data)
     PUB.set_group(d, d / "S2", "Precursors")          # Gruppen im Projekt zeigen
     PUB.set_group(d, d / "S3", "Products")
+    inp = Path(tempfile.mkdtemp(prefix="elucida_demo_path_"))
+    try:                                                   # Computerchemie: ein Reaktionspfad mit Profil
+        make_path(w, d, inp)
+    finally:
+        shutil.rmtree(inp, ignore_errors=True)            # Eingaben sind in den Pfad kopiert
     w.open_publication(d)
     return d

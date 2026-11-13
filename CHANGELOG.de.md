@@ -5,6 +5,16 @@
 ## 1.1.0 – 2026-11-12
 
 ### Neu
+- **X-Ray: Vergleich mit einer berechneten Geometrie.** Im Schritt „Auswertung“ wird eine Geometrie aus dem DFT-Tab
+  oder einer Datei (xyz, ORCA- oder Gaussian-Ausgabe) der Kristallstruktur nur über das Bindungsnetz zugeordnet
+  (gleiche Summenformel, gleiche Verknüpfung der Schweratome, gleich viele H je Atom; nie nach Abstand oder
+  Reihenfolge). Unter symmetrisch gleichwertigen Zuordnungen gilt die mit der kleinsten RMSD der Schweratome nach
+  Überlagerung, die RMSD wird angezeigt; ergeben gleich gute Zuordnungen verschiedene Werte, werden die Parameter
+  genannt. Andere Zusammensetzung oder Verknüpfung wird mit den abweichenden Atomen abgelehnt; bei Lösungsmittel oder
+  Gegenionen wird das Fragment gewählt. Die Zuordnung steht als Tabelle da und wird mit der Verbindung gespeichert. Die
+  Tabelle der ausgewählten Parameter bekommt eine Spalte mit dem Rechenwert (Bindungslängen 3, Winkel 1
+  Nachkommastelle, ohne Standardabweichung), wahlweise Δ = Rechnung − Kristall, in der App, in Excel/CSV und in Word;
+  der Kopf nennt die Methode, eine Fußnote die Geometrie (Gasphase oder solvatisiert) und die RMSD.
 - **Projektseite: Vergleich.** Beliebig viele benannte Vergleiche über die Verbindungen eines Projekts: CV-Stapel
   (je Verbindung ein Cyclovoltammogramm, Peakpotential am Peak, Struktur neben der Kurve, Scanpfeil je Kurve;
   andere Referenzskalen werden abgelehnt, nie umgerechnet), UV-Vis- und Emissionsspektren in einem Bild und eine
@@ -31,6 +41,12 @@
   einer oder mehreren Cary-Dateien: Aufnahmezeiten aus der Datei, je Spektrum eine Reihe, Spektren im Farbverlauf der
   Zeit oder Absorbanz bei λ gegen die Zeit (wahlweise Maximum im Bereich ± n nm, relativ zum ersten Spektrum), Fit
   erster Ordnung mit k, 95-%-Intervall und Halbwertszeit.
+- **Energieprofil mit Multireferenz-Plateaus.** CASSCF-/NEVPT2-/SORCI-Rechnungen (Einzelpunkt oder die Rechnung selbst)
+  fallen nicht mehr heraus: je Plateau wählen **Methode** und **Zustand** die Zustandsenergie (Vorgabe: höchste Theorie
+  der Datei, Wurzel 0); die Unterschrift nennt Methode und Wurzel. Ohne eigene Frequenzrechnung zeigt das Plateau seine
+  elektronische Energie, mit Hinweis.
+- **Overlay: SORCI-Spektren** sind wie die anderen Methoden angeregter Zustände wählbar, wenn die Ausgabe für den
+  abschließenden DDCI3-Schritt eine Absorptionstabelle druckt.
 - **SEC: Ansicht „Heatmap“.** Die ganze Spektrenserie in einem Bild: Wellenlänge gegen Spektrenfolge, Absorbanz oder
   ΔA zum ersten Spektrum als Farbe mit Farbskala; die y-Achse zeigt das Potential, ohne Potentiale die Zeit oder die
   Nummer.
@@ -48,7 +64,9 @@
   der Liste zeigt es wieder.
 - Beispielprojekt: Das Produkt füllt jeden Tab mit zusammenpassenden erfundenen Daten (jetzt auch HRMS-Rohdaten mit
   Spektrum und Chromatogramm, HOMO/LUMO und ein NICS-Scan im DFT-Tab, eine Abbildung unter „Weitere“; die H-Zelle
-  zykelt um dasselbe E½ wie das CV); die README-Bilder zeigen die Tabs mit diesen Daten.
+  zykelt um dasselbe E½ wie das CV); die README-Bilder zeigen die Tabs mit diesen Daten. Dazu jetzt ein Reaktionspfad
+  (vier Spezies mit Übergangszustand) unter Computerchemie und eine CASSCF-/NEVPT2-Rechnung des Produkts für die
+  DFT-Seite „Multireferenz“.
 
 ### Behoben
 Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und Statistik stimmten; diese Punkte nicht):
@@ -57,6 +75,13 @@ Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und
   Annahme steht jetzt bei der Messung und lässt sich unter „Feldeinheit der Datei“ bestätigen oder ändern.
 - **EPR, Kerne:** ⁶Li, ⁷Li, ⁹Be, ¹⁰B, ¹¹B, ²³Na, ²⁷Al und weitere Isotope bis ²⁰⁹Bi fehlten in der Tabelle; „I=3/2“
   (Spin als Bruch) wird jetzt gelesen.
+- **EPR-Bildunterschriften** der Ansichten Intensität gegen Zeit/Temperatur/Nr. und Arrhenius lauteten „EPR spectra
+  of …“; sie sagen jetzt, was aufgetragen ist, und nennen nur Werte der gezeigten Fits.
+- **NICS-Unterschrift:** Ein Scan entlang der Normalen der Ringebene wurde als Weg in einer Höhe über der Ebene
+  beschrieben; die Lage kommt jetzt aus den Koordinaten der Bq (in der Ebene, entlang der Normalen oder neutral „along
+  the scan path“). Die Seite eines Punkts (ober-/unterhalb, für das Mittel von Paaren) hängt nicht mehr vom beliebigen
+  Vorzeichen der lokalen Ebenennormalen ab.
+- **Overlay:** Eine nach einem SORCI-Schritt gedruckte Absorptionstabelle wurde als TD-DFT-Spektrum gelesen.
 - **Tab „Verbindung“:** Die Chips „Abbildungen von“ blieben nach einem Sprachwechsel leer.
 - **Projektseite:** Die Knöpfe „SI-Texte …“, „Allgemeine Vorschriften“ und „Im Ordner zeigen“ neben den Reitern waren
   unsichtbar (Höhe 0); die Linie über den Reitern war an dieser Stelle gebrochen und versetzt und entfällt. Kopf,

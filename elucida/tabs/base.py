@@ -406,7 +406,7 @@ STEP_LABELS = ("step_data", "step_eval", "step_display")
 STEP_TITLES = {
     1: ("Rechenweg", "Auswertung", "Verarbeitung", "Referenzierung", "Diffusionskoeffizient", "Simulationen",
         "Intensität und Kinetik", "Normierung",
-        "Elementaranalyse", "Ausgewählte Parameter", "Messen (Abstand, Winkel, Diederwinkel)",
+        "Elementaranalyse", "Ausgewählte Parameter", "Vergleich mit Rechnung", "Messen (Abstand, Winkel, Diederwinkel)",
         "NMR-Zeile (MNova-Multiplettbericht)", "Reagenzien (Mengen berechnen)", "Verbinder", "Größen",
         "Weitere Verbindungen", "Zellen und Anordnung"),
     2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate",
