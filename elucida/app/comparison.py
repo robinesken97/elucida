@@ -16,6 +16,7 @@ import csv
 import hashlib
 import html
 import json
+import traceback
 import os
 import re
 import uuid
@@ -26,8 +27,9 @@ import yaml
 from PySide6.QtCore import QMimeData, Qt, QTimer
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox,
-                               QHBoxLayout, QHeaderView, QLineEdit,
-                               QMainWindow, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+                               QMainWindow, QMenu, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from elucida.app import project as PRJ
 from elucida.app import publication as PUB
@@ -43,6 +45,7 @@ SOURCES = ("eps", "cv", "fluo", "epr", "irms", "xray", "dft", "nmr")   # Zustand
 MAX_POINTS = 1500                                  # Kurven im Stand: höchstens so viele Punkte (Datei bleibt klein)
 MAX_CYCLES = 10                                    # CV: Zyklen 1 … 10 je Messung im Stand (dazu der ausgewertete)
 KINDS = ("cv", "spectra", "table")
+NORM_MIN = 0.02                                    # Normierungsbereich: Maximum darin mindestens 2 % des Spektrenmaximums
 EPR_NU_TOL = 2e-4                                  # gleiche Mikrowellenfrequenz (relativ), wie der EPR-Tab beim Dunkelspektrum
 
 
@@ -795,44 +798,11 @@ class CompareTab(TABS.FigureTab):
     # -- Karten -----------------------------------------------------------------------
     def build_controls(self):
         page = self.page
-        g = QGroupBox(T("cmp_list"))
+        # Karte des offenen Vergleichs: Name und Gesamt-SI. Die Liste aller Vergleiche und „neu“ stehen als Karten auf
+        # der Seite davor (ComparePage.fill_landing), gewechselt wird auch über die Pfadleiste; entfernen: Rechtsklick
+        # auf die Karte (wie bei den Reaktionspfaden)
+        g = QGroupBox(T("pub_compare_tab"))
         v = QVBoxLayout(g)
-        row = QHBoxLayout()
-        for kind in KINDS:
-            b = QPushButton(STYLE.icon("add"), T("cmp_new_" + kind))
-            b.setToolTip(T("cmp_new_" + kind + "_tip"))
-            b.clicked.connect(lambda _=False, k=kind: page.add(k))
-            row.addWidget(b, 1)
-        if page.item is not None:                             # Knopfreihe wie über allen Listen: [+ …] [Entfernen]
-            b = STYLE.list_button(T("remove"))
-            b.setToolTip(T("cmp_remove_tip"))
-            b.clicked.connect(page.remove)
-            row.addWidget(b, 1)
-        v.addLayout(row)
-        # Liste als Tabelle wie in den anderen Tabs (Name, Art); gewählt = offen
-        self.lst = QTableWidget(0, 2)
-        self.lst.setHorizontalHeaderLabels([T("cmp_name"), T("cmp_kind")])
-        self.lst.verticalHeader().setVisible(False)
-        self.lst.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.lst.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.lst.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.lst.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)      # Spalten gleich breit (Nutzerwunsch)
-        items = page.items()
-        self.lst.setRowCount(len(items))
-        for i, it in enumerate(items):
-            x = QTableWidgetItem(it["name"])
-            x.setData(Qt.UserRole, it["uid"])
-            self.lst.setItem(i, 0, x)
-            self.lst.setItem(i, 1, QTableWidgetItem(T("cmp_kind_" + it["kind"])))
-            if page.item and it["uid"] == page.item["uid"]:
-                self.lst.setCurrentCell(i, 0)
-        STYLE.fit_check_table(self.lst, 6)
-        self.lst.setFixedHeight(max(self.lst.height(), self.lst.horizontalHeader().sizeHint().height()
-                                    + STYLE.CHECK_ROW_H + 2))
-        self.lst.currentCellChanged.connect(lambda r, *_: r >= 0 and QTimer.singleShot(
-            0, lambda u=self.lst.item(r, 0).data(Qt.UserRole): page.open(u)))
-        STYLE.empty_note(self.lst, T("cmp_list_empty"))
-        v.addWidget(self.lst)
         if page.item is not None:
             f = make_form()
             self.ed_name = QLineEdit(page.item["name"])
@@ -1096,6 +1066,7 @@ class CVStackTab(CompareTab):
     neben der Kurve, Pfeil der Messrichtung je Kurve. Verbindungen auf einer anderen Referenzskala als die erste werden
     abgelehnt, nie umgerechnet."""
     KIND = "cv"
+    SI_PAGE = True                     # Reiter „SI-Text“: ganze Bildunterschrift zum Lesen und Kopieren (Fußleiste kürzt)
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=1.0, ymax=0.0, members=[], stack_gap=1.0,
@@ -1322,11 +1293,14 @@ class SpectraTab(CompareTab):
     """Spektren mehrerer Verbindungen in einem Bild (UV-Vis als ε wie im Overlay oder auf das Maximum normiert,
     Emission normiert wie im Fluoreszenz-Tab), übereinander oder gestapelt, ein Legendeneintrag je Verbindung."""
     KIND = "spectra"
+    SI_PAGE = True
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], content="eps", stack=False, stack_gap=1.0,
-                         ref_freq=0.0, structures=True, struct_color=True, struct_w=22.0)
+                         ref_freq=0.0, structures=True, struct_color=True, struct_w=22.0,
+                         norm_auto=True, nlo=300.0, nhi=500.0)
     CONTENTS = ("eps", "abs_norm", "em", "abs_em", "ir", "epr", "epr_g")
     RESET_KEEP = CompareTab.RESET_KEEP + ("ref_freq",)      # Referenzfrequenz wie im EPR-Tab: bleibt beim Zurücksetzen
     EPR = ("epr", "epr_g")
+    NORMED = ("abs_norm", "abs_em")                         # Absorption auf das Maximum normiert: Bereich wählbar
 
     def kind_controls(self):
         st = self.st
@@ -1353,6 +1327,21 @@ class SpectraTab(CompareTab):
         self.sp_ref.setToolTip(T("cmp_ref_freq_tip"))
         f.addRow(T("epr_ref_freq"), self.sp_ref)
         self.sp_ref.valueChanged.connect(self.changed)
+        # Normierung auf eine gewählte Bande (Nutzerwunsch 2026-11-13: oft zählt die Bande über 400 nm, nicht die im UV):
+        # Maximum innerhalb des Bereichs = 1; „auto“ = Maximum ab dem Anfang des Peakbereichs wie bisher
+        self.row_norm = QHBoxLayout()
+        self.cb_nauto = QCheckBox(T("auto"))
+        self.cb_nauto.setChecked(bool(st.get("norm_auto", True)))
+        self.sp_nlo = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=st.get("nlo", 300.0))
+        self.sp_nhi = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=st.get("nhi", 500.0))
+        for w_ in (self.cb_nauto, self.sp_nlo, QLabel("–"), self.sp_nhi):
+            self.row_norm.addWidget(w_)
+        self.sp_nlo.setToolTip(T("cmp_norm_tip"))
+        self.sp_nhi.setToolTip(T("cmp_norm_tip"))
+        f.addRow(T("ov_norm_window"), self.row_norm)
+        self.cb_nauto.toggled.connect(self.changed)
+        self.sp_nlo.valueChanged.connect(self.changed)
+        self.sp_nhi.valueChanged.connect(self.changed)
         row = QHBoxLayout()                                   # Stapeln mit Abstand in einer Zeile wie im CV-Tab
         self.cb_stack = QCheckBox(T("cmp_stack"))
         self.cb_stack.setChecked(st["stack"])
@@ -1377,11 +1366,13 @@ class SpectraTab(CompareTab):
         self.cb_stack.toggled.connect(self.changed)
         self.lv.addWidget(g)
         self.form_display.setRowVisible(self.sp_ref, st["content"] == "epr")
+        self.form_display.setRowVisible(self.row_norm, st["content"] in self.NORMED)
 
     def content_changed(self, *_):
         """EPR: normiert und gestapelt als Vorgabe; Referenzfrequenz nur bei der Feldachse."""
         k = self.cmb_content.currentData()
         self.form_display.setRowVisible(self.sp_ref, k == "epr")
+        self.form_display.setRowVisible(self.row_norm, k in self.NORMED)
         if k in self.EPR and self.st["content"] not in self.EPR and not self.cb_stack.isChecked():
             self.cb_stack.setChecked(True)
         self.changed()
@@ -1395,7 +1386,8 @@ class SpectraTab(CompareTab):
     def collect(self):
         self.st.update(content=self.cmb_content.currentData(), stack_gap=self.sp_gap.value(),
                        stack=self.cb_stack.isChecked(), ref_freq=self.sp_ref.value(),
-                       struct_w=self.sp_struct_w.value(), **{k: cb.isChecked() for k, cb in self.cb.items()})
+                       struct_w=self.sp_struct_w.value(), **{k: cb.isChecked() for k, cb in self.cb.items()},
+                       norm_auto=self.cb_nauto.isChecked(), nlo=self.sp_nlo.value(), nhi=self.sp_nhi.value())
 
     def show_member(self):
         if not hasattr(self, "cmb_series"):
@@ -1445,7 +1437,8 @@ class SpectraTab(CompareTab):
         uv, em = content in ("eps", "abs_norm", "abs_em"), content in ("em", "abs_em")
         eps_mode = content == "eps"
         lo = core.DEFAULTS["peak_range_nm"][0]
-        groups, no_eps, missing = [], [], []
+        groups, no_eps, missing, outside = [], [], [], []
+        own = None if st.get("norm_auto", True) else sorted((st.get("nlo", 300.0), st.get("nhi", 500.0)))
         for m in self.drawn():
             rec = self.rec(m)
             cs = []
@@ -1460,7 +1453,14 @@ class SpectraTab(CompareTab):
                     else:
                         no_eps.append(rec["name"])
                 else:
-                    mx = np.nanmax(np.where(x >= lo, a, np.nan)) if (x >= lo).any() else np.nanmax(a)
+                    sel = (x >= lo) if own is None else (x >= own[0]) & (x <= own[1])
+                    sel = sel & np.isfinite(a)
+                    mx = np.nanmax(a[sel]) if sel.any() else np.nanmax(a)
+                    # eigener Bereich ohne Bande (außerhalb der Messung oder nur Grundlinie): nichts raten, nicht zeigen –
+                    # das Teilen durch Rauschen ergäbe beliebig große Kurven
+                    if own is not None and (not sel.any() or mx < NORM_MIN * np.nanmax(a)):
+                        outside.append(rec["name"])
+                        continue
                     if mx > 0:
                         cs.append((x, a / mx, "-"))
             fl = rec["tabs"].get("fluo") if em else None
@@ -1476,6 +1476,8 @@ class SpectraTab(CompareTab):
             self.add_note(T("cmp_missing_note", names=", ".join(missing)))
         if no_eps:
             self.add_note(T("cmp_no_eps", names=", ".join(no_eps)))
+        if outside:
+            self.add_note(T("cmp_norm_outside", names=", ".join(outside), lo=f"{own[0]:g}", hi=f"{own[1]:g}"))
         if not groups:
             return None
         cfg = self.base_cfg()
@@ -1617,6 +1619,10 @@ class SpectraTab(CompareTab):
         if st["content"] == "ir" or st["content"] in self.EPR:
             return self._caption_ir_epr()
         ms = [m for m in self.drawn()]
+        if st["content"] in self.NORMED and not st.get("norm_auto", True):   # ohne Bande im Bereich nicht im Bild
+            spec = _quiet(self.figure_spec)
+            shown = {c["label"] for c in spec[1] if c.get("label")} if spec else set()
+            ms = [m for m in ms if self.rec(m)["name"] in shown]
         names = [self.rec(m)["name"] for m in ms]
         if not names:
             return ""
@@ -1625,6 +1631,9 @@ class SpectraTab(CompareTab):
                 "em": "Normalized fluorescence emission spectra",
                 "abs_em": "Normalized UV-Vis absorption (solid) and fluorescence emission spectra (dashed)"}[st["content"]]
         h = f"{what} of " + _join_names(names)
+        if st["content"] in self.NORMED and not st.get("norm_auto", True):
+            lo_, hi_ = sorted((st.get("nlo", 300.0), st.get("nhi", 500.0)))
+            h += f" (absorption normalized to the maximum within {lo_:g}–{hi_:g} nm)"
         solv = []
         for m in ms:
             rec = self.rec(m)
@@ -2311,24 +2320,160 @@ TAB_CLASS = {None: CompareEmpty, "cv": CVStackTab, "spectra": SpectraTab, "table
 
 # ============================================================================ Seite „Vergleich“ der Projektseite
 class ComparePage(QWidget):
-    """Reiter „Vergleich“ der Projektseite: ein Tab für den gewählten Vergleich (wird beim Wechsel neu gebaut)."""
+    """Reiter „Vergleich“ der Projektseite. Wie die Reaktionspfade (Nutzerwunsch 2026-11-13): der Reiter zeigt Karten
+    (je Vergleich eine, dazu „neu“ je Art); ein Klick öffnet den Vergleich in voller Fenstergröße (`opened`, Kopf,
+    Reiter und Seitenleiste weg: `PublicationPage.compare_mode`), zurück über die Pfadleiste. Der Klick auf den Reiter
+    selbst ändert die Ansicht nie. Der Tab des offenen Vergleichs wird beim Wechsel neu gebaut."""
 
     def __init__(self, pub_page):
         super().__init__()
         self.pub, self.main = pub_page, pub_page.main
         self.pdir, self.item, self.tab, self.records, self._dirty = None, None, None, {}, True
         self._saved = None
+        self.opened = False
         self.history, self.cursor, self._restoring = [], -1, False   # Rückgängig je offenem Vergleich (wie PathHost)
         self.host = CompareHost(self)
-        self.lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.stack = QStackedWidget()
+        outer.addWidget(self.stack)
+        self.landing, self.holder = QWidget(), QWidget()
+        self.lay = QVBoxLayout(self.holder)
         self.lay.setContentsMargins(0, 0, 0, 0)
+        self.stack.addWidget(self.landing)
+        self.stack.addWidget(self.holder)
+        self.cards, self.gallery = [], None                 # Karten entstehen beim ersten Zeigen (fill_landing)
         self.timer = QTimer(self, singleShot=True, interval=300)
         self.timer.timeout.connect(self.save)
+
+    # -- Karten ----------------------------------------------------------------------------
+    def preview_path(self, uid) -> Path:
+        return PRJ.work_dir(self.pdir, "comparisons") / f"{uid}.png"
+
+    def fill_landing(self):
+        """Karten der Vergleiche (Vorschau, Name, Stand) und je Art eine Karte „neu“."""
+        from elucida.app import welcome as WEL
+        from elucida.app import publication_view as PV
+        if self.gallery is None:
+            v = QVBoxLayout(self.landing)
+            v.setContentsMargins(PV.IN, 12, PV.IN, 0)
+            v.setSpacing(8)
+            v.addWidget(QLabel(f"<b>{T('cmp_list')}</b>", objectName="recentHead"))
+            self.gallery = WEL.Gallery()
+            top = QWidget()                                   # Karten oben, nicht mittig in der Höhe
+            tv = QVBoxLayout(top)
+            tv.setContentsMargins(0, 0, 0, 0)
+            tv.addWidget(self.gallery)
+            tv.addStretch(1)
+            v.addWidget(PV.scrolled(top), 1)
+            # eine Karte „Neuer Vergleich …“ wie „Neuer Pfad …“ (Nutzerhinweis 2026-11-13: drei Karten je Art neben den
+            # Vergleichen wirkten unruhig); die Art wählt ein Menü an der Karte
+            self.b_new = PV.add_card(T("cmp_new"), T("cmp_new_hint"), PV.PATH_CARD_H)
+            self.new_menu = QMenu(self.b_new)
+            for kind in KINDS:
+                self.new_menu.addAction(T("cmp_new_" + kind), lambda k=kind: self.add(k))
+            self.b_new.clicked.connect(lambda: self.new_menu.exec(self.b_new.mapToGlobal(self.b_new.rect().center())))
+        self.gallery.remove_all()
+        for c in self.cards:
+            c.setParent(None)
+            c.deleteLater()
+        self.cards = []
+        if self.pdir is None:
+            return
+        for it in self.items():
+            if not self.preview_path(it["uid"]).exists():      # noch nie geöffnet (Beispielprojekt): Vorschau einmal bauen
+                self._make_preview(it)
+            c = PV.PathCard(it, self.preview_path(it["uid"]))
+            for lab in c.findChildren(QLabel, "recentSub"):   # Art auf der Karte: „Spektren · Geändert heute 13:58“
+                lab.setText(T("cmp_kind_" + it["kind"]) + " · " + lab.text())
+            c.opened.connect(lambda _=None, u=it["uid"]: self.open(u))
+            c.setContextMenuPolicy(Qt.CustomContextMenu)
+            c.customContextMenuRequested.connect(lambda pos, c=c: self._card_menu(c, pos))
+            self.cards.append(c)
+            self.gallery.add(c)
+        self.gallery.add(self.b_new)
+
+    def _card_menu(self, card, pos):
+        m = QMenu(self)
+        m.addAction(T("rp_open"), lambda: self.open(card.item["uid"]))
+        m.addSeparator()
+        m.addAction(T("remove"), lambda: self.remove(card.item["uid"]))
+        m.exec(card.mapToGlobal(pos))
+
+    def _make_preview(self, it):
+        """Vorschau eines nicht offenen Vergleichs: eigene, nie gezeigte Seite wie für die Gesamt-SI (`si_blocks`)."""
+        page = ComparePage(self.pub)
+        page.pdir, page._restoring, page.records = self.pdir, True, self.records
+        try:
+            page.item = copy.deepcopy(it)
+            page.sync_members(page.item)
+            page.build()
+            page.save_preview()
+        except Exception:
+            self.main.log_signal.emit(traceback.format_exc())
+        finally:
+            page.item = None
+            page.dispose()
+
+    def save_preview(self):
+        """Vorschau der Karte aus dem offenen Vergleich (Abbildung neu gezeichnet, Tabelle als Bild der Vorschau)."""
+        if self.pdir is None or self.item is None or self.tab is None:
+            return
+        try:
+            path = self.preview_path(self.item["uid"])
+            if isinstance(self.tab, TableTab):                # Tabelle wie kopiert, schwarz auf Weiß wie die Abbildungen
+                from PySide6.QtGui import QColor, QImage, QPainter, QTextDocument
+                doc = QTextDocument()
+                doc.setDefaultStyleSheet("th, td { color: black; padding: 2px 8px; }")
+                doc.setHtml(self.tab.table_html())
+                size = doc.size().toSize()
+                img = QImage(2 * (size.width() + 16), 2 * (size.height() + 16), QImage.Format_RGB32)
+                img.fill(QColor("white"))
+                pt = QPainter(img)
+                pt.scale(2, 2)
+                pt.translate(8, 8)
+                doc.drawContents(pt)
+                pt.end()
+                img.save(str(path))
+            else:
+                from matplotlib.backends.backend_agg import FigureCanvasAgg
+                from matplotlib.figure import Figure
+                fig = Figure()
+                FigureCanvasAgg(fig)
+                if self.tab.build(fig) is not None:
+                    fig.savefig(path, dpi=70, facecolor="white")
+        except Exception:                                     # die Vorschau ist nur Zierde: nie das Schließen stören
+            self.main.log_signal.emit(traceback.format_exc())
+
+    def _show(self):
+        if not self.opened:
+            self.fill_landing()
+        self.stack.setCurrentWidget(self.holder if self.opened else self.landing)
+        self.pub.compare_mode(self.opened)
+
+    def close(self):
+        """Offenen Vergleich schließen: speichern, Vorschau für die Karte, zurück zu den Karten."""
+        if not self.opened:
+            return True
+        self.save()
+        self.save_preview()
+        self.opened, self.item = False, None
+        self._saved = None
+        self.build()
+        self.reset_history()
+        self._show()
+        return True
 
     # -- Projekt ---------------------------------------------------------------------------
     def set_publication(self, pdir):
         self.save()
-        self.pdir = Path(pdir) if pdir else None
+        pdir = Path(pdir) if pdir else None
+        if pdir != self.pdir:                                 # anderes Projekt: nichts bleibt offen
+            if self.opened:
+                self.save_preview()
+            self.opened, self.item = False, None
+            self.pub.compare_mode(False)
+        self.pdir = pdir
         self._dirty = True
         if self.isVisible():
             self.load()
@@ -2353,15 +2498,17 @@ class ComparePage(QWidget):
         if self.pdir is not None:
             data = PUB.load(self.pdir)
             items = data.get("comparisons") or []
-            uid = uid or (self.item or {}).get("uid")
-            self.item = next((x for x in items if x["uid"] == uid), items[0] if items else None)
+            uid = uid or ((self.item or {}).get("uid") if self.opened else None)   # ohne offenen Vergleich: Karten
+            self.item = next((x for x in items if x["uid"] == uid), None) if uid else None
         else:
             self.item = None
+        self.opened = self.item is not None
         if self.item is not None:
             self.sync_members(self.item)
         self._saved = json.dumps(self.item, sort_keys=True, default=str)
         self.build()
         self.reset_history()
+        self._show()
 
     def read_records(self):
         """Stände aller Verbindungen des Projekts (nur Dateien lesen, nichts öffnen)."""
@@ -2466,6 +2613,8 @@ class ComparePage(QWidget):
         if self.item is not None and self.item["uid"] == uid:
             return
         self.save()
+        if self.opened:
+            self.save_preview()
         self.load(uid)
 
     # -- Ändern ----------------------------------------------------------------------------
@@ -2506,8 +2655,10 @@ class ComparePage(QWidget):
         data["comparisons"] = items + [item]
         PUB.save(self.pdir, data)
         self._saved = json.dumps(item, sort_keys=True, default=str)
+        self.opened = True
         self.build()
         self.reset_history()
+        self._show()
 
     def rename(self, name):
         name = name.strip()
@@ -2517,15 +2668,18 @@ class ComparePage(QWidget):
         self.record()
         self.save()
         QTimer.singleShot(0, self.build)                     # Liste zeigt den neuen Namen
+        self.main._update_crumbs()                          # Pfadleiste auch
 
-    def remove(self):
-        """Nur den Eintrag aus der Projektdatei nehmen (Exporte im Ordner bleiben)."""
-        if self.item is None:
+    def remove(self, uid=None):
+        """Nur den Eintrag aus der Projektdatei nehmen (Exporte im Ordner bleiben). uid: von der Karte aus."""
+        uid = uid or (self.item or {}).get("uid")
+        if uid is None or self.pdir is None:
             return
         data = PUB.load(self.pdir)
-        data["comparisons"] = [x for x in data.get("comparisons") or [] if x["uid"] != self.item["uid"]]
+        data["comparisons"] = [x for x in data.get("comparisons") or [] if x["uid"] != uid]
         PUB.save(self.pdir, data)
-        self.item = None
+        self.preview_path(uid).unlink(missing_ok=True)
+        self.item, self.opened = None, False
         self._dirty = True
         self.history, self.cursor = [], -1
         self.main._update_undo_actions()

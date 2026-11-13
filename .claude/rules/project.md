@@ -91,7 +91,15 @@ paths:
   `CV._fmt_e`, ΔE_p in mV, `g_text`, `hfc_texts`, D und |E/D| wie `zfs_summary`). Neu ausgelesen wird nur ein gebauter
   Tab mit geändertem Fingerabdruck (`fingerprint`: Zustand mit relativen Pfaden); ein Fehler darin stört das Speichern
   nie. Ein Eintrag, dessen Fingerabdruck nicht zur Projektdatei passt, gilt als veraltet und liefert keinen Wert;
-  „Aktualisieren“ (nur sichtbar, wenn nötig) öffnet die Verbindung kurz und speichert sie. Strukturen im Vergleich (CV-Stapel, Spektren;
+  „Aktualisieren“ (nur sichtbar, wenn nötig) öffnet die Verbindung kurz und speichert sie. Reiter „Vergleich“ wie die Reaktionspfade (Nutzerentscheid
+  2026-11-13): Karten je Vergleich (Vorschau `.elucida/comparisons/<uid>.png`, beim Schließen bzw. einmal beim Zeigen
+  erzeugt, Tabelle schwarz auf Weiß aus `table_html`) plus eine Karte „Neuer Vergleich …“ (Menü je Art, nie drei Karten:
+  wirkte unruhig); Klick auf eine Karte öffnet in voller Fenstergröße (`ComparePage.opened`, `PublicationPage.compare_mode`
+  = `_set_full`, Pfadleiste `Projekt › Vergleich ▾`, `_crumb_pub` schließt). Der Klick auf den Reiter selbst schaltet
+  die Ansicht nie um (springende Steuerelemente unerwünscht). Im offenen Vergleich nur noch Name und Gesamt-SI, keine Liste.
+  Spektren und CV-Stapel mit Reiter „SI-Text“ (`SI_PAGE`: ganze Unterschrift, die Fußleiste kürzt). Normierte Absorption:
+  Bereich wählbar (`norm_auto`, `nlo`, `nhi`; Maximum darin = 1, unter `NORM_MIN` des Spektrenmaximums oder außerhalb der
+  Messung -> nicht gezeigt + Hinweis, nie durch Rauschen teilen; Unterschrift nennt den Bereich). Strukturen im Vergleich (CV-Stapel, Spektren;
   Nutzerwunsch 2026-11-13): je Verbindung eine, Vorgabe in Kurvenfarbe (`structures`, `struct_color`, `struct_w`), alle im
   selben Zeichenmaßstab über `FigureTab.structure_images` (Breite in Bindungslängen aus der CDXML, `IMG.structure_units`;
   die breiteste = `struct_w`, Mausrad auf einer ändert `struct_w`, kein Einzelschrumpfen; gilt auch im UV-Vis-Overlay).

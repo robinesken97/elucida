@@ -285,6 +285,8 @@ class PathWorkspace(QWidget):
     def tab_changed(self, *_):
         if self.composition: self.composition.refresh_sources()
         if self.composition: self.composition.tool_row.setVisible(self.tabs.currentWidget() is self.composition)
+        if self.composition and self.composition._auto_pending and self.tabs.currentWidget() is self.composition:
+            self.composition._auto_timer.start()             # inzwischen Rechendaten geladen: Profil einsetzen
         if self.tabs.currentWidget() is self.calc_page: self.host.tab.pages.refresh()
         self.main._update_undo_actions()
 

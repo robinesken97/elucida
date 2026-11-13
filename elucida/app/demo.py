@@ -1307,7 +1307,7 @@ def open_demo_publication(w, folder=None) -> Path:
     data["comparisons"] = [
         dict(uid="demo0spectra", name="UV-Vis S2 / S3", kind="spectra",
              st=dict(members=[dict(m) for m in members], content="eps")),
-        dict(uid="demo00table", name="Properties", kind="table", st=dict(members=[dict(m) for m in members], table=dict(
+        dict(uid="demo00table", name="Properties S2 / S3", kind="table", st=dict(members=[dict(m) for m in members], table=dict(
             cols=[dict(id="c1", kind="auto", key="formula", group=""), dict(id="c2", kind="auto", key="mw", group=""),
                   dict(id="c3", kind="auto", key="uv_lam", group="UV-Vis"),
                   dict(id="c4", kind="auto", key="uv_eps", group="UV-Vis"),

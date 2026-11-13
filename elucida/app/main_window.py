@@ -2973,6 +2973,8 @@ class MainWindow(QMainWindow):
     def _crumb_pub(self):
         if self.pub_page.path_workspace:
             self.pub_page.close_path()
+        elif self.pub_page.compare_page.opened and not self.project_dir:
+            self.pub_page.compare_page.close()         # offener Vergleich: zurück zu den Karten
         elif self.publication_dir:
             self.go_publication()
         else:
@@ -2984,7 +2986,8 @@ class MainWindow(QMainWindow):
             return
         page = self.__dict__.get("pub_page")
         path = page.path_workspace if page is not None else None
-        work = bool(self.project_dir or path)
+        cmp_ = page.compare_page if page is not None and page.compare_page.opened and not self.project_dir else None
+        work = bool(self.project_dir or path or cmp_)
         self.act_crumbs.setVisible(work)
         for a_ in self._tb_edit + [self._sep_compound]:
             a_.setVisible(bool(self.project_dir))
@@ -3009,18 +3012,19 @@ class MainWindow(QMainWindow):
         from elucida.app import demo as DEMO
         on = bool(self.publication_dir and self.project_dir)
         orphan = bool(self.project_dir and not self.publication_dir and not DEMO.is_demo(self.project_dir))
-        self.crumb_seps[0].setVisible(on or orphan or bool(path))
-        self.btn_pub.setVisible(on or orphan or bool(path))
+        self.crumb_seps[0].setVisible(on or orphan or bool(path or cmp_))
+        self.btn_pub.setVisible(on or orphan or bool(path or cmp_))
         for w_ in (self.crumb_seps[1], self.btn_comp):
-            w_.setVisible(on or bool(path))
+            w_.setVisible(on or bool(path or cmp_))
         if orphan:
             self.btn_pub.setText("⚠ " + T("nav_no_project"))
             self.btn_pub.setToolTip(T("assign_title"))
-        if on or path:
+        if on or path or cmp_:
             t_ = self.publication_title()
             self.btn_pub.setText(t_ if len(t_) <= 44 else t_[:42] + " …")      # erst kürzen, wenn es wirklich lang ist
             self.btn_pub.setToolTip(T("act_to_publication") + ": " + t_)
-            self.btn_comp.setText(path.item["name"] if path and not on else self.export_name())
+            self.btn_comp.setText(path.item["name"] if path and not on else
+                                  cmp_.item["name"] if cmp_ else self.export_name())
         if self.project_dir:                                # Tab „Verbindung“: Nummer (SI, sonst Laborbuch) · Summenformel
             c_ = self.compound
             self.nav_buttons[self._tab_keys.index("compound")].set_compound(
@@ -3054,6 +3058,14 @@ class MainWindow(QMainWindow):
                 act.setCheckable(True)
                 act.setChecked(it["uid"] == cur_)
                 act.triggered.connect(lambda _=False, it=it: self.pub_page.open_path(it))
+            return
+        cp_ = self.pub_page.compare_page
+        if cp_.opened and not self.project_dir:               # offener Vergleich: die Vergleiche des Projekts
+            for it in cp_.items():
+                act = self.comp_menu.addAction(it["name"])
+                act.setCheckable(True)
+                act.setChecked(it["uid"] == cp_.item["uid"])
+                act.triggered.connect(lambda _=False, u=it["uid"]: cp_.open(u))
             return
         cur = Path(self.project_dir).resolve() if self.project_dir else None
         for d in PUB.sync(self.publication_dir)[0]:

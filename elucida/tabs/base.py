@@ -411,7 +411,8 @@ STEP_TITLES = {
         "Weitere Verbindungen", "Zellen und Anordnung"),
     2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate",
         "Größe und Formate", "Stapeln und Achsen", "Hervorheben und Labels", "Bilder", "Atome und Fragmente",
-        "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen"),
+        "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen",
+        "Beschriftung", "Abschnitte"),
 }
 BAR_MIN_H = STYLE.BAR_H + 21          # Fußleiste: Knopf + 2 × 10 Rand + Linie, auch wenn links kein Knopf steht
 

@@ -76,6 +76,9 @@ class PublicationTile(WEL.SideRow):
         return not t or any(t in s.lower() for s in [self.info["title"], self.info["path"]] + self.info["compounds"])
 
 
+PATH_CARD_H = 212                 # Karten der Reaktionspfade und Vergleiche (Bild THUMB_H + Name und Stand), auch „neu“
+
+
 class PathCard(WEL.ClickCard):
     """Reaktionspfad als Karte: Vorschau des Profils, Name, Stand."""
 
@@ -83,12 +86,14 @@ class PathCard(WEL.ClickCard):
         super().__init__()
         self._setup(dict(path=item["uid"]))
         self.item = item
-        self.setFixedHeight(190)
+        self.setFixedHeight(PATH_CARD_H)
         self.setMinimumWidth(WEL.CARD_W)
         v = QVBoxLayout(self)
         v.setContentsMargins(1, 1, 1, 1)
         v.setSpacing(0)
-        v.addWidget(WEL.card_picture(str(preview) if preview.exists() else None, 128))
+        # Vorschau so groß wie die Strukturbilder der Verbindungskarten, 12 px Luft oben und unten, mindestens 16 seitlich
+        # (Nutzerhinweis 2026-11-13: vorher 84 px hoch, zu klein)
+        v.addWidget(WEL.card_picture(str(preview) if preview.exists() else None, WEL.THUMB_H, WEL.CARD_W - 32, 24))
         b = QVBoxLayout()
         b.setContentsMargins(12, 9, 12, 10)
         b.setSpacing(2)
@@ -345,7 +350,7 @@ class PublicationPage(QWidget):
         lv.addLayout(lh)
         self.path_gallery = WEL.Gallery()
         self.path_cards = []
-        self.b_new_path = add_card(T("rp_new_path"), T("rp_energy_profiles_and_irc_across_multiple_compounds"), 190)
+        self.b_new_path = add_card(T("rp_new_path"), T("rp_energy_profiles_and_irc_across_multiple_compounds"), PATH_CARD_H)
         self.b_new_path.clicked.connect(self.path_panel.new)
         top = QWidget()                                     # Karten oben, nicht mittig in der Höhe
         tv2 = QVBoxLayout(top)
@@ -355,7 +360,14 @@ class PublicationPage(QWidget):
         lv.addWidget(scrolled(top), 1)
         ln.addLayout(lv, 1)
         self.cluster_page = ClusterPage(self)
-        self.cluster_page.setFixedWidth(360)
+        # Spalte „Cluster“ genau so breit wie die beiden Knöpfe im Kopf darüber (gleich breit, selbe Außenkanten):
+        # vorher 360 px unter 380 px Knöpfen, die Knöpfe standen links über (Nutzerhinweis 2026-11-13)
+        for b_ in (self.b_pack, self.b_si):
+            b_.ensurePolished()
+        bw_ = max(self.b_pack.sizeHint().width(), self.b_si.sizeHint().width())
+        for b_ in (self.b_pack, self.b_si):
+            b_.setFixedWidth(bw_)
+        self.cluster_page.setFixedWidth(max(360, 2 * bw_ + self.head.layout().spacing()))
         ln.addWidget(self.cluster_page)
         self.path_stack.addWidget(self.path_landing)
         self.cluster_card = ClusterCard(self)
@@ -443,6 +455,16 @@ class PublicationPage(QWidget):
         self.outer.setContentsMargins(*((0, 0, 0, 0) if on else PAGE_MARGINS))       # Pfad: Ränder wie in den Tabs (PathWorkspace)
         self.paths_layout.setContentsMargins(*((0, 12, 0, 0) if on else (IN, 12, IN, 0)))
         self.main._update_crumbs()
+
+    def compare_mode(self, on):
+        """Offener Vergleich wie ein offener Pfad: Kopf, Reiter und Seitenleiste weg, zurück über die Pfadleiste."""
+        if on:
+            self.project_tabs.setCurrentWidget(self.compare_page)
+        if on != getattr(self, "_cmp_full", False):
+            self._cmp_full = on
+            self._set_full(on or bool(self.path_workspace))
+        else:
+            self.main._update_crumbs()
 
     def sync_main_button(self, *_):
         """Ein Hauptknopf (blau) je Ansicht: mit offenem Vergleich ist es dessen „Exportieren“, sonst die Gesamt-SI."""

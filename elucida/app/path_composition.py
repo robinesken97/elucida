@@ -9,7 +9,8 @@ import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
+from shiboken6 import isValid
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QDialog, QSizePolicy, QMenu, QLineEdit, QLabel, QComboBox, QStackedWidget, QDialogButtonBox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -208,15 +209,38 @@ class CompositionEditor(QWidget):
         self.caption.editingFinished.connect(self.save_caption); row.addWidget(self.caption, 1)
         label.setBuddy(self.caption)
         path = host.tab.pages.prof.get('composition')
+        self._auto_pending = False
         if not path:
             path = str(host.project_dir / PRJ.STRUCTURES / 'reaction_path.cdxml')
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             # Do not overwrite an existing canvas after an interrupted state save.
-            if not Path(path).exists(): Path(path).write_text(PRJ.EMPTY_CDXML, encoding='utf-8')
+            if not Path(path).exists():
+                Path(path).write_text(PRJ.EMPTY_CDXML, encoding='utf-8')
+                self._auto_pending = True                   # neue Zeichenfläche: Energieprofil von selbst einsetzen
             host.tab.pages.prof['composition'] = path
             host.save()
         self.editor.open_path(path)
         self.refresh_sources()
+        self._auto_timer = QTimer(self, interval=300)
+        self._auto_timer.timeout.connect(self.auto_profile)
+        if self._auto_pending: self._auto_timer.start()
+
+    def auto_profile(self):
+        """Neue Zeichenfläche eines Pfads mit Rechendaten: das Energieprofil steht von selbst darauf (Nutzerhinweis
+        2026-11-13: die leere Fläche des Beispielpfads wirkte wie ein Fehler). Ohne Daten bleibt sie leer und der
+        Versuch offen, bis die Seite wieder gezeigt wird (PathWorkspace.tab_changed); nie auf einer Fläche, die es
+        schon gab."""
+        if not self._auto_pending or not isValid(self):
+            return self._auto_timer.stop()
+        if not (self.editor.ready and self.editor.path and self.isVisible()):
+            return                                          # Editor lädt noch
+        self._auto_timer.stop()
+        try:
+            payload, record = profile_asset(self.host, self.host.tab.pages.prof['mode'], self.frame.isChecked())
+        except Exception:
+            return                                          # noch keine Rechendaten: später erneut
+        self._auto_pending = False
+        self.put(payload, record)
 
     def notify(self, text):
         # Gespeichert/ungespeichert/speichert wechseln ständig (Autosave): nur Hinweise und Fehler einblenden
@@ -237,6 +261,7 @@ class CompositionEditor(QWidget):
         self.host.save()
 
     def put(self, payload, record, target=None):
+        self._auto_pending = False                          # der Nutzer hat selbst etwas eingesetzt
         key = uuid.uuid4().hex
         # Immutable revisions let Octet undo restore the previous image AND settings.
         self.host.tab.pages.prof.setdefault('composition_assets', {})[key] = record

@@ -33,6 +33,21 @@
 - **Strukturen gleich groß:** Mehrere Strukturen in einem Bild (Vergleich, UV-Vis-Overlay) haben immer denselben
   Zeichenmaßstab (gleiche Bindungslänge, unabhängig vom ChemDraw-Stil). Die Größe gilt für die breiteste; das Mausrad
   auf einer Struktur ändert alle.
+- **Vergleich:** Normierte UV-Vis-Spektren lassen sich auf eine gewählte Bande normieren (**Normierung [nm]**: das
+  Maximum im Bereich wird 1, z. B. die Bande über 400 nm statt der im UV; ohne Bande im Bereich wird die Verbindung
+  nicht gezeigt, ein Hinweis sagt das). Der Reiter „Vergleich“ zeigt die Vergleiche als Karten wie
+  die Reaktionspfade; ein Klick öffnet den Vergleich in voller Fenstergröße (Abbildung so groß wie in den Tabs der
+  Verbindungen), zurück über die Pfadleiste. Spektrenvergleich und CV-Stapel haben den Reiter „SI-Text“ mit der ganzen
+  Bildunterschrift zum Kopieren. Im UV-Vis-Overlay gab es den Normierungsbereich schon.
+- **Reaktionspfad:** Die Zeichenfläche „Gestalten“ zeigt beim ersten Öffnen eines Pfads mit Rechendaten gleich das
+  Energieprofil (vorher leer, auch im Beispielprojekt).
+- **Energiediagramm:** Plateaus lassen sich im Bild mit der Maus waagerecht ziehen (im schematischen Bild auch in der
+  Höhe; der Energiewert bleibt der echte). Neue Vorlage „Artikel“: ohne Rahmen mit Pfeil, kräftige kurze
+  Plateaus, gestrichelte Verbinder, Vorzeichen, Name und Wert fett-kursiv unter dem Plateau. Alles daran ist einzeln
+  einstellbar: Lage und Schrift der Beschriftung, Vorzeichen, Achsentitel (auch mehrzeilig), Plateaubreite; dazu
+  Abschnitte als Balken mit Text unter dem Profil. Die Einheit ist wählbar (kcal mol⁻¹, kJ mol⁻¹, eV): Werte, Achse
+  und Bildunterschrift werden umgerechnet. Die Vorlagen stehen jetzt in einer Auswahlliste.
+- **Verbindungsliste:** Die Punkte der Methoden stehen alle im selben Abstand (vorher eine breitere Lücke nach „m.p.“).
 - **EPR: Basislinie nach Wahl.** Neben dem Polynom gibt es „Glatt“ (folgt breitem Untergrund, lässt schmale Linien
   stehen, kommt ohne Dunkelspektrum aus; einziger Wert ist die Breite) und „Spline“ (durch die Mittel der
   signalfreien Bereiche). Methodentext und exportierte Spektren nennen das Verfahren.

@@ -16,8 +16,9 @@ def number(obj, key, default, low=-1e5, high=1e5):
     return value
 
 
-def arranged(rows, layout):
-    """Return drawing coordinates separately from each unmodified energy value."""
+def arranged(rows, layout, factor=1.):
+    """Return drawing coordinates separately from each unmodified energy value. factor: Einheit des Bildes (Werte und
+    gespeicherte Höhen bleiben kcal/mol, gezeichnet wird in der gewählten Einheit)."""
     if layout.get('mode', 'scaled') not in ('scaled', 'schematic'):
         raise ValueError('Invalid diagram presentation mode')
     schematic = layout.get('mode', 'scaled') == 'schematic'
@@ -30,8 +31,8 @@ def arranged(rows, layout):
         color = node.get('color')
         if color and not is_color_like(color): raise ValueError('Invalid diagram colour')
         result.append(dict(r, x=number(node, 'x', r['step']),
-                           plot_y=number(node, 'y', r['value']) if schematic else r['value'],
-                           width=number(node, 'width', .7, .05, 20), color=color,
+                           plot_y=(number(node, 'y', r['value']) if schematic else r['value']) * factor,
+                           width=number(node, 'width', number(layout, 'level_width', .7, .05, 20), .05, 20), color=color,
                            break_after=bool(node.get('break_after')) and schematic, **offsets))
     return result
 
@@ -199,20 +200,28 @@ def build_levels(pages, fig, layout, images=False):
     """Stufenbild eines Energieprofils – das eine Zeichenwerk für den DFT-Tab (images=True: Strukturen und Bilder an den
     Plateaus) und für die Abbildungen des Reaktionspfads. Energien kommen unverändert aus `levels_spec`; `layout` ist
     nur Darstellung (Stil, Lage der Plateaus und Labels)."""
-    from elucida.tabs.dft_pages import KINDS, kcal
+    from elucida.tabs.dft_pages import KINDS, UNITS, energy_text
     source, paths, notes = pages.levels_spec()
     if not source: return None, notes
-    rows = arranged(source, layout)
+    unit = pages.unit()
+    rows = arranged(source, layout, UNITS[unit][2])
     schematic = layout.get('mode', 'scaled') == 'schematic'
     cfg = pages.cfg('levels')
     cfg['images'] = []
-    cfg['ylabel'] = KINDS[pages.prof['y']][0] + ' [kcal mol$^{-1}$]'
-    if schematic: cfg['ylabel'] += ' (schematic)'
+    cfg['ylabel'] = KINDS[pages.prof['y']][0] + f' [{UNITS[unit][0]}]'
+    if schematic and not layout.get('axis_title'): cfg['ylabel'] += ' (schematic)'
     xs = [r['x'] - r['width']/2 for r in rows] + [r['x'] + r['width']/2 for r in rows]
     ys = [r['plot_y'] for r in rows]
     xspan, yspan = max(max(xs)-min(xs), 1), max(max(ys)-min(ys), 1)
+    label_pos = layout.get('labels', 'split')                # Wert oben + Name unten | beide unter | beide über dem Plateau
+    if label_pos not in ('split', 'below', 'above'): raise ValueError('Invalid label position')
+    sections = [sec for sec in (pages.prof.get('sections') or []) if sec.get('b', 0) > sec.get('a', 0)]
     cfg['xlim'] = [min(xs)-.12*xspan, max(xs)+.12*xspan]
-    cfg['ylim'] = [min(ys)-.2*yspan, max(ys)+.2*yspan]
+    low = (.3 if label_pos == 'below' else .12 if label_pos == 'above' else .2) + (.14 if sections else 0)
+    cfg['ylim'] = [min(ys)-low*yspan, max(ys)+(.12 if label_pos == 'below' else .3 if label_pos == 'above' else .2)*yspan]
+    title = layout.get('axis_title')                         # eigener Achsentitel; „ | “ = Zeilenumbruch
+    if title:
+        cfg['ylabel'] = str(title).replace(' | ', '\n').replace('{unit}', UNITS[unit][0])
     if images:
         notes = notes + _images(pages, cfg, rows, yspan)
     width = number(layout, 'line_width', 2.2, .1, 10)
@@ -233,7 +242,7 @@ def build_levels(pages, fig, layout, images=False):
     slots = {}                                                # senkrechte Übergänge je Spalte nebeneinander
     xw = cfg['xlim'][1] - cfg['xlim'][0]
     for r in rows:                                            # halbe Breite der Beschriftungen: Übergänge setzen daneben an
-        r['text_half'] = max(_text_width(t, fs) for t in (kcal(r['value']), r['label'])) / 144 / (fw * cfg['axes_rect'][2]) * xw
+        r['text_half'] = max(_text_width(t, fs) for t in (energy_text(r['value'], unit), r['label'])) / 144 / (fw * cfg['axes_rect'][2]) * xw
     pad = .023 / aspect * xw                                  # Wellenlinie (Ausschlag .011) plus Luft
     edges = edges_of(pages.prof, rows)
     segments = [edge_ends(by_uid[e['a']], by_uid[e['b']]) for e in edges
@@ -308,20 +317,39 @@ def build_levels(pages, fig, layout, images=False):
         F.ax.set_xlabel('')
         ylabel = F.ax.get_ylabel()
         F.ax.set_ylabel('')
-        F.ax.annotate('', xy=(-.025, .87), xytext=(-.025, .56), xycoords='axes fraction',
-                      arrowprops=dict(arrowstyle='-|>', color='black', lw=1.2), annotation_clip=False)
-        F.ax.text(-.04, .90, ylabel, transform=F.ax.transAxes, ha='left', va='bottom', fontsize=9)
+        # Pfeil oben links, der Titel rechts daneben (mehrzeilig möglich), wie in Profilen ohne Achse üblich
+        F.ax.annotate('', xy=(-.06, .99), xytext=(-.06, .74), xycoords='axes fraction',
+                      arrowprops=dict(arrowstyle='-|>', color='black', lw=1.4), annotation_clip=False)
+        F.ax.text(-.045, .985, ylabel, transform=F.ax.transAxes, ha='left', va='top', fontsize=max(7, fs * .85),
+                  fontweight='bold' if 'bold' in layout.get('label_font', '') else 'normal', linespacing=1.3)
     x0, x1 = cfg['xlim']; y0, y1 = cfg['ylim']
+    style = layout.get('label_font', 'normal')
+    if style not in ('normal', 'bold', 'italic', 'bold italic'): raise ValueError('Invalid label font')
+    font = dict(fontweight='bold' if 'bold' in style else 'normal', fontstyle='italic' if 'italic' in style else 'normal')
+    line_af = 1.35 * fs / 72 / (fh * cfg['axes_rect'][3])    # eine Textzeile in Achsenbruchteilen
+    nodes = layout.get('nodes', {})
+
+    def value_text(v):                                       # „Vorzeichen“: +18.9, ±0.0, −50.1
+        t = energy_text(v, unit)
+        return t if not layout.get('signed') else '±' + t if float(t.replace('−', '-')) == 0 else t if t.startswith('−') else '+' + t
     for r in rows:
         color = r['color'] or 'black'
         anchor = ((r['x'] - x0) / (x1 - x0), (r['plot_y'] - y0) / (y1 - y0))
+        own = nodes.get(r['uid'], {})
+        e_dy, e_va, l_dy, l_va = r['energy_dy'], 'bottom', r['label_dy'], 'top'
+        if label_pos == 'below':                             # Wert in der Zeile unter dem Namen, solange nicht verschoben
+            e_va = 'top'
+            if 'energy_dy' not in own: e_dy = l_dy - line_af
+        elif label_pos == 'above':                           # Name in der Zeile über dem Wert
+            l_va = 'bottom'
+            if 'label_dy' not in own: l_dy = e_dy + line_af
         # Labels als Anmerkungen in Achsenbruchteilen: mit der Maus verschiebbar (liegen zwei Plateaus eng, überlagert
         # sich die Schrift sonst); gespeichert wird der Abstand zum Plateau (layout.nodes[uid].energy_dx …)
-        for key, text, dx, dy, va in (('energy', kcal(r['value']), r['energy_dx'], r['energy_dy'], 'bottom'),
-                                      ('label', r['label'], r['label_dx'], r['label_dy'], 'top')):
+        for key, text, dx, dy, va in (('energy', value_text(r['value']), r['energy_dx'], e_dy, e_va),
+                                      ('label', r['label'], r['label_dx'], l_dy, l_va)):
             ann = F.ax.annotate(text, xy=(r['x'], r['plot_y']), xycoords='data', xytext=(anchor[0] + dx, anchor[1] + dy),
                                 textcoords='axes fraction', ha='center', va=va, fontsize=fs, color=color,
-                                gid=f"{key}-{r['uid']}", annotation_clip=False)
+                                gid=f"{key}-{r['uid']}", annotation_clip=False, **font)
             ann._anchor_af = anchor
             F.ann_items[f"{key}_{r['uid']}"] = ann
     for start, end, color in heads:
@@ -329,6 +357,15 @@ def build_levels(pages, fig, layout, images=False):
                       arrowprops=dict(arrowstyle='-|>', color=color, lw=connector_width, shrinkA=0, shrinkB=0,
                                       mutation_scale=7 + 3 * connector_width))
     _edge_labels(F, edge_labels, curves, fs * .9)
+    for sec in sections:                                     # Abschnitte: Balken mit Endpunkten unter dem Profil, Text darunter
+        col = sec.get('color') or 'black'
+        if not is_color_like(col): raise ValueError('Invalid section colour')
+        blend = F.ax.get_xaxis_transform()                   # x in Schritten wie die Plateaus, y in Achsenbruchteilen
+        F.ax.plot([sec['a'], sec['b']], [.075, .075], transform=blend, color=col, lw=max(1.2, width * .6), marker='o',
+                  ms=5, mfc=col, mec=col, clip_on=False, zorder=3, solid_capstyle='butt')
+        if sec.get('text'):
+            F.ax.text(.5 * (sec['a'] + sec['b']), .055, sec['text'], transform=blend, ha='center', va='top', fontsize=fs,
+                      color=col, **font)
     for point, color in breaks:
         x, y = (point[0]-x0)/(x1-x0), (point[1]-y0)/(y1-y0)
         for shift in (-.006, .006):
@@ -339,11 +376,15 @@ def build_levels(pages, fig, layout, images=False):
 
 class LinkMouse:
     """Plateaus im Bild verknüpfen (Nutzerwunsch 2026-11-11, „node-artig“): am Ende eines Plateaus drücken, auf ein
-    anderes Plateau ziehen, loslassen -> on_link(uid_von, uid_nach). Nur in der Vorschau, nie im Export."""
+    anderes Plateau ziehen, loslassen -> on_link(uid_von, uid_nach). Die Plateaulinie selbst greifen und ziehen
+    verschiebt das Plateau (Nutzerwunsch 2026-11-13): waagerecht im Raster `SNAP`, mit `free_y` (schematisches Bild)
+    auch in der Höhe -> on_move(uid, x, y oder None). Nur in der Vorschau, nie im Export."""
     GRAB = 10                                                # Fangweite in Pixeln
+    SNAP = .05                                               # Raster der Position beim Ziehen (Schritte)
 
-    def __init__(self, F, rows, on_link):
+    def __init__(self, F, rows, on_link, on_move=None, free_y=False):
         self.F, self.rows, self.on_link, self.src, self.line = F, rows, on_link, None, None
+        self.on_move, self.free_y, self.drag, self.ghost = on_move, free_y, None, None
         c = F.fig.canvas
         self.cids = [c.mpl_connect('button_press_event', self.press), c.mpl_connect('motion_notify_event', self.move),
                      c.mpl_connect('button_release_event', self.release)]
@@ -366,10 +407,11 @@ class LinkMouse:
                     return r, side
         return None
 
-    def row_at(self, ev):
+    def row_at(self, ev, tol=None):
+        tol = self.GRAB + 4 if tol is None else tol
         for r in self.rows:
             left, right = self._px(r['x'] - r['width'] / 2, r['plot_y']), self._px(r['x'] + r['width'] / 2, r['plot_y'])
-            if left[0] - self.GRAB <= ev.x <= right[0] + self.GRAB and abs(left[1] - ev.y) <= self.GRAB + 4:
+            if left[0] - self.GRAB <= ev.x <= right[0] + self.GRAB and abs(left[1] - ev.y) <= tol:
                 return r
         return None
 
@@ -380,8 +422,29 @@ class LinkMouse:
             self.src = r
             x, y = r['x'] + side * r['width'] / 2, r['plot_y']
             self.line, = self.F.ax.plot([x, x], [y, y], color='#4d8fdc', lw=1.2, ls=':', zorder=8, clip_on=False)
+            return
+        if self.on_move is None or ev.button != 1 or ev.x is None or ev.xdata is None:
+            return
+        if any(a.get_window_extent().contains(ev.x, ev.y) for a in self.F.ann_items.values()):
+            return                                           # auf einer Beschriftung: die zieht der Dragger
+        r = self.row_at(ev, 6)
+        if r is not None:
+            self.drag = (r, ev.xdata - r['x'], ev.ydata - r['plot_y'], ev.x, ev.y)
+            self.ghost, = self.F.ax.plot([r['x'] - r['width'] / 2, r['x'] + r['width'] / 2], [r['plot_y']] * 2,
+                                         color='#4d8fdc', lw=2.4, zorder=8, clip_on=False, solid_capstyle='butt')
+
+    def _drag_pos(self, ev):
+        r, dx, dy, *_ = self.drag
+        return round((ev.xdata - dx) / self.SNAP) * self.SNAP, (ev.ydata - dy) if self.free_y else r['plot_y']
 
     def move(self, ev):
+        if self.drag is not None:
+            if ev.xdata is not None:
+                x, y = self._drag_pos(ev)
+                half = self.drag[0]['width'] / 2
+                self.ghost.set_data([x - half, x + half], [y, y])
+                self.F.fig.canvas.draw_idle()
+            return
         if self.src is None or ev.xdata is None:
             return
         x0, y0 = self.line.get_xdata()[0], self.line.get_ydata()[0]
@@ -389,6 +452,17 @@ class LinkMouse:
         self.F.fig.canvas.draw_idle()
 
     def release(self, ev):
+        if self.drag is not None:
+            r, _dx, _dy, px, py = self.drag
+            moved = ev.x is not None and ev.xdata is not None and (abs(ev.x - px) > 3 or abs(ev.y - py) > 3)
+            pos = self._drag_pos(ev) if moved else None
+            self.drag = None
+            self.ghost.remove()
+            self.ghost = None
+            self.F.fig.canvas.draw_idle()
+            if pos is not None:
+                self.on_move(r['uid'], round(pos[0], 2), round(pos[1], 2) if self.free_y else None)
+            return
         if self.src is None:
             return
         src, self.src = self.src, None

@@ -31,6 +31,20 @@
 - **Structures at equal size:** several structures in one figure (comparison, UV-Vis overlay) always share the same
   drawing scale (equal bond length, whatever the ChemDraw style). The size applies to the widest one; the mouse wheel
   on one structure changes all.
+- **Comparison:** normalized UV-Vis spectra can be normalized to a chosen band (**Normalisation [nm]**: the maximum
+  within the range becomes 1, e.g. the band above 400 nm instead of the UV band; a compound without a band in the
+  range is not shown, and a note says so). The "Comparison" tab shows the comparisons as cards like the
+  reaction paths; a click opens the comparison at full window size (figure as large as in the compound tabs), back
+  via the breadcrumb. The spectra comparison and the CV stack have the "SI Text" tab with the whole caption to copy. The UV-Vis overlay already had the normalisation range.
+- **Reaction path:** the "Design" canvas shows the energy profile right away when a path with calculation data is
+  opened for the first time (it used to be empty, also in the example project).
+- **Energy diagram:** levels can be dragged sideways with the mouse (in the schematic diagram also in height; the
+  energy value stays the real one). New preset "Article": no frame but an arrow, heavy short levels,
+  dashed connectors, signed values, name and value in bold italics below the level. Each of these can be set on its
+  own: position and font of the labels, signs, axis title (also several lines), level width; plus sections as bars
+  with a text below the profile. The unit can be chosen (kcal mol⁻¹, kJ mol⁻¹, eV): values, axis and caption are
+  converted. The presets are now a drop-down list.
+- **Compound list:** the method dots are all equally spaced (there used to be one wider gap after "m.p.").
 - **EPR: choice of baseline.** Besides the polynomial there are "Smooth" (follows a broad background, keeps narrow
   lines, needs no dark spectrum; the only value is the width) and "Spline" (through the means of the signal-free
   ranges). The methods text and the exported spectra state the method.

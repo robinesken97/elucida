@@ -185,7 +185,8 @@ elsewhere into the project.
 
 - **Computational Chemistry (reaction paths):** a tab of the project for energy profiles and IRCs across several
   compounds, without touching them: calculations are copied in. **Design** is a free canvas (Octet) for profiles,
-  molecules, text and 3D/orbital views; **Calculation data** is the energy diagram with its column in three steps (see below); **3D / Orbitals** the views. Paths appear
+  molecules, text and 3D/orbital views (when a path with calculation data is opened for the first time, the energy
+  profile is already on it); **Calculation data** is the energy diagram with its column in three steps (see below); **3D / Orbitals** the views. Paths appear
   as cards (right-click to rename or remove). All of it stays in the main window; with a path open, the ☰ button shows or hides the path list. Profiles are true to scale by default; a schematic
   layout must be chosen explicitly and then says so in the figure and SI. Energies are never edited, and a stale diagram
   stops the export until **Update diagrams**. The complete SI includes the whole composition.
@@ -200,9 +201,15 @@ elsewhere into the project.
   none), arrowhead and a text such as "ISC", "IC" or "hν" as in a Jablonski diagram; the colour sits in the table. Levels
   on top of each other get a vertical transition inside the column that attaches at the side of the lines, beside the
   labels, several next to each other; the line of a level in between is interrupted where the transition passes. The text
-  of a connector stands beside its line, never on a stroke or another label. **Display** – four presets
-  (Classic, Curves, Colour, Minimal) set the style in one go; below them line style, widths, font size, frame, to scale
-  and colour per path. The style belongs to the diagram of the path. Energies, names and connector texts can be dragged in
+  of a connector stands beside its line, never on a stroke or another label. **Display** – the **Preset**
+  (Classic, Curves, Colour, Minimal, Article) sets the style in one go; "Article" has no frame but an arrow at the side,
+  heavy short levels, signed values and name and value in bold italics below the level. A preset only sets fields that
+  can then be changed one by one: card **Labels** (position of name and value: value above and name below, both below
+  or both above; font; **Axis title**, " | " starts a new line, `{unit}` stands for the unit; **Signs**), **Level width**, and card **Sections** (bar
+  below the profile with a text, from–to in steps and a colour, e.g. for two reaction channels). Below it line style, widths, font size, frame, to scale
+  and colour per path. The style belongs to the diagram of the path. A level can be grabbed by its line and dragged sideways (in steps
+  of 0.05; with "to scale" off also in height – the energy value stays the real one); the ends of a level link levels.
+  Energies, names and connector texts can be dragged in
   the figure (when two levels are close); **Reset labels** puts them back. The energies themselves never change.
 - **Data packages (zip):** the whole dataset as on TUDOdata – one zip per compound (as above), the DFT calculations of
   all compounds in `CompChem.zip`, `README.txt` (title, authors, DOI, citation, related publication, descriptions,
@@ -229,8 +236,10 @@ elsewhere into the project.
 <p align="center"><img src="screenshots/comparison_dark_en.png" alt="Comparison page with a property table" width="800"></p>
 
 The **Comparison** tab of the project page puts compounds of the project side by side, with any number of named
-comparisons (**+ CV Stack**, **+ Spectra**, **+ Table**; name, **Remove** only takes the entry out of the project,
-exported files stay). Steps on the left as in the tabs, figure or table on the right, **Export** bottom right. Everything
+comparisons. The tab shows them as cards like the reaction paths (preview, name, last change); the card **New
+comparison …** creates a CV stack, a spectra comparison or a table, a right-click on a card removes the entry (exported
+files stay). Clicking a card opens the comparison at full window size; the breadcrumb at the top (project name) leads
+back, and its last entry also switches between comparisons. Steps on the left as in the tabs, figure or table on the right, **Export** bottom right. Everything
 is saved in `publication.elucida`. **Undo/Redo** (Edit menu, Ctrl+Z) apply to the changes of the open comparison
 (compounds, order, settings, cells, quantities, dragged labels), never to the data of the compounds.
 
@@ -255,7 +264,10 @@ opens these compounds briefly one after another, writes the snapshot again and r
   curve) or normalized to the maximum, emission normalized as in the fluorescence tab, or both (emission dashed);
   overlaid or stacked, one legend entry per compound. **Structures** shows the structure of each compound, by default
   in the colour of its curve (**Structure in curve colour** off: black), at the highest point of its own curve or, when
-  stacked, on the right above its own baseline; draggable, all at one scale (**Size** = width of the widest). With several ε series, choose the series per compound.
+  stacked, on the right above its own baseline; draggable, all at one scale (**Size** = width of the widest).
+  **Normalisation [nm]** (for normalized absorption): the maximum within this range becomes 1, e.g. the band above
+  400 nm instead of the UV band; clear the field = auto (maximum of the whole measurement). A compound without a band
+  in the range is not shown (note below the figure); the caption states the range. With several ε series, choose the series per compound.
   **IR:** transmittance or absorbance as in the IR tab, wavenumber falling to the right; a compound whose IR tab shows the
   other display is not shown (never converted). **EPR** (normalized, stacked by default): on the field axis only spectra
   with the same microwave frequency as the first one, or scaled to a reference frequency with **Scale to frequency** as
@@ -894,7 +906,8 @@ Absorption and emission in one figure, as commonly shown in papers:
   project (Computational Chemistry, see above); it can be edited only there, the page no longer exists in the DFT tab of a
   compound (profile data saved there earlier stay in the project file). Species = the opt/freq calculations, each with label, step
   and path(s) A, B …; optional **single points** (e.g. DLPNO-CCSD(T)), matched by identical atoms and coordinates (never by
-  file name): G = E(SP) + (G − E_el). Levels with dashed connectors, ΔG/ΔH/ΔE in kcal mol⁻¹ with one decimal, caption
+  file name): G = E(SP) + (G − E_el). Levels with dashed connectors, ΔG/ΔH/ΔE in kcal mol⁻¹ (under **Unit** also kJ mol⁻¹ or eV, converted for figure, axis
+  and caption) with one decimal, caption
   "… calculated at the <single point>//<geometry> level of theory".
   **Multireference levels** (ORCA 6 CASSCF/NEVPT2/SORCI, as single point or as the calculation itself): the fields
   **Method** and **State** below the table choose which state energy the level shows (default: the highest level of

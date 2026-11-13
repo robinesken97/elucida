@@ -4987,10 +4987,93 @@ def selftest(outdir, with_isnet=False):
             # Stilvorlagen setzen nur Stil; Seite in Schritten, Kästchen sind Chips
             pg_.apply_preset("curves")
             assert pg_.prof["layout"]["connector_style"] == "curve" and pg_.prof["layout"]["preset"] == "curves"
-            assert pg_.preset_buttons["curves"].isChecked() and pg_.cmb_connector.currentData() == "curve"
+            assert pg_.cmb_preset.currentData() == "curves" and pg_.cmb_connector.currentData() == "curve"
             pg_.apply_preset("minimal")
             F_e3_, _ = pg_.build(fig_f4_(), "levels")
             assert not any(sp_.get_visible() for sp_ in F_e3_.ax.spines.values()) and not pg_.cb_frame.isChecked()
+            # Vorlage „Artikel“: ohne Rahmen, Name und Wert fett-kursiv unter dem Plateau (Wert eine Zeile tiefer);
+            # eine andere Vorlage stellt die Beschriftung wieder über/unter das Plateau
+            pg_.apply_preset("article")
+            F_a_, _ = pg_.build(fig_f4_(), "levels")
+            for u_a_ in u_e_[:2]:
+                en_a_, lb_a_ = F_a_.ann_items["energy_" + u_a_], F_a_.ann_items["label_" + u_a_]
+                assert en_a_.xyann[1] < lb_a_.xyann[1] < lb_a_._anchor_af[1] and en_a_.get_fontweight() == "bold" \
+                    and lb_a_.get_fontstyle() == "italic", (en_a_.xyann, lb_a_.xyann)
+            assert not any(sp_.get_visible() for sp_ in F_a_.ax.spines.values()) and pg_.cmb_preset.currentData() == "article"
+            # jede Eigenschaft der Vorlage ist ein eigenes Feld: Lage, Schrift, Vorzeichen, Plateaubreite, Achsentitel
+            assert pg_.cmb_label_pos.currentData() == "below" and pg_.cmb_label_font.currentData() == "bold italic" \
+                and pg_.cb_signed.isChecked() and abs(pg_.sp_level_width.value() - .5) < 1e-9
+            txt_a_ = [F_a_.ann_items["energy_" + u_].get_text() for u_ in u_e_]
+            assert all(t_[0] in "+−±" for t_ in txt_a_) and all(abs(r_["width"] - .5) < 1e-9 or
+                                                                "width" in pg_.prof["layout"]["nodes"].get(r_["uid"], {})
+                                                                for r_ in F_a_.profile_rows), txt_a_
+            pg_.cmb_label_pos.setCurrentIndex(pg_.cmb_label_pos.findData("above"))
+            pg_.ed_axis_title.setText("X (298 K) | (kcal/mol)")
+            pg_.style_changed()
+            F_b_, _ = pg_.build(fig_f4_(), "levels")
+            en_b_, lb_b_ = F_b_.ann_items["energy_" + u_e_[0]], F_b_.ann_items["label_" + u_e_[0]]
+            assert lb_b_.xyann[1] > en_b_.xyann[1] > en_b_._anchor_af[1], (lb_b_.xyann, en_b_.xyann)   # beide darüber
+            assert any(t_.get_text() == "X (298 K)\n(kcal/mol)" for t_ in F_b_.ax.texts), [t_.get_text() for t_ in F_b_.ax.texts]
+            assert pg_.cmb_preset.currentData() is None                   # geändert: „eigene“
+            # Abschnitte: Balken unter dem Profil mit Text, von–bis in Schritten; ungültige Zahl bleibt beim alten Wert
+            pg_.section_add()
+            sec_a_ = pg_.prof["sections"]
+            assert len(sec_a_) == 1 and sec_a_[0]["b"] > sec_a_[0]["a"] and pg_.tbl_sections.rowCount() == 1
+            pg_.tbl_sections.item(0, 0).setText("first part")
+            pg_.tbl_sections.item(0, 2).setText("abc")
+            assert sec_a_[0]["text"] == "first part" and pg_.tbl_sections.item(0, 2).text() == f"{sec_a_[0]['b']:g}"
+            n_lines_ = len(F_b_.ax.lines)
+            F_c_, _ = pg_.build(fig_f4_(), "levels")
+            assert len(F_c_.ax.lines) == n_lines_ + 1 and any(t_.get_text() == "first part" for t_ in F_c_.ax.texts)
+            pg_.section_remove()
+            assert pg_.prof["sections"] == [] and not pg_.btn_section_rm.isEnabled()
+            # Einheit wählbar: Bild, Achse und Unterschrift umgerechnet (1 kcal = 4.184 kJ), gespeichert bleibt kcal/mol;
+            # {unit} im eigenen Achsentitel folgt der Einheit
+            from elucida.tabs import dft_pages as DP_a_
+            assert DP_a_.energy_text(1.0, "kJ") == "4.2" and DP_a_.energy_text(23.060548, "eV") == "1.00" \
+                and DP_a_.energy_text(-0.01, "kcal") == "0.0" and DP_a_.energy_text(-2.0, "kcal") == "−2.0"
+            pg_.ed_axis_title.setText("E | ({unit})")
+            pg_.style_changed()
+            pg_.cmb_unit.setCurrentIndex(pg_.cmb_unit.findData("kJ"))
+            F_u_, _ = pg_.build(fig_f4_(), "levels")
+            assert pg_.prof["unit"] == "kJ" and all(abs(r_["plot_y"] - 4.184 * r_["value"]) < 1e-9 or
+                                                    "y" in pg_.prof["layout"]["nodes"].get(r_["uid"], {})
+                                                    for r_ in F_u_.profile_rows)
+            assert any(t_.get_text() == "E\n(kJ mol$^{-1}$)" for t_ in F_u_.ax.texts), [t_.get_text() for t_ in F_u_.ax.texts]
+            assert "in kJ mol<sup>−1</sup>" in pg_.levels_caption("x"), pg_.levels_caption("x")
+            pg_.cmb_unit.setCurrentIndex(pg_.cmb_unit.findData("kcal"))
+            assert "in kcal mol<sup>−1</sup>" in pg_.levels_caption("x")
+            pg_.ed_axis_title.setText("")
+            pg_.style_changed()
+            pg_.apply_preset("article")
+            pg_.cb_frame.setChecked(True)                         # etwas geändert: keine Vorlage mehr („eigene“)
+            assert pg_.cmb_preset.currentData() is None and "preset" not in pg_.prof["layout"]
+            pg_.apply_preset("minimal")
+            F_e3_, _ = pg_.build(fig_f4_(), "levels")
+            assert F_e3_.ann_items["energy_" + u_e_[0]].xyann[1] > F_e3_.ann_items["label_" + u_e_[0]].xyann[1]
+            # Plateau mit der Maus ziehen: Position im Raster, Höhe nur im schematischen Bild; nie die Energie
+            from types import SimpleNamespace as NS_a_
+            from elucida.tabs import diagram_layout as DL_a_
+            moved_a_ = []
+            lm_a_ = DL_a_.LinkMouse(F_e3_, F_e3_.profile_rows, lambda *a_: None, lambda *a_: moved_a_.append(a_))
+            r_a_ = F_e3_.profile_rows[0]
+
+            def ev_a_(x_, y_):
+                px_ = lm_a_._px(x_, y_)
+                return NS_a_(button=1, x=float(px_[0]), y=float(px_[1]), xdata=x_, ydata=y_)
+            lm_a_.press(ev_a_(r_a_["x"], r_a_["plot_y"]))
+            assert lm_a_.drag is not None
+            lm_a_.move(ev_a_(r_a_["x"] + .43, r_a_["plot_y"] + 3))
+            lm_a_.release(ev_a_(r_a_["x"] + .43, r_a_["plot_y"] + 3))
+            assert moved_a_ == [(r_a_["uid"], round(r_a_["x"] + .45, 2), None)] and lm_a_.drag is None, moved_a_
+            lm_a_.press(ev_a_(r_a_["x"], r_a_["plot_y"]))             # nur geklickt: nichts verschoben
+            lm_a_.release(ev_a_(r_a_["x"], r_a_["plot_y"]))
+            assert len(moved_a_) == 1
+            lm_a_.disconnect()
+            pg_.level_moved(r_a_["uid"], round(r_a_["x"] + .45, 2), None)
+            assert pg_.prof["layout"]["nodes"][r_a_["uid"]]["x"] == round(r_a_["x"] + .45, 2)
+            pg_.level_moved(r_a_["uid"], r_a_["step"], None)          # zurück auf den Schritt: automatischer Wert, kein Eintrag
+            assert "x" not in pg_.prof["layout"]["nodes"][r_a_["uid"]]
             assert [b_.label for b_ in pg_.steps.buttons] == [T("step_data"), T("step_path"), T("step_display")]
             assert all(cb_.property("chip") for cb_ in (pg_.cb_frame, pg_.cb_scaled, pg_.cb_path_colors))
             # der Reiter steht im DFT-Tab einer Verbindung nur, wenn sie ein Profil gespeichert hat
@@ -7797,6 +7880,10 @@ def selftest(outdir, with_isnet=False):
             assert row_f1.more.isHidden() and not row_f1.opt[0].isHidden() and not hd_f1.opt[0].isHidden()
             cw_f1 = {d_.width() for x_ in (hd_f1, row_f1) for d_ in x_.dots + x_.opt}
             assert len(cw_f1) == 1 and WEL.CHECK_W <= min(cw_f1) <= WEL.CHECK_W_MAX, cw_f1
+            for x_ in (hd_f1, row_f1):                             # alle Punkte im selben Abstand, keine einzelne Lücke
+                x_.layout().activate()
+                xs_f1 = [d_.x() for d_ in x_.dots + x_.opt]
+                assert len({b_ - a_ for a_, b_ in zip(xs_f1, xs_f1[1:])}) == 1, xs_f1
             for x_ in (hd_f1, row_f1):
                 x_.resize(1000, 60)
                 WEL.fit_more(x_)
@@ -8722,6 +8809,7 @@ def selftest(outdir, with_isnet=False):
                 assert ws_pv_.import_panel.isHidden() and ws_pv_.calc_page.isAncestorOf(ws_pv_.import_panel)
                 if ws_pv_.composition:
                     c_pv_ = ws_pv_.composition
+                    assert c_pv_._auto_pending               # neuer Pfad ohne Rechendaten: bleibt leer, Versuch offen
                     lab_pv_ = next(x_ for x_ in c_pv_.findChildren(QLabel) if x_.text() == T("rp_composition_caption"))
                     left_pv_ = pos_pv_(lab_pv_).x()
                     right_pv_ = ws_pv_.width() - pos_pv_(c_pv_.caption).x() - c_pv_.caption.width()
@@ -8838,6 +8926,23 @@ def selftest(outdir, with_isnet=False):
             open_s_ = time_c_.time() - t_open_
             assert pp_c_.project_tabs.indexOf(cp_) == 2 and pp_c_.project_tabs.tabText(2) == T("pub_compare_tab")
             assert [x_["kind"] for x_ in cp_.items()] == ["spectra", "table"]       # Beispielprojekt
+            # Reiter „Vergleich“ wie die Reaktionspfade: Karten (nichts offen, Kopf und Seitenleiste bleiben), eine Karte
+            # „neu“; erst das Öffnen einer Karte schaltet auf volle Größe, die Pfadleiste führt zurück
+            assert not cp_.opened and cp_.item is None and cp_.stack.currentWidget() is cp_.landing and len(cp_.cards) == 2
+            assert not pp_c_.head.isHidden() and not w.side.isHidden() and w.active_comparison() is None
+            assert all(cp_.preview_path(u_).exists() for u_ in ("demo0spectra", "demo00table")), "card previews"
+            assert [x_.findChildren(QLabel, "recentSub")[0].text().split(" · ")[0] for x_ in cp_.cards] == \
+                [T("cmp_kind_spectra"), T("cmp_kind_table")]                # Art steht auf der Karte
+            assert [a_.text() for a_ in cp_.new_menu.actions()] == [T("cmp_new_" + k_) for k_ in CMP.KINDS]
+            cp_.open("demo0spectra")
+            assert cp_.opened and cp_.stack.currentWidget() is cp_.holder and pp_c_.head.isHidden() and w.side.isHidden()
+            assert not w.btn_comp.isHidden() and w.btn_comp.text() == "UV-Vis S2 / S3", w.btn_comp.text()
+            w._fill_comp_menu()
+            assert [a_.text() for a_ in w.comp_menu.actions()] == ["UV-Vis S2 / S3", "Properties S2 / S3"]
+            assert not hasattr(cp_.tab, "lst") and cp_.tab.ed_name.text() == "UV-Vis S2 / S3"   # Liste steht als Karten davor
+            w._crumb_pub()
+            assert not cp_.opened and cp_.stack.currentWidget() is cp_.landing and not pp_c_.head.isHidden() \
+                and not w.side.isHidden() and w.btn_comp.isHidden()
             cp_.open("demo00table")
             assert isinstance(cp_.tab, CMP.TableTab) and not cp_.tab.btn_refresh.isHidden()   # nur sichtbar, wenn nötig
             assert cp_.refresh_snapshots() == 2
@@ -8998,10 +9103,53 @@ def selftest(outdir, with_isnet=False):
             assert pos_[0][1] > 0.4 > pos_[1][1] and all(p_[0] + p_[2] > 0.9 for p_ in pos_), pos_
             assert all(i_["between"] for i_ in st_.F.cfg["images"])
             st_.cb_stack.setChecked(False)
+            # Normierung auf eine gewählte Bande: Maximum im Bereich = 1; ohne Bande dort wird nichts geteilt (S2 hat über
+            # 340 nm nur Grundlinie) – nicht gezeigt, Hinweis, Unterschrift nennt nur die gezeigte Verbindung
+            st_.cmb_content.setCurrentIndex(st_.cmb_content.findData("abs_norm"))
+            assert not st_.form_display.isRowVisible(st_.sp_ref) and st_.form_display.isRowVisible(st_.row_norm)
+            assert [round(float(np.nanmax(c_["y"])), 6) for c_ in st_.figure_spec()[1]] == [1.0, 1.0]
+            st_.cb_nauto.setChecked(False)
+            st_.sp_nlo.setValue(340)
+            st_.sp_nhi.setValue(450)
+            st_.notes_begin()
+            nspec_ = st_.figure_spec()
+            assert [c_["label"] for c_ in nspec_[1]] == ["S3"] and abs(float(np.nanmax(nspec_[1][0]["y"])) - 1) < 1e-9
+            assert any("S2" in n_ and "340" in n_ for n_ in st_._notes), st_._notes
+            ncap_ = st_.si_caption("x")
+            assert "within 340–450 nm" in ncap_ and "<b>S3</b>" in ncap_ and "S2" not in ncap_, ncap_
+            assert st_.si_page is not None and st_.right_tabs.count() == 2      # ganze Unterschrift im Reiter „SI-Text“
+            st_.sp_nlo.setValue(230)                              # UV-Bande von S2 im Bereich: beide, je auf ihr Maximum darin
+            st_.sp_nhi.setValue(300)
+            n2_ = st_.figure_spec()[1]
+            assert [c_["label"] for c_ in n2_] == ["S2", "S3"] and float(np.nanmax(n2_[1]["y"])) > 1.5, \
+                [float(np.nanmax(c_["y"])) for c_ in n2_]         # S3: Bande bei 372 nm ragt über 1 hinaus
+            st_.cb_nauto.setChecked(True)
+            assert "within" not in st_.si_caption("x")
             st_.cmb_content.setCurrentIndex(st_.cmb_content.findData("abs_em"))
             spec_ = st_.figure_spec()
             assert [c_.get("ls") for c_ in spec_[1]] == ["-", "-", "--"], [c_.get("ls") for c_ in spec_[1]]
             assert abs(float(np.nanmax(spec_[1][1]["y"])) - 1) < 1e-9
+            # Reaktionspfad des Beispielprojekts: die neue Zeichenfläche zeigt das Energieprofil von selbst (war leer und
+            # wirkte wie ein Fehler); nur prüfbar, wenn der Web-Editor hier lädt
+            from elucida.app import reaction_paths as RP_c_
+            auto_c_ = "not checked (web editor not ready)"
+            ws_c_ = RP_c_.PathWorkspace(w, dcmp_, PUB_c_.load(dcmp_)["reaction_paths"][0])
+            try:
+                ws_c_.setWindowFlags(Qt.Window)
+                ws_c_.resize(1100, 700)
+                ws_c_.show()
+                c_c_ = ws_c_.composition
+                if c_c_ is not None and c_c_._auto_pending:
+                    t_c_ = time.time()
+                    while c_c_._auto_pending and time.time() - t_c_ < 20:
+                        pump_c_(0.2)
+                    if not c_c_._auto_pending:
+                        assert [a_["kind"] for a_ in c_c_.editor._js("window.elucida.assets()")] == ["profile"]
+                        auto_c_ = "energy profile inserted on first open"
+            finally:
+                ws_c_.dispose()
+                ws_c_.deleteLater()
+                pump_c_(0.1)
             cvp_ = out / "cmp_cv"
             PUB_c_.create(cvp_, "CV stack test")
             inp_c_ = out / "cmp_cv_input"
@@ -9072,7 +9220,8 @@ def selftest(outdir, with_isnet=False):
             w.close_publication()
             report.append("Comparison CV stack (three synthetic compounds: offsets, peak labels, structures beside "
                           "the curves, one scan arrow each, other reference refused) and spectra overlay (structures "
-                          "in curve colour, one drawing scale, wheel scales all, stacked beside the own curve): OK")
+                          "in curve colour, one drawing scale, wheel scales all, stacked beside the own curve, "
+                          f"normalisation range, SI text page; reaction path canvas: {auto_c_}): OK")
         with section:
             # X-Ray Stufe 3: Kristall gegen Rechnung. Alles künstlich: Kristall = RDKit-Geometrie in P1, Rechnung =
             # dieselbe 1.02-fach skaliert, gedreht, verschoben, Atome umsortiert -> RMSD = 0.02 x rms-Radius der
@@ -9399,7 +9548,7 @@ def selftest(outdir, with_isnet=False):
             i_next_ = x1_.find(">6. EPR Spectroscopy<", i_uv_)
             assert 0 < i_uv_ < i_cmp_ < i_next_, (i_uv_, i_cmp_, i_next_)        # im Kapitel UV-Vis, nach den Verbindungen
             heads_s_ = re.findall(r">(\d+)\. ([^<]+)<", x1_)
-            assert heads_s_ and heads_s_[-1][1] == "Properties", heads_s_[-3:]  # Tabelle: eigenes Kapitel am Ende
+            assert heads_s_ and heads_s_[-1][1] == "Properties S2 / S3", heads_s_[-3:]  # Tabelle: eigenes Kapitel am Ende
             assert "Elucida" not in x1_[i_uv_:]
             blk_ = PSI_c_.assemble({}, [("A", {"cv": [("image", "a.png", 16, 11, None), ("figcap", "A")]})], ["cv"],
                                    toc=False, comparisons=[("cv", [("image", "c.png", 16, 11, None), ("figcap", "C")]),

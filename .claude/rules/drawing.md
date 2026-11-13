@@ -27,7 +27,8 @@ paths:
   WebEngine, PySide 6.12/macOS): Mausrad-Schutz je Feld über `STYLE.guard_fields`. Canvas dunkel = `canvas_theme.dark_pixels`
   (HSL-Helligkeit spiegeln, Farbton bleibt, Weiß = #000000, Nutzerwunsch „im Dunkeln alles erkennen“); nur Anzeige.
   Reaktionspfade (`app/reaction_paths.py`, `path_composition.py`): keine Pop-up-Fenster, Höhe gehört dem Canvas
-  (Nutzerwunsch: Aktionen neben den Reitern, Pfadliste über ☰). Backups: je Speichern Rücksetzkopie, Verlauf höchstens
+  (Nutzerwunsch: Aktionen neben den Reitern, Pfadliste über ☰). Neue Zeichenfläche eines Pfads mit Rechendaten: das
+  Energieprofil wird von selbst eingesetzt (`CompositionEditor.auto_profile`; nie auf einer Fläche, die es schon gab). Backups: je Speichern Rücksetzkopie, Verlauf höchstens
   alle `BACKUP_GAP_S`, `BACKUP_KEEP` Stände.
 - Lage nach dem Öffnen (Nutzerwunsch 2026-11-10, `DrawingEditor.place`): Octet zentriert in der Seitengröße zum Ladezeitpunkt
   (verborgen oder noch nicht ausgelegt = beliebige Stelle). Deshalb nach dem Anzeigen neu setzen: waagerecht mittig, ein

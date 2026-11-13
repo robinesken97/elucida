@@ -1092,6 +1092,47 @@ TEXTS = {
     "dft_prof_preset_curves": ("Kurven", "Curves"),
     "dft_prof_preset_colour": ("Farbig", "Colour"),
     "dft_prof_preset_minimal": ("Minimal", "Minimal"),
+    "dft_prof_preset_article": ("Artikel", "Article"),
+    "dft_prof_unit": ("Einheit", "Unit"),
+    "dft_prof_unit_tip": ("Einheit der Energien im Bild, an der Achse und in der Unterschrift. Umgerechnet wird aus den\n"
+                          "Rechnungen: 1 kcal = 4.184 kJ, 1 eV = 96.4853 kJ mol⁻¹ (eV mit zwei Nachkommastellen).",
+                          "Unit of the energies in the figure, on the axis and in the caption. Converted from the\n"
+                          "calculations: 1 kcal = 4.184 kJ, 1 eV = 96.4853 kJ mol⁻¹ (eV with two decimals)."),
+    "dft_prof_level_width": ("Plateaubreite", "Level width"),
+    "dft_prof_level_width_tip": ("Länge der Plateaulinien in Schritten (ein Plateau mit eigener Breite behält sie).",
+                                 "Length of the level lines in steps (a level with its own width keeps it)."),
+    "dft_prof_card_labels": ("Beschriftung", "Labels"),
+    "dft_prof_label_pos": ("Lage", "Position"),
+    "dft_prof_labels_split": ("Wert oben, Name unten", "value above, name below"),
+    "dft_prof_labels_below": ("beide unter dem Plateau", "both below the level"),
+    "dft_prof_labels_above": ("beide über dem Plateau", "both above the level"),
+    "dft_prof_label_font": ("Schrift", "Font"),
+    "dft_prof_font_normal": ("normal", "regular"),
+    "dft_prof_font_bold": ("fett", "bold"),
+    "dft_prof_font_italic": ("kursiv", "italic"),
+    "dft_prof_font_bold_italic": ("fett kursiv", "bold italic"),
+    "dft_prof_axis_title": ("Achsentitel", "Axis title"),
+    "dft_prof_axis_title_tip": ("Eigener Titel der Energieachse, z. B. „ΔG (298.15 K) | ({unit})“: „ | “ beginnt eine neue\n"
+                                "Zeile, {unit} wird durch die gewählte Einheit ersetzt. Leer = automatisch.",
+                                "Own title of the energy axis, e.g. \"ΔG (298.15 K) | ({unit})\": \" | \" starts a new\n"
+                                "line, {unit} is replaced by the chosen unit. Empty = automatic."),
+    "dft_prof_signed": ("Vorzeichen", "Signs"),
+    "dft_prof_signed_tip": ("Werte mit Vorzeichen: +18.9, ±0.0, −50.1.", "Values with a sign: +18.9, ±0.0, −50.1."),
+    "dft_prof_card_sections": ("Abschnitte", "Sections"),
+    "dft_prof_section_add": ("Abschnitt …", "Section …"),
+    "dft_prof_section_text": ("Text", "Text"),
+    "dft_prof_section_from": ("von", "from"),
+    "dft_prof_section_to": ("bis", "to"),
+    "dft_prof_sections_none": ("Keine Abschnitte.", "No sections."),
+    "dft_prof_sections_tip": ("Balken unter dem Profil mit Text, z. B. für zwei Reaktionswege. „von“ und „bis“ sind\n"
+                              "Positionen in Schritten wie bei den Plateaus; Doppelklick ändert eine Zelle.",
+                              "Bar below the profile with a text, e.g. for two reaction channels. \"from\" and \"to\" are\n"
+                              "positions in steps like those of the levels; double-click edits a cell."),
+    "dft_prof_preset_own": ("eigene", "custom"),
+    "dft_prof_preset_tip": ("Stil in einem Zug setzen; Lage der Plateaus und Beschriftungen bleibt.\n"
+                            "Artikel: ohne Rahmen, kräftige Plateaus, Name und Wert fett-kursiv unter dem Plateau.",
+                            "Sets the style in one go; positions of levels and labels stay.\n"
+                            "Article: no frame, heavy levels, name and value in bold italics below the level."),
     "dft_prof_scaled": ("maßstäblich", "to scale"),
     "dft_prof_scaled_tip": ("Aus: schematisch, Höhen frei wählbar (steht dann im Bild und in der Unterschrift)",
                             "Off: schematic, heights can be chosen freely (stated in the figure and the caption)"),
@@ -3394,6 +3435,9 @@ TEXTS = {
     "cmp_new_cv": ("CV-Stapel", "CV Stack"),
     "cmp_new_spectra": ("Spektren", "Spectra"),
     "cmp_new_table": ("Tabelle", "Table"),
+    "cmp_new": ("Neuer Vergleich …", "New comparison …"),
+    "cmp_new_hint": ("CV-Stapel, Spektren oder Eigenschaftstabelle über mehrere Verbindungen hinweg.",
+                     "CV stack, spectra or property table across several compounds."),
     "cmp_new_cv_tip": ("Neuer Vergleich: je Verbindung ein Cyclovoltammogramm, versetzt übereinander",
                        "New comparison: one cyclic voltammogram per compound, stacked"),
     "cmp_new_spectra_tip": ("Neuer Vergleich: UV-Vis- und/oder Emissionsspektren mehrerer Verbindungen in einem Bild",
@@ -3454,6 +3498,14 @@ TEXTS = {
     "cmp_content_em": ("Emission normiert", "Emission normalized"),
     "cmp_content_abs_em": ("UV-Vis + Emission (normiert)", "UV-Vis + emission (normalized)"),
     "cmp_stack": ("Gestapelt", "Stacked"),
+    "cmp_norm_tip": ("Bereich, dessen höchste Absorbanz auf 1 gesetzt wird (z. B. die Bande über 400 nm statt der im UV).\n"
+                     "Feld leeren = auto: Maximum der ganzen Messung ab dem Anfang des Peakbereichs.",
+                     "Range whose highest absorbance is set to 1 (e.g. the band above 400 nm instead of the UV band).\n"
+                     "Clear the field = auto: maximum of the whole measurement from the start of the peak range."),
+    "cmp_norm_outside": ("Keine Bande im Normierungsbereich {lo}–{hi} nm (außerhalb der Messung oder unter 2 % des "
+                         "Maximums), nicht gezeigt: {names}",
+                         "No band within the normalisation range {lo}–{hi} nm (outside the measurement or below 2% of "
+                         "the maximum), not shown: {names}"),
     "cmp_no_eps": ("Ohne ε (Konzentration oder Molmasse fehlt im ε-Tab), nicht gezeigt: {names}",
                    "No ε (concentration or molar mass missing in the ε tab), not shown: {names}"),
     "cmp_step_table": ("Tabelle", "Table"),

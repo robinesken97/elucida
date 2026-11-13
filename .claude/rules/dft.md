@@ -74,8 +74,9 @@ paths:
   nur in der Seite). Darstellung getrennt von den Werten: `prof["layout"]` (Stufenbild) / `prof["layout_irc"]` – Stil
   gehört zum Profil, nicht mehr zur einzelnen eingefügten Abbildung (`style_of`; alte Abbildungen ohne Profilstil behalten
   ihren). Verbinder: `prof["edges"]` = None → aus Schritt und Pfadbuchstaben (`implied_edges`, wie bis 2.7.1), sonst
-  Liste {a, b, line, arrow, color, label, label_dx/dy}; Plateaus sind Knoten (im Bild ziehen: `LinkMouse`, oder
-  Tabelle). Linien `EDGE_LINES` (gestrichelt, durchgezogen, gepunktet, geschwungen, Wellenlinie = strahlungslos wie im
+  Liste {a, b, line, arrow, color, label, label_dx/dy}; Plateaus sind Knoten (im Bild an den Enden ziehen = verknüpfen: `LinkMouse`, oder
+  Tabelle; an der Linie ziehen = verschieben, Nutzerwunsch 2026-11-13: `on_move` -> `DftPages.level_moved`, x im Raster
+  `SNAP`, y nur im schematischen Bild, automatischer Wert bleibt ungesetzt, Energie nie geändert). Linien `EDGE_LINES` (gestrichelt, durchgezogen, gepunktet, geschwungen, Wellenlinie = strahlungslos wie im
   Jablonski-Diagramm, keine). Senkrechte Übergänge (Plateaus übereinander) laufen **in der Spalte**, seitlich an den
   Linien angesetzt (`VERTICAL_SLOTS`, mehrere nebeneinander), nie über einer Beschriftung (`text_half`), und enden auf
   der Ziellinie; ein Niveau dazwischen wird gekreuzt wie von den Pfeilen im Jablonski-Diagramm, seine Linie ist dort
@@ -90,7 +91,14 @@ paths:
   `prof["layout"]["nodes"][uid]` = x (Lage in Schritten), width, color, schematisch auch y und break_after; fehlender
   Schlüssel = automatisch (`DL.arranged`: x = Schritt, Breite 0.7, Farbe des Pfads), ein Wert gleich dem automatischen wird
   nicht gespeichert, „Plateau automatisch“ (`level_auto`) entfernt alle. Über den Feldern steht, zu welchem Plateau sie gehören (`lbl_level`); die Tabelle markiert die ganze Zeile; Farbfeld in normaler Größe, der einzelne Knopf über die Wertespalte (Sichtprüfung 2026-11-12). Ein Profil in „Gestalten“ bearbeiten zeigt
-  diese Seite. Stilvorlagen `PRESETS` setzen nur Stil, nie Lage oder Werte. Ob ein Übergang ISC/IC ist, schreibt der Nutzer als Text;
+  diese Seite. Stilvorlagen `PRESETS` (Auswahlliste `cmb_preset`, „eigene“ nach
+  einer Änderung) setzen nur Stil, nie Lage oder Werte; „article“ = ohne Rahmen, Name und Wert fett-kursiv unter dem
+  Plateau. Jede Eigenschaft einer Vorlage ist ein eigenes Feld (Nutzerwunsch 2026-11-13: Graphen voll einstellbar):
+  `labels` (split/below/above), `label_font`, `signed` (+18.9, ±0.0), `level_width`, `axis_title` („ | “ = Zeilenumbruch;
+  ohne Rahmen: Pfeil oben links, Titel daneben); `prof["sections"]` = Balken unter dem Profil {text, a, b, color}.
+  Einheit `prof["unit"]` (`UNITS`: kcal/kJ/eV): gerechnet und gespeichert wird immer in kcal/mol (auch die schematische
+  Höhe), umgerechnet erst für Bild, Achse, Feld „Höhe“ und Unterschrift (`energy_text`, `arranged(factor)`).
+  Neue Karten der Seite brauchen ihren Titel in `TABS.STEP_TITLES` (sonst landen sie im ersten Schritt). Ob ein Übergang ISC/IC ist, schreibt der Nutzer als Text;
   das Programm leitet es nie aus den Rechnungen ab. Stempel der Abbildungen (`profile_stamp`) enthält `edges`/`layout` nur,
   wenn gesetzt (alte Stempel bleiben gültig).
 - DFT-Energieprofil/IRC/NICS (F4, `tabs/dft_pages.py`, Reiter neben „Abbildung“): Spezies = Opt/Freq-Einträge,

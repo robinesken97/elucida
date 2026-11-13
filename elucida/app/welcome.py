@@ -192,12 +192,13 @@ def scaled(path, w, h, ratio):
     return pm
 
 
-def card_picture(path, h=THUMB_H):
-    """Bild oben in einer Karte, auf Weiß wie in ChemDraw; bei dunklem Canvas invertiert (nur Anzeige)."""
+def card_picture(path, h=THUMB_H, w=200, pad=44):
+    """Bild oben in einer Karte, auf Weiß wie in ChemDraw; bei dunklem Canvas invertiert (nur Anzeige). Das Bild füllt
+    höchstens w × (h − pad): Luft über und unter der Struktur."""
     pic = QLabel(objectName="cardThumb", alignment=Qt.AlignCenter)
     pic.setFixedHeight(h)
     if path:
-        pic.setPixmap(scaled(path, 200, h - 44, max(1.0, pic.devicePixelRatioF())))   # Luft über und unter der Struktur
+        pic.setPixmap(scaled(path, w, h - pad, max(1.0, pic.devicePixelRatioF())))
     return canvas_picture(pic)
 
 
@@ -581,7 +582,8 @@ def short_more(key):
     from elucida.app.i18n import get_lang
     v = SHORT_MORE[key]
     return v if isinstance(v, str) else v[0 if get_lang() == "de" else 1]
-GROUP_GAP = 10                     # Luft zwischen Pflichtteilen und weiteren Methoden
+GROUP_GAP = 0                      # keine Lücke zwischen Pflichtteilen und weiteren Methoden: alle Punkte im selben
+                                   # Abstand (Nutzerhinweis 2026-11-13: die eine breitere Lücke wirkte zufällig)
 CHECK_W_MAX = 56                   # breite Fenster: Spalten wachsen bis hierher, erst danach der Name
 NAME_MIN, NAME_TARGET = 140, 260   # Platz für Name und Formel: mindestens / bevor die Spalten wachsen
 ROW_MIN_W = 640                    # Mindestbreite von Kopf und Zeile: nie die der Matrix – sonst erzwingen die festen

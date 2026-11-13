@@ -172,7 +172,8 @@ gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) �
 
 **Computerchemie (Reaktionspfade):** Ein Reiter des Projekts für Energieprofile und IRCs über mehrere Verbindungen, ohne
 diese zu verändern (Rechnungen werden hineinkopiert). **Gestalten** ist eine freie Zeichenfläche (Octet) für Profile,
-Moleküle, Text und 3D-/Orbitalansichten, **Rechendaten** ist das Energiediagramm mit seiner Spalte in drei Schritten
+Moleküle, Text und 3D-/Orbitalansichten (beim ersten Öffnen eines Pfads mit Rechendaten steht das Energieprofil schon
+darauf), **Rechendaten** ist das Energiediagramm mit seiner Spalte in drei Schritten
 (siehe unten), **3D / Orbitale** die Ansichten. Pfade
 erscheinen als Karten (Rechtsklick: umbenennen, entfernen). Alles bleibt im Hauptfenster, ☰ blendet bei offenem Pfad die Pfadliste ein und aus. Profile sind standardmäßig maßstäblich; eine schematische
 Darstellung muss man ausdrücklich wählen, sie steht dann in Abbildung und SI. Energien werden nie bearbeitet, ein
@@ -192,8 +193,15 @@ veraltetes Diagramm stoppt den Export bis **Diagramme aktualisieren**. Die Gesam
   zwei Stufen übereinander, läuft der Übergang senkrecht in der Spalte und setzt seitlich an den Linien an, neben den
   Beschriftungen, mehrere nebeneinander; die Linie einer Stufe dazwischen ist am Übergang unterbrochen. Der Text eines
   Verbinders steht neben der Linie, nie auf einem Strich oder einer anderen Beschriftung.
-- **Darstellung:** vier Vorlagen (Klassisch, Kurven, Farbig, Minimal) setzen den Stil in einem Zug; darunter Linienart,
+- **Darstellung:** die **Vorlage** (Klassisch, Kurven, Farbig, Minimal, Artikel) setzt den Stil in einem Zug; „Artikel“
+  ist ohne Rahmen mit Pfeil an der Seite, kräftigen kurzen Plateaus, Vorzeichen an den Werten und Name und Wert
+  fett-kursiv unter dem Plateau. Eine Vorlage setzt nur Felder, die sich danach einzeln ändern lassen: Karte
+  **Beschriftung** (Lage von Name und Wert: Wert oben und Name unten, beide darunter oder beide darüber; Schrift;
+  **Achsentitel**, „ | “ beginnt eine neue Zeile, `{unit}` steht für die Einheit; **Vorzeichen**), **Plateaubreite**, und Karte **Abschnitte** (Balken
+  unter dem Profil mit Text, von–bis in Schritten und Farbe, z. B. für zwei Reaktionswege). Darunter Linienart,
   Strichstärken, Schriftgröße, Rahmen, maßstäblich und Farbe je Pfad. Der Stil gehört zum Diagramm des Pfads.
+- Ein Plateau lässt sich im Bild an seiner Linie greifen und waagerecht ziehen (im Raster von 0.05 Schritten; ist
+  „maßstäblich“ aus, auch in der Höhe – der Energiewert bleibt der echte). Die Enden eines Plateaus verknüpfen.
 - Energien, Namen und Verbinder-Texte lassen sich im Bild mit der Maus verschieben (wenn zwei Stufen eng liegen);
   **Beschriftungen zurücksetzen** stellt sie zurück. Die Energien selbst ändern sich nie.
 
@@ -240,8 +248,10 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
 <p align="center"><img src="screenshots/comparison_dark_de.png" alt="Seite Vergleich mit einer Eigenschaftstabelle" width="800"></p>
 
 Der Reiter **Vergleich** der Projektseite stellt Verbindungen des Projekts nebeneinander, beliebig viele benannte
-Vergleiche (**+ CV-Stapel**, **+ Spektren**, **+ Tabelle**; Name, **Entfernen** nimmt nur den Eintrag aus dem Projekt,
-exportierte Dateien bleiben). Links die Schritte wie in den Tabs, rechts Abbildung bzw. Tabelle, **Exportieren** unten
+Vergleiche. Der Reiter zeigt sie als Karten wie die Reaktionspfade (Vorschau, Name, Stand); die Karte **Neuer Vergleich …**
+legt einen CV-Stapel, einen Spektrenvergleich oder eine Tabelle an, ein Rechtsklick auf eine Karte entfernt den Eintrag
+(exportierte Dateien bleiben). Ein Klick auf eine Karte öffnet den Vergleich in voller Fenstergröße; zurück geht es über
+die Pfadleiste oben (Projektname), deren letzter Eintrag auch zwischen den Vergleichen wechselt. Links die Schritte wie in den Tabs, rechts Abbildung bzw. Tabelle, **Exportieren** unten
 rechts. Gespeichert wird in `publication.elucida`. **Rückgängig/Wiederholen** (Menü Bearbeiten, Strg+Z) gelten im offenen
 Vergleich für seine Änderungen (Verbindungen, Reihenfolge, Einstellungen, Zellen, Größen, gezogene Beschriftungen), nie
 für die Daten der Verbindungen.
@@ -269,7 +279,10 @@ zur Seite zurück.
   Kurve) oder auf das Maximum normiert, Emission normiert wie im Fluoreszenz-Tab, beides zusammen (Emission
   gestrichelt); übereinander oder gestapelt, ein Legendeneintrag je Verbindung. **Strukturen** zeigt je Verbindung ihre Struktur,
   als Vorgabe in der Farbe der Kurve (**Struktur in Kurvenfarbe** aus: schwarz), am höchsten Punkt der eigenen Kurve bzw.
-  gestapelt rechts über der eigenen Grundlinie; ziehbar, alle im selben Maßstab (**Größe** = Breite der breitesten). Bei mehreren ε-Serien wählt man die Serie
+  gestapelt rechts über der eigenen Grundlinie; ziehbar, alle im selben Maßstab (**Größe** = Breite der breitesten).
+  **Normierung [nm]** (bei normierter Absorption): das Maximum in diesem Bereich wird 1, etwa die Bande über 400 nm
+  statt der im UV; Feld leeren = auto (Maximum der ganzen Messung). Eine Verbindung ohne Bande im Bereich wird nicht
+  gezeigt (Hinweis unter dem Bild), die Unterschrift nennt den Bereich. Bei mehreren ε-Serien wählt man die Serie
   je Verbindung. **IR:** Transmission bzw. Absorbanz wie im IR-Tab, Wellenzahl fällt nach rechts; eine Verbindung, deren
   IR-Tab die andere Darstellung zeigt, wird nicht gezeigt (nie umgerechnet). **EPR** (normiert, Standard gestapelt): auf
   der Feldachse nur Spektren mit derselben Mikrowellenfrequenz wie das erste, oder mit **Frequenz angleichen** wie im
@@ -926,7 +939,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Projekts (Computerchemie, siehe oben); nur dort lässt es sich bearbeiten, im DFT-Tab einer Verbindung gibt es den Reiter
   nicht mehr (früher dort gespeicherte Profildaten bleiben in der Projektdatei). Spezies = die Opt/Freq-Rechnungen, je mit Label, Schritt und
   Pfad(en) A, B …; optional **Einzelpunkte** (z. B. DLPNO-CCSD(T)), zugeordnet über gleiche Atome und Koordinaten
-  (nie über Dateinamen): G = E(SP) + (G − E_el). Stufen mit gestrichelten Verbindungen, ΔG/ΔH/ΔE in kcal mol⁻¹ mit einer
+  (nie über Dateinamen): G = E(SP) + (G − E_el). Stufen mit gestrichelten Verbindungen, ΔG/ΔH/ΔE in kcal mol⁻¹ (unter **Einheit** auch kJ mol⁻¹ oder eV, umgerechnet für Bild,
+  Achse und Unterschrift) mit einer
   Nachkommastelle, Unterschrift „… calculated at the <Einzelpunkt>//<Geometrie> level of theory“.
   **Multireferenz-Plateaus** (ORCA 6 CASSCF/NEVPT2/SORCI, als Einzelpunkt oder als Rechnung selbst): die Felder
   **Methode** und **Zustand** unter der Tabelle wählen, welche Zustandsenergie das Plateau zeigt (Vorgabe: höchste Theorie

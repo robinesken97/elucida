@@ -35,10 +35,17 @@ from elucida.tabs import base as TABS
 HARTREE_KCAL = 627.5094740631            # kcal/mol je Hartree (CODATA 2018)
 LEVEL_W = 0.35                           # halbe Stufenbreite (Schritte)
 # Stilvorlagen des Stufenbilds (Schritt Darstellung): setzen nur Stil, nie Lage oder Werte
-PRESETS = {"classic": dict(connector_style="--", line_width=2.2, connector_width=.8, frame=True, path_colors=False, color="black"),
-           "curves": dict(connector_style="curve", line_width=2.2, connector_width=1.0, frame=True, path_colors=False, color="black"),
-           "colour": dict(connector_style="--", line_width=2.6, connector_width=1.0, frame=True, path_colors=True),
-           "minimal": dict(connector_style=":", line_width=1.6, connector_width=.7, frame=False, path_colors=False, color="black")}
+# „article“ (Nutzerwunsch 2026-11-13, nach einem Profil aus einer SI): ohne Rahmen mit Pfeil an der Seite, kräftige
+# Plateaus, gestrichelte Verbinder, Name und Wert fett-kursiv unter dem Plateau
+_PLAIN = dict(labels="split", label_font="normal", signed=False, level_width=.7)
+LABEL_POS = ("split", "below", "above")  # Wert oben + Name unten | beide unter | beide über dem Plateau
+LABEL_FONTS = ("normal", "bold", "italic", "bold italic")
+PRESETS = {"classic": dict(_PLAIN, connector_style="--", line_width=2.2, connector_width=.8, frame=True, path_colors=False, color="black"),
+           "curves": dict(_PLAIN, connector_style="curve", line_width=2.2, connector_width=1.0, frame=True, path_colors=False, color="black"),
+           "colour": dict(_PLAIN, connector_style="--", line_width=2.6, connector_width=1.0, frame=True, path_colors=True),
+           "minimal": dict(_PLAIN, connector_style=":", line_width=1.6, connector_width=.7, frame=False, path_colors=False, color="black"),
+           "article": dict(connector_style="--", line_width=3.4, connector_width=1.0, frame=False, path_colors=False, color="black",
+                           labels="below", label_font="bold italic", signed=True, level_width=.5)}
 LINE_KEYS = {"--": "dashed", "-": "solid", ":": "dotted", "curve": "curve", "wavy": "wavy", "none": "none"}
 PATH_COLORS = ("#1f3a93", "#c0392b", "#1e8449", "#7d3c98", "#b9770e")
 KINDS = {"G": ("ΔG", "Gibbs free energy"), "H": ("ΔH", "enthalpy"), "E": ("ΔE", "electronic energy")}
@@ -58,6 +65,21 @@ def kcal(v) -> str:
     """Wert in kcal/mol mit einer Nachkommastelle und echtem Minus („−0.0“ -> „0.0“)."""
     s = f"{v:.1f}"
     return "0.0" if s == "-0.0" else s.replace("-", "−")
+
+
+# Einheit der Energieprofile (Nutzerwunsch 2026-11-13: frei wählbar, mit Umrechnung). Gerechnet und gespeichert wird in
+# kcal/mol; umgerechnet wird erst für Bild, Achse und Unterschrift: (Mathtext, HTML, Faktor ab kcal/mol, Nachkommastellen).
+# 1 kcal = 4.184 kJ (thermochemisch); 1 eV = 96.485332 kJ/mol (CODATA 2018)
+UNITS = {"kcal": ("kcal mol$^{-1}$", "kcal mol<sup>−1</sup>", 1.0, 1),
+         "kJ": ("kJ mol$^{-1}$", "kJ mol<sup>−1</sup>", 4.184, 1),
+         "eV": ("eV", "eV", 4.184 / 96.485332, 2)}
+
+
+def energy_text(v, unit="kcal") -> str:
+    """Wert (in kcal/mol) in der gewählten Einheit, echtes Minus, nie „−0.0“."""
+    _m, _h, factor, digits = UNITS[unit]
+    s = f"{v * factor:.{digits}f}"
+    return s.lstrip("-") if float(s) == 0 else s.replace("-", "−")
 
 
 # Gaussian: Wörter der Route, die keine Methode oder Basis sind (für Routen ohne „Methode/Basis“)
@@ -309,6 +331,11 @@ class DftPages:
         self.cmb_y.setToolTip(T("dft_prof_y_tip"))
         self.lbl_y = QLabel(T("dft_prof_energy"))
         f.addRow(self.lbl_y, self.cmb_y)
+        self.cmb_unit = QComboBox()                        # Einheit im Bild und in der Unterschrift (umgerechnet)
+        for k, text in (("kcal", "kcal mol⁻¹"), ("kJ", "kJ mol⁻¹"), ("eV", "eV")):
+            self.cmb_unit.addItem(text, k)
+        self.cmb_unit.setToolTip(T("dft_prof_unit_tip"))
+        f.addRow(T("dft_prof_unit"), self.cmb_unit)
         self.form_levels = f
         # Kästchen in eigener Spalte 0 (ohne Text); der Name der Rechnung steht in Spalte 6, die gleich dahinter angezeigt
         # wird – so behalten Beschriftung, Schritt, Pfade, SP und Struktur ihre Nummern 1–5
@@ -473,16 +500,15 @@ class DftPages:
         # ---- Schritt Darstellung: Stilvorlagen, Feinheiten, Größe
         card = self.card_style = QGroupBox(T("dft_prof_card_style"))
         f = STYLE.make_form(card)
-        row = QHBoxLayout()
-        self.preset_buttons = {}
+        # Vorlagen als Auswahlliste (fünf passten nicht mehr als Knöpfe in die Wertespalte); „eigene“ = seit der Vorlage
+        # geändert oder nie eine gewählt
+        self.cmb_preset = QComboBox()
+        self.cmb_preset.addItem(T("dft_prof_preset_own"), None)
         for key in PRESETS:
-            b_ = QPushButton(T("dft_prof_preset_" + key))
-            b_.setCheckable(True)
-            b_.clicked.connect(lambda _=False, k=key: self.apply_preset(k))
-            row.addWidget(b_, 1)
-            self.preset_buttons[key] = b_
-        f.addRow(T("dft_prof_preset"), row)
-        self.row_presets = row
+            self.cmb_preset.addItem(T("dft_prof_preset_" + key), key)
+        self.cmb_preset.setToolTip(T("dft_prof_preset_tip"))
+        self.cmb_preset.activated.connect(lambda *_: self.cmb_preset.currentData() and self.apply_preset(self.cmb_preset.currentData()))
+        f.addRow(T("dft_prof_preset"), self.cmb_preset)
         self.cmb_connector = QComboBox()
         for key in ("--", "-", ":", "curve", "wavy", "none"):
             self.cmb_connector.addItem(T("dft_prof_line_" + LINE_KEYS[key]), key)
@@ -495,6 +521,10 @@ class DftPages:
             sp.editingFinished.connect(self.style_changed)
             f.addRow(T(text), sp)
             self.style_spins[key] = sp
+        self.sp_level_width = QDoubleSpinBox(decimals=2, minimum=.05, maximum=5, singleStep=.05)
+        self.sp_level_width.setToolTip(T("dft_prof_level_width_tip"))
+        self.sp_level_width.editingFinished.connect(self.style_changed)
+        f.addRow(T("dft_prof_level_width"), self.sp_level_width)
         self.cb_frame = QCheckBox(T("rp_show_diagram_frame"))
         self.cb_scaled = QCheckBox(T("dft_prof_scaled"))
         self.cb_scaled.setToolTip(T("dft_prof_scaled_tip"))
@@ -509,7 +539,56 @@ class DftPages:
         self.btn_labels_reset = QPushButton(T("dft_prof_labels_reset"))
         self.btn_labels_reset.setToolTip(T("dft_prof_labels_reset_tip"))
         self.btn_labels_reset.clicked.connect(self.reset_labels)
+        lv.addWidget(card)
+        # Beschriftung der Plateaus und der Achse: jede Eigenschaft einzeln (die Vorlage setzt nur diese Felder)
+        card = self.card_labels = QGroupBox(T("dft_prof_card_labels"))
+        f = STYLE.make_form(card)
+        self.cmb_label_pos = QComboBox()
+        for key in LABEL_POS:
+            self.cmb_label_pos.addItem(T("dft_prof_labels_" + key), key)
+        self.cmb_label_font = QComboBox()
+        for key in LABEL_FONTS:
+            self.cmb_label_font.addItem(T("dft_prof_font_" + key.replace(" ", "_")), key)
+        for cmb in (self.cmb_label_pos, self.cmb_label_font):
+            cmb.currentIndexChanged.connect(self.style_changed)
+        f.addRow(T("dft_prof_label_pos"), self.cmb_label_pos)
+        f.addRow(T("dft_prof_label_font"), self.cmb_label_font)
+        self.ed_axis_title = QLineEdit()
+        self.ed_axis_title.setPlaceholderText(T("auto"))
+        self.ed_axis_title.setToolTip(T("dft_prof_axis_title_tip"))
+        self.ed_axis_title.editingFinished.connect(self.style_changed)
+        f.addRow(T("dft_prof_axis_title"), self.ed_axis_title)
+        self.cb_signed = QCheckBox(T("dft_prof_signed"))
+        self.cb_signed.setToolTip(T("dft_prof_signed_tip"))
+        self.cb_signed.toggled.connect(self.style_changed)
+        f.addRow(self.cb_signed)
         f.addRow("", self.btn_labels_reset)                # an der Feldkante wie die übrigen Knopfreihen
+        lv.addWidget(card)
+        # Abschnitte: Balken unter dem Profil (z. B. zwei Reaktionswege nebeneinander), je Abschnitt Text, von–bis, Farbe
+        card = self.card_sections = QGroupBox(T("dft_prof_card_sections"))
+        v_ = QVBoxLayout(card)
+        row = QHBoxLayout()
+        b_ = QPushButton(T("dft_prof_section_add"))
+        b_.clicked.connect(self.section_add)
+        row.addWidget(b_)
+        self.btn_section_rm = QPushButton(T("remove"))
+        self.btn_section_rm.clicked.connect(self.section_remove)
+        row.addWidget(self.btn_section_rm)
+        v_.addLayout(row)
+        self.tbl_sections = QTableWidget(0, 4)
+        self.tbl_sections.setHorizontalHeaderLabels([T("dft_prof_section_text"), T("dft_prof_section_from"),
+                                                     T("dft_prof_section_to"), T("ov_color")])
+        self.tbl_sections.verticalHeader().setVisible(False)
+        self.tbl_sections.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_sections.setSelectionMode(QAbstractItemView.SingleSelection)
+        hh_ = self.tbl_sections.horizontalHeader()
+        hh_.setSectionResizeMode(0, QHeaderView.Stretch)
+        for c_ in (1, 2, 3):
+            hh_.setSectionResizeMode(c_, QHeaderView.ResizeToContents)
+        self.tbl_sections.setToolTip(T("dft_prof_sections_tip"))
+        self.tbl_sections.itemChanged.connect(self.section_edited)
+        STYLE.empty_note(self.tbl_sections, T("dft_prof_sections_none"))
+        v_.addWidget(self.tbl_sections)
         lv.addWidget(card)
         card = QGroupBox(T("dft_prof_card_size"))
         f = STYLE.make_form(card)
@@ -565,10 +644,6 @@ class DftPages:
         split.setSizes([STYLE.COLUMN_W, 900])
         outer.addWidget(split)
         STYLE.tidy(left)                                   # Ränder der Spalte zuerst: die Schrittleiste setzt den oberen neu
-        self.row_presets.setSpacing(6)                     # vier gleich breite Vorlagen über die ganze Wertespalte
-        for b_ in self.preset_buttons.values():
-            b_.setFixedWidth((STYLE.VALUE_W - 18) // 4)
-            b_.setStyleSheet("padding-left: 2px; padding-right: 2px;")     # „Klassisch“ passt sonst nicht in ein Viertel
         self.steps = TABS.StepColumn(left, cv, ("step_data", "step_path", "step_display"),
                                      settings=getattr(self.tab.main, "settings", None), name="profile", next_button=self.btn_next)
         self.column_fit = STYLE.fit_column(left, ls, bar, col, split)
@@ -576,6 +651,7 @@ class DftPages:
         self.cmb_y.currentIndexChanged.connect(self.combo_changed)
         self.cmb_irc_x.currentIndexChanged.connect(self.combo_changed)
         self.cmb_irc_ref.currentIndexChanged.connect(self.combo_changed)
+        self.cmb_unit.currentIndexChanged.connect(self.combo_changed)
         return g
 
     # -- Pfad: Verbinder (Plateaus als Knoten) ------------------------------------------------------
@@ -716,6 +792,13 @@ class DftPages:
         lay["frame"] = self.cb_frame.isChecked()
         lay["mode"] = "scaled" if self.cb_scaled.isChecked() or self.prof["mode"] != "levels" else "schematic"
         lay["path_colors"] = self.cb_path_colors.isChecked()
+        lay.update(level_width=self.sp_level_width.value(), labels=self.cmb_label_pos.currentData(),
+                   label_font=self.cmb_label_font.currentData(), signed=self.cb_signed.isChecked())
+        title = self.ed_axis_title.text().strip()
+        if title:
+            lay["axis_title"] = title
+        else:
+            lay.pop("axis_title", None)
         lay.pop("preset", None)
         self.sync_style()
         self.changed()
@@ -749,8 +832,15 @@ class DftPages:
         self.cb_frame.setChecked(bool((self.prof.get(self.layout_key()) or {}).get("frame", True)))
         self.cb_scaled.setChecked(lay.get("mode", "scaled") == "scaled")
         self.cb_path_colors.setChecked(bool(lay.get("path_colors", True)))
-        for key, b in self.preset_buttons.items():
-            b.setChecked((self.prof.get(self.layout_key()) or {}).get("preset") == key)
+        self.sp_level_width.setValue(lay.get("level_width", .7))
+        self.cmb_label_pos.setCurrentIndex(max(0, self.cmb_label_pos.findData(lay.get("labels", "split"))))
+        self.cmb_label_font.setCurrentIndex(max(0, self.cmb_label_font.findData(lay.get("label_font", "normal"))))
+        self.cb_signed.setChecked(bool(lay.get("signed")))
+        self.ed_axis_title.setText(lay.get("axis_title", ""))
+        for w in (self.sp_level_width, self.card_labels, self.card_sections):
+            w.setEnabled(levels)
+        self.fill_sections()
+        self.cmb_preset.setCurrentIndex(max(0, self.cmb_preset.findData((self.prof.get(self.layout_key()) or {}).get("preset"))))
         for w in (self.cb_scaled, self.cb_path_colors, self.btn_labels_reset, self.style_spins["connector_width"]):
             w.setEnabled(levels)
         self._loading = False
@@ -759,6 +849,99 @@ class DftPages:
     def link(self, a, b):
         """Im Bild von einem Plateau auf ein anderes gezogen: verknüpfen."""
         self.add_edge(a, b)
+
+    def unit(self):
+        u = self.prof.get("unit", "kcal")
+        return u if u in UNITS else "kcal"
+
+    def unit_factor(self):
+        return UNITS[self.unit()][2]
+
+    def level_width(self):
+        """Breite der Plateaus ohne eigene Angabe (Schritte), aus dem Stil des Diagramms."""
+        return (self.prof.get("layout") or {}).get("level_width", .7)
+
+    # -- Abschnitte unter dem Profil --------------------------------------------------
+    def fill_sections(self):
+        t = self.tbl_sections
+        was, self._loading = self._loading, True
+        items = self.prof.get("sections") or []
+        keep = t.currentRow()
+        t.setRowCount(len(items))
+        for i, sec in enumerate(items):
+            for c, text in ((0, sec.get("text", "")), (1, f"{sec['a']:g}"), (2, f"{sec['b']:g}")):
+                t.setItem(i, c, QTableWidgetItem(text))
+            if t.cellWidget(i, 3) is not None:
+                t.cellWidget(i, 3).hide()
+            t.setCellWidget(i, 3, TABS.color_button(sec.get("color") or "black",
+                                                    lambda c, i=i: self.section_set(i, "color", c), cell=True))
+        t.setFixedHeight(t.horizontalHeader().sizeHint().height() + max(2, min(len(items), 6)) * TABS.STYLE.CHECK_ROW_H + 2)
+        if items:
+            t.selectRow(min(max(keep, 0), len(items) - 1))
+        self.btn_section_rm.setEnabled(bool(items))
+        self._loading = was
+
+    def section_add(self):
+        """Neuer Abschnitt: hinter dem letzten bis zum letzten Plateau, sonst über das ganze Profil."""
+        rows = self.levels_spec()[0]
+        if not rows:
+            return
+        from elucida.tabs import diagram_layout as DL
+        xs = [r["x"] for r in DL.arranged(rows, self.style_of("levels")[1])]
+        items = self.prof.setdefault("sections", [])
+        a = max([sec["b"] for sec in items] + [min(xs)]) if items else min(xs)
+        items.append(dict(text="", a=round(min(a, max(xs)), 2), b=round(max(xs), 2), color="black"))
+        self.fill_sections()
+        self.tbl_sections.selectRow(len(items) - 1)
+        self.changed()
+
+    def section_remove(self):
+        items, r = self.prof.get("sections") or [], self.tbl_sections.currentRow()
+        if 0 <= r < len(items):
+            del items[r]
+            self.fill_sections()
+            self.changed()
+
+    def section_set(self, i, key, value):
+        items = self.prof.get("sections") or []
+        if 0 <= i < len(items) and items[i].get(key) != value:
+            items[i][key] = value
+            self.changed()
+
+    def section_edited(self, item):
+        """Zelle geändert: Text frei, von/bis als Zahl (Schritte); eine ungültige Eingabe bleibt beim alten Wert."""
+        if self._loading:
+            return
+        items, i, c = self.prof.get("sections") or [], item.row(), item.column()
+        if not 0 <= i < len(items):
+            return
+        if c == 0:
+            return self.section_set(i, "text", item.text().strip())
+        try:
+            value = round(float(item.text().replace(",", ".")), 2)
+        except ValueError:
+            return self.fill_sections()
+        self.section_set(i, "a" if c == 1 else "b", value)
+
+    def level_moved(self, uid, x, y):
+        """Plateau im Bild mit der Maus verschoben: Position, im schematischen Bild auch die Höhe (y nicht None). Wie in
+        den Feldern bleibt der automatische Wert ungesetzt; die Energie am Plateau ändert sich nie."""
+        row = next((r for r in self.levels_spec()[0] if r["uid"] == uid), None)
+        if row is None:
+            return
+        node = self.prof.setdefault("layout", {}).setdefault("nodes", {}).setdefault(uid, {})
+        before = dict(node)
+        y = None if y is None else round(y / self.unit_factor(), 2)   # gezogen in der gezeigten Einheit
+        for key, value, auto in (("x", x, row["step"]), ("y", y, round(row["value"], 2))):
+            if value is None:
+                continue
+            if abs(value - auto) < 1e-9:
+                node.pop(key, None)
+            else:
+                node[key] = value
+        if node != before:
+            self.level_selected()                           # Felder des gewählten Plateaus folgen
+            self.changed()
 
     def profile_size_changed(self):
         self.prof["size_cm"] = [self.profile_width.value(), self.profile_height.value()]
@@ -777,7 +960,7 @@ class DftPages:
         if self._loading:
             return
         p = self.prof
-        p.update(mode=self.cmb_mode.currentData(), y=self.cmb_y.currentData())
+        p.update(mode=self.cmb_mode.currentData(), y=self.cmb_y.currentData(), unit=self.cmb_unit.currentData())
         if self.cmb_irc_x.currentData():
             p["irc_x"] = self.cmb_irc_x.currentData()
         if self.cmb_irc_ref.currentData():
@@ -848,8 +1031,10 @@ class DftPages:
         schematic = self.style_of("levels")[1].get("mode", "scaled") == "schematic"
         was, self._loading = self._loading, True
         if row:
-            for key, default in (("x", row["step"]), ("width", .7), ("y", row["value"])):
-                self.level_spins[key].setValue(node.get(key, default))
+            for key, default in (("x", row["step"]), ("width", self.level_width()),
+                                 ("y", row["value"])):
+                shown = node.get(key, default) * (self.unit_factor() if key == "y" else 1)   # Höhe in der gezeigten Einheit
+                self.level_spins[key].setValue(shown)
             self.cb_level_break.setChecked(bool(node.get("break_after")))
             color = node.get("color") or self._level_auto_color(row, paths)
             b = self.btn_level_color
@@ -930,9 +1115,13 @@ class DftPages:
         node = self._level_node()
         if node is None:
             return
-        new = dict(x=(self.level_spins["x"].value(), row["step"]), width=(self.level_spins["width"].value(), .7))
+        new = dict(x=(self.level_spins["x"].value(), row["step"]),
+                   width=(self.level_spins["width"].value(), self.level_width()))
         if self.style_of("levels")[1].get("mode", "scaled") == "schematic":    # Höhe nur im schematischen Bild frei
-            new["y"] = (self.level_spins["y"].value(), round(row["value"], 2))
+            fu = self.unit_factor()                         # Feld in der gezeigten Einheit, gespeichert in kcal/mol
+            auto_y = round(row["value"], 2)
+            shown = self.level_spins["y"].value()
+            new["y"] = (auto_y if abs(shown - round(row["value"] * fu, 2)) < 1e-9 else round(shown / fu, 4), auto_y)
             new["break_after"] = (self.cb_level_break.isChecked(), False)
         before = dict(node)
         for key, (value, auto) in new.items():
@@ -1102,7 +1291,8 @@ class DftPages:
         cfg = self.cfg("irc_rc" if xk == "rc" else "irc_bond")
         if xk != "rc":
             cfg["xlabel"] = f"{xk} [Å]"
-        cfg["ylabel"] = "ΔE [kcal mol$^{-1}$]"
+        unit, fu = self.unit(), self.unit_factor()
+        cfg["ylabel"] = f"ΔE [{UNITS[unit][0]}]"
         curves, marks, x_end, anchors = [], [], None, {}
         for c in curves_:
             if xk == "rc":
@@ -1113,7 +1303,7 @@ class DftPages:
             else:
                 notes.append(T("dft_irc_no_col", name=c["label"], col=xk))
                 continue
-            y = (c["E"] - e0) * HARTREE_KCAL
+            y = (c["E"] - e0) * HARTREE_KCAL * fu
             anchors.update({("irc", c["uid"], i): (xx, yy) for i, (xx, yy) in enumerate(zip(x, y))})
             curves.append(dict(x=x, y=y, color="black", ls="-", lw=1.2, label=None))
             ts = c["ts"]
@@ -1136,7 +1326,8 @@ class DftPages:
         F = TABS.X.SimpleFigure(TABS.plt, cfg, curves, [], {}, fig=fig, legend=False)
         fs = cfg["labels"]["font_size"]
         for x, y, fwd, rev in marks:
-            F.ax.text(x, y + 0.04 * span, f"ΔE‡ = {kcal(fwd)} / {kcal(rev)}", ha="center", va="bottom", fontsize=fs)
+            F.ax.text(x, y + 0.04 * span, f"ΔE‡ = {energy_text(fwd, unit)} / {energy_text(rev, unit)}", ha="center",
+                      va="bottom", fontsize=fs)
         return F, notes
 
     def build(self, fig, mode=None):
@@ -1152,7 +1343,7 @@ class DftPages:
         lev, _ = self.level_text(rows)
         th = rows[0]["opt"].get("thermo") or {}
         cond = f"; T = {th['T']} K, p = {th['P']} atm" if y != "E" and th.get("T") and th.get("P") else ""
-        txt = (f"Calculated {KINDS[y][1]} profile of <b>{html.escape(name)}</b> ({KINDS[y][0]} in kcal mol<sup>−1</sup>, relative "
+        txt = (f"Calculated {KINDS[y][1]} profile of <b>{html.escape(name)}</b> ({KINDS[y][0]} in {UNITS[self.unit()][1]}, relative "
                f"to {html.escape(rows[0]['label'])}{cond})")
         txt += f" calculated at the {html.escape(lev)} level of theory." if lev else "."
         mr = [(html.escape(r["label"]), html.escape(r["mr"])) for r in rows if r.get("mr")]
@@ -1174,7 +1365,7 @@ class DftPages:
         meth = curves[0]["method"]
         xk = self.prof["irc_x"]
         xs = "the reaction coordinate" if xk == "rc" else html.escape(xk)
-        return (f"Intrinsic reaction coordinate (IRC) of <b>{html.escape(name)}</b> (ΔE in kcal mol<sup>−1</sup> along {xs}; "
+        return (f"Intrinsic reaction coordinate (IRC) of <b>{html.escape(name)}</b> (ΔE in {UNITS[self.unit()][1]} along {xs}; "
                 f"ΔE‡ forward/reverse at the transition state)"
                 + (f" calculated at the {html.escape(meth)} level of theory." if meth else "."))
 
@@ -1375,6 +1566,7 @@ class DftPages:
         self.irc_list.addItems([d.get("label") or Path(d["file"]).stem for d in p["irc"]])
         self.cmb_mode.setCurrentIndex(max(0, self.cmb_mode.findData(p["mode"])))
         self.cmb_y.setCurrentIndex(max(0, self.cmb_y.findData(p["y"])))
+        self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(self.unit())))
         curves, _ = self.irc_data() if p["irc"] else ([], [])
         self.cmb_irc_x.clear()
         self.cmb_irc_x.addItem(T("dft_irc_rc"), "rc")
@@ -1454,7 +1646,8 @@ class DftPages:
             self.profile_dragger = TABS.TabDragger(F, lambda moved, F=F: self.images_moved(F, moved))
             if self.prof["mode"] == "levels" and getattr(F, "profile_rows", None):
                 from elucida.tabs import diagram_layout as DL
-                self.profile_linker = DL.LinkMouse(F, F.profile_rows, self.link)   # Plateaus im Bild verknüpfen
+                schematic = self.style_of("levels")[1].get("mode", "scaled") == "schematic"
+                self.profile_linker = DL.LinkMouse(F, F.profile_rows, self.link, self.level_moved, free_y=schematic)
         self.lbl_prof.setText("\n".join("⚠ " + n for n in notes))
         # SimpleFigure resets inches while Qt keeps the widget's pixel dimensions.
         # Fit both together after every rebuild (also on Retina screens).
