@@ -74,13 +74,17 @@
   and CV stack).
 - **Consistent interface:** lists of measurements size their columns by content (no clipped name next to an empty
   column, no number touching the next); the selected parameters in X-Ray and the figures in "Other" are tables like
-  everywhere else; multi-line text fields indent their text like single-line fields.
+  everywhere else; multi-line text fields indent their text like single-line fields. Icons in buttons no longer
+  sit tight against the text (8 px instead of 4).
 - **Uniform tables:** result tables (UV-Vis, CV, UV-Vis kinetics, H-Cell) fill the page without empty space on the
   right and never clip. What used to be lines of text below the table is a second table: the scan-rate analysis in CV
   (slope, intercept, R², log–log slope, D), course and decay per series in the kinetics tab, the summary per
-  measurement in H-Cell; reference and warnings stand separately below. The DFT preview "Calculation for the SI" shows
+  measurement in H-Cell, the isothermal decays per temperature in the EPR tab; reference and warnings stand separately below. The DFT preview "Calculation for the SI" shows
   convergence, energies and coordinates as tables in the same style (the copied text and the Word export are
   unchanged).
+- **Word export:** methods texts typeset powers of ten and t½ correctly (previously literal "10^-2" and "t1/2" for
+  UV-Vis kinetics, EPR decays and the diffusion coefficient, "cm2" without superscript); the caption of the energy
+  profile writes kcal mol⁻¹ with a superscript. The property table of a comparison fills the page again.
 
 ### Fixed
 From a check of all calculations against the literature (formulas, constants and statistics were correct; these points

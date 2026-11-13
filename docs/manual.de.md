@@ -829,7 +829,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Isotherme Zerfälle und Arrhenius:** Ansicht „Intensität gegen Zeit“ mit **Zerfall fitten** legt je Temperatur einen Zerfall
   erster Ordnung an, I(t) = I₀·exp(−k·t) (kleinste Quadrate auf den Intensitäten, 95-%-Intervall von k mit
   t-Quantil). Eine Serie sind die Messungen, deren Temperatur **aus der Messdatei** auf 1 K gerundet gleich ist; ab
-  drei Spektren wird gefittet, sonst steht ein Hinweis. **Fit bis Verlust** beschränkt den Fit auf den Anfang jeder
+  drei Spektren wird gefittet, sonst steht ein Hinweis. Die Ergebnisse stehen je Temperatur in einer Tabelle (Reiter Ergebnisse). **Fit bis Verlust** beschränkt den Fit auf den Anfang jeder
   Serie (z. B. 15 %: bis die Intensität 15 % unter dem ersten Punkt liegt). Die Ansicht „Arrhenius“ trägt ln k
   gegen 1000/T auf und liefert E_a und ln A aus einer ungewichteten Ausgleichsgeraden, ein Punkt je Temperatur; ein
   95-%-Intervall gibt es erst ab drei Temperaturen. Die Striche an den Punkten sind die Intervalle von k. Peak-zu-Peak

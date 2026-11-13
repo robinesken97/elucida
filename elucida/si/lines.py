@@ -163,11 +163,14 @@ def chem_plain(text):
 
 
 def methods_html(text):
-    """Methodentext (Klartext wie „SI-Text kopieren“) -> HTML für Word: Einheiten „cm-1“ hochgestellt, „E1/2“ und
-    Indizes mit Unterstrich (A_red, g_lit, n_app) tiefgestellt. Keine Formel-Regel wie chem_html (E1/2 ≠ E₁/2)."""
+    """Methodentext (Klartext wie „SI-Text kopieren“) -> HTML für Word: Einheiten „cm-1“/„cm2“ und Zehnerpotenzen
+    „10^-2“ hochgestellt, „E1/2“, „t1/2“ und Indizes mit Unterstrich (A_red, g_lit, n_app) tiefgestellt. Keine
+    Formel-Regel wie chem_html (E1/2 ≠ E₁/2)."""
     h = _html.escape(text or "", quote=False)
     h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
-    h = re.sub(r"\bE1/2", "E<sub>1/2</sub>", h)
+    h = re.sub(r"10\^(-?\d+)", r"10<sup>\1</sup>", h)   # 3.90 × 10^-2 (core.sci_text)
+    h = re.sub(r"\b([Et])1/2", r"\1<sub>1/2</sub>", h)
+    h = re.sub(r"\bcm2\b", "cm<sup>2</sup>", h)
     h = h.replace("Fc0/+", "Fc<sup>0/+</sup>")         # wie die CV-Achse und die Unterschrift
     return re.sub(r"(?<=[A-Za-zνΔ])_([A-Za-z0-9]+)", r"<sub>\1</sub>", h)
 

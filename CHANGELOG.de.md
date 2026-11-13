@@ -77,13 +77,17 @@
   schmaler Rand (im CV-Tab und im CV-Stapel).
 - **Einheitliche Oberfläche:** Listen von Messungen verteilen ihre Spaltenbreiten nach Inhalt (kein abgeschnittener
   Name neben einer leeren Spalte, keine Zahl an Zahl); die ausgewählten Parameter im X-Ray-Tab und die Abbildungen unter
-  „Weitere“ sind Tabellen wie überall; mehrzeilige Textfelder rücken ihren Text so weit ein wie einzeilige.
+  „Weitere“ sind Tabellen wie überall; mehrzeilige Textfelder rücken ihren Text so weit ein wie einzeilige. Symbole in Knöpfen
+  stehen nicht mehr dicht am Text (8 statt 4 px).
 - **Einheitliche Tabellen:** Ergebnistabellen (UV-Vis, CV, UV-Vis-Kinetik, H-Cell) füllen die Seite ohne Leerraum
   rechts und schneiden nichts ab. Was bisher als Textzeilen unter der Tabelle stand, ist eine zweite Tabelle: beim CV
   die Scanraten-Analyse (Steigung, Achsenabschnitt, R², log-log-Steigung, D), bei der Kinetik Verlauf und Zerfall je
-  Reihe, bei der H-Cell die Zusammenfassung je Messung; Referenz und Warnungen stehen getrennt darunter. Die
+  Reihe, bei der H-Cell die Zusammenfassung je Messung, im EPR-Tab die isothermen Zerfälle je Temperatur; Referenz und Warnungen stehen getrennt darunter. Die
   DFT-Vorschau „Rechnung für die SI“ zeigt Konvergenz, Energien und Koordinaten als Tabellen im selben Stil (die
   kopierte Fassung und der Word-Export bleiben, wie sie waren).
+- **Word-Export:** Methodentexte setzen Zehnerpotenzen und t½ richtig (vorher wörtlich „10^-2“ und „t1/2“ bei
+  UV-Vis-Kinetik, EPR-Zerfällen und dem Diffusionskoeffizienten, „cm2“ ohne Hochstellung); die Unterschrift des
+  Energieprofils schreibt kcal mol⁻¹ hochgestellt. Die Eigenschaftstabelle im Vergleich füllt wieder die Seite.
 
 ### Behoben
 Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und Statistik stimmten; diese Punkte nicht):

@@ -67,7 +67,10 @@ paths:
   NSToolbar wäre 66 px, deshalb bleibt die kompakte (40 px) und `_fit_toolbar` setzt die Leistenknöpfe dort auf 32.
   Hinweis nach einer Feldzeile steht mittig unter der **Wertespalte** (`_field_edge`), nicht unter der ganzen Karte. Pfeile von
   Auswahllisten und Zahlenfeldern auf einer Achse (beide 24 px ab Rahmen). Reine Knopfreihen über Listen in allen Tabs gleich
-  (`tidy`: Plus, Pfeile als Symbol, Papierkorb; Textknöpfe teilen die Breite). Beschriftung breiter als `LABEL_W`: kürzen,
+  (`tidy`: Plus, Pfeile als Symbol, Papierkorb; Textknöpfe teilen die Breite). Symbol und Text im Knopf: Qt setzt fest
+  4 px dazwischen; `STYLE.icon` liefert deshalb für Knöpfe (`QPushButton {icon-size: 20px}`) das 16-px-Symbol links in
+  einem 20-px-Feld = 8 px bis zum Text (Nutzerhinweis 2026-11-13). Knopf ohne Text: `icon(name, lone=True)` (mittig; prüft
+  der Selbsttest). Beschriftung breiter als `LABEL_W`: kürzen,
   Langform als Eintrag `<key>_long` (Tooltip über `i18n.long_form`); der Selbsttest „design measures“ verlangt: passt oder bricht um.
   Rechte Seite in allen Tabs gleich (`tabs/base.py`): oben `PAGE_TOP` 12, Reiter über `result_tabs` (Segmentstil, links 14),
   Abbildung, Anleitung und Ergebniskarten mit `PAGE_INSET` (14/0/14/14, `CanvasHost(page=True)`, `page_wrap`); Ergebniskarte
@@ -247,11 +250,12 @@ paths:
     rechten Seiten sind `STYLE.FitGrid` (`fit()` nach dem Füllen: gleich breite Spalten, solange die breiteste passt;
     sonst nach Inhalt mit gleichmäßig verteiltem Rest; sonst Bildlaufleiste – nie Leerraum rechts, nie abgeschnitten;
     Kästchenspalten bleiben fest). Angaben je Reihe/Paar/Messung nie als Textzeilen unter der Tabelle, sondern als
-    zweite Tabelle (`STYLE.summary_grid`/`fill_summary`: CV Scanraten-Analyse, UV-Vis-Kinetik, H-Cell); darunter nur
+    zweite Tabelle (`STYLE.summary_grid`/`fill_summary`: CV Scanraten-Analyse, UV-Vis-Kinetik, H-Cell, EPR isotherme Zerfälle `tbl_iso`); darunter nur
     Sätze (Referenz) und Warnungen (rot, eigene Zeile). Tabellen in Textvorschauen über `XRAY.table_view_html` (X-Ray,
     DFT „Rechnung für die SI“ mit `si_html(view=True)` inkl. Koordinaten); Zwischenablage und Word behalten die
     SI-Form. Breite 99 % statt 100 % (Qt rechnet sonst 1 px zu viel: Querrollbalken). Verbliebene `QListWidget`
-    bekommen in `tidy` Zeilen wie Tabellen (`_ListDelegate`). Offen: EPR-Zerfälle je Temperatur stehen noch als Text.
+    bekommen in `tidy` Zeilen wie Tabellen (`_ListDelegate`). Text unter einer Tabelle:
+    `SciLabel.setText(text, plain=True)` (sonst stünde eine kurze Zeile groß in der Kartenmitte).
   - Selbsttest „design measures“ prüft je Tab und für die Projektseite: Einzug der Zahlenfelder, feste Feldhöhe,
     umbrochene Beschriftungen ohne zu breites Wort, Nebenspalten der Messungslisten mit Luft.
   - Die Tab-Leiste liegt in `WEL.NavScroll` (seit 1.1.0, 16 Tabs: sonst 1461 px Mindestbreite, unter Windows 2048 px):

@@ -847,8 +847,7 @@ class EPRTab(TABS.FigureTab):
     def arrange(self):
         super().arrange()
         # Fit-Ergebnis + „SI-Text kopieren“ als Reiter neben der Abbildung wie in CV (nicht mitten in „Darstellung“)
-        self.to_right(STYLE.split_group(self.group_titled("epr_display"), self.lbl_info, None, T("tab_results"), n=1),
-                      T("tab_results"))
+        self.to_right(self.grp_results, T("tab_results"))
         g = STYLE.split_group(self.group_titled("epr_display"), self.cmb_view, self.cb_curie, T("grp_intensity"))
         self.fold_int = self.fold(g, "intensity", ("mode", "int_window", "int_method", "int_x", "int_center", "kin_fit",
                                                    "kin_norm", "kin_loss", "int_curie"))
@@ -1156,8 +1155,15 @@ class EPRTab(TABS.FigureTab):
         self.lbl_info = STYLE.SciLabel("", T("results_none"))
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        f.addRow(self.lbl_info)                          # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(g)
+        # Ergebnisse (Reiter neben der Abbildung): isotherme Zerfälle je Temperatur als Tabelle, darunter der Text
+        self.grp_results = QGroupBox(T("tab_results"))
+        rv = QVBoxLayout(self.grp_results)
+        self.tbl_iso = STYLE.summary_grid([T("epr_col_T"), "k [s⁻¹]", T("uvkin_col_ci"), "t½ [min]", T("epr_col_pts"),
+                                           T("col_warn")])
+        rv.addWidget(self.tbl_iso)
+        rv.addWidget(self.lbl_info)                      # „SI-Text kopieren“ steht im Reiter SI-Text
+        self.lv.addWidget(self.grp_results)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
         for w_ in (self.sp_bl_order, self.sp_bl_edge, self.sp_bl_width, self.sp_smooth, self.sp_gap):
             w_.valueChanged.connect(self.changed)
@@ -1775,6 +1781,7 @@ class EPRTab(TABS.FigureTab):
 
     def figure_spec(self):
         st = self.st
+        STYLE.fill_summary(self.tbl_iso, [])                 # nur die isothermen Zerfälle füllen sie wieder
         vis = [e for e in st["entries"] if e["visible"]]
         if not vis:
             self.lbl_info.setText("")
@@ -2018,22 +2025,23 @@ class EPRTab(TABS.FigureTab):
         cols = [to_hex(colormaps["viridis"](0.85 * i / max(1, len(res) - 1))) for i in range(len(res))]
         name_T = lambda r: f"{r['T']:.0f} K" if r["T"] is not None else T("epr_kin_data")
         info = [T("epr_int_info", n=len(x), method=T("epr_int_" + st["int_method"]))]
+        rows = []
         for r in res:
             f = r["fit"]
             if f is None:
-                info.append(T("epr_iso_short", T=name_T(r), n=len(r["idx"])))
+                rows.append([name_T(r), "–", "–", "–", str(len(r["idx"])), T("epr_iso_short")])
                 continue
             ci = f["ci_k"]
-            info.append(T("epr_iso_result", T=name_T(r), k=f"{f['k']:.3g}",
-                          ci=f"{ci[0]:.3g}–{ci[1]:.3g}" if ci else "–",
-                          half=f"{np.log(2) / f['k'] / 60:.3g}" if f["k"] > 0 else "–", n=f["n"], of=f["n_all"]))
+            rows.append([name_T(r), f"{f['k']:.3g}", f"{ci[0]:.3g}–{ci[1]:.3g}" if ci else "–",
+                         f"{np.log(2) / f['k'] / 60:.3g}" if f["k"] > 0 else "–", f"{f['n']} / {f['n_all']}", ""])
+        STYLE.fill_summary(self.tbl_iso, rows, hidden=() if any(r_[5] for r_ in rows) else (5,))
         curves = []
         if st["int_x"] == "arr":
             pts = [r for r in res if r["fit"] and r["fit"]["k"] > 0 and r["T"]]
             self.arr_result = a = fit_arrhenius([r["T"] for r in pts], [r["fit"]["k"] for r in pts])
             if a is None:
                 self.series_values = []
-                self.lbl_info.setText("\n".join(info + [T("epr_arr_need")]))
+                self.lbl_info.setText("\n".join(info + [T("epr_arr_need")]), plain=True)
                 return None
             xa = np.array([1000.0 / r["T"] for r in pts])
             ya = np.array([np.log(r["fit"]["k"]) for r in pts])
@@ -2081,7 +2089,7 @@ class EPRTab(TABS.FigureTab):
             self.series_values = list(zip(x[o], y[o], [used[i]["label"] for i in o]))
         if getattr(self, "_edge_hits", 0):
             info.append(T("epr_gauss_edge", n=self._edge_hits))
-        self.lbl_info.setText("\n".join(info))
+        self.lbl_info.setText("\n".join(info), plain=True)
         return cfg, curves, [], []
 
     def intensity_spec(self, entries):

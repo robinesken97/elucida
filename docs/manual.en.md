@@ -803,7 +803,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Isothermal decays and Arrhenius:** the view "Intensity against time" with **Fit decay** fits a first-order decay per
   temperature, I(t) = I₀·exp(−k·t) (least squares on the intensities, 95 % interval of k with the t quantile). A
   series consists of the measurements whose temperature **from the measurement file** agrees after rounding to 1 K;
-  fitting starts at three spectra, otherwise a note appears. **Fit up to loss** restricts the fit to the start of
+  fitting starts at three spectra, otherwise a note appears. The results are listed per temperature in a table (Results tab). **Fit up to loss** restricts the fit to the start of
   each series (e.g. 15 %: until the intensity is 15 % below the first point). The view "Arrhenius" plots ln k
   against 1000/T and gives E_a and ln A from an unweighted straight-line fit, one point per temperature; a 95 %
   interval exists only from three temperatures on. The bars at the points are the intervals of k. Peak-to-peak

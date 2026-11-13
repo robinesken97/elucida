@@ -1152,7 +1152,7 @@ class DftPages:
         lev, _ = self.level_text(rows)
         th = rows[0]["opt"].get("thermo") or {}
         cond = f"; T = {th['T']} K, p = {th['P']} atm" if y != "E" and th.get("T") and th.get("P") else ""
-        txt = (f"Calculated {KINDS[y][1]} profile of <b>{html.escape(name)}</b> ({KINDS[y][0]} in kcal mol-1, relative "
+        txt = (f"Calculated {KINDS[y][1]} profile of <b>{html.escape(name)}</b> ({KINDS[y][0]} in kcal mol<sup>−1</sup>, relative "
                f"to {html.escape(rows[0]['label'])}{cond})")
         txt += f" calculated at the {html.escape(lev)} level of theory." if lev else "."
         mr = [(html.escape(r["label"]), html.escape(r["mr"])) for r in rows if r.get("mr")]
@@ -1174,7 +1174,7 @@ class DftPages:
         meth = curves[0]["method"]
         xk = self.prof["irc_x"]
         xs = "the reaction coordinate" if xk == "rc" else html.escape(xk)
-        return (f"Intrinsic reaction coordinate (IRC) of <b>{html.escape(name)}</b> (ΔE in kcal mol-1 along {xs}; "
+        return (f"Intrinsic reaction coordinate (IRC) of <b>{html.escape(name)}</b> (ΔE in kcal mol<sup>−1</sup> along {xs}; "
                 f"ΔE‡ forward/reverse at the transition state)"
                 + (f" calculated at the {html.escape(meth)} level of theory." if meth else "."))
 

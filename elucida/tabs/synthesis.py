@@ -613,7 +613,7 @@ class SynthTab(QWidget):
                 txt = {self.add_row: "", self.remove_row: "", self.rows_from_scheme: T("syn_from_scheme"), self.insert_amounts: T("draw_into_text")}[fn]
             b = QPushButton(txt)
             if self.compact and fn in (self.add_row, self.remove_row):   # Symbole wie über den Listen der anderen Tabs
-                b.setIcon(STYLE.icon("add" if fn == self.add_row else "trash"))
+                b.setIcon(STYLE.icon("add" if fn == self.add_row else "trash", lone=True))
                 b.setToolTip(T("syn_row_add") if fn == self.add_row else T("remove"))
                 b.setFixedWidth(40)
             if tip:

@@ -125,22 +125,41 @@ def colors():
     return COLORS[_mode]
 
 
-def _render(name, color, px, stroke=1.8):
+ICON_PX, BUTTON_ICON_PX = 16, 20       # Symbol; Feld des Symbols in Knöpfen (Stylesheet `icon-size`)
+_ICON_SCALES = (1, 1.25, 1.5, 1.75, 2, 2.5, 3)
+_LONE = set()                          # cacheKey der Symbole für Knöpfe ohne Text (Selbsttest)
+
+
+def _render(name, color, px, stroke=1.8, box=None, left=False):
+    """Symbol als Bild mit `px` Kantenlänge; `box`: größeres Feld, Symbol darin mittig bzw. `left` am linken Rand."""
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" '
            f'stroke-width="{stroke}" stroke-linecap="round" stroke-linejoin="round">{_SVG[name]}</svg>')
-    img = QImage(px, px, QImage.Format_ARGB32_Premultiplied)
+    box = box or px
+    img = QImage(box, box, QImage.Format_ARGB32_Premultiplied)
     img.fill(Qt.transparent)
     p = QPainter(img)
-    QSvgRenderer(QByteArray(svg.encode())).render(p, QRectF(0, 0, px, px))
+    QSvgRenderer(QByteArray(svg.encode())).render(p, QRectF(0 if left else (box - px) // 2, (box - px) // 2, px, px))
     p.end()
     return img
 
 
-def icon(name, color=None):
-    """QIcon in Textfarbe (oder `color`), scharf auch auf HiDPI-Bildschirmen."""
+def icon(name, color=None, lone=False):
+    """QIcon in Textfarbe (oder `color`), scharf bei jeder Bildschirmskalierung. Qt setzt in Knöpfen fest 4 px zwischen
+    Symbol und Text (QStyleSheetStyle, nicht einstellbar): breite Symbole klebten am Text (Nutzerhinweis 2026-11-13).
+    Knöpfe fragen deshalb ein 20-px-Feld an (`QPushButton {icon-size}`), in dem das 16-px-Symbol links sitzt -> 8 px
+    bis zum Text, der Rand links bleibt. `lone`: Knopf ohne Text, Symbol mittig. Menüs, Leisten und Listen (16/18 px)
+    bekommen das Symbol unverändert; je Skalierung eigene Bilder, weil Qt sonst nur nach Pixelgröße wählt
+    (16 px bei 125 % = 20 px)."""
     ic = QIcon()
-    for px in (16, 32, 48, 64):
-        ic.addPixmap(QPixmap.fromImage(_render(name, color or colors()["text"], px)))
+    color = color or colors()["text"]
+    for sc in _ICON_SCALES:
+        variants = [(px, None) for px in (ICON_PX, 18, 64)] + [(ICON_PX, BUTTON_ICON_PX)]
+        for px, box in variants:
+            pm = QPixmap.fromImage(_render(name, color, round(px * sc), box=box and round(box * sc), left=not lone))
+            pm.setDevicePixelRatio(sc)
+            ic.addPixmap(pm)
+    if lone:
+        _LONE.add(ic.cacheKey())
     return ic
 
 
@@ -167,7 +186,7 @@ def list_button(txt):
     b = QPushButton(txt)
     if txt in ("↑", "↓"):
         b.setText("")
-        b.setIcon(icon("move_up" if txt == "↑" else "move_down"))
+        b.setIcon(icon("move_up" if txt == "↑" else "move_down", lone=True))
         b.setToolTip(T("move_up" if txt == "↑" else "move_down"))
     elif txt == T("remove"):
         b.setIcon(icon("trash"))
@@ -352,7 +371,8 @@ class FitGrid(QTableWidget):
         hh = self.horizontalHeader()
         head = lambda i: self.horizontalHeaderItem(i).text() if self.horizontalHeaderItem(i) else ""   # noqa: E731
         shown = [i for i in range(self.columnCount()) if not self.isColumnHidden(i)]
-        cols = [i for i in shown if head(i)]                  # Kästchenspalten (ohne Kopf) behalten ihre feste Breite
+        # Kästchenspalten (ohne Kopf) behalten ihre feste Breite; ohne Kopfzeile (Vergleichstabelle) zählen alle Spalten
+        cols = shown if hh.isHidden() else [i for i in shown if head(i)]
         if not cols:
             return hh.setSectionResizeMode(QHeaderView.Interactive)
         need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}   # gilt auch unsichtbar
@@ -1129,7 +1149,7 @@ def _field_edge(root):
                 if isinstance(x, QPushButton) and x.text() == T("remove") and len(ws) > 2:
                     x.setToolTip(T("remove"))                 # Dateizeilen: Papierkorb statt Text (Platz für den Namen)
                     x.setText("")
-                    x.setIcon(icon("trash"))
+                    x.setIcon(icon("trash", lone=True))
                     x.setFixedWidth(34)
             others = sum(x.minimumWidth() if x.minimumWidth() == x.maximumWidth() else x.sizeHint().width()
                          for x in ws if x is not fill[0]) + 8 * (len(ws) - 1)
@@ -1572,11 +1592,12 @@ class SciLabel(QLabel):
         self.empty = empty
         self.setText(text)
 
-    def setText(self, text):
+    def setText(self, text, plain=False):
+        """plain: Text unter einer Tabelle, auch kurz als normale Zeile oben links."""
         shown = text or self.empty
         # Platzhalter und kurze Hinweise einer Ergebnisseite stehen groß in der Mitte der Karte (Nutzerwunsch 2026-11-11:
         # oben links wirkten sie verloren); mehrzeilige Ergebnisse wie bisher oben links
-        short = bool(self.empty) and "\n" not in shown and len(shown) <= 180
+        short = bool(self.empty) and not plain and "\n" not in shown and len(shown) <= 180
         if short != getattr(self, "_short", None):
             self._short = short
             self.setAlignment(Qt.AlignCenter if short else Qt.AlignLeft | Qt.AlignTop)
@@ -2067,7 +2088,7 @@ def tidy(root):
             if x.text() in ("↑", "↓"):
                 key = "move_up" if x.text() == "↑" else "move_down"
                 x.setText("")
-                x.setIcon(icon(key))
+                x.setIcon(icon(key, lone=True))
                 x.setToolTip(x.toolTip() or T(key))
             elif x.text() == T("remove"):
                 x.setIcon(icon("trash"))
@@ -2565,6 +2586,8 @@ QComboBox QAbstractItemView {{ background: {c['card']}; border: 1px solid {c['bo
     selection-background-color: {c['accent']}; selection-color: {c['on_accent']}; }}
 QPushButton {{ background: {c['button']}; border: 1px solid {c['border']}; border-radius: 8px;
     padding: 5px 13px; min-height: 18px; font-weight: 500; }}
+QPushButton {{ icon-size: {BUTTON_ICON_PX}px; }}             /* Symbol links im 20-px-Feld: 8 px bis zum Text (icon) */
+QPushButton#crumb {{ icon-size: 18px; }}
 QPushButton:hover {{ background: {c['hover']}; border-color: {c['border_strong']}; }}
 QPushButton:pressed {{ background: {c['border']}; }}
 QPushButton:disabled {{ color: {c['disabled']}; background: {c['alt']}; }}

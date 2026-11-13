@@ -1082,6 +1082,9 @@ def selftest(outdir, with_isnet=False):
             assert " nm: " not in "".join(mtx_)                 # Word: UV-Vis ohne Bandenliste (Zeile/Bild)
             assert SI.methods_html("A_red, g_lit, E1/2,app, M-1 cm-1") == \
                 "A<sub>red</sub>, g<sub>lit</sub>, E<sub>1/2</sub>,app, M<sup>-1</sup> cm<sup>-1</sup>"
+            assert SI.methods_html("k = 3.90 × 10^-2 d-1, t1/2 = 17.8 d, D = 1.00 × 10^-5 cm2 s-1") == \
+                "k = 3.90 × 10<sup>-2</sup> d<sup>-1</sup>, t<sub>1/2</sub> = 17.8 d, D = 1.00 × 10<sup>-5</sup> " \
+                "cm<sup>2</sup> s<sup>-1</sup>"                  # Word schrieb „10^-2“ und „t1/2“ wörtlich
             b_m, _ = w.si_blocks(["methods"])
             assert ("heading", "Data processing and fitting") in b_m and not any(b_[0] == "image" for b_ in b_m)
             mdoc_ = SI.write_docx(out / "si_methods.docx", b_m)
@@ -2032,7 +2035,11 @@ def selftest(outdir, with_isnet=False):
                 ir_ = t_e.iso_results
                 assert [round(r_["T"]) for r_ in ir_] == [100, 104, 108, 112] and ir_[3]["fit"] is None, ir_
                 assert all(abs(r_["fit"]["k"] / k_ - 1) < 0.01 and r_["fit"]["n"] == 6 for r_, k_ in zip(ir_, ks_)), ir_
-                assert T("epr_iso_short", T="112 K", n=2) in t_e.lbl_info.text(), t_e.lbl_info.text()
+                ti_ = t_e.tbl_iso                               # je Temperatur eine Zeile statt Textzeilen
+                rows_i_ = [[ti_.item(r_, c_).text() for c_ in range(6)] for r_ in range(ti_.rowCount())]
+                assert [r_[0] for r_ in rows_i_] == ["100 K", "104 K", "108 K", "112 K"] and rows_i_[0][4] == "6 / 6" \
+                    and rows_i_[3][1:] == ["–", "–", "–", "2", T("epr_iso_short")] and not ti_.isHidden() \
+                    and not ti_.isColumnHidden(5) and "100 K" not in t_e.lbl_info.text(), (rows_i_, t_e.lbl_info.text())
                 mt_ = t_e.methods_text()
                 assert "Isothermal decays" in mt_ and "ln k against 1/T" not in mt_ and "T = 104.0 K: k = " in mt_ \
                     and "Elucida" not in mt_, mt_
@@ -8428,6 +8435,9 @@ def selftest(outdir, with_isnet=False):
                            root_.findChildren(PB31_)):
                     if x_.property("fieldh") and (x_.minimumHeight(), x_.maximumHeight()) != (STYLE.CONTROL_H,) * 2:
                         bad31_.append((where_, "height", type(x_).__name__, x_.minimumHeight(), x_.maximumHeight()))
+                for x_ in root_.findChildren(PB31_):                 # Knopf nur mit Symbol: Symbol mittig (icon(lone=True))
+                    if not x_.text() and not x_.icon().isNull() and x_.icon().cacheKey() not in STYLE._LONE:
+                        bad31_.append((where_, "icon not centred", x_.toolTip() or x_.objectName()))
                 for lb_ in root_.findChildren(LB31_):
                     if lb_.wordWrap() and lb_.maximumWidth() == STYLE.LABEL_W and lb_.text() and "<" not in lb_.text() and \
                             max(lb_.fontMetrics().horizontalAdvance(t_) for t_ in lb_.text().split()) > STYLE.LABEL_W:
@@ -8857,6 +8867,11 @@ def selftest(outdir, with_isnet=False):
             # Zelle eines Tab-Werts überschreiben: markiert, zurücksetzbar
             mat_, n_head_ = tt_.matrix()
             assert n_head_ == 2 and len(mat_) == 4 and len(mat_[0]) == 6, (n_head_, len(mat_), len(mat_[0]))
+            tt_.grid.resize(700, 300)                            # ohne Kopfzeile: trotzdem eingepasst, nichts abgeschnitten
+            tt_.grid.fit()
+            gw_ = [tt_.grid.columnWidth(c_) for c_ in range(tt_.grid.columnCount())]
+            assert all(w_ >= tt_.grid.sizeHintForColumn(c_) for c_, w_ in enumerate(gw_)) \
+                and sum(gw_) >= tt_.grid.viewport().width() - 2, (gw_, tt_.grid.viewport().width())
             it_ = tt_.grid.item(3, 2)                            # S3, Molmasse
             assert it_.data(Qt.UserRole)[0] == "auto"
             key_ = "|".join(it_.data(Qt.UserRole)[1:])

@@ -2041,10 +2041,9 @@ TEXTS = {
                          "Intensität um diesen Anteil unter den ersten Punkt gefallen ist. 100 % = alle Punkte.",
                          "Isothermal decays (against time, Arrhenius): only the points from the start of a series until\n"
                          "the intensity has dropped by this share below the first point. 100 % = all points."),
-    "epr_iso_result": ("{T}: k = {k} s⁻¹ (95 %: {ci}), t½ = {half} min, {n} von {of} Punkten",
-                       "{T}: k = {k} s⁻¹ (95 %: {ci}), t½ = {half} min, {n} of {of} points"),
-    "epr_iso_short": ("{T}: {n} Punkte – kein Fit (mindestens drei nötig).",
-                      "{T}: {n} points – no fit (at least three needed)."),
+    "epr_iso_short": ("kein Fit (mindestens drei Punkte nötig)", "no fit (at least three points needed)"),
+    "epr_col_T": ("Temperatur", "Temperature"),
+    "epr_col_pts": ("Punkte", "Points"),
     "epr_arr_result": ("Arrhenius: E_a = {Ea} kJ mol⁻¹ = {kcal} kcal mol⁻¹ (95 %: {ci}), ln A = {lnA}, "
                        "{n} Temperaturen, R² = {r2}",
                        "Arrhenius: E_a = {Ea} kJ mol⁻¹ = {kcal} kcal mol⁻¹ (95 %: {ci}), ln A = {lnA}, "
