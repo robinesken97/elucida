@@ -240,7 +240,7 @@ class HCellTab(TABS.FigureTab):
 
         g = QGroupBox(T("hcell_results"))
         v = QVBoxLayout(g)
-        self.tbl_res = QTableWidget(0, 6)
+        self.tbl_res = STYLE.FitGrid(0, 6)
         STYLE.empty_note(self.tbl_res, T("hcell_results_none"))
         self.tbl_res.setHorizontalHeaderLabels([T("hcell_meas"), "#", "Q_charge [mAh]", "Q_discharge [mAh]",
                                                 T("hcell_pct_col"), "CE [%]"])
@@ -250,10 +250,9 @@ class HCellTab(TABS.FigureTab):
         self.tbl_res.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_res.setMinimumHeight(140)
         v.addWidget(self.tbl_res)
-        self.lbl_res = STYLE.SciLabel("")
-        self.lbl_res.setWordWrap(True)
-        self.lbl_res.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        v.addWidget(self.lbl_res)
+        self.tbl_sum = STYLE.summary_grid([T("hcell_meas"), "Q_theo [mAh]", T("hcell_col_first"), T("hcell_col_last"),
+                                           T("hcell_col_ret"), T("hcell_col_ce"), T("hcell_col_n"), T("hcell_col_h")])
+        v.addWidget(self.tbl_sum)                        # Zusammenfassung je sichtbarer Messung
         self.lv.addWidget(g)
         self.lv.addWidget(self.caption_box())
 
@@ -376,7 +375,7 @@ class HCellTab(TABS.FigureTab):
             it = QTableWidgetItem(n)
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
-        self.table.resizeColumnToContents(0)
+        STYLE.fit_columns(self.table)
         uids = [e["uid"] for e in es]
         if es:                                            # gewählte Messung: gespeichert, sonst die erste
             self.table.setCurrentCell(uids.index(self.st["current"]) if self.st["current"] in uids else 0, 1)
@@ -645,18 +644,15 @@ class HCellTab(TABS.FigureTab):
             for j, v in enumerate((foc[0]["label"], str(r["cycle"]), f(r["q_ch"], ".3f"), f(r["q_dis"], ".3f"),
                                    f(r["pct_dis"], ".1f"), f(r["ce"], ".1f"))):
                 self.tbl_res.setItem(i, j, QTableWidgetItem(v))
-        lines = []
+        self.tbl_res.fit()
+        srows = []
         for e, _d, _rs, s, q, src in res:
-            head = f"{e['label']}: " if many else ""
-            part = [T("hcell_sum_qtheo", q=f"{q:.3f}", src=T("hcell_src_" + src))] if q else []
-            if s["first"] is not None:
-                part.append(T("hcell_sum_dis", a=s["first"]["cycle"], qa=f"{s['first']['q_dis']:.3f}",
-                              pa=f(s["first"]["pct_dis"], ".1f"), b=s["last"]["cycle"],
-                              qb=f"{s['last']['q_dis']:.3f}", pb=f(s["last"]["pct_dis"], ".1f")))
-            part.append(T("hcell_sum_rest", ret=f(s["retention"], ".1f"), ce=f(s["ce_mean"], ".1f"),
-                          n=s["n"], h=f(s["hours"], ".1f")))
-            lines.append(head + "; ".join(part))
-        self.lbl_res.setText("\n".join(lines))
+            cyc = lambda c: f"{c['q_dis']:.3f} ({f(c['pct_dis'], '.1f')} %, #{c['cycle']})"   # noqa: E731
+            srows.append([e["label"], f"{q:.3f} ({T('hcell_src_' + src)})" if q else "–",
+                          cyc(s["first"]) if s["first"] is not None else "–",
+                          cyc(s["last"]) if s["first"] is not None else "–",
+                          f(s["retention"], ".1f"), f(s["ce_mean"], ".1f"), str(s["n"]), f(s["hours"], ".1f")])
+        STYLE.fill_summary(self.tbl_sum, srows, hidden=() if many else (0,))
 
     def kpis(self):
         foc = self.focus()

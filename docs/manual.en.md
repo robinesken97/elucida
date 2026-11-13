@@ -638,7 +638,8 @@ Absorption and emission in one figure, as commonly shown in papers:
   adjustable (default 0.20 V; compounds created before version 1.1 keep 0.15 V), baselines optionally in the figure. Peak potentials are unchanged. If the window has too
   little current before the peak, this is flagged and the measurement is left out of the regressions.
 - From 3 scan rates per group and couple: regression of **i_p vs. √v** (Randles–Ševčík) and **log i_p vs. log v**
-  (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**.
+  (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**; shown on the Results
+  tab as a second table below the peak data (one row per couple and peak).
 - **Diffusion coefficient** (evaluation step, card "Diffusion Coefficient"): with the number of electrons n, the area
   A of the working electrode, the concentration c and the temperature, the program calculates D from the
   Randles–Ševčík slope of the forward peak (i_p = 0.4463·n·F·A·c·√(n·F·v·D/RT), reversible, freely diffusing couple). Without area or

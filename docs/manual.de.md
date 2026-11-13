@@ -663,7 +663,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Bild. Peakpotentiale bleiben unverändert. Fehlt Vorlauf im Fenster, wird das markiert und die Messung nicht in die
   Regressionen genommen.
 - Ab 3 Scanraten je Gruppe und Paar: Regression **i_p gegen √v** (Randles-Ševčík) und **log i_p gegen log v**
-  (Steigung 0,5 = diffusionskontrolliert, 1 = adsorbiert), jeweils mit **95-%-Konfidenzintervall**.
+  (Steigung 0,5 = diffusionskontrolliert, 1 = adsorbiert), jeweils mit **95-%-Konfidenzintervall**; im Reiter
+  „Ergebnisse“ als zweite Tabelle unter den Peakdaten (eine Zeile je Paar und Peak).
 - **Diffusionskoeffizient** (Schritt Auswertung, Karte „Diffusionskoeffizient“): mit Elektronenzahl n, Fläche A der
   Arbeitselektrode, Konzentration c und Temperatur rechnet das Programm D aus der Randles-Ševčík-Steigung des Hinpeaks
   (i_p = 0,4463·n·F·A·c·√(n·F·v·D/RT), reversibles, frei diffundierendes Paar). Ohne Fläche oder Konzentration gibt es

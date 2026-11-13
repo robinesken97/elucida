@@ -1564,7 +1564,8 @@ def table_view_html(header, rows, title=None, notes=()):
     body = "".join("<tr>" + "".join(f'<td style="{cell}">{to_html(x)}</td>' for x in r) + "</tr>" for r in rows)
     cap = f'<p style="margin:0 0 4px 0"><b>{to_html(title)}</b></p>' if title else ""
     foot = "".join(f'<p style="font-size:small; color:{c["text2"]}">{to_html(n)}</p>' for n in notes)
-    return (f'{cap}<table width="100%" cellspacing="0" style="border-collapse:collapse"><tr>{th}</tr>{body}</table>'
+    # 99 %: bei 100 % ist die Tabelle in Qt 1 px breiter als das Feld (Querrollbalken unter der Vorschau)
+    return (f'{cap}<table width="99%" cellspacing="0" style="border-collapse:collapse"><tr>{th}</tr>{body}</table>'
             f'{foot}')
 
 
@@ -3338,6 +3339,8 @@ class MeasureAlign:
         self.lbl_align = QLabel("")
         self.lbl_align.setWordWrap(True)
         self.lbl_align.setStyleSheet(HINT_CSS)
+        self.lbl_align.hide()                             # leer: keine Zeile (die Karte hatte unten 20 px Luft zu viel)
+        STYLE._watch(self.lbl_align, "setText", lambda: self.lbl_align.setVisible(bool(self.lbl_align.text())))
         f.addRow(self.lbl_align)
         return g
 
@@ -3701,14 +3704,24 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         row.addStretch(1)
         v.addLayout(row)
         row = QHBoxLayout()
-        row.addWidget(QLabel(T("xr_wire_name")))
+        row.setSpacing(STYLE.FORM_GAP)
+        lb = QLabel(T("xr_wire_name"))                    # wie eine Formularzeile: gedämpft, Feld an der Feldkante
+        lb.setProperty("formlabel", True)
+        lb.setFixedWidth(STYLE.LABEL_W)
+        row.addWidget(lb)
         self.ed_wire = QLineEdit()
         self.ed_wire.setPlaceholderText(T("xr_wire_name_ph"))
         self.ed_wire.setToolTip(T("xr_wire_name_tip"))
         self.ed_wire.editingFinished.connect(self.wire_name_changed)
         row.addWidget(self.ed_wire, 1)
         v.addLayout(row)
-        self.lst_par = QListWidget()
+        self.lst_par = QTableWidget(0, 2)                 # Tabelle wie überall (vorher eine schlichte Textliste)
+        self.lst_par.setHorizontalHeaderLabels([T("xr_par_head"), T("xr_par_value")])
+        self.lst_par.verticalHeader().setVisible(False)
+        self.lst_par.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.lst_par.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.lst_par.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.lst_par.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.lst_par.setMaximumHeight(130)
         STYLE.empty_note(self.lst_par, T("xr_par_empty"))  # leere Liste: sagen, was hierher kommt
         v.addWidget(self.lst_par)
@@ -4463,15 +4476,16 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self._loading = False
 
     def fill_params(self):
-        self.lst_par.clear()
+        self.lst_par.setRowCount(0)
         e = self.entry()
         mol = self.molecule(e) if e else None
-        for p in (e or {}).get("params") or []:
+        for r, p in enumerate((e or {}).get("params") or []):
             m = measure(mol, p["atoms"]) if mol else None
             name = param_name(mol, p["atoms"]) if mol else param_label(p["atoms"])
-            txt = f"{name}   {minus(m['text']) if m else '–'}" + ("" if (m is None or m["source"] == "cif")
-                                                                    else "  *")
-            self.lst_par.addItem(txt)
+            self.lst_par.insertRow(r)
+            self.lst_par.setItem(r, 0, QTableWidgetItem(name))
+            self.lst_par.setItem(r, 1, QTableWidgetItem((minus(m["text"]) if m else "–") +
+                                                        ("" if (m is None or m["source"] == "cif") else " *")))
 
     def move_param(self, d):
         e = self.entry()
@@ -4481,7 +4495,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         if 0 <= i < len(ps) and 0 <= j < len(ps):
             ps[i], ps[j] = ps[j], ps[i]
             self.fill_params()
-            self.lst_par.setCurrentRow(j)
+            self.lst_par.selectRow(j)
             self.update_tables()
             self.main.push_undo()
 
@@ -4971,7 +4985,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         html = table_view_html(h, r, "Crystal data and structure refinement")
         h2, r2, notes = self.params_table()
         if len(r2):                                       # beide Tabellen nebeneinander: die Seite ist breit
-            html = ('<table width="100%"><tr><td valign="top" width="50%">' + html + '</td><td width="28"></td>'
+            html = ('<table width="99%"><tr><td valign="top" width="50%">' + html + '</td><td width="28"></td>'
                     '<td valign="top">' + table_view_html(h2, r2, "Selected bond lengths [Å], angles and torsion "
                                                           "angles [°]", notes) + "</td></tr></table>")
         self.txt_tab.setHtml(html)

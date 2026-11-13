@@ -233,6 +233,27 @@ paths:
     Zahlen der zuvor geöffneten Verbindung stehen lassen.
   - `tidy` ruft `guard_fields` ein zweites Mal nach `_chips`: Felder, die erst dort entstehen (OffSpin, OffCombo),
     bekamen sonst weder Einzug noch Mausrad-Schutz (Zahl klebte am linken Rand).
+  - Feste Feldhöhe überlebt das Umhängen nicht von selbst: `QStyleSheetStyle` setzt bei jedem `StyleChange` (Einhängen
+    in ein anderes Elternteil) `min-height` aus dem Stylesheet neu. `field_heights` markiert Felder mit `fieldh`,
+    `_WheelGuard` setzt die Höhe bei `StyleChange` wieder fest (ε-Tab und Vergleich laufen vor dem Einhängen durch
+    `tidy` und waren 28–30 statt 32 px hoch). Seiten ohne `tidy` (Cluster-Karte) rufen `field_heights` selbst.
+  - Messungslisten (Häkchen · Name · Farbe · …): nach dem Füllen `STYLE.fit_columns(table)` – Nebenspalten nach Inhalt
+    mit Luft, freier Platz gleichmäßig auf alle Textspalten, die dehnbare Namensspalte nimmt den Rest (Nutzerwunsch
+    2026-11-13: keine Spalte viel zu breit, keine ohne Platz). Nie `resizeColumnToContents` einzeln.
+  - Auswahl- und Wertelisten in den Spalten sind immer `QTableWidget` mit Kopf (nie `QListWidget`): X-Ray „Ausgewählte
+    Parameter“, „Weitere“ → Abbildungen. Mehrzeilige Textfelder haben per Stylesheet denselben Texteinzug (13 px) wie
+    einzeilige. Eine Zeile, die mit ihrem Modus verschwindet, blendet **alle** ihre Teile aus (auch den „–“ eines Paars).
+  - Einheitliche Tabellen (Nutzerwunsch 2026-11-13, „alle Tabellen im gesamten Programm“): Ergebnistabellen der
+    rechten Seiten sind `STYLE.FitGrid` (`fit()` nach dem Füllen: gleich breite Spalten, solange die breiteste passt;
+    sonst nach Inhalt mit gleichmäßig verteiltem Rest; sonst Bildlaufleiste – nie Leerraum rechts, nie abgeschnitten;
+    Kästchenspalten bleiben fest). Angaben je Reihe/Paar/Messung nie als Textzeilen unter der Tabelle, sondern als
+    zweite Tabelle (`STYLE.summary_grid`/`fill_summary`: CV Scanraten-Analyse, UV-Vis-Kinetik, H-Cell); darunter nur
+    Sätze (Referenz) und Warnungen (rot, eigene Zeile). Tabellen in Textvorschauen über `XRAY.table_view_html` (X-Ray,
+    DFT „Rechnung für die SI“ mit `si_html(view=True)` inkl. Koordinaten); Zwischenablage und Word behalten die
+    SI-Form. Breite 99 % statt 100 % (Qt rechnet sonst 1 px zu viel: Querrollbalken). Verbliebene `QListWidget`
+    bekommen in `tidy` Zeilen wie Tabellen (`_ListDelegate`). Offen: EPR-Zerfälle je Temperatur stehen noch als Text.
+  - Selbsttest „design measures“ prüft je Tab und für die Projektseite: Einzug der Zahlenfelder, feste Feldhöhe,
+    umbrochene Beschriftungen ohne zu breites Wort, Nebenspalten der Messungslisten mit Luft.
   - Die Tab-Leiste liegt in `WEL.NavScroll` (seit 1.1.0, 16 Tabs: sonst 1461 px Mindestbreite, unter Windows 2048 px):
     sie darf schmaler sein als ihr Inhalt, zeigt am abgeschnittenen Rand einen Pfeil, folgt Mausrad/Trackpad und hält den
     gewählten Tab sichtbar (`reveal`). Zeilen der Verbindungsliste melden `ROW_MIN_W`, nie die Breite der Matrix. Der

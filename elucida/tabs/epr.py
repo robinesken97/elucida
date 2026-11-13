@@ -1559,7 +1559,7 @@ class EPRTab(TABS.FigureTab):
                 it = QTableWidgetItem(txt)
                 it.setFlags(it.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(i, j, it)
-        self.table.resizeColumnToContents(0)
+        STYLE.fit_columns(self.table)
         cur = self.st.get("calib_uid")
         self.cmb_calib.blockSignals(True)
         self.cmb_calib.clear()

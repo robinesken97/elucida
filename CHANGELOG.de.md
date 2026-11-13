@@ -73,6 +73,17 @@
   zykelt um dasselbe E½ wie das CV); die README-Bilder zeigen die Tabs mit diesen Daten. Dazu jetzt ein Reaktionspfad
   (vier Spezies mit Übergangszustand) unter Computerchemie und eine CASSCF-/NEVPT2-Rechnung des Produkts für die
   DFT-Seite „Multireferenz“.
+- **CV:** Die Kurven laufen nicht mehr bis an den Rahmen: bei automatischem Bereich bleibt links und rechts ein
+  schmaler Rand (im CV-Tab und im CV-Stapel).
+- **Einheitliche Oberfläche:** Listen von Messungen verteilen ihre Spaltenbreiten nach Inhalt (kein abgeschnittener
+  Name neben einer leeren Spalte, keine Zahl an Zahl); die ausgewählten Parameter im X-Ray-Tab und die Abbildungen unter
+  „Weitere“ sind Tabellen wie überall; mehrzeilige Textfelder rücken ihren Text so weit ein wie einzeilige.
+- **Einheitliche Tabellen:** Ergebnistabellen (UV-Vis, CV, UV-Vis-Kinetik, H-Cell) füllen die Seite ohne Leerraum
+  rechts und schneiden nichts ab. Was bisher als Textzeilen unter der Tabelle stand, ist eine zweite Tabelle: beim CV
+  die Scanraten-Analyse (Steigung, Achsenabschnitt, R², log-log-Steigung, D), bei der Kinetik Verlauf und Zerfall je
+  Reihe, bei der H-Cell die Zusammenfassung je Messung; Referenz und Warnungen stehen getrennt darunter. Die
+  DFT-Vorschau „Rechnung für die SI“ zeigt Konvergenz, Energien und Koordinaten als Tabellen im selben Stil (die
+  kopierte Fassung und der Word-Export bleiben, wie sie waren).
 
 ### Behoben
 Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und Statistik stimmten; diese Punkte nicht):
@@ -115,6 +126,11 @@ Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und
 - **Rundung:** ε, Äquivalente und Ausbeuten runden bei genau 5 an der letzten Stelle kaufmännisch wie λ und Excel.
 - **Excel-Report:** Ein Fehler unter einer halben Einheit zeigt wie in der App „1“, nicht „0“.
 - Die Legende lag bei sehr dichten, verrauschten Kurven über den Kurven; sie rückt jetzt wie vorgesehen neben die Achse.
+- Felder im UV-Vis-Tab und im Vergleich waren 2 bis 4 Pixel niedriger als in den anderen Tabs.
+- CV: Ohne interne Referenz stand in der Karte „Referenzierung“ ein einzelner Strich.
+- Projekt → Angaben: Die Beschriftung „Datensatzbeschreibung“ war abgeschnitten.
+- UV-Vis-Kinetik, HRMS, X-Ray: einzelne Zeilen lagen außerhalb des Rasters (Knopf allein in einer Zeile, schmaleres
+  Feldpaar, Beschriftung in anderer Farbe); die Karte „Ausrichten“ hatte unten einen leeren Streifen.
 
 ## 1.0.0 – 2026-11-11
 

@@ -61,3 +61,5 @@ paths:
   sequentiell (`hm_cmap`), `hm_cmax` 0 = auto. Das Bild liegt genau im Datenbereich [x0, x1] × [0.5, n + 0.5] (MuPDF
   ignoriert Clip-Pfade), linear auf ein gleichmäßiges λ-Raster gebracht (Methodentext nennt es); Hover und CSV nehmen
   die Messwerte. Keine Labels, Legende oder Bilder; das Layout der anderen Ansichten bleibt. Rohsignal heißt „raw signal“.
+- CV-Abbildung und CV-Stapel: bei automatischem E-Bereich bleibt links und rechts `CV.X_PAD` (3 % der Spanne) Rand; die
+  Kurven liefen sonst bis an den Rahmen (Nutzerhinweis 2026-11-13). Ein eingegebener Bereich gilt unverändert.

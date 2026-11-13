@@ -213,7 +213,10 @@ def si_plain(p):
     return "\n".join(out)
 
 
-def si_html(p):
+def si_html(p, view=False):
+    """SI-Block als HTML. `view`: Anzeige in der App mit Tabellen im Stil aller Tabellen (`XRAY.table_view_html`,
+    Nutzerwunsch 2026-11-13: einheitliche Tabellen, die Vorschau muss nicht wie die SI aussehen); ohne `view` die
+    schlichte Form für die Zwischenablage."""
     import html as _h
 
     def table(head, rows, raw_head=False):
@@ -225,12 +228,18 @@ def si_html(p):
     out = [f"<p><b>{_h.escape(p['name'])}</b></p>", "<p>" + "&nbsp;&nbsp;&nbsp;&nbsp;".join(p["fields"][1]) + "</p>"]
     out += [f"<p>{h}</p>" for _, h in p["extra"][:k]]
     if p["conv"]:
-        out.append(table(*p["conv"]))
+        out.append(XRAY.table_view_html(*p["conv"]) if view else table(*p["conv"]))
     out += [f"<p>{h}</p>" for _, h in p["extra"][k:]]
-    out.append("<pre style='font-size:8pt'>" + _h.escape("\n".join(p["coords"])) + "</pre>")
+    xyz = [ln.split() for ln in p["coords"] if ln.strip()]
+    if view and xyz and all(len(r) == 4 for r in xyz):        # Anzeige: Koordinaten als Tabelle wie alle Tabellen
+        out.append(XRAY.table_view_html(["Atom", "*x*", "*y*", "*z*"], xyz))
+    else:
+        # Festbreite wie im Word-Export (Courier New): die Spalten der Koordinaten stehen nur so untereinander
+        out.append("<pre style=\"font-family: 'Courier New', monospace; font-size: 9pt\">" +
+                   _h.escape("\n".join(p["coords"])) + "</pre>")
     if p["energies"]:
-        heads = [XRAY.to_html(h) for h in p["energies"][0]]
-        out.append(table(heads, [p["energies"][2]], raw_head=True))
+        out.append(XRAY.table_view_html(p["energies"][0], [p["energies"][2]]) if view else
+                   table([XRAY.to_html(h) for h in p["energies"][0]], [p["energies"][2]], raw_head=True))
     return "".join(out)
 
 
@@ -1553,7 +1562,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             self.txt_si.setHtml("")
             return
         self.lbl_warn.setText("\n".join(calc_warnings(c)))
-        self.txt_si.setHtml(si_html(self.si_of(e)))
+        self.txt_si.setHtml(si_html(self.si_of(e), view=True))
 
     def si_opts_changed(self, *_):
         if self._loading:

@@ -87,16 +87,14 @@ class UVKinTab(TABS.FigureTab):
         self.rows_data, self.fits, self.notes = [], {}, []
         g = QGroupBox(T("uvkin_spectra"))
         v = QVBoxLayout(g)
-        row, row2 = QHBoxLayout(), QHBoxLayout()               # Hinzufügen / Auswahl: zwei Reihen
+        row = QHBoxLayout()                                    # eine Reihe wie in CV, H-Cell und X-Ray
         for txt, fn in ((T("guide_add"), self.add_files), ("↑", lambda: self.move(-1)), ("↓", lambda: self.move(1)),
                         (T("remove"), self.remove)):
             b = STYLE.list_button(txt)
             b.clicked.connect(fn)
-            (row if txt.endswith("…") else row2).addWidget(b)
+            row.addWidget(b)
         row.addStretch(1)
-        row2.addStretch(1)
         v.addLayout(row)
-        v.addLayout(row2)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("uvkin_series"), T("uvkin_time")])
         self.table.horizontalHeaderItem(2).setToolTip(T("uvkin_series_tip"))
@@ -171,15 +169,13 @@ class UVKinTab(TABS.FigureTab):
         # Ergebnisse (Reiter rechts, arrange): Tabelle je Messpunkt + Zusammenfassung je Reihe
         self.grp_results = QGroupBox(T("tab_results"))
         rv = QVBoxLayout(self.grp_results)
-        self.res_table = QTableWidget(0, 5)
+        self.res_table = STYLE.FitGrid(0, 5)
         self.res_table.verticalHeader().setVisible(False)
         self.res_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         STYLE.empty_note(self.res_table, T("uvkin_results_none"))
         rv.addWidget(self.res_table)
-        self.lbl_summary = STYLE.SciLabel("")
-        self.lbl_summary.setWordWrap(True)
-        self.lbl_summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        rv.addWidget(self.lbl_summary)
+        self.tbl_summary = STYLE.summary_grid(self._sum_heads("s"))   # je Reihe: Verlauf und Zerfall
+        rv.addWidget(self.tbl_summary)
         self.lv.addWidget(self.grp_results)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export (Reiter SI-Text)
 
@@ -330,9 +326,7 @@ class UVKinTab(TABS.FigureTab):
             if s_ is None:
                 it.setToolTip(T("uvkin_missing"))
             self.table.setItem(i, 3, it)
-        self.table.resizeColumnToContents(2)
-        self.table.resizeColumnToContents(3)
-        STYLE.check_columns(self.table)
+        STYLE.fit_columns(self.table)
         # so hoch wie die Zeilen (3 bis 8, darüber scrollen): nie eine halb sichtbare Zeile
         self.table.setFixedHeight(self.table.horizontalHeader().sizeHint().height()
                                   + max(3, min(len(es), 8)) * STYLE.CHECK_ROW_H + 2)
@@ -554,6 +548,12 @@ class UVKinTab(TABS.FigureTab):
                           "half": np.log(2) / (f["k"] * u) if f["k"] > 0 else None, "n": f["n"]}
         return out
 
+    @staticmethod
+    def _sum_heads(unit):
+        return [T("uvkin_series"), T("uvkin_col_a0"), T("uvkin_col_a1"), T("uvkin_col_rest"),
+                f"{T('uvkin_col_dur')} [{unit}]", T("uvkin_col_n"), f"k [{unit}⁻¹]", T("uvkin_col_ci"), f"t½ [{unit}]",
+                T("col_warn")]
+
     def show_results(self):
         """Ergebnisseite: Messpunkte je Reihe (Reihe, Name, t, A, relativ) und Zusammenfassung je Reihe."""
         if not hasattr(self, "res_table"):
@@ -568,24 +568,28 @@ class UVKinTab(TABS.FigureTab):
         for i, (n, lab, t, a, r) in enumerate(rows):
             for j, txt in enumerate((n, lab, fmt_t(t), f"{a:.3f}" if np.isfinite(a) else "–", fmt_pct(r))):
                 self.res_table.setItem(i, j, QTableWidgetItem(txt))
-        lines = []
+        self.res_table.fit()
+        srows, notes = [], False
         for n in data:
             s = self.series_summary(n)
             if s is None:
-                lines.append(T("uvkin_sum_none", s=n))
+                srows.append([n] + ["–"] * 8 + [T("uvkin_sum_none")])
+                notes = True
                 continue
-            txt = T("uvkin_sum", s=n, a0=f"{s['A0']:.3f}", a1=f"{s['A1']:.3f}", rest=fmt_pct(s["rest"]),
-                    dur=fmt_t(s["dur"]), u=unit, n=s["n"])
-            f = s["fit"]
-            if f is not None:
-                ci = f"{f['ci'][0]:.3g} … {f['ci'][1]:.3g}" if f["ci"] else "–"
-                txt += "; " + T("uvkin_sum_fit", k=f"{f['k']:.3g}", ci=ci, u=unit)
-                txt += "; " + (T("uvkin_sum_half", h=f"{f['half']:.3g}", u=unit) if f["half"] is not None
-                               else T("uvkin_sum_rise"))
-            elif self.st["fit"]:
-                txt += "; " + T("uvkin_sum_nofit")
-            lines.append(txt)
-        self.lbl_summary.setText("\n".join(lines))
+            f, note = s["fit"], ""
+            if f is None and self.st["fit"]:
+                note = T("uvkin_sum_nofit")
+            elif f is not None and f["half"] is None:
+                note = T("uvkin_sum_rise")
+            notes = notes or bool(note)
+            srows.append([n, f"{s['A0']:.3f}", f"{s['A1']:.3f}", fmt_pct(s["rest"]), fmt_t(s["dur"]), str(s["n"]),
+                          f"{f['k']:.3g}" if f else "–",
+                          f"{f['ci'][0]:.3g} … {f['ci'][1]:.3g}" if f and f["ci"] else "–",
+                          f"{f['half']:.3g}" if f and f["half"] is not None else "–", note])
+        self.tbl_summary.setHorizontalHeaderLabels(self._sum_heads(unit))
+        STYLE.rich_header(self.tbl_summary)
+        fitted = any(r[6] != "–" for r in srows)
+        STYLE.fill_summary(self.tbl_summary, srows, hidden=(() if fitted else (6, 7, 8)) + (() if notes else (9,)))
 
     def kpis(self):
         data = self.rows_data or {}

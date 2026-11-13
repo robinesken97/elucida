@@ -298,6 +298,7 @@ class ClusterPage(QWidget):
         body.addWidget(detail)
         pv.addLayout(body, 1)
         v.addWidget(panel)                             # so hoch wie der Inhalt
+        STYLE.field_heights(panel, buttons=False)      # Felder 32 px wie überall (waren 28)
         self.status = STYLE.HintLabel("")
         self.status.setWordWrap(True)
         self.status.setAlignment(Qt.AlignCenter)

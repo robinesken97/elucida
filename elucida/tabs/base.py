@@ -2520,7 +2520,7 @@ class OverlayTab(FigureTab):
                                    "esd": "ESD"}.get(e["kind"], "TD-DFT"))
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
-        self.table.resizeColumnToContents(0)
+        STYLE.fit_columns(self.table)
         self._loading = False
         self.update_combine()                             # Liste neu aufgebaut: Knopfzustand nachziehen
 

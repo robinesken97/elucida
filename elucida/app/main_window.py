@@ -786,7 +786,7 @@ class MainWindow(QMainWindow):
         self.tabs = TABS.result_tabs()                # wie die anderen Tabs: Abbildung | Ergebnisse | SI-Zeile
         # Kästchen (Bande im Bild) in eigener Spalte 0 ohne Text; λ steht in Spalte 7, die gleich dahinter angezeigt wird
         # (n, ε, b, R², Cutoff, Hinweise behalten ihre Nummern 1–6)
-        self.table = QTableWidget(0, 8)
+        self.table = STYLE.FitGrid(0, 8)              # über die ganze Seite wie alle Ergebnistabellen
         self.table.setHorizontalHeaderLabels(["", T("col_n"), T("col_coeff"), T("col_intercept"), T("col_r2"),
                                               T("col_cut"), T("col_warn"), T("col_lam")])
         hh_ = self.table.horizontalHeader()
@@ -4161,6 +4161,7 @@ class MainWindow(QMainWindow):
                 self.table.setItem(i, j or 7, it)            # λ (j = 0) steht in Spalte 7
             self._row_keys.append(int(round(r["lam_requested"])))
         self.table.blockSignals(False)
+        self.table.fit()
 
     def cutoff_edited(self, item):
         """Cutoff pro Bande aus der Ergebnistabelle (leer = globaler Cutoff); Häkchen in Spalte 0

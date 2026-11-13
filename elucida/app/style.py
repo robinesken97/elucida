@@ -16,7 +16,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
                                QHeaderView,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyle,
-                               QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QVBoxLayout, QWidget)
+                               QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QTableWidget, QVBoxLayout, QWidget)
 
 def _number_locale():
     """Dezimalpunkt in allen Zahlenfeldern (wissenschaftliche Konvention, Nutzerwunsch), ohne Tausendertrennzeichen –
@@ -289,6 +289,14 @@ class _CellDelegate(QStyledItemDelegate):
 
 
 CHECK_ROW_H = 30
+
+
+class _ListDelegate(_CellDelegate):
+    """Zeilen einer Liste wie Tabellenzeilen."""
+
+    def sizeHint(self, option, index):
+        return QSize(super().sizeHint(option, index).width(), CHECK_ROW_H)
+
 CHECK_COL_W = 44          # Spalte nur für das Kästchen: genug Fläche zum Treffen, überall gleich
 
 
@@ -302,6 +310,97 @@ def check_columns(table):
         if it is not None and not it.text():
             hh.setSectionResizeMode(i, QHeaderView.Fixed)
             hh.resizeSection(i, CHECK_COL_W)
+
+
+def fit_columns(table):
+    """Spalten nach Inhalt (Kopf und Zellen, mit Luft); freier Platz verteilt sich gleichmäßig auf alle Textspalten, die
+    dehnbare Spalte nimmt den Rest. Vorher blieben die Nebenspalten bei Qts 100 px bzw. ohne Luft: der Name war
+    abgeschnitten, während „T [K]“ leer stand, oder Zahl stand an Zahl neben einer halb leeren Namensspalte
+    (Nutzerwunsch 2026-11-13: keine Spalte viel zu breit, keine ohne Platz)."""
+    from PySide6.QtWidgets import QHeaderView
+    hh = table.horizontalHeader()
+    need, fixed = {}, 0
+    for c in range(table.columnCount()):
+        head = table.horizontalHeaderItem(c)
+        if table.isColumnHidden(c):
+            continue
+        if head is None or not head.text():                   # Kästchenspalten: check_columns
+            fixed += CHECK_COL_W
+            continue
+        w = hh.fontMetrics().horizontalAdvance(head.text())
+        for r in range(table.rowCount()):
+            cell, it = table.cellWidget(r, c), table.item(r, c)
+            if cell is not None:
+                w = max(w, cell.sizeHint().width() - 2 * _CellDelegate.PAD, 76)   # Farbfeld: 76 px wie bisher
+            elif it is not None:
+                w = max(w, table.fontMetrics().horizontalAdvance(it.text()))
+        need[c] = max(56, w + 2 * _CellDelegate.PAD)
+    avail = table.viewport().width() if table.isVisible() else INNER_W - 2     # linke Spalte: Karteninhalt ohne Rahmen
+    extra = max(0, min(40, (avail - fixed - sum(need.values())) // max(1, len(need))))
+    for c, w in need.items():
+        if hh.sectionResizeMode(c) != QHeaderView.Stretch:
+            hh.resizeSection(c, w + extra)
+    check_columns(table)
+
+
+class FitGrid(QTableWidget):
+    """Ergebnistabelle über die ganze Seite, nie abgeschnitten: gleich breite Spalten, solange die breiteste hineinpasst;
+    sonst Breiten nach Inhalt, der freie Platz gleichmäßig verteilt; passt auch das nicht, nach Inhalt mit
+    Bildlaufleiste."""
+
+    def fit(self):
+        hh = self.horizontalHeader()
+        head = lambda i: self.horizontalHeaderItem(i).text() if self.horizontalHeaderItem(i) else ""   # noqa: E731
+        shown = [i for i in range(self.columnCount()) if not self.isColumnHidden(i)]
+        cols = [i for i in shown if head(i)]                  # Kästchenspalten (ohne Kopf) behalten ihre feste Breite
+        if not cols:
+            return hh.setSectionResizeMode(QHeaderView.Interactive)
+        need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}   # gilt auch unsichtbar
+        width, total = self.viewport().width() - CHECK_COL_W * (len(shown) - len(cols)), sum(need.values())
+        if max(need.values()) * len(cols) <= width:
+            hh.setSectionResizeMode(QHeaderView.Stretch)
+        elif total <= width:
+            hh.setSectionResizeMode(QHeaderView.Fixed)
+            extra, rest = divmod(width - total, len(cols))
+            for k, i in enumerate(cols):
+                hh.resizeSection(i, need[i] + extra + (k < rest))
+        else:
+            hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+        if len(cols) < len(shown):
+            check_columns(self)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self.fit()
+
+
+def summary_grid(headers, rich=()):
+    """Zweite Tabelle einer Ergebnisseite (Zusammenfassung je Reihe/Paar/Messung) im Stil aller Tabellen: so hoch wie
+    ihre Zeilen, ohne Zeilen unsichtbar. Vorher standen diese Angaben als Textzeilen unter der Tabelle (Nutzerwunsch
+    2026-11-13: alles Tabellarische als einheitliche Tabelle). `rich`: Spalten mit Formelzeichen (i_pa, 10^-5)."""
+    from PySide6.QtWidgets import QAbstractItemView
+    t = FitGrid(0, len(headers))
+    t.setHorizontalHeaderLabels(list(headers))
+    for c in rich:
+        t.setItemDelegateForColumn(c, RichDelegate(t, sci))
+    t.verticalHeader().setVisible(False)
+    t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    t.hide()
+    return t
+
+
+def fill_summary(t, rows, hidden=()):
+    """Zeilen (Listen von Texten) setzen; `hidden`: Spalten, die diesmal entfallen."""
+    from PySide6.QtWidgets import QTableWidgetItem
+    t.setRowCount(len(rows))
+    for i, row in enumerate(rows):
+        for j, v in enumerate(row):
+            t.setItem(i, j, QTableWidgetItem(v))
+    for c in range(t.columnCount()):
+        t.setColumnHidden(c, c in hidden)
+    t.setFixedHeight(t.horizontalHeader().sizeHint().height() + len(rows) * CHECK_ROW_H + 2)
+    t.setVisible(bool(rows))
+    t.fit()
 
 
 def center_corner(tabs):
@@ -1040,6 +1139,21 @@ def _field_edge(root):
             _strip_stretch(lay)
             fill[0].setMinimumWidth(0)
             fill[0].setFixedWidth(W - others)
+
+
+def field_heights(root, buttons=True):
+    """Alle Felder (und Knöpfe) CONTROL_H hoch (Nutzerwunsch); auch für Seiten ohne tidy (Cluster-Karte)."""
+    from PySide6.QtWidgets import QLineEdit
+    guard = getattr(QApplication.instance(), "_wheel_guard", None) if elucida.octet_enabled() else None   # wie guard_fields
+    for x in root.findChildren(QAbstractSpinBox) + root.findChildren(QComboBox) + root.findChildren(QLineEdit) + \
+            (root.findChildren(QPushButton) if buttons else []):
+        if not isinstance(x.parentWidget(), (QAbstractSpinBox, QComboBox)) and not x.property("cellcss") and \
+                x.objectName() != "segBtn" and \
+                x.parentWidget().objectName() != "bottomBar":   # Fußleiste, Schrittleiste: eigene Höhe (Stylesheet)
+            x.setFixedHeight(CONTROL_H)
+            x.setProperty("fieldh", True)                     # Umhängen setzt die Mindesthöhe zurück: _WheelGuard hält sie
+            if guard is not None:
+                x.installEventFilter(guard)
 
 
 def guard_fields(root):
@@ -2050,14 +2164,11 @@ def tidy(root):
                         lay.setContentsMargins(indent, 0, 0, 0)
     _field_edge(root)
     _check_edge(root)
-    from PySide6.QtWidgets import QLineEdit as _LE
-    for x in root.findChildren(QAbstractSpinBox) + root.findChildren(QComboBox) + root.findChildren(_LE) + \
-            root.findChildren(QPushButton):                   # alle Felder und Knöpfe gleich hoch (Nutzerwunsch)
-        if not isinstance(x.parentWidget(), (QAbstractSpinBox, QComboBox)) and not x.property("cellcss") and \
-                x.objectName() != "segBtn" and \
-                x.parentWidget().objectName() != "bottomBar":   # Fußleiste, Schrittleiste: eigene Höhe (Stylesheet)
-            x.setFixedHeight(CONTROL_H)
-    from PySide6.QtWidgets import QTableWidget
+    field_heights(root)
+    from PySide6.QtWidgets import QListWidget
+    for lst in root.findChildren(QListWidget):               # verbliebene Listen (DFT: IRC, NICS-Dateien): Zeilen wie in
+        if not isinstance(lst.itemDelegate(), _CellDelegate):   # den Tabellen (Höhe, Linie, mittig)
+            lst.setItemDelegate(_ListDelegate(lst))
     for t in root.findChildren(QTableWidget):                # Zellen und Kästchen mittig (alle Tabellen)
         if not isinstance(t.itemDelegate(), _CellDelegate):
             t.setItemDelegate(_CellDelegate(t))
@@ -2123,7 +2234,9 @@ class _WheelGuard(QObject):
 
     def eventFilter(self, obj, ev):
         t = ev.type()
-        if t == QEvent.Polish and isinstance(obj, (QAbstractSpinBox, QComboBox)):
+        if t == QEvent.StyleChange and obj.property("fieldh"):  # tidy vor dem Einhängen (ε-Tab, Vergleich): das Stylesheet
+            obj.setFixedHeight(CONTROL_H)                       # setzt beim Umhängen min-height neu, Felder wurden 28–30 px
+        elif t == QEvent.Polish and isinstance(obj, (QAbstractSpinBox, QComboBox)):
             obj.setFocusPolicy(Qt.StrongFocus)                  # Mausrad gibt keinen Fokus (Qt-Standard: doch)
             if isinstance(obj, QAbstractSpinBox):               # linksbündig wie Text- und Auswahlfelder (Nutzerwunsch)
                 obj.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -2475,6 +2588,8 @@ QTableWidget, QTableView, QListWidget, QTreeWidget, QPlainTextEdit, QTextEdit {{
     selection-background-color: {c['accent']}; selection-color: {c['on_accent']}; }}
 QHeaderView::section {{ background: {c['card']}; color: {c['text2']}; border: none;
     border-bottom: 1px solid {c['border']}; padding: 4px 6px; }}        /* kein Gitter, auch nicht im Kopf */
+QTableCornerButton::section {{ background: {c['card']}; border: none; border-bottom: 1px solid {c['border']}; }}
+QPlainTextEdit, QTextEdit {{ padding: 2px 8px; }}             /* Text 13 px vom Rand wie in den einzeiligen Feldern */
 QGroupBox {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 12px;
     margin-top: 0; padding: 2.1em 4px 4px 4px; }}
 QGroupBox::title {{ subcontrol-origin: padding; subcontrol-position: top left; left: 12px; top: 9px;
@@ -2487,6 +2602,7 @@ QCheckBox::indicator:checked, QAbstractItemView::indicator:checked, QGroupBox::i
     background: {c['accent']}; border-color: {c['accent']}; image: url("{a['check']}"); }}
 QCheckBox::indicator:indeterminate, QAbstractItemView::indicator:indeterminate {{
     background: {c['accent']}; border-color: {c['accent']}; image: url("{a['dash']}"); }}
+QAbstractItemView::indicator:checked:selected {{ border-color: {c['on_accent']}; }}   /* sonst Blau auf Blau: nur der Haken */
 QCheckBox::indicator:disabled, QAbstractItemView::indicator:disabled {{ background: {c['alt']};
     border-color: {c['border_strong']}; }}
 QCheckBox::indicator:checked:disabled, QAbstractItemView::indicator:checked:disabled {{

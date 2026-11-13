@@ -10,8 +10,8 @@ import uuid
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLineEdit, QListWidget, QPushButton,
-                               QVBoxLayout)
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QLineEdit,
+                               QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from elucida.app import project as PRJ, style as STYLE
 from elucida.app.i18n import T
@@ -105,9 +105,15 @@ class OtherTab(TABS.FigureTab):
     def build_controls(self):
         g = QGroupBox(T("other_group"))
         v = QVBoxLayout(g)
-        self.lst = QListWidget()
+        self.lst = QTableWidget(0, 2)                       # Tabelle wie überall (vorher eine schlichte Textliste)
+        self.lst.setHorizontalHeaderLabels([T("nmr_file"), T("other_cap")])
+        self.lst.verticalHeader().setVisible(False)
+        self.lst.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.lst.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.lst.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.lst.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.lst.setMinimumHeight(120)
-        self.lst.currentRowChanged.connect(self.entry_selected)
+        self.lst.currentCellChanged.connect(lambda row, *_: self.entry_selected(row))
         v.addWidget(self.lst)
         TABS.RowDrag(self.lst, self.move_row)
         STYLE.hide_when_empty(self.lst)
@@ -209,12 +215,15 @@ class OtherTab(TABS.FigureTab):
     def sync_widgets(self):
         self._loading = True
         es, e = self.entries(), self.entry()
-        self.lst.clear()
-        self.lst.addItems([Path(x["file"]).name + (f" – {x['caption'][:40]}" if x.get("caption") else "") for x in es])
+        self.lst.setRowCount(len(es))
+        for r, x in enumerate(es):
+            self.lst.setItem(r, 0, QTableWidgetItem(Path(x["file"]).name))
+            self.lst.setItem(r, 1, QTableWidgetItem(x.get("caption", "")))
         if e is not None:
-            self.lst.setCurrentRow(es.index(e))
+            self.lst.selectRow(es.index(e))
         self.det.setEnabled(e is not None)
         self.ed_cap.setText((e or {}).get("caption", ""))
+        self.ed_cap.setCursorPosition(0)                  # langer Text: Anfang zeigen, nicht das Ende
         self.cmb_chap.setCurrentIndex(max(0, self.cmb_chap.findData((e or {}).get("chapter", "new"))))
         self.ed_head.setText((e or {}).get("heading", ""))
         self.ed_head.setEnabled(e is not None and e.get("chapter") == "new")

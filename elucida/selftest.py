@@ -1246,7 +1246,7 @@ def selftest(outdir, with_isnet=False):
             assert st_cv["bl_gap"] == CVMOD.BL_GAP == 0.20 and CVMOD.BL_GAP_MIN == 0.15
             sh_ = [r_ for r_ in t_cv.results if r_.get("bl_short")]
             assert all(r_["bl"] is not None and not r_["bl_fail"] for r_ in sh_)
-            assert (T("cv_bl_short", n=len(sh_), gap="0.15") in t_cv.lbl_res.text()) == bool(sh_), t_cv.lbl_res.text()
+            assert (T("cv_bl_short", n=len(sh_), gap="0.15") in t_cv.lbl_warn.text()) == bool(sh_), t_cv.lbl_warn.text()
             t_cv.render()
             assert len(t_cv.hover.curves) == len(curves_) - len(aux_), (len(t_cv.hover.curves), len(curves_))
             st_cv["show_bl"] = False
@@ -1276,22 +1276,26 @@ def selftest(outdir, with_isnet=False):
                 if plot_ == "loglog":
                     fits_ = t_cv.rate_fits()
                     assert list(fits_) == [("A", 1)] and abs(fits_[("A", 1)]["ll_a"]["slope"] - 0.5) < 0.05, fits_
-                    assert "log-log" in t_cv.lbl_res.text() or "log–log" in t_cv.lbl_res.text(), t_cv.lbl_res.text()
+                    tf_ = t_cv.tbl_fit                          # Scanraten-Analyse als Tabelle: i_pa und i_pc je Paar
+                    d_cells_ = lambda: [tf_.item(r_, 7).text() for r_ in range(tf_.rowCount())]   # noqa: E731
+                    assert tf_.rowCount() == 2 and [tf_.item(r_, 1).text() for r_ in range(2)] == ["i_pa", "i_pc"]
+                    assert all(" ± " in tf_.item(r_, c_).text() for r_ in range(2) for c_ in (3, 4, 6)) and not tf_.isHidden()
                     # Diffusionskoeffizient aus der Randles-Sevcik-Steigung: erst mit Flaeche und Konzentration
                     m_ = 0.4463 * 96485.33212 * 0.0707 * 1e-6 * np.sqrt(96485.33212 * 1e-5 / (8.314462618 * 298.15))
                     assert abs(CVMOD.diffusion_coefficient(m_, 1, 0.0707, 1.0, 25.0) / 1e-5 - 1) < 1e-9
                     assert CVMOD.diffusion_coefficient(m_, 1, 0.0, 1.0) is None and CVMOD.diffusion_coefficient(m_, 1, 0.07, 0.0) is None
-                    assert "D = " not in t_cv.lbl_res.text() and "Diffusion coefficients" not in t_cv.methods_text()
+                    assert tf_.isColumnHidden(7) and not any(d_cells_()) and "Diffusion coefficients" not in t_cv.methods_text()
                     st_cv.update(rs_area=0.0707, rs_conc=1.0, rs_n=1, rs_temp=25.0)
                     t_cv.render()
                     D_ = t_cv.diffusion(fits_[("A", 1)])          # nur aus dem Hinpeak, nie aus dem Rueckpeak
                     fw_ = fits_[("A", 1)]["fwd"]
                     assert D_ and D_[1] < D_[0] < D_[2] and D_[3] == fw_ and fw_ in ("a", "c"), (D_, fw_)
                     assert abs(D_[0] / CVMOD.diffusion_coefficient(fits_[("A", 1)]["rs_" + fw_]["slope"] * 1e-6, 1, 0.0707, 1.0) - 1) < 1e-12
-                    assert t_cv.lbl_res.text().count("D = ") == 1, t_cv.lbl_res.text()
+                    assert sum(bool(x_) for x_ in d_cells_()) == 1 and not tf_.isColumnHidden(7), d_cells_()
+                    assert d_cells_()[("a", "c").index(fw_)].startswith(f"{D_[0]:.2e}".split("e")[0] + " ("), d_cells_()
                     mt_ = t_cv.methods_text()
-                    assert "D = " in t_cv.lbl_res.text() and "Diffusion coefficients" in mt_ and "A = 0.0707 cm2" in mt_ \
-                        and f"cm2 s-1 from ip{fw_}" in mt_ and "forward peak" in mt_, (t_cv.lbl_res.text(), mt_)
+                    assert "Diffusion coefficients" in mt_ and "A = 0.0707 cm2" in mt_ \
+                        and f"cm2 s-1 from ip{fw_}" in mt_ and "forward peak" in mt_, mt_
                     st_cv.update(rs_area=0.0, rs_conc=0.0)
                     t_cv.render()
             st_cv.update(plot="cv", arrow=True)                  # Messrichtung: ziehbar, Position bleibt gespeichert
@@ -8410,7 +8414,25 @@ def selftest(outdir, with_isnet=False):
             from PySide6.QtWidgets import QFormLayout as FL31_, QLabel as LB31_, QPushButton as PB31_
             w.open_project(out / "demo_pub_items" / "S3", recent=False)
             pump(0.4)
+            from PySide6.QtWidgets import QComboBox as CB31_, QHeaderView, QLineEdit as LE31_, QTableWidget, QTableWidgetItem
             bad31_ = []
+
+            def lint31_(root_, where_):
+                # Einzug der Zahlenfelder wie in Text- und Auswahlfeldern; feste Feldhöhe bleibt auch nach dem Umhängen
+                # (das Stylesheet setzt min-height neu: ε-Tab und Vergleich hatten 28–30 statt 32 px); umbrochene
+                # Beschriftungen ohne Wort, das breiter als die Spalte ist („Datensatzbeschreibung“ war abgeschnitten)
+                for x_ in root_.findChildren(QAbstractSpinBox):
+                    if x_.lineEdit().textMargins().left() != 11:
+                        bad31_.append((where_, "indent", type(x_).__name__, x_.text()))
+                for x_ in (root_.findChildren(QAbstractSpinBox) + root_.findChildren(CB31_) + root_.findChildren(LE31_) +
+                           root_.findChildren(PB31_)):
+                    if x_.property("fieldh") and (x_.minimumHeight(), x_.maximumHeight()) != (STYLE.CONTROL_H,) * 2:
+                        bad31_.append((where_, "height", type(x_).__name__, x_.minimumHeight(), x_.maximumHeight()))
+                for lb_ in root_.findChildren(LB31_):
+                    if lb_.wordWrap() and lb_.maximumWidth() == STYLE.LABEL_W and lb_.text() and "<" not in lb_.text() and \
+                            max(lb_.fontMetrics().horizontalAdvance(t_) for t_ in lb_.text().split()) > STYLE.LABEL_W:
+                        bad31_.append((where_, "word", lb_.text()))
+
             for i_, k_ in enumerate(w._tab_keys):
                 w.main_tabs.setCurrentIndex(i_)
                 pump(0.1)
@@ -8432,9 +8454,43 @@ def selftest(outdir, with_isnet=False):
                 acc_ = [b_.text() for b_ in page_.findChildren(PB31_) if b_.property("accent") and b_.isVisible()]
                 if len(acc_) + bool(w.toolbar.widgetForAction(w.act_si).property("accent")) > 1:
                     bad31_.append((k_, "accent", acc_))               # ein Hauptknopf je Ansicht
+                lint31_(page_, k_)
+                t31_ = getattr(page_, "table", None)                  # Messungslisten: Nebenspalten nie ohne Luft
+                if isinstance(t31_, QTableWidget):
+                    hh_ = t31_.horizontalHeader()
+                    for c_ in range(t31_.columnCount()):
+                        if hh_.sectionResizeMode(c_) == QHeaderView.Stretch or not t31_.horizontalHeaderItem(c_).text():
+                            continue
+                        for r_ in range(t31_.rowCount()):
+                            it_ = t31_.item(r_, c_)
+                            if it_ is not None and t31_.fontMetrics().horizontalAdvance(it_.text()) + 24 > t31_.columnWidth(c_):
+                                bad31_.append((k_, "column", it_.text(), t31_.columnWidth(c_)))
             assert not bad31_, bad31_
+            # Projektseite (Angaben, Cluster) nach denselben Regeln; Tabellenspalten: freier Platz gleichmäßig verteilt
+            w.open_publication(out / "demo_pub_items")
+            pump(0.3)
+            lint31_(w.pub_page.info_page, "info")
+            lint31_(w.pub_page.cluster_page, "cluster")
+            assert not bad31_, bad31_
+            assert any(x_.property("fieldh") for x_ in w.pub_page.cluster_page.findChildren(LE31_))
+            tb31_ = QTableWidget(2, 4)
+            tb31_.setHorizontalHeaderLabels(["", "Name", "Series", "Recorded"])
+            tb31_.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            for r_, row_ in enumerate((("a", "20 uM", "2026-03-02 10:15"), ("a longer name", "10 uM", "2026-03-02 10:18"))):
+                for c_, t_ in enumerate(row_, 1):
+                    tb31_.setItem(r_, c_, QTableWidgetItem(t_))
+            STYLE.fit_columns(tb31_)
+            fm_ = tb31_.fontMetrics()
+            need31_ = [fm_.horizontalAdvance(t_) + 24 for t_ in ("a longer name", "20 uM", "2026-03-02 10:15")]
+            got31_ = [tb31_.columnWidth(c_) for c_ in (2, 3)]
+            spare31_ = STYLE.INNER_W - 2 - STYLE.CHECK_COL_W - max(56, need31_[0]) - sum(max(56, n_) for n_ in need31_[1:])
+            assert tb31_.columnWidth(0) == STYLE.CHECK_COL_W and spare31_ > 0, spare31_
+            assert got31_ == [max(56, n_) + min(40, spare31_ // 3) for n_ in need31_[1:]], (got31_, need31_, spare31_)
+            w.open_project(out / "demo_pub_items" / "S3", recent=False)
+            pump(0.4)
             assert STYLE.TOOLBAR_H == 52 and STYLE.BAR_H == 34 and STYLE.CONTROL_H == 32 and STYLE.LABEL_W == 128
-            report.append("design measures (label column, bar buttons, one main button per tab): OK")
+            report.append("design measures (label column, bar buttons, one main button per tab, text inset, field height "
+                          "kept after re-parenting, table columns): OK")
         with section:                                        # Listen mit der Maus umsortieren (Ziehen einer Zeile)
             from PySide6.QtCore import QPointF
             from PySide6.QtGui import QDropEvent

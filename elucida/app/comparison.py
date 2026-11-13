@@ -747,22 +747,7 @@ class GroupRule(STYLE.RichDelegate):
             painter.restore()
 
 
-class _FitGrid(QTableWidget):
-    """Vorschau der Tabelle: Spalten gleich breit über die ganze Seite, solange alles hineinpasst; sonst nach Inhalt mit
-    Bildlaufleiste (nie abgeschnittene Zellen)."""
-
-    def fit(self):
-        hh = self.horizontalHeader()
-        if not self.columnCount():
-            return hh.setSectionResizeMode(QHeaderView.Interactive)
-        hh.setSectionResizeMode(QHeaderView.ResizeToContents)
-        need = sum(hh.sectionSize(i) for i in range(self.columnCount()))
-        fits = need <= self.viewport().width()
-        hh.setSectionResizeMode(QHeaderView.Stretch if fits else QHeaderView.ResizeToContents)
-
-    def resizeEvent(self, ev):
-        super().resizeEvent(ev)
-        self.fit()
+_FitGrid = STYLE.FitGrid
 
 
 class CompareHost(QMainWindow):
@@ -1209,7 +1194,8 @@ class CVStackTab(CompareTab):
             off = (n - 1 - k) * st["stack_gap"] * span
             curves.append({"x": x, "y": y + off, "val": y, "color": m["color"], "label": rec["name"], "lw": 1.3,
                            "_off": off})
-        cfg["xlim"] = [float(min(np.nanmin(d[3]) for d in data)), float(max(np.nanmax(d[3]) for d in data))]
+        lo, hi = float(min(np.nanmin(d[3]) for d in data)), float(max(np.nanmax(d[3]) for d in data))
+        cfg["xlim"] = [lo - CV.X_PAD * ((hi - lo) or 1.0), hi + CV.X_PAD * ((hi - lo) or 1.0)]   # Rand wie im CV-Tab
         if not st["x_auto"]:
             cfg["xlim"] = [st["x_min"], st["x_max"]]
         w = st["struct_w"] / 100
@@ -1676,6 +1662,7 @@ class TableTab(CompareTab):
         self.form_member.addRow(T("cmp_xr_struct"), self.cmb_xr)
         self.form_member.addRow(T("cmp_dft_calc"), self.cmb_dft)
         for w in (self.cmb_xr, self.cmb_dft):
+            w.setPlaceholderText("–")                           # Verbindung ohne Struktur/Rechnung: Strich statt leerem Feld
             w.currentIndexChanged.connect(self.member_detail_changed)
         self.lv.addWidget(self.box_member)
         # Größen (Spalten der Tabelle, gedreht ihre Zeilen): Knopfzeile – Tabelle – Felder der gewählten Größe

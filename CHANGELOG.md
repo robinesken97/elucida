@@ -70,6 +70,17 @@
   the CV); the README screenshots show the tabs with these data. The project now also contains a reaction path
   (four species with a transition state) under Computational Chemistry and a CASSCF/NEVPT2 calculation of the product
   for the DFT page "Multireference".
+- **CV:** curves no longer run into the frame: with an automatic range a narrow margin stays left and right (CV tab
+  and CV stack).
+- **Consistent interface:** lists of measurements size their columns by content (no clipped name next to an empty
+  column, no number touching the next); the selected parameters in X-Ray and the figures in "Other" are tables like
+  everywhere else; multi-line text fields indent their text like single-line fields.
+- **Uniform tables:** result tables (UV-Vis, CV, UV-Vis kinetics, H-Cell) fill the page without empty space on the
+  right and never clip. What used to be lines of text below the table is a second table: the scan-rate analysis in CV
+  (slope, intercept, R², log–log slope, D), course and decay per series in the kinetics tab, the summary per
+  measurement in H-Cell; reference and warnings stand separately below. The DFT preview "Calculation for the SI" shows
+  convergence, energies and coordinates as tables in the same style (the copied text and the Word export are
+  unchanged).
 
 ### Fixed
 From a check of all calculations against the literature (formulas, constants and statistics were correct; these points
@@ -112,6 +123,11 @@ were not):
 - **Rounding:** ε, equivalents and yields round half up at an exact 5 in the last place, like λ and Excel.
 - **Excel report:** an error below half a unit shows "1" as in the app, not "0".
 - With very dense, noisy curves the legend was placed on top of the curves; it now moves beside the axis as intended.
+- Fields in the UV-Vis tab and in comparisons were 2 to 4 pixels lower than in the other tabs.
+- CV: without an internal reference the card "Referencing" showed a lone dash.
+- Project → Details: the German label of the dataset description was cut off.
+- UV-Vis kinetics, HRMS, X-Ray: single rows were off the grid (a button alone in a row, a narrower pair of fields, a
+  label in a different colour); the card "Align" had an empty strip at the bottom.
 
 ## 1.0.0 – 2026-11-11
 

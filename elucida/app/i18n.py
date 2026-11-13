@@ -1614,12 +1614,20 @@ TEXTS = {
                    "Erst mit Fläche und Konzentration; das Ergebnis steht im Reiter Ergebnisse.",
                    "D from the Randles–Ševčík slope of the forward peak (reversible, freely diffusing couple, from three scan rates). "
                    "Only with area and concentration; the result is shown in the Results tab."),
-    "cv_D_line": ("Paar {n}, aus dem Hinpeak (i_p{p}): D = {D} cm² s⁻¹ (95 %: {ci}; nur aus der Unsicherheit der Steigung)",
-                  "Couple {n}, from the forward peak (i_p{p}): D = {D} cm² s⁻¹ (95 %: {ci}; from the uncertainty of the slope only)"),
-    "cv_fit_line": ("Paar {n}, i_p{p} ({k} Scanraten): gegen √v Steigung {m} µA (V s⁻¹)^-½, Achsenabschnitt {b} µA, "
-                    "R² = {r2}; log-log-Steigung {ll} (95-%-KI)",
-                    "Couple {n}, i_p{p} ({k} scan rates): vs. √v slope {m} µA (V s⁻¹)^-½, intercept {b} µA, "
-                    "R² = {r2}; log–log slope {ll} (95% CI)"),
+    "cv_fit_title": ("Scanraten-Analyse: i_p gegen √v (Steigung, Achsenabschnitt, R²) und Steigung von log i_p gegen log v; "
+                     "± = 95-%-Intervall",
+                     "Scan-rate analysis: i_p vs. √v (slope, intercept, R²) and slope of log i_p vs. log v; "
+                     "± = 95% interval"),
+    "cv_fit_couple": ("Paar", "Couple"),
+    "cv_fit_peak": ("Peak", "Peak"),
+    "cv_fit_n": ("Scanraten", "Scan rates"),
+    "cv_fit_slope": ("Steigung [µA (V s⁻¹)^-½]", "Slope [µA (V s⁻¹)^-½]"),
+    "cv_fit_icpt": ("Achsenabschnitt [µA]", "Intercept [µA]"),
+    "cv_fit_ll": ("log-log-Steigung", "Log–log slope"),
+    "cv_fit_D_tip": ("Diffusionskoeffizient aus der Randles–Ševčík-Steigung des Hinpeaks; in Klammern die 95-%-Grenzen "
+                     "(nur aus der Unsicherheit der Steigung).",
+                     "Diffusion coefficient from the Randles–Ševčík slope of the forward peak; 95% limits in brackets "
+                     "(from the uncertainty of the slope only)."),
     "cv_baseline": ("Basislinie", "Baseline"),
     "cv_baseline_tip": ("i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund), extrapoliert\n"
                         "unter den Peak. Rückpeak: dieselbe Gerade, verschoben um den Sprung des Ladestroms am\n"
@@ -1813,13 +1821,14 @@ TEXTS = {
     "hcell_charge": ("Ladekurve", "charge curve"),
     "hcell_discharge": ("Entladekurve", "discharge curve"),
     "hcell_no_curves": ("Keine Schrittdateien für die gewählten Zyklen.", "No step files for the selected cycles."),
-    "hcell_sum_qtheo": ("Q_theo = {q} mAh ({src})", "Q_theo = {q} mAh ({src})"),
     "hcell_src_file": ("aus Datei", "from file"),
     "hcell_src_entered": ("eingegeben", "entered"),
-    "hcell_sum_dis": ("Entladen: Zyklus {a} {qa} mAh ({pa} %), Zyklus {b} {qb} mAh ({pb} %)",
-                      "discharge: cycle {a} {qa} mAh ({pa} %), cycle {b} {qb} mAh ({pb} %)"),
-    "hcell_sum_rest": ("Erhalt {ret} %, mittlere Coulomb-Effizienz {ce} %, {n} Zyklen in {h} h",
-                       "retention {ret} %, mean Coulombic efficiency {ce} %, {n} cycles in {h} h"),
+    "hcell_col_first": ("Entladen, erster Zyklus [mAh]", "Discharge, first cycle [mAh]"),
+    "hcell_col_last": ("Entladen, letzter Zyklus [mAh]", "Discharge, last cycle [mAh]"),
+    "hcell_col_ret": ("Erhalt [%]", "Retention [%]"),
+    "hcell_col_ce": ("mittlere CE [%]", "Mean CE [%]"),
+    "hcell_col_n": ("Zyklen", "Cycles"),
+    "hcell_col_h": ("Dauer [h]", "Duration [h]"),
     "hcell_kpi_ret": ("Erhalt", "Retention"),
     "hcell_kpi_ce": ("Coulomb-Eff.", "Coulombic eff."),
     "hcell_bad_tag": ("{f}: keine Gamry-Lade/Entlade-Datei (TAG {tag}). Erwartet: Cyclic Charge Discharge (Hauptdatei).",
@@ -2368,6 +2377,8 @@ TEXTS = {
     "xr_wire_name": ("Drahtmodell-Gruppen", "Wireframe groups"),
     "xr_wire_name_ph": ("z. B. Dipp groups", "e.g. Dipp groups"),
     "xr_wire_name_tip": ("Bezeichnung der Drahtmodell-Gruppen für die Bildunterschrift", "Name of the wireframe groups for the caption"),
+    "xr_par_head": ("Parameter", "Parameter"),
+    "xr_par_value": ("Wert", "Value"),
     "xr_par_empty": ("Gemessene Abstände und Winkel erscheinen hier.", "Measured distances and angles appear here."),
     "tbl_empty_results": ("Noch keine Ergebnisse.", "No results yet."),
     "tbl_empty_raw": ("Noch keine Rohdaten: TopSpin-Daten hinzufügen.", "No raw data yet: add TopSpin data."),
@@ -3141,7 +3152,7 @@ TEXTS = {
     "pub_f_doi": ("DOI des Datensatzes", "DOI of the dataset"),
     "pub_f_related": ("Zugehörige Publikation", "Related publication"),
     "pub_f_project_description": ("Projektbeschreibung", "Project description"),
-    "pub_f_dataset_description": ("Datensatzbeschreibung", "Dataset description"),
+    "pub_f_dataset_description": ("Beschreibung des Datensatzes", "Dataset description"),   # ein Wort war breiter als die Spalte
     "pub_f_license": ("Lizenz", "License"),
     "pub_ph_title": ("leer = Electronic supplement to <Titel des Artikels>",
                      "empty = Electronic supplement to <title of the paper>"),
@@ -3634,13 +3645,15 @@ TEXTS = {
                         "Series {s}: {n} points – no fit (at least three needed)."),
     "uvkin_no_time": ("Keine Reihe hat Spektren mit Aufnahmezeit – die Ansicht „Spektren über die Zeit“ zeigt sie.",
                       "No series has spectra with an acquisition time – the view “Spectra over time” shows them."),
-    "uvkin_sum_none": ("{s}: keine Spektren mit Aufnahmezeit", "{s}: no spectra with acquisition time"),
-    "uvkin_sum": ("{s}: A = {a0} → {a1}, {rest} % nach {dur} {u} ({n} Spektren)",
-                  "{s}: A = {a0} → {a1}, {rest} % after {dur} {u} ({n} spectra)"),
-    "uvkin_sum_fit": ("k = {k} {u}⁻¹ (95 %: {ci})", "k = {k} {u}⁻¹ (95%: {ci})"),
-    "uvkin_sum_half": ("t½ = {h} {u}", "t½ = {h} {u}"),
+    "uvkin_sum_none": ("keine Spektren mit Aufnahmezeit", "no spectra with acquisition time"),
     "uvkin_sum_rise": ("Absorbanz steigt (k < 0): keine Halbwertszeit", "absorbance rises (k < 0): no half-life"),
     "uvkin_sum_nofit": ("kein Fit (weniger als drei Punkte)", "no fit (fewer than three points)"),
+    "uvkin_col_a0": ("A (Anfang)", "A (start)"),
+    "uvkin_col_a1": ("A (Ende)", "A (end)"),
+    "uvkin_col_rest": ("Rest [%]", "Remaining [%]"),
+    "uvkin_col_dur": ("Dauer", "Duration"),
+    "uvkin_col_n": ("Spektren", "Spectra"),
+    "uvkin_col_ci": ("95 % (k)", "95% (k)"),
     "uvkin_kpi_rest": ("Rest {s}", "Remaining {s}"),
 }
 # Langformen gekürzter Chips (Tooltip über long_form): dieselben Texte wie zuvor im Dialog

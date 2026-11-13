@@ -58,6 +58,7 @@ BL_ONSET = 0.02
 # Nicholson gilt nur, wenn zwischen Hinpeak und Umkehrpotential kein weiterer Prozess liegt (sonst ist i_sp und der
 # abklingende Strom ein anderer). Erkennung: Strom steigt im Hinlauf nach dem Peak wieder um > 10 % der Peakhöhe an.
 NICHOLSON_RISE = 0.10
+X_PAD = 0.03                # Rand links/rechts der Kurven (Anteil der Spanne): sie liefen sonst bis an den Rahmen
 
 
 def _refine(E, I, k):
@@ -456,7 +457,8 @@ class CVTab(TABS.FigureTab):
         row = QHBoxLayout()
         self.sp_ref_lo = QDoubleSpinBox(decimals=2, minimum=-10, maximum=10, singleStep=0.05, value=st["ref_lo"])
         self.sp_ref_hi = QDoubleSpinBox(decimals=2, minimum=-10, maximum=10, singleStep=0.05, value=st["ref_hi"])
-        for w_ in (self.sp_ref_lo, QLabel("–"), self.sp_ref_hi):
+        self.lbl_ref_dash = QLabel("–")                    # eigener Name: verschwindet mit der Zeile (stand sonst allein da)
+        for w_ in (self.sp_ref_lo, self.lbl_ref_dash, self.sp_ref_hi):
             row.addWidget(w_)
         self.lbl_ref_win = QLabel(T("cv_ref_window"))
         f.addRow(self.lbl_ref_win, row)
@@ -556,7 +558,7 @@ class CVTab(TABS.FigureTab):
 
         g = QGroupBox(T("cv_results"))
         v = QVBoxLayout(g)
-        self.tbl_res = QTableWidget(0, 9)
+        self.tbl_res = STYLE.FitGrid(0, 9)                # über die ganze Seite wie die Tabelle darunter
         STYLE.empty_note(self.tbl_res, T("results_none"))
         self.tbl_res.setHorizontalHeaderLabels(
             [T("ov_name"), "#", "E_pa [V]", "E_pc [V]", "E½ [V]", "ΔE_p [mV]", "i_pa [µA]", "i_pc [µA]",
@@ -567,10 +569,23 @@ class CVTab(TABS.FigureTab):
         self.tbl_res.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_res.setMinimumHeight(140)
         v.addWidget(self.tbl_res)
-        self.lbl_res = STYLE.SciLabel("")
-        self.lbl_res.setWordWrap(True)
-        self.lbl_res.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        v.addWidget(self.lbl_res)                        # „SI-Text kopieren“ steht im Reiter SI-Text
+        # Scanraten-Analyse als zweite Tabelle, Referenz und Warnungen als eigene Zeilen (vorher eine Textwand unter der
+        # Tabelle, Nutzerhinweis 2026-11-13)
+        self.lbl_fit = QLabel(T("cv_fit_title"))
+        self.lbl_fit.setProperty("formlabel", True)
+        self.lbl_fit.setWordWrap(True)
+        v.addWidget(self.lbl_fit)
+        self.tbl_fit = STYLE.summary_grid([T("cv_fit_couple"), T("cv_fit_peak"), T("cv_fit_n"), T("cv_fit_slope"),
+                                           T("cv_fit_icpt"), "R²", T("cv_fit_ll"), "D [cm² s⁻¹]"], rich=(1, 7))
+        self.tbl_fit.horizontalHeaderItem(7).setToolTip(T("cv_fit_D_tip"))
+        v.addWidget(self.tbl_fit)
+        self.lbl_res = STYLE.SciLabel("")                 # Referenz
+        self.lbl_warn = STYLE.SciLabel("")                # Warnungen (Basislinie)
+        self.lbl_warn.setStyleSheet(STYLE.WARN_CSS)
+        for lb_ in (self.lbl_res, self.lbl_warn):
+            lb_.setWordWrap(True)
+            lb_.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            v.addWidget(lb_)                             # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(g)
 
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
@@ -656,8 +671,8 @@ class CVTab(TABS.FigureTab):
 
     def _sync_ref_widgets(self):
         mode = self.st["ref_mode"]
-        for w_ in (self.lbl_ref_file, self.cmb_ref_file, self.lbl_ref_win, self.sp_ref_lo, self.sp_ref_hi,
-                   self.lbl_compound, self.cmb_compound, self.sp_ref_value):
+        for w_ in (self.lbl_ref_file, self.cmb_ref_file, self.lbl_ref_win, self.sp_ref_lo, self.lbl_ref_dash,
+                   self.sp_ref_hi, self.lbl_compound, self.cmb_compound, self.sp_ref_value):
             w_.setVisible(mode == "internal")
         for w_ in (self.lbl_offset, self.sp_offset):
             w_.setVisible(mode == "manual")
@@ -748,7 +763,7 @@ class CVTab(TABS.FigureTab):
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
             self.table.setItem(i, 4, QTableWidgetItem(e.get("group", "")))
-        self.table.resizeColumnToContents(0)
+        STYLE.fit_columns(self.table)
         self.update_color_buttons()
         cur = self.st.get("ref_uid")
         self.cmb_ref_file.blockSignals(True)
@@ -1034,7 +1049,8 @@ class CVTab(TABS.FigureTab):
         y_axis = st.get("y_axis", "auto")
         cfg["y_axis"] = ("no_numbers" if stacked else "numbers") if y_axis == "auto" else y_axis
         allx = np.concatenate([c_["x"] for c_ in curves])
-        cfg["xlim"] = [float(allx.min()), float(allx.max())] if st["x_auto"] else [st["x_min"], st["x_max"]]
+        xpad = X_PAD * (float(np.ptp(allx)) or 1.0)
+        cfg["xlim"] = [float(allx.min()) - xpad, float(allx.max()) + xpad] if st["x_auto"] else [st["x_min"], st["x_max"]]
         ally = np.concatenate([c_["y"] for c_ in curves])
         span = float(ally.max() - ally.min()) or 1.0
         top = 0.22 if (st["show_e12"] and (st["e12_each"] or st["stack"])) else 0.12
@@ -1280,25 +1296,31 @@ class CVTab(TABS.FigureTab):
                 elif j == 8 and not r.get("ratio_ok", True):
                     it.setToolTip(T("cv_ratio_invalid"))
                 self.tbl_res.setItem(i, j, it)
-        self.tbl_res.resizeColumnsToContents()
-        lines = [self.note] if getattr(self, "note", "") else []
-        if any(r.get("bl_fail") for r in res):
-            lines.append(T("cv_bl_fail"))
+        self.tbl_res.fit()
+        warn = [T("cv_bl_fail")] if any(r.get("bl_fail") for r in res) else []
         n_short = sum(1 for r in res if r.get("bl_short"))
         if n_short:
-            lines.append(T("cv_bl_short", n=n_short, gap=f"{BL_GAP_MIN:.2f}"))
+            warn.append(T("cv_bl_short", n=n_short, gap=f"{BL_GAP_MIN:.2f}"))
+        rows, any_D = [], False
         for (grp, n), f in sorted(self.rate_fits().items(), key=lambda kv: (kv[0][1], kv[0][0])):
             name = f"{n}" + (f" ({grp})" if grp else "")
+            D = self.diffusion(f)
             for tag, rs, ll in (("a", f["rs_a"], f["ll_a"]), ("c", f["rs_c"], f["ll_c"])):
                 if rs and ll:
-                    lines.append(T("cv_fit_line", n=name, p=tag, m=fmt_ci(rs["slope"], rs["ci"]),
-                                   b=fmt_ci(rs["intercept"], rs["ci_b"]), r2=core.r2_text(rs['r2']),
-                                   ll=fmt_ci(ll["slope"], ll["ci"]), k=rs["n"]))
-            D = self.diffusion(f)
-            if D:
-                lines.append(T("cv_D_line", n=name, p=D[3], D=core.sci_text(D[0]),
-                               ci=(core.sci_text(D[1]) if D[1] else "0") + "–" + core.sci_text(D[2])))
-        self.lbl_res.setText("\n".join(lines))
+                    d_txt = ""
+                    if D and D[3] == tag:                     # nur beim Hinpeak; Grenzen mit demselben Exponenten
+                        ex = int(f"{D[0]:.2e}".split("e")[1])
+                        d_txt = f"{D[0] / 10 ** ex:.2f} ({(D[1] or 0) / 10 ** ex:.2f}–{D[2] / 10 ** ex:.2f}) × 10^{ex}"
+                        any_D = True
+                    mn = lambda t: t.replace("-", "−")        # noqa: E731  (echtes Minus wie in der Tabelle darüber)
+                    rows.append([name, f"i_p{tag}", str(rs["n"]), mn(fmt_ci(rs["slope"], rs["ci"])),
+                                 mn(fmt_ci(rs["intercept"], rs["ci_b"])), core.r2_text(rs["r2"]),
+                                 mn(fmt_ci(ll["slope"], ll["ci"])), d_txt])
+        STYLE.fill_summary(self.tbl_fit, rows, hidden=() if any_D else (7,))
+        for x, on in ((self.lbl_fit, rows), (self.lbl_res, getattr(self, "note", "")), (self.lbl_warn, warn)):
+            x.setVisible(bool(on))
+        self.lbl_res.setText(getattr(self, "note", "") or "")
+        self.lbl_warn.setText("\n".join(warn))
 
     def _ref_sentence(self):
         """Referenzierung der sichtbaren Messungen -> (Satz englisch, Referenz für die Ergebnisse)."""

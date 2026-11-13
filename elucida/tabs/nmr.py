@@ -786,6 +786,7 @@ class NMRTab(QWidget):
         self.sp_sw.setValue(self.struct_w())
         p = s.get("params")
         self.lbl_par.setText(params_html(p) if p else T("nmr_no_bruker"))
+        self.lbl_par.setStyleSheet("" if p else HINT_CSS)     # Hinweis grau wie alle Hinweise, Parameter als Text
 
     def fill_signals(self):
         rows = [(b["nucleus"], sig) for b in self.blocks() for sig in b["signals"]]

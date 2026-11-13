@@ -157,8 +157,7 @@ class HRMSTab(TABS.FigureTab):
         self.sp_rt_hi = QDoubleSpinBox(decimals=2, minimum=0, maximum=999, singleStep=0.05, suffix=" min")
         for w_ in (self.cb_rt_auto, self.sp_rt_lo, QLabel("–"), self.sp_rt_hi):
             row.addWidget(w_)
-        self.rt_row = QWidget()
-        self.rt_row.setLayout(row)
+        self.rt_row = row                                    # als Layout: tidy setzt das Paar ins Raster (Feld A – Feld B)
         f.addRow(T("ms_rt"), self.rt_row)
         # Chromatogramm (Werkzeug, nicht Teil der Abbildung): Ziehen setzt den LC-Bereich
         self.cfig = MplFigure(figsize=(4.2, 1.5), dpi=100)
