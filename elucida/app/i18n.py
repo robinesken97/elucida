@@ -3509,6 +3509,71 @@ TEXTS = {
     "cmp_col_epr_a": ("EPR: Kopplungen", "EPR: hyperfine couplings"),
     "cmp_col_epr_D": ("EPR: D", "EPR: D"),
     "cmp_col_epr_ED": ("EPR: |E/D|", "EPR: |E/D|"),
+    "cmp_col_ir_band": ("IR: Bande (Ziel ± Toleranz)", "IR: band (target ± tolerance)"),
+    "cmp_col_nmr_shift": ("NMR: Verschiebung (Ziel ± Toleranz)", "NMR: shift (target ± tolerance)"),
+    "cmp_col_xr_param": ("X-Ray: {p}", "X-Ray: {p}"),
+    "cmp_col_xr_sg": ("X-Ray: Raumgruppe", "X-Ray: space group"),
+    "cmp_col_xr_system": ("X-Ray: Kristallsystem", "X-Ray: crystal system"),
+    "cmp_col_dft_method": ("DFT: Methode", "DFT: method"),
+    "cmp_col_dft_eel": ("DFT: E(el)", "DFT: E(el)"),
+    "cmp_col_dft_g": ("DFT: G", "DFT: G"),
+    "cmp_col_dft_homo": ("DFT: HOMO", "DFT: HOMO"),
+    "cmp_col_dft_lumo": ("DFT: LUMO", "DFT: LUMO"),
+    "cmp_no_target": ("ohne Ziel", "no target"),
+    "cmp_nuc": ("Kern", "Nucleus"),
+    "cmp_target": ("Ziel", "Target"),
+    "cmp_target_tip": ("Gesuchte Lage: die Zelle zeigt die Bande bzw. das Signal aus der Liste des Tabs, das ihr am "
+                       "nächsten liegt – nur innerhalb der Toleranz, sonst bleibt sie leer",
+                       "Position looked for: the cell shows the band or signal from the tab's list closest to it – only "
+                       "within the tolerance, otherwise it stays empty"),
+    "cmp_target_ph_ir": ("z. B. 2100 (cm-1)", "e.g. 2100 (cm-1)"),
+    "cmp_target_ph_nmr": ("z. B. 7.26 (ppm)", "e.g. 7.26 (ppm)"),
+    "cmp_tol": ("Toleranz", "Tolerance"),
+    "cmp_tol_tip": ("Größter Abstand zum Ziel (Grenze eingeschlossen); Vorgabe IR ±15 cm-1, ¹H ±0.5 ppm, andere "
+                    "Kerne ±2 ppm", "Largest distance from the target (limit included); default IR ±15 cm-1, ¹H ±0.5 "
+                    "ppm, other nuclei ±2 ppm"),
+    "cmp_xr_struct": ("Struktur (X-Ray)", "Structure (X-Ray)"),
+    "cmp_xr_struct_tip": ("Struktur des X-Ray-Tabs, deren Werte die Tabelle zeigt (Vorgabe: die erste)",
+                          "Structure of the X-Ray tab whose values the table shows (default: the first)"),
+    "cmp_dft_calc": ("Rechnung (DFT)", "Calculation (DFT)"),
+    "cmp_dft_calc_tip": ("Rechnung des DFT-Tabs, deren Werte die Tabelle zeigt (Vorgabe: die erste)",
+                         "Calculation of the DFT tab whose values the table shows (default: the first)"),
+    "cmp_cycle": ("Zyklus", "Cycle"),
+    "cmp_cycle_tip": ("Gezeigter Zyklus dieser Messung. Der Stand enthält die ersten {n} Zyklen und den ausgewerteten; "
+                      "Zahlen am Peak gibt es nur für den Zyklus, den der CV-Tab ausgewertet hat",
+                      "Cycle shown for this measurement. The snapshot holds the first {n} cycles and the evaluated "
+                      "one; peak numbers exist only for the cycle the CV tab evaluated"),
+    "cmp_cycle_eval": ("{n} (ausgewertet)", "{n} (evaluated)"),
+    "cmp_cycle_hint": ("Nicht ausgewertet (der CV-Tab wertet Zyklus {n} aus): keine Zahl am Peak",
+                       "Not evaluated (the CV tab evaluates cycle {n}): no number at the peak"),
+    "cmp_cycle_gone": ("{name}: Zyklus {n} fehlt im Stand, gezeigt ist der ausgewertete Zyklus {ev}",
+                       "{name}: cycle {n} is not in the snapshot, the evaluated cycle {ev} is shown"),
+    "cmp_epr_trace": ("Messung (EPR)", "Measurement (EPR)"),
+    "cmp_ref_freq_tip": ("Feldachsen wie im EPR-Tab auf diese Mikrowellenfrequenz skalieren (B·ν_ref/ν). „aus“: nur "
+                         "Spektren mit derselben Frequenz wie das erste; andere werden nicht gezeigt",
+                         "Scale field axes to this microwave frequency as the EPR tab does (B·ν_ref/ν). “off”: only "
+                         "spectra with the same frequency as the first; others are not shown"),
+    "cmp_content_ir": ("IR", "IR"),
+    "cmp_content_epr": ("EPR (Feld, normiert)", "EPR (field, normalized)"),
+    "cmp_content_epr_g": ("EPR (g, normiert)", "EPR (g, normalized)"),
+    "cmp_ir_refused": ("Andere Darstellung als das erste IR-Spektrum ({mode}), nicht gezeigt (nie umgerechnet): {names}",
+                       "Other display than the first IR spectrum ({mode}), not shown (never converted): {names}"),
+    "cmp_ir_mode_T": ("Transmission", "transmittance"),
+    "cmp_ir_mode_A": ("Absorbanz", "absorbance"),
+    "cmp_epr_no_nu": ("Ohne Mikrowellenfrequenz in der Datei (keine g-Achse, keine Skalierung), nicht gezeigt: {names}",
+                      "No microwave frequency in the file (no g axis, no scaling), not shown: {names}"),
+    "cmp_epr_other_nu": ("Andere Mikrowellenfrequenz als das erste Spektrum ({nu} GHz), nicht gezeigt (nie still "
+                         "gemischt; „Frequenz angleichen“ oder g-Achse): {names}",
+                         "Other microwave frequency than the first spectrum ({nu} GHz), not shown (never mixed "
+                         "silently; “Scale to frequency” or g axis): {names}"),
+    "cmp_si": ("Gesamt-SI", "Combined SI"),
+    "cmp_si_on": ("Aufnehmen", "Include"),
+    "cmp_si_on_tip": ("Vergleich in die Gesamt-SI des Projekts aufnehmen (Abbildung mit „Figure Sn“, Tabelle mit "
+                      "„Table Sn“), im gewählten Kapitel nach den Verbindungen",
+                      "Include the comparison in the project's combined SI (figure with “Figure Sn”, table with "
+                      "“Table Sn”), in the chosen chapter after the compounds"),
+    "cmp_si_heading_tip": ("Überschrift des eigenen Kapitels am Ende der Gesamt-SI (leer: Name des Vergleichs)",
+                           "Heading of the own chapter at the end of the combined SI (empty: name of the comparison)"),
     # UV-Vis-Kinetik (tabs/uvkin.py)
     "uvkin_spectra": ("Spektren", "Spectra"),
     "uvkin_series": ("Reihe", "Series"),

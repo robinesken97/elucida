@@ -8731,7 +8731,7 @@ def selftest(outdir, with_isnet=False):
             size_c_ = CMP.snapshot_path(dcmp_ / "S3").stat().st_size
             assert size_c_ < 200_000, size_c_                 # ausgedünnte Kurven: Datei bleibt klein
             r3_ = CMP.read_compound(dcmp_ / "S3")
-            assert set(r3_["tabs"]) == {"eps", "cv", "fluo", "epr"} and not r3_["stale"] and not r3_["missing"], r3_
+            assert set(r3_["tabs"]) == set(CMP.SOURCES) and not r3_["stale"] and not r3_["missing"], r3_
             w.open_project(dcmp_ / "S3")
             w.cv_tab.render()
             f0_ = r3_["tabs"]["cv"]["files"][0]
@@ -8762,7 +8762,7 @@ def selftest(outdir, with_isnet=False):
             # ohne Stand (z. B. ältere Verbindung): fehlt -> Aktualisieren öffnet sie kurz
             CMP.snapshot_path(dcmp_ / "S2").unlink()
             r2_ = CMP.read_compound(dcmp_ / "S2")
-            assert r2_["missing"] == ["eps"] and CMP.status(r2_, "table") == "missing", r2_
+            assert r2_["missing"] == ["eps", "irms", "xray", "nmr"] and CMP.status(r2_, "table") == "missing", r2_
             w.open_publication(dcmp_)
             pp_c_ = w.pub_page
             cp_ = pp_c_.compare_page
@@ -9140,6 +9140,212 @@ def selftest(outdir, with_isnet=False):
             assert PG3_.level_of_theory({"program": "Gaussian", "keywords": ["#p opt freq oniom b3lyp def2svp"]}) == ""
             report.append("X-ray vs. calculation (graph assignment, Kabsch RMSD as constructed, calc./Delta columns, "
                           "symmetric molecule, composition refused, fragment choice, reopen, Word/CSV): OK")
+        with section:
+            # Vergleich, neue Tab-Werte: X-Ray-Parameter (eine Spalte je Atomlabels), Raumgruppe, DFT, IR/NMR mit Ziel
+            w.open_publication(dcmp_)
+            pp_c_.project_tabs.setCurrentWidget(cp_)
+            pump_c_(0.5)
+            cp_.add("table")
+            tn_ = cp_.tab
+            r2c_, r3c_ = cp_.records["S2"], cp_.records["S3"]
+            x2_ = r2c_["tabs"]["xray"]["structures"][0]["params"]
+            x3_ = r3c_["tabs"]["xray"]["structures"][0]["params"]
+            assert x2_[0]["label"] == x3_[0]["label"] == "C6–C7" and "(" in x2_[0]["t"], (x2_, x3_)
+            known_ = CMP.auto_columns(list(cp_.records.values()))
+            k_xr_ = CMP.xr_key("bond", "C7–C6")                   # andere Richtung: dieselbe Spalte
+            assert k_xr_ in known_ and "xr_sg" in known_ and "dft_homo" in known_ and "ir_band" in known_, sorted(known_)
+            for k_ in (k_xr_, "xr_sg", "dft_eel", "dft_homo", "ir_band", "nmr_shift"):
+                tn_.add_auto(k_)
+            cols_ = tn_.tb["cols"]
+            ir_c_, nmr_c_ = cols_[-2], cols_[-1]
+            assert ir_c_["tol"] == 15 and ir_c_["target"] is None and nmr_c_["tol"] == 0.5 and nmr_c_["nuc"] == "1H"
+            assert not tn_.ed_target.isHidden() and not tn_.cmb_nuc.isHidden()      # Ziel/Kern nur bei IR/NMR
+            tn_.tbl_cols.setCurrentCell(1, 0)                                         # X-Ray-Spalte: keine Zielfelder
+            assert tn_.ed_target.isHidden() and tn_.sp_tol.isHidden() and tn_.cmb_nuc.isHidden()
+            _g, heads_n_, rows_n_ = tn_.logical()
+            vals_ = {r_[1]: [v_[0] for v_ in r_[2]] for r_ in rows_n_}
+            assert heads_n_[1] == "C6–C7 / Å" and vals_["S2"][1] == x2_[0]["t"] \
+                and vals_["S3"][1] == x3_[0]["t"], (heads_n_, vals_)                 # gleiche Labels, eine Spalte
+            assert vals_["S2"][2] == vals_["S3"][2] == r3c_["tabs"]["xray"]["structures"][0]["sg"]
+            calc_ = r3c_["tabs"]["dft"]["calcs"][0]
+            assert vals_["S3"][3] == calc_["e_el"] and vals_["S3"][4] == calc_["homo"] and calc_["homo"].startswith("−")
+            assert vals_["S2"][3] == vals_["S2"][4] == "", vals_["S2"]               # ohne DFT: leer, nie geschaetzt
+            assert vals_["S2"][5] == vals_["S3"][5] == "" and vals_["S2"][6] == ""   # ohne Ziel: leer
+            p2_ = r2c_["tabs"]["irms"]["peaks"][1]                                   # Ziel 9 cm-1 daneben
+            tn_.tbl_cols.setCurrentCell(len(cols_) - 2, 0)
+            tn_.ed_target.setText(f"{p2_['wn'] + 9:.1f}")
+            tn_.col_edited()
+            vals_ = {r_[1]: [v_[0] for v_ in r_[2]] for r_ in tn_.logical()[2]}
+            near3_ = min(r3c_["tabs"]["irms"]["peaks"], key=lambda q_: abs(q_["wn"] - p2_["wn"] - 9))
+            assert vals_["S2"][5] == p2_["t"], vals_
+            assert vals_["S3"][5] == (near3_["t"] if abs(near3_["wn"] - p2_["wn"] - 9) <= 15 else "")
+            tn_.sp_tol.setValue(5)                                                   # Toleranz kleiner: Treffer weg
+            tn_.col_edited()
+            assert {r_[1]: r_[2][5][0] for r_ in tn_.logical()[2]}["S2"] == ""
+            s3n_ = r3c_["tabs"]["nmr"]["signals"][0]
+            tn_.tbl_cols.setCurrentCell(len(cols_) - 1, 0)
+            assert abs(tn_.sp_tol.value() - 0.5) < 1e-9
+            tn_.ed_target.setText(f"{s3n_['hi'] + 0.3:.2f}")
+            tn_.col_edited()
+            assert {r_[1]: r_[2][6][0] for r_ in tn_.logical()[2]}["S3"] == s3n_["t"]
+            tn_.sp_tol.setValue(0.1)
+            tn_.col_edited()
+            assert {r_[1]: r_[2][6][0] for r_ in tn_.logical()[2]}["S3"] == ""
+            assert CMP.head_of(nmr_c_) == "*δ*(^{1}H) / ppm"
+            src_ = tn_.tbl_cols.item(len(cols_) - 2, 3).text()
+            assert "± 5" in src_, src_                                          # Ziel und Toleranz in der Liste
+            report.append("Comparison table, values from X-ray (one column per atom labels), DFT, IR/NMR with target "
+                          "and tolerance (hit, miss, empty cell): OK")
+        with section:
+            # Vergleich: CV-Zyklus je Verbindung (nur der ausgewertete traegt Zahlen), IR und EPR im Spektrenvergleich
+            cp_.add("cv")
+            cc_ = cp_.tab
+            m3_ = next(m_ for m_ in cc_.members() if m_["dir"] == "S3")
+            f3_ = CMP.cv_file(cp_.records["S3"], m3_)
+            ev_ = f3_["cycle"]                                                      # ausgewerteter Zyklus des CV-Tabs
+            other_ = [n_ for n_ in (1, 2, 3) if n_ != ev_]
+            assert [c_["n"] for c_ in f3_["cycles"]] == other_, (ev_, [c_["n"] for c_ in f3_["cycles"]])
+            cc_.notes_begin()
+            _cfg, curves_c_, labels_c_, _s = cc_.figure_spec()
+            y2_ = np.asarray([np.nan if v_ is None else v_ for v_ in f3_["y"]], float)
+            assert len(labels_c_) == 1 and np.allclose(curves_c_[0]["val"], y2_, equal_nan=True)
+            cc_.tbl.setCurrentCell([m_["dir"] for m_ in cc_.members()].index("S3"), 1)
+            cc_.cmb_cycle.setCurrentIndex(cc_.cmb_cycle.findData(other_[-1]))
+            assert m3_.get("cycle") == other_[-1] and cc_.lbl_cycle.text(), cc_.lbl_cycle.text()
+            cc_.notes_begin()
+            _cfg, curves_c_, labels_c_, _s = cc_.figure_spec()
+            y3_ = np.asarray([np.nan if v_ is None else v_ for v_ in f3_["cycles"][-1]["y"]], float)
+            assert not labels_c_ and np.allclose(curves_c_[0]["val"], y3_, equal_nan=True)   # Kurve gewechselt, keine Zahl
+            assert "10" in cc_.cmb_cycle.toolTip()                                   # Grenze im Tooltip
+            cp_.open("demo0spectra")
+            sc_ = cp_.tab
+            sc_.cmb_content.setCurrentIndex(sc_.cmb_content.findData("ir"))
+            sc_.notes_begin()
+            cfg_i_, curves_i_, _l, _s = sc_.figure_spec()
+            assert [c_["label"] for c_ in curves_i_] == ["S2", "S3"] and cfg_i_["xlim"][0] > cfg_i_["xlim"][1]
+            assert cfg_i_["ylabel"] == "transmittance [%]" and "IR spectra of" in sc_.si_caption("x")
+            assert CMP.default_chapter(cp_.item) == "irms" and CMP.si_key(cp_.item) == "irms"
+            sc_.cmb_content.setCurrentIndex(sc_.cmb_content.findData("epr"))
+            assert sc_.st["stack"] is True                                      # EPR: gestapelt als Vorgabe
+            ep3_ = cp_.records["S3"]["tabs"]["epr"]["traces"][0]
+            nu3_ = ep3_["nu"]
+            cp_.records["S2"]["tabs"]["epr"] = {"traces": [dict(ep3_, uid="x2", nu=nu3_ * 1.01)], "unit": "mT"}
+            sc_.notes_begin()
+            _c, curves_e_, _l, _s = sc_.figure_spec()
+            assert [c_["label"] for c_ in curves_e_] == ["S2"] and any("S3" in n_ for n_ in sc_._notes), sc_._notes
+            assert abs(float(np.nanmax(np.abs(curves_e_[0]["val"]))) - 1) < 1e-9          # normiert
+            sc_.sp_ref.setValue(round(nu3_, 4))                                   # wie der EPR-Tab: auf nu_ref skaliert
+            sc_.notes_begin()
+            _c, curves_e_, _l, _s = sc_.figure_spec()
+            assert [c_["label"] for c_ in curves_e_] == ["S2", "S3"] and not sc_._notes, sc_._notes
+            assert abs(curves_e_[0]["x"][0] - ep3_["x"][0] * round(nu3_, 4) / (nu3_ * 1.01)) < 1e-6
+            sc_.sp_ref.setValue(0)
+            sc_.cmb_content.setCurrentIndex(sc_.cmb_content.findData("epr_g"))
+            sc_.notes_begin()
+            cfg_g_, curves_g_, _l, _s = sc_.figure_spec()
+            g_mid_ = float(np.mean(cfg_g_["xlim"]))
+            assert [c_["label"] for c_ in curves_g_] == ["S2", "S3"] and cfg_g_["xlim"][0] > cfg_g_["xlim"][1]
+            assert 1.9 < g_mid_ < 2.1 and "g value" in sc_.si_caption("x"), (cfg_g_["xlim"], sc_.si_caption("x"))
+            cp_.records["S2"]["tabs"]["epr"]["traces"][0]["nu"] = None           # ohne Frequenz: abgelehnt
+            sc_.notes_begin()
+            _c, curves_g_, _l, _s = sc_.figure_spec()
+            assert [c_["label"] for c_ in curves_g_] == ["S3"] and any("S2" in n_ for n_ in sc_._notes), sc_._notes
+            report.append("Comparison CV cycle per compound (curve changes, no peak number), IR and EPR spectra "
+                          "(field at one frequency or scaled, g axis, refused frequency/none): OK")
+        with section:
+            # Vergleich in der Gesamt-SI: Abbildung und Tabelle mit fortlaufenden Nummern, Kapitel nach Art
+            import zipfile as zip_s_
+            from elucida.si import publication_si as PSI_c_
+            cp_.save()
+            secs_ = [k_ for k_, _, _ in PSI_c_.SECTIONS]
+            fig_n_ = lambda x_: x_.count("SEQ Figure")                       # noqa: E731
+            psi0_ = w.export_publication_si(dcmp_, PUB_c_.sync(dcmp_)[0], secs_, path=out / "cmp_si0.docx")
+            x0_ = zip_s_.ZipFile(psi0_).read("word/document.xml").decode("utf-8")
+            data_s_ = PUB_c_.load(dcmp_)
+            for it_ in data_s_["comparisons"]:
+                if it_["uid"] in ("demo0spectra", "demo00table"):
+                    it_["si"] = {"on": True}
+                    it_["st"]["content"] = "eps"
+            PUB_c_.save(dcmp_, data_s_)
+            cp_._dirty = True
+            cp_.load()
+            psi1_ = w.export_publication_si(dcmp_, PUB_c_.sync(dcmp_)[0], secs_, path=out / "cmp_si1.docx")
+            x1_ = zip_s_.ZipFile(psi1_).read("word/document.xml").decode("utf-8")
+            assert fig_n_(x1_) == fig_n_(x0_) + 1 and x1_.count("SEQ Table") == x0_.count("SEQ Table") + 1, \
+                (fig_n_(x0_), fig_n_(x1_), x0_.count("SEQ Table"), x1_.count("SEQ Table"))
+            i_uv_ = x1_.rfind(">5. UV-Vis Spectroscopy<")
+            i_cmp_ = x1_.find("molar absorption coefficient")
+            i_next_ = x1_.find(">6. EPR Spectroscopy<", i_uv_)
+            assert 0 < i_uv_ < i_cmp_ < i_next_, (i_uv_, i_cmp_, i_next_)        # im Kapitel UV-Vis, nach den Verbindungen
+            heads_s_ = re.findall(r">(\d+)\. ([^<]+)<", x1_)
+            assert heads_s_ and heads_s_[-1][1] == "Properties", heads_s_[-3:]  # Tabelle: eigenes Kapitel am Ende
+            assert "Elucida" not in x1_[i_uv_:]
+            blk_ = PSI_c_.assemble({}, [("A", {"cv": [("image", "a.png", 16, 11, None), ("figcap", "A")]})], ["cv"],
+                                   toc=False, comparisons=[("cv", [("image", "c.png", 16, 11, None), ("figcap", "C")]),
+                                                           ("new:Extra", [("tabcap", "T", ""), ("params", ["x", "y"],
+                                                                                                [["1", "2"]])])])
+            caps_ = [b_[1] for b_ in blk_ if b_[0] == "figcap"]
+            assert caps_ == ["A", "C"] and [b_[1] for b_ in blk_ if b_[0] == "section"] == ["1. Cyclic Voltammetry",
+                                                                                         "2. Extra"], blk_
+            report.append("Comparison in the combined SI (figure in UV-Vis after the compounds, table as own chapter, "
+                          "numbers continue): OK")
+        with section:
+            # Vergleich: Rueckgaengig/Wiederholen ueber das Hauptfenster (Mitglied, Zelle, Spalte), Verbindungen unberuehrt
+            import hashlib as hash_u_
+            proj_hash_ = lambda: {n_: hash_u_.sha1((dcmp_ / n_ / "project.elucida").read_bytes()).hexdigest()   # noqa: E731
+                                  for n_ in ("S2", "S3")}
+            h0_ = proj_hash_()
+            pp_c_.project_tabs.setCurrentWidget(cp_)
+            pump_c_(0.3)
+            cp_.save()
+            cp_.load("demo00table")                                            # frischer Verlauf
+            pump_c_(0.6)
+            assert w.active_comparison() is cp_ and cp_.cursor == 0 and not w.act_undo.isEnabled(), cp_.cursor
+            tu_ = cp_.tab
+            n_cols_u_ = len(tu_.tb["cols"])
+            tu_.tbl.item(0, 0).setCheckState(Qt.Unchecked)                    # Mitglied abwaehlen
+            pump_c_(0.2)
+            assert cp_.tab.st["members"][0]["on"] is False and w.act_undo.isEnabled()
+            g_u_ = cp_.tab.grid
+            it_u_ = next(g_u_.item(r_, c_) for r_ in range(g_u_.rowCount()) for c_ in range(g_u_.columnCount())
+                         if g_u_.item(r_, c_) is not None and g_u_.item(r_, c_).data(Qt.UserRole)[0] == "auto")
+            key_u_ = "|".join(it_u_.data(Qt.UserRole)[1:])
+            it_u_.setText("XYZ")                                               # Zelle eines Tab-Werts ueberschreiben
+            pump_c_(0.2)
+            assert cp_.tab.tb["cells"].get(key_u_) == "XYZ"
+            col_x_ = key_u_.split("|")[1]
+            i_rm_ = next(i_ for i_, c_ in enumerate(cp_.tab.tb["cols"]) if c_["id"] != col_x_)
+            cp_.tab.tbl_cols.setCurrentCell(i_rm_, 0)
+            cp_.tab.remove_col()                                               # eine andere Spalte entfernen
+            pump_c_(0.2)
+            assert len(cp_.tab.tb["cols"]) == n_cols_u_ - 1
+            steps_u_, seen_u_ = cp_.cursor, []
+
+            def step_u_(fn):
+                fn()
+                for _ in range(100):                                            # bis der Tab neu gebaut und erfasst ist
+                    pump_c_(0.05)
+                    if not cp_._restoring:
+                        break
+                seen_u_.append((cp_.cursor, w.act_undo.isEnabled(), w.act_redo.isEnabled()))
+            step_u_(w.undo)
+            assert len(cp_.tab.tb["cols"]) == n_cols_u_ and cp_.cursor == steps_u_ - 1, seen_u_
+            step_u_(w.undo)
+            assert key_u_ not in cp_.tab.tb["cells"], seen_u_
+            step_u_(w.undo)
+            assert cp_.tab.st["members"][0]["on"] is True and seen_u_[-1] == (0, False, True), seen_u_
+            step_u_(w.redo)
+            assert cp_.tab.st["members"][0]["on"] is False, seen_u_
+            step_u_(w.redo)
+            step_u_(w.redo)
+            assert cp_.tab.tb["cells"].get(key_u_) == "XYZ" and len(cp_.tab.tb["cols"]) == n_cols_u_ - 1, seen_u_
+            assert seen_u_[-1] == (steps_u_, True, False), seen_u_
+            cp_.save()
+            saved_u_ = next(x_ for x_ in PUB_c_.load(dcmp_)["comparisons"] if x_["uid"] == "demo00table")
+            assert len(saved_u_["st"]["table"]["cols"]) == n_cols_u_ - 1     # Projektdatei folgt dem Verlauf
+            assert proj_hash_() == h0_                                         # Daten der Verbindungen unveraendert
+            w.close_publication()
+            report.append("Comparison undo/redo (member, cell, column; compounds untouched): OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

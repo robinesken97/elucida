@@ -242,7 +242,9 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
 Der Reiter **Vergleich** der Projektseite stellt Verbindungen des Projekts nebeneinander, beliebig viele benannte
 Vergleiche (**+ CV-Stapel**, **+ Spektren**, **+ Tabelle**; Name, **Entfernen** nimmt nur den Eintrag aus dem Projekt,
 exportierte Dateien bleiben). Links die Schritte wie in den Tabs, rechts Abbildung bzw. Tabelle, **Exportieren** unten
-rechts. Gespeichert wird in `publication.elucida`.
+rechts. Gespeichert wird in `publication.elucida`. **Rückgängig/Wiederholen** (Menü Bearbeiten, Strg+Z) gelten im offenen
+Vergleich für seine Änderungen (Verbindungen, Reihenfolge, Einstellungen, Zellen, Größen, gezogene Beschriftungen), nie
+für die Daten der Verbindungen.
 
 **Nichts wird neu ausgewertet.** Jede Verbindung legt beim Speichern einen kleinen Stand ihrer Auswertungen in
 `.elucida/compare.json` ab (Kurven ausgedünnt, Werte als Text genau wie im Tab: λ und ε ganzzahlig wie in der Tabelle des
@@ -260,16 +262,29 @@ zur Seite zurück.
   durch ihren größten Betrag; die Bildunterschrift sagt das. Verbindungen auf einer anderen Referenzskala als die erste
   werden nicht gezeigt (Hinweis unter dem Bild), nie umgerechnet. Die Bildunterschrift entsteht aus den Angaben der
   Verbindungen (Lösungsmittel, Leitsalz, Konzentration, Vorschub): gleiche einmal, verschiedene je Verbindung.
+  **Zyklus** wählt je Verbindung einen anderen Zyklus der Messung (im Stand liegen die ersten zehn Zyklen und der
+  ausgewertete). Zahlen am Peak gibt es nur für den Zyklus, den der CV-Tab ausgewertet hat; bei einem anderen bleibt der
+  Peak ohne Zahl, ein Hinweis sagt das.
 - **Spektren:** UV-Vis als ε (dieselbe Messung und Basislinie wie im Overlay, ohne Konzentration oder Molmasse keine
   Kurve) oder auf das Maximum normiert, Emission normiert wie im Fluoreszenz-Tab, beides zusammen (Emission
   gestrichelt); übereinander oder gestapelt, ein Legendeneintrag je Verbindung. Bei mehreren ε-Serien wählt man die Serie
-  je Verbindung.
+  je Verbindung. **IR:** Transmission bzw. Absorbanz wie im IR-Tab, Wellenzahl fällt nach rechts; eine Verbindung, deren
+  IR-Tab die andere Darstellung zeigt, wird nicht gezeigt (nie umgerechnet). **EPR** (normiert, Standard gestapelt): auf
+  der Feldachse nur Spektren mit derselben Mikrowellenfrequenz wie das erste, oder mit **Frequenz angleichen** wie im
+  EPR-Tab auf eine Referenzfrequenz skaliert (B·ν_ref/ν); **EPR (g)** trägt gegen g = hν/(µ_B·B) auf. Was nicht passt
+  (andere Frequenz, keine Frequenz in der Datei), steht als Hinweis unter dem Bild und wird nicht gezeigt.
 - **Tabelle:** Zeilen = Verbindungen in der Reihenfolge des Projekts (im Schritt „Daten“ abwählbar). Im Schritt
   „Tabelle“ stehen links drei Karten:
   - **Größen:** was verglichen wird, als Liste mit Größe, Einheit, Gruppenkopf und Herkunft. **Aus den Tabs** fügt
     einen Wert hinzu, den die Verbindungen selbst liefern (Summenformel, Molmasse, Schmelzpunkt, UV-Vis λ_max/ε/
     Lösungsmittel, Fluoreszenz λ_abs/λ_em/Stokes, CV E½/E_pa/E_pc/ΔE_p je Redoxpaar und Referenz, EPR g, Kopplungen, D
-    und |E/D|); Name und Einheit stehen dann fest. **Eigene** fügt eine Größe zum Eintippen hinzu (z. B. „IR (CN2)“ und
+    und |E/D|, X-Ray: jeder ausgewählte Parameter des X-Ray-Tabs mit Standardabweichung aus der CIF – eine Spalte je
+    Atomlabels, z. B. „C6–C7 / Å“, gefüllt bei allen Verbindungen mit denselben Labels –, Raumgruppe und Kristallsystem,
+    DFT: Eingabezeile, E(el), G, HOMO und LUMO), alle genau wie im Tab; Name und Einheit stehen dann fest.
+    **IR: Bande** und **NMR: Verschiebung** brauchen ein **Ziel** und eine **Toleranz** (Felder unter der Liste; Vorgabe
+    IR ±15 cm⁻¹, ¹H ±0.5 ppm, andere Kerne ±2 ppm; bei NMR dazu der Kern): die Zelle zeigt die Bande bzw. das Signal
+    aus der Liste des Tabs, das dem Ziel am nächsten liegt, sonst bleibt sie leer. Hat eine Verbindung mehrere
+    Strukturen oder Rechnungen, wählt man sie im Schritt „Daten“ unter „Gewählte Verbindung“ (Standard: die erste). **Eigene** fügt eine Größe zum Eintippen hinzu (z. B. „IR (CN2)“ und
     „cm-1“, Rechnung, Literatur); der Kopf wird in Normschreibweise „Größe / Einheit“ gesetzt. **Gruppenkopf** setzt
     einen zweiten Kopf über benachbarte Größen (z. B. „Experimental“ / „Computational“).
   - **Weitere Verbindungen:** Zeilen für Verbindungen, die nicht im Projekt liegen (z. B. aus der Literatur); ihre
@@ -282,8 +297,11 @@ zur Seite zurück.
   formatierten Text in die Zwischenablage.
 
 Abbildungen landen als PDF/SVG/PNG in `comparisons/figures/`, Tabellen als Excel/CSV in `comparisons/tables/` und als
-Word in `comparisons/SI/` des Projektordners, Dateiname = Name des Vergleichs. In die Gesamt-SI kommen Vergleiche
-(noch) nicht.
+Word in `comparisons/SI/` des Projektordners, Dateiname = Name des Vergleichs. **Gesamt-SI → Aufnehmen** (Standard
+aus) nimmt den Vergleich in die Gesamt-SI des Projekts: Abbildungen mit „Figure Sn“, Tabellen mit „Table Sn“, fortlaufend
+nummeriert, im gewählten **Kapitel** nach den Verbindungen (Vorgabe: CV-Stapel → Cyclic Voltammetry, Spektren je nach
+Inhalt UV-Vis, IR oder EPR, Tabelle → eigene Überschrift am Ende wie im Tab „Weitere“; leer = Name des Vergleichs).
+Gezeichnet wird genau, was die Seite zeigt.
 
 ## Verbindung
 

@@ -863,6 +863,8 @@ def load_data(w, inp, name="S3"):
     m3, P = mol_3d(c["smiles"], c.get("twist"))
     w.xray_tab.load_cif(str(make_cif(inp / "xray" / f"{name}.cif", name, m3, P, c["cell"], c["place"])))
     w.xray_state["current"] = w.xray_state["entries"][0]["uid"]
+    # ausgewählte Parameter: C≡C und der Winkel davor (in S2 und S3 dieselben Labels: eine Spalte im Vergleich)
+    w.xray_state["entries"][0]["params"] = [{"atoms": ["C6", "C7"]}, {"atoms": ["C5", "C6", "C7"]}]
     # NMR: erfundene Spektren (¹H, ¹³C), Mnova-Text, Struktur
     nd = inp / "nmr"
     h1 = demo_nmr_svg(nd / f"{name}-1H.svg", "1H", c["h1"], (9.5, 0.5))
@@ -941,7 +943,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     for rate in (50, 100, 200):
         p = inp / "cv" / f"{name}_CV_{rate}mVs.DTA"
         p.parent.mkdir(parents=True, exist_ok=True)
-        cyc, t = cv_cycles([(E_OX, 21.7)], rate, E_OX - 0.42, E_OX + 0.38, seed=rate)
+        cyc, t = cv_cycles([(E_OX, 21.7)], rate, E_OX - 0.42, E_OX + 0.38, cycles=3, seed=rate)   # ausgewertet: 2.
         write_dta(p, cyc, rate, times=t)
         files.append((p, rate))
     ref = inp / "cv" / f"{name}_CV_Fc.DTA"

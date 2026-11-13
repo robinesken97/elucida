@@ -22,6 +22,12 @@
   drehbar; Word, Excel, CSV, Kopieren als formatierter Text). Nichts wird neu ausgewertet: jede Verbindung legt beim
   Speichern einen kleinen Stand ihrer Tabs ab; veraltete oder fehlende Stände werden angezeigt und mit
   „Aktualisieren“ erneuert. Das Beispielprojekt enthält einen Spektrenvergleich und eine Tabelle.
+  Vergleiche können in die Gesamt-SI (Abbildung oder Tabelle mit fortlaufender Nummer, Kapitel nach Art oder eigene
+  Überschrift); der CV-Stapel zeigt je Verbindung einen der ersten zehn Zyklen (Zahlen am Peak nur beim ausgewerteten);
+  die Tabelle übernimmt X-Ray-Parameter, Raumgruppe und Kristallsystem, DFT-Energien und HOMO/LUMO sowie IR-Banden und
+  NMR-Verschiebungen am nächsten an einem Ziel innerhalb einer Toleranz; Spektren auch als IR und EPR (Feldachse nur bei
+  einer Mikrowellenfrequenz oder auf eine Referenz skaliert, sonst g-Achse); Rückgängig und Wiederholen gelten im
+  offenen Vergleich.
 - **EPR: Basislinie nach Wahl.** Neben dem Polynom gibt es „Glatt“ (folgt breitem Untergrund, lässt schmale Linien
   stehen, kommt ohne Dunkelspektrum aus; einziger Wert ist die Breite) und „Spline“ (durch die Mittel der
   signalfreien Bereiche). Methodentext und exportierte Spektren nennen das Verfahren.

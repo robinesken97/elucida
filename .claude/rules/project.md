@@ -100,8 +100,22 @@ paths:
   „Zellen und Anordnung“; kein Schritt „Darstellung“. Tab-Werte leer, wenn sie fehlen; von Hand überschriebene Zellen
   markiert und rücksetzbar; Kopf „Größe / Einheit“ als Markup, Ausgabe englisch, Namen fett; die Linie unter einem
   Gruppenkopf steht nur unter seinen Spalten (`GroupRule`, wie im Word-Export). Exporte nach `<Projekt>/comparisons/`
-  (figures/tables/SI), Name = Name des Vergleichs. „Entfernen“ nimmt nur den Eintrag aus der Projektdatei. Nicht in der
-  Gesamt-SI.
+  (figures/tables/SI), Name = Name des Vergleichs. „Entfernen“ nimmt nur den Eintrag aus der Projektdatei.
+  Gesamt-SI (Nutzerauftrag 2026-11-13): je Vergleich `item["si"]` = {on, chapter, heading}, Standard aus; Kapitel wie im
+  Tab „Weitere“ (`other.CHAPTERS`), Vorgabe nach Art (`default_chapter`: CV-Stapel → cv, Spektren nach Inhalt
+  uvvis/irms/epr, Tabelle → `new:<Überschrift>`, leer = Name). `CMP.si_blocks` zeichnet auf einer nie gezeigten
+  `ComparePage` mit denselben Ständen (nichts neu ausgewertet), `assemble(comparisons=…)` setzt sie je Kapitel nach die
+  Verbindungen (Abbildungen über `two_per_page`, Tabelle als `tabcap` + `params` mit `fit`). Stand: zusätzlich irms
+  (Banden der Liste, Kurve wie im Bild), xray (ausgewählte Parameter mit `param_label`, Raumgruppe, Kristallsystem), dft
+  (Eingabezeile, E(el), G, HOMO/LUMO), nmr (Signale aus dem Multiplettbericht); CV zusätzlich die Zyklen 1–`MAX_CYCLES`
+  je Messung; Zahlen am Peak nur im ausgewerteten Zyklus. Tabelle: X-Ray-Spalte = Atomlabels in beiden Richtungen
+  (`xr_key`); IR/NMR-Spalte mit Ziel und Toleranz (IR 15 cm⁻¹, ¹H 0.5 ppm, sonst 2 ppm), Zelle = nächster Eintrag der
+  Liste des Tabs innerhalb der Toleranz, sonst leer. Spektren: IR wie der IR-Tab (andere Darstellung abgelehnt), EPR
+  normiert und gestapelt, Feldachse nur bei gleicher Frequenz (`EPR_NU_TOL`) oder auf `ref_freq` skaliert wie der
+  EPR-Tab, sonst g-Achse; ohne Frequenz abgelehnt, nie still gemischt. Rückgängig: eigener Verlauf je offenem Vergleich
+  (`ComparePage.history`, wie `PathHost`), `MainWindow.undo/redo` leiten über `active_comparison` dorthin; nie die Daten
+  der Verbindungen. Listen des Tabs (Vergleiche, Verbindungen, Größen): Spalten gleich breit, nur die Häkchenspalte
+  schmal (Nutzerwunsch 2026-11-13).
 - Projektseite, Raster (Nutzerwunsch 2026-11-12): Kopf, Reiter und alle Seiten rücken selbst um `IN` (= `COL_PAD`) ein,
   die Reiterseite ist um `IN` breiter (`PAGE_MARGINS`) – so stehen die Karten des eingebetteten Vergleichs auf der Kante
   des Titels. Keine Linie über den Reitern (`projectTabs`); `center_corner` erst nach den Reitern (sonst Höhe 0, Knöpfe

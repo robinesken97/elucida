@@ -1914,6 +1914,8 @@ def tidy(root):
     guard_fields(root)
     _chips(root)
     special_resets(root)                                      # nach _chips: die „aus“-Felder entstehen dort
+    guard_fields(root)                                        # … und brauchen Einzug/Mausrad-Schutz wie alle Felder
+    # (ohne das klebte die Zahl eines erst hier erzeugten Felds am linken Rand: Vergleich, „Gestapelt“)
     top = root.layout()
     if isinstance(top, QVBoxLayout):                          # Spalte: gleicher Rand und Abstand zwischen Karten
         top.setContentsMargins(COL_PAD, COL_PAD, 0, COL_PAD)   # rechts: Bildlaufleiste (ColumnFit), zusammen COL_PAD

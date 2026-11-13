@@ -231,6 +231,8 @@ paths:
     Text-, Auswahl- und mehrzeilige Felder.
   - Der ε-Tab leert Ergebnistabelle, Kacheln und SI-Texte, sobald es keine Messdaten gibt (`clear_results`): nie die
     Zahlen der zuvor geöffneten Verbindung stehen lassen.
+  - `tidy` ruft `guard_fields` ein zweites Mal nach `_chips`: Felder, die erst dort entstehen (OffSpin, OffCombo),
+    bekamen sonst weder Einzug noch Mausrad-Schutz (Zahl klebte am linken Rand).
   - Die Tab-Leiste liegt in `WEL.NavScroll` (seit 1.1.0, 16 Tabs: sonst 1461 px Mindestbreite, unter Windows 2048 px):
     sie darf schmaler sein als ihr Inhalt, zeigt am abgeschnittenen Rand einen Pfeil, folgt Mausrad/Trackpad und hält den
     gewählten Tab sichtbar (`reveal`). Zeilen der Verbindungsliste melden `ROW_MIN_W`, nie die Breite der Matrix. Der

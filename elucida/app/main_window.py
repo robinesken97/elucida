@@ -1793,6 +1793,8 @@ class MainWindow(QMainWindow):
     def undo(self):
         path = self.active_reaction_path()
         if path: return path.undo(-1)
+        cmp_ = self.active_comparison()
+        if cmp_: return cmp_.undo(-1)
         tabs = (self.__dict__.get(self._tab_spec(k)[0]) for k in self._TAB_BUILD_ORDER)
         if any(hasattr(t, "timer") and t.timer.isActive() for t in tabs):
             self.push_undo()                           # Änderung, deren Vorschau noch aussteht: sonst ein Schritt zu weit
@@ -1803,6 +1805,8 @@ class MainWindow(QMainWindow):
     def redo(self):
         path = self.active_reaction_path()
         if path: return path.undo(1)
+        cmp_ = self.active_comparison()
+        if cmp_: return cmp_.undo(1)
         if self._redo:
             self._undo.append(self._redo.pop())
             self._restore(self._undo[-1])
@@ -1814,11 +1818,21 @@ class MainWindow(QMainWindow):
             return page.path_workspace
         return None
 
+    def active_comparison(self):
+        """Offener Vergleich auf der Projektseite: Rückgängig/Wiederholen gelten dann ihm (nie den Verbindungen)."""
+        page = self.__dict__.get('pub_page')
+        center = self.__dict__.get('center')
+        if page and center and center.currentWidget() is page and page.project_tabs.currentWidget() is page.compare_page \
+                and page.compare_page.item is not None:
+            return page.compare_page
+        return None
+
     def _update_undo_actions(self):
         if hasattr(self, "act_undo"):
             path = bool(self.active_reaction_path())
-            self.act_undo.setEnabled(path or len(self._undo) > 1)
-            self.act_redo.setEnabled(path or bool(self._redo))
+            cmp_ = self.active_comparison()
+            self.act_undo.setEnabled(path or (cmp_.can_undo(-1) if cmp_ else len(self._undo) > 1))
+            self.act_redo.setEnabled(path or (cmp_.can_undo(1) if cmp_ else bool(self._redo)))
 
     def is_dirty(self):
         if self._restoring:
@@ -3125,6 +3139,12 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
             dlg.close()
         meta = PUB.load(pdir)
+        try:                                            # Vergleiche mit „In die Gesamt-SI“ (wie auf der Projektseite)
+            from elucida.app import comparison as CMP
+            cmps = CMP.si_blocks(self, pdir, PRJ.work_dir(pdir, "si", "comparisons"), sections)
+        except Exception:
+            self.log_signal.emit(traceback.format_exc())
+            cmps = []
         setup = [str(self.settings.value(f"si_setup/{k}", "") or "").strip() for k in PSI.SETUP_KEYS]
         paths = []
         if "dft" in sections and meta.get("reaction_paths") and (meta.get("reaction_paths_si") or {}).get("include") is not False:
@@ -3134,7 +3154,8 @@ class MainWindow(QMainWindow):
             except Exception as ex:
                 self.error(str(ex))
                 return None
-        blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods, reaction_paths=paths)
+        blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods, reaction_paths=paths,
+                              comparisons=cmps)
         name = core.safe_name(Path(pdir).name)
         path = Path(path) if path else Path(pdir) / PUB.SI_DIR / f"{name}_SI.docx"
         SI.set_template(template, page_numbers=True)    # nur für diese Datei (Einzel-SI bleibt wie die Gruppe)

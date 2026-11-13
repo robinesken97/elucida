@@ -21,6 +21,11 @@
   CSV, rich-text copy). Nothing is evaluated again: each compound writes a small snapshot of its tabs on saving;
   outdated or missing snapshots are shown and renewed with "Refresh". The example project contains a spectra
   comparison and a table.
+  Comparisons can go into the combined SI (figure or table with continued numbering, chapter by kind or an own
+  heading); the CV stack shows any of the first ten cycles per compound (peak numbers only for the evaluated one); the
+  table takes X-ray parameters, space group and crystal system, DFT energies and HOMO/LUMO, and IR bands or NMR shifts
+  nearest a target within a tolerance; spectra include IR and EPR (field axis only at one microwave frequency or scaled
+  to a reference, or a g axis); undo and redo work in the open comparison.
 - **EPR: choice of baseline.** Besides the polynomial there are "Smooth" (follows a broad background, keeps narrow
   lines, needs no dark spectrum; the only value is the width) and "Spline" (through the means of the signal-free
   ranges). The methods text and the exported spectra state the method.

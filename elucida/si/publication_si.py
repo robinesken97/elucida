@@ -78,10 +78,13 @@ def procedure_blocks(p):
     return [("heading", head)] + text_blocks(p.get("text", ""))
 
 
-def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, reaction_paths=()):
+def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, reaction_paths=(), comparisons=()):
     """meta: Angaben der Publikation (title, authors, affiliation). compounds: [(Name, Teile)] mit Teile =
     {char, nmr, irms, uvvis, epr, cv, sec: Blöcke; xray: Blöcke ohne Kristalltabelle; crystal: (Kopf, Zeilen) | None;
-    dft: Blöcke; methods_<sec>: Blöcke}. sections: gewählte Kapitel. -> Blöcke für SI.write_docx."""
+    dft: Blöcke; methods_<sec>: Blöcke}. sections: gewählte Kapitel. comparisons: [(Kapitel bzw. „new:<Überschrift>“,
+    Blöcke)] der Vergleiche des Projekts, je Kapitel nach den Verbindungen. -> Blöcke für SI.write_docx."""
+    def cmp_blocks(key):
+        return [b for k, bl in comparisons if k == key for b in bl]
     from elucida.app.publication import paper_title
     blocks = []
     if paper_title(meta):                    # Titelblatt wie die SI der Gruppe: Titel des Artikels
@@ -134,6 +137,7 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
                 figs = grouped(fig_blocks)
             else:
                 figs = [b for _, parts in compounds for b in fig_blocks(parts)]
+            figs += cmp_blocks(key)                  # Vergleiche nach den Verbindungen, ohne Unterkapitel
             body = SI.two_per_page(intro + figs) if figs else []     # Einleitung zählt bei der Seitenaufteilung mit
             intro = []
         elif key == "xray":
@@ -147,11 +151,12 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
                 body += [("gap",), ("tabcap", "Crystal data and structure refinement",
                                     ", ".join(to_plain(h) for h in head[1:])),
                          ("crystal", head, rows)]
+            body += cmp_blocks("xray")
         elif key == "dft":
             for _, parts in compounds:
                 body += parts.get("dft") or []
             body = [("columns", 2)] + body if body else []
-            figs = [b for _, parts in compounds for b in parts.get("dft_figs") or []]   # Energieprofile usw. einspaltig
+            figs = [b for _, parts in compounds for b in parts.get("dft_figs") or []] + cmp_blocks("dft_figs")
             body = SI.two_per_page(figs) + body if figs else body
             if reaction_paths and (meta.get("reaction_paths_si") or {}).get("include") is not False:
                 paths = [("columns", 1), ("heading", "Reaction pathways")] + list(reaction_paths)
@@ -169,10 +174,11 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
     extra = []                                              # Tab „Weitere“: eigene Überschriften als Kapitel am Ende
     for _, parts in compounds:
         extra += [k for k in parts if k.startswith("new:") and k not in extra]
+    extra += [k for k, _ in comparisons if k.startswith("new:") and k not in extra]
     if extra and any(b[0] == "columns" for b in blocks):      # nach dem zweispaltigen DFT-Kapitel wieder einspaltig
         blocks.append(("columns", 1))
     for k in extra:
-        figs = [b for _, parts in compounds for b in parts.get(k) or []]
+        figs = [b for _, parts in compounds for b in parts.get(k) or []] + cmp_blocks(k)
         n += 1
         blocks += [("section", f"{n}. {k[4:]}")] + SI.two_per_page(figs)
     return blocks

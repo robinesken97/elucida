@@ -231,7 +231,8 @@ elsewhere into the project.
 The **Comparison** tab of the project page puts compounds of the project side by side, with any number of named
 comparisons (**+ CV Stack**, **+ Spectra**, **+ Table**; name, **Remove** only takes the entry out of the project,
 exported files stay). Steps on the left as in the tabs, figure or table on the right, **Export** bottom right. Everything
-is saved in `publication.elucida`.
+is saved in `publication.elucida`. **Undo/Redo** (Edit menu, Ctrl+Z) apply to the changes of the open comparison
+(compounds, order, settings, cells, quantities, dragged labels), never to the data of the compounds.
 
 **Nothing is evaluated again.** When a compound is saved it writes a small snapshot of its evaluations to
 `.elucida/compare.json` (thinned curves, values as text exactly as the tab shows them: λ and ε as integers like the table
@@ -247,16 +248,29 @@ opens these compounds briefly one after another, writes the snapshot again and r
   the curve colour), an arrow per curve shows the scan direction, the y axis has no numbers. **Normalized** divides each
   curve by its largest absolute current; the caption says so. Compounds on a different reference scale than the first one
   are not shown (note below the figure), never converted. The caption is built from the details of the compounds
-  (solvent, electrolyte, concentration, scan rate): common ones once, differing ones per compound.
+  (solvent, electrolyte, concentration, scan rate): common ones once, differing ones per compound. **Cycle** picks
+  another cycle of the measurement per compound (the snapshot holds the first ten cycles and the evaluated one). Peak
+  numbers exist only for the cycle the CV tab evaluated; for another cycle the peak has no number, and a hint says so.
 - **Spectra:** UV-Vis as ε (the same measurement and baseline as the overlay; without concentration or molar mass no
   curve) or normalized to the maximum, emission normalized as in the fluorescence tab, or both (emission dashed);
   overlaid or stacked, one legend entry per compound. With several ε series, choose the series per compound.
+  **IR:** transmittance or absorbance as in the IR tab, wavenumber falling to the right; a compound whose IR tab shows the
+  other display is not shown (never converted). **EPR** (normalized, stacked by default): on the field axis only spectra
+  with the same microwave frequency as the first one, or scaled to a reference frequency with **Scale to frequency** as
+  in the EPR tab (B·ν_ref/ν); **EPR (g)** plots against g = hν/(µ_B·B). Whatever does not fit (other frequency, no
+  frequency in the file) is named in a note below the figure and not shown.
 - **Table:** rows = compounds in project order (can be deselected in the step "Data"). The step "Table" has three
   cards on the left:
   - **Quantities:** what is compared, as a list with quantity, unit, group header and source. **From the Tabs** adds a
     value the compounds provide themselves (formula, molar mass, melting point, UV-Vis λ_max/ε/solvent, fluorescence
     λ_abs/λ_em/Stokes shift, CV E½/E_pa/E_pc/ΔE_p per redox couple and reference, EPR g, hyperfine couplings, D and
-    |E/D|); name and unit are then fixed. **Own** adds a quantity to type in (e.g. "IR (CN2)" and "cm-1", calculation,
+    |E/D|, X-ray: every selected parameter of the X-Ray tab with its standard uncertainty from the CIF – one column per
+    atom labels, e.g. "C6–C7 / Å", filled for all compounds with the same labels –, space group and crystal system,
+    DFT: input line, E(el), G, HOMO and LUMO), all exactly as in the tab; name and unit are then fixed. **IR: band** and
+    **NMR: shift** need a **Target** and a **Tolerance** (fields below the list; default IR ±15 cm⁻¹, ¹H ±0.5 ppm, other
+    nuclei ±2 ppm; for NMR also the nucleus): the cell shows the band or signal from the tab's list closest to the
+    target, otherwise it stays empty. If a compound has several structures or calculations, choose one in the step
+    "Data" under "Selected Compound" (default: the first). **Own** adds a quantity to type in (e.g. "IR (CN2)" and "cm-1", calculation,
     literature); the header is set in standard notation "quantity / unit". **Group header** puts a second header
     above neighbouring quantities (e.g. "Experimental" / "Computational").
   - **Further Compounds:** rows for compounds that are not in the project (e.g. from the literature); type their
@@ -268,8 +282,11 @@ opens these compounds briefly one after another, writes the snapshot again and r
   text.
 
 Figures go to `comparisons/figures/` as PDF/SVG/PNG, tables to `comparisons/tables/` as Excel/CSV and to
-`comparisons/SI/` as Word in the project folder, file name = name of the comparison. Comparisons are not (yet) part of
-the combined SI.
+`comparisons/SI/` as Word in the project folder, file name = name of the comparison. **Combined SI → Include** (off by
+default) puts the comparison into the project's combined SI: figures with "Figure Sn", tables with "Table Sn", numbered
+on, in the chosen **Chapter** after the compounds (default: CV stack → Cyclic Voltammetry, spectra by content UV-Vis, IR
+or EPR, table → own heading at the end as in the tab "Other"; empty = name of the comparison). It draws exactly what the
+page shows.
 
 ## Compound
 

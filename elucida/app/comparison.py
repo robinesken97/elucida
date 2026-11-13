@@ -39,9 +39,11 @@ from elucida.tabs import base as TABS
 
 SNAP_FILE = "compare.json"
 SNAP_VERSION = 1
-SOURCES = ("eps", "cv", "fluo", "epr")             # Zustandsschlüssel der Tabs, die einen Stand liefern
+SOURCES = ("eps", "cv", "fluo", "epr", "irms", "xray", "dft", "nmr")   # Zustandsschlüssel der Tabs mit Stand
 MAX_POINTS = 1500                                  # Kurven im Stand: höchstens so viele Punkte (Datei bleibt klein)
+MAX_CYCLES = 10                                    # CV: Zyklen 1 … 10 je Messung im Stand (dazu der ausgewertete)
 KINDS = ("cv", "spectra", "table")
+EPR_NU_TOL = 2e-4                                  # gleiche Mikrowellenfrequenz (relativ), wie der EPR-Tab beim Dunkelspektrum
 
 
 # ============================================================================ Stand je Verbindung (Schreiben)
@@ -72,8 +74,12 @@ def has_data(key, st) -> bool:
         return any(e.get("visible", True) for e in st.get("files") or [])
     if key == "fluo":
         return bool(st.get("abs_file") or st.get("em_file"))
-    if key == "epr":
+    if key in ("epr", "xray", "dft"):
         return bool(st.get("entries"))
+    if key == "irms":
+        return bool(st.get("ir_file") or st.get("ir_pdf"))
+    if key == "nmr":
+        return bool((st.get("text") or "").strip())
     return False
 
 
@@ -156,14 +162,20 @@ def _cv_entry(main):
         c = tab.cycle_of(e)
         off, lab, _ = tab.file_offset(e)
         x, y = _thin(np.asarray(c["E"]) - off, sign * 1e6 * np.asarray(c["I"]))
+        ev = min(st["cycle"], len(d["cycles"]))
+        others = []                                         # weitere Zyklen (nur Kurve, ohne Auswertung)
+        for n, c2 in enumerate(d["cycles"][:MAX_CYCLES], 1):
+            if n != ev:
+                x2, y2 = _thin(np.asarray(c2["E"]) - off, sign * 1e6 * np.asarray(c2["I"]))
+                others.append({"n": n, "x": x2, "y": y2})
         couples = [{"n": r["n"], "epa": r["epa"], "epc": r["epc"], "e12": r["e12"], "dep": r["dep"],
                     "ipa": sign * 1e6 * r["ipa_raw"], "ipc": sign * 1e6 * r["ipc_raw"], "edge": bool(r["edge"]),
                     "fwd": "epa" if r.get("anodic_first", True) else "epc",
                     "t_epa": CV._fmt_e(r["epa"]), "t_epc": CV._fmt_e(r["epc"]), "t_e12": CV._fmt_e(r["e12"]),
                     "t_dep": f"{r['dep'] * 1000:.0f}"} for r in tab.results if r["uid"] == e["uid"]]
         files.append({"uid": e["uid"], "label": e["label"], "rate": d["meta"].get("scanrate"),
-                      "cycle": min(st["cycle"], len(d["cycles"])), "ref": lab, "group": e.get("group", ""),
-                      "x": x, "y": y, "couples": couples})
+                      "cycle": ev, "n_cycles": len(d["cycles"]), "ref": lab, "group": e.get("group", ""),
+                      "x": x, "y": y, "couples": couples, "cycles": others})
     return {"files": files, "cap": {k: st.get("cap_" + k, "") for k in ("conc", "solvent", "el", "temp")}}
 
 
@@ -210,11 +222,112 @@ def _epr_entry(main):
                 D, E = EPR.zfs_DE(d)
                 zfs.append({"label": e.get("label", ""), "D": f"{D / EPR.MHZ_PER_CM:.4f}".replace("-", "−"),
                             "ED": f"{abs(E / D) if D else 0:.3f}"})
-    return {"species": species, "zfs": zfs}
+    # Messungen wie im Bild verarbeitet (Feld in mT nach Skalierung/Kalibrierung des Tabs), dazu die Frequenz der Achse
+    traces, cache = [], {}
+    for e in vis:
+        if e["kind"] != "exp":
+            continue
+        B, I = tab.processed(e, cache)
+        if not len(B):
+            continue
+        x, y = _thin(B, I)
+        nu = tab.axis_mw(e)
+        traces.append({"uid": e["uid"], "label": e.get("label", ""), "x": x, "y": y,
+                       "nu": float(nu) if nu else None})
+    return {"species": species, "zfs": zfs, "traces": traces, "unit": st.get("unit", "mT")}
 
 
-ENTRY = {"eps": _eps_entry, "cv": _cv_entry, "fluo": _fluo_entry, "epr": _epr_entry}
-TAB_KEY = {"cv": "cv", "fluo": "fluo", "epr": "epr"}       # Zustandsschlüssel -> Tab (gebaut?)
+def _ir_entry(main):
+    """IR-Tab: Banden der Liste des Tabs (ohne abgewählte, Text wie dort) und das Spektrum wie im Bild (%T oder A)."""
+    from elucida.tabs import ir_ea as IR
+    tab = main.irms_tab
+    st = tab.st
+    off = set(st.get("ir_off") or [])
+    use = [p for p in tab.peaks() if round(p["wn"]) not in off]
+    out = {"peaks": [{"wn": _num(p["wn"]), "t": IR.wn_text(p["wn"])} for p in sorted(use, key=lambda p: -p["wn"])],
+           "curve": None}
+    sp = tab.spectrum()
+    if sp is not None:
+        mode = tab.mode()
+        x, y = _thin(sp["wn"], IR.display_y(sp, mode))
+        out["curve"] = {"x": x, "y": y, "mode": mode}
+    return out
+
+
+def _xray_entry(main):
+    """X-Ray-Tab: je Struktur die „Ausgewählten Parameter“ (Text wie in der CIF, echtes Minus; selbst gerechnete ohne
+    esd) mit dem Zeilennamen aus den Atomlabels (`param_label`), dazu Raumgruppe und Kristallsystem."""
+    from elucida.tabs import xray as XRAY
+    tab = main.xray_tab
+    out = []
+    for e in tab.entries():
+        S = tab.structure(e)
+        if S is None:
+            continue
+        mol = tab.molecule(e)
+        params = []
+        for p in e.get("params") or []:
+            m = XRAY.measure(mol, p["atoms"]) if mol else None
+            if m is not None:
+                params.append({"kind": m["kind"], "label": XRAY.param_label(p["atoms"]), "t": XRAY.minus(m["text"]),
+                               "cif": m["source"] == "cif"})
+        cv = XRAY.crystal_values(S.block)
+        out.append({"name": e.get("name") or e["block"], "params": params, "sg": cv["sg"], "system": cv["system"]})
+    return {"structures": out}
+
+
+def _frontier(table):
+    """HOMO/LUMO in eV wie der DFT-Tab sie zeigt (zwei Stellen, echtes Minus); nur geschlossenschalig mit ganzen
+    Besetzungen, sonst leer."""
+    rows = table.get("")
+    if not rows or "a" in table or any(min(abs(o - k) for k in (0, 1, 2)) > 1e-3 for _, o, _ in rows):
+        return "", ""
+    homo = max((n for n, o, _ in rows if o > 0.5), default=None)
+    by = {n: en for n, _, en in rows}
+    fmt = lambda v: f"{v:.2f}".replace("-", "−") if v is not None and v == v else ""      # noqa: E731
+    return (fmt(by.get(homo)), fmt(by.get(homo + 1))) if homo is not None else ("", "")
+
+
+def _dft_entry(main):
+    """DFT-Tab: je Rechnung Eingabezeile, E(el), G (Text wie in der Ausgabe) und HOMO/LUMO wie der Tab sie zeigt."""
+    from elucida.tabs import xray as XRAY
+    tab = main.dft_tab
+    calcs = []
+    for e in tab.st.get("entries") or []:
+        c = tab.calc_of(e)
+        if c is None:
+            continue
+        th = c["thermo"]
+        mr = bool(c.get("multireference"))          # wie die SI: allgemeine Energie bezeichnet keinen MR-Zustand
+        e_el = "" if mr else (th.get("E_el") or c.get("energy") or "")
+        homo, lumo = _frontier(tab.orb_table(e))
+        calcs.append({"uid": e.get("uid") or e["file"], "name": e.get("name") or Path(e["file"]).stem,
+                      "method": " ".join(c["keywords"]), "e_el": XRAY.minus(str(e_el)) if e_el else "",
+                      "g": XRAY.minus(str(th["G"])) if th.get("G") and not mr else "", "homo": homo, "lumo": lumo})
+    return {"calcs": calcs}
+
+
+def _shift_range(t):
+    v = [float(x.replace("−", "-")) for x in re.findall(r"[−-]?\d+(?:\.\d+)?", t)]
+    return (min(v), max(v)) if v else None
+
+
+def _nmr_entry(main):
+    """NMR: Signale des Multiplettberichts im Tab (Verschiebung als Text wie in der NMR-Zeile)."""
+    from elucida.tabs import nmr as NMR
+    from elucida.tabs import xray as XRAY
+    sigs = []
+    for b in NMR.parse_mnova((main.nmr_state or {}).get("text") or ""):
+        for s in b["signals"]:
+            r = _shift_range(s["shift"])
+            if r is not None:
+                sigs.append({"nuc": b["nucleus"], "t": XRAY.minus(s["shift"]), "lo": r[0], "hi": r[1]})
+    return {"signals": sigs}
+
+
+ENTRY = {"eps": _eps_entry, "cv": _cv_entry, "fluo": _fluo_entry, "epr": _epr_entry, "irms": _ir_entry,
+         "xray": _xray_entry, "dft": _dft_entry, "nmr": _nmr_entry}
+TAB_KEY = {"cv": "cv", "fluo": "fluo", "epr": "epr", "irms": "irms", "xray": "xray", "dft": "dft"}   # -> Tab (gebaut?)
 
 
 def snapshot_path(pdir) -> Path:
@@ -242,12 +355,19 @@ def write_snapshot(main, state):
         if prev and prev.get("fp") == fp:
             tabs[key] = prev
             continue
-        built = key == "eps" or main._built(TAB_KEY[key])
+        built = key not in TAB_KEY or main._built(TAB_KEY[key])          # ε und NMR: nur der Zustand
         if not built:
             if prev:
                 tabs[key] = prev
             continue
-        entry = ENTRY[key](main) if has_data(key, state.get(key)) else None
+        try:                                                # ein Tab mit Fehler nimmt den anderen ihren Stand nicht
+            entry = ENTRY[key](main) if has_data(key, state.get(key)) else None
+        except Exception:
+            import traceback
+            main.log_signal.emit(T("cmp_snapshot_failed") + f" ({key})\n" + traceback.format_exc())
+            if prev:
+                tabs[key] = prev
+            continue
         tabs[key] = dict(entry or {}, fp=fp)
         done.append(key)
     if tabs == old:
@@ -296,7 +416,7 @@ def read_compound(cdir, rel=None) -> dict:
 
 
 def needs(kind) -> tuple:
-    return {"cv": ("cv",), "spectra": ("eps", "fluo"), "table": SOURCES}.get(kind, ())
+    return {"cv": ("cv",), "spectra": ("eps", "fluo", "irms", "epr"), "table": SOURCES}.get(kind, ())
 
 
 def status(rec, kind) -> str:
@@ -386,17 +506,95 @@ def auto_columns(records) -> dict:
     if "epr" in have:
         out.update(epr_g=("*g*", T("cmp_col_epr_g")), epr_a=("*a* / MHz", T("cmp_col_epr_a")),
                    epr_D=("*D* / cm^{−1}", T("cmp_col_epr_D")), epr_ED=("|*E*/*D*|", T("cmp_col_epr_ED")))
+    if "irms" in have:
+        out["ir_band"] = (FIXED_HEADS["ir_band"], T("cmp_col_ir_band"))
+    if "nmr" in have:
+        out["nmr_shift"] = ("*δ* / ppm", T("cmp_col_nmr_shift"))
+    if "xray" in have:
+        params = {}
+        for r in records:
+            for s in (r["tabs"].get("xray") or {}).get("structures", []):
+                for p in s["params"]:
+                    params.setdefault(xr_key(p["kind"], p["label"]), p["label"])
+        for k, lab in params.items():
+            out[k] = (_auto_head(k), T("cmp_col_xr_param", p=lab))
+        out.update(xr_sg=("Space group", T("cmp_col_xr_sg")), xr_system=("Crystal system", T("cmp_col_xr_system")))
+    if "dft" in have:
+        out.update({k: (FIXED_HEADS[k], T("cmp_col_" + k)) for k in ("dft_method", "dft_eel", "dft_g", "dft_homo",
+                                                                      "dft_lumo")})
     return out
+
+
+# Köpfe der neuen Tab-Werte (englisch wie die Ausgabe)
+FIXED_HEADS = {"ir_band": "*ṽ* / cm^{−1}", "dft_method": "Method (DFT)", "dft_eel": "*E*_{el} / E_{h}",
+               "dft_g": "*G* / E_{h}", "dft_homo": "*E*_{HOMO} / eV", "dft_lumo": "*E*_{LUMO} / eV",
+               "xr_sg": "Space group", "xr_system": "Crystal system"}
+XR_UNIT = {"bond": "Å", "angle": "°", "torsion": "°"}
+MARKUP_KEYS = ("xr_sg",)                             # Tab-Werte, die schon Markup sind (Raumgruppe kursiv, tiefgestellt)
+IR_TOL, NMR_TOL_H, NMR_TOL = 15.0, 0.5, 2.0          # Vorgaben der Toleranz (cm⁻¹, ppm ¹H, ppm andere Kerne)
+
+
+def xr_key(kind, label):
+    """Spalte eines X-Ray-Parameters: gleiche Atomlabels in beiden Richtungen = dieselbe Spalte."""
+    parts = label.split("–")
+    return f"xr:{kind}:" + "–".join(min(parts, parts[::-1]))
+
+
+def _auto_head(key, col=None):
+    """Kopf einer Tab-Spalte, auch wenn keine Verbindung sie gerade anbietet."""
+    col = col or {}
+    if key.startswith("xr:"):
+        _, kind, lab = key.split(":", 2)
+        return f"{_esc(lab)} / {XR_UNIT.get(kind, '')}"
+    if key == "nmr_shift":
+        from elucida.tabs import nmr as NMR
+        return f"*δ*({NMR.nuc_markup(col.get('nuc') or '1H')}) / ppm"
+    if key in FIXED_HEADS:
+        return FIXED_HEADS[key]
+    m = re.fullmatch(r"cv(\d+)_\w+", key)
+    return (_cv_heads(int(m.group(1))).get(key) or ("", ""))[0] if m else key
 
 
 def head_of(col, records=()):
     if col.get("kind") == "auto":
+        if col["key"].startswith("xr:") or col["key"] in FIXED_HEADS or col["key"] == "nmr_shift":
+            return _auto_head(col["key"], col)
         known = auto_columns(records)
         if col["key"] in known:
             return known[col["key"]][0]
-        m = re.fullmatch(r"cv(\d+)_\w+", col["key"])
-        return (_cv_heads(int(m.group(1))).get(col["key"]) or ("", ""))[0] if m else col["key"]
+        return _auto_head(col["key"], col)
     return head_markup(col.get("head", ""), col.get("unit", ""))
+
+
+def target_text(col):
+    """„2100 ± 15“ für IR-/NMR-Spalten (Herkunft in der Liste der Größen), leer ohne Ziel."""
+    if col.get("target") is None:
+        return ""
+    return f"{col['target']:g} ± {col.get('tol', 0):g}".replace("-", "−")
+
+
+def default_tol(col):
+    if col.get("key") == "ir_band":
+        return IR_TOL
+    return NMR_TOL_H if (col.get("nuc") or "1H") == "1H" else NMR_TOL
+
+
+def xr_structure(rec, member):
+    ss = (rec["tabs"].get("xray") or {}).get("structures") or []
+    return next((s for s in ss if s["name"] == member.get("xr_struct")), ss[0] if ss else None)
+
+
+def dft_calc(rec, member):
+    cs = (rec["tabs"].get("dft") or {}).get("calcs") or []
+    return next((c for c in cs if c["uid"] == member.get("dft_calc")), cs[0] if cs else None)
+
+
+def nearest(items, target, tol, dist):
+    """Eintrag mit dem kleinsten Abstand zum Ziel innerhalb der Toleranz (Grenze eingeschlossen), sonst None."""
+    if target is None:
+        return None
+    best = min(items, key=dist, default=None)
+    return best if best is not None and dist(best) <= tol + 1e-9 else None
 
 
 def ref_plain(ref):
@@ -404,9 +602,41 @@ def ref_plain(ref):
     return str(ref or "").replace("$^{0/+}$", "⁰/⁺").replace("$", "")
 
 
+def default_chapter(item):
+    """Kapitel der Gesamt-SI nach Art: CV-Stapel → Cyclic Voltammetry, Spektren nach Inhalt (UV-Vis, IR, EPR),
+    Tabelle → eigene Überschrift am Ende (wie „Weitere“ mit `new:<Überschrift>`)."""
+    if item.get("kind") == "cv":
+        return "cv"
+    if item.get("kind") == "spectra":
+        c = (item.get("st") or {}).get("content", "eps")
+        return "irms" if c == "ir" else "epr" if c in ("epr", "epr_g") else "uvvis"
+    return "new"
+
+
+def si_chapter(item):
+    return (item.get("si") or {}).get("chapter") or default_chapter(item)
+
+
+def si_key(item):
+    """Schlüssel für `publication_si.assemble`: Kapitel oder „new:<Überschrift>“ (Standard: Name des Vergleichs)."""
+    ch = si_chapter(item)
+    return ch if ch != "new" else "new:" + ((item.get("si") or {}).get("heading") or item["name"]).strip()
+
+
 def cv_file(rec, member):
     files = (rec["tabs"].get("cv") or {}).get("files") or []
     return next((f for f in files if f["uid"] == member.get("file")), files[0] if files else None)
+
+
+def cycle_of(f, member):
+    """Kurve des gewählten Zyklus einer CV-Messung -> (x, y, ausgewertet?, Nummer); ohne Wahl oder wenn der Zyklus nicht
+    im Stand liegt, der Zyklus, den der CV-Tab ausgewertet hat."""
+    n = (member or {}).get("cycle")
+    if n and n != f.get("cycle"):
+        c = next((c for c in f.get("cycles") or [] if c["n"] == n), None)
+        if c is not None:
+            return c["x"], c["y"], False, n
+    return f["x"], f["y"], True, f.get("cycle")
 
 
 def eps_series(rec, member):
@@ -414,9 +644,34 @@ def eps_series(rec, member):
     return next((s for s in ser if s["name"] == member.get("series")), ser[0] if ser else None)
 
 
-def auto_value(key, rec, member) -> str:
-    """Wert eines Tabs als Text, genau wie der Tab ihn zeigt; fehlt er, leer (nie geschätzt oder umgerechnet)."""
+def auto_value(key, rec, member, col=None) -> str:
+    """Wert eines Tabs als Text, genau wie der Tab ihn zeigt; fehlt er, leer (nie geschätzt oder umgerechnet).
+    col: die Spalte (IR/NMR: Ziel, Toleranz, Kern)."""
     t = rec["tabs"]
+    col = col or {}
+    if key == "ir_band":                                  # Bande der Liste des Tabs, die dem Ziel am nächsten liegt
+        p = nearest((t.get("irms") or {}).get("peaks") or [], col.get("target"),
+                    col.get("tol", IR_TOL), lambda p: abs(p["wn"] - col["target"]))
+        return p["t"] if p else ""
+    if key == "nmr_shift":                                # Signal (auch Bereich) des Kerns am nächsten am Ziel
+        nuc = col.get("nuc") or "1H"
+        sigs = [s for s in (t.get("nmr") or {}).get("signals") or [] if s["nuc"] == nuc]
+        tg = col.get("target")
+        s = nearest(sigs, tg, col.get("tol", default_tol(col)),
+                    lambda s: 0.0 if s["lo"] <= tg <= s["hi"] else min(abs(tg - s["lo"]), abs(tg - s["hi"])))
+        return s["t"] if s else ""
+    if key.startswith("xr"):
+        s = xr_structure(rec, member)
+        if s is None:
+            return ""
+        if key in ("xr_sg", "xr_system"):
+            return s["sg" if key == "xr_sg" else "system"]
+        p = next((p for p in s["params"] if xr_key(p["kind"], p["label"]) == key), None)
+        return p["t"] if p else ""
+    if key.startswith("dft_"):
+        c = dft_calc(rec, member)
+        return (c or {}).get({"dft_method": "method", "dft_eel": "e_el", "dft_g": "g", "dft_homo": "homo",
+                              "dft_lumo": "lumo"}[key], "")
     if key == "formula":
         from elucida.si import lines as SI
         return SI.chem_plain(rec["formula"]) if rec["formula"] else ""
@@ -492,6 +747,24 @@ class GroupRule(STYLE.RichDelegate):
             painter.restore()
 
 
+class _FitGrid(QTableWidget):
+    """Vorschau der Tabelle: Spalten gleich breit über die ganze Seite, solange alles hineinpasst; sonst nach Inhalt mit
+    Bildlaufleiste (nie abgeschnittene Zellen)."""
+
+    def fit(self):
+        hh = self.horizontalHeader()
+        if not self.columnCount():
+            return hh.setSectionResizeMode(QHeaderView.Interactive)
+        hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+        need = sum(hh.sectionSize(i) for i in range(self.columnCount()))
+        fits = need <= self.viewport().width()
+        hh.setSectionResizeMode(QHeaderView.Stretch if fits else QHeaderView.ResizeToContents)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self.fit()
+
+
 class CompareHost(QMainWindow):
     """Kleiner Gastgeber für den Tab eines Vergleichs (statt des Hauptfensters), wie `reaction_paths.PathHost`."""
 
@@ -544,7 +817,12 @@ class CompareTab(TABS.FigureTab):
             b = QPushButton(STYLE.icon("add"), T("cmp_new_" + kind))
             b.setToolTip(T("cmp_new_" + kind + "_tip"))
             b.clicked.connect(lambda _=False, k=kind: page.add(k))
-            row.addWidget(b)
+            row.addWidget(b, 1)
+        if page.item is not None:                             # Knopfreihe wie über allen Listen: [+ …] [Entfernen]
+            b = STYLE.list_button(T("remove"))
+            b.setToolTip(T("cmp_remove_tip"))
+            b.clicked.connect(page.remove)
+            row.addWidget(b, 1)
         v.addLayout(row)
         # Liste als Tabelle wie in den anderen Tabs (Name, Art); gewählt = offen
         self.lst = QTableWidget(0, 2)
@@ -553,7 +831,7 @@ class CompareTab(TABS.FigureTab):
         self.lst.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.lst.setSelectionMode(QAbstractItemView.SingleSelection)
         self.lst.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.lst.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.lst.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)      # Spalten gleich breit (Nutzerwunsch)
         items = page.items()
         self.lst.setRowCount(len(items))
         for i, it in enumerate(items):
@@ -575,19 +853,55 @@ class CompareTab(TABS.FigureTab):
             self.ed_name = QLineEdit(page.item["name"])
             self.ed_name.editingFinished.connect(lambda: page.rename(self.ed_name.text()))
             f.addRow(T("cmp_name"), self.ed_name)
+            # Gesamt-SI: aufnehmen (Standard aus), Kapitel wie im Tab „Weitere“ (SI-Kapitel oder eigene Überschrift)
+            from elucida.tabs import other as OTHER
+            si = page.item.get("si") or {}
+            self.cb_si = QCheckBox(T("cmp_si_on"))
+            self.cb_si.setToolTip(T("cmp_si_on_tip"))
+            self.cb_si.setChecked(bool(si.get("on")))
+            self.cmb_si = QComboBox()
+            for k, title in OTHER.CHAPTERS:
+                self.cmb_si.addItem(title or T("other_new_heading"), k)
+            self.cmb_si.setCurrentIndex(max(0, self.cmb_si.findData(si_chapter(page.item))))
+            self.ed_si_head = QLineEdit(si.get("heading") or "")
+            self.ed_si_head.setPlaceholderText(page.item["name"])
+            self.ed_si_head.setToolTip(T("cmp_si_heading_tip"))
+            f.addRow(T("cmp_si"), self.cb_si)
+            f.addRow(T("other_chapter"), self.cmb_si)
+            f.addRow(T("other_heading"), self.ed_si_head)
+            self.form_si = f
+            self.cb_si.toggled.connect(self.si_changed)
+            self.cmb_si.currentIndexChanged.connect(self.si_changed)
+            self.ed_si_head.editingFinished.connect(self.si_changed)
             v.addLayout(f)
-            b = STYLE.list_button(T("remove"))
-            b.setToolTip(T("cmp_remove_tip"))
-            b.clicked.connect(page.remove)
-            r2 = QHBoxLayout()
-            r2.addWidget(b)
-            v.addLayout(r2)
+            self.sync_si()
         self.lv.addWidget(g)
         if self.KIND is None:
             return
         self._members_card()
         self.kind_controls()
         self.show_member()                                    # Karten der Art entstehen nach der Liste
+
+    def sync_si(self):
+        """Kapitel nur, wenn der Vergleich in die Gesamt-SI kommt; die Überschrift nur beim eigenen Kapitel."""
+        on = self.cb_si.isChecked()
+        self.form_si.setRowVisible(self.cmb_si, on)
+        self.form_si.setRowVisible(self.ed_si_head, on and self.cmb_si.currentData() == "new")
+
+    def si_changed(self, *_):
+        item = self.page.item
+        if item is None:
+            return
+        new = {"on": self.cb_si.isChecked(), "chapter": self.cmb_si.currentData(),
+               "heading": self.ed_si_head.text().strip()}
+        if new["chapter"] == default_chapter(item):            # Vorgabe der Art nicht festschreiben (folgt dem Inhalt)
+            new.pop("chapter")
+        if not new["heading"]:
+            new.pop("heading")
+        self.sync_si()
+        if new != (item.get("si") or {}):
+            item["si"] = new
+            self.page.changed()
 
     def _members_card(self):
         g = QGroupBox(T("cmp_compounds"))
@@ -611,7 +925,8 @@ class CompareTab(TABS.FigureTab):
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)      # Datenspalten gleich breit; die
+        # Häkchenspalte bleibt schmal (check_columns)
         self.tbl.itemChanged.connect(self._member_edited)
         self.tbl.currentCellChanged.connect(lambda *_: self.show_member())
         v.addWidget(self.tbl)
@@ -713,6 +1028,12 @@ class CompareTab(TABS.FigureTab):
     def rec(self, m):
         return self.page.records[m["dir"]]
 
+    # -- Gesamt-SI -----------------------------------------------------------------------
+    def si_blocks(self, out_dir, item):
+        """Abbildung + „Figure Sn“-Unterschrift wie jede Abbildung der SI (leer ohne Bild)."""
+        self.notes_begin()
+        return self.si_figure(out_dir, "comparison_" + item["uid"])
+
     # -- Export -----------------------------------------------------------------------
     def export_dialog(self):
         """Ins Projekt: <Projekt>/comparisons/figures|tables|SI, Dateiname = Name des Vergleichs (wird überschrieben)."""
@@ -762,14 +1083,21 @@ class CVStackTab(CompareTab):
         self.det = QGroupBox(T("cmp_member"))
         f = make_form(self.det)
         self.cmb_file = QComboBox()
+        self.cmb_cycle = QComboBox()
+        self.cmb_cycle.setToolTip(T("cmp_cycle_tip", n=MAX_CYCLES))
         self.cmb_couple = QComboBox()
         self.cmb_label = QComboBox()
         for k in self.LABELS:
             self.cmb_label.addItem(T("cmp_lab_" + k), k)
         f.addRow(T("cmp_measurement"), self.cmb_file)
+        f.addRow(T("cmp_cycle"), self.cmb_cycle)
         f.addRow(T("cmp_couple"), self.cmb_couple)
         f.addRow(T("cmp_label"), self.cmb_label)
-        for w in (self.cmb_file, self.cmb_couple, self.cmb_label):
+        self.lbl_cycle = STYLE.HintLabel("")                  # anderer Zyklus: keine Zahl am Peak (nur der ausgewertete)
+        self.lbl_cycle.setWordWrap(True)
+        self.lbl_cycle.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_cycle)
+        for w in (self.cmb_file, self.cmb_cycle, self.cmb_couple, self.cmb_label):
             w.currentIndexChanged.connect(self.detail_changed)
         self.lv.addWidget(self.det)
         g = QGroupBox(T("cv_display"))
@@ -799,7 +1127,7 @@ class CVStackTab(CompareTab):
             return
         m = self.current_member()
         self._loading = True
-        for w in (self.cmb_file, self.cmb_couple):
+        for w in (self.cmb_file, self.cmb_cycle, self.cmb_couple):
             w.clear()
         cv = (self.rec(m)["tabs"].get("cv") if m else None) or {}
         for fl in cv.get("files", []):
@@ -811,6 +1139,12 @@ class CVStackTab(CompareTab):
             for c in f["couples"]:
                 self.cmb_couple.addItem(str(c["n"]), c["n"])
             self.cmb_couple.setCurrentIndex(max(0, self.cmb_couple.findData(m.get("couple", 1))))
+            for n in sorted({f["cycle"]} | {c["n"] for c in f.get("cycles") or []}):
+                self.cmb_cycle.addItem(T("cmp_cycle_eval", n=n) if n == f["cycle"] else str(n), n)
+            self.cmb_cycle.setCurrentIndex(max(0, self.cmb_cycle.findData(cycle_of(f, m)[3])))
+            self.cmb_cycle.setEnabled(self.cmb_cycle.count() > 1)
+        n_ = cycle_of(f, m)[3] if f is not None else None
+        self.lbl_cycle.setText(T("cmp_cycle_hint", n=f["cycle"]) if f is not None and n_ != f["cycle"] else "")
         if m:
             self.cmb_label.setCurrentIndex(max(0, self.cmb_label.findData(m.get("label", "fwd"))))
         self.det.setEnabled(m is not None and f is not None)
@@ -820,6 +1154,11 @@ class CVStackTab(CompareTab):
         m = self.current_member()
         if self._loading or m is None:
             return
+        f = cv_file(self.rec(m), m)
+        if f is not None and self.cmb_file.currentData() != f["uid"]:   # andere Messung: deren ausgewerteter Zyklus
+            m.pop("cycle", None)
+        else:
+            m["cycle"] = self.cmb_cycle.currentData()
         m.update(file=self.cmb_file.currentData(), couple=self.cmb_couple.currentData() or 1,
                  label=self.cmb_label.currentData())
         self.show_member()
@@ -856,10 +1195,13 @@ class CVStackTab(CompareTab):
         cfg = self.base_cfg()
         data = []
         for m, rec, f in rows:
-            x = np.asarray(f["x"], float)
-            y = np.asarray([np.nan if v is None else v for v in f["y"]], float)
+            x, y, evaluated, n = cycle_of(f, m)
+            if m.get("cycle") and n != m["cycle"]:            # Zyklus nicht (mehr) im Stand: der ausgewertete
+                self.add_note(T("cmp_cycle_gone", name=rec["name"], n=m["cycle"], ev=n))
+            x = np.asarray(x, float)
+            y = np.asarray([np.nan if v is None else v for v in y], float)
             fac = 1.0 / np.nanmax(np.abs(y)) if st["normalize"] and np.nanmax(np.abs(y)) > 0 else 1.0
-            data.append((m, rec, f, x, y * fac, fac))
+            data.append((m, rec, dict(f, _evaluated=evaluated), x, y * fac, fac))
         span = max(float(np.nanmax(y) - np.nanmin(y)) for *_, y, _f in data) or 1.0
         n = len(data)
         curves, labels, arrows, imgs = [], [], [], []
@@ -883,7 +1225,7 @@ class CVStackTab(CompareTab):
             off = curves[k]["_off"]
             c = next((c for c in f["couples"] if c["n"] == m.get("couple", 1)), None)
             kind = m.get("label", "fwd")
-            if c is not None and kind != "none":
+            if c is not None and kind != "none" and f["_evaluated"]:   # Zahlen nur aus dem ausgewerteten Zyklus
                 if c["edge"]:
                     self.add_note(T("cmp_edge_note", name=rec["name"]))
                 else:
@@ -961,43 +1303,69 @@ class SpectraTab(CompareTab):
     """Spektren mehrerer Verbindungen in einem Bild (UV-Vis als ε wie im Overlay oder auf das Maximum normiert,
     Emission normiert wie im Fluoreszenz-Tab), übereinander oder gestapelt, ein Legendeneintrag je Verbindung."""
     KIND = "spectra"
-    DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], content="eps", stack=False, stack_gap=1.0)
-    CONTENTS = ("eps", "abs_norm", "em", "abs_em")
+    DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], content="eps", stack=False, stack_gap=1.0,
+                         ref_freq=0.0)
+    CONTENTS = ("eps", "abs_norm", "em", "abs_em", "ir", "epr", "epr_g")
+    RESET_KEEP = CompareTab.RESET_KEEP + ("ref_freq",)      # Referenzfrequenz wie im EPR-Tab: bleibt beim Zurücksetzen
+    EPR = ("epr", "epr_g")
 
     def kind_controls(self):
         st = self.st
         self.box_series = QGroupBox(T("cmp_member"))         # nicht `det`: kein „erst wählen“-Hinweis (nur Sichtbarkeit)
-        f = make_form(self.box_series)
+        self.form_series = f = make_form(self.box_series)
         self.cmb_series = QComboBox()
         self.cmb_series.currentIndexChanged.connect(self.detail_changed)
         f.addRow(T("cmp_series"), self.cmb_series)
+        self.cmb_trace = QComboBox()                          # EPR: welche Messung der Verbindung
+        self.cmb_trace.currentIndexChanged.connect(self.detail_changed)
+        f.addRow(T("cmp_epr_trace"), self.cmb_trace)
         self.lv.addWidget(self.box_series)
         g = QGroupBox(T("cv_display"))
-        f = make_form(g)
+        self.form_display = f = make_form(g)
         self.cmb_content = QComboBox()
         for k in self.CONTENTS:
             self.cmb_content.addItem(T("cmp_content_" + k), k)
         self.cmb_content.setCurrentIndex(max(0, self.cmb_content.findData(st["content"])))
         f.addRow(T("cmp_content"), self.cmb_content)
+        # EPR-Feldachse: wie der EPR-Tab auf eine Referenzfrequenz skalieren (B·ν_ref/ν), sonst nur gleiche Frequenzen
+        self.sp_ref = QDoubleSpinBox(decimals=4, minimum=0.0, maximum=500.0, singleStep=0.1, suffix=" GHz",
+                                     value=st["ref_freq"])
+        self.sp_ref.setSpecialValueText(T("off"))
+        self.sp_ref.setToolTip(T("cmp_ref_freq_tip"))
+        f.addRow(T("epr_ref_freq"), self.sp_ref)
+        self.sp_ref.valueChanged.connect(self.changed)
         row = QHBoxLayout()                                   # Stapeln mit Abstand in einer Zeile wie im CV-Tab
         self.cb_stack = QCheckBox(T("cmp_stack"))
         self.cb_stack.setChecked(st["stack"])
         self.sp_gap = QDoubleSpinBox(decimals=2, minimum=0.0, maximum=5.0, singleStep=0.1, value=st["stack_gap"])
         self.sp_gap.setToolTip(T("cmp_gap_tip"))
-        self.sp_gap.setEnabled(st["stack"])                   # Abstand zählt nur gestapelt
-        self.cb_stack.toggled.connect(self.sp_gap.setEnabled)
         row.addWidget(self.cb_stack)
         row.addWidget(self.sp_gap)
         row.addStretch(1)
         f.addRow(row)
-        self.cmb_content.currentIndexChanged.connect(self.changed)
+        self.cmb_content.currentIndexChanged.connect(self.content_changed)
         self.sp_gap.valueChanged.connect(self.changed)
         self.cb_stack.toggled.connect(self.changed)
         self.lv.addWidget(g)
+        self.form_display.setRowVisible(self.sp_ref, st["content"] == "epr")
+
+    def content_changed(self, *_):
+        """EPR: normiert und gestapelt als Vorgabe; Referenzfrequenz nur bei der Feldachse."""
+        k = self.cmb_content.currentData()
+        self.form_display.setRowVisible(self.sp_ref, k == "epr")
+        if k in self.EPR and self.st["content"] not in self.EPR and not self.cb_stack.isChecked():
+            self.cb_stack.setChecked(True)
+        self.changed()
+        self.show_member()
+        if hasattr(self, "cmb_si") and not (self.page.item.get("si") or {}).get("chapter"):
+            self.cmb_si.blockSignals(True)                    # Kapitel der Gesamt-SI folgt dem Inhalt (Vorgabe)
+            self.cmb_si.setCurrentIndex(max(0, self.cmb_si.findData(default_chapter(self.page.item))))
+            self.cmb_si.blockSignals(False)
+            self.sync_si()
 
     def collect(self):
         self.st.update(content=self.cmb_content.currentData(), stack_gap=self.sp_gap.value(),
-                       stack=self.cb_stack.isChecked())
+                       stack=self.cb_stack.isChecked(), ref_freq=self.sp_ref.value())
 
     def show_member(self):
         if not hasattr(self, "cmb_series"):
@@ -1010,21 +1378,40 @@ class SpectraTab(CompareTab):
             self.cmb_series.addItem(s["name"], s["name"])
         if m and ser:
             self.cmb_series.setCurrentIndex(max(0, self.cmb_series.findData(eps_series(self.rec(m), m)["name"])))
-        # nur bei mehreren ε-Serien gibt es etwas zu wählen
-        self.box_series.setVisible(any(len((self.rec(x)["tabs"].get("eps") or {}).get("series") or []) > 1
-                                for x in self.members()))
+        self.cmb_trace.clear()
+        trs = ((self.rec(m)["tabs"].get("epr") or {}).get("traces") if m else None) or []
+        for t in trs:
+            self.cmb_trace.addItem(t["label"], t["uid"])
+        if m and trs:
+            self.cmb_trace.setCurrentIndex(max(0, self.cmb_trace.findData(epr_trace(self.rec(m), m)["uid"])))
+        # nur wählbar, was zum Inhalt gehört und bei einer Verbindung mehrfach vorkommt
+        content = self.st["content"]
+        many = lambda tab, k: any(len((self.rec(x)["tabs"].get(tab) or {}).get(k) or []) > 1     # noqa: E731
+                                  for x in self.members())
+        show_s = content in ("eps", "abs_norm", "abs_em") and many("eps", "series")
+        show_t = content in self.EPR and many("epr", "traces")
+        self.form_series.setRowVisible(self.cmb_series, show_s)
+        self.form_series.setRowVisible(self.cmb_trace, show_t)
+        self.box_series.setVisible(show_s or show_t)
         self._loading = False
 
     def detail_changed(self, *_):
         m = self.current_member()
         if self._loading or m is None:
             return
-        m["series"] = self.cmb_series.currentData()
+        if self.cmb_series.count():
+            m["series"] = self.cmb_series.currentData()
+        if self.cmb_trace.count():
+            m["epr"] = self.cmb_trace.currentData()
         self.timer.start()
 
     def figure_spec(self):
         st = self.st
         content = st["content"]
+        if content == "ir":
+            return self._ir_spec()
+        if content in self.EPR:
+            return self._epr_spec()
         uv, em = content in ("eps", "abs_norm", "abs_em"), content in ("em", "abs_em")
         eps_mode = content == "eps"
         lo = core.DEFAULTS["peak_range_nm"][0]
@@ -1084,9 +1471,116 @@ class SpectraTab(CompareTab):
         cfg["images"] = []
         return cfg, curves, [], []
 
+    def _stacked(self, groups, cfg, span):
+        """[(Mitglied, Verbindung, x, y)] -> Kurven, übereinander oder gestapelt (oberster Eintrag oben)."""
+        st, n, curves = self.st, len(groups), []
+        for k, (m, rec, x, y) in enumerate(groups):
+            off = (n - 1 - k) * st["stack_gap"] * span if st["stack"] else 0.0
+            curves.append({"x": x, "y": y + off, "val": y, "color": m["color"], "ls": "-", "lw": 1.0,
+                           "label": rec["name"]})
+        cfg["ylim"] = _fit_y(curves)
+        if st["ymax"] > 0:
+            cfg["ylim"][1] = st["ymax"]
+        cfg["y_axis"] = "no_numbers" if st["stack"] else "numbers"
+        cfg["legend_beside"] = True
+        cfg["images"] = []
+        return curves
+
+    def _xlim(self, xs, reverse):
+        """Achse wie im Tab: IR-Wellenzahl und g fallen nach rechts."""
+        st = self.st
+        lo, hi = (float(np.nanmin(xs)), float(np.nanmax(xs))) if st["x_auto"] else sorted((st["x_min"], st["x_max"]))
+        return [hi, lo] if reverse else [lo, hi]
+
+    def _refused_notes(self, missing, refused_key=None, refused=(), **kw):
+        if missing:
+            self.add_note(T("cmp_missing_note", names=", ".join(missing)))
+        if refused:
+            self.add_note(T(refused_key, names=", ".join(refused), **kw))
+
+    def _ir_spec(self):
+        """IR: Transmission oder Absorbanz wie im IR-Tab der ersten Verbindung; eine andere Darstellung wird
+        abgelehnt (nie umgerechnet)."""
+        groups, missing, refused, mode0 = [], [], [], None
+        for m in self.drawn():
+            rec = self.rec(m)
+            cu = (rec["tabs"].get("irms") or {}).get("curve")
+            if not cu:
+                if status(rec, "spectra") in ("outdated", "missing"):
+                    missing.append(rec["name"])
+                continue
+            if mode0 is None:
+                mode0 = cu["mode"]
+            elif cu["mode"] != mode0:
+                refused.append(rec["name"])
+                continue
+            groups.append((m, rec, np.asarray(cu["x"], float),
+                           np.asarray([np.nan if v is None else v for v in cu["y"]], float)))
+        self._refused_notes(missing, "cmp_ir_refused", refused, mode=T("cmp_ir_mode_" + (mode0 or "T")))
+        if not groups:
+            return None
+        cfg = self.base_cfg()
+        span = max(float(np.nanmax(y) - np.nanmin(y)) for *_, y in groups) or 1.0
+        curves = self._stacked(groups, cfg, span)
+        cfg["xlim"] = self._xlim(np.concatenate([g[2] for g in groups]), True)
+        cfg["xlabel"] = "wavenumber [cm$^{-1}$]"
+        cfg["ylabel"] = "transmittance [%]" if mode0 == "T" else "absorbance"
+        return cfg, curves, [], []
+
+    def _epr_spec(self):
+        """EPR normiert: Feldachse nur bei gleicher Mikrowellenfrequenz oder wie der EPR-Tab auf eine Referenzfrequenz
+        skaliert (B·ν_ref/ν), sonst g-Achse (g = hν/µ_B·B); was nicht passt, wird abgelehnt (nie still gemischt)."""
+        from elucida.tabs import epr as EPR
+        st = self.st
+        g_axis, ref = st["content"] == "epr_g", st["ref_freq"]
+        groups, missing, no_nu, other_nu, nu0, units = [], [], [], [], None, set()
+        for m in self.drawn():
+            rec = self.rec(m)
+            ep = rec["tabs"].get("epr") or {}
+            tr = epr_trace(rec, m)
+            if tr is None:
+                if status(rec, "spectra") in ("outdated", "missing"):
+                    missing.append(rec["name"])
+                continue
+            B = np.asarray(tr["x"], float)
+            y = np.asarray([np.nan if v is None else v for v in tr["y"]], float)
+            nu = tr.get("nu")
+            if g_axis or ref:
+                if not nu:
+                    no_nu.append(rec["name"])
+                    continue
+                x = nu / (EPR.MU_B_H * B / 1000.0) if g_axis else B * ref / nu
+            else:
+                if not groups:
+                    nu0 = nu
+                elif not nu or not nu0 or abs(nu - nu0) > EPR_NU_TOL * nu0:
+                    other_nu.append(rec["name"])
+                    continue
+                x = B
+            mx = np.nanmax(np.abs(y)) if np.isfinite(y).any() else 0
+            units.add(ep.get("unit", "mT"))
+            groups.append((m, rec, x, y / mx if mx > 0 else y))
+        self._refused_notes(missing, "cmp_epr_no_nu", no_nu)
+        if other_nu:
+            self.add_note(T("cmp_epr_other_nu", names=", ".join(other_nu), nu=f"{nu0:.4f}" if nu0 else "?"))
+        if not groups:
+            return None
+        cfg = self.base_cfg()
+        unit = "G" if units == {"G"} and not g_axis else "mT"
+        if unit == "G":
+            groups = [(m, rec, x * 10.0, y) for m, rec, x, y in groups]
+        curves = self._stacked(groups, cfg, 2.0)
+        cfg["xlim"] = self._xlim(np.concatenate([g[2] for g in groups]), g_axis)
+        cfg["xlabel"] = "g" if g_axis else f"magnetic field [{unit}]"
+        cfg["ylabel"] = "normalized EPR intensity [arb. u.]"
+        self._epr_nu = (ref or nu0) if not g_axis else None
+        return cfg, curves, [], []
+
     def si_caption(self, name):
         from elucida.si.lines import chem_html
         st = self.st
+        if st["content"] == "ir" or st["content"] in self.EPR:
+            return self._caption_ir_epr()
         ms = [m for m in self.drawn()]
         names = [self.rec(m)["name"] for m in ms]
         if not names:
@@ -1104,6 +1598,29 @@ class SpectraTab(CompareTab):
             solv.append((rec["name"], (s or {}).get("solvent") or fl.get("solvent", "")))
         sv = _per_compound(solv, chem_html)
         return h + (f" in {sv}" if sv else "") + (" (stacked)" if st["stack"] else "") + "."
+
+
+    def _caption_ir_epr(self):
+        """Unterschrift IR/EPR: nur Verbindungen, die das Bild zeigt; Achse der EPR-Spektren ausdrücklich."""
+        spec = _quiet(self.figure_spec)
+        if spec is None:
+            return ""
+        names = [c["label"] for c in spec[1] if c.get("label")]
+        st = self.st
+        h = ("IR spectra of " if st["content"] == "ir" else "Normalized EPR spectra of ") + _join_names(names)
+        h += " (stacked)" if st["stack"] and len(names) > 1 else ""
+        if st["content"] == "epr_g":
+            h += ", plotted against the g value"
+        elif st["content"] == "epr" and st["ref_freq"]:
+            h += f"; magnetic field scaled to a microwave frequency of {st['ref_freq']:.4f} GHz"
+        elif st["content"] == "epr" and getattr(self, "_epr_nu", None):
+            h += f"; microwave frequency {self._epr_nu:.4f} GHz"
+        return h + "."
+
+
+def epr_trace(rec, member):
+    trs = (rec["tabs"].get("epr") or {}).get("traces") or []
+    return next((t for t in trs if t["uid"] == member.get("epr")), trs[0] if trs else None)
 
 
 class TableTab(CompareTab):
@@ -1150,6 +1667,17 @@ class TableTab(CompareTab):
         return t
 
     def kind_controls(self):
+        # Gewählte Verbindung: welche Struktur (X-Ray) und welche Rechnung (DFT) ihre Werte liefert – nur bei mehreren
+        self.box_member = QGroupBox(T("cmp_member"))
+        self.form_member = make_form(self.box_member)
+        self.cmb_xr, self.cmb_dft = QComboBox(), QComboBox()
+        self.cmb_xr.setToolTip(T("cmp_xr_struct_tip"))
+        self.cmb_dft.setToolTip(T("cmp_dft_calc_tip"))
+        self.form_member.addRow(T("cmp_xr_struct"), self.cmb_xr)
+        self.form_member.addRow(T("cmp_dft_calc"), self.cmb_dft)
+        for w in (self.cmb_xr, self.cmb_dft):
+            w.currentIndexChanged.connect(self.member_detail_changed)
+        self.lv.addWidget(self.box_member)
         # Größen (Spalten der Tabelle, gedreht ihre Zeilen): Knopfzeile – Tabelle – Felder der gewählten Größe
         g = QGroupBox(T("cmp_columns"))
         v = QVBoxLayout(g)
@@ -1188,6 +1716,19 @@ class TableTab(CompareTab):
         f.addRow(T("cmp_group_head"), self.ed_group)
         for ed in (self.ed_head, self.ed_unit, self.ed_group):
             ed.editingFinished.connect(self.col_edited)
+        # IR-Bande / NMR-Verschiebung: Ziel und Toleranz (Zelle = nächster Wert der Liste des Tabs innerhalb der Toleranz)
+        self.cmb_nuc = QComboBox()
+        self.ed_target = QLineEdit()
+        self.ed_target.setToolTip(T("cmp_target_tip"))
+        self.sp_tol = QDoubleSpinBox(decimals=2, minimum=0.0, maximum=1000.0, singleStep=0.1)
+        self.sp_tol.setToolTip(T("cmp_tol_tip"))
+        f.addRow(T("cmp_nuc"), self.cmb_nuc)
+        f.addRow(T("cmp_target"), self.ed_target)
+        f.addRow(T("cmp_tol"), self.sp_tol)
+        self.ed_target.editingFinished.connect(self.col_edited)
+        self.sp_tol.editingFinished.connect(self.col_edited)
+        self.cmb_nuc.currentIndexChanged.connect(self.col_edited)
+        self.form_cols = f
         v.addLayout(f)
         self.lv.addWidget(g)
         # Weitere Verbindungen (nicht im Projekt, z. B. aus der Literatur): eigene Zeilen, Werte von Hand
@@ -1230,7 +1771,7 @@ class TableTab(CompareTab):
         # Vorschau: die Tabelle selbst (Kopfzeilen als Zeilen gesetzt, Zellen bearbeitbar)
         res = QGroupBox(T("cmp_table"))
         rv = QVBoxLayout(res)
-        self.grid = QTableWidget(0, 0)
+        self.grid = _FitGrid(0, 0)
         self.grid.horizontalHeader().hide()
         self.grid.verticalHeader().hide()
         self.grid.setShowGrid(False)                          # wie alle Tabellen: nur Linien unter den Zeilen
@@ -1287,8 +1828,11 @@ class TableTab(CompareTab):
         """Größe, Einheit, Gruppenkopf, Herkunft einer Spalte (Markup wie der Tabellenkopf)."""
         if c["kind"] == "auto":
             head, label = known.get(c.get("key"), (head_of(c), c.get("key", "")))
+            head = head_of(c) if c.get("key") == "nmr_shift" else head          # Kern gehört zur Spalte
             q, _sep, u = head.partition(" / ")
             src = label.split(":")[0] if ":" in label else T("cmp_src_compound")
+            if c.get("key") in ("ir_band", "nmr_shift"):                       # Ziel ± Toleranz statt Herkunft allein
+                src = f"{src} · {target_text(c) or T('cmp_no_target')}"
         else:
             q, u, src = _esc(c.get("head") or T("cmp_free_col")), unit_markup(c.get("unit", "")), T("cmp_src_own")
         return [q, u, c.get("group", ""), src]
@@ -1313,22 +1857,93 @@ class TableTab(CompareTab):
         tip = "" if free or c is None else T("cmp_auto_fixed")
         self.ed_head.setToolTip(tip)
         self.ed_unit.setToolTip(tip)
+        # Ziel/Toleranz nur für IR-Bande und NMR-Verschiebung, der Kern nur für NMR (sonst samt Beschriftung weg)
+        key = (c or {}).get("key") if c is not None and not free else None
+        self._col_loading = True
+        self.form_cols.setRowVisible(self.cmb_nuc, key == "nmr_shift")
+        for w in (self.ed_target, self.sp_tol):
+            self.form_cols.setRowVisible(w, key in ("ir_band", "nmr_shift"))
+        if key == "nmr_shift":
+            nucs = sorted({s["nuc"] for r in self.page.records.values()
+                           for s in (r["tabs"].get("nmr") or {}).get("signals", [])} | {c.get("nuc") or "1H"},
+                          key=lambda n: (n != "1H", n != "13C", n))
+            self.cmb_nuc.clear()
+            from elucida.tabs import nmr as NMR
+            for n in nucs:
+                self.cmb_nuc.addItem(NMR.sup_nuclei(n), n)
+            self.cmb_nuc.setCurrentIndex(max(0, self.cmb_nuc.findData(c.get("nuc") or "1H")))
+        if key in ("ir_band", "nmr_shift"):
+            unit = " cm⁻¹" if key == "ir_band" else " ppm"
+            self.ed_target.setText("" if c.get("target") is None else f"{c['target']:g}")
+            self.ed_target.setPlaceholderText(T("cmp_target_ph_ir" if key == "ir_band" else "cmp_target_ph_nmr"))
+            self.sp_tol.setDecimals(0 if key == "ir_band" else 2)
+            self.sp_tol.setSuffix(unit)
+            self.sp_tol.setValue(c.get("tol", default_tol(c)))
+        self._col_loading = False
 
-    def col_edited(self):
+    def col_edited(self, *_):
         c = self.current_col()
-        if c is None:
+        if c is None or getattr(self, "_col_loading", False):
             return
         new = dict(c, group=self.ed_group.text().strip())
         if c["kind"] == "free":
             new.update(head=self.ed_head.text().strip(), unit=self.ed_unit.text().strip())
+        elif c.get("key") in ("ir_band", "nmr_shift"):
+            txt = self.ed_target.text().strip().replace(",", ".").replace("−", "-")
+            try:
+                new["target"] = float(txt) if txt else None
+            except ValueError:                                     # kein Zahlentext: altes Ziel bleibt
+                self.ed_target.setText("" if c.get("target") is None else f"{c['target']:g}")
+            new["tol"] = self.sp_tol.value()
+            if c["key"] == "nmr_shift":
+                new["nuc"] = self.cmb_nuc.currentData() or c.get("nuc") or "1H"
+                if new["nuc"] != c.get("nuc") and c.get("tol") == default_tol(c):   # Vorgabe folgt dem Kern
+                    new["tol"] = default_tol(new)
         if new != c:
             c.update(new)
             self.table_changed(cols=True)
 
     def add_auto(self, key):
         if key:
-            self.tb["cols"].append({"id": uuid.uuid4().hex[:8], "kind": "auto", "key": key, "group": ""})
+            col = {"id": uuid.uuid4().hex[:8], "kind": "auto", "key": key, "group": ""}
+            if key == "nmr_shift":
+                col["nuc"] = "1H"
+            if key in ("ir_band", "nmr_shift"):
+                col.update(target=None, tol=default_tol(col))
+            self.tb["cols"].append(col)
             self.table_changed(cols=True, select=len(self.tb["cols"]) - 1)
+            if key in ("ir_band", "nmr_shift"):                 # gleich das Ziel eintippen
+                self.steps.reveal(self.ed_target)
+                self.ed_target.setFocus()
+
+    # -- Gewählte Verbindung (X-Ray-Struktur, DFT-Rechnung) ----------------------------------
+    def show_member(self):
+        if not hasattr(self, "cmb_xr"):
+            return
+        m = self.current_member()
+        self._loading = True
+        lists = []
+        for cmb, tab, items, attr, sel in ((self.cmb_xr, "xray", "structures", "name", xr_structure),
+                                           (self.cmb_dft, "dft", "calcs", "uid", dft_calc)):
+            cmb.clear()
+            its = ((self.rec(m)["tabs"].get(tab) or {}).get(items) if m else None) or []
+            for it in its:
+                cmb.addItem(it["name"], it[attr])
+            if its:
+                cmb.setCurrentIndex(max(0, cmb.findData(sel(self.rec(m), m)[attr])))
+            many = any(len((self.rec(x)["tabs"].get(tab) or {}).get(items) or []) > 1 for x in self.members())
+            self.form_member.setRowVisible(cmb, many)
+            cmb.setEnabled(len(its) > 1)
+            lists.append(many)
+        self.box_member.setVisible(any(lists))                  # nur wenn es etwas zu wählen gibt
+        self._loading = False
+
+    def member_detail_changed(self, *_):
+        m = self.current_member()
+        if self._loading or m is None:
+            return
+        m.update(xr_struct=self.cmb_xr.currentData(), dft_calc=self.cmb_dft.currentData())
+        self.table_changed()
 
     def add_free(self):
         self.tb["cols"].append({"id": uuid.uuid4().hex[:8], "kind": "free", "head": T("cmp_free_col"), "unit": "",
@@ -1415,7 +2030,7 @@ class TableTab(CompareTab):
             for c in cols:
                 k = f"{m['key']}|{c['id']}"
                 if c["kind"] == "auto":
-                    tv = auto_value(c["key"], rec, m)
+                    tv = auto_value(c["key"], rec, m, c)
                     vals.append((cells[k], "over", tv) if k in cells else (tv, "auto", tv))
                 else:
                     vals.append((cells.get(k, ""), "free", None))
@@ -1432,7 +2047,8 @@ class TableTab(CompareTab):
         top = [[("", "group", None, None)] + [(_esc(g), "group", None, c["id"]) for g, c in zip(groups, self.tb["cols"])]] \
             if groups else []
         head = [[(corner, "head", None, None)] + [(h, "head", None, c["id"]) for h, c in zip(heads, self.tb["cols"])]]
-        body = [[(_esc(name), "name", rk, None)] + [(_esc(t), kind, rk, c["id"]) for (t, kind, _tv), c in
+        body = [[(_esc(name), "name", rk, None)] + [(t if kind == "auto" and c.get("key") in MARKUP_KEYS else _esc(t),
+                                                       kind, rk, c["id"]) for (t, kind, _tv), c in
                                                       zip(vals, self.tb["cols"])] for rk, name, vals in rows]
         mat = top + head + body
         n_head = len(top) + 1
@@ -1480,9 +2096,7 @@ class TableTab(CompareTab):
             self._spans(col, lambda a, n: self.grid.setSpan(a, 0, n, 1))
         elif self.logical()[0] and mat:
             self._spans([t for t, *_ in mat[0]], lambda a, n: self.grid.setSpan(0, a, 1, n))
-        self.grid.resizeColumnsToContents()
-        hh = self.grid.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.Stretch if self.grid.columnCount() else QHeaderView.Interactive)
+        self.grid.fit()
         self.grid.blockSignals(False)
         self._loading = False
         self.show_cell()
@@ -1518,7 +2132,7 @@ class TableTab(CompareTab):
         col = next(c for c in self.tb["cols"] if c["id"] == ck)
         if col["kind"] == "auto":
             m = next((m for m in self.members() if m["key"] == rk), None)
-            tv = auto_value(col["key"], self.rec(m), m) if m else ""
+            tv = auto_value(col["key"], self.rec(m), m, col) if m else ""
             if text == tv:
                 self.tb["cells"].pop(k, None)
             else:
@@ -1538,7 +2152,7 @@ class TableTab(CompareTab):
         if role in ("auto", "over"):
             col = next(c for c in self.tb["cols"] if c["id"] == ck)
             m = next((m for m in self.members() if m["key"] == rk), None)
-            tv = auto_value(col["key"], self.rec(m), m) if m else ""
+            tv = auto_value(col["key"], self.rec(m), m, col) if m else ""
             self.lbl_cell.setText(T("cmp_cell_tab", v=tv or "–") + ("  ·  " + T("cmp_cell_over") if over else ""))
         else:
             self.lbl_cell.setText(T("cmp_cell_hint"))
@@ -1575,6 +2189,13 @@ class TableTab(CompareTab):
                 top.append((texts[a], b - a))
                 a = b
         return [t for t, *_ in mat[n_head - 1]], [[t for t, *_ in r] for r in mat[n_head:]], top, (0,)
+
+    def si_blocks(self, out_dir, item):
+        """„Table Sn: <Name>.“ und die Tabelle mit dem Schreiber des Word-Exports (Spaltenbreiten nach Inhalt)."""
+        header, rows, top, bold = self.export_table()
+        if not rows or len(header) < 2:
+            return []
+        return [("tabcap", _esc(item["name"]), ""), ("params", header, rows, dict(bold_cols=bold, top=top, fit=True))]
 
     def table_html(self):
         from elucida.tabs import xray as XRAY
@@ -1661,6 +2282,7 @@ class ComparePage(QWidget):
         self.pub, self.main = pub_page, pub_page.main
         self.pdir, self.item, self.tab, self.records, self._dirty = None, None, None, {}, True
         self._saved = None
+        self.history, self.cursor, self._restoring = [], -1, False   # Rückgängig je offenem Vergleich (wie PathHost)
         self.host = CompareHost(self)
         self.lay = QVBoxLayout(self)
         self.lay.setContentsMargins(0, 0, 0, 0)
@@ -1691,12 +2313,9 @@ class ComparePage(QWidget):
         if not self._dirty and uid is None and self.tab is not None:
             return
         self._dirty = False
-        self.records = {}
+        self.read_records()
         if self.pdir is not None:
             data = PUB.load(self.pdir)
-            for d in PUB.sync(self.pdir)[0]:
-                rel = PUB._rel(self.pdir.resolve(), d.resolve())
-                self.records[rel] = read_compound(d, rel)
             items = data.get("comparisons") or []
             uid = uid or (self.item or {}).get("uid")
             self.item = next((x for x in items if x["uid"] == uid), items[0] if items else None)
@@ -1706,6 +2325,65 @@ class ComparePage(QWidget):
             self.sync_members(self.item)
         self._saved = json.dumps(self.item, sort_keys=True, default=str)
         self.build()
+        self.reset_history()
+
+    def read_records(self):
+        """Stände aller Verbindungen des Projekts (nur Dateien lesen, nichts öffnen)."""
+        self.records = {}
+        if self.pdir is not None:
+            for d in PUB.sync(self.pdir)[0]:
+                rel = PUB._rel(self.pdir.resolve(), d.resolve())
+                self.records[rel] = read_compound(d, rel)
+
+    # -- Rückgängig/Wiederholen ------------------------------------------------------------------
+    # Wie der Reaktionspfad (`PathHost`): eigene Schnappschüsse des offenen Vergleichs, das Hauptfenster leitet
+    # Rückgängig/Wiederholen hierher, solange der Reiter offen ist. Nur der Eintrag in publication.elucida ändert sich,
+    # nie die Daten der Verbindungen.
+    def _snap(self):
+        return json.dumps(self.item, sort_keys=True, default=str)
+
+    def reset_history(self):
+        """Neuer Verlauf nach dem Öffnen; erst nach dem ersten Zeichnen (der Tab ergänzt dabei Vorgaben im Zustand)."""
+        self._restoring = True
+        self.history, self.cursor = [], -1
+        QTimer.singleShot(400, self._end_restore)
+
+    def _end_restore(self):
+        self._restoring = False
+        if self.item is None:
+            self.history, self.cursor = [], -1
+        elif self.cursor < 0:
+            self.history, self.cursor = [self._snap()], 0
+        else:
+            self.history[self.cursor] = self._snap()           # tatsächlichen Zustand übernehmen
+        self.main._update_undo_actions()
+
+    def record(self):
+        if self._restoring or self.item is None or self.cursor < 0:
+            return
+        snap = self._snap()
+        if snap == self.history[self.cursor]:
+            return
+        self.history = self.history[:self.cursor + 1] + [snap]
+        del self.history[:-200]
+        self.cursor = len(self.history) - 1
+        self.main._update_undo_actions()
+
+    def can_undo(self, delta):
+        return self.item is not None and 0 <= self.cursor + delta < len(self.history)
+
+    def undo(self, delta):
+        if self.tab is not None and self.tab.timer.isActive():   # Änderung, deren Vorschau noch aussteht, zuerst erfassen
+            self.tab.timer.stop()
+            self.tab.render()
+        if not self.can_undo(delta) or self._restoring:
+            return
+        self.cursor += delta
+        self._restoring = True
+        self.item = json.loads(self.history[self.cursor])
+        self.save()
+        self.build()
+        QTimer.singleShot(400, self._end_restore)
 
     def sync_members(self, item):
         """Neue Verbindungen des Projekts anhängen (in neuen Vergleichen gewählt, sonst abgewählt), Farbe und Schlüssel."""
@@ -1720,7 +2398,7 @@ class ComparePage(QWidget):
             m.setdefault("key", uuid.uuid4().hex[:8])
             m.setdefault("color", TABS.PALETTE[k % len(TABS.PALETTE)])
 
-    def build(self):
+    def _drop_tab(self):
         if self.tab is not None:
             self.tab.timer.stop()
             for x in (self.tab.dragger, self.tab.hover):
@@ -1730,6 +2408,17 @@ class ComparePage(QWidget):
             self.tab.hide()
             self.tab.deleteLater()
             self.tab = None
+
+    def dispose(self):
+        """Seite für die Gesamt-SI wieder abbauen (speichert nichts)."""
+        self.timer.stop()
+        self.pdir = None
+        self._drop_tab()
+        self.host.deleteLater()
+        self.deleteLater()
+
+    def build(self):
+        self._drop_tab()
         kind = (self.item or {}).get("kind")
         st = self.item.setdefault("st", {}) if self.item is not None else {}
         self.tab = TAB_CLASS.get(kind, CompareEmpty)(self.host, st)
@@ -1745,6 +2434,7 @@ class ComparePage(QWidget):
 
     # -- Ändern ----------------------------------------------------------------------------
     def changed(self):
+        self.record()
         self.timer.start()
 
     def save(self):
@@ -1781,12 +2471,14 @@ class ComparePage(QWidget):
         PUB.save(self.pdir, data)
         self._saved = json.dumps(item, sort_keys=True, default=str)
         self.build()
+        self.reset_history()
 
     def rename(self, name):
         name = name.strip()
         if self.item is None or not name or name == self.item["name"]:
             return
         self.item["name"] = name
+        self.record()
         self.save()
         QTimer.singleShot(0, self.build)                     # Liste zeigt den neuen Namen
 
@@ -1799,6 +2491,8 @@ class ComparePage(QWidget):
         PUB.save(self.pdir, data)
         self.item = None
         self._dirty = True
+        self.history, self.cursor = [], -1
+        self.main._update_undo_actions()
         QTimer.singleShot(0, self.load)
 
     def refresh_snapshots(self):
@@ -1814,3 +2508,34 @@ class ComparePage(QWidget):
         self.load(uid)
         self.main.statusBar().showMessage(T("cmp_refreshed", n=n), 5000)
         return n
+
+
+# ============================================================================ Gesamt-SI
+def si_blocks(main, pdir, out_dir, sections):
+    """Vergleiche mit „In die Gesamt-SI“ -> [(Kapitelschlüssel bzw. „new:<Überschrift>“, Blöcke)] in der Reihenfolge der
+    Projektdatei. Gezeichnet wird mit demselben Tab und denselben Ständen wie auf der Projektseite (nichts neu
+    ausgewertet): Abbildungen als Bild + „Figure Sn“, Tabellen als „Table Sn“ mit dem Tabellenschreiber des Exports."""
+    items = [x for x in PUB.load(pdir).get("comparisons") or [] if (x.get("si") or {}).get("on")]
+    if not items:
+        return []
+    page = ComparePage(main.pub_page)                       # eigene, nie gezeigte Seite: die offene bleibt, wie sie ist
+    page.pdir = Path(pdir)
+    page._restoring = True                                  # kein Rückgängig-Schritt, nichts speichern
+    page.read_records()
+    out = []
+    try:
+        for it in items:
+            key = si_key(it)
+            key = "dft_figs" if key == "dft" else key
+            if not (key.startswith("new:") or key in sections or (key == "dft_figs" and "dft" in sections)):
+                continue
+            page.item = copy.deepcopy(it)
+            page.sync_members(page.item)
+            page.build()
+            bl = page.tab.si_blocks(out_dir, it)
+            if bl:
+                out.append((key, bl))
+    finally:
+        page.item = None
+        page.dispose()
+    return out
