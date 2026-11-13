@@ -4413,6 +4413,8 @@ def selftest(outdir, with_isnet=False):
             keep_ns_ = ns_.size()
             ns_.resize(600, ns_.height())                             # schmal: rechts geht es weiter
             pump(0.1)
+            ns_.horizontalScrollBar().setValue(0)                     # Windows: der gewählte Tab lag schon rechts, die
+            pump(0.1)                                                 # Leiste war dorthin gerollt (linker Pfeil sichtbar)
             assert ns_.arrows[0].isHidden() and not ns_.arrows[1].isHidden()
             last_ns_ = w.nav_buttons[len(w._tab_keys) - 1]
             ns_.reveal(last_ns_)                                      # letzter Tab ganz sichtbar, links geht es zurück
