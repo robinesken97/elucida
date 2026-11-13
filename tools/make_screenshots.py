@@ -92,11 +92,11 @@ def shoot_welcome(w, outdir, lang, theme, work):
 
 
 def shoot_comparison(w, outdir, lang, theme):
-    """Projektseite → Vergleich: Eigenschaftstabelle des Beispielprojekts (Schritt „Tabelle“ links)."""
+    """Projektseite → Vergleich: Spektrenvergleich des Beispielprojekts in voller Größe (Strukturen in Kurvenfarbe)."""
     page = w.pub_page
     page.project_tabs.setCurrentWidget(page.compare_page)
     pump(0.5)
-    page.compare_page.open("demo00table")
+    page.compare_page.open("demo0spectra")
     page.compare_page.tab.steps.set_step(1, remember=False)
     pump(0.8)
     p = Path(outdir) / f"comparison_{theme}_{lang}.png"

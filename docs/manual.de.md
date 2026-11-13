@@ -245,7 +245,7 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
 
 ## Vergleich (Projekt)
 
-<p align="center"><img src="screenshots/comparison_dark_de.png" alt="Seite Vergleich mit einer Eigenschaftstabelle" width="800"></p>
+<p align="center"><img src="screenshots/comparison_dark_de.png" alt="Offener Spektrenvergleich mit Strukturen in Kurvenfarbe" width="800"></p>
 
 Der Reiter **Vergleich** der Projektseite stellt Verbindungen des Projekts nebeneinander, beliebig viele benannte
 Vergleiche. Der Reiter zeigt sie als Karten wie die Reaktionspfade (Vorschau, Name, Stand); die Karte **Neuer Vergleich …**

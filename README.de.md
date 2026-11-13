@@ -133,9 +133,14 @@ Schritt für Schritt mit Bildern:
 **Vom Projekt zum Paper.** Projekt anlegen, Verbindungen hinzufügen und der Checkliste folgen. **Gesamt-SI** schreibt
 Titelseite, Verzeichnis und Kapitel, **Datenpakete** den Datensatz.
 
+**Verbindungen vergleichen.** Projekt → **Vergleich**: CV-Stapel, Spektren (UV-Vis, Emission, IR, EPR) oder eine
+Eigenschaftstabelle über mehrere Verbindungen. Jeder Vergleich ist eine Karte und öffnet sich in voller Größe; die
+Strukturen stehen in der Farbe ihrer Kurve im Bild, alle im selben Maßstab.
+
 **Reaktionspfade über mehrere Verbindungen.** Projekt → **Computerchemie**: Rechnungen hineinkopieren, dann
-Energiediagramme, Moleküle und Orbitalansichten zusammenstellen. Diagramme sind maßstäblich, solange du nicht
-schematisch wählst, und gehen in die Gesamt-SI. Mit Zugang zu einem Slurm-Cluster zeigt die Seite auch deine Jobs und
+Energiediagramme, Moleküle und Orbitalansichten zusammenstellen. Plateaus lassen sich mit der Maus ziehen; Stil,
+Beschriftung, Achsentitel, Abschnitte und Einheit (kcal mol⁻¹, kJ mol⁻¹, eV) sind einzeln einstellbar, Vorlagen setzen
+sie in einem Zug. Diagramme sind maßstäblich, solange du nicht schematisch wählst, und gehen in die Gesamt-SI. Mit Zugang zu einem Slurm-Cluster zeigt die Seite auch deine Jobs und
 holt Ergebnisse direkt ins Projekt ([Einrichtung](docs/manual.de.md#cluster-anbindung)).
 
 **Spektroelektrochemie ohne Zeitstempel.** Zusammengeführte UV/Vis/NIR-Exporte enthalten keine Zeiten. Elucida zeigt

@@ -132,9 +132,14 @@ Step-by-step guides with pictures:
 **From project to paper.** Create a project, add compounds and follow the checklist. **Complete SI** writes title page,
 contents and chapters; **Data packages** writes the dataset.
 
+**Comparing compounds.** Project → **Comparison**: CV stacks, spectra (UV-Vis, emission, IR, EPR) or a property table
+across several compounds. Each comparison is a card and opens at full size; the structures appear in the colour of
+their curve, all at the same scale.
+
 **Reaction paths across compounds.** Project → **Computational Chemistry**: copy calculations in, then compose energy
-diagrams, molecules and orbital views. Diagrams are true to scale unless you choose a schematic layout, and they go
-into the complete SI. With access to a Slurm cluster the page also shows your jobs and fetches results straight into
+diagrams, molecules and orbital views. Levels can be dragged with the mouse; style, labels, axis title, sections and
+unit (kcal mol⁻¹, kJ mol⁻¹, eV) can each be set, and presets set them in one go. Diagrams are true to scale unless you
+choose a schematic layout, and they go into the complete SI. With access to a Slurm cluster the page also shows your jobs and fetches results straight into
 the project ([setup](docs/manual.en.md#cluster-connection)).
 
 **Spectroelectrochemistry without timestamps.** Merged UV/Vis/NIR exports contain no times. Elucida shows them by

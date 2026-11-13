@@ -233,7 +233,7 @@ elsewhere into the project.
 
 ## Comparison (project)
 
-<p align="center"><img src="screenshots/comparison_dark_en.png" alt="Comparison page with a property table" width="800"></p>
+<p align="center"><img src="screenshots/comparison_dark_en.png" alt="Open spectra comparison with structures in the curve colour" width="800"></p>
 
 The **Comparison** tab of the project page puts compounds of the project side by side, with any number of named
 comparisons. The tab shows them as cards like the reaction paths (preview, name, last change); the card **New
