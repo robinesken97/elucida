@@ -271,8 +271,8 @@ class PublicationPage(QWidget):
         self.bar_progress.setFixedSize(220, 6)
         pr.addWidget(self.bar_progress)
         self.lbl_progress = QLabel(objectName="recentSub")
-        pr.addWidget(self.lbl_progress)
-        pr.addStretch(1)
+        self.lbl_progress.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # darf abgeschnitten werden: sonst
+        pr.addWidget(self.lbl_progress, 1)                                             # bestimmt er die Fensterbreite mit
         tv.addSpacing(10)
         tv.addLayout(pr)
         hd.addLayout(tv, 1)

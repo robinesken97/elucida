@@ -4371,6 +4371,29 @@ def selftest(outdir, with_isnet=False):
                                      f"{left_.width()} px (min {left_.minimumSizeHint().width()}), Karten {cards_}, "
                                      f"breiteste Elemente {wide_}, Schrift {QApplication.font().family()} "
                                      f"{QApplication.font().pointSizeF()} pt, DPI {w.logicalDpiX()}")
+            # Tab-Leiste bestimmt die Fensterbreite nicht (1.1.0: 16 Tabs erzwangen 1461 px, unter Windows 2048 px):
+            # sie darf schmaler sein als ihr Inhalt, zeigt dann Pfeile und hält den gewählten Tab sichtbar
+            ns_ = w.nav_scroll
+            need_ns_ = ns_.widget().minimumSizeHint().width()
+            assert ns_.minimumSizeHint().width() <= 300 < need_ns_, (ns_.minimumSizeHint().width(), need_ns_)
+            assert w.minimumSizeHint().width() < need_ns_, (w.minimumSizeHint().width(), need_ns_)
+            assert w.width() == 1440, w.width()                       # das Fenster nimmt die verlangte Breite an
+            assert all(b_.isHidden() for b_ in ns_.arrows) == (ns_.viewport().width() >= need_ns_)
+            keep_ns_ = ns_.size()
+            ns_.resize(600, ns_.height())                             # schmal: rechts geht es weiter
+            pump(0.1)
+            assert ns_.arrows[0].isHidden() and not ns_.arrows[1].isHidden()
+            last_ns_ = w.nav_buttons[len(w._tab_keys) - 1]
+            ns_.reveal(last_ns_)                                      # letzter Tab ganz sichtbar, links geht es zurück
+            pump(0.1)
+            x_ns_ = last_ns_.mapTo(ns_.viewport(), QPoint(0, 0)).x()
+            assert 0 <= x_ns_ and x_ns_ + last_ns_.width() <= ns_.viewport().width(), (x_ns_, last_ns_.width())
+            assert not ns_.arrows[0].isHidden()
+            for _k in range(8):                                       # Pfeil links: schrittweise zurück bis zum Anfang
+                ns_.step(-1)
+            pump(0.1)
+            assert ns_.horizontalScrollBar().value() == 0 and ns_.arrows[0].isHidden()
+            ns_.resize(keep_ns_)
             w.resize(size0_)
             report.append(f"X-Ray (CIF, symmetry, disorder, ORTEP, picking, tables, wireframe, caption): OK "
                           f"({npath_} pdf paths)")
@@ -7623,6 +7646,7 @@ def selftest(outdir, with_isnet=False):
                 WEL.fit_more(x_)
             assert row_f1.opt[0].isHidden() and hd_f1.opt[0].isHidden() and not row_f1.more.isHidden()
             assert {d_.width() for d_ in row_f1.dots} == {WEL.CHECK_W}
+            assert hd_f1.minimumSizeHint().width() == row_f1.minimumSizeHint().width() == WEL.ROW_MIN_W   # nie die der Matrix
             hd_f1.deleteLater()
             row_f1.deleteLater()
             assert PRJ.load(dpub_ / 'S2')['compound']['sample_no'] == 'JA-042-F2'
@@ -7671,7 +7695,7 @@ def selftest(outdir, with_isnet=False):
             ct_.fields["note"].editingFinished.emit()                   # Feld verlassen ohne Änderung: kein Schritt
             assert len(w._undo) == n_ct and _filled_ct(w.compound) == _filled_ct(keep_ct)
             type_ct(ct_.fields["note"], "test note")
-            assert w.compound["note"] == "test note" and len(w._undo) == n_ct + 1
+            assert w.compound["note"] == "test note" and len(w._undo) == n_ct + 1, (w.compound.get("note"), len(w._undo), n_ct)
             type_ct(ct_.fields["name"], "S3-b")                         # Name steht sofort am Tab und in der Pfadleiste
             assert w.compound["name"] == "S3-b" and nb_ct.full_text.startswith("S3-b · ") and w.btn_comp.text() == "S3-b"
             ct_.checks["known"].setChecked(True)

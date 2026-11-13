@@ -63,6 +63,9 @@ were not):
   now start at the same left and right edge, the vertical distances follow one grid. The compound list shows every further method
   (UV-Vis, kinetics, fluorescence, CV, SEC, H-cell, EPR, X-ray, DFT) as its own column with a dot instead of a
   truncated text; all columns are centred in one grid.
+- **Window width:** the tab bar with now 16 tabs forced a minimum window width (on Windows wider than a laptop
+  screen). It may now be narrower than its content: an arrow at the edge and the mouse wheel scroll it, the selected
+  tab stays visible.
 - **Word export:** below a longer methods text there is now one more figure as long as it stays at least 7 cm high
   (the rest of the page stayed empty before). An energy profile with a single calculation (one line at 0) is no longer
   part of the SI.

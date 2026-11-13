@@ -64,6 +64,9 @@ Aus einer Prüfung aller Rechnungen gegen die Literatur (Formeln, Konstanten und
   Raster.
   Die Verbindungsliste zeigt jede weitere Methode (UV-Vis, Kinetik, Fluoreszenz, CV, SEC, H-Cell, EPR, X-Ray, DFT) als
   eigene Spalte mit Punkt statt als abgeschnittenen Text; alle Spalten stehen mittig in einem Raster.
+- **Fensterbreite:** Die Tab-Leiste mit jetzt 16 Tabs erzwang eine Mindestbreite des Fensters (unter Windows breiter
+  als ein Laptop-Bildschirm). Sie darf jetzt schmaler sein als ihr Inhalt: ein Pfeil am Rand und das Mausrad schieben
+  sie, der gewählte Tab bleibt sichtbar.
 - **Word-Export:** Unter einem längeren Methodentext steht jetzt noch eine Abbildung, solange sie mindestens 7 cm
   hoch bleibt (vorher blieb der Rest der Seite leer). Ein Energieprofil mit nur einer Rechnung (ein Strich bei 0) kommt nicht
   mehr in die SI.

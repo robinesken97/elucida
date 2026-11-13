@@ -1401,9 +1401,10 @@ class MainWindow(QMainWindow):
         """Tabs in vier Gruppen wie die SI (Leiste oben statt Reiter): kostet Höhe statt Breite – die Abbildung
         ist in der Breite begrenzt, eine Seitenleiste würde sie um ~20 % verkleinern."""
         from PySide6.QtWidgets import QButtonGroup
-        from elucida.app.welcome import NameTab, NavTab
+        from elucida.app.welcome import NameTab, NavScroll, NavTab
         bar = QFrame(objectName="navBar")
-        hb = QHBoxLayout(bar)
+        inner = QWidget()                                   # Inhalt der Leiste; darf breiter sein als das Fenster (NavScroll)
+        hb = QHBoxLayout(inner)
         hb.setContentsMargins(10, 8, 10, 8)
         hb.setSpacing(4)
         # Pfadleiste: ⌂ Übersicht › Projekt › Verbindung ▾ (jede Stufe anklickbar, Verbindungen des Projekts im Menü);
@@ -1454,7 +1455,13 @@ class MainWindow(QMainWindow):
             col.addLayout(row)
             hb.addLayout(col)
         hb.addStretch(1)
+        self.nav_scroll = NavScroll(inner)
+        outer = QHBoxLayout(bar)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self.nav_scroll)
         self.main_tabs.currentChanged.connect(lambda i: self.nav_buttons[i].setChecked(True))
+        self.main_tabs.currentChanged.connect(lambda i: self.nav_scroll.reveal(self.nav_buttons[i]))
         self.nav_buttons[self.main_tabs.currentIndex()].setChecked(True)
         self._update_crumbs()
         self.main_tabs.tabBar().hide()

@@ -2553,6 +2553,10 @@ QPushButton#navTab[hasData="true"] {{ color: {c['text']}; }}
 QPushButton#navTab:hover {{ background: {c['hover']}; color: {c['text']}; }}
 QPushButton#navTab:checked {{ background: {c['sel']}; color: {c['text']}; font-weight: 600; }}
 QFrame#navSep {{ background: {c['border']}; }}
+QScrollArea#navScroll, QWidget#navInner {{ background: transparent; border: none; }}
+QPushButton#navMore {{ background: {c['window']}; border: none; border-radius: 0; color: {c['text2']}; font-size: 18px;
+    padding: 0 0 3px 0; }}
+QPushButton#navMore:hover {{ color: {c['text']}; background: {c['hover']}; }}
 QFrame#sideBar {{ background: {c['side']}; border: none; border-right: 1px solid {c['border']}; }}
 QLabel#sideCap {{ color: {c['text2']}; font-size: 11px; font-weight: bold; padding: 0 10px 3px 10px; background: transparent; }}
 QLabel#sideBrand {{ font-size: 15px; font-weight: bold; background: transparent; }}

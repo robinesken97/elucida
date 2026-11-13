@@ -10,9 +10,10 @@ import re
 from pathlib import Path
 
 import yaml
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QSize, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
+                               QVBoxLayout, QWidget)
 
 from elucida.app import canvas_theme as CANVAS
 from elucida.app.canvas_theme import register as register_canvas
@@ -272,6 +273,72 @@ class NavTab(QPushButton):
             self.style().polish(self)
 
 
+class NavScroll(QScrollArea):
+    """Tab-Leiste, die schmaler werden darf als ihr Inhalt: 16 Tabs erzwangen sonst die Fensterbreite (1.1.0: 1461 px,
+    unter Windows 2048 px – breiter als ein Laptop-Bildschirm). Passt nicht alles, lässt sich die Leiste waagerecht
+    schieben (Mausrad, Trackpad) und zeigt am abgeschnittenen Rand einen Pfeil; der gewählte Tab bleibt sichtbar."""
+    ARROW_W = 26
+
+    def __init__(self, inner):
+        super().__init__()
+        self.setWidget(inner)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setObjectName("navScroll")
+        inner.setObjectName("navInner")
+        self.arrows = []
+        for d, sym in ((-1, "‹"), (1, "›")):
+            b = QPushButton(sym, self, objectName="navMore")
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setToolTip(T("nav_more_tip"))
+            b.clicked.connect(lambda _=False, d=d: self.step(d))
+            b.hide()
+            self.arrows.append(b)
+        sb = self.horizontalScrollBar()
+        sb.valueChanged.connect(self._sync)
+        sb.rangeChanged.connect(self._sync)
+
+    def sizeHint(self):
+        return self.widget().sizeHint()
+
+    def minimumSizeHint(self):
+        return QSize(240, self.widget().minimumSizeHint().height())
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._sync()
+
+    def _sync(self, *_):
+        sb, (left, right) = self.horizontalScrollBar(), self.arrows
+        left.setVisible(sb.value() > sb.minimum())
+        right.setVisible(sb.value() < sb.maximum())
+        left.setGeometry(0, 0, self.ARROW_W, self.height() - 1)          # −1: Linie unter der Leiste bleibt frei
+        right.setGeometry(self.width() - self.ARROW_W, 0, self.ARROW_W, self.height() - 1)
+        for b in self.arrows:
+            b.raise_()
+
+    def step(self, d):
+        sb = self.horizontalScrollBar()
+        sb.setValue(sb.value() + d * int(0.6 * self.viewport().width()))
+
+    def wheelEvent(self, ev):
+        d = ev.angleDelta()
+        sb = self.horizontalScrollBar()
+        if sb.maximum() > sb.minimum() and (d.x() or d.y()):
+            sb.setValue(sb.value() - (d.x() or d.y()))
+            ev.accept()
+        else:
+            ev.ignore()
+
+    def reveal(self, widget):
+        """Gewählten Tab ganz zeigen (mit Luft für den Pfeil am Rand)."""
+        self.ensureWidgetVisible(widget, self.ARROW_W + 12, 0)
+
+
 SUBSCRIPT = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
 
@@ -517,6 +584,13 @@ def short_more(key):
 GROUP_GAP = 10                     # Luft zwischen Pflichtteilen und weiteren Methoden
 CHECK_W_MAX = 56                   # breite Fenster: Spalten wachsen bis hierher, erst danach der Name
 NAME_MIN, NAME_TARGET = 140, 260   # Platz für Name und Formel: mindestens / bevor die Spalten wachsen
+ROW_MIN_W = 640                    # Mindestbreite von Kopf und Zeile: nie die der Matrix – sonst erzwingen die festen
+# Spalten die Fensterbreite (1.1.0: Fenster ließ sich nicht unter 1461 px ziehen, unter Windows 2048 px) und die
+# Umschaltung auf den Text bzw. die schmalen Spalten käme nie zum Zug. Was passt, entscheidet allein fit_more.
+
+
+def _row_min(widget, base):
+    return QSize(ROW_MIN_W, base.height())
 
 
 def fit_more(row):
@@ -574,6 +648,9 @@ class MatrixHeader(QWidget):
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         fit_more(self)
+
+    def minimumSizeHint(self):
+        return _row_min(self, super().minimumSizeHint())
 
 
 class RecentRow(ClickCard):
@@ -646,6 +723,9 @@ class RecentRow(ClickCard):
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         fit_more(self)
+
+    def minimumSizeHint(self):
+        return _row_min(self, super().minimumSizeHint())
 
     draggable = False                                  # Projektseite: Reihenfolge per Ziehen ändern
     DRAG_MIME = "application/x-elucida-compound"

@@ -231,6 +231,10 @@ paths:
     Text-, Auswahl- und mehrzeilige Felder.
   - Der ε-Tab leert Ergebnistabelle, Kacheln und SI-Texte, sobald es keine Messdaten gibt (`clear_results`): nie die
     Zahlen der zuvor geöffneten Verbindung stehen lassen.
+  - Die Tab-Leiste liegt in `WEL.NavScroll` (seit 1.1.0, 16 Tabs: sonst 1461 px Mindestbreite, unter Windows 2048 px):
+    sie darf schmaler sein als ihr Inhalt, zeigt am abgeschnittenen Rand einen Pfeil, folgt Mausrad/Trackpad und hält den
+    gewählten Tab sichtbar (`reveal`). Zeilen der Verbindungsliste melden `ROW_MIN_W`, nie die Breite der Matrix. Der
+    Selbsttest verlangt: Fenster nimmt 1440 px an, Leiste bestimmt die Mindestbreite nicht.
   - Kein Tab darf die Mindestbreite des Fensters hochtreiben (alle Tabs teilen einen Stapel, auch verborgene Seiten
     zählen): Bilder in QLabel mit `setMinimumWidth(1)`, nicht gebrauchte Seiten herausnehmen statt verbergen. Sonst wächst
     das Fenster beim Wechsel der Seite („Fensterverhältnisse ändern sich“).
