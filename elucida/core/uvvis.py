@@ -1033,9 +1033,10 @@ class FreeSpace:
         iy0, iy1 = int(math.floor(y0 * n)), int(math.ceil((y0 + h) * n))
         return not (self.elems | self.curves)[iy0:iy1, ix0:ix1].any()
 
-    def find(self, w, h, score_fn, over_curves=False):
-        """over_curves=True: nur Überlappung mit anderen Elementen vermeiden (Notlösung)."""
-        occ = self.elems if over_curves else (self.elems | self.curves)
+    def find(self, w, h, score_fn, over_curves=False, curves=None):
+        """over_curves=True: nur Überlappung mit anderen Elementen vermeiden (Notlösung). curves: andere Sperrfläche
+        als die Hülle (z. B. nur die Kurvenlinien: Platz zwischen gestapelten Kurven)."""
+        occ = self.elems if over_curves else (self.elems | (self.curves if curves is None else curves))
         n = self.n
         wc, hc = int(math.ceil(w * n)), int(math.ceil(h * n))
         m = int(math.ceil(self.margin * n))
@@ -1443,6 +1444,34 @@ class Figure:
         ab = self.ax.get_window_extent()
         return p / ab.width, p / ab.height
 
+    def _line_mask(self, n, pad=3):
+        """Raster [iy, ix] der Kurvenlinien selbst (mit `pad` Zellen Abstand) statt der Fläche unter der Hülle: für
+        Bilder mit "between" (Struktur im Stapel neben ihrer eigenen Kurve, auch unterhalb der obersten)."""
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        mask = np.zeros((n, n), bool)
+        for s in self.spectra:
+            x, y = np.asarray(s["x"], float), np.asarray(s["y"], float)
+            ok = np.isfinite(x) & np.isfinite(y)
+            fx, fy = (x[ok] - x0) / ((x1 - x0) or 1.0) * n, (y[ok] - y0) / ((y1 - y0) or 1.0) * n
+            if len(fx) < 2:
+                continue
+            arc = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(fx), np.diff(fy)))])
+            if not np.all(np.diff(arc) > 0):                 # doppelte Punkte: Bogenlänge muss steigen
+                keep = np.concatenate([[True], np.diff(arc) > 0])
+                fx, fy, arc = fx[keep], fy[keep], arc[keep]
+            t = np.linspace(0.0, arc[-1], int(min(400000, max(2, arc[-1] * 2))))   # halbe Zelle je Schritt
+            ix, iy = np.floor(np.interp(t, arc, fx)).astype(int), np.floor(np.interp(t, arc, fy)).astype(int)
+            inside = (ix >= 0) & (ix < n) & (iy >= 0) & (iy < n)
+            mask[iy[inside], ix[inside]] = True
+        out = mask.copy()
+        for dy in range(-pad, pad + 1):                      # um `pad` Zellen aufweiten
+            for dx in range(-pad, pad + 1):
+                sl_to = (slice(max(0, dy), n + min(0, dy)), slice(max(0, dx), n + min(0, dx)))
+                sl_from = (slice(max(0, -dy), n + min(0, -dy)), slice(max(0, -dx), n + min(0, -dx)))
+                out[sl_to] |= mask[sl_from]
+        return out
+
     def _extra_blocks(self, rend):
         """Weitere feste Flächen (Achsenbruchteile), die Labels/Inset/Bilder meiden sollen."""
         return []
@@ -1496,7 +1525,7 @@ class Figure:
             ppos = lay.get(im.get("_id", "")) or (im.get("pos") if isinstance(im.get("pos"), (list, tuple)) else None)
             if a is not None and ppos:
                 w0, h0 = a._img_wh
-                if len(ppos) == 4:
+                if len(ppos) == 4 and not im.get("keep_width"):
                     w0, h0 = ppos[2], ppos[2] * (h0 / w0 if w0 else 1.0)
                 px, py = self._frame_pad(a)
                 fs.block_rect(ppos[0] - px, ppos[1] - py, w0 + 2 * px, h0 + 2 * py)
@@ -1578,6 +1607,7 @@ class Figure:
                 fs.block_rect(pos[0] + dx, pos[1] + dy, tw, th)
 
         # 3) Bilder (schrumpfen, falls nicht genug Platz)
+        lines = None
         for im in self.cfg["images"]:
             key = im["_id"]
             a = self.axes_items[key]
@@ -1586,8 +1616,12 @@ class Figure:
             pos = lay.get(key) or (im.get("pos") if isinstance(im.get("pos"), (list, tuple)) else None)
             if pos is None:
                 hit = None
-                for f in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5):
-                    hit = fs.find(w * f + 2 * px, h * f + 2 * py, corner_score(im.get("prefer", "auto")))
+                if im.get("between") and lines is None:
+                    lines = self._line_mask(fs.n)
+                # "fixed": Strukturen im gemeinsamen Maßstab schrumpfen nicht einzeln (sonst ungleich groß)
+                for f in ((1.0,) if im.get("fixed") else (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)):
+                    hit = fs.find(w * f + 2 * px, h * f + 2 * py, corner_score(im.get("prefer", "auto")),
+                                  curves=lines if im.get("between") else None)
                     if hit:
                         if f < 1:
                             log("  " + T("image_shrunk", key=key, f=f))
@@ -1596,7 +1630,7 @@ class Figure:
                 hit = hit or find(key, w + 2 * px, h + 2 * py, corner_score(im.get("prefer", "auto")))
                 pos = (hit[0] + px, hit[1] + py) if hit else (0.5, 0.5)
             else:
-                if len(pos) == 4:
+                if len(pos) == 4 and not im.get("keep_width"):   # keep_width: Größe kommt vom Tab (gemeinsamer Maßstab)
                     # nur die Breite übernehmen; die Höhe folgt immer aus dem Seitenverhältnis des Bildes
                     # (sonst Verzerrung, wenn sich Bild oder Achsengröße geändert haben)
                     ratio = h / w if w else 1.0

@@ -244,8 +244,8 @@ opens these compounds briefly one after another, writes the snapshot again and r
 - **CV stack:** one cyclic voltammogram per compound, offset vertically (top of the list = top curve, drag or arrows to
   reorder, **Gap** in multiples of the largest curve height). Under "Selected Compound": measurement (default: the first
   visible one, in the cycle of the CV tab), redox couple and label at the peak (forward peak, E_pa, E_pc, E½ or none; the
-  number from the results of the CV tab). The structure of the compound stands beside its curve (draggable, optionally in
-  the curve colour), an arrow per curve shows the scan direction, the y axis has no numbers. **Normalized** divides each
+  number from the results of the CV tab). The structure of the compound stands beside its curve (draggable, by default in
+  the curve colour, can be switched off; all structures share one scale, **Size** = width of the widest), an arrow per curve shows the scan direction, the y axis has no numbers. **Normalized** divides each
   curve by its largest absolute current; the caption says so. Compounds on a different reference scale than the first one
   are not shown (note below the figure), never converted. The caption is built from the details of the compounds
   (solvent, electrolyte, concentration, scan rate): common ones once, differing ones per compound. **Cycle** picks
@@ -253,7 +253,9 @@ opens these compounds briefly one after another, writes the snapshot again and r
   numbers exist only for the cycle the CV tab evaluated; for another cycle the peak has no number, and a hint says so.
 - **Spectra:** UV-Vis as ε (the same measurement and baseline as the overlay; without concentration or molar mass no
   curve) or normalized to the maximum, emission normalized as in the fluorescence tab, or both (emission dashed);
-  overlaid or stacked, one legend entry per compound. With several ε series, choose the series per compound.
+  overlaid or stacked, one legend entry per compound. **Structures** shows the structure of each compound, by default
+  in the colour of its curve (**Structure in curve colour** off: black), at the highest point of its own curve or, when
+  stacked, on the right above its own baseline; draggable, all at one scale (**Size** = width of the widest). With several ε series, choose the series per compound.
   **IR:** transmittance or absorbance as in the IR tab, wavenumber falling to the right; a compound whose IR tab shows the
   other display is not shown (never converted). **EPR** (normalized, stacked by default): on the field axis only spectra
   with the same microwave frequency as the first one, or scaled to a reference frequency with **Scale to frequency** as
@@ -573,7 +575,9 @@ Compare several spectra in one figure, measured and calculated:
   of its own Gaussian, the curve is their sum). Reference: "curve maximum = 1" or "strongest
   transition = 1"; "curve maximum = 1, f on the right axis" adds the oscillator strength as a second scale for
   the same sticks (left out with a note if the calculations use different scales).
-- A **structure per spectrum**, optionally drawn in the curve colour.
+- A **structure per spectrum**, optionally drawn in the curve colour. Several structures in one figure always share
+  the same scale (equal bond length, from the CDXML); the size applies to the widest one, the mouse wheel on one
+  changes all.
 - Structure with adjustable size; the legend is placed in free space and can be dragged.
 - **Stacked** (as usual in papers): curves are offset vertically by a common spacing in list order
   (top of the list = top curve). "Same stacking level as the curve above" keeps e.g. a TD-DFT curve

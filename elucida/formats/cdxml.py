@@ -456,6 +456,31 @@ def render_svg(path):
     return svg, sorted(set(d.notes))
 
 
+def drawing_units(path):
+    """Breite der Zeichnung in Bindungslängen (Ausdehnung wie in `render_svg`, geteilt durch die mittlere Bindungslänge):
+    Maß für denselben Zeichenmaßstab mehrerer Strukturen in einem Bild, unabhängig vom ChemDraw-Stil. None ohne
+    Bindungen oder wenn nichts zu zeichnen ist."""
+    import statistics
+    root = ET.parse(str(path)).getroot()
+    pos = {}
+    for n in root.iter("n"):
+        try:
+            pos[n.get("id")] = tuple(float(v) for v in n.get("p", "").split()[:2])
+        except ValueError:
+            continue
+    d = [math.dist(pos[b.get("B")], pos[b.get("E")]) for b in root.iter("b")
+         if len(pos.get(b.get("B"), ())) == 2 and len(pos.get(b.get("E"), ())) == 2]
+    d = [v for v in d if v > 0]
+    if not d:
+        return None
+    try:
+        svg, _ = render_svg(path)
+    except Exception:
+        return None
+    m = re.search(r'width="([0-9.]+)pt"', svg)
+    return float(m.group(1)) / statistics.median(d) if m else None
+
+
 def scheme_texts(path):
     """Texte über/unter den Reaktionspfeilen (ReactionStepObjectsAbove/BelowArrow) -> [Text, …]."""
     root = ET.parse(str(path)).getroot()

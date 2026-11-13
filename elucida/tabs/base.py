@@ -1338,8 +1338,9 @@ class FigureTab(QWidget):
         return sp
 
     def sync_sizes(self, layout):
+        grouped = getattr(self, "_struct_drawn", {})         # gemeinsamer Maßstab: die Größe kommt aus struct_w
         for lk, (sp, key) in getattr(self, "_size_spins", {}).items():
-            if lk in layout and len(layout[lk]) == 4:
+            if lk in layout and len(layout[lk]) == 4 and lk not in grouped:
                 self.st[key] = round(layout[lk][2] * 100, 1)
                 sp.blockSignals(True)
                 sp.setValue(self.st[key])
@@ -1393,6 +1394,33 @@ class FigureTab(QWidget):
 
     def structure_asset(self, path, color=None):
         return self.cache(("struct", path, color), lambda: IMG.load_structure(path, color=color))
+
+    def structure_images(self, items, default_w=20.0, between=False):
+        """Strukturen mehrerer Verbindungen oder Spektren in einem Bild: [(id, Pfad, Farbe oder None, prefer)] ->
+        Bildeinträge im selben Zeichenmaßstab (gleiche Bindungslänge, `IMG.structure_units` aus der CDXML); die
+        breiteste bekommt `struct_w` % der Plotbreite (Nutzerwunsch 2026-11-13: alle Moleküle gleich groß, eine Größe
+        für alle). Ohne CDXML gibt es keinen Maßstab: volle Breite. Das Mausrad auf einer Struktur ändert `struct_w`
+        (`layout_changed`); mehrere Strukturen schrumpfen bei Platzmangel nicht einzeln. between: Platz auch zwischen
+        gestapelten Kurven suchen (nur nicht auf einer Linie)."""
+        w = self.st.get("struct_w", default_w) / 100
+        out = []
+        for id_, path, color, prefer in items:
+            try:
+                asset = self.structure_asset(path, color)
+            except Exception as ex:
+                self.add_note(f"{Path(path).name}: {ex}")
+                continue
+            out.append({"file": path, "id": id_, "prefer": prefer, "_asset": asset, "_units": IMG.structure_units(path)})
+        top = max((im["_units"] for im in out if im["_units"]), default=None)
+        self._struct_drawn, self._struct_w0 = {}, self.st.get("struct_w", default_w)
+        for im in out:
+            u = im.pop("_units")
+            im["width"] = w * u / top if u and top else w
+            im["fixed"] = len(out) > 1
+            im["keep_width"] = True                       # eine gespeicherte Einzelgröße (ältere Stände) gilt nicht mehr
+            im["between"] = between
+            self._struct_drawn["image_" + im["id"]] = im["width"]
+        return out
 
     def photo_asset(self, path, method):
         if method in ("auto", "isnet") and not self.main.ensure_model():
@@ -1653,6 +1681,19 @@ class FigureTab(QWidget):
     def layout_changed(self, layout):
         if not layout:                                 # nichts bewegt
             return
+        drawn = getattr(self, "_struct_drawn", {})
+        for k in [k for k in layout if k in drawn]:    # Strukturen im gemeinsamen Maßstab: nur die Position merken;
+            v = layout[k]                              # das Mausrad auf einer skaliert alle (struct_w)
+            if len(v) == 4 and abs(v[2] / drawn[k] - 1) > 0.005:
+                sp = getattr(self, "sp_struct_w", None)
+                lo, hi = (sp.minimum(), sp.maximum()) if sp is not None else (3.0, 90.0)
+                self.st["struct_w"] = round(min(hi, max(lo, self._struct_w0 * v[2] / drawn[k])), 1)
+                if sp is not None:
+                    sp.blockSignals(True)
+                    sp.setValue(self.st["struct_w"])
+                    sp.blockSignals(False)
+                self.timer.start()
+            layout[k] = list(v[:2])
         layout = self.st["layout"][self.size_key()] = dict(self.st["layout"].get(self.size_key()) or {}, **layout)
         self.sync_sizes(layout)
         self.main.push_undo()
@@ -2079,6 +2120,7 @@ class OverlayTab(FigureTab):
         row.addWidget(b2)
         f.addRow(T("structure"), row)
         self.sp_struct_w = self.size_spin(f, "struct_w", "image_struktur")
+        self.sp_struct_w.setToolTip(T("struct_w_group_tip"))
         self.cmb_ymode.currentIndexChanged.connect(self.changed)
         self.cmb_ymode.currentIndexChanged.connect(self.mode_changed)
         for w in (self.sp_nlo, self.sp_nhi):
@@ -2948,22 +2990,15 @@ class OverlayTab(FigureTab):
                                      max(1.1 * e.get("scale", 1.0) + total_off(e) for e in vis))]
         cfg["ylabel"] = (r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else
                          "absorbance [a.u.]" if abs_mode else "normalized absorbance [a.u.]")
-        imgs = []
+        items = []
         if st.get("structure") and Path(st["structure"]).exists():
-            imgs.append({"file": st["structure"], "id": "struktur", "width": st.get("struct_w", 20) / 100,
-                         "prefer": "top", "_asset": self.structure_asset(st["structure"])})
+            items.append(("struktur", st["structure"], None, "top"))
         for e in vis:                                   # Struktur pro Spektrum, optional in Kurvenfarbe
             p = e.get("structure")
             if p and Path(p).exists():
-                color = e["color"] if e.get("struct_color", True) else None
-                try:
-                    asset = self.structure_asset(p, color)
-                except Exception as ex:
-                    self.add_note(f"{Path(p).name}: {ex}")
-                    continue
-                imgs.append({"file": p, "id": "struktur_" + e.get("uid", "x"),
-                             "width": st.get("struct_w", 20) / 100, "prefer": "top", "_asset": asset})
-        cfg["images"] = imgs
+                items.append(("struktur_" + e.get("uid", "x"), p, e["color"] if e.get("struct_color", True) else None,
+                              "top"))
+        cfg["images"] = self.structure_images(items)    # alle im selben Maßstab, eine Größe
         return cfg, curves, [], sticks
 
 

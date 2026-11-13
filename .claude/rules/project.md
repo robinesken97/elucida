@@ -91,7 +91,12 @@ paths:
   `CV._fmt_e`, ΔE_p in mV, `g_text`, `hfc_texts`, D und |E/D| wie `zfs_summary`). Neu ausgelesen wird nur ein gebauter
   Tab mit geändertem Fingerabdruck (`fingerprint`: Zustand mit relativen Pfaden); ein Fehler darin stört das Speichern
   nie. Ein Eintrag, dessen Fingerabdruck nicht zur Projektdatei passt, gilt als veraltet und liefert keinen Wert;
-  „Aktualisieren“ (nur sichtbar, wenn nötig) öffnet die Verbindung kurz und speichert sie. CV-Stapel: eine andere
+  „Aktualisieren“ (nur sichtbar, wenn nötig) öffnet die Verbindung kurz und speichert sie. Strukturen im Vergleich (CV-Stapel, Spektren;
+  Nutzerwunsch 2026-11-13): je Verbindung eine, Vorgabe in Kurvenfarbe (`structures`, `struct_color`, `struct_w`), alle im
+  selben Zeichenmaßstab über `FigureTab.structure_images` (Breite in Bindungslängen aus der CDXML, `IMG.structure_units`;
+  die breiteste = `struct_w`, Mausrad auf einer ändert `struct_w`, kein Einzelschrumpfen; gilt auch im UV-Vis-Overlay).
+  Spektren: am höchsten Punkt der eigenen Kurve, gestapelt rechts über der eigenen Grundlinie (`between`: Platzsuche
+  sperrt dann nur die Kurvenlinien, nicht die Fläche unter der Hülle). CV-Stapel: eine andere
   Referenzskala als die erste Kurve wird abgelehnt, nie umgerechnet; Peak am Fensterrand ergibt keine Zahl; Unterschrift
   nur aus den `cap_*` der Verbindungen (gleiche Angaben einmal, verschiedene je Verbindung), normiert = Satz in der
   Unterschrift. Spektren: ε wie im Overlay (`eps_linked`, gleiche Basislinie); ohne Konzentration oder Molmasse keine

@@ -25,7 +25,12 @@
   heading); the CV stack shows any of the first ten cycles per compound (peak numbers only for the evaluated one); the
   table takes X-ray parameters, space group and crystal system, DFT energies and HOMO/LUMO, and IR bands or NMR shifts
   nearest a target within a tolerance; spectra include IR and EPR (field axis only at one microwave frequency or scaled
-  to a reference, or a g axis); undo and redo work in the open comparison.
+  to a reference, or a g axis); undo and redo work in the open comparison. The spectra comparison and the CV stack
+  show the structure of each compound in the figure, by default in the colour of its curve (can be switched off, or
+  black): at the highest point of its own curve, stacked on the right above its own baseline.
+- **Structures at equal size:** several structures in one figure (comparison, UV-Vis overlay) always share the same
+  drawing scale (equal bond length, whatever the ChemDraw style). The size applies to the widest one; the mouse wheel
+  on one structure changes all.
 - **EPR: choice of baseline.** Besides the polynomial there are "Smooth" (follows a broad background, keeps narrow
   lines, needs no dark spectrum; the only value is the width) and "Spline" (through the means of the signal-free
   ranges). The methods text and the exported spectra state the method.

@@ -927,6 +927,45 @@ class CompareTab(TABS.FigureTab):
     def kind_controls(self):
         pass
 
+    def struct_size_spin(self):
+        """Größe der Strukturen im Bild: Breite der breitesten in % der Plotbreite, alle im selben Maßstab."""
+        sp = QDoubleSpinBox(decimals=0, minimum=4, maximum=60, singleStep=1, suffix=" %",
+                            value=self.st.get("struct_w", self.DEFAULT_STATE.get("struct_w", 14.0)))
+        sp.setToolTip(T("struct_w_group_tip"))
+        return sp
+
+    def struct_images(self, cfg, traces):
+        """Struktur je Verbindung, als Vorgabe in der Farbe ihrer Kurve (Nutzerwunsch 2026-11-13; abschaltbar):
+        gestapelt rechts neben der eigenen Kurve, sonst so nah wie möglich an ihrem höchsten Punkt.
+        traces: [(Mitglied, Verbindung, x, y wie gezeichnet)]."""
+        st = self.st
+        if not st.get("structures", True):
+            return []
+        (x0, x1), (y0, y1) = cfg["xlim"], cfg["ylim"]
+        items = []
+        for m, rec, x, y in traces:
+            if not rec["structure"]:
+                continue
+            x, y = np.asarray(x, float), np.asarray(y, float)
+            inside = (x >= min(x0, x1)) & (x <= max(x0, x1)) & np.isfinite(y)
+            if not inside.any():
+                continue
+            if st.get("stack"):
+                py = (float(np.median(y[inside])) - y0) / ((y1 - y0) or 1.0)
+
+                def near(X, Y, w_, h_, py=py):                    # rechts, knapp über der eigenen Grundlinie
+                    d = Y - py
+                    return np.abs(1 - X - w_) + np.where(d >= 0, d, -4 * d)
+            else:
+                i = int(np.argmax(np.where(inside, y, -np.inf)))
+                px, py = (x[i] - x0) / ((x1 - x0) or 1.0), (y[i] - y0) / ((y1 - y0) or 1.0)
+
+                def near(X, Y, w_, h_, px=px, py=py):             # so nah wie möglich am höchsten Punkt
+                    return np.abs(X + w_ / 2 - px) + np.abs(Y + h_ / 2 - py)
+            items.append((f"struktur_{m['key']}", rec["structure"],
+                          m["color"] if st.get("struct_color", True) else None, near))
+        return self.structure_images(items, 22.0, between=bool(st.get("stack")))
+
     def members(self):
         """Mitglieder dieses Vergleichs, die zum Projekt gehören (in Listen- bzw. Projektreihenfolge)."""
         recs = self.page.records
@@ -1060,7 +1099,7 @@ class CVStackTab(CompareTab):
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=1.0, ymax=0.0, members=[], stack_gap=1.0,
-                         normalize=False, arrow=True, structures=True, struct_color=False, struct_w=14.0, legend=False)
+                         normalize=False, arrow=True, structures=True, struct_color=True, struct_w=14.0, legend=False)
     LABELS = ("fwd", "epa", "epc", "e12", "none")
 
     def kind_controls(self):
@@ -1090,7 +1129,7 @@ class CVStackTab(CompareTab):
         self.sp_gap = QDoubleSpinBox(decimals=2, minimum=0.0, maximum=5.0, singleStep=0.1, value=st["stack_gap"])
         self.sp_gap.setToolTip(T("cmp_gap_tip"))
         f.addRow(T("cmp_gap"), self.sp_gap)
-        self.sp_sw = QDoubleSpinBox(decimals=0, minimum=4, maximum=40, singleStep=1, suffix=" %", value=st["struct_w"])
+        self.sp_sw = self.sp_struct_w = self.struct_size_spin()
         f.addRow(T("img_size"), self.sp_sw)
         self.cb = {}
         for key in ("normalize", "arrow", "structures", "struct_color", "legend"):
@@ -1228,18 +1267,12 @@ class CVStackTab(CompareTab):
                 arrows.append((f"arrow_scan_{m['key']}", float(x[0]), float(y[0] + off),
                                float(x[0] + direction * 0.08 * xr), m["color"]))
             if structs and rec["structure"]:
-                try:
-                    asset = self.structure_asset(rec["structure"], m["color"] if st["struct_color"] else None)
-                except Exception as ex:
-                    self.add_note(f"{Path(rec['structure']).name}: {ex}")
-                    continue
                 yc = (float(np.nanmedian(y)) + off - y0) / ((y1 - y0) or 1.0)
 
                 def near(X, Y, w_, h_, yc=yc):                    # neben der eigenen Kurve, rechts
                     return np.abs(Y + h_ / 2 - yc) + 0.5 * np.abs(1 - X - w_)
-                imgs.append({"file": rec["structure"], "id": f"struktur_{m['key']}", "width": w, "prefer": near,
-                             "_asset": asset})
-        cfg["images"] = imgs
+                imgs.append((f"struktur_{m['key']}", rec["structure"], m["color"] if st["struct_color"] else None, near))
+        cfg["images"] = self.structure_images(imgs, 14.0)    # alle im selben Maßstab, die breiteste = struct_w
         cfg["scan_arrows"] = arrows
         cfg["y_axis"] = "no_numbers"
         cfg["legend"] = bool(st["legend"])
@@ -1290,7 +1323,7 @@ class SpectraTab(CompareTab):
     Emission normiert wie im Fluoreszenz-Tab), übereinander oder gestapelt, ein Legendeneintrag je Verbindung."""
     KIND = "spectra"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], content="eps", stack=False, stack_gap=1.0,
-                         ref_freq=0.0)
+                         ref_freq=0.0, structures=True, struct_color=True, struct_w=22.0)
     CONTENTS = ("eps", "abs_norm", "em", "abs_em", "ir", "epr", "epr_g")
     RESET_KEEP = CompareTab.RESET_KEEP + ("ref_freq",)      # Referenzfrequenz wie im EPR-Tab: bleibt beim Zurücksetzen
     EPR = ("epr", "epr_g")
@@ -1329,6 +1362,16 @@ class SpectraTab(CompareTab):
         row.addWidget(self.sp_gap)
         row.addStretch(1)
         f.addRow(row)
+        self.sp_struct_w = self.struct_size_spin()            # Strukturen wie im CV-Stapel
+        f.addRow(T("img_size"), self.sp_struct_w)
+        self.sp_struct_w.valueChanged.connect(self.changed)
+        self.cb = {}
+        for key in ("structures", "struct_color"):
+            cb = QCheckBox(T("cmp_" + key))
+            cb.setChecked(bool(st.get(key, True)))
+            cb.toggled.connect(self.changed)
+            f.addRow(cb)
+            self.cb[key] = cb
         self.cmb_content.currentIndexChanged.connect(self.content_changed)
         self.sp_gap.valueChanged.connect(self.changed)
         self.cb_stack.toggled.connect(self.changed)
@@ -1351,7 +1394,8 @@ class SpectraTab(CompareTab):
 
     def collect(self):
         self.st.update(content=self.cmb_content.currentData(), stack_gap=self.sp_gap.value(),
-                       stack=self.cb_stack.isChecked(), ref_freq=self.sp_ref.value())
+                       stack=self.cb_stack.isChecked(), ref_freq=self.sp_ref.value(),
+                       struct_w=self.sp_struct_w.value(), **{k: cb.isChecked() for k, cb in self.cb.items()})
 
     def show_member(self):
         if not hasattr(self, "cmb_series"):
@@ -1437,12 +1481,14 @@ class SpectraTab(CompareTab):
         cfg = self.base_cfg()
         n = len(groups)
         top = max(float(np.nanmax(y)) for _, _, cs in groups for _x, y, _l in cs) or 1.0
-        curves = []
+        curves, traces = [], []
         for k, (m, rec, cs) in enumerate(groups):
             off = (n - 1 - k) * st["stack_gap"] * (top if eps_mode else 1.0) if st["stack"] else 0.0
             for j, (x, y, ls) in enumerate(cs):
                 curves.append({"x": x, "y": y + off, "val": y, "color": m["color"], "ls": ls, "lw": 1.3,
                                "label": rec["name"] if j == 0 else None})
+                if j == 0:
+                    traces.append((m, rec, x, y + off))
         xs = np.concatenate([c["x"] for c in curves])
         cfg["xlim"] = [float(np.nanmin(xs)), float(np.nanmax(xs))] if st["x_auto"] else [st["x_min"], st["x_max"]]
         lo_x, hi_x = cfg["xlim"]
@@ -1454,7 +1500,7 @@ class SpectraTab(CompareTab):
         cfg["legend_beside"] = True
         cfg["ylabel"] = (r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else
                          "normalized emission [a.u.]" if content == "em" else "normalized intensity [a.u.]")
-        cfg["images"] = []
+        cfg["images"] = self.struct_images(cfg, traces)
         return cfg, curves, [], []
 
     def _stacked(self, groups, cfg, span):
@@ -1470,6 +1516,7 @@ class SpectraTab(CompareTab):
         cfg["y_axis"] = "no_numbers" if st["stack"] else "numbers"
         cfg["legend_beside"] = True
         cfg["images"] = []
+        self._traces = [(m, rec, c["x"], c["y"]) for (m, rec, _x, _y), c in zip(groups, curves)]
         return curves
 
     def _xlim(self, xs, reverse):
@@ -1511,6 +1558,7 @@ class SpectraTab(CompareTab):
         cfg["xlim"] = self._xlim(np.concatenate([g[2] for g in groups]), True)
         cfg["xlabel"] = "wavenumber [cm$^{-1}$]"
         cfg["ylabel"] = "transmittance [%]" if mode0 == "T" else "absorbance"
+        cfg["images"] = self.struct_images(cfg, self._traces)
         return cfg, curves, [], []
 
     def _epr_spec(self):
@@ -1560,6 +1608,7 @@ class SpectraTab(CompareTab):
         cfg["xlabel"] = "g" if g_axis else f"magnetic field [{unit}]"
         cfg["ylabel"] = "normalized EPR intensity [arb. u.]"
         self._epr_nu = (ref or nu0) if not g_axis else None
+        cfg["images"] = self.struct_images(cfg, self._traces)
         return cfg, curves, [], []
 
     def si_caption(self, name):

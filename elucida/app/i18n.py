@@ -1416,6 +1416,10 @@ TEXTS = {
     "reset_special_tip": ("Zurück auf „{what}“ (oder das Feld leeren)", "Back to '{what}' (or clear the field)"),
     "chips_figure": ("Im Bild", "In Figure"),
     "img_size": ("Größe [% Plotbreite]", "Size [% of plot width]"),
+    "struct_w_group_tip": ("Breite der breitesten Struktur. Mehrere Strukturen in einem Bild haben immer denselben\n"
+                           "Maßstab (gleiche Bindungslänge); das Mausrad auf einer Struktur ändert alle.",
+                           "Width of the widest structure. Several structures in one figure always share the same\n"
+                           "scale (equal bond length); the mouse wheel on one structure changes all."),
     "xrange": ("λ-Bereich [nm]", "λ range [nm]"),
     "xrange_auto": ("gesamt", "full"),
     "conc_title": ("Konzentrationen eingeben", "Enter concentrations"),

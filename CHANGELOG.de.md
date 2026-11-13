@@ -27,7 +27,12 @@
   die Tabelle übernimmt X-Ray-Parameter, Raumgruppe und Kristallsystem, DFT-Energien und HOMO/LUMO sowie IR-Banden und
   NMR-Verschiebungen am nächsten an einem Ziel innerhalb einer Toleranz; Spektren auch als IR und EPR (Feldachse nur bei
   einer Mikrowellenfrequenz oder auf eine Referenz skaliert, sonst g-Achse); Rückgängig und Wiederholen gelten im
-  offenen Vergleich.
+  offenen Vergleich. Im Spektrenvergleich und im CV-Stapel steht die Struktur jeder Verbindung im Bild, als Vorgabe
+  in der Farbe ihrer Kurve (abschaltbar, auch schwarz): am höchsten Punkt der eigenen Kurve, gestapelt rechts über der
+  eigenen Grundlinie.
+- **Strukturen gleich groß:** Mehrere Strukturen in einem Bild (Vergleich, UV-Vis-Overlay) haben immer denselben
+  Zeichenmaßstab (gleiche Bindungslänge, unabhängig vom ChemDraw-Stil). Die Größe gilt für die breiteste; das Mausrad
+  auf einer Struktur ändert alle.
 - **EPR: Basislinie nach Wahl.** Neben dem Polynom gibt es „Glatt“ (folgt breitem Untergrund, lässt schmale Linien
   stehen, kommt ohne Dunkelspektrum aus; einziger Wert ist die Breite) und „Spline“ (durch die Mittel der
   signalfreien Bereiche). Methodentext und exportierte Spektren nennen das Verfahren.

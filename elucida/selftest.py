@@ -8952,6 +8952,52 @@ def selftest(outdir, with_isnet=False):
             assert spec_ is not None and [c_["label"] for c_ in spec_[1]] == ["S2", "S3"]
             assert "varepsilon" in spec_[0]["ylabel"] and 25 < float(np.nanmax(spec_[1][1]["y"])) < 31
             assert "UV-Vis absorption spectra" in st_.si_caption("x") and "<b>S3</b>" in st_.si_caption("x")
+            # Struktur je Verbindung in der Farbe ihrer Kurve (Vorgabe), alle im selben Zeichenmaßstab: Breiten wie die
+            # Breiten in Bindungslängen, die breiteste = struct_w; nie einzeln geschrumpft
+            from elucida.core import images as IMG_c_
+            ims_ = spec_[0]["images"]
+            assert [i_["id"] for i_ in ims_] == ["struktur_" + m_["key"] for m_ in st_.drawn()], ims_
+            assert st_.st["structures"] and st_.st["struct_color"] and st_.st["struct_w"] == 22.0, st_.st
+            u_ = [IMG_c_.structure_units(i_["file"]) for i_ in ims_]
+            assert all(u_) and abs(u_[0] / u_[1] - 1) > 0.2, u_                    # verschieden große Moleküle
+            assert abs(ims_[0]["width"] / ims_[1]["width"] - u_[0] / u_[1]) < 1e-9 and \
+                abs(max(i_["width"] for i_ in ims_) - 0.22) < 1e-9 and all(i_["fixed"] and i_["keep_width"] for i_ in ims_)
+            for i_, m_ in zip(ims_, st_.drawn()):
+                px_ = i_["_asset"]["rgba"]
+                px_ = px_[px_[..., 3] > 200][:, :3]
+                want_ = [int(m_["color"].lstrip("#")[j_:j_ + 2], 16) for j_ in (0, 2, 4)]
+                assert np.abs(np.median(px_, axis=0) - want_).max() <= 2, (m_["color"], np.median(px_, axis=0))
+            src_ = Path(ims_[0]["file"]).read_text(encoding="utf-8")       # doppelt so groß gezeichnet: gleicher Maßstab
+            big_ = out / "cmp_scaled.cdxml"
+            big_.write_text(re.sub(r'\bp="([-0-9.]+) ([-0-9.]+)"',
+                                   lambda m_: f'p="{2 * float(m_.group(1)):.2f} {2 * float(m_.group(2)):.2f}"', src_),
+                            encoding="utf-8")
+            assert abs(IMG_c_.structure_units(big_) / u_[0] - 1) < 0.15, (IMG_c_.structure_units(big_), u_[0])
+            st_.render()
+            pump_c_(0.3)
+            k_ = "image_" + ims_[0]["id"]                         # Mausrad auf einer Struktur: alle wachsen (struct_w)
+            v_ = list(st_.F.current_layout()[k_])
+            st_.layout_changed({k_: [v_[0], v_[1], v_[2] * 1.1, v_[3] * 1.1]})
+            assert abs(st_.st["struct_w"] - 24.2) < 0.2 and len(st_.layout()[k_]) == 2, (st_.st["struct_w"], st_.layout())
+            st_.layout_changed({k_: v_})                          # nur verschoben: Größe bleibt, Position gemerkt
+            assert abs(st_.st["struct_w"] - 24.2) < 0.2 and st_.layout()[k_] == v_[:2]
+            st_.layout().pop(k_)
+            st_.sp_struct_w.setValue(22)
+            st_.cb["struct_color"].setChecked(False)              # schwarz statt Kurvenfarbe; ganz aus
+            px_ = st_.figure_spec()[0]["images"][1]["_asset"]["rgba"]
+            assert np.median(px_[px_[..., 3] > 200][:, :3], axis=0).max() <= 2
+            st_.cb["structures"].setChecked(False)
+            assert st_.figure_spec()[0]["images"] == []
+            st_.cb["structures"].setChecked(True)
+            st_.cb["struct_color"].setChecked(True)
+            st_.cb_stack.setChecked(True)                         # gestapelt: jede über ihrer eigenen Grundlinie, rechts
+            st_.render()
+            pump_c_(0.3)
+            lay_s_ = st_.F.current_layout()
+            pos_ = [lay_s_["image_" + i_["id"]] for i_ in ims_]
+            assert pos_[0][1] > 0.4 > pos_[1][1] and all(p_[0] + p_[2] > 0.9 for p_ in pos_), pos_
+            assert all(i_["between"] for i_ in st_.F.cfg["images"])
+            st_.cb_stack.setChecked(False)
             st_.cmb_content.setCurrentIndex(st_.cmb_content.findData("abs_em"))
             spec_ = st_.figure_spec()
             assert [c_.get("ls") for c_ in spec_[1]] == ["-", "-", "--"], [c_.get("ls") for c_ in spec_[1]]
@@ -9011,6 +9057,9 @@ def selftest(outdir, with_isnet=False):
             assert all(f"arrow_scan_{k_}" in lay_ and f"image_struktur_{k_}" in lay_ for k_ in keys_), sorted(lay_)
             ys_ = [lay_[f"image_struktur_{k_}"][1] for k_ in keys_]
             assert ys_[0] > ys_[1] > ys_[2], ys_                                      # Struktur neben ihrer Kurve
+            assert ct_.st["struct_color"] is True and ct_.sp_struct_w is ct_.sp_sw      # Vorgabe: Kurvenfarbe
+            wd_ = [i_["width"] for i_ in ct_.F.cfg["images"]]
+            assert abs(max(wd_) - ct_.st["struct_w"] / 100) < 1e-9 and all(i_["fixed"] for i_ in ct_.F.cfg["images"]), wd_
             ct_.move_row(2, 0)                                    # Reihenfolge = Liste: T3 jetzt oben
             assert [c_["label"] for c_ in ct_.figure_spec()[1]] == ["T3", "T1", "T2"]
             ct_.cb["normalize"].setChecked(True)
@@ -9022,7 +9071,8 @@ def selftest(outdir, with_isnet=False):
             assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["normalize"] is True
             w.close_publication()
             report.append("Comparison CV stack (three synthetic compounds: offsets, peak labels, structures beside "
-                          "the curves, one scan arrow each, other reference refused) and spectra overlay: OK")
+                          "the curves, one scan arrow each, other reference refused) and spectra overlay (structures "
+                          "in curve colour, one drawing scale, wheel scales all, stacked beside the own curve): OK")
         with section:
             # X-Ray Stufe 3: Kristall gegen Rechnung. Alles künstlich: Kristall = RDKit-Geometrie in P1, Rechnung =
             # dieselbe 1.02-fach skaliert, gedreht, verschoben, Atome umsortiert -> RMSD = 0.02 x rms-Radius der

@@ -257,8 +257,8 @@ zur Seite zurück.
 - **CV-Stapel:** je Verbindung ein Cyclovoltammogramm, versetzt übereinander (oben in der Liste = oberste Kurve, Ziehen
   oder Pfeile ordnen um, **Abstand** in Vielfachen der größten Kurvenhöhe). Unter „Gewählte Verbindung“: Messung (Standard:
   die erste sichtbare, im Zyklus des CV-Tabs), Redoxpaar und Beschriftung am Peak (Hinpeak, E_pa, E_pc, E½ oder keine; die
-  Zahl aus den Ergebnissen des CV-Tabs). Die Struktur der Verbindung steht neben ihrer Kurve (ziehbar, wahlweise in
-  Kurvenfarbe), ein Pfeil zeigt je Kurve die Messrichtung, die y-Achse hat keine Zahlen. **Normiert** teilt jede Kurve
+  Zahl aus den Ergebnissen des CV-Tabs). Die Struktur der Verbindung steht neben ihrer Kurve (ziehbar, als Vorgabe in
+  Kurvenfarbe, abschaltbar; alle Strukturen im selben Maßstab, **Größe** = Breite der breitesten), ein Pfeil zeigt je Kurve die Messrichtung, die y-Achse hat keine Zahlen. **Normiert** teilt jede Kurve
   durch ihren größten Betrag; die Bildunterschrift sagt das. Verbindungen auf einer anderen Referenzskala als die erste
   werden nicht gezeigt (Hinweis unter dem Bild), nie umgerechnet. Die Bildunterschrift entsteht aus den Angaben der
   Verbindungen (Lösungsmittel, Leitsalz, Konzentration, Vorschub): gleiche einmal, verschiedene je Verbindung.
@@ -267,7 +267,9 @@ zur Seite zurück.
   Peak ohne Zahl, ein Hinweis sagt das.
 - **Spektren:** UV-Vis als ε (dieselbe Messung und Basislinie wie im Overlay, ohne Konzentration oder Molmasse keine
   Kurve) oder auf das Maximum normiert, Emission normiert wie im Fluoreszenz-Tab, beides zusammen (Emission
-  gestrichelt); übereinander oder gestapelt, ein Legendeneintrag je Verbindung. Bei mehreren ε-Serien wählt man die Serie
+  gestrichelt); übereinander oder gestapelt, ein Legendeneintrag je Verbindung. **Strukturen** zeigt je Verbindung ihre Struktur,
+  als Vorgabe in der Farbe der Kurve (**Struktur in Kurvenfarbe** aus: schwarz), am höchsten Punkt der eigenen Kurve bzw.
+  gestapelt rechts über der eigenen Grundlinie; ziehbar, alle im selben Maßstab (**Größe** = Breite der breitesten). Bei mehreren ε-Serien wählt man die Serie
   je Verbindung. **IR:** Transmission bzw. Absorbanz wie im IR-Tab, Wellenzahl fällt nach rechts; eine Verbindung, deren
   IR-Tab die andere Darstellung zeigt, wird nicht gezeigt (nie umgerechnet). **EPR** (normiert, Standard gestapelt): auf
   der Feldachse nur Spektren mit derselben Mikrowellenfrequenz wie das erste, oder mit **Frequenz angleichen** wie im
@@ -596,7 +598,8 @@ Mehrere Spektren in einer Abbildung vergleichen, gemessen und berechnet:
   die Höhe seiner eigenen Gaußbande, die Kurve ist deren Summe). Bezug: „Kurvenmaximum = 1“ oder
   „stärkster Übergang = 1“; „Kurvenmaximum = 1, rechts zusätzlich f“ zeigt die Oszillatorstärke als zweite Skala
   derselben Striche (entfällt mit Hinweis, wenn die Rechnungen verschiedene Maßstäbe haben).
-- Eine **Struktur pro Spektrum**, optional in der Kurvenfarbe.
+- Eine **Struktur pro Spektrum**, optional in der Kurvenfarbe. Mehrere Strukturen in einem Bild haben immer denselben
+  Maßstab (gleiche Bindungslänge, aus der CDXML); die Größe gilt für die breiteste, das Mausrad auf einer ändert alle.
 - Struktur mit einstellbarer Größe; die Legende wird in freie Fläche gesetzt und lässt sich verschieben.
 - **Gestapelt** (wie in Papern üblich): Die Kurven werden in Listenreihenfolge um einen gemeinsamen
   Abstand senkrecht versetzt (oben in der Liste = oberste Kurve). „Gleiche Stapelebene wie die Kurve

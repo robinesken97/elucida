@@ -461,6 +461,25 @@ def _load_structure(path, target_px=2400, color=None):
 
 
 SIBLING_DRAWING_EXT = (".svg", ".pdf", ".png", ".tif", ".tiff")
+_UNITS_CACHE: dict = {}
+
+
+def structure_units(path):
+    """Breite einer Struktur in Bindungslängen, aus ihrer CDXML (die Datei selbst oder die gleichnamige neben einem
+    ChemDraw-Export). None ohne CDXML: dann gibt es keinen gemeinsamen Maßstab."""
+    p = Path(path)
+    cdx = p if p.suffix.lower() in CHEM_EXT else p.with_suffix(".cdxml")
+    try:
+        key = (str(cdx.resolve()), cdx.stat().st_mtime_ns)
+    except OSError:
+        return None
+    if key not in _UNITS_CACHE:
+        from elucida.formats import cdxml as CDXDRAW
+        try:
+            _UNITS_CACHE[key] = CDXDRAW.drawing_units(cdx)
+        except Exception:
+            _UNITS_CACHE[key] = None
+    return _UNITS_CACHE[key]
 
 
 STALE_S = 2.0                     # Export so viel älter als die CDXML: veraltet (CDXML in ChemDraw weiterbearbeitet)
