@@ -113,6 +113,33 @@ def _held_qt_items(where=""):
     return held
 
 
+def _load_note():
+    """Live widgets, own RSS and that of the WebEngine helper processes (POSIX via ps): CI Macs spent most of their
+    time in app-wide restyles, this shows whether widgets or memory grow."""
+    try:
+        from PySide6.QtWidgets import QApplication
+        note = f" widgets={len(QApplication.allWidgets())}"
+        if os.name == "posix":
+            import subprocess
+            me, own, web, n = os.getpid(), 0, 0, 0
+            for line in subprocess.run(["ps", "-axo", "pid=,ppid=,rss=,comm="], capture_output=True,
+                                       text=True, timeout=10).stdout.splitlines():
+                f = line.split(None, 3)
+                if len(f) < 4:
+                    continue
+                if int(f[0]) == me:
+                    own = int(f[2])
+                elif int(f[1]) == me and "QtWebEngineProcess" in f[3]:
+                    n, web = n + 1, web + int(f[2])
+            note += f" rss={own // 1024}MB web={n}/{web // 1024}MB"
+            if sys.platform == "darwin":                       # RSS zeigt Auslagerung auf macOS nicht
+                swap = subprocess.run(["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=10)
+                note += " swap " + " ".join(swap.stdout.split()[:6])
+        return note
+    except Exception:
+        return ""
+
+
 class _Section:
     """One part of the selftest: a failure is reported, the next part still runs, so one CI run shows all failures.
     Later parts can fail as a consequence (NameError): read the first FAILED first."""
@@ -133,7 +160,7 @@ class _Section:
             import faulthandler
             faulthandler.cancel_dump_traceback_later()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
-            print(f"slow section at selftest.py:{self.line}: {dt:.0f} s", flush=True)
+            print(f"slow section at selftest.py:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
         if kind is None or not issubclass(kind, Exception):
             return False
         self.failed += 1
@@ -881,6 +908,18 @@ def selftest(outdir, with_isnet=False):
                 win.close()
                 win.deleteLater()
                 core.LOG = IMG.LOG = lambda m="": w.log_signal.emit(str(m))
+
+            def wait_path_(ws_, limit=90):
+                # offener Reaktionspfad: warten, bis seine Zeichenfläche gespeichert ist (CDXML, dann SVG); vorher fehlt
+                # beim Schließen die Vorschau bzw. sie entsteht aus der Abbildung statt aus der SVG (langsame CI)
+                def ready_():
+                    c_ = ws_.composition
+                    return c_ is None or (not c_._auto_pending and c_.editor.path is not None and not c_.editor.dirty
+                                          and c_.editor.path.with_suffix(".svg").exists())
+                t0_ = time.time()
+                while not ready_() and time.time() - t0_ < limit:
+                    pump(0.2)
+                assert ready_(), "path drawing not saved"
 
             # TD-DFT mit Spin-Bahn-Kopplung (ORCA 6): Zustandsnamen wie "0-1.0A" dürfen nicht als Zahl gelten
             soc = out / "input" / "orca_soc.out"
@@ -12109,6 +12148,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time_c_.time()
                 while time_c_.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time_c_.sleep(0.02)
             dcmp_ = out / "demo_cmp"
             w.open_demo_publication(dcmp_)                    # schreibt beim Speichern je Verbindung den Stand
@@ -14545,6 +14585,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time_p.time()
                 while time_p.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time_p.sleep(0.02)
 
             def files_p(d_):
@@ -14592,10 +14633,8 @@ def selftest(outdir, with_isnet=False):
                 w.pub_page.open_path(item)
                 pump_p(1.0)
                 ws = w.pub_page.path_workspace
-                t0_ = time_p.time()                          # neue Fläche: Profil von selbst (nur mit Web-Editor)
-                while wait and ws.composition is not None and ws.composition._auto_pending and time_p.time() - t0_ < 90:
-                    pump_p(0.2)                              # CI-Macs ohne GPU: Web-Editor braucht > 15 s
-                assert not (wait and ws.composition is not None and ws.composition._auto_pending), "profile pending"
+                if wait:                                     # neue Fläche: Profil von selbst; CI-Macs ohne GPU > 15 s
+                    wait_path_(ws)
                 return ws
 
             ws_p = open_p(item_p, wait=True)
@@ -15819,6 +15858,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
 
             class Drop_a1:
@@ -15886,6 +15926,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_a2 = Path(w.open_demo_publication(out / "a2_pub"))
             pump_a2(0.5)
@@ -15976,6 +16017,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_a3 = Path(w.open_demo_publication(out / "a3_pub"))
             pump_a3(0.5)
@@ -16019,6 +16061,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
 
             def check_a4(path_):
@@ -16123,6 +16166,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_f1 = Path(w.open_demo_publication(out / "f1_pub"))
             pump_f1(0.5)
@@ -16162,6 +16206,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             yaml_z1 = out / "z1_preset.yaml"
             real_z1 = (TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName)
@@ -16231,6 +16276,7 @@ def selftest(outdir, with_isnet=False):
             # Schließen ohne Änderung: preview.png und project.elucida bleiben unberührt
             w.pub_page.open_path(item_z1)
             pump_z1(2.0)
+            wait_path_(w.pub_page.path_workspace)
             mt_z1 = {n_: (dir_z1 / n_).stat().st_mtime_ns for n_ in ("preview.png", "project.elucida")}
             w.pub_page.close_path()
             pump_z1(0.5)
@@ -16238,6 +16284,7 @@ def selftest(outdir, with_isnet=False):
             (dir_z1 / "preview.png").unlink()                                   # fehlt die Vorschau, entsteht sie neu
             w.pub_page.open_path(item_z1)
             pump_z1(2.0)
+            wait_path_(w.pub_page.path_workspace)
             w.pub_page.close_path()
             pump_z1(0.5)
             assert (dir_z1 / "preview.png").stat().st_size > 0
@@ -16315,6 +16362,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_f2 = Path(w.open_demo_publication(out / "f2_pub"))
             pump_f2(0.5)
@@ -16359,6 +16407,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_f3 = Path(w.open_demo_publication(out / "f3_pub"))
             pump_f3(0.5)
@@ -16393,6 +16442,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
 
             def has_color_m1(widget, color):
@@ -16431,6 +16481,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             keep_size_m2, log_m2 = w.size(), []
             w.log_signal.connect(log_m2.append)
@@ -16482,6 +16533,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             keep_size_x = w.size()
             dp_x = Path(w.open_demo_publication(out / "a2x_pub"))
@@ -16637,6 +16689,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
 
             def docx_y(p_):
@@ -16763,6 +16816,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_z = Path(w.open_demo_publication(out / "a2z_pub"))
             pump_z(0.5)
@@ -16846,6 +16900,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             w.show_tab("export")
             pump_s(0.5)
@@ -16898,6 +16953,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             comp_t = Path(w.project_dir)
             th_t = comp_t / PRJ_t.WORK / "thumbs"
@@ -17032,6 +17088,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             dp_v = Path(w.open_demo_publication(out / "a2v_pub"))
             pump_v(0.5)
@@ -17147,6 +17204,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
 
             def blobs_q(d_):                                                   # (Datei:Eintrag, Inhalt) aller Ausgaben
@@ -17340,6 +17398,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
 
             def media_r(p_):
@@ -17522,6 +17581,7 @@ def selftest(outdir, with_isnet=False):
                 t0_ = time.time()
                 while time.time() - t0_ < sec:
                     QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             from matplotlib.colors import to_hex as HEX_l
             from matplotlib.figure import Figure as MF_l
