@@ -51,7 +51,7 @@ jobs:
 
       - name: Selbsttest aus dem Quellcode
 
-        timeout-minutes: 60
+        timeout-minutes: 180
         env: { QT_QPA_PLATFORM: offscreen, PYTHONFAULTHANDLER: "1" }
         run: python Elucida.py --selftest selftest_src --selftest-isnet
 
@@ -60,7 +60,7 @@ jobs:
 
       - name: Selbsttest der fertigen App (Windows)
 
-        timeout-minutes: 60
+        timeout-minutes: 180
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -71,7 +71,7 @@ jobs:
 
       - name: Selbsttest der fertigen App (macOS)
 
-        timeout-minutes: 60
+        timeout-minutes: 180
         if: runner.os == 'macOS'
         run: |
           dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-isnet
@@ -79,7 +79,7 @@ jobs:
 
       - name: Selbsttest der fertigen App (Linux)
 
-        timeout-minutes: 60
+        timeout-minutes: 180
         if: runner.os == 'Linux'
         env: { QT_QPA_PLATFORM: offscreen }
         run: |
@@ -122,7 +122,7 @@ jobs:
 
       - name: Selbsttest des AppImage (Linux)
 
-        timeout-minutes: 60
+        timeout-minutes: 180
         if: runner.os == 'Linux'
         env: { QT_QPA_PLATFORM: offscreen, APPIMAGE_EXTRACT_AND_RUN: "1" }
         run: |

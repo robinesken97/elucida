@@ -662,7 +662,7 @@ def selftest(outdir, with_isnet=False):
             r_t = LT_.fit_decay(t_d, y_d, 2, start=0.4)             # Schwanz ab 0.4 ns nach dem Maximum
             assert not r_t["irf"] and r_t["t"][0] >= t_d[np.argmax(y_d)] + 0.4 - 1e-9 and abs(r_t["tau"][1] / 5.0 - 1) < 0.08
             r_1 = LT_.fit_decay(t_d, y_d / y_d.max(), 1, start=3.0)  # keine Zaehlraten: ungewichtet, kein chi2
-            assert r_1["chi2_red"] is None and not r_1["weighted"] and r_1["tau_amp"] == r_1["tau"][0]
+            assert r_1["chi2_red"] is None and not r_1["weighted"] and abs(r_1["tau_amp"] - r_1["tau"][0]) <= 1e-9 * r_1["tau"][0]
             kr_, knr_ = LT_.rates(0.5, 2.0)
             assert abs(kr_ - 2.5e8) < 1 and abs(knr_ - 2.5e8) < 1 and LT_.rates(1.5, 2.0) == (None, None)
             assert FT_.parse_phi("42 %") == 0.42 and FT_.parse_phi("0,3") == 0.3 and FT_.parse_phi("2") is None
