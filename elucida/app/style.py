@@ -2576,9 +2576,10 @@ def apply(mode, cache_dir: Path):
         mode, Qt.ColorScheme.Unknown))
     _mode = resolve(mode)
     c = colors()
-    style = QStyleFactory.create("Fusion")
-    base_style = style.name().lower()
-    app.setStyle(style)
+    if base_style != "fusion":                         # nur einmal: setStyle baut jedes Widget neu (CI-Macs hingen
+        style = QStyleFactory.create("Fusion")          # dabei mit offenen Web-Editoren > 1 h); Theme = Palette + QSS
+        base_style = style.name().lower()
+        app.setStyle(style)
     pal = QPalette()
     for role, key in ((QPalette.Window, "window"), (QPalette.WindowText, "text"), (QPalette.Base, "field"),
                       (QPalette.AlternateBase, "alt"), (QPalette.Text, "text"), (QPalette.Button, "button"),

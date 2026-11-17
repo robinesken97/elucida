@@ -14585,8 +14585,9 @@ def selftest(outdir, with_isnet=False):
                 pump_p(1.0)
                 ws = w.pub_page.path_workspace
                 t0_ = time_p.time()                          # neue Fläche: Profil von selbst (nur mit Web-Editor)
-                while wait and ws.composition is not None and ws.composition._auto_pending and time_p.time() - t0_ < 15:
-                    pump_p(0.2)
+                while wait and ws.composition is not None and ws.composition._auto_pending and time_p.time() - t0_ < 90:
+                    pump_p(0.2)                              # CI-Macs ohne GPU: Web-Editor braucht > 15 s
+                assert not (wait and ws.composition is not None and ws.composition._auto_pending), "profile pending"
                 return ws
 
             ws_p = open_p(item_p, wait=True)
