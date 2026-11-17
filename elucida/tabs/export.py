@@ -392,7 +392,7 @@ class ExportTab(QWidget):
         if k in SI_FIG_KEYS:                                     # Abbildungen des Tabs (alle Karten des Tabs zusammen)
             return (lambda: k not in m.si_figs_off(),
                     lambda on: (m.set_si_figs_off(m.si_figs_off() - {k} | (set() if on else {k})),
-                                QTimer.singleShot(0, self.sync_pills)))
+                                QTimer.singleShot(0, self, self.sync_pills)))
         return None
 
     def _mark(self, key, change):
@@ -402,7 +402,7 @@ class ExportTab(QWidget):
         if self.main._built(key):
             self.main.replace_tab(key)
         self.main.push_undo()
-        QTimer.singleShot(0, self.sync_pills)
+        QTimer.singleShot(0, self, self.sync_pills)
 
     def sync_pills(self):
         """Pillen aus dem Zustand. Ist der Teil der SI (Chip links, nur dieser Rechner) aus, bleiben sie bedienbar: die
@@ -564,7 +564,7 @@ class ExportTab(QWidget):
         if page is not None and self.content.parentWidget() is not page:
             page.layout().addWidget(self.content)
         self.main.settings.setValue("step/ExportSegment", self.segments[i][0])
-        QTimer.singleShot(0, self._place_counts)                 # der offene Reiter ist halbfett
+        QTimer.singleShot(0, self, self._place_counts)                 # der offene Reiter ist halbfett
         self.grid.set_filter(None if self.segments[i][1] is None else self.shown())
         if self.current is not None and self.cards[self.current] not in self.shown():
             self.cards[self.current].set_current(False)
@@ -591,11 +591,11 @@ class ExportTab(QWidget):
         if need > avail:
             self._seg_labels(short=True)
         self.right_tabs.fit()
-        QTimer.singleShot(0, self._place_counts)
+        QTimer.singleShot(0, self, self._place_counts)
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
-        QTimer.singleShot(0, self._fit_segments)
+        QTimer.singleShot(0, self, self._fit_segments)
 
     def select_all(self, on):
         """„Alle · Keine“: nur das offene Segment."""

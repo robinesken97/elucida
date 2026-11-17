@@ -634,7 +634,7 @@ class SECTab(TABS.FigureTab):
         super().showEvent(ev)
         if self.st.get("ref_from_cv") and getattr(self, "_ref_used", None) is not None \
                 and self._ref_used != (self.e_offset(), self.ref_note):    # .get: beim Schließen ist der Zustand leer
-            QTimer.singleShot(0, self.render)
+            QTimer.singleShot(0, self, self.render)
 
     def selection(self, n):
         """Indizes der gezeigten Spektren (Bereich erstes–letztes, 0-basiert)."""

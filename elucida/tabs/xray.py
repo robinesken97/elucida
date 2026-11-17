@@ -5402,7 +5402,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         if item.checkState() == Qt.Checked:
             keep.append({k_: c[k_] for k_ in ("kind", "a", "ga", "b", "gb")} | ({"own": True} if c.get("own") else {}))
         pk["shown"] = keep
-        QTimer.singleShot(0, self.render)
+        QTimer.singleShot(0, self, self.render)
 
     def pack_add_selected(self):
         """Eigener Abstand: zwei im Packungsbild gewählte Atome aus verschiedenen Molekülen (Messlogik wie measure:

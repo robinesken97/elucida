@@ -4208,7 +4208,7 @@ class MainWindow(QMainWindow):
         card = self.export_tab.grp_si
         self.export_tab.steps.reveal(card)
         area = self.export_tab._footer_parts[0]
-        QTimer.singleShot(0, lambda: area.ensureWidgetVisible(card))
+        QTimer.singleShot(0, card, lambda: area.ensureWidgetVisible(card))
 
     def export_si(self, parts=SI_PARTS, skip_figs=()):
         """SI-Abschnitt der Verbindung als Word-Datei: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis;
@@ -4682,7 +4682,7 @@ class MainWindow(QMainWindow):
     def show_export_card(self, key, label=None):
         """Link „In die SI“ in einem Tab: Karte im Tab „Export“ zeigen (dort ist die Pille „SI“ der eine Ort)."""
         self.show_tab("export")
-        QTimer.singleShot(0, lambda: self.export_tab.show_card(key, label))   # nach dem Auffüllen beim Zeigen
+        QTimer.singleShot(0, self, lambda: self.export_tab.show_card(key, label))   # nach dem Auffüllen beim Zeigen
 
     def show_eps_formats(self):
         """Klick aus der Exportmeldung: Formate zeigen (gelten seit dem Tab „Export“ für alle Abbildungen)."""

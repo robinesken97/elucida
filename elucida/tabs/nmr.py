@@ -1223,7 +1223,7 @@ class NMRTab(QWidget):
 
     def showEvent(self, ev):
         super().showEvent(ev)
-        QTimer.singleShot(0, self.focus_view)              # Tab geöffnet: Tasten gehen gleich an das Spektrum (121)
+        QTimer.singleShot(0, self, self.focus_view)              # Tab geöffnet: Tasten gehen gleich an das Spektrum (121)
 
     def focus_view(self):
         """Eigenes Spektrum sichtbar: Fokus an die Ansicht (nie die Ansicht dafür bauen, `_view`)."""
@@ -2879,7 +2879,7 @@ class NMRTab(QWidget):
 
         def poll():
             if "res" not in box and "err" not in box:
-                return QTimer.singleShot(150, poll)
+                return QTimer.singleShot(150, self, poll)
             self._acme = None
             try:
                 self.btn_acme.setText(T("nmr_phase_acme"))
@@ -2893,7 +2893,7 @@ class NMRTab(QWidget):
             s_["proc"].update(phc0=box["res"][0], phc1=box["res"][1], phase="acme", phase_ok=False)
             self.refresh_ref(s_)
             self.changed()
-        QTimer.singleShot(150, poll)
+        QTimer.singleShot(150, self, poll)
 
     def baseline_changed(self, key):
         """Basislinie: „poly5“ (Standard), „bernstein3“ oder „off“. Zustand: `baseline` (an/aus wie bisher) und

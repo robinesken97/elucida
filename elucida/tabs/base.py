@@ -489,7 +489,7 @@ def apply_view(tabs, scroll, view):
                 sb.rangeChanged.disconnect(follow)
             except (RuntimeError, TypeError):
                 pass
-        QTimer.singleShot(1500, stop)
+        QTimer.singleShot(1500, sb, stop)
 
 
 class ResultTabs(QTabWidget):
@@ -581,9 +581,9 @@ class ResultTabs(QTabWidget):
         finally:
             self._busy = False
         if self.overflow:
-            QTimer.singleShot(0, self._place)
+            QTimer.singleShot(0, self, self._place)
         if self._marked:
-            QTimer.singleShot(0, self._place_dots)
+            QTimer.singleShot(0, self, self._place_dots)
 
     def _place_dots(self):
         """Punkt oben rechts neben dem Text des markierten Reiters (wie am Schritt)."""
@@ -915,7 +915,7 @@ class ShowHook(QObject):
 
     def eventFilter(self, obj, ev):
         if ev.type() == QEvent.Show:
-            QTimer.singleShot(0, self.fn)
+            QTimer.singleShot(0, self, self.fn)
         return False
 
 
@@ -2280,7 +2280,7 @@ class FigureTab(QWidget):
         if f is not None:
             f.set_open(True)
         area = self._left_parts[2]
-        QTimer.singleShot(0, lambda: area.ensureWidgetVisible(g))
+        QTimer.singleShot(0, g, lambda: area.ensureWidgetVisible(g))
 
     def export_to(self, base: Path):
         base = Path(base).resolve()
@@ -3323,7 +3323,7 @@ class OverlayTab(FigureTab):
     def update_combine(self):
         """„Kombinieren“ nur aktiv, wenn mindestens zwei TD-DFT-Einträge markiert sind."""
         rows = {i.row() for i in self.table.selectedIndexes()}
-        ents = self.st["entries"]
+        ents = self.st.get("entries", [])                # Auswahlsignal kann vor dem Zustand kommen
         n = sum(1 for r in rows if 0 <= r < len(ents) and ents[r]["kind"] == "calc")
         self.btn_combine.setEnabled(n >= 2)
 

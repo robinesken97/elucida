@@ -1239,7 +1239,7 @@ class SpinPages:
     def shown(self, kind):
         if self.dirty[kind] and self.pages[kind].isVisible():
             self.dirty[kind] = False
-            QTimer.singleShot(0, lambda: self.draw(kind))
+            QTimer.singleShot(0, self.pages[kind], lambda: self.draw(kind))
 
     def draw(self, kind):
         m = self.mouse.pop(kind, None)

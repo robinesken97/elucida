@@ -99,6 +99,20 @@ def make_selftest_inputs(d: Path):
     return d / "selftest.csv", d / "pyridinol.cdxml", photo
 
 
+def _held_qt_items(where=""):
+    """Type names of Python wrappers kept for Qt-owned C++ objects that are no QObject (layout items from itemAt ...).
+    Qt deletes such objects without telling PySide; the dead entry in PySide's address table crashes the next Python
+    Qt object at that address (CLAUDE.md, SignalManager::retrieveMetaObject). QObjects are safe: PySide sees them go.
+    Only the Python type is read: a flagged wrapper may already point to freed memory."""
+    import shiboken6 as SHB
+    from PySide6.QtCore import QMetaObject, QObject
+    held = sorted(type(o_).__name__ for o_ in SHB.getAllValidWrappers() if not isinstance(o_, (QObject, QMetaObject))
+                  and not SHB.createdByPython(o_) and not SHB.ownedByPython(o_))
+    if held and where:                                   # sofort ins CI-Log: ein Absturz danach verliert die Liste
+        print(f"held Qt-owned wrappers ({where}): {held}", flush=True)
+    return held
+
+
 class _Section:
     """One part of the selftest: a failure is reported, the next part still runs, so one CI run shows all failures.
     Later parts can fail as a consequence (NameError): read the first FAILED first."""
@@ -107,9 +121,19 @@ class _Section:
         self.report, self.failed, self.echo = report, 0, echo
 
     def __enter__(self):
+        self.t0, self.line = time.perf_counter(), sys._getframe(1).f_lineno
+        if self.echo:                                        # hängt ein Abschnitt: alle Stacks ins CI-Log, alle 10 min
+            import faulthandler
+            faulthandler.dump_traceback_later(600, repeat=True)
         return self
 
     def __exit__(self, kind, ex, tb):
+        dt = time.perf_counter() - self.t0
+        if self.echo:
+            import faulthandler
+            faulthandler.cancel_dump_traceback_later()
+        if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
+            print(f"slow section at selftest.py:{self.line}: {dt:.0f} s", flush=True)
         if kind is None or not issubclass(kind, Exception):
             return False
         self.failed += 1
@@ -4154,14 +4178,17 @@ def selftest(outdir, with_isnet=False):
             # Raster: jedes sichtbare Zahlenfeld der linken Spalten genau so breit wie seine Rasterbreite (fieldw: Feld A
             # des Formulars, sonst STYLE.FIELD_W) – das Stylesheet darf die feste Breite nicht nachträglich aufheben
             w.show()
+            held_tabs_ = [("before", n_) for n_ in _held_qt_items("before tab loop 1")]
             for i_ in range(w.main_tabs.count()):
                 w.main_tabs.setCurrentIndex(i_)
                 pump(0.05)
+                held_tabs_ += [(w._tab_keys[i_], n_) for n_ in _held_qt_items(w._tab_keys[i_])]
                 page_ = w.main_tabs.widget(i_)
                 odd_ = [sp_.width() for sp_ in page_.findChildren(QAbstractSpinBox)
                         if sp_.isVisibleTo(page_) and sp_.property("fieldw") and sp_.width() !=
                         (sp_.property("fieldw") if type(sp_.property("fieldw")) is int else STYLE.FIELD_W)]
                 assert not odd_, (w._tab_keys[i_], odd_)
+            assert not held_tabs_, held_tabs_[:10]          # Tab-Wechsel: keine Wrapper Qt-eigener Elemente (_held_qt_items)
             # linke Spalte nie abgeschnitten: Inhalt passt in die sichtbare Breite, auch auf kleinerem Bildschirm
             for size_ in ((1600, 1000), (1280, 800)):
                 w.resize(*size_)
@@ -7132,6 +7159,7 @@ def selftest(outdir, with_isnet=False):
             assert any("SMD/CPCM" in n_ for n_ in n_lv_), n_lv_                            # SP ohne Lösungsmittel
             it_lab_ = pg_.tbl_sp.item(1, 1)
             it_lab_.setText("TS1¹")                                                      # Label in der Tabelle, Undo
+            del it_lab_  # keine Wrapper Qt-eigener Zellen behalten (_held_qt_items)
             pump()
             assert w.dft_state["profile"]["species"][w.dft_state["entries"][1]["uid"]]["label"] == "TS1¹"
             F_pr_, _ = pg_.build(fig_f4_(), "levels")
@@ -8093,7 +8121,7 @@ def selftest(outdir, with_isnet=False):
                 pass
             # UTF-16 (PowerShell) gleich gelesen; Ablehnungen mit Meldung
             u16_ = d_nbo_ / "T_NBO_utf16.out"
-            u16_.write_bytes(b"\xff\xfe" + txt_nbo_.replace("\n", "\r\n").encode("utf-16-le"))
+            u16_.write_bytes(b"\xff\xfe" + txt_nbo_.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-16-le"))
             r16_ = NBO_.parse_nbo(rt_nbo_(u16_))
             assert [a_["charge"] for a_ in r16_["npa"]] == [a_["charge"] for a_ in r_nbo_["npa"]]
             assert [e_["e2"] for e_ in r16_["e2"]] == [e_["e2"] for e_ in r_nbo_["e2"]]
@@ -11175,12 +11203,9 @@ def selftest(outdir, with_isnet=False):
 
         with section:
             # Tote Einträge in PySides Adresstabelle (Absturz beim nächsten Python-Qt-Objekt): STYLE.item_at statt itemAt
-            import shiboken6 as SHB
-            from PySide6.QtWidgets import QLayout, QLayoutItem
             w.open_demo_publication(out / "demo_pub_items")
             pump(0.5)
-            held_ = [type(o_).__name__ for o_ in SHB.getAllValidWrappers() if isinstance(o_, QLayoutItem)
-                     and not isinstance(o_, QLayout) and not SHB.createdByPython(o_)]
+            held_ = _held_qt_items()
             assert not held_, held_[:5]
             report.append("layout items: no wrappers of Qt-owned items are kept: OK")
         with section:
@@ -11308,9 +11333,11 @@ def selftest(outdir, with_isnet=False):
                 w._update_nav_dots()
             assert "other" in rows7_()
             wid7_ = {}                                                  # Symmetrie: linke Spalte in allen Tabs gleich breit
+            held7_ = [("before", n_) for n_ in _held_qt_items("before tab loop 2")]
             for i_, k_ in enumerate(w._tab_keys):
                 w.main_tabs.setCurrentIndex(i_)
                 pump(0.1)
+                held7_ += [(k_, n_) for n_ in _held_qt_items(k_)]
                 page_ = w.main_tabs.widget(i_)
                 cf_ = getattr(page_, "column_fit", None) or (w.column_fit if k_ == "eps" else None)
                 if cf_ is not None:
@@ -11319,6 +11346,7 @@ def selftest(outdir, with_isnet=False):
                     bar7_ = cf_.bar.minimumSizeHint().width() if cf_.bar is not None else 0
                     wid7_[k_] = (cf_.column.width(), cf_.content.width() + gut7_,
                                  max(cf_.content.minimumSizeHint().width() + gut7_, bar7_))
+            assert not held7_, held7_[:10]                  # Tab-Wechsel: keine Wrapper Qt-eigener Elemente (_held_qt_items)
             # Spalte samt Bildlaufleiste = COLUMN_W; breiter nur, wenn der Inhalt sonst abgeschnitten würde (Schriftbreiten
             # je System, z. B. Windows ohne Bildschirm)
             assert all(w_ == c_ == STYLE.COLUMN_W for w_, c_, h_ in wid7_.values() if h_ <= STYLE.COLUMN_W), wid7_
@@ -11349,6 +11377,7 @@ def selftest(outdir, with_isnet=False):
             it26_ = lst26_.item(n26_ - 1, 0)
             key26_ = it26_.data(Qt.UserRole)
             it26_.setCheckState(Qt.Unchecked)
+            del it26_  # keine Wrapper Qt-eigener Zellen behalten (_held_qt_items)
             assert len(w.groups[g26_]) == n26_ - 1 and key26_ not in [s_["name"] for s_ in w.groups[g26_]]
             assert w.F.spectra and len(w.F.spectra) == n26_ - 1 and lst26_.rowCount() == n26_
             w.save_project()
@@ -11432,6 +11461,7 @@ def selftest(outdir, with_isnet=False):
                             it_ = t31_.item(r_, c_)
                             if it_ is not None and t31_.fontMetrics().horizontalAdvance(it_.text()) + 24 > t31_.columnWidth(c_):
                                 bad31_.append((k_, "column", it_.text(), t31_.columnWidth(c_)))
+            head_ = it_ = None  # keine Wrapper Qt-eigener Zellen behalten (_held_qt_items)
             assert not bad31_, bad31_
             # Projektseite (Angaben, Cluster) nach denselben Regeln; Tabellenspalten: freier Platz gleichmäßig verteilt
             w.open_publication(out / "demo_pub_items")
@@ -11500,9 +11530,11 @@ def selftest(outdir, with_isnet=False):
                                               for c_ in tight_], [(need_[c_], t_.columnWidth(c_)) for c_ in tight_]))
                 return bad_
             bad32_, seen32_ = [], 0
+            held32_ = [("before", n_) for n_ in _held_qt_items("before tab loop 3")]
             for i_, k_ in enumerate(w._tab_keys):
                 w.main_tabs.setCurrentIndex(i_)
                 pump(0.1)
+                held32_ += [(k_, n_) for n_ in _held_qt_items(k_)]
                 page_ = w.main_tabs.widget(i_)
                 steps_, rt_ = getattr(page_, "steps", None), getattr(page_, "right_tabs", None)
                 for s_ in range(3 if steps_ is not None else 1):
@@ -11522,6 +11554,7 @@ def selftest(outdir, with_isnet=False):
                 if steps_ is not None:
                     steps_.set_step(0, remember=False)
             assert seen32_ > 10, seen32_
+            assert not held32_, held32_[:10]                # Tab-Wechsel: keine Wrapper Qt-eigener Elemente (_held_qt_items)
             if sys.platform != "win32":
                 assert not bad32_, bad32_
             report.append(f"table columns in every tab, step and page ({seen32_} tables seen): OK")
@@ -12172,6 +12205,7 @@ def selftest(outdir, with_isnet=False):
             assert it_.data(Qt.UserRole)[0] == "auto"
             key_ = "|".join(it_.data(Qt.UserRole)[1:])
             it_.setText("999.99")
+            del it_  # keine Wrapper Qt-eigener Zellen behalten (_held_qt_items)
             pump_c_(0.2)
             assert tb_["cells"].get(key_) == "999.99" and tt_.grid.item(3, 2).data(Qt.UserRole)[0] == "over"
             tt_.grid.setCurrentCell(3, 2)
@@ -12773,6 +12807,7 @@ def selftest(outdir, with_isnet=False):
                          if g_u_.item(r_, c_) is not None and g_u_.item(r_, c_).data(Qt.UserRole)[0] == "auto")
             key_u_ = "|".join(it_u_.data(Qt.UserRole)[1:])
             it_u_.setText("XYZ")                                               # Zelle eines Tab-Werts ueberschreiben
+            del it_u_  # keine Wrapper Qt-eigener Zellen behalten (_held_qt_items)
             pump_c_(0.2)
             assert cp_.tab.tb["cells"].get(key_u_) == "XYZ"
             col_x_ = key_u_.split("|")[1]
@@ -16750,7 +16785,7 @@ def selftest(outdir, with_isnet=False):
             t0_ = ep_z.grid.groups[0][1][0]
             xs_z = {lab0_.mapTo(ep_z, lab0_.rect().topLeft()).x(), t0_.pic.mapTo(ep_z, t0_.pic.rect().topLeft()).x(),
                     t0_.name.mapTo(ep_z, t0_.name.rect().topLeft()).x(),
-                    ep_z.legend.layout().itemAt(0).widget().mapTo(ep_z, ep_z.legend.layout().itemAt(0).widget().rect().topLeft()).x()}
+                    (lg0_ := STYLE.item_at(ep_z.legend.layout(), 0).widget()).mapTo(ep_z, lg0_.rect().topLeft()).x()}
             assert len(xs_z) == 1, xs_z
             from PySide6.QtWidgets import QDialog as QD_z
             assert not [d_ for d_ in QApplication.topLevelWidgets() if isinstance(d_, QD_z) and d_.isVisible()]
