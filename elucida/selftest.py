@@ -875,6 +875,13 @@ def selftest(outdir, with_isnet=False):
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
                     time.sleep(0.02)
 
+            def free_win_(win):
+                # Zusatzfenster freigeben (Speicher auf CI-Macs); jedes MainWindow lenkt core.LOG auf sich um,
+                # nach dem Löschen also zurück auf das Hauptfenster w
+                win.close()
+                win.deleteLater()
+                core.LOG = IMG.LOG = lambda m="": w.log_signal.emit(str(m))
+
             # TD-DFT mit Spin-Bahn-Kopplung (ORCA 6): Zustandsnamen wie "0-1.0A" dürfen nicht als Zahl gelten
             soc = out / "input" / "orca_soc.out"
             hdr = ["-" * 104, "      SOC CORRECTED ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", "-" * 104,
@@ -9586,6 +9593,7 @@ def selftest(outdir, with_isnet=False):
             for t_ in (w2.sec_tab, w2.epr_tab):
                 assert t_.right_tabs is not None and t_.right_tabs.tabText(1) == T("tab_results"), t_
                 assert t_.right_tabs.widget(1).isAncestorOf(t_.lbl_info)
+            free_win_(w2)
             # Öffnen: Fenster bleibt, nur der sichtbare Tab wird gebaut; übrige beim ersten Zugriff/Anzeigen
             w3_ = MainWindow()
             w3_.resize(1200, 800)
@@ -9600,7 +9608,7 @@ def selftest(outdir, with_isnet=False):
             w3_.main_tabs.setCurrentIndex(w3_._tab_keys.index("xray"))         # Anzeigen baut ihn
             pump(0.2)
             assert w3_._built("xray") and w3_.main_tabs.currentWidget() is w3_.xray_tab
-            w3_.close()
+            free_win_(w3_)
             report.append("undo/redo (only changed tabs rebuilt), lazy tabs on open: OK")
 
         with section:
@@ -9782,7 +9790,7 @@ def selftest(outdir, with_isnet=False):
                 MW.QFileDialog.getExistingDirectory = real9_
             assert (other9_ / PRJ.PROJECT_FILE).read_text(encoding="utf-8") == other_txt9_
             assert not PRJ.is_project(out / "p9_pub")
-            w9_.close()
+            free_win_(w9_)
             report.append("state audit P9 (solvent saved, missing UV-Vis file kept, focused field/procedure flushed on "
                           "save, undo keeps untouched tabs, EPR ref. frequency, NMR freq. slots, X-Ray reset selection, "
                           "presets keep data, failed render undoable, save copy never overwrites): OK")
@@ -9885,7 +9893,7 @@ def selftest(outdir, with_isnet=False):
             assert wc_.series[gf_]["structure"] is None and wc_.series[gf_]["mw"] == 99.5 and wc_.series[go_]["structure"]
             # 5. noch nicht gebaute Tabs lesen die Verbindung beim Bauen (neues Fenster: Tabs entstehen bei Bedarf)
             wc_.save_project()
-            wc_.close()
+            free_win_(wc_)
             wl_ = MainWindow()
             wl_.show()
             assert wl_.open_project(dc_, ask=False)
@@ -9899,7 +9907,7 @@ def selftest(outdir, with_isnet=False):
             assert "<b>Q8</b>" in t_.lbl_cap.text(), t_.lbl_cap.text()
             pump(0.4)
             assert wl_.series[gf_]["structure"] is None and wl_.series[go_]["structure"], "structure choice not kept"
-            wl_.close()
+            free_win_(wl_)
             report.append("compound change reaches all tabs (molar mass, formula, name, structure image; series always "
                           "follow the compound; undo; lazy tabs): OK")
         with section:
