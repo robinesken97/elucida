@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
+from elucida.tabs import epr_calc as CALC
 from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
@@ -538,6 +539,19 @@ def fit_arrhenius(T, k):
 sci_text = core.sci_text               # 1.23e-04 -> „1.23 × 10^-4“
 
 
+def sci_signed(v):
+    """Wie sci_text, das Vorzeichen der Zahl als echtes Minus wie in der Unterschrift („−3.89 × 10^-4“); der Exponent
+    bleibt „10^-4“ (methods_html setzt ihn hoch)."""
+    return "−" + sci_text(-v) if v < 0 else sci_text(v)
+
+
+def sci_range(lo, hi):
+    """Intervall für Tabellen wie sci_signed, gleicher Exponent nur einmal: „3.74 … 4.06 × 10^-2“ (schmale Spalte)."""
+    a, b = sci_signed(lo), sci_signed(hi)
+    ea, eb = a.split(" × "), b.split(" × ")
+    return f"{ea[0]} … {eb[0]} × {ea[1]}" if ea[1] == eb[1] else f"{a} … {b}"
+
+
 def decay_band(T, r, beta, time=None):
     """Band (Faktor r["t"] wie die Intervalle) um das Modell aus der Kovarianz von (E_a, ln A), linear fortgepflanzt:
     sd = √(J·cov·Jᵀ). Die Randwerte der Einzelintervalle taugen dafür nicht (Korrelation ≈ 1). -> (unten, oben)."""
@@ -548,6 +562,55 @@ def decay_band(T, r, beta, time=None):
                          for d in ((10.0, 0.0), (0.0, 1e-3))])
     sd = np.sqrt(np.abs(np.einsum("ij,jk,ik->i", J, np.asarray(r["cov"], float), J)))
     return m - r["t"] * sd, m + r["t"] * sd
+
+
+def spin_calibration(c, di):
+    """Kalibrierung für die Spinzählung: Doppelintegral gegen bekannte Konzentration einer Referenz. Ab drei
+    verschiedenen Konzentrationen eine Gerade mit Achsenabschnitt (kleinste Quadrate, R²), mit einer oder zwei eine
+    Gerade durch den Ursprung (das Doppelintegral ist der Spinzahl proportional). Ohne Unsicherheiten: aus wenigen
+    Punkten ließe sich keine ehrlich angeben. -> dict(m, b, r2 | None, n, origin) oder None ohne brauchbare Punkte."""
+    c, di = np.asarray(c, float), np.asarray(di, float)
+    ok = np.isfinite(c) & np.isfinite(di) & (c > 0)
+    c, di = c[ok], di[ok]
+    if not len(c):
+        return None
+    if len(np.unique(c)) >= 3:
+        m, b = np.polyfit(c, di, 1)
+        tot = float(np.sum((di - di.mean()) ** 2))
+        r2 = 1.0 - float(np.sum((di - (m * c + b)) ** 2)) / tot if tot > 0 else None
+        return dict(m=float(m), b=float(b), r2=r2, n=len(c), origin=False)
+    return dict(m=float(c @ di / (c @ c)), b=0.0, r2=None, n=len(c), origin=True)
+
+
+# Aufnahmegrößen für die Spinzählung: (Schlüssel, Name, relative Toleranz; None = gleich auf 3 Stellen wie bisher).
+# SPIN_SCALE skalieren die Intensität direkt, wenn die Daten nicht normiert sind (ob Xepr das schon tut, steht in keiner
+# gelesenen Angabe): nie umgerechnet, nur gewarnt.
+SPIN_COND = (("mod_mT", "modulation amplitude", None), ("power_mW", "microwave power", None),
+             ("T_K", "temperature", None), ("mw_GHz", "microwave frequency", 0.01))   # 1 %: Abstimmung je Probe
+SPIN_SCALE = (("n_scans", "number of scans", None), ("gain_dB", "receiver gain", None),
+              ("conv_ms", "conversion time", None))
+
+
+def spin_differ(metas, items):
+    """Namen der Größen aus items, die zwischen den Messungen abweichen oder nur in einem Teil der Dateien stehen."""
+    out = []
+    for key, name, tol in items:
+        vals = [m.get(key) for m in metas]
+        known = [float(v) for v in vals if v is not None]
+        if not known:
+            continue
+        spread = (len({round(v, 3) for v in known}) > 1 if tol is None
+                  else max(known) - min(known) > tol * max(abs(v) for v in known))
+        if spread or len(known) < len(vals):
+            out.append(name)
+    return out
+
+
+def spin_range_flags(samples, ref_c):
+    """Proben außerhalb der Kalibrierung: ([extrapoliert], [negativ]) als Namen. samples: [(Name, c)]."""
+    lo, hi = min(ref_c), max(ref_c)
+    neg = [lab for lab, c in samples if c < 0]
+    return [lab for lab, c in samples if c >= 0 and not lo <= c <= hi], neg
 
 
 def measured_at(meta):
@@ -825,14 +888,24 @@ def _labels(text):
     return out
 
 
+FIT_COLOR = "#1764e8"                                     # Fitkurven der Kinetik/Spinzählung (Stilkarte: col_fit)
+
+
 class EPRTab(TABS.FigureTab):
+    COLOR_ROLES = (("col_fit", FIT_COLOR, "tf_col_fit"),)   # Stilkarte: Fitkurven (Kinetik, Spinzählung)
     STATE_KEY = "epr"
     GUIDE, GUIDE_ACTION = "epr", ("guide_add", "add_exp")
     CAP_FIELDS = ("species", "solvent", "conc")
     SI_CAPTION = "EPR spectra of {name}."
     X_RANGE = (0.0, 20000.0, 1, 1.0)
     XRANGE_TEXT = "epr_xrange"
-    RESET_KEEP = ("entries", "calib_uid", "calib_g", "T_offset", "ref_freq")   # Spektren/Simulationen, Kalibrierung
+    RESET_KEEP = ("entries", "calib_uid", "calib_g", "T_offset", "ref_freq", "spin_unit",   # Spektren/Simulationen, Kalibrierung
+                  "mode", "bl_order", "bl_method", "bl_edge", "bl_width", "bl_regions", "exclude", "smooth",
+                  "normalize",                                                   # Vorverarbeitung
+                  "int_window", "int_method", "int_x", "int_curie", "int_center",  # Intensität
+                  "kin_fit", "kin_norm", "kin_loss", "hfc_unit", "hfc_dipole",     # Fits, Kopplungstabelle
+                  "hfc_min", "hfc_nuclei", "hfc_signed",   # gedruckte Kopplungen, EasySpin-Skript, SI-Abbildung ja/nein
+                  "spin_surface")                           # Spindichte oder SOMO: andere SI-Abbildung
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=300.0, x_max=360.0, ymax=0.0, entries=[], unit="mT",
                          bl_order=1, bl_edge=5.0, bl_regions="", bl_method="poly", bl_width=60.0, exclude="", smooth=0.0,
                          normalize=True,
@@ -841,7 +914,10 @@ class EPRTab(TABS.FigureTab):
                          show_sum=True, show_residual=False, sim_below=False, sim_gap=1.0, calib_uid=None, calib_g=2.0055,
                          ref_freq=0.0, T_offset=0.0, int_center=0.0, kin_fit=False, kin_norm="lsq",
                          kin_loss=100.0,
-                         trace_label="name", ramp="", cap_species="", cap_solvent="", cap_conc="")
+                         trace_label="name", ramp="", cap_species="", cap_solvent="", cap_conc="",
+                         spin_unit="mM",                            # Einheit der bekannten Konzentrationen (Spinzählung)
+                         cap_acq=False, cap_hfc="MHz",              # Messparameter / Einheit der Kopplungen (SI-Text)
+                         **CALC.DISPLAY_DEFAULTS)
 
 
     def arrange(self):
@@ -855,6 +931,14 @@ class EPRTab(TABS.FigureTab):
         self.fold(g, "simulation", ("show_sum", "show_residual", "sim_below", "sim_gap", "show_params"))
         g = STYLE.split_group(self.group_titled("epr_processing"), self.sp_ref_freq, self.sp_T_offset, T("grp_refs"))
         self.fold(g, "refs", ("ref_freq", "calib_uid", "calib_g", "T_offset"))
+        for k in CALC.SpinPages.KINDS:                     # Spindichte, Hyperfein: Reiter neben der Abbildung
+            self.to_right(self.calc_pages.groups[k], T("epr_calc_tab_" + k))
+        self.fold(self.calc_pages.display_card, "calc", tuple(CALC.DISPLAY_DEFAULTS))
+
+    def result_empty(self):
+        """Ohne Rechnung keine Seiten „Spindichte“ und „Hyperfein“."""
+        none = not self.calc_pages.has_data()
+        return [(self.calc_pages.groups[k], none) for k in CALC.SpinPages.KINDS]
 
     def build_controls(self):
         st = self.st
@@ -910,8 +994,25 @@ class EPRTab(TABS.FigureTab):
         self.btn_dark_all.setToolTip(T("epr_dark_all_tip"))
         self.btn_dark_all.clicked.connect(self.dark_for_all)
         f.addRow("", self.btn_dark_all)
+        # Spinzählung: bekannte Konzentration dieser Messung (Referenz der Kalibrierung); leer = Probe
+        row = QHBoxLayout()
+        self.ed_conc = QLineEdit()
+        self.ed_conc.setPlaceholderText(T("epr_conc_ph"))
+        self.ed_conc.setToolTip(T("epr_conc_tip"))
+        self.ed_conc.editingFinished.connect(self.detail_changed)
+        self.cmb_conc_unit = QComboBox()
+        for u in ("µM", "mM", "M"):
+            self.cmb_conc_unit.addItem(u, u)
+        self.cmb_conc_unit.setCurrentIndex(max(0, self.cmb_conc_unit.findData(st.get("spin_unit", "mM"))))
+        self.cmb_conc_unit.setToolTip(T("epr_conc_unit_tip"))
+        self.cmb_conc_unit.currentIndexChanged.connect(self.detail_changed)
+        row.addWidget(self.ed_conc, 1)
+        row.addWidget(self.cmb_conc_unit)
+        self.lbl_conc = QLabel(T("epr_conc"))
+        f.addRow(self.lbl_conc, row)
         # Zeilen je Art des Eintrags (show_details blendet jeweils alle Widgets der Zeile aus, auch „×“ und Knöpfe)
-        self._w_exp = (self.lbl_dark, self.cmb_dark, times, self.sp_dark_k, self.btn_dark_all)
+        self._w_exp = (self.lbl_dark, self.cmb_dark, times, self.sp_dark_k, self.btn_dark_all, self.lbl_conc,
+                       self.ed_conc, self.cmb_conc_unit)
         self.cmb_fit = QComboBox()
         self.cmb_fit.setToolTip(T("epr_fit_tip"))
         self.lbl_fit_to = QLabel(T("epr_fit_to"))
@@ -1120,7 +1221,7 @@ class EPRTab(TABS.FigureTab):
         # Karte „Intensität und Kinetik“ (arrange): eine Ansichtswahl statt „Ansicht“ (Darstellung) + „Gegen“; die
         # Felder darunter folgen ihr (_view_fields). Zustand bleibt mode + int_x.
         self.cmb_view = QComboBox()
-        for key in ("spectra", "time", "T", "arr", "index"):
+        for key in ("spectra", "time", "T", "arr", "index", "conc"):
             self.cmb_view.addItem(T("epr_view_" + key), key)
         self.cmb_view.setCurrentIndex(max(0, self.cmb_view.findData(st["int_x"] if st["mode"] == "intensity"
                                                                    else "spectra")))
@@ -1171,8 +1272,14 @@ class EPRTab(TABS.FigureTab):
         self.grp_results = QGroupBox(T("tab_results"))
         rv = QVBoxLayout(self.grp_results)
         self.tbl_iso = STYLE.summary_grid([T("epr_col_T"), "k [s⁻¹]", T("uvkin_col_ci"), "t½ [min]", T("epr_col_pts"),
-                                           T("col_warn")])
+                                           T("col_warn")], rich=(1, 2))      # k wie im Methodentext (sci_signed)
         rv.addWidget(self.tbl_iso)
+        # Spinzählung: Messungen mit Doppelintegral, bekannter bzw. aus der Kalibrierung bestimmter Konzentration
+        self.tbl_spin = STYLE.summary_grid([T("ov_name"), T("epr_spin_di"), T("epr_spin_known"), T("epr_spin_found")])
+        rv.addWidget(self.tbl_spin)
+        # S = ½-Fits: dieselben Werte wie in der Bildunterschrift (Filter und Formate aus si_caption)
+        self.tbl_fit = STYLE.summary_grid([T("ov_name"), "g", "ΔBₚₚ [mT]", T("epr_col_hfc"), T("col_r2")])
+        rv.addWidget(self.tbl_fit)
         rv.addWidget(self.lbl_info)                      # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(self.grp_results)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
@@ -1198,6 +1305,9 @@ class EPRTab(TABS.FigureTab):
         QTimer.singleShot(0, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
         for ed in (self.ed_bl_regions, self.ed_exclude, self.ed_labels, self.ed_int_window):
             ed.editingFinished.connect(self.changed)
+        self.calc_pages = CALC.SpinPages(self)            # Rechnung: Spindichte und Hyperfeinkopplungen
+        for card in (self.calc_pages.data_card, self.calc_pages.assign_card, self.calc_pages.display_card):
+            self.lv.addWidget(card)
         self.fill_table()
 
     def _bl_fields(self, *_):
@@ -1428,6 +1538,22 @@ class EPRTab(TABS.FigureTab):
                 parts.append(T("epr_fit_stale"))
         return "\n".join(parts)
 
+    def fit_rows(self, vis):
+        """Zeilen der Tabelle „S = ½-Fits“ (Ergebnisse): Einträge und Zahlen wie in si_caption."""
+        dB, calib_t = self.calibration_shift()
+        sup = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+        rows = []
+        for e in vis:
+            if e["kind"] != "iso" or not self.fit_ok(e) or (dB and e.get("fit_to") == calib_t):
+                continue
+            hfc = []
+            for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", ""))):
+                nm = re.sub(r"^\d+", lambda m: m.group(0).translate(sup), nm)          # 14N -> ¹⁴N
+                hfc.append(f"{n}×{nm}: {self.hfc_unit_text(a, e['g'])}")
+            rows.append([e["label"], g_text(e["g"]), f"{e['lw']:.3f}", "; ".join(hfc) or "–",
+                         core.r2_text(e["fit"]["r2"])])
+        return rows
+
     def si_caption(self, name):
         """Wie in der SI: „X-Band EPR spectrum of <b>X</b> in <Lösungsmittel> (<c>). Fitting parameters: g = …;
         ΔBpp = … mT; hyperfine coupling: 1×14N: … MHz; …“. Band aus der Mikrowellenfrequenz, Parameter nur aus
@@ -1448,11 +1574,15 @@ class EPRTab(TABS.FigureTab):
         band = band_name(st.get("ref_freq") or mw)
         h = (f"{band}-Band " if band else "") + ("EPR spectra" if len(exps) > 1 else "EPR spectrum") + f" of <b>{sp}</b>"
         h += where + "."
+        if st.get("cap_acq"):
+            acq = self.acq_text(exps)
+            if acq:
+                h += " Experimental conditions: " + acq + "."
         dB, calib_t = self.calibration_shift()
         isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e) and not (dB and e.get("fit_to") == calib_t)]
         for e in isos:
             parts = [f"g = {g_text(e['g'])}", f"ΔB<sub>pp</sub> = {e['lw']:.3f} mT"]
-            hfc = [f"{n}×{nucleus_html(nm)}: {hfc_texts(a, e['g'])[1]} MHz"
+            hfc = [f"{n}×{nucleus_html(nm)}: {self.hfc_unit_text(a, e['g'])}"
                    for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", "")))]
             if hfc:
                 parts.append("hyperfine coupling: " + "; ".join(hfc))
@@ -1461,6 +1591,58 @@ class EPRTab(TABS.FigureTab):
         if dB:
             h += f" The magnetic field was referenced to a standard (g = {g_text(st['calib_g'])})."
         return h
+
+    ACQ_ITEMS = (("mw_GHz", "ν = {:.4f} GHz"), ("mod_mT", "modulation amplitude {:.3g} mT"),
+                 ("power_mW", "microwave power {:.3g} mW"), ("n_scans", "{:d} scans"), ("T_K", "T = {:.0f} K"))
+
+    def acq_text(self, exps):
+        """Aufnahmeparameter aus den Messdateien (nur, was in allen gezeigten Messungen steht und gleich ist, wie
+        gedruckt); nie geschätzt. Temperatur mit der eingetragenen Korrektur wie überall im Tab."""
+        parts = []
+        for key, fmt in self.ACQ_ITEMS:
+            vals = set()
+            for e in exps:
+                v = self.spectrum(e)["meta"].get(key)
+                if v is None:
+                    vals = set()
+                    break
+                if key == "T_K":
+                    v += self.st.get("T_offset", 0.0)
+                vals.add(fmt.format(int(v) if key == "n_scans" else v))
+            if len(vals) == 1:
+                txt = next(iter(vals))
+                parts.append("1 scan" if txt == "1 scans" else txt)
+        return ", ".join(parts)
+
+    def hfc_unit_text(self, a_mT, g):
+        """Kopplung in der gewählten Einheit (`cap_hfc`): MHz mit dem gefitteten g, mT (drei Stellen) oder G."""
+        unit = self.st.get("cap_hfc", "MHz")
+        mt, mhz = hfc_texts(a_mT, g)
+        return {"mT": f"{mt} mT", "G": f"{a_mT * 10:.{A_MT_DIGITS - 1}f} G"}.get(unit, f"{mhz} MHz")
+
+    def caption_box(self):
+        """Felder der Bildunterschrift + Einheit der Kopplungen und Schalter für die Messparameter (Reiter SI-Text)."""
+        g = super().caption_box()
+        f = g.layout()
+        r, _ = f.getWidgetPosition(self.lbl_cap)
+        self.cmb_hfc_unit = QComboBox()
+        for u in ("MHz", "mT", "G"):
+            self.cmb_hfc_unit.addItem(u, u)
+        self.cmb_hfc_unit.setCurrentIndex(max(0, self.cmb_hfc_unit.findData(self.st.get("cap_hfc", "MHz"))))
+        self.cmb_hfc_unit.setToolTip(T("epr_acq_unit_tip"))
+        self.cb_cap_acq = QCheckBox(T("epr_acq_cap"))
+        self.cb_cap_acq.setToolTip(T("epr_acq_cap_tip"))
+        self.cb_cap_acq.setChecked(bool(self.st.get("cap_acq")))
+        f.insertRow(r, self.cb_cap_acq)
+        f.insertRow(r, T("epr_acq_unit"), self.cmb_hfc_unit)
+
+        def set_(*_):
+            self.st.update(cap_hfc=self.cmb_hfc_unit.currentData(), cap_acq=self.cb_cap_acq.isChecked())
+            self.show_caption()
+            self.timer.start()                            # Methodentext und Unterschrift nachziehen
+        self.cmb_hfc_unit.currentIndexChanged.connect(set_)
+        self.cb_cap_acq.toggled.connect(set_)
+        return g
 
     def intensity_caption(self, sp, where, exps):
         """Unterschrift der Intensitätsansichten: was aufgetragen ist (Größe, Feldfenster, Normierung, Temperaturen) und
@@ -1475,6 +1657,18 @@ class EPRTab(TABS.FigureTab):
                         for e in exps if self.spectrum(e)["meta"].get("T_K")})
         win = (ranges(st["int_window"]) or [None])[0]
         wtxt = f" within {win[0]:g}–{win[1]:g} mT" if win else ""
+        if st["int_x"] == "conc":                          # Spinzählung
+            r = getattr(self, "spin_result", None)
+            h = (f"Double integral of the EPR spectra{wtxt} against the concentration of reference samples of known "
+                 "concentration (circles)")
+            if r:
+                h += (", straight line through the origin" if r["cal"]["origin"] else ", linear least-squares fit")
+                if r["samples"]:
+                    h += "; spin concentrations read from the calibration (squares): " + ", ".join(
+                        f"{__import__('html').escape(lab)}: {c:.3g} {r['unit']}".replace("-", "−")
+                        + (" (extrapolated)" if lab in r["extra"] else " (negative)" if lab in r["neg"] else "")
+                        for lab, _, c in r["samples"])
+            return h + "."
         if st["int_x"] == "arr":
             pts = [r for r in (getattr(self, "iso_results", None) or [])
                    if r["fit"] and r["fit"]["k"] > 0 and r["T"]]
@@ -1507,7 +1701,8 @@ class EPRTab(TABS.FigureTab):
             for r in iso:
                 f = r["fit"]
                 v = f"k = {sup(f['k'])} {s1}" + (f", t<sub>1/2</sub> = {np.log(2) / f['k'] / 60:.3g} min"
-                                                if f["k"] > 0 else "")
+                                                if f["k"] > 0 else
+                                                ", intensity increased, no half-life" if f["k"] < 0 else "")
                 vals.append((f"{r['T']:.0f} K: " if r["T"] is not None and len(iso) > 1 else "") + v)
             h += (" Solid line" + ("s" if len(iso) > 1 else "") + ": first-order fit" + ("s" if len(iso) > 1 else "")
                   + ", I(t) = I<sub>0</sub>·exp(−kt)"
@@ -1632,6 +1827,7 @@ class EPRTab(TABS.FigureTab):
                     cmb.addItem(x["label"], x["uid"])
             cmb.setCurrentIndex(max(0, cmb.findData(e.get(key) if e else None)))
         if e:
+            self.ed_conc.setText(f"{e['conc']:g}" if e.get("conc") else "")
             self.sp_dark_k.setValue(e.get("dark_k", 1.0))
             self.sp_scale.setValue(e.get("scale", 1.0))
             self.sp_scale.setEnabled(not e.get("fit_to"))
@@ -1682,6 +1878,13 @@ class EPRTab(TABS.FigureTab):
             return
         if e["kind"] == "exp":
             e.update(dark=self.cmb_dark.currentData(), dark_k=self.sp_dark_k.value())
+            c_ = TABS.parse_num(self.ed_conc.text())              # bekannte Konzentration (Referenz), leer = Probe
+            if c_ is not None and c_ > 0:
+                e["conc"] = float(c_)
+            else:
+                e.pop("conc", None)                               # kein leerer Schlüssel: sonst ein Rückgängig-Schritt ohne Änderung
+            if self.cmb_conc_unit.currentData() != self.st.get("spin_unit", "mM"):
+                self.st["spin_unit"] = self.cmb_conc_unit.currentData()
         elif e["kind"] == "iso":
             new = dict(fit_to=self.cmb_fit.currentData(), g=self.sp_g.value(), lw=self.sp_lw.value(),
                        lorentz=self.sp_lor.value(), fit_lorentz=self.cb_fit_lor.isChecked(),
@@ -1793,13 +1996,20 @@ class EPRTab(TABS.FigureTab):
 
     def figure_spec(self):
         st = self.st
+        self.roles_idle = {"col_fit": "tf_idle_fit"}       # Stilkarte: bis eine Fitkurve gezeichnet ist
         STYLE.fill_summary(self.tbl_iso, [])                 # nur die isothermen Zerfälle füllen sie wieder
+        STYLE.fill_summary(self.tbl_spin, [])                # nur die Spinzählung füllt sie wieder
+        STYLE.fill_summary(self.tbl_fit, [])                 # nur die Spektrenansicht füllt sie wieder
+        self.lbl_info.empty = T("results_none")
+        self.spin_result = None
         vis = [e for e in st["entries"] if e["visible"]]
         if not vis:
             self.lbl_info.setText("")
             return None
         if bl_method(st) == "spline" and len(ranges(st["bl_regions"])) < 2:
             self.add_note(T("epr_bl_spline_need"))            # nichts raten: ohne Stützbereiche keine Basislinie
+        if st["mode"] == "intensity" and st["int_x"] == "conc":   # Referenzen dürfen ausgeblendet sein
+            return self.spin_spec([e for e in st["entries"] if e["kind"] == "exp" and (e["visible"] or e.get("conc"))])
         if st["mode"] == "intensity":
             return self.intensity_spec([e for e in vis if e["kind"] == "exp"])
         cfg = self.base_cfg()
@@ -1890,6 +2100,9 @@ class EPRTab(TABS.FigureTab):
                             txt += f"\n|E| = {abs(E_) / MHZ_PER_CM:.4f} cm$^{{-1}}$"
                         labels.append({"key": f"label_zfs_{e['uid']}", "lam": float(np.mean(cfg["xlim"])), "text": txt,
                                        "color": e["color"]})
+        rows = self.fit_rows(vis)
+        STYLE.fill_summary(self.tbl_fit, rows)
+        self.lbl_info.empty = "" if rows else T("results_none")     # Fit in der Tabelle: kein „Noch keine Ergebnisse“
         self.lbl_info.setText("\n".join(dict.fromkeys(info)))
         self._mw = next((self.axis_mw(e) for e in vis if e["kind"] == "exp" and self.axis_mw(e)), None)
         return cfg, curves, labels, []
@@ -2050,9 +2263,12 @@ class EPRTab(TABS.FigureTab):
                 rows.append([name_T(r), "–", "–", "–", str(len(r["idx"])), T("epr_iso_short")])
                 continue
             ci = f["ci_k"]
-            rows.append([name_T(r), f"{f['k']:.3g}", f"{ci[0]:.3g}–{ci[1]:.3g}" if ci else "–",
+            rows.append([name_T(r), sci_signed(f["k"]), sci_range(*ci) if ci else "–",
                          f"{np.log(2) / f['k'] / 60:.3g}" if f["k"] > 0 else "–", f"{f['n']} / {f['n_all']}", ""])
         STYLE.fill_summary(self.tbl_iso, rows, hidden=() if any(r_[5] for r_ in rows) else (5,))
+        rise = [name_T(r) for r in res if r["fit"] is not None and r["fit"]["k"] < 0]
+        if rise:                                         # k < 0: kein Zerfall, keine Halbwertszeit (wie UV-Kinetik)
+            info.append("⚠ " + T("fixt_epr_kin_rise", what=", ".join(rise)))
         curves = []
         if st["int_x"] == "arr":
             pts = [r for r in res if r["fit"] and r["fit"]["k"] > 0 and r["T"]]
@@ -2072,7 +2288,8 @@ class EPRTab(TABS.FigureTab):
             xl = np.array([xa.min() - pad, xa.max() + pad])
             curves.append({"x": xa, "y": ya, "color": "#000000", "label": T("epr_kin_data"), "ls": "none", "lw": 0.8,
                            "marker": "o"})
-            curves.append({"x": xl, "y": a["lnA"] - a["Ea"] / R_GAS * xl / 1000.0, "color": "#1764e8",
+            self.roles_idle = {}
+            curves.append({"x": xl, "y": a["lnA"] - a["Ea"] / R_GAS * xl / 1000.0, "color": TABS.role_color(self.st, "col_fit", FIT_COLOR),
                            "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
             ally = np.concatenate([c["y"] for c in curves])
             cfg["xlim"] = [float(xl[0]), float(xl[1])] if st["x_auto"] else [st["x_min"], st["x_max"]]
@@ -2086,15 +2303,19 @@ class EPRTab(TABS.FigureTab):
                           n=a["n"], r2=core.r2_text(a["r2"])))
         else:
             self.arr_result = None
+            if many:                                     # mehrere Reihen: Fits in der Farbe der Reihe
+                self.roles_idle = {"col_fit": "tf_idle_series"}
             for r, c_ in zip(res, cols):
                 ii, f = r["idx"], r["fit"]
                 col = c_ if many else "#000000"
                 curves.append({"x": x[ii], "y": y[ii], "color": col, "label": name_T(r), "ls": "none", "lw": 0.8,
                                "marker": "o"})
                 if f is not None:
+                    if not many:
+                        self.roles_idle = {}
                     tf = np.linspace(0.0, x[ii][f["n"] - 1] * 60.0 - f["t0"], 100)
                     curves.append({"x": (tf + f["t0"]) / 60.0, "y": f["I0"] * np.exp(-f["k"] * tf),
-                                   "color": col if many else "#1764e8", "label": None if many else T("epr_kin_fitcurve"),
+                                   "color": col if many else TABS.role_color(st, "col_fit", FIT_COLOR), "label": None if many else T("epr_kin_fitcurve"),
                                    "ls": "-", "lw": 1.6})
             pad = 0.05 * (np.ptp(x) or 1.0)
             cfg["xlim"] = [float(x.min() - pad), float(x.max() + pad)] if st["x_auto"] else [st["x_min"], st["x_max"]]
@@ -2108,6 +2329,76 @@ class EPRTab(TABS.FigureTab):
         if getattr(self, "_edge_hits", 0):
             info.append(T("epr_gauss_edge", n=self._edge_hits))
         self.lbl_info.setText("\n".join(info), plain=True)
+        return cfg, curves, [], []
+
+    def spin_spec(self, entries):
+        """Spinzählung: Doppelintegral der Messungen mit bekannter Konzentration (Referenzen) als Kalibrierung, die
+        übrigen sichtbaren Messungen (Proben) werden daran abgelesen. Nur mit dem Doppelintegral, ohne I·T, ohne
+        Normierung; nichts wird auf andere Messbedingungen umgerechnet – weichen Modulation, Leistung oder
+        Temperatur zwischen den Messungen ab, steht ein Hinweis."""
+        st = self.st
+        self.iso_results = self.arr_result = self.kin_result = None
+        if not entries:
+            return None
+        if st["int_method"] != "double" or st["int_curie"]:
+            self.lbl_info.setText(T("epr_spin_need_double"))
+            return None
+        _, di, _, used = self.intensity_series(entries, x_mode="index")
+        unit = st.get("spin_unit", "mM")
+        if sum(v for e, v in zip(used, di) if e.get("conc")) < 0:   # Signalphase: Doppelintegral der Referenzen positiv
+            di = -np.asarray(di)
+        refs = [(e, float(e["conc"]), v) for e, v in zip(used, di) if e.get("conc")]
+        cal = spin_calibration([c for _, c, _ in refs], [v for _, _, v in refs])
+        if cal is None or cal["m"] == 0:
+            self.lbl_info.setText(T("epr_spin_none"))
+            return None
+        samples = [(e, v, (v - cal["b"]) / cal["m"]) for e, v in zip(used, di) if not e.get("conc")]
+        metas = [self.spectrum(e)["meta"] for e in used]
+        differ, scale = spin_differ(metas, SPIN_COND), spin_differ(metas, SPIN_SCALE)
+        extra, neg = spin_range_flags([(e["label"], c) for e, _, c in samples], [c for _, c, _ in refs])
+        # gleich verarbeitet: ein Dunkelspektrum-Abzug (mit Faktor) gilt für alle oder keine
+        uids = {x["uid"] for x in st["entries"]}
+        same = len({e.get("dark_k", 1.0) if e.get("dark") in uids else None for e in used}) == 1
+        self.spin_result = dict(cal=cal, unit=unit, differ=differ, scale=scale, extra=extra, neg=neg, same=same,
+                                refs=[(e["label"], c, v) for e, c, v in refs],
+                                samples=[(e["label"], v, c) for e, v, c in samples])
+        cfg = self.base_cfg()
+        self.roles_idle = {}                              # Kalibriergerade in der Fitfarbe
+        cmax = max([c for _, c, _ in refs] + [c for _, _, c in samples if np.isfinite(c)] + [0.0])
+        xs = np.array([0.0, 1.05 * cmax])
+        curves = [{"x": np.array([c for _, c, _ in refs]), "y": np.array([v for _, _, v in refs]), "color": "#000000",
+                   "label": T("epr_spin_refs"), "ls": "none", "lw": 0.8, "marker": "o"},
+                  {"x": xs, "y": cal["m"] * xs + cal["b"], "color": TABS.role_color(self.st, "col_fit", FIT_COLOR), "label": T("epr_spin_line"), "ls": "-",
+                   "lw": 1.4}]
+        if samples:
+            curves.append({"x": np.array([c for _, _, c in samples]), "y": np.array([v for _, v, _ in samples]),
+                           "color": "#c0392b", "label": T("epr_spin_samples"), "ls": "none", "lw": 0.8, "marker": "s"})
+        top = max([v for _, _, v in refs] + [v for _, v, _ in samples])
+        cfg["xlim"] = [0.0, float(xs[1])] if st["x_auto"] else [st["x_min"], st["x_max"]]
+        cfg["ylim"] = [min(0.0, float(cal["b"])), st["ymax"] if st["ymax"] > 0 else 1.1 * float(top)]
+        cfg["xlabel"], cfg["ylabel"] = f"c [{unit}]", "double integral [arb. u.]"
+        cfg["y_axis"], cfg["legend"] = "numbers", True
+        self.series_values = [(c, v, lab) for lab, c, v in self.spin_result["refs"]] + \
+            [(c, v, lab) for lab, v, c in self.spin_result["samples"]]
+        num = lambda v: f"{v:.3g}".replace("-", "\u2212")                      # noqa: E731
+        self.tbl_spin.setHorizontalHeaderLabels([T("ov_name"), T("epr_spin_di"), f"{T('epr_spin_known')} [{unit}]",
+                                                 f"{T('epr_spin_found')} [{unit}]"])   # Einheit im Kopf
+        STYLE.rich_header(self.tbl_spin)
+        STYLE.fill_summary(self.tbl_spin, [[lab, num(v), num(c), ""] for lab, c, v in self.spin_result["refs"]]
+                           + [[lab, num(v), "", num(c)] for lab, v, c in self.spin_result["samples"]])
+        info = T("epr_spin_info", n=cal["n"], how=T("epr_spin_origin" if cal["origin"] else "epr_spin_fit"))
+        if cal["r2"] is not None:
+            info += f" R² = {core.r2_text(cal['r2'])}."
+        if scale:
+            info += "\n⚠ " + T("fixt_epr_spin_scale", what=", ".join(T("fixt_epr_" + k) for k, n, _ in SPIN_SCALE
+                                                                        if n in scale))
+        if differ:
+            info += "\n⚠ " + T("epr_spin_differ", what=", ".join(differ))
+        if extra:
+            info += "\n⚠ " + T("fixt_epr_spin_extra", what=", ".join(extra))
+        if neg:
+            info += "\n⚠ " + T("fixt_epr_spin_neg", what=", ".join(neg))
+        self.lbl_info.setText(info)
         return cfg, curves, [], []
 
     def intensity_spec(self, entries):
@@ -2145,11 +2436,12 @@ class EPRTab(TABS.FigureTab):
                     if lsq and r["I0"]:
                         y = y / r["I0"]                    # Anzeige relativ zur gefitteten Startintensität
                     # an den Messpunkten: das Integral des Modells läuft über genau diese Punkte (wie im Fit)
-                    fits.append({"x": xs_, "y": decay_model(xs_, r["A"], r["Ea"], beta, tm), "color": "#1764e8",
+                    self.roles_idle = {}
+                    fits.append({"x": xs_, "y": decay_model(xs_, r["A"], r["Ea"], beta, tm), "color": TABS.role_color(self.st, "col_fit", FIT_COLOR),
                                  "label": T("epr_kin_fitcurve"), "ls": "-", "lw": 1.6})
                     if np.isfinite(r["cov"]).all():
                         for yb, lab in zip(decay_band(xs_, r, beta, tm), (T("epr_kin_band"), None)):
-                            fits.append({"x": xs_, "y": yb, "color": "#1764e8", "label": lab, "ls": ":",
+                            fits.append({"x": xs_, "y": yb, "color": TABS.role_color(self.st, "col_fit", FIT_COLOR), "label": lab, "ls": ":",
                                          "lw": 0.9})
                     self.kin_result = dict(r, beta=beta)
         curves = [{"x": x[o], "y": y[o], "color": "#000000", "label": T("epr_kin_data") if kin else None,
@@ -2178,6 +2470,17 @@ class EPRTab(TABS.FigureTab):
         self.lbl_info.setText(info)
         return cfg, curves, [], []
 
+    def refresh_summary(self):
+        super().refresh_summary()
+        try:                                               # Simulationen/Fits geändert: Zuordnung und Reiter nachziehen
+            self.calc_pages.sync()
+            self.calc_pages.refresh()
+        except Exception as ex:
+            self.main.log_signal.emit(str(ex))
+
+    def si_figure(self, out_dir, name):
+        return super().si_figure(out_dir, name) + self.calc_pages.si_figures(out_dir, name)
+
     def chain(self):
         st = self.st
         return [(T("chain_dark"), any(e.get("dark") for e in st["entries"])), (T("chain_baseline"), bl_method(st) != "off"),
@@ -2195,8 +2498,13 @@ class EPRTab(TABS.FigureTab):
         st = self.st
         vis = [e for e in st["entries"] if e["visible"]]
         exps = [e for e in vis if e["kind"] == "exp"]
+        try:
+            calc = self.calc_pages.methods_text()
+        except Exception as ex:                          # Rechnung nicht lesbar: Text der Messung bleibt
+            self.main.skip_part(ex, self.calc_pages.calc["file"])
+            calc = ""
         if not exps:
-            return ""
+            return calc
         fmt_r = lambda rs: ", ".join(f"{a:g}–{b:g}" for a, b in rs)          # noqa: E731
         m, res = [], []
         if st.get("ref_freq"):
@@ -2273,7 +2581,10 @@ class EPRTab(TABS.FigureTab):
                 parts = [f"g = {g_text(e['g'])}"]
                 for n, I_, a in self.iso_groups(e):
                     mt, mhz = hfc_texts(a, e["g"])
-                    parts.append(f"a({n} × I = {I_:g}) = {mt} mT ({mhz} MHz)")
+                    if st.get("cap_hfc") == "G":                  # Einheit wie in der Unterschrift gewählt
+                        mt = self.hfc_unit_text(a, e["g"]).replace(" G", "")
+                    parts.append(f"a({n} × I = {I_:g}) = {mt} {'G' if st.get('cap_hfc') == 'G' else 'mT'} "
+                                 f"({mhz} MHz)")
                 parts.append(f"ΔBpp = {e['lw']:.3f} mT")
                 if e.get("fit_lorentz"):
                     parts.append(f"Lorentzian fraction {e.get('lorentz', 0.0):.2f}")
@@ -2294,6 +2605,21 @@ class EPRTab(TABS.FigureTab):
                          "y = p1·exp[−(B − p2)²/p3] + p4·B + p5, by Levenberg–Marquardt least squares (centre p2 "
                          "constrained to the window and at least 3% of its width from the edges, p3 = 3–50 mT²); "
                          "|p1| was used as intensity.")
+            sr = getattr(self, "spin_result", None) if st["int_x"] == "conc" else None
+            if sr:
+                c_ = sr["cal"]
+                m.append("Spin concentrations were determined from the double integrals with a calibration against "
+                         f"reference samples of known concentration (n = {c_['n']}; "
+                         + ("straight line through the origin" if c_["origin"] else
+                            "unweighted linear least-squares fit with intercept") + ")"
+                         + (", all spectra processed identically" if sr["same"] else "")
+                         + ". No uncertainties were derived from the calibration."
+                         + (" The spectra differ in " + ", ".join(sr["scale"] + sr["differ"]) + "; the intensities "
+                            "were not corrected for this." if sr["scale"] or sr["differ"] else ""))
+                for lab, _, c in sr["samples"]:
+                    note = (" (extrapolated beyond the calibration range)" if lab in sr["extra"] else
+                            " (negative: below the intercept of the calibration)" if lab in sr["neg"] else "")
+                    res.append(f"{lab}: c(spin) = {c:.3g} {sr['unit']}".replace("-", "−") + note)
             if st["int_curie"]:
                 m.append("Intensities were multiplied by the temperature (I·T)"
                          + (" before fitting." if meth == "gauss" else "."))
@@ -2302,7 +2628,8 @@ class EPRTab(TABS.FigureTab):
             iso = [q for q in (getattr(self, "iso_results", None) or []) if q["fit"]]
             if iso:
                 loss = st["kin_loss"]
-                m.append("Isothermal decays were analysed as first-order processes, I(t) = I0·exp(−k·t), by least squares "
+                m.append(("Isothermal decays" if all(q["fit"]["k"] > 0 for q in iso) else "Isothermal intensity changes")
+                         + " were analysed as first-order processes, I(t) = I0·exp(−k·t), by least squares "
                          "on the measured intensities (I0 determined linearly), separately for each temperature "
                          f"(spectra whose recorded temperature agrees after rounding to {ISO_T_STEP:g} K)"
                          + (f"; only the data up to an intensity loss of {loss:g}% relative to the first spectrum of "
@@ -2312,9 +2639,10 @@ class EPRTab(TABS.FigureTab):
                 for q in iso:
                     f = q["fit"]
                     res.append((f"T = {q['T']:.1f} K: " if q["T"] is not None else "")
-                               + f"k = {sci_text(f['k'])} s-1"
-                               + (f" (95% interval {sci_text(f['ci_k'][0])} to {sci_text(f['ci_k'][1])} s-1)"
-                                  if f["ci_k"] else "") + f", n = {f['n']}")
+                               + f"k = {sci_signed(f['k'])} s-1"
+                               + (f" (95% interval {sci_signed(f['ci_k'][0])} to {sci_signed(f['ci_k'][1])} s-1)"
+                                  if f["ci_k"] else "") + f", n = {f['n']}"
+                               + (" (intensity increased; no half-life)" if f["k"] < 0 else ""))
                 a = getattr(self, "arr_result", None)
                 if a:
                     m.append("Activation parameters were obtained from an unweighted linear least-squares fit of ln k "
@@ -2324,7 +2652,8 @@ class EPRTab(TABS.FigureTab):
                     ci = a["ci_Ea"]
                     res.append(f"Ea = {a['Ea'] / 1000:.1f} kJ mol-1 ({a['Ea'] / 4184:.1f} kcal mol-1"
                                + (f"; 95% interval {ci[0] / 1000:.1f} to {ci[1] / 1000:.1f} kJ mol-1" if ci else "")
-                               + f"), ln(A/s-1) = {a['lnA']:.2f}, n = {a['n']} temperatures, "
+                               + f"), ln(A/s-1) = {a['lnA']:.2f}".replace("= -", "= −")   # wie die Unterschrift
+                               + f", n = {a['n']} temperatures, "
                                f"R² = {core.r2_text(a['r2'])}")
             r = getattr(self, "kin_result", None)
             if r:
@@ -2354,17 +2683,30 @@ class EPRTab(TABS.FigureTab):
                            f"A = {mant} × 10^{int(ex)} s-1, "
                            f"β = {r['beta'] * 60:.3f} K min-1, n = {len(self.series_values)}, "
                            f"correlation Ea/ln A = {r['corr']:.4f}")
+        if calc:
+            m.append(calc)
         if not m and not res:
             return ""
         out = " ".join(m)
         return out + ("\n\n" + "; ".join(res) + "." if res else "")
 
+    def copy_pages(self):
+        cp = self.calc_pages
+        return [(cp.groups[k], lambda tmp, k=k: k in cp.figures() and self.copy_built(tmp, lambda fig: cp.build(fig, k, False)))
+                for k in cp.KINDS]
+
     def export_to(self, base: Path):
         """Abbildung + Daten wie überall; zusätzlich je Messung eine EasySpin-fertige Textdatei (B in mT, I) in
         voller Auflösung nach Dunkelspektrum/Basislinie/Glättung, ohne Normierung und Ausblenden."""
-        files = super().export_to(base)
-        st, cache = self.st, {}
         base = Path(base).resolve()
+        try:
+            files = super().export_to(base)
+        except RuntimeError:                               # ohne Spektren: nur die Abbildungen der Rechnung
+            if not self.calc_pages.figures():
+                raise
+            files = []
+        files += self.calc_pages.export_to(base)
+        st, cache = self.st, {}
         for e in st["entries"]:
             if not (e["visible"] and e["kind"] == "exp"):
                 continue
@@ -2373,8 +2715,9 @@ class EPRTab(TABS.FigureTab):
             dark = next((x for x in st["entries"] if x["uid"] == e.get("dark")), None)
             head = [f"% {e['label']} – exported by Elucida (processed spectrum for EasySpin: load(...))",
                     f"% source: {Path(e['file']).name}" + (f" [{e.get('slice', 0) + 1}]" if e.get("slice") else ""),
-                    f"% mwFreq [GHz]: {self.axis_mw(e)}; T [K]: {m.get('T_K')}; ModAmp [mT]: {m.get('mod_mT')}; "
-                    f"Power [mW]: {m.get('power_mW')}",
+                    "% " + "; ".join(f"{k}: {v}" for k, v in (("mwFreq [GHz]", self.axis_mw(e)), ("T [K]", m.get("T_K")),
+                                                               ("ModAmp [mT]", m.get("mod_mT")),
+                                                               ("Power [mW]", m.get("power_mW"))) if v is not None),
                     f"% dark spectrum: {dark['label'] + ' x ' + format(e.get('dark_k', 1.0), 'g') if dark else 'none'}; "
                     f"baseline: {bl_summary(st)}; smoothing: {st['smooth']:g} mT",
                     "% B [mT]\tI [arb. u.]"]

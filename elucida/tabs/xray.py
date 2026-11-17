@@ -275,7 +275,8 @@ class Structure:
                 part = 0
             occ = num(r.get("_atom_site_occupancy"))
             U = aniso.get(lab)
-            self.atoms.append(dict(label=lab, el=el, frac=np.array(xyz, float), uiso=uiso or 0.02,
+            # uiso: Ersatz 0.02 nur fürs Zeichnen (Kugel); u_iso_cif = Wert der CIF oder None (PXRD rechnet damit)
+            self.atoms.append(dict(label=lab, el=el, frac=np.array(xyz, float), uiso=uiso or 0.02, u_iso_cif=uiso,
                                    U=u_cart(self.M, U) if U is not None else None,
                                    occ=1.0 if occ is None else occ, part=part,
                                    assembly=r.get("_atom_site_disorder_assembly") or "",
@@ -812,6 +813,8 @@ def read_calc_geometry(path):
         fr = read_xyz(path)[-1]
     else:
         c = read_calc(path)
+        if not c.get("normal", True):                      # abgeschnitten/abgebrochen: Teilgeometrie nie vergleichen
+            raise ValueError(T("r2a_calc_abnormal"))
         fr = DFT.calc_frame(c, "", Path(path).with_suffix(".xyz"))[0]
     real = [i for i, e in enumerate(fr["els"]) if e in ELEMENTS or e in DFT.H_ELS]
     xyz = np.asarray(fr["xyz"], float)
@@ -1888,11 +1891,370 @@ def _half(xs, ys, half, overlap=0.0):
     return ([xs[0], xm], [ys[0], ym]) if half == 0 else ([xm, xs[1]], [ym, ys[1]])
 
 
+def _label_list(labels, n=8):
+    """Atomlabels für Hinweise: bis n einzeln, sonst die ersten n und die Zahl der übrigen."""
+    return join_en(list(labels)) if len(labels) <= n else ", ".join(labels[:n]) + f" and {len(labels) - n} more"
+
+
 def join_en(items):
     items = [i for i in items if i]
     if len(items) <= 1:
         return "".join(items)
     return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+# ---------------------------------------------------------------------------- Packung (Paket C 1.2.0)
+# van-der-Waals-Radien nach Bondi (J. Phys. Chem. 1964, 68, 441); Elemente ohne Wert dort bekommen keinen Vorschlag
+BONDI = {"H": 1.20, "C": 1.70, "N": 1.55, "O": 1.52, "F": 1.47, "Si": 2.10, "P": 1.80, "S": 1.80, "Cl": 1.75,
+         "Se": 1.90, "Br": 1.85, "I": 1.98}
+BONDI_REF = "A. Bondi, J. Phys. Chem. 1964, 68, 441–451"
+PACK_AXES = {"a": (0, 1), "b": (1, 2), "c": (2, 0)}       # Blickachse -> (Achse zum Betrachter, Achse nach rechts)
+PACK_COLOR = "#1764e8"
+PACK_DEFAULT = dict(on=False, axis="a", rule="centroid", h=False, si=False, tol=0.0, heavy=True, cg=4.0, ang=10.0,
+                    color=PACK_COLOR, shown=[])
+# Pulverdiffraktogramm (1.2.0; Rechnung in core/pxrd.py): je Struktur `entry["pxrd"]`
+PXRD_DEFAULT = dict(file=None, anode="Cu", ka2=True, fwhm=0.10, eta=0.5, auto=True, lo=5.0, hi=50.0, zero=0.0,
+                    stack=True, ticks=True, c_meas="#222222", c_calc=PACK_COLOR, si=False)
+PXRD_STEP = 0.01                      # Raster der Rechnung [° 2θ]
+PXRD_RANGE = (3.0, 50.0)              # 2θ-Bereich ohne Messung
+_OFFS27 = [np.array(o, float) for o in itertools.product((-1, 0, 1), repeat=3)]
+
+
+def _snap24(v):
+    """Translation auf ein Vielfaches von 1/24 einrasten (alle kristallographischen Translationen: 1/2, 1/3, 1/4, 1/6,
+    1/8, 1/12); andere Werte (Ursprungsverschiebung) bleiben exakt. Auch alte Projekte mit 0.3333 werden 1/3."""
+    s = round(float(v) * 24) / 24
+    return (s if abs(s - float(v)) < 1e-3 else float(v)) + 0.0
+
+
+def g_key(G):
+    """Operation (R, t) -> Liste (speicherbar, Vergleich über tr_key)."""
+    return [int(v) for v in np.asarray(G[0]).ravel()] + [_snap24(v) for v in G[1]]
+
+
+def g_of(k):
+    return np.array(k[:9], int).reshape(3, 3), np.array([_snap24(v) for v in k[9:12]], float)
+
+
+def axis_view(S, axis):
+    """Blick entlang der Zellachse `axis` (sie zeigt zum Betrachter), die zyklisch nächste nach rechts."""
+    i, j = PACK_AXES[axis]
+    z = S.M[:, i] / np.linalg.norm(S.M[:, i])
+    x = S.M[:, j] - z * float(S.M[:, j] @ z)
+    x /= np.linalg.norm(x)
+    return np.array([x, np.cross(z, x), z])
+
+
+def cell_edges(S):
+    """12 Zellkanten (kartesisch) und die Enden der Achsen a, b, c vom Ursprung."""
+    C = {c: S.M @ np.array(c, float) for c in itertools.product((0, 1), repeat=3)}
+    edges = [(C[p], C[q]) for p in C for q in C if p < q and sum(abs(u - v) for u, v in zip(p, q)) == 1]
+    return edges, {"a": (C[(0, 0, 0)], C[(1, 0, 0)]), "b": (C[(0, 0, 0)], C[(0, 1, 0)]),
+                   "c": (C[(0, 0, 0)], C[(0, 0, 1)])}
+
+
+class PackMol:
+    """Inhalt der Elementarzelle mit der Schnittstelle von Molecule (für XrayFigure/project): je Fragment des
+    vervollständigten Moleküls und Symmetrieoperation eine Kopie, ganzzahlig verschoben nach der Regel – „centroid“:
+    ganze Moleküle, deren Schwerpunkt in der Zelle liegt; „touch“: ganze Moleküle mit mindestens einem Atom in der Zelle.
+    Gleiche Lage (Molekül auf einem Symmetrieelement) zählt einmal. extra: weitere Kopien [(Fragment, G)] (Partner
+    gezeigter Abstände). Polymere: der Abbruch von Molecule (max_factor) gilt weiter (truncated)."""
+
+    def __init__(self, mol, rule="centroid", hidden=(), extra=()):
+        S = self.S = mol.S
+        self.base, self.ops, self.truncated = mol, {}, mol.truncated
+        self.atoms, self.bonds, self.fragments, self._cent = [], [], [], []
+        self._nbrs = None
+        for fi, fr in enumerate(mol.fragments):
+            if fi in hidden:
+                continue
+            F0 = np.array([mol.atoms[k]["frac"] for k in fr["atoms"]])
+            for op in S.ops:
+                Fg = F0 @ op[0].T + op[1]
+                base = -np.floor(Fg.mean(axis=0) + 1e-9)
+                if rule == "touch":
+                    shifts = [base + o for o in _OFFS27
+                              if (((Fg + base + o) >= -1e-6) & ((Fg + base + o) <= 1 + 1e-6)).all(axis=1).any()]
+                else:
+                    shifts = [base]
+                for sh in shifts:
+                    self.add(fi, (op[0], op[1] + sh))
+        for fi, G in extra:
+            if fi not in hidden:
+                self.add(fi, G)
+        self.bonds = sorted(self.bonds)
+
+    def add(self, fi, G):
+        """Kopie des Fragments fi unter G (relativ zum vervollständigten Molekül) -> Index der Kopie (vorhanden: alt)."""
+        mol, S = self.base, self.S
+        fr = mol.fragments[fi]
+        c = np.mean([apply(G, mol.atoms[k]["frac"]) for k in fr["atoms"]], axis=0)
+        for ci, (fj, cj) in enumerate(self._cent):
+            if fj == fi and np.linalg.norm(S.M @ (c - cj)) < 0.05:
+                return ci
+        ci = len(self.fragments)
+        self._cent.append((fi, c))
+        Rc = S.M @ G[0] @ np.linalg.inv(S.M)
+        idx = {}
+        for k in fr["atoms"]:
+            a = mol.atoms[k]
+            Tt = compose(G, a["T"])
+            frac = apply(G, a["frac"])
+            idx[k] = len(self.atoms)
+            self.atoms.append(dict(asu=a["asu"], label=a["label"], el=a["el"], T=Tt, frac=frac, xyz=S.cart(frac),
+                                   U=None if a["U"] is None else Rc @ a["U"] @ Rc.T, uiso=a["uiso"], part=a["part"],
+                                   generated=not is_identity(Tt), sym="", opkey="",
+                                   key=a["label"] + ("" if is_identity(Tt) else "|" + op_string(Tt)), frag=ci, base=k,
+                                   G=g_key(G)))
+        for p, q in mol.bonds:
+            if p in idx and q in idx:
+                self.bonds.append((min(idx[p], idx[q]), max(idx[p], idx[q])))
+        self.fragments.append(dict(atoms=list(idx.values()), formula=fr["formula"],
+                                   kind=fr["kind"] if fr["kind"] != "molecule" else "main", name=fr.get("name", ""),
+                                   base=fi, G=g_key(G)))
+        self._nbrs = None
+        return ci
+
+    neighbors = Molecule.neighbors
+    find_key = Molecule.find_key
+
+    def footnotes(self):
+        return []
+
+
+def _plane(P):
+    """Schwerpunkt, Normale und RMS-Abweichung einer Ebene durch die Punkte P."""
+    c = P.mean(axis=0)
+    _, sv, vt = np.linalg.svd(P - c)
+    return c, vt[2], float(sv[2] / math.sqrt(len(P)))
+
+
+def mol_rings(mol, max_rms=0.1):
+    """Ebene Ringe (5–7 Nicht-H-Atome, RMS-Abweichung von der Ebene < max_rms Å) aller Fragmente -> [Atomindizes]
+    in fester Reihenfolge (Cg1, Cg2 …)."""
+    nb = mol.neighbors()
+    heavy = {k for k, a in enumerate(mol.atoms) if a["el"] not in ("H", "D")}
+    found, out = set(), []
+
+    def walk(path):
+        last = path[-1]
+        for y in nb[last]:
+            if y not in heavy or y < path[0]:
+                continue
+            if y == path[0] and len(path) >= 5:
+                key = frozenset(path)
+                if key not in found:
+                    found.add(key)
+                    out.append(list(path))
+            elif y not in path and len(path) < 7:
+                walk(path + [y])
+    for s0 in sorted(heavy):
+        walk([s0])
+    out = [r for r in out if _plane(np.array([mol.atoms[k]["xyz"] for k in r]))[2] < max_rms]
+    # Ring ohne Sehne (kleinster Ring): enthält kein anderer gefundener Ring nur eine Teilmenge plus Sehne
+    out = [r for r in out if not any(set(q) < set(r) for q in out)]
+    return sorted(out, key=lambda r: (mol.atoms[r[0]].get("frag", 0), min(r)))
+
+
+def contact_geom(mol, c, rings=None, ang_tol=10.0):
+    """Abstand eines gespeicherten Kontakts -> dict(p1, p2 (kartesisch, ohne Zellverschiebung), d, angle, slip, value,
+    unit) oder None (Atome fehlen, z. B. andere Fehlordnung). kind „atoms“: Atom–Atom; „cent“: Ringschwerpunkte (mit
+    Versatz = Abstand in der Ebene des ersten Rings); „plane“: Abstand Cg2 zur mittleren Ebene von Ring 1, nur wenn
+    die Ebenen innerhalb ang_tol parallel sind, sonst nur der Winkel (value = None)."""
+    S = mol.S
+    ia = [mol.find_key(k) for k in c["a"]]
+    ib = [mol.find_key(k) for k in c["b"]]
+    if None in ia or None in ib or not ia or not ib:
+        return None
+    Ga, Gb = g_of(c["ga"]), g_of(c["gb"])
+    Pa = np.array([S.cart(apply(Ga, mol.atoms[k]["frac"])) for k in ia])
+    Pb = np.array([S.cart(apply(Gb, mol.atoms[k]["frac"])) for k in ib])
+    if c["kind"] == "atoms":
+        d = float(np.linalg.norm(Pa[0] - Pb[0]))
+        return dict(p1=Pa[0], p2=Pb[0], d=d, value=d, angle=None, slip=None)
+    c1, n1, _ = _plane(Pa)
+    c2, n2, _ = _plane(Pb)
+    v = c2 - c1
+    d = float(np.linalg.norm(v))
+    ang = math.degrees(math.acos(min(1.0, abs(float(n1 @ n2)))))
+    perp = abs(float(v @ n1))
+    slip = math.sqrt(max(0.0, d * d - perp * perp))
+    if c["kind"] == "cent":
+        return dict(p1=c1, p2=c2, d=d, value=d, angle=ang, slip=slip, c1=c1, c2=c2)
+    if ang <= ang_tol:
+        foot = c1 + n1 * float(v @ n1)
+        return dict(p1=c1, p2=foot, d=perp, value=perp, angle=ang, slip=slip, c1=c1, c2=c2)
+    return dict(p1=c1, p2=c2, d=d, value=None, angle=ang, slip=slip, c1=c1, c2=c2)
+
+
+def contact_id(c):
+    ga, gb = g_key(g_of(c["ga"])), g_key(g_of(c["gb"]))        # alte Projekte (0.3333) = neue Vorschläge (1/3)
+    return f"{c['kind']}:{','.join(c['a'])}@{ga}:{','.join(c['b'])}@{gb}"
+
+
+def _site_key(asu, F):
+    """Atommenge (ASU-Index, Lage) -> sortiertes Tupel; gleiche Lage = gleicher Schlüssel. Raster 0.001 mit Versatz
+    0.2371, damit Koordinaten aus der CIF (4–5 Stellen, z. B. 0.1235) nie auf einer Rundungsgrenze liegen."""
+    q = np.rint(np.asarray(F, float) * 1000 + 0.2371).astype(int)
+    return tuple(sorted(zip((int(i) for i in asu), map(tuple, q.tolist()))))
+
+
+def _pair_key(S, A, B):
+    """Kanonischer Schlüssel eines Paars von Atommengen A, B (je (ASU-Indizes, frac N×3)): gleich für alle symmetrisch
+    gleichen Paare (Operation der CIF + Gittertranslation, auch vertauscht). Ein Nachbar ist damit durch seine
+    Atommenge bestimmt, nicht durch die Operation (Moleküle auf Symmetrieelementen: G und G∘h geben dasselbe Paar)."""
+    best = None
+    for R, t in S.ops:
+        X, Y = A[1] @ R.T + t, B[1] @ R.T + t
+        for (ia, P), (ib, Q) in (((A[0], X), (B[0], Y)), ((B[0], Y), (A[0], X))):
+            sh = -np.floor(P.mean(axis=0) + 1e-6)
+            k = (_site_key(ia, P + sh), _site_key(ib, Q + sh))
+            if best is None or k < best:
+                best = k
+    return best
+
+
+def contact_suggestions(mol, tol=0.0, heavy_only=True, cg_max=4.0, ang_tol=10.0, hidden=()):
+    """Vorschläge zwischen Molekülen (Kopien je Symmetrieoperation und Translation ±1 um das jeweilige Fragment):
+    je Molekülpaar der kürzeste Atom-Atom-Kontakt mit d ≤ r_vdW(1) + r_vdW(2) + tol (Bondi; Elemente ohne Radius
+    entfallen, wahlweise ohne H) und je Ringpaar mit Cg···Cg ≤ cg_max der Schwerpunktabstand und der Ebenenabstand
+    (nur parallel innerhalb ang_tol, sonst Winkel). Symmetrisch gleiche Paare einmal. -> [dict(kind, a, ga, b, gb,
+    d, …)] nach d."""
+    S = mol.S
+    frs = [fi for fi in range(len(mol.fragments)) if fi not in hidden]
+    rings = mol_rings(mol)
+    data = {}
+    for fi in frs:
+        ks = mol.fragments[fi]["atoms"]
+        F = np.array([mol.atoms[k]["frac"] for k in ks])
+        r = np.array([BONDI.get(mol.atoms[k]["el"], np.nan) for k in ks])
+        ok = np.isfinite(r) & ((not heavy_only) | np.array([mol.atoms[k]["el"] not in ("H", "D") for k in ks]))
+        data[fi] = (ks, F, r, ok, [rg for rg in rings if mol.atoms[rg[0]].get("frag") == fi])
+    asu = {fi: [mol.atoms[k]["asu"] for k in data[fi][0]] for fi in frs}
+    own = {_site_key(asu[fi], data[fi][1]) for fi in frs}
+    out, seen = [], set()
+    I = g_key(IDENT)
+    for f1 in frs:
+        ks1, F1, r1, ok1, rg1 = data[f1]
+        P1 = F1 @ S.M.T
+        c1 = F1.mean(axis=0)
+        ext1 = float(np.max(np.linalg.norm(P1 - P1.mean(axis=0), axis=1)))
+        for f2 in frs:
+            ks2, F2, r2, ok2, rg2 = data[f2]
+            for op in S.ops:
+                F2g = F2 @ op[0].T + op[1]
+                base = np.rint(c1 - F2g.mean(axis=0))
+                for o in _OFFS27:
+                    G = (op[0], op[1] + base + o)
+                    Fb = F2g + base + o
+                    P2 = Fb @ S.M.T
+                    ext2 = float(np.max(np.linalg.norm(P2 - P2.mean(axis=0), axis=1)))
+                    if np.linalg.norm(P1.mean(axis=0) - P2.mean(axis=0)) > ext1 + ext2 + max(cg_max, 4.5):
+                        continue
+                    if _site_key(asu[f2], Fb) in own:          # Bild eines Moleküls auf sich selbst (Platzsymmetrie)
+                        continue
+                    D = np.linalg.norm(P1[:, None, :] - P2[None, :, :], axis=2)
+                    crit = (D - (r1[:, None] + r2[None, :]) <= tol) & ok1[:, None] & ok2[None, :]
+                    cands = []
+                    if crit.any():
+                        i, j = np.unravel_index(np.where(crit, D, np.inf).argmin(), D.shape)
+                        # je Molekülpaar ein Atomkontakt: Schlüssel aus beiden ganzen Atommengen
+                        sides = ((asu[f1], F1), (asu[f2], Fb))
+                        cands.append((sides, dict(kind="atoms", a=[mol.atoms[ks1[i]]["key"]],
+                                                  b=[mol.atoms[ks2[j]]["key"]], d=float(D[i, j]),
+                                                  rvdw=float(r1[i] + r2[j]))))
+                    for ra in rg1:
+                        for rb in rg2:
+                            ca = np.mean([mol.atoms[k]["xyz"] for k in ra], axis=0)
+                            Frb = np.array([apply(G, mol.atoms[k]["frac"]) for k in rb])
+                            if np.linalg.norm(ca - S.cart(Frb.mean(axis=0))) <= cg_max:
+                                sides = (([mol.atoms[k]["asu"] for k in ra], np.array([mol.atoms[k]["frac"] for k in ra])),
+                                         ([mol.atoms[k]["asu"] for k in rb], Frb))
+                                for kind in ("cent", "plane"):
+                                    cands.append((sides, dict(kind=kind, a=[mol.atoms[k]["key"] for k in ra],
+                                                              b=[mol.atoms[k]["key"] for k in rb])))
+                    # symmetrisch gleiche Paare (G, G⁻¹, Platzsymmetrie beider Seiten) einmal: Schlüssel aus den Atommengen
+                    for sides, c in cands:
+                        sig = (c["kind"], _pair_key(S, *sides))
+                        if sig in seen:
+                            continue
+                        seen.add(sig)
+                        c.update(ga=I, gb=g_key(G))
+                        geo = contact_geom(mol, c, ang_tol=ang_tol)
+                        c.update(d=geo["d"], value=geo["value"], angle=geo["angle"], slip=geo["slip"])
+                        out.append(c)
+    return sorted(out, key=lambda c: ({"atoms": 0, "cent": 1, "plane": 2}[c["kind"]], c["d"]))
+
+
+def ring_defs(mol, rings):
+    """Cg-Nummern der Ringe -> (Nummer je Ring, Bezugsoperation T_R je Ring, [(Nummer, Ring-Index des Vertreters)]).
+    Ein Ring, dessen Atome alle unter derselben Operation T erzeugt sind, gilt als Bild des Rings der CIF-Atome
+    (T_R = T, Definition mit den Labels ohne Code); symmetrisch gleiche Ringe des Moleküls teilen so eine Nummer. Ein Ring
+    auf einem Symmetrieelement (Atome unter verschiedenen Operationen) behält T_R = Identität und nennt die erzeugten
+    Atome mit ihrem Code (`ring_atoms`)."""
+    nums, TR, defs, by_def = [], [], [], {}
+    for i, r in enumerate(rings):
+        Ts = {tr_key(mol.atoms[k]["T"]) for k in r}
+        T = mol.atoms[r[0]]["T"] if len(Ts) == 1 else IDENT
+        key = tuple(sorted(ring_atoms(mol, r, T)))
+        if key not in by_def:
+            by_def[key] = len(defs) + 1
+            defs.append((by_def[key], i))
+        nums.append(by_def[key])
+        TR.append(T)
+    return nums, TR, defs
+
+
+def ring_atoms(mol, r, T):
+    """Atomnamen eines Rings relativ zu seiner Bezugsoperation T (gleiche Operation: Label allein, sonst mit Code)."""
+    return [mol.atoms[k]["label"] if tr_key(mol.atoms[k]["T"]) == tr_key(T) else atom_name(mol.atoms[k]) for k in r]
+
+
+def contact_names(mol, contacts, rings):
+    """Namen der Kontakte und Symmetriecodes wie in SI-Tabellen: „C5···C12ⁱⁱ“, „Cg1···Cg1ⁱⁱ“. Der erste Partner steht
+    an der Lage der CIF-Atome (ohne Code), der Code des zweiten ist relativ dazu: (Ga∘T_a)⁻¹∘(Gb∘T_b) mit der Operation
+    der Kopie G und der Erzeugung des Atoms bzw. Rings im Molekül T. Eine Nummerierung für alles: die Codes der
+    erzeugten Atome des Moleküls (mol.ops, Bild und Parametertabellen) behalten ihre Ziffern, neue folgen danach
+    -> ([Name], [(Ziffer, Operation)] der benutzten Codes, [Operation je Kontakt, "x, y, z" ohne])."""
+    codes = dict(getattr(mol, "ops", None) or {})
+    names, ops, used = [], [], set()
+    nums, TR, _ = ring_defs(mol, rings)
+    ring_ix = {frozenset(mol.atoms[k]["key"] for k in r): i for i, r in enumerate(rings)}
+
+    def code(c, Ta, Tb):
+        G = compose(inverse(compose(g_of(c["ga"]), Ta)), compose(g_of(c["gb"]), Tb))
+        ops.append(op_string(G) if not is_identity(G) else "x, y, z")
+        if is_identity(G):
+            return ""
+        key = op_string(G)
+        if key not in codes:
+            codes[key] = roman(len(codes))
+        used.add(key)
+        return codes[key].translate(SUP)
+    for c in contacts:
+        if c["kind"] == "atoms":
+            a, b = (mol.atoms[mol.find_key(x[0])] for x in (c["a"], c["b"]))
+            names.append(f"{a['label']}···{b['label']}{code(c, a['T'], b['T'])}")
+        else:
+            ia, ib = ring_ix.get(frozenset(c["a"])), ring_ix.get(frozenset(c["b"]))
+            if ia is None or ib is None:
+                names.append("Cg?···Cg?")
+                ops.append("")
+                continue
+            for ix in (ia, ib):                       # Codes in der Cg-Definition eines Rings auf einem Symmetrieelement
+                used.update(mol.atoms[k].get("opkey") for k in rings[ix]
+                            if mol.atoms[k].get("opkey") and tr_key(mol.atoms[k]["T"]) != tr_key(TR[ix]))
+            names.append(f"Cg{nums[ia]}···Cg{nums[ib]}{code(c, TR[ia], TR[ib])}")
+    return names, [(r, op) for op, r in codes.items() if op in used], ops
+
+
+def cg_definitions(mol, rings, contacts):
+    """„Cg1: centroid of C1, C2, …“ für die Ringe der gezeigten Kontakte (Nummern wie contact_names)."""
+    nums, TR, defs = ring_defs(mol, rings)
+    keys = [frozenset(mol.atoms[k]["key"] for k in r) for r in rings]
+    want = {nums[i] for c in contacts if c["kind"] != "atoms" for i, kk in enumerate(keys)
+            if kk in (frozenset(c["a"]), frozenset(c["b"]))}
+    return [(n, ", ".join(ring_atoms(mol, rings[i], TR[i]))) for n, i in defs if n in want]
 
 
 class XrayFigure:
@@ -2597,6 +2959,9 @@ class XrayFigure:
         return self.order
 
     def _anchor(self, k):
+        if isinstance(k, tuple):                           # Ringmitte (HOMA): Mittel der projizierten Ringatome
+            P = [self.scene["by_k"][i] for i in k if i in self.scene["by_k"]]
+            return float(np.mean([p_["x"] for p_ in P])), float(np.mean([p_["y"] for p_ in P]))
         it = self.scene["by_k"][k]
         return it["x"], it["y"]
 
@@ -2630,7 +2995,7 @@ class XrayFigure:
                                    color=label_color(a["el"], o.get("colors") or {}, o.get("label_color"), self.style,
                                                       o.get("label_colors"))
                                    or lc.get("color") or "black",
-                                   annotation_clip=False, **extra)
+                                   annotation_clip=False, arrowprops=o.get("label_arrows"), **extra)
             ann._atom = it["k"]
             self.ann_items[key] = ann
             todo.append((key, ann, it))
@@ -2647,6 +3012,11 @@ class XrayFigure:
             cx, cy = tr.transform((it["x"], it["y"]))
             rx = abs(tr.transform((it["x"] + max(it["w"], it["h"]) / 2, it["y"]))[0] - cx)
             circ.append((cx, cy, rx))
+        for ring in o.get("ring_marks") or ():           # Ringmitten mit Wert (HOMA): dort kein Atomlabel
+            P_ = [self.scene["by_k"][i] for i in ring if i in self.scene["by_k"]]
+            if P_:
+                cx, cy = tr.transform((float(np.mean([p_["x"] for p_ in P_])), float(np.mean([p_["y"] for p_ in P_]))))
+                circ.append((cx, cy, 1.6 * fs * ppt))
         # Bindungen dicht abgetastet (alle ~2 px), mit halber Linienbreite + Rand: ein Label darf keine Bindung berühren
         segpts, seghw = [], []
         margin = 2.5 * ppt
@@ -2783,6 +3153,140 @@ class XrayFigure:
         return paths
 
 
+class PackFigure(XrayFigure):
+    """Packungsbild (Paket C 1.2.0): XrayFigure des Zellinhalts (PackMol) mit Zellkanten, Achsen a, b, c und den
+    gezeigten Abständen als gestrichelte Linien mit Wert. cell = (Kanten, Achsen) kartesisch; contacts = [dict(p1, p2,
+    text, cents)] kartesisch (Zellverschiebung schon eingerechnet). Die Zelle zählt zur Bildausdehnung."""
+
+    def __init__(self, cfg, mol, R, opts, layout, fig, cell=None, contacts=(), **kw):
+        self._cell, self._contacts = cell, list(contacts)
+        super().__init__(cfg, mol, R, opts, layout, fig, **kw)
+        self._draw_pack()
+
+    def orbital_outline(self):
+        """Ausdehnung um die Zellecken erweitern (sonst schnitte das Bild Kanten ab, die kein Atom erreicht)."""
+        if not getattr(self, "_cell", None):
+            return []
+        P = np.array([p for e_ in self._cell[0] for p in e_])
+        Q = (P - self.center) @ self.R.T
+        return [(float(Q[:, 0].min()), float(Q[:, 1].min())), (float(Q[:, 0].max()), float(Q[:, 1].max()))]
+
+    def _xy(self, p):
+        q = self.R @ (np.asarray(p, float) - self.center)
+        return float(q[0]), float(q[1])
+
+    def _draw_pack(self):
+        sc = self.cfg.get("scale", 1.0)
+        fs = self.opts.get("label_size") or self.cfg["labels"]["font_size"]
+        halo = [PE.withStroke(linewidth=2.4 * sc, foreground=self.bg_show)]
+        if self._cell:
+            edges, axes = self._cell
+            for p, q in edges:
+                (x1, y1), (x2, y2) = self._xy(p), self._xy(q)
+                self.ax.plot([x1, x2], [y1, y2], color="black", lw=max(0.6, 0.8 * sc), zorder=1,
+                             solid_capstyle="round")
+            lens = {k: math.dist(self._xy(o), self._xy(e_)) for k, (o, e_) in axes.items()}
+            top = max(lens.values()) or 1.0
+            for k, (o, e_) in axes.items():
+                if lens[k] < 0.15 * top:                   # Blickachse (zeigt zum Betrachter): ohne Beschriftung
+                    continue
+                (x0, y0), (x1, y1) = self._xy(o), self._xy(e_)
+                d = np.array([x1 - x0, y1 - y0]) / max(lens[k], 1e-9)
+                self.ax.text(x1 + 0.45 * d[0], y1 + 0.45 * d[1], k, fontsize=fs * 1.1, style="italic",
+                             ha="center", va="center", zorder=52, path_effects=halo)
+        col = self.opts.get("contact_color") or PACK_COLOR
+        placed = []                                        # schon gesetzte Werte: nicht übereinander
+        from matplotlib.backends.backend_agg import RendererAgg
+        W_, H_ = self.fig.get_size_inches() * self.fig.dpi
+        rend = RendererAgg(int(W_), int(H_), self.fig.dpi)
+        inv = self.ax.transData.inverted()
+        for c in self._contacts:
+            (x1, y1), (x2, y2) = self._xy(c["p1"]), self._xy(c["p2"])
+            self.ax.plot([x1, x2], [y1, y2], color=col, lw=max(0.8, 1.0 * sc), ls=(0, (4, 2.5)), zorder=50,
+                         dash_capstyle="round")
+            for cg in c.get("cents") or ():
+                self.ax.plot(*self._xy(cg), marker="o", ms=3.5 * sc, color=col, zorder=50.5)
+            # Wert neben der Linie: unter den Stellen beidseits der Mitte (senkrecht versetzt, 0.6–3 Å) die, deren
+            # Textkasten die wenigsten Atome und keinen schon gesetzten Wert überdeckt (nicht auf dem Motiv)
+            L_ = math.hypot(x2 - x1, y2 - y1)
+            nx, ny = ((-(y2 - y1) / L_, (x2 - x1) / L_) if L_ > 0.3 else (0.0, 1.0))
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            t_ = self.ax.text(mx, my, c["text"], fontsize=fs, color=col, zorder=53, path_effects=halo, va="center")
+            best = None
+            for dist in (0.6, 1.2, 1.8, 2.4, 3.0):
+                for sgn in (1, -1):
+                    sx = sgn * nx
+                    t_.set_position((mx + sgn * nx * dist, my + sgn * ny * dist))
+                    t_.set_ha("left" if sx > 0.3 else "right" if sx < -0.3 else "center")
+                    bb = t_.get_window_extent(rend).transformed(inv)
+                    n_ = sum(1 for it in self.scene["atoms"] if bb.x0 - 0.3 <= it["x"] <= bb.x1 + 0.3
+                             and bb.y0 - 0.3 <= it["y"] <= bb.y1 + 0.3)
+                    n_ += 100 * sum(1 for q in placed if bb.overlaps(q))
+                    if best is None or n_ < best[0]:
+                        best = (n_, t_.get_position(), t_.get_ha(), bb)
+                if best[0] == 0:
+                    break
+            t_.set_position(best[1])
+            t_.set_ha(best[2])
+            placed.append(best[3])
+
+
+FILL = 0.94                    # Vorgabe-Ansicht: Motiv samt Beschriftung füllt die Zeichenfläche bis auf diesen Rand
+
+
+def content_box(F):
+    """Rahmen (Pixel) um Atome, Orbitalflächen, Beschriftungen, Texte und Linien der Abbildung (ohne Fußnote)."""
+    rend = F.fig.canvas.get_renderer()
+    pts = [(it["x"] + sx * max(it["w"], it["h"]) / 2, it["y"] + sy * max(it["w"], it["h"]) / 2)
+           for it in F.scene["atoms"] for sx in (-1, 1) for sy in (-1, 1)] + F.orbital_outline()
+    P = F.ax.transData.transform(pts) if pts else np.zeros((1, 2))
+    lo, hi = P.min(axis=0), P.max(axis=0)
+    for a in list(F.ax.texts) + list(F.ax.lines):
+        if a is getattr(F, "foot", None) or not a.get_visible():
+            continue
+        b = a.get_window_extent(rend)
+        if 0 < b.width < 1e5 and 0 < b.height < 1e5:
+            lo, hi = np.minimum(lo, (b.x0, b.y0)), np.maximum(hi, (b.x1, b.y1))
+    return float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1])
+
+
+def fill_rotation(R, pts, size, pad=1.5):
+    """Ansicht R in der Bildebene gedreht (Blickrichtung bleibt), sodass die Punkte (Å, kartesisch) die Fläche
+    size = (Breite, Höhe) am besten füllen; pad (Å) je Seite für Beschriftungen. Nur bei deutlichem Gewinn (> 5 %)
+    gegenüber R selbst, sonst bleibt die gewohnte Lage (Achse waagerecht)."""
+    P = np.asarray(pts, float)
+    if len(P) < 2:
+        return R
+    Q = (P - P.mean(axis=0)) @ np.asarray(R, float)[:2].T
+    W, H = size
+
+    def score(a):
+        c, s_ = math.cos(a), math.sin(a)
+        x, y = Q[:, 0] * c - Q[:, 1] * s_, Q[:, 0] * s_ + Q[:, 1] * c
+        return min(W / (np.ptp(x) + 2 * pad), H / (np.ptp(y) + 2 * pad))
+    best = max((math.radians(d) for d in range(0, 180, 3)), key=score)
+    return rot("z", best) @ R if score(best) > 1.05 * score(0.0) else R
+
+
+def fitted_view(make, fill=FILL):
+    """Vorgabe-Ansicht, die die Fläche füllt (Regel „Abbildung“ in new-views.md): make(z, shift) -> XrayFigure mit
+    Zoom-Faktor z und Verschiebung shift (Å) zusätzlich zur Ansicht des Nutzers. Beschriftungen haben feste Größe,
+    deshalb in bis zu drei Schritten: messen, Maßstab und Lage nachziehen. Setzt F._auto_zoom/_auto_pan."""
+    z, shift = 1.0, np.zeros(2)
+    for step in range(3):
+        F = make(z, shift)
+        x0, y0, x1, y1 = content_box(F)
+        W, H = F.fig.get_size_inches() * F.fig.dpi
+        f = min(fill * W / max(1.0, x1 - x0), fill * H / max(1.0, y1 - y0))
+        dpp = F.data_per_px()
+        move = np.array([(x0 + x1) / 2 - W / 2, (y0 + y1) / 2 - H / 2]) * dpp
+        if step == 2 or (abs(f - 1.0) < 0.02 and np.abs(move / dpp).max() < 2):
+            break
+        z, shift = z * f, shift + move
+    F._auto_zoom, F._auto_pan = z, shift.copy()
+    return F
+
+
 def save_tight(F, svg):
     """Abbildung eng um das Molekül beschnitten (wie in der SI): SVG (Vektor, Text als Pfade) + PNG-Ersatz (600 dpi).
     -> (PNG, Breite cm, Höhe cm, SVG) für SI.write_docx."""
@@ -2831,6 +3335,8 @@ class XrayMouse:
                      c.mpl_connect("scroll_event", self.scroll)]
 
     def disconnect(self):
+        if getattr(self, "_zoom_timer", None) is not None:
+            self._zoom_timer.stop()
         for cid in self.cids:
             self.F.fig.canvas.mpl_disconnect(cid)
         for ann in self.F.ann_items.values():
@@ -2976,8 +3482,19 @@ class XrayMouse:
         up = (ev.step > 0) if ev.step else (ev.button == "up")
         z = min(20.0, max(0.2, self.F.zoom * (1.08 if up else 1 / 1.08)))
         self.F.set_zoom_pan(zoom=z)
+        if self.F.orb_art is not None:                    # Orbital/Fläche: beim Zoomen gröber wie beim Drehen (volle
+            self.F.set_drag(True)                         # Auflösung kostete ~1 s je Mausradschritt), nach dem letzten
+            if getattr(self, "_zoom_timer", None) is None:    # Schritt wieder voll
+                self._zoom_timer = QTimer(singleShot=True, interval=250)
+                self._zoom_timer.timeout.connect(self._zoom_done)
+            self._zoom_timer.start()
         self.F.fig.canvas.draw_idle()
         self.tab.zoom_changed(z)
+
+    def _zoom_done(self):
+        if self.mode is None:                             # nicht mitten im Ziehen (das setzt beim Loslassen selbst zurück)
+            self.F.set_drag(False)
+            self.F.fig.canvas.draw_idle()
 
 
 # ---------------------------------------------------------------------------- Tab
@@ -3238,7 +3755,7 @@ def reset_display(tab, keep, entry_extra):
     for k, v in tab.DEFAULT_STATE.items():
         if k not in keep:
             st[k] = copy.deepcopy(v)
-    st["label_pt"] = 0.0
+    st.update(copy.deepcopy(tab.DISPLAY_EXTRA))        # Labelgröße „wie Textformat“, HOMA-Werte im Bild aus
     e = tab.entry()
     if e is not None:
         e.update(view=None, zoom=1.0, pan=[0.0, 0.0], layout={}, **copy.deepcopy(entry_extra))
@@ -3523,6 +4040,7 @@ class MeasureAlign:
 
 
 class XrayTab(MeasureAlign, TABS.FigureTab):
+    LINE_STYLE = False                 # Moleküle bzw. fremde Bilder: keine Linienbreiten der Stilkarte
     SI_PAGE = False                    # Bildunterschrift/SI stehen hier in eigenen Reitern
     DRAG_HINT = "drag_hint_plain"      # keine Kurven: kein Satz zur Einblendung am Mauszeiger
     STATE_KEY = "xray"
@@ -3533,6 +4051,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                          h_labels=False, colors={}, bond_w=0.12, style="mercury", x_auto=True, x_min=0.0,
                          x_max=1.0, ymax=0.0, label_mode="all", hide_solv=False, hide_ions=False, wire_h=False,
                          bg="white", label_color="black", label_colors={}, calc_cols=True, calc_delta=False)
+    # bleibt bei „Darstellung zurücksetzen“ und fehlt in Vorlagen: Fehlordnung/Fragmente (eingehende Daten), Spalten der
+    # Rechnung (Tabellen, SI)
+    RESET_KEEP = ("disorder", "hide_solv", "hide_ions", "calc_cols", "calc_delta")
+    DISPLAY_EXTRA = dict(label_pt=0.0, homa_fig=False)      # Darstellung ohne DEFAULT_STATE (HOMA: homa_view.DEFAULTS)
 
 
     def arrange(self):
@@ -3541,8 +4063,16 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.fold(g, "atoms")
         self.fold(self.group_titled("xr_align"), "align")
         self.fold(self.group_titled("xr_colors"), "colors", ("colors",))
-        self.to_right(self.group_titled("xr_caption"), T("xr_caption"))
+        # Abbildung, Auswertungen, dann was in die SI geht (Tabellen, Bildunterschrift); leere ohne Reiter
+        self.to_right(self.grp_pack_res, T("xray_pack_page"))
+        self.to_right(self.grp_pxrd_res, T("pxrd_page"))
+        self.to_right(self.homa.page, T("homa_page"))
         self.to_right(self.group_titled("xr_tables"), T("xr_tables"))
+        self.to_right(self.group_titled("xr_caption"), T("xr_caption"))
+
+    def result_empty(self):
+        """Ohne gezeigte Abstände keine Seite „Abstände“, ohne ebene Ringe keine Seite „HOMA“."""
+        return [(self.grp_pack_res, self.tbl_pack_res.rowCount() == 0), (self.homa.page, self.homa.tbl.rowCount() == 0)]
     def __init__(self, main, state):
         self.sel = []                     # gewählte Atome (Schlüssel) der aktuellen Verbindung, nicht im Undo
         self._meas = None
@@ -3736,12 +4266,17 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.lv.addWidget(g)
         self.lv.addWidget(self.calc_box())
 
+        self.build_pack_cards()
+        self.build_pxrd_cards()
+        from elucida.tabs.homa_view import HomaView
+        self.homa = HomaView(self, self.lv)                # HOMA (Paket A 1.2.0): Karte Auswertung, Seite rechts
+
         g = QGroupBox(T("xr_caption"))
         g.setProperty("hug", True)                        # Reiter rechts: Karte so hoch wie der Text, wie „SI-Text“
         v = QVBoxLayout(g)
         self.txt_cap = STYLE.SiText(empty=T("si_caption_empty"))    # Blocksatz, Formelzeichen wie im Satz
         b = STYLE.copy_button()
-        b.clicked.connect(lambda: copy_rich(*self.caption()))
+        b.clicked.connect(lambda: copy_rich(*self.shown_caption()))   # was sichtbar ist (Packung oder Molekül)
         v.addWidget(self.txt_cap)
         STYLE.card_actions(g, b)                          # „Kopieren“ oben rechts auf der Titelzeile, wie in jeder Karte
         self.lv.addWidget(g)
@@ -3839,7 +4374,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             return None
         try:
             return self.cache(("calcgeom", p), lambda: read_calc_geometry(p))
-        except Exception:
+        except Exception as ex:                # Spalte „Rechnung“ fehlt dann; im Export mit Datei und Grund gemeldet
+            self.main.skip_part(ex, p)
             return None
 
     def calc_on(self, e):
@@ -4033,6 +4569,11 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             txt, warn = c["error"], True
         elif g is None:
             txt, warn = T("xr_calc_missing", f=Path(c.get("file") or "").name), True
+            if c.get("file") and Path(c["file"]).exists():   # lesbar nicht (z. B. nicht normal beendet): Grund nennen
+                try:
+                    read_calc_geometry(c["file"])
+                except Exception as ex:
+                    txt = f"{Path(c['file']).name}: {ex}"
         elif mol is not None and any(mol.find_key(k) is None for k in amap):
             txt, warn = T("xr_calc_stale"), True
         else:
@@ -4064,7 +4605,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def common_box(self):
         """Nur Größe und Formate (keine Achsen)."""
-        g = QGroupBox(T("grp_export_size"))
+        g = QGroupBox(T("size"))
         f = make_form(g)
         st = self.st
         self.cmb_size = QComboBox()
@@ -4079,15 +4620,12 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         row.addWidget(QLabel("×"))
         row.addWidget(self.sp_h)
         f.addRow(T("size_wh"), row)
-        row = QHBoxLayout()
         self.cb_fmt = {}
-        for e in ("pdf", "svg", "png"):
-            cb = QCheckBox(e.upper())
+        for e in ("pdf", "svg", "png"):                   # nur Träger von st["fmt"]: Formate im Tab „Export“
+            cb = QCheckBox(e.upper(), g)
             cb.setChecked(st["fmt"].get(e, True))
+            cb.hide()
             self.cb_fmt[e] = cb
-            row.addWidget(cb)
-        row.addStretch(1)
-        f.addRow(T("formats"), row)
         for w_ in (self.sp_w, self.sp_h):
             w_.valueChanged.connect(self.changed)
         self.cmb_size.currentIndexChanged.connect(self.changed)
@@ -4558,6 +5096,854 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.main.push_undo()
 
     # -- Bildunterschrift -------------------------------------------------------------------
+    # -- Packung (Paket C 1.2.0) ------------------------------------------------------------
+    def build_pack_cards(self):
+        """Karten „Packung“ (Darstellung: Abbildung, Blickrichtung, Regel, H, Farbe, SI) und „Abstände in der Packung“
+        (Auswertung: Vorschläge nach vdW-Radien, Ringe, eigene Kontakte); Ergebnisseite „Abstände“ (arrange)."""
+        g = QGroupBox(T("xray_pack_card"))
+        g.setToolTip(T("xray_pack_card_tip"))
+        f = make_form(g)
+        self.cmb_pack = QComboBox()
+        self.cmb_pack.addItem(T("xray_pack_fig_mol"), False)
+        self.cmb_pack.addItem(T("xray_pack_fig_pack"), True)
+        f.addRow(T("xray_pack_fig"), self.cmb_pack)
+        self.cmb_pack_axis = QComboBox()
+        for ax_ in "abc":
+            self.cmb_pack_axis.addItem(T("xray_pack_along", a=ax_), ax_)
+        self.cmb_pack_axis.addItem(T("xray_pack_free"), "")
+        self.cmb_pack_axis.setToolTip(T("xray_pack_axis_tip"))
+        f.addRow(T("xray_pack_axis"), self.cmb_pack_axis)
+        self.cmb_pack_rule = QComboBox()
+        for key_ in ("centroid", "touch"):
+            self.cmb_pack_rule.addItem(T("xray_pack_rule_" + key_), key_)
+        self.cmb_pack_rule.setToolTip(T("xray_pack_rule_tip"))
+        f.addRow(T("xray_pack_rule"), self.cmb_pack_rule)
+
+        def pick_color(c):
+            e_ = self.entry()
+            if e_ is not None:
+                self.pack(e_)["color"] = c
+                self.render()
+        self.btn_pack_color = TABS.color_button(PACK_COLOR, pick_color)
+        f.addRow(T("xray_pack_color"), self.btn_pack_color)
+        self.cb_pack_h = QCheckBox(T("xray_pack_h"))
+        self.cb_pack_si = QCheckBox(T("xray_pack_si"))
+        self.cb_pack_si.setToolTip(T("xray_pack_si_tip"))
+        f.addRow(self.cb_pack_h)
+        f.addRow(self.cb_pack_si)
+        TABS.si_elsewhere(f, self.cb_pack_si, self, "xray", T("export_part_packing"))
+        self.grp_pack = g
+        # erste Karte im Schritt Darstellung (vor „Darstellung“): wer das Packungsbild sucht, findet es ohne Scrollen
+        at = next((i for i in range(self.lv.count()) if isinstance(STYLE.item_at(self.lv, i).widget(), QGroupBox)
+                   and STYLE.item_at(self.lv, i).widget().title() == T("xr_display")), self.lv.count())
+        self.lv.insertWidget(at, g)
+
+        g = QGroupBox(T("xray_pack_contacts"))
+        g.setToolTip(T("xray_pack_contacts_tip"))
+        f = make_form(g)
+        self.sp_pack_tol = QDoubleSpinBox(decimals=2, minimum=-1.0, maximum=1.5, singleStep=0.05, suffix=" Å")
+        self.sp_pack_tol.setToolTip(T("xray_pack_tol_tip"))
+        f.addRow(T("xray_pack_tol"), self.sp_pack_tol)
+        self.sp_pack_cg = QDoubleSpinBox(decimals=1, minimum=2.0, maximum=8.0, singleStep=0.1, suffix=" Å")
+        self.sp_pack_cg.setToolTip(T("xray_pack_cg_tip"))
+        f.addRow(T("xray_pack_cg"), self.sp_pack_cg)
+        self.sp_pack_ang = QDoubleSpinBox(decimals=0, minimum=0.0, maximum=45.0, singleStep=1.0, suffix=" °")
+        self.sp_pack_ang.setToolTip(T("xray_pack_ang_tip"))
+        f.addRow(T("xray_pack_ang"), self.sp_pack_ang)
+        self.cb_pack_heavy = QCheckBox(T("xray_pack_heavy"))
+        self.cb_pack_heavy.setToolTip(T("xray_pack_heavy_tip"))
+        f.addRow(self.cb_pack_heavy)
+        self.tbl_pack = STYLE.check_table((T("xray_pack_col_kind"), T("xray_pack_col_contact"), "d [Å]"))
+        self.tbl_pack.setToolTip(T("xray_pack_tbl_tip"))
+        STYLE.empty_note(self.tbl_pack, T("xray_pack_none"))
+        self.tbl_pack.itemChanged.connect(self.pack_toggled)
+        f.addRow(self.tbl_pack)
+        self.lbl_pack_off = STYLE.HintLabel("")              # P2-B8: Häkchen wirken nur im Packungsbild – das sagen
+        self.lbl_pack_off.setWordWrap(True)
+        self.lbl_pack_off.setStyleSheet(HINT_CSS)
+        self.lbl_pack_off.linkActivated.connect(self._show_pack_choice)
+        f.addRow(self.lbl_pack_off)
+        row = QHBoxLayout()
+        self.btn_pack_add = QPushButton(T("xray_pack_add"))
+        self.btn_pack_add.setToolTip(T("xray_pack_add_tip"))
+        self.btn_pack_add.clicked.connect(self.pack_add_selected)
+        b = QPushButton(T("xray_pack_clear"))
+        b.clicked.connect(self.pack_clear)
+        row.addWidget(self.btn_pack_add)
+        row.addWidget(b)
+        f.addRow(row)
+        self.lv.addWidget(g)
+        self.cmb_pack.currentIndexChanged.connect(self.pack_changed)
+        for w_ in (self.cmb_pack_axis, self.cmb_pack_rule):
+            w_.currentIndexChanged.connect(self.pack_changed)
+        for w_ in (self.cb_pack_h, self.cb_pack_si, self.cb_pack_heavy):
+            w_.toggled.connect(self.pack_changed)
+        for w_ in (self.sp_pack_tol, self.sp_pack_cg, self.sp_pack_ang):
+            w_.valueChanged.connect(self.pack_changed)
+        # Ergebnisseite: gezeigte Abstände wie in der SI (Kontakt, Art, d, Winkel, Versatz, Symmetrie)
+        self.grp_pack_res = QGroupBox(T("xray_pack_page"))
+        self.grp_pack_res.setProperty("hug", True)
+        v = QVBoxLayout(self.grp_pack_res)
+        self.tbl_pack_res = STYLE.summary_grid([T("xray_pack_col_contact"), T("xray_pack_col_kind"), "d [Å]",
+                                                T("xray_pack_col_angle"), T("xray_pack_col_slip"),
+                                                T("xray_pack_col_sym")])
+        STYLE.rich_header(self.tbl_pack_res)
+        v.addWidget(self.tbl_pack_res)
+        self.lbl_pack_res = STYLE.SciLabel(empty=T("xray_pack_res_none"))
+        self.lbl_pack_res.setWordWrap(True)
+        v.addWidget(self.lbl_pack_res)
+        self.lv.addWidget(self.grp_pack_res)
+        self._pack_sug = []
+
+    def pack(self, e):
+        """Einstellungen des Packungsbilds einer Struktur (im Eintrag, mit Vorgaben ergänzt)."""
+        pk = e.setdefault("pack", {})
+        for k_, v_ in PACK_DEFAULT.items():
+            pk.setdefault(k_, list(v_) if isinstance(v_, list) else v_)
+        return pk
+
+    def sync_pack_widgets(self):
+        e = self.entry()
+        ws = (self.cmb_pack, self.cmb_pack_axis, self.cmb_pack_rule, self.cb_pack_h, self.cb_pack_si, self.cb_pack_heavy,
+              self.sp_pack_tol, self.sp_pack_cg, self.sp_pack_ang)
+        for w_ in ws:
+            w_.blockSignals(True)
+        try:
+            pk = self.pack(e) if e is not None else dict(PACK_DEFAULT)
+            self.cmb_pack.setCurrentIndex(1 if pk["on"] else 0)
+            self.cmb_pack_axis.setCurrentIndex(max(0, self.cmb_pack_axis.findData(pk["axis"])))
+            self.cmb_pack_rule.setCurrentIndex(max(0, self.cmb_pack_rule.findData(pk["rule"])))
+            self.cb_pack_h.setChecked(bool(pk["h"]))
+            self.cb_pack_si.setChecked(bool(pk["si"]))
+            self.cb_pack_heavy.setChecked(bool(pk["heavy"]))
+            self.sp_pack_tol.setValue(float(pk["tol"]))
+            self.sp_pack_cg.setValue(float(pk["cg"]))
+            self.sp_pack_ang.setValue(float(pk["ang"]))
+            self.btn_pack_color.setProperty("color", pk["color"])
+            self.btn_pack_color.setStyleSheet(f"background-color: {pk['color']}; border: 1px solid {STYLE.swatch_border()};")
+        finally:
+            for w_ in ws:
+                w_.blockSignals(False)
+
+    def pack_changed(self, *_):
+        e = self.entry()
+        if e is None or self._loading:
+            return
+        pk, src = self.pack(e), self.sender()
+        on = bool(self.cmb_pack.currentData())
+        if on and not pk.get("used"):                       # erstes Packungsbild: auch in die SI
+            pk.update(used=True, si=True)
+        elif src is self.cb_pack_si:
+            pk["si"] = self.cb_pack_si.isChecked()
+        axis = self.cmb_pack_axis.currentData()
+        if src is self.cmb_pack_axis and axis:              # neue Blickrichtung: Ansicht und Maßstab neu
+            pk.update(axis=axis, view=None, pan=[0.0, 0.0], zoom=1.0)
+            pk.pop("ext", None)
+        pk.update(on=on, rule=self.cmb_pack_rule.currentData(), h=self.cb_pack_h.isChecked(),
+                  heavy=self.cb_pack_heavy.isChecked(), tol=self.sp_pack_tol.value(), cg=self.sp_pack_cg.value(),
+                  ang=self.sp_pack_ang.value())
+        self.sel = []
+        self.sync_pack_widgets()
+        self.render()
+
+    def pack_view(self, e, S):
+        pk = self.pack(e)
+        v = pk.get("view")
+        if v and len(v) == 9:
+            return np.array(v, float).reshape(3, 3)
+        return axis_view(S, pk["axis"] or "a")
+
+    def pack_suggestions(self, e, mol):
+        """Vorschläge (zwischengespeichert je Struktur und Einstellungen)."""
+        pk, o = self.pack(e), self.opts(e)
+        hidden = tuple(sorted(set(o["hidden_frags"]) | {fi for fi, fr in enumerate(mol.fragments)
+                                                         if fr["kind"] in set(o["hide_kinds"])}))
+        key = ("packsug", e["file"], e["block"], self.st["disorder"], round(pk["tol"], 3), bool(pk["heavy"]),
+               round(pk["cg"], 2), round(pk["ang"], 1), hidden)
+        return self.cache(key, lambda: contact_suggestions(mol, pk["tol"], pk["heavy"], pk["cg"], pk["ang"], hidden))
+
+    def pack_contacts(self, e, mol):
+        """Gezeigte Abstände -> [(Kontakt, Geometrie)] (ohne fehlende, z. B. nach Wechsel der Fehlordnung)."""
+        pk = self.pack(e)
+        out = []
+        for c in pk.get("shown") or []:
+            geo = contact_geom(mol, c, ang_tol=pk["ang"])
+            if geo is not None:
+                out.append((c, geo))
+        return out
+
+    def build_pack(self, fig, e, mol, interactive=True):
+        """Packungsbild: Zellinhalt nach der Regel, dazu die Partner gezeigter Abstände (eine Instanz je Abstand, die
+        erste Kopie mit dem Schwerpunkt in der Zelle)."""
+        S, pk, o = mol.S, self.pack(e), self.opts(e)
+        hidden = set(o["hidden_frags"]) | {fi for fi, fr in enumerate(mol.fragments) if fr["kind"] in set(o["hide_kinds"])}
+        extra, draw = [], []
+        names, _, _ = contact_names(mol, [c for c, _ in self.pack_contacts(e, mol)], mol_rings(mol))
+        for (c, geo), name in zip(self.pack_contacts(e, mol), names):
+            fa = mol.atoms[mol.find_key(c["a"][0])]["frag"]
+            fb = mol.atoms[mol.find_key(c["b"][0])]["frag"]
+            Ga, Gb = g_of(c["ga"]), g_of(c["gb"])
+            ca = np.mean([apply(Ga, mol.atoms[k]["frac"]) for k in mol.fragments[fa]["atoms"]], axis=0)
+            t = -np.floor(ca + 1e-9)
+            extra += [(fa, (Ga[0], Ga[1] + t)), (fb, (Gb[0], Gb[1] + t))]
+            sh = S.M @ t
+            txt = self.pack_value_text(c, geo)
+            draw.append(dict(p1=geo["p1"] + sh, p2=geo["p2"] + sh, text=txt,
+                             cents=[geo["c1"] + sh, geo["c2"] + sh] if "c1" in geo else []))
+        key = ("packmol", e["file"], e["block"], self.st["disorder"], pk["rule"], tuple(sorted(hidden)),
+               tuple((fi, tuple(g_key(G))) for fi, G in extra))
+        pm = self.cache(key, lambda: PackMol(mol, pk["rule"], hidden, extra))
+        if pm.truncated:
+            self.add_note(T("xray_pack_truncated"))
+        cfg = self.base_cfg()
+        core.setup_fonts(TABS.plt, cfg)
+        opts = dict(self.opts(e), labels=False, show_h=bool(pk["h"]), hidden_frags=[], hide_kinds=[], wire=set(),
+                    hidden_atoms=[], label_on={}, contact_color=pk["color"])
+        sel = [pm.find_key(k) for k in self.sel] if interactive else []
+
+        R = self.pack_view(e, S)
+        if not pk.get("view"):                             # Vorgabe: in der Bildebene so gedreht, dass das Motiv füllt
+            cell = cell_edges(S)[0]
+            R = fill_rotation(R, [a["xyz"] for a in pm.atoms] + [p for ed in cell for p in ed], cfg["figsize_in"])
+
+        def make(z, shift):
+            return PackFigure(cfg, pm, R, opts, {}, fig, cell=cell_edges(S), contacts=draw,
+                              selection=[k for k in sel if k is not None], zoom=pk.get("zoom", 1.0) * z,
+                              pan=tuple(np.array(pk.get("pan") or (0.0, 0.0), float) + shift), ext=pk.get("ext"))
+        # Vorgabe-Ansicht (Blickrichtung ohne eigenes Drehen/Zoomen/Verschieben): Zelle, Moleküle und Werte füllen das Bild
+        if pk.get("view") or pk.get("ext") or float(pk.get("zoom", 1.0)) != 1.0 or any(pk.get("pan") or ()):
+            return make(1.0, np.zeros(2))
+        return fitted_view(make)
+
+    @staticmethod
+    def pack_value_text(c, geo):
+        """Wert im Bild und in Tabellen: Å mit drei Nachkommastellen wie die gerechneten Messwerte; Ebenen nicht
+        parallel: der Winkel statt eines Abstands."""
+        if geo["value"] is None:
+            return f"{geo['angle']:.1f}°"
+        return f"{geo['value']:.3f} Å"
+
+    def show_pack(self):
+        """Linke Tabelle (Vorschläge + eigene, Häkchen = im Bild) und Seite „Abstände“ auf den Stand bringen."""
+        self.sync_pack_widgets()
+        e = self.entry()
+        mol = self.molecule(e) if e else None
+        t = self.tbl_pack
+        t.blockSignals(True)
+        t.setRowCount(0)
+        self._pack_rows = []
+        if mol is None:
+            t.blockSignals(False)
+            STYLE.fill_summary(self.tbl_pack_res, [])
+            self.lbl_pack_res.setText("")
+            self.lbl_pack_off.setText("")
+            return
+        pk = self.pack(e)
+        shown = {contact_id(c) for c in pk.get("shown") or []}
+        sug = list(self.pack_suggestions(e, mol))
+        own = [c for c in pk.get("shown") or [] if contact_id(c) not in {contact_id(x) for x in sug}]
+        rows = sug + own
+        rings = mol_rings(mol)
+        # römische Ziffern wie auf der Seite „Abstände“ und in der Unterschrift: die gezeigten Kontakte zuerst nummerieren
+        cs = self.pack_contacts(e, mol)
+        first = [c for c, _ in cs]
+        ids = {contact_id(c) for c in first}
+        order = first + [c for c in rows if contact_id(c) not in ids]
+        by_id = {contact_id(c): (n_, s_) for c, n_, s_ in zip(order, *contact_names(mol, order, rings)[::2])}
+        names, syms = [by_id[contact_id(c)][0] for c in rows], [by_id[contact_id(c)][1] for c in rows]
+        for c, name, sym in zip(rows, names, syms):
+            geo = contact_geom(mol, c, ang_tol=pk["ang"])
+            if geo is None:
+                continue
+            it_ = STYLE.check_row(t, len(self._pack_rows), (T("xray_pack_kind_" + c["kind"]), name,
+                                                          self.pack_value_text(c, geo).replace(" Å", "")),
+                                  contact_id(c) in shown)
+            t.item(it_.row(), 2).setToolTip(minus(sym))          # Symmetrieoperation des Partners
+            self._pack_rows.append(c)
+        STYLE.fit_check_table(t, 8)
+        t.blockSignals(False)
+        self.btn_pack_add.setEnabled(bool(pk["on"]))
+        self.lbl_pack_off.setText("" if pk["on"] or not self._pack_rows else T("xray_pack_off_hint"))
+        # Seite „Abstände“: die gezeigten mit Symmetriecodes
+        names, codes, syms = contact_names(mol, [c for c, _ in cs], rings)
+        res = []
+        for (c, geo), name, sym in zip(cs, names, syms):
+            res.append([name, T("xray_pack_kind_" + c["kind"]),
+                        f"{geo['value']:.3f}" if geo["value"] is not None else "–",
+                        f"{geo['angle']:.1f}" if geo.get("angle") is not None else "–",
+                        f"{geo['slip']:.3f}" if c["kind"] == "cent" or (c["kind"] == "plane" and geo["value"] is not None)
+                        else "–", sym])
+        STYLE.fill_summary(self.tbl_pack_res, res)
+        notes = []
+        for n_, atoms_ in cg_definitions(mol, rings, [c for c, _ in cs]):
+            notes.append(T("xray_pack_cg_def", n=n_, atoms=atoms_))
+        if cs:
+            notes.append(T("xray_pack_calc_note"))
+        if res:                                               # ohne Abstände der Platzhalter, nicht das Zitat
+            notes.append(T("xray_pack_bondi", ref=BONDI_REF))
+        self.lbl_pack_res.setText("\n".join(notes), plain=bool(res))
+
+    def _show_pack_choice(self, *_):
+        """Link im Hinweis: Feld „Abbildung“ der Karte „Packung“ zeigen (schaltet nichts um)."""
+        self.steps.reveal(self.cmb_pack)
+        self.cmb_pack.setFocus()
+
+    def pack_toggled(self, item):
+        if item.column() != 0:
+            return
+        e = self.entry()
+        i = item.data(Qt.UserRole)
+        if e is None or i is None or i >= len(self._pack_rows):
+            return
+        pk = self.pack(e)
+        c = self._pack_rows[i]
+        cid = contact_id(c)
+        keep = [x for x in pk.get("shown") or [] if contact_id(x) != cid]
+        if item.checkState() == Qt.Checked:
+            keep.append({k_: c[k_] for k_ in ("kind", "a", "ga", "b", "gb")} | ({"own": True} if c.get("own") else {}))
+        pk["shown"] = keep
+        QTimer.singleShot(0, self.render)
+
+    def pack_add_selected(self):
+        """Eigener Abstand: zwei im Packungsbild gewählte Atome aus verschiedenen Molekülen (Messlogik wie measure:
+        Atom-Schlüssel, Lage über die Operation der Kopie)."""
+        e = self.entry()
+        if e is None or self.F is None or not isinstance(self.F.mol, PackMol) or len(self.sel) != 2:
+            return self.main.error(T("xray_pack_add_need"))
+        pm = self.F.mol
+        a, b = (pm.atoms[pm.find_key(k)] for k in self.sel)
+        if a["frag"] == b["frag"]:
+            return self.main.error(T("xray_pack_add_same"))
+        base = pm.base
+        c = dict(kind="atoms", a=[base.atoms[a["base"]]["key"]], ga=a["G"], b=[base.atoms[b["base"]]["key"]],
+                 gb=b["G"], own=True)
+        pk = self.pack(e)
+        if contact_id(c) not in {contact_id(x) for x in pk.get("shown") or []}:
+            pk.setdefault("shown", []).append(c)
+        self.sel = []
+        self.render()
+
+    def pack_clear(self):
+        e = self.entry()
+        if e is not None:
+            self.pack(e)["shown"] = []
+            self.render()
+
+    def pack_caption(self, e=None):
+        """Unterschrift des Packungsbilds -> (Klartext, HTML): Blickrichtung, Regel, Ausgeblendetes, Ellipsoide, die
+        gezeigten Abstände (bis CAPTION_MAX hier, sonst Verweis auf die Tabelle), Symmetriecodes, Ringe, Herkunft."""
+        import html as _html
+        e = e or self.entry()
+        mol = self.molecule(e) if e else None
+        if mol is None:
+            return "", ""
+        pk, st = self.pack(e), self.st
+        name = e.get("name") or e["block"]
+        axis = pk["axis"]
+        view = f"viewed along the crystallographic {axis} axis" if axis else "in a rotated view"
+        view_h = f"viewed along the crystallographic <i>{axis}</i> axis" if axis else "in a rotated view"
+        rule = ("molecules whose centroid lies within the unit cell" if pk["rule"] == "centroid"
+                else "all molecules with at least one atom within the unit cell")
+        cs = self.pack_contacts(e, mol)
+        rings = mol_rings(mol)
+        names, codes, _ = contact_names(mol, [c for c, _ in cs], rings)
+        head = f"Crystal packing of {name}: unit cell {view}, {rule}"
+        head_h = f"Crystal packing of <b>{_html.escape(name)}</b>: unit cell {view_h}, {rule}"
+        tail = ""
+        if not pk["h"]:
+            tail += "; hydrogen atoms are omitted for clarity"
+        tail += f". Thermal ellipsoids are shown with {int(st['prob'])}% probability."
+        if cs and len(cs) <= CAPTION_MAX:
+            parts = []
+            for (c, geo), n in zip(cs, names):
+                if c["kind"] == "atoms":
+                    parts.append(f"{n} {geo['value']:.3f} Å")
+                elif c["kind"] == "cent":
+                    parts.append(f"{n} {geo['value']:.3f} Å (slip {geo['slip']:.3f} Å)")
+                elif geo["value"] is not None:
+                    parts.append(f"interplanar distance {n} {geo['value']:.3f} Å (interplanar angle {geo['angle']:.1f}°)")
+                else:
+                    parts.append(f"{n}: planes not parallel ({geo['angle']:.1f}°)")
+            tail += " Dashed lines: " + "; ".join(parts) + "."
+        elif cs:
+            tail += " Dashed lines: intermolecular distances as listed in the following table."
+        if cs:
+            defs = [f"Cg{n_}: centroid of {atoms_}" for n_, atoms_ in cg_definitions(mol, rings, [c for c, _ in cs])]
+            if defs:
+                tail += " " + "; ".join(defs) + "."
+            if codes and len(cs) <= CAPTION_MAX:
+                tail += (" Symmetry code" + ("s" if len(codes) > 1 else "") + ": "
+                         + "; ".join(f"({r}) {op}" for r, op in codes) + ".")
+            tail += " Distances calculated from the atomic coordinates; no s.u. in the CIF."
+        return minus(head + tail), head_h + _html.escape(minus(tail))
+
+    def pack_si_blocks(self, e, out_dir):
+        """Packungsbild für die SI (Haken „In die SI“): Bild eng beschnitten, Unterschrift, bei mehr als CAPTION_MAX
+        Abständen eine Tabelle mit Symmetriecodes."""
+        pk = self.pack(e)
+        mol = self.molecule(e)
+        if mol is None or not pk.get("si"):
+            return []
+        fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+        FigureCanvasAgg(fig)
+        F = self.build(fig, e, interactive=False, pack=True)
+        if F is None:
+            return []
+        fname = e.get("name") or e["block"]
+        out = []
+        if out_dir is not None:
+            out.append(("image",) + save_tight(F, Path(out_dir) / f"{core.safe_name(fname)}_packing.svg"))
+        out.append(("figcap", self.pack_caption(e)[1]))
+        cs = self.pack_contacts(e, mol)
+        if len(cs) > CAPTION_MAX:
+            names, codes, _ = contact_names(mol, [c for c, _ in cs], mol_rings(mol))
+            rows = [[esc_markup(n), {"atoms": "contact", "cent": "centroid–centroid", "plane": "interplanar"}[c["kind"]],
+                     f"{g['value']:.3f}" if g["value"] is not None else f"({g['angle']:.1f}°)"]
+                    for (c, g), n in zip(cs, names)]
+            out += [("tabcap", "Intermolecular distances in the crystal of", fname),
+                    ("params", ["Contact", "Type", "*d* / Å"], rows, {"fit": True})]
+            if codes:
+                out.append(("note", "Symmetry codes: " + "; ".join(f"({r}) {minus(op)}" for r, op in codes) + "."))
+            out.append(("note", "Calculated from the atomic coordinates; no s.u. in the CIF."))
+        return out
+
+    # -- Pulverdiffraktogramm (1.2.0) ------------------------------------------------------
+    def build_pxrd_cards(self):
+        """Karten „Pulverdiffraktogramm (PXRD)“ (Auswertung: Messung, Strahlung, Profil, Bereich, Nullpunkt, Hinweis) und
+        „PXRD-Abbildung“ (Darstellung: gestapelt/überlagert, Reflexmarken, Farben, SI); Seite „PXRD“ rechts."""
+        g = QGroupBox(T("pxrd_card"))
+        g.setToolTip(T("pxrd_card_tip"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        self.lbl_pxrd = QLabel("–")
+        self.lbl_pxrd.setWordWrap(True)
+        b = QPushButton(T("choose"))
+        b.clicked.connect(self.choose_pxrd)
+        b2 = QPushButton(T("remove"))
+        b2.clicked.connect(lambda: self.set_pxrd_file(None))
+        row.addWidget(self.lbl_pxrd, 1)
+        row.addWidget(b)
+        row.addWidget(b2)
+        f.addRow(T("pxrd_file"), row)
+        self.cmb_pxrd_anode = QComboBox()
+        from elucida.core import pxrd as PX
+        for an_, (l1_, l2_) in PX.ANODES.items():
+            self.cmb_pxrd_anode.addItem(T("pxrd_anode_item", a=an_, l1=f"{l1_:g}", l2=f"{l2_:g}"), an_)
+        self.cmb_pxrd_anode.setToolTip(T("pxrd_anode_tip"))
+        f.addRow(T("pxrd_anode"), self.cmb_pxrd_anode)
+        self.cb_pxrd_ka2 = QCheckBox(T("pxrd_ka2"))
+        self.cb_pxrd_ka2.setToolTip(T("pxrd_ka2_tip"))
+        self.cb_pxrd_ka2.setProperty("chip_here", True)
+        f.addRow(self.cb_pxrd_ka2)
+        self.sp_pxrd_fwhm = QDoubleSpinBox(decimals=3, minimum=0.005, maximum=2.0, singleStep=0.01, suffix=" °")
+        self.sp_pxrd_fwhm.setToolTip(T("pxrd_fwhm_tip"))
+        f.addRow(T("pxrd_fwhm"), self.sp_pxrd_fwhm)
+        self.sp_pxrd_eta = QDoubleSpinBox(decimals=2, minimum=0.0, maximum=1.0, singleStep=0.1)
+        self.sp_pxrd_eta.setToolTip(T("pxrd_eta_tip"))
+        f.addRow(T("pxrd_eta"), self.sp_pxrd_eta)
+        row = QHBoxLayout()
+        self.cb_pxrd_auto = QCheckBox(T("ir_full"))
+        self.sp_pxrd_lo = QDoubleSpinBox(decimals=1, minimum=1.0, maximum=170.0, singleStep=1.0, suffix=" °")
+        self.sp_pxrd_hi = QDoubleSpinBox(decimals=1, minimum=2.0, maximum=170.0, singleStep=1.0, suffix=" °")
+        for w_ in (self.cb_pxrd_auto, self.sp_pxrd_lo, QLabel("–"), self.sp_pxrd_hi):
+            row.addWidget(w_)
+        f.addRow(T("pxrd_range"), row)
+        self.sp_pxrd_zero = QDoubleSpinBox(decimals=3, minimum=-2.0, maximum=2.0, singleStep=0.01, suffix=" °")
+        self.sp_pxrd_zero.setToolTip(T("pxrd_zero_tip"))
+        f.addRow(T("pxrd_zero"), self.sp_pxrd_zero)
+        self.lbl_pxrd_note = STYLE.HintLabel("")
+        self.lbl_pxrd_note.setWordWrap(True)
+        self.lbl_pxrd_note.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_pxrd_note)
+        self.grp_pxrd = g
+        self.lv.addWidget(g)
+
+        g = QGroupBox(T("pxrd_fig_card"))
+        f = make_form(g)
+        self.cmb_pxrd_stack = QComboBox()
+        self.cmb_pxrd_stack.addItem(T("pxrd_stack"), True)
+        self.cmb_pxrd_stack.addItem(T("pxrd_overlay"), False)
+        f.addRow(T("pxrd_view"), self.cmb_pxrd_stack)
+
+        def pick(key):
+            def fn(c):
+                e_ = self.entry()
+                if e_ is not None:
+                    self.pxrd(e_)[key] = c
+                    self.show_pxrd()
+            return fn
+        self.btn_pxrd_meas = TABS.color_button(PXRD_DEFAULT["c_meas"], pick("c_meas"))
+        f.addRow(T("pxrd_c_meas"), self.btn_pxrd_meas)
+        self.btn_pxrd_calc = TABS.color_button(PXRD_DEFAULT["c_calc"], pick("c_calc"))
+        f.addRow(T("pxrd_c_calc"), self.btn_pxrd_calc)
+        self.cb_pxrd_ticks = QCheckBox(T("pxrd_ticks"))
+        self.cb_pxrd_si = QCheckBox(T("pxrd_si"))
+        self.cb_pxrd_si.setToolTip(T("pxrd_si_tip"))
+        f.addRow(self.cb_pxrd_ticks)
+        f.addRow(self.cb_pxrd_si)
+        TABS.si_elsewhere(f, self.cb_pxrd_si, self, "xray", "PXRD")
+        self.grp_pxrd_fig = g
+        self.lv.addWidget(g)
+        for w_ in (self.cmb_pxrd_anode, self.cmb_pxrd_stack):
+            w_.currentIndexChanged.connect(self.pxrd_changed)
+        for w_ in (self.cb_pxrd_ka2, self.cb_pxrd_auto, self.cb_pxrd_ticks, self.cb_pxrd_si):
+            w_.toggled.connect(self.pxrd_changed)
+        for w_ in (self.sp_pxrd_fwhm, self.sp_pxrd_eta, self.sp_pxrd_lo, self.sp_pxrd_hi, self.sp_pxrd_zero):
+            w_.valueChanged.connect(self.pxrd_changed)
+
+        # Seite „PXRD“: Abbildung (füllt die Seite), Hinweise, Bildunterschrift mit „Kopieren“
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from elucida.app.canvas_theme import register as register_canvas
+        from PySide6.QtWidgets import QStackedWidget
+        self.grp_pxrd_res = QGroupBox(T("pxrd_page"))
+        v = QVBoxLayout(self.grp_pxrd_res)
+        self.pxrd_fig = MplFigure(figsize=(6.3, 4.3), dpi=TABS.PREVIEW_DPI)
+        self.pxrd_canvas = register_canvas(FigureCanvasQTAgg(self.pxrd_fig))
+        self.pxrd_host = TABS.CanvasHost(self.pxrd_canvas, self.pxrd_fig, margin=0)
+        self.pxrd_host.setMinimumHeight(260)
+        content = QWidget()
+        cv = QVBoxLayout(content)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.addWidget(self.pxrd_host, 1)
+        self.lbl_pxrd_res = STYLE.SciLabel("")
+        self.lbl_pxrd_res.setWordWrap(True)
+        self.lbl_pxrd_res.setStyleSheet(HINT_CSS)
+        cv.addWidget(self.lbl_pxrd_res)
+        self.txt_pxrd_cap = STYLE.SiText(empty=T("si_caption_empty"))
+        cv.addWidget(self.txt_pxrd_cap)
+        self.pxrd_stack = QStackedWidget()
+        none = STYLE.SciLabel("", T("pxrd_none"))
+        none.setWordWrap(True)
+        self.pxrd_stack.addWidget(none)
+        self.pxrd_stack.addWidget(content)
+        v.addWidget(self.pxrd_stack, 1)
+        b = STYLE.copy_button()
+        b.clicked.connect(lambda: copy_rich(*self.pxrd_caption()))
+        STYLE.card_actions(self.grp_pxrd_res, b)
+        self.lv.addWidget(self.grp_pxrd_res)
+
+    def pxrd(self, e):
+        """Einstellungen des Pulverdiffraktogramms einer Struktur (im Eintrag, mit Vorgaben ergänzt)."""
+        px = e.setdefault("pxrd", {})
+        for k_, v_ in PXRD_DEFAULT.items():
+            px.setdefault(k_, v_)
+        return px
+
+    def sync_pxrd_widgets(self):
+        e = self.entry()
+        px = self.pxrd(e) if e is not None else dict(PXRD_DEFAULT)
+        ws = (self.cmb_pxrd_anode, self.cb_pxrd_ka2, self.sp_pxrd_fwhm, self.sp_pxrd_eta, self.cb_pxrd_auto,
+              self.sp_pxrd_lo, self.sp_pxrd_hi, self.sp_pxrd_zero, self.cmb_pxrd_stack, self.cb_pxrd_ticks,
+              self.cb_pxrd_si)
+        for w_ in ws:
+            w_.blockSignals(True)
+        try:
+            self.lbl_pxrd.setText(Path(px["file"]).name if px.get("file") else "–")
+            self.cmb_pxrd_anode.setCurrentIndex(max(0, self.cmb_pxrd_anode.findData(px["anode"])))
+            self.cb_pxrd_ka2.setChecked(bool(px["ka2"]))
+            self.sp_pxrd_fwhm.setValue(float(px["fwhm"]))
+            self.sp_pxrd_eta.setValue(float(px["eta"]))
+            lo, hi = self.pxrd_range(e) if e is not None else PXRD_RANGE
+            self.cb_pxrd_auto.setChecked(bool(px["auto"]))
+            self.sp_pxrd_lo.setValue(lo)
+            self.sp_pxrd_hi.setValue(hi)
+            self.sp_pxrd_lo.setEnabled(not px["auto"])
+            self.sp_pxrd_hi.setEnabled(not px["auto"])
+            self.sp_pxrd_zero.setValue(float(px["zero"]))
+            self.cmb_pxrd_stack.setCurrentIndex(0 if px["stack"] else 1)
+            self.cb_pxrd_ticks.setChecked(bool(px["ticks"]))
+            self.cb_pxrd_si.setChecked(bool(px["si"]))
+            for btn, key in ((self.btn_pxrd_meas, "c_meas"), (self.btn_pxrd_calc, "c_calc")):
+                btn.setProperty("color", px[key])
+                btn.setStyleSheet(f"background-color: {px[key]}; border: 1px solid {STYLE.swatch_border()};")
+        finally:
+            for w_ in ws:
+                w_.blockSignals(False)
+
+    def pxrd_changed(self, *_):
+        e = self.entry()
+        if e is None or self._loading:
+            return
+        px = self.pxrd(e)
+        auto = self.cb_pxrd_auto.isChecked()
+        lo, hi = self.sp_pxrd_lo.value(), self.sp_pxrd_hi.value()
+        if hi <= lo:                                       # min < max: das andere Feld weicht aus
+            hi = lo + 1.0
+        px.update(anode=self.cmb_pxrd_anode.currentData(), ka2=self.cb_pxrd_ka2.isChecked(),
+                  fwhm=self.sp_pxrd_fwhm.value(), eta=self.sp_pxrd_eta.value(), auto=auto, zero=self.sp_pxrd_zero.value(),
+                  stack=bool(self.cmb_pxrd_stack.currentData()), ticks=self.cb_pxrd_ticks.isChecked(),
+                  si=self.cb_pxrd_si.isChecked())
+        if not auto:
+            px.update(lo=lo, hi=hi)
+        self.show_pxrd()
+        self.main.push_undo()
+
+    def choose_pxrd(self):
+        if self.entry() is None or not self.main.ensure_project():
+            return
+        p, _ = QFileDialog.getOpenFileName(self, T("pxrd_file"), self.main.settings.value("last_dir", ""),
+                                           f"{T('pxrd_flt')};;{T('flt_all')}")
+        if p:
+            self.set_pxrd_file(p)
+
+    def set_pxrd_file(self, p):
+        """Gemessenes Diffraktogramm (Kopie ins Projekt) zur gewählten Struktur oder entfernen; unlesbar: Meldung."""
+        e = self.entry()
+        if e is None:
+            return
+        px = self.pxrd(e)
+        if p:
+            from elucida.formats.xy import read_xy
+            try:
+                d = read_xy(p)
+            except Exception as ex:
+                return self.main.error(f"{Path(p).name}: {ex}")
+            if not (0 < float(np.min(d["x"])) and float(np.max(d["x"])) < 180):
+                return self.main.error(f"{Path(p).name}: {T('pxrd_not_2theta')}")
+            p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+            if not px.get("file"):
+                px["si"] = True                            # erste Messung: auch in die SI
+        px["file"] = p
+        self.sync_pxrd_widgets()
+        self.show_pxrd()
+        self.main.push_undo()
+
+    def pxrd_measured(self, e):
+        """-> dict(x, y) aufsteigend in 2θ oder None."""
+        p = self.pxrd(e).get("file")
+        if not p or not Path(p).exists():
+            return None
+        from elucida.formats.xy import read_xy
+
+        def read():
+            try:
+                d = read_xy(p)
+            except Exception as ex:
+                return str(ex)
+            o = np.argsort(d["x"])
+            return {"x": d["x"][o], "y": d["y"][o]}
+        r = self.cache(("pxrd_meas", p), read)
+        return r if isinstance(r, dict) else None
+
+    def pxrd_range(self, e):
+        px = self.pxrd(e)
+        if not px["auto"]:
+            return float(px["lo"]), float(px["hi"])
+        m = self.pxrd_measured(e)
+        if m is not None:
+            return float(m["x"].min()), float(m["x"].max())
+        return PXRD_RANGE
+
+    def pxrd_calc(self, e):
+        """Reflexliste der Struktur bis zum Ende des Bereichs (zwischengespeichert je Struktur, Anode, Bereich)."""
+        from elucida.core import pxrd as PX
+        S = self.structure(e)
+        if S is None:
+            return None
+        px = self.pxrd(e)
+        lam = PX.ANODES[px["anode"]][0]
+        hi = self.pxrd_range(e)[1] + abs(float(px["zero"])) + 1.0
+        key = ("pxrd", e["file"], e["block"], px["anode"], round(hi, 2))
+
+        def calc():
+            try:
+                return PX.reflections(S, lam, min(hi, 170.0))
+            except ValueError as ex:
+                return T("pxrd_no_f0", el=str(ex))
+        return self.cache(key, calc)
+
+    def pxrd_spec(self, e):
+        """-> (cfg, Kurven, Striche, Reflexe, Zusatz) für die Abbildung oder None (Grund in self._pxrd_err)."""
+        from elucida.core import pxrd as PX
+        self._pxrd_err = ""
+        refl = self.pxrd_calc(e)
+        if not isinstance(refl, list):
+            self._pxrd_err = refl or ""
+            return None
+        px = self.pxrd(e)
+        lam1, lam2 = PX.ANODES[px["anode"]]
+        lo, hi = self.pxrd_range(e)
+        x = np.arange(lo, hi + PXRD_STEP / 2, PXRD_STEP)
+        y, lines = PX.pattern(refl, x, lam1, lam2 if px["ka2"] else None, float(px["fwhm"]), float(px["eta"]),
+                              float(px["zero"]))
+        m = self.pxrd_measured(e)
+        cfg = self.base_cfg()
+        cfg.update(xlabel="2θ [°]", ylabel="intensity [arb. u.]", y_axis="no_numbers", legend=bool(m is not None),
+                   legend_beside=True, xlim=[lo, hi])
+        curves, sticks = [], []
+        lw = cfg["line_width"] * 1.1
+        top = 1.0
+        if m is not None:
+            sel = (m["x"] >= lo) & (m["x"] <= hi)
+            ym = m["y"] - (np.nanmin(m["y"][sel]) if sel.any() else np.nanmin(m["y"]))
+            mx = np.nanmax(ym[sel]) if sel.any() else np.nanmax(ym)
+            ym = ym / (mx or 1.0)
+            off = 1.12 if px["stack"] else 0.0
+            curves.append({"x": m["x"], "y": ym + off, "color": px["c_meas"], "label": "measured", "ls": "-",
+                           "lw": lw})
+            top = off + 1.0
+        curves.append({"x": x, "y": y, "color": px["c_calc"], "label": "calculated", "ls": "-", "lw": lw})
+        bottom = 0.0
+        if px["ticks"]:
+            t1 = np.array([p for p, _, k1 in lines if k1 and lo <= p <= hi])
+            sticks.append({"x": t1, "h": np.full(len(t1), 0.06), "base": -0.09, "color": px["c_calc"]})
+            bottom = -0.09
+        cfg["ylim"] = [bottom - 0.03, top + 0.05]
+        return cfg, curves, sticks, refl, dict(lines=lines, lo=lo, hi=hi, measured=m is not None)
+
+    def build_pxrd(self, fig, e):
+        spec = self.pxrd_spec(e)
+        if spec is None:
+            return None
+        cfg, curves, sticks, _, _ = spec
+        core.setup_fonts(TABS.plt, cfg)
+        return TABS.X.SimpleFigure(TABS.plt, cfg, curves, [], {}, fig=fig, sticks=sticks)
+
+    def show_pxrd(self):
+        """Seite „PXRD“ und linke Karten auf den Stand bringen (nach jedem Zeichnen)."""
+        if getattr(self, "pxrd_host", None) is None:
+            return
+        self.sync_pxrd_widgets()
+        e = self.entry()
+        F = None
+        if e is not None and self.structure(e) is not None:
+            self.pxrd_host.set_figure_size(*self.base_cfg()["figsize_in"])
+            F = self.build_pxrd(self.pxrd_fig, e)
+        self.pxrd_stack.setCurrentIndex(0 if F is None else 1)
+        if F is None:
+            self.pxrd_fig.clear()
+            self.lbl_pxrd_note.setText(getattr(self, "_pxrd_err", "") if e is not None else "")
+            self.lbl_pxrd_note.setStyleSheet(HINT_CSS)
+            self.txt_pxrd_cap.setText("")
+            return
+        self.pxrd_canvas.draw_idle()
+        S = self.structure(e)
+        from elucida.core import pxrd as PX
+        tk = PX.temperature(S.block)
+        notes = [T("pxrd_hint", t=f"{tk:.0f} K" if tk is not None else "?")]
+        p = self.pxrd(e).get("file")
+        if p and self.pxrd_measured(e) is None:
+            notes.append(T("pxrd_meas_bad", e=self.main.extra_cache.get(("pxrd_meas", p)) or ""))
+        miss = PX.no_u(S)
+        if miss:
+            notes.insert(0, T("fixx_pxrd_no_u", n=len(miss), atoms=", ".join(miss[:8]) + (" …" if len(miss) > 8 else "")))
+        self.lbl_pxrd_note.setText("\n".join(notes))
+        self.lbl_pxrd_note.setStyleSheet(WARN_CSS if miss else HINT_CSS)
+        lo, hi = self.pxrd_range(e)
+        n_ = sum(1 for r in self.pxrd_calc(e) or [] if lo <= r["tth"] <= hi)
+        self.lbl_pxrd_res.setText(T("pxrd_res_note", n=n_, src=_f0_citation()), plain=True)
+        self.txt_pxrd_cap.setText("<b>Figure Sn:</b> " + self.pxrd_caption(e)[1])
+
+    def pxrd_caption(self, e=None):
+        """Unterschrift des Pulverdiffraktogramms -> (Klartext, HTML): gemessen/berechnet, Strahlung, Temperatur der
+        Strukturbestimmung, Profil, Nullpunkt; kein Gerät (steht im Kapiteltext der Gesamt-SI)."""
+        import html as _html
+        from elucida.core import pxrd as PX
+        e = e or self.entry()
+        S = self.structure(e) if e else None
+        if S is None:
+            return "", ""
+        px = self.pxrd(e)
+        name = e.get("name") or e["block"]
+        lam1, lam2 = PX.ANODES[px["anode"]]
+        tk = PX.temperature(S.block)
+        rad = (f"{px['anode']} Kα1/Kα2, λ = {lam1:g}/{lam2:g} Å" if px["ka2"] else f"{px['anode']} Kα1, λ = {lam1:g} Å")
+        rad_h = (f"{px['anode']} K<i>α</i><sub>1</sub>/K<i>α</i><sub>2</sub>, <i>λ</i> = {lam1:g}/{lam2:g} Å" if px["ka2"]
+                 else f"{px['anode']} K<i>α</i><sub>1</sub>, <i>λ</i> = {lam1:g} Å")
+        meas = self.pxrd_measured(e) is not None
+        calc = (f"calculated{' (bottom)' if meas and px['stack'] else ''} from the single-crystal structure"
+                f"{f' determined at {tk:.0f} K' if tk is not None else ''} "
+                f"({{rad}}; pseudo-Voigt profile, FWHM {px['fwhm']:.2f}° 2θ, η = {px['eta']:.2f})")
+        if meas:
+            head = ("Powder X-ray diffraction pattern of {n}: measured" + (" (top)" if px["stack"] else "")
+                    + " and " + calc)
+        else:
+            head = "Powder X-ray diffraction pattern of {n} " + calc
+        tail = "."
+        if abs(float(px["zero"])) > 1e-9:
+            tail = f"; calculated pattern shifted by {float(px['zero']):+.3f}° in 2θ (zero point)."
+        if px["ticks"]:
+            tail += " Ticks: calculated Kα1 reflection positions."
+        plain = minus(head.format(n=name, rad=rad) + tail)
+        htm = (head.format(n="<b>" + _html.escape(name) + "</b>", rad=rad_h).replace("2θ", "2<i>θ</i>")
+               .replace("η =", "<i>η</i> =") + _html.escape(minus(tail)).replace("2θ", "2<i>θ</i>"))
+        return plain, htm
+
+    def pxrd_methods(self, e):
+        """Methodensatz (englisch, ohne Programm) mit der Quelle der Formfaktoren."""
+        px = self.pxrd(e)
+        from elucida.core import pxrd as PX
+        lam1, lam2 = PX.ANODES[px["anode"]]
+        return ("Powder patterns were calculated from the single-crystal structure: reflection positions from the unit "
+                "cell, intensities I = |F|²·Lp summed over all reflections hkl, with F from the atomic positions, "
+                "occupancies and isotropic or anisotropic displacement parameters of all atoms in the unit cell "
+                "(symmetry operations of the CIF) and atomic scattering factors in the Cromer–Mann form "
+                f"({_f0_citation()}; anomalous dispersion neglected); Lp = (1 + cos²2θ)/(sin²θ cos θ). Profile: "
+                f"pseudo-Voigt, FWHM {px['fwhm']:.2f}° 2θ, η = {px['eta']:.2f}; "
+                + (f"{px['anode']} Kα1/Kα2 ({lam1:g}/{lam2:g} Å, intensity ratio {PX.KA2_RATIO:g})" if px["ka2"]
+                   else f"{px['anode']} Kα1 ({lam1:g} Å)")
+                + " (wavelengths from International Tables for Crystallography, Vol. C). The calculated pattern is "
+                "scaled to its strongest maximum; no refinement." + self.pxrd_no_u_note(e))
+
+    def pxrd_no_u_note(self, e):
+        """Satz für Atome ohne Auslenkungsparameter in der CIF (gerechnet ohne Temperaturfaktor, nichts angenommen)."""
+        from elucida.core import pxrd as PX
+        S = self.structure(e)
+        miss = PX.no_u(S) if S is not None else []
+        if not miss:
+            return ""
+        return (f" The CIF contains no displacement parameters for {_label_list(miss)}; "
+                + ("this atom was" if len(miss) == 1 else "these atoms were")
+                + " included without a temperature factor (U = 0), so calculated intensities at high angles are "
+                "overestimated.")
+
+    def pxrd_si_blocks(self, e, out_dir):
+        """SI (Haken „In die SI“): Abbildung, Unterschrift, Methodensatz als Notiz."""
+        if not self.pxrd(e).get("si") or self.structure(e) is None:
+            return []
+        fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+        FigureCanvasAgg(fig)
+        F = self.build_pxrd(fig, e)
+        if F is None:
+            return []
+        out = []
+        if out_dir is not None:
+            fname = e.get("name") or e["block"]
+            out.append(TABS.si_image(F, Path(out_dir) / f"{core.safe_name(fname)}_pxrd.svg"))
+        out += [("figcap", self.pxrd_caption(e)[1]), ("note", self.pxrd_methods(e)), ("gap",)]
+        return out
+
+    def pxrd_export(self, e, stem):
+        """Export (Haken „In die SI“): Abbildung in den Formaten des Tabs und eine CSV mit Rechnung und Reflexliste."""
+        if not self.pxrd(e).get("si") or self.structure(e) is None:
+            return []
+        fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+        FigureCanvasAgg(fig)
+        spec = self.pxrd_spec(e)
+        F = self.build_pxrd(fig, e)
+        if F is None or spec is None:
+            return []
+        F.cfg["output"] = str(PRJ.with_ext(stem, "." + F.cfg["_main_fmt"]))
+        F.cfg["_base_dir"] = stem.parent
+        F.export()
+        files = [PRJ.with_ext(stem, "." + x) for x in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]]
+        x_ = F.curves[-1]["x"]
+        y_ = F.curves[-1]["y"]
+        p = stem.with_name(stem.name + "_reflections.csv")
+        with open(p, "w", encoding="utf-8", newline="") as fh:
+            w_ = csv.writer(fh)
+            w_.writerow(["h", "k", "l", "d [A]", "2theta [deg]", "multiplicity", "|F|^2", "I rel"])
+            imax = max((r["I"] for r in spec[3]), default=1.0) or 1.0
+            for r in spec[3]:
+                w_.writerow([*r["hkl"], f"{r['d']:.5f}", f"{r['tth']:.4f}", r["m"], f"{r['F2']:.3f}",
+                             f"{100 * r['I'] / imax:.2f}"])
+        q = stem.with_name(stem.name + "_calculated.csv")
+        with open(q, "w", encoding="utf-8", newline="") as fh:
+            w_ = csv.writer(fh)
+            w_.writerow(["2theta [deg]", "I calc (max = 1)"])
+            w_.writerows([f"{a:.3f}", f"{b:.5f}"] for a, b in zip(x_, y_))
+        return files + [p, q]
+
     def caption(self, e=None):
         """Bildunterschrift im Stil der SI (ohne „Figure Sx:“) -> (Klartext, HTML). Folgt der Abbildung: Fehlordnung
         mit Besetzung, Ausgeblendetes, Drahtmodell; bis CAPTION_MAX ausgewählte Werte stehen in der Unterschrift,
@@ -4730,6 +6116,15 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def view_changed(self, R):
         e = self.entry()
+        if e is not None and self.pack(e)["on"]:            # Packung: eigene Ansicht, Blickrichtung „frei“
+            pk = self.pack(e)
+            if self.F is not None and getattr(self.F, "_auto_zoom", None) is not None:   # Vorgabe-Ansicht festhalten
+                pk.update(zoom=round(float(self.F.zoom), 4), pan=[round(float(v), 3) for v in self.F.pan])
+            pk.update(view=[round(float(v), 6) for v in np.asarray(R).ravel()], axis="")
+            keep_scale(pk, self.F)
+            self.sync_pack_widgets()
+            self.render()
+            return
         if e is not None:
             remember_view(self, e)
             e["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
@@ -4738,6 +6133,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def pan_changed(self, pan):
         e = self.entry()
+        if e is not None and self.pack(e)["on"]:
+            self.pack(e)["pan"] = [round(float(pan[0]), 3), round(float(pan[1]), 3)]
+            self.render()
+            return
         if e is not None:
             remember_view(self, e)
             e["pan"] = [round(float(pan[0]), 3), round(float(pan[1]), 3)]
@@ -4745,6 +6144,10 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def zoom_changed(self, z):
         e = self.entry()
+        if e is not None and self.pack(e)["on"]:
+            self.pack(e)["zoom"] = round(float(z), 4)
+            self.timer.start()
+            return
         if e is not None:
             remember_view(self, e, "zoom")
             e["zoom"] = round(float(z), 4)
@@ -4770,11 +6173,11 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.render()
 
     def reset_display(self):
-        """Darstellung auf Standard: Stil, Ellipsoide, Bindungsdicke, Labels, Fehlordnung, Farben …; für die gewählte
-        Struktur auch Ansicht, ausgeblendete Atome/Fragmente, Labels je Atom und Drahtmodell. CIFs, Namen, Referenzen,
-        ausgewählte Parameter und Exportgröße bleiben."""
-        reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout"),
-                      dict(hidden_frags=[], hidden_atoms=[], label_on={}, wire=[]))
+        """Darstellung auf Standard: Stil, Ellipsoide, Bindungsdicke, Labels, Farben …; für die gewählte Struktur auch
+        Ansicht, Labels je Atom und Drahtmodell. CIFs, Namen, Referenzen, ausgewählte Parameter, Exportgröße und
+        RESET_KEEP (Fehlordnung, ausgeblendete Atome/Fragmente, Spalten der Rechnung) bleiben."""
+        reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout") + self.RESET_KEEP,
+                      dict(label_on={}, wire=[]))
 
     reset_defaults = reset_display
 
@@ -4804,20 +6207,28 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                     hide_kinds=[k for k, on in (("solvent", st.get("hide_solv")), ("ion", st.get("hide_ions")))
                                 if on])
 
-    def build(self, fig, e=None, interactive=True):
+    def build(self, fig, e=None, interactive=True, pack=False):
         e = e or self.entry()
         if e is None:
             return None
         mol = self.molecule(e)
         if mol is None or not mol.atoms:
             return None
+        if pack is None:
+            pack = self.pack(e)["on"]
+        if pack:
+            return self.build_pack(fig, e, mol, interactive)
         cfg = self.base_cfg()
         core.setup_fonts(TABS.plt, cfg)
         lay = e.setdefault("layout", {}).setdefault(self.size_key(), {})
         sel = [mol.find_key(k) for k in self.sel] if interactive else []
-        return XrayFigure(cfg, mol, self.view_of(e, mol), self.opts(e), lay, fig,
-                          selection=[k for k in sel if k is not None], zoom=e.get("zoom", 1.0),
-                          pan=e.get("pan") or (0.0, 0.0), ext=e.get("ext"))
+        o = self.opts(e)
+        self.homa.reserve(o, e, mol)
+        F = XrayFigure(cfg, mol, self.view_of(e, mol), o, lay, fig,
+                       selection=[k for k in sel if k is not None], zoom=e.get("zoom", 1.0),
+                       pan=e.get("pan") or (0.0, 0.0), ext=e.get("ext"))
+        self.homa.annotate(F, e)                           # HOMA in der Ringmitte (wahlweise)
+        return F
 
     def render(self, push=True):
         self.notes_begin()
@@ -4827,7 +6238,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 self.dragger = None
             cfg = self.base_cfg()
             self.host.set_figure_size(*cfg["figsize_in"])
-            self.F = self.build(self.fig)
+            self.F = self.build(self.fig, pack=None)       # None: Molekül oder Packung, wie gewählt
             self.preview_stack.setCurrentIndex(0 if self.F is None else 1)
             if self.F is None:
                 self.fig.clear()
@@ -4836,6 +6247,21 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.update_info()
             self.update_tables()
             self.fill_calc()                           # Geometrien des DFT-Tabs können sich geändert haben
+            try:                                       # Packung: Vorschläge, Seite „Abstände“ (Zugabe, nie störend)
+                self.show_pack()
+            except Exception:
+                import traceback
+                self.main.log_signal.emit(traceback.format_exc())
+            try:                                       # Pulverdiffraktogramm (Seite „PXRD“), Zugabe wie die Packung
+                self.show_pxrd()
+            except Exception:
+                import traceback
+                self.main.log_signal.emit(traceback.format_exc())
+            try:                                       # HOMA-Seite (Zugabe, nie störend)
+                self.homa.refresh()
+            except Exception:
+                import traceback
+                self.main.log_signal.emit(traceback.format_exc())
             if not self._loading:
                 self.fill_atoms()
             self.canvas.draw_idle()
@@ -4976,8 +6402,14 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         return table_plain(h, r) + ("\n" + "\n".join(to_plain(n) for n in notes) if notes else ""), \
             table_html(h, r, title, notes)
 
+    def shown_caption(self):
+        """Unterschrift des gezeigten Bilds -> (Klartext, HTML): Packung, wenn sie die Abbildung ist, sonst Molekül."""
+        e_ = self.entry()
+        return self.pack_caption(e_) if e_ is not None and self.pack(e_)["on"] else self.caption()
+
     def update_tables(self):
-        self.txt_cap.setText("<b>Figure Sn:</b> " + self.caption()[1] if self.entries() else "")
+        cap_ = self.shown_caption()[1]
+        self.txt_cap.setText("<b>Figure Sn:</b> " + cap_ if self.entries() else "")
         if not self.entries():
             self.txt_tab.setHtml("")
             return
@@ -5040,6 +6472,13 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.main.exported([p.parent])
 
     # -- Export -----------------------------------------------------------------------------
+    def copy_build(self, fig):
+        return self.build(fig, interactive=False, pack=None)          # wie die Vorschau: Molekül oder Packung
+
+    def copy_pages(self):                                # Seite „Abstände“ ist eine Tabelle: Hinweis
+        e = self.entry()
+        return [(self.grp_pxrd_res, lambda tmp: e and self.copy_built(tmp, lambda fig: self.build_pxrd(fig, e)))]
+
     def export_to(self, base: Path):
         """Je Verbindung eine Abbildung (eigene Ansicht), dazu Tabellen als CSV und Excel."""
         base = Path(base).resolve()
@@ -5054,14 +6493,28 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                 continue
             name = base.name + ("_" + core.safe_name(e.get("name") or e["block"]) if len(es) > 1 else "")
             stem = base.with_name(name)
-            F.cfg["output"] = str(stem.with_suffix("." + F.cfg["_main_fmt"]))
+            F.cfg["output"] = str(PRJ.with_ext(stem, "." + F.cfg["_main_fmt"]))
             files += F.export()
+            files += self.pxrd_export(e, base.with_name(name + "_pxrd"))
+            pk_ = self.pack(e)                            # Packungsbild, sobald benutzt (die SI wählt pk["si"])
+            if pk_.get("on") or pk_.get("used") or pk_.get("si"):
+                fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+                FigureCanvasAgg(fig)
+                P_ = self.build(fig, e, interactive=False, pack=True)
+                if P_ is not None:
+                    P_.cfg["output"] = str(PRJ.with_ext(base.with_name(name + "_packing"), "." + P_.cfg["_main_fmt"]))
+                    files += P_.export()
         if not files and not es:
             raise RuntimeError(T("tab_empty"))
         cap = base.with_name(base.name + "_captions.txt")
-        cap.write_text("\n\n".join(f"{e.get('name') or e['block']}:\n{self.caption(e)[0]}" for e in es) + "\n",
-                       encoding="utf-8")
+        cap.write_text("\n\n".join(f"{e.get('name') or e['block']}:\n{self.caption(e)[0]}"
+                                   + (f"\n\n{e.get('name') or e['block']} (packing):\n{self.pack_caption(e)[0]}"
+                                      if any(self.pack(e).get(f) for f in ("on", "used", "si")) else "")
+                                   for e in es) + "\n", encoding="utf-8")
         files.append(cap)
+        if self.st.get("homa_si"):                       # HOMA je Ring (Haken „In die SI“ der Karte HOMA)
+            files += self.homa.export_csv(base.with_name(base.name + "_HOMA.csv"),
+                                          [(e.get("name") or e["block"], e) for e in es])
         h, r = self.crystal_table()
         files.append(write_table_csv(base.with_name(base.name + "_crystal_data.csv"), h, r))
         h2, r2, notes = self.params_table()
@@ -5071,6 +6524,11 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         except PermissionError:
             self.main.error(T("report_locked", p=base.with_name(base.name + "_tables.xlsx")))
         return files
+
+
+def _f0_citation():
+    from elucida.formats.xray_f0 import CITATION
+    return CITATION
 
 
 # ---------------------------------------------------------------------------- Testdaten (Selbsttest)

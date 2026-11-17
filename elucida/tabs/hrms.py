@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
                                QMessageBox, QPushButton, QTextBrowser, QWidget)
 
 from elucida.tabs import base as TABS
+from elucida.core import uvvis as core
 from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
@@ -111,14 +112,26 @@ def chromatogram(spectra):
 
 
 # ---------------------------------------------------------------------------- Tab
+def dev_text(dev):
+    """Abweichung found − calc in ppm, eine Stelle, echtes Minus, nie „−0.0“."""
+    return core.fmt_num(dev, 1, sign=True)
+
+
+def dev_ok(dev):
+    """≤ 5 ppm an der gedruckten Zahl geprüft (wie die EA): „+5.0“ ist immer gleich bewertet."""
+    return abs(float(f"{dev:.1f}")) <= 5
+
+
 class HRMSTab(TABS.FigureTab):
+    COLOR_ROLES = (("col_meas", MEASURED_COLOR, "tf_col_meas"), ("col_calc", CALC_COLOR, "tf_col_calc"))   # Stilkarte
     STATE_KEY = "hrms"
     GUIDE, GUIDE_ACTION = "hrms", ("guide_add", "choose_ms")
     MAIN_SI = True                                       # Ergebnis ist die HR-MS-Zeile der SI (Nutzerwunsch)
     SI_CAPTION = "HR-MS spectrum of {name}."
     X_RANGE = (10.0, 5000.0, 2, 0.5)
     XRANGE_TEXT = "ms_xrange"
-    RESET_KEEP = ("ms_file", "ms_raw", "ms_rt", "adduct", "found", "found_pick")
+    RESET_KEEP = ("ms_file", "ms_raw", "ms_rt", "adduct", "found", "found_pick",
+                  "mz_labels")                                 # welche m/z im Bild stehen
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=100.0, x_max=1000.0, ymax=0.0, ms_file=None, ms_raw=None,
                          ms_rt=None, adduct="M+H", found=None, found_pick=None, show_calc=True, mz_labels=True)
 
@@ -183,9 +196,19 @@ class HRMSTab(TABS.FigureTab):
         self.cmb_found = QComboBox()
         self.cmb_found.setToolTip(T("ms_found_tip"))
         f.addRow(T("ms_found"), self.cmb_found)
+        # Prüfung found − calc gegen 5 ppm (Angew.) als kleine Tabelle, Abweichung in der Warnfarbe
+        self.tbl_ms = TABS.STYLE.summary_grid([T("ea_chk_ms_ion"), T("ea_calc"), T("ea_chk_f1"), T("ea_chk_ms_dev"),
+                                               T("ea_chk_ms_status")])
+        self.tbl_ms.setToolTip(T("ea_chk_ms_tip"))
+        f.addRow(self.tbl_ms)
         self.lbl_ms_info = HintLabel("")
         self.lbl_ms_info.setWordWrap(True)
+        self.lbl_ms_info.setStyleSheet(HINT_CSS)
         f.addRow(self.lbl_ms_info)
+        self.lbl_ms_warn = HintLabel("")                 # Warnungen in eigener Zeile, nur sie in der Warnfarbe
+        self.lbl_ms_warn.setWordWrap(True)
+        self.lbl_ms_warn.setStyleSheet(WARN_CSS)
+        f.addRow(self.lbl_ms_warn)
         b = TABS.STYLE.copy_button(T("ms_copy"))
         b.clicked.connect(lambda: copy_rich(*self._ms_line))
         f.addRow(TABS.STYLE.text_head(T("line_ms"), b))    # „Kopieren“ direkt an der Zeile, die es kopiert
@@ -314,7 +337,12 @@ class HRMSTab(TABS.FigureTab):
         p = self.st.get("ms_file")
         if not p or not Path(p).exists():
             return None
-        return self.cache(("msdocx", p), lambda: read_ms_docx(p))
+        try:
+            return self.cache(("msdocx", p), lambda: read_ms_docx(p))
+        except Exception as ex:                # gespeicherter Bericht, den der Leser ablehnt: Tab bleibt bedienbar
+            self.main.skip_part(ex, p)
+            self._ms_error = str(ex)
+            return None
 
     def ms_raw(self):
         p = self.st.get("ms_raw")
@@ -383,11 +411,13 @@ class HRMSTab(TABS.FigureTab):
     def update_ms(self):
         st = self.st
         self._ion, self._lc, self._found = None, None, None
+        self._ms_error = None
         rep = self.ms_report()
         formula, src = self.formula()
-        notes = []
+        notes = [self._ms_error] if self._ms_error else []      # Bericht nicht lesbar: Grund mit Dateinamen
         self._ms_line = ("", "")
         self._ms_vals = None
+        TABS.STYLE.fill_summary(self.tbl_ms, [])
         self.cmb_found.blockSignals(True)
         self.cmb_found.clear()
         if not formula:
@@ -395,13 +425,14 @@ class HRMSTab(TABS.FigureTab):
             self.txt_ms.setHtml("")
             self.cmb_found.blockSignals(False)
             self.lbl_ms_info.setText("")
+            self.lbl_ms_warn.setText("\n".join(notes))
             return
         self.lbl_formula.setText(f"{chem_plain(formula)}  ({T('ms_src_' + src)})")
         try:
             _, z, calc, _ = ion(formula, st["adduct"])
         except ValueError as e:
-            self.lbl_ms_info.setText(str(e))
-            self.lbl_ms_info.setStyleSheet(WARN_CSS)
+            self.lbl_ms_info.setText("")
+            self.lbl_ms_warn.setText(str(e))
             self.cmb_found.blockSignals(False)
             return
         found = None
@@ -428,7 +459,7 @@ class HRMSTab(TABS.FigureTab):
                 except ValueError:
                     pass
             for v in rep["mz"]:
-                self.cmb_found.addItem(f"{v:.4f}  ({ppm(v, calc):+.1f} ppm)", v)
+                self.cmb_found.addItem(f"{v:.4f}  ({dev_text(ppm(v, calc))} ppm)", v)
             rep_found = nearest(rep["mz"], calc)
             if rep_found is None:
                 notes.append(T("ms_no_match"))
@@ -442,7 +473,7 @@ class HRMSTab(TABS.FigureTab):
                 notes.append(T("ms_raw_none"))
             else:
                 self.cmb_found.addItem(T("ms_raw_entry", mz=f"{lc['mz']:.4f}", n=lc["n"],
-                                         ppm=f"{ppm(lc['mz'], calc):+.1f}"), "raw")
+                                         ppm=dev_text(ppm(lc["mz"], calc))), "raw")
                 sd_ppm = lc["std_mda"] / 1000 / calc * 1e6
                 info.append(T("ms_raw_info", n=lc["n"], rt0=f"{lc['rt_lo'] / 60:.2f}", rt1=f"{lc['rt_hi'] / 60:.2f}",
                               lo=f"{lc['lo']:.4f}", hi=f"{lc['hi']:.4f}", sd=f"{lc['std_mda']:.2f}",
@@ -460,11 +491,13 @@ class HRMSTab(TABS.FigureTab):
                     self._loading = False
         pick = st.get("found_pick")
         if pick:                                     # im Spektrum angeklickt
-            self.cmb_found.addItem(T("ms_pick_entry", mz=f"{pick:.4f}", ppm=f"{ppm(pick, calc):+.1f}"), "pick")
+            self.cmb_found.addItem(T("ms_pick_entry", mz=f"{pick:.4f}", ppm=dev_text(ppm(pick, calc))), "pick")
         # Auswahl: gespeicherte Wahl, sonst Wert aus dem Bericht, sonst Mittel aus den Rohdaten
         want = st.get("found")
         if not ((want == "raw" and lc is not None) or (rep and want in rep["mz"]) or (want == "pick" and pick)):
             want = rep_found if rep_found is not None else ("raw" if lc else None)
+        if self._ms_error and st.get("found") not in ("raw", "pick"):   # Wert käme aus dem unlesbaren Bericht: nie still
+            want = None                                                  # durch das Mittel der Rohdaten ersetzen
         found = lc["mz"] if want == "raw" else (pick if want == "pick" else want)
         # ohne Zuordnung keine Vorauswahl (sonst würde der erste Eintrag beim nächsten collect zu found)
         self.cmb_found.setCurrentIndex(max(0, self.cmb_found.findData(want)) if want is not None else -1)
@@ -476,13 +509,14 @@ class HRMSTab(TABS.FigureTab):
         self.txt_ms.setHtml(html)
         if found is not None:
             dev = ppm(found, calc)
-            notes.insert(0, T("ms_dev", ppm=f"{dev:+.1f}"))
-            if abs(dev) > 5:
+            notes.insert(0, T("ms_dev", ppm=dev_text(dev)))
+            if not dev_ok(dev):
                 notes.append(T("ms_dev_high"))
-        warn = len(notes) > 1 or (found is None and bool(rep or raw))
+            self.fill_ms_table(st["adduct"], calc, found, dev)
         self._found = found
-        self.lbl_ms_info.setText("\n".join(notes[:1] + info + notes[1:]))
-        self.lbl_ms_info.setStyleSheet(WARN_CSS if warn else HINT_CSS)
+        head = notes[:1] if found is not None else []    # „Abweichung found − calc“: Information, keine Warnung
+        self.lbl_ms_info.setText("\n".join(head + info))
+        self.lbl_ms_warn.setText("\n".join(notes[len(head):]))
 
     def si_parts(self):
         """HR-MS-Zeile für den SI-Export (leer, wenn nichts da ist)."""
@@ -552,6 +586,7 @@ class HRMSTab(TABS.FigureTab):
 
     def figure_spec(self):
         st = self.st
+        self.roles_idle = {"col_calc": "tf_idle_calc"}    # Stilkarte: bis ein berechnetes Muster gezeichnet ist
         self.update_ms()
         self.draw_chromatogram()
         raw = self.ms_raw()
@@ -576,15 +611,16 @@ class HRMSTab(TABS.FigureTab):
         cfg["zero_lines"] = [0.0] if show_calc else []
         f_ion = ion(formula, st["adduct"])[0]
         sign = "+" if z > 0 else "−"
-        curves = [{"x": np.zeros(0), "y": np.zeros(0), "color": MEASURED_COLOR, "label": "measured"}]
-        sticks = [{"x": mz, "h": rel, "color": MEASURED_COLOR}]
+        curves = [{"x": np.zeros(0), "y": np.zeros(0), "color": TABS.role_color(self.st, "col_meas", MEASURED_COLOR), "label": "measured"}]
+        sticks = [{"x": mz, "h": rel, "color": TABS.role_color(self.st, "col_meas", MEASURED_COLOR)}]
         pat = self.pattern()
         if show_calc and pat:
             pm = np.array([m for m, _ in pat])
             pr = np.array([r for _, r in pat])
-            sticks.append({"x": pm, "h": -pr, "color": CALC_COLOR})
+            sticks.append({"x": pm, "h": -pr, "color": TABS.role_color(self.st, "col_calc", CALC_COLOR)})
+            self.roles_idle = {}
             f_tex = re.sub(r"(\d+)", r"$_{\1}$", f_ion)
-            curves.append({"x": np.zeros(0), "y": np.zeros(0), "color": CALC_COLOR,
+            curves.append({"x": np.zeros(0), "y": np.zeros(0), "color": TABS.role_color(self.st, "col_calc", CALC_COLOR),
                            "label": f"calculated ({f_tex}$^{{{sign}}}$)"})
         labels = []
         if st.get("mz_labels", True):
@@ -615,9 +651,26 @@ class HRMSTab(TABS.FigureTab):
             txt = self.lbl_ms_info.text()
             self.lbl_ms_info.setText((txt + "\n" if txt else "") + T("ms_iso_info", items=", ".join(items)))
 
+    def fill_ms_table(self, adduct, calc, found, dev):
+        from PySide6.QtGui import QBrush, QColor
+        ok = dev_ok(dev)
+        lab, _, z = ADDUCTS[adduct]
+        TABS.STYLE.fill_summary(self.tbl_ms, [[lab.replace("$_4$", "₄") + ("⁺" if z > 0 else "⁻"), f"{calc:.4f}",
+                                               f"{found:.4f}", dev_text(dev),
+                                               ("✓ " if ok else "⚠ ") + T("ea_chk_ms_ok" if ok else "ea_chk_ms_bad")]])
+        if not ok:
+            for c in range(self.tbl_ms.columnCount()):
+                self.tbl_ms.item(0, c).setForeground(QBrush(QColor(TABS.STYLE.WARN_COLOR)))
+
     def kpis(self):
         txt = self.cmb_found.currentText().strip()
-        return [(T("kpi_found"), txt)] if txt else []
+        out = [(T("kpi_found"), txt)] if txt else []
+        v = getattr(self, "_ms_vals", None)
+        if out and v and v[2] is not None:          # Abweichung als eigene Kachel, über 5 ppm in der Warnfarbe
+            dev = ppm(v[2], v[1])
+            out = [(T("kpi_found"), f"{v[2]:.4f}"),
+                   (T("ea_chk_ms_kpi"), f"{dev_text(dev)} ppm", not dev_ok(dev))]
+        return out
 
     def build(self, fig):
         F = super().build(fig)
@@ -660,6 +713,9 @@ class HRMSTab(TABS.FigureTab):
         files = []
         if self.ms_raw() is not None:
             files = super().export_to(base)
+            for f_ in [f_ for f_ in files if f_.name.endswith("_data.csv")]:   # Linienspektren sind keine Kurven:
+                f_.unlink(missing_ok=True)                                     # die Daten stehen in _sticks.csv
+                files.remove(f_)
             mz, rel = self._sticks
             p = base.with_name(base.name + "_sticks.csv")
             pat = self.pattern()

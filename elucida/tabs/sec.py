@@ -242,13 +242,15 @@ class HeatHover:
 
 
 class SECTab(TABS.FigureTab):
+    COLOR_ROLES = (("col_start", START_COLOR, "tf_col_start"), ("col_end", END_COLOR, "tf_col_end"))   # Stilkarte
     STATE_KEY = "sec"
     GUIDE, GUIDE_ACTION = "sec", ("guide_add", "choose_spectra")
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
     CAP_FIELDS = ("solvent", "start", "mid", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
     RESET_KEEP = ("spec_files", "dta", "offset_s", "e_shift", "electrode", "ref_from_cv", "mid", "quantity",
-                  "map_mode", "map_start", "map_step", "map_table", "map_ok", "import_note")  # Daten, Zeit, Referenz
+                  "map_mode", "map_start", "map_step", "map_table", "map_ok", "import_note",  # Daten, Zeit, Referenz
+                  "mode", "first", "last", "fit", "baseline", "trace_lams")   # Bereich, Verlauf, Fit: Auswertung
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=850.0, ymax=0.0, spec_files=[], dta=None,
                          mode="spectra", first=1, last=0, highlight=True, mid="", gradient=False, diff=False,
                          baseline=False, bands="", trace_lams="", fit=True, offset_s=0.0, e_shift=0.0,
@@ -296,7 +298,8 @@ class SECTab(TABS.FigureTab):
         self.cb_from_cv.setChecked(st["ref_from_cv"])
         row.addWidget(self.sp_shift)
         row.addWidget(self.cb_from_cv)
-        f.addRow(T("sec_shift"), row)
+        self.lbl_shift = STYLE.SciLabel(T("sec_shift"))           # mit „aus CV-Tab“: Name der Referenz (_sync_shift)
+        f.addRow(self.lbl_shift, row)
         self.ed_electrode = QLineEdit(st["electrode"])
         f.addRow(T("cv_electrode"), self.ed_electrode)
         self.lv.addWidget(g)
@@ -480,7 +483,8 @@ class SECTab(TABS.FigureTab):
             self.changed()
 
     def collect(self):
-        self.st.update(offset_s=self.sp_offset_s.value(), e_shift=self.sp_shift.value(),
+        self.st.update(offset_s=self.sp_offset_s.value(),        # zeigt das Feld den CV-Wert, bleibt der eigene
+                       e_shift=self.st["e_shift"] if getattr(self, "_shift_cv", False) else self.sp_shift.value(),
                        ref_from_cv=self.cb_from_cv.isChecked(), electrode=self.ed_electrode.text().strip() or "Ag/AgNO₃",
                        mode=self.cmb_mode.currentData(), first=self.sp_first.value(), last=self.sp_last.value(),
                        highlight=self.cb_highlight.isChecked(), mid=self.ed_mid.text().strip(),
@@ -588,12 +592,49 @@ class SECTab(TABS.FigureTab):
                              "of applied potentials."}.get(st["map_mode"], "") if st["map_ok"] else ""
 
     def e_offset(self):
-        """Verschiebung der Potentialachse (E_Achse = E − Offset) und Achsenbeschriftung der Referenz."""
+        """Verschiebung der Potentialachse (E_Achse = E − Offset) und Achsenbeschriftung der Referenz. „aus CV-Tab“
+        ohne Fc-Referenz dort: Achse wie gemessen gegen die Elektrode **dieses** Tabs; Hinweis des CV-Tabs in ref_note."""
         st = self.st
+        self.ref_note = ""
         if st["ref_from_cv"]:
-            off, label, _ = self.main.cv_tab.reference_offset()
-            return off, label
+            off, label, self.ref_note = self.main.cv_tab.reference_offset()
+            return off, (label if label.startswith("Fc") else st["electrode"])
         return st["e_shift"], ("Fc$^{0/+}$" if st["e_shift"] else st["electrode"])
+
+    def _sync_shift(self):
+        """Feld „E(Fc⁺/Fc) gemessen“ zeigt den eigenen Wert; mit „aus CV-Tab“ gesperrt E½ der Referenz des CV-Tabs unter
+        deren Namen (der eigene Wert bleibt in st["e_shift"])."""
+        cv = bool(self.st["ref_from_cv"])
+        v, name = self._cv_reference() if cv else (self.st["e_shift"], None)
+        self._shift_cv = cv
+        self.sp_shift.blockSignals(True)
+        self.sp_shift.setValue(v)
+        self.sp_shift.blockSignals(False)
+        self.sp_shift.setEnabled(not cv)
+        key = ("sec_shift" if not cv else "z1_sec_ref_e12_named" if name else "z1_sec_ref_e12" if name == ""
+               else "z1_sec_ref_shift")
+        self.sp_shift.setToolTip(T("sec_shift_tip") if not cv else T("z1_sec_ref_shift_tip") if name is None
+                                 else T("z1_sec_ref_e12_tip"))
+        self.lbl_shift.setText(T(key, name=name) if name else T(key))      # kurz für LABEL_W, Langform im Tooltip
+        self.lbl_shift.setToolTip("" if not cv else T(key + "_long", name=name) if name else T(key + "_long"))
+
+    def _cv_reference(self):
+        """„aus CV-Tab“ (Entscheidung 82): E½ der dort benutzten Referenz gegen die Elektrode und ihr Name ("" = eigene
+        Referenz ohne Namen). Die Achse rechnet mit E½ − Wert der Referenz (e_offset); bei Fc ist das dieselbe Zahl.
+        Verschiebung von Hand und keine gefundene Referenz (0 wie bisher, der Hinweis nennt das): Name None, das Feld
+        heißt „Verschiebung (CV)“ (Entscheidung 126) und zeigt die benutzte Verschiebung."""
+        cv = self.main.cv_tab
+        off, label, _ = cv.reference_offset()
+        if label.startswith("Fc") and cv.st["ref_mode"] == "internal":
+            return off + cv.st["ref_value"], CV.REFERENCES.get(cv.st["ref_compound"], ("",))[0]
+        return off, None
+
+    def showEvent(self, ev):
+        """Referenz aus dem CV-Tab dort geändert: beim Anzeigen neu zeichnen (Export und SI rechnen ohnehin frisch)."""
+        super().showEvent(ev)
+        if self.st.get("ref_from_cv") and getattr(self, "_ref_used", None) is not None \
+                and self._ref_used != (self.e_offset(), self.ref_note):    # .get: beim Schließen ist der Zustand leer
+            QTimer.singleShot(0, self.render)
 
     def selection(self, n):
         """Indizes der gezeigten Spektren (Bereich erstes–letztes, 0-basiert)."""
@@ -627,10 +668,13 @@ class SECTab(TABS.FigureTab):
 
     def figure_spec(self):
         st = self.st
+        # Start/Ende-Farben nur im Spektrenbild (Kurven und Bandenlabels); Rolle -> Grund (Stilkarte)
+        self.roles_idle = {} if st["mode"] == "spectra" else dict.fromkeys(TABS.style_keys(self), "tf_idle_spectra")
         sp, E = self.series()
         self.fits = []                                     # (λ, Nernst-Fit) für den SI-Text
         self.ref_label = None
         self._heat = None                                  # Heatmap: Daten für Hover, CSV und Methodentext
+        self._sync_shift()
         if not sp:
             self.lbl_info.setText("")
             return None
@@ -638,6 +682,7 @@ class SECTab(TABS.FigureTab):
         i0, i1 = sel[0], sel[-1]
         off, ref_label = self.e_offset()
         self.ref_label = ref_label
+        self._ref_used = ((off, ref_label), self.ref_note)
         Eax = None if E is None else E - off
         self.ed_mid.setPlaceholderText(T("sec_mid_ph_e" if Eax is not None else "sec_mid_ph_n"))
         cfg = self.base_cfg()
@@ -652,10 +697,10 @@ class SECTab(TABS.FigureTab):
 
         def ys(s):
             return on_grid(s) - ref_y if st["diff"] else on_grid(s)
-        rng = (T("sec_range_info_e", a=CV._fmt_e(Eax[i0]), b=CV._fmt_e(Eax[i1]), n=len(sel))
+        rng = (T("sec_range_info_e", a=CV._fmt_e(Eax[i0], 2), b=CV._fmt_e(Eax[i1], 2), n=len(sel))   # Stellen wie Legende
                if Eax is not None else T("sec_range_info", n=len(sel)))
         self.lbl_range.setText(rng)
-        info = []
+        info = [self.ref_note] if self.ref_note else []    # Herkunft bzw. Fehlen der Referenz aus dem CV-Tab
         lim = (lam0.min(), lam0.max()) if sp[0].get("merged") else LAM_RANGE   # NIR nicht abschneiden
         x0, x1 = (st["x_min"], st["x_max"]) if not st["x_auto"] else (max(lim[0], lam0.min()),
                                                                       min(lim[1], lam0.max()))
@@ -701,9 +746,14 @@ class SECTab(TABS.FigureTab):
                     f"{T('sec_index')} {i + 1}" + (f" ({CV._fmt_e(Eax[i], 2)} V)" if Eax is not None else "")
                     for i in mids)))
             # hervorgehoben: (Index, Farbe) – Start, Zwischenstufen, Ende
-            marked = [(sel[0], START_COLOR)] + [(i, MID_COLORS[k][0]) for k, i in enumerate(mids)] + \
-                [(sel[-1], END_COLOR)]
+            marked = [(sel[0], TABS.role_color(st, "col_start", START_COLOR))] + \
+                [(i, MID_COLORS[k][0]) for k, i in enumerate(mids)] + [(sel[-1], TABS.role_color(st, "col_end", END_COLOR))]
             mcol = dict(marked)
+            if not _floats(st["bands"]):                    # ohne Bandenlabels wirken die Farben nur über die Kurven
+                if not st["highlight"] or st["gradient"]:
+                    self.roles_idle = dict.fromkeys(TABS.style_keys(self), "tf_idle_sec_curves")
+                elif len(sel) == 1:                         # ein Spektrum ist zugleich Ende
+                    self.roles_idle = {"col_start": "tf_idle_single"}
             for j, i in enumerate(sel):
                 hi = i in mcol
                 if st["gradient"]:
@@ -724,7 +774,8 @@ class SECTab(TABS.FigureTab):
             for lam in _floats(st["bands"]):
                 # Farbe der hervorgehobenen Kurve mit der größten |A| an dieser Wellenlänge
                 col = max(ys_marked, key=lambda yc: abs(float(np.interp(lam, lam0, yc[0]))))[1]
-                labels.append({"key": f"label_sec_{lam:g}", "lam": lam, "text": f"λ =  {lam:g} nm", "color": col})
+                labels.append({"key": f"label_sec_{lam:g}", "lam": lam, "text": f"λ =  {lam:g} nm", "color": col,
+                               "near": True})
             cfg["xlim"] = [x0, x1]
             win = (lam0 >= x0) & (lam0 <= x1)
             vals = np.concatenate([c["y"][win] for c in curves])
@@ -744,6 +795,8 @@ class SECTab(TABS.FigureTab):
             info.append(T("sec_no_time"))
         elif E is not None and self.outside:              # > 30 s außerhalb (Ruhepotential davor ist normal)
             info.append(T("sec_outside", n=self.outside))
+        if info == [self.ref_note]:                        # nur der Referenzhinweis: Platzhalter bleibt sichtbar
+            info.insert(0, T("results_none_plain"))
         self.lbl_info.setText("\n".join(info))
         return cfg, curves, labels, []
 
@@ -773,7 +826,7 @@ class SECTab(TABS.FigureTab):
             cmap = st["hm_cmap"] if st["hm_cmap"] in SEQ_CMAPS else SEQ_CMAPS[0]
         if Eax is not None:
             kind, yv = "E", np.array([Eax[i] for i in sel])
-            ylab = [f"{v:.2f}".replace("-", "−") for v in yv]
+            ylab = [TABS.core.fmt_num(v, 2) for v in yv]                     # Achse wie bisher, nie „−0.00“
             hover = [f"E = {CV._fmt_e(v)} V" for v in yv]
             ylabel = f"E [V vs. {CV.axis_ref(ref_label)}]"
         elif all(sp[i]["time"] is not None for i in sel):
@@ -868,16 +921,18 @@ class SECTab(TABS.FigureTab):
             mids = self.mid_indices(sel, None if E is None else E - off, with_pos=True) if sel else []
             names = [x.strip() for x in st.get("cap_mid", "").split(";")]
             # ein einziges Spektrum ist zugleich Ende (rot) – Blau kommt dann nicht vor
-            items = [(st.get("cap_start", ""), "blue")] if len(sel) > 1 else []
+            # eigene Farbe der Stilkarte: kein Farbwort (nie einen Namen aus dem Hexwert raten)
+            own = lambda k, d: TABS.role_color(st, k, d).lower() != d.lower()         # noqa: E731
+            items = [(st.get("cap_start", ""), "" if own("col_start", START_COLOR) else "blue")] if len(sel) > 1 else []
             items += [(names[p] if p < len(names) else "", MID_COLORS[k][1]) for k, (_, p) in enumerate(mids)]
-            items.append((st.get("cap_end", ""), "red"))
-            cols = [f"<b>{chem_html(t)}</b> ({c})" for t, c in items if t]
+            items.append((st.get("cap_end", ""), "" if own("col_end", END_COLOR) else "red"))
+            cols = [f"<b>{chem_html(t)}</b>" + (f" ({c})" if c else "") for t, c in items if t]
             if cols:
                 h += " Color coding: " + ", ".join(cols) + "."
         if sp and E is not None:
             i0, i1 = sel[0], sel[-1]
             ref = ("Fc<sup>0/+</sup>" if str(lab) == "Fc$^{0/+}$" else chem_html(str(lab)))   # wie die Achse
-            fe = lambda v: f"{v:.2f}".replace("-", "−")                               # noqa: E731
+            fe = lambda v: TABS.core.fmt_num(v, 2)                                           # noqa: E731  wie bisher, nie „−0.00“
             h += (f" Starting potential (vs. {ref}): {fe(E[i0] - off)} V; End potential (vs. {ref}): "
                   f"{fe(E[i1] - off)} V.")
             if sp[0].get("merged"):

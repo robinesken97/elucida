@@ -3,11 +3,11 @@
 Früher ein Dialog mit OK/Abbrechen (Nutzerwunsch 2026-11-11: keine Popups). Im Tab gilt jede Änderung sofort: Felder beim
 Verlassen, Chips beim Klick, die Zeichnung speichert sich selbst wie das Schema im Synthese-Tab; Rückgängig stellt zurück.
 Der Zustand ist `main.compound` (set_compound ersetzt das Objekt, deshalb hält der Tab keine eigene Kopie)."""
+import re
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFontComboBox, QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QScrollArea, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 import elucida
@@ -18,8 +18,8 @@ from elucida.app.i18n import T
 from elucida.core import images as IMG
 from elucida.tabs import base as TABS
 
-TEXT_KEYS = ("name", "labbook", "note", "sample_no", "formula", "mp", "lit")     # Textfelder = Schlüssel der Verbindung
-# Abbildungen im SI-Export je Tab (Schlüssel wie MainWindow.si_figure_choices, Reihenfolge wie die SI)
+TEXT_KEYS = ("name", "labbook", "note", "sample_no", "formula", "mp", "lit", "purity_other")     # Textfelder = Schlüssel der Verbindung
+# Abbildungen im SI-Export je Tab (Schlüssel wie MainWindow.si_figure_choices, Reihenfolge wie die SI; Tab „Export“)
 SI_FIG_KEYS = ("eps", "irms", "hrms", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "other", "dft")
 
 
@@ -178,83 +178,82 @@ class CompoundTab(QWidget):
         f.addRow("", chips)
         self._line(f, "lit", "compound_lit", T("compound_lit_ph"))
         self.lv.addWidget(g)
-        self.lv.addWidget(self.si_export_card())
+        self.lv.addWidget(self.purity_card())             # SI-/Folien-Auswahl: Tab „Export“ (Entscheidungen 64–68)
 
-    # -- SI-Export (früher Auswahl-Dialog vor „SI (Word)“, Nutzerwunsch: keine Popups) ---------------------------------
-    def si_export_card(self):
-        """Teile des Word-Exports, Abbildungen je Tab und Schriftart: gemerkt in QSettings (`si_parts`, `si_figs_off`,
-        `si_font`) wie bisher im Dialog; jede Änderung gilt sofort, „SI (Word)“ exportiert damit direkt."""
-        from elucida.app.main_window import SI_PARTS
-        g = QGroupBox(T("si_export_grp"))
+    # -- Reinheit (ACS/Organometallics: Identität und Reinheit samt Methode; Angew. B1) -----------------------------
+    def purity_card(self):
+        """Chips je Nachweis + Freitext -> `compound.purity` (Liste) und `purity_other`; der Satz in der SI entsteht nur
+        daraus. Vorschlag aus den Daten (EA innerhalb 0.4 % -> EA, sonst NMR) nur als Hinweis mit „Übernehmen“."""
+        from elucida.si.lines import PURITY_METHODS
+        g = QGroupBox(T("purity_grp"))
         f = STYLE.make_form(g)
-        self.si_parts, self.si_figs = {}, {}
-        row = QHBoxLayout()
-        for k in SI_PARTS:
-            cb = self.si_parts[k] = QCheckBox(T("si_chip_" + k))
-            cb.toggled.connect(self._si_parts_changed)
-            row.addWidget(cb)
-        row.addStretch(1)
-        f.addRow(T("si_export_parts"), row)
-        row = QHBoxLayout()
-        for k in SI_FIG_KEYS:
-            cb = self.si_figs[k] = QCheckBox(T("tab_eps" if k == "eps" else self.main._tab_spec(k)[3]))
-            cb.setToolTip(T("si_figs_tip"))
-            cb.toggled.connect(self._si_figs_changed)
-            row.addWidget(cb)
-        row.addStretch(1)
-        f.addRow(T("si_export_figs"), row)
-        self.cmb_si_font = QFontComboBox()
-        self.cmb_si_font.setToolTip(T("si_font_tip"))
-        self.cmb_si_font.currentFontChanged.connect(self._si_font_changed)
-        f.addRow(T("si_font"), self.cmb_si_font)
-        hint = STYLE.HintLabel(T("si_export_hint"))
-        hint.setWordWrap(True)
-        hint.setStyleSheet(STYLE.HINT_CSS)                # Hinweise grau wie überall
-        f.addRow(hint)
-        self._si_loading = False
-        self.sync_si_export()
+        self.purity_cbs = {}
+        rows = (PURITY_METHODS[:3], PURITY_METHODS[3:])
+        for i, part in enumerate(rows):
+            row = QHBoxLayout()
+            for k, *_ in part:
+                cb = self.purity_cbs[k] = QCheckBox(T("purity_m_" + k))
+                cb.setProperty("chip_here", True)
+                cb.toggled.connect(self.apply)
+                row.addWidget(cb)
+            row.addStretch(1)
+            f.addRow(T("purity_by") if i == 0 else "", row)
+        self._line(f, "purity_other", "purity_other", T("purity_other_ph"), T("purity_other_tip"))
+        self.lbl_purity_sug = STYLE.HintLabel("")
+        self.lbl_purity_sug.setWordWrap(True)
+        self.lbl_purity_sug.setStyleSheet(STYLE.HINT_CSS)
+        f.addRow(self.lbl_purity_sug)
+        self.btn_purity_sug = QPushButton(T("purity_apply"))
+        self.btn_purity_sug.setToolTip(T("purity_apply_tip"))
+        self.btn_purity_sug.clicked.connect(self.apply_purity_suggestion)
+        f.addRow("", self.btn_purity_sug)                 # Knopf in der Wertespalte wie in den Nachbarkarten
+        self.lbl_purity_si = STYLE.HintLabel("")          # so steht es in der SI (englisch)
+        self.lbl_purity_si.setWordWrap(True)
+        self.lbl_purity_si.setStyleSheet(STYLE.HINT_CSS)
+        f.addRow(self.lbl_purity_si)
         return g
 
-    def sync_si_export(self):
-        """Gemerkte Auswahl -> Chips; Abbildungs-Chips nur für Tabs mit Daten (wie im früheren Dialog)."""
-        self._si_loading = True
-        try:
-            saved, off = self.main.si_parts_saved(), self.main.si_figs_off()
-            for k, cb in self.si_parts.items():
-                cb.setChecked(k in saved)
-            nav, keys = getattr(self.main, "nav_buttons", {}), list(getattr(self.main, "_tab_keys", []))
-            for k, cb in self.si_figs.items():
-                cb.setChecked(k not in off)
-                cb.setEnabled("figs" in saved)
-                b = nav.get(keys.index(k)) if k in keys else None
-                cb.setVisible(bool(getattr(b, "has_data", False)))
-            self.cmb_si_font.setCurrentFont(QFont(str(self.main.settings.value("si_font", "Arial") or "Arial")))
-        finally:
-            self._si_loading = False
-
-    def _si_parts_changed(self, *_):
-        if self._si_loading:
-            return
-        self.main.set_si_parts([k for k, cb in self.si_parts.items() if cb.isChecked()])
-        for cb in self.si_figs.values():
-            cb.setEnabled(self.si_parts["figs"].isChecked())
-
-    def _si_figs_changed(self, *_):
-        if self._si_loading:
-            return
-        off = (self.main.si_figs_off() - set(self.si_figs)) | {k for k, cb in self.si_figs.items() if not cb.isChecked()}
-        self.main.settings.setValue("si_figs_off", ",".join(sorted(off)))
-
-    def _si_font_changed(self, font):
-        if self._si_loading:
-            return
+    def purity_suggestion(self):
+        """Vorschlag aus vorhandenen Daten (nie gesetzt, nur angeboten): Elementaranalyse mit allen Elementen innerhalb
+        0.4 % -> ["ea"], sonst ¹H/¹³C, soweit die NMR-Zeile sie enthält. Liest die Zustände, baut keine Tabs."""
         from elucida.si import lines as SI
-        self.main.settings.setValue("si_font", font.family())
-        SI.set_font(font.family())
+        c, ir = self.main.compound, getattr(self.main, "irms_state", {}) or {}
+        try:
+            rows = SI.ea_check(c.get("formula") or "", ir.get("ea_solvate", ""), ir.get("ea_found") or {},
+                               ir.get("ea_found2") or None) if c.get("formula") and ir.get("ea_found") else []
+        except Exception:
+            rows = []
+        if rows and all(r[6] for r in rows):
+            return ["ea"]
+        text = (getattr(self.main, "nmr_state", {}) or {}).get("text") or ""
+        return [k for k, pat in (("1H", r"\b1H NMR"), ("13C", r"\b13C NMR")) if re.search(pat, text)]
+
+    def sync_purity(self):
+        from elucida.si import lines as SI
+        c = self.main.compound
+        on = set(c.get("purity") or [])
+        for k, cb in self.purity_cbs.items():
+            cb.setChecked(k in on)
+        sug = [k for k in self.purity_suggestion() if k not in on]
+        names = ", ".join(T("purity_m_" + k) for k in sug)
+        self.lbl_purity_sug.setText(T("purity_suggest", m=names) if sug and not on else "")
+        self.btn_purity_sug.setVisible(bool(sug) and not on)
+        line = SI.purity_line(c.get("purity"), c.get("purity_other", ""))[0]
+        self.lbl_purity_si.setText(T("purity_si", s=line) if line else T("purity_none"))
+
+    def apply_purity_suggestion(self):
+        comp = dict(self.main.compound)
+        comp["purity"] = list(dict.fromkeys(list(comp.get("purity") or []) + self.purity_suggestion()))
+        if comp["purity"]:
+            self.main.set_compound(comp)
 
     def showEvent(self, ev):
         super().showEvent(ev)
-        self.sync_si_export()                             # Daten in anderen Tabs können sich geändert haben
+        self._loading = True                              # Vorschlag Reinheit (EA/NMR) ebenso
+        try:
+            self.sync_purity()
+        finally:
+            self._loading = False
 
     # -- Zustand --------------------------------------------------------------------------
     def sync_widgets(self):
@@ -273,6 +272,7 @@ class CompoundTab(QWidget):
         self.lbl_struct.setText(Path(p).name if p else "–")
         self.lbl_struct.setToolTip(str(p) if p else "")
         self.lbl_several.setText(self.several_molecules(p))
+        self.sync_purity()
         self._loading = False
 
     @staticmethod
@@ -315,6 +315,9 @@ class CompoundTab(QWidget):
             comp[k] = cb.isChecked()
         if not comp["known"]:
             comp["lit"] = ""
+        comp["purity"] = [k for k, cb in self.purity_cbs.items() if cb.isChecked()]
+        if not comp["purity"]:
+            comp.pop("purity")                            # keine leere Liste: zählt sonst als Änderung
         if self.ed_mw.isModified():                       # unverändertes Feld: gespeicherten Wert nie über die Anzeige runden
             try:
                 comp["mw"] = parse_float(self.ed_mw.text())

@@ -1,6 +1,7 @@
 ---
 paths:
   - "elucida/tabs/epr.py"
+  - "elucida/tabs/epr_calc.py"
   - "elucida/formats/epr.py"
 ---
 
@@ -77,3 +78,49 @@ paths:
 - Unterschrift der Intensitätsansichten (`intensity_caption`, 2026-11-13): Größe, Feldfenster, Normierung, I·T,
   Temperaturen aus der Datei; nur gezeigte Fits (k, t½ je Temperatur; E_a/A der Rampe; Arrhenius E_a und ln A), ohne
   Intervalle; nie „EPR spectra of …“ für diese Ansichten.
+- Spindichte und Hyperfeinkopplungen aus einer Rechnung (1.2.0, Nutzerauftrag 2026-11-13; `tabs/epr_calc.py`, Zustand
+  `st["calc"]` + flache Schlüssel `spin_*`/`hfc_*`): Leser nur Gaussian 16 (`formats/calc.parse_gaussian_epr`: letzter
+  Block „Mulliken charges and spin densities“, Fermi-Kontakt in MHz und Gauss, Dipol-Hauptwerte); andere Programme und
+  geschlossenschalige Ausgaben ablehnen, ORCA erst mit echter Ausgabe. **Prozent = Spinpopulation / Summe aller Atome
+  × 100 mit Vorzeichen** (Summe 100 %; Nutzer: „Hauptsache nicht über 100 %“), im Bild ganzzahlig ab der Schwelle
+  (Nutzer-OK „ganzzahlig ist gut“), Tabelle alle Atome mit einer Nachkommastelle und Summenzeile. Fläche aus Molden
+  (Spindichte ρα − ρβ aus den besetzten MOs, `ORB.spin_density_grid`, Gitter 0.15 Å; SOMO = höchstes besetztes α-MO)
+  oder Cube wie er ist; Orbitaldatei nur mit denselben Atomen/Koordinaten (± 0.02 Å). Kopplungsbild nach der Vorlage
+  des Nutzers: Werte außen um das Molekül (`place_outside`), zweizeilig „x MHz avg.“ / „(exp. y MHz)“, Pfeil mit Spitze
+  bis kurz vor den Kern, je Methylgruppe **ein** Pfeil auf ihr C (`group_targets`), **kein Pfeil durch ein Label, kein
+  Label auf einem Pfeil** (Nutzerwunsch), Fläche auch dort. Zuordnung nur per Klick (Gruppe der S = ½-Simulation wählen,
+  Kerne anklicken; nie automatisch, andere Kernzahl nur melden); Kerne einer Gruppe **mit Vorzeichen gemittelt**, im
+  Bild standardmäßig Beträge wie das Experiment (Chip „Vorzeichen“, Nutzer-OK), Tabelle immer mit Vorzeichen.
+  Experimentelle Werte aus `hfc_texts` (MHz mit dem gefitteten g); G/mT der Rechnung aus der Gauss-Spalte der Ausgabe.
+  Ohne Simulation stehen automatisch alle Kerne außer C und O im Bild (Feld „Kerne“ überstimmt). Tabellen: Zuordnung
+  links über `STYLE.fit_columns` (Atome dehnbar), Ergebnisse rechts `FitGrid`, Spalte „Gruppe“ nur mit Zuordnung.
+  Unterschrift nennt Isowert, Schwelle und Rechenniveau; Methodentext nennt die Herkunft der Werte, nie das Programm.
+- Angaben der Richtlinien in der Unterschrift (1.2.0, Auftrag 2026-11-13; `acq_text`, `hfc_unit_text`, Zustand
+  `cap_acq`, `cap_hfc`, Felder in der Karte Bildunterschrift): Aufnahmeparameter (ν, Modulationsamplitude, Leistung,
+  Scans, T + `T_offset`) nur aus der Messdatei und nur, wenn alle gezeigten Messungen den Wert haben und er gleich
+  gedruckt wird; sonst entfällt die Angabe (nie geschätzt). Scans aus BES3T `NbScansDone`, sonst `AVGS`. Kopplungen in
+  der Unterschrift in MHz (mit gefittetem g, `hfc_texts`), mT (3 Stellen) oder G (2 Stellen); der Methodentext behält
+  „a = … mT (… MHz)“, bei G „a = … G (… MHz)“.
+- ORCA-Leser für Spindichte/Hyperfein (1.2.0, Auftrag 2026-11-13; `formats/calc.parse_orca_epr`, Weiche `parse_epr`).
+  **Dieser Eintrag ersetzt im Punkt „Spindichte und Hyperfeinkopplungen“ oben den Satz „ORCA erst mit echter
+  Ausgabe“** (dort nicht geändert): an echten öffentlichen Ausgaben geprüfte Layouts (`ORCA_EPR_LAYOUT`):
+  4.0/4.1/4.2/5.0 „Nucleus  10H : A:ISTP=“ + „Raw HFC matrix“, 6.0 „Nucleus   0H : A  : Isotope=“ + „Total HFC
+  matrix“; Kernindex ab 0. **6.1** (Robin 2026-11-13: „Schau für Orca 6.1.1 in die Dokumentation. Sonst einfach
+  bauen.“; die 6.1-Doku/Changelog nennen keine Änderung dieser Blöcke): mit dem 6.0-Layout gelesen, aber ohne echte
+  Ausgabe geprüft (`ORCA_EPR_UNCHECKED`, Hinweis `epr_calc_orca_unchecked` auf beiden Reitern; nach Prüfung an einer
+  echten 6.1-Ausgabe aus der Menge nehmen). Strenge Prüfung je Kern: Nucleus-Zeile und Matrixkopf müssen genau zum
+  Layout der Version passen, sonst ablehnen; 6.2+ und andere Versionen ablehnen. Mehrere Jobs (mehrere „INPUT
+  FILE“): Rechenniveau aus dem Job, in dem der gelesene Hyperfeinblock steht. Spin: letzter Mulliken-Block,
+  Löwdin als `spin_loewdin` (Oberfläche unverändert Mulliken). A_iso = **A(FC)** wie gedruckt (nicht A(iso), das bei
+  `aorb` den Pseudokontakt enthält; Gaussian liefert ebenfalls nur Fermi-Kontakt), G = MHz / (g_e·µ_B/h)
+  (`MHZ_PER_G`). Dipol = A(SD) aufsteigend, **nur ohne A(ORB)** (sonst Diagonale im Achsensystem des Gesamttensors,
+  nicht eindeutig; Hinweis im Reiter). Ohne Hyperfeinblock: nur Spin, Reiter „Hyperfein“ nennt `%eprnmr`. Letzter
+  Hyperfeinblock gilt. Methodentext nennt Rechenprogramm und Version („(ORCA 6.0.0)“), nie Elucida.
+- Spinzählung (1.2.0, Lückenanalyse „Spinzählung gegen Kalibrierkurve“; `spin_calibration`, `spin_spec`, Ansicht
+  `int_x` = „conc“): Referenz = Messung mit bekannter Konzentration (`e["conc"]`, Einheit `spin_unit` je Tab; darf
+  ausgeblendet sein), Probe = sichtbare Messung ohne. Kalibrierung Doppelintegral gegen c: ab **drei verschiedenen**
+  Konzentrationen ungewichtete Gerade mit Achsenabschnitt (R²), mit einer oder zwei eine Gerade durch den Ursprung;
+  c(Probe) = (DI − b)/m. **Keine Unsicherheiten, keine Umrechnung** (Verstärkung, Scans, Q, Füllhöhe, Sättigung kennt
+  das Programm nicht): unterscheiden sich Modulation, Leistung oder Temperatur laut Messdatei, steht ein Hinweis und
+  ein Satz im Methodentext. Nur mit dem Doppelintegral, ohne I·T, ohne Normierung; das Vorzeichen der Doppelintegrale
+  folgt den Referenzen (Signalphase). Ohne Referenz keine Zahl. Geprüft nur mit künstlichen Spektren.

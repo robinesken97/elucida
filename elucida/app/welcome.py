@@ -9,7 +9,6 @@ import datetime as dt
 import re
 from pathlib import Path
 
-import yaml
 from PySide6.QtCore import QSize, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
@@ -88,7 +87,7 @@ def project_info(path) -> dict | None:
     pf = PRJ.project_file(pdir)
     try:
         raw = pf.read_text(encoding="utf-8")
-        st = yaml.safe_load(raw) or {}
+        st = PRJ.read_yaml(raw) or {}
     except Exception:
         raw, st = "", {}
     g = lambda *ks: _get(st, *ks)                                  # noqa: E731
@@ -99,7 +98,7 @@ def project_info(path) -> dict | None:
         "ms": bool(g("hrms", "ms_file") or g("hrms", "ms_raw") or g("irms", "ms_file") or g("irms", "ms_raw")),
         "uvvis": bool(g("eps", "files")),
         "uvkin": bool(g("uvkin", "entries")),
-        "fluo": bool(g("fluo", "abs_file") or g("fluo", "em_file")),
+        "fluo": bool(g("fluo", "abs_file") or g("fluo", "em_file") or g("fluo", "decay_file")),
         "cv": bool(g("cv", "files")),
         "sec": bool(g("sec", "spec_files") or g("sec", "dta")),
         "hcell": bool(g("hcell", "entries")),
@@ -450,14 +449,14 @@ class CheckDot(QWidget):
 class Gallery(QWidget):
     """Karten im Raster: so viele Spalten, wie in die Breite passen; columns=1 für Zeilen."""
 
-    def __init__(self):
+    def __init__(self, card_w=CARD_W):
         super().__init__()
         self.grid = QGridLayout(self)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.items, self.cols, self.single = [], 0, False
+        self.items, self.cols, self.single, self.card_w = [], 0, False, card_w
 
     def _columns(self):
-        return 1 if self.single else max(1, (self.width() + CARD_GAP) // (CARD_W + CARD_GAP))
+        return 1 if self.single else max(1, (self.width() + CARD_GAP) // (self.card_w + CARD_GAP))
 
     def set_single(self, on):
         """Eine Spalte als zusammenhängende Tabelle (Rahmen ums Ganze), sonst Kartenraster."""
@@ -492,7 +491,7 @@ class Gallery(QWidget):
         for c in range(max(self.grid.columnCount(), self.cols)):       # leere Spalten behalten ihre Breite
             on = c < self.cols
             self.grid.setColumnStretch(c, 1 if on else 0)
-            self.grid.setColumnMinimumWidth(c, 0 if self.single or not on else CARD_W)
+            self.grid.setColumnMinimumWidth(c, 0 if self.single or not on else self.card_w)
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)

@@ -166,12 +166,14 @@ class HCellFigure(X.SimpleFigure):
 
 
 class HCellTab(TABS.FigureTab):
+    COLOR_ROLES = tuple((f"col_{k}", SI_LOOK[k][0], f"tf_col_{k}") for k in ("charge", "discharge", "ce"))   # Stilkarte
     STATE_KEY = "hcell"
     GUIDE, GUIDE_ACTION = "hcell", ("guide_add", "add_files")
     CAP_FIELDS = ("conc", "solvent")
     X_RANGE = (0.0, 100000.0, 0, 1.0)
     XRANGE_TEXT = "hcell_xrange"
-    RESET_KEEP = ("entries", "current", "cycles", "ref")         # Messungen (mit Q_theo je Messung), gewählte Zyklen
+    RESET_KEEP = ("entries", "current", "cycles", "ref",         # Messungen (mit Q_theo je Messung), gewählte Zyklen
+                  "view")                                        # Kapazität/Potential: Methodentext
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=1.0, x_max=100.0, ymax=0.0, entries=[], current=None,
                          view="capacity", unit="pct", show_ce=True, cycles="", ref="", cap_conc="", cap_solvent="")
 
@@ -447,7 +449,7 @@ class HCellTab(TABS.FigureTab):
             try:
                 d = self.data(e)
             except (OSError, ValueError) as ex:
-                self.add_note(str(ex))
+                self.note_unreadable(e["file"], ex)        # Hinweis + im Export mit Datei und Grund
                 continue
             q, src = self.q_theo(e, d)
             rows = cycle_rows(d["halves"], q)
@@ -461,6 +463,7 @@ class HCellTab(TABS.FigureTab):
 
     def figure_spec(self):
         self._segs = []
+        self.roles_idle = {}
         res = self._results = self.evaluate()
         self.show_results()
         if not res:
@@ -477,6 +480,9 @@ class HCellTab(TABS.FigureTab):
         if st["unit"] == "pct" and not pct:
             self.add_note(T("hcell_no_qtheo"))
         many = len(res) > 1
+        own = many or any(r[0].get("color") for r in res)   # Farben je Messung gewinnen (Stilkarte)
+        self.roles_idle = dict.fromkeys(TABS.style_keys(self), "tf_idle_many" if many else "tf_idle_own") if own else \
+            {} if st["show_ce"] else {"col_ce": "tf_idle_ce"}
         series = []                                         # (Messung k, Größe, Zyklen, Werte)
         for k, (_e, _d, rows, _s, _q, _src) in enumerate(res):
             for kind, key in (("charge", "q_ch"), ("discharge", "q_dis"), ("ce", "ce")):
@@ -502,6 +508,7 @@ class HCellTab(TABS.FigureTab):
                 marker, mfc = OWN_LOOK[kind]
             else:
                 col, marker, mfc = SI_LOOK[kind]
+                col = TABS.role_color(self.st, "col_" + kind, col)   # Stilkarte
             c = {"x": x, "y": y * y1 / r1 if kind == "ce" else y, "color": col, "label": LEGEND[kind], "ls": "none",
                  "marker": marker, "mfc": mfc, "ms": 3.5 if len(x) > 60 else 4.5}
             if kind == "ce":
@@ -532,6 +539,7 @@ class HCellTab(TABS.FigureTab):
             self.add_note(T("hcell_first_only", name=e["label"]))
         steps = self.steps_of(e)
         have = {h["cycle"] for h in d["halves"]} | {n for _, n in steps}
+        self.roles_idle = {"col_ce": "tf_idle_ce"}          # Potentialverlauf ohne CE (Stilkarte)
         parts = []                                          # (Zyklus, Art, t [h], E [V])
         for n in self.selected_cycles(max(have) if have else 0):
             if n not in have:
@@ -546,7 +554,7 @@ class HCellTab(TABS.FigureTab):
                 try:
                     s = self.step(p)
                 except (OSError, ValueError) as ex:
-                    self.add_note(str(ex))
+                    self.note_unreadable(p, ex)
                     continue
                 parts.append((n, kind, s["t_s"] / 3600.0, s["E"]))
         if not parts:
@@ -571,7 +579,8 @@ class HCellTab(TABS.FigureTab):
         curves, labels, named, Es = [], [], set(), []
         for n, kind, t, E in parts:
             xs, xe, t0 = seg_of[n]
-            curves.append({"x": t - t0 + xs, "y": E, "color": SI_LOOK[kind][0], "ls": "-", "lw": 1.3,
+            curves.append({"x": t - t0 + xs, "y": E, "color": TABS.role_color(self.st, "col_" + kind, SI_LOOK[kind][0]),
+                           "ls": "-", "lw": 1.3,
                            "label": kind if kind not in named else None})
             named.add(kind)
             Es.append(E)

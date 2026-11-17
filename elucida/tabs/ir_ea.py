@@ -431,6 +431,100 @@ def ms_line(formula, adduct, found, ionisation="ESI"):
     return plain, html, calc
 
 
+# ---------------------------------------------------------------------------- IR berechnet gegen gemessen (Paket B 1.2.0)
+IRC_MIN_REL = 0.05          # berechnete Moden ab 5 % der stärksten im Bereich zählen für die automatische Zuordnung
+IRC_COLOR = "#1764e8"
+
+
+def calc_ir_profile(modes, scale, fwhm, x0, x1):
+    """Berechnetes Spektrum im Bereich [x0, x1] -> (ṽ, Hüllkurve 0–1) oder None. modes [(ṽ, I)] werden mit `scale`
+    multipliziert; fwhm [cm⁻¹] > 0: Lorentz-Profile (Höhe ∝ I, gemeinsame Halbwertsbreite), sonst Linienspektrum als
+    Polylinie (Strich je Mode, Höhe I/I_max). Normiert auf das Maximum im Bereich."""
+    lo, hi = min(x0, x1), max(x0, x1)
+    m = [(w * scale, i) for w, i in modes if lo <= w * scale <= hi and i > 0]
+    if not m:
+        return None
+    w = np.array([a for a, _ in m])
+    inten = np.array([b for _, b in m])
+    if fwhm and fwhm > 0:
+        x = np.linspace(lo, hi, int(min(20000, max(2000, (hi - lo) / 0.5))))
+        g = (fwhm / 2) ** 2
+        env = (inten[:, None] * g / ((x[None, :] - w[:, None]) ** 2 + g)).sum(0)
+        return x, env / env.max()
+    o = np.argsort(w)
+    x = np.repeat(w[o], 3)
+    y = np.zeros_like(x)
+    y[1::3] = inten[o] / inten.max()
+    return np.r_[lo, x, hi], np.r_[0.0, y, 0.0]
+
+
+def calc_ir_display(env, y_meas, mode):
+    """Hüllkurve in die Darstellung der Messung: die stärkste berechnete Bande so tief/hoch wie die Spannweite der
+    gemessenen Absorbanz, Grundlinie auf der gemessenen. Transmission: T = 100·10^(−A) (berechnetes Spektrum wird
+    umgerechnet, nie die Messung)."""
+    a = to_absorbance(y_meas) if mode == "T" else np.asarray(y_meas, float)
+    lo, hi = float(np.nanmin(a)), float(np.nanmax(a))
+    calc_a = lo + np.asarray(env, float) * (hi - lo)
+    return to_transmission(calc_a) if mode == "T" else calc_a
+
+
+def assign_bands(meas, modes, scale, tol=None, manual=(), min_rel=IRC_MIN_REL):
+    """Zuordnung gemessener Banden (ṽ) zu berechneten Moden -> [dict(meas, calc, diff, I, mode, how)], absteigend.
+    manual: [[ṽ_gemessen gerundet, Modenindex]] gilt immer; automatisch (tol in cm⁻¹, None = aus) nur eindeutig: genau
+    eine Mode ab min_rel der stärksten innerhalb ±tol, und diese Mode hat innerhalb ±tol nur diese eine Bande.
+    diff = gemessen − berechnet (skaliert)."""
+    meas = sorted({round(float(v)) for v in meas}, reverse=True)
+    scaled = [(k, w * scale, i) for k, (w, i) in enumerate(modes)]
+    imax = max((i for _, _, i in scaled), default=0.0)
+    strong = [(k, w, i) for k, w, i in scaled if imax > 0 and i >= min_rel * imax]
+    out, used_m, used_c = [], set(), set()
+    for v, k in manual or ():
+        if v in meas and 0 <= k < len(scaled) and v not in used_m and k not in used_c:
+            out.append(dict(meas=v, calc=scaled[k][1], I=scaled[k][2], mode=k, how="manual"))
+            used_m.add(v)
+            used_c.add(k)
+    if tol:
+        free_m = [v for v in meas if v not in used_m]
+        free_c = [(k, w, i) for k, w, i in strong if k not in used_c]
+        for v in free_m:
+            cand = [(k, w, i) for k, w, i in free_c if abs(w - v) <= tol]
+            if len(cand) != 1:
+                continue
+            k, w, i = cand[0]
+            if sum(1 for u in free_m if abs(w - u) <= tol) != 1:
+                continue
+            out.append(dict(meas=v, calc=w, I=i, mode=k, how="auto"))
+    for r in out:
+        r["diff"] = r["meas"] - round(r["calc"])
+    return sorted(out, key=lambda r: -r["meas"])
+
+
+# ---------------------------------------------------------------------------- Raman (1.2.0)
+RAMAN_COLOR = "#1f7a3a"
+RAMAN_VIEWS = ("ir", "raman", "stack")         # Abbildung des Tabs: IR, Raman oder beide übereinander
+STACK_GAP = 0.12                               # Abstand der gestapelten Spektren (Anteil der normierten Höhe)
+
+
+def exc_text(nm):
+    """Anregungswellenlänge ohne überflüssige Stellen: 785, 632.8."""
+    return f"{nm:.1f}".rstrip("0").rstrip(".")
+
+
+def raman_line(peaks, exc=None):
+    """-> (Klartext, HTML) wie in der SI: Raman (λexc = 785 nm): ṽ = 1601, 1175, … cm-1 (ganze Zahlen, absteigend)."""
+    body = ", ".join(wn_text(p["wn"]) for p in sorted(peaks, key=lambda p: -p["wn"]))
+    ex = f" (λexc = {exc_text(exc)} nm)" if exc else ""
+    ex_h = f" (<i>λ</i><sub>exc</sub> = {exc_text(exc)} nm)" if exc else ""
+    return f"Raman{ex}: ṽ = {body} cm-1", f"<b>Raman</b>{ex_h}: ṽ = {body} cm<sup>-1</sup>"
+
+
+def norm01(y):
+    """Auf 0–1 (Minimum–Maximum) für Peaksuche und gestapelte Darstellung; NaN bleibt NaN."""
+    y = np.asarray(y, float)
+    lo, hi = np.nanmin(y), np.nanmax(y)
+    return (y - lo) / ((hi - lo) or 1.0)
+
+
 # ----------------------------------------------------------------------------
 # Tab „IR + MS“
 # ----------------------------------------------------------------------------
@@ -588,6 +682,16 @@ def copy_rich(plain, html):
     QApplication.clipboard().setMimeData(md)
 
 
+def read_ir_checked(p):
+    """CALC.read_ir_modes, aber eine nicht normal beendete (abgeschnittene) Ausgabe wird abgelehnt: ihre Moden und
+    Intensitäten können unvollständig sein."""
+    from elucida.formats import calc as CALC
+    r = CALC.read_ir_modes(p)
+    if not r["calc"].get("normal", True):
+        raise ValueError(T("r2a_calc_abnormal"))
+    return r
+
+
 class IRMSTab(TABS.FigureTab):
     """Tab „IR + EA“ (der MS-Teil steht seit 1.21 im Tab HRMS, tabs/hrms.py)."""
     STATE_KEY = "irms"
@@ -596,16 +700,38 @@ class IRMSTab(TABS.FigureTab):
     SI_CAPTION = "IR spectrum of {name}."
     X_RANGE = (100.0, 8000.0, 0, 50.0)
     XRANGE_TEXT = "ir_xrange"
-    RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ir_thr", "ea_solvate", "ea_found")   # Dateien, Peakwahl, EA
+    RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ir_thr", "ea_solvate", "ea_found", "ea_found2",
+                  "ea_reason", "irc_file", "irc_scale", "irc_pairs",   # Dateien, Peakwahl, EA, Rechnung
+                  "ram_file", "ram_exc", "ram_off",                  # Raman: Datei, Anregung, Peakwahl
+                  "prominence", "with_int", "ir_lo", "ir_hi", "ir_base", "ram_prom",   # Peaksuche (IR-/Raman-Zeile)
+                  "x_auto", "x_min", "x_max",                        # Raman-Peaks nur im gezeigten Bereich
+                  "irc_tol_on", "irc_tol", "irc_si",                 # Zuordnung zur Rechnung (SI-Tabelle)
+                  "ram_view")                                        # andere SI-Abbildung (IR/Raman)
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=400.0, x_max=4000.0, ymax=0.0, ir_file=None, ir_pdf=None,
                          ir_lo=None, ir_hi=None, prominence=5.0, with_int=False, ir_off=[], ir_labels=False,
-                         ea_solvate="", ea_found={}, ir_mode="T",     # "T" | "A"; None (alte Projekte) = wie die Datei
+                         ea_solvate="", ea_found={}, ea_found2={}, ea_reason="",   # EA (2. Satz, Begründung)
+                         ir_mode="T",                                # "T" | "A"; None (alte Projekte) = wie die Datei
                          y_auto=True, y_min=0.0, y_max=100.0,        # y-Bereich (ymax: nur alte Projekte)
                          ir_color=IR_COLOR,                          # Farbe des Spektrums (FB-13)
                          ir_lw=1.0,                                 # gleiche Linienbreite in Ansicht und Export
                          ir_base=False,                              # OPUS-Basislinie abziehen (FB-11)
                          ir_thr=[],                                  # Schwellenlinie [[ṽ, A], …] (FB-15)
-                         ir_struct=False, struct_w=20.0)             # Struktur der Verbindung im Bild
+                         ir_struct=False, struct_w=20.0,             # Struktur der Verbindung im Bild
+                         # berechnetes IR (Paket B 1.2.0): Datei, Skalierung (Vorgabe 1, vom Nutzer), Lorentz-FWHM
+                         # („aus“ = Linien), Toleranz der automatischen Zuordnung („aus“ = nur von Hand), Paare von Hand
+                         irc_file=None, irc_scale=1.0, irc_fwhm_on=True, irc_fwhm=15.0, irc_tol_on=True, irc_tol=20.0,
+                         irc_color=IRC_COLOR, irc_pairs=[], irc_si=True,
+                         # Raman (1.2.0): Datei (Textspalten), Anregung [nm], Mindesttiefe, abgewählte Peaks, Abbildung
+                         # (IR | Raman | übereinander), Farbe, berechnetes Raman aus der Frequenzrechnung
+                         ram_file=None, ram_exc=None, ram_prom=5.0, ram_off=[], ram_view="ir", ram_color=RAMAN_COLOR,
+                         ram_calc=True)
+
+    def arrange(self):
+        super().arrange()
+        self.to_right(self.grp_irc_res, T("ir_calc_page"))
+
+    def result_empty(self):
+        return [(self.grp_irc_res, not self.st.get("irc_file"))]     # ohne Frequenzrechnung keine Seite
 
     def build_controls(self):
         st = self.st
@@ -692,6 +818,8 @@ class IRMSTab(TABS.FigureTab):
         self.txt_ir.setMaximumHeight(90)
         f.addRow(self.txt_ir)
         self.lv.addWidget(g)
+        self.build_calc_card()
+        self.build_raman_card()
 
         g = QGroupBox(T("ea_group"))
         f = make_form(g)
@@ -706,12 +834,12 @@ class IRMSTab(TABS.FigureTab):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(8)
         grid.addWidget(QLabel(""), 0, 0)
-        for r_, key_ in ((1, "ea_calc"), (2, "ea_found")):   # Raster der Spalte: Beschriftungsspalte, dann die Wertespalte
+        for r_, key_ in ((1, "ea_calc"), (2, "ea_found"), (3, "ea_chk_found2")):   # Raster: Beschriftungen, dann Werte
             lab_ = QLabel(T(key_))
             lab_.setProperty("formlabel", True)
             lab_.setFixedWidth(TABS.STYLE.LABEL_W)
             grid.addWidget(lab_, r_, 0)
-        self.ea_calc_lbl, self.ea_found_ed = {}, {}
+        self.ea_calc_lbl, self.ea_found_ed, self.ea_found2_ed = {}, {}, {}
         for j, el in enumerate(SI.EA_ELEMENTS, 1):
             grid.addWidget(QLabel(f"{el} [%]", alignment=Qt.AlignCenter), 0, j)    # mittig über den Feldern
             lc = QLabel("–", alignment=Qt.AlignCenter)
@@ -722,7 +850,18 @@ class IRMSTab(TABS.FigureTab):
             grid.addWidget(ed, 2, j)
             ed.editingFinished.connect(self.changed)
             self.ea_calc_lbl[el], self.ea_found_ed[el] = lc, ed
+            ed2 = QLineEdit(str((st.get("ea_found2") or {}).get(el, "")))   # Doppelbestimmung (Angew.), optional
+            ed2.setAlignment(Qt.AlignCenter)
+            ed2.setToolTip(T("ea_chk_found2_tip"))
+            grid.addWidget(ed2, 3, j)
+            ed2.editingFinished.connect(self.changed)
+            self.ea_found2_ed[el] = ed2
         f.addRow(grid)
+        # Prüfung gegen 0.4 % je Element als Tabelle (Mittel bei Doppelbestimmung), Abweichung in der Warnfarbe
+        self.tbl_ea = TABS.STYLE.summary_grid([T("ea_chk_el"), T("ea_chk_f1"), T("ea_chk_mean"), "Δ [%]",
+                                               T("ea_chk_status")])   # Einzelwerte stehen im Raster darüber
+        self.tbl_ea.setToolTip(T("ea_chk_tip"))
+        f.addRow(self.tbl_ea)
         self.lbl_ea_info = HintLabel("")
         self.lbl_ea_info.setWordWrap(True)
         f.addRow(self.lbl_ea_info)
@@ -732,8 +871,13 @@ class IRMSTab(TABS.FigureTab):
         self.txt_ea = QTextBrowser()
         self.txt_ea.setMaximumHeight(60)
         f.addRow(self.txt_ea)
+        self.ed_reason = QLineEdit(st.get("ea_reason", ""))   # SI-Text, wenn es keine EA gibt (Angew., ACS)
+        self.ed_reason.setPlaceholderText(T("ea_chk_reason_ph"))
+        self.ed_reason.setToolTip(T("ea_chk_reason_tip"))
+        f.addRow(T("ea_chk_reason"), self.ed_reason)
         self.lv.addWidget(g)
         self.ed_solv.editingFinished.connect(self.changed)
+        self.ed_reason.editingFinished.connect(self.changed)
 
         self._ir_line = self._ea_line = ("", "")
         self.cb_full.toggled.connect(self.changed)
@@ -743,6 +887,507 @@ class IRMSTab(TABS.FigureTab):
             w_.toggled.connect(self.changed)
         self.cmb_mode.currentIndexChanged.connect(self.mode_changed)
         self.sync_widgets()
+
+    # -- berechnetes IR (Paket B 1.2.0) ----------------------------------------------------
+    def build_calc_card(self):
+        """Karte „IR-Rechnung“ (Schritt IR): Frequenzrechnung, Skalierung, Verbreiterung, Toleranz, Zuordnung von Hand;
+        Ergebnisseite „Rechnung“ rechts (arrange)."""
+        st = self.st
+        g = QGroupBox(T("ir_calc_card"))
+        g.setToolTip(T("ir_calc_card_tip"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        self.lbl_irc = QLabel("–")
+        self.lbl_irc.setWordWrap(True)
+        b = QPushButton(T("choose"))
+        b.clicked.connect(self.choose_calc)
+        b2 = QPushButton(T("remove"))
+        b2.clicked.connect(lambda: self.set_calc(None))
+        row.addWidget(self.lbl_irc, 1)
+        row.addWidget(b)
+        row.addWidget(b2)
+        f.addRow(T("ir_calc_file"), row)
+        self.sp_irc_scale = QDoubleSpinBox(decimals=3, minimum=0.5, maximum=1.5, singleStep=0.001, value=st["irc_scale"])
+        self.sp_irc_scale.setToolTip(T("ir_calc_scale_tip"))
+        f.addRow(T("ir_calc_scale"), self.sp_irc_scale)
+        row = QHBoxLayout()
+        self.cb_irc_fwhm = QCheckBox(T("ir_calc_fwhm"))
+        self.cb_irc_fwhm.setChecked(st["irc_fwhm_on"])
+        self.sp_irc_fwhm = QDoubleSpinBox(decimals=0, minimum=1, maximum=200, singleStep=1, value=st["irc_fwhm"],
+                                          suffix=" cm⁻¹")
+        self.sp_irc_fwhm.setToolTip(T("ir_calc_fwhm_tip"))
+        row.addWidget(self.cb_irc_fwhm)
+        row.addWidget(self.sp_irc_fwhm)
+        f.addRow(row)
+        row = QHBoxLayout()
+        self.cb_irc_tol = QCheckBox(T("ir_calc_tol"))
+        self.cb_irc_tol.setChecked(st["irc_tol_on"])
+        self.sp_irc_tol = QDoubleSpinBox(decimals=0, minimum=1, maximum=200, singleStep=1, value=st["irc_tol"],
+                                         suffix=" cm⁻¹")
+        self.sp_irc_tol.setToolTip(T("ir_calc_tol_tip"))
+        row.addWidget(self.cb_irc_tol)
+        row.addWidget(self.sp_irc_tol)
+        f.addRow(row)
+
+        def pick_color(c):
+            self.st["irc_color"] = c
+            self.changed()
+        self.btn_irc_color = TABS.color_button(st.get("irc_color") or IRC_COLOR, pick_color)
+        f.addRow(T("ov_color"), self.btn_irc_color)
+        self.cb_irc_si = QCheckBox(T("ir_calc_si"))
+        self.cb_irc_si.setToolTip(T("ir_calc_si_tip"))
+        self.cb_irc_si.setChecked(st["irc_si"])
+        self.cb_irc_si.setProperty("chip_here", True)     # vor der Zuordnung von Hand, nicht unter ihren Knöpfen
+        f.addRow(self.cb_irc_si)
+        TABS.si_elsewhere(f, self.cb_irc_si, self, "irms", T("export_part_irc"))
+        # Zuordnung von Hand: Bande und Mode wählen (Felder, keine Auswahl in Zellen), dann zuordnen/lösen
+        self.cmb_irc_band = QComboBox()
+        self.cmb_irc_band.setToolTip(T("ir_calc_band_tip"))
+        self.cmb_irc_band.currentIndexChanged.connect(self.fill_mode_combo)
+        f.addRow(T("ir_calc_band"), self.cmb_irc_band)
+        self.cmb_irc_mode = QComboBox()
+        self.cmb_irc_mode.setToolTip(T("ir_calc_mode_tip"))
+        f.addRow(T("ir_calc_mode"), self.cmb_irc_mode)
+        row = QHBoxLayout()
+        self.btn_irc_pair = QPushButton(T("ir_calc_pair"))
+        self.btn_irc_pair.clicked.connect(self.pair_selected)
+        self.btn_irc_unpair = QPushButton(T("ir_calc_unpair"))
+        self.btn_irc_unpair.clicked.connect(self.unpair_selected)
+        row.addWidget(self.btn_irc_pair)
+        row.addWidget(self.btn_irc_unpair)
+        f.addRow("", row)
+        self.grp_irc = g
+        self.lv.addWidget(g)
+        for w_ in (self.sp_irc_scale, self.sp_irc_fwhm, self.sp_irc_tol):
+            w_.valueChanged.connect(self.changed)
+        for w_ in (self.cb_irc_fwhm, self.cb_irc_tol, self.cb_irc_si):
+            w_.toggled.connect(self.changed)
+        # Ergebnisseite: Tabelle der zugeordneten Banden, darunter Skalierung und Regel
+        self.grp_irc_res = QGroupBox(T("ir_calc_page"))
+        self.grp_irc_res.setProperty("hug", True)
+        v = QVBoxLayout(self.grp_irc_res)
+        self.tbl_irc = TABS.STYLE.summary_grid([T("ir_calc_col_meas"), T("ir_calc_col_calc"), "Δṽ [cm⁻¹]",
+                                                "I_calc [km mol⁻¹]", T("ir_calc_col_how")])
+        TABS.STYLE.rich_header(self.tbl_irc)
+        v.addWidget(self.tbl_irc)
+        self.lbl_irc_res = TABS.STYLE.SciLabel(empty=T("ir_calc_none"))
+        self.lbl_irc_res.setWordWrap(True)
+        v.addWidget(self.lbl_irc_res)
+        self.lv.addWidget(self.grp_irc_res)
+        self._irc_rows = []
+
+    def choose_calc(self):
+        if not self.main.ensure_project():
+            return
+        p, _ = QFileDialog.getOpenFileName(self, T("ir_calc_file"), self.main.settings.value("last_dir", ""),
+                                           "ORCA / Gaussian (*.out *.log);;" + T("flt_all"))
+        if p:
+            self.set_calc(p)
+
+    def set_calc(self, p):
+        """Frequenzrechnung laden (Kopie ins Projekt) oder entfernen; unlesbar: Meldung, nichts ändern."""
+        if p:
+            try:
+                read_ir_checked(p)
+            except Exception as e:
+                return self.main.error(f"{Path(p).name}: {e}")
+            p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+        self.st.update(irc_file=p, irc_pairs=[])
+        self.sync_widgets()
+        self.timer.start()
+
+    def calc_modes(self):
+        """-> Ergebnis von CALC.read_ir_modes (zwischengespeichert) oder None."""
+        p = self.st.get("irc_file")
+        if not p or not Path(p).exists():
+            return None
+        def read():
+            try:
+                return read_ir_checked(p)
+            except Exception as e:
+                return str(e)
+        r = self.cache(("irmodes", p), read)
+        if isinstance(r, str):                 # Tab zeigt den Grund (show_calc); im Export mit Datei melden
+            self.main.skip_part(r, p)
+        return r if isinstance(r, dict) else None
+
+    def used_peaks(self):
+        off = set(self.st.get("ir_off") or [])
+        return [p for p in self.peaks() if round(p["wn"]) not in off]
+
+    def fill_band_combo(self):
+        """Gemessene Banden (gezeigte Peaks) in die Auswahl; Auswahl bleibt, wenn es die Bande noch gibt."""
+        old = self.cmb_irc_band.currentData()
+        self.cmb_irc_band.blockSignals(True)
+        self.cmb_irc_band.clear()
+        for p in sorted(self.used_peaks(), key=lambda q: -q["wn"]):
+            self.cmb_irc_band.addItem(f"{round(p['wn'])} cm⁻¹", round(p["wn"]))
+        i = self.cmb_irc_band.findData(old)
+        self.cmb_irc_band.setCurrentIndex(max(0, i))
+        self.cmb_irc_band.blockSignals(False)
+        self.fill_mode_combo()
+
+    def fill_mode_combo(self, *_):
+        """Berechnete Moden zur gewählten Bande, die nächsten (skaliert) zuerst."""
+        self.cmb_irc_mode.clear()
+        r, v = self.calc_modes(), self.cmb_irc_band.currentData()
+        ok = r is not None and v is not None
+        for w_ in (self.cmb_irc_mode, self.btn_irc_pair, self.btn_irc_unpair, self.cmb_irc_band):
+            w_.setEnabled(ok)
+        if not ok:
+            return
+        sc = self.st.get("irc_scale", 1.0)
+        near = sorted(range(len(r["modes"])), key=lambda k: abs(r["modes"][k][0] * sc - v))[:12]
+        for k in near:
+            w, i = r["modes"][k]
+            self.cmb_irc_mode.addItem(T("ir_calc_mode_item", w=f"{w * sc:.0f}", i=f"{i:.0f}"), k)
+
+    def pair_selected(self):
+        v, k = self.cmb_irc_band.currentData(), self.cmb_irc_mode.currentData()
+        if v is None or k is None:
+            return
+        pairs = [q for q in self.st.get("irc_pairs") or [] if q[0] != v and q[1] != k] + [[v, k]]
+        self.st["irc_pairs"] = pairs
+        self.timer.start()
+
+    def unpair_selected(self):
+        v = self.cmb_irc_band.currentData()
+        self.st["irc_pairs"] = [q for q in self.st.get("irc_pairs") or [] if q[0] != v]
+        self.timer.start()
+
+    def calc_rows(self):
+        """Zugeordnete Banden (Tabelle, SI, Kachel) aus Messung, Rechnung und Einstellungen."""
+        r = self.calc_modes()
+        if r is None or self.spectrum() is None and not self.st.get("ir_pdf"):
+            return []
+        st = self.st
+        return assign_bands([p["wn"] for p in self.used_peaks()], r["modes"], st.get("irc_scale", 1.0),
+                            st.get("irc_tol") if st.get("irc_tol_on") else None, st.get("irc_pairs") or [])
+
+    def show_calc(self):
+        """Ergebnisseite „IR-Rechnung“ nach jedem Zeichnen."""
+        if getattr(self, "tbl_irc", None) is None:
+            return
+        rows = self._irc_rows = self.calc_rows()
+        TABS.STYLE.fill_summary(self.tbl_irc, [[str(q["meas"]), f"{q['calc']:.0f}", f"{q['diff']:+d}".replace("-", "−"),
+                                                f"{q['I']:.0f}", T("ir_calc_how_" + q["how"])] for q in rows])
+        r, st = self.calc_modes(), self.st
+        notes = []
+        if st.get("irc_file") and r is None:
+            e = self.main.extra_cache.get(("irmodes", st["irc_file"]))
+            notes.append(T("ir_calc_bad", e=e if isinstance(e, str) else ""))
+        elif r is not None:
+            notes.append(T("ir_calc_info", n=len(r["modes"]), s=f"{st.get('irc_scale', 1.0):.3f}",
+                           pct=f"{IRC_MIN_REL * 100:.0f}"))
+            if rows:
+                mad = sum(abs(q["diff"]) for q in rows) / len(rows)
+                notes.append(T("ir_calc_mad", n=len(rows), d=f"{mad:.0f}"))
+            if r["n_imag"]:
+                notes.append(T("ir_calc_imag", n=r["n_imag"]))
+            if abs(st.get("irc_scale", 1.0) - 1.0) < 1e-9:
+                notes.append(T("ir_calc_scale_hint"))
+        self.lbl_irc_res.setText("\n".join(notes), plain=bool(rows))
+
+    # -- Raman (1.2.0) ---------------------------------------------------------------------
+    def build_raman_card(self):
+        """Karte „Raman“ (Schritt IR): Spektrum als Textspalten, Anregung, Mindesttiefe, Abbildung (IR, Raman oder beide
+        übereinander), Farbe, berechnetes Raman, Peaktabelle und SI-Zeile."""
+        st = self.st
+        g = QGroupBox(T("raman_card"))
+        g.setToolTip(T("raman_card_tip"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        self.lbl_ram = QLabel("–")
+        self.lbl_ram.setWordWrap(True)
+        b = QPushButton(T("choose"))
+        b.clicked.connect(self.choose_raman)
+        b2 = QPushButton(T("remove"))
+        b2.clicked.connect(lambda: self.set_raman(None))
+        row.addWidget(self.lbl_ram, 1)
+        row.addWidget(b)
+        row.addWidget(b2)
+        f.addRow(T("raman_file"), row)
+        # 0 = nicht angegeben: ohne Eingabe steht keine Anregung in SI und Unterschrift (nie eine Vorgabe)
+        self.sp_ram_exc = QDoubleSpinBox(decimals=1, minimum=0.0, maximum=1600.0, singleStep=1.0, suffix=" nm",
+                                         value=st["ram_exc"] or 0.0)
+        self.sp_ram_exc.setSpecialValueText(T("fixt_raman_exc_none"))
+        self.sp_ram_exc.setToolTip(T("raman_exc_tip"))
+        f.addRow(T("raman_exc"), self.sp_ram_exc)
+        self.sp_ram_prom = QDoubleSpinBox(decimals=1, minimum=0.5, maximum=50, singleStep=0.5, suffix=" %",
+                                          value=st["ram_prom"])
+        self.sp_ram_prom.setToolTip(T("raman_prom_tip"))
+        f.addRow(T("ir_prom"), self.sp_ram_prom)
+        self.cmb_ram_view = QComboBox()
+        for k_ in RAMAN_VIEWS:
+            self.cmb_ram_view.addItem(T("raman_view_" + k_), k_)
+        self.cmb_ram_view.setToolTip(T("raman_view_tip"))
+        f.addRow(T("raman_view"), self.cmb_ram_view)
+
+        def pick_color(c):
+            self.st["ram_color"] = c
+            self.changed()
+        self.btn_ram_color = TABS.color_button(st.get("ram_color") or RAMAN_COLOR, pick_color)
+        f.addRow(T("ov_color"), self.btn_ram_color)
+        self.cb_ram_calc = QCheckBox(T("raman_calc"))
+        self.cb_ram_calc.setToolTip(T("raman_calc_tip"))
+        self.cb_ram_calc.setChecked(bool(st["ram_calc"]))
+        self.cb_ram_calc.setProperty("chip_here", True)     # vor der Tabelle, nicht darunter
+        f.addRow(self.cb_ram_calc)
+        self.tbl_ram = QTableWidget(0, 2)
+        self.tbl_ram.setHorizontalHeaderLabels(["", "ṽ [cm⁻¹]"])
+        self.tbl_ram.verticalHeader().setVisible(False)
+        hh = self.tbl_ram.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tbl_ram.setMinimumHeight(130)
+        STYLE_ = TABS.STYLE
+        STYLE_.empty_note(self.tbl_ram, T("raman_none"))
+        self.tbl_ram.itemChanged.connect(self.raman_toggled)
+        f.addRow(self.tbl_ram)
+        b = STYLE_.copy_button(T("raman_copy"))
+        b.clicked.connect(lambda: copy_rich(*self._ram_line))
+        f.addRow(STYLE_.text_head(T("raman_line"), b))
+        self.txt_ram = QTextBrowser()
+        self.txt_ram.setMaximumHeight(70)
+        f.addRow(self.txt_ram)
+        self.grp_raman = g
+        self.lv.addWidget(g)
+        self._ram_line = ("", "")
+        for w_ in (self.sp_ram_exc, self.sp_ram_prom):
+            w_.valueChanged.connect(self.changed)
+        self.cb_ram_calc.toggled.connect(self.changed)
+        self.cmb_ram_view.currentIndexChanged.connect(self.raman_view_changed)
+
+    def choose_raman(self):
+        if not self.main.ensure_project():
+            return
+        p, _ = QFileDialog.getOpenFileName(self, T("raman_file"), self.main.settings.value("last_dir", ""),
+                                           f"{T('raman_flt')};;{T('flt_all')}")
+        if p:
+            self.set_raman(p)
+
+    def set_raman(self, p):
+        """Raman-Spektrum laden (Kopie ins Projekt) oder entfernen; unlesbar: Meldung, nichts ändern."""
+        if p:
+            from elucida.formats.xy import read_xy
+            try:
+                read_xy(p)
+            except Exception as e:
+                return self.main.error(f"{Path(p).name}: {e}")
+            p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
+        self.st.update(ram_file=p, ram_off=[])
+        if p and self.st.get("ram_view", "ir") == "ir" and self.spectrum() is None:
+            self.st["ram_view"] = "raman"                  # nur Raman geladen: gleich zeigen
+        self.sync_widgets()
+        self.timer.start()
+
+    def raman_view_changed(self, *_):
+        if self._loading:
+            return
+        self.st["ram_view"] = self.cmb_ram_view.currentData()
+        self.st["layout"][self.size_key()] = {}            # Labels gehören zur anderen Abbildung
+        self.timer.start()
+
+    def raman_spectrum(self):
+        """-> dict(wn, y) aufsteigend nach der Raman-Verschiebung oder None."""
+        p = self.st.get("ram_file")
+        if not p or not Path(p).exists():
+            return None
+        from elucida.formats.xy import read_xy
+
+        def read():
+            try:
+                d = read_xy(p)
+            except Exception as e:
+                return str(e)
+            o = np.argsort(d["x"])
+            return {"wn": d["x"][o], "y": d["y"][o]}
+        r = self.cache(("raman", p), read)
+        return r if isinstance(r, dict) else None
+
+    def raman_peaks(self):
+        """Maxima des Raman-Spektrums (auf 0–1 normiert, Mindesttiefe relativ zur stärksten Bande) im gezeigten Bereich."""
+        sp = self.raman_spectrum()
+        if sp is None:
+            return []
+        lo, hi = self.raman_xlim(sp)
+        return pick_peaks(sp["wn"], norm01(sp["y"]), "A", lo, hi, self.st.get("ram_prom", 5.0) / 100)
+
+    def raman_xlim(self, sp):
+        st = self.st
+        if not st.get("x_auto", True):
+            return min(st["x_min"], st["x_max"]), max(st["x_min"], st["x_max"])
+        return float(sp["wn"].min()), float(sp["wn"].max())
+
+    def raman_used(self):
+        off = set(self.st.get("ram_off") or [])
+        return [p for p in self.raman_peaks() if round(p["wn"]) not in off]
+
+    def raman_toggled(self, item):
+        if self._loading or item.column() != 0:
+            return
+        k = item.data(Qt.UserRole)
+        off = set(self.st.get("ram_off") or [])
+        off.discard(k) if item.checkState() == Qt.Checked else off.add(k)
+        self.st["ram_off"] = sorted(off)
+        self.timer.start()
+
+    def fill_raman(self):
+        """Peaktabelle und SI-Zeile des Raman-Spektrums."""
+        peaks = self.raman_peaks()
+        self._loading = True
+        off = set(self.st.get("ram_off") or [])
+        self.tbl_ram.setRowCount(len(peaks))
+        for i, p in enumerate(sorted(peaks, key=lambda q: -q["wn"])):
+            k = round(p["wn"])
+            it = QTableWidgetItem()
+            it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            it.setCheckState(Qt.Unchecked if k in off else Qt.Checked)
+            it.setData(Qt.UserRole, k)
+            self.tbl_ram.setItem(i, 0, it)
+            it = QTableWidgetItem(f"{p['wn']:.1f}")
+            it.setFlags(Qt.ItemIsEnabled)
+            self.tbl_ram.setItem(i, 1, it)
+        self._loading = False
+        use = [p for p in peaks if round(p["wn"]) not in off]
+        self._ram_line = raman_line(use, self.st.get("ram_exc")) if use else ("", "")
+        self.txt_ram.setHtml(self._ram_line[1])
+
+    def calc_raman(self):
+        """Berechnete Raman-Aktivitäten [(ṽ, S)] der geladenen Frequenzrechnung oder None (fehlen sie: kein Spektrum)."""
+        r = self.calc_modes()
+        return r.get("raman") if r is not None and self.st.get("ram_calc", True) else None
+
+    def raman_figure_spec(self, view):
+        """Abbildung „Raman“ (Maxima nach oben, Achse Raman shift, Intensität ohne Zahlen) oder „übereinander“ (IR oben,
+        Raman unten auf gemeinsamer Wellenzahlachse, beide auf ihre Spannweite normiert) -> wie figure_spec."""
+        st = self.st
+        rs = self.raman_spectrum()
+        cfg = self.base_cfg()
+        cfg["y_axis"] = "no_numbers"
+        cfg["legend"] = False
+        lw = min(20.0, max(0.05, float(st.get("ir_lw", 1.0))))
+        col = st.get("ram_color") or RAMAN_COLOR
+        labels = []
+        if view == "stack":
+            sp = self.spectrum()
+            (lo, hi), _ = self.ir_range()
+            if st["x_auto"]:
+                x0, x1 = min(lo, hi, rs["wn"].min()), max(lo, hi, rs["wn"].max())
+            else:
+                x0, x1 = min(st["x_min"], st["x_max"]), max(st["x_min"], st["x_max"])
+            mode = self.mode()
+            sel = (sp["wn"] >= x0) & (sp["wn"] <= x1)
+            yi = display_y(sp, mode)
+            ys = yi[sel] if sel.any() else yi
+            yi = (yi - np.nanmin(ys)) / ((np.nanmax(ys) - np.nanmin(ys)) or 1.0)
+            rsel = (rs["wn"] >= x0) & (rs["wn"] <= x1)
+            yr = rs["y"] - np.nanmin(rs["y"][rsel] if rsel.any() else rs["y"])
+            yr = yr / ((np.nanmax(yr[rsel] if rsel.any() else yr)) or 1.0)
+            off = 1.0 + STACK_GAP
+            curves = [{"x": sp["wn"], "y": yi + off, "color": st.get("ir_color") or IR_COLOR, "label": "IR", "ls": "-",
+                       "lw": lw},
+                      {"x": rs["wn"], "y": yr, "color": col, "label": "Raman", "ls": "-", "lw": lw}]
+            cfg.update(xlim=[x1, x0], ylim=[-0.04, 2 + STACK_GAP + 0.04], legend=True, legend_beside=True,
+                       xlabel="wavenumber [cm$^{-1}$]", ylabel="intensity [arb. u.]")
+            self._ir_fig = {"side": "above", "fixed": True}
+            self._fig_kind = "stack"
+            return cfg, curves, labels, []
+        x0, x1 = self.raman_xlim(rs)
+        sel = (rs["wn"] >= x0) & (rs["wn"] <= x1)
+        y = rs["y"]
+        ys = y[sel] if sel.any() else y
+        ymin, ymax = float(np.nanmin(ys)), float(np.nanmax(ys))
+        span = (ymax - ymin) or 1.0
+        curves = [{"x": rs["wn"], "y": y, "color": col, "label": None, "ls": "-", "lw": lw}]
+        self._ram_calc_drawn = None
+        modes = self.calc_raman()
+        if modes:
+            fw = st.get("irc_fwhm") if st.get("irc_fwhm_on", True) else 0.0
+            prof = calc_ir_profile(modes, st.get("irc_scale", 1.0), fw, x0, x1)
+            if prof is None:
+                self.add_note(T("ir_calc_out_of_range"))
+            else:
+                curves[0]["label"] = "exp."
+                curves.append({"x": prof[0], "y": ymin + prof[1] * span, "color": st.get("irc_color") or IRC_COLOR,
+                               "ls": "-", "label": "calc.", "lw": lw})
+                cfg.update(legend=True, legend_beside=True)
+                self._ram_calc_drawn = fw
+        elif self.calc_modes() is not None and st.get("ram_calc", True):
+            self.add_note(T("raman_calc_none"))
+        if st.get("ir_labels"):
+            o = np.argsort(rs["wn"])
+            for p in self.raman_used():
+                yv = float(np.interp(p["wn"], rs["wn"][o], y[o]))
+                labels.append({"key": f"label_ram_{round(p['wn'])}", "lam": p["wn"], "y": yv, "side": "above",
+                               "text": wn_text(p["wn"])})
+        cfg.update(xlim=[x0, x1], ylim=[ymin - 0.04 * span, ymax + 0.06 * span],
+                   xlabel="Raman shift [cm$^{-1}$]", ylabel="intensity [arb. u.]")
+        self._ir_fig = {"side": "above", "fixed": False}
+        self._fig_kind = "raman"
+        return cfg, curves, labels, []
+
+    def raman_caption(self, name):
+        """Bildunterschrift der Raman-Abbildungen (HTML); Anregung aus dem Feld, Rechnung wie beim IR."""
+        import html as _h
+        nm = "<b>" + _h.escape(name) + "</b>"
+        exc = self.st.get("ram_exc")
+        ex = f"<i>λ</i><sub>exc</sub> = {exc_text(exc)} nm" if exc else ""
+        if getattr(self, "_fig_kind", "ir") == "stack":
+            return f"IR (top) and Raman (bottom{', ' + ex if ex else ''}) spectra of {nm}."
+        cap = f"Raman spectrum of {nm}" + (f" ({ex})" if ex else "")
+        fw = getattr(self, "_ram_calc_drawn", None)
+        r = self.calc_modes()
+        if fw is None or r is None:
+            return cap + "."
+        from elucida.tabs import dft_pages as DP
+        lvl = DP.level_of_theory(r["calc"])
+        how = f"Lorentzian broadening, FWHM {fw:.0f} cm-1" if fw else "line spectrum"
+        return (cap + f" (measured) with the calculated Raman activities{' (' + _h.escape(lvl) + ')' if lvl else ''}, "
+                f"frequencies scaled by {self.st.get('irc_scale', 1.0):.3f}, {how}.")
+
+    def refresh_summary(self):
+        try:                                              # Zugabe zum Zeichnen: Fehler nie nach außen; vor den Kacheln
+            if getattr(self, "tbl_irc", None) is not None:
+                self.fill_band_combo()
+                self.show_calc()
+        except Exception:
+            import traceback
+            self.main.log_signal.emit(traceback.format_exc())
+        super().refresh_summary()
+
+    def si_caption(self, name):
+        if getattr(self, "_fig_kind", "ir") != "ir":
+            return self.raman_caption(name)
+        cap = super().si_caption(name)
+        r = self.calc_modes()
+        if r is None or getattr(self, "_irc_drawn", None) is None:
+            return cap
+        from elucida.tabs import dft_pages as DP
+        lvl = DP.level_of_theory(r["calc"])
+        fw = self._irc_drawn
+        how = f"Lorentzian broadening, FWHM {fw:.0f} cm-1" if fw else "line spectrum"
+        return (cap[:-1] + f" (measured) with the calculated spectrum{' (' + __import__('html').escape(lvl) + ')' if lvl else ''}, "
+                f"frequencies scaled by {self.st.get('irc_scale', 1.0):.3f}, {how}.")
+
+    def si_table_blocks(self, name):
+        """Tabelle der zugeordneten Banden für die SI (Word), leer ohne Zuordnung oder ohne Haken."""
+        if not self.st.get("irc_si", True):
+            return []
+        self.ensure_rendered()
+        rows = self.calc_rows()
+        if not rows:
+            return []
+        from elucida.tabs import xray as XRAY
+        st = self.st
+        head = ["*ṽ*_{exp} / cm^{−1}", "*ṽ*_{calc} / cm^{−1}", "Δ*ṽ* / cm^{−1}", "*I*_{calc} / km mol^{−1}"]
+        body = [[str(q["meas"]), f"{q['calc']:.0f}", f"{q['diff']:+d}".replace("-", "−"), f"{q['I']:.0f}"] for q in rows]
+        note = (f"Calculated frequencies scaled by {st.get('irc_scale', 1.0):.3f}; Δ*ṽ* = *ṽ*_{{exp}} − *ṽ*_{{calc}}. "
+                + ("Bands assigned manually" if all(q["how"] == "manual" for q in rows) else
+                   f"Bands assigned manually or as the only calculated mode (≥ {IRC_MIN_REL * 100:.0f}% of the strongest "
+                   f"intensity) within ±{st.get('irc_tol', 20.0):.0f} cm^{{−1}}") + ".")
+        return [("tabcap", "Measured and calculated IR bands of", name),
+                ("params", head, body, {"fit": True}), ("note", note), ("gap",)]
 
     def common_box(self):
         """Statt „y-Achse max“ eine Zeile „y-Bereich“: auto | min – max (exakt)."""
@@ -991,9 +1636,29 @@ class IRMSTab(TABS.FigureTab):
         self.sp_struct_w.setValue(st.get("struct_w", 20.0))
         c_ = st.get("ir_color") or IR_COLOR
         self.btn_ircolor.setProperty("color", c_)
-        self.btn_ircolor.setStyleSheet(f"background-color: {c_}; border: 1px solid #777;")
+        self.btn_ircolor.setStyleSheet(f"background-color: {c_}; border: 1px solid {TABS.STYLE.swatch_border()};")
         self.sp_prom.setValue(st.get("prominence", 5.0))
         self.sp_ir_lw.setValue(st.get("ir_lw", 1.0))
+        if getattr(self, "lbl_irc", None) is not None:      # berechnetes IR
+            self.lbl_irc.setText(Path(st["irc_file"]).name if st.get("irc_file") else "–")
+            self.sp_irc_scale.setValue(st.get("irc_scale", 1.0))
+            self.cb_irc_fwhm.setChecked(bool(st.get("irc_fwhm_on", True)))
+            self.sp_irc_fwhm.setValue(st.get("irc_fwhm", 15.0))
+            self.cb_irc_tol.setChecked(bool(st.get("irc_tol_on", True)))
+            self.sp_irc_tol.setValue(st.get("irc_tol", 20.0))
+            self.cb_irc_si.setChecked(bool(st.get("irc_si", True)))
+            c2_ = st.get("irc_color") or IRC_COLOR
+            self.btn_irc_color.setProperty("color", c2_)
+            self.btn_irc_color.setStyleSheet(f"background-color: {c2_}; border: 1px solid {TABS.STYLE.swatch_border()};")
+        if getattr(self, "lbl_ram", None) is not None:      # Raman
+            self.lbl_ram.setText(Path(st["ram_file"]).name if st.get("ram_file") else "–")
+            self.sp_ram_exc.setValue(st.get("ram_exc") or 0.0)
+            self.sp_ram_prom.setValue(st.get("ram_prom", 5.0))
+            self.cb_ram_calc.setChecked(bool(st.get("ram_calc", True)))
+            self.cmb_ram_view.setCurrentIndex(max(0, self.cmb_ram_view.findData(st.get("ram_view", "ir"))))
+            c3_ = st.get("ram_color") or RAMAN_COLOR
+            self.btn_ram_color.setProperty("color", c3_)
+            self.btn_ram_color.setStyleSheet(f"background-color: {c3_}; border: 1px solid {TABS.STYLE.swatch_border()};")
         self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
         self.sync_yrange()
         self._loading = False
@@ -1006,9 +1671,17 @@ class IRMSTab(TABS.FigureTab):
             st.update(ir_lo=self.sp_lo.value(), ir_hi=self.sp_hi.value())
         st.update(ea_solvate=self.ed_solv.text().strip(),
                   ea_found={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found_ed.items()
-                            if ed.text().strip()})
+                            if ed.text().strip()},
+                  ea_found2={el: ed.text().strip().replace(",", ".") for el, ed in self.ea_found2_ed.items()
+                             if ed.text().strip()},
+                  ea_reason=self.ed_reason.text().strip())
         st.update(prominence=self.sp_prom.value(), with_int=self.cb_int.isChecked(), ir_labels=self.cb_irlab.isChecked(),
-                  ir_base=self.cb_base.isChecked(), ir_struct=self.cb_irstruct.isChecked(), ir_lw=self.sp_ir_lw.value())
+                  ir_base=self.cb_base.isChecked(), ir_struct=self.cb_irstruct.isChecked(), ir_lw=self.sp_ir_lw.value(),
+                  irc_scale=self.sp_irc_scale.value(), irc_fwhm_on=self.cb_irc_fwhm.isChecked(),
+                  irc_fwhm=self.sp_irc_fwhm.value(), irc_tol_on=self.cb_irc_tol.isChecked(),
+                  irc_tol=self.sp_irc_tol.value(), irc_si=self.cb_irc_si.isChecked(),
+                  ram_exc=self.sp_ram_exc.value() or None, ram_prom=self.sp_ram_prom.value(),
+                  ram_calc=self.cb_ram_calc.isChecked())
         if getattr(self, "sp_ymin", None) is not None:
             lo, hi = self.sp_ymin.value(), self.sp_ymax2.value()
             if lo >= hi:                                  # min < max: das gerade nicht geänderte Feld weicht aus
@@ -1053,6 +1726,8 @@ class IRMSTab(TABS.FigureTab):
         st = self.st
         formula, _ = self.formula()
         self._ea_line = ("", "")
+        self._ea_rows = []
+        TABS.STYLE.fill_summary(self.tbl_ea, [])
         for el in SI.EA_ELEMENTS:
             self.ea_calc_lbl[el].setText("–")
         if not formula:
@@ -1063,7 +1738,9 @@ class IRMSTab(TABS.FigureTab):
         try:
             comp = SI.ea_composition(formula, st.get("ea_solvate", ""))
             label = SI.ea_formula_label(formula, st.get("ea_solvate", ""))
-            plain, html, notes = SI.ea_line(formula, st.get("ea_solvate", ""), st.get("ea_found") or {})
+            plain, html, notes = SI.ea_line(formula, st.get("ea_solvate", ""), st.get("ea_found") or {},
+                                            st.get("ea_found2") or {})
+            rows = SI.ea_check(formula, st.get("ea_solvate", ""), st.get("ea_found") or {}, st.get("ea_found2") or {})
         except (ValueError, KeyError) as e:
             self.lbl_ea_formula.setText(SI.chem_plain(formula))
             self.lbl_ea_info.setText(str(e))
@@ -1075,23 +1752,61 @@ class IRMSTab(TABS.FigureTab):
             if el in comp:
                 self.ea_calc_lbl[el].setText(f"{comp[el]:.2f}")
         if not st.get("ea_found"):
-            self.txt_ea.setHtml("")
+            self._ea_line = SI.ea_reason_line(st.get("ea_reason", ""))   # ohne Werte: Begründung, falls eingetragen
+            self.txt_ea.setHtml(self._ea_line[1])
             self.lbl_ea_info.setText(T("ea_enter"))
             self.lbl_ea_info.setStyleSheet(HINT_CSS)
             return
+        self._ea_rows = rows
+        self.fill_ea_table(rows)
         self._ea_line = (plain, html)
         self.txt_ea.setHtml(html)
         if notes:
-            self.lbl_ea_info.setText(T("ea_dev", els=", ".join(f"{el} {d:+.2f}" for el, d in notes)))
+            self.lbl_ea_info.setText(T("ea_dev", els=", ".join(f"{el} {d:+.2f}".replace("-", "−") for el, d in notes)))
             self.lbl_ea_info.setStyleSheet(WARN_CSS)
         else:
             self.lbl_ea_info.setText(T("ea_ok"))
             self.lbl_ea_info.setStyleSheet(HINT_CSS)
 
+    def fill_ea_table(self, rows):
+        """Tabelle der EA-Prüfung: je Element der geprüfte Wert (gefunden, mit zweitem Satz das Mittel), Δ, Status."""
+        from PySide6.QtGui import QBrush, QColor
+        two = any(r[3] is not None for r in rows)
+        single = two and any(r[4] is None for r in rows)  # Element nur einmal bestimmt: dieser Wert wird geprüft
+        self.tbl_ea.setHorizontalHeaderLabels([T("ea_chk_el"), T("ea_chk_f1"),
+                                               T("r2a_ea_mean_single" if single else "ea_chk_mean"), "Δ [%]",
+                                               T("ea_chk_status")])
+        TABS.STYLE.fill_summary(self.tbl_ea, [
+            [el, f"{v1:.2f}", f"{m if m is not None else v1:.2f}", TABS.core.fmt_num(d, 2, sign=True),
+             ("✓ " if ok else "⚠ ") + T("ea_chk_ok" if ok else "ea_chk_bad")]
+            for el, calc, v1, v2, m, d, ok in rows], hidden=(1,) if two else (2,))
+        for r, row in enumerate(rows):
+            if not row[-1]:
+                for c in range(self.tbl_ea.columnCount()):
+                    self.tbl_ea.item(r, c).setForeground(QBrush(QColor(TABS.STYLE.WARN_COLOR)))
+
+    KPI_WITHOUT_FIGURE = True                             # EA-Kachel auch ohne IR-Spektrum
+
+    def kpis(self):
+        """Kachel EA: alle Elemente innerhalb 0.4 % oder die größte Abweichung in der Warnfarbe; dazu die Zahl der
+        zugeordneten Banden der IR-Rechnung (dieselbe Zahl wie die Tabelle der Seite IR-Rechnung)."""
+        out = []
+        irc = getattr(self, "_irc_rows", None) or []
+        if irc:
+            out.append((T("ir_calc_kpi"), str(len(irc))))
+        rows = getattr(self, "_ea_rows", None) or []
+        if not rows:
+            return out
+        bad = [r for r in rows if not r[-1]]
+        if not bad:
+            return [(T("ea_chk_kpi"), "≤ 0.4 %")] + out
+        el, *_, d, _ = max(bad, key=lambda r: abs(r[5]))
+        return [(T("ea_chk_kpi"), f"{el} {d:+.2f} %".replace("-", "−"), True)] + out
+
     def si_parts(self):
         """Fertige Zeilen für den SI-Export: [(Klartext, HTML)] für IR und EA (leere fehlen)."""
         self.figure_spec()
-        return [x for x in (self._ir_line, self._ea_line) if x and x[0]]
+        return [x for x in (self._ir_line, getattr(self, "_ram_line", None), self._ea_line) if x and x[0]]
 
     # -- Abbildung ------------------------------------------------------------------
     def figure_spec(self):
@@ -1104,6 +1819,19 @@ class IRMSTab(TABS.FigureTab):
         self.txt_ir.setHtml(self._ir_line[1])
         self.update_ea()
         sp = self.spectrum()
+        self._fig_kind = "ir"
+        if getattr(self, "tbl_ram", None) is not None:
+            self.fill_raman()
+            view = st.get("ram_view", "ir")
+            if st.get("ram_file") and self.raman_spectrum() is None:
+                self.add_note(T("raman_unreadable"))
+            elif view != "ir" and self.raman_spectrum() is not None:
+                if view == "stack" and sp is None:
+                    self.add_note(T("raman_stack_no_ir"))
+                    view = "raman"
+                return self.raman_figure_spec(view)
+            elif view != "ir":
+                self.add_note(T("raman_view_no_data"))
         if self.pdf_error():
             self.add_note(T("ir_pdf_curve_none", e=self.pdf_error()))
         if sp is None:
@@ -1127,6 +1855,23 @@ class IRMSTab(TABS.FigureTab):
         cfg["ylabel"] = "transmittance [%]" if mode == "T" else "absorbance"
         cfg["legend"] = False
         curves = [{"x": sp["wn"], "y": y, "color": st.get("ir_color") or IR_COLOR, "label": None, "ls": "-", "lw": min(20.0, max(0.05, float(st.get("ir_lw", 1.0))))}]
+        self._irc_drawn = None
+        r_c = self.calc_modes()
+        if r_c is not None:                              # berechnetes Spektrum in der Darstellung der Messung
+            fw = st.get("irc_fwhm") if st.get("irc_fwhm_on", True) else 0.0
+            prof = calc_ir_profile(r_c["modes"], st.get("irc_scale", 1.0), fw, x0, x1)
+            if prof is None:
+                self.add_note(T("ir_calc_out_of_range"))
+            elif sel.any():
+                curves[0]["label"] = "exp."
+                curves.append({"x": prof[0], "y": calc_ir_display(prof[1], y[sel], mode),
+                               "color": st.get("irc_color") or IRC_COLOR, "ls": "-", "label": "calc.",
+                               "lw": min(20.0, max(0.05, float(st.get("ir_lw", 1.0))))})
+                cfg["legend"] = True
+                cfg["legend_beside"] = True              # keine freie Stelle: neben die Achse, nie über die Kurven
+                self._irc_drawn = fw
+        elif st.get("irc_file"):
+            self.add_note(T("ir_calc_unreadable"))
         labels = []
         if getattr(self, "_preview", False) and self.btn_thr.isChecked() and st.get("ir_thr"):   # nur Vorschau
             px_, py_ = np.array(sorted(st["ir_thr"])).T
@@ -1223,12 +1968,12 @@ class IRMSTab(TABS.FigureTab):
         """Abbildung (falls Spektrum) und die SI-Zeilen als Text."""
         base = Path(base)
         files = []
-        if self.spectrum() is not None:
+        if self.spectrum() is not None or self.raman_spectrum() is not None:
             files = super().export_to(base)
         else:
             self.figure_spec()
         p = base.with_name(base.name + "_SI.txt")
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("\n".join(x for x in (self._ir_line[0], self._ea_line[0]) if x) + "\n",
+        p.write_text("\n".join(x for x in (self._ir_line[0], self._ram_line[0], self._ea_line[0]) if x) + "\n",
                      encoding="utf-8")
         return files + [p]

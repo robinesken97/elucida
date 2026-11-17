@@ -11,6 +11,8 @@ paths:
   - "elucida/formats/calc.py"
   - "elucida/formats/orbital_files.py"
   - "elucida/formats/multireference.py"
+  - "elucida/formats/nbo.py"
+  - "elucida/tabs/dft_nbo.py"
 ---
 
 # DFT: fachliche Regeln (nicht ändern ohne Rückfrage)
@@ -124,3 +126,87 @@ paths:
   globalen.
 - Gaussian-Methode (`level_of_theory`): Token „Methode/Basis“ der Route, auch direkt am „#“; Optionen mit „/“ wie
   `iop(10/93=1)` nie. Ein Energieprofil mit einer einzigen Stufe kommt nicht in die SI.
+- 3D-NICS (1.2.0, Nutzerauftrag 2026-11-13 mit Vorlagebild; `dft_pages.nics_grid`/`build_nics3d`): Dateien ab
+  `NICS_GRID_MIN` (200) Bq sind Teile eines Gitters (keine Ebenen je Punkt, nicht in der Tabelle), außer die Punkte
+  liegen auf einer Linie mit gleichmäßigen Schritten ohne Sprung (gerade oder geknickt, `nics_is_path`): dann ist es ein
+  Scan, auch mit ≥ 200 Bq (Nutzerentscheidung 2026-11-14); Bq in einer einzigen Ebene werden mit eigener Meldung abgelehnt. Alle Teile müssen
+  dieselbe Geometrie haben (± 1e-3 Å) und zusammen ein vollständiges regelmäßiges Gitter ergeben, sonst ablehnen und
+  die Punktzahl nennen (nie fehlende Punkte ergänzen). NICS = −σ_iso (geprüft an einem Punkt gegen die Logdatei).
+  Bild wie die Vorlage: Kugel-Stab („depth“), zwei Isoflächen +`iso_pos` (Standard 5, rot, entschirmt) und −`iso_neg`
+  (Standard 15, blau, abgeschirmt), eine Deckkraft; umgesetzt als ein Feld Wert/Isowert mit Fläche bei ±1 über das
+  Orbital-Rendering. Unterschrift nennt beide Isowerte mit Farbnamen, Gitterabstand und Rechenniveau (`lev//geom` wie
+  beim Scan). Scan und Gitter zugleich: Auswahl „Abbildung“ im Reiter, Export/SI beide; Export zusätzlich als Cube.
+  Geprüft mit zwei echten Gittern (16 und 29 Teilrechnungen, 0.2 Å).
+- ACID (1.2.0, Nutzerauftrag 2026-11-13 mit Vorlage aus der eigenen SI; `tabs/dft_acid.py`, Leser `formats/aicd.py`,
+  Reiter „ACID“, Zustand `acid`): Nichts wird gerechnet. Quellen: (1) AICD-Ausgabe (Ordner `<Name>.d` aus
+  `AICD --povrayinput -c …`): `Isoober.inc` (`read_isoober`: `#declare Isooberflaeche = mesh` nur aus `smooth_triangle`
+  mit 6 Vektoren, `#declare Pfeile = union` je Zeile Zylinder (Green) + Kegel (Red) ab dem Zylinderende +
+  „// Länge: x“, `Magnetfeldvektor` Zylinder + Kegel, `Aufrufzeile`) und `Molekuel.inc` (PovChem, `object { Atom_<Name>
+  translate <x, y, z> }`, Namen über RDKit); Isowert aus dem internen Aufruf „-- <iso> <Bx> <By> <Bz>“ nur, wenn B zum
+  Magnetfeldvektor passt. Layout geprüft an einer echten öffentlichen AICD-3.0.4-Ausgabe (mit `-s`, 825 Dreiecke,
+  149 Pfeile; GitHub LRG-computational/deloc-vis, 2026-11-14); anderes ablehnen. Gaussian-Hilfsdatei (`.txt`,
+  „Stromdichtetensor“-Blöcke) nie lesen. (2) Cube mit dem ACID-Skalarfeld (`read_acid_cube`: ein Datensatz, mit Atomen,
+  min ≥ −1e-3·max). AICD geht dem Cube vor (Hinweis). Optional Gaussian-Ausgabe der CSGT-Rechnung (`read_acid_log`:
+  NMR=CSGT + IOp(10/93); nur Methode/Basis, IOp(10/93=2) = „selected orbitals“).
+  Bild: Kugel-Stab „depth“; AICD-Netz eigenes Raster (`mesh_render`, Tiefenpuffer, Atome davor verdecken, 2×2
+  Unterabtastung, Pfeile als Band + Dreieck knapp vor der Fläche, mindestens `MIN_ARROW_PX`) als Bild über den Atomen
+  wie die Orbitale (`MeshImage.attach` setzt `F.orb_art`, xray.py unverändert); Cube über das Orbital-Rendering (eine
+  Fläche bei Feld/Isowert = 1). Vorgaben wie die Vorlage: gelb `#e6d81e`, Deckkraft 0.9, Pfeile `#00ff00`/`#ff0000`
+  (POV Green/Red), Magnetfeld `#008000`; Cube-Isowert 0.045. Pfeile nur ausgedünnt (fester Zufall, Anteil in %) oder
+  um ihren Anfang skaliert. Magnetfeld als Symbol unten links (projizierter Pfeil, ⊙/⊗ bei Blick entlang B), nie
+  diatrop/paratrop behaupten (Ableseregel nur im Tooltip/Handbuch). Unterschrift: Isowert (Cube: Feld; AICD: aus der
+  Datei, sonst weggelassen), „based on a CSGT calculation at the <lev>//<geom> level of theory“, Pfeile/Magnetfeld je
+  ein Satzteil mit Farbnamen, Zitate Herges/Geuenich 2001 und Geuenich et al. 2005 (Methode, nicht Programm).
+  Export/SI über `DftPages.figures` (Kürzel „ACID“); im Reaktionspfad aus. Robins eigene AICD-Ausgaben ungeprüft.
+- Pflichtangaben der Zeitschriften (Auftrag 2026-11-13, ACS Research Data Guidelines, Org. Lett., Angew. Anhang F):
+  Reiter „Energietabelle“ (`grp_si_tbl`, `si_table_row`, `SI_TABLE_HEAD`): je Rechnung N_imag, E_el, E_nuc, H, G, H_corr,
+  −TS als Text wie in der Ausgabe, fehlend = „–“ (`DASH`; CSV: leere Zelle), nie berechnet oder geschätzt.
+  E_nuc: ORCA „Nuclear Repulsion … Eh“ (letzte), Gaussian „nuclear repulsion energy … Hartrees“ (die des Frequenzjobs wie
+  E_el). H_corr nur Gaussian „Thermal correction to Enthalpy=“ (ORCA druckt H − E_el nicht; „Thermal Enthalpy
+  correction“ ist nur kB·T und gehört nicht hierher). −TS: ORCA „Total entropy correction“, sonst „Final entropy term“
+  mit umgekehrtem Vorzeichen (Text, keine Rechnung); Gaussian druckt −TS nicht in Hartree. Multireferenz: E_el/H/G/
+  Korrekturen leer wie im SI-Block. Programm mit Version als Satz unter der Tabelle (`program_note`; Gaussian-Revision aus
+  „Gaussian 16:  ES64L-G16RevC.01“). Word: Tabelle einspaltig nach den Strukturen (`docx_blocks` beginnt mit
+  `("columns", 2)`, damit in der Gesamt-SI die nächste Verbindung wieder zweispaltig steht). Alle Geometrien des Tabs
+  als EINE xyz (`collection_text`: Atomzahl, „Name  E_el = … Eh“, „El x y z“ mit den Ziffern der Datei, ASCII-Minus) im
+  Export (`…_structures.xyz`) und im Datenpaket (`DFT/structures.xyz` aus dem Zustand über `collection_from_state`,
+  geschrieben nach `.elucida/dft/`). Eingabedateien (`INPUT_EXT`: .inp/.gjf/.com, gleicher Name neben der Ausgabe)
+  kopiert `PRJ.import_file` mit (nie überschreiben) und das Datenpaket nimmt sie auf; fehlende nur als Hinweis, nie
+  erfinden. App-Ansicht (Abnahme new-views, 2026-11-13): zwei `summary_grid` (Energien; E_nuc/Korrekturen/Programm/
+  Eingabe), Köpfe ohne Einheit („Alle Energien in Eₕ“ als Satz), Namensspalte kürzt (`FitGrid.elide_col`, Tooltip),
+  bei 1200 und 1500 px ohne Querrollen; Kachel „Eingabe n/m“ in Warnfarbe (`kpis`, drittes Element). Nur mit künstlichen Ausgaben geprüft (Zeilenformat von E_nuc/Korrekturen aus dem Gedächtnis).
+- Ladungen (1.2.0, Auftrag 2026-11-13; `formats/calc.parse_populations`, Reiter `tabs/dft_pop.py`): nur an echten Ausgaben
+  geprüfte Layouts – ORCA Mulliken/Löwdin (mit Spinpopulationen), Gaussian „Mulliken charges[ and spin densities]:“;
+  jeweils letzter Block. Hirshfeld nicht gelesen (keine echte Ausgabe); NPA/NBO gehört zum eigenen NBO-Leser. Neues
+  Schema = Eintrag in `POP_SCHEMES` + Leser. Atomzahl ≠ Geometrie → keine Tabelle. SI-Tabelle nur mit `pop_si` je
+  Eintrag (ORCA druckt immer), CSV `<Name>_charges.csv` mit den gedruckten Werten.
+- HOMA im DFT-Tab (Paket A 1.2.0): wie X-Ray (`xray.md`), Geometrie der Rechnung. NICS desselben Rings nur aus Dateien
+  der Seite NICS mit gleichen Atomen/Koordinaten (± 0.02 Å), Bq seitlich ≤ 0.3 Å von der Ringnormalen, Höhe 0 bzw.
+  1 ± 0.1 Å, Mittel beider Seiten (`homa.nics_for_ring`); 3D-Gitter nicht. Der NICS-Code bleibt unverändert.
+- NBO (1.2.0, Nutzerauftrag 2026-11-13; Leser `formats/nbo.py`, Reiter `tabs/dft_nbo.py`, Zustand `st["nbo"]`): Elucida
+  **liest nur**, rechnet nichts. Geprüft an echten Ausgaben von **NBO 7.0.10 über ORCA 6.0.0** (geschlossenschalig, eine
+  NBO-Analyse je Datei, UTF-8 und UTF-16): NPA-Zusammenfassung, Hauptliste (Besetzung, Hybride je Zentrum), NBO-Summary
+  (Energie, Lewis-Anteile), E(2), NRT (Gewichte mit Added(Removed), Bindungsordnungen t/c/i, Valenzen). Andere
+  NBO-Versionen, Gaussian/GENNBO, ORCA ≠ 6, Multiplizität ≠ 1 und mehrere NBO-/NRT-Abschnitte werden mit Meldung abgelehnt.
+  Wiberg (BNDIDX, Folgeauftrag 2026-11-14): Layout nach NBO-7.0-Handbuch B.6.5, geprüft an öffentlichen echten Ausgaben
+  (ORCA 6.1.1 + NBO 7.0, ORCA 5.0.4 + NBO 7.0.5, GenNBO 7.0.10; Quellen in Elucida-Audit/nbo-public/QUELLEN.txt, nie ins
+  Repo); streng (`_parse_wiberg`: Spaltenblöcke vollständig, Werte d.dddd, symmetrisch, Diagonale 0, Summen für
+  dieselben Atome, Atome wie NPA), sonst nicht gelesen + Hinweis. Bindungsbeschriftung wählbar NRT gesamt / „Wiberg-Index
+  (NBO, NAO-Basis)“ / keine (`bond_source`: fehlt die gewählte Quelle, die vorhandene); Unterreiter „Wiberg“ (Bindungen ab
+  Schwelle + Summen je Atom), CSV volle Matrix. „Alles auf Standard“ setzt `st["nbo"]` außer Dateien zurück. Ohne
+  Zitierblock (gekürzte Ausgabe) gilt die Version des Kopfs („NBO 7.0“). Offenschalig (Folgeauftrag 2026-11-14):
+  nur Dubletts; Block = Gesamtteil + „Alpha spin orbitals“ + „Beta  spin orbitals“ (sonst ablehnen). Gesamt-NPA mit 8.
+  Spalte „Natural Spin Density“ (Pflicht) und Wiberg gesamt geprüft an echter ORCA-6.1.1+NBO-7.0-Ausgabe; Alpha/Beta-
+  NBO-Liste und E(2) nur am NBO-6-Layout (Gaussian) geprüft -> Hinweis `nbo_open_lists`; offenschalige NRT: Hinweis,
+  nicht gelesen; Gaussian weiter abgelehnt. Oberfläche: Feld „Spin“ (gesamt/α/β) nur offenschalig, Spalte Spin in
+  Tabellen nur offenschalig, Atombeschriftung „natürliche Spindichte (NPA)“ mit Vorzeichen, nie „Mulliken“ (das ist der
+  EPR-Tab). Werte als Text wie gedruckt;
+  Hybride als sp^λ mit gedrucktem λ (s/p bei 100 %/0 %, sp^0.00 = s, übergelaufenes λ „99.99“ → Anteile wie gedruckt).
+  Bindungsordnungen im Bild = NRT gesamt (nur gezeichnete Bindungen, ab Schwelle, X–H nur mit „H beschriften“), überall
+  als „NRT“ benannt – die IAO-Wiberg-Ordnungen des Orbitalbilds bleiben unverändert und sind etwas anderes.
+  Resonanzstrukturen nur aus der CML von NRTCML (`<FILE>-nrt.cml` neben der Ausgabe, FILE aus der NBOKEYLIST), und nur wenn
+  sie passt (Elemente, Koordinaten ± 0.01 Å, erste Struktur = Gewicht von RS 1), sonst nur Tabelle mit Hinweis; Formalladungen
+  = Valenzelektronen − 2·freie Paare − Σ Bindungsordnungen (nur H/B/C/N/O/F/Si/P/S/Cl/Br/I). Methodensatz: Programm,
+  NBO-Version, Zitate **wie in der Ausgabe gedruckt**, Niveau (`level_of_theory` ohne „NBO“), NBOKEYLIST ohne FILE= (Pfad
+  des Nutzers). E(2)-Tabelle ab `e2_min` (Standard 5 kcal/mol; Robins SI zeigt keine E(2)-Tabelle), größte zuerst; CSV
+  enthält alles. Im Reaktionspfad aus (wie NICS). Beispielprojekt: `demo.make_nbo` (erfunden, Layout wie echt).

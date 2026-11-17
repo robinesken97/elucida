@@ -7,6 +7,8 @@ Selbsttest: python Elucida.py --selftest AUSGABEORDNER [--selftest-isnet]
 from __future__ import annotations
 import elucida
 
+import contextlib
+import copy
 import json
 import os
 import shutil
@@ -15,6 +17,7 @@ import html
 import re
 import traceback
 import tempfile
+import time
 import logging
 import locale
 from pathlib import Path
@@ -38,8 +41,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
-from PySide6.QtCore import QEvent, QFileSystemWatcher, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
-from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtCore import QEvent, QFileSystemWatcher, QObject, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
+from PySide6.QtCore import QEventLoop, QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon, QImage,  # noqa: E402
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,  # noqa: E402
@@ -59,6 +62,7 @@ from elucida.si import excel as REPORT  # noqa: E402
 from elucida.app import update as UPD  # noqa: E402
 from elucida.core import color as COLOR  # noqa: E402
 from elucida.tabs import compound as COMP  # noqa: E402
+from elucida.tabs import export as EXPORTTAB  # noqa: E402
 from elucida.tabs import cv as CVMOD  # noqa: E402
 from elucida.tabs import sec as SECMOD  # noqa: E402
 from elucida.tabs import hcell as HCELL  # noqa: E402
@@ -162,6 +166,13 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
                 "bands_add": True, "shoulders": False, "show_excl": False, "inset": True,
                 "mark_sh": False, "label_index": False, "conc_colors": False, "conc_legend": False, "min_r2": 0.98, "r2_digits": 2,
                 "color_show": False, "color_d": 1.0}
+# „Darstellung zurücksetzen“ im ε-Tab behält: Schichtdicke, Export und alles, was die Auswertung ändert (Cutoff, Banden,
+# Basislinie, Fitgrenzen, R²-Stellen; der x-Bereich begrenzt die Peaksuche)
+SERIES_DATA_KEYS = ("layout", "band_cutoff", "band_hidden")   # hängen an den Banden der Messdaten (open_files)
+EPS_RESET_KEEP = ("path_length", "size", "w_cm", "h_cm", "fmt_pdf", "fmt_svg", "fmt_png",
+                  "cutoff", "min_points", "bands", "bands_add", "shoulders", "baseline", "bl_a", "bl_b",
+                  "min_r2", "r2_digits", "x_auto", "x_min", "x_max",
+                  "r2", "show_err", "label_index")   # welche Größe im Bild steht (R², ± σ, ε-Index)
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg mL⁻¹"), ("M", "M")]     # (Schlüssel, Anzeige)
 
@@ -230,6 +241,42 @@ def compound_from_structure(p):
         return {}
 
 
+
+def _restore_in_place(cur, old):
+    """`cur` wieder gleich `old` machen, ohne Dicts/Listen zu ersetzen: Tabs halten Verweise auf Einträge darin."""
+    if isinstance(cur, dict):
+        for k in [k for k in cur if k not in old]:
+            del cur[k]
+        for k, v in old.items():
+            if k in cur and type(cur[k]) is type(v) and isinstance(v, (dict, list)):
+                _restore_in_place(cur[k], v)
+            elif k not in cur or cur[k] != v:
+                cur[k] = v
+    elif len(cur) == len(old):
+        for i, v in enumerate(old):
+            if type(cur[i]) is type(v) and isinstance(v, (dict, list)):
+                _restore_in_place(cur[i], v)
+            elif cur[i] != v:
+                cur[i] = v
+    else:
+        cur[:] = old
+
+
+class _EpsStyle:
+    """ε-Tab für die Stilkarte (TextFormatCard erwartet .st und .timer eines Tabs): Linienfelder zeigen; Linien im
+    Textformat, Farbrollen hat der ε-Tab keine (Farben je Messung in der Liste)."""
+
+    def __init__(self, main):
+        self.main = main
+
+    @property
+    def st(self):
+        return self.main.glob
+
+    @property
+    def timer(self):
+        return self.main.timer
+
 class MainWindow(QMainWindow):
     log_signal = Signal(str)
 
@@ -253,6 +300,7 @@ class MainWindow(QMainWindow):
         self.groups, self.units = {}, {}
         self.samples, self.conc, self.csv_paths = [], {}, []          # Rohproben und Konzentrations-Overrides
         self._eps_held = {}            # beim Öffnen fehlende Dateien/Serien: unverändert weiter speichern
+        self._eps_error = None         # (Datei, Ausnahme): gespeicherte Messdatei, die der Leser ablehnt
         self.series = {}               # je Serie: mw, structure, photo, bg, layout, assets
         self.current = None
         self.F = None
@@ -262,6 +310,9 @@ class MainWindow(QMainWindow):
         self._loading = False
         self.glob = dict(DEFAULT_GLOB)
         self.extra_cache = {}
+        self._skips = None                             # ausgelassene Teile eines laufenden Exports (skip_part)
+        self._held = []                                # davon von einer Freigabe zurückgehalten (withheld=True)
+        self.last_skips = []
         self.ov_state, self.fl_state, self.cv_state, self.sec_state, self.epr_state = {}, {}, {}, {}, {}
         self.hcell_state = {}  # leer
         self.irms_state = {}
@@ -270,6 +321,7 @@ class MainWindow(QMainWindow):
         self.xray_state = {}
         self.dft_state = {}
         self.other_state = {}
+        self.export_state = {}                            # Tab „Export“: Formate aller Abbildungen (`fmt`)
         self.nmr_state = {}
         self.syn_state = {}
         self.compound = {}                  # Verbindung des Projekts: name, structure, formula, mw
@@ -305,6 +357,11 @@ class MainWindow(QMainWindow):
         self._toast = QLabel(self, objectName="toast", alignment=Qt.AlignCenter)
         self._toast.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._toast.hide()
+        self._toast.linkActivated.connect(self._notice_clicked)
+        self._notice, self.last_notice = None, None       # Einblendung mit Klick-Zielen (notify)
+        self._notice_timer = QTimer(self, singleShot=True)
+        self._notice_timer.timeout.connect(self._notice_done)
+        self._marked_tabs, self._views = {}, {}           # Punkt am Tab-Knopf (Tab -> Verbindung); Ansicht je Tab
         self._status.messageChanged.connect(self._place_toast)
         self.log_signal.connect(self._append_log)
         core.LOG = IMG.LOG = lambda m="": self.log_signal.emit(str(m))
@@ -329,8 +386,14 @@ class MainWindow(QMainWindow):
     def build_ui(self):
         if not self.save_drawings():
             return
+        # Ansicht, die nur in den Widgets lebt (Reiter rechts, Bildlauf links), über Sprach-/Designwechsel behalten
+        self._views, eps_view, path_view = self.__dict__.pop("_captured", None) or self._capture_views()
         old_pub = self.__dict__.get('pub_page')
         old_path = old_pub.path_workspace.item.copy() if old_pub and old_pub.path_workspace else None
+        cp_ = old_pub.compare_page if old_pub else None       # offener Vergleich: nach dem Neuaufbau wieder öffnen
+        old_cmp = cp_.item["uid"] if cp_ is not None and cp_.opened and cp_.item is not None else None
+        if old_cmp:
+            cp_.save()
         old_pub_tab = old_pub.project_tabs.currentIndex() if old_pub else 0
         old_pdir = old_pub.pdir if old_pub else None
         if old_pub and not old_pub.close_path(): return
@@ -373,8 +436,11 @@ class MainWindow(QMainWindow):
         act_export = QAction(STYLE.icon("export"), T("act_export"), self, shortcut="Ctrl+E",
                              triggered=self.export_current)
         m.addAction(act_export)
-        m.addAction(QAction(T("act_export_si"), self, triggered=self.export_si_dialog))
-        m.addAction(QAction(T("act_datapack"), self, triggered=self.export_datapack))
+        self.act_export = act_export                 # Sichtbarkeit je Ebene: _update_crumbs (Projektseite: nichts Falsches)
+        self.act_export_si = QAction(T("act_export_si"), self, triggered=self.export_si_dialog)
+        self.act_datapack = QAction(T("act_datapack"), self, triggered=self.export_datapack)
+        m.addAction(self.act_export_si)
+        m.addAction(self.act_datapack)
         m.addSeparator()
         m.addAction(QAction(T("act_quit"), self, shortcut=QKeySequence.Quit, triggered=self.close))
         me = mb.addMenu(T("menu_edit"))
@@ -385,6 +451,9 @@ class MainWindow(QMainWindow):
         self.act_redo.setShortcuts([QKeySequence.Redo, QKeySequence("Ctrl+Shift+Z")])
         me.addAction(self.act_undo)
         me.addAction(self.act_redo)
+        me.addSeparator()                               # macOS: ⌘⇧C (Octet nutzt nur Umschalt+C für Cl)
+        me.addAction(QAction(T("act_copy_figure"), self, shortcut=QKeySequence("Ctrl+Shift+C"),
+                             triggered=self.copy_figure))
         self._update_undo_actions()
         # Werkzeugleiste: Projekt, Rückgängig/Wiederholen (dieselben Aktionen wie im Menü; Exportieren steht
         # in jedem Tab unten fest sichtbar)
@@ -425,12 +494,10 @@ class MainWindow(QMainWindow):
         self.act_folder.setToolTip(T("act_show_folder_tip", fm=T(fm)))
         self._sep_compound = self.toolbar.addSeparator()   # Name und Summenformel stehen am Tab „Verbindung“ (NameTab)
         self.act_si = QAction(STYLE.icon("export"), T("act_si_short"), self, triggered=self.export_si_dialog)
-        self.act_si.setToolTip(T("act_si_tip"))
-        self.toolbar.addAction(self.act_si)
-        self.toolbar.widgetForAction(self.act_si).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toolbar.widgetForAction(self.act_si).setObjectName("barTool")
+        self.act_si.setToolTip(T("act_si_tip"))         # nicht mehr in der Leiste (Entscheidung 64ff.): Menü Datei
         mf = mb.addMenu(T("menu_format"))
-        mf.addAction(QAction(T("act_text_format"), self, triggered=self.edit_text_format))
+        self.act_text_format = QAction(T("act_text_format"), self, triggered=self.edit_text_format)
+        mf.addAction(self.act_text_format)
         mt = mf.addMenu(T("menu_theme"))
         grp_t = QActionGroup(self)
         for code in ("system", "light", "dark"):
@@ -451,7 +518,7 @@ class MainWindow(QMainWindow):
                 self.canvas_mode_actions[code] = a
             self.canvas_toggle = QAction(self, triggered=lambda: self.set_canvas_mode(
                 "light" if self.canvas_is_dark() else "dark"))
-            self.toolbar.insertAction(self.act_si, self.canvas_toggle)
+            self.toolbar.addAction(self.canvas_toggle)
             self.toolbar.widgetForAction(self.canvas_toggle).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
             self._sync_canvas_toggle()
         ml = mb.addMenu(T("menu_lang"))
@@ -499,10 +566,8 @@ class MainWindow(QMainWindow):
         row.addWidget(self.lbl_file, 1)
         f.addRow(row)
         self.cmb_series = QComboBox()
-        self.cmb_series.addItems(list(self.groups))
-        if self.current:
-            self.cmb_series.setCurrentText(self.current)
-        self.cmb_series.currentTextChanged.connect(self.series_changed)
+        self.fill_series_combo(self.groups)
+        self.cmb_series.currentIndexChanged.connect(lambda _i: self.series_changed(self.cmb_series.currentData()))
         f.addRow(T("series"), self.cmb_series)
         self.lst_conc = STYLE.check_table((T("conc_col"), T("conc_col_unit"), T("conc_col_color")))
         self.lst_conc.setToolTip(T("conc_list_tip"))
@@ -734,16 +799,15 @@ class MainWindow(QMainWindow):
         for cb in (self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab, self.cb_excl, self.cb_conc_colors,
                    self.cb_conc_legend):
             fa.addRow(cb)
-        row = QHBoxLayout()
         self.cb_pdf, self.cb_svg, self.cb_png = QCheckBox("PDF"), QCheckBox("SVG"), QCheckBox("PNG")
-        for cb in (self.cb_pdf, self.cb_svg, self.cb_png):
-            row.addWidget(cb)
-        row.addStretch(1)
-        fa.addRow(T("formats"), row)
+        self.cb_pptx = QCheckBox("PPTX")                    # Folie je Serie (si/pptx.py); aus = kein Schlüssel in glob
+        for cb in (self.cb_pdf, self.cb_svg, self.cb_png, self.cb_pptx):   # nur Träger (glob): Formate im Tab „Export“
+            cb.setParent(g)
+            cb.hide()
         f.addRow(self.sec_plot)
         lv.addWidget(g)
-        self.tf_card = TABS.TextFormatCard(self, "epsilon", TABS.ALL_TEXT_OPTS)   # Schrift und Rahmen (früher Dialog)
-        self.tf_card.box, body = STYLE.card(T("tf_title"))   # Karte wie die übrigen des ε-Tabs (QFrame#card)
+        self.tf_card = TABS.TextFormatCard(self, "epsilon", TABS.ALL_TEXT_OPTS, _EpsStyle(self))   # Schrift und Linien
+        self.tf_card.box, body = STYLE.card(T("tf_title_lines"))   # Karte wie die übrigen des ε-Tabs (QFrame#card)
         bl_ = QVBoxLayout(body)
         bl_.setContentsMargins(0, 0, 0, 0)
         bl_.addWidget(self.tf_card)
@@ -766,6 +830,7 @@ class MainWindow(QMainWindow):
         self.btn_export.clicked.connect(self.export_dialog)
         self.btn_export.setToolTip(T("btn_export_tip"))
         self.btn_export.setDefault(True)
+        self.btn_export.hide()                          # Exportieren im Tab „Export“, Strg+E bleibt
         self.btn_next = TABS.next_step_button()
         left_col = QWidget()
         cv = QVBoxLayout(left_col)
@@ -787,7 +852,7 @@ class MainWindow(QMainWindow):
         # Kästchen (Bande im Bild) in eigener Spalte 0 ohne Text; λ steht in Spalte 7, die gleich dahinter angezeigt wird
         # (n, ε, b, R², Cutoff, Hinweise behalten ihre Nummern 1–6)
         self.table = STYLE.FitGrid(0, 8)              # über die ganze Seite wie alle Ergebnistabellen
-        self.table.setHorizontalHeaderLabels(["", T("col_n"), T("col_coeff"), T("col_intercept"), T("col_r2"),
+        self.table.setHorizontalHeaderLabels(["", T("col_n"), T("col_coeff"), T("col_intercept") + " [cm⁻¹]", T("col_r2"),
                                               T("col_cut"), T("col_warn"), T("col_lam")])
         hh_ = self.table.horizontalHeader()
         hh_.moveSection(7, 1)
@@ -860,6 +925,7 @@ class MainWindow(QMainWindow):
         split.setSizes([left_col.minimumWidth(), 920])
         self.column_fit = STYLE.fit_column(left, lscroll, bar, left_col, split)   # nie abgeschnitten
         self.eps_page = split
+        self._eps_scroll = lscroll
         # Tabs erst bei Bedarf bauen (sichtbar oder Zugriff auf self.<x>_tab, siehe __getattr__): beim Öffnen nur
         # der angezeigte; die übrigen sind Platzhalter
         self._lazy = set()
@@ -909,6 +975,11 @@ class MainWindow(QMainWindow):
         if old_pdir and str(old_pdir) == self.publication_dir:
             self.pub_page.project_tabs.setCurrentIndex(old_pub_tab)
             if old_path: self.pub_page.open_path(old_path)
+            ws_ = self.pub_page.path_workspace if old_path else None
+            if ws_ is not None:
+                TABS.apply_view(ws_.tabs, getattr(ws_.host.tab, "_left_parts", (None,) * 3)[2], path_view)
+            if old_cmp and not old_path:
+                self.pub_page.compare_page.open(old_cmp)
 
         self.apply_globals()
         self.apply_series_widgets()
@@ -917,7 +988,7 @@ class MainWindow(QMainWindow):
             w.valueChanged.connect(self.changed)
         self.cb_xauto.toggled.connect(self._xauto_toggled)
         self.cmb_size.currentIndexChanged.connect(self._size_changed)
-        for cb in (self.cb_pdf, self.cb_svg, self.cb_png):
+        for cb in (self.cb_pdf, self.cb_svg, self.cb_png, self.cb_pptx):
             cb.toggled.connect(lambda *_: self.collect_globals())
         self.sp_min.valueChanged.connect(self.changed)
         self.sp_r2.valueChanged.connect(self.changed)
@@ -932,13 +1003,36 @@ class MainWindow(QMainWindow):
             w.valueChanged.connect(self._update_sections)
         self.cmb_r2.currentIndexChanged.connect(self._update_sections)
         for w in (self.cb_shoulders, self.cb_err, self.cb_marksh, self.cb_lidx, self.cb_inset, self.cb_tab,
-                  self.cb_excl, self.cb_conc_colors, self.cb_conc_legend, self.cb_pdf, self.cb_svg, self.cb_png):
+                  self.cb_excl, self.cb_conc_colors, self.cb_conc_legend, self.cb_pdf, self.cb_svg, self.cb_png,
+                  self.cb_pptx):
             w.toggled.connect(self._update_sections)
         self._update_sections()
+        TABS.apply_view(self.tabs, self._eps_scroll, eps_view)
+
+    def _capture_views(self):
+        """-> ({Tab: Ansicht} der gebauten Tabs, Ansicht von ε) vor einem Neuaufbau."""
+        views = {k: v for k in self._TAB_BUILD_ORDER if k not in self.__dict__.get("_lazy", set()) and (v := self._tab_view(k))}
+        tabs = self.__dict__.get("tabs")
+        pub = self.__dict__.get("pub_page")
+        ws = pub.path_workspace if pub is not None else None    # Pfad: Reiter und Bildlauf der Spalte
+        return (views, TABS.view_state(tabs, self.__dict__.get("_eps_scroll")) if tabs is not None else None,
+                TABS.view_state(ws.tabs, getattr(ws.host.tab, "_left_parts", (None,) * 3)[2]) if ws else None)
+
+    def _tab_view(self, key):
+        """Ansicht eines gebauten Tabs (Reiter rechts, Bildlauf links) oder None."""
+        tab = self.__dict__.get(self._tab_spec(key)[0])
+        parts = getattr(tab, "_left_parts", None) if tab is not None else None
+        return TABS.view_state(getattr(tab, "right_tabs", None), parts[2]) if parts else None
+
+    def _apply_tab_view(self, tab, view):
+        parts = getattr(tab, "_left_parts", None)
+        if parts and view:
+            TABS.apply_view(getattr(tab, "right_tabs", None), parts[2], view)
 
     # Tabs: Schlüssel im Zustand -> (Attribut, Klasse, Attribut des Zustands, Textschlüssel); ε ist Teil des Fensters
-    _TAB_ORDER = ("compound", "syn", "nmr", "irms", "hrms", "eps", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "xray", "dft", "other")
-    _TAB_BUILD_ORDER = ("compound", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft", "other")
+    _TAB_ORDER = ("compound", "syn", "nmr", "irms", "hrms", "eps", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "xray", "dft", "other", "export")
+    _TAB_BUILD_ORDER = ("compound", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "hrms", "irms", "xray", "syn", "nmr", "dft", "other", "export")
+    EXPORT_TAB = True       # Tabs ohne eigenen „Exportieren“-Knopf und Formate: beides im Tab „Export“ (Vergleich/Pfad nicht)
 
     def _tab_spec(self, key):
         return {"compound": ("comp_tab", COMP.CompoundTab, "compound", "tab_compound"),   # Zustand = self.compound
@@ -955,7 +1049,8 @@ class MainWindow(QMainWindow):
                 "syn": ("syn_tab", SYN.SynthTab, "syn_state", "tab_syn"),
                 "nmr": ("nmr_tab", NMR.NMRTab, "nmr_state", "tab_nmr"),
                 "dft": ("dft_tab", DFT.DFTTab, "dft_state", "tab_dft"),
-                "other": ("other_tab", OTHER.OtherTab, "other_state", "tab_other")}[key]
+                "other": ("other_tab", OTHER.OtherTab, "other_state", "tab_other"),
+                "export": ("export_tab", EXPORTTAB.ExportTab, "export_state", "tab_export")}[key]
 
     def tab_key_of(self, tab):
         """Schlüssel (cv, xray …) eines Tab-Objekts, None für Unbekanntes (baut keine Tabs)."""
@@ -973,7 +1068,46 @@ class MainWindow(QMainWindow):
                 return self._build_tab(key)
         raise AttributeError(name)
 
+    def mark_tab(self, key, on=True):
+        """Punkt am Tab-Knopf: dort ist etwas Neues, das noch nicht angesehen wurde (bis zum Besuch)."""
+        if on and self._tab_keys[self.main_tabs.currentIndex()] == key:
+            return
+        if on:
+            self._marked_tabs[key] = self.project_dir
+        else:
+            self._marked_tabs.pop(key, None)
+        b = getattr(self, "nav_buttons", {}).get(self._tab_keys.index(key))
+        if b is not None:
+            TABS.mark_dot(b, on)
+
+    def show_tab(self, key):
+        self.main_tabs.setCurrentIndex(self._tab_keys.index(key))
+
+    def loaded_in(self, key, n):
+        """Nach Ablegen/Öffnen im Tab bleiben (Nutzerwunsch: nichts wechselt von selbst); die Einblendung nennt den Tab
+        mit „anzeigen“, der Tab-Knopf bekommt einen Punkt bis zum Besuch."""
+        if self._tab_keys[self.main_tabs.currentIndex()] == key:
+            return
+        self.mark_tab(key)
+        if self.__dict__.get("_drop_targets") is not None:      # Ablegen: eine Meldung für alle Ziel-Tabs (dropEvent)
+            self._drop_targets.append((key, n))
+        else:
+            self._notify_loaded([(key, n)])
+
+    def _notify_loaded(self, targets):
+        """„2 Dateien in „HRMS“ und 1 Datei in „IR + EA“ geladen.“ mit je einem Klick-Ziel."""
+        if not targets:
+            return
+        name = lambda k: T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3])      # noqa: E731
+        parts = [T("drop_part_1" if n == 1 else "drop_part_n", n=n, tab=name(k)) for k, n in targets]
+        text = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + T("drop_and") + parts[-1]
+        links = [(T("notice_show") if len(targets) == 1 else T("notice_show_tab", tab=name(k)),
+                  lambda k=k: self.show_tab(k)) for k, _ in targets]
+        self.notify(T("drop_loaded2", parts=text), links)
+
     def _tab_shown(self, i):
+        if 0 <= i < len(self._tab_keys) and self._tab_keys[i] in self._marked_tabs:
+            self.mark_tab(self._tab_keys[i], False)
         if 0 <= i < len(self._tab_keys) and self._tab_keys[i] in self._lazy:
             self._build_tab(self._tab_keys[i])
         elif 0 <= i < len(self._tab_keys) and self._tab_keys[i] == "overlay" and \
@@ -1005,7 +1139,11 @@ class MainWindow(QMainWindow):
         """Tab aus seinem Zustand bauen und den Platzhalter ersetzen."""
         self._lazy.discard(key)
         attr, cls, st_attr, label = self._tab_spec(key)
-        tab = cls(self, getattr(self, st_attr))
+        try:
+            tab = cls(self, getattr(self, st_attr))
+        except Exception:
+            self._lazy.add(key)            # Platzhalter bleibt: sonst fehlte der Tab bis zum Neustart (AttributeError)
+            raise
         self.__dict__[attr] = tab
         i = self._tab_keys.index(key)
         old = self.main_tabs.widget(i)
@@ -1016,6 +1154,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.setCurrentIndex(cur)
         self.main_tabs.blockSignals(False)
         STYLE.tidy(tab)
+        self._apply_tab_view(tab, self._views.pop(key, None))    # Neuaufbau (Sprache, Design): Reiter und Bildlauf
         if old is not None:
             old.setParent(None)
             old.deleteLater()
@@ -1031,8 +1170,21 @@ class MainWindow(QMainWindow):
         fw = QApplication.focusWidget()                # Feld mit Fokus meldet beim Entfernen editingFinished: still
         if fw is not None and old.isAncestorOf(fw):
             fw.blockSignals(True)
-        new = cls(self, getattr(self, st_attr))
-        setattr(self, attr, new)
+        view = None
+        if getattr(self, "_relazy", False) and key != self._tab_key:
+            # andere Verbindung geöffnet: verborgene Tabs wieder als Platzhalter, gebaut erst beim Anzeigen (wie beim
+            # ersten Öffnen; alle gebauten Tabs neu aufzubauen kostete im Beispielprojekt ~3 s)
+            new = QWidget()
+            self.__dict__.pop(attr, None)
+            self._lazy.add(key)
+            for c in old.findChildren(QObject):        # der alte Tab meldet beim Löschen nichts mehr (sein Zustand
+                c.blockSignals(True)                   # gehört schon der neuen Verbindung, ohne Vorgaben des Tabs)
+            self._views.pop(key, None)
+        else:
+            # Standardwerte, Vorlage, Rückgängig: Reiter und Bildlauf bleiben (andere Verbindung: neu beginnen)
+            view = None if getattr(self, "_relazy", False) else self._tab_view(key)
+            new = cls(self, getattr(self, st_attr))
+            setattr(self, attr, new)
         i = self._tab_keys.index(key)
         cur = self.main_tabs.currentIndex()
         self.main_tabs.blockSignals(True)
@@ -1041,11 +1193,12 @@ class MainWindow(QMainWindow):
         self.main_tabs.setCurrentIndex(cur)
         self.main_tabs.blockSignals(False)
         STYLE.tidy(new)
+        self._apply_tab_view(new, view)
         # Eltern behalten: ohne sie gehört das Objekt Python, und die Speicherbereinigung könnte den Tab samt WebEngine
         # mitten in anderem Code zerstören. deleteLater räumt in der Ereignisschleife auf.
         old.hide()
         old.deleteLater()
-        return new
+        return None if key in self._lazy else new
 
     def _update_sections(self, *_):
         """Eingeklappte Bereiche markieren, wenn dort etwas vom Standard abweicht."""
@@ -1060,8 +1213,7 @@ class MainWindow(QMainWindow):
                 (self.cb_err, "show_err"), (self.cb_marksh, "mark_sh"), (self.cb_lidx, "label_index"),
                 (self.cb_inset, "inset"),
                 (self.cb_tab, "table"), (self.cb_excl, "show_excl"), (self.cb_conc_colors, "conc_colors"),
-                (self.cb_conc_legend, "conc_legend"), (self.cb_pdf, "fmt_pdf"),
-                (self.cb_svg, "fmt_svg"), (self.cb_png, "fmt_png"))))
+                (self.cb_conc_legend, "conc_legend"))))         # Formate: Tab „Export“
         if getattr(self, "steps", None) is not None:
             self.steps.refresh()                           # Punkt am Schritt, in dem etwas vom Standard abweicht
 
@@ -1088,6 +1240,7 @@ class MainWindow(QMainWindow):
         self.cb_pdf.setChecked(gl["fmt_pdf"])
         self.cb_svg.setChecked(gl["fmt_svg"])
         self.cb_png.setChecked(gl["fmt_png"])
+        self.cb_pptx.setChecked(bool(gl.get("fmt_pptx")))
         self.cb_xauto.setChecked(gl["x_auto"])
         self.cb_bands_add.setChecked(gl.get("bands_add", True))
         self.cb_shoulders.setChecked(gl.get("shoulders", False))
@@ -1127,6 +1280,10 @@ class MainWindow(QMainWindow):
                          conc_legend=self.cb_conc_legend.isChecked(), inset=self.cb_inset.isChecked(),
                          mark_sh=self.cb_marksh.isChecked(), label_index=self.cb_lidx.isChecked(),
                          x_min=self.sp_xmin.value(), x_max=self.sp_xmax.value())
+        if self.cb_pptx.isChecked():
+            self.glob["fmt_pptx"] = True
+        else:
+            self.glob.pop("fmt_pptx", None)
 
     def _update_size_widgets(self):
         key = self.cmb_size.currentData()
@@ -1375,6 +1532,7 @@ class MainWindow(QMainWindow):
     def switch_theme(self, mode):
         self.collect_globals()
         self.settings.setValue("ui/theme", mode)
+        self._captured = self._capture_views()         # vor dem neuen Stylesheet (setzt den Bildlauf zurück)
         self.apply_theme()
         self.build_ui()                                # Symbole in der neuen Textfarbe
         self.render()
@@ -1395,7 +1553,9 @@ class MainWindow(QMainWindow):
         self.render()
 
     NAV_GROUPS = (("nav_grp_compound", ("compound",)), ("nav_grp_syn", ("syn", "nmr", "irms", "hrms")), ("nav_grp_uv", ("eps", "overlay", "uvkin", "fluo")),
-                  ("nav_grp_ec", ("cv", "sec", "hcell", "epr")), ("nav_grp_struct", ("xray", "dft", "other")))
+                  ("nav_grp_ec", ("cv", "sec", "hcell", "epr")), ("nav_grp_struct", ("xray", "dft", "other")),
+                  ("nav_grp_out", ("export",)))
+    NAV_SHORT = {"overlay": "nav_tab_overlay", "uvkin": "nav_tab_uvkin"}   # Beschriftung in der Leiste
 
     def nav_bar(self):
         """Tabs in vier Gruppen wie die SI (Leiste oben statt Reiter): kostet Höhe statt Breite – die Abbildung
@@ -1447,11 +1607,18 @@ class MainWindow(QMainWindow):
             row.setSpacing(2)
             for k in keys:
                 i = self._tab_keys.index(k)
-                b = NameTab() if k == "compound" else NavTab(self.main_tabs.tabText(i))
+                # kurzer Name, wo die Gruppenüberschrift den Zusammenhang nennt (Nutzerwunsch: „Kinetik“ statt
+                # „UV-Vis-Kinetik“); der volle Name bleibt im Tooltip und überall sonst
+                short = self.NAV_SHORT.get(k)
+                b = NameTab() if k == "compound" else NavTab(T(short) if short else self.main_tabs.tabText(i))
+                if short:
+                    b.setToolTip(self.main_tabs.tabText(i))
                 b.clicked.connect(lambda _=False, i=i: self.main_tabs.setCurrentIndex(i))
                 grp.addButton(b)
                 row.addWidget(b)
                 self.nav_buttons[i] = b
+                if k in self._marked_tabs:                  # Markierung übersteht Sprach-/Designwechsel
+                    TABS.mark_dot(b, True)
             col.addLayout(row)
             hb.addLayout(col)
         hb.addStretch(1)
@@ -1499,8 +1666,8 @@ class MainWindow(QMainWindow):
         start = self.settings.value("last_dir", str(Path.home()))
         ps, _ = QFileDialog.getOpenFileNames(self, T("dlg_open_csv"), start,
                                              f"{T('flt_csv')};;{T('flt_all')}")
-        if ps:
-            self.open_files(ps)
+        if ps and self.open_files(ps):
+            self.loaded_in("eps", len(ps))
 
     def open_csv(self, path, ask=True):
         return self.open_files([path], ask)
@@ -1532,14 +1699,24 @@ class MainWindow(QMainWindow):
             self.error(T("conc_none"))
             return False
         self.csv_path, self.csv_paths, self.samples = path, paths, samples
-        self._eps_held = {}
+        self._eps_held, self._eps_error = {}, None
         self.settings.setValue("last_dir", str(Path(path).parent))
+        # Einstellungen je Serie (Foto, Lösungsmittel, Hintergrund, Farbe, Struktur im Bild …) gelten weiter, wenn die
+        # Serie in den neuen Daten wieder vorkommt; was an den alten Banden hing (Layout, Cutoff je Bande) nicht
+        self._series_kept = {g: {k: v for k, v in st.items() if k not in SERIES_DATA_KEYS}
+                             for g, st in self.series.items()}
         self.groups, self.units, self.series, self.conc = {}, {}, {}, {}
         _, _, missing = core.group_samples(samples, self.conc, Path(path).stem)
         if not self.rebuild_groups():
             self.lbl_file.setText(self.files_label())
             self.fill_conc_list()
-            if missing:                                      # Konzentrationen fehlen: im Tab eintragen statt Fehlermeldung
+            self.push_undo()                                 # ε ist schon ersetzt: Rückgängig muss das erreichen
+            if missing and self._tab_keys[self.main_tabs.currentIndex()] != "eps":
+                self.mark_tab("eps")                         # aus einem anderen Tab: dort bleiben, Ziel nur nennen;
+                self.steps.reveal(self.sec_conc)             # der Klappbereich im (verborgenen) ε-Tab geht trotzdem auf
+                self.sec_conc.btn.setChecked(True)
+                self.notify(T("conc_enter_elsewhere"), [(T("conc_enter_link"), self.edit_concentrations)])
+            elif missing:                                    # Konzentrationen fehlen: im Tab eintragen statt Fehlermeldung
                 self.edit_concentrations()
                 self.statusBar().showMessage(T("conc_enter"), 10000)
             else:
@@ -1572,19 +1749,19 @@ class MainWindow(QMainWindow):
         for k in missing:
             self.log_signal.emit("  " + T("no_conc_in_name", name=k))
         self.groups, self.units = groups, units
+        kept = self.__dict__.get("_series_kept") or {}
         for g in groups:
             self.series.setdefault(g, {"mw": None, "structure": None, "photo": None, "bg": "auto",
                                        "layout": {}, "structure_asset": None, "photo_asset": None,
                                        "chem_info": "", "chem_warn": False,
                                        "struct_w": 17.0, "photo_w": 9.0, "band_cutoff": {},
-                                       "band_hidden": []})
+                                       "band_hidden": [], **kept.get(g, {})})
+        if groups:                                     # übernommen (auch erst nach dem Eintragen der Konzentrationen)
+            self._series_kept = None
         if self.current not in groups:
             self.current = next(iter(groups), None)
         self.cmb_series.blockSignals(True)
-        self.cmb_series.clear()
-        self.cmb_series.addItems(list(groups))
-        if self.current:
-            self.cmb_series.setCurrentText(self.current)
+        self.fill_series_combo(groups)
         self.cmb_series.blockSignals(False)
         log_names = ", ".join(groups) or "–"
         self.log_signal.emit(T("cary_series", name=Path(self.csv_path).name, s=log_names))
@@ -1612,7 +1789,7 @@ class MainWindow(QMainWindow):
         keys = ("mw", "structure", "photo", "bg", "layout", "struct_w", "photo_w", "band_cutoff", "band_hidden",
                 "color_c", "solvent", "no_structure")
         held = self._eps_held
-        return {"eps": {"files": list(self.csv_paths) + [p for p in held.get("files", []) if p not in self.csv_paths],
+        out = {"eps": {"files": list(self.csv_paths) + [p for p in held.get("files", []) if p not in self.csv_paths],
                         "glob": dict(self.glob), "conc": self.conc,
                         "series": dict(held.get("series", {}),
                                        **{g: {k: st.get(k) for k in keys} for g, st in self.series.items()}),
@@ -1620,9 +1797,14 @@ class MainWindow(QMainWindow):
                 "overlay": self.ov_state, "uvkin": self.uvkin_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "hcell": self.hcell_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
                 "dft": self.dft_state, "other": self.other_state, "nmr": self.nmr_state, "syn": self.syn_state,
-                "compound": dict(self.compound),
+                "export": self.export_state, "compound": dict(self.compound),
                 "tab": self._tab_key,
                 "text": dict(self.text_fmt), "text_tabs": {k: dict(v) for k, v in self.tab_fmt.items()}}
+        for st in out.values():                        # Linien standen kurz (Zwischenstand vor 1.3.0) im Tab: verwaist
+            if isinstance(st, dict) and st is not out["text"]:
+                for k in TABS.LINE_DEFAULTS:
+                    st.pop(k, None)
+        return out
 
     def _changed_parts(self, state):
         """Teile des Zustands (eps, cv, xray, tab …), die sich gegenüber der Oberfläche unterscheiden. Verbindung oder
@@ -1688,10 +1870,18 @@ class MainWindow(QMainWindow):
             self.cmb_series.clear()
             self.cmb_series.blockSignals(False)
             self.lbl_file.setText(self.files_label())
-        if self.csv_paths:
-            key = ("samples_multi", tuple(self.csv_paths))
-            if key not in self.extra_cache:
+        self._eps_error = None
+        key = ("samples_multi", tuple(self.csv_paths))
+        if self.csv_paths and key not in self.extra_cache:
+            try:
                 self.extra_cache[key] = core.read_samples(self.csv_paths)
+            except Exception as ex:   # gespeicherte Datei, die der Leser ablehnt: wie fehlende Dateien unverändert behalten
+                self._eps_error = (self.csv_paths[0] if len(self.csv_paths) == 1 else None, ex)
+                self._eps_held["files"] = list(eps.get("files") or [])
+                self.csv_paths, self.csv_path = [], None
+                self.log_signal.emit(f"{T('err_title')}: {ex}")
+                self.statusBar().showMessage(f"{T('err_title')}: {ex}", 12000)
+        if self.csv_paths:
             self.samples = self.extra_cache[key]
             self.rebuild_groups()
             for g, sd in (eps.get("series") or {}).items():
@@ -1719,7 +1909,7 @@ class MainWindow(QMainWindow):
             if self.current not in self.groups:
                 self.current = next(iter(self.groups), None)
             self.cmb_series.blockSignals(True)
-            self.cmb_series.setCurrentText(self.current or "")
+            self.cmb_series.setCurrentIndex(self.cmb_series.findData(self.current))
             self.cmb_series.blockSignals(False)
             self.lbl_file.setText(self.files_label())
         self._eps_held["series"] = {g: sd for g, sd in (eps.get("series") or {}).items() if g not in self.series}
@@ -1763,6 +1953,7 @@ class MainWindow(QMainWindow):
 
     def _restore(self, snap):
         self._restoring = True
+        self._series_kept = None
         state = json.loads(snap)
         # im offenen Tab bleiben; betrifft die Änderung nur andere Tabs, deren ersten zeigen (Nutzerwunsch P9 R1)
         ch = self._changed_parts(state)
@@ -1782,6 +1973,7 @@ class MainWindow(QMainWindow):
 
     def _load_state_into_ui(self, state):
         """Projekt/neues Projekt: Zustand setzen, Undo-Verlauf nach dem Neuzeichnen neu beginnen."""
+        self._series_kept = None                       # Serien-Einstellungen gehörten den vorigen Messdaten
         self._restoring = True
         self.set_state(state, partial=True)            # Fenster bleibt, nur Tabs und ε (statt build_ui)
         QTimer.singleShot(200, self._after_load)
@@ -2108,7 +2300,9 @@ class MainWindow(QMainWindow):
     def focus_search(self):
         """Strg+F: in einem Projekt dessen Filter, sonst die Suche der Übersicht (offene Verbindung wird geschlossen
         – gespeichert ist sie ohnehin)."""
-        if self.project_dir:
+        if self.project_dir and self.publication_dir:
+            self.go_publication()                       # Filter des Projekts (dieselbe Suche der Werkzeugleiste)
+        elif self.project_dir:
             self.go_home()
         self.ed_recent.setFocus()
         self.ed_recent.selectAll()
@@ -2678,6 +2872,7 @@ class MainWindow(QMainWindow):
             saved = PRJ.write(self.project_dir, self.get_state())
             from elucida.app import welcome as WEL       # Strukturbild für den Startbildschirm (nur wenn neuer)
             WEL.write_thumb(self.project_dir, self.thumb_structure(), self.log_signal.emit)
+            self._export_thumb()                          # Vorschaubilder der Karten im Tab „Export“
             try:                                          # Stand für den Vergleich im Projekt: nie das Speichern stören
                 from elucida.app import comparison as CMP
                 CMP.write_snapshot(self, saved)
@@ -2827,11 +3022,20 @@ class MainWindow(QMainWindow):
             return False
         for m in PRJ.missing_files(state):
             self.log_signal.emit("  " + T("missing_file", p=m))
+        ex = state.setdefault("export", {}) if isinstance(state.get("export", {}), dict) else {}
+        old_off = self.legacy_si_off()                  # frühere Abwahl dieses Rechners, nur ohne eigene Auswahl (auch
+        if "si_off" not in ex and old_off:              # leere): im Speicher, landet mit dem nächsten Speichern (N5, B2)
+            ex["si_off"] = sorted(old_off)
         self.project_dir = str(pdir)
         from elucida.app import publication as PUB
         pub = PUB.publication_of(pdir)
         self.publication_dir = str(pub) if pub else None
-        self._load_state_into_ui(state)
+        self._views = {}                               # gemerkte Ansichten gehörten der vorigen Verbindung
+        self._relazy = True                            # andere Verbindung: verborgene Tabs als Platzhalter (replace_tab)
+        try:
+            self._load_state_into_ui(state)
+        finally:
+            self._relazy = False
         self.watch_chemdraw()
         if recent:
             self.add_recent(pdir)
@@ -2992,6 +3196,11 @@ class MainWindow(QMainWindow):
         for a_ in self._tb_edit + [self._sep_compound]:
             a_.setVisible(bool(self.project_dir))
         self.act_si.setVisible(bool(self.project_dir))
+        # Übersicht/Projektseite: Befehle einer Verbindung wirkten dort auf einen verborgenen Tab (oder fragten nach einer
+        # neuen Verbindung); im offenen Vergleich exportiert Strg+E den Vergleich
+        self.act_export.setEnabled(bool(self.project_dir or cmp_))
+        for a_ in (self.act_export_si, self.act_datapack, self.act_text_format):
+            a_.setEnabled(bool(self.project_dir))
         if getattr(self, "canvas_toggle", None) is not None:
             self.canvas_toggle.setVisible(work)
         self._tb_theme.setVisible(work)
@@ -3035,14 +3244,17 @@ class MainWindow(QMainWindow):
         from elucida.app import welcome as WEL
         self._dots_dir = self.project_dir
         info = WEL.project_info(self.project_dir) if self.project_dir else None
+        for k, d in list(self._marked_tabs.items()):      # andere Verbindung: Markierungen gehörten der vorigen
+            if d != self.project_dir:
+                self.mark_tab(k, False)
         have = {WEL.TAB_OF[k] for k in info["badges"]} if info else set()
         if info:                                          # Overlay/Weitere haben kein Analytik-Abzeichen
             have |= {k for k, st in (("overlay", self.ov_state), ("other", self.other_state)) if st.get("entries")}
         for i, b in self.nav_buttons.items():
             if self._tab_keys[i] != "compound":           # NameTab: hell, sobald es eine Summenformel gibt
-                b.set_data(self._tab_keys[i] in have)
-        if self._built("compound"):                       # offener Tab „Verbindung“: Abbildungs-Chips folgen den Punkten
-            self.comp_tab.sync_si_export()                # (nach Sprachwechsel entstand er vor den Punkten)
+                b.set_data(self._tab_keys[i] in have or self._tab_keys[i] == "export")
+        if self._built("export"):                         # Zeilen je Abbildung folgen den Punkten
+            self.export_tab.refresh()
         self.sync_main_button()
 
     def _fill_comp_menu(self):
@@ -3113,13 +3325,19 @@ class MainWindow(QMainWindow):
         self.save_project()
         return True
 
-    def export_publication_si(self, pdir, compounds, sections, toc=True, methods=True, path=None, template="group"):
+    def export_publication_si(self, *args, **kw):
         """Gesamt-SI (elucida/si/publication_si.py): jede Verbindung kurz öffnen, ihre Blöcke je Kapitel sammeln,
-        danach die vorher offene Verbindung wiederherstellen. -> Pfad der Word-Datei."""
+        danach die vorher offene Verbindung wiederherstellen. -> Pfad der Word-Datei. Unlesbare Teile fehlen nur selbst
+        und stehen in der Meldung (`collecting_skips`)."""
+        with self.collecting_skips():
+            return self._export_publication_si(*args, **kw)
+
+    def _export_publication_si(self, pdir, compounds, sections, toc=True, methods=True, path=None, template="group"):
         from elucida.app import publication as PUB
         from elucida.si import publication_si as PSI
         if not self.maybe_save():
             return False
+        self.__dict__.pop("_pub_si_off", None)
         prev = self.project_dir
         comps = []
         dlg = QProgressDialog(T("pub_si_writing"), T("cancel"), 0, len(compounds), self)
@@ -3140,8 +3358,8 @@ class MainWindow(QMainWindow):
                     parts_["_group"] = PUB.group_name(pdir, d)     # Unterkapitel je Gruppe
                     parts_["_gp"] = self.syn_tab.st.get("gp") or None  # allgemeine Vorschrift (einmal vor der ersten)
                     comps.append((name_, parts_))
-                except Exception:
-                    self.log_signal.emit(traceback.format_exc())
+                except Exception as ex:
+                    self.skip_part(ex, part=PUB.compound_name(d))
         finally:
             if prev:
                 self.open_project(prev, recent=False)
@@ -3154,8 +3372,8 @@ class MainWindow(QMainWindow):
         try:                                            # Vergleiche mit „In die Gesamt-SI“ (wie auf der Projektseite)
             from elucida.app import comparison as CMP
             cmps = CMP.si_blocks(self, pdir, PRJ.work_dir(pdir, "si", "comparisons"), sections)
-        except Exception:
-            self.log_signal.emit(traceback.format_exc())
+        except Exception as ex:
+            self.skip_part(ex, part=T("pub_compare_tab"))
             cmps = []
         setup = [str(self.settings.value(f"si_setup/{k}", "") or "").strip() for k in PSI.SETUP_KEYS]
         paths = []
@@ -3163,14 +3381,14 @@ class MainWindow(QMainWindow):
             from elucida.app.reaction_paths import si_blocks
             try:
                 paths = si_blocks(self, pdir)
-            except Exception as ex:
-                self.error(str(ex))
-                return None
+            except Exception as ex:                     # Meldung nennt Pfad und Datei; die übrige Gesamt-SI bleibt
+                self.skip_part(ex, part=T("rp_computational_chemistry"))
         blocks = PSI.assemble(meta, comps, sections, setup, toc=toc, methods=methods, reaction_paths=paths,
                               comparisons=cmps)
         name = core.safe_name(Path(pdir).name)
         path = Path(path) if path else Path(pdir) / PUB.SI_DIR / f"{name}_SI.docx"
-        SI.set_template(template, page_numbers=True)    # nur für diese Datei (Einzel-SI bleibt wie die Gruppe)
+        SI.set_template(template, page_numbers=True,    # nur für diese Datei (Einzel-SI bleibt wie die Gruppe)
+                        naming=meta.get("si_naming", ""))   # Bezeichner des Projekts (Nature: „Supplementary Figure 1“)
         try:
             SI.write_docx(path, blocks)
         except PermissionError:
@@ -3178,7 +3396,12 @@ class MainWindow(QMainWindow):
             return None
         finally:
             SI.set_template("group")
-        self.exported([path.parent])
+        used = [T("pub_si_used", n=len(comps), parts=", ".join(t_ for k_, t_, _ in PSI.SECTIONS if k_ in sections))]
+        off = self.__dict__.pop("_pub_si_off", [])      # abgewählte Abbildungen je Verbindung (Spalte „SI“)
+        if off:
+            used.append(T("pub_si_figs_off", items="; ".join(f"{n}: {', '.join(t)}" for n, t in off if t)))
+        links = [(T("pub_si_change"), self.pub_page.show_export)] if self.publication_dir and self.pub_page.pdir else []
+        self.exported([path.parent], [path], used, links)
         return path
 
     def recent(self):
@@ -3198,6 +3421,14 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _=False, r=r: self.open_project(r))
             self.recent_menu.addAction(act)
         self.recent_menu.setEnabled(bool(rec))
+
+    def fill_series_combo(self, groups):
+        """Reihen als Einträge (Anzeigename, Schlüssel): der Standardschlüssel „probe“ erscheint übersetzt."""
+        self.cmb_series.clear()
+        for g in groups:
+            self.cmb_series.addItem(core.series_label(g), g)
+        if self.current:
+            self.cmb_series.setCurrentIndex(self.cmb_series.findData(self.current))
 
     def series_changed(self, g):
         if not g or g not in self.series:
@@ -3426,7 +3657,8 @@ class MainWindow(QMainWindow):
         cfg["figsize_in"] = list(FIGSIZE)
         if gl["size"] != "std":
             core.apply_export_size(cfg, gl["w_cm"], gl["h_cm"])
-        fmts = [e for e, on in (("pdf", gl["fmt_pdf"]), ("svg", gl["fmt_svg"]), ("png", gl["fmt_png"])) if on]
+        ef = self.export_fmt()
+        fmts = [e for e in ("pdf", "svg", "png") if ef.get(e)]
         cfg["extra_formats"] = fmts[1:]
         cfg["_main_fmt"] = fmts[0] if fmts else "pdf"
         imgs = []
@@ -3517,7 +3749,11 @@ class MainWindow(QMainWindow):
 
     def text_format(self, key):
         """Textformat eines Tabs: eigenes Format (Menü Format, „nur dieser Tab“), sonst das für alle Tabs."""
-        return {**core.TEXT_DEFAULTS, **self.text_fmt, **(self.tab_fmt.get(key) or {})}
+        own = self.tab_fmt.get(key)
+        if not own:
+            return {**core.TEXT_DEFAULTS, **self.text_fmt}
+        # eigenes Format ohne Linien (vor der Stilkarte gespeichert): Standard, nicht die globalen Linien
+        return {**core.TEXT_DEFAULTS, **self.text_fmt, **TABS.LINE_DEFAULTS, **own}
 
     def text_tab(self):
         """Offener Tab -> (Schlüssel für das Textformat oder None, Name, Optionen, die der Tab im Bild hat)."""
@@ -3638,7 +3874,7 @@ class MainWindow(QMainWindow):
                 self.hover.disconnect()
                 self.hover = None
             self.canvas_host.set_figure_size(*cfg2["figsize_in"])
-            self.F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=self.fig)
+            self.F = self.eps_figure(cfg2, spectra, results, g, self.fig)
             self.dragger = GuiDragger(self.F, self.layout_changed)
             unit = core.unit_text(cfg2["conc_unit"])
             curves = [dict(x=s_["x"], y=s_["y"], val=s_["y"], name=f"c = {s_['c']:g} {unit}") for s_ in spectra]
@@ -3714,15 +3950,20 @@ class MainWindow(QMainWindow):
             self.series[self.current]["layout"][self.size_key()] = {}
             self.render()
 
+    def eps_figure(self, cfg2, spectra, results, g, fig):
+        """Abbildung einer ε-Serie (Vorschau, Export, SI, Folien gleich) samt Linienbreiten der Stilkarte (glob)."""
+        F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
+        TABS.apply_lines(F.fig, self.text_format("epsilon"))
+        return F
+
     def reset_defaults(self):
-        """ε-Tab: Einstellungen (Cutoff, Banden, Basislinie, Darstellung …) auf DEFAULT_GLOB, für die gewählte Serie
-        Cutoff/Ausblenden je Bande und Layout. Schichtdicke, Exportgröße/-formate, Molmasse, Struktur, Foto,
-        Lösungsmittel und Konzentrationen bleiben. Rückgängig holt alles zurück."""
-        keep = ("path_length", "size", "w_cm", "h_cm", "fmt_pdf", "fmt_svg", "fmt_png")
-        self.glob.update({k: v for k, v in DEFAULT_GLOB.items() if k not in keep})
+        """ε-Tab: Darstellung auf DEFAULT_GLOB (außer EPS_RESET_KEEP), für die gewählte Serie das Layout. Auswertung
+        (auch Cutoff/Ausblenden je Bande), Schichtdicke, Export, Molmasse, Struktur, Foto, Lösungsmittel und
+        Konzentrationen bleiben. Rückgängig holt alles zurück."""
+        self.glob.update({k: v for k, v in DEFAULT_GLOB.items() if k not in EPS_RESET_KEEP})
         st = self.series.get(self.current)
         if st is not None:
-            st.update(band_cutoff={}, band_hidden=[], layout={})
+            st["layout"] = {}
         self.apply_globals()
         self.apply_series_widgets()
         self.render()
@@ -3792,7 +4033,8 @@ class MainWindow(QMainWindow):
             txt = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""),
                                  with_results)
             if txt:
-                out.append((f"Series {g}: " if len(self.groups) > 1 and g else "") + txt)
+                out.append((f"Series {'sample' if g == core.DEFAULT_SERIES else g}: "   # englischer Text: nie „probe“
+                            if len(self.groups) > 1 and g else "") + txt)
         return "\n\n".join(out)
 
     def copy_eps_methods(self):
@@ -3804,12 +4046,25 @@ class MainWindow(QMainWindow):
 
     def si_available(self):
         """Teile der SI, für die Daten da sind."""
-        xt, dt = self.xray_tab, self.dft_tab
+        xt = self.xray_tab
         return dict(char=True, nmr=bool(self.nmr_tab.spectra()),
                     figs=bool(self.groups) or any(t.F is not None for t in self.figure_tabs()),
                     methods=bool(self.si_methods_blocks()),
                     xray=any(xt.structure(e) is not None for e in xt.entries()),
-                    dft=any(dt.calc_of(e) is not None for e in dt.entries()))
+                    dft=self.dft_has_data())
+
+    def dft_has_data(self) -> bool:
+        """Hat der DFT-Tab etwas für die SI? Eine Bedingung für Einzel- und Gesamt-SI: lesbare Rechnungen (samt
+        Ladungen/HOMA), IRC, NICS (Scan oder Gitter), ACID (Cube oder AICD-Ausgabe), lesbare NBO-Ausgabe."""
+        ds = self.dft_state
+        acid = ds.get("acid") or {}
+        if (ds.get("profile") or {}).get("irc") or (ds.get("nics") or {}).get("files") or acid.get("cube") \
+                or acid.get("inc"):
+            return True
+        if not (ds.get("entries") or (ds.get("nbo") or {}).get("files")):
+            return False                                # ohne Einträge den Tab nicht bauen
+        dt = self.dft_tab
+        return any(dt.calc_of(e) is not None for e in dt.entries()) or dt.nbo.has_data()
 
     def si_figure_choices(self):
         """[(Schlüssel, Titel)] der Tabs mit Abbildung für die Auswahl im SI-Dialog (Reihenfolge wie die SI)."""
@@ -3819,8 +4074,7 @@ class MainWindow(QMainWindow):
             if t.F is not None:
                 k = self.tab_key_of(t)
                 out.append((k, T(self._tab_spec(k)[3])))
-        ds = self.dft_state
-        if ds.get("entries") or (ds.get("profile") or {}).get("irc") or (ds.get("nics") or {}).get("files"):
+        if self.dft_has_data():
             out.append(("dft", T("tab_dft")))
         return out
 
@@ -3840,9 +4094,95 @@ class MainWindow(QMainWindow):
     def set_si_parts(self, parts):
         self.settings.setValue("si_parts", ",".join(k for k in SI_PARTS if k in parts))
 
-    def si_figs_off(self):
-        """Tabs, deren Abbildung nicht in die SI soll (QSettings `si_figs_off`)."""
+    def export_pptx_slides(self, keys=None):
+        """„Folien aus Auswahl (PPTX)“ im Tab „Export“: die Abbildungen der gewählten Tabs (`keys`, sonst alle außer der
+        alle Abbildungen) wie in der SI (Bild + Unterschrift), eine Folie je Abbildung, als
+        <Verbindung>_slides.pptx nach figures/."""
+        from elucida.si import pptx as PPTX
+        if not self.ensure_project():
+            return None
+        pdir = Path(self.project_dir)
+        off = set() if keys is None else ({"eps", "xray", "dft"} | set(COMP.SI_FIG_KEYS)) - set(keys)
+        name = (self.compound or {}).get("name") or self.export_name()
+        work = PRJ.work_dir(pdir, "pptx")
+        with self.collecting_skips():
+            blocks, used, eps_done = [], [], False
+            for t in self.figure_tabs():                  # Reihenfolge der Tabs: IR + EA, HRMS vor ε (Entscheidung 99)
+                k = self.tab_key_of(t)
+                if k not in ("irms", "hrms") and not eps_done:
+                    eps_done = True
+                    if "eps" not in off and self.groups:
+                        blocks += self.si_part("eps", lambda: self.si_eps_figures(work, name))
+                if k not in off:
+                    blocks += self.si_part(k, lambda t=t: t.si_figure(work, name))
+            if "xray" not in off and any(self.xray_tab.structure(e) is not None for e in self.xray_tab.entries()):
+                blocks += self.si_part("xray", self.si_xray_part)
+            if "dft" not in off and self.dft_has_data():
+                blocks += self.si_part("dft", lambda: self.dft_tab.pages.si_figures(work, name))
+            figs = PPTX.figures_from_blocks(blocks)
+            if not figs:
+                return self.notify(T("pptx_none"))
+            try:
+                p = PPTX.write_pptx(PRJ.staging(pdir, "pptx") / (PRJ.export_stem(self.export_name(), "slides")
+                                                                  + ".pptx"), figs)
+                p = self.place_exports([p])[0]
+            except PermissionError as e:
+                return self.error(T("report_locked", p=getattr(e, "filename", "") or ""))
+            data = set(self.export_keys())               # nur Tabs mit Daten nennen
+            sel = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in sorted(off) if k in data]
+            used = [T("pptx_used", n=len(figs))] + ([T("si_used_figs_off", tabs=", ".join(sel))] if sel else [])
+            self.exported([p.parent], [p], used)
+        return p
+
+    def copy_figure(self):
+        """Bearbeiten › Abbildung kopieren (SVG), Strg+Umschalt+C (Entscheidung 128): Abbildung des offenen Tabs (sichtbare
+        Seite) genau wie im Export als SVG + PNG-Ersatz in die Zwischenablage; ohne Abbildung eine Einblendung."""
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                res = self.figure_for_copy(tmp)
+                if isinstance(res, str):
+                    return self.notify(res, ms=6000)
+                svg, png = (Path(p).read_bytes() for p in res)
+            from elucida.app.drawing_clipboard import copy_picture
+            copy_picture(svg, png)
+        except Exception as ex:                           # Zwischenablage oder Abbildung: melden, nie abstürzen
+            self.log_signal.emit("".join(traceback.format_exception(ex)))
+            return self.notify(T("copy_fig_failed", e=str(ex) or type(ex).__name__), ms=8000)
+        self.notify(T("copy_fig_done"), ms=4000)
+
+    def figure_for_copy(self, tmp):
+        """(SVG, PNG) der Abbildung des offenen Tabs in tmp, sonst der Grund (Text). Baut keinen Tab."""
+        tabs = getattr(self, "main_tabs", None)          # Übersicht, Projektseite: keine Verbindung sichtbar
+        if not self.project_dir or tabs is None or not tabs.isVisibleTo(self):
+            return T("copy_fig_none")
+        i = tabs.currentIndex()
+        key = self._tab_keys[i] if 0 <= i < len(self._tab_keys) else None
+        if key == "eps":
+            figs = self.si_eps_figures(tmp, self.export_name()) if self.groups else []   # derselbe Weg wie die SI
+            imgs = [b for b in figs if b[0] == "image"]
+            gs = list(self.groups)
+            if not imgs:
+                return T("copy_fig_none")
+            img = imgs[gs.index(self.current) if self.current in gs else 0]
+            return img[4], img[1]
+        tab = self.__dict__.get(self._tab_spec(key)[0]) if key and key not in ("eps", "compound", "export") else None
+        if tab is None or not hasattr(tab, "copy_figure"):
+            return T("copy_fig_none")
+        return tab.copy_figure(tmp)
+
+    def legacy_si_off(self):
+        """Frühere Abwahl dieses Rechners (QSettings `si_figs_off`, bleibt stehen) für Verbindungen ohne eigene Auswahl."""
         return set(str(self.settings.value("si_figs_off", "") or "").split(",")) - {""}
+
+    def si_figs_off(self):
+        """Tabs, deren Abbildung nicht in die SI soll: Auswahl der Verbindung (Tab „Export“, Spalte „SI“; gilt für
+        „SI (Word)“ und die Gesamt-SI, Entscheidung 67). Die frühere Abwahl dieses Rechners (QSettings `si_figs_off`)
+        übernimmt `open_project` einmal in Verbindungen ohne eigene Auswahl; danach gilt nur die Verbindung."""
+        return set(self.export_state.get("si_off") or ()) - {""}
+
+    def set_si_figs_off(self, off):
+        self.export_state["si_off"] = sorted(set(off) - {""})
+        self.push_undo()
 
     def export_si_dialog(self):
         """„SI (Word)“: exportiert direkt mit der Auswahl der Karte „SI-Export“ im Tab Verbindung (früher ein Dialog,
@@ -3854,11 +4194,21 @@ class MainWindow(QMainWindow):
         parts = [k for k in SI_PARTS if k in saved and avail[k]]
         empty = [T("si_chip_" + k) for k in SI_PARTS if k in saved and not avail[k]]
         if not parts:
-            self.statusBar().showMessage(T("si_nothing_selected"), 8000)
+            self.notify(T("si_nothing_selected"), [(T("si_card_link"), self.show_si_card)])
             return
-        if empty:
-            self.statusBar().showMessage(T("si_parts_without_data", parts=", ".join(empty)), 8000)
-        self.export_si(parts, self.si_figs_off())
+        self._si_pre_used = [T("si_parts_without_data", parts=", ".join(empty))] if empty else []   # in die Meldung
+        try:
+            self.export_si(parts, self.si_figs_off())
+        finally:
+            self.__dict__.pop("_si_pre_used", None)
+
+    def show_si_card(self):
+        """Klick aus der Meldung: Auswahl der SI (Karte „SI (Word)“ und Spalte „SI“) im Tab „Export“ zeigen."""
+        self.show_tab("export")
+        card = self.export_tab.grp_si
+        self.export_tab.steps.reveal(card)
+        area = self.export_tab._footer_parts[0]
+        QTimer.singleShot(0, lambda: area.ensureWidgetVisible(card))
 
     def export_si(self, parts=SI_PARTS, skip_figs=()):
         """SI-Abschnitt der Verbindung als Word-Datei: Charakterisierungsabsatz (m.p.; IR; HR-MS; UV-Vis;
@@ -3866,66 +4216,128 @@ class MainWindow(QMainWindow):
         (zweispaltig) – je nach Auswahl."""
         if not self.ensure_project():
             return
+        with self.collecting_skips():                  # unlesbare Teile auslassen und in der Meldung nennen
+            try:
+                blocks, missing = self.si_blocks(parts, skip_figs)
+                pdir = Path(self.project_dir)
+                name = core.safe_name(self.export_name())
+                p = SI.write_docx(PRJ.export_dir(pdir, PRJ.SI_DIR) / f"{name}_SI.docx", blocks)
+                p = (self.place_exports([p]) or [p])[0] if self.is_quick() else p     # Schnellauswertung: Zielordner
+            except PermissionError as e:
+                return self.error(T("report_locked", p=getattr(e, "filename", "")))
+            except Exception as e:
+                self.log_signal.emit(traceback.format_exc())
+                return self.error(str(e))
+            used = self.__dict__.pop("_si_pre_used", []) + self.si_used(parts, skip_figs) + \
+                ([T("si_missing", parts=", ".join(missing))] if missing else [])
+            links = [(T("si_card_link"), self.show_si_card)] + \
+                [(T(self._tab_spec(k)[3]), lambda k=k: self.show_tab(k)) for k in dict.fromkeys(k for k, _ in self._si_tables)]
+            rel = p.relative_to(pdir) if p.is_relative_to(pdir) else p      # Einblendung: kurz, ohne Benutzerpfad
+            self.exported([p.parent], [p], used, links, head=T("si_written", p=str(rel)))
+
+    def si_used(self, parts, skip_figs):
+        """Zeilen der Exportmeldung: benutzte Teile, abgewählte Abbildungen (Karte „SI-Export“), Tabellen mit eigenem
+        „In die SI“ (stehen in ihrem Tab, nicht in der Karte)."""
+        out = [T("si_used_parts", parts=", ".join(T("si_chip_" + k) for k in SI_PARTS if k in parts))]
+        if "figs" in parts:
+            data = set(self.export_keys())                # Tabs mit Daten, ohne sie zu bauen oder zu zeichnen
+            off = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in COMP.SI_FIG_KEYS
+                   if k in skip_figs and k in data]
+            if off:
+                out.append(T("si_used_figs_off", tabs=", ".join(off)))
+        if self._si_tables:
+            out.append(T("si_used_tables", t=", ".join(f"{lab} ({T(self._tab_spec(k)[3])})" for k, lab in self._si_tables)))
+        return out
+
+    def si_part(self, key, fn, default=None):
+        """Ein Teil der SI-Sammlung: fn(); Fehler -> nur diesen Teil auslassen und melden (`skip_part`; `key` = Tab,
+        benennt den Teil, wenn der Fehler keine Datei nennt)."""
         try:
-            blocks, missing = self.si_blocks(parts, skip_figs)
-            pdir = Path(self.project_dir)
-            name = core.safe_name(self.export_name())
-            p = SI.write_docx(PRJ.export_dir(pdir, PRJ.SI_DIR) / f"{name}_SI.docx", blocks)
-            p = (self.place_exports([p]) or [p])[0] if self.is_quick() else p     # Schnellauswertung: Zielordner
-        except PermissionError as e:
-            return self.error(T("report_locked", p=getattr(e, "filename", "")))
-        except Exception as e:
-            self.log_signal.emit(traceback.format_exc())
-            return self.error(str(e))
-        msg = T("si_written", p=str(p))
-        if missing:
-            msg += "\n" + T("si_missing", parts=", ".join(missing))
-        self.info(msg)
+            return fn()
+        except Exception as ex:
+            self.skip_part(ex, part=T(self._tab_spec(key)[3]) if key in self._TAB_BUILD_ORDER else "UV-Vis")
+            return [] if default is None else default
 
     def si_blocks(self, parts=SI_PARTS, skip_figs=()):
         """-> (Blöcke für SI.write_docx, fehlende Teile). skip_figs: Tabs (Schlüssel wie si_figure_choices) ohne
         Abbildung; ihre Zeilen im Charakterisierungsabsatz bleiben."""
         comp = self.compound or {}
         title = self.syn_tab.st.get("name") or comp.get("name") or Path(self.project_dir or ".").name
+        self.skip_eps_error()
+        self._si_tables = []                            # Tabellen mit eigenem „In die SI“ (Exportmeldung)
         blocks, missing, plain = [], [], ""
         if "char" in parts:
-            blocks, missing, plain = self.si_char_blocks(comp, title)
-            blocks = self.syn_tab.gp_blocks() + blocks            # Einzel-SI: allgemeine Vorschrift davor
+            blocks, missing, plain = self.si_part("syn", lambda: self.si_char_blocks(comp, title),
+                                                  ([("synthesis", title)], [], ""))
+            blocks = self.si_part("syn", self.syn_tab.gp_blocks, []) + blocks     # Einzel-SI: allgemeine Vorschrift davor
         elif title:
             blocks = [("heading", title)]
         self._si_plain = plain
         if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
-            blocks += [("pagebreak",)] + self.nmr_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si"))
+            blocks += [("pagebreak",)] + self.si_part(
+                "nmr", lambda: self.nmr_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si")))
         if "figs" in parts and self.project_dir:
             figs = self.si_figure_blocks(PRJ.work_dir(self.project_dir, "si"), title, skip_figs)
             if figs:
                 blocks += [("pagebreak",)] + figs
+            blocks += self.si_calc_tables(title)    # Tabellen Rechnung gegen Messung (IR, TD-DFT)
         if "methods" in parts:
             mb = self.si_methods_blocks()
             if mb:
                 blocks += [("gap",)] + mb
-        xt = self.xray_tab
-        es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in parts else []
-        if es:
-            blocks += self.si_xray_blocks(es)
-        dt = self.dft_tab
-        if "dft" in parts and any(dt.calc_of(e) is not None for e in dt.entries()) and self.project_dir:
-            blocks += [("gap",), ("columns", 2)] + dt.docx_blocks(PRJ.work_dir(self.project_dir, "si"))
+        if "xray" in parts:
+            blocks += self.si_part("xray", self.si_xray_part, [])
+        if "dft" in parts and self.project_dir and self.dft_has_data():
+            db = self.si_part("dft", lambda: self.dft_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si")), [])
+            if "dft" in skip_figs:                     # Chip „DFT“ unter „Abbildungen“ ab: auch Orbital-/NBO-Bilder weg
+                db = self.drop_captioned_images(db)
+            if any(b[0] != "columns" for b in db):      # nur NICS/ACID: deren Abbildungen stehen bei den Abbildungen
+                blocks += [("gap",), ("columns", 2)] + db
         return blocks, missing
+
+    @staticmethod
+    def drop_captioned_images(blocks):
+        """Abbildungen mit Unterschrift aus DFT-Blöcken nehmen (NBO, Resonanzstrukturen: „figcap“; Orbitale: „text“
+        direkt nach dem Bild). Das Bild der Geometrie (danach „fields“) und alle Tabellen bleiben."""
+        out, skip = [], False
+        for k, b in enumerate(blocks):
+            if skip:
+                skip = False
+                continue
+            nxt = blocks[k + 1][0] if k + 1 < len(blocks) else None
+            if b[0] == "image" and nxt in ("figcap", "text"):
+                skip = True
+                continue
+            out.append(b)
+        return out
+
+    def skip_eps_error(self):
+        """Gespeicherte ε-Messdatei nicht lesbar: Abbildung, UV-Vis-Zeile und Methodentext fehlen – in der Meldung nennen."""
+        if self._eps_error:
+            self.skip_part(self._eps_error[1], self._eps_error[0], "UV-Vis")
+
+    def si_xray_part(self):
+        xt = self.xray_tab
+        es = [e for e in xt.entries() if xt.structure(e) is not None]
+        return self.si_xray_blocks(es) if es else []
 
     def si_methods_items(self):
         """Methodentexte der Tabs, die fitten -> [(Kapitel der Gesamt-SI, Titel, Text)] (Text leer ohne Fit)."""
         self.collect_globals()
         items = [("uvvis", "UV-Vis absorption spectroscopy",          # Word: ohne Bandenliste (steht in Zeile/Bild)
                   self.eps_methods_text(with_results=False) if self.groups else "")]
-        for key, title, t in (("uvvis", "UV-Vis kinetics", self.uvkin_tab), ("cv", "Cyclic voltammetry", self.cv_tab),
+        for key, title, t in (("uvvis", "UV-Vis kinetics", self.uvkin_tab),
+                              ("uvvis", "Time-resolved fluorescence", self.fl_tab), ("cv", "Cyclic voltammetry", self.cv_tab),
                               ("sec", "UV-Vis spectroelectrochemistry", self.sec_tab),
                               ("hcell", "H-cell charge–discharge cycling", self.hcell_tab),
                               ("epr", "EPR spectroscopy", self.epr_tab)):
             try:
-                txt = t.methods_text() if t.figure_spec() is not None else ""   # Ergebnisse/Fits aktuell
-            except Exception:
-                self.log_signal.emit(traceback.format_exc())
+                drawn = t.figure_spec() is not None                    # Ergebnisse/Fits aktuell
+                # Lebensdauer auch ohne Spektren; EPR-Rechnung ohne Messung: gleiche Bedingung wie ihre Abbildungen
+                calc = t is self.epr_tab and bool(t.calc_pages.figures())
+                txt = t.methods_text() if drawn or calc or t is self.fl_tab else ""
+            except Exception as ex:
+                self.skip_part(ex, part=title)
                 txt = ""
             items.append((key, title, txt))
         return items
@@ -3951,23 +4363,34 @@ class MainWindow(QMainWindow):
         title = self.syn_tab.st.get("name") or comp.get("name") or Path(self.project_dir or ".").name
         out_dir = PRJ.work_dir(self.project_dir, "si")
         parts = {}
+        self.skip_eps_error()
+        off = self.si_figs_off()                          # Spalte „SI“ der Verbindung gilt auch hier (Entscheidung 67)
+        names = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in COMP.SI_FIG_KEYS
+                 if k in off and k in self.export_keys()]           # nur Tabs mit Daten nennen
+        if names:
+            self.__dict__.setdefault("_pub_si_off", []).append((comp.get("name") or Path(self.project_dir).name, names))
 
         def figs(tabs):
             res = []
             for t in tabs:
+                if self.tab_key_of(t) in off:
+                    continue
                 try:
                     res += t.si_figure(out_dir, title)
-                except Exception:
-                    self.log_signal.emit(traceback.format_exc())
+                except Exception as ex:
+                    self.skip_part(ex, part=T(self._tab_spec(self.tab_key_of(t))[3]))
             return res
         if "char" in sections:
-            parts["char"] = self.si_char_blocks(comp, title)[0]
+            char = self.si_part("syn", lambda: self.si_char_blocks(comp, title)[0], [("synthesis", title)])
+            if char != [("synthesis", title)]:           # ohne Vorschrift und Daten keine leere „Synthesis of X“
+                parts["char"] = char
         if "nmr" in sections and self.nmr_tab.spectra():
-            parts["nmr"] = self.nmr_tab.docx_blocks(out_dir)
+            parts["nmr"] = self.si_part("nmr", lambda: self.nmr_tab.docx_blocks(out_dir))
         if "irms" in sections:
             parts["irms"] = figs([self.irms_tab, self.hrms_tab])
         if "uvvis" in sections:
-            parts["uvvis"] = self.si_eps_figures(out_dir, title) + figs([self.ov_tab, self.uvkin_tab, self.fl_tab])
+            parts["uvvis"] = (self.si_part("eps", lambda: self.si_eps_figures(out_dir, title)) if "eps" not in off else []) + \
+                figs([self.ov_tab, self.uvkin_tab, self.fl_tab])
         for key, tab in (("epr", self.epr_tab), ("cv", self.cv_tab), ("sec", self.sec_tab), ("hcell", self.hcell_tab)):
             if key in sections:
                 parts[key] = figs([tab])
@@ -3976,8 +4399,30 @@ class MainWindow(QMainWindow):
                 if key in sections and txt:
                     parts["methods_" + key] = (parts.get("methods_" + key) or []) + \
                         self._methods_paras(f"{mtitle} ({title})", txt)   # UV-Vis: ε und Kinetik
+        if "xray" in sections:
+            self.si_part("xray", lambda: self._xray_parts(parts))
+        dt = self.dft_tab
+        if "dft" in sections and self.dft_has_data():
+            parts["dft"] = self.si_part("dft", lambda: dt.docx_blocks(out_dir))
+            if "dft" in off:                              # Pille „SI“ der DFT-Karten aus: Bilder mit Unterschrift weg (B3)
+                parts["dft"] = self.drop_captioned_images(parts["dft"])
+        if "dft" in sections:                   # IR- und TD-DFT-Tabellen im Kapitel Rechnungen
+            parts["calc_tables"] = self.si_calc_tables(title)
+        if "dft" in sections and self.dft_has_data() and "dft" not in off:
+            parts["dft_figs"] = self.si_part("dft", lambda: dt.pages.si_figures(out_dir, title))  # Energieprofil, IRC, NICS (F4)
+        try:                                    # Tab „Weitere“: ins gewählte Kapitel oder eigenes Kapitel am Ende
+            for key, bl in (self.other_tab.chapter_blocks(out_dir, title) if "other" not in off else []):
+                key = "dft_figs" if key == "dft" else key
+                if key.startswith("new:") or key in sections or (key == "dft_figs" and "dft" in sections):
+                    parts[key] = (parts.get(key) or []) + bl
+        except Exception as ex:
+            self.skip_part(ex, part=T("tab_other"))
+        return title, parts
+
+    def _xray_parts(self, parts):
+        """Gesamt-SI: Abbildungen/Parameter der Strukturen und die Kristalldaten (gemeinsame Tabellen) in `parts`."""
         xt = self.xray_tab
-        es = [e for e in xt.entries() if xt.structure(e) is not None] if "xray" in sections else []
+        es = [e for e in xt.entries() if xt.structure(e) is not None]
         if es:
             blocks = self.si_xray_blocks(es)
             k = next((i for i, b in enumerate(blocks) if b[0] == "tabcap" and b[1].startswith("Crystal data")), None)
@@ -3985,22 +4430,25 @@ class MainWindow(QMainWindow):
             h_, r_ = xt.crystal_table()
             parts["crystal"] = (h_, [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_]
                                      for row_ in r_])
-        dt = self.dft_tab
-        if "dft" in sections and any(dt.calc_of(e) is not None for e in dt.entries()):
-            parts["dft"] = dt.docx_blocks(out_dir)
-        if "dft" in sections:
-            try:
-                parts["dft_figs"] = dt.pages.si_figures(out_dir, title)    # Energieprofil, IRC, NICS (F4)
-            except Exception:
-                self.log_signal.emit(traceback.format_exc())
-        try:                                    # Tab „Weitere“: ins gewählte Kapitel oder eigenes Kapitel am Ende
-            for key, bl in self.other_tab.chapter_blocks(out_dir, title):
-                key = "dft_figs" if key == "dft" else key
-                if key.startswith("new:") or key in sections or (key == "dft_figs" and "dft" in sections):
-                    parts[key] = (parts.get(key) or []) + bl
-        except Exception:
-            self.log_signal.emit(traceback.format_exc())
-        return title, parts
+
+    def si_calc_tables(self, title):
+        """Tabellen Rechnung gegen Messung für die SI (1.2.0): zugeordnete IR-Banden, TD-DFT-Anregungen (je mit Haken
+        „In die SI“ im Tab); nur gebaute Zustände mit Daten, Fehler über `si_part` gemeldet."""
+        out = []
+        for st, key in ((self.irms_state, "irms"), (self.ov_state, "overlay")):
+            if not (st.get("irc_file") or st.get("entries")):
+                continue
+            got = self.si_part(key, lambda key=key: getattr(self, self._tab_spec(key)[0]).si_table_blocks(title))
+            if got:
+                self.__dict__.setdefault("_si_tables", []).append((key, T("ir_calc_page" if key == "irms" else "tddft_tab_page")))
+            out += got
+        if self.ov_state.get("nto", {}).get("items") and self.project_dir:
+            got = self.si_part("overlay", lambda: self.ov_tab.nto.si_blocks(   # NTO-Bilder (Paket B 1.2.0, „In die SI“)
+                PRJ.work_dir(self.project_dir, "si"), title))
+            if got:
+                self.__dict__.setdefault("_si_tables", []).append(("overlay", T("nto_page")))
+            out += got
+        return out
 
     def figure_tabs(self):
         """Tabs mit Abbildung in der Reihenfolge der SI (Charakterisierung, dann Spektroskopie, Elektrochemie)."""
@@ -4010,8 +4458,11 @@ class MainWindow(QMainWindow):
     def si_figure_blocks(self, out_dir, name, skip=()):
         """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je
         Seite (SI.two_per_page verkleinert, wo nötig), jede mit „Figure Sn: …“."""
-        figs = self.si_eps_figures(out_dir, name) if "eps" not in skip else []
-        for t in self.figure_tabs():
+        figs, eps_done = [], False
+        eps = lambda: self.si_part("eps", lambda: self.si_eps_figures(out_dir, name)) if "eps" not in skip else []  # noqa: E731
+        for t in self.figure_tabs():                      # Reihenfolge der Tabs (Entscheidung 99): IR + EA, HRMS vor ε
+            if self.tab_key_of(t) not in ("irms", "hrms") and not eps_done:
+                figs, eps_done = figs + eps(), True
             if self.tab_key_of(t) in skip:
                 continue
             try:
@@ -4019,15 +4470,12 @@ class MainWindow(QMainWindow):
                 if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
                     fb = [("char", SI.chem_html(t.si_setup_text()))] + fb
                 figs += fb
-            except Exception:
-                self.log_signal.emit(traceback.format_exc())
-        ds = self.dft_state
-        if "dft" not in skip and (ds.get("entries") or (ds.get("profile") or {}).get("irc")
-                                  or (ds.get("nics") or {}).get("files")):   # F4
-            try:
-                figs += self.dft_tab.pages.si_figures(out_dir, name)
-            except Exception:
-                self.log_signal.emit(traceback.format_exc())
+            except Exception as ex:
+                self.skip_part(ex, part=T(self._tab_spec(self.tab_key_of(t))[3]))
+        if not eps_done:
+            figs += eps()
+        if "dft" not in skip and self.dft_has_data():         # Energieprofil, IRC, NICS, ACID (NBO/Orbitale: si_blocks)
+            figs += self.si_part("dft", lambda: self.dft_tab.pages.si_figures(out_dir, name))
         return SI.two_per_page(figs)
 
     def si_eps_figures(self, out_dir, name):
@@ -4042,7 +4490,7 @@ class MainWindow(QMainWindow):
             cfg2, spectra, results = core.prepare_series(cfg, self.groups[g], g)
             fig = MplFigure(figsize=cfg2["figsize_in"], dpi=PREVIEW_DPI)
             FigureCanvasAgg(fig)
-            F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
+            F = self.eps_figure(cfg2, spectra, results, g, fig)
             sfx = f"_{core.safe_name(g)}" if len(self.groups) > 1 else ""
             img = TABS.si_image(F, Path(out_dir) / f"{core.safe_name(name)}_epsilon{sfx}.svg")
             solv = (self.series.get(g) or {}).get("solvent", "").strip()
@@ -4075,7 +4523,7 @@ class MainWindow(QMainWindow):
                 missing.append(lab)
         if not uv:
             missing.append("UV-Vis")
-        parts += [("ir", *p_) for p_ in ir_ms_ea if p_[0].startswith("IR")] + \
+        parts += [("ir", *p_) for p_ in ir_ms_ea if p_[0].startswith(("IR", "Raman"))] + \
             [("hrms", *p_) for p_ in ir_ms_ea if p_[0].startswith("HR-MS")] + [("uvvis", *p_) for p_ in uv] + \
             [("ea", *p_) for p_ in ir_ms_ea if p_[0].startswith("Elemental")]
         return parts, missing
@@ -4084,6 +4532,9 @@ class MainWindow(QMainWindow):
         """„Synthesis of Name“ + Charakterisierungsabsatz -> (Blöcke, fehlende Teile, Klartext)."""
         parts, missing = self.si_char_parts(comp)
         plain, para = SI.join_lines([(p_, h_) for _, p_, h_ in parts])
+        pur_p, pur_h = SI.purity_line(comp.get("purity"), comp.get("purity_other", ""))   # nur, was eingetragen ist
+        if pur_p:
+            plain, para = (plain + " " + pur_p).strip(), (para + " " + pur_h).strip()
         blocks = [("synthesis", title)]
         if self.syn_tab.has_content() and self.project_dir:      # Überschrift, Schema, Vorschrift aus dem Tab
             blocks = self.syn_tab.si_blocks(PRJ.work_dir(self.project_dir, "si"))
@@ -4120,6 +4571,18 @@ class MainWindow(QMainWindow):
                     blocks[-1:-1] = [("note", xt.sym_note(e))]
                 if p_tabs:                                 # Rechnung: Geometrie, Methode, RMSD (einmal, nach der letzten)
                     blocks[-1:-1] = [("note", n_) for n_ in xt.calc_notes(e)]
+                try:                                      # Packungsbild (Haken „In die SI“ der Karte Packung)
+                    blocks += xt.pack_si_blocks(e, out_dir)
+                except Exception:
+                    self.log_signal.emit(traceback.format_exc())
+                try:                                      # Pulverdiffraktogramm (Haken „In die SI“ der Karte PXRD-Abbildung)
+                    blocks += xt.pxrd_si_blocks(e, out_dir)
+                except Exception:
+                    self.log_signal.emit(traceback.format_exc())
+                try:                                      # HOMA je Ring (Haken „In die SI“ der Karte HOMA)
+                    blocks += xt.homa.si_blocks(e, fname)
+                except Exception:
+                    self.log_signal.emit(traceback.format_exc())
             h_, r_ = xt.crystal_table()
             r_ = [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_] for row_ in r_]
             names = [e.get("name") or e["block"] for e in es]
@@ -4129,7 +4592,7 @@ class MainWindow(QMainWindow):
     def fill_table(self, results, cfg):
         sym = "ε [M⁻¹ cm⁻¹]" if core.conc_factor(cfg) else "a [L g⁻¹ cm⁻¹]"
         self.table.blockSignals(True)
-        self.table.setHorizontalHeaderLabels(["", T("col_n"), sym, T("col_intercept"),
+        self.table.setHorizontalHeaderLabels(["", T("col_n"), sym, T("col_intercept") + " [cm⁻¹]",   # A/d: cm⁻¹
                                               T("col_r2"), T("col_cut"), T("col_warn"), T("col_lam")])
         self.table.setRowCount(len(results))
         self._row_keys = []
@@ -4206,14 +4669,260 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ Export
     def export_dialog(self):
         if not self.csv_path:
-            return self.error(T("load_first"))
+            return self.error(str(self._eps_error[1]) if self._eps_error else T("load_first"))
         if not self.ensure_project():
             return
         try:
             out = self.export_all()
         except PermissionError as e:
             return self.error(T("report_locked", p=getattr(e, "filename", "") or ""))
-        self.exported(p.parent for p in out)
+        used = [T("export_eps_series", n=len(self.groups))] if len(self.groups) > 1 else []
+        self.exported((p.parent for p in out), out, used, [(T("export_change_formats"), self.show_eps_formats)])
+
+    def show_export_card(self, key, label=None):
+        """Link „In die SI“ in einem Tab: Karte im Tab „Export“ zeigen (dort ist die Pille „SI“ der eine Ort)."""
+        self.show_tab("export")
+        QTimer.singleShot(0, lambda: self.export_tab.show_card(key, label))   # nach dem Auffüllen beim Zeigen
+
+    def show_eps_formats(self):
+        """Klick aus der Exportmeldung: Formate zeigen (gelten seit dem Tab „Export“ für alle Abbildungen)."""
+        self.show_tab("export")
+
+    # ------------------------------------------------------------ Tab „Export“ (Entscheidung 64–66)
+    def export_fmt(self):
+        """Formate aller Abbildungen der Verbindung {pdf, svg, png, pptx}. Ohne eigene Wahl (Verbindungen vor dem Tab
+        „Export“): die gespeicherten Formate des ersten Tabs mit Daten als Vorgabe; baut keine Tabs."""
+        if self.__dict__.get("_fmt_override"):              # Vorschaubilder der Teile: nur PNG
+            return dict(self._fmt_override)
+        f = self.export_state.get("fmt")
+        if f:                                           # PPTX je Bild entfällt (v3: „Folien aus Auswahl“)
+            return dict(f, pptx=False)
+        for k in self.export_keys():
+            if k == "eps":
+                g = self.glob
+                return {"pdf": bool(g.get("fmt_pdf", True)), "svg": bool(g.get("fmt_svg", True)),
+                        "png": bool(g.get("fmt_png", True)), "pptx": False}
+            st = getattr(self, self._tab_spec(k)[2])
+            if isinstance(st, dict) and st.get("fmt"):
+                return dict(st["fmt"], pptx=False)
+        return {"pdf": True, "svg": True, "png": True, "pptx": False}
+
+    def set_export_fmt(self, fmt):
+        self.export_state["fmt"] = {e: bool(fmt.get(e)) for e in ("pdf", "svg", "png")}
+        self.push_undo()
+
+    def _export_thumb(self):
+        """Vorschaubilder der Karten im Tab „Export“ (.elucida/thumbs/<Tab>.png) beim Speichern: für jeden gebauten Tab
+        mit Abbildung, dessen Zustand sich seit dem letzten Bild geändert hat oder dessen Bild fehlt (frische Verbindung:
+        keine Platzhalter). Verborgene Tabs zeichnen dafür einmal (`ensure_rendered`); ungebaute Tabs bleiben ungebaut.
+        Ein Fehler stört das Speichern nie."""
+        fps = self.__dict__.setdefault("_thumb_fp", {})
+        out = PRJ.work_dir(self.project_dir, "thumbs")
+        fmt = json.dumps([self.text_fmt, self.tab_fmt], sort_keys=True, default=str)
+        tabs = [("eps", self if self.groups else None)] + \
+            [(k, self.__dict__.get(self._tab_spec(k)[0])) for k in self._TAB_BUILD_ORDER if k != "export"]
+        for key, tab in tabs:
+            try:
+                if tab is None or (tab is not self and not isinstance(tab, TABS.FigureTab)):
+                    continue
+                st = self.get_state()["eps"] if tab is self else getattr(self, self._tab_spec(key)[2])
+                fp = (str(self.project_dir), json.dumps(st, sort_keys=True, default=str) + fmt)
+                path = out / f"{key}.png"
+                if fps.get(key) == fp and path.exists():
+                    continue
+                if tab is not self and tab.F is None and hasattr(tab, "ensure_rendered"):
+                    keep_r, self._restoring = self._restoring, True     # Zeichnen fürs Bild: kein Rückgängig-Schritt
+                    try:
+                        tab.ensure_rendered()
+                    finally:
+                        self._restoring = keep_r
+                if tab.F is None:
+                    continue
+                tab.fig.savefig(path, dpi=36, facecolor="white")
+                fps[key] = fp
+            except Exception:
+                pass
+
+    def render_part_thumbs(self, key):
+        """Vorschaubilder der Teile eines GEBAUTEN Tabs (Hyperfein, Packung, Orbitale …) für den Tab „Export“: einmal
+        der Export des Tabs als PNG in einen Zwischenordner, je Teil das passende Bild verkleinert nach
+        .elucida/thumbs/<Tab>_<Teil>.png; nur wenn eines fehlt oder sich der Tab geändert hat. Baut keinen Tab, schreibt
+        nichts in die Ordner der Verbindung; ein Fehler stört nichts (-> False). -> True, wenn Bilder neu sind."""
+        import shutil
+        from PySide6.QtGui import QImage
+        tab = self.__dict__.get(self._tab_spec(key)[0]) if key in self._TAB_BUILD_ORDER else None
+        if not isinstance(tab, TABS.FigureTab) or not self.project_dir:
+            return False
+        if self.__dict__.get("_part_cost", {}).get(key, EXPORTTAB.PART_COST_MAX) >= EXPORTTAB.PART_COST_MAX:
+            return self.render_quick_parts(key, tab)     # Export teuer oder unbekannt: nur billige Teile direkt (132)
+        ps = [(i, pred) for i, (_, pred) in enumerate(EXPORTTAB.parts(self, key)) if pred is not None]
+        out = PRJ.work_dir(self.project_dir, "thumbs")
+        fp = json.dumps(getattr(self, self._tab_spec(key)[2]), sort_keys=True, default=str)
+        fps = self.__dict__.setdefault("_thumb_fp_parts", {})
+        old_fp, made = fps.get(key, (None, ()))          # Teile ohne PNG (Tabellen) zählen nicht als fehlend
+        if not ps or (old_fp == fp and all((out / f"{key}_{i}.png").exists() for i in made)):
+            return False
+        tmp = Path(tempfile.mkdtemp(dir=PRJ.work_dir(self.project_dir)))
+        self._fmt_override, keep_r, self._restoring = {"png": True}, self._restoring, True
+        st = getattr(self, self._tab_spec(key)[2])
+        keep_st = copy.deepcopy(st)                       # Export legt z. B. Platzierungen ab: Vorschau ändert nichts
+        sb = self.statusBar()
+        keep_msg, blocked = sb.currentMessage(), self.blockSignals(True)   # keine Zeilen „gespeichert“ im Protokoll
+        try:
+            t0 = time.perf_counter()
+            with self.collecting_skips():
+                files = tab.export_to(tmp / PRJ.export_stem(self.export_name(), tab.STATE_KEY))
+            self.__dict__.setdefault("_part_cost", {})[key] = time.perf_counter() - t0   # teuer -> künftig nicht mehr
+            made = []
+            for i, pred in ps:
+                hits = sorted((Path(f) for f in files if Path(f).suffix.lower() == ".png" and pred(Path(f).name)),
+                              key=lambda p: len(p.name))
+                if hits:
+                    img = QImage(str(hits[0]))
+                    if not img.isNull():
+                        img.scaledToWidth(min(img.width(), 4 * STYLE.TILE_W), Qt.SmoothTransformation).save(
+                            str(out / f"{key}_{i}.png"))
+                        made.append(i)
+            fps[key] = (fp, made)
+            return bool(made)
+        except Exception:
+            return False
+        finally:
+            self.__dict__.pop("_fmt_override", None)
+            self._restoring = keep_r
+            self.blockSignals(blocked)
+            if isinstance(st, dict) and st != keep_st:
+                _restore_in_place(st, keep_st)
+            if sb.currentMessage() != keep_msg:
+                sb.clearMessage()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def quick_parts(self, key, tab=None):
+        """Teilbilder, die ohne Export billig direkt zu zeichnen sind (~0,1 s, Entscheidung 132): {Index der Kachel:
+        zeichnen(fig)}. Abklingkurve (Fluoreszenz), PXRD (X-Ray), NICS (DFT); Packung, Orbitale, Spindichte, NTO sind teuer
+        (0,3–14 s) und kommen erst aus einem Export. Baut keinen Tab."""
+        tab = tab or (self.__dict__.get(self._tab_spec(key)[0]) if key in ("fluo", "xray", "dft") else None)
+        if tab is None:
+            return {}
+        labs = [lab for lab, _ in EXPORTTAB.parts(self, key)]
+        if key == "fluo" and T("export_part_decay") in labs:
+            return {labs.index(T("export_part_decay")): tab.tau.draw}
+        if key == "xray" and "PXRD" in labs:
+            es = [e for e in tab.entries() if (e.get("pxrd") or {}).get("file") and tab.structure(e) is not None]
+            return {labs.index("PXRD"): lambda fig, e=es[0]: tab.build_pxrd(fig, e)} if es else {}
+        if key == "dft" and "NICS" in labs:
+            return {labs.index("NICS"): tab.pages.build_nics}
+        return {}
+
+    def render_quick_parts(self, key, tab):
+        """Billige Teilbilder (quick_parts) direkt in eine eigene Abbildung zeichnen und klein nach thumbs/ legen; wie
+        render_part_thumbs ohne Nebenwirkung (Zustand, Protokoll, Rückgängig) und nur bei Änderung. -> True, wenn neu."""
+        quick = self.quick_parts(key, tab)
+        out = PRJ.work_dir(self.project_dir, "thumbs")
+        fp = json.dumps(getattr(self, self._tab_spec(key)[2]), sort_keys=True, default=str)
+        fps = self.__dict__.setdefault("_thumb_fp_parts", {})
+        if not quick or (fps.get(key + "#quick") == fp and all((out / f"{key}_{i}.png").exists() for i in quick)):
+            return False
+        keep_r, self._restoring = self._restoring, True
+        st = getattr(self, self._tab_spec(key)[2])
+        keep_st = copy.deepcopy(st)
+        blocked = self.blockSignals(True)
+        made = False
+        try:
+            for i, draw in quick.items():
+                fig = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
+                FigureCanvasAgg(fig)
+                try:
+                    res = draw(fig)
+                    if not fig.axes or (isinstance(res, tuple) and res[0] is None):   # nichts gezeichnet: Symbol bleibt
+                        (out / f"{key}_{i}.png").unlink(missing_ok=True)   # nur eigener Vorschau-Cache, kein altes Bild
+                        continue
+                    fig.savefig(str(out / f"{key}_{i}.png"), dpi=40, facecolor="white")   # Kachelgröße, nicht Export
+                    made = True
+                except Exception:                         # Vorschau ist nur Anzeige
+                    pass
+            fps[key + "#quick"] = fp
+            return made
+        finally:
+            self._restoring = keep_r
+            self.blockSignals(blocked)
+            if isinstance(st, dict) and st != keep_st:
+                _restore_in_place(st, keep_st)
+
+    def export_keys(self):
+        """Tabs mit Daten in der Reihenfolge der Leiste (Punkte der gespeicherten Datei, ε aus den Serien); baut nichts."""
+        nav = getattr(self, "nav_buttons", {})
+        have = {self._tab_keys[i] for i, b in nav.items() if getattr(b, "has_data", False)}
+        if self.groups:
+            have.add("eps")
+        return [k for k in self._TAB_ORDER if k in have and k not in ("compound", "export")]
+
+    def export_key(self, key, only=None):
+        """Export eines Tabs wie Strg+E dort (Tab wird dafür gebaut); „export“ = alles. only(Dateiname) -> bool: nur
+        diese Dateien ablegen (Zeile je Abbildung/Bericht im Tab „Export“, `place_exports`)."""
+        if key == "export":                              # Strg+E im Tab „Export“ = sein Hauptknopf (Auswahl, sonst alles)
+            return self.export_tab.run() if self._built("export") else self.export_all_tabs()
+        self._export_only = only
+        t0 = time.perf_counter()
+        try:
+            if key == "eps":
+                return self.export_dialog()
+            tab = getattr(self, self._tab_spec(key)[0])
+            if getattr(tab, "_footer_parts", None) is not None:      # Synthese/NMR: Word-Datei mit derselben Meldung
+                return TABS._export_word(tab)
+            return tab.export_dialog()
+        finally:
+            self._export_only = None
+            if key in self._TAB_BUILD_ORDER:             # Dauer des Exports: entscheidet über Teilbilder beim Zeigen
+                self.__dict__.setdefault("_part_cost", {})[key] = time.perf_counter() - t0
+
+    def export_all_tabs(self, items=None):
+        """„Alles exportieren“: jeder Tab mit Daten wie sein eigener Export, eine Meldung für alle (nicht exportierte
+        Tabs werden genannt, ein Fehler hält die übrigen nicht auf). items: [(Tab, Test auf den Dateinamen | None)] =
+        nur diese Zeilen (Auswahl im Reiter „Bilder“)."""
+        if not self.ensure_project():
+            return None
+        name = lambda k: T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3])      # noqa: E731
+        items = list(items) if items else [(k, None) for k in self.export_keys()]
+        keys, done, batch = [k for k, _ in items], [], []
+        if not keys or self.__dict__.get("_batch") is not None:
+            return self.notify(T("export_all_none")) if not keys else None
+        n_undo, tab0 = len(self._undo), self.main_tabs.currentIndex()
+        et = self.export_tab if self._built("export") else None
+        if et is not None:
+            et.btn_all.setEnabled(False)
+        with self.collecting_skips():
+            self._batch = batch
+            try:
+                for i, (k, only) in enumerate(items, 1):
+                    self.notify(T("export_all_progress", i=i, n=len(keys), tab=name(k)), ms=0, log="")
+                    QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)   # Fortschritt zeigen
+                    n0 = len(batch)
+                    try:
+                        self.export_key(k, only=only)
+                    except Exception as ex:
+                        self.log_signal.emit(traceback.format_exc())
+                        self.skip_part(ex, part=name(k))
+                    if len(batch) > n0 and k not in done:
+                        done.append(k)
+            finally:
+                self._batch = None
+                self.__dict__.pop("_quick_dir", None)
+                if et is not None:
+                    et.btn_all.setEnabled(True)
+                if self.main_tabs.currentIndex() != tab0:  # Ansicht bleibt (Bauen der Tabs wechselt nichts)
+                    self.main_tabs.setCurrentIndex(tab0)
+                if len(self._undo) > n_undo > 0:        # Bauen der Tabs ergänzt Vorgaben: kein eigener Schritt
+                    self._undo[n_undo - 1] = self._undo[-1]
+                    del self._undo[n_undo:]
+                    self._update_undo_actions()
+            files = [f for b in batch for f in b[1]]
+            missing = [name(k) for k in dict.fromkeys(keys) if k not in done]
+            used = ([T("export_all_used", tabs=", ".join(name(k) for k in done))] if done else []) + \
+                ([T("export_all_missing", tabs=", ".join(missing))] if missing else [])
+            self.exported([f for b in batch for f in b[0]], files, used,
+                          [(T("export_change_formats"), self.show_eps_formats)])
+        return files
 
     def export_all(self, folder: Path = None):
         """Alle Serien exportieren: Abbildungen, Ergebnis-CSV und Excel-Report.
@@ -4235,7 +4944,7 @@ class MainWindow(QMainWindow):
             cfg2["output"] = str(folder_g / f"{name}.{cfg2['_main_fmt']}")
             fig = MplFigure(figsize=cfg2["figsize_in"], dpi=PREVIEW_DPI)
             FigureCanvasAgg(fig)
-            F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
+            F = self.eps_figure(cfg2, spectra, results, g, fig)
             F.export()
             core.write_results(results, folder_g / f"{name}_results.csv", cfg2)
             written += [folder_g / f"{name}.{e}" for e in [cfg2["_main_fmt"]] + cfg2["extra_formats"]]
@@ -4250,8 +4959,27 @@ class MainWindow(QMainWindow):
                 written.append(Path(rep))
             except PermissionError:
                 self.error(T("report_locked", p=folder_g / f"{name}_report.xlsx"))
+        if folder is None and self.export_fmt().get("pptx"):
+            written = self._eps_pptx(written)
         if folder is None:
             written = self.place_exports(written)
+        return written
+
+    def _eps_pptx(self, written):
+        """PPTX im Formate-Feld: je Serie eine Folie wie die SI-Abbildung (<Serie>_UV-Vis.pptx); nur PPTX gewählt: die
+        Abbildung, die sonst als PDF entstünde, fällt weg (Zwischenordner)."""
+        from elucida.si import pptx as PPTX
+        name = (self.compound or {}).get("name") or self.export_name()
+        figs = PPTX.figures_from_blocks(self.si_eps_figures(PRJ.work_dir(self.project_dir, "pptx"), name))
+        only = not any(self.export_fmt().get(k) for k in ("pdf", "svg", "png"))
+        for g, fig in zip(self.groups, figs):              # gleiche Reihenfolge wie si_eps_figures
+            stem = PRJ.export_stem(g, "eps")
+            pdf = next((f for f in written if Path(f).name == stem + ".pdf"), None)
+            folder_g = Path(next(f for f in written if Path(f).name.startswith(stem))).parent
+            written.append(PPTX.write_pptx(folder_g / (stem + ".pptx"), [fig]))
+            if only and pdf is not None:
+                Path(pdf).unlink(missing_ok=True)
+                written.remove(pdf)
         return written
 
     # ------------------------------------------------------------ Schnellauswertung (FB-3)
@@ -4282,10 +5010,20 @@ class MainWindow(QMainWindow):
     def place_exports(self, files):
         """Exporte ablegen: im Projekt nach figures/, tables/, SI/ – in einer Schnellauswertung in einen gewählten
         Ordner (zuletzt gewählter in QSettings „quick_export_dir“); abgebrochen -> wie sonst ins Projekt."""
+        only = self.__dict__.get("_export_only")
+        if only is not None:                            # Zeile im Tab „Export“: übrige Dateien des Tabs nicht ablegen
+            files = [Path(f) for f in files]
+            for f in [f for f in files if not only(f.name)]:
+                f.unlink(missing_ok=True)               # nur Zwischendateien des Exports (staging)
+            files = [f for f in files if only(f.name)]
         if not self.is_quick():
             return PRJ.place_exports(self.project_dir, files)
-        d = QFileDialog.getExistingDirectory(self, T("quick_export"), str(self.settings.value("quick_export_dir", "")
-                                                                            or Path.home()))
+        d = self.__dict__.get("_quick_dir")              # „Alles exportieren“: einmal je Export fragen (N3)
+        if d is None:
+            d = QFileDialog.getExistingDirectory(self, T("quick_export"), str(self.settings.value("quick_export_dir", "")
+                                                                                or Path.home()))
+            if self.__dict__.get("_batch") is not None:
+                self._quick_dir = d
         if not d:
             return PRJ.place_exports(self.project_dir, files)
         self.settings.setValue("quick_export_dir", d)
@@ -4310,6 +5048,14 @@ class MainWindow(QMainWindow):
             ev.acceptProposedAction()
 
     def dropEvent(self, ev):
+        self._drop_targets = []
+        try:
+            self._drop(ev)
+        finally:
+            targets, self._drop_targets = self._drop_targets, None
+            self._notify_loaded(targets)
+
+    def _drop(self, ev):
         files = [u.toLocalFile() for u in ev.mimeData().urls()]
         from elucida.app import publication as PUB
         for p in files:
@@ -4323,7 +5069,7 @@ class MainWindow(QMainWindow):
         secs = [p for p in files if Path(p).is_file() and (SECMOD.is_bwspec(p) or SECMOD.is_merged(p))]
         if secs and self.ensure_project():
             self.sec_tab.load_spectra(secs)
-            self.main_tabs.setCurrentWidget(self.sec_tab)
+            self.loaded_in("sec", len(secs))
             files = [p for p in files if p not in secs]
             if not files:
                 return
@@ -4332,7 +5078,7 @@ class MainWindow(QMainWindow):
         if cifs and self.ensure_project():
             for p in cifs:
                 self.xray_tab.load_cif(p)
-            self.main_tabs.setCurrentWidget(self.xray_tab)
+            self.loaded_in("xray", len(cifs))
             files = [p for p in files if p not in cifs]
             if not files:
                 return
@@ -4341,15 +5087,15 @@ class MainWindow(QMainWindow):
         svgs = [p for p in files if NMR.is_nmr_svg(p)
                 or (Path(p).suffix.lower() in (".svg", ".emf") and self.main_tabs.currentWidget() is self.nmr_tab)]
         mnovas = [p for p in files if Path(p).suffix.lower() == ".mnova"]
-        exps = [p for p in files if Path(p).is_dir() and NMR.find_experiments(p)]
+        exps = [p for p in files if NMR.find_experiments(p)]          # auch fid/acqus/pdata wie MNova
         if (svgs or exps or mnovas) and self.ensure_project():
             for p in svgs:
                 self.nmr_tab.load_svg(p)
-            for p in mnovas:
-                self.nmr_tab.add_mnova_file(p)
+            for p in mnovas:                     # mit SVGs zusammen: nur Rohdaten (FIDs an die Spektren), kein Export
+                self.nmr_tab.add_mnova_file(p, export=not svgs)
             for p in exps:
                 self.nmr_tab.import_topspin(p)
-            self.main_tabs.setCurrentWidget(self.nmr_tab)
+            self.loaded_in("nmr", len(svgs) + len(mnovas) + len(exps))
             files = [p for p in files if p not in svgs and p not in exps and p not in mnovas]
             if not files:
                 return
@@ -4358,7 +5104,7 @@ class MainWindow(QMainWindow):
         if xyzs and self.ensure_project():
             for p in xyzs:
                 self.dft_tab.load_xyz(p)
-            self.main_tabs.setCurrentWidget(self.dft_tab)
+            self.loaded_in("dft", len(xyzs))
             files = [p for p in files if p not in xyzs]
             if not files:
                 return
@@ -4371,13 +5117,23 @@ class MainWindow(QMainWindow):
                 (self.hrms_tab.load_raw if IRMS.is_bruker_d(p) else self.hrms_tab.load_ms)(p)
             if irms:
                 self.irms_tab.load_ir_files(irms)
-            self.main_tabs.setCurrentWidget(self.hrms_tab if ms else self.irms_tab)
+            if ms:
+                self.loaded_in("hrms", len(ms))
+            if irms:
+                self.loaded_in("irms", len(irms))
             files = [p for p in files if p not in ms and p not in irms]
             if not files:
                 return
         data = [p for p in files if Path(p).suffix.lower() in {".csv", ".txt"} | core.BINARY_EXT]
-        if data:
-            self.open_files(data)                     # mehrere Messdateien = ein Datensatz
+        here = self._tab_keys[self.main_tabs.currentIndex()]
+        if data and here == "uvkin":                  # Messdaten gehören in den Tab, auf dem sie abgelegt wurden
+            if self.ensure_project():
+                self.uvkin_tab.load_files(data)
+                self.loaded_in("uvkin", len(data))
+        elif data and here == "fluo":                 # Absorption oder Emission? nicht raten, nie still nach ε
+            self.error(T("drop_fluo_choose", a=T("fl_abs"), e=T("fl_em")))
+        elif data and self.open_files(data):          # mehrere Messdateien = ein Datensatz
+            self.loaded_in("eps", len(data))
         for p in files:
             ext = Path(p).suffix.lower()
             if p in data:
@@ -4386,8 +5142,10 @@ class MainWindow(QMainWindow):
                 self.error(T("load_first"))
             elif ext in IMG.CHEM_EXT | IMG.VECTOR_EXT:
                 self.set_structure(p)
+                self.loaded_in("eps", 1)
             elif ext in IMG.RASTER_EXT:
                 self.set_photo(p)
+                self.loaded_in("eps", 1)
             else:                                     # nie still fallen lassen
                 self.error(T("drop_unknown", name=Path(p).name))
 
@@ -4397,15 +5155,61 @@ class MainWindow(QMainWindow):
         if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             QMessageBox.critical(self, T("err_title"), str(msg))
 
+    def skip_part(self, ex, path=None, part="", withheld=False, who=""):
+        """Teil eines Exports/einer SI-Sammlung nicht lesbar (z. B. gespeicherte Datei, die ein strengerer Leser jetzt
+        ablehnt): nur diesen Teil auslassen und am Ende mit Datei und Grund melden (`skips_text`), nie still und nie den
+        ganzen Export abbrechen. ex: Ausnahme oder Fehlertext. Außerhalb eines Exports nichts (der Tab zeigt den Fehler).
+        withheld: lesbar, aber von einer Freigabe zurückgehalten (eigenes NMR) -> „Zurückgehalten“ + „Details“, nie
+        unter „Nicht lesbar“ (ein Mechanismus für Strg+E, Alles exportieren, SI (Word), Gesamt-SI). who: Verbindung vor
+        dem Namen (Gesamt-SI: gleiche Ordnernamen in zwei Verbindungen sind zwei Einträge, B3)."""
+        if self._skips is None:
+            return
+        path = path or TABS.error_file(ex)
+        name = Path(path).name if path else part
+        reason = str(ex).strip().replace(str(path), name) if path else str(ex).strip()   # ganzer Pfad -> Dateiname
+        if name and reason.startswith(name):              # Leser nennen die Datei oft selbst
+            reason = reason[len(name):].lstrip(" :")
+        item = T("skip_item", f=(f"{who} · " if who else "") + (name or "?"), e=reason or type(ex).__name__)
+        if item in self._skips + self._held:
+            return
+        (self._held if withheld else self._skips).append(item)
+        if isinstance(ex, Exception):                     # immer mit Traceback: auch ein Programmierfehler kann ValueError sein
+            self.log_signal.emit("".join(traceback.format_exception(ex)))
+        self.log_signal.emit("  " + item)
+
+    @contextlib.contextmanager
+    def collecting_skips(self):
+        """Export/SI-Sammlung: ausgelassene Teile sammeln (verschachtelt: der äußere sammelt); danach in `last_skips`."""
+        outer = self._skips is not None
+        if not outer:
+            self._skips, self._held = [], []
+        try:
+            yield
+        finally:
+            if not outer:
+                self.last_skips, self._skips = self._skips + self._held, None
+                self._held = []
+
+    def held_text(self):
+        """Zurückgehaltene Teile des laufenden Exports (Freigabe fehlt; '' ohne) – Text hinter „Details“."""
+        held = self._held if self._skips is not None else []
+        return T("nmr_held_head") + "\n" + "\n".join(held) if held else ""
+
+    def skips_text(self):
+        """Meldung der bisher ausgelassenen Teile des laufenden Exports ('' ohne)."""
+        return T("parts_skipped", items="\n".join(self._skips)) if self._skips else ""
+
     def rebuild_tabs(self):
         self.build_ui()
         self.render()
 
     def export_current(self):
-        key = self._tab_keys[self.main_tabs.currentIndex()]
-        if key == "eps":
-            return self.export_dialog()
-        return getattr(self, self._tab_spec(key)[0]).export_dialog()
+        page = self.__dict__.get("pub_page")
+        if not self.project_dir and page is not None and page.compare_page.opened and page.compare_page.tab is not None:
+            return page.compare_page.tab.export_dialog()    # offener Vergleich: Strg+E wie sein „Exportieren“
+        if not self.project_dir:
+            return None
+        return self.export_key(self._tab_keys[self.main_tabs.currentIndex()])
 
     def info(self, msg):
         self.log_signal.emit(msg)
@@ -4413,29 +5217,76 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, T("app_title"), msg)
 
     def export_datapack(self):
-        """Datenpaket (Zip) dieser Verbindung für ein Datenrepositorium (elucida/exchange/datapack.py)."""
+        """Datenpaket (Zip) dieser Verbindung (elucida/exchange/datapack.py): Knopf im Tab „Export“ und Menü Datei,
+        ohne Dialog mit der gespeicherten Auswahl (Entscheidung 68); „Auswahl ändern …“ in der Meldung."""
         if not self.ensure_project():
             return None
         if not self.maybe_save():
             return False
+        from elucida.app.datapack_dialog import export_compound
+        return export_compound(self)
+
+    def export_datapack_selection(self):
+        """Auswahl der Dateien dieser Verbindung (bis zur Karte auf der Projektseite, Teil c: der bisherige Dialog)."""
+        if not self.ensure_project():
+            return None
         from elucida.app.datapack_dialog import DatapackDialog
         dlg = DatapackDialog(self)
-        dlg.exec()
+
+        def used():
+            on, rep = [i for i in dlg.items if i.on], dlg.report or {}
+            return ([T("dp_used", n=rep.get("files", len(on)), sel=len(on), total=len(dlg.items))]
+                    + ([T("dp_used_text")] if dlg.cb_text.isChecked() else []),
+                    [(T("dp_change"), self.export_datapack_selection)])
+        self._export_extra = used
+        try:
+            dlg.exec()
+        finally:
+            self.__dict__.pop("_export_extra", None)
         return dlg.report
 
-    def exported(self, folders):
-        """Meldung nach einem Export mit Knopf „Ordner öffnen“ (erster Zielordner im Finder/Explorer)."""
+    def exported(self, folders, files=(), used=(), links=(), head=None):
+        """Meldung nach jedem Export (ein Mechanismus für Exportieren, SI (Word), Gesamt-SI, Datenpakete; Einblendung,
+        kein Dialog): Ziel, Formate der geschriebenen Dateien (`files`), was benutzt wurde (`used`: Zeilen) und
+        Klick-Ziele zum Ort der Auswahl (`links`: [(Text, Funktion)]) samt „Ordner öffnen“. head: erste Zeile statt
+        „Exportiert nach“ (SI)."""
+        if self.__dict__.get("_batch") is not None:     # „Alles exportieren“: eine Meldung am Ende
+            return self._batch.append(([str(f) for f in folders], list(files), list(used)))
         folders = sorted({str(f) for f in folders})
-        msg = T("exported_to", p="\n".join(folders))
-        self.log_signal.emit(msg)
+        if not folders and self.skips_text():            # nichts geschrieben, weil der einzige Teil unlesbar war
+            return self.error(self.skips_text())
+        extra = self.__dict__.pop("_export_extra", None)  # Dialoge (Datenpaket), die die Meldung selbst auslösen
+        if extra is not None:
+            u_, l_ = extra()
+            used, links = list(used) + list(u_), list(links) + list(l_)
+        base = self.project_dir or self.publication_dir  # Einblendung: Ordner relativ zur Verbindung, Protokoll: ganz
+
+        def short(f):
+            try:
+                return str(Path(f).relative_to(base)) if base else f
+            except ValueError:
+                return f
+        lines = [head or T("exported_to", p="\n".join(folders))]
+        shown = [head or T("exported_to", p=", ".join(map(short, folders)))]
+        fmts = list(dict.fromkeys(Path(f).suffix[1:].upper() for f in files if Path(f).suffix))
+        if fmts:
+            lines.append(T("export_formats", f=", ".join(fmts)))
+        lines += [u for u in used if u]
+        held = list(self._held) if self._skips is not None else []
+        if held:                                          # zurückgehalten (Freigabe fehlt): eine Zeile + „Details“
+            lines.append(T("nmr_held_line", n=len(held)))
+            links = [(T("nmr_details"), lambda h=self.held_text(): self.notify(h, ms=0))] + list(links)
+        msg, view = "\n".join(lines), "\n".join(shown + lines[1:])
+        if self.skips_text():                            # ausgelassene Teile in derselben Meldung
+            msg += "\n\n" + self.skips_text()
+            view += "\n\n" + self.skips_text()
         self.last_export = folders
-        if os.environ.get("QT_QPA_PLATFORM") == "offscreen" or not folders:
-            return
-        box = QMessageBox(QMessageBox.Information, T("app_title"), msg, QMessageBox.Ok, self)
-        b_open = box.addButton(T("open_folder"), QMessageBox.ActionRole)
-        box.exec()
-        if box.clickedButton() is b_open:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(folders[0]))
+        if folders:
+            links = list(links) + [(T("open_folder"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(folders[0])))]
+        n = len(self._skips or ())                       # ausgelassene Teile: zugeklappt eine Zeile (Entscheidung 57)
+        brief = T("notice_hints_1" if n == 1 else "notice_hints", n=n,
+                  head=T("notice_si_saved" if head else "notice_exported")) if n else None
+        self.notify(view, links, ms=0 if n else 30000, log=msg, brief=brief)
 
     # ------------------------------------------------------------ Updates
     def _auto_updates(self):
@@ -4504,17 +5355,86 @@ class MainWindow(QMainWindow):
     def statusBar(self):
         return self._status
 
+    def notify(self, msg, links=(), ms=15000, log=None, brief=None):
+        """Einblendung mit Klick-Zielen (Ablegen, Exportmeldung; Nutzerwunsch: nichts wechselt von selbst, die Ansicht
+        ändert sich nur auf einen Klick, der sein Ziel nennt): links = [(Text, Funktion)], ein Klick führt aus und
+        schließt. Bleibt `ms` lang stehen, gewöhnliche Meldungen erscheinen darunter. brief: zugeklappt nur diese eine
+        Zeile mit „Details“ (klappt `msg` mit den Links auf) und „Schließen“ (Entscheidung 57)."""
+        links = list(links) + [(T("notice_close"), lambda: None)]   # schließen; gibt die Abbildung darunter frei
+        self._notice = (str(msg), links, brief)
+        self.last_notice = (str(msg), [t_ for t_, _ in links[:-1]])
+        self.log_signal.emit(str(log or msg))
+        if ms:
+            self._notice_timer.start(ms)
+        else:                                           # bleibt bis zum Schließen (Meldung über ausgelassene Teile)
+            self._notice_timer.stop()
+        self._place_toast()
+
+    def _notice_clicked(self, href):
+        note = self._notice
+        if note and href == "details":                   # aufklappen: dieselbe Meldung wie ohne `brief`, nichts neu melden
+            self._notice = (note[0], note[1], None)
+            return self._place_toast()
+        self._notice_done()
+        if note and href.isdigit() and int(href) < len(note[1]):
+            note[1][int(href)][1]()
+
+    def _notice_done(self):
+        self._notice = None
+        self._notice_timer.stop()
+        self._place_toast()
+
     def _place_toast(self, msg=None):
         """Meldung unten rechts über der Abbildung (nimmt keinen Platz im Layout ein)."""
         t = self._toast
         msg = self._status.currentMessage() if msg is None else msg
-        if not msg:
+        note = self.__dict__.get("_notice")
+        if not msg and not note:
             t.hide()
             return
-        t.setText(msg)
-        t.ensurePolished()
-        w = min(t.fontMetrics().horizontalAdvance(msg) + 32, self.width() - 40)
-        h = t.fontMetrics().height() + 14
+        brief = bool(note and note[2])
+        if note:                                         # Einblendung mit Klick-Zielen, mehrzeilig, anklickbar
+            acc = STYLE.colors()["accent"]
+            link = lambda i, txt: (f'<a href="{i}" style="color:{acc}; text-decoration:none">'     # noqa: E731
+                                   f'{html.escape(txt)}</a>')
+            if note[2]:                                  # zugeklappt: eine Zeile, Links dahinter
+                body = (html.escape(note[2]) + "&nbsp;&nbsp;&nbsp;" + link("details", T("notice_details"))
+                        + " · " + link(len(note[1]) - 1, note[1][-1][0]))
+                t.setTextFormat(Qt.RichText)
+                t.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                t.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+                t.setContentsMargins(12, 6, 12, 6)
+                t.setWordWrap(False)
+                t.setText(body)
+                t.ensurePolished()
+                w, h = min(t.sizeHint().width() + 8, self.width() - 40), t.sizeHint().height()
+                note = None
+        if note:
+            body = html.escape(note[0]).replace("\n", "<br>")
+            if note[1]:
+                body += "<br>" + " · ".join(link(i, txt) for i, (txt, _) in enumerate(note[1]))
+            t.setTextFormat(Qt.RichText)
+            t.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            t.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+            t.setContentsMargins(12, 6, 12, 6)
+            t.setWordWrap(False)
+            t.setText(body)
+            t.ensurePolished()
+            w = min(t.sizeHint().width() + 8, 560, self.width() - 40)   # so breit wie nötig, lange Texte brechen um
+            t.setWordWrap(True)
+            h = t.heightForWidth(w)
+            if h <= 0:
+                h = t.sizeHint().height()
+        elif not brief:
+            t.setTextFormat(Qt.AutoText)
+            t.setWordWrap(False)
+            t.setAlignment(Qt.AlignCenter)
+            t.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            t.setContentsMargins(0, 0, 0, 0)
+            t.setText(msg)
+            t.ensurePolished()
+            w = min(t.fontMetrics().horizontalAdvance(msg) + 32, self.width() - 40)
+            h = t.fontMetrics().height() + 14
         # in einer Verbindung über der Fußleiste, in der Ecke der Abbildung: der Hauptknopf bleibt frei
         lift = TABS.BAR_MIN_H if self.project_dir else 0
         t.setGeometry(self.width() - w - 24, self.height() - h - 24 - lift, w, h)

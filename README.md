@@ -53,7 +53,7 @@ Information that has to be consistent. Elucida keeps all of it in one place.
 |---|---|---|
 | **Compound** | Compound | Name, formula and drawing in one place; built-in structure editor (Octet Draw), ChemDraw files keep working |
 | **Synthesis & analysis** | Synthesis · NMR · IR + EA · HRMS | Scheme, procedure and amount check; Mnova and TopSpin data; OPUS; Bruker `.d` |
-| **UV-Vis & photophysics** | UV-Vis (ε) · Overlay · Kinetics · Fluorescence | Beer–Lambert fit with confidence interval, TD-DFT overlay, spectra over time with first-order fit, ORCA ESD |
+| **UV-Vis & photophysics** | UV-Vis (ε) · TD-DFT · Kinetics · Fluorescence | Beer–Lambert fit with confidence interval, measured vs. TD-DFT, spectra over time with first-order fit, ORCA ESD |
 | **Electrochemistry & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles–Ševčík, UV/Vis/NIR SEC, H-cell cycling (capacity, Coulombic efficiency), S = ½ fit, thermal decay |
 | **Structure & computation** | X-Ray · DFT · Reaction paths | Mercury-style ORTEP, ORCA and Gaussian, orbitals, multireference, energy diagrams |
 | **Project** | Overview · Comparison · Complete SI · Data packages | Checklist per compound, search, CV stacks, spectra and property tables across compounds, complete SI for the whole paper, dataset for the repository |
@@ -61,7 +61,7 @@ Information that has to be consistent. Elucida keeps all of it in one place.
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/eps_dark_en.png" alt="UV-Vis tab"><br><sub>UV-Vis: ε from the dilution series</sub></td>
-    <td width="50%"><img src="docs/screenshots/overlay_dark_en.png" alt="Overlay tab"><br><sub>Overlay: measured spectrum and TD-DFT</sub></td>
+    <td width="50%"><img src="docs/screenshots/tddft_dark_en.png" alt="TD-DFT tab"><br><sub>TD-DFT: measured spectrum and calculation</sub></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/hrms_dark_en.png" alt="HRMS tab"><br><sub>HRMS: spectrum, isotope pattern and LC trace</sub></td>

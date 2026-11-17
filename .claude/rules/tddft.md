@@ -28,3 +28,37 @@ paths:
   Fluoreszenz `esd_file` (gestrichelt, Verschiebung in der Unterschrift); Verschiebung in eV wie TD-DFT.
 - SORCI im Overlay nur aus einer Absorptionstabelle nach „S O R C I (DDCI3-STEP)“ und nur, wenn jede Zeile E·λ = hc
   erfüllt; DDCI2 nie; Tabellen nach dem ersten SORCI-Marker nie als TD-DFT lesen. Layout nur synthetisch geprüft.
+- Overlay-Export (Auftrag 2026-11-13, ACS: Anregungsenergien und Oszillatorstärken maschinenlesbar): zusätzlich
+  `…_transitions.csv` je TD-DFT-Rechnung (auch jede Quelle eines kombinierten Eintrags): Zustand, E [eV], λ [nm], f,
+  Multiplizität wie von `parse_tddft` gelesen, ohne Verschiebung und Gewicht der Abbildung.
+- TD-DFT-Tabelle (Paket A 1.2.0, Reiter „Anregungen“, Karte „TD-DFT-Tabelle“, `tdt_*`): Hauptanteile nur, wenn die
+  Ausgabe sie enthält (`X.tddft_parts`): ORCA aus den Blöcken „… EXCITED STATES (SINGLETS/TRIPLETS)“ vor der gewählten
+  Absorptionstabelle (letzter Lauf), Zuordnung über die Energie (`MATCH_EV`) und Multiplizität, Gewicht wie gedruckt;
+  Gaussian 2c² (geschlossen) bzw. c² je Spin (offen, Buchstabe A/B), „<-“ nie. SOC, Spin-Flip, Multireferenz: keine
+  Anteile. HOMO/LUMO über `ORB.frontier_name` aus den Besetzungen (ORCA: Orbitalblock vor der Tabelle). Tabelle eine
+  Zeile je Anteil, Werte ohne Verschiebung; Filter f/λ-Bereich (λ-Bereich mit Verschiebung = was im Bild steht);
+  Tripletts mit f = 0 nur bei `triplets`. SI: `si_table_blocks` (Einzel-SI nach den Abbildungen, Gesamt-SI Kapitel
+  Rechnungen vor dem zweispaltigen Teil), Rechenregel als Fußnote ohne Programmnamen; CSV mit allen Anteilen ohne Schwelle.
+- NTO-Bilder (Paket B 1.2.0, Karte „Übergangsorbitale (NTO)“, Seite „NTO“, `tabs/nto.py`, Leser `formats/nto.py`):
+  nichts wird gerechnet. Paare und Gewichte nur aus dem NTO-Block der ORCA-Ausgabe („NATURAL TRANSITION ORBITALS FOR
+  STATE“, „E= … au“, „61a -> 62a : n= …“; geprüft an echten ORCA-6-Ausgaben), zugeordnet über die Energie (eindeutig
+  innerhalb `MATCH_EV`, sonst keine Zuordnung; Spin-Flip passt nie). Molden (orca_2mkl aus der .nto): Orbitalnummern
+  wie im Block ab 0 je Spin (`NtoView.mo_index`); Besetzungen der Molden-Datei werden nicht als Gewicht benutzt
+  (unbelegt). Cubes: genau zwei, Loch = kleinere MO-Nummer, Gewicht aus dem Block oder von Hand (Unterschrift sagt
+  nichts dazu, Hinweis in der Karte). Bilder mit dem Orbital-Rendering (IboView-Stil) über `XrayFigure`, gemeinsame
+  Ansicht (`default_view`), gemeinsame Ausdehnung und gemeinsamer Ausschnitt; langgestreckt (b > 1.6 h): Loch über
+  Teilchen. Schlüssel je Zustand = Dateiname|Variante|Index (nicht der Pfad); Dateien in `project._path_slots`.
+  Echte NTO-Molden-/Cube-Dateien und Gaussian-NTO ungeprüft.
+- Umbenennung und Abgrenzung (Nutzerentscheid 1.2.0, wörtlich: Tab „UV-Vis-Overlay“ heißt künftig „TD-DFT“, „das
+  Verbindungen vergleichen aber aus dem Tab rausnehmen“): sichtbar überall „TD-DFT“ (`tab_overlay`, Handbuch
+  „TD-DFT-Tab“/„TD-DFT tab“, `GUIDE_HEAD`, README-Bild `tddft_*`); intern bleibt alles (`ov_state`, STATE_KEY
+  „overlay“, `ov_*`-Schlüssel, `data/overlay`, Export `<Verbindung>_Overlay`, `SI_CAPTION`), sonst bräuchte jedes
+  Projekt eine Migration. Der Tab vergleicht Messung gegen Rechnung **einer** Verbindung; mehrere Messungen derselben
+  Verbindung bleiben (Grenze bei den Funktionen, nicht bei der Zahl der Spektren). Entfernt, weil der Projekt-Vergleich
+  es besser macht: nur die Struktur je Spektrum (`structure`/`struct_color` im Eintrag). Statt dessen Zeile „Vergleich“
+  im Schritt Daten mit „Öffnen …“ (Projektseite › Vergleich, nur mit Projekt). Alte Zustände: `figure_spec` liest die
+  Schlüssel weiter (Bild/SI wie bisher), nichts schreibt sie (`detail_changed`); Hinweis `ov_cmp_old` (`legacy_compare`).
+  Stapeln samt y-Achse/Namen an den Kurven/Nulllinien und „Ebene wie darüber“ (`stack_with_prev`) wieder eingebaut
+  (Nutzerentscheid 1.2.0, wörtlich „Wieder einbauen so wie du vorgeschlagen hast“): mehrere Spektren derselben Verbindung
+  (Lösungsmittel, vor/nach Reaktion, gemessen gegen gerechnet) gestapelt sind sinnvoll; Karte „Stapeln und Achsen“ mit
+  den alten Schlüsseln, normale Schlüssel (Vorlagen speichern/setzen sie).

@@ -9,10 +9,10 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-                               QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
+                               QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
-                               QProgressDialog, QPushButton, QSizePolicy,
-                               QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QApplication,
+                               QPushButton, QSizePolicy,
+                               QScrollArea, QVBoxLayout, QWidget,
                                QTabWidget, QStackedWidget)
 from PySide6.QtCore import QUrl
 
@@ -318,8 +318,11 @@ class PublicationPage(QWidget):
         from elucida.app.comparison import ComparePage
         self.compare_page = ComparePage(self)               # Vergleich über die Verbindungen (vor „Angaben“)
         self.project_tabs.addTab(self.compare_page, T("pub_compare_tab"))
-        self.info_page = PublicationInfoPage(self)          # Angaben (früher Dialog): letzte Seite
+        self.info_page = PublicationInfoPage(self)          # Angaben (früher Dialog)
         self.project_tabs.addTab(self.info_page, T("pub_details_tab"))
+        from elucida.app.publication_export import PublicationExportPage
+        self.export_page = PublicationExportPage(self)      # Gesamt-SI und Datensätze als Karten (Entscheidung 69)
+        self.project_tabs.addTab(self.export_page, T("pub_export_tab"))
         STYLE.center_corner(self.project_tabs)              # erst mit Reitern: vorher ist die Leiste 0 hoch und die
         # Knöpfe rechts (SI-Texte, Vorschriften, Ordner) blieben unsichtbar
         corner.layout().setContentsMargins(0, 0, IN, 8)     # 8: Schrift auf der Mittellinie der Reiter
@@ -471,6 +474,9 @@ class PublicationPage(QWidget):
         cmp_open = self.project_tabs.currentWidget() is self.compare_page and self.compare_page.item is not None
         if bool(self.b_si.property("accent")) == cmp_open:
             STYLE.set_accent(self.b_si, not cmp_open, "export")
+        exp = self.project_tabs.currentWidget() is getattr(self, "export_page", None)   # dort unten rechts (v4)
+        self.b_si.setVisible(not exp)
+        self.b_pack.setVisible(not exp)
 
     def open_path(self, item):
         from elucida.app.reaction_paths import PathWorkspace
@@ -503,6 +509,7 @@ class PublicationPage(QWidget):
             r.setParent(None)
             r.deleteLater()
         self.rows, self.headers, self.panels = [], [], []
+        self.export_page.set_publication(self.pdir)
         if self.pdir is None:
             self.compare_page.set_publication(None)
             return
@@ -758,17 +765,16 @@ class PublicationPage(QWidget):
             PUB.save(self.pdir, data)
 
     def export_datapack(self):
-        self.main.maybe_save()
-        dlg = PublicationPackDialog(self.main, self.pdir)
-        dlg.exec()
-        return dlg.report
+        """„Datenpakete“ im Kopf: mit der Auswahl der Karte „Datensätze“ im Reiter „Export“ (früher ein Dialog)."""
+        return self.export_page.dp_card.export()
 
     def export_si(self):
-        dlg = PublicationSIDialog(self.main, self.pdir)
-        if dlg.exec() == QDialog.Accepted:
-            return self.main.export_publication_si(self.pdir, dlg.compounds(), dlg.sections(), toc=dlg.toc(),
-                                                   methods=dlg.methods(), template=dlg.template())
-        return None
+        """„Gesamt-SI“ (Hauptknopf): mit der Auswahl der Karte „Gesamt-SI“ im Reiter „Export“ (früher ein Dialog)."""
+        return self.export_page.si_card.export()
+
+    def show_export(self):
+        """Klick aus der Exportmeldung: Reiter „Export“ mit beiden Karten."""
+        self.project_tabs.setCurrentWidget(self.export_page)
 
 
 
@@ -819,9 +825,40 @@ class PublicationInfoPage(QWidget):
             self.cmb_lic.addItem(name, k)
         self.cmb_lic.currentIndexChanged.connect(self.apply)
         f.addRow(T("pub_f_license"), self.cmb_lic)
+        # CV-Messaufbau des Projekts (Nutzerentscheidung 2026-11-13): einmal erfasst, erster Absatz des Kapitels
+        # „Cyclic Voltammetry“ der Gesamt-SI statt in jeder Bildunterschrift
+        g2 = QGroupBox(T("pub_cv_grp"))
+        g2.setMaximumWidth(2 * STYLE.COLUMN_W)
+        g2.setProperty("widefields", True)
+        f2 = STYLE.make_form(g2)
+        hint2 = STYLE.HintLabel(T("pub_cv_hint"))
+        hint2.setWordWrap(True)
+        hint2.setStyleSheet(STYLE.HINT_CSS)
+        hint2.setProperty("plaintext", True)
+        hint2.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        f2.addRow(hint2)
+        self.cv_eds = {}
+        for key in PUB.CV_SETUP:
+            if key == "conv":                              # Konvention der Auftragung: Auswahl, kein Freitext
+                self.cmb_cv_conv = QComboBox()
+                for k_, lab_ in (("", T("pub_cv_conv_none")), ("iupac", T("pub_cv_conv_iupac")),
+                                 ("polar", T("pub_cv_conv_polar"))):
+                    self.cmb_cv_conv.addItem(lab_, k_)
+                self.cmb_cv_conv.currentIndexChanged.connect(self.apply)
+                f2.addRow(T("pub_cv_conv"), self.cmb_cv_conv)
+                continue
+            ed = STYLE.ChemEdit("")
+            ed.setPlaceholderText(T("pub_cv_ph_" + key))
+            ed.editingFinished.connect(self.apply)
+            self.cv_eds[key] = ed
+            f2.addRow(T("pub_cv_" + key), ed)
+        g3, g4 = self._naming_card(), self._das_card()
         inner = QWidget()
         v = QVBoxLayout(inner)
         v.addWidget(g)
+        v.addWidget(g2)
+        v.addWidget(g3)
+        v.addWidget(g4)
         v.addStretch(1)
         STYLE.tidy(inner)
         v.setContentsMargins(IN, 12, IN, 0)
@@ -835,6 +872,100 @@ class PublicationInfoPage(QWidget):
             self.apply()
         return False
 
+    # -- Bezeichner der Gesamt-SI (Nature: „Supplementary Figure 1“) und Data Availability Statement ------------------
+    @staticmethod
+    def _hint(text):
+        h = STYLE.HintLabel(text)
+        h.setWordWrap(True)
+        h.setStyleSheet(STYLE.HINT_CSS)
+        h.setProperty("plaintext", True)
+        h.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        return h
+
+    def _naming_card(self):
+        g = QGroupBox(T("sinames_grp"))
+        g.setMaximumWidth(2 * STYLE.COLUMN_W)
+        g.setProperty("widefields", True)
+        f = STYLE.make_form(g)
+        f.addRow(self._hint(T("sinames_hint")))
+        self.cmb_naming = QComboBox()
+        for k in ("", "s", "supplementary"):
+            self.cmb_naming.addItem(T("sinames_" + (k or "tpl")), k)
+        self.cmb_naming.currentIndexChanged.connect(self.apply)
+        f.addRow(T("sinames_label"), self.cmb_naming)
+        return g
+
+    def _das_card(self):
+        """Bausteine nur aus Angaben des Nutzers (publication.DAS_KEYS); der Text steht darunter zum Kopieren und gehört
+        ins Manuskript (ACS: unter „Associated Content“), nicht in die SI."""
+        g = QGroupBox(T("das_grp"))
+        g.setMaximumWidth(2 * STYLE.COLUMN_W)
+        g.setProperty("widefields", True)
+        f = STYLE.make_form(g)
+        f.addRow(self._hint(T("das_hint")))
+        self.das_eds = {}
+        for k in ("repo", "link"):
+            ed = QLineEdit()
+            ed.setPlaceholderText(T("das_ph_" + k))
+            ed.editingFinished.connect(self.apply)
+            self.das_eds[k] = ed
+            f.addRow(T("das_" + k), ed)
+        row = QHBoxLayout()
+        self.das_cbs = {}
+        for k in ("ccdc", "fid"):
+            cb = QCheckBox(T("das_cb_" + k))
+            cb.setToolTip(T("das_cb_" + k + "_tip"))
+            cb.setProperty("chip_here", True)
+            cb.toggled.connect(self.apply)
+            self.das_cbs[k] = cb
+            row.addWidget(cb)
+        row.addStretch(1)
+        f.addRow(T("das_auto"), row)
+        ed = QPlainTextEdit()
+        ed.setFixedHeight(56)
+        ed.setPlaceholderText(T("das_ph_extra"))
+        ed.installEventFilter(self)
+        self.das_eds["extra"] = ed
+        f.addRow(T("das_extra"), ed)
+        b = STYLE.copy_button(T("das_copy_tip"))
+        b.clicked.connect(self.copy_das)
+        self.btn_das_copy = b
+        f.addRow(STYLE.text_head(T("das_out"), b))
+        self.txt_das = STYLE.SiText("", T("das_empty"))
+        f.addRow(self.txt_das)
+        return g
+
+    def das_values(self):
+        out = {k: self._text(ed) for k, ed in self.das_eds.items() if self._text(ed)}
+        out.update({k: "0" for k, cb in self.das_cbs.items() if not cb.isChecked()})   # Standard an: nur „aus“ merken
+        return out
+
+    def sync_das(self, data):
+        pdir = self.page.pdir
+        ccdc = PUB.ccdc_numbers(pdir) if pdir else []
+        self.das_cbs["ccdc"].setEnabled(bool(ccdc))
+        self.das_cbs["fid"].setEnabled(bool((data.get("fidpack") or {}).get("compounds")))
+        self._das = PUB.das_text(data, ccdc)
+        self.txt_das.setText(self._das)
+        self.btn_das_copy.setEnabled(bool(self._das))
+
+    def showEvent(self, ev):
+        """Beim Anzeigen neu bilden: CCDC-Nummern und FID-Paket hängen an den Verbindungen, die sich seit dem Laden der
+        Seite geändert haben können."""
+        super().showEvent(ev)
+        if self.page.pdir is not None and not self._loading:
+            try:
+                self.sync_das(PUB.load(self.page.pdir))
+            except Exception:                                 # Anzeige: nie die Seite blockieren
+                pass
+
+    def copy_das(self):
+        if getattr(self, "_das", ""):
+            from elucida.tabs.ir_ea import copy_rich
+            import html as _h
+            copy_rich(self._das, _h.escape(self._das))
+            self.page.main.statusBar().showMessage(T("das_copied"), 4000)
+
     @staticmethod
     def _text(ed):
         return (ed.toPlainText() if isinstance(ed, QPlainTextEdit) else ed.text()).strip()
@@ -842,6 +973,11 @@ class PublicationInfoPage(QWidget):
     def values(self):
         out = {k: self._text(ed) for k, ed in self.eds.items()}
         out["license"] = self.cmb_lic.currentData()
+        out["cv_setup"] = {k: ed.text().strip() for k, ed in self.cv_eds.items() if ed.text().strip()}
+        if self.cmb_cv_conv.currentData():
+            out["cv_setup"]["conv"] = self.cmb_cv_conv.currentData()
+        out["si_naming"] = self.cmb_naming.currentData() or ""
+        out["das"] = self.das_values()
         return out
 
     def load(self, data):
@@ -855,6 +991,19 @@ class PublicationInfoPage(QWidget):
                 if self._text(ed) != v.strip():
                     ed.setPlainText(v) if isinstance(ed, QPlainTextEdit) else ed.setText(v)
             self.cmb_lic.setCurrentIndex(max(0, self.cmb_lic.findData(data.get("license") or "CC-BY-4.0")))
+            for k, ed in self.cv_eds.items():
+                v = str((data.get("cv_setup") or {}).get(k) or "")
+                if not ed.hasFocus() and ed.text().strip() != v:
+                    ed.setText(v)
+            self.cmb_cv_conv.setCurrentIndex(max(0, self.cmb_cv_conv.findData((data.get("cv_setup") or {}).get("conv") or "")))
+            self.cmb_naming.setCurrentIndex(max(0, self.cmb_naming.findData(data.get("si_naming") or "")))
+            das = data.get("das") or {}
+            for k, ed in self.das_eds.items():
+                if not ed.hasFocus() and self._text(ed) != das.get(k, ""):
+                    ed.setPlainText(das.get(k, "")) if isinstance(ed, QPlainTextEdit) else ed.setText(das.get(k, ""))
+            for k, cb in self.das_cbs.items():
+                cb.setChecked(das.get(k) != "0")
+            self.sync_das(data)
         finally:
             self._loading = False
 
@@ -865,7 +1014,7 @@ class PublicationInfoPage(QWidget):
             return
         data = PUB.load(pdir)
         new = self.values()
-        if all((data.get(k) or "") == v for k, v in new.items()):
+        if all((data.get(k) or ({} if k in ("cv_setup", "das") else "")) == v for k, v in new.items()):
             return
         data.update(new)
         PUB.save(pdir, data)
@@ -1055,285 +1204,22 @@ class ProceduresDialog(QDialog):
                 if p.get("_orig") and p["key"] and p["key"] != p["_orig"] and p["key"] in keys}
 
 
-def _check_list(names, checked=True):
-    t = STYLE.check_table((T("col_compound"),))
-    for n in names:
-        STYLE.check_row(t, n, (n,), checked)
-    return t
-
-
 def _mb(n):
     return f"{n / 1e6:.1f} MB" if n >= 1e5 else f"{n / 1e3:.0f} kB"
 
 
-class PublicationPackDialog(QDialog):
-    """Datenpakete aller Verbindungen wie der Datensatz der Gruppe: <Name>.zip je Verbindung, CompChem.zip, README."""
-
-    def __init__(self, main, pdir):
-        super().__init__(main)
-        from elucida.app import project as PRJ
-        from elucida.app.datapack_dialog import saved_selection
-        from elucida.exchange import datapack as DP
-        self.main, self.pdir, self.report = main, Path(pdir), None
-        self.setWindowTitle(T("pub_datapack"))
-        self.resize(780, 720)
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            self.plans = []
-            gone = []
-            for d in PUB.sync(self.pdir)[0]:
-                items = DP.collect(PRJ.load(d), d, gone)
-                saved = saved_selection(main.settings, d)           # Auswahl aus dem Einzeldialog gilt weiter
-                for it in items:
-                    it.on = bool(saved.get(it.key, it.on if it.group != "dft" else True))
-                self.plans.append(DP.Plan(PUB.compound_name(d), d, items))
-            self.codes = DP.assign_codes(self.plans)
-        finally:
-            QApplication.restoreOverrideCursor()
-        if gone:
-            main.error(T("dp_missing", n=len(gone), names=", ".join(gone[:8])))
-        v = QVBoxLayout(self)
-        hint = QLabel(T("pub_dp_hint"), wordWrap=True)
-        hint.setStyleSheet(HINT_CSS)
-        v.addWidget(hint)
-        top = QHBoxLayout()
-        cv = QVBoxLayout()
-        cv.addWidget(QLabel(f"<b>{T('pub_compounds')}</b>"))
-        self.lst = _check_list([p.name for p in self.plans])
-        self.lst.itemChanged.connect(self._update)
-        cv.addWidget(self.lst)
-        top.addLayout(cv, 1)
-        gv = QVBoxLayout()
-        gv.addWidget(QLabel(f"<b>{T('pub_dp_groups')}</b>"))
-        self.cb_groups = {}
-        present = {it.group for p in self.plans for it in p.items}
-        for g, _, on in DP.GROUPS:
-            if g not in present:
-                continue
-            cb = QCheckBox(T("pub_dp_dft") if g == "dft" else T("dp_grp_" + g))
-            cb.setChecked(on or g == "dft")
-            cb.toggled.connect(self._update)
-            self.cb_groups[g] = cb
-            gv.addWidget(cb)
-        gv.addStretch(1)
-        top.addLayout(gv, 1)
-        v.addLayout(top, 2)
-        v.addWidget(QLabel(f"<b>{T('dp_codes')}</b>"))
-        self.tbl = QTableWidget(0, 3)
-        self.tbl.setHorizontalHeaderLabels([T("dp_code"), T("dp_code_name"), T("dp_code_text")])
-        self.tbl.verticalHeader().setVisible(False)
-        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        for code, name in self.codes.items():
-            r = self.tbl.rowCount()
-            self.tbl.insertRow(r)
-            for c, val in enumerate((code, name, f"Compound {name}")):
-                self.tbl.setItem(r, c, QTableWidgetItem(val))
-        v.addWidget(self.tbl, 2)
-        row = QHBoxLayout()
-        b = QPushButton(T("dp_code_add"))
-        b.clicked.connect(lambda: self.tbl.insertRow(self.tbl.rowCount()))
-        row.addWidget(b)
-        self.cb_text = QCheckBox(T("dp_text"))
-        self.cb_text.setToolTip(T("dp_text_tip"))
-        self.cb_text.setChecked(True)
-        row.addWidget(self.cb_text)
-        self.cb_readme = QCheckBox(T("pub_dp_readme"))
-        self.cb_readme.setChecked(True)
-        row.addWidget(self.cb_readme)
-        row.addStretch(1)
-        v.addLayout(row)
-        f = QFormLayout()
-        self.ed_dir = QLineEdit(str(self.pdir / PUB.PACK_DIR))
-        b_dir = QPushButton("…")
-        b_dir.clicked.connect(self._choose_dir)
-        dr = QHBoxLayout()
-        dr.addWidget(self.ed_dir, 1)
-        dr.addWidget(b_dir)
-        f.addRow(T("pub_dp_dir"), dr)
-        v.addLayout(f)
-        self.lbl_size = QLabel("")
-        v.addWidget(self.lbl_size)
-        bb = QDialogButtonBox(QDialogButtonBox.Cancel)
-        self.btn_ok = bb.addButton(T("dp_export"), QDialogButtonBox.AcceptRole)
-        self.btn_ok.setProperty("accent", True)
-        bb.accepted.connect(self.export)
-        bb.rejected.connect(self.reject)
-        v.addWidget(bb)
-        self._update()
-
-    def _choose_dir(self):
-        d = QFileDialog.getExistingDirectory(self, T("pub_dp_dir"), self.ed_dir.text())
-        if d:
-            self.ed_dir.setText(d)
-
-    def selected_plans(self):
-        """Gewählte Verbindungen; Einträge abgewählter Datenarten aus."""
-        from dataclasses import replace
-        on_groups = {g for g, cb in self.cb_groups.items() if cb.isChecked()}
-        out = []
-        for i, pl in enumerate(self.plans):
-            if self.lst.item(i, 0).checkState() != Qt.Checked:
-                continue
-            out.append(replace(pl, items=[replace(it, on=it.on and it.group in on_groups) for it in pl.items]))
-        return out
-
-    def _update(self, *_):
-        plans = self.selected_plans()
-        on = [it for p in plans for it in p.items if it.on]
-        self.lbl_size.setText(T("pub_dp_size", z=len(plans) + ("dft" in {i.group for i in on}), n=len(on),
-                                size=_mb(sum(i.size for i in on))))
-        self.btn_ok.setEnabled(bool(on))
-
-    def replacements(self):
-        names, texts = {}, {}
-        for r in range(self.tbl.rowCount()):
-            cell = lambda c: (self.tbl.item(r, c).text() if self.tbl.item(r, c) else "").strip()   # noqa: E731
-            code = cell(0)
-            if code:
-                names[code] = cell(1) or code
-                texts[code] = cell(2) or names[code]
-        return names, texts
-
-    def export(self, out_dir=None):
-        from elucida.exchange import datapack as DP
-        from elucida.app.main_window import resource_path
-        out_dir = Path(out_dir or self.ed_dir.text())
-        plans = self.selected_plans()
-        names, texts = self.replacements()
-        data = PUB.load(self.pdir)
-        kinds = {it.group for p in plans for it in p.items if it.on}
-        readme = PUB.readme_text(data, kinds, [p.name for p in plans], scrubbed=self.cb_text.isChecked()) \
-            if self.cb_readme.isChecked() else ""
-        lic = PUB.license_file(data, resource_path("assets")) if self.cb_readme.isChecked() else None
-        dlg = QProgressDialog(T("dp_writing"), T("cancel"), 0, 100, self)
-        dlg.setWindowModality(Qt.WindowModal)
-        dlg.setMinimumDuration(400)
-
-        def progress(root, i, n):
-            dlg.setLabelText(T("pub_dp_writing", name=root))
-            dlg.setMaximum(n)
-            dlg.setValue(i)
-            QApplication.processEvents()
-            return not dlg.wasCanceled()
-        try:
-            self.report = DP.write_publication(plans, out_dir, names, texts if self.cb_text.isChecked() else None,
-                                               compchem=True, readme=readme, license=lic, progress=progress)
-        except PermissionError as e:
-            self.main.error(T("report_locked", p=getattr(e, "filename", "")))
-            return None
-        finally:
-            dlg.close()
-        if self.report.get("cancelled"):
-            return None
-        rep = self.report
-        self.main.log_signal.emit(T("pub_dp_done", p=str(out_dir), z=len(rep["zips"]), n=rep["files"],
-                                    size=_mb(rep["bytes"])))
-        if rep["kept"]:
-            self.main.log_signal.emit(T("dp_kept", files="\n  ".join(rep["kept"][:30])))
-        self.accept()
-        self.main.exported([out_dir])
-        return rep
-
-
-class PublicationSIDialog(QDialog):
-    """Gesamt-SI: Kapitel und Verbindungen wählen (Aufbau wie die SI der Gruppe)."""
-
-    def __init__(self, main, pdir):
-        super().__init__(main)
-        from elucida.si import publication_si as PSI
-        self.main = main
-        self.dirs = PUB.sync(pdir)[0]
-        self.setWindowTitle(T("pub_si"))
-        self.resize(560, 620)
-        v = QVBoxLayout(self)
-        hint = QLabel(T("pub_si_hint"), wordWrap=True)
-        hint.setStyleSheet(HINT_CSS)
-        v.addWidget(hint)
-        saved = str(main.settings.value("pub_si_sections", "") or "")
-        chosen = set(saved.split(",")) if saved else {k for k, _, on in PSI.SECTIONS if on}
-        h = QHBoxLayout()
-        sv = QVBoxLayout()
-        sv.addWidget(QLabel(f"<b>{T('pub_si_sections')}</b>"))
-        self.cbs = {}
-        for k, title, _ in PSI.SECTIONS:
-            cb = QCheckBox(title)
-            cb.setChecked(k in chosen)
-            self.cbs[k] = cb
-            sv.addWidget(cb)
-        sv.addSpacing(8)
-        from elucida.si import lines as SI
-        tr = QHBoxLayout()
-        tr.addWidget(QLabel(T("pub_si_template")))
-        self.cmb_tpl = QComboBox()
-        for k in SI.TEMPLATES:
-            self.cmb_tpl.addItem(T("pub_tpl_" + k), k)
-        self.cmb_tpl.setCurrentIndex(max(0, self.cmb_tpl.findData(str(main.settings.value("pub_si_template", "group")))))
-        self.cmb_tpl.setToolTip(T("pub_si_template_tip"))
-        tr.addWidget(self.cmb_tpl, 1)
-        sv.addLayout(tr)
-        self.cb_toc = QCheckBox(T("pub_si_toc"))
-        self.cb_toc.setChecked(str(main.settings.value("pub_si_toc", "1")) not in ("0", "false"))
-        self.cb_methods = QCheckBox(T("pub_si_methods"))
-        self.cb_methods.setChecked(str(main.settings.value("pub_si_methods", "1")) not in ("0", "false"))
-        self.cb_groups = QCheckBox(T("pub_si_groups"))       # Gruppen sonst nur Orientierung auf der Projektseite
-        self.cb_groups.setToolTip(T("pub_si_groups_tip"))
-        self.cb_groups.setChecked(PUB.load(pdir)["group_headings"])
-        rp_opts = PUB.load(pdir).get("reaction_paths_si") or {}
-        self.cb_paths = QCheckBox(T('rp_reaction_paths_in_computational_section'))
-        self.cb_paths.setChecked(rp_opts.get("include") is not False)
-        self.cmb_paths = QComboBox()
-        self.cmb_paths.addItem(T('rp_before_individual_calculations'), "before")
-        self.cmb_paths.addItem(T('rp_after_individual_calculations'), "after")
-        self.cmb_paths.setCurrentIndex(max(0, self.cmb_paths.findData(rp_opts.get("position", "before"))))
-        sv.addWidget(self.cb_paths); sv.addWidget(self.cmb_paths)
-        def paths_enabled():
-            self.cb_paths.setEnabled(self.cbs["dft"].isChecked())
-            self.cmb_paths.setEnabled(self.cbs["dft"].isChecked() and self.cb_paths.isChecked())
-        self.cbs["dft"].toggled.connect(paths_enabled)
-        self.cb_paths.toggled.connect(paths_enabled)
-        paths_enabled()
-        self.pdir = pdir
-        sv.addWidget(self.cb_toc)
-        sv.addWidget(self.cb_methods)
-        sv.addWidget(self.cb_groups)
-        sv.addStretch(1)
-        h.addLayout(sv, 1)
-        cv = QVBoxLayout()
-        cv.addWidget(QLabel(f"<b>{T('pub_compounds')}</b>"))
-        self.lst = _check_list([PUB.compound_name(d) for d in self.dirs])
-        cv.addWidget(self.lst)
-        h.addLayout(cv, 1)
-        v.addLayout(h, 1)
-        bb = QDialogButtonBox(QDialogButtonBox.Cancel)
-        ok = bb.addButton(T("pub_si_write"), QDialogButtonBox.AcceptRole)
-        ok.setProperty("accent", True)
-        bb.accepted.connect(self._accept)
-        bb.rejected.connect(self.reject)
-        v.addWidget(bb)
-
-    def _accept(self):
-        s = self.main.settings
-        s.setValue("pub_si_sections", ",".join(self.sections()))
-        s.setValue("pub_si_toc", int(self.toc()))
-        s.setValue("pub_si_methods", int(self.methods()))
-        s.setValue("pub_si_template", self.template())
-        data = PUB.load(self.pdir)
-        data["group_headings"] = self.cb_groups.isChecked()
-        data["reaction_paths_si"] = dict(include=self.cb_paths.isChecked(), position=self.cmb_paths.currentData())
-        PUB.save(self.pdir, data)
-        self.accept()
-
-    def sections(self):
-        return [k for k, cb in self.cbs.items() if cb.isChecked()]
-
-    def compounds(self):
-        return [d for i, d in enumerate(self.dirs) if self.lst.item(i, 0).checkState() == Qt.Checked]
-
-    def toc(self):
-        return self.cb_toc.isChecked()
-
-    def methods(self):
-        return self.cb_methods.isChecked()
-
-    def template(self):
-        return self.cmb_tpl.currentData()
+def _fid_write(main, pdir, plans, out_dir, names, texts):
+    """„FID for Publication“ der gewählten Verbindungen schreiben und im Projekt vermerken (Statement)."""
+    from elucida.app import project as PRJ
+    from elucida.exchange import datapack as DP
+    groups = [(pl.name, DP.fid_items(PRJ.load(pl.pdir), pl.pdir, pl.name, names=names,     # Abwahl im Dialog gilt
+                                     only={str(Path(it.src).resolve()) for it in pl.items if it.on and it.group == "nmr"}))
+              for pl in plans]
+    rep = DP.write_fid_package(groups, out_dir, names, texts)
+    if rep.get("files"):
+        data = PUB.load(pdir)
+        data["fidpack"] = dict(name=Path(rep["path"]).name, compounds=list(rep["compounds"]),   # Namen fürs Statement,
+                               entries=[PUB.entry_key(pdir, pl.pdir, data) for (_, its), pl in zip(groups, plans) if its])
+        PUB.save(pdir, data)
+        main.log_signal.emit(T("fidpack_done", p=rep["path"], n=len(rep["compounds"])))
+    return rep

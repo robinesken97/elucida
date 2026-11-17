@@ -29,6 +29,8 @@ SI_DIR, PACK_DIR = "SI", "datapack"
 # Angaben (Schlüssel, mehrzeilig) in der Reihenfolge des Dialogs
 FIELDS = (("paper_title", False), ("title", False), ("authors", False), ("affiliation", True), ("contact", False), ("orcid", False),
           ("doi", False), ("related", True), ("project_description", True), ("dataset_description", True))
+DAS_KEYS = ("repo", "link", "ccdc", "fid", "extra")      # Data Availability Statement (ccdc/fid: "1" = einfügen)
+CV_SETUP = ("device", "we", "area", "polish", "ce", "ref", "gas", "ir", "conv", "more")   # wie tabs.cv.SETUP_KEYS (ohne Qt-Import)
 LICENSES = {   # Schlüssel -> (Name, URL, Datei in assets/licenses, Erklärung wie in den Datensätzen der Gruppe)
     "CC-BY-4.0": ("Creative Commons Attribution 4.0 International (CC-BY 4.0)",
                   "https://creativecommons.org/licenses/by/4.0/", "CC_BY_4.0_en.txt",
@@ -46,6 +48,7 @@ KIND_TEXT = {"nmr": "NMR spectra (NMR)", "ir": "IR spectra (IR)", "ms": "mass sp
              "fluo": "fluorescence data (Fluorescence)", "cv": "cyclic voltammograms (CV)",
              "sec": "spectroelectrochemical data (SEC)",
              "hcell": "H-cell charge-discharge cycling data (H-Cell)", "epr": "EPR data (EPR)",
+             "pxrd": "powder X-ray diffraction data (PXRD)",
              "dft": "DFT output files (CompChem)"}
 KIND_PROGRAMS = {"nmr": "NMR -> TopSpin, MestReNova", "ir": "IR -> Spectragryph, Bruker OPUS",
                  "ms": "MS -> Bruker DataAnalysis, OpenMS", "cv": "CV -> Gamry Echem Analyst",
@@ -74,11 +77,12 @@ def load(pdir) -> dict:
     data = default()
     f = Path(pdir) / PUB_FILE
     if f.exists():
-        raw = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        raw = PRJ.read_yaml(f.read_text(encoding="utf-8")) or {}
         if isinstance(raw, dict):
             data.update({k: v for k, v in raw.items() if v is not None})
     data["compounds"] = [str(c) for c in data.get("compounds") or []]
     data["excluded"] = [str(c) for c in data.get("excluded") or []]
+    data["pack_off"] = [str(c) for c in data.get("pack_off") or []]   # Datensätze: abgewählte Verbindungen (120)
     data["si_texts"] = {str(k): str(v) for k, v in (data.get("si_texts") or {}).items() if v}
     data["groups"] = [str(g) for g in data.get("groups") or [] if str(g).strip()]       # Reihenfolge der Gruppen
     data["group_of"] = {str(k): str(v) for k, v in (data.get("group_of") or {}).items()  # Eintrag -> Gruppe
@@ -88,6 +92,11 @@ def load(pdir) -> dict:
                           for p in data.get("procedures") or [] if isinstance(p, dict) and str(p.get("key") or "").strip()]
     data["group_headings"] = data.get("group_headings") is not False
     data["mnova"] = [str(m) for m in data.get("mnova") or []]          # Mnova-Dokumente des Projekts (FB-10)
+    cvs = data.get("cv_setup") if isinstance(data.get("cv_setup"), dict) else {}       # CV-Messaufbau (Anfangstext)
+    data["cv_setup"] = {k: str(cvs[k]).strip() for k in CV_SETUP if str(cvs.get(k) or "").strip()}
+    das = data.get("das") if isinstance(data.get("das"), dict) else {}
+    data["das"] = {k: str(das[k]).strip() for k in DAS_KEYS if str(das.get(k) or "").strip()}
+    data["si_naming"] = str(data.get("si_naming") or "")
     return data
 
 
@@ -100,6 +109,9 @@ def save(pdir, data):
     out["compounds"] = list(data.get("compounds") or [])
     if data.get("excluded"):
         out["excluded"] = list(data["excluded"])
+    off = [c for c in data.get("pack_off") or [] if c in out["compounds"]]
+    if off:                                # Datensätze ohne diese Verbindungen (118/120); neue Verbindungen: an
+        out["pack_off"] = off
     if data.get("groups"):                 # Gruppen im Projekt (Precursor, Salze …), Zuordnung je Eintrag
         out["groups"] = list(data["groups"])
         gof = {k: v for k, v in (data.get("group_of") or {}).items() if k in out["compounds"] and v in out["groups"]}
@@ -119,6 +131,15 @@ def save(pdir, data):
         out["reaction_paths_si"] = dict(data["reaction_paths_si"])
     if data.get("comparisons"):           # Seite „Vergleich“: benannte Vergleiche über die Verbindungen
         out["comparisons"] = list(data["comparisons"])
+    if data.get("cv_setup"):              # CV-Messaufbau des Projekts: Anfangstext des Kapitels in der Gesamt-SI
+        out["cv_setup"] = {k: str(v).strip() for k, v in data["cv_setup"].items() if k in CV_SETUP and str(v).strip()}
+    if data.get("si_naming"):             # Bezeichner der Gesamt-SI („supplementary“: Nature), leer = wie die Vorlage
+        out["si_naming"] = str(data["si_naming"])
+    das = {k: str(v).strip() for k, v in (data.get("das") or {}).items() if k in DAS_KEYS and str(v).strip()}
+    if das:                                # Data Availability Statement: Bausteine des Nutzers
+        out["das"] = das
+    if data.get("fidpack"):                # zuletzt geschriebenes „FID for Publication“ (Name der Zip, für das Statement)
+        out["fidpack"] = dict(data["fidpack"])
     texts = {k: v for k, v in (data.get("si_texts") or {}).items() if str(v).strip()}
     if texts:                              # Gesamt-SI: Materials and Methods, Einleitung je Kapitel
         out["si_texts"] = texts
@@ -218,6 +239,26 @@ def move_compound(pdir, cdir, delta):
     save(pdir, data)
 
 
+def entry_key(pdir, cdir, data=None) -> str:
+    """Fester Schlüssel einer Verbindung im Projekt: ihr Eintrag, wie er im Index steht (sonst der relative Pfad)."""
+    return _entry(pdir, data or load(pdir), cdir) or _rel(Path(pdir), Path(cdir))
+
+
+def pack_on(pdir, cdir, data=None) -> bool:
+    """Verbindung im Datensatz des Projekts (Pille „Zip“, Entscheidungen 118/120)? Standard: ja."""
+    data = data or load(pdir)
+    return entry_key(pdir, cdir, data) not in data["pack_off"]
+
+
+def set_pack_on(pdir, cdirs, on):
+    """Verbindungen in den Datensatz aufnehmen oder herausnehmen (gespeichert im Projekt, nicht je Rechner)."""
+    data = load(pdir)
+    rels = {entry_key(pdir, c, data) for c in cdirs}
+    off = [c for c in data["pack_off"] if c not in rels] + ([] if on else sorted(rels))
+    data["pack_off"] = off
+    save(pdir, data)
+
+
 def publication_of(project_dir) -> Path | None:
     """Publikation, zu der ein Verbindungsprojekt gehört: übergeordneter Ordner mit publication.elucida, der es
     aufführt (oder es beim nächsten sync aufnehmen würde)."""
@@ -236,7 +277,7 @@ def publication_of(project_dir) -> Path | None:
 def compound_name(cdir) -> str:
     """Name der Verbindung (wie im Projekt eingetragen), sonst Ordnername – Zip-/Abschnittsname."""
     try:
-        st = yaml.safe_load(PRJ.project_file(cdir).read_text(encoding="utf-8")) or {}
+        st = PRJ.read_yaml(PRJ.project_file(cdir).read_text(encoding="utf-8")) or {}
         name = ((st.get("compound") or {}).get("name") or (st.get("syn") or {}).get("name") or "").strip()
     except Exception:
         name = ""
@@ -334,7 +375,7 @@ def checklist(cdir) -> dict:
     """Was liegt für eine Verbindung vor (aus der Projektdatei, ohne sie zu öffnen)? -> known, lit, have (Menge der
     CHECKS-Schlüssel), missing (fehlende Pflichtteile in CHECKS-Reihenfolge), extra (vorhandene optionale Teile)."""
     try:
-        st = yaml.safe_load(PRJ.project_file(cdir).read_text(encoding="utf-8")) or {}
+        st = PRJ.read_yaml(PRJ.project_file(cdir).read_text(encoding="utf-8")) or {}
     except Exception:
         st = {}
     return checklist_of(st)
@@ -404,7 +445,7 @@ def rename_procedures(pdir, mapping, skip=None) -> list[Path]:
             continue
         pf = PRJ.project_file(cdir)
         try:
-            st = yaml.safe_load(pf.read_text(encoding="utf-8")) or {}
+            st = PRJ.read_yaml(pf.read_text(encoding="utf-8")) or {}
         except Exception:
             continue
         if rename_gp_in(st.get("syn"), mapping):
@@ -565,3 +606,73 @@ def move_group(pdir, name, delta):
     j = max(0, min(len(data["groups"]) - 1, i + delta))
     data["groups"].insert(j, data["groups"].pop(i))
     save(pdir, data)
+
+
+# -- Data Availability Statement (gehört ins Manuskript, nicht in die SI) ---------------------------------------
+# Muster: ACS Research Data Guidelines („The data underlying this study are openly available in [Repository] at
+# [Link]“), Angewandte/Wiley (Link zum Repository Pflicht; CCDC-Nummern einzeln, Standardsatz von CCDC/FIZ)
+CCDC_SENTENCE = ("{dep} {nums} {verb} the supplementary crystallographic data for this paper. These data are provided "
+                 "free of charge by the joint Cambridge Crystallographic Data Centre and Fachinformationszentrum "
+                 "Karlsruhe Access Structures service.")
+_CCDC_CIF = re.compile(r"^_database_code_depnum_ccdc_archive\s+['\"]?(?:CCDC\s*)?(\d{5,8})", re.M | re.I)
+
+
+def ccdc_numbers(pdir) -> list[tuple[str, str]]:
+    """[(Verbindung, Nummer)] aus den X-Ray-Angaben der Verbindungen (Eintrag „CCDC“, sonst die CIF selbst), in der
+    Reihenfolge des Projekts; nur Nummern, die dort stehen."""
+    out = []
+    for cdir in sync(pdir)[0]:
+        try:
+            st = PRJ.load(cdir)
+        except Exception:
+            continue
+        name = compound_name(cdir)
+        for e in (st.get("xray") or {}).get("entries") or []:
+            num = re.sub(r"(?i)^\s*ccdc\s*", "", str(e.get("ccdc") or "")).strip()
+            if not num and e.get("file"):
+                p = Path(e["file"]) if Path(e["file"]).is_absolute() else Path(cdir) / e["file"]
+                try:
+                    m = _CCDC_CIF.search(p.read_text(encoding="utf-8", errors="replace"))
+                except OSError:
+                    m = None
+                num = m.group(1) if m else ""
+            if num and num not in [n for _, n in out]:
+                out.append((name, num))
+    return out
+
+
+def _and(xs):
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+
+
+def das_parts(data, ccdc=()) -> list[tuple[str, str]]:
+    """Bausteine des Statements -> [(Art, Satz)], nur aus Angaben des Nutzers: repo (Repository + Link; Link sonst die
+    DOI des Datensatzes aus „Angaben“), fid (nur wenn ein „FID for Publication“ geschrieben wurde), ccdc (Nummern aus
+    den X-Ray-Angaben), extra (Freitext). ccdc/fid lassen sich mit "0" abschalten."""
+    das = data.get("das") or {}
+    out = []
+    repo = das.get("repo", "").strip()
+    link = (das.get("link") or data.get("doi") or "").strip()
+    if link and re.match(r"^(?:doi:)?10\.\d{4,}/", link, re.I):
+        link = "https://doi.org/" + re.sub(r"(?i)^doi:", "", link)
+    if repo or link:
+        where = (f" in {repo}" if repo else "") + (f" at {link}" if link else "")
+        out.append(("repo", f"The data underlying this study are openly available{where}."))
+    fid = data.get("fidpack") or {}
+    if das.get("fid") != "0" and fid.get("compounds"):
+        n = list(fid["compounds"])
+        out.append(("fid", f"Primary NMR data (FID files with acquisition and processing parameters) for "
+                           f"compound{'s' if len(n) > 1 else ''} {_and(n)} {'are' if len(n) > 1 else 'is'} provided as "
+                           f"“{re.sub(r'(?i)[.]zip$', '', fid.get('name') or 'FID for Publication')}”."))
+    if das.get("ccdc") != "0" and ccdc:
+        nums = _and([f"{num} (for {name})" for name, num in ccdc])
+        many = len(ccdc) > 1
+        out.append(("ccdc", CCDC_SENTENCE.format(dep="Deposition Numbers" if many else "Deposition Number",
+                                                 nums=nums, verb="contain" if many else "contains")))
+    if das.get("extra", "").strip():
+        out.append(("extra", das["extra"].strip()))
+    return out
+
+
+def das_text(data, ccdc=()) -> str:
+    return " ".join(s for _, s in das_parts(data, ccdc))

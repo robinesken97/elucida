@@ -32,7 +32,8 @@ BINARY_EXT = {".pdf", ".0", ".1", ".2", ".mnova", ".docx", ".xlsx", ".png", ".jp
 # Reihenfolge und Ordner im Zip; on = Standardauswahl
 GROUPS = (("nmr", "NMR", True), ("ir", "IR", True), ("ms", "MS", True), ("uvvis", "UV-Vis", True),
           ("overlay", "UV-Vis", False), ("fluo", "Fluorescence", True), ("cv", "CV", True), ("sec", "SEC", True),
-          ("hcell", "H-Cell", True),           ("epr", "EPR", True), ("dft", "DFT", False), ("elucida", "Elucida", False))
+          ("hcell", "H-Cell", True),           ("epr", "EPR", True), ("pxrd", "PXRD", True), ("dft", "DFT", False),
+          ("elucida", "Elucida", False))
 GROUP_ON = {g: on for g, _, on in GROUPS}
 BES3T = (".dsc", ".dta", ".ygf", ".xml")
 
@@ -101,6 +102,8 @@ def collect(state, project_dir, missing=None) -> list[Item]:
         add("nmr", r["path"], f"NMR/{folder}/{no}")
     # Mnova-Dokumente (.mnova) nie im Datenpaket (FB-10): Arbeitsdateien, Rohdaten liegen als TopSpin-Experimente bei
     for s in nmr.get("spectra") or []:                 # Mnova-Exporte (Abbildungen): wählbar, Standard aus
+        if s.get("mnova_doc"):                         # aus einem .mnova nachgebaut: Rohdatum ist das Dokument
+            continue
         add("nmr", s.get("file"), f"NMR/Spectra/{Path(s.get('file') or '').name}", )
         if items and items[-1].arc.startswith("NMR/Spectra/"):
             items[-1].on = False
@@ -108,6 +111,7 @@ def collect(state, project_dir, missing=None) -> list[Item]:
     ir = state.get("irms") or {}
     for k in ("ir_file", "ir_pdf"):
         add("ir", ir.get(k), f"IR/{Path(ir.get(k) or '').name}")
+    add("ir", ir.get("ram_file"), f"Raman/{Path(ir.get('ram_file') or '').name}")   # Raman-Rohdaten (1.2.0)
     hr = state.get("hrms") or {}
     for d in (hr, ir):                                 # alte Projekte: MS im Tab IR + MS
         for k in ("ms_file", "ms_raw"):
@@ -126,7 +130,7 @@ def collect(state, project_dir, missing=None) -> list[Item]:
             add("uvvis", f, f"UV-Vis/Kinetics/{Path(f).name}")
 
     fl = state.get("fluo") or {}
-    for k in ("abs_file", "em_file"):
+    for k in ("abs_file", "em_file", "exc_file", "decay_file", "irf_file"):
         add("fluo", fl.get(k), f"Fluorescence/{Path(fl.get(k) or '').name}")
     add("dft", fl.get("esd_file"), f"DFT/{Path(fl.get('esd_file') or '').name}")    # ESD(FLUOR): Rechnung
 
@@ -155,10 +159,31 @@ def collect(state, project_dir, missing=None) -> list[Item]:
                     if sib.suffix.lower() in BES3T:
                         add("epr", sib, f"EPR/{sib.name}")
 
+    for e in (state.get("xray") or {}).get("entries") or []:      # PXRD-Messung (1.2.0); die CIF nie (CCDC)
+        px = e.get("pxrd") if isinstance(e.get("pxrd"), dict) else {}
+        add("pxrd", px.get("file"), f"PXRD/{Path(px.get('file') or '').name}")
+
     dft = state.get("dft") or {}
     prof = dft.get("profile") or {}
     extra = [{"file": f} for f in (prof.get("sp") or []) + ((dft.get("nics") or {}).get("files") or [])]
     extra += [{"file": d.get("file"), "molden": d.get("trj")} for d in prof.get("irc") or []]   # IRC + Trajektorie
+    # weitere Rechnungen (1.2.0): IR-Frequenzen, EPR (Rechnung + Orbital/Spindichte), NTO, ACID (CSGT-Log, Cube), NBO
+    extra.append({"file": (state.get("irms") or {}).get("irc_file")})
+    extra += [{"file": (e.get("calc") or {}).get("file")} for e in (state.get("xray") or {}).get("entries") or []
+              if isinstance(e.get("calc"), dict)]                   # X-Ray Stufe 3: Rechnung zum Vergleich
+    ecalc = (state.get("epr") or {}).get("calc")
+    if isinstance(ecalc, dict):
+        extra.append({"file": ecalc.get("file"), "molden": ecalc.get("orb")})
+    for it in (((state.get("overlay") or {}).get("nto") or {}).get("items") or {}).values():
+        extra.append({"file": it.get("file"), "orbitals": [{"file": f} for f in it.get("files") or []]})
+    acid = dft.get("acid") if isinstance(dft.get("acid"), dict) else {}
+    extra.append({"file": acid.get("log"), "molden": acid.get("cube")})
+    for k in ("inc", "mol"):                           # AICD: beide Dateien heißen immer gleich -> Ordner behalten
+        f = acid.get(k)
+        if f:
+            add("dft", f, f"DFT/{Path(f).parent.name}/{Path(f).name}")
+    nbo = dft.get("nbo") if isinstance(dft.get("nbo"), dict) else {}
+    extra += [{"file": f.get("file"), "molden": f.get("cml")} for f in nbo.get("files") or []]
     for e in (dft.get("entries") or []) + extra:
         for f in [e.get("file"), e.get("molden")] + [o.get("file") for o in e.get("orbitals") or []]:
             if f:
@@ -166,6 +191,22 @@ def collect(state, project_dir, missing=None) -> list[Item]:
                 xyz = Path(f).with_suffix(".xyz")
                 if Path(f).suffix.lower() in (".out", ".log") and xyz.exists():
                     add("dft", xyz, f"DFT/{xyz.name}")
+                if Path(f).suffix.lower() in (".out", ".log"):      # ACS: Eingabedatei je Rechnung, wenn vorhanden
+                    q = Path(f) if Path(f).is_absolute() or pdir is None else pdir / f
+                    for x in (".inp", ".gjf", ".com"):
+                        if q.with_suffix(x).is_file():
+                            add("dft", q.with_suffix(x), f"DFT/{q.with_suffix(x).name}")
+    if dft.get("entries") and pdir is not None:        # alle Strukturen in EINER xyz-Datei (ACS, Org. Lett.)
+        from elucida.app import project as PRJ
+        from elucida.tabs.dft import collection_from_state
+        try:
+            txt = collection_from_state(dft, pdir)
+        except Exception:                              # Datenpaket nie an einer unlesbaren Rechnung scheitern lassen
+            txt = ""
+        if txt:
+            coll = PRJ.work_dir(pdir, "dft") / "structures.xyz"
+            coll.write_text(txt, encoding="utf-8", newline="\n")
+            add("dft", coll, "DFT/structures.xyz")
 
     if pdir is not None:                               # Ergebnisse von Elucida (Exporte)
         from elucida.app import project as PRJ
@@ -476,11 +517,11 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
                 texts.append(f.read_bytes().decode("latin-1"))
         text_repl = {**dict.fromkeys(find_users(texts), USER), **text_repl}
     report = dict(files=0, bytes=0, text_replaced=[], kept=[])
-    root = _safe_name(replace_codes(root, name_repl))
+    root = _safe_name(replace_codes(root, name_repl)) if root else ""
     seen = set()
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for n, (f, arc, group) in enumerate(files):
-            arc = f"{root}/{arc}"
+            arc = f"{root}/{arc}" if root else arc      # FID for Publication: Verbindungsordner oben im Zip
             k = 2
             while arc in seen:                          # gleicher Name nach dem Ersetzen: nummerieren
                 stem, dot, ext = arc.rpartition(".")
@@ -576,7 +617,8 @@ def write_publication(plans, out_dir, names, texts=None, compchem=True, readme="
         if own:
             jobs.append((pl.name, own))
         if compchem:
-            chem += [replace(i, arc=f"{pl.name}/{Path(i.arc).name}") for i in pl.items if i.on and i.group == "dft"]
+            chem += [replace(i, arc=f"{pl.name}/{i.arc.removeprefix('DFT/')}") for i in pl.items   # AICD-Ordner bleibt
+                     if i.on and i.group == "dft"]
     if chem:
         jobs.append(("CompChem", chem))
     report = dict(zips=[], files=0, bytes=0, text_replaced=0, kept=[], dir=str(out_dir))
@@ -598,3 +640,93 @@ def write_publication(plans, out_dir, names, texts=None, compchem=True, readme="
         name, src = license
         (out_dir / name).write_bytes(Path(src).read_bytes())
     return report
+
+
+# -- „FID for Publication“ (ACS Research Data Guidelines, Primary NMR Data Files) --------------------------------
+# Ein Ordner je Verbindung (Verbindungsnummer), darin je Experiment ein Ordner nach Kern/Art (1H, 13C, DEPT135, COSY …)
+# mit dem ganzen TopSpin-Experiment (fid/ser, acqus, pdata/…/procs), die Struktur als MolFile und eine kurze
+# Textdatei mit Gerät/Software aus den Parametern. Quelle: nur die NMR-Experimente, die der Verbindung im NMR-Tab
+# zugeordnet sind (data/nmr/…, beim Laden kopiert); nichts wird verschoben oder verändert.
+FID_ZIP = "FID for Publication"
+
+
+def _molfile(structure, out):
+    """CDXML der Verbindung -> MolFile (alle Fragmente in einem Mol, 2D-Koordinaten der Zeichnung) oder None."""
+    p = Path(structure) if structure else None
+    if p is None or p.suffix.lower() != ".cdxml" or not p.is_file():
+        return None
+    try:
+        from rdkit import Chem
+        ms = [m for m in Chem.MolsFromCDXMLFile(str(p), sanitize=True, removeHs=False) if m is not None]
+        if not ms:
+            return None
+        m = ms[0]
+        for x in ms[1:]:
+            m = Chem.CombineMols(m, x)
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(Chem.MolToMolBlock(m), encoding="utf-8", newline="\n")
+        return out
+    except Exception:                                  # keine lesbare Struktur: Paket ohne MolFile
+        return None
+
+
+def _fid_readme(name, rows):
+    """Textdatei je Verbindung: je Experiment Ordner, Art und die Angaben aus acqus (leere fallen weg)."""
+    out = [f"Primary NMR data of compound {name}", ""]
+    for folder, p in rows:
+        bits = [("Experiment", folder), ("Pulse program", p.get("pulprog")), ("Solvent", p.get("solvent")),
+                ("Spectrometer frequency", f"{p['bf1']:.2f} MHz" if p.get("bf1") else ""),
+                ("Temperature", f"{p['te']:.1f} K" if p.get("te") else ""),
+                ("Instrument", p.get("instrument")), ("Probe", p.get("probe")), ("Software", p.get("software"))]
+        out += [f"{k}: {v}" for k, v in bits if v] + [""]
+    return "\n".join(out)
+
+
+def fid_items(state, project_dir, name, work=None, only=None, names=None) -> list[Item]:
+    """Einträge für „FID for Publication“ einer Verbindung (Pfade im Zip: <Name>/<Art>/…). work: Ordner für MolFile
+    und Textdatei (Standard .elucida/fidpack der Verbindung). only: im Datenpaket-Dialog gewählte Experimente
+    (aufgelöste Pfade; None = alle). names: Kürzel -> Ersatz wie im Zip (auch im Text). Ohne Experimente: []."""
+    from elucida.formats.topspin import acq_params, read_jcamp_params
+    pdir = Path(project_dir).resolve()
+    raws = []
+    for r in (state.get("nmr") or {}).get("raw") or []:
+        p = Path(r.get("path") or "")
+        if r.get("path") and not p.is_absolute():
+            p = pdir / p
+        if r.get("path") and (p / "acqus").is_file() and (only is None or str(p.resolve()) in only):
+            raws.append((r.get("kind") or "NMR", p))
+    if not raws:
+        return []
+    from elucida.app import project as PRJ
+    work = Path(work) if work else PRJ.work_dir(pdir, "fidpack")
+    items, used, rows = [], {}, []
+    for kind, p in raws:
+        used[kind] = used.get(kind, 0) + 1
+        folder = kind if used[kind] == 1 else f"{kind}_{used[kind]}"   # zweites ¹H: „1H_2“
+        items.append(Item("nmr", p, f"{name}/{folder}", True, _size(p)))
+        try:
+            par = acq_params(p)
+            m = re.search(r"TOPSPIN\s*(?:Version\s*)?([\d.]+)", read_jcamp_params(p / "acqus").get("TITLE", ""), re.I)
+            par["software"] = f"TopSpin {m.group(1)}" if m else ""
+        except Exception:
+            par = {}
+        rows.append((folder, par))
+    mol = _molfile((state.get("compound") or {}).get("structure"), work / f"{_safe_name(name)}.mol")
+    if mol is not None:
+        items.append(Item("nmr", mol, f"{name}/{name}.mol", True, _size(mol)))
+    txt = work / "NMR_parameters.txt"
+    txt.write_text(_fid_readme(replace_codes(name, names or {}), rows), encoding="utf-8", newline="\n")
+    items.append(Item("nmr", txt, f"{name}/NMR_parameters.txt", True, _size(txt)))
+    return items
+
+
+def write_fid_package(groups, out_dir, names=None, texts=None) -> dict:
+    """groups: [(Name, Einträge aus fid_items)] -> <out_dir>/FID for Publication.zip mit einem Ordner je Verbindung.
+    names/texts: Kürzel -> Ersatz wie beim Datenpaket. -> Bericht von write_zip (+ compounds)."""
+    items = [it for _, its in groups for it in its]
+    if not items:
+        return dict(files=0, compounds=[])
+    rep = write_zip(items, Path(out_dir) / f"{FID_ZIP}.zip", "", names, texts)
+    rep["compounds"] = [_clean_name(n, names or {}) for n, its in groups if its]    # wie die Ordner im Zip
+    return rep

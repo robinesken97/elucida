@@ -83,6 +83,10 @@ def _path_slots(state):
         slots += [(files, i, data_sub("overlay")) for i in range(len(files))]
         for src in e.get("sources") or []:            # kombinierte TD-DFT-Einträge
             slots.append((src, "file", data_sub("overlay")))
+    for it in ((ov.get("nto") or {}).get("items") or {}).values():   # NTO-Dateien je Zustand (Paket B 1.2.0)
+        slots.append((it, "file", data_sub("overlay")))
+        files = it.get("files") or []
+        slots += [(files, i, data_sub("overlay")) for i in range(len(files))]
     slots.append((ov, "structure", STRUCTURES))
     for e in (state.get("cv") or {}).get("files") or []:
         slots.append((e, "file", data_sub("cv")))
@@ -97,15 +101,20 @@ def _path_slots(state):
         slots += [(e, "file", sub)] + [(steps, i, sub + "/CHARGE_DISCHARGE") for i in range(len(steps))]
     for e in (state.get("epr") or {}).get("entries") or []:
         slots += [(e, "file", data_sub("epr")), (e, "params", data_sub("epr"))]
+    ecalc = (state.get("epr") or {}).get("calc")           # Rechnung für Spindichte/Hyperfein (Gaussian, Molden/Cube)
+    if isinstance(ecalc, dict):
+        slots += [(ecalc, "file", data_sub("epr")), (ecalc, "orb", data_sub("epr"))]
     slots.append((state.get("compound") or {}, "structure", STRUCTURES))
     ir = state.get("irms") or {}
-    slots += [(ir, k, data_sub("irms")) for k in ("ir_file", "ir_pdf", "ms_file", "ms_raw")]
+    slots += [(ir, k, data_sub("irms")) for k in ("ir_file", "ir_pdf", "ms_file", "ms_raw", "irc_file", "ram_file")]
     hr = state.get("hrms") or {}
     slots += [(hr, "ms_file", data_sub("hrms")), (hr, "ms_raw", data_sub("hrms"))]
     for e in (state.get("xray") or {}).get("entries") or []:
         slots.append((e, "file", data_sub("xray")))
         if e.get("calc"):                                    # berechnete Geometrie zum Vergleich (Stufe 3)
             slots.append((e["calc"], "file", data_sub("xray")))
+        if isinstance(e.get("pxrd"), dict):                  # gemessenes Pulverdiffraktogramm (1.2.0)
+            slots.append((e["pxrd"], "file", data_sub("xray")))
     for e in (state.get("dft") or {}).get("entries") or []:
         slots.append((e, "file", data_sub("dft")))
         slots.append((e, "molden", data_sub("dft")))         # Orbitale: Molden-Datei der Rechnung
@@ -129,12 +138,22 @@ def _path_slots(state):
         slots += [(d, "file", data_sub("dft")), (d, "trj", data_sub("dft"))]
     nf = ((state.get("dft") or {}).get("nics") or {}).get("files") or []
     slots += [(nf, i, data_sub("dft")) for i in range(len(nf))]
+    acid = (state.get("dft") or {}).get("acid")                 # ACID (1.2.0): AICD-Dateien im Ordner der Rechnung
+    if isinstance(acid, dict):
+        aicd = data_sub("dft") + "/" + (Path(acid.get("inc") or acid.get("mol") or "AICD").parent.name or "AICD")
+        slots += [(acid, "log", data_sub("dft")), (acid, "cube", data_sub("dft")),
+                  (acid, "inc", aicd), (acid, "mol", aicd)]
+    nbo = (state.get("dft") or {}).get("nbo")                   # NBO (1.2.0): Ausgabe + NRT-CML, gewählte Datei
+    if isinstance(nbo, dict):
+        for f in nbo.get("files") or []:
+            slots += [(f, "file", data_sub("dft")), (f, "cml", data_sub("dft"))]
+        slots.append((nbo, "current", data_sub("dft")))
     for e in (state.get("other") or {}).get("entries") or []:   # Tab „Weitere“ (fremde Abbildungen)
         slots.append((e, "file", data_sub("other")))
     slots.append((state.get("nmr") or {}, "structure", STRUCTURES))
     slots.append((state.get("syn") or {}, "scheme", STRUCTURES))
     for e in (state.get("nmr") or {}).get("spectra") or []:
-        slots += [(e, "file", data_sub("nmr")), (e, "bruker", data_sub("nmr"))]
+        slots += [(e, "file", data_sub("nmr")), (e, "bruker", data_sub("nmr")), (e, "mnova_doc", data_sub("nmr") + "/mnova")]
     for r in (state.get("nmr") or {}).get("raw") or []:      # TopSpin-Experimente, nach Art sortiert
         slots.append((r, "path", data_sub("nmr") + "/" + (r.get("kind") or "other")))
     mn = (state.get("nmr") or {}).get("mnova") or []          # Mnova-Dokumente
@@ -143,7 +162,8 @@ def _path_slots(state):
         slots.append((e, "file", data_sub("uvkin")))
     fl = state.get("fluo") or {}
     slots += [(fl, "abs_file", data_sub("fluorescence")), (fl, "em_file", data_sub("fluorescence")),
-              (fl, "esd_file", data_sub("fluorescence")),
+              (fl, "esd_file", data_sub("fluorescence")), (fl, "exc_file", data_sub("fluorescence")),
+              (fl, "decay_file", data_sub("fluorescence")), (fl, "irf_file", data_sub("fluorescence")),
               (fl, "structure", STRUCTURES), (fl, "photo_day", STRUCTURES), (fl, "photo_uv", STRUCTURES)]
     return slots
 
@@ -291,10 +311,19 @@ def import_group(project_dir, srcs, sub) -> list:
     return [str(t) for t in targets]
 
 
+_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+def read_yaml(text):
+    """Wie yaml.safe_load, mit dem C-Leser (libyaml), wenn vorhanden: dieselben Daten, Projektdateien ~10× schneller
+    gelesen (Startbildschirm und Projektseite lesen jede Projektdatei)."""
+    return yaml.load(text, Loader=_LOADER)
+
+
 def load(project_dir) -> dict:
     """Projektdatei lesen (project.elucida oder alte project.uvvis), relative Pfade auf den Projektordner beziehen."""
     pdir = Path(project_dir).resolve()
-    state = yaml.safe_load(project_file(pdir).read_text(encoding="utf-8")) or {}
+    state = read_yaml(project_file(pdir).read_text(encoding="utf-8")) or {}
     for cont, key, _ in _path_slots(state):
         v = _get(cont, key)
         if v and not Path(v).is_absolute():
@@ -319,6 +348,10 @@ def import_file(project_dir, src, sub, name=None) -> str:
     target = _copy_unique(src, dest_dir, name)
     if src.suffix.lower() in (".out", ".log") and src.with_suffix(".xyz").is_file():   # ORCA: Endgeometrie, 14 Stellen
         shutil.copy2(src.with_suffix(".xyz"), target.with_suffix(".xyz"))
+    if src.suffix.lower() in (".out", ".log"):         # Eingabedatei (ACS: je Rechnung verlangt), nie überschreiben
+        for x in (".inp", ".gjf", ".com"):
+            if src.with_suffix(x).is_file() and not target.with_suffix(x).exists():
+                shutil.copy2(src.with_suffix(x), target.with_suffix(x))
     if src.suffix.lower() == ".cdxml":
         for sib in src.parent.glob(src.stem + ".*"):
             if sib.stem == src.stem and sib.suffix.lower() in (".svg", ".pdf", ".png", ".tif", ".tiff", ".cdx", ".emf"):
@@ -347,7 +380,7 @@ def backup(project_dir):
     """Sicherung vor dem Öffnen: .elucida/project.elucida.bak (bzw. project.uvvis.bak bei alten Projekten)."""
     pf = project_file(project_dir)
     try:
-        ok = isinstance(yaml.safe_load(pf.read_text(encoding="utf-8")), dict)
+        ok = isinstance(read_yaml(pf.read_text(encoding="utf-8")), dict)
     except (OSError, ValueError, yaml.YAMLError):
         ok = False
     if ok:                                             # leere/kaputte Datei nie über die letzte gute Sicherung
@@ -387,6 +420,12 @@ def export_stem(name, key) -> str:
     """Dateiname ohne Endung: <Verbindung>_<Tab>, z. B. „S2_CV“."""
     from elucida.core.uvvis import safe_name
     return f"{safe_name(name)}_{EXPORT_LABEL.get(key, key)}"
+
+
+def with_ext(path, ext) -> Path:
+    """Endung an einen Namen ohne Endung anhängen (ext mit Punkt). Nie with_suffix: aus „S3.1_CV“ würde „S3.pdf“."""
+    p = Path(path)
+    return p.with_name(p.name + ext)
 
 
 def export_kind(path) -> str:
@@ -466,3 +505,6 @@ def cdxml_has_content(path) -> bool:
     except OSError:
         return False
     return any(tag in txt for tag in ("<n ", "<n>", "<fragment", "<t ", "<arrow", "<graphic"))
+
+
+FIGURE_EXT.add(".pptx")              # Folien je Abbildung (si/pptx.py, 1.3.0) gehören zu den Abbildungen

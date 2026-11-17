@@ -284,7 +284,7 @@ def orbital_energies(text) -> dict:
     part = text[j:] if j >= 0 else text
     for spin, key in (("a", "Alpha"), ("b", "Beta")):
         rows = []
-        for m in re.finditer(key + r"\s+(occ|virt)\. eigenvalues --(.*)", part):
+        for m in re.finditer(key + r"\s+(occ|virt)\. eigenvalues --([^\r\n]*)", part):   # nur CR: „.“ liefe weiter
             for v in re.findall(r"\*{10}|-?\d+\.\d+", m.group(2)):         # ********** = Wert < −999.99999 (5F10.5)
                 rows.append((len(rows) + 1, 1.0 if m.group(1) == "occ" else 0.0,
                              float("nan") if v.startswith("*") else float(v) * HARTREE_EV))
@@ -444,7 +444,9 @@ def _trace(vol, iso, R, center, zoff, X, Y, top, floor, cp, cm, alpha, max_layer
         col = np.clip(base_c * D[:, None] + Sp[:, None], 0, 1)
         fog = ibo_fog(zc + zoff)[:, None]
         col = col + (1 - col) * fog
-        a = np.clip(alpha * D / np.clip(np.abs(nv[:, 2]), 0.1, 1.0), 0, 1)
+        # alpha: eine Deckkraft, oder (positiv, negativ) je Vorzeichen der Fläche (3D-NICS: rot deckend, blau durchscheinend)
+        al = np.where(sign > 0, alpha[0], alpha[1]) if isinstance(alpha, (tuple, list)) else alpha
+        a = np.clip(al * D / np.clip(np.abs(nv[:, 2]), 0.1, 1.0), 0, 1)
         Cb = np.zeros((len(sel), 3), np.float32)
         Ab = np.zeros(len(sel), np.float32)
         for lay in range(max_layers):                          # Schicht für Schicht, hinterste zuerst
@@ -942,6 +944,55 @@ def molden_grid(basis: Basis, c, spacing=0.12, margin=4.0, thresh=1e-3):
     return out.reshape(tuple(n)), lo, np.eye(3) * spacing
 
 
+def ao_values(basis: Basis, P):
+    """Alle Basisfunktionen an Punkten P (N×3, Bohr) -> N×nao (Normierung und Konvention wie Basis.evaluate)."""
+    if basis.variant is None:
+        basis.setup()
+    out = np.zeros((len(P), basis.nao))
+    off = 0
+    for sh, T in zip(basis.shells, basis._Ts):
+        k = len(sh["out"])
+        d = P - basis.centers[sh["at"]]
+        R = np.exp(-np.outer(np.einsum("ij,ij->i", d, d), sh["ex"])) @ basis._weights(sh, basis.variant[0])
+        mono = np.stack([d[:, 0] ** a * d[:, 1] ** b * d[:, 2] ** c for a, b, c in sh["cart"]], 1)
+        out[:, off:off + k] = (mono @ T.T) * basis._nrm[off:off + k] * R[:, None]
+        off += k
+    return out
+
+
+def spin_density_grid(basis: Basis, spacing=0.15, margin=4.0, thresh=2e-4):
+    """Spindichte ρα − ρβ (a.u.) aus den besetzten MOs einer Molden-Datei auf einem Gitter wie molden_grid. Ohne
+    β-Orbitale (ROHF): die einfach besetzten. Ohne ungepaarte Elektronen: ValueError.
+    shortcut: Gitter 0.15 Å statt 0.1 Å (Dichte ist glatter als ein MO, Rechenzeit ~ 1/Schritt³); feiner, falls die
+    Fläche kantig wirkt."""
+    mos = basis.m["mos"]
+    if any(mo["spin"] == "b" for mo in mos):
+        sel = [(mo["c"], mo["occ"] * (1.0 if mo["spin"] == "a" else -1.0)) for mo in mos if mo["occ"] > 1e-6]
+    else:
+        sel = [(mo["c"], 1.0) for mo in mos if 0.5 < mo["occ"] < 1.5]
+    if not sel or abs(sum(w for _, w in sel)) < 1e-6:
+        raise ValueError("Molden: no unpaired electrons")
+    C = np.array([c for c, _ in sel]).T
+    w = np.array([w_ for _, w_ in sel])
+
+    def rho(G):
+        out = np.empty(len(G), np.float32)
+        for k in range(0, len(G), 20_000):
+            out[k:k + 20_000] = ((ao_values(basis, G[k:k + 20_000] / BOHR) @ C) ** 2) @ w
+        return out
+    X = basis.centers * BOHR
+    lo, hi = X.min(axis=0) - margin, X.max(axis=0) + margin
+    gc = [np.arange(lo[d], hi[d] + 0.35, 0.35) for d in range(3)]
+    G = np.stack(np.meshgrid(*gc, indexing="ij"), -1).reshape(-1, 3)
+    big = np.abs(rho(G)) > thresh
+    if big.any():
+        lo, hi = G[big].min(axis=0) - 1.0, G[big].max(axis=0) + 1.0
+    n = np.ceil((hi - lo) / spacing).astype(int) + 1
+    g = [lo[d] + spacing * np.arange(n[d]) for d in range(3)]
+    G = np.stack(np.meshgrid(*g, indexing="ij"), -1).reshape(-1, 3)
+    return rho(G).reshape(tuple(n)), lo, np.eye(3) * spacing
+
+
 def molden_table(m):
     """Orbitalenergien aus der Molden-Datei wie orbital_energies: {Spin: [(Nummer, Besetzung, eV)]}.
     Nummern je Spin ab 0 (ORCA) bzw. ab 1 (andere); ohne β-Orbitale Spin ""."""
@@ -988,10 +1039,14 @@ def make_test_cube(path, n=48):
 
 # ---------------------------------------------------------------------------- Bild in der Abbildung
 ORB_MAX_DPI = 300                               # Export: Orbitalbild höchstens so fein (PDF/SVG eingebettet)
-DRAG_SCALE = 4                                  # beim Drehen: Bild mit 1/4 der Auflösung und halb so vielen
-DRAG_STEP = 1.0                                 # Tiefenschritten (Gitterabstände je Schritt) – flüssig, danach voll
-DRAG_PX = 25000                                 # beim Drehen höchstens so viele Pixel (~50 ms je Schritt; große/HiDPI-
-                                                # Vorschau sonst 0,2–0,3 s, FB-19)
+DRAG_SCALE = 3                                  # beim Drehen: Bild mit 1/3 der Auflösung (bis 1.1.0: 1/4) und halb so
+DRAG_STEP = 1.0                                 # vielen Tiefenschritten (Gitterabstände je Schritt) – flüssig, danach voll
+DRAG_PX = 60000                                 # beim Drehen höchstens so viele Pixel (große/HiDPI-Vorschau sonst
+                                                # 0,2–0,3 s, FB-19). Gemessen 2026-11-13 (48 Atome, Spindichte, 900 × 620 px):
+                                                # 55 ms je Bild mit 1/4 und Klötzchen, 77 ms mit 1/3 und weichem Hochskalieren
+
+DRAG_INTERP = "bilinear"                        # beim Drehen weich hochskaliert statt in Klötzchen („nearest“ wirkte
+                                                # pixelig, Nutzerhinweis 2026-11-13; gemessen: kaum teurer)
 
 from matplotlib.image import AxesImage  # noqa: E402
 
@@ -1023,7 +1078,7 @@ class OrbitalImage(AxesImage):
         H = max(2, int(round(bb.height * magnification * f)))
         xl, yl = tuple(ax.get_xlim()), tuple(ax.get_ylim())
         key = (W, H, self.F.R.tobytes(), xl, yl)
-        self.set_interpolation("nearest" if self.drag else "bilinear")     # Ziehen: billiges Hochskalieren
+        self.set_interpolation(DRAG_INTERP if self.drag else "bilinear")
         if key != self._key:
             self._key = key
             o = self.orb

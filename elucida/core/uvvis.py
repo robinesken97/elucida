@@ -17,6 +17,7 @@ import math
 import os
 import re
 import sys
+import traceback
 from pathlib import Path
 
 import matplotlib
@@ -124,6 +125,15 @@ def sci_text(v, digits=3):
     """1.23e-04 -> „1.23 × 10^-4“ (Ergebniszeilen und Methodentexte; die Anzeige setzt den Exponenten hoch)."""
     mant, ex = f"{v:.{digits - 1}e}".split("e")
     return f"{mant} × 10^{int(ex)}"
+
+
+def fmt_num(v, dec=0, sign=False):
+    """Feste Stellenzahl (Python rundet halb-gerade), echtes Minus, nie „−0.00“; sign: „+“ vor positiven Werten
+    (null ohne Vorzeichen). Gemeinsam für Werte, die nahe null liegen können (E½, ppm, HOMA, NICS)."""
+    s = f"{float(v):.{dec}f}"
+    if float(s) == 0:
+        return s.lstrip("-")
+    return ("+" + s if sign and not s.startswith("-") else s).replace("-", "−")
 
 
 def r2_text(r2):
@@ -234,7 +244,8 @@ def apply_export_size(cfg, w_cm, h_cm):
 # Textformat aus der GUI (Menü Format): gilt für alle Tabs, wird im Projekt gespeichert
 TEXT_DEFAULTS = {"font": "Arial", "symbol_font": "Times New Roman", "greek": True, "label_pt": 0.0,
                  "bold": False, "italic": False, "color": "#000000", "struct_frame": False,
-                 "axes_frame": True}                     # geschlossener Rahmen wie die Origin-Abbildungen der SI
+                 "axes_frame": True,                     # geschlossener Rahmen wie die Origin-Abbildungen der SI
+                 "line_w": 1.0, "axis_w": 0.0}           # Stilkarte (R8): Kurven × Faktor, Achsenlinien in pt (0 = wie gezeichnet)
 
 
 def apply_text_format(cfg, tf):
@@ -480,8 +491,16 @@ def parse_sample_name(name):
         return None                                  # „05mgml“: 0,5 oder aufgefüllte 5? Ebenso (ergab negative ε)
     conc = float(m.group(1).lower().replace("p", ".").replace(",", "."))
     unit = _UNIT_MAP.get(m.group(2).lower().replace(" ", ""), m.group(2))
-    group = name[:m.start()].rstrip("-_ ") or "probe"
+    group = name[:m.start()].rstrip("-_ ") or DEFAULT_SERIES
     return group, conc, unit
+
+
+DEFAULT_SERIES = "probe"     # Schlüssel der Reihe ohne Namensteil (gespeichert, sprachfrei); angezeigt über series_label
+
+
+def series_label(g):
+    """Anzeigename einer Reihe: der Standardschlüssel „probe“ in der Programmsprache, sonst der Name selbst."""
+    return T("r2a_series_sample") if g == DEFAULT_SERIES else str(g)
 
 
 _US_TIME = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) ([AP]M)", re.I)
@@ -526,33 +545,88 @@ def cary_times(lines, n):
     return out
 
 
+_NUM_FIELD = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def _eclipse_z(path, lines):
+    """Cary-Eclipse-Export mit „Z Axis“: Zeile 1 Spaltenköpfe, Zeile 2 Probennamen (erstes Feld leer), Zeile 3 Index der
+    Z-Achse „,1,…,n“, danach je Zeile λ und n Intensitäten bis zu den Metadaten. -> (Namen, Array n_λ × (n + 1)).
+    Passt etwas nicht (Namen ≠ Index, Datenzeile mit anderer Spaltenzahl, Daten nach den Metadaten): ablehnen, nie
+    kürzer lesen."""
+    bad = ValueError(T("r4_eclipse_layout", name=Path(path).name))
+
+    def fields(ln):
+        f = [c.strip() for c in next(csv.reader([ln]), [])]
+        while f and not f[-1]:
+            f.pop()
+        return f
+    if len(lines) < 3:
+        raise bad
+    names, idx = fields(lines[1]), fields(lines[2])
+    n = len(idx) - 1
+    if n < 1 or idx[0] or idx[1:] != [str(k + 1) for k in range(n)] or len(names) != n + 1 or names[0]:
+        raise bad
+    data, end = [], len(lines)
+    for i in range(3, len(lines)):
+        f = fields(lines[i])
+        if len(f) < 2 or not _NUM_FIELD.fullmatch(f[0]):    # Ende des Zahlenblocks (Metadaten)
+            end = i
+            break
+        if len(f) != n + 1 or not all(_NUM_FIELD.fullmatch(x) for x in f):
+            raise bad
+        data.append([float(x) for x in f])
+    later = (fields(ln) for ln in lines[end:])
+    if len(data) < 5 or any(len(f) >= 2 and all(_NUM_FIELD.fullmatch(x) for x in f) for f in later):
+        raise bad
+    return names[1:], np.array(data, float)
+
+
 def read_cary_samples(path):
     """Cary-Export: Zeile 1 = Probennamen (je 2 Spalten), danach λ/Abs-Paare.
     -> Liste von dict(key, name, x, y, parsed=(serie, c, einheit) | None, time=datetime | None)."""
     text = _read_text(path)
     lines = [ln for ln in text.splitlines() if ln.strip()]      # Leerzeilen (z. B. \r\r\n) ignorieren
     first = lines[0] if lines else ""
+    zcols = None
     if len(lines) > 1 and "intensity" in first.lower() and lines[1].lstrip().startswith(","):
-        # Cary-Eclipse-Export: Zeile 1 Spaltenköpfe, Zeile 2 Probennamen (je 2 Spalten)
-        names = [n.strip() for n in lines[1].split(",")[1::2]]
+        if "z axis" in [c.strip().lower() for c in first.split(",")]:
+            names, zcols = _eclipse_z(path, lines)
+        else:
+            # Cary-Eclipse-Export: Zeile 1 Spaltenköpfe, Zeile 2 Probennamen (je 2 Spalten)
+            names = [n.strip() for n in lines[1].split(",")[1::2]]
+            arr = read_table(path)
+            used = int(np.isfinite(arr).any(axis=0).sum())
+            if used != 2 * len([n for n in names if n]):      # z. B. eine λ-Spalte + n Intensitäten ohne „Z Axis“
+                raise ValueError(T("r4_eclipse_layout", name=Path(path).name))
     else:                                                       # Komma, sonst Semikolon/Tab (Excel-Export)
-        probe = lines[1] if len(lines) > 1 else first           # Trennzeichen aus der Zeile darunter (Namen
-        delim = max((",", ";", "\t"), key=probe.count)         # können selbst Kommas enthalten)
+        # Trennzeichen aus der Struktur aller Zeilen: das, bei dem die meisten Zeilen nur aus Zahlen bestehen (mit „;“/Tab
+        # auch Dezimalkomma). Eine Datenzeile „800,0;0,123“ allein hat mehr Kommas als Semikolons; Namen können Kommas
+        # enthalten, die Namenszeile hat oft weniger Trenner als die Daten.
+        def fits(d):
+            ok = 0
+            for ln in lines[1:200]:
+                f = [x.strip() for x in next(csv.reader([ln], delimiter=d), []) if x.strip()]
+                ok += len(f) >= 2 and all(_NUM_FIELD.fullmatch(x if d == "," else x.replace(",", ".")) for x in f)
+            return ok
+        delim = max((",", ";", "\t"), key=fits)
         names = [n.strip() for n in next(csv.reader([first], delimiter=delim), [])[0::2]]
     ex_list = [float(v) for v in _EX_RE.findall(text)]
     n_named = len(names)
     while n_named and not names[n_named - 1]:                  # Zeile 1 endet mit „,,“: leerer letzter Name
         n_named -= 1
     times = cary_times(lines, n_named) + [None] * (len(names) - n_named)
-    arr = read_table(path)
+    arr = read_table(path) if zcols is None else zcols
     samples, seen = [], {}
     for k, name in enumerate(names):
-        if 2 * k + 1 >= arr.shape[1]:
+        cx, cy = (0, k + 1) if zcols is not None else (2 * k, 2 * k + 1)
+        if cy >= arr.shape[1] or not np.isfinite(arr[:, cy]).any():
+            if name:                                   # benannte Probe ohne Datenspalten: nie still weglassen
+                raise ValueError(T("r4_cary_no_data", name=Path(path).name, sample=name))
             continue
         name = name or f"#{k + 1}"
         seen[name] = seen.get(name, 0) + 1
         key = name if seen[name] == 1 else f"{name} ({seen[name]})"   # doppelte Namen
-        x, y = _clean_xy(arr[:, 2 * k], arr[:, 2 * k + 1])
+        x, y = _clean_xy(arr[:, cx], arr[:, cy])
         if len(x) < 5:
             continue
         samples.append({"key": key, "name": name, "x": x, "y": y, "parsed": parse_sample_name(name),
@@ -565,10 +639,44 @@ BINARY_EXT = {".dsw", ".bsw", ".spc", ".fbsw", ".fdsw"}
 _HEADERISH = re.compile(r"^(#?\d*|wave.*|.*\(nm\).*|abs.*|nm|x|y)$", re.I)
 
 
+_DSW_TRAILER = (b"Collection Time:", b"Parameter List", b"<Current Wavelength>")
+
+
+def _records_to_end(data, p):
+    """Metadatenblock nach dem letzten Spektrum = Kette aus (int32-Länge, Text); vollständig nur, wenn sie genau am
+    Dateiende aufgeht (bei einer abgeschnittenen Datei läuft sie in den Kopf des nächsten Spektrums oder darüber)."""
+    while p + 4 <= len(data):
+        n = int.from_bytes(data[p:p + 4], "little", signed=True)
+        if n < 0 or p + 4 + n > len(data):
+            return False
+        p += 4 + n
+    return p == len(data)
+
+
+def _dsw_complete(cf, name):
+    """Abgeschnittene .DSW nie still kürzer lesen (parseuv sucht Zahlenpaare und nimmt, was da ist). Geprüft an
+    10 echten Cary-60-Dateien: je Spektrum ein Kopfblock „TContinuumStore“ und danach ein Metadatenblock (Collection
+    Time …, Kette aus Länge + Text bis ans Dateiende). Nur prüfen, was die Datei selbst angibt."""
+    from elucida.app.i18n import T
+    data, sp = cf._data, cf.spectra
+    if not sp:
+        return
+    heads = data.count(b"TContinuumStore")
+    ends = [s.metadata["file_offset"] + s.metadata["data_bytes"] for s in sp]
+    gaps = [data[e:(sp[k + 1].metadata["file_offset"] if k + 1 < len(sp) else len(data))] for k, e in enumerate(ends)]
+    bad = ((heads and heads != len(sp))
+           or any(m in gaps[0] and m not in g for g in gaps[1:] for m in _DSW_TRAILER)
+           or (heads and (_DSW_TRAILER[0] not in gaps[-1] or not _records_to_end(data, ends[-1]))))
+    if bad:
+        raise ValueError(T("r2l_dsw_incomplete", name=name))
+
+
 def read_binary_samples(path):
     """Cary WinUV .DSW/.BSW (und Shimadzu .SPC) über den mitgelieferten parseuv-Parser."""
     from elucida.formats.parseuv_lite import CaryFile
     cf = CaryFile(str(path))
+    if Path(path).suffix.lower() == ".dsw":
+        _dsw_complete(cf, Path(path).name)
     raw = Path(path).read_bytes().decode("cp1252", errors="replace")
     ex_list = [float(v) for v in _EX_RE.findall(raw)]
     out = []
@@ -910,7 +1018,7 @@ def fmt_ve(v, e=None, digits="auto", max_decimals=None):
     """Wert ± Fehler, gerundet nach Unsicherheit. max_decimals=0 (ε): ganzzahlig, auch bei großem Fehler
     (wie in den Publikationen der Gruppe: 7264 ± 318, nicht 7300 ± 300)."""
     d = ve_decimals(v, e, digits, max_decimals)
-    vs = f"{round_half_up(v, d):.{max(d, 0)}f}"
+    vs = f"{round_half_up(v, d) or 0.0:.{max(d, 0)}f}"         # „or 0.0“: −0.0 -> 0 (ε einer Bande ohne Absorption)
     es = None
     if e is not None and np.isfinite(e):
         er = round_half_up(e, d)
@@ -1031,7 +1139,7 @@ class FreeSpace:
             return False
         ix0, ix1 = int(math.floor(x0 * n)), int(math.ceil((x0 + w) * n))
         iy0, iy1 = int(math.floor(y0 * n)), int(math.ceil((y0 + h) * n))
-        return not (self.elems | self.curves)[iy0:iy1, ix0:ix1].any()
+        return not (self.elems[iy0:iy1, ix0:ix1].any() or self.curves[iy0:iy1, ix0:ix1].any())
 
     def find(self, w, h, score_fn, over_curves=False, curves=None):
         """over_curves=True: nur Überlappung mit anderen Elementen vermeiden (Notlösung). curves: andere Sperrfläche
@@ -1152,6 +1260,10 @@ def conc_ramp(concs):
     return {c: to_hex(colormaps["viridis"](0.85 * i / max(1, len(cs) - 1))) for i, c in enumerate(cs)}
 
 
+class _NoNear(Exception):
+    """Durchgang mit λ-Labels über dem Maximum abbrechen: keins passt (_place_checked)."""
+
+
 class Figure:
     def __init__(self, plt, cfg, spectra, results, layout, fig=None):
         self.plt, self.cfg, self.spectra, self.results, self.layout = plt, cfg, spectra, results, layout
@@ -1173,8 +1285,7 @@ class Figure:
         self._inset()
         self._labels()
         self._images()
-        self._place()
-        self._conc_legend()
+        self._place_checked(lambda: (self._place(), self._conc_legend()))
 
     def _conc_legend(self):
         """Legende der Konzentrationen, nur auf Wunsch (`conc_legend`; bis 2.7.1 immer mit den Farben)."""
@@ -1191,7 +1302,10 @@ class Figure:
         """Legende in freie Fläche setzen (Kurven, Bilder und Labels meiden), falls nicht verschoben."""
         if self.legend is None or self.layout.get("legend"):
             return
-        hit = self._legend_spot() or self._legend_spot(over_curves=True)
+        hit = self._legend_spot()
+        if hit is None:                                  # Notlösung: über den Kurven
+            self._fallback = True
+            hit = self._legend_spot(over_curves=True)
         if hit is not None:
             self.legend.set_loc(tuple(hit))
 
@@ -1271,6 +1385,7 @@ class Figure:
         x0, y0 = self._af_to_fig(x, y)
         x1, y1 = self._af_to_fig(x + w, y + h)
         a.set_position([x0, y0, x1 - x0, y1 - y0])
+        a._af = (x, y, w, h)                             # zum Festhalten an genau dieser Stelle (_place_checked)
 
     # -- Inset ---------------------------------------------------------------
     def _inset(self):
@@ -1367,6 +1482,7 @@ class Figure:
                                    xytext=(0.5, 0.5), textcoords="axes fraction",
                                    ha="left", va="bottom", linespacing=1.4, annotation_clip=False,
                                    zorder=5, **label_kw(self.cfg))
+            ann._near = True                             # λ-Label: knapp über seinem Maximum (Entscheidung 130)
             self.ann_items[f"label_{r['lam']:g}"] = ann
 
     # -- Bilder --------------------------------------------------------------
@@ -1482,16 +1598,137 @@ class Figure:
         w, h = self.fig.get_size_inches() * self.fig.dpi
         return RendererAgg(int(w), int(h), self.fig.dpi)
 
+    _near_on, _near_hits, _fallback, _pin, _near_possible, _log_elem = False, set(), False, None, False, False
+
+    def _fixed_labels(self):
+        return {f"label_{float(k):g}": v for k, v in (self.cfg["labels"].get("pos") or {}).items()}
+
+    def _layout_state(self):
+        """Lage von Achse(n), Inset, Tabelle und Bildern (Vergleich mit und ohne λ-Labels über dem Maximum)."""
+        tab, ax2 = getattr(self, "_inset_table", None), getattr(self, "ax2", None)
+        return (self.ax.get_position(original=True).bounds,
+                None if ax2 is None else ax2.get_position(original=True).bounds,
+                {k: (a.get_position(original=True).bounds, getattr(a, "_img_wh", None)) for k, a in self.axes_items.items()},
+                None if tab is None else tab.get_visible(),
+                getattr(self, "_inset_beside", False), getattr(self, "_beside_box", None))
+
+    def _set_layout_state(self, st):
+        ax, ax2, items, tab, self._inset_beside, self._beside_box = st
+        self.ax.set_position(ax)
+        if ax2 is not None:
+            self.ax2.set_position(ax2)
+        for k, (b, wh) in items.items():
+            self.axes_items[k].set_position(b)
+            if wh is not None:
+                self.axes_items[k]._img_wh = wh
+        if tab is not None:
+            self._inset_table.set_visible(tab)
+
+    def _snapshot(self):
+        leg, ileg = self.legend, getattr(self, "_inset_legend", None)
+        return (self._layout_state(), {k: (a, tuple(a.get_position())) for k, a in self.ann_items.items()},
+                None if leg is None else (leg, leg._loc, leg.get_draggable()),
+                None if ileg is None else [t.get_text() for t in ileg.get_texts()], list(self.ax._children))
+
+    def _restore(self, snap):
+        """Zustand eines Schnappschusses zurück, ohne neu zu platzieren: Künstler, die ein Durchgang angelegt hat (Pfeil,
+        Legende), fallen aus der Achse, die des Schnappschusses kommen in derselben Reihenfolge zurück."""
+        st, anns, leg, ileg, children = snap
+        self._set_layout_state(st)
+        for t, txt in zip(self._inset_legend.get_texts() if ileg is not None else (), ileg or ()):
+            t.set_text(txt)
+        self.ax._children[:] = children                  # nicht remove(): das koppelt den Künstler von der Achse ab
+        self.ann_items.clear()
+        for k, (a, p) in anns.items():
+            a.set_position(p)
+            self.ann_items[k] = a
+        if self.legend is not None and (leg is None or self.legend is not leg[0]):
+            self.legend.set_draggable(False)
+        self.legend = self.ax.legend_ = None if leg is None else leg[0]
+        if leg is not None:
+            leg[0]._set_loc(leg[1])
+            if bool(leg[0].get_draggable()) != bool(leg[2]):
+                leg[0].set_draggable(bool(leg[2]), use_blit=True, update="loc")
+        self.ax.stale = True
+
+    def _near_ok(self, keys):
+        """λ-Labels von links nach rechts nach λ geordnet und keins auf der Legende (auch einer gezogenen)?"""
+        rend = self._renderer()
+        x0, x1 = self.ax.get_xlim()
+        bbs = [self.ann_items[k].get_window_extent(rend) for k in
+               sorted(keys, key=lambda k: (self.ann_items[k].xy[0] - x0) / (x1 - x0))]
+        if not all(a.x0 + a.width / 2 < b.x0 + b.width / 2 for a, b in zip(bbs, bbs[1:])):
+            return False
+        lb = self.legend.get_window_extent(rend) if self.legend is not None else None
+        return lb is None or not any(b.overlaps(lb) for b in bbs)
+
+    @staticmethod
+    def _same(a, b):
+        if isinstance(a, dict):
+            return isinstance(b, dict) and a.keys() == b.keys() and all(Figure._same(a[k], b[k]) for k in a)
+        if isinstance(a, (tuple, list)):
+            return isinstance(b, (tuple, list)) and len(a) == len(b) and all(map(Figure._same, a, b))
+        if isinstance(a, float) and isinstance(b, float):
+            return abs(a - b) < 1e-9
+        return a == b
+
+    def _place_checked(self, run):
+        """run() setzt alles (Labels, Inset, Bilder, Legende, Pfeil). Erst bisherig; dann (Entscheidung 138) mit Inset,
+        Tabelle, Struktur und Foto an genau dieser Stelle (wie gespeichert) die λ-Labels knapp über ihr Maximum.
+        Behalten nur, wenn sie nach λ geordnet sind und nicht auf der Legende liegen und Legende, Pfeil und Labels ohne
+        Notlösung frei Platz fanden – sonst zurück zum bisherigen Ergebnis (ohne dritten Durchgang)."""
+        fixed = self._fixed_labels()
+        auto = [k for k, a in self.ann_items.items() if getattr(a, "_near", False) and getattr(a, "_anchor_y", None)
+                is None and not (self.layout.get(k) or fixed.get(k))]
+        if not auto:
+            return run()
+        global LOG
+        keep_log, lines, near_lines = LOG, [], []
+        start = self._snapshot()
+        try:
+            LOG = lambda m: lines.append((self._log_elem, m))
+            self._near_possible = False
+            run()
+            old = self._snapshot()
+            # Achse schmaler (Inset oder Legende daneben): so nicht festzuhalten -> bisherig
+            if self._near_possible and self._same(old[0][:2], start[0][:2]) and not old[0][4]:
+                pin = {k: a._af for k, a in self.axes_items.items() if getattr(a, "_af", None)}
+                self._restore(start)
+                self._set_layout_state(old[0])           # Tabelle, Bildgrößen wie bisher
+                for t, txt in zip(self._inset_legend.get_texts() if old[3] is not None else (), old[3] or ()):
+                    t.set_text(txt)
+                LOG = lambda m: near_lines.append((self._log_elem, m))
+                self._near_on, self._near_hits, self._fallback, self._pin = True, set(), False, pin
+                try:
+                    run()
+                    ok = (not self._fallback and self._near_ok(auto) and self._same(self._layout_state(), old[0]))
+                except _NoNear:                          # kein Label passt über sein Maximum: Rest sparen
+                    ok = False
+                except Exception:                        # Fehler im neuen Durchgang: Abbildung bleibt die bisherige
+                    traceback.print_exc()
+                    ok = False
+                if ok:
+                    self._set_layout_state(old[0])       # exakt wie bisher (Rundung beim Festhalten)
+                    # Inset/Tabelle/Bilder stammen aus dem bisherigen Durchgang (festgehalten): deren Meldungen von dort
+                    lines = [x for x in lines if x[0]] + [x for x in near_lines if not x[0]]
+                else:
+                    self._restore(old)
+        finally:
+            self._near_on, self._pin, self._log_elem, LOG = False, None, False, keep_log
+        for _, msg in lines:
+            log(msg)
+
     def _place(self):
         fig, ax = self.fig, self.ax
         rend = self._renderer()
         self._rend = rend
+        self._log_elem = False                           # Meldungen zu Inset/Tabelle/Bildern (für _place_checked)
         fs = FreeSpace()
         env = self._envelope(fs.n)
         fs.block_below(env)
         for r in self._extra_blocks(rend):
             fs.block_rect(*r)
-        lay = self.layout
+        lay = self.layout if self._pin is None else {**self._pin, **self.layout}
         warn_over = []
 
         def find(key, w, h, score):
@@ -1506,7 +1743,7 @@ class Figure:
         #    hinzugekommenes Element (z. B. eine Bande, die erst jetzt genug Fitpunkte hat) genau auf
         #    einem gespeicherten landen, weil dieses erst später in der Schleife eingetragen würde.
         x0, x1 = ax.get_xlim()
-        fixed_lbl = {f"label_{float(k):g}": v for k, v in (self.cfg["labels"].get("pos") or {}).items()}
+        fixed_lbl = self._fixed_labels()
         for key, ann in self.ann_items.items():
             pos = lay.get(key) or fixed_lbl.get(key)
             if pos:
@@ -1561,11 +1798,15 @@ class Figure:
                     pos = (min(max(px_, 0.0), 1 - bw), min(max(py_, 0.0), 1 - bh))
                 else:
                     ayn = min(1.0, float(env[min(fs.n - 1, max(0, int(axn * fs.n)))]))
-                    pos = find(key, bw, bh, anchor_score(axn, ayn)) or (min(axn, 1 - bw), 1 - bh)
+                    pos = find(key, bw, bh, anchor_score(axn, ayn))
+                    if pos is None:
+                        self._fallback = True
+                        pos = (min(axn, 1 - bw), 1 - bh)
             ann.set_position(tuple(pos))
             fs.block_rect(pos[0], pos[1], bw, bh)
 
         # 2) Inset: ggf. verkleinern, notfalls ohne Tabelle
+        self._log_elem = True
         if "inset" in self.axes_items:
             iax = self.axes_items["inset"]
             icfg = self.cfg["inset"]
@@ -1640,8 +1881,10 @@ class Figure:
             self._set_axes_af(a, pos[0], pos[1], w, h)
             fs.block_rect(pos[0] - px, pos[1] - py, w + 2 * px, h + 2 * py)
 
+        self._log_elem = False
         for k in warn_over:
             log("  " + T("no_space", key=k))
+        self._fallback = self._fallback or bool(warn_over)
         self.check_overlaps()
 
     def _legend_r2(self, on):
@@ -1651,12 +1894,32 @@ class Figure:
         for txt, (base, with_r2) in zip(leg.get_texts(), self._legend_labels):
             txt.set_text(with_r2 if on else base)
 
+    LABEL_GAP = 0.4      # λ-Label über seinem Maximum: Abstand in Labelhöhen (Entscheidung 130)
+    LABEL_SHIFT = 0.4    # höchstens so weit seitlich (Labelbreiten), die Bande bleibt unter dem Label
+    LABEL_RISE = 1.0     # höchstens so weit höher (Labelhöhen): noch „knapp über dem Maximum“
+
+    def _label_near(self, axn, bw, bh, fs, env):
+        """Platz knapp über dem eigenen Maximum (Entscheidung 130): mittig über λ, Unterkante = Hülle unter der ganzen
+        Labelbreite + LABEL_GAP · Labelhöhe, wenn nötig etwas seitlich oder höher. -> (x, y) oder None."""
+        n, m = fs.n, fs.margin
+        x_id = min(max(axn - bw / 2, m), 1 - m - bw)
+        dxs = sorted(np.linspace(-self.LABEL_SHIFT, self.LABEL_SHIFT, 17) * bw, key=abs)
+        for up in np.linspace(0, self.LABEL_RISE, 11) * bh:
+            for dx in dxs:
+                x = x_id + dx
+                if not x <= axn <= x + bw:
+                    continue
+                i0 = min(n - 1, max(0, int(x * n)))
+                y = max(float(env[i0:max(i0 + 1, math.ceil((x + bw) * n))].max()), 0.0) + self.LABEL_GAP * bh + up
+                if fs.is_free(x, y, bw, bh):
+                    return x, y
+        return None
+
     def _place_labels_ordered(self, keys, fs, env, rend):
-        """Mehrere Labels ordentlich setzen (sortiert nach x der Bande): erst als Reihe – alle Oberkanten gleich hoch,
-        jedes möglichst über seiner Bande, so hoch wie frei –, sonst als linksbündiger Block untereinander nahe den
-        Banden. Nur ganz frei von Kurven und anderen Elementen; sonst nichts (dann Einzelplatzierung). -> gesetzte."""
-        if len(keys) < 2:
-            return set()
+        """Labels ordentlich setzen (sortiert nach x der Bande): λ-Labels (`_near`) im Durchgang mit `_near_on` zuerst
+        einzeln knapp über ihr Maximum (`_label_near`); die übrigen ab zwei erst als Reihe – alle Oberkanten gleich
+        hoch, jedes möglichst über seiner Bande, so hoch wie frei –, sonst als linksbündiger Block untereinander nahe
+        den Banden. Nur ganz frei von Kurven und anderen Elementen; sonst nichts (dann Einzelplatzierung). -> gesetzte."""
         x0, x1 = self.ax.get_xlim()
         items = []
         for k in keys:
@@ -1665,6 +1928,24 @@ class Figure:
             axn = (ann.xy[0] - x0) / (x1 - x0)
             items.append((axn, k, bw, bh))
         items.sort()
+        near = set()
+        if not self._near_on and not self._near_possible:   # bisheriger Durchgang: passt überhaupt eins? (ohne Inset
+            self._near_possible = any(getattr(self.ann_items[k], "_near", False)    # und Bilder: Obermenge)
+                                      and self._label_near(axn, bw, bh, fs, env) for axn, k, bw, bh in items)
+        for axn, k, bw, bh in items if self._near_on else ():
+            hit = getattr(self.ann_items[k], "_near", False) and self._label_near(axn, bw, bh, fs, env)
+            if hit:
+                self.ann_items[k].set_position(hit)
+                gy = self.LABEL_GAP * bh                 # Abstand zum nächsten Label wie zum Maximum (Entscheidung 138)
+                gx = gy * self.ax.bbox.height / self.ax.bbox.width
+                fs.block_rect(hit[0] - gx, hit[1] - gy, bw + 2 * gx, bh + 2 * gy)
+                near.add(k)
+        self._near_hits = self._near_hits | near
+        if self._near_on and not self._near_hits:
+            raise _NoNear
+        items = [it for it in items if it[1] not in near]
+        if len(items) < 2:
+            return near
         gap_x, gap_y = 0.015, 0.012
         hmax = max(it[3] for it in items)
 
@@ -1690,7 +1971,7 @@ class Figure:
                     for x, (_, k, bw, bh) in zip(xs, items):
                         self.ann_items[k].set_position((x, top - bh))
                         fs.block_rect(x, top - bh, bw, bh)
-                    return {it[1] for it in items}
+                    return near | {it[1] for it in items}
                 top -= 0.01
         W = max(it[2] for it in items)
         H = sum(it[3] for it in items) + gap_y * (len(items) - 1)
@@ -1698,14 +1979,14 @@ class Figure:
         my = min(1.0, float(np.max([env[min(fs.n - 1, max(0, int(it[0] * fs.n)))] for it in items])))
         hit = fs.find(W, H, anchor_score(mx, my))
         if hit is None:
-            return set()
+            return near
         y = hit[1] + H
         for _, k, bw, bh in items:                       # kleinste Wellenlänge oben
             y -= bh
             self.ann_items[k].set_position((hit[0], y))
             fs.block_rect(hit[0], y, bw, bh)
             y -= gap_y
-        return {it[1] for it in items}
+        return near | {it[1] for it in items}
 
     def _make_room_right(self, iax, rend, aw, ah):
         """Achse schmaler machen, damit das Inset (Größe aw × ah der bisherigen Achse) rechts daneben Platz hat. Ohne

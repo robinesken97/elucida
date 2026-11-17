@@ -4,7 +4,8 @@
     QT_QPA_PLATFORM=offscreen python Elucida.py --selftest nachher
     python tools/compare_figures.py vorher nachher
 
-Vergleicht alle PNG (Pixel, sonst Bytes). Bekannt schwankend auch ohne Änderung: epr_p6.png (Fit-Startwerte).
+Vergleicht alle PNG (Pixel, sonst Bytes). Bekannt schwankend auch ohne Änderung: epr_p6.png (Fit-Startwerte),
+demo00table.png (Vorschau der Vergleichstabelle, wechselt zwischen zwei Ständen).
 xray_test_xtest_a.png hängt von der Vorschaugröße ab (simuliertes Drehen um 40 px), also von der Spaltenbreite.
 Exit-Code 1 bei Abweichungen.
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-FLAKY = {"epr_p6.png"}
+FLAKY = {"epr_p6.png", "demo00table.png"}
 
 
 def pixels(p):

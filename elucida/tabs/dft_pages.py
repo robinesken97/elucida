@@ -52,7 +52,9 @@ KINDS = {"G": ("ΔG", "Gibbs free energy"), "H": ("ΔH", "enthalpy"), "E": ("ΔE
 NICS_SCAN_MIN = 10                       # ab so vielen Bq: Scan (Kurve über die Weglänge), sonst Einzelpunkte
 NICS_NEAR = 2.5                          # Å: Schweratome für die lokale Ebene um ein Bq
 PROFILE_DEFAULT = dict(species={}, sp=[], y="G", mode="levels", colors={}, irc=[], irc_x="rc", irc_ref="first")
-NICS_DEFAULT = dict(files=[], geom="")
+NICS_GRID_MIN = 200                      # ab so vielen Bq in einer Datei: Teil eines 3D-Gitters (kein Scan)
+NICS_DEFAULT = dict(files=[], geom="", show="3d", iso_pos=5.0, iso_neg=15.0, color_pos="#d62728", color_neg="#1f77b4",
+                    alpha_pos=0.9, alpha_neg=0.45, view=None, zoom=1.0, pan=[0.0, 0.0])
 
 # Schlüsselwörter der Eingabezeile, die keine Methode sind (Job, Konvergenz, Gitter, Ausgabe, Hilfsbasen)
 _JOB_KW = re.compile(r"(?i)^(\w*opt\w*|\w*freq|\w*scf|\w*pno|\w*conv|irc|sp|nmr|engrad|moread|\w*print\w*|"
@@ -265,6 +267,69 @@ def nics_pairs(pts):
     return out
 
 
+def nics_is_path(P) -> bool:
+    """Bq einer Datei bilden einen Scan-Weg (auch lang, gerade oder geknickt): gleichmäßige Schritte ohne Sprung. Teile
+    eines Gitters springen am Zeilenende (Schritt ≫ Gitterabstand) und sind deshalb kein Weg."""
+    P = np.asarray(P, float)
+    if len(P) < 2:
+        return True
+    d = np.linalg.norm(np.diff(P, axis=0), axis=1)
+    med = float(np.median(d))
+    return med > 0 and float(d.max()) <= 2.0 * med
+
+
+def nics_grid(parts):
+    """Teilrechnungen eines 3D-NICS-Gitters (parse_nics je Datei) -> dict(els, xyz, data [nx, ny, nz] mit
+    NICS = −σ_iso, origin, step [Å]). Alle Teile müssen dieselbe Geometrie haben und zusammen ein vollständiges,
+    regelmäßiges Gitter ergeben; sonst ValueError (fehlende Teile werden nicht ergänzt)."""
+    xyz = np.asarray(parts[0]["xyz"], float)
+    for n in parts[1:]:
+        if n["els"] != parts[0]["els"] or np.abs(np.asarray(n["xyz"], float) - xyz).max() > 1e-3:
+            raise ValueError(T("dft_nics3d_geom"))
+    P = np.vstack([n["bq_xyz"] for n in parts])
+    V = -np.concatenate([n["iso"] for n in parts])
+    sv = np.linalg.svd(P - P.mean(axis=0), compute_uv=False) / np.sqrt(len(P))
+    if (sv > 0.01).sum() < 3:                            # alle Bq in einer Ebene: 2D-Karte, kein 3D-Gitter
+        raise ValueError(T("fixd_nics_plane", n=len(P)))
+    ax = [np.unique(np.round(P[:, k], 3)) for k in range(3)]
+    if any(len(a) < 3 for a in ax) or any(float(np.ptp(np.diff(a))) > 2e-3 for a in ax) \
+            or int(np.prod([len(a) for a in ax])) != len(P):
+        raise ValueError(T("dft_nics3d_irregular", n=len(P), full=int(np.prod([len(a) for a in ax]))))
+    step = np.array([float(np.diff(a)[0]) for a in ax])
+    idx = [np.rint((P[:, k] - ax[k][0]) / step[k]).astype(int) for k in range(3)]
+    data = np.full([len(a) for a in ax], np.nan)
+    data[idx[0], idx[1], idx[2]] = V
+    if np.isnan(data).any():                             # doppelte Punkte: das Gitter ist nicht vollständig
+        raise ValueError(T("dft_nics3d_irregular", n=len(P), full=data.size))
+    return dict(els=list(parts[0]["els"]), xyz=xyz, data=data, origin=np.array([a[0] for a in ax]), step=step)
+
+
+class _NicsMouse:
+    """Empfänger für `XrayMouse` der 3D-NICS-Abbildung: nur die Ansicht."""
+
+    def __init__(self, pages):
+        self.p = pages
+
+    def hover_atom(self, k):
+        pass
+
+    atom_clicked = atom_double_clicked = atoms_boxed = labels_moved = hover_atom
+
+    def _store(self, **kw):
+        self.p.nics.update(kw)
+        self.p.sync_nics()
+        self.p.changed()
+
+    def view_changed(self, R):
+        self._store(view=[round(float(v), 6) for v in np.asarray(R).ravel()])
+
+    def pan_changed(self, pan):
+        self._store(pan=[round(float(pan[0]), 4), round(float(pan[1]), 4)])
+
+    def zoom_changed(self, z):
+        self.p.nics["zoom"] = round(float(z), 4)             # gespeichert beim nächsten Schritt (Mausrad: viele Ereignisse)
+
+
 def nics_method(route):
     """„#p nmr=giao cam-b3lyp/6-311+g(2d,p)“ -> „GIAO-cam-b3lyp/6-311+g(2d,p)“ (Schreibweise wie in der Route)."""
     m = next((w for w in route.split() if "/" in w), "")
@@ -308,7 +373,7 @@ class DftPages:
     def _profile_group(self):
         """Seite „Energiediagramm“ wie die Tabs (Nutzerwunsch 2026-11-11): links die Spalte in Schritten
         Daten · Pfad · Darstellung, rechts das Diagramm, das jeder Änderung sofort folgt."""
-        from PySide6.QtWidgets import QCheckBox, QFrame, QScrollArea, QSplitter
+        from PySide6.QtWidgets import QCheckBox, QFrame, QScrollArea, QSplitter, QStackedWidget
         from elucida.app import style as STYLE
         g = QWidget()
         g.setProperty("rawpage", True)                    # eigene Seite neben „Abbildung“, keine Ergebniskarte darum
@@ -317,6 +382,21 @@ class DftPages:
         outer.setSpacing(0)
         left = QWidget()
         lv = QVBoxLayout(left)
+
+        # ---- Reaktionspfad: Auswahl „Aus Verbindungen übernehmen“ als Karte im Schritt Daten (kein Pop-up, keine
+        # Kopfzeile über beiden Spalten); verdrahtet und gezeigt vom PathWorkspace, sonst verborgen
+        card = self.import_card = QGroupBox(T("rp_import_calculations"))
+        f = STYLE.make_form(card)
+        self.import_list = STYLE.check_table((T("col_compound"), T("dft_prof_species")))
+        f.addRow(self.import_list)
+        row = QHBoxLayout()
+        self.btn_import_cancel, self.btn_import_ok = QPushButton(T("cancel")), QPushButton(T("rp_import_calculations"))
+        self.btn_import_cancel.clicked.connect(card.hide)
+        row.addWidget(self.btn_import_cancel)
+        row.addWidget(self.btn_import_ok)
+        f.addRow(row)
+        card.hide()
+        lv.addWidget(card)
 
         # ---- Schritt Daten: Rechnungen als Plateaus, Einzelpunkte, IRC
         card = QGroupBox(T("dft_prof_card_levels"))
@@ -345,15 +425,16 @@ class DftPages:
         self.tbl_sp.verticalHeader().setVisible(False)
         hh = self.tbl_sp.horizontalHeader()
         hh.moveSection(6, 1)
-        for c_ in range(1, 7):                            # alle Spalten nach Inhalt (nichts abgeschnitten), die letzte füllt
-            hh.setSectionResizeMode(c_, QHeaderView.ResizeToContents)
-        hh.setStretchLastSection(True)
+        # Breiten nach dem Füllen über STYLE.fit_columns (ui.md); Name und Beschriftung teilen sich den Rest und enden
+        # zu lang mit „…“ (linke Spalte nie mit Querrollen: echte Rechnungen haben lange Namen)
+        hh.setSectionResizeMode(6, QHeaderView.Stretch)
+        hh.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tbl_sp.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.tbl_sp.horizontalHeaderItem(4).setToolTip(T("dft_prof_sp"))
         STYLE.check_columns(self.tbl_sp)
         self.tbl_sp.setToolTip(T("dft_prof_tbl_tip"))
-        STYLE.empty_note(self.tbl_sp, T("tbl_empty_calcs"))
+        STYLE.empty_note(self.tbl_sp, T("p13p_tbl_empty_calcs"))
         self.tbl_sp.itemChanged.connect(self.species_edited)
-        self.tbl_sp.setMaximumHeight(170)
         f.addRow(self.tbl_sp)
         row = QHBoxLayout()
         self.btn_sp_add = QPushButton(T("dft_prof_sp_add_short"))      # kurz: die Spalte ist schmal, lang im Tooltip
@@ -419,9 +500,16 @@ class DftPages:
         self.btn_level_auto.clicked.connect(self.level_auto)
         self.btn_level_auto.setFixedWidth(STYLE.VALUE_W)   # einzelner Knopf: ganze Wertespalte
         f.addRow("", self.btn_level_auto)
-        self.irc_list = QListWidget()
+        # Auswahlliste als Tabelle mit Kopf (ui.md: nie QListWidget in den Spalten), so hoch wie ihre Zeilen (sync)
+        from PySide6.QtWidgets import QAbstractItemView as _AIV
+        self.irc_list = QTableWidget(0, 1)
+        self.irc_list.setHorizontalHeaderLabels([T("p13p_irc_curve")])
+        self.irc_list.verticalHeader().setVisible(False)
+        self.irc_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.irc_list.setSelectionBehavior(_AIV.SelectRows)
+        self.irc_list.setSelectionMode(_AIV.SingleSelection)
+        self.irc_list.setEditTriggers(_AIV.NoEditTriggers)
         self.irc_list.setToolTip(T("dft_irc_tip"))
-        self.irc_list.setMaximumHeight(110)
         f.addRow(self.irc_list)
         row = QHBoxLayout()
         self.btn_irc_add = QPushButton(T("dft_irc_add"))
@@ -465,11 +553,7 @@ class DftPages:
         self.tbl_edges.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_edges.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tbl_edges.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        hh = self.tbl_edges.horizontalHeader()
-        for c_ in (0, 1, 4):
-            hh.setSectionResizeMode(c_, QHeaderView.ResizeToContents)
-        for c_ in (2, 3):
-            hh.setSectionResizeMode(c_, QHeaderView.Stretch)
+        self.tbl_edges.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)   # Rest: Text; Breiten fit_columns
         self.tbl_edges.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.tbl_edges.itemSelectionChanged.connect(self.edge_selected)
         f.addRow(self.tbl_edges)
@@ -539,6 +623,7 @@ class DftPages:
         self.btn_labels_reset = QPushButton(T("dft_prof_labels_reset"))
         self.btn_labels_reset.setToolTip(T("dft_prof_labels_reset_tip"))
         self.btn_labels_reset.clicked.connect(self.reset_labels)
+        self.btn_labels_reset.setFixedWidth(STYLE.VALUE_W)  # einzelner Knopf: ganze Wertespalte wie „Plateau automatisch“
         lv.addWidget(card)
         # Beschriftung der Plateaus und der Achse: jede Eigenschaft einzeln (die Vorlage setzt nur diese Felder)
         card = self.card_labels = QGroupBox(T("dft_prof_card_labels"))
@@ -566,7 +651,7 @@ class DftPages:
         lv.addWidget(card)
         # Abschnitte: Balken unter dem Profil (z. B. zwei Reaktionswege nebeneinander), je Abschnitt Text, von–bis, Farbe
         card = self.card_sections = QGroupBox(T("dft_prof_card_sections"))
-        v_ = QVBoxLayout(card)
+        v_ = STYLE.make_form(card)
         row = QHBoxLayout()
         b_ = QPushButton(T("dft_prof_section_add"))
         b_.clicked.connect(self.section_add)
@@ -574,24 +659,21 @@ class DftPages:
         self.btn_section_rm = QPushButton(T("remove"))
         self.btn_section_rm.clicked.connect(self.section_remove)
         row.addWidget(self.btn_section_rm)
-        v_.addLayout(row)
+        v_.addRow(row)
         self.tbl_sections = QTableWidget(0, 4)
         self.tbl_sections.setHorizontalHeaderLabels([T("dft_prof_section_text"), T("dft_prof_section_from"),
                                                      T("dft_prof_section_to"), T("ov_color")])
         self.tbl_sections.verticalHeader().setVisible(False)
         self.tbl_sections.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_sections.setSelectionMode(QAbstractItemView.SingleSelection)
-        hh_ = self.tbl_sections.horizontalHeader()
-        hh_.setSectionResizeMode(0, QHeaderView.Stretch)
-        for c_ in (1, 2, 3):
-            hh_.setSectionResizeMode(c_, QHeaderView.ResizeToContents)
+        self.tbl_sections.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)   # Breiten: fit_columns
         self.tbl_sections.setToolTip(T("dft_prof_sections_tip"))
         self.tbl_sections.itemChanged.connect(self.section_edited)
         STYLE.empty_note(self.tbl_sections, T("dft_prof_sections_none"))
-        v_.addWidget(self.tbl_sections)
+        v_.addRow(self.tbl_sections)
         lv.addWidget(card)
         card = QGroupBox(T("dft_prof_card_size"))
-        f = STYLE.make_form(card)
+        f = self.form_size = STYLE.make_form(card)
         row = QHBoxLayout()
         self.profile_width, self.profile_height = QDoubleSpinBox(), QDoubleSpinBox()
         size = self.prof.get("size_cm") or [16., 11.]
@@ -616,7 +698,15 @@ class DftPages:
         ls.setFrameShape(QFrame.NoFrame)
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.btn_next = TABS.next_step_button()
-        bar = TABS.side_bar(self.btn_next, stretch_at=0)
+        # Fußleiste links wie in den Tabs: Zurücksetzen (Lage der Beschriftungen / Stil) … Weiter
+        self.btn_reset = QPushButton(STYLE.icon("reset"), T("btn_reset"))
+        m_ = QMenu(self.btn_reset)
+        m_.addAction(T("btn_reset_layout"), self.reset_labels).setToolTip(T("dft_prof_labels_reset_tip"))
+        m_.addAction(T("p13p_reset_style"), self.reset_style).setToolTip(T("p13p_reset_style_tip"))
+        m_.setToolTipsVisible(True)
+        self.btn_reset.setMenu(m_)
+        self.btn_reset.setToolTip(T("dft_prof_reset_tip"))     # nennt beide Einträge (Prüfer Spur P)
+        bar = TABS.side_bar(self.btn_reset, self.btn_next, stretch_at=1)
         col = QWidget()
         cv = QVBoxLayout(col)
         cv.setContentsMargins(0, 0, 0, 0)
@@ -630,14 +720,32 @@ class DftPages:
         self.canvas_host.setMinimumHeight(280)
         from elucida.tabs.profile_workspace import ProfileWorkspace
         self.workspace = ProfileWorkspace(self.canvas_host)
-        right = QWidget()
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(TABS.PAGE_INSET[0], 0, TABS.PAGE_INSET[2], TABS.PAGE_INSET[3])
-        rv.addWidget(self.workspace, 1)
+        self.form_size.addRow(T("rp_view_zoom"), self.workspace.zoom)   # nur Ansicht: links im Schritt Darstellung
+        # Ohne Rechnungen ein Platzhalter wie auf den Ergebnisseiten (nicht als Text in der Abbildung)
+        empty = QFrame(objectName="card")
+        ev_ = QVBoxLayout(empty)
+        self.lbl_prof_empty = STYLE.SciLabel("", T("dft_prof_empty"))
+        self.lbl_prof_empty.setWordWrap(True)
+        ev_.addWidget(self.lbl_prof_empty)
+        self.prof_stack = QStackedWidget()
+        self.prof_stack.addWidget(empty)
+        self.prof_stack.addWidget(self.workspace)
+        page = QWidget()                                  # Seite mit den Rändern der Tabs, oben auf Höhe der Schrittleiste
+        pv_ = QVBoxLayout(page)
+        pv_.setContentsMargins(TABS.PAGE_INSET[0], TABS.PAGE_TOP, TABS.PAGE_INSET[2], TABS.PAGE_INSET[3])
+        pv_.addWidget(self.prof_stack, 1)
         self.lbl_prof = QLabel("")
         self.lbl_prof.setWordWrap(True)
         self.lbl_prof.setStyleSheet(HINT_CSS)
-        rv.addWidget(self.lbl_prof)
+        pv_.addWidget(self.lbl_prof)
+        # Fußleiste rechts wie in den Tabs: Bildunterschrift (nur angezeigt; der Hauptknopf steht in der Werkzeugleiste)
+        self.lbl_cap_bar = TABS.CaptionLabel()
+        right = QWidget()
+        rv = QVBoxLayout(right)
+        rv.setContentsMargins(0, 0, 0, 0)
+        rv.setSpacing(0)
+        rv.addWidget(page, 1)
+        rv.addWidget(TABS.side_bar(self.lbl_cap_bar))
         split = QSplitter(Qt.Horizontal)
         split.addWidget(col)
         split.addWidget(right)
@@ -764,6 +872,7 @@ class DftPages:
                                                     lambda c, i=i: self._edge_set(i, "color", c), cell=True))
         # Höhe nach den Zeilen (3 bis 8, darüber scrollen): kein halb sichtbarer Verbinder
         t.setFixedHeight(t.horizontalHeader().sizeHint().height() + max(3, min(len(edges), 8)) * TABS.STYLE.CHECK_ROW_H + 2)
+        TABS.STYLE.fit_columns(t)
         if edges:
             t.selectRow(min(max(keep, 0), len(edges) - 1))
         for cmb in (self.cmb_edge_a, self.cmb_edge_b):
@@ -819,6 +928,32 @@ class DftPages:
             e.pop("label_dx", None)
             e.pop("label_dy", None)
         self.changed()
+
+    # bleibt beim „Stil auf Standard“: Lage/Breite/Farbe je Plateau und maßstäblich/schematisch (Unterschrift, Höhen),
+    # der Achsentitel ist Text des Nutzers (Prüfer Spur P); „Vorzeichen“ (`signed`) ändert gedruckte Werte (+18.9, ±0.0)
+    STYLE_KEEP = ("nodes", "mode", "axis_title", "signed")
+
+    def reset_style(self):
+        """Stil des gezeigten Bilds auf Standard: entfernt nur Schlüssel aus prof[layout] (nie mit Vorgaben füllen, sonst
+        gälten eingefügte Profile als veraltet); Werte, Verbinder, Abschnitte und Lage der Plateaus bleiben."""
+        lay = self.prof.get(self.layout_key()) or {}
+        for k in [k for k in lay if k not in self.STYLE_KEEP]:
+            del lay[k]
+        self.sync_style()
+        self.changed()
+        self.tab.main.statusBar().showMessage(T("xr_reset_display_done"), 6000)
+
+    def sync_caption_bar(self, F):
+        """Bildunterschrift der SI in der Fußleiste unter dem Diagramm, wie in den Tabs (nur Anzeige)."""
+        text = ""
+        if F is not None:
+            try:
+                name = self.tab.main.export_name() if hasattr(self.tab.main, "export_name") else "X"
+                cap = self.levels_caption(name) if self.prof["mode"] == "levels" else self.irc_caption(name)
+                text = html.unescape(re.sub(r"<[^>]+>", "", cap))
+            except Exception:
+                text = ""
+        self.lbl_cap_bar.set_full(f"{T('caption_bar')} · Figure Sn: {text}" if text else "")
 
     def sync_style(self):
         from elucida.tabs import diagram_layout as DL
@@ -876,6 +1011,7 @@ class DftPages:
             t.setCellWidget(i, 3, TABS.color_button(sec.get("color") or "black",
                                                     lambda c, i=i: self.section_set(i, "color", c), cell=True))
         t.setFixedHeight(t.horizontalHeader().sizeHint().height() + max(2, min(len(items), 6)) * TABS.STYLE.CHECK_ROW_H + 2)
+        TABS.STYLE.fit_columns(t)
         if items:
             t.selectRow(min(max(keep, 0), len(items) - 1))
         self.btn_section_rm.setEnabled(bool(items))
@@ -1039,7 +1175,7 @@ class DftPages:
             color = node.get("color") or self._level_auto_color(row, paths)
             b = self.btn_level_color
             b.setProperty("color", color)
-            b.setStyleSheet(f"{b.property('cellcss')}background-color: {color}; border: 1px solid #777;")
+            b.setStyleSheet(f"{b.property('cellcss')}background-color: {color}; border: 1px solid {TABS.STYLE.swatch_border()};")
         mr_calc = self._level_mr_calc(uid) if uid else None
         if mr_calc is not None:
             from elucida.formats.multireference import result_label
@@ -1061,8 +1197,8 @@ class DftPages:
         self.lbl_level.setText(T("rp_level_of_mr" if mr_calc is not None else "rp_level_of", name=row["label"]) if row
                                else T("rp_level_pick"))
         for w in (self.lbl_level, self.level_spins["x"], self.level_spins["width"], self.row_level_color,
-                  self.btn_level_auto):
-            self.form_levels.setRowVisible(w, lv)
+                  self.btn_level_auto):                     # Felder je Plateau erst, wenn es Plateaus gibt
+            self.form_levels.setRowVisible(w, lv and self.tbl_sp.rowCount() > 0)
         for w in (self.cmb_level_mr, self.cmb_level_root):              # nur bei einer Multireferenz-Rechnung
             self.form_levels.setRowVisible(w, lv and mr_calc is not None)
         self.form_levels.setRowVisible(self.level_spins["y"], lv and schematic)   # Höhe frei nur im schematischen Bild
@@ -1153,7 +1289,7 @@ class DftPages:
                     if c.get("energy") is not None:              # abgebrochener Einzelpunkt zählt nicht
                         out.append((p, c, self.tab.calc_geom(p)[0]))
                 except Exception as ex:                          # sonst fehlt die Spezies ohne Erklärung
-                    self.tab.add_note(f"{Path(p).name}: {ex}")
+                    self.tab.note_unreadable(p, ex)
                     continue
         return out
 
@@ -1219,6 +1355,15 @@ class DftPages:
 
     def levels_spec(self):
         """-> (Zeilen, Pfade, Hinweise) für das Stufenbild."""
+        removed = set(self.prof.get("removed_species", []))
+        # nur ein eingerichtetes Profil (Reaktionspfad, gespeicherte Stufen); im DFT-Tab einer Verbindung gibt es keins
+        bad = [e["file"] for e in self.tab.entries() if self.prof["species"] and e["uid"] not in removed
+               and (self.prof["species"].get(e["uid"]) or {}).get("on", True) and self.tab.calc_of(e) is None
+               and e["file"] in self.tab.__dict__.get("bad_files", {})]
+        if bad:                                # fehlende Stufe verschöbe Bezug und Werte: Profil nicht zeichnen
+            for p in bad:
+                self.tab.main.skip_part(T("dft_prof_unreadable"), p)
+            return [], [], [T("skip_item", f=", ".join(Path(p).name for p in bad), e=T("dft_prof_unreadable"))]
         items = [self.mr_item(it) for it in self.items()]
         rows, notes = profile_rows(items, self.prof["y"]) if items else ([], [])
         notes += [T("dft_prof_mr_el", name=r["label"], kind=KINDS[self.prof["y"]][0]) for r in rows if r.get("el_only")]
@@ -1488,7 +1633,7 @@ class DftPages:
             L = self.prof["irc"]
             L[i - 1], L[i] = L[i], L[i - 1]
             self.sync()
-            self.irc_list.setCurrentRow(i - 1)
+            self.irc_list.selectRow(i - 1)
             self.changed()
 
     def remove_irc(self):
@@ -1556,14 +1701,20 @@ class DftPages:
             if d.get('structure'):
                 menu.addAction(T('remove'), lambda checked=False, uid=e['uid']: self.remove_structure(uid))
             button.setMenu(menu)
-            self.tbl_sp.setCellWidget(i, 5, button)
-        self.tbl_sp.resizeColumnsToContents()
-        TABS.STYLE.check_columns(self.tbl_sp)
-        # nicht unter die Höhe ihrer Zeilen (bis 170) drücken lassen: sonst schrumpft sie mit den Plateau-Feldern darunter
-        self.tbl_sp.setMinimumHeight(min(170, self.tbl_sp.horizontalHeader().sizeHint().height()
-                                         + max(1, len(es)) * TABS.STYLE.CHECK_ROW_H + 2))
-        self.irc_list.clear()
-        self.irc_list.addItems([d.get("label") or Path(d["file"]).stem for d in p["irc"]])
+            if self.tbl_sp.isColumnHidden(5):               # Reaktionspfad mit Octet: Spalte verborgen, ihr Knopf ragte
+                self.tbl_sp.removeCellWidget(i, 5)          # sonst abgeschnitten in die Zeile
+                button.deleteLater()
+            else:
+                self.tbl_sp.setCellWidget(i, 5, button)
+        TABS.STYLE.fit_columns(self.tbl_sp)
+        # so hoch wie ihre Zeilen (2 bis 8, darüber scrollen) wie die Verbinder: kein leerer Streifen, keine halbe Zeile
+        self.tbl_sp.setFixedHeight(self.tbl_sp.horizontalHeader().sizeHint().height()
+                                   + max(2, min(len(es), 8)) * TABS.STYLE.CHECK_ROW_H + 2)
+        self.irc_list.setRowCount(len(p["irc"]))
+        for i, d in enumerate(p["irc"]):
+            self.irc_list.setItem(i, 0, QTableWidgetItem(d.get("label") or Path(d["file"]).stem))
+        self.irc_list.setFixedHeight(self.irc_list.horizontalHeader().sizeHint().height()
+                                     + max(2, min(len(p["irc"]), 6)) * TABS.STYLE.CHECK_ROW_H + 2)
         self.cmb_mode.setCurrentIndex(max(0, self.cmb_mode.findData(p["mode"])))
         self.cmb_y.setCurrentIndex(max(0, self.cmb_y.findData(p["y"])))
         self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(self.unit())))
@@ -1588,8 +1739,9 @@ class DftPages:
                 self.cmb_level_restore.addItem(e.get('name') or Path(e['file']).stem, e['uid'])
         self.btn_level_restore.setEnabled(bool(p.get("removed_species")))
         fl = self.form_levels                               # ganze Zeilen ein-/ausblenden (keine Lücken im Formular)
-        for w in (self.cmb_y, self.tbl_sp, self.row_sp, self.row_level):
+        for w in (self.cmb_y, self.tbl_sp, self.row_sp):
             fl.setRowVisible(w, lv)
+        fl.setRowVisible(self.row_level, lv and bool(es))   # ohne Rechnung nichts zu entfernen
         fl.setRowVisible(self.cmb_level_restore, lv and bool(self.cmb_level_restore.count()))
         for w in (self.irc_list, self.row_irc, self.cmb_irc_x, self.cmb_irc_ref):
             fl.setRowVisible(w, not lv)
@@ -1625,8 +1777,6 @@ class DftPages:
 
     def refresh(self):
         """Vorschau des gewählten Modus neu zeichnen (Exportgröße des Tabs, maßstabsgetreu verkleinert)."""
-        self.tbl_sp.setMaximumHeight(170)
-        self.irc_list.setMaximumHeight(110)
         dragger = getattr(self, "profile_dragger", None)
         if dragger:
             dragger.disconnect()
@@ -1639,9 +1789,10 @@ class DftPages:
             F, notes = self.build(self.canvas_fig)
         except Exception as ex:
             F, notes = None, [str(ex)]
+        self.prof_stack.setCurrentIndex(0 if F is None else 1)
+        self.sync_caption_bar(F)
         if F is None:
             self.canvas_fig.clear()
-            self.canvas_fig.text(0.5, 0.5, T("dft_prof_empty"), ha="center", va="center", color="gray")
         else:
             self.profile_dragger = TABS.TabDragger(F, lambda moved, F=F: self.images_moved(F, moved))
             if self.prof["mode"] == "levels" and getattr(F, "profile_rows", None):
@@ -1690,12 +1841,94 @@ class DftPages:
             self.changed()
 
     # -- NICS ----------------------------------------------------------------------------------------
+    def _nics_cards(self):
+        """Linke Spalte (Nutzerwunsch 2026-11-13: rechts steht nur das Ergebnis): Karte „NICS-Rechnungen“ im Schritt
+        Daten (Dateien als Tabelle, Methode der Geometrie) und Karte „NICS-Abbildung“ im Schritt Darstellung
+        (Scan oder 3D, Isowerte, Farben, Deckkraft; nur mit einem 3D-Gitter)."""
+        from PySide6.QtWidgets import QAbstractItemView
+        from elucida.app import style as STYLE
+        g = QGroupBox(T("dft_nics_card"))
+        f = STYLE.make_form(g)
+        row = QHBoxLayout()
+        b = STYLE.list_button(T("dft_nics_add_short"))        # Langform im Tooltip (Knopf wäre sonst abgeschnitten)
+        b.setToolTip(T("dft_nics_add"))
+        b.clicked.connect(self.add_nics)
+        self.btn_nics_rm = STYLE.list_button(T("remove"))
+        self.btn_nics_rm.clicked.connect(self.remove_nics)
+        row.addWidget(b)
+        row.addWidget(self.btn_nics_rm)
+        f.addRow(row)
+        self.tbl_nics_files = QTableWidget(0, 3)
+        self.tbl_nics_files.setHorizontalHeaderLabels([T("dft_nics_file"), "Bq", T("dft_nics_kind")])
+        self.tbl_nics_files.verticalHeader().setVisible(False)
+        self.tbl_nics_files.verticalHeader().setDefaultSectionSize(STYLE.CHECK_ROW_H)
+        self.tbl_nics_files.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_nics_files.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tbl_nics_files.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_nics_files.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tbl_nics_files.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        STYLE.empty_note(self.tbl_nics_files, T("dft_nics_start"))
+        f.addRow(self.tbl_nics_files)
+        self.ed_nics_geom = QLineEdit()
+        self.ed_nics_geom.setPlaceholderText(T("dft_nics_geom_ph"))
+        self.ed_nics_geom.setToolTip(T("dft_nics_geom_tip"))
+        self.ed_nics_geom.editingFinished.connect(self.nics_geom_changed)
+        f.addRow(T("dft_nics_geom"), self.ed_nics_geom)
+        self.nics_card = g
+
+        g = QGroupBox(T("dft_nics_display"))
+        f = STYLE.make_form(g)
+        self.cmb_nics_show = QComboBox()
+        self.cmb_nics_show.addItem(T("dft_nics3d"), "3d")
+        self.cmb_nics_show.addItem(T("dft_nics_scan"), "scan")
+        self.cmb_nics_show.currentIndexChanged.connect(self.nics3d_changed)
+        f.addRow(T("dft_nics_show"), self.cmb_nics_show)
+        self.lbl_nics_show = STYLE.HintLabel("")             # P2-B10: die Auswahl gilt nur für die Vorschau
+        self.lbl_nics_show.setWordWrap(True)
+        self.lbl_nics_show.setStyleSheet(STYLE.HINT_CSS)
+        f.addRow(self.lbl_nics_show)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.sp_nics_pos, self.sp_nics_neg = QDoubleSpinBox(), QDoubleSpinBox()
+        for sp, pre, tip in ((self.sp_nics_pos, "+", "dft_nics3d_pos_tip"), (self.sp_nics_neg, "\u2212", "dft_nics3d_neg_tip")):
+            sp.setRange(0.1, 500.0)
+            sp.setDecimals(1)
+            sp.setPrefix(pre)
+            sp.setSuffix(" ppm")
+            sp.setToolTip(T(tip))
+            sp.valueChanged.connect(self.nics3d_changed)
+            row.addWidget(sp)
+        f.addRow(T("dft_nics3d_iso"), row)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.btn_nics_pos = TABS.color_button(self.nics["color_pos"], lambda c: self.nics3d_color("color_pos", c))
+        self.btn_nics_neg = TABS.color_button(self.nics["color_neg"], lambda c: self.nics3d_color("color_neg", c))
+        self.btn_nics_pos.setToolTip(T("dft_nics3d_pos_tip"))
+        self.btn_nics_neg.setToolTip(T("dft_nics3d_neg_tip"))
+        row.addWidget(self.btn_nics_pos)
+        row.addWidget(self.btn_nics_neg)
+        row.addStretch(1)
+        f.addRow(T("dft_nics3d_colors"), row)
+        row = QHBoxLayout()                                # Deckkraft je Fläche, in derselben Reihenfolge wie die Isowerte
+        row.setSpacing(8)
+        self.sp_nics_alpha, self.sp_nics_alpha_neg = QDoubleSpinBox(), QDoubleSpinBox()
+        for sp, tip in ((self.sp_nics_alpha, "dft_nics3d_pos_tip"), (self.sp_nics_alpha_neg, "dft_nics3d_neg_tip")):
+            sp.setRange(0.05, 1.0)
+            sp.setSingleStep(0.05)
+            sp.setToolTip(T(tip))
+            sp.valueChanged.connect(self.nics3d_changed)
+            row.addWidget(sp)
+        f.addRow(T("dft_nics3d_alpha"), row)
+        self._nics_form = f
+        self.nics_display = g
+        self.nics_enabled = True                           # im Reaktionspfad aus: NICS gehört zur einzelnen Verbindung
+
     def _nics_group(self):
-        """Seite „NICS“ wie die übrigen Ergebnisseiten (Nutzerwunsch 2026-11-11): Aktionen oben rechts auf der Titelzeile,
-        ohne Dateien ein Platzhalter in der Mitte, sonst Angaben als Formular, Tabelle mit gleich breiten Spalten und
-        darunter der Scan (nur wenn es einen gibt)."""
+        """Seite „NICS“: nur das Ergebnis. Die Abbildung (Scan oder 3D-NICS) füllt die Seite, darunter die Tabelle der
+        Einzelpunkte, so hoch wie ihre Zeilen (ohne Einzelpunkte keine Tabelle); ohne Dateien ein Platzhalter."""
         from PySide6.QtWidgets import QStackedWidget
         from elucida.app import style as STYLE
+        self._nics_cards()
         g = QGroupBox(T("dft_nics"))
         v = QVBoxLayout(g)
         self.lbl_nics_none = STYLE.SciLabel("", T("dft_nics_start"))
@@ -1703,40 +1936,24 @@ class DftPages:
         content = QWidget()
         cv = QVBoxLayout(content)
         cv.setContentsMargins(0, 0, 0, 0)
-        f = STYLE.make_form()
-        self.nics_list = QListWidget()
-        self.nics_list.setMaximumHeight(90)
-        f.addRow(T("dft_nics_files"), self.nics_list)
-        self.ed_nics_geom = QLineEdit()
-        self.ed_nics_geom.setPlaceholderText(T("dft_nics_geom_ph"))
-        self.ed_nics_geom.setToolTip(T("dft_nics_geom_tip"))
-        self.ed_nics_geom.editingFinished.connect(self.nics_geom_changed)
-        f.addRow(T("dft_nics_geom"), self.ed_nics_geom)
-        cv.addLayout(f)
-        self.tbl_nics = QTableWidget(0, 6)
-        self.tbl_nics.setHorizontalHeaderLabels([T("dft_nics_file"), "Bq", "h [Å]", "NICS [ppm]", "NICSzz [ppm]",
-                                                 T("dft_nics_pair")])
-        self.tbl_nics.verticalHeader().setVisible(False)
-        self.tbl_nics.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)      # gleich breite Spalten, mittig
-        cv.addWidget(self.tbl_nics, 1)
         self.nics_fig = MplFigure(figsize=(6.3, 4.3), dpi=TABS.PREVIEW_DPI)
         self.nics_canvas = register_canvas(FigureCanvasQTAgg(self.nics_fig))
         self.nics_host = TABS.CanvasHost(self.nics_canvas, self.nics_fig, margin=0)
         self.nics_host.setMinimumHeight(280)
-        cv.addWidget(self.nics_host, 2)
+        cv.addWidget(self.nics_host, 1)
         self.lbl_nics = QLabel("")
         self.lbl_nics.setWordWrap(True)
         self.lbl_nics.setStyleSheet(HINT_CSS)
         cv.addWidget(self.lbl_nics)
+        self.tbl_nics = STYLE.FitGrid(0, 6)
+        self.tbl_nics.setHorizontalHeaderLabels([T("dft_nics_file"), "Bq", "h [Å]", "NICS [ppm]", "NICSzz [ppm]",
+                                                 T("dft_nics_pair")])
+        self.tbl_nics.verticalHeader().setVisible(False)
+        cv.addWidget(self.tbl_nics)
         self.nics_stack = QStackedWidget()
         self.nics_stack.addWidget(self.lbl_nics_none)
         self.nics_stack.addWidget(content)
         v.addWidget(self.nics_stack, 1)
-        b = QPushButton(STYLE.icon("add"), T("dft_nics_add"))
-        b.clicked.connect(self.add_nics)
-        self.btn_nics_rm = QPushButton(STYLE.icon("trash"), T("remove"))
-        self.btn_nics_rm.clicked.connect(self.remove_nics)
-        STYLE.card_actions(g, self.btn_nics_rm, b)
         return g
 
     def nics_data(self):
@@ -1748,16 +1965,87 @@ class DftPages:
             except Exception as ex:
                 notes.append(f"{Path(p).name}: {ex}")
                 continue
+            if len(n["bq_xyz"]) >= NICS_GRID_MIN and not nics_is_path(n["bq_xyz"]):   # Teil eines 3D-Gitters
+                out.append(dict(file=p, route=n["route"], n=n, pts=None, scan=False, grid=True))
+                continue
             pts = nics_points(n)
-            out.append(dict(file=p, route=n["route"], pts=pts, scan=len(pts["h"]) >= NICS_SCAN_MIN))
+            out.append(dict(file=p, route=n["route"], pts=pts, scan=len(pts["h"]) >= NICS_SCAN_MIN, grid=False))
         return out, notes
+
+    # -- 3D-NICS ---------------------------------------------------------------------------------------
+    def nics3d(self):
+        """Gitter aus allen geladenen Teilrechnungen -> (dict wie nics_grid + route, Hinweise) oder (None, Hinweise)."""
+        data, notes = self.nics_data()
+        parts = [d for d in data if d["grid"]]
+        if not parts:
+            return None, notes
+        try:
+            g = self.tab.cache(("nics3d",) + tuple(d["file"] for d in parts), lambda: nics_grid([d["n"] for d in parts]))
+        except ValueError as ex:
+            return None, notes + [str(ex)]
+        return dict(g, route=parts[0]["route"]), notes
+
+    def build_nics3d(self, fig, interactive=True):
+        """Molekül als Kugel-Stab-Modell mit zwei Isoflächen der NICS-Werte: +iso_pos (entschirmt) und −iso_neg
+        (abgeschirmt). Eine Fläche je Vorzeichen über ein stückweise skaliertes Feld (Wert/Isowert, Isofläche bei ±1)."""
+        from matplotlib.colors import to_rgb
+        from elucida.core import orbitals as ORB
+        from elucida.tabs import dft as DFT
+        from elucida.tabs import xray as XRAY
+        g, notes = self.nics3d()
+        if g is None:
+            return None, notes
+        st, t = self.nics, self.tab
+        files = tuple(self.nics["files"])
+        v = g["data"]
+        vol = t.cache(("nics3dvol", files, st["iso_pos"], st["iso_neg"]), lambda: ORB.Volume(
+            np.where(v >= 0, v / st["iso_pos"], v / st["iso_neg"]).astype(np.float32), g["origin"], np.diag(g["step"])))
+        els, xyz, n = g["els"], g["xyz"], len(g["els"])
+        mol = DFT.XyzMolecule(els, xyz, t.cache(("nics3dbonds", files), lambda: DFT.bonds_of(els, xyz)), [""] * n)
+        cfg = t.base_cfg()
+        TABS.core.setup_fonts(TABS.plt, cfg)
+        o = dict(prob=50, show_h=True, labels=False, h_labels=False, colors={}, bond_w=0.08, hidden_frags=[],
+                 style="depth", hidden_atoms=[], label_on={}, wire=set(), wire_h=False, label_mode="all", hide_kinds=[],
+                 label_size=0.0, label_color="black", label_colors={}, cartoon_color=False, h_radius=0.55 * 0.25,
+                 bg="white", ball_scale=1.0, rod_scale=1.0, elem_labels=False,
+                 orbital=dict(vol=vol, iso=1.0, plus=to_rgb(st["color_pos"]), minus=to_rgb(st["color_neg"]),
+                              alpha=(min(1.0, float(st["alpha_pos"])), min(1.0, float(st["alpha_neg"])))))
+        R = (np.array(st["view"], float).reshape(3, 3) if st["view"] and len(st["view"]) == 9
+             else XRAY.default_view(mol, use=list(range(n))))
+        return XRAY.XrayFigure(cfg, mol, R, o, {}, fig, zoom=st["zoom"], pan=st["pan"]), notes
+
+    def nics3d_caption(self, name):
+        g, _ = self.nics3d()
+        if g is None:
+            return ""
+        st = self.nics
+        lev, geom = nics_method(g["route"]), st["geom"].strip()
+        lev = f"{lev}//{geom}" if lev and geom else lev
+        return (f"3D NICS map of <b>{html.escape(name)}</b>: isosurfaces of NICS = +{st['iso_pos']:g} ppm "
+                f"({TABS.color_name(st['color_pos'])}, deshielded) and \u2212{st['iso_neg']:g} ppm "
+                f"({TABS.color_name(st['color_neg'])}, shielded) on a grid of {float(g['step'][0]):g} Å"
+                + (f", calculated at the {html.escape(lev)} level of theory." if lev else "."))
+
+    def nics3d_changed(self, *_):
+        if self._loading:
+            return
+        self.nics.update(show=self.cmb_nics_show.currentData(), iso_pos=self.sp_nics_pos.value(),
+                         iso_neg=self.sp_nics_neg.value(), alpha_pos=self.sp_nics_alpha.value(),
+                         alpha_neg=self.sp_nics_alpha_neg.value())
+        self.sync_nics()
+        self.changed()
+
+    def nics3d_color(self, key, c):
+        self.nics[key] = c
+        self.sync_nics()
+        self.changed()
 
     def nics_rows(self):
         """Tabelle: Einzelpunkte je Bq + Mittel ober-/unterhalb („NICS(1.0)“), -> [(Datei, Bq, h, NICS, zz, Paar)]."""
         rows = []
         data, _ = self.nics_data()
         for d in data:
-            if d["scan"]:
+            if d["scan"] or d["grid"]:
                 continue
             pts = d["pts"]
             pair_of = {}
@@ -1768,8 +2056,9 @@ class DftPages:
                 if i in pair_of and pair_of[i][0] == i:
                     a, b = pair_of[i]
                     h = (abs(pts["h"][a]) + abs(pts["h"][b])) / 2
-                    pr = (f"NICS({h:.1f}) = {(pts['nics'][a] + pts['nics'][b]) / 2:.1f}, "
-                          f"NICSzz({h:.1f}) = {(pts['zz'][a] + pts['zz'][b]) / 2:.1f}").replace("-", "−")
+                    nf = lambda v: TABS.core.fmt_num(v, 1)                      # noqa: E731  nie „−0.0“
+                    pr = (f"NICS({h:.1f}) = {nf((pts['nics'][a] + pts['nics'][b]) / 2)}, "
+                          f"NICSzz({h:.1f}) = {nf((pts['zz'][a] + pts['zz'][b]) / 2)}")
                 rows.append((Path(d["file"]).name, i + 1, pts["h"][i], pts["nics"][i], pts["zz"][i], pr))
         return rows
 
@@ -1854,7 +2143,7 @@ class DftPages:
         self.changed()
 
     def remove_nics(self):
-        i = self.nics_list.currentRow()
+        i = self.tbl_nics_files.currentRow()
         if 0 <= i < len(self.nics["files"]):
             del self.nics["files"][i]
             self.sync_nics()
@@ -1867,25 +2156,65 @@ class DftPages:
 
     def sync_nics(self):
         self._loading = True
-        self.nics_list.clear()
-        self.nics_list.addItems([Path(p).name for p in self.nics["files"]])
+        from elucida.app import style as STYLE
+        data = self.nics_data()[0]
+        kinds = {d["file"]: (T("dft_nics3d") if d["grid"] else T("dft_nics_scan") if d["scan"] else T("dft_nics_points"),
+                             len(d["n"]["bq_xyz"]) if d["grid"] else len(d["pts"]["h"])) for d in data}
+        tf = self.tbl_nics_files
+        row_ = tf.currentRow()
+        tf.setRowCount(len(self.nics["files"]))
+        for i, p in enumerate(self.nics["files"]):
+            kind, nbq = kinds.get(p, ("–", "–"))
+            for j, txt in enumerate((Path(p).name, str(nbq), kind)):
+                tf.setItem(i, j, QTableWidgetItem(txt))
+                tf.item(i, j).setToolTip(Path(p).name)
+        if 0 <= row_ < tf.rowCount():
+            tf.selectRow(row_)
+        tf.setFixedHeight(tf.horizontalHeader().sizeHint().height() + max(2, min(8, tf.rowCount())) * STYLE.CHECK_ROW_H + 2)
+        STYLE.fit_columns(tf)
         self.ed_nics_geom.setText(self.nics["geom"])
+        st = self.nics
+        self.cmb_nics_show.setCurrentIndex(max(0, self.cmb_nics_show.findData(st["show"])))
+        self.sp_nics_pos.setValue(st["iso_pos"])
+        self.sp_nics_neg.setValue(st["iso_neg"])
+        self.sp_nics_alpha.setValue(st["alpha_pos"])
+        self.sp_nics_alpha_neg.setValue(st["alpha_neg"])
         rows = self.nics_rows()
         self.tbl_nics.setRowCount(len(rows))
         for i, r in enumerate(rows):
-            for j, v in enumerate((r[0], str(r[1]), f"{r[2]:.2f}", f"{r[3]:.1f}", f"{r[4]:.1f}", r[5])):
-                it = QTableWidgetItem(v.replace("-", "−") if j in (2, 3, 4) else v)
+            for j, v in enumerate((r[0], str(r[1]), TABS.core.fmt_num(r[2], 2), TABS.core.fmt_num(r[3], 1),
+                                   TABS.core.fmt_num(r[4], 1), r[5])):
+                it = QTableWidgetItem(v)
                 it.setFlags(Qt.ItemIsEnabled)
                 self.tbl_nics.setItem(i, j, it)
+        self.tbl_nics.setMaximumHeight(self.tbl_nics.horizontalHeader().sizeHint().height()
+                                       + sum(self.tbl_nics.rowHeight(i) for i in range(len(rows))) + 4)
+        self.tbl_nics.fit()
         self._loading = False
+        mouse = getattr(self, "nics_mouse", None)
+        if mouse:
+            mouse.disconnect()
+            self.nics_mouse = None
+        grid, scan = any(d["grid"] for d in data), any(d["scan"] for d in data)
+        self._nics_form.setRowVisible(self.cmb_nics_show, grid and scan)
+        self.lbl_nics_show.setText(T("dft_nics_show_hint") if grid and scan else "")
+        self.nics_card.setVisible(self.nics_enabled)
+        self.nics_display.setVisible(self.nics_enabled and grid)   # Scan allein hat nichts einzustellen
+        self.tbl_nics.setVisible(bool(rows))
         try:
-            F, notes = self.build_nics(self.nics_fig)
+            if grid and (st["show"] == "3d" or not scan):
+                F, notes = self.build_nics3d(self.nics_fig)
+                if F is not None:
+                    from elucida.tabs import xray as XRAY
+                    self.nics_mouse = XRAY.XrayMouse(F, _NicsMouse(self))
+            else:
+                F, notes = self.build_nics(self.nics_fig)
         except Exception as ex:
             F, notes = None, [str(ex)]
         if F is None:
             self.nics_fig.clear()
             self.nics_fig.text(0.5, 0.5, T("dft_nics_empty"), ha="center", va="center", color="gray")
-        self.nics_host.setVisible(F is not None)              # Scan nur, wenn es einen gibt (sonst gehört der Platz der Tabelle)
+        self.nics_host.setVisible(F is not None or not rows)  # ohne Abbildung gehört der Platz der Tabelle
         self.nics_stack.setCurrentIndex(1 if self.nics["files"] else 0)
         self.btn_nics_rm.setEnabled(bool(self.nics["files"]))
         self.lbl_nics.setText("\n".join("⚠ " + n for n in notes))
@@ -1895,13 +2224,27 @@ class DftPages:
     def figures(self):
         """[(Kürzel, Bauer, Unterschrift)] der vorhandenen Abbildungen: profile, IRC, NICS."""
         out = []
-        if self.levels_spec()[0]:
+        # Profil gehört in den Reaktionspfad (dort ist NICS aus); in einer Verbindung nur ein gespeichertes (alte Projekte),
+        # nie eins, das nur aus den Rechnungen entstünde (Reiter dort entfernt, Werte gemischter Moleküle sinnlos)
+        path = not getattr(self, "nics_enabled", True)
+        if (path or self.has_profile()) and self.levels_spec()[0]:
             out.append(("profile", lambda fig: self.build(fig, "levels")[0], self.levels_caption))
         if self.prof["irc"]:
             out.append(("IRC", lambda fig: self.build(fig, "irc")[0], self.irc_caption))
         if any(d["scan"] for d in self.nics_data()[0]):
             out.append(("NICS", lambda fig: self.build_nics(fig)[0], self.nics_caption))
-        return out
+        if self.nics3d()[0] is not None:
+            out.append(("NICS3D", lambda fig: self.build_nics3d(fig, False)[0], self.nics3d_caption))
+        acid = getattr(self.tab, "acid_page", None)          # Reiter ACID (eigenes Modul): Export und SI wie NICS
+        return out + (acid.figures() if acid is not None else [])
+
+    def nics_copy(self, fig):
+        """Abbildung kopieren: was die Seite NICS zeigt (Gitter oder Scan, wie `sync_nics`)."""
+        data = self.nics_data()[0]
+        grid, scan = any(d["grid"] for d in data), any(d["scan"] for d in data)
+        if grid and (self.nics["show"] == "3d" or not scan):
+            return self.build_nics3d(fig, False)[0]
+        return self.build_nics(fig)[0] if scan else None
 
     def export_to(self, base: Path):
         """<base>_profile/_IRC/_NICS in den Formaten des Tabs; NICS-Einzelpunkte als CSV."""
@@ -1913,9 +2256,16 @@ class DftPages:
             F = build(fig)
             if F is not None:
                 out = base.with_name(f"{base.name}_{key}")
-                F.cfg["output"] = str(out.with_suffix("." + F.cfg["_main_fmt"]))
+                F.cfg["output"] = str(PRJ.with_ext(out, "." + F.cfg["_main_fmt"]))
                 F.export()                               # core.Figure.export liefert keine Liste
-                files += [out.with_suffix("." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]]
+                files += [PRJ.with_ext(out, "." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]]
+        g, _ = self.nics3d()
+        if g is not None:                                 # Gitter als Cube (NICS in ppm), z. B. für andere Programme
+            from elucida.core import orbitals as ORB
+            p = base.with_name(base.name + "_NICS3D.cube")
+            ORB.write_cube(p, g["els"], g["xyz"], g["origin"], np.diag(g["step"]), g["data"].astype(np.float32),
+                           title="3D NICS grid", comment="NICS = -sigma_iso [ppm]")
+            files.append(p)
         rows = self.nics_rows()
         if rows:
             p = base.with_name(base.name + "_NICS.csv")

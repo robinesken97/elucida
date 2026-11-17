@@ -14,8 +14,8 @@ import uuid
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (QDialog, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QDialogButtonBox, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton,
-                               QGroupBox, QTabWidget, QWidget, QLineEdit, QComboBox, QGridLayout, QMenu)
+                               QDialogButtonBox, QTableWidget, QTableWidgetItem, QAbstractItemView, QToolButton,
+                               QGroupBox, QTabWidget, QWidget, QLineEdit, QComboBox, QGridLayout, QMenu, QHeaderView)
 from elucida.app import project as PRJ, publication as PUB, style as STYLE
 
 
@@ -74,7 +74,7 @@ class PathHost(QMainWindow):
         self.state.setdefault('dft', {})
         self.extra_cache, self.compound, self.xray_tab = {}, {}, None
         self.settings, self.log_signal = main.settings, main.log_signal
-        self._format = deepcopy(main.text_format('dft'))
+        self._format = deepcopy(main.text_format('dft'))     # zuletzt gezeichnet (PathWorkspace.showEvent)
         self.restoring, self.tab = True, None
         self.history, self.cursor = [], -1
         self.timer = QTimer(self, singleShot=True, interval=350)
@@ -83,18 +83,25 @@ class PathHost(QMainWindow):
         self.tab = DFTTab(self, self.state['dft'])
         self.tab.setParent(self)
         self.tab.sync_widgets()
+        # erst nach dem Aufbau: Vorgaben, die der Tab ergänzt, sind keine Änderung (Schließen schreibt dann nichts)
+        self._saved = deepcopy(self.state)
         self.restoring = False
         if not readonly:
             self.push_undo()
 
     def ensure_project(self): return True
-    def text_format(self, _key): return deepcopy(self._format)
+    def text_format(self, _key): return deepcopy(self.owner.text_format('dft'))   # live wie CompareHost (R13)
     def canvas_is_dark(self): return self.owner.canvas_is_dark()
     def import_file(self, path, sub): return PRJ.import_file(self.project_dir, path, sub)
     def export_name(self): return self.item['name']
-    def show_hover(self, text): self.statusBar().showMessage(text)
+    # Meldungen des DFT-Teils als Einblendung im Hauptfenster (wie CompareHost); PathHost selbst wird nie gezeigt
+    def statusBar(self): return self.owner.statusBar()
+    def show_hover(self, text): self.owner.show_hover(text)
     def error(self, text): self.owner.error(text)
     def exported(self, dirs): self.owner.exported(dirs)
+    def skip_part(self, *a, **kw): self.owner.skip_part(*a, **kw)
+    def collecting_skips(self): return self.owner.collecting_skips()
+    def skips_text(self): return self.owner.skips_text()
     def place_exports(self, files): return PRJ.place_exports(self.project_dir, files)
     def tab_key_of(self, tab): return 'dft' if tab is self.tab else None
     def replace_tab(self, _key): self.rebuild_tabs()
@@ -127,9 +134,10 @@ class PathHost(QMainWindow):
         self.save()
 
     def save(self):
-        if self.readonly: return True
+        if self.readonly or self.state == self._saved: return True
         try:
             PRJ.save(self.project_dir, self.state)
+            self._saved = deepcopy(self.state)
             return True
         except Exception as ex:
             self.error(str(ex))
@@ -169,21 +177,38 @@ class PathWorkspace(QWidget):
             if icon: b.setIcon(STYLE.icon(icon))
             else: b.setText('☰')
             row.addWidget(b)
-        b = QPushButton(T('rp_data'), objectName='barBtn')
+        b = self.btn_data = QPushButton(T('rp_data'), objectName='barBtn')
         b.setToolTip(T('rp_saved_automatically_in_the_project_imports_are_independent_copies'))
         menu = QMenu(b)
-        menu.addAction(T('rp_import_from_compounds'), self.from_compounds)
+        menu.addAction(T('p13p_import_from_compounds'), self.from_compounds)   # nennt das Ziel (Seite Rechendaten)
         menu.addAction(T('rp_load_calculation_files'), self.host.tab.add_xyz)
         b.setMenu(menu); row.addWidget(b)
-        b = QPushButton(STYLE.icon('export', '#FFFFFF'), T('rp_export_profile'), objectName='barBtn'); b.clicked.connect(self.export)
+        b = self.btn_export = QPushButton(STYLE.icon('export', '#FFFFFF'), T('rp_export_profile'), objectName='barBtn')
+        b.clicked.connect(self.export)
         b.setProperty('accent', True)
         row.addWidget(b)
         # hinter Design- und Canvas-Knopf: der blaue Hauptknopf steht wie bei einer Verbindung ganz rechts
         self.bar_action = main.toolbar.insertWidget(main.act_si, corner)
         self.profile = self.host.tab.pages.prof_group
+        # Ein Hauptknopf je Ansicht (ui.md): blau ist „Profil exportieren“ oben; „Exportieren“ des DFT-Teils bleibt grau,
+        # auch wenn dessen Anleitung zur Abbildung wechselt (EmptyGuide färbt sonst den Knopf, den es kennt)
+        guide_ = getattr(self.host.tab, 'empty_guide', None)
+        if guide_ is not None:
+            guide_.export = None
+        STYLE.set_accent(self.host.tab.btn_export, False, 'export')
         # NICS und Multireferenz beschreiben eine einzelne Verbindung, keinen Pfad (Nutzerwunsch 2026-11-11): hier nicht
         rt_ = self.host.tab.right_tabs
-        for page_ in (self.host.tab.pages.nics_group, getattr(self.host.tab, "mr_page", None)):
+        self.host.tab.pages.nics_enabled = False               # auch die NICS-Karten der linken Spalte
+        self.host.tab.pages.sync_nics()
+        self.host.tab.acid_page.enabled = False
+        self.host.tab.acid_page.sync()
+        self.host.tab.nbo.enabled = False                      # NBO ebenso (gehört zur einzelnen Verbindung)
+        self.host.tab.nbo.sync()
+        homa_ = getattr(self.host.tab, "homa", None)          # HOMA ebenso (Ringe einer Verbindung)
+        if homa_ is not None:
+            homa_.card.hide()
+        for page_ in (self.host.tab.pages.nics_group, self.host.tab.acid_page.group, getattr(self.host.tab, "mr_page", None),
+                      homa_.page if homa_ is not None else None, self.host.tab.nbo.page):
             i_ = next((k for k in range(rt_.count()) if page_ is not None
                        and (rt_.widget(k) is page_ or rt_.widget(k).isAncestorOf(page_))), -1)
             if i_ >= 0:
@@ -198,32 +223,11 @@ class PathWorkspace(QWidget):
         if right and right.indexOf(wrapper) >= 0: right.removeTab(right.indexOf(wrapper))
         else: wrapper = self.profile
         self.calc_page = wrapper
-        # Kopf wie die Abschnitte der Projektseite: Titel, Erklärung, Aktionen rechts; darunter die Auswahl (kein Pop-up)
-        head = QHBoxLayout(); head.setSpacing(STYLE.FORM_GAP)
-        head.setContentsMargins(STYLE.CARD_PAD, 0, 0, 0)     # Titel über dem Karteninhalt
-        head.addWidget(QLabel(f"<b>{T('rp_calculation_data')}</b>", objectName='recentHead'))
-        sub = QLabel(T('rp_calculation_data_sub')); sub.setProperty('formlabel', True); head.addWidget(sub)
-        head.addStretch(1)
-        for key, fn in (('rp_import_from_compounds', self.from_compounds), ('rp_load_calculation_files', self.host.tab.add_xyz)):
-            b = QPushButton(T(key)); b.clicked.connect(fn); head.addWidget(b)
-        self.import_panel = QGroupBox(T('rp_import_calculations'))
-        iv = QVBoxLayout(self.import_panel)
-        self.import_list = STYLE.check_table((T('col_compound'), T('dft_prof_species')))
-        iv.addWidget(self.import_list)
-        buttons = QHBoxLayout(); buttons.addStretch(1)
-        for key, fn in (('cancel', self.import_panel.hide), ('rp_import_calculations', self.import_selected)):
-            b = QPushButton(T(key)); b.clicked.connect(fn); buttons.addWidget(b)
-        iv.addLayout(buttons)
-        self.import_panel.hide()
-        page = self.profile.parentWidget().layout() if wrapper is not self.profile else self.profile.layout()
-        top = QWidget()                                      # Kopf und Auswahl mit dem Seitenrand (die Seite selbst hat keinen)
-        tv = QVBoxLayout(top); tv.setContentsMargins(0, 0, TABS.PAGE_INSET[2] if wrapper is self.profile else 0, 0)
-        tv.setSpacing(STYLE.FORM_GAP)
-        tv.addLayout(head); tv.addWidget(self.import_panel)
-        from PySide6.QtWidgets import QSizePolicy
-        top.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)     # nimmt nur seine Höhe: der Rest gehört der Seite
-        page.insertWidget(0, top)
-        page.setSpacing(STYLE.FORM_GAP)
+        # Auswahl „Aus Verbindungen übernehmen“: Karte im Schritt Daten der linken Spalte (kein Pop-up, keine Kopfzeile
+        # über beiden Spalten, die die Schritte versetzte); geladen wird über „Daten ▾“ in der Werkzeugleiste
+        pg_ = self.host.tab.pages
+        self.import_panel, self.import_list = pg_.import_card, pg_.import_list
+        pg_.btn_import_ok.clicked.connect(self.import_selected)
         if elucida.octet_enabled():
             from elucida.app.path_composition import CompositionEditor
             self.composition = CompositionEditor(self.host, self)
@@ -231,8 +235,42 @@ class PathWorkspace(QWidget):
             # All drawing belongs to the common canvas, not nested popup editors.
             pg = self.host.tab.pages
             pg.btn_images.hide(); pg.btn_workspace.hide(); pg.tbl_sp.setColumnHidden(5, True)
+            for r_ in range(pg.tbl_sp.rowCount()):            # Strukturknöpfe der verborgenen Spalte ragten sonst herein
+                pg.tbl_sp.removeCellWidget(r_, 5)
+            STYLE.fit_columns(pg.tbl_sp)
         self.tabs.addTab(self.calc_page, T('rp_calculation_data'))
-        self.tabs.addTab(self.host.tab, T('rp_3d_orbitals'))
+        # Eine Reiterzeile (ui.md): die Seiten des DFT-Teils (Abbildung, Ladungen, Energietabelle, SI-Text) stehen als
+        # Reiter in der Zeile des Pfads; der DFT-Teil (Spalte + Seite) wandert in den gewählten Reiter (_place_3d), seine
+        # eigene Zeile ist verborgen. Leere Seiten verschwinden in beiden Zeilen gleich (set_empty gespiegelt).
+        rt_.tabBar().hide()
+        rt_.more.hide()
+        rt_.fit = lambda *a: None   # shortcut: verborgene Zeile ohne „Mehr ▾“; braucht base.py einen Schalter, dorthin
+        self.d3 = []
+        for k_ in range(rt_.count()):
+            holder = QWidget()
+            QVBoxLayout(holder).setContentsMargins(0, 0, 0, 0)
+            self.tabs.addTab(holder, T('rp_3d_orbitals') if k_ == 0 else rt_.tabText(k_))
+            self.d3.append(holder)
+        self.d3[0].layout().addWidget(self.host.tab)
+        set_empty_ = rt_.set_empty
+
+        def mirror(widget, empty):
+            set_empty_(widget, empty)
+            k_ = rt_.indexOf(widget)
+            if 0 <= k_ < len(self.d3):
+                self.tabs.set_empty(self.d3[k_], empty)
+        rt_.set_empty = mirror
+        for x_ in list(rt_._empty):
+            mirror(x_, True)
+        # Seiten ohne Zeichnen schon jetzt füllen (sonst erschien „Ladungen“ erst nach dem ersten Besuch von 3D / Orbitale)
+        self.host.tab.update_si()
+        self.host.tab.sync_result_tabs()
+        rt_.currentChanged.connect(self._follow_3d)
+        old_kpi = rt_.cornerWidget()                         # Kacheln („Eingabe 4/4“) in der Zeile des Pfads
+        if old_kpi is not None:
+            old_kpi.hide()
+            old_kpi.setMaximumWidth(0)
+        self.host.tab.kpi_box = TABS.kpi_corner(self.tabs)
         self.tabs.currentChanged.connect(self.tab_changed)
         self.host.changed.connect(self.tab_changed)
         v.addWidget(self.tabs, 0, 0)
@@ -242,6 +280,17 @@ class PathWorkspace(QWidget):
             self.composition.tool_row.layout().setContentsMargins(0, 0, TABS.PAGE_INSET[2], 0)
             v.addWidget(self.composition.tool_row, 0, 0, Qt.AlignTop | Qt.AlignRight)
             self.composition.tool_row.raise_()
+        self.host.tab.kpi_box.setVisible(self.on_3d())
+        self.sync_main_button()
+
+    def showEvent(self, ev):
+        """Format des Fensters inzwischen anders (Verbindung geöffnet und wieder geschlossen, Neuaufbau): neu zeichnen."""
+        super().showEvent(ev)
+        fmt = self.main.text_format('dft')
+        if not self._disposed and fmt != self.host._format:
+            self.host._format = deepcopy(fmt)
+            self.host.rebuild_tabs()
+            self.tab_changed()                                 # offene Rechendaten ziehen nach
 
     def undo(self, delta):
         if self.composition and self.composition.view_editor: return
@@ -264,8 +313,9 @@ class PathWorkspace(QWidget):
         for name, e in candidates:
             STYLE.check_row(self.import_list, (name, e), (name, e.get('name') or Path(e['file']).stem), False)
         STYLE.fit_check_table(self.import_list)
-        self.tabs.setCurrentWidget(self.calc_page)
+        self.tabs.setCurrentWidget(self.calc_page)          # der Menüeintrag nennt die Seite (Rechendaten)
         self.import_panel.show()
+        self.host.tab.pages.steps.reveal(self.import_panel)
 
     def import_selected(self):
         dft = self.host.state['dft']
@@ -282,28 +332,73 @@ class PathWorkspace(QWidget):
         self.host.tab.sync_widgets(); self.host.push_undo()
         self.import_panel.hide(); self.tab_changed()
 
+    def _place_3d(self):
+        """Der DFT-Teil steht im gewählten Reiter seiner Seiten; die Seite selbst wählt seine (verborgene) Zeile."""
+        cur = self.tabs.currentWidget()
+        k = next((i for i, h in enumerate(self.d3) if h is cur), -1)
+        if k < 0:
+            return
+        tab = self.host.tab
+        if tab.parentWidget() is not cur:
+            old = tab.parentWidget()
+            if old is not None and old.layout() is not None:
+                old.layout().removeWidget(tab)
+            cur.layout().addWidget(tab)
+            tab.show()
+        if tab.right_tabs.currentIndex() != k:
+            tab.right_tabs.setCurrentIndex(k)
+
+    def _follow_3d(self, k):
+        """Wählt der DFT-Teil selbst eine Seite (wie bisher im Tab), zeigt die Pfadzeile denselben Reiter."""
+        if self.on_3d() and 0 <= k < len(self.d3) and self.tabs.currentWidget() is not self.d3[k]:
+            self.tabs.setCurrentWidget(self.d3[k])
+
     def tab_changed(self, *_):
+        self._place_3d()
+        self.host.tab.kpi_box.setVisible(self.on_3d())       # Kacheln des DFT-Teils nur auf seinen Seiten
         if self.composition: self.composition.refresh_sources()
         if self.composition: self.composition.tool_row.setVisible(self.tabs.currentWidget() is self.composition)
         if self.composition and self.composition._auto_pending and self.tabs.currentWidget() is self.composition:
             self.composition._auto_timer.start()             # inzwischen Rechendaten geladen: Profil einsetzen
         if self.tabs.currentWidget() is self.calc_page: self.host.tab.pages.refresh()
+        self.sync_main_button()
         self.main._update_undo_actions()
 
+    def sync_main_button(self):
+        """Ein Hauptknopf je Ansicht (ui.md): mit Rechnungen „Profil exportieren“; ohne ist nichts zu exportieren, dann
+        der erste Schritt – auf 3D / Orbitale der Knopf der Anleitung, sonst „Daten ▾“."""
+        from shiboken6 import isValid
+        if self._disposed or not isValid(self.btn_export):   # Signale nach dem Schließen (Leiste schon gelöscht)
+            return
+        has_data = bool(self.host.tab.entries() or self.host.tab.pages.prof.get('irc'))
+        guide = self.tabs.currentWidget() is self.d3[0] and getattr(self.host.tab, 'empty_guide', None) is not None
+        for b, on in ((self.btn_export, has_data), (self.btn_data, not has_data and not guide)):
+            if bool(b.property('accent')) != on:
+                STYLE.set_accent(b, on, 'export' if b is self.btn_export else None)
+        gb = getattr(getattr(self.host.tab, 'empty_guide', None), 'btn', None)   # nur IRC: Anleitung auf 3D, aber Daten da
+        if gb is not None and bool(gb.property('accent')) == has_data:
+            STYLE.set_accent(gb, not has_data, 'open')
+
+    def on_3d(self):
+        """Zeigt die Reiterzeile gerade eine Seite des DFT-Teils (3D / Orbitale und seine Ergebnisseiten)?"""
+        return any(self.tabs.currentWidget() is h for h in self.d3)
+
     def calculations(self):
-        self.tabs.setCurrentWidget(self.host.tab)
+        self.tabs.setCurrentWidget(self.d3[0])
 
     def export(self):
         from elucida.core.uvvis import safe_name
-        try:
-            if self.composition:
-                files = self.composition.export()
-                if files: self.host.exported({p.parent for p in files})
-                return
-            files = self.host.tab.pages.export_to(PRJ.staging(self.host.project_dir, 'dft') / safe_name(self.item['name']))
-            files = self.host.place_exports(files)
-            self.host.exported({p.parent for p in files})
-        except Exception as ex: self.host.error(str(ex))
+        with self.main.collecting_skips():                   # unlesbare Stufe: in der Meldung nennen
+            try:
+                if self.composition:
+                    files = self.composition.export()
+                    if files: self.host.exported({p.parent for p in files})
+                    elif self.main.skips_text(): self.host.error(self.main.skips_text())   # nur unlesbare Stufen
+                    return
+                files = self.host.tab.pages.export_to(PRJ.staging(self.host.project_dir, 'dft') / safe_name(self.item['name']))
+                files = self.host.place_exports(files)
+                self.host.exported({p.parent for p in files})
+            except Exception as ex: self.host.error("\n\n".join(x for x in (str(ex), self.main.skips_text()) if x))
 
     def save(self):
         if self._disposed: return True
@@ -320,16 +415,22 @@ class PathWorkspace(QWidget):
             pass
         # Small neutral preview is disposable; editing sources always stay authoritative.
         try:
+            png = None
             if self.composition and self.composition.editor.path:
-                import pymupdf
-                with pymupdf.open(str(self.composition.editor.path.with_suffix('.svg'))) as doc:
-                    doc[0].get_pixmap(dpi=40, alpha=False).save(str(self.host.project_dir/'preview.png'))
+                from elucida.core.images import open_mupdf
+                with open_mupdf(self.composition.editor.path.with_suffix('.svg')) as doc:
+                    png = doc[0].get_pixmap(dpi=40, alpha=False).tobytes('png')
             else:
+                import io
                 from matplotlib.figure import Figure
                 from matplotlib.backends.backend_agg import FigureCanvasAgg
                 fig = Figure(); FigureCanvasAgg(fig)
                 F, _ = self.host.tab.pages.build(fig)
-                if F: fig.savefig(self.host.project_dir/'preview.png', dpi=70, facecolor='white')
+                if F:
+                    buf = io.BytesIO(); fig.savefig(buf, format='png', dpi=70, facecolor='white'); png = buf.getvalue()
+            target = self.host.project_dir/'preview.png'
+            if png and (not target.exists() or target.read_bytes() != png):   # gleicher Inhalt: Datei bleibt
+                target.write_bytes(png)
         except Exception:
             pass
         self.host.dispose()
@@ -342,18 +443,49 @@ class PathWorkspace(QWidget):
         self.closed.emit()
 
 
+class _RowHeadDelegate(STYLE._CellDelegate):
+    """Zeilenlinie und Luft wie alle Tabellen, aber Vorschau · Name linksbündig wie der Zeilenkopf der Verbindungsmatrix
+    (Entscheidung 125); die übrigen Tabellen bleiben mittig."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.displayAlignment = Qt.AlignLeft | Qt.AlignVCenter
+
+
+class _PathTable(QTableWidget):
+    """Pfadliste als Tabelle mit Kopf (ui.md: Auswahllisten nie als QListWidget), eine Spalte: Vorschau + Name."""
+    # shortcut: count/item(i)/setCurrentRow nur für publication_view.py (spricht die Liste noch wie eine QListWidget an);
+    # entfallen, sobald es rowCount/item(r, 0)/selectRow benutzt
+    def count(self): return self.rowCount()
+    def item(self, row, column=0): return super().item(row, column)
+    def setCurrentRow(self, row): self.setCurrentCell(row, 0)
+
+
 class PathPanel(QGroupBox):
     def __init__(self, page):
         super().__init__(T('rp_reaction_paths'), page)
         self.page = page
         v = QVBoxLayout(self)
         hint = QLabel(T('rp_energy_profiles_and_irc_across_multiple_compounds'))
-        v.setContentsMargins(16, 12, 16, 16); v.setSpacing(10)
+        v.setContentsMargins(*STYLE.CARD_MARGINS); v.setSpacing(STYLE.ROW_GAP)     # Abstände wie alle Karten (tidy)
         hint.setWordWrap(True); hint.setProperty('formlabel', True)
         v.addWidget(hint)
-        self.list = QListWidget(); self.list.setSpacing(4)
+        from PySide6.QtCore import QSize
+        self.list = _PathTable(0, 1)
+        self.list.setHorizontalHeaderLabels([T('z1_rp_paths_head')])
+        self.list.verticalHeader().hide()
+        self.list.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.list.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.list.setItemDelegate(_RowHeadDelegate(self.list))
+        self.list.horizontalHeaderItem(0).setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)   # Kopf über dem Namen
+        self.list.setShowGrid(False)
+        self.list.setWordWrap(False)
         self.list.setTextElideMode(Qt.ElideRight)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.setIconSize(QSize(72, 54))
+        self.list.verticalHeader().setDefaultSectionSize(54 + 2 * 4)  # Vorschau samt Rand in jeder Zeile
         self.list.currentItemChanged.connect(self.name_selected)
         self.list.itemDoubleClicked.connect(self.open); v.addWidget(self.list)
         self.name = QLineEdit(); self.name.setPlaceholderText(T('ov_name')); v.addWidget(self.name)
@@ -368,20 +500,21 @@ class PathPanel(QGroupBox):
         self.removed = QComboBox(); v.addWidget(self.removed)
         self.restore_button = QPushButton(T('rp_restore')); self.restore_button.setIcon(STYLE.icon('reset'))
         self.restore_button.clicked.connect(self.restore); v.addWidget(self.restore_button)
+        STYLE.field_heights(self)                            # Felder und Knöpfe CONTROL_H wie in den Karten
 
     def refresh(self):
         selected = self.selected()
-        self.list.clear()
+        self.list.setRowCount(0)
         if not self.page.pdir: return
         from PySide6.QtGui import QIcon, QPixmap
-        from PySide6.QtCore import QSize
-        self.list.setIconSize(QSize(72,54))
         for item in PUB.load(self.page.pdir).get('reaction_paths', []):
-            row = QListWidgetItem(item['name']); row.setData(Qt.UserRole, item)
+            row = QTableWidgetItem(item['name']); row.setData(Qt.UserRole, item)
             row.setToolTip(item['name'])
             preview = directory(self.page.pdir, item['uid']) / 'preview.png'
             if preview.exists(): row.setIcon(QIcon(QPixmap(str(preview))))
-            self.list.addItem(row)
+            r = self.list.rowCount()
+            self.list.insertRow(r)
+            self.list.setItem(r, 0, row)
             if selected and selected['uid'] == item['uid']: self.list.setCurrentItem(row)
         self.removed.clear()
         for item in PUB.load(self.page.pdir).get('removed_reaction_paths', []):
@@ -393,7 +526,7 @@ class PathPanel(QGroupBox):
         if row: self.name.setText(row.data(Qt.UserRole)['name'])
 
     def selected(self):
-        row = self.list.currentItem()
+        row = self.list.item(self.list.currentRow(), 0) if self.list.currentRow() >= 0 else None
         return row.data(Qt.UserRole) if row else None
 
     def new(self):
@@ -453,8 +586,9 @@ def si_blocks(main, pdir):
                 images = composition_blocks(host)
                 if images is None:
                     images = host.tab.pages.si_figures(PRJ.work_dir(host.project_dir, 'dft'), item['name'])
-            except Exception as ex:                        # die Meldung muss den Pfad nennen
-                raise ValueError(f"{item['name']}: {ex}") from ex
+            except Exception as ex:                        # nur dieser Pfad fehlt; die Meldung nennt ihn (Gesamt-SI)
+                main.skip_part(ValueError(f"{item['name']}: {ex}"), part=T('rp_computational_chemistry'))
+                images = None
             if images: blocks += [('heading', item['name'])] + images
         finally:
             host.dispose()

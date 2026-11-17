@@ -28,12 +28,12 @@ RENDER_DPI = 200
 
 def render_rgba(path, dpi=RENDER_DPI):
     """Erste Seite (PDF/SVG) bzw. das Bild (PNG) als RGBA-Array für die Vorschau/den PNG-Ersatz."""
-    import pymupdf
+    from elucida.core.images import open_mupdf
     if Path(path).suffix.lower() == ".png":
         from PIL import Image
         with Image.open(path) as im:
             return np.asarray(im.convert("RGBA"))
-    with pymupdf.open(str(path)) as doc:
+    with open_mupdf(path) as doc:
         pix = doc[0].get_pixmap(dpi=int(dpi), alpha=True)
         return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)
 
@@ -45,8 +45,8 @@ def natural_cm(path):
         with Image.open(path) as im:
             dpi = (im.info.get("dpi") or (300, 300))[0] or 300
             return im.width / dpi * 2.54, im.height / dpi * 2.54
-    import pymupdf
-    with pymupdf.open(str(path)) as doc:
+    from elucida.core.images import open_mupdf
+    with open_mupdf(path) as doc:
         r = doc[0].rect
         return r.width / 72 * 2.54, r.height / 72 * 2.54
 
@@ -54,7 +54,7 @@ def natural_cm(path):
 def word_image(path, out_dir, stem):
     """-> ("image", PNG, b, h, SVG|None) für SI.write_docx: PNG unverändert; SVG unverändert + PNG-Ersatz; PDF als
     Vektor (SVG, Text als Pfade) + PNG-Ersatz. Breite höchstens Satzspiegel, Seitenverhältnis wie die Datei."""
-    import pymupdf
+    from elucida.core.images import open_mupdf
     p, out_dir = Path(path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     w, h = natural_cm(p)
@@ -64,7 +64,7 @@ def word_image(path, out_dir, stem):
     if ext == ".png":
         return ("image", str(p), w, h, None)
     png = out_dir / f"{stem}.png"
-    with pymupdf.open(str(p)) as doc:
+    with open_mupdf(p) as doc:
         doc[0].get_pixmap(dpi=300, alpha=False).save(str(png))
         if ext == ".svg":
             svg = p
@@ -80,6 +80,7 @@ def heading_of(e):
 
 class OtherTab(TABS.FigureTab):
     """Tab „Weitere“ (ganz am Ende): Abbildungen anderer Programme mit Unterschrift und Kapitel."""
+    LINE_STYLE = False                 # Moleküle bzw. fremde Bilder: keine Linienbreiten der Stilkarte
     STATE_KEY = "other"
     GUIDE, GUIDE_ACTION = "other", ("guide_add", "add_files")
     DRAG_HINT = "drag_hint_plain"                        # fremde Abbildungen: keine Einblendung am Mauszeiger
@@ -87,6 +88,9 @@ class OtherTab(TABS.FigureTab):
     TEXT_OPTS = ()                                       # fertige Abbildungen: keine Karte „Schrift und Rahmen“
     RESET_KEEP = ("entries", "current")
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, entries=[], current=None)
+
+    def copy_figure(self, tmp):               # fremde Dateien: kein eigenes SVG (Entscheidung 128 nennt nur eigene)
+        return T("copy_fig_none")
 
     def common_box(self):                     # Dateien bleiben unverändert: keine Achsen/Größe/Formate
         g = QGroupBox()
@@ -248,6 +252,7 @@ class OtherTab(TABS.FigureTab):
             elif e is not None:
                 self.add_note(T("missing_file", p=e["file"]))
             self.preview_stack.setCurrentIndex(0 if self.F is None else 1)
+            self.show_caption()
             self.canvas.draw_idle()
             self.notes_show()
         except Exception as ex:
@@ -274,6 +279,18 @@ class OtherTab(TABS.FigureTab):
 
     def caption_html(self, e):
         return html.escape(e.get("caption") or "")
+
+    def si_caption(self, name):
+        """Unterschrift der angezeigten Abbildung (Reiter SI-Text, Fußleiste, Kopieren); je Bild eigene."""
+        e = self.entry() or (self.entries()[0] if self.entries() else None)
+        return self.caption_html(e) if e is not None else ""
+
+    def show_caption(self):
+        if getattr(self, "lbl_cap", None) is None:
+            return
+        self.lbl_cap.empty = T("other_cap_empty" if self.entries() else "si_caption_empty")
+        cap = self.si_caption("")
+        self.lbl_cap.setText("<b>Figure Sn:</b> " + cap if cap else "")
 
     def chapter_blocks(self, out_dir, name):
         """-> [(Kapitelschlüssel bzw. „new:<Überschrift>“, [image, figcap])] in Reihenfolge der Liste."""

@@ -63,10 +63,42 @@ def svg_info(path):
     return dict(nuclei=nuclei, is2d=bool(vert), size_cm=(w, h))
 
 
+def svg_axis_range(path):
+    """Kleinste und größte Zahl der waagerechten Achsenbeschriftung eines 1D-Mnova-SVG -> (lo, hi) oder None (keine
+    Zahlenreihe gefunden). Das ist der beschriftete Bereich; die Achse selbst kann etwas weiter reichen.
+    Achse = längste Textzeile mit ≥ 3 verschiedenen Zahlen in gleichen Schritten; Integrale unter dem Spektrum sind
+    nicht gleichmäßig gestuft und zählen nicht, auch wenn sie mehr Zahlen haben.
+    shortcut: eine Achse mit fehlender Beschriftung (Lücke im Raster) gilt als nicht gefunden (None, „nicht geprüft“);
+    erst mit einem echten Beispiel lockern."""
+    import pymupdf
+    page = pymupdf.open(str(path))[0]
+    rows = {}
+    for b in page.get_text("dict")["blocks"]:
+        for ln in b.get("lines", []):
+            dx, dy = ln.get("dir", (1, 0))
+            if abs(dx) < abs(dy):
+                continue
+            toks = "".join(s["text"] for s in ln["spans"]).replace("\u2212", "-").split()
+            if toks and all(re.fullmatch(r"-?\d+(\.\d+)?", t) for t in toks):
+                rows.setdefault(round(ln["bbox"][3] / 4), []).extend(float(t) for t in toks)   # eine Textzeile ± 4 pt
+    def axis_like(vals):
+        v = sorted(set(vals))
+        steps = [round(b - a, 6) for a, b in zip(v, v[1:])]
+        return len(v) == len(vals) >= 3 and len(set(steps)) == 1
+    vals = max((v for v in rows.values() if axis_like(v)), key=len, default=[])
+    return (min(vals), max(vals)) if vals else None
+
+
 def svg_peaks(path):
     """Peaklabels eines Mnova-SVG (senkrechte Zahlen über dem Spektrum) -> (Verschiebungen als Text wie gedruckt,
     absteigend; Lösungsmittel, falls ein Label einen Namen trägt, z. B. „77.16 CDCl3“). Das Lösungsmittelsignal
     selbst fällt weg."""
+    vals, label = svg_peak_labels(path)
+    return vals, label[1] if label else None
+
+
+def svg_peak_labels(path):
+    """Wie `svg_peaks`, aber mit dem beschrifteten Lösungsmittelsignal als (Wert als Text, Name), sonst None."""
     import pymupdf
     page = pymupdf.open(str(path))[0]
     vals, solvent = [], None
@@ -81,7 +113,7 @@ def svg_peaks(path):
                 continue
             if m.group(2):
                 if m.group(2).strip().upper() != "TMS":                 # Referenz, kein Lösungsmittel
-                    solvent = m.group(2).strip()
+                    solvent = (m.group(1).replace("−", "-"), m.group(2).strip())
                 continue
             vals.append(m.group(1).replace("−", "-"))
     vals = sorted(set(vals), key=float, reverse=True)

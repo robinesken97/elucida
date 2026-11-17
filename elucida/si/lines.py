@@ -175,11 +175,7 @@ def methods_html(text):
     return re.sub(r"(?<=[A-Za-zνΔ])_([A-Za-z0-9]+)", r"<sub>\1</sub>", h)
 
 
-def ea_line(formula: str, solvate: str, found: dict):
-    """-> (Klartext, HTML, Hinweise). found: {'C': '77.41', …}; nur gemessene Elemente stehen bei found."""
-    comp = ea_composition(formula, solvate)
-    els = [el for el in EA_ELEMENTS if el in comp or (found or {}).get(el)]
-    calc = ", ".join(f"{el} {comp.get(el, 0.0):.2f}" for el in els if el in comp)
+def _ea_values(found, els):
     fv = {}
     for el in els:
         v = str((found or {}).get(el) or "").strip().replace(",", ".")
@@ -187,17 +183,94 @@ def ea_line(formula: str, solvate: str, found: dict):
             fv[el] = float(v)
             if not math.isfinite(fv[el]):
                 raise ValueError(f"found {el}: {v}")
-    notes = []
-    for el, v in fv.items():                       # wie gedruckt verglichen (2 Nachkommastellen)
-        d = float(f"{v:.2f}") - float(f"{comp.get(el, 0.0):.2f}")
-        if abs(d) > EA_TOL + 1e-9:
-            notes.append((el, d))
+    return fv
+
+
+def ea_check(formula: str, solvate: str, found: dict, found2: dict | None = None):
+    """Je gemessenem Element -> [(El, calc, gefunden, 2. Messung oder None, Mittel oder None, Abweichung, ok)].
+    Mit zweitem Wertesatz (Doppelbestimmung, Angew.) gilt das Mittel der beiden wie gedruckten Werte, sonst der eine
+    Wert; Abweichung = Wert − calc wie gedruckt (2 Nachkommastellen), ok bis EA_TOL. Ein Element nur im zweiten Satz
+    wird nicht verworfen: es steht mit diesem einen Wert unter „gefunden“ (welcher Satz, weiß ea_line)."""
+    comp = ea_composition(formula, solvate)
+    els = [el for el in EA_ELEMENTS if el in comp or (found or {}).get(el) or (found2 or {}).get(el)]
+    f1, f2 = _ea_values(found, els), _ea_values(found2, els)
+    rows = []
+    for el in els:
+        if el not in f1 and el not in f2:
+            continue
+        v1 = float(f"{f1.get(el, f2.get(el)):.2f}")
+        v2 = float(f"{f2[el]:.2f}") if el in f1 and el in f2 else None
+        mean = None
+        if v2 is not None:                             # Mittel der gedruckten Werte, kaufmännisch gerundet (exakt)
+            from decimal import Decimal, ROUND_HALF_UP
+            mean = float(((Decimal(f"{v1:.2f}") + Decimal(f"{v2:.2f}")) / 2).quantize(Decimal("0.01"), ROUND_HALF_UP))
+        d = (mean if mean is not None else v1) - float(f"{comp.get(el, 0.0):.2f}")
+        rows.append((el, comp.get(el, 0.0), v1, v2, mean, d, abs(d) <= EA_TOL + 1e-9))
+    return rows
+
+
+def ea_line(formula: str, solvate: str, found: dict, found2: dict | None = None):
+    """-> (Klartext, HTML, Hinweise). found: {'C': '77.41', …}; nur gemessene Elemente stehen bei found. found2: zweiter
+    Wertesatz einer Doppelbestimmung (Angew.: beide Sätze und das Mittel angeben); geprüft wird dann das Mittel."""
+    comp = ea_composition(formula, solvate)
+    els = [el for el in EA_ELEMENTS if el in comp or (found or {}).get(el)]
+    calc = ", ".join(f"{el} {comp.get(el, 0.0):.2f}" for el in els if el in comp)
+    rows = ea_check(formula, solvate, found, found2)
+    notes = [(el, d) for el, _, _, _, _, d, ok in rows if not ok]   # wie gedruckt verglichen (2 Nachkommastellen)
     label = ea_formula_label(formula, solvate)
-    fnd = ", ".join(f"{el} {v:.2f}" for el, v in fv.items()) if fv else "–"
+    in1 = set(_ea_values(found, EA_ELEMENTS))
+    in2 = set(_ea_values(found2, EA_ELEMENTS))
+    if not in2:
+        fnd = ", ".join(f"{el} {v1:.2f}" for el, _, v1, *_ in rows) if rows else "–"
+    else:                                          # Doppelbestimmung: beide Wertesätze, Mittel nur wo zwei Werte
+        set1 = ", ".join(f"{el} {v1:.2f}" for el, _, v1, *_ in rows if el in in1)
+        set2 = ", ".join(f"{el} {v2 if v2 is not None else v1:.2f}" for el, _, v1, v2, *_ in rows if el in in2)
+        once = [el for el, *_ in rows if (el in in1) != (el in in2)]
+        extra = []
+        if any(r[4] is not None for r in rows):
+            extra.append("average " + ", ".join(f"{el} {m:.2f}" for el, _, _, _, m, *_ in rows if m is not None))
+        if once:
+            extra.append((", ".join(once[:-1]) + " and " + once[-1] if len(once) > 1 else once[0]) + " determined once")
+        fnd = " and ".join(x for x in (set1, set2) if x) + (f" ({'; '.join(extra)})" if extra else "")
     # gleich aufgebaut wie die HR-MS-Zeile („calc. … ; found …“, Nutzerwunsch)
     plain = f"Elemental analysis (%) calc. {label}: {calc}; found {fnd}"
     html = f"<b>Elemental analysis</b> (%) calc. {_sub_html(label)}: {calc}; found {fnd}"
     return plain, html, notes
+
+
+def ea_reason_line(reason: str):
+    """Ohne Elementaranalyse: Begründung des Nutzers für die SI (Angew.: „an explanation for the omission“)."""
+    reason = (reason or "").strip().rstrip(".")
+    return (f"Elemental analysis: {reason}", f"<b>Elemental analysis</b>: {_html.escape(reason)}") if reason else ("", "")
+
+
+# Reinheitsnachweis je Verbindung (Tab „Verbindung“; ACS/Organometallics: Identität und Reinheit samt Methode,
+# Angew. B1): Schlüssel -> (Klartext, HTML); Reihenfolge = Reihenfolge im Satz
+PURITY_METHODS = (("1H", "¹H NMR spectroscopy", "<sup>1</sup>H NMR spectroscopy"),
+                  ("13C", "¹³C NMR spectroscopy", "<sup>13</sup>C NMR spectroscopy"),
+                  ("qnmr", "quantitative ¹H NMR spectroscopy (qNMR)", "quantitative <sup>1</sup>H NMR spectroscopy (qNMR)"),
+                  ("ea", "elemental analysis", "elemental analysis"),
+                  ("hplc", "HPLC", "HPLC"), ("gc", "GC", "GC"))
+
+
+def purity_line(methods, other: str = ""):
+    """Gewählte Nachweise (+ Freitext des Nutzers) -> (Klartext, HTML) „Purity was established by … .“; leer ohne
+    Angabe (nichts wird vermutet). ¹H und ¹³C zusammen: „¹H and ¹³C NMR spectroscopy“."""
+    on = [m for m in PURITY_METHODS if m[0] in set(methods or ())]
+    if {"1H", "13C"} <= {m[0] for m in on}:
+        on = [("nmr", "¹H and ¹³C NMR spectroscopy", "<sup>1</sup>H and <sup>13</sup>C NMR spectroscopy")
+              if m[0] == "1H" else m for m in on if m[0] != "13C"]
+    items = [(p, h) for _, p, h in on]
+    other = (other or "").strip().rstrip(".")
+    if other:
+        items.append((other, _html.escape(other)))
+    if not items:
+        return "", ""
+
+    def join(xs):
+        return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+    return (f"Purity was established by {join([p for p, _ in items])}.",
+            f"Purity was established by {join([h for _, h in items])}.")
 
 
 # ---------------------------------------------------------------------------- UV-Vis
@@ -356,14 +429,67 @@ TEMPLATES = {
 }
 _TEMPLATE = "group"
 _PAGE_NUMBERS = False
+# Bezeichner der Gesamt-SI (Projekteinstellung `si_naming`, Nature-Zeitschriften): "" = wie die Vorlage,
+# "s" = „Figure S1 / Table S1“, "supplementary" = „Supplementary Figure 1 / Supplementary Table 1“
+NAMINGS = {"s": ("Figure S", "Table S"), "supplementary": ("Supplementary Figure ", "Supplementary Table ")}
+_NAMING = ""
 
 
-def set_template(key, page_numbers=False):
+def set_template(key, page_numbers=False, naming=""):
     """Vorlage für die folgenden Word-Exporte (Standard „group“; die Gesamt-SI setzt sie und danach zurück).
-    page_numbers: Seitenzahl in der Fußzeile (Gesamt-SI; ACS mit „S“ davor)."""
-    global _TEMPLATE, _PAGE_NUMBERS
+    page_numbers: Seitenzahl in der Fußzeile (Gesamt-SI; ACS mit „S“ davor). naming: Bezeichner (`NAMINGS`)."""
+    global _TEMPLATE, _PAGE_NUMBERS, _NAMING
     _TEMPLATE = key if key in TEMPLATES else "group"
     _PAGE_NUMBERS = bool(page_numbers)
+    _NAMING = naming if naming in NAMINGS else ""
+
+
+def labels():
+    """(Abbildung, Tabelle) vor der Nummer, z. B. („Figure S“, „Table S“): die eine Stelle für Unterschriften und
+    Verweise im Text."""
+    tpl = TEMPLATES[_TEMPLATE]
+    return NAMINGS.get(_NAMING, (tpl["fig"], tpl["tab"]))
+
+
+_REF_SP = "[  ]"
+_REF_ITEM = r"S?" + _REF_SP + r"?\d+(?:[a-z](?![A-Za-z]))?"           # S3, S 3, S3a, 3 (nach „Supplementary“)
+_REF_SEP = r"(?:" + _REF_SP + r"*[–—−-]" + _REF_SP + r"*|," + _REF_SP + r"*(?:and" + _REF_SP + r"+)?|" \
+    + _REF_SP + r"+(?:and|&)" + _REF_SP + r"+)"
+_REF_RE = re.compile(r"\b(Supplementary" + _REF_SP + r"+)?(Fig(?:ure)?s?\.?|Tables?)" + _REF_SP + r"+("
+                     + _REF_ITEM + r"(?:" + _REF_SEP + _REF_ITEM + r")*)")
+
+
+def rename_refs(text):
+    """Verweise auf SI-Abbildungen/-Tabellen im Text (auch von Hand geschrieben) auf die gewählten Bezeichner umstellen;
+    ohne eigene Bezeichner unverändert. Erkannt: „Figure S3“, „Fig. S3“, „Fig S3“, „Figure S 3“, „Figure S1a“,
+    „Figures S1 and S2“, „Figure S1–S3“/„S1–3“, „Tables S1, S2“, „Supplementary Figure(s) 2 (and 3)“. Nur Formen mit
+    „S“ oder „Supplementary“: ein „Figure 3“ meint den Artikel und bleibt; in einer Aufzählung endet der Verweis vor dem
+    ersten Eintrag ohne „S“ (ein Bereich „S1–3“ zählt mit). Mehrere Einträge oder ein Bereich: Mehrzahl („Supplementary
+    Figures 1–3“)."""
+    if not _NAMING or not isinstance(text, str):
+        return text
+    fig, tab = labels()
+    sep_re = re.compile("(" + _REF_SEP + ")")
+
+    def sub(m):
+        sup, head = bool(m.group(1)), m.group(2)
+        parts = sep_re.split(m.group(3))
+        items, seps = parts[0::2], parts[1::2]
+        k = 0                                          # Einträge, die zum SI-Verweis gehören
+        for i, it in enumerate(items):
+            if not (sup or it.startswith("S") or (i > 0 and re.search("[–—−-]", seps[i - 1]))):
+                break
+            k = i + 1
+        if k == 0:
+            return m.group(0)
+        label = tab if head.startswith("Table") else fig
+        if k > 1 or head.rstrip(".").endswith("s"):
+            label = label.replace("Figure", "Figures").replace("Table", "Tables")
+        pre = "S" if label.rstrip().endswith("S") else ""
+        nums = [re.sub("^S" + _REF_SP + "?", "", it) for it in items[:k]]
+        out = label + nums[0] + "".join(sp + pre + n for sp, n in zip(seps[:k - 1], nums[1:]))
+        return out + "".join(parts[2 * k - 1:])
+    return _REF_RE.sub(sub, text)
 
 
 def set_font(name):
@@ -533,7 +659,7 @@ def _label_para(kind, num, runs, **kw):
     """„Figure S1: …“ / „Table S1: …“ – Kürzel und Nummer fett, Doppelpunkt bei Tabellen fett, bei Abbildungen nicht
     (wie in der SI)."""
     tpl = TEMPLATES[_TEMPLATE]
-    lab = _run_xml(tpl["fig"] if kind == "Figure" else tpl["tab"], {"b"})
+    lab = _run_xml(labels()[0] if kind == "Figure" else labels()[1], {"b"})
     if _TEMPLATE == "group":                   # SI der Gruppe: Doppelpunkt nur bei Tabellen fett
         colon = _run_xml(":", {"b"} if kind == "Table" else set())
     else:
@@ -723,6 +849,9 @@ def _sect(columns):
             (f'<w:cols w:num="{columns}" w:space="{COL_GAP}"/>' if columns > 1 else "") + '</w:sectPr>')
 
 
+_REF_KINDS = ("char", "text", "figcap", "tabcap", "note")     # Blöcke mit Fließtext (Verweise auf Abbildungen)
+
+
 def write_docx(path, blocks, columns=1):
     """Blöcke:
     ("synthesis", Name)                   „Synthesis of <b>Name</b>“
@@ -749,6 +878,8 @@ def write_docx(path, blocks, columns=1):
     ("subsection", Text)                  Unterkapitel („2.1 Precursor“, Überschrift 2; Gruppen im Projekt)
     columns = Spalten am Anfang (2: ganzes Dokument zweispaltig wie die DFT-SI der Gruppe)"""
     body, media, svgs, oles, editable = [], [], [], [], []
+    if _NAMING:                                  # Verweise im Text wie die Unterschriften (Projekteinstellung)
+        blocks = [(b[0],) + tuple(rename_refs(x) for x in b[1:]) if b[0] in _REF_KINDS else b for b in blocks]
     n_fig = n_tab = 0
     def col_width(n):
         return TEXT_W if n == 1 else (TEXT_W - COL_GAP * (n - 1)) // n

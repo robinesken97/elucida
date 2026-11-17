@@ -406,7 +406,7 @@ def _calc_sheet(cs, cfg, spectra, results, unit, sym, coef_unit):
 def _results_sheet(ws, cs, calc, spec, cfg, results, series, files, version, unit, sym, coef_unit):
     _sheet(ws, [2, 12, 16, 12, 12, 9, 7, 14, 46])
     _put(ws, 2, 2, t("title" if sym == "ε" else "title_a"), F_TITLE, align=LEFT)
-    _put(ws, 3, 2, str(series), F_MUTED, align=LEFT)
+    _put(ws, 3, 2, core.series_label(series), F_MUTED, align=LEFT)
     ws.row_dimensions[2].height = 26
     R_HEAD = 5
     _head(ws, R_HEAD, 2, [t("lam"), f"{sym} [{coef_unit}]", t("se"), t("ci"), t("r2"), t("n"), t("check", sym=sym),

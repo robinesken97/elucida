@@ -48,7 +48,8 @@ paths:
   Tabellen/SI-Text als Reiter neben „Abbildung“ (`to_right`/`move_right`, auch ε) – nie unter die Abbildung (Höhe
   begrenzt sie dann, −28 % gemessen). Jede Ergebnisseite über `result_page`: Karte füllt die Seite, Tabellen/Texte
   wachsen mit, reine Knopfreihen rechts, erster Knopf der letzten Reihe mit Symbol. Protokoll nur
-  über Hilfe → Protokoll. Meldungen als Einblendung unten rechts (`_toast`), keine Statusleiste. Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
+  über Hilfe → Protokoll. Meldungen als Einblendung unten rechts (`_toast`), keine Statusleiste. Export, SI (Word), Gesamt-SI und Datenpaket melden über EINE
+  Exportmeldung, was benutzt wurde (Formate, Teile, abgewählte Abbildungen), mit Sprung zur Auswahl; mit Hinweisen eine Zeile + „Details“. Neue Karten dort einordnen; Abstände zentral in `STYLE.tidy`.
   Spalte in allen Tabs gleich breit (`STYLE.COLUMN_W`, Trennlinie fest, Nutzerwunsch; breiter nur, wenn sonst
   abgeschnitten): lange Beschriftungen kürzen (Langform in den Tooltip), Symmetrie (Nutzerwunsch Redesign): feste Beschriftungsspalte `LABEL_W`, Inhalt mit und ohne Bildlaufleiste gleich breit, Einzelwerte, Häkchen und Hinweise an denselben Kanten der Wertespalte, Felder in Paaren je halbe Breite, Listen/Textfelder/
   Bereiche im Zwei-Spalten-Raster A | `GAP_W` | B = `WIDE_W` (`_field_edge` in `tidy`: lange Zwischenbeschriftung
@@ -124,11 +125,15 @@ paths:
 - Keine Popups (Nutzerwunsch 2026-11-11, gilt allgemein): neue Eingaben nie als modaler Dialog, sondern als Tab, Karte
   oder Klappbereich im Raster. Umgesetzt: Tab „Verbindung“ (unten); Konzentrationen als Klappbereich in der Karte Daten des
   ε-Tabs (`sec_conc`, klappt selbst auf, wenn die Probennamen keine Konzentration nennen, gilt sobald eine Einheit gewählt
-  ist); Energiediagramm ohne „Große Arbeitsfläche“. Seit 2026-11-11 außerdem: **Schrift und Rahmen** als Klappkarte
-  `TABS.TextFormatCard` (letzte Karte im Schritt Darstellung jedes Tabs mit `TEXT_OPTS`, auch ε; Chip „Nur dieser Tab“ =
+  ist); Energiediagramm ohne „Große Arbeitsfläche“. Seit 2026-11-11 außerdem: **Schrift und Linien** als Klappkarte
+  `TABS.TextFormatCard` (in Tabs mit festen Farbrollen „**Schrift, Linien und Farben**“; letzte Karte im Schritt Darstellung jedes Tabs mit `TEXT_OPTS`, auch ε; Chip „Nur dieser Tab“ =
   `tab_fmt[key]`, sonst `text_fmt`; Änderung → `main.update_text_format`/`set_own_text_format` → `text_format_changed`:
   alle gebauten Tabs neu, ein `push_undo`, `sync_text_cards`; Zahlenfelder nach 350 ms gesammelt; Menü Format zeigt nur
-  die Karte, Tabs ohne Karte melden das; „Weitere“ hat `TEXT_OPTS = ()`); **Projektangaben** als dritte Seite „Angaben“
+  die Karte, Tabs ohne Karte melden das; „Weitere“ hat `TEXT_OPTS = ()`; Kurvenbreite als Faktor und Achsenlinien (1 bzw. automatisch = bisherige Abbildung pixelgleich)
+  gehören zum Textformat und gelten wie die Schrift global oder mit „Nur dieser Tab“ (ein eigenes Format erbt keine globalen
+  Linienwerte). Farben gibt es nur für feste Rollen ohne Messungsliste (SEC Start/Ende, H-Cell Laden/Entladen/CE, HRMS
+  gemessen/berechnet, EPR-Fitkurven); sie gelten je Abbildung; Knöpfe ohne Wirkung bleiben sichtbar, aber ausgegraut und nicht
+  drückbar, der Tooltip nennt den Grund. Mit eigener Farbe nennt keine Bildunterschrift einen Farbnamen); **Projektangaben** als dritte Seite „Angaben“
   der Projektseite (`PublicationInfoPage`, Feld gilt beim Verlassen, `edit_info` zeigt die Seite); **SI-Export** als Karte
   „SI-Export (Word)“ im Tab Verbindung (Chips für `SI_PARTS` und Abbildungen je Tab, Schriftart; QSettings `si_parts`/
   `si_figs_off`/`si_font` wie bisher), „SI (Word)“ exportiert direkt (`export_si_dialog`, Teile ohne Daten als Hinweis).
@@ -293,9 +298,17 @@ paths:
   (`TABS.RowDrag` + `move_row(von, nach)` des Tabs, Nutzerwunsch 2026-11-10); Qt verschiebt dabei nichts selbst.
 - Tab-Reihenfolge wie die SI, davor die Verbindung selbst: Verbindung · Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · UV-Vis-Kinetik · Fluoreszenz · CV · SEC · H-Cell · EPR ·
   X-Ray · DFT · Weitere; offener Tab als Name (`tab`, alte Projekte: Index in der alten Reihenfolge umrechnen).
-- „Alles auf Standard“ (`FigureTab.reset_defaults`): alle Schlüssel von DEFAULT_STATE außer `RESET_KEEP` des Tabs, Exportgröße/
+- „Standardwerte“ (`FigureTab.reset_defaults`): setzt nur reine Darstellung zurück. In `RESET_KEEP` gehört jeder Schlüssel, dessen
+  Rücksetzen eine gedruckte Zahl, eine Tabellenzeile/-spalte, den Methodentext oder die eingehenden Daten ändert (je Tab gemessen,
+  Selbsttest). Zurückgesetzt werden alle Schlüssel von DEFAULT_STATE außer `RESET_KEEP` des Tabs, Exportgröße/
   -formate und `cap_*`. In `RESET_KEEP` gehört, was Daten oder Angaben zur Messung sind (Dateien, Referenz/Kalibrierung,
   eingegebene Werte, gewählte Messdaten wie CV `cycle`, SEC `mid`, EPR `ref_freq`; Nutzerwunsch P9 R2) – neue Schlüssel
   dort einordnen. Vorlagen (`save_setup`/`load_setup`) nur ohne diese Schlüssel und ohne `cap_*`. X-Ray/DFT: `XRAY.reset_display` (+ Ansicht/Atom-Auswahl der
   gewählten Struktur; DFT behält Nummerierung, `label_style`, `zero_based`); ε: `MainWindow.reset_defaults` (DEFAULT_GLOB ohne
   Schichtdicke/Export). Immer `push_undo`.
+- Ansichten wechseln nie von selbst (Nutzerwunsch 2026-11-14): Tab, Schritt, Reiter und Bildlauf ändern sich nur auf einen Klick, der sein
+  Ziel nennt; Neuaufbau (Standardwerte, Vorlage, Rückgängig, Sprache, Design) behält Reiter und Bildlauf. Geladene Dateien bleiben im offenen
+  Tab: Einblendung mit „Anzeigen“ und blauer Punkt am Ziel-Tab bis zum Besuch. Eine Karte, die einen geschlossenen Ergebnis-Reiter ändert,
+  nennt ihn und markiert ihn. Ausnahmen: Rückgängig zeigt den Tab der Änderung (P9 R1), Konzentrationen klappen auf, EPR-Karte klappt beim
+  Wählen auf, „Profil bearbeiten“ zeigt Rechendaten. Punkt-Farben: blau = geladen/geändert, noch nicht angesehen; orange (Schritt) = weicht
+  vom Standard ab.

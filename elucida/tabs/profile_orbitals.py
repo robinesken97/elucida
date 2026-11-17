@@ -12,8 +12,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-                               QDoubleSpinBox, QDialogButtonBox, QPushButton)
+                               QDoubleSpinBox, QDialogButtonBox, QPushButton, QFormLayout, QWidget)
 from elucida.core import orbitals as ORB
+from elucida.app import style as STYLE
 from elucida.app.canvas_theme import register
 from elucida.tabs import base as TABS, xray as XRAY
 
@@ -137,11 +138,8 @@ class OrbitalViewDialog(QDialog):
                 self.mo.addItem(f"MO {c['mos'][i]}" if c.get('mos') else f"Orbital {i+1}", i)
             self.mo.setCurrentIndex(source.get("idx", 0))
         self.mo.currentIndexChanged.connect(self.orbital_changed)
-        v.addWidget(self.mo)
         hint = QLabel(T('rp_drag_rotate_right_button_pan_wheel_zoom_this_view_remains_independent'))
         hint.setWordWrap(True); hint.setProperty("formlabel", True)
-        v.addWidget(hint)
-        row = QHBoxLayout()
         self.mode = QComboBox()
         self.mode.addItem(T('rp_density_fraction'), "frac")
         self.mode.addItem(T('rp_isovalue_a_u'), "abs")
@@ -151,14 +149,35 @@ class OrbitalViewDialog(QDialog):
         self.alpha.setRange(.01, 1.)
         self.alpha.setSingleStep(.05)
         self.alpha.setValue(data["alpha"])
-        for w in (self.mode, self.value, QLabel(T('dft_orb_alpha')), self.alpha): row.addWidget(w)
+        # Bedienelemente als Formular wie die Karten (Beschriftungsspalte LABEL_W, Felder CONTROL_H, Paare halb breit)
         from matplotlib.colors import to_hex
+        controls = QWidget()
+        form = STYLE.make_form(controls)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setVerticalSpacing(STYLE.ROW_GAP)
+        form.setHorizontalSpacing(STYLE.FORM_GAP)
+        form.addRow(T('p13p_orbital'), self.mo)
+        iso = QHBoxLayout()
+        iso.addWidget(self.mode, 1)
+        iso.addWidget(self.value, 1)
+        form.addRow(T('p13p_isosurface'), iso)
+        form.addRow(T('dft_orb_alpha'), self.alpha)
+        colors = QHBoxLayout()
         for key in ("plus", "minus"):
-            row.addWidget(TABS.color_button(to_hex(data[key]), lambda c, key=key: self.color(key, c)))
-        v.addLayout(row)
+            colors.addWidget(TABS.color_button(to_hex(data[key]), lambda c, key=key: self.color(key, c)))
+        colors.addStretch(1)
+        form.addRow(T('p13p_orb_colors'), colors)
+        for r in range(form.rowCount()):
+            lb = STYLE.item_at(form, r, QFormLayout.LabelRole)
+            if lb is not None and lb.widget() is not None:
+                lb.widget().setFixedWidth(STYLE.LABEL_W)
+                lb.widget().setProperty("formlabel", True)
         if not data.get('show_orbital', True):
-            for i in range(row.count()):
-                STYLE.item_at(row, i).widget().setVisible(False)
+            for lay_ in (iso, self.alpha, colors):
+                form.setRowVisible(lay_, False)
+        STYLE.field_heights(controls, buttons=False)
+        v.addWidget(controls)
+        v.addWidget(hint)
         self.fig = Figure(figsize=(4, 4), dpi=100)
         self.canvas = register(FigureCanvasQTAgg(self.fig))
         self.host = TABS.CanvasHost(self.canvas, self.fig)

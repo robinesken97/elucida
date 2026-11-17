@@ -29,7 +29,9 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `tabs/sec.py` | Spektroelektrochemie: BWSpec-Leser (λ aus coefs_a0…a3), Potential je Spektrum über Uhrzeit (Gamry DATE/TIME + T), scheinbarer Nernst-Fit (Raster E½/n), `SECTab`. |
 | `tabs/hcell.py` | H-Zelle (Laden/Entladen): `cycle_rows`/`summary` (Kapazität, % von Q_theo je Messung, CE), `auto_cycles`/`parse_cycles`, `ref_axis`, `HCellFigure` (zweite Skala rechts, unterbrochene Zeitachse, Punktlegende), `HCellTab`. Leser in `formats/gamry_cycling.py`. |
 | `tabs/uvkin.py` | UV-Vis-Kinetik: `UVKinTab` (Zeilen je Spektrum mit Reihe, Ansichten Spektren über die Zeit / Absorbanz gegen Zeit, Fit erster Ordnung über `EPR.fit_first_order`, Ergebnisseite, `_kinetics.csv`), `value_at`, `auto_unit`, `series_from_name`; Zeiten aus `core.cary_times`. |
+| `tabs/fluo_tau.py`, `core/lifetime.py`, `formats/decay.py` | Fluoreszenz zeitaufgelöst: `TauPart` (Karten Abklingkurve/Lebensdauer, Reiter Abklingkurve/Kennwerte, SI-Abbildung, Export `_decay`), `fit_decay` (1–2 Exponentiale, IRF-Faltung oder Schwanzfit, Poisson-Gewichte), `rates`, `make_test_decay`; Textleser `read_decay`. |
 | `tabs/epr.py` | CW-EPR: BES3T-Leser (.dsc/.DTA, LIT/BIG, D/F/I, 2D+YGF), ASCII (MS400, EasySpin), EasySpin-Parameter (`Sys.D` MHz → cm⁻¹), Dunkelspektrum, Basislinie (`baseline`: Polynom, glatt nach Whittaker, Spline), Ausblenden, Glätten, `fit_scale`, `EPRTab`. Felder intern in mT. |
+| `tabs/epr_calc.py` | EPR-Tab, Rechnung: `SpinPages` (Karten „Rechnung (DFT)“, „Hyperfein-Zuordnung“, „Spindichte und Hyperfein“; Reiter Spindichte/Hyperfein), `percents`, `hfc_items`, `group_targets`, `place_outside`, `write_gaussian_epr` (erfundene Testdatei). Leser `parse_gaussian_epr` in `formats/calc.py`, Spindichte `spin_density_grid` in `core/orbitals.py`. |
 | `core/color.py` | Farbe der Lösung: T = 10^(−A) × Planck 6504 K, CIE-1931-Kurven (Näherung Wyman 2013), Bradford → sRGB; Kanäle > 1 gemeinsam skalieren. |
 | `app/update.py` | Update-Prüfung: neuestes GitHub-Release (API), Versionsvergleich, Paketname je System. Automatisch max. 1×/Tag, im Selbsttest ohne Netz. |
 | `tabs/ir_ea.py` | IR + MS: OPUS-Leser (Blockverzeichnis, T als Anteil → %), OPUS-PDF-Peaks, Peaksuche (Parabel, w/m/s/br), MS-Bericht (docx: Text + EMF-Beschriftungen, CDX-Objekt), Bruker-.d-Leser (BAF-Linienspektren, eigene Kalibrierung), `lc_found`, Ionenmassen, SI-Zeilen, `IRMSTab`. |
@@ -50,7 +52,7 @@ Module im Paket `elucida/` (Pfade in der Tabelle relativ dazu, außer `Elucida.p
 | `tools/release_notes.py` | Release-Titel/-Notes für GitHub aus `CHANGELOG.md` + `CHANGELOG.de.md` (Release-Job in `build.yml`; fehlt die Version, scheitert das Release). |
 | `app/i18n.py` | Texte DE/EN; `T(_key, **kw)` (Parameter heißt `_key`, damit `key=` als Format-Argument geht). |
 | `formats/parseuv_lite/` | Vendorte parseuv-1.0.4-Version (BSD-3), angepasst. |
-| `exchange/datapack.py` | Datenpaket je Verbindung (Zip wie die TUDOdata-Datensätze der Gruppe: `<Name>/NMR/1H/10`, `NMR/HSQC + HMBC/12`, IR, MS, UV-Vis, Fluorescence, CV/<Lösungsmittel>, SEC, EPR; DFT/Elucida-Ergebnisse Standard aus; nie X-Ray/Synthese): `collect` nur aus Zustandspfaden, `find_codes` (Laborkürzel `CODE_RE`), `write_zip` (Nutzerwunsch: „ausschließlich Compound XX und sonst unveränderte Rohdaten, Datum überall weg“: Namen immer ersetzen; Inhalt wahlweise, Standard an – Textdateien = keine Nullbytes inkl. TopSpin-Parameter/Titel/audita; Datum (`DATE_RE`) → 1980-01-01 **im selben
+| `exchange/datapack.py` | Datenpaket je Verbindung (Zip wie die TUDOdata-Datensätze der Gruppe: `<Name>/NMR/1H/10`, `NMR/HSQC + HMBC/12`, IR, MS, UV-Vis, Fluorescence, CV/<Lösungsmittel>, SEC, EPR; DFT/Elucida-Ergebnisse Standard aus; nie die CIF (geht an die CCDC) und nie Synthese; PXRD-Messung und berechnete Vergleichsgeometrie der X-Ray-Stufe gehören hinein, Nutzerentscheidung 2026-11-14): `collect` nur aus Zustandspfaden, `find_codes` (Laborkürzel `CODE_RE`), `write_zip` (Nutzerwunsch: „ausschließlich Compound XX und sonst unveränderte Rohdaten, Datum überall weg“: Namen immer ersetzen; Inhalt wahlweise, Standard an – Textdateien = keine Nullbytes inkl. TopSpin-Parameter/Titel/audita; Datum (`DATE_RE`) → 1980-01-01 **im selben
 Format**, Uhrzeit bleibt (Nutzerwunsch P8 R2: Dateien lesbar, kein Projektverlauf; Hinweis `SCRUB_NOTE` im README),
 `##$DATE=` → 0; Nutzer-/Kontonamen (`find_users`: ##OWNER, user@host, audita, BES3T OPER, Benutzerpfade, OPUS CNM)
 → „user“ (R1); Zip-Zeitstempel fest 1980; im Dateinamen wird das Datum gelöscht; PDF nur Eigenschaften auf gleicher
@@ -66,3 +68,15 @@ Länge (Datum, Autor); MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docP
 | `tools/build.py` | PyInstaller-Build (wechselt selbst in die Repo-Wurzel; `--collect-submodules elucida`). |
 | `core/orbitals.py` | Orbitale (DFT-Tab): Cube-Leser/-Schreiber, Molden-Leser + `Basis` (Überlappung Obara–Saika, Konventionsprüfung, Auswertung), `molden_grid`, Orbitalenergien ORCA/Gaussian, `iso_for_fraction`, `Volume`, `render` (Raycasting), `occluder_depth`, `OrbitalImage`, IboView-Konstanten, `make_test_cube`/`make_test_molden`. |
 | `core/minao.py` | Minimalbasis MINAO (Daten aus PySCF, Apache-2.0) für IAO-Bindungsordnungen im Orbitalbild. |
+| `formats/bruker_nmr.py` | Bruker fid/ser/1r/2rr, Ablehnungsliste. |
+| `formats/mnova_doc.py` | Mnova-Dokument (.mnova): FID + acqus/procs der 1D-Spektren in der Form von bruker_nmr (`read_document`, `write_experiment`), Mnova-Referenzierung nur als Vorschlag `ref_shift`, Versionslinien nur mit Beleg (`CHECKED_LINES`), 2D und Ungeprüftes abgelehnt. |
+| `core/nmr_proc.py` | FT, Phase, Basislinie, Referenzvorschlag. |
+| `core/nmr2d.py` | 2D aus ser. |
+| `core/nmr_analysis.py` | Integrale, Multiplett-Fit, Status. |
+| `core/nmr_report.py` | SI-Zeilen-Modell, Parser, Formatierer. |
+| `core/nmr_impurities.py` | Fulmer 2010 (Lösungsmittel/Verunreinigungen). |
+| `tabs/nmr_view.py` | Mnova-artige Spektrumansicht, Tasten. |
+| `si/pptx.py` | Eigener PPTX-Writer. |
+
+Ausgelassene Teile laufen über `si_part`/`skip_part` in die Exportmeldung, nie nur ins Protokoll; jeder Tab muss sich mit einer
+unlesbaren gespeicherten Datei bauen lassen.

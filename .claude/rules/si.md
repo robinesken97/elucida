@@ -42,3 +42,8 @@ paths:
   structure of **Name**. Thermal ellipsoids are shown with 50% probability.“ (Besetzung bei Fehlordnung „60% (A) and 40% (B)“);
   ≤ 8 ausgewählte Werte in der Unterschrift, sonst „**Table Sn:** Selected bond lengths/angles for **Name**.“ (Atom | … |
   Length / Å); Kristalldaten mit zentrierter erster Spalte, „a / Å“ usw.; Nummern als Word-SEQ-Felder (fortlaufend).
+- Reinheit und Bezeichner (1.2.0, Auftrag 2026-11-13): `compound.purity` (Schlüssel aus `SI.PURITY_METHODS`) + `purity_other`
+  ergeben in `si_char_blocks` den Satz „Purity was established by …“ (`SI.purity_line`), nur aus Eingetragenem; der
+  Vorschlag im Tab Verbindung (EA ≤ 0.4 → EA, sonst Kerne der NMR-Zeile) wird nie selbst gesetzt. Bezeichner der
+  Gesamt-SI zentral in `SI.labels()` (Vorlage oder Projekteinstellung `si_naming`: `s`/`supplementary`, `set_template(…,
+  naming=…)`); `write_docx` stellt Verweise im Fließtext (`_REF_KINDS`) über `rename_refs` um, „Figure 3“ ohne S bleibt.

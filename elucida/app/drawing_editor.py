@@ -661,7 +661,7 @@ class DrawingEditor(QWidget):
         if name:
             target = Path(name)
             if target.suffix.lower() not in ('.cdxml', '.cdx'):
-                target = target.with_suffix('.cdxml')
+                target = target.with_name(target.name + '.cdxml')   # nie with_suffix: „S3.1“ -> „S3.cdxml“
             if target.resolve() in (self.path, self.path.with_suffix('.cdx')):
                 self.save_sync()
                 return

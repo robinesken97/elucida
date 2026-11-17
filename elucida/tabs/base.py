@@ -7,6 +7,7 @@ import copy
 import csv
 import html
 import math
+import os
 import re
 import traceback
 import uuid
@@ -23,7 +24,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFontComboBox, QFormLayout, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea,
+                               QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
                                QFrame, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QMessageBox, QPlainTextEdit, QTabWidget)
 
@@ -58,6 +59,11 @@ def _plain(label):
     s = re.sub(r"\$\^\{?([^}$]*)\}?\$", r"^\1", str(label))
     s = re.sub(r"\$_\{?([^}$]*)\}?\$", r"_\1", s)
     return s.replace("$", "").replace("\\mathrm", "").replace("{", "").replace("}", "")
+
+
+def error_file(ex):
+    """Datei, an der ein Lesefehler hängt (`FigureTab.cache` merkt sie sich, OSError nennt sie), sonst None."""
+    return getattr(ex, "elucida_file", None) or getattr(ex, "filename", None)
 
 
 def write_curves_csv(path, curves, xlabel, ylabel):
@@ -102,13 +108,13 @@ def color_button(color, on_pick, cell=False, small=False):
     elif not cell:
         b.setFixedSize(44, 22)
     b.setProperty("cellcss", css)
-    b.setStyleSheet(f"{css}background-color: {color}; border: 1px solid #777;")
+    b.setStyleSheet(f"{css}background-color: {color}; border: 1px solid {STYLE.swatch_border()};")
 
     def pick():
         c = QColorDialog.getColor(QColor(b.property("color") or color))
         if c.isValid():
             b.setProperty("color", c.name())
-            b.setStyleSheet(f"{css}background-color: {c.name()}; border: 1px solid #777;")
+            b.setStyleSheet(f"{css}background-color: {c.name()}; border: 1px solid {STYLE.swatch_border()};")
             on_pick(c.name())
     b.setProperty("color", color)
     b.clicked.connect(pick)
@@ -125,9 +131,9 @@ class TextFormatCard(QWidget):
     sofort (`main.update_text_format`: alle Tabs neu, ein Rückgängig-Schritt); Zahlenfelder gesammelt nach kurzer Pause.
     Die Karte selbst (`box`) baut der Tab: Klappkarte (QGroupBox + Fold) bzw. im ε-Tab eine Karte wie dort üblich."""
 
-    def __init__(self, main, key, opts):
+    def __init__(self, main, key, opts, tab=None):
         super().__init__()
-        self.main, self.key, self.fold, self.box = main, key, None, None
+        self.main, self.key, self.fold, self.box, self.tab = main, key, None, None, tab
         self._loading, self._pending = False, {}
         self.timer = QTimer(self, singleShot=True, interval=350)
         self.timer.timeout.connect(self.flush)
@@ -192,6 +198,26 @@ class TextFormatCard(QWidget):
             f.addRow(T("tf_grp_frames"), row)
             fr = dict(frames)
             self.cb_axes, self.cb_struct = fr.get("axes_frame"), fr.get("struct_frame")
+        self.sp_line = self.sp_axis = None
+        if tab is not None:                               # Linien (R8): wie die Schrift global oder „Nur dieser Tab“
+            self.sp_line = QDoubleSpinBox(decimals=2, minimum=0.25, maximum=4.0, singleStep=0.25, suffix=" ×")
+            self.sp_line.setToolTip(T("tf_line_w_tip"))
+            self.sp_line.valueChanged.connect(lambda v: self._set("line_w", v))
+            f.addRow(T("tf_line_w"), self.sp_line)
+            self.sp_axis = QDoubleSpinBox(decimals=2, minimum=0.0, maximum=3.0, singleStep=0.25, suffix=" pt")
+            self.sp_axis.setSpecialValueText(T("tf_auto"))
+            self.sp_axis.setToolTip(T("tf_axis_w_tip"))
+            self.sp_axis.valueChanged.connect(lambda v: self._set("axis_w", v))
+            f.addRow(T("tf_axis_w"), self.sp_axis)
+        self.role_btns, self._role_rows = {}, []
+        for k_, d_, lab_ in (getattr(tab, "COLOR_ROLES", ()) if tab is not None else ()):   # feste Farben des Tabs
+            b_ = color_button(d_, lambda c, k_=k_, d_=d_: self._set_role(k_, d_, c))
+            row = QHBoxLayout()                           # Farbfeld in normaler Größe, wie die Schriftfarbe
+            row.addWidget(b_)
+            row.addStretch(1)
+            f.addRow(T(lab_), row)
+            self.role_btns[k_] = (b_, d_)
+            self._role_rows.append((f, row))
         b = QPushButton(T("tf_defaults"))
         b.clicked.connect(self.restore_defaults)
         b.setFixedWidth(STYLE.VALUE_W)                    # einzelner Knopf: ganze Wertespalte
@@ -206,8 +232,9 @@ class TextFormatCard(QWidget):
         return self.main.text_format(self.key) if self.own() else {**core.TEXT_DEFAULTS, **self.main.text_fmt}
 
     def differs(self):
-        """„(geändert)“ am Titel: eigenes Format oder Abweichung vom Standard."""
-        return self.own() or self.main.text_format(self.key) != core.TEXT_DEFAULTS
+        """„(geändert)“ am Titel: eigenes Format, Abweichung vom Standard oder eigene Linien des Tabs."""
+        return self.own() or self.main.text_format(self.key) != core.TEXT_DEFAULTS or \
+            (self.tab is not None and any(k in self.tab.st for k in style_keys(self.tab)))   # Farben je Abbildung
 
     def load(self):
         """Zustand -> Felder (ohne Signale: Laden ist keine Änderung)."""
@@ -232,11 +259,31 @@ class TextFormatCard(QWidget):
             if self.btn_color is not None:
                 b = self.btn_color
                 b.setProperty("color", tf["color"])
-                b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {tf['color']}; border: 1px solid #777;")
+                b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {tf['color']}; border: 1px solid {STYLE.swatch_border()};")
+            for sp, k_ in ((self.sp_line, "line_w"), (self.sp_axis, "axis_w")):
+                if sp is not None:
+                    sp.setValue(float(tf.get(k_, LINE_DEFAULTS[k_])))
         finally:
             self._loading = False
+        self.sync_roles()
         if self.fold is not None:
             self.fold.refresh()
+
+    def sync_roles(self):
+        """Farbknöpfe ohne Wirkung im gezeigten Bild (`roles_idle` des Tabs: Rolle -> Grund, z. B. H-Cell mit mehreren
+        Messungen) bleiben sichtbar, aber ausgegraut und nicht drückbar; der Tooltip nennt den Grund (R8, Entscheidung 155)."""
+        idle = getattr(self.tab, "_roles_shown_idle", None) or {}
+        grey = QColor(STYLE.colors()["disabled"])
+        for k_, (b_, d_) in self.role_btns.items():
+            why, c_ = idle.get(k_), role_color(self.tab.st, k_, d_)
+            b_.setProperty("color", c_)
+            b_.setEnabled(not why)
+            b_.setToolTip(T(why) if why else "")
+            q_ = QColor(c_)                               # ausgegraut: 30 % Farbe im Grau deaktivierter Texte (hell und dunkel)
+            show = QColor(*(round(0.3 * a + 0.7 * b) for a, b in zip(q_.getRgb()[:3], grey.getRgb()[:3]))).name() \
+                if why else c_
+            edge = STYLE.colors()["border_strong"] if why else "#777"
+            b_.setStyleSheet(f"{b_.property('cellcss') or ''}background-color: {show}; border: 1px solid {edge};")
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -263,9 +310,26 @@ class TextFormatCard(QWidget):
         self.flush()
         self.main.set_own_text_format(self.key, on)
 
+    def _set_role(self, key, default, color):
+        """Farbe einer Rolle (Stilkarte): gilt sofort; der Standard selbst = kein Schlüssel."""
+        if self._loading or self.tab is None:
+            return
+        if color.lower() == default.lower():
+            self.tab.st.pop(key, None)
+        else:
+            self.tab.st[key] = color
+        self.tab.timer.start()
+        if self.fold is not None:
+            self.fold.refresh()
+
     def restore_defaults(self):
         self._pending = {}
         self.timer.stop()
+        if self.tab is not None and any(k in self.tab.st for k in style_keys(self.tab)):
+            for k in style_keys(self.tab):
+                self.tab.st.pop(k, None)
+            self.tab.timer.start()
+            self.load()
         self.main.update_text_format(self.key if self.own() else None, dict(core.TEXT_DEFAULTS))
 
 
@@ -275,7 +339,7 @@ MANUAL = {"de": "docs/manual.de.md", "en": "docs/manual.en.md"}
 # Handbuch-Abschnitt je Tab (Deutsch, Englisch) – Überschriften wie in docs/manual.*.md (Selbsttest prüft das)
 GUIDE_HEAD = {"compound": ("Verbindung", "Compound"), "syn": ("Synthese-Tab", "Synthesis tab"), "nmr": ("NMR-Tab", "NMR tab"),
               "irms": ("IR + EA-Tab", "IR + EA tab"), "hrms": ("HRMS-Tab", "HRMS tab"), "eps": ("UV-Vis-(ε)-Tab", "UV-Vis (ε) tab"),
-              "overlay": ("UV-Vis-Overlay-Tab", "UV-Vis overlay tab"), "fluo": ("Fluoreszenz-Tab", "Fluorescence tab"),
+              "overlay": ("TD-DFT-Tab", "TD-DFT tab"), "fluo": ("Fluoreszenz-Tab", "Fluorescence tab"),
               "uvkin": ("UV-Vis-Kinetik-Tab", "UV-Vis kinetics tab"),
               "cv": ("CV-Tab (Cyclovoltammetrie)", "CV tab (cyclic voltammetry)"),
               "sec": ("SEC-Tab (Spektroelektrochemie)", "SEC tab (spectroelectrochemistry)"),
@@ -334,12 +398,231 @@ def page_wrap(widget):
     return w
 
 
+class _DotPlace(QObject):
+    """Hält den Punkt von `mark_dot` oben rechts im Widget, auch nach Größenänderungen."""
+
+    def __init__(self, dot, widget):
+        super().__init__(dot)
+        self.dot = dot
+        widget.installEventFilter(self)
+        self.place(widget)
+
+    def place(self, widget):
+        """Hinter dem Text (Abstand STYLE.MARK_GAP), auf Höhe der Oberlänge; ohne Text oben rechts."""
+        fm, tw = widget.fontMetrics(), widget.fontMetrics().horizontalAdvance(getattr(widget, "text", lambda: "")())
+        x = (widget.width() + tw) // 2 + STYLE.MARK_GAP if tw else widget.width() - STYLE.MARK_DOT - 5
+        y = (widget.height() - fm.height()) // 2 + 2 if tw else 5
+        self.dot.move(min(x, widget.width() - STYLE.MARK_DOT - 1), max(0, y))
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (QEvent.Resize, QEvent.Show):
+            self.place(obj)
+        return False
+
+
+def si_elsewhere(form, cb, tab, key, label):
+    """Haken „In die SI“ eines Tabs: der eine Ort für die SI-Auswahl ist die Pille „SI“ an der Karte im Tab „Export“
+    (Entscheidungen 67/93). Der Haken bleibt verborgen als Träger des Zustands (Code und Schlüssel unverändert), an
+    seiner Stelle ein Hinweis mit Link auf die Karte. Ohne Tab „Export“ (Vergleich, Pfad) bleibt der Haken."""
+    main = getattr(tab, "main", None)
+    if not getattr(main, "EXPORT_TAB", False):
+        return None
+    hint = QLabel(T("si_elsewhere"), wordWrap=True)
+    hint.setStyleSheet(HINT_CSS)
+    hint.setTextFormat(Qt.RichText)
+    hint.setProperty("plaintext", True)
+    hint.linkActivated.connect(lambda *_: main.show_export_card(key, label))
+    STYLE.drop_taken(form.replaceWidget(cb, hint))
+    cb.setParent(hint.parentWidget() or cb.parentWidget())
+    cb.setProperty("nochip", True)
+    cb.hide()
+    return hint
+
+
+def mark_dot(widget, on):
+    """Markierung (Punkt) oben rechts in `widget`, ohne dessen Größe oder Text zu ändern (Tab-Knopf, „Mehr ▾“):
+    „hier ist etwas neu, aber nicht angezeigt“ – bleibt, bis der Aufrufer sie beim Besuch wieder abnimmt."""
+    dot = widget.findChild(QLabel, "markDot", Qt.FindDirectChildrenOnly)
+    if not on:
+        if dot is not None:
+            dot.hide()
+        return
+    if dot is None:
+        dot = QLabel(widget, objectName="markDot")
+        dot.setAttribute(Qt.WA_TransparentForMouseEvents)
+        dot.setFixedSize(STYLE.MARK_DOT, STYLE.MARK_DOT)
+        dot._place = _DotPlace(dot, widget)
+    dot.setStyleSheet(STYLE.mark_dot_css())
+    dot._place.place(widget)
+    dot.show()
+    dot.raise_()
+
+
+def view_state(tabs, scroll):
+    """Ansicht eines Tabs, die nur im Widget lebt (Reiter rechts, Bildlauf links), für einen Neuaufbau merken."""
+    try:
+        i = tabs.currentIndex() if tabs is not None else -1
+        return {"text": tabs.tabText(i) if i >= 0 else "", "index": i,
+                "scroll": scroll.verticalScrollBar().value() if scroll is not None else 0}
+    except RuntimeError:                                  # Widget schon gelöscht
+        return None
+
+
+def apply_view(tabs, scroll, view):
+    """Gemerkte Ansicht wieder setzen: Reiter nach Text (Sprachwechsel: nach Nummer), Bildlauf nach dem Layout."""
+    if not view:
+        return
+    if tabs is not None and view["index"] > 0:
+        j = next((k for k in range(tabs.count()) if tabs.tabText(k) == view["text"]), -1)
+        j = j if j >= 0 else view["index"] if view["index"] < tabs.count() else -1
+        if j > 0:
+            tabs.setCurrentIndex(j)
+    if scroll is not None and view["scroll"]:
+        sb, v = scroll.verticalScrollBar(), view["scroll"]
+        sb.setValue(v)
+        # der Bereich steht erst nach dem Layout (Design: neue Stylesheets) fest: bis dahin jeder neuen Größe folgen
+        follow = lambda *_: sb.setValue(v)                   # noqa: E731
+        sb.rangeChanged.connect(follow)
+
+        def stop():
+            try:
+                sb.rangeChanged.disconnect(follow)
+            except (RuntimeError, TypeError):
+                pass
+        QTimer.singleShot(1500, stop)
+
+
+class ResultTabs(QTabWidget):
+    """Reiterzeile der rechten Seite. Seiten ohne Daten (`set_empty`) erscheinen nicht als Reiter (außer der
+    angewählten); passt die Zeile trotzdem nicht, wandern die hinteren Reiter in „Mehr ▾“ direkt hinter dem letzten
+    sichtbaren – nie abgeschnitten, kein nackter Rollpfeil (DFT hatte bei 1200 px neun Reiter). Die Nummern der
+    Seiten bleiben dabei unverändert (verborgen, nicht entfernt)."""
+
+    def __init__(self):
+        super().__init__(objectName="resultTabs")
+        self.setDocumentMode(True)
+        self.tabBar().setDrawBase(False)                     # sonst Linie über der Reiterzeile, sobald Kacheln daneben stehen
+        self._empty, self.overflow, self._busy = [], [], False
+        self.more = QPushButton(T("tabs_more"), self, objectName="tabMore")
+        self.more.setToolTip(T("tabs_more_tip"))
+        self.more.setFocusPolicy(Qt.NoFocus)
+        self.more.hide()
+        self.more.clicked.connect(self._menu)
+        self._marked = []                                    # Seiten, die sich geändert haben, ohne angezeigt zu sein
+        self.currentChanged.connect(lambda *_: self.mark(self.currentWidget(), False))
+        self.currentChanged.connect(lambda *_: self.fit())
+
+    def mark(self, page, on=True):
+        """Markierung (Punkt) am Reiter von `page`, bis er angezeigt wird (Nutzerwunsch: nichts wechselt von selbst,
+        eine Karte links, die eine nicht gezeigte Seite ändert, markiert deren Reiter)."""
+        i = self.indexOf(page)
+        if i < 0 or (on and i == self.currentIndex()) or (page in self._marked) == bool(on):
+            return
+        if on:
+            self._marked.append(page)
+            dot = QLabel(self.tabBar(), objectName="markDot")    # über der Reiterzeile: ändert keine Reiterbreite
+            dot.setAttribute(Qt.WA_TransparentForMouseEvents)
+            dot.setFixedSize(STYLE.MARK_DOT, STYLE.MARK_DOT)
+            dot.setStyleSheet(STYLE.mark_dot_css())
+            dot.page = page
+        else:
+            self._marked = [x for x in self._marked if x is not page]
+            for d in self.tabBar().findChildren(QLabel, "markDot"):
+                if getattr(d, "page", None) is page:
+                    d.hide()
+                    d.deleteLater()
+        self.fit()
+
+    def is_marked(self, page):
+        return page in self._marked
+
+    def set_empty(self, widget, empty):
+        if any(x is widget for x in self._empty) != bool(empty):
+            self._empty = [x for x in self._empty if x is not widget] + ([widget] if empty else [])
+            self.fit()
+
+    def tabInserted(self, i):
+        super().tabInserted(i)
+        self.fit()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self.fit()
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        self.fit()
+
+    def fit(self):
+        if self._busy:
+            return
+        self._busy = True
+        try:
+            cur, bar = self.currentIndex(), self.tabBar()
+            keep = [i for i in range(self.count()) if i == cur or not any(x is self.widget(i) for x in self._empty)]
+            for i in range(self.count()):
+                if self.isTabVisible(i) != (i in keep):
+                    self.setTabVisible(i, i in keep)
+            over = []
+            if self.isVisible() and self.width() > 200:
+                avail = self.width() - PAGE_INSET[0] - 8          # 8: angewählter Reiter halbfett
+                more_w = self.more.sizeHint().width() + 4
+                drop = [i for i in reversed(keep) if i not in (0, cur)]
+                while drop and bar.sizeHint().width() + (more_w if over else 0) > avail:
+                    i = drop.pop(0)
+                    self.setTabVisible(i, False)
+                    over.append(i)
+            self.overflow = sorted(over)
+            self.more.setVisible(bool(over))
+            mark_dot(self.more, any(self.widget(i) in self._marked for i in over))
+            box = self.cornerWidget()
+            if box is not None and hasattr(box, "refit"):
+                box.refit()
+        finally:
+            self._busy = False
+        if self.overflow:
+            QTimer.singleShot(0, self._place)
+        if self._marked:
+            QTimer.singleShot(0, self._place_dots)
+
+    def _place_dots(self):
+        """Punkt oben rechts neben dem Text des markierten Reiters (wie am Schritt)."""
+        bar = self.tabBar()
+        for d in bar.findChildren(QLabel, "markDot"):
+            i = self.indexOf(getattr(d, "page", None))
+            if i < 0 or not self.isTabVisible(i):
+                d.hide()
+                continue
+            r = bar.tabRect(i)
+            tw = bar.fontMetrics().horizontalAdvance(self.tabText(i))
+            d.move(r.center().x() + tw // 2 + STYLE.MARK_GAP, r.center().y() - 7)
+            d.show()
+            d.raise_()
+
+    def _place(self):
+        """„Mehr ▾“ direkt hinter den letzten sichtbaren Reiter, auf dessen Höhe."""
+        bar = self.tabBar()
+        vis = [i for i in range(self.count()) if self.isTabVisible(i)]
+        if not vis or not self.overflow:
+            return
+        r = bar.tabRect(vis[-1])
+        p = bar.mapTo(self, r.topRight())
+        h = self.more.sizeHint().height()
+        self.more.setGeometry(p.x() + 4, p.y() + max(0, (r.height() - h) // 2) - 6, self.more.sizeHint().width(), h)
+        self.more.raise_()
+
+    def _menu(self):
+        from PySide6.QtWidgets import QMenu
+        m = QMenu(self)
+        for i in self.overflow:
+            a = m.addAction(("• " if self.widget(i) in self._marked else "") + self.tabText(i))
+            a.triggered.connect(lambda _=False, i=i: self.setCurrentIndex(i))
+        m.exec(self.more.mapToGlobal(self.more.rect().bottomLeft()))
+
+
 def result_tabs():
     """Reiter neben der Abbildung, in allen Tabs gleich (Abbildung | Ergebnisse | ...). Stil: QTabWidget#resultTabs."""
-    tabs = QTabWidget(objectName="resultTabs")
-    tabs.setDocumentMode(True)
-    tabs.tabBar().setDrawBase(False)                         # sonst Linie über der Reiterzeile, sobald Kacheln daneben stehen
-    return tabs
+    return ResultTabs()
 
 
 def kpi_corner(tabs):
@@ -348,6 +631,10 @@ def kpi_corner(tabs):
     class _Box(QWidget):
         def minimumSizeHint(self):                           # Kacheln machen das Fenster nie breiter
             return QSize(0, super().minimumSizeHint().height())
+
+        def sizeHint(self):                                  # eingeklappt: QTabWidget hielt sonst die Breite der
+            s = super().sizeHint()                           # Kacheln frei, die Reiterzeile rollte (DFT bei 1200 px)
+            return QSize(0, s.height()) if self.maximumWidth() == 0 else s
 
     box = _Box()
     lay = QHBoxLayout(box)
@@ -365,8 +652,9 @@ def kpi_corner(tabs):
         col = STYLE.colors()["text"]
         for i, lb in enumerate(box.labels):
             if i < len(items):
-                a, b = items[i]
-                lb.setText(f"{STYLE.sci(a)} <span style='color:{col}; font-weight:600'>{STYLE.sci(b)}</span>"
+                a, b = items[i][:2]                          # drittes Element wahr: Wert in der Warnfarbe
+                c = STYLE.WARN_COLOR if len(items[i]) > 2 and items[i][2] else col
+                lb.setText(f"{STYLE.sci(a)} <span style='color:{c}; font-weight:600'>{STYLE.sci(b)}</span>"
                            if b not in ("", None) else STYLE.sci(a))
             lb.setVisible(i < len(items))
     class _Fit(QObject):                                     # schmales Fenster: Reiter gehen vor, Kacheln entfallen
@@ -376,14 +664,20 @@ def kpi_corner(tabs):
             return False
 
     def fit():
+        more = getattr(tabs, "more", None)                   # „Mehr ▾“ hinter den Reitern braucht seinen Platz
         need = tabs.tabBar().sizeHint().width() + sum(lb.sizeHint().width() + 8 for lb in box.labels
-                                                       if not lb.isHidden()) + 2 * PAGE_INSET[2]
-        box.setMaximumWidth(16777215 if tabs.width() >= need else 0)
+                                                       if not lb.isHidden()) + 2 * PAGE_INSET[2] \
+            + (more.sizeHint().width() + 4 if more is not None and not more.isHidden() else 0)
+        mw = 16777215 if tabs.width() >= need else 0
+        if box.maximumWidth() != mw:
+            box.setMaximumWidth(mw)
+            box.updateGeometry()
 
     def show_fit(items):
         show_items(items)
         fit()
     box.show_items = show_fit
+    box.refit = fit
     box._fit = _Fit(box)
     tabs.installEventFilter(box._fit)
     tabs.setCornerWidget(box, Qt.TopRightCorner)
@@ -408,11 +702,25 @@ STEP_TITLES = {
         "Intensität und Kinetik", "Normierung",
         "Elementaranalyse", "Ausgewählte Parameter", "Vergleich mit Rechnung", "Messen (Abstand, Winkel, Diederwinkel)",
         "NMR-Zeile (MNova-Multiplettbericht)", "Reagenzien (Mengen berechnen)", "Verbinder", "Größen",
-        "Weitere Verbindungen", "Zellen und Anordnung"),
-    2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate",
+        "Weitere Verbindungen", "Zellen und Anordnung", "Hyperfein-Zuordnung", "Lebensdauer", "TD-DFT-Tabelle",
+        "Abstände in der Packung", "Pulverdiffraktogramm (PXRD)", "Aromatizität (HOMA)", "Übergangsorbitale (NTO)"),
+    2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate", "Achsen und Größe",
         "Größe und Formate", "Stapeln und Achsen", "Hervorheben und Labels", "Bilder", "Atome und Fragmente",
-        "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen",
-        "Beschriftung", "Abschnitte"),
+        "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen", "Schrift und Linien",
+        "Schrift, Linien und Farben",
+        "Beschriftung", "Abschnitte", "Spindichte und Hyperfein", "NICS-Abbildung",
+        "ACID-Abbildung", "ACID-Pfeile", "Packung", "PXRD-Abbildung", "NBO-Darstellung"),
+}
+# Karten links, die eine Ergebnisseite rechts ändern (i18n-Schlüssel Karte -> Schlüssel der Reiter): die Karte nennt
+# den Reiter, und eine Eingabe dort markiert ihn, solange er nicht angezeigt ist (`ResultTabs.mark`; nie selbst wechseln)
+CARD_PAGES = {
+    "dft_nics_card": ("dft_nics",), "dft_nics_display": ("dft_nics",), "acid_card": ("acid",),
+    "acid_display": ("acid",), "acid_arrows_card": ("acid",), "nbo_card": ("nbo_tab",), "nbo_display": ("nbo_tab",),
+    "homa_card": ("homa_page",), "xray_pack_contacts": ("xray_pack_page",), "pxrd_card": ("pxrd_page",),
+    "pxrd_fig_card": ("pxrd_page",), "xr_calc": ("xr_tables",), "fluo_tau_data": ("fluo_tau_page",),
+    "fluo_tau_fit": ("fluo_tau_page", "fluo_tau_props"), "epr_calc_box": ("epr_calc_tab_spin", "epr_calc_tab_hfc"),
+    "epr_calc_assign": ("epr_calc_tab_hfc",), "epr_calc_display": ("epr_calc_tab_spin", "epr_calc_tab_hfc"),
+    "nto_card": ("nto_page",),
 }
 BAR_MIN_H = STYLE.BAR_H + 21          # Fußleiste: Knopf + 2 × 10 Rand + Linie, auch wenn links kein Knopf steht
 
@@ -475,7 +783,7 @@ class StepButton(QPushButton):
         p.drawText(QRectF(x + 25, 0, tw + 2, self.height()), Qt.AlignVCenter | Qt.AlignLeft, self.label)
         if self.changed:
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor("#E5AC62" if STYLE._mode == "dark" else "#9A5C0B"))
+            p.setBrush(QColor(STYLE.mark_color()))
             p.drawEllipse(QRectF(x + 25 + tw + 7, cy - 3, 6, 6))
 
 
@@ -594,6 +902,21 @@ class StepColumn(QObject):
                 b.changed = on
                 b.setToolTip(T("step_changed_tip") if on else "")
                 b.update()
+
+
+class ShowHook(QObject):
+    """Ruft `fn` (über die Ereignisschleife) auf, sobald `widget` sichtbar wird: Ergebnisseiten rechnen und zeichnen
+    erst beim Anzeigen, nicht bei jedem Zeichnen des Tabs."""
+
+    def __init__(self, widget, fn):
+        super().__init__(widget)
+        self.fn = fn
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Show:
+            QTimer.singleShot(0, self.fn)
+        return False
 
 
 class RowDrag(QObject):
@@ -765,6 +1088,8 @@ def footer(tab, left_scroll):
     v.addWidget(left_scroll, 1)
     v.addWidget(bar)
     tab.btn_export = b
+    if getattr(tab.main, "EXPORT_TAB", False):            # Hauptfenster: Exportieren im Tab „Export“, Strg+E bleibt
+        b.hide()
     tab._footer_parts = (left_scroll, bar, col)
     return col
 
@@ -780,9 +1105,10 @@ def fit_footer_column(tab, split):
 
 
 def _export_word(tab):
-    path = tab.export_dialog()
-    if path:
-        tab.main.exported([Path(path).parent])
+    with tab.main.collecting_skips():                     # Ausgelassenes (z. B. eigenes NMR nicht freigegeben) in die Meldung
+        path = tab.export_dialog()
+        if path:
+            tab.main.exported([Path(path).parent], [path])
 
 
 class EmptyGuide(QFrame):
@@ -880,6 +1206,19 @@ class CanvasHost(QWidget):
             self.match_buffer()
             return draw(*a, **k)
         canvas.draw = matched
+        idle = canvas._draw_idle
+
+        def idle_after_fit():
+            # Verborgen: erst beim Anzeigen zeichnen (paintEvent holt das ausstehende Zeichnen nach). Größe ändert sich
+            # gleich (fit_timer läuft): nicht in der alten Größe zeichnen, fit() zeichnet danach ohnehin. Beim Öffnen
+            # wurden Abbildungen sonst mehrfach gerechnet (Orbitale je ~0,4 s), auch auf verborgenen Seiten.
+            if not canvas.isVisible():
+                return None
+            if self.fit_timer.isActive() and getattr(canvas, "_draw_pending", False):
+                canvas._draw_pending = False
+                return None
+            return idle()
+        canvas._draw_idle = idle_after_fit
 
     def set_figure_size(self, w_in, h_in):
         self.fig_in = (float(w_in), float(h_in))
@@ -1055,6 +1394,24 @@ class HoverReadout:
 SI_MAX_W_CM = 16.0                       # Abbildungen im SI-Export höchstens so breit wie der Satzspiegel
 
 
+def export_pptx_extra(tab, base, out):
+    """„Exportieren“ mit PPTX im Formate-Feld: Folie(n) wie die SI-Abbildung des Tabs (Bild + Unterschrift) als
+    <base>.pptx dazu. Nur PPTX gewählt: die Abbildung, die der Export sonst als PDF schreibt, fällt weg (Zwischenordner)."""
+    from elucida.si import pptx as PPTX
+    name = (getattr(tab.main, "compound", None) or {}).get("name") or tab.main.export_name()
+    work = PRJ.work_dir(tab.main.project_dir, "pptx")
+    figs = PPTX.figures_from_blocks(tab.si_figure(work, name))
+    if not figs:
+        return out
+    out = list(out) + [PPTX.write_pptx(PRJ.with_ext(base, ".pptx"), figs)]
+    if not any(tab.fmt().get(e) for e in ("pdf", "svg", "png")):
+        drop = PRJ.with_ext(Path(base).resolve(), ".pdf")
+        for f in [f for f in out if Path(f).resolve() == drop]:
+            Path(f).unlink(missing_ok=True)
+            out.remove(f)
+    return out
+
+
 def si_image(F, svg):
     """Abbildung für den SI-Export: SVG (Vektor, Text als Pfade) + PNG-Ersatz -> ("image", PNG, b, h, SVG)."""
     from PIL import Image
@@ -1069,8 +1426,71 @@ def si_image(F, svg):
     return ("image", str(png), w_cm, h_cm, str(svg))
 
 
+LINE_DEFAULTS = {k: core.TEXT_DEFAULTS[k] for k in ("line_w", "axis_w")}   # Teil des Textformats (R8: global/„Nur dieser Tab“)
+
+
+def role_color(st, key, default):
+    """Farbe einer Rolle der Stilkarte (feste Standardfarbe ohne Messungsliste, `COLOR_ROLES` des Tabs): eigene Wahl im
+    Zustand des Tabs, sonst genau der bisherige Standard (Bilder pixelgleich). Farben je Messung gewinnen immer."""
+    return (st or {}).get(key) or default
+
+
+def style_keys(tab):
+    """Farbrollen der Stilkarte im Zustand eines Tabs (Standard = Schlüssel fehlt); Linien stehen im Textformat."""
+    return [k for k, _, _ in getattr(tab, "COLOR_ROLES", ())]
+
+
+def apply_lines(fig, st):
+    """Linienbreiten nach dem Zeichnen (vor Vorschau, Export und Word gleich) aus dem Textformat des Tabs
+    (`main.text_format(key)`, global oder „Nur dieser Tab“ wie die Schrift): Kurven (Line2D, LineCollection) × `line_w`,
+    Achsen und Striche absolut `axis_w`. Standard (1 ×, auto) fasst nichts an: Bilder pixelgleich. Mehrfach
+    aufgerufen (build ruft super().build) wirkt es einmal: die gezeichnete Breite wird am Objekt gemerkt."""
+    from matplotlib.collections import LineCollection
+    f, a = float(st.get("line_w", 1.0) or 1.0), float(st.get("axis_w", 0.0) or 0.0)
+    if f == 1.0 and not a:
+        return
+    for ax in fig.axes:
+        for ln in list(ax.lines) + [c for c in ax.collections if isinstance(c, LineCollection)]:
+            w0 = ln.__dict__.setdefault("_lw0", np.asarray(ln.get_linewidth(), dtype=float))
+            ln.set_linewidth(w0 * f)
+        if a:
+            for sp in ax.spines.values():
+                sp.set_linewidth(a)
+            ax.tick_params(which="major", width=a)
+            ax.tick_params(which="minor", width=0.75 * a)          # Nebenstriche wie üblich etwas feiner
+
+
+def _with_lines(build):
+    """build(fig, …) eines Tabs mit dem Linien-Haken danach (FigureTab.__init_subclass__)."""
+    if getattr(build, "_lines", False):
+        return build
+
+    def wrapped(self, fig, *a, **k):
+        res = build(self, fig, *a, **k)
+        tf = getattr(self.main, "text_format", None)     # Vergleich/Pfad ohne Textformat: unverändert
+        if self.LINE_STYLE and fig is not None and tf is not None:
+            apply_lines(fig, tf(self.STATE_KEY))
+        if fig is not None and fig is getattr(self, "fig", None):   # nur die Vorschau (Export/Teilbilder nicht)
+            self._roles_shown_idle = self.roles_idle
+            if getattr(self, "tf_card", None) is not None:
+                self.tf_card.sync_roles()                # Farbknöpfe nach dem, was das gezeigte Bild benutzt
+        return res
+    wrapped._lines = True
+    wrapped.__doc__, wrapped.__name__ = build.__doc__, build.__name__
+    return wrapped
+
+
 class FigureTab(QWidget):
     """Gemeinsame Basis: Vorschau, Größe/Formate, Ziehen, Export, Speichern/Laden."""
+
+    LINE_STYLE = True                    # Linienbreiten je Tab (Stilkarte); Moleküle/fremde Bilder (X-Ray, DFT, Weitere): aus
+    roles_idle = {}                      # Rolle -> T-Schlüssel des Grunds, wo die Farbe im Bild nicht wirkt (Knopf ausgegraut); nur neu zuweisen
+    COLOR_ROLES = ()                     # Stilkarte: (Schlüssel, Standardfarbe, Text) für feste Farben ohne Messungsliste
+
+    def __init_subclass__(cls, **kw):
+        super().__init_subclass__(**kw)
+        if "build" in cls.__dict__:
+            cls.build = _with_lines(cls.__dict__["build"])
 
     DEFAULT_STATE: dict = {}
     STATE_KEY = ""
@@ -1115,8 +1535,9 @@ class FigureTab(QWidget):
         self.tf_card = None
         # Schrift und Rahmen: letzte Karte im Schritt Darstellung (nicht im Reaktionspfad: dort gilt das Format des Projekts)
         if self.TEXT_OPTS and hasattr(main, "update_text_format"):
-            c_ = self.tf_card = TextFormatCard(main, self.STATE_KEY, self.TEXT_OPTS)
-            c_.box = QGroupBox(T("tf_title"))
+            c_ = self.tf_card = TextFormatCard(main, self.STATE_KEY, self.TEXT_OPTS, self if self.LINE_STYLE else None)
+            c_.box = QGroupBox(T("tf_title_colors" if self.COLOR_ROLES else "tf_title_lines" if self.LINE_STYLE
+                                  else "tf_title"))
             QVBoxLayout(c_.box).addWidget(c_)
             self.lv.insertWidget(self.lv.indexOf(self.grp_common) + 1, c_.box)
             c_.fold = STYLE.Fold(c_.box, f"{self.STATE_KEY}/text_format", main.settings, c_.differs)
@@ -1160,6 +1581,8 @@ class FigureTab(QWidget):
         self.btn_export.setToolTip(T("btn_export_tip"))
         self.btn_export.setDefault(True)
         self.btn_export.clicked.connect(self.export_dialog)
+        if getattr(self.main, "EXPORT_TAB", False):       # Hauptfenster: Exportieren im Tab „Export“, Strg+E bleibt
+            self.btn_export.hide()
         bar = side_bar(b_reset, self.btn_presets, self.btn_next, stretch_at=2)
         left_col = QWidget()
         cv = QVBoxLayout(left_col)
@@ -1212,6 +1635,7 @@ class FigureTab(QWidget):
         for g, title in self._to_right:                   # Ergebnisse als Reiter neben der Abbildung
             self.move_right(g, title)
         self._build_si_page()
+        self._link_cards(left)
         self.kpi_box = kpi_corner(self.right_tabs)        # Ergebnis auf einen Blick, rechts in der Reiterzeile
         self.right_tabs.currentChanged.connect(lambda *_: self.refresh_summary())
         split = QSplitter(Qt.Horizontal)
@@ -1269,8 +1693,15 @@ class FigureTab(QWidget):
     def build_controls(self):
         raise NotImplementedError
 
+    def fmt(self):
+        """Exportformate {pdf, svg, png, pptx}: im Hauptfenster die des Tabs „Export“ (für alle Abbildungen), im
+        Vergleich/Pfad die eigenen (`st["fmt"]`, Karte „Achsen, Größe und Formate“)."""
+        f = getattr(self.main, "export_fmt", None)
+        return f() if getattr(self.main, "EXPORT_TAB", False) and f is not None else self.st["fmt"]
+
     def common_box(self):
-        g = QGroupBox(T("grp_export"))
+        own = not getattr(self.main, "EXPORT_TAB", False)  # Formate hier nur ohne Tab „Export“ (Vergleich, Pfad)
+        g = QGroupBox(T("grp_export" if own else "grp_axes_size"))
         f = make_form(g)
         st = self.st
         row = QHBoxLayout()
@@ -1299,13 +1730,19 @@ class FigureTab(QWidget):
         f.addRow(T("size_wh"), row)
         row = QHBoxLayout()
         self.cb_fmt = {}
-        for e in ("pdf", "svg", "png"):
+        # PPTX: eine Folie mit Bild und Unterschrift (si/pptx.py); nur im Hauptfenster (Vergleich/Pfad exportieren selbst)
+        for e in ("pdf", "svg", "png") + (("pptx",) if hasattr(self.main, "notify") else ()):
             cb = QCheckBox(e.upper())
-            cb.setChecked(st["fmt"].get(e, True))
+            cb.setChecked(st["fmt"].get(e, e != "pptx"))
             self.cb_fmt[e] = cb
-            row.addWidget(cb)
+            if own:
+                row.addWidget(cb)
+            else:                                           # nur Träger von st["fmt"] (alte Verbindungen)
+                cb.setParent(g)
+                cb.hide()
         row.addStretch(1)
-        f.addRow(T("formats"), row)
+        if own:
+            f.addRow(T("formats"), row)
         for w in (self.sp_xmin, self.sp_xmax, self.sp_ymax, self.sp_w, self.sp_h):
             w.valueChanged.connect(self.changed)
         self.cb_xauto.toggled.connect(self.changed)
@@ -1364,7 +1801,8 @@ class FigureTab(QWidget):
         st = self.st
         st.update(x_auto=self.cb_xauto.isChecked(), x_min=self.sp_xmin.value(), x_max=self.sp_xmax.value(),
                   ymax=self.sp_ymax.value(), size=self.cmb_size.currentData(), w_cm=self.sp_w.value(),
-                  h_cm=self.sp_h.value(), fmt={e: cb.isChecked() for e, cb in self.cb_fmt.items()})
+                  h_cm=self.sp_h.value(), fmt={e: cb.isChecked() for e, cb in self.cb_fmt.items()
+                                               if e != "pptx" or cb.isChecked()})   # aus = kein Schlüssel (Standard)
 
     def changed(self, *_):
         if self._loading:
@@ -1381,7 +1819,12 @@ class FigureTab(QWidget):
     def cache(self, key, fn):
         c = self.main.extra_cache
         if key not in c:
-            c[key] = fn()
+            try:
+                c[key] = fn()
+            except Exception as ex:          # Datei merken: Exporte nennen sie, wenn sie den Teil auslassen
+                if error_file(ex) is None and isinstance(key, tuple):
+                    ex.elucida_file = next((k for k in key if isinstance(k, str) and os.path.isfile(k)), None)
+                raise
         return c[key]
 
     def samples(self, path):
@@ -1409,7 +1852,7 @@ class FigureTab(QWidget):
             try:
                 asset = self.structure_asset(path, color)
             except Exception as ex:
-                self.add_note(f"{Path(path).name}: {ex}")
+                self.note_unreadable(path, ex)
                 continue
             out.append({"file": path, "id": id_, "prefer": prefer, "_asset": asset, "_units": IMG.structure_units(path)})
         top = max((im["_units"] for im in out if im["_units"]), default=None)
@@ -1437,7 +1880,7 @@ class FigureTab(QWidget):
         if st["size"] != "std":
             core.apply_export_size(cfg, st["w_cm"], st["h_cm"])
         core.apply_text_format(cfg, self.main.text_format(self.STATE_KEY))
-        fmts = [e for e in ("pdf", "svg", "png") if st["fmt"].get(e)] or ["pdf"]
+        fmts = [e for e in ("pdf", "svg", "png") if self.fmt().get(e)] or ["pdf"]
         cfg["_main_fmt"], cfg["extra_formats"] = fmts[0], fmts[1:]
         return cfg
 
@@ -1492,7 +1935,8 @@ class FigureTab(QWidget):
     def arrange(self):
         """Standard: „Achsen, Größe und Formate“ eingeklappt; die Bildunterschrift steht rechts im Reiter „SI-Text“
         (`_build_si_page`). Tabs ergänzen (super())."""
-        self.fold(self.grp_common, "common", ("x_auto", "ymax", "size", "w_cm", "h_cm", "fmt"))
+        self.fold(self.grp_common, "common", ("x_auto", "ymax", "size", "w_cm", "h_cm")
+                  + (() if getattr(self.main, "EXPORT_TAB", False) else ("fmt",)))
 
     # -- Rechenweg, Ergebnis-Kacheln, SI-Text (Entwurf 2026-11) --------------------------
     SI_PAGE = True                     # Reiter „SI-Text“ (Bildunterschrift, Methodentext) neben der Abbildung
@@ -1501,6 +1945,8 @@ class FigureTab(QWidget):
     def chain(self):
         """Rechenweg dieses Tabs: [(Schritt, benutzt)] aus dem aktuellen Zustand; Tabs mit Auswertung überschreiben."""
         return []
+
+    KPI_WITHOUT_FIGURE = False         # Kacheln auch ohne Abbildung (IR + EA: Elementaranalyse ohne IR-Spektrum)
 
     def kpis(self):
         """Ergebnis auf einen Blick: höchstens zwei (Bezeichnung, Wert) aus den aktuellen Ergebnissen."""
@@ -1591,14 +2037,33 @@ class FigureTab(QWidget):
             QApplication.clipboard().setText(text)
         self.main.statusBar().showMessage(T("si_caption_copied") if text else T("si_caption_none"), 6000)
 
+    def result_empty(self):
+        """[(Seite, leer)] der Ergebnisseiten: leere erscheinen nicht als Reiter (`ResultTabs.set_empty`)."""
+        return []
+
+    def sync_result_tabs(self):
+        rt = getattr(self, "right_tabs", None)
+        if not isinstance(rt, ResultTabs):
+            return
+        try:
+            for page, empty in self.result_empty():
+                j = rt.indexOf(page)
+                if j < 0 and page.parentWidget() is not None:          # Karte steckt in result_page (Bildlauf)
+                    j = next((k for k in range(rt.count()) if rt.widget(k).isAncestorOf(page)), -1)
+                if j >= 0:
+                    rt.set_empty(rt.widget(j), empty)
+        except Exception:                                 # Zugabe: nie das Zeichnen stören
+            self.main.log_signal.emit(traceback.format_exc())
+
     def refresh_summary(self):
         """Rechenweg, Kacheln und SI-Text nach dem Zeichnen auf den aktuellen Stand bringen."""
+        self.sync_result_tabs()
         if getattr(self, "kpi_box", None) is None:
             return
         try:
             if self.chain_row is not None:
                 self.chain_row.set_items(self.chain())
-            ks = list(self.kpis())[:2] if getattr(self, "F", None) is not None else []
+            ks = list(self.kpis())[:2] if getattr(self, "F", None) is not None or self.KPI_WITHOUT_FIGURE else []
         except Exception:                                 # Kennwerte sind Zugabe: nie das Zeichnen stören
             ks = []
         self.kpi_box.show_items(ks)
@@ -1608,6 +2073,49 @@ class FigureTab(QWidget):
             except Exception:
                 txt = ""
             self.lbl_methods.setText(txt)
+
+    def _link_cards(self, left):
+        """Karten aus CARD_PAGES: Hinweis „Ergebnis im Reiter …“ in der Karte, Eingaben markieren den Reiter."""
+        from PySide6.QtWidgets import QAbstractButton
+        rt, titles = self.right_tabs, {T(k): k for k in CARD_PAGES}
+        self.card_links = {}
+        for g in dict.fromkeys(left.findChildren(QGroupBox)):
+            key = titles.get(_card_title(g))
+            if key is None or g in self.card_links:
+                continue
+            names = [T(k) for k in CARD_PAGES[key]]
+            pages = [rt.widget(i) for i in range(rt.count()) if rt.tabText(i) in names]
+            if not pages:
+                continue
+            self.card_links[g] = pages
+            hint = STYLE.HintLabel()
+            hint.setWordWrap(True)
+            q = ("„", "“") if get_lang() == "de" else ("“", "”")
+            hint.setText(T("card_acts_on", t=" · ".join(q[0] + rt.tabText(rt.indexOf(p_)) + q[1] for p_ in pages)))
+            hint.setStyleSheet(HINT_CSS)
+            fold = next((f_ for f_ in self.folds if f_.group is g), None)
+            lay = fold.body.layout() if fold is not None else g.layout()   # Klappkarte: im eingeklappten Inhalt
+            if isinstance(lay, QFormLayout):
+                lay.addRow(hint)
+            elif lay is not None:
+                lay.addWidget(hint)
+
+            def touched(*_, pages=pages):
+                if self._loading or getattr(self.main, "_restoring", False) or not self.isVisible():
+                    return                                # programmatisch (Öffnen, Rückgängig, verborgener Tab)
+                for p_ in pages:
+                    rt.mark(p_)
+            for x in g.findChildren(QAbstractButton):
+                x.clicked.connect(touched)
+            for x in g.findChildren(QComboBox):
+                x.activated.connect(touched)
+            for x in g.findChildren(QDoubleSpinBox) + g.findChildren(QSpinBox):
+                x.valueChanged.connect(touched)
+            for x in g.findChildren(QLineEdit):
+                if not isinstance(x.parentWidget(), (QComboBox, QDoubleSpinBox, QSpinBox)):
+                    x.editingFinished.connect(touched)
+            for x in g.findChildren(QAbstractItemView):
+                x.clicked.connect(touched)
 
     def move_right(self, group, title):
         """Karte als Reiter neben „Abbildung“ (kostet nur die Reiterzeile, die Abbildung bleibt gleich groß –
@@ -1622,6 +2130,11 @@ class FigureTab(QWidget):
         if msg not in self._notes:
             self._notes.append(msg)
         self.main.log_signal.emit("  " + msg)
+
+    def note_unreadable(self, path, ex):
+        """Datei nicht lesbar, ihr Teil fehlt: Hinweis unter der Vorschau und Meldung im Export (`skip_part`)."""
+        self.add_note(T("skip_item", f=Path(path).name, e=str(ex).removeprefix(Path(path).name + ": ")))
+        self.main.skip_part(ex, path)
 
     def notes_begin(self):
         self._notes = []
@@ -1703,17 +2216,26 @@ class FigureTab(QWidget):
         self.st["layout"][self.size_key()] = {}
         self.render()
 
-    # was „Alles auf Standard“ behält: Daten und Angaben zur Messung (Dateien, Referenz, Kalibrierung, eingegebene
-    # Werte); Exportgröße/-formate und Bildunterschriften (cap_*) bleiben immer
+    # was „Darstellung zurücksetzen“ behält und Vorlagen nie tragen: Daten, Angaben zur Messung und alles
+    # Wissenschaftliche (Schlüssel, deren Wert eine gedruckte Zahl, Tabelle, Kachel, den Methodentext, die SI oder die
+    # eingehenden Daten ändert: Auswahl, Bereich, Basislinie, Fit, Schwellen der Auswertung). Darstellung = nur Bild
+    # samt der Unterschrift, die es beschreibt. Exportgröße/-formate und Bildunterschriften (cap_*) bleiben immer.
     RESET_KEEP: tuple = ()
+    # Darstellung außerhalb von DEFAULT_STATE ({Schlüssel: Standard}): Vorlagen tragen sie, Zurücksetzen setzt sie
+    DISPLAY_EXTRA: dict = {}
+    # Darstellungsteile von Daten-Dicts ({Schlüssel: (Teilschlüssel, …)}): nur diese Teile reisen in Vorlagen
+    DISPLAY_PARTS: dict = {}
 
     def reset_defaults(self):
-        """Alle übrigen Einstellungen des Tabs (Darstellung und Auswertung) auf DEFAULT_STATE, Layout neu.
-        Rückgängig (Strg+Z) holt alles zurück."""
+        """Darstellung des Tabs auf DEFAULT_STATE (alles außer RESET_KEEP), Layout neu. Rückgängig (Strg+Z) holt alles
+        zurück."""
         keep = set(self.RESET_KEEP) | {"size", "w_cm", "h_cm", "fmt"}
         for k, v in self.DEFAULT_STATE.items():
             if k not in keep and not k.startswith("cap_"):
                 self.st[k] = copy.deepcopy(v)
+        for k in style_keys(self):                       # Linien und Farben (Stilkarte): Standard = kein Schlüssel
+            self.st.pop(k, None)
+        self.st.update(copy.deepcopy(self.DISPLAY_EXTRA))
         key = self.main.tab_key_of(self)              # nur diesen Tab aus dem Zustand neu aufbauen
         self.main.replace_tab(key) if key else self.main.rebuild_tabs()
         self.main.push_undo()
@@ -1725,14 +2247,37 @@ class FigureTab(QWidget):
             return
         pdir = Path(self.main.project_dir)
         base = PRJ.staging(pdir, self.STATE_KEY) / PRJ.export_stem(self.main.export_name(), self.STATE_KEY)
-        try:
-            out = self.main.place_exports(self.export_to(base))
-        except PermissionError as e:
-            return self.main.error(T("report_locked", p=getattr(e, "filename", "") or ""))
-        except Exception as e:
-            return self.main.error(str(e))
-        self.main.exported(p.parent for p in out)
+        with self.main.collecting_skips():                 # unlesbare Teile auslassen und in der Meldung nennen
+            try:
+                out = self.export_to(base)
+                if self.fmt().get("pptx"):
+                    out = export_pptx_extra(self, base, out)
+                out = self.main.place_exports(out)
+            except PermissionError as e:
+                return self.main.error(T("report_locked", p=getattr(e, "filename", "") or ""))
+            except Exception as e:
+                return self.main.error("\n\n".join(x for x in (str(e), self.main.skips_text()) if x))
+            if hasattr(self.main, "notify"):              # Hauptfenster: Formate und Sprung zur Karte in der Meldung
+                links = [(T("export_change_formats"), self.show_formats)] if getattr(self, "grp_common", None) else []
+                self.main.exported((p.parent for p in out), out, (), links)
+            else:                                          # Vergleich/Pfad: deren Gastgeber kennt nur die Ordner
+                self.main.exported(p.parent for p in out)
         return out
+
+    def show_formats(self):
+        """Klick aus der Exportmeldung: Karte mit den Formaten zeigen (Schritt, aufgeklappt, sichtbar)."""
+        if getattr(self.main, "EXPORT_TAB", False):       # Hauptfenster: Formate stehen im Tab „Export“
+            return self.main.show_eps_formats()
+        g = self.grp_common
+        key = self.main.tab_key_of(self)
+        if key:
+            self.main.show_tab(key)
+        self.steps.reveal(g)
+        f = next((f_ for f_ in self.folds if f_.group is g), None)
+        if f is not None:
+            f.set_open(True)
+        area = self._left_parts[2]
+        QTimer.singleShot(0, lambda: area.ensureWidgetVisible(g))
 
     def export_to(self, base: Path):
         base = Path(base).resolve()
@@ -1741,17 +2286,52 @@ class FigureTab(QWidget):
         F = self.build(fig)
         if F is None:
             raise RuntimeError(T("tab_empty"))
-        F.cfg["output"] = str(base.with_suffix("." + F.cfg["_main_fmt"]))
+        F.cfg["output"] = str(PRJ.with_ext(base, "." + F.cfg["_main_fmt"]))
         F.cfg["_base_dir"] = base.parent
         F.export()
         data = base.with_name(base.name + "_data.csv")
         write_curves_csv(data, F.curves, F.cfg.get("xlabel", "x"), F.cfg.get("ylabel", "y"))
-        out = [base.with_suffix("." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]] + [data]
-        txt = self.methods_text()
+        out = [PRJ.with_ext(base, "." + e) for e in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]] + [data]
+        try:
+            txt = self.methods_text()
+        except Exception as ex:                          # Abbildung und Daten bleiben; der Text fehlt mit Meldung
+            self.main.skip_part(ex, part=self.STATE_KEY)
+            txt = ""
         if txt:
             out.append(base.with_name(base.name + "_methods.txt"))
             out[-1].write_text(txt + "\n", encoding="utf-8")
         return out
+
+    def copy_figure(self, tmp):
+        """Bearbeiten › Abbildung kopieren (SVG), Entscheidung 128: Abbildung der sichtbaren Seite rechts, gebaut wie im
+        Export -> (SVG, PNG-Ersatz); ohne Abbildung der Grund (Text)."""
+        cur = self.right_tabs.currentWidget()
+        if cur is self.preview_stack:
+            got = self.copy_built(tmp, self.copy_build)
+        else:
+            make = next((m for g, m in self.copy_pages() if cur is g or cur.isAncestorOf(g)), None)
+            if make is None:
+                return T("copy_fig_page")
+            got = make(tmp)
+        return got or T("copy_fig_none")
+
+    def copy_build(self, fig):
+        """Hauptabbildung zum Kopieren; Tabs mit Markierungen nur in der Vorschau bauen wie im Export."""
+        return self.build(fig)
+
+    def copy_pages(self):
+        """[(Seite rechts, Kopierer(tmp) -> (SVG, PNG) | None)] der Seiten mit eigener Abbildung."""
+        return []
+
+    def copy_built(self, tmp, build):
+        """`build(fig)` -> F wie im Export, gespeichert über `si_image` (dasselbe SVG wie Export und SI)."""
+        fig = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
+        FigureCanvasAgg(fig)
+        F = build(fig)
+        if F is None:
+            return None
+        img = si_image(F, Path(tmp) / f"{self.STATE_KEY}.svg")
+        return img[4], img[1]
 
     # -- SI-Export (Word) ------------------------------------------------------------------
     SI_CAPTION = ""                      # englische Bildunterschrift, {name} = Name der Verbindung (fett)
@@ -1864,13 +2444,17 @@ class FigureTab(QWidget):
         self.main.statusBar().showMessage(T("si_methods_copied") if txt else T("si_methods_none"), 6000)
 
     def _is_data_key(self, k):
-        """Daten, Angaben zur Messung, Bildunterschrift: nicht in Vorlagen (X-Ray/DFT: entries, current)."""
-        return k in self.RESET_KEEP or k in ("entries", "current") or k.startswith("cap_")
+        """Daten, Auswertung, Angaben zur Messung, Bildunterschrift: nicht in Vorlagen (X-Ray/DFT: entries, current).
+        Was nicht in DEFAULT_STATE steht (Overlay `nto`, EPR `calc`, DFT `nbo`, `homa_*` …), hängt an Dateien: Daten."""
+        return (k in self.RESET_KEEP or k in ("entries", "current") or k.startswith("cap_")
+                or k not in self.DEFAULT_STATE and k not in self.DISPLAY_EXTRA)
 
     def save_setup(self):
         p, _ = QFileDialog.getSaveFileName(self, T("tab_save"), self.STATE_KEY + ".yaml", "YAML (*.yaml)")
         if p:
             data = {k: v for k, v in self.st.items() if not self._is_data_key(k)}
+            data.update({k: {s: v for s, v in self.st[k].items() if s in subs}
+                         for k, subs in self.DISPLAY_PARTS.items() if isinstance(self.st.get(k), dict)})
             Path(p).write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     def load_setup(self):
@@ -1884,6 +2468,9 @@ class FigureTab(QWidget):
             self.st.update(copy.deepcopy(self.DEFAULT_STATE))
             self.st.update({k: v for k, v in data.items() if not self._is_data_key(k)})
             self.st.update(keep)
+            for k, subs in self.DISPLAY_PARTS.items():           # Dateien darin bleiben die der offenen Verbindung
+                if isinstance(data.get(k), dict):
+                    self.st.setdefault(k, {}).update({s: copy.deepcopy(v) for s, v in data[k].items() if s in subs})
             key = self.main.tab_key_of(self)
             self.main.replace_tab(key) if key else self.main.rebuild_tabs()
 
@@ -1893,21 +2480,52 @@ COMMON_DEFAULTS = {"x_auto": True, "x_min": 200.0, "x_max": 800.0, "size": "half
 
 
 # ----------------------------------------------------------------------------
+FigureTab.build = _with_lines(FigureTab.build)
+
+
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
     GUIDE, GUIDE_ACTION, GUIDE_EXTRA = "overlay", ("guide_add", "add_exp"), "tabs_button"
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
-    SI_CAPTION = "Comparison of UV-Vis spectra of {name}."
-    RESET_KEEP = ("entries", "structure")
+    RESET_KEEP = ("entries", "structure", "mode", "baseline",          # y-Größe und Basislinie: Rechenweg
+                  "tdt_f_on", "tdt_f", "tdt_w", "tdt_range", "tdt_si",  # Auswahl der TD-DFT-Tabelle (SI)
+                  "x_auto", "x_min", "x_max")           # mit „nur im Bereich“ (tdt_range) Zeilen der Tabelle
+
+    def copy_pages(self):
+        def nto(tmp):                                    # Bild des gewählten Zustands wie im Export
+            got = self.nto.export_figure(Path(tmp) / "nto")
+            return (got[1], got[0]) if got else None
+        return [(self.nto.page, nto)]
+
+    def si_caption(self, name):
+        """Nach dem Inhalt (Robin 2026-11-14: „das passende klingt besser“): gemessen + gerechnet, nur gemessen, nur
+        gerechnet. Aus den sichtbaren Einträgen, nie gespeichert: gilt auch für bestehende Projekte."""
+        vis = [e for e in self.st["entries"] if e.get("visible", True)]
+        meas = any(e["kind"] in ("exp", "sec", "secser") for e in vis)
+        calc = ("calculated (TD-DFT)" if any(e["kind"] == "calc" for e in vis) else
+                "calculated vibronic" if any(e["kind"] == "esd" for e in vis) else "")
+        n = "<b>" + html.escape(name) + "</b>"
+        if meas and calc:
+            return f"Experimental and {calc} UV-Vis spectra of {n}."
+        if calc:
+            return f"{calc[0].upper() + calc[1:]} UV-Vis spectra of {n}."
+        return f"UV-Vis spectra of {n}."
     DEFAULT_STATE = dict(COMMON_DEFAULTS, entries=[], mode="norm", nlo=300.0, nhi=500.0, ymax=0.0,
                          baseline=True, sticks=True, stick_mode="band", structure=None, struct_w=20.0,
                          stack=False, stack_gap=1.0, y_axis="auto", curve_labels=False, zero_lines=False,
-                         triplets=False)
-
+                         triplets=False, tdt_f_on=True, tdt_f=0.01, tdt_w=10.0, tdt_range=False, tdt_si=True)
 
     def arrange(self):
         super().arrange()
         self.fold(self.group_titled("ov_stack_grp"), "stack", ("stack", "stack_gap", "y_axis", "curve_labels", "zero_lines"))
+        self.to_right(self.grp_tdt, T("tddft_tab_page"))
+        self.to_right(self.nto.page, T("nto_page"))
+
+    def result_empty(self):
+        """Ohne TD-DFT-Kurve keine Seite „Anregungen“, ohne NTO-Datei keine Seite „NTO“."""
+        calc = any(e.get("kind") == "calc" for e in self.st["entries"])
+        return [(self.grp_tdt, not calc), (self.nto.page, not self.nto.st["items"])]
+
     def build_controls(self):
         st = self.st
         g = QGroupBox(T("ov_curves"))
@@ -1959,6 +2577,22 @@ class OverlayTab(FigureTab):
         v.addWidget(self.table)
         RowDrag(self.table, self.move_row)
         STYLE.hide_when_empty(self.table)
+        # Verbindungen vergleicht das Projekt (Nutzerentscheid 1.2.0): hier nur Messung gegen Rechnung einer Verbindung
+        f = make_form()
+        row = QHBoxLayout()
+        self.lbl_cmp = QLabel(T("ov_cmp_where"))
+        self.btn_cmp = QPushButton(T("ov_cmp_open"))
+        self.btn_cmp.setProperty("chooselike", True)
+        self.btn_cmp.setToolTip(T("ov_cmp_open_tip"))
+        self.btn_cmp.clicked.connect(self.open_comparison)
+        row.addWidget(self.lbl_cmp, 1)
+        row.addWidget(self.btn_cmp)
+        f.addRow(T("ov_cmp"), row)
+        self.lbl_cmp_old = STYLE.HintLabel("")          # alter Zustand mit Struktur je Spektrum: bleibt, nur Hinweis
+        self.lbl_cmp_old.setWordWrap(True)
+        self.lbl_cmp_old.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_cmp_old)
+        v.addLayout(f)
         lay = self.lv
         lay.addWidget(g)
 
@@ -2050,18 +2684,6 @@ class OverlayTab(FigureTab):
         row.addWidget(self.cmb_ls, 1)
         row.addWidget(self.sp_lw)
         f.addRow(T("ov_line"), row)
-        row = QHBoxLayout()
-        self.lbl_estruct = QLabel("–")
-        b1, b2 = QPushButton(T("choose")), QPushButton(T("remove"))
-        b1.clicked.connect(self.choose_entry_structure)
-        b2.clicked.connect(lambda: self.set_entry_structure(None))
-        row.addWidget(self.lbl_estruct, 1)
-        row.addWidget(b1)
-        row.addWidget(b2)
-        f.addRow(T("structure"), row)
-        self.cb_ecolor = QCheckBox(T("ov_struct_color"))
-        self.cb_ecolor.toggled.connect(self.detail_changed)
-        f.addRow(self.cb_ecolor)
         self.cb_samelevel = QCheckBox(T("ov_same_level"))
         self.cb_samelevel.setToolTip(T("ov_same_level_tip"))
         self.cb_samelevel.toggled.connect(self.detail_changed)
@@ -2076,6 +2698,51 @@ class OverlayTab(FigureTab):
         self.ed_conc.editingFinished.connect(self.detail_changed)
         self.ed_mw.editingFinished.connect(self.detail_changed)
         lay.addWidget(self.det)
+
+        # TD-DFT-Tabelle (Paket A 1.2.0): Auswahl der Zustände links, Tabelle rechts im Reiter „Anregungen“
+        g = QGroupBox(T("tddft_tab_card"))
+        g.setToolTip(T("tddft_tab_card_tip"))
+        f = make_form(g)
+        row = QHBoxLayout()
+        self.cb_tdt_f = QCheckBox(T("tddft_tab_f"))
+        self.cb_tdt_f.setChecked(st["tdt_f_on"])
+        self.sp_tdt_f = QDoubleSpinBox(decimals=3, minimum=0.001, maximum=2.0, singleStep=0.005, value=st["tdt_f"])
+        self.sp_tdt_f.setToolTip(T("tddft_tab_f_tip"))
+        row.addWidget(self.cb_tdt_f)
+        row.addWidget(self.sp_tdt_f)
+        f.addRow(row)
+        self.sp_tdt_w = QDoubleSpinBox(decimals=0, minimum=1, maximum=100, singleStep=5, value=st["tdt_w"], suffix=" %")
+        self.sp_tdt_w.setToolTip(T("tddft_tab_w_tip"))
+        f.addRow(T("tddft_tab_w"), self.sp_tdt_w)
+        self.cb_tdt_range = QCheckBox(T("tddft_tab_range"))
+        self.cb_tdt_range.setToolTip(T("tddft_tab_range_tip"))
+        self.cb_tdt_range.setChecked(st["tdt_range"])
+        self.cb_tdt_si = QCheckBox(T("tddft_tab_si"))
+        self.cb_tdt_si.setToolTip(T("tddft_tab_si_tip"))
+        self.cb_tdt_si.setChecked(st["tdt_si"])
+        f.addRow(self.cb_tdt_range)
+        f.addRow(self.cb_tdt_si)
+        si_elsewhere(f, self.cb_tdt_si, self, "overlay", T("export_part_tdt"))
+        for w in (self.cb_tdt_f, self.cb_tdt_range, self.cb_tdt_si):
+            w.toggled.connect(self.changed)
+        for w in (self.sp_tdt_f, self.sp_tdt_w):
+            w.valueChanged.connect(self.changed)
+        lay.addWidget(g)
+        # Ergebnisseite (arrange -> to_right): Zustand, E, λ, f, Hauptanteile; darunter, wie gerechnet wurde
+        self.grp_tdt = QGroupBox(T("tddft_tab_page"))
+        self.grp_tdt.setProperty("hug", True)              # Tabelle so hoch wie ihre Zeilen, kein leerer Streifen
+        v = QVBoxLayout(self.grp_tdt)
+        # eine Zeile je Hauptanteil (Zustand, E, λ, f nur in der ersten): schmal, kein Querrollen, kein Umbruch in Zellen
+        self.tbl_tdt = STYLE.summary_grid([T("tddft_tab_col_calc"), T("tddft_tab_col_state"), "E [eV]", "λ [nm]",
+                                           "f" + STYLE.QTY, T("tddft_tab_col_trans"), T("tddft_tab_col_weight")])
+        STYLE.rich_header(self.tbl_tdt)                   # vor dem ersten Ausblenden tauschen (wie UV-Vis-Kinetik)
+        v.addWidget(self.tbl_tdt)
+        self.lbl_tdt = STYLE.SciLabel(empty=T("tddft_tab_none"))
+        self.lbl_tdt.setWordWrap(True)
+        v.addWidget(self.lbl_tdt)
+        lay.addWidget(self.grp_tdt)
+        from elucida.tabs.nto import NtoView              # NTO-Bilder je Anregung (Paket B 1.2.0)
+        self.nto = NtoView(self, lay)
 
         g = QGroupBox(T("ov_display"))
         f = make_form(g)
@@ -2462,6 +3129,174 @@ class OverlayTab(FigureTab):
         """Rechnungen eines TD-DFT-Eintrags: [dict(file, variant, weight)] (kombiniert: mehrere)."""
         return e.get("sources") or [{"file": e["file"], "variant": e.get("variant"), "weight": 1.0}]
 
+    def export_to(self, base: Path):
+        """Wie alle Tabs, dazu die TD-DFT-Übergänge maschinenlesbar (ACS Research Data Guidelines): je Rechnung
+        Zustand, E [eV], λ [nm], f, Multiplizität wie gelesen (ohne Verschiebung und Gewicht der Abbildung)."""
+        out = super().export_to(base)
+        calcs = [e for e in self.st["entries"] if e["kind"] == "calc"]
+        if calcs:
+            path = Path(base).resolve().with_name(Path(base).name + "_transitions.csv")
+            with open(path, "w", newline="", encoding="utf-8-sig") as fh:
+                w = csv.writer(fh)
+                w.writerow(["Entry", "File", "State", "E [eV]", "lambda [nm]", "f", "Multiplicity",
+                            "Contributions (weight)", "Weight rule"])
+                for e in calcs:
+                    for s_ in self.sources(e):
+                        r = self.cache(("tddft", s_["file"], s_.get("variant")),
+                                       lambda s_=s_: X.parse_tddft(s_["file"], s_.get("variant")))
+                        mult = list(r.get("mult") or [None] * len(r["E"]))
+                        pr = self.tdt_parts(s_)
+                        parts = pr["parts"] if pr else [None] * len(r["E"])
+                        for k, (E, f, m) in enumerate(zip(r["E"], r["f"], mult)):
+                            # alle gedruckten Anteile ohne Schwelle, ASCII-Pfeil (maschinenlesbar)
+                            con = "; ".join(f"{a} -> {b}: {wt:.4f}" for a, b, wt in parts[k] or ()).replace("\u2212", "-")
+                            w.writerow([e["label"], Path(s_["file"]).name, k + 1, f"{E:.10g}",
+                                        f"{1239.84198 / E:.10g}" if E > 0 else "", f"{f:.10g}", m or "",
+                                        con, X.RULE_CSV[pr["rule"]] if pr and con else ""])
+            out.append(path)
+        try:                                              # NTO-Bilder je Zustand mit Datei (Paket B 1.2.0)
+            out += self.nto.export_to(base)
+        except Exception:
+            self.main.log_signal.emit(traceback.format_exc())
+        return out
+
+    # -- TD-DFT-Tabelle (Paket A 1.2.0) ------------------------------------------------
+    def tdt_parts(self, s_):
+        """Hauptanteile einer Rechnung (`X.tddft_parts`, zwischengespeichert); None ohne Zusammensetzung oder bei Fehler."""
+        try:
+            return self.cache(("tdparts", s_["file"], s_.get("variant")),
+                              lambda: X.tddft_parts(s_["file"], s_.get("variant")))
+        except Exception:
+            return None
+
+    def tdt_rows(self):
+        """Zeilen der Anregungstabelle aus den sichtbaren TD-DFT-Einträgen -> (Zeilen, Info). Zeile: dict(entry, state,
+        E, lam, f, parts, rule). Werte wie gerechnet (ohne Verschiebung und Gewicht der Abbildung); gefiltert nach f-Schwelle,
+        wahlweise nach dem λ-Bereich des Bildes (dort mit der Verschiebung, also was im Bild zu sehen ist); Tripletts mit
+        f = 0 nur, wenn sie im Bild markiert sind."""
+        st = self.st
+        xlim = None
+        if st.get("tdt_range") and getattr(self, "F", None) is not None:
+            xlim = sorted(self.F.ax.get_xlim())
+        rows, info = [], dict(total=0, rules=set(), missing=False, shifts=set(), multi=False)
+        ents = [e for e in st["entries"] if e.get("kind") == "calc" and e.get("visible", True)]
+        srcs = [(e, s_) for e in ents for s_ in self.sources(e)]
+        info["multi"] = len(srcs) > 1
+        for e, s_ in srcs:
+            try:
+                r = self.cache(("tddft", s_["file"], s_.get("variant")),
+                               lambda s_=s_: X.parse_tddft(s_["file"], s_.get("variant")))
+            except Exception:
+                continue
+            pr = self.tdt_parts(s_)
+            if pr:
+                info["rules"].add(pr["rule"])
+            else:
+                info["missing"] = True
+            mult = list(r.get("mult") or [None] * len(r["E"]))
+            count, shift = {}, float(e.get("shift", 0.0) or 0.0)
+            name = e["label"].replace(" (TD-DFT)", "") + (f" · {Path(s_['file']).stem}" if len(self.sources(e)) > 1 else "")
+            for k, (E, f, m) in enumerate(zip(r["E"], r["f"], mult)):
+                count[m] = count.get(m, 0) + 1
+                info["total"] += 1
+                if m == 3 and f <= 0 and not st.get("triplets"):
+                    continue
+                if st.get("tdt_f_on") and f < st.get("tdt_f", 0.01):
+                    continue
+                if xlim is not None and not (E + shift > 0 and xlim[0] <= 1239.84198 / (E + shift) <= xlim[1]):
+                    continue
+                if shift:
+                    info["shifts"].add(shift)
+                rows.append(dict(entry=name, state={1: "S", 3: "T"}.get(m, "") + str(count[m] if m in (1, 3) else k + 1),
+                                 E=float(E), lam=1239.84198 / E if E > 0 else float("nan"), f=float(f),
+                                 parts=pr["parts"][k] if pr else None, rule=pr["rule"] if pr else None))
+        return rows, info
+
+    def tdt_table(self, si=False):
+        """Anregungstabelle als Text -> (Zeilen, Info, Anteile da). Eine Zeile je Hauptanteil ab der Schwelle; Zustand,
+        E (2 Nachkommastellen), λ (ganzzahlig wie überall), f (3) nur in der ersten Zeile des Zustands."""
+        rows, info = self.tdt_rows()
+        wmin = self.st.get("tdt_w", 10.0) / 100
+        has_parts = any(r_["parts"] for r_ in rows)
+        out = []
+        for r_ in rows:
+            head = [r_["entry"], r_["state"], f"{r_['E']:.2f}", core.fmt_lam(r_["lam"]), f"{r_['f']:.3f}"]
+            big = [(f"{a} → {b}", f"{w * 100:.0f}") for a, b, w in r_["parts"] or () if w >= wmin]
+            if not has_parts:
+                out.append(head + ["", ""])
+                continue
+            for k, (tr, wt) in enumerate(big or [("–", "–")]):
+                out.append((head if k == 0 else [""] * 5) + [tr, wt])
+        return out, info, has_parts
+
+    def show_excitations(self):
+        """Reiter „Anregungen“ nach jedem Zeichnen: Tabelle und darunter Anzahl, Rechenregel der Gewichte, Hinweise."""
+        rows, info, has_parts = self.tdt_table()
+        wmin = self.st.get("tdt_w", 10.0) / 100
+        # Spalten neu setzen statt ausblenden: eine verborgene erste Spalte ließ im RichHeader ihre Breite als Lücke stehen
+        keep = ([0] if info["multi"] else []) + [1, 2, 3, 4] + ([5, 6] if has_parts else [])
+        heads = [T("tddft_tab_col_calc"), T("tddft_tab_col_state"), "E [eV]", "λ [nm]", "f" + STYLE.QTY,
+                 T("tddft_tab_col_trans"), T("tddft_tab_col_weight")]
+        self.tbl_tdt.setColumnCount(len(keep))
+        self.tbl_tdt.setHorizontalHeaderLabels([heads[j] for j in keep])
+        STYLE.fill_summary(self.tbl_tdt, [[r_[j] for j in keep] for r_ in rows])
+        notes = []
+        if info["total"]:
+            notes.append(T("tddft_tab_count", n=sum(1 for r_ in rows if r_[1]), m=info["total"]))
+        for rule in sorted(info["rules"]):
+            notes.append(T("tddft_tab_rule_" + rule, w=f"{wmin * 100:.0f}"))
+        if info["missing"] and info["rules"]:
+            notes.append(T("tddft_tab_noparts"))
+        for s_ in sorted(info["shifts"]):
+            notes.append(T("tddft_tab_shift", s=f"{s_:+.2f}".replace("-", "−")))
+        self.lbl_tdt.setText("\n".join(notes), plain=bool(rows))
+
+    def refresh_summary(self):
+        super().refresh_summary()
+        if getattr(self, "lbl_cmp_old", None) is not None:
+            try:                                          # nach „Alles auf Standard“, Öffnen, Rückgängig
+                self.sync_compare_hint()
+            except Exception:
+                self.main.log_signal.emit(traceback.format_exc())
+        if getattr(self, "tbl_tdt", None) is not None:
+            try:                                          # Zugabe zum Zeichnen: Fehler hier nie nach außen
+                self.show_excitations()
+            except Exception:
+                self.main.log_signal.emit(traceback.format_exc())
+        if getattr(self, "nto", None) is not None:
+            try:                                          # NTO-Seite (Zugabe, nie störend)
+                self.nto.refresh()
+            except Exception:
+                self.main.log_signal.emit(traceback.format_exc())
+
+    def si_table_blocks(self, name):
+        """Tabelle der Anregungen für den SI-Export (Word): „Table Sn: TD-DFT excitations of **X**.“, Kopf mit kursiven
+        Größen, darunter Auswahl und Rechenregel der Gewichte (ohne Programmnamen). Leer ohne Zeilen oder ohne Haken."""
+        if not self.st.get("tdt_si", True):
+            return []
+        self.ensure_rendered()
+        if not self.tdt_rows()[0]:
+            return []
+        from elucida.tabs import xray as XRAY
+        wmin = self.st.get("tdt_w", 10.0) / 100
+        rows, info, has_parts = self.tdt_table()
+        keep = ([0] if info["multi"] else []) + [1, 2, 3, 4] + ([5, 6] if has_parts else [])
+        head = [["Calculation", "State", "*E* / eV", "*λ* / nm", "*f*", "Transition", "Weight / %"][j] for j in keep]
+        body = [[XRAY.esc_markup(r_[j]) if j in (0, 5) else r_[j] for j in keep] for r_ in rows]
+        sel = []
+        if self.st.get("tdt_f_on"):
+            sel.append(f"*f* ≥ {self.st.get('tdt_f', 0.01):g}")
+        if self.st.get("tdt_range") and getattr(self, "F", None) is not None:
+            lo, hi = sorted(self.F.ax.get_xlim())
+            sel.append(f"between {core.fmt_lam(lo)} and {core.fmt_lam(hi)} nm")
+        notes = [("States with " + " and ".join(sel) + ".") if sel else "All computed states."]
+        for rule in sorted(info["rules"]):
+            notes.append(X.RULE_SI[rule].format(w=f"{wmin * 100:.0f}"))
+        if info["shifts"]:
+            notes.append("Energies without the shift applied in the figure.")
+        return [("tabcap", "TD-DFT excitations of", name), ("params", head, body, {"fit": True}),
+                ("note", " ".join(notes)), ("gap",)]
+
     def calc_data(self, e):
         """Übergänge aller Rechnungen des Eintrags zusammengeführt -> (E [eV], f·Gewicht, Multiplizität).
         Verbreitert wird erst danach (gemeinsame FWHM/Verschiebung)."""
@@ -2566,6 +3401,7 @@ class OverlayTab(FigureTab):
         STYLE.fit_columns(self.table)
         self._loading = False
         self.update_combine()                             # Liste neu aufgebaut: Knopfzustand nachziehen
+        self.sync_compare_hint()
 
     def _set_color(self, e, c):
         e["color"] = c
@@ -2612,8 +3448,6 @@ class OverlayTab(FigureTab):
         for w in (self.lbl_weights, self.ed_weights):
             w.setVisible(combined)
         if e:
-            self.lbl_estruct.setText(Path(e["structure"]).name if e.get("structure") else "–")
-            self.cb_ecolor.setChecked(e.get("struct_color", True))
             self.cb_samelevel.setChecked(e.get("stack_with_prev", False))
             self.sp_scale.setValue(e.get("scale", 1.0))
             self.sp_offset.setValue(e.get("offset", 0.0))
@@ -2665,7 +3499,7 @@ class OverlayTab(FigureTab):
         e = self.current_entry()
         if self._loading or e is None:
             return
-        e.update(struct_color=self.cb_ecolor.isChecked(), stack_with_prev=self.cb_samelevel.isChecked())
+        e["stack_with_prev"] = self.cb_samelevel.isChecked()
         if self.sender() in (self.sp_elo, self.sp_ehi) and not self.cb_own.isChecked():
             self._loading = True                   # eigenen Bereich eingestellt = eigene Normierung
             self.cb_own.setChecked(True)
@@ -2733,7 +3567,9 @@ class OverlayTab(FigureTab):
                        baseline=self.cb_base.isChecked(), sticks=self.cb_sticks.isChecked(),
                        stick_mode=self.cmb_stick.currentData(), triplets=self.cb_trip.isChecked(), stack=self.cb_stack.isChecked(),
                        stack_gap=self.sp_gap.value(), y_axis=self.cmb_yaxis.currentData(),
-                       curve_labels=self.cb_clabels.isChecked(), zero_lines=self.cb_zero.isChecked())
+                       curve_labels=self.cb_clabels.isChecked(), zero_lines=self.cb_zero.isChecked(),
+                       tdt_f_on=self.cb_tdt_f.isChecked(), tdt_f=self.sp_tdt_f.value(), tdt_w=self.sp_tdt_w.value(),
+                       tdt_range=self.cb_tdt_range.isChecked(), tdt_si=self.cb_tdt_si.isChecked())
         e = self.current_entry()
         if e is not None and not e["own_norm"]:    # geerbtes Fenster in den Detailfeldern nachziehen
             self.show_norm_window(None)
@@ -2746,23 +3582,22 @@ class OverlayTab(FigureTab):
         self.sp_ehi.setValue(src["nhi"])
         self._loading = old
 
-    def choose_entry_structure(self):
-        e = self.current_entry()
-        if e is None or not self.main.ensure_project():
-            return
-        p, _ = QFileDialog.getOpenFileName(self, T("dlg_structure"), self.main.settings.value("last_img_dir", ""),
-                                           f"{T('flt_struct')};;{T('flt_all')}")
-        if p:
-            self.main.settings.setValue("last_img_dir", str(Path(p).parent))
-            self.set_entry_structure(self.main.import_file(p, PRJ.STRUCTURES))
+    # -- Vergleich verschiedener Verbindungen: liegt im Projekt (Projektseite › Vergleich) --------------------------
+    @staticmethod
+    def legacy_compare(st):
+        """Hat ein älterer Zustand eine Struktur je Spektrum? Sie bleibt unverändert im Bild und im gespeicherten Zustand;
+        einrichten lässt sie sich hier nicht mehr (Stapeln dagegen schon: Spektren derselben Verbindung)."""
+        return any(e.get("structure") for e in st.get("entries") or ())
 
-    def set_entry_structure(self, p):
-        e = self.current_entry()
-        if e is None:
-            return
-        e["structure"] = p
-        self.lbl_estruct.setText(Path(p).name if p else "–")
-        self.timer.start()
+    def sync_compare_hint(self):
+        self.btn_cmp.setVisible(bool(self.main.publication_dir and self.main.project_dir))
+        self.lbl_cmp_old.setText(T("ov_cmp_old") if self.legacy_compare(self.st) else "")
+
+    def open_comparison(self):
+        """Zur Projektseite, Reiter „Vergleich“ (die Verbindung wird dabei wie über die Pfadleiste geschlossen)."""
+        m = self.main
+        if m.publication_dir and m.open_publication(m.publication_dir):
+            m.pub_page.project_tabs.setCurrentWidget(m.pub_page.compare_page)
 
     def choose_structure(self):
         if not self.main.ensure_project():
@@ -3045,23 +3880,41 @@ class FluoTab(FigureTab):
     SI_CAPTION = "Fluorescence spectra of {name}."
     CAP_FIELDS = ("solvent", "conc", "cuvette")
     RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv",
-                  "esd_file", "esd_unit", "esd_shift")
+                  "esd_file", "esd_unit", "esd_shift", "exc_file", "exc_sample", "exc_det", "decay_file", "irf_file",
+                  "tau_unit", "tau_ex", "tau_em", "phi",
+                  "alo", "ahi", "mask", "tau_n", "tau_start", "tau_avg")   # λabs-Bereich, Streulicht, Fit: Auswertung
     DEFAULT_STATE = dict(COMMON_DEFAULTS, abs_file=None, abs_sample=None, em_file=None, em_sample=None,
                          ex=350.0, alo=300.0, ahi=500.0, eps="", mask=False, c_abs="#1f9bff",
                          c_em="#e8231b", structure=None, photo_day=None, bg_day="auto", photo_uv=None,
                          bg_uv="none", ymax=1.2, struct_w=20.0, photo_w=30.0, stokes_label=False,
-                         esd_file=None, esd_unit=None, esd_shift=0.0)    # berechnete Emission (ORCA ESD(FLUOR))
+                         esd_file=None, esd_unit=None, esd_shift=0.0,    # berechnete Emission (ORCA ESD(FLUOR))
+                         exc_file=None, exc_sample=None, exc_det=0.0, c_exc="#1f9e4a",     # Anregungsspektrum
+                         decay_file=None, irf_file=None, tau_unit="ns", tau_ex=0.0, tau_em=0.0,   # Lebensdauer
+                         tau_n=1, tau_start=0.0, tau_avg="amp", phi="")      # (tabs/fluo_tau.py)
 
 
     def arrange(self):
         super().arrange()
         self.fold(self.group_titled("fl_images"), "images")
+        for g, title in self.tau.build_pages():       # Abklingkurve und Kennwerte als Reiter rechts
+            self.to_right(g, title)
+
+    def result_empty(self):
+        """Ohne Abklingkurve (und ohne Lesefehler) keine Seite „Abklingkurve“, ohne Kennwerte keine Seite „Kennwerte“."""
+        return [(self.tau.stack.parentWidget(), self.tau.res is None and not self.tau.err),
+                (self.tau.tbl_props.parentWidget(), not any(self.tau.props()[0]))]
+
     def build_controls(self):
         st = self.st
         g = QGroupBox(T("fl_data"))
         f = make_form(g)
         self.w_abs = self._file_row(f, T("fl_abs"), "abs")
         self.w_em = self._file_row(f, T("fl_em"), "em")
+        self.w_exc = self._file_row(f, T("fluo_tau_exc"), "exc")
+        self.sp_exc_det = QDoubleSpinBox(decimals=0, minimum=0, maximum=1500, suffix=" nm", value=st["exc_det"])
+        self.sp_exc_det.setSpecialValueText(T("fluo_tau_none"))
+        self.sp_exc_det.setToolTip(T("fluo_tau_exc_det_tip"))
+        f.addRow(T("fluo_tau_exc_det"), self.sp_exc_det)
         self.lbl_esd = self._esd_row(f)
         self.sp_ex = QDoubleSpinBox(decimals=0, minimum=150, maximum=1500, value=st["ex"], suffix=" nm")
         self.sp_ex.setToolTip(T("fl_ex_tip"))
@@ -3082,10 +3935,12 @@ class FluoTab(FigureTab):
         self.ed_eps.setToolTip(T("fl_eps_tip"))
         f.addRow("ε [M⁻¹ cm⁻¹]", self.ed_eps)
         row = QHBoxLayout()
-        row.addWidget(QLabel(T("fl_abs")))
+        row.addWidget(QLabel(T("fluo_tau_c_abs")))               # drei Farben: kurze Namen (sonst abgeschnitten)
         row.addWidget(color_button(st["c_abs"], lambda c: self._set("c_abs", c), small=True))
-        row.addWidget(QLabel(T("fl_em")))
+        row.addWidget(QLabel(T("fluo_tau_c_em")))
         row.addWidget(color_button(st["c_em"], lambda c: self._set("c_em", c), small=True))
+        row.addWidget(QLabel(T("fluo_tau_exc_short")))
+        row.addWidget(color_button(st["c_exc"], lambda c: self._set("c_exc", c), small=True))
         row.addStretch(1)
         f.addRow(T("ov_color"), row)
         self.cb_stokes = QCheckBox(T("fl_stokes_label"))
@@ -3098,6 +3953,9 @@ class FluoTab(FigureTab):
         f.addRow(self.lbl_info)                              # mittig über die ganze Karte
         self.info = {}
         self.lv.addWidget(g)
+        from elucida.tabs.fluo_tau import TauPart
+        self.tau = TauPart(self)
+        self.tau.build_cards(self.lv)                    # Abklingkurve (Daten), Lebensdauer (Auswertung)
 
         g = QGroupBox(T("fl_images"))
         f = make_form(g)
@@ -3110,7 +3968,7 @@ class FluoTab(FigureTab):
         self.size_spin(f, "photo_w", "image_fotos")
         self.lv.addWidget(g)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
-        for w in (self.sp_ex, self.sp_alo, self.sp_ahi):
+        for w in (self.sp_ex, self.sp_alo, self.sp_ahi, self.sp_exc_det):
             w.valueChanged.connect(self.changed)
         self.cb_mask.toggled.connect(self.changed)
         self.ed_eps.editingFinished.connect(self.changed)
@@ -3133,8 +3991,12 @@ class FluoTab(FigureTab):
             cmb.blockSignals(True)
             cmb.clear()
             p = self.st[f"{which}_file"]
-            if p and Path(p).exists():
-                for s_ in self.samples(p):
+            try:
+                ss = self.samples(p) if p and Path(p).exists() else None
+            except Exception:       # gespeicherte Datei, die der Leser ablehnt: Tab bleibt bedienbar, Zeichnen meldet sie
+                ss = None
+            if ss is not None:
+                for s_ in ss:
                     cmb.addItem(s_["name"], s_["key"])
                 i = cmb.findData(self.st[f"{which}_sample"])
                 cmb.setCurrentIndex(max(0, i))
@@ -3290,7 +4152,8 @@ class FluoTab(FigureTab):
     def collect(self):
         self.st.update(ex=self.sp_ex.value(), mask=self.cb_mask.isChecked(), alo=self.sp_alo.value(),
                        ahi=self.sp_ahi.value(), eps=self.ed_eps.text().strip(),
-                       stokes_label=self.cb_stokes.isChecked())
+                       stokes_label=self.cb_stokes.isChecked(), exc_det=self.sp_exc_det.value())
+        self.tau.collect()
 
     def si_caption(self, name):
         """Vergleich Absorption/Emission wie in der SI üblich: „Normalized UV-Vis absorption (blue) and fluorescence
@@ -3308,6 +4171,9 @@ class FluoTab(FigureTab):
             h = f"Normalized fluorescence emission spectrum ({ex}) of {n}"
         else:
             h = f"Normalized UV-Vis absorption spectrum of {n}"
+        if st.get("exc_file") and self.sample(st["exc_file"], st.get("exc_sample")) is not None:
+            det = f"; λ<sub>em</sub> = {st['exc_det']:.0f} nm" if st.get("exc_det") else ""
+            h = h.replace(f" of {n}", f" and excitation spectrum ({color_name(st['c_exc'])}{det}) of {n}", 1)
         if st.get("cap_solvent"):
             h += " in " + chem_html(st["cap_solvent"])
         if st.get("cap_conc"):
@@ -3322,10 +4188,22 @@ class FluoTab(FigureTab):
 
     def kpis(self):
         i = getattr(self, "info", None) or {}
-        out = [("λem", f"{i['lam_em']:.0f} nm")] if i.get("lam_em") else []
-        if i.get("stokes_cm") is not None:
+        out = [("λem", f"{core.fmt_lam(i['lam_em'])} nm")] if i.get("lam_em") else []
+        tau, kind = self.tau.tau_used()
+        if tau:                                          # Lebensdauer wichtiger als die Stokes-Verschiebung
+            out.append(({"amp": "τ_amp", "int": "τ_int"}.get(kind, "τ"),            # Einheit wie die Tabellen (µs ab 1000 ns)
+                        f"{self.tau.fmt_tau(tau, self.tau.us())} {self.tau.tau_unit()}"))
+        elif i.get("stokes_cm") is not None:
             out.append(("Stokes", f"{fmt_stokes(i['stokes_cm'])} cm⁻¹"))
         return out
+
+    def show_caption(self):
+        """Reiter SI-Text: dazu die Unterschrift der Abklingkurve (zweite Abbildung im SI-Export)."""
+        super().show_caption()
+        if getattr(self, "lbl_cap", None) is not None and self.tau.res is not None:
+            name = (getattr(self.main, "compound", None) or {}).get("name") or "X"
+            first = getattr(self.lbl_cap, "_plain", "") if self.F is not None else ""
+            self.lbl_cap.setText((first + "<br><br>" if first else "") + "<b>Figure Sn:</b> " + self.tau.caption(name))
 
     def show_info(self, pa, pe, a_ex):
         """Kennwerte unter den Daten: λabs, λem, Stokes-Verschiebung, A(λex) mit Innenfilter-Hinweis."""
@@ -3344,11 +4222,32 @@ class FluoTab(FigureTab):
             self.lbl_info.setStyleSheet(WARN_CSS if warn else HINT_CSS)
 
     def figure_spec(self):
+        self.info = {}
+        spec = self.spectra_spec()
+        self.tau.update()                                # Lebensdauer: nach den Spektren (Kennwerte brauchen λ)
+        return spec
+
+    def si_figure(self, out_dir, name):
+        return super().si_figure(out_dir, name) + self.tau.si_figures(out_dir, name)
+
+    def copy_pages(self):
+        return [(self.tau.stack.parentWidget(), self.tau.copy_figure)]
+
+    def export_to(self, base: Path):
+        if self.F is None and self.tau.res is not None:   # nur Abklingkurve: kein Spektrenbild
+            return self.tau.export_to(Path(base).resolve())
+        return super().export_to(base) + self.tau.export_to(Path(base).resolve())
+
+    def methods_text(self):
+        return self.tau.methods_text()
+
+    def spectra_spec(self):
         st = self.st
         a = self.sample(st["abs_file"], st["abs_sample"]) if st["abs_file"] else None
         em = self.sample(st["em_file"], st["em_sample"]) if st["em_file"] else None
+        exc = self.sample(st["exc_file"], st["exc_sample"]) if st.get("exc_file") else None
         esd = self.esd_curve()
-        if a is None and em is None and esd is None:
+        if a is None and em is None and esd is None and exc is None:
             return None
         cfg = self.base_cfg()
         curves, labels = [], []
@@ -3366,11 +4265,11 @@ class FluoTab(FigureTab):
                 o = np.argsort(xa)
                 a_ex = float(np.interp(st["ex"], xa[o], np.asarray(a["y"], float)[o]))
             if pa:
-                txt = f"λ$_{{\\mathrm{{abs}}}}$ =  {pa:.0f} nm"
+                txt = f"λ$_{{\\mathrm{{abs}}}}$ =  {core.fmt_lam(pa)} nm"      # λ und ε wie die Kennwerte (kaufmännisch)
                 eps = parse_num(st["eps"])
                 if eps:
-                    txt += f"\nε =  {eps:.0f} cm$^{{-1}}$ M$^{{-1}}$"
-                labels.append({"key": "label_abs", "text": txt, "lam": pa})
+                    txt += f"\nε =  {core.round_half_up(eps):.0f} cm$^{{-1}}$ M$^{{-1}}$"
+                labels.append({"key": "label_abs", "text": txt, "lam": pa, "near": True})
         if em is not None:
             y = em["y"].astype(float).copy()
             if st["mask"]:
@@ -3379,13 +4278,17 @@ class FluoTab(FigureTab):
             ye = X.normalize(em["x"], y, float(np.nanmin(em["x"])), float(np.nanmax(em["x"])))
             if ye is None:
                 ye = y
-            curves.append({"x": em["x"], "y": ye, "color": st["c_em"], "label": None})
+            curves.append({"x": em["x"], "y": ye, "color": st["c_em"], "label": None, "role": "em"})
             pe = X.peak_in(em["x"], ye, float(np.nanmin(em["x"])), float(np.nanmax(em["x"])))
             if pe:
-                txt = f"λ$_{{\\mathrm{{em}}}}$ =  {pe:.0f} nm"
+                txt = f"λ$_{{\\mathrm{{em}}}}$ =  {core.fmt_lam(pe)} nm"
                 if st.get("stokes_label") and pa:
                     txt += f"\nΔ$\\tilde{{\\nu}}$ =  {fmt_stokes(stokes_cm(pa, pe))} cm$^{{-1}}$"
-                labels.append({"key": "label_em", "text": txt, "lam": pe})
+                labels.append({"key": "label_em", "text": txt, "lam": pe, "near": True})
+        if exc is not None:                              # Anregungsspektrum: auf 1 normiert, strichpunktiert
+            yx = X.normalize(exc["x"], exc["y"], float(np.nanmin(exc["x"])), float(np.nanmax(exc["x"])))
+            curves.append({"x": exc["x"], "y": exc["y"] if yx is None else yx, "color": st["c_exc"], "label": None,
+                           "ls": "-."})
         self.show_info(pa, pe, a_ex)
         if esd is not None:                              # gestrichelt in der Emissionsfarbe; x-Bereich nach Messung
             band = esd[0][esd[1] > 0.01]

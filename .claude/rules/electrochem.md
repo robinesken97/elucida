@@ -63,3 +63,43 @@ paths:
   die Messwerte. Keine Labels, Legende oder Bilder; das Layout der anderen Ansichten bleibt. Rohsignal heißt „raw signal“.
 - CV-Abbildung und CV-Stapel: bei automatischem E-Bereich bleibt links und rechts `CV.X_PAD` (3 % der Spanne) Rand; die
   Kurven liefen sonst bis an den Rahmen (Nutzerhinweis 2026-11-13). Ein eingegebener Bereich gilt unverändert.
+- Angaben der Richtlinien zum Voltammogramm (1.2.0, Auftrag 2026-11-13; ACS Research Data Guidelines „Electrochemistry“,
+  Angew. Anhang E; Karte „Messbedingungen“, `ACS_FIELDS`, `scan_facts`, `setup_sentence`): Start und Richtung aus dem
+  ersten Messpunkt bzw. den ersten Schritten des ersten Zyklus (`scan_start`, Achsenskala der Messung, nur wenn für alle
+  gezeigten Messungen gleich), iR-Kompensation aus `IRCOMP` (with/without nur, wenn alle gleich). Elektroden, Spülgas,
+  Gerät, Politur gibt der Nutzer ein (für neue Verbindungen gemerkt in QSettings `cv_acs/<Feld>`, vorbelegt nur ohne
+  Messungen). Referenzelektrode des Aufbaus ist ein eigenes Feld (`acs_ref`); die Achsenreferenz `ref_electrode` erscheint
+  im Aufbau-Text nur, wenn der Nutzer sie geändert hat (≠ Vorgabe) und Elektroden eingetragen sind: eine Vorgabe ist
+  keine Angabe über den Aufbau (Nutzerentscheidung 2026-11-14, „vorgabe folgen“, nach der Code-Sichtung vor 1.2.0).
+  Methodentext: Gerät, Arbeitselektrode mit Fläche (`rs_area`) und Politur, Gegen-/Referenzelektrode. Leere Angaben
+  erscheinen nicht.
+- CV-Messaufbau gesammelt im Anfangstext (Nutzerentscheidung 2026-11-13, wörtlich „CV-Messbedingungen gehören gesammelt
+  in den Anfangstext“, Vorbild: Kapitelanfang „Cyclic Voltammetry“ seiner SI; ersetzt im Punkt darüber „Unterschrift:
+  Gas, Elektroden“): Gerät, Arbeitselektrode, Fläche, Politur, Gegen-/Referenzelektrode, Atmosphäre, iR-Kompensation
+  stehen **einmal je Projekt** in `publication.elucida` (`cv_setup`, Schlüssel `PUB.CV_SETUP` = `CV.SETUP_KEYS`),
+  Eingabe auf der Projektseite → Angaben (Karte „Cyclovoltammetrie: Messaufbau“). `CV.setup_text` bildet daraus einen
+  **Fließtext** in ganzen Sätzen (Nutzer: „Wie in der SI mit dem CV Text“; nur der Aufbau seiner SI, nicht ihr
+  Wortlaut): Gerät mit iR-Kompensation, Atmosphäre, Dreielektrodenanordnung (Arbeitselektrode mit Fläche und Politur,
+  Gegen-, Referenzelektrode), Konvention, dazu das freie Feld „Weitere Angaben“ (`more`) für Sätze, die sich nicht aus
+  Feldern bilden lassen. Ein leeres Feld lässt seinen Satzteil weg; Fläche ohne Einheit = cm², „mm2“/„cm2“ werden zu
+  mm²/cm². Der Text ist der erste Absatz des Kapitels „Cyclic Voltammetry“ der Gesamt-SI, vor dem freien Kapiteltext
+  (`si_texts["cv"]`); derselbe Fließtext eröffnet ohne Projekt den Methodentext der Verbindung. Im
+  CV-Tab einer Verbindung im Projekt zeigt die Karte „Messbedingungen“ nur Verweis, Text und die Werte aus den
+  Dateien; ihr Methodentext enthält den Aufbau nicht (er stünde in der Gesamt-SI sonst je Verbindung noch einmal).
+  Ohne Projekt gelten die Felder der Karte und der Aufbau eröffnet den Methodentext wie zuvor. Nichts umräumen: fehlt
+  eine Angabe im Projekt, gilt die der Verbindung (`setup_effective`). Unterschriften bleiben kurz: nur was je Messung
+  gilt, nie Elektroden, Gerät, Atmosphäre, Politur. iR-Kompensation und Konvention (`conv`: iupac/polar, Auswahl in den
+  Projektangaben) stehen im Kapitelabsatz. Die Unterschrift nennt die Konvention nur, wenn das Projekt eine angibt und das
+  Bild davon abweicht oder die Ströme umgekehrt sind (`invert`); ohne Angabe im Projekt nennt sie keine (Nutzerentscheidung
+  2026-11-14). Ein `CONVENTION`-Wert ≠ 1 in der Gamry-Datei gibt einen Hinweis. iR-Kompensation nennt die Unterschrift
+  nur, wenn das Projekt sie nicht angibt oder die Messung abweicht. Start und Richtung nur mit dem Chip „Start und Richtung“ (`cap_start`, Vorgabe aus: der Pfeil im
+  Bild zeigt die Richtung). Nennt das Projekt eine
+  iR-Kompensation und eine Messung wurde ohne aufgezeichnet, steht ein Hinweis im Tab (nie still in den Sammeltext).
+  Die Regel in `si.md` zu den freien Aufbau-Texten (`si_setup/<Tab>` nur in QSettings) bleibt daneben bestehen.
+- Pulsverfahren im CV-Tab (Nutzerauftrag 2026-11-13 „DPV-Leser“; `formats/gamry.read_gamry`): eine Gamry-Tabelle mit
+  den **benannten** Spalten „Vstep“ und „Idif“ = eine Kurve E = Vstep, I = Idif (`meta["pulse"]` aus der TAG-Zeile:
+  DPV, SQUARE_WAVE → SWV, sonst „pulse“; Pulsparameter STEPSIZE/PULSESIZE/PULSEON/FREQUENCY). Geprüft nur mit einer
+  echten Square-Wave-Datei (öffentliche Testdatei, nicht im Repo); eine echte DPV-Datei fehlt – nie Spalten nach
+  Position lesen, Tabellen ohne diese Namen ablehnen. Unterschrift: Titel nach Verfahren (gemischt „Voltammograms“),
+  Pulsparameter nur, wenn für alle gleich; Achse ΔI. Keine Peakpaar- und Vorschub-Auswertung für Pulskurven (E_p eines
+  DPV-Peaks ist nicht E½; eine Umrechnung wäre eine eigene, noch nicht bestellte Auswertung).

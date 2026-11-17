@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from elucida.app.i18n import T
+from elucida.formats.gamry import table_rows
 
 MAIN_TAG = "PWR800_CYCLICCHARGEDISCHARGE"
 STEP_TAGS = {"PWR800_CHARGE": "charge", "PWR800_DISCHARGE": "discharge"}
@@ -41,7 +42,7 @@ def _header(lines):
     return out
 
 
-def _table(lines, name):
+def _table(lines, name, fname=""):
     """Tabelle `name` (Zeile NAME\\tTABLE, Kopf, Einheiten, Datenzeilen mit Tab am Anfang) -> {Spalte: Werte};
     Spalten mit Text (Over) fallen weg. None, wenn es die Tabelle nicht gibt."""
     for i, ln in enumerate(lines):
@@ -53,12 +54,17 @@ def _table(lines, name):
                 if not row.startswith("\t"):
                     break
                 rows.append(row.split("\t")[1:])
+            table_rows(lines, i, rows, fname)
             cols = {}
             for k, h in enumerate(head):
                 try:
                     cols[h.strip()] = np.array([float(r[k]) for r in rows])
                 except (ValueError, IndexError):
-                    continue
+                    vals = [r[k].strip() for r in rows if len(r) > k]
+                    if any(re.fullmatch(r"(?=.*\d)[-+]?[\d.]+(?:[eE][-+]?\d+)?|[-+]?\d+,\d+(?:[eE][-+]?\d+)?|\*+", v)
+                           for v in vals):                # Zahlenspalte mit Dezimalkomma/Überlauf: nie still weg
+                        raise ValueError(T("r2l_gamry_number", name=fname)) from None
+                    continue                              # Textspalte (Over)
             return cols
     return None
 
@@ -100,7 +106,7 @@ def read_cycling(path) -> dict:
     tag = _tag(lines)
     if tag != MAIN_TAG:
         raise ValueError(T("hcell_bad_tag", f=name, tag=tag or "–"))
-    cols = _table(lines, "CAPACITYCURVE")
+    cols = _table(lines, "CAPACITYCURVE", name)
     need = ("Time", "Type", "Cycle", "Charge")
     if cols is None or any(c not in cols for c in need) or not len(cols["Time"]):
         raise ValueError(T("hcell_no_table", f=name, t="CAPACITYCURVE"))
@@ -119,6 +125,9 @@ def read_cycling(path) -> dict:
                "duration_s": float(dur[i]) if dur is not None else None} for i in range(len(cols["Time"]))]
     if len({(h_["cycle"], h_["kind"]) for h_ in halves}) != len(halves):      # Halbzyklus doppelt: unbekannte Variante
         raise ValueError(T("hcell_bad_type", f=name))
+    # weniger Halbzyklen als CYCLES verlangt und kein STOPREASON (steht nach der Tabelle): Datei abgeschnitten
+    if meta["cycles"] and len(halves) < 2 * meta["cycles"] and not any(ln.startswith("STOPREASON") for ln in lines):
+        raise ValueError(T("r2l_hcell_incomplete", name=name, n=len(halves), m=int(2 * meta["cycles"])))
     return {"meta": meta, "halves": halves}
 
 
@@ -146,7 +155,7 @@ def read_step(path) -> dict:
     kind = STEP_TAGS.get(_tag(lines))
     if kind is None:
         raise ValueError(T("hcell_bad_tag", f=name, tag=_tag(lines) or "–"))
-    cols = _table(lines, "CURVE")
+    cols = _table(lines, "CURVE", name)
     if cols is None or "T" not in cols or "Vf" not in cols or not len(cols["T"]):
         raise ValueError(T("hcell_no_table", f=name, t="CURVE"))
     off = _num(_header(lines), "STARTTIMEOFFSET")

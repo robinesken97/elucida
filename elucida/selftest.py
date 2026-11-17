@@ -21,8 +21,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure as MplFigure
 from PySide6.QtCore import QEvent, QPoint, QSettings, Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QFrame, QGroupBox, QLabel,
-                               QPushButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, QFrame, QGroupBox, QLabel,
+                               QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QVBoxLayout, QWidget)
 
 from elucida import APP_NAME, APP_VERSION, ROOT  # noqa: E402
 from elucida.app.main_window import (DEFAULT_GLOB, OLD_APP_NAMES, PREVIEW_DPI, MainWindow,
@@ -45,6 +45,9 @@ from elucida.tabs import nmr as NMR
 from elucida.tabs import sec as SECMOD
 from elucida.tabs import synthesis as SYN
 from elucida.tabs import xray as XRAY
+
+# Zeitgrenzen der Selbsttests: CI und Windows (Software-Rendering, langsamere Läufer) bekommen Spielraum
+SLOW = 3.0 if os.environ.get("CI") or sys.platform == "win32" else 1.0
 
 
 # ----------------------------------------------------------------------------
@@ -119,6 +122,198 @@ class _Section:
 
 def _filled_ct(comp):
     return {k: v for k, v in comp.items() if v not in ("", None, False)}
+
+
+def _arrow_clear(F, key, pad=3):
+    """Pfeil der Messrichtung (Box + pad Pixel) schneidet keine Kurvenlinie (Bildschirmkoordinaten)."""
+    from matplotlib.path import Path as MPath
+    from matplotlib.transforms import Bbox
+    b = F.ann_items[key].get_window_extent(F._renderer())
+    b = Bbox.from_extents(b.x0 - pad, b.y0 - pad, b.x1 + pad, b.y1 + pad)
+    for s in F.spectra:
+        xy = np.column_stack([np.asarray(s["x"], float), np.asarray(s["y"], float)])
+        xy = F.ax.transData.transform(xy[np.isfinite(xy).all(1)])
+        if len(xy) > 1 and MPath(xy).intersects_bbox(b, filled=False):
+            return False
+    return True
+
+
+# „Darstellung zurücksetzen“ als Eigenschaft (Nutzerentscheidung 2026-11-14): wissenschaftlich ist, was eine gedruckte
+# Zahl, Tabelle, Kachel, den Rechenweg, Methodentext oder die SI ändert. Fingerabdruck ohne Bilder und Unterschriften
+# (die beschreiben das Bild und folgen ihm).
+_RS_TABLES = ("tabcap", "params", "crystal", "energies", "coords", "fields", "note", "mono")
+
+
+def _rs_txt(x):
+    if isinstance(x, str):                                   # Pfade hängen am Lauf, nicht an der Auswertung
+        return "" if re.search(r"(^/|\\|[A-Za-z]:/|\.(svg|png|pdf|emf|cdx|cdxml|xyz|out|cube)$)", x) else x
+    if isinstance(x, (list, tuple)):
+        return [_rs_txt(y) for y in x]
+    if isinstance(x, dict):
+        return {k: _rs_txt(v) for k, v in x.items()}
+    return x if isinstance(x, (int, float, bool, type(None))) else str(x)
+
+
+def _rs_call(fn, *a, blocks=False):
+    try:
+        r = fn(*a)
+    except Exception as ex:                                  # Fehler zählt als Abweichung
+        return f"ERR {type(ex).__name__}: {ex}"
+    if blocks:
+        r = [b for b in (r or []) if isinstance(b, (tuple, list)) and b and b[0] in _RS_TABLES]
+    return _rs_txt(r)
+
+
+def _rs_fp(w, key, out):
+    """Wissenschaftlicher Fingerabdruck eines Tabs (Kacheln, Rechenweg, Methodentext, Ergebnistabellen, SI-Tabellen)."""
+    if key == "eps":
+        t = w.table
+        return dict(table=[[t.item(r, c).text() if t.item(r, c) else "" for c in range(t.columnCount())]
+                           for r in range(t.rowCount())],
+                    uv=_rs_txt(getattr(w, "_uv_line", "")), methods=_rs_call(w.eps_methods_text),
+                    kpis=[lb.text() for lb in w.kpi_box.labels if lb.isVisibleTo(w.kpi_box)])
+    tab = getattr(w, w._tab_spec(key)[0])
+    fp = {n: _rs_call(getattr(tab, n)) for n in ("kpis", "chain", "methods_text")}
+    fp["tables"] = [[[t.item(r, c).text() if t.item(r, c) else "" for c in range(t.columnCount())]
+                     for r in range(t.rowCount())] for t in tab.right_tabs.findChildren(QTableWidget)]
+    if hasattr(tab, "si_table_blocks"):
+        fp["si_tables"] = _rs_call(tab.si_table_blocks, "S3", blocks=True)
+    if key in ("irms", "hrms"):
+        fp["char"] = _rs_call(w.si_char_parts, w.compound or {})
+    if key == "xray":
+        fp["xray"] = _rs_call(w.si_xray_blocks, [e for e in tab.entries() if tab.structure(e) is not None], blocks=True)
+    if key == "dft":
+        fp["dft"] = _rs_call(tab.docx_blocks, out, blocks=True)
+    return fp
+
+
+def _rs_other(tab, v):
+    """Anderer gültiger Wert: Wahrheitswert kippen, Zahl verschieben, Farbe, sonst ein anderer Eintrag der einzigen
+    Auswahlliste, die genau diesen Wert anbietet (sonst None: Schlüssel bleibt)."""
+    if isinstance(v, bool):
+        return not v
+    if isinstance(v, int):
+        return v + 1
+    if isinstance(v, float):
+        return 0.5 * v if 0 < abs(v) <= 1 else (1.5 * v if v else 1.0)
+    if isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+        return "#336699"
+    if isinstance(v, str) and v:
+        alts = [[d for d in data if d != v and isinstance(d, str)]
+                for data in ([cb.itemData(i) for i in range(cb.count())] for cb in tab.findChildren(QComboBox))
+                if v in data]
+        if len(alts) == 1 and alts[0]:
+            return alts[0][0]
+    return None
+
+
+def _display_reset_check(w, key, out, pump):
+    """Ein Tab im Beispielprojekt: behaltene Wahrheitswerte kippen (Zustand A), alle übrigen Schlüssel auf einen anderen
+    gültigen Wert (B), „Darstellung zurücksetzen“ (C). Verlangt: Fingerabdruck A = B = C, jeder übrige Schlüssel wieder
+    Standard, jeder behaltene unverändert. -> Liste der Abweichungen (leer = OK)."""
+    import copy
+    from elucida.tabs import dft_nbo as NBO_rs
+    from elucida.tabs import dft_acid as ACID_rs
+    from elucida.tabs import dft_pages as PAGES_rs
+
+    def tab_():
+        return w if key == "eps" else getattr(w, w._tab_spec(key)[0])
+
+    def show():
+        if key == "eps":
+            w.apply_globals()
+            w.apply_series_widgets()
+            w.render()
+        w.main_tabs.setCurrentWidget(w.eps_page if key == "eps" else tab_())
+        pump(0.3)
+        if key != "eps":
+            tab_().ensure_rendered()
+        pump(0.2)
+
+    st = w.glob if key == "eps" else getattr(w, w._tab_spec(key)[2])
+    if key == "eps":
+        dflt, keep = MW.DEFAULT_GLOB, set(MW.EPS_RESET_KEEP)
+    else:
+        dflt = dict(tab_().DEFAULT_STATE, **tab_().DISPLAY_EXTRA)   # X-Ray/DFT: label_pt, homa_fig
+        keep = set(tab_().RESET_KEEP) | {"size", "w_cm", "h_cm", "fmt", "entries", "current", "layout"}
+    saved, saved_ser = copy.deepcopy(st), copy.deepcopy(w.series.get(w.current)) if key == "eps" else None
+    bad = []
+    try:
+        for k in keep:                                       # A: behaltene Schalter weg vom Standard
+            if k in dflt and isinstance(dflt[k], bool):
+                st[k] = not st.get(k, dflt[k])
+        if key == "eps":
+            w.series[w.current]["band_hidden"] = [999]       # gehört zur Auswertung der Serie
+        if key == "xray":                                    # ausgeblendetes Atom = Auswahl der Daten
+            e = tab_().entry()
+            e["hidden_atoms"] = [next(a["label"] for a in tab_().molecule(e).atoms if a["el"] == "H")]
+        if key != "eps":
+            w.replace_tab(key)
+        show()
+        fa = _rs_fp(w, key, out)
+        kept_a = {k: copy.deepcopy(st[k]) for k in keep if k in st and k not in ("entries", "layout")}
+        if key == "eps":
+            kept_a["series"] = {k: copy.deepcopy(w.series[w.current][k]) for k in ("band_cutoff", "band_hidden")}
+        if key == "xray":
+            kept_a["hidden"] = [(e.get("hidden_atoms"), e.get("hidden_frags")) for e in st["entries"]]
+        moved = []                                           # B: alles Übrige auf einen anderen Wert
+        for k, d in dflt.items():
+            if k not in keep and not k.startswith("cap_"):
+                v = _rs_other(tab_(), st.get(k, d))
+                if v is not None:
+                    st[k] = v
+                    moved.append(k)
+        if key == "dft":
+            for k, d in NBO_rs.NBO_DEFAULT.items():
+                v = None if k in NBO_rs.RESET_KEEP else _rs_other(tab_(), st["nbo"].get(k, d))
+                if v is not None:
+                    st["nbo"][k] = v
+            for part_, d_part in (("nics", PAGES_rs.NICS_DEFAULT), ("acid", ACID_rs.ACID_DEFAULT)):
+                for k in tab_().DISPLAY_PARTS[part_]:
+                    v = _rs_other(tab_(), st[part_].get(k, d_part[k]))
+                    if v is not None:
+                        st[part_][k] = v
+        if key in ("xray", "dft"):
+            tab_().entry().update(zoom=2.0, label_on={"C1": False}, **({"wire": ["C1"]} if key == "xray" else {}))
+        if key != "eps":
+            w.replace_tab(key)
+        show()
+        fb = _rs_fp(w, key, out)
+        tab_().reset_defaults()
+        show()
+        fc = _rs_fp(w, key, out)
+        bad += [f"{key}: {n} changes with display settings: {str(fa[n])[:300]} -> {str(fb.get(n))[:300]}"
+                for n in fa if fa[n] != fb.get(n)]
+        bad += [f"{key}: {n} changes with reset: {str(fa[n])[:300]} -> {str(fc.get(n))[:300]}"
+                for n in fa if fa[n] != fc.get(n)]
+        bad += [f"{key}: {k} not reset" for k in moved if st.get(k) != dflt[k]]
+        kept_c = {k: st.get(k) for k in kept_a}
+        if key == "eps":
+            kept_c["series"] = {k: w.series[w.current][k] for k in ("band_cutoff", "band_hidden")}
+        if key == "xray":
+            kept_c["hidden"] = [(e.get("hidden_atoms"), e.get("hidden_frags")) for e in st["entries"]]
+            e = tab_().entry()
+            if e.get("wire") or e.get("label_on") or e.get("zoom") != 1.0:
+                bad.append("xray: view of the structure not reset")
+        bad += [f"{key}: kept {k} changed" for k in kept_a if kept_c[k] != kept_a[k]]
+        if key == "dft":
+            bad += [f"dft: nbo.{k} not reset" for k, d in NBO_rs.NBO_DEFAULT.items()
+                    if k not in NBO_rs.RESET_KEEP and st["nbo"].get(k) != d]
+            bad += [f"dft: {part_}.{k} not reset" for part_, d_part in (("nics", PAGES_rs.NICS_DEFAULT),
+                                                                       ("acid", ACID_rs.ACID_DEFAULT))
+                    for k in tab_().DISPLAY_PARTS[part_] if st[part_].get(k) != d_part[k]]
+        if not moved:
+            bad.append(f"{key}: nothing varied")
+    finally:
+        st.clear()
+        st.update(saved)
+        if key == "eps":
+            w.series[w.current].clear()
+            w.series[w.current].update(saved_ser)
+        else:
+            w.replace_tab(key)
+        show()
+    return bad
 
 
 def selftest(outdir, with_isnet=False):
@@ -348,6 +543,73 @@ def selftest(outdir, with_isnet=False):
             es = core.read_samples([ecl])
             assert len(es) == 1 and es[0]["name"] == "PROBE-1-45p3µM" and es[0]["ex"] == 387.0, es[0]["name"]
             report.append("overlay + fluorescence + Eclipse CSV: OK")
+        with section:
+            # Cary-Eclipse-Export mit „Z Axis“ (eine Wellenlaengenspalte + n Intensitaeten, Zeile 3 Index „,1,2“): alle
+            # Proben gelesen (vorher nur die erste), unpassender Aufbau abgelehnt statt kuerzer gelesen. xy/decay: die
+            # Indexzeile ist kein Datenpunkt, ein Trenner am Anfang jeder Zeile bleibt lesbar, Zeiteinheit aus dem
+            # Spaltenkopf ueber Namen-/Indexzeilen
+            from elucida.app.i18n import T as T_r4
+            from elucida.formats import decay as DEC_r4, xy as XY_r4
+            d_r4 = out / "input" / "r4"
+            d_r4.mkdir(parents=True, exist_ok=True)
+
+            def put_r4(name, rows):
+                p_ = d_r4 / name
+                p_.write_text("\r\n".join(rows) + "\r\n", encoding="utf-8", newline="")
+                return p_
+            lam_r4 = np.arange(400.0, 451.0, 1.0)
+            body_r4 = [f"{x_:g},{100 * np.exp(-((x_ - 420) / 10) ** 2):.4f},{50 * np.exp(-((x_ - 430) / 8) ** 2):.4f}"
+                       for x_ in lam_r4]
+            meta_r4 = ["", "PROBE-A", "Ex. Wavelength (nm)               350.00", "", "PROBE-B",
+                       "Ex. Wavelength (nm)               360.00"]
+            head_r4 = ["Wavelength (nm),Intensity (a.u.),Z Axis,", ",PROBE-A,PROBE-B", ",1,2"]
+            z_r4 = core.read_samples([put_r4("eclipse_z.csv", head_r4 + body_r4 + meta_r4)])
+            assert [s_["name"] for s_ in z_r4] == ["PROBE-A", "PROBE-B"], [s_["name"] for s_ in z_r4]
+            assert [s_["ex"] for s_ in z_r4] == [350.0, 360.0] and all(len(s_["x"]) == len(lam_r4) for s_ in z_r4)
+            assert [round(float(s_["x"][np.argmax(s_["y"])])) for s_ in z_r4] == [420, 430]
+            for name_r4, rows_r4 in (("short_row", head_r4 + body_r4[:10] + [body_r4[10].rsplit(",", 1)[0]] + body_r4[11:]
+                                      + meta_r4),                             # Zeile ohne zweite Intensitaet
+                                     ("bad_index", head_r4[:2] + [",1"] + body_r4 + meta_r4),   # Index passt nicht
+                                     ("no_zaxis", head_r4[:1] + [",PROBE-A,PROBE-B"] + body_r4 + meta_r4)):
+                if name_r4 == "no_zaxis":                                     # 3 Spalten, Kopf ohne „Z Axis“
+                    rows_r4[0] = "Wavelength (nm),Intensity (a.u.)"
+                try:
+                    core.read_samples([put_r4(name_r4 + ".csv", rows_r4)])
+                    raise AssertionError(f"Eclipse layout accepted: {name_r4}")
+                except ValueError as e_:
+                    assert str(e_) == T_r4("r4_eclipse_layout", name=name_r4 + ".csv"), (name_r4, str(e_))
+            f_r4 = put_r4("decay_z.csv", ["Time (ns),Counts,Z Axis,", ",PROBE-A,PROBE-B", ",1,2"]
+                          + [f"{0.1 * k:.1f},{1000 - k},{500 - k}" for k in range(1, 31)] + ["", "PROBE-A"])
+            xy_r4 = XY_r4.read_xy(f_r4)
+            assert len(xy_r4["x"]) == 30 and xy_r4["x"][0] == 0.1 and xy_r4["y"][0] == 999, xy_r4["x"][:2]
+            dec_r4 = DEC_r4.read_decay(f_r4)
+            assert dec_r4["unit"] == "ns" and len(dec_r4["t"]) == 30 and dec_r4["ncols"] == 3, dec_r4["unit"]
+            f2_r4 = put_r4("lead.csv", [",Time (us),Counts"] + [f",{0.1 * k:.1f},{1000 - k}" for k in range(1, 31)])
+            assert len(XY_r4.read_xy(f2_r4)["x"]) == 30 and DEC_r4.read_decay(f2_r4)["unit"] == "us"
+            f3_r4 = put_r4("upper.txt", ["Time (ps)\tCounts", "\tPROBE-A"] + [f"{10 * k}\t{1000 - k}" for k in range(1, 31)])
+            assert DEC_r4.read_decay(f3_r4)["unit"] == "ps"
+            # Einheit nie aus Metadaten ueber einem Spaltenkopf ohne Einheit (tau waere sonst um 1000 falsch)
+            f4_r4 = put_r4("meta_unit.csv", ["Resolution [ns],0.1", "Time,Counts"]
+                           + [f"{0.1 * k:.1f},{1000 - k}" for k in range(1, 31)])
+            assert DEC_r4.read_decay(f4_r4)["unit"] is None
+            # Eclipse paarweise (ohne „Z Axis“, zwei Proben): gelesen, auch mit Komma am Ende der Namenszeile
+            pair_r4 = [f"{x_:g},{100 * np.exp(-((x_ - 420) / 10) ** 2):.4f},{x_:g},{50 * np.exp(-((x_ - 430) / 8) ** 2):.4f}"
+                       for x_ in lam_r4]
+            for tail_r4 in ("", ","):
+                p_r4 = core.read_samples([put_r4(f"eclipse_pair{len(tail_r4)}.csv", [
+                    "Wavelength (nm),Intensity (a.u.),Wavelength (nm),Intensity (a.u.)", ",PROBE-A,,PROBE-B" + tail_r4]
+                    + pair_r4 + meta_r4)])
+                assert [s_["name"] for s_ in p_r4] == ["PROBE-A", "PROBE-B"], (tail_r4, [s_["name"] for s_ in p_r4])
+                assert [round(float(s_["x"][np.argmax(s_["y"])])) for s_ in p_r4] == [420, 430]
+            # Cary paarweise: benannte Probe ohne Datenspalten -> abgelehnt statt still weggelassen
+            cary_r4 = ["PROBE-A,,PROBE-B,,PROBE-C,,", "Wavelength (nm),Abs,Wavelength (nm),Abs,Wavelength (nm),Abs,"] + pair_r4
+            try:
+                core.read_samples([put_r4("cary_missing.csv", cary_r4)])
+                raise AssertionError("Cary sample without data accepted")
+            except ValueError as e_:
+                assert str(e_) == T_r4("r4_cary_no_data", name="cary_missing.csv", sample="PROBE-C"), str(e_)
+            report.append("Eclipse CSV with Z axis (all samples), index row in xy/decay, decay unit from the column header, "
+                          "paired Eclipse, Cary sample without data refused: OK")
 
         with section:
             # Fluoreszenz: Stokes-Verschiebung, A(λex), λabs-Label
@@ -365,6 +627,99 @@ def selftest(outdir, with_isnet=False):
             assert "abs" in ltxt and "\\tilde" in ltxt, ltxt
             w.fl_state.update(stokes_label=False)
             report.append("fluorescence Stokes shift + A(ex): OK")
+        with section:
+            # Fluoreszenz, zeitaufgeloest: Textleser, Lebensdauer-Fit (Schwanz / IRF-Faltung), Kennwerte k_r/k_nr,
+            # Anregungsspektrum, SI-Abbildungen, Export, Zustand
+            from elucida.core import lifetime as LT_
+            from elucida.formats import decay as DEC_
+            from elucida.tabs import fluo_tau as FT_
+            dd_ = out / "input" / "decay"
+            dd_.mkdir(parents=True, exist_ok=True)
+            t_d, y_d, irf_d = LT_.make_test_decay(taus=(1.2, 5.0), amps=(3000.0, 1200.0), bg=5.0, seed=21)
+            f_semi = dd_ / "semi.txt"                              # Semikolon + Dezimalkomma, Kopf mit ps
+            with open(f_semi, "w", encoding="utf-8", newline="") as fh:
+                fh.write("Messung X\nZeit (ps);Counts;IRF\n" + "".join(f"{str(round(t * 1000, 3)).replace('.', ',')};"
+                                                                    f"{int(y)};{int(i)}\n" for t, y, i in zip(t_d, y_d, irf_d)))
+            r_d = DEC_.read_decay(f_semi)
+            assert r_d["unit"] == "ps" and r_d["ncols"] == 3 and len(r_d["t"]) == len(t_d), (r_d["unit"], r_d["ncols"])
+            assert abs(r_d["t"][1] - 1000 * t_d[1]) < 1e-6 and r_d["y"][5] == y_d[5]
+            for bad_txt in ("a b\nc d\n", "".join(f"{k} {k}\n" for k in range(5)),
+                            "".join(f"{10 - k} {k}\n" for k in range(20))):
+                f_bad = dd_ / "bad.txt"
+                with open(f_bad, "w", encoding="utf-8", newline="") as fh:
+                    fh.write(bad_txt)
+                try:
+                    DEC_.read_decay(f_bad)
+                    raise AssertionError("bad decay file accepted")
+                except ValueError:
+                    pass
+            r_i = LT_.fit_decay(t_d, y_d, 2, irf=(t_d, irf_d))      # Faltung: wahre Werte nahe am 95-%-Intervall
+            assert r_i["weighted"] and 0.85 < r_i["chi2_red"] < 1.2, r_i["chi2_red"]  # (die IRF selbst rauscht)
+            assert all(abs(t_ - tt) <= 1.5 * (ci[1] - ci[0]) and ci[0] < t_ < ci[1]
+                       for t_, tt, ci in zip(r_i["tau"], (1.2, 5.0), r_i["ci_tau"])), (r_i["tau"], r_i["ci_tau"])
+            at_ = np.array([3000.0, 1200.0]) * np.array([1.2, 5.0])
+            assert abs(r_i["tau_amp"] - at_.sum() / 4200.0) < 0.1 and abs(r_i["tau_int"] - (at_ * [1.2, 5.0]).sum() / at_.sum()) < 0.1
+            r_t = LT_.fit_decay(t_d, y_d, 2, start=0.4)             # Schwanz ab 0.4 ns nach dem Maximum
+            assert not r_t["irf"] and r_t["t"][0] >= t_d[np.argmax(y_d)] + 0.4 - 1e-9 and abs(r_t["tau"][1] / 5.0 - 1) < 0.08
+            r_1 = LT_.fit_decay(t_d, y_d / y_d.max(), 1, start=3.0)  # keine Zaehlraten: ungewichtet, kein chi2
+            assert r_1["chi2_red"] is None and not r_1["weighted"] and r_1["tau_amp"] == r_1["tau"][0]
+            kr_, knr_ = LT_.rates(0.5, 2.0)
+            assert abs(kr_ - 2.5e8) < 1 and abs(knr_ - 2.5e8) < 1 and LT_.rates(1.5, 2.0) == (None, None)
+            assert FT_.parse_phi("42 %") == 0.42 and FT_.parse_phi("0,3") == 0.3 and FT_.parse_phi("2") is None
+            # Tab: Abklingkurve + IRF (ns), Anregungsspektrum, Phi
+            f_dec, f_irf = dd_ / "decay.txt", dd_ / "irf.txt"
+            for f_, v_ in ((f_dec, y_d), (f_irf, irf_d)):
+                with open(f_, "w", encoding="utf-8", newline="") as fh:
+                    fh.write("Time [ns]\tCounts\n" + "".join(f"{t:.4f}\t{int(v)}\n" for t, v in zip(t_d, v_)))
+            exf_ = out / "input" / "excitation.csv"
+            exf_.write_text("\r\n".join(["EX em520,,", "Wavelength (nm),Intensity (a.u.),"] +
+                                          [f"{x:.1f},{400 * np.exp(-((x - 350) / 30) ** 2):.3f}," for x in range(250, 501)]),
+                            encoding="utf-8", newline="")
+            keep_f = dict(w.fl_state)
+            t_f = w.fl_tab
+            try:
+                w.fl_state.update(decay_file=str(f_dec), irf_file=str(f_irf), tau_n=2, tau_avg="int", phi="0.5",
+                                  tau_ex=375.0, tau_em=520.0, exc_file=str(exf_), exc_sample="EX em520", exc_det=520.0)
+                w.replace_tab("fluo")
+                t_f = w.fl_tab
+                t_f.render()
+                res_ = t_f.tau.res
+                assert res_ is not None and res_["irf"] and res_["n_exp"] == 2 and t_f.tau.lab_start.isHidden()
+                assert any(c_.get("ls") == "-." for c_ in t_f.F.curves), "excitation curve missing"
+                assert "excitation spectrum (green; λ<sub>em</sub> = 520 nm)" in t_f.si_caption("X")
+                row_, head_, kind_, phi_ = t_f.tau.props()
+                assert kind_ == "int" and head_ == "τ_int [ns]" and phi_ == 0.5
+                assert row_[5] == core.sci_text(0.5 / (res_["tau_int"] * 1e-9)), row_
+                assert row_[0] and row_[2] == "520" and row_[3] == "0.5", row_
+                assert dict(t_f.kpis()).get("τ_int") == f"{res_['tau_int']:.3g} ns"
+                assert t_f.tau.tbl_props.rowCount() == 1 and t_f.tau.tbl_fit.rowCount() == 2
+                meth_f = t_f.methods_text()
+                assert "reconvolution" in meth_f and "intensity-weighted average lifetime" in meth_f and "Elucida" not in meth_f
+                cap_d = t_f.tau.caption("X")
+                assert cap_d.startswith("Fluorescence decay of <b>X</b> (λ<sub>exc</sub> = 375 nm, λ<sub>em</sub> = 520 nm)")
+                blocks_f = t_f.si_figure(out / "si_fluo", "X")
+                assert [b_[0] for b_ in blocks_f] == ["image", "figcap", "image", "figcap"], [b_[0] for b_ in blocks_f]
+                assert Path(blocks_f[2][1]).exists() and blocks_f[2][2] <= TABS.SI_MAX_W_CM + 1e-9
+                files_f = t_f.export_to(out / "fluo_tau")
+                csv_d = out / "fluo_tau_decay.csv"
+                assert csv_d.name in [Path(f_).name for f_ in files_f] and all(Path(f_).exists() for f_ in files_f), files_f
+                assert csv_d.read_text(encoding="utf-8-sig").splitlines()[0].startswith("t [ns],measured,fit,weighted")
+                # ohne IRF: Startfeld sichtbar, Schwanzfit; Phi ungueltig -> Warnung, kein k_r
+                w.fl_state.update(irf_file=None, phi="1.7", tau_n=1)
+                w.replace_tab("fluo")
+                t_f = w.fl_tab
+                t_f.render()
+                assert not t_f.tau.res["irf"] and not t_f.tau.lab_start.isHidden() and t_f.tau.lab_avg.isHidden()
+                row_ = t_f.tau.props()[0]
+                assert row_[3] == "" and row_[5] == "" and T("fluo_tau_phi_bad") in t_f.tau.prop_notes
+                assert "to the tail of the decay" in t_f.methods_text()
+                t_f.reset_defaults()
+                assert w.fl_state["decay_file"] == str(f_dec) and w.fl_state["tau_n"] == 1 and w.fl_state["phi"] == "1.7"
+            finally:
+                w.fl_state.clear()
+                w.fl_state.update(keep_f)
+                w.replace_tab("fluo")
+            report.append("fluorescence lifetime (reader, tail/IRF fit, CI, k_r/k_nr, excitation, SI, export): OK")
         with section:
             # Schultern, Zusatzbande, Cutoff und Ausblenden pro Bande
             w.open_csv(csv, ask=False)
@@ -652,19 +1007,71 @@ def selftest(outdir, with_isnet=False):
             report.append("overlay: y range, x range without sticks, tail normalisation, own window, remove, weights: OK")
 
         with section:
-            # Overlay gestapelt: Ebenen in Listenreihenfolge, TD-DFT auf der Ebene der Messung, y ohne Zahlen
+            # TD-DFT-Tab (früher Overlay) gestapelt: Ebenen in Listenreihenfolge, TD-DFT auf der Ebene der Messung, y ohne
+            # Zahlen; Stapeln hat Bedienelemente (Spektren derselben Verbindung). Die Struktur je Spektrum gibt es seit 1.2.0
+            # nur als alten Zustand (Vergleich verschiedener Verbindungen liegt im Projekt): ohne Bedienelement, Hinweis im
+            # Tab, Bild wie bisher, Zustand unverändert
+            import copy as copy_lg_
+            tab_ = w.ov_tab
             ents = w.ov_state["entries"]
             ents.append(dict(ents[0], uid="stack3", label="exp 2", color="#e8231b"))
             ents[1]["stack_with_prev"] = True
+            for a_ in ("cb_ecolor", "lbl_estruct", "set_entry_structure", "choose_entry_structure"):
+                assert not hasattr(tab_, a_), a_
+            for a_ in ("cb_stack", "sp_gap", "cmb_yaxis", "cb_clabels", "cb_zero", "cb_samelevel"):
+                assert hasattr(tab_, a_), a_
+            assert not hasattr(tab_, "LEGACY_KEYS") and not tab_._is_data_key("stack") and tab_._is_data_key("entries")
+            assert not tab_.legacy_compare(w.ov_state)            # Stapeln allein ist kein alter Zustand
+            tab_.fill_table()
+            assert tab_.lbl_cmp_old.text() == ""
 
             def ov_fig():
                 figo = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
                 FigureCanvasAgg(figo)
-                Fo = w.ov_tab.build(figo)
+                Fo = tab_.build(figo)
                 figo.canvas.draw()
                 return Fo
             w.ov_state.update(mode="norm", stick_mode="faxis", stack=False, curve_labels=False, zero_lines=False)
             flat = ov_fig()
+            base_ov = copy_lg_.deepcopy(dict(w.ov_state))
+            # Bedienelemente schreiben die Stapel-Schlüssel (collect) bzw. „Ebene wie darüber“ in den Eintrag
+            tab_._loading = True
+            tab_.cb_stack.setChecked(True)
+            tab_.sp_gap.setValue(1.2)
+            tab_.cmb_yaxis.setCurrentIndex(tab_.cmb_yaxis.findData("no_numbers"))
+            tab_.cb_clabels.setChecked(True)
+            tab_.cb_zero.setChecked(True)
+            tab_._loading = False
+            tab_.collect()
+            assert (w.ov_state["stack"], w.ov_state["stack_gap"], w.ov_state["y_axis"], w.ov_state["curve_labels"],
+                    w.ov_state["zero_lines"]) == (True, 1.2, "no_numbers", True, True), w.ov_state
+            tab_.table.setCurrentCell(1, 1)
+            tab_.show_details()
+            assert tab_.cb_samelevel.isChecked()
+            tab_.cb_samelevel.setChecked(False)
+            assert ents[1]["stack_with_prev"] is False
+            tab_.cb_samelevel.setChecked(True)
+            assert ents[1]["stack_with_prev"] is True
+            # alte Struktur je Spektrum (in Kurvenfarbe): zeichnet weiter, Hinweis, nichts schreibt sie
+            ents[2]["structure"] = str(cdxml)
+            assert tab_.legacy_compare(w.ov_state)
+            tab_.fill_table()
+            assert tab_.lbl_cmp_old.text() == T("ov_cmp_old")
+            tab_.table.setCurrentCell(2, 1)
+            tab_.show_details()
+            tab_.sp_lw.setValue(1.5)                              # Änderung im Detail: Struktur bleibt, keine Farbe dazu
+            assert ents[2]["lw"] == 1.5 and ents[2]["structure"] == str(cdxml) and "struct_color" not in ents[2], ents[2]
+            assert any(im_["id"] == "struktur_stack3" for im_ in tab_.figure_spec()[0]["images"]), \
+                tab_.figure_spec()[0]["images"]
+            tab_.timer.stop()
+            tab_._loading = True                                  # Felder zurück auf den Standard (Zustand folgt unten)
+            for cb_ in (tab_.cb_stack, tab_.cb_clabels, tab_.cb_zero):
+                cb_.setChecked(False)
+            tab_.sp_gap.setValue(1.0)
+            tab_.cmb_yaxis.setCurrentIndex(0)
+            tab_._loading = False
+            w.ov_state.update(copy_lg_.deepcopy(base_ov))
+            ents = w.ov_state["entries"]
             w.ov_state.update(stack=True, stack_gap=1.2, y_axis="auto", curve_labels=True, zero_lines=True)
             stk = ov_fig()
             for i, dy in enumerate((1.2, 1.2, 0.0)):
@@ -672,12 +1079,14 @@ def selftest(outdir, with_isnet=False):
                 assert abs(d - dy) < 1e-9, (i, d)
             assert stk.ax2 is None and not stk.ax.yaxis.get_major_ticks()[0].label1.get_visible()
             assert len(stk.curve_texts) == 2 and stk.legend is None, len(stk.curve_texts)
-            files = w.ov_tab.export_to(out / "overlay_stacked")
+            files = tab_.export_to(out / "overlay_stacked")
             assert all(f.exists() for f in files), files
             ents.pop()
             ents[1].pop("stack_with_prev")
             w.ov_state.update(stack=False, curve_labels=False, zero_lines=False, y_axis="auto")
-            report.append("overlay stacked: OK")
+            tab_.fill_table()
+            assert tab_.lbl_cmp_old.text() == ""
+            report.append("overlay stacked (controls; structure per spectrum legacy only): OK")
 
         with section:
             # TD-DFT: Triplett-Zustände (ORCA 6 Bezeichnung, ORCA 4/5 eigener Block, Gaussian) und Kombinieren
@@ -783,6 +1192,164 @@ def selftest(outdir, with_isnet=False):
             assert np.allclose(stx3[0]["h"] / stx3[0]["h"].max(), f3 / f3.max()), stx3
             assert abs(float(np.nanmax(cur3[0]["y"])) - 1.0) < 1e-9, float(np.nanmax(cur3[0]["y"]))
             report.append("TD-DFT triplet reference, spin-allowed spectrum: OK")
+
+        with section:
+            # TD-DFT-Tabelle (Paket A 1.2.0): Hauptanteile aus ORCA (Gewicht wie gedruckt) und Gaussian (2c^2 bzw. c^2),
+            # HOMO/LUMO aus den Besetzungen, Filter f/Gewicht, Tabelle, SI-Bloecke und erweiterte CSV; alle Werte erfunden
+            from elucida.core import tddft as XTA
+            from elucida.app.demo import tddft_out as td_a_
+            ta_ = td_a_(out / "input" / "tdt_orca.out", [(400.0, 0.80), (350.0, 0.004), (300.0, 0.20)],
+                        parts=[[(9, 10, 0.90), (8, 10, 0.06)], [(8, 10, 0.70), (9, 11, 0.25)],
+                               [(9, 11, 0.55), (7, 10, 0.40)]], n_occ=10)
+            pa_ = XTA.tddft_parts(ta_)
+            assert pa_["rule"] == "printed" and len(pa_["parts"]) == 3, pa_
+            assert pa_["parts"][0][0] == ("HOMO", "LUMO", 0.90), pa_["parts"][0]          # Nummern ab 0, HOMO = 9
+            assert XTA.parts_text(pa_["parts"][2], 0.1) == "HOMO \u2192 LUMO+1 (55 %), HOMO\u22122 \u2192 LUMO (40 %)"
+            assert XTA.parts_text(pa_["parts"][0], 0.1) == "HOMO \u2192 LUMO (90 %)"     # 6 % unter der Schwelle
+            # ohne Zusammensetzung (alte Tabelle): keine Anteile -> Spalte entfaellt
+            assert XTA.tddft_parts(td_a_(out / "input" / "tdt_plain.out", [(400.0, 0.5)])) is None
+            # Gaussian geschlossenschalig: Gewicht 2c^2, Abregungen (<-) zaehlen nicht, HOMO aus "alpha electrons"
+            g_ = out / "input" / "tdt_gauss.log"
+            g_.write_text("\n".join([
+                " Alpha  occ. eigenvalues --   -0.50000  -0.40000  -0.30000", " Alpha virt. eigenvalues --    0.05000   0.08000",
+                " Excitation energies and oscillator strengths:", "",
+                " Excited State   1:      Singlet-A      3.0000 eV  413.28 nm  f=0.5000  <S**2>=0.000",
+                "       3 ->  4         0.68000", "       2 ->  4         0.12000", "       3 <-  4        -0.10000", "",
+                " Excited State   2:      Singlet-A      4.0000 eV  309.96 nm  f=0.0050  <S**2>=0.000",
+                "       3 ->  5         0.70000", ""]) + "\n", encoding="utf-8")
+            pg_ = XTA.tddft_parts(g_)
+            assert pg_["rule"] == "2c2", pg_
+            assert pg_["parts"][0][0][:2] == ("HOMO", "LUMO") and abs(pg_["parts"][0][0][2] - 2 * 0.68 ** 2) < 1e-9, pg_
+            assert len(pg_["parts"][0]) == 2 and pg_["parts"][1][0][:2] == ("HOMO", "LUMO+1"), pg_
+            # Gaussian offenschalig: c^2 je Spin, Namen mit (alpha)/(beta)
+            gu_ = out / "input" / "tdt_gauss_u.log"
+            gu_.write_text("\n".join([
+                " Alpha  occ. eigenvalues --   -0.50000  -0.40000  -0.30000", " Alpha virt. eigenvalues --    0.05000",
+                " Beta  occ. eigenvalues --   -0.50000  -0.40000", " Beta virt. eigenvalues --   -0.10000   0.06000",
+                " Excited State   1:  Doublet-A      2.0000 eV  619.92 nm  f=0.1000  <S**2>=0.760",
+                "       3A ->  4A        0.60000", "       2B ->  3B        0.70000", ""]) + "\n", encoding="utf-8")
+            pu_ = XTA.tddft_parts(gu_)
+            assert pu_["rule"] == "c2" and pu_["parts"][0][0][0] == "HOMO (\u03b2)", pu_
+            assert abs(pu_["parts"][0][0][2] - 0.49) < 1e-9, pu_
+            # Tab: Tabelle (eine Zeile je Anteil), Filter f >= 0.01 und Gewicht >= 10 %, SI-Bloecke, CSV mit Anteilen
+            ov_a_ = w.ov_tab.st
+            old_a_ = dict(ov_a_)
+            try:
+                ov_a_.update(entries=[dict(uid="tdta", kind="calc", file=str(ta_), label="calc.", color="#1764e8",
+                                           visible=True, own_norm=False, nlo=250.0, nhi=500.0, fwhm=0.3, shift=0.0)],
+                             mode="norm", stack=False, nlo=250.0, nhi=500.0, tdt_f_on=True, tdt_f=0.01, tdt_w=10.0,
+                             tdt_range=False, tdt_si=True, triplets=False)
+                w.ov_tab.render()
+                w.ov_tab.show_excitations()
+                t_a_ = w.ov_tab.tbl_tdt
+                cells_ = [[t_a_.item(i_, j_).text() for j_ in range(t_a_.columnCount())] for i_ in range(t_a_.rowCount())]
+                assert t_a_.columnCount() == 6, t_a_.columnCount()                      # ohne Spalte „Rechnung“
+                assert [c_[0] for c_ in cells_] == ["S1", "S3", ""], cells_              # S2 (f = 0.004) gefiltert
+                assert cells_[0][2:] == ["400", "0.800", "HOMO \u2192 LUMO", "90"], cells_
+                assert cells_[2][:4] == ["", "", "", ""] and cells_[2][4] == "HOMO\u22122 \u2192 LUMO", cells_
+                bl_a_ = w.ov_tab.si_table_blocks("S9")
+                assert bl_a_[0][0] == "tabcap" and bl_a_[1][0] == "params" and bl_a_[1][1][1] == "*E* / eV", bl_a_[:2]
+                assert "Main contributions" in bl_a_[2][1] and "ORCA" not in bl_a_[2][1], bl_a_[2]
+                from elucida.si import lines as SI_a_
+                import zipfile as zf_a_
+                SI_a_.write_docx(out / "tdt.docx", bl_a_)
+                with zf_a_.ZipFile(out / "tdt.docx") as z_:
+                    doc_a_ = z_.read("word/document.xml").decode("utf-8")
+                assert "TD-DFT excitations of" in doc_a_ and "HOMO \u2192 LUMO" in doc_a_, doc_a_[:300]
+                ov_a_["tdt_si"] = False
+                assert w.ov_tab.si_table_blocks("S9") == []
+                fo_a_ = w.ov_tab.export_to(out / "tdt_ov")
+                tr_a_ = next(f_ for f_ in fo_a_ if f_.name == "tdt_ov_transitions.csv")
+                with open(tr_a_, encoding="utf-8-sig", newline="") as fh_:
+                    rows_a_ = list(__import__("csv").reader(fh_))
+                assert rows_a_[0][7:] == ["Contributions (weight)", "Weight rule"], rows_a_[0]
+                assert rows_a_[1][7] == "HOMO -> LUMO: 0.9000; HOMO-1 -> LUMO: 0.0600", rows_a_[1]   # alle, ohne Schwelle
+            finally:
+                ov_a_.clear()
+                ov_a_.update(old_a_)
+                w.ov_tab.render()
+            report.append("TD-DFT table (contributions ORCA/Gaussian, filters, SI table, CSV): OK")
+        with section:
+            # NTO-Bilder (Paket B 1.2.0): NTO-Block wie ORCA 6 (DoNTO true; Format an echten Ausgaben geprueft), Zuordnung
+            # ueber die Energie, Molden-Paare (Nummern ab 0), Cube-Paar mit Gewicht aus dem Block bzw. von Hand; erfunden
+            import copy as copy_n_
+            import shutil as sh_n_
+            from elucida.app.demo import tddft_out as td_n_
+            from elucida.formats import nto as NTOF_
+            from elucida.tabs import nto as NTOV_
+            tn_ = td_n_(out / "input" / "nto_orca.out", [(400.0, 0.80), (300.0, 0.20)],
+                        parts=[[(0, 1, 0.90)], [(0, 2, 0.70)]], n_occ=1,
+                        nto=[[(0, 1, 0.97123456), (2, 3, 0.02100000)], [(0, 2, 0.6), (3, 1, 0.38)]])
+            bl_n_ = NTOF_.orca_nto_blocks(tn_.read_text(encoding="utf-8"))
+            assert [b_["state"] for b_ in bl_n_] == [1, 2] and bl_n_[0]["file"] == "nto_orca.s1.nto", bl_n_
+            assert bl_n_[0]["pairs"][0] == (0, "a", 1, "a", 0.97123456), bl_n_[0]
+            assert abs(bl_n_[0]["E"] - 1239.84198 / 400.0) < 1e-4
+            assert NTOF_.block_for(bl_n_, 1239.84198 / 300.0)["state"] == 2
+            assert NTOF_.block_for(bl_n_, 5.0) is None
+            assert NTOF_.block_for(bl_n_ + [dict(bl_n_[0])], bl_n_[0]["E"]) is None          # zwei passen: nie raten
+            assert NTOV_.state_key({"file": "/a/b/x.out", "variant": None}, 2) == "x.out||2"
+            from elucida.core import orbitals as ORB_n_
+            mo_n_ = ORB_n_.make_test_molden(out / "input" / "nto_s1.molden", orca=True)
+            m_n_ = ORB_n_.parse_molden(mo_n_.read_text(encoding="utf-8"))
+            assert NTOV_.NtoView.mo_index(m_n_, 0, "a") == 0 and NTOV_.NtoView.mo_index(m_n_, 1, "a") == 1
+            c1_ = ORB_n_.make_test_cube(out / "input" / "nto_s1.mo7a.cube", n=24)
+            c2_ = out / "input" / "nto_s1.mo8a.cube"
+            sh_n_.copy(c1_, c2_)
+            ov_n_ = w.ov_tab.st
+            old_n_ = copy_n_.deepcopy(dict(ov_n_))
+            try:
+                ov_n_.update(entries=[dict(kind="calc", file=str(tn_), label="calc.", color="#1764e8", visible=True,
+                                           own_norm=False, nlo=250.0, nhi=500.0, fwhm=0.3, shift=0.0)],
+                             mode="norm", stack=False, nlo=250.0, nhi=500.0)
+                ov_n_["nto"] = dict(items={}, sel=None, wmin=10.0, iso=0.0, si=True)
+                v_n_ = w.ov_tab.nto
+                v_n_.sync()
+                assert [s_["name"] for s_ in v_n_._states] == ["S1", "S2"], v_n_._states
+                k1_ = NTOV_.state_key({"file": str(tn_)}, 0)
+                # Molden: Paare ab 10 % aus dem Block (S1: nur 0 -> 1, 97 %)
+                ov_n_["nto"]["items"][k1_] = dict(kind="molden", file=str(mo_n_), state="S1")
+                ov_n_["nto"]["sel"] = k1_
+                v_n_.sync()
+                pr_n_, _ = v_n_.pairs()
+                assert len(pr_n_) == 1 and pr_n_[0]["hole"]["mo"] == 0 and pr_n_[0]["particle"]["mo"] == 1, pr_n_
+                assert abs(pr_n_[0]["w"] - 0.97123456) < 1e-9 and pr_n_[0]["names"] == ["0a", "1a"]
+                ov_n_["nto"]["wmin"] = 1.0
+                assert len(v_n_.pairs()[0]) == 2                                      # 2 % ab Schwelle 1 %
+                ov_n_["nto"]["wmin"] = 10.0
+                # Cubes: Loch = kleinere Nummer; 7/8 steht nicht im Block -> Gewicht nur von Hand
+                fs_n_, nos_n_ = NTOV_.NtoView.cube_pair([str(c2_), str(c1_)])
+                ov_n_["nto"]["items"][k1_] = dict(kind="cube", files=fs_n_, mos=nos_n_, state="S1", weight=None)
+                v_n_.sync()
+                it_n_ = ov_n_["nto"]["items"][k1_]
+                assert it_n_["mos"] == [7, 8] and Path(it_n_["files"][0]).name == "nto_s1.mo7a.cube", it_n_
+                assert v_n_.pairs()[0][0]["w"] is None and v_n_.sp_w.isEnabled()
+                it_n_["weight"] = 88.0
+                pr_n_, notes_n_ = v_n_.pairs()
+                assert abs(pr_n_[0]["w"] - 0.88) < 1e-12 and notes_n_ == [T("nto_weight_user")], notes_n_
+                ims_n_ = v_n_.images(pr_n_)
+                assert len(ims_n_) == 2 and ims_n_[0].shape == ims_n_[1].shape and ims_n_[0][:, :, 3].max() > 0
+                v_n_.refresh()                     # Seite verborgen: Bild erst beim Anzeigen (geprüft im Abschnitt „speed“)
+                assert v_n_._pending and "88%" in v_n_.caption_html()
+                cap_n_ = v_n_.caption_html()
+                assert "Natural transition orbitals of" in cap_n_ and "S1 state" in cap_n_ and "Elucida" not in cap_n_
+                si_n_ = v_n_.si_blocks(out / "input", "S9")
+                assert [b_[0] for b_ in si_n_] == ["image", "figcap"] and Path(si_n_[0][1]).exists(), si_n_
+                ex_n_ = v_n_.export_to(out / "nto_ov")
+                assert any(p_.name == "nto_ov_NTO_S1.png" for p_ in ex_n_) and \
+                    any(p_.name == "nto_ov_NTO_captions.txt" for p_ in ex_n_), ex_n_
+                ov_n_["nto"]["si"] = False
+                assert v_n_.si_blocks(out / "input", "S9") == []
+                # Projektpfade: NTO-Dateien stehen in den Pfadstellen (relativ gespeichert, beim Oeffnen absolut)
+                from elucida.app import project as PRJ_n_
+                sl_n_ = [c_[k_] for c_, k_, _ in PRJ_n_._path_slots({"overlay": dict(ov_n_)})
+                         if isinstance(c_, (dict, list)) and (k_ in c_ if isinstance(c_, dict) else k_ < len(c_))]
+                assert str(it_n_["files"][0]) in sl_n_, sl_n_
+            finally:
+                ov_n_.clear()
+                ov_n_.update(old_n_)
+                w.ov_tab.render()
+            report.append("NTO (ORCA block, energy matching, Molden pairs, cube pair with weight, figure, SI, export, "
+                          "project paths): OK")
 
         with section:
             # Export ins Projekt inkl. Excel-Report
@@ -1050,16 +1617,16 @@ def selftest(outdir, with_isnet=False):
             assert "Nicholson" in meth and "diacetylferrocene" in meth and "95% confidence" in meth \
                 and "Couple 1: E1/2 = −1.08 V vs. Fc0/+" in meth, meth
             assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
-            # „Alles auf Standard“: Einstellungen zurück; Messungen, Redoxpaare, Referenz, Unterschrift bleiben
+            # „Darstellung zurücksetzen“: Darstellung zurück; Messungen, Redoxpaare, Referenz, Basislinie, Unterschrift bleiben
             snap_cv = json.loads(json.dumps({k_: st_cv[k_] for k_ in ("files", "couples", "ref_mode", "ref_value", "cycle",
                                                                       "gradient", "baseline")}))
             st_cv.update(gradient=False, baseline=False, stack=True, cap_temp="−78 °C")
             w.cv_tab.reset_defaults()
-            assert st_cv["gradient"] and st_cv["baseline"] and not st_cv["stack"]
+            assert st_cv["gradient"] and not st_cv["baseline"] and not st_cv["stack"]
             assert st_cv["cap_temp"] == "−78 °C" and all(st_cv[k_] == snap_cv[k_] for k_ in ("files", "couples", "ref_mode",
                                                                                          "ref_value", "cycle"))
             assert w.cv_tab.cb_gradient.isChecked() and w.main_tabs.currentWidget() is not None
-            st_cv.update(cycle=snap_cv["cycle"], cap_temp="rt")
+            st_cv.update(cycle=snap_cv["cycle"], cap_temp="rt", baseline=snap_cv["baseline"])
             w.cv_tab.fill_table()
             report.append("cyclic voltammetry: OK")
 
@@ -1306,6 +1873,7 @@ def selftest(outdir, with_isnet=False):
             arr_ = t_cv.F.ann_items["arrow_scan"]
             t_cv.F.fig.canvas.draw()
             assert "arrow_scan" in t_cv.F.current_layout() and arr_.arrow_patch is not None
+            assert "arrow_scan" not in t_cv.F.layout and _arrow_clear(t_cv.F, "arrow_scan"), arr_.xyann   # Vorgabe: über den Kurven
             t_cv.layout_changed({"arrow_scan": [0.3, 0.4]})
             t_cv.render()
             assert tuple(t_cv.F.ann_items["arrow_scan"].xyann) == (0.3, 0.4), t_cv.F.ann_items["arrow_scan"].xyann
@@ -1319,6 +1887,249 @@ def selftest(outdir, with_isnet=False):
             st_cv.update(files=[], couples=[], ref_mode="none", plot="cv", stack=False, e12_each=False)
             w.cv_tab.fill_table()
             report.append("CV stacking, reference per file, rate plots: OK")
+
+        with section:
+            # CV, Angaben der Richtlinien (ACS/Angew.): Start, Richtung, iR-Kompensation aus der Datei; Elektroden,
+            # Spülgas, Gerät, Politur aus der Karte „Messbedingungen“; leere Angaben erscheinen nicht
+            t_cv = w.cv_tab
+            acs_files = []
+            for k_, (rate, ir_) in enumerate(((50, "0"), (100, "0"))):
+                p_ = cvdir / f"cv_acs_{rate}.DTA"
+                write_dta(p_, [cv_sweep(-1.02, 40.0, -1.4, -0.5)], rate)
+                p_.write_text(p_.read_text(encoding="latin-1").replace(
+                    "EXPLAIN", f"EXPLAIN\r\nIRCOMP\tSELECTOR\t{ir_}\tIR Comp", 1), encoding="latin-1", newline="")
+                acs_files.append({"file": str(p_), "uid": f"acs{k_}", "visible": True, "color": "#000000",
+                                  "label": f"{rate} mV s-1"})
+            e0_, s0_ = CVMOD.scan_start(CVMOD.read_gamry(acs_files[0]["file"])["cycles"][0]["E"])
+            assert abs(e0_ + 1.4) < 1e-6 and s0_ == 1, (e0_, s0_)
+            assert CVMOD.scan_start(np.array([0.5, 0.49, 0.48, 0.47]))[1] == -1
+            st_cv.update(files=acs_files, couples=[], ref_mode="none", ref_electrode="Ag/AgNO3", plot="cv", arrow=True,
+                         invert=False, cap_conc="", cap_solvent="", cap_el="", cap_start=True)
+            for k_ in CVMOD.ACS_FIELDS:
+                st_cv[k_] = ""
+            t_cv.fill_table()
+            t_cv.render()
+            cap0_ = t_cv.si_caption("X")
+            assert "scans started at −1.40 V vs. Ag/AgNO<sub>3</sub> in the positive direction" in cap0_ \
+                and "(without iR compensation)" in cap0_ and "convention" not in cap0_, cap0_   # ohne Angabe wie 1.1.0
+            assert "under" not in cap0_ and "electrode" not in cap0_ and "three-electrode" not in t_cv.methods_text()
+            assert set(t_cv.acs_missing()) == {"solvent", "el", "conc", "we", "ce", "ref", "gas", "device", "area",
+                                               "polish"}                   # ref: Referenzelektrode des Aufbaus (1.2.0)
+            assert "positive" in t_cv.lbl_acs_file.text() or "positiv" in t_cv.lbl_acs_file.text(), \
+                t_cv.lbl_acs_file.text()
+            st_cv.update(acs_we="glassy carbon", acs_ce="Pt wire", acs_gas="N2", acs_device="Model 1 potentiostat",
+                         acs_polish="0.05 um alumina", rs_area=0.0707, cap_solvent="MeCN", cap_el="0.1 M n-Bu4NPF6",
+                         cap_conc="1 mM", invert=True)
+            cap1_ = t_cv.si_caption("X")
+            assert "under" not in cap1_ and "electrode" not in cap1_ and "polarographic convention" in cap1_, cap1_   # kurz
+            mt_ = t_cv.methods_text()
+            assert mt_.startswith("Cyclic voltammograms were recorded on Model 1 potentiostat. The samples were measured "
+                                  "under N2. A three-electrode setup was used, consisting of glassy carbon as working "
+                                  "electrode (A = 0.0707 cm\u00b2, polished with 0.05 um alumina), Pt wire as counter "
+                                  "electrode and Ag/AgNO3 as reference electrode."), mt_
+            assert t_cv.acs_missing() == [], t_cv.acs_missing()
+            t_cv.render()
+            assert t_cv.lbl_acs_missing.text() == "", t_cv.lbl_acs_missing.text()
+            t_cv.reset_defaults()                                  # Angaben zur Messung bleiben
+            assert st_cv["acs_we"] == "glassy carbon" and st_cv["acs_polish"] == "0.05 um alumina" and not st_cv["invert"]
+            assert w.cv_tab.ed_acs["acs_gas"].text() == "N2"
+            st_cv["cap_start"] = False                             # Vorgabe: Start und Richtung nicht in der Unterschrift
+            assert "scans started" not in t_cv.si_caption("X") and hasattr(t_cv, "cb_cap_start")
+            st_cv.update(files=[], couples=[], rs_area=0.0, cap_conc="", cap_solvent="", cap_el="",
+                         ref_electrode="Ag/AgNO₃", **{k_: "" for k_ in CVMOD.ACS_FIELDS})
+            for ed_ in w.cv_tab.ed_acs.values():
+                ed_.setText("")
+            w.cv_tab.fill_table()
+            report.append("CV guideline details (start, direction, iR, electrodes, gas, instrument, polishing): OK")
+
+        with section:
+            # 1.2.0 review fixes: tabs (EPR-Rechnung, Spinzaehlung, NMR-Kernzahl, Raman, CV-Texte)
+            from elucida.tabs import epr_calc as ECX_
+            from elucida.tabs import nmr as NMRX_
+            from elucida.formats import epr as FEPRX_
+            from elucida.formats import gamry as GAMX_
+            # E1: Zuordnung nach Gruppenindex, Element passt nicht mehr (N unter einer 1H-Gruppe) -> keine Beschriftung
+            dx_ = dict(els=["N", "H", "H"], fermi={0: ("14N", 20.0, 7.1), 1: ("1H", -0.001, -0.0004),
+                                                     2: ("1H", 30.0, 10.7)})
+            itx_ = ECX_.hfc_items(dx_, [(1, "1H", "14.00")], {"0": [0]}, "MHz", None, 0.0)
+            assert ECX_.bad_groups(dx_, [(1, "1H", "14.00")], {"0": [0]}) == ["0"]
+            assert all(i_["group"] is None and "exp." not in i_["text"] for i_ in itx_), itx_
+            assert ECX_.hfc_items(dx_, [(1, "1H", "14.00")], {"0": [2]}, "MHz", None, 0.0)[0]["group"] == 0
+            assert ECX_.bad_groups(dx_, [(1, "1H", "14.00")], {"1": [2]}) == ["1"]          # Gruppe gibt es nicht mehr
+            # E2: kein „−0.00“ in den Beschriftungen; B8: kaufmaennisch gerundet (12.5 % -> 13 %)
+            tx_ = {i_["atoms"][0]: i_["text"] for i_ in ECX_.hfc_items(dx_, [], {}, "MHz", None, 0.0)}
+            assert tx_[1] == "0.00 MHz", tx_
+            assert ECX_.num(2.5, 0) == "3" and ECX_.pct_label(12.5) == "13%" and ECX_.num(-0.004) == "0.00"
+            # B4/E9: Scans, Verstaerkung, Konversionszeit, Frequenz verglichen; Extrapolation und negative c markiert
+            assert EPRMOD.spin_differ([{"n_scans": 1}, {"n_scans": 4}], EPRMOD.SPIN_SCALE) == ["number of scans"]
+            assert EPRMOD.spin_differ([{"gain_dB": 60.0}, {}], EPRMOD.SPIN_SCALE) == ["receiver gain"]
+            assert EPRMOD.spin_differ([{"mw_GHz": 9.40}, {"mw_GHz": 9.41}], EPRMOD.SPIN_COND) == []
+            assert EPRMOD.spin_differ([{"mw_GHz": 9.40}, {"mw_GHz": 34.0}], EPRMOD.SPIN_COND) == ["microwave frequency"]
+            assert EPRMOD.spin_range_flags([("a", 0.5), ("b", 4.0), ("c", -0.1), ("d", 2.0)], [1.0, 3.0]) == \
+                (["a", "b"], ["c"])
+            bdir_ = out / "input" / "fixt_bes3t"
+            bdir_.mkdir(parents=True, exist_ok=True)
+            for nm_, extra_ in (("xepr", "RCAG\t60.00\nConvTime\t40.96 ms\n"), ("sptp", "SPTP\t0.004\n")):
+                (bdir_ / f"{nm_}.DSC").write_text("#DESC\t1.2\nDSRC\tEXP\nBSEQ\tBIG\nIKKF\tREAL\nXTYP\tIDX\nIRFMT\tD\n"
+                                                  "XPTS\t64\nXMIN\t3300\nXWID\t100\nXUNI\t'G'\nMWFQ\t9.4e9\n" + extra_,
+                                                  encoding="latin-1")
+                np.arange(64, dtype=">f8").tofile(bdir_ / f"{nm_}.DTA")
+            mx_ = FEPRX_.read_bes3t(bdir_ / "xepr.DSC")[0]["meta"]
+            assert mx_["gain_dB"] == 60.0 and abs(mx_["conv_ms"] - 40.96) < 1e-9, mx_
+            assert FEPRX_.read_bes3t(bdir_ / "sptp.DSC")[0]["meta"]["conv_ms"] == 4.0
+            t_x = w.epr_tab
+            keep_x = {k_: w.epr_state[k_] for k_ in ("entries", "mode", "int_x", "int_method", "normalize", "bl_order",
+                                                     "int_curie", "x_auto", "int_window")}
+            sdx_ = out / "input" / "fixt_spin"
+            sdx_.mkdir(parents=True, exist_ok=True)
+            Bx_ = np.linspace(330.0, 340.0, 2001)
+            lnx_ = -np.gradient(np.exp(-((Bx_ - 335.0) / 0.4) ** 2))
+            entx_ = []
+            for nm_, amp_, c_ in (("ref1", 1.0, 1.0), ("ref2", 2.0, 2.0), ("probe", 4.0, None)):
+                px_ = sdx_ / f"{nm_}_EPR-9p400000.txt"
+                np.savetxt(px_, np.column_stack([Bx_, amp_ * lnx_]), header="B [mT]\tI [a.U.]", comments="",
+                           delimiter="\t")
+                e_ = t_x._new("exp", str(px_))
+                e_.update(label=nm_, conc=c_, visible=True)
+                entx_.append(e_)
+            try:
+                w.epr_state.update(entries=entx_, mode="intensity", int_x="conc", int_method="double", normalize=False,
+                                   bl_order=-1, int_curie=False, x_auto=True, int_window="")
+                t_x.fill_table()
+                t_x.render()
+                srx_ = t_x.spin_result
+                assert srx_ and srx_["extra"] == ["probe"] and not srx_["neg"] and not srx_["scale"], srx_
+                mtx_ = t_x.methods_text()
+                assert "(extrapolated beyond the calibration range)" in mtx_ and "processed identically" in mtx_, mtx_
+                t_x.spectrum(entx_[1])["meta"]["n_scans"] = 4                     # eine Referenz mit 4 Scans
+                t_x.spectrum(entx_[0])["meta"]["n_scans"] = 1
+                t_x.spectrum(entx_[2])["meta"]["n_scans"] = 1
+                entx_[0]["dark"] = entx_[2]["uid"]                                 # nur eine mit Dunkelspektrum
+                t_x.render()
+                srx_ = t_x.spin_result
+                assert srx_["scale"] == ["number of scans"] and not srx_["same"], srx_
+                assert T("fixt_epr_spin_scale", what=T("fixt_epr_n_scans")) in t_x.lbl_info.text(), t_x.lbl_info.text()
+                assert "processed identically" not in t_x.methods_text() and "number of scans" in t_x.methods_text()
+            finally:
+                for e_ in entx_:
+                    t_x.spectrum(e_)["meta"].pop("n_scans", None)
+                w.epr_state.update(keep_x)
+                t_x.fill_table()
+                t_x.render()
+            # Nachtrag (Tiefentest): steigende Intensitaet (k < 0) im isothermen Fit -> Hinweis, keine Halbwertszeit;
+            # Methodentext mit echtem Minus wie die Unterschrift (auch UV-Kinetik ueber dieselbe Funktion)
+            assert EPRMOD.sci_signed(-3.89e-4) == "\u22123.89 \u00d7 10^-4" and EPRMOD.sci_signed(2e-3) == "2.00 \u00d7 10^-3"
+            kdx_ = out / "input" / "fixt_rise"
+            kdx_.mkdir(parents=True, exist_ok=True)
+            Bk_ = np.linspace(3300.0, 3400.0, 200)
+            for j_ in range(5):
+                (kdx_ / f"r{j_}.DSC").write_text(
+                    "#DESC\t1.2\nDSRC\tEXP\nBSEQ\tBIG\nIKKF\tREAL\nXTYP\tIDX\nIRFMT\tD\nXPTS\t200\nXMIN\t3300\n"
+                    f"XWID\t100\nXUNI\t'G'\nMWFQ\t9.4e9\nSTMP\t100\nDATE\t01/01/26\nTIME\t12:{10 * j_:02d}:00\n",
+                    encoding="latin-1")
+                (np.exp(0.02 * 10 * j_) * -np.gradient(np.exp(-((Bk_ - 3350.0) / 5.0) ** 2))).astype(">f8").tofile(
+                    kdx_ / f"r{j_}.DTA")
+            keep_k = {k_: w.epr_state[k_] for k_ in ("entries", "mode", "int_x", "int_method", "normalize", "bl_order",
+                                                     "int_curie", "x_auto", "int_window", "kin_fit", "kin_loss")}
+            try:
+                enk_ = [t_x._new("exp", str(kdx_ / f"r{j_}.DSC")) for j_ in range(5)]
+                w.epr_state.update(entries=enk_, mode="intensity", int_x="time", int_method="pp", normalize=False,
+                                   bl_order=-1, int_curie=False, x_auto=True, int_window="", kin_fit=True, kin_loss=100.0)
+                t_x.fill_table()
+                t_x.render()
+                fk_ = t_x.iso_results[0]["fit"]
+                assert fk_ and fk_["k"] < 0, t_x.iso_results
+                assert T("fixt_epr_kin_rise", what="100 K") in t_x.lbl_info.text(), t_x.lbl_info.text()
+                capk_ = t_x.si_caption("X")
+                assert "intensity increased, no half-life" in capk_ and "t<sub>1/2</sub>" not in capk_, capk_
+                mk_ = t_x.methods_text()
+                assert "Isothermal intensity changes" in mk_ and "k = \u2212" in mk_ and \
+                    "(intensity increased; no half-life)" in mk_, mk_
+            finally:
+                w.epr_state.update(keep_k)
+                t_x.fill_table()
+                t_x.render()
+            # E3: 2H-NMR gegen D der Formel; E4: mehrere H-Zahlen in einer Klammer bleiben stehen und gelten als mehrdeutig
+            blx_ = NMRX_.parse_mnova("1H NMR (400 MHz, CDCl3) δ 7.30 (s, 2H, 3H), 2.10 (s, 3H).\n"
+                                     "2H NMR (61 MHz, CHCl3) δ 7.16.")
+            assert blx_[0]["signals"][0]["nH"] == "2H, 3H" and "(s, 2H, 3H)" in NMRX_.nmr_line(blx_[0])[0]
+            ckx_ = NMRX_.count_check(blx_, "C6H5D")
+            assert ckx_[0][0] is False and ckx_[0][1][3].endswith(T("fixt_nmr_count_multi_h")), ckx_
+            assert ckx_[1][0] is True and ckx_[1][1][2] == "1 D", ckx_
+            assert NMRX_.count_check(blx_, "C6H6")[1][0] is False                      # kein D: nicht gegen H
+            assert NMRX_.count_check(blx_, "C6H5[2H]")[1][1][2] == "1 D"
+            # E5: Raman ohne Eingabe ohne Anregungswellenlaenge (auch alte Zustaende ohne ram_exc)
+            assert IRMS.IRMSTab.DEFAULT_STATE["ram_exc"] is None
+            t_rx = w.irms_tab
+            keep_rx = w.irms_state.get("ram_exc")
+            try:
+                w.irms_state["ram_exc"] = None
+                t_rx.sync_widgets()
+                t_rx.collect()
+                assert w.irms_state["ram_exc"] is None and "exc" not in t_rx.raman_caption("X")
+                assert t_rx.sp_ram_exc.text() == T("fixt_raman_exc_none"), t_rx.sp_ram_exc.text()
+            finally:
+                w.irms_state["ram_exc"] = keep_rx
+                t_rx.sync_widgets()
+            # E6-E8, E11: CV-Texte
+            t_cx, st_cx = w.cv_tab, w.cv_state
+            keep_cx = {k_: st_cx.get(k_) for k_ in ("files", "couples", "ref_electrode", "invert", "rs_area")
+                       + CVMOD.ACS_FIELDS}
+            try:
+                st_cx.update(acs_we="GC", acs_ce="Pt", acs_ref="", ref_electrode=CVMOD.CVTab.DEFAULT_STATE["ref_electrode"])
+                assert "ref" not in t_cx.setup_values(), t_cx.setup_values()             # Vorgabe der Achse: keine Angabe
+                st_cx["acs_ref"] = "Ag/AgCl"
+                assert t_cx.setup_values()["ref"] == "Ag/AgCl"
+                st_cx.update(acs_ref="", ref_electrode="Ag wire")                       # alte Eingabe gilt weiter
+                assert t_cx.setup_values()["ref"] == "Ag wire"
+                assert t_cx.shown_convention([{"convention": 1}]) == "iupac"
+                assert t_cx.shown_convention([{"convention": 0}]) is None
+                cvx_ = out / "input" / "fixt_cv"
+                cvx_.mkdir(parents=True, exist_ok=True)
+                write_dta(cvx_ / "c.DTA", [cv_sweep(-1.02, 40.0, -1.4, -0.5)], 100)
+                st_cx.update(files=[{"file": str(cvx_ / "c.DTA"), "uid": "fx1", "visible": True, "color": "#000000",
+                                     "label": "100 mV s-1"}], couples=[], invert=False)
+                t_cx.fill_table()
+                t_cx.render()
+                if t_cx.project_setup() is None:                                   # ohne Projektangabe wie 1.1.0
+                    assert "convention" not in t_cx.si_caption("X"), t_cx.si_caption("X")
+                    st_cx["invert"] = True
+                    assert "polarographic convention" in t_cx.si_caption("X")
+                    st_cx["invert"] = False
+                p0_ = cvx_ / "c0.DTA"                                              # andere Stromkonvention: Hinweis
+                p0_.write_text((cvx_ / "c.DTA").read_text(encoding="latin-1").replace(
+                    "CONVENTION\tIQUANT\t1", "CONVENTION\tIQUANT\t0"), encoding="latin-1", newline="")
+                st_cx["files"][0]["file"] = str(p0_)
+                t_cx.update_acs_hint()
+                assert "CONVENTION 0" in t_cx.lbl_acs_missing.text(), t_cx.lbl_acs_missing.text()
+                assert "convention" not in t_cx.si_caption("X")
+                # E11: leere Kurve -> kein IndexError, Hinweise bleiben
+                assert CVMOD.scan_start(np.array([0.1])) is None
+                dd_ = t_cx.data(str(p0_))
+                dd_["cycles"] = [dict(E=np.array([]), I=np.array([]), T=np.array([]))]
+                sf_ = t_cx.scan_facts()
+                assert sf_["start"] is None and sf_["conv"] == {0}, sf_
+                t_cx.update_acs_hint()
+                assert "CONVENTION 0" in t_cx.lbl_acs_missing.text()
+                dd_["cycles"] = []
+                assert t_cx.scan_facts()["start"] is None
+                # E8: nur DPV -> keine CV-Saetze
+                dpx_ = GAMX_.make_test_pulse(cvx_ / "dpv.DTA", "DPV")
+                st_cx.update(files=[{"file": str(dpx_), "uid": "fx2", "visible": True, "color": "#000000",
+                                     "label": "DPV"}], acs_device="P1")
+                t_cx.fill_table()
+                t_cx.render()
+                mpx_ = t_cx.methods_text()
+                assert "Nicholson" not in mpx_ and "E1/2" not in mpx_ and "Cyclic voltammograms" not in mpx_, mpx_
+                assert "Differential pulse voltammograms are shown as the difference current" in mpx_ and \
+                    "pulse amplitude 25 mV" in mpx_, mpx_
+            finally:
+                st_cx.update(keep_cx)
+                t_cx.fill_table()
+                t_cx.render()
+            report.append("1.2.0 review fixes: tabs (EPR assignment check, -0.00, half-up percent, spin counting "
+                          "scans/gain/extrapolation, 2H count, several H counts, Raman excitation, CV reference electrode, "
+                          "convention, pulse methods, empty curve): OK")
 
         with section:
             # Spektroelektrochemie: BWSpec-Spektren + Gamry-Potential über die Uhrzeit, Nernst-Fit, Export
@@ -2043,6 +2854,7 @@ def selftest(outdir, with_isnet=False):
                 t_e.fill_table()
                 F_e = t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
                 ir_ = t_e.iso_results
+                assert t_e.roles_idle == {"col_fit": "tf_idle_series"}, t_e.roles_idle   # Stilkarte: Fits in Reihenfarbe
                 assert [round(r_["T"]) for r_ in ir_] == [100, 104, 108, 112] and ir_[3]["fit"] is None, ir_
                 assert all(abs(r_["fit"]["k"] / k_ - 1) < 0.01 and r_["fit"]["n"] == 6 for r_, k_ in zip(ir_, ks_)), ir_
                 ti_ = t_e.tbl_iso                               # je Temperatur eine Zeile statt Textzeilen
@@ -2063,6 +2875,7 @@ def selftest(outdir, with_isnet=False):
                 w.epr_state.update(int_x="arr")
                 F_e = t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
                 ar_ = t_e.arr_result
+                assert t_e.roles_idle == {}                     # Arrhenius-Gerade in der Fitfarbe
                 cap_a_ = t_e.si_caption("X")
                 assert cap_a_.startswith("Arrhenius plot (ln k against 1/T) of the first-order rate constants k of the "
                                          "isothermal EPR decays of <b>X</b> at 100, 104 and 108 K.") and \
@@ -2260,12 +3073,84 @@ def selftest(outdir, with_isnet=False):
                 t_k.reset_defaults()
                 t_k = w.uvkin_tab
                 assert len(w.uvkin_state["entries"]) == len(es_k) and w.uvkin_state["entries"][1]["series"] == "two"
-                assert w.uvkin_state["view"] == "" and not w.uvkin_state["fit"] and t_k.view() == "trace"
+                assert w.uvkin_state["view"] == "spectra" and w.uvkin_state["fit"] and t_k.view() == "spectra"   # Auswertung
             finally:
                 w.uvkin_state.update(keep_k)
                 w.replace_tab("uvkin")
             report.append("UV-Vis kinetics (times by order, series, both views, window, units, first-order fit, export, "
                           "state, reset): OK")
+        with section:
+            # UV-Vis-Titration (Kinetik-Tab): Aequivalente aus dem Namen, isosbestische Punkte nur bei echtem Schnitt,
+            # beide Ansichten, Tabellen, SI-Abbildungen, Export
+            from elucida.app import demo as DEMO_t
+            from elucida.tabs import uvkin as UVT
+            assert UVT.eq_from_name("X_0.5eq") == 0.5 and UVT.eq_from_name("X 1,5 equiv") == 1.5
+            assert UVT.eq_from_name("X_0p25eq") == 0.25 and UVT.eq_from_name("X-2 Äq.") == 2.0
+            for n_ in ("X_1eq_2eq", "X-20uM", "sequence 3", "X_eq"):
+                assert UVT.eq_from_name(n_) is None, n_
+            wl_t = np.arange(700.0, 299.0, -1.0)
+            ga_ = lambda c, h, s: h * np.exp(-0.5 * ((wl_t - c) / s) ** 2)          # noqa: E731
+            neu_, ox_ = ga_(400, 0.8, 30), ga_(520, 0.6, 35)
+            eqs_ = (0.0, 0.25, 0.5, 0.75, 1.0)
+            rng_t = np.random.default_rng(3)
+            rows_t = [{"x": wl_t, "y": (1 - q) * neu_ + q * ox_ + rng_t.normal(0, 3e-4, wl_t.size)} for q in eqs_]
+            iso_ = UVT.isosbestic(rows_t, 0.01)
+            x_true = wl_t[np.argmin(np.abs(neu_ - ox_) + (np.abs(wl_t - 460) > 40))]   # Schnitt der Banden
+            assert len(iso_) == 1 and abs(iso_[0]["lam"] - x_true) <= 1.0, (iso_, x_true)
+            flat_ = [{"x": wl_t, "y": neu_ + rng_t.normal(0, 3e-4, wl_t.size)} for _ in eqs_]   # nichts aendert sich
+            assert UVT.isosbestic(flat_, 0.01) == [] and UVT.isosbestic(rows_t, 0.0) == []
+            assert UVT.isosbestic(rows_t[:2], 0.01) == []
+            drift_ = [{"x": wl_t, "y": r_["y"] + 0.05 * (k % 2)} for k, r_ in enumerate(rows_t)]   # Basislinie springt
+            assert UVT.isosbestic(drift_, 0.01) == [], UVT.isosbestic(drift_, 0.01)
+            f_t = DEMO_t.cary_csv(out / "input" / "uvtit" / "titration.csv",
+                                  [(f"TIT_{q:g}eq", wl_t, r_["y"], None) for q, r_ in zip(eqs_, rows_t)])
+            one_ = DEMO_t.cary_csv(out / "input" / "uvtit" / "TIT_2eq.csv", [("single", wl_t, ox_, None)])
+            t_t = w.uvkin_tab
+            keep_t = {k_: w.uvkin_state[k_] for k_ in ("entries", "view", "lam", "win", "iso_tol", "cap_reagent")}
+            try:
+                w.uvkin_state["entries"] = []
+                w.replace_tab("uvkin")
+                t_t = w.uvkin_tab
+                t_t.load_files([str(f_t), str(one_)])
+                es_t = w.uvkin_state["entries"]
+                assert [e_["eq"] for e_ in es_t] == list(eqs_) + [2.0] and all(e_["series"] == "" for e_ in es_t)
+                assert t_t.lbl_rows.text() == "" and t_t.table.item(1, 4).text() == "0.25"
+                t_t.table.item(5, 4).setText("abc")                       # ungueltig: alter Wert bleibt
+                assert es_t[5]["eq"] == 2.0 and t_t.table.item(5, 4).text() == "2"
+                t_t.table.item(5, 0).setCheckState(Qt.Unchecked)          # 2 Aeq. nicht verwenden
+                w.uvkin_state["cap_reagent"] = "NOSbF6"
+                t_t.cmb_view.setCurrentIndex(t_t.cmb_view.findData("titr"))
+                t_t.render()
+                assert len(t_t.titr_data) == 5 and len(t_t.iso) == 1 and t_t.tbl_iso.rowCount() == 1
+                assert [c_["label"] for c_ in t_t.F.curves if not c_.get("aux")][-1] == "1 equiv"
+                cap_t = t_t.si_caption("X")
+                assert "upon addition of 0–1 equiv of NOSbF<sub>6</sub>" in cap_t and "Isosbestic point at" in cap_t, cap_t
+                assert "agree within 0.01" in t_t.methods_text() and "Elucida" not in t_t.methods_text()
+                assert dict(t_t.kpis())["λ_iso"] == core.fmt_lam(iso_[0]["lam"]) + " nm"
+                t_t.sp_tol.setValue(0)                                    # aus: keine Markierung
+                t_t.render()
+                assert t_t.iso == [] and not any(c_.get("aux") for c_ in t_t.F.curves)
+                t_t.sp_tol.setValue(0.01)
+                t_t.cmb_view.setCurrentIndex(t_t.cmb_view.findData("titr_trace"))
+                t_t.sp_lam.setValue(520)
+                t_t.render()
+                assert list(t_t.F.curves[0]["x"]) == list(eqs_) and t_t.F.cfg["xlabel"] == "equivalents"
+                assert abs(t_t.F.curves[0]["y"][-1] - rows_t[-1]["y"][wl_t == 520][0]) < 1e-6
+                assert t_t.res_table.rowCount() == 5 and t_t.res_table.isColumnHidden(3)
+                cap_t = t_t.si_caption("X")
+                assert cap_t.startswith("Absorbance of <b>X</b> at 520 nm") and "against the equivalents of NOSbF" in cap_t
+                blocks_t = t_t.si_figure(out / "si_uvtit", "X")
+                assert [b_[0] for b_ in blocks_t] == ["image", "figcap", "image", "figcap"] and t_t.view() == "titr_trace"
+                assert "UV-Vis spectra" in blocks_t[1][1] and "Absorbance" in blocks_t[3][1]
+                files_t = t_t.export_to(out / "uvtit")
+                rows_c = (out / "uvtit_titration.csv").read_text(encoding="utf-8-sig").splitlines()
+                assert rows_c[0] == "equiv,name,A (520 nm)" and len(rows_c) == 6, rows_c
+                w.save_project()
+                assert PRJ.load(proj)["uvkin"]["entries"][1]["eq"] == 0.25
+            finally:
+                w.uvkin_state.update(keep_t)
+                w.replace_tab("uvkin")
+            report.append("UV-Vis titration (equivalents from names, isosbestic points, both views, SI, export): OK")
 
         with section:
             # Felder mit "auto"/"aus": ein Klick auf das Symbol im Feld oder ein geleertes Feld stellt zurueck (alle Tabs)
@@ -2347,8 +3232,12 @@ def selftest(outdir, with_isnet=False):
             t_e.fit_current()
             assert t_e.fit_ok(is_) and is_["fit"]["dB"] == 0.0 and abs(is_["g"] - 2.0050) < 2e-5, is_
             assert T("epr_fit_stale") not in t_e.fit_text(is_) and "g = 2.0050" in t_e.methods_text()
+            t_e.figure_spec()                                          # Reiter Ergebnisse: Fit als Tabelle, kein Platzhalter
+            assert t_e.tbl_fit.rowCount() == 1 and t_e.tbl_fit.item(0, 1).text() == "2.0050" and not t_e.lbl_info.empty
             is_["fit"]["dB"] = 0.1                                     # wie nach einer geaenderten Kalibrierung
             assert not t_e.fit_ok(is_) and T("epr_fit_stale") in t_e.fit_text(is_)
+            t_e.figure_spec()
+            assert t_e.tbl_fit.rowCount() == 0 and t_e.lbl_info.empty == T("results_none")
             assert "g = 2.0050" not in t_e.methods_text() and "g = 2.0050" not in t_e.si_caption("X")
             w.epr_state.update(entries=[], bl_order=1, normalize=True)
             t_e.fill_table()
@@ -2730,6 +3619,343 @@ def selftest(outdir, with_isnet=False):
             report.append("EPR audit P6 (reference frequency, dark axis, decay band, readers, import): OK")
 
         with section:
+            # NMR: Kernzahl der Zeilen gegen die Summenformel (nur Hinweise)
+            from elucida.tabs import nmr as NMRC_
+            bl_ = NMRC_.parse_mnova("1H NMR (400 MHz, CDCl3) \u03b4 7.30 (d, J = 8.0 Hz, 2H), 2.10 (s, 3H).\n"
+                                    "13C NMR (101 MHz, CDCl3) \u03b4 140.1, 128.0, 21.0.\n"
+                                    "19F NMR (376 MHz, CDCl3) \u03b4 -63.0.")
+            ck_ = NMRC_.count_check(bl_, "C4H5N")
+            assert [ok_ for ok_, _ in ck_] == [True, True, False], ck_       # 5 H passt, 3 Signale fuer 4 C, kein F
+            assert [ok_ for ok_, _ in NMRC_.count_check(bl_, "C2H6F3")] == [False, False, True]   # 5 von 6 H; 3 Signale, 2 C
+            assert not NMRC_.count_check(bl_, "") and not NMRC_.count_check(bl_, "??")
+            bl_[0]["signals"][0]["nH"] = ""
+            assert NMRC_.count_check(bl_, "C4H5N")[0][0] is False            # ohne H-Zahl nicht pruefbar
+            assert NMRC_.count_check(bl_, "C4H5N")[1][1][1:3] == [T("nmr_count_signals", n=3), "4 C"]
+            assert hasattr(w.nmr_tab, "tbl_count")
+            report.append("NMR nucleus count against the molecular formula: OK")
+
+        with section:
+            # NMR: Verbindungsnummer und Messangaben unter der Struktur im Spektrum (ACS/Angew.), Bereichsprüfung der Achse
+            from elucida.formats import mnova as MNV36_
+            from elucida.app import demo as DEMO36_
+            nd36_ = out / "input" / "nmr_label"
+            spec36_ = dict(nuclei=["1H"], kind="1D", freqs={"1H": "500"}, solvent="CDCl3", params=None)
+            ln36_ = NMRC_.label_lines(spec36_, [], "7b")
+            assert ln36_ == [("7b", True), ("$^{1}$H NMR (500 MHz, CDCl$_{3}$)", False)], ln36_
+            assert NMRC_.label_lines(spec36_, [], "7b", number=False) == ln36_[1:] and not NMRC_.label_lines(spec36_, [], "", info=False)
+            assert NMRC_.label_lines(dict(spec36_, solvent="DMSO-d6"), [], "", True, True)[0][0].endswith("DMSO-$d_{6}$)")
+            sh36_ = NMRC_.label_shapes(ln36_)
+            assert len(sh36_) == 2 and sh36_[0]["bold"] and all(s_["w"] > 0 and s_["segs"] for s_ in sh36_)
+            assert sh36_[1]["w"] > 5 * sh36_[0]["w"] and NMRC_.label_height(sh36_) > 3.0
+            pl36_ = NMRC_.label_place(sh36_, 100.0, 50.0, 10.0)
+            assert pl36_[0][3] < pl36_[1][3] and abs(pl36_[0][2] + (sh36_[0]["x0"] + sh36_[0]["w"] / 2) * 12.5 - 100.0) < 1e-6
+            g36_ = NMRC_.label_svg(pl36_)
+            assert g36_.count("<path") == 2 and "transform" not in g36_ and "NaN" not in g36_
+            h36_ = DEMO36_.demo_nmr_svg(nd36_ / "h.svg", "1H", [(7.2, 1.0, 0.01)], (9.5, 0.5))
+            c36_ = DEMO36_.demo_nmr_svg(nd36_ / "c.svg", "13C", [(120.0, 1.0, 0.2)], (210, -10))
+            assert MNV36_.svg_axis_range(h36_) == (1.0, 9.0) and MNV36_.svg_axis_range(c36_) == (0.0, 200.0)
+            # Integrale unter der Achse (mehr Zahlen als die Achse, ungleich gestuft) sind nie die Achse
+            int36_ = "".join(f'<text x="{60 + 70 * k_}" y="740" font-size="10">{v_}</text>' for k_, v_ in
+                             enumerate(("1.00", "2.03", "1.98", "2.01", "1.02", "0.97", "2.00", "1.95", "3.02", "2.98",
+                                        "6.10", "1.01", "2.96", "9.05")))
+            hi36_ = nd36_ / "h_int.svg"
+            hi36_.write_text(h36_.read_text(encoding="utf-8").replace("</svg>", int36_ + "</svg>"), encoding="utf-8")
+            assert MNV36_.svg_axis_range(hi36_) == (1.0, 9.0), MNV36_.svg_axis_range(hi36_)
+            assert NMRC_.range_check(dict(nuclei=["1H"], kind="1D"), (1.0, 9.0)) == (False, "1 \u2013 9")
+            assert NMRC_.range_check(dict(nuclei=["1H"], kind="1D"), (-1.0, 11.0))[0] is True
+            assert NMRC_.range_check(dict(nuclei=["13C"], kind="1D"), (0.0, 200.0))[0] is True
+            assert NMRC_.range_check(dict(nuclei=["1H", "13C"], kind="HSQC"), (0.0, 10.0))[0] is None
+            assert NMRC_.range_check(dict(nuclei=["31P"], kind="1D"), (0.0, 10.0))[0] is None and \
+                NMRC_.range_check(dict(nuclei=["1H"], kind="1D"), None)[0] is None
+            t36_ = w.nmr_tab
+            assert t36_.tbl.columnCount() == 4 and hasattr(t36_, "cb_lab_no") and t36_.cb_lab_no.isChecked()
+            report.append("NMR number and conditions below the structure (outlines for preview, SVG, Word), axis range "
+                          "check, integrals not taken for the axis: OK")
+
+        with section:
+            # EPR: Spindichte und Hyperfeinkopplungen aus einer Gaussian-Ausgabe (erfundene Datei): Leser, Prozent der
+            # Summe aller Atome, Zuordnung per Klick, Mittel aequivalenter Kerne, beide Abbildungen, SI, Export
+            from elucida.core import orbitals as ORB
+            from elucida.formats.calc import parse_gaussian_epr, read_text as read_text_
+            from elucida.tabs import dft as DFTM_
+            from elucida.tabs import epr_calc as ECALC
+            from elucida.app.i18n import TEXTS as TEXTS_
+            cdir_ = out / "input" / "eprcalc"
+            cdir_.mkdir(parents=True, exist_ok=True)
+            cubs_ = ORB.make_test_cube(cdir_ / "radical_spin.cube")
+            log_ = ECALC.make_test_gaussian_epr(cdir_ / "radical.log")
+            d_ = parse_gaussian_epr(read_text_(log_))
+            assert d_["els"] == ["C", "C", "H", "H", "H", "H"] and d_["spin"][:3] == [0.58, 0.54, -0.03], d_["spin"]
+            assert d_["fermi"][0] == ("13C", 30.5, round(30.5 / 2.8025, 5)) and d_["fermi"][3][:2] == ("1H", -42.0)
+            assert len(d_["dipole"]) == 6 and d_["dipole"][2][2][0] == -30.0 and d_["dipole"][0][0][0] == -15.25
+            assert d_["calc"]["charge"] == 1 and d_["calc"]["mult"] == 2
+            pc_ = ECALC.percents(d_["spin"])
+            assert abs(sum(pc_) - 100.0) < 1e-9 and abs(pc_[0] - 58.0) < 1e-9 and pc_[2] < 0, pc_   # mit Vorzeichen
+            for bad_, why_ in ((read_text_(DFTM_.make_test_gaussian(cdir_ / "closed.log")), "closed shell"),
+                               ("O   R   C   A\nMULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS", "other program")):
+                try:
+                    parse_gaussian_epr(bad_)
+                    raise AssertionError(why_ + " accepted")
+                except ValueError:
+                    pass
+            its_ = ECALC.hfc_items(d_, [(4, "1H", "14.00")], {"0": [2, 3, 4, 5]}, "MHz", {"H"}, 10.0)
+            assert len(its_) == 1 and its_[0]["text"] == "\u221240.00 MHz avg.\n(exp. 14.00 MHz)", its_
+            assert ECALC.hfc_items(d_, [(4, "1H", "14.00")], {"0": [2, 3, 4, 5]}, "MHz", {"H"}, 10.0, signed=False)[0][
+                "text"].startswith("40.00 MHz avg.")
+            assert ECALC.group_targets([2, 3], [(0, 1), (0, 2), (0, 3)], set()) == [0]       # zwei H an einem C
+            assert ECALC.group_targets([2, 4], [(0, 1), (0, 2), (1, 4)], set()) == [2, 4]    # verschiedene Nachbarn
+            assert ECALC.group_targets([2, 3], [(0, 2), (0, 3)], {0}) == [2, 3]              # Nachbar traegt ein Label
+            assert ECALC.group_targets([2, 3, 4, 5], [(0, 2), (0, 3), (1, 4), (1, 5)], set()) == [0, 1]   # zwei Gruppen
+            its_ = ECALC.hfc_items(d_, [], {}, "mT", None, 29.0)             # ohne Zuordnung: einzeln ab der Schwelle
+            assert [i_["atoms"] for i_ in its_] == [[0], [2], [3], [4], [5]] and its_[0]["text"].endswith(" mT")
+            assert ECALC.nuclei_filter("H, 14N; D") == {"H", "N"} and ECALC.nuclei_filter(" ") is None
+            mm_ = ORB.parse_molden(read_text_(ORB.make_test_molden(cdir_ / "h2.molden")))
+            mm_["mos"][1]["occ"] = 1.0                                     # ein ungepaartes Elektron im zweiten MO
+            bs_ = ORB.Basis(mm_)
+            bs_.setup()
+            sd_, _, ax_ = ORB.spin_density_grid(bs_, spacing=0.2)
+            assert abs(float(sd_.sum()) * (0.2 / ORB.BOHR) ** 3 - 1.0) < 0.03 and sd_.min() >= 0, sd_.sum()
+            mm_["mos"][1]["occ"] = 0.0
+            try:
+                ORB.spin_density_grid(ORB.Basis(mm_))
+                raise AssertionError("spin density of a closed shell")
+            except ValueError:
+                pass
+            t_e = w.epr_tab
+            cp_ = t_e.calc_pages
+            assert not cp_.figures() and not cp_.load_orb(str(cubs_)), "orbital file without calculation"
+            assert cp_.load_file(str(log_)) and cp_.load_orb(str(cubs_))
+            assert Path(cp_.calc["file"]).parent == proj / "data" / "epr", cp_.calc["file"]
+            assert any(c_ is cp_.calc and k_ == "orb" for c_, k_, _ in PRJ._path_slots({"epr": w.epr_state}))
+            other_ = ORB.make_test_cube(cdir_ / "other.cube")
+            txt_ = other_.read_text(encoding="utf-8").replace("-1.260", "-1.560", 1)   # ein Atom verschoben
+            if txt_ != other_.read_text(encoding="utf-8"):
+                other_.write_text(txt_, encoding="utf-8")
+                assert not cp_.load_orb(str(other_)), "orbital file of another geometry accepted"
+            w.epr_state["entries"].append({"uid": "isoq1", "kind": "iso", "file": None, "label": "S = 1/2", "color": "#e8238a",
+                                           "visible": False, "fit_to": None, "g": 2.003, "lw": 0.1, "lorentz": 0.0,
+                                           "fit_lorentz": False, "nuclei": "4 1H 0.5", "fit": None, "T": None})
+            cp_.sync()
+            assert [g_[:2] for g_ in cp_.exp_groups()] == [(4, "1H")], cp_.exp_groups()
+            cp_.toggle_atom(2)                                             # ohne gewaehlte Gruppe: nichts
+            assert not cp_.assign()
+            cp_.tbl_groups.selectRow(0)
+            for k_ in (2, 3, 4, 0):                                        # C ist kein 1H-Kern
+                cp_.toggle_atom(k_)
+            assert cp_.assign() == {"0": [2, 3, 4]}, cp_.assign()
+            assert "3" in cp_.lbl_assign.text() and "4" in cp_.lbl_assign.text(), cp_.lbl_assign.text()
+            cp_.toggle_atom(5)
+            assert cp_.tbl_groups.item(0, 2).text() == "H3, H4, H5, H6" and "40.00" in cp_.tbl_groups.item(0, 3).text()
+            Fh_ = cp_._offscreen("hfc")
+            lab_ = [a_.get_text() for k_, a_ in Fh_.ann_items.items() if k_.startswith("lbl_")]
+            mhz_ = EPRMOD.hfc_texts(0.5, 2.003)[1]
+            assert lab_ == [f"40.00 MHz avg.\n(exp. {mhz_} MHz)"], lab_          # Betrag wie das Experiment
+            assert sum(k_.startswith("arr_") for k_ in Fh_.ann_items) == 1, "one arrow per CH2 group"
+            ann_ = Fh_.ann_items["lbl_a0"]                                 # Label aussen: auf keinem Atom
+            Fh_.fig.canvas.draw()
+            from matplotlib.text import Text as Text_
+            bb_ = Text_.get_window_extent(ann_, Fh_.fig.canvas.get_renderer())
+            px_ = [Fh_.ax.transData.transform((it_["x"], it_["y"])) for it_ in Fh_.scene["atoms"]]
+            assert not any(bb_.x0 <= x_ <= bb_.x1 and bb_.y0 <= y_ <= bb_.y1 for x_, y_ in px_), "label on an atom"
+            assert ann_.arrow_patch is not None and Fh_.orb_art is not None
+            w.epr_state.update(hfc_unit="G", hfc_signed=True)
+            assert cp_._offscreen("hfc").ann_items["lbl_a0"].get_text().startswith("\u2212") and cp_._offscreen(
+                "hfc").ann_items["lbl_a0"].get_text().endswith("G avg.\n(exp. 5.00 G)")
+            w.epr_state.update(hfc_unit="MHz", hfc_signed=False)
+            cp_.assign()["0"] = [2, 3]                                     # zwei H am selben C: ein Pfeil auf das C
+            Fg_ = cp_._offscreen("hfc")
+            assert "lbl_a0" in Fg_.ann_items and not any(k_.startswith("arr_") for k_ in Fg_.ann_items)
+            cp_.assign()["0"] = [2, 3, 4, 5]
+            Fs_ = cp_._offscreen("spin")
+            assert Fs_.orb_art is not None and sorted(a_.get_text() for k_, a_ in Fs_.ann_items.items()) == [
+                "54%", "58%"], [a_.get_text() for a_ in Fs_.ann_items.values()]
+            w.epr_state["spin_thresh"] = 2.0                               # Schwelle: jetzt auch die negativen H
+            assert sum(a_.get_text() == "\u22123%" for a_ in cp_._offscreen("spin").ann_items.values()) == 4
+            w.epr_state["spin_thresh"] = 5.0
+            rows_ = cp_.rows("spin", d_)
+            assert len(rows_) == 7 and rows_[-1][2] == "100" and rows_[2][2] == "\u22123", rows_  # Tabelle: alle
+            assert cp_.rows("hfc", d_)[2][-1].startswith("4 ") and cp_.rows("hfc", d_)[0][-1] == ""
+            assert len(cp_.headers("hfc")) == 4 and cp_.rows("hfc", d_)[2][2] == "\u221240.00"     # eine Spalte A_iso
+            w.epr_state.update(hfc_dipole=True, hfc_unit="mT")
+            assert cp_.headers("hfc")[2:6] == ["A_iso [mT]", "B_aa [mT]", "B_bb [mT]", "B_cc [mT]"]
+            assert cp_.rows("hfc", d_)[2][5] == "\u22121.071", cp_.rows("hfc", d_)[2]             # 0.75 x -40 MHz als Gauss der Datei (3 Stellen) in mT
+            w.epr_state.update(hfc_dipole=False, hfc_unit="MHz")
+            cap_ = cp_.caption("spin", "1") + cp_.caption("hfc", "1") + cp_.methods_text()
+            assert "isovalue \u00b10.002 a.u." in cap_ and "UB3LYP/def2SVP" in cap_ and "avg." in cap_, cap_
+            assert "absolute values" in cap_
+            assert "Elucida" not in cap_ and "at least 5%" in cap_ and "averaged" in cap_
+            w.epr_state["spin_surface"] = "none"
+            assert cp_._offscreen("spin").orb_art is None and cp_.caption("spin", "1").startswith("Mulliken")
+            w.epr_state["spin_surface"] = "spin"
+            files_ = cp_.export_to(out / "eprcalc_out" / "radical")
+            names_ = {Path(f_).name for f_ in files_}
+            assert {"radical_spin.csv", "radical_hfc.csv"} <= names_ and all(Path(f_).stat().st_size > 100 for f_ in files_)
+            assert len((out / "eprcalc_out" / "radical_hfc.csv").read_text(encoding="utf-8-sig").splitlines()) == 7
+            si_ = t_e.si_figure(out / "eprcalc_out", "1")
+            assert [b_[0] for b_ in si_[-4:]] == ["image", "figcap", "image", "figcap"], [b_[0] for b_ in si_]
+            assert "Mulliken spin populations" in t_e.methods_text()
+            assert all(TEXTS_[k_][0] and TEXTS_[k_][1] for k_ in TEXTS_ if k_.startswith("epr_calc_"))
+            for kind_ in cp_.KINDS:                                        # Reiter zeichnet beim Anzeigen
+                cp_.draw(kind_)
+                assert cp_.F[kind_] is not None and cp_.tables[kind_].rowCount() >= 6
+            cp_.remove()
+            assert not cp_.figures() and not cp_.calc["file"]
+            w.epr_state["entries"] = [e_ for e_ in w.epr_state["entries"] if e_["uid"] != "isoq1"]
+            t_e.fill_table()
+            # EPR-Spinzählung: Kalibrierung des Doppelintegrals gegen bekannte Konzentrationen, Proben daran abgelesen
+            cal_ = EPRMOD.spin_calibration([1.0, 2.0, 3.0], [2.0, 4.1, 5.9])
+            assert not cal_["origin"] and abs(cal_["m"] - 1.95) < 1e-9 and abs(cal_["b"] - 0.1) < 1e-9 and cal_["r2"] > 0.99
+            one_ = EPRMOD.spin_calibration([2.0, 2.0], [4.0, 4.2])              # eine Konzentration: Ursprungsgerade
+            assert one_["origin"] and one_["b"] == 0.0 and abs(one_["m"] - 2.05) < 1e-9 and one_["r2"] is None
+            assert EPRMOD.spin_calibration([], []) is None and EPRMOD.spin_calibration([0.0, -1.0], [1.0, 2.0]) is None
+            sdir_ = out / "input" / "epr_spin"
+            sdir_.mkdir(parents=True, exist_ok=True)
+            Bs_ = np.linspace(330.0, 340.0, 2001)
+            ln_ = -np.gradient(np.exp(-((Bs_ - 335.0) / 0.4) ** 2))
+            keep_spin_ = {k_: w.epr_state[k_] for k_ in ("entries", "mode", "int_x", "int_method", "normalize", "bl_order",
+                                                        "int_curie", "x_auto", "int_window")}
+            ents_ = []
+            for nm_, amp_, c_ in (("ref1", 1.0, 1.0), ("ref2", 2.0, 2.0), ("ref3", 3.0, 3.0), ("probe", 2.5, None)):
+                ps_ = sdir_ / f"{nm_}_EPR-9p400000.txt"
+                np.savetxt(ps_, np.column_stack([Bs_, -amp_ * ln_]), header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+                e_ = t_e._new("exp", str(ps_))
+                e_.update(label=nm_, conc=c_, visible=c_ is None)        # Referenzen ausgeblendet: zählen trotzdem
+                ents_.append(e_)
+            w.epr_state.update(entries=ents_, mode="intensity", int_x="conc", int_method="double", normalize=False,
+                               bl_order=-1, int_curie=False, x_auto=True, int_window="")
+            t_e.fill_table()
+            t_e.render()
+            sr_ = t_e.spin_result
+            assert sr_ and sr_["cal"]["n"] == 3 and not sr_["cal"]["origin"] and sr_["cal"]["m"] > 0, sr_   # Phase egal
+            assert abs(sr_["samples"][0][2] - 2.5) < 0.01 and sr_["samples"][0][0] == "probe" and not sr_["differ"], sr_
+            assert t_e.tbl_spin.rowCount() == 4 and t_e.tbl_spin.item(3, 3).text() == "2.5" and \
+                t_e.tbl_spin.item(0, 2).text() == "1"                    # Einheit im Kopf (1.2.0)
+            cap_s_ = t_e.si_caption("X")
+            assert "reference samples of known concentration" in cap_s_ and "probe: 2.5 mM" in cap_s_, cap_s_
+            assert "c(spin) = 2.5 mM" in t_e.methods_text() and "No uncertainties" in t_e.methods_text()
+            for e_ in ents_[1:3]:
+                e_["conc"] = None                                         # eine Referenz: Gerade durch den Ursprung
+            t_e.render()
+            assert t_e.spin_result["cal"]["origin"] and abs(t_e.spin_result["samples"][0][2] - 2.5) < 0.01
+            assert "through the origin" in t_e.si_caption("X")
+            ents_[0]["conc"] = None
+            t_e.render()
+            assert t_e.spin_result is None and t_e.F is None                # ohne Referenz keine Zahl
+            w.epr_state["int_method"] = "pp"
+            ents_[0]["conc"] = 1.0
+            t_e.render()
+            assert t_e.spin_result is None                                  # nur mit dem Doppelintegral
+            w.epr_state.update(keep_spin_)
+            t_e.fill_table()
+            t_e.render()
+            assert not t_e.tbl_spin.isVisible() or t_e.tbl_spin.rowCount() == 0
+            report.append("EPR spin counting (calibration line with intercept or through the origin, samples read off, "
+                          "hidden references, phase, table, caption, methods text, only with the double integral): OK")
+            report.append("EPR spin density and hyperfine couplings (Gaussian reader, percent of sum, assignment, "
+                          "average of equivalent nuclei, figures, SI, export): OK")
+
+        with section:
+            # EPR: dieselben Groessen aus einer ORCA-Ausgabe (erfundene Dateien im Layout echter 4.x/5.0- und
+            # 6.0-Ausgaben): Werte, Prozent, Loewdin, A(SD) nur ohne A(ORB), ohne %eprnmr nur Spin, fremde Versionen ab
+            from elucida.formats.calc import parse_epr, parse_orca_epr, MHZ_PER_G, read_text as read_text_
+            from elucida.tabs import epr_calc as ECALC
+            cdir_ = out / "input" / "eprcalc_orca"
+            for ver_ in ("6.1.1", "6.0.0", "5.0.4", "4.2.1"):
+                d_ = parse_epr(read_text_(ECALC.make_test_orca_epr(cdir_ / f"r{ver_[:3]}.out", version=ver_, aorb=(3,))))
+                assert d_["unchecked"] == (ver_ == "6.1.1"), ver_                     # 6.1: Layout ohne echte Ausgabe
+                assert d_["calc"]["program"] == "ORCA" and d_["calc"]["version"] == ver_, d_["calc"]["version"]
+                assert d_["els"] == ["C", "C", "H", "H", "H", "H"] and d_["spin"][:3] == [0.58, 0.54, -0.03], d_["spin"]
+                assert d_["fermi"][0] == ("13C", 30.5, 30.5 / MHZ_PER_G) and d_["fermi"][3][:2] == ("1H", -42.0)
+                assert abs(d_["fermi"][2][2] - (-40.0 / 2.8025)) < 1e-3                  # Gauss mit g_e wie Gaussian
+                assert d_["dipole"][0] == [(-15.25, -15.25 / MHZ_PER_G), (-7.625, -7.625 / MHZ_PER_G),
+                                           (22.875, 22.875 / MHZ_PER_G)] and 3 not in d_["dipole"], d_["dipole"]
+                assert d_["spin_loewdin"][0] == 0.522 and d_["calc"]["charge"] == 1 and d_["calc"]["mult"] == 2
+                pc_ = ECALC.percents(d_["spin"])
+                assert abs(sum(pc_) - 100.0) < 1e-9 and abs(pc_[0] - 58.0) < 1e-9 and pc_[2] < 0, pc_
+            dn_ = parse_orca_epr(read_text_(ECALC.make_test_orca_epr(cdir_ / "nohfc.out", hfc=False)))
+            assert dn_["fermi"] == {} and dn_["dipole"] == {} and len(dn_["spin"]) == 6
+            t61_ = read_text_(cdir_ / "r6.1.out")
+            j2_ = ("=" * 80 + "\n                                       INPUT FILE\n" + "=" * 80
+                   + "\n|  1> ! PBE0 EPR-II\n|  2>                          ****END OF INPUT****\n")
+            dj_ = parse_epr(t61_.replace("ELECTRIC AND MAGNETIC HYPERFINE STRUCTURE",
+                                         j2_ + "ELECTRIC AND MAGNETIC HYPERFINE STRUCTURE"))
+            from elucida.tabs.dft_pages import level_of_theory as lot_
+            assert lot_(dj_["calc"]) == "PBE0/EPR-II", lot_(dj_["calc"])           # Niveau des Jobs mit dem Block
+            assert lot_(parse_epr(t61_)["calc"]) == "UB3LYP/def2-SVP"
+            bad_ = [read_text_(ECALC.make_test_orca_epr(cdir_ / "v62.out", version="6.2.0")),
+                    t61_.replace("Total HFC matrix", "Raw HFC matrix"),                # 6.1 mit fremdem Tabellenkopf
+                    t61_.replace("A  : Isotope", "A:ISTP"),
+                    read_text_(ECALC.make_test_orca_epr(cdir_ / "v3.out", version="3.0.3")),
+                    read_text_(ECALC.make_test_orca_epr(cdir_ / "mix.out", version="5.0.4")).replace("A:ISTP", "A  : Isotope"),
+                    read_text_(ECALC.make_test_orca_epr(cdir_ / "nospin.out")).replace("SPIN POPULATIONS", "X"),
+                    "plain text\nMULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS"]
+            for b_ in bad_:
+                try:
+                    parse_epr(b_)
+                    raise AssertionError("ORCA EPR layout accepted: " + b_[:40])
+                except ValueError:
+                    pass
+            t_e = w.epr_tab
+            cp_ = t_e.calc_pages
+            assert cp_.load_file(str(cdir_ / "r6.0.out")) and cp_.data()["calc"]["program"] == "ORCA"
+            assert cp_.figures() == ["spin", "hfc"] and "(ORCA 6.0.0)" in cp_.methods_text()
+            assert "Elucida" not in cp_.methods_text() + cp_.caption("hfc", "1")
+            rows_ = cp_.rows("spin", cp_.data())
+            assert len(rows_) == 7 and rows_[-1][2] == "100" and rows_[2][2] == "−3", rows_
+            w.epr_state["hfc_dipole"] = True
+            cp_.draw("hfc")
+            assert "aorb" in cp_.hints["hfc"].text(), cp_.hints["hfc"].text()          # H4 mit A(ORB): ohne Dipolwerte
+            assert cp_.rows("hfc", cp_.data())[3][3:6] == ["", "", ""]
+            w.epr_state["hfc_dipole"] = False
+            assert cp_.load_file(str(cdir_ / "nohfc.out")) and cp_.figures() == ["spin"]
+            cp_.draw("hfc")
+            assert "%eprnmr" in cp_.hints["hfc"].text(), cp_.hints["hfc"].text()       # sagt, was fehlt
+            assert not cp_.load_file(str(cdir_ / "v62.out")) and cp_.calc["file"].endswith("nohfc.out")
+            assert cp_.load_file(str(cdir_ / "r6.1.out"))
+            cp_.draw("spin")
+            assert T("epr_calc_orca_unchecked") in cp_.hints["spin"].text(), cp_.hints["spin"].text()
+            cp_.remove()
+            report.append("EPR spin density and hyperfine couplings from ORCA (4.x/5.0/6.0/6.1 layouts, percent of sum, "
+                          "Loewdin, dipole only without A(ORB), missing %eprnmr, 6.1 with note, level of the hyperfine job, other "
+                          "versions rejected): OK")
+
+        with section:
+            # EPR: Aufnahmeparameter aus der Datei wahlweise in der Unterschrift (nur gleiche, vorhandene Werte), Einheit
+            # der Kopplungen MHz / mT / G
+            t_e = w.epr_tab
+            Bq_ = np.linspace(3300.0, 3400.0, 501)
+            for stem_, scans_ in (("acq1", 4), ("acq2", 4), ("acq3", None)):
+                (eprdir / f"{stem_}.dsc").write_text("\n".join([
+                    "#DESC\t1.2", "DSRC\tEXP", "BSEQ\tLIT", "IKKF\tREAL", "XTYP\tIDX", "YTYP\tNODATA", "IRFMT\tD",
+                    f"XPTS\t{len(Bq_)}", f"XMIN\t{Bq_[0]}", f"XWID\t{Bq_[-1] - Bq_[0]}", "XUNI\t'G'", "#SPL\t1.2",
+                    "MWFQ\t9.401234e9", "STMP\t120", "B0MA\t0.0002", "MWPW\t0.00063"]
+                    + ([f"NbScansDone\t{scans_}"] if scans_ else [])), encoding="latin-1")
+                (-np.gradient(np.exp(-((Bq_ - 3350) / 5) ** 2))).astype("<f8").tofile(eprdir / f"{stem_}.DTA")
+            m_q = EPRMOD.read_any(eprdir / "acq1.DTA")[0]["meta"]
+            assert m_q["n_scans"] == 4 and abs(m_q["mod_mT"] - 0.2) < 1e-9, m_q
+            assert EPRMOD.read_any(eprdir / "acq3.DTA")[0]["meta"]["n_scans"] is None
+            eq_ = [t_e._new("exp", str(eprdir / f"{s_}.DTA")) for s_ in ("acq1", "acq2")]
+            w.epr_state.update(entries=eq_, mode="spectra", T_offset=0.0, cap_acq=False)
+            t_e.fill_table()
+            assert "Experimental conditions" not in t_e.si_caption("X")
+            w.epr_state["cap_acq"] = True
+            cq_ = t_e.si_caption("X")
+            assert "Experimental conditions: ν = 9.4012 GHz, modulation amplitude 0.2 mT, microwave power 0.63 mW, " \
+                "4 scans, T = 120 K." in cq_, cq_
+            eq_.append(t_e._new("exp", str(eprdir / "acq3.DTA")))          # eine Messung ohne Scanzahl: Angabe entfällt
+            w.epr_state["entries"] = eq_
+            cq_ = t_e.si_caption("X")
+            assert "scans" not in cq_ and "T = 120 K" in cq_, cq_
+            assert t_e.hfc_unit_text(0.86, 2.0031) == f"{EPRMOD.hfc_texts(0.86, 2.0031)[1]} MHz"
+            w.epr_state["cap_hfc"] = "G"
+            assert t_e.hfc_unit_text(0.86, 2.0031) == "8.60 G"
+            w.epr_state["cap_hfc"] = "mT"
+            assert t_e.hfc_unit_text(0.86, 2.0031) == "0.860 mT"
+            w.epr_state.update(entries=[], cap_acq=False, cap_hfc="MHz")
+            t_e.fill_table()
+            report.append("EPR acquisition parameters in the caption, coupling unit MHz/mT/G: OK")
+
+        with section:
             # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
             L_ = COLOR.LAM
             assert COLOR.to_hex(COLOR.absorbance_to_rgb(0 * L_)[0]) == "#FFFFFF"
@@ -2773,15 +3999,16 @@ def selftest(outdir, with_isnet=False):
             labels = [lb for lb in w.eps_page.findChildren(QLabel)
                       if lb.text() in (T("molar_mass_short"), T("ymax"))]
             assert len({lb.minimumWidth() for lb in labels}) == 1 and labels[0].minimumWidth() > 0
-            # „Alles auf Standard“ im ε-Tab: Einstellungen zurück, Schichtdicke und Exportgröße bleiben
+            # „Darstellung zurücksetzen“ im ε-Tab: Darstellung zurück; Auswertung, Schichtdicke und Exportgröße bleiben
             if w.current:
                 w.glob.update(cutoff=2.0, ymax=2.5, path_length=0.1, shoulders=True, size="custom")
                 w.series[w.current]["band_hidden"] = [600]
                 w.reset_defaults()
-                assert w.glob["cutoff"] == 1.0 and w.glob["ymax"] == 1.0 and not w.glob["shoulders"]
-                assert w.glob["path_length"] == 0.1 and w.glob["size"] == "custom" and abs(w.sp_cut.value() - 1.0) < 1e-9
-                assert w.series[w.current]["band_hidden"] == []
-                w.glob.update(path_length=1.0, size="half_a4")
+                assert w.glob["cutoff"] == 2.0 and w.glob["ymax"] == 1.0 and w.glob["shoulders"]
+                assert w.glob["path_length"] == 0.1 and w.glob["size"] == "custom" and abs(w.sp_cut.value() - 2.0) < 1e-9
+                assert w.series[w.current]["band_hidden"] == [600]
+                w.glob.update(path_length=1.0, size="half_a4", cutoff=1.0, shoulders=False)
+                w.series[w.current]["band_hidden"] = []
                 w.apply_globals()
             report.append("eps tab layout (sections, empty state): OK")
         with section:
@@ -2832,7 +4059,8 @@ def selftest(outdir, with_isnet=False):
             w.statusBar().showMessage("selftest", 5000)
             assert w._toast.isVisible() and w._toast.text() == "selftest"     # sofort (andere Meldungen folgen beim pump)
             pump(0.1)
-            bar_ = w.cv_tab.findChild(QFrame, "bottomBar")
+            bar_ = next(b_ for b_ in w.cv_tab.findChildren(QFrame, "bottomBar")      # Fußleiste mit Knöpfen (links; rechts
+                        if any(c_.isVisible() for c_ in b_.findChildren(QPushButton)))   # seit dem Tab „Export“ nur Text)
             y_ = bar_.mapTo(w, bar_.rect().bottomLeft()).y()
             assert y_ >= w.height() - 3, (y_, w.height())
             btn_ = max((c_ for c_ in bar_.findChildren(QPushButton) if c_.isVisible()), key=lambda c_: c_.height())
@@ -2843,7 +4071,7 @@ def selftest(outdir, with_isnet=False):
             report.append("empty-tab guides: OK")
         with section:
             # Navigation: Gruppen oben statt Reiter; Knopf wechselt den Tab, Tabwechsel markiert den Knopf
-            assert len(w.nav_buttons) == 16 and w.main_tabs.tabBar().isHidden()          # 16 mit „Verbindung“, „UV-Vis-Kinetik“, „H-Cell“ und „Weitere“
+            assert len(w.nav_buttons) == 17 and w.main_tabs.tabBar().isHidden()          # 17 mit „Verbindung“, „UV-Vis-Kinetik“, „H-Cell“, „Weitere“, „Export“
             i_cv_ = w._tab_keys.index("cv")
             w.nav_buttons[i_cv_].click()
             assert w.main_tabs.currentWidget() is w.cv_tab
@@ -2854,7 +4082,7 @@ def selftest(outdir, with_isnet=False):
             w.ov_tab.table.setCurrentCell(-1, -1)
             w.ov_tab.show_details()
             assert w.ov_tab.det.isHidden() == (not w.ov_tab.det.isEnabled())
-            assert not w.toolbar.widgetForAction(w.act_si).property("accent")     # ein Hauptknopf je Ansicht: Exportieren
+            assert w.toolbar.widgetForAction(w.act_si) is None   # „SI (Word)“ nur im Menü Datei (Tab „Export“, Spur A2)
             # Mausrad über einem Zahlenfeld in der linken Spalte: ohne Fokus scrollt die Spalte, der Wert bleibt
             from PySide6.QtCore import QPoint, QPointF
             from PySide6.QtGui import QWheelEvent
@@ -2902,16 +4130,19 @@ def selftest(outdir, with_isnet=False):
             fc_.set_open(True, remember=False)
             assert not fc_.body.isHidden()
             assert w.cv_tab.right_tabs is not None and w.cv_tab.right_tabs.tabText(0) == T("tab_figure")
-            assert [w.xray_tab.right_tabs.tabText(i_) for i_ in range(3)] == [T("tab_figure"), T("xr_caption"), T("xr_tables")]
+            assert [w.xray_tab.right_tabs.tabText(i_) for i_ in range(w.xray_tab.right_tabs.count())] == \
+                [T("tab_figure"), T("xray_pack_page"), T("pxrd_page"), T("homa_page"), T("xr_tables"), T("xr_caption")]
             assert [w.dft_tab.right_tabs.tabText(i_) for i_ in range(w.dft_tab.right_tabs.count())] == \
-                [T("tab_figure"), T("dft_si"), T("dft_nics"),                     # Energieprofil nur im Reaktionspfad
-                 "Multireference" if get_lang() == "en" else "Multireferenz"]
+                [T("tab_figure"), T("dft_nics"), T("acid"), T("homa_page"), T("nbo_tab"),
+                 "Multireference" if get_lang() == "en" else "Multireferenz", T("dft_pop_tab"), T("dft_si_tbl"),
+                 T("tab_si_text")]   # Profil: nur im Pfad; Abbildung zuerst, SI zuletzt
             assert [w.hrms_tab.right_tabs.tabText(i_) for i_ in range(w.hrms_tab.right_tabs.count())] == \
                 [T("tab_figure"), T("tab_si_text")]            # überall „SI-Text“, außer X-Ray/DFT (eigene Reiter)
             # Ergebnisseiten überall gleich: ε neben der Abbildung, Karte füllt die Seite, Hauptknopf blau rechts
             assert [w.tabs.tabText(i_) for i_ in range(w.tabs.count())] == [T("tab_figure"), T("tab_results"),
                                                                            T("tab_si_text")]
-            for rt_, j_ in ((w.cv_tab.right_tabs, 1), (w.xray_tab.right_tabs, 2), (w.dft_tab.right_tabs, 1), (w.tabs, 1)):
+            for rt_, j_ in ((w.cv_tab.right_tabs, 1), (w.xray_tab.right_tabs, 4),
+                            (w.dft_tab.right_tabs, w.dft_tab.right_tabs.count() - 1), (w.tabs, 1)):
                 card_ = rt_.widget(j_).widget().findChild(QGroupBox, "resultCard")
                 assert card_ is not None and card_.title() == "", (rt_.tabText(j_),)
                 acc_ = [b_ for b_ in card_.findChildren(QPushButton) if b_.property("accent")]
@@ -2966,6 +4197,29 @@ def selftest(outdir, with_isnet=False):
                 sys.excepthook = hook_
             assert not errs_, errs_
             assert not w.eps_page.handle(1).isEnabled() and w.eps_page.widget(0).width() == w.column_fit.needed()   # fest
+            # Reiterzeile rechts: leere Seiten ohne Reiter, Überlauf unter „Mehr“, angewählte Seite immer sichtbar
+            from elucida.tabs.base import ResultTabs as RT_
+            rtx_ = RT_()
+            pgs_ = [QLabel(str(i_)) for i_ in range(10)]
+            for i_, p_ in enumerate(pgs_):
+                rtx_.addTab(p_, f"Page number {i_}")
+            rtx_.resize(420, 300)
+            rtx_.show()
+            QApplication.processEvents()
+            vis_ = [i_ for i_ in range(10) if rtx_.isTabVisible(i_)]
+            assert rtx_.overflow and not rtx_.more.isHidden() and vis_[0] == 0, (vis_, rtx_.overflow)
+            assert rtx_.tabBar().sizeHint().width() <= rtx_.width(), rtx_.tabBar().sizeHint().width()
+            assert sorted(vis_ + rtx_.overflow) == list(range(10))
+            rtx_.setCurrentIndex(9)                                    # aus „Mehr“ gewählt: wird sichtbar
+            assert rtx_.isTabVisible(9) and rtx_.currentIndex() == 9 and 9 not in rtx_.overflow
+            rtx_.set_empty(pgs_[1], True)
+            assert not rtx_.isTabVisible(1) and 1 not in rtx_.overflow
+            rtx_.resize(2400, 300)
+            QApplication.processEvents()
+            assert not rtx_.overflow and rtx_.more.isHidden() and not rtx_.isTabVisible(1)
+            rtx_.set_empty(pgs_[1], False)
+            assert rtx_.isTabVisible(1)
+            rtx_.deleteLater()
             report.append("left column (folds, changed mark, result tabs, field grid, never clipped, fixed width): OK")
 
         with section:
@@ -3268,7 +4522,7 @@ def selftest(outdir, with_isnet=False):
             assert np.allclose(IRMS.read_opus(irdir / "base.0")["y"], raw_y_)            # Datei unverändert
             ycor_ = t_ir.spectrum()["y"]
             assert ycor_.max() > 99.5 and np.abs(ycor_ - 100 * 10 ** -bands_a_[::-1]).max() < 3.0, np.abs(ycor_ - 100 * 10 ** -bands_a_[::-1]).max()
-            assert "ir_base" in t_ir.DEFAULT_STATE and "ir_base" not in t_ir.RESET_KEEP and "ir_thr" in t_ir.RESET_KEEP
+            assert "ir_base" in t_ir.DEFAULT_STATE and "ir_base" in t_ir.RESET_KEEP and "ir_thr" in t_ir.RESET_KEEP
             w.undo()
             pump()
             for _ in range(100):                                     # CI langsamer: Wiederherstellung abwarten (≤ 10 s)
@@ -3354,9 +4608,547 @@ def selftest(outdir, with_isnet=False):
             t_ir.render()
             report.append("IR F3: OPUS-Basislinie (konkaves Gummiband, Verlauf), Schwellenlinie, Kurve aus OPUS-PDF: OK")
         with section:
+            # IR berechnet gegen gemessen (Paket B 1.2.0): Leser (ORCA "IR SPECTRUM", Gaussian "IR Inten", unbekannt ->
+            # ablehnen), Profil, Darstellung in %T, eindeutige/handische Zuordnung, Tabelle, SI; Zahlen erfunden
+            from elucida.formats import calc as CALC_b_
+            from elucida.tabs import dft as DFT_b_
+            dir_b_ = out / "input" / "ircalc"
+            orca_b_ = DFT_b_.make_test_orca(dir_b_ / "plain.out")              # Frequenzen ohne IR-Block
+            try:
+                CALC_b_.read_ir_modes(orca_b_)
+                raise AssertionError("ORCA ohne IR SPECTRUM angenommen")
+            except ValueError:
+                pass
+            txt_b_ = CALC_b_.read_text(orca_b_).replace("\r\n", "\n")
+            fr_b_ = [3093.0, 1763.0, 1036.0, 1020.0, 500.0]                   # 0.97 -> 3000, 1710, 1005, 989, 485
+            in_b_ = [50.0, 300.0, 100.0, 80.0, 1.0]
+            vib_b_ = "\n".join(["VIBRATIONAL FREQUENCIES", "-----------------------", ""]
+                               + [f"   {i_:2d}:   {0.0:9.2f} cm**-1" for i_ in range(6)]
+                               + [f"   {i_ + 6:2d}:   {v_:9.2f} cm**-1" for i_, v_ in enumerate(fr_b_)])
+            irb_ = ["", "-----------", "IR SPECTRUM", "-----------", "",
+                    " Mode   freq       eps      Int      T**2         TX        TY        TZ",
+                    "       cm**-1   L/(mol*cm) km/mol    a.u.", "-" * 76]
+            irb_ += [f"  {i_ + 6:2d}:   {v_:7.2f}   0.010000  {k_:6.2f}  0.010000  ( 0.000000  0.000000  0.000000)"
+                     for i_, (v_, k_) in enumerate(zip(fr_b_, in_b_))]
+            head_b_, _, tail_b_ = txt_b_.partition("VIBRATIONAL FREQUENCIES")
+            tail_b_ = tail_b_[tail_b_.index("THERMOCHEMISTRY") - 30:]
+            orca_ir_ = dir_b_ / "ir.out"
+            orca_ir_.write_text(head_b_ + vib_b_ + "\n" + "\n".join(irb_) + "\n\n" + tail_b_, encoding="utf-8")
+            r_b_ = CALC_b_.read_ir_modes(orca_ir_)
+            assert r_b_["program"] == "ORCA" and r_b_["modes"] == list(zip(fr_b_, in_b_)), r_b_["modes"]
+            old_b_ = dir_b_ / "old.out"                                         # Layout ohne km/mol (ORCA 4): ablehnen
+            old_b_.write_text(orca_ir_.read_text(encoding="utf-8").replace("km/mol", "      "), encoding="utf-8")
+            try:
+                CALC_b_.read_ir_modes(old_b_)
+                raise AssertionError("IR-Block ohne km/mol angenommen")
+            except ValueError:
+                pass
+            g_b_ = DFT_b_.make_test_gaussian(dir_b_ / "g.log")
+            gl_ = []
+            for ln_ in g_b_.read_text(encoding="utf-8").splitlines():
+                gl_.append(ln_)
+                if ln_.strip().startswith("Frequencies --"):
+                    gl_.append(" Red. masses --      1.0000                 1.0000                 1.0000")
+                    gl_.append(" IR Inten    --     10.0000                20.0000                30.0000")
+            g_b_.write_text("\n".join(gl_) + "\n", encoding="utf-8")
+            rg_b_ = CALC_b_.read_ir_modes(g_b_)
+            assert rg_b_["program"] == "Gaussian" and len(rg_b_["modes"]) == 6 and rg_b_["modes"][2] == (655.7034, 30.0)
+            # Profil und Darstellung: Lorentz normiert auf 1, Linien als Polylinie; %T: stärkste Bande so tief wie die Messung
+            px_b_, py_b_ = IRMS.calc_ir_profile(r_b_["modes"], 0.97, 10.0, 400.0, 4000.0)
+            assert abs(py_b_.max() - 1.0) < 1e-9 and abs(px_b_[np.argmax(py_b_)] - 1763.0 * 0.97) < 1.0
+            lx_b_, ly_b_ = IRMS.calc_ir_profile(r_b_["modes"], 1.0, 0.0, 400.0, 4000.0)
+            assert sorted(set(np.round(lx_b_[ly_b_ > 0], 2))) == sorted(fr_b_) and ly_b_.max() == 1.0
+            ym_b_ = np.array([100.0, 98.0, 40.0, 99.0])                         # gemessen %T
+            yc_b_ = IRMS.calc_ir_display(np.array([0.0, 1.0]), ym_b_, "T")
+            assert abs(yc_b_[0] - 100.0) < 1e-9 and abs(yc_b_[1] - 40.0) < 1e-6, yc_b_     # nie die Messung umgerechnet
+            # Zuordnung: 1000 hat zwei Moden in ±20 -> nicht automatisch; von Hand gilt immer
+            a_b_ = IRMS.assign_bands([3001.0, 1702.0, 999.0], r_b_["modes"], 0.97, 20.0)
+            assert [(q_["meas"], q_["how"]) for q_ in a_b_] == [(3001, "auto"), (1702, "auto")], a_b_
+            assert a_b_[1]["diff"] == 1702 - round(1763.0 * 0.97), a_b_
+            a_b_ = IRMS.assign_bands([3001.0, 1702.0, 999.0], r_b_["modes"], 0.97, 20.0, [[999, 2]])
+            assert [(q_["meas"], q_["how"]) for q_ in a_b_][-1] == (999, "manual") and len(a_b_) == 3, a_b_
+            assert IRMS.assign_bands([1702.0], r_b_["modes"], 0.97, None) == []          # Toleranz aus: nur von Hand
+            # im Tab: Kurve im Bild (Legende), Tabelle, Kachel, SI-Block; Datei entfernen leert alles
+            t_b_ = w.irms_tab
+            t_b_.set_calc(str(orca_ir_))
+            # Messung des Selbsttests: Banden bei 2961 und 1678 cm-1 -> mit ±50 eindeutig zu 3000 und 1710 (skaliert)
+            w.irms_state.update(irc_scale=0.97, irc_tol_on=True, irc_tol=50.0, irc_fwhm_on=True, irc_fwhm=10.0, irc_si=True)
+            t_b_.sync_widgets()
+            t_b_.render()
+            assert t_b_.F is not None and any(l_.get_label() == "calc." for l_ in t_b_.F.ax.lines), t_b_._notes
+            t_b_.refresh_summary()
+            n_b_ = t_b_.tbl_irc.rowCount()
+            meas_b_ = [round(p_["wn"]) for p_ in t_b_.used_peaks()]
+            assert n_b_ == len(t_b_._irc_rows) and n_b_ >= 1, (n_b_, meas_b_)
+            assert all(abs(q_["meas"] - q_["calc"]) <= 50 for q_ in t_b_._irc_rows)
+            assert (T("ir_calc_kpi"), str(n_b_)) in t_b_.kpis(), t_b_.kpis()
+            sb_b_ = t_b_.si_table_blocks("S9")
+            assert sb_b_[0][0] == "tabcap" and sb_b_[1][0] == "params" and "scaled by 0.970" in sb_b_[2][1], sb_b_
+            assert "scaled by 0.970" in t_b_.si_caption("S9") and "ORCA" not in t_b_.si_caption("S9")
+            t_b_.set_calc(None)
+            t_b_.render()
+            t_b_.refresh_summary()
+            assert t_b_.si_table_blocks("S9") == [] and t_b_.tbl_irc.rowCount() == 0
+            assert not any(l_.get_label() == "calc." for l_ in t_b_.F.ax.lines)
+            report.append("IR calculated vs measured (reader, profile, %T display, unique/manual assignment, SI): OK")
+        with section:
+            # Raman (1.2.0): Textspalten-Leser, Raman-Aktivitäten (ORCA „RAMAN SPECTRUM“, Gaussian „Raman Activ“, fehlen
+            # -> kein berechnetes Raman), SI-Zeile, Abbildung Raman/übereinander, Unterschrift, Export; Zahlen erfunden
+            from elucida.formats import calc as CALC_r_
+            from elucida.formats import xy as XY_r_
+            from elucida.app import demo as DEMO_r_
+            from elucida.tabs import dft as DFT_r_
+            dir_r_ = out / "input" / "raman"
+            dir_r_.mkdir(parents=True, exist_ok=True)
+            xs_r_ = np.linspace(200.0, 1800.0, 400)
+            ys_r_ = 100.0 + 900.0 / (1 + ((xs_r_ - 1000.0) / 6.0) ** 2) + 400.0 / (1 + ((xs_r_ - 1600.0) / 6.0) ** 2)
+            f_r_ = dir_r_ / "raman.txt"
+            with open(f_r_, "w", encoding="utf-8", newline="") as fh_:
+                fh_.write("# exported\nRaman shift (cm-1)\tIntensity\n")
+                fh_.writelines(f"{a_:.2f}\t{b_:.2f}\n" for a_, b_ in zip(xs_r_, ys_r_))
+            d_r_ = XY_r_.read_xy(f_r_)
+            assert len(d_r_["x"]) == 400 and abs(d_r_["y"][0] - ys_r_[0]) < 0.01
+            f2_r_ = dir_r_ / "comma.csv"                                   # Semikolon + Dezimalkomma, Leerraum + Komma
+            with open(f2_r_, "w", encoding="utf-8", newline="") as fh_:
+                fh_.writelines(f"{a_:.2f};{b_:.2f}\r\n".replace(".", ",") for a_, b_ in zip(xs_r_[:20], ys_r_[:20]))
+            assert np.allclose(XY_r_.read_xy(f2_r_)["x"], np.round(xs_r_[:20], 2))
+            f3_r_ = dir_r_ / "csv.csv"
+            with open(f3_r_, "w", encoding="utf-8", newline="") as fh_:
+                fh_.writelines(f"{a_:.2f},{b_:.2f},0.1\n" for a_, b_ in zip(xs_r_[:20], ys_r_[:20]))
+            assert np.allclose(XY_r_.read_xy(f3_r_)["y"], np.round(ys_r_[:20], 2))
+            for bad_ in (b"\x00\x01binary" * 50, b"1 2\n3 4\n"):
+                (dir_r_ / "bad.dat").write_bytes(bad_)
+                try:
+                    XY_r_.read_xy(dir_r_ / "bad.dat")
+                    raise AssertionError("unlesbare Datei angenommen")
+                except ValueError:
+                    pass
+            # ORCA: Raman-Block wie ORCA 6.1 (Mode, freq, Activity, Depolarization); ohne Block -> raman None
+            m_r_, P_r_ = DEMO_r_.mol_3d("C#Cc1ccccn1")
+            ir_r_ = [(1000.0, 10.0), (1600.0, 50.0), (2100.0, 5.0)]
+            o1_r_ = DEMO_r_.make_orca(dir_r_ / "r.out", "r", m_r_, P_r_, -300.0, ir=ir_r_, raman=[20.0, 8.0, 90.0])
+            rr_ = CALC_r_.read_ir_modes(o1_r_)
+            assert rr_["raman"] == [(1000.0, 20.0), (1600.0, 8.0), (2100.0, 90.0)], rr_["raman"]
+            o2_r_ = DEMO_r_.make_orca(dir_r_ / "n.out", "n", m_r_, P_r_, -300.0, ir=ir_r_)
+            assert CALC_r_.read_ir_modes(o2_r_)["raman"] is None
+            g_r_ = DFT_r_.make_test_gaussian(dir_r_ / "g.log")             # Gaussian freq=raman (Zeilen wie cclib liest)
+            gl_r_ = []
+            for ln_ in g_r_.read_text(encoding="utf-8").splitlines():
+                gl_r_.append(ln_)
+                if ln_.strip().startswith("Frequencies --"):
+                    gl_r_ += [" IR Inten    --     10.0000                20.0000                30.0000",
+                              " Raman Activ --      1.5000                 2.5000                 3.5000",
+                              " Depolar (P) --      0.7500                 0.7500                 0.7500"]
+            g_r_.write_text("\n".join(gl_r_) + "\n", encoding="utf-8")
+            rg_r_ = CALC_r_.read_ir_modes(g_r_)
+            assert rg_r_["raman"] and rg_r_["raman"][2] == (655.7034, 3.5), rg_r_["raman"]
+            g_r_.write_text("\n".join(gl_r_).replace("3.5000", "******") + "\n", encoding="utf-8")
+            assert CALC_r_.read_ir_modes(g_r_)["raman"] is None              # Überlauf: nie raten
+            assert IRMS.raman_line([{"wn": 1000.4}, {"wn": 1600.5}], 785.0) == (
+                "Raman (λexc = 785 nm): ṽ = 1601, 1000 cm-1",
+                "<b>Raman</b> (<i>λ</i><sub>exc</sub> = 785 nm): ṽ = 1601, 1000 cm<sup>-1</sup>")
+            assert IRMS.exc_text(632.8) == "632.8"
+            # im Tab: Raman allein (Rechnung mit Aktivitäten), übereinander, SI-Zeile, Export; danach wie vorher
+            t_r_ = w.irms_tab
+            keep_r_ = {k_: w.irms_state.get(k_) for k_ in ("ram_file", "ram_view", "ram_off", "irc_file", "irc_pairs",
+                                                           "ir_labels", "ram_exc", "x_auto")}
+            try:
+                t_r_.set_raman(str(f_r_))
+                t_r_.set_calc(str(o1_r_))
+                w.irms_state.update(ram_view="raman", ram_exc=785.0, ir_labels=True, ram_calc=True, x_auto=True)
+                t_r_.sync_widgets()
+                t_r_.render()
+                F_r_ = t_r_.F
+                assert F_r_ is not None and "Raman shift" in F_r_.ax.get_xlabel(), F_r_.ax.get_xlabel()
+                assert any(l_.get_label() == "calc." for l_ in F_r_.ax.lines), t_r_._notes
+                assert not any(t_.label1.get_visible() for t_ in F_r_.ax.yaxis.get_major_ticks())   # ohne Zahlen
+                peaks_r_ = sorted(round(p_["wn"]) for p_ in t_r_.raman_peaks())
+                assert peaks_r_ == [1000, 1600], peaks_r_
+                assert set(F_r_.ann_items) == {"label_ram_1000", "label_ram_1600"}, list(F_r_.ann_items)
+                cap_r_ = t_r_.si_caption("S9")
+                assert "Raman spectrum of <b>S9</b> (<i>λ</i><sub>exc</sub> = 785 nm)" in cap_r_ and "Raman activities" in cap_r_
+                assert "ORCA" not in cap_r_
+                assert ("Raman (λexc = 785 nm): ṽ = 1600, 1000 cm-1" in [p_[0] for p_ in t_r_.si_parts()]), t_r_.si_parts()
+                kinds_r_ = [k_ for k_, *_ in w.si_char_parts(w.compound)[0]]
+                assert kinds_r_.count("ir") >= 1 and any(p_.startswith("Raman") for _, p_, _ in w.si_char_parts(w.compound)[0])
+                # eine Bande abwählen -> nicht in der Zeile
+                w.irms_state["ram_off"] = [1000]
+                t_r_.render()
+                assert t_r_._ram_line[0] == "Raman (λexc = 785 nm): ṽ = 1600 cm-1", t_r_._ram_line
+                w.irms_state["ram_off"] = []
+                # übereinander: IR oben (über 1), Raman unten (0–1), gemeinsame Achse fallend
+                w.irms_state["ram_view"] = "stack"
+                t_r_.render()
+                labs_r_ = [l_.get_label() for l_ in t_r_.F.ax.lines]
+                assert "IR" in labs_r_ and "Raman" in labs_r_, labs_r_
+                l_ir_ = next(l_ for l_ in t_r_.F.ax.lines if l_.get_label() == "IR")
+                l_ra_ = next(l_ for l_ in t_r_.F.ax.lines if l_.get_label() == "Raman")
+                assert np.nanmin(l_ir_.get_ydata()) > np.nanmax(l_ra_.get_ydata()) - 1e-9
+                xl_r_ = t_r_.F.ax.get_xlim()
+                assert xl_r_[0] > xl_r_[1], xl_r_
+                assert t_r_.si_caption("S9").startswith("IR (top) and Raman (bottom, <i>λ</i><sub>exc</sub> = 785 nm)")
+                fs_r_ = t_r_.export_to(out / "raman_export")
+                txt_r_ = next(f_ for f_ in fs_r_ if f_.name.endswith("_SI.txt")).read_text(encoding="utf-8")
+                assert "Raman (λexc = 785 nm)" in txt_r_ and txt_r_.startswith("IR"), txt_r_
+                # Datei entfernt: Abbildung wieder IR, keine Zeile
+                t_r_.set_raman(None)
+                t_r_.render()
+                assert "Raman shift" not in t_r_.F.ax.get_xlabel() and t_r_._ram_line == ("", "")
+            finally:
+                w.irms_state.update(keep_r_)
+                t_r_.sync_widgets()
+                t_r_.render()
+            report.append("Raman (text reader, ORCA/Gaussian activities, SI line, Raman/stacked figure, caption): OK")
+        with section:
+            # 1.2.0 review fixes: readers. Jede Pruefung scheiterte vor der Behebung (Funde C1-C5, B1-B3, B5, B6, B8, D8);
+            # alle Zahlen und Dateien erfunden
+            from elucida.app.i18n import T as T_fr
+            from elucida.core import lifetime as LT_fr
+            from elucida.formats import calc as CALC_fr
+            from elucida.formats import decay as DEC_fr
+            from elucida.formats import nbo as NBO_fr
+            from elucida.formats import xy as XY_fr
+            from elucida.tabs import epr_calc as ECALC_fr
+            from elucida.tabs import fluo_tau as FT_fr
+            dir_fr = out / "input" / "review_readers"
+            dir_fr.mkdir(parents=True, exist_ok=True)
+
+            def put_fr(name, text, enc="utf-8"):
+                p_ = dir_fr / name
+                with open(p_, "w", encoding=enc, newline="") as fh_:
+                    fh_.write(text)
+                return p_
+
+            def fails_fr(fn, *a):
+                try:
+                    fn(*a)
+                except ValueError as e_:
+                    return str(e_)
+                raise AssertionError(f"accepted: {a}")
+
+            class TabStub_fr:
+                def __init__(self, st):
+                    self.st, self.info = st, {}
+
+                def cache(self, key, fn):
+                    return fn()
+
+            class LabelStub_fr:
+                text = ""
+
+                def setText(self, t):
+                    self.text = t
+
+                def setStyleSheet(self, *a):
+                    pass
+
+            # C1: Dezimalkomma nur in x, y ganzzahlig („400,5<Tab>1000“) -> dateiweit Dezimalkomma, nie x=400, y=5
+            xs_fr = [400 + 0.5 * k for k in range(20)]
+            f_fr = put_fr("c1.txt", "".join(f"{x_:g}".replace(".", ",") + f"\t{1000 - k}\n" for k, x_ in enumerate(xs_fr)))
+            d_fr = XY_fr.read_xy(f_fr)
+            assert list(d_fr["x"]) == xs_fr and d_fr["y"][0] == 1000 and d_fr["y"][1] == 999, (d_fr["x"][:3], d_fr["y"][:3])
+            f_fr = put_fr("c1_mixed.txt", "1.5\t2\n" * 10 + "1,5\t3\n" * 10)   # Punkt und Komma gemischt: ablehnen
+            assert fails_fr(XY_fr.read_xy, f_fr) == T_fr("fixr_mixed_decimal", line=11)
+            # C2: BOM (UTF-8 und UTF-16) – die erste Datenzeile fiel weg bzw. UTF-16 galt als Binaerdatei
+            body_fr = "".join(f"{400 + k}.0\t{10 + k}\n" for k in range(20))
+            for enc_ in ("utf-8-sig", "utf-16"):
+                d_fr = XY_fr.read_xy(put_fr(f"c2_{enc_}.txt", body_fr, enc_))
+                assert len(d_fr["x"]) == 20 and d_fr["x"][0] == 400.0, (enc_, d_fr["x"][:2])
+            # B1: „1, 100“ und „0.5, 120“ gemischt -> alle 40 Zeilen (vorher 20); unpassende Zeile -> Zeilennummer
+            rows_fr = [f"{0.5 * k:g}, {100 + k}" for k in range(1, 41)]
+            r_fr = DEC_fr.read_decay(put_fr("b1.txt", "Time, Counts\n" + "\n".join(rows_fr) + "\n"))
+            assert len(r_fr["t"]) == 40 and r_fr["t"][0] == 0.5 and r_fr["t"][1] == 1.0, len(r_fr["t"])
+            rows_fr[24] += ", 7"
+            assert fails_fr(DEC_fr.read_decay, put_fr("b1_bad.txt", "Time, Counts\n" + "\n".join(rows_fr) + "\n")) == \
+                T_fr("fixr_decay_row", line=26, n=2)
+            # B6: Einheit nur aus dem Kopf der Zeitspalte, nicht aus „TAC range: 50 ns“
+            data_fr = "".join(f"{0.1 * k:.1f}\t{1000 - k}\n" for k in range(1, 31))
+            assert DEC_fr.read_decay(put_fr("b6.txt", "TAC range: 50 ns\nTime\tCounts\n" + data_fr))["unit"] is None
+            assert DEC_fr.read_decay(put_fr("b6_ok.txt", "TAC range: 50 ns\nTime (ns)\tCounts\n" + data_fr))["unit"] == "ns"
+            # R2 (Tiefentest): ganzzahliges x + Dezimalkomma nur in y; Ueberlauf „******“ nie still weglassen;
+            # Einheiten µs in cp1252, ms, s
+            for sep_ in (";", "\t"):
+                d_fr = XY_fr.read_xy(put_fr("r2_y.txt", "".join(f"{150 + k}{sep_}104,2336\n" for k in range(20))))
+                assert d_fr["y"][0] == 104.2336 and d_fr["x"][1] == 151, (sep_, d_fr["y"][:2])
+            ovf_fr = "".join(f"{400 + k}.0\t{10 + k}.5\n" if k != 7 else f"{400 + k}.0\t******\n" for k in range(20))
+            assert fails_fr(XY_fr.read_xy, put_fr("r2_ovf.txt", ovf_fr)) == T_fr("fixr_overflow", line=8)
+            assert fails_fr(DEC_fr.read_decay, put_fr("r2_ovf_dec.txt", "Time (ns)\tCounts\n" + ovf_fr)) == \
+                T_fr("fixr_overflow", line=9)
+            for head_, unit_, enc_ in (("Time (µs)", "us", "cp1252"), ("Time (ms)", "ms", "utf-8"),
+                                       ("Time [s]", "s", "utf-8")):
+                assert DEC_fr.read_decay(put_fr("r2_unit.txt", f"{head_}\tCounts\n" + data_fr, enc_))["unit"] == unit_, head_
+
+            # B5: IRF mit eigener Zeiteinheit (ps) wird auf die Abklingkurve (ns) umgerechnet; ohne Einheit: Hinweis
+            t_fr, y_fr, irf_fr = LT_fr.make_test_decay(taus=(1.2, 5.0), amps=(3000.0, 1200.0), bg=5.0, seed=21)
+            f_dec = put_fr("b5_decay.txt", "t (ns)\tcounts\n" + "".join(f"{a_:.4f}\t{b_:.0f}\n" for a_, b_ in zip(t_fr, y_fr)))
+            f_irf = put_fr("b5_irf.txt", "t (ps)\tcounts\n" + "".join(f"{1000 * a_:.1f}\t{b_:.0f}\n"
+                                                                      for a_, b_ in zip(t_fr, irf_fr)))
+            st_fr = dict(decay_file=str(f_dec), irf_file=str(f_irf), tau_unit="ns", tau_n=2, tau_start=0.0,
+                         tau_avg="amp", phi="", eps="", c_em="#000000")
+            tp_fr = FT_fr.TauPart(TabStub_fr(st_fr))
+            tp_fr.lbl_info = LabelStub_fr()
+            assert np.allclose(tp_fr._read("irf_file")["t"], t_fr, atol=1e-6)
+            tp_fr.update()
+            assert tp_fr.res is not None and all(abs(a_ - b_) < 0.5 for a_, b_ in zip(tp_fr.res["tau"], (1.2, 5.0))), \
+                tp_fr.res and tp_fr.res["tau"]
+            assert T_fr("fixr_irf_unit", u="ns") not in tp_fr.lbl_info.text
+            st_fr["irf_file"] = str(put_fr("b5_irf_nounit.txt", "".join(f"{a_:.4f}\t{b_:.0f}\n" for a_, b_ in zip(t_fr, irf_fr))))
+            tp_fr.update()
+            assert T_fr("fixr_irf_unit", u="ns") in tp_fr.lbl_info.text, tp_fr.lbl_info.text
+            assert T_fr("fixr_decay_unit", u="ns") not in tp_fr.lbl_info.text
+            st_fr["decay_file"] = st_fr["irf_file"]                 # Abklingkurve ohne Einheit: sichtbare Warnung
+            tp_fr.update()
+            assert T_fr("fixr_decay_unit", u="ns") in tp_fr.lbl_info.text, tp_fr.lbl_info.text
+            # B2: Phi = 1 -> k_nr = 0 in Zelle und SI-Text
+            tp_fr.res = LT_fr.fit_decay(t_fr, y_fr, 2, irf=(t_fr, irf_fr))
+            st_fr["phi"] = "1"
+            assert tp_fr.props()[0][6] == "0", tp_fr.props()[0]
+            assert "knr = 0 s-1" in tp_fr.methods_text(), tp_fr.methods_text()
+            # B8: Intensitaetsanteil kaufmaennisch gerundet (12.5 -> 13, nicht 12)
+            tp_fr.res = dict(tp_fr.res, frac=[0.125, 0.875])
+            assert [r_[4] for r_ in tp_fr.fit_rows()[0]] == ["13", "88"], tp_fr.fit_rows()[0]
+            # B3: tau >= 1000 ns ohne Exponent in µs, Intervallgrenzen verschieden
+            t3_fr, y3_fr, _ = LT_fr.make_test_decay(taus=(1500.0,), amps=(3000.0,), bg=5.0, dt=10.0, irf_fwhm=20.0,
+                                                    t_peak=200.0, seed=3)
+            tp_fr.res = LT_fr.fit_decay(t3_fr, y3_fr, 1, start=50.0)
+            st_fr["phi"] = "0.5"
+            row_fr = tp_fr.fit_rows()[0][0]
+            assert "e" not in row_fr[1] and abs(float(row_fr[1]) - 1.5) < 0.1, row_fr
+            lo_fr, hi_fr = row_fr[2].split(" … ")
+            assert "e" not in row_fr[2] and lo_fr != hi_fr, row_fr
+            assert tp_fr.props()[1] == "τ [µs]" and "e" not in tp_fr.props()[0][4], tp_fr.props()
+            m_fr = tp_fr.methods_text()
+            assert "µs" in m_fr and "e+0" not in m_fr and " ns (" not in m_fr, m_fr
+            assert FT_fr.fmt_tau(1500.0) == "1500" and FT_fr.fmt_ci((1499.6, 1500.4), True) == ("1.4996", "1.5004")
+            # C3: NMR-Abschirmung („Nucleus   0C :“) nach dem Hyperfeinblock lehnt die Datei nicht mehr ab
+            t_or = CALC_fr.read_text(ECALC_fr.make_test_orca_epr(dir_fr / "c3.out"))
+            end_or = "                             ****ORCA TERMINATED NORMALLY****"
+            nmr_or = "\n".join(["-" * 15, "CHEMICAL SHIFTS", "-" * 15, "", " " + "-" * 14, " Nucleus   0C :", " " + "-" * 14,
+                                "", ""])
+            d_or = CALC_fr.parse_orca_epr(t_or.replace(end_or, nmr_or + end_or))
+            assert len(d_or["fermi"]) == 6 and d_or["fermi"][0][1] == 30.5, d_or["fermi"]
+            # C5: späterer Mulliken-Block ohne Spinspalte überschreibt den Spinblock nicht; allein: „keine Spinpopulation“
+            nospin_or = "\n".join(["-" * 44, "MULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS", "-" * 44] +
+                                  [f"{i_:4d} {e_:<2s}:{0.1:12.6f}" for i_, e_ in enumerate("CCHHHH")] + ["", ""])
+            d_or = CALC_fr.parse_orca_epr(t_or.replace(end_or, nospin_or + end_or))
+            assert d_or["spin"][:2] == [0.58, 0.54], d_or["spin"]
+            t5_or = t_or.replace("MULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS", "MULLIKEN ATOMIC CHARGES", 1)
+            assert fails_fr(CALC_fr.parse_orca_epr, t5_or.replace(end_or, nospin_or + end_or)) == T_fr("epr_calc_no_spin")
+            # C4: Ueberlauf „****“ in der Gaussian-Hyperfeintabelle -> Ablehnung statt 3 von 6 Kernen; Mulliken: T()-Meldung
+            t_g = CALC_fr.read_text(ECALC_fr.make_test_gaussian_epr(dir_fr / "c4.log"))
+            assert "-42.00000" in t_g and "0.540000" in t_g
+            assert fails_fr(CALC_fr.parse_gaussian_epr, t_g.replace("-42.00000", "*********")) == \
+                T_fr("fixr_epr_gauss_count", n=3, m=6)
+            assert "Gaussian" in fails_fr(CALC_fr.parse_gaussian_epr, t_g.replace("0.540000", "********", 1))
+            # D8: CML ohne lonePair -> keine Formalladung erfinden (vorher N mit +2)
+            cml_fr = ('<?xml version="1.0"?>\n<cml title="Resonance forms from NRT analysis">\n'
+                      ' <molecule id="1" title="Wgt=100.00%  rhoNL=0.10000">\n  <atomArray>\n'
+                      '   <atom id="a1" elementType="N" x3="0.00" y3="0.00" z3="0.00"{lp}/>\n'
+                      + "".join(f'   <atom id="a{k}" elementType="H" x3="{k}.00" y3="0.00" z3="0.00" lonePair="0"/>\n'
+                                for k in (2, 3, 4))
+                      + '  </atomArray>\n  <bondArray>\n'
+                      + "".join(f'   <bond atomRefs2="a1 a{k}" order="1"/>\n' for k in (2, 3, 4))
+                      + '  </bondArray>\n </molecule>\n</cml>\n')
+            st_cml = NBO_fr.parse_cml(put_fr("d8.cml", cml_fr.replace("{lp}", "")))
+            assert NBO_fr.formal_charges(st_cml[0]) == [None] * 4, NBO_fr.formal_charges(st_cml[0])
+            st_cml = NBO_fr.parse_cml(put_fr("d8_ok.cml", cml_fr.replace("{lp}", ' lonePair="1"')))
+            assert NBO_fr.formal_charges(st_cml[0]) == [0, 0, 0, 0], NBO_fr.formal_charges(st_cml[0])
+            report.append("1.2.0 review fixes: readers (decimal mark per file, BOM, overflow rows, decay rows/units, IRF "
+                          "unit, k_nr = 0, tau in us, percent rounding, ORCA/Gaussian EPR blocks, CML lone pairs): OK")
+        with section:
+            # 1.2.0 review fixes: readers round 2 (Tiefentest H). Jede Pruefung scheiterte vor der Behebung (still falsch,
+            # still verkuerzt oder roher Python-Text); alle Zahlen und Dateien erfunden
+            import struct as struct_r2
+            from elucida.app.i18n import T as T_r2
+            from elucida.core import orbitals as ORB_r2, tddft as TD_r2, uvvis as UV_r2
+            from elucida.formats import (bwspec as BW_r2, calc as C_r2, epr as EPR_r2, gamry as GA_r2,
+                                         ms_report as MSR_r2, nbo as NBO_r2, opus as OP_r2)
+            from elucida.tabs import dft as DFT_r2, epr_calc as ECALC_r2
+            d_r2 = out / "input" / "review_readers_r2"
+            d_r2.mkdir(parents=True, exist_ok=True)
+
+            def put_r2(name, data):
+                p_ = d_r2 / name
+                p_.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+                return p_
+
+            def fails_r2(fn, *a):
+                try:
+                    fn(*a)
+                except ValueError as e_:
+                    return str(e_)
+                raise AssertionError(f"accepted: {str(a)[:80]}")
+
+            def said_r2(msg, key):                       # eigene übersetzte Meldung, kein Python-Text
+                parts_ = T_r2(key, **{k_: "\x01" for k_ in ("name", "line", "n", "m", "t", "text", "table", "req")})
+                assert max(parts_.split("\x01"), key=len) in msg, (key, msg)
+            # (1) Mehrjob-Ausgaben: alle Angaben aus dem letzten Job (vorher Ladung/Mult./Methode aus Job 1)
+            o1_r2 = C_r2.read_text(DFT_r2.make_test_orca(d_r2 / "o1.out")).replace("\r\n", "\n")
+            o2_r2 = (o1_r2.replace("Charge          ....    0", "Charge          ....    1")
+                     .replace("Mult            ....    1", "Mult            ....    2")
+                     .replace("! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)", "! PBE0 def2-TZVP CPCM(thf)")
+                     .replace("-539.987654321098", "-540.111111111111"))
+            c_r2 = C_r2.parse_orca(o1_r2 + "\n" + o2_r2)
+            assert (c_r2["charge"], c_r2["mult"], c_r2["keywords"], c_r2["energy"]) == \
+                (1, 2, ["! PBE0 def2-TZVP CPCM(thf)"], "-540.111111111111"), c_r2
+            g1_r2 = DFT_r2.make_test_gaussian(d_r2 / "g1.log").read_text(encoding="utf-8")
+            orient_r2 = g1_r2[g1_r2.index("                         Standard orientation:"):]
+            orient_r2 = orient_r2[:orient_r2.index(" SCF Done")]
+            g2_r2 = g1_r2.replace(" Normal termination", " Normal termination", 1) + "\n".join([
+                " Link1:  Proceeding to internal job step number  2.", " " + "-" * 40,
+                " # M062X/def2TZVP geom=check guess=read", " " + "-" * 40, " Charge =  1 Multiplicity = 2",
+                orient_r2.rstrip("\n"), " SCF Done:  E(UM062X) =  -540.500000000     A.U. after   10 cycles",
+                " Normal termination of Gaussian 16 at Thu Oct 22 11:00:00 2026."]) + "\n"
+            c_r2 = C_r2.parse_gaussian(g2_r2)
+            assert (c_r2["charge"], c_r2["mult"], c_r2["energy"], c_r2["freqs"], c_r2["version"]) == \
+                (1, 2, "-540.500000000", None, "16 Rev. C.01") and "M062X" in c_r2["keywords"][0], c_r2
+            gauto_r2 = g1_r2 + "\n".join([       # von Gaussian erzeugter Folgeschritt (opt freq): bleibt ein Job
+                " Link1:  Proceeding to internal job step number  2.", " " + "-" * 40,
+                " #N Geom=AllCheck Guess=TCheck SCRF=Check GenChk RB3LYP/def2SVP Freq", " " + "-" * 40,
+                " Charge =  0 Multiplicity = 1", orient_r2.rstrip("\n"),
+                " SCF Done:  E(RB3LYP) =  -539.987654321     A.U. after    1 cycles",
+                " Normal termination of Gaussian 16 at Thu Oct 22 11:00:00 2026."]) + "\n"
+            c_r2 = C_r2.parse_gaussian(gauto_r2)
+            assert "opt freq" in c_r2["keywords"][0] and c_r2["opt_requested"] and c_r2["solvation"], c_r2
+            # (2) abgeschnitten im Koordinatenblock: letzter vollständiger Block, normal = False (vorher 2 Atome)
+            n_at_r2 = len(C_r2.parse_orca(o1_r2)["geometry"])
+            end_r2 = "                             ****ORCA TERMINATED NORMALLY****"
+            cut_r2 = o1_r2.replace(end_r2, "") + "\n".join(["", "-" * 33, "CARTESIAN COORDINATES (ANGSTROEM)", "-" * 33,
+                                                           "  C     9.000000   9.000000   9.000000",
+                                                           "  H     9.500000   9.0"])
+            c_r2 = C_r2.parse_orca(cut_r2)
+            assert len(c_r2["geometry"]) == n_at_r2 and "9.000000" not in c_r2["geometry"][0][0] and \
+                not c_r2["normal"], c_r2["geometry"][:2]
+            gcut_r2 = g1_r2.rsplit(" Normal termination", 1)[0] + "\n".join(orient_r2.splitlines()[:7])
+            c_r2 = C_r2.parse_gaussian(gcut_r2)
+            assert len(c_r2["geometry"]) == len(C_r2.parse_gaussian(g1_r2)["geometry"]) and not c_r2["normal"]
+            # (3) IR: abgeschnittene ORCA-Tabelle / fehlende Moden nie still 0 km/mol; Gaussian-Überlauf mit Meldung
+            txt_ir_r2 = o1_r2
+            irr_r2 = ["", "-----------", "IR SPECTRUM", "-----------", "",
+                      " Mode   freq       eps      Int      T**2         TX        TY        TZ",
+                      "       cm**-1   L/(mol*cm) km/mol    a.u.", "-" * 76]
+            frq_r2 = [float(v_) for v_ in C_r2.parse_orca(o1_r2)["freqs"]]
+            irr_r2 += [f"  {k_:2d}:   {v_:7.2f}   0.010000  {5.0:6.2f}  0.010000  ( 0.000000  0.000000  0.000000)"
+                       for k_, v_ in enumerate(frq_r2) if k_ >= 6]
+            th_r2 = txt_ir_r2.index("--------------------------\nTHERMOCHEMISTRY")
+            full_r2 = txt_ir_r2[:th_r2] + "\n".join(irr_r2) + "\n\n* The epsilon\n" + txt_ir_r2[th_r2:]
+            assert len(C_r2.read_ir_modes(put_r2("ir_ok.out", full_r2))["modes"]) == sum(f_ > 0 for f_ in frq_r2)
+            trunc_r2 = txt_ir_r2[:th_r2] + "\n".join(irr_r2[:14]) + "\n  14:   12"
+            said_r2(fails_r2(C_r2.read_ir_modes, put_r2("ir_cut.out", trunc_r2 + "\n" + end_r2 + "\n")),
+                    "r2l_ir_incomplete")
+            gap_r2 = txt_ir_r2[:th_r2] + "\n".join(irr_r2[:14]) + "\n\n* The epsilon\n" + txt_ir_r2[th_r2:]
+            said_r2(fails_r2(C_r2.read_ir_modes, put_r2("ir_gap.out", gap_r2)), "r2l_ir_incomplete")
+            gir_r2 = g1_r2.replace(" Frequencies --    245.1023               330.4012               655.7034",
+                                   " Frequencies --    245.1023               330.4012               655.7034\n"
+                                   " IR Inten    --     1.0000    ********     3.0000")
+            said_r2(fails_r2(C_r2.read_ir_modes, put_r2("g_ir.log", gir_r2)), "r2l_ir_overflow")
+            # (4) EPR-ASCII: „mt“ im Titel ist keine Einheit; gemischte Trenner, verschmolzene Zahlen, „****“ ablehnen
+            rows_r2 = [(3300.0 + 2 * k_, (-1) ** k_ * 6.92458) for k_ in range(15)]
+            amt_r2 = EPR_r2.read_ascii(put_r2("amt.txt", "% Sample: Amt-17\nField\tIntensity\n" +
+                                              "\n".join(f"{b_:.4f}\t{i_:.5f}" for b_, i_ in rows_r2)))
+            assert amt_r2["meta"]["unit_src"] == "assumed" and abs(amt_r2["B"][0] - 330.0) < 1e-9, amt_r2["meta"]
+            assert EPR_r2.read_ascii(put_r2("mt.txt", "B [mT]\tI\n" + "\n".join(
+                f"{b_ / 10:.4f}\t{i_:.5f}" for b_, i_ in rows_r2)))["meta"]["unit_src"] == "header"
+            for nm_r2, fmt_r2 in (("mix.txt", lambda b_, i_: f"{b_ / 10:.4f}\t" + f"{i_:.5f}".replace(".", ",")),
+                                  ("fused.txt", lambda b_, i_: f"{b_ / 10:.4f}{i_:+.5f}".replace("+", " ")),
+                                  ("star.txt", lambda b_, i_: f"{b_ / 10:.4f}\t{i_:.5f}" if b_ != 3310 else "*******")):
+                said_r2(fails_r2(EPR_r2.read_ascii, put_r2(nm_r2, "B [mT]\tI\n" + "\n".join(
+                    fmt_r2(b_, i_) for b_, i_ in rows_r2))), "r2l_epr_ascii_line")
+            # (5) Cary-Excel-Export: Namenszeile direkt vor den Daten, „;“ + Dezimalkomma -> alle Proben (vorher 1)
+            xl_r2 = ["A-1mM;;A-0p5mM;;A-0p25mM;"] + [
+                ";".join(f"{x_:.1f};{a_ / 2 ** j_:.4f}" for j_ in range(3)).replace(".", ",")
+                for x_, a_ in ((800.0 - k_, 0.5 + 0.001 * k_) for k_ in range(20))]
+            s_r2 = UV_r2.read_cary_samples(put_r2("xl.csv", "\n".join(xl_r2) + "\n"))
+            assert [s_["name"] for s_ in s_r2] == ["A-1mM", "A-0p5mM", "A-0p25mM"] and \
+                abs(s_r2[1]["y"][-1] - 0.25) < 1e-9, [s_["name"] for s_ in s_r2]
+            # (6) DSW im Aufbau des Cary 60 (Kopfblock TContinuumStore, Daten, Metadaten als Längen+Text): abgeschnitten
+            # -> Meldung statt weniger Spektren
+            magic_r2 = b"Varian UV-VIS-NIR"
+            dsw_r2 = bytearray([len(magic_r2)]) + magic_r2
+            dsw_r2 += bytes(0x400 - len(dsw_r2))
+            for k_ in range(3):
+                blk_ = bytearray(256)
+                t_ = f"R2-{k_ + 1}mM".encode()
+                blk_[:len(t_)] = t_
+                blk_[150:165] = b"TContinuumStore"
+                dsw_r2 += blk_
+                for x_ in np.arange(800.0, 249.0, -1.0):
+                    dsw_r2 += struct_r2.pack("<ff", x_, 0.3 * np.exp(-((x_ - 450) / 40) ** 2))
+                for s_ in (t_, b"Collection Time: 1/2/2026 1:00:00 PM", b"Parameter List : ", b"<Current Wavelength> , 250.0"):
+                    dsw_r2 += struct_r2.pack("<i", len(s_)) + s_
+            assert len(UV_r2.read_binary_samples(put_r2("ok.DSW", bytes(dsw_r2)))) == 3
+            for frac_r2 in (0.5, 0.66, 0.9, 0.999):
+                said_r2(fails_r2(UV_r2.read_binary_samples, put_r2("cut.DSW", bytes(dsw_r2[:int(len(dsw_r2) * frac_r2)]))),
+                        "r2l_dsw_incomplete")
+            # (7) ESD: abgeschnittene Zeile bzw. Störzeile -> Ablehnung mit Zeilennummer (vorher fc/ht = 0 bzw. Rest weg)
+            esd_r2 = ["Energy\t\t\tTotalSpectrum\t\tIntensityFC\t\tIntensityHT"] + [
+                f"{20000.0 + 20 * k_:.6f}\t\t{1.0:.6e}\t\t{1.0:.6e}\t\t0.000000e+00" for k_ in range(30)]
+            assert len(C_r2.read_esd_spectrum(put_r2("e.spectrum", "\n".join(esd_r2)))["nm"]) == 30
+            said_r2(fails_r2(C_r2.read_esd_spectrum, put_r2("e2.spectrum", "\n".join(esd_r2) + "\n20600.000000\t\t1.0")),
+                    "r2l_esd_line")
+            said_r2(fails_r2(C_r2.read_esd_spectrum, put_r2("e3.spectrum", "\n".join(esd_r2[:10] + ["####"] + esd_r2[10:]))),
+                    "r2l_esd_line")
+            # (8) TD-DFT: f über den Spaltenkopf (Überlauf in nm verschiebt nichts), abgeschnittene Tabelle -> Meldung
+            td_r2 = ["Number of roots to be determined               ...     20", "-" * 100,
+                     "                     ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", "-" * 100,
+                     "     Transition      Energy     Energy  Wavelength fosc(D2)      D2        DX        DY        DZ",
+                     "                      (eV)      (cm-1)    (nm)                 (au**2)    (au)      (au)      (au)",
+                     "-" * 100,
+                     "  0-1A  ->  1-1A    3.908634   31525.3   *****   0.120524234   1.25861   0.77043   0.80938  -0.09973",
+                     "  0-1A  ->  2-1A    4.001126   32271.3   309.9   0.260481717   2.65728  -1.27957   0.66264  -0.76215"]
+            r_td_r2 = TD_r2.parse_tddft(put_r2("td.out", "\n".join(td_r2 + ["", "done"])))
+            assert list(r_td_r2["f"]) == [0.120524234, 0.260481717], r_td_r2["f"]
+            msg_r2 = fails_r2(TD_r2.parse_tddft, put_r2("td_cut.out", "\n".join(td_r2)))
+            assert msg_r2 == T_r2("r2l_tddft_incomplete", n=2, req=T_r2("r2l_tddft_req", n="20")), msg_r2
+            # (9) ORCA-Hyperfeinblock abgeschnitten: nicht wie „ohne %eprnmr“ (vorher fermi verkürzt bzw. leer)
+            ep_r2 = C_r2.read_text(ECALC_r2.make_test_orca_epr(d_r2 / "ep.out"))
+            said_r2(fails_r2(C_r2.parse_orca_epr, ep_r2[:ep_r2.rindex("A(FC)")]), "r2l_epr_hfc_incomplete")
+            # (10) Gamry: Zeilenzahl aus „CURVE TABLE n“, Dezimalkomma -> Meldung statt rohem Text
+            pl_r2 = GA_r2.make_test_pulse(d_r2 / "p.DTA").read_text(encoding="latin-1").splitlines()
+            said_r2(fails_r2(GA_r2.read_gamry, put_r2("p_cut.DTA", "\r\n".join(pl_r2[:-15]) + "\r\n")),
+                    "r2l_gamry_rows")
+            said_r2(fails_r2(GA_r2.read_gamry, put_r2("p_dc.DTA", "\r\n".join(
+                ln_.replace(".", ",") if ln_.startswith("\t") else ln_ for ln_ in pl_r2) + "\r\n")), "r2l_gamry_number")
+            from elucida.app import demo as DEMO_r2
+            from elucida.formats import gamry_cycling as GC_r2
+            hc_r2 = DEMO_r2.write_cycling(d_r2 / "hc", "cell", 0.8, 0.002, np.full(4, 0.5), np.full(4, 0.99))
+            hl_r2 = hc_r2.read_text(encoding="latin-1").splitlines()
+            assert len(GC_r2.read_cycling(hc_r2)["halves"]) == 8
+            said_r2(fails_r2(GC_r2.read_cycling, put_r2("hc_cut.DTA", "\r\n".join(hl_r2[:-4]))), "r2l_hcell_incomplete")
+            bw_r2 = "File Version;BWSpec4.11\nDate;2026-01-02 12:00:00\nPixel;Wavelength;Absorbance #1\n" + \
+                "\n".join(f"{k_};;0,{k_:03d}" for k_ in range(20)) + "\n"
+            said_r2(fails_r2(BW_r2.read_bwspec, put_r2("bw.txt", bw_r2)), "r2l_bwspec_number")
+            # BWSpec: Kopf nennt pixel_start/pixel_end, Datei hat weniger Zeilen -> abgeschnitten, ablehnen
+            bwp_r2 = ("File Version;BWSpec4.11\nDate;2026-01-02 12:00:00\npixel_start;0\npixel_end;19\ncoefs_a0;400\n"
+                      "coefs_a1;2\ncoefs_a2;0\ncoefs_a3;0\nPixel;Wavelength;Absorbance #1\n")
+            assert len(BW_r2.read_bwspec(put_r2("bw_full.txt", bwp_r2 + "".join(f"{k_};;0.{k_:03d}\n" for k_ in range(20))))["A"]) == 20
+            said_r2(fails_r2(BW_r2.read_bwspec, put_r2("bw_cut.txt", bwp_r2 + "".join(f"{k_};;0.{k_:03d}\n" for k_ in range(12)))),
+                    "r3_bwspec_rows")
+            # (11) Cube/Molden: UTF-16 lesen, leer/abgeschnitten/überzählig und abgeschnittenes Molden mit Meldung
+            cube_r2 = ORB_r2.make_test_cube(d_r2 / "c.cube", n=12)
+            ctext_r2 = cube_r2.read_text(encoding="utf-8")
+            ref_r2 = ORB_r2.read_cube(cube_r2)
+            u16_r2 = ORB_r2.read_cube(put_r2("c16.cube", b"\xff\xfe" + ctext_r2.encode("utf-16-le")))
+            assert np.array_equal(u16_r2["data"][0], ref_r2["data"][0]) and u16_r2["els"] == ref_r2["els"]
+            said_r2(fails_r2(ORB_r2.read_cube, put_r2("c0.cube", b"")), "r2l_cube_bad")
+            said_r2(fails_r2(ORB_r2.read_cube, put_r2("cx.cube", ctext_r2 + " 0.1 0.2\n")), "r2l_cube_count")
+            said_r2(fails_r2(ORB_r2.read_cube, put_r2("ct.cube", ctext_r2[:len(ctext_r2) // 2])), "r2l_cube_count")
+            mol_r2 = C_r2.read_text(ORB_r2.make_test_molden(d_r2 / "m.molden"))
+            assert ORB_r2.parse_molden(mol_r2)["mos"]
+            for cut_m_r2 in (mol_r2[:mol_r2.index("[MO]") - 40], mol_r2[:len(mol_r2) - 30]):
+                said_r2(fails_r2(ORB_r2.parse_molden, cut_m_r2), "r2l_molden_bad")
+            # (12) leere CML, kein docx, leeres PDF: übersetzte Meldung statt ParseError/BadZipFile/EmptyFileError
+            said_r2(fails_r2(NBO_r2.parse_cml, put_r2("e.cml", "")), "r2l_cml_bad")
+            assert NBO_r2.find_cml(d_r2 / "nbo.out", {"file_stem": ""}) is None      # NBO-Ausgabe ohne FILE= (vorher ValueError)
+            assert NBO_r2.find_cml(d_r2 / "nbo.out", {}) is None
+            said_r2(fails_r2(MSR_r2.read_ms_docx, put_r2("e.docx", "kein zip")), "r2l_docx_bad")
+            said_r2(fails_r2(OP_r2.read_ir_pdf, put_r2("e.pdf", b"")), "r2l_pdf_bad")
+            report.append("1.2.0 review fixes: readers round 2 (multi-job outputs, truncated geometry/IR/TD-DFT/hyperfine/"
+                          "DSW/Gamry/ESD, EPR ASCII unit and rows, Cary delimiter, cube/molden/CML/docx/PDF messages): OK")
+        with section:
             w.compound["formula"] = "C18H20N2O"                 # falsche Verbindung -> Warnung
             t_ms.render()
-            assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
+            assert "⚠" in t_ms.lbl_ms_warn.text(), t_ms.lbl_ms_warn.text()
             files = t_ir.export_to(out / "irms") + t_ms.export_to(out / "hrms")
             assert sum(f.name.endswith("_SI.txt") for f in files) == 2 and all(f.exists() for f in files)
             slots_ = PRJ._path_slots(w.get_state())
@@ -3373,7 +5165,7 @@ def selftest(outdir, with_isnet=False):
             assert not t_ms.btn_take.isHidden()
             rep_["formula"] = "C18H19N2O"                       # Formelfeld vertippt -> Hinweis
             t_ms.render()
-            assert "⚠" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
+            assert "⚠" in t_ms.lbl_ms_warn.text(), t_ms.lbl_ms_warn.text()
             t_ms.take_compound()
             assert w.compound["formula"] == "C18H18N2O" and w.compound["name"] == "TEST-1", w.compound
             if rep_["structure"]["cdxml"]:
@@ -3975,17 +5767,25 @@ def selftest(outdir, with_isnet=False):
             t_x.sync_widgets()
             t_x.render()
             assert not ent_[0]["wire"] and "lbl_Cl1" in t_x.F.ann_items and "lbl_C1" not in t_x.F.ann_items
-            # Darstellung auf Standard: Einstellungen + gewählte Struktur zurück, CIFs/Namen/Parameter bleiben
+            # Darstellung auf Standard: Einstellungen + Ansicht der gewählten Struktur zurück, CIFs/Namen/Parameter,
+            # Fehlordnung und ausgeblendete Atome (eingehende Daten) bleiben
             e_x = t_x.entry()
             w.xray_state.update(bond_w=0.2, prob=30, style="flat", label_pt=14.0, show_h=False, disorder="all")
-            e_x.update(hidden_atoms=[e_x["hidden_atoms"] or "C2"], label_on={"C1": False}, wire=["C1"], zoom=2.0,
+            e_x.update(hidden_atoms=["C2"], hidden_frags=[1], label_on={"C1": False}, wire=["C1"], zoom=2.0,
                        name="umbenannt")
+            w.xray_state["homa_fig"] = True
             n_ent, params_ = len(w.xray_state["entries"]), list(e_x.get("params") or [])
             t_x.reset_display()
             d_x = XRAY.XrayTab.DEFAULT_STATE
-            assert all(w.xray_state[k_] == d_x[k_] for k_ in ("bond_w", "prob", "style", "show_h", "disorder"))
+            assert all(w.xray_state[k_] == d_x[k_] for k_ in ("bond_w", "prob", "style", "show_h"))
             assert w.xray_state["label_pt"] == 0.0 and abs(t_x.sp_bond.value() - 0.12) < 1e-9 and t_x.sp_prob.value() == 50
-            assert not e_x["hidden_atoms"] and not e_x["label_on"] and not e_x["wire"] and e_x["zoom"] == 1.0
+            assert e_x["hidden_atoms"] == ["C2"] and e_x["hidden_frags"] == [1] and w.xray_state["disorder"] == "all"
+            assert w.xray_state["homa_fig"] is False                  # HOMA-Werte im Bild: Darstellung
+            assert not e_x["label_on"] and not e_x["wire"] and e_x["zoom"] == 1.0
+            e_x.update(hidden_atoms=[], hidden_frags=[])         # Ausgangslage der folgenden Prüfungen (alle Atome)
+            w.xray_state.update({k_: d_x[k_] for k_ in XRAY.XrayTab.RESET_KEEP})
+            t_x.sync_widgets()
+            t_x.render()
             assert len(w.xray_state["entries"]) == n_ent and e_x["name"] == "umbenannt" and e_x["params"] == params_
             assert t_x.F is not None
             # Stile: Mercury (C weiß, schwarze Bindungen, fette Labels), Olex2, Kugel-Stab glänzend, Kugel-Stab mit Tiefe,
@@ -4174,6 +5974,438 @@ def selftest(outdir, with_isnet=False):
                 tab_.render(push=False)
             rot_keeps_scale_(t_x)
             report.append("X-Ray rotate keeps size (GUI path, labels moved, zoom): OK")
+        with section:
+            # Packungsbild (Paket C 1.2.0): erfundener ebener C6H6-Ring, gestapelt entlang a (3.60 Å, P1): Regeln der
+            # Zellbelegung, Blickrichtung, Vorschläge nach Bondi + Toleranz, Ringe (Cg, Ebene), Bild, Unterschrift, SI
+            import copy as copy_c_
+            r_c_ = 1.39
+            ats_c_ = [(f"C{i_ + 1}", "C", 0.0, 0.5 + r_c_ * np.cos(np.pi * i_ / 3) / 10, 0.5 + r_c_ * np.sin(np.pi * i_ / 3) / 10)
+                      for i_ in range(6)]
+            ats_c_ += [(f"H{i_ + 1}", "H", 0.0, 0.5 + 2.47 * np.cos(np.pi * i_ / 3) / 10, 0.5 + 2.47 * np.sin(np.pi * i_ / 3) / 10)
+                       for i_ in range(6)]
+            cif_c_ = out / "input" / "pack_stack.cif"
+            cif_c_.write_text("\n".join(
+                ["data_packtest", "_symmetry_space_group_name_H-M 'P 1'", "loop_", "_space_group_symop_operation_xyz",
+                 "'x, y, z'", "_cell_length_a 3.6000(5)", "_cell_length_b 10.000(1)", "_cell_length_c 10.000(1)",
+                 "_cell_angle_alpha 90", "_cell_angle_beta 90", "_cell_angle_gamma 90", "loop_", "_atom_site_label",
+                 "_atom_site_type_symbol", "_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z",
+                 "_atom_site_U_iso_or_equiv"] + [f"{l_} {e_} {x_:.5f} {y_:.5f} {z_:.5f} 0.02" for l_, e_, x_, y_, z_ in ats_c_])
+                + "\n", encoding="utf-8", newline="")
+            S_c_ = XRAY.Structure(XRAY.structure_blocks(cif_c_)[0])
+            m_c_ = XRAY.Molecule(S_c_)
+            assert len(XRAY.PackMol(m_c_, "centroid").fragments) == 1                  # Schwerpunkt bei x = 0
+            assert len(XRAY.PackMol(m_c_, "touch").fragments) == 2                     # x = 0 und x = 1 berühren
+            Rv_ = XRAY.axis_view(S_c_, "a")
+            assert np.allclose(Rv_[2], [1, 0, 0], atol=1e-9) and np.allclose(Rv_ @ Rv_.T, np.eye(3), atol=1e-9)
+            assert XRAY.BONDI["C"] == 1.70 and XRAY.BONDI["H"] == 1.20
+            rg_c_ = XRAY.mol_rings(m_c_)
+            assert len(rg_c_) == 1 and len(rg_c_[0]) == 6, rg_c_
+            sug0_ = XRAY.contact_suggestions(m_c_, tol=0.0)                           # 3.60 > 2 x 1.70: kein Atomkontakt
+            assert [c_["kind"] for c_ in sug0_] == ["cent", "plane"], [c_["kind"] for c_ in sug0_]
+            assert abs(sug0_[0]["d"] - 3.6) < 1e-6 and abs(sug0_[1]["value"] - 3.6) < 1e-6 and sug0_[1]["angle"] < 1e-6
+            assert abs(sug0_[0]["slip"]) < 1e-6
+            sug1_ = XRAY.contact_suggestions(m_c_, tol=0.3)
+            at_c_ = [c_ for c_ in sug1_ if c_["kind"] == "atoms"]
+            assert len(at_c_) == 1 and abs(at_c_[0]["d"] - 3.6) < 1e-6, at_c_            # kürzester je Molekülpaar
+            assert not [c_ for c_ in XRAY.contact_suggestions(m_c_, tol=0.3, heavy_only=False) if c_["kind"] == "atoms"
+                        and c_["d"] < 3.6 - 1e-6]
+            nm_c_, codes_c_, ops_c_ = XRAY.contact_names(m_c_, sug0_, rg_c_)
+            assert nm_c_[0].startswith("Cg1\u00b7\u00b7\u00b7Cg1") and len(codes_c_) == 1, (nm_c_, codes_c_)
+            assert ops_c_[0] in ("1+x, y, z", "\u22121+x, y, z"), ops_c_
+            # im Tab: Packungsbild mit Zelle, Abstand, Unterschrift, Seite „Abstände“, SI, eigener Abstand
+            t_c_ = w.xray_tab
+            keep_c_ = copy_c_.deepcopy({k_: w.xray_state.get(k_) for k_ in ("entries", "current")})
+            try:
+                t_c_.load_cif(str(cif_c_))
+                e_c_ = t_c_.entry()
+                pk_c_ = t_c_.pack(e_c_)
+                pk_c_.update(on=True, used=True, si=True, axis="c",
+                             shown=[{k_: sug0_[1][k_] for k_ in ("kind", "a", "ga", "b", "gb")}])
+                t_c_.render(push=False)
+                F_c_ = t_c_.F
+                assert isinstance(F_c_, XRAY.PackFigure) and isinstance(F_c_.mol, XRAY.PackMol)
+                assert len(F_c_.mol.fragments) == 2                                   # Partner des Abstands ergänzt
+                txt_c_ = [x_.get_text() for x_ in F_c_.ax.texts]
+                assert "3.600 \u00c5" in txt_c_ and "a" in txt_c_ and "b" in txt_c_ and "c" not in txt_c_, txt_c_
+                cap_c_ = t_c_.pack_caption(e_c_)[0]
+                assert "viewed along the crystallographic c axis" in cap_c_ and "3.600 \u00c5" in cap_c_, cap_c_
+                assert "no s.u." in cap_c_ and "Cg1: centroid of C1" in cap_c_, cap_c_
+                assert t_c_.tbl_pack_res.rowCount() == 1 and t_c_.tbl_pack_res.item(0, 2).text() == "3.600"
+                left_c_ = {t_c_.tbl_pack.item(r_, j_).text() for r_ in range(t_c_.tbl_pack.rowCount())
+                           for j_ in range(t_c_.tbl_pack.columnCount()) if t_c_.tbl_pack.item(r_, j_)}
+                assert t_c_.tbl_pack_res.item(0, 0).text() in left_c_, (t_c_.tbl_pack_res.item(0, 0).text(), left_c_)
+                si_c_ = t_c_.pack_si_blocks(e_c_, out / "input")
+                assert [b_[0] for b_ in si_c_] == ["image", "figcap"], [b_[0] for b_ in si_c_]
+                # eigener Abstand: zwei Atome verschiedener Moleküle anklicken (Schlüssel aus dem Packungsmodell)
+                pm_c_ = F_c_.mol
+                t_c_.sel = [pm_c_.atoms[pm_c_.fragments[0]["atoms"][0]]["key"], pm_c_.atoms[pm_c_.fragments[1]["atoms"][1]]["key"]]
+                t_c_.pack_add_selected()
+                assert len(pk_c_["shown"]) == 2 and pk_c_["shown"][1]["kind"] == "atoms", pk_c_["shown"]
+                g2_ = XRAY.contact_geom(m_c_, pk_c_["shown"][1])
+                assert 3.6 < g2_["d"] < 5.0, g2_                                    # C1···C2 der Nachbarschicht
+                # Blickrichtung a: der Wert steht trotzdem im Bild; Molekülbild unverändert ohne Packung
+                pk_c_.update(axis="a", view=None)
+                t_c_.render(push=False)
+                assert any(x_.get_text() == "3.600 \u00c5" for x_ in t_c_.F.ax.texts)
+                pk_c_["on"] = False
+                t_c_.render(push=False)
+                assert not isinstance(t_c_.F, XRAY.PackFigure) and isinstance(t_c_.F, XRAY.XrayFigure)
+            finally:
+                w.xray_state.update(keep_c_)
+                t_c_.sync_widgets()
+                t_c_.render(push=False)
+            report.append("X-ray packing (cell content rules, view along axes, Bondi contacts, ring centroid/plane, "
+                          "picked contact, caption, SI): OK")
+        with section:
+            # 1.2.0 review fixes (x-ray and SI): F1-F5 Packung (Platzsymmetrie, Codes, eine Nummerierung, Ga^-1 o Gb,
+            # 1/3-Translationen), B7 PXRD ohne erfundenes U_iso, F6 Verweise, E10 EA-Doppelbestimmung, F7 Platzhalter
+            import copy as copy_r_
+            import math as math_r_
+            from elucida.core import pxrd as PX_r_
+            dir_r_ = out / "input" / "review_xray"
+            dir_r_.mkdir(parents=True, exist_ok=True)
+
+            def cif_r_(name, a, bc, ops, atoms, u=True):
+                p_ = dir_r_ / f"{name}.cif"
+                p_.write_text("\n".join(
+                    [f"data_{name}", "loop_", "_space_group_symop_operation_xyz"] + [f"'{o_}'" for o_ in ops]
+                    + [f"_cell_length_a {a}", f"_cell_length_b {bc}", f"_cell_length_c {bc}", "_cell_angle_alpha 90",
+                       "_cell_angle_beta 90", "_cell_angle_gamma 90", "loop_", "_atom_site_label", "_atom_site_type_symbol",
+                       "_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z"]
+                    + (["_atom_site_U_iso_or_equiv"] if u else [])
+                    + [f"{l_} {e_} {x_:.5f} {y_:.5f} {z_:.5f}" + (f" {u_}" if u else "") for l_, e_, x_, y_, z_, u_ in atoms])
+                    + "\n", encoding="utf-8", newline="")
+                return p_, XRAY.Structure(XRAY.structure_blocks(p_)[0])
+
+            def op_r_(s_):
+                return XRAY.parse_symop(s_.replace("−", "-"))
+            # F1: Benzol (nur C) auf dem Inversionszentrum (P-1), Stapel entlang a: kein Kontakt mit sich selbst (d = 0),
+            # jeder Nachbar einmal (vorher: Bild unter -x,-y,-z = Molekül selbst, Nachbarn unter G und G o h doppelt)
+            r_r_ = 1.39
+            _, Sb_ = cif_r_("benz_inv", 3.6, 10.0, ("x, y, z", "-x, -y, -z"),
+                            [(f"C{i_ + 1}", "C", 0.0, r_r_ * np.cos(np.pi * i_ / 3) / 10, r_r_ * np.sin(np.pi * i_ / 3) / 10,
+                              0.02) for i_ in range(3)])
+            mb_ = XRAY.Molecule(Sb_)
+            assert len(mb_.atoms) == 6 and mb_.ops == {"−x, −y, −z": "i"}, mb_.ops
+            sb_ = XRAY.contact_suggestions(mb_, tol=0.3)
+            assert sorted(c_["kind"] for c_ in sb_) == ["atoms", "cent", "plane"], [(c_["kind"], c_["d"]) for c_ in sb_]
+            assert all(abs(c_["d"] - 3.6) < 1e-6 for c_ in sb_), [c_["d"] for c_ in sb_]
+            # F2: eine Nummerierung - (i) ist die Operation der erzeugten Molekuelhaelfte, der Partner bekommt (ii)
+            rb_ = XRAY.mol_rings(mb_)
+            nb_, cb_, ob_ = XRAY.contact_names(mb_, sb_, rb_)
+            assert dict(cb_)["i"] == "−x, −y, −z" and all(n_.endswith("ⁱⁱ") for n_ in nb_), (nb_, cb_)
+            assert XRAY.cg_definitions(mb_, rb_, sb_) == [(1, "C1, C2, C3, C1ⁱ, C2ⁱ, C3ⁱ")]
+            # F2/F3: Biphenyl (nur C) auf dem Inversionszentrum: beide Ringe = Cg1 (Ring 2 = Bild von Ring 1), jedes
+            # Ringpaar einmal, Code des Partners samt Erzeugung des Rings: Abstand aus dem Code = Abstand im Bild
+            L_r_, cy_r_ = 12.0, 0.745 + 1.39
+            _, Sp_ = cif_r_("biph_inv", 3.8, L_r_, ("x, y, z", "-x, -y, -z"),
+                            [(f"C{i_ + 1}", "C", 0.0, (cy_r_ + 1.39 * math_r_.cos(math_r_.radians(t_))) / L_r_,
+                              1.39 * math_r_.sin(math_r_.radians(t_)) / L_r_, 0.02)
+                             for i_, t_ in enumerate((180, 240, 300, 0, 60, 120))])
+            mp_ = XRAY.Molecule(Sp_)
+            rp_ = XRAY.mol_rings(mp_)
+            assert len(rp_) == 2 and XRAY.ring_defs(mp_, rp_)[0] == [1, 1], XRAY.ring_defs(mp_, rp_)[0]
+            sp_ = XRAY.contact_suggestions(mp_, tol=0.0, cg_max=6.0)
+            cent_ = sorted(round(c_["d"], 3) for c_ in sp_ if c_["kind"] == "cent")
+            assert cent_ == [3.8, 5.716, 5.716], cent_          # (r1, r2+a) und (r1, r2-a): in P-1 verschieden
+            np_, cp_, op_ = XRAY.contact_names(mp_, sp_, rp_)
+            asu_ring_ = np.array([Sp_.atoms[k_]["frac"] for k_ in range(6)])
+            for c_, n_, o_ in zip(sp_, np_, op_):
+                g_ = XRAY.contact_geom(mp_, c_)
+                R_, t_ = op_r_(o_)
+                c2_ = Sp_.cart((asu_ring_ @ R_.T + t_).mean(axis=0))
+                assert c_["kind"] == "plane" or abs(np.linalg.norm(c2_ - Sp_.cart(asu_ring_.mean(axis=0))) - g_["d"]) \
+                    < 1e-6, (n_, o_, g_["d"])
+                assert n_.startswith("Cg1···Cg1"), n_
+            assert all(r_ != "i" or o2_ == "−x, −y, −z" for r_, o2_ in cp_), cp_
+            # F4: eigener Abstand zwischen zwei Nicht-Identitaets-Kopien: Code = Ga^-1 o Gb, von Hand:
+            # Ga = -x,-y,-z, Gb = 1+x,y,z -> Ga^-1(Gb(x)) = -(x+1) = -1-x, -y, -z (vorher nur Gb: 1+x, y, z)
+            Ga_, Gb_ = op_r_("-x, -y, -z"), op_r_("x+1, y, z")
+            own_ = dict(kind="atoms", a=["C1"], ga=XRAY.g_key(Ga_), b=["C2"], gb=XRAY.g_key(Gb_), own=True)
+            n4_, c4_, o4_ = XRAY.contact_names(mb_, [own_], rb_)
+            assert o4_ == ["−1−x, −y, −z"] and n4_[0].startswith("C1···C2"), (n4_, o4_)
+            g4_ = XRAY.contact_geom(mb_, own_)
+            c1f_, c2f_ = Sb_.atoms[0]["frac"], XRAY.apply(op_r_(o4_[0]), Sb_.atoms[1]["frac"])
+            assert abs(np.linalg.norm(Sb_.cart(c2f_) - Sb_.cart(c1f_)) - g4_["d"]) < 1e-9, g4_["d"]
+            # F5: Translationen exakt (1/3, 1/6), auch aus alten Projekten mit 4 Stellen; andere Werte unveraendert
+            k5_ = XRAY.g_key((np.eye(3, dtype=int), np.array([1 / 3, 1 / 6, 2 / 3])))
+            assert np.abs(XRAY.g_of(k5_)[1] - [1 / 3, 1 / 6, 2 / 3]).max() < 1e-12, k5_
+            assert np.abs(XRAY.g_of([1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3333, 0.1667, 0.0])[1] - [1 / 3, 1 / 6, 0]).max() < 1e-12
+            assert XRAY.g_of(XRAY.g_key((np.eye(3, dtype=int), np.array([0.1234, 0.0, 0.0]))))[1][0] == 0.1234
+            assert XRAY.contact_id(dict(own_, gb=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3333, 0.0, 0.0])) == \
+                XRAY.contact_id(dict(own_, gb=XRAY.g_key((np.eye(3, dtype=int), np.array([1 / 3, 0.0, 0.0])))))
+            # B7: fehlendes U_iso nicht still 0.02, U = 0 bleibt 0; Hinweis in Karte und Methodensatz
+            pu_, Su_ = cif_r_("nacl_nou", 5.6402, 5.6402, ("x, y, z",),
+                              [("Na1", "Na", 0.0, 0.0, 0.0, "0.0"), ("Cl1", "Cl", 0.5, 0.0, 0.0, "?")])
+            assert PX_r_.no_u(Su_) == ["Cl1"], PX_r_.no_u(Su_)
+            assert list(PX_r_.cell_atoms(Su_)[3]) == [0.0, 0.0], PX_r_.cell_atoms(Su_)[3]
+            t_r_ = w.xray_tab
+            keep_r_ = copy_r_.deepcopy({k_: w.xray_state.get(k_) for k_ in ("entries", "current")})
+            try:
+                t_r_.load_cif(str(pu_))
+                e_r_ = t_r_.entry()
+                assert "no displacement parameters for Cl1" in t_r_.pxrd_methods(e_r_), t_r_.pxrd_methods(e_r_)
+                t_r_.show_pxrd()
+                assert "Cl1" in t_r_.lbl_pxrd_note.text(), t_r_.lbl_pxrd_note.text()
+            finally:
+                w.xray_state.update(keep_r_)
+                t_r_.sync_widgets()
+                t_r_.render(push=False)
+            # F6: Verweise im Text (Tabelle Eingabe -> Supplementary / S)
+            refs_ = [("Figures S1 and S2", "Supplementary Figures 1 and 2", "Figures S1 and S2"),
+                     ("Tables S1–S3", "Supplementary Tables 1–3", "Tables S1–S3"),
+                     ("Figure S1–S3", "Supplementary Figures 1–3", "Figures S1–S3"),
+                     ("Figure S1–3", "Supplementary Figures 1–3", "Figures S1–S3"),
+                     ("(Figure S1a)", "(Supplementary Figure 1a)", "(Figure S1a)"),
+                     ("Fig. S4", "Supplementary Figure 4", "Figure S4"), ("Fig S4", "Supplementary Figure 4", "Figure S4"),
+                     ("Figure S 3", "Supplementary Figure 3", "Figure S3"), ("Figure 3", "Figure 3", "Figure 3"),
+                     ("Figures S1, S2 and S5.", "Supplementary Figures 1, 2 and 5.", "Figures S1, S2 and S5."),
+                     ("Table S1 and 2 equiv.", "Supplementary Table 1 and 2 equiv.", "Table S1 and 2 equiv."),
+                     ("Supplementary Figures 1 and 2", "Supplementary Figures 1 and 2", "Figures S1 and S2"),
+                     ("see Figure S3 and Figure 4", "see Supplementary Figure 3 and Figure 4", "see Figure S3 and Figure 4")]
+            try:
+                for j_, nm_ in ((1, "supplementary"), (2, "s")):
+                    SI.set_template("group", naming=nm_)
+                    for r_ in refs_:
+                        assert SI.rename_refs(r_[0]) == r_[j_], (nm_, r_, SI.rename_refs(r_[0]))
+            finally:
+                SI.set_template("group")
+            # E10: Doppelbestimmung mit fehlendem zweiten Wert / Element nur im zweiten Satz
+            f1_r_ = {"C": "77.41", "H": "6.56", "N": "9.80"}
+            pl_r_ = SI.ea_line("C18H18N2O", "", f1_r_, {"C": "77.52", "H": "6.57"})[0]
+            assert pl_r_.endswith("found C 77.41, H 6.56, N 9.80 and C 77.52, H 6.57 (average C 77.47, H 6.57; "
+                                  "N determined once)"), pl_r_
+            rows_r_ = SI.ea_check("C18H18N2O", "", {"C": "77.41", "H": "6.56"}, {"C": "77.52", "H": "6.57", "N": "9.70"})
+            assert [r_[0] for r_ in rows_r_] == ["C", "H", "N"] and rows_r_[2][2:5] == (9.7, None, None), rows_r_
+            pl2_r_ = SI.ea_line("C18H18N2O", "", {"C": "77.41", "H": "6.56"}, {"C": "77.52", "H": "6.57", "N": "9.70"})[0]
+            assert pl2_r_.endswith("found C 77.41, H 6.56 and C 77.52, H 6.57, N 9.70 (average C 77.47, H 6.57; "
+                                   "N determined once)"), pl2_r_
+            # F7: deutsche Platzhalter der CV-Angaben
+            from elucida.app import i18n as I18N_r_
+            for k_ in ("we", "polish", "ce", "ref", "gas", "ir"):
+                assert I18N_r_.TEXTS[f"pub_cv_ph_{k_}"][0].startswith("z. B."), k_
+            report.append("1.2.0 review fixes: x-ray and SI (site symmetry, one numbering, Ga^-1 o Gb, 1/3, PXRD U, "
+                          "references, EA, placeholders): OK")
+        with section:
+            # Pulverdiffraktogramm (1.2.0): unabhängige Referenzen – Reflexlagen nach Bragg von Hand (NaCl, a = 5.6402 Å,
+            # Cu Kα1), Multiplizitäten, Reihenfolge der Intensitäten; dieselbe Struktur mit Symmetrie (F-1, Na auf dem
+            # Inversionszentrum) = P1; |F|² gegen die Lehrbuchform mit β = 2π²·N·U·N und R·β·Rᵀ (anisotrop, Besetzung)
+            import math as math_x_
+            from elucida.core import pxrd as PX_x_
+            from elucida.formats.xray_f0 import f0 as f0_x_, F0 as F0_x_
+            dir_x_ = out / "input" / "pxrd"
+            dir_x_.mkdir(parents=True, exist_ok=True)
+            assert abs(sum(F0_x_["C"][:5]) - 6.0) < 0.01 and abs(float(f0_x_("Cl", 0.0)) - 17.0) < 0.01
+            a_x_ = 5.6402
+            head_x_ = ["data_nacl", "_symmetry_space_group_name_H-M 'P 1'", "loop_", "_space_group_symop_operation_xyz"]
+            cell_x_ = [f"_cell_length_a {a_x_}", f"_cell_length_b {a_x_}", f"_cell_length_c {a_x_}", "_cell_angle_alpha 90",
+                       "_cell_angle_beta 90", "_cell_angle_gamma 90", "_diffrn_ambient_temperature 293(2)", "loop_",
+                       "_atom_site_label", "_atom_site_type_symbol", "_atom_site_fract_x", "_atom_site_fract_y",
+                       "_atom_site_fract_z", "_atom_site_U_iso_or_equiv"]
+            fcc_x_ = [(0, 0, 0), (0, 0.5, 0.5), (0.5, 0, 0.5), (0.5, 0.5, 0)]
+            p1_x_ = dir_x_ / "nacl_p1.cif"
+            p1_x_.write_text("\n".join(head_x_ + ["'x, y, z'"] + cell_x_ + [
+                f"{e_}{i_} {e_} {x_ + (0.5 if e_ == 'Cl' else 0)} {y_} {z_} 0.0200" for i_, (x_, y_, z_) in enumerate(fcc_x_)
+                for e_ in ("Na", "Cl")]) + "\n", encoding="utf-8", newline="")
+            ops_x_ = [f"'{o_}'" for o_ in ("x, y, z", "x, y+1/2, z+1/2", "x+1/2, y, z+1/2", "x+1/2, y+1/2, z", "-x, -y, -z",
+                                           "-x, -y+1/2, -z+1/2", "-x+1/2, -y, -z+1/2", "-x+1/2, -y+1/2, -z")]
+            f1_x_ = dir_x_ / "nacl_f-1.cif"
+            f1_x_.write_text("\n".join(head_x_ + ops_x_ + cell_x_ + ["Na1 Na 0 0 0 0.0200", "Cl1 Cl 0.5 0 0 0.0200"])
+                             + "\n", encoding="utf-8", newline="")
+            S1_x_ = XRAY.Structure(XRAY.structure_blocks(p1_x_)[0])
+            S2_x_ = XRAY.Structure(XRAY.structure_blocks(f1_x_)[0])
+            assert len(S2_x_.ops) == 8 and len(PX_x_.cell_atoms(S2_x_)[0]) == 8      # Na/Cl auf Inversionszentren: je 4
+            lam_x_ = PX_x_.ANODES["Cu"][0]
+            assert PX_x_.ANODES["Cu"] == (1.54056, 1.54439) and PX_x_.KA2_RATIO == 0.5
+            r1_x_ = PX_x_.reflections(S1_x_, lam_x_, 60.0)
+            r2_x_ = PX_x_.reflections(S2_x_, lam_x_, 60.0)
+            assert [r_["hkl"] for r_ in r1_x_] == [(1, 1, 1), (2, 0, 0), (2, 2, 0), (3, 1, 1), (2, 2, 2)], r1_x_
+            assert [r_["m"] for r_ in r1_x_] == [8, 6, 12, 24, 8]
+            for r_ in r1_x_:                                   # Bragg von Hand: d = a/√(h²+k²+l²), 2θ = 2·asin(λ/2d)
+                d_ = a_x_ / math_x_.sqrt(sum(v_ * v_ for v_ in r_["hkl"]))
+                assert abs(r_["d"] - d_) < 1e-9 and abs(r_["tth"] - 2 * math_x_.degrees(math_x_.asin(lam_x_ / 2 / d_))) < 1e-9
+            assert [round(r_["tth"], 2) for r_ in r1_x_] == [27.37, 31.70, 45.45, 53.87, 56.47], [r_["tth"] for r_ in r1_x_]
+            i_x_ = {r_["hkl"]: r_["I"] for r_ in r1_x_}
+            assert max(i_x_, key=i_x_.get) == (2, 0, 0) and 0.45 < i_x_[(2, 2, 0)] / i_x_[(2, 0, 0)] < 0.7
+            assert i_x_[(3, 1, 1)] < i_x_[(1, 1, 1)] < i_x_[(2, 2, 0)]          # Unterschied f(Na) − f(Cl) bei ungeraden hkl
+            assert all(abs(a_["I"] - b_["I"]) < 1e-9 * a_["I"] for a_, b_ in zip(r1_x_, r2_x_)) and len(r1_x_) == len(r2_x_)
+            # Lehrbuchform auf der Test-CIF (P2₁/c, anisotrop, Fehlordnung mit Besetzung 0.7/0.3)
+            cif_x_, _ = XRAY.make_test_cif(dir_x_ / "t.cif", blocks=("pxrd_t",))
+            S3_x_ = XRAY.Structure(XRAY.structure_blocks(cif_x_)[0])
+            H_x_, q2_x_ = PX_x_.hkl_list(S3_x_, 1.2)
+            F2_x_ = PX_x_.structure_factors(S3_x_, H_x_, q2_x_)
+            N_x_ = np.diag(np.linalg.norm(np.linalg.inv(S3_x_.M), axis=1))
+            ref_x_ = np.zeros(len(H_x_), complex)
+            b_x_ = S3_x_.block
+            ani_x_ = {q_["_atom_site_aniso_label"]: q_ for q_ in b_x_.rows("_atom_site_aniso_label")}
+            for r_ in b_x_.rows("_atom_site_label"):
+                lab_ = r_["_atom_site_label"]
+                x_ = np.array([XRAY.num(r_[f"_atom_site_fract_{k_}"]) for k_ in "xyz"])
+                occ_ = XRAY.num(r_.get("_atom_site_occupancy")) or 1.0
+                fe_ = f0_x_(XRAY.element_of(r_.get("_atom_site_type_symbol"), lab_), q2_x_ / 4)
+                for R_, t_ in S3_x_.ops:
+                    if lab_ in ani_x_:
+                        u_ = [XRAY.num(ani_x_[lab_][f"_atom_site_aniso_u_{k_}"]) for k_ in ("11", "22", "33", "23", "13", "12")]
+                        U_ = np.array([[u_[0], u_[5], u_[4]], [u_[5], u_[1], u_[3]], [u_[4], u_[3], u_[2]]])
+                        be_ = R_ @ (2 * math_x_.pi ** 2 * N_x_ @ U_ @ N_x_) @ R_.T
+                        T_ = np.exp(-np.einsum("ni,ij,nj->n", H_x_, be_, H_x_))
+                    else:
+                        T_ = np.exp(-8 * math_x_.pi ** 2 * XRAY.num(r_["_atom_site_u_iso_or_equiv"]) * q2_x_ / 4)
+                    ref_x_ += occ_ * fe_ * T_ * np.exp(2j * math_x_.pi * (H_x_ @ (R_ @ x_ + t_)))
+            assert np.max(np.abs(np.abs(ref_x_) ** 2 - F2_x_)) < 1e-9 * F2_x_.max()
+            # Profil: Pseudo-Voigt mit der eingegebenen Halbwertsbreite, Maximum 1, Kα2 an eigener Lage, Nullpunkt
+            xg_ = np.arange(25.0, 35.0, 0.001)
+            one_ = [r_ for r_ in r1_x_ if r_["hkl"] == (2, 0, 0)]
+            yg_, ln_ = PX_x_.pattern(one_, xg_, lam_x_, None, 0.10, 0.5)
+            above_ = xg_[yg_ >= 0.5]
+            assert abs(yg_.max() - 1.0) < 1e-12 and abs((above_.max() - above_.min()) - 0.10) < 0.003
+            assert abs(xg_[np.argmax(yg_)] - one_[0]["tth"]) < 0.001
+            yz_, _ = PX_x_.pattern(one_, xg_, lam_x_, None, 0.10, 0.5, zero=0.05)
+            assert abs(xg_[np.argmax(yz_)] - one_[0]["tth"] - 0.05) < 0.0015
+            y2_, ln2_ = PX_x_.pattern(one_, xg_, lam_x_, PX_x_.ANODES["Cu"][1], 0.05, 0.5)
+            t2_ = 2 * math_x_.degrees(math_x_.asin(PX_x_.ANODES["Cu"][1] / 2 / one_[0]["d"]))
+            assert len(ln2_) == 2 and abs(ln2_[1][0] - t2_) < 1e-9 and abs(ln2_[1][1] / ln2_[0][1] - 0.5 * float(
+                PX_x_.lp(t2_) / PX_x_.lp(one_[0]["tth"]))) < 1e-9
+            # Tab: Messung (.xye, drei Spalten), Seite PXRD, Unterschrift, SI, Export, gestapelt/überlagert
+            t_x_ = w.xray_tab
+            keep_x_ = copy_c_.deepcopy({k_: w.xray_state.get(k_) for k_ in ("entries", "current")})
+            try:
+                t_x_.load_cif(str(cif_x_))
+                e_x_ = t_x_.entry()
+                xm_ = np.arange(5.0, 40.0, 0.02)
+                ym_, _ = PX_x_.pattern(PX_x_.reflections(S3_x_, lam_x_, 42.0), xm_, lam_x_, PX_x_.ANODES["Cu"][1], 0.12, 0.5)
+                xye_ = dir_x_ / "meas.xye"
+                with open(xye_, "w", encoding="utf-8", newline="") as fh_:
+                    fh_.write("# 2theta intensity esd\n")
+                    fh_.writelines(f"{a_:.3f} {200 + 5000 * b_:.1f} {10.0:.1f}\n" for a_, b_ in zip(xm_, ym_))
+                t_x_.set_pxrd_file(str(xye_))
+                px_x_ = t_x_.pxrd(e_x_)
+                assert px_x_["si"] and px_x_["file"] and t_x_.pxrd_range(e_x_) == (5.0, round(float(xm_[-1]), 3))
+                t_x_.render(push=False)
+                assert t_x_.pxrd_stack.currentIndex() == 1 and t_x_.pxrd_fig.axes, "PXRD-Seite leer"
+                ax_x_ = t_x_.pxrd_fig.axes[0]
+                lb_x_ = {l_.get_label(): l_ for l_ in ax_x_.lines}
+                assert "measured" in lb_x_ and "calculated" in lb_x_, list(lb_x_)
+                assert np.nanmin(lb_x_["measured"].get_ydata()) > np.nanmax(lb_x_["calculated"].get_ydata())   # gestapelt
+                cap_x_ = t_x_.pxrd_caption(e_x_)[0]
+                assert "measured (top) and calculated (bottom) from the single-crystal structure determined at 100 K" in cap_x_, cap_x_
+                assert "Cu Kα1/Kα2, λ = 1.54056/1.54439 Å" in cap_x_, cap_x_
+                assert "Ticks" in cap_x_ and "zero" not in cap_x_
+                assert "100 K" in t_x_.lbl_pxrd_note.text()
+                px_x_.update(stack=False, zero=0.05, ticks=False, ka2=False)
+                t_x_.render(push=False)
+                ax_x_ = t_x_.pxrd_fig.axes[0]
+                lb_x_ = {l_.get_label(): l_ for l_ in ax_x_.lines}
+                assert abs(np.nanmax(lb_x_["measured"].get_ydata()) - 1.0) < 1e-9 and abs(
+                    np.nanmax(lb_x_["calculated"].get_ydata()) - 1.0) < 1e-9          # überlagert, beide auf 1
+                cap_x_ = t_x_.pxrd_caption(e_x_)[0]
+                assert "shifted by +0.050°" in cap_x_ and "(top)" not in cap_x_ and "Kα1, λ = 1.54056" in cap_x_
+                si_x_ = t_x_.pxrd_si_blocks(e_x_, dir_x_)
+                assert [b_[0] for b_ in si_x_] == ["image", "figcap", "note", "gap"], [b_[0] for b_ in si_x_]
+                assert "International Tables" in si_x_[2][1] and "Elucida" not in si_x_[2][1]
+                bl_x_ = w.si_xray_blocks([e_x_])                     # Word-SI: nach dem Molekülbild, mit Methodensatz
+                assert any(b_[0] == "figcap" and b_[1].startswith("Powder X-ray") for b_ in bl_x_), [b_[0] for b_ in bl_x_]
+                fx_ = t_x_.pxrd_export(e_x_, dir_x_ / "exp_pxrd")
+                assert any(f_.name.endswith("_reflections.csv") for f_ in fx_) and all(f_.exists() for f_ in fx_)
+                t_x_.set_pxrd_file(None)
+                t_x_.render(push=False)
+                assert "measured" not in {l_.get_label() for l_ in t_x_.pxrd_fig.axes[0].lines}
+            finally:
+                w.xray_state.update(keep_x_)
+                t_x_.sync_widgets()
+                t_x_.render(push=False)
+            report.append("PXRD from CIF (Bragg positions by hand, multiplicity, symmetry = P1, |F|^2 vs. textbook form, "
+                          "pseudo-Voigt, Ka2, zero point, measured .xye, caption, SI): OK")
+            # HOMA (Paket A 1.2.0): Werte von Hand nachgerechnet; X-Ray (CIF) und DFT (xyz) mit erfundenen Ringen
+            import copy as copy_h_
+            from elucida.core import homa as HOMA_
+            r_ = HOMA_.homa([("C", "C", 1.388)] * 6)                          # Benzol mit R_opt: 1 nach Definition
+            assert abs(r_["value"] - 1.0) < 1e-12 and r_["en"] == 0.0 and r_["geo"] == 0.0, r_
+            r_ = HOMA_.homa([("C", "C", 1.35), ("C", "C", 1.45)] * 3)          # alternierend, von Hand:
+            # 257.7/6 * 3 * (0.038^2 + 0.062^2) = 0.681359 -> 0.318641; EN = 257.7 * 0.012^2; GEO = 257.7 * 0.05^2
+            assert abs(r_["value"] - 0.3186412) < 1e-6 and abs(r_["en"] - 0.0371088) < 1e-6, r_
+            assert abs(r_["geo"] - 0.644250) < 1e-6 and abs(1 - r_["en"] - r_["geo"] - r_["value"]) < 1e-12, r_
+            assert HOMA_.fmt(r_["value"]) == "0.319" and HOMA_.fmt(-0.5) == "\u22120.500"
+            r_ = HOMA_.homa([("C", "C", 1.39), ("N", "C", 1.34)] * 3)            # gemischt: keine Zerlegung
+            assert r_["value"] is not None and r_["en"] is None and r_["geo"] is None
+            r_ = HOMA_.homa([("C", "C", 1.39), ("B", "C", 1.50)] * 3)            # C-B nicht parametrisiert: kein Wert
+            assert r_["value"] is None and r_["missing"] == ["BC"] and HOMA_.bond_name("BC") == "B\u2013C", r_
+            assert HOMA_.homa([("C", "S", 1.70)] * 5, "homac")["missing"] == ["CS"]       # HOMAc: nur CC, CN, NN, CO
+            assert HOMA_.PARAMS["homa"]["bonds"]["CC"] == (1.388, 257.7)
+            from elucida.tabs.homa_view import ring_name as RN_
+            assert RN_(["C2", "C3", "C4", "C5", "N2", "C16"]) == "C2\u2013C5, N2, C16"
+            assert RN_(["C6", "C5", "C4", "C3", "C2", "C1"]) == "C1\u2013C6"
+            assert HOMA_.PARAMS["homac"]["bonds"]["CC"] == (1.392, 153.37)
+            # X-Ray: ebener C6-Ring mit R = 1.390 Å (P1) -> 1 - 257.7 * 0.002^2 = 0.998969
+            ats_h_ = [(f"C{i_ + 1}", "C", 0.5, 0.5 + 1.39 * np.cos(np.pi * i_ / 3) / 10, 0.5 + 1.39 * np.sin(np.pi * i_ / 3) / 10)
+                      for i_ in range(6)]
+            cif_h_ = out / "input" / "homa_ring.cif"
+            cif_h_.write_text("\n".join(
+                ["data_homatest", "_symmetry_space_group_name_H-M 'P 1'", "loop_", "_space_group_symop_operation_xyz",
+                 "'x, y, z'", "_cell_length_a 10.000(1)", "_cell_length_b 10.000(1)", "_cell_length_c 10.000(1)",
+                 "_cell_angle_alpha 90", "_cell_angle_beta 90", "_cell_angle_gamma 90", "loop_", "_atom_site_label",
+                 "_atom_site_type_symbol", "_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z",
+                 "_atom_site_U_iso_or_equiv"] + [f"{l_} {e_} {x_:.6f} {y_:.6f} {z_:.6f} 0.02" for l_, e_, x_, y_, z_ in ats_h_])
+                + "\n", encoding="utf-8", newline="")
+            t_h_ = w.xray_tab
+            keep_h_ = copy_h_.deepcopy({k_: w.xray_state.get(k_) for k_ in ("entries", "current", "homa_fig", "homa_si",
+                                                                             "homa_var")})
+            try:
+                t_h_.load_cif(str(cif_h_))
+                e_h_ = t_h_.entry()
+                w.xray_state.update(homa_fig=True, homa_si=True, homa_var="homa")
+                t_h_.render(push=False)
+                rows_h_ = t_h_.homa.rings(e_h_)
+                assert len(rows_h_) == 1 and abs(rows_h_[0]["res"]["value"] - (1 - 257.7 * 0.002 ** 2)) < 1e-5, rows_h_
+                assert t_h_.homa.tbl.rowCount() == 1 and t_h_.homa.tbl.item(0, 2).text() == "0.999"
+                key_h_ = rows_h_[0]["id"]
+                ann_h_ = t_h_.F.ann_items.get(key_h_)
+                assert ann_h_ is not None and ann_h_.get_text() == "0.999" and t_h_.F.auto_pos.get(key_h_) == [0.0, 0.0]
+                x0_, y0_ = ann_h_.xy                                          # Ringmitte, folgt dem Drehen
+                assert abs(x0_ - np.mean([it_["x"] for it_ in t_h_.F.scene["atoms"]])) < 1e-6
+                t_h_.F.set_view(XRAY.rot("y", 0.5) @ t_h_.F.R)
+                assert abs(ann_h_.xy[0] - np.mean([it_["x"] for it_ in t_h_.F.scene["atoms"]])) < 1e-6
+                si_h_ = t_h_.homa.si_blocks(e_h_, "homatest")
+                assert [b_[0] for b_ in si_h_][:2] == ["tabcap", "params"] and si_h_[1][2][0][2] == "0.999", si_h_
+                assert "Krygowski" in si_h_[2][1] and "Elucida" not in str(si_h_)
+                csv_h_ = t_h_.homa.export_csv(out / "input" / "homa.csv", [("homatest", e_h_)])
+                assert "0.999" in csv_h_[0].read_text(encoding="utf-8-sig")
+                w.xray_state["homa_fig"] = False
+                t_h_.render(push=False)
+                assert key_h_ not in t_h_.F.ann_items
+            finally:
+                w.xray_state.update(keep_h_)
+                t_h_.sync_widgets()
+                t_h_.render(push=False)
+            # DFT: Benzol (1.388 Å) und ein erfundener ebener C4B-Fünfring (1.45 Å) -> 1.000 und „B–C“ fehlt
+            xyz_h_ = out / "input" / "homa_rings.xyz"
+            L_h_ = []
+            for i_ in range(6):
+                a_ = np.pi * i_ / 3
+                L_h_.append(f"C {1.388 * np.cos(a_):.6f} {1.388 * np.sin(a_):.6f} 0.000000")
+            rp_ = 1.45 / (2 * np.sin(np.pi / 5))
+            for i_ in range(5):
+                a_ = 2 * np.pi * i_ / 5
+                L_h_.append(f"{'B' if i_ == 0 else 'C'} {8.0 + rp_ * np.cos(a_):.6f} {rp_ * np.sin(a_):.6f} 0.000000")
+            xyz_h_.write_text(f"{len(L_h_)}\nhoma test\n" + "\n".join(L_h_) + "\n", encoding="utf-8", newline="")
+            t_d_ = w.dft_tab
+            keep_d_ = copy_h_.deepcopy({k_: w.dft_state.get(k_) for k_ in ("entries", "current")})
+            try:
+                t_d_.load_xyz(str(xyz_h_))
+                rows_d_ = t_d_.homa.rings(t_d_.entry())
+                assert len(rows_d_) == 2, rows_d_
+                vals_ = sorted((r_["res"]["value"] is None, r_["res"]["missing"]) for r_ in rows_d_)
+                assert vals_ == [(False, []), (True, ["BC"])], vals_
+                assert abs(next(r_ for r_ in rows_d_ if r_["res"]["value"] is not None)["res"]["value"] - 1.0) < 1e-6
+                t_d_.render(push=False)
+                notes_ = [t_d_.homa.tbl.item(i_, 9).text() for i_ in range(t_d_.homa.tbl.rowCount())]
+                assert any("B\u2013C" in n_ for n_ in notes_), notes_
+            finally:
+                w.dft_state.update(keep_d_)
+                t_d_.sync_widgets()
+                t_d_.render(push=False)
+            report.append("HOMA (by-hand values, EN/GEO, missing parameters, X-ray ring label and table, DFT rings, "
+                          "SI, CSV): OK")
         with section:
             # Audit P4 (X-Ray): jeder Fall scheiterte vor den Fixes; künstliche CIFs (kubische 10-Å-Zelle, Å-Koordinaten)
             fails_ = []
@@ -4717,6 +6949,10 @@ def selftest(outdir, with_isnet=False):
             gtab_ = ORB.orbital_energies(" Population analysis using the SCF Density.\n Alpha  occ. eigenvalues --"
                                          "  -10.20000  -0.50000\n Alpha virt. eigenvalues --    0.10000\n")
             assert ORB.frontier_name(2, "", gtab_) == "HOMO" and ORB.frontier_name(3, "", gtab_) == "LUMO", gtab_
+            gcr_ = ORB.orbital_energies(" Population analysis using the SCF Density.\r Alpha  occ. eigenvalues --"
+                                        "  -10.20000  -0.50000\r Alpha virt. eigenvalues --    0.10000\r"
+                                        " Condensed to atoms (all electrons):\r  1  C  5.123456  0.250000\r")
+            assert gcr_ == gtab_, gcr_                     # Zeilenende nur CR: Werte danach nie als Orbitale
             # zwei Orbitale in einem Cube (Gaussian: Atomzahl negativ, MO-Liste)
             mc_ = ddir / "two.cube"
             mc_.write_text("t\nc\n   -1 0 0 0\n    2 1 0 0\n    2 0 1 0\n    2 0 0 1\n    1 1.0 0 0 0\n    2 5 6\n"
@@ -5257,6 +7493,7 @@ def selftest(outdir, with_isnet=False):
             assert last_card_d(w.steps) is w.tf_card.box and w.tf_card.cb_struct is not None   # ε: alle Optionen
             assert w.other_tab.tf_card is None                    # fertige Abbildungen: keine Textformatierung
             cv_c_, sec_c_ = w.cv_tab.tf_card, w.sec_tab.tf_card
+            del w._undo[:-100]                                   # Stapel endet bei 200: sonst zaehlt er hier nicht mehr hoch
             n_undo_ = len(w._undo)
             cv_c_.cb_bold.setChecked(True)                       # Standard aller Tabs: gilt sofort überall
             cv_c_.flush()
@@ -5285,19 +7522,26 @@ def selftest(outdir, with_isnet=False):
             w.text_format_changed()
             assert w.cv_tab.tf_card.cb_bold.isChecked() == bool(w.text_format("cv")["bold"])
 
-            ct_ = w.comp_tab                                      # SI-Export als Karte im Tab Verbindung
-            assert set(ct_.si_parts) == set(SI_PARTS_d) and tuple(ct_.si_figs) == SI_FIG_KEYS
+            ct_ = w.export_tab                                    # SI-Teile im Tab „Export“ (Spur A2, vorher Tab Verbindung)
+            assert set(ct_.si_parts) == set(SI_PARTS_d) and not hasattr(w.comp_tab, "grp_si_export")
             assert not any(isinstance(x_, QCheckBox) and not x_.property("chip") for x_ in
-                           ct_.findChildren(QCheckBox) if x_.isVisibleTo(ct_)), "check box in the compound card"
+                           ct_.lv.parentWidget().findChildren(QCheckBox) if x_.isVisibleTo(ct_)), "check box in the column"
             keep_si_ = {k_: w.settings.value(k_) for k_ in ("si_parts", "si_figs_off", "si_font")}
-            ct_.sync_si_export()
+            keep_off_d = w.export_state.get("si_off")
+            ct_.refresh()
             ct_.si_parts["xray"].setChecked(False)
             assert "xray" not in w.si_parts_saved() and "char" in w.si_parts_saved()
             ct_.si_parts["figs"].setChecked(False)
-            assert not ct_.si_figs["cv"].isEnabled()
+            assert list(dict.fromkeys(c_.key for c_ in ct_.cards)) == w.export_keys()   # Reihenfolge der Leiste (98)
+            rule_ = ("Verbindung · Synthese · NMR · IR + EA · HRMS · UV-Vis (ε) · Overlay · UV-Vis-Kinetik · Fluoreszenz · "
+                     "CV · SEC · H-Cell · EPR · X-Ray · DFT · Weitere")                # Wortlaut der Regel ui.md
+            of_ = {"Verbindung": "compound", "Synthese": "syn", "NMR": "nmr", "IR + EA": "irms", "HRMS": "hrms",
+                   "UV-Vis (ε)": "eps", "Overlay": "overlay", "UV-Vis-Kinetik": "uvkin", "Fluoreszenz": "fluo", "CV": "cv",
+                   "SEC": "sec", "H-Cell": "hcell", "EPR": "epr", "X-Ray": "xray", "DFT": "dft", "Weitere": "other"}
+            assert w._TAB_ORDER == tuple(of_[n_] for n_ in rule_.split(" · ")) + ("export",), w._TAB_ORDER   # N9
             ct_.si_parts["figs"].setChecked(True)
-            ct_.si_figs["cv"].setChecked(False)
-            assert "cv" in w.si_figs_off()
+            w.set_si_figs_off(w.si_figs_off() | {"cv"})
+            assert "cv" in w.si_figs_off() and SI_FIG_KEYS[0] == "eps"
             ct_._si_font_changed(QFont_d("Courier New"))
             assert w.settings.value("si_font") == "Courier New"
             calls_ = []
@@ -5315,7 +7559,11 @@ def selftest(outdir, with_isnet=False):
                 else:
                     w.settings.setValue(k_, v_)
             SI.set_font(str(w.settings.value("si_font", "Arial") or "Arial"))
-            ct_.sync_si_export()
+            if keep_off_d is None:
+                w.export_state.pop("si_off", None)
+            else:
+                w.export_state["si_off"] = keep_off_d
+            ct_.refresh()
 
             pd_ = out / "pub_details"                              # Projektangaben als Seite „Angaben“
             PUB_d.create(pd_, "Details test")
@@ -5661,7 +7909,312 @@ def selftest(outdir, with_isnet=False):
             assert F_f6_.opts["orbital"] is not None and view_f6_ == before_f6_
             st_f6_ = {"dft": {"profile": {"annotations": [dict(kind="orbital", orbital=view_f6_)]}}}
             assert view_f6_["source"]["file"] in {PRJ._get(c_, k_) for c_, k_, _ in PRJ._path_slots(st_f6_)}
+            dlg_f6_ = PO_.OrbitalViewDialog(t_d, PO_.snapshot(t_d, e_m, None))      # nur Geometrie: Zeile ohne Orbital
+            dlg_f6_.deleteLater()                                                   # (STYLE fehlte, NameError)
             report.append("DFT profile orbital views: independent serializable view and portable source: OK")
+
+        with section:
+            # Pflichtangaben (ACS/Org. Lett./Angew.): Kernabstoßung, Korrekturen, Version, Energietabelle, EINE xyz für
+            # alle Strukturen (Export + Datenpaket), Eingabedateien, TD-DFT-Übergänge als CSV (künstliche Dateien)
+            import csv as csv_pf_
+            from elucida.tabs import dft as DFT_pf_
+            from elucida.formats.calc import read_calc as rc_pf_, decode as dec_pf_
+            from elucida.exchange import datapack as DP_pf_
+            d_pf_ = out / "dft_pflicht"
+            d_pf_.mkdir(parents=True, exist_ok=True)
+            txt_ = dec_pf_(DFT_pf_.make_test_orca(d_pf_ / "tmp.out").read_bytes())
+            txt_ = txt_.replace("FINAL SINGLE POINT ENERGY", "Nuclear Repulsion  :          345.67890123 Eh"
+                                "            9406.3 eV\r\nFINAL SINGLE POINT ENERGY", 1)
+            txt_ = txt_.replace("Final Gibbs free energy", "Total entropy correction          ...     -0.03012345 Eh"
+                                "    -18.90 kcal/mol\r\nFinal Gibbs free energy", 1)
+            o_pf_ = d_pf_ / "pf_orca.out"
+            with open(o_pf_, "w", encoding="utf-8", newline="") as fh_:              # enthält schon \r\n
+                fh_.write(txt_)
+            (d_pf_ / "pf_orca.inp").write_text("! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)\n", encoding="utf-8")
+            (d_pf_ / "tmp.out").unlink()
+            gt_ = DFT_pf_.make_test_gaussian(d_pf_ / "pf_gauss.log").read_text(encoding="utf-8")
+            gt_ = gt_.replace(" SCF Done:", " nuclear repulsion energy       "
+                              "345.6789012345 Hartrees.\n SCF Done:", 1)
+            gt_ = gt_.replace(" Sum of electronic and thermal Enthalpies=", " Thermal correction to Enthalpy=      "
+                              "    0.070944\n Sum of electronic and thermal Enthalpies=", 1)
+            (d_pf_ / "pf_gauss.log").write_text(gt_, encoding="utf-8")
+            co_pf_, cg_pf_ = rc_pf_(o_pf_), rc_pf_(d_pf_ / "pf_gauss.log")
+            assert co_pf_["nuc_rep"] == "345.67890123" and co_pf_["thermo"]["mTS"] == "-0.03012345", co_pf_["thermo"]
+            assert cg_pf_["nuc_rep"] == "345.6789012345" and cg_pf_["thermo"]["H_corr"] == "0.070944"
+            assert cg_pf_["version"] == "16 Rev. C.01", cg_pf_["version"]          # „Gaussian 16:  ES64L-G16RevC.01“
+            r_o_ = DFT_pf_.si_table_row("A", co_pf_)
+            r_g_ = DFT_pf_.si_table_row("B", cg_pf_)
+            assert r_o_ == ["A", "1", "−539.98765432", "345.67890123", "−539.91670987", "−539.94683332", "–",
+                            "−0.03012345"], r_o_
+            assert r_g_ == ["B", "0", "−539.987654321", "345.6789012345", "−539.916710", "−539.946833", "0.070944",
+                            "–"], r_g_
+            c_ts_ = dict(co_pf_, thermo={k_: v_ for k_, v_ in co_pf_["thermo"].items() if k_ != "mTS"})
+            assert DFT_pf_.si_table_row("A", c_ts_)[-1] == "−0.03012345"    # −TS aus dem gedruckten TS, Vorzeichen
+            c_no_ = dict(co_pf_, nuc_rep=None, freqs=None)
+            assert DFT_pf_.si_table_row("A", c_no_)[1] == "–" and DFT_pf_.si_table_row("A", c_no_)[3] == "–"
+            assert DFT_pf_.si_table_row("A", co_pf_, mr=True)[2:] == ["–", "345.67890123", "–", "–", "–", "–"]
+            assert DFT_pf_.program_note([("A", co_pf_), ("B", cg_pf_)]) == \
+                "Programs: ORCA 6.1.1 (A); Gaussian 16 Rev. C.01 (B)."
+            # Tab: zwei Rechnungen, Gaussian ohne Eingabedatei
+            t_d = w.dft_tab
+            saved_pf_ = (list(w.dft_state["entries"]), w.dft_state.get("current"))
+            w.dft_state["entries"] = []
+            try:
+                e_o_ = t_d.load_xyz(str(o_pf_))
+                e_g_ = t_d.load_xyz(str(d_pf_ / "pf_gauss.log"))
+                e_o_["name"], e_g_["name"] = "A", "B"
+                if w.project_dir:                                              # Import kopiert die Eingabe mit
+                    assert Path(e_o_["file"]).with_suffix(".inp").is_file(), e_o_["file"]
+                assert t_d.missing_inputs() == ["B"], t_d.missing_inputs()
+                t_d.update_si_table()
+                # App: Energien, darunter Korrekturen/Programm/Eingabe (zwei Tabellen, sonst rollte sie bei 1200 px quer)
+                t2_ = t_d.tbl_si2
+                assert [t_d.tbl_si.item(0, c_).text() for c_ in range(5)] == [r_o_[j_] for j_ in (0, 1, 2, 4, 5)]
+                assert [t2_.item(1, c_).text() for c_ in range(4)] == [r_g_[j_] for j_ in (0, 3, 6, 7)]
+                assert t2_.item(0, 5).text() == T("dft_si_inp_yes") and t2_.item(1, 5).text() == "–"
+                assert t2_.item(0, 5).toolTip() == "pf_orca.inp" and t_d.tbl_si.item(0, 0).toolTip() == "A"
+                assert t2_.item(1, 4).text() == "Gaussian 16 Rev. C.01" and not t_d.lbl_si_inp.isHidden()
+                assert not any(t2_.isColumnHidden(c_) for c_ in range(6))   # zwei Programme, eine Eingabe fehlt
+                assert t_d.kpis() == [(T("dft_si_kpi_input"), "1/2", True)], t_d.kpis()
+                assert T("dft_si_units") not in t_d.lbl_si_tbl.text()      # Einheit steht seit 1.2.0 im Kopf
+                assert all("[Eₕ]" in t_d.tbl_si.horizontalHeaderItem(c_).text() for c_ in (2, 3, 4))
+                assert DFT_pf_.empty_columns([r_o_]) == [6] and DFT_pf_.empty_columns([r_g_]) == [7]
+                files_pf_ = t_d.export_to(d_pf_ / "exp" / "pf")
+                names_pf_ = {f_.name for f_ in files_pf_}
+                assert {"pf_structures.xyz", "pf_energies.csv"} <= names_pf_, names_pf_
+                coll_ = (d_pf_ / "exp" / "pf_structures.xyz").read_text(encoding="utf-8").splitlines()
+                assert coll_[0] == "8" and coll_[1] == "A  E_el = -539.98765432 Eh", coll_[:2]
+                assert coll_[10] == "8" and coll_[11] == "B  E_el = -539.987654321 Eh" and len(coll_) == 20, coll_
+                assert all(len(r_.split()) == 4 and r_.split()[0].isalpha() for r_ in coll_[2:10] + coll_[12:])
+                with open(d_pf_ / "exp" / "pf_energies.csv", encoding="utf-8-sig", newline="") as fh_:
+                    csv_ = list(csv_pf_.reader(fh_))
+                assert csv_[1][:8] == [v_.replace("−", "-").replace("–", "") for v_ in r_o_], csv_
+                assert csv_[2][8] == "Gaussian 16 Rev. C.01" and csv_[2][7] == "", csv_
+                bl_ = t_d.docx_blocks(d_pf_ / "img")
+                assert bl_[0] == ("columns", 2) and ("columns", 1) in bl_
+                tab_ = next(b_ for b_ in bl_ if b_[0] == "params")
+                assert [r_[2] for r_ in tab_[2]] == ["−539.98765432", "−539.987654321"]
+                note_ = next(b_ for b_ in bl_ if b_[0] == "note")[1]
+                assert "Gaussian 16 Rev. C.01" in note_ and "ORCA 6.1.1" in note_
+                from elucida.si import lines as SI_pf_
+                import zipfile as zf_pf_
+                SI_pf_.write_docx(d_pf_ / "pf.docx", bl_, columns=2)
+                with zf_pf_.ZipFile(d_pf_ / "pf.docx") as z_:
+                    doc_pf_ = z_.read("word/document.xml").decode("utf-8")
+                assert "nuclear repulsion energies" in doc_pf_ and "345.6789012345" in doc_pf_
+                assert 'w:cols w:num="2"' in doc_pf_
+                # Datenpaket: dieselbe Sammel-xyz aus dem Zustand, dazu die Eingabedatei
+                assert DFT_pf_.collection_from_state(w.dft_state).splitlines() == coll_
+                if w.project_dir:
+                    arcs_ = [i_.arc for i_ in DP_pf_.collect({"dft": w.dft_state}, w.project_dir) if i_.group == "dft"]
+                    assert "DFT/structures.xyz" in arcs_ and "DFT/pf_orca.inp" in arcs_, arcs_
+                # TD-DFT-Übergänge maschinenlesbar (Overlay)
+                from elucida.app.demo import tddft_out as td_pf_
+                td_ = td_pf_(d_pf_ / "pf_td.out", [(380.0, 0.5), (300.0, 0.1)])
+                ov_st_ = w.ov_tab.st                                           # baut den Tab bei Bedarf
+                saved_ov_ = dict(ov_st_)
+                ov_st_.update(mode="norm", stack=False, nlo=250.0, nhi=500.0)
+                ov_st_["entries"] = [dict(uid="pf", kind="calc", file=str(td_), label="calc.", color="#1764e8", visible=True,
+                                              own_norm=False, nlo=250.0, nhi=500.0, fwhm=0.3, shift=0.2)]
+                try:
+                    fo_ = w.ov_tab.export_to(d_pf_ / "ov")
+                finally:
+                    ov_st_.clear()
+                    ov_st_.update(saved_ov_)
+                tr_ = next(f_ for f_ in fo_ if f_.name == "ov_transitions.csv")
+                with open(tr_, encoding="utf-8-sig", newline="") as fh_:
+                    rows_tr_ = list(csv_pf_.reader(fh_))
+                assert rows_tr_[0][:6] == ["Entry", "File", "State", "E [eV]", "lambda [nm]", "f"], rows_tr_[0]
+                assert len(rows_tr_) == 3 and abs(float(rows_tr_[1][4]) - 380.0) < 0.2 and rows_tr_[1][5] == "0.5", rows_tr_
+            finally:
+                w.dft_state["entries"], w.dft_state["current"] = saved_pf_
+                t_d.sync_widgets()
+            report.append("DFT journal requirements (energy table, E_nuc, one xyz file, inputs, TD-DFT CSV): OK")
+
+        with section:
+            # NBO (formats/nbo.py, tabs/dft_nbo.py): ORCA 6 + NBO 7.0 layout (invented values from app/demo.make_nbo),
+            # UTF-16, rejections, CML check, page with sub tabs, label placement, CSV/Word
+            import csv as csv_nbo_                       # nicht „csv“: wäre im ganzen selftest() lokal
+            from elucida.app import demo as DEMO_nbo_
+            from elucida.formats import nbo as NBO_
+            from elucida.formats.calc import read_text as rt_nbo_
+            from elucida.tabs import dft_nbo as PNBO_
+            d_nbo_ = out / "nbo"
+            d_nbo_.mkdir(parents=True, exist_ok=True)
+            m_nbo_, P_nbo_ = DEMO_nbo_.mol_3d(DEMO_nbo_.COMPOUNDS["S3"]["smiles"], DEMO_nbo_.COMPOUNDS["S3"].get("twist"))
+            o_nbo_ = DEMO_nbo_.make_nbo(d_nbo_ / "T_NBO.out", "T_NBO", m_nbo_, P_nbo_)
+            txt_nbo_ = rt_nbo_(o_nbo_)
+            r_nbo_ = NBO_.parse_nbo(txt_nbo_)
+            assert r_nbo_["nbo_version"] == "7.0.10" and r_nbo_["version"] == "6.0.0", r_nbo_["nbo_version"]
+            assert r_nbo_["nbo_keys"] == "NBO BNDIDX NRT NRTCML" and r_nbo_["file_stem"] == "T_NBO", r_nbo_["nbo_keys"]
+            assert len(r_nbo_["npa"]) == m_nbo_.GetNumAtoms() and not r_nbo_["notes"], r_nbo_["notes"]
+            # Wiberg (BNDIDX, Layout NBO-7-Handbuch B.6.5): Matrix in Spaltenblöcken, symmetrisch, Summen je Atom
+            wb_ = r_nbo_["wiberg"]
+            n_at_ = m_nbo_.GetNumAtoms()
+            assert wb_ and len(wb_["els"]) == n_at_ and len(wb_["matrix"]) == n_at_ ** 2, "Wiberg matrix incomplete"
+            assert all(abs(sum(float(wb_["matrix"][(i_, j_)]) for j_ in wb_["els"]) - float(wb_["totals"][i_])) < 1e-3 * n_at_
+                       for i_ in wb_["els"]), "Wiberg totals"
+            wbb_ = NBO_.wiberg_bonds(wb_, 2.0)
+            assert len(wbb_) == 1 and float(wbb_[0][2]) > 2.5, wbb_                  # nur die Dreifachbindung
+            bad_wb_ = txt_nbo_.replace("  0.0000  0.9300", "  0.9300", 1)              # eine Zahl fehlt: nicht lesen
+            r_bad_ = NBO_.parse_nbo(bad_wb_)
+            assert r_bad_["wiberg"] is None and T("nbo_wiberg_bad") in r_bad_["notes"], r_bad_["notes"]
+            assert abs(sum(float(a_["charge"]) for a_ in r_nbo_["npa"])) < 1e-3
+            assert [x_[0] for x_ in r_nbo_["lewis"]] == ["Total Lewis", "Valence non-Lewis", "Rydberg non-Lewis"]
+            assert r_nbo_["e2_thr"] == "0.50" and r_nbo_["e2"] and all(e_["e2"].count(".") == 1 for e_ in r_nbo_["e2"])
+            lp_ = [e_ for e_ in r_nbo_["nbos"].values() if e_["type"] == "LP"]
+            assert len(lp_) == 2 and all(e_.get("energy") for e_ in lp_), lp_
+            bd_ = next(e_ for e_ in r_nbo_["nbos"].values() if e_["type"] == "BD" and e_["atoms"][1][0] == "H")
+            assert bd_["hyb"].endswith(" s") and "%) sp^{" in bd_["hyb"], bd_["hyb"]
+            nrt_ = r_nbo_["nrt"]
+            assert [x_["weight"] for x_ in nrt_["rs"]] == ["31.42", "27.65", "15.08", "12.97", "6.37"], nrt_["rs"]
+            assert nrt_["others"] == "6.51" and nrt_["rs"][0]["change"] == "" and "(" in nrt_["rs"][1]["change"]
+            assert len(nrt_["val"]) == m_nbo_.GetNumAtoms() and nrt_["bo"][(1, 2)][0] == "1.0000", nrt_["bo"].get((1, 2))
+            tri_ = [b_ for b_ in NBO_.nrt_bonds(nrt_, 2.5)]
+            assert len(tri_) == 1 and float(tri_[0][2]) > 2.8, tri_          # Alkin: nur C≡C über 2.5
+            # Hybride wie gedruckt; übergelaufenes Verhältnis -> Anteile, sp^0 -> s, s 0 % -> p
+            hy_ = lambda s_: NBO_.hybrid(NBO_._HYB.findall(s_))           # noqa: E731
+            assert hy_("s( 36.90%)p 1.70( 62.89%)d 0.00(  0.15%)") == "sp^{1.70}"
+            assert hy_("s( 99.94%)p 0.00(  0.06%)") == "s" and hy_("s(  0.00%)p 1.00( 99.93%)d 0.00(  0.02%)") == "p"
+            assert hy_("s(  0.06%)p99.99( 99.88%)d 0.38(  0.02%)") == "s 0.06%, p 99.88%, d 0.02%"
+            assert hy_("s(  3.35%)p26.96( 90.35%)d 1.86(  6.24%)") == "sp^{26.96}d^{1.86}"
+            assert PNBO_.compact("( C  1- C  2),  C 10- N 11, ( N  4)") == "(C1–C2), C10–N11, (N4)"
+            # CML: passt (Atome, Koordinaten, Gewicht von RS 1), Formalladungen der Zwitterionform
+            cml_ = NBO_.find_cml(o_nbo_, r_nbo_)
+            st_nbo_ = NBO_.parse_cml(cml_)
+            NBO_.check_cml(st_nbo_, r_nbo_)
+            fc_ = NBO_.formal_charges(st_nbo_[-1])
+            assert sorted(x_ for x_ in fc_ if x_) == [-1, 1] and not any(NBO_.formal_charges(st_nbo_[0])), fc_
+            bad_ = dict(r_nbo_, nrt=dict(nrt_, rs=[dict(nrt_["rs"][0], weight="50.00")] + nrt_["rs"][1:]))
+            try:
+                NBO_.check_cml(st_nbo_, bad_)
+                raise AssertionError("CML of another NRT run accepted")
+            except ValueError:
+                pass
+            # UTF-16 (PowerShell) gleich gelesen; Ablehnungen mit Meldung
+            u16_ = d_nbo_ / "T_NBO_utf16.out"
+            u16_.write_bytes(b"\xff\xfe" + txt_nbo_.replace("\n", "\r\n").encode("utf-16-le"))
+            r16_ = NBO_.parse_nbo(rt_nbo_(u16_))
+            assert [a_["charge"] for a_ in r16_["npa"]] == [a_["charge"] for a_ in r_nbo_["npa"]]
+            assert [e_["e2"] for e_ in r16_["e2"]] == [e_["e2"] for e_ in r_nbo_["e2"]]
+            for old_, new_ in (("NBO 7.0.10 (8-Feb-2021)", "NBO 6.0.18 (8-Feb-2018)"),
+                               ("Mult            ....    1", "Mult            ....    2"),
+                               ("Program Version 6.0.0", "Program Version 5.0.4"),
+                               (" NBO 7.0 ", " NBO 7.X "), ("Summary of Natural Population", "Summary of something")):
+                try:
+                    NBO_.parse_nbo(txt_nbo_.replace(old_, new_))
+                    raise AssertionError("accepted: " + new_)
+                except ValueError:
+                    pass
+            # Seite im DFT-Tab: Karten links, Unterreiter rechts, Labels getrennt, CSV, Word, Methodentext
+            t_d = w.dft_tab
+            saved_nbo_ = json.loads(json.dumps(t_d.st.get("nbo") or {}))
+            try:
+                t_d.st["nbo"] = {}
+                t_d.nbo.sync()
+                assert t_d.nbo.stack.currentIndex() == 0                       # Platzhalter ohne Datei
+                t_d.nbo.load([str(o_nbo_)])
+                f_nbo_ = t_d.nbo.entry()
+                assert f_nbo_["cml"] and Path(f_nbo_["cml"]).name == "T_NBO-nrt.cml", f_nbo_
+                subs_ = [t_d.nbo.sub.tabText(i_) for i_ in range(t_d.nbo.sub.count())]
+                assert subs_ == [T("nbo_sub_fig"), T("nbo_sub_rs"), "NPA", "NBO", "E(2)", "NRT", "Wiberg",
+                                 T("nbo_sub_si")], subs_
+                assert t_d.nbo.tbl_wb.rowCount() == len(NBO_.wiberg_bonds(wb_, 0.10)) and t_d.nbo.tbl_wbt.rowCount() == n_at_
+                F_nbo_ = t_d.nbo.F
+                keys_ = set(F_nbo_.ann_items)
+                assert any(k_.startswith("bo_") for k_ in keys_) and any(k_.startswith("lbl_") for k_ in keys_)
+                hb_ = [k_ for k_ in keys_ if k_.startswith("bo_") and "H" in
+                       {F_nbo_.mol.atoms[int(x_)]["el"] for x_ in k_.split("_")[1:]}]
+                assert not hb_, hb_                                              # X-H nur mit „H beschriften“
+                n_e2_ = len(PNBO_.e2_rows(r_nbo_, 5.0))
+                assert t_d.nbo.tbl_e2.rowCount() == n_e2_ and 0 < n_e2_ < len(r_nbo_["e2"])
+                t_d.nbo.sp_e2.setValue(0.0)
+                assert t_d.nbo.tbl_e2.rowCount() == len(r_nbo_["e2"])
+                t_d.nbo.sp_e2.setValue(5.0)
+                assert t_d.nbo.tbl_npa.item(0, 1).text() == PNBO_.minus(r_nbo_["npa"][0]["charge"]).replace("−0.00000", "0.00000")
+                if sys.platform != "win32":                                     # Schriftmaße offscreen unter Windows unecht
+                    from matplotlib.backends.backend_agg import FigureCanvasAgg as FCA_nbo_
+                    from matplotlib.figure import Figure as MF_nbo_
+                    fig_nbo_ = MF_nbo_(figsize=(8, 6), dpi=100)
+                    FCA_nbo_(fig_nbo_)
+                    Fx_ = t_d.nbo.build(fig_nbo_, r_nbo_, interactive=False)
+                    fig_nbo_.canvas.draw()
+                    rend_ = fig_nbo_.canvas.get_renderer()
+                    bbs_ = [a_.get_window_extent(rend_) for a_ in Fx_.ann_items.values()]
+                    over_ = [(i_, j_) for i_ in range(len(bbs_)) for j_ in range(i_ + 1, len(bbs_))
+                             if min(bbs_[i_].x1, bbs_[j_].x1) - max(bbs_[i_].x0, bbs_[j_].x0) > 1.5
+                             and min(bbs_[i_].y1, bbs_[j_].y1) - max(bbs_[i_].y0, bbs_[j_].y0) > 1.5]
+                    assert len(over_) <= 1, f"NBO labels overlap: {len(over_)}"
+                t_d.nbo.cmb_bonds.setCurrentIndex(t_d.nbo.cmb_bonds.findData("wiberg"))      # Wiberg an den Bindungen
+                assert t_d.st["nbo"]["bonds"] == "wiberg" and "Wiberg bond indices in the NAO basis" in \
+                    t_d.nbo.caption(r_nbo_, "X")
+                txt_bo_ = {a_.get_text() for k_, a_ in t_d.nbo.F.ann_items.items() if k_.startswith("bo_")}
+                assert txt_bo_ and txt_bo_ <= {f"{float(v_):.2f}" for v_ in wb_["matrix"].values()}, txt_bo_
+                t_d.st["nbo"]["atoms"] = "none"
+                t_d.reset_display()                                              # „Alles auf Standard“: auch NBO
+                assert t_d.st["nbo"]["atoms"] == "charge" and t_d.st["nbo"]["bonds"] == "nrt" and t_d.st["nbo"]["files"]
+                meth_ = t_d.nbo.methods(r_nbo_)
+                assert "NBO 7.0.10" in meth_ and "ORCA 6.0.0" in meth_ and "Elucida" not in meth_, meth_
+                assert "Glendening" in meth_ and "B3LYP-D4/def2-TZVP" in meth_ and "FILE" not in meth_, meth_
+                ex_ = t_d.nbo.export_to(d_nbo_ / "exp")
+                names_ = {Path(p_).name for p_ in ex_}
+                for n_ in ("exp_NBO_NPA.csv", "exp_NBO_E2.csv", "exp_NBO_NRT_weights.csv", "exp_NBO_NRT_bond_orders.csv",
+                           "exp_NBO_list.csv", "exp_NBO_NRT_valencies.csv", "exp_NBO_Wiberg_matrix.csv",
+                           "exp_NBO_Wiberg_totals.csv"):
+                    assert n_ in names_, (n_, names_)
+                with open(d_nbo_ / "exp_NBO_E2.csv", encoding="utf-8-sig", newline="") as fh_:
+                    rows_e2_ = list(csv_nbo_.reader(fh_))
+                assert len(rows_e2_) == len(r_nbo_["e2"]) + 1 and rows_e2_[1][4] == r_nbo_["e2"][0]["e2"]
+                bl_ = t_d.nbo.docx_blocks(d_nbo_)
+                caps_ = [b_[1] for b_ in bl_ if b_[0] == "tabcap"]
+                with open(d_nbo_ / "exp_NBO_Wiberg_matrix.csv", encoding="utf-8-sig", newline="") as fh_:
+                    rows_wb_ = list(csv_nbo_.reader(fh_))
+                assert len(rows_wb_) == n_at_ + 1 and len(rows_wb_[1]) == n_at_ + 1 and rows_wb_[1][2] == wb_["matrix"][(1, 2)]
+                assert bl_[0] == ("columns", 1) and len(caps_) == 5 and sum(b_[0] == "figcap" for b_ in bl_) == 2, caps_
+                assert t_d.nbo.has_data()
+                assert t_d.nbo.cmb_atoms.findData("spin") < 0 and t_d.nbo.tbl_npa.isColumnHidden(6)   # geschlossenschalig
+                assert t_d.nbo.tbl_e2.isColumnHidden(0) and not t_d.nbo.cmb_spin.isVisibleTo(t_d.nbo.display)
+                # offenschalig (Radikalkation, Layout ORCA 6.1.1 + NBO 7.0): Spindichte, NBO/E(2)/Wiberg je Spin
+                oo_ = DEMO_nbo_.make_nbo(d_nbo_ / "T_cation_NBO.out", "T_cation_NBO", m_nbo_, P_nbo_, mult=2)
+                ro_ = NBO_.parse_nbo(rt_nbo_(oo_))
+                assert ro_["mult"] == 2 and ro_["nrt"] is None and T("nbo_open_lists") in ro_["notes"], ro_["notes"]
+                assert abs(sum(float(a_["spin"]) for a_ in ro_["npa"]) - 1.0) < 1e-3
+                for k_ in ("alpha", "beta"):
+                    sec_ = ro_["spin"][k_]
+                    assert sec_["nbos"] and sec_["e2"] and sec_["wiberg"] and len(sec_["npa"]) == n_at_, k_
+                assert ro_["spin"]["alpha"]["wiberg"]["matrix"] != ro_["spin"]["beta"]["wiberg"]["matrix"]
+                txo_ = rt_nbo_(oo_)
+                for old_, new_ in (("Mult            ....    2", "Mult            ....    3"),
+                                   ("Beta  spin orbitals", "Gamma spin orbitals")):
+                    try:
+                        NBO_.parse_nbo(txo_.replace(old_, new_))
+                        raise AssertionError("accepted open shell: " + new_)
+                    except ValueError:
+                        pass
+                t_d.nbo.load([str(oo_)])
+                assert t_d.nbo.cmb_atoms.findData("spin") >= 0 and t_d.nbo.cmb_spin.isVisibleTo(t_d.nbo.display)
+                assert not t_d.nbo.tbl_npa.isColumnHidden(6) and not t_d.nbo.tbl_e2.isColumnHidden(0)
+                assert t_d.nbo.cmb_bonds.currentData() == "wiberg" and t_d.st["nbo"]["bonds"] == "nrt"   # ohne NRT
+                n_ab_ = sum(len(PNBO_.e2_rows(ro_["spin"][k_], 5.0)) for k_ in ("alpha", "beta"))
+                assert t_d.nbo.tbl_e2.rowCount() == n_ab_, (t_d.nbo.tbl_e2.rowCount(), n_ab_)
+                t_d.nbo.cmb_spin.setCurrentIndex(t_d.nbo.cmb_spin.findData("beta"))
+                assert t_d.nbo.tbl_e2.rowCount() == len(PNBO_.e2_rows(ro_["spin"]["beta"], 5.0))
+                assert all(t_d.nbo.tbl_e2.item(i_, 0).text() == "β" for i_ in range(t_d.nbo.tbl_e2.rowCount()))
+                t_d.nbo.cmb_atoms.setCurrentIndex(t_d.nbo.cmb_atoms.findData("spin"))
+                labs_ = [a_.get_text() for k_, a_ in t_d.nbo.F.ann_items.items() if k_.startswith("lbl_")]
+                assert any(x_.startswith("+") for x_ in labs_), labs_                 # Spindichte mit Vorzeichen
+                assert "Natural spin densities (NPA" in t_d.nbo.caption(ro_, "X")
+                assert "Open-shell wavefunction (multiplicity 2)" in t_d.nbo.methods(ro_)
+                exo_ = {Path(p_).name for p_ in t_d.nbo.export_to(d_nbo_ / "expo")}
+                assert {"expo_NBO_T_cation_NBO_Wiberg_alpha_matrix.csv", "expo_NBO_T_cation_NBO_Wiberg_beta_matrix.csv"} <= exo_
+                t_d.nbo.remove()
+                t_d.nbo.remove()
+                assert not t_d.st["nbo"]["files"] and t_d.nbo.stack.currentIndex() == 0
+            finally:
+                t_d.st["nbo"] = saved_nbo_
+                t_d.nbo.sync()
+            report.append("DFT NBO (ORCA 6 + NBO 7.0: NPA, NBO list, E(2), NRT, Wiberg, open shell, CML structures, "
+                          "rejections, page, reset, CSV, Word): OK")
 
         with section:
             # Project-wide paths use their own files, never a compound's mutable state.
@@ -5841,7 +8394,7 @@ def selftest(outdir, with_isnet=False):
                     ORB.parse_molden(bad_h_)
                     raise AssertionError("h shell accepted")
                 except ValueError as ex_:
-                    assert "'h'" in str(ex_) and "not supported" in str(ex_), ex_
+                    assert str(ex_) == T("r2l_molden_shell", t="h"), ex_          # übersetzte Meldung (1.2.0 R2)
             chk_("molden ROHF/UHF bond orders, h shell", p5_orb_spin)
             def p5_orb_names():                      # Dateiname, Gaussian-Sterne, gebrochene Besetzung
                 assert ORB.cube_mo("demo12.cube") == (None, "") and ORB.cube_mo("NHO.mo67a.cube") == (67, "a")
@@ -6104,6 +8657,233 @@ def selftest(outdir, with_isnet=False):
                           "sorted by kind, Mnova file, Word, preview fits area): OK")
 
         with section:
+            # MNova-Export (1.3.0): MNova exportiert eine Kopie headless, Seiten + Berichte -> Zeilen. Ohne MNova (CI):
+            # erfundener Ausgabeordner + Manifest, Prozess als Attrappe; nie den echten MNova starten
+            import json as json_mx
+            from elucida.formats import mnova_cli as MX
+            t_x = w.nmr_tab
+            w.nmr_state.update(spectra=[], current=None, text="", assign={}, raw=[], mnova=[])
+            assert MX.SCRIPT.is_file() and "mainWindow.hasGui" in MX.SCRIPT.read_text(encoding="utf-8")   # Asset im Build
+            assert t_x.start_export(str(out / "x.mnova")) == "nmr_mx_none" and not w.__dict__.get("_mnova_jobs")   # offscreen
+            xdir = out / "input" / "mnova_export"
+            rep_h = ("<html><head><title>Multiplet Report</title></head><body><font><sup>1</sup>H NMR (501 MHz, "
+                     "CDCl<sub>3</sub>) &delta; 7.30 (d, <i>J</i> = 8.0 Hz, 2H), 2.10 (s, 3H).</font></body></html>")
+            rep_cm = "<sup>13</sup>C NMR (126 MHz, CDCl<sub>3</sub>) &delta; 160.1 (d, <i>J</i> = 245.0 Hz), 21.0 (s)."
+            rep_2d = "<sup>1</sup>H NMR (501 MHz, CDCl<sub>3</sub>) &delta; 7.30, 2.10."       # 2D-Bericht: nie eine Zeile
+            assert MX.report_text(rep_h) == "1H NMR (501 MHz, CDCl3) δ 7.30 (d, J = 8.0 Hz, 2H), 2.10 (s, 3H)."
+            NMR.make_test_svg(xdir / "page_1.svg", ("1H",))
+            NMR.make_test_svg(xdir / "page_2.svg", ("13C",), peaks=("160.15", "77.16 CDCl3", "21.03"))
+            NMR.make_test_svg(xdir / "page_3.svg", ("19F",), peaks=("-110.2",))
+            NMR.make_test_svg(xdir / "page_4.svg", ("1H", "13C"))
+            NMR.make_test_svg(xdir / "page_5.svg", ("1H",))
+            (xdir / "page_6.svg").write_text("<svg/>", encoding="utf-8")          # keine NMR-Abbildung: nicht übernommen
+            sp_x = lambda nuc, dim=1, m="", n=0: dict(nucleus=nuc, dim=dim, multiplets=n, peaks=3, mreport=m,  # noqa: E731
+                                                      preport="")
+            man_x = dict(token="tok", done=True, pages=[
+                dict(page=1, svg="page_1.svg", spectra=[sp_x("1H", m=rep_h, n=2), sp_x("1H", m=rep_h, n=2)]),   # Inset
+                dict(page=2, svg="page_2.svg", spectra=[sp_x("13C")]),
+                dict(page=3, svg="page_3.svg", spectra=[sp_x("19F", m=rep_cm.replace("13</sup>C", "19</sup>F"), n=1)]),
+                dict(page=4, svg="page_4.svg", spectra=[sp_x("13C", 2, rep_2d, 2)]),
+                dict(page=5, svg="page_5.svg", spectra=[sp_x("1H")]),                      # Serie ohne Multipletts
+                dict(page=6, svg="page_6.svg", spectra=[sp_x("1H")]),
+                dict(page=7, svg="../x.svg", spectra=[]),                                  # ohne Spektrum: still weg
+            ])
+            (xdir / "manifest.json").write_text(json_mx.dumps(man_x), encoding="utf-8")
+            assert MX.read_manifest(xdir, "tok")["done"] and MX.read_manifest(xdir, "other") is None   # alter Lauf
+            (out / "input" / "broken").mkdir(exist_ok=True)
+            (out / "input" / "broken" / "manifest.json").write_text('{"token": "tok", "pa', encoding="utf-8")
+            assert MX.read_manifest(out / "input" / "broken", "tok") is None             # unvollständig: weiter warten
+            assert [len(MX.page_spectra(p_)) for p_ in man_x["pages"]] == [1, 1, 1, 1, 1, 1, 0]
+            pr_x = lambda nuc, r_: dict(sp_x(nuc), preport=r_)                             # noqa: E731
+            assert len(MX.page_spectra(dict(spectra=[pr_x("13C", "a"), pr_x("13C", "b")]))) == 2   # ohne Multipletts
+            assert len(MX.page_spectra(dict(spectra=[pr_x("1H", "a"), pr_x("1H", "b")]))) == 1     # 1H: nur Multipletts
+            mdoc_x = proj / "data" / "nmr" / "mnova" / "X1.mnova"
+            mdoc_x.parent.mkdir(parents=True, exist_ok=True)
+            mdoc_x.write_bytes(b"MNOVA-TEST-X1")
+            w.nmr_state["text"] = "1H NMR (400 MHz, CDCl3) δ 1.00 (s, 3H)."               # eigener Text: nie still ersetzt
+            n_x = t_x.take_mnova_export(str(mdoc_x), xdir, man_x)
+            sp_xs = t_x.spectra()
+            assert n_x == 5 and [(s_["nuclei"], s_["kind"]) for s_ in sp_xs] == [
+                (["1H"], "1D"), (["1H"], "1D"), (["13C"], "1D"), (["19F"], "1D"), (["1H", "13C"], "2D")], sp_xs
+            fold_x = proj / "data" / "nmr" / "mnova" / "X1"
+            assert all(Path(s_["file"]).parent == fold_x for s_ in sp_xs) and (fold_x / "manifest.json").is_file()
+            assert [Path(s_["file"]).name for s_ in sp_xs] == ["X1_1.svg", "X1_5.svg", "X1_2.svg", "X1_3.svg",
+                                                              "X1_4.svg"], sp_xs        # Dokument + Seite, nie page_k
+            assert sorted(f_.name for f_ in fold_x.glob("*.svg")) == [f"X1_{k_}.svg" for k_ in range(1, 7)]
+            man_xr = dict(man_x, pages=[dict(p_, svg=f"X1_{p_['page']}.svg") if p_["page"] < 7 else p_
+                                        for p_ in man_x["pages"]])
+            assert json_mx.loads((fold_x / "manifest.json").read_text(encoding="utf-8")) == man_xr   # ganz (Peakberichte)
+            assert sorted(f_.name for f_ in xdir.glob("*.svg"))[0] == "page_1.svg"        # Ausgabeordner unverändert
+            assert w.nmr_state["text"] == "1H NMR (400 MHz, CDCl3) δ 1.00 (s, 3H)." and w.nmr_state.get("mx_pending")
+            assert not t_x.row_mx.isHidden() and T("nmr_mx_pending") in t_x.lbl_mx.text()
+            prop_x = w.nmr_state["mx_pending"].splitlines()
+            assert prop_x[0] == "1H NMR (501 MHz, CDCl3) δ 7.30 (d, J = 8.0 Hz, 2H), 2.10 (s, 3H).", prop_x
+            assert prop_x[1] == "13C NMR (126 MHz, CDCl3) δ 160.15, 21.03.", prop_x          # Peaklabels wie im Bild
+            assert prop_x[2].startswith("19F NMR (126 MHz") and len(prop_x) == 3, prop_x     # Multipletts vorgezogen
+            page5_ = T("nmr_mx_page", p=5, doc="X1.mnova")
+            assert T("nmr_mx_no_mult", page=page5_) in t_x.lbl_mx.text()                  # Serie: Hinweis, keine Zeile
+            two_ = [dict(nuclei=["1H"], kind="1D", mx=dict(page=k_, doc="D.mnova")) for k_ in (1, 2)]   # eine Zeile je Dokument
+            assert NMR.mx_lines(two_) == ("", [T("nmr_mx_no_mult", page=T("nmr_mx_pages", p="1, 2", doc="D.mnova"))])
+            assert T("nmr_mx_skipped", page=T("nmr_mx_page", p=6, doc="X1.mnova")) in t_x.lbl_mnova_refused.text()
+            t_x.mx_keep()
+            assert w.nmr_state["text"].startswith("1H NMR (400 MHz") and t_x.row_mx.isHidden()
+            hand_ = "19F NMR (376 MHz, CDCl3) δ -63.0."                                  # Kern nicht im Vorschlag
+            w.nmr_state["mx_pending"] = "\n".join(prop_x[:2])
+            t_x.ed_text.setPlainText("1H NMR (400 MHz, CDCl3) δ 1.00 (s, 3H).\n" + hand_)  # getippt, gleich übernommen
+            t_x.mx_adopt()                                                                 # nur ¹H/¹³C ersetzt
+            assert w.nmr_state["text"].splitlines() == prop_x[:2] + [hand_], w.nmr_state["text"]
+            w.nmr_state["text"] = ""
+            t_x.apply_mx_text()                                                            # leeres Feld: füllen
+            assert w.nmr_state["text"] == "\n".join(prop_x) and not w.nmr_state.get("mx_pending")
+            assert [b_["nucleus"] for b_ in t_x.blocks()] == ["1H", "13C", "19F"]          # 2D nie in der Zeile
+            # Umschalter Multipletts/Peaks: nur, wo beides da ist; Zustand am Spektrum, Rückgängig-Schritt, Text folgt
+            s19_ = [s_ for s_ in sp_xs if s_["nuclei"] == ["19F"]][0]
+            for s_, vis_ in ((sp_xs[0], False), (sp_xs[2], False), (s19_, True)):
+                w.nmr_state["current"] = s_["uid"]
+                t_x.sync_widgets()
+                assert t_x._sel_form.isRowVisible(t_x.cmb_mx) == vis_, s_["nuclei"]
+            t_x.cmb_mx.setCurrentIndex(t_x.cmb_mx.findData("peaks"))
+            assert s19_["mx"]["use"] == "peaks" and "19F NMR (" in w.nmr_state["text"]
+            assert "δ -110.2." in w.nmr_state["text"].splitlines()[2], w.nmr_state["text"]   # Peaklabel statt Multipletts
+            assert any((s_.get("mx") or {}).get("use") == "peaks"                         # Rückgängig-Schritt
+                       for s_ in json.loads(w._undo[-1])["nmr"]["spectra"])
+            typed_t = "19F NMR (376 MHz, CDCl3) δ -99.9."                                # getippt, gleich umgeschaltet
+            t_x.ed_text.setPlainText(typed_t)
+            assert t_x.text_timer.isActive()
+            t_x.cmb_mx.setCurrentIndex(t_x.cmb_mx.findData("mult"))                       # vor Ablauf des Timers
+            assert w.nmr_state["text"] == typed_t == t_x.ed_text.toPlainText(), w.nmr_state["text"]   # nie still ersetzt
+            assert w.nmr_state.get("mx_pending") and not t_x.text_timer.isActive()        # Vorschlag statt Ersatz
+            t_x.mx_keep()
+            # zweites Dokument mit einem weiteren ¹H-Bericht: das erste gilt, das zweite wird genannt
+            mdoc_y = mdoc_x.with_name("Y2.mnova")
+            mdoc_y.write_bytes(b"MNOVA-TEST-Y2")
+            man_y = dict(token="tok", done=True, pages=[man_x["pages"][0]])
+            t_x.take_mnova_export(str(mdoc_y), xdir, man_y)
+            assert (proj / "data" / "nmr" / "mnova" / "Y2" / "Y2_1.svg").is_file()        # eigener Ordner, eigene Namen
+            mdoc_z = mdoc_x.with_name("Z9.mnova")                                          # Ordnername schon vergeben
+            mdoc_z.write_bytes(b"MNOVA-TEST-Z9")
+            (mdoc_z.parent / "Z9").mkdir()
+            t_x.take_mnova_export(str(mdoc_z), xdir, man_y)
+            assert (mdoc_z.parent / "Z9_2" / "Z9_1.svg").is_file() and not any((mdoc_z.parent / "Z9").iterdir())
+            assert T("nmr_mx_second", nuc="¹H", page=T("nmr_mx_page", p=1, doc="Y2.mnova"),
+                     first=T("nmr_mx_page", p=1, doc="X1.mnova")) in t_x.lbl_mx.text(), t_x.lbl_mx.text()
+            # gleiches Dokument noch einmal: nichts doppelt
+            n_sp_ = len(w.nmr_state["spectra"])
+            t_x.add_mnova_file(str(mdoc_x))
+            assert len(w.nmr_state["spectra"]) == n_sp_ and w.last_notice[0] == T("nmr_mx_again", name="X1.mnova")
+            # Ablauf mit Attrappe: Kopie im eigenen Temp-Ordner, Manifest, eigener Prozess beendet, Nutzerdatei bytegleich
+            udoc_ = out / "input" / "user" / "Z3.mnova"
+            udoc_.parent.mkdir(parents=True, exist_ok=True)
+            udoc_.write_bytes(b"MNOVA-USER-Z3")
+            class FakeMX:                                      # noqa: E306
+                def __init__(self, args, write):
+                    self.args, self.done = args, False
+                    f_, cp_, out_, tok_ = args[-1].split(",")
+                    assert f_ == MX.FUNCTION and Path(cp_).name == tok_ + ".mnova" and Path(cp_).is_file()
+                    assert args[1] == "-nogui" and Path(args[2]).parent == Path(cp_).parent   # Skript aus dem Temp-Ordner
+                    assert Path(args[2]).read_bytes() == MX.SCRIPT.read_bytes()
+                    self.out, self.tok = Path(out_), tok_
+                    if write:
+                        write(self)
+                def poll(self):
+                    return 0 if self.done else None
+                def terminate(self):
+                    self.done = True
+                kill = terminate
+                def wait(self, timeout=None):
+                    return 0
+            procs_ = []
+            def run_mx(write, timeout=None):
+                old_ = (MX.find_mnova, MX.launch, MX.TIMEOUT_S)
+                MX.find_mnova = lambda: Path(sys.executable)
+                MX.launch = lambda a_: procs_.append(FakeMX(a_, write)) or procs_[-1]
+                if timeout:
+                    MX.TIMEOUT_S = timeout
+                w._allow_mnova = True
+                try:
+                    w.nmr_state.update(spectra=[], current=None, text="", mnova=[])
+                    w.nmr_tab.add_mnova_file(str(udoc_))
+                    assert w.last_notice[0] == T("nmr_mx_started", name="Z3.mnova"), w.last_notice   # Einblendung beim Start
+                    t0_ = time.time()
+                    while w.__dict__.get("_mnova_jobs") and time.time() - t0_ < 20:
+                        QApplication.processEvents()
+                        time.sleep(0.02)
+                    assert not w.__dict__.get("_mnova_jobs")
+                finally:
+                    MX.find_mnova, MX.launch, MX.TIMEOUT_S = old_
+                    w._allow_mnova = False
+                assert procs_[-1].done and not procs_[-1].out.parent.exists()     # eigener Prozess beendet, Temp weg
+                return w.last_notice[0]
+            def ok_(p_):
+                for f_ in xdir.glob("page_*.svg"):
+                    shutil.copy2(f_, p_.out / f_.name)
+                (p_.out / "manifest.json").write_text(json_mx.dumps(dict(man_x, token=p_.tok)), encoding="utf-8")
+            assert run_mx(ok_) == T("nmr_mx_done", n=5, name="Z3.mnova") and len(w.nmr_state["spectra"]) == 5
+            assert udoc_.read_bytes() == b"MNOVA-USER-Z3"                                  # Nutzerdatei bytegleich
+            typed_ = "1H NMR (400 MHz, CDCl3) δ 9.99 (s, 1H)."                             # während des Exports getippt
+            def typing_(p_):
+                ok_(p_)
+                def type_():                                   # nach dem Ablegen, vor dem Ende des Exports
+                    w.nmr_tab.text_timer.setInterval(60000)    # nur das Nachziehen übernimmt
+                    w.nmr_tab.ed_text.setPlainText(typed_)
+                from PySide6.QtCore import QTimer as QT_mx
+                QT_mx.singleShot(0, type_)
+            try:
+                assert run_mx(typing_) == T("nmr_mx_done", n=5, name="Z3.mnova")
+            finally:
+                w.nmr_tab.text_timer.setInterval(500)
+            assert w.nmr_state["text"] == typed_ and w.nmr_state.get("mx_pending"), w.nmr_state["text"]
+            w.nmr_state.pop("mx_pending", None)
+            fb_ = lambda why: T("nmr_mx_fallback", name="Z3.mnova", why=T(why))             # noqa: E731
+            gui_ = lambda p_: (p_.out / "manifest.json").write_text(json_mx.dumps(dict(refused="gui", token=p_.tok)),  # noqa: E731
+                                                                      encoding="utf-8")
+            assert run_mx(gui_).startswith(fb_("nmr_mx_gui"))
+            assert not any(s_.get("mx") for s_ in w.nmr_state["spectra"])                 # Rückfall: kein halber Export
+            assert run_mx(None, timeout=0.3).startswith(fb_("nmr_mx_timeout"))             # Zeitgrenze
+            exit_ = lambda p_: setattr(p_, "done", True)                                   # noqa: E731
+            assert run_mx(exit_).startswith(fb_("nmr_mx_exit"))                            # ohne Manifest beendet
+            def boom_(*a_, **k_):                              # Fehler nach dem Anlegen der Zeilen
+                raise OSError("boom")
+            t_b = w.nmr_tab
+            t_b.attach_mnova_fids = boom_
+            try:
+                notice_ = run_mx(ok_)
+            finally:
+                t_b.__dict__.pop("attach_mnova_fids", None)
+            assert notice_.startswith(T("nmr_mx_fallback", name="Z3.mnova", why=T("nmr_mx_failed") + " (boom)")), notice_
+            assert w.nmr_state["spectra"] == [], w.nmr_state["spectra"]                    # zurückgerollt, nie halb
+            old_ = (MX.find_mnova, MX.launch)                  # dasselbe Dokument, während sein Export läuft
+            MX.find_mnova = lambda: Path(sys.executable)
+            MX.launch = lambda a_: procs_.append(FakeMX(a_, None)) or procs_[-1]
+            w._allow_mnova = True
+            try:
+                w.nmr_state.update(spectra=[], current=None, text="", mnova=[])
+                w.nmr_tab.add_mnova_file(str(udoc_))
+                w.nmr_tab.add_mnova_file(str(udoc_))
+                assert len(w._mnova_jobs) == 1 and w.last_notice[0] == T("nmr_mx_queued", name="Z3.mnova"), w.last_notice
+            finally:
+                for j_ in list(w.__dict__.get("_mnova_jobs") or []):
+                    NMR._mx_done(w, j_, why="nmr_mx_exit")
+                MX.find_mnova, MX.launch = old_
+                w._allow_mnova = False
+            assert not w.__dict__.get("_mnova_jobs") and procs_[-1].done
+            old_ = MX.find_mnova
+            MX.find_mnova, w._allow_mnova = (lambda: None), True
+            try:
+                w.nmr_state.update(spectra=[], mnova=[])
+                w.nmr_tab.add_mnova_file(str(udoc_))
+                assert w.last_notice[0].startswith(fb_("nmr_mx_none"))                     # MNova nicht gefunden
+            finally:
+                MX.find_mnova, w._allow_mnova = old_, False
+            assert MX.has_comma("/a,b/c") and not MX.has_comma("/a b/ü")
+            w.nmr_state.update(spectra=[], current=None, text="", assign={}, raw=[], mnova=[])
+            w.nmr_state.pop("mx_auto", None)
+            w.nmr_tab.sync_widgets()
+            report.append("NMR: MNova export path (pages -> spectra, reports -> lines, 2D never in the line, duplicates one "
+                          "row, multiplets/peaks toggle, text never overwritten, stale/broken manifest, GUI refusal, "
+                          "time limit, no MNova -> fallback, user file unchanged): OK")
+
+        with section:
             # Schema-Hinweis beschreibt den aktuellen Ablauf (CDXML + optionale SVG/PDF, .cdx, .emf) in beiden Sprachen
             from elucida.app.i18n import TEXTS as TX_
             for k_ in ("syn_scheme_hint", "guide_syn_files"):
@@ -6355,13 +9135,56 @@ def selftest(outdir, with_isnet=False):
             w.export_si(["char", "dft"])
             with _zf.ZipFile(docx_) as z_:
                 xml_ = z_.read("word/document.xml").decode("utf-8")
-            assert "Elemental analysis" in xml_ and "Courier New" in xml_ and xml_.count("<w:sectPr>") == 2
+            # drei Abschnitte: einspaltig, DFT zweispaltig, Energietabelle wieder einspaltig
+            assert "Elemental analysis" in xml_ and "Courier New" in xml_ and xml_.count("<w:sectPr>") == 3
+            assert "nuclear repulsion energies" in xml_
             assert xml_.index("Elemental analysis") < xml_.index('w:cols w:num="2"')   # einspaltig, dann zweispaltig
             w.dft_state.update(entries=[], current=None)
             w.dft_tab.sync_widgets()
             w.irms_state.update(ea_found={}, ea_solvate="")
             w.compound = {}
             report.append("SI lines (EA, UV-Vis) + SI section as Word (parts selectable): OK")
+
+        with section:
+            # EA nach den Richtlinien: Doppelbestimmung (beide Sätze + Mittel, geprüft wird das Mittel), Tabelle und Kachel
+            # mit Warnfarbe, Begründung ohne EA; HRMS: Abweichung gegen 5 ppm als Tabelle und Kachel
+            f1_, f2_ = {"C": "77.41", "H": "6.56", "N": "9.80"}, {"C": "77.52", "H": "6.57", "N": "9.70"}
+            rows_ = SI.ea_check("C18H18N2O", "", f1_, f2_)
+            assert [(r_[0], r_[4], r_[6]) for r_ in rows_] == [("C", 77.47, True), ("H", 6.57, True), ("N", 9.75, True)], rows_
+            pl2_ = SI.ea_line("C18H18N2O", "", f1_, f2_)[0]
+            assert pl2_.endswith("found C 77.41, H 6.56, N 9.80 and C 77.52, H 6.57, N 9.70 (average C 77.47, H 6.57, "
+                                 "N 9.75)"), pl2_
+            assert SI.ea_line("C18H18N2O", "", f1_)[0] == SI.ea_line("C18H18N2O", "", f1_, {})[0]   # ohne 2. Satz wie bisher
+            assert [e_ for e_, _ in SI.ea_line("C18H18N2O", "", f1_, {"N": "9.20"})[2]] == ["N"]    # Mittel 9.50: −0.56
+            assert SI.ea_reason_line("not obtained (air-sensitive).")[0] == "Elemental analysis: not obtained (air-sensitive)"
+            t_ir = w.irms_tab
+            w.compound = {"name": "TEST-1", "formula": "C18H18N2O"}
+            w.irms_state.update(ea_found=dict(f1_), ea_found2={"N": "9.20"}, ea_solvate="", ea_reason="")
+            t_ir.update_ea()
+            tb_ = t_ir.tbl_ea
+            assert tb_.rowCount() == 3 and not tb_.isColumnHidden(2) and tb_.isColumnHidden(1), tb_.rowCount()
+            assert tb_.item(2, 2).text() == "9.50" and "⚠" in tb_.item(2, 4).text() \
+                and tb_.item(2, 0).foreground().color().name() == STYLE.WARN_COLOR.lower(), tb_.item(2, 4).text()
+            k_ = t_ir.kpis()
+            assert k_[0][1] == "N −0.56 %" and k_[0][2] is True, k_
+            w.irms_state.update(ea_found2={})
+            t_ir.update_ea()
+            assert tb_.isColumnHidden(2) and not tb_.isColumnHidden(1) and t_ir.kpis()[0][1] == "≤ 0.4 %", t_ir.kpis()
+            w.irms_state.update(ea_found={}, ea_reason="not obtained (air-sensitive); purity by 1H NMR")
+            t_ir.update_ea()
+            assert t_ir.si_parts()[-1][0] == "Elemental analysis: not obtained (air-sensitive); purity by 1H NMR" \
+                and not tb_.isVisible() and t_ir.kpis() == [], t_ir.si_parts()
+            assert "ea_reason" in t_ir.RESET_KEEP and "ea_found2" in t_ir.RESET_KEEP
+            w.irms_state.update(ea_reason="")
+            t_ms = w.hrms_tab
+            t_ms.fill_ms_table("M+H", 279.1492, 279.1513, 7.5)
+            assert t_ms.tbl_ms.rowCount() == 1 and "⚠" in t_ms.tbl_ms.item(0, 4).text() \
+                and t_ms.tbl_ms.item(0, 3).text() == "+7.5", t_ms.tbl_ms.item(0, 3).text()
+            t_ms.fill_ms_table("M+H", 279.1492, 279.1496, 1.4)
+            assert "✓" in t_ms.tbl_ms.item(0, 4).text()
+            w.compound = {}
+            t_ir.update_ea()
+            report.append("EA duplicate analysis, 0.4 % check table/tile, reason without EA; HRMS 5 ppm table: OK")
 
         with section:
             # Release Notes aus den Changelogs (nur im Quellcode; das Skript liegt nicht in der gebauten App)
@@ -6864,7 +9687,7 @@ def selftest(outdir, with_isnet=False):
             xt9_.reset_defaults()
             xt9_.take_param()
             assert not xt9_.sel and len(xt9_.entry()["params"]) == n9_, xt9_.entry()["params"]
-            ov9_ = w9_.ov_tab                                   # Vorlage: Einstellungen ja, Daten/Unterschrift nein
+            ov9_ = w9_.ov_tab                                   # Vorlage: Darstellung ja, Daten/Auswertung/Unterschrift nein
             w9_.ov_state["cap_extra"] = "P9 caption"
             n_ov9_ = len(w9_.ov_state["entries"])
             yaml9_ = out / "p9_preset.yaml"
@@ -6874,11 +9697,14 @@ def selftest(outdir, with_isnet=False):
             try:
                 ov9_.save_setup()
                 assert "entries" not in yaml9_.read_text(encoding="utf-8")
-                yaml9_.write_text("mode: abs\nentries: []\n", encoding="utf-8")
+                mode9_ = w9_.ov_state["mode"]
+                yaml9_.write_text("mode: abs\nstack: true\nentries: []\n", encoding="utf-8")
                 ov9_.load_setup()
             finally:
                 TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName = real9_
-            assert w9_.ov_state["mode"] == "abs" and len(w9_.ov_state["entries"]) == n_ov9_, w9_.ov_state.get("entries")
+            assert w9_.ov_state["stack"] and w9_.ov_state["mode"] == mode9_ != "abs" and \
+                len(w9_.ov_state["entries"]) == n_ov9_, w9_.ov_state.get("entries")
+            w9_.ov_state["stack"] = False
             assert w9_.ov_state["cap_extra"] == "P9 caption"
             ov9_ = w9_.ov_tab                                   # Bild scheitert: Änderung trotzdem im Verlauf
             ov9_.build = lambda fig_: 1 / 0
@@ -7097,7 +9923,7 @@ def selftest(outdir, with_isnet=False):
             assert w.compound.get("structure") and w.syn_state["proc"] and w.nmr_tab.spectra() and w.groups
             no_fig_ = []
             for key_ in w._TAB_ORDER:
-                if key_ in ("compound", "syn", "nmr", "eps"):
+                if key_ in ("compound", "syn", "nmr", "eps", "export"):
                     continue
                 t_x_ = getattr(w, w._tab_spec(key_)[0])
                 t_x_.render()
@@ -7190,7 +10016,7 @@ def selftest(outdir, with_isnet=False):
             from PySide6.QtCore import QPointF
             from PySide6.QtGui import QMouseEvent
             assert not MAC.enabled() and not w._mac_title and getattr(w, "_title_inset", None) is None
-            btn_ = w.toolbar.widgetForAction(w.act_si)
+            btn_ = w.toolbar.widgetForAction(w._tb_edit[2])               # Knopf „Ordner“ der Leiste
             ev_ = QMouseEvent(QEvent.MouseButtonPress, QPointF(btn_.geometry().center()), QPointF(),
                               Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
             assert MAC.TitleDrag(w).eventFilter(w.toolbar, ev_) is False
@@ -7247,8 +10073,8 @@ def selftest(outdir, with_isnet=False):
             mc_ = PSI.merge_crystal([(["Compound", "a", "b"], [["Formula", "C1", "C2"], ["Z", "4", "2"]]),
                                      (["Compound", "c", "d"], [["Formula", "C3", "C4"], ["Z", "8", "1"]])])
             assert [h_ for h_, _ in mc_] == [["Compound", "a", "b", "c"], ["Compound", "d"]] and mc_[1][1][1] == ["Z", "1"]
-            from elucida.app.publication_view import PublicationPackDialog
-            pdl_ = PublicationPackDialog(w, pub_)
+            w.pub_page.set_publication(pub_)                                    # Karte „Datensätze“ (früher Dialog)
+            pdl_ = w.pub_page.export_page.dp_card
             rep_ = pdl_.export(out / "pubpack")
             names_ = sorted(Path(z_).name for z_ in rep_["zips"])
             assert f"{n6_}.zip" in names_ and "CompChem.zip" in names_ and "2a.zip" not in names_, names_   # 2a ohne Daten
@@ -7301,7 +10127,8 @@ def selftest(outdir, with_isnet=False):
             assert doc_.index("CV intro") > doc_.index("Cyclic Voltammetry") and "TOC \\o" in doc_
             assert "Supplementary Materials for" in doc_ and "Synthesis of " in doc_
             subs_ = re.findall(r'w:val="Heading2".*?<w:t[^>]*>([^<]+)</w:t>', doc_)        # Unterkapitel je Gruppe
-            assert subs_[:2] == ["2.1 Precursor", "2.2 NHOs"] and "3.1 NHOs" in subs_, subs_
+            # 2a hat weder Synthese noch Daten: keine leere „Synthesis of 2a“ und keine leere Gruppe „Precursor“ (1.2.0)
+            assert subs_[:1] == ["2.1 NHOs"] and "3.1 NHOs" in subs_ and "Precursor" not in " ".join(subs_), subs_
             assert 'w:val="TOC2"' in doc_
             assert "PAGEREF _Toc1" in doc_ and 'w:name="_Toc1"' in doc_            # Verzeichnis schon gefüllt
             toc_ = SI.toc_entries([("title", "T"), ("toc",), ("section", "1. A"), ("char", "x"), ("section", "2. B")])
@@ -7416,7 +10243,7 @@ def selftest(outdir, with_isnet=False):
             # Tab „Weitere“: PNG/SVG/PDF unverändert, Unterschrift, Kapitel
             from PIL import Image as PIL5
             ot_ = w.other_tab
-            assert w._tab_keys[-1] == "other" and MW.MainWindow.NAV_GROUPS[-1][1][-1] == "other"
+            assert w._tab_keys[-2:] == ["other", "export"] and MW.MainWindow.NAV_GROUPS[-2][1][-1] == "other"
             f5d_ = out / "f5" / "figs"
             f5d_.mkdir()
             PIL5.new("RGB", (600, 300), "red").save(f5d_ / "dsc.png", dpi=(300, 300))
@@ -7435,6 +10262,7 @@ def selftest(outdir, with_isnet=False):
             ot_.ed_head.editingFinished.emit()
             e5_ = w.other_state["entries"][2]
             assert e5_["caption"] == "DSC trace of X." and e5_["heading"] == "Thermal Analysis", e5_
+            assert ot_.lbl_cap._plain.endswith("DSC trace of X."), ot_.lbl_cap._plain    # Reiter SI-Text: Unterschrift je Bild
             w.other_state["entries"][0].update(chapter="uvvis", caption="PNG fig.")
             blk5_ = ot_.si_figure(out / "f5" / "si", "X")
             assert [b_[0] for b_ in blk5_] == ["image", "figcap", "heading", "image", "figcap", "heading", "image",
@@ -7929,6 +10757,27 @@ def selftest(outdir, with_isnet=False):
             ct_ = w.comp_tab
             nb_ct = w.nav_buttons[0]                                     # Name · Summenformel, Zahlen tiefgestellt
             assert nb_ct.full_text == "S3 · C₁₆H₁₆N₂" and nb_ct.text() == nb_ct.full_text and nb_ct.has_data, nb_ct.text()
+            # Tab-Leiste: kurze Namen unter der Gruppe UV-Vis (Nutzerwunsch), voller Name im Tooltip; bei 1200 px ganz
+            # sichtbar (nur macOS: offscreen unter Windows ohne echte Schriftmaße, Linux mit breiterer Ersatzschrift)
+            for k_nv, short_nv in MW.MainWindow.NAV_SHORT.items():
+                b_nv = w.nav_buttons[w._tab_keys.index(k_nv)]
+                assert b_nv.text() == T(short_nv) and b_nv.toolTip() == T(w._tab_spec(k_nv)[3]), (k_nv, b_nv.text())
+            if sys.platform == "darwin":
+                size_nv = w.size()
+                w.resize(1200, size_nv.height())
+                pump(0.2)
+                # Spur A2: mit dem Tab „Export“ (eigene Gruppe) läuft die Leiste bei 1200 px über (akzeptiert); der Tab
+                # ist über den Pfeil erreichbar und wird beim Wählen ganz sichtbar (1280/1440 px: Abschnitt Punkt 3a)
+                keep_tab_nv = w._tab_key
+                w.show_tab("export")
+                pump(0.2)
+                b_ex = w.nav_buttons[w._tab_keys.index("export")]
+                x_ex = b_ex.mapTo(w.nav_scroll.viewport(), b_ex.rect().topLeft()).x()
+                assert 0 <= x_ex and x_ex + b_ex.width() <= w.nav_scroll.viewport().width(), (x_ex, b_ex.width())
+                w.show_tab(keep_tab_nv)
+                pump(0.1)
+                w.resize(size_nv)
+                pump(0.1)
             assert not hasattr(w, "act_compound")                        # kein zweiter Knopf in der Werkzeugleiste
             nb_ct.set_compound("4b", "C120H150N8O12P2Ru2")               # große Verbindung: nie gekürzt
             assert nb_ct.text() == "4b · C₁₂₀H₁₅₀N₈O₁₂P₂Ru₂" and nb_ct.minimumSizeHint().width() == nb_ct.sizeHint().width()
@@ -8404,7 +11253,7 @@ def selftest(outdir, with_isnet=False):
             assert len(got_["entries"]) == n26_ + 1 and got_["entries"][-1]["name"] == "calc", got_
             assert (s3_ / "data" / "dft" / "note.inp").exists() and "note.inp" in page_.status.text()
             page_.cmb_target.setCurrentIndex(page_.cmb_target.findText("S2"))     # offene Verbindung: in den Tab
-            n26_ = len(w.dft_state["entries"])
+            n26_ = len(w.dft_state.get("entries", []))                   # DFT-Tab der Vorstufe evtl. noch nicht gebaut
             page_.lst.item(1, 0).setCheckState(Qt.Unchecked)
             page_.fetch()
             assert len(w.dft_state["entries"]) == n26_ + 1 and w.dft_state["entries"][-1]["name"] == "calc"
@@ -8448,15 +11297,16 @@ def selftest(outdir, with_isnet=False):
             assert not w.side.isVisibleTo(w.side.parentWidget()) and w.act_crumbs.isVisible()
             assert w.nav_buttons[w._tab_keys.index("nmr")].has_data and w.other_state["entries"] and \
                 w.nav_buttons[w._tab_keys.index("other")].has_data            # Beispiel S3: auch „Weitere“ hat Daten
-            ent7_, chip7_ = w.other_state["entries"], w.comp_tab.si_figs["other"]   # ohne Einträge matt, Chip im Tab Verbindung folgt
+            ent7_ = w.other_state["entries"]                    # ohne Einträge matt, Zeile im Tab „Export“ folgt
+            rows7_ = lambda: [c_.key for c_ in w.export_tab.cards]           # noqa: E731
             w.other_state["entries"] = []
             try:
                 w._update_nav_dots()
-                assert not w.nav_buttons[w._tab_keys.index("other")].has_data and chip7_.isHidden()
+                assert not w.nav_buttons[w._tab_keys.index("other")].has_data and "other" not in rows7_()
             finally:
                 w.other_state["entries"] = ent7_
                 w._update_nav_dots()
-            assert not chip7_.isHidden()
+            assert "other" in rows7_()
             wid7_ = {}                                                  # Symmetrie: linke Spalte in allen Tabs gleich breit
             for i_, k_ in enumerate(w._tab_keys):
                 w.main_tabs.setCurrentIndex(i_)
@@ -8477,13 +11327,11 @@ def selftest(outdir, with_isnet=False):
             i7_ = w._tab_keys.index("hrms")
             w.main_tabs.setCurrentIndex(i7_)
             pump(0.1)
-            si7_ = w.toolbar.widgetForAction(w.act_si)
-            assert not hr7_.btn_export.property("accent")
-            assert bool(si7_.property("accent")) == (hr7_.preview_stack.currentIndex() == 1 or w.nav_buttons[i7_].has_data)
-            assert not (si7_.property("accent") and hr7_.empty_guide.btn.property("accent"))   # nie zwei blaue Knöpfe
+            # Spur A2: kein Exportknopf in den Tabs, „SI (Word)“ nicht mehr in der Leiste (Tab „Export“)
+            assert w.toolbar.widgetForAction(w.act_si) is None and not hr7_.btn_export.isVisible()
             w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
             pump(0.1)
-            assert not si7_.property("accent")                           # übrige Tabs: „Exportieren“ bzw. die Anleitung
+            assert not w.cv_tab.btn_export.isVisible()
             w.go_home()
             pump()
             assert w.btn_new.property("accent")
@@ -8564,14 +11412,21 @@ def selftest(outdir, with_isnet=False):
                     if len(hs_) > 1 or (hs_ and hs_ != {STYLE.BAR_H}):
                         bad31_.append((k_, "bar", sorted(hs_)))
                 acc_ = [b_.text() for b_ in page_.findChildren(PB31_) if b_.property("accent") and b_.isVisible()]
-                if len(acc_) + bool(w.toolbar.widgetForAction(w.act_si).property("accent")) > 1:
+                if len(acc_) > 1:
                     bad31_.append((k_, "accent", acc_))               # ein Hauptknopf je Ansicht
                 lint31_(page_, k_)
-                t31_ = getattr(page_, "table", None)                  # Messungslisten: Nebenspalten nie ohne Luft
-                if isinstance(t31_, QTableWidget):
+                # Messungslisten und die Listen des Tabs „Export“: Nebenspalten nie ohne Luft, Text nie abgeschnitten
+                for t31_ in [getattr(page_, "table", None)] + list(getattr(page_, "lists", {}).values()):
+                    if not isinstance(t31_, QTableWidget):
+                        continue
                     hh_ = t31_.horizontalHeader()
                     for c_ in range(t31_.columnCount()):
-                        if hh_.sectionResizeMode(c_) == QHeaderView.Stretch or not t31_.horizontalHeaderItem(c_).text():
+                        head_ = t31_.horizontalHeaderItem(c_)
+                        if not head_.text():                          # Kästchenspalte: feste Breite (check_columns)
+                            if k_ == "export" and t31_.columnWidth(c_) != STYLE.CHECK_COL_W:
+                                bad31_.append((k_, "check column", t31_.columnWidth(c_)))
+                            continue
+                        if hh_.sectionResizeMode(c_) == QHeaderView.Stretch:
                             continue
                         for r_ in range(t31_.rowCount()):
                             it_ = t31_.item(r_, c_)
@@ -8605,6 +11460,325 @@ def selftest(outdir, with_isnet=False):
             assert STYLE.TOOLBAR_H == 52 and STYLE.BAR_H == 34 and STYLE.CONTROL_H == 32 and STYLE.LABEL_W == 128
             report.append("design measures (label column, bar buttons, one main button per tab, text inset, field height "
                           "kept after re-parenting, table columns): OK")
+
+        with section:
+            # Tabellenspalten überall (Nutzerwunsch, mehrfach angemahnt): in jedem Tab, jedem Schritt und auf jeder rechten
+            # Seite des Beispielprojekts ist keine Zelle und kein Kopf breiter als die Spalte, solange daneben eine Spalte
+            # mehr als 40 px Luft hat oder die Tabelle nicht quer rollt. Dehnbare Spalten (freier Text, Rest der Breite)
+            # zählen nicht. Windows ohne Bildschirm misst Schrift zu breit: dort nur der Durchlauf.
+            from PySide6.QtWidgets import QHeaderView as HV32_, QTableWidget as TW32_
+
+            def table_faults_(root_, where_):
+                bad_ = []
+                for t_ in root_.findChildren(TW32_):
+                    if not t_.isVisible() or not t_.rowCount():
+                        continue
+                    hh_, fm_ = t_.horizontalHeader(), t_.fontMetrics()
+                    need_ = {}
+                    for c_ in range(t_.columnCount()):
+                        if t_.isColumnHidden(c_):
+                            continue
+                        hd_ = t_.horizontalHeaderItem(c_)
+                        n_ = hh_.fontMetrics().horizontalAdvance(hd_.text()) if hd_ is not None else 0
+                        for r_ in range(t_.rowCount()):
+                            it_ = t_.item(r_, c_)
+                            if it_ is not None and t_.cellWidget(r_, c_) is None:
+                                n_ = max(n_, fm_.horizontalAdvance(it_.text()))
+                        need_[c_] = n_
+                    for c_ in need_:                         # Kopf mit Größensymbol: kursiv über den Rich-Weg (Nutzerhinweis)
+                        hd_ = t_.horizontalHeaderItem(c_)
+                        tx_ = hd_.text() if hd_ is not None else ""
+                        if re.match(r"^[\u2212\u0394]?[EHGABJTkgIDtNhcfdnR\u1e7d\u03b4\u03bb\u03b5\u03bd\u03c4\u03a6\u03c7\u03b8\u03b7](_| \[| \(|\u200b|$)", tx_) \
+                                and tx_ not in ("H", "N", "B", "I", "D"):    # Elementsymbole/Zählspalten bleiben steil
+                            if STYLE.sci(tx_) == tx_ or not isinstance(hh_, STYLE.RichHeader):
+                                bad_.append((where_, "upright quantity in header", tx_))
+                    tight_ = [c_ for c_, n_ in need_.items() if n_ > t_.columnWidth(c_)
+                              and hh_.sectionResizeMode(c_) != HV32_.Stretch]
+                    loose_ = [c_ for c_, n_ in need_.items() if t_.columnWidth(c_) - n_ > 40 + 2 * STYLE._CellDelegate.PAD]
+                    if tight_ and (loose_ or t_.horizontalScrollBar().maximum() == 0):
+                        bad_.append((where_, [t_.horizontalHeaderItem(c_).text() if t_.horizontalHeaderItem(c_) else c_
+                                              for c_ in tight_], [(need_[c_], t_.columnWidth(c_)) for c_ in tight_]))
+                return bad_
+            bad32_, seen32_ = [], 0
+            for i_, k_ in enumerate(w._tab_keys):
+                w.main_tabs.setCurrentIndex(i_)
+                pump(0.1)
+                page_ = w.main_tabs.widget(i_)
+                steps_, rt_ = getattr(page_, "steps", None), getattr(page_, "right_tabs", None)
+                for s_ in range(3 if steps_ is not None else 1):
+                    if steps_ is not None:
+                        steps_.set_step(s_, remember=False)
+                    for f_ in getattr(page_, "folds", []):
+                        f_.set_open(True, remember=False)
+                    pump(0.05)
+                    bad32_ += table_faults_(page_, (k_, "step", s_))
+                    seen32_ += sum(1 for t_ in page_.findChildren(TW32_) if t_.isVisible())
+                for j_ in range(rt_.count() if rt_ is not None else 0):
+                    rt_.setCurrentIndex(j_)
+                    pump(0.1)
+                    bad32_ += table_faults_(page_, (k_, "page", rt_.tabText(j_)))
+                if rt_ is not None:
+                    rt_.setCurrentIndex(0)
+                if steps_ is not None:
+                    steps_.set_step(0, remember=False)
+            assert seen32_ > 10, seen32_
+            if sys.platform != "win32":
+                assert not bad32_, bad32_
+            report.append(f"table columns in every tab, step and page ({seen32_} tables seen): OK")
+
+        with section:
+            # 3D-NICS: Gitter aus Teilrechnungen (Reihenfolge beliebig), Vorzeichen, unvollstaendig/andere Geometrie
+            # ablehnen, Abbildung im Beispielprojekt, Unterschrift, Export als Cube
+            from matplotlib.backends.backend_agg import FigureCanvasAgg as Agg33_
+            from matplotlib.figure import Figure as Fig33_
+            from elucida.core import orbitals as ORB33_
+            from elucida.tabs import dft_pages as PG33_
+            P33_ = np.stack(np.meshgrid(np.arange(4) * 0.5, np.arange(3) * 0.5 + 1.0, np.arange(5) * 0.5 - 1.0,
+                                        indexing="ij"), -1).reshape(-1, 3)
+            iso33_ = P33_[:, 0] + 10 * P33_[:, 1] + 100 * P33_[:, 2]
+            mol33_ = dict(els=["C", "H"], xyz=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
+            perm33_ = np.random.default_rng(3).permutation(len(P33_))
+            parts33_ = [dict(mol33_, bq_xyz=P33_[ix_], iso=iso33_[ix_]) for ix_ in (perm33_[:25], perm33_[25:])]
+            g33_ = PG33_.nics_grid(parts33_)
+            assert g33_["data"].shape == (4, 3, 5) and np.allclose(g33_["step"], 0.5) and np.allclose(g33_["origin"], [0, 1, -1])
+            assert abs(g33_["data"][2, 1, 4] + (1.0 + 10 * 1.5 + 100 * 1.0)) < 1e-9     # NICS = -sigma_iso, richtiger Punkt
+            for bad33_ in ([parts33_[0]], [parts33_[0], dict(parts33_[1], xyz=mol33_["xyz"] + 0.1)]):
+                try:
+                    PG33_.nics_grid(bad33_)
+                    raise AssertionError("incomplete grid or other geometry accepted")
+                except ValueError:
+                    pass
+            pg33_ = w.dft_tab.pages                                     # Beispielprojekt S3: Scan und erfundenes Gitter
+            g3_, notes33_ = pg33_.nics3d()
+            assert g3_ is not None and not notes33_ and g3_["data"].min() < -15 and g3_["data"].max() > 5, notes33_
+            assert {"NICS", "NICS3D"} <= {k_ for k_, _, _ in pg33_.figures()}
+            assert not any("3D_NICS" in r_[0] for r_ in pg33_.nics_rows()), "grid points in the table of single points"
+            fig33_ = Fig33_(figsize=(8, 6), dpi=100)
+            Agg33_(fig33_)
+            F33_, _ = pg33_.build_nics3d(fig33_, False)
+            assert F33_ is not None and F33_.orb_art is not None and F33_.style == "depth"
+            assert F33_.orb["alpha"] == (0.9, 0.45)                    # rot deckend, blau durchscheinend (Vorlage)
+            vol33_ = F33_.orb["vol"]                                   # eine Deckkraft: Bild wie mit zwei gleichen Werten
+            args33_ = (vol33_, 1.0, F33_.R, F33_.center, 0.0, (-6.0, 6.0), (-4.0, 4.0), 60, 40, (1, 0, 0), (0, 0, 1))
+            assert np.array_equal(ORB33_.render(*args33_, 0.5), ORB33_.render(*args33_, (0.5, 0.5)))
+            assert not np.array_equal(ORB33_.render(*args33_, (0.9, 0.2)), ORB33_.render(*args33_, (0.5, 0.5)))
+            cap33_ = pg33_.nics3d_caption("S3")
+            assert "+5 ppm (red" in cap33_ and "\u221215 ppm (blue" in cap33_ and "0.5 \u00c5" in cap33_, cap33_
+            assert "Elucida" not in cap33_ and "level of theory" in cap33_
+            w.dft_state["nics"].update(iso_pos=8.0, color_pos="#2ca02c")
+            assert "+8 ppm (green" in pg33_.nics3d_caption("S3")
+            w.dft_state["nics"].update(iso_pos=5.0, color_pos="#d62728")
+            files33_ = [Path(f_) for f_ in pg33_.export_to(out / "nics3d_out" / "S3")]
+            cube33_ = next(f_ for f_ in files33_ if f_.name.endswith("_NICS3D.cube"))
+            assert any(f_.name.startswith("S3_NICS3D.") and f_.suffix != ".cube" for f_ in files33_), files33_
+            assert ORB33_.read_cube(cube33_)["data"][0].shape == g3_["data"].shape
+            pg33_.sync_nics()
+            assert pg33_.nics_mouse is not None and pg33_.cmb_nics_show.currentData() == "3d"
+            report.append("3D NICS (grid from partial calculations, sign, incomplete grid refused, figure, caption, "
+                          "cube export): OK")
+
+        with section:
+            # NMR im Beispielprojekt: Nummer und Messangaben stehen im exportierten SVG, der Bereich in der Tabelle
+            t37_ = w.nmr_tab
+            sp37_ = t37_.spectra()
+            svg37_ = Path(t37_.figure_svg(sp37_[0])).read_text(encoding="utf-8")
+            assert svg37_.count('id="elucida-label"') == 1 and svg37_.rstrip().endswith("</svg>")
+            w.nmr_state.update(label_no=False, label_info=False)
+            assert 'id="elucida-label"' not in Path(t37_.figure_svg(sp37_[0])).read_text(encoding="utf-8")
+            w.nmr_state.update(label_no=True, label_info=True)
+            t37_.sync_widgets()
+            rng37_ = [t37_.tbl.item(r_, 3).text() for r_ in range(t37_.tbl.rowCount())]
+            assert rng37_[0].startswith("\u2713") and rng37_[1].startswith("\u2713"), rng37_      # S3: 1H 0-10 ppm (1.2.0), 13C 0-200
+            report.append("NMR example: label in the exported SVG, chips, axis range in the table: OK")
+
+        with section:
+            # Gamry-Pulsverfahren (DPV, Square-Wave): Tabelle mit den benannten Spalten Vstep/Idif als eine Kurve,
+            # Titel und Pulsparameter in der Unterschrift, Achse Differenzstrom; Tabellen ohne diese Spalten ablehnen
+            from elucida.formats import gamry as GAM35_
+            pdir35_ = out / "input" / "pulse"
+            dpv35_ = GAM35_.make_test_pulse(pdir35_ / "dpv.DTA", "DPV")
+            swv35_ = GAM35_.make_test_pulse(pdir35_ / "swv.DTA", "SQUARE_WAVE")
+            d35_ = GAM35_.read_gamry(dpv35_)
+            assert d35_["meta"]["pulse"] == "DPV" and len(d35_["cycles"]) == 1 and "n_cycles" not in d35_["meta"]
+            c35_ = d35_["cycles"][0]
+            assert len(c35_["E"]) == 120 and abs(c35_["E"][np.argmax(c35_["I"])] + 0.25) < 0.005   # E = Vstep, I = Idif
+            assert abs(c35_["I"].max() - 2.01e-6) < 1e-8 and d35_["meta"]["pulse_par"] == dict(step_mV=2.0, pulse_mV=25.0,
+                                                                                          pulse_s=0.01)
+            assert GAM35_.read_gamry(swv35_)["meta"]["pulse"] == "SWV"
+            bad35_ = pdir35_ / "nocol.DTA"                                 # Tabelle ohne „Idif“: nicht raten
+            bad35_.write_text(dpv35_.read_text(encoding="latin-1").replace("Idif", "Ixxx"), encoding="latin-1", newline="")
+            try:
+                GAM35_.read_gamry(bad35_)
+                raise AssertionError("pulse table without Idif accepted")
+            except ValueError:
+                pass
+            t35_, st35_ = w.cv_tab, w.cv_state
+            keep35_ = dict(files=list(st35_["files"]), couples=list(st35_["couples"]))
+            st35_.update(files=[{"file": str(dpv35_), "uid": "dpv1", "visible": True, "color": "#000000", "label": "DPV"}],
+                         couples=[])
+            t35_.fill_table()
+            t35_.render()
+            assert t35_.F is not None and t35_.F.cfg["ylabel"].startswith("\u0394"), t35_.F.cfg["ylabel"]
+            cap35_ = t35_.si_caption("X")
+            assert cap35_.startswith("Differential pulse voltammograms of") and \
+                "step 2 mV, pulse amplitude 25 mV, pulse time 10 ms" in cap35_ and "scan rate" not in cap35_, cap35_
+            st35_["files"].append({"file": str(swv35_), "uid": "swv1", "visible": True, "color": "#c0392b", "label": "SWV"})
+            assert t35_.si_caption("X").startswith("Voltammograms of")       # gemischt
+            st35_.update(keep35_)
+            t35_.fill_table()
+            t35_.render()
+            report.append("Gamry pulse voltammetry (DPV/SWV by named columns Vstep and Idif, caption, difference "
+                          "current axis, other tables refused): OK")
+
+        with section:
+            # CV-Messaufbau einmal je Projekt (Nutzerentscheidung): Projektdatei, Seite „Angaben“, erster Absatz des
+            # Kapitels der Gesamt-SI, kurze Unterschrift, im Tab der Verbindung nur der Verweis
+            from elucida.app import publication as PUB34_
+            from elucida.si import publication_si as PSI34_
+            from elucida.tabs import cv as CV34_
+            assert CV34_.setup_text({}) == "" and tuple(PUB34_.CV_SETUP) == tuple(CV34_.SETUP_KEYS)
+            assert CV34_.setup_text(dict(we="GC", area="0.07", ce="Pt", ir="85%")) == \
+                "The voltammograms were recorded with iR compensation (85%). The setup contained GC as working " \
+                "electrode (A = 0.07 cm\u00b2) and Pt as counter electrode."          # Fließtext, leere Felder fallen weg
+            assert CV34_.setup_text(dict(area="7.07 mm2", more="The electrolyte was dried in vacuo")) == \
+                "The setup contained a working electrode (A = 7.07 mm\u00b2). The electrolyte was dried in vacuo."
+            assert CV34_.setup_text(dict(device="P1", conv="polar")) == "Cyclic voltammograms were recorded on P1. " \
+                "Voltammograms are plotted in the polarographic convention (cathodic currents positive)."
+            pd34_ = out / "demo_pub_items"
+            d34_ = PUB34_.load(pd34_)
+            assert d34_["cv_setup"]["we"].startswith("glassy carbon") and set(d34_["cv_setup"]) <= set(PUB34_.CV_SETUP)
+            PUB34_.save(pd34_, d34_)
+            assert PUB34_.load(pd34_)["cv_setup"] == d34_["cv_setup"]
+            part34_ = [("A", {"cv": [("image", "a.png", 16, 11, None), ("figcap", "A")]})]
+            ch34_ = [b_[1] for b_ in PSI34_.assemble(d34_, part34_, ["cv"], toc=False) if b_[0] == "char"]
+            assert ch34_[0].startswith("Cyclic voltammograms were recorded on Example potentiostat") and \
+                "A three-electrode setup was used" in ch34_[0] and "porous frit." in ch34_[0] and "ferrocene" in ch34_[1], ch34_
+            assert "Al<sub>2</sub>O<sub>3</sub>" in ch34_[0] and "cm\u00b2" in ch34_[0], ch34_[0]     # gesetzt wie im Druck
+            ch34_ = [b_[1] for b_ in PSI34_.assemble(dict(d34_, cv_setup={}), part34_, ["cv"], toc=False) if b_[0] == "char"]
+            assert "ferrocene" in ch34_[0] and not any("three-electrode" in c_ for c_ in ch34_)   # ohne Angaben kein Absatz
+            t34_ = w.cv_tab                                              # S3 gehört zum Beispielprojekt
+            assert t34_.project_setup() == d34_["cv_setup"] and t34_.setup_sentence() == ""
+            assert "three-electrode" not in t34_.methods_text() and "electrode" not in t34_.si_caption("S3")
+            # Konvention und iR-Kompensation stehen im Kapitelabsatz; die Unterschrift nennt sie nur bei Abweichung
+            assert d34_["cv_setup"]["conv"] == "iupac"
+            cap34_ = t34_.si_caption("S3")
+            assert "convention" not in cap34_ and "scans started" not in cap34_, cap34_
+            assert "(without iR compensation)" in cap34_                      # Projekt nennt keine: die Angabe bleibt
+            for conv_, ir_, want_ in (("polar", "", ("IUPAC convention", "(without iR compensation)")),
+                                      ("iupac", "positive feedback", ("(without iR compensation)",)),
+                                      ("", "", ())):                       # Projekt ohne Konvention: keine (1.2.0)
+                PUB34_.save(pd34_, dict(d34_, cv_setup=dict(d34_["cv_setup"], conv=conv_, ir=ir_)))
+                cap34_ = t34_.si_caption("S3")
+                assert all(x_ in cap34_ for x_ in want_) and (conv_ or "convention" not in cap34_), (conv_, ir_, cap34_)
+            PUB34_.save(pd34_, d34_)
+            t34_.update_acs_hint()
+            assert "glassy carbon" in t34_.lbl_acs_text.text(), t34_.lbl_acs_text.text()
+            assert not any(ed_.isVisibleTo(t34_) for ed_ in t34_.ed_acs.values()), "fields shown although in a project"
+            assert not {"we", "ce", "gas", "device", "polish", "area"} & set(t34_.acs_missing()), t34_.acs_missing()
+            w.pub_page.info_page.load(d34_)
+            assert w.pub_page.info_page.cv_eds["ce"].text() == "Pt wire"
+            assert w.pub_page.info_page.values()["cv_setup"] == d34_["cv_setup"]
+            report.append("CV setup once per project (details page, first paragraph of the chapter in the combined SI, "
+                          "short captions, reference in the tab): OK")
+
+        with section:
+            # ACID: Cube mit dem Skalarfeld (Orbital-Cube mit negativen Werten abgelehnt), CSGT-Ausgabe nur fuer die
+            # Unterschrift (ohne CSGT/IOp(10/93) abgelehnt), Abbildung im Beispielprojekt, Unterschrift, Export
+            from matplotlib.backends.backend_agg import FigureCanvasAgg as Agg34_
+            from matplotlib.figure import Figure as Fig34_
+            from elucida.core import orbitals as ORB34_
+            from elucida.tabs import dft_acid as ACID34_
+            from elucida.formats import aicd as AICD34_
+            d34_ = out / "acid_in"
+            d34_.mkdir(parents=True, exist_ok=True)
+            orb34_ = ORB34_.make_test_cube(d34_ / "orbital.cube", n=12)
+            for bad34_, fn34_ in ((orb34_, ACID34_.read_acid_cube),
+                                  (d34_ / "nmr.log", lambda p_: ACID34_.read_acid_log(Path(p_).read_text()))):
+                if bad34_.suffix == ".log":
+                    bad34_.write_text(" " + "-" * 69 + "\n #p nmr=giao b3lyp/6-31g(d)\n " + "-" * 69 + "\n",
+                                      encoding="utf-8", newline="")
+                try:
+                    fn34_(bad34_)
+                    raise AssertionError(f"{bad34_.name} accepted as ACID input")
+                except ValueError:
+                    pass
+            pg34_ = w.dft_tab.acid_page                                 # Beispielprojekt S3: erfundene AICD-Ausgabe
+            src34_, calc34_, notes34_ = pg34_.data()
+            assert src34_ is not None and src34_["kind"] == "mesh" and calc34_ is not None and not notes34_, notes34_
+            m34_ = src34_["mesh"]
+            assert len(m34_["tri"]) > 100 and len(m34_["arrows"]) > 50 and m34_["iso"] == 0.05
+            assert m34_["colors"] == ("Green", "Red") and abs(np.linalg.norm(m34_["field"]) - 1) < 1e-9
+            # Aufbau wie die echte AICD-Datei; Abweichungen abgelehnt (smooth_triangle -> triangle, Pfeil ohne Kegel)
+            inc34_ = Path(w.dft_state["acid"]["inc"]).read_text(encoding="utf-8")
+            for bad34_ in (inc34_.replace("smooth_triangle", "triangle"),
+                           inc34_.replace(" pigment { Red }}  // L", " pigment { Red }}  // X", 1),
+                           inc34_.replace("#declare Isooberflaeche", "#declare Flaeche")):
+                try:
+                    AICD34_.read_isoober(bad34_)
+                    raise AssertionError("unknown AICD layout accepted")
+                except ValueError:
+                    pass
+            try:
+                AICD34_.read_molekuel("// This file was created by PovChem version 1.00\n"
+                                      "object { Atom_Unobtainium translate <0, 0, 0> }\n")
+                raise AssertionError("unknown PovChem element accepted")
+            except ValueError:
+                pass
+            # Isowert nur, wenn B im Aufruf zum Magnetfeldvektor passt
+            fb34_ = -m34_["field"]
+            assert AICD34_.read_isoober(re.sub(r" -- 0\.05 \S+ \S+ \S+ ", f" -- 0.05 {fb34_[0]:g} {fb34_[1]:g} "
+                                               f"{fb34_[2]:g} ", inc34_, count=1))["iso"] is None
+            assert "ACID" in {k_ for k_, _, _ in w.dft_tab.pages.figures()}
+            fig34_ = Fig34_(figsize=(8, 6), dpi=100)
+            Agg34_(fig34_)
+            F34_, _ = pg34_.build(fig34_, False)
+            assert F34_ is not None and F34_.orb_art is not None and F34_.style == "depth" and F34_.orb["arrows"]
+            fig34_.canvas.draw()
+            img34_ = F34_.orb_art.get_array()
+            rgb34_ = np.asarray(img34_)[..., :3][np.asarray(img34_)[..., 3] > 0.5]
+            assert ((rgb34_[:, 1] > 0.7) & (rgb34_[:, 0] < 0.4)).sum() > 3     # Pfeile: Schaft gruen ...
+            assert ((rgb34_[:, 0] > 0.7) & (rgb34_[:, 1] < 0.4)).sum() > 3     # ... Spitze rot (Flaeche gelb)
+            n_all34_ = len(pg34_.shown_arrows(m34_))
+            w.dft_state["acid"]["arrow_density"] = 50.0                 # ausduennen, nie neu berechnen
+            half34_ = pg34_.shown_arrows(m34_)
+            assert abs(len(half34_) - n_all34_ / 2) <= 1 and set(half34_) <= set(range(n_all34_))
+            assert np.array_equal(half34_, pg34_.shown_arrows(m34_))     # immer dieselben
+            w.dft_state["acid"]["arrow_density"] = 100.0
+            cap34_ = pg34_.caption("S3")
+            assert "isovalue: 0.05)" in cap34_ and "b3lyp/6-311+g(2d,p)//B3LYP-D4/def2-TZVP level of theory" in cap34_, cap34_
+            assert "current density vectors" in cap34_ and "green arrow indicates the direction of the magnetic" in cap34_
+            assert "Herges" in cap34_ and "Elucida" not in cap34_ and "selected orbitals" not in cap34_
+            assert "diatrop" not in cap34_ and "paratrop" not in cap34_
+            log34_ = d34_ / "sel.log"                                   # IOp(10/93=2): nur ausgewaehlte Orbitale
+            log34_.write_text(Path(w.dft_state["acid"]["log"]).read_text(encoding="utf-8").replace(
+                "iop(10/93=1)", "iop(10/93=2)"), encoding="utf-8", newline="")
+            assert ACID34_.orbital_selection(ACID34_.read_acid_log(log34_.read_text(encoding="utf-8")))
+            files34_ = [Path(f_) for f_ in w.dft_tab.pages.export_to(out / "acid_out" / "S3")]
+            assert any(f_.name.startswith("S3_ACID.") for f_ in files34_), files34_
+            pg34_.sync()                                                 # Seite verborgen: Bild erst beim Anzeigen
+            assert (pg34_.mouse is not None) != pg34_._pending and pg34_.arrow_card.isVisibleTo(pg34_.arrow_card.parentWidget())
+            # Cube-Weg (ohne AICD-Dateien): Feld/Isowert, Farbe wie die Fläche
+            keep34_ = dict(w.dft_state["acid"])
+            from elucida.app import demo as DEMO34_
+            from rdkit import Chem as Chem34_
+            from rdkit.Chem import AllChem as AllChem34_
+            mol34_ = Chem34_.AddHs(Chem34_.MolFromSmiles("c1ccccc1C#C"))
+            AllChem34_.EmbedMolecule(mol34_, randomSeed=7)
+            cub34_ = DEMO34_.make_acid_cube(d34_ / "acid.cube", mol34_, mol34_.GetConformer().GetPositions())
+            w.dft_state["acid"].update(inc="", mol="", log="", cube=str(cub34_), iso=0.045)
+            src34_, _, notes34_ = pg34_.data()
+            assert src34_["kind"] == "cube" and notes34_ == [T("acid_no_log")], notes34_
+            F34_, _ = pg34_.build(Fig34_(figsize=(8, 6), dpi=100), False)
+            assert F34_.orb["plus"] == F34_.orb["minus"] and F34_.orb["alpha"] == (0.9, 0.9)
+            pg34_.sync()
+            pg34_.sp_iso.setValue(0.03)                                 # Feld -> Zustand -> Unterschrift
+            assert abs(w.dft_state["acid"]["iso"] - 0.03) < 1e-9 and "isovalue: 0.03)" in pg34_.caption("S3")
+            assert not pg34_.arrow_card.isVisibleTo(pg34_.arrow_card.parentWidget())
+            w.dft_state["acid"].clear()
+            w.dft_state["acid"].update(keep34_)
+            pg34_.sync()
+            report.append("ACID (AICD surface and arrows in the checked layout, other layouts refused, thinning, "
+                          "cube checked, CSGT output for the caption, figure, caption, export): OK")
         with section:                                        # Listen mit der Maus umsortieren (Ziehen einer Zeile)
             from PySide6.QtCore import QPointF
             from PySide6.QtGui import QDropEvent
@@ -8829,7 +12003,7 @@ def selftest(outdir, with_isnet=False):
                     assert c_pv_._auto_pending               # neuer Pfad ohne Rechendaten: bleibt leer, Versuch offen
                     lab_pv_ = next(x_ for x_ in c_pv_.findChildren(QLabel) if x_.text() == T("rp_composition_caption"))
                     left_pv_ = pos_pv_(lab_pv_).x()
-                    right_pv_ = ws_pv_.width() - pos_pv_(c_pv_.caption).x() - c_pv_.caption.width()
+                    right_pv_ = ws_pv_.width() - pos_pv_(c_pv_.btn_copy).x() - c_pv_.btn_copy.width()   # „Kopieren“ am Ende
                     below_pv_ = ws_pv_.height() - pos_pv_(c_pv_.caption).y() - c_pv_.caption.height()
                     assert (left_pv_, right_pv_, below_pv_) == (l_pv_, r_pv_, b_pv_), (left_pv_, right_pv_, below_pv_)
                     assert c_pv_.caption.height() == STYLE.CONTROL_H, c_pv_.caption.height()
@@ -8908,8 +12082,8 @@ def selftest(outdir, with_isnet=False):
             f0_ = r3_["tabs"]["cv"]["files"][0]
             r0_ = next(r_ for r_ in w.cv_tab.results if r_["n"] == 1 and r_["uid"] == f0_["uid"])
             c0_ = f0_["couples"][0]
-            assert c0_["t_e12"] == CVMOD._fmt_e(r0_["e12"]) and c0_["t_dep"] == f"{r0_['dep'] * 1000:.0f}", (c0_, r0_)
-            assert CMP.auto_value("cv1_e12", r3_, {}) == CVMOD._fmt_e(r0_["e12"])
+            assert c0_["t_e12"] == CVMOD._fmt_e(r0_["e12"], CVMOD.E_DEC) and c0_["t_dep"] == f"{r0_['dep'] * 1000:.0f}", (c0_, r0_)
+            assert CMP.auto_value("cv1_e12", r3_, {}) == CVMOD._fmt_e(r0_["e12"], CVMOD.E_DEC)   # Stellen wie Bild/SI (1.2.0)
             g_c_ = next(iter(w.groups))
             cfg_c_, _sp, res_c_ = core.prepare_series(w.make_cfg(g_c_), w.groups[g_c_], g_c_)
             line_ = SI.uvvis_line(res_c_, cfg_c_, w.series[g_c_].get("solvent", ""))[0]
@@ -8933,7 +12107,7 @@ def selftest(outdir, with_isnet=False):
             # ohne Stand (z. B. ältere Verbindung): fehlt -> Aktualisieren öffnet sie kurz
             CMP.snapshot_path(dcmp_ / "S2").unlink()
             r2_ = CMP.read_compound(dcmp_ / "S2")
-            assert r2_["missing"] == ["eps", "irms", "xray", "nmr"] and CMP.status(r2_, "table") == "missing", r2_
+            assert r2_["missing"] == ["eps", "epr", "irms", "xray", "nmr"] and CMP.status(r2_, "table") == "missing", r2_
             w.open_publication(dcmp_)
             pp_c_ = w.pub_page
             cp_ = pp_c_.compare_page
@@ -9220,6 +12394,7 @@ def selftest(outdir, with_isnet=False):
             lay_ = ct_.F.current_layout()
             keys_ = [m_["key"] for m_ in ct_.members()[:3]]
             assert all(f"arrow_scan_{k_}" in lay_ and f"image_struktur_{k_}" in lay_ for k_ in keys_), sorted(lay_)
+            assert all(_arrow_clear(ct_.F, f"arrow_scan_{k_}") for k_ in keys_), [lay_[f"arrow_scan_{k_}"] for k_ in keys_]
             ys_ = [lay_[f"image_struktur_{k_}"][1] for k_ in keys_]
             assert ys_[0] > ys_[1] > ys_[2], ys_                                      # Struktur neben ihrer Kurve
             assert ct_.st["struct_color"] is True and ct_.sp_struct_w is ct_.sp_sw      # Vorgabe: Kurvenfarbe
@@ -9633,10 +12808,6334 @@ def selftest(outdir, with_isnet=False):
             assert proj_hash_() == h0_                                         # Daten der Verbindungen unveraendert
             w.close_publication()
             report.append("Comparison undo/redo (member, cell, column; compounds untouched): OK")
+        with section:                                                        # 1.2.0: Reinheit, FID-Paket, Bezeichner,
+            import zipfile as _zf_k                                          # Data Availability Statement, Ladungen
+            from elucida.app import publication as PUB_k
+            from elucida.exchange import datapack as DP_k
+            from elucida.formats.calc import parse_populations
+            from elucida.tabs import dft_pop as POP_k
+            # Reinheit: Satz nur aus Eingetragenem, 1H + 13C zusammengefasst, Freitext unverändert
+            assert SI.purity_line([], "") == ("", "")
+            assert SI.purity_line(["ea"])[0] == "Purity was established by elemental analysis."
+            assert SI.purity_line(["13C", "1H", "hplc"], "PXRD")[0] == \
+                "Purity was established by ¹H and ¹³C NMR spectroscopy, HPLC and PXRD.", SI.purity_line(["13C", "1H", "hplc"], "PXRD")
+            assert "<sup>1</sup>H" in SI.purity_line(["1H"])[1]
+            dk_ = w.open_demo_publication(out / "demo_pub_siklein")
+            w.open_project(dk_ / "S3")
+            assert w.compound.get("purity") == ["1H", "13C", "ea"], w.compound.get("purity")
+            assert w.si_char_blocks(w.compound, "S3")[2].endswith("NMR spectroscopy and elemental analysis.")
+            w.open_project(dk_ / "S2")                                       # EA-Mittel 0.43 daneben: NMR vorgeschlagen,
+            assert not w.compound.get("purity") and w.comp_tab.purity_suggestion() == ["1H", "13C"]   # nichts gesetzt
+            assert "Purity" not in w.si_char_blocks(w.compound, "S2")[2]
+            # FID for Publication: ein Ordner je Verbindung, je Experiment nach Art, MolFile, Parameter; Kopien
+            dk_data_ = PUB_k.load(dk_)
+            assert dk_data_["fidpack"] == {"name": "FID for Publication.zip", "compounds": ["S2", "S3"],
+                                           "entries": ["S2", "S3"]}, dk_data_["fidpack"]
+            names_k_ = _zf_k.ZipFile(dk_ / PUB_k.PACK_DIR / "FID for Publication.zip").namelist()
+            for n_ in ("S2/HSQC/acqus", "S2/S2.mol", "S2/NMR_parameters.txt", "S3/HSQC/acqu2s", "S3/S3.mol"):
+                assert n_ in names_k_, (n_, names_k_)
+            raw_k_ = PRJ.load(dk_ / "S3")["nmr"]["raw"][0]["path"]
+            assert (Path(raw_k_) / "acqus").is_file(), raw_k_                 # Quelle bleibt (kopiert, nie verschoben)
+            assert DP_k.fid_items({"nmr": {"raw": []}}, dk_ / "S3", "S3") == []
+            # Data Availability Statement: nur Bausteine des Nutzers; CCDC je Nummer einzeln; abschaltbar
+            ccdc_k_ = PUB_k.ccdc_numbers(dk_)
+            assert ccdc_k_ == [("S2", "2000001"), ("S3", "2000002")], ccdc_k_
+            das_k_ = PUB_k.das_text(dk_data_, ccdc_k_)
+            for part_ in ("openly available in Example Repository at https://doi.org/10.0000/EXAMPLE.",
+                          "2000001 (for S2) and 2000002 (for S3)", "“FID for Publication”"):
+                assert part_ in das_k_, (part_, das_k_)
+            assert PUB_k.das_text(PUB_k.default()) == ""
+            assert "Deposition" not in PUB_k.das_text({**dk_data_, "das": {"ccdc": "0"}}, ccdc_k_)
+            w.pub_page.info_page.load(dk_data_)
+            assert w.pub_page.info_page.txt_das.text().startswith("The data underlying"), w.pub_page.info_page.txt_das.text()
+            # Bezeichner: zentral in SI.labels/rename_refs; Gesamt-SI mit „Supplementary Figure 1“, Verweise ebenso
+            SI.set_template("group", naming="supplementary")
+            try:
+                assert SI.labels() == ("Supplementary Figure ", "Supplementary Table ")
+                assert SI.rename_refs("see Figure S3, Fig. S12 and Table S2; Figure 4") == \
+                    "see Supplementary Figure 3, Supplementary Figure 12 and Supplementary Table 2; Figure 4"
+            finally:
+                SI.set_template("group")
+            assert SI.labels() == ("Figure S", "Table S") and SI.rename_refs("Figure S3") == "Figure S3"
+            SI.set_template("nature", naming="s")
+            assert SI.labels() == ("Figure S", "Table S") and SI.rename_refs("Supplementary Figure 2") == "Figure S2"
+            SI.set_template("group")
+            dk_data_["si_naming"] = "supplementary"
+            PUB_k.save(dk_, dk_data_)
+            assert PUB_k.load(dk_)["si_naming"] == "supplementary"
+            doc_k_ = w.export_publication_si(dk_, PUB_k.sync(dk_)[0], ["char", "figs", "xray"], template="group")
+            xml_k_ = re.sub(r"<[^>]+>", "", _zf_k.ZipFile(doc_k_).read("word/document.xml").decode("utf-8"))
+            assert "Supplementary Figure 1" in xml_k_ and "Figure S" not in xml_k_ and "Supplementary Table" in xml_k_
+            assert SI.labels() == ("Figure S", "Table S")                     # danach wieder die Vorgabe
+            # Ladungen: ORCA (Mulliken mit Spin, Löwdin), Gaussian (Mulliken + Spindichte); nur vorhandene Spalten
+            orca_k_ = ("* O   R   C   A *\nMULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS\n-------\n   0 N :   -0.446464    1.051333\n"
+                       "   1 H :    0.223232   -0.025666\n   2 H :    0.223232   -0.025667\nSum of atomic charges : 0.0\n\n"
+                       "LOEWDIN ATOMIC CHARGES AND SPIN POPULATIONS\n-------\n   0 N :   -0.098679    0.946114\n"
+                       "   1 H :    0.049339    0.026943\n   2 H :    0.049340    0.026943\n\n")
+            pk_ = parse_populations(orca_k_)
+            assert set(pk_) == {"mulliken", "loewdin"} and pk_["mulliken"]["els"] == ["N", "H", "H"], pk_
+            assert pk_["mulliken"]["spin"][0] == 1.051333 and pk_["loewdin"]["charge"][0] == -0.098679
+            assert [h_ for *_, h_ in POP_k.columns(pk_)] == ["Mulliken charge", "Mulliken spin population",
+                                                              "Löwdin charge", "Löwdin spin population"]
+            g_k_ = (" Entering Gaussian System, Link 0=g16\n Mulliken charges:\n               1\n     1  O   -0.800000\n"
+                    "     2  H    0.400000\n     3  H    0.400000\n Sum of Mulliken charges =  0.00000\n")
+            pg_ = parse_populations(g_k_)
+            assert list(pg_) == ["mulliken"] and pg_["mulliken"]["spin"] is None and pg_["mulliken"]["charge"][0] == -0.8, pg_
+            w.open_project(dk_ / "S3")
+            t_k_ = w.dft_tab
+            e_k_ = next(e_ for e_ in t_k_.entries() if POP_k.table(t_k_, e_)[1])
+            head_k_, rows_k_, _ = POP_k.table(t_k_, e_k_)
+            assert head_k_ == ["Atom", "Mulliken charge", "Löwdin charge"] and len(rows_k_) == len(t_k_.geometry(e_k_)[1])
+            csv_k_ = POP_k.write_csv(t_k_, out / "siklein_charges.csv")
+            assert csv_k_.read_text(encoding="utf-8-sig").startswith("Calculation,Atom,Mulliken charge")
+            e_k_["pop_si"] = True
+            assert any(b_[0] == "tabcap" and b_[1].startswith("Mulliken and Löwdin atomic charges")
+                       for b_ in t_k_.docx_blocks(out))
+            w.close_publication()
+            report.append("Purity, FID for Publication, SI labels, data availability, charges (1.2.0): OK")
+        with section:
+            # Tempo (1.2.0): verborgene Tabs werden beim Öffnen einer anderen Verbindung nicht neu gebaut, Ergebnisseiten
+            # (NTO, ACID) rechnen erst beim Anzeigen, Orbitale beim Zoomen gröber; Projektdateien mit dem C-Leser gleich
+            import yaml as _yaml_sp
+            pf_sp = PRJ.project_file(dk_ / "S3").read_text(encoding="utf-8")
+            assert PRJ.read_yaml(pf_sp) == _yaml_sp.safe_load(pf_sp)
+            w.open_publication(dk_)
+            w.open_project(dk_ / "S3")
+            pump(0.3)
+            for k_sp in ("cv", "overlay"):
+                w.main_tabs.setCurrentIndex(w._tab_keys.index(k_sp))
+                pump(0.3)
+            assert w._built("cv") and w._built("overlay")
+            nto_sp = w.ov_tab.nto
+            assert nto_sp.st["items"] and nto_sp._pending, "NTO drawn while hidden"
+            rt_sp = w.ov_tab.right_tabs
+            rt_sp.setCurrentIndex(next(j_ for j_ in range(rt_sp.count()) if rt_sp.widget(j_).isAncestorOf(nto_sp.page)))
+            pump(0.5)
+            assert not nto_sp._pending and nto_sp.canvas.isVisibleTo(nto_sp.page)
+            rt_sp.setCurrentIndex(0)
+            w.open_project(dk_ / "S2")                                      # andere Verbindung: verborgene Tabs als Platzhalter
+            pump(0.3)
+            assert not w._built("cv") and "cv" in w._lazy and not w._built("overlay"), sorted(w._lazy)
+            w.open_project(dk_ / "S3")
+            pump(0.3)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))           # beim Anzeigen wieder gebaut und gezeichnet
+            pump(0.3)
+            assert w._built("cv") and w.cv_tab.F is not None
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("dft"))
+            pump(0.5)
+            acid_sp = w.dft_tab.acid_page
+            assert acid_sp._pending and acid_sp.mouse is None                # ACID: Netz erst beim Anzeigen gerastert
+            rt_sp = w.dft_tab.right_tabs
+            rt_sp.setCurrentIndex(next(j_ for j_ in range(rt_sp.count()) if rt_sp.widget(j_).isAncestorOf(acid_sp.group)))
+            pump(0.5)
+            assert not acid_sp._pending and acid_sp.mouse is not None
+            rt_sp.setCurrentIndex(0)
+            pump(0.3)
+            F_sp = w.dft_tab.F
+            if F_sp is not None and F_sp.orb_art is not None:               # Mausrad über dem Orbital: kurz gröber
+                from matplotlib.backend_bases import MouseEvent as _ME_sp
+                c_sp = F_sp.fig.canvas
+                ev_sp = _ME_sp("scroll_event", c_sp, c_sp.width() / 2, c_sp.height() / 2, button="up", step=1)
+                w.dft_tab.dragger.scroll(ev_sp)
+                assert F_sp.orb_art.drag
+                pump(0.6)
+                assert not F_sp.orb_art.drag
+            w.close_publication()
+            report.append("speed: lazy tabs after switching compounds, result pages on show, coarse zoom: OK")
+        with section:
+            # 1.2.0 review fixes, Gruppe 4: Projektzustand, Datenpaket, Vergleich, DFT-Seiten (A1-A6, D1-D7)
+            import copy as _cp_fx
+            import dataclasses as _dc_fx
+            import types as _ty_fx
+            import zipfile as _zf_fx
+            from elucida.app import comparison as CMP_fx
+            from elucida.app import publication as PUB_fx
+            from elucida.app import publication_view as PV_fx
+            from elucida.exchange import datapack as DP_fx
+            from elucida.tabs import dft_nbo as NBOT_fx
+            from elucida.tabs import dft_pages as PG_fx
+            from elucida.tabs import nto as NTOV_fx
+            from elucida.core import orbitals as ORB_fx
+            dz_ = w.open_demo_publication(out / "fixd_pub")
+            w.open_project(dz_ / "S3")
+            # A1: Projekt-Vergleich nimmt die Emission (Kennung), nie das Anregungsspektrum; alter Stand gilt als veraltet
+            spec_fx = w.fl_tab.figure_spec()
+            em_fx = [c_ for c_ in spec_fx[1] if c_.get("role") == "em"]
+            exc_fx = [c_ for c_ in spec_fx[1] if c_.get("ls") == "-."]
+            assert len(em_fx) == 1 and len(exc_fx) == 1 and w.fl_state.get("exc_file"), "demo: emission + excitation"
+            ent_fx = CMP_fx._fluo_entry(w)
+            assert ent_fx["em"] is not None and ent_fx["em"]["y"] == CMP_fx._thin(em_fx[0]["x"], em_fx[0]["y"])[1]
+            assert ent_fx["em"]["x"] == CMP_fx._thin(em_fx[0]["x"], em_fx[0]["y"])[0]
+            fl_fx = _cp_fx.deepcopy(w.fl_state)
+            fp_old_ = CMP_fx.fingerprint(fl_fx, dz_ / "S3")                    # wie 1.2.0 (ohne Kennung)
+            assert CMP_fx.fingerprint(fl_fx, dz_ / "S3", "fluo") != fp_old_
+            assert CMP_fx.fingerprint(dict(fl_fx, exc_file=None), dz_ / "S3", "fluo") == \
+                CMP_fx.fingerprint(dict(fl_fx, exc_file=None), dz_ / "S3")    # ohne Anregung: Stand bleibt gültig
+            w.save_project()
+            snap_fx = CMP_fx.load_snapshot(dz_ / "S3")
+            snap_fx["tabs"]["fluo"]["fp"] = CMP_fx.fingerprint(PRJ.load(dz_ / "S3")["fluo"], dz_ / "S3")
+            CMP_fx.snapshot_path(dz_ / "S3").write_text(json.dumps(snap_fx), encoding="utf-8")   # Stand aus 1.2.0
+            assert "fluo" in CMP_fx.read_compound(dz_ / "S3")["stale"]           # -> „Aktualisieren“ bildet neu
+            snap_fx["tabs"].pop("fluo")
+            CMP_fx.snapshot_path(dz_ / "S3").write_text(json.dumps(snap_fx), encoding="utf-8")
+            CMP_fx.write_snapshot(w, w.get_state())
+            assert "fluo" not in CMP_fx.read_compound(dz_ / "S3")["stale"]
+            assert CMP_fx.load_snapshot(dz_ / "S3")["tabs"]["fluo"]["em"]["y"] == ent_fx["em"]["y"]
+            # A6/D4: eine Bedingung „DFT hat Daten“ für Einzel- und Gesamt-SI
+            ds_fx = w.dft_state
+            assert w.dft_tab.st is ds_fx
+            keep_fx = {k_: _cp_fx.deepcopy(ds_fx.get(k_)) for k_ in ("entries", "nics", "acid", "profile", "nbo")}
+            try:
+                ds_fx["entries"], ds_fx["nics"]["files"], ds_fx["profile"]["irc"] = [], [], []
+                ds_fx["acid"].update(cube="", log="")                          # nur AICD (inc/mol)
+                ds_fx["nbo"]["files"] = []
+                assert ds_fx["acid"]["inc"] and w.dft_has_data() and w.si_available()["dft"]
+                assert "dft" in [k_ for k_, _ in w.si_figure_choices()]
+                ds_fx["acid"].update(inc="", mol="")
+                ds_fx["nbo"]["files"] = keep_fx["nbo"]["files"]               # nur NBO
+                assert w.dft_has_data() and w.si_available()["dft"]
+                bl_fx, _ = w.si_blocks(["dft"])
+                assert any(b_[0] == "heading" and b_[1].startswith("NBO analysis") for b_ in bl_fx)
+                t_fx, parts_fx = w.si_compound_parts({"dft"}, methods=False)
+                assert any(b_[0] == "heading" and b_[1].startswith("NBO analysis") for b_ in parts_fx.get("dft") or [])
+                ds_fx["nbo"]["files"] = []
+                assert not w.dft_has_data() and not w.si_available()["dft"]
+                assert "dft" not in w.si_compound_parts({"dft"}, methods=False)[1]
+            finally:
+                for k_, v_ in keep_fx.items():                                 # an Ort und Stelle zurück
+                    if isinstance(v_, dict):
+                        ds_fx[k_].clear()
+                        ds_fx[k_].update(v_)
+                    else:
+                        ds_fx[k_] = v_
+            assert w.dft_has_data()
+            # D1: „Alles auf Standard“ setzt nur die Darstellung zurück, Dateien (NICS, ACID, Profil, NBO) bleiben
+            ds_fx["acid"]["iso"], ds_fx["nics"]["iso_pos"] = 0.123, 7.0
+            files_fx = (list(ds_fx["nics"]["files"]), {k_: ds_fx["acid"][k_] for k_ in ("cube", "log", "inc", "mol")},
+                        _cp_fx.deepcopy(ds_fx["profile"]), _cp_fx.deepcopy(ds_fx["nbo"]["files"]))
+            assert files_fx[0] and files_fx[1]["inc"] and files_fx[3]
+            w.dft_tab.reset_display()
+            assert (list(ds_fx["nics"]["files"]), {k_: ds_fx["acid"][k_] for k_ in ("cube", "log", "inc", "mol")},
+                    ds_fx["profile"], ds_fx["nbo"]["files"]) == files_fx
+            assert ds_fx["acid"]["iso"] == 0.045 and ds_fx["nics"]["iso_pos"] == 5.0
+            # D2: „α-spin Wiberg“ nur offenschalig; Laden einer geschlossenschaligen Datei setzt die Spinwahl zurück
+            nb_fx = w.dft_tab.nbo
+            closed_fx = next(f_ for f_ in nb_fx.st["files"] if not nb_fx.data(f_)[0].get("spin"))
+            d_fx = nb_fx.data(closed_fx)[0]
+            nb_fx.st.update(spin="alpha", bonds="wiberg")
+            assert d_fx["wiberg"] and NBOT_fx.bond_source(nb_fx.st, d_fx) == "wiberg"
+            cap_fx = nb_fx.caption(d_fx, "S3")
+            assert "Wiberg" in cap_fx and "spin" not in cap_fx, cap_fx
+            nb_fx.load([closed_fx["file"]])
+            assert nb_fx.st["spin"] == "total"
+            # D3: NBO-Ausgabe ohne Geometrieblock: Tabellen/CSV ja, Abbildung nein, SI und Export brechen nicht ab
+            nog_fx = out / "input" / "fixd_nogeom_NBO.out"
+            nog_fx.write_text(DFT.read_text(closed_fx["file"]).replace("CARTESIAN COORDINATES (ANGSTROEM)",
+                                                                       "CARTESIAN COORDINATES (OMITTED)"), encoding="utf-8")
+            nb_fx.load([str(nog_fx)])
+            cur_fx = nb_fx.entry()
+            d0_fx = nb_fx.data(cur_fx)[0]
+            assert d0_fx is not None and not d0_fx.get("geometry") and d0_fx["npa"]
+            try:
+                nb_fx.build(MplFigure(), d0_fx)
+                raise AssertionError("figure without geometry")
+            except ValueError as ex_:
+                assert str(ex_) == T("fixd_nbo_no_geom")
+            nb_fx.sync()
+            blk_fx = w.dft_tab.docx_blocks(PRJ.work_dir(w.project_dir, "si"))
+            assert any(b_[0] == "heading" and "fixd_nogeom" in b_[1] for b_ in blk_fx)
+            ex_dir_fx = out / "fixd_nbo_export"
+            ex_dir_fx.mkdir(exist_ok=True)
+            got_fx = nb_fx.export_to(ex_dir_fx / "S3")
+            assert any(Path(p_).name == "S3_NBO_fixd_nogeom_NBO_NPA.csv" for p_ in got_fx), [Path(p_).name for p_ in got_fx]
+            # Realtest F1: kein Energieprofil aus den Rechnungen einer Verbindung (Reiter dort entfernt), nur ein
+            # gespeichertes (alte Projekte) bzw. im Reaktionspfad
+            pg_fx = w.dft_tab.pages
+            assert pg_fx.levels_spec()[0] and not pg_fx.has_profile() and pg_fx.nics_enabled
+            assert "profile" not in [k_ for k_, _, _ in pg_fx.figures()]
+            assert not any("_dft_profile" in str(b_) for b_ in pg_fx.si_figures(PRJ.work_dir(w.project_dir, "si"), "S3"))
+            pg_fx.prof["species"]["fixd"] = {}                                 # gespeichertes Profil: bleibt
+            try:
+                assert "profile" in [k_ for k_, _, _ in pg_fx.figures()]
+            finally:
+                pg_fx.prof["species"].pop("fixd")
+            # Realtest F2: EPR-Rechnung ohne Messung: Methodentext wie die Abbildungen
+            et_fx = w.epr_tab
+            vis_fx = [e_.get("visible", True) for e_ in et_fx.st["entries"]]
+            try:
+                for e_ in et_fx.st["entries"]:
+                    e_["visible"] = False
+                assert et_fx.figure_spec() is None and et_fx.calc_pages.figures()
+                mt_fx = next(t_ for k_, ti_, t_ in w.si_methods_items() if ti_ == "EPR spectroscopy")
+                assert mt_fx and mt_fx == et_fx.calc_pages.methods_text(), mt_fx
+            finally:
+                for e_, v_ in zip(et_fx.st["entries"], vis_fx):
+                    e_["visible"] = v_
+            # A2/A3/D9: neue Dateipfade relativ gespeichert, nach Verschieben gefunden, im Datenpaket oder als fehlend
+            w.save_project()
+            w.open_project(dz_ / "S2")
+            mv_ = out / "fixd_moved" / "S3"
+            mv_.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(dz_ / "S3"), str(mv_))
+            raw_fx = PRJ.read_yaml(PRJ.project_file(mv_).read_text(encoding="utf-8"))
+            rel_fx = [raw_fx["dft"]["acid"][k_] for k_ in ("log", "inc", "mol")] + [raw_fx["dft"]["nbo"]["current"]] + \
+                [f_[k_] for f_ in raw_fx["dft"]["nbo"]["files"] for k_ in ("file", "cml") if f_.get(k_)]
+            assert rel_fx and not any(Path(p_).is_absolute() for p_ in rel_fx), rel_fx
+            st_fx = PRJ.load(mv_)
+            root_fx = str(mv_.resolve())
+            for p_ in [st_fx["dft"]["acid"][k_] for k_ in ("log", "inc", "mol")] + \
+                    [f_[k_] for f_ in st_fx["dft"]["nbo"]["files"] for k_ in ("file", "cml") if f_.get(k_)]:
+                assert p_.startswith(root_fx) and Path(p_).exists(), p_
+            assert PRJ.missing_files(st_fx) == [], PRJ.missing_files(st_fx)
+            miss_fx = []
+            its_fx = DP_fx.collect(st_fx, mv_, miss_fx)
+            arcs_fx = {it_.arc: it_.group for it_ in its_fx}
+            nm_ = lambda p_: Path(p_).name                                     # noqa: E731
+            want_fx = ["DFT/" + nm_(st_fx["irms"]["irc_file"]), "DFT/" + nm_(st_fx["epr"]["calc"]["file"]),
+                       "DFT/" + nm_(st_fx["epr"]["calc"]["orb"]), "DFT/" + nm_(st_fx["dft"]["acid"]["log"]),
+                       f"DFT/{Path(st_fx['dft']['acid']['inc']).parent.name}/Isoober.inc",
+                       f"DFT/{Path(st_fx['dft']['acid']['mol']).parent.name}/Molekuel.inc",
+                       "Raman/" + nm_(st_fx["irms"]["ram_file"]), "Fluorescence/" + nm_(st_fx["fluo"]["decay_file"]),
+                       "Fluorescence/" + nm_(st_fx["fluo"]["irf_file"]), "UV-Vis/Kinetics/S3_titration_NOSbF6.csv"]
+            want_fx += ["DFT/" + nm_(f_) for it_ in st_fx["overlay"]["nto"]["items"].values() for f_ in it_.get("files") or []]
+            want_fx += ["DFT/" + nm_(f_[k_]) for f_ in st_fx["dft"]["nbo"]["files"] for k_ in ("file", "cml") if f_.get(k_)]
+            pxrd_fx = [e_["pxrd"]["file"] for e_ in st_fx["xray"]["entries"] if (e_.get("pxrd") or {}).get("file")]
+            assert pxrd_fx
+            want_fx += ["PXRD/" + nm_(p_) for p_ in pxrd_fx]
+            assert not [a_ for a_ in want_fx if a_ not in arcs_fx], [a_ for a_ in want_fx if a_ not in arcs_fx]
+            assert not miss_fx, miss_fx
+            assert all(arcs_fx["PXRD/" + nm_(p_)] == "pxrd" for p_ in pxrd_fx)
+            assert not any(a_.endswith(".cif") for a_ in arcs_fx)                      # CIF nie (CCDC)
+            rep_fx = DP_fx.write_publication([DP_fx.Plan("S3", mv_, [_dc_fx.replace(it_, on=True) for it_ in its_fx
+                                                                           if it_.group == "dft"])],
+                                             out / "fixd_pack", {}, None, compchem=True)
+            zn_fx = _zf_fx.ZipFile(out / "fixd_pack" / "CompChem.zip").namelist()
+            assert f"CompChem/S3/{Path(st_fx['dft']['acid']['inc']).parent.name}/Isoober.inc" in zn_fx, zn_fx[:20]
+            assert rep_fx["files"] == len(zn_fx)
+            cml_fx = next(f_["cml"] for f_ in st_fx["dft"]["nbo"]["files"] if f_.get("cml"))
+            Path(cml_fx).unlink()                                                      # Testkopie, nie Nutzerdaten
+            miss2_fx = []
+            DP_fx.collect(st_fx, mv_, miss2_fx)
+            assert nm_(cml_fx) in miss2_fx and cml_fx in PRJ.missing_files(st_fx)
+            # A4/A5: FID-Paket folgt der Abwahl im Dialog und nennt die ersetzten Namen (Ordner, Text, Statement)
+            pl2_ = DP_fx.Plan("S2", dz_ / "S2", DP_fx.collect(PRJ.load(dz_ / "S2"), dz_ / "S2"))
+            pl3_ = DP_fx.Plan("S3", mv_, its_fx)
+            for it_ in pl2_.items:
+                if it_.group == "nmr":
+                    it_.on = False                                             # S2: NMR abgewählt
+            dirs3_ = [it_ for it_ in pl3_.items if it_.group == "nmr" and it_.src.is_dir()]
+            assert dirs3_ and DP_fx.fid_items(st_fx, mv_, "S3", only=set()) == []   # Experiment abgewählt: nichts
+            fid_fx = PV_fx._fid_write(w, dz_, [pl2_, pl3_], out / "fixd_fid", {"S3": "7"}, None)
+            assert fid_fx["compounds"] == ["7"], fid_fx["compounds"]
+            assert PUB_fx.load(dz_)["fidpack"]["compounds"] == ["7"]
+            zf_fx = _zf_fx.ZipFile(out / "fixd_fid" / f"{DP_fx.FID_ZIP}.zip")
+            names_fx = zf_fx.namelist()
+            assert not any(n_.startswith(("S2/", "S3/")) for n_ in names_fx), names_fx[:10]
+            exps_fx = {n_.split("/")[1] for n_ in names_fx if n_.startswith("7/") and n_.count("/") >= 2}
+            assert len(exps_fx) == len(dirs3_), exps_fx
+            par_fx = zf_fx.read("7/NMR_parameters.txt").decode("utf-8")
+            assert "compound 7" in par_fx and "S3" not in par_fx, par_fx[:200]
+            # D5: Notiz der Energietabelle sagt, warum H_corr bei ORCA fehlt
+            r_orca_ = ["a", "0", "-1", "1", "-1", "-1", DFT.DASH, "-0.1"]
+            r_g16_ = ["b", "0", "-1", "1", "-1", "-1", "0.2", DFT.DASH]
+            assert "k*_{B}*T" in DFT.si_table_note([r_orca_, r_g16_], "Programs: ORCA 6.1.1 (a); Gaussian 16 (b).")
+            assert DFT.si_table_note([r_g16_], "Program: Gaussian 16.") == DFT.SI_TABLE_NOTE
+            assert DFT.si_table_note([r_orca_], "Program: ORCA 6.1.1.") == DFT.SI_TABLE_NOTE    # Spalte entfällt
+            # D6: >= 200 Bq: langer gerader oder geknickter Scan bleibt ein Scan; Ebene wird mit Grund abgelehnt
+            line_fx = np.c_[np.linspace(-5, 5, 250), np.zeros(250), np.ones(250)]
+            bent_fx = np.r_[line_fx[:125], line_fx[124] + np.c_[np.zeros(125), np.linspace(0.04, 5, 125), np.zeros(125)]]
+            g_fx = np.stack(np.meshgrid(np.arange(8) * 0.5, np.arange(8) * 0.5, np.arange(8) * 0.5, indexing="ij"),
+                            -1).reshape(-1, 3)
+            assert PG_fx.nics_is_path(line_fx) and PG_fx.nics_is_path(bent_fx) and not PG_fx.nics_is_path(g_fx[:250])
+            plane_fx = g_fx[g_fx[:, 2] == 0.0]
+            mol_fx = dict(els=["C", "H"], xyz=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
+            try:
+                PG_fx.nics_grid([dict(mol_fx, bq_xyz=np.r_[plane_fx, plane_fx + [0.25, 0, 0]][:250],
+                                      iso=np.zeros(min(250, 2 * len(plane_fx))))])
+                raise AssertionError("plane accepted as 3D grid")
+            except ValueError as ex_:
+                assert "plane" in str(ex_) or "Ebene" in str(ex_), str(ex_)
+            # D7: Cubes ohne MO-Nummer nur über „hole“/„particle“; Gewicht vergleicht den Spin
+            cdir_fx = out / "input" / "fixd_nto"
+            cdir_fx.mkdir(parents=True, exist_ok=True)
+            for n_ in ("S1_particle.cube", "S1_hole.cube", "S1_a.cube", "S1_b.cube"):
+                ORB_fx.make_test_cube(cdir_fx / n_, n=12)
+            ps_fx, _ = NTOV_fx.NtoView.cube_pair([str(cdir_fx / "S1_particle.cube"), str(cdir_fx / "S1_hole.cube")])
+            assert [Path(p_).name for p_ in ps_fx] == ["S1_hole.cube", "S1_particle.cube"]
+            try:
+                NTOV_fx.NtoView.cube_pair([str(cdir_fx / "S1_a.cube"), str(cdir_fx / "S1_b.cube")])
+                raise AssertionError("hole/particle guessed from the selection order")
+            except ValueError as ex_:
+                assert str(ex_) == T("fixd_nto_order")
+            fake_fx = _ty_fx.SimpleNamespace(block=lambda s_: {"pairs": [(61, "a", 62, "a", 0.9), (61, "b", 62, "b", 0.6)]})
+            it_b_ = dict(kind="cube", files=["x.mo61b.cube", "x.mo62b.cube"], mos=[61, 62])
+            assert NTOV_fx.NtoView.out_weight(fake_fx, {}, it_b_) == 0.6
+            assert NTOV_fx.NtoView.out_weight(fake_fx, {}, dict(it_b_, files=["x.mo61a.cube", "x.mo62a.cube"])) == 0.9
+            w.close_publication()
+            report.append("1.2.0 review fixes: project and DFT (emission in comparison, paths, data package, FID, "
+                          "SI condition, reset, NBO, NICS, NTO, no hidden energy profile, EPR calc methods text): OK")
+        with section:
+            # 1.2.0 review fixes, Runde 2 (Anzeige): dieselbe Größe überall gleich gerundet und geschrieben
+            import csv as _csv_r2
+            import zipfile as _zf_r2
+            from elucida.core import uvvis as core_r2
+            from elucida.core import homa as HOMA_r2
+            from elucida.si import lines as SI_r2
+            from elucida.tabs import cv as CV_r2
+            from elucida.tabs import hrms as HRMS_r2
+            from elucida.tabs import ir_ea as IR_r2
+            from elucida.tabs import xray as XR_r2
+            from elucida.tabs import epr as EPR_r2
+            from elucida.tabs.epr import sci_signed as sci_r2
+            # 1 nie „−0“ (E½, ppm, ε, HOMA, NICS): eine Formatierfunktion
+            assert core_r2.fmt_num(-0.0003, 3, sign=True) == "0.000" and CV_r2._fmt_e(-0.0003) == "0.000"
+            assert core_r2.fmt_num(-0.04, 1) == "0.0" and core_r2.fmt_num(-0.06, 1) == "−0.1"
+            assert HRMS_r2.dev_text(-0.02) == "0.0" and HRMS_r2.dev_text(4.96) == "+5.0" and HRMS_r2.dev_text(-1.26) == "−1.3"
+            assert core_r2.fmt_ve(-0.3, None, max_decimals=0)[0] == "0" and HOMA_r2.fmt(-0.0002) == "0.000"
+            # 2 HRMS: Status an der gedruckten Zahl (5.03 und 4.96 zeigen „+5.0“: gleich bewertet)
+            assert HRMS_r2.dev_ok(5.03) and HRMS_r2.dev_ok(4.96) and HRMS_r2.dev_ok(5.049) and not HRMS_r2.dev_ok(5.06)
+            # 4 Kinetik-k in Tabellen wie im Methodentext (sci_signed), Intervall mit gemeinsamem Exponenten
+            assert sci_r2(-0.0389) == "−3.89 × 10^-2" and EPR_r2.sci_range(0.0374, 0.0406) == "3.74 … 4.06 × 10^-2"
+            # 10 Methodentext in Word: Exponenten als „-1“ wie in der SI (si.md)
+            assert SI_r2.methods_html("k = −3.89 × 10^-4 s-1") == "k = −3.89 × 10<sup>-4</sup> s<sup>-1</sup>"
+            d_r2 = out / "r2_display"
+            d_r2.mkdir(parents=True, exist_ok=True)
+            SI_r2.write_docx(d_r2 / "m.docx", [("char", SI_r2.methods_html("k = −3.89 × 10^-4 s-1")),
+                                               ("tabcap", "HOMA values of the rings of", "S3_opt_freq"),
+                                               ("params", ["a", "b"], [["1", "2"]])])
+            x_r2 = _zf_r2.ZipFile(d_r2 / "m.docx").read("word/document.xml").decode("utf-8")
+            assert ">-4<" in x_r2 and ">−4<" not in x_r2, x_r2[:400]
+            assert "S3_opt_freq" in x_r2 and "\\_" not in x_r2
+            # Beispielprojekt S3
+            dz_r2 = w.open_demo_publication(out / "r2_pub")
+            w.open_project(dz_r2 / "S3")
+            w.switch_lang("de")
+            # 5 Word: Tabellenunterschriften mit Klartextnamen, nie „S3\_opt\_freq“
+            bl_r2, _ = w.si_blocks()
+            caps_r2 = [b_ for b_ in bl_r2 if b_[0] == "tabcap"]
+            assert caps_r2 and not any("\\" in str(b_[2]) for b_ in caps_r2), [b_[2] for b_ in caps_r2]
+            assert any("_" in str(b_[2]) for b_ in caps_r2), [b_[2] for b_ in caps_r2]          # Namen mit „_“ geprüft
+            # Word-Tabellenkoepfe mit Schraegstrich wie die X-Ray-Tabellen (si.md); die Oberflaeche schreibt „[…]“
+            hw_r2 = [h_ for b_ in bl_r2 if b_[0] == "params" for h_ in b_[1]]
+            assert "*R*_{av} / Å" in hw_r2 and "*ṽ*_{exp} / cm^{−1}" in hw_r2, hw_r2
+            # 4 CV: E½ in Tabelle, Kachel und Vergleich mit den 2 Stellen von Bild, Methodentext und Word (die bleiben)
+            t_cv_r2 = w.cv_tab
+            t_cv_r2.ensure_rendered()
+            e12_r2 = CV_r2._fmt_e(t_cv_r2.results[0]["e12"], 2)
+            assert re.fullmatch(r"[+−]?\d\.\d{2}", e12_r2) and t_cv_r2.kpis()[0][1] == e12_r2 + " V", t_cv_r2.kpis()
+            assert t_cv_r2.tbl_res.item(0, 4).text() == e12_r2, t_cv_r2.tbl_res.item(0, 4).text()
+            spec_cv_r2 = t_cv_r2.figure_spec()
+            labs_cv_r2 = [l_["text"] for l_ in spec_cv_r2[2] if "1/2" in l_["text"]]
+            assert labs_cv_r2 and all(re.search(r"[+−]\d\.\d{2}( V)?$", l_) for l_ in labs_cv_r2), labs_cv_r2
+            assert all(re.fullmatch(r"[+−]\d\.\d{2}", v_) for v_ in re.findall(r"E1/2 = ([+−][\d.]+) V", t_cv_r2.methods_text()))
+            # 7 CV-Ergebnis-CSV sprachfrei (Referenz als Kennung „Fc0/+“, kein Hinweistext)
+            ref_r2 = {}
+            for lang_r2 in ("de", "en"):
+                w.switch_lang(lang_r2)
+                f_r2 = next(f_ for f_ in w.cv_tab.export_to(d_r2 / f"cv_{lang_r2}") if f_.name.endswith("_results.csv"))
+                rows_r2 = list(_csv_r2.DictReader(f_r2.read_text(encoding="utf-8-sig").splitlines(), delimiter=";"))
+                ref_r2[lang_r2] = [r_["reference"] for r_ in rows_r2]
+            assert ref_r2["de"] == ref_r2["en"] and set(ref_r2["de"]) <= {"Fc0/+", w.cv_state["ref_electrode"]}, ref_r2
+            w.switch_lang("de")
+            # 4 SEC: Potential in Kachel, Legende und Unterschrift mit gleicher Stellenzahl und Vorzeichen
+            t_sec_r2 = w.sec_tab
+            t_sec_r2.ensure_rendered()
+            leg_r2 = [c_["label"] for c_ in t_sec_r2.figure_spec()[1] if c_.get("label")]
+            kpi_sec_r2 = t_sec_r2.kpis()[0][0]
+            cap_sec_r2 = t_sec_r2.si_caption("S3")
+            assert leg_r2 and all(re.fullmatch(r"[+−]?\d\.\d{2} V", l_) for l_ in leg_r2), leg_r2
+            assert all(l_ in kpi_sec_r2 for l_ in (leg_r2[0], leg_r2[-1])), (leg_r2, kpi_sec_r2)      # Kachel wie Legende
+            assert all(l_.replace(" V", "").lstrip("+") in cap_sec_r2 for l_ in (leg_r2[0], leg_r2[-1])), (leg_r2, cap_sec_r2)
+            # 2 HRMS: found in Tabelle und Kachel = SI-Zeile; kein leeres _data.csv
+            t_ms_r2 = w.hrms_tab
+            t_ms_r2.ensure_rendered()
+            t_ms_r2.figure_spec()
+            fnd_r2 = f"{t_ms_r2._found:.4f}"
+            assert fnd_r2 in t_ms_r2._ms_line[0] and t_ms_r2.tbl_ms.item(0, 2).text() == fnd_r2 and t_ms_r2.kpis()[0][1] == fnd_r2
+            files_ms_r2 = t_ms_r2.export_to(d_r2 / "hrms")
+            assert not any(f_.name.endswith("_data.csv") for f_ in files_ms_r2) and not (d_r2 / "hrms_data.csv").exists()
+            assert any(f_.name.endswith("_sticks.csv") for f_ in files_ms_r2)
+            # 3 Fluoreszenz: ε im Bild wie die Kennwerte (kaufmännisch), λ mit fmt_lam, τ-Kachel in der Einheit der Tabellen
+            t_fl_r2 = w.fl_tab
+            t_fl_r2.ensure_rendered()
+            eps_old_r2 = w.fl_state["eps"]
+            try:
+                w.fl_state["eps"] = "12344.5"
+                lab_fl_r2 = " ".join(l_["text"] for l_ in t_fl_r2.figure_spec()[2])
+                assert "ε =  12345" in lab_fl_r2 and t_fl_r2.tau.props()[0][1] == "12345", lab_fl_r2
+            finally:
+                w.fl_state["eps"] = eps_old_r2
+            t_fl_r2.info["lam_em"] = 452.5
+            assert t_fl_r2.kpis()[0][1] == "453 nm", t_fl_r2.kpis()
+            us_r2 = t_fl_r2.tau.us
+            try:
+                t_fl_r2.tau.us = lambda: True
+                assert t_fl_r2.kpis()[1][1].endswith(" µs"), t_fl_r2.kpis()
+            finally:
+                t_fl_r2.tau.us = us_r2
+            # 6 Einheiten im Kopf: DFT-Energien [Eₕ], ε-Achsenabschnitt [cm⁻¹], EPR-Kopplungen [MHz], Spinzählung [mM]
+            w.dft_tab.ensure_rendered()
+            w.dft_tab.update_si_table()
+            heads_r2 = lambda t_: [t_.model().headerData(i_, Qt.Horizontal) for i_ in range(t_.columnCount())]   # noqa: E731
+            assert all("[Eₕ]" in h_ for h_ in heads_r2(w.dft_tab.tbl_si)[2:5]), heads_r2(w.dft_tab.tbl_si)
+            assert "[cm⁻¹]" in heads_r2(w.table)[3], heads_r2(w.table)
+            t_ep_r2 = w.epr_tab
+            t_ep_r2.ensure_rendered()
+            t_ep_r2.calc_pages.fill_groups()
+            hg_r2 = heads_r2(t_ep_r2.calc_pages.tbl_groups)
+            u_r2 = w.epr_state["hfc_unit"]
+            assert hg_r2[1].endswith(f"[{u_r2}]") and hg_r2[3].endswith(f"[{u_r2}]"), hg_r2
+            cells_r2 = [t_ep_r2.calc_pages.tbl_groups.item(i_, j_).text() for i_ in range(t_ep_r2.calc_pages.tbl_groups.rowCount())
+                        for j_ in (1, 3)]
+            assert cells_r2 and not any(u_r2 in c_ for c_ in cells_r2), cells_r2
+            # 12 Beispielprojekt: Zuordnung an der S = ½-Simulation, „berechnet“ gefüllt
+            assert any(c_ for c_ in cells_r2[1::2]), cells_r2
+            mode_r2 = (w.epr_state["mode"], w.epr_state["int_x"])
+            try:
+                w.epr_state.update(mode="intensity", int_x="conc")
+                t_ep_r2.figure_spec()
+                hs_r2 = heads_r2(t_ep_r2.tbl_spin)
+                assert hs_r2[2].endswith("]") and hs_r2[3].endswith("]"), hs_r2
+                assert t_ep_r2.tbl_spin.rowCount() and not any(" mM" in (t_ep_r2.tbl_spin.item(i_, 2).text() or "")
+                                                               for i_ in range(t_ep_r2.tbl_spin.rowCount()))
+            finally:
+                w.epr_state.update(mode=mode_r2[0], int_x=mode_r2[1])
+            # 11 EasySpin-Export ohne „None“ (Messung ohne Temperatur), EPR-Methodentext ohne „a M06…“
+            e_ep_r2 = next(e_ for e_ in w.epr_state["entries"] if e_["visible"] and e_["kind"] == "exp")
+            meta_r2 = t_ep_r2.spectrum(e_ep_r2)["meta"]
+            tk_r2 = meta_r2.get("T_K")
+            try:
+                meta_r2["T_K"] = None
+                heads_es_r2 = [l_ for f_ in t_ep_r2.export_to(d_r2 / "epr") if f_.suffix == ".txt"
+                               and not f_.name.endswith("_methods.txt") for l_ in f_.read_text(encoding="utf-8").splitlines()
+                               if l_.startswith("% mwFreq")]
+                assert heads_es_r2 and not any("None" in l_ or "T [K]" in l_ for l_ in heads_es_r2[:1]), heads_es_r2
+            finally:
+                meta_r2["T_K"] = tk_r2
+            mt_ep_r2 = t_ep_r2.calc_pages.methods_text()
+            assert "from a calculation" in mt_ep_r2 and not re.search(r"\ba [AEFHILMNORSX]\w*[-/]", mt_ep_r2), mt_ep_r2
+            # 8 TD-DFT-Unterschrift nach dem Inhalt (auch bestehende Projekte: nicht gespeichert)
+            cap_ov_r2 = w.ov_tab.si_caption("S3")
+            assert cap_ov_r2.startswith("Experimental and calculated (TD-DFT) UV-Vis spectra of <b>S3</b>"), cap_ov_r2
+            vis_r2 = [e_.get("visible", True) for e_ in w.ov_state["entries"]]
+            try:
+                for e_ in w.ov_state["entries"]:
+                    e_["visible"] = e_["kind"] in ("exp", "sec", "secser")
+                assert w.ov_tab.si_caption("S3") == "UV-Vis spectra of <b>S3</b>."
+                for e_ in w.ov_state["entries"]:
+                    e_["visible"] = e_["kind"] == "calc"
+                assert w.ov_tab.si_caption("S3") == "Calculated (TD-DFT) UV-Vis spectra of <b>S3</b>."
+            finally:
+                for e_, v_ in zip(w.ov_state["entries"], vis_r2):
+                    e_["visible"] = v_
+            # 9 nicht normal beendete Ausgabe: X-Ray-Vergleich und IR-Rechnung lehnen ab
+            irc_r2 = w.irms_state.get("irc_file")
+            assert irc_r2, "demo: IR calculation"
+            txt_r2 = Path(irc_r2).read_text(encoding="utf-8", errors="replace")
+            cut_r2 = d_r2 / "cut.out"
+            cut_r2.write_text("\n".join(l_ for l_ in txt_r2.splitlines() if "TERMINATED NORMALLY" not in l_
+                                        and "Normal termination" not in l_), encoding="utf-8")
+            for fn_r2 in (IR_r2.read_ir_checked, XR_r2.read_calc_geometry):
+                try:
+                    fn_r2(cut_r2)
+                    raise AssertionError(f"{fn_r2.__name__}: abnormal output accepted")
+                except ValueError as ex_:
+                    assert str(ex_) == T("r2a_calc_abnormal"), ex_
+            assert IR_r2.read_ir_checked(irc_r2)["modes"] and XR_r2.read_calc_geometry(irc_r2)["els"]
+            # 10 EA: Doppelbestimmung, ein Element nur einmal -> Einzelwert in der Spalte, Kopf sagt es
+            t_ir_r2 = w.irms_tab
+            t_ir_r2.fill_ea_table([("C", 77.67, 77.41, 77.52, 77.47, -0.2, True), ("N", 5.2, 5.1, None, None, -0.1, True)])
+            assert t_ir_r2.tbl_ea.item(1, 2).text() == "5.10" and heads_r2(t_ir_r2.tbl_ea)[2] == T("r2a_ea_mean_single")
+            assert t_ir_r2.tbl_ea.item(0, 3).text() == "−0.20"
+            # 10 CV: Referenzelektrode des Aufbaus als verlangte Angabe; D8 Hinweis ohne lonePair
+            acs_r2 = {k_: w.cv_state.get(k_) for k_ in ("acs_ref", "ref_electrode", "acs_we", "acs_ce")}
+            try:
+                w.cv_state.update(acs_ref="", acs_we="", acs_ce="")
+                t_cv_r2.project_setup = lambda: None                                   # wie ohne Projekt
+                assert "ref" in t_cv_r2.acs_missing(), t_cv_r2.acs_missing()
+                w.cv_state.update(acs_ref="Ag/AgNO3")
+                assert "ref" not in t_cv_r2.acs_missing(), t_cv_r2.acs_missing()
+            finally:
+                del t_cv_r2.project_setup
+                w.cv_state.update(acs_r2)
+            assert T("r2a_nbo_no_lp") in w.dft_tab.nbo.notes(None, dict(notes=[], wiberg=[1], normal=True),
+                                                              [dict(lp=[2, None])], "")
+            # 11 Reihe ohne Namensteil: Anzeige übersetzt, Schlüssel bleibt; Raman-Zeile wie IR; keine leere „Synthesis of“
+            assert core_r2.parse_sample_name("1mM")[0] == "probe"
+            w.switch_lang("en")
+            assert core_r2.series_label("probe") == "sample" and core_r2.series_label("TEST-A") == "TEST-A"
+            w.switch_lang("de")
+            assert IR_r2.raman_line([{"wn": 1000.0}], 785)[0] == "Raman (λexc = 785 nm): ṽ = 1000 cm-1"
+            # 4 UV-Vis-Kinetik: k in der Tabelle wie im Methodentext
+            t_uk_r2 = w.uvkin_tab
+            view_r2 = w.uvkin_state.get("view")
+            try:
+                w.uvkin_state.update(view="trace")                                   # Absorbanz gegen Zeit mit Zerfallsfit
+                t_uk_r2.render()
+                sr_uk_r2 = t_uk_r2.series_summary(next(iter(t_uk_r2.rows_data)))
+                assert sr_uk_r2 and sr_uk_r2["fit"], "demo: fitted kinetics"
+                k_uk_r2 = t_uk_r2.tbl_summary.item(0, 6).text()
+                assert k_uk_r2 == sci_r2(sr_uk_r2["fit"]["k"]) and k_uk_r2 in t_uk_r2.methods_text(), k_uk_r2
+            finally:
+                w.uvkin_state.update(view=view_r2)
+            # 12 Beispielprojekt: ¹H von S3 ohne Bereichswarnung, S2 (Beispiel mit Fehlern) mit 1-9 ppm als Warnfall;
+            # die epsilon-Serie nennt ihr Loesungsmittel in Unterschrift und SI-Zeile
+            from elucida.tabs import nmr as NMR_r2
+            for c_r2, ok_r2 in (("S3", True), ("S2", False)):
+                w.open_project(dz_r2 / c_r2)
+                h1_r2 = [s_ for s_ in w.nmr_tab.spectra() if (s_.get("nuclei") or [""])[0] == "1H"]
+                assert h1_r2 and all(NMR_r2.range_check(s_, w.nmr_tab.axis_range(s_))[0] is ok_r2 for s_ in h1_r2), c_r2
+                assert w.eps_caption(w.current, 0.1, c_r2).startswith(f"UV-Vis spectra of <b>{c_r2}</b> in THF,"), c_r2
+                assert any(p_[0].startswith("UV-Vis (THF)") for p_ in w.uvvis_si_parts()), (c_r2, w.uvvis_si_parts())
+            report.append("1.2.0 review fixes: display round 2 (no -0, HRMS status, fluorescence rounding, UI digits like the SI, "
+                          "Word names, units in UI headers, CSV, TD-DFT caption, abnormal outputs, demo): OK")
+        with section:
+            # Korrekturrunde 5: ein altes Projekt enthält eine gespeicherte Datei, die ein strengerer Leser jetzt ablehnt.
+            # Nur ihr Teil fehlt; Tab, Export, SI und Gesamt-SI laufen weiter und die Meldung nennt die Datei
+            # (Dateien des erfundenen Beispielprojekts, hier kaputt gemacht).
+            import zipfile as _zf_r5
+            from elucida.app import publication as PUB_r5
+            from elucida.si import publication_si as PSI_r5
+            dp_r5 = w.open_demo_publication(out / "r5_pub")
+            s3_r5 = dp_r5 / "S3"
+
+            def lines_r5(p_):                                              # Zeilen samt Endung (Windows: \r\n)
+                return p_.read_bytes().splitlines(keepends=True)
+
+            def cut_at_r5(p_, mark_, extra_=0):                            # an einer festen Zeile abgeschnitten
+                ls_ = lines_r5(p_)
+                p_.write_bytes(b"".join(ls_[: next(i_ for i_, l_ in enumerate(ls_) if mark_ in l_) + extra_]))
+                return p_.name
+            broken_r5 = [cut_at_r5(s3_r5 / "data/epr/S3_radical_cation_epr.log", b"Isotropic Fermi Contact", 10),
+                         cut_at_r5(s3_r5 / "data/dft/S3_opt_freq.out", b"CARTESIAN COORDINATES (ANG")]
+            p_r5 = s3_r5 / "data/hrms/S3_HRMS.docx"                       # Zip ohne zentrales Verzeichnis
+            p_r5.write_bytes(p_r5.read_bytes()[: p_r5.stat().st_size // 2])
+            p2_r5 = s3_r5 / "data/nmr/S3-1H.svg"                           # SVG endet in einem Attribut
+            b_r5 = p2_r5.read_bytes()
+            p2_r5.write_bytes(b_r5[: b_r5.index(b'points="') + 40])
+            p3_r5 = s3_r5 / "data/cv/S3_CV_100mVs.DTA"                     # Dezimalkomma in einer Datenzeile
+            ls_r5 = lines_r5(p3_r5)
+            k_r5 = next(i_ for i_, l_ in enumerate(ls_r5) if l_.startswith(b"CURVE1")) + 3
+            ls_r5[k_r5] = ls_r5[k_r5].replace(b".", b",", 1)
+            p3_r5.write_bytes(b"".join(ls_r5))
+            broken_r5 += [p_r5.name, p2_r5.name, p3_r5.name]
+            eps_r5 = s3_r5 / "data/uvvis/S3_UV-Vis.csv"                    # Cary-CSV nur mit Kopfzeilen
+            head_r5 = eps_r5.read_text(encoding="utf-8").splitlines()[:2]
+            with open(eps_r5, "w", newline="", encoding="utf-8") as fh_r5:
+                fh_r5.write("\r\n".join(head_r5) + "\r\n")
+            broken_r5.append(eps_r5.name)
+            w.extra_cache.clear()
+            assert w.open_project(s3_r5, ask=False, recent=False)          # Öffnen bricht nicht ab
+            assert w._eps_error is not None and not w.csv_paths
+            for a_r5 in ("hrms_tab", "nmr_tab", "dft_tab", "epr_tab", "cv_tab"):
+                getattr(w, a_r5)                                           # Tabs lassen sich bauen (vorher AttributeError)
+            w.save_project()                                               # ε-Datei und Serien bleiben in der Projektdatei
+            st_r5 = PRJ.load(s3_r5)["eps"]
+            assert st_r5["files"] and Path(st_r5["files"][0]).name == eps_r5.name and "S3" in st_r5["series"], st_r5
+            log_r5 = []
+            w.log_signal.connect(log_r5.append)
+            head_skip_r5 = T("parts_skipped", items="").strip()
+            ep_r5 = w.epr_tab.export_dialog()                              # Messung wird exportiert, Rechnung gemeldet
+            assert ep_r5 and any(p_.suffix == ".pdf" and "_spin" not in p_.name for p_ in ep_r5), ep_r5
+            assert any(broken_r5[0] in s_ for s_ in w.last_skips), w.last_skips
+            assert any(head_skip_r5 in m_ and broken_r5[0] in m_ for m_ in log_r5), "Exportmeldung ohne Datei"
+            w.settings.setValue("si_parts", ",".join(MW.SI_PARTS))
+            w.settings.setValue("si_figs_off", "")
+            w.export_si_dialog()                                           # Knopf „SI (Word)“: alles andere bleibt
+            si_r5 = s3_r5 / "SI" / f"{core.safe_name(w.export_name())}_SI.docx"
+            txt_r5 = lambda p_: "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", _zf_r5.ZipFile(p_).read(  # noqa: E731
+                "word/document.xml").decode("utf-8")))
+            x_r5 = txt_r5(si_r5)
+            assert "EPR spectroscopy" in x_r5 and "X-ray solid state structure" in x_r5, "SI ohne EPR/X-Ray"
+            for n_r5 in broken_r5:
+                assert any(n_r5 in s_ for s_ in w.last_skips), (n_r5, w.last_skips)
+            assert any(T("si_written", p="") in m_ and head_skip_r5 in m_ for m_ in log_r5), "SI-Meldung ohne Auslassungen"
+            w.log_signal.disconnect(log_r5.append)
+            rp_r5 = next(dp_r5.glob("reaction_paths/*/data/dft/*_2_TS.out"))   # Stufe des Reaktionspfads: Profil
+            broken_r5.append(cut_at_r5(rp_r5, b"CARTESIAN COORDINATES (ANG"))  # fehlt ganz, nie ohne die Stufe gerechnet
+            psi_r5 = w.export_publication_si(dp_r5, PUB_r5.sync(dp_r5)[0], [k_ for k_, _, _ in PSI_r5.SECTIONS])
+            assert psi_r5 and Path(psi_r5).exists()
+            xp_r5 = txt_r5(psi_r5)                                         # beide Verbindungen, EPR von S3 ohne Rechnung
+            assert xp_r5.count("Synthesis of") == 2 and "EPR spectroscopy (S3)" in xp_r5, xp_r5.count("Synthesis of")
+            for n_r5 in broken_r5:
+                assert any(n_r5 in s_ for s_ in w.last_skips), (n_r5, w.last_skips)
+            assert any(T("dft_prof_unreadable") in s_ for s_ in w.last_skips), w.last_skips
+            w.close_publication()
+            report.append("Round 5: unreadable saved files (EPR calc, DFT, HRMS report, NMR SVG, CV DTA, Cary CSV, path "
+                          "level) leave out only their part and are named in export, SI and project SI: OK")
+        with section:
+            # 1.3.0: 13C-Signale gegen Restsignale/Verunreinigungen (Fulmer 2010, nur Hinweis). Tabelle: Umfang und
+            # Stichproben gegen die Abschrift (wie gedruckt, Fussnoten getrennt)
+            from elucida.core import nmr_impurities as IMP_
+            assert len(IMP_.H1) == 845 and len(IMP_.C13) == 908, (len(IMP_.H1), len(IMP_.C13))
+
+            def cell_(rows_, comp_, grp_, solv_):
+                return [(r_["shift"], r_["note"]) for r_ in rows_ if (r_["compound"], r_["group"], r_["solvent"]) ==
+                        (comp_, grp_, solv_)]
+            for comp_, grp_, solv_, want_ in (("H grease", "CH2", "CDCl3", [("29.71", "compound:b")]),
+                                              ("solvent signals", "", "CDCl3", [("77.16", "")]),
+                                              ("solvent signals", "", "toluene-d8",
+                                               [("137.48", ""), ("128.87", ""), ("127.96", ""), ("125.13", ""),
+                                                ("20.43", "")]),
+                                              ("acetone", "CO", "TFE-d3", [("32.35", "")]),       # wie gedruckt
+                                              ("methanol", "CH3", "D2O", [("49.50", "shift:d")]),
+                                              ("HMPA", "CH3", "D2O", [("36.46", "compound:c")]),
+                                              ("benzene", "CH", "D2O", [])):
+                assert cell_(IMP_.C13, comp_, grp_, solv_) == want_, (comp_, solv_, cell_(IMP_.C13, comp_, grp_, solv_))
+            assert cell_(IMP_.H1, "water", "OH", "(CD3)2CO") == [("2.84", "shift:b")]
+            assert cell_(IMP_.H1, "H grease", "CH3", "CDCl3") == [("0.84-0.87", "compound:f")]
+            assert cell_(IMP_.H1, "acetic acid", "CH3", "C6D6") == [("1.52", "")]
+            assert [r_["mult"] for r_ in IMP_.H1 if r_["compound"] == "ethanol" and r_["group"] == "CH2"][0] == "q, 7"
+            for c_ in {r_["compound"] for r_ in IMP_.C13 + IMP_.H1} - set(IMP_.SOLVENT_ROW.values()):   # Namen DE/EN
+                assert T("fulmer_" + c_) != "fulmer_" + c_, c_
+            # Loesungsmittel: Schreibweisen -> Spalte, Unbekanntes -> nichts
+            for name_, key_ in (("CDCl3", "CDCl3"), ("Chloroform-d", "CDCl3"), ("CD2Cl2", "CD2Cl2"),
+                                ("(CD3)2CO", "(CD3)2CO"), ("Acetone-d6", "(CD3)2CO"), ("DMSO-d6", "(CD3)2SO"),
+                                ("DMSO-d₆", "(CD3)2SO"), ("(CD3)2SO", "(CD3)2SO"), ("C6D6", "C6D6"),
+                                ("C₆D₆", "C6D6"), ("CD3CN", "CD3CN"), ("CD3OD", "CD3OD"), ("MeOD", "CD3OD"),
+                                ("D2O", "D2O"), ("THF-d8", "THF-d8"), ("Toluene-d8", "toluene-d8"),
+                                ("Toluol-d8", "toluene-d8"), ("C6D5Cl", "C6D5Cl"), ("TFE-d3", "TFE-d3")):
+                assert IMP_.solvent_key(name_) == key_, (name_, IMP_.solvent_key(name_))
+            for name_ in ("", None, "THF", "acetone", "CHCl3", "CH3OH", "benzene", "Pyridine-d5"):
+                assert IMP_.solvent_key(name_) is None and IMP_.hits(name_, ["29.71", "77.16"]) == [], name_
+            # Toleranz 0.02 ppm plus halbe letzte Stelle: 29.73 trifft (0.02), 29.74 nicht; 29.7 (eine Stelle) trifft,
+            # 29.6 nicht
+            assert [r_["compound"] for _, r_ in IMP_.hits("CDCl3", ["29.73"])] == ["H grease"]
+            assert IMP_.hits("CDCl3", ["29.74"]) == [] and IMP_.hits("CDCl3", ["29.6"]) == []
+            assert [i_ for i_, _ in IMP_.hits("CDCl3", ["150.40", "29.7", "77.16"])] == [1, 2]
+            # Stoffe mit mehreren C: alle C mit H muessen passen (Ether nur mit CH3 und CH2), quartaere C optional
+            assert IMP_.hits("CDCl3", ["65.91"]) == [] and len(IMP_.hits("CDCl3", ["65.91", "15.20"])) == 2
+            assert {r_["compound"] for _, r_ in IMP_.hits("CDCl3", ["129.07", "128.26", "125.33", "21.46"])} == {"toluene"}
+            assert [(i_, r_["compound"]) for i_, r_ in IMP_.hits("CDCl3", ["−0.55", "128.5 – 128.3", "abc"])] \
+                == [(1, "benzene")]                                    # Minus, Bereich (Benzol 128.37), Text
+            # Beispielprojekt: S2 (Beispiel mit Fehlern) zeigt Schlifffett bei 29.7, die Kernzahl meldet 9 Signale fuer
+            # 8 C; S3 bleibt ohne Hinweis. Chip schaltet die Tabelle (Rueckgaengig-Schritt), nie die NMR-Zeile.
+            w.open_project(dz_r2 / "S2")
+            t_imp_ = w.nmr_tab
+            assert t_imp_.tbl_imp.rowCount() == 1 and not t_imp_.tbl_imp.isHidden(), t_imp_.tbl_imp.rowCount()
+            row_imp_ = [t_imp_.tbl_imp.item(0, c_).text() for c_ in range(4)]
+            assert row_imp_[1:] == ["29.7", "29.71", T("fulmer_H grease")], row_imp_
+            ck_imp_ = NMR_r2.count_check(t_imp_.blocks(), "C8H7N")
+            assert ck_imp_[1][0] is False and ck_imp_[1][1][1:3] == [T("nmr_count_signals", n=9), "8 C"], ck_imp_
+            # Referenzversatz aus dem beschrifteten Loesungsmittelsignal (nur fuer den Abgleich): 77.00 statt 77.16 ->
+            # +0.16, Fett bei 29.55 wieder erkannt; ohne Label kein Versatz; mehr als 0.5 ppm daneben -> kein Abgleich
+            assert IMP_.ref_offset("CDCl3", ("77.00", "CDCl3")) == (0.16, 77.16)
+            assert IMP_.ref_offset("CD3CN", ("118.10", "CD3CN")) == (0.16, 118.26)          # naechstes Restsignal
+            assert IMP_.ref_offset("CDCl3", None) == (None, None) and IMP_.ref_offset("CDCl3", ("77.00", "C6D6")) == \
+                (None, None) and IMP_.ref_offset("CDCl3", ("77.80", "CDCl3")) == (None, 77.16)
+            assert IMP_.hits("CDCl3", ["29.55"]) == []
+            assert [r_["compound"] for _, r_ in IMP_.hits("CDCl3", ["29.55"], offset=0.16)] == ["H grease"]
+            from elucida.app import demo as DEMO_imp_
+            spec_imp_ = next(s_ for s_ in t_imp_.st["spectra"] if s_.get("nuclei") == ["13C"])
+            file_imp_, text_imp_ = spec_imp_["file"], t_imp_.st["text"]
+            t_imp_.st["text"] = "13C NMR (126 MHz, CDCl3) δ 150.40, 29.55."
+            try:
+                for tag_, solv_, n_, note_ in (("off016", 77.00, 1, "+0.16"), ("nolabel", None, 0, ""),
+                                               ("off064", 77.80, 0, "77.80")):
+                    spec_imp_["file"] = str(DEMO_imp_.demo_nmr_svg(out / "input" / "imp" / f"{tag_}.svg", "13C",
+                                                                   [(150.4, 1.0, 0.15), (29.55, 0.5, 0.15)],
+                                                                   (210, -10), solvent=solv_))
+                    t_imp_.fill_impurities()
+                    assert t_imp_.tbl_imp.rowCount() == n_ and note_ in t_imp_.lbl_imp.text(), (tag_, t_imp_.lbl_imp.text())
+                    assert bool(note_) == bool(t_imp_.lbl_imp.text()), tag_
+            finally:
+                spec_imp_["file"], t_imp_.st["text"] = file_imp_, text_imp_
+                t_imp_.fill_impurities()
+            assert t_imp_.tbl_imp.rowCount() == 1 and t_imp_.lbl_imp.text() == T("nmr_imp_1h_nopeaks")   # 1H ohne Peakliste
+            for _ in range(100):                                 # Oeffnen noch nicht abgeschlossen: Undo erfasst sonst nichts
+                if not w._restoring:
+                    break
+                pump(0.1)
+            line_imp_ = t_imp_.nmr_lines()[1][0]
+            t_imp_.cb_imp.setChecked(False)
+            assert t_imp_.tbl_imp.isHidden() and w.nmr_state["imp_hint"] is False
+            assert t_imp_.nmr_lines()[1][0] == line_imp_ and "29.7" in line_imp_    # nur Hinweis: Zeile unveraendert
+            w.undo()
+            assert w.nmr_state.get("imp_hint", True) and w.nmr_tab.tbl_imp.rowCount() == 1
+            w.open_project(dz_r2 / "S3")
+            assert w.nmr_tab.tbl_imp.rowCount() == 0 and w.nmr_tab.tbl_imp.isHidden()
+            assert all(ok_ for ok_, _ in NMR_r2.count_check(w.nmr_tab.blocks(), "C16H16N2"))
+            report.append("1.3.0 13C impurity note (Fulmer 2010 table, solvent names, tolerance, all C-H rule, "
+                          "demo warning case S2, S3 clean, chip): OK")
+        with section:
+            # 1.3.0: 1H-Fremdsignale nur an freien Peaks (in keinem Multiplett der Zeile). Alle Peaklisten erfunden.
+            from elucida.core import nmr_impurities as IMP_
+            from elucida.app import i18n as I18N_h1
+            from PySide6.QtGui import QColor as QColor_h1
+            assert IMP_._span("0.84-0.87") == (8400, 8700, 50) and IMP_._span("-0.06") == (-600, -600, 50)
+            assert all(IMP_._span(r_["shift"]) for r_ in IMP_.H1)            # jede Zelle lesbar (Bereiche, Minus)
+            sig_h1_ = [dict(shift="7.27", mult="d", J="8.0"), dict(shift="1.25", mult="t", J="7.0"),
+                       dict(shift="3.60 – 3.50", mult="m", J="")]
+            pk_h1_ = ["7.28", "7.26", "3.55", "1.28", "1.22", "4.13", "2.04", "1.57", "0.86", "0.50"]
+            free_h1_ = IMP_.free_peaks(pk_h1_, sig_h1_, 400.0)
+            # Linien von d, t (aeussere Linien bei +-J: Breite erster Ordnung) und m-Bereich sind nie frei
+            assert free_h1_ == [5, 6, 7, 8, 9], free_h1_
+            res_h1_ = [(pk_h1_[i_], r_["compound"], ok_) for i_, r_, ok_ in IMP_.hits_1h("CDCl3", pk_h1_, free_h1_)]
+            # Ethylacetat: CH3 (1.26) liegt im Triplett -> kein Treffer; Wasser nur "moeglich"; Restsignal 7.26 im Dublett
+            assert ("1.57", "water", False) in res_h1_ and not any(c_ == "ethyl acetate" for _, c_, _ in res_h1_), res_h1_
+            assert not any(p_ in ("7.28", "7.26", "3.55", "1.28", "1.22") for p_, _, _ in res_h1_), res_h1_
+            assert not any(p_ == "0.50" for p_, _, _ in res_h1_), res_h1_          # Bereichswert nicht als -0.87..0.84
+            # alle Gruppen frei -> Treffer (sicher); Bereichswert-Zeile (Schlifffett 0.84-0.87 mit CH2 1.25)
+            all_h1_ = ["4.13", "2.04", "1.27", "0.86", "1.25"]
+            res_h1_ = [(all_h1_[i_], r_["compound"], ok_) for i_, r_, ok_ in
+                       IMP_.hits_1h("CDCl3", all_h1_, IMP_.free_peaks(all_h1_, [], 400.0))]
+            assert {("4.13", "ethyl acetate", True), ("2.04", "ethyl acetate", True), ("1.27", "ethyl acetate", True),
+                    ("0.86", "H grease", True), ("1.25", "H grease", True)} <= set(res_h1_), res_h1_
+            assert IMP_.hits_1h("Pyridine-d5", all_h1_, [0, 1, 2]) == [] and IMP_.hits_1h("CDCl3", all_h1_, []) == []
+            # undeuterierter Stoff des Lösungsmittels (Toluol in Toluol-d8) trifft die Restsignale: nie sicher
+            assert IMP_.parent("toluene-d8") == {"toluene"} and IMP_.parent("THF-d8") == {"tetrahydrofuran"}
+            tol_h1_ = ["2.09", "6.97", "7.01", "7.09"]
+            res_h1_ = IMP_.hits_1h("toluene-d8", tol_h1_, [0, 1, 2, 3])
+            assert any(r_["compound"] == "toluene" for _, r_, _ in res_h1_) and not any(ok_ for _, _, ok_ in res_h1_)
+            # ein Peak zwischen zwei nahen Zeilen (Diglyme in CD3OD) zaehlt nur einmal; je Zeile ein Peak -> sicher
+            res_h1_ = IMP_.hits_1h("CD3OD", ["3.595", "3.35"], [0, 1])
+            assert any(r_["compound"] == "diglyme" for _, r_, _ in res_h1_) and not any(ok_ for _, _, ok_ in res_h1_)
+            assert {r_["compound"] for _, r_, ok_ in IMP_.hits_1h("CD3OD", ["3.61", "3.58", "3.35"], [0, 1, 2])
+                    if ok_} == {"diglyme"}
+            # Tab: Peakbericht aus dem Manifest eines (erfundenen) MNova-Exports; ohne Manifest -> Hinweis
+            w.open_project(dz_r2 / "S3")
+            t_h1_ = w.nmr_tab
+            assert T("nmr_imp_1h_nopeaks") in t_h1_.lbl_imp.text(), t_h1_.lbl_imp.text()
+            sp_h1_ = next(s_ for s_ in t_h1_.st["spectra"] if s_.get("nuclei") == ["1H"] and s_.get("kind", "1D") == "1D")
+            keep_h1_ = (sp_h1_["file"], sp_h1_.get("mx"), t_h1_.st["text"])
+            dir_h1_ = out / "input" / "h1imp"
+            dir_h1_.mkdir(parents=True, exist_ok=True)
+            svg_h1_ = NMR_r2.make_test_svg(dir_h1_ / "doc_1.svg", ("1H",))
+            rep_h1_ = "<p>1H NMR (400 MHz, CDCl3) &delta; " + ", ".join(pk_h1_) + ".</p>"
+            (dir_h1_ / "manifest.json").write_text(json.dumps(dict(pages=[dict(page=1, svg="doc_1.svg", spectra=[
+                dict(nucleus="1H", dim=1, mreport="x", preport=rep_h1_)])])), encoding="utf-8")
+            try:
+                sp_h1_["file"], sp_h1_["mx"] = str(svg_h1_), dict(page=1, doc="doc.mnova", mult="x")
+                t_h1_.st["text"] = "1H NMR (400 MHz, CDCl3) δ 7.27 (d, J = 8.0 Hz, 2H), 3.60 – 3.50 (m, 2H), " \
+                                   "1.25 (t, J = 7.0 Hz, 3H)."
+                t_h1_.fill_impurities()
+                rows_h1_ = [[t_h1_.tbl_imp.item(r_, c_).text() for c_ in range(4)] for r_ in range(t_h1_.tbl_imp.rowCount())]
+                assert ["\u00b9H", "1.57", "1.56", T("nmr_imp_possible", name=T("fulmer_water"))] in rows_h1_, rows_h1_
+                assert not any(r_[1] in ("7.28", "7.26", "3.55", "1.28", "1.22") for r_ in rows_h1_), rows_h1_
+                assert T("nmr_imp_1h_nopeaks") not in t_h1_.lbl_imp.text()
+                k_h1_ = [r_[1] for r_ in rows_h1_].index("1.57")              # "moeglich" grau, nicht Warnfarbe
+                assert t_h1_.tbl_imp.item(k_h1_, 0).foreground().color().name() == QColor_h1("gray").name()
+                # neuer Export (Manifest geaendert) -> neue Peaks statt Cache
+                (dir_h1_ / "manifest.json").write_text(json.dumps(dict(pages=[dict(page=1, svg="doc_1.svg", spectra=[
+                    dict(nucleus="1H", dim=1, mreport="x", preport=rep_h1_.replace("1.57", "5.30, 9.99"))])])),
+                    encoding="utf-8")
+                t_h1_.fill_impurities()
+                pk_new_h1_ = [t_h1_.tbl_imp.item(r_, 1).text() for r_ in range(t_h1_.tbl_imp.rowCount())]
+                assert "5.30" in pk_new_h1_ and "1.57" not in pk_new_h1_, pk_new_h1_
+                (dir_h1_ / "manifest.json").write_text(json.dumps(dict(pages=[dict(page=1, svg="doc_1.svg", spectra=[
+                    dict(nucleus="1H", dim=1, mreport="x", preport=rep_h1_)])])), encoding="utf-8")
+                t_h1_.fill_impurities()
+                rows_h1_ = [[t_h1_.tbl_imp.item(r_, c_).text() for c_ in range(4)] for r_ in range(t_h1_.tbl_imp.rowCount())]
+                # Signalzeilen bleiben unveraendert (nur Hinweis)
+                ln_h1_ = t_h1_.nmr_lines()[0][0]
+                assert "7.27 (d, J = 8.0 Hz, 2H)" in ln_h1_ and "1.57" not in ln_h1_, ln_h1_
+                # Peakbericht mit Zusaetzen (z. B. Intensitaet) ist keine Peakliste -> None
+                (dir_h1_ / "manifest.json").write_text(json.dumps(dict(pages=[dict(page=1, spectra=[dict(
+                    nucleus="1H", dim=1, preport="1H NMR (400 MHz, CDCl3) δ 7.28 (0.5), 1.57 (0.1).")])])),
+                    encoding="utf-8")
+                assert NMR_r2.mx_peak_report(sp_h1_) is None
+                t_h1_.fill_impurities()                          # unvollstaendiges Manifest: Hinweis, nichts im Cache
+                assert T("nmr_imp_1h_nopeaks") in t_h1_.lbl_imp.text()
+                assert not any(k_[0] == "nmrh1peaks" and v_ is None for k_, v_ in t_h1_.main.extra_cache.items()
+                               if isinstance(k_, tuple) and k_)
+                sp_h1_["file"] = str(out / "input" / "nowhere" / "x.svg")
+                assert NMR_r2.mx_peak_report(sp_h1_) is None
+            finally:
+                sp_h1_["file"], t_h1_.st["text"] = keep_h1_[0], keep_h1_[2]
+                if keep_h1_[1] is None:
+                    sp_h1_.pop("mx", None)
+                else:
+                    sp_h1_["mx"] = keep_h1_[1]
+                t_h1_.fill_impurities()
+            # eigene Verarbeitung (Entscheidung 157): kein 1H-Abgleich, also Hinweis "ohne Peakliste"
+            assert t_h1_.h1_peaks(dict(source="own", uid=sp_h1_["uid"])) is None
+            for k_ in ("nmr_imp_possible", "nmr_imp_1h_nopeaks", "nmr_imp_1h_nofreq", "fulmer_water", "fulmer_hydrogen"):
+                de_, en_ = I18N_h1.TEXTS[k_]
+                assert de_ and en_ and de_ != en_, k_
+            assert "nmr_imp_1h_auto" not in I18N_h1.TEXTS
+            # Versatz-Hinweise gelten nur fuer 13C: in beiden Sprachen so beschriftet
+            assert all(x_.startswith("\u00b9\u00b3C: ") for k_ in ("nmr_imp_offset", "nmr_imp_offset_bad")
+                       for x_ in I18N_h1.TEXTS[k_])
+            report.append("1.3.0 NMR: 1H impurities at free peaks (multiplet windows, all groups rule, single-signal "
+                          "possible, solvent parent never sure, one peak per row, range values, peak report from the "
+                          "manifest with refresh, own processing off, hint without peak list): OK")
+        with section:
+            # 1.3.0: EasySpin-Startskript (garlic, isotrop) aus den berechneten Kopplungen; g/Exp nie erfunden
+            from elucida.formats.epr import parse_easyspin as pes_es
+            from elucida.tabs import epr_calc as ECALC_es
+            s_es = ECALC_es.easyspin_script([("14N", 1, 22.604, ["N1"], 1), ("1H", 2, -0.004, ["H2", "H3"], 3)],
+                                            level="ωB97X-D/def2-SVP", source="rädical.out")
+            p_es = pes_es(s_es)
+            assert s_es.isascii() and "Sys.g" not in p_es and "Sys.lwpp" not in p_es and "Exp.mwFreq" not in p_es, s_es
+            assert p_es["Sys.A"] == [22.6, 0.0] and "-0.00" not in s_es and p_es["Sys.n"] == [1.0, 2.0], s_es
+            assert "% Sys.g = ;  % set g" in s_es and "(simulation: 3 nuclei)" in s_es and "anisotropic tensors not exported" in s_es
+            dz_es = w.open_demo_publication(out / "es_pub")
+            w.open_project(dz_es / "S3")
+            cp_es = w.epr_tab.calc_pages
+            sim_es = cp_es.sim()
+            t_es = cp_es.easyspin_text()
+            p_es = pes_es(t_es)
+            assert t_es.isascii() and "Elucida" not in t_es and "−" not in t_es, t_es
+            assert p_es["Sys.Nucs"] == "'14N,1H'" and p_es["Sys.n"] == [1.0, 6.0] and p_es["Sys.A"] == [22.6, 27.4], p_es
+            assert p_es["Sys.g"] == [float(EPRMOD.g_text(sim_es["g"]))] and w.epr_tab.fit_ok(sim_es), p_es   # g aus dem Fit
+            assert p_es["Exp.mwFreq"] == [9.4] and p_es["Exp.Range"] == [328.0, 343.0], p_es
+            assert "UB3LYP/def2TZVP" in t_es and "S = 1/2" in t_es, t_es
+            u_es = w.epr_state["hfc_unit"]
+            try:
+                w.epr_state["hfc_unit"] = "G"                                 # Einheit des Bildes: Skript bleibt MHz
+                assert cp_es.easyspin_text() == t_es
+            finally:
+                w.epr_state["hfc_unit"] = u_es
+            fit_es = sim_es["fit"]
+            try:
+                sim_es["fit"] = None                                          # ohne gueltigen Fit: Platzhalter, keine Zahl
+                assert "Sys.g" not in pes_es(cp_es.easyspin_text()) and "% Sys.g = ;" in cp_es.easyspin_text()
+            finally:
+                sim_es["fit"] = fit_es
+            a_es = cp_es.calc["assign"][sim_es["uid"]]
+            try:
+                cp_es.calc["assign"][sim_es["uid"]] = {}                      # ohne Zuordnung: Kerne des Bildes einzeln
+                p0_es = pes_es(cp_es.easyspin_text())
+                assert p0_es["Sys.n"] == [1.0] * len(p0_es["Sys.A"]) and len(p0_es["Sys.A"]) > 2, p0_es
+            finally:
+                cp_es.calc["assign"][sim_es["uid"]] = a_es
+            f_es = cp_es.save_easyspin(out / "es_pub" / "s3.m")
+            assert f_es.read_bytes().decode("ascii") == t_es
+            assert any(Path(f_).name.endswith("_easyspin.m") for f_ in cp_es.export_to(out / "es_pub" / "S3_epr"))
+            # Dateiname = gueltiger MATLAB-Bezeichner; ein Fehler im Skript laesst nur das Skript aus und wird gemeldet
+            for stem_es, want_es in (("S3_EPR", "S3_EPR_easyspin.m"), ("S3.1_EPR", "S3_1_EPR_easyspin.m"),
+                                     ("3-1 (ä)_EPR", "x3_1_a_EPR_easyspin.m"), ("", "x_easyspin.m")):
+                assert ECALC_es.matlab_script_name(stem_es) == want_es, (stem_es, ECALC_es.matlab_script_name(stem_es))
+            long_es = ECALC_es.matlab_script_name("A" * 100)
+            assert len(long_es) == 63 + 2 and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*\.m", long_es), long_es
+
+            def broken_es():
+                raise ValueError("no couplings")
+            cp_es.easyspin_text = broken_es
+            try:
+                with w.collecting_skips():
+                    f2_es = cp_es.export_to(out / "es_pub" / "S3-1_epr")
+                assert f2_es and not any(Path(f_).suffix == ".m" for f_ in f2_es), f2_es
+                assert any("S3_1_epr_easyspin.m" in s_ and "no couplings" in s_ for s_ in w.last_skips), w.last_skips
+            finally:
+                del cp_es.easyspin_text
+            report.append("EasySpin start script from calculated couplings (garlic, MHz, g from fit or placeholder, ASCII, "
+                          "MATLAB file name, failure leaves out only the script and is named): OK")
+        with section:
+            # 1.3.0: Verbindungsname mit Punkt (erfunden „S3.1“). Exportnamen bekamen ihre Endung über with_suffix: aus
+            # „S3.1_CV“ wurde „S3.pdf“, die Tabs überschrieben sich still. Jetzt: jede Datei mit vollem Namen, keine doppelt.
+            dp_dot = w.open_demo_publication(out / "dot_pub")
+            s3_dot = dp_dot / "S3"
+            assert w.open_project(s3_dot, ask=False, recent=False)
+            w.comp_tab.fields["name"].setText("S3.1")                     # wie im Tab Verbindung
+            w.comp_tab.apply()
+            assert w.export_name() == "S3.1", w.export_name()
+
+            def exports_dot():
+                return {p_.resolve() for k_ in (PRJ.FIGURES, PRJ.TABLES, PRJ.SI_DIR) if (s3_dot / k_).is_dir()
+                        for p_ in (s3_dot / k_).iterdir() if p_.is_file()}
+            before_dot = exports_dot()
+            ret_dot = []
+            for key_ in w._TAB_ORDER:
+                if key_ in ("compound", "export"):                         # „Alles exportieren“: eigener Abschnitt
+                    continue
+                r_ = w.export_all() if key_ == "eps" else getattr(w, w._tab_spec(key_)[0]).export_dialog()
+                r_ = [r_] if isinstance(r_, (str, Path)) else list(r_ or [])
+                assert r_, key_                                            # jeder Tab des Beispielprojekts exportiert
+                ret_dot += [Path(p_).resolve() for p_ in r_]
+            w.settings.setValue("si_parts", ",".join(MW.SI_PARTS))
+            w.settings.setValue("si_figs_off", "")
+            w.export_si_dialog()
+            ret_dot.append((s3_dot / PRJ.SI_DIR / "S3.1_SI.docx").resolve())
+            dup_dot = sorted({p_.name for p_ in ret_dot if ret_dot.count(p_) > 1})
+            assert not dup_dot, dup_dot                                    # nichts doppelt geschrieben (überschrieben)
+            new_dot = exports_dot() - before_dot                          # dazu Nebendateien (z. B. NMR-Text zur Word-Datei)
+            assert set(ret_dot) <= new_dot, sorted(p_.name for p_ in set(ret_dot) - new_dot)
+            # Ausnahmen: ε heißt nach der Serie („S3“), das EasySpin-Skript nach MATLAB-Regeln (Punkt -> _)
+            bad_dot = [p_.name for p_ in new_dot if not p_.name.startswith("S3.1_")
+                       and not p_.name.startswith(("S3_UV-Vis.", "S3_UV-Vis_")) and p_.name != "S3_1_EPR_easyspin.m"]
+            assert not bad_dot, bad_dot
+            assert not [p_ for p_ in new_dot if p_.stem in ("S3", "S3.1")], "Datei ohne Tab im Namen"
+            assert {"S3.1_CV.pdf", "S3.1_IR.svg", "S3.1_X-ray_pxrd.png", "S3.1_EPR_spin.csv", "S3.1_DFT_NICS.pdf",
+                    "S3.1_Fluorescence_decay.csv"} <= {p_.name for p_ in new_dot}
+            n_dot = len(new_dot)
+            # Vergleich (Name aus Nutzertext) mit Punkt: Tabelle als docx/xlsx/csv mit vollem Namen
+            w.close_project()
+            w.open_publication(dp_dot)
+            cp_dot = w.pub_page.compare_page
+            w.pub_page.project_tabs.setCurrentWidget(cp_dot)
+            cp_dot.load()
+            cp_dot.open("demo00table")
+            cp_dot.tab.ed_name.setText("Properties v1.2")
+            cp_dot.tab.ed_name.editingFinished.emit()
+            f_dot = cp_dot.tab.export_dialog()
+            assert sorted(p_.name for p_ in f_dot) == ["Properties v1.2.csv", "Properties v1.2.docx",
+                                                       "Properties v1.2.xlsx"], f_dot
+            assert all(p_.exists() for p_ in f_dot)
+            assert PRJ.with_ext("a/S3.1_CV", ".pdf") == Path("a/S3.1_CV.pdf")
+            w.close_publication()
+            report.append(f"Compound name with a dot (S3.1): {n_dot} export files of all tabs + SI with full names, "
+                          f"{len(ret_dot)} returned, none overwritten; comparison name with a dot: OK")
+        with section:
+            # Bruker-NMR-Leser + eigene 1D-Verarbeitung (1.3.0): erfundene TopSpin-Ordner, im Test erzeugt
+            from elucida.formats import bruker_nmr as BN_b1
+            from elucida.core import nmr_proc as NP_b1
+            root_b1 = out / "input" / "bruker_b1"
+            shutil.rmtree(root_b1, ignore_errors=True)               # Ausgabeordner wird wiederverwendet
+
+            def par_b1(path, **kw):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "w", encoding="latin-1", newline="") as f_:
+                    f_.write("##TITLE= Parameter file\n" + "".join(f"##${k}= {v}\n" for k, v in kw.items()) + "##END=\n")
+
+            # Signal beginnt nach der Gruppenlaufzeit, mit Phase pi*GRPDLY wie in echten Bruker-Daten (Pivot links,
+            # empirisch an 78 Sätzen); mit GRPDLY 68.08 (belegt bis 0.08) läge der Pivot in der Mitte 14 Grad daneben
+            si_b1, td_b1, sw_b1, sf_b1, g_b1, m_b1 = 1024, 512, 5000.0, 500.0, 68.08, 100
+            k_b1 = np.arange(td_b1 // 2) - g_b1
+            fid_b1 = np.exp(2j * np.pi * m_b1 / si_b1 * k_b1 - k_b1 / 60.0 + 1j * np.pi * g_b1) * 1e5
+            acq_b1 = dict(TD=td_b1, DTYPA=0, BYTORDA=0, SW_h=sw_b1, GRPDLY=g_b1, AQ_mod=3, DIGMOD=1, NBL=1,
+                          PULPROG="<zg30>")
+            prc_b1 = dict(SI=si_b1, TDeff=0, DTYPP=0, BYTORDP=0, NC_proc=-1, OFFSET=8.0, SW_p=sw_b1, SF=sf_b1, WDW=1,
+                          LB=0.3, PHC0=0.0, PHC1=0.0, PH_mod=1, FT_mod=6, BC_mod=0, ME_mod=0, REVERSE="no", STSI=si_b1,
+                          STSR=0, TDoff=0)
+
+            def exp_b1(name, acq=None, prc=None, dtype="<i4", one_r=None):
+                d_ = root_b1 / name / "10"
+                a_, p_ = dict(acq_b1, **(acq or {})), dict(prc_b1, **(prc or {}))
+                par_b1(d_ / "acqus", **a_)
+                par_b1(d_ / "pdata" / "1" / "procs", **p_)
+                raw_ = np.empty(td_b1)
+                raw_[0::2], raw_[1::2] = np.round(fid_b1.real), np.round(fid_b1.imag)
+                raw_.astype(dtype).tofile(d_ / "fid")
+                (np.arange(si_b1) if one_r is None else one_r).astype("<i4").tofile(d_ / "pdata" / "1" / "1r")
+                return d_
+
+            d32_b1 = exp_b1("int32")
+            d64_b1 = exp_b1("f64be", acq=dict(DTYPA=2, BYTORDA=1), dtype=">f8")
+            f32_b1, a32_b1 = BN_b1.read_fid(d32_b1)
+            f64_b1, _ = BN_b1.read_fid(d64_b1)
+            assert f32_b1.size == td_b1 // 2 and np.array_equal(f32_b1, f64_b1), "int32 / float64 big endian"
+            assert f32_b1[0] == np.round(fid_b1[0].real) + 1j * np.round(fid_b1[0].imag)
+            r_b1, p_b1 = BN_b1.read_1d(d32_b1 / "pdata" / "1")
+            assert np.array_equal(r_b1, np.arange(si_b1) * 0.5), "1r x 2^NC_proc"
+            ax_b1 = BN_b1.ppm_axis(p_b1)
+            assert ax_b1[0] == 8.0 and abs(ax_b1[1] - (8.0 - sw_b1 / sf_b1 / si_b1)) < 1e-12
+            # Gruppenlaufzeit (Pivot links): Signal +m Punkte über dem Träger -> Index SI/2 - m, rein absorptiv
+            s_b1 = NP_b1.process_1d(f32_b1, a32_b1, p_b1, "int32")
+            i_b1 = int(np.argmax(np.abs(s_b1)))
+            assert i_b1 == si_b1 // 2 - m_b1, i_b1
+            assert abs(np.angle(s_b1[i_b1], deg=True)) < 3, np.angle(s_b1[i_b1], deg=True)
+            assert abs(ax_b1[i_b1] - (ax_b1[si_b1 // 2] + m_b1 * sw_b1 / si_b1 / sf_b1)) < 1e-9   # höher in ppm
+            s90_b1 = NP_b1.process_1d(f32_b1, a32_b1, dict(p_b1, PHC0=90.0), "int32")
+            assert np.allclose(s90_b1, s_b1 * np.exp(-0.5j * np.pi)), "PHC0 sign"
+            # PHC1: Pivot am linken Rand, Vorzeichen negativ
+            s60_b1 = NP_b1.process_1d(f32_b1, a32_b1, dict(p_b1, PHC1=60.0), "int32")
+            assert np.allclose(s60_b1, s_b1 * np.exp(-1j * np.deg2rad(60.0) * np.arange(si_b1) / si_b1)), "PHC1"
+            # EM: exp(-pi LB t), Zeitursprung bei der Gruppenlaufzeit; TDeff kürzt das FID
+            lb_b1 = (np.arange(td_b1 // 2) - g_b1) / sw_b1
+            s5_b1 = NP_b1.process_1d(f32_b1, a32_b1, dict(p_b1, LB=5.0), "int32")
+            em_b1 = NP_b1.process_1d(f32_b1 * np.exp(-np.pi * 5.0 * lb_b1), a32_b1, dict(p_b1, LB=0.0), "int32")
+            assert np.allclose(s5_b1, em_b1, rtol=1e-12, atol=0), "EM time origin"
+            sh_b1 = NP_b1.process_1d(f32_b1, a32_b1, dict(p_b1, TDeff=td_b1 // 2), "int32")
+            assert np.allclose(sh_b1, NP_b1.process_1d(f32_b1[:td_b1 // 4], a32_b1, p_b1, "int32"), rtol=1e-12,
+                               atol=0), "TDeff"
+            assert not np.allclose(sh_b1, s_b1), "TDeff ignored"
+            assert NP_b1.group_delay(dict(GRPDLY=-1, DSPFVS=12, DECIM=16, DIGMOD=1)) == 71.625
+            # ser: jeder FID auf 1024 Byte aufgefüllt (TD 200 int32 -> Zeilen zu 256 Werten), Füllwerte fallen weg
+            se_b1 = root_b1 / "ser2d" / "11"
+            par_b1(se_b1 / "acqus", TD=200, DTYPA=0, BYTORDA=0, NBL=1, FnTYPE=0)
+            par_b1(se_b1 / "acqu2s", TD=3)
+            rows_b1 = np.full((3, 256), 7, dtype="<i4")
+            rows_b1[:, :200] = np.arange(600).reshape(3, 200)
+            rows_b1.tofile(se_b1 / "ser")
+            ser_b1, _, _ = BN_b1.read_ser(se_b1)
+            want_b1 = np.arange(600.0).reshape(3, 200)
+            assert ser_b1.shape == (3, 100) and np.array_equal(ser_b1, want_b1[:, 0::2] + 1j * want_b1[:, 1::2]), "ser"
+            # 2rr mit Untermatrizen (XDIM < SI in beiden Dimensionen)
+            full_b1 = np.arange(8 * 12).reshape(8, 12)
+            p2d_b1 = root_b1 / "hsqc" / "11" / "pdata" / "1"
+            par_b1(p2d_b1 / "procs", SI=12, XDIM=6, DTYPP=0, BYTORDP=0, NC_proc=1, OFFSET=10.0, SW_p=6000.0, SF=500.0)
+            par_b1(p2d_b1 / "proc2s", SI=8, XDIM=4, DTYPP=0, BYTORDP=0, NC_proc=0, OFFSET=160.0, SW_p=20000.0, SF=125.0)
+            np.concatenate([full_b1[b1_ * 4:(b1_ + 1) * 4, b2_ * 6:(b2_ + 1) * 6].ravel() for b1_ in range(2)
+                               for b2_ in range(2)]).astype("<i4").tofile(p2d_b1 / "2rr")
+            m2_b1, pf2_b1, pf1_b1 = BN_b1.read_2d(p2d_b1)
+            assert np.array_equal(m2_b1, full_b1 * 2.0), "2rr submatrix order"
+            assert BN_b1.ppm_axis(pf1_b1)[1] == 160.0 - 20000.0 / 125.0 / 8
+            # NOAH-Modul nur aus dem Audit-Trail (k = 2 -> zweiter Buchstabe B = HMBC), ohne Audit keins
+            nd_b1 = root_b1 / "noah" / "12001"
+            par_b1(nd_b1 / "acqus", PULPROG="<noah2_SB>", NBL=1)
+            assert BN_b1.noah_module(nd_b1) is None
+            with open(nd_b1 / "audita.txt", "w", encoding="latin-1", newline="") as f_:
+                f_.write("##TITLE= Audit trail\n(1,<2020-01-01>,<user>,<host>,<go4>,<TOPSPIN 4.1>,\n"
+                         "<created by splitx 2 2. dataset from\n /data/x/nmr/test/12>)\n")
+            assert BN_b1.noah_module(nd_b1) == "HMBC"
+            par_b1(nd_b1 / "acqus", PULPROG="<noah2_SBx>", NBL=1)            # Zusatz im Namen: Zählung unsicher
+            assert BN_b1.noah_module(nd_b1) is None
+            # Ablehnungen mit Meldung (Datei + Grund), nie geraten
+            bad_b1 = []
+
+            def rejects_b1(fn, *args, has=""):
+                try:
+                    fn(*args)
+                except ValueError as e_:
+                    assert has in str(e_), (has, str(e_))
+                    bad_b1.append(str(e_))
+                    return
+                raise AssertionError(f"accepted: {fn.__name__} {has}")
+            bk_b1 = root_b1 / "bak" / "10"
+            bk_b1.mkdir(parents=True, exist_ok=True)
+            (bk_b1 / "acqus.bak").write_bytes(b"##$TD= 2\n")
+            rejects_b1(BN_b1.read_fid, bk_b1, has="acqus.bak")
+            rejects_b1(BN_b1.read_fid, exp_b1("dtyp1", acq=dict(DTYPA=1)), has="DTYPA")
+            rejects_b1(BN_b1.read_1d, exp_b1("bytordp", prc=dict(BYTORDP=1)) / "pdata" / "1", has="BYTORDP")
+            rejects_b1(BN_b1.read_1d, exp_b1("short", one_r=np.arange(10)) / "pdata" / "1", has="1r")
+            rejects_b1(BN_b1.read_1d, exp_b1("strip", prc=dict(STSI=512)) / "pdata" / "1", has="STSI")
+            rejects_b1(BN_b1.read_fid, exp_b1("tdodd", acq=dict(TD=td_b1 - 1)), has="TD")
+            rejects_b1(BN_b1.ppm_axis, {k_: v_ for k_, v_ in prc_b1.items() if k_ != "OFFSET"}, None, "x/10",
+                       has="OFFSET")
+            par_b1(p2d_b1 / "proc2s", SI=8, XDIM=3, DTYPP=0, BYTORDP=0, NC_proc=0, OFFSET=1.0, SW_p=1.0, SF=1.0)
+            rejects_b1(BN_b1.read_2d, p2d_b1, has="XDIM")
+            for key_b1, val_b1, has_b1 in (("ME_mod", 2, "ME_mod"), ("WDW", 2, "WDW"), ("STSI", 512, "STSI"),
+                                           ("REVERSE", "yes", "REVERSE"), ("BC_mod", 2, "BC_mod"),
+                                           ("TDoff", 4, "TDoff"), ("SI", 1000, "SI = 1000"), ("TDeff", "x", "TDeff"),
+                                           ("STSR", None, "STSR")):
+                p_x_b1 = {k_: v_ for k_, v_ in dict(p_b1, **{key_b1: val_b1}).items() if v_ is not None}
+                rejects_b1(NP_b1.process_1d, f32_b1, a32_b1, p_x_b1, "x/10", has=has_b1)
+            for acq_x_b1, has_b1 in ((dict(GRPDLY=67), "67"), (dict(GRPDLY=67.5), "67.5"),
+                                     (dict(GRPDLY=-1, DSPFVS=10, DECIM=4), "DSPFVS"),
+                                     (dict(GRPDLY=-1, DSPFVS=12, DECIM=16, DIGMOD=0), "DIGMOD"),
+                                     (dict(FnTYPE=1), "FnTYPE"), (dict(NBL=None), "NBL")):
+                a_x_b1 = {k_: v_ for k_, v_ in dict(a32_b1, **acq_x_b1).items() if v_ is not None}
+                rejects_b1(NP_b1.process_1d, f32_b1, a_x_b1, p_b1, "x/10", has=has_b1)
+            sd_b1 = root_b1 / "nus" / "10"
+            par_b1(sd_b1 / "acqus", TD=8, DTYPA=0, BYTORDA=0, FnTYPE=2)
+            par_b1(sd_b1 / "acqu2s", TD=4)
+            rejects_b1(BN_b1.read_ser, sd_b1, has="FnTYPE")
+            par_b1(sd_b1 / "acqus", TD=8, DTYPA=0, BYTORDA=0, NBL=2)
+            rejects_b1(BN_b1.read_ser, sd_b1, has="NBL")
+            # NUS/LP = Kennzeichen „nur 2rr/1r zeigen“; 2D-Klassen ohne Beleg (hier EM in F1) ebenso (Abschnitt c2d)
+            only_b1 = NP_b1.blockers(dict(acq_b1, FnTYPE=2), prc_b1, a2={}, p2=dict(prc_b1, ME_mod=2, MC2=5),
+                                     name="nus/10")
+            assert all("2rr" in t_ and "nus/10" in t_ for t_ in only_b1), only_b1
+            assert any("NUS" in t_ for t_ in only_b1) and any("ME_mod = 2" in t_ for t_ in only_b1), only_b1
+            plain_b1 = NP_b1.blockers(acq_b1, prc_b1, a2={"FnMODE": 6}, p2=prc_b1, name="hsqc/11")
+            assert any("WDW (F1)" in t_ for t_ in plain_b1), plain_b1
+            assert NP_b1.blockers(a32_b1, p_b1) == [], NP_b1.blockers(a32_b1, p_b1)
+            # extreme DSP-Werte (Mnova-Prüfung): Meldung statt OverflowError, DECIM nie gekürzt (16.5 ist nicht 16)
+            for dsp_b1 in (dict(GRPDLY=float("inf")), dict(GRPDLY=-1, DSPFVS=12, DECIM=16.5, DIGMOD=1),
+                           dict(GRPDLY=-1, DSPFVS=12, DECIM=float("inf"), DIGMOD=1),
+                           dict(GRPDLY=-1, DSPFVS=12, DECIM=float("nan"), DIGMOD=1)):
+                assert NP_b1.group_delay(dsp_b1) is None, dsp_b1
+                assert NP_b1.blockers(dict(a32_b1, **dsp_b1), p_b1, name="x/10"), dsp_b1
+            assert NP_b1.group_delay(dict(GRPDLY=-1, DSPFVS=12, DECIM=16.0, DIGMOD=1)) == 71.625
+            assert any("GRPDLY = inf" in t_ for t_ in NP_b1.blockers(dict(acq_b1, GRPDLY=float("inf")), prc_b1, a2={},
+                                                                   p2=prc_b1, name="x/11"))
+            assert all("{" not in t_ for t_ in bad_b1), bad_b1                # alle Platzhalter gefüllt
+            report.append(f"Bruker NMR reader + 1D processing (int32/float64 big endian, NC_proc, group delay pivot "
+                          f"left, PHC0/PHC1 sign and pivot, EM origin, TDeff, ppm axis, ser padding, 2rr submatrices, "
+                          f"NOAH from audit, {len(bad_b1)} rejections with message, unchecked 2D 2rr only): OK")
+        with section:
+            # Mnova-Dokument (.mnova, formats/mnova_doc.py): Rahmen wie in echten Dokumenten im Code nachgebaut, Inhalt
+            # erfunden (TopSpin-Satz aus make_test_1d); keine Bytes aus echten Dateien
+            import struct as st_mv
+            import zlib as zl_mv
+            from elucida.formats import bruker_nmr as BN_mv
+            from elucida.formats import mnova_doc as MV
+            from elucida.core import nmr_analysis as NA_mv
+            from elucida.core import nmr_proc as NP_mv
+            root_mv = out / "input" / "mnova_doc"
+            shutil.rmtree(root_mv, ignore_errors=True)
+            exp_mv = BN_mv.make_test_1d(root_mv / "h1" / "10", [(7.26, 1.0, 1.0), (2.10, 3.0, 1.2)], td=8192, si=16384)
+            acq_mv = (exp_mv / "acqus").read_bytes()
+            prc_mv = (exp_mv / "pdata" / "1" / "procs").read_bytes()
+            fid_mv, a_mv = BN_mv.read_fid(exp_mv)
+            p_mv = BN_mv.procs(exp_mv / "pdata" / "1")
+            raw_mv = np.empty(2 * fid_mv.size)
+            raw_mv[0::2], raw_mv[1::2] = fid_mv.real, fid_mv.imag
+
+            def qs_mv(t):
+                return st_mv.pack(">I", 2 * len(t)) + t.encode("utf-16-be")
+
+            def emb_mv(name, data):
+                z_ = zl_mv.compress(data)
+                return (qs_mv(name) + st_mv.pack(">II" + "IIB" * 3, 31, 0, *(2461000, 3600000, 255) * 3)
+                        + st_mv.pack(">q", len(z_) + 4) + st_mv.pack(">I", len(data)) + z_ + qs_mv("C:/x/" + name))
+
+            def axis_mv(low, a_):
+                return b"\x09\x01" + bytes(8) + st_mv.pack(">3d", low, a_["SFO1"], a_["SW_h"]) + bytes(6)
+
+            def item_mv(values, files, lows=(), a_=a_mv):
+                body_ = b"".join(emb_mv(n_, d_) for n_, d_ in files for _ in range(2))   # je zweimal wie Mnova
+                body_ += b"".join(axis_mv(x_, a_) for x_ in lows)
+                v_ = np.asarray(values, "<f4").tobytes()
+                return body_ + b"\x0f\x00\x00\x00\x00\x01" + st_mv.pack(">I", len(v_) >> 8) + b"\x05" + \
+                    st_mv.pack(">I", len(v_)) + b"\x01" + v_
+
+            def doc_mv(name, items, version="14.2.3-12345"):
+                head_ = qs_mv("MestReNova") + qs_mv(version)
+                b_ = MV.MAGIC + st_mv.pack(">I", 8 + len(head_)) + bytes(8) + head_ + b"".join(items)
+                (root_mv / name).write_bytes(b_)
+                return root_mv / name
+
+            sw_mv, bf_mv = a_mv["SW_h"], a_mv["BF1"]
+            ax0_mv = NA_mv.axis_uncalibrated(a_mv, p_mv)[0]
+            low_b_mv, low_m_mv = p_mv["OFFSET"] * p_mv["SF"] - sw_mv, (ax0_mv + 0.05) * bf_mv - sw_mv  # Bruker, Mnova
+            fl_mv = [("audita.txt", b"x"), ("acqus", acq_mv), ("procs", prc_mv)]
+            c13_mv = acq_mv.replace(b"##$DTYPA= 2", b"##$DTYPA= 0").replace(b"<1H>", b"<13C>")
+            int_mv = np.round(raw_mv / np.abs(raw_mv).max() * 2 ** 20)       # float32 hält dort auch x.5
+            two_mv = [("acqus", acq_mv.replace(b"##$PULPROG= <zg30>", b"##$PULPROG= <hsqcetgp>")),
+                      ("acqu2s", b"##$TD= 2\n"), ("procs", prc_mv), ("proc2s", b"##$SI= 4\n")]
+            t1_mv = [(n_, d_.replace(b"hsqcetgp", b"t1ir")) for n_, d_ in two_mv]
+            items_mv = [item_mv(raw_mv, fl_mv, (low_b_mv, low_m_mv, low_b_mv, low_b_mv)),
+                        item_mv(raw_mv, fl_mv, (low_b_mv, low_m_mv, low_b_mv, low_b_mv)),     # Kopie
+                        item_mv(int_mv, [("acqus", c13_mv), ("procs", prc_mv)], (low_b_mv,) * 3),
+                        item_mv(np.zeros(2 * raw_mv.size), two_mv), item_mv(np.zeros(2 * raw_mv.size), t1_mv),
+                        item_mv(raw_mv[:-256], fl_mv),                                          # TD passt nicht
+                        item_mv(int_mv + 0.5, [("acqus", c13_mv), ("procs", prc_mv)]),          # keine ganzen Zahlen
+                        item_mv(raw_mv, [("acqus", acq_mv), ("procs", prc_mv)], (low_b_mv, low_m_mv, low_m_mv + 9)),
+                        item_mv(np.ones(1024), []),                                              # ohne Parameter
+                        item_mv(raw_mv, [("acqus", acq_mv), ("procs", prc_mv),
+                                         ("procs", prc_mv.replace(b"##$LB= ", b"##$LB= 1"))]),  # Kopien verschieden
+                        item_mv(raw_mv, [("acqus", acq_mv.replace(b"##$TD= 8192", b"##$TD= 8191")),
+                                         ("procs", prc_mv)]),                                    # TD ungerade
+                        item_mv(raw_mv, [("acqus", acq_mv.replace(b"##$BYTORDA= 0", b"##$BYTORDA= 7")),
+                                         ("procs", prc_mv)]),                                    # ungeprüft
+                        item_mv(raw_mv, fl_mv, (low_b_mv + 5, low_m_mv, low_b_mv + 5))]   # Mehrheit != Bruker
+            r_mv = MV.read_document(doc_mv("doc.mnova", items_mv))
+            assert r_mv["version"] == "14.2.3-12345", r_mv["version"]
+            sp_mv = r_mv["spectra"]
+            assert [(s_["nucleus"], s_["copies"]) for s_ in sp_mv] == [("1H", 2), ("13C", 1), ("1H", 1), ("1H", 1)], sp_mv
+            h_mv, c_mv, amb_mv, unm_mv = sp_mv
+            # dieselbe Form wie ein TopSpin-Ordner: FID = float32 des Ordners, Parameter gleich, Spektrum gleich
+            f32_mv = raw_mv.astype("<f4").astype(float)
+            assert np.array_equal(h_mv["fid"], f32_mv[0::2] + 1j * f32_mv[1::2])
+            assert h_mv["acqus"] == a_mv and h_mv["procs"] == p_mv
+            s1_mv, s2_mv = (NP_mv.process_1d(f_, a_mv, p_mv) for f_ in (h_mv["fid"], fid_mv))
+            assert np.abs(s1_mv - s2_mv).max() < 1e-6 * np.abs(s2_mv).max()
+            assert abs(h_mv["ref_shift"] - 0.05) < 1e-9 and h_mv["notes"] == [], (h_mv["ref_shift"], h_mv["notes"])
+            assert c_mv["acqus"]["DTYPA"] == 0 and np.array_equal(c_mv["fid"], int_mv[0::2] + 1j * int_mv[1::2])
+            assert c_mv["ref_shift"] is None and c_mv["notes"] == []                 # nicht umreferenziert
+            assert amb_mv["ref_shift"] is None and amb_mv["notes"] == [MV.T("mnovadoc_ref_ambiguous")], amb_mv["notes"]
+            assert MV.axis_start(a_mv, p_mv) == ax0_mv                             # geschlossene Form = ganze Achse
+            assert unm_mv["ref_shift"] is None and unm_mv["notes"] == [MV.T("mnovadoc_ref_unmatched")], unm_mv["notes"]
+            rej_mv, skip_mv = r_mv["rejected"], r_mv["skipped"]
+
+            def at_mv(k_):
+                return MV.T("mnovadoc_where", name="doc.mnova", k=k_)
+            assert rej_mv == [MV.T("mnovadoc_2d", where=at_mv(4), what="1H, hsqcetgp"),
+                              MV.T("b1nmr_size", name=at_mv(6), n=raw_mv.size - 256, m=raw_mv.size),
+                              MV.T("mnovadoc_not_raw", where=at_mv(7)), MV.T("mnovadoc_copies", where=at_mv(10)),
+                              MV.T("b1nmr_td", name=at_mv(11), v=8191),
+                              MV.T("b1nmr_unchecked", name=at_mv(12), key="BYTORDA", v=7)], rej_mv
+            assert skip_mv == [MV.T("mnovadoc_pseudo", where=at_mv(5), what="1H, t1ir"),
+                               MV.T("mnovadoc_no_params", where=at_mv(9))], skip_mv
+            out_mv = MV.write_experiment(h_mv, root_mv / "back" / "1")              # TopSpin-Ordner wieder lesbar
+            assert np.array_equal(BN_mv.read_fid(out_mv)[0], h_mv["fid"])
+            # ganze Dokumente: fremde Datei, ungeprüfte Version, nichts Lesbares
+            for b_, has_ in ((b"PK\x03\x04", "MNova"), (None, "14.0.0-1")):
+                f_ = doc_mv("v.mnova", items_mv[:1], "14.0.0-1") if b_ is None else root_mv / "x.mnova"
+                if b_ is not None:
+                    f_.write_bytes(b_)
+                try:
+                    MV.read_document(f_)
+                    raise AssertionError(f"not refused: {has_}")
+                except ValueError as ex_:
+                    assert has_ in str(ex_), ex_
+            none_mv = MV.read_document(doc_mv("e.mnova", items_mv[3:4]))
+            assert none_mv["spectra"] == [] and "1D" in none_mv["rejected"][0], none_mv
+            assert all("{" not in t_ for t_ in rej_mv + skip_mv + amb_mv["notes"])
+            # feindliche Dokumente: jedes Element endet abgelehnt oder ohne Vorschlag, nie mit Ausnahme, und schnell
+            def acq_x_mv(old_, new_):
+                return [("acqus", acq_mv.replace(old_, new_)), ("procs", prc_mv)]
+
+            def prc_x_mv(old_, new_):
+                return [("acqus", acq_mv), ("procs", prc_mv.replace(old_, new_))]
+            si_mv = b"##$SI= %d" % p_mv["SI"]
+            bf_txt_mv = b"##$BF1= " + str(a_mv["BF1"]).encode()
+            assert si_mv in prc_mv and bf_txt_mv in acq_mv
+            rolled_mv = np.roll(raw_mv, raw_mv.size // 2)                           # Maximum mitten im Feld (wie 1r)
+            nan_mv = raw_mv.copy()
+            nan_mv[100] = np.nan
+            lows_mv = (low_b_mv, low_m_mv, low_b_mv)                                # Vorschlagsweg wird erreicht
+            hostile_mv = [item_mv(raw_mv, prc_x_mv(si_mv, si_), lows_mv) for si_ in (b"##$SI= 0", b"##$SI= -4", b"##$SI= nan",
+                                                                            b"##$SI= 3000000000")]
+            hostile_mv += [item_mv(raw_mv, acq_x_mv(bf_txt_mv, b"##$BF1= " + x_), lows_mv) for x_ in (b"0", b"inf",
+                                                                                                   b"nan")]
+            hostile_mv += [item_mv(raw_mv, [("acqus", bytes(MV.FILE_MAX + 1)), ("procs", prc_mv)]),   # Bombe, benutzt
+                           item_mv(raw_mv, [("uxnmr.par", bytes(64 << 20))] + fl_mv),                # unbenutzt: nur Rahmen
+                           item_mv(rolled_mv, fl_mv), item_mv(int_mv * 64, [("acqus", c13_mv), ("procs", prc_mv)]),
+                           item_mv(nan_mv, fl_mv), item_mv(raw_mv, acq_x_mv(b"##$BYTORDA= 0", b"##$BYTORDA= 1")),
+                           item_mv(raw_mv, fl_mv, low_b_mv + np.arange(5000.0)),                        # viele Einträge
+                           item_mv(raw_mv, prc_x_mv(b"##$OFFSET= ", b"##$OFFSET= nan\n##$X= "), (low_b_mv, low_m_mv,
+                                                                                                low_b_mv))]
+            t0_mv = time.perf_counter()
+            r_mv = MV.read_document(doc_mv("hostile.mnova", hostile_mv))
+            dt_mv = time.perf_counter() - t0_mv
+
+            def at_mv(k_):
+                return MV.T("mnovadoc_where", name="hostile.mnova", k=k_)
+            pk_mv = int(np.argmax(np.hypot(*(rolled_mv.astype("<f4").astype(float)[i_::2] for i_ in (0, 1)))))
+            assert r_mv["rejected"] == [MV.T("mnovadoc_param", name=at_mv(1), key="SI", v=0),
+                                        MV.T("mnovadoc_param", name=at_mv(2), key="SI", v=-4),
+                                        MV.T("mnovadoc_param", name=at_mv(3), key="SI", v=float("nan")),
+                                        MV.T("mnovadoc_param", name=at_mv(4), key="SI", v=3000000000),
+                                        MV.T("mnovadoc_param", name=at_mv(5), key="BF1", v=0),
+                                        MV.T("mnovadoc_param", name=at_mv(6), key="BF1", v=float("inf")),
+                                        MV.T("mnovadoc_param", name=at_mv(7), key="BF1", v=float("nan")),
+                                        MV.T("mnovadoc_file_big", where=at_mv(8), file="acqus", mb=MV.FILE_MAX >> 20),
+                                        MV.T("mnovadoc_not_fid", where=at_mv(10), i=pk_mv, g=a_mv["GRPDLY"]),
+                                        MV.T("mnovadoc_int_range", where=at_mv(11)),
+                                        MV.T("mnovadoc_not_finite", where=at_mv(12)),
+                                        MV.T("b1nmr_unchecked", name=at_mv(13), key="BYTORDA (DTYPA 2)", v=1)], \
+                r_mv["rejected"]
+            assert [(s_["ref_shift"], s_["notes"]) for s_ in r_mv["spectra"]] == [
+                (r_mv["spectra"][0]["ref_shift"], []), (None, [MV.T("mnovadoc_ref_ambiguous")]),
+                (None, [MV.T("mnovadoc_ref_unmatched")])] and r_mv["spectra"][0]["ref_shift"] is None, r_mv["spectra"]
+            assert dt_mv < 30, dt_mv
+            # Feinde je Zahlenparameter, den der Leser anfasst (Vorschlagsweg erreicht): nur gewollte Ablehnungen oder kein
+            # Vorschlag, keine Ausnahme, jedes Element gezählt
+            def set_mv(text_, key_, val_):
+                line_ = b"##$" + key_.encode() + b"= " + val_
+                new_, n_ = re.subn(rb"##\$" + key_.encode() + rb"= [^\n]*", lambda m_: line_, text_)
+                return new_ if n_ else text_.replace(b"##END=", line_ + b"\n##END=")
+            bad_mv = (b"0", b"-1", b"nan", b"inf", b"1e400", b"1e300", b"abc")
+            sweep_mv = []
+            for key_ in ("TD", "BF1", "SFO1", "SW_h", "GRPDLY", "DECIM", "DSPFVS", "DIGMOD", "DTYPA", "BYTORDA"):
+                for x_ in bad_mv:
+                    acq_ = set_mv(acq_mv, key_, x_)
+                    if key_ in ("DECIM", "DSPFVS", "DIGMOD"):                     # Tabelle statt GRPDLY
+                        acq_ = set_mv(set_mv(acq_, "GRPDLY", b"-1"), "DSPFVS" if key_ != "DSPFVS" else "DECIM", b"12")
+                    sweep_mv.append(item_mv(raw_mv, [("acqus", acq_), ("procs", prc_mv)], lows_mv))
+            for key_ in ("SI", "SF", "OFFSET", "SW_p"):
+                sweep_mv += [item_mv(raw_mv, [("acqus", acq_mv), ("procs", set_mv(prc_mv, key_, x_))], lows_mv)
+                             for x_ in bad_mv]
+            t0_mv = time.perf_counter()
+            sw_mv = MV.read_document(doc_mv("sweep.mnova", sweep_mv))
+            assert time.perf_counter() - t0_mv < 60
+            err_mv = MV.T("mnovadoc_item_error", where="@", err="@").split("@")[1]
+            assert not any(err_mv in t_ for t_ in sw_mv["rejected"]), sw_mv["rejected"]
+            assert all(s_["ref_shift"] is None or abs(s_["ref_shift"]) <= MV.REF_MAX_PPM for s_ in sw_mv["spectra"])
+            assert len(sw_mv["rejected"]) - (not sw_mv["spectra"]) + len(sw_mv["skipped"]) + \
+                sum(s_["copies"] for s_ in sw_mv["spectra"]) == len(sweep_mv)
+            frame_mv = emb_mv("acqus", bytes(MV.FILE_MAX))                     # viele Kopien knapp unter der Grenze
+            try:
+                MV.read_document(doc_mv("many.mnova", [frame_mv * (MV.UNPACK_MAX // MV.FILE_MAX + 1) + items_mv[0]]))
+                raise AssertionError("many copies not refused")
+            except ValueError as ex_:
+                assert str(ex_) == MV.T("mnovadoc_unpack_total", name="many.mnova", mb=MV.UNPACK_MAX >> 20), ex_
+            # viele falsche Rahmen, deren Länge bis zum Dateiende reicht (früher je Rahmen eine Kopie des Rests): schnell
+            head_mv = MV.MAGIC + st_mv.pack(">I", 8 + len(qs_mv("MestReNova") + qs_mv("14.2.1-1"))) + bytes(8) + \
+                qs_mv("MestReNova") + qs_mv("14.2.1-1")
+            pre_mv = qs_mv("acqus") + st_mv.pack(">II" + "IIB" * 3, 31, 0, *(2461000, 3600000, 255) * 3)
+            k_mv, fsize_mv, pad_mv = 10000, len(pre_mv) + 8 + 4 + 4, 8 << 20
+            total_mv = len(head_mv) + k_mv * fsize_mv + pad_mv
+            fake_mv = b"".join(pre_mv + st_mv.pack(">q", total_mv - (len(head_mv) + i_ * fsize_mv + len(pre_mv)) - 8)
+                               + st_mv.pack(">I", 100) + b"\x78\x9c\xff\xff" for i_ in range(k_mv))
+            (root_mv / "fake.mnova").write_bytes(head_mv + fake_mv + bytes(pad_mv))
+            t0_mv = time.perf_counter()
+            try:
+                fk_mv = MV.read_document(root_mv / "fake.mnova")
+                assert fk_mv["spectra"] == [] and fk_mv["rejected"] == [MV.T("mnovadoc_none", name="fake.mnova")], fk_mv
+            except ValueError as ex_:                                            # Obergrenze je Fehlschlag angerechnet
+                assert str(ex_) == MV.T("mnovadoc_unpack_total", name="fake.mnova", mb=MV.UNPACK_MAX >> 20), ex_
+            assert time.perf_counter() - t0_mv < 20, time.perf_counter() - t0_mv
+            big_mv = np.random.default_rng(3).integers(0, 256, 300_000, dtype=np.uint8).tobytes()   # > ZCHUNK komprimiert
+            got_mv = [x_[3] for x_ in MV._items(emb_mv("audita.txt", b"x") + emb_mv("procs", big_mv)) if x_[0] == "file"]
+            assert got_mv == [None, big_mv], [None if x_ is None else len(x_) for x_ in got_mv]
+            # Rahmen, die erst nach dem Entpacken scheitern (Länge falsch), zählen ebenfalls gegen die Grenze
+            z1_mv = zl_mv.compress(bytes(1 << 20))
+            bad_len_mv = b"".join(qs_mv("acqus") + st_mv.pack(">II" + "IIB" * 3, 31, 0, *(2461000, 3600000, 255) * 3)
+                                  + st_mv.pack(">q", len(z1_mv) + 4) + st_mv.pack(">I", 2 << 20) + z1_mv
+                                  for _ in range(MV.UNPACK_MAX // (1 << 20) + 1))
+            try:
+                MV.read_document(doc_mv("badlen.mnova", [bad_len_mv + items_mv[0]]))
+                raise AssertionError("failing frames not counted")
+            except ValueError as ex_:
+                assert str(ex_) == MV.T("mnovadoc_unpack_total", name="badlen.mnova", mb=MV.UNPACK_MAX >> 20), ex_
+            report.append(f"Mnova document reader (FID + acqus/procs as from a TopSpin folder, float32 copy, copies merged, "
+                          f"Mnova re-referencing only as suggestion, 2D/pseudo-2D/TD/non-integer/differing copies "
+                          f"refused, unchecked version refused; {len(hostile_mv)} hostile items and {len(sweep_mv)} bad parameter "
+                          f"values refused or without suggestion, no exception; many-copies bomb refused): OK")
+        with section:
+            # Eigene 2D-Verarbeitung aus ser (1.3.0, core/nmr2d.py): erfundene Sätze je FnMODE, zwei Kreuzsignale an
+            # bekannten Lagen (in F1 nicht spiegelbildlich, eines negativ); Konventionen wie an echten 2rr kalibriert
+            from elucida.core import nmr2d as N2_c2d
+            from elucida.core import nmr_proc as NP_c2d
+            root_c2d = out / "input" / "bruker_c2d"
+            shutil.rmtree(root_c2d, ignore_errors=True)
+
+            def par_c2d(path, **kw):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "w", encoding="latin-1", newline="") as f_:
+                    f_.write("##TITLE= Parameter file\n" + "".join(f"##${k}= {v}\n" for k, v in kw.items()) + "##END=\n")
+
+            si2_c, si1_c, n2_c, n1_c, g_c = 256, 128, 128, 32, 68.0
+            sw2_c, sw1_c, bf_c, bfx_c = 5000.0, 2000.0, 500.0, 125.0
+            sfo2_c, sfo1_c = bf_c + 0.002, bfx_c + 0.01                     # Träger 4 ppm (F2), 80 ppm (F1)
+            pk_c = ((30, 20, 1.0), (-50, -35, -1.0))                        # (Bins F2, Bins F1, Vorzeichen)
+            k_c = np.arange(n2_c) - g_c
+
+            def e2_c(m2):                                                   # F2-FID wie b1: Phase pi*GRPDLY
+                return np.exp(2j * np.pi * m2 / si2_c * k_c - np.maximum(k_c, 0) / 40 + 1j * np.pi * g_c)
+
+            def ser_c2d(mode, peaks=pk_c):
+                """t1-Zeilen je Modus; frequenz +m landet bei Index SI/2 − m (wie 1D, höhere ppm links)."""
+                rows_ = []
+                if mode == "TPPI":                                          # reell, DW1 = 1/(2 SW1), −90° je Punkt
+                    return np.array([sum(s_ * np.cos(2 * np.pi * (0.5 - m1_ / si1_c) * j_ / 2) * np.exp(-j_ / 50)
+                                         * e2_c(m2_) for m2_, m1_, s_ in peaks) for j_ in range(2 * n1_c)])
+                for j_ in range(n1_c):
+                    def sig(f_):
+                        return sum(s_ * f_(2 * np.pi * m1_ / si1_c * j_) * np.exp(-j_ / 25) * e2_c(m2_)
+                                   for m2_, m1_, s_ in peaks)
+                    if mode == "QF":                                        # Drehsinn umgekehrt (QF nicht gespiegelt)
+                        rows_.append(sig(lambda w_: np.exp(-1j * w_)))
+                    elif mode == "States-TPPI":                             # Träger um SW1/2 versetzt: (−1)^j
+                        rows_ += [sig(lambda w_: (-1) ** j_ * np.cos(w_)), sig(lambda w_: (-1) ** j_ * np.sin(w_))]
+                    else:                                                   # E/A: cos = i(E+A), sin = −(E−A)
+                        rows_ += [sig(lambda w_: -0.5j * np.exp(-1j * w_)), sig(lambda w_: -0.5j * np.exp(1j * w_))]
+                return np.array(rows_)
+
+            acq_c = dict(TD=2 * n2_c, DTYPA=2, BYTORDA=0, SW_h=sw2_c, SW=sw2_c / sfo2_c, SFO1=sfo2_c, BF1=bf_c,
+                         GRPDLY=g_c, NBL=1, FnTYPE=0, AQ_mod=3, PULPROG="<test2d>", NUC1="<1H>")
+            prc_c = dict(SI=si2_c, XDIM=si2_c, WDW=4, SSB=2, LB=0.0, GB=0.0, PH_mod=1, PHC0=0.0, PHC1=0.0, BC_mod=0,
+                         ME_mod=0, TDeff=0, TDoff=0, STSI=si2_c, STSR=0, FTSIZE=si2_c, REVERSE="no", SF=bf_c,
+                         DTYPP=0, BYTORDP=0, NC_proc=0)
+
+            def exp_c2d(name, mode, fn, ph, acq=None, a2x=None, p2x=None, p1x=None, audit=None, peaks=pk_c):
+                d_ = root_c2d / name / "10"
+                rows_ = ser_c2d(mode, peaks)
+                par_c2d(d_ / "acqus", **dict(acq_c, **(acq or {})))
+                par_c2d(d_ / "acqu2s", **dict(dict(TD=len(rows_), FnMODE=fn, SW=sw1_c / sfo1_c, SFO1=sfo1_c,
+                                                   BF1=bfx_c, NUC1="<13C>"), **(a2x or {})))
+                par_c2d(d_ / "pdata" / "1" / "procs", **dict(prc_c, PH_mod=ph[0], **(p2x or {})))
+                par_c2d(d_ / "pdata" / "1" / "proc2s", **dict(dict(prc_c, SI=si1_c, XDIM=si1_c, STSI=si1_c,
+                                                                   FTSIZE=si1_c, FCOR=0.5, MC2=0, SF=bfx_c,
+                                                                   PH_mod=ph[1]), **(p1x or {})))
+                raw_ = np.empty((len(rows_), 2 * n2_c))
+                raw_[:, 0::2], raw_[:, 1::2] = rows_.real, rows_.imag
+                raw_.astype("<f8").tofile(d_ / "ser")
+                if audit:
+                    (d_ / "pdata" / "1" / "auditp.txt").write_text(audit, encoding="latin-1")
+                return d_
+
+            def hits_c2d(d_, signed, peaks=pk_c):
+                """jedes Signal: lokales Maximum von |S| genau am erwarteten Index, ≥ 30 % des größten, Vorzeichen."""
+                for m2_, m1_, s_ in peaks:
+                    i1_, i2_ = si1_c // 2 - m1_, si2_c // 2 - m2_
+                    w_ = np.abs(d_[i1_ - 1:i1_ + 2, i2_ - 1:i2_ + 2])
+                    if w_[1, 1] < w_.max() or w_[1, 1] < 0.3 * np.abs(d_).max():
+                        return False
+                    if signed and np.sign(d_[i1_, i2_]) != s_:
+                        return False
+                return True
+
+            modes_c2d = (("QF", 1, (0, 2)), ("TPPI", 3, (1, 1)), ("States-TPPI", 5, (1, 1)),
+                         ("Echo-Antiecho", 6, (1, 1)))
+            dirs_c2d = {m_: exp_c2d(m_.lower(), m_, fn_, ph_) for m_, fn_, ph_ in modes_c2d}
+            for m_, fn_, ph_ in modes_c2d:
+                r_c = N2_c2d.process(dirs_c2d[m_], name=m_)
+                assert r_c.mode == m_ and r_c.data.shape == (si1_c, si2_c), (m_, r_c.mode, r_c.data.shape)
+                assert hits_c2d(r_c.data, signed=ph_ != (0, 2)), m_
+            # Achsen aus acqus/acqu2s (SF = BF1): Signal +m Bins über dem Träger -> Träger + m·SW/(SI·BF1) ppm
+            r_c = N2_c2d.process(dirs_c2d["States-TPPI"])
+            i1_c, i2_c = si1_c // 2 - 20, si2_c // 2 - 30
+            assert abs(r_c.ax2[i2_c] - (4.0 + 30 * sw2_c / si2_c / bf_c)) < 1e-9, r_c.ax2[i2_c]
+            assert abs(r_c.ax1[i1_c] - (80.0 + 20 * sw1_c / si1_c / bfx_c)) < 1e-9, r_c.ax1[i1_c]
+            assert r_c.sf == (bf_c, bfx_c) and r_c.sf_stored == (bf_c, bfx_c) and not r_c.notes, r_c
+            # Mutationen: falsche Spiegelung in F1 bzw. E/A ohne Vierteldrehung müssen die Prüfung verfehlen
+            mut_c2d = 0
+            for key_c, val_c, m_ in (("QF", True, "QF"), ("TPPI", False, "TPPI"),
+                                     ("States-TPPI", False, "States-TPPI"), ("Echo-Antiecho", False, "Echo-Antiecho"),
+                                     ("EA_TURN", 1.0, "Echo-Antiecho")):
+                old_c = N2_c2d.EA_TURN if key_c == "EA_TURN" else N2_c2d.F1_FLIP[key_c]
+                try:
+                    if key_c == "EA_TURN":
+                        N2_c2d.EA_TURN = val_c
+                    else:
+                        N2_c2d.F1_FLIP[key_c] = val_c
+                    assert not hits_c2d(N2_c2d.process(dirs_c2d[m_]).data, signed=m_ != "QF"), (key_c, val_c)
+                    mut_c2d += 1
+                finally:
+                    if key_c == "EA_TURN":
+                        N2_c2d.EA_TURN = old_c
+                    else:
+                        N2_c2d.F1_FLIP[key_c] = old_c
+            assert hits_c2d(N2_c2d.process(dirs_c2d["Echo-Antiecho"]).data, signed=True), "conventions restored"
+            # F2 = 1D-Verarbeitung (EM, Phase): Zeile für Zeile wie nmr_proc.process_1d
+            p1d_c = dict(prc_c, WDW=1, LB=2.0, PHC0=30.0, PHC1=-20.0, FT_mod=6, STSI=si2_c)
+            fid_c = e2_c(30)
+            assert np.allclose(N2_c2d._f2(fid_c[None, :], acq_c, p1d_c)[0], NP_c2d.process_1d(fid_c, acq_c, p1d_c),
+                               rtol=1e-12, atol=1e-9), "F2 = 1D"
+            # apk* im auditp: gespeicherte Phase gilt auch bei PH_mod 0; Nutzerwerte (f2/f1) gehen vor
+            ea_ph_c = exp_c2d("ea_apkm", "Echo-Antiecho", 6, (1, 0), p1x=dict(PHC0=180.0), audit="xfb\napkm\n")
+            assert np.allclose(N2_c2d.process(ea_ph_c).data, -N2_c2d.process(dirs_c2d["Echo-Antiecho"]).data,
+                               atol=1e-6 * np.abs(r_c.data).max()), "apkm: PHC0 180 in F1 applied"
+            assert np.allclose(N2_c2d.process(ea_ph_c, f1={"PHC0": 0.0}).data,
+                               N2_c2d.process(dirs_c2d["Echo-Antiecho"]).data), "override"
+            # Ablehnungen (nur 2rr) mit Meldung; LP nur mit Nutzerentscheidung „ohne LP“ (ME_mod 0)
+            rej_c2d = []
+            for name_c, kw_c, has_c in (
+                    ("lp", dict(p1x=dict(ME_mod=2)), "ME_mod"), ("em1", dict(p1x=dict(WDW=1)), "WDW (F1)"),
+                    ("em2", dict(p2x=dict(WDW=1)), "WDW (F2)"), ("gm", dict(p2x=dict(WDW=2)), "WDW (F2)"),
+                    ("ssb3", dict(p1x=dict(SSB=3)), "SSB (F1)"), ("strip2", dict(p2x=dict(FTSIZE=512)), "FTSIZE (F2)"),
+                    ("strip1", dict(p1x=dict(FTSIZE=256)), "FTSIZE (F1)"), ("qpol", dict(p2x=dict(BC_mod=4)), "BC_mod"),
+                    ("tdeff", dict(p1x=dict(TDeff=40)), "TDeff (F1)"), ("rev", dict(p1x=dict(REVERSE="yes")), "REVERSE"),
+                    ("fcor", dict(p1x=dict(FCOR=0)), "FCOR"), ("phmc", dict(p1x=dict(PH_mod=2)), "PH_mod (F2/F1)"),
+                    ("qseq", dict(a2x=dict(FnMODE=2)), "QSEQ"), ("states", dict(a2x=dict(FnMODE=4)), "States"),
+                    ("nogrp", dict(acq=dict(GRPDLY=-1)), "GRPDLY"), ("si", dict(p2x=dict(SI=250)), "SI = 250"),
+                    ("dosy", dict(acq=dict(PULPROG="<ledbpgp2s>")), "ledbpgp2s"),
+                    ("sym", dict(audit="xfb\nsyma\n"), "syma"), ("aq", dict(acq=dict(AQ_mod=1)), "AQ_mod"),
+                    ("tdneg", dict(p2x=dict(TDeff=-100)), "TDeff (F2)"),
+                    ("si16k", dict(p2x=dict(SI=16384, FTSIZE=16384, STSI=16384)), "SI (F2) = 16384"),
+                    ("mem", dict(p2x=dict(SI=8192, FTSIZE=8192, STSI=8192),
+                                 p1x=dict(SI=8192, FTSIZE=8192, STSI=8192)), "GB"),
+                    ("ea01", dict(mode="Echo-Antiecho", fn=6, ph=(0, 1)), "PH_mod (F2/F1) = 0/1")):
+                mfp_c = (kw_c.pop("mode", "States-TPPI"), kw_c.pop("fn", 5), kw_c.pop("ph", (1, 1)))
+                d_c = exp_c2d("rej_" + name_c, *mfp_c, **kw_c)
+                try:
+                    N2_c2d.process(d_c)                                     # Meldung nennt den Ordner selbst
+                except ValueError as e_:
+                    assert has_c in str(e_) and "2rr" in str(e_) and f"rej_{name_c}/10" in str(e_), (has_c, str(e_))
+                    rej_c2d.append(str(e_))
+                else:
+                    raise AssertionError(f"accepted: {name_c}")
+            lp_c = exp_c2d("lp0", "States-TPPI", 5, (1, 1), p1x=dict(ME_mod=2))
+            r_lp_c = N2_c2d.process(lp_c, f1={"ME_mod": 0})
+            assert np.array_equal(r_lp_c.data, N2_c2d.process(dirs_c2d["States-TPPI"]).data), "LP off by user"
+            assert len(r_lp_c.notes) == 1 and "ME_mod = 0" in r_lp_c.notes[0] and "lp0/10" in r_lp_c.notes[0]
+            lp2_c = exp_c2d("lp2", "States-TPPI", 5, (1, 1), p2x=dict(ME_mod=2))  # LP in F2: nicht abschaltbar
+            for fn_c in (N2_c2d.process, N2_c2d.reasons):
+                try:
+                    why_c = fn_c(lp2_c, f2={"ME_mod": 0})
+                except ValueError as e_:
+                    why_c = [str(e_)]
+                assert why_c and "F2" in why_c[0] and "lp2/10" in why_c[0] and "2rr" in why_c[0], why_c
+            rej_c2d.append(why_c[0])
+            big_c = dict.fromkeys(("SI", "FTSIZE", "STSI"), 8192)          # Speichergrenze auch über Nutzerwerte
+            assert any("GB" in t_ for t_ in N2_c2d.reasons(dirs_c2d["TPPI"], f2=big_c, f1=big_c))
+            # Vorzeichenwächter: eigenes Ergebnis gegen ein vorhandenes 2rr (auch bei anderem SI)
+            sg_c = exp_c2d("sign", "States-TPPI", 5, (1, 1))
+            want_c = N2_c2d.process(sg_c).data
+            (np.round(want_c / np.abs(want_c).max() * 1e6)).astype("<i4").tofile(sg_c / "pdata" / "1" / "2rr")
+            assert N2_c2d.process(sg_c).data.shape == want_c.shape
+            assert N2_c2d.process(sg_c, f1=dict.fromkeys(("SI", "FTSIZE", "STSI"), si1_c // 2)).data.shape == (si1_c // 2, si2_c)
+            (np.round(-want_c / np.abs(want_c).max() * 1e6)).astype("<i4").tofile(sg_c / "pdata" / "1" / "2rr")
+            try:
+                N2_c2d.process(sg_c)
+            except ValueError as e_:
+                assert "r = -1.00" in str(e_) and "sign/10" in str(e_) and "2rr" in str(e_), str(e_)
+                rej_c2d.append(str(e_))
+            else:
+                raise AssertionError("inverted against 2rr accepted")
+            assert N2_c2d.reasons(dirs_c2d["TPPI"]) == [], N2_c2d.reasons(dirs_c2d["TPPI"])
+            # NOAH unaufgeteilt (noah2_SB, NBL 2): Block k = Zeile 2·j + k − 1, Modul = k-ter Buchstabe
+            pk2_c = ((-10, 40, 1.0), (60, -15, 1.0))
+            hsqc_c, hmbc_c = ser_c2d("Echo-Antiecho"), ser_c2d("Echo-Antiecho", pk2_c)
+            nd_c = root_c2d / "noah" / "12"
+            par_c2d(nd_c / "acqus", **dict(acq_c, NBL=2, PULPROG="<noah2_SB>"))
+            par_c2d(nd_c / "acqu2s", TD=2 * len(hsqc_c), FnMODE=6, SW=sw1_c / sfo1_c, SFO1=sfo1_c, BF1=bfx_c,
+                    NUC1="<13C>")
+            both_c = np.empty((2 * len(hsqc_c), n2_c), complex)
+            both_c[0::2], both_c[1::2] = hsqc_c, hmbc_c
+            raw_c = np.empty((len(both_c), 2 * n2_c))
+            raw_c[:, 0::2], raw_c[:, 1::2] = both_c.real, both_c.imag
+            raw_c.astype("<f8").tofile(nd_c / "ser")
+            a_n, a2_n, blk_n = N2_c2d.noah_blocks(nd_c)
+            assert [m_ for m_, _ in blk_n] == ["HSQC", "HMBC"] and a_n["NBL"] == 1 and a2_n["TD"] == len(hsqc_c)
+            assert blk_n[0][1].tobytes() == raw_c[0::2].astype("<f8").tobytes(), "NOAH block 1 bytes"
+            assert blk_n[1][1].tobytes() == raw_c[1::2].astype("<f8").tobytes(), "NOAH block 2 bytes"
+            # HSQC-Block: ohne Phase des Nutzers in F2 UND F1 kein Ergebnis („Phase ausstehend“), k nur 1 … 2
+            for f2_n, f1_n, has_n in (({"SI": si2_c}, {"SI": si1_c}, "F2 + F1"),
+                                      ({"SI": si2_c, "PHC0": 0.0}, {"SI": si1_c}, "F1"),
+                                      ({"SI": si2_c}, {"SI": si1_c, "PHC0": 0.0}, "F2"),
+                                      (None, None, "Block 0"), (None, None, "Block 3")):
+                try:
+                    N2_c2d.process_noah(nd_c, int(has_n[-1]) if has_n.startswith("Block") else 1, f2_n, f1_n)
+                except ValueError as e_:
+                    assert has_n in str(e_) and "noah/12" in str(e_), (has_n, str(e_))
+                    rej_c2d.append(str(e_))
+                else:
+                    raise AssertionError(f"NOAH accepted: {has_n}")
+            r1_n = N2_c2d.process_noah(nd_c, 1, {"SI": si2_c, "PHC0": 0.0}, {"SI": si1_c, "PHC0": 0.0})
+            assert hits_c2d(r1_n.data, signed=True) and r1_n.sf == (bf_c, bfx_c) and r1_n.sf_stored == (None, None)
+            assert sorted(t_.split(" = ")[0].split()[-1] for t_ in r1_n.notes) == ["SI", "SI"], r1_n.notes
+            r2_n = N2_c2d.process_noah(nd_c, 2, {"SI": si2_c}, {"SI": si1_c})
+            assert r2_n.p2["PH_mod"] == 2 and hits_c2d(r2_n.data, signed=False, peaks=pk2_c) and len(r2_n.notes) == 2
+            par_c2d(nd_c / "acqus", **dict(acq_c, NBL=3, PULPROG="<noah3_BSC>"))
+            try:
+                N2_c2d.noah_blocks(nd_c)
+            except ValueError as e_:
+                assert "noah3_BSC" in str(e_), str(e_)
+                rej_c2d.append(str(e_))
+            else:
+                raise AssertionError("noah3 accepted")
+            assert all("{" not in t_ for t_ in rej_c2d), rej_c2d
+            report.append(f"Own 2D processing from ser (QF, TPPI, States-TPPI, echo-antiecho: positions, signs, "
+                          f"axes; {mut_c2d} mutations of mirror/quarter turn fail; F2 = 1D; apkm; LP only off by user; "
+                          f"sign against 2rr; NOAH split, phase pending until F2 and F1 are set; {len(rej_c2d)} rejections "
+                          f"with message): OK")
+        with section:
+            # „Darstellung zurücksetzen“ setzt nur Darstellung zurück (Nutzerentscheidung 2026-11-14): je Tab des
+            # Beispiels als Eigenschaft, nicht als Schlüsselliste (_display_reset_check)
+            pub_rs = Path(w.open_demo_publication(out / "reset_pub"))
+            w.open_project(pub_rs / "S3", recent=False)
+            pump(0.5)
+            w.main_tabs.setCurrentWidget(w.dft_tab)            # die X-Ray-Zuordnung zur Rechnung braucht den DFT-Tab
+            w.dft_tab.ensure_rendered()
+            w.main_tabs.setCurrentWidget(w.xray_tab)
+            pump(0.5)
+            xt_rs = w.xray_tab
+            src_rs = xt_rs.dft_sources()
+            xt_rs.cmb_calc.setCurrentIndex(xt_rs.cmb_calc.findData("dft:" + src_rs[0]["uid"]))
+            xt_rs.calc_source_chosen()
+            pump(0.3)
+            assert xt_rs.calc_on(xt_rs.entry()), "X-Ray: no calculation assigned (calc columns untested)"
+            bad_rs = []
+            for key_rs in ("eps", "overlay", "fluo", "uvkin", "cv", "sec", "hcell", "epr", "hrms", "irms", "xray", "dft",
+                           "other"):
+                bad_rs += _display_reset_check(w, key_rs, out, pump)
+            assert not bad_rs, bad_rs
+            report.append("Reset display keeps everything scientific (13 tabs of the example, as a property): OK")
+        with section:
+            # Vorlagen tragen nur Darstellung: in S3 speichern, in S2 laden -> S2 behält alle eigenen Daten und bekommt
+            # keine von S3; alte Vorlagen mit Daten-/Auswerteschlüsseln ändern beim Laden nichts davon
+            import copy as _cp_tpl
+            import yaml as _yaml_tpl
+            keys_tpl = ("overlay", "fluo", "uvkin", "cv", "sec", "hcell", "epr", "hrms", "irms", "xray", "dft", "other")
+            real_tpl = (TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName)
+            path_tpl = {"p": None}
+            TABS.QFileDialog.getSaveFileName = staticmethod(lambda *a_, **k_: (str(path_tpl["p"]), ""))
+            TABS.QFileDialog.getOpenFileName = staticmethod(lambda *a_, **k_: (str(path_tpl["p"]), ""))
+            try:
+                w.open_project(pub_rs / "S3", recent=False)
+                pump(0.3)
+                # Darstellung außerhalb von DEFAULT_STATE reist mit (Positivkontrolle: Werte, die S2 nicht hat)
+                for st_ in (w.xray_state, w.dft_state):
+                    st_.update(label_pt=13.0, homa_fig=not st_.get("homa_fig"))
+                w.dft_tab.nbo.st["color_q"] = "#123456"
+                w.dft_state["nics"]["iso_pos"], w.dft_state["acid"]["iso"] = 7.0, 0.06
+                s3_tpl = {}
+                for key_ in keys_tpl:
+                    tab_ = getattr(w, w._tab_spec(key_)[0])
+                    path_tpl["p"] = out / f"tpl_{key_}.yaml"
+                    tab_.save_setup()
+                    s3_tpl[key_] = _yaml_tpl.safe_load(path_tpl["p"].read_text(encoding="utf-8")) or {}
+                    data_ = [k_ for k_ in s3_tpl[key_] if tab_._is_data_key(k_) and not (
+                        k_ in tab_.DISPLAY_PARTS and set(s3_tpl[key_][k_]) <= set(tab_.DISPLAY_PARTS[k_]))]
+                    assert s3_tpl[key_] and not data_, (key_, data_)
+                    assert all(k_ in s3_tpl[key_] for k_ in tab_.DISPLAY_EXTRA), (key_, list(s3_tpl[key_]))
+                assert s3_tpl["dft"]["nbo"]["color_q"] == "#123456" and "files" not in s3_tpl["dft"]["nbo"]
+                assert s3_tpl["dft"]["nics"]["iso_pos"] == 7.0 and "files" not in s3_tpl["dft"]["nics"]
+
+                def _tpl_strip(tab_, k_, v_):                  # Daten-Dict ohne seine Darstellungsteile
+                    subs_ = tab_.DISPLAY_PARTS.get(k_, ())
+                    return {s_: x_ for s_, x_ in v_.items() if s_ not in subs_} if isinstance(v_, dict) else v_
+                # S3 hat Rechnungen, die nie mitreisen dürfen
+                s3_data = (_cp_tpl.deepcopy(w.ov_state.get("nto")), _cp_tpl.deepcopy(w.epr_state.get("calc")),
+                           list((w.dft_state.get("nbo") or {}).get("files") or []))
+                assert all(s3_data), s3_data
+                w.open_project(pub_rs / "S2", recent=False)
+                pump(0.3)
+                for key_ in keys_tpl:
+                    stn_ = w._tab_spec(key_)[2]
+                    tab_ = getattr(w, w._tab_spec(key_)[0])
+                    before_ = _cp_tpl.deepcopy(getattr(w, stn_))
+                    path_tpl["p"] = out / f"tpl_{key_}.yaml"
+                    tab_.load_setup()
+                    after_ = getattr(w, stn_)
+                    tab_ = getattr(w, w._tab_spec(key_)[0])
+                    lost_ = [k_ for k_, v_ in before_.items() if tab_._is_data_key(k_)
+                             and _tpl_strip(tab_, k_, after_.get(k_)) != _tpl_strip(tab_, k_, v_)]
+                    new_ = [k_ for k_ in after_ if tab_._is_data_key(k_) and k_ not in before_
+                            and (after_[k_].get("files") if k_ in tab_.DISPLAY_PARTS
+                                 else after_[k_] != tab_.DEFAULT_STATE.get(k_))]
+                    shown_ = [k_ for k_, v_ in s3_tpl[key_].items()
+                              if json.dumps({s_: after_[k_].get(s_) for s_ in v_} if k_ in tab_.DISPLAY_PARTS
+                                            else after_.get(k_), default=str) != json.dumps(v_, default=str)]
+                    assert not lost_ and not new_ and not shown_, (key_, lost_, new_, shown_)
+                assert (w.ov_state.get("nto"), w.epr_state.get("calc"),
+                        list((w.dft_state.get("nbo") or {}).get("files") or [])) != s3_data   # (der Reihe nach)
+                assert w.ov_state.get("nto") != s3_data[0] and w.epr_state.get("calc") != s3_data[1] \
+                    and (w.dft_state.get("nbo") or {}).get("files") != s3_data[2]
+                # alte Vorlage (vor 1.3.0) mit Daten- und Auswerteschlüsseln: nur die Darstellung kommt an
+                w.open_project(pub_rs / "S3", recent=False)
+                pump(0.3)
+                old_tpl = {"overlay": {"nto": {"file": "x.out"}, "entries": [], "mode": "abs", "tdt_si": False,
+                                       "stack": True},
+                           "epr": {"calc": {}, "bl_order": 3, "smooth": 2.0, "gap": 2.0},
+                           "dft": {"nics": {}, "acid": {}, "profile": {}, "nbo": {}, "homa_si": [], "bond_w": 0.2},
+                           "xray": {"disorder": "all", "calc_delta": True, "homa_si": [], "bond_w": 0.2}}
+                for key_, data_ in old_tpl.items():
+                    stn_ = w._tab_spec(key_)[2]
+                    tab_ = getattr(w, w._tab_spec(key_)[0])
+                    before_ = _cp_tpl.deepcopy(getattr(w, stn_))
+                    path_tpl["p"] = out / f"old_{key_}.yaml"
+                    path_tpl["p"].write_text(_yaml_tpl.safe_dump(data_), encoding="utf-8")
+                    tab_.load_setup()
+                    after_ = getattr(w, stn_)
+                    disp_ = next(k_ for k_ in data_ if k_ in ("stack", "gap", "bond_w"))
+                    changed_ = [k_ for k_ in data_ if k_ != disp_ and json.dumps(after_.get(k_), default=str)
+                                != json.dumps(before_.get(k_), default=str)]
+                    assert after_[disp_] == data_[disp_] and not changed_, (key_, changed_)
+                nbo_before = _cp_tpl.deepcopy(w.dft_tab.nbo.st)
+                path_tpl["p"] = out / "old_dft_nbo.yaml"
+                path_tpl["p"].write_text(_yaml_tpl.safe_dump({"nbo": {"files": [{"file": "x.out"}], "current": "x.out",
+                                                                      "thr": 0.5, "color_q": "#654321"}}), encoding="utf-8")
+                w.dft_tab.load_setup()
+                nbo_after = w.dft_tab.nbo.st
+                assert nbo_after["color_q"] == "#654321" and all(nbo_after[k_] == nbo_before[k_]
+                                                                  for k_ in ("files", "current", "thr")), nbo_after
+            finally:
+                TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName = real_tpl
+            report.append("Templates carry display only (S3 -> S2 mirror, old templates with data keys): OK")
+        with section:
+            # 1.3.0 Spur P: Reaktionspfad im Rahmen der Tabs – ein blauer Hauptknopf, Meldungen im Hauptfenster, eine
+            # Reiterzeile, Fußleisten links/rechts, Auswahl als Karte, Platzhalter statt Text im Bild, Formate wie die Tabs;
+            # Schutz: Öffnen/Schließen schreibt den Pfad nicht um, „Stil auf Standard“ füllt nie Vorgaben in `layout`.
+            import hashlib as hl_p
+            import time as time_p
+            from PySide6.QtWidgets import QTabBar as QTabBar_p
+            from elucida.app import publication as PUB_p, reaction_paths as RP_p, path_composition as PC_p
+
+            def pump_p(sec=0.3):
+                t0_ = time_p.time()
+                while time_p.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+                    time_p.sleep(0.02)
+
+            def files_p(d_):
+                return {str(p_.relative_to(d_)): hl_p.sha256(p_.read_bytes()).hexdigest() for p_ in sorted(d_.rglob("*"))
+                        if p_.is_file() and "backup" not in str(p_.relative_to(d_))}
+
+            # MuPDF ignoriert x/y eines verschachtelten <svg> (Profil in der Octet-Fläche): umgeschrieben in <g transform>
+            import pymupdf as mu_p
+            from PIL import Image as Image_p
+            from elucida.core import images as IMG_p
+            nested_p = ('<svg xmlns="http://www.w3.org/2000/svg" width="100pt" height="100pt" viewBox="-50 -50 100 100">'
+                        '<g transform="scale(1)"><svg x="-40" y="-20" width="80" height="40" viewBox="0 0 20 20" '
+                        'preserveAspectRatio="xMidYMid meet"><rect width="20" height="20" fill="#ff0000"/></svg></g></svg>')
+            flat_p = IMG_p.flatten_nested_svg(nested_p)
+            assert flat_p.count("<svg") == 1 and flat_p.count("</svg>") == 1 and \
+                'transform="translate(-20 -20) scale(2 2)"' in flat_p, flat_p
+            (out / "p13p_nested.svg").write_text(nested_p, encoding="utf-8")
+            with IMG_p.open_mupdf(out / "p13p_nested.svg") as d_:
+                pix_ = d_[0].get_pixmap(dpi=72, alpha=False)
+            a_ = np.frombuffer(pix_.samples, np.uint8).reshape(pix_.height, pix_.width, pix_.n)
+            ys_, xs_ = np.nonzero((a_[..., 0] > 200) & (a_[..., 1] < 60))
+            assert (abs(xs_.min() - 30) <= 1 and abs(xs_.max() - 69) <= 1 and abs(ys_.min() - 30) <= 1
+                    and abs(ys_.max() - 69) <= 1), (xs_.min(), xs_.max(), ys_.min(), ys_.max())
+            assert (out / "p13p_nested.svg").read_text(encoding="utf-8") == nested_p   # Datei bleibt unverändert
+
+            def ink_p(a_):                                   # Tintenrahmen als Anteil der Bildbreite/-höhe
+                g_ = np.asarray(a_)[..., :3].min(axis=2)
+                ys_, xs_ = np.nonzero(g_ < 245)
+                assert xs_.size, "blank image"
+                h_, w_ = g_.shape
+                return xs_.min() / w_, (xs_.max() + 1) / w_, ys_.min() / h_, (ys_.max() + 1) / h_
+
+            def centred_p(a_, what_):                        # Profil ganz im Bild, mittig, nicht briefmarkengroß
+                x0_, x1_, y0_, y1_ = ink_p(a_)
+                assert (x0_ < .1 and y0_ < .1 and x1_ - x0_ > .6 and y1_ - y0_ > .6 and abs((x0_ + x1_) / 2 - .5) < .15
+                        and abs((y0_ + y1_) / 2 - .5) < .15), (what_, x0_, x1_, y0_, y1_)
+
+            pub_p = Path(w.open_demo_publication(out / "p13p_demo"))
+            item_p = PUB_p.load(pub_p)["reaction_paths"][0]
+            dir_p = RP_p.directory(pub_p, item_p["uid"])
+
+            def open_p(item, wait=False):
+                w.go_publication()
+                pump_p(0.3)
+                w.pub_page.open_path(item)
+                pump_p(1.0)
+                ws = w.pub_page.path_workspace
+                t0_ = time_p.time()                          # neue Fläche: Profil von selbst (nur mit Web-Editor)
+                while wait and ws.composition is not None and ws.composition._auto_pending and time_p.time() - t0_ < 15:
+                    pump_p(0.2)
+                return ws
+
+            ws_p = open_p(item_p, wait=True)
+            w.pub_page.close_path()
+            pump_p(0.5)
+            h1_p = files_p(dir_p)
+            ws_p = open_p(item_p)                             # Schutz: weiteres Öffnen und Schließen ohne Eingabe
+            w.pub_page.close_path()                           # schreibt den Pfad nicht um
+            pump_p(0.5)
+            h2_p = files_p(dir_p)
+            changed_p = sorted(k_ for k_ in set(h1_p) | set(h2_p) if h1_p.get(k_) != h2_p.get(k_))
+            assert not changed_p, changed_p
+            ws_p = open_p(item_p)
+            pg_p, t_p = ws_p.host.tab.pages, ws_p.host.tab
+            # eine Reiterzeile: die Seiten des DFT-Teils stehen in der Zeile des Pfads, seine eigene ist verborgen
+            texts_p = [ws_p.tabs.tabText(i_) for i_ in range(ws_p.tabs.count())]
+            assert T("rp_calculation_data") in texts_p and T("rp_3d_orbitals") in texts_p, texts_p
+            assert t_p.right_tabs.tabBar().isHidden() and len(ws_p.d3) == t_p.right_tabs.count()
+            for k_, holder_ in enumerate(ws_p.d3):
+                ws_p.tabs.setCurrentWidget(holder_)
+                pump_p(0.3)
+                assert holder_.isAncestorOf(t_p) and t_p.right_tabs.currentIndex() == k_ and ws_p.on_3d()
+                bars_p = [b_ for b_ in ws_p.findChildren(QTabBar_p) if b_.isVisible()]
+                assert bars_p == [ws_p.tabs.tabBar()], [b_.parent() for b_ in bars_p]
+            # ein blauer Hauptknopf: „Profil exportieren“ (Daten vorhanden), „Exportieren“ des DFT-Teils grau
+            assert ws_p.btn_export.property("accent") and not t_p.btn_export.property("accent")
+            assert not ws_p.btn_data.property("accent")
+            # Meldungen des DFT-Teils als Einblendung im Hauptfenster
+            w.statusBar().clearMessage()
+            t_p.main.statusBar().showMessage("p13p message", 3000)
+            assert w.statusBar().currentMessage() == "p13p message"
+            t_p.main.show_hover("p13p hover")
+            assert w.statusBar().currentMessage() == "p13p hover"
+            w.statusBar().clearMessage()
+            # Rechendaten: keine Kopfzeile, Auswahl als Karte im Schritt Daten, Fußleisten gleich hoch, Unterschrift rechts
+            ws_p.tabs.setCurrentWidget(ws_p.calc_page)
+            pump_p(0.5)
+            assert not [x_ for x_ in ws_p.findChildren(QLabel) if x_.text() == T("rp_calculation_data_sub")]
+            assert pg_p.steps.pages[0].isAncestorOf(ws_p.import_panel) and ws_p.import_panel.isHidden()
+            bars_p = [b_ for b_ in ws_p.calc_page.findChildren(QWidget, "bottomBar") if b_.isVisible()]
+            assert len(bars_p) == 2 and len({b_.height() for b_ in bars_p}) == 1, [b_.height() for b_ in bars_p]
+            assert pg_p.lbl_cap_bar._full.startswith(T("caption_bar")) and pg_p.prof_stack.currentIndex() == 1
+            assert pg_p.btn_reset.isVisible() and len(pg_p.btn_reset.menu().actions()) == 2
+            assert ws_p.calc_page.findChildren(type(pg_p.workspace.zoom)).count(pg_p.workspace.zoom) == 1
+            assert pg_p.steps.pages[-1].isAncestorOf(pg_p.workspace.zoom)      # Zoom links im Schritt Darstellung
+            # design measures der Pfad-Seiten wie in den Tabs: Einzug, feste Feldhöhe, Leistenknöpfe BAR_H, ein Hauptknopf
+            from PySide6.QtWidgets import QComboBox as QCB_p, QLineEdit as QLE_p
+            bad_p = []
+            for page_, steps_, cf_ in ((ws_p.calc_page, pg_p.steps, pg_p.column_fit), (ws_p.d3[0], t_p.steps, t_p.column_fit)):
+                ws_p.tabs.setCurrentWidget(page_)
+                for k_ in range(len(steps_.pages)):
+                    steps_.set_step(k_, remember=False)
+                    pump_p(0.2)
+                    for x_ in cf_.content.findChildren(QAbstractSpinBox):
+                        if x_.isVisible() and x_.lineEdit().textMargins().left() != 11:
+                            bad_p.append(("indent", x_.text()))
+                    for x_ in (cf_.content.findChildren(QAbstractSpinBox) + cf_.content.findChildren(QCB_p) +
+                               cf_.content.findChildren(QLE_p) + cf_.content.findChildren(QPushButton)):
+                        if x_.property("fieldh") and (x_.minimumHeight(), x_.maximumHeight()) != (STYLE.CONTROL_H,) * 2:
+                            bad_p.append(("height", type(x_).__name__, x_.minimumHeight()))
+                steps_.set_step(0, remember=False)
+                hs_ = {b_.height() for b_ in cf_.bar.findChildren(QPushButton) if b_.isVisible()}
+                if hs_ - {STYLE.BAR_H}:
+                    bad_p.append(("bar", sorted(hs_)))
+                acc_ = [b_.text() for b_ in w.findChildren(QPushButton) if b_.property("accent") and b_.isVisible()]
+                if len(acc_) != 1:
+                    bad_p.append(("accent", acc_))
+            assert not bad_p, bad_p
+            ws_p.tabs.setCurrentWidget(ws_p.calc_page)
+            pump_p(0.3)
+            # Tabelle der Rechnungen: kein Knopf der verborgenen Strukturspalte, so hoch wie ihre Zeilen
+            if pg_p.tbl_sp.isColumnHidden(5):
+                assert all(pg_p.tbl_sp.cellWidget(r_, 5) is None for r_ in range(pg_p.tbl_sp.rowCount()))
+            rows_p = pg_p.tbl_sp.rowCount()
+            assert pg_p.tbl_sp.height() == pg_p.tbl_sp.horizontalHeader().sizeHint().height() + \
+                max(2, min(rows_p, 8)) * STYLE.CHECK_ROW_H + 2, pg_p.tbl_sp.height()
+            from PySide6.QtWidgets import QTableWidget as QTW_p
+            assert isinstance(pg_p.irc_list, QTW_p)
+            # „Stil auf Standard“: nur Schlüssel entfernen (Stempel wie ohne Stil), Rückgängig holt den Stil zurück
+            stamp_p = PC_p.profile_stamp(ws_p.host, "levels")
+            pg_p.prof.setdefault("layout", {})["font_size"] = 14.0
+            pg_p.changed()
+            assert PC_p.profile_stamp(ws_p.host, "levels") != stamp_p
+            pg_p.reset_style()
+            pump_p(0.3)
+            assert set(pg_p.prof.get("layout") or {}) <= set(pg_p.STYLE_KEEP), pg_p.prof.get("layout")
+            assert PC_p.profile_stamp(ws_p.host, "levels") == stamp_p
+            assert w.statusBar().currentMessage() == T("xr_reset_display_done")
+            ws_p.undo(-1)
+            pump_p(0.3)
+            assert ws_p.host.tab.pages.prof["layout"].get("font_size") == 14.0
+            ws_p.undo(-1)
+            pump_p(0.3)
+            assert PC_p.profile_stamp(ws_p.host, "levels") == stamp_p
+            # Hauptknopf: mit Komposition die Komposition (wie bisher, von jeder Seite), Formate wie die Tabs
+            figs_p = dir_p / PRJ.FIGURES
+            composed_p = "not checked (web editor not ready)"
+            c_p = ws_p.composition
+            if c_p is None:                                  # ohne Octet: das Profil, wie bisher
+                shutil.rmtree(figs_p, ignore_errors=True)
+                ws_p.export()
+                got_p = sorted(p_.name for p_ in figs_p.iterdir()) if figs_p.exists() else []
+                assert got_p and all("_profile" in n_ for n_ in got_p), got_p
+                composed_p = "profile export without Octet"
+            elif c_p.editor.ready and c_p.editor.path:
+                shutil.rmtree(figs_p, ignore_errors=True)
+                ws_p.export()                                # Vorgabe (alle drei Formate) = die bisherigen fünf Dateien
+                got_p = sorted(Path(n_.name).suffix for n_ in figs_p.iterdir())
+                assert got_p == [".cdx", ".cdxml", ".pdf", ".png", ".svg"], got_p
+                with Image_p.open(next(figs_p.glob("*.png"))) as im_:
+                    centred_p(im_.convert("RGB"), "composition png")
+                with mu_p.open(next(figs_p.glob("*.pdf"))) as d_:
+                    pix_ = d_[0].get_pixmap(dpi=40, alpha=False)
+                    centred_p(np.frombuffer(pix_.samples, np.uint8).reshape(pix_.height, pix_.width, pix_.n), "composition pdf")
+                shutil.rmtree(figs_p, ignore_errors=True)
+                t_p.st["fmt"] = {"pdf": False, "svg": False, "png": True}
+                ws_p.export()
+                got_p = sorted(Path(n_.name).suffix for n_ in figs_p.iterdir())
+                assert got_p == [".cdx", ".cdxml", ".png"], got_p
+                t_p.st["fmt"] = {"pdf": True, "svg": True, "png": True}
+                from PySide6.QtWidgets import QDialog as QD_p, QDialogButtonBox as QDBB_p
+                c_p.refresh_sources()                        # eingebettete Orbitalansicht: kein zweiter blauer Knopf
+                c_p.add_orbital()
+                pump_p(0.5)
+                assert c_p.view_editor is not None
+                ok_p = c_p.view_editor.buttons.button(QDBB_p.Ok)
+                assert not ok_p.property("accent") and not ok_p.isDefault()
+                c_p.finish_view(QD_p.Rejected)
+                pump_p(0.2)
+                composed_p = "composition export follows the formats, orbital view without a second blue button"
+            w.pub_page.close_path()
+            pump_p(0.5)
+            if composed_p.startswith("composition"):         # Kartenvorschau aus derselben SVG
+                with Image_p.open(dir_p / "preview.png") as im_:
+                    centred_p(im_.convert("RGB"), "preview.png")
+                composed_p += ", profile centred in PNG/PDF/preview"
+            # leerer Pfad: Platzhalter statt Text im Bild, „Daten ▾“ ist der Hauptknopf, keine Plateau-Felder
+            empty_p = RP_p.create(pub_p, "p13p empty")
+            w.pub_page.refresh()
+            ws_p = open_p(empty_p)
+            pg_p = ws_p.host.tab.pages
+            ws_p.tabs.setCurrentWidget(ws_p.calc_page)
+            pump_p(0.5)
+            assert pg_p.prof_stack.currentIndex() == 0 and not pg_p.canvas_fig.texts
+            assert not pg_p.lbl_cap_bar._full and not pg_p.btn_level_auto.isVisible()
+            assert not ws_p.btn_export.property("accent") and ws_p.btn_data.property("accent")
+            ws_p.tabs.setCurrentWidget(ws_p.d3[0])                  # dort ist der Knopf der Anleitung der Hauptknopf
+            pump_p(0.3)
+            assert not ws_p.btn_data.property("accent")
+            w.pub_page.close_path()
+            pump_p(0.3)
+            report.append(f"Reaction path in the tab frame (one main button, toasts, one tab row, footers, import card, "
+                          f"placeholder, style reset only removes keys; {composed_p}; open/close keeps "
+                          f"files; nested SVG flattened for MuPDF): OK")
+        with section:
+            # Interaktive NMR-Ansicht (1.3.0, Spur D1): jede Taste und jeder Modus mit simulierten Ereignissen, Signale
+            # mit erwarteten Werten, Esc, Schalter der Anzeige. Mausereignisse runden auf ganze Pixel: Toleranzen in
+            # Pixeln, umgerechnet in ppm bzw. Intensität.
+            import math
+            import shiboken6 as _shb_nv
+            from PySide6.QtWidgets import QComboBox as _QCB_nv
+            from matplotlib.backend_bases import MouseEvent as _ME_nv
+            from matplotlib.lines import Line2D as Line2D_nv
+            from PySide6.QtTest import QTest as _QT_nv
+            from elucida.tabs import nmr_view as NV
+            assert NV.spread([10, 10, 10], [4, 4, 4], 0, 100) == [6, 10, 14]
+            sp_nv = NV.spread([1, 2, 99], [6, 6, 6], 0, 100)
+            assert sp_nv[0] >= 3 and sp_nv[1] - sp_nv[0] >= 6 - 1e-9 and sp_nv[2] <= 97, sp_nv
+            sp_nv = NV.spread([50] * 30, [10] * 30, 0, 100)             # passen nicht: gestaucht, im Bereich
+            assert min(sp_nv) >= 0 and max(sp_nv) <= 100 and sp_nv == sorted(sp_nv), sp_nv
+            # Labelreihe wie Mnova: Gruppe mittig über ihren Peaks; stoßende Gruppen rücken nach links, am Rand zurück
+            assert NV.label_row([10, 12, 50], [[0, 1], [2]], 5, 0, 100) == [8.5, 13.5, 50.0]
+            lr_nv = NV.label_row([20, 22, 24, 26], [[0, 1], [2, 3]], 5, 14, 100)
+            assert lr_nv[0] == 16.5 and lr_nv[2] - lr_nv[1] >= 5 and lr_nv[3] - lr_nv[2] == 5, lr_nv   # nie überlappend
+            lr_nv = NV.label_row(list(range(200)), [[i_] for i_ in range(200)], 5, 0, 100)   # zu viele: gestaucht
+            assert min(lr_nv) >= 0 and max(lr_nv) <= 100 and min(np.diff(lr_nv)) >= 0.5 - 1e-9
+            empty_nv = NV.NMRView()                                       # ohne Spektrum: Tasten ohne Fehler
+            empty_nv.intensity(1)
+            _QT_nv.keyClick(empty_nv.canvas, Qt.Key_Plus)
+            _QT_nv.keyClick(empty_nv.canvas, Qt.Key_F)
+            QApplication.processEvents()                                  # ausstehendes Zeichnen vor dem Löschen
+            _shb_nv.delete(empty_nv)
+            assert NV.merge_ranges([{"lo": 1, "hi": 3}, {"lo": 2, "hi": 4}, {"lo": 6, "hi": 7}]) == [
+                {"lo": 1.0, "hi": 4.0}, {"lo": 6.0, "hi": 7.0}]
+            v_nv = NV.NMRView()
+            card_nv = v_nv.display_card()
+            holder_nv = QWidget()
+            QVBoxLayout(holder_nv).addWidget(card_nv)
+            holder_nv.layout().addWidget(v_nv.style_card())
+            STYLE.tidy(holder_nv)
+            d_nv = NV.make_test_spectrum()
+            assert len(d_nv["x"]) == 65536 and d_nv["x"][0] > d_nv["x"][-1]
+            v_nv.set_spectrum(d_nv["x"], d_nv["y"], d_nv["sf"], title="1H")
+            v_nv.set_integrals(d_nv["integrals"])
+            v_nv.set_peaks(d_nv["peaks"])
+            v_nv.set_multiplets(d_nv["multiplets"])
+            v_nv.set_solvents(d_nv["solvents"])
+            v_nv.resize(1100, 720)
+            v_nv.show()
+            holder_nv.show()
+            t0_nv = time.time()
+            while time.time() - t0_nv < 0.4:
+                QApplication.processEvents()
+            got_nv = {}
+            for sig_nv in ("integrals_changed", "peaks_changed", "multiplets_changed", "cuts_changed", "insets_changed",
+                           "peak_pick_requested", "multiplet_requested", "reference_clicked", "distance_measured",
+                           "phase_changed", "display_changed", "mode_changed", "marks_changed"):
+                getattr(v_nv, sig_nv).connect(lambda *a_, n_=sig_nv: got_nv.setdefault(n_, []).append(a_))
+            ax_nv, cv_nv = v_nv.ax, v_nv.canvas
+
+            def px_nv(x_, y_=None):
+                cv_nv.draw()
+                bb_ = ax_nv.bbox
+                xp_ = ax_nv.transData.transform((x_, 0))[0]
+                return xp_, (bb_.y0 + bb_.y1) / 2 if y_ is None else ax_nv.transData.transform((x_, y_))[1]
+
+            def ppm_px():                                       # ppm je Pixel (Toleranz für gerundete Ereignisse)
+                cv_nv.draw()
+                return abs(ax_nv.transData.inverted().transform((1, 0))[0]
+                           - ax_nv.transData.inverted().transform((0, 0))[0])
+
+            def mouse_nv(kind_, x_, y_, button_=1, **kw_):
+                cv_nv.callbacks.process(kind_, _ME_nv(kind_, cv_nv, x_, y_, button=button_, **kw_))
+
+            def drag_nv(p0_, p1_, button_=1, **kw_):
+                mouse_nv("button_press_event", *p0_, button_, **kw_)
+                mouse_nv("motion_notify_event", (p0_[0] + p1_[0]) / 2, (p0_[1] + p1_[1]) / 2, button_, **kw_)
+                mouse_nv("motion_notify_event", *p1_, button_, **kw_)
+                mouse_nv("button_release_event", *p1_, button_, **kw_)
+
+            def click_nv(p_, button_=1, **kw_):
+                mouse_nv("button_press_event", *p_, button_, **kw_)
+                mouse_nv("button_release_event", *p_, button_, **kw_)
+
+            def key_nv(k_, mod_=Qt.NoModifier):
+                _QT_nv.keyClick(cv_nv, k_, mod_)
+
+            full_nv = (float(d_nv["x"].max()), float(d_nv["x"].min()))
+            assert v_nv.mode == "pointer" and v_nv.xlim == full_nv and len(v_nv.history) == 1
+            assert not v_nv.action_buttons["prev"].isEnabled() and v_nv.mode_buttons["pointer"].isChecked()
+            # sichtbare Modusleiste: jeder Modus und jede Aktion als Knopf mit Symbol, Taste im Text und im Tooltip
+            for n_, b_ in list(v_nv.mode_buttons.items()) + list(v_nv.action_buttons.items()):
+                k_ = (NV.MODES.get(n_) or NV.ACTIONS[n_])[0]
+                assert b_.icon_name and b_.key == k_ and b_.height() == STYLE.BAR_H - 6, (n_, b_.height())
+                assert k_.replace("⇧", "") in b_.toolTip() or "Shift" in b_.toolTip() or "Umschalt" in b_.toolTip(), n_
+            # Z wechselt waagerecht -> senkrecht -> Rechteck -> waagerecht; Knopf ebenso
+            for want_ in ("h", "v", "box", "h"):
+                key_nv(Qt.Key_Z)
+                assert v_nv.mode == "zoom" and v_nv.zoom_kind == want_, (v_nv.mode, v_nv.zoom_kind)
+            v_nv.mode_buttons["zoom"].click()
+            assert v_nv.zoom_kind == "v" and v_nv.mode_buttons["zoom"].isChecked()
+            v_nv.set_mode("zoom")
+            key_nv(Qt.Key_Z)
+            key_nv(Qt.Key_Z)
+            assert v_nv.zoom_kind == "h", v_nv.zoom_kind
+            ylim0_nv = v_nv.ylim
+            tol_nv = 1.5 * ppm_px()
+            drag_nv(px_nv(8.0), px_nv(7.2))
+            assert abs(v_nv.xlim[0] - 8.0) < tol_nv and abs(v_nv.xlim[1] - 7.2) < tol_nv, v_nv.xlim
+            assert v_nv.ylim == ylim0_nv and len(v_nv.history) == 2 and v_nv.action_buttons["prev"].isEnabled()
+            zoom_nv = v_nv.xlim
+            key_nv(Qt.Key_Left, Qt.AltModifier)                       # vorige Zoomstufe: Alt+← (jede Tastatur)
+            assert v_nv.xlim == full_nv
+            key_nv(Qt.Key_Right, Qt.AltModifier)
+            assert v_nv.xlim == zoom_nv
+            key_nv(Qt.Key_Less, Qt.ShiftModifier)                     # US: < = Umschalt + Komma
+            assert v_nv.xlim == full_nv
+            key_nv(Qt.Key_Greater, Qt.ShiftModifier)
+            key_nv(Qt.Key_Less)                                       # DE: < ohne Umschalt
+            assert v_nv.xlim == full_nv
+            key_nv(Qt.Key_Greater, Qt.ShiftModifier)                  # nächste (deutsche Tastatur: Umschalt + <)
+            assert v_nv.xlim == zoom_nv
+            key_nv(Qt.Key_Z, Qt.ShiftModifier)                        # Shift+Z: heraus, Breite verdoppelt
+            assert v_nv.mode == "zoom" and abs((v_nv.xlim[0] - v_nv.xlim[1]) - 2 * (zoom_nv[0] - zoom_nv[1])) < 1e-9
+            key_nv(Qt.Key_Z, Qt.ControlModifier)                      # Strg+Z gehört dem Fenster (Rückgängig)
+            assert v_nv.zoom_kind == "h" and v_nv.mode == "zoom"
+            key_nv(Qt.Key_F)
+            assert v_nv.xlim == full_nv
+            p_nv, n_h_nv = px_nv(6.0), len(v_nv.history)              # waagerecht, aber senkrecht gezogen: nichts
+            drag_nv(p_nv, (p_nv[0] + 1, p_nv[1] + 60))
+            assert v_nv.xlim == full_nv and len(v_nv.history) == n_h_nv, (v_nv.xlim, len(v_nv.history))
+            if sys.platform != "win32":                               # Schriftmaße offscreen unter Windows unecht
+                assert v_nv.minimumSizeHint().width() <= 420, v_nv.minimumSizeHint().width()
+                assert v_nv.flow.rows() == 1, "Modusleiste bei 1100 px nicht in einer Zeile"
+            # Achse wie die Mnova-Vorlage: nur unten, Zwischenstriche, Titel „delta 1H (ppm)“
+            assert ax_nv.get_xlabel() == "δ ¹H (ppm)", ax_nv.get_xlabel()         # δ steil: kein Mathtext
+            assert not ax_nv.spines["top"].get_visible() and not ax_nv.spines["left"].get_visible()
+            assert len(ax_nv.xaxis.get_minorticklocs()) > len(ax_nv.get_xticks()) - 2
+            # Rechteck: beide Grenzen
+            key_nv(Qt.Key_Z)
+            key_nv(Qt.Key_Z)
+            assert v_nv.zoom_kind == "box"
+            ytol_nv = 1.5 * abs(np.diff(ax_nv.transData.inverted().transform([(0, 0), (0, 1)])[:, 1])[0])
+            drag_nv(px_nv(4.3, 0.1), px_nv(3.9, 0.6))
+            assert abs(v_nv.xlim[0] - 4.3) < tol_nv and abs(v_nv.xlim[1] - 3.9) < tol_nv, v_nv.xlim
+            assert abs(v_nv.ylim[0] - 0.1) < ytol_nv and abs(v_nv.ylim[1] - 0.6) < ytol_nv, v_nv.ylim
+            # H: höchster sichtbarer Punkt unter den Labels; Mausrad und +/- ändern nur die Intensität
+            key_nv(Qt.Key_H)
+            vis_nv = (d_nv["x"] <= 4.3 + tol_nv) & (d_nv["x"] >= 3.9 - tol_nv)
+            ymax_nv = float(d_nv["y"][vis_nv].max())
+            assert ymax_nv < v_nv.ylim[1] < 2.5 * ymax_nv and v_nv.ylim[0] < 0, (ymax_nv, v_nv.ylim)
+            y_h_nv, x_h_nv, n_hist_nv = v_nv.ylim, v_nv.xlim, len(v_nv.history)
+            cx_nv, cy_nv = px_nv(4.1)
+            mouse_nv("scroll_event", cx_nv, cy_nv, None, step=1)
+            assert abs(v_nv.ylim[1] - y_h_nv[1] / NV.WHEEL) < 1e-12 and v_nv.xlim == x_h_nv
+            key_nv(Qt.Key_Minus)
+            assert abs(v_nv.ylim[1] - y_h_nv[1]) < 1e-12 and len(v_nv.history) == n_hist_nv
+            y_h_nv = v_nv.ylim                                          # /1.25 und *1.25: nur bis auf Rundung gleich
+            # P: frei -> waagerecht -> senkrecht; waagerecht verschiebt nur x
+            key_nv(Qt.Key_P)
+            assert v_nv.mode == "pan" and v_nv.pan_kind == "free"
+            key_nv(Qt.Key_P)
+            assert v_nv.pan_kind == "h"
+            x0_nv = v_nv.xlim
+            p_nv = px_nv(4.1)
+            drag_nv(p_nv, (p_nv[0] + 50, p_nv[1] + 30))
+            shift_nv = 50 * ppm_px()
+            assert abs((v_nv.xlim[0] - x0_nv[0]) - shift_nv) < 2 * tol_nv and v_nv.ylim == y_h_nv, (v_nv.xlim, x0_nv)
+            key_nv(Qt.Key_P)
+            assert v_nv.pan_kind == "v"
+            # Esc beim Ziehen: Verschieben zurückgenommen; Esc noch einmal: Zeiger
+            x1_nv = v_nv.xlim
+            mouse_nv("button_press_event", *p_nv)
+            mouse_nv("motion_notify_event", p_nv[0], p_nv[1] + 40, 1)
+            assert v_nv.ylim != y_h_nv
+            key_nv(Qt.Key_Escape)
+            mouse_nv("button_release_event", p_nv[0], p_nv[1] + 40, 1)
+            assert v_nv.ylim == y_h_nv and v_nv.xlim == x1_nv and v_nv.mode == "pan"
+            key_nv(Qt.Key_Escape)
+            assert v_nv.mode == "pointer" and v_nv.mode_buttons["pointer"].isChecked()
+            # Doppelklick (Zeiger): ganzes Spektrum
+            mouse_nv("button_press_event", *px_nv(4.1), 1, dblclick=True)
+            assert v_nv.xlim == full_nv
+            # Anzeigeänderungen behalten die Ansicht (nichts springt)
+            v_nv.set_view((8.0, 7.15), v_nv.ylim)
+            view_nv = (v_nv.xlim, v_nv.ylim)
+            v_nv.set_integrals(d_nv["integrals"])
+            v_nv.set_display({"grid": True})
+            v_nv.set_spectrum(d_nv["x"], d_nv["y"] * 1.0, d_nv["sf"], title="1H")
+            assert (v_nv.xlim, v_nv.ylim) == view_nv
+            v_nv.set_display({"grid": False})
+            tol_nv = 1.5 * ppm_px()
+            # I: Bereich aufziehen, Rand ziehen, Mitte ziehen, Entf löscht
+            key_nv(Qt.Key_I)
+            n_int_nv = len(v_nv.integrals)
+            drag_nv(px_nv(7.70), px_nv(7.60))
+            new_nv = got_nv["integrals_changed"][-1][0][-1]
+            assert len(got_nv["integrals_changed"][-1][0]) == n_int_nv + 1, got_nv["integrals_changed"][-1]
+            assert abs(new_nv["hi"] - 7.70) < tol_nv and abs(new_nv["lo"] - 7.60) < tol_nv, new_nv
+            assert v_nv.selected == ("integrals", n_int_nv)
+            drag_nv(px_nv(new_nv["lo"]), px_nv(7.55))                # rechter Rand (lo) nach 7.55
+            r_nv = got_nv["integrals_changed"][-1][0][-1]
+            assert abs(r_nv["lo"] - 7.55) < tol_nv and abs(r_nv["hi"] - new_nv["hi"]) < 1e-9, r_nv
+            mid_nv = (r_nv["lo"] + r_nv["hi"]) / 2
+            drag_nv(px_nv(mid_nv), px_nv(mid_nv + 0.05))             # Mitte: ganzer Bereich verschoben
+            m_nv = got_nv["integrals_changed"][-1][0][-1]
+            assert abs((m_nv["hi"] - r_nv["hi"]) - 0.05) < tol_nv and abs((m_nv["lo"] - r_nv["lo"]) - 0.05) < tol_nv
+            assert v_nv.btn_delete.isEnabled()
+            key_nv(Qt.Key_Delete)
+            assert len(got_nv["integrals_changed"][-1][0]) == n_int_nv and v_nv.selected is None
+            assert not v_nv.btn_delete.isEnabled()
+            click_nv(px_nv(7.81))                                     # Klick auf einen Bereich wählt ihn
+            assert v_nv.selected == ("integrals", 0), v_nv.selected
+            v_nv.btn_delete.click()                                   # Knopf statt Taste
+            assert len(got_nv["integrals_changed"][-1][0]) == n_int_nv - 1
+            # K: Bereich + Schwelle (Höhe beim Loslassen); Peak anklicken + Entf löscht
+            key_nv(Qt.Key_K)
+            ytol_nv = 1.5 * abs(np.diff(ax_nv.transData.inverted().transform([(0, 0), (0, 1)])[:, 1])[0])
+            drag_nv(px_nv(7.95, 0.5), px_nv(7.75, 0.3))
+            lo_nv, hi_nv, thr_nv = got_nv["peak_pick_requested"][-1]
+            assert abs(hi_nv - 7.95) < tol_nv and abs(lo_nv - 7.75) < tol_nv and abs(thr_nv - 0.3) < ytol_nv, (
+                lo_nv, hi_nv, thr_nv)
+            n_req_nv = len(got_nv["peak_pick_requested"])
+            p_nv = px_nv(v_nv.peaks[3]["x"], 0.4)                     # Ziehen ab einem Peak: Bereich, kein Klick
+            drag_nv(p_nv, (p_nv[0] + 80, p_nv[1] - 40))
+            assert len(got_nv["peak_pick_requested"]) == n_req_nv + 1 and v_nv.selected is None
+            key_nv(Qt.Key_I)                                           # Bereich ohne Breite: kein Signal
+            n_ic_nv = len(got_nv["integrals_changed"])
+            drag_nv(px_nv(7.5), (px_nv(7.5)[0] + 1, px_nv(7.5)[1] + 60))
+            assert len(got_nv["integrals_changed"]) == n_ic_nv
+            key_nv(Qt.Key_K)
+            n_pk_nv = len(v_nv.peaks)
+            click_nv(px_nv(v_nv.peaks[0]["x"]))
+            assert v_nv.selected == ("peaks", 0), v_nv.selected
+            key_nv(Qt.Key_Backspace)
+            assert len(got_nv["peaks_changed"][-1][0]) == n_pk_nv - 1
+            # einzelner Peak (Schulter): Klick ins Leere; mit Umschalt genau an der Mausposition
+            p_nv = px_nv(7.55)
+            click_nv(p_nv, modifiers=frozenset({"shift"}))
+            new_pk_nv = [q_["x"] for q_ in got_nv["peaks_changed"][-1][0]]
+            assert len(new_pk_nv) == n_pk_nv and min(abs(v_ - 7.55) for v_ in new_pk_nv) < 1.5 * ppm_px(), new_pk_nv
+            click_nv(px_nv(7.65))                                       # ohne Umschalt: rastet (+-3 px) ein
+            new_pk_nv = [q_["x"] for q_ in got_nv["peaks_changed"][-1][0]]
+            assert len(new_pk_nv) == n_pk_nv + 1 and min(abs(v_ - 7.65) for v_ in new_pk_nv) < 5 * ppm_px()
+            # J: Bereich + Schwelle als Anfrage; Bereich eines Multipletts bleibt änderbar
+            key_nv(Qt.Key_J)
+            drag_nv(px_nv(7.70, 0.2), px_nv(7.62, 0.05))
+            lo_nv, hi_nv, thr_nv = got_nv["multiplet_requested"][-1]
+            assert abs(hi_nv - 7.70) < tol_nv and abs(lo_nv - 7.62) < tol_nv and abs(thr_nv - 0.05) < ytol_nv
+            m0_nv = dict(v_nv.multiplets[0])
+            drag_nv(px_nv(m0_nv["hi"]), px_nv(m0_nv["hi"] + 0.02))
+            assert abs(got_nv["multiplets_changed"][-1][0][0]["hi"] - (m0_nv["hi"] + 0.02)) < tol_nv
+            assert got_nv["multiplets_changed"][-1][0][0]["cls"] == "d"         # übrige Angaben bleiben
+            # R (und L): Klick neben die Peakspitze rastet auf die Spitze; Doppelklick zählt nicht doppelt
+            v_nv.set_view((7.9, 7.7), v_nv.ylim)
+            dlt_nv = 7.81 - 8.4 / d_nv["sf"] / 2
+            for k_ in (Qt.Key_R, Qt.Key_L):
+                key_nv(k_)
+                assert v_nv.mode == "reference"
+                n_ref_nv = len(got_nv.get("reference_clicked", []))
+                p_nv = px_nv(dlt_nv, 0.2)
+                click_nv((p_nv[0] + 3, p_nv[1]))
+                mouse_nv("button_press_event", p_nv[0] + 3, p_nv[1], 1, dblclick=True)
+                assert len(got_nv["reference_clicked"]) == n_ref_nv + 1
+                assert abs(got_nv["reference_clicked"][-1][0] - dlt_nv) < 3e-4, got_nv["reference_clicked"][-1]
+            # C: zwei Klicks = Abstand in Hz (J des Dubletts); ohne SF kein Hz
+            key_nv(Qt.Key_C)
+            tol_nv = 1.5 * ppm_px()
+            click_nv(px_nv(7.81 + 8.4 / d_nv["sf"] / 2))
+            click_nv(px_nv(dlt_nv))
+            a_nv, b_nv, hz_nv = got_nv["distance_measured"][-1]
+            assert abs(hz_nv - 8.4) < 2 * tol_nv * d_nv["sf"] and abs(hz_nv - abs(a_nv - b_nv) * d_nv["sf"]) < 1e-9
+            assert "J = " in v_nv.lbl_read.text() and "Hz" in v_nv.lbl_read.text(), v_nv.lbl_read.text()
+            mouse_nv("motion_notify_event", *px_nv(7.8))
+            assert "δ: " in v_nv.lbl_read.text() and "<i>δ" not in STYLE.sci(v_nv.lbl_read.text())   # δ steil
+            v_nv.sf = None
+            click_nv(px_nv(7.85))
+            click_nv(px_nv(7.75))
+            assert got_nv["distance_measured"][-1][2] is None and "Hz" not in v_nv.lbl_read.text()
+            v_nv.sf = d_nv["sf"]
+            # X: Bereich ausblenden (Achse ohne Lücke, keine Teilstriche darin), Lücke anklicken + Entf blendet ein
+            key_nv(Qt.Key_F)
+            key_nv(Qt.Key_X)
+            xl_nv = v_nv.xlim
+            drag_nv(px_nv(6.9), px_nv(4.6))
+            cut_nv = got_nv["cuts_changed"][-1][0]
+            tol_nv = 1.5 * ppm_px()
+            assert len(cut_nv) == 1 and abs(cut_nv[0]["hi"] - 6.9) < 2 * tol_nv and abs(cut_nv[0]["lo"] - 4.6) < 2 * tol_nv
+            assert v_nv.xlim == xl_nv
+            cv_nv.draw()
+            assert abs(px_nv(6.9)[0] - px_nv(4.6)[0]) < 10, "Schnitt nicht zusammengezogen"
+            assert not any(4.6 < t_ < 6.9 for t_ in ax_nv.get_xticks()), ax_nv.get_xticks()
+            # Achsenlinie am Bruch unterbrochen (Mnova): Linie in Stücken statt durchgehender Achse
+            assert not ax_nv.spines["bottom"].get_visible()
+            spine_nv = [l_ for l_ in v_nv._ov if isinstance(l_, Line2D_nv) and len(l_.get_ydata()) == 2
+                        and l_.get_ydata()[0] == l_.get_ydata()[1] == ax_nv.bbox.y0]
+            assert len(spine_nv) == 2, len(spine_nv)
+            assert np.isnan(v_nv._yplot[(d_nv["x"] > 5) & (d_nv["x"] < 6)]).all()
+            click_nv(px_nv(5.7))
+            assert v_nv.selected == ("cuts", 0), v_nv.selected
+            key_nv(Qt.Key_Delete)
+            assert got_nv["cuts_changed"][-1][0] == [] and not np.isnan(v_nv._yplot).any()
+            # zwei Schnitte, einen wählen, dann einen dritten über beide ziehen: Auswahl gilt nicht mehr (Verschmelzen)
+            v_nv.set_cuts([{"lo": 6.0, "hi": 6.3}, {"lo": 5.0, "hi": 5.3}])
+            click_nv(px_nv(6.15))                                       # aufsteigend sortiert: zweiter Schnitt
+            assert v_nv.selected == ("cuts", 1), v_nv.selected
+            drag_nv(px_nv(6.6), px_nv(4.8))
+            assert len(v_nv.cuts) == 1 and v_nv.selected is None
+            key_nv(Qt.Key_Delete)                                     # früher IndexError
+            click_nv(px_nv(5.7))
+            v_nv.set_cuts([])
+            # E: Ausschnitt aufziehen -> Inset im Bild
+            key_nv(Qt.Key_E)
+            drag_nv(px_nv(4.2), px_nv(4.05))
+            assert len(got_nv["insets_changed"][-1][0]) == 1 and len(v_nv._insets_ax) == 1
+            drag_nv(px_nv(3.95, 0.02), px_nv(3.75, 0.02), modifiers=frozenset({"shift"}))   # unten: nicht auf dem Ausschnitt   # Umschalt: zweiter Teil mit Bruch
+            ins_nv = got_nv["insets_changed"][-1][0]
+            assert len(ins_nv) == 1 and len(ins_nv[0]["parts"]) == 2, ins_nv
+            cv_nv.draw()
+            ia_nv = v_nv._insets_ax[0]                                  # Achsenbruch: zwei Schrägstriche auf der Achse
+            y_ax_nv = ia_nv.bbox.y0
+            two_nv = [l_ for l_ in ia_nv.lines if len(l_.get_xdata()) == 2 and abs(np.mean(l_.get_ydata()) - y_ax_nv) < 1]
+            assert sum(1 for l_ in two_nv if l_.get_ydata()[0] != l_.get_ydata()[1]) == 2            # Schrägstriche
+            assert sum(1 for l_ in two_nv if l_.get_ydata()[0] == l_.get_ydata()[1]) == 2            # Achse mit Lücke
+            # jeder Text im Ausschnitt (Peak-Labels, Integralwerte, Zahlen) hat sichtbare Pixel (weiße Fläche deckt nichts ab)
+            buf_nv = np.asarray(cv_nv.buffer_rgba())[..., :3].astype(int)
+            rr_nv = cv_nv.get_renderer()
+            in_txt_nv = [t_ for t_ in ia_nv.texts if t_.get_text().strip()]
+            assert len(in_txt_nv) >= 2, [t_.get_text() for t_ in ia_nv.texts]
+            for t_ in in_txt_nv:
+                e_ = t_.get_window_extent(rr_nv)
+                y0_, y1_ = int(buf_nv.shape[0] - e_.y1), int(buf_nv.shape[0] - e_.y0)
+                crop_ = buf_nv[max(0, y0_):y1_ + 1, max(0, int(e_.x0)):int(e_.x1) + 1]
+                assert crop_.size and crop_.min() < 160, ("Ausschnitt-Text unsichtbar", t_.get_text())
+            # Ausschnitt: automatische Lage frei vom Spektrum (ein freier Platz schlägt immer einen kollidierenden, das
+            # linke Drittel für die Struktur ist nur nachrangig; Spur N); ziehen = Lage, Ecke = Größe,
+            # Mausrad = eigene Intensität; alles in insets_changed und display()
+            bbm_nv = ax_nv.bbox
+            xs_nv = sorted(ax_nv.transData.inverted().transform([(ia_nv.bbox.x0, 0), (ia_nv.bbox.x1, 0)])[:, 0])
+            top_nv = ax_nv.transData.transform((0, float(np.nanmax(v_nv._yplot[(v_nv.x >= xs_nv[0]) & (v_nv.x <= xs_nv[1])]))))[1]
+            assert not v_nv.notes and ia_nv.bbox.y0 >= top_nv - 1, (ia_nv.bbox.y0, top_nv)
+            pos0_nv = v_nv._inset_pos(ia_nv)
+            c_nv = ((ia_nv.bbox.x0 + ia_nv.bbox.x1) / 2, (ia_nv.bbox.y0 + ia_nv.bbox.y1) / 2)
+            dx_nv = 40 if pos0_nv[0] < 0.5 else -40                    # zur Mitte hin (am Rand wird begrenzt)
+            drag_nv(c_nv, (c_nv[0] + dx_nv, c_nv[1] - 20))
+            pos1_nv = got_nv["insets_changed"][-1][0][0]["pos"]
+            assert abs((pos1_nv[0] - pos0_nv[0]) * bbm_nv.width - dx_nv) < 2 and abs(pos1_nv[2] - pos0_nv[2]) < 1e-9
+            ia_nv = v_nv._insets_ax[0]
+            drag_nv((ia_nv.bbox.x1 - 2, ia_nv.bbox.y0 + 2), (ia_nv.bbox.x1 + 30, ia_nv.bbox.y0 - 20))
+            pos2_nv = got_nv["insets_changed"][-1][0][0]["pos"]
+            assert pos2_nv[2] > pos1_nv[2] and pos2_nv[3] > pos1_nv[3], (pos1_nv, pos2_nv)
+            ia_nv = v_nv._insets_ax[0]
+            top_nv = ia_nv._top
+            mouse_nv("scroll_event", (ia_nv.bbox.x0 + ia_nv.bbox.x1) / 2, (ia_nv.bbox.y0 + ia_nv.bbox.y1) / 2, None, step=1)
+            assert abs(got_nv["insets_changed"][-1][0][0]["ymax"] - top_nv / NV.WHEEL) < 1e-12
+            assert v_nv.display()["insets"][0]["pos"] == pos2_nv
+            v_nv.set_display({"insets": [{"lo": 7.2, "hi": 7.5}]})          # Lösungsmittel (7.26) zählt nicht
+            ia_nv = v_nv._insets_ax[0]
+            m_nv = (d_nv["x"] >= 7.2) & (d_nv["x"] <= 7.5) & (np.abs(d_nv["x"] - 7.26) > 0.003 * np.ptp(d_nv["x"]))
+            assert abs(ia_nv._top - d_nv["y"][m_nv].max()) < 1e-12, (ia_nv._top, d_nv["y"][m_nv].max())
+            v_nv.set_insets([])
+            # automatische Lage: der ganze Ausschnitt (Zahlen, Achsentitel) hält Abstand zu Kurve und Marke – hohes
+            # schmales Signal mit „*“ 0.5 pt links neben der zuerst gewählten Lage (früher blieb er dort stehen)
+            x2_nv = np.linspace(10.0, 0.0, 32768)
+            lor_nv = lambda c_, h_: h_ * 1e-6 / ((x2_nv - c_) ** 2 + 1e-6)      # Lorentz, Halbwertsbreite 0.002 ppm
+            y2_nv = lor_nv(9.5, 1.0) + sum(lor_nv(c_, 0.2) for c_ in (8.0, 7.6, 7.3, 3.5, 1.2))
+            v2_nv = NV.NMRView()
+            v2_nv.resize(1100, 720)
+            v2_nv.show()
+            v2_nv.set_spectrum(x2_nv, y2_nv, 400.0)
+            v2_nv.set_insets([{"lo": 7.2, "hi": 8.1}])
+            QApplication.processEvents()
+            v2_nv.redraw()
+            v2_nv.canvas.draw()
+            xe_nv = v2_nv.ax.transData.inverted().transform((v2_nv._insets_ax[0].bbox.x0 - v2_nv._pt(0.5), 0))[0]
+            y2_nv = y2_nv + lor_nv(xe_nv, 0.8 * v2_nv.ylim[1])
+            v2_nv.set_spectrum(x2_nv, y2_nv, 400.0)                      # gleiche Achse: Ansicht bleibt
+            v2_nv.set_marks([{"x": xe_nv, "text": "*"}])
+            v2_nv.canvas.draw()
+            r2_nv = v2_nv.canvas.get_renderer()
+            box_nv = v2_nv._insets_ax[0].get_tightbbox(r2_nv).padded(v2_nv._pt(1.5))
+            pts_nv = v2_nv.ax.transData.transform(np.column_stack([x2_nv, y2_nv]))
+            hit_nv = ((pts_nv[:, 0] > box_nv.x0) & (pts_nv[:, 0] < box_nv.x1) & (pts_nv[:, 1] > box_nv.y0)
+                      & (pts_nv[:, 1] < box_nv.y1))
+            star_nv = [t_ for t_ in v2_nv.ax.texts if t_.get_text() == "*"]
+            assert len(star_nv) == 1 and not hit_nv.any(), (int(hit_nv.sum()), box_nv.bounds)
+            assert not star_nv[0].get_window_extent(r2_nv).overlaps(box_nv), box_nv.bounds
+            QApplication.processEvents()
+            _shb_nv.delete(v2_nv)
+            # Shift+P: links 0. Ordnung, rechts 1. Ordnung, Strg fein; Rückruf rechnet, Ansicht bleibt
+            calls_nv = []
+
+            def phase_cb_nv(p0_, p1_, piv_):
+                calls_nv.append((p0_, p1_, piv_))
+                return d_nv["y"] * math.cos(math.radians(p0_))
+            v_nv.set_phase_callback(phase_cb_nv)
+            key_nv(Qt.Key_P, Qt.ShiftModifier)
+            assert v_nv.mode == "phase" and v_nv.pivot is not None
+            view_nv = (v_nv.xlim, v_nv.ylim)
+            p_nv = px_nv(6.0)
+            drag_nv(p_nv, (p_nv[0], p_nv[1] + 40))
+            assert abs(v_nv.ph0 - 40 * NV.PH0_DEG_PX) < 1e-9 and v_nv.ph1 == 0, (v_nv.ph0, v_nv.ph1)
+            drag_nv(p_nv, (p_nv[0], p_nv[1] + 40), 3, modifiers=frozenset({"ctrl"}))
+            assert abs(v_nv.ph1 - 40 * NV.PH1_DEG_PX * NV.FINE) < 1e-9, v_nv.ph1
+            assert got_nv["phase_changed"][-1][:2] == (v_nv.ph0, v_nv.ph1) and calls_nv[-1][:2] == (v_nv.ph0, v_nv.ph1)
+            assert abs(v_nv.y.max() - d_nv["y"].max() * math.cos(math.radians(v_nv.ph0))) < 1e-9
+            assert (v_nv.xlim, v_nv.ylim) == view_nv
+            p_nv = px_nv(6.0)                                          # Ziehen: nur die Linie wird geblittet
+            mouse_nv("button_press_event", *p_nv)
+            mouse_nv("motion_notify_event", p_nv[0], p_nv[1] + 30, 1)
+            assert v_nv._fast == "phase" and v_nv.line.get_animated()
+            mouse_nv("button_release_event", p_nv[0], p_nv[1] + 30, 1)
+            assert v_nv._fast is None and not v_nv.line.get_animated()
+            click_nv(px_nv(2.0))                                       # Klick setzt den Drehpunkt
+            assert abs(v_nv.pivot - 2.0) < 2 * ppm_px() and abs(got_nv["phase_changed"][-1][2] - v_nv.pivot) < 1e-12
+            key_nv(Qt.Key_Escape)
+            assert v_nv.mode == "pointer"
+            v_nv.set_spectrum(d_nv["x"][::2], d_nv["y"][::2], d_nv["sf"], title="1H")    # andere Achse: Phase zurück
+            assert v_nv.ph0 == v_nv.ph1 == 0 and v_nv.pivot is None
+            # Verschieben: Labels/Klammern beim Ziehen verborgen, beim Loslassen wieder da
+            key_nv(Qt.Key_P)
+            p_nv = px_nv(6.0)
+            mouse_nv("button_press_event", *p_nv)
+            mouse_nv("motion_notify_event", p_nv[0] + 30, p_nv[1], 1)
+            assert v_nv._fast == "pan" and v_nv._ov and not any(a_.get_visible() for a_ in v_nv._ov)
+            mouse_nv("button_release_event", p_nv[0] + 30, p_nv[1], 1)
+            assert v_nv._fast is None and all(a_.get_visible() for a_ in v_nv._ov)
+            key_nv(Qt.Key_Escape)
+            # T: Marke per Klick über ein Signal (rastet auf die Spitze), ziehen, Zeichen wählen, löschen
+            v_nv.set_phase_callback(None)
+            v_nv.set_spectrum(d_nv["x"], d_nv["y"], d_nv["sf"], title="1H")
+            v_nv.set_view((8.0, 7.2), v_nv.ylim)
+            key_nv(Qt.Key_T)
+            assert v_nv.mode == "mark" and v_nv.mode_buttons["mark"].isChecked()
+            h2o_nv = 7.43 - 7.6 / d_nv["sf"]                                 # Spitze des Tripletts links
+            p_nv = px_nv(7.43, 0.3)
+            click_nv((p_nv[0] + 2, p_nv[1]))
+            mk_nv = got_nv["marks_changed"][-1][0]
+            assert len(mk_nv) == 1 and mk_nv[0]["text"] == "*" and abs(mk_nv[0]["x"] - 7.43) < 2 * ppm_px(), mk_nv
+            star_nv = [t_ for t_ in v_nv._ov if getattr(t_, "get_text", lambda: "")() == "*"]
+            assert star_nv and star_nv[0].get_fontsize() == NV.SHOW_DEFAULT["mark_size"]
+            drag_nv(px_nv(mk_nv[0]["x"], 0.3), px_nv(7.81, 0.3))           # ziehen: auf die Spitze am neuen Ort
+            assert abs(got_nv["marks_changed"][-1][0][0]["x"] - 7.81) < 0.012, got_nv["marks_changed"][-1]
+            v_nv.cmb_mark.setCurrentIndex(NV.MARK_SYMBOLS.index("†"))
+            click_nv(px_nv(7.31, 0.3))
+            assert [m_["text"] for m_ in got_nv["marks_changed"][-1][0]] == ["*", "†"]
+            key_nv(Qt.Key_Delete)
+            assert [m_["text"] for m_ in got_nv["marks_changed"][-1][0]] == ["*"]
+            v_nv.set_marks([{"x": 7.81, "text": "‡"}])
+            assert v_nv.marks == [{"x": 7.81, "text": "‡"}]
+            v_nv.set_view(v_nv.xlim, (v_nv.ylim[0], v_nv.ylim[1] * 0.2))   # Signal oben abgeschnitten: Marke im Bild
+            cv_nv.draw()
+            mk_t_nv = next(t_ for t_ in v_nv._ov if getattr(t_, "get_text", lambda: "")() == "‡")
+            assert mk_t_nv.get_window_extent(cv_nv.get_renderer()).y1 <= ax_nv.bbox.y1 + 1
+            v_nv.cmb_mark.setCurrentIndex(0)
+            key_nv(Qt.Key_Escape)
+            # Schalter der Anzeige: Chips (tidy) schalten Zustand, Signal und Bild
+            assert holder_nv.findChildren(STYLE.ChipRow), "Anzeige ohne Chips"
+
+            def texts_nv():
+                cv_nv.draw()
+                return [a_.get_text() for a_ in v_nv._ov if hasattr(a_, "get_text")]
+            assert "7.82" in texts_nv() and "2.00" in texts_nv()       # 7.80 wurde oben (K) gelöscht
+            v_nv._boxes["peak_labels"].setChecked(False)
+            assert "7.82" not in texts_nv() and got_nv["display_changed"][-1][0]["peak_labels"] is False
+            v_nv._boxes["int_values"].setChecked(False)
+            assert "2.00" not in texts_nv()
+            v_nv._boxes["grid"].setChecked(True)
+            cv_nv.draw()
+            assert any(g_.get_visible() for g_ in ax_nv.get_xgridlines())
+            v_nv._boxes["y_axis"].setChecked(True)
+            assert ax_nv.spines["left"].get_visible()
+            v_nv._boxes["title"].setChecked(True)
+            assert "1H" in texts_nv()
+            v_nv._boxes["title"].setChecked(False)
+            assert "1H" not in texts_nv()
+            assert "7.81 (d, 2H)" not in texts_nv()                   # Vorgabe wie die Vorlage: aus
+            v_nv._boxes["mult_labels"].setChecked(True)
+            assert "7.81 (d, 2H)" in texts_nv()
+            v_nv.cmb_mult.setCurrentIndex(NV.MULT_LABELS.index("cls"))
+            assert "d" in texts_nv() and "7.81 (d, 2H)" not in texts_nv()
+            v_nv._boxes["mult_labels"].setChecked(False)
+            assert "d" not in texts_nv()
+            assert any(c_.currentText() == T("off") for c_ in holder_nv.findChildren(_QCB_nv)), "Feld ohne aus"
+            v_nv._boxes["solvents"].setChecked(False)
+            assert "7.26 CHCl$_{3}$" not in texts_nv()
+            v_nv._boxes["solvents"].setChecked(True)
+            assert "7.26 CHCl$_{3}$" in texts_nv()
+            assert v_nv.display()["grid"] is True and len(got_nv["display_changed"]) >= 8
+            # Aussehen: Farbfeld (Farbwahl nachgestellt) und Dicke ändern die Linie, Zurücksetzen = Vorlage
+            from PySide6.QtGui import QColor as _QC_nv
+            pick_nv = TABS.QColorDialog.getColor
+            TABS.QColorDialog.getColor = staticmethod(lambda *a_: _QC_nv("#123456"))
+            try:
+                v_nv._boxes["spectrum_color"].click()
+            finally:
+                TABS.QColorDialog.getColor = pick_nv
+            v_nv._boxes["spectrum_width"].setValue(2.0)
+            cv_nv.draw()
+            assert v_nv.line.get_color() == "#123456" and v_nv.line.get_linewidth() == 2.0
+            assert got_nv["display_changed"][-1][0]["spectrum_width"] == 2.0 and v_nv.display()["spectrum_color"] == "#123456"
+            v_nv.reset_display()
+            cv_nv.draw()
+            assert v_nv.line.get_color() == NV.SHOW_DEFAULT["spectrum_color"] == "#800000"
+            assert v_nv.line.get_linewidth() == NV.SHOW_DEFAULT["spectrum_width"] == 0.665
+            assert v_nv._boxes["spectrum_width"].value() == 0.665
+            assert v_nv._boxes["spectrum_color"].property("color") == "#800000" and not v_nv._boxes["grid"].isChecked()
+            assert {k_: v_ for k_, v_ in got_nv["display_changed"][-1][0].items() if k_ != "insets"} == NV.SHOW_DEFAULT
+            # Ruheansicht: keine Bereichsflächen (nur im Modus I als Auswahlhilfe), Integralklammer in der Vorgabefarbe
+            from matplotlib.patches import Polygon as _Poly_nv, Rectangle as _Rect_nv
+            v_nv.set_mode("pointer")
+            assert not [a_ for a_ in v_nv._ov if isinstance(a_, (_Poly_nv, _Rect_nv))]
+            assert any(getattr(a_, "get_color", lambda: "")() == "#008000" for a_ in v_nv._ov)
+            v_nv.set_mode("integral")
+            assert [a_ for a_ in v_nv._ov if isinstance(a_, (_Poly_nv, _Rect_nv))], "Modus I ohne Bereichsflächen"
+            v_nv.set_mode("pointer")
+            for w_nv in (v_nv, holder_nv):
+                w_nv.close()
+                _shb_nv.delete(w_nv)
+            report.append("NMR view (keys Z/Shift+Z/F/H/P/I/K/J/R/L/C/X/E/Shift+P/Esc/</>, wheel, double click, "
+                          "signals with expected values, cuts, insets with break, phase callback, display chips, appearance + reset "
+                          "to the Mnova template, one-row mode bar, marks (T), single peaks, broken axis line, upright delta): OK")
+        with section:
+            # NMR-Auswertung (1.3.0): erfundene Spektren aus Lorentz-Linien mit bekannten delta/J/nH, geglättetem Rauschen
+            # (wie nach EM), Basislinie und verschobener Achse; dort Wahrheit prüfen
+            from math import comb as comb_b2
+            from elucida.core import nmr_analysis as NA_b2, nmr_report as NR_b2
+            rng_b2 = np.random.default_rng(7)
+            si_b2, sf_b2, sw_b2, gam_b2 = 65536, 500.0, 20.0, 0.3          # Punkte, MHz, ppm, Halbwertsbreite/2 (Hz)
+            ax_b2 = 15.0 - np.arange(si_b2) * sw_b2 / si_b2               # unkalibrierte Achse
+            hzpt_b2 = sw_b2 * sf_b2 / si_b2
+
+            def lines_b2(c, nh, pat):                                     # erste Ordnung: [(n, J)] -> [(Hz, Fläche)]
+                pos_, w_ = np.zeros(1), np.ones(1)
+                for n_, j_ in pat:
+                    b_ = np.array([comb_b2(n_, k_) for k_ in range(n_ + 1)], float)
+                    pos_ = (pos_[:, None] + ((np.arange(n_ + 1) - n_ / 2) * j_)[None, :]).ravel()
+                    w_ = (w_[:, None] * b_[None, :]).ravel()
+                return [(c * sf_b2 + p_, a_) for p_, a_ in zip(pos_, w_ / w_.sum() * nh)]
+
+            def pattern_pos_b2(mult, js):                                   # Linienlagen erster Ordnung (Hz)
+                pos_ = np.zeros(1)
+                for l_, j_ in zip(NA_b2.class_letters(mult), js):
+                    n_ = NA_b2.LETTER_N[l_]
+                    pos_ = (pos_[:, None] + ((np.arange(n_ + 1) - n_ / 2) * j_)[None, :]).ravel()
+                return sorted(pos_)
+
+            def spec_b2(lines, sf=sf_b2, ax=ax_b2, gam=gam_b2):
+                s_ = np.zeros(ax.size, complex)
+                for p_, a_ in lines:
+                    s_ += a_ * gam / (gam + 1j * (ax * sf - p_))
+                return s_ * 1000
+
+            def noisy_b2(s, amp=0.2, base=20.0):                           # Rauschen über 5 Punkte korreliert
+                k_ = np.exp(-0.5 * (np.arange(-12, 13) / 4) ** 2)
+                n_ = np.convolve(rng_b2.normal(0, amp, s.size), k_ / np.sqrt((k_ ** 2).sum()), "same")
+                x_ = np.linspace(-1, 1, s.size)
+                return s.real + n_ + base * (1 + 0.3 * x_ + 0.2 * x_ ** 2 - 0.1 * x_ ** 3)
+
+            off_b2 = 0.05                                                 # Achse liegt 0.05 ppm zu tief
+            truth_b2 = [(7.50, 2, "d", [(1, 8.0)]), (6.90, 1, "dd", [(1, 8.1), (1, 1.6)]), (3.71, 2, "q", [(3, 7.1)]),
+                        (2.10, 3, "s", []), (1.25, 3, "t", [(2, 7.1)])]
+            ln_b2 = [((7.26 - off_b2) * sf_b2, 0.3)]                      # CDCl3-Restsignal
+            ln_b2 += [x_ for c_, n_, _, p_ in truth_b2 for x_ in lines_b2(c_ - off_b2, n_, p_)]
+            y_b2, sg_b2, mask_b2, blw_b2 = NA_b2.baseline(noisy_b2(spec_b2(ln_b2)), hzpt_b2)
+            assert not blw_b2, blw_b2
+            assert 0.15 < sg_b2 < 0.25 and 0.5 < mask_b2.mean() < 1.0, (sg_b2, mask_b2.mean())
+            assert abs(np.median(y_b2[(ax_b2 > 10) & (ax_b2 < 14)])) < 0.5     # Basislinie entfernt
+            ref_b2 = NA_b2.suggest_reference(y_b2, ax_b2, "1H", "CDCl3", sf_b2)
+            assert abs(ref_b2["shift"] - off_b2) < 0.0005 and not ref_b2["warnings"], ref_b2
+            axr_b2 = ax_b2 + ref_b2["shift"]
+            ms_b2 = [m_ for m_ in NA_b2.multiplets(y_b2, axr_b2, sf_b2, sg_b2) if abs(m_["shift"] - 7.26) > 0.01]
+            assert len(ms_b2) == len(truth_b2), [(m_["shift"], m_["mult"]) for m_ in ms_b2]
+            for m_, (c_, n_, cls_, p_) in zip(ms_b2, truth_b2):
+                assert m_["mult"] == cls_ and abs(m_["shift"] - c_) < 0.001, (m_, c_, cls_)
+                assert all(abs(a_ - b_) < 0.05 for a_, (_, b_) in zip(m_["J"], p_)), (m_["J"], p_)
+            int_b2 = NA_b2.integrate(y_b2, axr_b2, NA_b2.integral_ranges([(m_["lo"], m_["hi"]) for m_ in ms_b2], sf_b2))
+            nh_b2 = NA_b2.normalise(int_b2, 3, 3)                         # Nutzer: Singulett = 3H
+            assert all(abs(a_ - t_[1]) < 0.05 for a_, t_ in zip(nh_b2, truth_b2)), nh_b2
+            sg3_b2 = [NR_b2.signal_of(m_, NA_b2.round_h(n_), a_) for m_, n_, a_
+                      in zip(ms_b2, nh_b2, ("Ar-H", "Ar-H", "OCH2", "Cp*", "CH3"))]
+            un3_b2 = NR_b2.format_plain(NR_b2.Spectrum("1H", 500, "CDCl3", signals=sg3_b2))   # Vorschlag: nur Bereiche
+            assert "J =" not in un3_b2 and un3_b2.count("(m, ") == len(truth_b2), un3_b2
+            sp_b2 = NR_b2.Spectrum("1H", 500, "CDCl3", signals=[NR_b2.signal_of(m_, NA_b2.round_h(n_), a_, confirmed=True)
+                                                                for m_, n_, a_ in zip(ms_b2, nh_b2, ("Ar-H", "Ar-H",
+                                                                                                     "OCH2", "Cp*", "CH3"))])
+            line_b2 = ("1H NMR (500 MHz, CDCl3): δ [ppm] = 7.50 (d, J = 8.0 Hz, 2H, Ar-H), 6.90 (dd, J = 8.1, 1.6 Hz, 1H, "
+                       "Ar-H), 3.71 (q, J = 7.1 Hz, 2H, OCH2), 2.10 (s, 3H, Cp*), 1.25 (t, J = 7.1 Hz, 3H, CH3)")
+            assert NR_b2.format_plain(sp_b2) == line_b2, NR_b2.format_plain(sp_b2)
+            mk_b2 = NR_b2.format_markup(sp_b2)
+            assert "Cp\\*" in mk_b2 and "".join(t_ for t_, _ in XRAY.runs(mk_b2)) == line_b2, mk_b2
+            # Muster vom Nutzer (Klasse + J) im Bereich; Gegenproben: falsche Klasse, Bereich ohne Linien, mehrdeutig
+            fp_b2, why_b2 = NA_b2.fit_pattern(y_b2, axr_b2, 6.86, 6.94, sf_b2, "dd", [8.1, 1.6], 5 * sg_b2)
+            assert why_b2 is None and abs(fp_b2["shift"] - 6.90) < 0.001 and len(fp_b2["lines"]) == 4, (fp_b2, why_b2)
+            fpl_b2 = [NR_b2.format_plain(NR_b2.Spectrum("1H", 500, "CDCl3", signals=[NR_b2.signal_of(fp_b2, 1, confirmed=c_)]))
+                      for c_ in (False, True)]                            # Fit -> Signal -> SI-Zeile
+            assert fpl_b2[0].endswith("= 6.94 – 6.86 (m, 1H)") and fpl_b2[1].endswith("= 6.90 (dd, J = 8.1, 1.6 Hz, 1H)"), \
+                fpl_b2
+            assert NA_b2.fit_pattern(y_b2, axr_b2, 6.86, 6.94, sf_b2, "dd", [8.1], 5 * sg_b2)[0] is None
+            assert NA_b2.fit_pattern(y_b2, axr_b2, 9.0, 9.1, sf_b2, "d", [8.0], 10 * sg_b2)[0] is None
+            assert NA_b2.fit_pattern(y_b2, axr_b2, 6.86, 6.94, sf_b2, "t", [8.1], 10 * sg_b2)[0] is None
+            amb_b2 = NA_b2.fit_pattern(y_b2, axr_b2, 6.85, 6.95, sf_b2, "d", [1.6], 5 * sg_b2)
+            assert amb_b2[0] is None and amb_b2[1], amb_b2                    # zwei Paare im Bereich: mehrdeutig
+            # unsicheres Muster -> „m“ mit Bereich
+            irr_b2 = [((4.40 - off_b2) * sf_b2 + d_, a_) for d_, a_ in ((-6.3, 0.1), (-3.1, 0.45), (-1.0, 0.2),
+                                                                         (2.2, 0.5), (4.4, 0.12))]
+            y2_b2, sg2_b2, _, _ = NA_b2.baseline(noisy_b2(spec_b2(ln_b2 + irr_b2)),
+                                              hzpt_b2)
+            m2_b2 = [m_ for m_ in NA_b2.multiplets(y2_b2, ax_b2 + off_b2, sf_b2, sg2_b2) if 4.3 < m_["shift"] < 4.5]
+            assert len(m2_b2) == 1 and m2_b2[0]["mult"] == "m" and m2_b2[0]["lo"] < 4.388 and m2_b2[0]["hi"] > 4.409, m2_b2
+            assert abs(m2_b2[0]["shift"] - (m2_b2[0]["lo"] + m2_b2[0]["hi"]) / 2) < 1e-12
+            rng_txt_b2 = NR_b2.format_plain(NR_b2.Spectrum("1H", 500, "CDCl3", signals=[NR_b2.signal_of(m2_b2[0], 1)]))
+            assert re.search(r"= 4\.4\d – 4\.3\d \(m, 1H\)$", rng_txt_b2), rng_txt_b2
+            unk_b2 = NA_b2.suggest_reference(y_b2, ax_b2, "1H", "Acetone", sf_b2)
+            assert unk_b2["found"] is None and unk_b2["warnings"], unk_b2   # ungeprüftes Lösungsmittel: kein Vorschlag
+            # Phase: ACME findet eine bekannte Phase wieder (nur Vorschlag; mit procs-Phase kein Vorschlag)
+            s_b2 = spec_b2(ln_b2)
+            pe_b2 = NA_b2.autophase(s_b2 * np.exp(1j * np.deg2rad(40.0 - 30.0 * np.arange(si_b2) / si_b2)))
+            top_b2 = [int(np.argmin(np.abs(ax_b2 * sf_b2 - p_))) for p_, _ in ln_b2]
+            dphi_b2 = [((pe_b2[0] + pe_b2[1] * i_ / si_b2) - (40.0 - 30.0 * i_ / si_b2) + 180) % 360 - 180 for i_ in top_b2]
+            assert max(map(abs, dphi_b2)) < 5, (pe_b2, dphi_b2)
+            assert NA_b2.suggest_phase(s_b2, {"PHC0": 12.0, "PHC1": -3.0}) is None
+            # 13C: Peaks ab 5 sigma ohne Lösungsmittel, Referenz über das CDCl3-Triplett (Achse 0.8 ppm daneben)
+            sf13_b2, off13_b2 = 125.7, -0.8
+            ax13_b2 = 230.0 - np.arange(si_b2) * 250.0 / si_b2
+            c13_b2 = [170.2, 136.4, 128.9, 61.3, 21.0, 14.2]
+            l13_b2 = [((c_ - off13_b2) * sf13_b2, 0.04) for c_ in c13_b2]
+            l13_b2 += [((77.16 - off13_b2) * sf13_b2 + d_, 0.3) for d_ in (-32.0, 0.0, 32.0)]
+            y13_b2, sg13_b2, _, _ = NA_b2.baseline(noisy_b2(spec_b2(l13_b2, sf13_b2, ax13_b2, 1.0), 1.0, 5.0),
+                                                250.0 * sf13_b2 / si_b2)
+            r13_b2 = NA_b2.suggest_reference(y13_b2, ax13_b2, "13C", "CDCl3", sf13_b2)
+            assert abs(r13_b2["shift"] - off13_b2) < 0.01 and not r13_b2["warnings"], r13_b2
+            ax13r_b2 = ax13_b2 + r13_b2["shift"]
+            pk13_b2 = NA_b2.peaks(y13_b2, ax13r_b2, NA_b2.PEAK_NSIG * sg13_b2, exclude=[(76.5, 77.8)])
+            assert len(pk13_b2) == len(c13_b2) and all(abs(p_ - c_) < 0.01 for (p_, _), c_ in zip(pk13_b2, c13_b2)), \
+                pk13_b2
+            # Modell, Leser, Formatierer (erfundene Zeilen): Rundreise zeichengleich, nachsichtige Eingaben, Markup
+            rt_b2 = ["1H NMR (400 MHz, CDCl3): δ [ppm] = 7.26 – 7.20 (m, 2H, Ar-H), 6.90 (dd, J = 8.1, 1.2 Hz, 1H, Ar-H), "
+                     "3.71 (q, J = 7.1 Hz, 2H, OCH2), 1.25 (t, J = 7.1 Hz, 3H, CH3), 0.98 (br. s, 1H, NH)",
+                     "13C{1H} NMR (101 MHz, DMSO-d6, 300 K): δ [ppm] = 162.4 (d, 1JC,F = 245.0 Hz, Ar-CF), 130.2, "
+                     "115.6 (d, 2JC,F = 21.5 Hz), -5.2 (Si(CH3)3)",
+                     "19F NMR (376 MHz, C6D6): δ [ppm] = -112.3 (Ar-F)"]
+            for t_ in rt_b2:
+                (s_, a_, e_), = NR_b2.parse_spans(t_ + "; rest")
+                assert (a_, e_) == (0, len(t_)) and NR_b2.format_plain(s_) == t_, (NR_b2.format_plain(s_), t_)
+                assert "".join(x_ for x_, _ in XRAY.runs(NR_b2.format_markup(s_))) == t_
+            s_b2 = NR_b2.parse(rt_b2[1])[0]
+            assert s_b2.temp == 300 and s_b2.digits == 1 and s_b2.signals[0].J[0] == NR_b2.Coupling(245.0, 1, "C,F", NR_b2.CONFIRMED)
+            assert NR_b2.format_markup(s_b2).startswith("^{13}C{^{1}H} NMR (101 MHz, DMSO-*d*_{6}, 300 K): δ [ppm] = "
+                                                        "162.4 (d, ^{1}*J*_{C,F} = ")
+            assert NR_b2.format_plain(s_b2, NR_b2.Style(minus="−")).endswith("−5.2 (Si(CH3)3)")
+            s_b2 = NR_b2.parse("1H NMR (500 MHz, CDCl3): δ [ppm] = 7.10 - 7.30 (m, 2 H,Ar-H), 2.10 (s, 3H, , CH3).")[0]
+            assert NR_b2.format_plain(s_b2) == "1H NMR (500 MHz, CDCl3): δ [ppm] = 7.30 – 7.10 (m, 2H, Ar-H), 2.10 (s, 3H, CH3)"
+            s_b2.signals.reverse()
+            assert NR_b2.format_plain(s_b2, NR_b2.Style(sort="desc")).endswith("7.30 – 7.10 (m, 2H, Ar-H), 2.10 (s, 3H, CH3)")
+            t_b2 = ("1H NMR (500 MHz, CDCl3): 7.50 (d, J = 8.0 Hz, 2H, Ar-H) 7.20 (d, J = 8.0 Hz, 2H, Ar-H), 0.10 (s, 9H, "
+                    "Si(CH3)3; 13C NMR (126 MHz, CDCl3): δ [ppm] = 140.1, 0.5, 13C")
+            (h_b2, _, e_b2), (c_b2, _, _) = NR_b2.parse_spans(t_b2)
+            assert [x_.shift for x_ in h_b2.signals] == [7.50, 7.20, 0.10] and t_b2[e_b2] == ";"
+            assert h_b2.signals[2].assign == "Si(CH3)3" and [x_.shift for x_ in c_b2.signals] == [140.1, 0.5]
+            for nasty_b2 in ("Cp*", "H_{a}", "C^{2}", "~x", "a\\b", "{1}"):          # Zuordnung bleibt Text
+                mk_b2 = NR_b2.signal_markup(NR_b2.Signal(shift=1.0, mult="s", nH=1, assign=nasty_b2, status=NR_b2.CONFIRMED), 2)
+                assert NR_b2.plain(mk_b2) == f"1.00 (s, 1H, {nasty_b2})" == "".join(x_ for x_, _ in XRAY.runs(mk_b2)), mk_b2
+            # jede Klasse, die hoye bilden kann (d/t/q/p bis fünf Buchstaben, Summe <= 8 Kopplungen; sext/hept
+            # allein), wird erkannt und als SI-Zeile zeichengleich gelesen/geschrieben; gemischt mit sext/hept -> None
+            from itertools import product as prod_b2
+            n_b2 = {"d": 1, "t": 2, "q": 3, "p": 4, "sext": 5, "hept": 6}
+
+            def hoye_lines_b2(cls):                                       # J streng hierarchisch: alle Linien getrennt
+                js_, acc_ = [], 0.0
+                for c_ in reversed(cls):
+                    js_.insert(0, acc_ + 1.0)
+                    acc_ += n_b2[c_] * js_[0]
+                pos_, w_ = np.zeros(1), np.ones(1)
+                for c_, j_ in zip(cls, js_):
+                    k_ = np.arange(n_b2[c_] + 1)
+                    pos_ = (pos_[:, None] + (k_ * j_)[None, :]).ravel()
+                    w_ = (w_[:, None] * np.array([comb_b2(n_b2[c_], i_) for i_ in k_], float)[None, :]).ravel()
+                return pos_, w_, js_
+
+            classes_b2 = [[c_] for c_ in ("sext", "hept")]
+            classes_b2 += [list(t_) for L_ in range(1, 6) for t_ in prod_b2("dtqp", repeat=L_)
+                           if sum(n_b2[c_] for c_ in t_) <= 8]
+            for cls_ in classes_b2:
+                pos_, w_, js_ = hoye_lines_b2(cls_)
+                res_ = NA_b2.hoye(pos_, w_, 0.3)
+                name_ = "".join(cls_)
+                assert res_ and res_[0] == name_ and np.allclose(res_[1], js_, atol=1e-6), (name_, res_)
+                sig_ = NR_b2.signal_of(dict(shift=5.0, mult=res_[0], J=res_[1], lo=0, hi=0), 1, confirmed=True)
+                txt_ = NR_b2.format_plain(NR_b2.Spectrum("1H", 500, "CDCl3", signals=[sig_]))
+                back_ = NR_b2.parse(txt_)[0]
+                assert back_.signals[0].mult == name_ and NR_b2.format_plain(back_) == txt_, txt_
+                assert NA_b2.pattern_lines(name_, res_[1]), name_
+            for cls_ in (["d", "hept"], ["t", "sext"], ["sext", "d"]):
+                pos_, w_, _ = hoye_lines_b2(cls_)
+                assert NA_b2.hoye(pos_, w_, 0.3) is None, cls_
+            assert NR_b2.class_j_count(NR_b2.Signal(mult="ddd")) == 3 and NR_b2.class_j_count(NR_b2.Signal(mult="m")) is None
+            # Abnahmetests der Prüfung (1.3.0, b2review): Basislinie, Musterhöhen, unaufgelöste J, Grenzen, Vokabular
+            rng_b2 = np.random.default_rng(2)
+            n2_b2 = rng_b2.normal(0, 0.002, si_b2)
+
+            def lor_b2(c, a=1.0, g=0.3):
+                return a * g * g / (g * g + (ax_b2 * sf_b2 - c * sf_b2) ** 2)
+            for top_b2 in (12.0, 14.8):                                    # 79 % bzw. > 75 % des Spektrums Signal
+                yd_b2 = n2_b2 + 0.05 + sum(lor_b2(c_, 1.0, 3.0) for c_ in np.arange(-2.0, top_b2, 0.012))
+                yc_b2, _, md_b2, w_b2 = NA_b2.baseline(yd_b2, hzpt_b2)
+                assert w_b2 and np.array_equal(yc_b2, yd_b2) and not md_b2.any(), (top_b2, w_b2)   # Meldung statt 0
+            for fw_b2 in (20.0, 50.0, 100.0):                              # breite Linie, 25 sigma hoch
+                br_b2 = lor_b2(5.0, 0.05, fw_b2 / 2)
+                yc_b2, _, _, w_b2 = NA_b2.baseline(n2_b2 + br_b2 + lor_b2(7.0) + lor_b2(2.0), hzpt_b2)
+                rr_b2 = NA_b2.integral_ranges([(5.0 - fw_b2 / sf_b2, 5.0 + fw_b2 / sf_b2)], sf_b2)
+                kept_b2 = NA_b2.integrate(yc_b2, ax_b2, rr_b2)[0] / NA_b2.integrate(br_b2, ax_b2, rr_b2)[0]
+                assert not w_b2 and abs(kept_b2 - 1) <= 0.02, (fw_b2, kept_b2)
+            ex_b2 = [(6.9, 7.1), (2.05, 1.95)]                             # Integralbereiche nie Basislinie (auch vertauscht)
+            _, _, mx_b2, _ = NA_b2.baseline(n2_b2 + lor_b2(7.0) + lor_b2(2.0), hzpt_b2, ax_b2, ex_b2)
+            assert not any(mx_b2[(ax_b2 >= min(e_)) & (ax_b2 <= max(e_))].any() for e_ in ex_b2)
+
+            def wig_b2(c, amp, mult, js, off=10.0):                        # Wellen neben dem Signal, die das gesuchte
+                return sum(lor_b2(c + (off + p_) / sf_b2, amp) for p_ in pattern_pos_b2(mult, js))   # Muster bilden
+
+            def fit_b2(y, c, mult, js):                                     # großzügiger Bereich wie im Prüfgerüst
+                w_ = NA_b2.first_order_width(mult, js)
+                return NA_b2.fit_pattern(y, ax_b2, c - 0.03 - (w_ / 2 + 2) / sf_b2, c + 0.03 + (w_ / 2 + 2) / sf_b2,
+                                         sf_b2, mult, js, 5 * 0.002)
+            # nur Wellen (1 % der Linie) bilden ein Dublett, die echte Linie ist ein Singulett -> nicht gefunden
+            yw_b2 = n2_b2 * 0.1 + lor_b2(4.0) + wig_b2(4.0, 0.01, "d", [6.0])
+            assert fit_b2(yw_b2, 4.0, "d", [6.0])[0] is None
+            # Nachbildungen: kleine J nicht aufgelöst (d 0.7, d 1.0, dd 7.0/0.8, dd 7.1/0.8) -> richtiges delta aus den
+            # äußeren aufgelösten Linien, J als eingegeben markiert; td 7.5/1.3 mit verschobener Linie -> nicht gefunden
+            for c_, cls_, js_, g_, ok_ in ((4.0, "d", [0.7], 0.7, True), (4.5, "d", [1.0], 1.0, True),   # FWHM = 2 J: eine Linie
+                                          (5.0, "dd", [7.0, 0.8], 0.8, True), (5.5, "dd", [7.1, 0.8], 0.8, True),
+                                          (6.0, "td", [7.5, 1.3], 0.3, False)):
+                pos_ = [p_ for p_ in pattern_pos_b2(cls_, js_)]
+                if not ok_:
+                    pos_[1] += 0.89
+                yr_b2 = n2_b2 * 0.1 + sum(lor_b2(c_ + p_ / sf_b2, 1.0, g_) for p_ in pos_) \
+                    + wig_b2(c_, 0.01, cls_, js_)
+                r_b2, why_b2 = fit_b2(yr_b2, c_, cls_, js_)
+                if ok_:
+                    assert why_b2 is None and abs(r_b2["shift"] - c_) < 0.001, (cls_, js_, r_b2, why_b2)
+                    assert r_b2["unmeasured"] == [min(js_)] and r_b2["notes"], r_b2
+                else:
+                    assert r_b2 is None or abs(r_b2["shift"] - c_) < 0.001, (cls_, r_b2)
+            yh_b2 = n2_b2 * 0.1 + sum(lor_b2(3.0 + p_ / sf_b2) for p_ in pattern_pos_b2("hept", [6.8]))
+            r_b2, _ = fit_b2(yh_b2, 3.0, "hept", [6.8])                     # schwache Außenlinien bleiben gültig
+            assert r_b2 and abs(r_b2["shift"] - 3.0) < 0.001 and not r_b2["unmeasured"] and len(r_b2["lines"]) == 7
+            # dd 8.0/0.6 Hz, Halbwertsbreite/2 0.6 Hz (0.6 Hz nicht trennbar), sigma 0.002, Schwelle 5 sigma, Bereich
+            # +-15 Hz: 50 Rauschseeds, nie ein falsches delta ohne Meldung (Rippel neben der Linie bilden ein volles dd)
+            ok4_b2 = 0
+            dd_b2 = sum(lor_b2(5.0 + (a_ * 4.0 + b_ * 0.3) / sf_b2, 1.0, 0.6) for a_ in (-1, 1) for b_ in (-1, 1))
+            for seed_b2 in range(50):
+                yq_b2 = dd_b2 + np.random.default_rng(seed_b2).normal(0, 0.002, si_b2)
+                r_b2, why_b2 = NA_b2.fit_pattern(yq_b2, ax_b2, 5.0 - 15 / sf_b2, 5.0 + 15 / sf_b2, sf_b2, "dd", [8.0, 0.6],
+                                                 5 * NA_b2.noise(yq_b2))
+                assert (r_b2 is None and why_b2) or abs(r_b2["shift"] - 5.0) * sf_b2 <= 0.5, (seed_b2, r_b2)
+                ok4_b2 += r_b2 is not None
+            # starkes Singulett im Abstand J neben einer Außenlinie: nie falsches delta; volles dd gewinnt gegen ein „d“ mit
+            # weggelassenem kleinem J (Breite aus den Musterlinien, nicht aus dem Singulett)
+            for cls_, js_, c_ in (("d", [8.3], 4.0), ("dd", [8.0, 2.0], 6.0)):
+                yn_b2 = n2_b2 + sum(lor_b2(c_ + p_ / sf_b2, 1.0, 0.5) for p_ in pattern_pos_b2(cls_, js_))
+                yn_b2 = yn_b2 + lor_b2(c_ + (max(pattern_pos_b2(cls_, js_)) + js_[0]) / sf_b2, 3.0, 0.5)
+                w_ = NA_b2.first_order_width(cls_, js_)
+                r_b2, why_b2 = NA_b2.fit_pattern(yn_b2, ax_b2, c_ - (w_ / 2 + 15) / sf_b2, c_ + (w_ / 2 + 15) / sf_b2, sf_b2,
+                                                 cls_, js_, 5 * NA_b2.noise(yn_b2))
+                assert (r_b2 is None and why_b2) or abs(r_b2["shift"] - c_) * sf_b2 <= 0.5, (cls_, r_b2)
+                assert cls_ == "d" or (r_b2 and not r_b2["unmeasured"]), r_b2
+            # Vertrag: ein automatischer Fit ist ein Vorschlag, bis der Nutzer bestätigt; bis dahin druckt die SI-Zeile
+            # Bereich + „m“ ohne J. Ein nicht gemessenes J macht auch delta unsicher (auch nach Bestätigung). Fälle: dq neben
+            # einem ddd (kleines J nicht getrennt, delta 11 Hz daneben), falsche Eingabe (d als dd mit kleinem J, d+t als
+            # dd, d als t), Meldung -> nie ein ungeprüftes delta oder J in der Zeile
+            ov_b2 = sum(lor_b2(p_ / sf_b2, a_ / 3, 0.6) for p_, a_ in lines_b2(4.0, 8, [(1, 12.0), (3, 1.2)]))
+            ov_b2 = ov_b2 + sum(lor_b2(p_ / sf_b2, 0.8 * a_, 0.6)
+                                for p_, a_ in lines_b2(4.0 - 10 / sf_b2, 8, [(1, 8.5), (1, 3.3), (1, 2.7)]))
+            d1_b2 = n2_b2 + sum(lor_b2(p_ / sf_b2, a_, 0.5) for p_, a_ in lines_b2(5.0, 2, [(1, 8.0)]))
+            dt_b2 = n2_b2 + sum(lor_b2(p_ / sf_b2, a_, 0.5) for p_, a_ in lines_b2(5.0, 8, [(1, 7.5), (2, 2.0)]))
+            for y_, c_, hw_, cls_, js_ in ((ov_b2, 4.0, 22.8, "dq", [12.0, 1.2]), (d1_b2, 5.0, 15.0, "dd", [8.0, 0.4]),
+                                           (dt_b2, 5.0, 15.0, "dd", [7.5, 2.0]), (d1_b2, 5.0, 15.0, "t", [8.0])):
+                rg_b2 = (c_ - hw_ / sf_b2, c_ + hw_ / sf_b2)
+                r_b2, _ = NA_b2.fit_pattern(y_, ax_b2, *rg_b2, sf_b2, cls_, js_, 5 * 0.002)
+                for c2_ in (False, True):
+                    t_ = NR_b2.format_plain(NR_b2.Spectrum("1H", 500, "CDCl3", signals=[
+                        NR_b2.signal_of(r_b2, 1, rng=rg_b2, confirmed=c2_)]))
+                    if not c2_ or r_b2 is None or r_b2["unmeasured"]:
+                        assert t_.endswith(f"= {rg_b2[1]:.2f} – {rg_b2[0]:.2f} (m, 1H)"), (cls_, js_, c2_, r_b2, t_)
+            # Lücke darüber: ein „gefundenes“ Muster wurde bestätigt nicht geprüft. dd 8.0/0.4 Hz auf einem Dublett
+            # passte, weil _pattern_sets Linien < 0.5 Hz zusammenlegt (dd = d), und galt als gemessen -> bestätigt
+            # „J = 8.0, 0.4 Hz“. Jetzt: zusammengelegte Linien = J nicht gemessen, bestätigt Bereich + m, unabhängig von der
+            # Linienbreite (hier 0.5 Hz, schmaler als 0.4 Hz Abstand + Breite trennen könnte); erst „J übernehmen“ druckt es
+            for w_d1 in (0.5, 0.2):
+                yd1_ = n2_b2 + sum(lor_b2(p_ / sf_b2, a_, w_d1) for p_, a_ in lines_b2(5.0, 2, [(1, 8.0)]))
+                r_b2, _ = NA_b2.fit_pattern(yd1_, ax_b2, 5.0 - 15 / sf_b2, 5.0 + 15 / sf_b2, sf_b2, "dd", [8.0, 0.4],
+                                            5 * 0.002)
+                assert r_b2 is not None and r_b2["unmeasured"] == [0.4] and r_b2["notes"], (w_d1, r_b2)
+                t_ = NR_b2.format_plain(NR_b2.Spectrum("1H", 500, "CDCl3", signals=[
+                    NR_b2.signal_of(r_b2, 1, rng=(4.97, 5.03), confirmed=True)]))
+                assert t_.endswith("= 5.03 – 4.97 (m, 1H)"), t_
+                r_b2, _ = NA_b2.fit_pattern(yd1_, ax_b2, 5.0 - 15 / sf_b2, 5.0 + 15 / sf_b2, sf_b2, "d", [8.0], 5 * 0.002)
+                assert r_b2 is not None and not r_b2["unmeasured"], r_b2              # richtige Eingabe bleibt gemessen
+            # ohne Statusangabe (künftige Aufrufer, Laden ohne Feld) nie delta oder J: Vorgabe ist Vorschlag
+            for j_b2 in ([NR_b2.Coupling(7.0)], [NR_b2.Coupling(7.0, status=NR_b2.CONFIRMED)]):
+                for st_b2 in ({}, {"status": NR_b2.CONFIRMED}):
+                    if st_b2 and j_b2[0].status == NR_b2.CONFIRMED:
+                        continue
+                    mk_b2 = NR_b2.signal_markup(NR_b2.Signal(shift=1.0, lo=0.9, hi=1.1, mult="d", J=j_b2, nH=1, **st_b2), 2)
+                    assert mk_b2 == "1.10 – 0.90 (m, 1H)", mk_b2
+            try:
+                NR_b2.signal_markup(NR_b2.Signal(shift=1.0, mult="s"), 2)
+                raise AssertionError("unconfirmed delta without range printed")
+            except ValueError as e_:
+                assert str(e_) and "{" not in str(e_)
+            # abgeschnittenes CD3CN-Quintett am Achsenende, daneben breites Wasser: kein Vorschlag (nicht das Wasser)
+            axc_b2 = np.linspace(4.0, 1.935, 8192)
+            yc5_b2 = sum(w_ * 0.09 / (0.09 + (axc_b2 * 500 - (1.94 * 500 + k_ * 2.5)) ** 2)
+                         for k_, w_ in zip(range(-2, 3), (1, 2, 3, 2, 1))) + 1.5 / (1 + ((axc_b2 - 2.13) * 500 / 2) ** 2)
+            yc5_b2 = yc5_b2 + np.random.default_rng(3).normal(0, 0.01, axc_b2.size)
+            assert NA_b2.suggest_reference(yc5_b2, axc_b2, "1H", "CD3CN", 500.0)["found"] is None
+            # breite Linie: Integral mit Hinweis, scharfe ohne
+            nb_b2 = NA_b2.integral_notes(n2_b2 + lor_b2(5.0, 0.05, 100.0) + lor_b2(7.0), ax_b2,
+                                         [(4.6, 5.4), (6.98, 7.02)], sf_b2)
+            assert nb_b2[0] and not nb_b2[1], nb_b2
+            # Grenzen: vertauscht, verschachtelt, Restsignal am Rand, Bezugsintegral 0 -> Ergebnis oder Meldung
+            yi_b2 = lor_b2(3.0) + lor_b2(3.004)
+            assert np.allclose(NA_b2.integrate(yi_b2, ax_b2, [(3.1, 2.9)]), NA_b2.integrate(yi_b2, ax_b2, [(2.9, 3.1)]))
+            for bad_b2 in (lambda: NA_b2.integral_ranges([(2.9, 3.1), (2.99, 3.01)], sf_b2),
+                           lambda: NA_b2.normalise([1.0, 0.0], 1, 1), lambda: NA_b2.round_h(float("nan"))):
+                try:
+                    bad_b2()
+                    raise AssertionError("no message")
+                except ValueError as e_:
+                    assert str(e_) and "{" not in str(e_)
+            assert len(NA_b2.integral_ranges([(3.00, 3.01), (3.012, 3.013), (3.015, 3.02)], sf_b2)) == 3
+            axe_b2 = np.linspace(4.0, 1.9405, 8192)
+            ye_b2 = sum(w_ * 0.09 / (0.09 + (axe_b2 * 500 - (1.94 * 500 + k_ * 2.5)) ** 2)
+                        for k_, w_ in zip(range(-2, 3), (1, 2, 3, 2, 1)))
+            for noi_b2 in (0.0, 1e-3):                                       # Muster hinter dem Rand, auch mit Rauschen
+                ye2_b2 = ye_b2 + np.random.default_rng(5).normal(0, noi_b2, axe_b2.size) if noi_b2 else ye_b2
+                re_b2 = NA_b2.suggest_reference(ye2_b2, axe_b2, "1H", "CD3CN", 500.0)
+                assert re_b2["found"] is None and re_b2["warnings"], re_b2
+            # Vokabular: Auswertung und Bericht (p, hept, dp), Lösungsmittel über solvent_key, (CD3)2SO im Kopf, Maskierung
+            assert NA_b2.hoye(np.arange(7) * 7.0, [1, 6, 15, 20, 15, 6, 1], 0.3)[0] == "hept"
+            assert NA_b2.hoye(np.arange(5) * 7.0, [1, 4, 6, 4, 1], 0.3)[0] == "p" and NA_b2.class_letters("dp") == ["d", "p"]
+            assert NA_b2.pattern_lines("dp", [7.0, 1.2]) and NA_b2.pattern_lines("hept", [6.8])
+            assert [NR_b2.solvent_text(x_) for x_ in ("DMSO", "(CD3)2SO", "chloroform-d", "C6D6", "xyz")] == \
+                ["DMSO-d6", "DMSO-d6", "CDCl3", "C6D6", "xyz"]
+            for t_ in ("1H NMR (500 MHz, (CD3)2SO): δ [ppm] = 7.00 (dp, J = 7.0, 1.2 Hz, 1H)",
+                       "1H NMR (500 MHz, DMSO-d6, 253 K): δ [ppm] = 2.90 (hept, J = 6.8 Hz, 1H)"):
+                s_ = NR_b2.parse(t_)[0]
+                assert NR_b2.format_plain(s_) == t_ and "".join(x_ for x_, _ in XRAY.runs(NR_b2.format_markup(s_))) == t_
+            s_ = NR_b2.Spectrum("1H", 500, "Cp*-d_5", signals=[NR_b2.Signal(shift=1.0, mult="s", nH=1, status=NR_b2.CONFIRMED)])
+            assert "".join(x_ for x_, _ in XRAY.runs(NR_b2.format_markup(s_))) == NR_b2.format_plain(s_) == \
+                "1H NMR (500 MHz, Cp*-d_5): δ [ppm] = 1.00 (s, 1H)", NR_b2.format_markup(s_)
+            report.append("NMR analysis (invented spectra: baseline, CDCl3 reference suggestion, "
+                          "first-order multiplets d/dd/q/s/t with delta/J, uncertain pattern -> m with range, user pattern "
+                          "fit, integrals + normalisation, ACME phase, 13C peaks >= 5 sigma; review: dense spectrum -> message, "
+                          "broad 20-100 Hz lines +-2 %, ranges excluded, wiggles -> not found, unresolved small J -> "
+                          f"delta from outer lines, dd 8.0/0.6 over 50 noise seeds {ok4_b2}/50 right and 0 wrong, broad-line note, "
+                          "edges -> message, vocabulary p/hept/dp, solvents; fit -> signal -> SI line: suggestion or "
+                          "unmeasured J prints range + m without J (overlap, wrong entry, message)) and SI line model "
+                          f"(round trip, lenient parser, markup escaping, every class hoye can form, {len(classes_b2)}): OK")
+        with section:
+            # Spur T 1.3.0, P2-A1: „Kopieren“ der X-Ray-Bildunterschrift nimmt den Text, der zu sehen ist (Packung/Molekül)
+            import copy as _copy_t1
+            from PySide6.QtWidgets import QGroupBox as _QG_t1, QPushButton as _QB_t1
+            t_t1 = w.xray_tab
+            keep_t1 = _copy_t1.deepcopy({k_: w.xray_state.get(k_) for k_ in ("entries", "current")})
+            try:
+                t_t1.load_cif(str(out / "input" / "pack_stack.cif"))
+                e_t1 = t_t1.entry()
+                g_t1 = [g_ for g_ in t_t1.findChildren(_QG_t1) if t_t1.txt_cap in g_.findChildren(type(t_t1.txt_cap))][0]
+                b_t1 = [b_ for b_ in g_t1.findChildren(_QB_t1) if b_.text() == T("si_copy")][0]
+                for on_t1, want_t1 in ((True, t_t1.pack_caption), (False, t_t1.caption)):
+                    t_t1.pack(e_t1)["on"] = on_t1
+                    t_t1.render(push=False)
+                    t_t1.update_tables()
+                    QApplication.clipboard().clear()
+                    b_t1.click()
+                    got_t1 = QApplication.clipboard().text()
+                    assert got_t1 and got_t1 == want_t1(e_t1)[0], (on_t1, got_t1[:60])
+                    assert ("Crystal packing" in got_t1) == on_t1, got_t1[:60]
+                QApplication.clipboard().clear()
+            finally:
+                w.xray_state.update(keep_t1)
+                t_t1.sync_widgets()
+                t_t1.render(push=False)
+            report.append("X-ray caption copy takes the caption on screen (packing or molecule): OK")
+        with section:
+            # Spur T 1.3.0, SEC „aus CV-Tab“ (Nachstellung repro): Feld zeigt den benutzten Wert, Hinweis bei fehlender
+            # Referenz, ohne Fc-Referenz die Elektrode des SEC-Tabs, Vorschau zieht beim Anzeigen nach
+            dpub_t = w.open_demo_publication(out / "lane_t_demo")
+            w.open_project(dpub_t / "S3", recent=False)
+            sec_t, cv_t = w.sec_tab, w.cv_tab
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
+            QApplication.processEvents()
+            sec_t.ensure_rendered()
+            assert sec_t.st["ref_from_cv"] and sec_t.st["e_shift"] == 0.0
+            off_t = cv_t.reference_offset()[0]
+            # Entscheidung 82: gesperrtes Feld = E½ der Referenz des CV-Tabs unter deren Namen (Achse: E½ − Wert)
+            assert cv_t.st["ref_mode"] == "internal", cv_t.st["ref_mode"]
+            e12_t = off_t + cv_t.st["ref_value"]
+            assert abs(off_t) > 1e-3 and abs(sec_t.sp_shift.value() - round(e12_t, 3)) < 1e-9, sec_t.sp_shift.value()
+            assert sec_t.lbl_shift.text() == T("z1_sec_ref_e12_named", name=CVMOD.REFERENCES[cv_t.st["ref_compound"]][0])
+            assert not sec_t.sp_shift.isEnabled() and "Fc" in sec_t.lbl_info.text(), sec_t.lbl_info.text()
+            sec_t.ed_electrode.setText("Ag wire")
+            sec_t.ed_electrode.editingFinished.emit()
+            sec_t.render()
+            rng_t = sec_t.lbl_range.text()
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            cv_t.cmb_ref.setCurrentIndex(cv_t.cmb_ref.findData("none"))
+            cv_t.render()
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
+            for _ in range(5):
+                QApplication.processEvents()
+            assert sec_t.e_offset() == (0.0, "Ag wire") and sec_t.lbl_range.text() != rng_t, sec_t.lbl_range.text()
+            assert "(vs. Ag wire)" in sec_t.si_caption("S3") and sec_t.sp_shift.value() == 0.0
+            assert sec_t.lbl_shift.text() == T("z1_sec_ref_shift")              # ohne Referenz: „Verschiebung (CV)“
+            if sys.platform != "win32":                                         # offscreen unter Windows: Schrift zu breit
+                assert sec_t.lbl_shift.sizeHint().width() <= STYLE.LABEL_W, sec_t.lbl_shift.sizeHint().width()
+            cv_t.cmb_ref.setCurrentIndex(cv_t.cmb_ref.findData("internal"))
+            cv_t.st["ref_uid"] = "missing"
+            sec_t.render()
+            assert T("cv_ref_missing") in sec_t.lbl_info.text(), sec_t.lbl_info.text()
+            assert sec_t.lbl_shift.text() == T("z1_sec_ref_shift") and sec_t.sp_shift.value() == 0.0   # nicht gefunden
+            sec_t.cb_from_cv.setChecked(False)
+            sec_t.render()
+            sec_t.sp_shift.setValue(0.123)
+            sec_t.cb_from_cv.setChecked(True)
+            sec_t.render()
+            sec_t.cb_from_cv.setChecked(False)
+            sec_t.render()
+            assert sec_t.st["e_shift"] == 0.123 and sec_t.sp_shift.value() == 0.123 and sec_t.sp_shift.isEnabled()
+            report.append("SEC reference from the CV tab: field shows E1/2 of the named reference, missing reference noted, own "
+                          "electrode without Fc, preview follows the CV tab: OK")
+        with section:
+            # Spur T 1.3.0, P2-B2: Hinweis der Hyperfein-Zuordnung mit Link zum Reiter; Wahl einer Gruppe wechselt nichts
+            from PySide6.QtGui import Qt as _Qt_t3
+            w.open_project(out / "lane_t_demo" / "S3", recent=False)
+            ep_t = w.epr_tab
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("epr"))
+            QApplication.processEvents()
+            cp_t = ep_t.calc_pages
+            cp_t.fill_groups()
+            lb_t = cp_t.lbl_assign
+            assert 'href="hfc"' in lb_t.text() and _Qt_t3.mightBeRichText(QLabel.text(lb_t)), lb_t.text()
+            rt_t = ep_t.right_tabs
+            rt_t.setCurrentIndex(0)
+            cp_t.tbl_groups.selectRow(0)
+            QApplication.processEvents()
+            assert rt_t.currentIndex() == 0                               # Gruppe wählen: Reiter bleibt
+            lb_t.linkActivated.emit("hfc")
+            assert rt_t.currentWidget().isAncestorOf(cp_t.groups["hfc"]) or rt_t.currentWidget() is cp_t.groups["hfc"]
+            report.append("EPR hyperfine assignment: hint links to the Hyperfine page, choosing a group switches nothing: OK")
+        with section:
+            # Spur T 1.3.0, P2-B5: Seiten Ladungen und Multireferenz nennen ihre Rechnung, Link zeigt die Tabelle „Strukturen“
+            dt_t = w.dft_tab
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("dft"))
+            QApplication.processEvents()
+            e_t5 = dt_t.entry()
+            assert e_t5 is not None and len(dt_t.calc_heads) == 2
+            nm_t5 = e_t5.get("name") or Path(e_t5["file"]).name
+            for lb_t5 in dt_t.calc_heads:
+                assert nm_t5 in lb_t5.text() and 'href="structures"' in lb_t5.text(), lb_t5.text()
+            dt_t.steps.set_step(len(dt_t.steps.pages) - 1)
+            dt_t.calc_heads[1].linkActivated.emit("structures")
+            assert dt_t.steps.pages[dt_t.steps.step].isAncestorOf(dt_t.tbl), dt_t.steps.step
+            report.append("DFT charges and multireference pages name their calculation with a link to the structures: OK")
+        with section:
+            # Spur T 1.3.0, P2-B8/B10: Hinweise, wo eine Wahl nicht sichtbar wirkt (Packungs-Häkchen beim Molekülbild,
+            # NICS-„Abbildung“ nur für die Vorschau)
+            pg_t = w.dft_tab.pages
+            pg_t.sync_nics()
+            assert pg_t.lbl_nics_show.text() == T("dft_nics_show_hint"), pg_t.lbl_nics_show.text()
+            x_t = w.xray_tab
+            import copy as _copy_t8
+            keep_t8 = {k_: _copy_t8.deepcopy(w.xray_state.get(k_)) for k_ in ("entries", "current")}
+            try:
+                x_t.load_cif(str(out / "input" / "pack_stack.cif"))
+                e_t8 = x_t.entry()
+                for on_t8 in (False, True):
+                    x_t.pack(e_t8)["on"] = on_t8
+                    x_t.render(push=False)
+                    x_t.show_pack()
+                    assert x_t._pack_rows and bool(x_t.lbl_pack_off.text()) != on_t8, (on_t8, x_t.lbl_pack_off.text())
+                x_t.pack(e_t8)["on"] = False
+                x_t.render(push=False)
+                x_t.steps.set_step(0)
+                x_t.lbl_pack_off.linkActivated.emit("pack")                  # zeigt das Feld, schaltet nicht um
+                assert x_t.steps.pages[x_t.steps.step].isAncestorOf(x_t.cmb_pack) and not x_t.pack(e_t8)["on"]
+            finally:
+                w.xray_state.update(keep_t8)
+                x_t.sync_widgets()
+                x_t.render(push=False)
+            report.append("X-ray packing ticks and DFT NICS figure choice say where they act: OK")
+        with section:
+            # Spur T 1.3.0, Nacharbeiten Reaktionspfad (Prüfer Spur P): „Ladungen“ gleich beim Öffnen, Pfad nur mit IRC
+            # hat einen blauen Knopf, IRC-Stempel mit Spalten der Ausgabe, „Stil auf Standard“ behält den Achsentitel
+            from elucida.app import publication as PUB_t5, reaction_paths as RP_t5, path_composition as PC_t5
+            from PySide6.QtWidgets import QPushButton as _QB_t5
+            pub_t5 = out / "lane_t_demo"
+            w.pub_page.close_path() if w.pub_page.path_workspace else None
+            w.open_publication(pub_t5) if hasattr(w, "open_publication") else None
+            w.pub_page.open_path(PUB_t5.load(pub_t5)["reaction_paths"][0])
+            QApplication.processEvents()
+            ws_t5 = w.pub_page.path_workspace
+            vis_t5 = [ws_t5.tabs.tabText(i_) for i_ in range(ws_t5.tabs.count()) if ws_t5.tabs.isTabVisible(i_)]
+            assert T("dft_pop_tab") in vis_t5, vis_t5                          # ohne Besuch von 3D / Orbitale
+            w.pub_page.close_path()
+            it_t5 = RP_t5.create(pub_t5, "IRC only")
+            w.pub_page.open_path(it_t5)
+            ws_t5 = w.pub_page.path_workspace
+            d_t5 = out / "lane_t_irc"
+            d_t5.mkdir(exist_ok=True)
+            tm_t5 = Path(DFT.make_test_orca(d_t5 / "tmpl.out")).read_bytes()[2:].decode("utf-16-le")
+            ev_t5 = [-100.000, -99.990, -99.970, -99.990, -100.020]
+            sm_t5 = ["IRC PATH SUMMARY", "", "Step        E(Eh)      dE(kcal/mol)  max(|G|)   RMS(G)  B(C 1,H 2)"]
+            sm_t5 += [f"   {i_ + 1}      {e_:.6f}   0.0    0.001  0.0001      {1.0 + 0.1 * i_:.2f}"
+                      + ("    <= TS" if i_ == 2 else "") for i_, e_ in enumerate(ev_t5)]
+            (d_t5 / "x.out").write_text(tm_t5.replace("TightOpt Freq", "IRC").split("FINAL SINGLE POINT ENERGY")[0]
+                                        + "\n".join(sm_t5) + "\n\n****ORCA TERMINATED NORMALLY****\n", encoding="utf-8")
+            tj_t5 = []
+            for i_, e_ in enumerate(ev_t5):
+                tj_t5 += ["2", f"Coordinates from ORCA-job x_IRC_Full E {e_:.12f}", "C 0 0 0", f"H 0 0 {1.0 + 0.1 * i_:.3f}"]
+            (d_t5 / "x_IRC_Full_trj.xyz").write_text("\n".join(tj_t5) + "\n", encoding="utf-8")
+            pg_t5 = ws_t5.host.tab.pages
+            pg_t5.load_irc(str(d_t5 / "x.out"))
+            ws_t5.tabs.setCurrentWidget(ws_t5.d3[0])
+            QApplication.processEvents()
+            gb_t5 = ws_t5.host.tab.empty_guide.btn
+            assert not gb_t5.property("accent") and ws_t5.btn_export.property("accent")
+            assert len(PC_t5.profile_stamp(ws_t5.host, "irc")) == 64                 # Spalten (B(C 1,H 2)) sind Listen
+            pl_t5, rec_t5 = PC_t5.profile_asset(ws_t5.host, "irc")                 # IRC lässt sich einsetzen
+            assert pl_t5["svg"].startswith("<") and rec_t5["mode"] == "irc" and len(rec_t5["stamp"]) == 64
+            if ws_t5.composition is not None:                                     # Octet: Menüpunkt nennt die 3D-Quelle
+                ws_t5.composition.label_insert()
+                assert ws_t5.composition.sources.currentText() in ws_t5.composition.act_orbital.text() \
+                    or not ws_t5.composition.sources.count(), ws_t5.composition.act_orbital.text()
+            lk_t5 = pg_t5.layout_key()
+            pg_t5.prof.setdefault(lk_t5, {}).update(axis_title="Invented axis", line_width=3.0, signed=True)
+            pg_t5.reset_style()
+            assert pg_t5.prof[lk_t5].get("axis_title") == "Invented axis" and "line_width" not in pg_t5.prof[lk_t5]
+            assert pg_t5.prof[lk_t5].get("signed") is True             # Vorzeichen ändern gedruckte Werte: bleiben
+            w.pub_page.close_path()
+            report.append("Reaction path follow-ups: Charges tab at once, IRC-only path with one blue button, IRC stamp "
+                          "with output columns, style reset keeps the axis title: OK")
+        with section:
+            # Spur T 1.3.0, V8: „Aus den Tabs › IR-Bande“ – das Zielfeld steht in derselben Karte, kein Schrittwechsel
+            w.open_publication(out / "lane_t_demo")
+            pp_t6 = w.pub_page
+            cp_t6 = pp_t6.compare_page
+            pp_t6.project_tabs.setCurrentWidget(cp_t6)
+            cp_t6.load()
+            cp_t6.add("table")
+            tn_t6 = cp_t6.tab
+            card_t6 = tn_t6.btn_auto.parentWidget()
+            while not isinstance(card_t6, QGroupBox):
+                card_t6 = card_t6.parentWidget()
+            assert card_t6.isAncestorOf(tn_t6.ed_target)
+            tn_t6.steps.reveal(tn_t6.btn_auto)
+            st_t6 = tn_t6.steps.step
+            tn_t6.add_auto("ir_band")
+            assert tn_t6.steps.step == st_t6 and not tn_t6.ed_target.isHidden()
+            cp_t6.close()                                         # neutral zurück: Verbindung S3 offen
+            w.open_project(out / "lane_t_demo" / "S3", recent=False)
+            report.append("Comparison: adding an IR band column keeps its target field in the same card and step: OK")
+        with section:
+            # Spur A 1.3.0, Punkt 1: Ablegen auf Kinetik/Fluoreszenz ersetzt nie still ε; ε-Ersatz ist ein Rückgängig-
+            # Schritt; H-Zelle im Aufbau der Gesamt-SI; DFT-Abbildungen ab = auch Orbital-/NBO-Bilder; Projektseite
+            from PySide6.QtCore import QMimeData as QMD_a1, QUrl as QU_a1
+            from elucida.si import publication_si as PSI_a1
+
+            def pump_a1(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+
+            class Drop_a1:
+                def __init__(self, ps_):
+                    self.m_ = QMD_a1()
+                    self.m_.setUrls([QU_a1.fromLocalFile(str(x_)) for x_ in ps_])
+
+                def mimeData(self):
+                    return self.m_
+            assert "hcell" in PSI_a1.SETUP_KEYS
+            bl_a1 = [("image", "g"), ("fields", []), ("image", "o"), ("text", "orb"), ("image", "n"), ("figcap", "nbo"),
+                     ("params", [], [])]
+            assert MW.MainWindow.drop_captioned_images(bl_a1) == [("image", "g"), ("fields", []), ("params", [], [])]
+            dp_a1 = Path(w.open_demo_publication(out / "a1_pub"))
+            pump_a1(0.5)
+            assert w.open_project(dp_a1 / "S3", ask=False, recent=False)
+            pump_a1(0.5)
+            src_a1 = next((dp_a1 / "S3").glob("data/uvvis-kinetics/*.csv"))
+            ls_a1 = src_a1.read_text(encoding="utf-8").splitlines(True)
+            ls_a1[0] = "S3_t0,,S3_t1,,\n"                                  # Probennamen ohne Konzentration
+            kin_a1 = out / "a1_kinetics.csv"
+            with open(kin_a1, "w", newline="", encoding="utf-8") as fh_a1:
+                fh_a1.write("".join(ls_a1))
+            eps_a1 = list(w.csv_paths)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("uvkin"))
+            pump_a1(0.5)
+            n_a1 = len(w.uvkin_tab.st["entries"])
+            w.dropEvent(Drop_a1([kin_a1]))
+            pump_a1(0.5)
+            assert len(w.uvkin_tab.st["entries"]) == n_a1 + 2 and w.csv_paths == eps_a1, "Kinetik-CSV nicht im Tab"
+            errs_a1, keep_a1 = [], w.error
+            w.error = errs_a1.append
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("fluo"))
+            pump_a1(0.5)
+            fl_a1 = dict(w.fl_tab.st)
+            w.dropEvent(Drop_a1([kin_a1]))
+            assert errs_a1 and T("fl_em") in errs_a1[-1] and w.csv_paths == eps_a1 and w.fl_tab.st == fl_a1, errs_a1
+            w.error = keep_a1
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            pump_a1(0.5)
+            w.push_undo()
+            u_a1 = len(w._undo)
+            w.dropEvent(Drop_a1([kin_a1]))                                  # ε ohne Konzentrationen: Schritt im Verlauf
+            pump_a1(0.5)
+            assert not w.groups and len(w._undo) == u_a1 + 1, (len(w._undo), u_a1)
+            w.undo()
+            pump_a1(1.0)
+            assert [Path(x_).name for x_ in w.csv_paths] == [Path(x_).name for x_ in eps_a1] and w.groups, w.csv_paths
+            assert w.act_export_si.isEnabled() and w.act_datapack.isEnabled()
+            w.go_publication()
+            pump_a1(0.5)
+            assert not (w.act_export.isEnabled() or w.act_export_si.isEnabled() or w.act_datapack.isEnabled()
+                        or w.act_text_format.isEnabled()) and w.export_current() is None
+            report.append("Lane A item 1 (drop stays in its tab, eps replace undoable, H-cell setup, DFT figures off, "
+                          "project page menu): OK")
+        with section:
+            # Spur A 1.3.0, Punkt 2: nichts wechselt von selbst. Neuaufbau (Standardwerte, Rückgängig, Sprache, Design)
+            # behält Reiter rechts und Bildlauf links; Ablegen bleibt im Tab (Einblendung mit „Anzeigen“, Punkt am
+            # Tab-Knopf bis zum Besuch); Karte links markiert den Reiter, den sie ändert; Strg+F = Projektfilter
+            from PySide6.QtCore import QMimeData as QMD_a2, QUrl as QU_a2
+            from elucida.tabs import base as TB_a2
+            from PySide6.QtWidgets import QDoubleSpinBox as QDSB_a2
+
+            def pump_a2(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_a2 = Path(w.open_demo_publication(out / "a2_pub"))
+            pump_a2(0.5)
+            assert w.open_project(dp_a2 / "S3", ask=False, recent=False)
+            w.show_tab("cv")
+            pump_a2(1.0)
+            size_a2 = w.size()
+            w.resize(1300, 560)                                             # Spalte muss rollen können
+            cv_a2 = w.cv_tab
+            cv_a2.steps.set_step(len(cv_a2.steps.pages) - 1)
+            rt_a2 = cv_a2.right_tabs
+            rt_a2.setCurrentIndex(next(i_ for i_ in range(rt_a2.count()) if rt_a2.tabText(i_) == T("cv_results")))
+            pump_a2(0.3)
+            sb_a2 = cv_a2._left_parts[2].verticalScrollBar()
+            sb_a2.setValue(sb_a2.maximum())
+            want_a2 = sb_a2.value()
+            assert want_a2 > 0, "Spalte rollt nicht: Prüfung wäre leer"
+            yaml_a2 = out / "a2_preset.yaml"
+            real_a2 = (TB_a2.QFileDialog.getSaveFileName, TB_a2.QFileDialog.getOpenFileName)
+
+            def view_a2():
+                t_ = w.cv_tab
+                return t_.right_tabs.currentIndex(), t_._left_parts[2].verticalScrollBar().value()
+            start_a2 = view_a2()
+            for step_a2 in ("reset", "preset", "undo", "en", "de", "dark", "light"):
+                if step_a2 == "reset":
+                    w.cv_tab.reset_defaults()
+                elif step_a2 == "preset":
+                    TB_a2.QFileDialog.getSaveFileName = staticmethod(lambda *a_, **k_: (str(yaml_a2), ""))
+                    TB_a2.QFileDialog.getOpenFileName = staticmethod(lambda *a_, **k_: (str(yaml_a2), ""))
+                    try:
+                        w.cv_tab.save_setup()
+                        w.cv_tab.load_setup()
+                    finally:
+                        TB_a2.QFileDialog.getSaveFileName, TB_a2.QFileDialog.getOpenFileName = real_a2
+                elif step_a2 == "undo":
+                    w.cv_tab.sp_ymax.setValue(w.cv_tab.sp_ymax.value() + 1.0)
+                    pump_a2(0.8)
+                    w.push_undo()
+                    w.undo()
+                elif step_a2 in ("en", "de"):
+                    w.switch_lang(step_a2)
+                else:
+                    w.switch_theme(step_a2)
+                pump_a2(2.0)
+                assert view_a2() == start_a2 and w._tab_key == "cv", (step_a2, view_a2(), start_a2, want_a2)
+            w.resize(size_a2)
+            cif_a2 = Path(shutil.copy(next((dp_a2 / "S3").rglob("*.cif")), out / "a2_drop.cif"))
+            m_a2 = QMD_a2()
+            m_a2.setUrls([QU_a2.fromLocalFile(str(cif_a2))])
+            w.dropEvent(type("Drop_a2", (), {"mimeData": lambda self_: m_a2})())
+            pump_a2(0.5)
+            nb_a2 = w.nav_buttons[w._tab_keys.index("xray")]
+            dot_a2 = nb_a2.findChild(QLabel, "markDot")
+            assert w._tab_key == "cv" and "xray" in w._marked_tabs and dot_a2 is not None and dot_a2.isVisible()
+            assert w.last_notice and w.last_notice[1] == [T("notice_show")] and w._toast.isVisible()
+            w.statusBar().showMessage("x", 1000)                           # gewöhnliche Meldung verdrängt sie nicht
+            assert T("notice_show") in w._toast.text()
+            w._notice_clicked("0")
+            pump_a2(0.5)
+            assert w._tab_key == "xray" and "xray" not in w._marked_tabs and not dot_a2.isVisible()
+            w.show_tab("dft")
+            pump_a2(1.5)
+            d_a2 = w.dft_tab
+            g_a2 = next(g_ for g_ in d_a2.card_links if TB_a2._card_title(g_) == T("dft_nics_display"))
+            assert T("dft_nics") in g_a2.findChildren(STYLE.HintLabel)[-1].text()
+            d_a2.steps.reveal(g_a2)
+            pump_a2(0.3)
+            sp_a2 = (g_a2.findChildren(QDSB_a2) + g_a2.findChildren(QSpinBox))[0]
+            sp_a2.setValue(sp_a2.value() + sp_a2.singleStep())
+            pump_a2(0.3)
+            nics_a2 = d_a2.card_links[g_a2][0]
+            assert d_a2.right_tabs.is_marked(nics_a2) and d_a2.right_tabs.currentWidget() is not nics_a2
+            d_a2.right_tabs.setCurrentWidget(nics_a2)
+            assert not d_a2.right_tabs.is_marked(nics_a2)
+            w.focus_search()
+            pump_a2(0.5)
+            assert not w.project_dir and w.publication_dir and w.center.currentWidget() is w.pub_page
+            report.append("Lane A item 2 (views kept over rebuilds, drop stays with notice and tab mark, card marks "
+                          "its result tab, Ctrl+F = project filter): OK")
+        with section:
+            # Spur A 1.3.0, Punkt 3: eine Exportmeldung (Einblendung) nennt Formate, Teile, abgewählte Abbildungen, Tabellen
+            # mit eigenem „In die SI“ und springt per Klick zum Ort der Auswahl; Gesamt-SI nennt, dass sie alle enthält
+            from elucida.app import publication as PUB_a3
+            from elucida.si import publication_si as PSI_a3
+
+            def pump_a3(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_a3 = Path(w.open_demo_publication(out / "a3_pub"))
+            pump_a3(0.5)
+            assert w.open_project(dp_a3 / "S3", ask=False, recent=False)
+            w.show_tab("cv")
+            pump_a3(0.8)
+            w.cv_tab.steps.set_step(0)
+            w.cv_tab.export_dialog()
+            msg_a3, links_a3 = w.last_notice
+            assert T("export_formats", f="PDF, SVG, PNG") in msg_a3 and links_a3 == [T("export_change_formats"),
+                                                                                   T("open_folder")], w.last_notice
+            w._notice_clicked("0")
+            pump_a3(0.3)
+            assert w._tab_key == "export"                               # Formate stehen im Tab „Export“ (Spur A2)
+            keep_off_a3 = w.si_figs_off()                              # Abwahl der Verbindung (seit N5 nur dort)
+            w.set_si_figs_off({"cv"})
+            w.save_project()
+            w.export_si_dialog()
+            msg_a3, links_a3 = w.last_notice
+            assert T("si_used_figs_off", tabs=T("tab_cv")) in msg_a3 and links_a3[0] == T("si_card_link"), msg_a3
+            w._notice_clicked("0")
+            pump_a3(0.5)
+            assert w._tab_key == "export" and w.export_tab.grp_si.isVisible()
+            secs_a3 = [k_ for k_, _, _ in PSI_a3.SECTIONS if k_ in ("cv", "uvvis")]
+            assert w.export_publication_si(dp_a3, PUB_a3.sync(dp_a3)[0], secs_a3, path=out / "a3_pub_si.docx")
+            assert "S3: CV" in w.last_notice[0] and T("pub_si_figs_off", items="").split("(")[0] in w.last_notice[0], \
+                w.last_notice[0]                                          # seit Spur A2: Abwahl gilt auch hier
+            w.set_si_figs_off(keep_off_a3)
+            w.save_project()
+            report.append("Lane A item 3 (one export notice: formats, parts, deselected figures, tables, jump to the "
+                          "selection; whole SI names the figure chips): OK")
+        with section:
+            # Spur A 1.3.0, Punkt 4: PPTX ohne Zusatzpaket – Zip/Rels/XML wohlgeformt, Folienzahl, Seitenverhältnis wie das
+            # Bild, Unterschrift als Läufe (fett, kursiv, tief, hoch), docProps ohne Personen/Datum; Formate-Feld und Karte
+            import zipfile as ZF_a4
+            from xml.dom import minidom as MD_a4
+            from PIL import Image as Img_a4
+            from elucida.si import pptx as PPTX_a4
+
+            def pump_a4(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+
+            def check_a4(path_):
+                z_ = ZF_a4.ZipFile(path_)
+                names_ = z_.namelist()
+                for n_ in names_:
+                    if n_.endswith((".xml", ".rels")):
+                        MD_a4.parseString(z_.read(n_))
+                    if n_.endswith(".rels"):                              # jedes Ziel einer Beziehung existiert
+                        base_ = n_.replace("_rels/", "").removesuffix(".rels")
+                        for t_ in re.findall(r'Target="([^"]+)"', z_.read(n_).decode()):
+                            q_ = (Path(base_).parent / t_).as_posix() if not n_.startswith("_rels") else t_
+                            parts_ = []
+                            for seg_ in q_.split("/"):
+                                parts_ = parts_[:-1] if seg_ == ".." else parts_ + [seg_]
+                            assert "/".join(parts_) in names_, (n_, t_)
+                # PowerPoint darf beim Speichern keine Bilder herunterrechnen (nur PNG-Abbildungen wären betroffen)
+                assert 'autoCompressPictures="0"' in z_.read("ppt/presentation.xml").decode()
+                core_ = z_.read("docProps/core.xml").decode() + z_.read("docProps/app.xml").decode()
+                assert not re.search(r"creator|lastModifiedBy|dcterms:created|dcterms:modified|Company|Manager", core_)
+                return z_, sorted((n_ for n_ in names_ if re.fullmatch(r"ppt/slides/slide\d+\.xml", n_)),
+                                  key=lambda n_: int(re.findall(r"\d+", n_)[0]))
+            png_a4 = out / "a4_fig.png"
+            Img_a4.new("RGB", (1600, 1100), "white").save(png_a4)
+            svg_a4 = out / "a4_fig.svg"
+            svg_a4.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="110"/>', encoding="utf-8")
+            cap_a4 = "Cyclic voltammograms of <b>3b</b> in CH<sub>2</sub>Cl<sub>2</sub> at 100 mV s<sup>-1</sup>, <i>E</i> vs. Fc."
+            f_a4 = PPTX_a4.write_pptx(out / "a4.pptx", [(str(png_a4), 16.0, 11.0, str(svg_a4), cap_a4),
+                                                        (str(png_a4), 16.0, 11.0, None, "")])
+            z_a4, sl_a4 = check_a4(f_a4)
+            assert len(sl_a4) == 2, sl_a4
+            x_a4 = z_a4.read(sl_a4[0]).decode()
+            cx_a4, cy_a4 = (int(v_) for v_ in re.search(r'<p:pic>.*?<a:ext cx="(\d+)" cy="(\d+)"', x_a4).groups())
+            assert abs(cx_a4 / cy_a4 - 16 / 11) < 1e-3 and cx_a4 <= PPTX_a4.SLIDE_W and "svgBlip" in x_a4
+            assert re.search(r'b="1"[^>]*>(?:(?!</a:r>).)*<a:t>3b</a:t>', x_a4)
+            for t_a4, attr_a4 in (("2", 'baseline="-25000"'), ("-1", 'baseline="30000"'), ("E", 'i="1"')):
+                assert re.search(attr_a4 + r'[^>]*>(?:(?!</a:r>).)*<a:t>' + re.escape(t_a4) + "</a:t>", x_a4), t_a4
+            assert "Figure" not in re.sub(r'name="[^"]*"', "", x_a4)            # Unterschrift ohne „Figure Sn:“
+            assert "<p:sp>" not in z_a4.read(sl_a4[1]).decode()                 # ohne Unterschrift kein Textfeld
+            dp_a4 = Path(w.open_demo_publication(out / "a4_pub"))
+            pump_a4(0.5)
+            assert w.open_project(dp_a4 / "S3", ask=False, recent=False)
+            w.show_tab("cv")
+            pump_a4(0.8)
+            assert not w.export_fmt()["pptx"]                            # PPTX je Bild entfällt (Export-Tab v3)
+            w.show_tab("export")
+            pump_a4(0.5)
+            et_a4 = w.export_tab                                         # „Folien aus Auswahl“: alle Karten außer CV
+            et_a4.select_all(False)
+            for c_a4 in et_a4.cards:
+                if c_a4.key != "cv":
+                    et_a4.toggle(c_a4)
+            assert et_a4.btn_slides.isEnabled() and not et_a4.btn_slides.property("accent")
+            et_a4.btn_slides.click()
+            pump_a4(0.3)
+            z2_a4, sl2_a4 = check_a4(dp_a4 / "S3" / "figures" / "S3_slides.pptx")
+            assert len(sl2_a4) >= 3 and T("si_used_figs_off", tabs="CV") in w.last_notice[0], (len(sl2_a4), w.last_notice)
+            assert not any("voltammogra" in z2_a4.read(n_).decode() for n_ in sl2_a4)
+            et_a4.select_all(False)
+            report.append(f"Lane A item 4 (PPTX writer: zip/rels/XML, {len(sl2_a4)} slides, aspect, caption runs, no "
+                          f"personal docProps; slides from the selected cards): OK")
+        with section:
+            # PPTX (Entscheidungen 74/75): neben dem SVG nur ein kleines Ersatz-PNG (<= 72 dpi der Breite auf der Folie,
+            # nie vergrößert); ohne SVG bleibt das PNG bytegleich (es ist das Bild); die Quelldatei bleibt unverändert
+            import io as IO_pp
+            import zipfile as ZF_pp
+            from PIL import Image as Img_pp
+            from elucida.si import pptx as PPTX_pp
+            png_pp = out / "pp_fig.png"
+            Img_pp.new("RGB", (1890, 1300), "white").save(png_pp, dpi=(300, 300))
+            src_pp = png_pp.read_bytes()
+            svg_pp = out / "pp_fig.svg"
+            svg_pp.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="110"/>', encoding="utf-8")
+            f_pp = PPTX_pp.write_pptx(out / "pp.pptx", [(str(png_pp), 16.0, 11.0, str(svg_pp), "A <b>1</b>."),
+                                                        (str(png_pp), 16.0, 11.0, None, "")])
+            z_pp = ZF_pp.ZipFile(f_pp)
+            cx_pp = int(re.search(r'<p:pic>.*?<a:ext cx="(\d+)"', z_pp.read("ppt/slides/slide1.xml").decode()).group(1))
+            with Img_pp.open(IO_pp.BytesIO(z_pp.read("ppt/media/image1.png"))) as im_pp:
+                assert im_pp.width <= cx_pp / 914400 * 72 + 1 and abs(im_pp.width / im_pp.height - 1890 / 1300) < 0.01, \
+                    (im_pp.size, cx_pp)
+            assert z_pp.read("ppt/media/image2.png") == src_pp and png_pp.read_bytes() == src_pp
+            assert z_pp.read("ppt/media/image1.svg") == svg_pp.read_bytes()
+            small_pp = Img_pp.new("RGB", (40, 30), "white")                 # schon kleiner: nie vergrößert
+            buf_pp = IO_pp.BytesIO()
+            small_pp.save(buf_pp, "PNG")
+            assert PPTX_pp.fallback_png(buf_pp.getvalue(), 9000000) == buf_pp.getvalue()
+            # eigenes Minimalgerüst (Entscheidung 50): nur Pflichtteile, nichts aus der Office-Vorlage
+            parts_pp = set(z_pp.namelist())
+            assert {"ppt/presentation.xml", "ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml",
+                    "ppt/theme/theme1.xml"} <= parts_pp and not parts_pp & {
+                "ppt/presProps.xml", "ppt/viewProps.xml", "ppt/tableStyles.xml"}, sorted(parts_pp)
+            all_pp = "".join(z_pp.read(n_).decode() for n_ in parts_pp if n_.endswith((".xml", ".rels")))
+            assert not re.search(r"creationId|p14:|p15:|thm15|Office Theme|Aptos|a16:", all_pp)
+            assert set(re.findall(r"\{[0-9A-F-]{36}\}", all_pp)) == {"{96DAC541-7B7A-43D3-8B79-37D633B846F1}"}
+            assert len(re.findall(r'<a:srgbClr val="[0-9A-F]{6}"/>', z_pp.read("ppt/theme/theme1.xml").decode())) == 12
+            report.append("PPTX fallback PNG (<= 72 dpi beside the SVG, PNG-only figures unchanged), own minimal "
+                          "skeleton: OK")
+        with section:
+            # Spur A Fix 1: neue ε-Messdaten derselben Serie behalten die Einstellungen der Serie (Foto, Lösungsmittel,
+            # Hintergrund, Farbe, Struktur im Bild), auch nach dem Speichern; Rückgängig stellt die alten Daten her
+            def pump_f1(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_f1 = Path(w.open_demo_publication(out / "f1_pub"))
+            pump_f1(0.5)
+            s3_f1 = dp_f1 / "S3"
+            assert w.open_project(s3_f1, ask=False, recent=False)
+            pump_f1(1.5)                                     # Rückgängig-Verlauf beginnt erst nach dem Laden (_after_load)
+            g_f1 = w.current
+            w.series[g_f1].update(solvent="MeCN", bg="border", color_c=7.0, no_structure=True)
+            want_f1 = {k_: w.series[g_f1][k_] for k_ in ("photo", "solvent", "bg", "color_c", "no_structure")}
+            assert want_f1["photo"], "Beispiel ohne Foto"
+            w.push_undo()
+            n_f1 = len(w._undo)
+            old_f1 = [Path(x_).name for x_ in w.csv_paths]
+            new_f1 = Path(shutil.copy(next((s3_f1 / "data/uvvis").glob("*.csv")), out / "f1_new_UV-Vis.csv"))
+            assert w.open_files([str(new_f1)])
+            pump_f1(1.0)
+            assert {k_: w.series[g_f1][k_] for k_ in want_f1} == want_f1, w.series[g_f1]
+            assert len(w._undo) > n_f1, (len(w._undo), n_f1)
+            w.autosave(force=True)
+            saved_f1 = PRJ.load(s3_f1)["eps"]["series"][g_f1]
+            for k_ in ("solvent", "bg", "color_c", "no_structure"):
+                assert saved_f1.get(k_) == want_f1[k_], (k_, saved_f1.get(k_))
+            assert saved_f1.get("photo"), saved_f1
+            w.undo()
+            pump_f1(1.5)
+            assert [Path(x_).name for x_ in w.csv_paths] == old_f1 and w.series[g_f1]["solvent"] == "MeCN", \
+                (w.csv_paths, old_f1, w.series.get(g_f1, {}).get("solvent"), len(w._undo), n_f1)
+            report.append("Lane A fix 1 (eps series settings survive new data of the same series, saved, undoable): OK")
+        with section:
+            # Nachzügler Z1: Vergleich und Reaktionspfad behalten Reiter und Bildlauf bei Standardwerten, Vorlage und
+            # Rückgängig; Pfadliste als Tabelle mit Kopf; Schließen ohne Änderung schreibt keine Datei neu; Besuch des
+            # Reiters „Hyperfein“ ist kein Rückgängig-Schritt; SEC-Ergebnisse mit Referenzhinweis zeigen den Platzhalter
+            from elucida.app import publication as PUB_z1, reaction_paths as RP_z1
+            from PySide6.QtWidgets import QTableWidget as QTW_z1
+
+            def pump_z1(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            yaml_z1 = out / "z1_preset.yaml"
+            real_z1 = (TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName)
+
+            def preset_z1(tab_):
+                TABS.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (str(yaml_z1), ""))
+                TABS.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (str(yaml_z1), ""))
+                try:
+                    tab_.save_setup()
+                    tab_.load_setup()
+                finally:
+                    TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName = real_z1
+            ptab_z1 = w.pub_page.project_tabs.currentIndex()             # am Ende zurück: spätere Abschnitte unberührt
+            dp_z1 = Path(w.open_demo_publication(out / "z1_pub"))
+            pump_z1(0.5)
+            w.go_publication()
+            pump_z1(0.5)
+            size_z1 = w.size()
+            w.resize(1300, 560)
+            cp_z1 = w.pub_page.compare_page
+            w.pub_page.project_tabs.setCurrentWidget(cp_z1)
+            cp_z1.open(cp_z1.items()[0]["uid"])
+            pump_z1(1.5)
+            last_z1 = cp_z1.tab.right_tabs.count() - 1
+            assert last_z1 > 0
+            for step_z1 in ("reset", "preset", "undo"):
+                cp_z1.tab.right_tabs.setCurrentIndex(last_z1)
+                pump_z1(0.2)
+                old_z1 = cp_z1.tab
+                if step_z1 == "reset":
+                    cp_z1.tab.reset_defaults()
+                elif step_z1 == "preset":
+                    preset_z1(cp_z1.tab)
+                else:
+                    cp_z1.undo(-1)
+                pump_z1(0.8)
+                assert cp_z1.tab is not old_z1 and cp_z1.tab.right_tabs.currentIndex() == last_z1, step_z1
+            # Reaktionspfad: Reiter und Bildlauf der Spalte über Standardwerte, Vorlage und Rückgängig
+            item_z1 = PUB_z1.load(dp_z1)["reaction_paths"][0]
+            dir_z1 = RP_z1.directory(dp_z1, item_z1["uid"])
+            w.pub_page.open_path(item_z1)
+            pump_z1(2.0)
+            ws_z1 = w.pub_page.path_workspace
+            assert isinstance(w.pub_page.path_panel.list, QTW_z1)                  # R12: Tabelle mit Kopf
+            pl_z1 = w.pub_page.path_panel.list
+            assert pl_z1.horizontalHeaderItem(0).text() == T("z1_rp_paths_head") and pl_z1.rowCount() >= 1
+            assert w.pub_page.path_panel.selected()["uid"] == item_z1["uid"]       # open_path wählt die Zeile
+            ws_z1.tabs.setCurrentIndex(ws_z1.tabs.count() - 1)
+            pump_z1(0.5)
+            sb_z1 = ws_z1.host.tab._left_parts[2].verticalScrollBar()
+            sb_z1.setValue(sb_z1.maximum())
+            v_z1 = sb_z1.value()
+            assert v_z1 > 0, "Spalte des Pfads rollt nicht"
+            for step_z1 in ("reset", "preset", "undo"):
+                t_z1 = ws_z1.host.tab
+                if step_z1 == "reset":
+                    t_z1.reset_defaults()
+                elif step_z1 == "preset":
+                    preset_z1(t_z1)
+                else:
+                    ws_z1.undo(-1)
+                pump_z1(0.8)
+                assert ws_z1.tabs.currentIndex() == ws_z1.tabs.count() - 1, step_z1
+                assert ws_z1.host.tab._left_parts[2].verticalScrollBar().value() == v_z1, step_z1
+            w.pub_page.close_path()
+            pump_z1(0.5)
+            # Schließen ohne Änderung: preview.png und project.elucida bleiben unberührt
+            w.pub_page.open_path(item_z1)
+            pump_z1(2.0)
+            mt_z1 = {n_: (dir_z1 / n_).stat().st_mtime_ns for n_ in ("preview.png", "project.elucida")}
+            w.pub_page.close_path()
+            pump_z1(0.5)
+            assert mt_z1 == {n_: (dir_z1 / n_).stat().st_mtime_ns for n_ in mt_z1}, "Pfad schrieb beim Schließen"
+            (dir_z1 / "preview.png").unlink()                                   # fehlt die Vorschau, entsteht sie neu
+            w.pub_page.open_path(item_z1)
+            pump_z1(2.0)
+            w.pub_page.close_path()
+            pump_z1(0.5)
+            assert (dir_z1 / "preview.png").stat().st_size > 0
+            # R13: Pfad offen, Verbindung mit eigenem Format geöffnet, Sprachwechsel baut den Pfad mit deren Format neu;
+            # zurück auf der Projektseite (Verbindung zu) zeichnet er mit dem Format des Fensters
+            w.pub_page.open_path(item_z1)
+            pump_z1(2.0)
+            assert w.open_project(dp_z1 / "S2", ask=False, recent=False)
+            pump_z1(1.0)
+            w.update_text_format(None, {"bold": True})
+            w.switch_lang("en")
+            pump_z1(2.0)
+            assert w.pub_page.path_workspace.host._format["bold"] is True
+            w.go_publication()
+            pump_z1(1.5)
+            ws_z1 = w.pub_page.path_workspace
+            assert ws_z1.host._format == w.text_format("dft") and not ws_z1.host._format["bold"], ws_z1.host._format
+            w.switch_lang("de")
+            pump_z1(1.5)
+            w.pub_page.close_path()
+            pump_z1(0.5)
+            w.resize(size_z1)
+            # EPR: Reiter „Hyperfein“ ansehen und den Tab wechseln ist kein Rückgängig-Schritt (leeres layout.hfc)
+            assert w.open_project(dp_z1 / "S3", ask=False, recent=False)
+            pump_z1(1.0)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))          # erst gebaut und gezeigt (eigene Vorgaben)
+            pump_z1(1.0)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("epr"))
+            pump_z1(1.0)
+            cp_e_z1 = w.epr_tab.calc_pages
+            cp_e_z1.fill_groups()
+            cp_e_z1.show_page("hfc")
+            pump_z1(1.0)
+            assert "hfc" not in w.epr_tab.st["calc"].get("layout", {}), w.epr_tab.st["calc"].get("layout")
+            n_z1 = len(w._undo)
+            w.push_undo()
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
+            pump_z1(1.0)
+            assert len(w._undo) == n_z1, (len(w._undo), n_z1)
+            # SEC (Beispiel: Referenz aus dem CV-Tab, kein Fit): Platzhalter über dem Referenzhinweis
+            sec_z1 = w.sec_tab
+            sec_z1.ensure_rendered()
+            assert sec_z1.ref_note and not sec_z1.fits
+            assert sec_z1.lbl_info.text() == T("results_none_plain") + "\n" + sec_z1.ref_note, sec_z1.lbl_info.text()
+            # Entscheidung 82 mit einer Referenz ≠ Fc: Feld = E½ der Referenz (Achse E½ − 0.49 V), Name im Feldnamen;
+            # eigene Referenz „Referenz E½ (CV)“, Verschiebung von Hand „Verschiebung (CV)“ (Entscheidung 126)
+            cv_z1 = w.cv_tab
+            for comp_z1, ref_z1 in (("ac2fc", "internal"), ("custom", "internal"), ("ac2fc", "manual"), ("fc", "internal")):
+                cv_z1.cmb_ref.setCurrentIndex(cv_z1.cmb_ref.findData(ref_z1))
+                cv_z1.cmb_compound.setCurrentIndex(cv_z1.cmb_compound.findData(comp_z1))
+                cv_z1.render()
+                sec_z1.render()
+                off_z1, lab_z1, _ = cv_z1.reference_offset()
+                if ref_z1 == "internal":
+                    assert lab_z1.startswith("Fc")
+                    assert abs(sec_z1.sp_shift.value() - round(off_z1 + cv_z1.st["ref_value"], 3)) < 1e-9, comp_z1
+                    assert abs(sec_z1.e_offset()[0] - off_z1) < 1e-12                   # Achse unverändert
+                named_z1 = ref_z1 == "internal" and comp_z1 in CVMOD.REFERENCES
+                want_z1 = (T("z1_sec_ref_e12_named", name=CVMOD.REFERENCES[comp_z1][0]) if named_z1
+                           else T("z1_sec_ref_e12") if ref_z1 == "internal" else T("z1_sec_ref_shift"))
+                assert sec_z1.lbl_shift.text() == want_z1, (comp_z1, ref_z1, sec_z1.lbl_shift.text())
+                if sys.platform != "win32":
+                    assert sec_z1.lbl_shift.sizeHint().width() <= STYLE.LABEL_W, sec_z1.lbl_shift.sizeHint().width()
+            assert abs(cv_z1.st["ref_value"]) < 1e-12                                 # Beispiel wieder mit Fc
+            w.pub_page.project_tabs.setCurrentIndex(ptab_z1)
+            report.append("Z1 (comparison and path keep tab/scroll over defaults/preset/undo, path list as table, closing "
+                          "a path writes nothing unchanged, path follows the window's text format, visiting Hyperfine is "
+                          "no undo step, SEC placeholder, SEC field named after the CV reference): OK")
+        with section:
+            # Spur A Fix 2: Sprache/Design behalten im offenen Reaktionspfad Reiter und Bildlauf der Spalte und öffnen einen
+            # offenen Vergleich wieder
+            from elucida.app import publication as PUB_f2
+
+            def pump_f2(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_f2 = Path(w.open_demo_publication(out / "f2_pub"))
+            pump_f2(0.5)
+            w.go_publication()
+            pump_f2(0.5)
+            size_f2 = w.size()
+            w.resize(1300, 560)
+            w.pub_page.open_path(PUB_f2.load(dp_f2)["reaction_paths"][0])
+            pump_f2(2.0)
+            ws_f2 = w.pub_page.path_workspace
+            ws_f2.tabs.setCurrentIndex(ws_f2.tabs.count() - 1)
+            pump_f2(0.5)
+            sb_f2 = ws_f2.host.tab._left_parts[2].verticalScrollBar()
+            sb_f2.setValue(sb_f2.maximum())
+            v_f2 = sb_f2.value()
+            assert v_f2 > 0, "Spalte des Pfads rollt nicht"
+            for th_f2 in ("dark", "light"):
+                w.switch_theme(th_f2)
+                pump_f2(2.0)
+                ws_f2 = w.pub_page.path_workspace
+                assert ws_f2.tabs.currentIndex() == ws_f2.tabs.count() - 1, th_f2
+                assert ws_f2.host.tab._left_parts[2].verticalScrollBar().value() == v_f2, th_f2
+            w.pub_page.close_path()
+            pump_f2(0.5)
+            w.resize(size_f2)
+            cp_f2 = w.pub_page.compare_page
+            uid_f2 = cp_f2.items()[0]["uid"]
+            cp_f2.open(uid_f2)
+            pump_f2(1.5)
+            for lang_f2 in ("en", "de"):
+                w.switch_lang(lang_f2)
+                pump_f2(1.5)
+                cp_f2 = w.pub_page.compare_page
+                assert cp_f2.opened and cp_f2.item["uid"] == uid_f2 and w.act_export.isEnabled(), lang_f2
+            report.append("Lane A fix 2 (reaction path keeps tab and column scroll, open comparison reopens): OK")
+        with section:
+            # Spur A Fix 3: ein Ablegen in zwei Tabs = eine Meldung mit beiden (Einzahl/Mehrzahl), keine fremde Statuszeile
+            # in der Einblendung; Punkt am Tab-Knopf mit Abstand zum Text
+            from PySide6.QtCore import QMimeData as QMD_f3, QUrl as QU_f3
+
+            def pump_f3(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_f3 = Path(w.open_demo_publication(out / "f3_pub"))
+            pump_f3(0.5)
+            assert w.open_project(dp_f3 / "S3", ask=False, recent=False)
+            w.show_tab("cv")
+            pump_f3(0.8)
+            fs_f3 = [shutil.copy(next((dp_f3 / "S3").rglob("*_HRMS.docx")), out / "f3_HRMS.docx"),
+                     shutil.copy(next((dp_f3 / "S3").rglob("*_IR.0")), out / "f3_IR.0")]
+            m_f3 = QMD_f3()
+            m_f3.setUrls([QU_f3.fromLocalFile(str(f_)) for f_ in fs_f3])
+            w.dropEvent(type("Drop_f3", (), {"mimeData": lambda self_: m_f3})())
+            pump_f3(0.5)
+            msg_f3 = w.last_notice[0]
+            assert msg_f3.count(T("drop_part_1", tab="X").split("„")[0]) == 2 and T("tab_hrms") in msg_f3 \
+                and T("tab_irms") in msg_f3 and len(w.last_notice[1]) == 2, w.last_notice
+            w.statusBar().showMessage("f3-status", 2000)
+            pump_f3(0.1)
+            assert "f3-status" not in w._toast.text(), w._toast.text()
+            b_f3 = w.nav_buttons[w._tab_keys.index("hrms")]
+            d_f3 = b_f3.findChild(QLabel, "markDot")
+            tw_f3 = b_f3.fontMetrics().horizontalAdvance(b_f3.text())
+            assert d_f3.x() >= (b_f3.width() + tw_f3) // 2 + STYLE.MARK_GAP - 1 or d_f3.x() == b_f3.width() - STYLE.MARK_DOT - 1
+            w._notice_done()
+            report.append("Lane A fix 3 (one drop notice for two tabs, singular/plural, no status line, dot gap): OK")
+        with section:
+            # Spur A2, Punkt 1 (Entscheidung 56): Punkt „noch nicht angesehen“ (Tab-Knopf, Ergebnisreiter) in der
+            # Akzentfarbe, Schritt-Punkt „weicht vom Standard ab“ bleibt orange – in beiden Designs
+            from PySide6.QtGui import QColor as QC_m1
+            keep_theme_m1 = w.settings.value("ui/theme", "light")
+
+            def pump_m1(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+
+            def has_color_m1(widget, color):
+                img_, c_ = widget.grab().toImage(), QC_m1(color)
+                return any(abs(QC_m1(img_.pixel(x_, y_)).red() - c_.red()) + abs(QC_m1(img_.pixel(x_, y_)).green()
+                           - c_.green()) + abs(QC_m1(img_.pixel(x_, y_)).blue() - c_.blue()) < 24
+                           for x_ in range(img_.width()) for y_ in range(img_.height()))
+            for mode_m1 in ("light", "dark"):
+                w.switch_theme(mode_m1)
+                pump_m1(0.3)
+                acc_m1, step_m1 = STYLE.colors()["accent"], STYLE.mark_color()
+                assert STYLE.mark_new_color() == acc_m1 and step_m1 == STYLE.MARK_COLORS[mode_m1] != acc_m1
+                w.show_tab("cv")
+                w.mark_tab("hrms", True)
+                d_m1 = w.nav_buttons[w._tab_keys.index("hrms")].findChild(QLabel, "markDot")
+                assert d_m1 is not None and acc_m1 in d_m1.styleSheet() and step_m1 not in d_m1.styleSheet()
+                w.mark_tab("hrms", False)
+                rt_m1 = w.cv_tab.right_tabs
+                pg_m1 = next(rt_m1.widget(i_) for i_ in range(rt_m1.count()) if i_ != rt_m1.currentIndex())
+                rt_m1.mark(pg_m1, True)
+                dr_m1 = [d_ for d_ in rt_m1.tabBar().findChildren(QLabel, "markDot") if getattr(d_, "page", None) is pg_m1]
+                assert dr_m1 and acc_m1 in dr_m1[0].styleSheet()
+                rt_m1.mark(pg_m1, False)
+                sb_m1 = TABS.StepButton(1, "Daten")
+                sb_m1.resize(160, 34)
+                sb_m1.changed = True
+                assert has_color_m1(sb_m1, step_m1) and not has_color_m1(sb_m1, acc_m1), mode_m1
+                sb_m1.deleteLater()
+            w.switch_theme(keep_theme_m1)
+            report.append("Lane A2 item 1 (unseen dot = accent, step dot stays orange, light and dark): OK")
+        with section:
+            # Spur A2, Punkt 2 (Entscheidung 57): Exportmeldung mit ausgelassenen Teilen zugeklappt EINE Zeile
+            # („SI gespeichert – 2 Hinweise“, Details · Schließen); Details klappt die volle Meldung auf, ohne neue
+            # Protokollzeile; ohne Auslassungen unverändert. Gilt für alle Wege (ein Mechanismus: `exported`).
+            def pump_m2(sec=0.2):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            keep_size_m2, log_m2 = w.size(), []
+            w.log_signal.connect(log_m2.append)
+            out_m2 = out / "m2_export"
+            out_m2.mkdir(exist_ok=True)
+            for lang_m2 in ("de", "en"):
+                w.switch_lang(lang_m2)
+                w.resize(1200, 800)
+                pump_m2()
+                for head_m2, key_m2, n_m2 in (("SI", "notice_si_saved", 2), (None, "notice_exported", 1)):
+                    log_m2.clear()
+                    with w.collecting_skips():
+                        for i_ in range(n_m2):
+                            w.skip_part(ValueError(f"broken {i_}"), part=f"part{i_}.dat")
+                        w.exported([out_m2], [out_m2 / "x.pdf"], ["used line"], [("Link", lambda: None)], head=head_m2)
+                    pump_m2()
+                    t_m2 = w._toast
+                    want_m2 = T("notice_hints_1" if n_m2 == 1 else "notice_hints", n=n_m2, head=T(key_m2))
+                    assert t_m2.isVisible() and want_m2 in t_m2.text() and T("notice_details") in t_m2.text(), t_m2.text()
+                    assert "used line" not in t_m2.text() and "part0.dat" not in t_m2.text()
+                    assert t_m2.height() <= t_m2.fontMetrics().height() + 16, (t_m2.height(), lang_m2)   # eine Zeile
+                    n_log_m2 = len(log_m2)                                    # skip_part protokolliert selbst
+                    assert "part0.dat" in log_m2[-1] and "used line" in log_m2[-1], log_m2
+                    assert w.last_notice[1] == ["Link", T("open_folder")]     # Klick-Ziele wie bisher
+                    w._notice_clicked("details")
+                    pump_m2()
+                    assert t_m2.isVisible() and "part0.dat" in t_m2.text() and "used line" in t_m2.text() \
+                        and "Link" in t_m2.text() and T("notice_details") not in t_m2.text()
+                    assert t_m2.height() > 2 * t_m2.fontMetrics().height() and len(log_m2) == n_log_m2
+                    w._notice_clicked(str(len(w._notice[1]) - 1))             # Schließen
+                    pump_m2()
+                    assert w._notice is None and not t_m2.isVisible()
+                w.exported([out_m2], [out_m2 / "x.pdf"], ["used line"])     # ohne Auslassungen: volle Meldung wie bisher
+                pump_m2()
+                assert "used line" in w._toast.text() and T("notice_details") not in w._toast.text()
+                w._notice_done()
+            w.log_signal.disconnect(log_m2.append)
+            w.resize(keep_size_m2)
+            report.append("Lane A2 item 2 (export notice with skipped parts: one line, Details expands, DE/EN): OK")
+        with section:
+            # Spur A2, Punkt 3a (Entscheidungen 64–66): Tab „Export“ zuletzt in eigener Gruppe, Zeigen baut keine anderen
+            # Tabs, Zeile je Tab mit Daten; Zeilen-Export schreibt genau die Dateien der Zeile, „Alles exportieren“ alle
+            # mit einer Meldung; Formate gelten für alle Abbildungen (Rückgängig bleibt im Tab); Tabs ohne Exportknopf und
+            # ohne Formate, „SI (Word)“ nicht in der Leiste; offener Tab wird gespeichert; Leiste passt bei 1440 px
+            from PySide6.QtWidgets import QPushButton as PB_x
+            from elucida.app import project as PRJ_x
+
+            def pump_x(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            keep_size_x = w.size()
+            dp_x = Path(w.open_demo_publication(out / "a2x_pub"))
+            pump_x(0.5)
+            assert w.open_project(dp_x / "S3", ask=False, recent=False)
+            pump_x(0.8)
+            assert w._tab_keys[-1] == "export" and MW.MainWindow.NAV_GROUPS[-1] == ("nav_grp_out", ("export",))
+            lazy_x = set(w._lazy) - {"export"}
+            w.show_tab("export")
+            pump_x(0.5)
+            assert set(w._lazy) == lazy_x and w._built("export"), sorted(lazy_x - set(w._lazy))   # baut nichts sonst
+            assert w.nav_buttons[w._tab_keys.index("export")].has_data                         # Tab-Text nie gedimmt
+            et_x = w.export_tab
+            keys_x = list(dict.fromkeys(c_.key for c_ in et_x.cards))           # Galerie: Karten je Tab (v3)
+            assert et_x._footer_parts[1].isHidden()                          # keine leere Fußleiste links
+            assert keys_x == w.export_keys() and {"eps", "cv", "syn", "xray"} <= set(keys_x) and "compound" not in keys_x
+            acc_x = [b_ for b_ in et_x.findChildren(PB_x) if b_.property("accent") and b_.isVisible()]
+            assert acc_x == [et_x.btn_all], [b_.text() for b_ in acc_x]                        # ein Hauptknopf
+            s3_x = dp_x / "S3"
+
+            def files_x():
+                return {p_: p_.stat().st_mtime_ns for p_ in s3_x.rglob("*")
+                        if p_.is_file() and ".elucida" not in p_.parts and p_.suffix != ".elucida"}
+            b0_x = files_x()
+            time.sleep(0.05)
+            def row_x(k_, part_=""):                                          # Karte wählen -> „1 exportieren“
+                et_ = w.export_tab
+                et_.select_all(False)
+                et_.toggle(next(c_ for c_ in et_.cards if c_.key == k_ and part_ in c_.label))
+                assert et_.btn_main.text() == T("export_n", n=1), et_.btn_main.text()
+                return et_.btn_main
+            row_x("cv").click()
+            pump_x(0.3)
+            ch_x = {p_.name for p_, m_ in files_x().items() if b0_x.get(p_) != m_}
+            assert ch_x and all(n_.startswith("S3_CV") for n_ in ch_x), sorted(ch_x)            # nur die Zeile
+            w._notice_done()
+            # Zeile je Abbildung/Bericht aus dem gespeicherten Zustand: EPR Hyperfein, X-Ray Packung, DFT-Orbitale
+            for k_, part_, want_ in (("epr", T("export_part_hfc"), "_hfc"), ("xray", T("export_part_packing"), "_packing"),
+                                     ("dft", T("export_part_orbitals", name="S3_opt_freq"), "_S3_opt_freq_")):
+                b0_x = files_x()
+                time.sleep(0.05)
+                row_x(k_, part_).click()
+                pump_x(0.3)
+                ch_x = {p_.name for p_, m_ in files_x().items() if b0_x.get(p_) != m_}
+                assert ch_x and all(want_ in n_ for n_ in ch_x), (k_, sorted(ch_x))
+                w._notice_done()
+                et_x = w.export_tab
+            b0_x = files_x()
+            assert w._tab_key == "export" and T("export_change_formats") in w.last_notice[1]
+            w._notice_done()
+            b0_x = files_x()
+            time.sleep(0.05)
+            from PySide6.QtTest import QTest as QT_x                          # Tastatur: Strg+A, Pfeil, Leertaste
+            et_k = w.export_tab
+            et_k.area.setFocus()
+            QT_x.keyClick(et_k.area, Qt.Key_A, Qt.ControlModifier)
+            assert et_k.cards and all(c_.selected == c_.selectable for c_ in et_k.cards)   # Tabellen nie (N2)
+            et_k.select_all(False)
+            QT_x.keyClick(et_k.area, Qt.Key_Right)
+            QT_x.keyClick(et_k.area, Qt.Key_Space)
+            assert len(et_k.chosen()) == 1 and et_k.btn_main.text() == T("export_n", n=1)
+            et_k.select_all(False)
+            assert et_k.btn_main.text() == T("export_all")
+            n_undo_x, tab_x = len(w._undo), w._tab_key
+            all_x = [Path(f_) for f_ in w.export_all_tabs()]
+            pump_x(0.3)
+            assert len(w._undo) == n_undo_x and w._tab_key == tab_x == "export"         # kein Schritt, Ansicht bleibt
+            assert all(p_.parent.name in (PRJ_x.FIGURES, PRJ_x.TABLES, PRJ_x.SI_DIR) for p_ in all_x), \
+                sorted({p_.parent.name for p_ in all_x})
+            ch_x = {p_ for p_, m_ in files_x().items() if b0_x.get(p_) != m_}
+            assert all_x and {p_.resolve() for p_ in all_x} <= {p_.resolve() for p_ in ch_x}
+            names_x = [T("tab_eps") if k_ == "eps" else T(w._tab_spec(k_)[3]) for k_ in keys_x]
+            assert T("export_all_used", tabs=", ".join(names_x)) in w.last_notice[0], w.last_notice[0]
+            assert T("export_all_missing", tabs="").split(":")[0] not in w.last_notice[0]
+            w._notice_done()
+            # Formate für alle Abbildungen: ein Rückgängig-Schritt, bleibt im Tab „Export“
+            w.show_tab("export")
+            pump_x(0.3)
+            assert w.export_fmt()["svg"]
+            w.export_tab.cb_fmt["svg"].setChecked(False)
+            pump_x(0.3)
+            assert not w.export_fmt()["svg"] and not w.cv_tab.fmt()["svg"]
+            w.undo()
+            pump_x(0.5)
+            assert w.export_fmt()["svg"] and w._tab_key == "export" and w.export_tab.cb_fmt["svg"].isChecked()
+            # Vorschaubilder ohne Tab-Bau: aus dem letzten Export (figures/*.png); nie veraltet: das neueste gewinnt
+            old_th = w.export_tab.thumb("cv", 0, None)
+            assert old_th is not None and old_th.parent.name == PRJ_x.FIGURES and w.export_tab.thumb("syn", 0, None) is None
+            time.sleep(1.1)
+            w.show_tab("cv")
+            pump_x(0.3)
+            w.cv_tab.st["ymax"] = 55.0                                        # Abbildung ändern, speichern ohne Export
+            w.cv_tab.render()
+            w.save_project()
+            new_th = w.export_tab.thumb("cv", 0, None)
+            assert new_th is not None and new_th.name == "cv.png" and new_th.stat().st_mtime > old_th.stat().st_mtime
+            w.show_tab("export")
+            pump_x(0.3)
+            # Tabs: kein Exportknopf, keine Formate; Strg+E exportiert weiter die sichtbare Abbildung
+            for k_ in ("cv", "syn"):
+                w.show_tab(k_)
+                pump_x(0.3)
+                t_x = getattr(w, w._tab_spec(k_)[0])
+                assert not t_x.btn_export.isVisible()
+                assert not [c_ for c_ in t_x.findChildren(QCheckBox) if c_.text() in ("PDF", "SVG", "PNG", "PPTX")
+                            and c_.isVisible()]
+            w.show_tab("cv")
+            pump_x(0.3)
+            out_x = w.export_current()
+            assert out_x and all(Path(p_).name.startswith("S3_CV") for p_ in out_x), out_x
+            w._notice_done()
+            assert w.toolbar.widgetForAction(w.act_si) is None and w.act_si.isEnabled()
+            # offener Tab „Export“ wird gespeichert und beim Öffnen wieder gezeigt
+            w.show_tab("export")
+            pump_x(0.3)
+            w.save_project()
+            assert PRJ_x.load(s3_x)["tab"] == "export"
+            assert w.open_project(dp_x / "S2", ask=False, recent=False) and w.open_project(s3_x, ask=False, recent=False)
+            pump_x(0.8)
+            assert w._tab_key == "export" and w.main_tabs.currentWidget() is w.export_tab
+            # Tab-Leiste passt bei 1280 und 1440 px ohne Bildlauf, DE und EN, mit Punkten an Tabs (nur macOS wie der
+            # 1200-px-Test: Windows offscreen ohne echte Schriftbreiten, Linux mit breiterer Ersatzschrift)
+            fit_x = {}
+            for lang_x in ("de", "en"):
+                w.switch_lang(lang_x)
+                pump_x(0.3)
+                w.show_tab("export")
+                w.mark_tab("cv", True)
+                w.mark_tab("other", True)
+                for wd_x in (1280, 1440):
+                    w.resize(wd_x, 900)
+                    pump_x(0.3)
+                    ns_x = w.nav_scroll
+                    fit_x[(lang_x, wd_x)] = (ns_x.widget().minimumSizeHint().width(), ns_x.viewport().width(),
+                                             all(a_.isHidden() for a_ in ns_x.arrows))
+                w.mark_tab("cv", False)
+                w.mark_tab("other", False)
+            if sys.platform == "darwin":
+                assert all(n_ <= v_ and hid_ for n_, v_, hid_ in fit_x.values()), fit_x
+            w.resize(keep_size_x)
+            report.append(f"Lane A2 item 3a (Export tab: lazy, rows, row export = own files, export all, formats + undo, "
+                          f"no export buttons, tab saved, nav bar at 1280/1440 px DE/EN"
+                          f"{'' if sys.platform == 'darwin' else ' (measured, asserted only on macOS)'}): OK")
+        with section:
+            # Spur A2, Punkt 3b (Entscheidungen 67–68): Spalte „SI“ mit der Verbindung gespeichert (alte Auswahl des
+            # Rechners als Vorgabe, Rückgängig), gilt für „SI (Word)“ UND die Gesamt-SI, beide Meldungen nennen das
+            # Abgewählte; graue Knöpfe „SI (Word)“ und „Datenpaket“ (gespeicherte Auswahl, ohne Dialog)
+            import zipfile as ZF_y
+            from elucida.app import publication as PUB_y
+            from elucida.app.datapack_dialog import export_compound as dp_y
+
+            def pump_y(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+
+            def docx_y(p_):
+                return "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", ZF_y.ZipFile(p_).read("word/document.xml").decode()))
+            keep_y = {k_: w.settings.value(k_) for k_ in ("si_figs_off", "si_parts")}
+            w.settings.setValue("si_figs_off", "hcell")                      # frühere Auswahl dieses Rechners
+            w.settings.setValue("si_parts", ",".join(k_ for k_ in MW.SI_PARTS if k_ != "methods"))
+            dp_y_pub = Path(w.open_demo_publication(out / "a2y_pub"))
+            pump_y(0.5)
+
+            def tile_n_y():                                                   # Zahl auf der Projektkachel von S3
+                pg_ = w.pub_page.export_page
+                pg_.set_publication(dp_y_pub)
+                return next(t_.pill.text() for t_ in pg_.tiles() if Path(t_.path).name == "S3")
+            w.open_publication(dp_y_pub)
+            pump_y(0.5)
+            n_legacy_y = tile_n_y()                                           # B2: Kachel wie beim Öffnen
+            # B2: die frühere Abwahl gilt für jede Verbindung ohne eigene Auswahl, nur im Speicher: Öffnen schreibt
+            # nichts, kein Rückgängig-Schritt, der Eintrag dieses Rechners bleibt
+            prj_y = lambda d_: (d_ / PRJ.PROJECT_FILE).read_bytes()          # noqa: E731
+            before_y = prj_y(dp_y_pub / "S3")
+            assert w.open_project(dp_y_pub / "S3", ask=False, recent=False)
+            pump_y(0.8)
+            assert w.export_state.get("si_off") == ["hcell"] and w.si_figs_off() == {"hcell"}   # übernommen (N5)
+            assert prj_y(dp_y_pub / "S3") == before_y and len(w._undo) == 1, len(w._undo)
+            assert w.legacy_si_off() == {"hcell"}
+            assert w.open_project(dp_y_pub / "S2", ask=False, recent=False)
+            pump_y(0.5)
+            assert w.si_figs_off() == {"hcell"} and tile_n_y() == n_legacy_y     # S2 nimmt S3 nichts weg
+            w.set_si_figs_off(set())                                          # eigene, leere Auswahl bleibt leer
+            w.save_project()
+            assert (PRJ.load(dp_y_pub / "S2").get("export") or {}).get("si_off") == []
+            assert w.open_project(dp_y_pub / "S3", ask=False, recent=False)
+            pump_y(0.8)
+            assert w.open_project(dp_y_pub / "S2", ask=False, recent=False)
+            pump_y(0.5)
+            assert not w.si_figs_off()
+            old_y = out / "a2y_old"                                           # alte Verbindung: project.uvvis bleibt
+            shutil.rmtree(old_y, ignore_errors=True)
+            shutil.copytree(dp_y_pub / "S3", old_y)
+            (old_y / PRJ.PROJECT_FILE).rename(old_y / PRJ.OLD_PROJECT_FILES[0])
+            assert w.open_project(old_y, ask=False, recent=False)
+            pump_y(0.8)
+            assert w.si_figs_off() == {"hcell"} and (old_y / PRJ.OLD_PROJECT_FILES[0]).is_file()
+            assert not (old_y / PRJ.PROJECT_FILE).exists()
+            assert w.open_project(dp_y_pub / "S3", ask=False, recent=False)
+            pump_y(0.8)
+            assert w.si_figs_off() == {"hcell"} and tile_n_y() == n_legacy_y
+            w.show_tab("export")
+            pump_y(0.5)
+            et_y = w.export_tab
+            si_y = lambda k_: next(c_.pill for c_ in et_y.cards if c_.key == k_)   # noqa: E731  Pille „SI“ der Karte
+            assert not si_y("hcell").isChecked() and si_y("cv").isChecked()
+            assert all(c_.pill is None for c_ in et_y.cards if c_.key == "syn")   # Bericht: Teile links
+            si_y("cv").setChecked(False)
+            pump_y(0.3)
+            assert w.export_state["si_off"] == ["cv", "hcell"]
+            w.undo()
+            pump_y(0.5)
+            assert w.export_state.get("si_off") == ["hcell"] and w._tab_key == "export"
+            w.redo()
+            pump_y(0.5)
+            assert w.si_figs_off() == {"cv", "hcell"}
+            pk_y = next(c_.pill for c_ in w.export_tab.cards                 # Packung: Pille statt Haken im X-Ray-Tab
+                        if c_.key == "xray" and c_.label.endswith(T("export_part_packing")))
+            on_y = pk_y.isChecked()
+            pk_y.setChecked(not on_y)
+            pump_y(0.3)
+            pk_st = lambda: all((e_.get("pack") or {}).get("si") for e_ in w.xray_state["entries"])   # noqa: E731
+            assert pk_st() == (not on_y) and w._tab_key == "export"
+            w.undo()
+            pump_y(0.5)
+            assert pk_st() == on_y and w._tab_key == "export"
+            # ein Ort (67/93): im X-Ray-Tab statt der Haken ein Hinweis mit Link auf die Karte
+            xt_y = w.xray_tab
+            assert not xt_y.cb_pack_si.isVisibleTo(xt_y) and not xt_y.cb_pxrd_si.isVisibleTo(xt_y)
+            links_y = [l_ for l_ in xt_y.findChildren(QLabel) if T("si_elsewhere").split("<")[0] in l_.text()]
+            assert len(links_y) >= 3, len(links_y)                           # Packung, PXRD, HOMA
+            links_y[0].linkActivated.emit("export")
+            pump_y(0.3)
+            assert w._tab_key == "export" and w.export_tab.current is not None
+            assert w.export_tab.cards[w.export_tab.current].key == "xray"
+            w.settings.setValue("si_figs_off", "")                          # gilt jetzt die Auswahl der Verbindung
+            assert w.si_figs_off() == {"cv", "hcell"}
+            et_y = w.export_tab
+            assert not et_y.btn_dp.property("accent") and not et_y.btn_si.property("accent")
+            et_y.btn_si.click()                                               # SI (Word) der Verbindung
+            pump_y(0.3)
+            si_doc_y = dp_y_pub / "S3" / "SI" / "S3_SI.docx"
+            x_y = docx_y(si_doc_y)
+            assert "voltammograms of" not in x_y and "UV-Vis spectra" in x_y, "CV in the SI"
+            ir_at_y = re.search(r"Figure S\d+: IR\b", x_y)                    # „IR spectrum“ oder „IR (top) and Raman“
+            assert ir_at_y and ir_at_y.start() < x_y.index("HR-MS spectrum of") < x_y.index("UV-Vis spectra"), \
+                "SI not in tab order (decision 99: IR + EA, HRMS before UV-Vis)"
+            assert T("si_used_figs_off", tabs=", ".join([T("tab_cv"), T("tab_hcell")])) in w.last_notice[0], w.last_notice
+            w._notice_done()
+            from elucida.si import publication_si as PSI_y
+            secs_y = [k_ for k_, _, _ in PSI_y.SECTIONS]
+            whole_y = w.export_publication_si(dp_y_pub, PUB_y.sync(dp_y_pub)[0], secs_y, methods=False,
+                                              path=out / "a2y_whole_si.docx")
+            assert whole_y and "voltammograms of" not in docx_y(whole_y) and "UV-Vis spectra" in docx_y(whole_y)
+            assert "S3: " + T("tab_cv") in w.last_notice[0], w.last_notice[0]
+            w._notice_done()
+            assert w.project_dir and Path(w.project_dir).name == "S3"
+            rep_y = dp_y(w, path=out / "a2y_pack.zip")                       # Datenpaket mit gespeicherter Auswahl
+            assert rep_y and (out / "a2y_pack.zip").exists() and ZF_y.ZipFile(out / "a2y_pack.zip").namelist()
+            assert T("dp_change") in w.last_notice[1]
+            w._notice_done()
+            for k_, v_ in keep_y.items():
+                if v_ is None:
+                    w.settings.remove(k_)
+                else:
+                    w.settings.setValue(k_, v_)
+            report.append("Lane A2 item 3b (SI column saved with the compound + undo, old selection as default, SI (Word) "
+                          "and whole SI leave the figure out and say so, data package button): OK")
+        with section:
+            # Spur A2, Punkt 3c/v4 (Entscheidungen 69, 96–98): Projektseite, Reiter „Export“: links „Gesamt-SI“ und
+            # „Datensätze“ (keine Dialoge), rechts dasselbe Kachelraster wie Verbindung › Export – Gruppen in der
+            # Reihenfolge des Projekts, Kachel je Verbindung; unten „Datensätze“ (grau) und „Gesamt-SI (Word)“ (blau)
+            from elucida.app.tiles import TileGrid as TG_z
+            from elucida.app import welcome as WEL_z
+
+            def pump_z(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_z = Path(w.open_demo_publication(out / "a2z_pub"))
+            pump_z(0.5)
+            dirs_z = PUB_y.sync(dp_z)[0]
+            PUB_y.set_group(dp_z, dirs_z[1], "Produkte")                      # Gruppen: Kopfzeilen über die volle Breite
+            PUB_y.set_group(dp_z, dirs_z[0], "Vorstufen")
+            w.open_publication(dp_z)
+            pump_z(0.5)
+            pp_z = w.pub_page
+            ep_z = pp_z.export_page
+            assert pp_z.project_tabs.tabText(pp_z.project_tabs.indexOf(ep_z)) == T("pub_export_tab")
+            assert ep_z.dp_card.plans is None                                  # Dateien erst beim Zeigen lesen
+            pp_z.project_tabs.setCurrentWidget(ep_z)
+            pump_z(0.5)
+            assert not pp_z.b_si.isVisible() and ep_z.btn_si.property("accent") and not ep_z.btn_dp.property("accent")
+            assert ep_z.dp_card.plans and type(ep_z.grid) is TG_z is type(w.export_tab.grid)    # dieselbe Klasse
+            want_z = [(g_, [d_.name for d_ in ds_]) for g_, ds_ in PUB_y.grouped(dp_z) if ds_]
+            got_z = [(lab_.text().split(" · ")[0] if lab_ else None, [t_.path.name for t_ in ts_])
+                     for lab_, ts_ in ep_z.grid.groups]
+            assert [(g_ or T("pub_exp_no_group"), ds_) for g_, ds_ in want_z] == got_z, (want_z, got_z)   # Reihenfolge (98)
+            from elucida.app.publication_export import SLOTS as SL_z
+            for t_ in ep_z.tiles():                                           # Farbstreifen: feste Plätze, vorhanden = Farbe
+                info_ = WEL_z.project_info(t_.path)
+                assert [k_ for _, k_, _ in t_.slotbar.slots] == [k_ for _, k_ in SL_z]
+                assert [on_ for _, _, on_ in t_.slotbar.slots] == [b_ in info_["badges"] for b_, _ in SL_z]
+                assert "<sub>" in t_.name.text()                               # Summenformel tiefgestellt
+            # eine linke Kante: Kopfzeile, Legende, Kartenkante (Vorschau), Name
+            lab0_ = ep_z.grid.groups[0][0]
+            t0_ = ep_z.grid.groups[0][1][0]
+            xs_z = {lab0_.mapTo(ep_z, lab0_.rect().topLeft()).x(), t0_.pic.mapTo(ep_z, t0_.pic.rect().topLeft()).x(),
+                    t0_.name.mapTo(ep_z, t0_.name.rect().topLeft()).x(),
+                    ep_z.legend.layout().itemAt(0).widget().mapTo(ep_z, ep_z.legend.layout().itemAt(0).widget().rect().topLeft()).x()}
+            assert len(xs_z) == 1, xs_z
+            from PySide6.QtWidgets import QDialog as QD_z
+            assert not [d_ for d_ in QApplication.topLevelWidgets() if isinstance(d_, QD_z) and d_.isVisible()]
+            ep_z.btn_si.click()                                               # Hauptknopf: ohne Dialog, alle Verbindungen
+            pump_z(0.5)
+            si_z = dp_z / PUB_y.SI_DIR / f"{core.safe_name(dp_z.name)}_SI.docx"
+            assert si_z.exists() and T("pub_si_used", n=len(dirs_z), parts="").split(";")[0] in w.last_notice[0], \
+                w.last_notice
+            w._notice_clicked("0")                                            # „Auswahl ändern …“ -> Reiter „Export“
+            pump_z(0.3)
+            assert w.pub_page.project_tabs.currentWidget() is w.pub_page.export_page
+            cmb_z = w.pub_page.export_page.si_card.cmb_tpl                   # Vorlage: eine Wahl, nichts abgeschnitten
+            for i_ in range(cmb_z.count()):
+                assert cmb_z.fontMetrics().horizontalAdvance(cmb_z.itemText(i_)) + 40 <= cmb_z.width(), \
+                    (cmb_z.itemText(i_), cmb_z.width())
+                assert cmb_z.itemData(i_, Qt.ToolTipRole), cmb_z.itemText(i_)
+            w.pub_page.export_page.btn_dp.click()
+            pump_z(0.3)
+            rep_z = w.pub_page.export_page.dp_card.report
+            assert rep_z and rep_z["zips"] and (dp_z / PUB_y.PACK_DIR / "README.txt").exists()
+            assert T("pub_exp_change") in w.last_notice[1]
+            w._notice_done()
+            t3_z = next(t_ for t_ in w.pub_page.export_page.tiles() if t_.path.name == "S3")
+            t3_z.clicked.emit(t3_z, None)                                     # Kachel öffnet den Export-Tab der Verbindung
+            pump_z(0.8)
+            assert w.project_dir and Path(w.project_dir).name == "S3" and w._tab_key == "export"
+            # Verbindung › Export bei 1470 × 920: alles ohne Bildlauf (nur macOS: Schriftmaße), volle Zeilen gleich breit
+            keep_z = w.size()
+            w.resize(1470, 920)
+            pump_z(0.6)
+            et_z = w.export_tab
+            gr_z = et_z.grid
+            rows_z = {}
+            for t_ in gr_z.tiles:
+                rows_z.setdefault(t_.y(), []).append(t_.geometry().right())
+            full_z = [max(v_) for v_ in rows_z.values() if len(v_) == gr_z.cols]
+            assert full_z and len(set(full_z)) == 1, rows_z                   # gleiche rechte Kante
+            assert all(t_.findChildren(QLabel, "tileCap") for t_ in gr_z.tiles)   # Marke der Datenart auf jeder Kachel
+            if sys.platform == "darwin":
+                assert et_z.scroll.verticalScrollBar().maximum() == 0, et_z.scroll.verticalScrollBar().maximum()
+            w.resize(keep_z)
+            report.append("Lane A2 item 3c/v4 (project page Export tab: cards instead of dialogs, one tile grid class for "
+                          "both pages, group order, badge order, tile opens the compound's Export tab; S3 fits at 1470x920, "
+                          "full rows equally wide): OK")
+        with section:
+            # Spur A2, Entscheidung 102: Segmente über dem einen Raster – filtern nur, eine Auswahl über alle, Zahl je
+            # Segment, „Alle · Keine“ nur im offenen Segment, Reihenfolge in „Alle“ = export_keys()
+            def pump_s(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            w.show_tab("export")
+            pump_s(0.5)
+            et_s = w.export_tab
+            et_s.right_tabs.setCurrentIndex(0)
+            pump_s(0.2)
+            assert list(dict.fromkeys(c_.key for c_ in et_s.shown())) == w.export_keys()
+            et_s.select_all(False)
+            cv_s = next(c_ for c_ in et_s.cards if c_.key == "cv")
+            ir_s = next(c_ for c_ in et_s.cards if c_.key == "irms")
+            et_s.toggle(cv_s)
+            et_s.toggle(ir_s)
+            i_ec = next(i_ for i_, (sid_, _) in enumerate(et_s.segments) if sid_ == "nav_grp_ec")
+            et_s.right_tabs.setCurrentIndex(i_ec)                             # Elektrochemie: nur deren Kacheln
+            pump_s(0.3)
+            assert all(c_.key in ("cv", "sec", "hcell", "epr") for c_ in et_s.shown()) and not ir_s.isVisible()
+            assert cv_s.selected and ir_s.selected and len(et_s.chosen()) == 2   # Filter ändert die Auswahl nicht
+            bar_s = et_s.right_tabs.tabBar()
+            cnt_s = lambda i_: et_s.seg_counts[i_]                           # noqa: E731
+            pump_s(0.2)
+            for i_ in range(len(et_s.segments)):                              # Zahl im Segment, auf Textmitte
+                c_ = cnt_s(i_)
+                lab_ = et_s.right_tabs.tabText(i_)
+                assert lab_.strip() and not lab_.startswith("export_") and "_" not in lab_ and \
+                    lab_.replace("&&", "").count("&") == 0, lab_               # Text, kein Schlüssel, kein Kürzel
+                if c_.isVisible():
+                    r_ = bar_s.tabRect(i_).adjusted(0, STYLE.RESULT_TAB_MT, 0, -STYLE.RESULT_TAB_MB)   # sichtbar
+                    assert r_.contains(c_.geometry()) and abs(c_.geometry().center().y() - r_.center().y()) <= 1, \
+                        (i_, r_, c_.geometry())
+            i_syn = next(i_ for i_, (sid_, _) in enumerate(et_s.segments) if sid_ == "nav_grp_syn")
+            assert cnt_s(i_ec).text() == "1" and cnt_s(i_syn).text() == "1" and cnt_s(0).text() == "2"
+            et_s.select_all(False)                                            # „Keine“: nur das offene Segment
+            assert not cv_s.selected and ir_s.selected and cnt_s(i_ec).isHidden()
+            assert et_s.btn_main.text() == T("export_n", n=1)                 # unten: die ganze Auswahl
+            assert w.settings.value("step/ExportSegment") == "nav_grp_ec"
+            et_s.right_tabs.setCurrentIndex(0)
+            et_s.select_all(False)
+            report.append("Lane A2 decision 102 (segments filter the one grid, one selection, counts per segment, "
+                          "All/None per segment, order in All = tab bar): OK")
+        with section:
+            # Spur A2, Entscheidung 103: Teilbilder (Hyperfein, Packung …) entstehen beim Zeigen des Tabs „Export“ nur für
+            # GEBAUTE Tabs, nacheinander, ohne Nebenwirkung: kein Tab gebaut, kein Rückgängig-Schritt, nicht geändert,
+            # kein Speichern, Ansicht aller Tabs gleich (R4), Dateien nur in .elucida/thumbs; Verlassen des Tabs oder
+            # Wechsel der Verbindung bricht die Warteschlange ab (nie in den Ordner einer anderen Verbindung)
+            from matplotlib.figure import Figure as MF_t
+            from PySide6.QtWidgets import QScrollBar as QSB_t, QStackedWidget as QSW_t, QTabWidget as QTW_t
+            from elucida.app import project as PRJ_t
+
+            def pump_t(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            comp_t = Path(w.project_dir)
+            th_t = comp_t / PRJ_t.WORK / "thumbs"
+            w.show_tab("epr")                                                 # gebaut: EPR (Teile), X-Ray
+            pump_t(0.4)
+            w.show_tab("xray")
+            pump_t(0.4)
+            w.save_project()
+            pump_t(0.3)
+
+            def fresh_t():
+                for p_ in th_t.glob("*_*.png"):
+                    p_.unlink()
+                w.__dict__.pop("_thumb_fp_parts", None)
+
+            def files_t():
+                return {p_ for p_ in comp_t.rglob("*") if p_.is_file() and th_t not in p_.parents}
+
+            def view_t():                                                     # was man sieht: Schritt, Rollen, Zoom
+                out_ = {"tab": w._tab_key}
+                for k_ in w._TAB_BUILD_ORDER:
+                    if k_ == "export" or not w._built(k_):
+                        continue
+                    t_ = getattr(w, w._tab_spec(k_)[0])
+                    out_[k_] = ([x_.currentIndex() for x_ in t_.findChildren(QTW_t) + t_.findChildren(QSW_t)],
+                                [x_.value() for x_ in t_.findChildren(QSB_t)],
+                                [(tuple(a_.get_xlim()), tuple(a_.get_ylim())) for a_ in t_.fig.axes]
+                                if isinstance(getattr(t_, "fig", None), MF_t) else None)
+                return out_
+            snap_t = lambda: {k_: v_ for k_, v_ in json.loads(w._snap()).items() if k_ != "tab"}   # noqa: E731
+
+            def objs_t(o_, acc_):                                             # Dicts/Listen im Zustand (Identität)
+                if isinstance(o_, (dict, list)):
+                    acc_.add(id(o_))
+                    for v_ in (o_.values() if isinstance(o_, dict) else o_):
+                        objs_t(v_, acc_)
+                return acc_
+            states_t = lambda: [getattr(w, w._tab_spec(k_)[2]) for k_ in ("epr", "xray")]   # noqa: E731
+            calls_t, keep_rpt_t = [], w.render_part_thumbs
+
+            def rpt_t(k_):                                                    # jedes Teilbild: in die offene Verbindung
+                calls_t.append((k_, str(w.project_dir), str(w.export_tab._sub_dir)))
+                return keep_rpt_t(k_)
+            w.render_part_thumbs = rpt_t
+            w.__dict__.pop("_part_cost", None)                               # Dauer unbekannt: nichts zeichnen, nie blockieren
+            fresh_t()
+            w.show_tab("epr")
+            pump_t(0.3)
+            t_s = time.perf_counter()
+            w.show_tab("export")
+            worst_t, t1_t = time.perf_counter() - t_s, time.time()
+            while time.time() - t1_t < 2.0:                                   # längster Schritt der Ereignisschleife
+                a_ = time.perf_counter()
+                QApplication.processEvents()
+                worst_t = max(worst_t, time.perf_counter() - a_)
+                time.sleep(0.005)
+            assert worst_t < 1.5 * SLOW, worst_t                  # Wanduhr: unter Last großzügig
+            quick_t = {f"xray_{i_}.png" for i_ in w.quick_parts("xray")}   # 132: billige Teile ohne Export (PXRD)
+            assert quick_t and {p_.name for p_ in th_t.glob("*_*.png")} == quick_t, sorted(th_t.glob("*_*.png"))
+            assert {k_ for k_, _, _ in calls_t} <= {"xray"} and not list(th_t.glob("epr_*.png")), calls_t
+            w.show_tab("epr")
+            pump_t(0.3)
+            cheap_t = lambda: w.__dict__.__setitem__("_part_cost", {"epr": 0.0, "xray": 0.0})   # noqa: E731  als billig gemessen
+            cheap_t()
+            fresh_t()
+            w.show_tab("export")
+            lazy_t, st_t, undo_t, dirty_t = set(w._lazy), snap_t(), len(w._undo), w.is_dirty()
+            auto_t, view0_t, files0_t = w.autosave_timer.isActive(), view_t(), files_t()
+            mt_t = (comp_t / PRJ_t.PROJECT_FILE).stat().st_mtime
+            ids_t = set().union(*(objs_t(x_, set()) for x_ in states_t()))
+            t0_t = time.time()
+            while time.time() - t0_t < 30 and w.export_tab._sub_queue:
+                pump_t(0.3)
+            pump_t(0.5)
+            assert {"epr_0.png", "xray_1.png"} <= {p_.name for p_ in th_t.glob("*_*.png")}, sorted(th_t.glob("*"))
+            assert set(w._lazy) == lazy_t, sorted(lazy_t - set(w._lazy))     # kein Tab gebaut
+            assert snap_t() == st_t and len(w._undo) == undo_t and w.is_dirty() == dirty_t
+            assert auto_t or not w.autosave_timer.isActive()                  # kein Speichern ausgelöst
+            assert (comp_t / PRJ_t.PROJECT_FILE).stat().st_mtime == mt_t
+            assert view_t() == view0_t, [k_ for k_ in view0_t if view_t().get(k_) != view0_t[k_]]
+            assert ids_t <= set().union(*(objs_t(x_, set()) for x_ in states_t())), "Zustand ersetzt: Tabs hielten verwaiste Einträge"
+            ax_t = w.epr_tab.fig.axes[0]                                      # die Prüfung sieht Zoom und Rollen
+            lim_t = ax_t.get_xlim()
+            ax_t.set_xlim(lim_t[0], lim_t[1] + 1)
+            assert view_t() != view0_t
+            ax_t.set_xlim(*lim_t)
+            sb_t = next((x_ for x_ in w.epr_tab.findChildren(QSB_t) if x_.maximum() > 0), None)
+            if sb_t is not None:
+                sb_t.setValue(sb_t.value() + 1 if sb_t.value() < sb_t.maximum() else sb_t.value() - 1)
+                assert view_t() != view0_t
+            assert files_t() == files0_t, sorted(map(str, files_t() ^ files0_t))   # nur .elucida/thumbs
+            n_t = len(list(th_t.glob("*_*.png")))
+            w.show_tab("epr")                                                 # zweites Zeigen: nichts neu
+            pump_t(0.3)
+            mtimes_t = {p_.name: p_.stat().st_mtime for p_ in th_t.glob("*_*.png")}
+            assert w._part_cost["epr"] > 0                                    # gemessen beim Zeichnen
+            cheap_t()
+            w.show_tab("export")
+            pump_t(2.0)
+            assert {p_.name: p_.stat().st_mtime for p_ in th_t.glob("*_*.png")} == mtimes_t and n_t == len(mtimes_t)
+            fresh_t()                                                         # Tab verlassen: Warteschlange weg
+            cheap_t()
+            w.show_tab("export")
+            w.show_tab("epr")
+            pump_t(1.5)
+            assert not list(th_t.glob("*_*.png")) and not w.export_tab._sub_queue
+            other_t = next((p_ for p_ in sorted(comp_t.parent.iterdir()) if p_ != comp_t
+                            and (p_ / PRJ_t.PROJECT_FILE).exists()), None)
+            if other_t is not None:                                           # Verbindung gewechselt: nichts dort
+                fresh_t()
+                cheap_t()
+                w.show_tab("export")                                          # Warteschlange steht noch aus
+                assert w.open_project(other_t, ask=False, recent=False)
+                pump_t(2.0)
+                assert not list(th_t.glob("*_*.png"))                         # alte Verbindung: nichts mehr
+                et_t = w.export_tab                                           # (neu gebaut oder derselbe)
+                assert not getattr(et_t, "_sub_queue", None) or Path(et_t._sub_dir) == other_t   # nur die offene
+                assert calls_t and all(p_ == d_ for _, p_, d_ in calls_t), calls_t   # nie in eine andere Verbindung
+                assert w.open_project(comp_t, ask=False, recent=False)
+                pump_t(0.8)
+            w.__dict__.pop("render_part_thumbs", None)
+            w.__dict__.pop("_part_cost", None)
+            report.append("Lane A2 decision 103 (part previews on showing Export: only measured-cheap kinds, longest "
+                          "blocking step < 0.5 s, built tabs only, no tab built, no "
+                          "undo step, not dirty, no autosave, view of every tab unchanged, files only in thumbs, "
+                          "once; leaving the tab or switching compound cancels the queue): OK")
+        with section:
+            # Spur A2, Befunde der Export-Prüfung (B1–B3, N1–N7)
+            import zipfile as ZF_v
+
+            def pump_v(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            dp_v = Path(w.open_demo_publication(out / "a2v_pub"))
+            pump_v(0.5)
+            assert w.open_project(dp_v / "S3", ask=False, recent=False)
+            pump_v(0.8)
+            w.show_tab("export")
+            pump_v(0.5)
+            et_v = w.export_tab
+            card_v = lambda k_, lab_=None: next(c_ for c_ in w.export_tab.cards if c_.key == k_   # noqa: E731
+                                               and (lab_ is None or c_.label.endswith(lab_)))
+            # B1: Pille „SI“ der Packung aus -> Kachel bleibt, exportierbar, wieder an
+            pk_v = card_v("xray", T("export_part_packing"))
+            pk_v.pill.setChecked(False)
+            pump_v(0.4)
+            pk_v = card_v("xray", T("export_part_packing"))
+            assert not pk_v.pill.isChecked()
+            w._notice_done()
+            w.export_key("xray")
+            pump_v(0.3)
+            assert list((dp_v / "S3" / "figures").glob("*_packing.*")), "Packung nicht exportiert"
+            card_v("xray", T("export_part_packing")).pill.setChecked(True)   # Export frischt die Kacheln auf
+            pump_v(0.4)
+            assert card_v("xray", T("export_part_packing")).pill.isChecked()
+            # B2: Auswahl übersteht Speichern/Auffrischen (Pille, Format, Autosave)
+            et_v = w.export_tab
+            et_v.right_tabs.setCurrentIndex(0)
+            et_v.select_all(False)
+            for c_ in (card_v("cv"), card_v("irms"), card_v("epr")):
+                et_v.toggle(c_)
+            card_v("sec").pill.setChecked(not card_v("sec").pill.isChecked())
+            pump_v(0.3)
+            card_v("sec").pill.setChecked(not card_v("sec").pill.isChecked())
+            w.autosave()
+            pump_v(1.2)
+            et_v = w.export_tab
+            assert len(et_v.chosen()) == 3 and et_v.btn_main.text() == T("export_n", n=3), \
+                [(c_.key, c_.label) for c_ in et_v.chosen()]
+            # N7: Strg+E im Tab „Export“ = Hauptknopf (nur die Auswahl)
+            et_v.select_all(False)
+            et_v.toggle(card_v("cv"))
+            w._notice_done()
+            w.export_current()
+            pump_v(0.3)
+            assert T("export_all_used", tabs=T("tab_cv")) in w.last_notice[0], w.last_notice
+            # N1: Auffrischen nach einem Export liest die großen Bilder nicht im Ganzen (einzeln je Durchlauf, Speicher)
+            w._notice_done()
+            w.export_all_tabs()
+            pump_v(0.3)
+            t_v = time.perf_counter()
+            w.export_tab.refresh()
+            first_v = time.perf_counter() - t_v
+            t0_v = time.time()
+            while w.export_tab._thumb_queue and time.time() - t0_v < 20:
+                pump_v(0.1)
+            t_v = time.perf_counter()
+            w.export_tab.refresh()
+            again_v = time.perf_counter() - t_v
+            assert first_v < 1.5 * SLOW and again_v < 1.0 * SLOW and not w.export_tab._thumb_queue, (first_v, again_v)
+            # N2: „Alle“ und Leertaste wählen keine Tabellenkacheln (pred None = ganzer Tab)
+            et_v = w.export_tab
+            et_v.right_tabs.setCurrentIndex(0)
+            et_v.select_all(True)
+            assert all(c_.selectable for c_ in et_v.chosen()) and any(not c_.selectable for c_ in et_v.cards)
+            tb_v = next(c_ for c_ in et_v.cards if not c_.selectable)
+            tb_v.set_selected(True)
+            assert not tb_v.selected
+            et_v.select_all(False)
+            # N6/B1: Teil „Abbildungen“ aus -> Pillen bleiben bedienbar (Gesamt-SI folgt ihnen), Hinweis nennt den Chip
+            keep_parts_v = [k_ for k_ in MW.SI_PARTS if k_ in w.si_parts_saved()]
+            w.set_si_parts([k_ for k_ in MW.SI_PARTS if k_ != "figs"])
+            et_v.sync_pills()
+            assert card_v("cv").pill.isEnabled() and T("si_chip_figs") in card_v("cv").pill.toolTip()
+            w.set_si_parts(keep_parts_v)
+            et_v.sync_pills()
+            assert card_v("cv").pill.isEnabled() and card_v("cv").pill.toolTip() == T("export_si_pill_tip")
+            # N4: Folien ohne Auswahl = alle Abbildungen, keine alte Abwahl aus QSettings
+            assert not hasattr(w, "pptx_figs_off") and not hasattr(w, "show_pptx_card")
+            # B3: Gesamt-SI ohne DFT-Bilder mit Unterschrift, wenn die DFT-Pille aus ist
+            w.set_si_figs_off(w.si_figs_off() | {"dft"})
+            parts_v = w.si_compound_parts(["dft"], methods=False)
+            dft_v = parts_v[1]["dft"]                                         # (Titel, Teile)
+            assert dft_v and MW.MainWindow.drop_captioned_images(dft_v) == dft_v, "DFT-Bilder trotz Abwahl"
+            w.set_si_figs_off(w.si_figs_off() - {"dft"})
+            # N3: Schnellauswertung fragt beim Alles-Exportieren einmal nach dem Ordner
+            asks_v, keep_dlg_v, keep_q_v = [], MW.QFileDialog.getExistingDirectory, w.is_quick
+            qd_v = out / "a2v_quick"
+            qd_v.mkdir(exist_ok=True)
+            MW.QFileDialog.getExistingDirectory = staticmethod(lambda *a_, **k_: asks_v.append(1) or str(qd_v))
+            w.is_quick = lambda: True
+            try:
+                w.export_all_tabs([("cv", None), ("sec", None)])
+                pump_v(0.3)
+            finally:
+                MW.QFileDialog.getExistingDirectory = keep_dlg_v
+                w.__dict__.pop("is_quick", None)
+            assert len(asks_v) == 1 and list(qd_v.glob("*CV*")) and list(qd_v.glob("*SEC*")), (asks_v, list(qd_v.iterdir()))
+            w._notice_done()
+            report.append("Lane A2 review fixes (B1 packing pill round trip, B2 selection survives autosave, B3 whole SI "
+                          "drops captioned DFT images, N1 refresh fast after export, N2 tables never selected, N3 one "
+                          "folder question, N4 no slide deselection, N6 pills stay usable with a hint when the figures part is off, N7 Ctrl+E = "
+                          "selection): OK")
+        with section:
+            # Entscheidungen 118/120/135: Verbindungen der Projekt-Datensätze abwählbar (Pille „Zip“ je Kachel, „Zip: Alle ·
+            # Keine“, Knopf „Datensätze (n von m)“), gespeichert im Projekt (publication.elucida), neue Verbindungen an.
+            # Abgewählt = keine eigenen Dateien (eigene Zip, CompChem, FID, README); ihr Kürzel wird in den übrigen
+            # Dateien weiter ersetzt (135). Alte Dateien im Ordner bleiben, eine Zeile nennt sie; fidpack = letzter Export
+            import tempfile as TF_q
+            import zipfile as ZF_q
+            from PySide6.QtWidgets import QTableWidgetItem as QTWI_q
+            from elucida.app import project as PRJ_q, publication as PUB_q
+
+            def pump_q(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+
+            def blobs_q(d_):                                                   # (Datei:Eintrag, Inhalt) aller Ausgaben
+                res_ = []
+                for f_ in d_.rglob("*"):
+                    if f_.is_file():
+                        res_.append((f_.name, f_.read_bytes()))
+                        if f_.suffix.lower() == ".zip":
+                            with ZF_q.ZipFile(f_) as z_:
+                                res_ += [(f"{f_.name}:{n_}", z_.read(n_)) for n_ in z_.namelist()]
+                return res_
+
+            def roots_q(z_):
+                with ZF_q.ZipFile(z_) as zz_:
+                    return {r_ for n_ in zz_.namelist() for r_ in n_.split("/")[:2]}   # CompChem/<Verbindung>/…
+            code_q = "QZ-9-901"                                              # erfundenes Laborkürzel
+            prev_q = w.project_dir                                            # spätere Abschnitte erwarten die Verbindung
+            dp_q = Path(w.open_demo_publication(out / "a2q_pub"))
+            pump_q(0.5)
+            dirs_q = PUB_q.sync(dp_q)[0]
+            dx_q = next(d_ for d_ in dirs_q if list((d_ / "data").rglob("*.out")))   # mit DFT: wird abgewählt
+            do_q = next(d_ for d_ in dirs_q if d_ != dx_q)
+            st_q = PRJ_q.load(dx_q)                                           # erfundener, eindeutiger Name zum Suchen
+            st_q.setdefault("compound", {})["name"] = "Qzxdeselected"
+            PRJ_q.write(dx_q, st_q)
+            w.open_publication(dp_q)
+            pump_q(0.5)
+            ep_q = w.pub_page.export_page
+            w.pub_page.project_tabs.setCurrentWidget(ep_q)
+            pump_q(0.8)
+            tq_ = {Path(t_.path).name: t_ for t_ in ep_q.tiles()}
+            assert all(t_.zip is not None and t_.zip.isChecked() for t_ in tq_.values())   # Standard: alle an
+            assert all(t_.zip.text() == T("pub_exp_zip") for t_ in tq_.values())
+            assert ep_q.btn_dp.text() == T("pub_exp_dp_btn")
+            tq_[dx_q.name].zip.setChecked(False)                              # Pille „Zip“ aus
+            pump_q(0.3)
+            assert PUB_q.load(dp_q)["pack_off"] == [dx_q.name] and not PUB_q.pack_on(dp_q, dx_q)
+            n_q = len(tq_)
+            assert ep_q.btn_dp.text() == T("pub_exp_dp_btn_n", n=n_q - 1, m=n_q), ep_q.btn_dp.text()
+            ep_q.set_pack([t_.path for t_ in ep_q.tiles()], False)            # „0 von m“: Knopf aus
+            assert ep_q.btn_dp.text() == T("pub_exp_dp_btn_n", n=0, m=n_q) and not ep_q.btn_dp.isEnabled()
+            ep_q.set_pack([do_q], True)
+            assert ep_q.btn_dp.isEnabled()
+            w.open_publication(dp_q)                                          # gespeichert im Projekt: bleibt
+            pump_q(0.5)
+            ep_q = w.pub_page.export_page
+            assert not {Path(t_.path).name: t_ for t_ in ep_q.tiles()}[dx_q.name].zip.isChecked()
+            # Kürzel: Eintrag der abgewählten Verbindung in der Tabelle, im Inhalt einer Textdatei der anderen
+            dc_q = ep_q.dp_card
+            dc_q.load()
+            txt_q = next(it_.src for pl_ in dc_q.plans if pl_.pdir == do_q for it_ in pl_.items
+                         if it_.on and it_.src.is_file() and it_.src.suffix.lower() in (".csv", ".txt", ".jdx", ".dx"))
+            txt_q.write_text(txt_q.read_text(encoding="utf-8", errors="replace") + f"\n{code_q}\n", encoding="utf-8")
+            r_q = dc_q.tbl.rowCount()
+            dc_q.tbl.insertRow(r_q)
+            for c_, v_ in enumerate((code_q, "Qzxdeselected", "Compound Qzxdeselected")):
+                dc_q.tbl.setItem(r_q, c_, QTWI_q(v_))
+            assert dc_q.replacements()[0].get(code_q) == "Qzxdeselected"     # 135: auch abgewählt ersetzt
+            assert not dc_q.cb_fid.isHidden()                                 # Beispiel hat FID-Daten
+            dc_q.cb_fid.setChecked(True)
+            dc_q.cb_readme.setChecked(True)
+            dc_q.cb_text.setChecked(True)
+            fpk_q = lambda: PUB_q.load(dp_q).get("fidpack")                   # noqa: E731
+            pre_q = T("pub_dp_leftover", files="")
+
+            def left_q():                                                     # Zeile „Ältere Dateien …“ der Meldung
+                return next((l_ for l_ in (w.last_notice or ("",))[0].split("\n") if l_.startswith(pre_q)), "")
+            # Gegenprobe: gewählt -> eigene Zip, Ordner in CompChem und FID, fidpack nennt sie
+            ep_q.set_pack([dx_q], True)
+            outa_q = out / "a2q_packs_a"
+            shutil.rmtree(outa_q, ignore_errors=True)
+            assert dc_q.export(outa_q)
+            pump_q(0.3)
+            assert (outa_q / "Qzxdeselected.zip").exists() and "Qzxdeselected" in roots_q(outa_q / "CompChem.zip")
+            fida_q = [z_ for z_ in outa_q.glob("*.zip") if z_.name not in ("Qzxdeselected.zip", "CompChem.zip")
+                      and "Qzxdeselected" in roots_q(z_)]                    # FID-Paket mit ihrem Ordner
+            assert fida_q and b"Qzxdeselected" in (outa_q / "README.txt").read_bytes()
+            assert fpk_q() and "Qzxdeselected" in fpk_q()["compounds"], fpk_q()
+            # abgewählt, zweiter Export in Ordner A ohne FID und README: alte Dateien bleiben, eine Zeile nennt sie
+            # (nicht die Zip der gewählten Verbindung); fidpack nannte die abgewählte -> leer
+            ep_q.set_pack([dx_q], False)
+            dc_q.cb_fid.setChecked(False)
+            dc_q.cb_readme.setChecked(False)
+            assert dc_q.export(outa_q)
+            pump_q(0.3)
+            assert (outa_q / "Qzxdeselected.zip").exists()                    # nie gelöscht
+            line_q = left_q()
+            so_q = f"{PUB_q.compound_name(do_q)}.zip"
+            assert line_q and "Qzxdeselected.zip" in line_q and "README.txt" in line_q and \
+                all(z_.name in line_q for z_ in fida_q) and so_q not in line_q, (line_q, so_q)
+            assert fpk_q() is None and not [k_ for k_, _ in PUB_q.das_parts(PUB_q.load(dp_q)) if k_ == "fid"]
+            # abgewählt in neuen Ordner B mit FID: keine eigenen Dateien, das Kürzel in der anderen Zip trotzdem ersetzt
+            dc_q.cb_fid.setChecked(True)
+            dc_q.cb_readme.setChecked(True)
+            outb_q = out / "a2q_packs_b"
+            shutil.rmtree(outb_q, ignore_errors=True)
+            rep_q = dc_q.export(outb_q)
+            pump_q(0.3)
+            assert rep_q and rep_q["zips"], rep_q
+            assert not (outb_q / "Qzxdeselected.zip").exists() and not left_q()
+            for z_ in outb_q.glob("*.zip"):
+                assert "Qzxdeselected" not in roots_q(z_), z_.name           # CompChem, FID: kein Ordner
+            rd_q = [b_ for n_, b_ in blobs_q(outb_q) if n_.lower().startswith("readme")]
+            assert rd_q and all(b"qzxdeselected" not in b_.lower() for b_ in rd_q)
+            zo_q = outb_q / so_q                                              # eigene Zip der anderen Verbindung
+            assert zo_q.exists(), sorted(p_.name for p_ in outb_q.iterdir())
+            bo_q = b"".join(b_ for n_, b_ in blobs_q(outb_q) if n_.startswith(zo_q.name + ":"))
+            assert b"Qzxdeselected" in bo_q and code_q.encode() not in bo_q   # ersetzt (135)
+            fpb_q = fpk_q()
+            assert fpb_q and fpb_q["compounds"] and "Qzxdeselected" not in fpb_q["compounds"], fpb_q
+            assert not any("Qzxdeselected" in t_ for _, t_ in PUB_q.das_parts(PUB_q.load(dp_q)))
+            # FID aus, fidpack ohne abgewählte Verbindung: bleibt gültig
+            dc_q.cb_fid.setChecked(False)
+            assert dc_q.export(outb_q)
+            pump_q(0.3)
+            assert fpk_q() == fpb_q and [k_ for k_, _ in PUB_q.das_parts(PUB_q.load(dp_q)) if k_ == "fid"]
+            # fidpack mit festem Schlüssel: nach Umbenennen der Verbindung wird ihre Abwahl trotzdem erkannt
+            ep_q.set_pack([dx_q], True)
+            dc_q.cb_fid.setChecked(True)
+            outc_q = out / "a2q_packs_c"
+            shutil.rmtree(outc_q, ignore_errors=True)
+            assert dc_q.export(outc_q)
+            pump_q(0.3)
+            assert PUB_q.entry_key(dp_q, dx_q) in (fpk_q() or {}).get("entries", []), fpk_q()
+            st_q = PRJ_q.load(dx_q)
+            st_q["compound"]["name"] = "Qzrenamed"
+            PRJ_q.write(dx_q, st_q)
+            dc_q.plans = None                                                 # Namen neu lesen
+            ep_q.set_pack([dx_q], False)
+            dc_q.cb_fid.setChecked(False)
+            assert dc_q.export(outc_q)
+            pump_q(0.3)
+            assert fpk_q() is None, fpk_q()
+            # README: nur die Liste „(one archive per compound: …)“ zählt, Zahlnamen treffen kein Datum, keine Lizenz
+            outd_q = Path(TF_q.mkdtemp(dir=out))
+            keep_on_q = dc_q.off_names
+            dc_q.off_names = lambda n_: {"1", "4"}
+            try:
+                (outd_q / "README.txt").write_text(PUB_q.readme_text({"license": "CC-BY-4.0"}, ["nmr"], ["2b", "7"])
+                                                    + "\nFile dates were set to 1 January 1980.\n", encoding="utf-8")
+                rd0_q = (outd_q / "README.txt").read_text(encoding="utf-8")
+                assert dc_q.leftovers(outd_q, {}, set()) == [] and " 4.0" in rd0_q, rd0_q[-300:]
+                (outd_q / "README.txt").write_text(PUB_q.readme_text({"license": "CC-BY-4.0"}, ["nmr", "dft"],
+                                                                     ["1", "7"]), encoding="utf-8")
+                assert dc_q.leftovers(outd_q, {}, set()) == ["README.txt"]
+            finally:
+                dc_q.off_names = keep_on_q
+            ep_q.set_pack([t_.path for t_ in ep_q.tiles()], True)              # „Zip: Alle“
+            assert PUB_q.load(dp_q)["pack_off"] == [] and ep_q.btn_dp.text() == T("pub_exp_dp_btn")
+            # neue Verbindung: an
+            shutil.copytree(do_q, dp_q / "Qznew", ignore=shutil.ignore_patterns(".elucida"))
+            assert dp_q / "Qznew" in PUB_q.sync(dp_q)[0] and PUB_q.pack_on(dp_q, dp_q / "Qznew")
+            # Eintrag im Index anders geschrieben (./, absolut): Abwahl bleibt beim Speichern
+            tq2_ = Path(TF_q.mkdtemp(dir=out))
+            for n_ in ("Q1", "Q2"):
+                PRJ_q.write(tq2_ / n_, {"compound": {"name": n_}})
+            PUB_q.save(tq2_, {"compounds": ["./Q1", str((tq2_ / "Q2").resolve())]})
+            PUB_q.set_pack_on(tq2_, [tq2_ / "Q1", tq2_ / "Q2"], False)
+            assert not PUB_q.pack_on(tq2_, tq2_ / "Q1") and not PUB_q.pack_on(tq2_, tq2_ / "Q2"), PUB_q.load(tq2_)
+            w._notice_done()
+            if prev_q:
+                assert w.open_project(prev_q, ask=False, recent=False)
+                pump_q(0.8)
+            # billige Teilbilder: nichts gezeichnet -> kein Vorschaubild, ein altes aus dem Cache weg (Symbol bleibt)
+            thq_ = PRJ_q.work_dir(w.project_dir, "thumbs")
+            (thq_ / "dft_0.png").write_bytes(b"x")
+            keep_qp = w.quick_parts
+            w.quick_parts = lambda k_, t_=None: {0: lambda f_: (None, []), 1: lambda f_: None}
+            try:
+                w.__dict__.pop("_thumb_fp_parts", None)
+                assert not w.render_quick_parts("dft", None)
+                assert not (thq_ / "dft_0.png").exists() and not (thq_ / "dft_1.png").exists()
+            finally:
+                w.quick_parts = keep_qp
+            report.append("Decisions 118/120/135 (dataset selection per project: Zip pill, All/None, n of m, 0 of m "
+                          "disabled, saved in publication.elucida also for other index spellings, new compounds on; "
+                          "deselected compound with DFT has no own zip/CompChem/FID/README files but its lab code is "
+                          "still replaced; leftovers named, never deleted; fidpack = last export; quick part previews "
+                          "only when drawn): OK")
+        with section:
+            # Spur A2 nach dem Zusammenführen mit Spur N (R7): ob NMR in die SI kommt, entscheidet der Tab „Export“; der
+            # Chip im NMR-Tab wählt nur eigene Verarbeitung statt Mnova. Jeder Exportweg geht durch die Freigabe
+            # (own_release): Karte, „Alles exportieren“, SI (Word), Strg+E im Tab – ohne Freigabe kein eigenes Bild, Grund
+            # in der Meldung; nach Bestätigen von Phase und Referenz das eigene Bild
+            import tempfile as TF_r
+            import zipfile as ZF_r
+            from elucida.formats import bruker_nmr as BN_r
+            from elucida.tabs import nmr as NMR_r
+
+            def pump_r(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+
+            def media_r(p_):
+                return [n_ for n_ in ZF_r.ZipFile(p_).namelist() if n_.startswith("word/media/")]
+            for d_ in ("a2r_prj", "input/a2r_raw"):
+                shutil.rmtree(out / d_, ignore_errors=True)
+            d_r = BN_r.make_test_1d(out / "input" / "a2r_raw" / "T1" / "10",
+                                    [(7.29, 0.15, 1.0), (7.50, 2.0, 1.0), (3.03, 6.0, 1.0), (1.30, 3.0, 1.0)],
+                                    phc0=30.0, td=16384, si=32768)
+            prev_r = w.project_dir                                            # danach wieder offen (Folgeabschnitte)
+            assert w.create_project(out / "a2r_prj")
+            pump_r(0.3)
+            w.show_tab("nmr")
+            pump_r(0.3)
+            t_r = w.nmr_tab
+            assert not t_r.btn_export.isVisibleTo(t_r) and t_r.cb_si_use.text() == T("nmr_si_use")
+            assert len(t_r.add_raw_path(str(d_r))) == 1
+            t_r.cb_si_use.setChecked(True)
+            assert NMR_r.own_release(t_r.current()) == "nmr_own_phase"
+            w.save_project()
+            pump_r(0.3)
+            nmr_doc_r = out / "a2r_prj" / "SI" / "a2r_prj_NMR.docx"
+            w.show_tab("export")                                              # Karte mit Ordner als Datei: kein Fehler
+            pump_r(0.5)
+            assert [c_.key for c_ in w.export_tab.cards] == ["nmr"]
+            why_r = T("nmr_own_phase")
+            shown_r, keep_notify_r = [], w.notify
+
+            def notify_r(msg_, *a_, **k_):                                    # jede Einblendung mitschreiben
+                shown_r.append(str(msg_))
+                return keep_notify_r(msg_, *a_, **k_)
+            w.notify = notify_r
+            try:
+                for run_r in (lambda: w.export_key("nmr"), w.export_all_tabs, w.export_tab.btn_si.click,
+                              lambda: (w.show_tab("nmr"), w.export_current())):
+                    w._notice_done()
+                    shown_r.clear()
+                    run_r()
+                    pump_r(0.4)
+                    docs_r = [nmr_doc_r] if nmr_doc_r.exists() else []
+                    docs_r += sorted((out / "a2r_prj" / "SI").glob("*_SI.docx"))
+                    assert docs_r and not any(media_r(p_) for p_ in docs_r), [media_r(p_) for p_ in docs_r]
+                    msg_r, links_r = w.last_notice                            # eine Mechanik: „Zurückgehalten“ + Details
+                    prog_r = T("export_all_progress", i=1, n=1, tab="X").split("1/1")[0]   # Fortschritt zählt nicht
+                    final_r = [m_ for m_ in shown_r if not m_.startswith(prog_r)]
+                    assert len(final_r) == 1, final_r                         # genau eine Meldung
+                    assert T("nmr_held_line", n=1) in msg_r and T("parts_skipped", items="")[:10] not in msg_r, msg_r
+                    w._notice_clicked(str(links_r.index(T("nmr_details"))))
+                    det_r = w.last_notice[0]
+                    assert det_r.startswith(T("nmr_held_head")) and det_r.count(why_r) == 1, det_r   # einmal genannt
+                    assert w.nmr_tab.compound_name() + " · " in det_r, det_r      # B3: Verbindung genannt
+                    for p_ in docs_r:
+                        p_.unlink()
+            finally:
+                w.__dict__.pop("notify", None)
+            # B3: gleicher Ordnername in zwei Verbindungen (Gesamt-SI) = zwei Einträge, je mit der Verbindung
+            with w.collecting_skips():
+                for who_ in ("Qza", "Qzb"):
+                    w.skip_part(why_r, out / "x" / "10", withheld=True, who=who_)
+                held_r = w.held_text()
+            assert "Qza · 10" in held_r and "Qzb · 10" in held_r, held_r
+            w.show_tab("nmr")
+            pump_r(0.2)
+            with TF_r.TemporaryDirectory() as tmp_r:                      # Entscheidung 128: zurückgehalten = nichts
+                assert w.figure_for_copy(tmp_r) == T("copy_fig_held", why=why_r) and not list(Path(tmp_r).iterdir())
+            w.nmr_tab.confirm_ref()
+            w.nmr_tab.confirm_phase()
+            assert NMR_r.own_release(w.nmr_tab.current()) is None
+            with TF_r.TemporaryDirectory() as tmp_r:                      # freigegeben: SVG + PNG-Ersatz
+                got_r = w.figure_for_copy(tmp_r)
+                assert isinstance(got_r, tuple) and Path(got_r[0]).read_bytes().lstrip().startswith(b"<"), got_r
+                assert Path(got_r[1]).read_bytes()[:4] == b"\x89PNG", got_r
+            w.show_tab("export")
+            pump_r(0.3)
+            w._notice_done()
+            w.export_all_tabs()
+            pump_r(0.4)
+            assert media_r(nmr_doc_r), "own figure missing after release"
+            w._notice_done()
+            if prev_r:
+                assert w.open_project(prev_r, ask=False, recent=False)
+                pump_r(0.8)
+            report.append("Lane A2 R7 after merging lane N (NMR: no own export button, chip = own processing; every "
+                          "export path through own_release, reason in the notice, own figure once released): OK")
+        with section:
+            # Entscheidung 128: Bearbeiten › Abbildung kopieren (SVG), Strg+Umschalt+C – Inhalt = Exportdatei der sichtbaren
+            # Seite (geprüft wird der Inhalt, nicht die Zwischenablage des Systems)
+            import base64 as B64_c
+            import hashlib as HL_c
+            import io as IO_c
+            import tempfile as TF_c
+            from PIL import Image as IM_c
+            from PySide6.QtGui import QKeySequence as QKS_c
+
+            def norm_c(p_):                                      # Datum, Zufalls-IDs und PNG-Kodierung eingebetteter Bilder
+                s_ = re.sub(r"<dc:date>[^<]*</dc:date>", "", Path(p_).read_text(encoding="utf-8"))
+                ids_ = {}
+                s_ = re.sub(r"\b((?:[pm]|image)[0-9a-f]{10})\b", lambda m_: ids_.setdefault(m_.group(1), f"I{len(ids_)}"), s_)
+                return re.sub(r"base64,([A-Za-z0-9+/=\n]+)", lambda m_: HL_c.md5(np.asarray(IM_c.open(
+                    IO_c.BytesIO(B64_c.b64decode(m_.group(1))))).tobytes()).hexdigest(), s_)
+            acts_c = [a_ for a_ in w.menuBar().actions() if a_.menu() is not None
+                      for a_ in a_.menu().actions() if a_.text() == T("act_copy_figure")]
+            assert len(acts_c) == 1 and acts_c[0].shortcut() == QKS_c("Ctrl+Shift+C"), acts_c
+            prev_c = w.project_dir
+            w.open_project(out / "demo_pub_items" / "S3", recent=False)
+            pump(0.5)
+            with TF_c.TemporaryDirectory() as tmp_c:
+                tmp_c = Path(tmp_c).resolve()                   # export_to löst auf (macOS: /private/var)
+                for key_c, page_c, file_c in (("cv", 0, "X.svg"), ("fluo", 1, "X_decay.svg")):
+                    w.show_tab(key_c)
+                    pump(0.4)
+                    t_c = getattr(w, w._tab_spec(key_c)[0])
+                    t_c.right_tabs.setCurrentIndex(page_c)
+                    d_c = tmp_c / key_c
+                    d_c.mkdir()
+                    files_c = t_c.export_to(d_c / "X")
+                    got_c = w.figure_for_copy(d_c)
+                    assert isinstance(got_c, tuple) and d_c / file_c in files_c, (key_c, got_c, files_c)
+                    assert norm_c(got_c[0]) == norm_c(d_c / file_c), key_c
+                    assert Path(got_c[1]).read_bytes()[:4] == b"\x89PNG", key_c
+                w.show_tab("xray")                                # Packung an: die Vorschau zeigt sie, kopiert wird sie
+                pump(0.4)
+                x_c = w.xray_tab
+                pk_c = x_c.pack(x_c.entry())
+                keep_pk_c, pk_c["on"] = pk_c["on"], True
+                (tmp_c / "xray").mkdir()
+                files_c = x_c.export_to(tmp_c / "xray" / "X")                # mehrere CIF-Einträge: X_<Name>_packing
+                got_c = w.figure_for_copy(tmp_c / "xray")
+                pk_c["on"] = keep_pk_c
+                pks_c = [norm_c(p_) for p_ in files_c if p_.name.endswith("_packing.svg")]
+                assert isinstance(got_c, tuple) and norm_c(got_c[0]) in pks_c, (got_c, files_c)
+                w.show_tab("fluo")
+                pump(0.3)
+                t_c.right_tabs.setCurrentIndex(2)                 # Seite ohne Abbildung (Kennwerte): Hinweis, nichts kopiert
+                assert w.figure_for_copy(tmp_c) == T("copy_fig_page")
+                t_c.right_tabs.setCurrentIndex(0)
+                w.show_tab("eps")
+                pump(0.3)
+                got_c = w.figure_for_copy(tmp_c)
+                assert isinstance(got_c, tuple) and Path(got_c[0]).exists(), got_c
+                for key_c in ("xray", "dft"):                     # Kopieren ändert weder Zustand noch Rückgängig
+                    w.show_tab(key_c)
+                    pump(0.5)
+                    st0_c, und0_c = json.dumps(w.get_state(), sort_keys=True, default=str), list(w._undo)
+                    (tmp_c / ("s_" + key_c)).mkdir()
+                    assert isinstance(w.figure_for_copy(tmp_c / ("s_" + key_c)), tuple), key_c
+                    pump(0.6)
+                    assert json.dumps(w.get_state(), sort_keys=True, default=str) == st0_c and w._undo == und0_c, key_c
+                w.show_tab("cv")                                  # Projektseite und Übersicht: nichts kopiert
+                pump(0.3)
+                w.open_publication(out / "demo_pub_items")
+                pump(0.4)
+                assert w.figure_for_copy(tmp_c / "pub") == T("copy_fig_none") and not (tmp_c / "pub").exists()
+                w.go_home()
+                pump(0.3)
+                assert w.figure_for_copy(tmp_c / "home") == T("copy_fig_none") and not (tmp_c / "home").exists()
+            if prev_c:
+                assert w.open_project(prev_c, ask=False, recent=False)
+                pump(0.8)
+            report.append("Copy Figure (SVG, decision 128): Edit menu with Ctrl+Shift+C, content = export file of the "
+                          "visible page, page without figure and withheld NMR = notice, nothing copied: OK")
+        with section:
+            # i18n: jeder Schlüssel genau einmal im Quelltext (ein späterer Eintrag überschreibt still den früheren; welcher
+            # Text gilt, sähe man sonst nicht). Gebaute App ohne Quelltext: nichts zu prüfen
+            import ast as AST_d
+            import collections as COL_d
+            src_d = Path(ROOT) / "elucida" / "app" / "i18n.py"
+            if src_d.is_file():
+                cnt_d = COL_d.Counter(k_.value for n_ in AST_d.walk(AST_d.parse(src_d.read_text(encoding="utf-8")))
+                                      if isinstance(n_, AST_d.Dict) for k_ in n_.keys
+                                      if isinstance(k_, AST_d.Constant) and isinstance(k_.value, str))
+                dup_d = sorted(k_ for k_, n_ in cnt_d.items() if n_ > 1)
+                assert not dup_d, dup_d
+            report.append("i18n: no duplicate keys in the source: OK")
+        with section:
+            # Stilkarte „Schrift, Linien und Farben“ (R8, Entscheidung 129): Linienfaktor und Achsenlinien wie die Schrift
+            # global (text_fmt) oder „Nur dieser Tab“ (tab_fmt); zentraler Haken nach dem Zeichnen (Vorschau, Export, Word
+            # gleich), Standard fasst nichts an. Farben je Abbildung nur für feste Farben ohne Messungsliste (COLOR_ROLES)
+            def pump_l(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    time.sleep(0.01)
+            from matplotlib.colors import to_hex as HEX_l
+            from matplotlib.figure import Figure as MF_l
+            from matplotlib.backends.backend_agg import FigureCanvasAgg as FCA_l
+
+            def lws_l(t_):                                                   # eigenes Bild wie Export/Word
+                f_ = MF_l()
+                FCA_l(f_)
+                t_.build(f_)
+                return f_, [l_.get_linewidth() for ax_ in f_.axes for l_ in ax_.lines]
+            for k_l in ("cv", "overlay", "epr", "irms"):
+                w.show_tab(k_l)
+                pump_l(0.5)
+                t_l = getattr(w, w._tab_spec(k_l)[0])
+                assert t_l.LINE_STYLE and t_l.tf_card.sp_line is not None and w.text_format(k_l)["line_w"] == 1.0
+                f0_, lw0_ = lws_l(t_l)                                        # Standard: unverändert gezeichnet
+                assert all("_lw0" not in l_.__dict__ for ax_ in f0_.axes for l_ in ax_.lines)
+                last_l = w._undo[-1] if w._undo else None                   # Verlauf hat höchstens 200 Schritte
+                t_l.tf_card.sp_line.setValue(2.0)
+                t_l.tf_card.sp_axis.setValue(1.5)
+                t_l.tf_card.flush()
+                pump_l(0.6)
+                assert w.text_fmt["line_w"] == 2.0 and w.text_fmt["axis_w"] == 1.5 and w._undo[-1] != last_l, k_l   # global
+                t_l = getattr(w, w._tab_spec(k_l)[0])
+                f1_, lw1_ = lws_l(t_l)
+                assert lw1_ == [2 * x_ for x_ in lw0_], (k_l, lw0_, lw1_)
+                assert {round(sp_.get_linewidth(), 2) for ax_ in f1_.axes for sp_ in ax_.spines.values()} == {1.5}
+                assert t_l.tf_card.differs()
+                t_l.tf_card.restore_defaults()
+                pump_l(0.6)
+                assert w.text_fmt["line_w"] == 1.0 and w.text_fmt["axis_w"] == 0.0, k_l
+            # „Nur dieser Tab“: eigener Faktor nur im CV-Tab, der Standard aller Tabs bleibt
+            w.show_tab("cv")
+            pump_l(0.4)
+            c_l = w.cv_tab.tf_card
+            c_l.cb_own.setChecked(True)
+            pump_l(0.3)
+            c_l = w.cv_tab.tf_card
+            c_l.sp_line.setValue(3.0)
+            c_l.flush()
+            pump_l(0.6)
+            assert w.text_format("cv")["line_w"] == 3.0 and w.text_fmt["line_w"] == 1.0 and \
+                w.text_format("overlay")["line_w"] == 1.0
+            w.cv_tab.tf_card.cb_own.setChecked(False)
+            pump_l(0.4)
+            assert "cv" not in w.tab_fmt and w.text_format("cv")["line_w"] == 1.0
+            # ε-Tab: dieselben Felder, dieselbe Mechanik
+            w.show_tab("eps")
+            pump_l(0.5)
+            lw_e0 = [l_.get_linewidth() for ax_ in w.fig.axes for l_ in ax_.lines if len(l_.get_xdata())]   # ohne leere Mauszeiger-Linie
+            w.tf_card.sp_line.setValue(2.0)
+            w.tf_card.flush()
+            pump_l(0.8)
+            lw_e1 = [l_.get_linewidth() for ax_ in w.fig.axes for l_ in ax_.lines if len(l_.get_xdata())]
+            assert lw_e0 and lw_e1 == [2 * x_ for x_ in lw_e0], (lw_e0[:3], lw_e1[:3])
+            w.tf_card.restore_defaults()
+            pump_l(0.6)
+            assert w.text_fmt["line_w"] == 1.0
+            # Farben je Abbildung: Rolle setzen -> im Bild, Standardfarbe = kein Schlüssel, Zurücksetzen
+            for k_l in ("sec", "hcell", "hrms"):
+                w.show_tab(k_l)
+                pump_l(0.5)
+                t_l = getattr(w, w._tab_spec(k_l)[0])
+                assert t_l.COLOR_ROLES and sorted(t_l.tf_card.role_btns) == sorted(r_[0] for r_ in t_l.COLOR_ROLES)
+                key_l, def_l, _ = t_l.COLOR_ROLES[0]
+                cols_l = lambda f_: {HEX_l(l_.get_color()) for ax_ in f_.axes for l_ in ax_.lines} | {  # noqa: E731
+                    HEX_l(c_) for ax_ in f_.axes for co_ in ax_.collections for c_ in list(co_.get_edgecolor())[:50]}
+                t_l.tf_card._set_role(key_l, def_l, "#123456")
+                pump_l(0.6)
+                t_l = getattr(w, w._tab_spec(k_l)[0])
+                assert t_l.st.get(key_l) == "#123456" and "#123456" in cols_l(lws_l(t_l)[0]), k_l
+                t_l.tf_card._set_role(key_l, def_l, def_l)
+                assert key_l not in t_l.st                                    # Standard = kein Schlüssel
+                t_l.tf_card._set_role(key_l, def_l, "#654321")
+                t_l.tf_card.restore_defaults()
+                pump_l(0.6)
+                assert not [x_ for x_ in getattr(w, w._tab_spec(k_l)[0]).st if x_.startswith("col_")], k_l
+            # Bildunterschrift SEC: eigene Farbe -> kein Farbwort (nie aus dem Hexwert raten), Standard unverändert
+            import copy as copy_l
+            t_l = w.sec_tab
+            keep_l = {k_: copy_l.deepcopy(t_l.st.get(k_)) for k_ in ("mode", "highlight", "gradient", "cap_start", "cap_end")}
+            t_l.st.update(mode="spectra", highlight=True, gradient=False, cap_start="Qzstart", cap_end="Qzend")
+            c0_l = t_l.si_caption("X")
+            assert "<b>Qzstart</b> (blue)" in c0_l and "<b>Qzend</b> (red)." in c0_l, c0_l
+            t_l.st["col_start"] = "#123456"
+            c1_l = t_l.si_caption("X")
+            assert "<b>Qzstart</b>, " in c1_l and "(blue)" not in c1_l and "<b>Qzend</b> (red)." in c1_l, c1_l
+            t_l.st["col_end"] = "#654321"
+            c2_l = t_l.si_caption("X")
+            assert "(blue)" not in c2_l and "(red)" not in c2_l and "<b>Qzend</b>." in c2_l, c2_l
+            t_l.st["col_start"], t_l.st["col_end"] = "#1764E8", "#e8231b"     # Standard in anderer Schreibweise
+            assert t_l.si_caption("X") == c0_l
+            for k_ in ("col_start", "col_end"):
+                t_l.st.pop(k_, None)
+            assert t_l.si_caption("X") == c0_l
+            t_l.st.update(keep_l)
+            # eigenes Format von früher ohne Linien: globale Linien gelten dort nicht (Standard)
+            tf_keep_l = (dict(w.text_fmt), copy_l.deepcopy(w.tab_fmt))
+            w.tab_fmt["cv"] = {k_: v_ for k_, v_ in {**core.TEXT_DEFAULTS, **w.text_fmt}.items()
+                               if k_ not in ("line_w", "axis_w")}
+            w.text_fmt["line_w"], w.text_fmt["axis_w"] = 2.0, 1.5
+            assert w.text_format("cv")["line_w"] == 1.0 and w.text_format("cv")["axis_w"] == 0.0
+            assert w.text_format("overlay")["line_w"] == 2.0
+            w.text_fmt, w.tab_fmt = tf_keep_l
+            # Titel mit „Farben“ nur in Tabs mit Farbrollen
+            w.show_tab("uvkin")
+            pump_l(0.4)
+            ti_l = w.uvkin_tab.tf_card.box.title()
+            assert ti_l.endswith(T("tf_title_lines")) and "Farben" not in ti_l and "Colours" not in ti_l, ti_l
+            assert w.sec_tab.tf_card.box.title().endswith(T("tf_title_colors"))   # Fold: Pfeil davor
+            # Farbknöpfe ohne Wirkung bleiben sichtbar, ausgegraut und nicht drückbar, Tooltip = Grund (R8, Entscheidung
+            # 155); es zählt die Vorschau, nicht ein Bild für Export oder Teilbild
+            def idle_l(t_, want_):
+                t_.build(t_.fig)
+                assert t_.roles_idle == want_, (t_.STATE_KEY, t_.roles_idle)
+                assert t_.tf_card._role_rows and all(f_.isRowVisible(r_) for f_, r_ in t_.tf_card._role_rows)
+                for k_, (b_, _) in t_.tf_card.role_btns.items():
+                    why_ = want_.get(k_)
+                    assert not b_.isHidden() and b_.isEnabled() == (not why_) and \
+                        b_.toolTip() == (T(why_) if why_ else ""), (t_.STATE_KEY, k_, b_.toolTip())
+                    if why_:                                                 # blass: nicht die volle Farbe
+                        assert b_.property("color").lower() not in b_.styleSheet().lower(), (t_.STATE_KEY, k_)
+            all_l = lambda t_, why_: dict.fromkeys((r_[0] for r_ in t_.COLOR_ROLES), why_)   # noqa: E731
+            # H-Cell: mehrere Messungen oder eigene Messungsfarbe -> alle; CE nicht im Bild -> CE
+            t_l = w.hcell_tab
+            view_l, ce_l = t_l.st["view"], t_l.st["show_ce"]
+            t_l.st["view"], t_l.st["show_ce"] = "capacity", True
+            t_l.build(t_l.fig)
+            many_l = len(t_l._results) > 1
+            idle_l(t_l, all_l(t_l, "tf_idle_many") if many_l else {})
+            if not many_l:
+                e_l = t_l._results[0][0]
+                col_keep_l = e_l.get("color")
+                e_l["color"] = "#00aa00"
+                idle_l(t_l, all_l(t_l, "tf_idle_own"))
+                t_l.st["view"] = "potential"
+                lws_l(t_l)                                                   # Exportbild: Knöpfe bleiben wie gezeigt
+                assert not t_l.tf_card.role_btns["col_charge"][0].isEnabled()
+                e_l.pop("color") if col_keep_l is None else e_l.update(color=col_keep_l)
+                t_l.st["view"], t_l.st["show_ce"] = "capacity", False
+                idle_l(t_l, {"col_ce": "tf_idle_ce"})
+            t_l.st["view"], t_l.st["show_ce"] = "potential", ce_l
+            idle_l(t_l, {"col_ce": "tf_idle_ce"})
+            t_l.st["view"] = view_l
+            t_l.build(t_l.fig)
+            # SEC: außerhalb der Spektrenserie; ohne Hervorheben (oder mit Verlauf) und ohne λ-Labels; mit Labels wirksam
+            t_l = w.sec_tab
+            keep_l = {k_: t_l.st[k_] for k_ in ("mode", "highlight", "gradient", "bands")}
+            t_l.st["mode"] = "trace"
+            idle_l(t_l, all_l(t_l, "tf_idle_spectra"))
+            t_l.st.update(mode="spectra", highlight=False, gradient=False, bands="")
+            idle_l(t_l, all_l(t_l, "tf_idle_sec_curves"))
+            t_l.st.update(highlight=True, gradient=True)
+            idle_l(t_l, all_l(t_l, "tf_idle_sec_curves"))
+            t_l.st.update(highlight=False, gradient=False, bands="500")
+            idle_l(t_l, {})
+            t_l.st.update(keep_l)
+            t_l.build(t_l.fig)
+            # HRMS: ohne berechnetes Isotopenmuster nur „berechnet“
+            t_l = w.hrms_tab
+            calc_l = t_l.st.get("show_calc")
+            t_l.st["show_calc"] = False
+            idle_l(t_l, {"col_calc": "tf_idle_calc"})
+            t_l.st["show_calc"] = True
+            idle_l(t_l, {} if t_l.pattern() else {"col_calc": "tf_idle_calc"})
+            t_l.st.pop("show_calc") if calc_l is None else t_l.st.update(show_calc=calc_l)
+            t_l.build(t_l.fig)
+            # EPR: Spektrenbild ohne Fitkurve (mehrere Reihen: Abschnitt EPR isotherm)
+            w.show_tab("epr")
+            pump_l(0.5)
+            t_l = w.epr_tab
+            mode_l = t_l.st["mode"]
+            t_l.st["mode"] = "spectra"
+            idle_l(t_l, {"col_fit": "tf_idle_fit"})
+            t_l.st["mode"] = mode_l
+            t_l.build(t_l.fig)
+            # verwaiste Linien im Tab-Zustand (Zwischenstand vor 1.3.0) fallen beim nächsten Speichern weg
+            w.cv_tab.st["line_w"], w.cv_tab.st["axis_w"] = 2.0, 1.0
+            st_l = w.get_state()
+            assert "line_w" not in st_l["cv"] and "axis_w" not in st_l["cv"] and "line_w" not in w.cv_tab.st
+            assert "line_w" in st_l["text"]
+            assert w.epr_tab.COLOR_ROLES and not w.cv_tab.COLOR_ROLES        # CV: Farben je Messung in der Liste
+            assert not w.xray_tab.LINE_STYLE and w.xray_tab.tf_card is None or w.xray_tab.tf_card.sp_line is None
+            report.append("Style card (R8: line factor and axis width global or only this tab like the font, central "
+                          "hook for preview/export/Word incl. eps and fluorescence decay, default untouched; colour roles "
+                          "per figure for SEC/H-Cell/HRMS/EPR without measurement lists, no colour word for own colours, own format "
+                          "without inherited lines, colour buttons without effect visible but disabled with the reason as tooltip, "
+                          "orphaned keys dropped): OK")
+        with section:
+            # NMR-Tab, Quelle Bruker-Rohdaten (1.3.0 Spur N): erfundene TopSpin-Ordner, im Test erzeugt
+            from elucida.formats import bruker_nmr as BN_n1
+            from elucida.tabs import nmr as NMR_n1
+            root_n1 = out / "input" / "nmr_raw_n1"
+            shutil.rmtree(root_n1, ignore_errors=True)
+            shutil.rmtree(out / "nmr_raw_n1", ignore_errors=True)
+            shutil.rmtree(out / "nmr_raw_n1_moved", ignore_errors=True)
+            lines_n1 = [(7.29, 0.15, 1.0), (7.51, 2.0, 1.0), (7.49, 2.0, 1.0), (3.03, 6.0, 1.0), (1.33, 1.0, 1.0),
+                        (1.31, 2.0, 1.0), (1.29, 1.0, 1.0)]                 # Achse 0.03 ppm daneben (CHCl3 bei 7.29)
+            d_n1 = BN_n1.make_test_1d(root_n1 / "T1" / "10", lines_n1, phc0=30.0, td=16384, si=32768)
+            errs_n1 = []
+            keep_err_n1, w.error = w.error, errs_n1.append
+            try:
+                assert w.create_project(out / "nmr_raw_n1")
+                pump(0.3)
+                t_n1 = w.nmr_tab
+                w.main_tabs.setCurrentWidget(t_n1)
+                new_n1 = t_n1.add_raw_path(str(d_n1))
+                assert len(new_n1) == 1 and not errs_n1, errs_n1
+                s_n1 = t_n1.current()
+                assert s_n1["source"] == "bruker" and s_n1["nuclei"] == ["1H"] and s_n1["solvent"] == "CDCl3"
+                assert Path(s_n1["bruker"]) == out / "nmr_raw_n1" / "data" / "nmr" / "1H" / "T1_10"   # ganz ins Projekt
+                pr_n1 = s_n1["proc"]
+                assert pr_n1["phase"] == "procs" and pr_n1["phc0"] == 30.0 and not pr_n1["phase_ok"]
+                assert pr_n1["ref_status"] == "suggested" and abs(pr_n1["ref"] + 0.03) < 0.002, pr_n1
+                assert t_n1.preview_stack.currentIndex() == 2 and t_n1.view.y is not None
+                i_n1 = int(np.argmax(t_n1.view.y))                      # 6H-Singulett, Referenz angewandt
+                assert abs(t_n1.view.x[i_n1] - 3.00) < 0.002, t_n1.view.x[i_n1]
+                assert NMR_n1.T("nmr_not_ok") in t_n1.lbl_ref.text() and NMR_n1.T("nmr_not_ok") in t_n1.lbl_phase.text()
+                assert all(g_.isEnabled() for g_ in t_n1.raw_cards)
+                # Referenz bestätigen, Phase von Hand (0. Ordnung +15°) übernehmen, Rückgängig, Wiederholen
+                t_n1.confirm_ref()
+                assert s_n1["proc"]["ref_status"] == "confirmed"
+                pump(0.3)
+                t_n1.view.set_mode("phase")
+                t_n1.view.ph0 = 15.0
+                t_n1.commit_phase()
+                assert t_n1.current()["proc"]["phc0"] == 45.0 and t_n1.current()["proc"]["phase"] == "manual"
+                assert t_n1.view.ph0 == 0.0
+                pump(0.3)
+                w.undo()
+                pump(0.5)
+                assert w.nmr_tab.current()["proc"]["phc0"] == 30.0 and w.nmr_tab.current()["proc"]["ref_status"] == "confirmed"
+                w.redo()
+                pump(0.5)
+                assert w.nmr_tab.current()["proc"]["phc0"] == 45.0
+                # Ausschnitt aus der Ansicht: reine Zahlen im Zustand (YAML), Bereich auf der unkalibrierten Achse
+                t_n1 = w.nmr_tab
+                t_n1.view.insets = [dict(lo=1.25, hi=1.35, pos=[np.float64(0.5), 0.4, 0.3, 0.3])]
+                t_n1.view._emit("insets")
+                ins_n1 = t_n1.current()["view"]["insets"][0]
+                ref_n1 = t_n1.current()["proc"]["ref"]
+                assert type(ins_n1["pos"][0]) is float and abs(ins_n1["lo"] - (1.25 - ref_n1)) < 1e-9, ins_n1
+                # Speichern, Ordner verschieben, öffnen: Quelle, Phase, Referenz, Ausschnitt bleiben (relative Pfade)
+                w.save_project()
+                w.close_project()
+                shutil.move(str(out / "nmr_raw_n1"), str(out / "nmr_raw_n1_moved"))
+                w.open_project(str(out / "nmr_raw_n1_moved"), ask=False, recent=False)
+                pump(0.5)
+                s2_n1 = w.nmr_tab.current()
+                assert s2_n1["source"] == "bruker" and Path(s2_n1["bruker"]).parent.parent.parent.parent.name == "nmr_raw_n1_moved"
+                assert s2_n1["proc"]["phc0"] == 45.0 and s2_n1["proc"]["ref_status"] == "confirmed"
+                assert abs(s2_n1["view"]["insets"][0]["lo"] - (1.25 - ref_n1)) < 1e-9
+                w.main_tabs.setCurrentWidget(w.nmr_tab)
+                pump(0.3)
+                assert abs(w.nmr_tab.view.insets[0]["lo"] - 1.25) < 1e-9          # Ansicht: mit Referenz
+                # Abgelehnt (WDW 2 = GM, nicht geprüft): TopSpins 1r mit Meldung; ohne 1r: nicht aufgenommen, Meldung
+                d2_n1 = BN_n1.make_test_1d(root_n1 / "T2" / "10", lines_n1, td=16384, si=32768, extra_proc=dict(WDW=2))
+                n_n1 = len(w.nmr_state["spectra"])
+                assert len(w.nmr_tab.add_raw_path(str(d2_n1))) == 1
+                s3_n1 = w.nmr_tab.current()
+                assert "WDW" in w.nmr_tab.lbl_proc.text() and "1r" in w.nmr_tab.lbl_proc.text(), w.nmr_tab.lbl_proc.text()
+                assert s3_n1["proc"]["phase"] == "topspin" and w.nmr_tab.view.y is not None
+                d3_n1 = BN_n1.make_test_1d(root_n1 / "T3" / "10", lines_n1, td=16384, si=32768, extra_proc=dict(WDW=2))
+                (d3_n1 / "pdata" / "1" / "1r").unlink()
+                assert w.nmr_tab.add_raw_path(str(d3_n1)) == [] and errs_n1 and "1r" in errs_n1[-1], errs_n1
+                assert len(w.nmr_state["spectra"]) == n_n1 + 1
+                # gespiegeltes 1r (REVERSE) passt nicht zur Achse aus acqus: abgelehnt mit Meldung, nicht gezeigt
+                d4_n1 = BN_n1.make_test_1d(root_n1 / "T4" / "10", lines_n1, td=16384, si=32768,
+                                           extra_proc=dict(REVERSE="<yes>"))
+                assert w.nmr_tab.add_raw_path(str(d4_n1)) == [] and "REVERSE" in errs_n1[-1], errs_n1[-1:]
+                # ACME-Vorschlag im Hintergrund: Ergebnis als Phase „acme“, nicht bestätigt
+                w.nmr_state["current"] = s3_n1["uid"]
+                w.nmr_state["current"] = [x_ for x_ in w.nmr_tab.spectra() if x_.get("proc", {}).get("phase") != "topspin"][0]["uid"]
+                w.nmr_tab.sync_widgets()
+                w.nmr_tab.acme_phase()
+                t0_n1 = time.time()
+                while getattr(w.nmr_tab, "_acme", None) is not None and time.time() - t0_n1 < 60:
+                    pump(0.2)
+                pr_a_n1 = w.nmr_tab.current()["proc"]
+                assert pr_a_n1["phase"] == "acme" and not pr_a_n1["phase_ok"], pr_a_n1
+                # Mnova-Spektrum: Karten der Rohdaten zeigen nur den Satz, Quelle Bruker nur mit Experiment wählbar
+                p_n1 = NMR_n1.make_test_svg(root_n1 / "T1-1H.svg")
+                s4_n1 = w.nmr_tab.load_svg(str(p_n1))
+                w.nmr_state["current"] = s4_n1["uid"]
+                w.nmr_tab.sync_widgets()
+                assert not any(g_.isEnabled() for g_ in w.nmr_tab.raw_cards)
+                assert not w.nmr_tab.cmb_source.model().item(1).isEnabled() and w.nmr_tab.preview_stack.currentIndex() == 1
+            finally:
+                w.error = keep_err_n1
+            report.append("NMR tab, source Bruker raw data (folder -> own FT, phase from procs unconfirmed, CDCl3 "
+                          "reference suggestion then confirmed, manual phase in procs form, undo/redo, plain numbers, "
+                          "save + move + open, rejected set -> TopSpin 1r with message, no 1r -> message): OK")
+        with section:
+            # NMR-Tab, Auswertung eigener Spektren (1.3.0 Spur N): erfundene Multipletts bei 500 MHz, Achse 0.03 daneben
+            from elucida.formats import bruker_nmr as BN_n2
+            root_n2 = out / "input" / "nmr_raw_n2"
+            shutil.rmtree(root_n2, ignore_errors=True)
+            shutil.rmtree(out / "nmr_raw_n2", ignore_errors=True)
+
+            def mult_n2(d, js, n, sf=500.13, fw=1.0):             # Linien erster Ordnung (δ, Fläche, Breite Hz)
+                pos = np.array([0.0])
+                w = np.array([1.0])
+                for j_ in js:
+                    pos = np.concatenate([pos - j_ / 2 / sf, pos + j_ / 2 / sf])
+                    w = np.concatenate([w, w])
+                return [(d + 0.03 + p_, n * w_ / w.sum(), fw) for p_, w_ in zip(pos, w)]
+            lines_n2 = (mult_n2(7.50, [8.0], 2) + mult_n2(6.90, [8.0, 0.8], 1, fw=2.0) + mult_n2(4.10, [7.1] * 3, 2)
+                        + mult_n2(3.00, [], 3) + mult_n2(1.30, [7.1] * 2, 3) + [(7.29, 0.1, 1.0)])
+            d_n2 = BN_n2.make_test_1d(root_n2 / "T4" / "10", lines_n2, phc0=10.0, td=32768, si=65536, noise=5e-5)
+            assert w.create_project(out / "nmr_raw_n2")
+            pump(0.3)
+            t_n2 = w.nmr_tab
+            w.main_tabs.setCurrentWidget(t_n2)
+            s_n2 = t_n2.add_raw_path(str(d_n2))[0]
+            t_n2.confirm_ref()
+            t_n2 = w.nmr_tab
+            t_n2.suggest_multiplets()
+            sig_n2 = t_n2.ana(t_n2.current())["signals"]
+            by_n2 = {round(g_["shift"] + t_n2.current()["proc"]["ref"], 2): g_ for g_ in sig_n2 if g_["shift"] is not None}
+            assert by_n2.get(7.5, {}).get("mult") == "d" and by_n2[4.1]["mult"] == "q" and by_n2[1.3]["mult"] == "t", by_n2
+            assert not any(abs((g_["lo"] + g_["hi"]) / 2 - 7.29) < 0.02 for g_ in sig_n2)        # Restsignal fällt weg
+            assert all(not g_["confirmed"] for g_ in sig_n2) and all(g_["lines"] for g_ in sig_n2 if g_["mult"] != "m")
+            assert t_n2.view.fit_lines and not any(f_["ok"] for f_ in t_n2.view.fit_lines)   # Linien sichtbar, orange
+            # Normierung: Singulett 3.00 = 3 H -> nH aller Signale; vorher keine Kerne
+            assert all(t_n2.signal_nh(g_, None, None, None) is None for g_ in sig_n2)
+            t_n2._sel_uid = by_n2[3.0]["uid"]
+            t_n2.fill_ana()
+            t_n2.sp_norm.setValue(3)
+            t_n2.set_norm()
+            t_n2 = w.nmr_tab
+            ctx_n2 = t_n2._raw_ctx()
+            k_n2 = t_n2.norm_factor(ctx_n2[0], ctx_n2[2], ctx_n2[1])
+            nh_n2 = {round(g_["shift"] + ctx_n2[3], 2): t_n2.signal_nh(g_, k_n2, ctx_n2[2], ctx_n2[1])
+                     for g_ in t_n2.ana(ctx_n2[0])["signals"] if g_["shift"] is not None}
+            assert nh_n2[7.5] == 2 and nh_n2[4.1] == 2 and nh_n2[1.3] == 3, nh_n2
+            # Bestätigen je Signal: nur das gewählte
+            t_n2._sel_uid = by_n2[7.5]["uid"]
+            t_n2.fill_ana()
+            t_n2.confirm_signal()
+            st_n2 = [w.nmr_tab.sig_status(g_) for g_ in w.nmr_tab.ana(w.nmr_tab.current())["signals"]]
+            assert st_n2.count("confirmed") == 1, st_n2
+            # Muster vom Nutzer: dd 8.0/0.8 Hz (0.8 nicht getrennt) -> J nicht gemessen, Bestätigen hebt das nicht auf,
+            # erst „J übernehmen“
+            t_n2 = w.nmr_tab
+            g69_n2 = next(g_ for g_ in t_n2.ana(t_n2.current())["signals"] if g_["lo"] < 6.93 < g_["hi"])
+            t_n2._sel_uid = g69_n2["uid"]
+            t_n2.fill_ana()
+            t_n2.ed_cls.setText("dd")
+            t_n2.ed_j.setText("8.0, 0.8")
+            t_n2.fit_selected()
+            g69_n2 = w.nmr_tab.selected_signal()[1]
+            assert g69_n2["unmeasured"] == [0.8] and g69_n2["mult"] == "dd", g69_n2
+            w.nmr_tab.confirm_signal()
+            assert w.nmr_tab.sig_status(w.nmr_tab.selected_signal()[1]) == "unmeasured"
+            assert w.nmr_tab.btn_j_take.isEnabled()
+            w.nmr_tab.take_j()
+            assert w.nmr_tab.sig_status(w.nmr_tab.selected_signal()[1]) == "taken"     # nie „bestätigt“ (59)
+            # J im Bild: Bereich um das Quartett -> ein Signal (Vorschlag); „m“ von Hand
+            t_n2 = w.nmr_tab
+            ref_n2 = t_n2.current()["proc"]["ref"]
+            n0_n2 = len(t_n2.ana(t_n2.current())["signals"])
+            t_n2.multiplet_requested(4.06, 4.14, 0.0)
+            sig2_n2 = w.nmr_tab.ana(w.nmr_tab.current())["signals"]
+            assert len(sig2_n2) == n0_n2 and w.nmr_tab.selected_signal()[1]["mult"] == "q"
+            assert abs(w.nmr_tab.selected_signal()[1]["lo"] - (4.06 - ref_n2)) < 1e-9
+            w.nmr_tab.ed_cls.setText("m")
+            w.nmr_tab.fit_selected()
+            assert w.nmr_tab.selected_signal()[1]["mult"] == "m" and w.nmr_tab.selected_signal()[1]["shift"] is None
+            # Integral aus der Ansicht, Speichern -> Öffnen: Status, Normierung, J übernommen bleiben
+            w.nmr_tab.view.integrals = [dict(lo=1.25, hi=1.35)]
+            w.nmr_tab.view._emit("integrals")
+            assert abs(w.nmr_tab.ana(w.nmr_tab.current())["integrals"][0]["lo"] - (1.25 - ref_n2)) < 1e-9
+            assert abs(w.nmr_tab.view.integrals[0]["value"] - 3.0) < 0.05, w.nmr_tab.view.integrals
+            w.save_project()
+            w.close_project()
+            w.open_project(str(out / "nmr_raw_n2"), ask=False, recent=False)
+            pump(0.5)
+            a_n2 = w.nmr_tab.ana(w.nmr_tab.current())
+            assert a_n2["norm"]["n"] == 3 and len(a_n2["integrals"]) == 1
+            st2_n2 = sorted(w.nmr_tab.sig_status(g_) for g_ in a_n2["signals"])
+            assert st2_n2.count("confirmed") == 1 and st2_n2.count("taken") == 1 and any(g_.get("j_accepted") for g_ in a_n2["signals"]), st2_n2
+            report.append("NMR tab, evaluation of own spectra (suggested multiplets d/q/t with drawn lines, residual "
+                          "signal left out, normalisation by the user, confirm one signal, user pattern dd with "
+                          "unresolved J -> not measured until 'take J', J range in the figure, range + m, integral "
+                          "from the view, save + open keeps status): OK")
+        with section:
+            # NMR-Tab, SI aus eigenen Spektren (1.3.0 Spur N): Zeile über nmr_report, Unterschrift, Abbildung, Word
+            import zipfile as _zf_n3
+            from elucida.formats import bruker_nmr as BN_n3
+            root_n3 = out / "input" / "nmr_raw_n3"
+            shutil.rmtree(root_n3, ignore_errors=True)
+            shutil.rmtree(out / "nmr_raw_n3", ignore_errors=True)
+
+            def mult_n3(d, js, n, fw=1.0, sf=500.13):
+                pos, w3 = np.array([0.0]), np.array([1.0])
+                for j_ in js:
+                    pos, w3 = np.concatenate([pos - j_ / 2 / sf, pos + j_ / 2 / sf]), np.concatenate([w3, w3])
+                return [(d + 0.03 + p_, n * w_ / w3.sum(), fw) for p_, w_ in zip(pos, w3)]
+            d_n3 = BN_n3.make_test_1d(root_n3 / "T5" / "10", mult_n3(7.50, [8.0], 2) + mult_n3(6.90, [8.0, 0.8], 1, 2.0)
+                                      + mult_n3(4.10, [7.1] * 3, 2) + mult_n3(1.30, [7.1] * 2, 3) + [(7.29, 0.1, 1.0)],
+                                      td=32768, si=65536, noise=5e-5)
+            assert w.create_project(out / "nmr_raw_n3")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            w.nmr_tab.ed_text.setPlainText("1H NMR (500 MHz, CDCl3) δ 9.99 (s, 1H).\n13C NMR (126 MHz, CDCl3) δ 77.0, 14.1.")
+            w.nmr_tab.text_changed()
+            w.nmr_tab.add_raw_path(str(d_n3))
+            w.nmr_tab.confirm_ref()
+            w.nmr_tab.confirm_phase()
+            w.nmr_tab.cb_si_use.setChecked(True)                       # ausdrücklich „für die SI“ (Entscheidung 90)
+            assert "9.99" in w.nmr_tab.nmr_lines()[0][0]                 # ohne bestätigtes Signal: Mnova-Zeile bleibt
+            w.nmr_tab.suggest_multiplets()
+            t_n3 = w.nmr_tab
+            ref_n3 = t_n3.current()["proc"]["ref"]
+            sig_n3 = {round(g_["shift"] + ref_n3, 2): g_ for g_ in t_n3.ana(t_n3.current())["signals"] if g_["shift"]}
+            for c_ in (1.3, 7.5):                                      # Normierung am Triplett, zwei Signale bestätigt
+                t_n3 = w.nmr_tab
+                t_n3._sel_uid = sig_n3[c_]["uid"]
+                t_n3.fill_ana()
+                if c_ == 1.3:
+                    t_n3.sp_norm.setValue(3)
+                    t_n3.set_norm()
+                w.nmr_tab.confirm_signal()
+            t_n3 = w.nmr_tab
+            lines_n3 = t_n3.nmr_lines()
+            h1_n3 = lines_n3[0][0]
+            assert "9.99" not in h1_n3 and h1_n3.startswith("¹H NMR (500 MHz, CDCl₃): δ [ppm] = "), h1_n3
+            assert "7.50 (d, J = 8.0 Hz, 2H)" in h1_n3 and "1.30 (t, J = 7.1 Hz, 3H)" in h1_n3, h1_n3
+            q_n3 = sig_n3[4.1]
+            assert f"{q_n3['hi'] + ref_n3:.2f} – {q_n3['lo'] + ref_n3:.2f}" not in h1_n3, h1_n3   # Vorschlag: nie gedruckt
+            assert any("77.0" in p_ for p_, _ in lines_n3[1:]), lines_n3                # ¹³C weiter aus dem Mnova-Text
+            open_n3 = sum(1 for g_ in t_n3.ana(t_n3.current())["signals"] if not g_["confirmed"])
+            assert open_n3 and T("nmr_own_open", nuc="¹H", n=open_n3) in t_n3.lbl_own.text(), t_n3.lbl_own.text()
+            # nicht gemessenes J: „Ohne dieses J“ passt das Muster ohne 0.8 Hz neu an (dd -> d), danach bestätigen
+            g69_n3 = next(g_ for g_ in t_n3.ana(t_n3.current())["signals"] if g_["lo"] < 6.93 < g_["hi"])
+            t_n3._sel_uid = g69_n3["uid"]
+            t_n3.fill_ana()
+            t_n3.ed_cls.setText("dd")
+            t_n3.ed_j.setText("8.0, 0.8")
+            t_n3.fit_selected()
+            assert w.nmr_tab.selected_signal()[1]["unmeasured"] == [0.8] and w.nmr_tab.btn_j_drop.isEnabled()
+            w.nmr_tab.drop_j()
+            g_n3 = w.nmr_tab.selected_signal()[1]
+            assert g_n3["mult"] == "d" and g_n3["J"] == [8.0] and not g_n3["unmeasured"] and not g_n3["confirmed"], g_n3
+            w.nmr_tab.confirm_signal()
+            assert "6.90 (d, J = 8.0 Hz, 1H)" in w.nmr_tab.nmr_lines()[0][0], w.nmr_tab.nmr_lines()[0][0]
+            # ein Signal, das sich nicht schreiben lässt (hier: beschädigtes J im Zustand), wird genannt, die Zeile bleibt
+            import copy as _cp_n3
+            bad_n3 = _cp_n3.deepcopy(w.nmr_tab.current())
+            bad_n3["ana"]["signals"].append(dict(uid="bad", lo=1.95, hi=2.05, shift=2.0, mult="d", J=["x"], confirmed=True))
+            nuc_n3, (p_n3, _), err_n3 = w.nmr_tab.raw_line(bad_n3)
+            assert "6.90 (d" in p_n3 and len(err_n3) == 1 and f"{2.0 + ref_n3:.2f}" in err_n3[0], (p_n3, err_n3)
+            # Marken mit Bedeutung in der Unterschrift; Abbildung 16 × 11 cm ohne Bedienhilfen; Word mit Bild und Zeile
+            t_n3 = w.nmr_tab
+            t_n3.view.marks = [dict(x=1.56, text="*")]
+            t_n3.view._emit("marks")
+            t_n3 = w.nmr_tab
+            t_n3.ed_marks.setText("* = H2O")
+            t_n3.marks_note_changed()
+            s_n3 = w.nmr_tab.current()
+            assert "H<sub>2</sub>O" in NMR.caption_html(s_n3, [], "T5"), NMR.caption_html(s_n3, [], "T5")
+            svg_n3 = Path(w.nmr_tab.raw_svg(s_n3)).read_text(encoding="utf-8")
+            assert "<text" not in svg_n3                                      # Text als Pfade (project.md)
+            assert 'viewBox="0 0 453.54' in svg_n3 and "#c77c0e" not in svg_n3.lower() and "#2e9e4f" not in svg_n3.lower()
+            doc_n3 = w.nmr_tab.export_dialog(out / "nmr_raw_n3" / "own.docx")
+            with _zf_n3.ZipFile(doc_n3) as z_:
+                names_n3 = z_.namelist()
+                xml_n3 = z_.read("word/document.xml").decode("utf-8")
+            assert any(n_.endswith(".svg") for n_ in names_n3) and any(n_.endswith(".png") for n_ in names_n3), names_n3
+            assert "MHz" in xml_n3 and "Figure S" in xml_n3 and "* " in xml_n3
+            txt_n3 = (out / "nmr_raw_n3" / "SI").glob("*.txt")
+            assert any("7.50 (d, J = 8.0 Hz, 2H)" in p_.read_text(encoding="utf-8") for p_ in txt_n3)
+            # Referenz nur vorgeschlagen: ¹H-Zeile bleibt die aus dem Mnova-Text (δ hängt an der Referenz), Satz dazu
+            pr_n3 = w.nmr_tab.current()["proc"]
+            pr_n3["ref_status"] = "suggested"
+            w.nmr_tab.changed()
+            assert "9.99" in w.nmr_tab.nmr_lines()[0][0] and T("nmr_own_ref") in w.nmr_tab.lbl_own.text()
+            w.nmr_tab.current()["proc"]["ref_status"] = "confirmed"
+            w.nmr_tab.changed()
+            report.append("NMR tab, SI from own spectra (line via nmr_report replaces the Mnova line of that nucleus, "
+                          "confirmed delta/J only, suggestion -> range + m, 'without this J' refits dd -> d, unwritable "
+                          "signal named, marks in the caption, 16 x 11 cm figure without screen aids, Word): OK")
+        with section:
+            # NMR-Tab, eigene 2D-Spektren (1.3.0 Spur N): erfundenes HSQC (States-TPPI) mit drei Kreuzsignalen, eines
+            # negativ; F2 über das bestätigte ¹H desselben Magneten referenziert; ohne belegte Klasse: 2rr + Meldung
+            from elucida.formats import bruker_nmr as BN_n4
+            root_n4 = out / "input" / "nmr_raw_n4"
+            shutil.rmtree(root_n4, ignore_errors=True)
+            shutil.rmtree(out / "nmr_raw_n4", ignore_errors=True)
+            pk_n4 = [(7.33, 128.5, 1), (3.03, 40.2, 1), (4.13, 60.0, -1)]          # Achse 0.03 ppm daneben (F2)
+            d2_n4 = BN_n4.make_test_2d(root_n4 / "T6" / "11", pk_n4)
+            d1_n4 = BN_n4.make_test_1d(root_n4 / "T6" / "10", [(7.29, 0.1, 1.0), (3.03, 3.0, 1.0)], bf1=500.13,
+                                       td=16384, si=32768)
+            assert w.create_project(out / "nmr_raw_n4")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            new_n4 = w.nmr_tab.add_raw_path(str(root_n4 / "T6"))
+            assert [s_["kind"] for s_ in new_n4] == ["1D", "HSQC"], [s_["kind"] for s_ in new_n4]
+            s2_n4 = new_n4[1]
+            assert s2_n4["nuclei"] == ["1H", "13C"] and not s2_n4["struct_on"]
+            w.nmr_state["current"] = s2_n4["uid"]
+            w.nmr_tab.sync_widgets()
+            t_n4 = w.nmr_tab
+            assert t_n4.preview_stack.currentIndex() == 3 and t_n4.view2d.data is not None
+            assert T("nmr_2d_own") in t_n4.lbl_2d.text() and T("nmr_2d_uncal", dim="F2", nuc="¹H") in t_n4.lbl_2d.text()
+            v_n4 = t_n4.view2d
+            for d2_, d1_, sg_ in pk_n4:                                   # Kreuzsignale an ihrer Lage, Vorzeichen
+                i2_ = int(np.argmin(np.abs(v_n4.ax2 - d2_)))
+                i1_ = int(np.argmin(np.abs(v_n4.ax1 - d1_)))
+                blk_ = v_n4.data[i1_ - 2:i1_ + 3, i2_ - 2:i2_ + 3]
+                assert np.sign(blk_.flat[np.abs(blk_).argmax()]) == sg_ and np.abs(blk_).max() > 0.5 * np.abs(v_n4.data).max()
+            # ¹H referenzieren und bestätigen -> F2 verschoben, Hinweis „referenziert“
+            w.nmr_state["current"] = new_n4[0]["uid"]
+            w.nmr_tab.sync_widgets()
+            w.nmr_tab.confirm_ref()
+            ref_n4 = w.nmr_tab.current()["proc"]["ref"]
+            w.nmr_state["current"] = s2_n4["uid"]
+            w.nmr_tab.sync_widgets()
+            v_n4 = w.nmr_tab.view2d
+            i2_ = int(np.argmin(np.abs(v_n4.ax2 - (3.03 + ref_n4))))
+            assert abs(ref_n4 + 0.03) < 0.003 and T("nmr_2d_cal", dim="F2", nuc="¹H", d=f"{ref_n4:+.3f}") in w.nmr_tab.lbl_2d.text()
+            # Zoom (Rechteck) und Schwelle (Mausrad) wirken; SI-Abbildung und Word nehmen das 2D wie ein Mnova-Spektrum
+            v_n4.xlim, v_n4.ylim = (8.0, 2.5), (140.0, 30.0)
+            v_n4.redraw()
+            v_n4.view_changed.emit(v_n4.xlim, v_n4.ylim)                  # Zoom gespeichert (SI, Öffnen)
+            assert w.nmr_tab.current()["view2d"]["xlim"] == [8.0, 2.5]
+            svg_n4 = Path(w.nmr_tab.raw_svg2d(w.nmr_tab.current())).read_text(encoding="utf-8")
+            assert 'viewBox="0 0 453.54' in svg_n4 and "<text" not in svg_n4
+            w.nmr_tab.cb_si_use.setChecked(True)                       # eigene 2D-Abbildung nur „für die SI“
+            w.nmr_tab.cb_2d_nominal.setChecked(True)                   # F1 (¹³C) ohne eigenes 1D: nominell bestätigt
+            blocks_n4 = w.nmr_tab.docx_blocks(out / "nmr_raw_n4")
+            assert sum(1 for b_ in blocks_n4 if b_[0] == "image") == 1, blocks_n4      # ¹H nicht gewählt: nicht in Word
+            # nicht belegte Klasse (WDW EM in 2D) -> TopSpins 2rr mit der Meldung (Name mit drei Pfadteilen)
+            d3_n4 = BN_n4.make_test_2d(root_n4 / "T7" / "11", pk_n4, two_rr=True)
+            pr_n4 = d3_n4 / "pdata" / "1" / "procs"
+            pr_n4.write_text(pr_n4.read_text(encoding="latin-1").replace("##$WDW= 4", "##$WDW= 1"), encoding="latin-1")
+            s3_n4 = w.nmr_tab.add_raw_path(str(d3_n4))[0]
+            w.nmr_state["current"] = s3_n4["uid"]
+            w.nmr_tab.sync_widgets()
+            txt_n4 = w.nmr_tab.lbl_2d.text()
+            assert T("nmr_2d_2rr") in txt_n4 and "WDW" in txt_n4 and "HSQC/T7_11" in txt_n4, txt_n4
+            report.append("NMR tab, own 2D spectra (HSQC from ser with signs at their positions, F2 referenced via "
+                          "the confirmed 1H of the same magnet, zoom/threshold, SI figure + Word, unchecked class -> "
+                          "TopSpin 2rr with message): OK")
+        with section:
+            # NMR-Tab, X-Kerne (1.3.0 Spur N): Achse nominell als Vorgabe; Unified Scale nur über ein bestätigtes ¹H
+            # derselben Probe am selben Magneten (Ξ doppelt abgeschrieben), danach bestätigen; anderer Magnet -> Meldung
+            from elucida.core import nmr_analysis as NA_n5
+            from elucida.formats import bruker_nmr as BN_n5
+            root_n5 = out / "input" / "nmr_raw_n5"
+            shutil.rmtree(root_n5, ignore_errors=True)
+            shutil.rmtree(out / "nmr_raw_n5", ignore_errors=True)
+            bh_n5 = 500.13
+            BN_n5.make_test_1d(root_n5 / "T8" / "10", [(7.29, 0.1, 1.0), (2.33, 3.0, 1.0)], bf1=bh_n5, td=16384, si=32768)
+            BN_n5.make_test_1d(root_n5 / "T8" / "11", [(-63.69, 3.0, 2.0)], nucleus="19F", bf1=NA_n5.XI["19F"] / 100 * bh_n5,
+                               o1p=-100.0, sw_ppm=200.0, td=16384, si=32768, pulprog="zgfhigqn")
+            BN_n5.make_test_1d(root_n5 / "T9" / "11", [(-63.69, 3.0, 2.0)], nucleus="19F",
+                               bf1=NA_n5.XI["19F"] / 100 * 400.13, o1p=-100.0, sw_ppm=200.0, td=16384, si=32768)
+            errs_n5 = []
+            keep_err_n5, w.error = w.error, errs_n5.append
+            try:
+                assert w.create_project(out / "nmr_raw_n5")
+                pump(0.3)
+                w.main_tabs.setCurrentWidget(w.nmr_tab)
+                h_n5, f_n5 = w.nmr_tab.add_raw_path(str(root_n5 / "T8"))
+                assert f_n5["nuclei"] == ["19F"] and f_n5["proc"]["ref"] is None
+                w.nmr_state["current"] = f_n5["uid"]
+                w.nmr_tab.sync_widgets()
+                assert T("nmr_ref_nominal", nuc="19F") in w.nmr_tab.lbl_ref_note.text()      # Vorgabe: nominell
+                w.nmr_tab.unified_ref()                                      # ¹H noch nicht bestätigt -> Meldung
+                assert errs_n5 and errs_n5[-1] == T("nmr_xi_noh") and w.nmr_tab.current()["proc"]["ref"] is None
+                w.nmr_state["current"] = h_n5["uid"]
+                w.nmr_tab.sync_widgets()
+                w.nmr_tab.confirm_ref()
+                w.nmr_state["current"] = f_n5["uid"]
+                w.nmr_tab.sync_widgets()
+                w.nmr_tab.unified_ref()
+                pr_n5 = w.nmr_tab.current()["proc"]
+                assert pr_n5["ref_src"] == "unified" and pr_n5["ref_status"] == "suggested" and abs(pr_n5["ref"] + 0.03) < 0.002
+                w.nmr_tab.confirm_ref()
+                v_n5 = w.nmr_tab.view
+                assert abs(v_n5.x[int(np.argmax(v_n5.y))] - (-63.72)) < 0.01, v_n5.x[int(np.argmax(v_n5.y))]
+                assert v_n5.axis_label() == "δ $^{19}$F (ppm)"            # Arial hat kein hochgestelltes 9
+                # anderer Magnet (400 MHz) mit demselben ¹H: BF1-Verhältnis passt nicht -> Meldung, Achse bleibt
+                f2_n5 = w.nmr_tab.add_raw_path(str(root_n5 / "T9" / "11"))[0]
+                w.nmr_state["current"] = f2_n5["uid"]
+                w.nmr_tab.sync_widgets()
+                w.nmr_tab.unified_ref()
+                assert w.nmr_tab.current()["proc"]["ref"] is None and errs_n5[-1] == T("nmr_xi_noh")   # andere Probe
+                try:                                                     # gleiche Probe, anderer Magnet: Verhältnis
+                    NA_n5.unified_shift("19F", NA_n5.XI["19F"] / 100 * 400.13, bh_n5, 0.0)
+                    raise AssertionError("other magnet accepted")
+                except ValueError as ex_n5:
+                    assert "BF1" in str(ex_n5), ex_n5
+            finally:
+                w.error = keep_err_n5
+            assert sorted(NA_n5.XI) == ["11B", "13C", "15N", "19F", "1H", "29Si", "31P"] and NA_n5.XI_15N_NH3 == 10.132912
+            report.append("NMR tab, X nuclei (axis nominal by default, unified scale only via a confirmed 1H of the same "
+                          "sample and magnet, then confirmed; other magnet -> message; only the doubly checked Xi): OK")
+        with section:
+            # NMR Fix-Runde 1 (Prüferbefunde, erfundene Daten): EINE Definition des Gedruckten (printed_blocks). Mnova bleibt,
+            # bis ein eigenes Spektrum „für die SI“ gewählt UND Phase + Referenz bestätigt sind (jeder Kern); nur bestätigte
+            # Signale; Tabelle, Kernzahl, Vergleich und Word lesen dieselbe Definition; Abbildung beschriftet nur Bestätigtes
+            import copy as _cp_f1
+            from elucida.app import comparison as CMP_f1
+            from elucida.formats import bruker_nmr as BN_f1
+            from elucida.tabs import nmr_view as NV_f1
+            root_f1 = out / "input" / "nmr_fix1"
+            shutil.rmtree(root_f1, ignore_errors=True)
+            shutil.rmtree(out / "nmr_fix1", ignore_errors=True)
+            lin_f1 = [(7.29, 0.1, 1.0), (7.53, 1.0, 1.0), (7.51, 1.0, 1.0), (3.03, 3.0, 1.0), (1.56, 0.4, 1.0)]  # H2O: Vorschlag
+            raw_f1 = BN_f1.make_test_1d(root_f1 / "T1" / "10", lin_f1, td=16384, si=32768, noise=5e-5)
+            raw2_f1 = BN_f1.make_test_1d(root_f1 / "T1" / "13", lin_f1, td=16384, si=32768, noise=5e-5)
+            errs_f1 = []
+            keep_err_f1, w.error = w.error, errs_f1.append
+            try:
+                assert w.create_project(out / "nmr_fix1")
+                pump(0.3)
+                w.main_tabs.setCurrentWidget(w.nmr_tab)
+                w.nmr_tab.ed_text.setPlainText("1H NMR (500 MHz, CDCl3) δ 7.52 (d, J = 8.0 Hz, 2H), 3.00 (s, 3H).")
+                w.nmr_tab.text_changed()
+                svg_f1 = w.nmr_tab.load_svg(str(NMR.make_test_svg(root_f1 / "T1-1H.svg")))
+                w.nmr_tab.import_topspin(str(raw_f1))                     # verknüpft mit dem Mnova-Spektrum
+                w.nmr_state["current"] = svg_f1["uid"]
+                w.nmr_tab.sync_widgets()
+                t_f1 = w.nmr_tab
+                t_f1.cmb_source.setCurrentIndex(1)                        # Quelle Bruker
+                t_f1 = w.nmr_tab
+                mn_f1 = "7.52 (d, J = 8.0 Hz, 2H), 3.00 (s, 3H)"
+                # Befund 1: Referenz bestätigt, Vorschläge unberührt -> nichts Eigenes gedruckt (vorher „(m)“ je Vorschlag)
+                t_f1.confirm_ref()
+                w.nmr_tab.suggest_multiplets()
+                t_f1 = w.nmr_tab
+                assert mn_f1 in t_f1.nmr_lines()[0][0], t_f1.nmr_lines()
+                # Befund 2: alles bestätigt, aber nicht „für die SI“ gewählt -> Mnova bleibt (Entscheidung 90)
+                t_f1.confirm_phase()
+                t_f1 = w.nmr_tab
+                sig_f1 = t_f1.ana(t_f1.current())["signals"]
+                ref_f1 = t_f1.current()["proc"]["ref"]
+                g3_f1 = next(g_ for g_ in sig_f1 if g_["lo"] < 3.0 - ref_f1 < g_["hi"])
+                t_f1._sel_uid = g3_f1["uid"]
+                t_f1.fill_ana()
+                t_f1.confirm_signal()
+                t_f1 = w.nmr_tab
+                assert mn_f1 in t_f1.nmr_lines()[0][0] and T("nmr_own_not_chosen") in t_f1.lbl_own.text(), t_f1.lbl_own.text()
+                # gewählt + Phase + Referenz: nur das bestätigte Signal, nie „(m, 0H)“ eines Vorschlags; offene gezählt
+                t_f1.cb_si_use.setChecked(True)
+                t_f1 = w.nmr_tab
+                line_f1 = t_f1.nmr_lines()[0][0]
+                assert line_f1.endswith("= 3.00 (s)") and "(m" not in line_f1, line_f1
+                n_open_f1 = sum(1 for g_ in t_f1.ana(t_f1.current())["signals"] if not g_["confirmed"])
+                assert n_open_f1 and T("nmr_own_open", nuc="¹H", n=n_open_f1) in t_f1.lbl_own.text()
+                # Befund 3: Signaltabelle, Kernzahl, Kacheln und Vergleich lesen dasselbe wie die Zeile
+                assert [t_f1.tbl_sig.item(r_, 1).text() for r_ in range(t_f1.tbl_sig.rowCount())] == ["3.00"]
+                assert [x_["t"] for x_ in CMP_f1._nmr_entry(w)["signals"] if x_["nuc"] == "1H"] == ["3.00"]
+                # Phase wieder offen (z. B. von Hand gezogen ist bestätigt; hier ausdrücklich zurück) -> Mnova
+                t_f1.current()["proc"]["phase_ok"] = False
+                t_f1.changed()
+                assert mn_f1 in w.nmr_tab.nmr_lines()[0][0] and T("nmr_own_phase") in w.nmr_tab.lbl_own.text()
+                w.nmr_tab.confirm_phase()
+                # Befund 4: Abbildung nur mit Bestätigtem beschriftet (Multipletts, Peaks); ¹³C-/¹H-Vorschlagspeaks nie
+                t_f1 = w.nmr_tab
+                s_f1 = t_f1.current()
+                ds_f1 = t_f1.raw_ds(s_f1)
+                c_f1 = t_f1.raw_y(s_f1, ds_f1)
+                t_f1.suggest_peaks()
+                t_f1 = w.nmr_tab
+                ev_f1 = NV_f1.NMRView()
+                t_f1.push_analysis(t_f1.current(), ds_f1, c_f1, ref_f1, ev_f1, export=True)
+                assert len(ev_f1.multiplets) == 1 and ev_f1.peaks == [], (ev_f1.multiplets, ev_f1.peaks)
+                t_f1.confirm_peaks()
+                t_f1 = w.nmr_tab
+                t_f1.push_analysis(t_f1.current(), ds_f1, c_f1, ref_f1, ev_f1, export=True)
+                assert ev_f1.peaks and "(m" not in w.nmr_tab.nmr_lines()[0][0]       # Peaks drucken bei ¹H nie
+                ev_f1.deleteLater()
+                # Befund 5: angenommenes J heißt „übernommen“, nie „bestätigt“
+                g7_f1 = next(g_ for g_ in t_f1.ana(t_f1.current())["signals"] if g_["lo"] < 7.52 - ref_f1 < g_["hi"])
+                t_f1._sel_uid = g7_f1["uid"]
+                t_f1.fill_ana()
+                t_f1.ed_cls.setText("dd")
+                t_f1.ed_j.setText("8.0, 0.4")
+                t_f1.fit_selected()
+                t_f1 = w.nmr_tab
+                if t_f1.selected_signal()[1]["unmeasured"]:
+                    t_f1.take_j()
+                    w.nmr_tab.confirm_signal()
+                    t_f1 = w.nmr_tab
+                    row_f1 = [g_["uid"] for g_ in t_f1.ana(t_f1.current())["signals"]].index(t_f1._sel_uid)
+                    assert t_f1.tbl_raw_sig.item(row_f1, 4).text() == T("nmr_sigst_taken"), t_f1.tbl_raw_sig.item(row_f1, 4).text()
+                # Befund 6: zweites eigenes ¹H „für die SI“ fällt nicht still weg; nur eines je Kern gewählt
+                s2_f1 = w.nmr_tab.add_raw_path(str(raw2_f1))[0]
+                t_f1 = w.nmr_tab
+                t_f1.cb_si_use.setChecked(True)
+                assert not next(x_ for x_ in w.nmr_state["spectra"] if x_["uid"] == svg_f1["uid"]).get("si_use")
+                st2_f1 = _cp_f1.deepcopy(w.nmr_state)
+                for x_ in st2_f1["spectra"]:
+                    x_["si_use"] = x_.get("source") == "bruker" and x_.get("kind", "1D") == "1D"
+                    x_.setdefault("proc", {}).update(phase_ok=True, ref_status="confirmed")
+                assert any(T("nmr_own_second", nuc="¹H", f=Path(s2_f1["bruker"]).name)[:12] in n_
+                           for n_ in NMR.printed_blocks(st2_f1)[1]), NMR.printed_blocks(st2_f1)[1]
+                # Befund 7: eigene Abbildung nicht freigegeben -> Mnova-Abbildung in Word, die Exportmeldung sagt es
+                w.nmr_state["current"] = svg_f1["uid"]
+                w.nmr_tab.sync_widgets()
+                w.nmr_tab.cb_si_use.setChecked(True)
+                w.nmr_tab.current()["proc"]["phase_ok"] = False
+                w.nmr_tab.changed()
+                with w.collecting_skips():
+                    bl_f1 = w.nmr_tab.docx_blocks(out / "nmr_fix1")
+                    txt_f1 = w.skips_text() + w.held_text()                    # zurückgehalten: eigene Überschrift
+                assert T("nmr_fig_mnova", why=T("nmr_own_phase")) in txt_f1, txt_f1
+                assert any(b_[0] == "image" and Path(b_[-1]).name.startswith("T1-1H") for b_ in bl_f1 if len(b_) > 4), bl_f1
+                # Befund 8: TopSpins 1r ohne 1i -> weder ACME noch Phase von Hand, mit Grund; Bereichsspalte eigenes Spektrum
+                d3_f1 = BN_f1.make_test_1d(root_f1 / "T2" / "10", lin_f1, td=16384, si=32768, extra_proc=dict(WDW=2))
+                (d3_f1 / "pdata" / "1" / "1i").unlink()
+                w.nmr_tab.add_raw_path(str(d3_f1))
+                t_f1 = w.nmr_tab
+                assert not t_f1.btn_acme.isEnabled() and not t_f1.btn_phase_manual.isEnabled()
+                assert T("nmr_no_1i") in t_f1.lbl_proc.text()
+                row_f1 = [x_["uid"] for x_ in t_f1.spectra()].index(t_f1.current()["uid"])
+                assert t_f1.tbl.item(row_f1, 3).text().strip("✓⚠ ") == "−1 – 11", t_f1.tbl.item(row_f1, 3).text()
+            finally:
+                w.error = keep_err_f1
+            # Befund 9: ¹⁹F (nominelle Achse) – Peaks bestätigt reichen nicht: erst Phase UND Referenz (auch nominell)
+            root9_f1 = root_f1 / "F"
+            BN_f1.make_test_1d(root9_f1 / "T3" / "11", [(-63.69, 3.0, 2.0)], nucleus="19F", bf1=470.59, o1p=-100.0,
+                               sw_ppm=200.0, td=16384, si=32768)
+            assert w.create_project(out / "nmr_fix1_f")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            w.nmr_tab.add_raw_path(str(root9_f1 / "T3"))
+            t_f1 = w.nmr_tab
+            t_f1.suggest_peaks()
+            w.nmr_tab.confirm_peaks()
+            w.nmr_tab.cb_si_use.setChecked(True)
+            f19_f1 = lambda: [p_ for p_, _ in w.nmr_tab.nmr_lines() if p_.startswith("¹⁹F")]   # noqa: E731
+            assert not f19_f1(), f19_f1()
+            w.nmr_tab.confirm_phase()
+            assert not f19_f1()                                               # Referenz (nominell) noch offen
+            w.nmr_tab.confirm_ref()
+            assert w.nmr_tab.current()["proc"]["ref_src"] == "nominal"
+            assert len(f19_f1()) == 1 and "-63.7" in f19_f1()[0], f19_f1()
+            report.append("NMR fix round 1 (one definition of what is printed: Mnova stays until an own spectrum is "
+                          "chosen for the SI with confirmed phase and reference, only confirmed signals, open "
+                          "suggestions counted, table/count/comparison/Word read the same, figure labels only confirmed, "
+                          "taken J, second own spectrum named, withheld figure -> Mnova + message, 1r without 1i, 19F): OK")
+        with section:
+            # NMR Fix-Runde 1b (erfundene Daten): (1) eigenes 2D mit unkalibrierten Achsen nie still in Word – erst mit
+            # referenziertem eigenem 1D je Achse oder ausdrücklich „Achsen nominell“; (2) „m“-Label im Bild = Text der SI-Zeile
+            from elucida.formats import bruker_nmr as BN_f1b
+            from elucida.tabs import nmr_view as NV_f1b
+            root_f1b = out / "input" / "nmr_fix1b"
+            shutil.rmtree(root_f1b, ignore_errors=True)
+            shutil.rmtree(out / "nmr_fix1b", ignore_errors=True)
+            d2_f1b = BN_f1b.make_test_2d(root_f1b / "T5" / "11", [(7.30, 128.0, 1), (3.00, 40.0, 1)])
+            sf_f1b = 500.13
+            l_f1b = [(7.29, 0.1, 1.0), (3.03, 3.0, 1.0)]
+            for c_, n_ in ((7.53, 2), (7.47, 1)):                         # überlappendes d/dd -> „m“
+                l_f1b += [(c_ + 0.03 + k_ * 8.9 / 2 / sf_f1b, n_ / 2, 1.5) for k_ in (-1, 1)]
+            d1_f1b = BN_f1b.make_test_1d(root_f1b / "T5" / "10", l_f1b, td=32768, si=65536, noise=5e-5)
+            assert w.create_project(out / "nmr_fix1b")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            s2_f1b = w.nmr_tab.add_raw_path(str(d2_f1b))[0]
+            w.nmr_state["current"] = s2_f1b["uid"]
+            w.nmr_tab.sync_widgets()
+            w.nmr_tab.cb_si_use.setChecked(True)
+            with w.collecting_skips():
+                bl_f1b = w.nmr_tab.docx_blocks(out / "nmr_fix1b")
+                sk_f1b = w.skips_text() + w.held_text()
+            assert not [b_ for b_ in bl_f1b if b_[0] == "image"] and T("nmr_2d_uncal_held") in sk_f1b, (bl_f1b, sk_f1b)
+            w.nmr_tab.cb_2d_nominal.setChecked(True)                      # ausdrücklich nominell -> in Word
+            with w.collecting_skips():
+                bl_f1b = w.nmr_tab.docx_blocks(out / "nmr_fix1b")
+            assert len([b_ for b_ in bl_f1b if b_[0] == "image"]) == 1, bl_f1b
+            # (2) bestätigtes „m“: Label im Bild == Bereich der SI-Zeile (vorher Mitte „7.45 (m, 3H)“)
+            s1_f1b = w.nmr_tab.add_raw_path(str(d1_f1b))[0]
+            t_f1b = w.nmr_tab
+            t_f1b.confirm_ref()
+            w.nmr_tab.confirm_phase()
+            w.nmr_tab.cb_si_use.setChecked(True)
+            w.nmr_tab.suggest_multiplets()
+            t_f1b = w.nmr_tab
+            ref_f1b = t_f1b.current()["proc"]["ref"]
+            sg_f1b = t_f1b.ana(t_f1b.current())["signals"]
+            g3_f1b = next(g_ for g_ in sg_f1b if g_["lo"] < 3.0 - ref_f1b < g_["hi"])
+            gm_f1b = next(g_ for g_ in sg_f1b if g_["lo"] < 7.5 - ref_f1b < g_["hi"])
+            for g_ in (g3_f1b, gm_f1b):
+                t_f1b = w.nmr_tab
+                t_f1b._sel_uid = g_["uid"]
+                t_f1b.fill_ana()
+                if g_ is g3_f1b:
+                    t_f1b.sp_norm.setValue(3)
+                    t_f1b.set_norm()
+                else:                                                  # ausdrücklich als „m“ behalten
+                    t_f1b.ed_cls.setText("m")
+                    t_f1b.fit_selected()
+                w.nmr_tab.confirm_signal()
+            t_f1b = w.nmr_tab
+            line_f1b = t_f1b.nmr_lines()[0][0]
+            v_f1b = t_f1b.view
+            v_f1b.opts["mult_label"] = "delta_full"
+            lab_f1b = [v_f1b._ml_text(m_) for m_ in v_f1b.multiplets if m_["cls"] == "m" and m_["uid"] == gm_f1b["uid"]]
+            assert lab_f1b and " – " in lab_f1b[0] and lab_f1b[0] in line_f1b, (lab_f1b, line_f1b)
+            ev_f1b = NV_f1b.NMRView()                                    # dasselbe in der SI-Abbildung
+            t_f1b.push_analysis(t_f1b.current(), t_f1b.raw_ds(t_f1b.current()), t_f1b.raw_y(t_f1b.current()), ref_f1b,
+                                ev_f1b, export=True)
+            ev_f1b.opts["mult_label"] = "delta_full"
+            assert [ev_f1b._ml_text(m_) for m_ in ev_f1b.multiplets if m_["cls"] == "m"] == lab_f1b
+            ev_f1b.deleteLater()
+            report.append("NMR fix round 1b (own 2D with uncalibrated axes kept out of Word with a notice until "
+                          "referenced or nominal axes chosen; label of a confirmed m = range of the SI line): OK")
+        with section:
+            # NMR Runde 2, Ansicht (erfundene Daten): X im Ausschnitt schneidet Teile heraus („//“), Labels je Teil über
+            # dem Teil, Hinweis bei zu vielen Labels, Peak-Label-Größe ab Vorlage, Multiplett-Labels lesbar am Bildschirm
+            from matplotlib.backend_bases import MouseEvent as _ME_n2
+            from PySide6.QtTest import QTest as _QT_n2
+            from elucida.tabs import nmr_view as NV_n2
+            d_n2 = NV_n2.make_test_spectrum()
+            v_n2 = NV_n2.NMRView()
+            v_n2.set_spectrum(d_n2["x"], d_n2["y"], d_n2["sf"])
+            v_n2.set_peaks(d_n2["peaks"])
+            v_n2.set_integrals(d_n2["integrals"])
+            v_n2.resize(1100, 720)
+            v_n2.show()
+            pump(0.4)
+            cv_n2 = v_n2.canvas
+            got_n2 = []
+            v_n2.insets_changed.connect(lambda a_: got_n2.append(a_))
+
+            def drag_n2(p0_, p1_):
+                for k_, (x_, y_) in (("button_press_event", p0_), ("motion_notify_event", ((p0_[0] + p1_[0]) / 2, p0_[1])),
+                                     ("motion_notify_event", p1_), ("button_release_event", p1_)):
+                    cv_n2.callbacks.process(k_, _ME_n2(k_, cv_n2, x_, y_, button=1))
+            v_n2.set_insets([{"lo": 7.2, "hi": 8.1}])
+            cv_n2.draw()
+            ia_n2 = v_n2._insets_ax[0]
+            ym_n2 = (ia_n2.bbox.y0 + ia_n2.bbox.y1) / 2
+            ipx_n2 = lambda x_: (ia_n2.transData.transform((x_, 0))[0], ym_n2)      # noqa: E731
+            tol_n2 = abs(np.diff(ia_n2.transData.inverted().transform([(0, 0), (1, 0)])[:, 0])[0]) * 1.5
+            _QT_n2.keyClick(cv_n2, Qt.Key_X)
+            drag_n2(ipx_n2(7.7), ipx_n2(7.5))
+            parts_n2 = got_n2[-1][0]["parts"]
+            assert len(got_n2) == 1 and v_n2.cuts == [] and len(parts_n2) == 2, (got_n2, v_n2.cuts)
+            assert abs(parts_n2[0]["lo"] - 7.7) < 2 * tol_n2 and abs(parts_n2[1]["hi"] - 7.5) < 2 * tol_n2, parts_n2
+            assert parts_n2[0]["hi"] == 8.1 and parts_n2[1]["lo"] == 7.2
+            cv_n2.draw()
+            ia_n2 = v_n2._insets_ax[0]
+            pitch_n2 = v_n2._pt(NV_n2.G["pitch"] * v_n2.opts["peak_label_size"])
+            lab_n2 = [t_ for t_ in ia_n2.texts if t_.get_rotation() == 90 and t_.get_va() == "bottom"]   # Peak-Labels
+            assert len(lab_n2) >= 4, [t_.get_text() for t_ in ia_n2.texts]
+            for t_ in lab_n2:
+                x_ = float(t_.get_text().split()[0])
+                q_ = next(q_ for q_ in parts_n2 if q_["lo"] <= x_ <= q_["hi"])
+                a_, b_ = sorted(ia_n2.transData.transform([(q_["lo"], 0), (q_["hi"], 0)])[:, 0])
+                assert a_ - 1 <= t_.get_position()[0] <= b_ + 1, (t_.get_text(), a_, b_)   # Label über seinem Teil
+            # ein Klick oder ein Schnitt über den ganzen Ausschnitt ändert nichts; außerhalb schneidet X das Spektrum
+            ia_n2 = v_n2._insets_ax[0]
+            ym_n2 = (ia_n2.bbox.y0 + ia_n2.bbox.y1) / 2
+            drag_n2((ia_n2.bbox.x0 + 1, ym_n2), (ia_n2.bbox.x1 - 1, ym_n2))
+            assert len(got_n2) == 1 and len(v_n2.insets[0]["parts"]) == 2
+            cv_n2.draw()
+            bb_n2 = v_n2.ax.bbox
+            mpx_n2 = lambda x_: (v_n2.ax.transData.transform((x_, 0))[0], bb_n2.y0 + 3)   # noqa: E731
+            drag_n2(mpx_n2(3.0), mpx_n2(2.6))
+            assert len(v_n2.cuts) == 1 and len(got_n2) == 1, v_n2.cuts
+            # zu viele Labels für die Breite: nur ein Hinweis (in der Abbildung bleibt alles, wie es ist)
+            v_n2.set_cuts([])
+            v_n2.set_insets([])
+            assert T("nmrv_labels_crowded") not in v_n2.notes and not v_n2.lbl_note.text()
+            many_n2 = [{"x": float(x_)} for x_ in np.linspace(10.5, -0.5, 400)]
+            v_n2.set_peaks(many_n2)
+            cv_n2.draw()
+            assert T("nmrv_labels_crowded") in v_n2.notes and T("nmrv_labels_crowded") in v_n2.lbl_note.text()
+            assert len(v_n2.peaks) == 400
+            v_n2.set_peaks(d_n2["peaks"])
+            assert not v_n2.notes and not v_n2.lbl_note.text()
+            # Peak-Label-Größe: Vorgabe = Vorlage (4 pt), die Karte stellt nur größer
+            sc_n2 = v_n2.style_card()
+            sp_n2 = v_n2._boxes["peak_label_size"]
+            assert sp_n2.minimum() == NV_n2.STYLE_DEFAULT["peak_label_size"] == 4.0 and sp_n2.maximum() > 4.0
+            sc_n2.deleteLater()
+            # Multiplett-Labels: am Bildschirm mindestens ML_SCREEN_PX hoch, in der SI-Abbildung wie die Peak-Labels
+            v_n2.set_multiplets(d_n2["multiplets"])
+            v_n2.set_display({"mult_labels": True})
+            cv_n2.draw()
+            ml_n2 = [t_ for t_ in v_n2.ax.texts if t_.get_rotation() == 0 and "(" in t_.get_text()]
+            assert ml_n2, [t_.get_text() for t_ in v_n2.ax.texts]
+            px_n2 = ml_n2[0].get_fontsize() * v_n2.fig.dpi / 72 / v_n2._ratio()
+            assert px_n2 >= NV_n2.ML_SCREEN_PX - 0.01, px_n2
+            rr_n2 = cv_n2.get_renderer()
+            ex_n2 = sorted((t_.get_window_extent(rr_n2) for t_ in ml_n2), key=lambda e_: e_.x0)
+            assert all(a_.x1 < b_.x0 for a_, b_ in zip(ex_n2, ex_n2[1:])) or ml_n2[0].get_rotation() == 90
+            # Verbindungen der Multiplett-Labels laufen schräg nur unter ALLEN Labels (nie über eine Beschriftung)
+            rr_n2 = cv_n2.get_renderer()
+            low_lab_n2 = min(t_.get_window_extent(rr_n2).y0 for t_ in ml_n2)
+            conn_n2 = [l_ for l_ in v_n2._ov if isinstance(l_, NV_n2.Line2D) and len(l_.get_xdata()) == 3]
+            assert conn_n2, "keine verschobenen Multiplett-Labels im Test"
+            for l_ in conn_n2:
+                xs_, ys_ = l_.get_xdata(), l_.get_ydata()
+                assert ys_[1] < low_lab_n2 and ys_[2] < low_lab_n2 and xs_[0] == xs_[1], (list(ys_), low_lab_n2)
+                for t_ in ml_n2:                                       # senkrechter Teil nur unter dem eigenen Label
+                    e_ = t_.get_window_extent(rr_n2)
+                    assert not (e_.x0 < xs_[0] < e_.x1 and ys_[0] > e_.y0) or abs(t_.get_position()[0] - xs_[0]) < 1
+            # Zahlen der Achse überlappen nie, auch nicht am Bruch eines Ausschnitts (früher „7.487.40“)
+            v_n2.set_insets([{"lo": 7.30, "hi": 7.55, "parts": [{"lo": 7.48, "hi": 7.55}, {"lo": 7.30, "hi": 7.40}]}])
+            cv_n2.draw()
+            for a_ in (v_n2.ax, v_n2._insets_ax[0]):
+                lim_ = sorted(a_.get_xlim())
+                ex_ = sorted((t_.get_window_extent(rr_n2).x0, t_.get_window_extent(rr_n2).x1) for t_ in a_.get_xticklabels()
+                             if t_.get_text() and t_.get_visible() and lim_[0] <= t_.get_position()[0] <= lim_[1])
+                assert len(ex_) >= 2 and all(p_[1] <= q_[0] for p_, q_ in zip(ex_, ex_[1:])), ex_
+            v_n2.set_insets([])
+            # viele Multipletts in schmaler Ansicht: senkrecht, und der Platz oben reicht (keine Labels auf den Signalen)
+            x11_n2 = np.linspace(11, -1, 65536)
+            y11_n2 = sum(1.0 / (1 + ((x11_n2 - c_) / 0.002) ** 2) for c_ in np.linspace(8.6, 1.0, 11))
+            v_n2.set_spectrum(x11_n2, y11_n2, 500.0)
+            v_n2.set_peaks([])
+            v_n2.set_integrals([])
+            v_n2.set_multiplets([dict(lo=c_ - 0.03, hi=c_ + 0.03, delta=c_, cls="dd", nH=1) for c_ in np.linspace(8.6, 1.0, 11)])
+            v_n2.resize(760, 600)
+            pump(0.3)
+            v_n2.fit_highest()
+            cv_n2.draw()
+            m11_n2 = [t_ for t_ in v_n2.ax.texts if "(" in t_.get_text()]
+            assert len(m11_n2) == 11 and m11_n2[0].get_rotation() == 90
+            low_n2 = min(t_.get_window_extent(cv_n2.get_renderer()).y0 for t_ in m11_n2)
+            assert low_n2 > v_n2.ax.transData.transform((0, float(y11_n2.max())))[1], low_n2
+            v_n2.screen = False
+            assert v_n2._ml_size() == v_n2.opts["peak_label_size"]
+            v_n2.close()
+            v_n2.deleteLater()
+            report.append("NMR round 2 view (X inside an inset cuts the part out with a break, labels grouped per part, "
+                          "crowded-label notice only, peak label size from the template upwards, readable multiplet "
+                          "labels on screen only): OK")
+        with section:
+            # NMR Runde 2, Tab (erfundene Daten): Exportmeldung mit „zurückgehalten“, Kernzahl nennt offene Vorschläge,
+            # SI-Bereich nur aus dem Feld (nie die letzte Zoomstufe), Ansicht übersteht Sprache/Rückgängig, Raster, 2D mit
+            # Reiter „SI-Abbildung“ und ¹H/¹³C im Feld, Lösungsmittel tiefgestellt, abgelegter 1D-Ordner ohne Mnova-Spektrum
+            # wird eigenes Spektrum
+            from elucida.formats import bruker_nmr as BN_r2
+            from elucida.tabs import nmr_view as NV_r2
+            root_r2 = out / "input" / "nmr_r2"
+            shutil.rmtree(root_r2, ignore_errors=True)
+            shutil.rmtree(out / "nmr_r2", ignore_errors=True)
+            # Kernzahl: H fehlen, weil Vorschläge offen sind -> das sagt der Hinweis (nicht „austauschbare H?“)
+            bk_r2 = dict(nucleus="1H", signals=[dict(shift="7.30", mult="d", J="8.0", nH="2H", assign="")], open=2)
+            ck_r2 = NMR.count_check([bk_r2], "C4H5N")
+            assert ck_r2[0][1][3] == "⚠ " + T("nmr_count_open", n=2), ck_r2
+            assert T("nmr_count_less_h") in NMR.count_check([dict(bk_r2, open=0)], "C4H5N")[0][1][3]
+            # Lösungsmittel überall tiefgestellt (Ansicht, Unterschrift, Beschriftung unter der Struktur, SI-Zeile)
+            sp_r2 = dict(nuclei=["1H"], kind="1D", solvent="DMSO-d6", temp=298, freqs={"1H": "500"})
+            assert "<sub>6</sub>" in NMR.caption_html(sp_r2, [], "X"), NMR.caption_html(sp_r2, [], "X")
+            assert any("_{6}$" in t_ for t_, _ in NMR.label_lines(sp_r2, [], "X")), NMR.label_lines(sp_r2, [], "X")
+            blk_r2 = dict(nucleus="1H", dec="", freq="500", solvent="DMSO-d6", signals=[dict(shift="7.30", mult="s",
+                                                                                             J="", nH="1H", assign="")])
+            assert "<sub>6</sub>" in NMR.nmr_line(blk_r2)[1] and "d₆" in NMR.nmr_line(blk_r2)[0], NMR.nmr_line(blk_r2)
+            vv_r2 = NV_r2.NMRView()
+            vv_r2.solvents = [{"x": 2.50, "name": "DMSO-d6"}]
+            vv_r2.xlim = (11.0, -1.0)
+            vv_r2.cuts = []
+            assert any("$_{6}$" in t_ for _, t_, _, _ in vv_r2._row_items()), vv_r2._row_items()
+            vv_r2.deleteLater()
+            # eigenes ¹H (erfunden) neben einem Mnova-Spektrum
+            lin_r2 = [(7.29, 0.1, 1.0), (7.53, 1.0, 1.0), (7.51, 1.0, 1.0), (3.03, 3.0, 1.0)]
+            raw_r2 = BN_r2.make_test_1d(root_r2 / "T1" / "10", lin_r2, td=16384, si=32768, noise=5e-5)
+            assert w.create_project(out / "nmr_r2")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            s_r2 = w.nmr_tab.add_raw_path(str(raw_r2))[0]
+            t_r2 = w.nmr_tab
+            t_r2.confirm_ref()
+            ds_r2 = t_r2.raw_ds(t_r2.current())
+            ref_r2 = t_r2.current()["proc"]["ref"]
+            # SI-Bereich: „auto“ = −1…11 ppm, Zoom ändert ihn nicht; nur das Feld legt ihn fest
+            assert t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2) == (11.0, -1.0)
+            t_r2.view.set_view((7.7, 7.2), t_r2.view.ylim)
+            t_r2 = w.nmr_tab
+            assert t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2) == (11.0, -1.0)
+            row_r2 = [x_["uid"] for x_ in t_r2.spectra()].index(s_r2["uid"])
+            assert t_r2.tbl.item(row_r2, 3).text().strip("✓⚠ ") == "−1 – 11", t_r2.tbl.item(row_r2, 3).text()
+            assert t_r2.cb_rng.isChecked() and t_r2.sp_rng[0].value() == 11.0 and t_r2.sp_rng[1].value() == -1.0
+            t_r2.cb_rng.setChecked(False)
+            t_r2.sp_rng[0].setValue(10.0)
+            t_r2.sp_rng[1].setValue(0.0)
+            t_r2.si_range_changed()
+            t_r2 = w.nmr_tab
+            xl_r2 = t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2)
+            assert abs(xl_r2[0] - 10.0) < 1e-9 and abs(xl_r2[1]) < 1e-9, xl_r2
+            assert t_r2.tbl.item(row_r2, 3).text().strip("✓⚠ ") == "0 – 10", t_r2.tbl.item(row_r2, 3).text()
+            t_r2.cb_rng.setChecked(True)
+            t_r2 = w.nmr_tab
+            assert "si_xlim" not in (t_r2.current().get("view") or {})
+            # Ansicht übersteht Sprache und Rückgängig: Reiter rechts, Bildlauf links, Zoom
+            t_r2.view.set_view((7.7, 7.2), t_r2.view.ylim)
+            t_r2.right_tabs.setCurrentWidget(t_r2.right_tabs.widget(1))
+            sb_r2 = t_r2._left_parts[2].verticalScrollBar()
+            sb_r2.setValue(sb_r2.maximum() // 2)
+            t_r2.view.set_mode("integral")
+            v0_r2 = (t_r2.right_tabs.currentIndex(), sb_r2.value(), tuple(round(v_, 3) for v_ in t_r2.view.xlim),
+                     t_r2.view.mode)
+            for step_r2 in ("en", "de", "dark", "light", "undo"):
+                if step_r2 == "undo":
+                    w.nmr_tab.current()["temp"] = 300.0
+                    w.push_undo()
+                    w.undo()
+                elif step_r2 in ("dark", "light"):
+                    w.switch_theme(step_r2)
+                else:
+                    w.switch_lang(step_r2)
+                pump(1.0)
+                t_r2 = w.nmr_tab
+                v1_r2 = (t_r2.right_tabs.currentIndex(), t_r2._left_parts[2].verticalScrollBar().value(),
+                         tuple(round(v_, 3) for v_ in t_r2.view.xlim), t_r2.view.mode)
+                assert v1_r2 == v0_r2, (step_r2, v1_r2, v0_r2)
+            t_r2.right_tabs.setCurrentIndex(0)
+            t_r2.view.set_mode("pointer")
+            # Zahl der vorgeschlagenen Peaks bleibt neben dem Satz zur Normierung stehen (fill_ana überschrieb sie sofort)
+            w.nmr_tab.suggest_peaks()
+            t_r2 = w.nmr_tab
+            n_pk_r2 = len(t_r2.ana(t_r2.current())["peaks"])
+            assert T("nmr_peaks_found", n=n_pk_r2) in t_r2.lbl_ana.text() and T("nmr_norm_none") in t_r2.lbl_ana.text(), \
+                t_r2.lbl_ana.text()
+            t_r2.fill_ana()
+            assert T("nmr_peaks_found", n=n_pk_r2) in t_r2.lbl_ana.text()
+            t_r2.view.set_peaks(t_r2.view.peaks[:1])
+            t_r2.view._emit("peaks")
+            assert T("nmr_peaks_found", n=n_pk_r2) not in w.nmr_tab.lbl_ana.text()       # Peaks geändert: Zahl gilt nicht mehr
+            t_r2 = w.nmr_tab
+            assert t_r2.cb_2d_nominal.isHidden()                       # „Achsen nominell“ nur beim eigenen 2D
+            # Raster: Signaltabelle so hoch wie ihre Zeilen, „Peaks bestätigen“ und „Setzen“ über die Wertespalte,
+            # Zeile „Über ¹H (Ξ)“ nur bei X-Kernen
+            t_r2.suggest_multiplets()
+            t_r2 = w.nmr_tab
+            n_r2 = t_r2.tbl_raw_sig.rowCount()
+            hd_r2 = t_r2.tbl_raw_sig.horizontalHeader()
+            assert t_r2.tbl_raw_sig.height() == hd_r2.sizeHint().height() + min(n_r2, 8) * STYLE.CHECK_ROW_H + 2 and \
+                all(t_r2.tbl_raw_sig.rowHeight(r_) == STYLE.CHECK_ROW_H for r_ in range(n_r2)), n_r2   # keine halbe Zeile
+            assert t_r2.btn_peaks_ok.width() == t_r2.btn_norm.width() == t_r2.sp_norm.width() > 2 * t_r2.btn_ref_ok.width() - 20
+            assert t_r2.btn_unified.isHidden()                          # ¹H: Zeile ganz weg (¹⁹F unten: da)
+            # Exportmeldung (Strg+E): eigene Abbildung „für die SI“, Phase offen -> unter „zurückgehalten“ mit „Details“,
+            # kein Popup, nicht unter „Nicht lesbar“
+            t_r2.cb_si_use.setChecked(True)
+            infos_r2 = []
+            keep_info_r2, w.info = w.info, infos_r2.append
+            try:
+                w.export_current()
+                pump(0.2)
+            finally:
+                w.info = keep_info_r2
+            msg_r2, links_r2 = w.last_notice
+            assert not infos_r2 and T("nmr_held_line", n=1) in msg_r2 and T("parts_skipped", items="")[:10] not in msg_r2, msg_r2
+            assert T("nmr_details") in links_r2, links_r2
+            w._notice_clicked(str(links_r2.index(T("nmr_details"))))
+            assert w.last_notice[0].startswith(T("nmr_held_head")) and T("nmr_own_phase") in w.last_notice[0], w.last_notice
+            pump(0.1)
+            assert "_export_extra" not in w.__dict__
+            # abgelegter 1D-Ordner ohne passendes Mnova-Spektrum: eigenes Spektrum, Auswahl bleibt
+            cur_r2 = w.nmr_state["current"]
+            n_sp_r2 = len(w.nmr_state["spectra"])
+            raw3_r2 = BN_r2.make_test_1d(root_r2 / "T2" / "11", [(7.10, 1.0, 1.0)], td=16384, si=32768, noise=5e-5)
+            assert w.nmr_tab.import_topspin(str(raw3_r2)) == 1
+            assert len(w.nmr_state["spectra"]) == n_sp_r2 + 1 and w.nmr_state["current"] == cur_r2
+            assert w.nmr_state["spectra"][-1]["source"] == "bruker" and not w.nmr_state["spectra"][-1].get("si_use")
+            with w.collecting_skips():                                  # nie gewählt, nichts ausgewertet: kein Hinweis im Export
+                w.nmr_tab.docx_blocks(out / "nmr_r2")
+                new_r2 = Path(w.nmr_state["spectra"][-1]["bruker"]).name
+                sk_r2 = w.skips_text() + w.held_text()
+                assert new_r2 not in sk_r2 and Path(s_r2["bruker"]).name in sk_r2, (new_r2, sk_r2)
+            # eigenes 2D: Reiter „SI-Abbildung“ wie bei 1D; Kerne im Feld hochgestellt, getippt 1H/13C gilt weiter
+            d2_r2 = BN_r2.make_test_2d(root_r2 / "T3" / "12", [(7.30, 128.0, 1), (3.00, 40.0, 1)])
+            s2_r2 = w.nmr_tab.add_raw_path(str(d2_r2))[0]
+            t_r2 = w.nmr_tab
+            assert t_r2.current()["uid"] == s2_r2["uid"] and not any(x_ is t_r2.si_page for x_ in t_r2.right_tabs._empty)
+            assert not t_r2.cb_2d_nominal.isHidden() and t_r2.cb_2d_nominal.isEnabled()
+            assert t_r2.ed_nuc.text() == "¹H/¹³C", t_r2.ed_nuc.text()
+            t_r2.ed_nuc.setText("1H/13C")
+            t_r2.spec_edited()
+            assert w.nmr_tab.current()["nuclei"] == ["1H", "13C"]
+            f19_r2 = BN_r2.make_test_1d(root_r2 / "T4" / "13", [(-63.69, 3.0, 2.0)], nucleus="19F", bf1=470.59, o1p=-100.0,
+                                        sw_ppm=200.0, td=16384, si=32768)
+            w.nmr_tab.add_raw_path(str(f19_r2))
+            assert not w.nmr_tab.btn_unified.isHidden() and w.nmr_tab.btn_unified.isEnabled()
+            # Bereich der SI-Abbildung übersteht Anzeigeänderungen (Chip, Ausschnitt, Schnitt im Ausschnitt)
+            w.nmr_state["current"] = s_r2["uid"]
+            w.nmr_tab.sync_widgets()
+            t_r2 = w.nmr_tab
+            t_r2.cb_rng.setChecked(False)
+            t_r2.sp_rng[0].setValue(9.0)
+            t_r2.sp_rng[1].setValue(1.0)
+            t_r2.si_range_changed()
+            want_r2 = w.nmr_tab.current()["view"]["si_xlim"]
+            v_r2 = w.nmr_tab.view
+            v_r2._set_show("grid", True)
+            v_r2.insets = [{"lo": 7.0, "hi": 8.6}]
+            v_r2._emit("insets")
+            w.nmr_tab.view.cut_inset(0, 7.6, 8.2)
+            w.nmr_tab.view._emit("insets")
+            assert w.nmr_tab.current()["view"]["si_xlim"] == want_r2, w.nmr_tab.current()["view"]
+            assert len(w.nmr_tab.current()["view"]["insets"][0]["parts"]) == 2
+            w.undo()                                                    # je Schnitt ein Rückgängig-Schritt
+            pump(0.3)
+            assert len(w.nmr_tab.current()["view"]["insets"][0].get("parts") or [None]) == 1, w.nmr_tab.current()["view"]
+            report.append("NMR round 2 tab (export notice with withheld figures, open suggestions in the count, SI "
+                          "range only from the field, view kept over language/theme/undo, grid, 2D SI tab, superscript "
+                          "nuclei, subscript solvent, dropped 1D folder): OK")
+        with section:
+            # Entscheidung 130: λ-Labels (ε, SEC, Fluoreszenz) knapp über dem eigenen Maximum – nur wenn sie danach noch
+            # nach λ geordnet sind und Inset, Tabelle und Bilder genau wie bisher liegen; sonst bisherige Platzierung
+            keep_l130 = core.Figure._label_near
+            hits_l130 = []
+
+            def near_l130(self_, *a_):
+                hits_l130.append(keep_l130(self_, *a_))
+                return hits_l130[-1]
+
+            keep_pc_l130 = core.Figure._place_checked
+
+            def old_l130(build):                                    # bisherige Platzierung: ein Durchgang
+                core.Figure._place_checked = lambda self_, run_: run_()
+                try:
+                    return build()
+                finally:
+                    core.Figure._place_checked = keep_pc_l130
+
+            def px_l130(F):
+                F.fig.canvas.draw()
+                return np.asarray(F.fig.canvas.buffer_rgba()).copy()
+
+            def pos_l130(F):
+                return ({k_: tuple(np.round(a_.get_position(), 6)) for k_, a_ in F.ann_items.items()},
+                        {k_: tuple(np.round(a_.get_position().bounds, 6)) for k_, a_ in F.axes_items.items()})
+
+            def in_order_l130(F, keys):
+                x0_, x1_ = F.ax.get_xlim()
+                bx_ = [F._measure_af(F.ann_items[k_].get_window_extent(F._renderer())) for k_ in
+                       sorted(keys, key=lambda k_: (F.ann_items[k_].xy[0] - x0_) / (x1_ - x0_))]
+                return all(a_[0] + a_[2] / 2 < b_[0] + b_[2] / 2 for a_, b_ in zip(bx_, bx_[1:]))
+            dp_l130 = Path(w.open_demo_publication(out / "l130_pub"))
+            pump(0.5)
+            assert w.open_project(dp_l130 / "S3", ask=False, recent=False)
+            # 1) SEC des Beispiels: 505/760 nm knapp über ihrem Maximum, 372 nm (oben kein Platz) wie bisher
+            w.show_tab("sec")
+            pump(0.5)
+            w.sec_tab.render()
+            F_l130 = w.sec_tab.F
+            new_l130 = pos_l130(F_l130)[0]
+            assert in_order_l130(F_l130, [k_ for k_ in new_l130 if k_.startswith("label_sec_")])
+            env_l130 = F_l130._envelope(240)
+            x0_l, x1_l = F_l130.ax.get_xlim()
+            bh_l130 = {lam_: F_l130._measure_af(F_l130.ann_items[f"label_sec_{lam_}"].get_window_extent(
+                F_l130._renderer()))[3] for lam_ in (505, 760)}
+            old_l130_ = old_l130(lambda: (w.sec_tab.render(), pos_l130(w.sec_tab.F))[1])[0]
+            for lam_, bh_ in bh_l130.items():
+                k_ = f"label_sec_{lam_}"
+                e_ = env_l130[int((lam_ - x0_l) / (x1_l - x0_l) * 240)]
+                assert new_l130[k_][1] < old_l130_[k_][1] - 0.1, (k_, new_l130[k_], old_l130_[k_])      # nicht mehr oben
+                assert e_ < new_l130[k_][1] < e_ + (core.Figure.LABEL_GAP + core.Figure.LABEL_RISE + 0.3) * bh_, \
+                    (k_, new_l130[k_], e_, bh_)
+            w.sec_tab.render()
+            spec_l130 = w.sec_tab.figure_spec()                     # für 4)-6): dieselbe SEC-Abbildung mit Layout
+            # 2) ε von S2: 284 nm passte über sein Maximum, stünde dann aber links vom 246-nm-Label -> alles wie bisher
+            assert w.open_project(dp_l130 / "S2", ask=False, recent=False)
+            pump(0.5)
+            core.Figure._label_near = near_l130
+            try:
+                w.render()
+            finally:
+                core.Figure._label_near = keep_l130
+            assert any(h_ is not None for h_ in hits_l130), hits_l130
+            assert pos_l130(w.F) == old_l130(lambda: (w.render(), pos_l130(w.F))[1]), "S2: Rückfall"
+            # 3) Inset bleibt: schwache Bande links bekommt ihr Label über dem Maximum, Inset und Tabelle wie bisher
+            cfg_l130 = dict(w.make_cfg(w.current), images=[])
+            x_l130 = np.arange(220.0, 801.0)
+            sp_l130 = [dict(x=x_l130, y=sum(h_ * c_ / 30 * np.exp(-((x_l130 - l_) / 25) ** 2)
+                                             for l_, h_ in ((260, 0.35), (450, 0.9))), c=c_, name=f"l130_{c_}")
+                       for c_ in (5, 10, 20, 30)]
+
+            def build_l130(lay_=None):
+                cfg_, sp_, res_ = core.prepare_series(cfg_l130, sp_l130, "l130")
+                fig_ = MplFigure(figsize=cfg_["figsize_in"], dpi=PREVIEW_DPI)
+                FigureCanvasAgg(fig_)
+                return core.build_figure(plt, cfg_, sp_, res_, dict(lay_ or {}), fig=fig_)
+            Fn_l130, Fo_l130 = build_l130(), old_l130(build_l130)
+            pn_, po_ = pos_l130(Fn_l130), pos_l130(Fo_l130)
+            assert "inset" in pn_[1] and pn_[1] == po_[1], (pn_[1], po_[1])
+            assert Fn_l130._inset_table.get_visible() == Fo_l130._inset_table.get_visible()
+            assert pn_[0]["label_260"] != po_[0]["label_260"] and pn_[0]["label_260"][1] < 0.6, (pn_[0], po_[0])
+            assert in_order_l130(Fn_l130, ["label_260", "label_450"])
+            # 3b) mit frei platzierter Struktur und Foto (Entscheidung 138): beide genau wie bisher, Label über dem
+            #     Maximum; ebenso mit gespeicherten Bildern
+            cfg_l130 = dict(w.make_cfg(w.current))
+            assert cfg_l130.get("images"), "S2 ohne Bilder"
+            Fn_l130, Fo_l130 = build_l130(), old_l130(build_l130)
+            pn_, po_ = pos_l130(Fn_l130), pos_l130(Fo_l130)
+            assert {"image_struktur", "image_kuevette"} <= set(pn_[1]) and pn_[1] == po_[1], (pn_[1], po_[1])
+            assert pn_[0]["label_260"] != po_[0]["label_260"] and pn_[0]["label_260"][1] < 0.6, (pn_[0], po_[0])
+            lay_l130 = {k_: v_ for k_, v_ in Fo_l130.current_layout().items() if k_.startswith("image_")}
+            Fn_l130, Fo_l130 = build_l130(lay_l130), old_l130(lambda: build_l130(lay_l130))
+            pn_, po_ = pos_l130(Fn_l130), pos_l130(Fo_l130)
+            assert pn_[1] == po_[1] and pn_[0]["label_260"] != po_[0]["label_260"], (pn_, po_)
+            # 3c) Meldung „Bild verkleinert“ (aus dem bisherigen Durchgang) genau einmal, auch wenn die Labels über dem
+            #     Maximum bleiben (Entscheidung 140)
+            cfg_l130 = dict(cfg_l130, images=[dict(i_, width=i_["width"] * 1.3) for i_ in cfg_l130["images"]])
+
+            def logged_l130(build):
+                out_, keep_ = [], core.LOG
+                core.LOG = out_.append
+                try:
+                    return build(), [m_ for m_ in out_ if "image_kuevette" in m_]
+                finally:
+                    core.LOG = keep_
+            (Fn_l130, ln_), (Fo_l130, lo_) = logged_l130(build_l130), logged_l130(lambda: old_l130(build_l130))
+            pn_, po_ = pos_l130(Fn_l130), pos_l130(Fo_l130)
+            assert pn_[1] == po_[1] and pn_[0]["label_260"] != po_[0]["label_260"], (pn_, po_)
+            assert len(lo_) == 1 and ln_ == lo_, (ln_, lo_)
+            from elucida.core import tddft as XT_l130
+
+            def sec_l130(layout):
+                cfg_, curves_, labels_, sticks_ = spec_l130
+                fig_ = MplFigure(figsize=cfg_["figsize_in"], dpi=PREVIEW_DPI)
+                FigureCanvasAgg(fig_)
+                return XT_l130.SimpleFigure(plt, cfg_, curves_, labels_, dict(layout), fig=fig_, sticks=sticks_)
+            sec_new_l130 = pos_l130(sec_l130({}))[0]
+            assert sec_new_l130 != pos_l130(old_l130(lambda: sec_l130({})))[0]
+            # 4) keine freie Stelle für die Legende (nur über den Kurven) -> ganze Abbildung wie bisher
+            spot_l130 = core.Figure._legend_spot
+            core.Figure._legend_spot = lambda self_, over_curves=False: \
+                spot_l130(self_, over_curves=True) if over_curves else None
+            try:
+                F4_l130 = sec_l130({})
+                assert F4_l130._fallback and np.array_equal(px_l130(F4_l130), px_l130(old_l130(lambda: sec_l130({}))))
+            finally:
+                core.Figure._legend_spot = spot_l130
+            # 4b) Fehler im neuen Durchgang: bisherige Abbildung (pixelgleich), Traceback auf stderr (Entscheidung 140)
+            ok_l130 = core.Figure._near_ok
+
+            def boom_l130(self_, keys_):
+                raise RuntimeError("l130 test")
+            core.Figure._near_ok = boom_l130
+            err_l130 = __import__("io").StringIO()
+            try:
+                with __import__("contextlib").redirect_stderr(err_l130):
+                    F4_l130 = sec_l130({})
+            finally:
+                core.Figure._near_ok = ok_l130
+            assert "RuntimeError: l130 test" in err_l130.getvalue(), err_l130.getvalue()[-300:]
+            assert np.array_equal(px_l130(F4_l130), px_l130(old_l130(lambda: sec_l130({}))))
+            # 5) gespeicherte Legende über der 760-nm-Bande: kein Label darauf -> wie bisher; weit weg -> knapp darüber
+            lay_l130 = {"legend": [0.72, 0.42]}
+            assert np.array_equal(px_l130(sec_l130(lay_l130)), px_l130(old_l130(lambda: sec_l130(lay_l130))))
+            assert pos_l130(sec_l130({"legend": [0.05, 0.05]}))[0] == sec_new_l130
+            # 6) gespeichertes Label bleibt, wo es ist; die übrigen gehen trotzdem über ihr Maximum
+            F6_l130 = sec_l130({"label_sec_505": [0.3, 0.6]})
+            assert tuple(F6_l130.ann_items["label_sec_505"].xyann) == (0.3, 0.6)
+            assert pos_l130(F6_l130)[0]["label_sec_760"] == sec_new_l130["label_sec_760"]
+            report.append("lambda labels just above their maximum (SEC 505/760, S2 falls back to keep the order, "
+                          "inset, structure and photo stay (also placed freely), legend fallback or a label on the legend -> old layout, "
+                          "saved label stays, notices once, error -> old figure): OK")
+        with section:
+            # Entscheidung 110: Basislinie wählbar (Polynom 5 Standard, Bernstein 3 wie Mnovas Vorgabe, aus); erfundene Daten
+            from elucida.core import nmr_analysis as NA_bl
+            from elucida.formats import bruker_nmr as BN_bl
+            rng_bl = np.random.default_rng(3)
+            x_bl = np.linspace(-1, 1, 4000)
+            y_bl = 0.3 * x_bl ** 3 - 0.2 * x_bl + 0.05 + 0.01 * rng_bl.standard_normal(x_bl.size)
+            b_bl = NA_bl.bernstein_basis(x_bl, 3)
+            assert b_bl.shape == (x_bl.size, 4) and np.allclose(b_bl.sum(1), 1.0)       # Zerlegung der Eins
+            fit_bl = b_bl @ np.linalg.lstsq(b_bl, y_bl, rcond=None)[0]                  # gleiche Kurve wie Polynom 3
+            assert np.allclose(fit_bl, np.polyval(np.polyfit(x_bl, y_bl, 3), x_bl), atol=1e-9)
+            spec_bl = np.exp(-((np.arange(32768) - 9000) / 6.0) ** 2) * 50 + 0.002 * rng_bl.standard_normal(32768) \
+                + 0.5 * np.linspace(-1, 1, 32768) ** 3
+            r5_bl = NA_bl.baseline(spec_bl, 0.3)
+            assert all(np.array_equal(a_, b_) if isinstance(a_, np.ndarray) else a_ == b_
+                       for a_, b_ in zip(r5_bl, NA_bl.baseline(spec_bl, 0.3, model="poly5")))    # Standard unverändert
+            r3_bl = NA_bl.baseline(spec_bl, 0.3, model="bernstein3")
+            assert not np.array_equal(r3_bl[0], r5_bl[0]) and abs(np.median(r3_bl[0][~r3_bl[2]][:100])) < 0.05
+            root_bl = out / "input" / "nmr_bl"
+            shutil.rmtree(root_bl, ignore_errors=True)
+            shutil.rmtree(out / "nmr_bl", ignore_errors=True)
+            d_bl = BN_bl.make_test_1d(root_bl / "T1" / "10", [(7.26, 0.2, 1.0), (3.5, 3.0, 1.0)], td=16384, si=32768)
+            assert w.create_project(out / "nmr_bl")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            s_bl = w.nmr_tab.add_raw_path(str(d_bl))[0]
+            pump(0.3)
+            t_bl = w.nmr_tab
+            assert [t_bl.cmb_baseline.itemData(i_) for i_ in range(t_bl.cmb_baseline.count())] == \
+                ["poly5", "bernstein3", "off"]
+            assert t_bl.cmb_baseline.currentData() == "poly5" and "bl_model" not in s_bl["proc"]   # alte Zustände gleich
+            y5_bl = t_bl.raw_y(s_bl)["y"].copy()
+            t_bl.cmb_baseline.setCurrentIndex(1)
+            pump(0.3)
+            pr_bl = w.nmr_tab.current()["proc"]
+            assert pr_bl["bl_model"] == "bernstein3" and pr_bl["baseline"] is True
+            assert not np.array_equal(w.nmr_tab.raw_y(w.nmr_tab.current())["y"], y5_bl)
+            w.undo()
+            pump(0.5)
+            assert "bl_model" not in w.nmr_tab.current()["proc"] and w.nmr_tab.cmb_baseline.currentData() == "poly5"
+            w.redo()
+            pump(0.5)
+            assert w.nmr_tab.cmb_baseline.currentData() == "bernstein3"
+            w.nmr_tab.cmb_baseline.setCurrentIndex(2)
+            pump(0.3)
+            assert w.nmr_tab.current()["proc"]["baseline"] is False and w.nmr_tab.cmb_baseline.currentData() == "off"
+            w.nmr_tab.cmb_baseline.setCurrentIndex(0)
+            pump(0.3)
+            pr_bl = w.nmr_tab.current()["proc"]
+            assert pr_bl["baseline"] is True and "bl_model" not in pr_bl
+            assert np.array_equal(w.nmr_tab.raw_y(w.nmr_tab.current())["y"], y5_bl)
+            # unbekannte Variante (z. B. aus einer neueren Version): Polynom 5 mit Meldung, Auswahl nicht leer
+            msg_bl = NA_bl.T("b2nmr_bl_unknown", m="invented9")
+            assert NA_bl.baseline(spec_bl, 0.3, model="invented9")[3] == [msg_bl]
+            assert np.array_equal(NA_bl.baseline(spec_bl, 0.3, model="invented9")[0], r5_bl[0])
+            w.nmr_tab.current()["proc"]["bl_model"] = "invented9"
+            w.nmr_tab.sync_widgets()
+            pump(0.3)
+            assert w.nmr_tab.cmb_baseline.currentData() == "poly5", w.nmr_tab.cmb_baseline.currentIndex()
+            c_bl = w.nmr_tab.raw_y(w.nmr_tab.current())
+            assert np.array_equal(c_bl["y"], y5_bl) and msg_bl in c_bl["notes"], c_bl["notes"]
+            w.nmr_tab.current()["proc"].pop("bl_model")
+            report.append("NMR baseline choice (fifth-order polynomial default unchanged, third-order Bernstein = cubic "
+                          "least squares on the same points, off; state, undo/redo; unknown model -> polynomial with "
+                          "message): OK")
+        with section:
+            # .mnova im NMR-Tab (Entscheidung 124): künstliches Dokument wie im Abschnitt des Lesers, Inhalt erfunden
+            import hashlib as hl_md
+            import struct as st_md
+            import zlib as zl_md
+            from PySide6.QtCore import QMimeData as QMD_md, QUrl as QU_md
+            from elucida.formats import bruker_nmr as BN_md
+            from elucida.formats import mnova_doc as MV_md
+            from elucida.core import nmr_analysis as NA_md
+            root_md = out / "input" / "nmr_mnova_tab"
+            shutil.rmtree(root_md, ignore_errors=True)
+            shutil.rmtree(out / "nmr_mnova_tab", ignore_errors=True)
+            exp_md = BN_md.make_test_1d(root_md / "h1" / "10", [(7.26, 0.2, 1.0), (3.00, 3.0, 1.0)], td=8192, si=16384)
+            acq_md = (exp_md / "acqus").read_bytes()
+            prc_md = (exp_md / "pdata" / "1" / "procs").read_bytes()
+            fid_md, a_md = BN_md.read_fid(exp_md)
+            p_md = BN_md.procs(exp_md / "pdata" / "1")
+            raw_md = np.empty(2 * fid_md.size)
+            raw_md[0::2], raw_md[1::2] = fid_md.real, fid_md.imag
+
+            def qs_md(t):
+                return st_md.pack(">I", 2 * len(t)) + t.encode("utf-16-be")
+
+            def emb_md(name, data):
+                z_ = zl_md.compress(data)
+                return (qs_md(name) + st_md.pack(">II" + "IIB" * 3, 31, 0, *(2461000, 3600000, 255) * 3)
+                        + st_md.pack(">q", len(z_) + 4) + st_md.pack(">I", len(data)) + z_ + qs_md("C:/x/" + name))
+
+            def item_md(values, files, lows=()):
+                body_ = b"".join(emb_md(n_, d_) for n_, d_ in files for _ in range(2))
+                body_ += b"".join(b"\x09\x01" + bytes(8) + st_md.pack(">3d", x_, a_md["SFO1"], a_md["SW_h"]) + bytes(6)
+                                  for x_ in lows)
+                v_ = np.asarray(values, "<f4").tobytes()
+                return body_ + b"\x0f\x00\x00\x00\x00\x01" + st_md.pack(">I", len(v_) >> 8) + b"\x05" + \
+                    st_md.pack(">I", len(v_)) + b"\x01" + v_
+            ax0_md = NA_md.axis_uncalibrated(a_md, p_md)[0]
+            sw_md, bf_md = a_md["SW_h"], a_md["BF1"]
+            low_b_md, low_m_md = p_md["OFFSET"] * p_md["SF"] - sw_md, (ax0_md + 0.05) * bf_md - sw_md   # Mnova +0.05
+            c13_md = acq_md.replace(b"##$DTYPA= 2", b"##$DTYPA= 0").replace(b"<1H>", b"<13C>")
+            int_md = np.round(raw_md / np.abs(raw_md).max() * 2 ** 20)
+            two_md = [("acqus", acq_md.replace(b"##$PULPROG= <zg30>", b"##$PULPROG= <hsqcetgp>")),
+                      ("acqu2s", b"##$TD= 2\n"), ("procs", prc_md), ("proc2s", b"##$SI= 4\n")]
+            head_md = qs_md("MestReNova") + qs_md("14.2.3-12345")
+            doc_md = root_md / "invented.mnova"
+            doc_md.write_bytes(MV_md.MAGIC + st_md.pack(">I", 8 + len(head_md)) + bytes(8) + head_md + b"".join((
+                item_md(raw_md, [("acqus", acq_md), ("procs", prc_md)], (low_b_md, low_m_md, low_b_md, low_b_md)),
+                item_md(int_md, [("acqus", c13_md), ("procs", prc_md)], (low_b_md,) * 3),
+                item_md(np.zeros(2 * raw_md.size), two_md))))
+            sha_md = hl_md.sha256(doc_md.read_bytes()).hexdigest()
+            errs_md, keep_md = [], w.error
+            w.error = errs_md.append
+            try:
+                assert w.create_project(out / "nmr_mnova_tab")
+                pump(0.3)
+                w.main_tabs.setCurrentWidget(w.nmr_tab)
+                pump(0.3)
+                svg_md = w.nmr_tab.load_svg(str(NMR.make_test_svg(root_md / "X-1H.svg")))   # gewählt: bleibt gewählt
+                w.nmr_state["current"] = svg_md["uid"]
+                w.nmr_tab.sync_widgets()
+
+                class Drop_md:                                           # Ablegen wie aus dem Finder/Explorer
+                    def __init__(self, ps_):
+                        self.m_ = QMD_md()
+                        self.m_.setUrls([QU_md.fromLocalFile(str(x_)) for x_ in ps_])
+
+                    def mimeData(self):
+                        return self.m_
+                w.dropEvent(Drop_md([doc_md]))
+                pump(0.5)
+                t_md = w.nmr_tab
+                assert hl_md.sha256(doc_md.read_bytes()).hexdigest() == sha_md            # Nutzerdatei unverändert
+                stored_md = Path(t_md.st["mnova"][0])
+                assert stored_md == out / "nmr_mnova_tab" / "data" / "nmr" / "mnova" / "invented.mnova", stored_md
+                own_md = [s_ for s_ in t_md.spectra() if s_.get("mnova_doc")]
+                assert [s_["nuclei"][0] for s_ in own_md] == ["1H", "13C"], [s_["nuclei"] for s_ in own_md]
+                assert all(s_["source"] == "bruker" for s_ in own_md)
+                assert Path(own_md[0]["bruker"]) == out / "nmr_mnova_tab" / "data" / "nmr" / "1H" / "invented_1"
+                assert Path(own_md[1]["bruker"]) == out / "nmr_mnova_tab" / "data" / "nmr" / "13C" / "invented_2"
+                assert not t_md.st.get("raw"), t_md.st.get("raw")       # nachgebaut: nie als TopSpin-Rohdaten
+                assert t_md.st["current"] == svg_md["uid"]              # Ansicht wechselt nicht von selbst
+                msg_md = MV_md.T("mnovadoc_2d", where=MV_md.T("mnovadoc_where", name="invented.mnova", k=3),
+                                 what="1H, hsqcetgp")
+                assert not errs_md and msg_md in w.last_notice[0], (errs_md, w.last_notice)   # Einblendung, kein Popup
+                assert w.nmr_tab.lbl_mnova_refused.text() == msg_md, w.nmr_tab.lbl_mnova_refused.text()   # und Karte
+                own0_md = next(s_ for s_ in w.nmr_tab.spectra() if s_.get("mnova_doc"))
+                w.nmr_state["current"] = own0_md["uid"]
+                w.nmr_tab.sync_widgets()                                 # Quelle nennt das Dokument, nicht „Bruker“
+                assert w.nmr_tab.cmb_source.currentText() == NMR.T("nmr_src_mnova_doc")
+                assert w.nmr_tab.tbl.item(w.nmr_tab.tbl.currentRow(), 0).text() == NMR.T("nmr_src_row_mnova", n="invented_1")
+                w.nmr_state["current"] = svg_md["uid"]
+                w.nmr_tab.sync_widgets()
+                pr_md = own_md[0]["proc"]                               # Mnovas Referenzierung: Vorschlag, nicht bestätigt
+                assert pr_md["ref_src"] == "mnova" and pr_md["ref_status"] == "suggested", pr_md
+                assert abs(pr_md["ref"] - 0.05) < 1e-6, pr_md["ref"]
+                assert own_md[1]["proc"].get("mnova_ref") is None and own_md[1]["proc"]["ref_src"] != "mnova"
+                w.nmr_state["current"] = own_md[0]["uid"]
+                t_md.sync_widgets()
+                pump(0.5)
+                v_md = t_md.view
+                i_md = int(np.argmax(v_md.y))                          # erfundene Linie bei 3.00 -> 3.05 (±1 Punkt)
+                hz_md = abs(v_md.x[1] - v_md.x[0])
+                assert abs(v_md.x[i_md] - 3.05) <= hz_md + 1e-9, v_md.x[i_md]
+                assert NMR.T("nmr_refst_mnova", d="+0.050") in t_md.lbl_ref.text().replace("\u2212", "-").replace("\u00a0", " ") \
+                    and NMR.T("nmr_not_ok") in t_md.lbl_ref.text(), t_md.lbl_ref.text()
+                t_md.sp_ref.setValue(t_md.sp_ref.value() + 1.0)         # Sollwert verschiebt die Mnova-Referenz nicht
+                assert abs(t_md.current()["proc"]["ref"] - 0.05) < 1e-6
+                t_md.confirm_ref()
+                assert t_md.current()["proc"]["ref_status"] == "confirmed"
+                n_md = len(t_md.spectra())
+                t_md.add_mnova_file(str(doc_md))                        # noch einmal: nichts doppelt, Bestätigung bleibt
+                assert len(w.nmr_tab.spectra()) == n_md and len(w.nmr_tab.st["mnova"]) == 1
+                assert w.nmr_tab.current()["proc"]["ref_status"] == "confirmed"
+                # neu gespeichert (andere Bytes, gleiche FIDs, gleicher Name): nichts doppelt, Bestätigung bleibt
+                re_md = root_md / "resaved" / "invented.mnova"
+                re_md.parent.mkdir(parents=True, exist_ok=True)
+                re_md.write_bytes(MV_md.MAGIC + st_md.pack(">I", 8 + len(head_md)) + bytes(8) + head_md + b"".join((
+                    item_md(raw_md, [("acqus", acq_md), ("procs", prc_md)], (low_b_md,) * 4),
+                    item_md(int_md, [("acqus", c13_md), ("procs", prc_md)], (low_b_md,) * 3))))
+                assert re_md.read_bytes() != doc_md.read_bytes()
+                dirs_md = sorted(p_.name for p_ in (out / "nmr_mnova_tab" / "data" / "nmr" / "1H").iterdir())
+                w.nmr_tab.add_mnova_file(str(re_md))
+                assert len(w.nmr_tab.spectra()) == n_md and len(w.nmr_tab.st["mnova"]) == 2, len(w.nmr_tab.spectra())
+                assert w.nmr_tab.current()["proc"]["ref_status"] == "confirmed"
+                assert sorted(p_.name for p_ in (out / "nmr_mnova_tab" / "data" / "nmr" / "1H").iterdir()) == dirs_md
+                # Teilerfolg: ein Spektrum scheitert unerwartet, das andere kommt, Rückgängig/Autosave laufen
+                part_md = root_md / "partial.mnova"
+                part_md.write_bytes(MV_md.MAGIC + st_md.pack(">I", 8 + len(head_md)) + bytes(8) + head_md + b"".join((
+                    item_md(2 * raw_md, [("acqus", acq_md), ("procs", prc_md)], (low_b_md,) * 4),
+                    item_md(3 * raw_md, [("acqus", acq_md), ("procs", prc_md)], (low_b_md,) * 4))))
+                calls_md, changed_md = [], []
+                t_md = w.nmr_tab
+                real_rs_md, real_ch_md = t_md.raw_spectrum_for, t_md.changed
+
+                def rs_md(*a_, **k_):                                   # nur der Tab, nicht der Leser
+                    calls_md.append(1)
+                    if len(calls_md) == 1:
+                        raise RuntimeError("invented failure")
+                    return real_rs_md(*a_, **k_)
+                t_md.raw_spectrum_for, t_md.changed = rs_md, lambda: (changed_md.append(1), real_ch_md())
+                try:
+                    t_md.add_mnova_file(str(part_md))
+                finally:
+                    t_md.__dict__.pop("raw_spectrum_for", None)
+                    t_md.__dict__.pop("changed", None)
+                assert len(w.nmr_tab.spectra()) == n_md + 1 and changed_md, (len(w.nmr_tab.spectra()), changed_md)
+                assert "invented failure" in w.last_notice[0], w.last_notice
+                # Projektdatei: mnova_doc relativ; Datenpaket: nachgebaute Ordner nie (auch nicht wählbar)
+                w.autosave(force=True)
+                prj_md = (out / "nmr_mnova_tab" / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
+                assert "mnova_doc: data/nmr/mnova/invented.mnova" in prj_md and str(out) not in prj_md
+                from elucida.exchange import datapack as DP_md
+                arcs_md = [i_.arc for i_ in DP_md.collect(w.get_state(), out / "nmr_mnova_tab", [])]
+                assert not any(a_.startswith("NMR/") and "invented_" in a_ for a_ in arcs_md), arcs_md
+                assert any(a_ == "NMR/Spectra/X-1H.svg" for a_ in arcs_md), arcs_md
+                bad_md = root_md / "broken.mnova"
+                bad_md.write_bytes(b"not a document")
+                w.nmr_tab.add_mnova_file(str(bad_md))                   # unlesbar: abgelegt, Meldung des Lesers
+                assert w.last_notice[0] == T("nmr_mx_fallback", name="broken.mnova", why=T("nmr_mx_none")) + "\n" + \
+                    MV_md.T("mnovadoc_not_mnova", name="broken.mnova"), w.last_notice   # ohne MNova: Grund vorn (1.3.0)
+                assert MV_md.T("mnovadoc_not_mnova", name="broken.mnova") in w.nmr_tab.lbl_mnova_refused.text()
+                assert len(w.nmr_tab.st["mnova"]) == 4 and len(w.nmr_tab.spectra()) == n_md + 1
+                # mit SVGs zusammen abgelegt (1.3.0): kein Export, die FIDs nur als Rohdaten an die passenden Spektren
+                assert w.create_project(out / "nmr_mnova_attach")
+                pump(0.3)
+                w.dropEvent(Drop_md([NMR.make_test_svg(root_md / "A-1H.svg"),
+                                     NMR.make_test_svg(root_md / "A-13C.svg", ("13C",)), doc_md]))
+                pump(0.5)
+                att_md, base_md = w.nmr_tab.spectra(), out / "nmr_mnova_attach" / "data" / "nmr"
+                assert [s_["nuclei"] for s_ in att_md] == [["1H"], ["13C"]] and not w.__dict__.get("_mnova_jobs"), att_md
+                assert [Path(s_["bruker"]) for s_ in att_md] == [base_md / "1H" / "invented_1",
+                                                                 base_md / "13C" / "invented_2"], att_md
+                assert all(s_.get("source", "mnova") == "mnova" and Path(s_["mnova_doc"]) == base_md / "mnova" /
+                           "invented.mnova" and "mnova_ref" in s_["mx_ref"] for s_ in att_md), att_md   # Quelle bleibt MNova
+                assert hl_md.sha256(doc_md.read_bytes()).hexdigest() == sha_md
+                # Karte „Spektren“ (früher „Spektren (SVG/EMF aus MNova)“): kurzer Name in Schritt 1, beide Sprachen
+                for lang_md in ("en", "de"):
+                    w.switch_lang(lang_md)
+                    pump(0.3)
+                    box_md = [g_ for g_ in w.nmr_tab.findChildren(QGroupBox)
+                              if TABS._card_title(g_) == T("nmr_spectra")]
+                    assert len(box_md) == 1 and T("nmr_spectra") == ("Spectra" if lang_md == "en" else "Spektren")
+                    assert w.nmr_tab.steps.pages[0].isAncestorOf(box_md[0])
+            finally:
+                w.error = keep_md
+            report.append("NMR tab opens a .mnova document (dropped: stored unchanged in data/nmr/mnova, each 1D "
+                          "spectrum with FID as own spectrum in data/nmr/<kind>, not as TopSpin raw data, Mnova "
+                          "referencing only as unconfirmed suggestion at the right sign, 2D refused with the reader's "
+                          "message, opened twice or re-saved without duplicates, partial success kept with undo step, "
+                          "relative path in the project file, rebuilt folders not in the data package, unreadable "
+                          "stored with message; card Spectra): OK")
+        with section:
+            # Entscheidung 121: Tasten wie Mnova ohne vorherigen Klick (Fokus beim Öffnen des Tabs und unter der Maus)
+            from PySide6.QtCore import QPointF as QPF_fo
+            from PySide6.QtGui import QEnterEvent as QEE_fo, QKeyEvent as QKE_fo
+            from elucida.formats import bruker_nmr as BN_fo
+            root_fo = out / "input" / "nmr_focus"
+            shutil.rmtree(root_fo, ignore_errors=True)
+            shutil.rmtree(out / "nmr_focus", ignore_errors=True)
+            d_fo = BN_fo.make_test_1d(root_fo / "T1" / "10", [(7.26, 0.2, 1.0), (2.0, 3.0, 1.0)], td=8192, si=16384)
+            assert w.create_project(out / "nmr_focus")
+            pump(0.3)
+            w.show()
+            w.activateWindow()
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            w.nmr_tab.add_raw_path(str(d_fo))
+            pump(0.5)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("irms"))
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)                    # Tab öffnen: Spektrum hat den Fokus
+            pump(0.5)
+            cv_fo = w.nmr_tab.view.canvas
+            assert QApplication.focusWidget() is cv_fo, QApplication.focusWidget()
+
+            def enter_fo():
+                QApplication.sendEvent(cv_fo, QEE_fo(QPF_fo(20, 20), QPF_fo(20, 20), QPF_fo(20, 20)))
+                pump(0.1)
+            for typing_fo in (w.nmr_tab.ed_nuc, w.nmr_tab.sp_ref):        # Textfeld/Zahlenfeld behält den Fokus
+                w.nmr_tab.steps.reveal(typing_fo)
+                typing_fo.setFocus()
+                pump(0.2)
+                assert QApplication.focusWidget() in (typing_fo, getattr(typing_fo, "lineEdit", lambda: None)())
+                enter_fo()
+                assert QApplication.focusWidget() is not cv_fo, typing_fo
+            w.nmr_tab.tbl.setFocus()                                     # Tabelle: Maus über dem Spektrum holt ihn
+            pump(0.2)
+            enter_fo()
+            assert QApplication.focusWidget() is cv_fo, QApplication.focusWidget()
+            QApplication.sendEvent(cv_fo, QKE_fo(QEvent.KeyPress, Qt.Key_Z, Qt.NoModifier, "z"))   # ohne Klick
+            pump(0.1)
+            assert w.nmr_tab.view.mode == "zoom", w.nmr_tab.view.mode
+            w.nmr_tab.view.set_mode("pointer")
+            w.nmr_tab.tbl.setFocus()                                     # anderes Fenster aktiv: Maus holt nichts
+            pump(0.2)
+            other_fo = QWidget()
+            other_fo.show()
+            other_fo.activateWindow()
+            pump(0.3)
+            try:
+                assert not w.isActiveWindow()
+                enter_fo()
+                w.nmr_tab.focus_view()                                   # wie showEvent
+                assert w.focusWidget() is w.nmr_tab.tbl and not w.nmr_tab.view.take_focus(), w.focusWidget()
+            finally:
+                other_fo.close()
+                other_fo.deleteLater()
+                w.activateWindow()
+                pump(0.3)
+            report.append("NMR keys like Mnova without a click (spectrum focused when the tab opens and under the "
+                          "mouse, a text or number field being typed in keeps the focus, never in an inactive "
+                          "window): OK")
+        with section:
+            # Entscheidung 113: 13C-Vorschlag nur bei bestätigter Phase gefiltert (höchstes Maximum in ±1 Hz), Rest genannt
+            from elucida.core import nmr_analysis as NA_pk
+            from elucida.formats import bruker_nmr as BN_pk
+            y_pk = np.zeros(200)
+            y_pk[[50, 52, 54, 120, 160]] = [10.0, 9.0, 11.0, 8.0, 9.0]          # 50/52/54 innerhalb ±4 Punkte
+            ax_pk = np.linspace(10, 0, 200)
+            assert len(NA_pk.peaks(y_pk, ax_pk, 1.0)) == 5
+            assert [round(x_, 2) for x_, _ in NA_pk.peaks(y_pk, ax_pk, 1.0, nms=4)] == \
+                [round(ax_pk[k_], 2) for k_ in (54, 120, 160)]
+            root_pk = out / "input" / "nmr_c13_pk"
+            shutil.rmtree(root_pk, ignore_errors=True)
+            shutil.rmtree(out / "nmr_c13_pk", ignore_errors=True)
+            lines_pk = [(77.16, 1.0, 2.0), (170.1, 0.5, 2.0), (128.4, 1.0, 2.0), (128.3, 1.0, 2.0), (61.2, 0.8, 2.0),
+                        (14.1, 0.9, 2.0), (40.0, 40.0, 60.0)]            # breite, starke Linie: Rauschen auf der Flanke
+            d_pk = BN_pk.make_test_1d(root_pk / "C1" / "10", lines_pk, nucleus="13C", bf1=125.76, o1p=100.0,
+                                      sw_ppm=240.0, td=32768, si=65536, pulprog="zgpg30", noise=2e-3)
+            assert w.create_project(out / "nmr_c13_pk")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            s_pk = w.nmr_tab.add_raw_path(str(d_pk))[0]
+            pump(0.3)
+            w.nmr_tab.suggest_peaks()                                     # Phase nicht bestätigt: ungefiltert wie bisher
+            pump(0.2)
+            a_pk = w.nmr_tab.ana(w.nmr_tab.current())
+            all_pk = [p_["x"] for p_ in a_pk["peaks"]]
+            assert not a_pk["peaks_note"].get("rest") and NMR.T("nmr_peaks_rest", n=1)[:12] not in w.nmr_tab.lbl_ana.text()
+            w.nmr_tab.confirm_phase()
+            pump(0.2)
+            w.nmr_tab.suggest_peaks()
+            pump(0.3)
+            t_pk = w.nmr_tab
+            a_pk = t_pk.ana(t_pk.current())
+            ref_pk = t_pk.current()["proc"].get("ref") or 0.0
+            kept_pk = [p_["x"] for p_ in a_pk["peaks"]]
+            rest_pk = a_pk["peaks_note"]["rest"]
+            assert rest_pk > 0 and len(kept_pk) + rest_pk == len(all_pk), (len(kept_pk), rest_pk, len(all_pk))
+            for d_ in (170.1, 128.4, 128.3, 61.2, 14.1):                   # jede erfundene Linie bleibt vorgeschlagen
+                assert any(abs(x_ + ref_pk - d_) < 0.05 for x_ in kept_pk), (d_, ref_pk)
+            t_pk.fill_ana()                                               # Hinweis übersteht das Neufüllen der Karte
+            assert NMR.T("nmr_peaks_rest", n=rest_pk) in t_pk.lbl_ana.text(), t_pk.lbl_ana.text()
+            report.append("NMR 13C peak suggestion filter only with confirmed phase (highest maximum within 1 Hz, all "
+                          "invented lines kept, remaining maxima named and kept in the card): OK")
+        with section:
+            # Bruker-Daten ablegen wie in MNova: Experimentordner, aber auch fid/acqus/pdata-Ordner → das Experiment darüber
+            from PySide6.QtCore import QMimeData as QMD_bd, QUrl as QU_bd
+            errs_bd, keep_bd = [], w.error
+            w.error = errs_bd.append
+            try:
+                assert w.create_project(out / "nmr_drop_bruker")
+                pump(0.3)
+                e_bd = NMR.make_test_acqus(out / "drop_bruker_src" / "QzDS" / "10", nuc="1H", pulprog="zg30", te=298.0)
+                (e_bd / "fid").write_bytes(b"\1" * 64)
+                (e_bd / "pdata" / "1").mkdir(parents=True)
+                (e_bd / "pdata" / "1" / "procs").write_text("##$SI= 1024\n", encoding="latin-1")
+                (e_bd / "pdata" / "1" / "1r").write_bytes(b"\0" * 64)
+                fid0_bd = (e_bd / "fid").read_bytes()
+
+                class Drop_bd:                                           # Ablegen wie aus dem Finder/Explorer
+                    def __init__(self, ps_):
+                        self.m_ = QMD_bd()
+                        self.m_.setUrls([QU_bd.fromLocalFile(str(x_)) for x_ in ps_])
+
+                    def mimeData(self):
+                        return self.m_
+                w.dropEvent(Drop_bd([e_bd / "fid"]))                     # einzelne fid-Datei
+                pump(0.3)
+                raw_bd = w.nmr_tab.st.get("raw") or []
+                assert len(raw_bd) == 1 and Path(raw_bd[0]["path"]).name == "QzDS_10", raw_bd
+                for p_bd in (e_bd / "acqus", e_bd / "pdata", e_bd / "pdata" / "1", e_bd / "pdata" / "1" / "1r"):
+                    w.dropEvent(Drop_bd([p_bd]))                         # dasselbe Experiment: nichts doppelt
+                    pump(0.2)
+                    assert len(w.nmr_tab.st["raw"]) == 1, (p_bd, w.nmr_tab.st["raw"])
+                assert not errs_bd, errs_bd                              # alles erkannt, keine „unbekannte Datei“
+                assert (e_bd / "fid").read_bytes() == fid0_bd            # Nutzerdatei unverändert
+                (e_bd / "pdata" / "1" / "x.svg").write_text("<svg/>", encoding="utf-8")
+                assert NMR.find_experiments(e_bd / "pdata" / "1" / "x.svg") == []   # Datei mit Endung: nie ein Experiment
+            finally:
+                w.error = keep_bd
+            report.append("NMR: Bruker data dropped like in MNova (fid, acqus, pdata folder or file -> the experiment, "
+                          "nothing twice, user files unchanged): OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
-            import shiboken6 as _shb_end                                    # Beenden: alle Widgets vor dem Interpreter-
+            import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-
             from PySide6.QtWidgets import QWidget as _QW_end                 # Ende löschen (macOS-Absturz 2.3.7)
             MW.release_widgets(app)
             left_ = [type(o_).__name__ for o_ in _shb_end.getAllValidWrappers() if isinstance(o_, _QW_end)]

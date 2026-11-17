@@ -67,3 +67,40 @@ paths:
   `level_of_theory`, reine xyz „calc.“; Fußnote: Geometrie wie die Rechnung angibt (optimiert nur bei konvergierter
   Optimierung, Gasphase oder solvatisiert) und RMSD der Schweratome; nie das Programm. Mit Rechnung stehen die Werte
   immer in der Tabelle (auch ≤ `CAPTION_MAX`), nicht in der Bildunterschrift.
+- Packungsbild (Paket C 1.2.0, Karten „Packung“/„Abstände in der Packung“, Seite „Abstände“; Zustand je Struktur
+  `entry["pack"]`, Vorgaben `PACK_DEFAULT`): `PackMol` = Kopien der Fragmente von `Molecule` je Symmetrieoperation,
+  ganzzahlig verschoben (Regel „centroid“: Schwerpunkt in [0, 1)³; „touch“: mindestens ein Atom in der Zelle), gleiche
+  Lage einmal; Abbruch `max_factor` gilt weiter. Blick `axis_view` (Achse zum Betrachter, zyklisch nächste nach rechts),
+  Drehen mit der Maus = „frei“ (eigene Ansicht im `pack`, nie die des Molekülbilds). `PackFigure` = XrayFigure mit
+  Zellkanten (Ausdehnung inkl. Zellecken), Achsen *a*/*b*/*c* (Blickachse ohne Label), Abständen gestrichelt mit Wert
+  neben der Linie. Kontakte gespeichert als Atom-Schlüssel + Operation der Kopie (`g_key`), Partner werden ins Bild
+  ergänzt. Vorschläge `contact_suggestions`: je Molekülpaar (G und G⁻¹ gleich) der kürzeste Atomkontakt mit d ≤ Σ r_vdW
+  (Bondi 1964, `BONDI`, nur Elemente mit Wert) + Toleranz; Ringe = ebene 5–7-Ringe ohne Sehne (`mol_rings`), Cg···Cg mit
+  Versatz zur Ebene von Ring 1, Ebenenabstand nur parallel innerhalb `ang` (sonst Winkel, kein Abstand). Werte aus den
+  Koordinaten mit drei Nachkommastellen, nie s.u.; Unterschrift/Tabelle mit Symmetriecodes und Cg-Definitionen; SI:
+  `pack_si_blocks` nach dem Molekülbild (mehr als `CAPTION_MAX` Abstände: Tabelle).
+
+- Pulverdiffraktogramm (1.2.0, Karten „Pulverdiffraktogramm (PXRD)“/„PXRD-Abbildung“, Seite „PXRD“; Zustand je Struktur
+  `entry["pxrd"]`, Vorgaben `PXRD_DEFAULT`; Rechnung `core/pxrd.py`): Rechnung aus der Struktur, kein Fit. Alle Atome der
+  Zelle über die Operationen der CIF (gleiche Lage einmal, `SAME_SITE`), Fehlordnung mit Besetzung, U mit der Operation
+  gedreht; |F|² je einzelnem hkl (Multiplizität ergibt sich), f0 Cromer–Mann aus International Tables Vol. C Tab. 6.1.1.4
+  (`formats/xray_f0.py`, DABAX `f0_InterTables.dat`, neutrale Atome, Pu bewusst nicht; fehlt ein Element: keine Rechnung,
+  Hinweis), ohne anomale Dispersion; Lp = (1 + cos²2θ)/(sin²θ cos θ) (Bragg–Brentano ohne Monochromator). Kα1/Kα2 nach
+  ITC Vol. C Tab. 4.2.2.1 (`ANODES`), Kα2/Kα1 = 0.5. Profil Pseudo-Voigt (eine FWHM in ° 2θ, η). Angepasst wird nichts:
+  stärkstes Maximum = 1, Nullpunkt nur eingegeben und auf die **Rechnung** angewandt (Messung bleibt unverändert).
+  Messung: `formats/xy.read_xy` (.xy/.xye/Text, erste Spalte 2θ in Grad). Bild: gemessen oben, berechnet unten (Standard)
+  oder überlagert, Reflexmarken (Kα1) optional, y ohne Zahlen. Hinweis in der Karte: Temperatur der Strukturbestimmung
+  aus der CIF, Zellausdehnung und bevorzugte Orientierung werden nicht korrigiert. Unterschrift ohne Gerät
+  („calculated from the single-crystal structure determined at … K“, Strahlung, Profil, Nullpunkt); SI: Bild,
+  Unterschrift, Methodensatz mit Quelle der Formfaktoren (`pxrd_si_blocks`, Haken „In die SI“, nach dem Packungsbild).
+  Geprüft: NaCl-Lagen nach Bragg von Hand, F-1 = P1 (spezielle Lagen), |F|² gegen die β-Form R·β·Rᵀ; echte CIFs nur
+  durchgelaufen, keine gemessene Pulveraufnahme zum Vergleich.
+- HOMA (Paket A 1.2.0, Karte „Aromatizität (HOMA)“, Seite „HOMA“; `core/homa.py` rechnet, `tabs/homa_view.py` zeigt,
+  gemeinsam für X-Ray und DFT): Ringe = `mol_rings` (ebene 5–7-Ringe ohne Sehne, wie Cg), Bindungslängen aus den
+  Koordinaten. Parameter nur aus der Literatur (`PARAMS`, Quelle im Code): HOMA = Krygowski 1993 (CC, CN, CO, CP, CS,
+  NN, NO; Zahlen wie in Krygowski & Szatyłowicz 2015 tabelliert, CC/CN/NN/CO zusätzlich Arpa 2025, Tab. 1), HOMAc =
+  Arpa 2025 (nur CC, CN, NN, CO). Fehlt ein Bindungstyp: kein Wert, Hinweis mit der Bindung (nie schätzen). EN/GEO
+  (Krygowski & Cyrański 1996) nur bei einem einzigen Bindungstyp. Keine s.u. für HOMA (der Tab pflanzt keine fort).
+  Drei Nachkommastellen überall (`homa.fmt`). Wert im Bild: Anmerkung `homa_<Atom-Schlüssel>` in der Ringmitte
+  (`XrayFigure._anchor` nimmt ein Tupel von Atomen), Ringmitte vorher für Atomlabels belegt (`opts["ring_marks"]`).
+  Zustand `homa_var`/`homa_fig`/`homa_si` im Tab; im Reaktionspfad ausgeblendet.

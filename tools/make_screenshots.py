@@ -33,7 +33,7 @@ SHOW = "S3"                                       # Verbindung des Beispielproje
 # Alle README-Bilder dunkel (Nutzerwunsch), auch das Coverbild
 SHOTS = tuple((name, key, ("dark",), step) for name, key, step in (
     ("compound", "compound", 0), ("synthesis", "syn", 0), ("nmr", "nmr", 0), ("irms", "irms", 0), ("hrms", "hrms", 0),
-    ("eps", "eps", 1), ("overlay", "overlay", 0), ("uvkin", "uvkin", 1), ("fluorescence", "fluo", 0), ("cv", "cv", 1),
+    ("eps", "eps", 1), ("tddft", "overlay", 0), ("uvkin", "uvkin", 1), ("fluorescence", "fluo", 0), ("cv", "cv", 1),
     ("sec", "sec", 0), ("hcell", "hcell", 0), ("epr", "epr", 1), ("xray", "xray", 0), ("dft", "dft", 0),
     ("other", "other", 0)))
 

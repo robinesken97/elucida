@@ -27,7 +27,8 @@ def _types():
 
 def _pdf(svg, cdxml):
     import pymupdf as fitz
-    with fitz.open(stream=svg.encode(), filetype='svg') as doc:
+    from elucida.core.images import flatten_nested_svg
+    with fitz.open(stream=flatten_nested_svg(svg).encode(), filetype='svg') as doc:
         data = doc.convert_to_pdf()
     with fitz.open(stream=data, filetype='pdf') as doc:
         if cdxml:
@@ -74,6 +75,29 @@ def copy_drawing(payload):
         mime = QMimeData()
         for name, raw in data.items():
             mime.setData(name, raw)
+        QApplication.clipboard().setMimeData(mime)
+    return True
+
+
+def copy_picture(svg, png):
+    """Abbildung (Entscheidung 128): SVG (Vektor) + PNG-Ersatz; macOS zusätzlich PDF aus dem SVG wie copy_drawing
+    (Office für Mac fügt PDF als Vektor ein). svg/png: Bytes."""
+    if sys.platform == 'darwin':
+        from AppKit import NSPasteboard
+        from Foundation import NSData
+        data = {'com.adobe.pdf': _pdf(svg.decode('utf-8'), None), 'public.svg-image': svg, 'public.png': png}
+        board = NSPasteboard.generalPasteboard()
+        board.clearContents()
+        board.declareTypes_owner_(list(data), None)
+        for name, raw in data.items():
+            if not board.setData_forType_(NSData.dataWithBytes_length_(raw, len(raw)), name):
+                raise RuntimeError('macOS rejected a clipboard format')
+    else:                                   # shortcut: Windows/Linux-Typen nicht in Office geprüft; prüfen, sobald ein Windows-Rechner bereitsteht
+        from PySide6.QtGui import QImage
+        mime = QMimeData()
+        mime.setData('image/svg+xml', svg)
+        mime.setData('image/png', png)
+        mime.setImageData(QImage.fromData(png, 'PNG'))
         QApplication.clipboard().setMimeData(mime)
     return True
 

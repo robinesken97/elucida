@@ -14,7 +14,6 @@ from PySide6.QtWidgets import QApplication, QDialog, QListWidget
 from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
 from elucida.app import main_window as MW, project as PRJ, publication as PUB, reaction_paths as RP
-from elucida.app.publication_view import PublicationSIDialog
 from elucida.tabs import dft as DFT
 from elucida.core import orbitals as ORB
 from elucida.si import publication_si as PSI, lines as SI
@@ -129,10 +128,11 @@ try:
     # A project containing paths only is still exportable through the real main-window entry point.
     out = w.export_publication_si(pub, [], ['dft'], toc=False, path=folder/'paths-only.docx')
     assert out and out.exists()
-    chooser = PublicationSIDialog(w, pub)
+    chooser = w.pub_page.export_page.si_card          # Karte „Gesamt-SI“ im Reiter „Export“ (früher Dialog)
+    chooser.set_publication(pub)
     chooser.cbs['dft'].setChecked(False)
-    assert not chooser.cb_paths.isEnabled() and not chooser.cmb_paths.isEnabled()
-    chooser.reject(); chooser.deleteLater()
+    assert not chooser.cmb_paths.isEnabled()
+    chooser.cbs['dft'].setChecked(True)
     assert compound_file.read_bytes() == original_bytes
     print('Project import isolation, files, undo, removal/restore, SI order and inclusion: OK', flush=True)
     print(folder, flush=True)

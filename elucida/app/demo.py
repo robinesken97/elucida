@@ -7,6 +7,7 @@ Datenordner des Programms und wird bei jedem Öffnen neu angelegt.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -22,11 +23,14 @@ from elucida.tabs import xray as XRAY
 from elucida.formats.bruker_ms import BAF_LINE_MAGIC
 
 
-def write_dta(path, cycles, rate, cycle_col=False, times=None):
-    """Gamry-.DTA wie im Selbsttest (Spalten Pt, T, Vf, Im, Vu; Strom in µA übergeben)."""
+def write_dta(path, cycles, rate, cycle_col=False, times=None, ircomp=None):
+    """Gamry-.DTA wie im Selbsttest (Spalten Pt, T, Vf, Im, Vu; Strom in µA übergeben); ircomp: Kopfzeile IRCOMP
+    (None = keine)."""
     head = ["EXPLAIN", "TAG\tCV", "DATE\tLABEL\t1/1/2026\tDate", "TIME\tLABEL\t12:00:00\tTime",
             f"SCANRATE\tQUANT\t{rate:.5E}\t&Scan Rate (mV/s)", "AREA\tQUANT\t7.10000E-002\tElectrode &Area (cm^2)",
             "CONVENTION\tIQUANT\t1\tCurrent Convention"]
+    if ircomp is not None:
+        head.append(f"IRCOMP\tSELECTOR\t{int(bool(ircomp))}\tIR Comp")
     cols = "\tPt\tT\tVf\tIm\tVu" + ("\tCycle" if cycle_col else "")
     units = "\t#\ts\tV vs. Ref.\tA\tV" + ("\t#" if cycle_col else "")
     body = [f"CURVE\tTABLE\t{sum(len(c[0]) for c in cycles)}", cols, units] if cycle_col else []
@@ -150,6 +154,27 @@ def uvvis_csv(path, name, bands, concs, solvent="THF", seed=0):
     return Path(path), names
 
 
+def demo_lifetime(inp, name, bands):
+    """Anregungsspektrum (Eclipse-CSV, Detektion 458 nm) und erfundene TCSPC-Abklingkurve mit IRF (biexponentiell,
+    τ = 0.9 und 3.6 ns, Poisson-Rauschen, Untergrund) als Textdateien; Φ als Angabe -> Schlüssel des Fluoreszenz-Tabs."""
+    from elucida.core import lifetime as LT
+    xs = np.arange(250.0, 441.0, 1.0)
+    ex_ = band_sum(xs, bands) * (1 - 0.3 * np.exp(-((xs - 270) / 25) ** 2))       # Lampe/Korrektur: UV-Bande kleiner
+    I_ = 600 * ex_ / ex_.max() + np.random.default_rng(5).normal(0, 4.0, xs.size)
+    exc = inp / f"{name}_excitation.csv"
+    exc.write_text("\r\n".join([f"{name} EX em458,,", "Wavelength (nm),Intensity (a.u.),"]
+                                + [f"{x:.1f},{y:.3f}," for x, y in zip(xs, I_)]), encoding="utf-8", newline="")
+    t, y, irf = LT.make_test_decay(taus=(0.9, 3.6), amps=(2600.0, 1400.0), bg=6.0, dt=0.025, n=1024, t_peak=2.5, seed=4)
+    files = {}
+    for key, vals in (("decay", y), ("irf", irf)):
+        p = inp / f"{name}_TCSPC_{key}.txt"
+        p.write_text("\n".join([f"{name} {key}", "Time [ns]\tCounts"] + [f"{a:.4f}\t{b:.0f}" for a, b in zip(t, vals)]),
+                     encoding="utf-8", newline="")
+        files[key] = str(p)
+    return dict(exc_file=str(exc), exc_sample=f"{name} EX em458", exc_det=458.0, decay_file=files["decay"],
+                irf_file=files["irf"], tau_unit="ns", tau_ex=375.0, tau_em=458.0, tau_n=2, phi="0.46")
+
+
 def cary_csv(path, cols):
     """Cary-WinUV-Export mit Metadaten: cols = [(Name, λ, A, Aufnahmezeit als Text oder None)]; nach den Daten je Probe
     ein Block „<Name>,“ / „<Name>“ / „Collection Time: …“ in der Reihenfolge der Spalten (wie das Gerät)."""
@@ -175,18 +200,51 @@ def cuvette_photo(path, liquid, uv=False):
     return Path(path)
 
 
-def tddft_out(path, states):
-    """ORCA-Tabelle der Anregungen [(λ in nm, f_osc)]; T² passt zu Energie und Oszillatorstärke."""
-    rows = []
+def tddft_out(path, states, parts=None, n_occ=None, nto=None):
+    """ORCA-Tabelle der Anregungen [(λ in nm, f_osc)]; T² passt zu Energie und Oszillatorstärke. Mit `parts`
+    ([[(von, nach, Gewicht)] je Zustand], Orbitalnummern ab 0) und `n_occ` (doppelt besetzte Orbitale) im Format von
+    ORCA 6: Orbitalenergien, Block „TD-DFT/TDA EXCITED STATES (SINGLETS)“ mit den Anteilen und die Tabelle mit
+    Zustandsbezeichnungen. Alle Zahlen erfunden."""
+    rows, head = [], []
+    if parts is not None:
+        occ = list(np.linspace(-0.95, -0.188, n_occ)) + list(-0.060 + 0.028 * np.arange(10))
+        head += ["", "----------------", "ORBITAL ENERGIES", "----------------", "",
+                 "  NO   OCC          E(Eh)            E(eV) "]
+        head += [f"{k:4d}   {2.0 if k < n_occ else 0.0:.4f}   {e:14.6f}   {e * 27.211386:14.4f}" for k, e in enumerate(occ)]
+        head += ["", "-------------------------------------", "TD-DFT/TDA EXCITED STATES (SINGLETS)",
+                 "-------------------------------------", "",
+                 "the weight of the individual excitations are printed if larger than 1.0e-02", ""]
+        for k, ((lam, _f), ps) in enumerate(zip(states, parts), 1):
+            ev = 1239.84198 / lam
+            head.append(f"STATE {k:2d}:  E= {ev / 27.211386:10.6f} au {ev:10.3f} eV {1e7 / lam:10.1f} cm**-1 "
+                        "<S**2> =   0.000000 Mult 1")
+            head += [f"   {a:3d}a -> {b_:3d}a  :     {w:.6f} (c= {w ** 0.5:11.8f})" for a, b_, w in ps]
+            head.append("")
+    for k, ((lam, _f), ps) in enumerate(zip(states, nto or ()), 1):    # NTO-Blöcke wie ORCA 6 (DoNTO true)
+        if not ps:
+            continue
+        ev = 1239.84198 / lam
+        head += ["", "-" * 42, f"NATURAL TRANSITION ORBITALS FOR STATE {k:4d}", "-" * 42, "",
+                 f"Natural Transition Orbitals were saved in {Path(path).stem}.s{k}.nto",
+                 "Threshold for printing occupation numbers 0.001000", "",
+                 f" E= {ev / 27.211386245988:10.6f} au {ev:10.3f} eV {1e7 / lam:10.1f} cm**-1"]
+        head += [f"    {a:3d}a -> {b_:3d}a  : n= {n:11.8f}" for a, b_, n in ps]
+        head.append("")
     for k, (lam, f) in enumerate(states, 1):
         cm = 1e7 / lam
         t2 = 1.5 * f / (cm / 219474.63)
-        rows.append(f"{k:4d}   {cm:7.1f}    {lam:5.1f}   {f:.9f}   {t2:.5f}   {t2 ** 0.5:.5f}   0.00000   0.00000")
-    Path(path).write_text("\n".join([
-        "-" * 77, "         ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", "-" * 77,
-        "State   Energy    Wavelength  fosc         T2        TX        TY        TZ",
-        "        (cm-1)      (nm)                 (au**2)    (au)      (au)      (au)", "-" * 77] + rows + [""]),
-        encoding="utf-8")
+        if parts is not None:
+            rows.append(f"  0-1A  ->  {k}-1A   {1239.84198 / lam:9.6f}  {cm:8.1f}   {lam:5.1f}   {f:.9f}   {t2:.5f}"
+                        f"   {t2 ** 0.5:.5f}   0.00000   0.00000")
+        else:
+            rows.append(f"{k:4d}   {cm:7.1f}    {lam:5.1f}   {f:.9f}   {t2:.5f}   {t2 ** 0.5:.5f}   0.00000   0.00000")
+    cols = ("     Transition      Energy     Energy  Wavelength fosc(D2)      D2        DX        DY        DZ",
+            "                      (eV)      (cm-1)    (nm)                 (au**2)    (au)      (au)      (au)") \
+        if parts is not None else ("State   Energy    Wavelength  fosc         T2        TX        TY        TZ",
+                                   "        (cm-1)      (nm)                 (au**2)    (au)      (au)      (au)")
+    Path(path).write_text("\n".join(head + [
+        "-" * 77, "         ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS", "-" * 77, *cols,
+        "-" * 77] + rows + [""]), encoding="utf-8")
     return Path(path)
 
 
@@ -210,7 +268,7 @@ def demo_nmr_svg(path, nucleus, peaks, x_range, solvent=None):
     for v in np.arange(np.ceil(lo / step) * step, hi + 1e-9, step):
         x = 50 + (hi - v) / (hi - lo) * 990
         parts.append(f'<line x1="{x:.1f}" y1="700" x2="{x:.1f}" y2="706" stroke="#000000"/>')
-        parts.append(f'<text x="{x - 6:.1f}" y="722" font-size="12">{v:g}</text>')
+        parts.append(f'<text x="{x - 6:.1f}" y="722" font-size="12">{v + 0.0:g}</text>')        # nie „-0“
     for pos, _, _ in peaks if el == "C" else ():
         x = 50 + (hi - pos) / (hi - lo) * 990
         parts.append(f'<text x="{x:.1f}" y="70" font-size="9" transform="rotate(-90 {x:.1f} 70)">{pos:.2f}</text>')
@@ -407,8 +465,23 @@ def make_cif(path, name, m, P, cell, place):
     return Path(path)
 
 
+def nuc_repulsion(m, P):
+    """Kernabstoßung [Eh] der Geometrie P (Ladungen der Kerne, Abstände in Bohr) für die erfundenen Ausgaben."""
+    Z = np.array([a.GetAtomicNum() for a in m.GetAtoms()], float)
+    R = np.asarray(P, float) / 0.529177210903
+    d = np.linalg.norm(R[:, None] - R[None], axis=2)
+    iu = np.triu_indices(len(Z), 1)
+    return float((Z[:, None] * Z[None])[iu] @ (1.0 / d[iu]))
+
+
+def write_orca_input(path, L):
+    """Eingabedatei neben der erfundenen Ausgabe (gleicher Name, .inp): die Zeilen des Blocks INPUT FILE."""
+    rows = [re.sub(r"^\|\s*\d+>\s?", "", ln) for ln in L if re.match(r"^\|\s*\d+>", ln) and "END OF INPUT" not in ln]
+    Path(path).with_suffix(".inp").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
 def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("thf", "7.2500", "TETRAHYDROFURAN"),
-              homo_lumo=(-5.12, -1.62), imag=None):
+              homo_lumo=(-5.12, -1.62), imag=None, ir=None, raman=None):
     """ORCA-6-Ausgabe (nur die gelesenen Abschnitte, Format wie `DFT.make_test_orca`; Zahlen erfunden) einer
     Optimierung + Frequenzrechnung mit der Geometrie P: Minimum (keine imaginäre Frequenz), Nullpunktsenergie aus
     den Frequenzen, Enthalpie und freie Enthalpie daraus fortgeschrieben, Orbitalenergien mit HOMO/LUMO in eV
@@ -425,6 +498,8 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
                np.sort(2935.0 + 265.0 * rng.uniform(0, 1, n_ch))]
     if imag:
         fr[6] = -abs(imag)
+    if ir is not None:                                   # IR-Rechnung (Tab IR + EA): vorgegebene Moden [(ṽ, I km/mol)]
+        fr = np.r_[np.zeros(6), [w for w, _ in ir]]
     zpe = fr[fr > 0].sum() / 2 / 219474.63
     u = energy + zpe + 0.00072 * n                       # thermische Korrektur grob je Atom
     h = u + 0.00094421
@@ -462,9 +537,34 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
           "  NO   OCC          E(Eh)            E(eV) "]
     L += [f"{k:4d}   {2.0 if k < n_occ else 0.0:.4f}   {e:14.6f}   {e * 27.211386:14.4f}"
           for k, e in enumerate(occ + list(virt))]
+    # Mulliken- und Löwdin-Ladungen (erfunden, Summe 0, Layout wie ORCA 6): N −0.40, H +0.12, C gleichen aus
+    q = np.array([-0.40 if e == "N" else 0.12 if e == "H" else 0.0 for e in el])
+    cs = [k for k, e in enumerate(el) if e == "C"]
+    q[cs] = -q.sum() / len(cs) + 0.03 * np.sin(np.arange(len(cs)))
+    q[cs[-1]] -= q.sum()
+    for head, f in (("MULLIKEN ATOMIC CHARGES", 1.0), ("LOEWDIN ATOMIC CHARGES", 0.45)):
+        L += ["", "-" * len(head), head, "-" * len(head)] + [f"{k:4d} {e:<2s}:{v * f:12.6f}" for k, (e, v) in
+                                                              enumerate(zip(el, q))]
+        if f == 1.0:
+            L.append(f"Sum of atomic charges:{(q * f).sum():13.7f}")
+    e_nuc = nuc_repulsion(m, P)
+    L += ["", "Components:", f"Nuclear Repulsion  :      {e_nuc:16.8f} Eh       {e_nuc * 27.211386:16.5f} eV"]
     L += ["", "-------------------------   --------------------", f"FINAL SINGLE POINT ENERGY     {energy:.12f}", "",
           "-----------------------", "VIBRATIONAL FREQUENCIES", "-----------------------", ""]
     L += [f"   {i:3d}:   {v:9.2f} cm**-1" + ("  ***imaginary mode***" if v < 0 else "") for i, v in enumerate(fr)]
+    if ir is not None:                                   # Block „IR SPECTRUM“ wie ORCA 6 (eps, Int in km/mol, T**2)
+        L += ["", "-----------", "IR SPECTRUM", "-----------", "",
+              " Mode   freq       eps      Int      T**2         TX        TY        TZ",
+              "       cm**-1   L/(mol*cm) km/mol    a.u.",
+              "----------------------------------------------------------------------------"]
+        L += [f"  {k + 6:2d}:   {w:7.2f}   {i / 5.0e3:.6f}  {i:6.2f}  {i / 970.0:.6f}  ( 0.000000  0.000000  0.000000)"
+              for k, (w, i) in enumerate(ir)]
+    if ir is not None and raman is not None:            # Block „RAMAN SPECTRUM“ wie ORCA 6.1 (Aktivität, Depolarisation)
+        L += ["", "--------------", "RAMAN SPECTRUM", "--------------", "",
+              " Mode    freq (cm**-1)   Activity   Depolarization",
+              "-------------------------------------------------------------------"]
+        L += [f"  {k + 6:2d}:   {w:10.2f}   {a:11.6f}   {0.25 + 0.5 * (k % 2):10.6f}"
+              for k, ((w, _), a) in enumerate(zip(ir, raman))]
     L += ["", "--------------------------", "THERMOCHEMISTRY AT 298.15K", "--------------------------", "",
           "Temperature         ...   298.15 K", "Pressure            ...     1.00 atm",
           "Quasi RRHO          ...     True",
@@ -474,12 +574,14 @@ def make_orca(path, name, m, P, energy, method="B3LYP D4 def2-TZVP", solvent=("t
           f"Total Enthalpy                    ...   {h:.8f} Eh",
           "Point Group:  C1, Symmetry Number:   1  ",
           f"Final entropy term                ...      {ts:.8f} Eh     {ts * 627.5095:.2f} kcal/mol",
+          f"Total entropy correction          ...     {-ts:.8f} Eh    {-ts * 627.5095:.2f} kcal/mol",
           f"Final Gibbs free energy         ...   {h - ts:.8f} Eh",
           f"G-E(el)                           ...      {h - ts - energy:.8f} Eh     "
           f"{(h - ts - energy) * 627.5095:.2f} kcal/mol", "",
           "                             ****ORCA TERMINATED NORMALLY****"]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    write_orca_input(path, L)
     return Path(path)
 
 
@@ -526,11 +628,14 @@ def make_mr(path, name, m, P):
                   f"Reference Energy                 : E0 = {e_cas:.12f}",
                   f"Total Energy Correction          : dE = {e_pt - e_cas:.12f}",
                   f"Total Energy (E0+dE)             : E = {e_pt:.12f}", ""]
+    e_nuc = nuc_repulsion(m, P)
+    L += ["Components:", f"Nuclear Repulsion  :      {e_nuc:16.8f} Eh       {e_nuc * 27.211386:16.5f} eV", ""]
     L += ["TIMINGS NEVPT2", "", "-------------------------   --------------------",
           f"FINAL SINGLE POINT ENERGY     {MR_STATES[1][0][2]:.12f}", "",
           "                             ****ORCA TERMINATED NORMALLY****"]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    # ohne Eingabedatei: das Beispiel zeigt den Hinweis der Energietabelle (ACS verlangt sie)
     return Path(path)
 
 
@@ -781,12 +886,16 @@ COMPOUNDS = {
         uv=[(284, 6200, 1400), (246, 10400, 1700), (212, 15000, 2200)], concs=(80, 60, 40, 20, 10),
         h1=[(8.38, 1.0, 0.002), (7.50 + _J2, 0.5, 0.002), (7.50 - _J2, 0.5, 0.002), (7.41 + _J2, 0.5, 0.002),
             (7.41 - _J2, 0.5, 0.002), (3.08, 1.0, 0.002), (2.33, 3.0, 0.002), (7.26, 0.15, 0.002)],
-        c13=(150.4, 139.9, 136.7, 133.4, 127.1, 82.9, 76.9, 18.4),
+        # ¹³C mit Schlifffett bei 29.7 (Fulmer 2010, CDCl3 29.71): Warnfall der Verunreinigungs- und Kernzahl-Prüfung
+        c13=(150.4, 139.9, 136.7, 133.4, 127.1, 82.9, 76.9, 29.7, 18.4),
         nmr_text="1H NMR (500 MHz, CDCl3) δ 8.38 (s, 1H), 7.50 (d, J = 8.0 Hz, 1H), 7.41 (d, J = 8.0 Hz, 1H), "
-                 "3.08 (s, 1H), 2.33 (s, 3H).\n13C NMR (126 MHz, CDCl3) δ 150.4, 139.9, 136.7, 133.4, 127.1, 82.9, "
-                 "76.9, 18.4.",
+                 "2.33 (s, 3H).\n13C NMR (126 MHz, CDCl3) δ 150.4, 139.9, 136.7, 133.4, 127.1, 82.9, "
+                 "76.9, 29.7, 18.4.",
         ir=((3290.0, 35, 10), (2104.0, 20, 6), (1598.0, 40, 8), (1482.0, 45, 6), (1029.0, 30, 8), (823.0, 55, 6)),
         ea={"C": "81.88", "H": "6.07", "N": "11.86"},
+        ea2={"C": "81.70", "H": "6.11", "N": "11.20"},     # Doppelbestimmung: Mittel N 0.43 % zu tief (Warnfall)
+        ccdc="2000001",                                     # erfunden (Data Availability Statement)
+        ms_shift=0.0009,                                    # HRMS 7.4 ppm daneben (Warnfall der 5-ppm-Prüfung)
         scheme={},
         reagents=[dict(name="S1", M="C11H15NSi", m_mg="947", role="ref"),
                   dict(name="K2CO3", M="K2CO3", m_mg="829", role="reagent"),
@@ -813,6 +922,8 @@ COMPOUNDS = {
             (1585.0, 28, 7), (1522.0, 60, 8), (1476.0, 24, 7), (1445.0, 18, 8), (1362.0, 45, 9), (1228.0, 20, 8),
             (1190.0, 30, 7), (1126.0, 16, 7), (1024.0, 14, 6), (945.0, 12, 6), (815.0, 50, 7), (728.0, 13, 6)),
         ea={"C": "81.12", "H": "6.90", "N": "11.74"},
+        ea2={"C": "81.20", "H": "6.86", "N": "11.79"},      # Doppelbestimmung innerhalb 0.4 %
+        purity=("1H", "13C", "ea"), ccdc="2000002",         # Reinheit bestätigt; CCDC-Nummer erfunden
         scheme=dict(reactants=("Cc1ccc(C#C)nc1", "Ic1ccc(N(C)C)cc1"), product="Cc1ccc(C#Cc2ccc(N(C)C)cc2)nc1",
                     above="PdCl2(PPh3)2, CuI", below="NEt3, THF, rt, 16 h"),
         reagents=[dict(name="S2", M="C8H7N", m_mg="586", role="ref"),
@@ -845,13 +956,15 @@ def load_data(w, inp, name="S3"):
     cdxml.write_text(acs_cdxml(mol_cdxml(m2)), encoding="utf-8")
     # Verbindung mit Zeichnung (Tab „Verbindung“), Formel, Molmasse und Schmelzpunkt (erfunden), damit die Checkliste
     # des Projekts vollständig ist
-    w.set_compound({"name": name, "formula": c["formula"], "mw": c["mw"], "mp": c["mp"], "structure": str(cdxml)})
+    w.set_compound({"name": name, "formula": c["formula"], "mw": c["mw"], "mp": c["mp"], "structure": str(cdxml),
+                    **({"purity": list(c["purity"])} if c.get("purity") else {})})   # S2 ohne: Vorschlag sichtbar
     # UV-Vis (ε): Verdünnungsreihe, Struktur, Küvettenfoto in der Farbe, die das Spektrum ergibt
     csv, samples = uvvis_csv(inp / f"{name}_UV-Vis.csv", name, c["uv"], c["concs"])
     rgb = COLOR.absorbance_to_rgb(band_sum(COLOR.LAM, c["uv"]) * STOCK_UM * 1e-6)[0]
     photo = cuvette_photo(inp / f"{name}_cuvette.png", 255 * np.asarray(rgb) * np.array([215, 220, 228]) / 228)
     w.open_csv(csv, ask=False)
     w.series[name]["color_c"] = STOCK_UM                 # „Farbe in Lösung“: die Stammlösung auf dem Foto
+    w.series[name]["solvent"] = "THF"                    # wie die Probennamen: Unterschrift und SI-Zeile vollständig
     w.glob["color_show"] = True
     w.apply_globals()
     w.set_structure(str(cdxml), name, render=False, sync=True)
@@ -865,22 +978,66 @@ def load_data(w, inp, name="S3"):
     w.xray_state["current"] = w.xray_state["entries"][0]["uid"]
     # ausgewählte Parameter: C≡C und der Winkel davor (in S2 und S3 dieselben Labels: eine Spalte im Vergleich)
     w.xray_state["entries"][0]["params"] = [{"atoms": ["C6", "C7"]}, {"atoms": ["C5", "C6", "C7"]}]
+    w.xray_state["entries"][0]["ccdc"] = c["ccdc"]
+    if name == "S3":
+        # Packungsbild (in der Karte „Packung“ einschalten): entlang b liegen die Moleküle als Stapel entlang a; gezeigt
+        # der Ebenenabstand des gestapelten Paars (Cg···Cg bis 6 Å, damit der Stapel mit 5.98 Å Zellachse vorkommt)
+        e0 = w.xray_state["entries"][0]
+        mol0 = w.xray_tab.molecule(e0)
+        sug = XRAY.contact_suggestions(mol0, cg_max=6.0)
+        stack = [c for c in sug if c["kind"] == "plane" and c["value"] is not None and c["angle"] < 1.0]
+        e0["pack"] = dict(axis="b", cg=6.0, used=True, si=True,
+                          shown=[{k: c[k] for k in ("kind", "a", "ga", "b", "gb")} for c in stack[:1]])
+        # Pulverdiffraktogramm (erfunden): wie bei Raumtemperatur gemessen, Zelle 0.8 % größer, Nullpunkt +0.04°,
+        # Intensitäten durch bevorzugte Orientierung verändert -> Hinweis der Karte sichtbar; Nullpunkt wie eingegeben
+        w.xray_tab.set_pxrd_file(str(make_pxrd(inp / "xray" / f"{name}_PXRD.xy", w.xray_tab.structure(e0))))
+        w.xray_tab.pxrd(e0)["zero"] = 0.04
+        w.xray_state.update(homa_fig=True, homa_si=True)   # HOMA: Werte in der Ringmitte, Tabelle in der SI
     # NMR: erfundene Spektren (¹H, ¹³C), Mnova-Text, Struktur
     nd = inp / "nmr"
-    h1 = demo_nmr_svg(nd / f"{name}-1H.svg", "1H", c["h1"], (9.5, 0.5))
+    # ¹H von S3 beschriftet 0…10 ppm (fehlerfrei); S2 nur 1…9 ppm: Warnfall der Bereichsprüfung (S2 ist das Beispiel
+    # mit Fehlern)
+    h1 = demo_nmr_svg(nd / f"{name}-1H.svg", "1H", c["h1"], (10.5, -0.5) if name == "S3" else (9.5, 0.5))
     c13 = demo_nmr_svg(nd / f"{name}-13C.svg", "13C", [(d, 1.0 - 0.07 * (k % 5), 0.15) for k, d in enumerate(c["c13"])],
-                       (170, 0), solvent=77.16)
+                       (210, -10), solvent=77.16)        # ¹³C über 0…200 ppm
     t_n = w.nmr_tab
     for p in (h1, c13):
         t_n.load_svg(str(p))
     w.nmr_state["structure"] = w.import_file(str(cdxml), PRJ.STRUCTURES)   # nicht im Temp-Ordner lassen
     # 2D: künstliches TopSpin-HSQC-Experiment (Rohdaten-Reiter, Checkliste „2D NMR“)
     t_n.import_topspin(str(NMR.make_test_acqus(nd / name / "3", nuc="1H", nuc2="13C", pulprog="hsqcedetgpsisp2.3")))
+    if name == "S3":                                     # ¹H-Rohdaten (erfunden) zum Mnova-Spektrum: Quelle bleibt Mnova,
+        t_n.import_topspin(str(NMR.demo_raw_1h(nd / name / "10", c["h1"])))   # „Quelle: Bruker“ zeigt die eigene Kette
     # IR (künstliche OPUS-Datei), HRMS (künstlicher Bericht der Massenabteilung), Elementaranalyse (erfundene Werte)
     w.irms_tab.load_ir(str(make_opus(inp / "irms" / f"{name}_IR.0", c["ir"])))
-    w.hrms_tab.load_ms(str(make_ms_report(inp / "irms" / f"{name}_HRMS.docx", name, c["formula"])))
-    w.hrms_tab.load_raw(str(make_bruker_d(inp / "irms" / f"{name}_HRMS.d", name, c["formula"])))   # Spektrum + LC
+    sh = c.get("ms_shift", 0.0004)
+    w.hrms_tab.load_ms(str(make_ms_report(inp / "irms" / f"{name}_HRMS.docx", name, c["formula"], shift=sh)))
+    w.hrms_tab.load_raw(str(make_bruker_d(inp / "irms" / f"{name}_HRMS.d", name, c["formula"], shift=sh)))   # Spektrum + LC
+    if name == "S3":
+        # IR-Rechnung (erfunden): Moden zu den gemessenen Banden, ungeskaliert etwas zu hoch wie bei Hybridfunktionalen;
+        # der Faktor 0.965 ist wie vom Nutzer eingetragen (Vorgabe im Tab bleibt 1.000). 1596 liegt zwischen den Banden
+        # 1605 und 1585 (Warnfall: nicht eindeutig) -> 1605 von Hand zugeordnet, 1585 danach eindeutig; zwei schwache Moden.
+        dv = (9, -7, 5, -4, 11, 6, 11, -6, 4, -3, 7, -5, 3, -8, 5, 2, -4, 6)
+        fi = (1.3, 0.7, 1.1, 0.8, 1.6, 1.2, 0.6, 1.4, 0.9, 1.2, 0.7, 1.5, 0.8, 1.1, 0.6, 1.3, 1.2, 0.9)   # Intensität
+        modes = [((wn + d) / 0.965, depth * width * 0.9 * k) for (wn, depth, width), d, k in zip(c["ir"], dv, fi)]
+        modes += [(3070.0 / 0.965, 2.0), (1010.0 / 0.965, 1.0)]
+        ir_modes = sorted((round(w, 2), round(i, 2)) for w, i in modes)
+        acts = [raman_activity(w * 0.965) for w, _ in ir_modes]
+        irc = make_orca(inp / "irms" / f"{name}_freq.out", f"{name}_freq", m3, P, -729.512846,
+                        ir=ir_modes, raman=acts)
+        w.irms_tab.set_calc(str(irc))
+        # Raman (erfunden): dieselben Schwingungen, Intensität nach der Raman-Aktivität (C≡C und Ringmoden stark),
+        # gemessen wenige cm-1 neben der skalierten Rechnung, dazu ein flacher Fluoreszenzuntergrund
+        rb = [(w * 0.965 + d, a) for (w, _), a, d in zip(ir_modes, acts, (3, -2, 4, -3, 2, -4, 5, -2, 3, -1, 2, -3, 4,
+                                                                          -2, 1, 3, -4, 2, 3, -2))]
+        w.irms_tab.set_raman(str(make_raman(inp / "irms" / f"{name}_Raman.txt", rb)))
+        w.irms_state["ram_exc"] = 785.0
+        w.irms_state["ram_view"] = "stack"                 # IR und Raman übereinander: das Raman-Spektrum ist zu sehen
+        w.irms_state.update(irc_scale=0.965)
+        w.irms_state["irc_pairs"] = [[1605, next(k for k, (w_, _) in enumerate(sorted(modes)) if abs(w_ * 0.965 - 1611) < 1)]]
+        w.irms_tab.sync_widgets()
     w.irms_state["ea_found"] = dict(c["ea"])
+    w.irms_state["ea_found2"] = dict(c["ea2"])
     w.nmr_state["text"] = c["nmr_text"]
     w.nmr_state["current"] = t_n.spectra()[0]["uid"]
     # Synthese: erfundenes Schema, Vorschrift, Reagenzien (Mengen passen zueinander)
@@ -890,6 +1047,37 @@ def load_data(w, inp, name="S3"):
     w.syn_state["proc"] = c["proc"]
     if name == "S3":
         load_product(w, inp, name, csv, samples, photo, m3, P)
+    else:
+        load_spin_count(w, inp, name)
+
+
+def load_spin_count(w, inp, name):
+    """EPR der Vorstufe (erfunden): kleine Spinzählung mit gewählter Ansicht „Spinzählung“ – ein schwaches
+    Radikalsignal (Spuren, ~0.03 mM) in der Probe, abgelesen an drei Referenzen bekannter Konzentration wie in S3
+    (Nitroxid-Triplett, ausgeblendet; Intensität proportional zur Konzentration). S3 zeigt das Spektrum."""
+    Bt = np.linspace(328.0, 343.0, 6001)
+    (inp / "epr").mkdir(parents=True, exist_ok=True)
+    t_e = w.epr_tab
+    entries = []
+    for c_ref in (0.25, 0.5, 1.0):
+        I_r = c_ref * 2.2 * EPR.iso_spectrum(Bt, 9.40, 2.0060, [(1, 1.0, 1.55)], 0.16)
+        I_r += np.random.default_rng(int(c_ref * 100)).standard_normal(len(Bt)) * 0.004 * np.ptp(I_r)
+        p_r = inp / "epr" / f"TEMPO_{c_ref:g}mM_EPR-9p400000.txt"
+        np.savetxt(p_r, np.column_stack([Bt, I_r]), header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+        e_r = t_e._new("exp", str(w.import_file(str(p_r), PRJ.data_sub("epr"))))
+        e_r.update(label=f"reference {c_ref:g} mM", conc=c_ref, visible=False, color="#666666")
+        entries.append(e_r)
+    I_s = 0.03 * 2.2 * EPR.iso_spectrum(Bt, 9.40, 2.0045, [], 0.30)      # Spuren eines Radikals, ohne Kopplungen
+    I_s += np.random.default_rng(7).standard_normal(len(Bt)) * 0.02 * np.ptp(I_s)
+    p_s = inp / "epr" / f"{name}_EPR-9p400000.txt"
+    np.savetxt(p_s, np.column_stack([Bt, I_s]), header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+    e_s = t_e._new("exp", str(w.import_file(str(p_s), PRJ.data_sub("epr"))))
+    e_s.update(label=name)
+    entries.append(e_s)
+    w.epr_state.update(entries=entries, mode="intensity", int_x="conc", int_method="double", normalize=False,
+                       bl_order=-1, int_curie=False, x_auto=True, int_window="", smooth=0.0, x_min=328.0, x_max=343.0,
+                       cap_species=f"{name}", cap_solvent="CH2Cl2", cap_conc="1 mM", cap_acq=True)
+    t_e.fill_table()
 
 
 def load_product(w, inp, name, csv, samples, photo, m3, P):
@@ -899,7 +1087,14 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     c = COMPOUNDS[name]
     lam0 = c["uv"][0][0]
     # Overlay: Messung + TD-DFT (erfundene ORCA-Tabelle, stärkster Übergang nahe der gemessenen Bande)
-    orca = tddft_out(inp / f"{name}_TD-DFT.out", [(380.2, 0.952), (301.4, 0.061), (266.8, 0.284), (251.3, 0.022)])
+    # mit Zusammensetzung (Tabelle „Anregungen“): S3 hat 63 doppelt besetzte Orbitale, HOMO = 62 (ORCA zählt ab 0);
+    # S2 ist ein dunkler Zustand (f = 0.003) unter der Vorgabe-Schwelle f ≥ 0.01
+    orca = tddft_out(inp / f"{name}_TD-DFT.out",
+                     [(380.2, 0.952), (328.5, 0.003), (301.4, 0.061), (266.8, 0.284), (251.3, 0.022)],
+                     parts=[[(62, 63, 0.921), (61, 63, 0.041)], [(61, 63, 0.702), (62, 64, 0.211)],
+                            [(62, 64, 0.683), (60, 63, 0.188), (61, 63, 0.052)], [(60, 63, 0.585), (62, 65, 0.297)],
+                            [(59, 63, 0.476), (62, 66, 0.318), (61, 64, 0.104)]], n_occ=63,
+                     nto=[[(62, 63, 0.95812), (61, 64, 0.02904)]])   # NTO nur für S1 (Cubes unten)
     win = dict(nlo=lam0 - 42, nhi=lam0 + 48)
     w.ov_state.update(entries=[
         dict(win, kind="exp", file=str(csv), sample=samples[2], label="exp.", color="#000000", visible=True,
@@ -918,7 +1113,8 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     w.fl_state.update(abs_file=str(csv), abs_sample=samples[-1], em_file=str(em), em_sample=f"{name} EM ex{lam0}",
                       ex=float(lam0), alo=lam0 - 42, ahi=lam0 + 48, eps=f"{eps:.0f}", stokes_label=True,
                       photo_day=str(photo), bg_day="grabcut", bg_uv="none",
-                      photo_uv=str(cuvette_photo(inp / f"{name}_cuvette_UV.png", (70, 150, 255), uv=True)))
+                      photo_uv=str(cuvette_photo(inp / f"{name}_cuvette_UV.png", (70, 150, 255), uv=True)),
+                      cap_solvent="THF", cap_conc="5 µM", **demo_lifetime(inp, name, c["uv"]))
     # UV-Vis-Kinetik: Stabilität der Lösung über eine Woche, je Tag eine Datei mit zwei Konzentrationen (Zerfall erster
     # Ordnung, k = 0.04 d⁻¹), Aufnahmezeiten im Cary-Format
     from elucida.tabs import uvkin as UVKIN
@@ -937,25 +1133,38 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
         p = w.import_file(str(cary_csv(inp / "uvkin" / f"{name}_stability_day{day}.csv", cols)), PRJ.data_sub("uvkin"))
         entries += [{"uid": f"kin{day}_{k}", "file": p, "idx": k, "label": f"{n_} day {day}",
                      "series": UVKIN.series_from_name(n_), "use": True} for k, (n_, *_) in enumerate(cols)]
-    w.uvkin_state.update(entries=entries, fit=True, cap_solvent="THF")
+    # Titration mit einem Oxidationsmittel (gleiche Banden wie SEC): Neutralform -> Radikalkation, 1 Äq. = vollständig;
+    # isosbestische Punkte dort, wo beide Formen gleich absorbieren. Äquivalente stehen im Probennamen („…_0.4eq“).
+    wl_t = np.arange(800.0, 249.0, -1.0)
+    neu = band_sum(wl_t, [(lam0, 0.30, 1900), (268, 0.155, 1900)])
+    ox = band_sum(wl_t, [(505, 0.24, 1100), (760, 0.13, 1500), (334, 0.11, 1800), (262, 0.14, 2000)])
+    cols = [(f"{name}_{eq:g}eq", wl_t, (1 - min(eq, 1)) * neu + min(eq, 1) * ox + rng.normal(0, 4e-4, wl_t.size), None)
+            for eq in (0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1.0, 1.2)]
+    p = w.import_file(str(cary_csv(inp / "uvkin" / f"{name}_titration_NOSbF6.csv", cols)), PRJ.data_sub("uvkin"))
+    entries += [{"uid": f"tit{k}", "file": p, "idx": k, "label": n_, "series": "", "use": True,
+                 "eq": UVKIN.eq_from_name(n_)} for k, (n_, *_) in enumerate(cols)]
+    w.uvkin_state.update(entries=entries, fit=True, cap_solvent="THF", cap_reagent="NOSbF6")
     # CV: drei Vorschubgeschwindigkeiten + Messung mit Ferrocen als internem Standard (1 mM, D = 1·10⁻⁵ cm² s⁻¹)
     files = []
     for rate in (50, 100, 200):
         p = inp / "cv" / f"{name}_CV_{rate}mVs.DTA"
         p.parent.mkdir(parents=True, exist_ok=True)
         cyc, t = cv_cycles([(E_OX, 21.7)], rate, E_OX - 0.42, E_OX + 0.38, cycles=3, seed=rate)   # ausgewertet: 2.
-        write_dta(p, cyc, rate, times=t)
+        write_dta(p, cyc, rate, times=t, ircomp=False)
         files.append((p, rate))
     ref = inp / "cv" / f"{name}_CV_Fc.DTA"
     cyc, t = cv_cycles([(E_OX, 21.7), (E_FC, 17.4)], 200, E_FC - 0.40, E_OX + 0.38, cycles=2, seed=1)
-    write_dta(ref, cyc, 200, cycle_col=True, times=t)
+    write_dta(ref, cyc, 200, cycle_col=True, times=t, ircomp=False)
     w.cv_state["files"] = [{"file": str(p), "uid": f"cv{i}", "visible": True, "color": "#000000",
                             "label": f"{r} mV s-1"} for i, (p, r) in enumerate(files)]
     w.cv_state["files"].append({"file": str(ref), "uid": "cvref", "visible": False, "color": "#000000",
                                 "label": "Fc"})
     w.cv_state.update(couples=[[E_OX - 0.2, E_OX + 0.2]], ref_mode="internal", ref_uid="cvref", ref_lo=E_FC - 0.2,
                       ref_hi=E_FC + 0.2, ref_compound="fc", ref_value=0.0, cycle=2, cap_conc="1 mM",
-                      cap_solvent="CH2Cl2", cap_el="0.1 M n-Bu4NPF6")
+                      cap_solvent="CH2Cl2", cap_el="0.1 M n-Bu4NPF6",
+                      # Messaufbau (erfunden); Politur und Fläche fehlen: die Karte zeigt, was für die Richtlinie fehlt
+                      acs_we="glassy carbon (3 mm)", acs_ce="Pt wire", acs_gas="argon",
+                      acs_device="Example Instruments P-100 potentiostat")
     # SEC: dieselbe Oxidation in der Dünnschichtzelle, Potentiale über die Referenz des CV-Tabs
     sec_files, dta = make_sec(inp / "sec", name, E_FC - 0.09, E_OX, neutral=[(lam0, 0.30, 1900), (268, 0.155, 1900)],
                               oxidised=[(505, 0.24, 1100), (760, 0.13, 1500), (334, 0.11, 1800), (262, 0.14, 2000)])
@@ -975,10 +1184,15 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     I_ = EPR.iso_spectrum(Bt, 9.40, 2.0031, [(1, 1.0, 0.86), (6, 0.5, 0.93)], 0.14)
     I_ += np.random.default_rng(1).standard_normal(len(Bt)) * 0.01 * np.ptp(I_)
     (inp / "epr").mkdir(parents=True, exist_ok=True)
-    np.savetxt(inp / "epr" / f"{name}_EPR-9p400000.txt", np.column_stack([Bt, I_]), header="B [mT]\tI [a.U.]",
-               comments="", delimiter="\t")
+    # Bruker BES3T (.dsc + .DTA, Feld in G) mit erfundenen Aufnahmeparametern: die Bildunterschrift kann sie nennen
+    (inp / "epr" / f"{name}_EPR.dsc").write_text("\n".join([
+        "#DESC\t1.2", "DSRC\tEXP", "BSEQ\tLIT", "IKKF\tREAL", "XTYP\tIDX", "YTYP\tNODATA", "IRFMT\tD",
+        f"XPTS\t{len(Bt)}", f"XMIN\t{Bt[0] * 10}", f"XWID\t{(Bt[-1] - Bt[0]) * 10}", "XUNI\t'G'", "#SPL\t1.2",
+        "MWFQ\t9.400000e9", "STMP\t298", "B0MA\t0.0001", "MWPW\t0.002", "#DSL\t1.0", "NbScansDone\t4"]),
+        encoding="latin-1")
+    I_.astype("<f8").tofile(inp / "epr" / f"{name}_EPR.DTA")
     t_e = w.epr_tab
-    er = t_e._new("exp", str(inp / "epr" / f"{name}_EPR-9p400000.txt"))
+    er = t_e._new("exp", str(inp / "epr" / f"{name}_EPR.DTA"))
     w.epr_state.update(entries=[er], bl_order=-1, smooth=0.0, normalize=True, stack=False, show_sum=False,
                        show_residual=False, x_min=328.0, x_max=343.0)
     t_e.fill_table()
@@ -988,7 +1202,18 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     t_e.fill_table()
     t_e.table.selectRow(1)
     t_e.fit_current()
-    w.epr_state.update(cap_species=f"{name}^{{•+}}", cap_solvent="CH2Cl2", cap_conc="1 mM")
+    # Spinzählung (Ansicht „Spinzählung“): drei ausgeblendete Referenzspektren bekannter Konzentration (erfunden,
+    # Nitroxid-Triplett, Intensität proportional zur Konzentration); die Messung der Verbindung ist die Probe
+    for c_ref in (0.25, 0.5, 1.0):
+        I_r = c_ref * 2.2 * EPR.iso_spectrum(Bt, 9.40, 2.0060, [(1, 1.0, 1.55)], 0.16)
+        I_r += np.random.default_rng(int(c_ref * 100)).standard_normal(len(Bt)) * 0.004 * np.ptp(I_r)
+        p_r = inp / "epr" / f"TEMPO_{c_ref:g}mM_EPR-9p400000.txt"
+        np.savetxt(p_r, np.column_stack([Bt, I_r]), header="B [mT]\tI [a.U.]", comments="", delimiter="\t")
+        e_r = t_e._new("exp", str(w.import_file(str(p_r), PRJ.data_sub("epr"))))
+        e_r.update(label=f"reference {c_ref:g} mM", conc=c_ref, visible=False, color="#666666")
+        w.epr_state["entries"].append(e_r)
+    t_e.fill_table()
+    w.epr_state.update(cap_species=f"{name}^{{•+}}", cap_solvent="CH2Cl2", cap_conc="1 mM", cap_acq=True)
     # DFT: ORCA-Ausgabe (Optimierung + Frequenzen) mit der Geometrie des Kristalls, dazu HOMO und LUMO als Cube
     # (Namen wie orca_plot, Nummern ab 0; HOMO zuletzt, damit es gezeigt wird)
     w.dft_tab.load_xyz(str(make_orca(inp / "dft" / f"{name}_opt_freq.out", f"{name}_opt_freq", m3, P, -729.512846)))
@@ -996,6 +1221,40 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     n_homo = sum(a.GetAtomicNum() for a in m3.GetAtoms()) // 2 - 1
     for no, coef in ((n_homo + 1, lumo), (n_homo, homo)):
         w.dft_tab.load_cube(str(orbital_cube(inp / "dft" / f"{name}_opt_freq.mo{no}a.cube", m3, P, atoms, coef)))
+    # NTO von S1 (Overlay, Seite „NTO“): Cubes wie orca_plot aus der .nto (Nummern 62/63 wie im NTO-Block der
+    # erfundenen Ausgabe -> Gewicht 96 % aus der Ausgabe); Loch/Teilchen = Hückel-HOMO/LUMO, nur fürs Aussehen
+    from elucida.tabs.nto import state_key
+    ov_calc = next(e for e in w.ov_state["entries"] if e["kind"] == "calc")
+    cubes = [str(orbital_cube(inp / f"{name}_TD-DFT.s1.mo{no}a.cube", m3, P, atoms, coef))
+             for no, coef in ((62, homo), (63, lumo))]
+    key = state_key({"file": ov_calc["file"], "variant": ov_calc.get("variant")}, 0)
+    w.ov_state["nto"] = dict(items={key: dict(kind="cube", files=cubes, mos=[62, 63], state="S1", weight=None)},
+                             sel=key, wmin=10.0, iso=0.0, si=True)
+    # EPR, Rechnung zum Radikalkation (erfunden, aus dem Hückel-HOMO): Spinpopulation = c² am π-Atom mit etwas negativer
+    # Dichte an den H, Kopplungen grob nach McConnell (Ring-H −70 MHz·ρ_C), Amin-N und seine Methyl-H nahe den Werten
+    # der Simulation (die drei H je Methylgruppe verschieden: das Mittel zeigt „avg.“); Zuordnung zu den zwei Gruppen
+    from elucida.tabs import epr_calc as ECALC
+    els = [a.GetSymbol() for a in m3.GetAtoms()]
+    rho = np.zeros(len(els))
+    rho[atoms] = 1.12 * np.asarray(homo) ** 2
+    hs = [i for i, e in enumerate(els) if e == "H"]
+    rho[hs] = -0.12 / len(hs)
+    amine = next(a.GetIdx() for a in m3.GetAtoms() if a.GetSymbol() == "N" and not a.GetIsAromatic())
+    methyl_h = [h.GetIdx() for c_ in m3.GetAtomWithIdx(amine).GetNeighbors() if c_.GetSymbol() == "C"
+                and not c_.GetIsAromatic() for h in c_.GetNeighbors() if h.GetSymbol() == "H"]
+    mhz = np.where(np.array(els) == "C", 95.0 * rho, 60.0 * rho)
+    for h in hs:
+        mhz[h] = -70.0 * rho[next(x.GetIdx() for x in m3.GetAtomWithIdx(h).GetNeighbors())]
+    mhz[amine] = 22.6
+    for k, h in enumerate(methyl_h):
+        mhz[h] = 27.4 * (0.55, 1.0, 1.45)[k % 3]
+    cp = t_e.calc_pages
+    cp.load_file(str(ECALC.write_gaussian_epr(inp / "epr" / f"{name}_radical_cation_epr.log", els, P, rho, mhz,
+                                              route="#p Prop=EPR UB3LYP/def2TZVP scrf=(smd,solvent=dichloromethane)")))
+    cp.load_orb(str(orbital_cube(inp / "epr" / f"{name}_radical_cation_spin.cube", m3, P, atoms, homo, density=True)))
+    cp.calc["assign"][cp.sim()["uid"]] = {"0": [amine], "1": sorted(methyl_h)}   # an der S = ½-Simulation (nicht der
+    # letzten Zeile: seit der Spinzählung sind das die Referenzen)
+    w.epr_state.update(hfc_min=8.0)
     # Reiter Multireferenz: CASSCF/SC-NEVPT2 auf derselben Geometrie als eigene Rechnung, Ergebnis SC-NEVPT2 gewählt;
     # gezeigt bleibt die Opt/Freq-Rechnung mit ihren Orbitalen (die Seite folgt der gewählten Rechnung)
     opt_uid = w.dft_state["current"]
@@ -1005,7 +1264,16 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     e_mr.update(mr_singlet=0, mr_triplet=len(MR_STATES[1]))          # ΔE_ST zwischen S0 und T1 (Indizes im Block)
     w.dft_state["current"] = opt_uid
     w.dft_tab.pages.load_nics([str(make_nics(inp / "dft" / f"{name}_NICS-scan.log", m3, P))])     # Reiter NICS
+    w.dft_tab.pages.load_nics([str(make_nics_grid(inp / "dft" / f"{name}_3D_NICS_0001.log", m3, P))])   # 3D-NICS-Gitter
     w.dft_tab.pages.nics["geom"] = "B3LYP-D4/def2-TZVP"
+    w.dft_tab.acid_page.load([str(make_acid_aicd(inp / "dft" / f"{name}_ACID.d", m3, P)[0]),      # Reiter ACID
+                              str(make_acid_log(inp / "dft" / f"{name}_ACID_CSGT.log", m3, P))])
+    w.dft_state["acid"]["geom"] = "B3LYP-D4/def2-TZVP"
+    w.dft_state.update(homa_si=True)                  # HOMA neben NICS(1) desselben Rings (Scan 1 Å über der Ebene)
+    # Reiter NBO: Radikalkation (offenschalig, Spindichte) und Neutralmolekül (gezeigt, mit NRT und CML)
+    w.dft_tab.nbo.load([str(make_nbo(inp / "dft" / f"{name}_radical_cation_NBO.out", f"{name}_radical_cation_NBO", m3, P,
+                                     mult=2)),
+                        str(make_nbo(inp / "dft" / f"{name}_NBO.out", f"{name}_NBO", m3, P))])
     w.dft_state["h_labels"] = False                   # Orbitalbild: nur Schweratome beschriftet (H bleiben anklickbar)
     # Weitere: Abbildung aus einem anderen Programm (Lippert-Mataga-Auftragung der Emission in fünf Lösungsmitteln)
     w.other_tab.load_files([str(lippert_png(inp / f"{name}_Lippert-Mataga.png"))])
@@ -1039,6 +1307,61 @@ def make_opus(path, bands=((3290.0, 35, 10), (2104.0, 20, 6), (1598.0, 40, 8), (
         struct.pack("<BBBBii", 15, 20, 0, 0, len(wn), off_dat)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_bytes(head + dirs + p_ + T.astype("<f4").tobytes())
+    return Path(path)
+
+
+def make_pxrd(path, S, expand=1.008, zero=0.04, seed=5) -> Path:
+    """Erfundenes Pulverdiffraktogramm (.xy, Cu Kα1/Kα2, 3–50° 2θ) zur Struktur S, wie bei Raumtemperatur gemessen: Zelle um
+    `expand` größer als die Tieftemperaturstruktur (Reflexe bei kleinerem 2θ), Nullpunktfehler `zero`, Intensitäten
+    je Reflex um ±40 % verändert (bevorzugte Orientierung), breitere Reflexe, Untergrund aus Probenträger und Luft,
+    Zählrauschen. Kein echter Datensatz."""
+    from elucida.core import pxrd as PX
+    lam1, lam2 = PX.ANODES["Cu"]
+    rng = np.random.default_rng(seed)
+    refl = []
+    for r in PX.reflections(S, lam1, 52.0):
+        d = r["d"] * expand
+        s = lam1 / (2 * d)
+        if s >= 1:
+            continue
+        k = float(rng.uniform(0.6, 1.4))
+        tth = 2 * np.degrees(np.arcsin(s))
+        refl.append(dict(r, d=d, tth=tth, F2=r["F2"] * k, I=r["I"] * k * float(PX.lp(tth) / PX.lp(r["tth"]))))
+    x = np.arange(3.0, 50.0 + 1e-9, 0.02)
+    y, _ = PX.pattern(refl, x, lam1, lam2, 0.13, 0.6, zero)
+    counts = 6000.0 * y + 380.0 * np.exp(-(x - 3.0) / 6.0) + 160.0 + 90.0 * np.exp(-((x - 21.0) / 7.0) ** 2)
+    counts = rng.poisson(counts).astype(float)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("# 2Theta [deg]  Intensity [counts]\n")
+        fh.writelines(f"{a:.3f} {b:.0f}\n" for a, b in zip(x, counts))
+    return Path(path)
+
+
+def raman_activity(wn):
+    """Erfundene Raman-Aktivität [Å⁴/amu] einer Mode von S3 nach ihrer Lage: C≡C und Ringstreckschwingungen stark (wie
+    bei Diarylacetylenen üblich), C–H mittel, der Rest schwach."""
+    for lo, hi, a in ((2150, 2260, 950.0), (1570, 1625, 420.0), (2800, 3100, 140.0), (1170, 1200, 160.0),
+                      (980, 1040, 120.0), (800, 830, 45.0)):
+        if lo <= wn <= hi:
+            return a
+    return 18.0
+
+
+def make_raman(path, bands) -> Path:
+    """Erfundenes Raman-Spektrum (Textspalten wie ein Geräte-Export: Kopfzeile, Raman-Verschiebung, Zählrate) 150–3200
+    cm-1: Lorentz-Banden (Lage, Höhe ∝ Aktivität), flacher Fluoreszenzuntergrund, Rauschen. Kein echter Datensatz."""
+    x = np.linspace(150.0, 3200.0, 2400)
+    y = 400.0 + 0.06 * x + 1.2e-5 * (x - 1600.0) ** 2
+    for c, a in bands:
+        y += 9.0 * a / (1.0 + ((x - c) / 5.5) ** 2)
+    k = np.random.default_rng(3).uniform(0.6, 1.4, len(bands))      # gemessen ≠ Aktivität (Resonanz, Orientierung)
+    y += sum(9.0 * a * (f - 1.0) / (1.0 + ((x - c) / 5.5) ** 2) for (c, a), f in zip(bands, k))
+    y += np.random.default_rng(7).normal(0.0, 18.0, x.size)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("Raman shift (cm-1)\tIntensity (counts)\n")
+        fh.writelines(f"{a:.2f}\t{b:.1f}\n" for a, b in zip(x, y))
     return Path(path)
 
 
@@ -1150,7 +1473,7 @@ def huckel_frontier(m, P):
     return pi, C[:, order[n_occ - 1]], C[:, order[n_occ]]
 
 
-def orbital_cube(path, m, P, atoms, coef, step=0.2, pad=3.5, alpha=1.6):
+def orbital_cube(path, m, P, atoms, coef, step=0.2, pad=3.5, alpha=1.6, density=False):
     """Cube (Bohr, wie ORCA) eines π-Orbitals: Σ c·(z − z_i)·exp(−α r²) an den Atomen, normiert, auf einem Gitter um
     die Geometrie P (dieselben Atome und Koordinaten wie die ORCA-Ausgabe, damit der DFT-Tab den Cube anhängt)."""
     from elucida.core import orbitals as ORB
@@ -1162,8 +1485,11 @@ def orbital_cube(path, m, P, atoms, coef, step=0.2, pad=3.5, alpha=1.6):
         x0, y0, z0 = P[i]
         psi += c * (Z - z0) * np.exp(-alpha * ((X - x0) ** 2 + (Y - y0) ** 2 + (Z - z0) ** 2))
     psi /= np.sqrt(np.sum(psi ** 2) * (step / ORB.BOHR) ** 3)
+    if density:                                        # Spindichte des Radikalkations im Modell: |HOMO|², ein Elektron
+        psi = psi ** 2
     ORB.write_cube(path, [a.GetSymbol() for a in m.GetAtoms()], P, lo, np.eye(3) * step, psi.astype(np.float32),
-                   title="Elucida demo orbital", comment="pi orbital (Hueckel model)")
+                   title="Elucida demo orbital", comment="spin density (Hueckel model)" if density else
+                   "pi orbital (Hueckel model)")
     return Path(path)
 
 
@@ -1204,10 +1530,499 @@ def make_nics(path, m, P, height=1.0, step=0.25, depth=(-27.0, -24.0)):
     return Path(path)
 
 
+def make_nics_grid(path, m, P, step=0.5, pad=3.0):
+    """Gaussian-NMR-Ausgabe eines 3D-NICS-Gitters (Bq auf einem regelmäßigen Gitter um die Geometrie P, Abstand `step`).
+    Werte erfunden, in der Form aber wie echte Karten: abgeschirmte Hülle um das Gerüst (Gaußglocke je Schweratom) und
+    über/unter den Sechsringen, entschirmter Ring um die Dreifachbindung (senkrecht zur Bindungsachse). Isotrope
+    Tensoren. Kein echter Datensatz."""
+    from elucida.formats.elements import ELEMENTS
+    lo, hi = P.min(0) - pad, P.max(0) + pad
+    g = [lo[k] + step * np.arange(int(np.ceil((hi[k] - lo[k]) / step)) + 1) for k in range(3)]
+    bq = np.stack(np.meshgrid(*g, indexing="ij"), -1).reshape(-1, 3)
+    nics = np.zeros(len(bq))
+    for a_ in m.GetAtoms():                              # Hülle: −15 ppm etwa 1.1 Å vom Gerüst
+        if a_.GetAtomicNum() > 1:
+            nics -= 38.0 * np.exp(-(np.linalg.norm(bq - P[a_.GetIdx()], axis=1) / 1.15) ** 2)
+    for r in (np.asarray(r) for r in m.GetRingInfo().AtomRings() if len(r) == 6):
+        c = P[r].mean(0)
+        nv = np.linalg.svd(P[r] - c)[2][2]
+        d = bq - c
+        h = d @ nv
+        rho = np.linalg.norm(d - np.outer(h, nv), axis=1)
+        nics -= 25.0 * np.exp(-(rho / 1.3) ** 2 - (h / 1.6) ** 2)
+    for bd in m.GetBonds():                              # Alkin: entschirmter Ring um die Bindung
+        if bd.GetBondTypeAsDouble() == 3:
+            i, j = bd.GetBeginAtomIdx(), bd.GetEndAtomIdx()
+            c, u = (P[i] + P[j]) / 2, (P[j] - P[i]) / np.linalg.norm(P[j] - P[i])
+            d = bq - c
+            z = d @ u
+            rho = np.linalg.norm(d - np.outer(z, u), axis=1)
+            nics += 24.0 * np.exp(-((rho - 2.1) / 0.8) ** 2 - (z / 1.0) ** 2)
+    Z = {e: i + 1 for i, e in enumerate(ELEMENTS)}
+    els = [x.GetSymbol() for x in m.GetAtoms()]
+    dash = " " + "-" * 69
+    L = [" Entering Gaussian System, Link 0=g16", dash, " #p nmr=giao b3lyp/6-311+g(2d,p) scrf=(smd,solvent=thf)", dash,
+         "", "                          Input orientation:", dash,
+         " Center     Atomic      Atomic             Coordinates (Angstroms)",
+         " Number     Number       Type             X           Y           Z", dash]
+    L += [f" {k + 1:6d} {Z[e]:10d} {0:11d} {x:15.6f} {y:11.6f} {z:11.6f}" for k, (e, (x, y, z)) in enumerate(zip(els, P))]
+    L += [f" {len(els) + k + 1:6d} {0:10d} {0:11d} {x:15.6f} {y:11.6f} {z:11.6f}" for k, (x, y, z) in enumerate(bq)]
+    L += [dash, "", " SCF GIAO Magnetic shielding tensor (ppm):"]
+    for k, si in enumerate(-nics):                        # σ_iso = −NICS
+        L += [f" {len(els) + k + 1:6d}  Bq   Isotropic = {si:12.4f}   Anisotropy = {0.0:12.4f}",
+              f"   XX= {si:12.4f}   YX= {0.0:12.4f}   ZX= {0.0:12.4f}",
+              f"   XY= {0.0:12.4f}   YY= {si:12.4f}   ZY= {0.0:12.4f}",
+              f"   XZ= {0.0:12.4f}   YZ= {0.0:12.4f}   ZZ= {si:12.4f}"]
+    L += [" Normal termination of Gaussian 16."]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    return Path(path)
+
+
+def make_acid_cube(path, m, P, step=0.25, pad=2.5):
+    """Cube eines ACID-Skalarfelds (wie ihn ein ACID-Programm schreibt) um die Geometrie P. Werte erfunden, in der Form
+    aber wie echte Bilder: Röhre um jede konjugierte Bindung (Maximum statt Summe, damit die Röhren gleich dick bleiben
+    und die Sechsringe in der Mitte offen sind), dünner um übrige Bindungen zwischen Schweratomen, nichts um X–H.
+    Bei 0.045 hat die Röhre etwa 0.65 Å Radius. Kein echter Datensatz."""
+    from elucida.core import orbitals as ORB
+    lo, hi = P.min(0) - pad, P.max(0) + pad
+    g = [lo[k] + step * np.arange(int(np.ceil((hi[k] - lo[k]) / step)) + 1) for k in range(3)]
+    X = np.stack(np.meshgrid(*g, indexing="ij"), -1).reshape(-1, 3)
+    v = np.zeros(len(X))
+    for bd in m.GetBonds():
+        a_, b_ = bd.GetBeginAtom(), bd.GetEndAtom()
+        if 1 in (a_.GetAtomicNum(), b_.GetAtomicNum()):
+            continue
+        amp = 0.12 if bd.GetIsConjugated() or bd.GetIsAromatic() else 0.06
+        a, d = P[a_.GetIdx()], P[b_.GetIdx()] - P[a_.GetIdx()]
+        t = np.clip((X - a) @ d / (d @ d), 0.0, 1.0)
+        r = np.linalg.norm(X - a - np.outer(t, d), axis=1)
+        v = np.maximum(v, amp * np.exp(-(r / 0.65) ** 2))
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    ORB.write_cube(path, [x.GetSymbol() for x in m.GetAtoms()], P, lo, np.diag([step] * 3),
+                   v.reshape([len(a) for a in g]).astype(np.float32), title="ACID", comment="invented demo data")
+    return Path(path)
+
+
+def make_acid_aicd(folder, m, P, r=0.6):
+    """AICD-Ausgabe (Isoober.inc + Molekuel.inc im Layout von AICD 3.0.4) um die Geometrie P, erfunden: Fläche als
+    Röhren um die konjugierten Bindungen und Kugeln an ihren Atomen (Radius r, analytische Normalen; überlappende
+    Teile verdeckt der Tiefenpuffer), Stromdichtepfeile auf den Röhren der Sechsringe tangential im Uhrzeigersinn um
+    die Ringmitte, gesehen mit B zum Betrachter (= diatrop), B senkrecht auf der Molekülebene. Kein echter Datensatz."""
+    from elucida.formats import aicd as AICD
+    heavy = [a.GetIdx() for a in m.GetAtoms() if a.GetAtomicNum() > 1]
+    c0 = P[heavy].mean(0)
+    B = np.linalg.svd(P[heavy] - c0)[2][2]
+    conj = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in m.GetBonds()
+            if (b.GetIsConjugated() or b.GetIsAromatic()) and 1 not in (b.GetBeginAtom().GetAtomicNum(),
+                                                                        b.GetEndAtom().GetAtomicNum())]
+    tri, nrm = [], []
+
+    def frame(d):
+        u = np.cross(d, [1.0, 0, 0] if abs(d[0]) < 0.9 else [0, 1.0, 0])
+        u /= np.linalg.norm(u)
+        return u, np.cross(d, u)
+
+    def quads(pts, nos, nu, nv):                             # Gitter nu × nv (in v geschlossen) -> Dreiecke
+        for i in range(nu - 1):
+            for j in range(nv):
+                k = (j + 1) % nv
+                for a_, b_, c_ in (((i, j), (i + 1, j), (i + 1, k)), ((i, j), (i + 1, k), (i, k))):
+                    tri.append([pts[a_], pts[b_], pts[c_]])
+                    nrm.append([nos[a_], nos[b_], nos[c_]])
+
+    ph = np.linspace(0, 2 * np.pi, 20, endpoint=False)
+    for i, j in conj:                                        # Röhren
+        a, d = P[i], P[j] - P[i]
+        u, v = frame(d / np.linalg.norm(d))
+        pts, nos = {}, {}
+        for s_, t in enumerate(np.linspace(0, 1, 5)):
+            for q, f in enumerate(ph):
+                n = np.cos(f) * u + np.sin(f) * v
+                pts[s_, q], nos[s_, q] = a + t * d + r * n, n
+        quads(pts, nos, 5, len(ph))
+    th = np.linspace(0, np.pi, 11)
+    for k in sorted({x for b in conj for x in b}):          # Kugeln an den Atomen
+        pts, nos = {}, {}
+        for s_, t in enumerate(th):
+            for q, f in enumerate(ph):
+                n = np.array([np.sin(t) * np.cos(f), np.sin(t) * np.sin(f), np.cos(t)])
+                pts[s_, q], nos[s_, q] = P[k] + r * n, n
+        quads(pts, nos, len(th), len(ph))
+    arrows = []
+    for ring in (np.asarray(x) for x in m.GetRingInfo().AtomRings() if len(x) == 6):
+        c = P[ring].mean(0)
+        for a_, b_ in zip(ring, np.roll(ring, -1)):
+            a, d = P[a_], P[b_] - P[a_]
+            u, v = frame(d / np.linalg.norm(d))
+            for t in (0.25, 0.5, 0.75):
+                for f in np.linspace(0, 2 * np.pi, 8, endpoint=False):
+                    p0 = a + t * d + r * (np.cos(f) * u + np.sin(f) * v)
+                    w = np.cross(p0 - c, B)                     # tangential um die Ringmitte
+                    w /= np.linalg.norm(w)
+                    arrows.append([p0, p0 + 0.27 * w, p0 + 0.36 * w])
+    els = [x.GetSymbol() for x in m.GetAtoms()]
+    return AICD.write_aicd_files(folder, els, P, np.array(tri), np.array(nrm), np.array(arrows), B, 0.05)
+
+
+def make_acid_log(path, m, P):
+    """Gaussian-Ausgabe der CSGT-Rechnung für ACID (nur Route, Eingabeorientierung, Ende; erfunden)."""
+    from elucida.formats.elements import ELEMENTS
+    Z = {e: i + 1 for i, e in enumerate(ELEMENTS)}
+    dash = " " + "-" * 69
+    L = [" Entering Gaussian System, Link 0=g16", dash, " #p nmr=csgt b3lyp/6-311+g(2d,p) iop(10/93=1)", dash,
+         "", "                          Input orientation:", dash,
+         " Center     Atomic      Atomic             Coordinates (Angstroms)",
+         " Number     Number       Type             X           Y           Z", dash]
+    L += [f" {k + 1:6d} {Z[a.GetSymbol()]:10d} {0:11d} {x:15.6f} {y:11.6f} {z:11.6f}"
+          for k, (a, (x, y, z)) in enumerate(zip(m.GetAtoms(), P))]
+    L += [dash, " Normal termination of Gaussian 16."]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    return Path(path)
+
+
 # Emission in fünf Lösungsmitteln (Lippert-Mataga): Δf aus ε und n (Literaturkonstanten), λ_abs erfunden, λ_em aus einer
 # erfundenen Geraden durch den THF-Punkt der Tabs ε/Fluoreszenz (372 → 458 nm)
 SOLVENTS = (("cyclohexane", 2.02, 1.426, 366), ("toluene", 2.38, 1.497, 371), ("THF", 7.58, 1.407, 372),
             ("CH$_2$Cl$_2$", 8.93, 1.424, 375), ("MeCN", 35.9, 1.344, 370))
+
+
+# NBO/NRT von S3 (erfunden): Gewichte der Resonanzstrukturen in der Reihenfolge von RDKit (vier Kekulé-Formen, dann
+# die chinoide Zwitterionform des Push-pull-Systems); „others“ ist der Rest auf 100 %.
+NBO_RS_WEIGHTS = (31.42, 27.65, 15.08, 12.97, 6.37)
+
+
+def _nbo_atom(el, k):
+    return f"{el}{k:3d}"
+
+
+def _nbo_lab(typ, n, atoms):
+    return f"{typ:<3s}({n:2d}) " + "-".join(_nbo_atom(e, k) for e, k in atoms)
+
+
+def Chem_path(m, a, b):
+    from rdkit import Chem
+    return Chem.GetShortestPath(m, a, b) if a != b else (a,)
+
+
+def _nbo_open_shell(L, els, q, core, ryd, Z, Wb, wiberg_lines, m):
+    """Geschlossenschalige erfundene NBO-Ausgabe -> offenschalige (Radikalkation, Multiplizität 2) im Layout von
+    ORCA 6.1.1 + NBO 7.0: Gesamtteil (NPA mit Spindichte, Wiberg), dann Alpha- und Beta-Teil. Erfunden: Spindichte auf
+    dem Amin-N und dem Donorring (Summe 1), Ladungen +1/n je Schweratom verschoben."""
+    import re as _re
+    n = len(els)
+    at = lambda key: next(i for i, ln in enumerate(L) if ln.startswith(key))     # noqa: E731
+    a, b = at(" Summary of Natural Population Analysis:"), at(" * Total *")
+    c, d = at(" Wiberg bond index matrix"), at("     (Occupancy)")
+    e, f, g = at(" SECOND ORDER"), at(" NATURAL BOND ORBITALS (Summary):"), at(" NATURAL RESONANCE")
+    tail = L[at(" NBO analysis completed"):]
+    head = [ln.replace("Charge          ....    0", "Charge          ....    1")
+            .replace("Mult            ....    1", "Mult            ....    2")
+            .replace(" NRT NRTCML", "") for ln in L[:a] if "/NRT    /" not in ln]
+    amine = next(x.GetIdx() for x in m.GetAtoms() if x.GetSymbol() == "N" and not x.GetIsAromatic())
+    ring = next(r for r in m.GetRingInfo().AtomRings() if any(m.GetBondBetweenAtoms(amine, k) for k in r))
+    rho = np.zeros(n)
+    rho[amine] = 0.42
+    for k, i in enumerate(sorted(ring, key=lambda i: len(Chem_path(m, amine, i)))):
+        rho[i] = (0.17, -0.04, -0.04, 0.12, 0.12, 0.25)[k]
+    rho[[i for i, x in enumerate(els) if x == "H"]] = -0.0
+    rho[amine] += 1.0 - rho.sum()
+    heavy = [i for i, x in enumerate(els) if x != "H"]
+    q2 = q.copy()
+    q2[heavy] += 1.0 / len(heavy)
+    npa = ["", " Summary of Natural Population Analysis:", "",
+           "                                     Natural Population                 Natural",
+           "             Natural    ---------------------------------------------    Spin",
+           "  Atom No    Charge        Core      Valence    Rydberg      Total      Density",
+           " " + "-" * 79]
+    for i, x in enumerate(els):
+        tot = Z[x] - q2[i]
+        npa.append(f"    {x:<2s}{i + 1:3d}  {q2[i]:9.5f}  {core[i]:10.5f}  {tot - core[i] - ryd[i]:10.5f}  {ryd[i]:9.5f}  "
+                   f"{tot:10.5f}  {rho[i]:10.5f}")
+    npa += [" " + "=" * 79, f" * Total *  {q2.sum():7.5f}", ""]
+
+    def half(lines, key):
+        """Besetzungen „(1.98120)“ bzw. E(2)-Werte halbieren (Alpha/Beta)."""
+        out = []
+        for ln in lines:
+            if key == "occ":
+                ln = _re.sub(r"\((\s*\d\.\d{5})\)", lambda mm: f"({float(mm.group(1)) / 2:7.5f})", ln)
+            elif key == "e2" and _re.match(r"^\s*\d+\.", ln):
+                ln = ln[:-24] + "".join(f"{float(v) / (2 if k == 0 else 1):8.{(2, 2, 3)[k]}f}"
+                                        for k, v in enumerate(ln[-24:].split()))
+            elif key == "sum" and _re.match(r"^\s*\d+\.", ln):
+                ln = _re.sub(r"(\s)(\d\.\d{5})(\s)", lambda mm: f"{mm.group(1)}{float(mm.group(2)) / 2:7.5f}{mm.group(3)}", ln, 1)
+            out.append(ln)
+        return out
+    spin = []
+    for lab, sgn in (("Alpha", 1), ("Beta ", -1)):
+        Ws = Wb / 2 + sgn * 0.02 * np.outer(np.abs(rho), np.abs(rho)) * (Wb > 0.5)
+        np.fill_diagonal(Ws, 0.0)
+        spin += ["", " ***************************************************",
+                 f" *******         {lab} spin orbitals         *******",
+                 " ***************************************************", ""]
+        spin += L[a:b + 1] + wiberg_lines(np.round(Ws, 4))
+        spin += half(L[d:e], "occ") + half(L[e:f], "e2") + half(L[f:g], "sum")
+    return head + npa + L[c:d] + spin + tail
+
+
+def make_nbo(path, name, m, P, mult=1):
+    """ORCA-6-Ausgabe mit NBO 7.0 (nur die Abschnitte, die `formats.nbo.parse_nbo` liest, im Layout echter Ausgaben)
+    und die CML-Datei der NRT-Strukturen daneben (`<FILE>-nrt.cml`). Alle Zahlen erfunden: natürliche Ladungen aus den
+    Gasteiger-Ladungen (× 2.2, Summe 0), Lewis-Struktur = erste Kekulé-Form, E(2) für Donor-N → Ring-π*, π → π* in
+    den Ringen und einige σ → σ*, NRT-Bindungsordnungen = Mittel der Strukturen nach Gewicht. Kein echter Datensatz.
+    mult=2: offenschalig (Radikalkation, Layout wie ORCA 6.1.1 + NBO 7.0 offenschalig): NPA gesamt mit natürlicher
+    Spindichte, Wiberg gesamt, dann je „Alpha/Beta spin orbitals“ NPA, Wiberg, NBO-Liste, E(2), Summary (Besetzungen
+    und E(2) halbiert, Wiberg je Spin ± Spindichte); keine NRT, keine CML."""
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+    rng = np.random.default_rng(23)
+    els = [a.GetSymbol() for a in m.GetAtoms()]
+    n = len(els)
+    Z = {"H": 1, "C": 6, "N": 7}
+    num = lambda i: (els[i], i + 1)                                      # noqa: E731
+    stem = Path(path).stem
+    # Resonanzstrukturen (Bindungsordnungen, freie Paare) aus RDKit
+    k = Chem.Mol(m)
+    Chem.Kekulize(k, clearAromaticFlags=True)
+    rs = []
+    for r in list(Chem.ResonanceMolSupplier(k, Chem.KEKULE_ALL | Chem.ALLOW_CHARGE_SEPARATION))[:len(NBO_RS_WEIGHTS)]:
+        bo = {tuple(sorted((b.GetBeginAtomIdx(), b.GetEndAtomIdx()))): int(b.GetBondTypeAsDouble()) for b in r.GetBonds()}
+        val = {"H": 1, "C": 4, "N": 5}
+        lp = []
+        for a in r.GetAtoms():
+            s = sum(o for (i, j), o in bo.items() if a.GetIdx() in (i, j))
+            lp.append((val[a.GetSymbol()] - a.GetFormalCharge() - s) // 2)
+        rs.append(dict(bo=bo, lp=lp))
+    w = np.array(NBO_RS_WEIGHTS)
+    others = 100.0 - w.sum()
+    # NPA
+    AllChem.ComputeGasteigerCharges(m)
+    q = np.array([2.2 * float(a.GetProp("_GasteigerCharge")) for a in m.GetAtoms()])
+    q[[i for i, e in enumerate(els) if e == "H"]] = 0.20 + rng.uniform(-0.02, 0.02, els.count("H"))
+    heavy = [i for i, e in enumerate(els) if e != "H"]
+    q[heavy] -= q.sum() / len(heavy)
+    core = [0.0 if e == "H" else 1.99998 for e in els]
+    ryd = [0.0013 if e == "H" else 0.0185 for e in els]
+    L = ["", "                                 *****************", "                                 * O   R   C   A *",
+         "                                 *****************", "", "                 Program Version 6.0.0  -   RELEASE   -",
+         "", "=" * 80, "                                       INPUT FILE", "=" * 80, f"NAME = {stem}.inp",
+         "|  1> ! B3LYP D4 def2-TZVP NBO", "|  2> %nbo", f'|  3> NBOKEYLIST = "$NBO NBO BNDIDX NRT NRTCML FILE={stem} $END"',
+         "|  4> end", "|  5> * xyz 0 1"]
+    L += [f"|{i + 6:3d}> {e:<2s} {x:12.6f} {y:12.6f} {z:12.6f}" for i, (e, (x, y, z)) in enumerate(zip(els, P))]
+    L += [f"|{n + 6:3d}> *", f"|{n + 7:3d}>                          ****END OF INPUT****", "",
+          " Total Charge           Charge          ....    0", " Multiplicity           Mult            ....    1", "",
+          "---------------------------------", "CARTESIAN COORDINATES (ANGSTROEM)", "---------------------------------"]
+    L += [f"  {e:<2s}  {x:12.6f} {y:12.6f} {z:12.6f}" for e, (x, y, z) in zip(els, P)]
+    L += ["", "-------------------------   --------------------", "FINAL SINGLE POINT ENERGY      -729.498215337412", "",
+          " " + "*" * 35 + " NBO 7.0 " + "*" * 35,
+          "             N A T U R A L   A T O M I C   O R B I T A L   A N D",
+          "          N A T U R A L   B O N D   O R B I T A L   A N A L Y S I S", " " + "*" * 79, "",
+          "          Cite this program [NBO 7.0.10 (8-Feb-2021)] as:", "",
+          "          NBO 7.0.  E. D. Glendening, J. K. Badenhoop, A. E. Reed,",
+          "          J. E. Carpenter, J. A. Bohmann, C. M. Morales, P. Karafiloglou,",
+          "          C. R. Landis, and F. Weinhold, Theoretical Chemistry Institute,",
+          "          University of Wisconsin, Madison, WI (2018)", "",
+          "       /NBO    / : Natural Bond Orbital Analysis", "       /NRT    / : Natural Resonance Theory Analysis",
+          "       /BNDIDX / : Print bond indices based on the NAO density matrix", "",
+          " Summary of Natural Population Analysis:", "", "                                     Natural Population",
+          "             Natural    ---------------------------------------------",
+          "  Atom No    Charge        Core      Valence    Rydberg      Total",
+          " --------------------------------------------------------------------"]
+    for i, e in enumerate(els):
+        tot = Z[e] - q[i]
+        L.append(f"    {e:<2s}{i + 1:3d}  {q[i]:9.5f}  {core[i]:10.5f}  {tot - core[i] - ryd[i]:10.5f}  {ryd[i]:9.5f}  "
+                 f"{tot:10.5f}")
+    L += [" " + "=" * 68, f" * Total *  {0.0:7.5f}", ""]
+    # BNDIDX: Wiberg-Matrix (NAO) im Layout des NBO-7-Handbuchs (B.6.5), erfunden: gewichtetes Mittel der Strukturen
+    # × 0.93 (Wiberg liegt unter der formalen Ordnung), dazu kleine Werte zwischen nicht gebundenen Atomen
+    Wb = np.zeros((n, n))
+    for r_, wt in zip(rs, w / w.sum()):
+        for (i, j), o in r_["bo"].items():
+            Wb[i, j] += 0.93 * wt * o
+    Wb = Wb + Wb.T
+    D_ = np.linalg.norm(P[:, None] - P[None], axis=2)
+    Wb += np.where((Wb == 0) & (D_ < 2.9), 0.012 * np.exp(-(D_ - 2.4) ** 2), 0.0)
+    np.fill_diagonal(Wb, 0.0)
+    Wb = np.round(Wb, 4)
+    def wiberg_lines(M):
+        out = ["", " Wiberg bond index matrix in the NAO basis:", ""]
+        for c0 in range(0, n, 9):
+            cols = list(range(c0, min(n, c0 + 9)))
+            out += ["     Atom  " + "".join(f"{c + 1:4d}    " for c in cols).rstrip(),
+                    "     ---- " + "  ".join("------" for _ in cols)]
+            out += [f"  {i + 1:3d}. {els[i]:>2s}  " + "  ".join(f"{M[i, c]:6.4f}" for c in cols) for i in range(n)]
+            out.append("")
+        out += ["", " Wiberg bond index, Totals by atom:", "", "     Atom    1", "     ---- ------"]
+        out += [f"  {i + 1:3d}. {els[i]:>2s}  {M[i].sum():6.4f}" for i in range(n)]
+        return out + ["", ""]
+    L += wiberg_lines(Wb)
+    # Lewis-Struktur = erste Resonanzstruktur: CR, LP, BD je Bindung (BD(2)/BD(3) für Mehrfachbindungen), dann BD*
+    nbos = []                                                # (Typ, n, Atome, Besetzung, Energie, Zentren/Hybrid)
+    for i in heavy:
+        nbos.append(("CR", 1, [i], 1.99999, -14.38 if els[i] == "N" else -10.19 - 0.01 * rng.random(), "s(100.00%)"))
+    for i in heavy:
+        for kk in range(rs[0]["lp"][i]):
+            planar = m.GetAtomWithIdx(i).GetIsAromatic() is False
+            nbos.append(("LP", kk + 1, [i], 1.7924 if planar else 1.9137, -0.2398 if planar else -0.3471,
+                         "s(  8.12%)p11.30( 91.75%)d 0.01(  0.13%)" if planar else
+                         "s( 29.84%)p 2.35( 70.03%)d 0.00(  0.13%)"))
+    bonds = sorted(rs[0]["bo"].items())
+
+    def hyb(i, pi=False):
+        if els[i] == "H":
+            return "s( 99.94%)p 0.00(  0.06%)"
+        if pi:
+            return "s(  0.00%)p 1.00( 99.95%)d 0.00(  0.05%)"
+        hy = m.GetAtomWithIdx(i).GetHybridization()
+        lam = {Chem.HybridizationType.SP: 0.98, Chem.HybridizationType.SP3: 3.04}.get(hy, 1.93) + rng.uniform(-.08, .08)
+        s = 100.0 / (1 + lam + 0.004)
+        return f"s({s:6.2f}%)p{lam:5.2f}({s * lam:6.2f}%)d 0.00({100 - s - s * lam:6.2f}%)"
+
+    def pol(i, j):
+        en = {"H": 2.2, "C": 2.55, "N": 3.04}
+        a = 50.0 + 30.0 * (en[els[i]] - en[els[j]]) + rng.uniform(-.6, .6)
+        return a, 100.0 - a
+    for (i, j), o in bonds:
+        for kk in range(1, o + 1):
+            a, b = pol(i, j)
+            nbos.append(("BD", kk, [i, j], (1.9812 if kk == 1 else 1.6935 + 0.05 * rng.random()),
+                         (-0.6112 if kk == 1 else -0.2510) + 0.02 * rng.uniform(-1, 1), [(a, i, hyb(i, kk > 1)), (b, j, hyb(j, kk > 1))]))
+    for (i, j), o in bonds:
+        for kk in range(1, o + 1):
+            a, b = pol(i, j)
+            nbos.append(("BD*", kk, [i, j], (0.0142 if kk == 1 else 0.2861 + 0.08 * rng.random()),
+                         (0.4211 if kk == 1 else -0.0213) + 0.02 * rng.uniform(-1, 1), [(b, i, hyb(i, kk > 1)), (a, j, hyb(j, kk > 1))]))
+    idx = {(t, nn, tuple(at)): x + 1 for x, (t, nn, at, *_r) in enumerate(nbos)}
+    L += ["", "     (Occupancy)   Bond orbital / Coefficients / Hybrids",
+          " ------------------ Lewis ------------------------------------------------------"]
+    for x, (t, nn, at, occ, en, h) in enumerate(nbos):
+        lab = _nbo_lab(t, nn, [num(i) for i in at])
+        if isinstance(h, str):
+            L.append(f"{x + 1:4d}. ({occ:7.5f}) {lab:<20s} {h}")
+            L.append("                                         1.0000  0.0000  0.0000")
+        else:
+            L.append(f"{x + 1:4d}. ({occ:7.5f}) {lab}")
+            for pc, i, hh in h:
+                L.append(f"               ({pc:6.2f}%) {np.sqrt(pc / 100):7.4f}* {_nbo_atom(*num(i))} {hh}")
+                L.append("                                         0.0000  0.5871  0.0102")
+    L += ["", "", " NHO DIRECTIONALITY AND BOND BENDING (deviation from line of nuclear centers at", ""]
+    # E(2)
+    e2 = []
+    don = next((i for i in heavy if els[i] == "N" and not m.GetAtomWithIdx(i).GetIsAromatic()), None)
+    pis = [(i, j) for (i, j), o in bonds if o == 2]
+    tri = [(i, j) for (i, j), o in bonds if o == 3]
+    ring_of = {a: r for r in m.GetRingInfo().AtomRings() for a in r}
+    for (i, j) in pis:                                    # Donor-N → π* des Rings daneben
+        if don is not None and any(m.GetBondBetweenAtoms(don, x) for x in (i, j)):
+            e2.append((("LP", 1, [don]), ("BD*", 2, [i, j]), 38.71, 0.29, 0.098))
+    for (i, j) in pis + tri:                              # π → π* benachbarter Mehrfachbindungen
+        for (a, b) in pis + tri:
+            if (a, b) == (i, j):
+                continue
+            if any(m.GetBondBetweenAtoms(x, y) for x in (i, j) for y in (a, b)):
+                same = ring_of.get(i) is not None and ring_of.get(i) == ring_of.get(a)
+                e2.append((("BD", 2, [i, j]), ("BD*", 2, [a, b]), round((19.5 if same else 11.8) + rng.uniform(-3, 3), 2),
+                           round(0.28 + rng.uniform(-0.02, 0.02), 2), round(0.071 + rng.uniform(-.01, .01), 3)))
+    sig = [(i, j) for (i, j), o in bonds]
+    for _ in range(14):                                   # einige σ → σ* (klein)
+        (i, j), (a, b) = [sig[x] for x in rng.choice(len(sig), 2, replace=False)]
+        if any(m.GetBondBetweenAtoms(x, y) for x in (i, j) for y in (a, b)):
+            e2.append((("BD", 1, [i, j]), ("BD*", 1, [a, b]), round(rng.uniform(0.6, 6.2), 2),
+                       round(rng.uniform(0.95, 1.25), 2), round(rng.uniform(0.02, 0.07), 3)))
+    L += [" SECOND ORDER PERTURBATION THEORY ANALYSIS OF FOCK MATRIX IN NBO BASIS", "",
+          "     Threshold for printing:   0.50 kcal/mol",
+          "                                                          E(2) E(NL)-E(L) F(L,NL)",
+          "      Donor (L) NBO              Acceptor (NL) NBO      kcal/mol   a.u.    a.u.",
+          " " + "=" * 79, "", " within unit  1"]
+    for (dt_, dn, da), (at_, an, aa), v, de, f in e2:
+        dl, al = _nbo_lab(dt_, dn, [num(i) for i in da]), _nbo_lab(at_, an, [num(i) for i in aa])
+        L.append(f"{idx[(dt_, dn, tuple(da))]:5d}. {dl:<22s}{idx[(at_, an, tuple(aa))]:4d}. {al:<20s}{v:8.2f}{de:8.2f}{f:8.3f}")
+    L += ["", "", " NATURAL BOND ORBITALS (Summary):", "",
+          "           NBO                 Occupancy    Energy   (geminal,vicinal,remote)", " " + "=" * 79]
+    for x, (t, nn, at, occ, en, _h) in enumerate(nbos):
+        L.append(f"{x + 1:5d}. {_nbo_lab(t, nn, [num(i) for i in at]):<26s}{occ:8.5f}  {en:9.5f}")
+    lew = sum(o[3] for o in nbos if o[0] != "BD*")
+    nl = sum(o[3] for o in nbos if o[0] == "BD*")
+    tot = sum(Z[e] for e in els)
+    L += ["          -------------------------------",
+          f"                 Total Lewis  {lew:9.5f}  ({100 * lew / tot:8.4f}%)",
+          f"           Valence non-Lewis  {nl:9.5f}  ({100 * nl / tot:8.4f}%)",
+          f"           Rydberg non-Lewis  {tot - lew - nl:9.5f}  ({100 * (tot - lew - nl) / tot:8.4f}%)",
+          "          -------------------------------", "              Charge unit  1    0.00000", "", " $CHOOSE", " $END", ""]
+    # NRT
+    L += [" NATURAL RESONANCE THEORY ANALYSIS:", "", "    Parent structure threshold:  50% of leading weight",
+          " Delocalization list threshold:  1 kcal/mol", "         Maximum search cycles:  unlimited", "",
+          " TOPO matrix for the leading resonance structure:", "", "         Resonance",
+          "    RS   Weight(%)                  Added(Removed)",
+          " ---------------------------------------------------------------------------"]
+    for r_, wt in zip(range(len(rs)), w):
+        ch = []
+        for key in sorted(set(rs[0]["bo"]) | set(rs[r_]["bo"])):
+            d = rs[r_]["bo"].get(key, 0) - rs[0]["bo"].get(key, 0)
+            lab = f"{_nbo_atom(*num(key[0]))}-{_nbo_atom(*num(key[1]))}"
+            ch += [f" {lab}"] * max(d, 0) + [f"({lab})"] * max(-d, 0)
+        for i in range(n):
+            d = rs[r_]["lp"][i] - rs[0]["lp"][i]
+            ch += [f" {_nbo_atom(*num(i))}"] * max(d, 0) + [f"({_nbo_atom(*num(i))})"] * max(-d, 0)
+        rows = [""]                                       # wie NBO: Zeilen von etwa 56 Zeichen, Umbruch nach Komma
+        for x, item in enumerate(ch):
+            piece = item + ("," if x < len(ch) - 1 else "")
+            if rows[-1] and len(rows[-1]) + len(piece) > 56:
+                rows.append("")
+            rows[-1] += (" " if rows[-1] else "") + piece
+        L.append(f"{r_ + 1:6d}    {wt:6.2f}   " + rows[0])
+        L += ["                   " + t_ for t_ in rows[1:]]
+    L += [f"  others    {others:6.2f}", " " + "-" * 75, "          100.00   * Total *", "", "",
+          " Natural Bond Order:  (total/covalent/ionic)", ""]
+    T_ = np.zeros((n, n))
+    for r_, wt in zip(rs, w / w.sum()):
+        for (i, j), o in r_["bo"].items():
+            T_[i, j] += wt * o
+            T_[j, i] += wt * o
+    ion = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            if T_[i, j]:
+                pair = {els[i], els[j]}
+                ion[i, j] = T_[i, j] * (0.21 if "H" in pair else 0.31 if "N" in pair else 0.07)
+    for c0 in range(0, n, 9):
+        cols = list(range(c0, min(n, c0 + 9)))
+        L += ["     Atom    " + "".join(f"{c + 1:7d}" for c in cols), "     ----   " + " ------" * len(cols)]
+        for i in range(n):
+            L.append(f"  {i + 1:3d}.  {els[i]:<2s} t " + " ".join(f"{T_[i, c]:6.4f}" for c in cols))
+            L.append("          c " + " ".join("  --- " if c == i else f"{T_[i, c] - ion[i, c]:6.4f}" for c in cols))
+            L.append("          i " + " ".join("  --- " if c == i else f"{ion[i, c]:6.4f}" for c in cols))
+            L.append("")
+    L += [" Natural Atomic Valencies, Electron Counts, and Charges:", "",
+          "                      Co-    Electro- Electron  Formal", "     Atom  Valency  Valency  Valency   Count    Charge",
+          "     ----  -------  -------  -------  -------  -------"]
+    for i in range(n):
+        v, iv = T_[i].sum(), ion[i].sum()
+        L.append(f"  {i + 1:3d}.  {els[i]:<2s}  {v:7.4f}  {v - iv:7.4f}  {iv:7.4f}  {2.0 if els[i] == 'H' else 8.0:7.4f}  "
+                 f"{0.0:7.4f}")
+    L += ["", " $NRTSTR", " $END", "", " NBO analysis completed in 4.21 CPU seconds (4 wall seconds)", "",
+          "                             ****ORCA TERMINATED NORMALLY****"]
+    if mult == 2:
+        L = _nbo_open_shell(L, els, q, core, ryd, Z, Wb, wiberg_lines, m)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
+    if mult == 2:
+        return Path(path)
+    # CML der NRT-Strukturen (wie NBO 7: Koordinaten mit zwei Nachkommastellen, Titel „Wgt=…%  rhoNL=…“)
+    C = ['<?xml version="1.0"?>', '<cml title="Resonance forms from NRT analysis">']
+    for r_, wt in zip(rs, w):
+        C.append(f' <molecule id="{len(C)}" title="Wgt={wt:.2f}%  rhoNL={2.4 + 0.1 * len(C):.5f}">')
+        C.append("  <atomArray>")
+        C += [f'   <atom id="a{i + 1}" elementType="{e}" hydrogenCount="0" x3="{x:.2f}" y3="{y:.2f}" z3="{z:.2f}" '
+              f'lonePair="{r_["lp"][i]}"/>' for i, (e, (x, y, z)) in enumerate(zip(els, P))]
+        C += ["  </atomArray>", "  <bondArray>"]
+        C += [f'   <bond atomRefs2="a{i + 1} a{j + 1}" order="{o}"/>' for (i, j), o in sorted(r_["bo"].items())]
+        C += ["  </bondArray>", " </molecule>"]
+    C.append("</cml>")
+    Path(path).with_name(f"{stem}-nrt.cml").write_text("\n".join(C) + "\n", encoding="utf-8")
+    return Path(path)
 
 
 def lippert_png(path, em_thf=458.0, slope=9500.0):
@@ -1261,6 +2076,8 @@ def open_demo(w, folder=None, name="S3") -> Path:
         tabs = ("nmr_tab", "irms_tab", "hrms_tab", "xray_tab")
         if name == "S3":                                   # die Vorstufe hat diese Tabs nicht
             tabs += ("ov_tab", "uvkin_tab", "fl_tab", "cv_tab", "sec_tab", "hcell_tab", "epr_tab", "dft_tab", "other_tab")
+        else:                                              # Vorstufe: EPR nur als Spinzählung
+            tabs += ("epr_tab",)
         for t in (getattr(w, a) for a in tabs):
             for fn in ("sync_widgets", "update_preview", "render"):
                 f = getattr(type(t), fn, None)
@@ -1300,7 +2117,13 @@ def open_demo_publication(w, folder=None) -> Path:
                 project_description="Artificial data generated by Elucida to show the publication workflow.",
                 si_texts={"methods": "All reactions were carried out under argon using standard Schlenk techniques. "
                                      "NMR spectra were recorded at 298 K; chemical shifts are given in ppm.",
-                          "cv": "Cyclic voltammograms were recorded with ferrocene as internal reference."})
+                          "cv": "Cyclic voltammograms were recorded with ferrocene as internal reference."},
+                # CV-Messaufbau des Projekts (erfunden): erster Absatz des Kapitels „Cyclic Voltammetry“ der Gesamt-SI
+                cv_setup=dict(device="Example potentiostat, model 1", we="glassy carbon disc, 3 mm diameter",
+                              area="0.0707", polish="0.05 µm Al2O3", ce="Pt wire", ref="Ag/AgNO3 (0.01 M in MeCN)",
+                              gas="argon", conv="iupac",    # ohne iR-Kompensation, wie die erfundenen Messdateien
+                              more="The reference electrode was separated from the solution by a porous frit"))
+    data["das"] = dict(repo="Example Repository")        # Data Availability Statement: Link = DOI des Datensatzes
     # Seite „Vergleich“: UV-Vis beider Verbindungen (ε wie im Overlay) und eine Eigenschaftstabelle (Werte aus den Tabs,
     # dazu eine freie Spalte mit der C≡C-Bande der erfundenen IR-Spektren)
     members = [dict(dir=n, on=True, key=f"m{n}", color=c) for n, c in (("S2", "#000000"), ("S3", "#e8231b"))]
@@ -1315,6 +2138,14 @@ def open_demo_publication(w, folder=None) -> Path:
             rows=[], cells={f"m{n}|c5": f"{COMPOUNDS[n]['ir'][k][0]:.0f}" for n, k in (("S2", 1), ("S3", 4))},
             transpose=False)))]
     PUB.save(d, data)
+    from elucida.exchange import datapack as DP        # „FID for Publication“ (HSQC-Experimente der Beispiele)
+    fids = [(n, DP.fid_items(PRJ.load(d / n), d / n, n)) for n in ("S2", "S3")]
+    rep = DP.write_fid_package(fids, d / PUB.PACK_DIR)
+    if rep.get("files"):
+        data = PUB.load(d)
+        data["fidpack"] = dict(name=Path(rep["path"]).name, compounds=list(rep["compounds"]),
+                               entries=[PUB.entry_key(d, d / n, data) for n, its in fids if its])
+        PUB.save(d, data)
     PUB.set_group(d, d / "S2", "Precursors")          # Gruppen im Projekt zeigen
     PUB.set_group(d, d / "S3", "Products")
     inp = Path(tempfile.mkdtemp(prefix="elucida_demo_path_"))

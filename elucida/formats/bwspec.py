@@ -31,8 +31,18 @@ def read_bwspec(path) -> dict:
     if cols is None or "Absorbance #1" not in cols:
         raise ValueError(f"{Path(path).name}: kein BWSpec-Spektrum mit Absorbanz")
     ia, iw = cols.index("Absorbance #1"), cols.index("Wavelength") if "Wavelength" in cols else None
-    pix = np.array([float(r[0]) for r in rows if len(r) > ia])
-    A = np.array([float(r[ia]) for r in rows if len(r) > ia])
+    try:                                                  # Dezimalkomma, zweiter angehängter Export: nie roher Text
+        pix = np.array([float(r[0]) for r in rows if len(r) > ia])
+        A = np.array([float(r[ia]) for r in rows if len(r) > ia])
+        a = [float(hdr.get(f"coefs_a{i}", 0) or 0) for i in range(4)]
+    except ValueError:
+        raise ValueError(T("r2l_bwspec_number", name=Path(path).name)) from None
+    try:                                                  # Kopf nennt den Pixelbereich: abgeschnittene Datei ablehnen
+        n_exp = int(hdr["pixel_end"]) - int(hdr["pixel_start"]) + 1
+    except (KeyError, ValueError):
+        n_exp = None
+    if n_exp is not None and len(pix) != n_exp:
+        raise ValueError(T("r3_bwspec_rows", name=Path(path).name, n=len(pix), m=n_exp))
     lam = None
     if iw is not None:
         try:
@@ -40,7 +50,6 @@ def read_bwspec(path) -> dict:
         except ValueError:
             lam = None
     if lam is None:
-        a = [float(hdr.get(f"coefs_a{i}", 0) or 0) for i in range(4)]
         lam = a[0] + a[1] * pix + a[2] * pix ** 2 + a[3] * pix ** 3
     if not np.all(np.isfinite(lam)) or np.ptp(lam) <= 0:   # ohne (vollständige) Kalibrierung keine λ-Achse
         raise ValueError(f"{Path(path).name}: keine Wellenlängen und keine Kalibrierung (coefs_a0…a3)")

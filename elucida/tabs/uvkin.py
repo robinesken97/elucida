@@ -5,11 +5,17 @@ Messdatei („Collection Time“ des Cary-CSV-Exports), nie aus Dateinamen oder 
 Ansichten: Spektren einer Reihe im Farbverlauf der Zeit; Absorbanz bei λ (oder Maximum im Fenster ± n nm) gegen die
 Zeit seit dem ersten Spektrum der Reihe, wie gemessen oder relativ zum ersten Spektrum; optional Zerfall erster Ordnung
 A(t) = A0·exp(−k·t) je Reihe (`EPR.fit_first_order`, kleinste Quadrate auf den gemessenen Werten).
+
+Titration (Auftrag 2026-11-13, SI-Lückenanalyse Punkt 8): Zeilen mit Äquivalenten (Spalte „Äq.“, aus dem Namen
+vorgeschlagen, wenn eindeutig) bilden eine Spektrenschar gegen die zugegebenen Äquivalente (Farbverlauf in der
+Reihenfolge der Äquivalente, isosbestische Punkte nur, wo alle Spektren innerhalb der Toleranz übereinstimmen und sich die
+Änderung umkehrt) und die Absorbanz bei λ gegen die Äquivalente. Keine Bindungskonstanten, keine Verdünnungskorrektur.
 """
 from __future__ import annotations
 
 import csv
 import html
+import re
 import uuid
 from pathlib import Path
 
@@ -21,7 +27,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
-from elucida.tabs.epr import fit_first_order, sci_text
+from elucida.tabs.epr import fit_first_order, sci_range, sci_signed
 from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
@@ -55,6 +61,63 @@ def value_at(x, y, lam, win=0.0):
     return float(np.interp(lam, x, y))
 
 
+_EQ_RE = re.compile(r"(?<![\d.,p])(\d+(?:[.,p]\d+)?)\s*-?\s*(?:eq|equiv|äq|aeq)\.?(?![a-z])", re.IGNORECASE)
+TITR_VIEWS = ("titr", "titr_trace")
+
+
+def eq_from_name(name):
+    """Äquivalente aus einem Namen („…_0.5eq“, „1,5 equiv“, „0p25eq“) nur bei genau einem Treffer, sonst None."""
+    hits = _EQ_RE.findall(str(name))
+    return float(hits[0].replace(",", ".").replace("p", ".")) if len(hits) == 1 else None
+
+
+def fmt_eq(v):
+    return f"{core.round_half_up(v, 3):g}"
+
+
+def isosbestic(rows, tol, lo=None, hi=None, reach=20.0):
+    """Isosbestische Punkte einer Spektrenschar (mindestens drei Spektren, Liste dict(x, y) in Reihenfolge).
+    Kandidaten: Nulldurchgänge der Änderung letztes − erstes Spektrum. Ein Punkt gilt nur, wenn (1) dort alle Spektren
+    innerhalb `tol` (Spannweite max − min, Absorbanz) übereinstimmen und (2) die Änderung beiderseits innerhalb `reach`
+    nm deutlich (> 3·tol) und mit entgegengesetztem Vorzeichen ist – sonst keiner (Grundlinie, Rauschen).
+    -> [dict(lam, A, spread)] aufsteigend nach λ."""
+    if tol <= 0 or len(rows) < 3:
+        return []
+    xs = [np.asarray(r["x"], float) for r in rows]
+    a, b = max(x.min() for x in xs), min(x.max() for x in xs)
+    if lo is not None:
+        a, b = max(a, lo), min(b, hi)
+    x0 = np.sort(xs[0])
+    grid = x0[(x0 >= a) & (x0 <= b)]
+    if len(grid) < 5:
+        return []
+    Y = np.array([np.interp(grid, np.sort(x), np.asarray(r["y"], float)[np.argsort(x)]) for x, r in zip(xs, rows)])
+    spread = Y.max(axis=0) - Y.min(axis=0)
+    d = Y[-1] - Y[0]
+    step = float(np.median(np.diff(grid)))
+    near = max(2.0, 2 * step)
+    out = []
+    for j in np.flatnonzero(np.sign(d[:-1]) * np.sign(d[1:]) < 0):
+        w = (grid >= grid[j] - near) & (grid <= grid[j + 1] + near)
+        k = np.flatnonzero(w)[np.argmin(spread[w])]
+        if spread[k] > tol:
+            continue
+        left = (grid >= grid[k] - reach) & (grid < grid[k])
+        right = (grid > grid[k]) & (grid <= grid[k] + reach)
+        if not left.any() or not right.any():
+            continue
+        dl, dr = d[left][np.argmax(np.abs(d[left]))], d[right][np.argmax(np.abs(d[right]))]
+        if abs(dl) <= 3 * tol or abs(dr) <= 3 * tol or np.sign(dl) == np.sign(dr):
+            continue
+        p = {"lam": float(grid[k]), "A": float(Y[:, k].mean()), "spread": float(spread[k])}
+        if out and p["lam"] - out[-1]["lam"] < 5.0:          # derselbe Schnittpunkt: der engere bleibt
+            if p["spread"] < out[-1]["spread"]:
+                out[-1] = p
+            continue
+        out.append(p)
+    return out
+
+
 def is_baseline(name):
     """Gerätebasislinien („Baseline 100%T“, „Baseline 0%T“) sind keine Spektren (wie read_binary_samples)."""
     return str(name).strip().lower().startswith("baseline")
@@ -70,12 +133,15 @@ class UVKinTab(TABS.FigureTab):
     STATE_KEY = "uvkin"
     GUIDE, GUIDE_ACTION = "uvkin", ("guide_add", "add_files")
     TEXT_OPTS = ("fonts", "axes_frame")
-    CAP_FIELDS = ("solvent", "conc")
+    CAP_FIELDS = ("solvent", "conc", "reagent")
     SI_CAPTION = "UV-Vis spectra of {name}."
     X_RANGE = (100, 3500, 0, 10)
-    RESET_KEEP = ("entries",)                       # Spektren samt Reihe, Name und Häkchen
+    RESET_KEEP = ("entries",                        # Spektren samt Reihe, Name und Häkchen
+                  "view", "series", "lam", "win", "y", "t_unit", "fit", "iso_tol",   # Auswertung
+                  "x_auto", "x_min", "x_max")       # Bereich: λ ohne Eingabe und isosbestische Punkte darin
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=250.0, x_max=800.0, ymax=0.0, entries=[], view="", series="",
-                         lam=0.0, win=0.0, y="abs", t_unit="auto", fit=False, cap_solvent="", cap_conc="")
+                         lam=0.0, win=0.0, y="abs", t_unit="auto", fit=False, cap_solvent="", cap_conc="",
+                         iso_tol=0.01, cap_reagent="")
 
     def arrange(self):
         super().arrange()
@@ -95,10 +161,11 @@ class UVKinTab(TABS.FigureTab):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("uvkin_series"), T("uvkin_time")])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("uvkin_series"), T("uvkin_time"), T("uvtit_eq_col")])
         self.table.horizontalHeaderItem(2).setToolTip(T("uvkin_series_tip"))
         self.table.horizontalHeaderItem(3).setToolTip(T("uvkin_time_tip"))
+        self.table.horizontalHeaderItem(4).setToolTip(T("uvtit_eq_tip"))
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -134,6 +201,8 @@ class UVKinTab(TABS.FigureTab):
         self.cmb_view = QComboBox()
         for key in ("spectra", "trace"):
             self.cmb_view.addItem(T("uvkin_view_" + key), key)
+        for key in TITR_VIEWS:
+            self.cmb_view.addItem(T("uvtit_view_" + key), key)
         self.cmb_view.setToolTip(T("uvkin_view_tip"))
         f.addRow(T("sec_mode"), self.cmb_view)
         self.cmb_series = QComboBox()
@@ -153,10 +222,13 @@ class UVKinTab(TABS.FigureTab):
         for key in ("auto", "min", "h", "d"):
             self.cmb_unit.addItem(T("auto") if key == "auto" else key, key)
         self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(st["t_unit"])))
+        self.sp_tol = QDoubleSpinBox(decimals=3, minimum=0, maximum=0.5, singleStep=0.001, value=st["iso_tol"])
+        self.sp_tol.setSpecialValueText(T("off"))
+        self.sp_tol.setToolTip(T("uvtit_tol_tip"))
         self._rows = {}
         for key_, lab_, w_ in (("series", "uvkin_series", self.cmb_series), ("lam", "uvkin_lam", self.sp_lam),
                                ("win", "uvkin_win", self.sp_win), ("y", "uvkin_y", self.cmb_y),
-                               ("unit", "uvkin_unit", self.cmb_unit)):
+                               ("unit", "uvkin_unit", self.cmb_unit), ("tol", "uvtit_tol", self.sp_tol)):
             l_ = QLabel(T(lab_))
             f.addRow(l_, w_)
             self._rows[key_] = (l_, w_)
@@ -174,15 +246,17 @@ class UVKinTab(TABS.FigureTab):
         self.res_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         STYLE.empty_note(self.res_table, T("uvkin_results_none"))
         rv.addWidget(self.res_table)
-        self.tbl_summary = STYLE.summary_grid(self._sum_heads("s"))   # je Reihe: Verlauf und Zerfall
+        self.tbl_summary = STYLE.summary_grid(self._sum_heads("s"), rich=(6, 7))   # je Reihe: Verlauf und Zerfall; k wie im Methodentext
         rv.addWidget(self.tbl_summary)
+        self.tbl_iso = STYLE.summary_grid(["λ_iso [nm]", "A" + STYLE.QTY, T("uvtit_col_spread")])   # Titration
+        rv.addWidget(self.tbl_iso)
         self.lv.addWidget(self.grp_results)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export (Reiter SI-Text)
 
         self.fill_table()
         self.fill_series()
         self._sync_view_combo()
-        for w_ in (self.sp_lam, self.sp_win):
+        for w_ in (self.sp_lam, self.sp_win, self.sp_tol):
             w_.valueChanged.connect(self.changed)
         for w_ in (self.cmb_series, self.cmb_y, self.cmb_unit):
             w_.currentIndexChanged.connect(self.changed)
@@ -195,7 +269,7 @@ class UVKinTab(TABS.FigureTab):
     def view(self):
         """Gewählte Ansicht; ohne Wahl „gegen Zeit“, sobald eine Reihe zwei Spektren mit Zeit hat."""
         v = self.st.get("view") or ""
-        if v in ("spectra", "trace"):
+        if v in ("spectra", "trace") + TITR_VIEWS:
             return v
         return "trace" if any(len([r for r in rows if r["time"] is not None]) >= 2
                               for rows in self.series_rows().values()) else "spectra"
@@ -207,7 +281,9 @@ class UVKinTab(TABS.FigureTab):
 
     def _view_fields(self, *_):
         v = self.cmb_view.currentData()
-        show = {"series": v == "spectra", "lam": v == "trace", "win": v == "trace", "y": v == "trace", "unit": True}
+        lam = v in ("trace", "titr_trace")
+        show = {"series": v == "spectra", "lam": lam, "win": lam, "y": v == "trace", "unit": v in ("spectra", "trace"),
+                "tol": v == "titr"}
         for key_, pair in self._rows.items():
             for w_ in pair:
                 w_.setVisible(show[key_])
@@ -227,7 +303,8 @@ class UVKinTab(TABS.FigureTab):
 
     def collect(self):
         self.st.update(series=self.cmb_series.currentData() or "", lam=self.sp_lam.value(), win=self.sp_win.value(),
-                       y=self.cmb_y.currentData(), t_unit=self.cmb_unit.currentData(), fit=self.cb_fit.isChecked())
+                       y=self.cmb_y.currentData(), t_unit=self.cmb_unit.currentData(), fit=self.cb_fit.isChecked(),
+                       iso_tol=self.sp_tol.value())
 
     # -- Liste --------------------------------------------------------------------
     def add_files(self):
@@ -249,11 +326,15 @@ class UVKinTab(TABS.FigureTab):
             except Exception as ex:
                 bad.append(f"{Path(p).name}: {ex}")
                 continue
+            real = [s_ for s_ in smp if not is_baseline(s_["name"])]
             for k, s_ in enumerate(smp):
                 if is_baseline(s_["name"]) or (q, k) in have:
                     continue
+                eq = eq_from_name(s_["name"])
+                if eq is None and len(real) == 1:           # eine Probe je Datei: Dateiname darf es nennen
+                    eq = eq_from_name(Path(p).stem)
                 es.append({"uid": uuid.uuid4().hex[:8], "file": q, "idx": k, "label": s_["name"],
-                           "series": series_from_name(s_["name"]), "use": True})
+                           "series": "" if eq is not None else series_from_name(s_["name"]), "use": True, "eq": eq})
         if bad:
             self.main.error(T("uvkin_read_fail", files="\n".join(bad)))
         self.fill_table()
@@ -326,7 +407,8 @@ class UVKinTab(TABS.FigureTab):
             if s_ is None:
                 it.setToolTip(T("uvkin_missing"))
             self.table.setItem(i, 3, it)
-        STYLE.fit_columns(self.table)
+            self.table.setItem(i, 4, QTableWidgetItem(fmt_eq(e["eq"]) if e.get("eq") is not None else ""))
+        self.sync_columns()
         # so hoch wie die Zeilen (3 bis 8, darüber scrollen): nie eine halb sichtbare Zeile
         self.table.setFixedHeight(self.table.horizontalHeader().sizeHint().height()
                                   + max(3, min(len(es), 8)) * STYLE.CHECK_ROW_H + 2)
@@ -335,7 +417,7 @@ class UVKinTab(TABS.FigureTab):
         self.show_row_hint()
 
     def show_row_hint(self):
-        es = [e for e in self.st["entries"] if e.get("use", True)]
+        es = [e for e in self.st["entries"] if e.get("use", True) and e.get("eq") is None]   # Titration: ohne Reihe
         n = sum(1 for e in es if not str(e.get("series", "")).strip())
         self.lbl_rows.setText(T("uvkin_no_series", n=n) if n else "")
 
@@ -352,6 +434,16 @@ class UVKinTab(TABS.FigureTab):
             self.fill_series()
             self._sync_view_combo()
             self._view_fields()
+        elif item.column() == 4:                          # Äquivalente: Zahl (auch mit Komma) oder leer
+            txt = item.text().strip().replace(",", ".")
+            v = TABS.parse_num(txt) if txt else None
+            if txt and (v is None or v < 0):
+                self._loading = True
+                item.setText(fmt_eq(e["eq"]) if e.get("eq") is not None else "")
+                self._loading = False
+                return
+            e["eq"] = v
+            self.show_row_hint()
         self.show_row_hint()
         self.timer.start()
 
@@ -435,11 +527,14 @@ class UVKinTab(TABS.FigureTab):
     def figure_spec(self):
         st = self.st
         self.rows_data, self.fits, self.lam_used, self.unit_used = {}, {}, None, "min"
+        self.titr_data, self.iso = [], []
         if not st["entries"]:
             self.show_results()
             return None
-        n_off = sum(1 for e in st["entries"] if e.get("use", True) and not str(e.get("series", "")).strip())
-        if n_off:
+        titr = self.view() in TITR_VIEWS
+        n_off = sum(1 for e in st["entries"] if e.get("use", True) and e.get("eq") is None
+                    and not str(e.get("series", "")).strip())
+        if n_off and not titr:
             self.add_note(T("uvkin_no_series", n=n_off))
         gone = sum(1 for e in st["entries"] if self.sample_of(e) is None)
         if gone:
@@ -447,9 +542,79 @@ class UVKinTab(TABS.FigureTab):
         data, lam, unit = self.trace()
         self.rows_data, self.lam_used, self.unit_used = data, lam, unit
         self.fits = self.fit_series(data) if st["fit"] else {}
-        spec = self.spectra_spec() if self.view() == "spectra" else self.trace_spec(data, lam, unit)
+        self.titr_data, self.iso = [], []
+        if titr:
+            spec = self.titr_spec()
+        else:
+            spec = self.spectra_spec() if self.view() == "spectra" else self.trace_spec(data, lam, unit)
         self.show_results()
         return spec
+
+    # -- Titration --------------------------------------------------------------------
+    def titr_rows(self):
+        """Benutzte Zeilen mit Äquivalenten und lesbarer Datei, nach Äquivalenten (bei Gleichstand Listenreihenfolge)."""
+        out = []
+        for e in self.st["entries"]:
+            if not e.get("use", True) or e.get("eq") is None:
+                continue
+            s_ = self.sample_of(e)
+            if s_ is not None:
+                out.append({"e": e, "x": s_["x"], "y": s_["y"], "eq": float(e["eq"])})
+        return sorted(out, key=lambda r: r["eq"])
+
+    def titr_spec(self):
+        """Spektrenschar gegen Äquivalente (Ansicht „titr“) oder A(λ) gegen Äquivalente („titr_trace“)."""
+        st = self.st
+        rows = self.titr_data = self.titr_rows()
+        if not rows:
+            self.add_note(T("uvtit_none"))
+            return None
+        self.lam_used = st["lam"] if st["lam"] > 0 else self.auto_lam(rows)
+        cfg = self.base_cfg()
+        if self.view() == "titr_trace":
+            eq = np.array([r["eq"] for r in rows])
+            A = np.array([value_at(r["x"], r["y"], self.lam_used, st["win"]) for r in rows])
+            for r, a in zip(rows, A):
+                r["A"] = a
+            ok = np.isfinite(A)
+            if not ok.any():
+                self.add_note(T("uvtit_lam_out", lam=core.fmt_lam(self.lam_used)))
+                return None
+            curves = [{"x": eq[ok], "y": A[ok], "color": "#000000", "label": None, "ls": "-", "lw": 0.8, "marker": "o",
+                       "ms": 6}]
+            pad = 0.05 * (float(np.ptp(eq)) or 1.0)
+            cfg["xlim"] = [float(eq.min()) - pad, float(eq.max()) + pad]
+            lo, hi = float(np.nanmin(A)), float(np.nanmax(A))
+            span = (hi - lo) or 1.0
+            cfg["ylim"] = [min(0.0, lo - 0.1 * span), st["ymax"] if st["ymax"] > 0 else hi + 0.15 * span]
+            cfg["xlabel"], cfg["ylabel"] = "equivalents", f"absorbance at {core.fmt_lam(self.lam_used)} nm"
+            cfg["legend"] = False
+            cfg["y_axis"] = "numbers"
+            return cfg, curves, [], []
+        from matplotlib import colormaps
+        from matplotlib.colors import to_hex
+        curves = []
+        for k, r in enumerate(rows):
+            col = to_hex(colormaps["viridis"](0.85 * k / max(1, len(rows) - 1))) if len(rows) > 1 else "#000000"
+            curves.append({"x": r["x"], "y": r["y"], "color": col, "label": f"{fmt_eq(r['eq'])} equiv", "ls": "-",
+                           "lw": 1.2})
+        xs = np.concatenate([c["x"] for c in curves])
+        x0, x1 = (float(xs.min()), float(xs.max())) if st["x_auto"] else (st["x_min"], st["x_max"])
+        cfg["xlim"] = [x0, x1]
+        self.iso = isosbestic(rows, st["iso_tol"], x0, x1)
+        # Kreis am Schnittpunkt; λ steht in Unterschrift, Tabelle und Kachel (ein Label läge zwischen den Kurven)
+        for p_ in self.iso:
+            curves.append({"x": np.array([p_["lam"]]), "y": np.array([p_["A"]]), "color": "#000000", "label": None,
+                           "ls": "none", "marker": "o", "ms": 6, "aux": True})
+        vals = np.concatenate([c["y"][(c["x"] >= x0) & (c["x"] <= x1)] for c in curves])
+        vals = vals[np.isfinite(vals)]
+        top = float(vals.max()) if len(vals) else 1.0
+        bot = min(0.0, float(vals.min())) if len(vals) else 0.0
+        span_y = (top - bot) or 1.0
+        cfg["ylim"] = [bot - 0.03 * span_y, st["ymax"] if st["ymax"] > 0 else top + 0.08 * span_y]
+        cfg["xlabel"], cfg["ylabel"] = "wavelength [nm]", "absorbance"
+        cfg["legend"], cfg["legend_beside"] = True, True
+        return cfg, curves, [], []
 
     def shown_series(self):
         series = self.series_rows()
@@ -554,10 +719,40 @@ class UVKinTab(TABS.FigureTab):
                 f"{T('uvkin_col_dur')} [{unit}]", T("uvkin_col_n"), f"k [{unit}⁻¹]", T("uvkin_col_ci"), f"t½ [{unit}]",
                 T("col_warn")]
 
+    def show_titr_results(self):
+        """Titration: je Spektrum Äquivalente, Name, A(λ); darunter die isosbestischen Punkte."""
+        rows = self.titr_data or []
+        lam = core.fmt_lam(self.lam_used) if self.lam_used else "–"
+        self.res_table.setHorizontalHeaderLabels([T("uvtit_eq_col"), T("ov_name"), f"A ({lam} nm)", "", ""])
+        self.res_table.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            a = r.get("A", value_at(r["x"], r["y"], self.lam_used, self.st["win"]) if self.lam_used else float("nan"))
+            for j, txt in enumerate((fmt_eq(r["eq"]), r["e"]["label"], f"{a:.3f}" if np.isfinite(a) else "–")):
+                self.res_table.setItem(i, j, QTableWidgetItem(txt))
+        for c in (3, 4):
+            self.res_table.setColumnHidden(c, True)
+        self.res_table.fit()
+        STYLE.fill_summary(self.tbl_summary, [])
+        STYLE.fill_summary(self.tbl_iso, [[core.fmt_lam(p_["lam"]), f"{p_['A']:.3f}", f"{p_['spread']:.3f}"]
+                                          for p_ in self.iso] if self.view() == "titr" else [])
+
+    def sync_columns(self):
+        """Keine dauerhaft leere Spalte: „Reihe“ nicht in der Titration, „Äq.“ nicht in der Kinetik, solange leer."""
+        es, titr = self.st["entries"], self.view() in TITR_VIEWS
+        self.table.setColumnHidden(2, titr and not any(e.get("series") for e in es))
+        self.table.setColumnHidden(4, not titr and not any(e.get("eq") is not None for e in es))
+        STYLE.fit_columns(self.table)
+
     def show_results(self):
         """Ergebnisseite: Messpunkte je Reihe (Reihe, Name, t, A, relativ) und Zusammenfassung je Reihe."""
         if not hasattr(self, "res_table"):
             return
+        self.sync_columns()
+        if self.view() in TITR_VIEWS:
+            return self.show_titr_results()
+        for c in (3, 4):
+            self.res_table.setColumnHidden(c, False)
+        STYLE.fill_summary(self.tbl_iso, [])
         data, unit = self.rows_data or {}, self.unit_used
         rows = [(n, lab, t / UNIT_S[unit], a, r) for n, d in data.items()
                 for lab, t, a, r in zip(d["labels"], d["t"], d["A"], d["rel"])]
@@ -583,8 +778,8 @@ class UVKinTab(TABS.FigureTab):
                 note = T("uvkin_sum_rise")
             notes = notes or bool(note)
             srows.append([n, f"{s['A0']:.3f}", f"{s['A1']:.3f}", fmt_pct(s["rest"]), fmt_t(s["dur"]), str(s["n"]),
-                          f"{f['k']:.3g}" if f else "–",
-                          f"{f['ci'][0]:.3g} … {f['ci'][1]:.3g}" if f and f["ci"] else "–",
+                          sci_signed(f["k"]) if f else "–",
+                          sci_range(*f["ci"]) if f and f["ci"] else "–",
                           f"{f['half']:.3g}" if f and f["half"] is not None else "–", note])
         self.tbl_summary.setHorizontalHeaderLabels(self._sum_heads(unit))
         STYLE.rich_header(self.tbl_summary)
@@ -592,6 +787,12 @@ class UVKinTab(TABS.FigureTab):
         STYLE.fill_summary(self.tbl_summary, srows, hidden=(() if fitted else (6, 7, 8)) + (() if notes else (9,)))
 
     def kpis(self):
+        if self.view() in TITR_VIEWS:
+            out = [(T("uvtit_kpi_n"), str(len(self.titr_data or [])))]
+            if self.view() == "titr":
+                out.append(("λ_iso", " / ".join(core.fmt_lam(p_["lam"]) for p_ in self.iso) + " nm" if self.iso
+                            else T("uvtit_kpi_none")))
+            return out
         data = self.rows_data or {}
         name = next((n for n in data if len(data[n]["t"])), None)
         s = self.series_summary(name) if name else None
@@ -603,6 +804,8 @@ class UVKinTab(TABS.FigureTab):
         return out
 
     def hover_text(self, x, val, name):
+        if self.view() == "titr_trace":
+            return f"{fmt_eq(x)} equiv    A = {val:.4g}" if val is not None else f"{fmt_eq(x)} equiv"
         if self.view() == "trace":
             return f"t = {x:.3g} {self.unit_used}    A = {val:.4g}    {name}" if val is not None else f"t = {x:.3g}"
         return super().hover_text(x, val, name)
@@ -617,8 +820,33 @@ class UVKinTab(TABS.FigureTab):
             h += f" ({chem_html(st['cap_conc'])})"
         return h
 
+    def _reagent(self):
+        from elucida.si.lines import chem_html
+        r = (self.st.get("cap_reagent") or "").strip()
+        return chem_html(r) if r else ""
+
+    def titr_caption(self, name, view):
+        n = "<b>" + html.escape(name) + "</b>"
+        rows = self.titr_data or []
+        rng = f"{fmt_eq(rows[0]['eq'])}–{fmt_eq(rows[-1]['eq'])} equiv" if len(rows) > 1 else ""
+        reag = self._reagent()
+        add = f" of {reag}" if reag else ""
+        if view == "titr_trace":
+            lam = core.fmt_lam(self.lam_used) if self.lam_used else "–"
+            what = (f"Maximum absorbance of {n} within {lam} ± {self.st['win']:g} nm" if self.st["win"] > 0
+                    else f"Absorbance of {n} at {lam} nm")
+            return what + self._cap_tail() + f" against the equivalents{add} added."
+        h = f"UV-Vis spectra of {n}" + self._cap_tail() + f" upon addition of {rng or 'equivalents'}{add}."
+        if self.view() == "titr" and self.iso:
+            lams = [core.fmt_lam(p_["lam"]) for p_ in self.iso]
+            h += (" Isosbestic point at " if len(lams) == 1 else " Isosbestic points at ") + (
+                ", ".join(lams[:-1]) + " and " + lams[-1] if len(lams) > 1 else lams[0]) + " nm (circles)."
+        return h
+
     def si_caption(self, name):
         n = "<b>" + html.escape(name) + "</b>"
+        if self.view() in TITR_VIEWS:
+            return self.titr_caption(name, self.view())
         if self.view() == "trace":
             lam = core.fmt_lam(self.lam_used) if self.lam_used else "–"
             h = f"Absorbance of {n} at {lam} nm"
@@ -640,9 +868,31 @@ class UVKinTab(TABS.FigureTab):
             h += f" recorded over {fmt_t(span / UNIT_S[u])} {u}"
         return h + "."
 
+    def titr_methods(self):
+        st, rows = self.st, self.titr_data or []
+        if not rows:
+            return ""
+        m = ["Spectra are shown as measured against the equivalents added (no correction for dilution)."]
+        lam = core.fmt_lam(self.lam_used) if self.lam_used else None
+        if lam and self.view() == "titr_trace":
+            m.append(f"For each spectrum, the maximum absorbance within {lam} ± {st['win']:g} nm was used." if st["win"] > 0
+                     else f"The absorbance was read at {lam} nm (linear interpolation between data points).")
+        res = ""
+        if self.view() == "titr":
+            if st["iso_tol"] > 0 and len(rows) >= 3:
+                m.append(f"Isosbestic points were taken as wavelengths at which the absorbances of all {len(rows)} "
+                         f"spectra agree within {st['iso_tol']:g} (maximum − minimum) and the change between the first "
+                         "and the last spectrum reverses its sign.")
+                res = ("Isosbestic points: " + ", ".join(f"{core.fmt_lam(p_['lam'])} nm (A = {p_['A']:.3f})"
+                                                         for p_ in self.iso) + "." if self.iso
+                       else "No isosbestic point was found within this tolerance.")
+        return " ".join(m) + ("\n\n" + res if res else "")
+
     def methods_text(self):
         """Englisch, nur die benutzten Schritte: wo die Absorbanz abgelesen wurde, Bezug, Fit, Ergebnisse je Reihe."""
         st = self.st
+        if self.view() in TITR_VIEWS:
+            return self.titr_methods()
         if self.view() != "trace" or not self.rows_data or self.lam_used is None:
             return ""
         lam, unit = core.fmt_lam(self.lam_used), self.unit_used
@@ -667,18 +917,49 @@ class UVKinTab(TABS.FigureTab):
                  f"{fmt_t(s['dur'])} {unit}, n = {s['n']})")
             f = s["fit"]
             if f is not None:
-                r += f", k = {sci_text(f['k'])} {unit}-1"
+                r += f", k = {sci_signed(f['k'])} {unit}-1"
                 if f["ci"]:
-                    r += f" (95% interval {sci_text(f['ci'][0])} to {sci_text(f['ci'][1])} {unit}-1)"
+                    r += f" (95% interval {sci_signed(f['ci'][0])} to {sci_signed(f['ci'][1])} {unit}-1)"
                 r += (f", t1/2 = {f['half']:.3g} {unit}" if f["half"] is not None
                       else " (absorbance increased; no half-life)")
             res.append(r)
         return " ".join(m) + ("\n\n" + "; ".join(res) + "." if res else "")
 
+    def si_figure(self, out_dir, name):
+        """Titration: Spektrenschar und A(λ) gegen Äquivalente als zwei Abbildungen; sonst die gezeigte Ansicht."""
+        v = self.view()
+        if v not in TITR_VIEWS:
+            return super().si_figure(out_dir, name)
+        out = []
+        try:
+            for view in TITR_VIEWS:
+                self.st["view"] = view
+                fig = TABS.MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
+                TABS.FigureCanvasAgg(fig)
+                F = self.build(fig)
+                if F is None:
+                    continue
+                svg = Path(out_dir) / f"{core.safe_name(name)}_{self.STATE_KEY}_{view}.svg"
+                out += [TABS.si_image(F, svg), ("figcap", self.titr_caption(name, view))]
+        finally:
+            self.st["view"] = v
+            self.figure_spec()                            # Ergebnisse wieder für die gezeigte Ansicht
+        return out
+
     def export_to(self, base: Path):
         """Abbildung + Kurvendaten wie überall, dazu eine CSV je Messpunkt (Reihe, Name, Zeit, A, relativ; Rohwerte)."""
         files = super().export_to(base)
         base = Path(base).resolve()
+        if self.view() in TITR_VIEWS:                    # Titration: Äquivalente, Name, A(λ)
+            p = base.with_name(base.name + "_titration.csv")
+            lam = self.lam_used or self.auto_lam(self.titr_rows())
+            with open(p, "w", encoding="utf-8-sig", newline="") as fh:
+                w = csv.writer(fh)
+                w.writerow(["equiv", "name", f"A ({core.fmt_lam(lam)} nm)"])
+                for r in self.titr_rows():
+                    w.writerow([f"{r['eq']:g}", r["e"]["label"], f"{value_at(r['x'], r['y'], lam, self.st['win']):.6g}"])
+            files.append(p)
+            return files
         p = base.with_name(base.name + "_kinetics.csv")
         unit = self.unit_used
         lam = core.fmt_lam(self.lam_used) if self.lam_used else ""

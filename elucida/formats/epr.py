@@ -24,6 +24,20 @@ def _f(h, key, default=None):
         return default
 
 
+def _conv_ms(h):
+    """Konversionszeit [ms]: SPTP (Standardschicht, s je Punkt), sonst Xepr „ConvTime 40.96 ms“; andere Einheit -> None."""
+    if _f(h, "SPTP") is not None:
+        return _f(h, "SPTP") * 1000.0
+    m = re.match(r"^([-+0-9.eE]+)\s*(ms|s)$", h.get("ConvTime", "").strip())
+    return None if not m else float(m.group(1)) * (1000.0 if m.group(2) == "s" else 1.0)
+
+
+def _gain_db(h):
+    """Empfängerverstärkung [dB] aus RCAG (Zahl, auch „60 dB“); andere Einheit -> None."""
+    m = re.match(r"^([-+0-9.eE]+)\s*(dB)?$", h.get("RCAG", "").strip())
+    return float(m.group(1)) if m else None
+
+
 _FMT = {"D": "f8", "F": "f4", "I": "i4", "S": "i2"}
 
 
@@ -61,6 +75,10 @@ def read_bes3t(path) -> list:
             yvals = np.fromfile(ygf, dtype=order + yfmt) if yfmt else None
     meta = {"mw_GHz": (_f(h, "MWFQ") or 0) / 1e9 or None, "T_K": _f(h, "STMP"),
             "mod_mT": (_f(h, "B0MA") or 0) * 1000 or None, "power_mW": (_f(h, "MWPW") or 0) * 1000 or None,
+            # Zahl der Scans: erledigte Scans der Aufnahme (Gerätelage), sonst Mittelungen des Deskriptors
+            "n_scans": int(_f(h, "NbScansDone") or _f(h, "AVGS") or 0) or None,
+            # Verstärkung und Konversionszeit nur zum Vergleich in der Spinzählung (nie umgerechnet)
+            "gain_dB": _gain_db(h), "conv_ms": _conv_ms(h),
             "date": h.get("DATE", ""), "time": h.get("TIME", ""), "title": h.get("TITL", p.stem),
             "device": "Bruker BES3T"}
     out = []
@@ -83,22 +101,57 @@ def _text(path):
 
 
 def _ascii_xy(path):
-    rows = []
-    for ln in _text(path).splitlines():
-        ln = ln.strip().replace("−", "-")
-        if re.search(r"\d,\d", ln) and "." not in ln and re.search(r"[\s;]", ln):  # Dezimalkomma, Spalten ␣/;
-            ln = ln.replace(",", ".")
-        parts = re.split(r"[\s,;]+", ln)
+    """Zahlenzeilen -> (B, I). Dateiweit: ein Dezimalzeichen (Punkt oder Komma), feste Spaltenzahl; eine Zahlenzeile,
+    die nicht passt (gemischte Trenner, verschmolzene Zahlen „330.37-6.92“, Überlauf „****“), lehnt die Datei mit
+    Zeilennummer ab statt still falsch zu lesen oder wegzulassen. Zeilen mit Text (Kopf, Kommentar) zählen nicht."""
+    from elucida.app.i18n import T
+    rows, mark, width, name = [], None, None, Path(path).name
+    for k, raw in enumerate(_text(path).splitlines(), 1):
+        ln = raw.strip().replace("−", "-")
+        if not re.search(r"[\d*]", ln) or re.search(r"[^\d\s.,;+\-eE*]", ln):
+            continue                                   # Kopfzeile/Kommentar
+        ln = re.sub(r"\s*,\s+|\s+,\s*", ",", ln)       # „330, 1.25“: Komma mit Leerzeichen = Spaltentrenner
+        if re.search(r"[\s;]", ln):                    # Spalten ␣/; -> Komma in einer Zahl = Dezimalkomma
+            tok = [t for t in re.split(r"[\s;]+", ln) if t]
+            marks = {"," if "," in t else "." for t in tok if "," in t or "." in t}
+        else:                                          # nur Kommas: Spaltentrenner, Dezimalpunkt
+            tok = ln.split(",")
+            marks = {"."} if "." in ln else set()
         try:
-            vals = [float(v) for v in parts if v]
+            if len(marks) > 1 or (mark and marks and marks != {mark}):
+                raise ValueError
+            mark = mark or next(iter(marks), None)
+            vals = [float(t.replace(",", ".")) for t in tok]
+            if len(vals) < 2 or width not in (None, len(vals)):
+                raise ValueError
         except ValueError:
-            continue                                   # Kopfzeile
-        if len(vals) >= 2:
-            rows.append(vals[:2])
+            raise ValueError(T("r2l_epr_ascii_line", name=name, line=k, text=raw.strip()[:40])) from None
+        width = len(vals)
+        rows.append(vals[:2])
     if len(rows) < 10:
         raise ValueError(f"{Path(path).name}: keine zweispaltigen Daten gefunden")
     a = np.array(rows)
     return a[:, 0], a[:, 1]
+
+
+def _field_unit(text):
+    """Feldeinheit aus dem Spaltenkopf der Feldspalte (letzte Textzeile vor den Daten, erste Spalte) -> "mt"/"g"/None.
+    Nur ganze Wörter („Amt“ oder ein Probenname mit „MT“ im Titel sind keine Einheit)."""
+    head = None
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s and not re.search(r"[^\d\s.,;+\-eE*−]", s):
+            break                                      # erste Zahlenzeile
+        if s:
+            head = s
+    if head is None:
+        return None
+    first = re.split(r"\t|;|,|\s{2,}", head)[0]
+    if re.search(r"(?<![A-Za-z])mT(?![A-Za-z])|\bmillitesla\b", first, re.I):
+        return "mt"
+    if re.search(r"[\[(]\s*G\s*[\])]|\bgauss\b", first, re.I) or re.search(r"\bG\b", first):
+        return "g"
+    return None
 
 
 def read_ascii(path, unit=None) -> dict:
@@ -109,12 +162,10 @@ def read_ascii(path, unit=None) -> dict:
     '…-9p412345-…' (GHz)."""
     p = Path(path)
     B, I = _ascii_xy(p)
-    head = _text(p)[:300].lower()
     src = "header"
-    if "[g]" in head or "(g)" in head:
-        unit = "g"
-    elif "mt" in head:
-        unit = "mt"
+    found = _field_unit(_text(p))
+    if found:
+        unit = found
     elif unit:
         unit, src = unit.lower(), "user"
     else:

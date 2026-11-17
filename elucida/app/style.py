@@ -78,6 +78,8 @@ _SVG = {
 }
 
 HINT_CSS = "color: gray;"            # Hinweistexte
+QTY = "\u200b"                      # hinter einem einzelnen Buchstaben: als Größe kursiv setzen (siehe _SCI)
+WARN_COLOR = "#d9534f"
 WARN_CSS = "color: #d9534f;"         # Warnungen (fehlende Molmasse, Farbe unvollständig)
 NOTE_CSS = "color: #c77c0e;"         # Hinweise, die man beachten sollte, aber kein Fehler sind (orange)
 
@@ -123,6 +125,11 @@ base_style = ""                      # Name des Qt-Stils (app.style() ist mit St
 
 def colors():
     return COLORS[_mode]
+
+
+def swatch_border():
+    """Rand der Farbfelder (`color_button`): im Dunkeln hell, sonst wirkt ein schwarzes Feld auf der Karte leer."""
+    return "#777" if _mode == "light" else "#B5B3AC"
 
 
 ICON_PX, BUTTON_ICON_PX = 16, 20       # Symbol; Feld des Symbols in Knöpfen (Stylesheet `icon-size`)
@@ -254,7 +261,10 @@ class _CellDelegate(QStyledItemDelegate):
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
-        option.displayAlignment = Qt.AlignCenter
+        left = option.widget.property("leftcol") if option.widget is not None else None
+        # Listen mit Abschnitten (Tab „Export“): Namensspalte linksbündig, sonst mittig wie die Köpfe
+        option.displayAlignment = (Qt.AlignLeft | Qt.AlignVCenter) if left is not None and index.column() == left \
+            else Qt.AlignCenter
 
     def sizeHint(self, option, index):
         s = super().sizeHint(option, index)
@@ -362,12 +372,17 @@ def fit_columns(table):
     check_columns(table)
 
 
+ELIDE_MIN_W = 90                       # schmalste Namensspalte, bevor eine FitGrid-Tabelle doch quer rollt
+
+
 class FitGrid(QTableWidget):
     """Ergebnistabelle über die ganze Seite, nie abgeschnitten: gleich breite Spalten, solange die breiteste hineinpasst;
-    sonst Breiten nach Inhalt, der freie Platz gleichmäßig verteilt; passt auch das nicht, nach Inhalt mit
-    Bildlaufleiste."""
+    sonst Breiten nach Inhalt, der freie Platz gleichmäßig verteilt; sonst kürzt die Namensspalte `elide_col` (falls
+    gesetzt, Tooltip mit dem vollen Text); passt auch das nicht, nach Inhalt mit Bildlaufleiste."""
+    elide_col = None
 
     def fit(self):
+        rich_header(self)             # Köpfe, die erst nach `tidy` gesetzt werden („t [d]“): Größen trotzdem kursiv
         hh = self.horizontalHeader()
         head = lambda i: self.horizontalHeaderItem(i).text() if self.horizontalHeaderItem(i) else ""   # noqa: E731
         shown = [i for i in range(self.columnCount()) if not self.isColumnHidden(i)]
@@ -384,10 +399,21 @@ class FitGrid(QTableWidget):
             extra, rest = divmod(width - total, len(cols))
             for k, i in enumerate(cols):
                 hh.resizeSection(i, need[i] + extra + (k < rest))
+        elif self.elide_col in cols and total - need[self.elide_col] + ELIDE_MIN_W <= width:
+            # Namensspalte (Eigenschaft `elide_col`) gibt nach: gekürzt mit „…“, voller Name im Tooltip der Zelle,
+            # statt die ganze Tabelle quer rollen zu lassen (Zahlen werden nie gekürzt)
+            hh.setSectionResizeMode(QHeaderView.Fixed)
+            for i in cols:
+                hh.resizeSection(i, need[i] if i != self.elide_col else width - (total - need[i]))
+            total = width
         else:
             hh.setSectionResizeMode(QHeaderView.ResizeToContents)
         if len(cols) < len(shown):
             check_columns(self)
+        rows_h = getattr(self, "_rows_h", None)            # summary_grid: so hoch wie die Zeilen, dazu die Laufleiste,
+        if rows_h is not None:                             # wenn die Spalten nicht passen (sonst verdeckt sie die letzte Zeile)
+            over = total > width
+            self.setFixedHeight(rows_h + (self.horizontalScrollBar().sizeHint().height() if over else 0))
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
@@ -418,7 +444,8 @@ def fill_summary(t, rows, hidden=()):
             t.setItem(i, j, QTableWidgetItem(v))
     for c in range(t.columnCount()):
         t.setColumnHidden(c, c in hidden)
-    t.setFixedHeight(t.horizontalHeader().sizeHint().height() + len(rows) * CHECK_ROW_H + 2)
+    t._rows_h = t.horizontalHeader().sizeHint().height() + len(rows) * CHECK_ROW_H + 2
+    t.setFixedHeight(t._rows_h)
     t.setVisible(bool(rows))
     t.fit()
 
@@ -766,6 +793,31 @@ COLUMN_W = 538                    # linke Spalte in allen Tabs gleich breit, sam
 CARD_MARGINS = (12, 8, 12, 12)     # Layout-Rand in der Karte (dazu Rahmen 1 + Padding 4 seitlich, oben CARD_TITLE_H aus dem Stylesheet)
 CARD_TITLE_H = 30                  # Titelzone: 12 oben + Titelzeile; Inhalt beginnt 39 unter der Kartenkante wie im Entwurf
 ROW_GAP = 6                        # senkrechter Abstand zwischen Zeilen einer Karte (Entwurf: Zeilenraster 38 bei 32 hohen Feldern)
+EXPORT_CARD_W, EXPORT_CARD_H, EXPORT_THUMB_H = 190, 168, 122   # Karten der Galerie im Tab „Export“ (Entwurf v3)
+# Kachelraster der Export-Tabs (Entscheidungen 96–97): Mindestbreite, Höhen, Abstände
+TILE_W, TILE_THUMB_H, TILE_CAP_H, TILE_H, TILE_GAP_X, TILE_GAP_Y = 118, 74, 17, 112, 10, 4
+RESULT_TAB_MT, RESULT_TAB_MB = 3, 13   # Außenabstand oben/unten der Reiter in resultTabs (Zahl im Segment mittig)
+TILE_SEL, TILE_SLOT_H = 3, 5        # Auswahlrahmen 3 px außen um die Vorschau; Farbstreifen der Projektkacheln (100)
+# Farbe je Datenart (Marken der Kacheln, Entscheidung 99): Farbverlauf in der Reihenfolge der Tabs, damit das Raster von
+# oben links nach unten rechts fließt; hell und dunkel gleich. Vorschaufläche: 14 % davon über der Kartenfarbe.
+METHOD_COLORS = {"syn": "#BD6062", "nmr": "#BB6546", "irms": "#B36D2A", "hrms": "#A57710", "eps": "#918112",
+                 "overlay": "#778A2D", "uvkin": "#57914A", "fluo": "#2B9667", "cv": "#009783", "sec": "#00959C",
+                 "hcell": "#0090B1", "epr": "#2B88C0", "xray": "#5480C7", "dft": "#7377C6", "other": "#8C6EBD"}
+TILE_TINT = 0.14
+
+
+def method_color(key):
+    return METHOD_COLORS.get(key, METHOD_COLORS["other"])
+
+
+def method_tint(key):
+    """Hintergrund der Vorschaufläche: TILE_TINT der Datenart-Farbe über der Kartenfarbe (hell/dunkel)."""
+    from PySide6.QtGui import QColor
+    a, b = QColor(method_color(key)), QColor(colors()["card"])
+    mix = lambda x, y: round(TILE_TINT * x + (1 - TILE_TINT) * y)     # noqa: E731
+    return QColor(mix(a.red(), b.red()), mix(a.green(), b.green()), mix(a.blue(), b.blue())).name()
+
+
 INNER_W = COLUMN_W - 2 * COL_PAD - 2 * CARD_PAD     # Karteninhalt: Beschriftung + Abstand + Wertespalte
 VALUE_W = INNER_W - LABEL_W - FORM_GAP              # Wertespalte bei fester Beschriftungsspalte
 CHECKS_IN_FIELD_COLUMN = True     # Häkchen-Zeilen in der Wertespalte (eine Kante für alle Bedienelemente)
@@ -1418,12 +1470,15 @@ def _flow(widgets, width, apply, gap=6):
 
 # Formelzeichen wie im Satz (Nutzerwunsch 2026-11-11): Größen kursiv, Indizes tief, Einheiten steil. Nur für Texte, die
 # ein QLabel als Rich-Text zeigt (Rechenweg, Kacheln, Beschriftungen); Tabellenköpfe und Auswahllisten können das nicht.
-_SCI = [(r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<i>E</i><sub>1/2</sub>"),
+_SCI = [(r"χ²_red\b", "<i>χ</i>²<sub>red</sub>"),                 # Fluoreszenz (tabs/fluo_tau.py): τ_1, λ_abs, k_r
+        (r"(?<![A-Za-z>])([λτΦ])_([A-Za-z0-9]+)", r"<i>\1</i><sub>\2</sub>"), (r"(?<![A-Za-z>])([τΦ])(?![a-zäöü_<])", r"<i>\1</i>"),
+        (r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<i>E</i><sub>1/2</sub>"),
         (r"ΔE[pP]\b", "Δ<i>E</i><sub>p</sub>"), (r"\bE(pa|pc|p)\b", r"<i>E</i><sub>\1</sub>"),
         (r"\bip,([rfac])\b", r"<i>i</i><sub>p,\1</sub>"),      # Nicholson: i_p,r / i_p,f – Index samt Komma tief
         (r"\bi(pa|pc|p)\b", r"<i>i</i><sub>\1</sub>"), (r"λ(max|em|ex)\b", r"<i>λ</i><sub>\1</sub>"),
         (r"R²", "<i>R</i>²"), (r"\bm/z\b", "<i>m</i>/<i>z</i>"), (r"ε(?![a-zäöü])", "<i>ε</i>"), (r"λ(?![a-zäöü<])", "<i>λ</i>"),
         (r"\bA/d\b", "<i>A</i>/<i>d</i>"), (r"\bE°", "<i>E</i>°"), (r"ṽ", "<i>ṽ</i>"), (r"ν(?![a-zäöü])", "<i>ν</i>"),
+        (r"θ(?![a-zäöü])", "<i>θ</i>"), (r"η(?![a-zäöü])", "<i>η</i>"),                      # PXRD: 2θ, Lorentz-Anteil η
         # Größe vor ihrer Einheit „E [V]“, „m [mg]“, „ρ [g mL⁻¹]“ (nicht S: „S [%]“ ist Schwefel) und vor „=“/„≤“
         (r"(?<![A-Za-zäöüÄÖÜß>])([EMTJnjcdgvBVmhItiaAfkUDQρδ])(?= \[|-Bereich| range|-Korrektur| correction)", r"<i>\1</i>"),
         # nicht nach „_“: „E_a = …“ gehört der Indexregel am Ende (sonst blieb der Unterstrich stehen)
@@ -1445,9 +1500,13 @@ _SCI = [(r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<
         (r"·c\b", "·<i>c</i>"), (r"(?<=\+ )b\b", "<i>b</i>"), (r"\bk(?=·)", "<i>k</i>"),               # A/d = ε·c + b
         (r"\(g, a, ", "(<i>g</i>, <i>a</i>, "), (r"\ba(?=/mT)", "<i>a</i>"), (r"^([TD])(?= aus | from )", r"<i>\1</i>"),
         (r"^([xyz])(?=[+−]$)", r"<i>\1</i>"), (r"^([cdgn])$", r"<i>\1</i>"), (r"^Δ([A-Z])$", r"Δ<i>\1</i>"),
+        (r"^([cAk])(?= \()", r"<i>\1</i>"),                                      # „c (bekannt)“, „A (372 nm)“
         (r"\bA(?= bei | at )", "<i>A</i>"), (r"\bM(?= / )", "<i>M</i>"), (r"\bn/n\(", "<i>n</i>/<i>n</i>("),
         (r"\b([xy])(?=-Achse|-Größe|-Bereich| axis| range)", r"<i>\1</i>"),              # E [V], M = …, E-Bereich, y-Achse
         (r"(?<![A-Za-zäöüÄÖÜß>])([AEc])(?= gegen | vs\. | against |\()", r"<i>\1</i>"),    # A gegen E, E(Fc⁺/Fc)
+        # Größe ohne Zusammenhang (Tabellenkopf „H“, „G“ der Energietabelle; „H“ allein ist sonst die H-Zahl im NMR):
+        # der Text trägt hinter dem Zeichen ein Leerzeichen ohne Breite (U+200B, `STYLE.QTY`), das hier verschwindet
+        (r"([A-Za-z])\u200b", r"<i>\1</i>"), (r"−TS\b", "−<i>TS</i>"),
         (r"ΔBpp\b", "Δ<i>B</i><sub>pp</sub>"), (r"\bisp\b", "<i>i</i><sub>sp</sub>"),                     # Methodentexte
         (r"\bv1/2\b", "<i>v</i><sup>1/2</sup>"), (r"\)0(?=[/\s,.;)])", ")<sub>0</sub>"),                 # v1/2, (i_sp)0
         (r"\^-½", "<sup>−½</sup>"), (r"\b(mV|V|mA|µA|mg|g) (s|mL|L|mol)-1\b", r"\1 \2<sup>−1</sup>"),    # mV s-1
@@ -2124,14 +2183,18 @@ def tidy(root):
                 continue
             for i, x in enumerate(ws):
                 if 0 < i < len(ws) - 1 and isinstance(x, QLabel) and len(x.text().strip()) > 2:
-                    inner.append(x)
+                    inner.append((x, ws[i + 1]))
                     if isinstance(ws[i - 1], QComboBox):     # „[keine ▾] g_lit [2,0055]“: Auswahl so breit wie ein Wert
                         ws[i - 1].setProperty("fieldw", True)
                         ws[i - 1].setFixedWidth(FIELD_W)
         if inner:
-            wmax = max(x.sizeHint().width() for x in inner)
-            for x in inner:
-                x.setMinimumWidth(wmax)
+            wmax = max(x.sizeHint().width() for x, _ in inner)
+            for x, nxt in inner:
+                grow = wmax - x.maximumWidth()                # fest gesetzte (_pairs), schmalere Beschriftung: das Feld
+                x.setMinimumWidth(wmax)                       # dahinter gibt die Differenz ab, sonst ragt die Zeile über
+                if 0 < grow < wmax and nxt.property("fieldw") and nxt.minimumWidth() == nxt.maximumWidth():   # die Kante
+                    x.setMaximumWidth(wmax)
+                    _cell(nxt, nxt.maximumWidth() - grow)
         # „☑ Basislinie [0,15 V]“ (Zeile über die ganze Breite): Häkchen so breit wie die Beschriftungsspalte, damit
         # der Wert in der Wertespalte steht
         labels = [item_at(fl, r, QFormLayout.LabelRole).widget() for r in range(fl.rowCount())
@@ -2601,11 +2664,14 @@ QTabWidget::pane {{ border: 1px solid {c['border']}; border-radius: 12px; backgr
 QTabWidget#resultTabs::pane, QTabWidget#projectTabs::pane {{ border: none; top: 0; }}
 QTabWidget#resultTabs::tab-bar, QTabWidget#projectTabs::tab-bar {{ left: 14px; }}
 /* Reiter mittig auf der Höhe der Schrittleiste links (34 hoch) und Seite darunter auf der Höhe der ersten Karte */
-QTabWidget#resultTabs > QTabBar::tab {{ margin: 3px 2px 13px 0; }}
+QTabWidget#resultTabs > QTabBar::tab {{ margin: {RESULT_TAB_MT}px 2px {RESULT_TAB_MB}px 0; }}
 QTabBar::tab {{ background: transparent; color: {c['text2']}; border: 1px solid transparent; border-radius: 6px;
     padding: 0 12px; margin: 3px 1px; min-height: 26px; max-height: 26px; font-weight: 500; }}
 QTabBar::tab:selected {{ background: {c['sel']}; color: {c['text']}; font-weight: 600; }}
 QTabBar::tab:hover:!selected {{ background: {c['hover']}; color: {c['text']}; }}
+QPushButton#tabMore {{ background: transparent; color: {c['text2']}; border: 1px solid transparent; border-radius: 6px;
+    padding: 0 12px; min-height: 26px; max-height: 26px; font-weight: 500; }}   /* wie ein Reiter (ResultTabs) */
+QPushButton#tabMore:hover {{ background: {c['hover']}; color: {c['text']}; }}
 QTableWidget, QTableView, QListWidget, QTreeWidget, QPlainTextEdit, QTextEdit {{
     background: {c['field']}; border: 1px solid {c['border']}; border-radius: 8px; gridline-color: {c['border']};
     selection-background-color: {c['accent']}; selection-color: {c['on_accent']}; }}
@@ -2712,7 +2778,7 @@ QFrame#seg {{ background: {c['field']}; border: 1px solid {c['border']}; border-
 QPushButton#segBtn {{ background: transparent; border: none; border-radius: 6px; padding: 0 12px; color: {c['text2']}; min-height: 28px; max-height: 28px; }}
 QPushButton#segBtn:checked {{ background: {c['hover']}; color: {c['text']}; font-weight: 600; }}
 QCheckBox::indicator {{ background: {c['button']}; border: 1px solid {c['border_strong']}; }}
-QCheckBox[chip="true"] {{ spacing: 0; padding: 0 11px; min-height: 24px; max-height: 24px; border-radius: 13px;
+QCheckBox[chip="true"] {{ spacing: 0; padding: 0 11px; min-height: 24px; max-height: 24px; min-width: 20px; border-radius: 13px;
     border: 1px solid {c['border_strong']}; color: {c['text2']}; background: transparent; }}
 QCheckBox[chip="true"][tight="1"] {{ padding: 0 7px; }}
 QCheckBox[chip="true"][tight="2"] {{ padding: 0 4px; }}
@@ -2747,8 +2813,89 @@ QWidget#matrixRow:hover {{ background: {c['hover']}; }}
 QLabel#cardThumb {{ background: #ffffff; border: none; border-bottom: 1px solid #dddddd;
     border-top-left-radius: 11px; border-top-right-radius: 11px; }}
 QLabel#cardName {{ font-size: 15px; font-weight: bold; background: transparent; }}
+QWidget#recentRow[selected="true"] {{ border: 2px solid {c['accent']}; }}
+QWidget#recentRow[current="true"] {{ border-color: {c['accent_hover']}; }}
+QLabel#cardThumb[placeholder="true"] {{ background: {c['alt']}; border-bottom: 1px solid {c['border']}; }}
+QLabel#exportSec {{ color: {c['text2']}; font-size: 12px; font-weight: 600; background: transparent; padding-top: 8px; }}
+QLabel#exportName {{ font-size: 13px; background: transparent; }}
+QWidget#tile {{ background: transparent; border: none; padding: 0; }}
+QFrame#tileSel {{ background: transparent; border: 2px solid transparent; border-radius: 8px; }}
+QFrame#tileSel[current="true"] {{ border-color: {c['border_strong']}; }}
+QFrame#tileSel[selected="true"] {{ border-color: {c['accent']}; }}
+QLabel#tileThumb {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 6px; }}
+QLabel#tileThumb[placeholder="true"] {{ background: {c['card']}; }}
+QLabel#tileCap {{ font-size: 10.5px; font-weight: 600; background: transparent; }}
+QLabel#tileDot {{ border-radius: 2px; }}
+QLabel#tileLegend {{ font-size: 10.5px; color: {c['text2']}; background: transparent; }}
+QLabel#tileName {{ font-size: 11.5px; background: transparent; }}
+QLabel#tileGroupLinks {{ font-size: 11px; background: transparent; border: none; }}
+QLabel#tileGroup {{ font-size: 12px; font-weight: 600; background: transparent; border: none;
+    border-bottom: 1px solid {c['border']}; padding: 8px 0 3px 0; }}
+QLabel#tileCount {{ min-height: 18px; max-height: 18px; padding: 0 9px; border-radius: 9px; font-size: 11px;
+    font-weight: 600; background: {c['accent']}; color: {c['on_accent']}; }}
+QLabel#segCount {{ min-height: 16px; max-height: 16px; padding: 0 6px; border-radius: 8px; font-size: 10px;
+    font-weight: 600; background: {c['accent']}; color: {c['on_accent']}; }}
+QPushButton#siPill {{ min-height: 18px; max-height: 18px; padding: 0 9px; border-radius: 9px; border: none;
+    font-size: 11px; font-weight: 600; background: {c['sel']}; color: {c['text2']}; }}
+QPushButton#siPill:checked {{ background: {c['accent']}; color: {c['on_accent']}; }}
+QPushButton#siPill:disabled {{ background: {c['sel']}; color: {c['disabled']}; }}
 QLabel#statusOk {{ color: {c['ok']}; font-size: 12px; font-weight: bold; background: transparent; }}
 QLabel#statusOpen, QLabel#recentHint {{ color: {c['text2']}; font-size: 12px; background: transparent; }}
 QProgressBar#pubProgress {{ background: {c['border']}; border: none; border-radius: 3px; }}
 QProgressBar#pubProgress::chunk {{ background: {c['ok']}; border-radius: 3px; }}
 """
+
+
+# Interaktive NMR-Ansicht (tabs/nmr_view.py, 1.3.0): Symbole der Modusleiste, Tastenzeichen im Symbolknopf, Gitter im Bild
+_SVG.update({
+    "nmrv_pointer": '<path d="M6 3.5l12 8.2-5.6 1.2-2.9 5.6z"/>',
+    "nmrv_zoom_h": '<circle cx="10" cy="10" r="6.5"/><path d="M15 15l5.5 5.5M7 10h6M7 10l1.8-1.8M7 10l1.8 1.8'
+                   'M13 10l-1.8-1.8M13 10l-1.8 1.8"/>',
+    "nmrv_zoom_v": '<circle cx="10" cy="10" r="6.5"/><path d="M15 15l5.5 5.5M10 7v6M10 7l-1.8 1.8M10 7l1.8 1.8'
+                   'M10 13l-1.8-1.8M10 13l1.8-1.8"/>',
+    "nmrv_zoom_box": '<circle cx="10" cy="10" r="6.5"/><path d="M15 15l5.5 5.5"/><rect x="7.3" y="7.3" width="5.4" '
+                     'height="5.4"/>',
+    "nmrv_zoom_out": '<circle cx="10" cy="10" r="6.5"/><path d="M15 15l5.5 5.5M7 10h6"/>',
+    "nmrv_full": '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    "nmrv_highest": '<path d="M3 20h18M5 20c3 0 4.5-14 7-14s4 14 7 14M6 4h12"/>',
+    "nmrv_pan_free": '<path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5'
+                     'M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/>',
+    "nmrv_pan_h": '<path d="M3 12h18M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>',
+    "nmrv_pan_v": '<path d="M12 3v18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3"/>',
+    "nmrv_prev": '<path d="M14.5 6l-6 6 6 6"/>',
+    "nmrv_next": '<path d="M9.5 6l6 6-6 6"/>',
+    "nmrv_integral": '<path d="M3 19h3c3 0 4-3 5-7s2-7 5-7h5"/>',
+    "nmrv_peaks": '<path d="M3 20h18M5 20c2 0 2.5-8 4-8s2 8 4 8M11 20c2 0 2.5-13 4-13s2 13 4 13M15 3v2"/>',
+    "nmrv_multiplet": '<path d="M3 20h18M7.5 20v-6M12 20v-11M16.5 20v-6M6 5h12"/>',
+    "nmrv_reference": '<circle cx="12" cy="12" r="5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
+    "nmrv_cursor": '<path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="2"/>',
+    "nmrv_cut": '<circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="18" r="2.5"/><path d="M8.3 16.2 17 4'
+                'M15.7 16.2 7 4"/>',
+    "nmrv_inset": '<rect x="3" y="4" width="18" height="16" rx="1.5"/><rect x="12" y="7" width="6" height="5"/>',
+    "nmrv_phase": '<path d="M3 12c2.5-7 6.5-7 9 0s6.5 7 9 0"/>',
+    "nmrv_mark": '<path d="M12 4v9M8.1 6.2l7.8 4.6M15.9 6.2l-7.8 4.6M3 20h18"/>',
+})
+MODE_BADGE_PX = 9                  # Tastenzeichen unten rechts im Symbolknopf der Modusleiste
+MODE_BADGE_INSET = 3               # Symbol um so viel nach links oben, Zeichen so weit vom Rand
+FIG_GRID_COLOR = "#d9d9d9"         # Gitterlinien in Abbildungen, die nur angezeigt werden
+# Punkte neben einem Text: eine Form, ein Abstand zum Text (Spur A 1.3.0), zwei Bedeutungen in zwei Farben
+# (Entscheidung 56): Schritt = „weicht vom Standard ab“ (orange), Tab-Knopf/Ergebnisreiter/„Mehr ▾“ = „geladen oder
+# geändert, noch nicht angesehen“ (Akzentfarbe)
+MARK_COLORS = {"light": "#9A5C0B", "dark": "#E5AC62"}
+MARK_NEW_COLORS = {m: COLORS[m]["accent"] for m in COLORS}
+MARK_DOT = 6                         # Durchmesser in px
+MARK_GAP = 4                         # Abstand zum letzten Buchstaben in px
+
+
+def mark_color():
+    """Schritt-Punkt (weicht vom Standard ab)."""
+    return MARK_COLORS["dark" if _mode == "dark" else "light"]
+
+
+def mark_new_color():
+    """Punkt am Tab-Knopf und Ergebnisreiter (noch nicht angesehen)."""
+    return MARK_NEW_COLORS["dark" if _mode == "dark" else "light"]
+
+
+def mark_dot_css():
+    return f"background: {mark_new_color()}; border-radius: {MARK_DOT // 2}px;"

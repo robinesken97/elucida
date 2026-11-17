@@ -19,7 +19,8 @@ UV-Vis-Kinetik, Fluoreszenz, CV, SEC, H-Cell (Laden/Entladen), EPR, X-Ray (CIF) 
 Stehen in `.claude/rules/` (nicht ändern ohne Rückfrage) und laden automatisch, sobald eine passende Datei gelesen oder geändert wird.
 Frage oder Aufgabe ohne passende Datei: die Regeldatei selbst lesen. Neue Regeln dorthin, nicht in diese Datei.
 `uvvis` · `drawing` (ChemDraw, Octet) · `tddft` (Overlay, ESD) · `electrochem` (CV, SEC) · `epr` · `ir-hrms` · `xray` (auch Moleküldarstellung) ·
-`dft` (Orbitale, Energieprofil, NICS) · `cluster` · `nmr` · `synthesis` · `si` (Word, Methodentexte) · `project` (Ordner, Publikation, Export) · `ui` · `architecture`.
+`dft` (Orbitale, Energieprofil, NICS) · `cluster` · `nmr` · `synthesis` · `si` (Word, Methodentexte) · `project` (Ordner, Publikation, Export) · `ui` ·
+`new-views` (Abnahme neuer Ansichten, Reiter, Tabellen) · `architecture`.
 
 Gelten überall:
 - ε und λ überall ganzzahlig; dieselbe Zahl in Tabelle, Bild, SI und Excel, nur die CSV behält Rohwerte.
@@ -51,6 +52,7 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 ihre Releases/Tags sind entfernt. Versionsangaben in Kommentaren, Regeln und im Selbsttest („seit 2.3“, „bis 2.7.1“)
 meinen die **alte** Zählung, also Stände vor 1.0.0. Installierte Vorversionen erkennen 1.0.x nicht als Update
 (Versionsvergleich), das ist bekannt und so gewollt.
+Versionsangaben „1.2.0“ in Kommentaren, Regeln und Selbsttest-Titeln meinen den nie veröffentlichten Zwischenstand, der in 1.3.0 aufging.
 1. `APP_VERSION` in `elucida/__init__.py` erhöhen.
 2. `CHANGELOG.md` **und** `CHANGELOG.de.md` ergänzen; bei sichtbaren Änderungen `docs/manual.en.md` **und** `docs/manual.de.md` (README nur für Neues von Gewicht).
 3. Selbsttest, commit, push, dann **ein** Lauf: `gh workflow run build.yml --ref main -f release=vX.Y.Z` (Nutzerwunsch
@@ -102,13 +104,26 @@ meinen die **alte** Zählung, also Stände vor 1.0.0. Installierte Vorversionen 
   Rückgängig bleibt im offenen Tab bzw. zeigt den Tab der Änderung (`_restore`, Nutzerwunsch P9 R1); ein Schnappschuss,
   der sich nur im Tab unterscheidet, ist kein eigener Schritt. Ziehen speichert nur bewegte Elemente
   (`Dragger.moved`, ein Klick ins Bild hält die automatische Platzierung nicht fest).
+- **Alte Projekte beim Anschauen (bekannt, 1.2.0 nicht behoben):** ein Tab trägt beim ersten Zeigen fehlende
+  Vorgabe-Schlüssel ein (`setdefault` in `FigureTab.__init__`, weitere beim ersten Zeichnen); das erste `render` →
+  `push_undo` macht daraus Rückgängig-Schritte ohne sichtbare Änderung, das Autosave (speichert ohnehin den offenen Tab)
+  schreibt die Vorgaben in die Projektdatei. Werte bleiben gleich, nur die Datei wird umgeschrieben; Abhilfe nur über
+  `push_undo`/Speichern des offenen Tabs (riskant).
 - **Tempo:** `build_ui` nur beim Start, Sprach-/Theme-Wechsel. Öffnen und Rückgängig/Wiederholen über
   `set_state(partial=True)`/`_changed_parts`: nur geänderte Tabs ersetzen (`replace_tab`, feste `_TAB_BUILD_ORDER`, DFT
   liest X-Ray), ε nachziehen (`apply_globals`); Verbindung/Textformat geändert -> alle Tabs ersetzen, Fenster bleibt.
   Tabs werden **bei Bedarf gebaut** (`_lazy`, `__getattr__` auf `self.<x>_tab`, `_tab_shown`): nie `hasattr(self,
   "<x>_tab")` (baut), sondern `_built(key)`; Schleifen über alle Tabs nur über gebaute. Neue Tabs in `_tab_spec`/
-  `_TAB_ORDER`/`_TAB_BUILD_ORDER`. Beispielprojekt: Öffnen 0,2 s, Rückgängig 0,1 s, erster Klick auf einen Tab ~0,2 s. Verborgene Tabs zeichnen erst beim Anzeigen (`_first_render`;
-  `ensure_rendered()` vor Zugriff auf `F`). PNG-Ersatz für Word mit `png_fast` (compress_level 1).
+  `_TAB_ORDER`/`_TAB_BUILD_ORDER`. `open_project` macht verborgene, schon gebaute Tabs wieder zu Platzhaltern (`_relazy`):
+  Code darf Vorgabe-Schlüssel im Zustand eines ungebauten Tabs nicht voraussetzen (immer `.get`). Verborgene Tabs und
+  Seiten zeichnen erst beim Anzeigen (`_first_render`; `CanvasHost` zeichnet erst sichtbar und in fester Größe;
+  Rechenseiten wie NTO/ACID über `TABS.ShowHook`); `ensure_rendered()` vor Zugriff auf `F`. Projektdateien lesen mit
+  `PRJ.read_yaml` (libyaml, falls vorhanden). PNG-Ersatz für Word mit `png_fast` (compress_level 1).
+  Messwerte 1.2.0 (Beispielprojekt, offscreen, Median): Öffnen S3 0,3 s, erste Verbindung 1,0 s (Zeichner); Wechsel zu
+  einer anderen Verbindung mit gebauten Tabs 0,5 s; erster Klick auf einen Tab 0,15–0,55 s (DFT 2,0 s), zweiter < 0,1 s;
+  Rechenseiten (NTO, NICS, ACID, Hyperfein) beim ersten Anzeigen 0,6–1,7 s; Rückgängig 0,33 s (der geänderte Tab wird neu
+  gebaut); Sprache/Theme 1,0/1,6 s; Gesamt-SI ~29 s; Speicher mit allen Tabs ~1,6 GB. Messskript:
+  `~/Elucida-Audit/tempo/measure.py` (nicht im Repo).
 - **macOS-Version:** `tools/build.py` liest `APP_VERSION` und schreibt sie nach dem Build in die `Info.plist`,
   danach `codesign --force --deep --sign -` (Signatur schließt die Info.plist ein).
 - **pymupdf:** `get_pixmap(dpi=…)` nur mit ganzen Zahlen (die Windows-Version wirft sonst TypeError; lokal unbemerkt).
@@ -124,9 +139,9 @@ meinen die **alte** Zählung, also Stände vor 1.0.0. Installierte Vorversionen 
 - CV geprüft mit echten Gamry-Serien; bei hohem Vorschub in schlecht leitendem Medium iR-dominiert: „Vorschlag“ findet dort zu Recht kein Paar.
 - X-Ray geprüft mit künstlicher CIF, einer Olex2-CIF und einer CCDC-CIF mit Fehlordnung und Lösungsmittel; Symmetrieerzeugung
   nur künstlich; Polymere werden
-  abgebrochen (`max_factor`). Stufe 3 (Vergleich mit DFT-Geometrie, ORCA-xyz) vorbereitet: `measure` arbeitet nur
-  mit Atom-Schlüsseln (Label|Operation) und `param_label`; ein xyz-Molekül mit denselben Labels kann eine eigene
-  Spalte liefern (Zuordnung der Atome noch offen).
+  abgebrochen (`max_factor`). Vergleich mit einer berechneten Geometrie (seit 1.1.0, Zuordnung nur über das Bindungsnetz)
+  an einer hinterlegten CIF, der ein H fehlte, mit einer Rechnung auf der Kristallgeometrie geprüft; echte CIF gegen
+  eine frei optimierte Geometrie desselben Moleküls noch nicht.
 - BSW-Datei mit Sprung in Spektrum 60 (CSV-Export zum Vergleich fehlt).
 - Echte Gaussian-TD-DFT-Ausgabe noch nicht getestet (nur ORCA inkl. SOC); DFT-Tab: Gaussian-Leser mit einer Opt+Freq geprüft.
 - DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering, Orbitale wie IboView). Orbitale: echte ORCA-Molden-
@@ -135,4 +150,13 @@ meinen die **alte** Zählung, also Stände vor 1.0.0. Installierte Vorversionen 
   SORCI (nur der DDCI3-Schritt, Energie = gedruckter STATE-Wert inkl. Davidson-Korrektur wie in der Übergangstabelle, CI-Energie daneben) gegen eine echte
   H2-Ausgabe (ORCA 6.0.1) geprüft: ohne innere Orbitale, ohne Symmetrie, ohne Spektren; im Overlay nicht wählbar. Orbitale, die beim Einlesen nicht
   orthogonal waren (`redoing schmidt`, > `MAX_SCHMIDT`), gibt der Parser als Warnung aus: ORCA endet trotzdem normal.
-  Vergleichsmodus mit echter CIF noch ungeprüft (nur künstliche CIF und echte DFT-Paare).
+- Seit 1.2.0 neu und nur an öffentlichen oder erfundenen Dateien geprüft (echte Dateien des Nutzers stehen aus; jeder Punkt
+  steht mit Quelle in der passenden Regeldatei): ORCA-Leser für Spindichten/Hyperfein (4.0–6.0 an echten öffentlichen
+  Ausgaben, 6.1 mit dem 6.0-Layout und Hinweis), NBO 7 (geschlossenschalig an echten ORCA-6.0-Ausgaben; Wiberg und
+  Dubletts an öffentlichen Ausgaben, α/β-Listen nur am NBO-6-Layout), AICD-Ausgabe (`Isoober.inc`/`Molekuel.inc`, eine
+  öffentliche Datei), Gamry-Pulsleser (an einer Square-Wave-Datei, DPV selbst nicht), NTO-Bilder aus echter Molden-Datei,
+  Raman-/PXRD-/Lebensdauer-Messungen (nur allgemeiner Textleser, kein Geräteformat), Bruker-Rohdaten im FID-Paket.
+  PXRD-Rechnung gegen eigene Referenzen, nicht gegen Mercury/VESTA verglichen. Bondi-Radien (Packungskontakte) und die
+  HOMA-Parameter für CP/CS/NO stammen aus Sekundärquellen: gegen die Originalarbeiten prüfen.
+- Word-Ausgabe aller in 1.2.0 neuen Abbildungen und Tabellen nur als Blöcke im Selbsttest geprüft, nicht in Word angesehen;
+  Windows nur über die CI (offscreen misst Schrift zu breit, schriftabhängige Prüfungen sind dort ausgenommen).

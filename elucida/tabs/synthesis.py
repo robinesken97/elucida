@@ -405,7 +405,7 @@ from PySide6.QtCore import Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QFont, QImage, QPixmap, QTextCharFormat  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame, QGroupBox,  # noqa: E402
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSplitter, QStackedWidget,
-                               QInputDialog, QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
+                               QInputDialog, QMessageBox, QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
 
 from elucida.app import project as PRJ, style as STYLE  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS  # noqa: E402
@@ -718,7 +718,9 @@ class SynthTab(QWidget):
             # n eintragbar (zählt nur ohne m/V); berechnetes n grau
             n = (str(row.get("n_mmol")) if calc["given"] else f"{calc['mmol']:.3f}" if calc["mmol"] is not None
                  else str(row.get("n_mmol") or "–"))
-            e = f"{calc['yld']:.0f}%" if calc["yld"] is not None else f"{calc['eq']:.2f}" if calc["eq"] is not None \
+            # kaufmännisch wie die SI-Zeile (Ausbeute, Äquivalente); „%“ bleibt: die Spalte mischt eq. und Ausbeute
+            e = f"{core.round_half_up(calc['yld'], 0):.0f}%" if calc["yld"] is not None \
+                else f"{core.round_half_up(calc['eq'], 2):.2f}" if calc["eq"] is not None \
                 else ("1.00" if row.get("role") == "ref" and calc["mmol"] else "–")
             for c, val in ((len(COLS), n), (len(COLS) + 1, e)):
                 it = QTableWidgetItem(val)

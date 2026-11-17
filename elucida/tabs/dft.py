@@ -17,6 +17,7 @@ import numpy as np
 
 from elucida.core import orbitals as ORB
 from elucida.tabs import xray as XRAY
+from elucida.tabs import dft_acid as ACID
 from elucida.tabs import dft_pages as PAGES
 from elucida.formats.elements import element_of
 from elucida.app.i18n import T
@@ -241,6 +242,118 @@ def si_html(p, view=False):
         out.append(XRAY.table_view_html(p["energies"][0], [p["energies"][2]]) if view else
                    table([XRAY.to_html(h) for h in p["energies"][0]], [p["energies"][2]], raw_head=True))
     return "".join(out)
+
+
+# ---------------------------------------------------------------------------- Pflichtangaben (ACS, Org. Lett., Angew.)
+DASH = "–"                                        # Wert steht nicht in der Ausgabe
+# Kopf der Energietabelle: (Markup für Word, Text für App/CSV)
+SI_TABLE_HEAD = (("Structure", "Structure"), ("*N*_{imag}", "N_imag"), ("*E*_{el} [E_{h}]", "E_el [Eh]"),
+                 ("*E*_{nuc} [E_{h}]", "E_nuc [Eh]"), ("*H* [E_{h}]", "H [Eh]"), ("*G* [E_{h}]", "G [Eh]"),
+                 ("*H*_{corr} [E_{h}]", "H_corr [Eh]"), ("−*TS* [E_{h}]", "−TS [Eh]"))
+SI_TABLE_CAPTION = ("Electronic energies, nuclear repulsion energies, enthalpies, free energies and thermal "
+                    "corrections (Hartree) and number of imaginary frequencies of the computed structures")
+SI_TABLE_NOTE = ("Values as printed in the output; – = not given in the output. *H*_{corr}: thermal correction to "
+                 "the enthalpy; −*TS*: entropy correction to the free energy.")
+# ORCA druckt H − E_el nicht („Thermal Enthalpy correction“ = kB·T, geprüft an echten ORCA-6-Opt+Freq-Ausgaben)
+SI_TABLE_NOTE_ORCA = " ORCA prints no *H*_{corr}; its “thermal enthalpy correction” is only *k*_{B}*T*."
+INPUT_EXT = (".inp", ".gjf", ".com")              # Eingabedateien neben der Ausgabe (gleicher Name)
+
+
+def si_energy(c, mr=False):
+    """E(el) der Energietabelle (dieselbe Zahl wie im SI-Block) oder None; Multireferenz: der allgemeine letzte
+    Einzelpunkt bezeichnet keinen Zustand, deshalb keiner (wie `si_of`)."""
+    return None if mr else (c["thermo"].get("E_el") or c["energy"])
+
+
+def si_table_row(name, c, mr=False):
+    """Zeile der Energietabelle: Werte als Text wie in der Ausgabe (echtes Minus), fehlende als Strich. −TS: ORCA
+    „Total entropy correction“, sonst das Vorzeichen des gedruckten „Final entropy term“ (TS) umgekehrt; Gaussian
+    druckt −TS nicht in Hartree (Strich). Kernabstoßung nur, wenn gedruckt – nie berechnet."""
+    th = c["thermo"]
+    ts = th.get("mTS") or (("-" + th["TS"].lstrip("+") if not th["TS"].startswith("-") else th["TS"][1:])
+                           if th.get("TS") else None)
+    vals = [si_energy(c, mr), c.get("nuc_rep"), None if mr else th.get("H"), None if mr else th.get("G"),
+            None if mr else th.get("H_corr"), None if mr else ts]
+    n_im = str(len(imaginary(c))) if c.get("freqs") else DASH
+    return [name, n_im] + [XRAY.minus(v) if v else DASH for v in vals]
+
+
+def empty_columns(rows):
+    """Spalten (außer dem Namen), die in keiner Zeile einen Wert haben: in App und Word weglassen (nur ORCA: keine
+    H-Korrektur; nur Gaussian: kein −TS). Die CSV behält alle Spalten (festes Schema)."""
+    return [j for j in range(1, len(SI_TABLE_HEAD)) if rows and all(r[j] == DASH for r in rows)]
+
+
+def si_table_note(rows, prog):
+    """Notiz unter der Energietabelle; steht in der Spalte H_corr ein „–“ einer ORCA-Rechnung, sagt sie warum."""
+    orca = "ORCA" in prog and any(r[6] == DASH for r in rows) and 6 not in empty_columns(rows)
+    return SI_TABLE_NOTE + (SI_TABLE_NOTE_ORCA if orca else "")
+
+
+def program_note(items):
+    """items = [(Name, Rechnung)] -> „Program: ORCA 6.1.1.“ bzw. je Programm mit den Strukturen (ACS: Version
+    verlangt; das Rechenprogramm, nie Elucida)."""
+    groups = {}
+    for name, c in items:
+        groups.setdefault(method_line(c)[0], []).append(name)
+    if len(groups) == 1:
+        return f"Program: {next(iter(groups))}."
+    return "Programs: " + "; ".join(f"{p} ({', '.join(n)})" for p, n in groups.items()) + "."
+
+
+def input_files(p):
+    """Eingabedateien mit demselben Namen neben einer Ausgabe (.inp/.gjf/.com), nur vorhandene."""
+    p = Path(p)
+    return [p.with_suffix(x) for x in INPUT_EXT if p.suffix.lower() in (".out", ".log") and p.with_suffix(x).is_file()]
+
+
+def collection_text(items):
+    """items = [(Name, Bild, Reihenfolge, E_el oder None)] -> EINE xyz-Datei mit allen Strukturen hintereinander
+    (ACS/Org. Lett.: maschinenlesbar in einer Datei): Atomzahl, Kommentar „Name  E_el = … Eh“, je Atom „El x y z“
+    in Å; Ziffern wie in der Ausgabe (keine Rundung), ASCII-Minus für Leseprogramme."""
+    out = []
+    for name, fr, order, e in items:
+        out += [str(len(order)), " ".join(str(name).split()) + (f"  E_el = {e} Eh" if e else "")]
+        for k in order:
+            x, y, z = fr["lines"][k].split()[1:4]
+            out.append(f"{fr['els'][k]:<2s} {x:>18s} {y:>18s} {z:>18s}")
+    return "\n".join(out) + "\n"
+
+
+def frames_from_file(p):
+    """Geometrie einer Datei ohne Tab (Datenpaket): xyz oder Rechnung, sonst None (Cube/Molden hängen an einer
+    Geometrie des Tabs)."""
+    p = Path(p)
+    if p.suffix.lower() == ".xyz":
+        return read_xyz(p), None
+    if p.suffix.lower() in (".out", ".log"):
+        c = read_calc(p)
+        return [calc_frame(c, p.stem, p.with_suffix(".xyz"))[0]], c
+    return None, None
+
+
+def collection_from_state(st, root=None):
+    """Sammel-xyz aus dem Zustand des DFT-Tabs (Datenpaket) -> Text oder "" ohne Geometrie. Gleiche Zeilen wie
+    `DFTTab.structure_items` für xyz- und Rechnungseinträge."""
+    items = []
+    for e in st.get("entries") or []:
+        p = Path(e.get("file") or "")
+        if root is not None and not p.is_absolute():
+            p = Path(root) / p
+        if not p.is_file():
+            continue
+        try:
+            frames, c = frames_from_file(p)
+        except Exception:
+            continue
+        if not frames:
+            continue
+        n = len(frames[-1]["els"])
+        o = e.get("order")
+        order = list(o) if o and sorted(o) == list(range(n)) else list(range(n))
+        mr = bool(c and c.get("multireference"))
+        items.append((e.get("name") or p.stem, frames[-1], order, si_energy(c, mr) if c else None))
+    return collection_text(items) if items else ""
 
 
 def write_xyz(path, frames, order=None):
@@ -612,6 +725,7 @@ def new_entry(p):
 
 
 class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
+    LINE_STYLE = False                 # Moleküle bzw. fremde Bilder: keine Linienbreiten der Stilkarte
     SI_PAGE = False                    # Bildunterschrift/SI stehen hier in eigenen Reitern
     DRAG_HINT = "drag_hint_plain"      # keine Kurven: kein Satz zur Einblendung am Mauszeiger
     STATE_KEY = "dft"
@@ -624,7 +738,17 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                          cartoon_color=False,
                          orb_iso_mode="frac", orb_frac=ORB.ISO_FRACTION, orb_abs=ORB.ISO_ABS, orb_alpha=ORB.ORB_ALPHA,
                          orb_scheme="hue", orb_labels=True,
-                         profile=PAGES.PROFILE_DEFAULT, nics=PAGES.NICS_DEFAULT)   # Reiter Energieprofil/NICS (F4)
+                         profile=PAGES.PROFILE_DEFAULT, nics=PAGES.NICS_DEFAULT,
+                         acid=ACID.ACID_DEFAULT)   # Reiter Energieprofil/NICS (F4)
+    # bleibt bei „Darstellung zurücksetzen“ und fehlt in Vorlagen: Nummerierung, Profil und NICS/ACID mit ihren Dateien
+    # (deren Darstellung setzt reset_display einzeln zurück); NBO steht nicht in DEFAULT_STATE und gilt damit als Daten
+    RESET_KEEP = ("label_style", "zero_based", "profile", "nics", "acid")
+    DISPLAY_EXTRA = XRAY.XrayTab.DISPLAY_EXTRA
+    # Vorlagen: Darstellung von NBO/NICS/ACID ohne Dateien, Auswahl, Tabellenschwellen und Ansicht des Moleküls
+    DISPLAY_PARTS = dict(nbo=("atoms", "bonds", "dec", "els", "show_h", "h_labels", "rs_max", "color_q", "color_bo"),
+                         nics=("show", "iso_pos", "iso_neg", "color_pos", "color_neg", "alpha_pos", "alpha_neg"),
+                         acid=("iso", "color", "alpha", "arrows", "arrow_scale", "arrow_density", "color_shaft",
+                               "color_head", "field", "color_field"))
 
     # Größe/Formate wie im X-Ray-Tab (keine Achsen)
     common_box = XRAY.XrayTab.common_box
@@ -639,13 +763,40 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.fold(self.group_titled("dft_numbering"), "numbering")
         self.fold(self.group_titled("dft_measure"), "measure")
         self.fold(self.group_titled("xr_align"), "align")
-        self.to_right(self.group_titled("dft_si"), T("dft_si"))
+        # Reihenfolge: Abbildung, Auswertungen, Tabellen und Text für die SI zuletzt; Auswertungen ohne Daten erscheinen
+        # nicht als Reiter (result_empty), was dann nicht passt, steht unter „Mehr ▾“ (ResultTabs)
         self.to_right(self.pages.prof_group, T("dft_profile"))
         self.to_right(self.pages.nics_group, T("dft_nics"))
+        self.to_right(self.acid_page.group, T("acid"))
+        self.to_right(self.homa.page, T("homa_page"))
+        self.to_right(self.nbo.page, T("nbo_tab"))                     # NBO (dft_nbo.py)
         from elucida.tabs.multireference import MultireferencePage
         self.mr_page = MultireferencePage(self)
         self.to_right(self.mr_page, T('rp_multireference'))
         self.mr_page.sync()
+        from elucida.tabs.dft_pop import PopulationPage      # Ladungen/Spinpopulationen (eigenes Modul)
+        self.pop_page = PopulationPage(self)
+        self.to_right(self.pop_page, T("dft_pop_tab"))
+        # P2-B5: beide Seiten gelten je Rechnung (Chip „In die SI“) – Kopfzeile nennt sie, Link zeigt die Tabelle „Strukturen“
+        self.calc_heads = []
+        for page in (self.mr_page, self.pop_page):
+            lb = STYLE.HintLabel("")
+            lb.setStyleSheet(HINT_CSS)
+            lb.linkActivated.connect(self._show_structures)
+            page.layout().insertWidget(0, lb)
+            self.calc_heads.append(lb)
+        self._sync_calc_heads()
+        self.to_right(self.grp_si_tbl, T("dft_si_tbl"))
+        self.to_right(self.group_titled("dft_si"), T("tab_si_text"))     # wie in den anderen Tabs (Karte: „Rechnung für die SI“)
+
+    def result_empty(self):
+        """Seiten ohne Daten (keine Reiter): NICS, ACID, NBO, Multireferenz, Ladungen, HOMA ohne Ringe."""
+        return [(self.pages.nics_group, self.pages.nics_stack.currentIndex() == 0),
+                (self.acid_page.group, self.acid_page.stack.currentIndex() == 0),
+                (self.homa.page, self.homa.tbl.rowCount() == 0),
+                (self.nbo.page, self.nbo.stack.currentIndex() == 0),
+                (self.mr_page, self.mr_page.choice.count() <= 1),
+                (self.pop_page, self.pop_page.stack.currentIndex() == 0)]
     def __init__(self, main, state):
         self.numbering = False            # Klick-Modus „Nummerieren“ (nicht im Undo)
         self.picks = []                   # angeklickte Dateiindizes in Klickreihenfolge
@@ -654,6 +805,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         # Die Seite „Energieprofil“ bringt ihre eigene Spalte mit: solange sie offen ist, weicht die Spalte der 3D-Ansicht
         self.right_tabs.currentChanged.connect(self._profile_column)
         self.show_profile_tab()
+        for stack in (self.pages.nics_stack, self.acid_page.stack, self.nbo.stack, self.pop_page.stack):
+            stack.currentChanged.connect(lambda *_: self.sync_result_tabs())   # Daten geladen/entfernt: Reiter folgt
+        self.sync_result_tabs()
 
     def _profile_column(self, *_):
         self._split.widget(0).setVisible(self.right_tabs.currentWidget() is not self.pages.prof_group)
@@ -736,6 +890,36 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.btn_si_word.clicked.connect(lambda: self.save_docx())
         STYLE.card_actions(g, self.btn_si_word, self.btn_si_copy)
         self.lv.addWidget(g)
+
+        # Pflichtangaben der Zeitschriften (ACS, Org. Lett., Angew.): Energietabelle aller Rechnungen, Programm,
+        # Eingabedateien, Sammel-xyz (Reiter rechts, arrange)
+        self.grp_si_tbl = QGroupBox(T("dft_si_tbl"))
+        v = QVBoxLayout(self.grp_si_tbl)
+        self.grp_si_tbl.setProperty("hug", True)             # wenige Zeilen: Karte so hoch wie die Tabelle
+        # App (Abnahme new-views): zwei Tabellen, damit bei 1200 px nichts quer rollt – Energien, darunter Korrekturen
+        # und Angaben je Rechnung (Programm/Eingabedatei nur, wenn sie sich unterscheiden); Einheit einmal im Satz
+        self.tbl_si = STYLE.summary_grid([T("dft_si_col_name"), "N_imag", "E_el [Eₕ]", "H" + STYLE.QTY + " [Eₕ]",
+                                          "G" + STYLE.QTY + " [Eₕ]"])   # kursiv; Einheit im Kopf wie in Word
+        self.tbl_si2 = STYLE.summary_grid([T("dft_si_col_name"), "E_nuc [Eₕ]", "H_corr [Eₕ]", "−TS [Eₕ]", T("dft_si_col_prog"),
+                                           T("dft_si_col_input")])
+        for t in (self.tbl_si, self.tbl_si2):
+            t.elide_col = 0                                  # lange Namen gekürzt, Tooltip mit dem vollen Namen
+            v.addWidget(t)
+        self.lbl_si_tbl = STYLE.SciLabel("", T("dft_si_tbl_none"))     # ohne Rechnung: Satz statt leerer Fläche
+        self.lbl_si_tbl.setWordWrap(True)
+        v.addWidget(self.lbl_si_tbl)
+        self.lbl_si_inp = STYLE.SciLabel("")               # fehlende Eingabedateien (ACS: „required“)
+        self.lbl_si_inp.setWordWrap(True)
+        self.lbl_si_inp.setStyleSheet(WARN_CSS)
+        self.lbl_si_inp.setToolTip(T("dft_si_inp_tip"))
+        v.addWidget(self.lbl_si_inp)
+        self.btn_si_tbl_copy = STYLE.copy_button(T("dft_si_tbl_copy_tip"))
+        self.btn_si_tbl_copy.clicked.connect(self.copy_si_table)
+        self.btn_si_xyz = QPushButton(T("dft_si_xyz"))
+        self.btn_si_xyz.setToolTip(T("dft_si_xyz_tip"))
+        self.btn_si_xyz.clicked.connect(lambda: self.save_collection())
+        STYLE.card_actions(self.grp_si_tbl, self.btn_si_xyz, self.btn_si_tbl_copy)
+        self.lv.addWidget(self.grp_si_tbl)
 
         g = QGroupBox(T("dft_numbering"))                 # im Raster der Spalte (grafische Sichtung 2026-11-11):
         f = make_form(g)                                  # Knopfreihen gleich breit in der Wertespalte, Vorlage als Feld
@@ -853,6 +1037,17 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                    self.cb_orb_lab):
             w_.toggled.connect(self.changed)
         self.pages = PAGES.DftPages(self)
+        for card in (self.pages.nics_card, self.pages.nics_display):   # NICS: Dateien (Daten), Abbildung (Darstellung)
+            self.lv.addWidget(card)
+        self.acid_page = ACID.AcidPage(self)                         # ACID: Cube/Rechnung (Daten), Abbildung (Darstellung)
+        for card in (self.acid_page.card, self.acid_page.display, self.acid_page.arrow_card):
+            self.lv.addWidget(card)
+        from elucida.tabs.homa_view import HomaView
+        self.homa = HomaView(self, self.lv, nics=True)   # HOMA (Paket A 1.2.0), NICS derselben Geometrie daneben
+        from elucida.tabs.dft_nbo import NboPage
+        self.nbo = NboPage(self)                                       # NBO: Dateien (Daten), Darstellung
+        for card in (self.nbo.card, self.nbo.display):
+            self.lv.addWidget(card)
         self.sync_widgets()
 
     def orbital_box(self):
@@ -888,7 +1083,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             self.cmb_iso.addItem(T("dft_orb_iso_" + k), k)
         self.cmb_iso.setToolTip(T("dft_orb_iso_tip"))
         f.addRow(T("dft_orb_iso"), self.cmb_iso)
-        self.sp_iso = QDoubleSpinBox(decimals=4, minimum=0.0001, maximum=99.99, singleStep=1.0)
+        from elucida.app.main_window import TrimSpin   # hier: main_window importiert die Tabs
+        self.sp_iso = TrimSpin(decimals=4, minimum=0.0001, maximum=99.99, singleStep=1.0)   # „80 %“, nicht „80.0000 %“
         self.sp_iso.setToolTip(T("dft_orb_iso_tip"))
         f.addRow(T("dft_orb_thr"), self.sp_iso)
         self.sp_alpha = QDoubleSpinBox(decimals=2, minimum=0.1, maximum=1.0, singleStep=0.05)
@@ -961,6 +1157,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.update_num_status()
         self.pages.sync()
         self.pages.sync_nics()
+        self.acid_page.sync()
+        self.nbo.sync()
         self.pages.refresh()
 
     # -- Einträge -------------------------------------------------------------------------
@@ -1205,7 +1403,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         try:
             return self.cache(("bondorders", mp), lambda: ORB.iao_bond_orders(self.basis_of(mp)))
         except Exception as ex:
-            self.add_note(str(ex))
+            self.note_unreadable(mp, ex)
             return None
 
     def orbital_selected(self, _i=None):
@@ -1259,7 +1457,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                 homo = max((i for i, mo in enumerate(m["mos"]) if mo["occ"] > 0.5 and mo["spin"] == "a"), default=0)
                 self.cmb_mo.setCurrentIndex(homo)
             except Exception as ex:                        # sonst leere MO-Liste ohne Grund
-                self.add_note(f"{Path(mp).name}: {ex}")
+                self.note_unreadable(mp, ex)
         self.row_mo.setVisible(self.cmb_mo.count() > 0)
         lab_ = self.row_mo.parentWidget().layout().labelForField(self.row_mo) if self.row_mo.parentWidget() else None
         if lab_ is not None:
@@ -1353,7 +1551,20 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         p = e["file"] if e else None
         if not p or Path(p).suffix.lower() not in (".out", ".log") or not Path(p).exists():
             return None
-        return self.calc_file(p)
+        try:
+            return self.calc_file(p)
+        except Exception as ex:
+            return self.unreadable(p, ex)
+
+    def unreadable(self, p, ex):
+        """Gespeicherte Datei, die der Leser (inzwischen) ablehnt: wie ein Eintrag ohne Daten behandeln (None), der Eintrag
+        bleibt; Hinweis unter der Abbildung und Meldung im Export (`skip_part`), nie still."""
+        self.main.skip_part(ex, p)
+        msg = T("skip_item", f=Path(p).name, e=ex)
+        self.__dict__.setdefault("bad_files", {})[p] = msg      # Energieprofil: nie ohne diese Stufe rechnen
+        if getattr(self, "_notes", None) is not None and msg not in self._notes:
+            self._notes.append(msg)
+        return None
 
     def si_of(self, e):
         c = self.calc_of(e)
@@ -1386,7 +1597,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         p = e["file"]
         if not p or not Path(p).exists():
             return None
-        frames = self.frames_of(p)
+        try:
+            frames = self.frames_of(p)
+        except Exception as ex:
+            return self.unreadable(p, ex)
         last = frames[-1]
         bonds = self.cache(("xyzbonds", p), lambda: bonds_of(last["els"], last["xyz"]))
         return frames, last["els"], last["xyz"], bonds
@@ -1482,6 +1696,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                 mol.bonds = sorted(bo)
                 mol._fragments()
                 o["bond_orders"] = bo
+        if not (interactive and self.numbering):
+            self.homa.reserve(o, e, mol)
         F = XRAY.XrayFigure(cfg, mol, self.view_of(e, mol), o, lay, fig, selection=sel,
                             zoom=e.get("zoom", 1.0), pan=e.get("pan") or (0.0, 0.0), ext=e.get("ext"))
         if interactive and self.numbering:
@@ -1497,6 +1713,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                     ann.contains = lambda ev: (False, {})
                 else:
                     ann.set_color(OLD_COLOR)
+        if not (interactive and self.numbering):
+            self.homa.annotate(F, e)                       # HOMA in der Ringmitte (wahlweise)
         return F
 
     def render(self, push=True):
@@ -1514,6 +1732,11 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             else:
                 self.dragger = XRAY.XrayMouse(self.F, self)
             self.update_info()
+            try:                                       # HOMA-Seite (Zugabe, nie störend)
+                self.homa.refresh()
+            except Exception:
+                import traceback
+                self.main.log_signal.emit(traceback.format_exc())
             self.canvas.draw_idle()
             self.notes_show()
         except Exception as ex:
@@ -1548,9 +1771,25 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.update_orb_info()
         self.update_si()
 
+    def _sync_calc_heads(self):
+        import html as _html
+        e = self.entry()
+        text = T("dft_page_calc", name=_html.escape(e.get("name") or Path(e["file"]).name)) if e else ""
+        for lb in getattr(self, "calc_heads", ()):
+            lb.setText(text)
+
+    def _show_structures(self, *_):
+        """Link der Kopfzeile: Schritt mit der Tabelle „Strukturen“ zeigen (Wahl der Rechnung)."""
+        self.steps.reveal(self.tbl)
+        self.tbl.setFocus()
+
     def update_si(self):
+        self._sync_calc_heads()
         if hasattr(self, "mr_page"):
             self.mr_page.sync()
+        if hasattr(self, "pop_page"):
+            self.pop_page.sync()
+        self.update_si_table()
         e = self.entry()
         c = self.calc_of(e) if e else None
         self.btn_si_copy.setEnabled(c is not None)
@@ -1563,6 +1802,112 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             return
         self.lbl_warn.setText("\n".join(calc_warnings(c)))
         self.txt_si.setHtml(si_html(self.si_of(e), view=True))
+
+    # -- Pflichtangaben: Energietabelle, Sammel-xyz, Eingabedateien ----------------------------
+    def calc_items(self):
+        """[(Eintrag, Name, Rechnung)] aller Einträge mit Rechnung und Geometrie, in der Reihenfolge des Tabs."""
+        out = []
+        for e in self.entries():
+            c = self.calc_of(e) if self.geometry(e) is not None else None
+            if c is not None:
+                out.append((e, e.get("name") or Path(e["file"]).stem, c))
+        return out
+
+    def si_table(self):
+        """-> (Zeilen, Hinweis „Program: …“) der Energietabelle; dieselben Zahlen wie SI-Block und Export."""
+        items = self.calc_items()
+        rows = [si_table_row(n, c, bool(c.get("multireference"))) for _, n, c in items]
+        return rows, program_note([(n, c) for _, n, c in items]) if items else ""
+
+    def missing_inputs(self):
+        """Namen der Rechnungen ohne gleichnamige Eingabedatei neben der Ausgabe."""
+        return [n for e, n, _ in self.calc_items() if not input_files(e["file"])]
+
+    def structure_items(self):
+        """[(Name, letztes Bild, Reihenfolge, E_el oder None)] aller Geometrien des Tabs (Sammel-xyz)."""
+        out = []
+        for e in self.entries():
+            g = self.geometry(e)
+            if g is None:
+                continue
+            c = self.calc_of(e)
+            out.append((e.get("name") or Path(e["file"]).stem, g[0][-1], self.order(e, len(g[1])),
+                        si_energy(c, bool(c.get("multireference"))) if c is not None else None))
+        return out
+
+    def update_si_table(self):
+        if not hasattr(self, "tbl_si"):
+            return
+        rows, _ = self.si_table()
+        items = self.calc_items()
+        miss = self.missing_inputs()
+        progs = [method_line(c)[0] for _, _, c in items]
+        inp = [", ".join(f.name for f in input_files(e["file"])) for e, _, _ in items]
+        STYLE.fill_summary(self.tbl_si, [[r[j] for j in (0, 1, 2, 4, 5)] for r in rows])
+        empty = empty_columns(rows)
+        hidden2 = [k for k, j in ((1, 3), (2, 6), (3, 7)) if j in empty] + [4] * (len(set(progs)) == 1) + [5] * (not miss)
+        STYLE.fill_summary(self.tbl_si2, [[r[0], r[3], r[6], r[7], pg, T("dft_si_inp_yes") if f else DASH]
+                                          for r, pg, f in zip(rows, progs, inp)], hidden=hidden2)
+        self.tbl_si2.setVisible(bool(rows) and len(hidden2) < 5)          # nur Name übrig: keine zweite Tabelle
+        for t in (self.tbl_si, self.tbl_si2):
+            for i in range(t.rowCount()):
+                t.item(i, 0).setToolTip(t.item(i, 0).text())
+        for i, f in enumerate(inp):
+            if f:
+                self.tbl_si2.item(i, 5).setToolTip(f)
+        n_geo = len(self.structure_items())
+        bits = ([T("dft_si_prog", p=progs[0])] if len(set(progs)) == 1 else []) + \
+            [T("dft_si_xyz_note", n=n_geo)] + ([T("dft_si_inp_all")] if not miss else [])
+        self.lbl_si_tbl.setText(" ".join(bits) if rows else "", plain=bool(rows))
+        self.lbl_si_inp.setText(T("dft_si_inp_missing", n=len(miss)) if miss else "", plain=True)
+        self.lbl_si_inp.setVisible(bool(miss))
+        self.btn_si_tbl_copy.setEnabled(bool(rows))
+        self.btn_si_xyz.setEnabled(bool(n_geo))
+
+    def kpis(self):
+        """Kachel: Eingabedateien vorhanden / Rechnungen, in der Warnfarbe, wenn eine fehlt (ACS verlangt sie)."""
+        n = len(self.calc_items())
+        if not n:
+            return []
+        have = n - len(self.missing_inputs())
+        return [(T("dft_si_kpi_input"), f"{have}/{n}", have < n)]
+
+    def copy_si_table(self):
+        rows, prog = self.si_table()
+        if not rows:
+            return
+        from elucida.tabs.ir_ea import copy_rich
+        head = [h for _, h in SI_TABLE_HEAD]
+        note = si_table_note(rows, prog)
+        pl = "\n".join("\t".join(r) for r in [head] + rows) + "\n" + XRAY.to_plain(note) + " " + prog
+        ht = XRAY.table_html([m for m, _ in SI_TABLE_HEAD], [[XRAY.esc_markup(v) for v in r] for r in rows])
+        import html as _h
+        copy_rich(pl, ht + f"<p>{XRAY.to_html(note)} {_h.escape(prog)}</p>")
+        self.main.statusBar().showMessage(T("dft_si_copied"), 4000)
+
+    def write_collection(self, path):
+        items = self.structure_items()
+        if not items:
+            return None
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(collection_text(items))
+        return path
+
+    def save_collection(self, path=None):
+        """Alle Strukturen des Tabs als eine xyz-Datei (Werkzeug der Seite; der Export schreibt sie immer mit)."""
+        if path is None:
+            stem = PRJ.export_stem(self.main.export_name(), self.STATE_KEY) + "_structures.xyz"
+            start = PRJ.export_dir(self.main.project_dir, PRJ.TABLES) / stem if self.main.project_dir else Path(stem)
+            path, _ = QFileDialog.getSaveFileName(self, T("dft_si_xyz"), str(start), "xyz (*.xyz)")
+            if not path:
+                return None
+        out = self.write_collection(path)
+        if out is not None:
+            self.main.log_signal.emit(T("saved", p=str(out)))
+            self.main.statusBar().showMessage(T("saved", p=str(out)), 6000)
+        return out
 
     def si_opts_changed(self, *_):
         if self._loading:
@@ -1666,8 +2011,16 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     def reset_display(self):
         """Darstellung auf Standard (Stil, Radien, Bindungsdicke, Labels …; Ansicht und Labels je Atom der gewählten
         Geometrie). Dateien, Namen, Nummerierung (order, Labelstil, Zählung ab 0) und SI-Auswahl bleiben."""
-        XRAY.reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout", "label_style",
-                                  "zero_based"), dict(label_on={}))
+        import copy
+        self.nbo.reset_display()                                       # NBO-Darstellung ebenso (Dateien bleiben)
+        for key, default, data in (("nics", PAGES.NICS_DEFAULT, ("files", "geom")),      # NICS/ACID: nur Darstellung
+                                   ("acid", ACID.ACID_DEFAULT, ("cube", "log", "inc", "mol", "geom"))):
+            d = self.st.setdefault(key, {})
+            for k, v in default.items():
+                if k not in data:
+                    d[k] = copy.deepcopy(v)
+        XRAY.reset_display(self, ("entries", "current", "size", "w_cm", "h_cm", "fmt", "layout") + self.RESET_KEEP,
+                           dict(label_on={}))
 
     reset_defaults = reset_display
 
@@ -1763,8 +2116,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         for x in self.entries():
             if cur is not None and x["uid"] != cur["uid"]:
                 self.cmb_ref.addItem(f"DFT: {x.get('name') or Path(x['file']).stem}", f"dft:{x['uid']}")
-        xt = getattr(self.main, "xray_tab", None)
-        for x in (xt.entries() if xt is not None else []):
+        # Einträge aus dem Zustand des X-Ray-Tabs (derselbe Inhalt wie xray_tab.entries(), ohne den Tab zu bauen)
+        for x in ((getattr(self.main, "xray_state", None) or {}).get("entries") or []):
             self.cmb_ref.addItem(f"X-Ray: {x.get('name') or x['block']}", f"xray:{x['uid']}")
         if keep is not None and self.cmb_ref.findData(keep) >= 0:
             self.cmb_ref.setCurrentIndex(self.cmb_ref.findData(keep))
@@ -1854,7 +2207,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                 return None
         path = Path(path)
         if path.suffix.lower() != ".xyz":
-            path = path.with_suffix(".xyz")
+            path = PRJ.with_ext(path, ".xyz")
         if path.resolve() == Path(e["file"]).resolve():
             self.main.error(T("dft_no_overwrite"))
             return None
@@ -1863,12 +2216,21 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.main.statusBar().showMessage(T("saved", p=str(path)), 6000)
         return path
 
+    def copy_build(self, fig):
+        return self.build(fig, interactive=False)        # sichtbares Orbital, Beschriftung wie im Export
+
+    def copy_pages(self):
+        pg = self.pages
+        return [(pg.prof_group, lambda tmp: self.copy_built(tmp, lambda fig: pg.build(fig)[0])),
+                (pg.nics_group, lambda tmp: self.copy_built(tmp, pg.nics_copy)),
+                (self.acid_page.group, lambda tmp: self.copy_built(tmp, lambda fig: self.acid_page.build(fig, False)[0]))]
+
     def export_to(self, base: Path):
         """Je Geometrie eine Abbildung (eigene Ansicht) und die xyz-Datei in der aktuellen Reihenfolge."""
         base = Path(base).resolve()
         base.parent.mkdir(parents=True, exist_ok=True)
         es = [e for e in self.entries() if self.geometry(e) is not None]
-        extra = self.pages.export_to(base)               # Energieprofil, IRC, NICS (F4)
+        extra = self.pages.export_to(base) + self.nbo.export_to(base)   # Energieprofil, IRC, NICS (F4), NBO
         if not es:
             if extra:
                 return extra
@@ -1882,7 +2244,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             FigureCanvasAgg(fig)
             F = self.build(fig, e, interactive=False, orb=None)
             if F is not None:
-                F.cfg["output"] = str(stem.with_suffix("." + F.cfg["_main_fmt"]))
+                F.cfg["output"] = str(PRJ.with_ext(stem, "." + F.cfg["_main_fmt"]))
                 files += F.export()
             for k, item in enumerate(e.get("orbitals") or []):          # je Orbital eine Abbildung
                 if not Path(item["file"]).exists():
@@ -1892,10 +2254,26 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                 F = self.build(fig, e, interactive=False, orb=k)
                 if F is not None:
                     o = stem.with_name(stem.name + "_" + self.orb_short(e, item))
-                    F.cfg["output"] = str(o.with_suffix("." + F.cfg["_main_fmt"]))
+                    F.cfg["output"] = str(PRJ.with_ext(o, "." + F.cfg["_main_fmt"]))
                     files += F.export()
             g = self.geometry(e)
-            files.append(write_xyz(stem.with_suffix(".xyz"), g[0], self.order(e, len(g[1]))))
+            files.append(write_xyz(PRJ.with_ext(stem, ".xyz"), g[0], self.order(e, len(g[1]))))
+        files.append(self.write_collection(base.with_name(base.name + "_structures.xyz")))   # ACS: eine Datei
+        if self.st.get("homa_si"):                       # HOMA je Ring (Haken „In die SI“ der Karte HOMA)
+            files += self.homa.export_csv(base.with_name(base.name + "_HOMA.csv"),
+                                          [(e.get("name") or Path(e["file"]).stem, e) for e in es])
+        rows, prog = self.si_table()
+        if rows:                                         # Energietabelle maschinenlesbar (dieselben Zahlen wie die SI)
+            import csv
+            out = base.with_name(base.name + "_energies.csv")
+            with open(out, "w", newline="", encoding="utf-8-sig") as fh:
+                w = csv.writer(fh)
+                w.writerow([h.replace("−", "-") for _, h in SI_TABLE_HEAD] + ["Program"])
+                for r, (_, _, c) in zip(rows, self.calc_items()):          # CSV: fehlend = leere Zelle
+                    w.writerow(["" if v == DASH else v.replace("−", "-") for v in r] + [method_line(c)[0]])
+            files.append(out)
+        from elucida.tabs import dft_pop as POP          # Ladungen/Spinpopulationen als CSV (gedruckte Werte)
+        files += [f for f in [POP.write_csv(self, base.with_name(base.name + "_charges.csv"))] if f]
         if any(self.calc_of(e) is not None for e in es):
             files.append(self.save_docx(base.with_name(base.name + "_SI.docx")))
             si = [si_plain(self.si_of(e)) for e in es if self.calc_of(e) is not None]
@@ -1905,8 +2283,9 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         return files + extra
 
     def docx_blocks(self, img_dir):
-        """Blöcke für SI.write_docx: je Rechnung Name, Abbildung (eng beschnitten), Text, Konvergenz, Koordinaten."""
-        blocks = []
+        """Blöcke für SI.write_docx: je Rechnung Name, Abbildung (eng beschnitten), Text, Konvergenz, Koordinaten; am
+        Ende die Energietabelle einspaltig. Beginnt zweispaltig (in der Gesamt-SI folgt die nächste Verbindung)."""
+        blocks = [("columns", 2)]
         if method_mode(self.st.get("si_method")) == "top":
             items = [(e.get("name") or Path(e["file"]).stem, self.calc_of(e)) for e in self.entries()
                      if self.calc_of(e) is not None]
@@ -1918,7 +2297,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             p = self.si_of(e) if self.geometry(e) is not None else None
             if p is None:
                 continue
-            if blocks:
+            if len(blocks) > 1:
                 blocks.append(("gap",))
             blocks.append(("heading", p["name"]))
             fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
@@ -1937,7 +2316,22 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             if p["energies"]:
                 blocks.append(("energies", p["energies"][0], [p["energies"][2]]))
             blocks += self.orbital_blocks(e, p["name"], img_dir, n)
-        return blocks
+        rows, prog = self.si_table()
+        if rows:                                         # Energietabelle über die ganze Breite (einspaltig)
+            keep = [j for j in range(len(SI_TABLE_HEAD)) if j not in empty_columns(rows)]
+            blocks += [("columns", 1), ("tabcap", SI_TABLE_CAPTION, ""),
+                       ("params", [SI_TABLE_HEAD[j][0] for j in keep],
+                        [[XRAY.esc_markup(r[j]) for j in keep] for r in rows], {"fit": True}),
+                       ("note", si_table_note(rows, prog) + " " + XRAY.esc_markup(prog))]
+        from elucida.tabs import dft_pop as POP          # Ladungstabellen der Rechnungen mit „In die SI“
+        blocks += POP.si_blocks(self)
+        homa = []
+        for e in self.entries():                         # HOMA je Geometrie (Haken „In die SI“), einspaltig
+            if self.geometry(e) is not None:
+                homa += self.homa.si_blocks(e, e.get("name") or Path(e["file"]).stem)
+        if homa:
+            blocks += ([] if rows else [("columns", 1)]) + homa
+        return blocks + self.nbo.docx_blocks(img_dir)
 
     def orbital_caption(self, e, item, name):
         """Unterschrift (HTML, englisch): „HOMO (−5.43 eV) of <b>X</b>, isosurface enclosing 80% of the orbital

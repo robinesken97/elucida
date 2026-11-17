@@ -331,15 +331,87 @@ def _content_rect(page):
     return r & page.rect
 
 
+_SVG_TAG = re.compile(r"<(/?)svg(?=[\s/>])([^>]*?)(/?)>")
+_SVG_ATTR = re.compile(r"""([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')""")
+
+
+def _nested_svg_transform(attrs):
+    """transform für ein verschachteltes <svg> (x/y/width/height/viewBox/preserveAspectRatio) oder None (unbekannte Einheit)."""
+    a = {k: v[1:-1] for k, v in _SVG_ATTR.findall(attrs)}
+    try:
+        num = lambda k, d=None: float(a[k].strip().removesuffix("px")) if k in a else d
+        x, y = num("x", 0.), num("y", 0.)
+        if "viewBox" not in a:
+            return f"translate({x:.6g} {y:.6g})"
+        vx, vy, vw, vh = (float(v) for v in re.split(r"[\s,]+", a["viewBox"].strip()))
+        w, h = num("width"), num("height")
+    except ValueError:
+        return None
+    if w is None or h is None or vw <= 0 or vh <= 0:
+        return None
+    par = (a.get("preserveAspectRatio") or "xMidYMid meet").replace("defer", "").split()
+    align = par[0] if par else "xMidYMid"
+    sx, sy, ax, ay = w / vw, h / vh, 0., 0.
+    if align != "none":
+        sx = sy = (max if par[1:] == ["slice"] else min)(sx, sy)
+        pos = {"Min": 0., "Mid": .5, "Max": 1.}
+        ax, ay = pos.get(align[1:4], .5), pos.get(align[5:8], .5)
+    tx, ty = x + (w - vw * sx) * ax - vx * sx, y + (h - vh * sy) * ay - vy * sy
+    return f"translate({tx:.6g} {ty:.6g}) scale({sx:.6g} {sy:.6g})"
+
+
+def flatten_nested_svg(text):
+    """Verschachtelte <svg x y width height viewBox> als <g transform> (MuPDF ignoriert deren x/y, z. B. das Profil in
+    der Octet-Fläche des Reaktionspfads). Kein Clip: MuPDF ignoriert Clip-Pfade ohnehin."""
+    out, stack, pos = [], [], 0
+    for m in _SVG_TAG.finditer(text):
+        close, attrs, empty = m.groups()
+        if close:
+            rep = "</g>" if stack and stack.pop() else None
+        elif not stack and not out:                      # Wurzel bleibt
+            rep = None
+            stack.append(False)
+        else:
+            tf = _nested_svg_transform(attrs)
+            if tf is not None:
+                keep = _SVG_ATTR.sub(lambda a: "" if a.group(1) in
+                                     ("x", "y", "width", "height", "viewBox", "preserveAspectRatio", "transform") else a.group(0), attrs)
+                old = dict(_SVG_ATTR.findall(attrs)).get("transform")
+                tf = f"{old[1:-1]} {tf}" if old else tf
+                rep = f'<g{keep.rstrip()} transform="{tf}"{empty}>'
+            else:
+                rep = None
+            if not empty:
+                stack.append(tf is not None)
+        if rep is not None:
+            out += [text[pos:m.start()], rep]
+            pos = m.end()
+    return "".join(out) + text[pos:] if out else text
+
+
+def open_mupdf(path):
+    """pymupdf-Dokument einer Datei; SVG mit verschachteltem <svg> umgeschrieben (flatten_nested_svg), Datei bleibt unverändert."""
+    import pymupdf
+    p = Path(path)
+    if p.suffix.lower() == ".svg":
+        raw = p.read_bytes()
+        if raw.count(b"<svg") > 1:
+            try:
+                return pymupdf.open(stream=flatten_nested_svg(raw.decode("utf-8")).encode("utf-8"), filetype="svg")
+            except UnicodeDecodeError:                   # fremde SVG in anderer Kodierung: wie bisher
+                pass
+    return pymupdf.open(str(p))
+
+
 def _vector_doc(path, svg_text=None):
     try:
         import pymupdf
     except ImportError as e:
         raise RuntimeError(T("need_pymupdf")) from e
     if svg_text is not None:
-        src = pymupdf.open(stream=svg_text.encode("utf-8"), filetype="svg")
+        src = pymupdf.open(stream=flatten_nested_svg(svg_text).encode("utf-8"), filetype="svg")
     else:
-        src = pymupdf.open(str(path))
+        src = open_mupdf(path)
     if src.is_pdf:
         return pymupdf.open("pdf", src.tobytes())
     return pymupdf.open("pdf", src.convert_to_pdf())

@@ -8,6 +8,8 @@ import struct
 import zipfile
 from pathlib import Path
 
+from elucida.app.i18n import T
+
 
 def _emf_texts(data: bytes) -> list[str]:
     """Alle EMR_EXTTEXTOUTW-Texte eines EMF (Beschriftungen der Spektren aus der Massenabteilung)."""
@@ -78,10 +80,13 @@ CHECKED = "☒☑✓✔✗✘"                                   # angekreuzte K
 def read_ms_docx(path) -> dict:
     """Auftragsformular (docx) -> dict(sample, formula, exact_mass, ionisation, polarity, mz [found], remark,
     structure = Formel/Molmasse aus dem eingebetteten ChemDraw-Objekt oder None)."""
-    with zipfile.ZipFile(path) as z:
-        xml = z.read("word/document.xml").decode("utf-8", "replace")
-        emf = [z.read(n) for n in z.namelist() if n.startswith("word/media/") and n.lower().endswith(".emf")]
-        cdx = _docx_cdx(z)
+    try:
+        with zipfile.ZipFile(path) as z:
+            xml = z.read("word/document.xml").decode("utf-8", "replace")
+            emf = [z.read(n) for n in z.namelist() if n.startswith("word/media/") and n.lower().endswith(".emf")]
+            cdx = _docx_cdx(z)
+    except (zipfile.BadZipFile, KeyError):                   # kein/kaputtes Word-Dokument: nie roher Text
+        raise ValueError(T("r2l_docx_bad", name=Path(path).name)) from None
     xml = re.sub(r"<w:del(?:\s[^>]*)?(?<!/)>.*?</w:del>", "", xml, flags=re.S)   # Löschungen (nicht <w:del/>)
     paras = [re.sub(r"<[^>]+>", "", p) for p in xml.split("</w:p>")]
     paras = [re.sub(r"\s+", " ", p.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")).strip()

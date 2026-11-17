@@ -84,14 +84,14 @@ _E = r"(-?\d+\.\d+)"
 
 ORCA_THERMO = (("E_el", "Electronic energy"), ("ZPE", "Zero point energy"), ("U", "Total thermal energy"),
                ("H", "Total Enthalpy"), ("TS", "Final entropy term"), ("G", "Final Gibbs free energy"),
-               ("G_E", "G-E(el)"))
+               ("G_E", "G-E(el)"), ("mTS", "Total entropy correction"))
 
 
 def _calc():
     return dict(program="", version="", keywords=[], charge=None, mult=None, point_group="", solvation=None,
                 opt_requested=False,
                 opt_converged=None, conv=[], freq_requested=False, freqs=None, thermo={}, energy=None,
-                normal=False, geometry=None)
+                normal=False, geometry=None, nuc_rep=None)
 
 
 def is_orca(text):
@@ -102,9 +102,50 @@ def is_gaussian(text):
     return "Entering Gaussian System" in text[:20000] or "Gaussian, Inc." in text[:20000]
 
 
+def _num_rows(rows, k):
+    """Koordinatenzeilen (Text, Token): drei Zahlen ab Token k (abgeschnittene Zeile -> False)."""
+    try:
+        return all(len(tok) >= k + 3 and [float(v) for v in tok[k:k + 3]] for _, tok in rows)
+    except ValueError:
+        return False
+
+
+def _last_job(text, starts, parse, chained=lambda seg: False):
+    """Mehrere Jobs in einer Ausgabe (ORCA $new_job/Compound, Gaussian Link1): alle Angaben aus DEMSELBEN Job, dem
+    letzten vollständigen mit Geometrie (sonst dem letzten); `chained(seg)` hängt einen Folgeschritt desselben Jobs
+    (Gaussian „opt freq“) an den vorigen. normal = Ende der ganzen Datei. starts: Zeilenindizes der Jobanfänge."""
+    L = text.splitlines()
+    bounds = [0] + [s for s in starts[1:]] + [len(L)]
+    segs = []
+    for a, b in zip(bounds, bounds[1:]):
+        if segs and chained(L[a:b]):
+            segs[-1] = (segs[-1][0], b)
+        else:
+            segs.append((a, b))
+    jobs = [parse("\n".join(L[a:b])) for a, b in segs]
+    done = [k for k, c in enumerate(jobs) if (k < len(jobs) - 1 or c["normal"]) and c["geometry"]]
+    k = done[-1] if done else len(jobs) - 1
+    c = jobs[k]
+    c["normal"] = jobs[-1]["normal"]
+    return c, "\n".join(L[:segs[k][1]])
+
+
 def parse_orca(text) -> dict:
     """ORCA 6: Eingabezeile(n) „!“, Ladung/Multiplizität, CPCM/SMD, letzte Konvergenztabelle der Optimierung,
-    letzte Koordinaten, Frequenzen, Thermochemie. Abgebrochene Dateien liefern, was vorhanden ist (normal = False)."""
+    letzte Koordinaten, Frequenzen, Thermochemie. Abgebrochene Dateien liefern, was vorhanden ist (normal = False);
+    Koordinatenblöcke nur vollständig. Mehrere Jobs: alles aus dem letzten vollständigen (`_last_job`)."""
+    L = text.splitlines()
+    starts = [i for i, ln in enumerate(L) if ln.strip() == "INPUT FILE"]
+    if len(starts) < 2:
+        return _orca_job(text)
+    c, upto = _last_job(text, starts, _orca_job)
+    if not c["version"]:                                 # Kopf steht vor dem ersten Job
+        vs = re.findall(r"Program Version\s+(\S+)", upto)
+        c["version"] = vs[-1] if vs else ""
+    return c
+
+
+def _orca_job(text) -> dict:
     c = _calc()
     c["program"] = "ORCA"
     L = text.splitlines()
@@ -158,8 +199,11 @@ def parse_orca(text) -> dict:
                     continue
                 rows.append((L[j].rstrip(), tok))
                 j += 1
-            if rows:
-                c["geometry"] = rows
+            # nur vollständige Blöcke (keine angeschnittene Zeile, Zahlen, Atomzahl wie „Number of atoms“ bzw. der vorige
+            # Block): abgeschnittene Datei -> voriger Block
+            if rows and (j >= n or not L[j].strip()) and _num_rows(rows, 1) and \
+                    len(rows) == c.get("_natoms", len(rows)):
+                c["geometry"], c["_natoms"] = rows, len(rows)
             i = j
             continue
         elif s == "VIBRATIONAL FREQUENCIES":
@@ -203,8 +247,14 @@ def parse_orca(text) -> dict:
             c["point_group"] = s.split(":", 1)[1].split(",")[0].strip()
         elif s.startswith("Quasi RRHO"):
             c["thermo"]["qrrho"] = s.split("...")[-1].strip().lower() == "true"
+        elif s.startswith("Nuclear Repulsion"):          # „Nuclear Repulsion  :  819.92… Eh“ bzw. „… ENuc …. 819.92… Eh“
+            m = re.search(_E + r"\s*Eh", s)
+            if m:
+                c["nuc_rep"] = m.group(1)
         elif "ORCA TERMINATED NORMALLY" in ln:
             c["normal"] = True
+        elif re.fullmatch(r"Number of atoms\s+\.{3,}\s+\d+", s):
+            c.setdefault("_natoms", int(s.split()[-1]))
         else:
             for key, lab in ORCA_THERMO:
                 if s.startswith(lab):
@@ -218,12 +268,43 @@ def parse_orca(text) -> dict:
     c["freq_requested"] = bool(re.search(r"\b(NUM|AN)?FREQ\b", kw)) or c["freqs"] is not None
     from elucida.formats.multireference import parse_orca_mr
     c["multireference"] = parse_orca_mr(text)
+    c.pop("_natoms", None)
     return c
 
 
+def _g_route(L):
+    """Route eines Gaussian-Jobs (erste Zeile „#…“ nach einer Strichlinie) oder None."""
+    for i in range(1, len(L)):
+        if L[i].strip().startswith("#") and L[i - 1].strip().startswith("---"):
+            j, parts = i, []
+            while j < len(L) and not L[j].strip().startswith("---"):
+                parts.append(L[j].strip())
+                j += 1
+            return "".join(parts)
+    return None
+
+
 def parse_gaussian(text) -> dict:
-    """Gaussian (nicht mit echten Ausgaben geprüft): Route, Ladung/Multiplizität, letzte Standard-/Input-Orientierung,
-    letzte Konvergenztabelle, Frequenzen, Thermochemie, SCF-Energie, SCRF aus der Route."""
+    """Gaussian (geprüft mit einer echten Opt+Freq/SMD-Ausgabe): Route, Ladung/Multiplizität, letzte Standard-/Input-
+    Orientierung (nur vollständig), letzte Konvergenztabelle, Frequenzen, Thermochemie, SCF-Energie, SCRF aus der Route.
+    Mehrere Jobs (Link1): von Gaussian erzeugte Folgeschritte („opt freq“: Route mit GenChk, Werte aus dem Checkpoint)
+    gehören zum Job davor; ein eigener Job (andere Methode/Ladung möglich) ersetzt alles (`_last_job`)."""
+    L = text.splitlines()
+    starts = [i for i, ln in enumerate(L) if ln.strip().startswith(("Initial command:", "Link1:"))]
+    if not starts or not L[starts[0]].strip().startswith("Initial command:"):
+        starts = [0] + starts                            # Kopf ohne „Initial command“: Job 1 beginnt am Anfang
+    if len(starts) < 2:
+        return _gaussian_job(text)
+    c, upto = _last_job(text, starts, _gaussian_job,
+                        lambda seg: (lambda r: r is None or "genchk" in r.lower())(_g_route(seg)))
+    if not c["version"]:                                 # eigener Job nach Link1: Kopf steht im ersten
+        m = (re.search(r"Gaussian (\d\d), Revision ([A-Z]\.\d+)", upto)
+             or re.search(r"Gaussian (\d\d):\s+\S*Rev([A-Z]\.\d+)", upto) or re.search(r"Gaussian (\d\d):", upto))
+        c["version"] = m.group(1) + (f" Rev. {m.group(2)}" if m.lastindex and m.lastindex > 1 else "") if m else ""
+    return c
+
+
+def _gaussian_job(text) -> dict:
     c = _calc()
     c["program"] = "Gaussian"
     L = text.splitlines()
@@ -233,7 +314,9 @@ def parse_gaussian(text) -> dict:
         ln = L[i]
         s = ln.strip()
         if not c["version"]:
-            m = re.search(r"Gaussian (\d\d), Revision ([A-Z]\.\d+)", ln) or re.search(r"Gaussian (\d\d):", ln)
+            m = (re.search(r"Gaussian (\d\d), Revision ([A-Z]\.\d+)", ln)
+                 or re.search(r"Gaussian (\d\d):\s+\S*Rev([A-Z]\.\d+)", ln)    # „Gaussian 16:  ES64L-G16RevC.01“
+                 or re.search(r"Gaussian (\d\d):", ln))
             if m:
                 c["version"] = m.group(1) + (f" Rev. {m.group(2)}" if m.lastindex and m.lastindex > 1 else "")
         if s.startswith("#") and not c["keywords"] and i > 0 and L[i - 1].strip().startswith("---"):
@@ -249,15 +332,21 @@ def parse_gaussian(text) -> dict:
             if m:
                 c["charge"], c["mult"] = int(m.group(1)), int(m.group(2))
         elif s in ("Standard orientation:", "Input orientation:"):
-            rows, j = [], i + 5
+            rows, j, whole = [], i + 5, True
             while j < n and not L[j].strip().startswith("---"):
                 tok = L[j].split()
                 if len(tok) == 6 and tok[1].isdigit():
                     z = int(tok[1])
                     el = ELEMENTS[z - 1] if 1 <= z <= len(ELEMENTS) else "X"
                     rows.append((f"  {el:<2s} {tok[3]:>14s} {tok[4]:>14s} {tok[5]:>14s}", [el] + tok[3:6]))
+                else:
+                    whole = False                        # abgeschnittene Zeile
                 j += 1
-            if rows and (s == "Standard orientation:" or c.get("_orient") != "std"):
+            # nur vollständige Blöcke (Strichlinie am Ende, gleiche Atomzahl): abgeschnittene Datei -> voriger Block
+            whole = whole and j < n and _num_rows(rows, 1) and len(rows) == c.get("_natoms", len(rows))
+            if rows and whole:
+                c["_natoms"] = len(rows)
+            if rows and whole and (s == "Standard orientation:" or c.get("_orient") != "std"):
                 c["geometry"] = rows
                 c["_orient"] = "std" if s == "Standard orientation:" else "inp"
             i = j
@@ -303,11 +392,18 @@ def parse_gaussian(text) -> dict:
                 c["thermo"].update(T=m.group(1), P=m.group(2))
         elif s.startswith("Zero-point correction="):
             c["thermo"]["ZPE"] = s.split("=")[1].split()[0]
+        elif s.startswith("nuclear repulsion energy"):   # „nuclear repulsion energy  819.92… Hartrees.“
+            m = re.search(_E + r"\s+Hartrees", s)
+            if m:
+                c["nuc_rep"] = m.group(1)
+        elif s.startswith("Thermal correction to Enthalpy="):
+            c["thermo"]["H_corr"] = s.split("=")[1].split()[0]
         elif s.startswith("Sum of electronic and thermal Enthalpies="):
             c["thermo"]["H"] = s.split("=")[1].split()[0]
         elif s.startswith("Sum of electronic and thermal Free Energies="):
             c["thermo"]["G"] = s.split("=")[1].split()[0]
             c["_e_th"] = c["energy"]             # E(el) desselben Jobs (spätere Single Points: andere Methode)
+            c["_n_th"] = c["nuc_rep"]            # Kernabstoßung derselben Geometrie
         elif "Normal termination of Gaussian" in s:
             c["normal"] = True
         elif s.startswith(("Initial command:", "Link1:")) or "Error termination" in s:
@@ -327,9 +423,191 @@ def parse_gaussian(text) -> dict:
                               e_diel=None, e_cds=None)
     if c["energy"] is not None:
         c["thermo"].setdefault("E_el", c.get("_e_th") or c["energy"])
-    for k in ("_orient", "_fjob", "_e_th"):
+    c["nuc_rep"] = c.get("_n_th") or c["nuc_rep"]
+    for k in ("_orient", "_fjob", "_e_th", "_n_th", "_natoms"):
         c.pop(k, None)
     return c
+
+
+_HFC_ROW = re.compile(r"^\s*(\d+)\s+([A-Za-z]+)\((\d+)\)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*$")
+_DIP_ROW = re.compile(r"^\s*(?:(\d+)\s+[A-Za-z]+\(\d+\)\s+)?B(aa|bb|cc)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+"
+                      r"(-?\d+\.\d+)")
+
+
+def parse_gaussian_epr(text) -> dict:
+    """Gaussian 16, offenschalig: Mulliken-Spinpopulationen je Atom, isotrope Fermi-Kontakt-Kopplungen und anisotrope
+    Dipolkopplungen (Hauptwerte), je der letzte Block der Ausgabe. -> dict(calc (parse_gaussian), els, spin [float],
+    fermi {Atomindex: (Isotop "14N", MHz, Gauss)}, dipole {Atomindex: [(MHz, Gauss) für Baa, Bbb, Bcc]}).
+    Andere Programme und Ausgaben ohne Spinpopulationen werden abgelehnt (nicht raten). Geprüft mit G16 (Prop=EPR)."""
+    if not is_gaussian(text):
+        raise ValueError(T("epr_calc_not_gaussian"))
+    c = parse_gaussian(text)
+    L = text.splitlines()
+    els, spin, fermi, dipole, blocks = [], [], {}, {}, set()
+    i, n = 0, len(L)
+    while i < n:
+        s = L[i].strip()
+        if s == "Mulliken charges and spin densities:":
+            els, spin, j = [], [], i + 2
+            while j < n:
+                t = L[j].split()
+                if len(t) != 4 or not t[0].isdigit():
+                    break
+                els.append(element_of(t[1], t[1]))
+                try:
+                    spin.append(float(t[3]))
+                except ValueError:                             # Überlauf „****“
+                    raise ValueError(T("fixr_epr_gauss_overflow", line=j + 1)) from None
+                j += 1
+            i = j
+            continue
+        if s == "Isotropic Fermi Contact Couplings":
+            fermi, j = {}, i + 2
+            blocks.add("fermi")
+            while j < n:
+                m = _HFC_ROW.match(L[j])
+                if not m:
+                    break
+                fermi[int(m.group(1)) - 1] = (m.group(3) + m.group(2), float(m.group(5)), float(m.group(6)))
+                j += 1
+            i = j
+            continue
+        if s == "Anisotropic Spin Dipole Couplings in Principal Axis System":
+            dipole, j, rows, at = {}, i + 1, [], None
+            blocks.add("dipole")
+            while j < n:
+                m = _DIP_ROW.match(L[j])
+                if m:
+                    at = int(m.group(1)) - 1 if m.group(1) else at
+                    rows.append((float(m.group(4)), float(m.group(5))))
+                    if m.group(2) == "cc" and at is not None and len(rows) == 3:
+                        dipole[at] = rows
+                    if m.group(2) == "cc":
+                        rows, at = [], None
+                elif L[j].strip() and not set(L[j].strip()) <= {"-"} and "Atom" not in L[j]:
+                    break
+                j += 1
+            i = j
+            continue
+        i += 1
+    if not spin:
+        raise ValueError(T("epr_calc_no_spin"))
+    if not c["geometry"] or len(c["geometry"]) != len(spin):
+        raise ValueError(T("dft_no_geometry"))
+    for key, got in (("fermi", fermi), ("dipole", dipole)):    # Tabelle endet still beim ersten fremden Muster („****“)
+        if key in blocks and len(got) != len(spin):
+            raise ValueError(T("fixr_epr_gauss_count", n=len(got), m=len(spin)))
+    return dict(calc=c, els=els, spin=spin, fermi=fermi, dipole=dipole)
+
+
+# ORCA-Hyperfeinblock, geprüft an echten öffentlichen Ausgaben: 4.0/4.1/4.2/5.0 „Nucleus  10H : A:ISTP=    1 …“ +
+# „Raw HFC matrix“, 6.0 „Nucleus   0H : A  : Isotope=    1 …“ + „Total HFC matrix“. 6.1 (Nutzerentscheid 2026-11-13)
+# mit dem 6.0-Layout und strenger Prüfung, aber ohne echte Ausgabe (`ORCA_EPR_UNCHECKED`, Hinweis). Andere ablehnen.
+ORCA_EPR_LAYOUT = {"4.0": "istp", "4.1": "istp", "4.2": "istp", "5.0": "istp", "6.0": "isotope", "6.1": "isotope"}
+ORCA_EPR_UNCHECKED = {"6.1"}
+_ORCA_HEAD = {"istp": "Raw HFC matrix (all values in MHz):", "isotope": "Total HFC matrix (all values in MHz):"}
+_ORCA_NUC = {"istp": re.compile(r"^\s*Nucleus\s+(\d+)\s*([A-Z][a-z]?)\s*:\s*A:ISTP=\s*(\d+)\s"),
+             "isotope": re.compile(r"^\s*Nucleus\s+(\d+)\s*([A-Z][a-z]?)\s*:\s*A\s+:\s*Isotope=\s*(\d+)\s")}
+_ORCA_A = re.compile(r"^\s*A\((FC|SD|ORB)\)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*(?:$|A\(PC\))")
+_ORCA_POP = re.compile(r"^\s*(\d+)\s+([A-Z][a-z]?)\s*:\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*$")
+MHZ_PER_G = 2.00231930436 * 1.3996245                  # g_e · µ_B/h (MHz/G), wie die Gauss-Spalte von Gaussian
+
+
+def parse_orca_epr(text) -> dict:
+    """ORCA (4.0–4.2, 5.0, 6.0, 6.1 ungeprüft; offenschalig): Spinpopulationen (letzter Block „MULLIKEN ATOMIC CHARGES AND SPIN
+    POPULATIONS“, Löwdin als `spin_loewdin`) und je Kern des letzten Hyperfeinblocks A(FC) (Fermi-Kontakt, MHz wie
+    gedruckt, Gauss mit g_e) sowie A(SD) als Dipol-Hauptwerte, nur ohne A(ORB) (sonst Diagonale im Achsensystem
+    des Gesamttensors). Gleiche Struktur wie `parse_gaussian_epr`; ohne `%eprnmr` bleibt fermi leer."""
+    if not is_orca(text):
+        raise ValueError(T("epr_calc_orca_not_supported"))
+    m = re.search(r"Program Version\s+(\d+)\.(\d+)", text)
+    ver = f"{m.group(1)}.{m.group(2)}" if m else "?"
+    if ver not in ORCA_EPR_LAYOUT:
+        raise ValueError(T("epr_calc_orca_version", v=ver))
+    nuc_re, head = _ORCA_NUC[ORCA_EPR_LAYOUT[ver]], _ORCA_HEAD[ORCA_EPR_LAYOUT[ver]]
+    c = parse_orca(text)
+    L = text.splitlines()
+    pops, fermi, dipole, inputs, hfc_input = {}, {}, {}, [], None
+    i, n, in_hfc, cur, hfc_seen = 0, len(L), False, None, False
+
+    def close(cur):
+        if cur and "FC" in cur["A"] and not cur["head"]:          # Tabellenkopf fehlt/anders: Layout unbekannt
+            raise ValueError(T("epr_calc_orca_layout", v=ver, line=cur["line"]))
+        if cur and "FC" in cur["A"]:
+            mhz = cur["A"]["FC"][0]
+            fermi[cur["k"]] = (cur["iso"], mhz, mhz / MHZ_PER_G)
+            if "SD" in cur["A"] and "ORB" not in cur["A"]:
+                dipole[cur["k"]] = [(v, v / MHZ_PER_G) for v in sorted(cur["A"]["SD"])]
+
+    while i < n:
+        s = L[i].strip()
+        for kind in ("MULLIKEN", "LOEWDIN"):
+            if s == f"{kind} ATOMIC CHARGES AND SPIN POPULATIONS":
+                rows, j = [], i + 2
+                while j < n and (mm := _ORCA_POP.match(L[j])):
+                    rows.append((element_of(mm.group(2), mm.group(2)), float(mm.group(4))))
+                    j += 1
+                if rows:                                       # Block ohne Spinspalte überschreibt keinen früheren
+                    pops[kind] = rows
+                i = j - 1
+        if s == "INPUT FILE":
+            inputs.append(i)
+            close(cur)
+            in_hfc, cur = False, None                          # neuer Job: Hyperfeinblock ist zu Ende
+        if s.startswith("ELECTRIC AND MAGNETIC HYPERFINE STRUCTURE"):
+            close(cur)
+            fermi, dipole, in_hfc, cur = {}, {}, True, None     # nur der letzte Block gilt
+            hfc_seen = True
+            hfc_input = inputs[-1] if inputs else None
+        elif in_hfc and s.startswith("Nucleus"):
+            close(cur)
+            mm = nuc_re.match(L[i])
+            if not mm and re.fullmatch(r"Nucleus\s+\d+\s*[A-Z][a-z]?\s*:", s):   # NMR-Abschirmung: Block zu Ende
+                in_hfc, cur = False, None
+                i += 1
+                continue
+            if not mm:
+                raise ValueError(T("epr_calc_orca_layout", v=ver, line=i + 1))
+            cur = dict(k=int(mm.group(1)), iso=mm.group(3) + mm.group(2), A={}, head=False, line=i + 1)
+        elif cur is not None and "HFC matrix" in s:
+            if s != head:
+                raise ValueError(T("epr_calc_orca_layout", v=ver, line=i + 1))
+            cur["head"] = True
+        elif cur is not None and (mm := _ORCA_A.match(L[i])):
+            cur["A"].setdefault(mm.group(1), [float(mm.group(g)) for g in (2, 3, 4)])
+        i += 1
+    close(cur)
+    if not c["normal"] and (hfc_seen or re.search(r"(?im)^\|\s*\d+>.*%eprnmr", text)):   # abgeschnitten: nie wie
+        raise ValueError(T("r2l_epr_hfc_incomplete"))                               # ohne %eprnmr zeigen
+    if "MULLIKEN" not in pops:
+        raise ValueError(T("epr_calc_no_spin"))
+    els = [e for e, _ in pops["MULLIKEN"]]
+    spin = [v for _, v in pops["MULLIKEN"]]
+    if not c["geometry"] or len(c["geometry"]) != len(spin):
+        raise ValueError(T("dft_no_geometry"))
+    if len(inputs) > 1 and hfc_input is not None:             # mehrere Jobs: Niveau des Jobs mit dem Hyperfeinblock
+        kw, j = [], hfc_input + 1
+        while j < n and "END OF INPUT" not in L[j]:
+            mm = re.match(r"\|\s*\d+>\s?(.*)$", L[j])
+            if mm and mm.group(1).lstrip().startswith("!"):
+                kw.append(mm.group(1).split("#")[0].strip())
+            j += 1
+        c["keywords"] = kw or c["keywords"]
+    lw = pops.get("LOEWDIN")
+    if any(k >= len(els) or nucleus != els[k] for k, nucleus in
+           ((k, re.sub(r"^\d+", "", f[0])) for k, f in fermi.items())):
+        raise ValueError(T("epr_calc_orca_layout", v=ver, line="?"))
+    return dict(calc=c, els=els, spin=spin, fermi=fermi, dipole=dipole, unchecked=ver in ORCA_EPR_UNCHECKED,
+                spin_loewdin=[v for _, v in lw] if lw and len(lw) == len(spin) else None)
+
+
+def parse_epr(text) -> dict:
+    """Weiche für den EPR-Tab: Gaussian 16 oder ORCA, sonst ablehnen."""
+    if is_gaussian(text):
+        return parse_gaussian_epr(text)
+    if is_orca(text):
+        return parse_orca_epr(text)
+    raise ValueError(T("epr_calc_orca_not_supported"))
 
 
 def read_calc(path) -> dict:
@@ -343,6 +621,139 @@ def read_calc(path) -> dict:
     if not c["geometry"]:
         raise ValueError(T("dft_no_geometry"))
     return c
+
+
+def _orca_ir(text):
+    """ORCA 5/6: letzter Block „IR SPECTRUM“ -> {Modennummer: Intensität [km/mol]}. Nur das Layout mit der Spalte
+    „km/mol“ (Mode freq eps Int T**2 …); ältere Layouts ohne km/mol (ORCA 4: nur T**2) werden abgelehnt (None)."""
+    i = text.rfind("\nIR SPECTRUM")
+    if i < 0:
+        return None
+    lines = text[i:].splitlines()[1:40]
+    head = "\n".join(lines[:8])
+    if "km/mol" not in head or not re.search(r"Mode\s+freq\s+eps\s+Int", head):
+        return None
+    out, started, shape = {}, False, set()
+    for ln in text[i:].splitlines()[1:]:
+        m = re.match(r"^\s*(\d+):\s+" + _E + r"\s+" + _E + r"\s+" + _E, ln)
+        if m:
+            out[int(m.group(1))] = float(m.group(4))
+            started = True
+            shape.add(ln.rstrip()[-1:])                   # Zeilenende wie die übrigen (Klammer)
+        elif started and ln.strip():
+            if re.match(r"^\s*\d+:", ln) or len(shape) > 1:     # abgeschnittene Zeile
+                raise ValueError(T("r2l_ir_incomplete"))
+            return out
+    if started:                                          # Tabelle reicht bis ans Dateiende: abgeschnitten
+        raise ValueError(T("r2l_ir_incomplete"))
+    return out
+
+
+def _gaussian_ir(text):
+    """Gaussian: Paare „Frequencies --“ / „IR Inten    --“ des letzten Frequenzjobs -> ([ṽ], [I km/mol]) oder None."""
+    fr, it, in_job = [], [], False
+    for k, ln in enumerate(text.splitlines()):
+        s = ln.strip()
+        try:
+            if s.startswith("Frequencies --") and not s.startswith("Frequencies ---"):
+                if not in_job:
+                    fr, it, in_job = [], [], True
+                fr += [float(v) for v in s.split("--")[1].split()]
+            elif s.startswith("IR Inten    --"):
+                it += [float(v) for v in s.split("--")[1].split()]
+        except ValueError:                               # Überlauf „********“
+            raise ValueError(T("r2l_ir_overflow", line=k + 1)) from None
+        if s.startswith(("Initial command:", "Link1:")):
+            in_job = False
+    return (fr, it) if fr and len(fr) == len(it) else None
+
+
+def _orca_raman(text):
+    """ORCA 5/6: letzter Block „RAMAN SPECTRUM“ (Mode, freq (cm**-1), Activity, Depolarization; Layout wie im
+    ORCA-6.1-Tutorial „Infrared and Raman“) -> {Modennummer: Aktivität [Å⁴/amu]} oder None."""
+    i = text.rfind("\nRAMAN SPECTRUM")
+    if i < 0:
+        return None
+    head = "\n".join(text[i:].splitlines()[1:8])
+    if not re.search(r"Mode\s+freq \(cm\*\*-1\)\s+Activity\s+Depolarization", head):
+        return None
+    out, started = {}, False
+    for ln in text[i:].splitlines()[1:]:
+        m = re.match(r"^\s*(\d+):\s+" + _E + r"\s+" + _E + r"\s+" + _E, ln)
+        if m:
+            out[int(m.group(1))] = float(m.group(3))
+            started = True
+        elif started and ln.strip():
+            break
+    return out or None
+
+
+def _gaussian_raman(text):
+    """Gaussian (freq=raman): Zeilen „Raman Activ --“ des letzten Frequenzjobs (Lage wie cclib sie liest) ->
+    ([ṽ], [Aktivität Å⁴/amu]) oder None; Sternchen (Überlauf) -> None."""
+    fr, ra, in_job = [], [], False
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("Frequencies --") and not s.startswith("Frequencies ---"):
+            if not in_job:
+                fr, ra, in_job = [], [], True
+            fr += [float(v) for v in s.split("--")[1].split()]
+        elif s.startswith("Raman Activ --"):
+            try:
+                ra += [float(v) for v in s.split("--")[1].split()]
+            except ValueError:
+                return None
+        elif s.startswith(("Initial command:", "Link1:")):
+            in_job = False
+    return (fr, ra) if fr and len(fr) == len(ra) else None
+
+
+def raman_modes(text, program, freqs):
+    """Raman-Aktivitäten passend zu den Frequenzen -> [(ṽ, S)] nur reelle Moden > 0, oder None (keine Aktivitäten oder
+    passen nicht: dann gibt es kein berechnetes Raman-Spektrum, nie raten)."""
+    if program == "ORCA":
+        r = _orca_raman(text)
+        if r is None or any(k >= len(freqs) for k in r):
+            return None
+        pairs = [(f, r.get(k, 0.0)) for k, f in enumerate(freqs)]
+    else:
+        g = _gaussian_raman(text)
+        if g is None or len(g[0]) != len(freqs) or any(abs(a - b) > 0.01 for a, b in zip(g[0], freqs)):
+            return None
+        pairs = list(zip(*g))
+    return [(f, s) for f, s in pairs if f > 0]
+
+
+def read_ir_modes(path) -> dict:
+    """Schwingungen einer Frequenzrechnung mit IR-Intensitäten (Paket B 1.2.0) -> dict(program, calc (wie read_calc),
+    modes=[(ṽ [cm⁻¹], I [km/mol])] nur reelle Moden > 0, n_imag, raman=[(ṽ, Aktivität Å⁴/amu)] oder None).
+    Frequenzen wie der DFT-Tab sie liest (`read_calc`), Intensitäten: ORCA „IR SPECTRUM“ (Int in km/mol), Gaussian
+    „IR Inten“. Fehlen Intensitäten oder passen sie nicht zu den Frequenzen: ablehnen, nie raten. Raman-Aktivitäten
+    (ORCA „RAMAN SPECTRUM“, Gaussian „Raman Activ“) nur, wenn vorhanden und passend."""
+    text = read_text(path)
+    c = read_calc(path)
+    freqs = [float(f) for f in c.get("freqs") or []]
+    if not freqs:
+        raise ValueError(T("ir_calc_no_freq"))
+    if c["program"] == "ORCA":
+        ir = _orca_ir(text)
+        if ir is None:
+            raise ValueError(T("ir_calc_no_int"))
+        if any(k >= len(freqs) or abs(freqs[k]) < 1e-6 and v > 0 for k, v in ir.items()):
+            raise ValueError(T("ir_calc_mismatch"))
+        if any(f > 0 and k not in ir for k, f in enumerate(freqs)):     # fehlende Intensität nie still 0
+            raise ValueError(T("r2l_ir_incomplete"))
+        pairs = [(f, ir.get(k, 0.0)) for k, f in enumerate(freqs)]
+    else:
+        g = _gaussian_ir(text)
+        if g is None:
+            raise ValueError(T("ir_calc_no_int"))
+        if len(g[0]) != len(freqs) or any(abs(a - b) > 0.01 for a, b in zip(g[0], freqs)):
+            raise ValueError(T("ir_calc_mismatch"))
+        pairs = list(zip(*g))
+    modes = [(f, i) for f, i in pairs if f > 0]
+    return dict(program=c["program"], calc=c, modes=modes, n_imag=sum(1 for f, _ in pairs if f < 0),
+                raman=raman_modes(text, c["program"], freqs))
 
 
 def is_xyz(path):
@@ -462,15 +873,17 @@ def read_esd_spectrum(path, unit=None) -> dict:
     head = next((i for i, ln in enumerate(lines) if ln.split()[:2] == ["Energy", "TotalSpectrum"]), None)
     if head is None:
         raise ValueError(T("esd_bad", name=Path(path).name))
-    rows = []
-    for ln in lines[head + 1:]:
+    rows, ncol = [], min(4, len(lines[head].split()))
+    for k, ln in enumerate(lines[head + 1:], head + 2):
         tok = ln.split()
-        if len(tok) < 2:
+        if not tok:
             continue
-        try:
-            rows.append([float(v) for v in tok[:4]] + [0.0] * (4 - len(tok[:4])))
+        try:                                             # so viele Zahlen wie der Kopf Spalten nennt, sonst ablehnen
+            if len(tok) < ncol:
+                raise ValueError
+            rows.append([float(v) for v in tok[:ncol]] + [0.0] * (4 - ncol))
         except ValueError:
-            break
+            raise ValueError(T("r2l_esd_line", name=Path(path).name, line=k)) from None
     a = np.array(rows, float)
     if len(a) < 2:
         raise ValueError(T("esd_bad", name=Path(path).name))
@@ -488,3 +901,60 @@ def read_esd_spectrum(path, unit=None) -> dict:
 def esd_shift(nm, shift_ev):
     """Wellenlängen um shift_ev (eV) in der Energie verschieben (wie die TD-DFT-Verschiebung)."""
     return HC_EV_NM / (HC_EV_NM / np.asarray(nm, float) + shift_ev) if shift_ev else np.asarray(nm, float)
+
+
+# -- Ladungen und Spinpopulationen (DFT-Tab, Reiter „Ladungen“) -------------------------------------------------
+# Nur Layouts, die an echten Ausgaben geprüft sind: ORCA 5/6 „MULLIKEN ATOMIC CHARGES [AND SPIN POPULATIONS]“ und
+# „LOEWDIN ATOMIC CHARGES [AND SPIN POPULATIONS]“, Gaussian 16 „Mulliken charges[ and spin densities]:“. Hirshfeld
+# (ORCA „HIRSHFELD ANALYSIS“, Gaussian „Hirshfeld charges“) und NPA liegen nicht als echte Ausgabe vor: nicht gelesen
+# (NBO/NPA: eigener Leser formats/nbo.py). Neue Schemata als weiterer Eintrag in POP_SCHEMES.
+POP_SCHEMES = ("mulliken", "loewdin")
+# nicht _ORCA_POP: so heißt weiter oben das Zeilenmuster des EPR-Lesers (Namenskollision beim Zusammenführen)
+_ORCA_POP_HEADS = {"mulliken": re.compile(r"^MULLIKEN ATOMIC CHARGES(?: AND SPIN (?:POPULATIONS|DENSITIES))?\s*$", re.M),
+                   "loewdin": re.compile(r"^LOEWDIN ATOMIC CHARGES(?: AND SPIN (?:POPULATIONS|DENSITIES))?\s*$", re.M)}
+_ORCA_ROW = re.compile(r"^\s*(\d+)\s+([A-Z][a-z]?)\s*:\s*(-?\d+\.\d+)(?:\s+(-?\d+\.\d+))?\s*$")
+_G_POP = re.compile(r"^ Mulliken charges(?: and spin densities)?:\s*$", re.M)
+_G_ROW = re.compile(r"^\s*(\d+)\s+([A-Z][a-z]?)\s+(-?\d+\.\d+)(?:\s+(-?\d+\.\d+))?\s*$")
+
+
+def _pop_block(lines, row_re, base):
+    """Zeilen nach der Überschrift bis zur ersten Nicht-Atomzeile (Trennstriche/Kopf „1 2“ davor überspringen)."""
+    els, q, s, started = [], [], [], False
+    for ln in lines:
+        m = row_re.match(ln)
+        if m is None:
+            if started:
+                break
+            if ln.strip() and not re.fullmatch(r"[-\s\d]+", ln):   # unerwarteter Text vor der ersten Zeile
+                return None
+            continue
+        started = True
+        if int(m.group(1)) - base != len(els):            # Lücke in der Nummerierung: Layout nicht wie erwartet
+            return None
+        els.append(m.group(2))
+        q.append(float(m.group(3)))
+        s.append(float(m.group(4)) if m.group(4) is not None else None)
+    if not els:
+        return None
+    return dict(els=els, charge=q, spin=s if all(v is not None for v in s) else None)
+
+
+def parse_populations(text) -> dict:
+    """Ladungen (und Spinpopulationen, wo gedruckt) je Schema -> {Schema: {els, charge, spin|None}}, jeweils der
+    letzte Block der Ausgabe (Endgeometrie). Fehlende Schemata fehlen im Ergebnis (keine leeren Spalten)."""
+    out = {}
+    if is_orca(text):
+        for key, head in _ORCA_POP_HEADS.items():
+            hits = list(head.finditer(text))
+            if hits:
+                b = _pop_block(text[hits[-1].end():].splitlines()[1:400000], _ORCA_ROW, 0)
+                if b:
+                    out[key] = b
+    elif is_gaussian(text):
+        hits = list(_G_POP.finditer(text))
+        if hits:
+            b = _pop_block(text[hits[-1].end():].splitlines()[1:400000], _G_ROW, 1)
+            if b:
+                out["mulliken"] = b
+    n = {len(b["els"]) for b in out.values()}
+    return out if len(n) <= 1 else {}               # verschiedene Atomzahlen: nichts zeigen statt falsch zuordnen

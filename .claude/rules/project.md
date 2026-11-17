@@ -140,3 +140,10 @@ paths:
   Haken = Daten, feiner Punkt = keine), „Geändert“. Spaltenbreite in Kopf und Zeilen gleich, wächst mit dem Fenster bis
   `CHECK_W_MAX`; passen die Spalten nicht (Name behielte weniger als `NAME_MIN`), steht stattdessen der gekürzte Text
   „Weitere Analytik“. Neue Tabs mit Abzeichen in `MORE` und `SHORT_MORE` eintragen. Word-Tabelle des Vergleichs: Spaltenbreiten nach Inhalt (`SI.fit_widths`).
+- Manuskript-Angaben (1.2.0, Auftrag 2026-11-13): „FID for Publication“ (ACS) über `datapack.fid_items`/`write_fid_package`:
+  Zip ohne Wurzelordner, `<Name>/<Art>[_n]/` = ganzes TopSpin-Experiment aus `nmr.raw` (nur zugeordnete, Kopie),
+  `<Name>/<Name>.mol` aus der CDXML, `NMR_parameters.txt` nur aus acqus; im Dialog der Datenpakete wählbar (QSettings
+  `pub_dp_fid`), das Ergebnis steht als `fidpack` in `publication.elucida`. Data Availability Statement (`das`, Bausteine
+  `DAS_KEYS`; `PUB.das_parts`): Repository/Link (sonst `doi` der Angaben), FID nur mit `fidpack`, CCDC je Nummer aus den
+  X-Ray-Einträgen (`ccdc`, sonst `_database_code_depnum_ccdc_archive` der CIF), Freitext; ccdc/fid mit "0" aus. Karte auf
+  „Angaben“, beschriftet als Text für das Manuskript (nie in der SI).

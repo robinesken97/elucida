@@ -53,7 +53,7 @@ Supporting Information, in der alles zusammenpassen muss. Elucida hält das an e
 |---|---|---|
 | **Verbindung** | Verbindung | Name, Formel und Zeichnung an einer Stelle; eingebauter Struktureditor (Octet Draw), ChemDraw-Dateien funktionieren weiter |
 | **Synthese & Analytik** | Synthese · NMR · IR + EA · HRMS | Schema, Vorschrift und Mengenprüfung; Mnova- und TopSpin-Daten; OPUS; Bruker `.d` |
-| **UV-Vis & Photophysik** | UV-Vis (ε) · Overlay · Kinetik · Fluoreszenz | Lambert-Beer-Fit mit Konfidenzintervall, TD-DFT-Overlay, Spektren über die Zeit mit Fit erster Ordnung, ORCA ESD |
+| **UV-Vis & Photophysik** | UV-Vis (ε) · TD-DFT · Kinetik · Fluoreszenz | Lambert-Beer-Fit mit Konfidenzintervall, Messung gegen TD-DFT, Spektren über die Zeit mit Fit erster Ordnung, ORCA ESD |
 | **Elektrochemie & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles-Ševčík, UV/Vis/NIR-SEC, H-Zelle (Kapazität, Coulomb-Effizienz), S = ½-Fit, thermischer Zerfall |
 | **Struktur & Rechnung** | X-Ray · DFT · Reaktionspfade | ORTEP im Mercury-Stil, ORCA und Gaussian, Orbitale, Multireferenz, Energiediagramme |
 | **Projekt** | Übersicht · Vergleich · Gesamt-SI · Datenpakete | Checkliste je Verbindung, Suche, CV-Stapel, Spektren und Eigenschaftstabellen über die Verbindungen, Gesamt-SI für das ganze Paper, Datensatz fürs Repositorium |
@@ -61,7 +61,7 @@ Supporting Information, in der alles zusammenpassen muss. Elucida hält das an e
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/eps_dark_de.png" alt="UV-Vis-Tab"><br><sub>UV-Vis: ε aus der Verdünnungsreihe</sub></td>
-    <td width="50%"><img src="docs/screenshots/overlay_dark_de.png" alt="Overlay-Tab"><br><sub>Overlay: Messung und TD-DFT</sub></td>
+    <td width="50%"><img src="docs/screenshots/tddft_dark_de.png" alt="TD-DFT-Tab"><br><sub>TD-DFT: Messung und Rechnung</sub></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/hrms_dark_de.png" alt="HRMS-Tab"><br><sub>HRMS: Spektrum, Isotopenmuster und LC-Spur</sub></td>

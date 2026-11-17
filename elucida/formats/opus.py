@@ -85,12 +85,20 @@ def is_opus(path) -> bool:
         return False
 
 
+def _open_pdf(path):
+    """PDF öffnen; leere/kaputte Datei -> übersetzte Meldung statt pymupdf-Text."""
+    import pymupdf
+    try:
+        return pymupdf.open(str(path))
+    except pymupdf.FileDataError:
+        raise ValueError(T("r2l_pdf_bad", name=Path(path).name)) from None
+
+
 def read_ir_pdf(path) -> list[float]:
     """OPUS-PDF-Ausdruck -> Peaklagen [cm⁻¹] aus den Textbeschriftungen. Achsenwerte (runde Hunderter/Prozente)
     werden verworfen; Peakwerte tragen in OPUS Nachkommastellen."""
-    import pymupdf
     vals = []
-    with pymupdf.open(str(path)) as doc:
+    with _open_pdf(path) as doc:
         for page in doc:
             for w in page.get_text("words"):
                 s = w[4].replace(",", ".")
@@ -128,8 +136,7 @@ def read_ir_pdf_curve(path) -> dict:
     """OPUS-PDF ohne Messdatei -> Spektrum wie read_opus (wn, y, kind, name). Kurve = Linienzüge mit ≥ 50 Segmenten,
     x über die Wellenzahl-Ticks stückweise linear (OPUS staucht die Achse über 2000 cm⁻¹), y linear über die
     %T- bzw. Absorbanz-Ticks. Unbekanntes Layout -> ValueError (nicht raten)."""
-    import pymupdf
-    with pymupdf.open(str(path)) as doc:
+    with _open_pdf(path) as doc:
         pages = [(pg.get_text("words"), pg.get_drawings()) for pg in doc]
     pages = [(w, d) for w, d in pages if any(len(d_["items"]) >= 50 for d_ in d)]
     if len(pages) != 1:

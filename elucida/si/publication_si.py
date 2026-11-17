@@ -31,7 +31,7 @@ SECTIONS = (("methods", "Materials and Methods", True),
 FIGURE_SECTIONS = ("nmr", "irms", "uvvis", "epr", "cv", "sec", "hcell")
 CRYSTAL_COLS = 3
 # Aufbau-Texte (lokal hinterlegt, si_setup/<Tab>) in „Materials and Methods“, in der Reihenfolge der SI
-SETUP_KEYS = ("irms", "hrms", "overlay", "uvkin", "fluorescence", "epr", "cv", "sec")
+SETUP_KEYS = ("irms", "hrms", "overlay", "uvkin", "fluorescence", "epr", "cv", "sec", "hcell")
 METHODS_PLACEHOLDER = "[General information: solvents, reagents and instruments.]"
 
 
@@ -122,6 +122,9 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
         if key not in sections:
             continue
         intro = text_blocks((meta.get("si_texts") or {}).get(key, ""))   # Text der Publikation unter dem Kapitel
+        if key == "cv" and meta.get("cv_setup"):      # Messaufbau des Projekts: einmal, als erster Absatz des Kapitels
+            from elucida.tabs.cv import setup_text
+            intro = text_blocks(setup_text(meta["cv_setup"])) + intro
         body = []
         if key == "methods":
             body = intro or [("char", SI.chem_html(t)) for t in setup_texts if t] or [("char", METHODS_PLACEHOLDER)]
@@ -158,6 +161,10 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
             body = [("columns", 2)] + body if body else []
             figs = [b for _, parts in compounds for b in parts.get("dft_figs") or []] + cmp_blocks("dft_figs")
             body = SI.two_per_page(figs) + body if figs else body
+            tabs_ = [b for _, parts in compounds for b in parts.get("calc_tables") or []]   # IR/TD-DFT, einspaltig
+            if tabs_:
+                k_ = next((i for i, b in enumerate(body) if b[0] == "columns"), len(body))
+                body = body[:k_] + tabs_ + body[k_:]
             if reaction_paths and (meta.get("reaction_paths_si") or {}).get("include") is not False:
                 paths = [("columns", 1), ("heading", "Reaction pathways")] + list(reaction_paths)
                 body = body + paths if (meta.get("reaction_paths_si") or {}).get("position") == "after" else paths + body

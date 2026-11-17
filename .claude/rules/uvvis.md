@@ -38,3 +38,19 @@ paths:
   Spektren ohne Zeit nur in „Spektren über die Zeit“ (Hinweis in der anderen Ansicht). Gesättigte Spektren nicht
   automatisch erkennen. Durchgehende Kinetik des Cary-Kinetikprogramms (eine Wellenlänge gegen Zeit) wird nicht
   gelesen (kein Beispiel).
+- Fluoreszenz, zeitaufgelöst (`tabs/fluo_tau.py`, `core/lifetime.py`, Leser `formats/decay.py`; Auftrag 2026-11-13,
+  SI-Lückenanalyse Punkt 5): Abklingkurve/IRF nur als allgemeiner Text (Spalte 1 Zeit, 2 Intensität; mehr Spalten mit
+  Hinweis), kein Herstellerformat ohne echte Beispieldatei. Modell Σ A_i·exp(−t/τ_i) + B (1 oder 2 Exponentiale); mit
+  IRF Faltung (Fläche 1, Verschiebung gefittet) über die ganze Kurve, sonst Schwanzfit ab Start nach dem Maximum
+  (Methodentext sagt „ohne Entfaltung“). Poisson-Gewichte und χ²_red nur bei ganzzahligen Werten, sonst ungewichtet und
+  kein χ². 95-%-Intervall nur für τ_i (s²(JᵀWJ)⁻¹, t(0,975; n − p)); mittlere Lebensdauern (amplituden- und
+  intensitätsgewichtet getrennt) ohne Intervall und nur bei positiven Amplituden. Φ ist eine Angabe des Nutzers (0 < Φ ≤ 1),
+  k_r/k_nr nur mit Φ und τ, bei zwei Exponentialen mit Hinweis auf die gewählte mittlere Lebensdauer (Standard
+  amplitudengewichtet). Fehlende Kennwerte bleiben leer, nie geschätzt.
+- UV-Vis-Titration im Kinetik-Tab (Auftrag 2026-11-13, SI-Lückenanalyse Punkt 8): Äquivalente je Zeile (`entries[i]["eq"]`,
+  Spalte „Äq.“), vorgeschlagen nur bei genau einem Treffer im Probennamen (bei einer Probe je Datei auch im Dateinamen),
+  `eq_from_name`; solche Zeilen brauchen keine Reihe. Ansichten `titr` (Schar, Farbverlauf nach Äquivalenten) und
+  `titr_trace` (A bei λ gegen Äq.). Isosbestische Punkte (`isosbestic`): ab drei Spektren, nur wo alle Spektren innerhalb
+  der Toleranz (Spannweite) liegen und Δ(letztes − erstes) beiderseits deutlich (> 3·Toleranz) mit Vorzeichenwechsel ist;
+  sonst keiner, nie interpoliert oder geschätzt. Markiert als Kreis ohne Text (λ in Unterschrift, Tabelle, Kachel).
+  Keine Verdünnungskorrektur, keine Bindungskonstanten. SI: beide Titrationsbilder, wenn eine Titrationsansicht gewählt ist.

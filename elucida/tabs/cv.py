@@ -27,7 +27,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
+                               QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
@@ -282,8 +282,82 @@ def axis_ref(text):
     return re.sub("[₀-₉]+", lambda m: "$_{" + m.group().translate(_SUB) + "}$", str(text))
 
 
+E_DEC = 2      # E½, Epa, Epc: Stellen wie Bild, Methodentext und Word (seit jeher); Tabelle, Kachel, Vergleich folgen
+
+
 def _fmt_e(v, nd=3):
-    return f"{v:+.{nd}f}".replace("-", "−")
+    """Potential mit Vorzeichen und echtem Minus, nie „−0.000“."""
+    return core.fmt_num(v, nd, sign=True)
+
+
+ACS_FIELDS = ("acs_we", "acs_ce", "acs_ref", "acs_gas", "acs_device", "acs_polish")   # Karte „Messbedingungen“
+# Messaufbau einmal je Projekt (publication.elucida: cv_setup), Nutzerentscheidung 2026-11-13: „CV-Messbedingungen
+# gehören gesammelt in den Anfangstext“ – erster Absatz des Kapitels „Cyclic Voltammetry“ der Gesamt-SI
+SETUP_KEYS = ("device", "we", "area", "polish", "ce", "ref", "gas", "ir", "conv", "more")
+CONVENTIONS = {"iupac": "IUPAC convention (anodic currents positive)",
+               "polar": "polarographic convention (cathodic currents positive)"}
+
+
+def setup_text(v, what="Cyclic voltammograms"):
+    """Messaufbau als Fließtext (englisch) wie der Kapitelanfang in der SI des Nutzers: Gerät und iR-Kompensation,
+    Atmosphäre, Dreielektrodenanordnung, Konvention, freie weitere Angaben. Nur aus eingetragenen Feldern; ein leeres
+    Feld lässt seinen Satzteil weg (keine hängenden Kommas), ohne Angaben leer."""
+    def area_txt(a):
+        a = str(a).strip()
+        if not re.search(r"[A-Za-zµ²]", a):                  # nur eine Zahl: cm² wie im Feld der Fläche
+            a += " cm2"
+        return re.sub(r"\b(cm|mm)2\b", r"\1²", a)
+    out = []
+    dev, ir = v.get("device"), v.get("ir")
+    if dev:
+        out.append(f"{what} were recorded on {dev}" + (f" with iR compensation ({ir})" if ir else "") + ".")
+    elif ir:
+        out.append(f"The voltammograms were recorded with iR compensation ({ir}).")
+    if v.get("gas"):
+        out.append(f"The samples were measured under {v['gas']}.")
+    items = []
+    extra = [x for x in (f"A = {area_txt(v['area'])}" if v.get("area") else "",
+                         f"polished with {v['polish']}" if v.get("polish") else "") if x]
+    if v.get("we") or extra:
+        items.append((f"{v['we']} as working electrode" if v.get("we") else "a working electrode")
+                     + (f" ({', '.join(extra)})" if extra else ""))
+    if v.get("ce"):
+        items.append(f"{v['ce']} as counter electrode")
+    if v.get("ref"):
+        items.append(f"{v['ref']} as reference electrode")
+    if items:
+        lst = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+        out.append(("A three-electrode setup was used, consisting of " if len(items) == 3 else "The setup contained ")
+                   + lst + ".")
+    if v.get("conv") in CONVENTIONS:
+        out.append(f"Voltammograms are plotted in the {CONVENTIONS[v['conv']]}.")
+    more = str(v.get("more") or "").strip()
+    if more:                                              # was sich nicht aus Feldern bilden lässt (Präparation …)
+        out.append(more if more.endswith((".", "!", "?")) else more + ".")
+    return " ".join(out)
+
+
+def pulse_params(metas):
+    """Pulsparameter aus den Dateien als Text („step 5 mV, pulse amplitude 25 mV …“), nur wenn für alle Pulsmessungen
+    gleich; sonst ''."""
+    pp = {tuple(sorted((m.get("pulse_par") or {}).items())) for m in metas if m.get("pulse")}
+    if len(pp) != 1 or pp == {()}:
+        return ""
+    par = dict(next(iter(pp)))
+    bits = [f"step {par['step_mV']:g} mV" if "step_mV" in par else "",
+            f"pulse amplitude {par['pulse_mV']:g} mV" if "pulse_mV" in par else "",
+            f"pulse time {par['pulse_s'] * 1000:g} ms" if "pulse_s" in par else "",
+            f"frequency {par['freq_Hz']:g} Hz" if "freq_Hz" in par else ""]
+    return ", ".join(b for b in bits if b)
+
+
+def scan_start(E, n=6):
+    """Erster Messpunkt und Richtung des Scans (+1 positiv, −1 negativ) aus den aufgezeichneten Potentialen;
+    None bei weniger als zwei Punkten."""
+    if len(E) < 2:
+        return None
+    d = np.diff(np.asarray(E[:n], float))
+    return float(E[0]), (1 if d.mean() >= 0 else -1)
 
 
 class CVTab(TABS.FigureTab):
@@ -297,7 +371,10 @@ class CVTab(TABS.FigureTab):
     XRANGE_TEXT = "cv_xrange"
     RESET_KEEP = ("files", "couples", "ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value",
                   "ref_offset", "ref_electrode", "cycle",  # Messungen, Zyklus, Redoxpaare und Referenzierung bleiben
-                  "rs_n", "rs_area", "rs_conc", "rs_temp")   # Angaben zur Messung für den Diffusionskoeffizienten
+                  "rs_n", "rs_area", "rs_conc", "rs_temp",   # Angaben zur Messung für den Diffusionskoeffizienten
+                  "acs_we", "acs_ce", "acs_ref", "acs_gas", "acs_device", "acs_polish",   # Messaufbau (ACS-Angaben)
+                  "baseline", "bl_gap", "density",            # Peakströme und Stromdichte: Auswertung
+                  "plot", "peak_labels")                     # andere SI-Abbildung, andere Größe im Bild
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
@@ -305,7 +382,8 @@ class CVTab(TABS.FigureTab):
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
                          struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False,
                          rs_n=1, rs_area=0.0, rs_conc=0.0, rs_temp=25.0,
-                         cap_conc="", cap_solvent="", cap_el="", cap_temp="rt")
+                         acs_we="", acs_ce="", acs_ref="", acs_gas="", acs_device="", acs_polish="",
+                         cap_conc="", cap_solvent="", cap_el="", cap_temp="rt", cap_start=False)
 
     # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
     PLOTS = ("cv", "dep", "rs", "rs_v", "loglog", "ratio", "trumpet")
@@ -406,6 +484,46 @@ class CVTab(TABS.FigureTab):
         for w_ in (self.cmb_fref, self.cmb_fref_file):
             w_.currentIndexChanged.connect(self.file_ref_changed)
         self.cmb_fcompound.currentIndexChanged.connect(self.fcompound_changed)
+
+        # Angaben zur Messung, die ACS/Angew. zum Voltammogramm verlangen und die nicht in der Gamry-Datei stehen
+        # (Start, Richtung, Vorschub und iR-Kompensation liest der Tab aus der Datei); einmal eingegeben, gemerkt für neue
+        # Verbindungen (nur solange der Tab noch keine Messung hat: alte Projekte bekommen nie still fremde Angaben)
+        g = QGroupBox(T("cv_acs_group"))
+        f = make_form(g)
+        self.ed_acs = {}
+        for key in ACS_FIELDS:
+            if not st.get(key) and not st["files"]:
+                st[key] = str(self.main.settings.value(f"cv_acs/{key}", "") or "")
+            ed = STYLE.ChemEdit(st.get(key, ""))
+            lk = ("fixt_cv_" if key == "acs_ref" else "cv_") + key          # Referenzelektrode im Aufbau (1.2.0)
+            ed.setPlaceholderText(T(lk + "_ph"))
+            ed.editingFinished.connect(self.acs_edited)
+            f.addRow(T(lk), ed)
+            self.ed_acs[key] = ed
+        # In einem Projekt steht der Messaufbau einmal in den Projektangaben (Anfangstext des Kapitels der Gesamt-SI):
+        # hier nur der Verweis und der Text, wie er dort gebildet wird; die Felder gelten nur ohne Projekt
+        self.lbl_acs_pub = STYLE.HintLabel("")
+        self.lbl_acs_pub.setStyleSheet(HINT_CSS)
+        self.lbl_acs_pub.setWordWrap(True)
+        f.addRow(self.lbl_acs_pub)
+        self.lbl_acs_text = STYLE.SiText("")              # der Text selbst: linksbündig, normale Farbe, Formeln gesetzt
+        holder = QWidget()                                 # eigener Rahmen: tidy setzt Hinweise sonst mittig unter die
+        hl = QVBoxLayout(holder)                           # Wertespalte (wie die Bildunterschrift im Reiter SI-Text)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.addWidget(self.lbl_acs_text)
+        f.addRow(holder)
+        if self.project_setup() is not None:
+            for ed in self.ed_acs.values():
+                f.setRowVisible(ed, False)
+        self.lbl_acs_file = STYLE.HintLabel("")
+        self.lbl_acs_file.setStyleSheet(HINT_CSS)
+        self.lbl_acs_file.setWordWrap(True)
+        f.addRow(self.lbl_acs_file)
+        self.lbl_acs_missing = STYLE.HintLabel("")
+        self.lbl_acs_missing.setStyleSheet(STYLE.WARN_CSS)
+        self.lbl_acs_missing.setWordWrap(True)
+        f.addRow(self.lbl_acs_missing)
+        self.lv.addWidget(g)
 
         g = QGroupBox(T("cv_analysis"))
         f = make_form(g)
@@ -607,6 +725,33 @@ class CVTab(TABS.FigureTab):
                   "ratio": "Peak current ratio vs. scan rate", "trumpet": "Trumpet plot"}
     CAP_REFS = {"ac2fc": "diacetylferrocene", "fc": "ferrocene"}
 
+    def pulse_kinds(self, entries):
+        """Verfahren der Messungen: {None} = nur CV, sonst „DPV“/„SWV“/„pulse“ (auch gemischt)."""
+        out = set()
+        for e in entries:
+            try:
+                out.add(self.data(e["file"])["meta"].get("pulse"))
+            except Exception:
+                pass
+        return out
+
+    def caption_box(self):
+        """Bildunterschrift: zusätzlich der Schalter „Start und Richtung“ (Vorgabe aus: der Pfeil im Bild zeigt sie)."""
+        g = super().caption_box()
+        f = g.layout()
+        r, _ = f.getWidgetPosition(self.lbl_cap)
+        self.cb_cap_start = QCheckBox(T("cv_cap_start"))
+        self.cb_cap_start.setToolTip(T("cv_cap_start_long"))
+        self.cb_cap_start.setChecked(bool(self.st.get("cap_start")))
+        f.insertRow(r, self.cb_cap_start)
+
+        def set_(*_):
+            self.st["cap_start"] = self.cb_cap_start.isChecked()
+            self.show_caption()
+            self.timer.start()
+        self.cb_cap_start.toggled.connect(set_)
+        return g
+
     def si_caption(self, name):
         """Wie in der SI: „Cyclic voltammograms of <b>6b</b> (1.7±0.1 mg mL-1) in THF (0.1 M n-Bu4NPF6) at rt;
         scan rate 200 mV s-1 (iR compensation = 2200 Ohm); potentials referenced against Fc0/+ using ferrocene as
@@ -618,7 +763,12 @@ class CVTab(TABS.FigureTab):
         st = self.st
         vis = [e for e in st["files"] if e["visible"]]
         plot = st.get("plot", "cv")
-        h = f"{self.CAP_TITLES.get(plot, 'Cyclic voltammograms')} of <b>{html.escape(name)}</b>"
+        title = self.CAP_TITLES.get(plot, "Cyclic voltammograms")
+        kinds = self.pulse_kinds(vis)                    # Pulsverfahren (DPV, Square-Wave): eigener Titel
+        if plot == "cv" and kinds - {None}:
+            from elucida.formats.gamry import PULSE_NAMES
+            title = PULSE_NAMES[next(iter(kinds))] if len(kinds) == 1 else "Voltammograms"
+        h = f"{title} of <b>{html.escape(name)}</b>"
         if st.get("cap_conc"):
             h += f" ({chem_html(st['cap_conc'])})"
         groups = sorted({e.get("group", "").strip() for e in vis} - {""})
@@ -628,6 +778,8 @@ class CVTab(TABS.FigureTab):
         if st.get("cap_el"):
             h += f" ({chem_html(st['cap_el'])})"
         h += " at " + chem_html(st.get("cap_temp") or "rt")
+        # Elektroden, Gerät, Atmosphäre und Politur stehen nicht in jeder Unterschrift (Nutzerentscheidung 2026-11-13):
+        # sie gehören gesammelt in den Anfangstext (Projekt: Kapiteltext der Gesamt-SI, sonst Methodentext)
         if plot == "cv" and vis:
             metas = []
             for e in vis:
@@ -640,9 +792,33 @@ class CVTab(TABS.FigureTab):
                 h += "; scan rate " + chem_html(f"{rates[0]:g} mV s-1")
             elif rates:
                 h += "; different scan rates"
+            pp = pulse_params(metas)
+            if pp:
+                h += "; " + pp
             ir = {m.get("pfcor") if m.get("ircomp_on") and m.get("posfeed") else None for m in metas}
-            if len(ir) == 1 and None not in ir:
+            states = {m.get("ircomp_on") for m in metas}
+            # Steht etwas schon im Kapitelabsatz des Projekts (iR-Kompensation, Konvention), nennt die Unterschrift es
+            # nur, wenn diese Messung davon abweicht (Nutzerentscheidung 2026-11-13: kurze Unterschriften)
+            pub = self.project_setup() or {}
+            if pub.get("ir"):
+                if False in states:
+                    h += " (without iR compensation)"
+            elif len(ir) == 1 and None not in ir:
                 h += f" (iR compensation = {next(iter(ir)):g} Ohm)"
+            elif states == {True}:
+                h += " (with iR compensation)"
+            elif states == {False}:
+                h += " (without iR compensation)"
+            sf = self.scan_facts()
+            if st.get("cap_start") and sf["start"] and sf["direction"]:   # die Abbildung zeigt die Richtung als Pfeil
+                lab = str(sf["start"][1]).replace("Fc$^{0/+}$", "Fc<sup>0/+</sup>")
+                h += (f"; scans started at {_fmt_e(sf['start'][0], 2)} V vs. {chem_html(lab) if '<' not in lab else lab}"
+                      f" in the {'positive' if sf['direction'] > 0 else 'negative'} direction")
+            # Konvention nur, wenn das Projekt eine nennt und die Darstellung abweicht, oder die Darstellung von der
+            # Aufnahme abweicht (umgekehrt); alte Verbindungen ohne Angabe bleiben wie in 1.1.0
+            conv = self.shown_convention(metas)
+            if conv and ((pub.get("conv") and pub["conv"] != conv) or (not pub.get("conv") and st.get("invert"))):
+                h += "; " + CONVENTIONS[conv]
             refs = {}                                  # interner Standard -> E½ vs. Fc0/+ (Vorgabe)
             for e in vis:
                 ref = e.get("ref") or {}
@@ -662,12 +838,19 @@ class CVTab(TABS.FigureTab):
                     if k == "fc":
                         parts.append("ferrocene")
                     else:
-                        e12 = (f" (E<sub>1/2</sub> = {vals[0]:+.2f}".replace("-", "\u2212") + f" V vs. {fc})" if len(vals) == 1 else "")
+                        e12 = (f" (E<sub>1/2</sub> = {_fmt_e(vals[0], 2)}" + f" V vs. {fc})" if len(vals) == 1 else "")
                         parts.append(self.CAP_REFS[k] + e12)
                 h += f"; potentials referenced against {fc} using " + " or ".join(parts) + " as internal standard"
             if st.get("arrow"):
                 h += " (arrows indicate scanning direction)"
         return h + "."
+
+    def shown_convention(self, metas):
+        """Konvention der Darstellung: Gamry zeichnet anodisch positiv auf (CONVENTION 1 in allen geprüften Dateien,
+        ohne Angabe ebenso angenommen), `invert` kehrt um. Anderer Wert in einer Datei -> None (nicht belegt)."""
+        if {m.get("convention") for m in metas} - {None, 1}:
+            return None
+        return "polar" if self.st.get("invert") else "iupac"
 
     def _sync_ref_widgets(self):
         mode = self.st["ref_mode"]
@@ -685,8 +868,81 @@ class CVTab(TABS.FigureTab):
             self.sp_ref_value.blockSignals(False)
         self.changed()
 
+    def acs_edited(self):
+        for key, ed in self.ed_acs.items():
+            v = ed.text().strip()
+            if v:                                         # für neue Verbindungen merken
+                self.main.settings.setValue(f"cv_acs/{key}", v)
+        self.changed()
+
+    def scan_facts(self):
+        """Aus den sichtbaren Gamry-Dateien: Startpotential (Achsenskala, auf 0.01 V), Richtung, iR-Kompensation.
+        -> dict(start=(E, Referenz) oder None, direction=±1 oder None, ir=Menge der Zustände True/False/None)."""
+        starts, dirs, ir, conv = set(), set(), set(), set()
+        for e in [e for e in self.st["files"] if e["visible"]]:
+            try:
+                d = self.data(e["file"])
+            except Exception:
+                continue
+            conv.add(d["meta"].get("convention"))
+            ir.add(d["meta"].get("ircomp_on"))
+            ss = scan_start(d["cycles"][0]["E"]) if d["cycles"] else None
+            if ss is None:                                # leere Kurve: keine Angabe, Hinweise bleiben
+                continue
+            e0, s = ss
+            off, lab, _ = self.file_offset(e)
+            starts.add((round(e0 - off, 2) + 0.0, lab))
+            dirs.add(s)
+        return dict(start=next(iter(starts)) if len(starts) == 1 else None,
+                    direction=next(iter(dirs)) if len(dirs) == 1 else None, ir=ir, n=len(dirs), conv=conv)
+
+    def acs_missing(self):
+        """Angaben, die die Richtlinien (ACS, Angew.) zum Voltammogramm oder in der SI verlangen und die noch fehlen."""
+        st = self.st
+        groups = {e.get("group", "").strip() for e in st["files"] if e["visible"]} - {""}
+        v = self.setup_effective()
+        have = dict(solvent=st.get("cap_solvent") or len(groups) == 1, el=st.get("cap_el"), conc=st.get("cap_conc"),
+                    we=v.get("we"), ce=v.get("ce"), ref=v.get("ref"), gas=v.get("gas"), device=v.get("device"),
+                    area=v.get("area"), polish=v.get("polish"))
+        return [k for k, v in have.items() if not v]
+
+    def update_acs_hint(self):
+        f = self.scan_facts()
+        parts = []
+        if f["start"]:
+            parts.append(T("cv_acs_start", E=_fmt_e(f["start"][0], 2), ref=self.ref_text(f["start"][1])))
+        if f["direction"]:
+            parts.append(T("cv_acs_dir_pos" if f["direction"] > 0 else "cv_acs_dir_neg"))
+        if f["n"] and f["ir"] <= {True, False}:
+            parts.append(T("cv_acs_ir_on" if f["ir"] == {True} else "cv_acs_ir_off" if f["ir"] == {False}
+                           else "cv_acs_ir_mixed"))
+        self.lbl_acs_file.setText(T("cv_acs_from_file", items=", ".join(parts)) if parts else "")
+        miss = self.acs_missing() if self.st["files"] else []
+        lines = [T("cv_acs_missing", items=", ".join(T("cv_acs_n_" + k) for k in miss))] if miss else []
+        pub = self.project_setup()
+        if pub is not None:
+            from elucida.si.lines import chem_plain
+            txt = setup_text(self.setup_effective())
+            self.lbl_acs_pub.setText(T("cv_acs_in_project") if txt else T("cv_acs_in_project_none"))
+            self.lbl_acs_text.setText(chem_plain(txt) if txt else "")
+            self.lbl_acs_text.setVisible(bool(txt))
+            if pub.get("ir") and False in f["ir"]:        # Sammeltext nennt iR-Kompensation, diese Messung hat keine
+                lines.append(T("cv_acs_ir_differs"))
+        else:
+            self.lbl_acs_pub.setText("")
+            self.lbl_acs_text.setText("")
+            self.lbl_acs_text.setVisible(False)
+        if f["conv"] - {None, 1}:                         # Stromkonvention der Datei nicht anodisch positiv: prüfen
+            lines.append(T("fixt_cv_conv_file", v=", ".join(str(c) for c in sorted(f["conv"] - {None, 1}))))
+        self.lbl_acs_missing.setText("\n".join(lines))
+
+    @staticmethod
+    def ref_text(lab):
+        return str(lab).replace("Fc$^{0/+}$", "Fc⁰/⁺")
+
     def collect(self):
         st = self.st
+        st.update({k: ed.text().strip() for k, ed in self.ed_acs.items()})
         st.update(cycle=self.sp_cycle.value(), ref_mode=self.cmb_ref.currentData(),
                   ref_uid=self.cmb_ref_file.currentData(), ref_lo=self.sp_ref_lo.value(),
                   ref_hi=self.sp_ref_hi.value(), ref_compound=self.cmb_compound.currentData(),
@@ -786,7 +1042,7 @@ class CVTab(TABS.FigureTab):
             col = grad.get(e["uid"], e["color"])
             b.setEnabled(not grad)
             b.setToolTip(T("cv_color_gradient_tip") if grad else "")
-            b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {col}; border: 1px solid #777;")
+            b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {col}; border: 1px solid {STYLE.swatch_border()};")
 
     def _set_color(self, e, c):
         e["color"] = c
@@ -973,6 +1229,10 @@ class CVTab(TABS.FigureTab):
     def figure_spec(self):
         st = self.st
         vis = [e for e in st["files"] if e["visible"]]
+        try:
+            self.update_acs_hint()                       # Angaben aus der Datei und was für die Richtlinie fehlt
+        except Exception as ex:                          # Hinweis darf das Zeichnen nie stören
+            core.LOG(f"CV: {ex}")
         if not vis:
             self.results = []
             self.show_results()
@@ -1057,6 +1317,8 @@ class CVTab(TABS.FigureTab):
         cfg["ylim"] = [float(ally.min()) - 0.08 * span, st["ymax"] if st["ymax"] > 0 else float(ally.max()) + top * span]
         cfg["xlabel"] = f"E [V vs. {axis_ref(ref_label)}]"
         cfg["ylabel"] = "j [mA cm$^{-2}$]" if (st["density"] and unit == "mA") else "I [µA]"
+        if None not in self.pulse_kinds(vis) and vis:     # nur Pulsverfahren: aufgetragen ist der Differenzstrom
+            cfg["ylabel"] = "Δ" + cfg["ylabel"]
         if st["show_e12"]:
             multi = len(st["couples"]) > 1
             mode = st.get("peak_labels", "e12")
@@ -1072,7 +1334,7 @@ class CVTab(TABS.FigureTab):
                             if mode in (kind, "both"):
                                 labels.append({"key": f"label_{kind}_{c_['uid']}_{r['n']}", "lam": ex, "side": side,
                                                "y": None if dens else float(ip * 1e6 * sign) + c_.get("off", 0.0),
-                                               "text": f"{ex:.2f}".replace("-", "−")})
+                                               "text": core.fmt_num(ex, E_DEC)})
             elif st["e12_each"] or stacked:
                 # je Kurve und Redoxpaar, am anodischen Peak dieser Kurve (wie in Vergleichsabbildungen üblich)
                 for c_ in curves:
@@ -1084,7 +1346,7 @@ class CVTab(TABS.FigureTab):
                         labels.append({"key": f"label_e12_{c_['uid']}_{r['n']}", "lam": r["epa"], "side": side,
                                        "y": float(r["ipa_raw"] * 1e6 * sign) + c_.get("off", 0.0)
                                        if not (st["density"] and unit == "mA") else None,
-                                       "text": f"E{sup}$_{{1/2}}$ = " + _fmt_e(r["e12"], 2)})
+                                       "text": f"E{sup}$_{{1/2}}$ = " + _fmt_e(r["e12"], E_DEC)})
             else:
                 # Mittel je Gruppe: verschiedene Lösungsmittel nie zu einem E½ mitteln
                 groups = sorted({r.get("group", "") for r in self.results})
@@ -1097,7 +1359,7 @@ class CVTab(TABS.FigureTab):
                             tag = f" ({grp})" if len(groups) > 1 and grp else ""
                             key = f"label_e12_{n}" + (f"_{grp}" if len(groups) > 1 else "")
                             labels.append({"key": key, "lam": e12,
-                                           "text": "E$_{1/2}$" + tag + " =\n" + _fmt_e(e12, 2) + " V"})
+                                           "text": "E$_{1/2}$" + tag + " =\n" + _fmt_e(e12, E_DEC) + " V"})
         if st["arrow"]:
             c0 = curves[0]
             xr = cfg["xlim"][1] - cfg["xlim"][0]
@@ -1282,7 +1544,7 @@ class CVTab(TABS.FigureTab):
         self.tbl_res.setRowCount(len(res))
         for i, r in enumerate(res):
             name = f"{r['label']} ({r['group']})" if r.get("group") else r["label"]
-            vals = [name, str(r["n"]), _fmt_e(r["epa"]), _fmt_e(r["epc"]), _fmt_e(r["e12"]),
+            vals = [name, str(r["n"]), _fmt_e(r["epa"], E_DEC), _fmt_e(r["epc"], E_DEC), _fmt_e(r["e12"], E_DEC),
                     f"{r['dep'] * 1000:.0f}", f"{r['ipa'] * 1e6:.1f}", f"{r['ipc'] * 1e6:.1f}",
                     f"{r['ratio']:.2f}" if np.isfinite(r["ratio"]) else "–"]
             for j, v in enumerate(vals):
@@ -1362,7 +1624,43 @@ class CVTab(TABS.FigureTab):
         res = getattr(self, "results", None) or []
         if not res:
             return []
-        return [("E½", _fmt_e(res[0]["e12"]) + " V"), ("ΔEp", f"{res[0]['dep'] * 1000:.0f} mV")]
+        return [("E½", _fmt_e(res[0]["e12"], E_DEC) + " V"), ("ΔEp", f"{res[0]['dep'] * 1000:.0f} mV")]
+
+    def setup_values(self):
+        """Messaufbau aus den Feldern dieser Verbindung (Karte „Messbedingungen“, Fläche aus Randles-Ševčík); die
+        Referenzelektrode aus dem eigenen Feld des Aufbaus (`acs_ref`); die Referenz der Achse (`ref_electrode`) gilt nur,
+        wenn der Nutzer sie geändert hat (ihre Vorgabe ist keine Angabe über den Aufbau) und Elektroden eingetragen sind
+        (alte Verbindungen mit eigener Angabe behalten ihren Satz)."""
+        st = self.st
+        axis_ref = st.get("ref_electrode") or ""
+        old_ref = (axis_ref if axis_ref != self.DEFAULT_STATE["ref_electrode"] and (st.get("acs_we") or st.get("acs_ce"))
+                   else "")
+        v = dict(device=st.get("acs_device"), we=st.get("acs_we"),
+                 area=f"{st['rs_area']:g}" if st.get("rs_area", 0.0) > 0 else "", polish=st.get("acs_polish"),
+                 ce=st.get("acs_ce"), gas=st.get("acs_gas"), ref=st.get("acs_ref") or old_ref)
+        return {k: x for k, x in v.items() if x}
+
+    def project_setup(self):
+        """Messaufbau des Projekts (cv_setup) oder None, wenn die Verbindung zu keinem Projekt gehört."""
+        from elucida.app import publication as PUB
+        pdir = PUB.publication_of(self.main.project_dir)
+        if pdir is None:
+            return None
+        f = Path(pdir) / PUB.PUB_FILE
+        key = ("cvsetup", str(f), f.stat().st_mtime_ns if f.exists() else 0)
+        return self.cache(key, lambda: dict(PUB.load(pdir).get("cv_setup") or {}))
+
+    def setup_effective(self):
+        """Was gilt: Angaben des Projekts, wo sie fehlen die der Verbindung (alte Verbindungen werden nicht umgeräumt)."""
+        return dict(self.setup_values(), **{k: v for k, v in (self.project_setup() or {}).items() if v})
+
+    def setup_sentence(self):
+        """Messaufbau im Methodentext der Verbindung, nur ohne Projekt: im Projekt steht er einmal als Anfangstext des
+        Kapitels der Gesamt-SI (sonst stünde er dort je Verbindung noch einmal)."""
+        if self.project_setup() is not None:
+            return ""
+        kinds = self.pulse_kinds([e for e in self.st["files"] if e["visible"]])
+        return setup_text(self.setup_values(), "Cyclic voltammograms" if kinds <= {None} else "Voltammograms")
 
     def methods_text(self):
         """SI-Text zur Auswertung (englisch, Stil des Abschnitts „Cyclic Voltammetry“ der Gruppen-SI): Gerät,
@@ -1371,7 +1669,23 @@ class CVTab(TABS.FigureTab):
         st = self.st
         rates = sorted({round(r["rate"], 1) for r in self.results if r["rate"]})
         ref_txt, ref_lab = self._ref_sentence()
-        m = [ref_txt,                                  # nur die Mathematik, kein Programmname (Nutzerwunsch)
+        vis = [e for e in st["files"] if e["visible"]]
+        kinds = self.pulse_kinds(vis)
+        if kinds and None not in kinds:                # nur Pulsmessungen: keine CV-Sätze (E½, Nicholson, Zyklen)
+            from elucida.formats.gamry import PULSE_NAMES
+            title = PULSE_NAMES[next(iter(kinds))] if len(kinds) == 1 else "Pulse voltammograms"
+            metas = []
+            for e in vis:
+                try:
+                    metas.append(self.data(e["file"])["meta"])
+                except Exception:
+                    pass
+            pp = pulse_params(metas)
+            m = [self.setup_sentence(), ref_txt,
+                 f"{title} are shown as the difference current against the step potential"
+                 + (f" ({pp})" if pp else "") + "."]
+            return " ".join(x for x in m if x)
+        m = [self.setup_sentence(), ref_txt,           # nur die Mathematik, kein Programmname (Nutzerwunsch)
              "Peak potentials (Epa, Epc) were obtained by a parabolic fit to the current extremum (±3 data points) "
              f"of cycle {st['cycle']}; E1/2 = (Epa + Epc)/2 and ΔEp = Epa − Epc."]
         vis = [e for e in st["files"] if e["visible"]]
@@ -1423,7 +1737,7 @@ class CVTab(TABS.FigureTab):
             dep = [r["dep"] * 1000 for r in rr]
             rat = [r["ratio"] for r in rr if np.isfinite(r["ratio"]) and not r.get("bl_fail")]
             rng = lambda v, f: f"{min(v):{f}}" + (f"–{max(v):{f}}" if f"{min(v):{f}}" != f"{max(v):{f}}" else "")  # noqa: E731
-            e_txt = (f"E1/2 = {_fmt_e(e12, 2)} V vs. {lab}" if e12 is not None
+            e_txt = (f"E1/2 = {_fmt_e(e12, E_DEC)} V vs. {lab}" if e12 is not None
                      else "E1/2 not averaged (different reference scales)")
             txt = (f"Couple {n}" + (f" ({grp})" if grp else "") + f": {e_txt}"
                    + f" (ΔEp = {rng(dep, '.0f')} mV" + (f", ip,r/ip,f = {rng(rat, '.2f')}" if rat else "")
@@ -1468,7 +1782,7 @@ class CVTab(TABS.FigureTab):
                 w.writerow([r["label"], r.get("group", ""), r["n"], r["rate"], f"{r['epa']:.4f}", f"{r['epc']:.4f}",
                             f"{r['e12']:.4f}", f"{r['dep'] * 1000:.1f}", f"{r['ipa'] * 1e6:.3f}",
                             f"{r['ipc'] * 1e6:.3f}", f"{r['ratio']:.3f}", int(r["edge"]), f"{r.get('offset', 0):.4f}",
-                            r.get("ircomp", ""), getattr(self, "note", "").replace("\n", " | "),
+                            r.get("ircomp", ""), str(r["ref"]).replace("Fc$^{0/+}$", "Fc0/+"),   # Skala, nie Hinweistext (sprachfrei)
                             "failed" if r.get("bl_fail") else ("linear" if r.get("bl") else "none"),
                             f"{r['ipa_raw'] * 1e6:.3f}", f"{r['ipc_raw'] * 1e6:.3f}",
                             f"{r['bl']['step'] * 1e6:.3f}" if r.get("bl") else ""])

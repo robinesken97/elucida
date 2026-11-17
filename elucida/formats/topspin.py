@@ -100,10 +100,23 @@ def experiment_name(d):
 
 def find_experiments(root, depth=3):
     """Alle Bruker-Experimentordner (mit acqus) unter einer Auswahl: ein Experiment, ein Datensatz (10, 11, …) oder
-    ein Ordner mit mehreren Datensätzen. pdata wird nicht durchsucht. Sortiert nach Datensatz und Nummer."""
+    ein Ordner mit mehreren Datensätzen. pdata wird nicht durchsucht. Sortiert nach Datensatz und Nummer.
+    Wie MNova auch eine Datei des Experiments (fid, ser, acqus, 1r … – Bruker-Dateien haben keine Endung) oder ein
+    pdata-Ordner: dann das Experiment darüber."""
     root = Path(root)
+    one = root.is_file()
+    if one:
+        if root.suffix:                                   # z. B. SVG/PDF neben fid: nie als Experiment nehmen
+            return []
+        root = root.parent
+    if "pdata" in root.parts:                             # nur wenn darüber wirklich ein Experiment liegt
+        up = Path(*root.parts[:len(root.parts) - 1 - root.parts[::-1].index("pdata")])
+        if (up / "acqus").is_file():
+            return [up]
     if (root / "acqus").is_file():
         return [root]
+    if one or not root.is_dir():
+        return []
     out = []
 
     def walk(d, k):

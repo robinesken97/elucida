@@ -5,6 +5,7 @@ import html
 import io
 import json
 from pathlib import Path
+import re
 import shutil
 import uuid
 import xml.etree.ElementTree as ET
@@ -14,6 +15,7 @@ from shiboken6 import isValid
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QDialog, QSizePolicy, QMenu, QLineEdit, QLabel, QComboBox, QStackedWidget, QDialogButtonBox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+import numpy as np
 from PIL import Image
 
 from elucida.app import project as PRJ, style as STYLE
@@ -32,7 +34,8 @@ def profile_stamp(host, mode):
     else:
         curves, notes = pg.irc_data()
         data = [dict(uid=c['uid'], label=c['label'], s=c['s'].tolist(), E=c['E'].tolist(),
-                     ts=c['ts'], method=c['method'], cols={k: v.tolist() for k,v in c['cols'].items()}) for c in curves]
+                     ts=c['ts'], method=c['method'],                # cols aus parse_irc sind Listen (tolist() warf)
+                     cols={k: np.asarray(v, float).tolist() for k, v in c['cols'].items()}) for c in curves]
         caption = pg.irc_caption('')
     if not data:
         raise ValueError(T('dft_prof_empty'))
@@ -104,7 +107,7 @@ def orbital_asset(host, view):
             dict(kind='orbital', orbital=deepcopy(view)))
 
 
-def composition_metadata(host):
+def composition_metadata(host, check_stamps=True):
     path = host.tab.pages.prof.get('composition')
     if not path: return None
     p = Path(path)
@@ -118,7 +121,7 @@ def composition_metadata(host):
         record = host.tab.pages.prof.get('composition_assets', {}).get(ref['key'])
         if not record or record.get('kind') != ref['kind']:
             raise ValueError(T('rp_composition_missing_source'))
-        if record['kind'] == 'profile' and record['stamp'] != profile_stamp(host, record['mode']):
+        if check_stamps and record['kind'] == 'profile' and record['stamp'] != profile_stamp(host, record['mode']):
             raise ValueError(T('rp_composition_stale'))
     return p, meta
 
@@ -130,6 +133,15 @@ def composition_blocks(host):
     p, meta = info
     # A deliberately cleared canvas must not resurrect the old automatic plot.
     if not any(el.tag in ('n', 't', 'arrow', 'graphic', 'embeddedobject') for el in ET.parse(p).iter()): return []
+    caption = composition_caption(host, meta)
+    figure = word_image(p.with_suffix('.svg'), PRJ.work_dir(host.project_dir, 'composition'), 'SI_composition')
+    # Keep vector Word graphics and portable editable drawings side by side.
+    cdx = p.with_suffix('.cdx')
+    return [(*figure, str(cdx) if cdx.exists() else None), ('figcap', caption)]
+
+
+def composition_caption(host, meta):
+    """SI-Unterschrift der Komposition (HTML): eigene oder die der eingefügten Profile; dieselbe für SI und „Kopieren“."""
     captions = []
     for ref in meta.get('assets', []):
         rec = host.tab.pages.prof['composition_assets'][ref['key']]
@@ -140,10 +152,7 @@ def composition_blocks(host):
            and host.tab.pages.prof['composition_assets'][r['key']].get('mode') == 'levels' for r in meta.get('assets', [])):
         from elucida.tabs.diagram_layout import SCHEMATIC_NOTE
         caption += ' ' + SCHEMATIC_NOTE
-    figure = word_image(p.with_suffix('.svg'), PRJ.work_dir(host.project_dir, 'composition'), 'SI_composition')
-    # Keep vector Word graphics and portable editable drawings side by side.
-    cdx = p.with_suffix('.cdx')
-    return [(*figure, str(cdx) if cdx.exists() else None), ('figcap', caption)]
+    return caption
 
 
 class CompositionDrawingEditor(DrawingEditor):
@@ -164,19 +173,20 @@ class CompositionEditor(QWidget):
         self.tool_row = QWidget()
         row = QHBoxLayout(self.tool_row); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(4)
         self.actions = []
-        insert = QPushButton(T('rp_insert'), objectName='ghost')
+        insert = QPushButton(T('rp_insert'), objectName='barBtn')     # Leistenknöpfe BAR_H wie „Daten“ (ui.md)
         menu = QMenu(insert)
         menu.addAction(T('rp_insert_diagram'), self.insert_profile)
-        menu.addAction(T('rp_insert_orbital'), self.add_orbital)
+        self.act_orbital = menu.addAction(T('rp_insert_orbital'), self.add_orbital)
+        menu.aboutToShow.connect(self.label_insert)          # P2-B7: der Menüpunkt nennt die gewählte 3D-Quelle
         insert.setMenu(menu); row.addWidget(insert); self.actions.append(insert)
         for key, fn, tip in [('rp_update_diagrams', self.update_profiles, None),
-                             ('rp_edit_figure', self.edit_selected, 'rp_edit_selected')]:
-            button = QPushButton(T(key), objectName='ghost')
+                             ('rp_edit_figure', self.edit_selected, 'rp_edit_selected_target')]:   # V9: Ziel nennen
+            button = QPushButton(T(key), objectName='barBtn')
             if tip: button.setToolTip(T(tip))
             button.clicked.connect(fn); row.addWidget(button); self.actions.append(button)
         # 3D-Quelle als Menü statt Feld fester Breite (Entwurf): die Auswahl gilt für „3D-/Orbitalansicht einfügen“
         self.sources = QComboBox(self); self.sources.hide()
-        source = QPushButton(T('rp_view_source'), objectName='ghost'); source.setMenu(QMenu(source))
+        source = QPushButton(T('rp_view_source'), objectName='barBtn'); source.setMenu(QMenu(source))
         source.menu().aboutToShow.connect(self.fill_sources); row.addWidget(source)
         insert.setToolTip(T('rp_composition_hint'))
         self.editor = CompositionDrawingEditor(self, scheme_actions=False)
@@ -191,7 +201,7 @@ class CompositionEditor(QWidget):
         self.frame = menu_.addAction(T('rp_show_diagram_frame')); self.frame.setCheckable(True)
         menu_.removeAction(self.frame); menu_.insertAction(first, self.frame)
         menu_.insertSeparator(first)
-        more_ = QPushButton('⋯', objectName='ghost'); more_.setMenu(menu_); row.addWidget(more_)
+        more_ = QPushButton('⋯', objectName='barBtn'); more_.setMenu(menu_); row.addWidget(more_)
         self.editor.asset_edit_requested.connect(self.edit_asset)
         # Meldungen als Einblendung (rules/ui.md), keine ständige Zeile unter dem Canvas
         self.editor.status.hide(); self.editor.status.changed.connect(self.notify)
@@ -199,15 +209,22 @@ class CompositionEditor(QWidget):
         card = QFrame(objectName='card')
         cv = QVBoxLayout(card); cv.setContentsMargins(*[STYLE.FORM_GAP] * 4); cv.addWidget(self.views)
         v.addWidget(card, 1)
-        # SI-Unterschrift: Zeile an den Kanten der Karte, Beschriftung und Feld wie in den Formularen
-        row = QHBoxLayout(); row.setSpacing(STYLE.FORM_GAP); v.addLayout(row)
+        # SI-Unterschrift: Zeile an den Kanten der Karte, Beschriftung (LABEL_W) und Feld wie in den Formularen, daneben
+        # „Kopieren“ der fertigen Unterschrift (eigene oder die der eingefügten Profile)
+        cap_row = QWidget()
+        row = QHBoxLayout(cap_row); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(STYLE.FORM_GAP); v.addWidget(cap_row)
         label = QLabel(T('rp_composition_caption')); label.setProperty('formlabel', True); row.addWidget(label)
+        label.setFixedWidth(STYLE.LABEL_W)
+        # QLineEdit, nicht ChemEdit: die SI schreibt diesen Text unverändert (html.escape), H₂O im Feld wäre H2O in Word
         self.caption = QLineEdit(host.tab.pages.prof.get('composition_caption', ''))
         self.caption.setPlaceholderText(T('rp_caption_auto'))
-        # so hoch wie die Felder der Spalten; über die Zeile, weil das Stylesheet die Mindesthöhe des Felds selbst setzt
-        row.addStrut(STYLE.CONTROL_H); self.caption.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.caption.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.caption.editingFinished.connect(self.save_caption); row.addWidget(self.caption, 1)
         label.setBuddy(self.caption)
+        self.btn_copy = STYLE.copy_button(T('p13p_copy_caption_tip'))
+        self.btn_copy.clicked.connect(self.copy_caption)
+        row.addWidget(self.btn_copy)
+        STYLE.field_heights(cap_row)                        # Feld und Knopf CONTROL_H, auch nach dem Umhängen (fieldh)
         path = host.tab.pages.prof.get('composition')
         self._auto_pending = False
         if not path:
@@ -247,6 +264,11 @@ class CompositionEditor(QWidget):
         if text and text not in (self.editor.saved_message, T('draw_unsaved'), T('draw_saving')):
             self.host.owner.statusBar().showMessage(text, 8000)
 
+    def label_insert(self):
+        self.refresh_sources()
+        src = self.sources.currentText()
+        self.act_orbital.setText(T('rp_insert_orbital_src', src=src) if src else T('rp_insert_orbital'))
+
     def fill_sources(self):
         self.refresh_sources()
         menu = self.sender(); menu.clear()
@@ -257,8 +279,22 @@ class CompositionEditor(QWidget):
             menu.addAction(T('rp_load_view_source')).setEnabled(False)
 
     def save_caption(self):
+        if not self.caption.isModified(): return            # nur nach einer Eingabe speichern
         self.host.tab.pages.prof['composition_caption'] = self.caption.text()
+        self.caption.setModified(False)
         self.host.save()
+
+    def copy_caption(self):
+        from PySide6.QtWidgets import QApplication
+        self.save_caption()
+        try:                                                # eigene Unterschrift hängt nicht vom Stand der Profile ab
+            own = self.host.tab.pages.prof.get('composition_caption', '').strip()
+            info = composition_metadata(self.host, check_stamps=not own)
+            text = html.unescape(re.sub(r"<[^>]+>", "", composition_caption(self.host, info[1]))) if info else ""
+        except Exception as ex:
+            return self.host.error(str(ex))
+        if text: QApplication.clipboard().setText(text)
+        self.host.owner.statusBar().showMessage(T("si_caption_copied") if text else T("si_caption_none"), 6000)
 
     def put(self, payload, record, target=None):
         self._auto_pending = False                          # der Nutzer hat selbst etwas eingesetzt
@@ -322,6 +358,13 @@ class CompositionEditor(QWidget):
         dialog.setParent(self.views); dialog.setWindowFlags(Qt.Widget)
         self.view_editor, self.view_target = dialog, target
         dialog.buttons.button(QDialogButtonBox.Ok).setText(T('rp_apply_view'))
+        ok_ = dialog.buttons.button(QDialogButtonBox.Ok)     # blau bleibt „Profil exportieren“ (ui.md); als Seite kein
+        ok_.setAutoDefault(False); ok_.setDefault(False)     # Standardknopf eines Dialogs (das Stylesheet färbt ihn sonst)
+        STYLE.set_accent(ok_, False)
+        dialog.buttons.button(QDialogButtonBox.Cancel).setText(T('cancel'))
+        # QDialogButtonBox macht beim Anzeigen den ersten Annehmen-Knopf zum Standardknopf (im Dialog blau), außer es gibt
+        # schon einen: ein verborgener Standardknopf statt eines Python-Event-Filters (Windows-CI, CLAUDE.md)
+        dummy_ = QPushButton(dialog); dummy_.setAutoDefault(False); dummy_.setDefault(True); dummy_.hide()
         dialog.finished.connect(self.finish_view)
         self.views.addWidget(dialog); self.views.setCurrentWidget(dialog)
         for button in self.actions: button.setEnabled(False)
@@ -363,6 +406,7 @@ class CompositionEditor(QWidget):
         „Profile aktualisieren“ (früher eigener Layout-Editor mit Übernehmen/Abbrechen)."""
         if self.view_editor: return
         self.workspace.tabs.setCurrentWidget(self.workspace.calc_page)
+        self.host.owner.statusBar().showMessage(T('rp_edit_in_calc'), 8000)   # V9: der Wechsel nennt sein Ziel
 
     def save(self):
         if not self.finish_view(QDialog.Accepted): return False
@@ -373,16 +417,24 @@ class CompositionEditor(QWidget):
         if not self.save(): return []
         info = composition_metadata(self.host)
         if not info: raise ValueError(T('dft_prof_empty'))
-        import pymupdf
+        from elucida.core.images import open_mupdf
         p, _ = info
         from elucida.core.uvvis import safe_name
         base = self.host.project_dir / PRJ.FIGURES / safe_name(self.host.item['name'])
         base.parent.mkdir(parents=True, exist_ok=True)
+        # Formate wie in den Tabs aus „Größe und Formate“ des Pfads (fmt, Vorgabe alle drei = die bisherigen Dateien);
+        # CDXML/CDX immer: die bearbeitbare Quelle der Komposition
+        fmt = self.host.tab.st.get('fmt') or {}
+        fmts = [e for e in ('pdf', 'svg', 'png') if fmt.get(e)] or ['pdf']
         files = []
         for ext in ('.svg', '.cdxml', '.cdx'):
-            target = base.with_suffix(ext); shutil.copy2(p.with_suffix(ext), target); files.append(target)
-        with pymupdf.open(str(p.with_suffix('.svg'))) as drawing:
-            drawing[0].get_pixmap(dpi=300, alpha=False).save(str(base.with_suffix('.png')))
-            base.with_suffix('.pdf').write_bytes(drawing.convert_to_pdf())
-        files += [base.with_suffix('.png'), base.with_suffix('.pdf')]
+            if ext == '.svg' and 'svg' not in fmts: continue
+            target = PRJ.with_ext(base, ext); shutil.copy2(p.with_suffix(ext), target); files.append(target)
+        with open_mupdf(p.with_suffix('.svg')) as drawing:
+            if 'png' in fmts:
+                drawing[0].get_pixmap(dpi=300, alpha=False).save(str(PRJ.with_ext(base, '.png')))
+                files.append(PRJ.with_ext(base, '.png'))
+            if 'pdf' in fmts:
+                PRJ.with_ext(base, '.pdf').write_bytes(drawing.convert_to_pdf())
+                files.append(PRJ.with_ext(base, '.pdf'))
         return files

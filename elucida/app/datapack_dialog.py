@@ -168,37 +168,79 @@ class DatapackDialog(QDialog):
         names, texts = self.replacements()
         root = DP.replace_codes(root, names)
         if path is None:
-            start = self.main.settings.value("datapack_dir", "") or str(Path(self.main.project_dir or ".").parent)
-            path, _ = QFileDialog.getSaveFileName(self, T("dp_title"), str(Path(start) / f"{root}.zip"), "Zip (*.zip)")
+            path = ask_path(self.main, root, self)
             if not path:
                 return None
-            self.main.settings.setValue("datapack_dir", str(Path(path).parent))
         self._save()
-        dlg = QProgressDialog(T("dp_writing"), T("cancel"), 0, 100, self)
-        dlg.setWindowModality(Qt.WindowModal)
-        dlg.setMinimumDuration(400)
-
-        def progress(i, n):
-            dlg.setMaximum(n)
-            dlg.setValue(i)
-            from PySide6.QtWidgets import QApplication
-            QApplication.processEvents()
-            return not dlg.wasCanceled()
-        try:
-            self.report = DP.write_zip(self.items, path, root, names, texts if self.cb_text.isChecked() else None,
-                                       progress)
-        except PermissionError:
-            self.main.error(T("report_locked", p=path))
+        self.report = write_pack(self.main, self.items, path, root, names, texts if self.cb_text.isChecked() else None,
+                                 self)
+        if self.report is None:
             return None
-        finally:
-            dlg.close()
-        if self.report.get("cancelled"):
-            return None
-        rep = self.report
-        self.main.log_signal.emit(T("dp_done", p=rep["path"], n=rep["files"], size=_mb(rep["bytes"]),
-                                    t=len(rep["text_replaced"])))
-        if rep["kept"]:
-            self.main.log_signal.emit(T("dp_kept", files="\n  ".join(rep["kept"][:30])))
         self.accept()
-        self.main.exported([Path(rep["path"]).parent])
-        return rep
+        self.main.exported([Path(self.report["path"]).parent])
+        return self.report
+
+
+def ask_path(main, root, parent=None):
+    """Zielname der Zip (Ordner wie zuletzt, QSettings `datapack_dir`) oder '' bei Abbruch."""
+    start = main.settings.value("datapack_dir", "") or str(Path(main.project_dir or ".").parent)
+    path, _ = QFileDialog.getSaveFileName(parent or main, T("dp_title"), str(Path(start) / f"{root}.zip"), "Zip (*.zip)")
+    if path:
+        main.settings.setValue("datapack_dir", str(Path(path).parent))
+    return path
+
+
+def write_pack(main, items, path, root, names, texts, parent=None):
+    """Zip schreiben mit Fortschritt und Abbruch; Protokoll wie bisher. -> Bericht oder None (gesperrt/abgebrochen)."""
+    dlg = QProgressDialog(T("dp_writing"), T("cancel"), 0, 100, parent or main)
+    dlg.setWindowModality(Qt.WindowModal)
+    dlg.setMinimumDuration(400)
+
+    def progress(i, n):
+        dlg.setMaximum(n)
+        dlg.setValue(i)
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        return not dlg.wasCanceled()
+    try:
+        rep = DP.write_zip(items, path, root, names, texts, progress)
+    except PermissionError:
+        main.error(T("report_locked", p=path))
+        return None
+    finally:
+        dlg.close()
+    if rep.get("cancelled"):
+        return None
+    main.log_signal.emit(T("dp_done", p=rep["path"], n=rep["files"], size=_mb(rep["bytes"]), t=len(rep["text_replaced"])))
+    if rep["kept"]:
+        main.log_signal.emit(T("dp_kept", files="\n  ".join(rep["kept"][:30])))
+    return rep
+
+
+def export_compound(main, path=None):
+    """Knopf „Datenpaket“ im Tab „Export“ (Entscheidung 68): ohne Dialog mit der gespeicherten Auswahl der Verbindung
+    und den Vorgaben des Dialogs (Kürzel -> Name, „Compound <Name>“ auch im Inhalt). -> Bericht oder None."""
+    gone = []
+    items = DP.collect(main.get_state(), main.project_dir, gone)
+    if gone:
+        main.error(T("dp_missing", n=len(gone), names=", ".join(gone[:8])))
+    saved = saved_selection(main.settings, main.project_dir)
+    for it in items:
+        if it.key in saved:
+            it.on = bool(saved[it.key])
+    on = [i for i in items if i.on]
+    if not on:
+        return main.notify(T("dp_nothing"))
+    name = main.export_name()
+    names = {c: name for c in DP.find_codes(items)}
+    texts = {c: f"Compound {name}" for c in names}
+    root = DP.replace_codes(name, names)
+    path = path or ask_path(main, root)
+    if not path:
+        return None
+    rep = write_pack(main, items, path, root, names, texts)
+    if rep is not None:
+        main.exported([Path(rep["path"]).parent], [rep["path"]],
+                      [T("dp_used", n=rep.get("files", len(on)), sel=len(on), total=len(items)), T("dp_used_text")],
+                      [(T("dp_change"), main.export_datapack_selection)])
+    return rep

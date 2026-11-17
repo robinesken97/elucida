@@ -3,37 +3,64 @@ elucida/formats/orbital_files.py - Orbitaldateien: Gaussian-Cube (Gitter, Atome;
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
+from elucida.app.i18n import T
 from elucida.formats.elements import BOHR, ELEMENTS
+
+
+class _Count(Exception):
+    """Zahl der Werte passt nicht zum Gitter (gelesen, verlangt)."""
 
 
 def read_cube(path) -> dict:
     """Gaussian-Cube -> dict(title, comment, els, xyz (Å), origin (Å), axes (3×3 Å, Zeile = Schritt), data [Gitter],
-    mos [Nummern oder None]). Mehrere Orbitale (Atomzahl negativ, MO-Liste) werden alle gelesen."""
-    with open(path, "r", errors="replace") as f:
-        title = f.readline().rstrip("\n")
-        comment = f.readline().rstrip("\n")
+    mos [Nummern oder None]). Mehrere Orbitale (Atomzahl negativ, MO-Liste) werden alle gelesen. Kodierung wie die
+    Rechnungen (UTF-16 aus PowerShell, BOM); leere/abgeschnittene Dateien und Dateien mit mehr Werten als das Gitter
+    hat werden mit Meldung abgelehnt."""
+    import io
+    from elucida.formats.calc import read_text
+    name = Path(path).name
+    try:
+        c, n, vals = _read_cube(io.StringIO(read_text(path), newline=None))   # CR/CRLF wie open()
+        need = n[0] * n[1] * n[2] * len(c["mos"])
+        if len(vals) != need:                                # abgeschnitten bzw. überzählige Werte: nie still
+            raise _Count(len(vals), need)
+        a = np.array(vals, dtype=np.float32).reshape(n[0], n[1], n[2], len(c["mos"]))
+    except _Count as e:
+        raise ValueError(T("r2l_cube_count", name=name, n=e.args[0], m=e.args[1])) from None
+    except (ValueError, IndexError):                         # leer, UTF-16-Reste, Überlauf: nie roher Text
+        raise ValueError(T("r2l_cube_bad", name=name)) from None
+    c["data"] = [np.ascontiguousarray(a[..., j]) for j in range(len(c["mos"]))]
+    return c
+
+
+def _read_cube(f):
+    """Kopf, Atome und Zahlenwerte (Text) einer Cube-Datei -> (dict ohne data, Gitterpunkte, Werte)."""
+    title = f.readline().rstrip("\n")
+    comment = f.readline().rstrip("\n")
+    t = f.readline().split()
+    nat = int(t[0])
+    origin = np.array([float(x) for x in t[1:4]])
+    nval = int(t[4]) if len(t) > 4 else 1
+    n, axes = [], []
+    for _ in range(3):
         t = f.readline().split()
-        nat = int(t[0])
-        origin = np.array([float(x) for x in t[1:4]])
-        nval = int(t[4]) if len(t) > 4 else 1
-        n, axes = [], []
-        for _ in range(3):
-            t = f.readline().split()
-            n.append(int(t[0]))
-            axes.append([float(x) for x in t[1:4]])
-        unit = BOHR if n[0] > 0 else 1.0                      # negative Punktzahl: Ångström
-        n = [abs(x) for x in n]
-        axes = np.array(axes) * unit
-        origin = origin * unit
-        els, xyz = [], []
-        for _ in range(abs(nat)):
-            t = f.readline().split()
-            z = int(float(t[0]))
-            els.append(ELEMENTS[z - 1] if 0 < z <= len(ELEMENTS) else "X")
-            xyz.append([float(x) * unit for x in t[2:5]])
-        mos = [None]
-        rest = f.read().split()
+        n.append(int(t[0]))
+        axes.append([float(x) for x in t[1:4]])
+    unit = BOHR if n[0] > 0 else 1.0                      # negative Punktzahl: Ångström
+    n = [abs(x) for x in n]
+    axes = np.array(axes) * unit
+    origin = origin * unit
+    els, xyz = [], []
+    for _ in range(abs(nat)):
+        t = f.readline().split()
+        z = int(float(t[0]))
+        els.append(ELEMENTS[z - 1] if 0 < z <= len(ELEMENTS) else "X")
+        xyz.append([float(x) * unit for x in t[2:5]])
+    mos = [None]
+    rest = f.read().split()
     vals = rest
     if nat < 0:                                              # MO-Liste: Anzahl, dann Nummern
         nm = int(rest[0])
@@ -41,22 +68,34 @@ def read_cube(path) -> dict:
         vals = rest[1 + nm:]
     elif nval > 1:
         mos = [None] * nval
-    m = len(mos)
-    need = n[0] * n[1] * n[2] * m
-    if len(vals) < need:
-        raise ValueError(f"cube: {len(vals)} values, expected {need}")
-    a = np.array(vals[:need], dtype=np.float32).reshape(n[0], n[1], n[2], m)
-    data = [np.ascontiguousarray(a[..., j]) for j in range(m)]
+    if len(xyz) != abs(nat) or any(len(p) != 3 for p in xyz) or len(origin) != 3:
+        raise ValueError
     return dict(title=title, comment=comment, els=els, xyz=np.array(xyz, float).reshape(-1, 3), origin=origin,
-                axes=axes, data=data, mos=mos)
+                axes=axes, mos=mos), n, vals
 
 
 _L = {"s": 0, "p": 1, "d": 2, "f": 3, "g": 4, "sp": -1}
 
 
+class _Said(ValueError):
+    """Eigene Meldung (übersetzt), nicht durch die allgemeine ersetzen."""
+
+
 def parse_molden(text) -> dict:
     """Molden-Datei -> dict(title, els, xyz (Bohr), shells [(Atom, l, Exponenten, Koeffizienten)], pure {l: bool},
-    mos [dict(sym, energy (Eh), spin "a"/"b", occ, c (Array))], orca)."""
+    mos [dict(sym, energy (Eh), spin "a"/"b", occ, c (Array))], orca). Abgeschnittene/kaputte Dateien: Meldung."""
+    try:
+        out = _parse_molden(text)
+    except _Said:
+        raise
+    except (ValueError, IndexError):
+        raise ValueError(T("r2l_molden_bad")) from None
+    if len({len(m["c"]) for m in out["mos"]}) != 1:        # letztes MO abgeschnitten (sonst numpy-Fehler in Basis)
+        raise ValueError(T("r2l_molden_bad"))
+    return out
+
+
+def _parse_molden(text) -> dict:
     sec, out = None, dict(title="", els=[], xyz=[], shells=[], pure={2: False, 3: False, 4: False}, mos=[])
     lines = text.splitlines()
     unit = 1.0
@@ -93,7 +132,7 @@ def parse_molden(text) -> dict:
                 if not t[0].isalpha():
                     break
                 if t[0].lower() not in _L:
-                    raise ValueError(f"Molden: shell type '{t[0]}' not supported (s–g)")
+                    raise _Said(T("r2l_molden_shell", t=t[0]))
                 l, n = _L[t[0].lower()], int(t[1])
                 ex, co = [], []
                 for j in range(n):
@@ -134,5 +173,5 @@ def parse_molden(text) -> dict:
     out["xyz"] = np.array(out["xyz"], float).reshape(-1, 3)
     out["orca"] = "orca" in out["title"].lower()
     if not out["els"] or not out["shells"] or not out["mos"]:
-        raise ValueError("Molden: [Atoms], [GTO] or [MO] missing")
+        raise _Said(T("r2l_molden_missing"))
     return out

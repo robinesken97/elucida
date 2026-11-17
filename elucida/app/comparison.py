@@ -61,10 +61,12 @@ def _rel_strings(obj, root):
     return obj
 
 
-def fingerprint(part, pdir) -> str:
+def fingerprint(part, pdir, key=None) -> str:
     """Fingerabdruck eines gespeicherten Tab-Zustands (Projektdatei oder Zustand beim Speichern: gleiche Zahl)."""
     root = str(Path(pdir).resolve()) + os.sep
     txt = json.dumps(_rel_strings(part, root), sort_keys=True, ensure_ascii=False, default=str)
+    if key == "fluo" and isinstance(part, dict) and part.get("exc_file"):
+        txt += "|em-role"       # 1.2.0 nahm das Anregungsspektrum als Emission: solche Stände gelten als veraltet
     return hashlib.sha1(txt.encode("utf-8")).hexdigest()[:16]
 
 
@@ -111,6 +113,8 @@ class _EpsView:
 def _eps_entry(main):
     """ε-Tab: je Serie die Banden des Bildes (λ, ε wie Tabelle/SI-Zeile) und das Spektrum wie im Overlay (Messung der
     Serie, Basislinie wie dort, Absorbanz und Faktor auf ε)."""
+    if getattr(main, "_eps_error", None):              # Messdatei nicht lesbar: kein (leerer) Stand, sondern ein Fehler
+        raise main._eps_error[1]
     if not getattr(main, "csv_paths", None):
         return None
     view, out = _EpsView(main), []
@@ -174,7 +178,8 @@ def _cv_entry(main):
         couples = [{"n": r["n"], "epa": r["epa"], "epc": r["epc"], "e12": r["e12"], "dep": r["dep"],
                     "ipa": sign * 1e6 * r["ipa_raw"], "ipc": sign * 1e6 * r["ipc_raw"], "edge": bool(r["edge"]),
                     "fwd": "epa" if r.get("anodic_first", True) else "epc",
-                    "t_epa": CV._fmt_e(r["epa"]), "t_epc": CV._fmt_e(r["epc"]), "t_e12": CV._fmt_e(r["e12"]),
+                    "t_epa": CV._fmt_e(r["epa"], CV.E_DEC), "t_epc": CV._fmt_e(r["epc"], CV.E_DEC),
+                    "t_e12": CV._fmt_e(r["e12"], CV.E_DEC),
                     "t_dep": f"{r['dep'] * 1000:.0f}"} for r in tab.results if r["uid"] == e["uid"]]
         files.append({"uid": e["uid"], "label": e["label"], "rate": d["meta"].get("scanrate"),
                       "cycle": ev, "n_cycles": len(d["cycles"]), "ref": lab, "group": e.get("group", ""),
@@ -191,14 +196,15 @@ def _fluo_entry(main):
     spec = _quiet(tab.figure_spec)
     info = getattr(tab, "info", None) or {}
     em_ok = bool(st.get("em_file")) and tab.sample(st["em_file"], st.get("em_sample")) is not None
-    out = {"lam_em": f"{info['lam_em']:.0f}" if info.get("lam_em") else "",
-           "lam_abs": f"{info['lam_abs']:.0f}" if info.get("lam_abs") else "",
+    out = {"lam_em": core.fmt_lam(info["lam_em"]) if info.get("lam_em") else "",
+           "lam_abs": core.fmt_lam(info["lam_abs"]) if info.get("lam_abs") else "",
            "stokes": TABS.fmt_stokes(info["stokes_cm"]) if info.get("stokes_cm") is not None else "",
            "ex": st.get("ex"), "solvent": st.get("cap_solvent", ""), "em": None}
     if spec is not None and em_ok:
-        em = [c for c in spec[1] if c.get("ls") != "--"][-1]        # Reihenfolge im Tab: Absorption, Emission
-        x, y = _thin(em["x"], em["y"])
-        out["em"] = {"x": x, "y": y}
+        em = next((c for c in spec[1] if c.get("role") == "em"), None)     # Kennung, nie Linienstil/Reihenfolge
+        if em is not None:
+            x, y = _thin(em["x"], em["y"])
+            out["em"] = {"x": x, "y": y}
     return out
 
 
@@ -320,7 +326,7 @@ def _nmr_entry(main):
     from elucida.tabs import nmr as NMR
     from elucida.tabs import xray as XRAY
     sigs = []
-    for b in NMR.parse_mnova((main.nmr_state or {}).get("text") or ""):
+    for b in NMR.printed_blocks(main.nmr_state or {})[0]:            # gedruckte Signale (Mnova oder eigenes)
         for s in b["signals"]:
             r = _shift_range(s["shift"])
             if r is not None:
@@ -353,7 +359,7 @@ def write_snapshot(main, state):
     old = load_snapshot(pdir).get("tabs") or {}
     tabs, done = {}, []
     for key in SOURCES:
-        fp = fingerprint(state.get(key), pdir)
+        fp = fingerprint(state.get(key), pdir, key)
         prev = old.get(key)
         if prev and prev.get("fp") == fp:
             tabs[key] = prev
@@ -408,7 +414,7 @@ def read_compound(cdir, rel=None) -> dict:
         e = snap.get(key)
         if e is None:
             missing.append(key)
-        elif e.get("fp") != fingerprint(state.get(key), cdir):
+        elif e.get("fp") != fingerprint(state.get(key), cdir, key):
             stale.append(key)
         else:
             tabs[key] = e
@@ -767,6 +773,9 @@ class CompareHost(QMainWindow):
     def show_hover(self, text): self.owner.show_hover(text)                     # noqa: E704
     def error(self, text): self.owner.error(text)                               # noqa: E704
     def exported(self, dirs): self.owner.exported(dirs)                         # noqa: E704
+    def skip_part(self, *a, **kw): self.owner.skip_part(*a, **kw)              # noqa: E704
+    def collecting_skips(self): return self.owner.collecting_skips()            # noqa: E704
+    def skips_text(self): return self.owner.skips_text()                        # noqa: E704
     def push_undo(self): self.page.changed()                                    # noqa: E704
     def ensure_project(self): return self.page.pdir is not None                 # noqa: E704
     def export_name(self): return (self.page.item or {}).get("name", "")        # noqa: E704
@@ -1229,7 +1238,7 @@ class CVStackTab(CompareTab):
                     key = "e12" if kind == "e12" else kind
                     ip = c["ipa"] if kind in ("epa", "e12") else c["ipc"]
                     v = c[key]
-                    txt = (f"E$_{{1/2}}$ = {v:.2f} V" if kind == "e12" else f"{v:.2f} V").replace("-", "−")
+                    txt = ("E$_{1/2}$ = " if kind == "e12" else "") + core.fmt_num(v, CV.E_DEC) + " V"   # wie bisher, nie „−0.00“
                     labels.append({"key": f"label_{m['key']}", "lam": v, "y": ip * fac + off, "text": txt,
                                    "side": "below" if kind == "epc" else "above", "color": m["color"]})
             if st["arrow"] and len(x) > 5:
@@ -1298,7 +1307,7 @@ class SpectraTab(CompareTab):
                          ref_freq=0.0, structures=True, struct_color=True, struct_w=22.0,
                          norm_auto=True, nlo=300.0, nhi=500.0)
     CONTENTS = ("eps", "abs_norm", "em", "abs_em", "ir", "epr", "epr_g")
-    RESET_KEEP = CompareTab.RESET_KEEP + ("ref_freq",)      # Referenzfrequenz wie im EPR-Tab: bleibt beim Zurücksetzen
+    RESET_KEEP = CompareTab.RESET_KEEP + ("ref_freq", "content")   # Referenzfrequenz wie im EPR-Tab, Inhalt = Datenauswahl
     EPR = ("epr", "epr_g")
     NORMED = ("abs_norm", "abs_em")                         # Absorption auf das Maximum normiert: Bereich wählbar
 
@@ -2278,7 +2287,7 @@ class TableTab(CompareTab):
         if not rows or len(header) < 2:
             raise RuntimeError(T("cmp_table_empty"))
         name = self.page.item["name"]
-        docx = base.with_suffix(".docx")
+        docx = PRJ.with_ext(base, ".docx")
         SI.write_docx(docx, [("tabcap", _esc(name), ""), ("params", header, rows, dict(bold_cols=bold, top=top, fit=True))])
         from openpyxl import Workbook
         wb = Workbook()
@@ -2303,9 +2312,9 @@ class TableTab(CompareTab):
             for c, v in enumerate(row):
                 XL._put(ws, ri, 2 + c, XRAY.to_rich_xlsx(v) if v else None, XL.F_BOLD if c in bold else XL.F_BASE,
                         align=XL.LEFT if c == 0 else XL.CENTER, border=XL.ROW_LINE)
-        xlsx = base.with_suffix(".xlsx")
+        xlsx = PRJ.with_ext(base, ".xlsx")
         wb.save(xlsx)
-        csv_p = base.with_suffix(".csv")
+        csv_p = PRJ.with_ext(base, ".csv")
         with open(csv_p, "w", newline="", encoding="utf-8-sig") as fh:
             w = csv.writer(fh)
             if top:
@@ -2601,11 +2610,17 @@ class ComparePage(QWidget):
         self.deleteLater()
 
     def build(self):
-        self._drop_tab()
         kind = (self.item or {}).get("kind")
+        key = ((self.item or {}).get("uid"), kind)
+        # Neuaufbau desselben Vergleichs (Standardwerte, Vorlage, Rückgängig) behält Reiter und Bildlauf (ui.md)
+        old = self.tab if self.item is not None and getattr(self, "_built", None) == key else None
+        view = TABS.view_state(old.right_tabs, old._left_parts[2]) if old is not None else None
+        self._drop_tab()
         st = self.item.setdefault("st", {}) if self.item is not None else {}
         self.tab = TAB_CLASS.get(kind, CompareEmpty)(self.host, st)
+        self._built = key
         self.lay.addWidget(self.tab)
+        TABS.apply_view(self.tab.right_tabs, self.tab._left_parts[2], view)
         self.tab.btn_export.setEnabled(self.item is not None)
         self.pub.sync_main_button()
 

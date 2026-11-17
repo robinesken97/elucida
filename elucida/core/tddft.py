@@ -34,19 +34,26 @@ _ORCA_SOC_HEAD = "SOC CORRECTED ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPO
 _FLOAT = re.compile(r"-?\d+\.\d+(?:[eE][-+]?\d+)?")
 
 
-def _orca_table(lines):
-    """Zeilen einer ORCA-Absorptionstabelle (ab Titel) -> (E [eV], f, Multiplizität oder None)."""
-    dashes, E, f, mult = 0, [], [], []
+def _orca_table(lines, roots=None):
+    """Zeilen einer ORCA-Absorptionstabelle (ab Titel) -> (E [eV], f, Multiplizität oder None). f aus der Spalte
+    „fosc…“ des Kopfes (Überlauf in einer anderen Spalte verschiebt nichts); angeschnittene Zeile bzw. Tabelle bis ans
+    Dateiende einer Ausgabe mit „Number of roots“ (roots) -> ablehnen."""
+    from elucida.app.i18n import T
+    dashes, E, f, mult, k_f, ended = 0, [], [], [], None, False
     for ln in lines[1:]:
         s = ln.strip()
         if s.startswith("---"):
             dashes += 1
             if dashes >= 3:
+                ended = True
                 break
             continue
         if dashes < 2:
+            hk = [i for i, t in enumerate(s.split()) if t.lower().startswith("fosc")]
+            k_f = hk[0] if hk and k_f is None else k_f
             continue                                   # Kopfzeilen
         if not s:
+            ended = True
             break
         if "->" in s:                                  # ORCA 5/6: Zustandsbezeichnungen vor den Zahlen
             ref, _, rest = s.partition("->")
@@ -54,9 +61,15 @@ def _orca_table(lines):
             m = _ORCA_STATE_LABEL.match(parts[0]) if parts else None
             ref = _ORCA_STATE_LABEL.match(ref.strip())
             nums = [float(v) for v in _FLOAT.findall(parts[1])] if len(parts) > 1 else []
+            if k_f is not None:                        # Kopf: „Transition“ ↔ Zielzustand, dann die Zahlenspalten
+                tok = rest.split()
+                try:
+                    fk = float(tok[k_f])
+                except (IndexError, ValueError):
+                    raise ValueError(T("r2l_tddft_row", text=s[:60])) from None
             if len(nums) >= 4:                         # eV, cm-1, nm, fosc
                 E.append(nums[0])
-                f.append(nums[3])
+                f.append(nums[3] if k_f is None else fk)
                 mv = int(m.group(1)) if m else None
                 # offenschalige Referenz ("0-3A -> 1-3A", z. B. UKS-Triplett): alle Zustände spinerlaubt mit dem
                 # gedruckten f, kein Triplett im Sinn der Marken -> None. Die Multiplizität im Label schätzt ORCA dort
@@ -65,11 +78,29 @@ def _orca_table(lines):
             continue
         parts = s.split()
         nums = [float(v) for v in _FLOAT.findall(" ".join(parts[1:]))]   # ORCA 4: Index, cm-1, nm, fosc
+        if k_f is not None:
+            try:
+                fk = float(parts[k_f])
+            except (IndexError, ValueError):
+                raise ValueError(T("r2l_tddft_row", text=s[:60])) from None
         if len(nums) >= 3:
             E.append(nums[0] / EV_TO_CM)
-            f.append(nums[2])
+            f.append(nums[2] if k_f is None else fk)
             mult.append(None)
+    # Tabelle bis ans Dateiende in einer echten Ausgabe (druckt „Number of roots“ und danach immer weiteren Text):
+    # abgeschnitten, nie still weniger Zustände (mit Tripletts/SOC ist die Zahl der Zeilen nicht roots); eine
+    # angeschnittene letzte Zeile lehnt schon die fosc-Spalte ab
+    if E and not ended and roots:
+        raise ValueError(T("r2l_tddft_incomplete", n=len(E), req=T("r2l_tddft_req", n=roots) if roots else ""))
     return np.array(E), np.array(f), mult
+
+
+def _orca_roots(lines, end):
+    """„Number of roots to be determined ... 20“ vor der Tabelle oder None."""
+    for ln in reversed(lines[:end]):
+        if ln.strip().startswith("Number of roots to be determined"):
+            return ln.split()[-1] if ln.split()[-1].isdigit() else None
+    return None
 
 
 def _orca_triplets(lines):
@@ -163,6 +194,11 @@ def parse_tddft(path, variant=None) -> dict:
     Multiplizität einer offenschaligen Referenz (ORCA 6 „0-3A -> 1-3A“: spinerlaubt, keine Marke)."""
     txt = read_text(path)                          # erkennt UTF-16 (Windows-PowerShell-Umleitung)
     ms = list(_G_STATE.finditer(txt))
+    heads = [ln for ln in txt.splitlines() if re.match(r"\s*Excited State\s+\d+:", ln)]
+    if ms and len(heads) != len(ms):                   # Zeile mit Überlauf („*****“) nie still weglassen
+        from elucida.app.i18n import T
+        bad = next((h for h in heads if not _G_STATE.search(h)), heads[0] if heads else "")
+        raise ValueError(T("r2l_tddft_row", text=bad.strip()[:60]))
     if ms:
         starts = [i for i, m in enumerate(ms) if m.group(1) == "1"]
         ms = ms[starts[-1]:] if starts else ms
@@ -187,7 +223,8 @@ def parse_tddft(path, variant=None) -> dict:
             mult = [None] * len(E)
         if not len(E):
             raise ValueError("Selected multireference spectrum contains no transitions")
-        return dict(program="ORCA", E=E, f=f, mult=mult, variant=chosen["key"], method=chosen["method"])
+        return dict(program="ORCA", E=E, f=f, mult=mult, variant=chosen["key"], method=chosen["method"],
+                    index=chosen["index"])
     if variant and variant.startswith("mr:"):          # Datei ersetzt: nie still eine andere Tabelle liefern
         raise ValueError("Selected multireference spectrum is no longer present in the output")
     head = _before_sorci(lines)
@@ -199,7 +236,7 @@ def parse_tddft(path, variant=None) -> dict:
     if not idx:
         idx, variant = (plain_idx, "nosoc") if plain_idx else (soc_idx, "soc")
     if idx:
-        E, f, mult = _orca_table(lines[idx[-1]:])
+        E, f, mult = _orca_table(lines[idx[-1]:], _orca_roots(lines, idx[-1]))
         if variant == "soc" or "SPIN FLIP" in lines[idx[-1]]:
             mult = [None] * len(E)                     # SOC: gemischt; Spin-Flip: Label = Referenz, nicht der Zustand
         elif not any(m == 3 for m in mult):            # ORCA 4/5: Tripletts nur im eigenen Block
@@ -208,8 +245,141 @@ def parse_tddft(path, variant=None) -> dict:
                 mult = [m or 1 for m in mult] + [3] * len(trip)
                 E, f = np.append(E, trip), np.append(f, np.zeros(len(trip)))
         if len(E):
-            return {"program": "ORCA", "E": E, "f": f, "mult": mult, "variant": variant}
+            return {"program": "ORCA", "E": E, "f": f, "mult": mult, "variant": variant, "index": idx[-1],
+                    "spin_flip": "SPIN FLIP" in lines[idx[-1]]}
     raise ValueError(f"{Path(path).name}: keine TD-DFT-Anregungen gefunden (ORCA/Gaussian)")
+
+
+# -- Zusammensetzung der Zustände (Hauptanteile, Paket A 1.2.0) ------------------------------------------------
+_ORCA_STATE_E = re.compile(r"^STATE\s+\d+:\s+E=\s*(-?[\d.]+)\s+au(?:.*Mult\s+(\d+))?")
+_ORCA_PART = re.compile(r"^(\d+)([ab])\s*->\s*(\d+)([ab])\s*:\s*(-?\d+\.\d+)")
+_G_PART = re.compile(r"^(\d+)([AB]?)\s*->\s*(\d+)([AB]?)\s+(-?\d+\.\d+)")
+HARTREE_EV = 27.211386245988
+MATCH_EV = 0.002            # Zustand der Absorptionstabelle <-> Block der Zusammensetzung (ORCA druckt eV auf 6 Stellen)
+
+
+def _orca_state_blocks(lines):
+    """ORCA: Zustände der TD-DFT/CIS-Blöcke („TD-DFT/TDA EXCITED STATES (SINGLETS)“ …) vor der gewählten
+    Absorptionstabelle -> [dict(E [eV], mult, parts=[(von, Spin, nach, Spin, Gewicht)])]. Nur der letzte Lauf (Blöcke
+    nach einer früheren Absorptionstabelle beginnen neu); NTO-Abschnitte („n=“) passen nicht ins Muster."""
+    blocks, cur, inside, after_abs = [], None, False, False
+    for ln in lines:
+        s = ln.strip()
+        if "ABSORPTION SPECTRUM" in s:
+            after_abs, inside, cur = True, False, None
+            continue
+        if "EXCITED STATES" in s and ("TD-DFT" in s or "CIS" in s or "TDA" in s) and "SPECTRUM" not in s:
+            if after_abs:
+                blocks, after_abs = [], False
+            inside, cur = True, None
+            block_mult = 1 if "(SINGLETS)" in s else 3 if "(TRIPLETS)" in s else None
+            continue
+        if not inside:
+            continue
+        if s.startswith("NATURAL TRANSITION") or s.startswith("SPIN ORBIT") or s.startswith("CALCULATED SOLVENT"):
+            inside, cur = False, None
+            continue
+        m = _ORCA_STATE_E.match(s)
+        if m:
+            cur = dict(E=float(m.group(1)) * HARTREE_EV, mult=int(m.group(2)) if m.group(2) else block_mult, parts=[])
+            blocks.append(cur)
+            continue
+        m = _ORCA_PART.match(s)
+        if m and cur is not None:
+            cur["parts"].append((int(m.group(1)), m.group(2), int(m.group(3)), m.group(4), float(m.group(5))))
+    return blocks
+
+
+def _names(table, spins):
+    """Orbitalnummer -> „HOMO−1“/„LUMO+2“ (aus den Besetzungen der Ausgabe), offenschalig mit (α)/(β)."""
+    from elucida.core import orbitals as ORB
+    open_shell = "a" in table and "b" in table
+
+    def name(no, spin):
+        n = ORB.frontier_name(no, spin, table)
+        if n is None:
+            return None
+        return n + (" (α)" if spin == "a" else " (β)") if open_shell else n
+    return name
+
+
+def tddft_parts(path, variant=None):
+    """Hauptanteile je Zustand der gelesenen Tabelle -> dict(parts=[[(von, nach, Gewicht 0–1)] oder None je Zustand],
+    rule) oder None, wenn die Ausgabe keine Zusammensetzung enthält (dann bleibt die Spalte weg). Orbitalnamen relativ
+    zu HOMO/LUMO aus den Besetzungen der Ausgabe; ohne ganzzahlige Besetzungen bleibt die Nummer der Ausgabe.
+    rule: "printed" (ORCA: Gewicht wie gedruckt), "2c2" (Gaussian geschlossenschalig, Koeffizienten c, Gewicht 2c²),
+    "c2" (Gaussian offenschalig, α und β getrennt, c²). Abregungen („<-“) zählen nie mit. SOC, Spin-Flip und
+    Multireferenz: None (gemischte Zustände bzw. keine Einfachanregungen)."""
+    from elucida.core import orbitals as ORB
+    r = parse_tddft(path, variant)
+    txt = read_text(path)
+    if r["program"] == "Gaussian":
+        ms = list(_G_STATE.finditer(txt))
+        starts = [i for i, m in enumerate(ms) if m.group(1) == "1"]
+        first = starts[-1] if starts else 0
+        ms = ms[first:]
+        raw, spin_seen = [], False
+        for k, m in enumerate(ms):
+            end = ms[k + 1].start() if k + 1 < len(ms) else len(txt)
+            rows = []
+            for ln in txt[m.end():end].splitlines()[1:]:
+                g = _G_PART.match(ln.strip())
+                if g:
+                    rows.append(g.groups())
+                    spin_seen = spin_seen or bool(g.group(2))
+                elif rows and not ln.strip():
+                    break
+            raw.append(rows)
+        if not any(raw):
+            return None
+        rule = "c2" if spin_seen else "2c2"
+        table = ORB.orbital_energies(txt)
+        name = _names(table, "ab" if spin_seen else "")
+        parts = []
+        for rows in raw:
+            out = []
+            for a, sa, b, sb, c in rows:
+                w = float(c) ** 2 * (1.0 if spin_seen else 2.0)
+                sa = sa.lower()
+                out.append((name(int(a), sa) or f"{a}{sa}", name(int(b), sb.lower()) or f"{b}{sb.lower()}", w))
+            parts.append(sorted(out, key=lambda t: -t[2]) or None)
+        return dict(parts=parts, rule=rule)
+    if r.get("method") or r.get("variant") != "nosoc" or r.get("spin_flip") or "index" not in r:
+        return None
+    lines = txt.splitlines()
+    blocks = _orca_state_blocks(lines[:r["index"]])
+    if not blocks:
+        return None
+    table = ORB.orbital_energies("\n".join(lines[:r["index"]]))
+    name = _names(table, "ab")
+    used, parts = set(), []
+    for E, m in zip(r["E"], r["mult"] or [None] * len(r["E"])):
+        cand = [(abs(b["E"] - E), i) for i, b in enumerate(blocks) if i not in used and abs(b["E"] - E) < MATCH_EV
+                and (m is None or b["mult"] is None or b["mult"] == m)]
+        if not cand:
+            parts.append(None)
+            continue
+        i = min(cand)[1]
+        used.add(i)
+        out = [(name(a, sa) or f"{a}{sa}", name(b, sb) or f"{b}{sb}", w) for a, sa, b, sb, w in blocks[i]["parts"]]
+        parts.append(sorted(out, key=lambda t: -t[2]) or None)
+    if not any(parts):
+        return None
+    return dict(parts=parts, rule="printed")
+
+
+# Rechenregel der Gewichte: Text der SI (ohne Programmnamen; {w} = Schwelle in %) und Kennung in der CSV
+RULE_SI = {"printed": "Main contributions (weight ≥ {w}%) as weights of the single excitations given in the output.",
+           "2c2": "Main contributions (weight ≥ {w}%): weight = 2*c*^{{2}} from the printed excitation coefficients *c* "
+                  "(closed shell).",
+           "c2": "Main contributions (weight ≥ {w}%): weight = *c*^{{2}} per spin from the printed excitation "
+                 "coefficients *c* (open shell)."}
+RULE_CSV = {"printed": "weight as printed", "2c2": "2c^2 (closed shell)", "c2": "c^2 per spin (open shell)"}
+
+
+def parts_text(parts, min_weight=0.1, arrow="→", pct=" %"):
+    """„HOMO → LUMO (92 %), HOMO−1 → LUMO (5 %)“: Anteile ab min_weight (0–1), absteigend; Prozent ganzzahlig."""
+    return ", ".join(f"{a} {arrow} {b} ({w * 100:.0f}{pct})" for a, b, w in parts or () if w >= min_weight)
 
 
 def broaden(E_ev, f, fwhm_ev=0.3, shift_ev=0.0, lam=None):
@@ -296,7 +466,7 @@ class SimpleFigure(core.Figure):
             self._legend()
         self._make_labels(labels or [])
         self._images()
-        self._place()
+        self._place_checked(self._place)
 
     def _plot(self, sticks):
         cfg, ax = self.cfg, self.ax
@@ -456,6 +626,7 @@ class SimpleFigure(core.Figure):
                                    zorder=5, **kw)
             ann._anchor_y = lab.get("y")             # None: über der Hüllkurve aller Kurven platzieren
             ann._anchor_side = lab.get("side", "above")
+            ann._near = bool(lab.get("near"))       # λ-Label: knapp über seinem Maximum (Entscheidung 130)
             self.ann_items[lab["key"]] = ann
 
     def _place(self):
@@ -504,12 +675,49 @@ class SimpleFigure(core.Figure):
 
     def _scan_arrow(self):
         """Messrichtung als ziehbares Element: Anfang in Achsenanteilen (wie Labels, Schlüssel arrow_scan), die Spitze
-        folgt dem Anfang mit fester Länge. Ohne Verschieben liegt er am ersten Messpunkt."""
+        folgt dem Anfang mit fester Länge. Ohne Verschieben liegt er an freier Stelle knapp über den Kurven nahe dem
+        ersten Messpunkt (Vergleich: über der eigenen Kurve), ohne freie Stelle am ersten Messpunkt."""
         # cfg["scan_arrows"]: mehrere Pfeile [(Schlüssel, x0, y0, x1, Farbe)] (Vergleich: einer je Kurve)
         arrows = [("arrow_scan", *self.cfg["scan_arrow"], "black")] if self.cfg.get("scan_arrow") else []
-        arrows += list(self.cfg.get("scan_arrows") or [])
-        for key, x0, y0, x1, color in arrows:
+        stacked = list(self.cfg.get("scan_arrows") or [])
+        for key, x0, y0, x1, color in arrows + stacked:
             self._one_scan_arrow(key, x0, y0, x1, color)
+        auto = [(a, a in stacked) for a in arrows + stacked if not self.layout.get(a[0])]
+        if not auto:
+            return
+        # wie die Legende: gespeicherte Pfeile, Labels, Bilder, Inset sind schon gesetzt und werden gemieden
+        rend = self._renderer()
+        fs = core.FreeSpace()
+        env = self._envelope(fs.n)
+        for r in self._extra_blocks(rend):
+            fs.block_rect(*r)
+        for a in self.axes_items.values():
+            fr = getattr(a, "_frame", None)
+            fs.block_rect(*self._measure_af(fr.get_window_extent(rend) if fr is not None else a.get_tightbbox(rend)))
+        if self.legend is not None and (self.layout.get("legend") or isinstance(self.legend._loc, tuple)):
+            fs.block_rect(*self._measure_af(self.legend.get_window_extent(rend)))
+        pending = {a[0] for a, _ in auto}
+        for key, ann in self.ann_items.items():
+            if key not in pending:
+                fs.block_rect(*self._measure_af(ann.get_window_extent(rend)))
+        if not all(s for _, s in auto):
+            fs.block_below(env)
+        lines = self._line_mask(fs.n) if any(s for _, s in auto) else None
+        for (key, x0, y0, x1, _c), own in auto:
+            ann = self.ann_items[key]
+            bx, by, w, h = self._measure_af(ann.get_window_extent(rend))
+            dx, dy = ann.xyann[0] - bx, ann.xyann[1] - by       # Anfang relativ zur Box (Pfeil zeigt ggf. nach links)
+            ys = env[min(fs.n - 1, max(0, int((bx + w / 2) * fs.n)))]
+            if own:                                            # gestapelt: über der eigenen Kurve, unter der nächsten
+                ys = by + h / 2
+            score = core.anchor_score(bx + w / 2, ys)
+            hit = fs.find(w, h, lambda X, Y, w_, h_: score(X, Y, w_, h_) + (Y < ys) * 1.0,
+                          curves=lines if own else None)
+            if hit is None or hit[1] + h / 2 < by + h / 2:        # nur darüber, sonst bleibt der erste Messpunkt
+                self._fallback = True
+                continue
+            ann.xyann = (hit[0] + dx, hit[1] + dy)
+            fs.block_rect(hit[0], hit[1], w, h)
 
     def _one_scan_arrow(self, key, x0, y0, x1, color):
         from matplotlib.transforms import Affine2D
