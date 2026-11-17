@@ -122,14 +122,14 @@ class _Section:
 
     def __enter__(self):
         self.t0, self.line = time.perf_counter(), sys._getframe(1).f_lineno
-        if self.echo:                                        # hängt ein Abschnitt: alle Stacks ins CI-Log, alle 10 min
-            import faulthandler
+        if self.echo and sys.stderr is not None:             # hängt ein Abschnitt: alle Stacks ins CI-Log, alle 10 min
+            import faulthandler                              # (gebaute Windows-App ohne Konsole: kein stderr)
             faulthandler.dump_traceback_later(600, repeat=True)
         return self
 
     def __exit__(self, kind, ex, tb):
         dt = time.perf_counter() - self.t0
-        if self.echo:
+        if self.echo and sys.stderr is not None:
             import faulthandler
             faulthandler.cancel_dump_traceback_later()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
