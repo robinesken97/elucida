@@ -424,6 +424,10 @@ class PublicationExportPage(QWidget):
         top.addWidget(self.lbl_n)
         rv.addLayout(top)
         self.legend = Legend([(T("slot_" + b), k) for b, k in SLOTS])
+        # Legende in einer Zeile darf die Mindestbreite nicht vorgeben (verborgene Seite zählt im Stapel mit: Fenster
+        # unter Windows sonst breiter als 1440 px); bei schmalem Fenster wird sie rechts abgeschnitten
+        from PySide6.QtWidgets import QSizePolicy
+        self.legend.setSizePolicy(QSizePolicy.Ignored, self.legend.sizePolicy().verticalPolicy())
         rv.addWidget(self.legend)
         self.grid = TileGrid()
         inner = QWidget()
