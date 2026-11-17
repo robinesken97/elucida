@@ -1212,7 +1212,10 @@ class CanvasHost(QWidget):
             # Verborgen: erst beim Anzeigen zeichnen (paintEvent holt das ausstehende Zeichnen nach). Größe ändert sich
             # gleich (fit_timer läuft): nicht in der alten Größe zeichnen, fit() zeichnet danach ohnehin. Beim Öffnen
             # wurden Abbildungen sonst mehrfach gerechnet (Orbitale je ~0,4 s), auch auf verborgenen Seiten.
-            if not canvas.isVisible():
+            # matplotlib ruft das über QTimer.singleShot ohne Empfänger: Fläche oder Gastgeber können inzwischen gelöscht
+            # sein (Tab ersetzt) – dann nichts anfassen (Windows stürzte sonst mit access violation ab)
+            from shiboken6 import isValid
+            if not (isValid(canvas) and isValid(self) and isValid(self.fit_timer)) or not canvas.isVisible():
                 return None
             if self.fit_timer.isActive() and getattr(canvas, "_draw_pending", False):
                 canvas._draw_pending = False
