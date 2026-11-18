@@ -912,14 +912,18 @@ def selftest(outdir, with_isnet=False):
             def wait_path_(ws_, limit=90):
                 # offener Reaktionspfad: warten, bis seine Zeichenfläche gespeichert ist (CDXML, dann SVG); vorher fehlt
                 # beim Schließen die Vorschau bzw. sie entsteht aus der Abbildung statt aus der SVG (langsame CI)
-                def ready_():
+                def state_():                                  # wie PathWorkspace.dispose: Editor oder gespeicherte Fläche
                     c_ = ws_.composition
-                    return c_ is None or (not c_._auto_pending and c_.editor.path is not None and not c_.editor.dirty
-                                          and c_.editor.path.with_suffix(".svg").exists())
+                    comp_ = c_ and (c_.editor.path or ws_.host.tab.pages.prof.get("composition"))
+                    return c_ is None, c_ and c_._auto_pending, c_ and c_.editor.dirty, comp_ and Path(comp_).with_suffix(".svg").exists()
+
+                def ready_():
+                    none_, pend_, dirty_, svg_ = state_()
+                    return none_ or (not pend_ and not dirty_ and svg_)
                 t0_ = time.time()
                 while not ready_() and time.time() - t0_ < limit:
                     pump(0.2)
-                assert ready_(), "path drawing not saved"
+                assert ready_(), ("path drawing not saved (none, pending, dirty, svg)", state_())
 
             # TD-DFT mit Spin-Bahn-Kopplung (ORCA 6): Zustandsnamen wie "0-1.0A" dürfen nicht als Zahl gelten
             soc = out / "input" / "orca_soc.out"

@@ -416,9 +416,12 @@ class PathWorkspace(QWidget):
         # Small neutral preview is disposable; editing sources always stay authoritative.
         try:
             png = None
-            if self.composition and self.composition.editor.path:
+            # Zeichenfläche auch, wenn der Editor beim Schließen noch lädt: sonst entstand die Vorschau aus der Abbildung
+            comp = self.composition and (self.composition.editor.path or self.host.tab.pages.prof.get('composition'))
+            svg = Path(comp).with_suffix('.svg') if comp else None
+            if svg and svg.exists():
                 from elucida.core.images import open_mupdf
-                with open_mupdf(self.composition.editor.path.with_suffix('.svg')) as doc:
+                with open_mupdf(svg) as doc:
                     png = doc[0].get_pixmap(dpi=40, alpha=False).tobytes('png')
             else:
                 import io
