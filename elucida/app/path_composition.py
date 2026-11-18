@@ -227,6 +227,10 @@ class CompositionEditor(QWidget):
         STYLE.field_heights(cap_row)                        # Feld und Knopf CONTROL_H, auch nach dem Umhängen (fieldh)
         path = host.tab.pages.prof.get('composition')
         self._auto_pending = False
+        try:                                                # noch unberührte Vorlage (vor dem Einsetzen geschlossen): neu
+            self._auto_pending = bool(path) and Path(path).read_text(encoding='utf-8') == PRJ.EMPTY_CDXML
+        except OSError:
+            pass
         if not path:
             path = str(host.project_dir / PRJ.STRUCTURES / 'reaction_path.cdxml')
             Path(path).parent.mkdir(parents=True, exist_ok=True)

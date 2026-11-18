@@ -16253,6 +16253,7 @@ def selftest(outdir, with_isnet=False):
             dir_z1 = RP_z1.directory(dp_z1, item_z1["uid"])
             w.pub_page.open_path(item_z1)
             pump_z1(2.0)
+            wait_path_(w.pub_page.path_workspace)                       # Profil eingesetzt und gespeichert
             ws_z1 = w.pub_page.path_workspace
             assert isinstance(w.pub_page.path_panel.list, QTW_z1)                  # R12: Tabelle mit Kopf
             pl_z1 = w.pub_page.path_panel.list

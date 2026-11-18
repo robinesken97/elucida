@@ -50,7 +50,8 @@ jobs:
         run: python tools/build_octet.py
 
       - name: Selbsttest aus dem Quellcode
-
+        # Intel-Mac: ein Selbsttest dauert dort > 3 h, zwei passen nicht in die 6 h eines Jobs; geprüft wird die fertige App
+        if: matrix.label != 'macos-x64'
         timeout-minutes: 180
         env: { QT_QPA_PLATFORM: offscreen, PYTHONFAULTHANDLER: "1" }
         run: python Elucida.py --selftest selftest_src --selftest-isnet
@@ -71,7 +72,7 @@ jobs:
 
       - name: Selbsttest der fertigen App (macOS)
 
-        timeout-minutes: 180
+        timeout-minutes: 320
         if: runner.os == 'macOS'
         run: |
           dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-isnet
