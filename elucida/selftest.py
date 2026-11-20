@@ -1685,9 +1685,9 @@ def selftest(outdir, with_isnet=False):
                 w.cv_tab.grad_colors[st_cv["files"][0]["uid"]] in b_cv.styleSheet(), b_cv.styleSheet()
             rs = CVMOD.randles_sevcik([50, 100, 200], [r["ipa"] * 1e6 for r in res])
             assert rs and rs[2] > 0.99, rs
-            csv_txt = files[-1].read_text(encoding="utf-8-sig")
-            assert csv_txt.count("\n") == 4 and "E_half_V" in csv_txt and "charging_step_uA" in csv_txt, csv_txt
-            meth = files[-2].read_text(encoding="utf-8")
+            csv_txt = next(f_ for f_ in files if f_.name.endswith("_results.csv")).read_text(encoding="utf-8-sig")
+            assert csv_txt.count("\n") == 4 and "E_1/2 [V]" in csv_txt and "charging step [uA]" in csv_txt, csv_txt
+            meth = next(f_ for f_ in files if f_.name.endswith("_methods.txt")).read_text(encoding="utf-8")
             assert "Nicholson" in meth and "diacetylferrocene" in meth and "95% confidence" in meth \
                 and "Couple 1: E1/2 = −1.08 V vs. Fc0/+" in meth, meth
             assert any(c_ is st_cv["files"][0] for c_, _, _ in PRJ._path_slots({"cv": st_cv})), "CV-Dateien fehlen im Projekt"
@@ -1954,13 +1954,178 @@ def selftest(outdir, with_isnet=False):
             t_cv.F.fig.canvas.draw()
             st_cv["plot"] = "dep"
             files = t_cv.export_to(out / "cv_dep")
-            assert all(f.exists() for f in files) and "group" in files[-1].read_text(encoding="utf-8-sig")
-            assert "Couple 1 (A)" in files[-2].read_text(encoding="utf-8")
+            assert all(f.exists() for f in files) and "group" in files[-2].read_text(encoding="utf-8-sig")
+            assert "Couple 1 (A)" in next(f_ for f_ in files if f_.name.endswith("_methods.txt")).read_text(encoding="utf-8")
             st_cv["files"] = st_cv["files"][:1]
             assert t_cv.figure_spec() is None and "zwei Scanraten" in t_cv.note or "two scan rates" in t_cv.note
             st_cv.update(files=[], couples=[], ref_mode="none", plot="cv", stack=False, e12_each=False)
             w.cv_tab.fill_table()
             report.append("CV stacking, reference per file, rate plots: OK")
+
+        with section:
+            # CV, Auswertung (1.3.1): zwei Wellen im Fenster, D nur bei reversiblem Paar, k0 (Nicholson/Lavagnini,
+            # Klingler-Kochi), Kachel, CSV + rate_fits.csv, Ablegen von .DTA (Gamry -> CV, BES3T -> EPR).
+            # Kurven simuliert (Butler-Volmer, Faltungsintegral, D_O = D_R), keine Messdaten
+            t_cv = w.cv_tab
+            F_k0, R_k0 = CVMOD.F_CONST, CVMOD.R_CONST
+
+            def bv_cv(v, k0, alpha=0.5, D=1e-5, E0=0.0, Ei=-0.6, Es=0.6, dE=0.001):
+                """Oxidation R -> O (1 mM, 0.0707 cm2, 25 C) im Dreieck Ei -> Es -> Ei; -> (E [V], I [uA])."""
+                f_ = F_k0 / (R_k0 * 298.15)
+                up_ = np.arange(Ei, Es, dE)
+                E_ = np.concatenate([up_, np.arange(Es, Ei - dE / 2, -dE)])
+                kk_ = np.arange(len(E_) + 1)
+                w_ = 2 * np.sqrt(dE / v / np.pi) * (np.sqrt(kk_[1:]) - np.sqrt(kk_[:-1]))
+                FA_, q_ = F_k0 * 0.0707, 1 / (F_k0 * 0.0707 * np.sqrt(D))
+                ea_, ec_ = np.exp((1 - alpha) * f_ * (E_ - E0)), np.exp(-alpha * f_ * (E_ - E0))
+                i_ = np.zeros(len(E_))
+                for k_ in range(len(E_)):
+                    s_ = i_[:k_] @ w_[k_:0:-1] if k_ else 0.0
+                    i_[k_] = FA_ * k0 * (1e-6 * ea_[k_] - q_ * s_ * (ea_[k_] + ec_[k_])) / \
+                        (1 + FA_ * k0 * q_ * w_[0] * (ea_[k_] + ec_[k_]))
+                return E_, i_ * 1e6
+
+            # zwei Paare 0.15 V auseinander: ein gemeinsames Fenster ist ungueltig, der Vorschlag trennt die Fenster
+            E1_, I1_ = bv_cv(0.1, 1e3)
+            I2_ = bv_cv(0.1, 1e3, E0=0.15)[1]
+            r_ = CVMOD.analyze_couple(E1_, I1_ + I2_, -0.25, 0.25)
+            assert r_["two_waves"] and r_["invalid"] and not r_["edge"], r_
+            sug_ = CVMOD.suggest_couples(E1_, I1_ + I2_)
+            assert len(sug_) == 2 and sug_[0][0] < 0.0 < sug_[0][1] <= sug_[1][0] < 0.15 < sug_[1][1], sug_
+            r_ = CVMOD.analyze_couple(E1_, I1_ + I2_, *sug_[0])
+            assert not r_["invalid"] and abs(r_["e12"]) < 0.01, r_
+            sug_ = CVMOD.suggest_couples(E1_, I1_)                      # eine Welle: kein Fehlalarm
+            r_ = CVMOD.analyze_couple(E1_, I1_, *sug_[0])
+            assert len(sug_) == 1 and not r_["invalid"] and 0.050 < r_["dep"] < 0.065, (sug_, r_)
+            assert abs(abs(r_["epa"] - r_["ep2"]) * 1000 - 56.5) < 3, r_["ep2"]   # |Ep - Ep/2| reversibel 56.5 mV
+            # Schwelle fuer D: 2.22 RT/F + 10 mV, mit Referenz derselben Messung deren dEp + 10 mV
+            st_cv.update(rs_n=1, rs_temp=25.0)
+            rev_ = CVMOD.dep_reversible(1, 25.0)
+            assert abs(rev_ * 1000 - 57.0) < 0.1, rev_
+            rows_ = [dict(rate=50.0, dep=rev_ + 0.009, dep_ref=None), dict(rate=100.0, dep=rev_ + 0.011, dep_ref=None)]
+            assert t_cv.d_check(rows_) == [100.0], t_cv.d_check(rows_)
+            rows_[1]["dep_ref"] = 0.070
+            assert t_cv.d_check(rows_) == []
+            # k0: Lavagnini gegen Nicholsons Tabelle (psi 1 bei 84 mV, 0.5 bei 105 mV); unter 66 mV und ohne alpha
+            # im Klingler-Kochi-Bereich kein Wert
+            assert abs(CVMOD.psi_lavagnini(84) - 1.0) < 0.1 and abs(CVMOD.psi_lavagnini(105) / 0.5 - 1) < 0.1
+            assert CVMOD.k0_value(0.064, 100, 1e-5) == (None, "rev") and CVMOD.k0_value(0.2, 100, 1e-5) == (None, "alpha")
+            assert CVMOD.k0_value(0.2, 100, 1e-5, alpha=0.5)[1] == "kk" and CVMOD.k0_value(0.1, 100, 1e-5)[1] == "lav"
+
+            def k0_files(tag, k0, rates, ir):
+                out_ = []
+                for v_ in rates:
+                    p_ = cvdir / f"k0_{tag}_{v_}.DTA"
+                    write_dta(p_, [bv_cv(v_ / 1000, k0)], v_)
+                    p_.write_text(p_.read_text(encoding="latin-1").replace(
+                        "EXPLAIN", f"EXPLAIN\r\nIRCOMP\tSELECTOR\t{ir}\tIR Comp", 1), encoding="latin-1", newline="")
+                    out_.append({"file": str(p_), "uid": f"k0{tag}{v_}", "visible": True, "color": "#000000",
+                                 "label": f"{v_} mV s-1"})
+                return out_
+            keep_k0 = {k_: st_cv[k_] for k_ in ("rs_area", "rs_conc", "k0_D", "k0_alpha", "baseline")}
+            st_cv.update(couples=[[-0.6, 0.6]], ref_mode="none", plot="cv", stack=False, baseline=True,
+                         rs_area=0.0707, rs_conc=1.0, k0_D=0.0, k0_alpha=0.0)
+            key_ = ("", 1)
+            tf_ = t_cv.tbl_fit
+            for k_, v_ in (("rev", 1e3), ("q", 0.01)):                 # reversibel: D; quasireversibel: D scheinbar
+                st_cv["files"] = k0_files(k_, v_, (50, 100, 200, 500), 1)
+                t_cv.fill_table()
+                t_cv.figure_spec()                                   # rechnet Ergebnisse und Tabellen
+                D_ = t_cv.diffusion(t_cv.rate_fits()[key_])
+                bad_ = t_cv.d_check(t_cv.rate_series(currents=True)[key_])
+                d_txt_ = next(tf_.item(r_, 7).text() for r_ in range(tf_.rowCount()) if tf_.item(r_, 7).text())
+                if k_ == "rev":
+                    assert abs(D_[0] / 1e-5 - 1) < 0.06 and not bad_ and T("cv_apparent") not in d_txt_, (D_, bad_)
+                    assert set(t_cv.k0_info(key_, t_cv.rate_fits()[key_])["skip"].values()) == {"rev"}
+                else:
+                    assert bad_ == [50.0, 100.0, 200.0, 500.0] and d_txt_.endswith(T("cv_apparent")), (bad_, d_txt_)
+                    assert "apparent D" in t_cv.methods_text() and "not reversible" in t_cv.methods_text()
+            st_cv["k0_D"] = 1e-5                                       # eingetragenes D: k0 aus dEp je Scanrate
+            t_cv.fill_table()
+            t_cv.figure_spec()                                   # rechnet Ergebnisse und Tabellen
+            k0_ = t_cv.k0_info(key_, t_cv.rate_fits()[key_])
+            assert k0_["D_src"] == "entered" and not k0_["apparent"] and len(k0_["vals"]) == 4, k0_
+            assert all(h_ == "lav" and 0.8 < k_ / 0.01 < 1.2 for _, k_, h_ in k0_["vals"]), k0_["vals"]
+            assert any(" × 10^−2" in tf_.item(r_, 8).text() for r_ in range(tf_.rowCount())) and not tf_.isColumnHidden(8)
+            kp_ = t_cv.kpis()                                          # Kachel = erste gueltige Zeile der Tabelle
+            assert kp_[1][1] == t_cv.tbl_res.item(0, 6).text() + " mV" and t_cv.tbl_res.item(0, 1).text() == "50", kp_
+            mt_ = t_cv.methods_text()
+            assert "Lavagnini" in mt_ and "Nicholson" in mt_ and "DO = DR" in mt_ and "Klingler" not in mt_, mt_
+            files_ = t_cv.export_to(out / "cv_k0")
+            res_ = files_[-2].read_text(encoding="utf-8-sig").splitlines()
+            fit_ = files_[-1].read_text(encoding="utf-8-sig").splitlines()
+            assert files_[-2].name.endswith("_results.csv") and files_[-1].name.endswith("_rate_fits.csv"), files_
+            # Entscheidung 170: Komma, englische ASCII-Koepfe "Name [Einheit]", volle Rohwerte
+            assert res_[0].startswith("file,label,group,couple,cycle,v [mV s^-1],E_pa [V],") \
+                and "two_waves_in_window" in res_[0] and "|E_p - E_p/2| [mV]" in res_[0] and "T [degC]" in res_[0] \
+                and res_[1].startswith("k0_q_50.DTA,") and all(c_ < "\x80" for c_ in res_[0]), res_[:2]
+            rd_ = list(__import__("csv").DictReader(res_))
+            assert len(rd_) == 4 and all(v_ not in ("nan", "None") for r_ in rd_ for v_ in r_.values()), rd_
+            e12_ = [r_ for r_ in t_cv.results if r_["n"] == 1][0]["e12"]
+            assert float(rd_[0]["E_1/2 [V]"]) == e12_, (rd_[0]["E_1/2 [V]"], e12_)       # Rohwert, nicht gerundet
+            dh_ = next(f_ for f_ in files_ if f_.name.endswith("_data.csv")).read_text(encoding="utf-8-sig").splitlines()[0]
+            assert "$" not in dh_ and all(c_ < "\x80" for c_ in dh_) and "50 mV s^-1: I [uA]" in dh_, dh_
+            fd_ = list(__import__("csv").DictReader(fit_))
+            row_ = next(r_ for r_ in fd_ if r_["k0_status"])
+            assert row_["k0_status"] == "result" and row_["D_status"] == "apparent" and row_["k0_D_source"] == "entered" \
+                and row_["k0_methods"] == "lav" and len(fd_) == 2, (row_, fit_)
+            # langsam (X > 160 mV): Klingler-Kochi nur mit alpha; ohne iR-Kompensation nur scheinbar
+            st_cv["files"] = k0_files("s", 0.001, (100, 200, 500), 0)
+            t_cv.fill_table()
+            t_cv.figure_spec()                                   # rechnet Ergebnisse und Tabellen
+            k0_ = t_cv.k0_info(key_, t_cv.rate_fits()[key_])
+            assert not k0_["vals"] and set(k0_["skip"].values()) == {"alpha"}, k0_
+            st_cv["k0_alpha"] = 0.5
+            t_cv.fill_table()
+            t_cv.figure_spec()                                   # rechnet Ergebnisse und Tabellen
+            k0_ = t_cv.k0_info(key_, t_cv.rate_fits()[key_])
+            assert all(h_ == "kk" and 0.88 < k_ / 0.001 < 1.12 for _, k_, h_ in k0_["vals"]) and len(k0_["vals"]) == 3, k0_
+            assert k0_["apparent"] == ["ir"], k0_["apparent"]
+            assert any(tf_.item(r_, 8).text().endswith(T("cv_apparent")) for r_ in range(tf_.rowCount()))
+            mt_ = t_cv.methods_text()
+            assert "Klingler" in mt_ and "α = 0.5" in mt_ and "apparent k0" in mt_ and "without iR" in mt_, mt_
+            # Kachel: erste gueltige Zeile, auch wenn die erste Zeile ungueltig ist (zwei Wellen im ersten Fenster)
+            p_ = cvdir / "k0_two.DTA"
+            write_dta(p_, [(E1_, I1_ + I2_)], 100)
+            sep_ = CVMOD.suggest_couples(E1_, I1_ + I2_)[0]
+            st_cv.update(files=[{"file": str(p_), "uid": "k0two", "visible": True, "color": "#000000", "label": "two"}],
+                         couples=[[-0.25, 0.25], list(sep_)])
+            t_cv.fill_table()
+            t_cv.figure_spec()
+            r0_, r1_ = t_cv.results[:2]
+            assert r0_["invalid"] and not r1_["invalid"] and t_cv.kpis()[1][1] == f"{r1_['dep'] * 1000:.0f} mV", \
+                (r0_["invalid"], r1_["invalid"], t_cv.kpis())
+            # Ablegen: Gamry-.DTA -> CV, Bruker-BES3T-.DTA (gleiche Endung, binaer) -> EPR; der offene Tab bleibt
+            from elucida.formats.gamry import gamry_tag
+            bdrop_ = out / "input" / "drop_bes3t"
+            bdrop_.mkdir(parents=True, exist_ok=True)
+            (bdrop_ / "spec.DSC").write_text("#DESC\t1.2\nDSRC\tEXP\nBSEQ\tBIG\nIKKF\tREAL\nXTYP\tIDX\nIRFMT\tD\n"
+                                             "XPTS\t64\nXMIN\t3300\nXWID\t100\nXUNI\t'G'\nMWFQ\t9.4e9\n", encoding="latin-1")
+            np.sin(np.arange(64) / 5).astype(">f8").tofile(bdrop_ / "spec.DTA")
+            gdrop_ = out / "input" / "drop_cv.DTA"
+            write_dta(gdrop_, [bv_cv(0.1, 1e3)], 100)
+            pwr_ = out / "input" / "drop_pwr.DTA"
+            pwr_.write_text("EXPLAIN\r\nTAG\tPWR800_CHARGE\r\n", encoding="latin-1", newline="")
+            assert gamry_tag(gdrop_) == "CV" and gamry_tag(bdrop_ / "spec.DTA") is None \
+                and gamry_tag(pwr_) == "PWR800_CHARGE", gamry_tag(pwr_)
+            st_cv.update(files=[], couples=[])
+            t_cv.fill_table()
+            n_epr_ = len(w.epr_tab.st["entries"])
+            w.main_tabs.setCurrentWidget(w.eps_page)
+            from PySide6.QtCore import QMimeData as QMD_k0, QUrl as QU_k0
+            m_k0 = QMD_k0()
+            m_k0.setUrls([QU_k0.fromLocalFile(str(gdrop_)), QU_k0.fromLocalFile(str(bdrop_ / "spec.DTA"))])
+            w.dropEvent(type("Drop_k0", (), {"mimeData": lambda self_: m_k0})())
+            assert len(st_cv["files"]) == 1 and len(w.epr_tab.st["entries"]) == n_epr_ + 1, \
+                (st_cv["files"], w.epr_tab.st["entries"][n_epr_:])
+            assert w.main_tabs.currentWidget() is w.eps_page and {"cv", "epr"} <= set(w._marked_tabs)
+            del w.epr_tab.st["entries"][n_epr_:]
+            w.epr_tab.fill_table()
+            for k_ in ("cv", "epr"):
+                w.mark_tab(k_, False)
+            st_cv.update(files=[], couples=[], **keep_k0)
+            t_cv.fill_table()
+            report.append("CV two waves, D check, k0, CSV, .DTA drop: OK")
 
         with section:
             # CV, Angaben der Richtlinien (ACS/Angew.): Start, Richtung, iR-Kompensation aus der Datei; Elektroden,
@@ -12016,7 +12181,7 @@ def selftest(outdir, with_isnet=False):
             assert t35_.steps.pages[1].isAncestorOf(card35_) and STYLE.item_at(t35_.steps.pages[1].layout(), 0).widget() \
                 is card35_, "Rechenweg ist die erste Karte im Schritt Auswertung"
             k35_ = [lb_.text() for lb_ in t35_.kpi_box.labels if not lb_.isHidden()]   # Kacheln: E½ und ΔEp der Tabelle
-            assert len(k35_) == 2 and t35_.tbl_res.item(0, 4).text() in k35_[0] and t35_.tbl_res.item(0, 5).text() in k35_[1], k35_
+            assert len(k35_) == 2 and t35_.tbl_res.item(0, 5).text() in k35_[0] and t35_.tbl_res.item(0, 6).text() in k35_[1], k35_
             tb35_ = t35_.right_tabs.tabBar()
             y35_ = t35_.kpi_box.labels[0].mapTo(t35_.right_tabs, QPoint(0, 0)).y()
             assert abs(y35_ - (tb35_.tabRect(0).top() + 3)) <= 1 and t35_.kpi_box.labels[0].height() == 26, y35_
@@ -13310,7 +13475,7 @@ def selftest(outdir, with_isnet=False):
             t_cv_r2.ensure_rendered()
             e12_r2 = CV_r2._fmt_e(t_cv_r2.results[0]["e12"], 2)
             assert re.fullmatch(r"[+−]?\d\.\d{2}", e12_r2) and t_cv_r2.kpis()[0][1] == e12_r2 + " V", t_cv_r2.kpis()
-            assert t_cv_r2.tbl_res.item(0, 4).text() == e12_r2, t_cv_r2.tbl_res.item(0, 4).text()
+            assert t_cv_r2.tbl_res.item(0, 5).text() == e12_r2, t_cv_r2.tbl_res.item(0, 5).text()
             spec_cv_r2 = t_cv_r2.figure_spec()
             labs_cv_r2 = [l_["text"] for l_ in spec_cv_r2[2] if "1/2" in l_["text"]]
             assert labs_cv_r2 and all(re.search(r"[+−]\d\.\d{2}( V)?$", l_) for l_ in labs_cv_r2), labs_cv_r2
@@ -13320,9 +13485,9 @@ def selftest(outdir, with_isnet=False):
             for lang_r2 in ("de", "en"):
                 w.switch_lang(lang_r2)
                 f_r2 = next(f_ for f_ in w.cv_tab.export_to(d_r2 / f"cv_{lang_r2}") if f_.name.endswith("_results.csv"))
-                rows_r2 = list(_csv_r2.DictReader(f_r2.read_text(encoding="utf-8-sig").splitlines(), delimiter=";"))
+                rows_r2 = list(_csv_r2.DictReader(f_r2.read_text(encoding="utf-8-sig").splitlines()))
                 ref_r2[lang_r2] = [r_["reference"] for r_ in rows_r2]
-            assert ref_r2["de"] == ref_r2["en"] and set(ref_r2["de"]) <= {"Fc0/+", w.cv_state["ref_electrode"]}, ref_r2
+            assert ref_r2["de"] == ref_r2["en"] and set(ref_r2["de"]) <= {"Fc0/+", w.cv_state["ref_electrode"].replace("₃", "3")}, ref_r2
             w.switch_lang("de")
             # 4 SEC: Potential in Kachel, Legende und Unterschrift mit gleicher Stellenzahl und Vorzeichen
             t_sec_r2 = w.sec_tab

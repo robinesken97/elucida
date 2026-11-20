@@ -822,7 +822,7 @@ TEXTS = {
     "grp_export": ('Achsen, Größe und Formate', 'Axes, Size and Formats'),
     "grp_export_size": ('Größe und Formate', 'Size and Formats'),
     "grp_refs": ("Referenzierung", "Referencing"),
-    "grp_diffusion": ("Diffusionskoeffizient", "Diffusion Coefficient"),
+    "grp_diffusion": ("Diffusion und k⁰", "Diffusion and k⁰"),
     "grp_more_display": ('Weitere Darstellung', 'More Display Options'),
     "grp_highlight": ('Hervorheben und Labels', 'Highlighting and Labels'),
     "grp_intensity": ('Intensität und Kinetik', 'Intensity and Kinetics'),
@@ -2012,9 +2012,9 @@ TEXTS = {
                        "⚠ Reference not found (check measurement or window) – axis as measured."),
     "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
     "cv_area_from_file": ("Stromdichte mit der Fläche aus der Messdatei ({A} cm²) – dort steht oft der Vorgabewert. "
-                          "Eigene Fläche: Auswertung → Diffusionskoeffizient → Fläche A.",
+                          "Eigene Fläche: Auswertung → Diffusion und k⁰ → Fläche A.",
                           "Current density with the area from the measurement file ({A} cm²) – often the default value. "
-                          "Own area: Evaluation → Diffusion Coefficient → Area A."),
+                          "Own area: Evaluation → Diffusion and k⁰ → Area A."),
     "cv_area_missing": ("⚠ Keine Elektrodenfläche in {files} – Strom statt Stromdichte.",
                         "⚠ No electrode area in {files} – current instead of current density."),
     "cv_cycle_missing": ("⚠ {files}: Zyklus {n} fehlt – letzter Zyklus ausgewertet.",
@@ -2030,9 +2030,9 @@ TEXTS = {
     "cv_rs_conc": ("Konzentration c", "Concentration c"),
     "cv_rs_temp": ("Temperatur", "Temperature"),
     "cv_rs_hint": ("D aus der Randles–Ševčík-Steigung des Hinpeaks (reversibles, frei diffundierendes Paar, ab drei Scanraten). "
-                   "Erst mit Fläche und Konzentration; das Ergebnis steht im Reiter Ergebnisse.",
+                   "Erst mit Fläche und Konzentration. k⁰ aus ΔE_p mit diesem oder dem eingegebenen D; die Ergebnisse stehen im Reiter Ergebnisse.",
                    "D from the Randles–Ševčík slope of the forward peak (reversible, freely diffusing couple, from three scan rates). "
-                   "Only with area and concentration; the result is shown in the Results tab."),
+                   "Only with area and concentration. k⁰ from ΔE_p with this or the entered D; the results are shown in the Results tab."),
     # CV: Angaben, die ACS/Angew. zum Voltammogramm und in der SI verlangen (Karte „Messbedingungen“)
     "cv_acs_group": ("Messbedingungen", "Measurement Conditions"),
     "cv_acs_in_project": ("Der Messaufbau steht einmal im Projekt (Projektseite → Angaben) und in der Gesamt-SI am Anfang "
@@ -2102,7 +2102,7 @@ TEXTS = {
     "cv_acs_n_ce": ("Gegenelektrode", "counter electrode"),
     "cv_acs_n_gas": ("Spülgas", "purge gas"),
     "cv_acs_n_device": ("Gerät", "instrument"),
-    "cv_acs_n_area": ("Fläche der Arbeitselektrode (Diffusionskoeffizient)", "working electrode area (Diffusion Coefficient)"),
+    "cv_acs_n_area": ("Fläche der Arbeitselektrode (Diffusion und k⁰)", "working electrode area (Diffusion and k⁰)"),
     "cv_acs_n_polish": ("Politur", "polishing"),
     "cv_fit_title": ("Scanraten-Analyse: i_p gegen √v (Steigung, Achsenabschnitt, R²) und Steigung von log i_p gegen log v; "
                      "± = 95-%-Intervall",
@@ -2118,6 +2118,47 @@ TEXTS = {
                      "(nur aus der Unsicherheit der Steigung).",
                      "Diffusion coefficient from the Randles–Ševčík slope of the forward peak; 95% limits in brackets "
                      "(from the uncertainty of the slope only)."),
+    "cv_fit_k0_tip": ("Heterogene Geschwindigkeitskonstante k⁰ aus ΔE_p, Bereich über die Scanraten (nie ±): "
+                      "Nicholson-ψ nach Lavagnini (n·ΔE_p 66–160 mV), darüber Klingler–Kochi (nur mit α).",
+                      "Heterogeneous rate constant k⁰ from ΔE_p, range over the scan rates (never ±): Nicholson ψ "
+                      "after Lavagnini (n·ΔE_p 66–160 mV), above that Klingler–Kochi (only with α)."),
+    "cv_apparent": ("(scheinbar)", "(apparent)"),
+    "cv_two_waves": ("⚠ zwei Wellen im Fenster", "⚠ two waves in the window"),
+    "cv_two_waves_warn": ("⚠ {n} Zeile(n) mit zwei Wellen im Fenster: E_pa und E_pc kämen von verschiedenen Paaren – "
+                          "nicht ausgewertet. Fenster je Paar enger setzen oder „Vorschlagen“.",
+                          "⚠ {n} row(s) with two waves in the window: E_pa and E_pc would come from different couples – "
+                          "not evaluated. Narrow the window of each couple or use “Suggest”."),
+    "cv_D_apparent_warn": ("⚠ Paar {couple}: D nur scheinbar – bei {rates} mV s⁻¹ nicht reversibel (ΔE_p mehr als 10 mV "
+                           "über dem der Referenz derselben Messung bzw. über 2,22·RT/(nF)); langsamer Elektronentransfer "
+                           "oder iR-Abfall machen D zu klein.",
+                           "⚠ Couple {couple}: D is only apparent – not reversible at {rates} mV s⁻¹ (ΔE_p more than "
+                           "10 mV above that of the reference in the same measurement or above 2.22·RT/(nF)); slow "
+                           "electron transfer or iR drop make D too small."),
+    "cv_k0_skip_rev": ("Paar {couple}: kein k⁰ bei {rates} mV s⁻¹ – zu nah am reversiblen Grenzwert (n·ΔE_p < 66 mV).",
+                       "Couple {couple}: no k⁰ at {rates} mV s⁻¹ – too close to reversible to determine (n·ΔE_p < 66 mV)."),
+    "cv_k0_skip_alpha": ("Paar {couple}: kein k⁰ bei {rates} mV s⁻¹ – n·ΔE_p > 160 mV braucht Klingler–Kochi mit α "
+                         "(Karte Diffusion und k⁰).",
+                         "Couple {couple}: no k⁰ at {rates} mV s⁻¹ – n·ΔE_p > 160 mV needs Klingler–Kochi with α "
+                         "(card Diffusion and k⁰)."),
+    "cv_k0_apparent_warn": ("⚠ Paar {couple}: k⁰ nur scheinbar – {why}.", "⚠ Couple {couple}: k⁰ is only apparent – {why}."),
+    "cv_k0_why_ir": ("ohne iR-Kompensation aufgenommen", "recorded without iR compensation"),
+    "cv_k0_why_ref": ("ΔE_p der Referenz zeigt unkompensierten Widerstand", "ΔE_p of the reference shows uncompensated "
+                      "resistance"),
+    "cv_k0_why_D": ("D aus einem nicht reversiblen Paar (zu klein; D eingeben)", "D from a couple that is not reversible "
+                    "(too small; enter D)"),
+    "cv_k0_falls": ("⚠ Paar {couple}: k⁰ fällt mit steigender Scanrate um mehr als {pct} % – Zeichen für iR-Abfall.",
+                    "⚠ Couple {couple}: k⁰ falls by more than {pct} % with increasing scan rate – a sign of iR drop."),
+    "cv_k0_D": ("D für k⁰", "D for k⁰"),
+    "cv_k0_D_rs": ("aus Randles–Ševčík", "from Randles–Ševčík"),
+    "cv_k0_D_tip": ("Diffusionskoeffizient für k⁰ (D_O = D_R), z. B. aus einer reversiblen Messung oder Chronoamperometrie.\n"
+                    "Leer: D aus der Randles–Ševčík-Steigung des Paars (bei nicht reversiblem Paar zu klein: k⁰ scheinbar).",
+                    "Diffusion coefficient for k⁰ (D_O = D_R), e.g. from a reversible measurement or chronoamperometry.\n"
+                    "Empty: D from the Randles–Ševčík slope of the couple (too small for a couple that is not "
+                    "reversible: k⁰ apparent)."),
+    "cv_k0_alpha": ("α (Klingler–Kochi)", "α (Klingler–Kochi)"),
+    "cv_k0_alpha_tip": ("Durchtrittsfaktor α für k⁰ nach Klingler–Kochi (n·ΔE_p > 160 mV). Nie vorbelegt: ohne α dort kein k⁰.",
+                        "Transfer coefficient α for k⁰ after Klingler–Kochi (n·ΔE_p > 160 mV). Never prefilled: without α "
+                        "no k⁰ there."),
     "cv_baseline": ("Basislinie", "Baseline"),
     "cv_baseline_tip": ("i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund), extrapoliert\n"
                         "unter den Peak. Rückpeak: dieselbe Gerade, verschoben um den Sprung des Ladestroms am\n"
@@ -4326,8 +4367,8 @@ TEXTS = {
                          "Without a current snapshot, not shown: {names} (“Refresh”)"),
     "cmp_ref_refused": ("Andere Referenzskala als die erste Kurve ({ref}), nicht gezeigt (nie umgerechnet): {names}",
                         "Reference scale differs from the first curve ({ref}), not shown (never converted): {names}"),
-    "cmp_edge_note": ("{name}: Peak am Rand des Fensters des Redoxpaars, keine Beschriftung",
-                      "{name}: peak at the edge of the redox couple window, no label"),
+    "cmp_edge_note": ("{name}: Peak am Rand des Fensters des Redoxpaars oder zwei Wellen im Fenster, keine Beschriftung",
+                      "{name}: peak at the edge of the redox couple window or two waves in the window, no label"),
     "cmp_series": ("Serie (UV-Vis)", "Series (UV-Vis)"),
     "cmp_content": ("Inhalt", "Content"),
     "cmp_content_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
@@ -5016,6 +5057,7 @@ TEXTS.update({
     "r2l_gamry_rows": ("{name}: Tabelle {table} hat {n} statt der angegebenen {m} Zeilen (Datei abgeschnitten?): nicht "
                        "gelesen.", "{name}: table {table} has {n} instead of the stated {m} rows (file truncated?): "
                        "not read."),
+    "r2l_gamry_none": ("{name}: keine CV-Daten (Gamry .DTA) gefunden.", "{name}: no CV data (Gamry .DTA) found."),
     "r2l_hcell_incomplete": ("{name}: {n} von {m} Halbzyklen und kein Abbruchgrund (STOPREASON): Datei abgeschnitten, "
                              "nicht gelesen.", "{name}: {n} of {m} half-cycles and no stop reason (STOPREASON): file "
                              "truncated, not read."),

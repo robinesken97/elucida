@@ -934,11 +934,16 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 
 - Liest **Gamry-.DTA**-Dateien (Framework 6/7, beide Tabellenvarianten); Scanrate, Elektrodenfläche und
   Zyklen kommen aus der Datei. Mehrere Messungen (z. B. eine Scanraten-Serie) werden überlagert, optional mit
-  Farbverlauf blau → rot nach Scanrate, Pfeil für die Scanrichtung und E½ im Bild.
+  Farbverlauf blau → rot nach Scanrate, Pfeil für die Scanrichtung und E½ im Bild. Abgelegte .DTA-Dateien werden
+  am Inhalt erkannt: Gamry-CV-Dateien gehen in den CV-Tab, Gamry-Lade-/Entladedateien in H-Cell, Bruker-BES3T-Dateien
+  (gleiche Endung) in EPR; der offene Tab bleibt, Einblendung mit „Anzeigen“ und Punkt am Ziel-Tab.
 - **Redoxpaare** werden in Potentialfenstern ausgewertet („Vorschlag“ schlägt sie vor, die Fenster sind
   änderbar): E_pa (Strommaximum im Hinlauf), E_pc (Minimum im Rücklauf), E½, ΔE_p, i_pa, i_pc und das
   Peakstromverhältnis nach **Nicholson** (berücksichtigt den abklingenden Strom des Hinlaufs; ≈ 1 = chemisch
-  reversibel). Peaks am Fensterrand werden rot markiert.
+  reversibel). Peaks am Fensterrand werden rot markiert, ebenso Fenster mit **zwei Wellen** (mehr als ein Maximum im
+  Hinlauf oder Minimum im Rücklauf): solche Zeilen zählen nirgends (Regressionen, Beschriftung, Vergleich). „Vorschlag“
+  endet deshalb jedes Fenster höchstens auf halbem Weg zur Nachbarwelle (sonst 0,25 V). Die Ergebnistabelle nennt auch
+  die Scanrate ν jeder Messung; die Kacheln E½/ΔE_p zeigen die erste gültige Zeile.
 - **Basislinie** (Standard an): i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund),
   extrapoliert unter den Peak; für den Rückpeak um den Sprung des Ladestroms am Umkehrpunkt (2·C·v) verschoben, den
   abklingenden Hinlaufstrom korrigiert Nicholson. Abstand zum Peak einstellbar (Standard 0,20 V; vor Version 1.1 angelegte Verbindungen behalten 0,15 V), Basislinien optional im
@@ -947,11 +952,23 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - Ab 3 Scanraten je Gruppe und Paar: Regression **i_p gegen √v** (Randles-Ševčík) und **log i_p gegen log v**
   (Steigung 0,5 = diffusionskontrolliert, 1 = adsorbiert), jeweils mit **95-%-Konfidenzintervall**; im Reiter
   „Ergebnisse“ als zweite Tabelle unter den Peakdaten (eine Zeile je Paar und Peak).
-- **Diffusionskoeffizient** (Schritt Auswertung, Karte „Diffusionskoeffizient“): mit Elektronenzahl n, Fläche A der
+- **Diffusionskoeffizient** (Schritt Auswertung, Karte „Diffusion und k⁰“): mit Elektronenzahl n, Fläche A der
   Arbeitselektrode, Konzentration c und Temperatur rechnet das Programm D aus der Randles-Ševčík-Steigung des Hinpeaks
   (i_p = 0,4463·n·F·A·c·√(n·F·v·D/RT), reversibles, frei diffundierendes Paar). Ohne Fläche oder Konzentration gibt es
   kein D; die Fläche wird nie aus der Messdatei übernommen. Das Intervall trägt nur die Unsicherheit der Steigung,
-  nicht die von Fläche und Konzentration. Ergebnis im Reiter Ergebnisse und im Methodentext.
+  nicht die von Fläche und Konzentration. Ergebnis im Reiter Ergebnisse und im Methodentext. D gilt nur als Ergebnis,
+  wenn ΔE_p bei **jeder** Scanrate höchstens 10 mV über ΔE_p des internen Standards derselben Messung liegt (ohne
+  Standard: über 2,22·RT/(nF), 57 mV bei 25 °C); sonst steht es als „(scheinbar)“ mit den Scanraten, bei denen das Paar
+  nicht reversibel ist (Tabelle, CSV, Methodentext).
+- **k⁰** (dieselbe Karte): heterogene Standardgeschwindigkeitskonstante aus ΔE_p je Scanrate, mit D_O = D_R = D (das
+  eingetragene „D für k⁰“, sonst der Randles-Ševčík-Wert des Paars). Für n·ΔE_p von 66–160 mV Nicholsons ψ in der
+  Näherung von Lavagnini (Electroanalysis 2004, 16, 505); darüber Klingler–Kochi (J. Phys. Chem. 1981, 85, 1731), das
+  den Durchtrittsfaktor α braucht (Feld „α (Klingler–Kochi)“, nie vorbelegt). Unter 66 mV gibt es keinen Wert (zu nah
+  am reversiblen Fall). Angegeben wird nur der Bereich über die Scanraten, nie ±; an simulierten Kurven geprüft:
+  −14 bis +17 % (Lavagnini), −7 bis +7 % (Klingler–Kochi). „(scheinbar)“, wenn eine Messung ohne iR-Kompensation
+  aufgenommen wurde (Gamry-Datei, sonst Projektangabe), ΔE_p des internen Standards über der D-Schwelle liegt oder D aus
+  einem nicht reversiblen Paar stammt; fällt k⁰ mit steigender Scanrate um mehr als 25 %, weist eine Warnung auf
+  unkompensierten Widerstand hin.
 - **Konventionen der CV-Rechnung:** Das Nicholson-Verhältnis rechnet mit basislinienkorrigierten Strömen (im Original
   gegen die Nulllinie) und streut auch bei ideal reversiblen Paaren um etwa ±3 %, je nach Umkehrpotential. Die
   Basislinie endet 0,20 V vor dem Peak; bei einer ideal reversiblen Welle liegen dort noch etwa 0,3 % des Peakstroms,
@@ -978,8 +995,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Auftragung:** Cyclovoltammogramm, **elektrochemische Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und
   i_pc gegen √v oder v mit Ausgleichsgerade ab 3 Scanraten), **Diffusion** (log |i_p| gegen log v), **chemische Reversibilität**
   (i_r/i_f nach Nicholson gegen v, Linie bei 1) oder **Trumpet-Plot** (E_pa und E_pc gegen log v), eine Datenreihe je Gruppe.
-  Hinweis: ΔE_p enthält auch den iR-Abfall (v. a. in THF); der Trumpet-Plot wird ohne k⁰-Auswertung gezeichnet, dafür
-  wären mehrere Dekaden Scanrate nötig.
+  Hinweis: ΔE_p enthält auch den iR-Abfall (v. a. in THF); der Trumpet-Plot selbst wird nicht gefittet (k⁰ kommt aus
+  ΔE_p, siehe oben).
 - Strom wie aufgezeichnet (Gamry: IUPAC, anodisch positiv) oder invertiert; optional als Stromdichte.
 - **Messbedingungen** (Schritt Daten): Arbeits- und Gegenelektrode, Spülgas, Gerät (Hersteller, Modell) und Politur
   der Arbeitselektrode; einmal eingegeben, für neue Verbindungen vorbelegt. Darunter steht, was aus den Messdateien
@@ -997,8 +1014,13 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   wie CV-Dateien laden: eine Kurve Differenzstrom gegen Potential, Achse ΔI, Unterschrift mit Verfahren und
   Pulsparametern aus der Datei. Peakpaare und Vorschub-Auswertungen gelten dafür nicht. Geprüft mit einer echten
   Square-Wave-Datei, noch nicht mit einer echten DPV-Datei; andere Tabellen werden abgelehnt.
-- Export: Abbildung (PDF/SVG/PNG), `…_results.csv` mit allen Werten (inkl. Gruppe, Referenzverschiebung, dem
-  iR-Kompensations-Eintrag der Gamry-Datei, Strömen mit/ohne Basislinie und Ladestromsprung) und `…_methods.txt` (SI-Text).
+- Export: Abbildung (PDF/SVG/PNG), `…_results.csv` mit allen Werten (Dateiname, Zyklus, Scanrate, ΔE_p des internen
+  Standards, |E_p − E_p/2|, Kennzeichen für Fensterrand, zwei Wellen, kurze Basislinie und ungültiges Verhältnis, Gruppe,
+  Referenzverschiebung, iR-Kompensations-Eintrag der Gamry-Datei, Ströme mit/ohne Basislinie, Ladestromsprung, T; leere
+  Zelle = kein Wert), `…_rate_fits.csv` (je Paar und Peak: Steigungen und Achsenabschnitte mit Intervallen, R²,
+  log-log-Steigung, D mit Grenzen und Status, k⁰-Bereich, Status und Verfahren) und `…_methods.txt` (SI-Text). Beide
+  CSV-Dateien sind Maschinenformate: Komma als Trenner, Dezimalpunkt, UTF-8, englische ASCII-Köpfe „Name [Einheit]“
+  (z. B. „E_pa [V]“, „v [mV s^-1]“) und volle Rohwerte, nicht die Stellen der Anzeige.
 
 ## SEC-Tab (Spektroelektrochemie)
 

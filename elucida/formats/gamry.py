@@ -37,6 +37,20 @@ def make_test_pulse(path, tag="DPV", n=120):
     return Path(path)
 
 
+def gamry_tag(path):
+    """TAG einer Gamry-Textdatei (.DTA beginnt mit „EXPLAIN“, TAG in den ersten Zeilen), sonst None – z. B. Bruker-BES3T-
+    .DTA (EPR, binär, gleiche Endung). Erkennung nur am Inhalt, nie an der Endung."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2048)
+    except OSError:
+        return None
+    if not head.startswith(b"EXPLAIN"):
+        return None
+    m = re.search(rb"(?:^|[\r\n])TAG\t([^\t\r\n]*)", head)
+    return m.group(1).decode("latin-1").strip() if m else ""
+
+
 def read_gamry(path) -> dict:
     """Gamry .DTA (Framework 6/7): -> dict(meta, cycles=[dict(E, I, T)]).
     Zwei Varianten: mehrere Tabellen CURVE1, CURVE2, … (je Zyklus) oder eine Tabelle 'CURVE' mit
@@ -129,7 +143,7 @@ def _read_gamry(path) -> dict:
         else:
             cycles.append({"E": arr[:, 0], "I": arr[:, 1], "T": arr[:, 2]})
     if not cycles:
-        raise ValueError(f"{Path(path).name}: keine CV-Daten (Gamry .DTA) gefunden")
+        raise ValueError(T("r2l_gamry_none", name=Path(path).name))
     # Start innerhalb des Fensters (VINIT zwischen den Grenzen): Gamry schreibt den Rückweg zu VFINAL als eigenes
     # Stück (CURVE{n+1} bzw. Cycle n) – gehört zum letzten Zyklus, sonst fehlt das Ende der Kurve
     n = meta.get("n_cycles")

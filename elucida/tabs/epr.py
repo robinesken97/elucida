@@ -1395,7 +1395,10 @@ class EPRTab(TABS.FigureTab):
         return ps
 
     def add_exp(self):
-        ps = self._pick(T("epr_add_exp"), "EPR (*.dsc *.DSC *.DTA *.txt *.asc *.csv);;" + T("flt_all"))
+        self.load_exp(self._pick(T("epr_add_exp"), "EPR (*.dsc *.DSC *.DTA *.txt *.asc *.csv);;" + T("flt_all")))
+
+    def load_exp(self, ps):
+        """Messungen übernehmen (auch beim Ablegen von BES3T-Dateien); .dsc und .DTA derselben Messung nur einmal."""
         seen = set()
         for p in ps:
             stem = str(Path(p).with_suffix(""))

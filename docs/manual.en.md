@@ -893,11 +893,16 @@ Absorption and emission in one figure, as commonly shown in papers:
 
 - Reads **Gamry .DTA** files (Framework 6/7, both table variants); scan rate, electrode area and cycles
   come from the file. Several measurements (e.g. a scan-rate series) are overlaid, optionally with a
-  blue → red colour gradient by scan rate, an arrow for the scan direction and E½ in the figure.
+  blue → red colour gradient by scan rate, an arrow for the scan direction and E½ in the figure. Dropped .DTA files
+  are sorted by content: Gamry CV files go to the CV tab, Gamry charge/discharge files to H-Cell, Bruker BES3T files
+  (same extension) to EPR; the open tab stays, a notice with "Show" and a dot mark the target tab.
 - **Redox couples** are analysed in potential windows ("Suggest" proposes them, the windows can be
   edited): E_pa (current maximum in the forward scan), E_pc (minimum in the reverse scan), E½, ΔE_p,
   i_pa, i_pc and the peak-current ratio after **Nicholson** (accounts for the decaying forward current;
-  ≈ 1 = chemically reversible). Peaks at the window edge are marked red.
+  ≈ 1 = chemically reversible). Peaks at the window edge are marked red, and so are windows that contain **two
+  waves** (more than one maximum in the forward or minimum in the reverse scan): such rows count nowhere (regressions,
+  labels, comparison). "Suggest" therefore ends each window at most halfway to the neighbouring wave (otherwise
+  0.25 V). The results table also lists the scan rate ν of each measurement; the E½/ΔE_p tiles show the first valid row.
 - **Baseline** (on by default): i_p against a straight line through the current before the forward peak (charging
   current + background), extrapolated beneath the peak; for the reverse peak shifted by the step of the charging current
   at the switching potential (2·C·v), the decaying forward current is corrected by Nicholson. Distance to the peak is
@@ -906,12 +911,23 @@ Absorption and emission in one figure, as commonly shown in papers:
 - From 3 scan rates per group and couple: regression of **i_p vs. √v** (Randles–Ševčík) and **log i_p vs. log v**
   (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**; shown on the Results
   tab as a second table below the peak data (one row per couple and peak).
-- **Diffusion coefficient** (evaluation step, card "Diffusion Coefficient"): with the number of electrons n, the area
+- **Diffusion coefficient** (evaluation step, card "Diffusion and k⁰"): with the number of electrons n, the area
   A of the working electrode, the concentration c and the temperature, the program calculates D from the
   Randles–Ševčík slope of the forward peak (i_p = 0.4463·n·F·A·c·√(n·F·v·D/RT), reversible, freely diffusing couple). Without area or
   concentration there is no D; the area is never taken from the measurement file. The interval carries only the
   uncertainty of the slope, not that of area and concentration. The result appears on the Results tab and in the
-  methods text.
+  methods text. D counts as a result only if ΔE_p at **every** scan rate is at most 10 mV above ΔE_p of the internal
+  standard in the same measurement (without one: above 2.22·RT/(nF), 57 mV at 25 °C); otherwise it is marked
+  "(apparent)" with the scan rates at which the couple is not reversible (table, CSV, methods text).
+- **k⁰** (same card): heterogeneous standard rate constant from ΔE_p at each scan rate, with D_O = D_R = D (the entered
+  "D for k⁰", otherwise the Randles–Ševčík value of the couple). For n·ΔE_p of 66–160 mV Nicholson's ψ in the
+  approximation of Lavagnini (Electroanalysis 2004, 16, 505); above that Klingler–Kochi (J. Phys. Chem. 1981, 85, 1731),
+  which needs the transfer coefficient α (field "α (Klingler–Kochi)", never prefilled). Below 66 mV there is no value
+  (too close to reversible). Only the range over the scan rates is given, never ±; checked against simulated curves:
+  −14 to +17 % (Lavagnini), −7 to +7 % (Klingler–Kochi). "(apparent)" if a measurement was recorded without iR
+  compensation (Gamry file, otherwise project setup), if ΔE_p of the internal standard exceeds the D threshold or if D
+  comes from a couple that is not reversible; if k⁰ falls by more than 25 % with increasing scan rate, a warning points
+  to uncompensated resistance.
 - **Conventions of the CV calculation:** the Nicholson ratio uses baseline-corrected currents (the original uses the
   zero-current axis) and scatters by about ±3 % even for ideally reversible couples, depending on the switching
   potential. The baseline ends 0.20 V before the peak; for an ideally reversible wave about 0.3 % of the peak current
@@ -936,8 +952,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Plot:** cyclic voltammogram, **electrochemical reversibility** (ΔE_p vs. v), **Randles–Ševčík** (i_pa and i_pc vs.
   √v or vs. v, with fit lines from 3 scan rates), **diffusion** (log |i_p| vs. log v), **chemical reversibility** (i_r/i_f after
   Nicholson vs. v, line at 1) or **trumpet plot** (E_pa and E_pc vs. log v), one series per group. Note: ΔE_p also
-  contains the iR drop (especially in THF); the trumpet plot is drawn without a k⁰ analysis, which would need
-  several decades of scan rate.
+  contains the iR drop (especially in THF); the trumpet plot itself is not fitted (k⁰ comes from ΔE_p, see above).
 - The **scan-direction arrow** sits just above the curves near the start of the scan (in the CV stack above its own
   curve) and can be dragged in the figure; its place is saved.
 - Current as recorded (Gamry: IUPAC, anodic positive) or inverted; optionally as current density.
@@ -958,9 +973,13 @@ Absorption and emission in one figure, as commonly shown in papers:
   CV files: one curve, difference current against potential, axis ΔI, caption with the technique and the pulse
   parameters from the file. Peak pairs and scan-rate analyses do not apply. Checked with a real square-wave file, not
   yet with a real DPV file; other tables are refused.
-- Export: figure (PDF/SVG/PNG), `…_results.csv` with all values (incl. group, reference offset, the iR
-  compensation entry of the Gamry file, currents with/without baseline and the charging-current step) and
-  `…_methods.txt` (SI text).
+- Export: figure (PDF/SVG/PNG), `…_results.csv` with all values (file name, cycle, scan rate, ΔE_p of the internal
+  standard, |E_p − E_p/2|, flags for window edge, two waves, short baseline and invalid ratio, group, reference offset,
+  the iR compensation entry of the Gamry file, currents with/without baseline, the charging-current step, T; empty
+  cell = no value), `…_rate_fits.csv` (per couple and peak: slopes and intercepts with intervals, R², log–log slope,
+  D with bounds and status, k⁰ range, status and method) and `…_methods.txt` (SI text). Both CSV files are machine
+  formats: comma-separated, decimal point, UTF-8, English ASCII headers "name [unit]" (e.g. "E_pa [V]", "v [mV s^-1]")
+  and full raw values, not the digits shown in the app.
 
 ## SEC tab (spectroelectrochemistry)
 

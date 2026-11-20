@@ -175,8 +175,9 @@ def _cv_entry(main):
             if n != ev:
                 x2, y2 = _thin(np.asarray(c2["E"]) - off, sign * 1e6 * np.asarray(c2["I"]))
                 others.append({"n": n, "x": x2, "y": y2})
+        # "edge" = ungültig wie im Tab (Peak am Fensterrand oder zwei Wellen im Fenster): kein Wert, keine Beschriftung
         couples = [{"n": r["n"], "epa": r["epa"], "epc": r["epc"], "e12": r["e12"], "dep": r["dep"],
-                    "ipa": sign * 1e6 * r["ipa_raw"], "ipc": sign * 1e6 * r["ipc_raw"], "edge": bool(r["edge"]),
+                    "ipa": sign * 1e6 * r["ipa_raw"], "ipc": sign * 1e6 * r["ipc_raw"], "edge": bool(r["invalid"]),
                     "fwd": "epa" if r.get("anodic_first", True) else "epc",
                     "t_epa": CV._fmt_e(r["epa"], CV.E_DEC), "t_epc": CV._fmt_e(r["epc"], CV.E_DEC),
                     "t_e12": CV._fmt_e(r["e12"], CV.E_DEC),

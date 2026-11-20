@@ -18,6 +18,7 @@ Ströme: IUPAC-Konvention wie aufgezeichnet (Gamry: anodisch positiv); optional 
 from __future__ import annotations
 
 import csv
+import io
 import re
 import uuid
 from pathlib import Path
@@ -59,6 +60,55 @@ BL_ONSET = 0.02
 # abklingende Strom ein anderer). Erkennung: Strom steigt im Hinlauf nach dem Peak wieder um > 10 % der Peakhöhe an.
 NICHOLSON_RISE = 0.10
 X_PAD = 0.03                # Rand links/rechts der Kurven (Anteil der Spanne): sie liefen sonst bis an den Rahmen
+PEAK_REL = 0.03             # Peak = Prominenz > 3 % des größten |I| der Kurve (Vorschlag der Paare und Zwei-Wellen-Prüfung)
+F_CONST, R_CONST = 96485.33212, 8.314462618
+# D aus Randles–Ševčík gilt nur für ein reversibles Paar: ΔE_p höchstens so groß wie das der internen Referenz derselben
+# Messung (sie trägt denselben iR-Abfall) bzw. ohne sie wie das einer reversiblen Welle, 2,22·RT/(nF), plus diese Toleranz
+D_DEP_TOL = 0.010
+# k⁰ aus ΔE_p (n·ΔE_p in mV, auf 25 °C umgerechnet): unter K0_X_MIN zu nah am reversiblen Grenzwert (ψ → ∞), bis K0_X_MAX
+# Lavagnini (Näherung an Nicholsons ψ-Tabelle), darüber Klingler–Kochi (nur mit eingegebenem α). Simuliert (Butler–Volmer,
+# α = 0,5, Umkehr 0,6 V hinter E°, wahres D): 66–160 mV −14 … +17 %, darüber Klingler–Kochi −7 … +7 %; bei 62–64 mV
+# +21 … +27 % (ψ ändert sich dort steil mit ΔE_p), deshalb erst ab 66 mV
+K0_X_MIN, K0_X_MAX = 66.0, 160.0
+# „k⁰ fällt mit v“ (iR-Abfall): k⁰ bei der größten Scanrate unter 75 % des Werts bei der kleinsten. Simuliert ohne Ru:
+# Lavagnini driftet selbst um bis zu −17 % (ψ-Näherung ±15 %); mit Ru = 1 kΩ fällt k⁰ um 34 % bzw. 57 %
+K0_FALL = 0.75
+
+
+def _smooth(I):
+    return np.convolve(I, np.ones(5) / 5, mode="same")
+
+
+def find_peaks(E, I, mask, sign, min_rel=PEAK_REL, half_width=0.15):
+    """Peaks von sign·I im Lauf `mask` (Messpunkte in Messreihenfolge) -> Indizes. Lokales Maximum des geglätteten Stroms
+    (5 Punkte) mit Prominenz gegen die Minima in ±half_width V über min_rel·max|I| (breite Peaks). Zwei Maxima zählen nur
+    getrennt, wenn der Strom zwischen ihnen um mehr als dieselbe Schwelle unter das kleinere fällt: Rauschen auf einer
+    Peakspitze ergibt sonst zwei „Peaks“ mit der Prominenz der ganzen Welle."""
+    E, I = np.asarray(E, float), np.asarray(I, float)
+    thr = min_rel * (np.nanmax(np.abs(I)) or 1.0)
+    idx = np.flatnonzero(mask)
+    y = sign * _smooth(I)
+    out = []
+    for j in range(3, len(idx) - 3):
+        k = idx[j]
+        if y[k] < y[idx[j - 3:j + 4]].max():
+            continue
+        left = idx[(E[idx] >= E[k] - half_width) & (E[idx] <= E[k])]
+        right = idx[(E[idx] <= E[k] + half_width) & (E[idx] >= E[k])]
+        if len(left) < 3 or len(right) < 3:
+            continue
+        if y[k] - max(y[left].min(), y[right].min()) <= thr:
+            continue
+        if out:
+            p = out[-1]
+            between = idx[(idx > p) & (idx < k)]
+            low = min(y[p], y[k])
+            if not len(between) or low - y[between].min() <= thr:      # keine echte Senke dazwischen: derselbe Peak
+                if y[k] > y[p]:
+                    out[-1] = k
+                continue
+        out.append(k)
+    return out
 
 
 def _refine(E, I, k):
@@ -181,45 +231,52 @@ def analyze_couple(E, I, lo, hi, use_baseline=False, gap=BL_GAP):
         ratio_ok = not np.any(y - np.minimum.accumulate(y) > NICHOLSON_RISE * h)
     if not ratio_ok:
         ratio = float("nan")
+    # zwei Wellen im Fenster (Paare ≤ ~0,25 V auseinander): E_pa und E_pc kämen sonst von verschiedenen Paaren – ein
+    # plausibles, falsches E½/ΔE_p. Peaks auf dem ganzen Lauf suchen (im Fenster wären die Flanken abgeschnitten)
+    n_a = sum(lo <= E[k] <= hi for k in find_peaks(E, I, dE > 0, 1))
+    n_c = sum(lo <= E[k] <= hi for k in find_peaks(E, I, dE < 0, -1))
+    two = n_a > 1 or n_c > 1
+    # Halbpeakpotential des Hinpeaks (|E_p − E_p/2|, CSV): Strom (gegen die Basislinie) = halber Peakstrom, vor dem Peak
+    ep2 = None
+    run = np.flatnonzero((fw if anodic_first else bw)[:k_f + 1])
+    if len(run) > 2:
+        base_ = (lambda e: bl["a"] * e + bl["b"]) if bl is not None else (lambda e: 0.0 * e)
+        y = s * (I[run] - base_(E[run]))
+        half = (abs(ia) if anodic_first else abs(ic)) / 2
+        below = np.flatnonzero(y < half)
+        if len(below) and below[-1] + 1 < len(run):
+            j0, j1 = run[below[-1]], run[below[-1] + 1]
+            y0, y1 = y[below[-1]], y[below[-1] + 1]
+            ep2 = float(E[j0] + (half - y0) / (y1 - y0) * (E[j1] - E[j0])) if y1 != y0 else float(E[j0])
     return {"epa": epa, "epc": epc, "e12": (epa + epc) / 2, "dep": epa - epc, "ipa": ia, "ipc": ic,
             "ipa_raw": ipa, "ipc_raw": ipc, "ratio": ratio, "ratio_ok": bool(ratio_ok), "edge": bool(edge),
+            "two_waves": bool(two), "invalid": bool(edge or two),
             "bl": bl, "bl_fail": fail, "bl_short": bool(short),
-            "anodic_first": bool(anodic_first)}
+            "anodic_first": bool(anodic_first), "ep2": ep2}
 
 
-def suggest_couples(E, I, min_rel=0.03, max_sep=0.25):
+def suggest_couples(E, I, min_rel=PEAK_REL, max_sep=0.25, half=0.25):
     """Vorschläge für Redoxpaare: anodische Peaks im Hinlauf mit passendem kathodischen Peak im Rücklauf.
-    -> [(lo, hi)] (Fenster ±0.25 V um E½)."""
+    -> [(lo, hi)]: Fenster je Seite bis `half` V um E½, höchstens bis zur halben Strecke zum E½ des Nachbarpaars (zwei
+    Paare in einem Fenster ergäben ein E½ aus beiden). Die freie Seite bleibt weit (Vorlauf für die Basislinie)."""
     E, I = np.asarray(E, float), np.asarray(I, float)
     dE = np.gradient(E)
-    scale = np.nanmax(np.abs(I)) or 1.0
-
-    def peaks(mask, sign, half_width=0.15):
-        """Lokale Maxima von sign·I im Lauf; Prominenz gegen die Minima in ±half_width V (breite Peaks)."""
-        idx = np.flatnonzero(mask)
-        y = sign * np.convolve(I, np.ones(5) / 5, mode="same")
-        out = []
-        for j in range(3, len(idx) - 3):
-            k = idx[j]
-            if y[k] < y[idx[j - 3:j + 4]].max():
-                continue
-            left = idx[(E[idx] >= E[k] - half_width) & (E[idx] <= E[k])]
-            right = idx[(E[idx] <= E[k] + half_width) & (E[idx] >= E[k])]
-            if len(left) < 3 or len(right) < 3:
-                continue
-            prom = y[k] - max(y[left].min(), y[right].min())
-            if prom > min_rel * scale:
-                out.append(float(E[k]))
-        return out
-    an, ca = peaks(dE > 0, 1), peaks(dE < 0, -1)
-    out = []
+    an = [float(E[k]) for k in find_peaks(E, I, dE > 0, 1, min_rel)]
+    ca = [float(E[k]) for k in find_peaks(E, I, dE < 0, -1, min_rel)]
+    mids, used = [], set()
     for a in an:
-        cs = [c for c in ca if 0 <= a - c <= max_sep]
+        cs = [c for c in ca if 0 <= a - c <= max_sep and c not in used]
         if cs:
             c = max(cs)
-            mid = (a + c) / 2
-            if not any(lo <= mid <= hi for lo, hi in out):
-                out.append((round(mid - 0.25, 2), round(mid + 0.25, 2)))
+            used.add(c)
+            mids.append((a + c) / 2)
+    out = []
+    for m in mids:                                        # Reihenfolge wie bisher (Nummern der Paare)
+        below = [x for x in mids if x < m]
+        above = [x for x in mids if x > m]
+        left = min(half, (m - max(below)) / 2) if below else half
+        right = min(half, (min(above) - m) / 2) if above else half
+        out.append((round(m - left, 2), round(m + right, 2)))
     return out
 
 
@@ -253,11 +310,54 @@ def diffusion_coefficient(slope_A, n, area_cm2, conc_mM, temp_C=25.0):
     return (slope_A / (0.4463 * n * F * area_cm2 * conc_mM * 1e-6)) ** 2 * R * (temp_C + 273.15) / (n * F)
 
 
+def dep_reversible(n=1, temp_C=25.0):
+    """ΔE_p einer reversiblen Welle [V]: 2,22·RT/(nF) (Bard & Faulkner §6.2; 57 mV für n = 1 bei 25 °C)."""
+    return 2.22 * R_CONST * (temp_C + 273.15) / (n * F_CONST)
+
+
+def psi_lavagnini(x_mV):
+    """Nicholsons ψ aus n·ΔE_p [mV, 25 °C] nach Lavagnini, Antiochia, Magno, Electroanalysis 2004, 16, 505:
+    ψ = (−0.6288 + 0.0021·X)/(1 − 0.017·X). Gegen Nicholsons Tabelle (Anal. Chem. 1965, 37, 1351; α = 0,5) geprüft:
+    63–141 mV innerhalb ±7 %, bei 61 und 212 mV −30 % (daher nur K0_X_MIN … K0_X_MAX)."""
+    return (-0.6288 + 0.0021 * x_mV) / (1 - 0.017 * x_mV)
+
+
+def k0_value(dep_V, rate_mVs, D, n=1, temp_C=25.0, alpha=0.0):
+    """Heterogene Standardgeschwindigkeitskonstante k⁰ [cm s⁻¹] aus ΔE_p einer Scanrate, D_O = D_R = D [cm² s⁻¹].
+    X = n·ΔE_p in mV, auf 25 °C umgerechnet (ΔE_p skaliert mit RT/F). X < K0_X_MIN: kein Wert („rev“, zu nah am
+    reversiblen Grenzwert); bis K0_X_MAX: ψ nach Lavagnini, k⁰ = ψ·(π·D·n·F·v/(R·T))^½ (Nicholson 1965); darüber
+    Klingler & Kochi, J. Phys. Chem. 1981, 85, 1731: k⁰ = 2,18·(D·α·n·F·v/(R·T))^½·exp(−α²·n·F·ΔE_p/(R·T)), nur mit α
+    (sonst „alpha“). -> (k⁰ oder None, "lav"|"kk"|"rev"|"alpha")."""
+    T_ = temp_C + 273.15
+    f = n * F_CONST / (R_CONST * T_)
+    v = rate_mVs / 1000.0
+    x = n * dep_V * 1000.0 * 298.15 / T_
+    if x < K0_X_MIN:
+        return None, "rev"
+    if x <= K0_X_MAX:
+        return psi_lavagnini(x) * np.sqrt(np.pi * D * f * v), "lav"
+    if not alpha or alpha <= 0:
+        return None, "alpha"
+    return 2.18 * np.sqrt(D * alpha * f * v) * np.exp(-alpha ** 2 * f * dep_V), "kk"
+
+
 def loglog_fit(rates_mVs, ip):
     """log|i_p| gegen log v: Steigung 0,5 = diffusionskontrolliert, 1 = an der Oberfläche gebunden."""
     v, ip = np.asarray(rates_mVs, float), np.abs(np.asarray(ip, float))
     ok = (v > 0) & (ip > 0)
     return rate_fit(np.log10(v[ok] / 1000.0), np.log10(ip[ok]))
+
+
+def _flag_note(r):
+    """Warnung eines ungültigen Paars (Peak am Fensterrand, zwei Wellen im Fenster) für Hinweise und Tooltips."""
+    return "".join("  " + T(k) for k, on in (("cv_edge", r.get("edge")), ("cv_two_waves", r.get("two_waves"))) if on)
+
+
+def sci_range(lo, hi, digits=2):
+    """„1.0–1.4 × 10^-2“ (gleicher Exponent, `digits` gültige Stellen), bei gleichen Werten nur einer."""
+    ex = int(f"{hi:.{digits - 1}e}".split("e")[1])
+    a, b = f"{lo / 10 ** ex:.{digits - 1}f}", f"{hi / 10 ** ex:.{digits - 1}f}"
+    return (a if a == b else f"{a}–{b}") + f" × 10^{ex}"
 
 
 def fmt_ci(v, ci, unit=""):
@@ -372,6 +472,7 @@ class CVTab(TABS.FigureTab):
     RESET_KEEP = ("files", "couples", "ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value",
                   "ref_offset", "ref_electrode", "cycle",  # Messungen, Zyklus, Redoxpaare und Referenzierung bleiben
                   "rs_n", "rs_area", "rs_conc", "rs_temp",   # Angaben zur Messung für den Diffusionskoeffizienten
+                  "k0_D", "k0_alpha",                        # Angaben für k⁰ (eingegebenes D, α für Klingler–Kochi)
                   "acs_we", "acs_ce", "acs_ref", "acs_gas", "acs_device", "acs_polish",   # Messaufbau (ACS-Angaben)
                   "baseline", "bl_gap", "density",            # Peakströme und Stromdichte: Auswertung
                   "plot", "peak_labels")                     # andere SI-Abbildung, andere Größe im Bild
@@ -381,7 +482,7 @@ class CVTab(TABS.FigureTab):
                          gradient=True, density=False, show_e12=True, arrow=True, invert=False,
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
                          struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False,
-                         rs_n=1, rs_area=0.0, rs_conc=0.0, rs_temp=25.0,
+                         rs_n=1, rs_area=0.0, rs_conc=0.0, rs_temp=25.0, k0_D=0.0, k0_alpha=0.0,
                          acs_we="", acs_ce="", acs_ref="", acs_gas="", acs_device="", acs_polish="",
                          cap_conc="", cap_solvent="", cap_el="", cap_temp="rt", cap_start=False)
 
@@ -397,7 +498,7 @@ class CVTab(TABS.FigureTab):
         self.fold(g, "refs", ("ref_mode", "ref_uid", "ref_lo", "ref_hi", "ref_compound", "ref_value", "ref_offset",
                               "ref_electrode"))
         g = STYLE.split_group(self.group_titled("cv_analysis"), self.sp_rs_n, self.lbl_rs_hint, T("grp_diffusion"))
-        self.fold(g, "diffusion", ("rs_n", "rs_area", "rs_conc", "rs_temp"))
+        self.fold(g, "diffusion", ("rs_n", "rs_area", "rs_conc", "rs_temp", "k0_D", "k0_alpha"))
         g = STYLE.split_group(self.group_titled("cv_display"), self.cb_gradient, self.cb_invert, T("grp_more_display"))
         self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "invert"))
         self.to_right(self.group_titled("cv_results"), T("cv_results"))
@@ -600,7 +701,7 @@ class CVTab(TABS.FigureTab):
         f.addRow(self.lbl_offset, self.sp_offset)
         self.ed_electrode = QLineEdit(st["ref_electrode"])
         f.addRow(T("cv_electrode"), self.ed_electrode)
-        # ab hier eigene Klappkarte „Diffusionskoeffizient“ (arrange): Angaben für D aus der Randles–Ševčík-Steigung
+        # ab hier eigene Klappkarte „Diffusion und k⁰“ (arrange): Angaben für D aus der Randles–Ševčík-Steigung
         self.sp_rs_n = QSpinBox(minimum=1, maximum=6, value=st["rs_n"])
         self.sp_rs_area = QDoubleSpinBox(decimals=4, minimum=0, maximum=100, singleStep=0.01, value=st["rs_area"],
                                          suffix=" cm²")
@@ -615,6 +716,18 @@ class CVTab(TABS.FigureTab):
         f.addRow(T("cv_rs_area"), self.sp_rs_area)
         f.addRow(T("cv_rs_conc"), self.sp_rs_conc)
         f.addRow(T("cv_rs_temp"), self.sp_rs_temp)
+        # k⁰ aus ΔE_p: D eingegeben (sonst aus Randles–Ševčík des Paars) und α nur für Klingler–Kochi – nie vorbelegt
+        from elucida.app.main_window import TrimSpin       # hier: main_window importiert die Tabs
+        self.sp_k0_D = TrimSpin(decimals=3, minimum=0, maximum=1000, singleStep=0.1,      # „10 × 10⁻⁶“, nicht „10.000“
+                                value=st.get("k0_D", 0.0) * 1e6, suffix=" × 10⁻⁶ cm² s⁻¹")
+        self.sp_k0_D.setSpecialValueText(T("cv_k0_D_rs"))
+        self.sp_k0_D.setToolTip(T("cv_k0_D_tip"))
+        self.sp_k0_alpha = QDoubleSpinBox(decimals=2, minimum=0, maximum=0.95, singleStep=0.05,
+                                          value=st.get("k0_alpha", 0.0))
+        self.sp_k0_alpha.setSpecialValueText(T("off"))
+        self.sp_k0_alpha.setToolTip(T("cv_k0_alpha_tip"))
+        f.addRow(T("cv_k0_D"), self.sp_k0_D)
+        f.addRow(T("cv_k0_alpha"), self.sp_k0_alpha)
         self.lbl_rs_hint = STYLE.HintLabel(T("cv_rs_hint"))
         self.lbl_rs_hint.setStyleSheet(STYLE.HINT_CSS)
         self.lbl_rs_hint.setWordWrap(True)
@@ -656,7 +769,7 @@ class CVTab(TABS.FigureTab):
         for w_ in (self.cmb_peaklab, self.cmb_yaxis):
             w_.currentIndexChanged.connect(self.changed)
         self.cmb_plot.currentIndexChanged.connect(self.changed)
-        for sp_ in (self.sp_rs_n, self.sp_rs_area, self.sp_rs_conc, self.sp_rs_temp):
+        for sp_ in (self.sp_rs_n, self.sp_rs_area, self.sp_rs_conc, self.sp_rs_temp, self.sp_k0_D, self.sp_k0_alpha):
             sp_.valueChanged.connect(self.changed)
         self.sp_gap.valueChanged.connect(self.changed)
         for cb in (self.cb_stack, self.cb_e12_each):
@@ -676,12 +789,12 @@ class CVTab(TABS.FigureTab):
 
         g = QGroupBox(T("cv_results"))
         v = QVBoxLayout(g)
-        self.tbl_res = STYLE.FitGrid(0, 9)                # über die ganze Seite wie die Tabelle darunter
+        self.tbl_res = STYLE.FitGrid(0, 10)               # über die ganze Seite wie die Tabelle darunter
         STYLE.empty_note(self.tbl_res, T("results_none"))
         self.tbl_res.setHorizontalHeaderLabels(
-            [T("ov_name"), "#", "E_pa [V]", "E_pc [V]", "E½ [V]", "ΔE_p [mV]", "i_pa [µA]", "i_pc [µA]",
+            [T("ov_name"), "ν [mV s⁻¹]", "#", "E_pa [V]", "E_pc [V]", "E½ [V]", "ΔE_p [mV]", "i_pa [µA]", "i_pc [µA]",
              "i_r/i_f"])
-        self.tbl_res.horizontalHeaderItem(8).setToolTip(T("cv_ratio_tip"))
+        self.tbl_res.horizontalHeaderItem(9).setToolTip(T("cv_ratio_tip"))
         self.tbl_res.setItemDelegateForColumn(0, STYLE.RichDelegate(self.tbl_res, core.unit_html))
         self.tbl_res.verticalHeader().setVisible(False)
         self.tbl_res.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -694,8 +807,10 @@ class CVTab(TABS.FigureTab):
         self.lbl_fit.setWordWrap(True)
         v.addWidget(self.lbl_fit)
         self.tbl_fit = STYLE.summary_grid([T("cv_fit_couple"), T("cv_fit_peak"), T("cv_fit_n"), T("cv_fit_slope"),
-                                           T("cv_fit_icpt"), "R²", T("cv_fit_ll"), "D [cm² s⁻¹]"], rich=(1, 7))
+                                           T("cv_fit_icpt"), "R²", T("cv_fit_ll"), "D [cm² s⁻¹]", "k⁰ [cm s⁻¹]"],
+                                          rich=(1, 7, 8))
         self.tbl_fit.horizontalHeaderItem(7).setToolTip(T("cv_fit_D_tip"))
+        self.tbl_fit.horizontalHeaderItem(8).setToolTip(T("cv_fit_k0_tip"))
         v.addWidget(self.tbl_fit)
         self.lbl_res = STYLE.SciLabel("")                 # Referenz
         self.lbl_warn = STYLE.SciLabel("")                # Warnungen (Basislinie)
@@ -956,7 +1071,7 @@ class CVTab(TABS.FigureTab):
                   peak_labels=self.cmb_peaklab.currentData(), baseline=self.cb_baseline.isChecked(),
                   bl_gap=self.sp_bl_gap.value(), show_bl=self.cb_show_bl.isChecked(),
                   rs_n=self.sp_rs_n.value(), rs_area=self.sp_rs_area.value(), rs_conc=self.sp_rs_conc.value(),
-                  rs_temp=self.sp_rs_temp.value())
+                  rs_temp=self.sp_rs_temp.value(), k0_D=self.sp_k0_D.value() * 1e-6, k0_alpha=self.sp_k0_alpha.value())
         self._sync_ref_widgets()
 
     # -- Dateien -------------------------------------------------------------------
@@ -968,6 +1083,10 @@ class CVTab(TABS.FigureTab):
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("cv_add"), self.main.settings.value("last_dir", ""),
                                              "Gamry (*.DTA *.dta);;" + T("flt_all"))
+        self.load_files(ps)
+
+    def load_files(self, ps):
+        """Gamry-Dateien übernehmen (auch beim Ablegen); Unlesbares wird gemeldet."""
         for p in ps:
             try:
                 p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
@@ -1200,8 +1319,7 @@ class CVTab(TABS.FigureTab):
                     name = REFERENCES.get(st["ref_compound"], (T("cv_ref_custom"), 0))[0]
                     note = T("cv_ref_note", name=name, e12=_fmt_e(r["e12"]), el=st["ref_electrode"],
                              dep=f"{r['dep'] * 1000:.0f}", val=_fmt_e(st["ref_value"], 2))
-                    if r["edge"]:
-                        note += "  " + T("cv_edge")
+                    note += _flag_note(r)
                     return r["e12"] - st["ref_value"], "Fc$^{0/+}$", note
             return 0.0, st["ref_electrode"], T("cv_ref_missing")
         return 0.0, st["ref_electrode"], ""
@@ -1220,8 +1338,7 @@ class CVTab(TABS.FigureTab):
                     name = REFERENCES.get(ref.get("compound"), (T("cv_ref_custom"), 0))[0]
                     note = T("cv_ref_note", name=name, e12=_fmt_e(r["e12"]), el=self.st["ref_electrode"],
                              dep=f"{r['dep'] * 1000:.0f}", val=_fmt_e(ref.get("value", 0.0), 2))
-                    if r["edge"]:
-                        note += "  " + T("cv_edge")
+                    note += _flag_note(r)
                     return r["e12"] - ref.get("value", 0.0), "Fc$^{0/+}$", note
             return 0.0, self.st["ref_electrode"], T("cv_ref_missing")
         return self.reference_offset()
@@ -1265,6 +1382,7 @@ class CVTab(TABS.FigureTab):
             d = self.data(e["file"])
             c = self.cycle_of(e)
             off, lab_ref, n_ = self.file_offset(e)
+            dep_ref = self.ref_dep(e)
             labels_ref.add(lab_ref)
             if n_ and e.get("ref"):
                 notes.append(f"{e['label']}: {n_}")
@@ -1288,7 +1406,9 @@ class CVTab(TABS.FigureTab):
                     self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
                                              rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
                                              e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off,
-                                             ref=lab_ref))
+                                             ref=lab_ref, file=e["file"], dep_ref=dep_ref,
+                                             ir_on=d["meta"].get("ircomp_on"),
+                                             cycle=min(st["cycle"], len(d["cycles"]))))
         self.grad_colors = grad_colors if st["gradient"] and len(vis) > 1 else {}
         self.update_color_buttons()
         if len(labels_ref) > 1:
@@ -1327,7 +1447,7 @@ class CVTab(TABS.FigureTab):
                 # Peakpotentiale als Zahl an den einzelnen Peaks (z. B. Probe und Ac₂Fc in einer Messung)
                 for c_ in curves:
                     for r in self.results:
-                        if r["uid"] != c_["uid"] or r["edge"]:
+                        if r["uid"] != c_["uid"] or r["invalid"]:
                             continue
                         for kind, ex, ip, side in (("epa", r["epa"], r["ipa_raw"], "above"),
                                                          ("epc", r["epc"], r["ipc_raw"], "below")):
@@ -1339,7 +1459,7 @@ class CVTab(TABS.FigureTab):
                 # je Kurve und Redoxpaar, am anodischen Peak dieser Kurve (wie in Vergleichsabbildungen üblich)
                 for c_ in curves:
                     for r in self.results:
-                        if r["uid"] != c_["uid"] or r["edge"]:
+                        if r["uid"] != c_["uid"] or r["invalid"]:
                             continue
                         sup = f"$^{{{r['n']}}}$" if multi else ""
                         side = "right" if (multi and r["n"] == len(st["couples"])) else "left"
@@ -1350,12 +1470,11 @@ class CVTab(TABS.FigureTab):
             else:
                 # Mittel je Gruppe: verschiedene Lösungsmittel nie zu einem E½ mitteln
                 groups = sorted({r.get("group", "") for r in self.results})
+                ser = self.e12_series()
                 for n in range(1, len(st["couples"]) + 1):
                     for grp in groups:
-                        rr = [r for r in self.results if r["n"] == n and not r["edge"] and r.get("group", "") == grp]
-                        vals = [r["e12"] for r in rr]
-                        if vals and len({r["ref"] for r in rr}) == 1:      # nie über Referenzskalen mitteln
-                            e12 = float(np.mean(vals))
+                        e12 = ser.get((grp, n))
+                        if e12 is not None:                                 # nie über Referenzskalen mitteln
                             tag = f" ({grp})" if len(groups) > 1 and grp else ""
                             key = f"label_e12_{n}" + (f"_{grp}" if len(groups) > 1 else "")
                             labels.append({"key": key, "lam": e12,
@@ -1390,7 +1509,7 @@ class CVTab(TABS.FigureTab):
             sc, off_e, yoff = c_["_scale"], c_["_off_e"], c_.get("off", 0.0)
             for r in self.results:
                 bl = r.get("bl")
-                if r["uid"] != c_["uid"] or bl is None or r["edge"]:
+                if r["uid"] != c_["uid"] or bl is None or r["invalid"]:
                     continue
                 s, a, b, step = bl["s"], bl["a"], bl["b"], bl["step"]
                 epf, epr = bl["epf"], bl["epr"]               # gemessene Potentiale; Achse = gemessen − off_e
@@ -1413,9 +1532,79 @@ class CVTab(TABS.FigureTab):
         Ströme in einer Regression)."""
         ser = {}
         for r in self.results:
-            if r["rate"] and not r["edge"] and not (currents and r.get("bl_fail")):
+            if r["rate"] and not r["invalid"] and not (currents and r.get("bl_fail")):
                 ser.setdefault((r["group"], r["n"]), []).append(r)
         return {k: sorted(v, key=lambda r: r["rate"]) for k, v in ser.items()}
+
+    def e12_series(self):
+        """E½ je (Gruppe, Paar): Mittel über alle gültigen Zeilen (auch ohne Scanrate in der Datei), nur bei einer
+        Referenzskala – dieselbe Zahl im Bild und im Methodentext. -> {(Gruppe, n): E½ oder None}."""
+        out = {}
+        for r in self.results:
+            if not r["invalid"]:
+                out.setdefault((r.get("group", ""), r["n"]), []).append(r)
+        return {k: float(np.mean([r["e12"] for r in rr])) if len({r["ref"] for r in rr}) == 1 else None
+                for k, rr in out.items()}
+
+    def ref_dep(self, e):
+        """ΔE_p [V] der internen Referenz **derselben** Messung (sie trägt denselben iR-Abfall), nur aus einem gültigen
+        Paar; sonst None (dann gilt der reversible Grenzwert)."""
+        st = self.st
+        ref = e.get("ref") or {}
+        if ref.get("mode") == "internal":
+            uid, lo, hi = ref.get("uid"), ref.get("lo", 0.3), ref.get("hi", 0.8)
+        elif not ref.get("mode") and st["ref_mode"] == "internal":
+            uid, lo, hi = st.get("ref_uid"), st["ref_lo"], st["ref_hi"]
+        else:
+            return None
+        if uid != e["uid"]:
+            return None
+        c = self.cycle_of(e)
+        r = analyze_couple(c["E"], c["I"], lo, hi)
+        return None if r is None or r["invalid"] else float(r["dep"])
+
+    def d_check(self, rr):
+        """Scanraten [mV s⁻¹], bei denen das Paar nicht als reversibel gilt: ΔE_p > ΔE_p(Referenz derselben Messung)
+        + D_DEP_TOL, ohne Referenz > 2,22·RT/(nF) + D_DEP_TOL. Leer = D ist ein Ergebnis, sonst nur „scheinbar“
+        (langsamer Elektronentransfer oder unkompensierter Widerstand machen i_p und damit D zu klein)."""
+        st = self.st
+        rev = dep_reversible(st["rs_n"], st["rs_temp"])
+        return sorted({round(r["rate"], 1) for r in rr
+                       if r["dep"] > (r["dep_ref"] if r.get("dep_ref") is not None else rev) + D_DEP_TOL})
+
+    def k0_info(self, key, fits=None):
+        """k⁰ eines Paars über die Scanraten (`k0_value`), D_O = D_R = eingegebenes D, sonst D aus Randles–Ševčík des
+        Hinpeaks. -> dict(vals=[(v, k⁰, Verfahren)], skip={v: Grund}, lo, hi, D, D_src "entered"|"rs", apparent=[Gründe:
+        "ir" ohne iR-Kompensation (Datei, sonst Projektangabe), "ref" ΔE_p der Referenz über der D-Schwelle, "D" D aus
+        einem nicht reversiblen Paar], falls=k⁰ fällt mit v) oder None (kein D)."""
+        st = self.st
+        rr = self.rate_series().get(key) or []
+        if not rr:
+            return None
+        D, src = st.get("k0_D", 0.0), "entered"
+        if not D > 0:
+            Dt = self.diffusion(fits) if fits else None
+            if not Dt:
+                return None
+            D, src = Dt[0], "rs"
+        vals, skip = [], {}
+        for r in rr:
+            k, how = k0_value(r["dep"], r["rate"], D, st["rs_n"], st["rs_temp"], st.get("k0_alpha", 0.0))
+            if k is None:
+                skip[round(r["rate"], 1)] = how
+            else:
+                vals.append((r["rate"], float(k), how))
+        apparent = []
+        pub_ir = bool((self.project_setup() or {}).get("ir"))
+        if any(r.get("ir_on") is False or (r.get("ir_on") is None and not pub_ir) for r in rr):
+            apparent.append("ir")
+        if any(r.get("dep_ref") is not None and r["dep_ref"] > dep_reversible(1, st["rs_temp"]) + D_DEP_TOL for r in rr):
+            apparent.append("ref")
+        if src == "rs" and self.d_check(self.rate_series(currents=True).get(key) or []):
+            apparent.append("D")
+        ks = [k for _, k, _ in vals]
+        return dict(vals=vals, skip=skip, lo=min(ks) if ks else None, hi=max(ks) if ks else None, D=D, D_src=src,
+                    apparent=apparent, falls=len(vals) >= 2 and vals[-1][1] < K0_FALL * vals[0][1])
 
     def rate_fits(self):
         """Regressionen je (Gruppe, Redoxpaar) ab 3 Scanraten -> {(Gruppe, n): dict(rs_a, rs_c, ll_a, ll_c, rates)}."""
@@ -1544,18 +1733,18 @@ class CVTab(TABS.FigureTab):
         self.tbl_res.setRowCount(len(res))
         for i, r in enumerate(res):
             name = f"{r['label']} ({r['group']})" if r.get("group") else r["label"]
-            vals = [name, str(r["n"]), _fmt_e(r["epa"], E_DEC), _fmt_e(r["epc"], E_DEC), _fmt_e(r["e12"], E_DEC),
-                    f"{r['dep'] * 1000:.0f}", f"{r['ipa'] * 1e6:.1f}", f"{r['ipc'] * 1e6:.1f}",
-                    f"{r['ratio']:.2f}" if np.isfinite(r["ratio"]) else "–"]
+            vals = [name, f"{round(r['rate'], 1):g}" if r["rate"] else "–", str(r["n"]), _fmt_e(r["epa"], E_DEC),
+                    _fmt_e(r["epc"], E_DEC), _fmt_e(r["e12"], E_DEC), f"{r['dep'] * 1000:.0f}", f"{r['ipa'] * 1e6:.1f}",
+                    f"{r['ipc'] * 1e6:.1f}", f"{r['ratio']:.2f}" if np.isfinite(r["ratio"]) else "–"]
             for j, v in enumerate(vals):
-                it = QTableWidgetItem(v.replace("-", "−") if j >= 2 else v)      # echtes Minus wie im Text darunter
-                if r["edge"]:
+                it = QTableWidgetItem(v.replace("-", "−") if j >= 3 else v)      # echtes Minus wie im Text darunter
+                if r["invalid"]:                                 # Rand oder zwei Wellen: nirgends ausgewertet
                     it.setForeground(Qt.red)
-                    it.setToolTip(T("cv_edge"))
-                elif r.get("bl_fail") and j >= 6:
+                    it.setToolTip(_flag_note(r).strip())
+                elif r.get("bl_fail") and j >= 7:
                     it.setForeground(Qt.darkYellow)
                     it.setToolTip(T("cv_bl_fail"))
-                elif j == 8 and not r.get("ratio_ok", True):
+                elif j == 9 and not r.get("ratio_ok", True):
                     it.setToolTip(T("cv_ratio_invalid"))
                 self.tbl_res.setItem(i, j, it)
         self.tbl_res.fit()
@@ -1563,26 +1752,65 @@ class CVTab(TABS.FigureTab):
         n_short = sum(1 for r in res if r.get("bl_short"))
         if n_short:
             warn.append(T("cv_bl_short", n=n_short, gap=f"{BL_GAP_MIN:.2f}"))
-        rows, any_D = [], False
+        n_two = sum(1 for r in res if r.get("two_waves"))
+        if n_two:
+            warn.append(T("cv_two_waves_warn", n=n_two))
+        rows, any_D, any_k = [], False, False
+        mn = lambda t: t.replace("-", "−")                    # noqa: E731  (echtes Minus wie in der Tabelle darüber)
+        rates = lambda v: ", ".join(f"{x:g}" for x in v)      # noqa: E731
         for (grp, n), f in sorted(self.rate_fits().items(), key=lambda kv: (kv[0][1], kv[0][0])):
             name = f"{n}" + (f" ({grp})" if grp else "")
             D = self.diffusion(f)
+            bad = self.d_check(self.rate_series(currents=True).get((grp, n)) or []) if D else []
+            if bad:
+                warn.append(T("cv_D_apparent_warn", couple=name, rates=rates(bad)))
+            k0 = self.k0_info((grp, n), f)
             for tag, rs, ll in (("a", f["rs_a"], f["ll_a"]), ("c", f["rs_c"], f["ll_c"])):
                 if rs and ll:
-                    d_txt = ""
+                    d_txt = k_txt = ""
+                    fwd = tag == (D[3] if D else f.get("fwd"))
                     if D and D[3] == tag:                     # nur beim Hinpeak; Grenzen mit demselben Exponenten
                         ex = int(f"{D[0]:.2e}".split("e")[1])
                         d_txt = f"{D[0] / 10 ** ex:.2f} ({(D[1] or 0) / 10 ** ex:.2f}–{D[2] / 10 ** ex:.2f}) × 10^{ex}"
+                        if bad:
+                            d_txt += " " + T("cv_apparent")
                         any_D = True
-                    mn = lambda t: t.replace("-", "−")        # noqa: E731  (echtes Minus wie in der Tabelle darüber)
+                    if k0 and fwd:
+                        k_txt = sci_range(k0["lo"], k0["hi"]) if k0["vals"] else "–"
+                        if k0["vals"] and k0["apparent"]:
+                            k_txt += " " + T("cv_apparent")
+                        any_k = True
                     rows.append([name, f"i_p{tag}", str(rs["n"]), mn(fmt_ci(rs["slope"], rs["ci"])),
                                  mn(fmt_ci(rs["intercept"], rs["ci_b"])), core.r2_text(rs["r2"]),
-                                 mn(fmt_ci(ll["slope"], ll["ci"])), d_txt])
-        STYLE.fill_summary(self.tbl_fit, rows, hidden=() if any_D else (7,))
+                                 mn(fmt_ci(ll["slope"], ll["ci"])), d_txt, mn(k_txt)])
+            if k0:
+                warn += self.k0_warnings(name, k0)
+        STYLE.fill_summary(self.tbl_fit, rows, hidden=tuple(c for c, on in ((7, any_D), (8, any_k)) if not on))
+        for i, row in enumerate(rows):                        # scheinbare Werte in der Warnfarbe
+            for j in (7, 8):
+                it = self.tbl_fit.item(i, j)
+                if it is not None and T("cv_apparent") in row[j]:
+                    it.setForeground(Qt.darkYellow)
         for x, on in ((self.lbl_fit, rows), (self.lbl_res, getattr(self, "note", "")), (self.lbl_warn, warn)):
             x.setVisible(bool(on))
         self.lbl_res.setText(getattr(self, "note", "") or "")
         self.lbl_warn.setText("\n".join(warn))
+
+    def k0_warnings(self, name, k0):
+        """Hinweise zu k⁰ eines Paars: welche Scanraten keinen Wert haben (zu reversibel, α fehlt), warum „scheinbar“,
+        k⁰ fällt mit v (iR-Abfall)."""
+        out = []
+        rates = lambda v: ", ".join(f"{x:g}" for x in v)      # noqa: E731
+        for why in ("rev", "alpha"):
+            rr = [v for v, w in k0["skip"].items() if w == why]
+            if rr:
+                out.append(T("cv_k0_skip_" + why, couple=name, rates=rates(rr)))
+        if k0["vals"] and k0["apparent"]:
+            out.append(T("cv_k0_apparent_warn", couple=name,
+                         why="; ".join(T("cv_k0_why_" + w) for w in k0["apparent"])))
+        if k0["falls"]:
+            out.append(T("cv_k0_falls", couple=name, pct=f"{(1 - K0_FALL) * 100:.0f}"))
+        return out
 
     def _ref_sentence(self):
         """Referenzierung der sichtbaren Messungen -> (Satz englisch, Referenz für die Ergebnisse)."""
@@ -1621,10 +1849,10 @@ class CVTab(TABS.FigureTab):
                 ("E½", bool(st["couples"])), (T("chain_ref"), st["ref_mode"] != "none")]
 
     def kpis(self):
-        res = getattr(self, "results", None) or []
-        if not res:
+        r = next((r for r in getattr(self, "results", None) or [] if not r["invalid"]), None)   # erste gültige Zeile
+        if r is None:
             return []
-        return [("E½", _fmt_e(res[0]["e12"], E_DEC) + " V"), ("ΔEp", f"{res[0]['dep'] * 1000:.0f} mV")]
+        return [("E½", _fmt_e(r["e12"], E_DEC) + " V"), ("ΔEp", f"{r['dep'] * 1000:.0f} mV")]
 
     def setup_values(self):
         """Messaufbau aus den Feldern dieser Verbindung (Karte „Messbedingungen“, Fläche aus Randles-Ševčík); die
@@ -1724,32 +1952,76 @@ class CVTab(TABS.FigureTab):
                      "(Randles–Ševčík) and of log|ip| vs. log v (slope 0.5: diffusion-controlled, 1: surface-"
                      "confined species); uncertainties are given as 95% confidence intervals (t-distribution, "
                      "n − 2 degrees of freedom).")
-            if any(self.diffusion(f_) for f_ in fits.values()):
+            Ds = {k_: self.diffusion(f_) for k_, f_ in fits.items()}
+            if any(Ds.values()):
                 m.append("Diffusion coefficients were calculated from the Randles–Ševčík slope of the forward peak for "
                          "a reversible, freely diffusing couple, ip = 0.4463·n·F·A·c·(n·F·v·D/RT)1/2, with n = "
                          f"{st['rs_n']}, A = {st['rs_area']:g} cm2, c = {st['rs_conc']:g} mM and T = "
                          f"{st['rs_temp']:g} °C; their intervals reflect the uncertainty of the slope only.")
+                m.append("D is reported as a result only if ΔEp at every scan rate was at most 10 mV above ΔEp of the "
+                         "internal standard in the same measurement (without one, above 2.22·RT/(nF)); otherwise it is "
+                         "given as an apparent value, because slow electron transfer or uncompensated resistance lowers "
+                         "the peak current.")
+            k0s = {k_: self.k0_info(k_, f_) for k_, f_ in fits.items()}
+            used = {how for k_ in k0s.values() if k_ for _, _, how in k_["vals"]}
+            if used:
+                srcs = {k_["D_src"] for k_ in k0s.values() if k_ and k_["vals"]}
+                d_src = " and ".join(("the Randles–Ševčík value of the couple" if x == "rs" else
+                                      f"D = {core.sci_text(st['k0_D'])} cm2 s-1") for x in sorted(srcs, reverse=True))
+                parts = []
+                if "lav" in used:
+                    parts.append(f"for n·ΔEp of {K0_X_MIN:.0f}–{K0_X_MAX:.0f} mV from Nicholson's kinetic parameter "
+                                 "ψ = k0 (π·D·n·F·v/RT)-1/2, approximated by ψ = (−0.6288 + 0.0021·n·ΔEp)/"
+                                 "(1 − 0.017·n·ΔEp) [R. S. Nicholson, Anal. Chem. 1965, 37, 1351; I. Lavagnini, "
+                                 "R. Antiochia, F. Magno, Electroanalysis 2004, 16, 505]")
+                if "kk" in used:
+                    parts.append(f"for n·ΔEp above {K0_X_MAX:.0f} mV according to k0 = 2.18 (D·α·n·F·v/RT)1/2 "
+                                 f"exp(−α2·n·F·ΔEp/RT) with α = {st['k0_alpha']:g} [R. J. Klingler, J. K. Kochi, "
+                                 "J. Phys. Chem. 1981, 85, 1731]")
+                m.append("Standard heterogeneous electron-transfer rate constants k0 were estimated from ΔEp at each "
+                         f"scan rate with DO = DR = D ({d_src}) and n = {st['rs_n']} (n·ΔEp scaled to 25 °C), "
+                         + " and ".join(parts) + ". k0 is given as the range over the scan rates; scan rates with "
+                         f"n·ΔEp below {K0_X_MIN:.0f} mV were too close to reversible behaviour to give a value.")
         res = []
-        for (grp, n), rr in sorted(self.rate_series().items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        valid = {}
+        for r in self.results:
+            if not r["invalid"]:
+                valid.setdefault((r.get("group", ""), r["n"]), []).append(r)
+        e12s = self.e12_series()                         # dieselben Mittel wie im Bild (auch ohne Scanrate)
+        rates_txt = lambda v: ", ".join(f"{x:g}" for x in v)      # noqa: E731
+        for (grp, n), rr in sorted(valid.items(), key=lambda kv: (kv[0][1], kv[0][0])):
             refs = {r["ref"] for r in rr}
-            e12 = np.mean([r["e12"] for r in rr]) if len(refs) == 1 else None
+            e12 = e12s.get((grp, n))
             lab = str(next(iter(refs))).replace("Fc$^{0/+}$", "Fc0/+") if len(refs) == 1 else ref_lab
             dep = [r["dep"] * 1000 for r in rr]
             rat = [r["ratio"] for r in rr if np.isfinite(r["ratio"]) and not r.get("bl_fail")]
+            rv = sorted(round(r["rate"], 1) for r in rr if r["rate"])
             rng = lambda v, f: f"{min(v):{f}}" + (f"–{max(v):{f}}" if f"{min(v):{f}}" != f"{max(v):{f}}" else "")  # noqa: E731
             e_txt = (f"E1/2 = {_fmt_e(e12, E_DEC)} V vs. {lab}" if e12 is not None
                      else "E1/2 not averaged (different reference scales)")
             txt = (f"Couple {n}" + (f" ({grp})" if grp else "") + f": {e_txt}"
                    + f" (ΔEp = {rng(dep, '.0f')} mV" + (f", ip,r/ip,f = {rng(rat, '.2f')}" if rat else "")
-                   + (f"; {rng([round(r['rate'], 1) for r in rr], 'g')} mV s-1" if len(rr) > 1 else "") + ")")
+                   + (f"; {rng(rv, 'g')} mV s-1" if len(rv) > 1 else "") + ")")
             f = fits.get((grp, n))
             if f and f["ll_a"] and f["ll_c"]:
                 txt += (f"; log–log slopes {fmt_ci(f['ll_a']['slope'], f['ll_a']['ci'])} (ipa) and "
                         f"{fmt_ci(f['ll_c']['slope'], f['ll_c']['ci'])} (ipc)")
             D = self.diffusion(f)
             if D:
-                txt += (f"; D = {core.sci_text(D[0])} cm2 s-1 from ip{D[3]} (95% interval "
-                        f"{core.sci_text(D[1]) if D[1] else '0'} to {core.sci_text(D[2])} cm2 s-1)")
+                bad = self.d_check(self.rate_series(currents=True).get((grp, n)) or [])
+                txt += (f"; {'apparent ' if bad else ''}D = {core.sci_text(D[0])} cm2 s-1 from ip{D[3]} (95% interval "
+                        f"{core.sci_text(D[1]) if D[1] else '0'} to {core.sci_text(D[2])} cm2 s-1"
+                        + (f"; couple not reversible at {rates_txt(bad)} mV s-1" if bad else "") + ")")
+            k0 = self.k0_info((grp, n), f) if f else None
+            if k0 and k0["vals"]:
+                why = {"ir": "recorded without iR compensation",
+                       "ref": "ΔEp of the internal standard indicates uncompensated resistance",
+                       "D": "D from a couple that is not reversible"}
+                txt += (f"; {'apparent ' if k0['apparent'] else ''}k0 = {sci_range(k0['lo'], k0['hi'])} cm s-1 "
+                        f"({len(k0['vals'])} of {len(k0['vals']) + len(k0['skip'])} scan rates"
+                        + ("; " + ", ".join(why[w] for w in k0["apparent"]) if k0["apparent"] else "")
+                        + ("; k0 decreases with increasing scan rate, indicating uncompensated resistance"
+                           if k0["falls"] else "") + ")")
             res.append(txt + ".")
         out = " ".join(x for x in m if x)
         return out + ("\n\n" + " ".join(res) if res else "")
@@ -1769,21 +2041,76 @@ class CVTab(TABS.FigureTab):
         return f"E = {x:.3f} V    {'j' if dens else 'I'} = {val:.2f} {unit}    {name}"
 
     def export_to(self, base: Path):
-        """Abbildung wie die anderen Tabs, dazu die Ergebnisse als CSV (UTF-8, Semikolon)."""
+        """Abbildung wie die anderen Tabs, dazu die Ergebnisse als CSV (Entscheidung 170: Komma, Dezimalpunkt, UTF-8 mit
+        BOM, englische ASCII-Köpfe „Name [Einheit]“, volle Rohwerte – die Stellen der Anzeige gehören nicht hierher): je
+        Messung und Paar (`_results.csv`) und je Regression gegen die Scanrate mit D und k⁰ (`_rate_fits.csv`).
+        Statuswerte englisch und fest (sprachfrei); leere Zelle = kein Wert."""
         files = super().export_to(base)
+        st = self.st
+        data = next((f for f in files if f.name.endswith("_data.csv")), None)
+        if data is not None:          # Kurvennamen der Abbildung tragen Mathtext („s$^{-1}$“): Kopf als ASCII (Entsch. 170)
+            with open(data, encoding="utf-8-sig", newline="") as fh:
+                head, rest = fh.read().split("\r\n", 1)
+            fold = str.maketrans({"µ": "u", "−": "-", "⁰": "0", "⁺": "+", **{chr(0x2080 + k): str(k) for k in range(10)}})
+            buf = io.StringIO()
+            csv.writer(buf).writerow([TABS._plain(h).translate(fold) for h in next(csv.reader([head]))])
+            with open(data, "w", encoding="utf-8-sig", newline="") as fh:
+                fh.write(buf.getvalue() + rest)
         p = Path(base).with_name(Path(base).name + "_results.csv")
+        num = lambda v: repr(float(v)) if v is not None and np.isfinite(v) else ""     # noqa: E731
         with open(p, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh, delimiter=";")
-            w.writerow(["file", "group", "couple", "scan_rate_mV_s", "E_pa_V", "E_pc_V", "E_half_V", "dE_p_mV",
-                        "i_pa_uA", "i_pc_uA", "ratio_Nicholson", "peak_at_window_edge", "reference_offset_V",
-                        "ir_compensation_in_file", "reference", "baseline", "i_pa_raw_uA", "i_pc_raw_uA",
-                        "charging_step_uA"])
+            w = csv.writer(fh)
+            w.writerow(["file", "label", "group", "couple", "cycle", "v [mV s^-1]", "E_pa [V]", "E_pc [V]", "E_1/2 [V]",
+                        "dE_p [mV]", "dE_p reference [mV]", "|E_p - E_p/2| [mV]", "i_pa [uA]", "i_pc [uA]",
+                        "i_r/i_f Nicholson", "ratio_ok", "peak_at_window_edge", "two_waves_in_window",
+                        "reference offset [V]", "ir_compensation_in_file", "reference", "baseline", "baseline_short",
+                        "i_pa raw [uA]", "i_pc raw [uA]", "charging step [uA]", "T [degC]"])
             for r in self.results:
-                w.writerow([r["label"], r.get("group", ""), r["n"], r["rate"], f"{r['epa']:.4f}", f"{r['epc']:.4f}",
-                            f"{r['e12']:.4f}", f"{r['dep'] * 1000:.1f}", f"{r['ipa'] * 1e6:.3f}",
-                            f"{r['ipc'] * 1e6:.3f}", f"{r['ratio']:.3f}", int(r["edge"]), f"{r.get('offset', 0):.4f}",
-                            r.get("ircomp", ""), str(r["ref"]).replace("Fc$^{0/+}$", "Fc0/+"),   # Skala, nie Hinweistext (sprachfrei)
+                epf = r["epa"] if r.get("anodic_first", True) else r["epc"]
+                ep2 = r["ep2"] - r.get("offset", 0) if r.get("ep2") is not None else None
+                w.writerow([Path(r.get("file", "")).name, r["label"], r.get("group", ""), r["n"], r.get("cycle", ""),
+                            num(r["rate"]), num(r["epa"]), num(r["epc"]), num(r["e12"]), num(r["dep"] * 1000),
+                            num(r["dep_ref"] * 1000 if r.get("dep_ref") is not None else None),
+                            num(abs(epf - ep2) * 1000 if ep2 is not None else None),
+                            num(r["ipa"] * 1e6), num(r["ipc"] * 1e6), num(r["ratio"]),
+                            int(r.get("ratio_ok", True)), int(r["edge"]), int(r.get("two_waves", False)),
+                            num(r.get("offset", 0)),
+                            r.get("ircomp", ""),                       # Skala, nie Hinweistext (sprachfrei), ASCII: „Ag/AgNO3“
+                            str(r["ref"]).replace("Fc$^{0/+}$", "Fc0/+").translate(str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")),
                             "failed" if r.get("bl_fail") else ("linear" if r.get("bl") else "none"),
-                            f"{r['ipa_raw'] * 1e6:.3f}", f"{r['ipc_raw'] * 1e6:.3f}",
-                            f"{r['bl']['step'] * 1e6:.3f}" if r.get("bl") else ""])
-        return files + [p]
+                            int(r.get("bl_short", False)), num(r["ipa_raw"] * 1e6), num(r["ipc_raw"] * 1e6),
+                            num(r["bl"]["step"] * 1e6) if r.get("bl") else "", num(st["rs_temp"])])
+        p2 = Path(base).with_name(Path(base).name + "_rate_fits.csv")
+        with open(p2, "w", newline="", encoding="utf-8-sig") as fh:
+            w = csv.writer(fh)
+            w.writerow(["couple", "group", "peak", "n scan rates", "slope [uA (V s^-1)^-1/2]",
+                        "slope CI95 [uA (V s^-1)^-1/2]", "intercept [uA]", "intercept CI95 [uA]", "R2", "log-log slope",
+                        "log-log slope CI95", "D [cm^2 s^-1]", "D low [cm^2 s^-1]", "D high [cm^2 s^-1]", "D_status",
+                        "D not reversible at [mV s^-1]", "k0 low [cm s^-1]", "k0 high [cm s^-1]", "k0_status",
+                        "k0_apparent_because", "k0_methods", "k0 scan rates used [mV s^-1]",
+                        "k0 no value at [mV s^-1]", "k0_D_source", "k0_falls_with_scan_rate", "alpha"])
+            for (grp, n), f in sorted(self.rate_fits().items(), key=lambda kv: (kv[0][1], kv[0][0])):
+                D = self.diffusion(f)
+                bad = self.d_check(self.rate_series(currents=True).get((grp, n)) or []) if D else []
+                k0 = self.k0_info((grp, n), f)
+                for tag in ("a", "c"):
+                    rs, ll = f["rs_" + tag], f["ll_" + tag]
+                    if not rs:
+                        continue
+                    row = [n, grp, "i_p" + tag, rs["n"], num(rs["slope"]), num(rs["ci"]), num(rs["intercept"]),
+                           num(rs["ci_b"]), num(rs["r2"]), num(ll["slope"]) if ll else "", num(ll["ci"]) if ll else ""]
+                    if D and D[3] == tag:
+                        row += [num(D[0]), num(D[1]), num(D[2]), "apparent" if bad else "result",
+                                " ".join(f"{x:g}" for x in bad)]
+                    else:
+                        row += [""] * 5
+                    if k0 and tag == (D[3] if D else f.get("fwd")) and k0["vals"]:
+                        row += [num(k0["lo"]), num(k0["hi"]), "apparent" if k0["apparent"] else "result",
+                                " ".join(k0["apparent"]), " ".join(sorted({h for _, _, h in k0["vals"]})),
+                                " ".join(f"{v:g}" for v, _, _ in k0["vals"]),
+                                " ".join(f"{v:g}:{why}" for v, why in k0["skip"].items()),
+                                k0["D_src"], int(k0["falls"]), num(st["k0_alpha"]) if st.get("k0_alpha") else ""]
+                    else:
+                        row += [""] * 10
+                    w.writerow(row)
+        return files + [p, p2]

@@ -5127,6 +5127,27 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in ms and p not in irms]
             if not files:
                 return
+        # .DTA: Gamry (Text ab „EXPLAIN“) -> CV, Lade-/Entladedateien (TAG PWR800_…) -> H-Cell; Bruker BES3T (.DTA/.DSC,
+        # binär, gleiche Endung) -> EPR. Nur am Inhalt erkannt, nie an der Endung
+        from elucida.formats.gamry import gamry_tag
+        tags = {p: gamry_tag(p) for p in files if Path(p).suffix.lower() == ".dta" and Path(p).is_file()}
+        cvs = [p for p, t in tags.items() if t is not None and not t.startswith("PWR800")]
+        cells = [p for p, t in tags.items() if t is not None and t.startswith("PWR800")]
+        bes = [p for p in files if Path(p).is_file() and ((Path(p).suffix.lower() == ".dta" and tags.get(p) is None)
+                                                          or Path(p).suffix.lower() == ".dsc")]
+        if (cvs or cells or bes) and self.ensure_project():
+            for key, ps, tab, load in (("cv", cvs, "cv_tab", "load_files"), ("hcell", cells, "hcell_tab", "load_files"),
+                                       ("epr", bes, "epr_tab", "load_exp")):
+                if ps:
+                    t_ = getattr(self, tab)
+                    n_ = len(t_.st.get("files", t_.st.get("entries", [])))
+                    getattr(t_, load)(ps)                     # Unlesbares meldet der Tab selbst
+                    n_ = len(t_.st.get("files", t_.st.get("entries", []))) - n_
+                    if n_:
+                        self.loaded_in(key, n_)
+            files = [p for p in files if p not in cvs and p not in cells and p not in bes]
+            if not files:
+                return
         data = [p for p in files if Path(p).suffix.lower() in {".csv", ".txt"} | core.BINARY_EXT]
         here = self._tab_keys[self.main_tabs.currentIndex()]
         if data and here == "uvkin":                  # Messdaten gehören in den Tab, auf dem sie abgelegt wurden

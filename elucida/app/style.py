@@ -1479,6 +1479,7 @@ _SCI = [(r"χ²_red\b", "<i>χ</i>²<sub>red</sub>"),                 # Fluoresz
         (r"R²", "<i>R</i>²"), (r"\bm/z\b", "<i>m</i>/<i>z</i>"), (r"ε(?![a-zäöü])", "<i>ε</i>"), (r"λ(?![a-zäöü<])", "<i>λ</i>"),
         (r"\bA/d\b", "<i>A</i>/<i>d</i>"), (r"\bE°", "<i>E</i>°"), (r"ṽ", "<i>ṽ</i>"), (r"ν(?![a-zäöü])", "<i>ν</i>"),
         (r"θ(?![a-zäöü])", "<i>θ</i>"), (r"η(?![a-zäöü])", "<i>η</i>"),                      # PXRD: 2θ, Lorentz-Anteil η
+        (r"(?<![A-Za-z>])k⁰", "<i>k</i>⁰"), (r"^α(?= \()", "<i>α</i>"),                    # CV: k⁰, α (Klingler–Kochi)
         # Größe vor ihrer Einheit „E [V]“, „m [mg]“, „ρ [g mL⁻¹]“ (nicht S: „S [%]“ ist Schwefel) und vor „=“/„≤“
         (r"(?<![A-Za-zäöüÄÖÜß>])([EMTJnjcdgvBVmhItiaAfkUDQρδ])(?= \[|-Bereich| range|-Korrektur| correction)", r"<i>\1</i>"),
         # nicht nach „_“: „E_a = …“ gehört der Indexregel am Ende (sonst blieb der Unterstrich stehen)
