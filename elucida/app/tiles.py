@@ -8,6 +8,8 @@ Kante (Robin): Kopfzeile, ihre Linie, Legende, Kartenkante (Vorschau), Name und 
 Verbindung: oben Punkt + Datenart in ihrer Farbe (STYLE.method_color), Vorschau im Ton der Datenart, Pille „SI“.
 Projekt: oben rechts die Zahl der Abbildungen in der SI, unten an der Vorschau ein Farbstreifen mit festen Plätzen je
 Datenart (vorhanden = Farbe, sonst Linienfarbe), darunter Nummer + Summenformel."""
+import math
+
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
@@ -106,25 +108,36 @@ def kind_pixmap(kind, key, ratio=1.0):
             p.drawLine(QPointF(x, 36), QPointF(x, y))
     elif kind == "band":
         path((4, 34), ((20, 34), (22, 6), (32, 6)), ((42, 6), (44, 30), (60, 30)))
-    elif kind == "twopeaks":
-        path((4, 34), ((14, 34), (16, 8), (22, 8)), ((28, 8), (28, 34), (34, 34)))
-        path((30, 34), ((40, 34), (42, 14), (48, 14)), ((54, 14), (54, 34), (60, 34)))
+    elif kind == "twopeaks":                              # Anregung (gestrichelt) und Emission, rotverschoben
+        p.drawLine(QPointF(4, 35), QPointF(60, 35))
+        pen = p.pen()
+        dash = QPen(pen)
+        dash.setDashPattern([2.2, 1.8])
+        p.setPen(dash)
+        path((6, 35), ((16, 35), (18, 8), (24, 8)), ((30, 8), (32, 35), (42, 35)))
+        p.setPen(pen)
+        path((20, 35), ((30, 35), (32, 10), (38, 10)), ((44, 10), (48, 35), (58, 35)))
     elif kind == "decay":
         path((6, 6), ((18, 30), (30, 34), (60, 35)))
         p.drawLine(QPointF(4, 36), QPointF(60, 36))
-    elif kind == "loop":
-        path((6, 26), ((24, 26), (30, 6), (40, 8)), ((50, 10), (52, 16), (58, 16)))
-        path((58, 20), ((50, 20), (46, 34), (36, 32)), ((26, 30), (22, 22), (6, 22)))
+    elif kind == "loop":                                  # Ente: Oxidation oben, Rückweg punktgespiegelt
+        up = [(4, 24), ((16, 24), (24, 23), (28, 13)), ((30, 8), (32, 6), (35, 6)), ((40, 6), (46, 15), (60, 16))]
+        m = lambda q: (64 - q[0], 40 - q[1])                                          # noqa: E731
+        path(*up)
+        path(*[m(q) if len(q) == 2 else tuple(m(c) for c in q) for q in up])
     elif kind == "derivative":
         path((4, 20), (20, 20), ((26, 20), (26, 4), (30, 4)), ((34, 4), (34, 36), (38, 36)),
              ((42, 36), (42, 20), (48, 20)), (60, 20))
-    elif kind == "molecule":
-        pts = [(12, 26), (24, 12), (38, 22), (52, 10), (40, 34)]
+    elif kind == "molecule":                              # Zickzack mit 120°, Ast senkrecht; Atome N, C, C, O, C
+        dx, dy = 13 * math.cos(math.radians(30)), 13 * math.sin(math.radians(30))
+        x0 = 32 - 1.5 * dx
+        pts = [(x0, 17), (x0 + dx, 17 - dy), (x0 + 2 * dx, 17), (x0 + 3 * dx, 17 - dy), (x0 + 2 * dx, 30)]
         for a, b in ((0, 1), (1, 2), (2, 3), (2, 4)):
             p.drawLine(QPointF(*pts[a]), QPointF(*pts[b]))
-        p.setBrush(col)
-        for x, y in pts:
-            p.drawEllipse(QPointF(x, y), 3.6, 3.6)
+        p.setPen(Qt.NoPen)
+        for (x, y), c in zip(pts, ("#3b6fd6", "#8a8f98", "#8a8f98", "#d64545", "#8a8f98")):   # feste Atomfarben
+            p.setBrush(QColor(c))
+            p.drawEllipse(QPointF(x, y), 3.8, 3.8)
     elif kind == "lobes":
         p.drawEllipse(QRectF(10, 8, 20, 24))
         p.drawEllipse(QRectF(34, 8, 20, 24))
@@ -149,8 +162,14 @@ def kind_pixmap(kind, key, ratio=1.0):
         p.drawRoundedRect(QRectF(20, 3, 24, 34), 2, 2)
         for y in (11, 17, 23, 29):
             p.drawLine(QPointF(25, y), QPointF(39, y))
-    else:                                                 # „curve“
-        path((4, 30), ((16, 30), (20, 12), (30, 16)), ((40, 20), (46, 8), (60, 10)))
+    else:                                                 # „curve“: Achsen + Messpunkte mit Linie
+        p.drawLine(QPointF(10, 4), QPointF(10, 35))
+        p.drawLine(QPointF(10, 35), QPointF(58, 35))
+        pts = [(16, 30), (24, 25), (32, 22), (40, 15), (48, 12), (55, 7)]
+        path(*pts)
+        p.setBrush(col)
+        for x, y in pts:
+            p.drawEllipse(QPointF(x, y), 2.0, 2.0)
     p.end()
     return pm
 

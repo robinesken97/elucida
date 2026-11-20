@@ -528,7 +528,7 @@ def norm01(y):
 # ----------------------------------------------------------------------------
 # Tab „IR + MS“
 # ----------------------------------------------------------------------------
-from PySide6.QtCore import QMimeData, Qt  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,  # noqa: E402
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
                                QTableWidget,
@@ -537,7 +537,7 @@ import os  # noqa: E402
 
 from elucida.si import lines as SI  # noqa: E402
 from elucida.tabs import base as TABS  # noqa: E402
-from elucida.app.i18n import T  # noqa: E402
+from elucida.app.i18n import T, T_en  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form, off_spin  # noqa: E402
 
@@ -678,7 +678,7 @@ class IRFigure(TABS.X.SimpleFigure):
 
 def copy_rich(plain, html):
     """Zeile mit Formatierung (fett, hoch-/tiefgestellt) in die Zwischenablage – bleibt beim Einfügen in Word."""
-    md = QMimeData()
+    md = TABS.STYLE.clip_mime()
     md.setText(SI.nbsp(plain))                  # geschützte Leerzeichen wie im Word-Export
     md.setHtml(SI.nbsp(html))
     QApplication.clipboard().setMimeData(md)
@@ -870,6 +870,8 @@ class IRMSTab(TABS.FigureTab):
         self.tbl_ea = TABS.STYLE.summary_grid([T("ea_chk_el"), T("ea_chk_f1"), T("ea_chk_mean"), "Δ [%]",
                                                T("ea_chk_status")])   # Einzelwerte stehen im Raster darüber
         self.tbl_ea.setToolTip(T("ea_chk_tip"))
+        TABS.STYLE.name_table(self.tbl_ea, "EA", "Elemental analysis check", csv=True)
+        f.addRow(TABS.STYLE.table_head(T("tbl_head_check"), self.tbl_ea))
         f.addRow(self.tbl_ea)
         self.lbl_ea_info = HintLabel("")
         self.lbl_ea_info.setWordWrap(True)
@@ -977,6 +979,7 @@ class IRMSTab(TABS.FigureTab):
         v = QVBoxLayout(self.grp_irc_res)
         self.tbl_irc = TABS.STYLE.summary_grid([T("ir_calc_col_meas"), T("ir_calc_col_calc"), "Δṽ [cm⁻¹]",
                                                 "I_calc [km mol⁻¹]", T("ir_calc_col_how")])
+        TABS.STYLE.name_table(self.tbl_irc, "calc_modes", "Calculated IR assignment", csv=True)
         TABS.STYLE.rich_header(self.tbl_irc)
         v.addWidget(self.tbl_irc)
         self.lbl_irc_res = TABS.STYLE.SciLabel(empty=T("ir_calc_none"))
@@ -1078,8 +1081,11 @@ class IRMSTab(TABS.FigureTab):
         if getattr(self, "tbl_irc", None) is None:
             return
         rows = self._irc_rows = self.calc_rows()
-        TABS.STYLE.fill_summary(self.tbl_irc, [[str(q["meas"]), f"{q['calc']:.0f}", f"{q['diff']:+d}".replace("-", "−"),
-                                                f"{q['I']:.0f}", T("ir_calc_how_" + q["how"])] for q in rows])
+        N = TABS.STYLE.num
+        TABS.STYLE.fill_summary(self.tbl_irc, [[N(str(q["meas"]), q["meas"]), N(f"{q['calc']:.0f}", q["calc"]),
+                                                N(f"{q['diff']:+d}".replace("-", "−"), q["diff"]), N(f"{q['I']:.0f}", q["I"]),
+                                                N(T("ir_calc_how_" + q["how"]), T_en("ir_calc_how_" + q["how"]))]
+                                               for q in rows])
         r, st = self.calc_modes(), self.st
         notes = []
         if st.get("irc_file") and r is None:
@@ -1788,9 +1794,11 @@ class IRMSTab(TABS.FigureTab):
         self.tbl_ea.setHorizontalHeaderLabels([T("ea_chk_el"), T("ea_chk_f1"),
                                                T("r2a_ea_mean_single" if single else "ea_chk_mean"), "Δ [%]",
                                                T("ea_chk_status")])
+        N = TABS.STYLE.num                               # CSV: Rohwerte, Status englisch
         TABS.STYLE.fill_summary(self.tbl_ea, [
-            [el, f"{v1:.2f}", f"{m if m is not None else v1:.2f}", TABS.core.fmt_num(d, 2, sign=True),
-             ("✓ " if ok else "⚠ ") + T("ea_chk_ok" if ok else "ea_chk_bad")]
+            [el, N(f"{v1:.2f}", v1), N(f"{m if m is not None else v1:.2f}", m if m is not None else v1),
+             N(TABS.core.fmt_num(d, 2, sign=True), d),
+             N(("✓ " if ok else "⚠ ") + T("ea_chk_ok" if ok else "ea_chk_bad"), T_en("ea_chk_ok" if ok else "ea_chk_bad"))]
             for el, calc, v1, v2, m, d, ok in rows], hidden=(1,) if two else (2,))
         for r, row in enumerate(rows):
             if not row[-1]:

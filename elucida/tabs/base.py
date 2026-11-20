@@ -4,7 +4,6 @@ elucida/tabs/base.py - Zusätzliche Tabs der GUI: Overlay (Messung + TD-DFT) und
 from __future__ import annotations
 
 import copy
-import csv
 import html
 import math
 import os
@@ -29,6 +28,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColo
                                QWidget, QDialog, QDialogButtonBox, QListWidget, QMenu, QMessageBox, QPlainTextEdit, QTabWidget)
 
 from elucida.core import color as COLOR
+from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.core import tddft as X
 from elucida.formats import calc as CALC
@@ -55,10 +55,8 @@ def parse_num(txt):
 
 
 def _plain(label):
-    """Achsenbeschriftung ohne Mathtext für CSV-Köpfe: 'cm$^{-1}$' -> 'cm^-1'."""
-    s = re.sub(r"\$\^\{?([^}$]*)\}?\$", r"^\1", str(label))
-    s = re.sub(r"\$_\{?([^}$]*)\}?\$", r"_\1", s)
-    return s.replace("$", "").replace("\\mathrm", "").replace("{", "").replace("}", "")
+    """Achsenbeschriftung ohne Mathtext für CSV-Köpfe: 'cm$^{-1}$' -> 'cm^-1' (eine Form für alle: core.tables)."""
+    return TBL.plain(label)
 
 
 def error_file(ex):
@@ -67,7 +65,7 @@ def error_file(ex):
 
 
 def write_curves_csv(path, curves, xlabel, ylabel):
-    """Gezeichnete Kurven als CSV (UTF-8, Komma): je Kurve ein x/y-Spaltenpaar, Werte ohne Stapelversatz
+    """Gezeichnete Kurven als CSV (core.tables: UTF-8 mit BOM, Komma): je Kurve ein x/y-Spaltenpaar, Werte ohne Stapelversatz
     ('val'). Lässt sich in Origin, Excel und MATLAB (readmatrix) öffnen."""
     curves = [c for c in curves if len(c["x"]) and not c.get("aux")]    # aux: Hilfslinien (z. B. Basislinien)
     cols, head = [], []
@@ -76,12 +74,66 @@ def write_curves_csv(path, curves, xlabel, ylabel):
         cols += [np.asarray(c["x"], float), np.asarray(c.get("val", c["y"]), float)]
         head += [f"{name}: {_plain(xlabel)}", f"{name}: {_plain(ylabel)}"]
     n = max((len(c) for c in cols), default=0)
-    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-        w = csv.writer(fh)
-        w.writerow(head)
-        for i in range(n):
-            w.writerow([(f"{c[i]:.10g}" if i < len(c) and np.isfinite(c[i]) else "") for c in cols])
-    return path
+    return TBL.write_csv(path, head, ([c[i] if i < len(c) else None for c in cols] for i in range(n)))
+
+
+def table_sheets(tab):
+    """Benannte Ergebnistabellen des Tabs (`STYLE.name_table`) mit Zeilen -> [(Tabelle, Blatt, Kopf, Zeilen)], genau
+    wie angezeigt. Ein nie gezeigter Tab (Alles exportieren) zeichnet vorher."""
+    if hasattr(tab, "ensure_rendered"):
+        main = tab.main
+        keep, main._restoring = getattr(main, "_restoring", False), True    # Zeichnen für die Datei: kein Rückgängig-Schritt
+        try:
+            tab.ensure_rendered()
+        finally:
+            main._restoring = keep
+    out = []
+    for g in tab.findChildren(STYLE.FitGrid):
+        if g.export_name and g.rowCount() and not g.isHidden():
+            head, rows = g.file_table()                # Kopf englisch, Zellen genau wie angezeigt
+            out.append((g, g.sheet or g.export_name, head, rows))
+    return out
+
+
+# Kurven-CSVs eines Exports (Endung -> Blatt der Mappe): Abbildungsdaten, Abklingkurve, Linienspektrum, PXRD, NICS-Scan
+CURVE_CSV = {"_data.csv": "data", "_decay.csv": "data decay", "_sticks.csv": "data sticks",
+             "_pxrd_calculated.csv": "data PXRD", "_NICS_scan.csv": "data NICS scan"}
+
+
+def curve_csvs(files):
+    """[(Blatt, Pfad)] der Kurven-CSVs unter `files` (Reihenfolge des Exports)."""
+    out = []
+    for p in map(Path, files):
+        suf = next((s for s in CURVE_CSV if p.name.endswith(s) and not p.name.endswith("_crystal_data.csv")), None)
+        if suf and p.is_file():
+            out.append((CURVE_CSV[suf], p))
+    return out
+
+
+def table_files(tab, base, done=()):
+    """Entscheidung 170: jede Ergebnistabelle hat eine Datei. Benannte Tabellen mit eigener CSV -> <base>_<Name>.csv
+    (Rohwerte), alle zusammen -> <base>_tables.xlsx (Zahlen wie angezeigt), dazu die Kurven-CSVs als Blätter „data“
+    (auch ohne Ergebnistabelle). Schreibt der Tab die Mappe selbst (`done` enthält sie: X-Ray), kommen die Kurven
+    dort hinzu. -> neue Dateien"""
+    base = Path(base)
+    items, out = table_sheets(tab), []
+    for g, _, _, _ in items:
+        if g.csv:
+            head, raw = g.file_table(raw=True)
+            out.append(TBL.write_csv(base.with_name(f"{base.name}_{g.export_name}.csv"), head, raw))
+    xl = base.with_name(base.name + "_tables.xlsx")
+    curves = curve_csvs(done)
+    own = next((Path(p) for p in done if Path(p).name == xl.name), None)
+    from elucida.si import excel as XL
+    if own is not None:
+        if curves:
+            from openpyxl import load_workbook
+            wb = load_workbook(own, rich_text=True)       # sonst gingen Kursiv/Indizes der X-Ray-Blätter verloren
+            XL.add_data_sheets(wb, curves)
+            wb.save(own)
+    elif items or curves:
+        out.append(XL.write_tables(xl, [(s, h, r) for _, s, h, r in items], curves))
+    return out
 
 
 def reset_button(reset_layout, reset_defaults):
@@ -1311,6 +1363,8 @@ def result_page(group):
     from PySide6.QtWidgets import QSizePolicy, QTextBrowser, QTextEdit
     big = (QTextBrowser, QTextEdit, QPlainTextEdit, QTableWidget, QListWidget)
     group.setParent(None)
+    if STYLE.card_grids(group) and not any(b.property("tablecopy") for b in group.findChildren(QPushButton)):
+        STYLE.table_copy_button(group)               # vor setTitle(""): die Titelzeile kommt mit dem Knopf zurück
     group.setTitle("")
     group.setObjectName("resultCard")
     v = group.layout()
@@ -2628,6 +2682,7 @@ class FigureTab(QWidget):
         with self.main.collecting_skips():                 # unlesbare Teile auslassen und in der Meldung nennen
             try:
                 out = self.export_to(base)
+                out = list(out) + table_files(self, base, out)
                 if self.fmt().get("pptx"):
                     out = export_pptx_extra(self, base, out)
                 out = self.main.place_exports(out)
@@ -2637,7 +2692,8 @@ class FigureTab(QWidget):
                 return self.main.error("\n\n".join(x for x in (str(e), self.main.skips_text()) if x))
             if hasattr(self.main, "notify"):              # Hauptfenster: Formate und Sprung zur Karte in der Meldung
                 links = [(T("export_change_formats"), self.show_formats)] if getattr(self, "grp_common", None) else []
-                self.main.exported((p.parent for p in out), out, (), links)
+                used = self.main.retire_exports(self.STATE_KEY, out)     # erst nach dem gelungenen Ablegen
+                self.main.exported((p.parent for p in out), out, used, links)
             else:                                          # Vergleich/Pfad: deren Gastgeber kennt nur die Ordner
                 self.main.exported(p.parent for p in out)
         return out
@@ -3114,6 +3170,7 @@ class OverlayTab(FigureTab):
         # eine Zeile je Hauptanteil (Zustand, E, λ, f nur in der ersten): schmal, kein Querrollen, kein Umbruch in Zellen
         self.tbl_tdt = STYLE.summary_grid([T("tddft_tab_col_calc"), T("tddft_tab_col_state"), "E [eV]", "λ [nm]",
                                            "f" + STYLE.QTY, T("tddft_tab_col_trans"), T("tddft_tab_col_weight")])
+        STYLE.name_table(self.tbl_tdt, "TDDFT", "TD-DFT transitions")   # CSV: _transitions.csv (alle Anteile)
         STYLE.rich_header(self.tbl_tdt)                   # vor dem ersten Ausblenden tauschen (wie UV-Vis-Kinetik)
         v.addWidget(self.tbl_tdt)
         self.lbl_tdt = STYLE.SciLabel(empty=T("tddft_tab_none"))
@@ -3515,24 +3572,22 @@ class OverlayTab(FigureTab):
         calcs = [e for e in self.st["entries"] if e["kind"] == "calc"]
         if calcs:
             path = Path(base).resolve().with_name(Path(base).name + "_transitions.csv")
-            with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-                w = csv.writer(fh)
-                w.writerow(["Entry", "File", "State", "E [eV]", "lambda [nm]", "f", "Multiplicity",
-                            "Contributions (weight)", "Weight rule"])
-                for e in calcs:
-                    for s_ in self.sources(e):
-                        r = self.cache(("tddft", s_["file"], s_.get("variant")),
-                                       lambda s_=s_: X.parse_tddft(s_["file"], s_.get("variant")))
-                        mult = list(r.get("mult") or [None] * len(r["E"]))
-                        pr = self.tdt_parts(s_)
-                        parts = pr["parts"] if pr else [None] * len(r["E"])
-                        for k, (E, f, m) in enumerate(zip(r["E"], r["f"], mult)):
-                            # alle gedruckten Anteile ohne Schwelle, ASCII-Pfeil (maschinenlesbar)
-                            con = "; ".join(f"{a} -> {b}: {wt:.4f}" for a, b, wt in parts[k] or ()).replace("\u2212", "-")
-                            w.writerow([e["label"], Path(s_["file"]).name, k + 1, f"{E:.10g}",
-                                        f"{1239.84198 / E:.10g}" if E > 0 else "", f"{f:.10g}", m or "",
-                                        con, X.RULE_CSV[pr["rule"]] if pr and con else ""])
-            out.append(path)
+            rows = []
+            for e in calcs:
+                for s_ in self.sources(e):
+                    r = self.cache(("tddft", s_["file"], s_.get("variant")),
+                                   lambda s_=s_: X.parse_tddft(s_["file"], s_.get("variant")))
+                    mult = list(r.get("mult") or [None] * len(r["E"]))
+                    pr = self.tdt_parts(s_)
+                    parts = pr["parts"] if pr else [None] * len(r["E"])
+                    for k, (E, f, m) in enumerate(zip(r["E"], r["f"], mult)):
+                        # alle gedruckten Anteile ohne Schwelle, ASCII-Pfeil (maschinenlesbar)
+                        con = "; ".join(f"{a} -> {b}: {wt:.4f}" for a, b, wt in parts[k] or ()).replace("\u2212", "-")
+                        rows.append([e["label"], Path(s_["file"]).name, k + 1, E,
+                                     1239.84198 / E if E > 0 else None, f, m or "",
+                                     con, X.RULE_CSV[pr["rule"]] if pr and con else ""])
+            out.append(TBL.write_csv(path, ["Entry", "File", "State", "E [eV]", "λ [nm]", "f", "Multiplicity",
+                                            "Contributions (weight)", "Weight rule"], rows))
         try:                                              # NTO-Bilder je Zustand mit Datei (Paket B 1.2.0)
             out += self.nto.export_to(base)
         except Exception:

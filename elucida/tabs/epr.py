@@ -1278,12 +1278,15 @@ class EPRTab(TABS.FigureTab):
         rv = QVBoxLayout(self.grp_results)
         self.tbl_iso = STYLE.summary_grid([T("epr_col_T"), "k [s⁻¹]", T("uvkin_col_ci"), "t½ [min]", T("epr_col_pts"),
                                            T("col_warn")], rich=(1, 2))      # k wie im Methodentext (sci_signed)
+        STYLE.name_table(self.tbl_iso, "decays", "Isothermal decays", csv=True)
         rv.addWidget(self.tbl_iso)
         # Spinzählung: Messungen mit Doppelintegral, bekannter bzw. aus der Kalibrierung bestimmter Konzentration
         self.tbl_spin = STYLE.summary_grid([T("ov_name"), T("epr_spin_di"), T("epr_spin_known"), T("epr_spin_found")])
+        STYLE.name_table(self.tbl_spin, "spin_counting", "Spin counting")   # Rohwerte: _intensity.csv
         rv.addWidget(self.tbl_spin)
         # S = ½-Fits: dieselben Werte wie in der Bildunterschrift (Filter und Formate aus si_caption)
         self.tbl_fit = STYLE.summary_grid([T("ov_name"), "g", "ΔBₚₚ [mT]", T("epr_col_hfc"), T("col_r2")])
+        STYLE.name_table(self.tbl_fit, "fit", "EPR fits", csv=True)
         rv.addWidget(self.tbl_fit)
         rv.addWidget(self.lbl_info)                      # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(self.grp_results)
@@ -1558,8 +1561,8 @@ class EPRTab(TABS.FigureTab):
             for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", ""))):
                 nm = re.sub(r"^\d+", lambda m: m.group(0).translate(sup), nm)          # 14N -> ¹⁴N
                 hfc.append(f"{n}×{nm}: {self.hfc_unit_text(a, e['g'])}")
-            rows.append([e["label"], g_text(e["g"]), f"{e['lw']:.3f}", "; ".join(hfc) or "–",
-                         core.r2_text(e["fit"]["r2"])])
+            rows.append([e["label"], STYLE.num(g_text(e["g"]), e["g"]), STYLE.num(f"{e['lw']:.3f}", e["lw"]),
+                         "; ".join(hfc) or "–", STYLE.num(core.r2_text(e["fit"]["r2"]), e["fit"]["r2"])])
         return rows
 
     def si_caption(self, name):
@@ -2272,8 +2275,10 @@ class EPRTab(TABS.FigureTab):
                 rows.append([name_T(r), "–", "–", "–", str(len(r["idx"])), T("epr_iso_short")])
                 continue
             ci = f["ci_k"]
-            rows.append([name_T(r), sci_signed(f["k"]), sci_range(*ci) if ci else "–",
-                         f"{np.log(2) / f['k'] / 60:.3g}" if f["k"] > 0 else "–", f"{f['n']} / {f['n_all']}", ""])
+            rows.append([STYLE.num(name_T(r), r["T"]) if r["T"] is not None else name_T(r),
+                         STYLE.num(sci_signed(f["k"]), f["k"]), sci_range(*ci) if ci else "–",
+                         STYLE.num(f"{np.log(2) / f['k'] / 60:.3g}", np.log(2) / f["k"] / 60) if f["k"] > 0 else "–",
+                         f"{f['n']} / {f['n_all']}", ""])
         STYLE.fill_summary(self.tbl_iso, rows, hidden=() if any(r_[5] for r_ in rows) else (5,))
         rise = [name_T(r) for r in res if r["fit"] is not None and r["fit"]["k"] < 0]
         if rise:                                         # k < 0: kein Zerfall, keine Halbwertszeit (wie UV-Kinetik)
@@ -2731,6 +2736,8 @@ class EPRTab(TABS.FigureTab):
                     f"baseline: {bl_summary(st)}; smoothing: {st['smooth']:g} mT",
                     "% B [mT]\tI [arb. u.]"]
             safe = re.sub(r"[^\w.+-]+", "_", e["label"]).strip("_") or e["uid"]
+            if safe == base.name or safe.startswith(base.name + "_"):    # „S3_EPR_S3_EPR.txt“ -> „S3_EPR_spectrum.txt“
+                safe = safe[len(base.name):].strip("_") or "spectrum"
             p, n = base.with_name(f"{base.name}_{safe}.txt"), 1
             while p in files:                              # „sample A“ und „sample/A“: nicht überschreiben
                 p, n = base.with_name(f"{base.name}_{safe}_{e['uid']}" + (f"_{n}" if n > 1 else "") + ".txt"), n + 1
@@ -2741,33 +2748,46 @@ class EPRTab(TABS.FigureTab):
                     fh.write(f"{b:.6f}\t{i:.8g}\n")
             files.append(p)
         if st["mode"] == "intensity" and getattr(self, "series_values", None):
-            p = base.with_name(base.name + "_intensity.csv")
-            with open(p, "w", encoding="utf-8-sig") as fh:
-                fh.write("x;intensity;spectrum\n")
-                for x, y, lab in self.series_values:
-                    fh.write(f"{x:.6g};{y:.6g};{lab}\n")
-                for q in getattr(self, "iso_results", None) or []:
-                    f = q["fit"]
-                    if f:
-                        fh.write("# isothermal first-order decay" + (f", T = {q['T']:.3f} K" if q["T"] is not None else "")
-                                 + f": k = {f['k']:.6g} 1/s"
-                                 + (f" [{f['ci_k'][0]:.6g}, {f['ci_k'][1]:.6g}]" if f["ci_k"] else "")
-                                 + f", I0 = {f['I0']:.6g}, n = {f['n']} of {f['n_all']}\n")
-                a = getattr(self, "arr_result", None)
-                if a:
-                    fh.write(f"# Arrhenius (ln k vs 1/T): Ea = {a['Ea']:.6g} J/mol"
-                             + (f" [{a['ci_Ea'][0]:.6g}, {a['ci_Ea'][1]:.6g}]" if a["ci_Ea"] else "")
-                             + f", lnA = {a['lnA']:.6g}"
-                             + (f" [{a['ci_lnA'][0]:.6g}, {a['ci_lnA'][1]:.6g}]" if a["ci_lnA"] else "")
-                             + f", n = {a['n']}, R2 = {a['r2']:.6f}\n")
-                r = getattr(self, "kin_result", None)
-                if r:
-                    fh.write(f"# Arrhenius first-order decay ({st.get('kin_norm', 'lsq')}): "
-                             f"Ea = {r['Ea']:.6g} J/mol [{r['ci_Ea'][0]:.6g}, {r['ci_Ea'][1]:.6g}], "
-                             f"lnA = {r['lnA']:.6g} [{r['ci_lnA'][0]:.6g}, {r['ci_lnA'][1]:.6g}], "
-                             f"beta = {r['beta']:.6g} K/s, corr(Ea, lnA) = {r['corr']:.4f}\n")
-            files.append(p)
+            files.append(self.write_intensity_csv(base.with_name(base.name + "_intensity.csv")))
         return files
+
+    def write_intensity_csv(self, path):
+        """Intensitätsansicht als CSV (Entscheidung 170): eine Zeile je Punkt mit Rolle (Messung; Spinzählung:
+        Referenz/Probe), x und Intensität mit Einheit aus den Achsen, danach die Fits als Zeilen „Parameter, Wert,
+        Intervall“ (Kalibriergerade, isotherme Zerfälle, Arrhenius) statt Kommentarzeilen."""
+        from elucida.core import tables as TBL
+        st, cfg = self.st, (getattr(getattr(self, "F", None), "cfg", None) or {})
+        xl, yl = cfg.get("xlabel") or "x", cfg.get("ylabel") or "intensity"
+        sr = getattr(self, "spin_result", None) if st.get("int_x") == "conc" else None
+        refs = {lab for lab, _c, _v in (sr or {}).get("refs", [])}
+        rows = [["reference" if lab in refs else "sample" if sr else "measurement", lab, x, y, "", None, None, None]
+                for x, y, lab in self.series_values]
+        fit = lambda role, name, par, v, ci=None: [role, name, None, None, par, v] + list(ci or (None, None))  # noqa: E731
+        if sr:
+            cal = sr["cal"]
+            rows += [fit("calibration", "double integral vs c", "slope", cal.get("m")),
+                     fit("calibration", "double integral vs c", "intercept", cal.get("b")),
+                     fit("calibration", "double integral vs c", "R^2", cal.get("r2"))]
+        for q in getattr(self, "iso_results", None) or []:
+            f = q["fit"]
+            if f:
+                nm = f"T = {q['T']:.3f} K" if q["T"] is not None else "isothermal decay"
+                rows += [fit("isothermal first-order decay", nm, "k [s^-1]", f["k"], f["ci_k"]),
+                         fit("isothermal first-order decay", nm, "I0", f["I0"]),
+                         fit("isothermal first-order decay", nm, "points used", f["n"]),
+                         fit("isothermal first-order decay", nm, "points", f["n_all"])]
+        a = getattr(self, "arr_result", None)
+        if a:
+            rows += [fit("Arrhenius (ln k vs 1/T)", "", "Ea [J mol^-1]", a["Ea"], a["ci_Ea"]),
+                     fit("Arrhenius (ln k vs 1/T)", "", "lnA", a["lnA"], a["ci_lnA"]),
+                     fit("Arrhenius (ln k vs 1/T)", "", "temperatures", a["n"]),
+                     fit("Arrhenius (ln k vs 1/T)", "", "R^2", a["r2"])]
+        r = getattr(self, "kin_result", None)
+        if r:
+            role = f"Arrhenius first-order decay ({st.get('kin_norm', 'lsq')})"
+            rows += [fit(role, "", "Ea [J mol^-1]", r["Ea"], r["ci_Ea"]), fit(role, "", "lnA", r["lnA"], r["ci_lnA"]),
+                     fit(role, "", "beta [K/s]", r["beta"]), fit(role, "", "corr(Ea, lnA)", r["corr"])]
+        return TBL.write_csv(path, ["role", "name", xl, yl, "parameter", "value", "CI95 low", "CI95 high"], rows)
 
     def hover_text(self, x, val, name):
         if self.st["mode"] == "intensity":

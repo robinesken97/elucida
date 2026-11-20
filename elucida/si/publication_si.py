@@ -157,7 +157,7 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
                     tables.append(parts["crystal"])
             from elucida.tabs.xray import to_plain              # Kopf ist Markup (Namen maskiert, esc_markup)
             for head, rows in merge_crystal(tables):
-                body += [("gap",), ("tabcap", "Crystal data and structure refinement",
+                body += [("gap",), ("tabcap", "Crystal data and structure refinement for",
                                     ", ".join(to_plain(h) for h in head[1:])),
                          ("crystal", head, rows)]
             body += cmp_blocks("xray")

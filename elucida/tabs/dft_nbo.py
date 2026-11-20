@@ -10,7 +10,6 @@ Reiter. Die Bindungsordnungen sind die aus der NRT-Analyse; die IAO-Wiberg-Ordnu
 """
 from __future__ import annotations
 
-import csv
 import html
 import math
 import re
@@ -29,6 +28,7 @@ from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.canvas_theme import register as register_canvas
 from elucida.app.i18n import T
+from elucida.core import tables as TBL
 from elucida.formats import nbo as NBO
 from elucida.formats.calc import read_text
 from elucida.tabs import base as TABS
@@ -486,6 +486,7 @@ class NboPage:
         g = self._card()
         self.tbl_npa = self._grid([T("nbo_col_atom"), "q" + STYLE.QTY + " [e]", T("nbo_col_core"),
                                    T("nbo_col_valence"), "Rydberg", T("nbo_col_total"), T("nbo_col_spin")])
+        STYLE.name_table(self.tbl_npa, "NBO_NPA", "NBO natural charges")
         g.layout().addWidget(self.tbl_npa, 1)
         self.lbl_npa = STYLE.SciLabel("")
         self.lbl_npa.setWordWrap(True)
@@ -494,9 +495,11 @@ class NboPage:
         # NBO-Liste
         g = self._card()
         self.tbl_lewis = STYLE.summary_grid(["Spin", T("nbo_col_lewis"), T("nbo_col_occ") + " [e]", "%"])
+        STYLE.name_table(self.tbl_lewis, "NBO_Lewis", "NBO Lewis structure")
         g.layout().addWidget(self.tbl_lewis)
         self.tbl_nbo = self._grid(["Spin", "NBO", T("nbo_col_occ") + " [e]", T("nbo_col_energy") + " [Eₕ]",
                                    T("nbo_col_hyb")], rich=(4,))
+        STYLE.name_table(self.tbl_nbo, "NBO_list", "NBO list")
         self.tbl_nbo.elide_col = 4
         g.layout().addWidget(self.tbl_nbo, 1)
         self.lbl_nbo = STYLE.SciLabel("")
@@ -507,6 +510,7 @@ class NboPage:
         g = self._card()
         self.tbl_e2 = self._grid(["Spin", "Donor", T("nbo_col_acceptor"), "E(2) [kcal mol⁻¹]", "E(j)−E(i) [a.u.]",
                                   "F" + STYLE.QTY + "(i,j) [a.u.]"])
+        STYLE.name_table(self.tbl_e2, "NBO_E2", "NBO E(2)")
         self.tbl_e2.elide_col = 2                            # Akzeptor gibt nach, statt quer zu rollen
         g.layout().addWidget(self.tbl_e2, 1)
         self.lbl_e2 = STYLE.SciLabel("")
@@ -516,9 +520,11 @@ class NboPage:
         # NRT
         g = self._card()
         self.tbl_rs = self._grid(["RS", T("nbo_col_weight") + " [%]", T("nbo_col_change")])
+        STYLE.name_table(self.tbl_rs, "NBO_NRT_weights", "NRT weights")
         self.tbl_rs.elide_col = 2
         g.layout().addWidget(self.tbl_rs, 1)
         self.tbl_bo = self._grid([T("nbo_col_bond"), T("nbo_col_bo_t"), T("nbo_col_bo_c"), T("nbo_col_bo_i")])
+        STYLE.name_table(self.tbl_bo, "NBO_NRT_bond_orders", "NRT bond orders")
         g.layout().addWidget(self.tbl_bo, 1)
         self.lbl_nrt = STYLE.SciLabel("")
         self.lbl_nrt.setWordWrap(True)
@@ -527,8 +533,10 @@ class NboPage:
         # Wiberg (BNDIDX): Bindungen ab Schwelle, darunter die Summen je Atom
         g = self._card()
         self.tbl_wb = self._grid([T("nbo_col_bond"), T("nbo_col_wiberg")])
+        STYLE.name_table(self.tbl_wb, "NBO_Wiberg", "Wiberg bond indices")
         g.layout().addWidget(self.tbl_wb, 1)
         self.tbl_wbt = self._grid([T("nbo_col_atom"), T("nbo_col_wiberg_sum")])
+        STYLE.name_table(self.tbl_wbt, "NBO_Wiberg_totals", "Wiberg totals")
         g.layout().addWidget(self.tbl_wbt, 1)
         self.lbl_wb = STYLE.SciLabel("")
         self.lbl_wb.setWordWrap(True)
@@ -976,9 +984,20 @@ class NboPage:
                 self.tab.main.skip_part(err, f["file"])
             else:
                 good.append((f, d))
-        for f, d in good:
-            out.append((f, d, self.structures(f, d)[0], Path(f["file"]).stem if len(good) > 1 else ""))
+        stems = [Path(f["file"]).stem for f, _ in good] if len(good) > 1 else [""] * len(good)
+        parts = [self._short(s_) for s_ in stems]
+        if len(set(parts)) < len(parts):                # gekürzt nicht mehr eindeutig: ganzer Dateiname
+            parts = stems
+        for (f, d), part in zip(good, parts):
+            out.append((f, d, self.structures(f, d)[0], part))
         return out
+
+    def _short(self, stem):
+        """Dateiname ohne doppelte Namensteile (Verbindung, „NBO“): S3_NBO -> "", S3_cation_NBO -> "cation"."""
+        cmp = TABS.core.safe_name(self.compound_name())
+        if cmp and stem.startswith(cmp + "_"):
+            stem = stem[len(cmp) + 1:]
+        return "_".join(t for t in stem.split("_") if t.upper() != "NBO")
 
     def _with(self, f, fn):
         """fn() mit `f` als gewählter Datei (Ansicht, Labels gehören zur gewählten); danach zurück."""
@@ -1014,12 +1033,7 @@ class NboPage:
 
     def write_csv(self, stem, d):
         def w(suffix, head, rows):
-            p = stem.with_name(stem.name + suffix)
-            with open(p, "w", encoding="utf-8-sig", newline="") as fh:
-                cw = csv.writer(fh)
-                cw.writerow(head)
-                cw.writerows(rows)
-            return p
+            return TBL.write_csv(stem.with_name(stem.name + suffix), head, rows)
         op = bool(d.get("spin"))
         out = [w("_NPA.csv", ["atom", "natural charge [e]", "core", "valence", "Rydberg", "total"]
                  + (["natural spin density"] if op else []),
@@ -1034,7 +1048,7 @@ class NboPage:
                           for lab, sec in sp for k, e in sorted(sec["nbos"].items())]))
         if any(sec["e2"] for _, sec in sp):
             out.append(w("_E2.csv", (["spin"] if op else []) + ["donor NBO", "donor", "acceptor NBO", "acceptor",
-                                                                 "E(2) [kcal/mol]", "E(j)-E(i) [a.u.]", "F(i,j) [a.u.]"],
+                                                                 "E(2) [kcal mol^-1]", "E(j)-E(i) [a.u.]", "F(i,j) [a.u.]"],
                          [([lab] if op else []) + [r["donor"], NBO.nbo_label(r["d_type"], r["d_n"], r["d_atoms"]),
                                                    r["acceptor"], NBO.nbo_label(r["a_type"], r["a_n"], r["a_atoms"]),
                                                    r["e2"], r["de"], r["f"]]
@@ -1071,6 +1085,7 @@ class NboPage:
         name = self.compound_name()
         blocks = [("columns", 1)]
         for f, d, structs, part in items:
+            nm = f"{name} ({part.replace('_', ' ')})" if part else name     # zwei Rechnungen: Unterschriften unterscheidbar
             blocks += [("heading", "NBO analysis" + (f" ({part})" if part else "")),
                        ("text", html.escape(self.methods(d)).replace("E(2)", "<i>E</i>(2)"))]
             svg = Path(img_dir) / f"{TABS.core.safe_name(name)}_nbo{('_' + TABS.core.safe_name(part)) if part else ''}.svg"
@@ -1078,7 +1093,7 @@ class NboPage:
                 fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
                 FigureCanvasAgg(fig)
                 F = self._with(f, lambda: self.build(fig, d, interactive=False))
-                blocks += [("image",) + XRAY.save_tight(F, svg), ("figcap", self.caption(d, name))]
+                blocks += [("image",) + XRAY.save_tight(F, svg), ("figcap", self.caption(d, nm))]
             if structs:
                 fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
                 FigureCanvasAgg(fig)
@@ -1088,31 +1103,31 @@ class NboPage:
                 png = svg2.with_suffix(".png")
                 fig.savefig(png, dpi=300, facecolor="white")
                 w_cm, h_cm = (v * 2.54 for v in fig.get_size_inches())
-                blocks += [("image", str(png), w_cm, h_cm, str(svg2)), ("figcap", self.rs_caption(d, structs, name))]
+                blocks += [("image", str(png), w_cm, h_cm, str(svg2)), ("figcap", self.rs_caption(d, structs, nm))]
             op = bool(d.get("spin"))
             blocks += [("tabcap", "Natural charges" + (" and spin densities" if op else "") + " (NPA) of",
-                        name),
+                        nm),
                        ("params", ["Atom", "*q* [e]", "Core", "Valence", "Rydberg", "Total"] + (["Spin density"] if op else []),
                         [[f"{a['el']}{a['num']}", minus(a["charge"]), a["core"], a["valence"], a["rydberg"], a["total"]]
                          + ([minus(a.get("spin", ""))] if op else []) for a in d["npa"]], {"fit": True})]
             rows = [(lab,) + r_ for lab, sec in views(d, "total") for r_ in e2_rows(sec, self.st["e2_min"])]
             if rows:
                 blocks += [("tabcap", f"Second-order perturbation energies *E*(2) ≥ {self.st['e2_min']:.1f} "
-                                      "kcal mol^{−1} of", name),
+                                      "kcal mol^{−1} of", nm),
                            ("params", (["Spin"] if op else []) + ["Donor", "Acceptor", "*E*(2) [kcal mol^{−1}]",
                                                                   "*E*(j)−*E*(i) [a.u.]", "*F*(i,j) [a.u.]"],
                             [([lab] if op else []) + [XRAY.esc_markup(a), XRAY.esc_markup(b), e, minus(de), minus(f_)]
                              for lab, a, b, e, de, f_ in rows], {"fit": True})]
             nrt = d["nrt"]
             if nrt:
-                blocks += [("tabcap", "NRT resonance weights of", name),
+                blocks += [("tabcap", "NRT resonance weights of", nm),
                            ("params", ["RS", "Weight [%]", "Added (removed) vs. RS 1"],
                             [[str(r["rs"]), r["weight"], XRAY.esc_markup(compact(r["change"]))] for r in nrt["rs"]]
                             + ([["others", nrt["others"], ""]] if nrt["others"] else []), {"fit": True})]
                 bo = NBO.nrt_bonds(nrt, self.st["thr"])
                 if bo:
                     blocks += [("tabcap", f"Natural bond orders (NRT, total ≥ {self.st['thr']:.2f}) of",
-                                name),
+                                nm),
                                ("params", ["Bond", "Total", "Covalent", "Ionic"],
                                 [[f"{nrt['els'].get(a, '')}{a}–{nrt['els'].get(b, '')}{b}", t, c, i]
                                  for a, b, t, c, i in bo], {"fit": True})]
@@ -1120,7 +1135,7 @@ class NboPage:
             rows = NBO.wiberg_bonds(wb, self.st["thr"]) if wb else []
             if rows:
                 blocks += [("tabcap", f"Wiberg bond indices in the NAO basis (NBO, ≥ {self.st['thr']:.2f}) of",
-                            name),
+                            nm),
                            ("params", ["Bond", "Wiberg bond index"],
                             [[f"{wb['els'][a]}{a}–{wb['els'][b]}{b}", v] for a, b, v in rows], {"fit": True})]
         return blocks

@@ -10,7 +10,6 @@ NICS = −σ_iso, NICSzz = −n·σ·n mit n = Normale der Ebene durch die Schwe
 from __future__ import annotations
 import elucida
 
-import csv
 import html
 import os
 import re
@@ -1945,7 +1944,7 @@ class DftPages:
         self.lbl_nics.setWordWrap(True)
         self.lbl_nics.setStyleSheet(HINT_CSS)
         cv.addWidget(self.lbl_nics)
-        self.tbl_nics = STYLE.FitGrid(0, 6)
+        self.tbl_nics = STYLE.name_table(STYLE.FitGrid(0, 6), "NICS", "NICS points")   # Rohwerte: _NICS.csv
         self.tbl_nics.setHorizontalHeaderLabels([T("dft_nics_file"), "Bq", "h [Å]", "NICS [ppm]", "NICSzz [ppm]",
                                                  T("dft_nics_pair")])
         self.tbl_nics.verticalHeader().setVisible(False)
@@ -2266,15 +2265,34 @@ class DftPages:
             ORB.write_cube(p, g["els"], g["xyz"], g["origin"], np.diag(g["step"]), g["data"].astype(np.float32),
                            title="3D NICS grid", comment="NICS = -sigma_iso [ppm]")
             files.append(p)
+        from elucida.core import tables as TBL
+        if any(k == "profile" for k, _, _ in self.figures()):   # Stufen des Profils: ΔE/ΔH/ΔG (vorher nur im Bild)
+            items = [self.mr_item(it) for it in self.items()]
+            per = {k: {id(r_.get("opt")): r_ for r_ in profile_rows(items, k)[0]} for k in ("E", "H", "G")}
+            out = []
+            for it in items:
+                vals = [per[k].get(id(it.get("opt"))) for k in ("E", "H", "G")]
+                if any(vals):
+                    out.append([it["label"], it.get("step")] + [v["value"] if v else None for v in vals]
+                               + [v["abs"] if v else None for v in vals])
+            if out:
+                files.append(TBL.write_csv(base.with_name(base.name + "_profile.csv"),
+                                           ["species", "step", "ΔE [kcal mol^-1]", "ΔH [kcal mol^-1]", "ΔG [kcal mol^-1]",
+                                            "E [Eh]", "H [Eh]", "G [Eh]"], out))
         rows = self.nics_rows()
-        if rows:
-            p = base.with_name(base.name + "_NICS.csv")
-            with open(p, "w", encoding="utf-8-sig", newline="") as fh:
-                w = csv.writer(fh)
-                w.writerow(["file", "Bq", "h [A]", "NICS [ppm]", "NICSzz [ppm]", "average above/below"])
-                for r in rows:
-                    w.writerow([r[0], r[1], f"{r[2]:.3f}", f"{r[3]:.2f}", f"{r[4]:.2f}", r[5].replace("−", "-")])
-            files.append(p)
+        if rows:                                          # Rohwerte (Tabelle zeigt gerundet)
+            files.append(TBL.write_csv(base.with_name(base.name + "_NICS.csv"),
+                                       ["file", "Bq", "h [Å]", "NICS [ppm]", "NICSzz [ppm]", "average above/below"], rows))
+        scans = [d for d in self.nics_data()[0] if d["scan"]]
+        if scans:                                         # Scan (Abbildung): fehlte bis 1.3 in jeder Datei
+            out = []
+            for d in scans:
+                pts = d["pts"]
+                s_ = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pts["xyz"], axis=0), axis=1))])
+                out += [[Path(d["file"]).name, i + 1, s_[i], pts["h"][i], pts["nics"][i], pts["zz"][i]]
+                        for i in range(len(pts["h"]))]
+            files.append(TBL.write_csv(base.with_name(base.name + "_NICS_scan.csv"),
+                                       ["file", "Bq", "path length [Å]", "h [Å]", "NICS [ppm]", "NICSzz [ppm]"], out))
         return files
 
     def si_figures(self, out_dir, name):

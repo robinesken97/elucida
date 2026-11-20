@@ -875,16 +875,12 @@ class SECTab(TABS.FigureTab):
         out = super().export_to(base)
         h = self._heat if self.st["mode"] == "heatmap" else None
         if h:                                              # Daten der Heatmap statt einer leeren Kurventabelle
-            import csv
+            from elucida.core import tables as TBL
             data = next(p for p in out if p.name.endswith("_data.csv"))
             ycol = h["kind"] != "n"
-            head = ["spectrum no."] + ([TABS._plain(h["ylabel"])] if ycol else []) + [f"{v:.10g} nm" for v in h["lam"]]
-            with open(data, "w", newline="", encoding="utf-8-sig") as fh:
-                w_ = csv.writer(fh)
-                w_.writerow(head)
-                for k, z in enumerate(h["Z"]):
-                    w_.writerow([h["nums"][k]] + ([f"{h['yv'][k]:.10g}"] if ycol else []) +
-                                [f"{v:.10g}" if np.isfinite(v) else "" for v in z])
+            head = ["spectrum no."] + ([h["ylabel"]] if ycol else []) + [f"{v:.10g} nm" for v in h["lam"]]
+            TBL.write_csv(data, head, ([h["nums"][k]] + ([h["yv"][k]] if ycol else []) + [float(v) for v in z]
+                                       for k, z in enumerate(h["Z"])))
         return out
 
     def si_caption(self, name):

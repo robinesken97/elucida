@@ -7,8 +7,6 @@ Rechnung (`pop_si`, Chip wie „Multireferenz“), weil ORCA Mulliken und Löwdi
 """
 from __future__ import annotations
 
-import csv
-import html
 from pathlib import Path
 
 from PySide6.QtWidgets import QCheckBox, QGroupBox, QStackedWidget, QVBoxLayout
@@ -90,13 +88,13 @@ def write_csv(tab, path):
     if not data:
         return None
     heads = list(dict.fromkeys(h for _, (head, _, _) in data for h in head[1:]))
-    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-        w = csv.writer(fh)
-        w.writerow(["Calculation", "Atom"] + heads)
-        for n, (head, _, vals) in data:
-            for r in vals:
-                d = dict(zip(head[1:], r[1:]))
-                w.writerow([n, r[0]] + [repr(d[h]) if h in d else "" for h in heads])
+    from elucida.core import tables as TBL
+    rows = []
+    for n, (head, _, vals) in data:
+        for r in vals:                                   # ORCA und Gaussian drucken Ladungen mit 6 Nachkommastellen
+            d = dict(zip(head[1:], r[1:]))              # (repr ergab „1e-05“ und kürzte „-0.120000“)
+            rows.append([n, r[0]] + [f"{d[h]:.6f}" if h in d else "" for h in heads])
+    TBL.write_csv(path, ["Calculation", "Atom"] + heads, rows)
     return Path(path)
 
 
@@ -116,7 +114,7 @@ class PopulationPage(QGroupBox):
         row.addWidget(self.si)
         row.addStretch(1)
         v.addLayout(row)
-        self.grid = STYLE.FitGrid(0, 1)
+        self.grid = STYLE.name_table(STYLE.FitGrid(0, 1), "charges", "Atomic charges")   # Rohwerte: _charges.csv
         self.grid.verticalHeader().setVisible(False)
         from PySide6.QtWidgets import QAbstractItemView
         self.grid.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -130,6 +128,7 @@ class PopulationPage(QGroupBox):
         self.note.setWordWrap(True)
         v.addWidget(self.note)
         self.btn_copy = STYLE.copy_button(T("dft_pop_copy_tip"))
+        self.btn_copy.setProperty("tablecopy", True)
         self.btn_copy.clicked.connect(self.copy)
         STYLE.card_actions(self, self.btn_copy)
 
@@ -175,9 +174,5 @@ class PopulationPage(QGroupBox):
         head, rows, _ = table(self.tab, e)
         if not rows:
             return
-        from elucida.tabs import xray as XRAY
-        from elucida.tabs.ir_ea import copy_rich
-        pl = "\n".join("\t".join(r) for r in [head] + rows)
-        ht = XRAY.table_html(head, [[html.escape(c) for c in r] for r in rows])
-        copy_rich(pl, ht)
+        STYLE.copy_tables([self.grid])                  # Word (HTML, U+2212) und Excel (TSV, ASCII-Minus) zugleich
         self.tab.main.statusBar().showMessage(T("dft_pop_copied"), 4000)

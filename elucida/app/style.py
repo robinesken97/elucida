@@ -419,6 +419,143 @@ class FitGrid(QTableWidget):
         super().resizeEvent(ev)
         self.fit()
 
+    # -- Tabelle als Datei und in der Zwischenablage (Entscheidung 170): eine Quelle für Kopieren und _tables.xlsx
+    export_name = None        # Teil des Dateinamens (<Verbindung>_<Tab>_<export_name>.csv), None = nur Kopieren
+    sheet = ""                # Blattname in _tables.xlsx
+    csv = False               # eigene CSV (sonst steht sie schon mit Rohwerten in einer anderen Datei des Tabs)
+
+    def screen_table(self, raw=False):
+        """Kopf und Zeilen in der Reihenfolge der Anzeige, genau die angezeigten Texte (raw: Rohwert der Zelle aus
+        Qt.UserRole, sonst der Text). Ohne verborgene Spalten und Spalten ohne Kopf (Kästchen, Farbfelder)."""
+        hh = self.horizontalHeader()
+        cols = [hh.logicalIndex(v) for v in range(self.columnCount())]
+        head = lambda c: self.horizontalHeaderItem(c).text() if self.horizontalHeaderItem(c) else ""   # noqa: E731
+        cols = [c for c in cols if not self.isColumnHidden(c) and head(c)]
+        rows = []
+        for r in range(self.rowCount()):
+            if self.isRowHidden(r):
+                continue
+            row = []
+            for c in cols:
+                it = self.item(r, c)
+                v = it.data(Qt.UserRole) if (raw and it is not None) else None
+                row.append(v if v is not None else (it.text() if it is not None else ""))
+            rows.append(row)
+        return [head(c) for c in cols], rows
+
+    def file_table(self, raw=False):
+        """Wie `screen_table`, für Dateien: Kopf englisch (CSV/Excel sind immer englisch), mit raw auch Hinweistexte."""
+        from elucida.app.i18n import to_en
+        head, rows = self.screen_table(raw)
+        if raw:
+            rows = [[to_en(v) if isinstance(v, str) else v for v in r] for r in rows]
+        return [to_en(h) for h in head], rows
+
+    def contextMenuEvent(self, ev):
+        from PySide6.QtWidgets import QMenu
+        from elucida.app.i18n import T
+        m = QMenu(self)
+        m.addAction(icon("copy"), T("tbl_copy_one"), lambda: copy_tables([self]))
+        m.exec(ev.globalPos())
+
+    def keyPressEvent(self, ev):
+        from PySide6.QtGui import QKeySequence
+        if ev.matches(QKeySequence.Copy):
+            return copy_tables([self])
+        super().keyPressEvent(ev)
+
+
+def name_table(t, name, sheet, csv=False):
+    """Ergebnistabelle für den Export benennen: Blatt `sheet` in <Tab>_tables.xlsx, mit csv=True zusätzlich
+    <Tab>_<name>.csv (Rohwerte aus Qt.UserRole, siehe fill_summary)."""
+    t.export_name, t.sheet, t.csv = name, sheet, csv
+    return t
+
+
+def table_html(head, rows):
+    """Tabelle für Word: Kopf fett mit Linie, echtes Minus (U+2212) vor Zahlen, Zellen mittig."""
+    import html as _h
+    import re as _re
+
+    def cell(s):
+        return _h.escape(_re.sub(r"(?<![\w.])-(?=[\d.])", "−", str(s)))
+    css = "border-collapse:collapse;font-family:Arial;font-size:10pt"
+    th = "".join(f"<th style='border-top:1px solid black;border-bottom:1px solid black;padding:2px 8px'>{cell(h)}</th>"
+                 for h in head)
+    tr = "".join("<tr>" + "".join(f"<td style='padding:2px 8px;text-align:center'>{cell(c)}</td>" for c in r) + "</tr>"
+                 for r in rows)
+    return f"<table style='{css}'><tr>{th}</tr>{tr}<tr>" + "".join(
+        "<td style='border-top:1px solid black'></td>" for _ in head) + "</tr></table>"
+
+
+def table_tsv(head, rows):
+    """Dieselbe Tabelle für Excel: Tabulatoren, ASCII-Minus, Dezimalpunkt (die Anzeige hat ihn schon)."""
+    from elucida.core import tables as TBL
+    return "\n".join("\t".join(TBL.plain(c) for c in r) for r in [head] + rows) + "\n"
+
+
+def clip_mime():
+    """Leere QMimeData für die Zwischenablage, von Qt (C++) angelegt: eine in Python angelegte bleibt dort als
+    Python-Unterklasse liegen, Qt löscht sie erst nach dem Ende von Python und das Programm stürzt beim Beenden ab
+    (EXC_BAD_ACCESS in ~QMimeDataWrapper, exit 139)."""
+    from PySide6.QtGui import QStandardItem, QStandardItemModel
+    model = QStandardItemModel(1, 1)
+    model.setItem(0, 0, QStandardItem())
+    md = model.mimeData([model.index(0, 0)])
+    for f in md.formats():
+        md.removeFormat(f)
+    return md
+
+
+def copy_tables(grids):
+    """„Kopieren“ einer Ergebnistabelle: HTML (Word) und TSV (Excel) in EINEM Zwischenablage-Eintrag; mehrere
+    Tabellen einer Karte untereinander. -> Anzahl kopierter Tabellen."""
+    parts = [g.screen_table() for g in grids if not g.isHidden() and g.rowCount()]
+    if not parts:
+        return 0
+    md = clip_mime()
+    md.setHtml("<br>".join(table_html(h, r) for h, r in parts))
+    md.setText("\n".join(table_tsv(h, r) for h, r in parts))
+    QApplication.clipboard().setMimeData(md)
+    return len(parts)
+
+
+def card_grids(card):
+    """Ergebnistabellen einer Karte (FitGrid), auch in Stapeln und Unterseiten."""
+    return [g for g in card.findChildren(FitGrid)]
+
+
+def table_copy_button(card):
+    """Ein „Kopieren“ je Karte mit Ergebnistabellen (oben rechts auf der Titelzeile, wie alle Karten): kopiert alle
+    sichtbaren Tabellen der Karte. Hat die Karte schon Aktionen, kommt der Knopf ans Ende."""
+    from elucida.app.i18n import T
+    b = copy_button(T("tbl_copy_tip"))
+    b.setProperty("tablecopy", True)
+    b.clicked.connect(lambda: copy_tables(card_grids(card)))
+    for g in card_grids(card):
+        g._copy_btn = b
+    acts = getattr(card, "_actions", None)
+    if acts is not None:
+        _head_button(b)
+        acts.box.layout().addWidget(b)
+        acts.place()
+    elif not card.title() and hasattr(card.layout(), "insertWidget"):   # Karte ohne Titel (NBO-Unterreiter): eigene
+        card.layout().insertWidget(0, text_head("", b))                  # Kopfzeile, sonst läge der Knopf auf der Tabelle
+    else:
+        card_actions(card, b)
+    return b
+
+
+def table_head(label, grid):
+    """Kopfzeile mit „Kopieren“ direkt über einer Ergebnistabelle, die nur ein Teil ihrer Karte ist (HRMS-, EA-Prüfung
+    zwischen Eingaben; wie `text_head` über Textfeldern)."""
+    from elucida.app.i18n import T
+    b = copy_button(T("tbl_copy_tip"))
+    b.setProperty("tablecopy", True)
+    b.clicked.connect(lambda: copy_tables([grid]))
+    grid._copy_btn = b
+    return text_head(label, b)
+
 
 def summary_grid(headers, rich=()):
     """Zweite Tabelle einer Ergebnisseite (Zusammenfassung je Reihe/Paar/Messung) im Stil aller Tabellen: so hoch wie
@@ -435,13 +572,28 @@ def summary_grid(headers, rich=()):
     return t
 
 
+class num(str):
+    """Zelltext mit Rohwert: verhält sich überall wie der angezeigte Text, `fill_summary` legt `raw` für die CSV in
+    Qt.UserRole (Entscheidung 170: CSV mit vollen Rohwerten, Bildschirm/Excel/Kopieren mit den angezeigten Zahlen)."""
+
+    def __new__(cls, text, raw):
+        o = super().__new__(cls, text)
+        o.raw = raw
+        return o
+
+
 def fill_summary(t, rows, hidden=()):
-    """Zeilen (Listen von Texten) setzen; `hidden`: Spalten, die diesmal entfallen."""
+    """Zeilen (Listen von Texten) setzen; `hidden`: Spalten, die diesmal entfallen. Zellen vom Typ `num` tragen ihren
+    Rohwert für die CSV (Qt.UserRole); angezeigt und kopiert wird der Text."""
     from PySide6.QtWidgets import QTableWidgetItem
     t.setRowCount(len(rows))
     for i, row in enumerate(rows):
         for j, v in enumerate(row):
-            t.setItem(i, j, QTableWidgetItem(v))
+            raw = getattr(v, "raw", None)
+            it = QTableWidgetItem(str(v))
+            if raw is not None:
+                it.setData(Qt.UserRole, raw)
+            t.setItem(i, j, it)
     for c in range(t.columnCount()):
         t.setColumnHidden(c, c in hidden)
     t._rows_h = t.horizontalHeader().sizeHint().height() + len(rows) * CHECK_ROW_H + 2

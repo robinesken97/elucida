@@ -12,7 +12,6 @@ Reaktionspfad (`CompareHost`); die Vergleiche stehen in `publication.elucida` un
 from __future__ import annotations
 
 import copy
-import csv
 import hashlib
 import html
 import json
@@ -24,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import yaml
-from PySide6.QtCore import QMimeData, Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -36,6 +35,7 @@ from elucida.app import publication as PUB
 from elucida.app import style as STYLE
 from elucida.app.i18n import T
 from elucida.app.style import HINT_CSS, make_form
+from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 
@@ -773,7 +773,7 @@ class CompareHost(QMainWindow):
     def text_format(self, key): return self.owner.text_format(key)              # noqa: E704
     def show_hover(self, text): self.owner.show_hover(text)                     # noqa: E704
     def error(self, text): self.owner.error(text)                               # noqa: E704
-    def exported(self, dirs): self.owner.exported(dirs)                         # noqa: E704
+    def exported(self, *a, **kw): self.owner.exported(*a, **kw)                 # noqa: E704
     def skip_part(self, *a, **kw): self.owner.skip_part(*a, **kw)              # noqa: E704
     def collecting_skips(self): return self.owner.collecting_skips()            # noqa: E704
     def skips_text(self): return self.owner.skips_text()                        # noqa: E704
@@ -1047,12 +1047,13 @@ class CompareTab(TABS.FigureTab):
         out_dir = page.out_dir()
         base = PRJ.staging(out_dir, self.STATE_KEY) / core.safe_name(page.item["name"])
         try:
-            out = PRJ.place_exports(out_dir, self.export_to(base))
+            out = self.export_to(base)
+            out = PRJ.place_exports(out_dir, list(out) + TABS.table_files(self, base, out))   # Kurven: Blatt „data“
         except PermissionError as e:
             return self.main.error(T("report_locked", p=getattr(e, "filename", "") or ""))
         except Exception as e:
             return self.main.error(str(e))
-        self.main.exported(p.parent for p in out)
+        self.main.exported([p.parent for p in out], out)             # mit Formatzeile wie jeder Export
         return out
 
 
@@ -2278,7 +2279,7 @@ class TableTab(CompareTab):
         from elucida.si import lines as SI
         from elucida.tabs import xray as XRAY
         header, rows, *_ = self.export_table()
-        md = QMimeData()
+        md = STYLE.clip_mime()
         md.setText(XRAY.table_plain(header, rows))
         md.setHtml(SI.nbsp(self.table_html()))
         QApplication.clipboard().setMimeData(md)
@@ -2316,17 +2317,23 @@ class TableTab(CompareTab):
                     align=XL.LEFT if c == 0 else XL.CENTER, fill=XL.HEAD_FILL, border=XL.HEAD_LINE)
         for ri, row in enumerate(rows, r0 + 1):
             for c, v in enumerate(row):
-                XL._put(ws, ri, 2 + c, XRAY.to_rich_xlsx(v) if v else None, XL.F_BOLD if c in bold else XL.F_BASE,
+                num = TBL.screen_number(XRAY.to_plain(v)) if v and c else None      # eine Zahl: Zahlenzelle
+                XL._put(ws, ri, 2 + c, num[0] if num else (XRAY.to_rich_xlsx(v) if v else None),
+                        XL.F_BOLD if c in bold else XL.F_BASE, fmt=num[1] if num else None,
                         align=XL.LEFT if c == 0 else XL.CENTER, border=XL.ROW_LINE)
+        # mehrere Werte in einer Zelle (Banden, Paare): zweites Blatt mit einem Wert je Zeile
+        groups = [t for t, n in top for _ in range(n)] if top else [""] * len(header)
+        long = [[XRAY.to_plain(r[0]), " ".join(x for x in (XRAY.to_plain(groups[c]), XRAY.to_plain(header[c])) if x),
+                 k + 1, part]
+                for r in rows for c in range(1, len(r)) if r[c]
+                for k, part in enumerate(x for x in re.split(r"\s*[;,]\s+|\n", XRAY.to_plain(r[c])) if x.strip())]
+        XL.add_table_sheets(wb, [("Values", ["Row", "Column", "Value no.", "Value"], long)])
         xlsx = PRJ.with_ext(base, ".xlsx")
         wb.save(xlsx)
         csv_p = PRJ.with_ext(base, ".csv")
-        with open(csv_p, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh)
-            if top:
-                w.writerow([XRAY.to_plain(t) for t, n in top for _ in range(n)])
-            for r in [header] + rows:
-                w.writerow([XRAY.to_plain(c) for c in r])
+        TBL.write_csv(csv_p, [XRAY.to_plain(c) for c in header] if not top else
+                      [" ".join(x for x in (XRAY.to_plain(g), XRAY.to_plain(h)) if x) for g, h in zip(groups, header)],
+                      [[XRAY.to_plain(c) for c in r] for r in rows])
         return [docx, xlsx, csv_p]
 
 

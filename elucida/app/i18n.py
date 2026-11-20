@@ -5277,6 +5277,30 @@ def long_form(text: str) -> str:
     return ""
 
 
+def T_en(_key: str, **kw) -> str:
+    """Englischer Text unabhängig von der Programmsprache (Dateien wie CSV sind immer englisch)."""
+    en = TEXTS.get(_key, (_key, _key))[1]
+    return en.format(**kw) if kw else en
+
+
+_TO_EN = {}
+
+
+def to_en(text: str) -> str:
+    """Angezeigten Text (Tabellenkopf, Hinweis) auf Englisch für Dateien: ganzer Eintrag oder der Teil vor „ [Einheit]“;
+    Unbekanntes bleibt."""
+    if _LANG == "en" or not text:
+        return text
+    if not _TO_EN:
+        _TO_EN.update({de.replace("\u200b", ""): en for de, en in TEXTS.values()
+                       if isinstance(de, str) and "{" not in de})
+    text = text.replace("\u200b", "")                 # STYLE.QTY (Satzmarke) gehört nicht zum Wort
+    if text in _TO_EN:
+        return _TO_EN[text]
+    head, sep, unit = text.partition(" [")
+    return _TO_EN.get(head, head) + sep + unit if sep else text
+
+
 def T(_key: str, **kw) -> str:
     de, en = TEXTS.get(_key, (_key, _key))
     txt = en if _LANG == "en" else de
@@ -5563,7 +5587,7 @@ TEXTS.update({                                      # Spur A2, Punkt 3 (Rest): Z
     "export_part_tables": ("Tabellen", "Tables"),
     "export_part_geometry": ("Geometrie {name}", "Geometry {name}"),
     "export_part_orbitals": ("Orbitale {name}", "Orbitals {name}"),
-    "export_part_report": ("Bericht, NBO, ACID, Tabellen", "Report, NBO, ACID, tables"),
+    "export_part_report": ("Bericht, NBO, ACID", "Report, NBO, ACID"),
     "export_all_progress": ("Exportiere {i}/{n}: {tab} …", "Exporting {i}/{n}: {tab} …"),
 })
 TEXTS.update({                                      # Spur A2, Export-Tab Entwurf v2 (Reiter je Ziel)
@@ -6182,4 +6206,21 @@ TEXTS.update({
     "lab_extra_off_tip": ("Alle eigenen Labels dieser Abbildung entfernen", "Remove all own labels of this figure"),
     "lab_extra_none": ("Keine eigenen Labels: Rechtsklick auf eine freie Stelle der Vorschau fügt eines ein",
                        "No own labels: right-click an empty spot of the preview to add one"),
+})
+# tbl_: Ergebnistabellen als Datei und in der Zwischenablage (Entscheidung 170)
+TEXTS.update({
+    "tbl_copy_one": ("Tabelle kopieren (Word und Excel)", "Copy table (Word and Excel)"),
+    "tbl_copy_tip": ("Tabellen dieser Karte kopieren: Word erhält eine formatierte Tabelle, Excel Zahlen mit "
+                     "Dezimalpunkt", "Copy the tables of this card: Word gets a formatted table, Excel numbers with a "
+                     "decimal point"),
+    "export_retired": ("Nicht mehr erzeugt, in den Papierkorb: {f}", "No longer written, moved to the Trash: {f}"),
+    "export_retired_failed": ("Nicht mehr erzeugt, Papierkorb fehlgeschlagen (bleibt liegen): {f}",
+                              "No longer written, could not move to the Trash (left in place): {f}"),
+    "export_counts": ("Dateien: {c}", "Files: {c}"),
+    "open_tables": ("tables/ öffnen", "Open tables/"),
+    "tbl_head_check": ("Prüfung", "Check"),
+    "tbl_excel_hint": ("Für Excel <Verbindung>_<Tab>_tables.xlsx öffnen; CSV-Dateien sind für Origin/Python (in Excel "
+                       "über Daten > Aus Text/CSV)",
+                       "For Excel open <compound>_<Tab>_tables.xlsx; CSV files are for Origin/Python (in Excel via "
+                       "Data > From Text/CSV)"),
 })

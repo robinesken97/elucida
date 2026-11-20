@@ -2992,7 +2992,7 @@ def selftest(outdir, with_isnet=False):
             files_hc = t_hc.export_to(out / "hcell_cap")
             assert all(f_.exists() for f_ in files_hc) and not any(f_.name.endswith("_data.csv") for f_ in files_hc)
             csv_hc = next(f_ for f_ in files_hc if f_.name.endswith("_cycles.csv")).read_text(encoding="utf-8-sig")
-            assert csv_hc.count("cellA;") == 6 and csv_hc.count("cellB;") == 6, csv_hc[:300]
+            assert csv_hc.count("cellA,") == 6 and csv_hc.count("cellB,") == 6 and ";" not in csv_hc, csv_hc[:300]   # Komma (170)
             assert any(f_.suffix == ".pdf" for f_ in files_hc)
             # Speichern/Laden: Pfade im Projekt, Schrittdateien bleiben im Ordner der Messung
             w.save_project()
@@ -3355,7 +3355,8 @@ def selftest(outdir, with_isnet=False):
                 assert "ln k against 1/T" in mt_ and "Ea = " in mt_ and "n = 3 temperatures" in mt_, mt_
                 files = t_e.export_to(out / "epr_arr")
                 csv_ = next(f_ for f_ in files if f_.name.endswith("_intensity.csv")).read_text(encoding="utf-8-sig")
-                assert csv_.count("# isothermal first-order decay") == 3 and "# Arrhenius (ln k vs 1/T): Ea = " in csv_, csv_
+                assert csv_.count(",k [s^-1],") == 3 and "Arrhenius (ln k vs 1/T),,,,Ea [J mol^-1]," in csv_, csv_   # 170: Zeilen
+                assert csv_.splitlines()[0].startswith("role,name,") and "#" not in csv_, csv_[:200]
                 w.epr_state.update(kin_loss=50.0, int_x="time")       # Anfangsphase: weniger Punkte, Satz im Methodentext
                 t_e.build(MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI))
                 assert [r_["fit"]["n"] for r_ in t_e.iso_results[:3]] == [6, 6, 4], t_e.iso_results
@@ -3523,7 +3524,7 @@ def selftest(outdir, with_isnet=False):
                 assert f"{s_k['fit']['half'] * 24:.3g} h" in meth_ and "Elucida" not in cap_ + meth_, meth_
                 files_x = t_k.export_to(out / "uvkin")
                 assert all(Path(f_).exists() for f_ in files_x) and Path(out / "uvkin.pdf") in files_x
-                rows_x = (out / "uvkin_kinetics.csv").read_text(encoding="utf-8-sig").splitlines()
+                rows_x = (out / "uvkin_results.csv").read_text(encoding="utf-8-sig").splitlines()   # bis 1.3: _kinetics
                 assert rows_x[0].startswith("series,name,t [h]") and len(rows_x) == 1 + len(days_) + 2, rows_x
                 # Ansicht 1: Spektren einer Reihe im Farbverlauf, beschriftet mit der Zeit; ohne Zeit mit Namen
                 t_k.cmb_view.setCurrentIndex(t_k.cmb_view.findData("spectra"))
@@ -6158,10 +6159,10 @@ def selftest(outdir, with_isnet=False):
             npath_ = len(pymupdf.open(str(out / "xray" / "xray_test_xtest_a.pdf"))[0].get_drawings())
             assert npath_ > 20, npath_
             csv_ = (out / "xray" / "xray_test_crystal_data.csv").read_text(encoding="utf-8-sig")
-            assert "P2\u2081/c" in csv_ and "0.42/\u22120.31" in csv_
+            assert "P2_1/c" in csv_ and "0.42/-0.31" in csv_          # 170: CSV ohne Hochstellung, ASCII-Minus
             from openpyxl import load_workbook
             wb_ = load_workbook(out / "xray" / "xray_test_tables.xlsx")
-            assert wb_.sheetnames == ["Crystal data", "Selected parameters"]
+            assert wb_.sheetnames[:2] == ["Crystal data", "Selected parameters"], wb_.sheetnames   # 170: dahinter Ergebnisblätter
             assert (out / "xray" / "xray_test_captions.txt").read_text(encoding="utf-8").count("X-ray solid state structure") == 2
             # Lösungsmittel-Schalter, Startansicht, Label-Modus, Drahtmodell, Bildunterschrift
             mol_ = t_x.molecule(ent_[0])
@@ -8497,7 +8498,7 @@ def selftest(outdir, with_isnet=False):
                 tr_ = next(f_ for f_ in fo_ if f_.name == "ov_transitions.csv")
                 with open(tr_, encoding="utf-8-sig", newline="") as fh_:
                     rows_tr_ = list(csv_pf_.reader(fh_))
-                assert rows_tr_[0][:6] == ["Entry", "File", "State", "E [eV]", "lambda [nm]", "f"], rows_tr_[0]
+                assert rows_tr_[0][:6] == ["Entry", "File", "State", "E [eV]", "λ [nm]", "f"], rows_tr_[0]   # bis 1.3: lambda
                 assert len(rows_tr_) == 3 and abs(float(rows_tr_[1][4]) - 380.0) < 0.2 and rows_tr_[1][5] == "0.5", rows_tr_
             finally:
                 w.dft_state["entries"], w.dft_state["current"] = saved_pf_
@@ -8679,7 +8680,10 @@ def selftest(outdir, with_isnet=False):
                 assert "Natural spin densities (NPA" in t_d.nbo.caption(ro_, "X")
                 assert "Open-shell wavefunction (multiplicity 2)" in t_d.nbo.methods(ro_)
                 exo_ = {Path(p_).name for p_ in t_d.nbo.export_to(d_nbo_ / "expo")}
-                assert {"expo_NBO_T_cation_NBO_Wiberg_alpha_matrix.csv", "expo_NBO_T_cation_NBO_Wiberg_beta_matrix.csv"} <= exo_
+                # Namensteil ohne doppeltes „NBO“ (bis 1.3: expo_NBO_T_cation_NBO_Wiberg_alpha_matrix.csv)
+                assert any(n_.startswith("expo_NBO_") and n_.endswith("cation_Wiberg_alpha_matrix.csv") for n_ in exo_), exo_
+                assert any(n_.endswith("cation_Wiberg_beta_matrix.csv") for n_ in exo_), exo_
+                assert all(n_.count("NBO") == 1 for n_ in exo_ if n_.endswith(".csv")), exo_
                 t_d.nbo.remove()
                 t_d.nbo.remove()
                 assert not t_d.st["nbo"]["files"] and t_d.nbo.stack.currentIndex() == 0
@@ -13047,8 +13051,9 @@ def selftest(outdir, with_isnet=False):
             assert "Lit. 1" in vals_ and "999.99" in vals_ and "UV-Vis" in vals_, vals_
             with open(next(p_ for p_ in files_ if p_.suffix == ".csv"), newline="", encoding="utf-8-sig") as fh_:
                 rows_csv_ = list(csv_c_.reader(fh_))
-            assert rows_csv_[0][3:5] == ["UV-Vis", "UV-Vis"] and rows_csv_[1][0] == "Compound", rows_csv_[:2]
-            assert [r_[0] for r_ in rows_csv_[2:]] == ["S2", "S3", "Lit. 1"] and rows_csv_[3][2] == "999.99", rows_csv_
+            assert rows_csv_[0][0] == "Compound" and rows_csv_[0][3:5] == ["UV-Vis \u03bb_max [nm]",   # 170: ein Kopf,
+                                                                          "UV-Vis \u03b5 [M^-1 cm^-1]"], rows_csv_[0]  # Gruppe davor
+            assert [r_[0] for r_ in rows_csv_[1:]] == ["S2", "S3", "Lit. 1"] and rows_csv_[2][2] == "999.99", rows_csv_
             tt_.cb_transpose.setChecked(True)                     # Verbindungen als Spalten
             mat_, _n = tt_.matrix()
             assert len(mat_) == 6 and len(mat_[0]) == 5 and [t_ for t_, *_r in mat_[0][2:]] == ["S2", "S3", "Lit. 1"]
@@ -13887,7 +13892,7 @@ def selftest(outdir, with_isnet=False):
             ex_dir_fx = out / "fixd_nbo_export"
             ex_dir_fx.mkdir(exist_ok=True)
             got_fx = nb_fx.export_to(ex_dir_fx / "S3")
-            assert any(Path(p_).name == "S3_NBO_fixd_nogeom_NBO_NPA.csv" for p_ in got_fx), [Path(p_).name for p_ in got_fx]
+            assert any(Path(p_).name == "S3_NBO_fixd_nogeom_NPA.csv" for p_ in got_fx), [Path(p_).name for p_ in got_fx]
             # Realtest F1: kein Energieprofil aus den Rechnungen einer Verbindung (Reiter dort entfernt), nur ein
             # gespeichertes (alte Projekte) bzw. im Reaktionspfad
             pg_fx = w.dft_tab.pages
@@ -16834,6 +16839,7 @@ def selftest(outdir, with_isnet=False):
             w.cv_tab.export_dialog()
             msg_a3, links_a3 = w.last_notice
             assert T("export_formats", f="PDF, SVG, PNG") in msg_a3 and links_a3 == [T("export_change_formats"),
+                                                                                   T("open_tables"),     # 170
                                                                                    T("open_folder")], w.last_notice
             w._notice_clicked("0")
             pump_a3(0.3)
@@ -20244,6 +20250,208 @@ def selftest(outdir, with_isnet=False):
                           "warn, export (Word heading, figures/, complete-SI subchapter), withheld when unconfirmed, "
                           "prediction lane on screen only (SVG/PDF/PNG, Word, Copy Figure, state, data package "
                           "identical; never in PPTX): OK")
+        with section:
+            # Entscheidung 170: eine CSV-Form, Mappe je Tab mit den Zahlen des Bildschirms, Kopieren (HTML + TSV),
+            # Liste der Exporte (nicht mehr erzeugte Dateien in den Papierkorb, nie bei Teil- oder Fehlexport),
+            # Exportmeldung mit Anzahl je Ordner, Kachel „Tabellen“ im Tab Export
+            import csv as csv_tb
+            import re as re_tb
+            import time as time_tb
+            from openpyxl import load_workbook as load_tb
+            from PySide6.QtCore import QFile as QF_tb
+            from elucida.core import tables as TBL_tb
+
+            def pump_tb(sec=0.3):
+                t0_ = time_tb.time()
+                while time_tb.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+            assert TBL_tb.header("d / \u00c5") == "d [\u00c5]" and TBL_tb.header("THF / MeCN: E [V]") == "THF / MeCN: E [V]"
+            assert TBL_tb.header("$\\varepsilon$ / M$^{-1}$ cm$^{-1}$") == "\u03b5 [M^-1 cm^-1]"
+            assert TBL_tb.cell(-0.5) == "-0.5" and TBL_tb.cell(float("nan")) == "" and TBL_tb.cell("\u22121.5") == "-1.5"
+            assert TBL_tb.screen_number("\u22121.50") == (-1.5, "0.00") and TBL_tb.screen_number("7264 \u00b1 318") is None
+            assert "\u22121.5" in STYLE.table_html(["a"], [["-1.5"]]) and STYLE.table_tsv(["a"], [["\u22121.5"]]).split() == ["a", "-1.5"]
+            trash_tb, keep_trash_tb, keep_err_tb, errs_tb = [], QF_tb.moveToTrash, w.error, []
+            QF_tb.moveToTrash = staticmethod(lambda p_: trash_tb.append(p_) or True)    # Attrappe, nie echt
+            w.error = errs_tb.append
+            try:
+                assert w.open_demo(out / "tables_demo")
+                pump_tb(0.5)
+                pdir_tb = Path(w.project_dir)
+                tdir_tb = pdir_tb / PRJ.TABLES
+                tdir_tb.mkdir(exist_ok=True)
+                legacy_tb = tdir_tb / "S3_UV-Vis-kinetics_kinetics.csv"          # Datei aus der Zeit vor der Liste
+                legacy_tb.write_text("old\n", encoding="utf-8")
+                w.export_all_tabs()                                         # nie gezeigte Tabs: bauen und zeichnen
+                pump_tb()
+                man_tb = pdir_tb / PRJ.WORK / PRJ.MANIFEST
+                assert man_tb.exists() and legacy_tb.exists() and not trash_tb, trash_tb   # erster Export: nur merken
+                # CSV: BOM, Komma, Punkt, ASCII-Minus, Kopf „Name [Einheit]“ ohne Mathtext/Hochzahlen
+                bad_tb = re_tb.compile("[$\\\\\u2212\u00b9\u00b2\u00b3\u2070-\u209f]|\\[[^\\]]*/(?:mol|L|mL|g|mg|s|cm|K|h|min)\\b")   # Einheit nie „/mol“ (Fc^0/+ ist keine)
+                csvs_tb = [f_ for f_ in sorted(tdir_tb.glob("*.csv")) if f_ != legacy_tb]
+                for f_ in csvs_tb:
+                    raw_ = f_.read_bytes()
+                    assert raw_.startswith(b"\xef\xbb\xbf"), f_.name
+                    txt_ = raw_.decode("utf-8-sig")
+                    assert "\u2212" not in txt_, f_.name
+                    head_ = next(csv_tb.reader(txt_.splitlines()))
+                    assert len(head_) > 1 or ";" not in head_[0], f_.name
+                    assert not any(bad_tb.search(h_) for h_ in head_), (f_.name, head_)
+                names_tb = {f_.name for f_ in csvs_tb}
+                need_tb = {"S3_UV-Vis_results.csv", "S3_UV-Vis-kinetics_results.csv", "S3_UV-Vis-kinetics_summary.csv",
+                           "S3_H-Cell_cycles.csv", "S3_H-Cell_summary.csv", "S3_Fluorescence_lifetime_fit.csv",
+                           "S3_Fluorescence_photophysics.csv", "S3_HRMS_check.csv", "S3_HRMS_sticks.csv",
+                           "S3_IR_EA.csv", "S3_IR_calc_modes.csv", "S3_EPR_fit.csv", "S3_EPR_spin.csv",
+                           "S3_X-ray_HOMA.csv", "S3_X-ray_contacts.csv", "S3_DFT_charges.csv", "S3_DFT_energies.csv",
+                           "S3_DFT_NICS_scan.csv", "S3_Overlay_transitions.csv"}
+                assert need_tb <= names_tb, sorted(need_tb - names_tb)
+                assert not any("_NBO_S3" in n_ or n_.count("_EPR") > 1 or "_kinetics_" in n_ for n_ in names_tb)
+                assert (tdir_tb / "S3_EPR_spectrum.txt").exists()                        # bis 1.3: S3_EPR_S3_EPR.txt
+                ev_tb = next(csv_tb.reader((tdir_tb / "S3_UV-Vis_results.csv").read_text(encoding="utf-8-sig")
+                                           .splitlines()))
+                assert ev_tb[0] == "\u03bb [nm]" and ev_tb[3].startswith("slope ["), ev_tb
+                # Mappe je Tab = Zahlen des Bildschirms (Zahlenzellen mit Format); nie gezeigte Tabs eingeschlossen
+                n_cells_tb = 0
+                for key_tb in ("uvkin", "hcell", "fluo", "hrms", "irms", "epr", "dft", "overlay"):
+                    tab_tb = getattr(w, w._tab_spec(key_tb)[0])
+                    sheets_ = TABS.table_sheets(tab_tb)
+                    assert sheets_, key_tb
+                    wb_ = load_tb(tdir_tb / (PRJ.export_stem(w.export_name(), tab_tb.STATE_KEY) + "_tables.xlsx"))
+                    tbl_ws_ = [ws_ for ws_ in wb_.worksheets if not ws_.title.startswith("data")]   # „data“: Kurven
+                    assert len(tbl_ws_) == len(sheets_), (key_tb, wb_.sheetnames)
+                    for ws_, (g_, _, head_, rows_) in zip(tbl_ws_, sheets_):
+                        assert [ws_.cell(4, 2 + c_).value for c_ in range(len(head_))] == \
+                            [TBL_tb.header(h_) or None for h_ in head_], (key_tb, ws_.title)
+                        for r_, row_ in enumerate(rows_):
+                            for c_, v_ in enumerate(row_):
+                                x_ = ws_.cell(5 + r_, 2 + c_)
+                                num_ = TBL_tb.screen_number(v_) if v_ else None
+                                if num_:
+                                    n_cells_tb += 1
+                                    assert x_.value == num_[0] and x_.number_format == num_[1], (key_tb, v_, x_.value)
+                                else:
+                                    assert x_.value == (TBL_tb.plain(v_) or None), (key_tb, v_, x_.value)
+                assert n_cells_tb > 100, n_cells_tb
+                tab_tb = w.hcell_tab                                          # Zeichnen für die Mappe: kein Rückgängig-Schritt
+                tab_tb.st["title_off_tb"] = True                              # Zustand anders als der letzte Schnappschuss
+                tab_tb._render_pending, n_undo_tb = True, len(w._undo)
+                TABS.table_sheets(tab_tb)
+                assert len(w._undo) == n_undo_tb and not tab_tb._render_pending, (len(w._undo), n_undo_tb)
+                tab_tb.st.pop("title_off_tb")
+                xw_tb = load_tb(tdir_tb / "S3_X-ray_tables.xlsx")               # X-Ray: eigene Mappe + Tabellen
+                assert "Crystal data" in xw_tb.sheetnames and "HOMA" in xw_tb.sheetnames, xw_tb.sheetnames
+                from openpyxl.cell.rich_text import CellRichText as CRT_tb      # Kurvenblatt angehängt: Satz bleibt
+                assert any(isinstance(c_.value, CRT_tb) for r_ in load_tb(tdir_tb / "S3_X-ray_tables.xlsx", rich_text=True)
+                           ["Crystal data"].iter_rows() for c_ in r_), "X-Ray rich text lost"
+                assert "data PXRD" in xw_tb.sheetnames, xw_tb.sheetnames
+                # Kurven-CSVs (_data.csv …) stehen als Blatt „data“ in derselben Mappe, Werte = CSV (Zahlenzellen)
+                from elucida.si import excel as XL_tb
+                inv_tb = {v_: k_ for k_, v_ in TABS.CURVE_CSV.items()}
+                n_data_tb, curve_only_tb = 0, []
+                for xl_ in sorted(tdir_tb.glob("*_tables.xlsx")):
+                    pre_ = xl_.name[:-len("_tables.xlsx")] + "_"
+                    wb_ = load_tb(xl_)
+                    data_ws_ = [ws_ for ws_ in wb_.worksheets if ws_.title.startswith("data")]
+                    if data_ws_ and len(data_ws_) == len(wb_.worksheets):
+                        curve_only_tb.append(xl_.name)
+                    cands_ = [f_ for f_ in csvs_tb if f_.name.startswith(pre_) and f_.name.endswith(tuple(TABS.CURVE_CSV))
+                              and not f_.name.endswith("_crystal_data.csv")]                  # X-Ray: Tabelle
+                    assert len(data_ws_) == len(cands_), (xl_.name, [ws_.title for ws_ in data_ws_], [f_.name for f_ in cands_])
+                    norm_ = lambda r_: [None if v_ in ("", None) else v_ for v_ in r_]        # noqa: E731
+                    for ws_ in data_ws_:
+                        suf_ = inv_tb[re_tb.sub(r" \d+$", "", ws_.title)]
+                        got_ = [norm_(r_) for r_ in ws_.iter_rows(values_only=True)]
+                        hits_ = []
+                        for f_ in cands_:
+                            if not f_.name.endswith(suf_):
+                                continue
+                            rows_ = list(csv_tb.reader(f_.read_text(encoding="utf-8-sig").splitlines()))
+                            want_ = [norm_(rows_[0])] + [norm_([XL_tb._csv_value(v_) for v_ in r_]) for r_ in rows_[1:]]
+                            want_ = [r_ + [None] * (ws_.max_column - len(r_)) for r_ in want_]
+                            hits_.append(want_ == got_)
+                        assert any(hits_), (xl_.name, ws_.title)
+                        assert any(isinstance(v_, (int, float)) for v_ in got_[1]), (xl_.name, got_[1])   # Zahlenzellen
+                        n_data_tb += 1
+                assert n_data_tb >= 5 and curve_only_tb, (n_data_tb, curve_only_tb)
+                # jede benannte Tabelle hat „Kopieren“ (Titelzeile der Ergebnisseite oder Kopfzeile darüber)
+                miss_tb = []
+                for key_tb in w._TAB_BUILD_ORDER:
+                    if key_tb in ("nmr", "cv") or not w._built(key_tb):      # NMR/CV: eigene Spuren
+                        continue
+                    for g_ in getattr(w, w._tab_spec(key_tb)[0]).findChildren(STYLE.FitGrid):
+                        if g_.export_name is None:
+                            continue
+                        p_, ok_ = g_.parentWidget(), getattr(g_, "_copy_btn", None) is not None
+                        while p_ is not None and not ok_:
+                            a_ = getattr(p_, "_actions", None)
+                            ok_ = a_ is not None and any(b_.property("tablecopy") for b_ in
+                                                         a_.box.findChildren(QPushButton))
+                            p_ = p_.parentWidget()
+                        if not ok_:
+                            miss_tb.append((key_tb, g_.export_name))
+                assert not miss_tb, miss_tb
+                dbl_tb = [(key_tb, g_.title()) for key_tb in w._TAB_BUILD_ORDER if w._built(key_tb) and key_tb != "nmr"
+                          for g_ in getattr(w, w._tab_spec(key_tb)[0]).findChildren(QGroupBox)
+                          if getattr(g_, "_actions", None) is not None
+                          and sum(b_.text() == T("si_copy") for b_ in
+                                  g_._actions.box.findChildren(QPushButton)) > 1]
+                assert not dbl_tb, dbl_tb                                    # nie zwei „Kopieren“ in einer Karte
+                g_tb = w.hcell_tab.tbl_sum
+                QApplication.clipboard().clear()
+                assert STYLE.copy_tables([g_tb]) == 1
+                md_tb = QApplication.clipboard().mimeData()
+                assert md_tb.hasHtml() and "<table" in md_tb.html() and md_tb.hasText(), md_tb.formats()
+                tsv_tb = md_tb.text().splitlines()
+                assert len(tsv_tb) == g_tb.rowCount() + 1 and "\t" in tsv_tb[0] and "\u2212" not in md_tb.text()
+                # Exportmeldung: Dateien je Ordner und „tables/ öffnen“
+                w.export_key("hcell")
+                pump_tb()
+                msg_tb, links_tb = w.last_notice
+                assert T("export_counts", c="").strip() in msg_tb and f"{PRJ.TABLES}/" in msg_tb, msg_tb
+                assert T("open_tables") in links_tb, links_tb
+                # Kinetik -> Titration: _results.csv/_summary.csv in den Papierkorb und genannt, alte Datei bleibt
+                t_tb = w.uvkin_tab
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("uvkin"))
+                pump_tb()
+                if not t_tb.titr_rows():                                     # Beispiel ohne Äquivalente: setzen
+                    for i_, e_ in enumerate(t_tb.st["entries"][:4]):
+                        e_["eq"] = 0.5 * i_
+                t_tb.cmb_view.setCurrentIndex(t_tb.cmb_view.findData("titr"))
+                pump_tb()
+                before_tb = man_tb.read_text(encoding="utf-8")
+                w.export_key("uvkin", only=lambda n_: n_.endswith(".png"))  # eine Kachel: nie löschen
+                assert not trash_tb and man_tb.read_text(encoding="utf-8") == before_tb
+                real_exp_tb = t_tb.export_to
+                t_tb.export_to = lambda base_: (_ for _ in ()).throw(RuntimeError("export broken"))
+                try:
+                    w.export_key("uvkin")                                    # Fehler: nichts weg, Liste unverändert
+                finally:
+                    t_tb.export_to = real_exp_tb
+                assert errs_tb and not trash_tb and man_tb.read_text(encoding="utf-8") == before_tb, trash_tb
+                w.export_key("uvkin")
+                pump_tb()
+                gone_tb = {Path(p_).name for p_ in trash_tb}
+                assert "S3_UV-Vis-kinetics_results.csv" in gone_tb and (tdir_tb / "S3_UV-Vis-kinetics_titration.csv").exists()
+                assert legacy_tb.exists() and legacy_tb.name not in gone_tb               # nie in der Liste: bleibt
+                assert all(Path(p_).parent.name in (PRJ.TABLES, PRJ.FIGURES, PRJ.SI_DIR) for p_ in trash_tb), trash_tb
+                assert "S3_UV-Vis-kinetics_results.csv" in w.last_notice[0], w.last_notice[0]
+                # Entscheidung 180: keine Kacheln „Tabellen“ im Tab Export (nur die alte X-Ray-Teilkachel); Bedienelement
+                # für Tabellen dort steht noch aus. Der Tab Export schreibt die Tabellen wie der Export im Tab
+                w.export_tab.refresh()
+                assert not any(c_.label.endswith(T("export_part_tables")) for c_ in w.export_tab.cards if c_.key != "xray")
+                (tdir_tb / "S3_H-Cell_cycles.csv").unlink()
+                n_trash_tb = len(trash_tb)
+                w.export_all_tabs([("hcell", None)])
+                pump_tb()
+                assert (tdir_tb / "S3_H-Cell_cycles.csv").exists() and len(trash_tb) == n_trash_tb
+            finally:
+                QF_tb.moveToTrash = keep_trash_tb
+                w.error = keep_err_tb
+            report.append(f"Tables (decision 170): {n_data_tb} curve data sheets = CSV ({len(curve_only_tb)} xlsx "
+                          "with curves only); "
+                          f"{len(csvs_tb)} CSVs (BOM, comma, English headers), xlsx = screen "
+                          f"({n_cells_tb} numeric cells), Copy HTML+TSV, manifest (first export records, titration "
+                          "trashes kinetics files, tile/failed export trash nothing, legacy kept), export message "
+                          "counts + Open tables, no Tables tiles in the Export tab: OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

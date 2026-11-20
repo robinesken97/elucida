@@ -28,7 +28,7 @@ import yaml
 from PIL import Image
 
 from elucida.core import images as IMG  # noqa: E402
-from elucida.app.i18n import T  # noqa: E402
+from elucida.app.i18n import T, T_en  # noqa: E402
 
 LOG = print          # GUI ersetzt das durch ihr Protokollfenster
 
@@ -1066,7 +1066,7 @@ def evaluate(cfg, spectra):
             if len(used) >= cfg["min_fit_points"] else None
         r = dict(lam=lam, lam_requested=float(lam0), used=used, excluded=excl, fit=fit, cutoff=cut)
         if fit is None and len(used) >= cfg["min_fit_points"]:
-            r["no_fit"] = T("no_fit_conc")
+            r["no_fit"], r["no_fit_en"] = T("no_fit_conc"), T_en("no_fit_conc")
         if int(round(float(lam0))) in set(cfg.get("band_hidden") or []):
             r["hidden"] = True                      # in Tabelle/CSV, aber nicht im Bild
         if fit and not fit["r2"] >= cfg["min_r2"]:             # auch R² undefiniert (alle A gleich)
@@ -1078,32 +1078,35 @@ def evaluate(cfg, spectra):
             dof = fit["n"] - (2 if cfg["fit_intercept"] else 1)
             r["t95"] = t_quantile(0.975, dof) if dof > 0 else float("nan")
             r["eps_ci95"] = r["t95"] * r["eps_err"] if np.isfinite(r["eps_err"]) else float("nan")
-            warn = []
+            warn = []                                   # (Schlüssel, Werte): Anzeige in der Programmsprache, CSV englisch
             if fit["n"] < 4:
-                warn.append(T("few_points", n=fit["n"]))
+                warn.append(("few_points", dict(n=fit["n"])))
             if cfg["fit_intercept"] and np.isfinite(fit["se_intercept"]) and fit["se_intercept"] > 0 \
                     and abs(fit["intercept"]) > r["t95"] * fit["se_intercept"]:         # 95 %, wie das KI
-                warn.append(T("intercept_sig", b=fit["intercept"], e=fit["se_intercept"]))
-            r["warnings"] = warn
+                warn.append(("intercept_sig", dict(b=fit["intercept"], e=fit["se_intercept"])))
+            r["warnings"] = [T(k, **kw) for k, kw in warn]
+            r["warnings_en"] = [T_en(k, **kw) for k, kw in warn]
         results.append(r)
     return results
 
 
 def write_results(results, path, cfg):
-    cu = cfg["conc_unit"]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["lambda_nm", "n_used", "n_excluded", f"slope_cm-1_{cu}-1", "se_slope",
-                    "intercept_cm-1", "se_intercept", "R2", "RSS",
-                    "eps_M-1cm-1" if conc_factor(cfg) else "a_L_g-1_cm-1", "err", "ci95", "warnings"])
-        for r in results:
-            ft = r["fit"]
-            if not ft:
-                w.writerow([r["lam"], len(r["used"]), len(r["excluded"])] + [""] * 9 + ["kein Fit"])
-                continue
-            w.writerow([r["lam"], ft["n"], len(r["excluded"]), ft["slope"], ft["se_slope"],
-                        ft["intercept"], ft["se_intercept"], ft["r2"], ft["rss"],
-                        r["eps"], r["eps_err"], r.get("eps_ci95"), " | ".join(r["warnings"])])
+    """Ergebnis-CSV der Serie (core.tables: Komma, BOM, Kopf „Name [Einheit]“, Rohwerte, Hinweise englisch)."""
+    from elucida.core import tables as TBL
+    inv = {"M": "M^-1", "mM": "mM^-1", "uM": "µM^-1", "mg/mL": "mL mg^-1"}.get(cfg["conc_unit"], cfg["conc_unit"] + "^-1")
+    coef = "ε [M^-1 cm^-1]" if conc_factor(cfg) else "a [L g^-1 cm^-1]"
+    head = ["λ [nm]", "n used", "n excluded", f"slope [{inv} cm^-1]", f"SE slope [{inv} cm^-1]", "intercept [cm^-1]",
+            "SE intercept [cm^-1]", "R^2", "RSS", coef, "SE " + coef, "CI95 " + coef, "warnings"]
+    rows = []
+    for r in results:
+        ft = r["fit"]
+        if not ft:
+            rows.append([r["lam"], len(r["used"]), len(r["excluded"])] + [None] * 9 + [r.get("no_fit_en") or "no fit"])
+            continue
+        rows.append([r["lam"], ft["n"], len(r["excluded"]), ft["slope"], ft["se_slope"], ft["intercept"],
+                     ft["se_intercept"], ft["r2"], ft["rss"], r["eps"], r["eps_err"], r.get("eps_ci95"),
+                     " | ".join(r.get("warnings_en", r["warnings"]))])
+    return TBL.write_csv(path, head, rows)
 
 
 def print_results(results, cfg):

@@ -13,7 +13,6 @@ Reihenfolge der Äquivalente, isosbestische Punkte nur, wo alle Spektren innerha
 """
 from __future__ import annotations
 
-import csv
 import html
 import re
 import uuid
@@ -28,7 +27,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.tabs.epr import fit_first_order, sci_range, sci_signed
-from elucida.app.i18n import T
+from elucida.app.i18n import T, T_en
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
@@ -245,14 +244,16 @@ class UVKinTab(TABS.FigureTab):
         # Ergebnisse (Reiter rechts, arrange): Tabelle je Messpunkt + Zusammenfassung je Reihe
         self.grp_results = QGroupBox(T("tab_results"))
         rv = QVBoxLayout(self.grp_results)
-        self.res_table = STYLE.FitGrid(0, 5)
+        self.res_table = STYLE.name_table(STYLE.FitGrid(0, 5), "results", "Measurements")   # CSV: _results/_titration
         self.res_table.verticalHeader().setVisible(False)
         self.res_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         STYLE.empty_note(self.res_table, T("uvkin_results_none"))
         rv.addWidget(self.res_table)
-        self.tbl_summary = STYLE.summary_grid(self._sum_heads("s"), rich=(6, 7))   # je Reihe: Verlauf und Zerfall; k wie im Methodentext
+        self.tbl_summary = STYLE.name_table(STYLE.summary_grid(self._sum_heads("s"), rich=(6, 7)), "summary",
+                                            "Summary per series", csv=True)   # je Reihe: Verlauf und Zerfall; k wie im Methodentext
         rv.addWidget(self.tbl_summary)
-        self.tbl_iso = STYLE.summary_grid(["λ_iso [nm]", "A" + STYLE.QTY, T("uvtit_col_spread")])   # Titration
+        self.tbl_iso = STYLE.name_table(STYLE.summary_grid(["λ_iso [nm]", "A" + STYLE.QTY, T("uvtit_col_spread")]),
+                                        "isosbestic", "Isosbestic points", csv=True)   # Titration
         rv.addWidget(self.tbl_iso)
         self.lv.addWidget(self.grp_results)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export (Reiter SI-Text)
@@ -737,7 +738,8 @@ class UVKinTab(TABS.FigureTab):
             self.res_table.setColumnHidden(c, True)
         self.res_table.fit()
         STYLE.fill_summary(self.tbl_summary, [])
-        STYLE.fill_summary(self.tbl_iso, [[core.fmt_lam(p_["lam"]), f"{p_['A']:.3f}", f"{p_['spread']:.3f}"]
+        STYLE.fill_summary(self.tbl_iso, [[STYLE.num(core.fmt_lam(p_["lam"]), p_["lam"]), STYLE.num(f"{p_['A']:.3f}", p_["A"]),
+                                           STYLE.num(f"{p_['spread']:.3f}", p_["spread"])]
                                           for p_ in self.iso] if self.view() == "titr" else [])
 
     def sync_columns(self):
@@ -772,19 +774,21 @@ class UVKinTab(TABS.FigureTab):
         for n in data:
             s = self.series_summary(n)
             if s is None:
-                srows.append([n] + ["–"] * 8 + [T("uvkin_sum_none")])
+                srows.append([n] + ["–"] * 8 + [STYLE.num(T("uvkin_sum_none"), T_en("uvkin_sum_none"))])
                 notes = True
                 continue
             f, note = s["fit"], ""
             if f is None and self.st["fit"]:
-                note = T("uvkin_sum_nofit")
+                note = STYLE.num(T("uvkin_sum_nofit"), T_en("uvkin_sum_nofit"))
             elif f is not None and f["half"] is None:
-                note = T("uvkin_sum_rise")
+                note = STYLE.num(T("uvkin_sum_rise"), T_en("uvkin_sum_rise"))
             notes = notes or bool(note)
-            srows.append([n, f"{s['A0']:.3f}", f"{s['A1']:.3f}", fmt_pct(s["rest"]), fmt_t(s["dur"]), str(s["n"]),
-                          sci_signed(f["k"]) if f else "–",
+            N = STYLE.num
+            srows.append([n, N(f"{s['A0']:.3f}", s["A0"]), N(f"{s['A1']:.3f}", s["A1"]), N(fmt_pct(s["rest"]), s["rest"]),
+                          N(fmt_t(s["dur"]), s["dur"]), str(s["n"]),
+                          N(sci_signed(f["k"]), f["k"]) if f else "–",
                           sci_range(*f["ci"]) if f and f["ci"] else "–",
-                          f"{f['half']:.3g}" if f and f["half"] is not None else "–", note])
+                          N(f"{f['half']:.3g}", f["half"]) if f and f["half"] is not None else "–", note])
         self.tbl_summary.setHorizontalHeaderLabels(self._sum_heads(unit))
         STYLE.rich_header(self.tbl_summary)
         fitted = any(r[6] != "–" for r in srows)
@@ -954,24 +958,19 @@ class UVKinTab(TABS.FigureTab):
         """Abbildung + Kurvendaten wie überall, dazu eine CSV je Messpunkt (Reihe, Name, Zeit, A, relativ; Rohwerte)."""
         files = super().export_to(base)
         base = Path(base).resolve()
+        from elucida.core import tables as TBL
         if self.view() in TITR_VIEWS:                    # Titration: Äquivalente, Name, A(λ)
-            p = base.with_name(base.name + "_titration.csv")
             lam = self.lam_used or self.auto_lam(self.titr_rows())
-            with open(p, "w", encoding="utf-8-sig", newline="") as fh:
-                w = csv.writer(fh)
-                w.writerow(["equiv", "name", f"A ({core.fmt_lam(lam)} nm)"])
-                for r in self.titr_rows():
-                    w.writerow([f"{r['eq']:g}", r["e"]["label"], f"{value_at(r['x'], r['y'], lam, self.st['win']):.6g}"])
-            files.append(p)
+            files.append(TBL.write_csv(base.with_name(base.name + "_titration.csv"),
+                                       ["equiv", "name", f"A ({core.fmt_lam(lam)} nm)"],
+                                       [[r["eq"], r["e"]["label"], value_at(r["x"], r["y"], lam, self.st["win"])]
+                                        for r in self.titr_rows()]))
             return files
-        p = base.with_name(base.name + "_kinetics.csv")
-        unit = self.unit_used
+        unit = self.unit_used                            # <Verbindung>_UV-Vis-kinetics_results.csv (bis 1.3: _kinetics)
         lam = core.fmt_lam(self.lam_used) if self.lam_used else ""
-        with open(p, "w", encoding="utf-8-sig", newline="") as fh:
-            w = csv.writer(fh)
-            w.writerow(["series", "name", f"t [{unit}]", "t [s]", f"A ({lam} nm)", "relative [%]"])
-            for n, d in (self.rows_data or {}).items():
-                for lab, t, a, r in zip(d["labels"], d["t"], d["A"], d["rel"]):
-                    w.writerow([n, lab, f"{t / UNIT_S[unit]:.6g}", f"{t:.0f}", f"{a:.6g}", f"{r:.6g}"])
+        p = TBL.write_csv(base.with_name(base.name + "_results.csv"),
+                          ["series", "name", f"t [{unit}]", "t [s]", f"A ({lam} nm)", "relative [%]"],
+                          [[n, lab, t / UNIT_S[unit], t, a, r] for n, d in (self.rows_data or {}).items()
+                           for lab, t, a, r in zip(d["labels"], d["t"], d["A"], d["rel"])])
         files.append(p)
         return files

@@ -7,7 +7,6 @@ Start, τ für k_r/k_nr, Φ) im Schritt Auswertung. Rechts zwei Reiter: „Abkli
 """
 from __future__ import annotations
 
-import csv
 import html
 from pathlib import Path
 
@@ -208,9 +207,10 @@ class TauPart:
         self.host = TABS.CanvasHost(self.canvas, self.fig, margin=0)
         self.host.setMinimumHeight(260)
         cv.addWidget(self.host, 4)                         # das Bild hat Vorrang
-        self.tbl_fit = STYLE.summary_grid(self._fit_heads("ns"))
+        self.tbl_fit = STYLE.name_table(STYLE.summary_grid(self._fit_heads("ns")), "lifetime_fit", "Lifetime fit", csv=True)
         cv.addWidget(self.tbl_fit)
-        self.tbl_fit2 = STYLE.summary_grid(self._fit2_heads("ns"))
+        self.tbl_fit2 = STYLE.name_table(STYLE.summary_grid(self._fit2_heads("ns")), "lifetime_summary",
+                                         "Lifetime fit summary", csv=True)
         cv.addWidget(self.tbl_fit2)
         self.lbl_fit = STYLE.SciLabel("")
         self.lbl_fit.setWordWrap(True)
@@ -221,7 +221,8 @@ class TauPart:
         g2 = QGroupBox(T("fluo_tau_props"))
         g2.setProperty("hug", True)                          # eine Zeile: Karte so hoch wie ihr Inhalt
         v2 = QVBoxLayout(g2)
-        self.tbl_props = STYLE.summary_grid(self._prop_heads("τ [ns]"), rich=(5, 6))
+        self.tbl_props = STYLE.name_table(STYLE.summary_grid(self._prop_heads("τ [ns]"), rich=(5, 6)),
+                                          "photophysics", "Photophysical properties", csv=True)
         v2.addWidget(self.tbl_props)
         self.lbl_props = STYLE.SciLabel("", T("fluo_tau_props_empty"))
         self.lbl_props.setWordWrap(True)
@@ -379,15 +380,17 @@ class TauPart:
     def fit_rows(self):
         """Je Komponente (τ, 95 %, A, Anteil an der Intensität) und eine Zeile mit Mitteln, Untergrund, χ², n."""
         r, rows, us = self.res, [], self.us()
+        u = 1000 if us else 1                            # Rohwerte (CSV) in der Einheit des Kopfes
         for i, (a, t, ci) in enumerate(zip(r["A"], r["tau"], r["ci_tau"])):
-            rows.append([str(i + 1), fmt_tau(t, us), " … ".join(fmt_ci(ci, us)) if ci else "–", f"{a:.4g}".replace("-", "−"),
-                         f"{core.round_half_up(100 * r['frac'][i]):.0f}" if r["frac"] else "–"])
+            rows.append([str(i + 1), STYLE.num(fmt_tau(t, us), t / u), " … ".join(fmt_ci(ci, us)) if ci else "–",
+                         STYLE.num(f"{a:.4g}".replace("-", "−"), a),
+                         STYLE.num(f"{core.round_half_up(100 * r['frac'][i]):.0f}", 100 * r["frac"][i]) if r["frac"] else "–"])
         two = r["n_exp"] == 2
-        row2 = [fmt_tau(r["tau_amp"], us) if two and r["tau_amp"] else "",
-                fmt_tau(r["tau_int"], us) if two and r["tau_int"] else "",
-                f"{r['B']:.3g}".replace("-", "−"),                   # Versatz in ps (ns zeigte −0.000583)
-                f"{r['shift'] * 1000:.3g}".replace("-", "−") if r["irf"] else "",
-                f"{r['chi2_red']:.2f}" if r["chi2_red"] is not None else "", str(r["n"])]
+        row2 = [STYLE.num(fmt_tau(r["tau_amp"], us), r["tau_amp"] / u) if two and r["tau_amp"] else "",
+                STYLE.num(fmt_tau(r["tau_int"], us), r["tau_int"] / u) if two and r["tau_int"] else "",
+                STYLE.num(f"{r['B']:.3g}".replace("-", "−"), r["B"]),                   # Versatz in ps (ns zeigte −0.000583)
+                STYLE.num(f"{r['shift'] * 1000:.3g}".replace("-", "−"), r["shift"] * 1000) if r["irf"] else "",
+                STYLE.num(f"{r['chi2_red']:.2f}", r["chi2_red"]) if r["chi2_red"] is not None else "", str(r["n"])]
         return rows, row2
 
     def fit_note(self):
@@ -404,11 +407,12 @@ class TauPart:
         eps = TABS.parse_num(self.st.get("eps", ""))
         tau, kind = self.tau_used()
         kr, knr = LT.rates(phi, tau)
-        row = [core.fmt_lam(info["lam_abs"]) if info.get("lam_abs") else "",
-               f"{core.round_half_up(eps):.0f}" if eps else "",
-               core.fmt_lam(info["lam_em"]) if info.get("lam_em") else "",
-               f"{phi:g}" if phi is not None else "", fmt_tau(tau, self.us()) if tau else "",
-               core.sci_text(kr) if kr else "", ("0" if knr == 0 else core.sci_text(knr)) if knr is not None else ""]
+        row = [STYLE.num(core.fmt_lam(info["lam_abs"]), info["lam_abs"]) if info.get("lam_abs") else "",
+               STYLE.num(f"{core.round_half_up(eps):.0f}", eps) if eps else "",
+               STYLE.num(core.fmt_lam(info["lam_em"]), info["lam_em"]) if info.get("lam_em") else "",
+               STYLE.num(f"{phi:g}", phi) if phi is not None else "",
+               STYLE.num(fmt_tau(tau, self.us()), tau / (1000 if self.us() else 1)) if tau else "",
+               STYLE.num(core.sci_text(kr), kr) if kr else "", STYLE.num(("0" if knr == 0 else core.sci_text(knr)), knr) if knr is not None else ""]
         head = {"amp": "τ_amp", "int": "τ_int"}.get(kind, "τ") + f" [{self.tau_unit()}]"
         return row, head, kind, phi
 
@@ -417,7 +421,8 @@ class TauPart:
         self.tbl_props.setHorizontalHeaderLabels(self._prop_heads(head))
         STYLE.rich_header(self.tbl_props)
         any_ = any(row)
-        STYLE.fill_summary(self.tbl_props, [row] if any_ else [], hidden=[i for i, v in enumerate(row) if not v])
+        STYLE.fill_summary(self.tbl_props, [row] if any_ else [], hidden=[i for i, v in enumerate(row)
+                                                                          if not v])
         notes = []
         if self.st.get("phi") and phi is None:
             notes.append(T("fluo_tau_phi_bad"))
@@ -497,15 +502,14 @@ class TauPart:
             files.append(p)
         p = PRJ.with_ext(out, ".csv")
         r = self.res
-        with open(p, "w", encoding="utf-8-sig", newline="") as fh:
-            w = csv.writer(fh)
-            w.writerow(["t [ns]", "measured", "fit", "weighted residual" if r["weighted"] else "residual"])
-            t_all, y_all = self.data["t"], self.data["y"]
-            fit = dict(zip(np.round(r["t"], 9), zip(r["fit"], r["resid"])))
-            for t, y in zip(t_all, y_all):
-                f = fit.get(np.round(t, 9))
-                w.writerow([f"{t:.6g}", f"{y:.6g}"] + ([f"{f[0]:.6g}", f"{f[1]:.6g}"] if f else ["", ""]))
-        files.append(p)
+        from elucida.core import tables as TBL
+        fit = dict(zip(np.round(r["t"], 9), zip(r["fit"], r["resid"])))
+        rows = []
+        for t, y in zip(self.data["t"], self.data["y"]):
+            f = fit.get(np.round(t, 9))
+            rows.append([float(t), float(y)] + ([float(f[0]), float(f[1])] if f else [None, None]))
+        files.append(TBL.write_csv(p, ["t [ns]", "measured", "fit", "weighted residual" if r["weighted"] else "residual"],
+                                   rows))
         return files
 
     def methods_text(self):

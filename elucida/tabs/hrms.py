@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 
 from elucida.tabs import base as TABS
 from elucida.core import uvvis as core
-from elucida.app.i18n import T
+from elucida.app.i18n import T, T_en
+from elucida.core import tables as TBL
 from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
                         ppm, read_bruker_d, read_ms_docx)
@@ -201,6 +202,8 @@ class HRMSTab(TABS.FigureTab):
         self.tbl_ms = TABS.STYLE.summary_grid([T("ea_chk_ms_ion"), T("ea_calc"), T("ea_chk_f1"), T("ea_chk_ms_dev"),
                                                T("ea_chk_ms_status")])
         self.tbl_ms.setToolTip(T("ea_chk_ms_tip"))
+        TABS.STYLE.name_table(self.tbl_ms, "check", "HRMS check", csv=True)
+        f.addRow(TABS.STYLE.table_head(T("tbl_head_check"), self.tbl_ms))
         f.addRow(self.tbl_ms)
         self.lbl_ms_info = HintLabel("")
         self.lbl_ms_info.setWordWrap(True)
@@ -656,9 +659,11 @@ class HRMSTab(TABS.FigureTab):
         from PySide6.QtGui import QBrush, QColor
         ok = dev_ok(dev)
         lab, _, z = ADDUCTS[adduct]
-        TABS.STYLE.fill_summary(self.tbl_ms, [[lab.replace("$_4$", "₄") + ("⁺" if z > 0 else "⁻"), f"{calc:.4f}",
-                                               f"{found:.4f}", dev_text(dev),
-                                               ("✓ " if ok else "⚠ ") + T("ea_chk_ms_ok" if ok else "ea_chk_ms_bad")]])
+        N = TABS.STYLE.num                                # CSV: Rohwerte, Status englisch
+        TABS.STYLE.fill_summary(self.tbl_ms, [[lab.replace("$_4$", "₄") + ("⁺" if z > 0 else "⁻"), N(f"{calc:.4f}", calc),
+                                               N(f"{found:.4f}", found), N(dev_text(dev), dev),
+                                               N(("✓ " if ok else "⚠ ") + T("ea_chk_ms_ok" if ok else "ea_chk_ms_bad"),
+                                                 T_en("ea_chk_ms_ok" if ok else "ea_chk_ms_bad"))]])
         if not ok:
             for c in range(self.tbl_ms.columnCount()):
                 self.tbl_ms.item(0, c).setForeground(QBrush(QColor(TABS.STYLE.WARN_COLOR)))
@@ -721,12 +726,9 @@ class HRMSTab(TABS.FigureTab):
             p = base.with_name(base.name + "_sticks.csv")
             pat = self.pattern()
             n = max(len(mz), len(pat))
-            with open(p, "w", encoding="utf-8-sig", newline="") as fh:
-                fh.write("measured m/z,measured rel. int. [%],calculated m/z,calculated rel. int. [%]\n")
-                for i in range(n):
-                    a = f"{mz[i]:.5f},{rel[i]:.3f}" if i < len(mz) else ","
-                    b = f"{pat[i][0]:.5f},{pat[i][1]:.3f}" if i < len(pat) else ","
-                    fh.write(f"{a},{b}\n")
+            TBL.write_csv(p, ["measured m/z", "measured rel. int. [%]", "calculated m/z", "calculated rel. int. [%]"],
+                          [([float(mz[i]), float(rel[i])] if i < len(mz) else [None, None])
+                           + ([float(pat[i][0]), float(pat[i][1])] if i < len(pat) else [None, None]) for i in range(n)])
             files.append(p)
         else:
             self.update_ms()
