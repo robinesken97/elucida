@@ -130,6 +130,10 @@ def series_from_name(name):
 
 
 class UVKinTab(TABS.FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“ (eigene Labels; Entscheidung 169: alle Tabs)
+
+    def label_view(self):
+        return self.st.get("view") or ""
     STATE_KEY = "uvkin"
     GUIDE, GUIDE_ACTION = "uvkin", ("guide_add", "add_files")
     TEXT_OPTS = ("fonts", "axes_frame")

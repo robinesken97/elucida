@@ -345,6 +345,19 @@ def math_symbols(s, it="mathit", rm="mathrm"):
     return "$".join(parts).replace("$$", "")
 
 
+def label_text_ok(s):
+    """Eigener Text eines Labels: Mathtext zwischen $…$ muss sich setzen lassen (sonst bräche die Abbildung samt Export)."""
+    from matplotlib import cbook
+    from matplotlib.mathtext import MathTextParser
+    try:                                       # zeilenweise wie matplotlib beim Zeichnen
+        for line in s.splitlines():
+            if cbook.is_math_text(line):
+                MathTextParser("path").parse(line)
+        return True
+    except Exception:
+        return False
+
+
 def fmt_text(s, cfg, label=False):
     """Bildtext setzen: Größen kursiv (`math_symbols`), griechische Buchstaben in der Symbolschrift (Größen kursiv:
     Labels \\mathsf im Labelstil, sonst \\mathtt; übrige steil \\mathcal – alle in setup_fonts belegt). Für Labels
@@ -1284,6 +1297,7 @@ class Figure:
         self._fit_axes(0.01 if cfg.get("size_cm") else 0.06)
         self._inset()
         self._labels()
+        self._extra_labels()
         self._images()
         self._place_checked(lambda: (self._place(), self._conc_legend()))
 
@@ -1462,12 +1476,30 @@ class Figure:
         self.axes_items["inset"] = iax
 
     # -- Labels --------------------------------------------------------------
+    def label_text(self, key, auto, ident=None):
+        """Eigener Text / im Bild ausgeblendet aus cfg["label_over"] (Karte „Beschriftungen im Bild“); merkt jedes Label
+        mit seinem automatischen Text in `label_rows` (auch ausgeblendete, für die Karte). -> Text oder None (ausgeblendet).
+        Tabelle, SI, Excel und Bildunterschrift benutzen nie den Text eines Labels: sie behalten die berechneten Werte.
+        ident: Kennung für Schlüssel, die nur durchzählen (EPR `label_epr_<k>`): ein Eintrag mit anderer Kennung gehört
+        zu einem anderen Label (eines davor wurde entfernt) und gilt nicht."""
+        # shortcut: overrides hang on the label key, which mostly contains the measured value (λ, E, m/z); after a
+        # baseline/peak change that key is gone and its override is silently ignored. Keys without a value
+        # (fluorescence, H-Cell cycles) keep their override across data changes, so the hint compares against the
+        # current automatic text on every render. Upgrade to matching by nearest position if users lose their texts often.
+        o = (self.cfg.get("label_over") or {}).get(key)
+        o = o if isinstance(o, dict) and o.get("id", ident) == ident else {}
+        text = o.get("text") if isinstance(o.get("text"), str) and label_text_ok(o["text"]) else None
+        self.__dict__.setdefault("label_rows", []).append(
+            {"key": key, "auto": auto, "text": text, "hidden": bool(o.get("hidden")), "id": ident})
+        return None if o.get("hidden") else auto if text is None else text
+
     def _labels(self):
         lcfg = self.cfg["labels"]
         if not lcfg["show"]:
             return
         lo, hi = self.ax.get_xlim()
         shown = [r for r in self.results if r["fit"] and not r.get("hidden") and lo <= r["lam"] <= hi]
+        # Indizes über alle Banden im Bild, auch im Bild ausgeblendete Labels: die Bande bleibt in Tabelle und SI
         num = {id(r): i for i, r in enumerate(sorted(shown, key=lambda r: r["lam"]), 1)}
         for r in shown:
             v, e = fmt_ve(r["eps"], r["eps_err"], lcfg["eps_digits"], eps_max_decimals(self.cfg))
@@ -1478,6 +1510,9 @@ class Figure:
             txt = f"λ{ix} =  {fmt_lam(r['lam'])} nm{sh}\n{sym}{ix} =  {eps} {unit}"
             if self.cfg["r2_mode"] == "label":
                 txt += f"\n$R^2$ =  {r2_text(r['fit']['r2'])}"
+            txt = self.label_text(f"label_{r['lam']:g}", txt)
+            if txt is None:
+                continue
             ann = self.ax.annotate(fmt_text(txt, self.cfg, label=True), xy=(r["lam"], 0), xycoords="data",
                                    xytext=(0.5, 0.5), textcoords="axes fraction",
                                    ha="left", va="bottom", linespacing=1.4, annotation_clip=False,
@@ -1601,7 +1636,29 @@ class Figure:
     _near_on, _near_hits, _fallback, _pin, _near_possible, _log_elem = False, set(), False, None, False, False
 
     def _fixed_labels(self):
-        return {f"label_{float(k):g}": v for k, v in (self.cfg["labels"].get("pos") or {}).items()}
+        out = {f"label_{float(k):g}": v for k, v in (self.cfg["labels"].get("pos") or {}).items()}
+        out.update(getattr(self, "_extra_pos", {}))       # eigene Labels: feste Stelle, vor allem anderen reserviert
+        return out
+
+    def _extra_labels(self):
+        """Eigene Labels (cfg["extra_labels"], Karte „Beschriftungen im Bild“): freier Text an fester Stelle in
+        Achsenbruchteilen (Unterkante links; gleich für jede Exportgröße), über `_fixed_labels` vor den automatischen
+        Elementen reserviert. Auch ausgeblendete stehen in `label_rows` (für die Karte)."""
+        self._extra_pos = {}
+        for e in self.cfg.get("extra_labels") or ():
+            key = f"xlab_{e['id']}"
+            text = e.get("text") if isinstance(e.get("text"), str) else ""
+            self.__dict__.setdefault("label_rows", []).append(
+                {"key": key, "auto": "", "text": text, "hidden": bool(e.get("hidden")), "extra": True, "id": None})
+            if e.get("hidden") or not text.strip() or not label_text_ok(text):
+                continue
+            x, y = (min(max(float(e.get(c, 0.5)), 0.0), 1.0) for c in ("x", "y"))
+            ann = self.ax.annotate(fmt_text(text, self.cfg, label=True), xy=(x, y), xycoords="axes fraction",
+                                   ha="left", va="bottom", linespacing=1.4, annotation_clip=False, zorder=5,
+                                   **label_kw(self.cfg))
+            ann._extra = True
+            self.ann_items[key] = ann
+            self._extra_pos[key] = [x, y]
 
     def _layout_state(self):
         """Lage von Achse(n), Inset, Tabelle und Bildern (Vergleich mit und ohne λ-Labels über dem Maximum)."""
@@ -2162,6 +2219,14 @@ class Dragger:
                 return a
         return None
 
+    on_label_menu = None                      # Rechtsklick auf ein Label -> Schlüssel (GUI: Kontextmenü der Karte)
+    on_empty_menu = None                      # Rechtsklick auf eine freie Stelle -> (x, y) in Achsenbruchteilen
+
+    def label_key_at(self, ev):
+        """Schlüssel des Labels unter der Maus (nur Labels der Karte „Beschriftungen im Bild“, keine Legende/Pfeile)."""
+        keys = {r["key"] for r in getattr(self.F, "label_rows", ())}
+        return next((k for k, a in self.F.ann_items.items() if k in keys and a.get_visible() and a.contains(ev)[0]), None)
+
     def _over_label(self, ev):
         leg = getattr(self.F, "legend", None)
         if leg is not None and leg.contains(ev)[0]:
@@ -2179,6 +2244,12 @@ class Dragger:
             pass
 
     def press(self, ev):
+        if ev.button == 3 and ev.x is not None and self.on_label_menu is not None and self.label_key_at(ev):
+            # matplotlib greift das Label mit jeder Taste (Blitting ohne das Label): wie Ziehen behandeln, damit
+            # Loslassen neu zeichnet und eine Verschiebung gemeldet wird; das Menü kommt beim Loslassen
+            self._lay0 = self.F.current_layout()
+            self._label_drag = True
+            return
         if ev.button != 1 or ev.x is None:
             return
         self._lay0 = self.F.current_layout()
@@ -2219,6 +2290,13 @@ class Dragger:
             canvas.draw_idle()
 
     def release(self, ev):
+        if ev.button == 3 and self.on_label_menu is not None and ev.x is not None:
+            key = self.label_key_at(ev)               # Menü erst beim Loslassen: matplotlib hat das Label dann losgelassen
+            if key:
+                self.on_label_menu(key)
+            elif self.on_empty_menu is not None and not self._over_label(ev) and self._axes_at(ev) is None:
+                xa, ya = self.F.ax.transAxes.inverted().transform((ev.x, ev.y))
+                self.on_empty_menu((min(max(float(xa), 0.0), 0.95), min(max(float(ya), 0.0), 0.95)))
         if self.drag and self._bg is not None:
             self.drag[0].set_animated(False)     # wieder normal mitzeichnen (Export, Reihenfolge)
         if self.drag or getattr(self, "_label_drag", False):

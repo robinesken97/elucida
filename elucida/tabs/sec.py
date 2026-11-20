@@ -242,6 +242,11 @@ class HeatHover:
 
 
 class SECTab(TABS.FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
+
+    def label_view(self):
+        m = self.st.get("mode", "spectra")
+        return None if m == "heatmap" else m      # Heatmap: keine Labels (electrochem.md)
     COLOR_ROLES = (("col_start", START_COLOR, "tf_col_start"), ("col_end", END_COLOR, "tf_col_end"))   # Stilkarte
     STATE_KEY = "sec"
     GUIDE, GUIDE_ACTION = "sec", ("guide_add", "choose_spectra")

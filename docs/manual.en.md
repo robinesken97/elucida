@@ -696,6 +696,9 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
 6. **Export:** File → Export (Ctrl+E) or the row in the tab **Export**. This writes the formats chosen there (PDF/SVG/PNG),
    `<series>_results.csv` and the Excel report for **all** series into the compound (see below).
 
+The card **Figure Labels** changes the text and visibility of single λ/ε labels (see there); labels hidden in the
+figure stay in the table and SI line, unlike deselected bands.
+
 ### What happens automatically during the analysis
 
 - **Baseline** ("automatic (series)", default): the window is placed where the most concentrated
@@ -1525,6 +1528,33 @@ CV, no frames in X-Ray). **Reset to defaults** restores the defaults:
   out; its tooltip gives the reason.
 - **Frames:** closed frame around the plot (top and right too; default since 1.24, like the Origin figures) and a
   rounded frame around the chemical structure.
+
+## Figure labels
+
+Card **Figure Labels** in the step **Display** (UV-Vis (ε) per series, TD-DFT, kinetics, fluorescence, HRMS, IR + EA,
+CV, SEC, H-Cell, EPR, CV stack and spectra of a comparison; not yet NMR, X-Ray, DFT and the energy profile). The table lists the labels of the figure shown:
+
+- **Tick** = label shown in the figure. Unticked, only the label is missing from the figure (and from every export);
+  table, SI line, Excel and methods text keep the value. This differs from a deselected band in the ε tab or in IR,
+  which also leaves the SI line.
+- **Own text:** select a row and change the text in the field below (applies when leaving the field; multi-line like
+  the label, formulas as in the figure between `$…$`). Empty or equal to the automatic text = no own text. Own texts
+  are orange in the table; the tooltip shows the automatic text.
+- **Number changed:** if the label carries a number and the own text differs, the preview shows "Label … differs from
+  the table/SI". Table, SI, Excel and caption always use the computed values.
+- **Right-click a label** in the preview: Edit text (shows the card), Hide in figure, Reset.
+- **Reset** / **Reset all:** automatic text, shown again. "Defaults" and templates leave own texts alone; every change
+  is one undo step.
+- Own texts belong to the label: for bands, peaks and masses (ε, SEC, IR, HRMS) to its value – if it changes
+  (baseline, peak search), the old text no longer matches a label and is not used. For CV pairs, H-Cell cycles and the
+  fluorescence maxima the text stays and the hint under the preview shows the difference; EPR labels belong to name
+  and position from the field "Labels".
+- **Own labels:** right-click an empty spot of the preview → **Add Label Here**. The new label appears in the table,
+  its text in the field below; drag to move it (the position holds for every export size), right-click it for Edit
+  text, Hide in figure and Remove Label; **Reset** removes the selected own label, **Remove Own Labels** all of them.
+  Own labels are in every export (PDF/SVG/PNG, Word, PowerPoint, Copy Figure), never in the caption or methods text;
+  automatic labels keep clear of them. Adding, text, moving and removing are one undo step each. Own labels belong to
+  the view shown (e.g. H-Cell capacity or potential, IR or Raman); the SEC heatmap has no labels.
 
 ## Notes on CDXML
 

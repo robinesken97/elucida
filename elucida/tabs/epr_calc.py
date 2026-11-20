@@ -669,6 +669,7 @@ class SpinPages:
                 sel = [k for k in self.assign().get(str(self.row()), []) if k < n]
         mol = DFT.XyzMolecule(els, xyz, bonds, labels)
         cfg = self.tab.base_cfg()
+        cfg.pop("extra_labels", None)                     # eigene Labels gehören zur Hauptabbildung des Tabs
         core.setup_fonts(TABS.plt, cfg)
         o = dict(prob=50, show_h=True, labels=True, h_labels=True, colors={}, bond_w=0.08, hidden_frags=[],
                  style="iboview", hidden_atoms=[], label_on=on, wire=set(), wire_h=False, label_mode="all",

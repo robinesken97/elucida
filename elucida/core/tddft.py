@@ -465,6 +465,7 @@ class SimpleFigure(core.Figure):
         if legend and cfg.get("legend", True):
             self._legend()
         self._make_labels(labels or [])
+        self._extra_labels()
         self._images()
         self._place_checked(self._place)
 
@@ -617,10 +618,13 @@ class SimpleFigure(core.Figure):
 
     def _make_labels(self, labels):
         for lab in labels:
+            text = self.label_text(lab["key"], lab["text"], lab.get("id"))   # eigener Text / ausgeblendet (label_over)
+            if text is None:
+                continue
             kw = core.label_kw(self.cfg)
             if lab.get("color"):                      # z. B. SEC: Label in der Farbe des zugehörigen Spektrums
                 kw["color"] = lab["color"]
-            ann = self.ax.annotate(core.fmt_text(lab["text"], self.cfg, label=True), xy=(lab["lam"], lab.get("y", 0)),
+            ann = self.ax.annotate(core.fmt_text(text, self.cfg, label=True), xy=(lab["lam"], lab.get("y", 0)),
                                    xycoords="data", xytext=(0.5, 0.5), textcoords="axes fraction",
                                    ha="left", va="bottom", linespacing=1.4, annotation_clip=False,
                                    zorder=5, **kw)

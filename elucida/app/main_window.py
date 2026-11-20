@@ -126,9 +126,13 @@ class GuiDragger(core.Dragger):
     """Wie core.Dragger, meldet aber jede Änderung (Ziehen von Inset/Bild/Label, Mausrad)
     an die GUI, damit Vorschau, Serienwechsel und Export dasselbe Layout verwenden."""
 
-    def __init__(self, F, on_change):
+    def __init__(self, F, on_change, on_menu=None, on_empty=None):
         self.on_change = on_change
         super().__init__(F, None)
+        if on_menu is not None:                       # Rechtsklick auf ein Label: Menü nach den Release-Handlern
+            self.on_label_menu = lambda key: QTimer.singleShot(0, lambda: on_menu(key))
+        if on_empty is not None:                      # Rechtsklick auf eine freie Stelle: „Label hier einfügen“
+            self.on_empty_menu = lambda xy: QTimer.singleShot(0, lambda: on_empty(xy))
 
     def _report(self, lay0):
         # erst nach allen anderen Release-Handlern auslesen (Label-Drag von matplotlib)
@@ -168,7 +172,7 @@ DEFAULT_GLOB = {"path_length": 1.0, "cutoff": 1.0, "min_points": 3, "bands": "",
                 "color_show": False, "color_d": 1.0}
 # „Darstellung zurücksetzen“ im ε-Tab behält: Schichtdicke, Export und alles, was die Auswertung ändert (Cutoff, Banden,
 # Basislinie, Fitgrenzen, R²-Stellen; der x-Bereich begrenzt die Peaksuche)
-SERIES_DATA_KEYS = ("layout", "band_cutoff", "band_hidden")   # hängen an den Banden der Messdaten (open_files)
+SERIES_DATA_KEYS = ("layout", "band_cutoff", "band_hidden", "label_over")   # hängen an den Banden der Messdaten (open_files)
 EPS_RESET_KEEP = ("path_length", "size", "w_cm", "h_cm", "fmt_pdf", "fmt_svg", "fmt_png",
                   "cutoff", "min_points", "bands", "bands_add", "shoulders", "baseline", "bl_a", "bl_b",
                   "min_r2", "r2_digits", "x_auto", "x_min", "x_max",
@@ -806,6 +810,12 @@ class MainWindow(QMainWindow):
             cb.hide()
         f.addRow(self.sec_plot)
         lv.addWidget(g)
+        g, body = STYLE.card(T("lab_card"))                # Labels im Bild: eigener Text, ausblenden (je Serie)
+        self.label_card = TABS.LabelCard(body, lambda: (self.series.get(self.current) or {}).get("label_over"),
+                                         self.set_label_over, lambda w: self.steps.reveal(w),
+                                         lambda: (self.series.get(self.current) or {}).get("extra_labels"),
+                                         self.set_extra_labels)
+        lv.addWidget(g)
         self.tf_card = TABS.TextFormatCard(self, "epsilon", TABS.ALL_TEXT_OPTS, _EpsStyle(self))   # Schrift und Linien
         self.tf_card.box, body = STYLE.card(T("tf_title_lines"))   # Karte wie die übrigen des ε-Tabs (QFrame#card)
         bl_ = QVBoxLayout(body)
@@ -918,6 +928,12 @@ class MainWindow(QMainWindow):
         rl_.setContentsMargins(0, TABS.PAGE_TOP, 0, 0)
         rl_.setSpacing(0)
         rl_.addWidget(self.tabs)
+        self.lbl_eps_note = QLabel(wordWrap=True)          # Hinweise unter der Vorschau wie in den anderen Tabs
+        self.lbl_eps_note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl_eps_note.setContentsMargins(TABS.PAGE_INSET[0], 0, TABS.PAGE_INSET[2], 10)
+        self.lbl_eps_note.setStyleSheet(STYLE.NOTE_CSS)
+        self.lbl_eps_note.hide()
+        rl_.addWidget(self.lbl_eps_note)
         rl_.addWidget(TABS.side_bar(self.lbl_cap_bar, self.btn_export))
         split = QSplitter(Qt.Horizontal)
         split.addWidget(left_col)
@@ -1792,7 +1808,9 @@ class MainWindow(QMainWindow):
         out = {"eps": {"files": list(self.csv_paths) + [p for p in held.get("files", []) if p not in self.csv_paths],
                         "glob": dict(self.glob), "conc": self.conc,
                         "series": dict(held.get("series", {}),
-                                       **{g: {k: st.get(k) for k in keys} for g, st in self.series.items()}),
+                                       **{g: dict({k: st.get(k) for k in keys},   # eigene Labeltexte nur, wenn gesetzt
+                                                  **{k: st[k] for k in ("label_over", "extra_labels") if st.get(k)})
+                                          for g, st in self.series.items()}),
                         "current": self.current},
                 "overlay": self.ov_state, "uvkin": self.uvkin_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "hcell": self.hcell_state, "epr": self.epr_state,
                 "irms": self.irms_state, "hrms": self.hrms_state, "xray": self.xray_state,
@@ -3641,6 +3659,10 @@ class MainWindow(QMainWindow):
         cfg["labels"]["index"] = gl.get("label_index", False)
         cfg["band_cutoff"] = {int(k): float(v) for k, v in (st.get("band_cutoff") or {}).items()}
         cfg["band_hidden"] = [int(k) for k in (st.get("band_hidden") or [])]
+        if st.get("label_over"):                          # eigene Texte / im Bild ausgeblendete Labels (nur die Abbildung)
+            cfg["label_over"] = st["label_over"]
+        if st.get("extra_labels"):                        # eigene Labels (nur die Abbildung)
+            cfg["extra_labels"] = st["extra_labels"]
         if gl["baseline"] == "off":
             cfg["baseline_nm"] = None
         elif gl["baseline"] == "manual":
@@ -3851,6 +3873,8 @@ class MainWindow(QMainWindow):
         self.lbl_eps_cap.setText("")
         self.lbl_eps_methods.setText("")
         self.lbl_cap_bar.set_full("")
+        self.label_card.fill([])
+        self.lbl_eps_note.hide()
         try:
             self.update_color()
         except Exception:                                # die Farbe der Lösung ist Zugabe
@@ -3875,7 +3899,12 @@ class MainWindow(QMainWindow):
                 self.hover = None
             self.canvas_host.set_figure_size(*cfg2["figsize_in"])
             self.F = self.eps_figure(cfg2, spectra, results, g, self.fig)
-            self.dragger = GuiDragger(self.F, self.layout_changed)
+            self.dragger = GuiDragger(self.F, self.layout_changed, self.label_card.popup, self.label_card.popup_empty)
+            rows = getattr(self.F, "label_rows", [])
+            self.label_card.fill(rows)
+            notes = TABS.label_number_notes(rows)          # eigener Text mit Zahl: weicht von Tabelle/SI ab
+            self.lbl_eps_note.setText("\n".join("⚠ " + n for n in notes))
+            self.lbl_eps_note.setVisible(bool(notes))
             unit = core.unit_text(cfg2["conc_unit"])
             curves = [dict(x=s_["x"], y=s_["y"], val=s_["y"], name=f"c = {s_['c']:g} {unit}") for s_ in spectra]
             self.hover = TABS.HoverReadout(self.F, curves, self.show_hover, self.hover_text, self.pick_band)
@@ -3890,6 +3919,29 @@ class MainWindow(QMainWindow):
             self.log_signal.emit(traceback.format_exc())
             self.statusBar().showMessage(f"{T('err_title')}: {e}", 8000)
         self.push_undo()                               # auch wenn das Bild scheitert: Änderung speichern/rückgängig
+
+    def set_extra_labels(self, extra):
+        """Eigene Labels der gewählten Serie (bleiben bei neuen Messdaten: Achsenbruchteile, an keiner Bande)."""
+        st = self.series.get(self.current)
+        if st is None:
+            return
+        if extra:
+            st["extra_labels"] = extra
+        else:
+            st.pop("extra_labels", None)
+        self.render()
+
+    def set_label_over(self, over):
+        """Karte „Beschriftungen im Bild“ (gewählte Serie): eigene Texte/ausgeblendete Labels, neu zeichnen (ein
+        Rückgängig-Schritt). Hängt an den Banden der Messdaten (SERIES_DATA_KEYS) und bleibt bei „Standardwerte“."""
+        st = self.series.get(self.current)
+        if st is None:
+            return
+        if over:
+            st["label_over"] = over
+        else:
+            st.pop("label_over", None)
+        self.render()
 
     def size_key(self):
         gl = self.glob
@@ -3907,6 +3959,9 @@ class MainWindow(QMainWindow):
             return
         if not layout:                                 # nichts bewegt
             return
+        ex = TABS.move_extra_labels(self.series[self.current].get("extra_labels"), layout)
+        if ex is not None:                             # eigene Labels: Lage im Eintrag, nicht im Layout je Größe
+            self.series[self.current]["extra_labels"] = ex
         stored = self.get_layout(self.current)
         layout = dict(stored, **layout)
         if layout != stored:

@@ -1075,6 +1075,7 @@ class CVStackTab(CompareTab):
     """CV-Stapel: eine Kurve je Verbindung (oberster Eintrag = oberste Kurve), Peakpotential als Zahl am Peak, Struktur
     neben der Kurve, Pfeil der Messrichtung je Kurve. Verbindungen auf einer anderen Referenzskala als die erste werden
     abgelehnt, nie umgerechnet."""
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
     KIND = "cv"
     SI_PAGE = True                     # Reiter „SI-Text“: ganze Bildunterschrift zum Lesen und Kopieren (Fußleiste kürzt)
     X_RANGE = (-10.0, 10.0, 2, 0.1)
@@ -1304,6 +1305,10 @@ class SpectraTab(CompareTab):
     Emission normiert wie im Fluoreszenz-Tab), übereinander oder gestapelt, ein Legendeneintrag je Verbindung."""
     KIND = "spectra"
     SI_PAGE = True
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“ (eigene Labels; Entscheidung 169: alle Tabs)
+
+    def label_view(self):
+        return self.st.get("content", "eps")
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], content="eps", stack=False, stack_gap=1.0,
                          ref_freq=0.0, structures=True, struct_color=True, struct_w=22.0,
                          norm_auto=True, nlo=300.0, nhi=500.0)

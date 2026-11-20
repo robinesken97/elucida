@@ -10227,6 +10227,321 @@ def selftest(outdir, with_isnet=False):
             report.append(f"Example S3 coherent (all tabs with figure; HRMS {calc_x_:.4f} found {lc_x_['mz']:.4f}; "
                           f"lambda max {sorted(set(lam_x_.values()))} nm; E1/2 {e12_:.3f} V): OK")
         with section:
+            # Karte „Beschriftungen im Bild“: eigener Text, im Bild ausblenden, zurücksetzen (je Label, label_over)
+            import pymupdf
+            from matplotlib.backend_bases import MouseEvent as _ME
+            pump(0.3)
+            def settle_l():                      # Rückgängig sperrt push_undo, bis _end_restore läuft (200 ms Timer)
+                t_ = time.time() + 5
+                while w._restoring and time.time() < t_:
+                    pump(0.05)
+                assert not w._restoring
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            w.render()
+            pre_l = json.loads(w._snap())        # das Beispiel muss danach genau so bleiben (spätere Abschnitte kopieren es)
+            g_l = w.current
+            card_l = w.label_card
+            rows_l = list(w.F.label_rows)
+            assert len(rows_l) >= 2 and card_l.table.rowCount() == len(rows_l), rows_l
+            k_l, auto_l = rows_l[0]["key"], rows_l[0]["auto"]
+            hid_l, uv_l = list(w.series[g_l].get("band_hidden") or []), w._uv_line
+            tbl_l = [w.table.item(r_, 7).text() for r_ in range(w.table.rowCount())]
+            ir_off_l = json.dumps(w.irms_state.get("ir_off"))
+            # Rechtsklick: nur Labels der Karte treffen, Menü erst beim Loslassen
+            w.canvas.draw()
+            bb_l = w.F.ann_items[k_l].get_window_extent(w.F.fig.canvas.get_renderer())
+            xy_l = (bb_l.x0 + bb_l.width / 2, bb_l.y0 + bb_l.height / 2)
+            ev_l = _ME("button_release_event", w.F.fig.canvas, *xy_l, button=3)
+            assert w.dragger.label_key_at(ev_l) == k_l and w.dragger.on_label_menu is not None
+            got_l, lay_l = [], w.F.current_layout()
+            w.dragger.on_label_menu = got_l.append
+            _ME("button_press_event", w.F.fig.canvas, *xy_l, button=3)._process()   # wie mit der Maus: Drücken + Loslassen
+            ev_l._process()
+            pump(0.2)
+            assert got_l == [k_l], got_l
+            assert not w.F.ann_items[k_l].get_animated() and w.F.current_layout() == lay_l   # Label bleibt gezeichnet, am Platz
+            assert [a_.text() for a_ in card_l.menu(k_l).actions()] == [T("lab_menu_edit"), T("lab_menu_hide"),
+                                                                         T("lab_menu_reset")]
+            assert not card_l.menu(k_l).actions()[2].isEnabled()           # nichts zurückzusetzen
+            # eigener Text: ein Rückgängig-Schritt, Bild ändert sich, Tabelle/SI-Zeile nicht, Hinweis + markierte Zeile
+            card_l.edit(k_l)
+            assert card_l.ed.toPlainText() == auto_l
+            card_l._commit()                                                # unverändert: kein eigener Text, kein Schritt
+            assert not w.series[g_l].get("label_over")
+            n_l = len(w._undo)
+            card_l.ed.setPlainText("Zqx own")
+            card_l._commit()
+            assert w.series[g_l]["label_over"] == {k_l: {"text": "Zqx own"}}, w.series[g_l].get("label_over")
+            assert len(w._undo) == n_l + 1, (len(w._undo), n_l)
+            assert w.F.ann_items[k_l].get_text() == "Zqx own", w.F.ann_items[k_l].get_text()
+            assert w._uv_line == uv_l and [w.table.item(r_, 7).text() for r_ in range(w.table.rowCount())] == tbl_l
+            assert not w.lbl_eps_note.isHidden() and T("lab_num_differs", label=TABS._label_line(auto_l)) in \
+                w.lbl_eps_note.text(), w.lbl_eps_note.text()
+            assert card_l.table.item(0, 1).foreground().color().name() == "#c77c0e"
+            assert card_l.menu(k_l).actions()[2].isEnabled()
+            exp_l = out / "labels_eps"
+            w.export_all(exp_l)
+            pdf_l = next(exp_l.glob("*.pdf"))
+            assert "Zqx" in "".join(p_.get_text() for p_ in pymupdf.open(str(pdf_l))), "own label text missing in export"
+            # Formel, die sich nicht setzen lässt: nicht übernommen, Hinweis
+            card_l.ed.setPlainText("$\\frac{$ bad")
+            card_l._commit()
+            assert w.series[g_l]["label_over"][k_l]["text"] == "Zqx own" and card_l.lbl_warn.text() == T("lab_bad_math")
+            card_l.ed.setPlainText("Zqx own")
+            card_l._commit()
+            # gespeichert und nach dem Öffnen wieder da
+            w.save_project()
+            assert PRJ.load(Path(w.project_dir))["eps"]["series"][g_l]["label_over"] == {k_l: {"text": "Zqx own"}}
+            w.open_project(Path(w.project_dir), ask=False, recent=False)
+            pump(0.3)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            w.render()
+            assert w.F.ann_items[k_l].get_text() == "Zqx own" and w.label_card.table.item(0, 1).text() == "Zqx own"
+            # Zurücksetzen = ein Schritt; Rückgängig / Wiederholen
+            n_l = len(w._undo)
+            card_l = w.label_card
+            card_l.reset(k_l)
+            assert not w.series[w.current].get("label_over") and w.F.ann_items[k_l].get_text() != "Zqx own"
+            assert len(w._undo) == n_l + 1
+            w.undo()
+            settle_l()
+            assert w.series[w.current].get("label_over") == {k_l: {"text": "Zqx own"}}, w.series[w.current].get("label_over")
+            w.redo()
+            settle_l()
+            assert not w.series[w.current].get("label_over")
+            # im Bild ausblenden (Häkchen): Bande bleibt in Tabelle und SI-Zeile, band_hidden unverändert
+            w.render()
+            card_l = w.label_card
+            card_l.table.item(0, 0).setCheckState(Qt.Unchecked)
+            pump(0.2)
+            assert w.series[w.current]["label_over"] == {k_l: {"hidden": True}}
+            assert k_l not in w.F.ann_items and [r_["key"] for r_ in w.F.label_rows][0] == k_l
+            assert card_l.table.item(0, 0).checkState() == Qt.Unchecked
+            assert list(w.series[w.current].get("band_hidden") or []) == hid_l and w._uv_line == uv_l
+            # „Standardwerte“ und Layout behalten eigene Texte (eingegebene Angaben; Rücksetzen je Label)
+            w.reset_defaults()
+            pump(0.2)
+            assert w.series[w.current].get("label_over") == {k_l: {"hidden": True}}
+            w.undo()                                                     # Darstellung des Beispiels wie vorher
+            settle_l()
+            # veralteter Schlüssel (Bande nach Änderung der Basislinie weg): ignoriert, keine Zeile
+            w.series[w.current]["label_over"] = {"label_99999": {"text": "stale"}}
+            w.render()
+            assert "label_99999" not in w.F.ann_items and len(w.F.label_rows) == len(rows_l) and w.lbl_eps_note.isHidden()
+            w.label_card.btn_reset_all.click()
+            assert not w.series[w.current].get("label_over") and not w.label_card.btn_reset_all.isEnabled()
+            # SimpleFigure-Tabs: dieselbe Karte, Export mit/ohne Label, „Standardwerte“ behält, Vorlagen tragen sie nie
+            for key_l in ("cv", "sec", "hcell", "epr", "hrms", "irms", "fluo", "overlay", "uvkin"):
+                assert getattr(w, w._tab_spec(key_l)[0]).label_card is not None, key_l
+            assert getattr(w.nmr_tab, "label_card", None) is None        # NMR: eigene Lane
+            t_ov = w.ov_tab                                              # TD-DFT: nur eigene Labels
+            t_ov.render()
+            id_ov = t_ov.label_card.add_at((0.6, 0.6))
+            assert t_ov.F.ann_items[f"xlab_{id_ov}"].get_text() == T("lab_new") and "view" not in t_ov.st["extra_labels"][0]
+            t_ov.label_card.btn_extra_off.click()
+            assert "extra_labels" not in t_ov.st
+            t_l = w.sec_tab
+            t_l.render()
+            rows_l = list(t_l.F.label_rows)
+            k_s, a_s = rows_l[-1]["key"], rows_l[-1]["auto"]
+            num_s = re.search(r"\d+", a_s).group()
+            meth_s = t_l.methods_text()
+
+            def pdf_text_(tab_, name_):
+                files_ = tab_.export_to(out / "labels_sec" / name_)
+                return "".join(p_.get_text() for p_ in pymupdf.open(str(next(f_ for f_ in files_ if f_.suffix == ".pdf"))))
+            (out / "labels_sec").mkdir(exist_ok=True)
+            assert num_s in pdf_text_(t_l, "plain"), (num_s, a_s)
+            t_l.label_card.edit(k_s)
+            t_l.label_card.ed.setPlainText("Zqy band")
+            t_l.label_card._commit()
+            assert t_l.st["label_over"] == {k_s: {"text": "Zqy band"}} and t_l.methods_text() == meth_s
+            assert any(T("lab_num_differs", label=TABS._label_line(a_s)) in n_ for n_ in t_l._notes), t_l._notes
+            assert "Zqy" in pdf_text_(t_l, "own")
+            t_l.label_card.menu(k_s).actions()[1].trigger()                # Menü „Im Bild ausblenden“
+            pump(0.2)
+            assert t_l.st["label_over"][k_s].get("hidden") and k_s not in t_l.F.ann_items
+            txt_s = pdf_text_(t_l, "hidden")
+            assert "Zqy" not in txt_s and num_s not in txt_s, num_s
+            t_l.reset_defaults()
+            t_l = w.sec_tab
+            assert t_l.st["label_over"][k_s].get("hidden") and t_l._is_data_key("label_over")
+            w.undo()                                                     # Darstellung des Beispiels wie vorher
+            settle_l()
+            t_l = w.sec_tab
+            t_l.render()
+            t_l.label_card.reset(k_s)
+            assert "label_over" not in t_l.st and k_s in t_l.F.ann_items
+            assert t_l.st.get("bands") == pre_l["sec"].get("bands") and num_s in pdf_text_(t_l, "reset")   # Bild wie vorher
+            # eigene Labels (Entscheidung 169): Rechtsklick auf eine freie Stelle, einfügen, Text, ziehen, ausblenden,
+            # Export, Öffnen, Rückgängig, entfernen; nie in Unterschrift/Methodentext, vor automatischen Labels reserviert
+            cap_s = t_l.si_caption("Zcap")
+            got_x = []
+            t_l.dragger.on_empty_menu = got_x.append
+            for fx_, fy_ in ((0.5, 0.55), (0.3, 0.7), (0.7, 0.4), (0.5, 0.9), (0.2, 0.3)):
+                px_, py_ = t_l.F.ax.transAxes.transform((fx_, fy_))
+                ev_x = _ME("button_release_event", t_l.F.fig.canvas, px_, py_, button=3)
+                if t_l.dragger.label_key_at(ev_x) or t_l.dragger._over_label(ev_x) or t_l.dragger._axes_at(ev_x):
+                    continue
+                _ME("button_press_event", t_l.F.fig.canvas, px_, py_, button=3)._process()
+                ev_x._process()
+                break
+            assert len(got_x) == 1 and abs(got_x[0][0] - fx_) < 0.01 and abs(got_x[0][1] - fy_) < 0.01, got_x
+            assert [a_.text() for a_ in t_l.label_card.menu_empty(got_x[0]).actions()] == [T("lab_menu_add")]
+            assert not t_l.label_card.btn_extra_off.isEnabled()
+            w.activateWindow()                                           # Feld bekommt wirklich den Fokus
+            pump(0.2)
+            t_l.label_card.edit(k_s)                                     # Text der gewählten Zeile im Feld, mit Fokus
+            pump(0.1)
+            n_x = len(w._undo)
+            id_x = t_l.label_card.add_at(got_x[0])
+            k_x = f"xlab_{id_x}"
+            assert len(w._undo) == n_x + 1 and t_l.F.ann_items[k_x].get_text() == T("lab_new")
+            pump(0.2)                                                    # Feld des neuen Labels hat den Fokus
+            assert t_l.label_card.current() == k_x and t_l.label_card.ed.toPlainText() == T("lab_new")
+            t_l.label_card.ed.setPlainText("Zxl free")
+            t_l.label_card._commit()
+            assert len(w._undo) == n_x + 2 and t_l.F.ann_items[k_x].get_text() == "Zxl free"
+            assert "label_over" not in t_l.st and t_l.F.ann_items[k_s].get_text() != "Zxl free"   # nie die Nachbarzeile
+            t_l.label_card.edit(k_s)
+            pump(0.1)
+            assert t_l.label_card.ed.toPlainText() == a_s                # Feld zeigt die neu gewählte Zeile
+            assert [r_["key"] for r_ in t_l.F.label_rows if r_.get("extra")] == [k_x]
+            assert not any(n_.startswith(T("lab_num_differs", label="")[:6]) for n_ in t_l._notes)   # kein Zahlhinweis
+            assert t_l.F._fixed_labels()[k_x] == [round(got_x[0][0], 4), round(got_x[0][1], 4)]  # vor allem reserviert
+            # ziehen (echte Maus: Drücken, Bewegen, Loslassen): Lage im Eintrag (alle Exportgrößen), nicht im Layout je
+            # Größe; ein Schritt
+            t_l.canvas.draw()
+            bb_x = t_l.F.ann_items[k_x].get_window_extent(t_l.F.fig.canvas.get_renderer())
+            cx_, cy_ = bb_x.x0 + bb_x.width / 2, bb_x.y0 + bb_x.height / 2
+            x0_x = t_l.st["extra_labels"][0]["x"]
+            _ME("button_press_event", t_l.F.fig.canvas, cx_, cy_, button=1)._process()
+            for d_ in (10, 20, 30):
+                _ME("motion_notify_event", t_l.F.fig.canvas, cx_ + d_, cy_, button=1)._process()
+            _ME("button_release_event", t_l.F.fig.canvas, cx_ + 30, cy_, button=1)._process()
+            pump(0.3)
+            assert t_l.st["extra_labels"][0]["x"] > x0_x + 0.01 and k_x not in t_l.layout(), t_l.st["extra_labels"]
+            assert len(w._undo) == n_x + 3, (len(w._undo), n_x)
+            t_l.layout_changed({k_x: [0.12, 0.34]})
+            assert t_l.st["extra_labels"][0]["x"] == 0.12 and k_x not in t_l.layout() and len(w._undo) == n_x + 4
+            t_l.render()
+            assert tuple(t_l.F.ann_items[k_x].xyann) == (0.12, 0.34)
+            txt_x = pdf_text_(t_l, "extra")
+            assert "Zxl" in txt_x and t_l.methods_text() == meth_s and "Zxl" not in (cap_s + t_l.methods_text())
+            assert t_l.si_caption("Zcap") == cap_s
+            # gehört zur Ansicht: Heatmap ohne Labels (und ohne „Label hier einfügen“), zurück in der Spektrenserie
+            t_l.cmb_mode.setCurrentIndex(t_l.cmb_mode.findData("heatmap"))
+            t_l.render()
+            assert t_l.st["mode"] == "heatmap" and k_x not in t_l.F.ann_items and t_l.dragger.on_empty_menu is None
+            assert not t_l.extra_here()
+            t_l.cmb_mode.setCurrentIndex(t_l.cmb_mode.findData("spectra"))
+            t_l.render()
+            assert k_x in t_l.F.ann_items and t_l.st["extra_labels"][0]["view"] == "spectra"
+            # im Bild ausblenden (Menü), wieder zeigen (Häkchen)
+            t_l.label_card.menu(k_x).actions()[1].trigger()
+            assert t_l.st["extra_labels"][0].get("hidden") and k_x not in t_l.F.ann_items
+            assert "Zxl" not in pdf_text_(t_l, "extra_hidden")
+            i_x = [r_["key"] for r_ in t_l.label_card.rows].index(k_x)
+            t_l.label_card.table.item(i_x, 0).setCheckState(Qt.Checked)
+            pump(0.2)
+            assert "hidden" not in t_l.st["extra_labels"][0] and k_x in t_l.F.ann_items
+            # gespeichert, nach dem Öffnen wieder da; Rückgängig nimmt den letzten Schritt zurück
+            w.save_project()
+            assert PRJ.load(Path(w.project_dir))["sec"]["extra_labels"][0]["text"] == "Zxl free"
+            w.open_project(Path(w.project_dir), ask=False, recent=False)
+            pump(0.3)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
+            pump(0.3)
+            t_l = w.sec_tab
+            t_l.render()
+            assert t_l.F.ann_items[k_x].get_text() == "Zxl free" and tuple(t_l.F.ann_items[k_x].xyann) == (0.12, 0.34)
+            t_l.label_card.reset(k_x)                                    # Zurücksetzen = eigenes Label entfernen
+            assert "extra_labels" not in t_l.st and k_x not in t_l.F.ann_items
+            w.undo()
+            settle_l()
+            t_l = w.sec_tab
+            t_l.render()
+            assert t_l.st["extra_labels"][0]["id"] == id_x and k_x in t_l.F.ann_items
+            t_l.reset_defaults()                                         # Standardwerte behalten eigene Labels
+            t_l = w.sec_tab
+            assert t_l.st.get("extra_labels") and t_l._is_data_key("extra_labels")
+            w.undo()
+            settle_l()
+            t_l = w.sec_tab
+            t_l.render()
+            t_l.label_card.btn_extra_off.click()                         # „Eigene Labels entfernen“
+            assert "extra_labels" not in t_l.st and not t_l.label_card.btn_extra_off.isEnabled()
+            # ε: dieselbe Karte, Lage im Eintrag der Serie
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            pump(0.2)
+            w.render()
+            id_e = w.label_card.add_at((0.05, 0.05))
+            assert w.F.ann_items[f"xlab_{id_e}"].get_text() == T("lab_new") and w._uv_line == uv_l
+            w.layout_changed({f"xlab_{id_e}": [0.06, 0.07]})
+            assert w.series[w.current]["extra_labels"][0]["x"] == 0.06 and f"xlab_{id_e}" not in w.get_layout(w.current)
+            assert w.get_state()["eps"]["series"][w.current]["extra_labels"][0]["id"] == id_e
+            w.save_project()
+            w.open_project(Path(w.project_dir), ask=False, recent=False)
+            pump(0.3)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            w.render()
+            assert tuple(w.F.ann_items[f"xlab_{id_e}"].xyann) == (0.06, 0.07)
+            w.label_card.btn_extra_off.click()
+            assert "extra_labels" not in w.series[w.current]
+            # EPR: Schlüssel zählen nur durch; nach Entfernen des ersten Labels gilt sein eigener Text nicht für das nächste
+            t_ep = w.epr_tab
+            t_ep.render()
+            labs_ep = t_ep.st["labels"]
+            lo_ep, hi_ep = sorted(t_ep.F.ax.get_xlim())
+            p1_ep, p2_ep = f"{lo_ep + 0.3 * (hi_ep - lo_ep):.1f}", f"{lo_ep + 0.7 * (hi_ep - lo_ep):.1f}"
+            t_ep.st["labels"] = f"Zp@{p1_ep}, Zq@{p2_ep}"
+            t_ep.render()
+            assert [r_["key"] for r_ in t_ep.F.label_rows] == ["label_epr_0", "label_epr_1"], t_ep.F.label_rows
+            t_ep.label_card.edit("label_epr_0")
+            t_ep.label_card.ed.setPlainText("Zep own")
+            t_ep.label_card._commit()
+            assert t_ep.st["label_over"]["label_epr_0"]["text"] == "Zep own" and t_ep.F.ann_items["label_epr_0"].get_text() == "Zep own"
+            t_ep.st["labels"] = f"Zq@{p2_ep}"
+            t_ep.render()
+            assert t_ep.F.ann_items["label_epr_0"].get_text() == "Zq" and not t_ep.F.label_rows[0]["text"]
+            t_ep.label_card.menu("label_epr_0").actions()[1].trigger()          # neues erstes Label: ohne den alten Text
+            assert t_ep.st["label_over"]["label_epr_0"] == {"hidden": True, "id": f"Zq@{float(p2_ep):g}"}, t_ep.st["label_over"]
+            t_ep.label_card.reset("label_epr_0")
+            t_ep.st["labels"] = labs_ep
+            t_ep.render()
+            assert "label_over" not in t_ep.st
+            # IR: Labels einschalten, eines im Bild ausblenden -> SI-Zeile und ir_off bleiben
+            t_ir = w.irms_tab
+            view_ir = t_ir.st.get("ram_view", "ir")              # Beispiel zeigt IR/Raman gestapelt (ohne Peaklabels)
+            t_ir.cmb_ram_view.setCurrentIndex(t_ir.cmb_ram_view.findData("ir"))
+            t_ir.cb_irlab.setChecked(True)
+            t_ir.render()
+            rows_ir = list(t_ir.F.label_rows)
+            assert rows_ir and isinstance(t_ir.F, IRMS.IRFigure), rows_ir
+            k_ir, line_ir = rows_ir[0]["key"], t_ir._ir_line
+            assert t_ir.dragger.on_empty_menu is not None
+            t_ir.btn_thr.setChecked(True)                                # Schwellenmodus: rechte Taste entfernt Punkte
+            assert t_ir.dragger.on_empty_menu is None
+            t_ir.btn_thr.setChecked(False)
+            t_ir.label_card.menu(k_ir).actions()[1].trigger()
+            assert t_ir.st["label_over"] == {k_ir: {"hidden": True}} and k_ir not in t_ir.F.ann_items
+            assert t_ir._ir_line == line_ir and json.dumps(w.irms_state.get("ir_off")) == ir_off_l
+            assert len(t_ir.F.ann_items) == len(rows_ir) - 1
+            t_ir.label_card.reset(k_ir)
+            t_ir.cb_irlab.setChecked(False)
+            t_ir.cmb_ram_view.setCurrentIndex(t_ir.cmb_ram_view.findData(view_ir))
+            t_ir.render()
+            assert t_ir.st.get("ram_view", "ir") == view_ir
+            assert "label_over" not in t_ir.st
+            assert json.dumps(w.irms_state.get("ir_off")) == ir_off_l
+            post_l = json.loads(w._snap())
+            diff_l = [(k_, j_) for k_, v_ in pre_l.items() if isinstance(v_, dict) and k_ != "tab"
+                      for j_ in v_ if post_l.get(k_, {}).get(j_) != v_[j_]]
+            assert not diff_l, [(k_, j_, json.dumps(pre_l[k_][j_])[:300], json.dumps(post_l.get(k_, {}).get(j_))[:300]) for k_, j_ in diff_l]
+            w.save_project()
+            report.append("figure labels (own text, hide, reset, undo, reopen, export, hint, stale key, own labels; "
+                          "band_hidden/ir_off unchanged): OK")
+        with section:
             from elucida.app import welcome as WEL                 # Startbildschirm: Projektliste mit Struktur und Analytik
             w.compound["note"] = "Radikalkation (Test)"           # Notiz zur Verbindung: Titel, Startbildschirm
             w.update_title()
@@ -12651,6 +12966,11 @@ def selftest(outdir, with_isnet=False):
             assert ct_.st["struct_color"] is True and ct_.sp_struct_w is ct_.sp_sw      # Vorgabe: Kurvenfarbe
             wd_ = [i_["width"] for i_ in ct_.F.cfg["images"]]
             assert abs(max(wd_) - ct_.st["struct_w"] / 100) < 1e-9 and all(i_["fixed"] for i_ in ct_.F.cfg["images"]), wd_
+            kl_ = ct_.F.label_rows[0]["key"]                      # Karte „Beschriftungen im Bild“: eigener Text im Stapel
+            ct_.label_card.edit(kl_)
+            ct_.label_card.ed.setPlainText("Zqc own")
+            ct_.label_card._commit()
+            assert ct_.st["label_over"] == {kl_: {"text": "Zqc own"}} and ct_.F.ann_items[kl_].get_text() == "Zqc own"
             ct_.move_row(2, 0)                                    # Reihenfolge = Liste: T3 jetzt oben
             assert [c_["label"] for c_ in ct_.figure_spec()[1]] == ["T3", "T1", "T2"]
             ct_.cb["normalize"].setChecked(True)
@@ -12660,6 +12980,7 @@ def selftest(outdir, with_isnet=False):
             assert out_cv_ and {p_.suffix for p_ in out_cv_} >= {".pdf", ".svg", ".png"}, out_cv_
             cp_.save()
             assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["normalize"] is True
+            assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["label_over"] == {kl_: {"text": "Zqc own"}}
             w.close_publication()
             report.append("Comparison CV stack (three synthetic compounds: offsets, peak labels, structures beside "
                           "the curves, one scan arrow each, other reference refused) and spectra overlay (structures "

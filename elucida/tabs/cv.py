@@ -461,6 +461,10 @@ def scan_start(E, n=6):
 
 
 class CVTab(TABS.FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
+
+    def label_view(self):
+        return self.st.get("plot", "cv")
     STATE_KEY = "cv"
     GUIDE, GUIDE_ACTION = "cv", ("guide_add", "add_files")
     TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame", "struct_frame")

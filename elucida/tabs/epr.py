@@ -892,6 +892,11 @@ FIT_COLOR = "#1764e8"                                     # Fitkurven der Kineti
 
 
 class EPRTab(TABS.FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
+
+    def label_view(self):
+        m = self.st.get("mode", "spectra")
+        return m if m == "spectra" else f"{m}/{self.st.get('int_x', 'time')}"
     COLOR_ROLES = (("col_fit", FIT_COLOR, "tf_col_fit"),)   # Stilkarte: Fitkurven (Kinetik, Spinzählung)
     STATE_KEY = "epr"
     GUIDE, GUIDE_ACTION = "epr", ("guide_add", "add_exp")
@@ -2090,7 +2095,8 @@ class EPRTab(TABS.FigureTab):
         if series:                                        # statt der Legende: Name bzw. Zeit/T neben jeder Kurve
             cfg["legend"], cfg["right_ticks"] = False, ticks
             cfg["right_label"] = {" min": "t [min]", " K": "T [K]"}.get(unit_)
-        labels = [{"key": f"label_epr_{k}", "lam": pos, "text": name} for k, (name, pos) in enumerate(_labels(st["labels"]))]
+        labels = [{"key": f"label_epr_{k}", "lam": pos, "text": name, "id": f"{name}@{pos:g}"}   # id: Schlüssel zählt nur
+                  for k, (name, pos) in enumerate(_labels(st["labels"]))]
         if st["show_params"]:
             for e in vis:
                 if e["kind"] == "sim" and e.get("params") and Path(e["params"]).exists():

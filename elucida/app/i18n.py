@@ -6086,3 +6086,50 @@ TEXTS.update({                                            # NMR-Vergleiche und V
     "nmr_pred_solv_any": ("Lösungsmittel „{solv}“ kennt Octets Tabelle nicht: Verschiebungen aus allen Lösungsmitteln.",
                           "Octet's table does not know the solvent “{solv}”: shifts from all solvents."),
 })
+# lab_: Karte „Beschriftungen im Bild“ (eigener Text / ausblenden je Label, tabs/base.py LabelCard)
+TEXTS.update({
+    "lab_card": ("Beschriftungen im Bild", "Figure Labels"),
+    "lab_col_text": ("Beschriftung", "Label"),
+    "lab_table_tip": ("Häkchen = Label im Bild. Ausblenden betrifft nur die Abbildung: Tabelle, SI-Zeile und Excel "
+                      "behalten den Wert (anders als eine abgewählte Bande).",
+                      "Tick = label shown in the figure. Hiding affects only the figure: table, SI line and Excel keep "
+                      "the value (unlike a deselected band)."),
+    "lab_empty": ("Keine Labels im Bild", "No labels in the figure"),
+    "lab_text": ("Eigener Text", "Own text"),
+    "lab_text_tip": ("Text im Bild für die gewählte Beschriftung; gilt beim Verlassen des Felds. Leer = automatischer "
+                     "Text. Formeln wie im Bild zwischen $…$.",
+                     "Text in the figure for the selected label; applies when leaving the field. Empty = automatic "
+                     "text. Formulas as in the figure between $…$."),
+    "lab_reset": ("Zurücksetzen", "Reset"),
+    "lab_reset_tip": ("Automatischer Text und wieder im Bild", "Automatic text and shown again"),
+    "lab_reset_all": ("Alle zurücksetzen", "Reset all"),
+    "lab_reset_all_tip": ("Alle Beschriftungen wieder automatisch und im Bild", "All labels automatic and shown again"),
+    "lab_reset_none": ("Nichts zurückzusetzen: automatischer Text, im Bild", "Nothing to reset: automatic text, shown"),
+    "lab_pick_first": ("Erst eine Beschriftung in der Tabelle wählen", "Select a label in the table first"),
+    "lab_auto": ("Automatisch: {t}", "Automatic: {t}"),
+    "lab_hint": ("Rechtsklick auf ein Label im Bild: Text bearbeiten, im Bild ausblenden, zurücksetzen. Rechtsklick auf "
+                 "eine freie Stelle: eigenes Label einfügen.",
+                 "Right-click a label in the figure: edit text, hide in figure, reset. Right-click an empty spot: add "
+                 "your own label."),
+    "lab_num_differs": ("Label „{label}“ hat einen eigenen Text und weicht von Tabelle/SI ab (dort stehen die "
+                        "berechneten Werte).",
+                        "Label “{label}” has its own text and differs from the table/SI (they keep the computed "
+                        "values)."),
+    "lab_bad_math": ("Eigener Text nicht übernommen: die Formel zwischen $…$ lässt sich nicht setzen.",
+                     "Own text not applied: the formula between $…$ cannot be typeset."),
+    "lab_menu_edit": ("Text bearbeiten", "Edit text"),
+    "lab_menu_hide": ("Im Bild ausblenden", "Hide in figure"),
+    "lab_menu_reset": ("Zurücksetzen", "Reset"),
+    "lab_menu_add": ("Label hier einfügen", "Add Label Here"),
+    "lab_menu_remove": ("Label entfernen", "Remove Label"),
+    "lab_new": ("Text", "Text"),
+    "lab_extra_tip": ("Eigenes Label: Text im Feld darunter, ziehen zum Verschieben, Zurücksetzen entfernt es. Steht nur "
+                      "im Bild, nie in Unterschrift oder SI-Text.",
+                      "Own label: text in the field below, drag to move, Reset removes it. Only in the figure, never "
+                      "in the caption or SI text."),
+    "lab_extra_reset_tip": ("Dieses eigene Label entfernen", "Remove this own label"),
+    "lab_extra_off": ("Eigene Labels entfernen", "Remove Own Labels"),
+    "lab_extra_off_tip": ("Alle eigenen Labels dieser Abbildung entfernen", "Remove all own labels of this figure"),
+    "lab_extra_none": ("Keine eigenen Labels: Rechtsklick auf eine freie Stelle der Vorschau fügt eines ein",
+                       "No own labels: right-click an empty spot of the preview to add one"),
+})

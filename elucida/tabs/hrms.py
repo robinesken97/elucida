@@ -123,6 +123,7 @@ def dev_ok(dev):
 
 
 class HRMSTab(TABS.FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
     COLOR_ROLES = (("col_meas", MEASURED_COLOR, "tf_col_meas"), ("col_calc", CALC_COLOR, "tf_col_calc"))   # Stilkarte
     STATE_KEY = "hrms"
     GUIDE, GUIDE_ACTION = "hrms", ("guide_add", "choose_ms")

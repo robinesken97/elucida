@@ -124,6 +124,293 @@ def color_button(color, on_pick, cell=False, small=False):
 ALL_TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
 
 
+def _label_line(s):
+    """Text eines Labels in einer Tabellenzeile/Meldung: Zeilen mit „ · “, ohne Mathtext-Zeichen (nur Anzeige)."""
+    s = _plain(str(s)).replace("^-1", "⁻¹").replace("^2", "²").replace("\\tilde\\nu", "ṽ").replace("\\", "")
+    return " · ".join(" ".join(x.split()) for x in s.splitlines() if x.strip())
+
+
+def label_number_notes(rows):
+    """Hinweise für Labels mit Zahl, deren eigener Text vom automatischen abweicht: Tabelle, SI und Excel behalten die
+    berechneten Werte (eine Zahl gehört überall gleich, hier steht im Bild bewusst etwas anderes)."""
+    return [T("lab_num_differs", label=_label_line(r["auto"])) for r in rows
+            if r["text"] is not None and r["text"] != r["auto"] and not r["hidden"] and re.search(r"\d", r["auto"])]
+
+
+class _LabelEdit(QPlainTextEdit):
+    """Eigener Text eines Labels (mehrzeilig wie das Label); gilt beim Verlassen des Felds."""
+
+    def __init__(self, done):
+        super().__init__()
+        self.done = done
+        self.setTabChangesFocus(True)
+        self.setFixedHeight(3 * self.fontMetrics().lineSpacing() + 18)
+
+    def focusOutEvent(self, ev):
+        super().focusOutEvent(ev)
+        self.done()
+
+
+class LabelCard(QObject):
+    """Karte „Beschriftungen im Bild“ (FigureTab mit LABEL_CARD, ε je Serie): Zeilen = Labels der gezeigten Abbildung
+    (`F.label_rows`: Häkchen = im Bild, Text = eigener, sonst der automatische; eigener Text orange markiert). Darunter der eigene Text der gewählten
+    Zeile (gilt beim Verlassen; leer oder wie automatisch = kein eigener Text), Zurücksetzen je Label und für alle,
+    Rechtsklick auf ein Label im Bild öffnet `menu`. Zustand {Schlüssel: {"text": …, "hidden": True}} über
+    get_over/set_over des Tabs (set_over zeichnet neu = ein Rückgängig-Schritt). Ausblenden betrifft nur das Bild, anders
+    als „Bande im Bild“ (ε) und abgewählte IR-Banden, die auch die SI-Zeile ändern.
+    Eigene Labels (Entscheidung 169): Rechtsklick auf eine freie Stelle → `popup_empty` → „Label hier einfügen“; Liste
+    [{id, text, x, y, hidden}] in Achsenbruchteilen über get_extra/set_extra (Zeilen `xlab_<id>` mit "extra"); Text wie
+    oben, Zurücksetzen entfernt das eigene Label, „Eigene Labels entfernen“ alle. Nie in Unterschrift oder Methodentext."""
+
+    def __init__(self, body, get_over, set_over, reveal=None, get_extra=None, set_extra=None):
+        super().__init__(body)
+        self.body, self.get_over, self.set_over, self.reveal = body, get_over, set_over, reveal
+        self.get_extra, self.set_extra = get_extra or (lambda: None), set_extra
+        self.rows, self._loading = [], False
+        self._ed_key = None                                  # Zeile, deren Text gerade im Feld steht
+        self._ed_text = ""                                   # zuletzt ins Feld gesetzter Text: gleich = nichts getippt
+        f = make_form(body)
+        f.setContentsMargins(0, 0, 0, 0)
+        self.table = STYLE.check_table([T("lab_col_text")])
+        self.table.setItemDelegateForColumn(1, STYLE.RichDelegate(self.table, STYLE.sci))   # λ, ε kursiv wie überall
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setFocusPolicy(Qt.StrongFocus)
+        self.table.setToolTip(T("lab_table_tip") + "\n" + T("lab_hint"))   # Hinweis nur hier: Karte gleich hoch in DE/EN
+        STYLE.empty_note(self.table, T("lab_empty"))
+        STYLE.fit_check_table(self.table)
+        self.table.itemChanged.connect(self._checked)
+        self.table.itemSelectionChanged.connect(self._show_row)
+        f.addRow(self.table)
+        self.ed = _LabelEdit(self._commit)
+        self.ed.setToolTip(T("lab_text_tip"))
+        f.addRow(T("lab_text"), self.ed)
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.btn_reset = QPushButton(STYLE.icon("reset"), T("lab_reset"))
+        self.btn_reset.clicked.connect(lambda: self.reset(self.current()))
+        self.btn_reset_all = QPushButton(T("lab_reset_all"))
+        self.btn_reset_all.clicked.connect(lambda: self.set_over({}))
+        rl.addWidget(self.btn_reset)
+        rl.addWidget(self.btn_reset_all)
+        f.addRow(row)
+        self.btn_extra_off = QPushButton(STYLE.icon("trash"), T("lab_extra_off"))
+        self.btn_extra_off.clicked.connect(lambda: self.set_extra([]))
+        row = QWidget()                                      # eigene Reihe in voller Breite wie die darüber
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.addWidget(self.btn_extra_off)
+        f.addRow(row)
+        row.setVisible(set_extra is not None)                # erst nach addRow: ohne Eltern würde es ein eigenes Fenster
+        self.lbl_info = STYLE.HintLabel()
+        self.lbl_info.setStyleSheet(HINT_CSS)
+        self.lbl_info.setWordWrap(True)
+        f.addRow(self.lbl_info)
+        self.lbl_warn = STYLE.HintLabel()
+        self.lbl_warn.setStyleSheet(STYLE.NOTE_CSS)
+        self.lbl_warn.setWordWrap(True)
+        f.addRow(self.lbl_warn)
+        self._error = ""
+        self.fill([])
+
+    # -- Zustand ---------------------------------------------------------------
+    def over(self):
+        return copy.deepcopy(self.get_over() or {})
+
+    def _store(self, key, **kw):
+        """Teile des Eintrags setzen (Wert None = entfernen); leerer Eintrag fällt weg."""
+        over = self.over()
+        ident = next((r.get("id") for r in self.rows if r["key"] == key), None)
+        old = over.get(key) or {}
+        old = old if old.get("id", ident) == ident else {}            # gehörte einem entfernten Label (EPR)
+        o = {k: v for k, v in dict(old, **kw).items() if v is not None and k != "id"}
+        if o:
+            over[key] = dict(o, id=ident) if ident is not None else o     # Kennung durchzählender Schlüssel (EPR)
+        else:
+            over.pop(key, None)
+        if over != (self.get_over() or {}):
+            self.set_over(over)
+
+    def extra(self):
+        return copy.deepcopy(self.get_extra() or [])
+
+    def _store_extra(self, key, **kw):
+        """Eigenes Label ändern (Wert None = entfernen); text=None löscht das Label."""
+        ex = self.extra()
+        for i, e in enumerate(ex):
+            if f"xlab_{e['id']}" == key:
+                if "text" in kw and kw["text"] is None:
+                    del ex[i]
+                else:
+                    ex[i] = {k: v for k, v in dict(e, **kw).items() if v is not None}
+                break
+        if ex != (self.get_extra() or []):
+            self.set_extra(ex)
+
+    def add_at(self, xy):
+        """„Label hier einfügen“ (Achsenbruchteile der Mausposition): ein Schritt, danach Text bearbeiten."""
+        import uuid
+        e = {"id": uuid.uuid4().hex[:8], "text": T("lab_new"), "x": round(float(xy[0]), 4), "y": round(float(xy[1]), 4)}
+        self.set_extra(self.extra() + [e])
+        QTimer.singleShot(0, lambda: self.edit(f"xlab_{e['id']}"))
+        return e["id"]
+
+    def current(self):
+        r = self.table.currentRow()
+        return self.rows[r]["key"] if 0 <= r < len(self.rows) else None
+
+    def row_of(self, key):
+        return next((r for r in self.rows if r["key"] == key), None)
+
+    # -- Anzeige ---------------------------------------------------------------
+    def fill(self, rows):
+        """Zeilen aus der gezeigten Abbildung (nach jedem Zeichnen)."""
+        keep = self.current()
+        self.rows = list(rows)
+        self._loading = True
+        self.table.blockSignals(True)
+        self.table.setRowCount(0)
+        for r in self.rows:
+            STYLE.check_row(self.table, r["key"], [_label_line(r["text"] if r["text"] is not None else r["auto"])],
+                            checked=not r["hidden"])
+            it = self.table.item(self.table.rowCount() - 1, 1)
+            it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            if r.get("extra"):
+                it.setToolTip(T("lab_extra_tip"))
+            elif r["text"] is not None:                      # eigener Text: markiert wie überschriebene Zellen im Vergleich
+                it.setForeground(QColor("#c77c0e"))
+                it.setToolTip(T("lab_auto", t=_label_line(r["auto"])))
+        STYLE.fit_check_table(self.table)
+        self.table.blockSignals(False)
+        i = next((i for i, r in enumerate(self.rows) if r["key"] == keep), -1)
+        if i >= 0:
+            self.table.selectRow(i)
+        self._loading = False
+        self.btn_reset_all.setEnabled(bool(self.get_over()))
+        self.btn_reset_all.setToolTip(T("lab_reset_all_tip") if self.get_over() else T("lab_reset_none"))
+        self.btn_extra_off.setEnabled(bool(self.get_extra()))
+        self.btn_extra_off.setToolTip(T("lab_extra_off_tip") if self.get_extra() else T("lab_extra_none"))
+        self.lbl_warn.setText(self._error)                   # Abweichung von Tabelle/SI: Hinweis unter der Vorschau
+        self._show_row()
+
+    def _show_row(self):
+        key = self.current()
+        r = self.row_of(key)
+        own = bool(r and (r["text"] is not None or r["hidden"] or r.get("extra")))
+        self.btn_reset.setEnabled(own)
+        self.btn_reset.setToolTip(T("lab_extra_reset_tip") if r and r.get("extra") else T("lab_reset_tip") if own
+                                  else T("lab_reset_none" if r else "lab_pick_first"))
+        self.ed.setEnabled(r is not None)
+        typed = self.ed.toPlainText() != self._ed_text
+        if not self.ed.hasFocus() or key != self._ed_key or not typed:   # Getipptes nie überschreiben
+            self._ed_key = key
+            self._ed_text = "" if r is None else r["text"] if r["text"] is not None else r["auto"]
+            self.ed.blockSignals(True)
+            self.ed.setPlainText(self._ed_text)
+            self.ed.blockSignals(False)
+        self.lbl_info.setText(T("lab_extra_tip") if r and r.get("extra") else
+                              T("lab_auto", t=_label_line(r["auto"])) if r and r["text"] is not None else "")
+
+    # -- Eingaben --------------------------------------------------------------
+    def _checked(self, item):
+        if self._loading or item.column() != 0:
+            return
+        key, hidden = item.data(Qt.UserRole), item.checkState() != Qt.Checked
+        st = self._store_extra if key.startswith("xlab_") else self._store
+        QTimer.singleShot(0, lambda: st(key, hidden=True if hidden else None))   # nach dem Klick neu zeichnen
+
+    def _commit(self):
+        key = self._ed_key                                   # die Zeile, für die der Text im Feld steht
+        r = self.row_of(key)
+        if self._loading or r is None or self.ed.toPlainText() == self._ed_text:   # nichts getippt: alter Feldtext
+            return                                           # darf nach Zurücksetzen nicht zurückkommen
+        self._ed_text = self.ed.toPlainText()               # übernommen: nach Zurücksetzen nicht noch einmal
+        text = self._ed_text.rstrip()
+        if r.get("extra"):                                   # eigenes Label: leer = entfernen
+            text = text if text.strip() else None
+            if text is not None and not core.label_text_ok(text):
+                self._error = T("lab_bad_math")
+                self.lbl_warn.setText(self._error)
+                return
+            self._error = ""
+            if text != r["text"]:
+                self._store_extra(key, text=text)
+            return
+        text = None if not text.strip() or text == r["auto"] else text
+        if text is not None and not core.label_text_ok(text):
+            self._error = T("lab_bad_math")
+            self.lbl_warn.setText(self._error)
+            return
+        self._error = ""
+        if text != r["text"]:
+            self._store(key, text=text)
+
+    def reset(self, key):
+        if key and key.startswith("xlab_"):
+            self._store_extra(key, text=None)
+        elif key:
+            self._store(key, text=None, hidden=None)
+
+    def edit(self, key):
+        """„Text bearbeiten“: Karte zeigen, Zeile wählen, Feld fokussieren."""
+        if self.ed.hasFocus():                               # Text der bisherigen Zeile erst übernehmen
+            self._commit()
+        i = next((i for i, r in enumerate(self.rows) if r["key"] == key), -1)
+        if i < 0:
+            return
+        if self.reveal is not None:
+            self.reveal(self.body)
+        self.table.selectRow(i)
+        p = self.body.parentWidget()
+        while p is not None and not isinstance(p, QScrollArea):
+            p = p.parentWidget()
+        if p is not None:                                    # linke Spalte bis zum Feld rollen
+            p.ensureWidgetVisible(self.ed)
+        self.ed.setFocus()
+        self.ed.selectAll()
+
+    def menu(self, key):
+        """Kontextmenü eines Labels im Bild (ohne exec, damit der Selbsttest es prüfen kann)."""
+        m = QMenu(self.body)
+        r = self.row_of(key)
+        m.addAction(T("lab_menu_edit"), lambda: self.edit(key))
+        if key.startswith("xlab_"):
+            m.addAction(T("lab_menu_hide"), lambda: self._store_extra(key, hidden=True))
+            m.addAction(T("lab_menu_remove"), lambda: self.reset(key))
+            return m
+        m.addAction(T("lab_menu_hide"), lambda: self._store(key, hidden=True))
+        a = m.addAction(T("lab_menu_reset"), lambda: self.reset(key))
+        a.setEnabled(bool(r and (r["text"] is not None or r["hidden"])))
+        return m
+
+    def popup(self, key):
+        from PySide6.QtGui import QCursor
+        if self.row_of(key) is not None:
+            self.menu(key).exec(QCursor.pos())
+
+    def menu_empty(self, xy):
+        m = QMenu(self.body)
+        m.addAction(T("lab_menu_add"), lambda: self.add_at(xy))
+        return m
+
+    def popup_empty(self, xy):
+        """Rechtsklick auf eine freie Stelle der Vorschau (xy in Achsenbruchteilen)."""
+        from PySide6.QtGui import QCursor
+        if self.set_extra is not None:
+            self.menu_empty(xy).exec(QCursor.pos())
+
+
+def move_extra_labels(extra, layout):
+    """Gezogene eigene Labels (`xlab_<id>` im gemeldeten Layout): Lage in den Eintrag (Achsenbruchteile, gilt für jede
+    Exportgröße) statt ins Layout je Größe; entfernt die Schlüssel aus layout. -> neue Liste oder None (keins bewegt)."""
+    moved = {k[5:]: layout.pop(k) for k in [k for k in layout if k.startswith("xlab_")]}
+    if not moved:
+        return None
+    return [dict(e, x=round(float(moved[e["id"]][0]), 4), y=round(float(moved[e["id"]][1]), 4)) if e["id"] in moved else e
+            for e in extra or []]
+
+
 class TextFormatCard(QWidget):
     """Inhalt der Karte „Schrift und Rahmen“ (Menü Format) am Ende des Schritts Darstellung; früher ein Dialog
     (Nutzerwunsch 2026-11-11: keine Popups). Zeigt nur, was der Tab im Bild hat (`opts` = TEXT_OPTS). Chip „Nur dieser
@@ -705,7 +992,7 @@ STEP_TITLES = {
         "Weitere Verbindungen", "Zellen und Anordnung", "Hyperfein-Zuordnung", "Lebensdauer", "TD-DFT-Tabelle",
         "Abstände in der Packung", "Pulverdiffraktogramm (PXRD)", "Aromatizität (HOMA)", "Übergangsorbitale (NTO)"),
     2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate", "Achsen und Größe",
-        "Größe und Formate", "Stapeln und Achsen", "Hervorheben und Labels", "Bilder", "Atome und Fragmente",
+        "Größe und Formate", "Stapeln und Achsen", "Hervorheben und Labels", "Beschriftungen im Bild", "Bilder", "Atome und Fragmente",
         "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen", "Schrift und Linien",
         "Schrift, Linien und Farben",
         "Beschriftung", "Abschnitte", "Spindichte und Hyperfein", "NICS-Abbildung",
@@ -1274,9 +1561,13 @@ class CanvasHost(QWidget):
 
 
 class TabDragger(core.Dragger):
-    def __init__(self, F, cb):
+    def __init__(self, F, cb, on_menu=None, on_empty=None):
         self.cb = cb
         super().__init__(F, None)
+        if on_menu is not None:                       # Rechtsklick auf ein Label: Menü nach den Release-Handlern
+            self.on_label_menu = lambda key: QTimer.singleShot(0, lambda: on_menu(key))
+        if on_empty is not None:                      # Rechtsklick auf eine freie Stelle: „Label hier einfügen“
+            self.on_empty_menu = lambda xy: QTimer.singleShot(0, lambda: on_empty(xy))
 
     def _report(self, lay0):
         QTimer.singleShot(0, lambda: self.cb(self.moved(lay0)))
@@ -1499,6 +1790,11 @@ class FigureTab(QWidget):
 
     DEFAULT_STATE: dict = {}
     STATE_KEY = ""
+    # Karte „Beschriftungen im Bild“ (eigener Text / ausblenden je Label über SimpleFigure._make_labels); Zustand
+    # st["label_over"] steht bewusst nicht in DEFAULT_STATE: alte Projekte bleiben unverändert, „Standardwerte“ und
+    # Vorlagen lassen eigene Texte in Ruhe (eingegebene Angaben wie die Bildunterschrift; je Label zurücksetzbar);
+    # ebenso st["extra_labels"] (eigene Labels, Rechtsklick auf eine freie Stelle)
+    LABEL_CARD = False
     # was der Tab im Bild hat (Menü Format zeigt nur das): Schriften, Symbolschrift für λ/ε, Labels, Labelgröße, Rahmen
     TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame")
     X_RANGE = (100, 3500, 0, 10)         # x-Achse: min, max, Nachkommastellen, Schritt (Spektren: nm)
@@ -1528,6 +1824,13 @@ class FigureTab(QWidget):
         self.build_controls()
         self.grp_common = self.common_box()
         self.lv.addWidget(self.grp_common)
+        self.label_card = None
+        if self.LABEL_CARD:                                # Labels im Bild: eigener Text, ausblenden, zurücksetzen
+            g = QGroupBox(T("lab_card"))
+            self.label_card = LabelCard(g, lambda: self.st.get("label_over"), self.set_label_over,
+                                        lambda w: self.steps.reveal(w) if getattr(self, "steps", None) else None,
+                                        self.extra_here, self.set_extra_labels)
+            self.lv.addWidget(g)
         hint = QLabel(T(self.DRAG_HINT), alignment=Qt.AlignHCenter)      # Fußnote unter den Karten: mittig
         hint.setWordWrap(True)
         hint.setStyleSheet(HINT_CSS)
@@ -1544,7 +1847,8 @@ class FigureTab(QWidget):
             c_.box = QGroupBox(T("tf_title_colors" if self.COLOR_ROLES else "tf_title_lines" if self.LINE_STYLE
                                   else "tf_title"))
             QVBoxLayout(c_.box).addWidget(c_)
-            self.lv.insertWidget(self.lv.indexOf(self.grp_common) + 1, c_.box)
+            last = self.label_card.body if self.label_card is not None else self.grp_common   # bleibt die letzte Karte
+            self.lv.insertWidget(self.lv.indexOf(last) + 1, c_.box)
             c_.fold = STYLE.Fold(c_.box, f"{self.STATE_KEY}/text_format", main.settings, c_.differs)
             self.folds.append(c_.fold)
         self.chain_row = None
@@ -1887,6 +2191,10 @@ class FigureTab(QWidget):
         core.apply_text_format(cfg, self.main.text_format(self.STATE_KEY))
         fmts = [e for e in ("pdf", "svg", "png") if self.fmt().get(e)] or ["pdf"]
         cfg["_main_fmt"], cfg["extra_formats"] = fmts[0], fmts[1:]
+        if self.st.get("label_over"):                     # eigene Texte / ausgeblendete Labels (Karte „Beschriftungen im Bild“)
+            cfg["label_over"] = self.st["label_over"]
+        if self.extra_here():                             # eigene Labels (nur das Bild, nie Unterschrift/Methodentext)
+            cfg["extra_labels"] = self.extra_here()
         return cfg
 
     def size_key(self):
@@ -2179,7 +2487,11 @@ class FigureTab(QWidget):
                 self.fig.clear()
                 self.fig.text(0.5, 0.5, T("tab_empty"), ha="center", va="center", color="gray")
             else:
-                self.dragger = TabDragger(self.F, self.layout_changed)
+                card = self.label_card
+                self.dragger = TabDragger(self.F, self.layout_changed, card.popup if card is not None else None,
+                                          card.popup_empty if card is not None and self.own_labels_allowed() else None)
+                for n in label_number_notes(getattr(self.F, "label_rows", ())) if self.label_card is not None else ():
+                    self.add_note(n)                       # eigener Text mit Zahl: weicht von Tabelle/SI ab
                 curves = [dict(x=c["x"], y=c["y"], val=c.get("val", c["y"]), name=c.get("label") or "")
                           for c in self.F.curves if not c.get("aux")]
                 self.hover = HoverReadout(self.F, curves, self.main.show_hover, self.hover_text)
@@ -2190,7 +2502,43 @@ class FigureTab(QWidget):
             self.main.log_signal.emit(traceback.format_exc())
             self.main.statusBar().showMessage(f"{T('err_title')}: {e}", 8000)
             self.notes_show(error=e)
+        if self.label_card is not None:
+            self.label_card.fill(getattr(self.F, "label_rows", ()) if self.F is not None else ())
         self.main.push_undo()                          # auch wenn das Bild scheitert: Änderung speichern/rückgängig
+
+    def label_view(self):
+        """Ansicht, zu der eigene Labels gehören: '' = der Tab hat nur eine, None = Ansicht ohne eigene Labels (SEC-Heatmap).
+        Tabs mit mehreren Ansichten (CV, SEC, H-Cell, EPR, IR/Raman) geben ihre Ansicht zurück."""
+        return ""
+
+    def own_labels_allowed(self):
+        """Rechtsklick auf eine freie Stelle bietet „Label hier einfügen“ (nicht, wo die rechte Taste schon belegt ist)."""
+        return self.label_view() is not None
+
+    def extra_here(self):
+        """Eigene Labels der gezeigten Ansicht (Eintrag "view"; ohne = '')."""
+        v = self.label_view()
+        return [] if v is None else [e for e in self.st.get("extra_labels") or [] if e.get("view", "") == v]
+
+    def set_extra_labels(self, extra):
+        """Eigene Labels der gezeigten Ansicht setzen (Liste, leer = keine; die anderer Ansichten bleiben), neu zeichnen
+        (ein Rückgängig-Schritt)."""
+        v = self.label_view() or ""
+        extra = [e for e in self.st.get("extra_labels") or [] if e.get("view", "") != v] + \
+            [dict(e, view=v) if v else e for e in extra]
+        if extra:
+            self.st["extra_labels"] = extra
+        else:
+            self.st.pop("extra_labels", None)
+        self.render()
+
+    def set_label_over(self, over):
+        """Karte „Beschriftungen im Bild“: eigene Texte/ausgeblendete Labels setzen, neu zeichnen (ein Rückgängig-Schritt)."""
+        if over:
+            self.st["label_over"] = over
+        else:
+            self.st.pop("label_over", None)
+        self.render()
 
     def hover_text(self, lam, val, name):
         if val is None:
@@ -2200,6 +2548,9 @@ class FigureTab(QWidget):
     def layout_changed(self, layout):
         if not layout:                                 # nichts bewegt
             return
+        ex = move_extra_labels(self.st.get("extra_labels"), layout)
+        if ex is not None:                             # eigene Labels: Lage im Eintrag, nicht im Layout je Größe
+            self.st["extra_labels"] = ex
         drawn = getattr(self, "_struct_drawn", {})
         for k in [k for k in layout if k in drawn]:    # Strukturen im gemeinsamen Maßstab: nur die Position merken;
             v = layout[k]                              # das Mausrad auf einer skaliert alle (struct_w)
@@ -2490,6 +2841,7 @@ FigureTab.build = _with_lines(FigureTab.build)
 
 class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“ (eigene Labels; Entscheidung 169: alle Tabs)
     GUIDE, GUIDE_ACTION, GUIDE_EXTRA = "overlay", ("guide_add", "add_exp"), "tabs_button"
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
     RESET_KEEP = ("entries", "structure", "mode", "baseline",          # y-Größe und Basislinie: Rechenweg
@@ -3879,6 +4231,7 @@ def color_name(c) -> str:
 
 
 class FluoTab(FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
     STATE_KEY = "fluorescence"
     GUIDE, GUIDE_ACTION = "fluo", None
     TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")

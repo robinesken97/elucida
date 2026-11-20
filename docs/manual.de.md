@@ -730,6 +730,9 @@ linearen Regressionen und R², die Struktur und ein freigestelltes Foto der Küv
 6. **Exportieren:** Datei → Exportieren (Strg+E) oder die Zeile im Tab **Export**. Das schreibt die dort gewählten Formate (PDF/SVG/PNG),
    `<Serie>_results.csv` und den Excel-Report für **alle** Serien in die Verbindung (siehe unten).
 
+Text und Sichtbarkeit einzelner λ/ε-Labels ändert die Karte **Beschriftungen im Bild** (siehe dort); im Bild
+ausgeblendete Labels bleiben anders als abgewählte Banden in Tabelle und SI-Zeile.
+
 ### Was bei der Auswertung automatisch passiert
 
 - **Basislinie** („automatisch (Reihe)“, Standard): Das Fenster liegt dort, wo die konzentrierteste
@@ -1584,6 +1587,34 @@ in der Verbindung gespeichert, jede Änderung lässt sich rückgängig machen; d
   im gezeigten Bild (z. B. H-Cell mit mehreren Messungen, HRMS ohne Isotopenmuster) ist ausgegraut, der Tooltip nennt den Grund.
 - **Rahmen:** geschlossener Rahmen um den Plot (auch oben und rechts; seit 1.24 Standard, wie die Origin-Abbildungen)
   und abgerundeter Rahmen um die Strukturformel.
+
+## Beschriftungen im Bild
+
+Karte **Beschriftungen im Bild** im Schritt **Darstellung** (UV-Vis (ε) je Serie, TD-DFT, Kinetik, Fluoreszenz, HRMS,
+IR + EA, CV, SEC, H-Cell, EPR, CV-Stapel und Spektren im Vergleich; NMR, X-Ray, DFT und das Energieprofil noch nicht). Die Tabelle zeigt die Labels der gezeigten Abbildung:
+
+- **Häkchen** = Label im Bild. Abgewählt fehlt nur das Label in der Abbildung (und in allen Exporten); Tabelle,
+  SI-Zeile, Excel und Methodentext behalten den Wert. Das ist etwas anderes als eine abgewählte Bande im ε-Tab oder in
+  IR, die auch aus der SI-Zeile fällt.
+- **Eigener Text:** Zeile wählen, Text im Feld darunter ändern (gilt beim Verlassen des Felds; mehrzeilig wie das Label,
+  Formeln wie im Bild zwischen `$…$`). Leer oder gleich dem automatischen Text = kein eigener Text. Eigene Texte
+  stehen orange in der Tabelle, der Tooltip zeigt den automatischen Text.
+- **Zahl geändert:** trägt das Label eine Zahl und weicht der eigene Text ab, steht unter der Vorschau „Label … weicht
+  von Tabelle/SI ab“. Tabelle, SI, Excel und Bildunterschrift benutzen immer die berechneten Werte.
+- **Rechtsklick auf ein Label** in der Vorschau: Text bearbeiten (zeigt die Karte), Im Bild ausblenden, Zurücksetzen.
+- **Zurücksetzen** / **Alle zurücksetzen:** automatischer Text, wieder im Bild. „Standardwerte“ und Vorlagen lassen
+  eigene Texte in Ruhe; jede Änderung ist ein Rückgängig-Schritt.
+- Eigene Texte hängen am Label: bei Banden, Peaks und Massen (ε, SEC, IR, HRMS) an seinem Wert – ändert er sich
+  (Basislinie, Peaksuche), gehört der alte Text zu keinem Label mehr und wird nicht mehr benutzt. Bei CV-Paaren,
+  H-Cell-Zyklen und den Fluoreszenzmaxima bleibt der Text, der Hinweis unter der Vorschau zeigt dann die Abweichung;
+  EPR-Labels hängen an Name und Lage aus dem Feld „Labels“.
+- **Eigene Labels:** Rechtsklick auf eine freie Stelle der Vorschau → **Label hier einfügen**. Das neue Label steht in der
+  Tabelle, sein Text im Feld darunter; ziehen verschiebt es (die Lage gilt für jede Exportgröße), Rechtsklick darauf
+  bietet Text bearbeiten, Im Bild ausblenden und Label entfernen; **Zurücksetzen** entfernt das gewählte eigene Label,
+  **Eigene Labels entfernen** alle. Eigene Labels stehen in allen Exporten (PDF/SVG/PNG, Word, PowerPoint, Abbildung
+  kopieren), nie in Bildunterschrift oder Methodentext; automatische Labels weichen ihnen aus. Einfügen, Text,
+  Verschieben und Entfernen sind je ein Rückgängig-Schritt. Eigene Labels gehören zur gezeigten Ansicht (z. B. H-Cell
+  Kapazität oder Potential, IR oder Raman); die SEC-Heatmap hat keine Labels.
 
 ## Hinweise zu CDXML
 

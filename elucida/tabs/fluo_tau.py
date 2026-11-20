@@ -312,6 +312,7 @@ class TauPart:
         """Abklingkurve (log) mit Fit und IRF, darunter die Residuen; Größe und Schrift wie die Abbildung des Tabs."""
         r, d = self.res, self.data
         cfg = self.tab.base_cfg()
+        cfg.pop("extra_labels", None)                     # eigene Labels gehören zur Hauptabbildung des Tabs
         core.setup_fonts(plt, cfg)
         fs, lw, sc = cfg["font_size"], cfg["line_width"], cfg.get("scale", 1.0)
         fig.clear()
@@ -363,6 +364,7 @@ class TauPart:
             STYLE.fill_summary(self.tbl_fit2, [])
             return
         cfg = self.tab.base_cfg()
+        cfg.pop("extra_labels", None)                     # eigene Labels gehören zur Hauptabbildung des Tabs
         self.host.set_figure_size(*cfg["figsize_in"])
         self.draw(self.fig)
         self.canvas.draw_idle()
@@ -486,6 +488,7 @@ class TauPart:
             return []
         fig = self.figure()
         cfg = self.tab.base_cfg()
+        cfg.pop("extra_labels", None)                     # eigene Labels gehören zur Hauptabbildung des Tabs
         out = base.with_name(base.name + "_decay")
         files = []
         for e in [cfg["_main_fmt"]] + cfg["extra_formats"]:

@@ -598,7 +598,7 @@ class IRFigure(TABS.X.SimpleFigure):
     def _ir_positions(self):
         """-> {key: (x, y)} lower-left in Achsenbruchteilen; erweitert dabei ggf. die y-Achse, füllt ir_leaders."""
         self.ir_leaders = {}
-        if not self.ann_items:
+        if not any(not getattr(a, "_extra", False) for a in self.ann_items.values()):
             return {}
         ax, below = self.ax, self._ir_side == "below"
         pts = [(np.asarray(c["x"], float), np.asarray(c["y"], float)) for c in self.spectra]
@@ -616,6 +616,8 @@ class IRFigure(TABS.X.SimpleFigure):
             y0, y1 = ax.get_ylim()
             keys, tgt, wid, hgt = [], [], [], []
             for key, ann in self.ann_items.items():
+                if getattr(ann, "_extra", False):          # eigenes Label: feste Stelle, nicht in der Reihe
+                    continue
                 _, _, bw, bh = self._measure_af(ann.get_window_extent(rend))
                 keys.append(key)
                 tgt.append((ann.xy[0] - x0) / (x1 - x0))
@@ -623,7 +625,7 @@ class IRFigure(TABS.X.SimpleFigure):
                 hgt.append(bh)
             if sum(wid) > IR_LABEL_FILL and not shrunk:    # viele Peaks (Rohdatei): wie OPUS kleiner setzen, statt
                 shrunk = True                              # über den Rand zu schieben oder die Breite zu füllen
-                for ann in self.ann_items.values():
+                for ann in (a for a in self.ann_items.values() if not getattr(a, "_extra", False)):
                     ann.set_fontsize(max(IR_LABEL_MIN_PT, ann.get_fontsize() * IR_LABEL_FILL / sum(wid)))
                 continue
             h = max(hgt)
@@ -694,6 +696,13 @@ def read_ir_checked(p):
 
 class IRMSTab(TABS.FigureTab):
     """Tab „IR + EA“ (der MS-Teil steht seit 1.21 im Tab HRMS, tabs/hrms.py)."""
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
+
+    def label_view(self):
+        return self.st.get("ram_view", "ir")
+
+    def own_labels_allowed(self):
+        return not self.btn_thr.isChecked()      # Schwellenmodus: Rechtsklick entfernt einen Stützpunkt
     STATE_KEY = "irms"
     STEP_LABELS = ("step_ir", "step_ea", "step_display")                # Schritte der linken Spalte
     GUIDE, GUIDE_ACTION = "irms", ("guide_add", "choose_ir")
@@ -1630,6 +1639,9 @@ class IRMSTab(TABS.FigureTab):
             self.btn_thr.setChecked(False)
             self.btn_thr.blockSignals(False)
         self.btn_thr_clear.setEnabled(bool(st.get("ir_thr")))
+        for key_, eds_ in (("ea_found", self.ea_found_ed), ("ea_found2", self.ea_found2_ed)):
+            for el, ed in eds_.items():
+                ed.setText(str((st.get(key_) or {}).get(el, "")))
         self.cb_int.setChecked(bool(st.get("with_int")))
         self.cb_irlab.setChecked(bool(st.get("ir_labels")))
         self.cb_irstruct.setChecked(bool(st.get("ir_struct")))

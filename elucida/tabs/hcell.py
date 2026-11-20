@@ -166,6 +166,10 @@ class HCellFigure(X.SimpleFigure):
 
 
 class HCellTab(TABS.FigureTab):
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
+
+    def label_view(self):
+        return self.st.get("view", "capacity")
     COLOR_ROLES = tuple((f"col_{k}", SI_LOOK[k][0], f"tf_col_{k}") for k in ("charge", "discharge", "ce"))   # Stilkarte
     STATE_KEY = "hcell"
     GUIDE, GUIDE_ACTION = "hcell", ("guide_add", "add_files")
