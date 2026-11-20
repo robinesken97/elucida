@@ -267,6 +267,9 @@ class Bridge(QObject):
             elif method in ('copy', 'paste'):
                 from elucida.app.drawing_clipboard import copy_drawing, paste_drawing
                 value = copy_drawing(data) if method == 'copy' else paste_drawing()
+            elif method == 'prediction':                       # Octets NMR-Vorhersage (nmr_compare.Predictor)
+                QTimer.singleShot(0, lambda: self.owner.predicted.emit(data if isinstance(data, dict) else {}))
+                value = True
             elif method == 'edit_asset':
                 key, shape_id = data.get('key'), data.get('shapeId')
                 if not isinstance(key, str) or len(key) > 80 or not isinstance(shape_id, int):
@@ -343,6 +346,7 @@ class DrawingEditor(QWidget):
     external_requested = Signal()
     remove_requested = Signal()
     asset_edit_requested = Signal(str, int)
+    predicted = Signal(object)                              # Antwort von window.elucida.predict (Token, Wert, Fehler)
     fit_view = False                                        # True: show the whole drawing (zoom) instead of placing it
 
     def __init__(self, parent=None, *, scheme_actions=True, draft=False):

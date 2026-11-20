@@ -3294,10 +3294,12 @@ TEXTS = {
     "nmr_label_info_long": ("Kern, Frequenz und Lösungsmittel unter der Struktur im Spektrum",
                             "Nucleus, frequency and solvent below the structure in the spectrum"),
     "nmr_range": ("Bereich [ppm]", "Range [ppm]"),
-    "nmr_range_tip": ("Beschrifteter Bereich der Achse. Üblich sind mindestens −1…10 ppm (¹H) und 0…200 ppm (¹³C; Angew. "
-                      "−10…200); ⚠ = die Beschriftung reicht nicht bis 0 bzw. 10/200. Nur ein Hinweis.",
-                      "Labelled range of the axis. Usual are at least −1…10 ppm (¹H) and 0…200 ppm (¹³C; Angew. "
-                      "−10…200); ⚠ = the labels do not reach 0 or 10/200. A note only."),
+    "nmr_range_tip": ("Bereich der Achse. MNova-Bild: üblich sind mindestens −1…10 ppm (¹H) und 0…200 ppm (¹³C; Angew. "
+                      "−10…200); eigenes Spektrum: Bereich der SI-Abbildung. ⚠ = die Beschriftung reicht nicht bis 0 bzw. "
+                      "10/200 oder ein Signal der SI-Zeile liegt außerhalb. Nur ein Hinweis.",
+                      "Range of the axis. MNova image: usual are at least −1…10 ppm (¹H) and 0…200 ppm (¹³C; Angew. "
+                      "−10…200); own spectrum: range of the SI figure. ⚠ = the labels do not reach 0 or 10/200, or a signal "
+                      "of the SI line lies outside. A note only."),
     "nmr_count_tip": ("Vergleich der NMR-Zeilen mit der Summenformel der Verbindung. ¹H: Summe der H-Zahlen; andere "
                       "Kerne: Zahl der Signale gegen die Atome des Elements. Nur ein Hinweis.",
                       "Comparison of the NMR lines with the molecular formula of the compound. ¹H: sum of the H "
@@ -5763,10 +5765,13 @@ TEXTS.update({
                        "Assignment of the signal for the SI line (*italic*, _{sub}, ^{sup})."),
     "nmr_marks_note": ("Marken", "Marks"),
     "nmr_si_range": ("Bereich", "Range"),
-    "nmr_si_range_tip": ("Bereich der SI-Abbildung in ppm. „auto“: −1 bis 11 ppm (¹H) bzw. −10 bis 220 ppm (¹³C), "
-                         "sonst das ganze Spektrum. Zoomen in der Ansicht ändert die Abbildung nicht.",
-                         "Range of the SI figure in ppm. “auto”: −1 to 11 ppm (¹H) or −10 to 220 ppm (¹³C), otherwise "
-                         "the whole spectrum. Zooming in the view does not change the figure."),
+    "nmr_si_range_tip": ("Bereich der SI-Abbildung in ppm. „auto“: 9 bis 0 ppm (¹H) bzw. 200 bis 0 ppm (¹³C), erweitert, bis "
+                         "jedes Signal der SI-Zeile mit Rand innen liegt (Hydride, Carbene); andere Kerne das ganze Spektrum. "
+                         "Ein eigener Bereich bleibt, ein Signal außerhalb wird gemeldet. Zoomen in der Ansicht ändert die "
+                         "Abbildung nicht.",
+                         "Range of the SI figure in ppm. “auto”: 9 to 0 ppm (¹H) or 200 to 0 ppm (¹³C), widened until every "
+                         "signal of the SI line lies inside with a margin (hydrides, carbenes); other nuclei the whole spectrum. "
+                         "An own range stays; a signal outside it is reported. Zooming in the view does not change the figure."),
     "nmr_marks_ph": ("* = H2O", "* = H2O"),
     "nmr_marks_tip": ("Bedeutung der Marken (Modus T) für die Bildunterschrift, z. B. „* = H2O, † = Et2O“.",
                       "Meaning of the marks (mode T) for the caption, e.g. “* = H2O, † = Et2O”."),
@@ -5970,4 +5975,72 @@ TEXTS.update({
     "pub_exp_zip_links": ("Zip: <a href=\"all\">Alle</a> · <a href=\"none\">Keine</a>",
                           "Zip: <a href=\"all\">All</a> · <a href=\"none\">None</a>"),
     "pub_exp_dp_btn_n": ("Datensätze ({n} von {m})", "Datasets ({n} of {m})"),
+})
+
+TEXTS.update({                                            # NMR-Vergleiche und Vorhersage (Nutzerentscheid 2026-11-20)
+    "nmr_cmp_single": ("Einzeln", "Single"),
+    "nmr_cmp_overlay": ("Überlagert", "Overlaid"),
+    "nmr_cmp_stack": ("Gestapelt", "Stacked"),
+    "nmr_cmp_offset": ("Versatz", "Offset"),
+    "nmr_cmp_offset_tip": ("Abstand der gestapelten Spuren in % ihrer Höhe.", "Spacing of the stacked traces in % of their height."),
+    "nmr_cmp_mode_tip": ("Eigene 1D-Spektren desselben Kerns und Lösungsmittels einzeln, überlagert oder gestapelt zeigen; "
+                         "welche, wählt das Häkchen in der Liste „Spektren“. Überlagert und Gestapelt kommen als Abbildung "
+                         "in Export und SI.",
+                         "Show own 1D spectra of the same nucleus and solvent single, overlaid or stacked; the tick in the "
+                         "“Spectra” list chooses which. Overlaid and Stacked go into export and SI as a figure."),
+    "nmr_cmp_need_own": ("Nur für eigene 1D-Spektren (Bruker-FID oder FID aus .mnova): ein MNova-Bild ist eine Grafik und "
+                         "lässt sich nicht überlagern.",
+                         "Only for own 1D spectra (Bruker FID or FID from .mnova): an MNova image is a picture and cannot "
+                         "be overlaid."),
+    "nmr_cmp_check_tip": ("Spektrum im Vergleich (Überlagert, Gestapelt)", "Spectrum in the comparison (Overlaid, Stacked)"),
+    "nmr_cmp_card": ("NMR-Vergleich", "NMR Comparison"),
+    "nmr_cmp_label": ("Beschriftung", "Label"),
+    "nmr_cmp_label_tip": ("Beschriftung der gewählten Spur im Bild; leer = Temperatur (wenn sie sich unterscheidet), sonst "
+                          "der Dateiname.",
+                          "Label of the selected trace in the figure; empty = temperature (if it differs), otherwise the "
+                          "file name."),
+    "nmr_cmp_caption": ("Satz", "Sentence"),
+    "nmr_cmp_caption_long": ("Satz der Bildunterschrift (nach den Messangaben)", "Sentence of the caption (after the measurement data)"),
+    "nmr_cmp_caption_ph": ("z. B. Signale der Vorstufe mit * markiert.", "e.g. Signals of the precursor marked with *."),
+    "nmr_cmp_heading": ("SI-Überschrift", "SI heading"),
+    "nmr_cmp_heading_tip": ("Überschrift der Vergleiche in der SI (Einzel-SI nach den Spektren, Gesamt-SI als Unterkapitel am "
+                            "Ende des NMR-Kapitels).",
+                            "Heading of the comparisons in the SI (single SI after the spectra, complete SI as a subchapter "
+                            "at the end of the NMR chapter)."),
+    "nmr_cmp_hint": ("Häkchen in der Liste „Spektren“ wählen die Spuren; ein Vergleich je Kern. In die SI nur mit bestätigter "
+                     "Phase und Referenz jeder Spur.",
+                     "Ticks in the “Spectra” list choose the traces; one comparison per nucleus. Into the SI only with "
+                     "confirmed phase and reference of every trace."),
+    "nmr_cmp_active": ("aktiv", "active"),
+    "nmr_cmp_not_member": ("Das gewählte Spektrum ist nicht angehakt: es steht in der Ansicht oben, aber nicht in der Abbildung.",
+                           "The selected spectrum is not ticked: it is on top in the view but not in the figure."),
+    "nmr_cmp_ref": ("Referenz nicht bestätigt: {names}. Lage gegenüber {what} unsicher.",
+                    "Reference not confirmed: {names}. Position relative to {what} uncertain."),
+    "nmr_cmp_ref_pred": ("der Vorhersage", "the prediction"),
+    "nmr_cmp_ref_other": ("den anderen Spektren", "the other spectra"),
+    "nmr_cmp_ref_both": ("Vorhersage und anderen Spektren", "prediction and other spectra"),
+    "nmr_cmp_few": ("Vergleich {nuc}: weniger als zwei Spektren angehakt", "Comparison {nuc}: fewer than two spectra ticked"),
+    "nmr_cmp_solvent": ("Vergleich {nuc}: Spektren in verschiedenen Lösungsmitteln", "Comparison {nuc}: spectra in different solvents"),
+    "nmr_cmp_unconfirmed": ("Vergleich {nuc}: Phase oder Referenz nicht bei jeder Spur bestätigt",
+                            "Comparison {nuc}: phase or reference not confirmed for every trace"),
+    "nmr_cmp_withheld": ("{why} – nicht in Export und SI.", "{why} – not in export and SI."),
+    "nmr_rng_out": ("Signal δ {sig} außerhalb des Bildbereichs", "Signal δ {sig} outside the image range"),
+    "nmr_pred": ("Vorhersage", "Prediction"),
+    "nmr_pred_lane": ("Vorhersage (Octet)", "Prediction (Octet)"),
+    "nmr_pred_tip": ("Octets NMR-Vorhersage für die Struktur der Verbindung als zusätzliche Spur (nur auf Klick, nur Ansicht: "
+                     "nie in Export, SI, Word, PPTX, Datenpaket oder Zwischenablage).",
+                     "Octet's NMR prediction for the compound's structure as an extra trace (on click only, view only: "
+                     "never in export, SI, Word, PPTX, data package or clipboard)."),
+    "nmr_pred_need_struct": ("Vorhersage braucht eine gezeichnete Struktur (CDXML) der Verbindung.",
+                             "Prediction needs a drawn structure (CDXML) of the compound."),
+    "nmr_pred_need_nuc": ("Vorhersage nur für ¹H, ¹³C, ¹⁹F und ³¹P.", "Prediction only for ¹H, ¹³C, ¹⁹F and ³¹P."),
+    "nmr_pred_running": ("Vorhersage wird gerechnet …", "Computing the prediction …"),
+    "nmr_pred_failed": ("Vorhersage nicht möglich: {e}", "Prediction not possible: {e}"),
+    "nmr_pred_none": ("Octet hat für diese Struktur keine Vorhersage ({nuc}).", "Octet has no prediction for this structure ({nuc})."),
+    "nmr_pred_frame": ("Vorhersage von Octet für die Struktur der Verbindung: nur Ansicht, nie in Export oder SI.",
+                       "Octet's prediction for the compound's structure: view only, never in export or SI."),
+    "nmr_pred_xnuc": ("{nuc}-Vorhersage: Octets Tabelle ist für diesen Kern klein, Lagen können deutlich abweichen.",
+                      "{nuc} prediction: Octet's table is small for this nucleus, shifts can deviate markedly."),
+    "nmr_pred_solv_any": ("Lösungsmittel „{solv}“ kennt Octets Tabelle nicht: Verschiebungen aus allen Lösungsmitteln.",
+                          "Octet's table does not know the solvent “{solv}”: shifts from all solvents."),
 })

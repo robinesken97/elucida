@@ -80,8 +80,8 @@ def procedure_blocks(p):
 
 def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, reaction_paths=(), comparisons=()):
     """meta: Angaben der Publikation (title, authors, affiliation). compounds: [(Name, Teile)] mit Teile =
-    {char, nmr, irms, uvvis, epr, cv, sec: Blöcke; xray: Blöcke ohne Kristalltabelle; crystal: (Kopf, Zeilen) | None;
-    dft: Blöcke; methods_<sec>: Blöcke}. sections: gewählte Kapitel. comparisons: [(Kapitel bzw. „new:<Überschrift>“,
+    {char, nmr, irms, uvvis, epr, cv, sec: Blöcke; nmr_cmp: [(Überschrift, Blöcke)] der NMR-Vergleiche; xray: Blöcke
+    ohne Kristalltabelle; crystal: (Kopf, Zeilen) | None; dft: Blöcke; methods_<sec>: Blöcke}. sections: gewählte Kapitel. comparisons: [(Kapitel bzw. „new:<Überschrift>“,
     Blöcke)] der Vergleiche des Projekts, je Kapitel nach den Verbindungen. -> Blöcke für SI.write_docx."""
     def cmp_blocks(key):
         return [b for k, bl in comparisons if k == key for b in bl]
@@ -138,6 +138,12 @@ def assemble(meta, compounds, sections, setup_texts=(), toc=True, methods=True, 
                 return mb + fb
             if key == "nmr":                         # NMR ebenfalls je Gruppe
                 figs = grouped(fig_blocks)
+                heads = {}                           # Vergleiche (Überlagert/Gestapelt): je Überschrift ein Unterkapitel am Ende
+                for _, parts in compounds:
+                    for head, bl in parts.get("nmr_cmp") or []:
+                        heads.setdefault(head, []).extend(bl)
+                for head, bl in heads.items():
+                    figs += [("subsection", head)] + bl
             else:
                 figs = [b for _, parts in compounds for b in fig_blocks(parts)]
             figs += cmp_blocks(key)                  # Vergleiche nach den Verbindungen, ohne Unterkapitel

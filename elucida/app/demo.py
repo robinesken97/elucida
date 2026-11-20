@@ -248,6 +248,27 @@ def tddft_out(path, states, parts=None, n_occ=None, nto=None):
     return Path(path)
 
 
+def demo_nmr_series(t_n, d, h1):
+    """Erfundene Tieftemperaturreihe (¹H, eigene Verarbeitung) für den NMR-Vergleich: 253 und 213 K mit bestätigter Phase
+    und Referenz, angehakt und gestapelt (Normalfall); 193 K mit unbestätigter Referenz, nicht angehakt (Warnfall beim
+    Ansehen). Keine davon „für die SI“: SI-Zeile und Einzelabbildungen bleiben die aus MNova. Keine Messdaten."""
+    from elucida.formats import bruker_nmr as BN
+    from elucida.tabs import nmr_compare as NC
+    uids = []
+    for n, te, dx in (("11", 253.2, 0.03), ("12", 213.2, 0.07), ("13", 193.2, 0.10)):
+        wid = 1.0 + 1.5 * (298.0 - te) / 100            # breiter und ein Signal verschoben, je kälter
+        lines = [(x + 0.04 + (dx if x > 7.6 else 0.0), a, wid) for x, a, _ in h1]
+        t_n.import_topspin(str(BN.make_test_1d(d / n, lines, phc0=18.0, td=32768, si=65536, te=te, seed=int(n))))
+        s = next(x for x in t_n.spectra() if x.get("source") == "bruker" and str(x.get("bruker", "")).endswith("_" + n))
+        pr = s["proc"]
+        pr["phase_ok"] = True
+        if n != "13" and pr.get("ref") is not None:
+            pr["ref_status"] = "confirmed"
+            uids.append(s["uid"])
+    c = NC.state(t_n.st)
+    c.update(mode="stack", members=uids)
+
+
 def demo_nmr_svg(path, nucleus, peaks, x_range, solvent=None):
     """Mnova-ähnliches SVG (Achse als Text wie bei Mnova) mit erfundenen Lorentz-Signalen."""
     w, h = 1088, 759
@@ -1008,6 +1029,7 @@ def load_data(w, inp, name="S3"):
     t_n.import_topspin(str(NMR.make_test_acqus(nd / name / "3", nuc="1H", nuc2="13C", pulprog="hsqcedetgpsisp2.3")))
     if name == "S3":                                     # ¹H-Rohdaten (erfunden) zum Mnova-Spektrum: Quelle bleibt Mnova,
         t_n.import_topspin(str(NMR.demo_raw_1h(nd / name / "10", c["h1"])))   # „Quelle: Bruker“ zeigt die eigene Kette
+        demo_nmr_series(t_n, nd / name, c["h1"])
     # IR (künstliche OPUS-Datei), HRMS (künstlicher Bericht der Massenabteilung), Elementaranalyse (erfundene Werte)
     w.irms_tab.load_ir(str(make_opus(inp / "irms" / f"{name}_IR.0", c["ir"])))
     sh = c.get("ms_shift", 0.0004)

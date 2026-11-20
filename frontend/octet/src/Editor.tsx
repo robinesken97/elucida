@@ -55,7 +55,7 @@ import { MassSpecPanel, type MsAdd } from "./MassSpec";
 import { chemRuns, msFigure } from "./msanalysis";
 import { acsText, countText, isNucleus, multiplicity, NUCLEI, NUCLEUS_LIST, quality, shiftText } from "./nmr";
 import { nmrReady, predict, type Nucleus } from "./nmr";
-import { placeFigure, withNotice } from "./spectrumplot";
+import { placeFigure, withNotice, spectrumLines } from "./spectrumplot";
 import { numbered, placeBeside } from "./beside";
 import { centreIn, dropClear, panInto, roomOf, type Span } from "./reveal";
 import { followLeaders, labelLines, lonePlot, placePlot, plotFigure, plotsIn, plotTop, reframe, rescale, signalKeys, traceOf, type Plot, type PlotEnv } from "./pageplot";
@@ -1343,6 +1343,26 @@ export default function Editor() {
       return sh?.elucida ? {shapeId:sh.id, key:sh.elucida.key, kind:sh.elucida.kind} : undefined;
     },
     theme: (dark) => setHostDark(dark),
+    // Octet's NMR prediction for the drawing's largest structure (as the Spectrum panel), handed back to the Qt host
+    // through the bridge (method "prediction"), never polled. View only: the host keeps it out of every output.
+    predict: (token, nucleus, solvent, decouple, mhz) => {
+      void (async () => {
+        let value: unknown, error: string | undefined;
+        try {
+          await nmrReady();
+          const all = [...fragments(doc)].sort((a, b) => b.length - a.length);
+          if (!all[0]?.length) value = {fragments: 0, graph: null, prediction: null};
+          else {
+            const ids = [...all[0]].sort((a, b) => a - b), { mol } = expandWithOrigins(subset(doc, new Set(ids)), true), g = graphOf(mol);
+            const p = g ? predict(g, nucleus, solvent, decouple) : undefined;
+            value = {fragments: all.length, graph: g ?? null, prediction: p ? {decoupled: p.decoupled, acs: acsText(p, mhz, solvent),
+              signals: p.signals.map(s => ({shift: s.shift, nuclei: s.nuclei, solvent: s.solvent ?? null})),
+              lines: spectrumLines(p.signals, nucleus, mhz)} : null};
+          }
+        } catch (e) { error = String(e); }
+        await host("prediction", {token, value, error}).catch(() => {});
+      })();
+    },
     markSaved: () => {const saved = hostSnapshot.current ?? doc; setFile(f => ({...f, saved})); window.elucidaHost?.state(doc !== saved);},
   };
   useEffect(() => { if (EMBEDDED) window.elucidaHost?.state(dirty); }, [dirty, doc, guides]);

@@ -364,6 +364,9 @@ class NMRView(QWidget):
         self.struct_box = None                               # Struktur im Bild (Bildanteile x0, y0, x1, y1): Ausschnitte meiden sie
         self.struct_left = True                              # ohne bekannte Box: linkes Drittel freihalten (Struktur folgt)
         self.notes = []                                      # Hinweise der letzten Zeichnung (kein Platz für einen Ausschnitt)
+        # Vergleich (Überlagert/Gestapelt): weitere Spuren {x, y, color, label, kind "trace"/"pred", h}; das Hauptspektrum
+        # trägt main_label. Vorhersage („pred“) nur am Bildschirm (`screen`), nie in einer Abbildung für die SI
+        self.traces, self.stack, self.offset, self.main_label = [], False, 1.0, None
         self.opts = dict(SHOW_DEFAULT)
         self.mode, self.zoom_kind, self.pan_kind = "pointer", "h", "free"
         self.xlim = self.ylim = None
@@ -703,6 +706,24 @@ class NMRView(QWidget):
         bot = self._pt(G["base"] if (o["int_values"] and any(r.get("value") is not None for r in self.integrals)) else 4)
         return min(top / hgt, 0.5), min(bot / hgt, 0.4)
 
+    def lanes(self):
+        """Spuren unter dem Hauptspektrum: gestapelte Spektren, darunter die Vorhersage (nur am Bildschirm)."""
+        return [t_ for t_ in self.traces if t_["kind"] == "trace" and self.stack] + \
+            [t_ for t_ in self.traces if t_["kind"] == "pred" and self.screen]
+
+    def _lane_fracs(self, ls):
+        """Lage der Spuren als Anteil der Achsenhöhe: (Höhe des Hauptspektrums, Grundlinien relativ zu seiner, unterer
+        Rand). Erste Spur unter dem Band der Integralwerte, weitere im Abstand `offset` × Spurhöhe."""
+        top_f, bot_f = self._bands()
+        t, m0, gap = 1 - top_f - 0.03, 0.03, 0.02
+        rest = sum(l_["h"] for l_ in ls[1:])
+        ha = max(t - m0 - bot_f - (len(ls) - 1) * gap, 0.05) / (1 + ls[0]["h"] + self.offset * rest)
+        bases, b = [], 0.0
+        for k, l_ in enumerate(ls):
+            b = (-bot_f - l_["h"] * ha) if k == 0 else b - self.offset * l_["h"] * ha - gap
+            bases.append(b)
+        return ha, bases, -bases[-1] + m0
+
     def fit_highest(self, record=True, xlim=None):
         """H: höchster sichtbarer Punkt auf Fensterhöhe (unter den Labels), Grundlinie über den Integralwerten."""
         if self.x is None:
@@ -711,6 +732,11 @@ class NMRView(QWidget):
         idx = self._visible(xlim)
         ymax = float(np.nanmax(self.y[idx])) if len(idx) else 1.0
         ymax = ymax if ymax > 0 else 1.0
+        ls = self.lanes()
+        if ls:                                             # Spuren darunter: Hauptspektrum oben, Spuren in den Rest
+            ha, _bases, B = self._lane_fracs(ls)
+            rng = ymax / ha
+            return self.set_view(xlim, (-B * rng, -B * rng + rng), record)
         top_f, bot_f = self._bands()
         t, b = 1 - top_f - 0.03, bot_f
         rng = ymax / max(t - b, 0.1)
@@ -921,6 +947,7 @@ class NMRView(QWidget):
             self._cuts_ov()
             self._insets_ov()
             self._marks_ov()
+            self._traces_ov()
         finally:
             self._sync_delete()
             if self.screen:                                  # Hinweise der Zeichnung (Labels zu dicht, kein Platz)
@@ -933,6 +960,79 @@ class NMRView(QWidget):
     def _add(self, a):
         self._ov.append(a)
         return a
+
+    def _vmax(self, x, y):
+        a, b = sorted(self.xlim)
+        m = (x >= a) & (x <= b) & np.isfinite(y)
+        v = float(np.nanmax(y[m])) if m.any() else 0.0
+        return v if v > 0 else 1.0
+
+    def _traces_ov(self):
+        """Vergleich: überlagerte Spuren auf derselben Grundlinie und Höhe wie das Hauptspektrum (Legende im Bild) oder
+        gestapelte Spuren darunter (Beschriftung links über der Grundlinie); die Vorhersage nur am Bildschirm."""
+        ax, o = self.ax, self.opts
+        fs, lw = o["axis_font_size"], o["spectrum_width"]
+        traces = [t_ for t_ in self.traces if t_["kind"] != "pred" or self.screen]
+        if not traces:
+            return
+        from matplotlib.transforms import blended_transform_factory
+        lab = blended_transform_factory(ax.transAxes, ax.transData)
+        ymax = self._vmax(self.x, self._yplot)
+        if not self.stack:                                 # überlagert: hinter dem Hauptspektrum, gleiche Höhe
+            lines = [self.line]
+            for t_ in traces:
+                if t_["kind"] == "trace":
+                    lines.append(self._add(ax.plot(t_["x"], t_["y"] * ymax / self._vmax(t_["x"], t_["y"]),
+                                                   color=t_["color"], lw=lw, zorder=2)[0]))
+            if self.main_label and len(lines) > 1:
+                self._add(ax.legend(lines, [self.main_label] + [t_["label"] for t_ in traces if t_["kind"] == "trace"],
+                                    loc="best", frameon=False, fontsize=fs, handlelength=1.6, borderaxespad=0.6))
+        labels = []                                        # (Text, x, y, Grundlinie, Höhe, Farbe, kursiv)
+        if self.stack and self.main_label:
+            labels.append((self.main_label, self.x, self._yplot, 0.0, ymax, o["spectrum_color"], False))
+        ls = self.lanes()
+        ha, bases, _B = self._lane_fracs(ls) if ls else (0.0, [], 0.0)
+        rng = self.ylim[1] - self.ylim[0]
+        lo, hi = sorted(self.xlim)
+        for t_, b in zip(ls, bases):
+            base, hgt = b * rng, t_["h"] * ha * rng * 0.95
+            y = base + t_["y"] * hgt / self._vmax(t_["x"], t_["y"])
+            if t_["kind"] == "pred":                       # eigener Farbton, gefüllt, gestrichelte Grundlinie, kursiv
+                self._add(ax.fill_between(t_["x"], base, y, color=t_["color"], alpha=0.18, lw=0, zorder=2))
+                self._add(ax.plot([hi, lo], [base, base], color=t_["color"], lw=0.6, ls=(0, (4, 3)), zorder=2)[0])
+            self._add(ax.plot(t_["x"], y, color=t_["color"], lw=0.8 if t_["kind"] == "pred" else lw, zorder=3)[0])
+            labels.append((t_["label"], t_["x"], y, base, hgt, t_["color"], t_["kind"] == "pred"))
+        self._lane_labels(labels, lab)
+
+    def _lane_labels(self, labels, tr):
+        """Beschriftungen der gestapelten Spuren über ihrer Grundlinie, alle am selben Rand (links, außer rechts liegen
+        die Spuren unter den Beschriftungen niedriger), je über dem höchsten Punkt der Spur dort: nie auf einem Signal."""
+        if not labels:
+            return
+        lo, hi = sorted(self.xlim)
+        texts = [self._add(self.ax.text(0.004, base, text, transform=tr, fontsize=self.opts["axis_font_size"], color=col,
+                                        style="italic" if it else "normal", ha="left", va="bottom", zorder=5))
+                 for text, _x, _y, base, _h, col, it in labels]
+        try:                                               # breiteste Beschriftung als Anteil der Achse
+            r = self.fig.canvas.get_renderer()
+            frac = max(t_.get_window_extent(r).width for t_ in texts) / max(self.ax.bbox.width, 1.0)
+        except Exception:
+            frac = 0.012 * max(len(lb[0]) for lb in labels)
+        w = (min(frac, 0.45) + 0.02) * (hi - lo)
+
+        def edge(x, y, base, a, b):
+            x = np.asarray(x)
+            m = (x >= a) & (x <= b)
+            return float(np.nanmax(y[m]) - base) if m.any() else 0.0
+        lift = {side: [max(0.18 * h, edge(x, y, base, *rng_) + 0.06 * h) / max(h, 1e-12)
+                       for _t, x, y, base, h, _c, _i in labels]
+                for side, rng_ in (("left", (hi - w, hi)), ("right", (lo, lo + w)))}   # links = hohe ppm
+        side = "right" if max(lift["right"]) < max(lift["left"]) - 1e-9 else "left"
+        for t_, lb, k in zip(texts, labels, lift[side]):
+            t_.set_y(lb[3] + k * lb[4])
+            if side == "right":
+                t_.set_x(0.996)
+                t_.set_ha("right")
 
     def _px(self, x, y=0.0):
         return self.ax.transData.transform((x, y))

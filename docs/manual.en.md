@@ -452,7 +452,8 @@ to Word or as part of the SI section.
   spectra. Below the structure stand the compound **Number** (bold) and the **Conditions** (nucleus, frequency,
   solvent), as ACS and Angewandte ask for every spectrum; both can be switched off with the two chips. The table of
   spectra shows the labelled **range** of the axis: usual are at least −1…10 ppm (¹H) and 0…200 ppm (¹³C, Angewandte
-  −10…200); if the labels do not reach 0 or 10/200, a ⚠ appears (a note only, the spectrum itself comes from
+  −10…200); if the labels do not reach 0 or 10/200 or a signal of the NMR line lies outside the labels ("Signal δ …
+  outside the image range", also below the preview), a ⚠ appears (a note only, the spectrum itself comes from
   MestReNova).
 - **NMR line:** paste the Mnova multiplet report ("Multiplets → Copy", journal format) – all nuclei into the one
   field, one line per nucleus. **Line from peak labels** builds the ¹³C (or other) line from the labelled peaks of the
@@ -503,8 +504,11 @@ to Word or as part of the SI section.
   confirmed phase and reference (for ¹⁹F etc. confirm the nominal axis); until then the Mnova line and figure stay, and
   the sentence below the NMR line says why. Only confirmed signals are printed; open suggestions are counted.
   The NMR line of that nucleus then replaces the one from the Mnova text; the page **SI Figure** shows the spectrum as in
-  Word (structure, insets, marks explained in the field "Marks"). Its range is set only by the field **Range** (step 3;
-  "auto" = −1…11 ppm for ¹H, −10…220 ppm for ¹³C); zooming in the view never changes the figure. **Insets** like Mnova:
+  Word (structure, insets, marks explained in the field "Marks"). Its range is set only by the field **Range** (step 3);
+  "auto" = 9…0 ppm for ¹H and 200…0 ppm for ¹³C, widened until every signal of the NMR line lies inside with a margin
+  (¹H 0.5, ¹³C 5 ppm), rounded to whole ppm or 10 ppm (hydride at −8 ppm: 9…−9; carbene at 250 ppm: 260…0); free peaks,
+  impurities and the solvent never widen it. An own range stays; a signal outside it shows a ⚠ in the column "Range"
+  and below the view. Zooming in the view never changes the figure. **Insets** like Mnova:
   E + drag = inset; X + drag inside an inset cuts that range out of it (parts with a "//" break, each cut one undo
   step); Shift+E adds a part. The labels of an inset stand in groups above their part. Labels that do not fit the width
   even at the smallest font only give a note ("add an inset or thin out the peaks"); nothing is changed. Peak labels
@@ -518,6 +522,25 @@ to Word or as part of the SI section.
   **X nuclei** (¹⁹F, ³¹P …): without a solvent signal the axis stays nominal. **Unified scale (¹H)** converts it to the
   IUPAC scale via the own ¹H of the same sample on the same magnet (reference confirmed there); ¹⁵N against MeNO2 or
   NH3 as chosen. Then confirm it like any reference.
+- **Comparison: Single · Overlaid · Stacked** (bar above the figure, default Single, saved, every switch one undo step):
+  only own 1D spectra (Bruker FID or FID from an MNova document) of the same nucleus and solvent; for MNova pictures
+  the bar is greyed out (a picture cannot be overlaid, the tooltip says so). The ticks in the table of spectra (column
+  shown in Overlaid/Stacked) decide which spectra belong to it; the first switch adds the selected spectrum. The view
+  shows the selected spectrum in front or on top, **Offset** (20–150 %) moves the stacked traces apart. Label per trace
+  in the figure: own text (card **NMR Comparison**), otherwise the temperature if it differs, otherwise the file name.
+  Caption = fixed part "¹H NMR (500 MHz, THF-d₈, 193–298 K) of **X**." (temperatures as a range) + one own sentence from
+  the card. Export and SI only when phase and reference are confirmed for every trace (otherwise the export message
+  says why): **Export** writes `<compound>_NMR_comparison_<nucleus>` (SVG/PDF/PNG as in the tab "Export") to
+  `figures/`, the Word file of the tab and "SI (Word)" put the comparisons after the spectra under the heading from the
+  card (default "NMR Comparisons"), the complete SI as its own subchapter at the end of the chapter NMR. One range for
+  all traces (union of their ranges), without structure and analysis. Not in the slides (PPTX), like the other NMR
+  figures.
+- **Prediction** (chip at the right of the bar, only on click, not saved): Octet's NMR prediction for the structure of
+  the compound (CDXML) as its own trace below the spectrum, for ¹H and ¹³C, ¹⁹F and ³¹P with a warning (sparse tables
+  there). Solvent as in the measurement if Octet knows it (otherwise shifts of all solvents, with a note); frequency of
+  the magnet. The prediction is **never** in any output: not in the project file, SI, Word, PPTX, data package, "Copy
+  figure" or SVG/PDF/PNG. The licence note of nmrshiftdb2 stands below the view. If the reference of a shown spectrum
+  is not confirmed, a ⚠ says that its position relative to the prediction or other traces is uncertain.
 - **MNova documents** (`.mnova`): card at the top of the left column – **MNova document …** or drag & drop. The file
   is kept unchanged in `data/nmr/mnova`.
   - **With MNova installed** (macOS and Windows; not yet tested on a real Windows installation) MNova exports a copy in the background; the MNova card

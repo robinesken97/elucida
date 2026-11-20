@@ -473,8 +473,9 @@ als eigene Word-Datei oder im SI-Abschnitt.
   gleich. Unter der Struktur stehen die **Nummer** der Verbindung (fett) und die **Messangaben** (Kern, Frequenz,
   Lösungsmittel), wie ACS und Angewandte es für jedes Spektrum verlangen; beides lässt sich mit den zwei Chips
   abschalten. Die Tabelle der Spektren zeigt den beschrifteten **Bereich** der Achse: üblich sind mindestens −1…10 ppm
-  (¹H) und 0…200 ppm (¹³C, Angewandte −10…200); reicht die Beschriftung nicht bis 0 bzw. 10/200, steht ein ⚠ (nur ein
-  Hinweis, das Spektrum selbst kommt aus MestReNova).
+  (¹H) und 0…200 ppm (¹³C, Angewandte −10…200); reicht die Beschriftung nicht bis 0 bzw. 10/200 oder liegt ein Signal
+  der NMR-Zeile außerhalb der Beschriftung („Signal δ … außerhalb des Bildbereichs“, auch unter der Vorschau), steht ein
+  ⚠ (nur ein Hinweis, das Spektrum selbst kommt aus MestReNova).
 - **NMR-Zeile:** den Mnova-Multiplettbericht einfügen („Multiplets → Copy“, Journal-Format) – alle Kerne in das eine
   Feld, je Kern eine Zeile. **Zeile aus Peaklabels** baut die ¹³C-Zeile (oder andere) aus den beschrifteten Peaks des
   gewählten Spektrums; ein mit Namen beschriftetes Lösungsmittelsignal („77.16 CDCl3“) fällt weg. Zuordnungen je Signal
@@ -529,7 +530,10 @@ als eigene Word-Datei oder im SI-Abschnitt.
   -Abbildung, der Satz unter der NMR-Zeile sagt warum. Gedruckt werden nur bestätigte Signale; offene Vorschläge werden
   gezählt. Die NMR-Zeile dieses Kerns ersetzt dann die aus dem Mnova-Text; der Reiter **SI-Abbildung** zeigt das Spektrum wie in
   Word (Struktur, Ausschnitte, Marken mit Bedeutung im Feld „Marken“). Den Bereich legt nur das Feld **Bereich** fest
-  (Schritt 3; „auto“ = −1…11 ppm bei ¹H, −10…220 ppm bei ¹³C); Zoomen in der Ansicht ändert die Abbildung nie.
+  (Schritt 3); „auto“ = 9…0 ppm bei ¹H und 200…0 ppm bei ¹³C, so weit erweitert, dass jedes Signal der NMR-Zeile mit
+  Rand (¹H 0.5, ¹³C 5 ppm) innen liegt, auf ganze ppm bzw. 10 ppm gerundet (Hydrid bei −8 ppm: 9…−9; Carben bei 250 ppm:
+  260…0); freie Peaks, Verunreinigungen und das Lösungsmittel erweitern nie. Ein eigener Bereich bleibt, ein Signal
+  außerhalb davon steht als ⚠ in der Spalte „Bereich“ und unter der Ansicht. Zoomen in der Ansicht ändert die Abbildung nie.
   **Ausschnitte** wie Mnova: E + Ziehen = Ausschnitt; X + Ziehen in einem Ausschnitt schneidet diesen Bereich aus dem
   Ausschnitt (Teile mit „//“-Bruch, jeder Schnitt ein Rückgängig-Schritt); Umschalt+E fügt einen Teil an. Die Labels
   eines Ausschnitts stehen gruppiert über ihrem Teil. Passen Labels auch mit kleinster Schrift nicht in die Breite, gibt
@@ -544,6 +548,27 @@ als eigene Word-Datei oder im SI-Abschnitt.
   **X-Kerne** (¹⁹F, ³¹P …): ohne Lösungsmittelsignal bleibt die Achse nominell. **Unified Scale (¹H)** rechnet sie über
   das eigene ¹H derselben Probe am selben Magneten (Referenz dort bestätigt) auf die IUPAC-Skala um; ¹⁵N wahlweise gegen
   MeNO2 oder NH3. Danach wie jede Referenz bestätigen.
+- **Vergleich: Einzeln · Überlagert · Gestapelt** (Leiste über der Abbildung, Vorgabe Einzeln, gespeichert, jeder Wechsel
+  ein Rückgängig-Schritt): nur eigene 1D-Spektren (Bruker-FID oder FID aus einem MNova-Dokument) desselben Kerns und
+  Lösungsmittels; bei MNova-Bildern ist die Leiste ausgegraut (ein Bild lässt sich nicht überlagern, der Tooltip sagt
+  es). Welche Spektren dazugehören, bestimmen die Häkchen in der Spektrentabelle (Spalte erscheint in Überlagert/
+  Gestapelt); beim ersten Umschalten kommt das gewählte Spektrum dazu. Die Ansicht zeigt das gewählte Spektrum vorn bzw.
+  oben, **Versatz** (20–150 %) rückt die gestapelten Spuren auseinander. Beschriftung je Spur im Bild: eigener Text
+  (Karte **NMR-Vergleich**), sonst die Temperatur, wenn sie sich unterscheidet, sonst der Dateiname.
+  Unterschrift = fester Teil „¹H NMR (500 MHz, THF-d₈, 193–298 K) of **X**.“ (Temperaturen als Bereich) + ein eigener
+  Satz aus der Karte. Export und SI nur, wenn bei jeder Spur Phase und Referenz bestätigt sind (sonst nennt die
+  Exportmeldung den Grund): **Exportieren** schreibt `<Verbindung>_NMR_comparison_<Kern>` (SVG/PDF/PNG wie im Tab
+  „Export“) nach `figures/`, die Word-Datei des Tabs und „SI (Word)“ setzen die Vergleiche nach den Spektren unter die
+  Überschrift aus der Karte (Vorgabe „NMR Comparisons“), die Gesamt-SI als eigenes Unterkapitel am Ende des Kapitels
+  NMR. Ein Bereich für alle Spuren (Vereinigung ihrer Bereiche), ohne Struktur und Auswertung. Nicht in den Folien
+  (PPTX), wie die übrigen NMR-Abbildungen.
+- **Vorhersage** (Chip rechts in der Leiste, nur auf Klick, nicht gespeichert): Octets NMR-Vorhersage für die Struktur der
+  Verbindung (CDXML) als eigene Spur unter dem Spektrum, für ¹H und ¹³C, ¹⁹F und ³¹P mit Warnung (Tabellen dort
+  dünn). Lösungsmittel wie in der Messung, falls Octet es kennt (sonst Verschiebungen aller Lösungsmittel, mit Hinweis);
+  Frequenz des Magneten. Die Vorhersage steht **nie** in einer Ausgabe: nicht in Projektdatei, SI, Word, PPTX,
+  Datenpaket, „Abbildung kopieren“ oder SVG/PDF/PNG. Unter der Ansicht steht der Lizenzhinweis von nmrshiftdb2. Ist die
+  Referenz eines gezeigten Spektrums nicht bestätigt, sagt ein ⚠, dass die Lage gegenüber Vorhersage bzw. anderen
+  Spuren unsicher ist.
 - **MNova-Dokumente** (`.mnova`): Karte oben in der linken Spalte – **MNova-Dokument …** oder Ablegen. Die Datei liegt
   unverändert in `data/nmr/mnova`.
   - **Mit installiertem MNova** (macOS und Windows; unter Windows noch nicht an einer echten Installation geprüft) exportiert MNova eine Kopie im Hintergrund; die Karte

@@ -9,7 +9,8 @@ declare global {
  interface Window {
   elucida?: {load: (text: string, name: string) => Record<string, number>; snapshot: () => Bundle; command: (id: string) => void; markSaved: () => void; dirty: boolean; theme: (dark:boolean) => void;
     putAsset: (asset: import("./elucida-assets.ts").AssetInput, target?:number) => number;
-    assets: () => AssetRef[]; selectedAsset: () => AssetRef|undefined};
+    assets: () => AssetRef[]; selectedAsset: () => AssetRef|undefined;
+    predict: (token: number, nucleus: import("./nmr.ts").Nucleus, solvent: string, decouple: boolean|undefined, mhz: number) => void};
   elucidaHost?: {call: (method: string, args: string, cb: (result: string) => void) => void; state: (dirty: boolean) => void};
  }
 }

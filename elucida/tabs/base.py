@@ -1106,9 +1106,11 @@ def fit_footer_column(tab, split):
 
 def _export_word(tab):
     with tab.main.collecting_skips():                     # Ausgelassenes (z. B. eigenes NMR nicht freigegeben) in die Meldung
+        tab._extra_files = []
         path = tab.export_dialog()
         if path:
-            tab.main.exported([Path(path).parent], [path])
+            extra = list(getattr(tab, "_extra_files", None) or [])      # NMR: Vergleichsabbildungen nach figures/
+            tab.main.exported([Path(path).parent] + [Path(f).parent for f in extra], [path] + extra)
 
 
 class EmptyGuide(QFrame):

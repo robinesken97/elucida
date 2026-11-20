@@ -1149,6 +1149,10 @@ class NMRTab(QWidget):
         self.lbl_prev.installEventFilter(self)             # Struktur in der Vorschau ziehen, Größenänderung
         self._drag_rect, self._drag, self._pm_size = None, None, (1, 1)
         rv.addWidget(_PreviewCard(self.lbl_prev), 1)           # Karte in Canvas-Farbe wie die Abbildungen der anderen Tabs
+        self.lbl_rng = STYLE.HintLabel("", wordWrap=True)     # Signal der SI-Zeile außerhalb der Achse (leer = keine Zeile)
+        self.lbl_rng.setStyleSheet(f"color: {STYLE.WARN_COLOR};")
+        self.lbl_rng.setContentsMargins(*PAGE_INSET_CAP)
+        rv.addWidget(self.lbl_rng)
         self.lbl_cap = QLabel("", wordWrap=True)
         self.lbl_cap.setTextFormat(Qt.RichText)
         self.lbl_cap.setAlignment(Qt.AlignCenter)             # mittig unter der Abbildung
@@ -1166,6 +1170,10 @@ class NMRTab(QWidget):
         self.lbl_cap_raw.setTextFormat(Qt.RichText)
         self.lbl_cap_raw.setAlignment(Qt.AlignCenter)
         self.lbl_cap_raw.setContentsMargins(*PAGE_INSET_CAP)
+        self.lbl_cmp_notes = QLabel("", wordWrap=True)      # Vergleich/Vorhersage: Referenz, Hinweis, Lizenz; Bereich
+        self.lbl_cmp_notes.setTextFormat(Qt.RichText)
+        self.lbl_cmp_notes.setContentsMargins(*PAGE_INSET_CAP)
+        rlv.addWidget(self.lbl_cmp_notes)
         rlv.addWidget(self.lbl_cap_raw)
         self.preview_stack.addWidget(raw)
         p2d = QWidget()                                    # 3 = eigenes 2D-Spektrum (Höhenlinien) + Hinweise
@@ -1183,7 +1191,13 @@ class NMRTab(QWidget):
         # Reiter neben der Abbildung wie die Ergebnisseiten der anderen Tabs: Rohdaten (TopSpin, Mnova)
         from elucida.tabs.base import result_page
         self.right_tabs = result_tabs()
-        self.right_tabs.addTab(self.preview_stack, T("tab_figure"))
+        fig = QWidget()                                    # Abbildung: Leiste Einzeln · Überlagert · Gestapelt darüber
+        fv = QVBoxLayout(fig)
+        fv.setContentsMargins(0, 0, 0, 0)
+        fv.setSpacing(6)
+        fv.addWidget(self.build_cmp_bar())
+        fv.addWidget(self.preview_stack, 1)
+        self.right_tabs.addTab(fig, T("tab_figure"))
         self.right_tabs.addTab(result_page(self.grp_raw), T("nmr_raw"))
         si = QWidget()                                     # eigenes Spektrum, wie es in die SI geht (mit Struktur)
         sv = QVBoxLayout(si)
@@ -1269,8 +1283,11 @@ class NMRTab(QWidget):
             row.addWidget(b)
         row.addStretch(1)
         v.addLayout(row)
-        self.tbl = QTableWidget(0, 4)
-        self.tbl.setHorizontalHeaderLabels([T("nmr_file"), T("nmr_nuclei"), T("nmr_kind"), T("nmr_range")])
+        self.tbl = QTableWidget(0, 5)
+        self.tbl.setHorizontalHeaderLabels([T("nmr_file"), T("nmr_nuclei"), T("nmr_kind"), T("nmr_range"), ""])
+        self.tbl.horizontalHeader().moveSection(4, 0)      # Häkchen (Vergleich) vorn, ohne Kopftext
+        self.tbl.horizontalHeaderItem(4).setToolTip(T("nmr_cmp_check_tip"))
+        self.tbl.itemChanged.connect(self.cmp_member_toggled)
         self.tbl.horizontalHeaderItem(3).setToolTip(T("nmr_range_tip"))
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -1420,6 +1437,7 @@ class NMRTab(QWidget):
         row.addWidget(b)
         f.addRow(row)
         self.lv.addWidget(g)
+        self.build_cmp_card()
         self.build_raw_cards()
 
         g = QGroupBox(T("nmr_text"))
@@ -1694,9 +1712,10 @@ class NMRTab(QWidget):
         self._loading = True
         sp = self.spectra()
         self.tbl.setRowCount(len(sp))
+        bl = self.blocks()
         for r, s in enumerate(sp):
             nuc = sup_nuclei("/".join(s.get("nuclei") or []))
-            ok, rtxt = range_check(s, self.axis_range(s))
+            ok, rtxt, out = self.range_state(s, bl)
             name = T("nmr_src_row_mnova" if s.get("mnova_doc") else "nmr_src_row", n=Path(s["file"]).name) \
                 if s.get("source") == "bruker" else Path(s["file"]).name
             for c, val in enumerate((name, nuc or "?", s.get("kind"),
@@ -1707,11 +1726,12 @@ class NMRTab(QWidget):
                 if c == 1 and not s.get("nuclei"):
                     it.setToolTip(T("nmr_nuc_missing"))
                 if c == 3:                                   # beschrifteter Bereich gegen −1…10 / 0…200 ppm (nur Hinweis)
-                    it.setToolTip(T("nmr_range_tip"))
+                    it.setToolTip(T("nmr_range_tip") + ("\n" + self.range_warning(s, out) if out else ""))
                     if ok is False:
                         from PySide6.QtGui import QBrush, QColor as _QColor
                         it.setForeground(QBrush(_QColor(STYLE.WARN_COLOR)))
                 self.tbl.setItem(r, c, it)
+        self.fill_cmp_column(sp)
         STYLE.fit_columns(self.tbl)
         cur = self.current()
         if cur is not None:
@@ -1722,6 +1742,7 @@ class NMRTab(QWidget):
         self.fill_signals()
         self.fill_raw()
         self.fill_mx()
+        self.fill_cmp()
         self._loading = False
         self.update_preview()
 
@@ -2749,6 +2770,9 @@ class NMRTab(QWidget):
         had = v._bands() if v.x is not None and v.xlim is not None else None
         self.push_analysis(s, ds, c, ref)                  # vor dem Spektrum: Vollansicht rechnet Labels/Werte mit
         v.set_spectrum(ds["ax"] + ref, c["y"], ds["sf"], nucleus=ds["nucleus"])
+        traces, main_label, grp = self.cmp_traces(s)
+        v.traces, v.main_label = traces, main_label
+        v.stack, v.offset = self.cmp_mode() == "stack", int(self.cmp().get("offset") or 100) / 100
         if keep is not None:
             dx, xl, yl = keep
             v.set_view((xl[0] + dx, xl[1] + dx), yl, record=False)
@@ -2761,18 +2785,27 @@ class NMRTab(QWidget):
         if prev is None or prev[0] != s["uid"]:            # anderes Spektrum oder Neuaufbau: dessen letzter Modus
             v.set_mode(self.main.__dict__.get("_nmr_view_mode", {}).get(s["uid"], "pointer"))
         n = self.spectra().index(s) + 1
-        self.lbl_cap_raw.setText(f"<b>Figure S{n}</b>: " + caption_html(s, self.blocks(), self.compound_name()))
+        from elucida.tabs import nmr_compare as NC
+        if len(grp) >= 2 and any(m["uid"] == s["uid"] for m in grp):     # Vergleich: dessen Unterschrift
+            self.lbl_cap_raw.setText(NC.caption_html(grp, self.blocks(), self.compound_name(), self.cmp()))
+        else:
+            self.lbl_cap_raw.setText(f"<b>Figure S{n}</b>: " + caption_html(s, self.blocks(), self.compound_name()))
+        notes = self.cmp_notes(s, traces, grp)
+        self.lbl_cmp_notes.setText(notes)
+        self.lbl_cmp_notes.setVisible(bool(notes))
 
     def si_xlim(self, s, ds, ref):
         """Bereich der SI-Abbildung: vom Nutzer im Feld „Bereich“ festgelegt (gespeichert auf der unkalibrierten Achse),
-        sonst −1…11 ppm (¹H) bzw. −10…220 ppm (¹³C) wie die SI (Angew./ACS), sonst das ganze Spektrum. Nie die letzte
-        Zoomstufe der Ansicht (Runde 2: die Abbildung sprang mit jedem Zoom mit)."""
+        sonst „auto“ (`nmr_compare.auto_xlim`: ¹H 9…0, ¹³C 200…0 ppm, erweitert bis jedes Signal der SI-Zeile mit Rand
+        innen liegt; Nutzerentscheid 2026-11-20), andere Kerne das ganze Spektrum. Nie die letzte Zoomstufe der Ansicht
+        (Runde 2: die Abbildung sprang mit jedem Zoom mit)."""
         xl = (s.get("view") or {}).get("si_xlim")
         if xl:
             return (xl[0] + ref, xl[1] + ref)
-        lo, hi = float(ds["ax"].min() + ref), float(ds["ax"].max() + ref)
-        a, b = {"1H": (-1.0, 11.0), "13C": (-10.0, 220.0)}.get(ds["nucleus"], (lo, hi))
-        return (min(b, hi), max(a, lo))
+        from elucida.tabs import nmr_compare as NC
+        nuc = (s.get("nuclei") or [ds["nucleus"]])[0]
+        return NC.auto_xlim(nuc, NC.signal_spans(self.blocks(), nuc),
+                            (float(ds["ax"].min() + ref), float(ds["ax"].max() + ref)))
 
     def si_range_changed(self, *_):
         """Feld „Bereich“ (SI-Abbildung): eigener Bereich (gespeichert auf der unkalibrierten Achse) oder wieder „auto“."""
@@ -3515,6 +3548,461 @@ class NMRTab(QWidget):
         self.btn_peaks_ok.setEnabled(bool(a["peaks"]) and not a.get("peaks_ok"))
         self._loading = was
 
+    # -- Vergleich (Einzeln · Überlagert · Gestapelt) und Vorhersage ---------------------------------------------------
+    def build_cmp_bar(self):
+        """Leiste über der Abbildung: Segment Einzeln · Überlagert · Gestapelt, Versatz (nur gestapelt), Chip Vorhersage;
+        Spuren tragen ihre Beschriftung im Bild. Bei MNova-Bildern sichtbar, aber ausgegraut (Grund im Tooltip)."""
+        from PySide6.QtWidgets import QButtonGroup, QSpinBox
+        from elucida.tabs import nmr_compare as NC
+        from elucida.tabs.base import PAGE_INSET
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(PAGE_INSET[0], 0, PAGE_INSET[2], 6)
+        v.setSpacing(6)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        seg = self._cmp_seg = QFrame(objectName="seg")
+        sh = QHBoxLayout(seg)
+        sh.setContentsMargins(2, 2, 2, 2)
+        sh.setSpacing(0)
+        grp = QButtonGroup(seg)
+        self.cmp_btns = {}
+        for k in NC.MODES:
+            b = QPushButton(T("nmr_cmp_" + k), objectName="segBtn", checkable=True)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.clicked.connect(lambda _c=False, k=k: self.set_cmp_mode(k))
+            grp.addButton(b)
+            sh.addWidget(b)
+            self.cmp_btns[k] = b
+        row.addWidget(seg)
+        row.addSpacing(6)
+        self.lbl_cmp_off = QLabel(T("nmr_cmp_offset"))
+        self.lbl_cmp_off.setStyleSheet(HINT_CSS)
+        self.sp_cmp_off = QSpinBox(minimum=20, maximum=150, singleStep=10, suffix=" %", value=100)
+        self.sp_cmp_off.setToolTip(T("nmr_cmp_offset_tip"))
+        self.sp_cmp_off.setFixedSize(90, STYLE.CONTROL_H)
+        self.sp_cmp_off.valueChanged.connect(self.cmp_offset_changed)
+        row.addWidget(self.lbl_cmp_off)
+        row.addWidget(self.sp_cmp_off)
+        row.addStretch(1)
+        self.cb_pred = QCheckBox(T("nmr_pred"))
+        self.cb_pred.setProperty("chip", True)
+        self.cb_pred.setProperty("nochip", True)           # eigener Chip der Leiste, nicht in „Optionen“ einsammeln
+        self.cb_pred.toggled.connect(self.pred_toggled)
+        row.addWidget(self.cb_pred)
+        v.addLayout(row)
+        return w
+
+    def build_cmp_card(self):
+        """Karte „NMR-Vergleich“ (Schritt Spektren): Beschriftung der gewählten Spur, Satz der Unterschrift, SI-Überschrift."""
+        g = self.grp_cmp = QGroupBox(T("nmr_cmp_card"))
+        f = make_form(g)
+        self.ed_cmp_label = QLineEdit()
+        self.ed_cmp_label.setToolTip(T("nmr_cmp_label_tip"))
+        self.ed_cmp_label.editingFinished.connect(self.cmp_label_edited)
+        f.addRow(T("nmr_cmp_label"), self.ed_cmp_label)
+        self.ed_cmp_cap = STYLE.ChemEdit()
+        self.ed_cmp_cap.setPlaceholderText(T("nmr_cmp_caption_ph"))
+        self.ed_cmp_cap.setToolTip(T("nmr_cmp_caption_long"))
+        self.ed_cmp_cap.editingFinished.connect(lambda: self.cmp_text_edited("caption", self.ed_cmp_cap))
+        f.addRow(T("nmr_cmp_caption"), self.ed_cmp_cap)
+        self.ed_cmp_head = QLineEdit()
+        self.ed_cmp_head.setToolTip(T("nmr_cmp_heading_tip"))
+        self.ed_cmp_head.editingFinished.connect(lambda: self.cmp_text_edited("heading", self.ed_cmp_head))
+        f.addRow(T("nmr_cmp_heading"), self.ed_cmp_head)
+        hint = STYLE.HintLabel(T("nmr_cmp_hint"), wordWrap=True)
+        hint.setStyleSheet(HINT_CSS)
+        f.addRow(hint)
+        self.lv.addWidget(g)
+
+    def cmp(self):
+        """Zustand des Vergleichs zum Lesen (Vorgaben ergänzt, ohne ihn anzulegen: alte Verbindungen bleiben unberührt)."""
+        from elucida.tabs import nmr_compare as NC
+        return dict(NC.DEFAULT, **(self.st.get("cmp") or {}))
+
+    def cmp_mode(self):
+        return self.cmp().get("mode", "single")
+
+    def fill_cmp_column(self, sp):
+        """Häkchen der Spektrenliste: eigene 1D-Spektren wählbar, sonst leer; nur in Überlagert/Gestapelt sichtbar."""
+        from elucida.tabs import nmr_compare as NC
+        on = set(self.cmp().get("members") or ())
+        for r, s in enumerate(sp):
+            it = QTableWidgetItem()
+            it.setData(Qt.UserRole, s["uid"])
+            if NC.own_1d(s):
+                it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                it.setCheckState(Qt.Checked if s["uid"] in on else Qt.Unchecked)
+                it.setToolTip(T("nmr_cmp_check_tip"))
+            else:
+                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                it.setToolTip(T("nmr_cmp_need_own"))
+            self.tbl.setItem(r, 4, it)
+        self.tbl.setColumnHidden(4, self.cmp_mode() == "single")
+
+    def fill_cmp(self):
+        """Leiste und Karte des Vergleichs nach dem Zustand (Segment, Versatz, Chip, Felder)."""
+        from elucida.tabs import nmr_compare as NC
+        c, s = self.cmp(), self.current()
+        own = s is not None and NC.own_1d(s)
+        tip = T("nmr_cmp_mode_tip") if own else T("nmr_cmp_need_own")
+        for k, b in self.cmp_btns.items():
+            b.setChecked(c["mode"] == k)
+            b.setEnabled(own)                              # MNova-Bild: sichtbar, aber ausgegraut (R8), Grund im Tooltip
+            b.setToolTip(tip)
+        self._cmp_seg.setToolTip(tip)
+        for w_ in (self.lbl_cmp_off, self.sp_cmp_off):
+            w_.setVisible(c["mode"] == "stack")
+            w_.setEnabled(own)
+        self.sp_cmp_off.blockSignals(True)
+        self.sp_cmp_off.setValue(int(c.get("offset") or 100))
+        self.sp_cmp_off.blockSignals(False)
+        why = self.pred_refusal(s)
+        self.cb_pred.setEnabled(why is None)
+        self.cb_pred.setToolTip(T("nmr_pred_tip") if why is None else why)
+        self.cb_pred.blockSignals(True)
+        self.cb_pred.setChecked(why is None and self.pred_on())
+        self.cb_pred.blockSignals(False)
+        self.ed_cmp_label.setEnabled(own)
+        self.ed_cmp_label.setText((c.get("labels") or {}).get(s["uid"], "") if own else "")
+        if own:
+            grp = NC.groups(self.spectra(), c).get(NC.nucleus(s)) or []
+            specs = grp if any(m["uid"] == s["uid"] for m in grp) else grp + [s]
+            self.ed_cmp_label.setPlaceholderText(NC.label_of(s, specs, dict(c, labels={})))
+        else:
+            self.ed_cmp_label.setPlaceholderText("")
+        self.ed_cmp_cap.setText(c.get("caption") or "")
+        self.ed_cmp_head.setText(c.get("heading") or "")
+        self.ed_cmp_head.setPlaceholderText(NC.DEFAULT["heading"])
+
+    def set_cmp_mode(self, k):
+        """Segment: ein Rückgängig-Schritt; die Auswahl der Spektren bleibt. Erstes Mal Überlagert/Gestapelt ohne Häkchen
+        dieses Kerns: das gewählte Spektrum kommt dazu (sonst wäre der Vergleich leer)."""
+        from elucida.tabs import nmr_compare as NC
+        if self._loading or self.cmp_mode() == k:
+            return self.fill_cmp()
+        c = NC.state(self.st)
+        c["mode"] = k
+        s = self.current()
+        if k != "single" and s is not None and NC.own_1d(s) and not NC.groups(self.spectra(), c).get(NC.nucleus(s)):
+            c["members"].append(s["uid"])
+        self._raw_s = None                                 # Spuren ändern die Höhe: neu einpassen
+        self.changed()
+
+    def cmp_member_toggled(self, item):
+        from elucida.tabs import nmr_compare as NC
+        if self._loading or item.column() != 4 or not (item.flags() & Qt.ItemIsUserCheckable):
+            return
+        uid, on = item.data(Qt.UserRole), item.checkState() == Qt.Checked
+        if on == (uid in (self.cmp().get("members") or ())):
+            return
+        m = NC.state(self.st)["members"]
+        if on:
+            m.append(uid)
+        else:
+            m.remove(uid)
+        self._raw_s = None
+        QTimer.singleShot(0, self, self.changed)           # nicht im Signal der Tabelle neu füllen
+
+    def cmp_offset_changed(self, v):
+        from elucida.tabs import nmr_compare as NC
+        if self._loading or int(self.cmp().get("offset") or 100) == int(v):
+            return
+        NC.state(self.st)["offset"] = int(v)
+        self._raw_s = None
+        self.changed()
+
+    def cmp_label_edited(self):
+        from elucida.tabs import nmr_compare as NC
+        s = self.current()
+        if self._loading or s is None or not NC.own_1d(s):
+            return
+        txt = self.ed_cmp_label.text().strip()
+        if txt == (self.cmp().get("labels") or {}).get(s["uid"], ""):
+            return
+        lab = NC.state(self.st)["labels"]
+        if txt:
+            lab[s["uid"]] = txt
+        else:
+            lab.pop(s["uid"], None)
+        self.changed()
+
+    def cmp_text_edited(self, key, w):
+        from elucida.tabs import nmr_compare as NC
+        txt = w.text().strip() or (NC.DEFAULT[key] if key == "heading" else "")
+        if self._loading or txt == (self.cmp().get(key) or ""):
+            return
+        NC.state(self.st)[key] = txt
+        self.changed()
+
+    def cmp_groups(self):
+        """Vergleiche für Export und SI -> [(Kern, Spektren, Grund oder None)]; leer in „Einzeln“."""
+        from elucida.tabs import nmr_compare as NC
+        c = self.cmp()
+        if c["mode"] == "single":
+            return []
+        return [(nuc, specs, NC.refusal(specs)) for nuc, specs in NC.groups(self.spectra(), c).items()]
+
+    def cmp_traces(self, s):
+        """Spuren der Ansicht für das gewählte Spektrum s -> (Spuren, Beschriftung von s, Gruppe). Die Vorhersage nur,
+        wenn der Chip an ist und sie vorliegt (nie im Zustand)."""
+        from elucida.tabs import nmr_compare as NC
+        c = self.cmp()
+        traces, grp, main_label = [], [], None
+        if c["mode"] != "single":
+            grp = NC.groups(self.spectra(), c).get(NC.nucleus(s)) or []
+            specs = grp if any(m["uid"] == s["uid"] for m in grp) else grp + [s]
+            for m in (m for m in grp if m["uid"] != s["uid"]):
+                try:
+                    ds = self.raw_ds(m)
+                    y = self.raw_y(m, ds)["y"]
+                except (OSError, ValueError):
+                    continue
+                traces.append(dict(x=ds["ax"] + (m["proc"].get("ref") or 0.0), y=y, kind="trace", h=1.0,
+                                   color=NC.COLORS[(len(traces) + 1) % len(NC.COLORS)], label=NC.label_of(m, specs, c),
+                                   uid=m["uid"]))
+            if traces:
+                main_label = NC.label_of(s, specs, c)
+        p = self.pred_result(s)
+        if p and p.get("curve") is not None:
+            x, y = p["curve"]
+            traces.append(dict(x=x, y=y, color=NC.PRED_COLOR, kind="pred", h=NC.PRED_H, label=T("nmr_pred_lane")))
+        return traces, main_label, grp
+
+    def cmp_notes(self, s, traces, grp):
+        """Hinweise unter der Ansicht: Referenz unbestätigt, Spektrum nicht angehakt, Gruppe abgelehnt, Signale außerhalb
+        des Bereichs der SI-Abbildung, Vorhersage samt Lizenzhinweis von nmrshiftdb2."""
+        from elucida.tabs import nmr_compare as NC
+        warn, gray = STYLE.WARN_COLOR, "gray"
+        lines = []
+        others = [t_ for t_ in traces if t_["kind"] == "trace"]
+        pred = any(t_["kind"] == "pred" for t_ in traces)
+        sp = {m["uid"]: m for m in self.st["spectra"]}
+        shown = [s] + [sp[t_["uid"]] for t_ in others if t_["uid"] in sp]
+        unconf = [NC.label_of(m, shown, self.cmp()) for m in shown if (m.get("proc") or {}).get("ref_status") != "confirmed"]
+        if unconf and (pred or others):
+            what = T("nmr_cmp_ref_both") if pred and others else T("nmr_cmp_ref_pred") if pred else T("nmr_cmp_ref_other")
+            lines.append((warn, "⚠ " + T("nmr_cmp_ref", names=", ".join(unconf), what=what)))
+        if self.cmp_mode() != "single" and grp and not any(m["uid"] == s["uid"] for m in grp):
+            lines.append((gray, T("nmr_cmp_not_member")))
+        why = NC.refusal(grp) if len(grp) >= 2 else None
+        if why:
+            lines.append((warn, "⚠ " + T("nmr_cmp_withheld", why=T(why, nuc=sup_nuclei(NC.nucleus(s))))))
+        try:
+            out = self.range_state(s)[2]
+        except (OSError, ValueError):
+            out = []
+        if out:
+            lines.append((warn, "⚠ " + self.range_warning(s, out)))
+        if self.pred_on() and self.pred_refusal(s) is None:
+            p = self.pred_result(s) or {}
+            nuc = NC.nucleus(s)
+            if p.get("error"):
+                lines.append((warn, p["error"]))
+            elif p.get("curve") is None:
+                lines.append((gray, T("nmr_pred_running")))
+            if nuc in ("19F", "31P"):
+                lines.append((warn, "⚠ " + T("nmr_pred_xnuc", nuc=sup_nuclei(nuc))))
+            if NC.octet_solvent(s.get("solvent")) is None:
+                lines.append((gray, T("nmr_pred_solv_any", solv=s.get("solvent") or "–")))
+            lines.append((gray, T("nmr_pred_frame") + " " + NC.NOTICE))
+        return "<br>".join(f"<span style='color:{c_}'>{_h.escape(t_, quote=False)}</span>" for c_, t_ in lines)
+
+    def range_state(self, s, bl=None):
+        """Bereich der Achse -> (passt | None, Text, Signale der SI-Zeile außerhalb). Eigenes Spektrum: Bereich der
+        SI-Abbildung, geprüft wird nur, ob jedes Signal innen liegt (die Vorgabe 9…0 ppm erreicht 10 nicht);
+        MNova-Bild: Mindestbereich (`AXIS_MIN`) und Signale."""
+        from elucida.tabs import nmr_compare as NC
+        rng = self.axis_range(s)
+        ok, rtxt = range_check(s, rng)
+        if s.get("kind", "1D") != "1D" or rng is None:
+            return ok, rtxt, []
+        out = NC.outside(NC.signal_spans(self.blocks() if bl is None else bl, NC.nucleus(s)), rng)
+        if NC.own_1d(s):
+            return not out, f"{rng[0] + 0.0:g} – {rng[1] + 0.0:g}".replace("-", "−"), out
+        return (False if out else ok), rtxt, out
+
+    @staticmethod
+    def range_warning(s, out):
+        if not out:
+            return ""
+        return "; ".join(T("nmr_rng_out", sig=XRAY.minus(t_)) for t_ in out[:4]) + (" …" if len(out) > 4 else "")
+
+    def cmp_svg(self, specs, fmt="svg", out=None):
+        """Vergleichsabbildung (16 × 11 cm, Text als Pfade) -> Pfad. Erstes Spektrum der Liste oben bzw. vorn, ein
+        Bereich für alle (Vereinigung der Bereiche ihrer SI-Abbildungen), ohne Auswertung und Struktur. Eigene Ansicht
+        ohne Bildschirm (`screen` False): nie mit Vorhersage. SVG/PDF ohne Datum, feste IDs (bytegleich wiederholbar)."""
+        import json
+        import zlib
+        import matplotlib
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from elucida.tabs import nmr_compare as NC
+        from elucida.tabs import nmr_view as NV
+        c = self.cmp()
+        data = []
+        for s in specs:
+            ds = self.raw_ds(s)
+            ref = s["proc"].get("ref") or 0.0
+            data.append((ds, self.raw_y(s, ds)["y"], ref, self.si_xlim(s, ds, ref)))
+        hi, lo = max(max(d[3]) for d in data), min(min(d[3]) for d in data)
+        labels = [NC.label_of(s, specs, c) for s in specs]
+        if out is None:
+            cdir = PRJ.work_dir(self.main.project_dir or Path(specs[0]["bruker"]).parent, self.STATE_KEY)
+            tag = zlib.crc32(json.dumps([c["mode"], c.get("offset"), labels, specs, hi, lo], sort_keys=True,
+                                        default=str).encode())
+            out = cdir / f"cmp_{NC.nucleus(specs[0])}_{tag:08x}.{fmt}"
+            if out.exists():
+                return str(out)
+        w_cm, h_cm = OWN_SIZE_CM
+        v = NV.NMRView()
+        try:
+            v.canvas = FigureCanvasAgg(v.fig)
+            v.screen = False
+            v.fig.set_dpi(72)
+            v.fig.set_size_inches(w_cm / 2.54, h_cm / 2.54, forward=False)
+            v.set_display(dict(self.view_opts(specs[0], data[0][2]), insets=[]))   # ohne Auswertung: keine Labels
+            ds0, y0, ref0, _xl = data[0]
+            v.set_spectrum(ds0["ax"] + ref0, y0, ds0["sf"], nucleus=ds0["nucleus"])
+            v.traces = [dict(x=ds["ax"] + ref, y=y, color=NC.COLORS[(i + 1) % len(NC.COLORS)], label=labels[i + 1],
+                             kind="trace", h=1.0) for i, (ds, y, ref, _x) in enumerate(data[1:])]
+            v.stack, v.offset, v.main_label = c["mode"] == "stack", int(c.get("offset") or 100) / 100, labels[0]
+            v.fit_highest(record=False, xlim=(hi, lo))
+            v.selected = None
+            v.redraw()
+            meta = {"svg": {"Date": None}, "pdf": {"CreationDate": None, "ModDate": None}}.get(fmt)
+            with matplotlib.rc_context({"svg.fonttype": "path", "svg.hashsalt": "elucida-nmr"}):
+                v.fig.savefig(out, format=fmt, dpi=300 if fmt == "png" else 72, facecolor="white", metadata=meta)
+        finally:
+            v.deleteLater()
+        return str(out)
+
+    def export_cmp_figures(self, base):
+        """Vergleichsabbildungen beim Export als <Verbindung>_NMR_comparison_<Kern>.svg/.pdf/.png nach figures/ (Formate
+        des Tabs „Export“); Zurückgehaltenes meldet die Word-Datei (`cmp_blocks`). -> geschriebene Pfade."""
+        if self.main.is_quick() or not self.main.project_dir:
+            return []                                      # shortcut: Schnellauswertung ohne Vergleichsabbildungen
+        files, fmt = [], self.main.export_fmt()
+        for nuc, specs, why in self.cmp_groups():
+            if why:                                        # gemeldet hat es schon die Word-Datei (`cmp_blocks`)
+                continue
+            out = PRJ.export_dir(self.main.project_dir, PRJ.FIGURES)
+            for ext in ("svg", "pdf", "png"):
+                if fmt.get(ext):
+                    try:
+                        files.append(self.cmp_svg(specs, ext, out / f"{base}_comparison_{nuc}.{ext}"))
+                    except Exception as ex:
+                        self.main.skip_part(ex, specs[0].get("bruker") or "")
+        return files
+
+    def cmp_heading(self):
+        return (self.cmp().get("heading") or "").strip() or "NMR Comparisons"
+
+    def cmp_blocks(self, img_dir):
+        """Vergleichsabbildungen für Word: Bild (SVG + PNG-Ersatz) + Unterschrift je freigegebener Gruppe; abgelehnte
+        meldet `skip_part(withheld=True)`; Gruppen mit nur einem Spektrum sind kein Vergleich und still."""
+        from elucida.tabs import nmr_compare as NC
+        out, name, bl = [], self.compound_name(), self.blocks()
+        for nuc, specs, why in self.cmp_groups():
+            if why == "nmr_cmp_few":
+                continue
+            if why:
+                self.main.skip_part(T("nmr_cmp_withheld", why=T(why, nuc=sup_nuclei(nuc))),
+                                    specs[0].get("bruker") or "", withheld=True, who=name)
+                continue
+            try:
+                f = self.cmp_svg(specs)
+                png = svg_png(f, Path(img_dir) / (Path(f).stem + "_nmr.png"))
+            except Exception as ex:                        # nur dieser Vergleich fehlt, mit Grund gemeldet
+                self.main.skip_part(ex, specs[0].get("bruker") or "")
+                continue
+            w, h = OWN_SIZE_CM
+            out += [("image", str(png), FIG_W_CM, FIG_W_CM * h / w, f),
+                    ("figcap", NC.caption_html(specs, bl, name, self.cmp()))]
+        return out
+
+    # -- Vorhersage (Octet; nur Ansicht, nie in einer Ausgabe) -------------------------------------------------------
+    def pred_on(self):
+        return bool(self.main.__dict__.get("_nmr_pred_on"))
+
+    def pred_refusal(self, s):
+        """Warum für s keine Vorhersage geht -> Text oder None."""
+        from elucida.tabs import nmr_compare as NC
+        if s is None or not NC.own_1d(s):
+            return T("nmr_cmp_need_own")
+        if NC.nucleus(s) not in NC.PRED_NUCLEI:
+            return T("nmr_pred_need_nuc")
+        p = self.structure_path()
+        if not p or Path(p).suffix.lower() != ".cdxml":
+            return T("nmr_pred_need_struct")
+        return None
+
+    def pred_req(self, s):
+        """Anfrage an Octet für s: Struktur, Kern, Lösungsmittel (Octets Name), ¹H-Frequenz des Magneten."""
+        from elucida.tabs import nmr_compare as NC
+        if self.pred_refusal(s) is not None:
+            return None
+        nuc = NC.nucleus(s)
+        try:
+            sf = float(self.raw_ds(s)["sf"])
+            p = Path(self.structure_path())
+            mtime = p.stat().st_mtime_ns
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return dict(structure=str(p), mtime=mtime, nucleus=nuc, solvent=NC.octet_solvent(s.get("solvent")),
+                    decouple=None, mhz=int(round(sf / GAMMA_REL.get(nuc, 1.0))))
+
+    @staticmethod
+    def _pred_key(req):
+        return tuple(req.get(k) for k in ("structure", "mtime", "nucleus", "solvent", "mhz"))
+
+    def pred_result(self, s):
+        """Vorhersage für s, solange der Chip an ist: dict(curve) oder dict(error); {} = läuft (einmal angefragt)."""
+        if not self.pred_on():
+            return None
+        req = self.pred_req(s)
+        if req is None:
+            return None
+        res = self.main.__dict__.setdefault("_nmr_pred_res", {})
+        key = self._pred_key(req)
+        if key not in res:
+            res[key] = {}
+            self.predictor().request(req)
+        return res[key]
+
+    def predictor(self):
+        if getattr(self, "_predictor", None) is None:
+            from elucida.tabs import nmr_compare as NC
+            self._predictor = NC.Predictor(self, store=self.main.__dict__.setdefault("_nmr_pred_store", {}))
+            self._predictor.done.connect(self.pred_done)
+        return self._predictor
+
+    def pred_done(self, req, v):
+        from elucida.tabs import nmr_compare as NC
+        res = self.main.__dict__.setdefault("_nmr_pred_res", {})
+        key = self._pred_key(req)
+        p = (v.get("prediction") or {}) if isinstance(v, dict) else {}
+        if isinstance(v, str):
+            res[key] = dict(error=T("nmr_pred_failed", e=v))
+        elif not p.get("lines"):
+            res[key] = dict(error=T("nmr_pred_none", nuc=sup_nuclei(req["nucleus"])))
+        else:
+            span = {"1H": (-20.0, 20.0), "13C": (-50.0, 260.0)}.get(req["nucleus"], (-400.0, 300.0))
+            ppm = [l_["ppm"] for l_ in p["lines"]]
+            res[key] = dict(curve=NC.lorentz(p["lines"], min(span[0], min(ppm) - 5), max(span[1], max(ppm) + 5)),
+                            acs=p.get("acs"))
+        self._raw_s = None                                 # neue Spur: Höhe neu einpassen
+        try:
+            self.update_preview()
+        except RuntimeError:                               # Tab inzwischen ersetzt
+            pass
+
+    def pred_toggled(self, on):
+        if self._loading:
+            return
+        self.main.__dict__["_nmr_pred_on"] = bool(on)      # nie im Zustand: kein Rückgängig-Schritt, nie gespeichert
+        self._raw_s = None
+        self.update_preview()
+
     # -- Struktur im Spektrum ---------------------------------------------------------------
     def structure_path(self):
         """Eigene Struktur des Tabs, sonst die der Verbindung (CDXML; gleichnamige ChemDraw-SVG/PDF hat Vorrang)."""
@@ -3759,6 +4247,11 @@ class NMRTab(QWidget):
         if raw:
             self.show_raw(s)
             return self.update_si_preview()
+        try:                                               # MNova-Bild: Signale der SI-Zeile außerhalb der Achse
+            out = self.range_state(s)[2] if s is not None else []
+        except Exception:
+            out = []
+        self.lbl_rng.setText("⚠ " + self.range_warning(s, out) if out else "")
         empty = s is None or not Path(s["file"]).is_file()
         self.preview_stack.setCurrentIndex(0 if empty else 1)
         if empty:
@@ -3921,9 +4414,10 @@ class NMRTab(QWidget):
         return super().eventFilter(obj, ev)
 
     # -- Export ---------------------------------------------------------------------------
-    def docx_blocks(self, img_dir):
+    def docx_blocks(self, img_dir, cmp=True):
         """Zwei Spektren je Seite: Bild (SVG + PNG-Ersatz) 16 cm breit, darunter „Figure Sn: …“. Zurückgehaltene eigene
-        Abbildungen (Freigabe fehlt) meldet `skip_part(withheld=True)` (eigene Zeile in der Exportmeldung)."""
+        Abbildungen (Freigabe fehlt) meldet `skip_part(withheld=True)` (eigene Zeile in der Exportmeldung). cmp: die
+        Vergleiche (Überlagert/Gestapelt) unter ihrer Überschrift danach (Gesamt-SI holt sie über `cmp_blocks` selbst)."""
         blocks = []
         name = self.compound_name()
         bl = self.blocks()
@@ -3951,7 +4445,8 @@ class NMRTab(QWidget):
                 self.main.skip_part(ex, s["file"])
                 continue
             blocks += [("image", str(png), FIG_W_CM, FIG_W_CM * h / w, f), ("figcap", caption_html(s, bl, name))]
-        return SI.two_per_page(blocks)
+        cb = self.cmp_blocks(img_dir) if cmp else []
+        return SI.two_per_page(blocks + ([("heading", self.cmp_heading())] + cb if cb else []))
 
     def figure_source(self, s):
         """Welche Abbildung eines Spektrums in die SI kommt -> (Quelle „mnova“/„bruker“ oder None, Grund oder None).
@@ -3969,6 +4464,12 @@ class NMRTab(QWidget):
         s = self.current()
         if s is None:
             return T("copy_fig_none")
+        for nuc, specs, why in self.cmp_groups():          # Vergleich sichtbar: ihn kopieren, mit seiner Freigabe
+            if any(m["uid"] == s["uid"] for m in specs) and len(specs) >= 2:
+                if why:
+                    return T("copy_fig_held", why=T(why, nuc=sup_nuclei(nuc)))
+                f = self.cmp_svg(specs)
+                return f, svg_png(f, Path(tmp) / (Path(f).stem + "_nmr.png"))
         src, why = self.figure_source(s)
         if why:
             return T("copy_fig_held", why=T(why))
@@ -4001,6 +4502,7 @@ class NMRTab(QWidget):
         lines = self.nmr_lines()
         if lines:
             (out / f"{base}.txt").write_text("; ".join(p for p, _ in lines) + "\n", encoding="utf-8")
+        self._extra_files = self.export_cmp_figures(base)
         if self.main.is_quick() and path.parent == out:  # Schnellauswertung: in den gewählten Ordner
             path = (self.main.place_exports([path] + ([out / f"{base}.txt"] if lines else [])) or [path])[0]
         self.main.log_signal.emit(T("saved", p=str(path)))

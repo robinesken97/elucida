@@ -3742,7 +3742,7 @@ def selftest(outdir, with_isnet=False):
             assert NMRC_.range_check(dict(nuclei=["31P"], kind="1D"), (0.0, 10.0))[0] is None and \
                 NMRC_.range_check(dict(nuclei=["1H"], kind="1D"), None)[0] is None
             t36_ = w.nmr_tab
-            assert t36_.tbl.columnCount() == 4 and hasattr(t36_, "cb_lab_no") and t36_.cb_lab_no.isChecked()
+            assert t36_.tbl.columnCount() == 5 and hasattr(t36_, "cb_lab_no") and t36_.cb_lab_no.isChecked()
             report.append("NMR number and conditions below the structure (outlines for preview, SVG, Word), axis range "
                           "check, integrals not taken for the axis: OK")
 
@@ -13471,7 +13471,7 @@ def selftest(outdir, with_isnet=False):
             for c_r2, ok_r2 in (("S3", True), ("S2", False)):
                 w.open_project(dz_r2 / c_r2)
                 h1_r2 = [s_ for s_ in w.nmr_tab.spectra() if (s_.get("nuclei") or [""])[0] == "1H"]
-                assert h1_r2 and all(NMR_r2.range_check(s_, w.nmr_tab.axis_range(s_))[0] is ok_r2 for s_ in h1_r2), c_r2
+                assert h1_r2 and all(w.nmr_tab.range_state(s_)[0] is ok_r2 for s_ in h1_r2), c_r2    # MNova: Achse, eigene: Signale
                 assert w.eps_caption(w.current, 0.1, c_r2).startswith(f"UV-Vis spectra of <b>{c_r2}</b> in THF,"), c_r2
                 assert any(p_[0].startswith("UV-Vis (THF)") for p_ in w.uvvis_si_parts()), (c_r2, w.uvvis_si_parts())
             report.append("1.2.0 review fixes: display round 2 (no -0, HRMS status, fluorescence rounding, UI digits like the SI, "
@@ -18306,7 +18306,7 @@ def selftest(outdir, with_isnet=False):
                 assert not t_f1.btn_acme.isEnabled() and not t_f1.btn_phase_manual.isEnabled()
                 assert T("nmr_no_1i") in t_f1.lbl_proc.text()
                 row_f1 = [x_["uid"] for x_ in t_f1.spectra()].index(t_f1.current()["uid"])
-                assert t_f1.tbl.item(row_f1, 3).text().strip("✓⚠ ") == "−1 – 11", t_f1.tbl.item(row_f1, 3).text()
+                assert t_f1.tbl.item(row_f1, 3).text().strip("✓⚠ ") == "0 – 9", t_f1.tbl.item(row_f1, 3).text()
             finally:
                 w.error = keep_err_f1
             # Befund 9: ¹⁹F (nominelle Achse) – Peaks bestätigt reichen nicht: erst Phase UND Referenz (auch nominell)
@@ -18560,14 +18560,14 @@ def selftest(outdir, with_isnet=False):
             t_r2.confirm_ref()
             ds_r2 = t_r2.raw_ds(t_r2.current())
             ref_r2 = t_r2.current()["proc"]["ref"]
-            # SI-Bereich: „auto“ = −1…11 ppm, Zoom ändert ihn nicht; nur das Feld legt ihn fest
-            assert t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2) == (11.0, -1.0)
+            # SI-Bereich: „auto“ = 9…0 ppm (ohne SI-Zeile), Zoom ändert ihn nicht; nur das Feld legt ihn fest
+            assert t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2) == (9.0, 0.0), t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2)
             t_r2.view.set_view((7.7, 7.2), t_r2.view.ylim)
             t_r2 = w.nmr_tab
-            assert t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2) == (11.0, -1.0)
+            assert t_r2.si_xlim(t_r2.current(), ds_r2, ref_r2) == (9.0, 0.0)
             row_r2 = [x_["uid"] for x_ in t_r2.spectra()].index(s_r2["uid"])
-            assert t_r2.tbl.item(row_r2, 3).text().strip("✓⚠ ") == "−1 – 11", t_r2.tbl.item(row_r2, 3).text()
-            assert t_r2.cb_rng.isChecked() and t_r2.sp_rng[0].value() == 11.0 and t_r2.sp_rng[1].value() == -1.0
+            assert t_r2.tbl.item(row_r2, 3).text().strip("✓⚠ ") == "0 – 9", t_r2.tbl.item(row_r2, 3).text()
+            assert t_r2.cb_rng.isChecked() and t_r2.sp_rng[0].value() == 9.0 and t_r2.sp_rng[1].value() == 0.0
             t_r2.cb_rng.setChecked(False)
             t_r2.sp_rng[0].setValue(10.0)
             t_r2.sp_rng[1].setValue(0.0)
@@ -19241,6 +19241,207 @@ def selftest(outdir, with_isnet=False):
                 w.error = keep_bd
             report.append("NMR: Bruker data dropped like in MNova (fid, acqus, pdata folder or file -> the experiment, "
                           "nothing twice, user files unchanged): OK")
+        with section:
+            # NMR-Vergleich (Einzeln · Überlagert · Gestapelt), Bereich „auto“ und Vorhersage (nur Ansicht); erfundene Daten
+            import json as js_nc
+            import zipfile as zf_nc
+            from PIL import Image as PImg_nc
+            from elucida.formats import bruker_nmr as BN_nc
+            from elucida.tabs import nmr_compare as NC
+            from elucida.tabs.export import PPTX_KEYS as PPK_nc
+            from elucida.exchange import datapack as DP_nc
+            from elucida.si import lines as SI_nc
+            from elucida.si import publication_si as PSI_nc
+            # Bereichsregeln (auto): Vorgabe, Ausreißer erweitern auf ganze Raster, Rand 0.5 bzw. 5 ppm
+            assert NC.auto_xlim("1H", []) == (9.0, 0.0) and NC.auto_xlim("13C", []) == (200.0, 0.0)
+            assert NC.auto_xlim("13C", [(250.0, 250.0, "250.0")]) == (260.0, 0.0), NC.auto_xlim("13C", [(250.0, 250.0, "")])
+            assert NC.auto_xlim("1H", [(-12.0, -12.0, "-12.0")]) == (9.0, -13.0), NC.auto_xlim("1H", [(-12.0, -12.0, "")])
+            assert NC.auto_xlim("1H", [(8.7, 8.7, "8.7")]) == (10.0, 0.0)          # 8.7 + 0.5 > 9: eine Stufe weiter
+            assert NC.auto_xlim("1H", [(0.2, 0.2, "0.2")]) == (9.0, -1.0)
+            assert NC.auto_xlim("1H", [(30.0, 30.0, "")], data=(-2.0, 14.0)) == (14.0, 0.0)    # nie über die Messung
+            assert NC.outside([(250.0, 250.0, "250.0")], (0.0, 200.0)) == ["250.0"]
+            assert NC.outside([(120.0, 130.0, "130.0–120.0")], (0.0, 200.0)) == []
+            assert w.create_project(out / "nmr_cmp")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            pump(0.3)
+            lin_nc = [(7.30, 1.0, 1.0), (7.10, 1.0, 1.0), (2.30, 3.0, 1.0), (-8.0, 0.5, 1.0)]    # Hydrid (erfunden)
+            for n_nc, te_nc, dx_nc in (("10", 298.2, 0.0), ("11", 193.2, 0.05)):
+                BN_nc.make_test_1d(out / "nmr_cmp_src" / "QzCmp" / n_nc, [(x_ + dx_nc, a_, f_) for x_, a_, f_ in lin_nc],
+                                   td=16384, si=32768, noise=5e-5, te=te_nc, seed=int(n_nc), o1p=0.0)
+            sp_nc = w.nmr_tab.add_raw_path(str(out / "nmr_cmp_src" / "QzCmp"))
+            assert len(sp_nc) == 2, sp_nc
+            t_nc = w.nmr_tab
+            for s_ in t_nc.spectra():                     # Phase und Referenz bestätigt (wie der Nutzer)
+                t_nc.st["current"] = s_["uid"]
+                s_["proc"].update(phase_ok=True, ref=s_["proc"].get("ref") or 0.0, ref_status="confirmed")
+            t_nc.st["text"] = "1H NMR (500 MHz, CDCl3) δ 7.30 (s, 1H), 7.10 (s, 1H), 2.30 (s, 3H), -8.00 (s, 1H)."
+            t_nc.sync_widgets()
+            s0_nc, s1_nc = t_nc.spectra()
+            ds_nc = t_nc.raw_ds(s0_nc)
+            ref_nc = s0_nc["proc"]["ref"]
+            assert t_nc.si_xlim(s0_nc, ds_nc, ref_nc) == (9.0, -9.0), t_nc.si_xlim(s0_nc, ds_nc, ref_nc)
+            ok_nc, txt_nc, out_nc = t_nc.range_state(s0_nc)
+            assert ok_nc and not out_nc and txt_nc == "−9 – 9", (ok_nc, txt_nc, out_nc)
+            # eigener Bereich mit einem Signal außerhalb: bleibt, aber warnt (Tabelle und Ansicht)
+            s0_nc.setdefault("view", {})["si_xlim"] = [10.0 - ref_nc, 0.0 - ref_nc]
+            t_nc.st["current"] = s0_nc["uid"]
+            t_nc.sync_widgets()
+            ok_nc, txt_nc, out_nc = t_nc.range_state(s0_nc)
+            assert not ok_nc and len(out_nc) == 1 and "8.00" in out_nc[0], (ok_nc, out_nc)
+            assert t_nc.si_xlim(s0_nc, ds_nc, ref_nc) == (10.0, 0.0)
+            assert "8.00" in t_nc.tbl.item(0, 3).toolTip() and t_nc.tbl.item(0, 3).text().startswith("⚠"), \
+                t_nc.tbl.item(0, 3).text()
+            assert "8.00" in t_nc.lbl_cmp_notes.text(), t_nc.lbl_cmp_notes.text()
+            s0_nc["view"].pop("si_xlim")
+            # MNova-SVG: Achse 0…200, ¹³C-Signal bei 250 -> Warnung „außerhalb des Bildbereichs“; Umschalter ausgegraut
+            svg_nc = NMR.make_test_svg(out / "nmr_cmp_src" / "QzCmp-13C.svg", nuclei=("13C",))
+            txt_svg_nc = svg_nc.read_text(encoding="utf-8").replace("</svg>", "".join(
+                f'<text x="{60 + 240 * k_}" y="725" font-size="12">{v_}</text>' for k_, v_ in enumerate(
+                    (200, 150, 100, 50, 0))) + "</svg>")
+            svg_nc.write_text(txt_svg_nc, encoding="utf-8")
+            t_nc.load_svg(str(svg_nc))
+            t_nc.st["text"] += "\n13C NMR (126 MHz, CDCl3) δ 250.0, 128.0, 21.0."
+            mn_nc = next(s_ for s_ in t_nc.spectra() if not NC.own_1d(s_))
+            ok_nc, _t, out_nc = t_nc.range_state(mn_nc)
+            assert ok_nc is False and out_nc == ["250.0"], (ok_nc, out_nc)
+            t_nc.st["current"] = mn_nc["uid"]
+            t_nc.sync_widgets()
+            t_nc.update_preview()
+            assert "250.0" in t_nc.lbl_rng.text(), t_nc.lbl_rng.text()
+            assert not t_nc.cmp_btns["stack"].isEnabled() and not t_nc.cb_pred.isEnabled()
+            assert T("nmr_cmp_need_own") in t_nc.cmp_btns["stack"].toolTip()
+            # Umschalter: Vorgabe Einzeln, jeder Wechsel ein Rückgängig-Schritt, gespeichert im Projekt
+            t_nc.st["current"] = s0_nc["uid"]
+            t_nc.sync_widgets()
+            assert t_nc.cmp_mode() == "single" and t_nc.tbl.isColumnHidden(4)
+            n0_nc = len(w._undo)
+            t_nc.set_cmp_mode("stack")
+            assert t_nc.cmp_mode() == "stack" and t_nc.cmp()["members"] == [s0_nc["uid"]], t_nc.cmp()
+            assert len(w._undo) == n0_nc + 1 and not t_nc.tbl.isColumnHidden(4)
+            it_nc = t_nc.tbl.item(1, 4)
+            it_nc.setCheckState(Qt.Checked)                # zweites Spektrum anhaken
+            pump(0.2)
+            t_nc = w.nmr_tab
+            assert t_nc.cmp()["members"] == [s0_nc["uid"], s1_nc["uid"]], t_nc.cmp()
+            t_nc.set_cmp_mode("overlay")
+            t_nc = w.nmr_tab
+            w.undo()
+            pump(0.2)
+            t_nc = w.nmr_tab
+            assert t_nc.cmp_mode() == "stack", t_nc.cmp_mode()
+            w.save_project()
+            assert "stack" in (Path(w.project_dir) / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
+            t_nc.update_preview()
+            pump(0.3)
+            v_nc = t_nc.view
+            assert v_nc.stack and len(v_nc.traces) == 1 and v_nc.main_label == "298 K", (v_nc.main_label, v_nc.traces)
+            assert "193–298 K" in t_nc.lbl_cap_raw.text(), t_nc.lbl_cap_raw.text()
+            # Export: Word mit Überschrift + Unterschrift, Dateien nach figures/, Gesamt-SI als eigenes Unterkapitel
+            t_nc.st["cmp"]["caption"] = "Hydride signal broadens on cooling."
+            img_nc = out / "nmr_cmp_img"
+            img_nc.mkdir(exist_ok=True)
+            with w.collecting_skips():
+                bl_nc = t_nc.docx_blocks(img_nc)
+            hd_nc = [b_ for b_ in bl_nc if b_[0] == "heading"]
+            caps_nc = [b_[1] for b_ in bl_nc if b_[0] == "figcap" and "193" in b_[1]]
+            assert hd_nc == [("heading", "NMR Comparisons")] and len(caps_nc) == 1, bl_nc
+            assert "193–298 K" in caps_nc[0] and "broadens on cooling." in caps_nc[0], caps_nc
+            for mode_nc in ("overlay", "stack"):
+                t_nc.st["cmp"]["mode"] = mode_nc
+                specs_nc = t_nc.cmp_groups()[0][1]
+                f_nc = t_nc.cmp_svg(specs_nc, "png", out / f"nmr_cmp_{mode_nc}.png")
+                assert PImg_nc.open(f_nc).size[0] > 1000
+            assert t_nc.cmp_svg(specs_nc, "svg", out / "nmr_cmp_a.svg") and \
+                Path(t_nc.cmp_svg(specs_nc, "svg", out / "nmr_cmp_b.svg")).read_bytes() == \
+                (out / "nmr_cmp_a.svg").read_bytes()      # wiederholbar (feste IDs, ohne Datum)
+            with w.collecting_skips():
+                t_nc._extra_files = []
+                p_nc = t_nc.export_dialog()
+            extra_nc = t_nc._extra_files
+            assert p_nc and any(Path(f_).name.endswith("_comparison_1H.png") for f_ in extra_nc), extra_nc
+            assert all(Path(f_).parent.name == PRJ.FIGURES and Path(f_).is_file() for f_ in extra_nc), extra_nc
+            parts_nc = w.si_compound_parts({"nmr"}, methods=False)[1]
+            assert parts_nc and parts_nc.get("nmr_cmp") and parts_nc["nmr_cmp"][0][0] == "NMR Comparisons", parts_nc
+            assert not any(b_[0] == "heading" for b_ in parts_nc["nmr"]), parts_nc["nmr"]
+            asm_nc = PSI_nc.assemble({}, [("X", parts_nc)], {"nmr"}, toc=False)
+            assert any(b_[0] == "subsection" and b_[1].endswith(" NMR Comparisons") for b_ in asm_nc), asm_nc
+            # Abgelehnt: Referenz nicht bestätigt -> nicht exportiert, Grund in der Exportmeldung
+            t_nc = w.nmr_tab
+            s1_nc = next(s_ for s_ in t_nc.spectra() if s_["uid"] == s1_nc["uid"])
+            s1_nc["proc"]["ref_status"] = "suggested"
+            with w.collecting_skips():
+                assert not t_nc.cmp_blocks(img_nc)
+                assert T("nmr_cmp_unconfirmed", nuc="¹H") in w.held_text(), w.held_text()
+            s1_nc["proc"]["ref_status"] = "confirmed"
+
+            # Vorhersage nie in einer Ausgabe: jede Ausgabe ohne Zwischenspeicher mit und ohne Vorhersage gleich
+            def outputs_nc(tag):
+                import shutil as sh_
+                sh_.rmtree(PRJ.work_dir(w.project_dir, "nmr"), ignore_errors=True)
+                w.extra_cache.clear()
+                w.nmr_tab._ycache.clear()
+                d_ = out / f"nmr_cmp_id_{tag}"
+                sh_.rmtree(d_, ignore_errors=True)
+                d_.mkdir()
+                t_ = w.nmr_tab
+                res = {}
+                specs_ = t_.cmp_groups()[0][1]
+                for ext_ in ("svg", "pdf", "png"):
+                    res[ext_] = Path(t_.cmp_svg(specs_, ext_, d_ / f"c.{ext_}")).read_bytes()
+                with w.collecting_skips():
+                    blk_ = t_.docx_blocks(d_)
+                res["word_blocks"] = [b_ if b_[0] != "image" else b_[0] for b_ in blk_]
+                res["word_png"] = [PImg_nc.open(b_[1]).tobytes() for b_ in blk_ if b_[0] == "image"]
+                SI_nc.write_docx(d_ / "x.docx", blk_)
+                with zf_nc.ZipFile(d_ / "x.docx") as z_:
+                    res["word_xml"] = z_.read("word/document.xml")
+                cp_ = t_.copy_figure(d_)                     # Abbildung kopieren (sichtbarer Vergleich)
+                assert isinstance(cp_, tuple), cp_
+                res["copy_svg"] = Path(cp_[0]).read_bytes()
+                res["copy"] = PImg_nc.open(cp_[1]).tobytes()
+                res["state"] = js_nc.dumps(w.get_state(), sort_keys=True, default=str)
+                res["datapack"] = sorted(i_.key for i_ in DP_nc.collect(w.get_state(), Path(w.project_dir)))
+                return res
+            t_nc.st["current"] = s0_nc["uid"]
+            t_nc.sync_widgets()
+            t_nc.update_preview()
+            from rdkit import Chem as Chem_nc
+            from rdkit.Chem import AllChem as AC_nc
+            from elucida.app.demo import mol_cdxml as mc_nc
+            m_nc = Chem_nc.MolFromSmiles("CCc1ccccc1")
+            AC_nc.Compute2DCoords(m_nc)
+            (out / "nmr_cmp_src" / "QzCmp.cdxml").write_text(mc_nc(m_nc), encoding="utf-8")
+            t_nc.st["structure"] = w.import_file(str(out / "nmr_cmp_src" / "QzCmp.cdxml"), PRJ.STRUCTURES)
+            plain_nc = outputs_nc("plain")                  # Struktur gehört zu beiden Ständen
+            t_nc = w.nmr_tab
+            t_nc.sync_widgets()
+            assert t_nc.cb_pred.isEnabled(), t_nc.cb_pred.toolTip()
+            t_nc.cb_pred.setChecked(True)                  # nur auf Klick, Antwort über die Brücke (kein Abfragen)
+            t0_nc = time.time()
+            while time.time() - t0_nc < 120:
+                pump(0.2)
+                p_nc = w.nmr_tab.pred_result(w.nmr_tab.current()) or {}
+                if p_nc.get("curve") is not None or p_nc.get("error"):
+                    break
+            assert p_nc.get("curve") is not None, p_nc
+            t_nc = w.nmr_tab
+            t_nc.update_preview()
+            pump(0.3)
+            assert any(l_["kind"] == "pred" for l_ in t_nc.view.lanes()), "prediction lane in the view"
+            assert NC.NOTICE in t_nc.lbl_cmp_notes.text(), t_nc.lbl_cmp_notes.text()
+            assert "_nmr_pred" not in js_nc.dumps(w.get_state(), default=str)
+            pred_nc = outputs_nc("pred")
+            for k_ in plain_nc:
+                assert plain_nc[k_] == pred_nc[k_], f"output differs with prediction: {k_}"
+            assert "nmr" not in PPK_nc                     # NMR (und damit Vergleich und Vorhersage) nie auf Folien
+            t_nc.cb_pred.setChecked(False)
+            assert len(w.nmr_tab._predictor.cache) >= 1   # zweiter Klick antwortet aus dem Zwischenspeicher
+            report.append("NMR comparison: single/overlaid/stacked toggle (one undo step, saved), auto range 9..0 / "
+                          "200..0 widened by SI-line signals (13C 250 -> 260, 1H -12 -> -13), user range and MNova SVG "
+                          "warn, export (Word heading, figures/, complete-SI subchapter), withheld when unconfirmed, "
+                          "prediction lane on screen only (SVG/PDF/PNG, Word, Copy Figure, state, data package "
+                          "identical; never in PPTX): OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

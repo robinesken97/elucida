@@ -4385,7 +4385,10 @@ class MainWindow(QMainWindow):
             if char != [("synthesis", title)]:           # ohne Vorschrift und Daten keine leere „Synthesis of X“
                 parts["char"] = char
         if "nmr" in sections and self.nmr_tab.spectra():
-            parts["nmr"] = self.si_part("nmr", lambda: self.nmr_tab.docx_blocks(out_dir))
+            parts["nmr"] = self.si_part("nmr", lambda: self.nmr_tab.docx_blocks(out_dir, cmp=False))
+            cb = self.si_part("nmr", lambda: self.nmr_tab.cmp_blocks(out_dir))     # Vergleiche: eigenes Unterkapitel
+            if cb:
+                parts["nmr_cmp"] = [(self.nmr_tab.cmp_heading(), cb)]
         if "irms" in sections:
             parts["irms"] = figs([self.irms_tab, self.hrms_tab])
         if "uvvis" in sections:
