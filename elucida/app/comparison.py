@@ -2626,7 +2626,7 @@ class ComparePage(QWidget):
         self.tab = TAB_CLASS.get(kind, CompareEmpty)(self.host, st)
         self._built = key
         self.lay.addWidget(self.tab)
-        TABS.apply_view(self.tab.right_tabs, self.tab._left_parts[2], view)
+        TABS.apply_view(self.tab.right_tabs, self.tab._left_parts[2], view, self.tab)
         self.tab.btn_export.setEnabled(self.item is not None)
         self.pub.sync_main_button()
 

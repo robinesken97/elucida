@@ -1043,7 +1043,7 @@ class MainWindow(QMainWindow):
     def _apply_tab_view(self, tab, view):
         parts = getattr(tab, "_left_parts", None)
         if parts and view:
-            TABS.apply_view(getattr(tab, "right_tabs", None), parts[2], view)
+            TABS.apply_view(getattr(tab, "right_tabs", None), parts[2], view, tab)
 
     # Tabs: Schlüssel im Zustand -> (Attribut, Klasse, Attribut des Zustands, Textschlüssel); ε ist Teil des Fensters
     _TAB_ORDER = ("compound", "syn", "nmr", "irms", "hrms", "eps", "overlay", "uvkin", "fluo", "cv", "sec", "hcell", "epr", "xray", "dft", "other", "export")

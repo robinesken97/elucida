@@ -140,7 +140,11 @@ jobs:
         if: always()
         with:
           name: selftest-${{ matrix.label }}
-          path: selftest_*/selftest_report.txt
+          # nur Bericht, Abschnittszeiten und Bilder fehlgeschlagener Abschnitte (der ganze Ordner hat ~6 GB)
+          path: |
+            selftest_*/selftest_report.txt
+            selftest_*/sections.tsv
+            selftest_*/failed_*.png
 
   release:
     # Tag-Push (git push --tags) oder manueller Start auf main mit Eingabe „release“ (legt das Tag selbst an)

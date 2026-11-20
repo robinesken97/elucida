@@ -755,8 +755,9 @@ def view_state(tabs, scroll):
         return None
 
 
-def apply_view(tabs, scroll, view):
-    """Gemerkte Ansicht wieder setzen: Reiter nach Text (Sprachwechsel: nach Nummer), Bildlauf nach dem Layout."""
+def apply_view(tabs, scroll, view, tab=None):
+    """Gemerkte Ansicht wieder setzen: Reiter nach Text (Sprachwechsel: nach Nummer), Bildlauf nach dem Layout.
+    `tab` (neu gebauter FigureTab): dem Bildlauf erst ab seinem ersten Zeichnen 1,5 s lang folgen."""
     if not view:
         return
     if tabs is not None and view["index"] > 0:
@@ -776,7 +777,18 @@ def apply_view(tabs, scroll, view):
                 sb.rangeChanged.disconnect(follow)
             except (RuntimeError, TypeError):
                 pass
-        QTimer.singleShot(1500, sb, stop)
+
+        def start():
+            try:
+                QTimer.singleShot(1500, sb, stop)
+            except RuntimeError:                             # Spalte schon gelöscht
+                pass
+        # das erste Zeichnen füllt Karten links (Figure Labels) und verlängert die Spalte; auf langsamen Rechnern kam
+        # es erst nach Ablauf der 1,5 s (CI: Bildlauf blieb am kürzeren Ende)
+        if tab is not None and not getattr(tab, "_first_done", True):
+            tab._after_first.append(start)
+        else:
+            start()
 
 
 class ResultTabs(QTabWidget):
@@ -1956,7 +1968,7 @@ class FigureTab(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
-        self._render_pending = False
+        self._render_pending, self._first_done, self._after_first = False, False, []
         self.sync_caption_bar()
         self.steps.refresh()
         QTimer.singleShot(0, self._first_render)
@@ -1974,21 +1986,31 @@ class FigureTab(QWidget):
         """Erstes Zeichnen nach dem Aufbau: sofort, wenn der Tab zu sehen ist, sonst beim ersten Anzeigen (beim
         Öffnen eines Projekts sind elf von zwölf Tabs verborgen – das Zeichnen aller Abbildungen kostete ~1 s)."""
         if self.isVisible():
-            self.render()
+            self._render_first()
         else:
             self._render_pending = True
+
+    def _render_first(self):
+        """Zeichnen aus `_first_render`/`showEvent`/`ensure_rendered`; danach die Rückrufe von `apply_view`."""
+        try:
+            self.render()
+        finally:
+            self._first_done = True
+            fns, self._after_first = getattr(self, "_after_first", []), []
+            for fn in fns:
+                fn()
 
     def showEvent(self, ev):
         super().showEvent(ev)
         if getattr(self, "_render_pending", False):
             self._render_pending = False
-            QTimer.singleShot(0, self.render)
+            QTimer.singleShot(0, self._render_first)
 
     def ensure_rendered(self):
         """Abbildung jetzt zeichnen, falls sie wegen eines verborgenen Tabs noch aussteht (z. B. vor Zugriff auf F)."""
         if getattr(self, "_render_pending", False):
             self._render_pending = False
-            self.render()
+            self._render_first()
 
     def compound_changed(self):
         """Verbindung des Projekts geändert (MainWindow.set_compound ruft das in jedem gebauten Tab): Abbildung und

@@ -144,11 +144,16 @@ class _Section:
     """One part of the selftest: a failure is reported, the next part still runs, so one CI run shows all failures.
     Later parts can fail as a consequence (NameError): read the first FAILED first."""
 
-    def __init__(self, report, echo=True):
-        self.report, self.failed, self.echo = report, 0, echo
+    def __init__(self, report, echo=True, out=None):
+        # out: Ausgabeordner des echten Laufs -> sections.tsv (je Abschnitt sofort, auch wenn der Lauf hängt) und
+        # failed_<Zeile>.png; ohne out (Abschnitte im Abschnitt) weder Datei noch Bild
+        self.report, self.failed, self.echo, self.out, self.rows = report, 0, echo, out, []
+        if out is not None:
+            (out / "sections.tsv").write_text("line\ttitle\tseconds\tstatus\n", encoding="utf-8")
 
     def __enter__(self):
-        self.t0, self.line = time.perf_counter(), sys._getframe(1).f_lineno
+        f = sys._getframe(1)
+        self.t0, self.line, self.file, self.n0 = time.perf_counter(), f.f_lineno, f.f_code.co_filename, len(self.report)
         if self.echo and sys.stderr is not None:             # hängt ein Abschnitt: alle Stacks ins CI-Log, alle 10 min
             import faulthandler                              # (gebaute Windows-App ohne Konsole: kein stderr)
             faulthandler.dump_traceback_later(600, repeat=True)
@@ -161,14 +166,63 @@ class _Section:
             faulthandler.cancel_dump_traceback_later()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
             print(f"slow section at selftest.py:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
-        if kind is None or not issubclass(kind, Exception):
+        failed = kind is not None and issubclass(kind, Exception)
+        self._record(dt, failed, traceback.format_exception_only(kind, ex)[-1].strip() if failed else "")
+        if not failed:
             return False
         self.failed += 1
         text = "FAILED\n" + "".join(traceback.format_exception(kind, ex, tb))
         self.report.append(text)
         if self.echo:                                        # sofort im CI-Log, falls später etwas hängt
             print(text.encode("ascii", "replace").decode(), flush=True)
+        if self.out is not None:                             # Bild des Hauptfensters; darf nie selbst scheitern
+            try:
+                w = sys._getframe(1).f_locals.get("w")
+                if w is not None:
+                    w.grab().save(str(self.out / f"failed_{self.line}.png"))
+            except Exception:
+                pass
         return True
+
+    def _title(self):
+        """Report-Zeile „…: OK“ des Abschnitts, sonst erste Kommentarzeile (gebaute App ohne Quelltext: leer)."""
+        oks = [t for t in self.report[self.n0:] if t.endswith(": OK")]
+        if oks:
+            return oks[-1]
+        try:
+            import linecache
+            for k in range(2):                               # Zeile `with section:` (# dahinter) und die nächste
+                src = linecache.getline(self.file, self.line + k)
+                if "#" in src:
+                    return src.split("#", 1)[1].strip()
+        except Exception:
+            pass
+        return ""
+
+    def _record(self, dt, failed, last):
+        title = re.sub(r"\s+", " ", self._title())[:160]
+        self.rows.append((self.line, title, dt, "FAILED" if failed else "OK", last))
+        if self.out is not None:
+            try:
+                with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
+                    fh.write(f"{self.line}\t{title}\t{dt:.1f}\t{self.rows[-1][3]}\n")
+            except OSError:
+                pass
+
+    def summary(self):
+        """Zusammenfassung oben im Report: erster FAILED, spätere als mögliche Folgefehler, 10 langsamste (nur ASCII)."""
+        fails = [r for r in self.rows if r[3] == "FAILED"]
+        lines = ["== Summary =="]
+        for i, (line, title, dt, _, last) in enumerate(fails):
+            lines.append(f"{'FIRST FAILED' if i == 0 else 'FAILED (possibly a consequence)'}: selftest.py:{line} "
+                         f"{title} -- {last}")
+        if not fails:
+            lines.append("no FAILED section")
+        lines.append("10 slowest sections:")
+        for line, title, dt, status, _ in sorted(self.rows, key=lambda r: -r[2])[:10]:
+            lines.append(f"  {dt:7.1f} s  selftest.py:{line} {status} {title}")
+        lines.append("== End of summary ==")
+        return [t.encode("ascii", "replace").decode() for t in lines]
 
 
 def _filled_ct(comp):
@@ -374,7 +428,7 @@ def selftest(outdir, with_isnet=False):
     MW.SETTINGS_FILE.unlink(missing_ok=True)
     report = [f"{APP_NAME} {APP_VERSION} selftest", f"python {sys.version.split()[0]}, {sys.platform}"]
     ok = True
-    section = _Section(report)
+    section = _Section(report, out=out)
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
     QApplication.setApplicationVersion(APP_VERSION)
     try:
@@ -11921,6 +11975,32 @@ def selftest(outdir, with_isnet=False):
                 raise ValueError("expected")
             assert sec_.failed == 1 and "expected" in sec_.report[0]
             report.append("selftest: a failed part does not stop the next: OK")
+        with section:
+            # Selbsttest Stufe 1: sections.tsv je Abschnitt, Zusammenfassung (erster FAILED oben, spätere als mögliche
+            # Folgefehler, langsamste), Bild des Hauptfensters bei FAILED; an einem Wegwerf-Lauf, der echte bleibt grün
+            d_s1 = out / "stage1"
+            shutil.rmtree(d_s1, ignore_errors=True)
+            d_s1.mkdir()
+            sec_s1 = _Section([], echo=False, out=d_s1)
+            with sec_s1:
+                sec_s1.report.append("stage1 part: OK")
+            with sec_s1:
+                raise ValueError("first expected")
+            with sec_s1:
+                raise KeyError("second expected")
+            rows_s1 = [r_.split("\t") for r_ in (d_s1 / "sections.tsv").read_text(encoding="utf-8").splitlines()]
+            assert rows_s1[0] == ["line", "title", "seconds", "status"] and len(rows_s1) == 4, rows_s1
+            assert [r_[3] for r_ in rows_s1[1:]] == ["OK", "FAILED", "FAILED"] and rows_s1[1][1] == "stage1 part: OK"
+            sum_s1 = sec_s1.summary()
+            assert sum_s1[1].startswith("FIRST FAILED: selftest.py:" + rows_s1[2][0]) and "first expected" in sum_s1[1]
+            assert "possibly a consequence" in sum_s1[2] and "second expected" in sum_s1[2], sum_s1
+            assert "10 slowest sections:" in sum_s1 and all(t_.isascii() for t_ in sum_s1)
+            img_s1 = (d_s1 / f"failed_{rows_s1[2][0]}.png").exists()  # Bild nur gemeldet: darf nie scheitern lassen
+            report.append(f"selftest stage 1: window image on FAILED {'written' if img_s1 else 'skipped'}")
+            assert len(section.rows) > 20 and {r_[3] for r_ in section.rows} <= {"OK", "FAILED"}
+            assert len((out / "sections.tsv").read_text(encoding="utf-8").splitlines()) == len(section.rows) + 1
+            shutil.rmtree(d_s1)
+            report.append("selftest stage 1: sections.tsv, summary (first FAILED on top, later ones marked): OK")
         with section:                                        # Cluster: nur Lesebefehle, Gegenseite nicht vertrauenswürdig
             from elucida.app import cluster as CL
             w.open_project(out / "demo_pub_items" / "S2", recent=False)
@@ -16685,6 +16765,55 @@ def selftest(outdir, with_isnet=False):
             report.append("Lane A item 2 (views kept over rebuilds, drop stays with notice and tab mark, card marks "
                           "its result tab, Ctrl+F = project filter): OK")
         with section:
+            # Bildlauf über einen Neuaufbau, dessen erstes Zeichnen > 1,5 s braucht (langsame CI-Runner): erst das Zeichnen
+            # füllt die Karte „Figure Labels“, der Bildlauf muss bis dahin folgen (blieb 30 px am kürzeren Ende)
+            def pump_sr(sec):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+                    time.sleep(0.01)
+            dp_sr = Path(w.open_demo_publication(out / "sr_pub"))
+            pump_sr(0.5)
+            assert w.open_project(dp_sr / "S3", ask=False, recent=False)
+            w.show_tab("cv")
+            pump_sr(1.0)
+            size_sr, own_sr = w.size(), CVMOD.CVTab.__dict__.get("render")
+            real_sr = CVMOD.CVTab.render
+
+            done_sr = []
+
+            def slow_sr(self_, *a_, **k_):
+                time.sleep(1.7)
+                try:
+                    return real_sr(self_, *a_, **k_)
+                finally:
+                    done_sr.append(1)
+            try:
+                w.resize(1300, 560)
+                w.cv_tab.steps.set_step(len(w.cv_tab.steps.pages) - 1)
+                pump_sr(0.3)
+                sb_sr = w.cv_tab._left_parts[2].verticalScrollBar()
+                sb_sr.setValue(sb_sr.maximum())
+                want_sr = sb_sr.value()
+                assert want_sr > 0, "Spalte rollt nicht: Prüfung wäre leer"
+                CVMOD.CVTab.render = slow_sr
+                w.switch_lang(get_lang())                                  # vollständiger Neuaufbau
+                t0_sr = time.time()
+                while not done_sr and time.time() - t0_sr < 120:           # auf das Zeichnen warten, nicht auf eine
+                    pump_sr(0.1)                                           # feste Zeit (langsame Runner)
+                assert done_sr, "CV tab not rendered after the rebuild"
+                pump_sr(1.0)                                               # Layout nach dem Zeichnen, < 1,5 s
+                sb_sr = w.cv_tab._left_parts[2].verticalScrollBar()
+                assert sb_sr.value() == want_sr, (sb_sr.value(), want_sr, sb_sr.maximum())
+            finally:
+                if own_sr is None:
+                    del CVMOD.CVTab.render
+                else:
+                    CVMOD.CVTab.render = own_sr
+                w.resize(size_sr)
+            report.append("Scroll kept over a rebuild whose first render takes over 1.5 s: OK")
+        with section:
             # Spur A 1.3.0, Punkt 3: eine Exportmeldung (Einblendung) nennt Formate, Teile, abgewählte Abbildungen, Tabellen
             # mit eigenem „In die SI“ und springt per Klick zum Ort der Auswahl; Gesamt-SI nennt, dass sie alle enthält
             from elucida.app import publication as PUB_a3
@@ -20129,6 +20258,7 @@ def selftest(outdir, with_isnet=False):
         ok = False
         report.append("FAILED\n" + traceback.format_exc())
     ok = ok and not section.failed
+    report[2:2] = section.summary()
     (out / "selftest_report.txt").write_text("\n".join(report), encoding="utf-8")
     try:                                   # Windows-Konsole (cp1252) kann z. B. kein λ: ersetzen statt abstürzen
         sys.stdout.reconfigure(errors="replace")
