@@ -1,6 +1,6 @@
 # Selbsttest Stufe 2 – Bericht (Spur `lane-selftest2`)
 
-**Stand: Phase 0 abgeschlossen (Probelauf im Container). Warte auf „GO <sha>“.**
+**Stand: Phase 1 in Arbeit (Hebel 1–3 auf `35ce4c1`, nach Freigabe der Hauptsitzung). Hebel 1 committet, Prüflauf läuft noch – nicht abgenommen.**
 
 Start-SHA: `35ce4c1` (origin/main zum Zeitpunkt des Probelaufs). Branch `lane-selftest2` aus diesem Stand.
 
@@ -102,7 +102,18 @@ Start-SHA: `35ce4c1` (origin/main zum Zeitpunkt des Probelaufs). Branch `lane-se
 Dieser Commit enthält nur diese Datei (keine Codeänderung); der Selbsttest wurde deshalb nicht erneut ausgeführt.
 
 ## Phase 1+
-Noch nicht begonnen. Zusätzlich vereinbart (Hauptsitzung, 21:12 UTC):
+### Laufende Arbeit (nicht abgenommen)
+- `b4c32ac` Lane A item 1: feste Stabilitätsdatei statt erster CSV in Verzeichnisreihenfolge (Erwartung unverändert);
+  einzeln nachgestellt (n+2), voller Lauf steht aus.
+- Hebel 1 (`_DemoPub` in `selftest.py`): Beispielpublikation einmal bauen, je Abschnitt Kopie in den Ordner des Abschnitts.
+  Schlüssel = QSettings ohne Pfade/Zuletzt-Listen/Geometrie/Ansicht + Sprache; `own=True` (immer echt bauen) für die
+  Abschnitte, die den Bau selbst prüfen: „publication …“ (Bau), „layout items“ (Qt-Wrapper nach dem Bau),
+  „Comparison snapshots“ (Stand beim Speichern im Bau), „Lane A2 item 3b“ (Bau liest QSettings). Prüflauf
+  `ELUCIDA_SELFTEST_DEMO_CHECK=1` (jeder Bau echt, Vergleich mit der Vorlage) läuft seit 22:01 UTC.
+- Hebel 2: bisher keine Wiederverwendungsstelle gefunden (alle Exporte prüfen die Aktion selbst oder einen geänderten Stand); Liste folgt.
+- Hebel 3: Messung der Wartezeit je Abschnitt folgt im nächsten Lauf.
+
+Vorher vereinbart: Zusätzlich vereinbart (Hauptsitzung, 21:12 UTC):
 - Phase 1–3 gegen `st_base` auf `35ce4c1` messen, `origin/main` erst am Ende mergen.
 - Spitzen-RSS je Lauf vorher/nachher und Ursache des Wachstums.
 - Der Wächter `faulthandler.dump_traceback_later(600, repeat=True)` in `_Section.__enter__` darf den Lauf nie abbrechen

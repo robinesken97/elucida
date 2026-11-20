@@ -225,6 +225,88 @@ class _Section:
         return [t.encode("ascii", "replace").decode() for t in lines]
 
 
+class _DemoPub:
+    """Beispielpublikation für die Abschnitte (Selbsttest Stufe 2): einmal bauen, danach je Abschnitt eine frische Kopie.
+
+    Schlüssel = was der Bau liest: alle Einstellungen außer Pfaden, Zuletzt-Listen, Fenstergeometrie und Ansicht
+    (`SKIP`) plus Sprache; anderer Schlüssel = echt bauen (eine Vorlage je Schlüssel). Die Kopie liegt im Ordner des
+    Abschnitts (wie bisher; gespeichert wird nur relativ), Dateizeiten mit gleichem Abstand untereinander, die jüngste
+    = jetzt: Frische-Prüfungen vergleichen Dateien untereinander, „zuletzt geändert“ ist neu wie nach einem Bau. Im
+    Fenster dasselbe wie nach `open_demo_publication`: S2, dann S3 zuletzt benutzt, letzter Ordner, Publikation offen.
+    own=True: der Abschnitt prüft den Bau selbst (immer echt bauen; die Vorlage wird daraus genommen).
+    ELUCIDA_SELFTEST_DEMO_CHECK=1: immer echt bauen und jeden Bau mit der Vorlage seines Schlüssels vergleichen
+    (Ergebnis in demo_check.txt; Beleg, dass eine Kopie einem Bau gleicht)."""
+    SKIP = ("geometry", "last_dir", "last_img_dir", "last_project_dir", "recent_projects", "recent_publications",
+            "quick_export_dir", "update_last")
+    SKIP_GROUPS = ("datapack/", "fold/", "step/", "welcome/")
+
+    def __init__(self, out):
+        self.out, self.masters, self.calls = out, {}, []
+        self.check = os.environ.get("ELUCIDA_SELFTEST_DEMO_CHECK") == "1"
+
+    def key(self, w):
+        s = w.settings
+        items = sorted((k, str(s.value(k))) for k in s.allKeys()
+                       if k not in self.SKIP and not k.startswith(self.SKIP_GROUPS))
+        return json.dumps([get_lang(), items], ensure_ascii=False)
+
+    @staticmethod
+    def _tree(d):
+        """Normierter Inhalt eines Ordners: Pfad -> Text (zufällige 32-stellige Kennungen maskiert) oder Prüfsumme."""
+        import hashlib
+        hexid = re.compile(r"[0-9a-f]{32}")
+        res = {}
+        for p in sorted(Path(d).rglob("*")):
+            if p.is_file():
+                b = p.read_bytes()
+                try:
+                    v = hexid.sub("<id>", b.decode("utf-8"))
+                except UnicodeDecodeError:
+                    v = hashlib.sha256(b).hexdigest()
+                res[hexid.sub("<id>", p.relative_to(d).as_posix())] = v
+        return res
+
+    def __call__(self, w, folder, own=False):
+        folder = Path(folder)
+        key, t0 = self.key(w), time.perf_counter()
+        line = sys._getframe(1).f_lineno
+        master = self.masters.get(key)
+        if own or self.check or master is None:
+            d = w.open_demo_publication(folder)
+            if not d:
+                return d
+            snap = self.out / f"_demo_pub_master{len(self.masters)}"
+            if self.check and master is not None:          # Beleg: Bau gegen Vorlage desselben Schlüssels
+                a_, b_ = self._tree(master[0]), self._tree(d)
+                diff = sorted(k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k))
+                with open(self.out / "demo_check.txt", "a", encoding="utf-8") as fh:
+                    fh.write(f"{line}\t{len(diff)}\t{' '.join(diff[:20])}\n")
+            if master is None:                             # Vorlage sofort, bevor der Abschnitt etwas ändert
+                if snap.exists():
+                    shutil.rmtree(snap)
+                shutil.copytree(d, snap, copy_function=shutil.copy2)
+                self.masters[key] = (snap, time.time())
+            self.calls.append((line, "built", time.perf_counter() - t0))
+            return d
+        if not w.maybe_save():
+            return False
+        if folder.exists():
+            shutil.rmtree(folder)
+        shutil.copytree(master[0], folder, copy_function=shutil.copy2)
+        shift = time.time() - master[1]
+        for p in [folder, *folder.rglob("*")]:
+            st = p.stat()
+            os.utime(p, (st.st_atime + shift, st.st_mtime + shift))
+        w.settings.setValue("last_project_dir", str(folder))   # wie create_project (S2, dann S3)
+        for n in ("S2", "S3"):
+            w.add_recent(folder / n)
+        if not w.open_publication(folder):
+            return False
+        w.statusBar().showMessage(T("demo_pub_done", p=str(folder)), 10000)
+        self.calls.append((line, "copied", time.perf_counter() - t0))
+        return folder
+
+
 def _filled_ct(comp):
     return {k: v for k, v in comp.items() if v not in ("", None, False)}
 
@@ -429,6 +511,7 @@ def selftest(outdir, with_isnet=False):
     report = [f"{APP_NAME} {APP_VERSION} selftest", f"python {sys.version.split()[0]}, {sys.platform}"]
     ok = True
     section = _Section(report, out=out)
+    demo_pub = _DemoPub(out)                     # Beispielpublikation einmal bauen, je Abschnitt eine Kopie
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
     QApplication.setApplicationVersion(APP_VERSION)
     try:
@@ -11226,7 +11309,7 @@ def selftest(outdir, with_isnet=False):
             assert not rv_, rv_
             report.append("F3-F5 review fixes (Codex) + GP keys like variables: OK")
         with section:
-            dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
+            dpub_ = demo_pub(w, out / "demo_pub", own=True)                  # Beispielpublikation
             assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
             assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2
             assert PUB.load(dpub_)["si_texts"]["methods"].startswith("All reactions")
@@ -11964,7 +12047,7 @@ def selftest(outdir, with_isnet=False):
 
         with section:
             # Tote Einträge in PySides Adresstabelle (Absturz beim nächsten Python-Qt-Objekt): STYLE.item_at statt itemAt
-            w.open_demo_publication(out / "demo_pub_items")
+            demo_pub(w, out / "demo_pub_items", own=True)
             pump(0.5)
             held_ = _held_qt_items()
             assert not held_, held_[:5]
@@ -12900,7 +12983,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time_c_.sleep(0.02)
             dcmp_ = out / "demo_cmp"
-            w.open_demo_publication(dcmp_)                    # schreibt beim Speichern je Verbindung den Stand
+            demo_pub(w, dcmp_, own=True)                    # schreibt beim Speichern je Verbindung den Stand
             for n_ in ("S2", "S3"):
                 assert CMP.snapshot_path(dcmp_ / n_).exists(), n_
             size_c_ = CMP.snapshot_path(dcmp_ / "S3").stat().st_size
@@ -13660,7 +13743,7 @@ def selftest(outdir, with_isnet=False):
             assert SI.purity_line(["13C", "1H", "hplc"], "PXRD")[0] == \
                 "Purity was established by ¹H and ¹³C NMR spectroscopy, HPLC and PXRD.", SI.purity_line(["13C", "1H", "hplc"], "PXRD")
             assert "<sup>1</sup>H" in SI.purity_line(["1H"])[1]
-            dk_ = w.open_demo_publication(out / "demo_pub_siklein")
+            dk_ = demo_pub(w, out / "demo_pub_siklein")
             w.open_project(dk_ / "S3")
             assert w.compound.get("purity") == ["1H", "13C", "ea"], w.compound.get("purity")
             assert w.si_char_blocks(w.compound, "S3")[2].endswith("NMR spectroscopy and elemental analysis.")
@@ -13796,7 +13879,7 @@ def selftest(outdir, with_isnet=False):
             from elucida.tabs import dft_pages as PG_fx
             from elucida.tabs import nto as NTOV_fx
             from elucida.core import orbitals as ORB_fx
-            dz_ = w.open_demo_publication(out / "fixd_pub")
+            dz_ = demo_pub(w, out / "fixd_pub")
             w.open_project(dz_ / "S3")
             # A1: Projekt-Vergleich nimmt die Emission (Kennung), nie das Anregungsspektrum; alter Stand gilt als veraltet
             spec_fx = w.fl_tab.figure_spec()
@@ -14047,7 +14130,7 @@ def selftest(outdir, with_isnet=False):
             assert ">-4<" in x_r2 and ">−4<" not in x_r2, x_r2[:400]
             assert "S3_opt_freq" in x_r2 and "\\_" not in x_r2
             # Beispielprojekt S3
-            dz_r2 = w.open_demo_publication(out / "r2_pub")
+            dz_r2 = demo_pub(w, out / "r2_pub")
             w.open_project(dz_r2 / "S3")
             w.switch_lang("de")
             # 5 Word: Tabellenunterschriften mit Klartextnamen, nie „S3\_opt\_freq“
@@ -14236,7 +14319,7 @@ def selftest(outdir, with_isnet=False):
             import zipfile as _zf_r5
             from elucida.app import publication as PUB_r5
             from elucida.si import publication_si as PSI_r5
-            dp_r5 = w.open_demo_publication(out / "r5_pub")
+            dp_r5 = demo_pub(w, out / "r5_pub")
             s3_r5 = dp_r5 / "S3"
 
             def lines_r5(p_):                                              # Zeilen samt Endung (Windows: \r\n)
@@ -14509,7 +14592,7 @@ def selftest(outdir, with_isnet=False):
             assert s_es.isascii() and "Sys.g" not in p_es and "Sys.lwpp" not in p_es and "Exp.mwFreq" not in p_es, s_es
             assert p_es["Sys.A"] == [22.6, 0.0] and "-0.00" not in s_es and p_es["Sys.n"] == [1.0, 2.0], s_es
             assert "% Sys.g = ;  % set g" in s_es and "(simulation: 3 nuclei)" in s_es and "anisotropic tensors not exported" in s_es
-            dz_es = w.open_demo_publication(out / "es_pub")
+            dz_es = demo_pub(w, out / "es_pub")
             w.open_project(dz_es / "S3")
             cp_es = w.epr_tab.calc_pages
             sim_es = cp_es.sim()
@@ -14564,7 +14647,7 @@ def selftest(outdir, with_isnet=False):
         with section:
             # 1.3.0: Verbindungsname mit Punkt (erfunden „S3.1“). Exportnamen bekamen ihre Endung über with_suffix: aus
             # „S3.1_CV“ wurde „S3.pdf“, die Tabs überschrieben sich still. Jetzt: jede Datei mit vollem Namen, keine doppelt.
-            dp_dot = w.open_demo_publication(out / "dot_pub")
+            dp_dot = demo_pub(w, out / "dot_pub")
             s3_dot = dp_dot / "S3"
             assert w.open_project(s3_dot, ask=False, recent=False)
             w.comp_tab.fields["name"].setText("S3.1")                     # wie im Tab Verbindung
@@ -15218,7 +15301,7 @@ def selftest(outdir, with_isnet=False):
         with section:
             # „Darstellung zurücksetzen“ setzt nur Darstellung zurück (Nutzerentscheidung 2026-11-14): je Tab des
             # Beispiels als Eigenschaft, nicht als Schlüsselliste (_display_reset_check)
-            pub_rs = Path(w.open_demo_publication(out / "reset_pub"))
+            pub_rs = Path(demo_pub(w, out / "reset_pub"))
             w.open_project(pub_rs / "S3", recent=False)
             pump(0.5)
             w.main_tabs.setCurrentWidget(w.dft_tab)            # die X-Ray-Zuordnung zur Rechnung braucht den DFT-Tab
@@ -15380,7 +15463,7 @@ def selftest(outdir, with_isnet=False):
                 assert (x0_ < .1 and y0_ < .1 and x1_ - x0_ > .6 and y1_ - y0_ > .6 and abs((x0_ + x1_) / 2 - .5) < .15
                         and abs((y0_ + y1_) / 2 - .5) < .15), (what_, x0_, x1_, y0_, y1_)
 
-            pub_p = Path(w.open_demo_publication(out / "p13p_demo"))
+            pub_p = Path(demo_pub(w, out / "p13p_demo"))
             item_p = PUB_p.load(pub_p)["reaction_paths"][0]
             dir_p = RP_p.directory(pub_p, item_p["uid"])
 
@@ -16430,7 +16513,7 @@ def selftest(outdir, with_isnet=False):
         with section:
             # Spur T 1.3.0, SEC „aus CV-Tab“ (Nachstellung repro): Feld zeigt den benutzten Wert, Hinweis bei fehlender
             # Referenz, ohne Fc-Referenz die Elektrode des SEC-Tabs, Vorschau zieht beim Anzeigen nach
-            dpub_t = w.open_demo_publication(out / "lane_t_demo")
+            dpub_t = demo_pub(w, out / "lane_t_demo")
             w.open_project(dpub_t / "S3", recent=False)
             sec_t, cv_t = w.sec_tab, w.cv_tab
             w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
@@ -16629,7 +16712,7 @@ def selftest(outdir, with_isnet=False):
             bl_a1 = [("image", "g"), ("fields", []), ("image", "o"), ("text", "orb"), ("image", "n"), ("figcap", "nbo"),
                      ("params", [], [])]
             assert MW.MainWindow.drop_captioned_images(bl_a1) == [("image", "g"), ("fields", []), ("params", [], [])]
-            dp_a1 = Path(w.open_demo_publication(out / "a1_pub"))
+            dp_a1 = Path(demo_pub(w, out / "a1_pub"))
             pump_a1(0.5)
             assert w.open_project(dp_a1 / "S3", ask=False, recent=False)
             pump_a1(0.5)
@@ -16686,7 +16769,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_a2 = Path(w.open_demo_publication(out / "a2_pub"))
+            dp_a2 = Path(demo_pub(w, out / "a2_pub"))
             pump_a2(0.5)
             assert w.open_project(dp_a2 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16774,7 +16857,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
                     time.sleep(0.01)
-            dp_sr = Path(w.open_demo_publication(out / "sr_pub"))
+            dp_sr = Path(demo_pub(w, out / "sr_pub"))
             pump_sr(0.5)
             assert w.open_project(dp_sr / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16826,7 +16909,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_a3 = Path(w.open_demo_publication(out / "a3_pub"))
+            dp_a3 = Path(demo_pub(w, out / "a3_pub"))
             pump_a3(0.5)
             assert w.open_project(dp_a3 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16908,7 +16991,7 @@ def selftest(outdir, with_isnet=False):
                 assert re.search(attr_a4 + r'[^>]*>(?:(?!</a:r>).)*<a:t>' + re.escape(t_a4) + "</a:t>", x_a4), t_a4
             assert "Figure" not in re.sub(r'name="[^"]*"', "", x_a4)            # Unterschrift ohne „Figure Sn:“
             assert "<p:sp>" not in z_a4.read(sl_a4[1]).decode()                 # ohne Unterschrift kein Textfeld
-            dp_a4 = Path(w.open_demo_publication(out / "a4_pub"))
+            dp_a4 = Path(demo_pub(w, out / "a4_pub"))
             pump_a4(0.5)
             assert w.open_project(dp_a4 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16975,7 +17058,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_f1 = Path(w.open_demo_publication(out / "f1_pub"))
+            dp_f1 = Path(demo_pub(w, out / "f1_pub"))
             pump_f1(0.5)
             s3_f1 = dp_f1 / "S3"
             assert w.open_project(s3_f1, ask=False, recent=False)
@@ -17027,7 +17110,7 @@ def selftest(outdir, with_isnet=False):
                 finally:
                     TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName = real_z1
             ptab_z1 = w.pub_page.project_tabs.currentIndex()             # am Ende zurück: spätere Abschnitte unberührt
-            dp_z1 = Path(w.open_demo_publication(out / "z1_pub"))
+            dp_z1 = Path(demo_pub(w, out / "z1_pub"))
             pump_z1(0.5)
             w.go_publication()
             pump_z1(0.5)
@@ -17172,7 +17255,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_f2 = Path(w.open_demo_publication(out / "f2_pub"))
+            dp_f2 = Path(demo_pub(w, out / "f2_pub"))
             pump_f2(0.5)
             w.go_publication()
             pump_f2(0.5)
@@ -17217,7 +17300,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_f3 = Path(w.open_demo_publication(out / "f3_pub"))
+            dp_f3 = Path(demo_pub(w, out / "f3_pub"))
             pump_f3(0.5)
             assert w.open_project(dp_f3 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -17344,7 +17427,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             keep_size_x = w.size()
-            dp_x = Path(w.open_demo_publication(out / "a2x_pub"))
+            dp_x = Path(demo_pub(w, out / "a2x_pub"))
             pump_x(0.5)
             assert w.open_project(dp_x / "S3", ask=False, recent=False)
             pump_x(0.8)
@@ -17505,7 +17588,7 @@ def selftest(outdir, with_isnet=False):
             keep_y = {k_: w.settings.value(k_) for k_ in ("si_figs_off", "si_parts")}
             w.settings.setValue("si_figs_off", "hcell")                      # frühere Auswahl dieses Rechners
             w.settings.setValue("si_parts", ",".join(k_ for k_ in MW.SI_PARTS if k_ != "methods"))
-            dp_y_pub = Path(w.open_demo_publication(out / "a2y_pub"))
+            dp_y_pub = Path(demo_pub(w, out / "a2y_pub", own=True))
             pump_y(0.5)
 
             def tile_n_y():                                                   # Zahl auf der Projektkachel von S3
@@ -17626,7 +17709,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_z = Path(w.open_demo_publication(out / "a2z_pub"))
+            dp_z = Path(demo_pub(w, out / "a2z_pub"))
             pump_z(0.5)
             dirs_z = PUB_y.sync(dp_z)[0]
             PUB_y.set_group(dp_z, dirs_z[1], "Produkte")                      # Gruppen: Kopfzeilen über die volle Breite
@@ -17898,7 +17981,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_v = Path(w.open_demo_publication(out / "a2v_pub"))
+            dp_v = Path(demo_pub(w, out / "a2v_pub"))
             pump_v(0.5)
             assert w.open_project(dp_v / "S3", ask=False, recent=False)
             pump_v(0.8)
@@ -18030,7 +18113,7 @@ def selftest(outdir, with_isnet=False):
                     return {r_ for n_ in zz_.namelist() for r_ in n_.split("/")[:2]}   # CompChem/<Verbindung>/…
             code_q = "QZ-9-901"                                              # erfundenes Laborkürzel
             prev_q = w.project_dir                                            # spätere Abschnitte erwarten die Verbindung
-            dp_q = Path(w.open_demo_publication(out / "a2q_pub"))
+            dp_q = Path(demo_pub(w, out / "a2q_pub"))
             pump_q(0.5)
             dirs_q = PUB_q.sync(dp_q)[0]
             dx_q = next(d_ for d_ in dirs_q if list((d_ / "data").rglob("*.out")))   # mit DFT: wird abgewählt
@@ -19527,7 +19610,7 @@ def selftest(outdir, with_isnet=False):
                 bx_ = [F._measure_af(F.ann_items[k_].get_window_extent(F._renderer())) for k_ in
                        sorted(keys, key=lambda k_: (F.ann_items[k_].xy[0] - x0_) / (x1_ - x0_))]
                 return all(a_[0] + a_[2] / 2 < b_[0] + b_[2] / 2 for a_, b_ in zip(bx_, bx_[1:]))
-            dp_l130 = Path(w.open_demo_publication(out / "l130_pub"))
+            dp_l130 = Path(demo_pub(w, out / "l130_pub"))
             pump(0.5)
             assert w.open_project(dp_l130 / "S3", ask=False, recent=False)
             # 1) SEC des Beispiels: 505/760 nm knapp über ihrem Maximum, 372 nm (oben kein Platz) wie bisher
@@ -20261,6 +20344,9 @@ def selftest(outdir, with_isnet=False):
     ok = ok and not section.failed
     report[2:2] = section.summary()
     (out / "selftest_report.txt").write_text("\n".join(report), encoding="utf-8")
+    if demo_pub.calls:                     # Beispielpublikation: je Aufruf gebaut oder kopiert, Sekunden
+        (out / "demo_pub.tsv").write_text("line\thow\tseconds\n" + "".join(
+            f"{ln}\t{how}\t{dt:.1f}\n" for ln, how, dt in demo_pub.calls), encoding="utf-8")
     try:                                   # Windows-Konsole (cp1252) kann z. B. kein λ: ersetzen statt abstürzen
         sys.stdout.reconfigure(errors="replace")
     except Exception:
