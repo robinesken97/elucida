@@ -154,14 +154,14 @@ class _Section:
     def __enter__(self):
         f = sys._getframe(1)
         self.t0, self.line, self.file, self.n0 = time.perf_counter(), f.f_lineno, f.f_code.co_filename, len(self.report)
-        if self.echo and sys.stderr is not None:             # hängt ein Abschnitt: alle Stacks ins CI-Log, alle 10 min
-            import faulthandler                              # (gebaute Windows-App ohne Konsole: kein stderr)
+        if self.echo and sys.stderr is not None and sys.platform != "win32":   # hängt ein Abschnitt: alle Stacks ins
+            import faulthandler      # CI-Log alle 10 min; nicht Windows (Stack-Ausgabe beim Zeichnen: access violation)
             faulthandler.dump_traceback_later(600, repeat=True)
         return self
 
     def __exit__(self, kind, ex, tb):
         dt = time.perf_counter() - self.t0
-        if self.echo and sys.stderr is not None:
+        if self.echo and sys.stderr is not None and sys.platform != "win32":
             import faulthandler
             faulthandler.cancel_dump_traceback_later()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
@@ -2325,36 +2325,78 @@ def selftest(outdir, with_isnet=False):
             assert not wd_.isHidden() and len(wd_.text()) < 60 and T("cv_D_apparent_warn", couple="2",
                                                                        rates="50, 100, 200, 500")[2:] in wd_.toolTip(), wd_.toolTip()
             assert any(t_cv.tbl_res.item(i_, 0).text() == "Fc run · 200 mV s-1" for i_ in range(t_cv.tbl_res.rowCount()))
-            if sys.platform != "win32":                       # Schriftmasse: Windows nur ueber CI-Bilder
-                key0_, size0_ = w._tab_key, w.size()          # danach wie vorher (spaetere Abschnitte erwarten ihren Tab)
-                w.resize(1200, 900)
-                w.show()
-                w.show_tab("cv")
-                rt_ = t_cv.right_tabs
-                rt_.setCurrentIndex(next(k_ for k_ in range(rt_.count()) if rt_.widget(k_).isAncestorOf(t_cv.tbl_res)))
-                pump(0.4)
-                for lang_ in ("en", "de"):
-                    w.switch_lang(lang_)
-                    t_cv = w.cv_tab
+            key0_, size0_, lang0_ = w._tab_key, w.size(), get_lang()   # danach wie vorher, auch nach einem Fehler
+            try:                                              # (spaetere Abschnitte erwarten Tab, Sprache, leeren CV-Tab)
+                if sys.platform != "win32":                   # Schriftmasse: Windows nur ueber CI-Bilder
+                    w.resize(1200, 900)
+                    w.show()
+                    w.show_tab("cv")
                     rt_ = t_cv.right_tabs
                     rt_.setCurrentIndex(next(k_ for k_ in range(rt_.count()) if rt_.widget(k_).isAncestorOf(t_cv.tbl_res)))
-                    t_cv.render()
                     pump(0.4)
-                    for tb_ in (t_cv.tbl_res, t_cv.tbl_fit, t_cv.tbl_dk):   # nie quer, nie eine halbe Zeile (Seite rollt)
-                        assert tb_.isVisible() and tb_.horizontalScrollBar().maximum() == 0 \
-                            and tb_.verticalScrollBar().maximum() == 0, \
-                            (lang_, tb_.horizontalScrollBar().maximum(), tb_.viewport().width())
-                w.hide()
-                w.resize(size0_)
-                w.show_tab(key0_)
-            st_cv.clear()
-            st_cv.update(keep_rc)
-            w.replace_tab("cv")
-            t_cv = w.cv_tab
-            t_cv.fill_table()
-            t_cv.sync_ref_controls()
-            t_cv.render()                                      # leerer Tab zeigt wieder die Anleitung
+                    for lang_ in ("en", "de"):
+                        w.switch_lang(lang_)
+                        t_cv = w.cv_tab
+                        rt_ = t_cv.right_tabs
+                        rt_.setCurrentIndex(next(k_ for k_ in range(rt_.count())
+                                                 if rt_.widget(k_).isAncestorOf(t_cv.tbl_res)))
+                        t_cv.render()
+                        pump(0.4)
+                        for tb_ in (t_cv.tbl_res, t_cv.tbl_fit, t_cv.tbl_dk):   # nie quer, nie eine halbe Zeile
+                            assert tb_.isVisible() and tb_.horizontalScrollBar().maximum() == 0 \
+                                and tb_.verticalScrollBar().maximum() == 0, \
+                                (lang_, tb_.horizontalScrollBar().maximum(), tb_.viewport().width())
+            finally:
+                if sys.platform != "win32":
+                    w.hide()
+                    w.resize(size0_)
+                    if get_lang() != lang0_:
+                        w.switch_lang(lang0_)
+                    w.show_tab(key0_)
+                st_cv.clear()
+                st_cv.update(keep_rc)
+                w.replace_tab("cv")
+                t_cv = w.cv_tab
+                t_cv.fill_table()
+                t_cv.sync_ref_controls()
+                t_cv.render()                                  # leerer Tab zeigt wieder die Anleitung
             report.append("CV reference by click, Fc marker, separate-run dEp, result page at 1200 px: OK")
+
+        with section:
+            # FitGrid ueber alle Breiten 300..800 px (schriftunabhaengig): Spalten fuellen den Viewport genau (kein 1 px zu
+            # viel, keine Luecke) oder die Tabelle rollt; vor dem Querrollen erst weniger Luft in den Zellen (Linux-CI:
+            # DejaVu Sans, CV-Ergebnisse bei 1200 px rollten quer). Kurze Koepfe: jede Spalte richtet sich nach den Zellen
+            from PySide6.QtWidgets import QTableWidgetItem
+            host_ = QWidget()
+            host_.resize(900, 300)
+            host_.show()
+            fg_ = STYLE.FitGrid(2, 5)
+            fg_.setParent(host_)
+            fg_.setHorizontalHeaderLabels(["one", "two", "three", "four", "five"])   # ohne Formelzeichen (kein RichHeader)
+            fg_.setItemDelegate(STYLE._CellDelegate(fg_))     # wie STYLE.tidy
+            fg_.horizontalHeader().setMinimumSectionSize(44)
+            fg_.setFixedHeight(200)                           # nie eine senkrechte Laufleiste (Viewport bleibt vw_)
+            fg_.verticalHeader().setVisible(False)
+            for r_ in range(2):
+                for c_ in range(5):
+                    fg_.setItem(r_, c_, QTableWidgetItem(f"-{c_ + 1}{r_}.456 ± 0.0{c_}9"))
+            fg_.show()
+            hh_ = fg_.horizontalHeader()
+            need_ = sum(max(hh_.sectionSizeHint(c_), fg_.sizeHintForColumn(c_)) for c_ in range(5))
+            tight_ = need_ - 5 * (STYLE._CellDelegate.PAD - 2)
+            assert all(fg_.sizeHintForColumn(c_) - STYLE._CellDelegate.PAD > hh_.sectionSizeHint(c_) for c_ in range(5))
+            for vw_ in range(300, 801):
+                fg_.setFixedWidth(vw_ + 2 * fg_.frameWidth())
+                QApplication.processEvents()
+                fg_.fit()
+                QApplication.processEvents()
+                sum_ = sum(hh_.sectionSize(c_) for c_ in range(5))
+                hmax_ = fg_.horizontalScrollBar().maximum()
+                assert fg_.viewport().width() == vw_, (vw_, fg_.viewport().width())
+                assert (hmax_ == 0 and sum_ == vw_) or (hmax_ > 0 and sum_ > vw_), (vw_, sum_, hmax_, need_, tight_)
+                assert (hmax_ == 0) == (vw_ >= tight_), (vw_, sum_, hmax_, need_, tight_)
+            host_.deleteLater()
+            report.append(f"FitGrid fills 300..800 px exactly, less padding before scrolling ({tight_}..{need_} px): OK")
 
         with section:
             # CV, Angaben der Richtlinien (ACS/Angew.): Start, Richtung, iR-Kompensation aus der Datei; Elektroden,

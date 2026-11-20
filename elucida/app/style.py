@@ -378,7 +378,8 @@ ELIDE_MIN_W = 90                       # schmalste Namensspalte, bevor eine FitG
 class FitGrid(QTableWidget):
     """Ergebnistabelle über die ganze Seite, nie abgeschnitten: gleich breite Spalten, solange die breiteste hineinpasst;
     sonst Breiten nach Inhalt, der freie Platz gleichmäßig verteilt; sonst kürzt die Namensspalte `elide_col` (falls
-    gesetzt, Tooltip mit dem vollen Text); passt auch das nicht, nach Inhalt mit Bildlaufleiste."""
+    gesetzt, Tooltip mit dem vollen Text); dann beides mit weniger Luft in den Zellen; passt auch das nicht, nach
+    Inhalt mit Bildlaufleiste."""
     elide_col = None
 
     def fit(self):
@@ -394,20 +395,33 @@ class FitGrid(QTableWidget):
         width, total = self.viewport().width() - CHECK_COL_W * (len(shown) - len(cols)), sum(need.values())
         if max(need.values()) * len(cols) <= width:
             hh.setSectionResizeMode(QHeaderView.Stretch)
-        elif total <= width:
-            hh.setSectionResizeMode(QHeaderView.Fixed)
-            extra, rest = divmod(width - total, len(cols))
-            for k, i in enumerate(cols):
-                hh.resizeSection(i, need[i] + extra + (k < rest))
-        elif self.elide_col in cols and total - need[self.elide_col] + ELIDE_MIN_W <= width:
-            # Namensspalte (Eigenschaft `elide_col`) gibt nach: gekürzt mit „…“, voller Name im Tooltip der Zelle,
-            # statt die ganze Tabelle quer rollen zu lassen (Zahlen werden nie gekürzt)
-            hh.setSectionResizeMode(QHeaderView.Fixed)
-            for i in cols:
-                hh.resizeSection(i, need[i] if i != self.elide_col else width - (total - need[i]))
-            total = width
         else:
-            hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+            # Passt es mit voller Luft nicht (auch nicht mit gekürztem Namen), dann mit weniger Luft in den Zellen, bevor
+            # die Tabelle quer rollt: unter Linux (DejaVu Sans, breiter) rollten die CV-Ergebnisse bei 1200 px sonst quer.
+            # Kopf und Zellen mit Widget (Farbfeld) werden nie enger; je Seite bleiben 7 px (RichDelegate schneidet bei 6).
+            def tight(i):
+                d = self.itemDelegateForColumn(i) or self.itemDelegate()
+                if not isinstance(d, _CellDelegate) or any(self.cellWidget(r, i) for r in range(self.rowCount())):
+                    return need[i]
+                return max(hh.sectionSizeHint(i), self.sizeHintForColumn(i) - (_CellDelegate.PAD - 2))
+            for nd in (need, {i: tight(i) for i in cols}):
+                total = sum(nd.values())
+                if total <= width:
+                    hh.setSectionResizeMode(QHeaderView.Fixed)
+                    extra, rest = divmod(width - total, len(cols))
+                    for k, i in enumerate(cols):
+                        hh.resizeSection(i, nd[i] + extra + (k < rest))
+                    break
+                if self.elide_col in cols and total - nd[self.elide_col] + ELIDE_MIN_W <= width:
+                    # Namensspalte (Eigenschaft `elide_col`) gibt nach: gekürzt mit „…“, voller Name im Tooltip der
+                    # Zelle, statt die ganze Tabelle quer rollen zu lassen (Zahlen werden nie gekürzt)
+                    hh.setSectionResizeMode(QHeaderView.Fixed)
+                    for i in cols:
+                        hh.resizeSection(i, nd[i] if i != self.elide_col else width - (total - nd[i]))
+                    total = width
+                    break
+            else:
+                hh.setSectionResizeMode(QHeaderView.ResizeToContents)
         if len(cols) < len(shown):
             check_columns(self)
         rows_h = getattr(self, "_rows_h", None)            # summary_grid: so hoch wie die Zeilen, dazu die Laufleiste,
