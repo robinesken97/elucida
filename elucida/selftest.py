@@ -241,7 +241,7 @@ class _DemoPub:
     SKIP_GROUPS = ("datapack/", "fold/", "step/", "welcome/")
 
     def __init__(self, out):
-        self.out, self.masters, self.calls = out, {}, []
+        self.out, self.masters, self.calls, self.last_key = out, {}, [], None
         self.check = os.environ.get("ELUCIDA_SELFTEST_DEMO_CHECK") == "1"
 
     def key(self, w):
@@ -281,12 +281,18 @@ class _DemoPub:
                 diff = sorted(k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k))
                 with open(self.out / "demo_check.txt", "a", encoding="utf-8") as fh:
                     fh.write(f"{line}\t{len(diff)}\t{' '.join(diff[:20])}\n")
+            why = "own" if own else "check" if master is not None else ""
             if master is None:                             # Vorlage sofort, bevor der Abschnitt etwas ändert
                 if snap.exists():
                     shutil.rmtree(snap)
                 shutil.copytree(d, snap, copy_function=shutil.copy2)
+                if self.masters:                           # was anders ist als bei der vorigen Vorlage
+                    a_, b_ = dict(json.loads(self.last_key)[1]), dict(json.loads(key)[1])
+                    lang_ = [] if json.loads(self.last_key)[0] == json.loads(key)[0] else ["lang"]
+                    why = "new key: " + ", ".join(lang_ + sorted(k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k)))
                 self.masters[key] = (snap, time.time())
-            self.calls.append((line, "built", time.perf_counter() - t0))
+                self.last_key = key
+            self.calls.append((line, "built", time.perf_counter() - t0, why))
             return d
         if not w.maybe_save():
             return False
@@ -303,7 +309,7 @@ class _DemoPub:
         if not w.open_publication(folder):
             return False
         w.statusBar().showMessage(T("demo_pub_done", p=str(folder)), 10000)
-        self.calls.append((line, "copied", time.perf_counter() - t0))
+        self.calls.append((line, "copied", time.perf_counter() - t0, ""))
         return folder
 
 
@@ -20345,8 +20351,8 @@ def selftest(outdir, with_isnet=False):
     report[2:2] = section.summary()
     (out / "selftest_report.txt").write_text("\n".join(report), encoding="utf-8")
     if demo_pub.calls:                     # Beispielpublikation: je Aufruf gebaut oder kopiert, Sekunden
-        (out / "demo_pub.tsv").write_text("line\thow\tseconds\n" + "".join(
-            f"{ln}\t{how}\t{dt:.1f}\n" for ln, how, dt in demo_pub.calls), encoding="utf-8")
+        (out / "demo_pub.tsv").write_text("line\thow\tseconds\twhy\n" + "".join(
+            f"{ln}\t{how}\t{dt:.1f}\t{why}\n" for ln, how, dt, why in demo_pub.calls), encoding="utf-8")
     try:                                   # Windows-Konsole (cp1252) kann z. B. kein λ: ersetzen statt abstürzen
         sys.stdout.reconfigure(errors="replace")
     except Exception:
