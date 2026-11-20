@@ -16633,7 +16633,8 @@ def selftest(outdir, with_isnet=False):
             pump_a1(0.5)
             assert w.open_project(dp_a1 / "S3", ask=False, recent=False)
             pump_a1(0.5)
-            src_a1 = next((dp_a1 / "S3").glob("data/uvvis-kinetics/*.csv"))
+            # eine bestimmte Stabilitätsdatei (zwei Proben): glob liefert unsortiert, die Titrationsdatei hat mehr Proben
+            src_a1 = sorted((dp_a1 / "S3").glob("data/uvvis-kinetics/*_stability_day*.csv"))[0]
             ls_a1 = src_a1.read_text(encoding="utf-8").splitlines(True)
             ls_a1[0] = "S3_t0,,S3_t1,,\n"                                  # Probennamen ohne Konzentration
             kin_a1 = out / "a1_kinetics.csv"
