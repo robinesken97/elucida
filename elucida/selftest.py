@@ -1868,13 +1868,15 @@ def selftest(outdir, with_isnet=False):
             cfg_, curves_, labels_, _ = spec_
             offs_ = [c_.get("off", 0) for c_ in curves_]
             assert offs_ == sorted(offs_, reverse=True) and offs_[0] > 0 == offs_[-1] and cfg_["y_axis"] == "no_numbers"
-            assert len(labels_) == 5 and all(l_.get("y") is not None and "1/2" in l_["text"] for l_ in labels_), labels_
+            e12_ = [l_ for l_ in labels_ if not l_["key"].startswith("label_ref_")]   # Sterne am Fc: eigener Abschnitt
+            assert len(e12_) == 5 and all(l_.get("y") is not None and "1/2" in l_["text"] for l_ in e12_), labels_
             t_cv.render()
             assert all(getattr(a_, "_anchor_y", None) is not None for k_, a_ in t_cv.F.ann_items.items() if k_ != "arrow_scan")
             # Peakpotentiale an einzelnen Peaks, y-Achse aus, Struktur je Messung (in Kurvenfarbe)
             st_cv.update(peak_labels="both", y_axis="off")
             st_cv["files"][0].update(structure=str(cdxml), struct_color=True)
             cfg_, curves_, labels_, _ = t_cv.figure_spec()
+            labels_ = [l_ for l_ in labels_ if not l_["key"].startswith("label_ref_")]   # Sterne am Fc: eigener Abschnitt
             assert len(labels_) == 10 and {l_["side"] for l_ in labels_} == {"above", "below"}, len(labels_)
             assert cfg_["y_axis"] == "off" and [i_["id"] for i_ in cfg_["images"]] == ["struktur_cv0"], cfg_["images"]
             t_cv.render()
@@ -1890,12 +1892,15 @@ def selftest(outdir, with_isnet=False):
             assert st_cv["bl_gap"] == CVMOD.BL_GAP == 0.20 and CVMOD.BL_GAP_MIN == 0.15
             sh_ = [r_ for r_ in t_cv.results if r_.get("bl_short")]
             assert all(r_["bl"] is not None and not r_["bl_fail"] for r_ in sh_)
-            assert (T("cv_bl_short", n=len(sh_), gap="0.15") in t_cv.lbl_warn.text()) == bool(sh_), t_cv.lbl_warn.text()
+            wl_ = t_cv.warn_lbls["bl_short"]                  # Warnung kurz, Einzelheiten im Tooltip
+            assert (T("cv_bl_short", n=len(sh_), gap="0.15").lstrip("⚠ ") in wl_.toolTip()) == bool(sh_) == \
+                (not wl_.isHidden()), wl_.toolTip()
             t_cv.render()
             assert len(t_cv.hover.curves) == len(curves_) - len(aux_), (len(t_cv.hover.curves), len(curves_))
             st_cv["show_bl"] = False
             st_cv.update(stack=False, e12_each=False)          # E½ ohne Stapeln: je Gruppe, nie über Gruppen gemittelt
             _, _, labels_, _ = t_cv.figure_spec()
+            labels_ = [l_ for l_ in labels_ if not l_["key"].startswith("label_ref_")]
             assert sorted(l_["text"].split(" =")[0] for l_ in labels_) == ["E$_{1/2}$ (A)", "E$_{1/2}$ (B)"], labels_
             assert {round(l_["lam"], 2) for l_ in labels_} == {-1.08, -1.18}, labels_
             st_cv.update(stack=True, e12_each=True)
@@ -1921,22 +1926,23 @@ def selftest(outdir, with_isnet=False):
                     fits_ = t_cv.rate_fits()
                     assert list(fits_) == [("A", 1)] and abs(fits_[("A", 1)]["ll_a"]["slope"] - 0.5) < 0.05, fits_
                     tf_ = t_cv.tbl_fit                          # Scanraten-Analyse als Tabelle: i_pa und i_pc je Paar
-                    d_cells_ = lambda: [tf_.item(r_, 7).text() for r_ in range(tf_.rowCount())]   # noqa: E731
+                    dk_ = t_cv.tbl_dk                           # D und k0 je Paar: eigene Tabelle
+                    d_cells_ = lambda: [dk_.item(r_, 1).text() for r_ in range(dk_.rowCount())]   # noqa: E731
                     assert tf_.rowCount() == 2 and [tf_.item(r_, 1).text() for r_ in range(2)] == ["i_pa", "i_pc"]
                     assert all(" ± " in tf_.item(r_, c_).text() for r_ in range(2) for c_ in (3, 4, 6)) and not tf_.isHidden()
                     # Diffusionskoeffizient aus der Randles-Sevcik-Steigung: erst mit Flaeche und Konzentration
                     m_ = 0.4463 * 96485.33212 * 0.0707 * 1e-6 * np.sqrt(96485.33212 * 1e-5 / (8.314462618 * 298.15))
                     assert abs(CVMOD.diffusion_coefficient(m_, 1, 0.0707, 1.0, 25.0) / 1e-5 - 1) < 1e-9
                     assert CVMOD.diffusion_coefficient(m_, 1, 0.0, 1.0) is None and CVMOD.diffusion_coefficient(m_, 1, 0.07, 0.0) is None
-                    assert tf_.isColumnHidden(7) and not any(d_cells_()) and "Diffusion coefficients" not in t_cv.methods_text()
+                    assert dk_.isHidden() and not d_cells_() and "Diffusion coefficients" not in t_cv.methods_text()
                     st_cv.update(rs_area=0.0707, rs_conc=1.0, rs_n=1, rs_temp=25.0)
                     t_cv.render()
                     D_ = t_cv.diffusion(fits_[("A", 1)])          # nur aus dem Hinpeak, nie aus dem Rueckpeak
                     fw_ = fits_[("A", 1)]["fwd"]
                     assert D_ and D_[1] < D_[0] < D_[2] and D_[3] == fw_ and fw_ in ("a", "c"), (D_, fw_)
                     assert abs(D_[0] / CVMOD.diffusion_coefficient(fits_[("A", 1)]["rs_" + fw_]["slope"] * 1e-6, 1, 0.0707, 1.0) - 1) < 1e-12
-                    assert sum(bool(x_) for x_ in d_cells_()) == 1 and not tf_.isColumnHidden(7), d_cells_()
-                    assert d_cells_()[("a", "c").index(fw_)].startswith(f"{D_[0]:.2e}".split("e")[0] + " ("), d_cells_()
+                    assert len(d_cells_()) == 1 and not dk_.isHidden() and tf_.columnCount() == 7, d_cells_()
+                    assert d_cells_()[0].startswith(f"{D_[0]:.2e}".split("e")[0] + " ("), d_cells_()
                     mt_ = t_cv.methods_text()
                     assert "Diffusion coefficients" in mt_ and "A = 0.0707 cm2" in mt_ \
                         and f"cm2 s-1 from ip{fw_}" in mt_ and "forward peak" in mt_, mt_
@@ -2033,12 +2039,13 @@ def selftest(outdir, with_isnet=False):
                 t_cv.figure_spec()                                   # rechnet Ergebnisse und Tabellen
                 D_ = t_cv.diffusion(t_cv.rate_fits()[key_])
                 bad_ = t_cv.d_check(t_cv.rate_series(currents=True)[key_])
-                d_txt_ = next(tf_.item(r_, 7).text() for r_ in range(tf_.rowCount()) if tf_.item(r_, 7).text())
+                d_txt_ = t_cv.tbl_dk.item(0, 3).text()                 # Bewertung je Paar
                 if k_ == "rev":
-                    assert abs(D_[0] / 1e-5 - 1) < 0.06 and not bad_ and T("cv_apparent") not in d_txt_, (D_, bad_)
+                    assert abs(D_[0] / 1e-5 - 1) < 0.06 and not bad_ and T("cv_dk_D_ok") in d_txt_, (D_, bad_, d_txt_)
                     assert set(t_cv.k0_info(key_, t_cv.rate_fits()[key_])["skip"].values()) == {"rev"}
                 else:
-                    assert bad_ == [50.0, 100.0, 200.0, 500.0] and d_txt_.endswith(T("cv_apparent")), (bad_, d_txt_)
+                    assert bad_ == [50.0, 100.0, 200.0, 500.0] and T("cv_dk_D_app") in d_txt_, (bad_, d_txt_)
+                    assert "500" in t_cv.tbl_dk.item(0, 3).toolTip() and not t_cv.warn_lbls["D"].isHidden()
                     assert "apparent D" in t_cv.methods_text() and "not reversible" in t_cv.methods_text()
             st_cv["k0_D"] = 1e-5                                       # eingetragenes D: k0 aus dEp je Scanrate
             t_cv.fill_table()
@@ -2046,9 +2053,9 @@ def selftest(outdir, with_isnet=False):
             k0_ = t_cv.k0_info(key_, t_cv.rate_fits()[key_])
             assert k0_["D_src"] == "entered" and not k0_["apparent"] and len(k0_["vals"]) == 4, k0_
             assert all(h_ == "lav" and 0.8 < k_ / 0.01 < 1.2 for _, k_, h_ in k0_["vals"]), k0_["vals"]
-            assert any(" × 10^−2" in tf_.item(r_, 8).text() for r_ in range(tf_.rowCount())) and not tf_.isColumnHidden(8)
+            assert " × 10^−2" in t_cv.tbl_dk.item(0, 2).text() and T("cv_dk_k0_ok") in t_cv.tbl_dk.item(0, 3).text()
             kp_ = t_cv.kpis()                                          # Kachel = erste gueltige Zeile der Tabelle
-            assert kp_[1][1] == t_cv.tbl_res.item(0, 6).text() + " mV" and t_cv.tbl_res.item(0, 1).text() == "50", kp_
+            assert kp_[1][1] == t_cv.tbl_res.item(0, 5).text() + " mV" and t_cv.tbl_res.item(0, 0).text() == "50 mV s-1", kp_
             mt_ = t_cv.methods_text()
             assert "Lavagnini" in mt_ and "Nicholson" in mt_ and "DO = DR" in mt_ and "Klingler" not in mt_, mt_
             files_ = t_cv.export_to(out / "cv_k0")
@@ -2081,7 +2088,7 @@ def selftest(outdir, with_isnet=False):
             k0_ = t_cv.k0_info(key_, t_cv.rate_fits()[key_])
             assert all(h_ == "kk" and 0.88 < k_ / 0.001 < 1.12 for _, k_, h_ in k0_["vals"]) and len(k0_["vals"]) == 3, k0_
             assert k0_["apparent"] == ["ir"], k0_["apparent"]
-            assert any(tf_.item(r_, 8).text().endswith(T("cv_apparent")) for r_ in range(tf_.rowCount()))
+            assert T("cv_dk_k0_app") in t_cv.tbl_dk.item(0, 3).text() and not t_cv.warn_lbls["k0"].isHidden()
             mt_ = t_cv.methods_text()
             assert "Klingler" in mt_ and "α = 0.5" in mt_ and "apparent k0" in mt_ and "without iR" in mt_, mt_
             # Kachel: erste gueltige Zeile, auch wenn die erste Zeile ungueltig ist (zwei Wellen im ersten Fenster)
@@ -2126,6 +2133,174 @@ def selftest(outdir, with_isnet=False):
             st_cv.update(files=[], couples=[], **keep_k0)
             t_cv.fill_table()
             report.append("CV two waves, D check, k0, CSV, .DTA drop: OK")
+
+        with section:
+            # CV 1.3.1, Entscheidungen 167/171: Zwei-Wellen-Pruefung nur fuer echte Wellen (gleiche Prominenz wie der
+            # Vorschlag), Referenz per Klick (Fc-Spalte, Einrasten auf die Peaks, ein Rueckgaengig-Schritt, Esc),
+            # Stern + Unterschrift, D-Schwelle mit Fc in eigener Messung nur bei gleicher Scanrate, Ergebnisseite bei
+            # 1200 px ohne Querrollen. Kurven simuliert (bv_cv aus dem Abschnitt davor), keine Messdaten
+            t_cv = w.cv_tab
+            # alte +-0.25-V-Fenster (Vorschlag bis 1.3.0): ein kleiner Buckel (unter 3 % von max|I|) ist keine zweite Welle
+            E1_, I1_ = bv_cv(0.1, 1e3)
+            bump_ = 0.015 * I1_.max() * np.exp(-((E1_ - 0.15) / 0.02) ** 2)
+            r_ = CVMOD.analyze_couple(E1_, I1_ + bump_, -0.25, 0.25)
+            assert not r_["two_waves"] and not r_["invalid"], r_
+            rf_ = {}
+            for v_ in (50, 100, 200, 500):                    # Paar 1 reversibel, Paar 2 quasireversibel
+                E_, Ia_ = bv_cv(v_ / 1000, 1e3, E0=-0.35, Ei=-0.8, Es=0.9, dE=0.002)
+                Ib_ = bv_cv(v_ / 1000, 0.01, E0=0.25, Ei=-0.8, Es=0.9, dE=0.002)[1]
+                # Rauschen wie echte Messungen: ohne werden die 95-%-Intervalle winzig und die Zahlen sehr lang
+                rf_[v_] = (E_, Ia_ + Ib_ + np.random.default_rng(v_).normal(0, 0.05, len(E_)))
+            Ifc_ = bv_cv(0.2, 1e3, E0=0.6, Ei=-0.8, Es=0.9, dE=0.002)[1]
+            fl_ = []
+            for v_, (E_, I_) in rf_.items():
+                p_ = cvdir / f"refclick_{v_}.DTA"
+                write_dta(p_, [(E_, I_)], v_)
+                fl_.append({"file": str(p_), "uid": f"rc{v_}", "visible": True, "color": "#000000", "label": f"{v_} mV s-1"})
+            p_ = cvdir / "refclick_fc.DTA"                    # Fc in eigener Messung bei 200 mV s-1
+            write_dta(p_, [(rf_[200][0], rf_[200][1] + Ifc_)], 200)
+            fl_.append({"file": str(p_), "uid": "rcfc", "visible": True, "color": "#000000", "label": "Fc run"})
+            keep_rc = json.loads(json.dumps(st_cv))           # Reste der Abschnitte davor (Zyklus 2 usw.): erst Vorgaben
+            st_cv.update(json.loads(json.dumps(CVMOD.CVTab.DEFAULT_STATE)))
+            # altes Projekt: eingetipptes Fenster gilt weiter
+            st_cv.update(files=fl_, couples=[[-0.6, -0.05], [-0.05, 0.42]], plot="cv", stack=False, baseline=True,
+                         ref_mode="internal", ref_uid="rcfc", ref_lo=0.45, ref_hi=0.75, ref_compound="fc", ref_value=0.0,
+                         rs_area=0.0707, rs_conc=1.0, k0_D=1e-5, k0_alpha=0.0, ref_marker=True)
+            w.replace_tab("cv")                                # Felder aus dem Zustand (collect liest sie zurueck)
+            t_cv = w.cv_tab
+            t_cv.fill_table()
+            t_cv.sync_ref_controls()
+            off_typed_ = t_cv.reference_offset()[0]
+            assert abs(off_typed_ - 0.6) < 0.005, off_typed_
+            col_ = [t_cv.table.item(i_, 5).checkState() == Qt.Checked for i_ in range(len(fl_))]
+            assert col_ == [False] * 4 + [True] and t_cv.table.horizontalHeaderItem(5).text() == "Fc", col_
+            t_cv.set_ref_run(fl_[-1], False)                   # Haekchen weg: keine Referenz; wieder an: interne
+            assert st_cv["ref_mode"] == "none" and t_cv.cmb_ref.currentData() == "none"
+            t_cv.set_ref_run(fl_[-1], True)
+            assert st_cv["ref_mode"] == "internal" and st_cv["ref_uid"] == "rcfc" and t_cv.cmb_ref.currentData() == "internal"
+            t_cv.timer.stop()
+            t_cv.render()
+
+            class Ev_rc:
+                def __init__(self, x_, y_):
+                    self.inaxes, self.button, self.xdata, self.ydata = t_cv.F.ax, 1, x_, y_
+
+            cfc_ = next(c_ for c_ in t_cv.F.curves if c_.get("uid") == "rcfc")
+            ymax_, ymin_ = float(cfc_["y"].max()), float(cfc_["y"].min())
+            # Achse ist schon verschoben (zweites Setzen): Klicks neben die Peaks, in Achsenkoordinaten
+            snap_a_ = t_cv.snap_ref_peak("rcfc", 0.06, 0.8 * ymax_)
+            snap_c_ = t_cv.snap_ref_peak("rcfc", -0.07, 0.6 * ymin_)
+            assert snap_a_[0] == "a" and snap_c_[0] == "c" and abs(snap_a_[1] - 0.629) < 0.006 \
+                and abs(snap_c_[1] - 0.571) < 0.006, (snap_a_, snap_c_)
+            assert t_cv.snap_ref_peak("rcfc", 0.3, 0.0) is None          # nur Flanke im Suchbereich: kein Peak
+            # Esc bricht ab, nichts aendert sich
+            snap_st_ = json.dumps(st_cv, sort_keys=True, default=str)
+            t_cv.btn_ref_pick.setChecked(True)
+            assert t_cv._pick == {"uid": "rcfc"} and t_cv._esc.isEnabled()
+            t_cv.ref_clicked(Ev_rc(0.06, 0.8 * ymax_))
+            assert "a" in t_cv._pick and json.dumps(st_cv, sort_keys=True, default=str) == snap_st_
+            t_cv._esc.activated.emit()
+            assert t_cv._pick is None and not t_cv.btn_ref_pick.isChecked() and not t_cv._esc.isEnabled()
+            assert json.dumps(st_cv, sort_keys=True, default=str) == snap_st_
+            # zwei Klicks: Fenster gespeichert wie eingetippt, E1/2 = Mittel der eingerasteten Peaks, ein Rueckgaengig-Schritt
+            snap0_ = w._undo[-1]
+            t_cv.btn_ref_pick.setChecked(True)
+            t_cv.ref_clicked(Ev_rc(-0.07, 0.6 * ymin_))
+            t_cv.ref_clicked(Ev_rc(0.06, 0.8 * ymax_))
+            assert t_cv._pick is None and not t_cv.btn_ref_pick.isChecked()
+            lo_, hi_ = st_cv["ref_lo"], st_cv["ref_hi"]
+            assert lo_ < snap_c_[1] < snap_a_[1] < hi_ and (lo_, hi_) == (t_cv.sp_ref_lo.value(), t_cv.sp_ref_hi.value())
+            t_cv.collect()                                     # Felder tragen dasselbe Fenster
+            assert (st_cv["ref_lo"], st_cv["ref_hi"]) == (lo_, hi_)
+            off_ = t_cv.reference_offset()[0]
+            assert abs(off_ - (snap_a_[1] + snap_c_[1]) / 2) < 1e-9, (off_, snap_a_, snap_c_)
+            t_cv.timer.stop()
+            t_cv.render()
+            assert w._undo[-2] == snap0_ != w._undo[-1]          # genau ein neuer Schritt
+            for c_ in (c_ for c_ in t_cv.F.curves if not c_.get("aux")):   # alle Kurven auf der Fc-Skala
+                e_ = next(x_ for x_ in fl_ if x_["uid"] == c_["uid"])
+                assert abs(c_["x"][0] - (t_cv.cycle_of(e_)["E"][0] - off_)) < 1e-12
+            # Stern am Fc-Oxidationspeak und Satz in der Unterschrift, nur wenn er im Bild steht
+            _, _, lab_rc, _ = t_cv.figure_spec()
+            star_ = [l_ for l_ in lab_rc if l_["key"] == "label_ref_rcfc"]
+            assert len(star_) == 1 and star_[0]["text"] == "*" and abs(star_[0]["lam"] - (snap_a_[1] - off_)) < 0.002, star_
+            assert t_cv.si_caption("X").endswith("; * Fc<sup>0/+</sup> (internal standard)."), t_cv.si_caption("X")
+            # Karte „Beschriftungen im Bild“: der Stern ist keine Zeile (an/aus nur ueber den Chip, sonst passte der Satz
+            # in der Unterschrift nicht zum Bild); andere Labels ausblenden/aendern und eigene Labels lassen ihn stehen
+            t_cv.render()
+            rows_ = [r_["key"] for r_ in t_cv.F.label_rows]
+            assert rows_ and not any(k_.startswith("label_ref_") for k_ in rows_), rows_
+            star_pos_ = lambda: [tuple(np.round(a_.xyann, 3)) for k_, a_ in t_cv.F.ann_items.items()   # noqa: E731
+                                 if k_.startswith("label_ref_") and a_.get_visible()]
+            p0_ = star_pos_()
+            assert len(p0_) == 1, p0_
+            for over_ in ({rows_[0]: {"hidden": True}}, {rows_[0]: {"text": "own text"}}):
+                t_cv.set_label_over(over_)
+                assert star_pos_() == p0_ and t_cv.si_caption("X").endswith("(internal standard)."), (over_, star_pos_())
+            t_cv.set_extra_labels([{"id": "own1", "text": "own label", "x": 0.05, "y": 0.92}])
+            assert "xlab_own1" in t_cv.F.ann_items and star_pos_() == p0_, star_pos_()
+            assert not any(k_.startswith("label_ref_") for k_ in (r_["key"] for r_ in t_cv.F.label_rows))
+            t_cv.set_extra_labels([])
+            t_cv.set_label_over({})
+            assert star_pos_() == p0_
+            for k_, v_ in (("ref_marker", False), ("plot", "dep")):
+                st_cv[k_] = v_
+                assert "internal standard)." not in t_cv.si_caption("X") and not t_cv.ref_marks()
+                st_cv.update(ref_marker=True, plot="cv")
+            fl_[-1]["visible"] = False                         # Referenzmessung ausgeblendet: kein Stern, kein Klickmodus
+            assert not t_cv.ref_marks()
+            t_cv.btn_ref_pick.setChecked(True)
+            assert t_cv._pick is None and not t_cv.btn_ref_pick.isChecked()
+            fl_[-1]["visible"] = True
+            # D-Schwelle: Fc in eigener Messung zaehlt nur bei gleicher Scanrate, sonst 2.22 RT/F + 10 mV
+            t_cv.figure_spec()
+            kinds_ = {(r_["uid"], r_["n"]): (r_["dep_ref_kind"], r_["dep_ref"]) for r_ in t_cv.results}
+            fc_dep_ = kinds_[("rc200", 1)][1]
+            assert kinds_[("rc200", 1)][0] == "separate" and abs(fc_dep_ - (snap_a_[1] - snap_c_[1])) < 1e-9, kinds_
+            assert kinds_[("rcfc", 1)][0] == "same", kinds_            # die Fc-Messung selbst: Standard in derselben Messung
+            assert kinds_[("rc50", 1)] == ("nomatch", None) and kinds_[("rc500", 2)] == ("nomatch", None), kinds_
+            mt_ = t_cv.methods_text()
+            assert "separate measurement at the same scan rate" in mt_ and "at 50, 100, 500 mV s-1 the reversible" in mt_, mt_
+            # Ergebnisseite: D und k0 als eigene Tabelle, Warnungen kurz (Einzelheiten im Tooltip), bei 1200 px nie quer
+            assert t_cv.tbl_dk.rowCount() == 2 and t_cv.tbl_fit.columnCount() == 7 and t_cv.tbl_res.columnCount() == 9
+            # Exponent hochgestellt, auch mit echtem Minus; winzige Intervalle kurz statt 8 Nachkommastellen
+            assert "10<sup>−5</sup>" in STYLE.sci("1.07 (0.47–1.92) × 10^−5") == STYLE.sci("1.07 (0.47–1.92) × 10^-5")
+            assert CVMOD.fmt_ci(59.508404, 0.00005) == "59.51 ± < 0.01" and CVMOD.fmt_ci(62.1, 5.2) == "62 ± 5"
+            assert CVMOD.fmt_ci(0.000079, 0.000022, ref=59.5) == "0.00 ± < 0.01" and CVMOD.fmt_ci(0.49999838, 1.6e-7) == "0.5000 ± < 0.0001"
+            wd_ = t_cv.warn_lbls["D"]
+            assert not wd_.isHidden() and len(wd_.text()) < 60 and T("cv_D_apparent_warn", couple="2",
+                                                                       rates="50, 100, 200, 500")[2:] in wd_.toolTip(), wd_.toolTip()
+            assert any(t_cv.tbl_res.item(i_, 0).text() == "Fc run · 200 mV s-1" for i_ in range(t_cv.tbl_res.rowCount()))
+            if sys.platform != "win32":                       # Schriftmasse: Windows nur ueber CI-Bilder
+                key0_, size0_ = w._tab_key, w.size()          # danach wie vorher (spaetere Abschnitte erwarten ihren Tab)
+                w.resize(1200, 900)
+                w.show()
+                w.show_tab("cv")
+                rt_ = t_cv.right_tabs
+                rt_.setCurrentIndex(next(k_ for k_ in range(rt_.count()) if rt_.widget(k_).isAncestorOf(t_cv.tbl_res)))
+                pump(0.4)
+                for lang_ in ("en", "de"):
+                    w.switch_lang(lang_)
+                    t_cv = w.cv_tab
+                    rt_ = t_cv.right_tabs
+                    rt_.setCurrentIndex(next(k_ for k_ in range(rt_.count()) if rt_.widget(k_).isAncestorOf(t_cv.tbl_res)))
+                    t_cv.render()
+                    pump(0.4)
+                    for tb_ in (t_cv.tbl_res, t_cv.tbl_fit, t_cv.tbl_dk):   # nie quer, nie eine halbe Zeile (Seite rollt)
+                        assert tb_.isVisible() and tb_.horizontalScrollBar().maximum() == 0 \
+                            and tb_.verticalScrollBar().maximum() == 0, \
+                            (lang_, tb_.horizontalScrollBar().maximum(), tb_.viewport().width())
+                w.hide()
+                w.resize(size0_)
+                w.show_tab(key0_)
+            st_cv.clear()
+            st_cv.update(keep_rc)
+            w.replace_tab("cv")
+            t_cv = w.cv_tab
+            t_cv.fill_table()
+            t_cv.sync_ref_controls()
+            t_cv.render()                                      # leerer Tab zeigt wieder die Anleitung
+            report.append("CV reference by click, Fc marker, separate-run dEp, result page at 1200 px: OK")
 
         with section:
             # CV, Angaben der Richtlinien (ACS/Angew.): Start, Richtung, iR-Kompensation aus der Datei; Elektroden,
@@ -2543,7 +2718,8 @@ def selftest(outdir, with_isnet=False):
                                        "value": 0.49}}])
             _, _, labels_, _ = t_cv.figure_spec()
             assert {r_["ref"] for r_ in t_cv.results} == {"Fc$^{0/+}$", st_cv["ref_electrode"]}, t_cv.results
-            assert not labels_ and "not averaged" in t_cv.methods_text(), (labels_, t_cv.methods_text())
+            assert not [l_ for l_ in labels_ if not l_["key"].startswith("label_ref_")] \
+                and "not averaged" in t_cv.methods_text(), (labels_, t_cv.methods_text())
             st_cv.update(files=[], couples=[], ref_mode="none", baseline=True)
             t_cv.fill_table()
             # SEC: Namen der Zwischenstufen nach Eingabeposition (weggefallene Einträge verschieben nichts)
@@ -12484,6 +12660,15 @@ def selftest(outdir, with_isnet=False):
             t35_.ensure_rendered()
             t35_.render()
             assert t35_.results, "Beispiel: CV mit Redoxpaar"
+            # Beispiel zeigt die neuen Teile (Entscheidung 175): Fc-Messung sichtbar mit Stern, Satz in der Unterschrift,
+            # D/k0-Tabelle (erfundene Flaeche und Konzentration); der Messrichtungspfeil beruehrt den Stern nicht
+            _, _, lab35_, _ = t35_.figure_spec()
+            assert [l_["key"] for l_ in lab35_ if l_["key"].startswith("label_ref_")] == ["label_ref_cvref"], lab35_
+            assert t35_.si_caption("S3").endswith("; * Fc<sup>0/+</sup> (internal standard)."), t35_.si_caption("S3")
+            assert t35_.tbl_dk.rowCount() == 1 and "10^" in t35_.tbl_dk.item(0, 1).text(), t35_.tbl_dk.rowCount()
+            rend35_ = t35_.F.fig.canvas.get_renderer()
+            assert not t35_.F.ann_items["label_ref_cvref"].get_window_extent(rend35_).overlaps(
+                t35_.F.ann_items["arrow_scan"].arrow_patch.get_window_extent(rend35_))
             ch35_ = t35_.chain()                                          # Rechenweg folgt den Einstellungen
             assert ch35_[0] == (T("chain_cycle", n=t35_.st["cycle"]), True) and t35_.chain_row.items == ch35_
             base35_ = t35_.st["baseline"]
@@ -12496,7 +12681,7 @@ def selftest(outdir, with_isnet=False):
             assert t35_.steps.pages[1].isAncestorOf(card35_) and STYLE.item_at(t35_.steps.pages[1].layout(), 0).widget() \
                 is card35_, "Rechenweg ist die erste Karte im Schritt Auswertung"
             k35_ = [lb_.text() for lb_ in t35_.kpi_box.labels if not lb_.isHidden()]   # Kacheln: E½ und ΔEp der Tabelle
-            assert len(k35_) == 2 and t35_.tbl_res.item(0, 5).text() in k35_[0] and t35_.tbl_res.item(0, 6).text() in k35_[1], k35_
+            assert len(k35_) == 2 and t35_.tbl_res.item(0, 4).text() in k35_[0] and t35_.tbl_res.item(0, 5).text() in k35_[1], k35_
             tb35_ = t35_.right_tabs.tabBar()
             y35_ = t35_.kpi_box.labels[0].mapTo(t35_.right_tabs, QPoint(0, 0)).y()
             assert abs(y35_ - (tb35_.tabRect(0).top() + 3)) <= 1 and t35_.kpi_box.labels[0].height() == 26, y35_
@@ -12639,7 +12824,9 @@ def selftest(outdir, with_isnet=False):
             for n_ in ("S2", "S3"):
                 assert CMP.snapshot_path(dcmp_ / n_).exists(), n_
             size_c_ = CMP.snapshot_path(dcmp_ / "S3").stat().st_size
-            assert size_c_ < 200_000, size_c_                 # ausgedünnte Kurven: Datei bleibt klein
+            # ausgedünnte Kurven: Datei bleibt klein (seit Entscheidung 175 vier sichtbare CV-Messungen statt drei: Fc-Messung
+            # im Beispiel sichtbar, ~222 kB)
+            assert size_c_ < 250_000, size_c_
             r3_ = CMP.read_compound(dcmp_ / "S3")
             assert set(r3_["tabs"]) == set(CMP.SOURCES) and not r3_["stale"] and not r3_["missing"], r3_
             w.open_project(dcmp_ / "S3")
@@ -13796,7 +13983,7 @@ def selftest(outdir, with_isnet=False):
             t_cv_r2.ensure_rendered()
             e12_r2 = CV_r2._fmt_e(t_cv_r2.results[0]["e12"], 2)
             assert re.fullmatch(r"[+−]?\d\.\d{2}", e12_r2) and t_cv_r2.kpis()[0][1] == e12_r2 + " V", t_cv_r2.kpis()
-            assert t_cv_r2.tbl_res.item(0, 5).text() == e12_r2, t_cv_r2.tbl_res.item(0, 5).text()
+            assert t_cv_r2.tbl_res.item(0, 4).text() == e12_r2, t_cv_r2.tbl_res.item(0, 4).text()
             spec_cv_r2 = t_cv_r2.figure_spec()
             labs_cv_r2 = [l_["text"] for l_ in spec_cv_r2[2] if "1/2" in l_["text"]]
             assert labs_cv_r2 and all(re.search(r"[+−]\d\.\d{2}( V)?$", l_) for l_ in labs_cv_r2), labs_cv_r2

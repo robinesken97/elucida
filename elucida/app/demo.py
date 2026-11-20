@@ -1179,12 +1179,14 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     write_dta(ref, cyc, 200, cycle_col=True, times=t, ircomp=False)
     w.cv_state["files"] = [{"file": str(p), "uid": f"cv{i}", "visible": True, "color": "#000000",
                             "label": f"{r} mV s-1"} for i, (p, r) in enumerate(files)]
-    w.cv_state["files"].append({"file": str(ref), "uid": "cvref", "visible": False, "color": "#000000",
-                                "label": "Fc"})
+    w.cv_state["files"].append({"file": str(ref), "uid": "cvref", "visible": True, "color": "#000000",
+                                "label": "Fc"})                   # sichtbar: Stern am Standard (Referenz per Klick)
     w.cv_state.update(couples=[[E_OX - 0.2, E_OX + 0.2]], ref_mode="internal", ref_uid="cvref", ref_lo=E_FC - 0.2,
                       ref_hi=E_FC + 0.2, ref_compound="fc", ref_value=0.0, cycle=2, cap_conc="1 mM",
+                      # erfunden, passend zu nFAc√D = 21.7 µA s^½ (3-mm-Scheibe, 1 mM, D = 1·10⁻⁵): D und k⁰ je Paar
+                      rs_area=0.0707, rs_conc=1.0,
                       cap_solvent="CH2Cl2", cap_el="0.1 M n-Bu4NPF6",
-                      # Messaufbau (erfunden); Politur und Fläche fehlen: die Karte zeigt, was für die Richtlinie fehlt
+                      # Messaufbau (erfunden); die Politur fehlt: die Karte zeigt, was für die Richtlinie fehlt
                       acs_we="glassy carbon (3 mm)", acs_ce="Pt wire", acs_gas="argon",
                       acs_device="Example Instruments P-100 potentiostat")
     # SEC: dieselbe Oxidation in der Dünnschichtzelle, Potentiale über die Referenz des CV-Tabs

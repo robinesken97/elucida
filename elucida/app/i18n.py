@@ -2110,9 +2110,25 @@ TEXTS = {
                      "± = 95% interval"),
     "cv_fit_couple": ("Paar", "Couple"),
     "cv_fit_peak": ("Peak", "Peak"),
-    "cv_fit_n": ("Scanraten", "Scan rates"),
+    "cv_fit_n": ("Anzahl der Messungen in der Regression", "Number of measurements in the regression"),
+    "cv_dk_title": ("Diffusionskoeffizient und k⁰ je Paar", "Diffusion coefficient and k⁰ per couple"),
+    "cv_dk_status": ("Bewertung", "Assessment"),
+    "cv_dk_D_ok": ("D: Ergebnis", "D: result"),
+    "cv_dk_D_app": ("D: scheinbar", "D: apparent"),
+    "cv_dk_k0_ok": ("k⁰: Ergebnis", "k⁰: result"),
+    "cv_dk_k0_app": ("k⁰: scheinbar", "k⁰: apparent"),
+    "cv_dk_skip_rev": ("{n}× kein k⁰ (zu reversibel)", "{n}× no k⁰ (too reversible)"),
+    "cv_dk_skip_alpha": ("{n}× kein k⁰ (α fehlt)", "{n}× no k⁰ (α missing)"),
+    "cv_dk_falls": ("k⁰ fällt mit v", "k⁰ falls with v"),
+    "cv_w_bl_fail": ("Keine Basislinie bei {n} Zeile(n)", "No baseline in {n} row(s)"),
+    "cv_w_bl_short": ("Kurze Basislinie bei {n} Zeile(n): i_p etwas zu klein", "Short baseline in {n} row(s): i_p slightly too small"),
+    "cv_w_two_waves": ("Zwei Wellen im Fenster: {n} Zeile(n) nicht ausgewertet", "Two waves in the window: {n} row(s) not evaluated"),
+    "cv_w_D": ("D nur scheinbar bei {n} Paar(en)", "D only apparent for {n} couple(s)"),
+    "cv_w_k0": ("k⁰ nur scheinbar bei {n} Paar(en)", "k⁰ only apparent for {n} couple(s)"),
+    "cv_w_k0_falls": ("k⁰ fällt mit der Scanrate bei {n} Paar(en): iR-Abfall?", "k⁰ falls with scan rate for {n} couple(s): iR drop?"),
     "cv_fit_slope": ("Steigung [µA (V s⁻¹)^-½]", "Slope [µA (V s⁻¹)^-½]"),
-    "cv_fit_icpt": ("Achsenabschnitt [µA]", "Intercept [µA]"),
+    "cv_fit_icpt": ("Abschnitt [µA]", "Intercept [µA]"),
+    "cv_fit_icpt_tip": ("y-Achsenabschnitt der Regression (Strom bei v = 0)", "y intercept of the regression (current at v = 0)"),
     "cv_fit_ll": ("log-log-Steigung", "Log–log slope"),
     "cv_fit_D_tip": ("Diffusionskoeffizient aus der Randles–Ševčík-Steigung des Hinpeaks; in Klammern die 95-%-Grenzen "
                      "(nur aus der Unsicherheit der Steigung).",
@@ -2122,18 +2138,52 @@ TEXTS = {
                       "Nicholson-ψ nach Lavagnini (n·ΔE_p 66–160 mV), darüber Klingler–Kochi (nur mit α).",
                       "Heterogeneous rate constant k⁰ from ΔE_p, range over the scan rates (never ±): Nicholson ψ "
                       "after Lavagnini (n·ΔE_p 66–160 mV), above that Klingler–Kochi (only with α)."),
-    "cv_apparent": ("(scheinbar)", "(apparent)"),
     "cv_two_waves": ("⚠ zwei Wellen im Fenster", "⚠ two waves in the window"),
     "cv_two_waves_warn": ("⚠ {n} Zeile(n) mit zwei Wellen im Fenster: E_pa und E_pc kämen von verschiedenen Paaren – "
                           "nicht ausgewertet. Fenster je Paar enger setzen oder „Vorschlagen“.",
                           "⚠ {n} row(s) with two waves in the window: E_pa and E_pc would come from different couples – "
                           "not evaluated. Narrow the window of each couple or use “Suggest”."),
     "cv_D_apparent_warn": ("⚠ Paar {couple}: D nur scheinbar – bei {rates} mV s⁻¹ nicht reversibel (ΔE_p mehr als 10 mV "
-                           "über dem der Referenz derselben Messung bzw. über 2,22·RT/(nF)); langsamer Elektronentransfer "
-                           "oder iR-Abfall machen D zu klein.",
+                           "über dem der Referenz derselben Messung oder einer eigenen Messung mit gleicher Scanrate bzw. "
+                           "über 2,22·RT/(nF)); langsamer Elektronentransfer oder iR-Abfall machen D zu klein.",
                            "⚠ Couple {couple}: D is only apparent – not reversible at {rates} mV s⁻¹ (ΔE_p more than "
-                           "10 mV above that of the reference in the same measurement or above 2.22·RT/(nF)); slow "
-                           "electron transfer or iR drop make D too small."),
+                           "10 mV above that of the reference in the same measurement or in a separate measurement at the "
+                           "same scan rate, or above 2.22·RT/(nF)); slow electron transfer or iR drop make D too small."),
+    "cv_dk_ref_rate": ("Referenz in eigener Messung, andere Scanrate: bei {rates} mV s⁻¹ gilt 2,22·RT/(nF) + 10 mV.",
+                       "Reference in a separate run at another scan rate: at {rates} mV s⁻¹ the limit 2.22·RT/(nF) + "
+                       "10 mV applies."),
+    "cv_ref_col": ("Ref.", "Ref."),
+    "cv_ref_col_tip": ("Messung, die den internen Standard enthält (Fc oder Ac₂Fc, Karte Referenz): eine je Reihe\n"
+                       "(Gruppe). Danach „Referenz setzen“ und die beiden Peaks des Standards in der Vorschau anklicken.",
+                       "Run that contains the internal standard (Fc or Ac₂Fc, card Reference): one per series (group).\n"
+                       "Then “Set reference” and click the two peaks of the standard in the preview."),
+    "cv_ref_pick": ("Referenz setzen", "Set Reference"),
+    "cv_ref_pick_tip": ("Oxidations- und Reduktionspeak des Standards in der Referenzmessung anklicken: jeder Klick springt\n"
+                        "auf den Peak in der Nähe (±80 mV), E½ = Mittelwert. Esc bricht ab.",
+                        "Click the oxidation and the reduction peak of the standard in the reference run: each click\n"
+                        "snaps to the nearby peak (±80 mV), E½ = their mean. Esc cancels."),
+    "cv_ref_pick_none": ("Erst in der Liste die Messung mit dem Standard anhaken (Spalte Fc).",
+                         "First tick the run containing the standard in the list (column Fc)."),
+    "cv_ref_pick_hidden": ("Die Referenzmessung ist ausgeblendet: in der Liste einblenden, dann „Referenz setzen“.",
+                           "The reference run is hidden: show it in the list, then “Set reference”."),
+    "cv_ref_pick_plot": ("Referenz setzen geht nur in der Ansicht Cyclovoltammogramm.",
+                         "Setting the reference works only in the cyclic voltammogram view."),
+    "cv_ref_pick_hint": ("Referenz setzen: in „{name}“ nahe den Oxidations- und den Reduktionspeak des Standards klicken "
+                         "(Esc bricht ab).",
+                         "Set reference: click near the oxidation and the reduction peak of the standard in “{name}” "
+                         "(Esc cancels)."),
+    "cv_ref_pick_a": ("Oxidationspeak", "Oxidation peak"),
+    "cv_ref_pick_c": ("Reduktionspeak", "Reduction peak"),
+    "cv_ref_pick_next": ("{which} bei {e} V (gemessen) – jetzt den anderen Peak anklicken.",
+                         "{which} at {e} V (measured) – now click the other peak."),
+    "cv_ref_pick_nopeak": ("Dort ist kein Peak: näher an die Spitze klicken.", "No peak there: click closer to its tip."),
+    "cv_ref_pick_fail": ("Kein Fenster findet genau diese beiden Peaks (andere Welle zu nah?) – Fenster von Hand eingeben.",
+                         "No window finds exactly these two peaks (another wave too close?) – enter the window by hand."),
+    "cv_ref_pick_done": ("Referenz gesetzt: E½ = {e12} V (gemessen), ΔE_p = {dep} mV.",
+                         "Reference set: E½ = {e12} V (measured), ΔE_p = {dep} mV."),
+    "cv_ref_marker": ("Standard markieren", "Mark Standard"),
+    "cv_ref_marker_long": ("Stern (*) am Oxidationspeak des internen Standards; die Bildunterschrift erklärt ihn.",
+                           "Asterisk (*) at the oxidation peak of the internal standard; the caption explains it."),
     "cv_k0_skip_rev": ("Paar {couple}: kein k⁰ bei {rates} mV s⁻¹ – zu nah am reversiblen Grenzwert (n·ΔE_p < 66 mV).",
                        "Couple {couple}: no k⁰ at {rates} mV s⁻¹ – too close to reversible to determine (n·ΔE_p < 66 mV)."),
     "cv_k0_skip_alpha": ("Paar {couple}: kein k⁰ bei {rates} mV s⁻¹ – n·ΔE_p > 160 mV braucht Klingler–Kochi mit α "

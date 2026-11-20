@@ -945,8 +945,10 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Peakstromverhältnis nach **Nicholson** (berücksichtigt den abklingenden Strom des Hinlaufs; ≈ 1 = chemisch
   reversibel). Peaks am Fensterrand werden rot markiert, ebenso Fenster mit **zwei Wellen** (mehr als ein Maximum im
   Hinlauf oder Minimum im Rücklauf): solche Zeilen zählen nirgends (Regressionen, Beschriftung, Vergleich). „Vorschlag“
-  endet deshalb jedes Fenster höchstens auf halbem Weg zur Nachbarwelle (sonst 0,25 V). Die Ergebnistabelle nennt auch
-  die Scanrate ν jeder Messung; die Kacheln E½/ΔE_p zeigen die erste gültige Zeile.
+  endet deshalb jedes Fenster höchstens auf halbem Weg zur Nachbarwelle (sonst 0,25 V). Als zweite Welle zählt nur, was
+  dieselbe Mindesthöhe wie beim Vorschlag hat (3 % des größten Stroms der Kurve); kleine Buckel und Rauschen nicht. In der
+  Ergebnistabelle nennt der Name die Scanrate („50 mV s⁻¹“; ein eigener Name ohne sie bekommt sie angehängt), bei wenig
+  Platz wird der Name gekürzt (voller Name im Tooltip); die Kacheln E½/ΔE_p zeigen die erste gültige Zeile.
 - **Basislinie** (Standard an): i_p gegen eine Gerade durch den Strom vor dem Hinpeak (Ladestrom + Untergrund),
   extrapoliert unter den Peak; für den Rückpeak um den Sprung des Ladestroms am Umkehrpunkt (2·C·v) verschoben, den
   abklingenden Hinlaufstrom korrigiert Nicholson. Abstand zum Peak einstellbar (Standard 0,20 V; vor Version 1.1 angelegte Verbindungen behalten 0,15 V), Basislinien optional im
@@ -954,14 +956,20 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Regressionen genommen.
 - Ab 3 Scanraten je Gruppe und Paar: Regression **i_p gegen √v** (Randles-Ševčík) und **log i_p gegen log v**
   (Steigung 0,5 = diffusionskontrolliert, 1 = adsorbiert), jeweils mit **95-%-Konfidenzintervall**; im Reiter
-  „Ergebnisse“ als zweite Tabelle unter den Peakdaten (eine Zeile je Paar und Peak).
+  „Ergebnisse“ als zweite Tabelle unter den Peakdaten (eine Zeile je Paar und Peak; N = Zahl der Messungen in der
+  Regression). D und k⁰ stehen darunter in einer eigenen kleinen Tabelle **je Paar** mit kurzer Bewertung („D: Ergebnis“,
+  „k⁰: scheinbar“ …), scheinbare Werte in der Warnfarbe; die Gründe im Einzelnen zeigt der Tooltip der Bewertung.
+  Warnungen stehen darunter als eine kurze Zeile je Art mit Anzahl (z. B. „Zwei Wellen im Fenster: 2 Zeile(n) nicht
+  ausgewertet“), Einzelheiten im Tooltip der Zeile.
 - **Diffusionskoeffizient** (Schritt Auswertung, Karte „Diffusion und k⁰“): mit Elektronenzahl n, Fläche A der
   Arbeitselektrode, Konzentration c und Temperatur rechnet das Programm D aus der Randles-Ševčík-Steigung des Hinpeaks
   (i_p = 0,4463·n·F·A·c·√(n·F·v·D/RT), reversibles, frei diffundierendes Paar). Ohne Fläche oder Konzentration gibt es
   kein D; die Fläche wird nie aus der Messdatei übernommen. Das Intervall trägt nur die Unsicherheit der Steigung,
   nicht die von Fläche und Konzentration. Ergebnis im Reiter Ergebnisse und im Methodentext. D gilt nur als Ergebnis,
-  wenn ΔE_p bei **jeder** Scanrate höchstens 10 mV über ΔE_p des internen Standards derselben Messung liegt (ohne
-  Standard: über 2,22·RT/(nF), 57 mV bei 25 °C); sonst steht es als „(scheinbar)“ mit den Scanraten, bei denen das Paar
+  wenn ΔE_p bei **jeder** Scanrate höchstens 10 mV über ΔE_p des internen Standards liegt – aus derselben Messung oder
+  aus einer eigenen Messung des Standards **mit derselben Scanrate** (nur dann vergleichbar: ΔE_p wächst mit v durch den
+  iR-Abfall). Ohne Standard oder bei anderer Scanrate gilt 2,22·RT/(nF) + 10 mV (57 mV + 10 mV bei 25 °C); der
+  Methodentext nennt, bei welchen Scanraten das so war. Sonst ist D nur „scheinbar“, mit den Scanraten, bei denen das Paar
   nicht reversibel ist (Tabelle, CSV, Methodentext).
 - **k⁰** (dieselbe Karte): heterogene Standardgeschwindigkeitskonstante aus ΔE_p je Scanrate, mit D_O = D_R = D (das
   eingetragene „D für k⁰“, sonst der Randles-Ševčík-Wert des Paars). Für n·ΔE_p von 66–160 mV Nicholsons ψ in der
@@ -985,6 +993,15 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Referenzierung:** wie gemessen (Referenzelektrode, z. B. Ag/AgNO₃), **intern** (Fc- oder Ac₂Fc-Paar in einer
   der Messungen; E½ der Referenz gegen Fc⁺/Fc ist änderbar – Vorgabe Ac₂Fc +0,49 V, mit eurer Literatur abgleichen)
   oder Verschiebung von Hand. Die Achse heißt dann „E [V vs. Fc⁰/⁺]“.
+- **Referenz per Klick:** In der Messungsliste die Messung anhaken, die den Standard enthält (Spalte „Fc“ bzw. „Ac₂Fc“;
+  eine je Reihe – mit mehreren Gruppen gilt das Häkchen für alle Messungen seiner Gruppe). Dann in der Karte Referenz
+  **Referenz setzen** und in der Vorschau nahe den Oxidations- und den Reduktionspeak des Standards klicken: jeder Klick
+  springt auf den Peak in ±80 mV um die Klickstelle (dieselbe Parabel wie bei den Paaren), E½ = Mittelwert, und alle
+  Kurven rücken sofort auf die Fc-Skala (E_Fc = E − (E½,Ref − E°Ref)). Gespeichert wird ein Referenzfenster wie ein
+  eingetipptes (eingetippte Fenster alter Verbindungen gelten weiter); ein Schritt zum Rückgängigmachen, **Esc** bricht
+  ab. Die Referenzmessung muss eingeblendet sein. Im Bild markiert ein **Stern (*)** den Oxidationspeak des Standards
+  (Chip „Standard markieren“, Vorgabe an); die Bildunterschrift erklärt ihn („* Fc⁰/⁺ (internal standard)“), nur wenn er
+  im Bild steht.
 - **Referenz je Messung** („Referenz der ausgewählten Messung“): eigener interner Standard (auch das Fc/Ac₂Fc-Paar in
   derselben Datei, z. B. „mit Ac₂Fc“) oder eigene Verschiebung – nötig beim Lösungsmittelvergleich, jedes gegen seinen
   eigenen Standard. Die Fenster der Redoxpaare folgen der Referenz der jeweiligen Messung.

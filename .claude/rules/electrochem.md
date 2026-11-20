@@ -29,6 +29,11 @@ paths:
   Ladestromsprung (ob er zum Hin- oder Rücklauf gehört, steht in keiner Datei). Stromdichte: eingetragene Fläche (`rs_area`) vor der
   Fläche der Gamry-Datei, die nur mit Hinweis unter der Vorschau benutzt wird. Ac₂Fc +0,49 V ist ein CH₂Cl₂-Wert
   (Connelly & Geiger 1996).
+- Zwei Wellen im Paarfenster (Prominenz wie der Vorschlag, 3 % von max|I|): Zeile ungültig wie ein Randpeak (nicht in Regressionen, Beschriftung, E½-Mittel, Vergleich). Der Vorschlag endet jedes Fenster höchstens auf halbem Weg zur Nachbarwelle. Schultern ohne Senke werden nicht erkannt.
+- D nur als Ergebnis, wenn ΔEp bei jeder Scanrate höchstens 10 mV über ΔEp der internen Referenz liegt (Referenz derselben Messung, oder eigene Messung nur bei gleicher Scanrate), sonst über 2,22·RT/(nF); sonst „scheinbares D“ mit den Scanraten in Tabelle, CSV und Methodentext. n nie aus ΔEp, ΔEp nie mit Ru korrigieren.
+- k⁰ aus ΔEp je Scanrate (D_O = D_R = eingegebenes D, sonst Randles–Ševčík-D des Paars), n·ΔEp auf 25 °C skaliert: unter 66 mV kein Wert; 66–160 mV Nicholson-ψ nach Lavagnini; darüber Klingler–Kochi nur mit eingegebenem α (nie vorbelegt). Nur als Bereich über die Scanraten, nie ±, erst ab 3 Scanraten. „Scheinbar“ bei unbekannter iR-Kompensation, Referenz-ΔEp über der D-Schwelle oder D aus einem nicht reversiblen Paar. Fällt k⁰ mit v unter 75 % des ersten Werts: Warnung (iR). Methodentext nennt Verfahren, Quellen und α.
+- Referenz per Klick: Häkchen „Fc“ je Messung, „Referenz setzen“, zwei Klicks rasten im Bereich ±80 mV auf das Extremum, E½ = Mittel; gespeichert wie ein eingetipptes Fenster, ein Rückgängig-Schritt, Esc bricht ab. Stern am Oxidationspeak des Standards (Vorgabe an), Unterschrift „* Fc⁰/⁺ (internal standard)“ nur mit Stern im Bild.
+- Ergebnisseite: Peaktabelle (Scanrate im Namen) · Scanraten-Regression · D/k⁰ je Paar · Warnungen eine Zeile je Art, Einzelheiten im Tooltip; bei 1200 px kein Querrollen. CSV: Komma, Dezimalpunkt, Köpfe „Name [Einheit]“, Rohwerte.
 - H-Zelle (Tab „H-Cell“, `tabs/hcell.py`, Leser `formats/gamry_cycling.py`, Nutzerauftrag 2026-11-12): Gamry „Cyclic
   Charge Discharge“ (TAG `PWR800_CYCLICCHARGEDISCHARGE`) + Schrittdateien nur `CHARGE_#n`/`DISCHARGE_#n.DTA` aus
   `CHARGE_DISCHARGE/` daneben (andere Dateien dort = andere Experimente). Kopfwerte/Spalten nach Namen; andere TAGs,

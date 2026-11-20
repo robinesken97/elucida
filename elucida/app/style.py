@@ -1489,7 +1489,7 @@ _SCI = [(r"χ²_red\b", "<i>χ</i>²<sub>red</sub>"),                 # Fluoresz
         (r"(?<=ln\()A\b", "<i>A</i>"), (r"\bI0\b", "<i>I</i><sub>0</sub>"), (r"\bI(?=\([tT]\))", "<i>I</i>"),
         (r"\bA0\b", "<i>A</i><sub>0</sub>"), (r"\bA(?=\(t\))", "<i>A</i>"),                    # UV-Vis-Kinetik
         (r"\(([tT])\)", r"(<i>\1</i>)"), (r"·t\b", "·<i>t</i>"), (r"\bEa\b", "<i>E</i><sub>a</sub>"),
-        (r"10\^(-?)(\d+)", lambda m: "10<sup>" + ("−" if m.group(1) else "") + m.group(2) + "</sup>"),
+        (r"10\^([-−]?)(\d+)", lambda m: "10<sup>" + ("−" if m.group(1) else "") + m.group(2) + "</sup>"),
         (r"/RT\b", "/<i>RT</i>"), (r"β(?= = )", "<i>β</i>"), (r"(?<= of )k\b", "<i>k</i>"),
         (r"\bcm2\b", "cm²"), (r"(?<![A-Za-zäöüÄÖÜß>_])D(?= = )", "<i>D</i>"),                         # D = … cm2 s-1
         (r"(?<=Cutoff )A\b", "<i>A</i>"), (r"\b([BWH]) × (H)\b", r"<i>\1</i> × <i>\2</i>"),            # B × H
@@ -1693,6 +1693,22 @@ class RichHeader(QHeaderView):
         painter.translate(rect.x() + (rect.width() - doc.idealWidth()) / 2, rect.y() + (rect.height() - doc.size().height()) / 2)
         doc.drawContents(painter)
         painter.restore()
+
+    def sectionSizeFromContents(self, index):
+        """Breite des gesetzten Kopfes: Qt maß den Rohtext („ΔE_p [mV]“ mit Unterstrich, Indizes in voller Größe) und
+        die Spalten wurden breiter als nötig (CV-Ergebnistabelle rollte bei 1200 px quer)."""
+        s = super().sectionSizeFromContents(index)
+        text = str(self.model().headerData(index, self.orientation(), Qt.DisplayRole) or "")
+        h = sci(text)
+        if h == text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"):
+            return s
+        from PySide6.QtGui import QTextDocument
+        doc = QTextDocument()
+        doc.setDefaultFont(self.font())
+        doc.setDocumentMargin(0)
+        doc.setHtml(h)
+        pad = s.width() - self.fontMetrics().horizontalAdvance(text)          # Rand und Sortierpfeil wie bei Qt
+        return QSize(min(s.width(), pad + int(doc.idealWidth()) + 1), s.height())
 
 
 def rich_header(t):

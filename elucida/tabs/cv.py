@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -73,6 +74,12 @@ K0_X_MIN, K0_X_MAX = 66.0, 160.0
 # „k⁰ fällt mit v“ (iR-Abfall): k⁰ bei der größten Scanrate unter 75 % des Werts bei der kleinsten. Simuliert ohne Ru:
 # Lavagnini driftet selbst um bis zu −17 % (ψ-Näherung ±15 %); mit Ru = 1 kΩ fällt k⁰ um 34 % bzw. 57 %
 K0_FALL = 0.75
+# Referenz per Klick (Entscheidung 171): ein Klick sucht den Peak in ±REF_SNAP V um die Klickstelle (Parabel wie die
+# Paare); das gespeicherte Fenster reicht REF_PADS V über beide Peaks (das erste, das genau diese Peaks wiederfindet)
+REF_SNAP = 0.08
+REF_PADS = (0.15, 0.10, 0.07, 0.05, 0.03)
+# Nur bei gleicher Scanrate ist ΔE_p einer Referenz in eigener Messung ein fairer Vergleich für die D-Schwelle
+REF_RATE_TOL = 0.5          # mV s⁻¹
 
 
 def _smooth(I):
@@ -360,8 +367,16 @@ def sci_range(lo, hi, digits=2):
     return (a if a == b else f"{a}–{b}") + f" × 10^{ex}"
 
 
-def fmt_ci(v, ci, unit=""):
-    """Wert ± 95-%-KI, gerundet auf die Genauigkeit des Intervalls (core.fmt_ve)."""
+def fmt_ci(v, ci, unit="", ref=None):
+    """Wert ± 95-%-KI, gerundet auf die Genauigkeit des Intervalls (core.fmt_ve), höchstens 4 gültige Stellen von `ref`
+    (Größenordnung der Spalte, Vorgabe der Wert): ein winziges Intervall (rauschfreie Daten) steht als „± < 0.01“
+    statt mit 8 Nachkommastellen (die Regressionstabelle rollte sonst bei 1200 px quer). Nie ein erfundenes Intervall."""
+    ref = abs(v if ref is None else ref)
+    if ci is not None and np.isfinite(ci) and ref > 0:
+        cap = max(0, 3 - int(np.floor(np.log10(ref))))
+        if core.ve_decimals(v, ci) > cap:
+            a = f"{core.round_half_up(v, cap) or 0.0:.{cap}f}".replace("-", "\u2212")
+            return f"{a} ± < {10.0 ** -cap:.{cap}f}{unit}"
     a, b = core.fmt_ve(v, ci)
     return f"{a} ± {b}{unit}" if b is not None else f"{a}{unit}"
 
@@ -483,7 +498,7 @@ class CVTab(TABS.FigureTab):
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
-                         gradient=True, density=False, show_e12=True, arrow=True, invert=False,
+                         gradient=True, density=False, show_e12=True, arrow=True, invert=False, ref_marker=True,
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
                          struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False,
                          rs_n=1, rs_area=0.0, rs_conc=0.0, rs_temp=25.0, k0_D=0.0, k0_alpha=0.0,
@@ -492,6 +507,7 @@ class CVTab(TABS.FigureTab):
 
     # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
     PLOTS = ("cv", "dep", "rs", "rs_v", "loglog", "ratio", "trumpet")
+    WARN_KINDS = ("bl_fail", "bl_short", "two_waves", "D", "k0", "k0_falls")      # Reihenfolge der Warnzeilen
     MARKERS = ("s", "o", "^", "v", "D", "p")
 
     # -- Bedienelemente ------------------------------------------------------------
@@ -504,7 +520,7 @@ class CVTab(TABS.FigureTab):
         g = STYLE.split_group(self.group_titled("cv_analysis"), self.sp_rs_n, self.lbl_rs_hint, T("grp_diffusion"))
         self.fold(g, "diffusion", ("rs_n", "rs_area", "rs_conc", "rs_temp", "k0_D", "k0_alpha"))
         g = STYLE.split_group(self.group_titled("cv_display"), self.cb_gradient, self.cb_invert, T("grp_more_display"))
-        self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "invert"))
+        self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "ref_marker", "invert"))
         self.to_right(self.group_titled("cv_results"), T("cv_results"))
     def build_controls(self):
         st = self.st
@@ -519,8 +535,9 @@ class CVTab(TABS.FigureTab):
             b.clicked.connect(fn)
             row.addWidget(b)
         v.addLayout(row)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), "ν [mV s⁻¹]", T("cv_group")])
+        self.table = QTableWidget(0, 6)                   # Spalte 5: Messung mit dem internen Standard (je Reihe eine)
+        self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), "ν [mV s⁻¹]", T("cv_group"), "Fc"])
+        self.table.horizontalHeaderItem(5).setToolTip(T("cv_ref_col_tip"))
         self.table.setItemDelegateForColumn(1, STYLE.RichDelegate(self.table, core.unit_html))   # „50 mV s⁻¹“
         self.table.horizontalHeaderItem(4).setToolTip(T("cv_group_tip"))
         self.table.verticalHeader().setVisible(False)
@@ -685,6 +702,18 @@ class CVTab(TABS.FigureTab):
             row.addWidget(w_)
         self.lbl_ref_win = QLabel(T("cv_ref_window"))
         f.addRow(self.lbl_ref_win, row)
+        # Referenz per Klick: Oxidations- und Reduktionspeak des Standards in der Vorschau anklicken (Esc bricht ab)
+        self.btn_ref_pick = QPushButton(T("cv_ref_pick"))
+        self.btn_ref_pick.setCheckable(True)
+        self.btn_ref_pick.setToolTip(T("cv_ref_pick_tip"))
+        self.btn_ref_pick.toggled.connect(self.toggle_ref_pick)
+        row = QHBoxLayout()                                 # Knopfreihe in der Wertespalte (lag sonst lose am linken Rand)
+        row.addWidget(self.btn_ref_pick)
+        f.addRow("", row)
+        self._pick, self._pick_cid = None, None
+        self._esc = QShortcut(QKeySequence(Qt.Key_Escape), self, context=Qt.WindowShortcut)
+        self._esc.setEnabled(False)                        # nur im Klickmodus (kein Konflikt mit anderen Tabs)
+        self._esc.activated.connect(self.cancel_ref_pick)
         row = QHBoxLayout()
         self.cmb_compound = QComboBox()
         for key, (name, _) in REFERENCES.items():
@@ -782,10 +811,12 @@ class CVTab(TABS.FigureTab):
         self.cb_density = QCheckBox(T("cv_density"))
         self.cb_e12 = QCheckBox(T("cv_show_e12"))
         self.cb_arrow = QCheckBox(T("cv_arrow"))
+        self.cb_ref_marker = QCheckBox(T("cv_ref_marker"))
+        self.cb_ref_marker.setToolTip(T("cv_ref_marker_long"))
         self.cb_invert = QCheckBox(T("cv_invert"))
         self.cb_invert.setToolTip(T("cv_invert_tip"))
         for cb, key in ((self.cb_gradient, "gradient"), (self.cb_density, "density"), (self.cb_e12, "show_e12"),
-                        (self.cb_arrow, "arrow"), (self.cb_invert, "invert")):
+                        (self.cb_arrow, "arrow"), (self.cb_ref_marker, "ref_marker"), (self.cb_invert, "invert")):
             cb.setChecked(st[key])
             f.addRow(cb)
             cb.toggled.connect(self.changed)
@@ -793,13 +824,13 @@ class CVTab(TABS.FigureTab):
 
         g = QGroupBox(T("cv_results"))
         v = QVBoxLayout(g)
-        self.tbl_res = STYLE.FitGrid(0, 10)               # über die ganze Seite wie die Tabelle darunter
+        self.tbl_res = STYLE.FitGrid(0, 9)                # über die ganze Seite wie die Tabelle darunter
         STYLE.empty_note(self.tbl_res, T("results_none"))
         self.tbl_res.setHorizontalHeaderLabels(
-            [T("ov_name"), "ν [mV s⁻¹]", "#", "E_pa [V]", "E_pc [V]", "E½ [V]", "ΔE_p [mV]", "i_pa [µA]", "i_pc [µA]",
-             "i_r/i_f"])
-        self.tbl_res.horizontalHeaderItem(9).setToolTip(T("cv_ratio_tip"))
+            [T("ov_name"), "#", "E_pa [V]", "E_pc [V]", "E½ [V]", "ΔE_p [mV]", "i_pa [µA]", "i_pc [µA]", "i_r/i_f"])
+        self.tbl_res.horizontalHeaderItem(8).setToolTip(T("cv_ratio_tip"))
         self.tbl_res.setItemDelegateForColumn(0, STYLE.RichDelegate(self.tbl_res, core.unit_html))
+        self.tbl_res.elide_col = 0                       # Name gibt nach, bevor die Tabelle quer rollt (1200 px)
         self.tbl_res.verticalHeader().setVisible(False)
         self.tbl_res.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_res.setMinimumHeight(140)
@@ -810,19 +841,35 @@ class CVTab(TABS.FigureTab):
         self.lbl_fit.setProperty("formlabel", True)
         self.lbl_fit.setWordWrap(True)
         v.addWidget(self.lbl_fit)
-        self.tbl_fit = STYLE.summary_grid([T("cv_fit_couple"), T("cv_fit_peak"), T("cv_fit_n"), T("cv_fit_slope"),
-                                           T("cv_fit_icpt"), "R²", T("cv_fit_ll"), "D [cm² s⁻¹]", "k⁰ [cm s⁻¹]"],
-                                          rich=(1, 7, 8))
-        self.tbl_fit.horizontalHeaderItem(7).setToolTip(T("cv_fit_D_tip"))
-        self.tbl_fit.horizontalHeaderItem(8).setToolTip(T("cv_fit_k0_tip"))
+        self.tbl_fit = STYLE.summary_grid([T("cv_fit_couple"), T("cv_fit_peak"), "N", T("cv_fit_slope"),
+                                           T("cv_fit_icpt"), "R²", T("cv_fit_ll")], rich=(1,))
+        self.tbl_fit.horizontalHeaderItem(2).setToolTip(T("cv_fit_n"))
+        self.tbl_fit.horizontalHeaderItem(4).setToolTip(T("cv_fit_icpt_tip"))
         v.addWidget(self.tbl_fit)
+        # D und k⁰ je Paar als eigene kleine Tabelle (vorher zwei Spalten der Regressionstabelle: sie rollte schon bei
+        # 1500 px quer); Bewertung kurz, Gründe vollständig im Tooltip der Zelle
+        self.lbl_dk = QLabel(T("cv_dk_title"))
+        self.lbl_dk.setProperty("formlabel", True)
+        v.addWidget(self.lbl_dk)
+        self.tbl_dk = STYLE.summary_grid([T("cv_fit_couple"), "D [cm² s⁻¹]", "k⁰ [cm s⁻¹]", T("cv_dk_status")],
+                                         rich=(1, 2))
+        self.tbl_dk.elide_col = 3
+        self.tbl_dk.horizontalHeaderItem(1).setToolTip(T("cv_fit_D_tip"))
+        self.tbl_dk.horizontalHeaderItem(2).setToolTip(T("cv_fit_k0_tip"))
+        v.addWidget(self.tbl_dk)
         self.lbl_res = STYLE.SciLabel("")                 # Referenz
-        self.lbl_warn = STYLE.SciLabel("")                # Warnungen (Basislinie)
-        self.lbl_warn.setStyleSheet(STYLE.WARN_CSS)
-        for lb_ in (self.lbl_res, self.lbl_warn):
+        self.lbl_res.setWordWrap(True)
+        self.lbl_res.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        v.addWidget(self.lbl_res)                        # „SI-Text kopieren“ steht im Reiter SI-Text
+        # Warnungen: eine kurze Zeile je Art mit Anzahl, Einzelheiten im Tooltip (vorher eine rote Textwand)
+        self.warn_lbls = {}
+        for key in self.WARN_KINDS:
+            lb_ = STYLE.SciLabel("")
+            lb_.setStyleSheet(STYLE.WARN_CSS)
             lb_.setWordWrap(True)
-            lb_.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            v.addWidget(lb_)                             # „SI-Text kopieren“ steht im Reiter SI-Text
+            lb_.hide()
+            v.addWidget(lb_)
+            self.warn_lbls[key] = lb_
         self.lv.addWidget(g)
 
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
@@ -962,6 +1009,11 @@ class CVTab(TABS.FigureTab):
                 h += f"; potentials referenced against {fc} using " + " or ".join(parts) + " as internal standard"
             if st.get("arrow"):
                 h += " (arrows indicate scanning direction)"
+            marks = sorted({m[2] or "" for m in self.ref_marks()})      # nur, wenn der Stern im Bild steht
+            if marks:
+                names = {"fc": "Fc<sup>0/+</sup>", "ac2fc": "Ac<sub>2</sub>Fc"}
+                h += "; * " + ", ".join(f"{names[c_]} (internal standard)" if c_ in names else "internal standard"
+                                        for c_ in marks)
         return h + "."
 
     def shown_convention(self, metas):
@@ -978,6 +1030,7 @@ class CVTab(TABS.FigureTab):
             w_.setVisible(mode == "internal")
         for w_ in (self.lbl_offset, self.sp_offset):
             w_.setVisible(mode == "manual")
+        self.btn_ref_pick.setVisible(mode != "manual")
 
     def ref_compound_changed(self, *_):
         key = self.cmb_compound.currentData()
@@ -1069,6 +1122,7 @@ class CVTab(TABS.FigureTab):
                   ref_electrode=self.ed_electrode.text().strip() or "Ag/AgNO₃",
                   gradient=self.cb_gradient.isChecked(), density=self.cb_density.isChecked(),
                   show_e12=self.cb_e12.isChecked(), arrow=self.cb_arrow.isChecked(),
+                  ref_marker=self.cb_ref_marker.isChecked(),
                   invert=self.cb_invert.isChecked(), plot=self.cmb_plot.currentData(),
                   stack=self.cb_stack.isChecked(), stack_gap=self.sp_gap.value(),
                   e12_each=self.cb_e12_each.isChecked(), y_axis=self.cmb_yaxis.currentData(),
@@ -1125,6 +1179,7 @@ class CVTab(TABS.FigureTab):
     def fill_table(self):
         self._loading = True
         fs = self.st["files"]
+        refs = self.ref_uids()
         self.table.setRowCount(len(fs))
         for i, e in enumerate(fs):
             it = QTableWidgetItem()
@@ -1142,6 +1197,15 @@ class CVTab(TABS.FigureTab):
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 3, it)
             self.table.setItem(i, 4, QTableWidgetItem(e.get("group", "")))
+            it = QTableWidgetItem()                          # enthält den internen Standard (Referenz der Reihe)
+            it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            it.setCheckState(Qt.Checked if e["uid"] in refs else Qt.Unchecked)
+            self.table.setItem(i, 5, it)
+        # Kopf = Kurzname des Standards (Fc, Ac₂Fc); verschiedene oder eigener Standard: „Ref.“
+        comp = {(x.get("ref") or {}).get("compound") for x in fs if (x.get("ref") or {}).get("mode") == "internal"}
+        comp |= {self.st.get("ref_compound")} if self.st.get("ref_mode") == "internal" or not comp else set()
+        key = next(iter(comp)) if len(comp) == 1 else None
+        self.table.horizontalHeaderItem(5).setText(REFERENCES[key][0] if key in REFERENCES else T("cv_ref_col"))
         STYLE.fit_columns(self.table)
         self.update_color_buttons()
         cur = self.st.get("ref_uid")
@@ -1182,6 +1246,8 @@ class CVTab(TABS.FigureTab):
             self.fill_table()
         elif item.column() == 4:
             e["group"] = item.text().strip()
+        elif item.column() == 5:
+            return self.set_ref_run(e, item.checkState() == Qt.Checked)
         self.timer.start()
 
     # -- Referenz je Messung ---------------------------------------------------------
@@ -1255,6 +1321,193 @@ class CVTab(TABS.FigureTab):
             "value": self.sp_fref_value.value(), "offset": self.sp_foffset.value()}
         self.show_file_ref()
         self.timer.start()
+
+    # -- Referenzmessung (Häkchen in der Liste) und Referenz per Klick (Entscheidung 171) -------------------------
+    def ref_uids(self):
+        """Messungen, die als interner Standard dienen (global oder je Messung/Reihe)."""
+        st = self.st
+        out = {st.get("ref_uid")} if st.get("ref_mode") == "internal" else set()
+        out |= {(e.get("ref") or {}).get("uid") for e in st["files"] if (e.get("ref") or {}).get("mode") == "internal"}
+        return out - {None}
+
+    def sync_ref_controls(self):
+        """Felder der Karte Referenz aus dem Zustand (ohne Signale): `collect` liest sie sonst zurück."""
+        st = self.st
+        for w_, val in ((self.cmb_ref, st["ref_mode"]), (self.cmb_ref_file, st.get("ref_uid")),
+                        (self.cmb_compound, st["ref_compound"])):
+            w_.blockSignals(True)
+            w_.setCurrentIndex(max(0, w_.findData(val)))
+            w_.blockSignals(False)
+        for w_, val in ((self.sp_ref_lo, st["ref_lo"]), (self.sp_ref_hi, st["ref_hi"]),
+                        (self.sp_ref_value, st["ref_value"])):
+            w_.blockSignals(True)
+            w_.setValue(val)
+            w_.blockSignals(False)
+        self._sync_ref_widgets()
+
+    def set_ref_run(self, x, on):
+        """Häkchen „enthält den Standard“: eine Messung je Reihe (Gruppe). Ohne verschiedene Gruppen die globale
+        Referenz, sonst die Referenz je Messung aller Messungen dieser Gruppe; Standard und E° bleiben."""
+        st, fs = self.st, self.st["files"]
+        internal = lambda f: (f.get("ref") or {}).get("mode") == "internal"          # noqa: E731
+        if on and len({f.get("group", "") for f in fs}) <= 1:
+            for f in fs:
+                if internal(f):
+                    f["ref"] = None
+            st.update(ref_mode="internal", ref_uid=x["uid"])
+        elif on:
+            for f in (f for f in fs if f.get("group", "") == x.get("group", "")):
+                old = f["ref"] if internal(f) else {}
+                same = old.get("uid") == x["uid"]
+                f["ref"] = {"mode": "internal", "uid": x["uid"], "lo": old["lo"] if same else st["ref_lo"],
+                            "hi": old["hi"] if same else st["ref_hi"], "compound": old.get("compound", st["ref_compound"]),
+                            "value": old.get("value", st["ref_value"])}
+        else:
+            if st["ref_mode"] == "internal" and st.get("ref_uid") == x["uid"]:
+                st["ref_mode"] = "none"
+            for f in fs:
+                if internal(f) and f["ref"].get("uid") == x["uid"]:
+                    f["ref"] = None
+        self.fill_table()
+        self.sync_ref_controls()
+        self.timer.start()
+
+    def ref_target(self):
+        """Referenzmessung für „Referenz setzen“: die der gewählten Zeile (eigene Referenz oder global), sonst die
+        globale, sonst die erste angehakte -> uid oder None."""
+        e, st = self.current_file(), self.st
+        ref = (e or {}).get("ref") or {}
+        if ref.get("mode") == "internal":
+            return ref.get("uid")
+        if st["ref_mode"] == "internal" and st.get("ref_uid"):
+            return st["ref_uid"]
+        return next(iter(sorted(self.ref_uids())), None)
+
+    def toggle_ref_pick(self, on):
+        if not on:
+            return self.cancel_ref_pick()
+        uid = self.ref_target()
+        e = next((x for x in self.st["files"] if x["uid"] == uid), None)
+        why = ("cv_ref_pick_none" if e is None else "cv_ref_pick_hidden" if not e["visible"] else
+               "cv_ref_pick_plot" if self.st["plot"] != "cv" or self.F is None else None)
+        if why:
+            self.btn_ref_pick.blockSignals(True)
+            self.btn_ref_pick.setChecked(False)
+            self.btn_ref_pick.blockSignals(False)
+            return self.main.notify(T(why), ms=8000)
+        self._pick = {"uid": uid}
+        self._pick_cid = self.canvas.mpl_connect("button_press_event", self.ref_clicked)
+        self._esc.setEnabled(True)
+        self.main.notify(T("cv_ref_pick_hint", name=e["label"]), links=[(T("cancel"), self.cancel_ref_pick)], ms=0)
+
+    def cancel_ref_pick(self):
+        if self._pick_cid is not None:
+            self.canvas.mpl_disconnect(self._pick_cid)
+        self._pick, self._pick_cid = None, None
+        self._esc.setEnabled(False)
+        self.btn_ref_pick.blockSignals(True)
+        self.btn_ref_pick.setChecked(False)
+        self.btn_ref_pick.blockSignals(False)
+
+    def snap_ref_peak(self, uid, x_axis, y_axis=None):
+        """Klick (Achsenkoordinaten der Vorschau) -> ("a"|"c", E_p gemessen) oder None: höchster Strom im Hinlauf bzw.
+        tiefster im Rücklauf in ±REF_SNAP V um die Klickstelle (dieselben Läufe wie `analyze_couple`), Lage per Parabel
+        (`_refine`). Liegt das Extremum am Rand des Suchbereichs, ist dort kein Peak. Von beiden gilt der in der Vorschau
+        nähere (Pixelabstand zum Klick)."""
+        curve = next((c for c in (self.F.curves if self.F else []) if c.get("uid") == uid and not c.get("aux")), None)
+        e = next((x for x in self.st["files"] if x["uid"] == uid), None)
+        if curve is None or e is None:
+            return None
+        c = self.cycle_of(e)
+        E, I = np.asarray(c["E"], float), np.asarray(c["I"], float)
+        em = x_axis + curve["_off_e"]                     # Achse = gemessen − Offset dieser Messung
+        dE = np.gradient(E)
+        near = np.abs(E - em) <= REF_SNAP
+        hits = []
+        for kind, mask, pick in (("a", near & (dE > 0), np.argmax), ("c", near & (dE < 0), np.argmin)):
+            idx = np.flatnonzero(mask)
+            if len(idx) < 5:
+                continue
+            k = int(idx[pick(I[idx])])
+            # Extremum am Rand des Suchbereichs oder am Ende des Laufs (Umkehrpunkt): Flanke, kein Peak
+            if abs(E[k] - em) >= REF_SNAP - 0.004 or k in (idx[0], idx[-1]) or not (mask[k - 1] and mask[k + 1]):
+                continue
+            d = 0.0
+            if y_axis is not None:
+                px = self.F.ax.transData.transform([(curve["x"][k], curve["y"][k]), (x_axis, y_axis)])
+                d = float(np.hypot(*(px[0] - px[1])))
+            hits.append((d, kind, _refine(E, I, k)[0]))
+        return min(hits)[1:] if hits else None
+
+    def ref_window(self, uid, epa, epc):
+        """Fenster (gemessene Potentiale, 2 Stellen wie die Felder), in dem `analyze_couple` genau diese Peaks findet
+        -> (lo, hi) oder None."""
+        e = next((x for x in self.st["files"] if x["uid"] == uid), None)
+        c = self.cycle_of(e)
+        for pad in REF_PADS:
+            lo, hi = np.floor((epc - pad) * 100) / 100, np.ceil((epa + pad) * 100) / 100
+            r = analyze_couple(c["E"], c["I"], lo, hi)
+            if r is not None and not r["invalid"] and abs(r["epa"] - epa) < 0.002 and abs(r["epc"] - epc) < 0.002:
+                return float(lo), float(hi)
+        return None
+
+    def ref_clicked(self, ev):
+        if self._pick is None or self.F is None or ev.inaxes is not self.F.ax or ev.button != 1 or ev.xdata is None:
+            return
+        hit = self.snap_ref_peak(self._pick["uid"], float(ev.xdata), float(ev.ydata))
+        if hit is None:
+            return self.main.notify(T("cv_ref_pick_nopeak"), ms=8000)
+        self._pick[hit[0]] = hit[1]
+        if not ("a" in self._pick and "c" in self._pick):
+            return self.main.notify(T("cv_ref_pick_next", e=_fmt_e(hit[1]), which=T("cv_ref_pick_" + hit[0])),
+                                    links=[(T("cancel"), self.cancel_ref_pick)], ms=0)
+        self.apply_ref_pick(self._pick["uid"], self._pick["a"], self._pick["c"])
+
+    def apply_ref_pick(self, uid, epa, epc):
+        """Beide Peaks gewählt: Fenster speichern wie ein eingegebenes (Referenz je Messung oder global); E½ rechnet
+        danach `analyze_couple` wie immer. Ein Rückgängig-Schritt (ein Zeichnen)."""
+        self.cancel_ref_pick()
+        win = self.ref_window(uid, epa, epc) if epa > epc else None
+        if win is None:
+            return self.main.notify(T("cv_ref_pick_fail"), ms=8000)
+        st, hit = self.st, False
+        for f in st["files"]:
+            ref = f.get("ref") or {}
+            if ref.get("mode") == "internal" and ref.get("uid") == uid:
+                ref["lo"], ref["hi"] = win
+                hit = True
+        if not hit or (st["ref_mode"] == "internal" and st.get("ref_uid") == uid):
+            st.update(ref_mode="internal", ref_uid=uid, ref_lo=win[0], ref_hi=win[1])
+        self.sync_ref_controls()
+        self.fill_table()
+        self.main.notify(T("cv_ref_pick_done", e12=_fmt_e((epa + epc) / 2), dep=f"{(epa - epc) * 1000:.0f}"), ms=8000)
+        self.timer.start()
+
+    def ref_marks(self):
+        """Interner Standard im Bild (Chip „Standard markieren“): [(uid, Ergebnis von analyze_couple, Standard)] der
+        sichtbaren Referenzmessungen, deren Fenster ein gültiges Paar ergibt; nur in der CV-Ansicht."""
+        st = self.st
+        if st.get("plot", "cv") != "cv" or not st.get("ref_marker", True):
+            return []
+        wins = {}
+        if st["ref_mode"] == "internal":
+            wins[st.get("ref_uid")] = (st["ref_lo"], st["ref_hi"], st["ref_compound"])
+        for e in st["files"]:
+            ref = e.get("ref") or {}
+            if ref.get("mode") == "internal" and e["visible"]:
+                wins.setdefault(ref.get("uid"), (ref.get("lo", 0.3), ref.get("hi", 0.8), ref.get("compound")))
+        out = []
+        for e in st["files"]:
+            if e["uid"] in wins and e["visible"]:
+                lo, hi, comp = wins[e["uid"]]
+                try:
+                    c = self.cycle_of(e)
+                except Exception:
+                    continue
+                r = analyze_couple(c["E"], c["I"], lo, hi)
+                if r is not None and not r["invalid"]:
+                    out.append((e["uid"], r, comp))
+        return out
 
     # -- Redoxpaare (gespeichert in gemessenen Potentialen, angezeigt in der Achsenskala) -----------------
     def fill_couples(self):
@@ -1386,7 +1639,7 @@ class CVTab(TABS.FigureTab):
             d = self.data(e["file"])
             c = self.cycle_of(e)
             off, lab_ref, n_ = self.file_offset(e)
-            dep_ref = self.ref_dep(e)
+            dep_ref, dep_kind = self.ref_dep(e)
             labels_ref.add(lab_ref)
             if n_ and e.get("ref"):
                 notes.append(f"{e['label']}: {n_}")
@@ -1410,7 +1663,7 @@ class CVTab(TABS.FigureTab):
                     self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
                                              rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
                                              e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off,
-                                             ref=lab_ref, file=e["file"], dep_ref=dep_ref,
+                                             ref=lab_ref, file=e["file"], dep_ref=dep_ref, dep_ref_kind=dep_kind,
                                              ir_on=d["meta"].get("ircomp_on"),
                                              cycle=min(st["cycle"], len(d["cycles"]))))
         self.grad_colors = grad_colors if st["gradient"] and len(vis) > 1 else {}
@@ -1483,6 +1736,12 @@ class CVTab(TABS.FigureTab):
                             key = f"label_e12_{n}" + (f"_{grp}" if len(groups) > 1 else "")
                             labels.append({"key": key, "lam": e12,
                                            "text": "E$_{1/2}$" + tag + " =\n" + _fmt_e(e12, E_DEC) + " V"})
+        for uid, r, _comp in self.ref_marks():           # interner Standard: Stern über seinem Oxidationspeak
+            c_ = next((x for x in curves if x["uid"] == uid), None)
+            if c_ is not None:
+                y_ = float(r["ipa_raw"] * c_["_scale"]) + c_.get("off", 0.0)
+                labels.append({"key": f"label_ref_{uid}", "lam": r["epa"] - c_["_off_e"], "y": y_, "text": "*",
+                               "side": "above" if c_["_scale"] > 0 else "below", "card": False})
         if st["arrow"]:
             c0 = curves[0]
             xr = cfg["xlim"][1] - cfg["xlim"][0]
@@ -1551,8 +1810,10 @@ class CVTab(TABS.FigureTab):
                 for k, rr in out.items()}
 
     def ref_dep(self, e):
-        """ΔE_p [V] der internen Referenz **derselben** Messung (sie trägt denselben iR-Abfall), nur aus einem gültigen
-        Paar; sonst None (dann gilt der reversible Grenzwert)."""
+        """ΔE_p [V] der internen Referenz für die D-Schwelle, nur aus einem gültigen Paar -> (ΔE_p oder None, Art):
+        „same“ = Referenz in derselben Messung (trägt denselben iR-Abfall), „separate“ = eigene Messung mit derselben
+        Scanrate (Entscheidung 171: nur dann ein fairer Vergleich), „nomatch“ = eigene Messung mit anderer Scanrate
+        (dann gilt wie ohne Referenz der reversible Grenzwert), None = keine interne Referenz."""
         st = self.st
         ref = e.get("ref") or {}
         if ref.get("mode") == "internal":
@@ -1560,12 +1821,22 @@ class CVTab(TABS.FigureTab):
         elif not ref.get("mode") and st["ref_mode"] == "internal":
             uid, lo, hi = st.get("ref_uid"), st["ref_lo"], st["ref_hi"]
         else:
-            return None
+            return None, None
+        kind = "same"
         if uid != e["uid"]:
-            return None
+            src = next((x for x in st["files"] if x["uid"] == uid), None)
+            if src is None:
+                return None, None
+            try:
+                v_ref, v_e = self.data(src["file"])["meta"]["scanrate"], self.data(e["file"])["meta"]["scanrate"]
+            except Exception:
+                return None, None
+            if not (v_ref and v_e and abs(v_ref - v_e) <= REF_RATE_TOL):
+                return None, "nomatch"
+            e, kind = src, "separate"
         c = self.cycle_of(e)
         r = analyze_couple(c["E"], c["I"], lo, hi)
-        return None if r is None or r["invalid"] else float(r["dep"])
+        return (None, None) if r is None or r["invalid"] else (float(r["dep"]), kind)
 
     def d_check(self, rr):
         """Scanraten [mV s⁻¹], bei denen das Paar nicht als reversibel gilt: ΔE_p > ΔE_p(Referenz derselben Messung)
@@ -1734,87 +2005,112 @@ class CVTab(TABS.FigureTab):
             return
         self.show_caption()
         res = self.results
+        # ν steht im Namen (Vorgabe „50 mV s-1“); nennt ein Name die Scanrate nicht, wird sie angehängt – eine eigene
+        # Spalte ließ die Tabelle bei 1200 px quer rollen
         self.tbl_res.setRowCount(len(res))
         for i, r in enumerate(res):
-            name = f"{r['label']} ({r['group']})" if r.get("group") else r["label"]
-            vals = [name, f"{round(r['rate'], 1):g}" if r["rate"] else "–", str(r["n"]), _fmt_e(r["epa"], E_DEC),
-                    _fmt_e(r["epc"], E_DEC), _fmt_e(r["e12"], E_DEC), f"{r['dep'] * 1000:.0f}", f"{r['ipa'] * 1e6:.1f}",
-                    f"{r['ipc'] * 1e6:.1f}", f"{r['ratio']:.2f}" if np.isfinite(r["ratio"]) else "–"]
+            rate = f"{round(r['rate'], 1):g} mV s-1" if r["rate"] else ""
+            name = r["label"] if not rate or rate in r["label"] else f"{r['label']} · {rate}"
+            name = f"{name} ({r['group']})" if r.get("group") else name
+            vals = [name, str(r["n"]), _fmt_e(r["epa"], E_DEC), _fmt_e(r["epc"], E_DEC), _fmt_e(r["e12"], E_DEC),
+                    f"{r['dep'] * 1000:.0f}", f"{r['ipa'] * 1e6:.1f}", f"{r['ipc'] * 1e6:.1f}",
+                    f"{r['ratio']:.2f}" if np.isfinite(r["ratio"]) else "–"]
             for j, v in enumerate(vals):
-                it = QTableWidgetItem(v.replace("-", "−") if j >= 3 else v)      # echtes Minus wie im Text darunter
+                it = QTableWidgetItem(v.replace("-", "−") if j >= 2 else v)      # echtes Minus wie im Text darunter
                 if r["invalid"]:                                 # Rand oder zwei Wellen: nirgends ausgewertet
                     it.setForeground(Qt.red)
                     it.setToolTip(_flag_note(r).strip())
-                elif r.get("bl_fail") and j >= 7:
+                elif r.get("bl_fail") and j >= 6:
                     it.setForeground(Qt.darkYellow)
                     it.setToolTip(T("cv_bl_fail"))
-                elif j == 9 and not r.get("ratio_ok", True):
+                elif j == 8 and not r.get("ratio_ok", True):
                     it.setToolTip(T("cv_ratio_invalid"))
+                elif j == 0:
+                    it.setToolTip(name)                          # Name wird bei wenig Platz gekürzt
                 self.tbl_res.setItem(i, j, it)
+        # so hoch wie die Zeilen (wie die Tabellen darunter): die Seite rollt, nie eine halb sichtbare Zeile
+        self.tbl_res._rows_h = self.tbl_res.horizontalHeader().sizeHint().height() + len(res) * STYLE.CHECK_ROW_H + 2
+        self.tbl_res.setFixedHeight(self.tbl_res._rows_h)
         self.tbl_res.fit()
-        warn = [T("cv_bl_fail")] if any(r.get("bl_fail") for r in res) else []
+        # Warnungen gesammelt je Art: (Anzahl, Einzelheiten)
+        warn = {k: [0, []] for k in self.WARN_KINDS}
+        n_fail = sum(1 for r in res if r.get("bl_fail"))
+        if n_fail:
+            warn["bl_fail"] = [n_fail, [T("cv_bl_fail")]]
         n_short = sum(1 for r in res if r.get("bl_short"))
         if n_short:
-            warn.append(T("cv_bl_short", n=n_short, gap=f"{BL_GAP_MIN:.2f}"))
+            warn["bl_short"] = [n_short, [T("cv_bl_short", n=n_short, gap=f"{BL_GAP_MIN:.2f}")]]
         n_two = sum(1 for r in res if r.get("two_waves"))
         if n_two:
-            warn.append(T("cv_two_waves_warn", n=n_two))
-        rows, any_D, any_k = [], False, False
+            warn["two_waves"] = [n_two, [T("cv_two_waves_warn", n=n_two)]]
+        rows, dk_rows, dk_tips, dk_warn = [], [], [], []
         mn = lambda t: t.replace("-", "−")                    # noqa: E731  (echtes Minus wie in der Tabelle darüber)
         rates = lambda v: ", ".join(f"{x:g}" for x in v)      # noqa: E731
         for (grp, n), f in sorted(self.rate_fits().items(), key=lambda kv: (kv[0][1], kv[0][0])):
             name = f"{n}" + (f" ({grp})" if grp else "")
-            D = self.diffusion(f)
-            bad = self.d_check(self.rate_series(currents=True).get((grp, n)) or []) if D else []
-            if bad:
-                warn.append(T("cv_D_apparent_warn", couple=name, rates=rates(bad)))
-            k0 = self.k0_info((grp, n), f)
             for tag, rs, ll in (("a", f["rs_a"], f["ll_a"]), ("c", f["rs_c"], f["ll_c"])):
                 if rs and ll:
-                    d_txt = k_txt = ""
-                    fwd = tag == (D[3] if D else f.get("fwd"))
-                    if D and D[3] == tag:                     # nur beim Hinpeak; Grenzen mit demselben Exponenten
-                        ex = int(f"{D[0]:.2e}".split("e")[1])
-                        d_txt = f"{D[0] / 10 ** ex:.2f} ({(D[1] or 0) / 10 ** ex:.2f}–{D[2] / 10 ** ex:.2f}) × 10^{ex}"
-                        if bad:
-                            d_txt += " " + T("cv_apparent")
-                        any_D = True
-                    if k0 and fwd:
-                        k_txt = sci_range(k0["lo"], k0["hi"]) if k0["vals"] else "–"
-                        if k0["vals"] and k0["apparent"]:
-                            k_txt += " " + T("cv_apparent")
-                        any_k = True
                     rows.append([name, f"i_p{tag}", str(rs["n"]), mn(fmt_ci(rs["slope"], rs["ci"])),
-                                 mn(fmt_ci(rs["intercept"], rs["ci_b"])), core.r2_text(rs["r2"]),
-                                 mn(fmt_ci(ll["slope"], ll["ci"])), d_txt, mn(k_txt)])
+                                 mn(fmt_ci(rs["intercept"], rs["ci_b"], ref=rs["slope"])), core.r2_text(rs["r2"]),
+                                 mn(fmt_ci(ll["slope"], ll["ci"]))])
+            D = self.diffusion(f)
+            k0 = self.k0_info((grp, n), f)
+            if not D and not k0:
+                continue
+            short, long_ = [], []
+            d_txt = k_txt = "–"
+            bad = self.d_check(self.rate_series(currents=True).get((grp, n)) or []) if D else []
+            if D:                                             # Grenzen mit demselben Exponenten
+                ex = int(f"{D[0]:.2e}".split("e")[1])
+                d_txt = f"{D[0] / 10 ** ex:.2f} ({(D[1] or 0) / 10 ** ex:.2f}–{D[2] / 10 ** ex:.2f}) × 10^{ex}"
+                short.append(T("cv_dk_D_app" if bad else "cv_dk_D_ok"))
+                if bad:
+                    long_.append(T("cv_D_apparent_warn", couple=name, rates=rates(bad)))
+                    warn["D"][0] += 1
+                    warn["D"][1].append(long_[-1])
+                miss = sorted({round(r["rate"], 1) for r in self.rate_series().get((grp, n)) or []
+                               if r.get("dep_ref_kind") == "nomatch"})
+                if miss:                                      # Referenz nur bei anderer Scanrate gemessen
+                    long_.append(T("cv_dk_ref_rate", rates=rates(miss)))
+            k_app = False
             if k0:
-                warn += self.k0_warnings(name, k0)
-        STYLE.fill_summary(self.tbl_fit, rows, hidden=tuple(c for c, on in ((7, any_D), (8, any_k)) if not on))
-        for i, row in enumerate(rows):                        # scheinbare Werte in der Warnfarbe
-            for j in (7, 8):
-                it = self.tbl_fit.item(i, j)
-                if it is not None and T("cv_apparent") in row[j]:
-                    it.setForeground(Qt.darkYellow)
-        for x, on in ((self.lbl_fit, rows), (self.lbl_res, getattr(self, "note", "")), (self.lbl_warn, warn)):
+                if k0["vals"]:
+                    k_txt = sci_range(k0["lo"], k0["hi"])
+                    k_app = bool(k0["apparent"])
+                    short.append(T("cv_dk_k0_app" if k_app else "cv_dk_k0_ok"))
+                    if k_app:
+                        long_.append(T("cv_k0_apparent_warn", couple=name,
+                                       why="; ".join(T("cv_k0_why_" + w) for w in k0["apparent"])))
+                        warn["k0"][0] += 1
+                        warn["k0"][1].append(long_[-1])
+                for why in ("rev", "alpha"):
+                    rr = [v for v, w in k0["skip"].items() if w == why]
+                    if rr:
+                        short.append(T("cv_dk_skip_" + why, n=len(rr)))
+                        long_.append(T("cv_k0_skip_" + why, couple=name, rates=rates(rr)))
+                if k0["falls"]:
+                    short.append(T("cv_dk_falls"))
+                    long_.append(T("cv_k0_falls", couple=name, pct=f"{(1 - K0_FALL) * 100:.0f}"))
+                    warn["k0_falls"][0] += 1
+                    warn["k0_falls"][1].append(long_[-1])
+            dk_rows.append([name, mn(d_txt), mn(k_txt), "; ".join(short)])
+            dk_tips.append("\n".join(x.lstrip("⚠ ") for x in long_))
+            dk_warn.append((bool(bad), k_app, bool(bad or k_app or (k0 and k0["falls"]))))
+        STYLE.fill_summary(self.tbl_fit, rows)
+        STYLE.fill_summary(self.tbl_dk, dk_rows)
+        for i, (d_bad, k_bad, any_bad) in enumerate(dk_warn):    # scheinbare Werte in der Warnfarbe
+            for j, on in ((1, d_bad), (2, k_bad), (3, any_bad)):
+                if on:
+                    self.tbl_dk.item(i, j).setForeground(Qt.darkYellow)
+            self.tbl_dk.item(i, 3).setToolTip(dk_tips[i] or dk_rows[i][3])
+        for x, on in ((self.lbl_fit, rows), (self.lbl_dk, dk_rows), (self.lbl_res, getattr(self, "note", ""))):
             x.setVisible(bool(on))
         self.lbl_res.setText(getattr(self, "note", "") or "")
-        self.lbl_warn.setText("\n".join(warn))
-
-    def k0_warnings(self, name, k0):
-        """Hinweise zu k⁰ eines Paars: welche Scanraten keinen Wert haben (zu reversibel, α fehlt), warum „scheinbar“,
-        k⁰ fällt mit v (iR-Abfall)."""
-        out = []
-        rates = lambda v: ", ".join(f"{x:g}" for x in v)      # noqa: E731
-        for why in ("rev", "alpha"):
-            rr = [v for v, w in k0["skip"].items() if w == why]
-            if rr:
-                out.append(T("cv_k0_skip_" + why, couple=name, rates=rates(rr)))
-        if k0["vals"] and k0["apparent"]:
-            out.append(T("cv_k0_apparent_warn", couple=name,
-                         why="; ".join(T("cv_k0_why_" + w) for w in k0["apparent"])))
-        if k0["falls"]:
-            out.append(T("cv_k0_falls", couple=name, pct=f"{(1 - K0_FALL) * 100:.0f}"))
-        return out
+        for k, (cnt, tips) in warn.items():
+            lb_ = self.warn_lbls[k]
+            lb_.setText("⚠ " + T("cv_w_" + k, n=cnt) if cnt else "")
+            lb_.setToolTip("\n".join(x.lstrip("⚠ ") for x in tips))
+            lb_.setVisible(bool(cnt))
 
     def _ref_sentence(self):
         """Referenzierung der sichtbaren Messungen -> (Satz englisch, Referenz für die Ergebnisse)."""
@@ -1963,9 +2259,20 @@ class CVTab(TABS.FigureTab):
                          f"{st['rs_n']}, A = {st['rs_area']:g} cm2, c = {st['rs_conc']:g} mM and T = "
                          f"{st['rs_temp']:g} °C; their intervals reflect the uncertainty of the slope only.")
                 m.append("D is reported as a result only if ΔEp at every scan rate was at most 10 mV above ΔEp of the "
-                         "internal standard in the same measurement (without one, above 2.22·RT/(nF)); otherwise it is "
-                         "given as an apparent value, because slow electron transfer or uncompensated resistance lowers "
-                         "the peak current.")
+                         "internal standard in the same measurement or in a separate measurement at the same scan rate "
+                         "(without one, above 2.22·RT/(nF)); otherwise it is given as an apparent value, because slow "
+                         "electron transfer or uncompensated resistance lowers the peak current.")
+                # Standard in eigener Messung: ΔE_p nur bei gleicher Scanrate vergleichbar (Entscheidung 171)
+                rr_ = [r for r in self.results if not r["invalid"] and r.get("rate")]
+                sep_ = ", ".join(f"{x:g}" for x in sorted({round(r["rate"], 1) for r in rr_
+                                                             if r.get("dep_ref_kind") == "separate"}))
+                miss_ = ", ".join(f"{x:g}" for x in sorted({round(r["rate"], 1) for r in rr_
+                                                              if r.get("dep_ref_kind") == "nomatch"}))
+                if miss_:
+                    m.append("The internal standard was measured in a separate run"
+                             + (f" at {sep_} mV s-1 only" if sep_ else " at a different scan rate")
+                             + f"; at {miss_} mV s-1 the reversible limit 2.22·RT/(nF) + 10 mV was used instead, "
+                             "because ΔEp of a separate measurement is comparable only at the same scan rate.")
             k0s = {k_: self.k0_info(k_, f_) for k_, f_ in fits.items()}
             used = {how for k_ in k0s.values() if k_ for _, _, how in k_["vals"]}
             if used:

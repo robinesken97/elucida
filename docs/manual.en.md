@@ -905,7 +905,10 @@ Absorption and emission in one figure, as commonly shown in papers:
   ≈ 1 = chemically reversible). Peaks at the window edge are marked red, and so are windows that contain **two
   waves** (more than one maximum in the forward or minimum in the reverse scan): such rows count nowhere (regressions,
   labels, comparison). "Suggest" therefore ends each window at most halfway to the neighbouring wave (otherwise
-  0.25 V). The results table also lists the scan rate ν of each measurement; the E½/ΔE_p tiles show the first valid row.
+  0.25 V). Only a wave of the same minimum height as for "Suggest" counts as a second wave (3% of the largest current of
+  the curve); small bumps and noise do not. In the results table the name states the scan rate ("50 mV s⁻¹"; an own name
+  without it gets it appended); when space is short the name is shortened (full name in the tooltip). The E½/ΔE_p tiles
+  show the first valid row.
 - **Baseline** (on by default): i_p against a straight line through the current before the forward peak (charging
   current + background), extrapolated beneath the peak; for the reverse peak shifted by the step of the charging current
   at the switching potential (2·C·v), the decaying forward current is corrected by Nicholson. Distance to the peak is
@@ -913,15 +916,21 @@ Absorption and emission in one figure, as commonly shown in papers:
   little current before the peak, this is flagged and the measurement is left out of the regressions.
 - From 3 scan rates per group and couple: regression of **i_p vs. √v** (Randles–Ševčík) and **log i_p vs. log v**
   (slope 0.5 = diffusion-controlled, 1 = adsorbed), each with a **95% confidence interval**; shown on the Results
-  tab as a second table below the peak data (one row per couple and peak).
+  tab as a second table below the peak data (one row per couple and peak; N = number of measurements in the
+  regression). D and k⁰ follow in a small table of their own **per couple** with a short assessment ("D: result",
+  "k⁰: apparent" …), apparent values in the warning colour; the tooltip of the assessment gives the reasons in full.
+  Warnings below are one short line per kind with a count (e.g. "Two waves in the window: 2 row(s) not evaluated"),
+  details in the tooltip of the line.
 - **Diffusion coefficient** (evaluation step, card "Diffusion and k⁰"): with the number of electrons n, the area
   A of the working electrode, the concentration c and the temperature, the program calculates D from the
   Randles–Ševčík slope of the forward peak (i_p = 0.4463·n·F·A·c·√(n·F·v·D/RT), reversible, freely diffusing couple). Without area or
   concentration there is no D; the area is never taken from the measurement file. The interval carries only the
   uncertainty of the slope, not that of area and concentration. The result appears on the Results tab and in the
   methods text. D counts as a result only if ΔE_p at **every** scan rate is at most 10 mV above ΔE_p of the internal
-  standard in the same measurement (without one: above 2.22·RT/(nF), 57 mV at 25 °C); otherwise it is marked
-  "(apparent)" with the scan rates at which the couple is not reversible (table, CSV, methods text).
+  standard – from the same measurement or from a separate measurement of the standard **at the same scan rate** (only
+  then comparable: ΔE_p grows with v through the iR drop). Without a standard or at another scan rate the limit is
+  2.22·RT/(nF) + 10 mV (57 mV + 10 mV at 25 °C); the methods text names the scan rates where this applied. Otherwise D
+  is only "apparent", with the scan rates at which the couple is not reversible (table, CSV, methods text).
 - **k⁰** (same card): heterogeneous standard rate constant from ΔE_p at each scan rate, with D_O = D_R = D (the entered
   "D for k⁰", otherwise the Randles–Ševčík value of the couple). For n·ΔE_p of 66–160 mV Nicholson's ψ in the
   approximation of Lavagnini (Electroanalysis 2004, 16, 505); above that Klingler–Kochi (J. Phys. Chem. 1981, 85, 1731),
@@ -944,6 +953,14 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
   of the measurements; E½ of the reference vs. Fc⁺/Fc is editable – default Ac₂Fc +0.49 V, check against your
   literature) or a manual shift. The axis then reads "E [V vs. Fc⁰/⁺]".
+- **Reference by click:** in the measurement list, tick the run that contains the standard (column "Fc" or "Ac₂Fc"; one
+  per series – with several groups the tick applies to all measurements of its group). Then press **Set Reference** in
+  the Reference card and click near the oxidation and the reduction peak of the standard in the preview: each click
+  snaps to the peak within ±80 mV of the click (the same parabola as for the couples), E½ = their mean, and all curves
+  move to the Fc scale at once (E_Fc = E − (E½,ref − E°ref)). A reference window is stored like a typed one (typed
+  windows of older compounds keep working); one undo step, **Esc** cancels. The reference run must be shown. In the
+  figure an **asterisk (*)** marks the oxidation peak of the standard (chip "Mark Standard", on by default); the caption
+  explains it ("* Fc⁰/⁺ (internal standard)") only when it is in the figure.
 - **Reference per measurement** ("Reference of the selected measurement"): own internal standard (also the
   Fc/Ac₂Fc couple in the same file, e.g. "with Ac₂Fc") or own shift – needed when comparing solvents, each against
   its own standard. The couple windows follow each measurement's reference.

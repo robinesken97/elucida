@@ -618,7 +618,9 @@ class SimpleFigure(core.Figure):
 
     def _make_labels(self, labels):
         for lab in labels:
-            text = self.label_text(lab["key"], lab["text"], lab.get("id"))   # eigener Text / ausgeblendet (label_over)
+            # eigener Text / ausgeblendet (label_over); "card": False = nicht in der Karte (CV-Stern: an/aus über den
+            # Chip, sonst passte der Satz in der Bildunterschrift nicht mehr zum Bild)
+            text = lab["text"] if lab.get("card") is False else self.label_text(lab["key"], lab["text"], lab.get("id"))
             if text is None:
                 continue
             kw = core.label_kw(self.cfg)
@@ -710,6 +712,11 @@ class SimpleFigure(core.Figure):
         for (key, x0, y0, x1, _c), own in auto:
             ann = self.ann_items[key]
             bx, by, w, h = self._measure_af(ann.get_window_extent(rend))
+            # die Spitze liegt um die Pfeillänge neben der Mitte des Textkastens (5 Leerzeichen, kürzer als der Pfeil):
+            # ganze Länge freihalten, sonst stieß der Pfeil an Labels (Stern am Fc-Peak) und Kurven
+            sx_, ex_ = self.ax.transData.transform([(x0, y0), (x1, y0)])[:, 0]
+            tip_ = bx + w / 2 + (ex_ - sx_) / self.ax.bbox.width
+            bx, w = min(bx, tip_), max(bx + w, tip_) - min(bx, tip_)
             dx, dy = ann.xyann[0] - bx, ann.xyann[1] - by       # Anfang relativ zur Box (Pfeil zeigt ggf. nach links)
             ys = env[min(fs.n - 1, max(0, int((bx + w / 2) * fs.n)))]
             if own:                                            # gestapelt: über der eigenen Kurve, unter der nächsten
