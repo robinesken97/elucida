@@ -1,6 +1,6 @@
 // Run: node src/render.check.ts. Fails loudly if the ACS drawing rules break.
 import assert from "node:assert/strict";
-import { ALL_ARROW_KINDS, SHAPE_KINDS, SWEEPS, arrowPath, arrowShapes, blockOutline, ellipseArrow, fitArrows, headOfLength, headSize, lineOffsets, markAt, orbitalLine, placeCaptions, render, renderParts, shapeInk, shapePaths, sizeOf, spotPath, sweepBend, tableLayout, tlcLayout, turnedWith, waveAlong, type Arrow, type Atom, type Bond, type Box, type Caption, type Drawing, type Face, type Ink, type Mol, type PartCache, type Shape } from "./render.ts";
+import { ALL_ARROW_KINDS, SHAPE_KINDS, SWEEPS, arrowPath, arrowShapes, blockOutline, ellipseArrow, fitArrows, headOfLength, headSize, lineOffsets, markAt, orbitalLine, placeCaptions, render, renderParts, shapeInk, shapePaths, sizeOf, spotPath, sweepBend, tableLayout, tlcLayout, turnedWith, waveAlong, writtenCharge, type Arrow, type Atom, type Bond, type Box, type Caption, type Drawing, type Face, type Ink, type Mol, type PartCache, type Shape } from "./render.ts";
 import { readFileSync } from "node:fs";
 import { layoutCycles, type Cycle } from "./cycle.ts";
 import { arialGlyph } from "./cdxml.ts";
@@ -102,6 +102,39 @@ const nitro = render({
 }, S, ink);
 assert.deepEqual(nitro.labels.map((l) => l.text).sort(), ["+", "N", "O", "O", "–"].sort());
 console.log("render.check: charges ok");
+
+// A minus sits as high as a plus (Cl⁻ level with N⁺, 2– with 2+): its ink's middle at the plus's, the count unmoved.
+{
+  // Arial's ink up from the baseline (em): + 0.116 to 0.589, its en dash 0.224 to 0.294, other glyphs a box.
+  const arialish = (t: string): Ink => {
+    let x = 0;
+    const outline: P[] = [];
+    for (const ch of t) { const [lo, hi] = ch === "+" ? [0.116, 0.589] : ch === "–" ? [0.224, 0.294] : [0, 0.716]; outline.push([x, -lo * S.size], [x + 5, -lo * S.size], [x + 5, -hi * S.size], [x, -hi * S.size]); x += 5; }
+    return { width: x, ascent: 0.716 * S.size, outline };
+  };
+  const ion = (label: string, charge: number) => render({ atoms: [{ label, location: [0, 0, 0], charge }], bonds: [] }, S, arialish).labels;
+  const mid = (l: { text: string; y: number; size: number }) => l.y - ((l.text === "+" ? 0.3525 : l.text === "–" ? 0.259 : 0.358) * l.size);
+  const plus = ion("N", 1).find((l) => l.text === "+")!, minus = ion("Cl", -1).find((l) => l.text === "–")!;
+  assert.ok(Math.abs(mid(plus) - mid(minus)) < 1e-9, `the minus's middle at the plus's (${mid(plus)} vs ${mid(minus)})`);
+  const two = ion("O", -2), twoPlus = ion("O", 2);
+  assert.equal(two.find((l) => l.text === "2")!.y, twoPlus.find((l) => /^2/.test(l.text))!.y, "a count stays on the sign's baseline");
+  assert.ok(Math.abs(mid(two.find((l) => l.text === "–")!) - mid(plus)) < 1e-9, "2–'s minus as high as a plus");
+  // A written label's sign at its end (BF4- from ChemDraw's formula face) is raised as a charge's is; the count stays.
+  const written = (text: string) => render({ atoms: [{ label: "B", text, location: [0, 0, 0] }], bonds: [] }, S, arialish).labels;
+  const bf4 = written("BF4-"), nh4 = written("NH4+");
+  assert.deepEqual(bf4.map((l) => l.text), ["B", "F", "4", "–"]);
+  assert.ok(Math.abs(mid(bf4[3]) - mid(nh4.find((l) => l.text === "+")!)) < 1e-9 && bf4[3].size < bf4[0].size, "BF4-'s minus raised, level with NH4+'s plus");
+  // A count before the sign is a charge only for a monatomic ion or after a space; otherwise it stays a count.
+  const charges: [string, string, number][] = [["Fe2+", "Fe", 2], ["Cu2+", "Cu", 2], ["O2-", "O", -2], ["S2-", "S", -2], ["SO4 2-", "SO4", -2], ["NH4+", "NH4", 1], ["BF4-", "BF4", -1], ["PF6-", "PF6", -1], ["I3-", "I3", -1], ["N3-", "N3", -1], ["SO42-", "SO42", -1], ["O2+", "O2", 1], ["U4+", "U", 4]];
+  for (const [t, text, charge] of charges) assert.deepEqual(writtenCharge(t), { text, charge }, t);
+  assert.equal(writtenCharge("CH2"), undefined);
+  const o2 = written("O2-"), fe = written("Fe2+");
+  assert.deepEqual(o2.map((l) => l.text), ["O", "2", "–"]);
+  assert.ok(o2[1].size < o2[0].size && o2[1].y < o2[0].y && Math.abs(mid(o2[2]) - mid(plus)) < 1e-9, "O2-'s 2 raised with its minus");
+  assert.ok(fe.some((l) => /^2\+?$/.test(l.text) && l.y < fe[0].y), "Fe2+'s 2 raised");
+  assert.deepEqual(written("SO4 2-").map((l) => l.text), ["S", "O", "4", "2", "–"]);
+}
+console.log("render.check: minus level with plus ok");
 
 // Carbocation: no C label, just the + beside the vertex, and the carbon still joins its bonds in a fan.
 const cation = render({

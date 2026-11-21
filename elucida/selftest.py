@@ -22501,6 +22501,55 @@ def _g_nmr_own(ctx):
                           f"({build_tp:.1f} s), later opens copy ({copy_tp:.2f} s, same content, edits replaced), wrong "
                           "key or damaged template = no copy, never in recent lists or the overview: OK")
         with section:
+            # lane-octetbonds: die eigene Zeichnung (formats/cdxml.py) liest DoublePosition wie ChemDraw 23 (Right = links
+            # von B->E im Bild, y nach unten), alte Octet-Dateien (ohne "sides") in Octets altem Sinn; Formelstil hebt
+            # eine Ladung am Ende hoch, Minus als U+2212 (so hoch wie das Plus). Erfundene Moleküle.
+            import math as math_ob
+            import xml.etree.ElementTree as ET_ob
+            from elucida.formats import cdxml as CDXD_ob
+            def ring_ob(pos, top=""):
+                n_ = "".join(f'<n id="{k + 2}" p="{100 + 14.4 * math_ob.cos(math_ob.radians(30 + 60 * k)):.2f} '
+                             f'{100 + 14.4 * math_ob.sin(math_ob.radians(30 + 60 * k)):.2f}"/>' for k in range(6))
+                b_ = "".join(f'<b id="{10 + j}" B="{B + 2}" E="{E + 2}"' + (f' Order="2" DoublePosition="{pos[j // 2]}"' if j % 2 == 0 else "")
+                             + "/>" for j, (B, E) in enumerate([(0, 1), (1, 2), (3, 2), (3, 4), (4, 5), (5, 0)]))
+                f_ = out / "octetbonds_ring.cdxml"
+                f_.write_text(f'<CDXML BondLength="14.40"{top}><page BoundingBox="0 0 540 720"><fragment id="1">{n_}{b_}'
+                              "</fragment></page></CDXML>", encoding="utf-8")
+                svg_ob = CDXD_ob.render_svg(f_)[0]
+                mids_ = [((float(m_[0]) + float(m_[2])) / 2 - 100, (float(m_[1]) + float(m_[3])) / 2 - 100) for m_ in
+                         re.findall(r'<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"', svg_ob)]
+                return sum(math_ob.hypot(*m_) < 11.5 for m_ in mids_)       # zweite Linien innen (Kante: 12.47)
+            assert ring_ob(["Left", "Right", "Left"]) == 3, "ChemDraw-Seiten zeigen in den Ring"
+            assert ring_ob(["Right", "Left", "Right"]) == 0, "ChemDraw-Seiten außen bleiben außen"
+            assert ring_ob(["Right", "Left", "Right"], """ Octet='{"v":1,"app":"1.1.2","xyz":1}'""") == 3, "alte Octet-Datei"
+            assert ring_ob(["Left", "Right", "Left"], """ Octet='{"v":1,"app":"1.1.2","xyz":1,"sides":1}'""") == 3
+            assert CDXD_ob._formula_parts("NH3+") == [("NH", ""), ("3", "sub"), ("+", "sup")]
+            assert CDXD_ob._formula_parts("BF4-")[-1] == ("-", "sup") and CDXD_ob._formula_parts("n-Bu4N")[-1] == ("N", "")
+            # Zahl vor dem Zeichen: Ladung nur bei einatomigem Ion oder nach Leerzeichen, sonst Index (erfundene Liste)
+            for t_ob, want_ob in (("Fe2+", [("Fe", ""), ("2+", "sup")]), ("Cu2+", [("Cu", ""), ("2+", "sup")]),
+                                  ("O2-", [("O", ""), ("2-", "sup")]), ("NH4+", [("NH", ""), ("4", "sub"), ("+", "sup")]),
+                                  ("BF4-", [("BF", ""), ("4", "sub"), ("-", "sup")]),
+                                  ("SO42-", [("SO", ""), ("42", "sub"), ("-", "sup")]),
+                                  ("SO4 2-", [("SO", ""), ("4", "sub"), ("2-", "sup")]),
+                                  ("I3-", [("I", ""), ("3", "sub"), ("-", "sup")]),
+                                  ("U4+", [("U", ""), ("4+", "sup")])):
+                assert CDXD_ob._formula_parts(t_ob) == want_ob, (t_ob, CDXD_ob._formula_parts(t_ob))
+            from elucida.formats.elements import ELEMENTS as ELS_ob
+            assert len(ELS_ob) == 118 and ELS_ob[91] == "U" and ELS_ob[-1] == "Og"      # wie Octet: alle Elemente
+            ion_ob = ET_ob.fromstring('<t><s face="96">Cl-</s></t>')
+            assert [(r_[0], r_[4]) for r_ in CDXD_ob._runs(ion_ob)[0]] == [("Cl", ""), ("\u2212", "sup")]
+            ion_ob = ET_ob.fromstring('<t><s face="96">O2-</s></t>')
+            assert [(r_[0], r_[4]) for r_ in CDXD_ob._runs(ion_ob)[0]] == [("O", ""), ("2\u2212", "sup")]
+            # ein Strich am Ende eines Laufs, der nicht das Label beendet (CH2- vor CH3), bleibt Text
+            ion_ob = ET_ob.fromstring('<t><s face="96">CH2-</s><s face="96">CH3</s></t>')
+            assert [(r_[0], r_[4]) for r_ in CDXD_ob._runs(ion_ob)[0]] == [("CH", ""), ("2", "sub"), ("-", ""), ("CH", ""), ("3", "sub")]
+            ion_ob = ET_ob.fromstring('<t><s face="96">N</s><s face="64">+</s><s face="64">-</s></t>')
+            runs_ob = CDXD_ob._runs(ion_ob)[0]
+            assert [(r_[0], r_[4]) for r_ in runs_ob] == [("N", ""), ("+", "sup"), ("\u2212", "sup")], runs_ob
+            report.append("Own structure drawing: ChemDraw's double bond sides (Right = left of B->E as drawn), older "
+                          "Octet files in Octet's old sense, a charge at the end of formula text raised (count only "
+                          "for a monatomic ion or after a space), minus as U+2212: OK")
+        with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
             import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-

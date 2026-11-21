@@ -1434,3 +1434,43 @@ No</s><s font="3" size="10" color="4" face="3"> ISC</s></t></n></fragment><fragm
   assert.deepEqual([pyridine.atoms[0].implicitHCount, pyridine.bonds.filter((x) => x.type === 2).length], [undefined, 3], "a pyridine's N");
   console.log("cdxml.check: hydrogens set by hand ok");
 }
+
+// A ring double bond's side as ChemDraw stores it: its Right is the left of B to E as drawn (y down), as ChemDraw 23
+// draws a test ring. A copy from ChemDraw (CDX) carries the side ChemDraw placed itself (0x0001/0x0002); it must point
+// into the ring, as the side Octet places itself does. Older Octet files (no sides mark) wrote Octet's own sense.
+{
+  const PT = 4 / 3, S = { bond: 14.4 * PT, line: 0.6 * PT, bold: 2 * PT, spacing: 0.18 * 14.4 * PT, hash: 2.5 * PT, margin: 1.69 * PT, size: 10 * PT };
+  const ink = (): Ink => ({ width: 9.6, ascent: 9.5, outline: [[0, 0], [9.6, 0], [9.6, -9.5], [0, -9.5]] });
+  // Toluene in Kekulé form, the ring clockwise as drawn: B to E runs 0-1, 3-2 (backwards) and 4-5.
+  const hexagon = (pos: [string, string, string], top = "") => {
+    const n = [0, 1, 2, 3, 4, 5].map((k) => `<n id="${k + 2}" p="${[100 + 14.4 * Math.cos(((30 + 60 * k) * Math.PI) / 180), 100 + 14.4 * Math.sin(((30 + 60 * k) * Math.PI) / 180)].map((v) => v.toFixed(2)).join(" ")}"/>`).join("") + `<n id="8" p="${(100 + 14.4 * 2 * Math.cos(Math.PI / 6)).toFixed(2)} ${(100 + 14.4 * 2 * Math.sin(Math.PI / 6)).toFixed(2)}"/>`;
+    const b = (id: number, B: number, E: number, order: number, dp: string) => `<b id="${id}" B="${B + 2}" E="${E + 2}"${order === 2 ? ' Order="2"' : ""}${dp ? ` DoublePosition="${dp}"` : ""}/>`;
+    return `<CDXML BondLength="14.40"${top}><page BoundingBox="0 0 540 720"><fragment id="1">${n}${b(10, 0, 1, 2, pos[0])}${b(11, 1, 2, 1, "")}${b(12, 3, 2, 2, pos[1])}${b(13, 3, 4, 1, "")}${b(14, 4, 5, 2, pos[2])}${b(15, 5, 0, 1, "")}${b(16, 0, 6, 1, "")}</fragment></page></CDXML>`;
+  };
+  const sides = (m: Mol) => render(m, S, ink).sides!.filter((_, k) => m.bonds[k].type === 2);
+  const auto = fromCdxml(hexagon(["", "", ""])).mol, inside = sides(auto);
+  assert.equal(inside.length, 3);
+  assert.deepEqual(sides(fromCdxml(hexagon(["Left", "Right", "Left"])).mol), inside, "ChemDraw's Left/Right (CDXML) into the ring");
+  // ChemDraw's own placement in a CDX copy: 2 = Left, 1 = Right, placed by the program.
+  const copied = readCdx(xmlToCdx(parseXml(hexagon(["2", "1", "2"])))).mol;
+  assert.deepEqual(sides(copied), inside, "ChemDraw's placed sides from a CDX copy point into the ring");
+  assert.deepEqual(sides(fromCdxml(hexagon(["Right", "Left", "Right"], ` Octet='{"v":1,"app":"1.1.2","xyz":1}'`)).mol), inside, "an older Octet file keeps its sides");
+  // Octet writes ChemDraw's sense and marks it; reading its own file back keeps every side.
+  const set: Mol = { ...auto, bonds: auto.bonds.map((x, k) => (x.type === 2 ? { ...x, position: inside[auto.bonds.filter((y) => y.type === 2).indexOf(x)] > 0 ? "right" as const : "left" as const } : x)) };
+  const xml = toCdxml(set, DEFAULT_STYLE);
+  assert.deepEqual([...xml.matchAll(/DoublePosition="(\w+)"/g)].map((m) => m[1]).sort(), ["Left", "Left", "Right"], "written as ChemDraw reads it");
+  assert.deepEqual(fromCdxml(xml).mol.bonds.map((x) => x.position), set.bonds.map((x) => x.position), "and read back");
+  console.log("cdxml.check: double bond sides ok");
+}
+
+// A written ion's label (Fe2+, SO4 2-) goes to the file as written, in formula face, as ChemDraw keeps it: what is a
+// charge and what a count is decided where it is drawn (render.ts writtenCharge, the own drawer's _formula_parts).
+{
+  const ions = ["Fe2+", "Cu2+", "O2-", "NH4+", "BF4-", "SO42-", "SO4 2-"];
+  const page = ions.map((t, k) => `<fragment id="${10 + 2 * k}"><n id="${11 + 2 * k}" p="${100 + 40 * k} 100" NodeType="Unspecified"><t p="${96 + 40 * k} 104"><s font="3" size="10" face="96">${t}</s></t></n></fragment>`).join("");
+  const mol = fromCdxml(`<CDXML BondLength="14.40"><page BoundingBox="0 0 540 720">${page}</page></CDXML>`).mol, xml = toCdxml(mol, DEFAULT_STYLE);
+  assert.deepEqual(mol.atoms.map((a) => [a.text, a.charge]), ions.map((t) => [t, undefined]), "read as written");
+  assert.deepEqual([...xml.matchAll(/face="96">([^<]*)</g)].map((m) => m[1]), ions, "written as read");
+  assert.deepEqual(fromCdxml(xml).mol.atoms.map((a) => a.text), ions, "and back");
+  console.log("cdxml.check: written ions ok");
+}

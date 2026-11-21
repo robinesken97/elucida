@@ -63,3 +63,12 @@ the hidden Export button; the new `oct` clipboard field and Word object windows 
 src-tauri/src/*.rs and tauri.conf.json are vendored unused because the upstream checks read them. Excluded in
 scripts/check-embed.mjs: flatpak, libreoffice, word (packaging), ui (reads upstream's CLAUDE.md), inventory (needs
 upstream Git tags) and depth (depends on machine speed, fails in unmodified upstream on a fast Mac).
+
+Local change on November 21 (ChemDraw paste, Windows report): ChemDraw's DoublePosition Right is the left of B->E as
+drawn (y down), Left the right; checked in ChemDraw 23.1.2 with invented rings (CDXML and CDX, user and automatic
+values). Octet read and wrote the opposite, so ChemDraw's own placed sides in a CDX copy (0x0001/0x0002, which
+ChemDraw writes to CDX but not to CDXML) came out of the ring. cdxml.ts now reads and writes ChemDraw's sense and marks
+its files `sides: 1` at the top; files without the mark (older Octet) keep Octet's old sense. render.ts raises a charge
+minus (en dash) until its ink's middle is level with a plus's, and draws a free written label's trailing sign (BF4-) as a
+charge sign (bonded labels such as SO3- keep the sign in the text, since labelOf measures it there); a count before the sign is a charge only for a monatomic ion
+(metal cation Fe2+, chalcogenide O2-) or after a space (SO4 2-), else a count (NH4+, SO42-, I3-) (writtenCharge); signAt in cdxml.ts follows. Upstream has neither; offer them upstream.

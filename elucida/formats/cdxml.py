@@ -8,10 +8,13 @@ Nicht unterstützte Objekte (Bilder, Klammern, Kurvenpfeile …) werden gemeldet
 from __future__ import annotations
 
 import html
+import json
 import math
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from elucida.formats.elements import ELEMENTS
 
 PAD = 2.0                                        # Rand um den Inhalt [pt]
 
@@ -22,32 +25,54 @@ def _font(bold):
     return pymupdf.Font("hebo" if bold else "helv")          # Metrik wie Arial/Helvetica
 
 
-def _formula_parts(text):
-    """Formelstil (face 96): Ziffern nach Buchstaben/Klammern tiefgestellt (K2CO3, n-Bu4NPF6), sonst normal."""
+# Nichtmetalle: „X2+“ ist dort ein Molekülion (O2+, H2+), kein X²⁺
+_NONMETALS = set("H He B C N O F Ne Si P S Cl Ar Se Br Kr I Xe At Rn".split())
+
+
+def _monatomic(sym, sign):
+    """Elementsymbol + Zahl + Zeichen als einatomiges Ion lesen: Metallkation (Fe2+, Al3+) oder Chalkogenid (O2-, S2-);
+    I3-, N3-, O2+ bleiben Molekülionen mit Index (Nitrid als „N 3-“)."""
+    return sym in ELEMENTS and (sym not in _NONMETALS if sign == "+" else sym in ("O", "S", "Se", "Te"))
+
+
+def _formula_parts(text, end=True):
+    """Formelstil (face 96): Ziffern nach Buchstaben/Klammern tiefgestellt (K2CO3, n-Bu4NPF6), eine Ladung am Ende
+    hochgestellt wie in ChemDraw (N+, Cl-), sonst normal. end: der Lauf beendet das Label (sonst bleibt ein Zeichen am
+    Ende Text, CH2- vor einem weiteren Lauf). Zahl vor dem Zeichen ist Ladung nur bei einem einatomigen Ion (Fe2+, O2-)
+    oder nach einem Leerzeichen (SO4 2-, das Leerzeichen fällt weg), sonst Index (NH4+, SO42-, I3-, N3-)."""
+    m = re.fullmatch(r"(.*?\S) (\d*[+\-−–])", text, re.S) if end else None
+    if not m and end:
+        m = re.fullmatch(r"([A-Z][a-z]?)(\d+[+\-−–])", text)
+        m = m if m and _monatomic(m.group(1), m.group(2)[-1]) else re.fullmatch(r"(.*[A-Za-z0-9)\]])([+\-−–])", text, re.S)
+    body, charge = (m.group(1), m.group(2)) if m else (text, "")
     out = []
-    for m in re.finditer(r"(?P<sub>(?<=[A-Za-z)\]])\d+)|.", text, re.S):
-        sub = m.group("sub") is not None
+    for q in re.finditer(r"(?P<sub>(?<=[A-Za-z)\]])\d+)|.", body, re.S):
+        sub = q.group("sub") is not None
         if out and out[-1][1] == sub:
-            out[-1][0] += m.group(0)
+            out[-1][0] += q.group(0)
         else:
-            out.append([m.group(0), sub])
-    return [(t, "sub" if s else "") for t, s in out]
+            out.append([q.group(0), sub])
+    return [(t, "sub" if s else "") for t, s in out] + ([(charge, "sup")] if charge else [])
 
 
 def _runs(t_el, size0=10.0, face0=0, color0="#000000", colors=None):
     """<t> -> Zeilen aus Läufen (Text, Größe, fett, kursiv, sub/sup, Farbe)."""
     lines = [[]]
-    for s in t_el.iter("s"):
+    ss = list(t_el.iter("s"))
+    last = max((k for k, s in enumerate(ss) if (s.text or "").strip()), default=-1)
+    for k_s, s in enumerate(ss):
         txt = s.text or ""
         size = float(s.get("size", size0))
         face = int(s.get("face", face0))
         col = _color(s.get("color"), colors) or color0
         bold, italic = bool(face & 1), bool(face & 2)
         if face & 96 == 96:
-            parts = _formula_parts(txt)
+            parts = _formula_parts(txt, k_s == last)
         else:
             parts = [(txt, "sub" if face & 32 else "sup" if face & 64 else "")]
         for part, va in parts:
+            if va == "sup" and re.fullmatch(r"\d*[-–]", part):
+                part = part[:-1] + "−"                 # Minus (U+2212) sitzt so hoch wie das Plus, Bindestrich tiefer
             for k, piece in enumerate(part.replace("\r", "\n").split("\n")):
                 if k:
                     lines.append([])
@@ -204,6 +229,11 @@ class _Doc:
         self.colors = ["#%02x%02x%02x" % tuple(int(round(float(c.get(k, 0)) * 255)) for k in "rgb")
                        for c in (ct.findall("color") if ct is not None else [])]
         self.out, self.notes, self.pts = [], [], []
+        try:                                           # Octet-Datei ohne „sides“: Seiten noch in Octets altem Sinn
+            own = json.loads(root.get("Octet") or "null")
+        except ValueError:
+            own = None
+        self.old_sides = isinstance(own, dict) and own.get("v") == 1 and not own.get("sides")
 
     def add_pts(self, *pts):
         self.pts.extend(pts)
@@ -309,8 +339,8 @@ class _Doc:
         if order in ("2", "1.5"):
             pos = b.get("DoublePosition")
             side = 0
-            if pos in ("Right", "Left"):
-                side = 1 if pos == "Right" else -1
+            if pos in ("Right", "Left"):                # ChemDraw: „Right“ = links von B→E im Bild (y nach unten)
+                side = (1 if pos == "Right" else -1) * (1 if self.old_sides else -1)
             elif pos != "Center":
                 rc_ = self.ring_center(u, v, nodes, adj)
                 if rc_ is not None:

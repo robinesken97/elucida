@@ -10,7 +10,7 @@
 //   that glyph stays on the atom if the label ends with it (OMe as MeO); if not (Br), the label's ink ends as far
 //   right of the atom as it starts left of it read left to right.
 
-import { pieces, units } from "./labels.ts";
+import { isElement, pieces, units } from "./labels.ts";
 import { atomIndicator, bondIndicator, queryLabel } from "./query.ts";
 import { aromaticAtoms, rings as ringsOf } from "./rings.ts";
 import { lines as richLines, plainOf, runsOf, styleOf, wrap, type RunStyle, type TextRun } from "./richtext.ts";
@@ -625,6 +625,18 @@ function crosses(b: Box, p: P, q: P): boolean {
 // ends of the label's attaching line. raised: a raised sign's baseline. w, ink: the sign's advance, and its ink outline
 // from its origin. label: the label's ink outline. size: the label's size.
 // Returns the sign's origin, and whether that is after the label and raised, where ChemDraw puts a label's sign.
+// A written label's charge at its end: after a space any count is the charge (SO4 2-), as it is after a monatomic ion's
+// symbol (Fe2+, O2-); otherwise only the sign is, and a count before it stays a count (NH4+, SO42-, I3-, N3-).
+// Nonmetals with a plus are molecular ions (O2+, H2+); of the anions only chalcogenides are read as monatomic.
+const NONMETALS = new Set("H D T He B C N O F Ne Si P S Cl Ar Se Br Kr I Xe At Rn".split(" "));
+export function writtenCharge(text: string): { text: string; charge: number } | undefined {
+  const ion = /^([A-Z][a-z]?)(\d+)([+\-−–])$/.exec(text);
+  const m = /^(.*?\S) (\d*)([+\-−–])$/s.exec(text)
+    ?? (ion && isElement(ion[1]) && (ion[3] === "+" ? !NONMETALS.has(ion[1]) : ["O", "S", "Se", "Te"].includes(ion[1])) ? ion : null)
+    ?? /^(.*[A-Za-z0-9)\]])()([+\-−–])$/s.exec(text);
+  return m ? { text: m[1], charge: (m[2] ? Number(m[2]) : 1) * (m[3] === "+" ? 1 : -1) } : undefined;
+}
+
 export function signSpot(X: P, bonds: { to: P; lines: number[]; m: number }[], rings: [number, number][], left: number, right: number, raised: number, w: number, ink: P[], rtl: boolean, label: P[], size: number): { at: P; after: boolean } {
   const [x0, y0, x1, y1] = outlineBox(ink), first = rtl ? left - w : right, second = rtl ? right : left - w;
   // How far out along a bond's lines some ink (moved by o) stops them, as the label cuts below work it out.
@@ -894,6 +906,12 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
       }
       return [];
     }
+    // A free written label's charge at its end (a counter-ion, BF4-, as ChemDraw's formula face raises it) is drawn as a
+    // charge is: raised and small, a minus level with a plus.
+    // shortcut: bonded labels (SO3-, NMe3+) keep the sign in the text, as the CDXML anchors (labelOf) measure it; raise
+    // those too once labelOf measures the raised sign.
+    const ends = !nbrs[i].length && !a.charge && !a.circled && !a.runs && a.chemical !== false && a.text && !a.text.includes("\n") ? writtenCharge(a.text) : undefined;
+    if (ends) a = { ...a, ...ends };
     const look: { font?: string; bold?: true; italic?: true; underline?: true; colour?: string } = { ...(a.font ? { font: a.font } : {}), ...(a.bold ? { bold: true } : {}), ...(a.italic ? { italic: true } : {}), ...(a.underline ? { underline: true } : {}) };
     const shape: Piece[] = [];
     capAt[i] = M('H').ascent;
@@ -963,12 +981,18 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
     };
     // The charge sign, where signSpot puts it: left and right are the ends of the label's attaching line, base its
     // baseline.
+    // A minus (an en dash) is raised until its ink's middle is level with a plus's, so Cl⁻ and N⁺ match.
+    const middle = (o: P[]) => (o.length ? (Math.min(...o.map((q) => q[1])) + Math.max(...o.map((q) => q[1]))) / 2 : 0);
     const charged = (left: number, right: number, base: number, rtl: boolean) => {
       if (!a.charge || a.circled) return;
-      const t = sign(a.charge), m = M(t), ink = m.outline.length ? m.outline.map(([px, py]): P => [px * SUB, py * SUB]) : ([[0, -m.ascent * SUB], [m.width * SUB, 0]] as P[]);
+      const t = sign(a.charge), m = M(t), count = t.slice(0, -1), lift = a.charge < 0 ? middle(M("+").outline) - middle(M("–").outline) : 0;
+      const w = count ? M(count).width : 0, own = lift ? [...(count ? M(count).outline : []), ...M("–").outline.map(([px, py]): P => [px + w, py + lift])] : m.outline;
+      const ink = own.length ? own.map(([px, py]): P => [px * SUB, py * SUB]) : ([[0, -m.ascent * SUB], [m.width * SUB, 0]] as P[]);
       const { bonds, rings } = signBonds(i, nbrs, covalent, (p, q) => bondAt.get(key(p, q))!, (j) => labelled[j], (j) => pts[j], atomZ[i]);
       const { at } = signSpot(pts[i], bonds, rings, left, right, base - RISE * S, m.width * SUB, ink, rtl, placedPoints(shape), S);
-      run(t, at[0], at[1], SUB, -1);
+      if (!lift) return void run(t, at[0], at[1], SUB, -1);
+      if (count) run(count, at[0], at[1], SUB, -1);
+      run("–", at[0] + w * SUB, at[1] + lift * SUB, SUB, -1);
     };
     // A text's ink, left and right of where it starts; and how far left of the middle of a glyph its ink starts.
     const inkOf = (t: string): [number, number] => { const o = M(t).outline; if (!o.length) return [0, 0]; const b = outlineBox(o); return [b[0], b[2]]; };

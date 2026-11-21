@@ -734,9 +734,10 @@ export function toCdxml(input: Mol, style: DocStyle, opts: CdxmlOptions = {}): s
     const a = mol.atoms[i], f = scaleOf(a), s = 0.75 * size, t = (a.charge ?? 0) > 0 ? "+" : "–", [w, l, r] = arialGlyph(t).map((n) => (n * s) / 1000);
     const y = X[1] + (/[OSCGQ]/.test(text) ? 0.364 : 0.358) * size, left = rtl ? X[0] + end - isoW - textW : X[0] - advance(text[0], size) / 2 - isoW;
     const edge = (b: Box): P[] => Array.from({ length: 9 }, (_, k): P[] => { const g = k / 8, x = b[0] + (b[2] - b[0]) * g, yy = b[1] + (b[3] - b[1]) * g; return [[x, b[1]], [x, b[3]], [b[0], yy], [b[2], yy]]; }).flat();
-    // The sign's ink: Arial's + is two bars 0.08 em thick, from 0.116 to 0.589 em up; its en dash one bar.
-    const c: P = [(l + r) / 2, t === "+" ? -0.3525 * s : -0.259 * s], bar = 0.04 * s;
-    const ink = t === "+" ? [...edge([l, c[1] - bar, r, c[1] + bar]), ...edge([c[0] - bar, -0.589 * s, c[0] + bar, -0.116 * s])] : edge([l, -0.294 * s, r, -0.224 * s]);
+    // The sign's ink: Arial's + is two bars 0.08 em thick, from 0.116 to 0.589 em up; its en dash one bar, raised from
+    // 0.224-0.294 em until its middle is the plus's, as render.ts draws it.
+    const c: P = [(l + r) / 2, -0.3525 * s], bar = 0.04 * s;
+    const ink = t === "+" ? [...edge([l, c[1] - bar, r, c[1] + bar]), ...edge([c[0] - bar, -0.589 * s, c[0] + bar, -0.116 * s])] : edge([l, c[1] - 0.035 * s, r, c[1] + 0.035 * s]);
     const z = { spacing: (style.spacing / 100) * B * f, margin: ((style.margin * 1.69) / 1.6) * f, hw: (line / 2) * f, wide: style.bold * 0.75 * f };
     const shownAt = (j: number) => { const b = mol.atoms[j], d = seen[j].length; return !b.attach && !b.bead && !b.centre && (b.label !== "C" || !d || !!b.text || !!b.isotope || !!b.shown || (d === 1 ? style.terminalLabels : style.carbonLabels)); };
     const { bonds, rings } = signBonds(i, seen, covalent, bondOf, shownAt, page, z);
@@ -897,7 +898,7 @@ export function toCdxml(input: Mol, style: DocStyle, opts: CdxmlOptions = {}): s
       id: bondId[k], Z: Z(), Visible: mol.atoms[i].hidden || mol.atoms[j].hidden ? "no" : undefined, B: nodeId.get(i)!, E: nodeId.get(j)!,
       Order: b.query ? BOND_QUERY[b.query] : ring || dashed || b.type === 4 ? "1.5" : d === "dative" ? "dative" : b.type === 2 ? "2" : b.type === 3 ? "3" : b.type === QUADRUPLE ? "4" : undefined,
       Topology: b.topology && TOPOLOGY[b.topology], RxnParticipation: b.rxn && RXN[b.rxn],
-      Display: ring ? undefined : dashed && d === "aromatic" ? "Dash" : b.type === HBOND ? "DottedHydrogen" : display, Display2: dashed ? "Dash" : undefined, Octet: priv({ order: ring ? b.type : undefined, type: !ring && b.query ? b.type : undefined, line: b.line, bold: b.bold }), DoublePosition: b.type === 2 && b.position ? { left: "Left", right: "Right", centre: "Center" }[b.position] : undefined,
+      Display: ring ? undefined : dashed && d === "aromatic" ? "Dash" : b.type === HBOND ? "DottedHydrogen" : display, Display2: dashed ? "Dash" : undefined, Octet: priv({ order: ring ? b.type : undefined, type: !ring && b.query ? b.type : undefined, line: b.line, bold: b.bold }), DoublePosition: b.type === 2 && b.position ? { left: "Right", right: "Left", centre: "Center" }[b.position] : undefined,
       color: colour(b.colour), highlightColor: colour(b.halo), ShowPerspective: mol.atoms[i].shade || mol.atoms[j].shade ? "yes" : undefined, ShowBondStereo: mol.atoms[i].cip && mol.atoms[j].cip ? "yes" : undefined, BondCircularOrdering: circular, IgnoreWarnings: b.ignoreWarnings ? "yes" : undefined,
       // Its own settings: from its scale, else as they came from ChemDraw; and its own double-bond spacing.
       ...(f === 1 ? b.own : undefined), ...ownBond(f, b), BondSpacing: b.spacing !== undefined ? num6(b.spacing) : undefined,
@@ -1161,7 +1162,7 @@ export function toCdxml(input: Mol, style: DocStyle, opts: CdxmlOptions = {}): s
     ChemPropBoilingPt: "Boiling Point: ", ChemPropMeltingPt: "Melting Point: ", ChemPropCritTemp: "Critical Temp: ", ChemPropCritPres: "Critical Pres: ", ChemPropCritVol: "Critical Vol: ",
     ChemPropGibbs: "Gibbs Energy: ", ChemPropLogP: "Log P: ", ChemPropMR: "MR: ", ChemPropHenry: "Henry's Law: ", ChemPropEForm: "Heat of Form: ", ChemProptPSA: "tPSA: ", ChemPropID: "", ChemPropFragmentLabel: "",
     color: doc, bgcolor: bg, RxnAutonumberStart: 1, RxnAutonumberConditions: "no", RxnAutonumberStyle: "Roman", RxnAutonumberFormat: "(#)",
-    Octet: priv({ v: 1, app: pkg.version, xyz: 1, page: style.page, custom: style.custom, landscape: style.landscape || undefined, edges: style.edges ? undefined : false, grid: style.grid === "bond" ? undefined : style.grid, scale: style.scale !== 1 ? style.scale : undefined, purpose: style.purpose,
+    Octet: priv({ v: 1, app: pkg.version, xyz: 1, sides: 1, page: style.page, custom: style.custom, landscape: style.landscape || undefined, edges: style.edges ? undefined : false, grid: style.grid === "bond" ? undefined : style.grid, scale: style.scale !== 1 ? style.scale : undefined, purpose: style.purpose,
       background: style.background === "white" ? undefined : style.background, cycles: cycles.length ? cycles : undefined, palette: style.palette, guides: mol.guides, fields: mol.fields ? 1 : undefined }),
   }, tables + pageXml);
   return `<?xml version="1.0" encoding="UTF-8" ?>\n<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >\n${root}\n`;
@@ -1759,7 +1760,9 @@ export function fromCdxml(input: string | Xml): CdxmlRead {
         if (s) { if (s[0]) bond.display = s[0]; if (s[1]) bond.stereo = s[1]; swap = s[2]; }
       } else if (bond.type === 2) {
         if (dashed) { /* above */ } else if (d === "Bold") bond.display = "bold"; else if (d === "Wavy") bond.display = "either"; else if (d === "Dash") bond.display = "aromatic"; else if (d2 === "Dash") bond.display = "dashed"; else if (d && d !== "Solid") lose("bond display");
-        const side = { Left: "left", Right: "right", Center: "centre" }[b.attrs.DoublePosition ?? ""] as Bond["position"];
+        // ChemDraw's Right is the left of B to E as drawn (y down), its Left the right. Older Octet files (no sides mark
+        // at the top) wrote Octet's own sides.
+        const side = (octet && !top?.sides ? { Left: "left", Right: "right", Center: "centre" } : { Left: "right", Right: "left", Center: "centre" })[b.attrs.DoublePosition ?? ""] as Bond["position"];
         if (side) bond.position = side;
       } else if (d && d !== "Solid" && !hbond) lose("bond display");
       if (swap) bond.atoms = [j!, i!];
