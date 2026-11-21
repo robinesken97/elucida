@@ -369,20 +369,25 @@ page shows.
 ## Compound
 
 A compound folder usually stands for **one compound** (or one comparison). The **Compound** tab is the first in the tab row
-and carries its number (the one used in the SI, otherwise the lab notebook no.) and formula. On the left are the name, formula, molar mass and the
-details for the SI, on the right the drawing. There is no OK and no Cancel: a field applies as soon as you leave it, the
-drawing saves itself, and undo takes every change back. Formula and molar mass follow the drawing (isotopes such as D
-included) unless you changed them by hand; a cleared field takes the drawn value again. **Choose…** loads an existing
-ChemDraw or image file instead. The formula shows subscript digits already in the field. If the drawing contains more
-than one molecule and is not a salt, a hint below says so: formula and molar mass then refer to all of them together. The
-sample number can always be entered, also without "Sample left". This is
-what the ε tab (structure, molar mass), the fluorescence tab, IR + EA and HRMS always follow: changing the compound also
-replaces values entered there; a replaced molar mass is shown as a message and undo restores it. Nothing is entered for this in
-the UV-Vis tab any more: the **Compound** card shows formula and molar mass, **Edit …** opens the compound, **Structure in
-figure** hides the structure for one series. The name appears in the window title. The melting point entered there starts the
-characterisation paragraph of the SI section. The molar mass is kept with two decimals everywhere. The **Lab notebook
-no.** sits next to the number used in the SI: it is shown in the overview and found by the search, but never appears in
-the SI, Word or the data package.
+and carries its number (the one used in the SI, otherwise the lab notebook no.) and formula. On the left are the name,
+formula, molar mass and the details for the SI, on the right the drawing. There is no OK and no Cancel: a field applies as
+soon as you leave it, the drawing saves itself, and undo takes every change back. Formula and molar mass follow the drawing
+(isotopes such as D included) unless you changed them by hand; a cleared field takes the drawn value again. **Choose…**
+loads an existing ChemDraw or image file instead. The formula shows subscript digits already in the field. If the drawing
+contains more than one molecule and is not a salt, a hint below says so: formula and molar mass then refer to all of them
+together. Salts: draw cation and counter-ion as separate parts; common counter-ions may be a label (PF6, SbF6, AsF6, BF4,
+ClO4, OTf, NTf2, BArF, BPh4, OAc, OTs, NO3, HSO4, SO4, I3, N3, also "[BArF4]−"), and the charge may be only in the text ("Br−").
+A number before the charge sign is the charge only on a monatomic ion (metal with +: "Fe2+"; O/S/Se/Te with −: "O2-"),
+otherwise an index ("NH4+", "BF4-", "O2+"); "SO42-" is ambiguous and only reported, "SO4 2-" (space), superscript or
+"[SO4]2-" are clear (also in a typed formula). A label Elucida does not know is named, formula and molar mass then stay
+empty; if the charges do not sum to zero, a hint asks for the counter-ion. By hand, a salt can be written as "[C10H16N]+
+[PF6]-". The sample number can always be entered, also without "Sample left". This is what the ε tab (structure, molar
+mass), the fluorescence tab, IR + EA and HRMS always follow: changing the compound also replaces values entered there; a
+replaced molar mass is shown as a message and undo restores it. Nothing is entered for this in the UV-Vis tab any more: the
+**Compound** card shows formula and molar mass, **Edit …** opens the compound, **Structure in figure** hides the structure
+for one series. The name appears in the window title. The melting point entered there starts the characterisation paragraph
+of the SI section. The molar mass is kept with two decimals everywhere. The **Lab notebook no.** sits next to the number
+used in the SI: it is shown in the overview and found by the search, but never appears in the SI, Word or the data package.
 
 **Purity:** the card **Purity** records how the purity of the compound is shown (¹H NMR, ¹³C NMR, qNMR, elemental
 analysis, HPLC, GC, plus free text). The characterisation paragraph of the SI then ends with "Purity was established by
@@ -606,7 +611,10 @@ to Word or as part of the SI section.
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
   m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
   says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
-  preselected. calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₁₉N₂O⁺ [M+H]⁺ 279.1492;
+  preselected. If the compound is a salt, **Salt ion** chooses the measured part: preselected is the part with
+  carbon (otherwise the cation), a cation as [M]⁺ (dication [M]²⁺, m/z per charge), an anion as [M]⁻; molar mass and EA
+  still refer to the whole salt. Older projects with a report or a found value keep the whole salt.
+  calc. includes the electron mass; four decimals: **HR-MS-ESI(+)** calc. C₁₈H₁₉N₂O⁺ [M+H]⁺ 279.1492;
   found 279.1496. The deviation in ppm is shown for checking (found − calc). The formula is checked against the
   **ChemDraw object embedded in the report**; without a compound set, **Take the compound from the MS report**
   sets name, formula and molar mass from it (the drawing is then an RDKit substitute – use your own CDXML for figures).

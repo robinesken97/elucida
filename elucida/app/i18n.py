@@ -371,6 +371,14 @@ TEXTS = {
     "cdxml_empty": ("{name}: keine Struktur in CDXML gefunden", "{name}: no structure found in CDXML"),
     "cdxml_fragments": ("{n} Fragmente – Molmasse ist die Summe (Salz/Gegenion?)",
                         "{n} fragments – molar mass is the sum (salt/counter-ion?)"),
+    "cdxml_label_unknown": ("Beschriftung „{names}“ nicht aufgelöst (kein Element, keine Atome dahinter) – Summenformel und "
+                            "Molmasse bitte im Tab Verbindung eintragen",
+                            "Label “{names}” not resolved (no element, no atoms behind it) – please enter formula and "
+                            "molar mass in the Compound tab"),
+    "cdxml_charge_ambiguous": ("Ladung von „{names}“ mehrdeutig – Leerzeichen vor die Ladung setzen (z. B. SO4 2-); "
+                               "Summenformel und Ladungsbilanz bleiben leer",
+                               "Charge of “{names}” is ambiguous – put a space before the charge (e.g. SO4 2-); "
+                               "formula and charge balance stay empty"),
     "cdxml_dummies": ("{n} Platzhalteratom(e) (Abkürzung wie Dipp/Mes nicht aufgelöst?) – "
                       "Molmasse bitte manuell eingeben",
                       "{n} placeholder atom(s) (abbreviation like Dipp/Mes not expanded?) – "
@@ -1348,6 +1356,16 @@ TEXTS = {
     "ms_polarity_raw": ("⚠ die Rohdaten sind im Modus {rep}MS gemessen", "⚠ the raw data were measured in {rep}MS mode"),
     "compound_formula": ("Summenformel", "Formula"),
     "ms_adduct": ("Ion", "Ion"),
+    "ms_part": ("Ion des Salzes", "Salt ion"),
+    "ms_part_tip": ("Die Verbindung ist ein Salz: gemessen wird ein geladener Teil (Kation im positiven, Anion im negativen "
+                    "Modus). Molmasse und Elementaranalyse gelten weiter für das ganze Salz.",
+                    "The compound is a salt: what is measured is one charged part (cation in positive, anion in negative "
+                    "mode). Molar mass and elemental analysis still refer to the whole salt."),
+    "ms_part_cation": ("Kation {f}", "cation {f}"),
+    "ms_part_anion": ("Anion {f}", "anion {f}"),
+    "ms_part_salt": ("ganzes Salz {f}", "whole salt {f}"),
+    "formula_salt_bad": ("Salz {f} nicht lesbar – Schreibweise z. B. [C10H16N]+ [PF6]- oder [C8H22N2]2+ 2[PF6]-",
+                         "Salt {f} not readable – write e.g. [C10H16N]+ [PF6]- or [C8H22N2]2+ 2[PF6]-"),
     "ms_found": ("Gefunden (m/z)", "Found (m/z)"),
     "ms_found_tip": ("Gemessene m/z aus den Spektren im Bericht und das Mittel aus den Rohdaten; vorgewählt ist der "
                      "Wert im Bericht am nächsten am berechneten (SmartFormula-PDF: die Zeile des gewählten Ions), ohne "
@@ -1509,6 +1527,8 @@ TEXTS = {
                          "Verbindung nur ein Molekül zeichnen (Salze ausgenommen).",
                          "The drawing contains {n} molecules: formula and molar mass refer to all of them together. Draw "
                          "one molecule per compound (salts excepted)."),
+    "compound_charge_sum": ("Ladungen ergeben nicht null ({q}) – Gegenion fehlt?",
+                            "Charges do not sum to zero ({q}) – counter-ion missing?"),
     "compound_file": ("Datei", "File"),
     "ir_linewidth": ("Linienbreite", "Line width"),
     "cv_group": ("Gruppe", "Group"),

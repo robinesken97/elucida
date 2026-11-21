@@ -14,7 +14,6 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from elucida.formats.elements import ELEMENTS
 
 PAD = 2.0                                        # Rand um den Inhalt [pt]
 
@@ -25,25 +24,17 @@ def _font(bold):
     return pymupdf.Font("hebo" if bold else "helv")          # Metrik wie Arial/Helvetica
 
 
-# Nichtmetalle: „X2+“ ist dort ein Molekülion (O2+, H2+), kein X²⁺
-_NONMETALS = set("H He B C N O F Ne Si P S Cl Ar Se Br Kr I Xe At Rn".split())
-
-
-def _monatomic(sym, sign):
-    """Elementsymbol + Zahl + Zeichen als einatomiges Ion lesen: Metallkation (Fe2+, Al3+) oder Chalkogenid (O2-, S2-);
-    I3-, N3-, O2+ bleiben Molekülionen mit Index (Nitrid als „N 3-“)."""
-    return sym in ELEMENTS and (sym not in _NONMETALS if sign == "+" else sym in ("O", "S", "Se", "Te"))
-
-
 def _formula_parts(text, end=True):
     """Formelstil (face 96): Ziffern nach Buchstaben/Klammern tiefgestellt (K2CO3, n-Bu4NPF6), eine Ladung am Ende
     hochgestellt wie in ChemDraw (N+, Cl-), sonst normal. end: der Lauf beendet das Label (sonst bleibt ein Zeichen am
-    Ende Text, CH2- vor einem weiteren Lauf). Zahl vor dem Zeichen ist Ladung nur bei einem einatomigen Ion (Fe2+, O2-)
-    oder nach einem Leerzeichen (SO4 2-, das Leerzeichen fällt weg), sonst Index (NH4+, SO42-, I3-, N3-)."""
+    Ende Text, CH2- vor einem weiteren Lauf). Zahl vor dem Zeichen ist Ladung nur bei einem einatomigen Ion mit einer
+    Ziffer (Fe2+, O2-; `chem.monatomic`, gleiche Regel wie die Ladungserkennung) oder nach einem Leerzeichen (SO4 2-, das
+    Leerzeichen fällt weg), sonst Index (NH4+, SO42-, I3-, N3-, Hg22+)."""
+    from elucida.core.chem import monatomic
     m = re.fullmatch(r"(.*?\S) (\d*[+\-−–])", text, re.S) if end else None
     if not m and end:
-        m = re.fullmatch(r"([A-Z][a-z]?)(\d+[+\-−–])", text)
-        m = m if m and _monatomic(m.group(1), m.group(2)[-1]) else re.fullmatch(r"(.*[A-Za-z0-9)\]])([+\-−–])", text, re.S)
+        m = re.fullmatch(r"([A-Z][a-z]?)(\d[+\-−–])", text)
+        m = m if m and monatomic(m.group(1), m.group(2)[-1]) else re.fullmatch(r"(.*[A-Za-z0-9)\]])([+\-−–])", text, re.S)
     body, charge = (m.group(1), m.group(2)) if m else (text, "")
     out = []
     for q in re.finditer(r"(?P<sub>(?<=[A-Za-z)\]])\d+)|.", body, re.S):

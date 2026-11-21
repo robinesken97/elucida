@@ -22501,6 +22501,257 @@ def _g_nmr_own(ctx):
                           f"({build_tp:.1f} s), later opens copy ({copy_tp:.2f} s, same content, edits replaced), wrong "
                           "key or damaged template = no copy, never in recent lists or the overview: OK")
         with section:
+            # lane-salze: Salze als Verbindung (Gegenion als Beschriftung, Ladung nur im Text, Hinweise) -- erfundene
+            # CDXMLs, Ion: N(CH3)4+ mit verschiedenen Anionen; jede Beschriftung gegen ihren gezeichneten Zwilling
+            from elucida.core import chem as CH_sz
+            from elucida.tabs.compound import CompoundTab as CT_sz
+            from elucida.app.main_window import compound_from_structure as cfs_sz
+            d_sz = out / "input" / "salts"
+            d_sz.mkdir(parents=True, exist_ok=True)
+            id_sz = iter(range(100, 100000))
+
+            def at_sz(x_, el_=None, q_=None, text_=None, typ_=None):
+                i_ = next(id_sz)
+                a_ = (f' Element="{el_}"' if el_ else "") + (f' Charge="{q_}"' if q_ is not None else "") + \
+                    (f' NodeType="{typ_}"' if typ_ else "")
+                t_ = f'<t p="{x_} 0">' + "".join(f"<s>{r_}</s>" for r_ in text_) + "</t>" if text_ else ""
+                return i_, f'<n id="{i_}" p="{x_} 0"{a_}>{t_}</n>'
+
+            def frag_sz(nodes_, bonds_=(), inner_=""):
+                b_ = "".join(f'<b id="{next(id_sz)}" B="{a_}" E="{c_}"{o_}/>' for a_, c_, o_ in bonds_)
+                return f'<fragment id="{next(id_sz)}">{"".join(nodes_)}{b_}{inner_}</fragment>'
+
+            def cat_sz(q_=1, text_=None):                     # N(CH3)4+ (Ladung als Attribut oder nur im Text)
+                n_, ns_ = at_sz(0, 7, q_, text_)
+                cs_ = [at_sz(10 + k_) for k_ in range(4)]
+                return frag_sz([ns_] + [c_[1] for c_ in cs_], [(n_, c_[0], "") for c_ in cs_])
+
+            def central_sz(el_, n_lig, q_=-1):                # gezeichnetes EX_n- (PF6-, BF4-)
+                c_, cs_ = at_sz(200, el_, q_)
+                ls_ = [at_sz(210 + k_, 9) for k_ in range(n_lig)]
+                return frag_sz([cs_] + [l_[1] for l_ in ls_], [(c_, l_[0], "") for l_ in ls_])
+
+            def otf_sz():                                     # gezeichnetes CF3SO3-
+                c_, cs_ = at_sz(200)
+                s_, ss_ = at_sz(210, 16)
+                o_ = [at_sz(220 + k_, 8, -1 if k_ == 2 else None) for k_ in range(3)]
+                f_ = [at_sz(230 + k_, 9) for k_ in range(3)]
+                return frag_sz([cs_, ss_] + [x_[1] for x_ in o_ + f_],
+                               [(c_, s_, ""), (s_, o_[0][0], ' Order="2"'), (s_, o_[1][0], ' Order="2"'),
+                                (s_, o_[2][0], "")] + [(c_, x_[0], "") for x_ in f_])
+
+            def label_sz(text_, q_=-1, typ_="Nickname", nested_=None):
+                n_, ns_ = at_sz(300, None, q_, [text_] if isinstance(text_, str) else text_, typ_)
+                if nested_:                                   # Octet: Fragment-Knoten mit eigenen Atomen darin
+                    ns_ = ns_.replace("<t ", nested_ + "<t ", 1)
+                return frag_sz([ns_])
+
+            def doc_sz(name_, *frags_):
+                p_ = d_sz / f"{name_}.cdxml"
+                p_.write_text('<?xml version="1.0"?><CDXML><page id="1">' + "".join(frags_) + "</page></CDXML>",
+                              encoding="utf-8")
+                return p_
+
+            bf4_inner_ = central_sz(5, 4, None).replace("<fragment ", '<fragment Octet="{&quot;d&quot;:1}" ', 1)
+            cases_sz = {                                          # Name: (Datei, Formel, Molmasse, Teile)
+                "pf6_drawn": (doc_sz("pf6_drawn", cat_sz(), central_sz(15, 6)), "C4H12F6NP"),
+                "pf6_nick": (doc_sz("pf6_nick", cat_sz(), label_sz("PF6")), "C4H12F6NP"),
+                "pf6_nocharge": (doc_sz("pf6_nocharge", cat_sz(), label_sz("PF6", None)), "C4H12F6NP"),
+                "pf6_octet_text": (doc_sz("pf6_octet_text", cat_sz(), label_sz("PF6−", None, "Unspecified")), "C4H12F6NP"),
+                "bf4_drawn": (doc_sz("bf4_drawn", cat_sz(), central_sz(5, 4)), "C4H12BF4N"),
+                "bf4_octet": (doc_sz("bf4_octet", cat_sz(), label_sz(["BF4", "-"], -1, "Fragment", bf4_inner_)),
+                              "C4H12BF4N"),
+                "otf_drawn": (doc_sz("otf_drawn", cat_sz(), otf_sz()), "C5H12F3NO3S"),
+                "otf_nick": (doc_sz("otf_nick", cat_sz(), label_sz("OTf")), "C5H12F3NO3S"),
+                "otf_unspec": (doc_sz("otf_unspec", cat_sz(), label_sz("CF3SO3", -1, "Unspecified")), "C5H12F3NO3S"),
+                "ntf2": (doc_sz("ntf2", cat_sz(), label_sz("Tf2N", -1, "Unspecified")), "C6H12F6N2O4S2"),
+                "barf_br": (doc_sz("barf_br", cat_sz(), label_sz("[BArF4]−", None, "Unspecified")), "C36H24BF24N"),
+                "barf24": (doc_sz("barf24", cat_sz(), label_sz("BArF24", -1, "GenericNickname")), "C36H24BF24N"),
+                "sbf6": (doc_sz("sbf6", cat_sz(), label_sz("SbF6")), "C4H12F6NSb"),
+                "dication": (doc_sz("dication", cat_sz(), cat_sz(), label_sz("PF6"), label_sz("PF6")), "C8H24F12N2P2"),
+                "text_charges": (doc_sz("text_charges", cat_sz(None, ["N+"]),
+                                        frag_sz([at_sz(300, 35, None, ["Br−"])[1]])), "C4H12BrN"),
+            }
+            got_sz = {k_: CH_sz.load_cdxml(p_, render=False) for k_, (p_, _f) in cases_sz.items()}
+            for k_, (p_, f_) in cases_sz.items():
+                g_ = got_sz[k_]
+                assert g_["formula"] == f_ and g_["mw"] and not g_["labels"], (k_, g_)
+                assert sum(g_["charges"]) == 0 and any(g_["charges"]) and CT_sz.several_molecules(p_) == "", (k_, g_)
+                assert cfs_sz(p_)["formula"] == f_, (k_, cfs_sz(p_))
+            for lab_, drawn_ in (("pf6_nick", "pf6_drawn"), ("pf6_octet_text", "pf6_drawn"), ("bf4_octet", "bf4_drawn"),
+                                 ("otf_nick", "otf_drawn"), ("otf_unspec", "otf_drawn")):
+                assert abs(got_sz[lab_]["mw"] - got_sz[drawn_]["mw"]) < 1e-9 and \
+                    got_sz[lab_]["parts"] == got_sz[drawn_]["parts"], (lab_, got_sz[lab_], got_sz[drawn_])
+            assert got_sz["barf_br"]["parts"] == [("C4H12N", 1), ("C32H12BF24", -1)], got_sz["barf_br"]
+            assert abs(got_sz["barf_br"]["mw"] - 937.36) < 0.01 and abs(got_sz["pf6_nick"]["mw"] - 219.11) < 0.01
+            assert got_sz["dication"]["charges"] == [1, 1, -1, -1] and len(got_sz["dication"]["parts"]) == 2
+            # Vorschau wie gezeichnet: Beschriftung bleibt Beschriftung, Kation mit Ladung nur im Text wird gezeichnet
+            # (die unveränderte Datei ist nicht sanitisierbar, RDKit ließ das Kation weg)
+            for k_, n_bonds in (("pf6_nick", 4), ("text_charges", 4)):
+                svg_ = CH_sz.load_cdxml(cases_sz[k_][0])["svg"]
+                assert len(set(re.findall(r"class='bond-(\d+)", svg_))) == n_bonds, (k_, svg_[:200])
+            # jede Abkürzung der Tabelle als freie Beschriftung: Formel des Ions (unabhängig aufgeschrieben), Ladung -1
+            ions_sz = {"PF6": "F6P", "SbF6": "F6Sb", "AsF6": "AsF6", "BF4": "BF4", "ClO4": "ClO4", "OTf": "CF3O3S",
+                       "TfO": "CF3O3S", "CF3SO3": "CF3O3S", "SO3CF3": "CF3O3S", "NTf2": "C2F6NO4S2", "Tf2N": "C2F6NO4S2",
+                       "N(SO2CF3)2": "C2F6NO4S2", "TFSI": "C2F6NO4S2", "BArF": "C32H12BF24", "BArF4": "C32H12BF24",
+                       "BArF24": "C32H12BF24", "BArF20": "C24BF20", "BPh4": "C24H20B", "OAc": "C2H3O2", "AcO": "C2H3O2",
+                       "OTs": "C7H7O3S", "TsO": "C7H7O3S", "NO3": "NO3", "HSO4": "HO4S", "I3": "I3", "N3": "N3", "SO4": "O4S"}
+            assert {k_.lower() for k_ in ions_sz} == set(CH_sz.COUNTER_IONS), set(CH_sz.COUNTER_IONS) ^ {k_.lower() for k_ in ions_sz}
+            for lab_, f_ in ions_sz.items():
+                z_ = 2 if lab_ == "SO4" else 1                      # Dianion: zwei Kationen
+                g_ = CH_sz.load_cdxml(doc_sz("ion_" + re.sub(r"\W", "_", lab_), *[cat_sz()] * z_, label_sz(lab_)),
+                                      render=False)
+                assert g_["parts"] == [("C4H12N", 1), (f_, -z_)] and g_["mw"], (lab_, g_)
+            # Abkürzung mit eigenen Atomen („SO3−“ gebunden): Ladung aus dem Text nicht setzen, RDKit liest die Atome
+            c_, cs_ = at_sz(500)
+            fr_, frs_ = at_sz(510, None, None, ["SO3−"], "Fragment")
+            frs_ = frs_.replace("<t ", frag_sz([at_sz(510, 16)[1]]) + "<t ", 1)
+            root_sz = CH_sz._prepare(doc_sz("abbr_atoms", frag_sz([cs_, frs_], [(c_, fr_, "")])))[0]
+            assert next(n_ for n_ in root_sz.iter("n") if n_.get("id") == str(fr_)).get("Charge") is None
+            # unbekannte Beschriftung (frei oder gebunden): Formel/Molmasse leer, nie „*“ oder CH3, Hinweis nennt sie
+            unk_sz = doc_sz("unknown", cat_sz(), label_sz("Xyz", -1, "Unspecified"))
+            c_, cs_ = at_sz(400)
+            l_, ls_ = at_sz(410, None, None, ["Qrs"], "Nickname")
+            bound_sz = doc_sz("bound", frag_sz([cs_, ls_], [(c_, l_, "")]))
+            for p_, lab_ in ((unk_sz, "Xyz"), (bound_sz, "Qrs")):
+                g_ = CH_sz.load_cdxml(p_, render=False)
+                assert g_["formula"] is None and g_["mw"] is None and g_["labels"] == [lab_], g_
+                assert T("cdxml_label_unknown", names=lab_) in CT_sz.several_molecules(p_) and cfs_sz(p_) == {"formula": None, "mw": None}
+            # Ladungen ohne Gegenion: Hinweis statt „mehrere Moleküle“; zwei neutrale Moleküle wie bisher
+            only_sz = doc_sz("cation_only", cat_sz())
+            assert CT_sz.several_molecules(only_sz) == T("compound_charge_sum", q="+1"), CT_sz.several_molecules(only_sz)
+            neutral_sz = doc_sz("two_neutral", frag_sz([at_sz(0)[1]]), frag_sz([at_sz(50)[1]]))
+            assert CT_sz.several_molecules(neutral_sz) == T("compound_several", n=2)
+            assert CH_sz.label_charge("PF6−") == ("PF6", -1) and CH_sz.label_charge("[X]2+") == ("[X]", 2)
+            assert CH_sz.label_charge("X²⁻") == ("X", -2) and CH_sz.label_charge("NH3+") == ("NH3", 1)
+            assert CH_sz.label_charge("Foo") == ("Foo", None) and CH_sz.counter_ion("TfO⁻") == CH_sz.counter_ion("otf")
+            assert CH_sz.counter_ion("Ph") is None and CH_sz.counter_ion("OMe") is None
+            # Entscheidung 191: Zahl = Ladung nur beim einatomigen Ion (Metall +, Chalkogen -), sonst Index; „SO42-“ nicht raten
+            for t_, want_ in (("Fe2+", ("Fe", 2)), ("Cu2+", ("Cu", 2)), ("O2-", ("O", -2)), ("S2-", ("S", -2)),
+                              ("NH4+", ("NH4", 1)), ("BF4-", ("BF4", -1)), ("PF6-", ("PF6", -1)), ("I3-", ("I3", -1)),
+                              ("N3-", ("N3", -1)), ("SO4 2-", ("SO4", -2)), ("SO4²⁻", ("SO4", -2)), ("O2+", ("O2", 1)),
+                              ("Al3+", ("Al", 3)), ("U4+", ("U", 4)), ("H2+", ("H2", 1))):
+                assert CH_sz._label_charge(t_) == want_ + (False,), (t_, CH_sz._label_charge(t_))
+            for t_ in ("SO42-", "CO32-", "Hg22+", "Fe(CN)64-"):                 # mehrstellig, auch Index + Ladung möglich
+                assert CH_sz._label_charge(t_) == (t_[:-1], None, True), (t_, CH_sz._label_charge(t_))
+            assert CH_sz._label_charge("C32H12BF24-") == ("C32H12BF24", -1, False)     # Hill-Formel bleibt Index
+            import xml.etree.ElementTree as ET_sz
+            run_sz = lambda f_: CH_sz._label_charge(CH_sz._label_text(ET_sz.fromstring(
+                f'<n><t><s face="96">SO4</s><s face="{f_}">2-</s></t></n>')))
+            assert run_sz(64) == ("SO4", -2, False) and run_sz(96)[2], (run_sz(64), run_sz(96))   # hochgestellt / Formel
+            fe_sz = doc_sz("fe_text", frag_sz([at_sz(0, 26, None, ["Fe2+"])[1]]),
+                           *[frag_sz([at_sz(40 + 40 * k_, 17, None, ["Cl-"])[1]]) for k_ in range(2)])
+            g_ = CH_sz.load_cdxml(fe_sz, render=False)
+            assert sorted(g_["charges"]) == [-1, -1, 2] and g_["formula"] == "Cl2Fe", g_
+            assert CT_sz.several_molecules(fe_sz) == "", CT_sz.several_molecules(fe_sz)
+            amb_sz = doc_sz("so4_ambiguous", cat_sz(), label_sz("SO42-", None, "Unspecified"))
+            g_, h_ = CH_sz.load_cdxml(amb_sz, render=False), CT_sz.several_molecules(amb_sz)
+            assert g_["ambiguous"] == ["SO42-"] and g_["formula"] is None and g_["mw"] is None, g_
+            assert h_ == T("cdxml_charge_ambiguous", names="SO42-"), h_                # nur dieser Hinweis
+            so4_sz = doc_sz("so4_space", cat_sz(), cat_sz(), label_sz("SO4 2-", None, "Unspecified"))
+            g_ = CH_sz.load_cdxml(so4_sz, render=False)
+            assert g_["formula"] == "C8H24N2O4S" and sorted(g_["charges"]) == [-2, 1, 1], g_
+            report.append(f"Salts as compounds: {len(cases_sz)} invented drawings, {len(ions_sz)} table labels (Nickname/Unspecified/"
+                          "GenericNickname/Octet fragment = drawn twin, charges from label text: count is charge only on a "
+                          "monatomic ion (metal +, chalcogen -), SO42- ambiguous -> hint), unknown labels named with empty formula and "
+                          "mass, charge-sum hint: OK")
+        with section:
+            # lane-salze: Salzschreibweise in der Summenformel, „*“ nie still weglassen
+            P_sz = IRMS.parse_formula
+            for t_, f_, parts_ in (("C10H16N+ Br-", "C10H16BrN", [("C10H16N", 1, 1), ("Br", -1, 1)]),
+                                   ("[C10H16N]+[PF6]-", "C10H16F6NP", [("C10H16N", 1, 1), ("PF6", -1, 1)]),
+                                   ("C10H16N+·PF6-", "C10H16F6NP", [("C10H16N", 1, 1), ("PF6", -1, 1)]),
+                                   ("[C8H22N2]2+ 2[PF6]-", "C8H22F12N2P2", [("C8H22N2", 2, 1), ("PF6", -1, 2)]),
+                                   # Entscheidung 191: Zahl am einatomigen Ion = Ladung, sonst Index
+                                   ("Fe2+ 2Cl-", "Cl2Fe", [("Fe", 2, 1), ("Cl", -1, 2)]),
+                                   ("Cu2+ 2BF4-", "B2CuF8", [("Cu", 2, 1), ("BF4", -1, 2)]),
+                                   ("NH4+ N3-", "H4N4", [("NH4", 1, 1), ("N3", -1, 1)]),
+                                   ("2Na+ SO4 2-", "Na2O4S", [("Na", 1, 2), ("SO4", -2, 1)]),
+                                   ("C19H15+ BF4-", "C19H15BF4", [("C19H15", 1, 1), ("BF4", -1, 1)]),
+                                   ("C10H16N+ C32H12BF24-", "C42H28BF24N", [("C10H16N", 1, 1), ("C32H12BF24", -1, 1)])):
+                assert IRMS.formula_str(P_sz(t_)) == f_ and IRMS.salt_parts(t_) == parts_, (t_, P_sz(t_))
+            for t_ in ("C18H18N2O+", "[13C]H4+", "C18H18N2O·2H2O", "C18H18N2O+2"):
+                assert IRMS.salt_parts(t_) == [], t_
+            assert P_sz("[13C]H4+") == {"[13C]": 1, "H": 4}
+            # Hydrat-Trenner wie auf main (·, •, *; Werte = main bdd1cfc, Spur-Vergleich mit allen Demo-/Fremdpeak-Formeln)
+            for t_, f_, m_ in (("CuSO4*5H2O", "H10CuO9S", 249.677), ("CuSO4·5H2O", "H10CuO9S", 249.677),
+                               ("CuSO4 * 5 H2O", "H10CuO9S", 249.677), ("Na2CO3*10H2O", "CH20Na2O13", 286.138),
+                               ("C18H18N2O*H2O", "C18H20N2O2", 296.37), ("C18H18N2O·HCl", "C18H19ClN2O", 314.813)):
+                assert IRMS.formula_str(P_sz(t_)) == f_ and abs(SYN.molar_mass(t_) - m_) < 1e-3, (t_, SYN.molar_mass(t_))
+            for bad_ in ("C10H16N+Br", "C10H16N+ x-", "2Na+ SO42-", "Hg22+ 2Cl-", "4Na+ Fe(CN)64-"):
+                try:
+                    P_sz(bad_)
+                    raise AssertionError(f"{bad_} angenommen")
+                except ValueError:
+                    pass
+            assert SI.ea_formula_label("[C10H16N]+[PF6]-") == "C10H16F6NP"          # EA: ganzes Salz
+            report.append("Salt notation in formulas ([C]+ [A]-, C+ A-, dication with 2 anions), hydrates with * and middle dot as "
+                          "before, unreadable or ambiguous salts rejected, EA of the whole salt: OK")
+        with section:
+            # lane-salze: HRMS eines Salzes misst einen geladenen Teil ([M]+ des Kations, [M]- des Anions, [M]2+)
+            t_sz = w.hrms_tab
+            keep_c_sz, keep_st_sz = dict(w.compound), dict(t_sz.st)
+            try:
+                def ms_sz(comp_, **st_):
+                    w.compound = comp_
+                    t_sz.st.pop("ms_part", None)
+                    t_sz.st.update(adduct="M+H", **{k_: None for k_ in t_sz._EVALUATED})   # ohne Auswertung
+                    t_sz.st.update(**st_)
+                    t_sz.sync_widgets()
+                    t_sz.update_ms()
+                    return t_sz._ms_line[0]
+                assert ms_sz({"formula": "C18H18N2O"}).startswith("HR-MS-ESI(+) calc. C18H19N2O+ [M+H]+ 279.1492")
+                assert t_sz.cmb_part.count() == 0 and t_sz.cmb_adduct.count() == len(IRMS.ADDUCTS) + 1  # ohne Salz wie bisher
+                line_sz = ms_sz({"formula": "[C10H16N]+[PF6]-"})
+                assert line_sz.startswith("HR-MS-ESI(+) calc. C10H16N+ [M]+ 150.1277"), line_sz
+                assert t_sz.cmb_part.count() == 3 and t_sz.cmb_adduct.currentData() == "M"
+                pat_sz = t_sz.pattern()
+                assert abs(pat_sz[0][0] - 150.1277) < 1e-4 and abs(pat_sz[0][1] - 100) < 1e-9, pat_sz[:2]
+                assert t_sz.formula() == ("[C10H16N]+[PF6]-", "project")              # EA bleibt beim ganzen Salz
+                t_sz.cmb_part.setCurrentIndex(1)                                        # Anion
+                assert t_sz.st["ms_part"] == "PF6|-1" and t_sz.adduct() == ("M", -1)
+                t_sz.update_ms()
+                assert t_sz._ms_line[0].startswith("HR-MS-ESI(−) calc. F6P− [M]− 144.9647"), t_sz._ms_line
+                assert all(t_sz.cmb_adduct.itemText(i_).endswith("⁻")
+                           for i_ in range(t_sz.cmb_adduct.count() - 1))              # nur negative Ionen
+                t_sz.cmb_part.setCurrentIndex(2)                                        # ganzes Salz: wie ohne Salz
+                t_sz.update_ms()
+                assert t_sz._ms_line[0].startswith("HR-MS-ESI(+) calc. C10H17F6NP+ [M+H]+"), t_sz._ms_line
+                assert ms_sz({"formula": "[C8H22N2]2+ 2[PF6]-"}).startswith(
+                    "HR-MS-ESI(+) calc. [C8H22N2]2+ [M]2+ 73.0886"), t_sz._ms_line
+                t_sz.cmb_adduct.setCurrentIndex(t_sz.cmb_adduct.findData("M+H"))       # Addukt auf dem Teil
+                t_sz.update_ms()
+                assert t_sz._ms_line[0].startswith("HR-MS-ESI(+) calc. [C8H23N2]3+ [M+H]3+"), t_sz._ms_line
+                # Vorgabe = Teil mit Kohlenstoff (Natriumsalz: das organische Anion), sonst erstes Kation
+                assert ms_sz({"formula": "Na+ [C7H5O2]-"}).startswith("HR-MS-ESI(−) calc. C7H5O2− [M]−"), t_sz._ms_line
+                # Projekt von vor „Ion des Salzes“ (Auswertung, kein ms_part): bleibt beim ganzen Salz, kein neuer Schlüssel
+                line_sz = ms_sz({"formula": "[C10H16N]+[PF6]-"}, found_manual=296.0912, found="manual")
+                assert line_sz.startswith("HR-MS-ESI(+) calc. C10H17F6NP+ [M+H]+") and "ms_part" not in t_sz.st, line_sz
+                assert t_sz.cmb_part.currentData() == "salt"
+                # neue Auswertung: angezeigte Vorgabe (Kation) wird vorher festgehalten
+                ms_sz({"formula": "[C10H16N]+[PF6]-"})
+                t_sz.freeze_part()
+                t_sz.st.update(found_manual=150.128, found="manual")
+                t_sz.sync_widgets()
+                t_sz.update_ms()
+                assert t_sz.st["ms_part"] == "C10H16N|1" and t_sz._ms_line[0].startswith(
+                    "HR-MS-ESI(+) calc. C10H16N+ [M]+ 150.1277"), t_sz._ms_line
+                # aus der Zeichnung (Formel = Zeichnung); eigene Formel, die nicht passt: kein Salz
+                drawn_sz = str(cases_sz["pf6_nick"][0])
+                assert ms_sz({"formula": "C4H12F6NP", "structure": drawn_sz}).startswith(
+                    "HR-MS-ESI(+) calc. C4H12N+ [M]+ 74.0964"), t_sz._ms_line
+                assert ms_sz({"formula": "C4H13F6NP", "structure": drawn_sz}).startswith(
+                    "HR-MS-ESI(+) calc. C4H14F6NP+ [M+H]+") and t_sz.cmb_part.count() == 0, t_sz._ms_line
+            finally:
+                w.compound = keep_c_sz
+                t_sz.st.clear()
+                t_sz.st.update(keep_st_sz)
+                t_sz.sync_widgets()
+            report.append("HRMS of salts: part with carbon (else first cation) by default, older evaluated projects keep "
+                          "the whole salt, anion [M]- in negative mode, dication [M]2+ (m/z per "
+                          "charge), adducts on the part, isotope pattern of the part, whole salt and non-salt formulas "
+                          "unchanged: OK")
+        with section:
             # lane-octetbonds: die eigene Zeichnung (formats/cdxml.py) liest DoublePosition wie ChemDraw 23 (Right = links
             # von B->E im Bild, y nach unten), alte Octet-Dateien (ohne "sides") in Octets altem Sinn; Formelstil hebt
             # eine Ladung am Ende hoch, Minus als U+2212 (so hoch wie das Plus). Erfundene Moleküle.
@@ -22534,6 +22785,15 @@ def _g_nmr_own(ctx):
                                   ("I3-", [("I", ""), ("3", "sub"), ("-", "sup")]),
                                   ("U4+", [("U", ""), ("4+", "sup")])):
                 assert CDXD_ob._formula_parts(t_ob) == want_ob, (t_ob, CDXD_ob._formula_parts(t_ob))
+            # gemeinsame Liste Zeichner/Leser (chem._label_charge): Ladung im Bild = erkannte Ladung; mehrdeutig -> Index
+            from elucida.core import chem as CH_ob
+            for t_ob in ("Fe2+", "Cu2+", "O2-", "S2-", "SO4 2-", "NH4+", "BF4-", "PF6-", "I3-", "N3-", "SO42-", "O2+",
+                         "Al3+", "U4+", "H2+", "Hg22+", "CO32-", "C32H12BF24-", "Fe(CN)64-"):
+                sup_ob = CDXD_ob._formula_parts(t_ob)[-1]
+                _, q_ob, amb_ob = CH_ob._label_charge(t_ob)
+                shown_ob = int(sup_ob[0][:-1] or 1) * (1 if sup_ob[0][-1] == "+" else -1)
+                assert sup_ob[1] == "sup" and (shown_ob == (1 if t_ob[-1] == "+" else -1) if amb_ob else shown_ob == q_ob), \
+                    (t_ob, sup_ob, q_ob, amb_ob)
             from elucida.formats.elements import ELEMENTS as ELS_ob
             assert len(ELS_ob) == 118 and ELS_ob[91] == "U" and ELS_ob[-1] == "Og"      # wie Octet: alle Elemente
             ion_ob = ET_ob.fromstring('<t><s face="96">Cl-</s></t>')

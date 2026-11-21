@@ -626,11 +626,12 @@ function crosses(b: Box, p: P, q: P): boolean {
 // from its origin. label: the label's ink outline. size: the label's size.
 // Returns the sign's origin, and whether that is after the label and raised, where ChemDraw puts a label's sign.
 // A written label's charge at its end: after a space any count is the charge (SO4 2-), as it is after a monatomic ion's
-// symbol (Fe2+, O2-); otherwise only the sign is, and a count before it stays a count (NH4+, SO42-, I3-, N3-).
+// symbol with one digit (Fe2+, O2-); otherwise only the sign is, and a count before it stays a count (NH4+, SO42-, I3-,
+// N3-, Hg22+). Same rule as the app's charge reading (elucida/core/chem.py monatomic), which reports SO42- as ambiguous.
 // Nonmetals with a plus are molecular ions (O2+, H2+); of the anions only chalcogenides are read as monatomic.
 const NONMETALS = new Set("H D T He B C N O F Ne Si P S Cl Ar Se Br Kr I Xe At Rn".split(" "));
 export function writtenCharge(text: string): { text: string; charge: number } | undefined {
-  const ion = /^([A-Z][a-z]?)(\d+)([+\-−–])$/.exec(text);
+  const ion = /^([A-Z][a-z]?)(\d)([+\-−–])$/.exec(text);   // one digit: Hg22+ is Hg2 with a count, not Hg²²⁺
   const m = /^(.*?\S) (\d*)([+\-−–])$/s.exec(text)
     ?? (ion && isElement(ion[1]) && (ion[3] === "+" ? !NONMETALS.has(ion[1]) : ["O", "S", "Se", "Te"].includes(ion[1])) ? ion : null)
     ?? /^(.*[A-Za-z0-9)\]])()([+\-−–])$/s.exec(text);

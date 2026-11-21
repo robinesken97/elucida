@@ -390,22 +390,28 @@ Gezeichnet wird genau, was die Seite zeigt.
 
 ## Verbindung
 
-Ein Verbindungsordner steht meist für **eine Verbindung** (oder einen Vergleich). Der Tab **Verbindung** ist der erste in der
-Tab-Reihe und trägt ihre Nummer (die der SI, sonst die Laborbuch-Nr.) und ihre Summenformel. Links stehen Bezeichnung,
+Ein Verbindungsordner steht meist für **eine Verbindung** (oder einen Vergleich). Der Tab **Verbindung** ist der erste in
+der Tab-Reihe und trägt ihre Nummer (die der SI, sonst die Laborbuch-Nr.) und ihre Summenformel. Links stehen Bezeichnung,
 Summenformel, Molmasse und die Angaben für die SI, rechts die Zeichnung. Es gibt kein OK und kein Abbrechen: Ein Feld gilt,
 sobald du es verlässt, die Zeichnung speichert sich selbst, Rückgängig nimmt jede Änderung zurück. Summenformel und Molmasse
 folgen der Zeichnung (Isotope wie D inklusive), solange du sie nicht von Hand geändert hast; ein geleertes Feld nimmt wieder
-den Wert der Zeichnung. **Wählen…** lädt stattdessen eine vorhandene ChemDraw- oder Bilddatei. Die Summenformel steht
-schon im Feld mit tiefgestellten Ziffern. Enthält die Zeichnung mehr als ein Molekül und ist kein Salz, steht darunter ein
-Hinweis: Summenformel und Molmasse gelten dann für alle zusammen. Die Probennummer lässt sich immer eintragen, auch ohne
-„Substanz übrig“.
-Der ε-Tab (Struktur, Molmasse), der Fluoreszenz-Tab, IR + EA und HRMS folgen der Verbindung immer: Wird sie geändert, ersetzt
-das auch dort eingetragene Werte; eine ersetzte Molmasse wird eingeblendet, Rückgängig stellt sie wieder her. Im UV-Vis-Tab
-gibst du dazu nichts mehr ein: Die Karte **Verbindung** zeigt Summenformel und Molmasse, **Ändern …** öffnet die Verbindung,
-**Struktur im Bild** blendet die Struktur für eine Serie aus. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
-Charakterisierungsabsatz im SI-Abschnitt. Die Molmasse wird überall mit zwei Nachkommastellen geführt. Die
-**Laborbuch-Nr.** steht neben der Nummer für die SI: Sie erscheint in der Übersicht und wird von der Suche gefunden,
-aber nie in SI, Word oder Datenpaket.
+den Wert der Zeichnung. **Wählen…** lädt stattdessen eine vorhandene ChemDraw- oder Bilddatei. Die Summenformel steht schon
+im Feld mit tiefgestellten Ziffern. Enthält die Zeichnung mehr als ein Molekül und ist kein Salz, steht darunter ein
+Hinweis: Summenformel und Molmasse gelten dann für alle zusammen. Salze: Kation und Gegenion als getrennte Teile zeichnen;
+gängige Gegenionen dürfen als Beschriftung stehen (PF6, SbF6, AsF6, BF4, ClO4, OTf, NTf2, BArF, BPh4, OAc, OTs, NO3, HSO4, SO4,
+I3, N3, auch „[BArF4]−“), die Ladung darf auch nur im Text stehen („Br−“). Eine Zahl vor dem Ladungszeichen ist nur beim
+einatomigen Ion die Ladung (Metall mit +: „Fe2+“; O/S/Se/Te mit −: „O2-“), sonst ein Index („NH4+“, „BF4-“, „O2+“); „SO42-“
+ist mehrdeutig und wird nur gemeldet, eindeutig sind „SO4 2-“ (Leerzeichen), hochgestellt oder „[SO4]2-“ (gilt auch für die
+getippte Formel). Eine Beschriftung, die Elucida nicht kennt, wird genannt, Summenformel und Molmasse bleiben dann leer;
+ergeben die Ladungen nicht null, fragt ein Hinweis nach dem Gegenion. Von Hand lässt sich ein Salz als „[C10H16N]+ [PF6]-“
+schreiben. Die Probennummer lässt sich immer eintragen, auch ohne „Substanz übrig“. Der ε-Tab (Struktur, Molmasse), der
+Fluoreszenz-Tab, IR + EA und HRMS folgen der Verbindung immer: Wird sie geändert, ersetzt das auch dort eingetragene Werte;
+eine ersetzte Molmasse wird eingeblendet, Rückgängig stellt sie wieder her. Im UV-Vis-Tab gibst du dazu nichts mehr ein: Die
+Karte **Verbindung** zeigt Summenformel und Molmasse, **Ändern …** öffnet die Verbindung, **Struktur im Bild** blendet die
+Struktur für eine Serie aus. Der Name steht im Fenstertitel. Der dort eingetragene Schmelzpunkt beginnt den
+Charakterisierungsabsatz im SI-Abschnitt. Die Molmasse wird überall mit zwei Nachkommastellen geführt. Die **Laborbuch-Nr.**
+steht neben der Nummer für die SI: Sie erscheint in der Übersicht und wird von der Suche gefunden, aber nie in SI, Word oder
+Datenpaket.
 
 **Reinheit:** Die Karte **Reinheit** hält fest, womit die Reinheit belegt ist (¹H-NMR, ¹³C-NMR, qNMR,
 Elementaranalyse, HPLC, GC, dazu Freitext). Der Charakterisierungsabsatz der SI endet dann mit „Purity was established by
@@ -637,7 +643,10 @@ als eigene Word-Datei oder im SI-Abschnitt.
 - **HRMS:** den **Word-Bericht** der Massenabteilung laden; Formel, Ionisierung, Polarität und die gemessenen m/z (aus
   den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung (Warnung, wenn der
   Bericht etwas anderes sagt), das Ion ist wählbar ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), vorgewählt ist das nächste
-  gemessene m/z. calc. mit Elektronenmasse, vier Nachkommastellen: **HR-MS-ESI(+)** calc. C₁₈H₁₉N₂O⁺ [M+H]⁺ 279.1492;
+  gemessene m/z. Ist die Verbindung ein Salz, wählt **Ion des Salzes** den gemessenen Teil: vorgewählt der Teil mit
+  Kohlenstoff (sonst das Kation), ein Kation als [M]⁺ (Dikation [M]²⁺, m/z je Ladung), ein Anion als [M]⁻; Molmasse und EA
+  gelten weiter für das ganze Salz. Ältere Projekte mit Bericht oder gefundenem Wert bleiben beim ganzen Salz.
+  calc. mit Elektronenmasse, vier Nachkommastellen: **HR-MS-ESI(+)** calc. C₁₈H₁₉N₂O⁺ [M+H]⁺ 279.1492;
   found 279.1496. Die Abweichung in ppm steht zur Kontrolle daneben (found − calc). Die Formel wird gegen das im
   Bericht **eingebettete ChemDraw-Objekt** geprüft; ohne festgelegte Verbindung setzt **Verbindung aus dem MS-Bericht
   übernehmen** Name, Formel und Molmasse daraus (die Zeichnung ist dann eine RDKit-Ersatzzeichnung – für Abbildungen

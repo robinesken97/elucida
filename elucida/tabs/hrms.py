@@ -23,7 +23,7 @@ from elucida.app.i18n import T, T_en
 from elucida.core import tables as TBL
 from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, adduct_def, adduct_ui, charge_text, copy_rich, ion, is_bruker_d, lc_found, ms_line,
-                        nearest, parse_formula, ppm, read_bruker_d)
+                        nearest, parse_formula, part_adduct, ppm, read_bruker_d, salt_parts)
 from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form
 from elucida.formats.bruker_ms import spectra_of
 from elucida.formats.ms_report import pdf_image_array, pdf_image_png, read_ms_report
@@ -196,7 +196,7 @@ class HRMSTab(TABS.FigureTab):
     SI_CAPTION = "HR-MS spectrum of {name}."
     X_RANGE = (10.0, 5000.0, 2, 0.5)
     XRANGE_TEXT = "ms_xrange"
-    RESET_KEEP = ("ms_file", "ms_raw", "ms_rt", "adduct", "found", "found_pick", "found_pdf", "found_manual", "ms_img",
+    RESET_KEEP = ("ms_file", "ms_raw", "ms_rt", "adduct", "ms_part", "found", "found_pick", "found_pdf", "found_manual", "ms_img",
                   "mz_labels")                                 # welche m/z im Bild stehen
     # found: None | m/z aus dem Bericht | "raw" | "pick" (found_pick) | "pdf" (found_pdf: per Klick aus der Kandidatenliste
     # eines unbekannten PDF) | "manual" (found_manual: von Hand); ms_img: Nummer des Bildes aus dem PDF-Bericht (0 = keins)
@@ -257,10 +257,12 @@ class HRMSTab(TABS.FigureTab):
         self.btn_take.setToolTip(T("ms_take_compound_tip"))
         self.btn_take.clicked.connect(self.take_compound)
         f.addRow(self.btn_take)
+        self.cmb_part = QComboBox()                          # Salz: welcher geladene Teil gemessen wird (sonst verborgen)
+        self.cmb_part.setToolTip(T("ms_part_tip"))
+        f.addRow(T("ms_part"), self.cmb_part)
         self.cmb_adduct = QComboBox()
-        for key in ADDUCTS:
-            self.cmb_adduct.addItem(adduct_ui(key), key)
-        self.cmb_adduct.addItem(T("ms_own_item"), "own")              # eigenes Ion: Ausdruck + Ladung darunter
+        self._adduct_q = None
+        self.fill_adducts(0)
         self.cmb_adduct.setCurrentIndex(max(0, self.cmb_adduct.findData(st["adduct"])))
         f.addRow(T("ms_adduct"), self.cmb_adduct)
         row = QHBoxLayout()
@@ -353,6 +355,7 @@ class HRMSTab(TABS.FigureTab):
         for w_ in (self.cb_calc, self.cb_mzlab):
             w_.toggled.connect(self.changed)
         self.cmb_adduct.currentIndexChanged.connect(self.adduct_changed)
+        self.cmb_part.currentIndexChanged.connect(self.part_changed)
         self.ed_own.editingFinished.connect(self.own_edited)
         self.sp_own_z.valueChanged.connect(self.own_edited)
         self.cmb_found.currentIndexChanged.connect(self.changed)
@@ -558,6 +561,7 @@ class HRMSTab(TABS.FigureTab):
         self.sp_rt_hi.setEnabled(bool(rt))
         self.cb_calc.setChecked(st.get("show_calc", True))
         self.cb_mzlab.setChecked(st.get("mz_labels", True))
+        self.sync_part()
         own = st.get("adduct") == "own"
         for w_, v in ((self.ed_own, st.get("own_ion") or ""), (self.sp_own_z, int(st.get("own_z", 1)))):
             w_.blockSignals(True)
@@ -585,6 +589,8 @@ class HRMSTab(TABS.FigureTab):
                 src = self.sender()
                 vals = [v if src is sp else p for p, v, sp in zip(sorted(prev), vals, (self.sp_rt_lo, self.sp_rt_hi))]
             st["ms_rt"] = sorted(vals)
+        if self.cmb_part.count():                    # Salz: Wahl festhalten, ab jetzt gilt die gespeicherte (nicht mehr „auto“)
+            st["ms_part"] = self.cmb_part.currentData()
         st.update(adduct=self.cmb_adduct.currentData(), found=self.cmb_found.currentData(),
                   ms_img=int(self.cmb_img.currentData() or 0) if self.cmb_img.count() else int(st.get("ms_img") or 0),
                   show_calc=self.cb_calc.isChecked(), mz_labels=self.cb_mzlab.isChecked())
@@ -606,6 +612,7 @@ class HRMSTab(TABS.FigureTab):
         except Exception as e:
             self.main.error(f"{Path(p).name}: {e}")
             return
+        self.freeze_part()
         self.st.update(ms_file=p, found=None, found_pdf=None, found_ocr=None, ms_img=0)   # neuer Bericht: Auswahl neu
         self.sync_widgets()
         self.timer.start()
@@ -628,6 +635,7 @@ class HRMSTab(TABS.FigureTab):
         except Exception as e:
             self.main.error(f"{Path(p).name}: {e}")
             return
+        self.freeze_part()
         self.st.update(ms_raw=p, ms_rt=None, found=None, found_pick=None)
         self.sync_widgets()
         self.timer.start()
@@ -673,9 +681,108 @@ class HRMSTab(TABS.FigureTab):
             return None
 
     def adduct(self):
-        """Gewähltes Ion: Schlüssel aus ADDUCTS oder eigenes Ion (Ausdruck, Ladung)."""
+        """Gewähltes Ion: Schlüssel aus ADDUCTS oder eigenes Ion (Ausdruck, Ladung). Geladener Teil eines Salzes: das
+        Addukt auf dem Teil (`part_adduct`), ohne gespeicherte Wahl [M] mit der Ladung des Teils."""
         st = self.st
-        return (st.get("own_ion") or "", int(st.get("own_z", 1))) if st.get("adduct") == "own" else st["adduct"]
+        if st.get("adduct") == "own":
+            return st.get("own_ion") or "", int(st.get("own_z", 1))
+        _, q, parts = self.ion_part()
+        key = "M" if parts and self.part_choice() is None else st["adduct"]
+        return (part_adduct(key, q) or ("M", q)) if q else key
+
+    def salt(self, formula, src):
+        """Geladene Teile [(Formel, Ladung)] eines Salzes, Kationen zuerst; [] ohne Salz. Aus der Salzschreibweise der
+        Formel ([C10H16N]+ [PF6]-) oder aus der Zeichnung der Verbindung, wenn sie genau diese Formel ergibt und ihre
+        Ladungen sich zu null ergänzen."""
+        if not formula:
+            return []
+        try:
+            parts = [(f, z) for f, z, _ in salt_parts(formula)]
+        except ValueError:
+            return []
+        p = self.main.compound.get("structure") if src == "project" else None
+        cdx = Path(p).with_suffix(".cdxml") if p else None
+        if not parts and cdx is not None and cdx.exists() and PRJ.cdxml_has_content(cdx):
+            from elucida.core import chem as CHEM
+            try:
+                c = CHEM.load_cdxml(cdx, render=False)
+            except Exception:
+                c = {}
+            q = c.get("charges") or []
+            if len(q) > 1 and any(q) and not sum(q) and c.get("formula") and same_formula(c["formula"], formula):
+                parts = c.get("parts") or []
+        return sorted(dict.fromkeys((f, z) for f, z in parts if z), key=lambda p: p[1] < 0)
+
+    def ion_part(self):
+        """-> (Formel des gemessenen Ions, Ladung des Teils (0 = ganze Formel), geladene Teile des Salzes)."""
+        formula, src = self.formula()
+        parts = self.salt(formula, src)
+        want = self.part_choice()
+        if not parts or want == "salt":
+            return formula, 0, parts
+        first = min(parts, key=lambda p: ("C" not in re.findall(r"[A-Z][a-z]?", p[0]), p[1] < 0))   # mit C, Kation zuerst
+        return next(((f, z) for f, z in parts if f"{f}|{z}" == want), first) + (parts,)
+
+    _EVALUATED = ("ms_file", "ms_raw", "found", "found_pick", "found_pdf", "found_ocr", "found_manual")
+
+    def part_choice(self):
+        """Gespeicherte Wahl des Salzteils; ohne Wahl (None = Vorgabe) bleibt ein Projekt mit Auswertung (Bericht,
+        Rohdaten, gefundener Wert) beim ganzen Salz wie vor „Ion des Salzes“ (sonst änderte sich seine SI-Zeile)."""
+        want = self.st.get("ms_part")
+        return "salt" if want is None and any(self.st.get(k) for k in self._EVALUATED) else want
+
+    def freeze_part(self):
+        """Vor der ersten Auswertung die angezeigte Vorgabe festhalten (sonst gälte danach „ganzes Salz“)."""
+        if self.st.get("ms_part") is None and self.cmb_part.count():
+            self.st.update(ms_part=self.cmb_part.currentData(), adduct=self.cmb_adduct.currentData())   # wie angezeigt
+
+    def fill_adducts(self, q):
+        """Auswahl der Ionen: alle aus ADDUCTS; auf einem geladenen Teil (q) nur die sinnvollen, mit dessen Ladung."""
+        if q == self._adduct_q:
+            return
+        self._adduct_q = q
+        cmb = self.cmb_adduct
+        cmb.blockSignals(True)
+        cmb.clear()
+        seen = set()
+        for key in sorted(ADDUCTS, key=lambda k: bool(q) and k not in ("M", "M-")):    # Teil: [M] zuerst
+            a = part_adduct(key, q) if q else key
+            if a is not None and a not in seen:
+                seen.add(a)
+                cmb.addItem(adduct_ui(a), key)
+        cmb.addItem(T("ms_own_item"), "own")                          # eigenes Ion: Ausdruck + Ladung darunter
+        cmb.blockSignals(False)
+
+    def sync_part(self):
+        """Zeile „Ion des Salzes“ (nur bei einem Salz) und die dazu passende Ionenliste."""
+        f_ion, q, parts = self.ion_part()
+        sup = str.maketrans("0123456789+−", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
+        self.cmb_part.blockSignals(True)
+        self.cmb_part.clear()
+        for f, z in parts:
+            self.cmb_part.addItem(T("ms_part_cation" if z > 0 else "ms_part_anion",
+                                    f=chem_plain(f) + charge_text(z).translate(sup)), f"{f}|{z}")
+        if parts:
+            self.cmb_part.addItem(T("ms_part_salt", f=chem_plain(self.formula()[0])), "salt")
+            self.cmb_part.setCurrentIndex(max(0, self.cmb_part.findData("salt" if not q else f"{f_ion}|{q}")))
+        self.cmb_part.blockSignals(False)
+        self._form.setRowVisible(self.cmb_part, bool(parts))
+        self.fill_adducts(q)
+        self.cmb_adduct.blockSignals(True)
+        a = self.st.get("adduct")
+        key = a if a == "own" else (self.adduct() if not q else
+                                    next((k for k in ADDUCTS if part_adduct(k, q) == self.adduct()), "M"))
+        self.cmb_adduct.setCurrentIndex(max(0, self.cmb_adduct.findData(key)))
+        self.cmb_adduct.blockSignals(False)
+
+    def part_changed(self, *_):
+        """Anderer Teil des Salzes: Ion neu ([M] mit seiner Ladung, ganzes Salz wie ohne Salz [M+H]), neu zuordnen."""
+        if self._loading:
+            return
+        part = self.cmb_part.currentData()
+        self.st.update(ms_part=part, adduct="M+H" if part == "salt" else "M", found=None)
+        self.sync_widgets()
+        self.timer.start()
 
     def polarity(self):
         try:
@@ -784,6 +891,7 @@ class HRMSTab(TABS.FigureTab):
             self.lbl_ms_warn.setText("\n".join(notes))
             return
         self.lbl_formula.setText(f"{chem_plain(formula)}  ({T('ms_src_' + src)})")
+        whole, formula = formula, self.ion_part()[0]       # Salz: Ion aus dem gewählten Teil, Abgleich mit dem ganzen Salz
         try:
             _, z, calc, _ = ion(formula, self.adduct())
         except ValueError as e:
@@ -806,8 +914,8 @@ class HRMSTab(TABS.FigureTab):
             ref_f = rep["structure"]["formula"] if rep.get("structure") else rep.get("formula")
             if ref_f and src == "project":
                 try:
-                    if parse_formula(ref_f) != parse_formula(formula):
-                        notes.append(T("ms_formula_mismatch", rep=ref_f, prj=formula))
+                    if parse_formula(ref_f) not in (parse_formula(whole), parse_formula(formula)):
+                        notes.append(T("ms_formula_mismatch", rep=ref_f, prj=whole))
                 except ValueError:
                     pass
             if rep.get("structure") and rep.get("formula"):
@@ -973,6 +1081,7 @@ class HRMSTab(TABS.FigureTab):
         """Kandidat übernehmen (nur per Klick): found = "pdf", Wert in found_pdf (Herkunft „aus PDF gewählt“); Scan/Bild:
         found = "ocr", Wert in found_ocr (Herkunft „per OCR erkannt“)."""
         if 0 <= r < len(self._cands):
+            self.freeze_part()
             if (self.ms_report() or {}).get("kind") == "ocr":
                 self.st.update(found="ocr", found_ocr=self._cands[r][0])
             else:
@@ -985,6 +1094,7 @@ class HRMSTab(TABS.FigureTab):
         if v == self.st.get("found_manual"):
             return
         found = "manual" if v else (None if self.st.get("found") == "manual" else self.st.get("found"))
+        self.freeze_part()
         self.st.update(found_manual=v, found=found)
         self.render()
 
@@ -1261,6 +1371,7 @@ class HRMSTab(TABS.FigureTab):
         j = int(np.argmin(np.abs(px - ev.x)))
         if abs(px[j] - ev.x) > 6 * self.fig.dpi / 72:
             return
+        self.freeze_part()
         self.st.update(found="pick", found_pick=round(float(mz[j]), 5))
         self.render()
 

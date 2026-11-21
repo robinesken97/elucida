@@ -278,7 +278,8 @@ class CompoundTab(QWidget):
     @staticmethod
     def several_molecules(path):
         """Hinweis, wenn die Zeichnung mehr als ein Molekül enthält und kein Salz ist (Nutzerwunsch 2026-11-11):
-        Summenformel und Molmasse gelten dann für alle zusammen. Salz = geladene Teile, die sich zu null ergänzen."""
+        Summenformel und Molmasse gelten dann für alle zusammen. Salz = geladene Teile, die sich zu null ergänzen.
+        Ladungen, die sich nicht zu null ergänzen, und nicht aufgelöste Beschriftungen (Gegenion als Text) werden genannt."""
         src = Path(path).with_suffix(".cdxml") if path else None
         if src is None or not src.exists() or not PRJ.cdxml_has_content(src):
             return ""
@@ -288,9 +289,15 @@ class CompoundTab(QWidget):
         except Exception:
             return ""
         q = c.get("charges") or []
-        if c.get("n_fragments", 1) < 2 or (any(q) and sum(q) == 0):
-            return ""
-        return T("compound_several", n=c["n_fragments"])
+        out = [T("cdxml_label_unknown", names=", ".join(c["labels"]))] if c.get("labels") else \
+            [T("cdxml_dummies", n=c["dummies"])] if c.get("dummies") else []    # Formel/Molmasse leer: Grund nennen
+        if c.get("ambiguous"):                           # Ladung nicht geraten -> Summe wäre erfunden
+            out.append(T("cdxml_charge_ambiguous", names=", ".join(c["ambiguous"])))
+        elif sum(q):
+            out.append(T("compound_charge_sum", q=f"{sum(q):+d}".replace("-", "−")))
+        elif c.get("n_fragments", 1) >= 2 and not any(q):
+            out.append(T("compound_several", n=c["n_fragments"]))
+        return "\n".join(out)
 
     def compound_changed(self):
         self.sync_widgets()

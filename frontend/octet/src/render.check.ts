@@ -125,7 +125,7 @@ console.log("render.check: charges ok");
   assert.deepEqual(bf4.map((l) => l.text), ["B", "F", "4", "–"]);
   assert.ok(Math.abs(mid(bf4[3]) - mid(nh4.find((l) => l.text === "+")!)) < 1e-9 && bf4[3].size < bf4[0].size, "BF4-'s minus raised, level with NH4+'s plus");
   // A count before the sign is a charge only for a monatomic ion or after a space; otherwise it stays a count.
-  const charges: [string, string, number][] = [["Fe2+", "Fe", 2], ["Cu2+", "Cu", 2], ["O2-", "O", -2], ["S2-", "S", -2], ["SO4 2-", "SO4", -2], ["NH4+", "NH4", 1], ["BF4-", "BF4", -1], ["PF6-", "PF6", -1], ["I3-", "I3", -1], ["N3-", "N3", -1], ["SO42-", "SO42", -1], ["O2+", "O2", 1], ["U4+", "U", 4]];
+  const charges: [string, string, number][] = [["Fe2+", "Fe", 2], ["Cu2+", "Cu", 2], ["O2-", "O", -2], ["S2-", "S", -2], ["SO4 2-", "SO4", -2], ["NH4+", "NH4", 1], ["BF4-", "BF4", -1], ["PF6-", "PF6", -1], ["I3-", "I3", -1], ["N3-", "N3", -1], ["SO42-", "SO42", -1], ["O2+", "O2", 1], ["U4+", "U", 4], ["Al3+", "Al", 3], ["H2+", "H2", 1], ["Hg22+", "Hg22", 1], ["CO32-", "CO32", -1], ["C32H12BF24-", "C32H12BF24", -1], ["Fe(CN)64-", "Fe(CN)64", -1]];
   for (const [t, text, charge] of charges) assert.deepEqual(writtenCharge(t), { text, charge }, t);
   assert.equal(writtenCharge("CH2"), undefined);
   const o2 = written("O2-"), fe = written("Fe2+");

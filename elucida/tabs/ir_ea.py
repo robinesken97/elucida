@@ -65,9 +65,50 @@ def _formula_part(s: str) -> dict:
     return stack[0]
 
 
+_FTOKS = r"(?:\[\d+[A-Z][a-z]?\]|[A-Z][a-z]?\d*|\(|\)\d*)+"             # Formel aus Elementen/Isotopen/Klammern
+# Teil eines Salzes: [Anzahl] Formel Ladung | [Anzahl] [Formel]Ladung („2[PF6]-“, „[C8H22N2]2+“); ohne eckige Klammer
+# ist eine Ziffer vor dem Zeichen Index („PF6-“, Ladung = Zahl der Zeichen), außer am einatomigen Ion („Fe2+“, „O2-“; Entsch. 191)
+_SALT_PART = re.compile(rf"[·•]?(\d*)(?:\[({_FTOKS})\](\d*)|({_FTOKS}))(\++|[\-−]+)")
+
+
+def salt_parts(text: str) -> list:
+    """Salzschreibweise 'C10H16N+ Br-', '[C10H16N]+[PF6]-', 'C10H16N+·PF6-', '[C8H22N2]2+ 2[PF6]-', 'Fe2+ 2Cl-',
+    'Na+ SO4 2-' -> [(Formel, Ladung, Anzahl)]; keine Salzschreibweise (höchstens eine Ladung am Ende) -> []. Lässt sie
+    sich nicht ganz oder nicht eindeutig lesen („SO42-“) -> ValueError (nie still einen Teil weglassen oder raten)."""
+    from elucida.app.i18n import T
+    from elucida.core.chem import ambiguous_count, monatomic
+    s = str(text).strip()
+    s = re.sub(rf"(^|[\s·•])(\d*)({_FTOKS})\s+(\d+)(?=[+\-−])", r"\1\2[\3]\4", s)    # „SO4 2-“ = [SO4]2-
+    s = s.replace(" ", "")
+    if not re.search(r"[+\-−]\d*[^\d+\-−]", s):
+        return []
+    out, pos = [], 0
+    while pos < len(s):
+        m = _SALT_PART.match(s, pos)
+        if not m or (m.group(3) and len(m.group(5)) > 1):
+            raise ValueError(T("formula_salt_bad", f=text))
+        f, z = m.group(2) or m.group(4), int(m.group(3)) if m.group(3) else len(m.group(5))
+        tail = re.fullmatch(r"(.*?)(\d+)", f) if m.group(4) else None
+        if tail and ambiguous_count(tail.group(1), tail.group(2)):
+            raise ValueError(T("formula_salt_bad", f=text))
+        if tail and len(m.group(5)) == 1 and monatomic(tail.group(1), m.group(5)):
+            f, z = tail.group(1), int(tail.group(2))
+        out.append((f, z if m.group(5)[0] == "+" else -z, int(m.group(1) or 1)))
+        pos = m.end()
+    return out
+
+
 def parse_formula(text: str) -> dict:
     """'C20H15N3' / 'C18H18N2O+' / 'Ca(OH)2' / 'C18H18N2O·2H2O' / '[13C]H4' (Isotope wie RDKit) -> {'C': 20, …,
-    '[13C]': 1}; Ladung am Ende wird ignoriert (kommt vom Addukt). Nicht lesbare Teile -> ValueError."""
+    '[13C]': 1}; Ladung am Ende wird ignoriert (kommt vom Addukt). Salz ('[C10H16N]+[PF6]-', `salt_parts`): alle Teile
+    zusammen. Hydrat-Trenner wie bisher „·“, „•“, „*“. Nicht lesbare Teile -> ValueError."""
+    parts = salt_parts(text)
+    if parts:
+        out = {}
+        for f, _, k in parts:
+            for el, n in _formula_part(f).items():
+                out[el] = out.get(el, 0) + n * k
+        return out
     text = re.sub(r"[+\-−]+\d*$", "", str(text).replace(" ", ""))
     out = {}
     for part in re.split(r"[·•*]", text):
@@ -136,6 +177,16 @@ def adduct_def(adduct):
     if not z:
         raise ValueError(f"Ion ohne Ladung: {spec}")
     return label, delta, z, k
+
+
+def part_adduct(key, q):
+    """Addukt aus ADDUCTS auf einem geladenen Teil eines Salzes (Ladung q) -> eigenes Ion (Ausdruck, Ladung): [M] trägt
+    die Ladung des Teils, Gruppen ändern sie ([M+H]2+ eines Kations). None, wenn es keinen Sinn ergibt (Ladung 0,
+    Vorzeichen gewechselt, mehrere M)."""
+    spec = "M" if key == "M-" else key
+    k, _, zg, _ = parse_ion(spec)
+    z = q + zg
+    return (spec, z) if k == 1 and z and (z > 0) == (q > 0) else None
 
 
 def charge_text(z: int) -> str:
