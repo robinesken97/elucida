@@ -838,7 +838,20 @@ def apply_view(tabs, scroll, view, tab=None):
         # das erste Zeichnen füllt Karten links (Figure Labels) und verlängert die Spalte; auf langsamen Rechnern kam
         # es erst nach Ablauf der 1,5 s (CI: Bildlauf blieb am kürzeren Ende)
         if tab is not None and not getattr(tab, "_first_done", True):
-            tab._after_first.append(start)
+            def settle():
+                # Neue Höhe (Zeilen der Tabelle „Beschriftungen im Bild“, 30 px je Zeile) gleich hier einrichten statt in
+                # späteren Runden der Ereignisschleife: dauerte das Zeichnen lange (CI unter Last), war die Spalte danach
+                # noch kürzer und der Bildlauf blieb am kürzeren Ende. Je Durchgang rückt die Anfrage eine Ebene nach
+                # oben (Qt stellt in einem Aufruf nichts zu, was währenddessen entsteht); 8 reichen (gemessen: 2).
+                try:
+                    for _ in range(8):
+                        if sb.maximum() >= v:
+                            break
+                        QApplication.sendPostedEvents(None, QEvent.LayoutRequest)
+                except RuntimeError:                         # Spalte schon gelöscht
+                    return
+                start()
+            tab._after_first.append(settle)
         else:
             start()
 
