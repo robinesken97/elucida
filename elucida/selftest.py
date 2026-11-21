@@ -209,17 +209,30 @@ class _Section:
             except OSError:
                 pass
 
+    def skip(self, group):
+        """Gruppe nicht gelaufen (`--selftest-group`): eine Zeile SKIPPED in sections.tsv, nie OK."""
+        self.rows.append((0, group, 0.0, "SKIPPED", ""))
+        if self.out is not None:
+            try:
+                with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
+                    fh.write(f"0\t{group}\t0.0\tSKIPPED\n")
+            except OSError:
+                pass
+
     def summary(self):
         """Zusammenfassung oben im Report: erster FAILED, spätere als mögliche Folgefehler, 10 langsamste (nur ASCII)."""
         fails = [r for r in self.rows if r[3] == "FAILED"]
         lines = ["== Summary =="]
+        skipped = [r[1] for r in self.rows if r[3] == "SKIPPED"]
+        if skipped:                                          # nie als OK gezählt (Gruppenlauf)
+            lines.append(f"skipped {len(skipped)} group(s): {', '.join(skipped)}")
         for i, (line, title, dt, _, last) in enumerate(fails):
             lines.append(f"{'FIRST FAILED' if i == 0 else 'FAILED (possibly a consequence)'}: selftest.py:{line} "
                          f"{title} -- {last}")
         if not fails:
             lines.append("no FAILED section")
         lines.append("10 slowest sections:")
-        for line, title, dt, status, _ in sorted(self.rows, key=lambda r: -r[2])[:10]:
+        for line, title, dt, status, _ in sorted((r for r in self.rows if r[3] != "SKIPPED"), key=lambda r: -r[2])[:10]:
             lines.append(f"  {dt:7.1f} s  selftest.py:{line} {status} {title}")
         lines.append("== End of summary ==")
         return [t.encode("ascii", "replace").decode() for t in lines]
@@ -519,7 +532,18 @@ def _display_reset_check(w, key, out, pump):
     return bad
 
 
-def selftest(outdir, with_isnet=False):
+GROUPS = ("smoke", "main")   # Reihenfolge des vollen Laufs; „smoke“ = Rauchtest (selftest_smoke.py), „main“ = alles andere
+
+
+class _SkipRest(Exception):
+    """Rest des Laufs gehört zu nicht gewählten Gruppen."""
+
+
+def selftest(outdir, with_isnet=False, group=None):
+    """Voller Lauf (group=None) oder eine Gruppe aus GROUPS; nicht gewählte Gruppen = SKIPPED (nie OK). -> Exit-Code."""
+    if group is not None and group not in GROUPS:
+        print(f"unknown selftest group {group!r}; groups: {', '.join(GROUPS)}", flush=True)
+        return 2
     out = Path(outdir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     MW.SETTINGS_FILE = out / "selftest_settings.ini"  # zuletzt geöffnet, Sprache usw. nicht beim Nutzer ändern
@@ -528,9 +552,20 @@ def selftest(outdir, with_isnet=False):
     ok = True
     section = _Section(report, out=out)
     demo_pub = _DemoPub(out)                     # Beispielpublikation einmal bauen, je Abschnitt eine Kopie
+    skipped_groups = []
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
     QApplication.setApplicationVersion(APP_VERSION)
     try:
+        if group in (None, "smoke"):
+            from elucida import selftest_smoke as SMOKE
+            SMOKE.run(section, report, out, with_isnet)
+        else:
+            skipped_groups.append("smoke")
+            section.skip("smoke")
+        if group not in (None, "main"):
+            skipped_groups.append("main")
+            section.skip("main")
+            raise _SkipRest
         with section:
             csv, cdxml, photo = make_selftest_inputs(out / "input")
             report.append(f"photo format: {photo.suffix}")
@@ -12142,7 +12177,20 @@ def selftest(outdir, with_isnet=False):
             assert "10 slowest sections:" in sum_s1 and all(t_.isascii() for t_ in sum_s1)
             img_s1 = (d_s1 / f"failed_{rows_s1[2][0]}.png").exists()  # Bild nur gemeldet: darf nie scheitern lassen
             report.append(f"selftest stage 1: window image on FAILED {'written' if img_s1 else 'skipped'}")
-            assert len(section.rows) > 20 and {r_[3] for r_ in section.rows} <= {"OK", "FAILED"}
+            # Gruppenlauf (Stufe 2): nicht gelaufene Gruppe = eine Zeile SKIPPED, oben gezählt, nie OK, nie „langsam“
+            d_k1 = d_s1 / "skip"
+            d_k1.mkdir()
+            sec_k1 = _Section([], echo=False, out=d_k1)
+            with sec_k1:
+                sec_k1.report.append("kept part: OK")
+            sec_k1.skip("other")
+            rows_k1 = [r_.split("\t") for r_ in (d_k1 / "sections.tsv").read_text(encoding="utf-8").splitlines()]
+            assert [r_[3] for r_ in rows_k1[1:]] == ["OK", "SKIPPED"] and rows_k1[2][:3] == ["0", "other", "0.0"], rows_k1
+            sum_k1 = sec_k1.summary()
+            assert sum_k1[1] == "skipped 1 group(s): other" and "no FAILED section" in sum_k1, sum_k1
+            assert not any("SKIPPED" in t_ for t_ in sum_k1), sum_k1
+            assert len(section.rows) > 20 and {r_[3] for r_ in section.rows} <= {"OK", "FAILED", "SKIPPED"}
+            assert [r_[1] for r_ in section.rows if r_[3] == "SKIPPED"] == skipped_groups, skipped_groups
             assert len((out / "sections.tsv").read_text(encoding="utf-8").splitlines()) == len(section.rows) + 1
             shutil.rmtree(d_s1)
             report.append("selftest stage 1: sections.tsv, summary (first FAILED on top, later ones marked): OK")
@@ -20603,7 +20651,11 @@ def selftest(outdir, with_isnet=False):
             left_ = [type(o_).__name__ for o_ in _shb_end.getAllValidWrappers() if isinstance(o_, _QW_end)]
             assert not app.topLevelWidgets() and not left_, left_[:10]
             report.append("Quit: no widgets left for PySide's atexit cleanup: OK")
-        report.append("OK" if not section.failed else f"FAILED: {section.failed} section(s), see above")
+        raise _SkipRest                                     # Ende des Laufs: Schlusszeile wie bei einer Gruppe
+    except _SkipRest:
+        report.append(("OK" if not section.failed else f"FAILED: {section.failed} section(s), see above")
+                      + (f" (group {group}; skipped {len(skipped_groups)} group(s): {', '.join(skipped_groups)})"
+                         if skipped_groups else ""))
     except Exception:
         ok = False
         report.append("FAILED\n" + traceback.format_exc())

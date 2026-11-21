@@ -26,6 +26,8 @@ args = [
     "--windowed",
     "--icon", {"darwin": "assets/icon.icns", "win32": "assets/icon.ico"}.get(sys.platform, "assets/icon.png"),
     "--add-data", f"assets{';' if sys.platform.startswith('win') else ':'}assets",
+    # Rauchtest der gebauten App (elucida/selftest_smoke.py) liest die Liste der Module unten aus dieser Datei
+    "--add-data", f"tools/build.py{';' if sys.platform.startswith('win') else ':'}tools",
     "--collect-all", "rdkit",
     "--collect-all", "pymupdf",
     "--collect-all", "pillow_heif",
