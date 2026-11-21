@@ -10,4 +10,5 @@ onnxruntime
 opencv-python-headless
 olefile
 openpyxl
+rapidocr
 pyobjc-framework-Cocoa; sys_platform == 'darwin'

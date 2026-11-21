@@ -4987,7 +4987,14 @@ class MainWindow(QMainWindow):
                         self._restoring = keep_r
                 if tab.F is None:
                     continue
-                tab.fig.savefig(path, dpi=36, facecolor="white")
+                hide = tab.preview_only() if hasattr(tab, "preview_only") else []    # nur Vorschau (HRMS-Marker)
+                for a in hide:
+                    a.set_visible(False)
+                try:
+                    tab.fig.savefig(path, dpi=36, facecolor="white")
+                finally:
+                    for a in hide:
+                        a.set_visible(True)
                 fps[key] = fp
             except Exception:
                 pass

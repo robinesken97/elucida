@@ -1573,11 +1573,12 @@ def make_ms_pdf(path, formula, adduct="M+H", shift=0.0004, calc_off=0.0) -> Path
 BAF_CAL = (20000.0, 0.2, 302.5, 159870.0, 2.61e-4, 0.0, -0.0009)   # erfundene Kalibrierung: Delay, Takt, c0, c1, c2, –, c6
 
 
-def make_bruker_d(d, name, formula, adduct="M+H", shift=0.0004, seed=0) -> Path:
+def make_bruker_d(d, name, formula, adduct="M+H", shift=0.0004, seed=0, extra=()) -> Path:
     """Künstlicher Bruker-Messordner (.d: analysis.baf + analysis.sqlite im Baf2Sql-Schema, nur MS1-Linienspektren):
     LC-Lauf über 2 min, Ion der Formel mit dem berechneten Isotopenmuster im LC-Peak bei 0.9 min, gemessen um `shift`
     (Da, wie im Bericht) neben calc. mit Streuung je Scan, dazu zwei Untergrundionen. Flugzeit-Indizes über die
-    Umkehrung der Kalibrierung (`BAF_CAL`, Variante int 10 wie `formats.bruker_ms`). Kein echter Datensatz."""
+    Umkehrung der Kalibrierung (`BAF_CAL`, Variante int 10 wie `formats.bruker_ms`). `extra`: weitere Linien
+    [(m/z, Intensität)] in jedem Scan (Selbsttest Fremdpeaks). Kein echter Datensatz."""
     import sqlite3
     import struct
     from elucida.tabs import hrms as HRMS
@@ -1598,6 +1599,7 @@ def make_bruker_d(d, name, formula, adduct="M+H", shift=0.0004, seed=0) -> Path:
         mz = [149.0233, 391.2843] + [m + shift + rng.normal(0, 3e-4) for m, r in pat if amp * r > 5000]
         it = [3.1e3 * rng.normal(1, 0.08), 6.5e3 * rng.normal(1, 0.08)] + [amp * r / 100 * rng.normal(1, 0.03)
                                                                          for m, r in pat if amp * r > 5000]
+        mz, it = mz + [m for m, _ in extra], it + [h for _, h in extra]
         n, o = len(mz), np.argsort(mz)                  # Linienspektren nach m/z sortiert wie vom Gerät
         mz, it = np.asarray(mz)[o], np.asarray(it)[o]
         body = (struct.pack("<4I", n, 16, 16 + 8 * n, 16 + 12 * n) + to_idx(mz).astype("<f8").tobytes()

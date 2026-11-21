@@ -4,7 +4,7 @@ Läuft in der gebauten App und im AppImage allein (`--selftest-group smoke`), im
 Eigenes Fenster, eigene Einstellungsdatei und eigener Unterordner `smoke/`: die übrigen Abschnitte sehen davon nichts.
 Prüft: jedes `--hidden-import`/`--collect-all` aus `tools/build.py` (Liste wird dort gelesen, die gebaute App trägt die
 Datei mit), Repo-Dateien über `elucida.ROOT` (Symbole, Lizenzen, Octet, Mnova-Skript, Handbuch-Verweise), Bibliotheken
-(rdkit, pymupdf, onnxruntime/ISNet, pillow-heif, openpyxl, OpenCV), Start, Beispielprojekt mit jedem Tab gebaut und
+(rdkit, pymupdf, onnxruntime/ISNet, pillow-heif, openpyxl, OpenCV, RapidOCR-Modelle), Start, Beispielprojekt mit jedem Tab gebaut und
 gezeichnet, Octet-Zeichner (WebEngine), ein Export, eine Word-SI und eine PPTX-Datei.
 """
 from __future__ import annotations
@@ -104,6 +104,26 @@ def run(section, report, out: Path, with_isnet: bool):
                 assert TABS.MANUAL[lang].startswith("docs/manual.") and TABS.README_URL.startswith("https://")
             report.append(f"smoke: repo files via elucida.ROOT ({len(pngs)} icons, {len(lic)} licence texts, Octet, "
                           f"Mnova script, manual links): OK")
+        with section:   # smoke: text recognition (RapidOCR models in the package)
+            from elucida.core import ocr as OCR
+            frozen = bool(getattr(sys, "frozen", False))
+            if not OCR.available() and not frozen:           # aus dem Quelltext ohne rapidocr: nur dann überspringen
+                report.append("smoke: text recognition SKIPPED: package rapidocr not installed (source run)")
+            else:
+                assert OCR.available(), "rapidocr fehlt in der gebauten App (tools/build.py)"
+                import matplotlib
+                from PIL import Image, ImageDraw, ImageFont
+                font = ImageFont.truetype(str(Path(matplotlib.get_data_path()) / "fonts" / "ttf" / "DejaVuSans.ttf"), 28)
+                img = Image.new("RGB", (420, 70), "white")
+                ImageDraw.Draw(img).text((16, 16), "found 176.0710", fill="black", font=font)
+                img.save(sm / "ocr_smoke.png")
+                t0 = time.time()
+                res = OCR.run(sm / "ocr_smoke.png")            # Modelle fehlen -> {"error": ...}
+                assert "items" in res, res
+                nums = [it["number"] for it in res["items"] if it["number"] is not None]
+                assert 176.071 in nums, [it["word"] for it in res["items"]]
+                report.append(f"smoke: text recognition (RapidOCR models found, 176.0710 read in "
+                              f"{time.time() - t0:.1f} s): OK")
         with section:   # smoke: start, UV-Vis project
             csv, cdxml, photo = make_selftest_inputs(sm / "input")
             ws = MW.MainWindow()

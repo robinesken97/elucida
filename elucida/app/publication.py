@@ -403,7 +403,7 @@ def checklist_of(st) -> dict:
     have = {k for k, ok in (("1H", "1H" in nuclei), ("13C", "13C" in nuclei), ("2D", two_d),
                             ("ms", bool(hr.get("ms_file") or hr.get("ms_raw") or hr.get("found_manual")
                                          or ir.get("ms_file") or ir.get("ms_raw"))),
-                            ("ir", bool(ir.get("ir_file") or ir.get("ir_pdf"))), ("mp", bool(comp.get("mp") or comp.get("oil"))),
+                            ("ir", bool(ir.get("ir_file") or ir.get("ir_pdf") or ir.get("ir_doc") and ir.get("ir_doc_sel"))), ("mp", bool(comp.get("mp") or comp.get("oil"))),
                             ("ea", bool(ir.get("ea_found"))), ("uvvis", bool(g("eps").get("files"))),
                             ("xray", bool(g("xray").get("entries")))) if ok}
     known = bool(comp.get("known"))

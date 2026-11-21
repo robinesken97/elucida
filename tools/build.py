@@ -35,6 +35,8 @@ args = [
     "--hidden-import", "elucida.formats.parseuv_lite",
     "--hidden-import", "olefile",
     "--hidden-import", "openpyxl",
+    "--hidden-import", "rapidocr",               # Texterkennung (elucida/core/ocr.py, erst bei Bedarf geladen)
+    "--collect-data", "rapidocr",                # ONNX-Modelle und config.yaml im Paket
     "--collect-submodules", "elucida",           # alle eigenen Module, auch nur bei Bedarf importierte (z. B. demo)
     "--hidden-import", "PySide6.QtSvg",          # Symbole/Theme (elucida/app/style.py)
     "--hidden-import", "colorsys",                 # Orbitalfarben wie IboView (in elucida/core/orbitals nur lokal importiert)

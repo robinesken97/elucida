@@ -214,6 +214,8 @@ def write_pack(main, items, path, root, names, texts, parent=None):
     main.log_signal.emit(T("dp_done", p=rep["path"], n=rep["files"], size=_mb(rep["bytes"]), t=len(rep["text_replaced"])))
     if rep["kept"]:
         main.log_signal.emit(T("dp_kept", files="\n  ".join(rep["kept"][:30])))
+    if rep.get("pdf_check"):
+        main.log_signal.emit(T("dp_pdf_check", files="\n  ".join(rep["pdf_check"][:30])))
     return rep
 
 

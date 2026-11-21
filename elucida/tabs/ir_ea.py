@@ -31,14 +31,6 @@ MONO = {  # häufigstes Isotop, IUPAC/AME
     "I": 126.904473, "Pt": 194.9647911, "Au": 196.9665687, "Li": 7.01600455, "Cs": 132.905451933, "Ge": 73.9211778,
     "Te": 129.9062244, "Bi": 208.9803987, "Ti": 47.9479463, "Mn": 54.9380451, "Cr": 51.9405075,
 }
-# Addukt: (Anzeige, Änderung der Formel, Ladung)
-ADDUCTS = {
-    "M+H": ("[M+H]", {"H": 1}, 1), "M+Na": ("[M+Na]", {"Na": 1}, 1), "M+K": ("[M+K]", {"K": 1}, 1),
-    "M+NH4": ("[M+NH$_4$]", {"N": 1, "H": 4}, 1), "M": ("[M]", {}, 1), "M-H": ("[M−H]", {"H": -1}, -1),
-    "M+Cl": ("[M+Cl]", {"Cl": 1}, -1), "M-": ("[M]", {}, -1),
-}
-
-
 _FTOK = re.compile(r"(?:\[(\d+)([A-Z][a-z]?)\]|([A-Z][a-z]?))(\d*)|(\()|\)(\d*)")
 NO_NATURAL = {"Tc", "Pm", "Po", "At", "Rn"}          # ohne stabile Isotope: Masse nur mit Massenzahl
 _ISO = re.compile(r"\[(\d+)([A-Z][a-z]?)\]")
@@ -90,6 +82,83 @@ def parse_formula(text: str) -> dict:
     return out
 
 
+# Benannte Gruppen in Ionenausdrücken (eigenes Ion, Fremdpeak-Liste): Lösungsmittel/Anionen als Summenformel
+ION_GROUPS = {"MeOH": "CH4O", "MeCN": "C2H3N", "ACN": "C2H3N", "H2O": "H2O", "HCOO": "CHO2", "DMSO": "C2H6OS",
+              "FA": "CH2O2", "CH3COO": "C2H3O2", "AcO": "C2H3O2", "NH4": "NH4"}
+# Ladung, die eine Gruppe mitbringt (+X: z += q, −X: z −= q); alles andere gilt als neutral
+ION_CHARGES = {"H": 1, "Li": 1, "Na": 1, "K": 1, "NH4": 1, "Ag": 1, "Cs": 1, "Cl": -1, "Br": -1, "I": -1,
+               "HCOO": -1, "CH3COO": -1, "AcO": -1}
+_ION_RE = re.compile(r"\[?\s*(\d*)\s*M((?:\s*[+\-−]\s*\d*\s*[A-Za-z][A-Za-z0-9()]*)*)\s*\]?")
+_ION_TERM = re.compile(r"([+\-−])(\d*)([A-Za-z][A-Za-z0-9()]*)")
+
+
+def parse_ion(spec: str):
+    """Ionenausdruck „M+Na+MeOH“, „2M+H“, „M-H2O+H“, „[M+2H]“, „nM+HCOO“ (n = Reihe, zählt 1) -> (k, Änderung der
+    Formel, Ladung aus den Gruppen, Anzeige mit $_n$ für tiefe Ziffern). Gruppen: ION_GROUPS oder Summenformel.
+    Nicht lesbar -> ValueError."""
+    s = str(spec).strip().replace(" ", "")
+    s = re.sub(r"^n(?=M)", "", s)
+    m = _ION_RE.fullmatch(s)
+    if not m:
+        raise ValueError(f"Ion nicht lesbar: {spec}")
+    k = int(m.group(1) or 1)
+    delta, z = {}, 0
+    for sign, mult, grp in _ION_TERM.findall(m.group(2)):
+        f = (-1 if sign != "+" else 1) * int(mult or 1)
+        counts = _formula_part(ION_GROUPS.get(grp, grp))
+        for el, n in counts.items():
+            delta[el] = delta.get(el, 0) + f * n
+        z += f * ION_CHARGES.get(grp, 0)
+    body = "".join(f"{'+' if sign == '+' else '−'}{mult}{re.sub(r'(?<=[A-Za-z)])(\d+)', r'$_\1$', grp)}"
+                   for sign, mult, grp in _ION_TERM.findall(m.group(2)))
+    return k, {el: n for el, n in delta.items() if n}, z, f"[{k if k > 1 else ''}M{body}]"
+
+
+def _adduct(spec, z):
+    k, delta, _, label = parse_ion(spec)
+    return label, delta, z, k
+
+
+# Addukt: (Anzeige, Änderung der Formel, Ladung, Anzahl M); Ladung > 1 und 2M rechnet `ion`
+ADDUCTS = {key: _adduct("M" if key == "M-" else key, z) for key, z in (
+    ("M+H", 1), ("M+Na", 1), ("M+K", 1), ("M+NH4", 1), ("M", 1), ("M+H+MeOH", 1), ("M+Na+MeOH", 1),
+    ("M+H+H2O", 1), ("M+H-H2O", 1), ("M+H+MeCN", 1), ("M+2H", 2), ("2M+H", 1), ("2M+Na", 1),
+    ("M-H", -1), ("M+Cl", -1), ("M+HCOO", -1), ("M-", -1))}
+
+
+def adduct_def(adduct):
+    """Schlüssel aus ADDUCTS oder eigenes Ion (Ausdruck, Ladung) -> (Anzeige, Änderung, Ladung, Anzahl M)."""
+    if isinstance(adduct, str) and adduct in ADDUCTS:
+        return ADDUCTS[adduct]
+    spec, z = (adduct, None) if isinstance(adduct, str) else adduct
+    k, delta, zg, label = parse_ion(spec)
+    z = int(zg if z is None else z)
+    if not z:
+        raise ValueError(f"Ion ohne Ladung: {spec}")
+    return label, delta, z, k
+
+
+def charge_text(z: int) -> str:
+    """Ladung als Hochzahl-Text: +, −, 2+, 3−."""
+    return (f"{abs(z)}" if abs(z) > 1 else "") + ("+" if z > 0 else "−")
+
+
+def label_text(label: str, mode="plain") -> str:
+    """Anzeige eines Addukts ($_n$ = tiefe Ziffern) als Klartext, HTML oder mit Unicode-Indizes (Oberfläche)."""
+    if mode == "html":
+        return re.sub(r"\$_(\d+)\$", r"<sub>\1</sub>", label)
+    if mode == "ui":
+        return re.sub(r"\$_(\d+)\$", lambda m: m.group(1).translate(str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")), label)
+    return re.sub(r"\$_(\d+)\$", r"\1", label)
+
+
+def adduct_ui(adduct) -> str:
+    """„[M+NH₄]⁺“, „[M+2H]²⁺“ für Auswahllisten und Tabellen."""
+    label, _, z, _ = adduct_def(adduct)
+    sup = charge_text(z).translate(str.maketrans("0123456789+−", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻"))
+    return label_text(label, "ui") + sup
+
+
 def element_of_key(key: str) -> str:
     """'[13C]' -> 'C', 'C' -> 'C'."""
     m = _ISO.fullmatch(key)
@@ -126,13 +195,14 @@ def formula_html(f: str) -> str:
                   lambda m: f"<sup>{m.group(1)}</sup>{m.group(2)}" if m.group(1) else f"<sub>{m.group(3)}</sub>", f)
 
 
-def ion(formula: str, adduct: str = "M+H"):
-    """-> (Ionenformel ohne Ladung, Ladung ±1, m/z calc, Addukt-Anzeige)."""
-    counts = parse_formula(formula)
-    label, delta, z = ADDUCTS[adduct]
+def ion(formula: str, adduct="M+H"):
+    """-> (Ionenformel ohne Ladung, Ladung z, m/z calc, Addukt-Anzeige); m/z = (k·M + Δ − z·mₑ)/|z|. adduct: Schlüssel
+    aus ADDUCTS oder eigenes Ion (Ausdruck, Ladung)."""
+    label, delta, z, k = adduct_def(adduct)
+    counts = {el: n * k for el, n in parse_formula(formula).items()}
     for el, n in delta.items():
         counts[el] = counts.get(el, 0) + n
-    if any(v < 0 for v in counts.values()):
+    if any(v < 0 for v in counts.values()) or not any(counts.values()):
         raise ValueError("Addukt passt nicht zur Formel")
     m = sum(mono_mass(el) * n for el, n in counts.items()) - z * ELECTRON
     return formula_str(counts), z, m / abs(z), label
@@ -418,15 +488,18 @@ def nearest(mz_list, calc, max_ppm=20.0):
 
 
 def ms_line(formula, adduct, found, ionisation="ESI"):
-    """-> (Klartext, HTML): HR-MS-ESI(+) calc. C18H19N2O+ [M+H]+ 279.1492; found 279.1496."""
+    """-> (Klartext, HTML): HR-MS-ESI(+) calc. C18H19N2O+ [M+H]+ 279.1492; found 279.1496. Ladung 2: „[C…]2+ [M+2H]2+“
+    im Klartext (sonst liefe die Ladung in die letzte Ziffer der Formel), hochgestellt im HTML."""
     f_ion, z, calc, label = ion(formula, adduct)
-    sign = "+" if z > 0 else "−"
-    lab_plain = label.replace("$_4$", "4")
-    lab_html = label.replace("$_4$", "<sub>4</sub>")
+    sign = charge_text(z)
+    pol = "+" if z > 0 else "−"
+    lab_plain = label_text(label)
+    lab_html = label_text(label, "html")
     f_html = formula_html(f_ion)
+    f_plain = f"[{f_ion}]" if abs(z) > 1 else f_ion
     tail = f"; found {found:.4f}." if found is not None else "; found –."
-    plain = f"HR-MS-{ionisation}({sign}) calc. {f_ion}{sign} {lab_plain}{sign} {calc:.4f}{tail}"
-    html = (f"<b>HR-MS-{ionisation}({sign})</b> calc. {f_html}<sup>{sign}</sup> {lab_html}<sup>{sign}</sup> "
+    plain = f"HR-MS-{ionisation}({pol}) calc. {f_plain}{sign} {lab_plain}{sign} {calc:.4f}{tail}"
+    html = (f"<b>HR-MS-{ionisation}({pol})</b> calc. {f_html}<sup>{sign}</sup> {lab_html}<sup>{sign}</sup> "
             f"{calc:.4f}{tail}")
     return plain, html, calc
 
@@ -540,6 +613,10 @@ from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app.i18n import T, T_en  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form, off_spin  # noqa: E402
+from elucida.core import ocr as OCR  # noqa: E402
+from elucida.formats.ms_report import header_line  # noqa: E402
+IR_DOC_NUM = r"\d{3,4}(\.\d{1,2})?"                    # ṽ in einem fremden Dokument (ganze Zahl oder 1–2 Nachkommastellen)
+IR_DOC_RANGE = (350, 4500)
 
 IR_COLOR = "#7a1a12"
 
@@ -709,7 +786,7 @@ class IRMSTab(TABS.FigureTab):
     SI_CAPTION = "IR spectrum of {name}."
     X_RANGE = (100.0, 8000.0, 0, 50.0)
     XRANGE_TEXT = "ir_xrange"
-    RESET_KEEP = ("ir_file", "ir_pdf", "ir_off", "ir_thr", "ea_solvate", "ea_found", "ea_found2",
+    RESET_KEEP = ("ir_file", "ir_pdf", "ir_doc", "ir_doc_sel", "ir_off", "ir_thr", "ea_solvate", "ea_found", "ea_found2",
                   "ea_reason", "irc_file", "irc_scale", "irc_pairs",   # Dateien, Peakwahl, EA, Rechnung
                   "ram_file", "ram_exc", "ram_off",                  # Raman: Datei, Anregung, Peakwahl
                   "prominence", "with_int", "ir_lo", "ir_hi", "ir_base", "ram_prom",   # Peaksuche (IR-/Raman-Zeile)
@@ -758,6 +835,18 @@ class IRMSTab(TABS.FigureTab):
         row.addWidget(b)
         row.addWidget(b2)
         f.addRow(T("ir_files"), row)
+        # anderes PDF oder Bild (Tabelle anderer Gruppen): Zahlen als Kandidaten, Häkchen übernimmt sie in die IR-Zeile
+        self.doc_head = TABS.STYLE.text_head(T("ir_doc_head_pdf"))
+        f.addRow(self.doc_head)
+        self.tbl_doc = TABS.STYLE.check_table([T("ir_doc_wn")])     # Zeile und Ausschnitt im Tooltip der Zeile
+        self.tbl_doc.setToolTip(T("ir_doc_tip"))
+        self.tbl_doc.itemChanged.connect(self.doc_toggled)
+        f.addRow(self.tbl_doc)
+        self.lbl_doc = HintLabel("")
+        self.lbl_doc.setWordWrap(True)
+        self.lbl_doc.setStyleSheet(HINT_CSS)
+        f.addRow(self.lbl_doc)
+        self._doc_form = f
         row = QHBoxLayout()
         self.sp_lo = QDoubleSpinBox(decimals=0, minimum=0, maximum=10000, singleStep=50, suffix=" cm⁻¹")
         self.sp_hi = QDoubleSpinBox(decimals=0, minimum=0, maximum=10000, singleStep=50, suffix=" cm⁻¹")
@@ -1070,7 +1159,7 @@ class IRMSTab(TABS.FigureTab):
     def calc_rows(self):
         """Zugeordnete Banden (Tabelle, SI, Kachel) aus Messung, Rechnung und Einstellungen."""
         r = self.calc_modes()
-        if r is None or self.spectrum() is None and not self.st.get("ir_pdf"):
+        if r is None or self.spectrum() is None and not self.st.get("ir_pdf") and not self.doc_values():
             return []
         st = self.st
         return assign_bands([p["wn"] for p in self.used_peaks()], r["modes"], st.get("irc_scale", 1.0),
@@ -1497,13 +1586,16 @@ class IRMSTab(TABS.FigureTab):
         if not self.main.ensure_project():
             return
         ps, _ = QFileDialog.getOpenFileNames(self, T("ir_files"), self.main.settings.value("last_dir", ""),
-                                             f"{T('flt_ir')};;{T('flt_all')}")
+                                             f"{T('flt_ir')};;{T('flt_ocr_img')} "
+                                             f"({' '.join('*' + e for e in OCR.IMAGE_EXT)});;{T('flt_all')}")
         self.load_ir_files(ps)
 
     def load_ir_files(self, ps):
         """Mehrere Dateien auf einmal: das letzte Spektrum gilt; ein PDF nur, wenn es eindeutig zu ihm gehört (einziges
         Spektrum der Auswahl oder gleicher Dateiname), sonst Hinweis statt fremder Peaks."""
-        spec = [p for p in ps if Path(p).suffix.lower() != ".pdf"]
+        spec = [p for p in ps if Path(p).suffix.lower() != ".pdf" and Path(p).suffix.lower() not in OCR.IMAGE_EXT]
+        for p in [p for p in ps if Path(p).suffix.lower() in OCR.IMAGE_EXT][-1:]:   # Bild: Zahlen per OCR
+            self.load_ir(p)
         pdfs = [p for p in ps if Path(p).suffix.lower() == ".pdf"]
         for p in spec:
             self.load_ir(p)
@@ -1519,10 +1611,21 @@ class IRMSTab(TABS.FigureTab):
         """PDF -> Peakliste aus OPUS, OPUS-Datei -> Spektrum (eigene Peaksuche); beides darf gleichzeitig da sein."""
         p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
+            if Path(p).suffix.lower() in OCR.IMAGE_EXT or (Path(p).suffix.lower() == ".pdf" and not read_ir_pdf(p)):
+                if Path(p).suffix.lower() == ".pdf":
+                    import pymupdf
+                    with pymupdf.open(p) as doc_:                 # unlesbar: Grund statt leerer Liste
+                        doc_.page_count
+                else:
+                    from PIL import Image
+                    with Image.open(p) as im_:
+                        im_.verify()
+                self.st.update(ir_doc=p, ir_doc_sel=[], ir_pdf=None)   # kein OPUS-PDF: Werte per Klick
+                self.sync_widgets()
+                self.timer.start()
+                return
             if Path(p).suffix.lower() == ".pdf":
-                if not read_ir_pdf(p):
-                    raise ValueError(T("ir_pdf_empty"))
-                self.st["ir_pdf"] = p
+                self.st.update(ir_pdf=p, ir_doc=None, ir_doc_sel=[])
             else:
                 read_opus(p)
                 if self.st.get("ir_file") and self.st["ir_file"] != p:
@@ -1536,7 +1639,7 @@ class IRMSTab(TABS.FigureTab):
         self.timer.start()
 
     def clear_ir(self):
-        self.st.update(ir_file=None, ir_pdf=None, ir_lo=None, ir_hi=None, ir_off=[], ir_thr=[])
+        self.st.update(ir_file=None, ir_pdf=None, ir_lo=None, ir_hi=None, ir_off=[], ir_thr=[], ir_doc=None, ir_doc_sel=[])
         self.sync_widgets()
         self.timer.start()
 
@@ -1589,6 +1692,9 @@ class IRMSTab(TABS.FigureTab):
         if sp is None and pdf and Path(pdf).exists():   # nur PDF: alle Peakwerte liegen im ganzen Bereich
             vals = self.cache(("irpdf", pdf), lambda: read_ir_pdf(pdf))
             full = (min([full[0], *vals]), max([full[1], *vals]))
+        elif sp is None and self.doc_values():           # nur Werte aus einem Dokument: ebenso
+            vals = self.doc_values()
+            full = (min([full[0], *vals]), max([full[1], *vals]))
         lo, hi = self.st.get("ir_lo"), self.st.get("ir_hi")
         return (full[0] if lo is None else lo, full[1] if hi is None else hi), full
 
@@ -1602,8 +1708,12 @@ class IRMSTab(TABS.FigureTab):
             found = threshold_peaks(sp, st["ir_thr"], lo, hi)
         else:
             found = pick_peaks(sp["wn"], sp["y"], sp["kind"], lo, hi, st["prominence"] / 100) if sp else []
+        vals = None
         if st.get("ir_pdf") and Path(st["ir_pdf"]).exists():
             vals = self.cache(("irpdf", st["ir_pdf"]), lambda: read_ir_pdf(st["ir_pdf"]))
+        elif self.doc_values():                          # aus einem Dokument angehakt (Textebene oder OCR)
+            vals = self.doc_values()
+        if vals is not None:
             out = []
             for v in vals:
                 if min(lo, hi) <= v <= max(lo, hi):
@@ -1613,6 +1723,74 @@ class IRMSTab(TABS.FigureTab):
                     out.append(p)
             return out
         return found
+
+    def doc_values(self):
+        """Angehakte ṽ aus dem Dokument (ganze Zahlen, absteigend); gelten ohne erneute Erkennung."""
+        return sorted({float(v) for v in self.st.get("ir_doc_sel") or []}, reverse=True) if self.st.get("ir_doc") else []
+
+    def doc_candidates(self):
+        """Zahlen des Dokuments -> ([(ṽ ganzzahlig, Zeile, Ausschnitt)], Herkunft "pdf"/"ocr", Zustand der Erkennung):
+        erst die Textebene, ohne Zahlen dort die Texterkennung im Hintergrund."""
+        p = self.st.get("ir_doc")
+        if not p or not Path(p).exists():
+            return [], "", ""
+        items = self.cache(("irdoctext", p), lambda: OCR.text_items(p))
+        cands = OCR.candidates(items, IR_DOC_NUM, IR_DOC_RANGE[0], IR_DOC_RANGE[1], header_line)
+        if cands:
+            return self._ir_ints(cands), "pdf", ""
+        res = OCR.start(self.main, p)
+        if res is None:
+            return [], "ocr", "running"
+        if "error" in res:
+            return [], "ocr", res["error"]
+        return self._ir_ints(OCR.candidates(res["items"], IR_DOC_NUM, IR_DOC_RANGE[0], IR_DOC_RANGE[1], header_line)), "ocr", ""
+
+    @staticmethod
+    def _ir_ints(cands):
+        out, seen = [], set()
+        for v, line, crop in cands:
+            k = int(round(v))
+            if k not in seen:
+                seen.add(k)
+                out.append((k, line, crop))
+        return out
+
+    def fill_doc(self):
+        """Kandidatentabelle des Dokuments: nichts angehakt, bis man klickt; Herkunft in der Kopfzeile."""
+        on = bool(self.st.get("ir_doc"))
+        for w_ in (self.doc_head, self.tbl_doc):
+            self._doc_form.setRowVisible(w_, on)
+        if not on:
+            self.lbl_doc.setText("")
+            return
+        cands, src, state = self.doc_candidates()
+        self.doc_head.findChild(QLabel).setText(T("ir_doc_head_" + (src or "pdf")))
+        sel = {int(v) for v in self.st.get("ir_doc_sel") or []}
+        t = self.tbl_doc
+        t.blockSignals(True)
+        t.setRowCount(0)
+        for k, line, crop in cands:
+            TABS.STYLE.check_row(t, k, [str(k)], checked=k in sel)
+            tip = OCR.tip_html(crop, line)
+            for c in range(t.columnCount()):
+                t.item(t.rowCount() - 1, c).setToolTip(tip)
+        t.blockSignals(False)
+        TABS.STYLE.fit_columns(t)
+        TABS.STYLE.fit_check_table(t, 6)
+        self._doc_form.setRowVisible(t, bool(cands))
+        self.lbl_doc.setStyleSheet(WARN_CSS if state not in ("", "running") else HINT_CSS)
+        self.lbl_doc.setText(T("ms_ocr_running") if state == "running" else T("ocr_missing") if state == "missing"
+                             else T("ocr_failed", e=state) if state else T("ir_doc_none") if not cands else "")
+
+    def doc_toggled(self, item):
+        if item.column() != 0:
+            return
+        k = item.data(Qt.UserRole)
+        sel = {int(v) for v in self.st.get("ir_doc_sel") or []}
+        sel.add(k) if item.checkState() == Qt.Checked else sel.discard(k)
+        self.st["ir_doc_sel"] = sorted(sel, reverse=True)
+        self.fill_doc()
+        self.timer.start()
 
     def formula(self):
         """Formel wie im HRMS-Tab: Verbindung des Projekts, sonst die Struktur im MS-Bericht, sonst dessen Formelfeld."""
@@ -1626,7 +1804,7 @@ class IRMSTab(TABS.FigureTab):
     def sync_widgets(self):
         st = self.st
         self._loading = True
-        names = [Path(p).name for p in (st.get("ir_file"), st.get("ir_pdf")) if p]
+        names = [Path(p).name for p in (st.get("ir_file"), st.get("ir_pdf"), st.get("ir_doc")) if p]
         self.lbl_ir.setText(", ".join(names) or "–")
         (lo, hi), full = self.ir_range()
         auto = st.get("ir_lo") is None and st.get("ir_hi") is None
@@ -1679,6 +1857,7 @@ class IRMSTab(TABS.FigureTab):
             self.btn_ram_color.setStyleSheet(f"background-color: {c3_}; border: 1px solid {TABS.STYLE.swatch_border()};")
         self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
         self.sync_yrange()
+        self.fill_doc()
         self._loading = False
 
     def collect(self):

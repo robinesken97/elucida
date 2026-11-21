@@ -364,6 +364,8 @@ class DatasetsCard(QGroupBox):
                                     size=_mb(rep["bytes"])))
         if rep["kept"]:
             self.main.log_signal.emit(T("dp_kept", files="\n  ".join(rep["kept"][:30])))
+        if rep.get("pdf_check"):
+            self.main.log_signal.emit(T("dp_pdf_check", files="\n  ".join(rep["pdf_check"][:30])))
         off = [f"{pl.name}: {n}" for pl in plans if (n := sum(1 for i in pl.items if not i.on))]
         notes = [T("pub_dp_used_off", items=", ".join(off))] if off else []
         new = rep["zips"] + [fid.get("path") or ""] + ([str(Path(out_dir) / "README.txt")] if readme else [])

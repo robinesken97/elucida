@@ -1710,7 +1710,9 @@ It comes without any warranty.
 The app bundles the following libraries under their own licenses:
 PySide6/Qt (LGPL-3.0), PyMuPDF (AGPL-3.0), RDKit (BSD-3-Clause), matplotlib (Matplotlib License),
 NumPy (BSD-3-Clause), Pillow (MIT-CMU), pillow-heif (BSD-3-Clause, contains libheif, LGPL-3.0),
-OpenCV (Apache-2.0), ONNX Runtime (MIT), PyYAML (MIT), olefile (BSD-2-Clause), openpyxl (MIT), PyObjC on macOS (MIT).
+OpenCV (Apache-2.0), ONNX Runtime (MIT), PyYAML (MIT), olefile (BSD-2-Clause), openpyxl (MIT), PyObjC on macOS (MIT),
+RapidOCR (Apache-2.0; text recognition models from PaddleOCR, Apache-2.0) with Shapely (BSD-3-Clause), pyclipper (MIT),
+OmegaConf (BSD-3-Clause, contains the ANTLR runtime, BSD-3-Clause), colorlog (MIT), Requests (Apache-2.0), tqdm (MPL-2.0 and MIT) and six (MIT).
 The drawing editor is [Octet Draw](https://github.com/SamChemMan/Octet-Draw) (© Sam Ellis and contributors, Apache-2.0,
 modified, see `frontend/octet/UPSTREAM.md`) with OPSIN (MIT), Indigo (Apache-2.0) and further components listed in
 `frontend/octet/THIRD_PARTY.md` and `frontend/octet/licenses/`; it runs in Qt WebEngine/Chromium (LGPL-3.0 and others).

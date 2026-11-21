@@ -1774,7 +1774,9 @@ Es gibt keine Gewährleistung.
 Die App enthält folgende Bibliotheken unter ihren eigenen Lizenzen:
 PySide6/Qt (LGPL-3.0), PyMuPDF (AGPL-3.0), RDKit (BSD-3-Clause), matplotlib (Matplotlib License),
 NumPy (BSD-3-Clause), Pillow (MIT-CMU), pillow-heif (BSD-3-Clause, enthält libheif, LGPL-3.0),
-OpenCV (Apache-2.0), ONNX Runtime (MIT), PyYAML (MIT), olefile (BSD-2-Clause), openpyxl (MIT), PyObjC unter macOS (MIT).
+OpenCV (Apache-2.0), ONNX Runtime (MIT), PyYAML (MIT), olefile (BSD-2-Clause), openpyxl (MIT), PyObjC unter macOS (MIT),
+RapidOCR (Apache-2.0; Texterkennungsmodelle von PaddleOCR, Apache-2.0) mit Shapely (BSD-3-Clause), pyclipper (MIT),
+OmegaConf (BSD-3-Clause, enthält die ANTLR-Laufzeit, BSD-3-Clause), colorlog (MIT), Requests (Apache-2.0), tqdm (MPL-2.0 und MIT) und six (MIT).
 Der Zeicheneditor ist [Octet Draw](https://github.com/SamChemMan/Octet-Draw) (© Sam Ellis und Mitwirkende, Apache-2.0,
 verändert, siehe `frontend/octet/UPSTREAM.md`) mit OPSIN (MIT), Indigo (Apache-2.0) und weiteren Bestandteilen, gelistet in
 `frontend/octet/THIRD_PARTY.md` und `frontend/octet/licenses/`; er läuft in Qt WebEngine/Chromium (LGPL-3.0 u. a.).

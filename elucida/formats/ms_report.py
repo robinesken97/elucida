@@ -216,13 +216,22 @@ def _smartformula_rows(lines):
     return rows if head else None
 
 
+class NoTextLayer(ValueError):
+    """PDF ohne Textebene (Scan): `read_ms_pdf` lehnt ab, `read_ms_report` liefert dann einen OCR-Bericht."""
+
+
+def header_line(line: str) -> bool:
+    """Zeile, die nach Kopfdaten aussieht (Probe, Name, Bearbeiter, Datum, Pfad): stellt nie Kandidaten."""
+    return bool(HEADER_WORDS.search(line)) or "\\" in line or ":/" in line
+
+
 def _pdf_candidates(lines):
     """Unbekanntes Layout: [(m/z, Textzeile)] aller Zahlen mit ≥ 3 Nachkommastellen zwischen 50 und 5000, ohne
     Zeilen, die nach Kopfdaten aussehen (HEADER_WORDS, Pfade); jede Zahl einmal (erste Zeile)."""
     out, seen = [], set()
     for _, _, sp in lines:
         line = " ".join(t for _, _, t in sp)
-        if HEADER_WORDS.search(line) or "\\" in line or ":/" in line:
+        if header_line(line):
             continue
         for m in MZ_NUM.finditer(line):
             v = float(m.group(1))
@@ -266,7 +275,7 @@ def read_ms_pdf(path) -> dict:
         lines = _pdf_lines(doc)
         images = _pdf_images(doc)
     if not lines:
-        raise ValueError(T("ms_pdf_no_text", name=Path(path).name))
+        raise NoTextLayer(T("ms_pdf_no_text", name=Path(path).name))
     out = {"sample": "", "formula": "", "structure": None, "exact_mass": None, "remark": "", "images": images,
            "rows": [], "candidates": [], "mz": []}
     rows = _smartformula_rows(lines) if any(t == SF_TITLE for _, _, sp in lines for _, _, t in sp) else None
@@ -309,6 +318,29 @@ def pdf_image_array(path, xref):
     return arr
 
 
+def ocr_report(path) -> dict:
+    """PDF ohne Textebene oder Bild: Bericht der Art "ocr" ohne Zahlen; die Kandidaten liefert die Texterkennung im
+    Hintergrund (Tab HRMS, `core.ocr`), nichts vorgewählt."""
+    return {"sample": "", "formula": "", "structure": None, "exact_mass": None, "remark": "", "images": [], "rows": [],
+            "candidates": [], "mz": [], "kind": "ocr", "polarity": None, "ionisation": None}
+
+
 def read_ms_report(path) -> dict:
-    """Bericht der Massenabteilung: .pdf über `read_ms_pdf`, sonst Word (`read_ms_docx`)."""
-    return read_ms_pdf(path) if Path(path).suffix.lower() == ".pdf" else read_ms_docx(path)
+    """Bericht der Massenabteilung: .pdf über `read_ms_pdf` (ohne Textebene: OCR-Bericht), Bild -> OCR-Bericht, sonst Word
+    (`read_ms_docx`)."""
+    from elucida.core.ocr import IMAGE_EXT
+    suf = Path(path).suffix.lower()
+    if suf in IMAGE_EXT:
+        from PIL import Image
+        try:
+            with Image.open(path) as im:
+                im.verify()
+        except Exception:
+            raise ValueError(T("ms_pdf_bad", name=Path(path).name)) from None
+        return ocr_report(path)
+    if suf == ".pdf":
+        try:
+            return read_ms_pdf(path)
+        except NoTextLayer:
+            return ocr_report(path)
+    return read_ms_docx(path)

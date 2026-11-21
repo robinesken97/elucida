@@ -94,7 +94,7 @@ def project_info(path) -> dict | None:
     has = {
         "syn": bool(g("syn", "proc") or g("syn", "scheme")),
         "nmr": bool(g("nmr", "spectra") or g("nmr", "raw") or g("nmr", "mnova")),
-        "ir": bool(g("irms", "ir_file") or g("irms", "ir_pdf")),
+        "ir": bool(g("irms", "ir_file") or g("irms", "ir_pdf") or g("irms", "ir_doc") and g("irms", "ir_doc_sel")),
         "ms": bool(g("hrms", "ms_file") or g("hrms", "ms_raw") or g("hrms", "found_manual") or g("irms", "ms_file")
                    or g("irms", "ms_raw")),
         "uvvis": bool(g("eps", "files")),

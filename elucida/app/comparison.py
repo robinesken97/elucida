@@ -82,7 +82,7 @@ def has_data(key, st) -> bool:
     if key in ("epr", "xray", "dft"):
         return bool(st.get("entries"))
     if key == "irms":
-        return bool(st.get("ir_file") or st.get("ir_pdf"))
+        return bool(st.get("ir_file") or st.get("ir_pdf") or st.get("ir_doc") and st.get("ir_doc_sel"))
     if key == "nmr":
         return bool((st.get("text") or "").strip())
     return False

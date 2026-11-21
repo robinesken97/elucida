@@ -20099,6 +20099,451 @@ def _g_lanes(ctx):
             assert MW.restart_command(w.project_dir, None)[0] == head_k2     # Übersicht: ohne Verbindung
             report.append("Restart now (lane klein 2): command with compound and tab (source, frozen, AppImage), own "
                           "scale factor not inherited, saved first, start arguments reopen compound and tab: OK")
+        with section:
+            # Spur hrms2, Teil 1: weitere Addukte (Ladung 2, 2M, Lösungsmittel) und eigenes Ion (Ausdruck + Ladung)
+            def pump_h2(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+            f_h2 = "C10H9NO2"                                           # erfundene Verbindung
+            mono_h2 = sum(IRMS.MONO[e_] * n_ for e_, n_ in {"C": 10, "H": 9, "N": 1, "O": 2}.items())
+            H_, Na_, e_h2 = IRMS.MONO["H"], IRMS.MONO["Na"], IRMS.ELECTRON
+            meoh_ = IRMS.MONO["C"] + 4 * H_ + IRMS.MONO["O"]
+            want_h2 = {"M+H": mono_h2 + H_ - e_h2, "M+2H": (mono_h2 + 2 * H_ - 2 * e_h2) / 2,
+                       "2M+H": 2 * mono_h2 + H_ - e_h2, "2M+Na": 2 * mono_h2 + Na_ - e_h2,
+                       "M+Na+MeOH": mono_h2 + Na_ + meoh_ - e_h2, "M+H+MeOH": mono_h2 + H_ + meoh_ - e_h2,
+                       "M+H+H2O": mono_h2 + 3 * H_ + IRMS.MONO["O"] - e_h2,
+                       "M+H-H2O": mono_h2 - H_ - IRMS.MONO["O"] - e_h2,
+                       "M+H+MeCN": mono_h2 + H_ + 2 * IRMS.MONO["C"] + 3 * H_ + IRMS.MONO["N"] - e_h2,
+                       "M+HCOO": mono_h2 + IRMS.MONO["C"] + H_ + 2 * IRMS.MONO["O"] + e_h2}
+            for a_, v_ in want_h2.items():
+                assert abs(IRMS.ion(f_h2, a_)[2] - v_) < 1e-7, (a_, IRMS.ion(f_h2, a_), v_)
+            assert IRMS.ion(f_h2, "M+2H")[1] == 2 and IRMS.ion(f_h2, "M+HCOO")[1] == -1
+            assert IRMS.ion(f_h2, ("2M+H", 1)) == IRMS.ion(f_h2, "2M+H")       # eigenes Ion = Liste
+            assert IRMS.ion(f_h2, ("M+Na+MeOH", 1))[0] == "C11H13NNaO3"
+            assert abs(IRMS.ion(f_h2, ("M+H+FA+DMSO", 1))[2] - (want_h2["M+H"] + 46.005479 + 78.013936)) < 1e-5
+            for bad_ in ("M+Xx", "X+H", "M+", "M++H", ""):
+                try:
+                    IRMS.ion(f_h2, (bad_, 1))
+                    assert False, bad_
+                except ValueError:
+                    pass
+            try:
+                IRMS.ion(f_h2, ("M+H", 0))                                # Ladung 0: kein Ion
+                assert False
+            except ValueError:
+                pass
+            # SI-Zeile: Ladung 1 unverändert, Ladung 2 eindeutig (Klartext in Klammern, HTML hochgestellt)
+            assert IRMS.ms_line(f_h2, "M+H", 176.0709)[0] == \
+                f"HR-MS-ESI(+) calc. C10H10NO2+ [M+H]+ {want_h2['M+H']:.4f}; found 176.0709."
+            pl_h2, ht_h2, _ = IRMS.ms_line(f_h2, "M+2H", None)
+            assert f"calc. [C10H11NO2]2+ [M+2H]2+ {want_h2['M+2H']:.4f}" in pl_h2, pl_h2
+            assert "O<sub>2</sub><sup>2+</sup> [M+2H]<sup>2+</sup>" in ht_h2, ht_h2
+            assert "[M+H−H<sub>2</sub>O]<sup>+</sup>" in IRMS.ms_line(f_h2, "M+H-H2O", None)[1]
+            assert "(−) calc." in IRMS.ms_line(f_h2, "M+HCOO", None)[0]
+            assert IRMS.adduct_ui("M+2H") == "[M+2H]²⁺" and IRMS.adduct_ui("M+NH4") == "[M+NH₄]⁺"
+            # Isotopenmuster mit Ladung 2: erster Peak = calc, Abstand der Isotope ~0.5
+            pat_h2 = HRMS.isotope_pattern(IRMS.ion(f_h2, "M+2H")[0], 2)
+            assert abs(pat_h2[0][0] - want_h2["M+2H"]) < 2e-5 and abs(pat_h2[1][0] - pat_h2[0][0] - 0.5017) < 0.002, pat_h2
+            # Tab: Liste mit allen neuen Ionen und „Eigenes Ion“; Ausdruck mit Ladung, Fehler am Feld, kein Fenster
+            errs_h2, keep_err_h2 = [], w.error
+            w.error = errs_h2.append
+            try:
+                assert w.create_project(out / "hrms2_ion")
+                w.set_compound({"name": "P2", "formula": f_h2})
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("hrms"))
+                pump_h2(0.5)
+                t_h2 = w.hrms_tab
+                keys_h2 = [t_h2.cmb_adduct.itemData(i_) for i_ in range(t_h2.cmb_adduct.count())]
+                assert set(want_h2) <= set(keys_h2) and keys_h2[-1] == "own", keys_h2
+                assert not t_h2.ed_own.isVisibleTo(t_h2)                  # nur mit „Eigenes Ion“
+                t_h2.cmb_adduct.setCurrentIndex(t_h2.cmb_adduct.findData("M+2H"))
+                pump_h2(0.6)
+                assert f"[M+2H]2+ {want_h2['M+2H']:.4f}" in t_h2._ms_line[0], t_h2._ms_line
+                t_h2.cmb_adduct.setCurrentIndex(t_h2.cmb_adduct.findData("own"))
+                pump_h2(0.6)
+                assert t_h2.ed_own.isVisibleTo(t_h2) and not t_h2.lbl_own_err.text()     # leer: noch kein Fehler
+                t_h2.ed_own.setText("M+Na+MeOH")
+                t_h2.ed_own.editingFinished.emit()
+                pump_h2(0.6)
+                st_h2 = w.hrms_state
+                assert (st_h2["adduct"], st_h2["own_ion"], st_h2["own_z"]) == ("own", "M+Na+MeOH", 1), st_h2
+                assert f"C11H13NNaO3+ [M+Na+MeOH]+ {want_h2['M+Na+MeOH']:.4f}" in t_h2._ms_line[0], t_h2._ms_line
+                t_h2.ed_own.setText("M+Qq")
+                t_h2.ed_own.editingFinished.emit()
+                pump_h2(0.6)
+                assert t_h2.lbl_own_err.text() == T("ms_own_bad") and t_h2.lbl_own_err.isVisibleTo(t_h2)
+                assert not t_h2._ms_line[0] and not errs_h2, (t_h2._ms_line, errs_h2)
+                t_h2.ed_own.setText("M+2H")
+                t_h2.ed_own.editingFinished.emit()
+                t_h2.sp_own_z.setValue(2)
+                pump_h2(0.6)
+                assert not t_h2.lbl_own_err.text() and f"{want_h2['M+2H']:.4f}" in t_h2._ms_line[0], t_h2._ms_line
+                assert w.save_project() is not False
+                assert w.open_project(Path(w.project_dir), ask=False, recent=False)
+                pump_h2(0.5)
+                st_h2 = w.hrms_state
+                assert (st_h2["adduct"], st_h2["own_ion"], st_h2["own_z"]) == ("own", "M+2H", 2), st_h2
+                assert not errs_h2, errs_h2
+            finally:
+                w.error = keep_err_h2
+            report.append("HRMS ions (lane hrms2 part 1): 9 new adducts incl. charge 2, 2M and solvent adducts "
+                          "computed against independent masses, own ion (expression + charge) parsed, invalid input "
+                          "flagged inline without popup, saved and reopened, SI line unchanged for charge 1 and "
+                          "unambiguous for charge 2, isotope pattern for charge 2: OK")
+        with section:
+            # Spur hrms2, Teil 2: Hinweise auf Fremdpeaks (Liste nach Keller et al. 2008, eigene Einträge je Computer,
+            # Reagenzien des Schemas, Bruchstücke der Verbindung); nie in SI-Zeile, SI-Abbildung oder Export
+            from matplotlib.figure import Figure as Fig_h2
+            from elucida.app import demo as DEMO_h2
+            from elucida.core import ms_flags as FL_h2
+            ents_h2 = FL_h2.shipped()
+            assert len(ents_h2) == 50 and all(e_["formula"] or e_["kind"] == "series" for e_ in ents_h2)
+            only_struct_h2 = [e_["key"] for e_ in ents_h2 if e_["source"].startswith("structure:")]
+            assert "pf6" in only_struct_h2 and "tpp_oxide" not in only_struct_h2, only_struct_h2
+            assert "Keller" in FL_h2.SHIPPED.read_text(encoding="utf-8").splitlines()[1]
+            assert all(FL_h2.reference_ions([e_]) for e_ in ents_h2), [e_["key"] for e_ in ents_h2
+                                                                      if not FL_h2.reference_ions([e_])]
+            # Massen, die die Quellenspalte nennt (Wiederholungseinheiten, Ionen) = eigene Rechnung
+            for f_, v_ in (("C2H6OSi", 74.01879), ("CHNaO2", 67.98742), ("C2H3NaO2", 82.00307), ("CH5NO2", 63.03203),
+                           ("ClNa", 57.95862), ("C12H25NaO4S", 288.1371)):
+                assert abs(IRMS.ion(f_, "M")[2] + IRMS.ELECTRON - v_) < 6e-5, (f_, v_)
+            refs_h2 = FL_h2.reference_ions(ents_h2)
+            for txt_, v_ in (("Dimethyldioctadecylammonium [M]⁺", 550.62853),
+                             ("Triphenylphosphine oxide (TPPO) [M+H]⁺", 279.09333),
+                             ("D3-D10 (n = 5) [M+H]⁺", 371.10124)):
+                assert any(txt_ in t_ and abs(m_ - v_) < 2e-4 for m_, _z, t_, _k in refs_h2), txt_
+            assert any(z_ == -1 and "[M−Na]⁻" in t_ for _m, z_, t_, _k in refs_h2)    # SDS: Ladung aus −Na
+            # erfundener Fall: Diazoverbindung, N2-Verlust gibt das protonierte Olefin
+            f2_h2 = "C12H14N4"
+            pk_h2 = {"tppo": IRMS.ion("C18H15OP", "M+H")[2] * (1 + 0.8e-6),
+                     "d5": IRMS.ion("C10H30O5Si5", "M+H")[2] * (1 - 1.2e-6),
+                     "rea": IRMS.ion("C8H10N2O", "M+H")[2] * (1 + 0.5e-6),
+                     "frag": IRMS.ion(f2_h2, ("M-N2+H", 1))[2] * (1 + 1.0e-6),
+                     "free": 333.2222}                                    # passt zu nichts
+            errs_h2, keep_err_h2, keep_lang_h2 = [], w.error, get_lang()
+            w.error = errs_h2.append
+            try:
+                w.switch_lang("en")
+                assert w.create_project(out / "hrms2_flags")
+                w.set_compound({"name": "P3", "formula": f2_h2})
+                w.syn_state["reagents"] = [dict(name="R7", M="C8H10N2O", role="ref"),
+                                           dict(name="", M=f2_h2, role="product"), dict(name="NaOH", M="40.00", role="reagent")]
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("hrms"))
+                pump_h2(0.5)
+                t_h2 = w.hrms_tab
+                FL_h2.save_own(w.settings, [])
+                t_h2.fill_own()
+                t_h2.load_raw(str(DEMO_h2.make_bruker_d(out / "hrms2_in" / "P3.d", "P3", f2_h2, extra=[
+                    (pk_h2["tppo"], 4e4), (pk_h2["d5"], 3e4), (pk_h2["rea"], 2e4), (pk_h2["frag"], 5e4),
+                    (pk_h2["free"], 3e4)])))
+                t_h2.render()
+                pump_h2(0.8)
+                rows_h2 = {t_h2.tbl_flags.item(r_, 0).text(): (t_h2.tbl_flags.item(r_, 1).text(),
+                                                                t_h2.tbl_flags.item(r_, 2).text())
+                           for r_ in range(t_h2.tbl_flags.rowCount())}
+                calc_h2 = t_h2._ion[2]
+                found_h2 = t_h2._found
+                assert found_h2 is not None and abs(found_h2 - calc_h2) < 1e-3, (found_h2, calc_h2)
+                for k_, (txt_, dev_) in {"tppo": ("TPPO", "+0.8"), "d5": ("(n = 5) [M+H]⁺", "−1.2"),
+                                         "rea": ("reagent R7 [M+H]⁺", "+0.5"),
+                                         "frag": ("possible fragment of the compound [M−N₂+H]⁺", "+1.0")}.items():
+                    hit_ = [v_ for m_, v_ in rows_h2.items() if abs(float(m_) - pk_h2[k_]) < 2e-4]
+                    assert hit_ and txt_ in hit_[0][1] and hit_[0][0] == dev_, (k_, hit_, rows_h2)
+                assert not any(abs(float(m_) - calc_h2) < 0.01 or abs(float(m_) - 333.2222) < 0.01 for m_ in rows_h2), rows_h2
+                assert not t_h2.tbl_flags.isHidden() and not t_h2.lbl_flags.text()
+                # Fenster je Tab: 0.7 ppm -> TPPO (+0.8), D5 (−1.2), Bruchstück (+1.0) fallen weg; Reagenz (+0.5) und
+                # die beiden Phthalat-Linien des Beispiel-.d (~0 ppm) bleiben
+                t_h2.sp_flag_ppm.setValue(0.7)
+                t_h2.sp_flag_ppm.editingFinished.emit()
+                pump_h2(0.6)
+                assert w.hrms_state["cont_ppm"] == 0.7 and t_h2.tbl_flags.rowCount() == 3, t_h2.tbl_flags.rowCount()
+                t_h2.sp_flag_ppm.setValue(5.0)
+                t_h2.sp_flag_ppm.editingFinished.emit()
+                pump_h2(0.6)
+                # Marker an markierten Linien nur in der Vorschau (Bereich mit Reagenz und Verbindung)
+                w.hrms_state.update(x_auto=False, x_min=140.0, x_max=300.0)
+                t_h2.render()
+                pump_h2(0.6)
+                mk_h2 = [c_ for c_ in t_h2.F.curves if c_.get("marker") == "v"]
+                assert len(mk_h2) == 1 and mk_h2[0].get("aux") and len(mk_h2[0]["x"]) == 4, mk_h2   # Phthalat, Reagenz, Bruchstück, TPPO
+                assert all(abs(x_ - calc_h2) > 0.5 for x_ in mk_h2[0]["x"])
+                F2_h2 = t_h2.build(Fig_h2())                                # Export/SI/Kopie bauen ohne Vorschau
+                assert not any(c_.get("marker") == "v" for c_ in F2_h2.curves)
+                assert len(t_h2.preview_only()) == 1                       # Vorschaubild im Tab Export ohne Marker
+                # eigene Einträge: in den Einstellungen dieses Computers, nie im Projekt; nicht rechenbare mit Hinweis
+                t_h2.own_add()
+                pump_h2(0.2)
+                t_h2.tbl_own.item(0, 0).setText("Own impurity Q")
+                t_h2.tbl_own.item(0, 1).setText("C17H17N")
+                t_h2.tbl_own.item(0, 2).setText("M+H;M+Zz")
+                pump_h2(0.6)
+                assert FL_h2.own_entries(w.settings)[0]["name"] == "Own impurity Q"
+                assert "M+Zz" in t_h2.lbl_own_bad.text() and not t_h2.lbl_own_bad.isHidden()
+                own_mz_h2 = IRMS.ion("C17H17N", "M+H")[2]
+                assert not any(abs(float(m_) - own_mz_h2) < 1e-3 for m_ in rows_h2)
+                # Nichts davon in SI-Zeile, SI (Word), Export, Projektdatei
+                words_h2 = ("TPPO", "Triphenylphosphine", "reagent R7", "possible fragment", "siloxane", "Own impurity")
+                assert not any(x_ in t_h2._ms_line[0] + t_h2._ms_line[1] for x_ in words_h2), t_h2._ms_line
+                files_h2 = t_h2.export_dialog()
+                w.export_si()
+                pump_h2()
+                assert w.save_project() is not False
+                docx_h2 = next(Path(w.project_dir, PRJ.SI_DIR).glob("*_SI.docx"))
+                import zipfile as zip_h2
+                with zip_h2.ZipFile(docx_h2) as z_:
+                    xml_h2 = z_.read("word/document.xml").decode("utf-8")
+                assert f"{found_h2:.4f}" in xml_h2 and not any(x_ in xml_h2 for x_ in words_h2)
+                for p_ in list(Path(w.project_dir).rglob("*")) + [Path(p_) for p_ in files_h2]:
+                    if p_.is_file() and p_.suffix in (".txt", ".csv", ".elucida", ".json", ".yaml", ".svg"):
+                        txt_ = p_.read_text(encoding="utf-8", errors="replace")
+                        assert not any(x_ in txt_ for x_ in words_h2), p_.name
+                t_h2.own_reset()
+                pump_h2(0.3)
+                assert not FL_h2.own_entries(w.settings) and t_h2.tbl_own.rowCount() == 0
+                assert not errs_h2, errs_h2
+            finally:
+                w.error = keep_err_h2
+                if get_lang() != keep_lang_h2:
+                    w.switch_lang(keep_lang_h2)
+            report.append("HRMS contaminant hints (lane hrms2 part 2): 50 shipped entries (Keller 2008 et al.) all "
+                          "computable, masses quoted in the source column reproduced; invented .d with TPPO, D5, a "
+                          "reagent of the scheme and the N2-loss fragment flagged with ppm, compound and unknown peak not "
+                          "flagged, window per tab, markers only in the preview, own entries per computer (settings, "
+                          "invalid ones named), nothing in SI line/SI/export/project file: OK")
+        with section:
+            # Spur hrms2, Teil 3: Texterkennung (RapidOCR) für HRMS-Scans und IR-Werte aus fremden PDFs/Bildern;
+            # Kandidaten mit Bildausschnitt, nichts vorgewählt, Übernahme nur per Klick
+            import matplotlib as mpl_h3
+            import pymupdf as mu_h3
+            from PIL import Image as Img_h3, ImageDraw as Draw_h3, ImageFont as Font_h3
+            from elucida.core import ocr as OCR_h3
+            from elucida.formats import ms_report as MSR_h3
+            # Auswahl der Zahlen (ohne Erkennung): Kopfzeilen und nicht ganz lesbare Wörter fallen weg, nichts „repariert“
+            it_h3 = [dict(text="Sample X 176.0712", word="176.0712", number=176.0712, crop=None),
+                     dict(text="found 176.0710", word="176.0710", number=176.0710, crop=None),
+                     dict(text="found 176.O711", word="176.O711", number=None, crop=None),
+                     dict(text="found 17.07", word="17.07", number=17.07, crop=None)]
+            assert [c_[0] for c_ in OCR_h3.candidates(it_h3, HRMS.OCR_MZ, 50, 5000, MSR_h3.header_line)] == [176.0710]
+            in_h3 = out / "hrms2_ocr_in"
+            in_h3.mkdir(parents=True, exist_ok=True)
+            doc_h3 = mu_h3.open()                                         # IR-Tabelle mit Textebene (andere Gruppe)
+            pg_h3 = doc_h3.new_page()
+            pg_h3.insert_text((50, 60), "Operator 1234", fontsize=12)
+            pg_h3.insert_text((50, 100), "IR (ATR) 3302 2951 1713 1605 1251", fontsize=12)
+            doc_h3.save(str(in_h3 / "ir_table.pdf"))
+            doc_h3.close()
+            ti_h3 = OCR_h3.text_items(in_h3 / "ir_table.pdf")
+            assert [c_[0] for c_ in OCR_h3.candidates(ti_h3, IRMS.IR_DOC_NUM, *IRMS.IR_DOC_RANGE, MSR_h3.header_line)] == \
+                [3302, 2951, 1713, 1605, 1251]
+            assert all(it_["crop"] is not None and it_["crop"].shape[0] > 5 for it_ in ti_h3 if it_["number"] is not None)
+            if not OCR_h3.available():
+                report.append("OCR (lane hrms2 part 3): number selection and PDF text layer OK; recognition SKIPPED: "
+                              "package rapidocr not installed (pip install rapidocr)")
+            else:
+                font_h3 = Font_h3.truetype(str(Path(mpl_h3.get_data_path()) / "fonts" / "ttf" / "DejaVuSans.ttf"), 26)
+                f_h3 = "C10H9NO2"                                         # erfundene Verbindung
+                calc_h3 = IRMS.ion(f_h3, "M+H")[2]
+                v_h3 = round(calc_h3 + 0.0004, 4)
+                im_h3 = Img_h3.new("RGB", (1100, 420), "white")
+                d_h3 = Draw_h3.Draw(im_h3)
+                d_h3.text((30, 30), f"Sample name QX-1 code {calc_h3 + 0.0002:.4f}", fill="black", font=font_h3)
+                d_h3.text((30, 120), f"HR-MS (ESI+) found {v_h3:.4f}", fill="black", font=font_h3)
+                d_h3.text((30, 190), f"isotope {calc_h3 + 1.0034:.4f}   other {calc_h3 + 50.1234:.4f}", fill="black",
+                          font=font_h3)
+                im_h3.save(in_h3 / "ms_scan.png")
+                im_h3 = Img_h3.new("RGB", (1000, 300), "white")
+                d_h3 = Draw_h3.Draw(im_h3)
+                d_h3.text((30, 30), "Operator 1234", fill="black", font=font_h3)
+                d_h3.text((30, 110), "Peak  3301  2950  1712  1604  1250", fill="black", font=font_h3)
+                im_h3.save(in_h3 / "ir_scan.png")
+
+                def uncut_h3(tb_, where_):
+                    """Keine Zelle gekürzt: Textbreite (+ Rand) <= Spaltenbreite, bei 1200 und 1500 px (Schriftmaße:
+                    nicht win32, offscreen misst dort zu breit)."""
+                    if sys.platform == "win32":
+                        return
+                    keep_ = w.size()
+                    try:
+                        for wd_ in (1200, 1500):
+                            w.resize(wd_, 900)
+                            pump_h2(0.4)
+                            fm_ = tb_.fontMetrics()
+                            for r_ in range(tb_.rowCount()):
+                                for c_ in range(tb_.columnCount()):
+                                    it_ = tb_.item(r_, c_)
+                                    if it_ is not None and it_.text() and not tb_.isColumnHidden(c_):
+                                        need_ = fm_.horizontalAdvance(it_.text()) + 8
+                                        assert need_ <= tb_.columnWidth(c_), (where_, wd_, it_.text(), need_,
+                                                                              tb_.columnWidth(c_))
+                    finally:
+                        w.resize(keep_)
+                        pump_h2(0.3)
+
+                def ocr_wait_h3(limit=240):
+                    t0_ = time.time()
+                    while w.__dict__.get("_ocr_busy") and time.time() - t0_ < limit:
+                        pump_h2(0.2)
+                    assert not w.__dict__.get("_ocr_busy"), "OCR still running"
+                    pump_h2(0.5)
+                errs_h3, keep_err_h3, keep_lang_h3 = [], w.error, get_lang()
+                w.error = errs_h3.append
+                try:
+                    w.switch_lang("en")
+                    assert w.create_project(out / "hrms2_ocr")
+                    w.set_compound({"name": "P4", "formula": f_h3})
+                    w.main_tabs.setCurrentIndex(w._tab_keys.index("hrms"))
+                    pump_h2(0.5)
+                    t_h3 = w.hrms_tab
+                    t_h3.load_ms(str(in_h3 / "ms_scan.png"))
+                    ocr_wait_h3()
+                    t_h3 = w.hrms_tab
+                    tc_h3 = t_h3.tbl_cand
+                    rows_h3 = [tc_h3.item(r_, 0).text() for r_ in range(tc_h3.rowCount())]
+                    assert f"{v_h3:.4f}" in rows_h3 and f"{calc_h3 + 1.0034:.4f}" in rows_h3, rows_h3
+                    assert f"{calc_h3 + 50.1234:.4f}" not in rows_h3, rows_h3     # außerhalb ± 2 Da (CAND_WINDOW_DA)
+                    assert f"{calc_h3 + 0.0002:.4f}" not in rows_h3, rows_h3      # Kopfzeile stellt keine Kandidaten
+                    r_h3 = rows_h3.index(f"{v_h3:.4f}")
+                    tip_h3 = tc_h3.item(r_h3, 0).toolTip()                      # Ausschnitt + ganze Zeile nur im Tooltip
+                    assert tc_h3.columnCount() == 2 and "<img" in tip_h3 and f"found {v_h3:.4f}" in tip_h3, tip_h3
+                    uncut_h3(tc_h3, "hrms ocr")
+                    eg_h3 = t_h3.empty_guide                                    # Bild ohne .d: ein Satz statt Anleitung
+                    assert eg_h3 is None or eg_h3.label.text().endswith(f"{T('hrms_no_spectrum_img')}</p>"), eg_h3.label.text()
+                    assert w.hrms_state.get("found") in (None, "auto") and not w.hrms_state.get("found_ocr")
+                    assert f"found {v_h3:.4f}" not in t_h3._ms_line[0], t_h3._ms_line  # nichts vorgewählt
+                    # PDF-Kandidaten (Textebene) ebenso: zwei Spalten, Zeile im Tooltip, keine Zelle gekürzt
+                    doc_t3 = mu_h3.open()
+                    doc_t3.new_page().insert_text((50, 80), f"ESI-TOF found {v_h3 + 0.0011:.4f} and a long tail of words "
+                                                  f"that would never fit into a narrow table cell", fontsize=9)
+                    doc_t3.save(str(in_h3 / "ms_text.pdf"))
+                    doc_t3.close()
+                    t_h3.load_ms(str(in_h3 / "ms_text.pdf"))
+                    pump_h2(0.6)
+                    tp_h3 = w.hrms_tab.tbl_cand
+                    assert tp_h3.rowCount() == 1 and "long tail of words" in tp_h3.item(0, 1).toolTip()
+                    uncut_h3(tp_h3, "hrms pdf")
+                    w.hrms_tab.load_ms(str(in_h3 / "ms_scan.png"))
+                    ocr_wait_h3()
+                    t_h3 = w.hrms_tab
+                    tc_h3 = t_h3.tbl_cand
+                    r_h3 = [tc_h3.item(r_, 0).text() for r_ in range(tc_h3.rowCount())].index(f"{v_h3:.4f}")
+                    t_h3.candidate_clicked(r_h3)
+                    pump_h2(0.6)
+                    assert (w.hrms_state["found"], w.hrms_state["found_ocr"]) == ("ocr", v_h3), w.hrms_state
+                    assert f"found {v_h3:.4f}" in t_h3._ms_line[0], t_h3._ms_line
+                    assert "OCR" in t_h3.cmb_found.currentText()                  # Herkunft sichtbar
+                    # IR: Zahlen aus der Textebene, dann aus einem Bild (OCR); Häkchen übernimmt sie in die IR-Zeile
+                    w.main_tabs.setCurrentIndex(w._tab_keys.index("irms"))
+                    pump_h2(0.5)
+                    ti_h3 = w.irms_tab
+                    for f_, src_, want_ in (("ir_table.pdf", "pdf", [3302, 2951, 1713, 1605, 1251]),
+                                            ("ir_scan.png", "ocr", [3301, 2950, 1712, 1604, 1250])):
+                        ti_h3.load_ir(str(in_h3 / f_))
+                        ti_h3.render()
+                        ocr_wait_h3()
+                        tb_h3 = ti_h3.tbl_doc
+                        got_ = [tb_h3.item(r_, 0).data(Qt.UserRole) for r_ in range(tb_h3.rowCount())]
+                        assert got_ == want_, (f_, got_)
+                        assert not any(tb_h3.item(r_, 0).checkState() == Qt.Checked for r_ in range(tb_h3.rowCount()))
+                        tip_h3 = tb_h3.item(0, 1).toolTip()
+                        assert tb_h3.columnCount() == 2 and "<img" in tip_h3 and str(want_[0]) in tip_h3, tip_h3
+                        assert not tb_h3.isHidden()
+                        uncut_h3(tb_h3, f_)
+                        assert ti_h3.doc_head.findChild(QLabel).text() == T("ir_doc_head_" + src_)
+                        tb_h3.item(0, 0).setCheckState(Qt.Checked)
+                        tb_h3.item(2, 0).setCheckState(Qt.Checked)
+                        pump_h2(0.6)
+                        assert w.irms_state["ir_doc_sel"] == [want_[0], want_[2]], w.irms_state["ir_doc_sel"]
+                        assert f"{want_[0]}, {want_[2]}" in ti_h3._ir_line[0], ti_h3._ir_line
+                    assert w.save_project() is not False
+                    assert w.open_project(Path(w.project_dir), ask=False, recent=False)
+                    pump_h2(0.5)
+                    ocr_wait_h3()
+                    assert (w.hrms_state["found"], w.hrms_state["found_ocr"]) == ("ocr", v_h3)
+                    assert w.irms_state["ir_doc_sel"] == [3301, 1712]
+                    w.main_tabs.setCurrentIndex(w._tab_keys.index("irms"))
+                    pump_h2(0.5)
+                    ocr_wait_h3()
+                    assert "3301, 1712" in w.irms_tab._ir_line[0], w.irms_tab._ir_line
+                    # ohne rapidocr: Hinweis am Tab, keine Kandidaten, kein Fenster
+                    keep_av_h3 = OCR_h3.available
+                    OCR_h3.available = lambda: False
+                    try:
+                        shutil.copy(in_h3 / "ir_scan.png", in_h3 / "ir_scan2.png")
+                        w.irms_tab.load_ir(str(in_h3 / "ir_scan2.png"))
+                        w.irms_tab.render()
+                        ocr_wait_h3()
+                        assert w.irms_tab.lbl_doc.text() == T("ocr_missing") and w.irms_tab.tbl_doc.rowCount() == 0
+                    finally:
+                        OCR_h3.available = keep_av_h3
+                    assert not errs_h3, errs_h3
+                finally:
+                    w.error = keep_err_h3
+                    if get_lang() != keep_lang_h3:
+                        w.switch_lang(keep_lang_h3)
+                report.append("OCR (lane hrms2 part 3): HRMS scan -> m/z candidates with image detail, header line "
+                              "excluded, nothing preselected, click takes the value (origin OCR) and survives reopening; "
+                              "IR values from a PDF text layer and from an image as tick candidates into the IR line, "
+                              "kept after reopening; without rapidocr a hint instead of candidates: OK")
+        with section:
+            # Spur hrms2, Teil 4: Datenpaket schwärzt Kopf und Fußzeile eines SmartFormula-Berichts in der Kopie (Text
+            # entfernt, kein Kasten); unbekannte MS-PDFs bleiben im Inhalt gleich und stehen als „PDF-Köpfe prüfen“ im Bericht
+            import hashlib as hl_h4
+            import zipfile as zip_h4
+            import pymupdf as mu_h4
+            from elucida.app import demo as DEMO_h4
+            from elucida.exchange import datapack as DP_h4
+            from elucida.formats import ms_report as MSR_h4
+            in_h4 = out / "hrms2_pack_in"
+            sf_h4 = DEMO_h4.make_ms_pdf(in_h4 / "P5_HRMS.pdf", "C10H9NO2")
+            doc_h4 = mu_h4.open()
+            doc_h4.new_page().insert_text((50, 80), "Other layout  Operator Hdrother-Q7  found 176.0713", fontsize=10)
+            doc_h4.save(str(in_h4 / "P5_other.pdf"))
+            doc_h4.close()
+            # zwei Seiten, auf der ersten ein Wert in der Zeile von „Analysis Info“: beide Seiten ganz geschwärzt
+            with mu_h4.open(str(sf_h4)) as one_, mu_h4.open() as doc_h4:
+                doc_h4.insert_pdf(one_)
+                doc_h4.insert_pdf(one_)
+                doc_h4[0].insert_text((200, 83), "HDRLINE-Q7", fontsize=9)
+                doc_h4.save(str(in_h4 / "P5_two.pdf"))
+                doc_h4.new_page().insert_text((58, 83), "Analysis Info", fontsize=9)   # Kopf ohne Ende -> nichts schwärzen
+                doc_h4[-1].insert_text((217, 781), "printed:", fontsize=9)
+                doc_h4.save(str(in_h4 / "P5_broken.pdf"))
+            shutil.copy(in_h4 / "P5_other.pdf", in_h4 / "P5_scan.png")       # Scan als MS-Bericht (Inhalt egal)
+            hash_h4 = {f_.name: hl_h4.sha256(f_.read_bytes()).hexdigest() for f_ in in_h4.iterdir()}
+            items_h4 = [DP_h4.Item("ms", sf_h4, "MS/P5_HRMS.pdf"), DP_h4.Item("ms", in_h4 / "P5_other.pdf", "MS/P5_other.pdf"),
+                        DP_h4.Item("ir", sf_h4, "IR/P5_HRMS.pdf")]          # nur MS-Berichte werden geschwärzt
+            items_h4 += [DP_h4.Item("ms", in_h4 / f"P5_{k_}", f"MS/P5_{k_}") for k_ in ("two.pdf", "broken.pdf", "scan.png")]
+            rep_h4 = DP_h4.write_zip(items_h4, out / "hrms2_pack" / "P5.zip", "P5", {}, {})
+            assert rep_h4["pdf_check"] == ["P5/MS/P5_other.pdf", "P5/MS/P5_broken.pdf", "P5/MS/P5_scan.png"], rep_h4
+            assert {f_.name: hl_h4.sha256(f_.read_bytes()).hexdigest() for f_ in in_h4.iterdir()} == hash_h4   # Originale
+            with zip_h4.ZipFile(rep_h4["path"]) as z_:
+                red_h4, oth_h4, ir_h4, two_h4, brk_h4 = (z_.read(f"P5/{a_}") for a_ in (
+                    "MS/P5_HRMS.pdf", "MS/P5_other.pdf", "IR/P5_HRMS.pdf", "MS/P5_two.pdf", "MS/P5_broken.pdf"))
+            gone_h4 = list(DEMO_h4.PDF_HEADER.values()) + ["run_0001.d", "printed:", "DataAnalysis"]
+            txt_h4 = DP_h4.pdf_text(red_h4)
+            assert not any(x_ in txt_h4 or x_.encode() in red_h4 for x_ in gone_h4), [x_ for x_ in gone_h4 if x_ in txt_h4]
+            assert all(x_ in txt_h4 for x_ in ("Analysis Info", "Acquisition Parameter", "Ion Polarity", "Meas. m/z"))
+            assert "Hdrother-Q7" in DP_h4.pdf_text(oth_h4)                  # unbekannt: Inhalt gleich
+            txt2_h4 = DP_h4.pdf_text(two_h4)
+            assert not any(x_ in txt2_h4 for x_ in gone_h4 + ["HDRLINE-Q7"]) and txt2_h4.count("Meas. m/z") == 2
+            assert "HDRSAMPLE-Q7" in DP_h4.pdf_text(brk_h4)                 # halb schwärzen nie: ganz unverändert
+            assert "HDRSAMPLE-Q7" in DP_h4.pdf_text(ir_h4)
+            with mu_h4.open(stream=red_h4, filetype="pdf") as d_:
+                assert not any(a_.type[0] == mu_h4.PDF_ANNOT_REDACT for pg_ in d_ for a_ in pg_.annots())
+                assert len(d_[0].get_images()) == 3 and not d_.metadata.get("author")
+            (out / "hrms2_pack" / "red.pdf").write_bytes(red_h4)
+            a_h4, b_h4 = MSR_h4.read_ms_pdf(sf_h4), MSR_h4.read_ms_pdf(out / "hrms2_pack" / "red.pdf")
+            assert {k_: v_ for k_, v_ in a_h4.items() if k_ != "images"} == {k_: v_ for k_, v_ in b_h4.items() if k_ != "images"}
+            assert len(a_h4.get("images") or []) == len(b_h4.get("images") or []) > 0
+            rep0_h4 = DP_h4.write_zip(items_h4[:1], out / "hrms2_pack" / "P5_raw.zip", "P5")   # Inhalt nicht ändern: ganz gleich
+            with zip_h4.ZipFile(rep0_h4["path"]) as z_:
+                assert z_.read("P5/MS/P5_HRMS.pdf") == sf_h4.read_bytes() and not rep0_h4["pdf_check"]
+            assert "{files}" in T("dp_pdf_check")
+            report.append("Data package (lane hrms2 part 4): SmartFormula header band and footer redacted in the copy "
+                          "(text removed, no box, images/table/acquisition kept, same reading), unknown MS PDF unchanged "
+                          "and listed as 'check PDF headers', IR copy and package without content changes untouched, "
+                          "originals unchanged: OK")
     finally:
         ctx.update(locals())
 

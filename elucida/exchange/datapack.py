@@ -24,6 +24,8 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from elucida.core.ocr import IMAGE_EXT as OCR_IMAGE_EXT
+
 # Laborkürzel „Initialen-Buch-Seite“, z. B. AB-1-234, AB-12-7a, AB-2-142FC (TopSpin-Datensatz „OCM-AB-2-142FC_…“)
 CODE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{1,4}-\d{1,3}-\d{1,4}(?:[a-z]|[A-Z]{1,3})?)(?![A-Za-z0-9])")
 TEXT_MAX = 50_000_000            # größere Dateien nie als Text behandeln
@@ -109,7 +111,7 @@ def collect(state, project_dir, missing=None) -> list[Item]:
             items[-1].on = False
 
     ir = state.get("irms") or {}
-    for k in ("ir_file", "ir_pdf"):
+    for k in ("ir_file", "ir_pdf", "ir_doc"):
         add("ir", ir.get(k), f"IR/{Path(ir.get(k) or '').name}")
     add("ir", ir.get("ram_file"), f"Raman/{Path(ir.get('ram_file') or '').name}")   # Raman-Rohdaten (1.2.0)
     hr = state.get("hrms") or {}
@@ -359,6 +361,40 @@ def scrub_pdf(data: bytes) -> bytes:
     return re.sub(rb"(/Author\s*\()([^()\\]*)(\))", lambda m: m[1] + b" " * len(m[2]) + m[3], data)
 
 
+SF_FOOT_PAD = 20.0          # pt über „printed:“: Fußzeile mit Dateiname der Messung, Programm, Druckdatum, Bearbeiter
+
+
+def redact_ms_pdf(data: bytes):
+    """Bruker-„SmartFormula Report“: Kopfband (rechts neben „Analysis Info“ und darunter bis „Acquisition Parameter“,
+    volle Breite) und Fußzeile (ab knapp über „printed:“) auf jeder Seite echt schwärzen (Text entfernt, weiß statt
+    Kasten); Bilder, Linien, Messangaben und Tabelle bleiben. Eigenschaften (Autor, Datum, XMP) leer. -> neue Bytes oder
+    None (anderes Layout, oder eine Seite ohne Fußzeile bzw. mit Kopf ohne Ende: Datei bleibt, Hinweis „PDF-Kopf
+    prüfen“; lieber nichts als halb geschwärzt)."""
+    import pymupdf
+    from elucida.formats.ms_report import SF_TITLE
+    with pymupdf.open(stream=data, filetype="pdf") as doc:
+        if not any(SF_TITLE in page.get_text() for page in doc):
+            return None
+        head = False
+        for page in doc:
+            a, b = page.search_for("Analysis Info"), page.search_for("Acquisition Parameter")
+            foot = page.search_for("printed:")
+            if a and not (b and b[0].y0 > a[0].y1) or not foot:
+                return None
+            if a:
+                page.add_redact_annot(pymupdf.Rect(a[0].x1 + 1, a[0].y0, page.rect.x1, a[0].y1), fill=False)
+                page.add_redact_annot(pymupdf.Rect(page.rect.x0, a[0].y1, page.rect.x1, b[0].y0), fill=False)
+                head = True
+            page.add_redact_annot(pymupdf.Rect(page.rect.x0, foot[0].y0 - SF_FOOT_PAD, page.rect.x1, page.rect.y1),
+                                  fill=False)
+            page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
+        if not head:
+            return None
+        doc.set_metadata({})
+        doc.del_xml_metadata()
+        return doc.tobytes(garbage=4, deflate=True)
+
+
 def _scrub_word_xml(xml: str, repl: dict, dates: bool) -> str:
     """Absätze eines WordprocessingML-Teils: Text je Absatz zusammensetzen (Word teilt ihn in Runs, z. B. „AB-1-“ +
     „234“), Kürzel/Datum ersetzen; geänderter Absatz -> ganzer Text im ersten Run, übrige Runs leer."""
@@ -516,7 +552,7 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
             if f.stat().st_size <= TEXT_MAX and (_is_text(f) or group == "ir" and OPUS_RE.search(f.name)):
                 texts.append(f.read_bytes().decode("latin-1"))
         text_repl = {**dict.fromkeys(find_users(texts), USER), **text_repl}
-    report = dict(files=0, bytes=0, text_replaced=[], kept=[])
+    report = dict(files=0, bytes=0, text_replaced=[], kept=[], pdf_check=[])
     root = _safe_name(replace_codes(root, name_repl)) if root else ""
     seen = set()
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
@@ -550,10 +586,20 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
                     data = new_b
                     report["text_replaced"].append(arc)
             elif text_repl is not None and f.suffix.lower() == ".pdf":
-                new_b = scrub_pdf(data)
+                red = None
+                if group == "ms":                       # MS-Bericht: bekanntes Layout schwärzen, sonst Hinweis
+                    try:
+                        red = redact_ms_pdf(data)
+                    except Exception:                  # beschädigte PDF: wie unbekannt
+                        red = None
+                    if red is None:
+                        report["pdf_check"].append(arc)
+                new_b = red if red is not None else scrub_pdf(data)
                 if new_b != data:
                     data = new_b
                     report["text_replaced"].append(arc)
+            if text_repl is not None and group == "ms" and f.suffix.lower() in OCR_IMAGE_EXT:
+                report["pdf_check"].append(arc)        # Scan als MS-Bericht: Kopf kann im Bild stehen
             check = data
             if is_docx:
                 check = docx_text(data).encode("utf-8")
@@ -621,7 +667,7 @@ def write_publication(plans, out_dir, names, texts=None, compchem=True, readme="
                      if i.on and i.group == "dft"]
     if chem:
         jobs.append(("CompChem", chem))
-    report = dict(zips=[], files=0, bytes=0, text_replaced=0, kept=[], dir=str(out_dir))
+    report = dict(zips=[], files=0, bytes=0, text_replaced=0, kept=[], pdf_check=[], dir=str(out_dir))
     for k, (root, items) in enumerate(jobs):
         def prog(i, n, root=root, k=k):
             return progress is None or progress(root, k * 1000 + int(1000 * i / max(1, n)), 1000 * len(jobs))
@@ -634,6 +680,7 @@ def write_publication(plans, out_dir, names, texts=None, compchem=True, readme="
         report["bytes"] += rep["bytes"]
         report["text_replaced"] += len(rep["text_replaced"])
         report["kept"] += rep["kept"]
+        report["pdf_check"] += rep["pdf_check"]
     if readme:
         (out_dir / "README.txt").write_text(readme, encoding="utf-8", newline="\n")
     if license is not None:

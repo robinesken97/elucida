@@ -6329,3 +6329,70 @@ TEXTS.update({
                        "For Excel open <compound>_<Tab>_tables.xlsx; CSV files are for Origin/Python (in Excel via "
                        "Data > From Text/CSV)"),
 })
+TEXTS.update({                                            # HRMS: eigenes Ion, Fremdpeaks, OCR (Spur hrms2)
+    "ms_own_item": ("Eigenes Ion …", "Own ion …"),
+    "ms_own": ("Eigenes Ion", "Own ion"),
+    "ms_own_z": ("z =", "z ="),
+    "ms_own_tip": ("Ion als Ausdruck aus M und Gruppen, z. B. M+Na+MeOH, 2M+H, M-H2O+H, M+2H (Ladung 2); Gruppen: "
+                   "Summenformeln und MeOH, MeCN, H2O, HCOO, DMSO, FA (Ameisensäure). z = Ladung des Ions.",
+                   "Ion as an expression of M and groups, e.g. M+Na+MeOH, 2M+H, M-H2O+H, M+2H (charge 2); groups: "
+                   "formulas and MeOH, MeCN, H2O, HCOO, DMSO, FA (formic acid). z = charge of the ion."),
+    "ms_own_bad": ("⚠ Ion nicht lesbar oder ohne Ladung – Beispiel: M+Na+MeOH mit z = 1",
+                   "⚠ ion not readable or without charge – example: M+Na+MeOH with z = 1"),
+    "ms_flag_card": ("Fremdpeaks und Reagenzien", "Contaminants and Reagents"),
+    "ms_flag_ppm": ("Fenster", "Window"),
+    "ms_flag_ppm_tip": ("Höchstabstand eines Peaks zu einem bekannten Fremd-Ion, Reagenz oder Bruchstück (found − calc), "
+                        "Vorgabe 5 ppm; gilt für diesen Tab", "Largest distance of a peak to a known contaminant ion, "
+                        "reagent or fragment (found − calc), default 5 ppm; applies to this tab"),
+    "ms_flag_hint": ("Hinweis", "Hint"),
+    "ms_flag_src": ("Quelle", "Source"),
+    "ms_flag_dev": ("Δ [ppm]", "Δ [ppm]"),
+    "ms_flag_src_raw": ("Rohdaten", "raw data"),
+    "ms_flag_src_report": ("Bericht", "report"),
+    "ms_flag_src_pdf": ("PDF", "PDF"),
+    "ms_flag_tip": ("Peaks, die zu einem bekannten Fremd-Ion (Keller et al. 2008 u. a.), einem eigenen Eintrag, einem "
+                    "Edukt/Reagenz des Syntheseschemas oder einem Bruchstück der Verbindung (−N2, −H2O, −CO, −CO2) passen. "
+                    "Nur Hinweis: nichts wird ausgeblendet, nichts steht in SI-Zeile oder Export.",
+                    "Peaks that match a known contaminant ion (Keller et al. 2008 and others), an own entry, a starting "
+                    "material/reagent of the synthesis scheme or a fragment of the compound (−N2, −H2O, −CO, −CO2). Hint "
+                    "only: nothing is hidden, nothing goes into the SI line or the export."),
+    "ms_flag_none": ("Kein Peak passt innerhalb ± {ppm} ppm zu einem Fremd-Ion, Reagenz oder Bruchstück.",
+                     "No peak matches a contaminant, reagent or fragment within ± {ppm} ppm."),
+    "ms_flag_nopeaks": ("Hinweise erscheinen, sobald Rohdaten (.d) oder ein Bericht mit Zahlen geladen sind.",
+                        "Hints appear once raw data (.d) or a report with numbers is loaded."),
+    "ms_own_card": ("Eigene Fremdpeaks", "Own Contaminants"),
+    "ms_own_card_tip": ("Eigene Einträge für die Hinweise, gespeichert auf diesem Computer (nicht im Projekt). Ionen mit "
+                        "Semikolon getrennt, z. B. M+H;M+Na;2M+H;M-H.", "Own entries for the hints, stored on this "
+                        "computer (not in the project). Ions separated by semicolons, e.g. M+H;M+Na;2M+H;M-H."),
+    "ms_own_name": ("Name", "Name"),
+    "ms_own_formula": ("Formel", "Formula"),
+    "ms_own_ions": ("Ionen", "Ions"),
+    "ms_own_empty": ("Keine eigenen Einträge – es gilt die mitgelieferte Liste", "No own entries – the shipped list applies"),
+    "ms_own_add": ("Eintrag hinzufügen", "Add entry"),
+    "ms_own_reset": ("Nur mitgelieferte Liste", "Shipped list only"),
+    "ms_own_reset_tip": ("Eigene Einträge dieses Computers entfernen; es gilt wieder nur die mitgelieferte Liste.",
+                         "Remove the own entries of this computer; only the shipped list applies again."),
+    "ms_own_entry_bad": ("⚠ nicht rechenbar (ohne Hinweis): {items}", "⚠ cannot be computed (no hint): {items}"),
+    "ms_pdf_kind_ocr": ("per OCR", "by OCR"),
+    "ms_cand_head_ocr": ("Per OCR erkannt (Klick übernimmt)", "Recognised by OCR (click to take)"),
+    "ms_ocr_entry": ("Per OCR erkannt: {mz}  ({ppm} ppm)", "Recognised by OCR: {mz}  ({ppm} ppm)"),
+    "ms_ocr_running": ("Texterkennung läuft …", "Text recognition running …"),
+    "ocr_missing": ("⚠ Texterkennung nicht installiert (Paket rapidocr) – Werte von Hand eintragen",
+                    "⚠ text recognition not installed (package rapidocr) – enter the values manually"),
+    "ocr_failed": ("⚠ Texterkennung fehlgeschlagen: {e}", "⚠ text recognition failed: {e}"),
+    "flt_ocr_img": ("Bild für Texterkennung", "Image for text recognition"),
+    "ir_doc_head_pdf": ("Zahlen aus dem PDF (Häkchen übernimmt sie in die IR-Zeile)",
+                        "Numbers from the PDF (tick to take them into the IR line)"),
+    "ir_doc_head_ocr": ("Per OCR erkannt (Häkchen übernimmt sie in die IR-Zeile)",
+                        "Recognised by OCR (tick to take them into the IR line)"),
+    "ir_doc_wn": ("ṽ [cm⁻¹]", "ṽ [cm⁻¹]"),
+    "ir_doc_tip": ("Zahlen zwischen 350 und 4500 aus dem Dokument; nichts ist vorgewählt. Zeile und Ausschnitt stehen im "
+                   "Tooltip jeder Zeile: vergleichen, bevor du sie übernimmst.", "Numbers between 350 and 4500 from the document; nothing is preselected. "
+                   "Line and detail are in each row's tooltip: compare before taking them."),
+    "ir_doc_none": ("⚠ keine Zahlen zwischen 350 und 4500 im Dokument gefunden – Werte von Hand eintragen",
+                    "⚠ no numbers between 350 and 4500 found in the document – enter the values manually"),
+    "hrms_no_spectrum_img": ("Kein Spektrum – für eine Abbildung MS-Rohdaten (.d) laden.",
+                             "No spectrum – load MS raw data (.d) for a figure."),
+    "dp_pdf_check": ("PDF-Köpfe prüfen (MS-Bericht als Bild oder mit unbekanntem Aufbau, Inhalt unverändert):\n  {files}",
+                     "check PDF headers (MS report as image or with unknown layout, content unchanged):\n  {files}"),
+})

@@ -1,0 +1,58 @@
+# Common contaminant and background ions in ESI-MS (formulas only; Elucida computes every m/z itself).
+# Main source: Keller, Sui, Young, Whittal, Anal. Chim. Acta 2008, 627, 71-81, doi:10.1016/j.aca.2008.04.043;
+# further sources per entry in the column source. Entries whose source starts with "structure:" have their ions
+# inferred from the structure only (no published background-ion list); elsewhere "structure:" only describes it.
+# Columns: key, name_en, name_de, formula (end group for series, may be empty; trailing +/- = charged species),
+# kind (single | series), series_unit (repeat unit), n_range (series members a-b), typical_ions (';'-separated:
+# M+H, M+Na, 2M+H, M-Na, nM+HCOO = series member n with formate ...), polarity (+, -, or both), source.
+key	name_en	name_de	formula	kind	series_unit	n_range	typical_ions	polarity	source
+d_cyclo_siloxane	Cyclic polydimethylsiloxanes D3-D10	Zyklische Polydimethylsiloxane D3-D10		series	C2H6OSi	3-10	M+H;M+NH4;M+Na	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/; Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf
+pdms_linear_tms	Linear PDMS, trimethylsilyl-terminated	Lineares PDMS, Trimethylsilyl-terminiert	C6H18OSi2	series	C2H6OSi	1-15	M+NH4;M+Na;M+H	+	Keller 2008 doi:10.1016/j.aca.2008.04.043 (unit 74.01879); structure: Me3Si-(OSiMe2)n-OSiMe3; n range is a guess
+pdms_linear_oh	Linear PDMS, silanol-terminated	Lineares PDMS, Silanol-terminiert	H2O	series	C2H6OSi	2-15	M+NH4;M+Na;M+H	+	structure: HO-(SiMe2O)n-H; unit per Keller 2008 doi:10.1016/j.aca.2008.04.043
+peg	Polyethylene glycol (PEG)	Polyethylenglykol (PEG)	H2O	series	C2H4O	2-30	M+Na;M+NH4;M+H;M+K	+	UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/; UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/
+ppg	Polypropylene glycol (PPG)	Polypropylenglykol (PPG)	H2O	series	C3H6O	2-25	M+Na;M+NH4;M+H	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/; Keller 2008 doi:10.1016/j.aca.2008.04.043
+triton_x	Triton X (octylphenol ethoxylate)	Triton X (Octylphenolethoxylat)	C14H22O	series	C2H4O	3-20	M+Na;M+NH4;M+H	+	UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/ ([C14H22O][C2H4O]n)
+nylon66_cyclic	Cyclic nylon-6,6 oligomers	Zyklische Nylon-6,6-Oligomere		series	C12H22N2O2	1-4	M+H;M+Na	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/; Tran, Doucette doi:10.1016/j.jasms.2006.01.008
+na_formate	Sodium formate clusters	Natriumformiat-Cluster		series	CHNaO2	1-12	nM+Na;nM+HCOO	±	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (67.98742); structure: HCOONa
+na_acetate	Sodium acetate clusters	Natriumacetat-Cluster		series	C2H3NaO2	1-12	nM+Na;nM+CH3COO	±	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (82.00307); structure: CH3COONa
+nh4_formate	Ammonium formate clusters	Ammoniumformiat-Cluster		series	CH5NO2	1-8	nM+NH4;nM+HCOO	±	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (63.03203); structure: HCOONH4
+nacl	Sodium chloride clusters	Natriumchlorid-Cluster		series	ClNa	1-10	nM+Na;nM+Cl	±	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (57.95862); structure: NaCl
+sds	Sodium dodecyl sulfate (SDS)	Natriumdodecylsulfat (SDS)	C12H25NaO4S	single			M-Na;2M-Na	−	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (288.1371, negative mode)
+mecn	Acetonitrile	Acetonitril	C2H3N	single			M+H;M+Na;M+NH4;2M+H;2M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/
+meoh	Methanol	Methanol	CH4O	single			M+H;2M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/
+dmso	Dimethyl sulfoxide (DMSO)	Dimethylsulfoxid (DMSO)	C2H6OS	single			M+H;M+Na;2M+H;2M+Na;3M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/
+dmf	N,N-Dimethylformamide (DMF)	N,N-Dimethylformamid (DMF)	C3H7NO	single			M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf
+triethylamine	Triethylamine (TEA)	Triethylamin (TEA)	C6H15N	single			M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/
+dipea	Diisopropylethylamine (DIPEA)	Diisopropylethylamin (DIPEA)	C8H19N	single			M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/
+dmap	4-Dimethylaminopyridine (DMAP)	4-Dimethylaminopyridin (DMAP)	C7H10N2	single			M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf
+tris	Tris(hydroxymethyl)aminomethane (Tris)	Tris(hydroxymethyl)aminomethan (Tris)	C4H11NO3	single			M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/
+dcu	N,N'-Dicyclohexylurea (DCU)	N,N'-Dicyclohexylharnstoff (DCU)	C13H24N2O	single			M+H;2M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf
+tba	Tetrabutylammonium (TBA)	Tetrabutylammonium (TBA)	C16H36N+	single			M	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (m/z 242)
+dodmam	Dimethyldioctadecylammonium	Dimethyldioctadecylammonium	C38H80N+	single			M	+	Keller 2008 doi:10.1016/j.aca.2008.04.043 Table 4 (550.62853); Manier et al. doi:10.1016/j.jasms.2008.01.015
+pf6	Hexafluorophosphate	Hexafluorophosphat	F6P-	single			M	−	structure: PF6-, electrolyte anion
+bf4	Tetrafluoroborate	Tetrafluoroborat	BF4-	single			M	−	structure: BF4-, electrolyte anion
+clo4	Perchlorate	Perchlorat	ClO4-	single			M	−	structure: ClO4-, electrolyte anion
+tpp_oxide	Triphenylphosphine oxide (TPPO)	Triphenylphosphinoxid (TPPO)	C18H15OP	single			M+H;M+Na;2M+Na;2M+H	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (m/z 279); structure: Ph3P=O
+tpp	Triphenylphosphine	Triphenylphosphin	C18H15P	single			M+H	+	structure: PPh3 (oxidises to TPPO)
+phth_anhydride	Phthalic anhydride (phthalate fragment)	Phthalsäureanhydrid (Phthalat-Fragment)	C8H4O3	single			M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf; UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/
+dep	Diethyl phthalate (DEP)	Diethylphthalat (DEP)	C12H14O4	single			M+H;M+Na;M+NH4	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (223.0965)
+dbp	Dibutyl phthalate (DBP, DIBP)	Dibutylphthalat (DBP, DIBP)	C16H22O4	single			M+H;M+Na;M+K;M+NH4	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (279.1591); Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (279/301/317)
+dehp	Bis(2-ethylhexyl) phthalate (DEHP, DOP)	Bis(2-ethylhexyl)phthalat (DEHP, DOP)	C24H38O4	single			M+H;M+Na;M+K;M+NH4;2M+Na	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (391.2843); Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (391/413/429/803)
+dinp	Diisononyl phthalate (DiNP)	Diisononylphthalat (DiNP)	C26H42O4	single			M+H;M+Na;M+NH4	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (419.3156)
+didp	Diisodecyl phthalate (DiDP)	Diisodecylphthalat (DiDP)	C28H46O4	single			M+H;M+Na;M+NH4	+	UWPR repeat units https://proteomicsresource.washington.edu/resources/cores/esi_background_ions_repeat_units/ (447.3469)
+nbbs	N-Butylbenzenesulfonamide	N-Butylbenzolsulfonamid	C10H15NO2S	single			M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (214/236)
+tbp	Tributyl phosphate (TBP)	Tributylphosphat (TBP)	C12H27O4P	single			M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (m/z 267)
+bpa	Bisphenol A	Bisphenol A	C15H16O2	single			M-H;M+Na	−	Keller 2008 doi:10.1016/j.aca.2008.04.043 (leaching, ref. 91); structure: 2,2-bis(4-hydroxyphenyl)propane
+oleamide	Oleamide	Oleamid	C18H35NO	single			M+H;M+Na	+	UWPR https://proteomicsresource.washington.edu/resources/cores/esi_background_ions/ (282.279140); Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf
+erucamide	Erucamide	Erucamid	C22H43NO	single			M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (338/360)
+stearamide	Stearamide	Stearamid	C18H37NO	single			M+H;M+Na	+	Waters list (copy) https://web.uvic.ca/~mcindoe/bkgrnd_ion_mstr_list.pdf (284)
+palmitic	Palmitic acid	Palmitinsäure	C16H32O2	single			M-H;M+Na	−	structure: hexadecanoic acid; fatty acids per Keller 2008 doi:10.1016/j.aca.2008.04.043 (C2H4 unit)
+stearic	Stearic acid	Stearinsäure	C18H36O2	single			M-H;M+Na	−	structure: octadecanoic acid
+oleic	Oleic acid	Ölsäure	C18H34O2	single			M-H;M+Na	−	structure: (9Z)-octadec-9-enoic acid
+bht	Butylated hydroxytoluene (BHT)	Butylhydroxytoluol (BHT)	C15H24O	single			M-H;M+Na	−	structure: 2,6-di-tert-butyl-4-methylphenol
+dtbq	2,6-Di-tert-butyl-1,4-benzoquinone (BHT oxidation product)	2,6-Di-tert-butyl-1,4-benzochinon (BHT-Oxidationsprodukt)	C14H20O2	single			M+H;M+Na	+	structure: 2,6-di-tert-butyl-1,4-benzoquinone
+dtbp24	2,4-Di-tert-butylphenol (Irgafos 168 degradation product)	2,4-Di-tert-butylphenol (Irgafos-168-Abbauprodukt)	C14H22O	single			M-H	−	structure: 2,4-di-tert-butylphenol
+irganox1076	Irganox 1076	Irganox 1076	C35H62O3	single			M+Na;M+NH4;M-H	±	structure: octadecyl 3-(3,5-di-tert-butyl-4-hydroxyphenyl)propionate
+irganox1010	Irganox 1010	Irganox 1010	C73H108O12	single			M+Na;M+NH4	+	structure: pentaerythritol tetrakis[3-(3,5-di-tert-butyl-4-hydroxyphenyl)propionate]
+irgafos168	Irgafos 168	Irgafos 168	C42H63O3P	single			M+H;M+Na	+	structure: tris(2,4-di-tert-butylphenyl) phosphite
+irgafos168_ox	Irgafos 168 oxide (phosphate)	Irgafos-168-Oxid (Phosphat)	C42H63O4P	single			M+H;M+Na;M+NH4	+	structure: tris(2,4-di-tert-butylphenyl) phosphate

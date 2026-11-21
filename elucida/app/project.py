@@ -106,7 +106,7 @@ def _path_slots(state):
         slots += [(ecalc, "file", data_sub("epr")), (ecalc, "orb", data_sub("epr"))]
     slots.append((state.get("compound") or {}, "structure", STRUCTURES))
     ir = state.get("irms") or {}
-    slots += [(ir, k, data_sub("irms")) for k in ("ir_file", "ir_pdf", "ms_file", "ms_raw", "irc_file", "ram_file")]
+    slots += [(ir, k, data_sub("irms")) for k in ("ir_file", "ir_pdf", "ir_doc", "ms_file", "ms_raw", "irc_file", "ram_file")]
     hr = state.get("hrms") or {}
     slots += [(hr, "ms_file", data_sub("hrms")), (hr, "ms_raw", data_sub("hrms"))]
     for e in (state.get("xray") or {}).get("entries") or []:
