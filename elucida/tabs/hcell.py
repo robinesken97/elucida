@@ -270,7 +270,7 @@ class HCellTab(TABS.FigureTab):
         for ed in (self.ed_cycles, self.ed_ref):
             ed.editingFinished.connect(self.changed)
         self._view_fields()
-        QTimer.singleShot(0, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
+        QTimer.singleShot(0, self, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
         self.fill_table()
 
     def _view_fields(self, *_):

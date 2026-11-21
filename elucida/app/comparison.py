@@ -2242,7 +2242,7 @@ class TableTab(CompareTab):
             self.tb["cells"][k] = text
         else:
             self.tb["cells"].pop(k, None)
-        QTimer.singleShot(0, self.table_changed)
+        QTimer.singleShot(0, self, self.table_changed)
 
     def show_cell(self):
         if not hasattr(self, "btn_reset_cell"):
@@ -2543,7 +2543,7 @@ class ComparePage(QWidget):
     def showEvent(self, ev):
         super().showEvent(ev)
         if self._dirty:
-            QTimer.singleShot(0, self.load)
+            QTimer.singleShot(0, self, self.load)
 
     def items(self):
         return PUB.load(self.pdir).get("comparisons") or [] if self.pdir else []
@@ -2591,7 +2591,7 @@ class ComparePage(QWidget):
         """Neuer Verlauf nach dem Öffnen; erst nach dem ersten Zeichnen (der Tab ergänzt dabei Vorgaben im Zustand)."""
         self._restoring = True
         self.history, self.cursor = [], -1
-        QTimer.singleShot(400, self._end_restore)
+        QTimer.singleShot(400, self, self._end_restore)
 
     def _end_restore(self):
         self._restoring = False
@@ -2628,7 +2628,7 @@ class ComparePage(QWidget):
         self.item = json.loads(self.history[self.cursor])
         self.save()
         self.build()
-        QTimer.singleShot(400, self._end_restore)
+        QTimer.singleShot(400, self, self._end_restore)
 
     def sync_members(self, item):
         """Neue Verbindungen des Projekts anhängen (in neuen Vergleichen gewählt, sonst abgewählt), Farbe und Schlüssel."""
@@ -2735,7 +2735,7 @@ class ComparePage(QWidget):
         self.item["name"] = name
         self.record()
         self.save()
-        QTimer.singleShot(0, self.build)                     # Liste zeigt den neuen Namen
+        QTimer.singleShot(0, self, self.build)                     # Liste zeigt den neuen Namen
         self.main._update_crumbs()                          # Pfadleiste auch
 
     def remove(self, uid=None):
@@ -2751,7 +2751,7 @@ class ComparePage(QWidget):
         self._dirty = True
         self.history, self.cursor = [], -1
         self.main._update_undo_actions()
-        QTimer.singleShot(0, self.load)
+        QTimer.singleShot(0, self, self.load)
 
     def refresh_snapshots(self):
         """„Aktualisieren“: Verbindungen ohne oder mit veraltetem Stand kurz öffnen und den Stand neu schreiben."""

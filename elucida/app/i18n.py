@@ -501,6 +501,9 @@ TEXTS = {
     "ui_scale_value": ("{v} %", "{v}%"),
     "ui_scale_note": ("Gilt nach dem Neustart, nur auf diesem Rechner", "Applies after restart, on this computer only"),
     "ui_scale_restart": ("Oberflächengröße {v} %: gilt nach dem Neustart von Elucida", "Interface size {v}%: applies after restarting Elucida"),
+    "restart_now": ("Jetzt neu starten", "Restart Now"),
+    "restart_failed": ("Elucida ließ sich nicht neu starten. Bitte von Hand neu starten.",
+                       "Could not restart Elucida. Please restart it manually."),
     "move_up": ("Nach oben", "Move up"),
     "move_down": ("Nach unten", "Move down"),
     "toolbar": ("Werkzeugleiste", "Toolbar"),
@@ -583,6 +586,15 @@ TEXTS = {
     "btn_reset_layout": ("Layout zurücksetzen", "Reset layout"),
     "btn_reset": ("Zurücksetzen", "Reset"),
     "btn_reset_defaults": ("Darstellung zurücksetzen", "Reset display"),
+    "btn_clear_tab": ("Tab leeren (Daten und Einstellungen)", "Clear Tab (Data and Settings)"),
+    "btn_clear_tab_tip": ("Entfernt alle geladenen Dateien aus diesem Tab und setzt seine Einstellungen auf Standard,\n"
+                          "wie bei einem neuen Tab. Die Dateien bleiben im Ordner der Verbindung. Rückgängig mit Strg+Z.",
+                          "Removes all loaded files from this tab and resets its settings to defaults,\n"
+                          "like a new tab. The files stay in the compound folder. Undo with Ctrl+Z."),
+    "btn_reset_clear_tip": ("„Tab leeren“: Dateien und Einstellungen dieses Tabs entfernen (Dateien bleiben im Ordner).",
+                            "“Clear tab”: remove this tab's files and settings (the files stay in the folder)."),
+    "tab_cleared": ("Tab geleert – die Dateien bleiben im Ordner. Rückgängig mit Strg+Z.",
+                    "Tab cleared – the files stay in the folder. Undo with Ctrl+Z."),
     "btn_reset_defaults_tip": ("„Layout zurücksetzen“: nur die Lage von Labels, Inset und Bildern.\n"
                                "„Darstellung zurücksetzen“: nur das Aussehen der Abbildung auf Standard (Farben, Achsen,\n"
                                "Beschriftungen …). Nichts Wissenschaftliches ändert sich: Daten, Auswertung (Bereiche,\n"

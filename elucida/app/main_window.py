@@ -42,7 +42,7 @@ from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
 from PySide6.QtCore import QEvent, QFileSystemWatcher, QObject, QSettings, QSize, Qt, QThread, QTimer, Signal  # noqa: E402
-from PySide6.QtCore import QEventLoop, QUrl  # noqa: E402
+from PySide6.QtCore import QEventLoop, QProcess, QProcessEnvironment, QUrl  # noqa: E402
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QDesktopServices, QIcon, QImage,  # noqa: E402
                            QGuiApplication, QKeySequence, QPixmap, QTextCursor)
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,  # noqa: E402
@@ -199,6 +199,55 @@ def apply_ui_scale(settings, env):
     if v != 100 and "QT_SCALE_FACTOR" not in env:
         env["QT_SCALE_FACTOR"] = str(v / 100)
     return v
+
+
+_OWN_SCALE = False     # QT_SCALE_FACTOR kam von apply_ui_scale (main), nicht vom Nutzer: ein Neustart erbt sie nicht
+
+
+def restart_command(project_dir=None, tab=None, frozen=None, executable=None, env=None, own_scale=None):
+    """„Jetzt neu starten“: (Befehl, Umgebung) für ein neues Elucida mit derselben Verbindung und demselben Tab
+    (Startargumente: Ordner der Verbindung, `--tab KEY`, siehe `parse_open_args`). Gebaut die App selbst (AppImage: die
+    Datei $APPIMAGE, der eingehängte Ordner verschwindet mit diesem Prozess), sonst Python mit Elucida.py. Eine selbst
+    gesetzte QT_SCALE_FACTOR erbt der neue Prozess nicht (die neue Größe gälte sonst nicht); PyInstaller: unabhängige
+    neue Instanz (PYINSTALLER_RESET_ENVIRONMENT)."""
+    env = dict(os.environ if env is None else env)
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    exe = executable or sys.executable
+    cmd = [env.get("APPIMAGE") or exe] if frozen else [exe, str(elucida.ROOT / "Elucida.py")]
+    if project_dir:
+        cmd.append(str(project_dir))
+        if tab:
+            cmd += ["--tab", tab]
+    if _OWN_SCALE if own_scale is None else own_scale:
+        env.pop("QT_SCALE_FACTOR", None)
+    if frozen:
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return cmd, env
+
+
+def parse_open_args(argv):
+    """Startargumente ohne Programm -> (erster Pfad oder None, Tab nach `--tab` oder None); andere Optionen zählen nicht
+    (macOS hängt z. B. -psn_… an)."""
+    path, tab, it = None, None, iter(argv)
+    for a in it:
+        if a == "--tab":
+            tab = next(it, None)
+        elif not a.startswith("-") and path is None:
+            path = a
+    return path, tab
+
+
+def spawn_detached(cmd, env):
+    """Neuen Prozess unabhängig von diesem starten (überlebt das Beenden). -> gestartet?"""
+    p = QProcess()
+    p.setProgram(cmd[0])
+    p.setArguments(cmd[1:])
+    pe = QProcessEnvironment()
+    for k, v in env.items():
+        pe.insert(k, v)
+    p.setProcessEnvironment(pe)
+    r = p.startDetached()                          # PySide 6.12: bool (Stub: (bool, pid))
+    return bool(r[0] if isinstance(r, tuple) else r)
 
 
 def migrate_settings(old, new):
@@ -901,7 +950,8 @@ class MainWindow(QMainWindow):
         cv.setContentsMargins(0, 0, 0, 0)
         cv.setSpacing(0)
         cv.addWidget(lscroll, 1)
-        bar = TABS.side_bar(TABS.reset_button(self.reset_layout, self.reset_defaults), self.btn_next, stretch_at=1)
+        bar = TABS.side_bar(TABS.reset_button(self.reset_layout, self.reset_defaults, lambda: self.clear_tab("eps")),
+                            self.btn_next, stretch_at=1)
         cv.addWidget(bar)
         self.steps = TABS.StepColumn(left, cv, settings=self.settings, name="eps", next_button=self.btn_next,
                                      changed=lambda page: any(s_.changed for s_ in page.findChildren(Section)))
@@ -1602,7 +1652,37 @@ class MainWindow(QMainWindow):
     def set_ui_scale(self, v):
         """Oberflächengröße merken (nur dieser Rechner); wirkt erst nach dem Neustart."""
         self.settings.setValue("ui/scale", int(v))
-        self.statusBar().showMessage(T("ui_scale_restart", v=v), 8000)
+        self.notify(T("ui_scale_restart", v=v), [(T("restart_now"), self.restart_now)])
+
+    def restart_now(self, spawn=None):
+        """Knopf „Jetzt neu starten“ der Meldung zur Oberflächengröße: speichern, ein neues Elucida mit derselben
+        Verbindung und demselben Tab starten, dieses beenden. spawn(Befehl, Umgebung): Selbsttest, startet und beendet
+        nichts."""
+        if not self.maybe_save():
+            return False
+        self.autosave(force=True)
+        self.settings.sync()
+        cmd, env = restart_command(self.project_dir, self._tab_key if self.project_dir else None)
+        if spawn is not None:
+            return spawn(cmd, env)
+        if not self.close():
+            return False
+        self.settings.sync()                           # Fenstergröße schreibt erst closeEvent
+        if not spawn_detached(cmd, env):
+            self.show()
+            return self.error(T("restart_failed"))
+        QApplication.quit()
+        return True
+
+    def open_start_args(self, argv):
+        """Startargumente: Ordner einer Verbindung (Neustart, mit `--tab KEY`) oder Messdatei (Doppelklick / Ziehen auf
+        das Programmsymbol)."""
+        path, tab = parse_open_args(argv)
+        if path and PRJ.is_project(path):
+            if self.open_project(path) and tab in self._tab_keys:
+                self.show_tab(tab)
+        elif path and Path(path).exists():
+            self.open_csv(path)
 
     def switch_theme(self, mode):
         self.collect_globals()
@@ -4092,6 +4172,29 @@ class MainWindow(QMainWindow):
         self.push_undo()
         self.statusBar().showMessage(T("xr_reset_display_done"), 6000)
 
+    def clear_tab(self, key):
+        """„Tab leeren“ (Nutzerwunsch): Zustand des Tabs wie frisch gebaut – geladene Dateien vergessen, Einstellungen
+        und eigenes Textformat auf Standard. Dateien im Ordner der Verbindung bleiben. Ohne Rückfrage, ein
+        Rückgängig-Schritt: wie Rückgängig über set_state, Vorgaben beim ersten Zeichnen erst danach erfassen."""
+        if not key or self._restoring:
+            return
+        state = json.loads(self._snap())
+        state[key] = {}
+        (state.get("text_tabs") or {}).pop("epsilon" if key == "eps" else self._tab_spec(key)[1].STATE_KEY, None)
+        self._restoring = True
+        self._series_kept = None                       # ε: Serien-Einstellungen gehörten den vergessenen Messdaten
+        self.set_state(state, partial=True)
+        rt = getattr(self.__dict__.get(self._tab_spec(key)[0]) if key != "eps" else None, "right_tabs", None)
+        if rt is not None:                             # wie ein neuer Tab: Abbildung mit Anleitung, kein leeres Ergebnis
+            rt.setCurrentIndex(0)
+        QTimer.singleShot(200, self._end_clear)
+        self.statusBar().showMessage(T("tab_cleared"), 6000)
+
+    def _end_clear(self):
+        self._restoring = False
+        self.push_undo()
+        self.sync_main_button()
+
     def update_si_line(self, results, cfg):
         st = self.series.get(self.current) or {}
         self.ed_solvent.setText(st.get("solvent", ""))
@@ -5688,17 +5791,18 @@ def main():
             group = sys.argv[j + 1] if len(sys.argv) > j + 1 else ""
         from elucida.selftest import selftest
         sys.exit(selftest(outdir, "--selftest-isnet" in sys.argv, group))
+    global _OWN_SCALE
+    had_scale = "QT_SCALE_FACTOR" in os.environ
     apply_ui_scale(QSettings(str(SETTINGS_FILE), QSettings.IniFormat) if SETTINGS_FILE
                    else QSettings(APP_NAME, APP_NAME), os.environ)
+    _OWN_SCALE = not had_scale and "QT_SCALE_FACTOR" in os.environ
     install_crash_handler()
     QApplication.setApplicationName(APP_NAME)
     QApplication.setApplicationVersion(APP_VERSION)
     app = QApplication(sys.argv)
     w = MainWindow()
     w.show()
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    if args and Path(args[0]).exists():
-        w.open_csv(args[0])          # Datei per Doppelklick / Drag auf das Programmsymbol
+    w.open_start_args(sys.argv[1:])
     rc = app.exec()
     release_widgets(app)
     sys.exit(rc)

@@ -136,16 +136,22 @@ def table_files(tab, base, done=()):
     return out
 
 
-def reset_button(reset_layout, reset_defaults):
-    """Knopf „Zurücksetzen“ mit Menü: nur Layout (Lage von Labels/Inset/Bildern) oder alles auf Standard."""
+def reset_button(reset_layout, reset_defaults, clear=None):
+    """Knopf „Zurücksetzen“ mit Menü: nur Layout (Lage von Labels/Inset/Bildern) oder alles auf Standard; clear: dazu
+    „Tab leeren“ (nur im Hauptfenster, `MainWindow.clear_tab`)."""
     b = QPushButton(STYLE.icon("reset"), T("btn_reset"))
     m = QMenu(b)
     m.addAction(T("btn_reset_layout"), reset_layout)
     a = m.addAction(T("btn_reset_defaults"), reset_defaults)
     a.setToolTip(T("btn_reset_defaults_tip"))
+    tip = T("btn_reset_defaults_tip")
+    if clear is not None:
+        a = m.addAction(T("btn_clear_tab"), clear)
+        a.setToolTip(T("btn_clear_tab_tip"))
+        tip += "\n" + T("btn_reset_clear_tip")
     m.setToolTipsVisible(True)
     b.setMenu(m)
-    b.setToolTip(T("btn_reset_defaults_tip"))
+    b.setToolTip(tip)
     return b
 
 
@@ -1962,7 +1968,9 @@ class FigureTab(QWidget):
         ls.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # Fußleisten bleiben sichtbar, auch wenn die Spalte gescrollt wird. Links: Zurücksetzen ▾ · Vorlagen ▾ … Weiter;
         # rechts unter der Abbildung: Bildunterschrift … Exportieren (Entwurf 2026-11)
-        b_reset = self.btn_reset = reset_button(self.reset_layout, self.reset_defaults)
+        clear = getattr(self.main, "clear_tab", None)          # Vergleich/Pfad: ihr Zustand gehört dem Gastgeber
+        b_reset = self.btn_reset = reset_button(self.reset_layout, self.reset_defaults,
+                                                clear and (lambda: clear(self.main.tab_key_of(self))))
         b = QPushButton(T("tab_presets"))
         b.setToolTip(T("tab_presets_tip"))
         m = QMenu(b)
@@ -2048,7 +2056,7 @@ class FigureTab(QWidget):
         self._render_pending, self._first_done, self._after_first = False, False, []
         self.sync_caption_bar()
         self.steps.refresh()
-        QTimer.singleShot(0, self._first_render)
+        QTimer.singleShot(0, self, self._first_render)
 
     def sync_caption_bar(self):
         """Bildunterschrift der SI in der Fußleiste unter der Abbildung (eine Zeile, ganz im Tooltip)."""
@@ -2081,7 +2089,7 @@ class FigureTab(QWidget):
         super().showEvent(ev)
         if getattr(self, "_render_pending", False):
             self._render_pending = False
-            QTimer.singleShot(0, self._render_first)
+            QTimer.singleShot(0, self, self._render_first)
 
     def ensure_rendered(self):
         """Abbildung jetzt zeichnen, falls sie wegen eines verborgenen Tabs noch aussteht (z. B. vor Zugriff auf F)."""
@@ -3031,7 +3039,7 @@ class OverlayTab(FigureTab):
         self.table.itemChanged.connect(self.table_edited)
         self.table.itemSelectionChanged.connect(self.show_details)
         self.table.itemSelectionChanged.connect(self.update_combine)
-        QTimer.singleShot(0, self.update_combine)             # Anfangszustand (nichts markiert)
+        QTimer.singleShot(0, self, self.update_combine)             # Anfangszustand (nichts markiert)
         v.addWidget(self.table)
         RowDrag(self.table, self.move_row)
         STYLE.hide_when_empty(self.table)

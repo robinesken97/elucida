@@ -205,7 +205,7 @@ class Predictor(QObject):
         """req: dict(structure, nucleus, solvent, decouple, mhz). Antwort über `done` (auch sofort aus dem Speicher)."""
         hit = self.cached(req)
         if hit is not None:
-            return QTimer.singleShot(0, lambda: self.done.emit(req, hit))
+            return QTimer.singleShot(0, self, lambda: self.done.emit(req, hit))
         from elucida.app.drawing_editor import DrawingEditor
         if self.editor is None:
             self.editor = DrawingEditor(self._parent, scheme_actions=False)   # nie gezeigt, stirbt mit dem Tab
@@ -226,7 +226,7 @@ class Predictor(QObject):
             if tries > 600:                                 # 60 s ohne Zeichner
                 self.pending.pop(token, None)
                 return self.done.emit(req, T("nmr_pred_failed", e=T("draw_load_error")))
-            return QTimer.singleShot(100, lambda: self._start(token, tries + 1))
+            return QTimer.singleShot(100, self, lambda: self._start(token, tries + 1))
         args = ", ".join(json.dumps(v) for v in (token, req["nucleus"], req["solvent"] or "", req["decouple"],
                                                   int(req["mhz"])))
         ed.page.runJavaScript(f"window.elucida.predict({args})")

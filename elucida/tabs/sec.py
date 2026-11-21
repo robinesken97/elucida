@@ -420,7 +420,7 @@ class SECTab(TABS.FigureTab):
         for ed in (self.ed_mid, self.ed_bands, self.ed_trace, self.ed_electrode):
             ed.editingFinished.connect(self.changed)
         self._show_files()
-        QTimer.singleShot(0, self._view_fields)           # nach tidy (Chip-Zeilen) und der Karte „Achsen“ (sp_ymax)
+        QTimer.singleShot(0, self, self._view_fields)           # nach tidy (Chip-Zeilen) und der Karte „Achsen“ (sp_ymax)
 
     def _view_fields(self, *_):
         """Nur die Felder der gewählten Ansicht zeigen (Muster EPR); Chip-Zeilen ohne sichtbaren Chip entfallen von

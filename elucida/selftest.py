@@ -273,9 +273,12 @@ class _DemoPub:
 
     Schlüssel = was der Bau liest: alle Einstellungen außer Pfaden, Zuletzt-Listen, Fenstergeometrie und Ansicht
     (`SKIP`) plus Sprache; anderer Schlüssel = echt bauen (eine Vorlage je Schlüssel). Die Kopie liegt im Ordner des
-    Abschnitts (wie bisher; gespeichert wird nur relativ), Dateizeiten mit gleichem Abstand untereinander, die jüngste
-    = jetzt: Frische-Prüfungen vergleichen Dateien untereinander, „zuletzt geändert“ ist neu wie nach einem Bau. Im
-    Fenster dasselbe wie nach `open_demo_publication`: S2, dann S3 zuletzt benutzt, letzter Ordner, Publikation offen.
+    Abschnitts (wie bisher; gespeichert wird nur relativ), Dateizeiten mit gleichem Abstand untereinander, um die Zeit
+    seit dem Ablegen der Vorlage verschoben (die jüngste ≈ jetzt): Frische-Prüfungen vergleichen Dateien untereinander.
+    Die Kopie ist der Ordner beim Ablegen der Vorlage (gleich nach dem Bau); was das Fenster erst später schreibt
+    (z. B. verzögerte Vorschaubilder, Vergleichsstände), fehlt ihr. Im Fenster nachgebildet wird nur: S2, dann S3
+    zuletzt benutzt, `last_project_dir`, Publikation offen; nicht, was das Öffnen von S2/S3 während des Baus im Fenster
+    hinterlässt (Rückgängig-Verlauf, gebaute Tabs, weitere Einstellungen).
     own=True: der Abschnitt prüft den Bau selbst (immer echt bauen; die Vorlage wird daraus genommen).
     ELUCIDA_SELFTEST_DEMO_CHECK=1: immer echt bauen und jeden Bau mit der Vorlage seines Schlüssels vergleichen
     (Ergebnis in demo_check.txt; Beleg, dass eine Kopie einem Bau gleicht)."""
@@ -19275,9 +19278,10 @@ def _g_lanes(ctx):
             keep_u3 = w.settings.value("ui/scale")
             try:
                 w.set_ui_scale(150)
-                assert MW.ui_scale(w.settings) == 150 and "150" in w.statusBar().currentMessage()
+                assert MW.ui_scale(w.settings) == 150 and "150" in w.last_notice[0]   # Einblendung mit „Jetzt neu starten“
                 assert "ui/scale" not in json.dumps(w.get_state()) and "ui_scale" not in json.dumps(w.get_state())
             finally:
+                w._notice_done()                                       # Einblendung nicht in spätere Abschnitte
                 if keep_u3 is None:
                     w.settings.remove("ui/scale")
                 else:
@@ -19930,6 +19934,171 @@ def _g_lanes(ctx):
                           "old tab switch kept until the first click, showing writes nothing; four equal buttons, greyed "
                           "with a reason; every card feeds its buttons (images/tables only their files, nothing trashed, "
                           "PPTX, SI and whole SI follow the card); pressed tile + ring; d-orbital icon; minimum width: OK")
+        with section:
+            # Spur klein 4: dunkler Canvas, Helligkeit in int32 (in int16 lief die Summe ab 128 über -> weiße Säume)
+            from elucida.app import canvas_theme as CT_k4
+
+            def ref_k4(r_, g_, b_):                                       # dieselbe Rechnung in reinem Python
+                if r_ == g_ == b_:
+                    return [255 - r_] * 3
+                hi_, lo_ = max(r_, g_, b_), min(r_, g_, b_)
+                c_ = [x_ + 255 - hi_ - lo_ for x_ in (r_, g_, b_)]
+                luma_ = (54 * c_[0] + 183 * c_[1] + 19 * c_[2]) >> 8
+                if luma_ < CT_k4.MIN_LUMA and hi_ - lo_ > 32:
+                    t_ = (CT_k4.MIN_LUMA - luma_) / (255.0 - luma_)
+                    c_ = [x_ + int((255 - x_) * t_) for x_ in c_]
+                return c_
+            vals_k4 = list(range(0, 256, 15)) + [255]
+            grid_k4 = np.array([[r_, g_, b_] for r_ in vals_k4 for g_ in vals_k4 for b_ in vals_k4], np.uint8)
+            got_k4 = CT_k4.dark_pixels(grid_k4[None])[0].tolist()
+            bad_k4 = [(p_.tolist(), g_) for p_, g_ in zip(grid_k4, got_k4) if g_ != ref_k4(*map(int, p_))]
+            assert not bad_k4, bad_k4[:5]
+            # liefen vorher über: dunkles Grün/Blau, Matplotlib-Blau (vorher 204,255,204 / 205,205,255 / 183,218,242)
+            px_k4 = CT_k4.dark_pixels(np.array([[[0, 100, 0], [0, 0, 128], [31, 119, 180]]], np.uint8))[0].tolist()
+            assert px_k4 == [[155, 255, 155], [127, 127, 255], [75, 163, 224]], px_k4
+            report.append("Dark canvas colours without int16 overflow (lane klein 4): OK")
+        with section:
+            # Spur klein 3: verzögerte Aufrufe eines Tabs mit Kontextobjekt; ein sofort wieder gelöschter Tab (Vergleich,
+            # Neuaufbau) meldete vorher „Internal C++ object already deleted“ (CompareEmpty-Traceback im Selbsttest)
+            import shiboken6 as SHB_k3
+            errs_k3, hook_k3 = [], sys.excepthook
+            sys.excepthook = lambda t_, v_, tb_: errs_k3.append(f"{t_.__name__}: {v_}")
+            try:
+                for key_ in ("overlay", "uvkin", "sec", "hcell", "epr"):
+                    tab_k3 = w._tab_spec(key_)[1](w, {})
+                    SHB_k3.delete(tab_k3)
+                pump(0.3)
+            finally:
+                sys.excepthook = hook_k3
+            assert not errs_k3, errs_k3[:3]
+            report.append("Deferred tab calls die with their tab (lane klein 3): OK")
+        with section:
+            # Spur klein 1: „Tab leeren“ (Nutzerwunsch): Zustand wie frisch gebaut, Dateien bleiben, ein Rückgängig-Schritt
+            import hashlib
+            import shiboken6 as SHB_k1
+            dp_k1 = demo_pub(w, out / "k1_pub")
+            s3_k1 = dp_k1 / "S3"
+            assert w.open_project(s3_k1, ask=False, recent=False)
+            pump(0.5)
+            dump_k1 = lambda d_: json.dumps(d_, sort_keys=True, default=str)          # noqa: E731
+            # leere Layouts je Bildgröße legt erst das sichtbare Zeichnen an: kein Unterschied
+            bare_k1 = lambda d_: dict(d_, layout={k_: v_ for k_, v_ in (d_.get("layout") or {}).items() if v_})  # noqa: E731
+
+            def files_k1():                                   # Daten der Verbindung (ohne Projektdatei, .elucida: Autosave)
+                return {p_.relative_to(s3_k1).as_posix(): hashlib.sha256(p_.read_bytes()).hexdigest()
+                        for p_ in s3_k1.rglob("*") if p_.is_file() and p_.name != PRJ.PROJECT_FILE
+                        and ".elucida" not in p_.relative_to(s3_k1).parts}
+            w.show_tab("epr")
+            pump(0.5)
+            w.show_tab("cv")
+            pump(0.5)
+            cv0_k1, epr0_k1, files0_k1 = dump_k1(w.cv_state), dump_k1(w.epr_state), files_k1()
+            assert w.cv_state.get("files") and w.epr_state.get("entries"), "demo: data in CV and EPR"
+            acts_k1 = w.cv_tab.btn_reset.menu().actions()
+            assert [a_.text() for a_ in acts_k1] == [T("btn_reset_layout"), T("btn_reset_defaults"), T("btn_clear_tab")]
+            assert acts_k1[2].toolTip() == T("btn_clear_tab_tip")
+            old_tab_k1, n_undo_k1 = w.cv_tab, len(w._undo)
+            acts_k1[2].trigger()
+            pump(0.6)
+            assert w.cv_tab is not old_tab_k1 and not w.cv_state.get("files")
+            fresh_k1 = {}
+            tab_k1 = w._tab_spec("cv")[1](w, fresh_k1)          # frisch gebauter Tab derselben Verbindung, gezeichnet
+            tab_k1.ensure_rendered()
+            pump(0.3)
+            SHB_k1.delete(tab_k1)
+            assert dump_k1(bare_k1(w.cv_state)) == dump_k1(bare_k1(fresh_k1)), \
+                sorted(k_ for k_ in set(w.cv_state) | set(fresh_k1) if dump_k1(w.cv_state.get(k_)) != dump_k1(fresh_k1.get(k_)))
+            assert dump_k1(w.epr_state) == epr0_k1                # anderer Tab unverändert
+            assert files_k1() == files0_k1                        # nichts gelöscht oder verschoben
+            assert len(w._undo) == n_undo_k1 + 1, (len(w._undo), n_undo_k1)   # genau ein Schritt
+            w.undo()
+            pump(0.6)
+            assert dump_k1(w.cv_state) == cv0_k1 and w.cv_tab.btn_reset.menu().actions()[2].text() == T("btn_clear_tab")
+            # ε (Teil des Fensters): dieselbe Funktion
+            w.show_tab("eps")
+            pump(0.4)
+            assert w.csv_paths
+            eps_files_k1, n_undo_k1 = list(w.csv_paths), len(w._undo)
+            w.clear_tab("eps")
+            pump(0.6)
+            assert not w.csv_paths and not w.series and len(w._undo) == n_undo_k1 + 1 and files_k1() == files0_k1
+            w.undo()
+            pump(0.6)
+            assert w.csv_paths == eps_files_k1 and w.series
+            # jeder Tab mit Zurücksetzen-Menü: leeren (auch von „Ergebnisse“ aus) -> Anleitung, ein Schritt, Rückgängig
+            errs_k1, hook_k1 = [], sys.excepthook
+            sys.excepthook = lambda t_, v_, tb_: errs_k1.append(f"{t_.__name__}: {v_}")
+            try:
+                for key_ in [k_ for k_ in w._TAB_BUILD_ORDER if k_ not in ("compound", "syn", "nmr", "export")]:
+                    w.show_tab(key_)
+                    pump(0.5)
+                    tab_k1 = getattr(w, w._tab_spec(key_)[0])
+                    tab_k1.right_tabs.setCurrentIndex(tab_k1.right_tabs.count() - 1)
+                    snap_k1, n_undo_k1 = w._snap(), len(w._undo)
+                    tab_k1.btn_reset.menu().actions()[2].trigger()
+                    pump(0.6)
+                    tab_k1 = getattr(w, w._tab_spec(key_)[0])
+                    assert len(w._undo) == n_undo_k1 + 1, key_
+                    assert tab_k1.right_tabs.currentIndex() == 0 and tab_k1.preview_stack.currentIndex() == 0, key_
+                    w.undo()
+                    pump(0.6)
+                    assert w._snap() == snap_k1, key_
+            finally:
+                sys.excepthook = hook_k1
+            assert not errs_k1, errs_k1[:3]
+            report.append("Clear tab (lane klein 1): fresh state, other tab and files unchanged, one undo step, every tab "
+                          "with a reset menu and eps: OK")
+        with section:
+            # Spur klein 2: „Jetzt neu starten“ in der Meldung zur Oberflächengröße (nie einen Prozess starten)
+            prj_k2 = str(out / "k2 dir" / "S3")
+            for frozen_k2 in (False, True):
+                cmd_k2, env_k2 = MW.restart_command(prj_k2, "epr", frozen=frozen_k2, executable="/x/Elucida",
+                                                    env={"QT_SCALE_FACTOR": "1.25", "HOME_K2": "h"}, own_scale=True)
+                head_k2 = ["/x/Elucida"] if frozen_k2 else ["/x/Elucida", str(ROOT / "Elucida.py")]
+                assert cmd_k2[:len(head_k2)] == head_k2, cmd_k2
+                assert MW.parse_open_args(cmd_k2[len(head_k2):]) == (prj_k2, "epr"), cmd_k2
+                assert "QT_SCALE_FACTOR" not in env_k2 and env_k2["HOME_K2"] == "h"     # neue Größe gilt
+                assert (env_k2.get("PYINSTALLER_RESET_ENVIRONMENT") == "1") == frozen_k2
+            cmd_k2, env_k2 = MW.restart_command(None, "epr", frozen=True, executable="/mnt/x/Elucida",
+                                                env={"APPIMAGE": "/a/Elucida.AppImage", "QT_SCALE_FACTOR": "2"},
+                                                own_scale=False)
+            assert cmd_k2 == ["/a/Elucida.AppImage"] and env_k2["QT_SCALE_FACTOR"] == "2"   # vom Nutzer gesetzt: bleibt
+            assert MW.parse_open_args(["-psn_0_1", "/d/S3", "--tab", "cv", "x"]) == ("/d/S3", "cv")
+            assert MW.parse_open_args([]) == (None, None)
+            # Klick in der Meldung: speichern, Befehl mit dieser Verbindung und diesem Tab; Start mit diesen Argumenten
+            dp_k2 = demo_pub(w, out / "k2_pub")
+            s3_k2 = dp_k2 / "S3"
+            assert w.open_project(s3_k2, ask=False, recent=False)
+            w.show_tab("epr")
+            pump(0.5)
+            got_k2, keep_k2 = [], w.settings.value("ui/scale")
+            w.restart_now = lambda spawn=None: MW.MainWindow.restart_now(w, lambda c_, e_: got_k2.append((c_, e_)) or True)
+            try:
+                w.set_ui_scale(125)
+                assert "125" in w.last_notice[0] and w.last_notice[1] == [T("restart_now")], w.last_notice
+                w._notice_clicked("0")
+            finally:
+                del w.restart_now
+                w._notice_done()
+                if keep_k2 is None:
+                    w.settings.remove("ui/scale")
+                else:
+                    w.settings.setValue("ui/scale", keep_k2)
+            head_k2 = MW.restart_command()[0]                             # Quelltext: Python + Elucida.py, gebaut: die App
+            assert len(got_k2) == 1 and got_k2[0][0][:len(head_k2)] == head_k2, got_k2
+            assert MW.parse_open_args(got_k2[0][0][len(head_k2):]) == (str(s3_k2), "epr"), got_k2[0][0]
+            assert PRJ.load(s3_k2).get("tab") == "epr"                    # gespeichert vor dem Neustart
+            assert w.isVisible() and w.project_dir == str(s3_k2)           # Selbsttest: nichts beendet
+            w.go_home()
+            pump(0.3)
+            w.open_start_args(got_k2[0][0][len(head_k2):])
+            pump(0.5)
+            assert w.project_dir == str(s3_k2) and w._tab_key == "epr", (w.project_dir, w._tab_key)
+            w.go_home()
+            pump(0.3)
+            assert MW.restart_command(w.project_dir, None)[0] == head_k2     # Übersicht: ohne Verbindung
+            report.append("Restart now (lane klein 2): command with compound and tab (source, frozen, AppImage), own "
+                          "scale factor not inherited, saved first, start arguments reopen compound and tab: OK")
     finally:
         ctx.update(locals())
 

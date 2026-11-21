@@ -20,13 +20,13 @@ def dark_pixels(rgb):
     out = 255 - rgb
     coloured = (rgb[..., 0] != rgb[..., 1]) | (rgb[..., 1] != rgb[..., 2])
     if coloured.any():
-        c = rgb[coloured].astype(np.int16)
+        c = rgb[coloured].astype(np.int32)       # int32: in int16 lief die Helligkeitssumme ab 128 über (weiße Säume)
         hi, lo = c.max(-1), c.min(-1)
         c += (255 - hi - lo)[:, None]
         luma = (54 * c[:, 0] + 183 * c[:, 1] + 19 * c[:, 2]) >> 8
         dim = (luma < MIN_LUMA) & (hi - lo > 32)
         t = (MIN_LUMA - luma[dim]) / (255.0 - luma[dim])
-        c[dim] += ((255 - c[dim]) * t[:, None]).astype(np.int16)
+        c[dim] += ((255 - c[dim]) * t[:, None]).astype(np.int32)
         out[coloured] = c
     return out
 

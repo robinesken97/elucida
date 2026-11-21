@@ -268,13 +268,13 @@ class Bridge(QObject):
                 from elucida.app.drawing_clipboard import copy_drawing, paste_drawing
                 value = copy_drawing(data) if method == 'copy' else paste_drawing()
             elif method == 'prediction':                       # Octets NMR-Vorhersage (nmr_compare.Predictor)
-                QTimer.singleShot(0, lambda: self.owner.predicted.emit(data if isinstance(data, dict) else {}))
+                QTimer.singleShot(0, self.owner, lambda: self.owner.predicted.emit(data if isinstance(data, dict) else {}))
                 value = True
             elif method == 'edit_asset':
                 key, shape_id = data.get('key'), data.get('shapeId')
                 if not isinstance(key, str) or len(key) > 80 or not isinstance(shape_id, int):
                     raise ValueError('Invalid figure reference')
-                QTimer.singleShot(0, lambda: self.owner.asset_edit_requested.emit(key, shape_id))
+                QTimer.singleShot(0, self.owner, lambda: self.owner.asset_edit_requested.emit(key, shape_id))
                 value = True
             else:
                 raise ValueError('Unsupported editor command')
@@ -455,7 +455,7 @@ class DrawingEditor(QWidget):
             self._anchored = False
         elif event.type() == QEvent.Resize and obj is self.view and self._anchored:
             self._unplaced = True
-            QTimer.singleShot(0, self.place)
+            QTimer.singleShot(0, self, self.place)
         # A trackpad pinch (macOS) reaches Chromium as page zoom, which scales Octet's panels off screen. Hand it to
         # Octet as Ctrl+wheel instead, which zooms the drawing (Octet: zoom = exp(-deltaY / 100)).
         if event.type() == QEvent.NativeGesture and getattr(self, "page", None) is not None and event.gestureType() in (
@@ -504,7 +504,7 @@ class DrawingEditor(QWidget):
         self.set_canvas_dark(self.canvas_dark)
         self.status.setText(self.saved_message)
         if self._pending:
-            QTimer.singleShot(0, self._open_pending)
+            QTimer.singleShot(0, self, self._open_pending)
 
     def _open_pending(self):
         if isValid(self) and self._pending:
@@ -537,7 +537,7 @@ class DrawingEditor(QWidget):
             if isValid(self):
                 self._opening = False
                 if self._pending and self._pending != p:   # währenddessen wurde eine andere Datei verlangt
-                    QTimer.singleShot(0, self._open_pending)
+                    QTimer.singleShot(0, self, self._open_pending)
                 else:
                     self._pending = None
         self.path, self.expected = p, expected
@@ -551,7 +551,7 @@ class DrawingEditor(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        QTimer.singleShot(0, self.place)
+        QTimer.singleShot(0, self, self.place)
 
     def status_to(self, show):
         """Host with a toast: hide the status line and pass on notes and errors only (saved/unsaved/saving change all
@@ -571,7 +571,7 @@ class DrawingEditor(QWidget):
                 return
             if distance is False and tries:
                 self._unplaced = True
-                QTimer.singleShot(50, lambda: self.place(tries - 1))
+                QTimer.singleShot(50, self, lambda: self.place(tries - 1))
             elif self.fit_view:
                 self.command('zoom_fit')
         self.page.runJavaScript(self.place_code(not self.fit_view), done)

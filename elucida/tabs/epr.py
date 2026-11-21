@@ -1310,7 +1310,7 @@ class EPRTab(TABS.FigureTab):
         for w_ in (self.cmb_unit, self.cmb_yaxis, self.cmb_view, self.cmb_int_method, self.cmb_trace, self.cmb_ramp):
             w_.currentIndexChanged.connect(self.changed)
         self._view_fields()
-        QTimer.singleShot(0, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
+        QTimer.singleShot(0, self, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
         for ed in (self.ed_bl_regions, self.ed_exclude, self.ed_labels, self.ed_int_window):
             ed.editingFinished.connect(self.changed)
         self.calc_pages = CALC.SpinPages(self)            # Rechnung: Spindichte und Hyperfeinkopplungen

@@ -268,7 +268,7 @@ class UVKinTab(TABS.FigureTab):
         self.cmb_view.currentIndexChanged.connect(self._view_changed)
         self.cb_fit.toggled.connect(self.changed)
         self._view_fields()
-        QTimer.singleShot(0, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
+        QTimer.singleShot(0, self, self._view_fields)           # noch einmal nach tidy: erst dann gibt es die Chip-Zeile
 
     # -- Ansicht ------------------------------------------------------------------
     def view(self):
