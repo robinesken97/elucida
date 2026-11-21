@@ -1037,9 +1037,11 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   springt auf den Peak in ±80 mV um die Klickstelle (dieselbe Parabel wie bei den Paaren), E½ = Mittelwert, und alle
   Kurven rücken sofort auf die Fc-Skala (E_Fc = E − (E½,Ref − E°Ref)). Gespeichert wird ein Referenzfenster wie ein
   eingetipptes (eingetippte Fenster alter Verbindungen gelten weiter); ein Schritt zum Rückgängigmachen, **Esc** bricht
-  ab. Die Referenzmessung muss eingeblendet sein. Im Bild markiert ein **Stern (*)** den Oxidationspeak des Standards
-  (Chip „Standard markieren“, Vorgabe an); die Bildunterschrift erklärt ihn („* Fc⁰/⁺ (internal standard)“), nur wenn er
-  im Bild steht.
+  ab. Die Referenzmessung muss eingeblendet sein. Im Bild steht über dem Oxidationspeak des Standards seine **Struktur**
+  (Ferrocen bzw. 1,1'-Diacetylferrocen als Sandwich, in der Farbe seiner Kurve; Chip „Struktur des Standards“, Vorgabe
+  an, aus = keine Markierung); die Bildunterschrift nennt den internen Standard ohnehin. Angehakte Messungen dienen nur
+  als Referenz und gehen nicht in die Scanraten-Analyse ein; fehlt dadurch eine Scanrate, sagt das ein Hinweis unter
+  den Ergebnissen.
 - **Referenz je Messung** („Referenz der ausgewählten Messung“): eigener interner Standard (auch das Fc/Ac₂Fc-Paar in
   derselben Datei, z. B. „mit Ac₂Fc“) oder eigene Verschiebung – nötig beim Lösungsmittelvergleich, jedes gegen seinen
   eigenen Standard. Die Fenster der Redoxpaare folgen der Referenz der jeweiligen Messung.
@@ -1048,8 +1050,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   an den Peaks** (z. B. Probe und Ac₂Fc in einer Messung); y-Achse mit Zahlen, ohne oder ausgeblendet.
 - **Gestapelte** CVs (Listenreihenfolge von oben nach unten, Abstand einstellbar, y-Achse ohne Zahlen) mit **E½ an jeder
   Kurve** neben ihrem anodischen Peak (E¹½, E²½ bei mehreren Paaren).
-- Der **Pfeil der Messrichtung** steht knapp über den Kurven nahe dem Messbeginn (im CV-Stapel über der eigenen Kurve),
-  lässt sich in der Abbildung ziehen, die Position bleibt gespeichert.
+- Der **Pfeil der Messrichtung** steht oben links über den Kurven (Richtung aus der ersten Kurve; im CV-Stapel über der
+  eigenen Kurve), lässt sich in der Abbildung ziehen, die Position bleibt gespeichert.
 - **Auftragung:** Cyclovoltammogramm, **elektrochemische Reversibilität** (ΔE_p gegen v), **Randles-Ševčík** (i_pa und
   i_pc gegen √v oder v mit Ausgleichsgerade ab 3 Scanraten), **Diffusion** (log |i_p| gegen log v), **chemische Reversibilität**
   (i_r/i_f nach Nicholson gegen v, Linie bei 1) oder **Trumpet-Plot** (E_pa und E_pc gegen log v), eine Datenreihe je Gruppe.

@@ -995,8 +995,10 @@ Absorption and emission in one figure, as commonly shown in papers:
   snaps to the peak within ±80 mV of the click (the same parabola as for the couples), E½ = their mean, and all curves
   move to the Fc scale at once (E_Fc = E − (E½,ref − E°ref)). A reference window is stored like a typed one (typed
   windows of older compounds keep working); one undo step, **Esc** cancels. The reference run must be shown. In the
-  figure an **asterisk (*)** marks the oxidation peak of the standard (chip "Mark Standard", on by default); the caption
-  explains it ("* Fc⁰/⁺ (internal standard)") only when it is in the figure.
+  figure the **structure** of the standard stands above its oxidation peak (ferrocene or 1,1'-diacetylferrocene as a
+  sandwich, in the colour of its curve; chip "Standard Structure", on by default, off = no marker); the caption names the
+  internal standard anyway. Ticked runs serve as reference only and are left out of the scan-rate analysis; if a scan
+  rate is missing because of that, a note below the results says so.
 - **Reference per measurement** ("Reference of the selected measurement"): own internal standard (also the
   Fc/Ac₂Fc couple in the same file, e.g. "with Ac₂Fc") or own shift – needed when comparing solvents, each against
   its own standard. The couple windows follow each measurement's reference.
@@ -1009,8 +1011,8 @@ Absorption and emission in one figure, as commonly shown in papers:
   √v or vs. v, with fit lines from 3 scan rates), **diffusion** (log |i_p| vs. log v), **chemical reversibility** (i_r/i_f after
   Nicholson vs. v, line at 1) or **trumpet plot** (E_pa and E_pc vs. log v), one series per group. Note: ΔE_p also
   contains the iR drop (especially in THF); the trumpet plot itself is not fitted (k⁰ comes from ΔE_p, see above).
-- The **scan-direction arrow** sits just above the curves near the start of the scan (in the CV stack above its own
-  curve) and can be dragged in the figure; its place is saved.
+- The **scan-direction arrow** sits top left above the curves (direction from the first curve; in the CV stack above its
+  own curve) and can be dragged in the figure; its place is saved.
 - Current as recorded (Gamry: IUPAC, anodic positive) or inverted; optionally as current density.
 - **Measurement Conditions** (Data step): working and counter electrode, purge gas, instrument (manufacturer, model)
   and polishing of the working electrode; entered once, prefilled for new compounds. Below them the card shows what

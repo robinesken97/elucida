@@ -2137,7 +2137,8 @@ def _g_electrochem(ctx):
             cfg_, curves_, labels_, _ = t_cv.figure_spec()
             labels_ = [l_ for l_ in labels_ if not l_["key"].startswith("label_ref_")]   # Sterne am Fc: eigener Abschnitt
             assert len(labels_) == 10 and {l_["side"] for l_ in labels_} == {"above", "below"}, len(labels_)
-            assert cfg_["y_axis"] == "off" and [i_["id"] for i_ in cfg_["images"]] == ["struktur_cv0"], cfg_["images"]
+            assert cfg_["y_axis"] == "off" and [i_["id"] for i_ in cfg_["images"]                  # Struktur am Ac2Fc: CV3
+                                                if not i_["id"].startswith("ref_")] == ["struktur_cv0"], cfg_["images"]
             t_cv.render()
             assert "image_struktur_cv0" in t_cv.F.axes_items
             assert any(c_ is st_cv["files"][0] and k_ == "structure" for c_, k_, _ in PRJ._path_slots({"cv": st_cv}))
@@ -2479,23 +2480,24 @@ def _g_electrochem(ctx):
             for c_ in (c_ for c_ in t_cv.F.curves if not c_.get("aux")):   # alle Kurven auf der Fc-Skala
                 e_ = next(x_ for x_ in fl_ if x_["uid"] == c_["uid"])
                 assert abs(c_["x"][0] - (t_cv.cycle_of(e_)["E"][0] - off_)) < 1e-12
-            # Stern am Fc-Oxidationspeak und Satz in der Unterschrift, nur wenn er im Bild steht
-            _, _, lab_rc, _ = t_cv.figure_spec()
-            star_ = [l_ for l_ in lab_rc if l_["key"] == "label_ref_rcfc"]
-            assert len(star_) == 1 and star_[0]["text"] == "*" and abs(star_[0]["lam"] - (snap_a_[1] - off_)) < 0.002, star_
-            assert t_cv.si_caption("X").endswith("; * Fc<sup>0/+</sup> (internal standard)."), t_cv.si_caption("X")
-            # Karte „Beschriftungen im Bild“: der Stern ist keine Zeile (an/aus nur ueber den Chip, sonst passte der Satz
-            # in der Unterschrift nicht zum Bild); andere Labels ausblenden/aendern und eigene Labels lassen ihn stehen
+            # CV3 (Entscheidung 179): statt des Sterns die Ferrocen-Struktur am Fc-Oxidationspeak, kein Satz zum Stern
+            cfg_rc, _, lab_rc, _ = t_cv.figure_spec()
+            assert not [l_ for l_ in lab_rc if l_["key"].startswith("label_ref_")], lab_rc
+            img_rc = [i_ for i_ in cfg_rc["images"] if i_["id"] == "ref_rcfc"]
+            assert len(img_rc) == 1 and img_rc[0]["file"].endswith("ferrocene.svg"), cfg_rc["images"]
+            assert "*" not in t_cv.si_caption("X") and "as internal standard" in t_cv.si_caption("X"), t_cv.si_caption("X")
+            # Karte „Beschriftungen im Bild“: die Struktur ist keine Zeile (an/aus nur ueber den Chip); andere Labels
+            # ausblenden/aendern und eigene Labels lassen sie stehen
             t_cv.render()
             rows_ = [r_["key"] for r_ in t_cv.F.label_rows]
             assert rows_ and not any(k_.startswith("label_ref_") for k_ in rows_), rows_
-            star_pos_ = lambda: [tuple(np.round(a_.xyann, 3)) for k_, a_ in t_cv.F.ann_items.items()   # noqa: E731
-                                 if k_.startswith("label_ref_") and a_.get_visible()]
+            star_pos_ = lambda: [tuple(np.round(a_.get_position().bounds, 3)) for k_, a_ in   # noqa: E731
+                                 t_cv.F.axes_items.items() if k_ == "image_ref_rcfc" and a_.get_visible()]
             p0_ = star_pos_()
             assert len(p0_) == 1, p0_
             for over_ in ({rows_[0]: {"hidden": True}}, {rows_[0]: {"text": "own text"}}):
                 t_cv.set_label_over(over_)
-                assert star_pos_() == p0_ and t_cv.si_caption("X").endswith("(internal standard)."), (over_, star_pos_())
+                assert star_pos_() == p0_ and "*" not in t_cv.si_caption("X"), (over_, star_pos_())
             t_cv.set_extra_labels([{"id": "own1", "text": "own label", "x": 0.05, "y": 0.92}])
             assert "xlab_own1" in t_cv.F.ann_items and star_pos_() == p0_, star_pos_()
             assert not any(k_.startswith("label_ref_") for k_ in (r_["key"] for r_ in t_cv.F.label_rows))
@@ -2504,9 +2506,9 @@ def _g_electrochem(ctx):
             assert star_pos_() == p0_
             for k_, v_ in (("ref_marker", False), ("plot", "dep")):
                 st_cv[k_] = v_
-                assert "internal standard)." not in t_cv.si_caption("X") and not t_cv.ref_marks()
+                assert not t_cv.ref_marks() and not (t_cv.figure_spec() or [{}])[0].get("images"), k_
                 st_cv.update(ref_marker=True, plot="cv")
-            fl_[-1]["visible"] = False                         # Referenzmessung ausgeblendet: kein Stern, kein Klickmodus
+            fl_[-1]["visible"] = False                         # Referenzmessung ausgeblendet: keine Struktur, kein Klickmodus
             assert not t_cv.ref_marks()
             t_cv.btn_ref_pick.setChecked(True)
             assert t_cv._pick is None and not t_cv.btn_ref_pick.isChecked()
@@ -13213,14 +13215,14 @@ def _g_publication(ctx):
             t35_.ensure_rendered()
             t35_.render()
             assert t35_.results, "Beispiel: CV mit Redoxpaar"
-            # Beispiel zeigt die neuen Teile (Entscheidung 175): Fc-Messung sichtbar mit Stern, Satz in der Unterschrift,
-            # D/k0-Tabelle (erfundene Flaeche und Konzentration); der Messrichtungspfeil beruehrt den Stern nicht
-            _, _, lab35_, _ = t35_.figure_spec()
-            assert [l_["key"] for l_ in lab35_ if l_["key"].startswith("label_ref_")] == ["label_ref_cvref"], lab35_
-            assert t35_.si_caption("S3").endswith("; * Fc<sup>0/+</sup> (internal standard)."), t35_.si_caption("S3")
+            # Beispiel zeigt die neuen Teile (Entscheidungen 175, 179): Fc-Messung sichtbar mit ihrer Struktur, kein Satz
+            # zum Stern, D/k0-Tabelle (erfundene Flaeche und Konzentration); der Messrichtungspfeil beruehrt sie nicht
+            cfg35_, _, lab35_, _ = t35_.figure_spec()
+            assert [i_["id"] for i_ in cfg35_["images"]] == ["ref_cvref"], cfg35_["images"]
+            assert "*" not in t35_.si_caption("S3"), t35_.si_caption("S3")
             assert t35_.tbl_dk.rowCount() == 1 and "10^" in t35_.tbl_dk.item(0, 1).text(), t35_.tbl_dk.rowCount()
             rend35_ = t35_.F.fig.canvas.get_renderer()
-            assert not t35_.F.ann_items["label_ref_cvref"].get_window_extent(rend35_).overlaps(
+            assert not t35_.F.axes_items["image_ref_cvref"].get_window_extent(rend35_).overlaps(
                 t35_.F.ann_items["arrow_scan"].arrow_patch.get_window_extent(rend35_))
             ch35_ = t35_.chain()                                          # Rechenweg folgt den Einstellungen
             assert ch35_[0] == (T("chain_cycle", n=t35_.st["cycle"]), True) and t35_.chain_row.items == ch35_
@@ -19589,6 +19591,170 @@ def _g_lanes(ctx):
                           "chosen until a click, origin shown, saved and reopened, manual found, scan rejected, drop on the "
                           "HRMS tab, header data never in state/UI/export/SI/log, explanation text not squeezed, candidate table "
                           "whole rows (max 6, then scrolls) and clear of the found row, file name on one line: OK")
+        with section:
+            from matplotlib.backend_bases import MouseEvent as ME_c3
+            from elucida import ROOT as ROOT_c3
+            from elucida.app import demo as DEMO_c3
+            # CV3 (Entscheidungen 176, 177, 179): Struktur des Standards statt Stern, E1/2 einzeilig, Messrichtungspfeil oben
+            # links und ziehbar, Fc-Messungen nur Referenz (nicht in der Scanraten-Analyse)
+            svg_c3 = {k_: Path(ROOT_c3) / "assets" / "standards" / f_ for k_, f_ in CVMOD.REF_STRUCTS.items()}
+            assert all(p_.exists() for p_ in svg_c3.values()), svg_c3                     # auch in der gebauten App
+            assert "#d62728" in IMG.recolor_svg('<path fill="var(--ink)"/>', "#d62728")    # Octet-Tinte wird eingefärbt
+            rgba_c3 = np.asarray(IMG.load_structure(svg_c3["fc"], target_px=300, color="#d62728")["rgba"], float)
+            rgba_c3 = rgba_c3 / (255.0 if rgba_c3.max() > 1 else 1.0)
+            ink_c3 = rgba_c3[rgba_c3[..., 3] > 0.9][:, :3]
+            assert len(ink_c3) > 100 and ink_c3[:, 0].mean() > 0.6 and ink_c3[:, 1].mean() < 0.4, ink_c3.mean(0)
+            assert w.open_demo(out / "cv3_demo")
+            pump(0.5)
+            t_c3 = w.cv_tab
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            t_c3.right_tabs.setCurrentIndex(0)                    # Reiter „Abbildung“: gezogen wird nur im sichtbaren Bild
+            pump(0.4)
+            t_c3.ensure_rendered()
+            t_c3.st.get("layout", {}).clear()                                # Vorgaben, nichts gezogen
+            t_c3.render()
+            cfg_c3, cur_c3, lab_c3, _ = t_c3.figure_spec()
+            F_c3 = t_c3.F
+            # (a) E1/2 in einer Zeile
+            e12_c3 = [l_ for l_ in lab_c3 if l_["key"].startswith("label_e12")]
+            assert e12_c3 and all("\n" not in l_["text"] and " = +0.38 V" in l_["text"] for l_ in e12_c3), e12_c3
+            txt_c3 = F_c3.ann_items[e12_c3[0]["key"]]
+            assert "\n" not in txt_c3.get_text(), txt_c3.get_text()
+            # (b) Ferrocen-Struktur in Kurvenfarbe über dem Fc-Oxidationspeak, kein Stern, kein Satz dazu
+            assert not [l_ for l_ in lab_c3 if l_["key"].startswith("label_ref_")], lab_c3
+            img_c3 = [i_ for i_ in cfg_c3["images"] if i_["id"] == "ref_cvref"]
+            assert len(img_c3) == 1 and img_c3[0]["file"] == str(svg_c3["fc"]), cfg_c3["images"]
+            cap_c3 = t_c3.si_caption("S3")
+            assert "*" not in cap_c3 and "using ferrocene as internal standard" in cap_c3, cap_c3
+            rend_c3 = F_c3._renderer()
+            box_c3 = F_c3.axes_items["image_ref_cvref"].get_window_extent(rend_c3)
+            r_fc_c3 = next(r_ for u_, r_, _ in t_c3.ref_marks() if u_ == "cvref")
+            c_fc_c3 = next(c_ for c_ in F_c3.curves if c_.get("uid") == "cvref")
+            pk_c3 = F_c3.ax.transData.transform((r_fc_c3["epa"] - c_fc_c3["_off_e"], r_fc_c3["ipa_raw"] * c_fc_c3["_scale"]))
+            assert box_c3.x0 - 2 <= pk_c3[0] <= box_c3.x1 + 2 and box_c3.y0 >= pk_c3[1], (box_c3.bounds, pk_c3)
+            assert box_c3.y1 <= F_c3.ax.bbox.y1 + 1, (box_c3.bounds, F_c3.ax.bbox.bounds)                 # passt in die Achse
+            assert not t_c3.ref_images(cur_c3, dict(cfg_c3)) or t_c3.st["ref_marker"]
+            t_c3.st["ref_marker"] = False                                    # Chip aus: keine Markierung
+            assert not t_c3.figure_spec()[0]["images"] and "*" not in t_c3.si_caption("S3")
+            t_c3.st["ref_marker"] = True
+            t_c3.st["ref_compound"] = "ac2fc"                                # anderer Standard: seine Struktur
+            assert [i_["file"] for i_ in t_c3.figure_spec()[0]["images"]] == [str(svg_c3["ac2fc"])]
+            t_c3.st["ref_compound"] = "fc"
+            # Übernahme: Farbe schwarz (Vorgabe, alte Projekte) oder Farbe der Referenzmessung; Maßstab der Verbindung
+            fc_c3 = str(svg_c3["fc"])
+            col_c3 = next(c_["color"] for c_ in t_c3.figure_spec()[1] if c_.get("uid") == "cvref")   # Kurvenfarbe
+            assert t_c3.DEFAULT_STATE["ref_color"] is False and not t_c3.st["ref_color"]
+            assert t_c3.figure_spec()[0]["images"][0]["_asset"] is t_c3.structure_asset(fc_c3, None)
+            t_c3.st["ref_color"] = True
+            assert t_c3.figure_spec()[0]["images"][0]["_asset"] is t_c3.structure_asset(fc_c3, col_c3)
+            t_c3.st["ref_color"] = False
+            wpt_c3 = float(re.search(r'width="([\d.]+)pt"', Path(fc_c3).read_text(encoding="utf-8")[:2000]).group(1))
+            cfg_s_c3 = t_c3.figure_spec()[0]
+            axw_c3 = cfg_s_c3["figsize_in"][0] * cfg_s_c3["axes_rect"][2]
+            assert abs(cfg_s_c3["images"][0]["width"] - wpt_c3 / 72 / axw_c3) < 1e-9      # ohne Struktur: Druckgröße
+            cdx_c3 = next(p_ for p_ in sorted(Path(w.project_dir).rglob("*.cdxml")) if IMG.structure_units(p_))   # Schema hat keine
+            u_c3 = IMG.structure_units(cdx_c3)
+            assert u_c3, cdx_c3
+            t_c3.st["files"][0]["structure"] = str(cdx_c3)
+            try:
+                im_c3 = {i_["id"]: i_["width"] for i_ in t_c3.figure_spec()[0]["images"]}
+                bond_c3 = im_c3["struktur_cv0"] / u_c3                     # Bindungslänge der Verbindung (Achsenanteil)
+                assert abs(im_c3["ref_cvref"] - bond_c3 * wpt_c3 / CVMOD.REF_BOND_PT) < 1e-9, (im_c3, u_c3)
+            finally:
+                t_c3.st["files"][0].pop("structure")
+            # Vergleich (CV-Stapel): Welle des Standards im Stand, Chip „Struktur des Standards“ (Vorgabe aus)
+            from types import SimpleNamespace as NS_c3
+            from elucida.app import comparison as CMP_c3
+            std_c3 = {f_["uid"]: f_["std"] for f_ in CMP_c3._cv_entry(w)["files"]}
+            assert std_c3["cvref"]["comp"] == "fc" and not any(std_c3[u_] for u_ in ("cv0", "cv1", "cv2")), std_c3
+            assert CMP_c3.CVStackTab.DEFAULT_STATE["std_struct"] is False
+            fake_c3 = NS_c3(st={"struct_w": 14.0, "struct_color": False},
+                            structure_asset=lambda p_, c_: IMG.load_structure(p_, target_px=300, color=c_),
+                            note_unreadable=lambda *a_: None)
+            cfgv_c3 = {"figsize_in": (6.3, 4.3), "axes_rect": (0.1, 0.1, 0.8, 0.8), "xlim": [-1.0, 1.0], "ylim": [-10.0, 30.0]}
+            row_c3 = lambda st_, cdx_: ({"key": "a", "color": "#d62728"}, {"structure": cdx_},   # noqa: E731
+                                        {"std": st_, "_evaluated": True}, None, None, 1.0)
+            one_c3 = {"comp": "fc", "epa": 0.0, "ipa": 20.0}
+            got_c3 = CMP_c3.CVStackTab.std_images(fake_c3, cfgv_c3, [row_c3(one_c3, None)], [{"_off": 0.0}], False)
+            assert len(got_c3) == 1 and abs(got_c3[0]["width"] - wpt_c3 / 72 / (6.3 * 0.8)) < 1e-9, got_c3
+            got_c3 = CMP_c3.CVStackTab.std_images(fake_c3, cfgv_c3, [row_c3(one_c3, str(cdx_c3))], [{"_off": 0.0}], True)
+            assert abs(got_c3[0]["width"] - 0.14 * wpt_c3 / CVMOD.REF_BOND_PT / u_c3) < 1e-9, got_c3
+            assert not CMP_c3.CVStackTab.std_images(fake_c3, cfgv_c3, [row_c3(None, None)], [{"_off": 0.0}], False)
+            # (c) Pfeil oben links über den Kurven, frei von Kurven und Struktur, nicht neben der Fc-Welle; ziehbar
+            t_c3.render()
+            F_c3 = t_c3.F
+            rend_c3 = F_c3._renderer()
+            arr_c3 = F_c3.ann_items["arrow_scan"]
+            ax0_c3, ay0_c3 = arr_c3.xyann
+            assert "arrow_scan" not in F_c3.layout and ax0_c3 < 0.25 and ay0_c3 > 0.75, arr_c3.xyann
+            assert _arrow_clear(F_c3, "arrow_scan"), arr_c3.xyann
+            ab_c3 = arr_c3.arrow_patch.get_window_extent(rend_c3).union([arr_c3.get_window_extent(rend_c3)])
+            box_c3 = F_c3.axes_items["image_ref_cvref"].get_window_extent(rend_c3)
+            assert ab_c3.x1 + 10 < box_c3.x0 or not ab_c3.overlaps(box_c3.expanded(1.3, 1.3)), (ab_c3.bounds, box_c3.bounds)
+            # auf den Pfeil selbst klicken (die Mitte der Box liegt neben dem duennen Strich, je nach Fenstergroesse)
+            hit_c3 = [(x_, y_) for x_ in np.linspace(ab_c3.x0, ab_c3.x1, 31) for y_ in np.linspace(ab_c3.y0, ab_c3.y1, 31)
+                      if arr_c3.contains(ME_c3("button_press_event", t_c3.canvas, x_, y_, button=1))[0]]
+            assert hit_c3, ab_c3.bounds
+            cx_c3, cy_c3 = min(hit_c3, key=lambda p_: abs(p_[0] - (ab_c3.x0 + ab_c3.x1) / 2) + abs(p_[1] - (ab_c3.y0 + ab_c3.y1) / 2))
+            proc_c3 = t_c3.canvas.callbacks.process
+            proc_c3("button_press_event", ME_c3("button_press_event", t_c3.canvas, cx_c3, cy_c3, button=1))
+            for i_ in (1, 2, 3):
+                proc_c3("motion_notify_event", ME_c3("motion_notify_event", t_c3.canvas, cx_c3 + 20 * i_, cy_c3 - 10 * i_, button=1))
+            proc_c3("button_release_event", ME_c3("button_release_event", t_c3.canvas, cx_c3 + 60, cy_c3 - 30, button=1))
+            pump(0.3)
+            lay_c3 = t_c3.layout().get("arrow_scan")
+            ax_w_c3, ax_h_c3 = t_c3.F.ax.bbox.width, t_c3.F.ax.bbox.height
+            assert lay_c3 and abs(lay_c3[0] - (ax0_c3 + 60 / ax_w_c3)) < 1.5 / ax_w_c3 \
+                and abs(lay_c3[1] - (ay0_c3 - 30 / ax_h_c3)) < 1.5 / ax_h_c3, (lay_c3, ax0_c3, ay0_c3)
+            t_c3.render()                                                    # gespeicherte Lage bleibt
+            assert np.allclose(t_c3.F.ann_items["arrow_scan"].xyann, lay_c3), (t_c3.F.ann_items["arrow_scan"].xyann, lay_c3)
+            t_c3.layout().pop("arrow_scan")
+            # (d) Fc-Messung nur Referenz: Beispiel = reine Fc-Messung (keine Zeile, keine rote Zeile), N = 3
+            t_c3.figure_spec()
+            assert {r_["uid"] for r_ in t_c3.results} == {"cv0", "cv1", "cv2"}, [(r_["uid"], r_["invalid"]) for r_ in t_c3.results]
+            fit_c3 = t_c3.rate_fits()[("", 1)]
+            assert fit_c3["rates"] == [50.0, 100.0, 200.0] and fit_c3["rs_a"]["n"] == 3, fit_c3
+            ipa_c3 = {r_["rate"]: r_["ipa"] * 1e6 for r_ in t_c3.results}
+            assert abs(ipa_c3[200.0] / ipa_c3[50.0] - 2.0) < 0.1, ipa_c3                    # i_p ~ sqrt(v)
+            assert t_c3.tbl_dk.rowCount() == 1 and not t_c3.ref_rates_missing()
+            # Fc am Ende zugegeben (beide Wellen) bei 500 mV s-1: Zeile in der Tabelle, aber nicht in der Regression + Hinweis
+            p_c3 = Path(t_c3.st["files"][0]["file"]).with_name("S3_CV_Fc_added_500.DTA")
+            cyc_c3, tt_c3 = DEMO_c3.cv_cycles([(DEMO_c3.E_OX, 21.7), (DEMO_c3.E_FC, 17.4)], 500, DEMO_c3.E_FC - 0.40,
+                                              DEMO_c3.E_OX + 0.38, cycles=2, seed=5)
+            DEMO_c3.write_dta(p_c3, cyc_c3, 500, cycle_col=True, times=tt_c3, ircomp=False)
+            keep_c3 = json.loads(json.dumps(t_c3.st, default=str))
+            try:
+                t_c3.st["files"].append({"file": str(p_c3), "uid": "cvadd", "visible": True, "color": "#000000",
+                                         "label": "Fc added"})
+                t_c3.st["ref_uid"] = "cvadd"
+                t_c3.figure_spec()
+                t_c3.show_results()
+                assert any(r_["uid"] == "cvadd" and not r_["invalid"] for r_ in t_c3.results), t_c3.results
+                assert t_c3.rate_fits()[("", 1)]["rates"] == [50.0, 100.0, 200.0]
+                assert t_c3.ref_rates_missing() == [500.0] and T("cv_ref_rate_out", rates="500") in t_c3.lbl_res.text(), \
+                    t_c3.lbl_res.text()
+                # altes Projekt: globale interne Referenz auf einen Lauf der Scanratenreihe -> dieser zählt als Fc-Messung
+                t_c3.st["files"].pop()
+                t_c3.st["ref_uid"] = "cv2"
+                t_c3.figure_spec()
+                t_c3.show_results()
+                assert "cv2" in t_c3.ref_only_uids() and not t_c3.rate_fits() and t_c3.ref_rates_missing() == [200.0]
+                assert T("cv_ref_rate_out", rates="200") in t_c3.lbl_res.text() and t_c3.tbl_fit.rowCount() == 0, \
+                    t_c3.lbl_res.text()
+                # Standard in jeder Lösung (jede Messung referenziert nur sich selbst): alle bleiben Messungen der Reihe
+                t_c3.st["ref_mode"] = "none"
+                for f_ in t_c3.st["files"]:
+                    f_["ref"] = {"mode": "internal", "uid": f_["uid"], "lo": t_c3.st["ref_lo"], "hi": t_c3.st["ref_hi"],
+                                 "compound": "fc", "value": 0.0}
+                assert not t_c3.ref_only_uids() and t_c3.ref_uids() == {f_["uid"] for f_ in t_c3.st["files"]}
+            finally:
+                t_c3.st.clear()
+                t_c3.st.update(keep_c3)
+                p_c3.unlink(missing_ok=True)
+                t_c3.render()
+            report.append("CV3: standard structure (Octet SVG, black or curve colour, compound's bond length, above its "
+                          "wave, chip off = none; comparison chip, default off), E1/2 on one "
+                          "line, scan arrow top-left and draggable, Fc runs reference only with hint for a missing scan rate: OK")
     finally:
         ctx.update(locals())
 

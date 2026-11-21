@@ -31,6 +31,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from elucida import ROOT
+from elucida.core import images as IMG
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.app.i18n import T
@@ -43,6 +45,10 @@ from elucida.formats.gamry import (read_gamry)  # noqa: E402,F401  (Leser in elu
 # (lösungsmittelabhängig, gegen Literatur prüfen).
 REFERENCES = {"fc": ("Fc", 0.0), "ac2fc": ("Ac₂Fc", 0.49)}
 REF_NAMES_EN = {"fc": ("ferrocene", "Fc"), "ac2fc": ("1,1'-diacetylferrocene", "Ac₂Fc")}
+# Struktur des internen Standards an seiner Welle (Entscheidung 176/179): einmal mit Octet „Name to Structure“
+# gezeichnet (Sandwich), Octets SVG unverändert, im Bild in Druckgröße (wie ChemDraw ACS 1996)
+REF_STRUCTS = {"fc": "ferrocene.svg", "ac2fc": "diacetylferrocene.svg"}
+REF_BOND_PT = 14.4                     # Bindungslänge dieser SVGs (ACS 1996, nachgemessen ~14.5 pt)
 
 # Basislinie endet so weit vor dem Hinpeak. 0,20 V = E½ − 0,17 V: dort trägt eine ideal reversible Welle (n = 1, 25 °C)
 # etwa 0,3 % von i_p, der Fehler von i_p bleibt unter 1 % (simuliert: 0,2–0,8 % je nach Fensterbeginn). Mit den
@@ -498,7 +504,7 @@ class CVTab(TABS.FigureTab):
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=-0.5, ymax=0.0, files=[], couples=[], cycle=1,
                          ref_mode="none", ref_uid=None, ref_lo=0.3, ref_hi=0.8, ref_compound="ac2fc",
                          ref_value=REFERENCES["ac2fc"][1], ref_offset=0.0, ref_electrode="Ag/AgNO₃",
-                         gradient=True, density=False, show_e12=True, arrow=True, invert=False, ref_marker=True,
+                         gradient=True, density=False, show_e12=True, arrow=True, invert=False, ref_marker=True, ref_color=False,
                          plot="cv", stack=False, stack_gap=1.0, e12_each=False, y_axis="auto", peak_labels="e12",
                          struct_w=18.0, baseline=True, bl_gap=BL_GAP, show_bl=False,
                          rs_n=1, rs_area=0.0, rs_conc=0.0, rs_temp=25.0, k0_D=0.0, k0_alpha=0.0,
@@ -520,7 +526,7 @@ class CVTab(TABS.FigureTab):
         g = STYLE.split_group(self.group_titled("cv_analysis"), self.sp_rs_n, self.lbl_rs_hint, T("grp_diffusion"))
         self.fold(g, "diffusion", ("rs_n", "rs_area", "rs_conc", "rs_temp", "k0_D", "k0_alpha"))
         g = STYLE.split_group(self.group_titled("cv_display"), self.cb_gradient, self.cb_invert, T("grp_more_display"))
-        self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "ref_marker", "invert"))
+        self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "ref_marker", "ref_color", "invert"))
         self.to_right(self.group_titled("cv_results"), T("cv_results"))
     def build_controls(self):
         st = self.st
@@ -813,10 +819,13 @@ class CVTab(TABS.FigureTab):
         self.cb_arrow = QCheckBox(T("cv_arrow"))
         self.cb_ref_marker = QCheckBox(T("cv_ref_marker"))
         self.cb_ref_marker.setToolTip(T("cv_ref_marker_long"))
+        self.cb_ref_color = QCheckBox(T("cv_ref_color"))       # schwarz (Vorgabe) oder Farbe der Referenzmessung
+        self.cb_ref_color.setToolTip(T("cv_ref_color_tip"))
         self.cb_invert = QCheckBox(T("cv_invert"))
         self.cb_invert.setToolTip(T("cv_invert_tip"))
         for cb, key in ((self.cb_gradient, "gradient"), (self.cb_density, "density"), (self.cb_e12, "show_e12"),
-                        (self.cb_arrow, "arrow"), (self.cb_ref_marker, "ref_marker"), (self.cb_invert, "invert")):
+                        (self.cb_arrow, "arrow"), (self.cb_ref_marker, "ref_marker"), (self.cb_ref_color, "ref_color"),
+                        (self.cb_invert, "invert")):
             cb.setChecked(st[key])
             f.addRow(cb)
             cb.toggled.connect(self.changed)
@@ -1009,11 +1018,6 @@ class CVTab(TABS.FigureTab):
                 h += f"; potentials referenced against {fc} using " + " or ".join(parts) + " as internal standard"
             if st.get("arrow"):
                 h += " (arrows indicate scanning direction)"
-            marks = sorted({m[2] or "" for m in self.ref_marks()})      # nur, wenn der Stern im Bild steht
-            if marks:
-                names = {"fc": "Fc<sup>0/+</sup>", "ac2fc": "Ac<sub>2</sub>Fc"}
-                h += "; * " + ", ".join(f"{names[c_]} (internal standard)" if c_ in names else "internal standard"
-                                        for c_ in marks)
         return h + "."
 
     def shown_convention(self, metas):
@@ -1122,7 +1126,7 @@ class CVTab(TABS.FigureTab):
                   ref_electrode=self.ed_electrode.text().strip() or "Ag/AgNO₃",
                   gradient=self.cb_gradient.isChecked(), density=self.cb_density.isChecked(),
                   show_e12=self.cb_e12.isChecked(), arrow=self.cb_arrow.isChecked(),
-                  ref_marker=self.cb_ref_marker.isChecked(),
+                  ref_marker=self.cb_ref_marker.isChecked(), ref_color=self.cb_ref_color.isChecked(),
                   invert=self.cb_invert.isChecked(), plot=self.cmb_plot.currentData(),
                   stack=self.cb_stack.isChecked(), stack_gap=self.sp_gap.value(),
                   e12_each=self.cb_e12_each.isChecked(), y_axis=self.cmb_yaxis.currentData(),
@@ -1330,6 +1334,19 @@ class CVTab(TABS.FigureTab):
         out |= {(e.get("ref") or {}).get("uid") for e in st["files"] if (e.get("ref") or {}).get("mode") == "internal"}
         return out - {None}
 
+    def ref_only_uids(self):
+        """Messungen, die **anderen** Messungen als interner Standard dienen (reiner Fc-Lauf oder Fc am Ende zugegeben,
+        Entscheidung 177): nur Referenz, nicht in der Scanraten-Analyse. Eine Messung, die nur sich selbst referenziert
+        (Standard in jeder Lösung, z. B. „mit Ac₂Fc“), bleibt eine Messung der Reihe."""
+        st, users = self.st, {}
+        for e in st["files"]:
+            ref = e.get("ref") or {}
+            uid = ref.get("uid") if ref.get("mode") == "internal" else \
+                st.get("ref_uid") if not ref.get("mode") and st["ref_mode"] == "internal" else None
+            if uid:
+                users.setdefault(uid, set()).add(e["uid"])
+        return {u for u, us in users.items() if us - {u}}
+
     def sync_ref_controls(self):
         """Felder der Karte Referenz aus dem Zustand (ohne Signale): `collect` liest sie sonst zurück."""
         st = self.st
@@ -1483,11 +1500,12 @@ class CVTab(TABS.FigureTab):
         self.main.notify(T("cv_ref_pick_done", e12=_fmt_e((epa + epc) / 2), dep=f"{(epa - epc) * 1000:.0f}"), ms=8000)
         self.timer.start()
 
-    def ref_marks(self):
-        """Interner Standard im Bild (Chip „Standard markieren“): [(uid, Ergebnis von analyze_couple, Standard)] der
+    def ref_marks(self, always=False):
+        """Interner Standard im Bild (Chip „Struktur des Standards“, Schlüssel `ref_marker` wie früher der Stern):
+        [(uid, Ergebnis von analyze_couple, Standard)] der
         sichtbaren Referenzmessungen, deren Fenster ein gültiges Paar ergibt; nur in der CV-Ansicht."""
         st = self.st
-        if st.get("plot", "cv") != "cv" or not st.get("ref_marker", True):
+        if not always and (st.get("plot", "cv") != "cv" or not st.get("ref_marker", True)):   # always: Vergleich
             return []
         wins = {}
         if st["ref_mode"] == "internal":
@@ -1635,6 +1653,7 @@ class CVTab(TABS.FigureTab):
         short = [e["label"] for e in vis if len(self.data(e["file"])["cycles"]) < st["cycle"]]
         if short:
             notes.append(T("cv_cycle_missing", files=", ".join(short), n=st["cycle"]))
+        refs = self.ref_only_uids()
         for k, e in enumerate(vis):
             d = self.data(e["file"])
             c = self.cycle_of(e)
@@ -1659,7 +1678,8 @@ class CVTab(TABS.FigureTab):
             shift = off - off_g
             for n, (lo, hi) in enumerate(st["couples"], 1):
                 r = analyze_couple(c["E"], c["I"], lo + shift, hi + shift, st["baseline"], st["bl_gap"])
-                if r is not None:
+                # reine Fc-Messung: das Fenster der Verbindung trifft dort nur den Rand (rote Zeile ohne Nutzen)
+                if r is not None and not (r["invalid"] and not r["two_waves"] and e["uid"] in refs):
                     self.results.append(dict(r, label=e["label"], group=e.get("group", ""), n=n, uid=e["uid"],
                                              rate=d["meta"]["scanrate"], epa=r["epa"] - off, epc=r["epc"] - off,
                                              e12=r["e12"] - off, ircomp=d["meta"].get("ircomp", ""), offset=off,
@@ -1671,6 +1691,9 @@ class CVTab(TABS.FigureTab):
         if len(labels_ref) > 1:
             notes.append(T("cv_ref_mixed"))
         ref_label = "Fc$^{0/+}$" if labels_ref == {"Fc$^{0/+}$"} else ref_label
+        miss = self.ref_rates_missing()
+        if miss:
+            notes.append(T("cv_ref_rate_out", rates=", ".join(f"{v:g}" for v in miss)))
         self.note = "\n".join(notes)
         if st["plot"] != "cv":
             out = self.rate_plot(cfg, ref_label)
@@ -1735,20 +1758,15 @@ class CVTab(TABS.FigureTab):
                             tag = f" ({grp})" if len(groups) > 1 and grp else ""
                             key = f"label_e12_{n}" + (f"_{grp}" if len(groups) > 1 else "")
                             labels.append({"key": key, "lam": e12,
-                                           "text": "E$_{1/2}$" + tag + " =\n" + _fmt_e(e12, E_DEC) + " V"})
-        for uid, r, _comp in self.ref_marks():           # interner Standard: Stern über seinem Oxidationspeak
-            c_ = next((x for x in curves if x["uid"] == uid), None)
-            if c_ is not None:
-                y_ = float(r["ipa_raw"] * c_["_scale"]) + c_.get("off", 0.0)
-                labels.append({"key": f"label_ref_{uid}", "lam": r["epa"] - c_["_off_e"], "y": y_, "text": "*",
-                               "side": "above" if c_["_scale"] > 0 else "below", "card": False})
+                                           "text": "E$_{1/2}$" + tag + " = " + _fmt_e(e12, E_DEC) + " V"})
         if st["arrow"]:
             c0 = curves[0]
             xr = cfg["xlim"][1] - cfg["xlim"][0]
             direction = 1.0 if np.gradient(c0["x"])[:5].mean() >= 0 else -1.0
             x0, y0 = float(c0["x"][0]), float(c0["y"][0])
             cfg["scan_arrow"] = (x0, y0, x0 + direction * 0.08 * xr)
-        imgs = []
+            cfg["scan_arrow_prefer"] = "top-left"        # Vorgabe oben links über den Kurven (Entscheidung 179)
+        imgs = self.ref_images(curves, cfg)              # interner Standard: seine Struktur an seiner Welle
         for e, c_ in zip(vis, curves):                  # Struktur je Messung, optional in Kurvenfarbe
             p = e.get("structure")
             if p and Path(p).exists():
@@ -1764,6 +1782,54 @@ class CVTab(TABS.FigureTab):
             curves += self.baseline_curves(curves)
         self.show_results()
         return cfg, curves, labels, []
+
+    def ref_images(self, curves, cfg):
+        """Struktur des internen Standards (Fc/Ac₂Fc, `REF_STRUCTS`) über dem Oxidationspeak seiner Messung (Chip „Struktur
+        des Standards“ = `ref_marker`), schwarz (Vorgabe; auf dunkler Zeichenfläche weiß) oder in der Kurvenfarbe der
+        Referenzmessung (`ref_color`); im Maßstab der Struktur der Verbindung im Bild (gleiche Bindungslänge), ohne diese
+        in Druckgröße. Anderer Standard: nichts. Automatisches y-Maximum wächst, bis sie über den Peak passt.
+        -> Bildeinträge."""
+        found = []
+        ax_w_in, ax_h_in = (cfg["figsize_in"][k] * cfg["axes_rect"][k + 2] for k in (0, 1))
+        k_sc = self.ref_scale(ax_w_in)
+        for uid, r, comp in self.ref_marks():
+            c_ = next((x for x in curves if x["uid"] == uid), None)
+            if c_ is None or comp not in REF_STRUCTS:
+                continue
+            path = Path(ROOT) / "assets" / "standards" / REF_STRUCTS[comp]
+            try:
+                asset = self.structure_asset(str(path), c_["color"] if self.st.get("ref_color") else None)
+                head = path.read_text(encoding="utf-8")[:2000]
+                w_pt, h_pt = (float(re.search(rf'{k}="([\d.]+)pt"', head).group(1)) for k in ("width", "height"))
+            except Exception as ex:
+                self.main.log_signal.emit(f"  {path.name}: {ex}")
+                continue
+            found.append((uid, path, asset, w_pt * k_sc, h_pt * k_sc, r["epa"] - c_["_off_e"],
+                          float(r["ipa_raw"] * c_["_scale"]) + c_.get("off", 0.0)))
+        y0, y1 = cfg["ylim"]
+        if self.st["ymax"] <= 0:                         # Platz über dem Peak: Bildhöhe + 4 % der Achse
+            for *_, h_pt, _x, ypk in found:
+                f = h_pt / 72 / ax_h_in + 0.04
+                if f < 0.8:
+                    y1 = max(y1, (ypk - f * y0) / (1 - f))
+            cfg["ylim"] = [y0, y1]
+        out = []
+        (x0, x1) = cfg["xlim"]
+        for uid, path, asset, w_pt, h_pt, xpk, ypk in found:
+            out.append({"file": str(path), "id": f"ref_{uid}", "_asset": asset, "width": w_pt / 72 / ax_w_in,
+                        "prefer": core.anchor_score((xpk - x0) / (x1 - x0), (ypk - y0) / (y1 - y0))})
+        return out
+
+    def ref_scale(self, ax_w_in):
+        """Faktor auf die Druckgröße der Standard-SVG: Bindungslänge wie die Struktur der ersten sichtbaren Messung mit
+        Struktur (Breite `struct_w` % der Achse, Breite in Bindungslängen aus ihrer CDXML); ohne sie 1."""
+        for e in self.st["files"]:
+            p = e.get("structure")
+            if e.get("visible", True) and p and Path(p).exists():
+                u = IMG.structure_units(p)
+                if u:
+                    return self.st.get("struct_w", 18.0) / 100 * ax_w_in * 72 / u / REF_BOND_PT
+        return 1.0
 
     def baseline_curves(self, curves):
         """Basislinien zur Kontrolle: Hin- und Rückbasislinie (gestrichelt) und Lote vom Peak (gepunktet)."""
@@ -1793,11 +1859,17 @@ class CVTab(TABS.FigureTab):
         """Ergebnisse nach (Gruppe, Redoxpaar) für Auftragungen gegen die Scanrate (ohne Randpeaks).
         currents=True: auch ohne Messungen, deren Basislinie fehlt (sonst korrigierte und unkorrigierte
         Ströme in einer Regression)."""
-        ser = {}
-        for r in self.results:
-            if r["rate"] and not r["invalid"] and not (currents and r.get("bl_fail")):
+        ser, refs = {}, self.ref_only_uids()
+        for r in self.results:                           # Messungen mit Standard (Häkchen Fc): nur Referenz (Entscheidung 177)
+            if r["rate"] and not r["invalid"] and not (currents and r.get("bl_fail")) and r["uid"] not in refs:
                 ser.setdefault((r["group"], r["n"]), []).append(r)
         return {k: sorted(v, key=lambda r: r["rate"]) for k, v in ser.items()}
+
+    def ref_rates_missing(self):
+        """Scanraten [mV s⁻¹], die nur eine Messung mit Standard hat: sie fehlen deshalb in der Scanraten-Analyse."""
+        refs, ser = self.ref_only_uids(), self.rate_series()
+        return sorted({round(r["rate"], 1) for r in self.results if r["uid"] in refs and r["rate"] and not r["invalid"]
+                       and round(r["rate"], 1) not in {round(x["rate"], 1) for x in ser.get((r["group"], r["n"]), [])}})
 
     def e12_series(self):
         """E½ je (Gruppe, Paar): Mittel über alle gültigen Zeilen (auch ohne Scanrate in der Datei), nur bei einer

@@ -1171,7 +1171,9 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     entries += [{"uid": f"tit{k}", "file": p, "idx": k, "label": n_, "series": "", "use": True,
                  "eq": UVKIN.eq_from_name(n_)} for k, (n_, *_) in enumerate(cols)]
     w.uvkin_state.update(entries=entries, fit=True, cap_solvent="THF", cap_reagent="NOSbF6")
-    # CV: drei Vorschubgeschwindigkeiten + Messung mit Ferrocen als internem Standard (1 mM, D = 1·10⁻⁵ cm² s⁻¹)
+    # CV: drei Vorschubgeschwindigkeiten + eigene Ferrocen-Messung als Referenz (1 mM, D = 1·10⁻⁵ cm² s⁻¹). Nur Fc (CV3,
+    # OFFEN §26): eine Messung mit beiden Wellen gäbe für S3 einen anderen i_pa als der 200-mV-s⁻¹-Lauf (anderer Start,
+    # Fc-Ausläufer unter der Basislinie); sie zählt ohnehin nicht zur Scanraten-Analyse
     files = []
     for rate in (50, 100, 200):
         p = inp / "cv" / f"{name}_CV_{rate}mVs.DTA"
@@ -1180,12 +1182,12 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
         write_dta(p, cyc, rate, times=t, ircomp=False)
         files.append((p, rate))
     ref = inp / "cv" / f"{name}_CV_Fc.DTA"
-    cyc, t = cv_cycles([(E_OX, 21.7), (E_FC, 17.4)], 200, E_FC - 0.40, E_OX + 0.38, cycles=2, seed=1)
+    cyc, t = cv_cycles([(E_FC, 17.4)], 200, E_FC - 0.40, E_FC + 0.40, cycles=2, seed=1)
     write_dta(ref, cyc, 200, cycle_col=True, times=t, ircomp=False)
     w.cv_state["files"] = [{"file": str(p), "uid": f"cv{i}", "visible": True, "color": "#000000",
                             "label": f"{r} mV s-1"} for i, (p, r) in enumerate(files)]
     w.cv_state["files"].append({"file": str(ref), "uid": "cvref", "visible": True, "color": "#000000",
-                                "label": "Fc"})                   # sichtbar: Stern am Standard (Referenz per Klick)
+                                "label": "Fc"})                   # sichtbar: Struktur am Standard (Referenz per Klick)
     w.cv_state.update(couples=[[E_OX - 0.2, E_OX + 0.2]], ref_mode="internal", ref_uid="cvref", ref_lo=E_FC - 0.2,
                       ref_hi=E_FC + 0.2, ref_compound="fc", ref_value=0.0, cycle=2, cap_conc="1 mM",
                       # erfunden, passend zu nFAc√D = 21.7 µA s^½ (3-mm-Scheibe, 1 mM, D = 1·10⁻⁵): D und k⁰ je Paar

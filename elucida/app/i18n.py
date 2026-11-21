@@ -2241,9 +2241,20 @@ TEXTS = {
                          "No window finds exactly these two peaks (another wave too close?) – enter the window by hand."),
     "cv_ref_pick_done": ("Referenz gesetzt: E½ = {e12} V (gemessen), ΔE_p = {dep} mV.",
                          "Reference set: E½ = {e12} V (measured), ΔE_p = {dep} mV."),
-    "cv_ref_marker": ("Standard markieren", "Mark Standard"),
-    "cv_ref_marker_long": ("Stern (*) am Oxidationspeak des internen Standards; die Bildunterschrift erklärt ihn.",
-                           "Asterisk (*) at the oxidation peak of the internal standard; the caption explains it."),
+    "cv_ref_rate_out": ("Messungen mit internem Standard zählen nur als Referenz: {rates} mV s⁻¹ fehlt deshalb in der "
+                        "Scanraten-Analyse.",
+                        "Runs with the internal standard count as reference only: {rates} mV s⁻¹ is therefore missing "
+                        "from the scan-rate analysis."),
+    "cv_ref_marker": ("Struktur des Standards", "Standard Structure"),
+    "cv_ref_marker_long": ("Struktur des internen Standards (Fc bzw. Ac₂Fc) an seiner Welle, im Maßstab der Struktur der "
+                           "Verbindung.",
+                           "Structure of the internal standard (Fc or Ac₂Fc) at its wave, at the scale of the compound's "
+                           "structure."),
+    "cv_ref_color": ("Standard in Kurvenfarbe", "Standard in curve colour"),
+    "cv_ref_color_tip": ("Struktur des Standards in der Farbe der Referenzmessung; aus = schwarz (auf dunkler "
+                         "Zeichenfläche weiß, in Grafik und SI immer schwarz).",
+                         "Standard structure in the colour of the reference measurement; off = black (white on a dark "
+                         "canvas, always black in figures and the SI)."),
     "cv_k0_skip_rev": ("Paar {couple}: kein k⁰ bei {rates} mV s⁻¹ – zu nah am reversiblen Grenzwert (n·ΔE_p < 66 mV).",
                        "Couple {couple}: no k⁰ at {rates} mV s⁻¹ – too close to reversible to determine (n·ΔE_p < 66 mV)."),
     "cv_k0_skip_alpha": ("Paar {couple}: kein k⁰ bei {rates} mV s⁻¹ – n·ΔE_p > 160 mV braucht Klingler–Kochi mit α "
@@ -4472,6 +4483,7 @@ TEXTS = {
     "cmp_arrow": ("Scanpfeil", "Scan arrow"),
     "cmp_structures": ("Strukturen", "Structures"),
     "cmp_struct_color": ("Struktur in Kurvenfarbe", "Structure in curve colour"),
+    "cmp_std_struct": ("Struktur des Standards", "Standard structure"),
     "cmp_legend": ("Legende", "Legend"),
     "cmp_missing_note": ("Ohne aktuellen Stand, nicht gezeigt: {names} („Aktualisieren“)",
                          "Without a current snapshot, not shown: {names} (“Refresh”)"),

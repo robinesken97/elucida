@@ -417,8 +417,10 @@ def _vector_doc(path, svg_text=None):
     return pymupdf.open("pdf", src.convert_to_pdf())
 
 
+# var(--ink): Octet schreibt die Tinte als CSS-Variable (hell = #000000, embedded.css); ohne sie blieb jede in Octet
+# gezeichnete Struktur beim Einfärben schwarz
 _BLACK = re.compile(r"(#000000|#000(?![0-9a-fA-F])|\bblack\b|rgb\(\s*0\s*,\s*0\s*,\s*0\s*\)|"
-                    r"rgb\(\s*0%\s*,\s*0%\s*,\s*0%\s*\))", re.I)
+                    r"rgb\(\s*0%\s*,\s*0%\s*,\s*0%\s*\)|var\(\s*--ink\s*\))", re.I)
 
 
 def recolor_svg(svg_text, color):

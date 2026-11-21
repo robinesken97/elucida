@@ -163,6 +163,7 @@ def _cv_entry(main):
         return None
     _quiet(tab.figure_spec)                                 # Ergebnisse wie in der Tabelle (tab.results)
     sign = -1.0 if st.get("invert") else 1.0
+    stds = {uid: (r, comp) for uid, r, comp in tab.ref_marks(always=True) if comp in CV.REF_STRUCTS}
     files = []
     for e in vis:
         d = tab.data(e["file"])
@@ -182,7 +183,12 @@ def _cv_entry(main):
                     "t_epa": CV._fmt_e(r["epa"], CV.E_DEC), "t_epc": CV._fmt_e(r["epc"], CV.E_DEC),
                     "t_e12": CV._fmt_e(r["e12"], CV.E_DEC),
                     "t_dep": f"{r['dep'] * 1000:.0f}"} for r in tab.results if r["uid"] == e["uid"]]
-        files.append({"uid": e["uid"], "label": e["label"], "rate": d["meta"].get("scanrate"),
+        if e["uid"] in stds:                                # Welle des internen Standards (Fc/Ac₂Fc) in dieser Messung
+            r_, comp_ = stds[e["uid"]]
+            std_f = {"comp": comp_, "epa": r_["epa"] - off, "ipa": sign * 1e6 * r_["ipa_raw"]}
+        else:
+            std_f = None
+        files.append({"std": std_f, "uid": e["uid"], "label": e["label"], "rate": d["meta"].get("scanrate"),
                       "cycle": ev, "n_cycles": len(d["cycles"]), "ref": lab, "group": e.get("group", ""),
                       "x": x, "y": y, "couples": couples, "cycles": others})
     return {"files": files, "cap": {k: st.get("cap_" + k, "") for k in ("conc", "solvent", "el", "temp")}}
@@ -1082,7 +1088,8 @@ class CVStackTab(CompareTab):
     X_RANGE = (-10.0, 10.0, 2, 0.1)
     XRANGE_TEXT = "cv_xrange"
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=-1.5, x_max=1.0, ymax=0.0, members=[], stack_gap=1.0,
-                         normalize=False, arrow=True, structures=True, struct_color=True, struct_w=14.0, legend=False)
+                         normalize=False, arrow=True, structures=True, struct_color=True, struct_w=14.0, legend=False,
+                         std_struct=False)
     LABELS = ("fwd", "epa", "epc", "e12", "none")
 
     def kind_controls(self):
@@ -1115,7 +1122,7 @@ class CVStackTab(CompareTab):
         self.sp_sw = self.sp_struct_w = self.struct_size_spin()
         f.addRow(T("img_size"), self.sp_sw)
         self.cb = {}
-        for key in ("normalize", "arrow", "structures", "struct_color", "legend"):
+        for key in ("normalize", "arrow", "structures", "struct_color", "std_struct", "legend"):
             cb = QCheckBox(T("cmp_" + key))
             cb.setChecked(bool(st[key]))
             cb.toggled.connect(self.changed)
@@ -1256,6 +1263,8 @@ class CVStackTab(CompareTab):
                     return np.abs(Y + h_ / 2 - yc) + 0.5 * np.abs(1 - X - w_)
                 imgs.append((f"struktur_{m['key']}", rec["structure"], m["color"] if st["struct_color"] else None, near))
         cfg["images"] = self.structure_images(imgs, 14.0)    # alle im selben Maßstab, die breiteste = struct_w
+        if st.get("std_struct"):
+            cfg["images"] += self.std_images(cfg, data, curves, structs)
         cfg["scan_arrows"] = arrows
         cfg["y_axis"] = "no_numbers"
         cfg["legend"] = bool(st["legend"])
@@ -1265,6 +1274,37 @@ class CVStackTab(CompareTab):
         for c in curves:
             c.pop("_off", None)
         return cfg, curves, labels, []
+
+    def std_images(self, cfg, data, curves, structs):
+        """Chip „Struktur des Standards“ (Vorgabe aus): Struktur des internen Standards (Fc/Ac₂Fc) über seiner Welle,
+        nur wenn die gezeigte Messung sie enthält (sonst gibt es keine Welle); Bindungslänge wie die Strukturen der
+        Verbindungen (ohne sie Druckgröße), Farbe wie diese (`struct_color`). -> Bildeinträge."""
+        from elucida import ROOT
+        from elucida.core import images as IMG
+        from elucida.tabs import cv as CV
+        st = self.st
+        units = [IMG.structure_units(d[1]["structure"]) for d in data if structs and d[1]["structure"]]
+        top = max((u for u in units if u), default=None)
+        ax_w_in = cfg["figsize_in"][0] * cfg["axes_rect"][2]
+        (x0, x1), (y0, y1) = cfg["xlim"], cfg["ylim"]
+        out = []
+        for k, (m, rec, f, x, y, fac) in enumerate(data):
+            std = f.get("std")
+            if not std or std["comp"] not in CV.REF_STRUCTS or not f["_evaluated"]:
+                continue
+            path = Path(ROOT) / "assets" / "standards" / CV.REF_STRUCTS[std["comp"]]
+            try:
+                asset = self.structure_asset(str(path), m["color"] if st["struct_color"] else None)
+                w_pt = float(re.search(r'width="([\d.]+)pt"', path.read_text(encoding="utf-8")[:2000]).group(1))
+            except Exception as ex:
+                self.note_unreadable(path, ex)
+                continue
+            width = st["struct_w"] / 100 * (w_pt / CV.REF_BOND_PT) / top if top else w_pt / 72 / ax_w_in
+            yp = std["ipa"] * fac + curves[k]["_off"]
+            out.append({"file": str(path), "id": f"std_{m['key']}", "_asset": asset, "width": width,
+                        "keep_width": True, "prefer": core.anchor_score((std["epa"] - x0) / ((x1 - x0) or 1.0),
+                                                                         (yp - y0) / ((y1 - y0) or 1.0))})
+        return out
 
     def hover_text(self, x, val, name):
         return f"E = {x:.3f} V" + (f"  ·  {name}" if name else "")

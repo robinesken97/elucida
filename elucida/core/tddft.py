@@ -721,10 +721,14 @@ class SimpleFigure(core.Figure):
             ys = env[min(fs.n - 1, max(0, int((bx + w / 2) * fs.n)))]
             if own:                                            # gestapelt: über der eigenen Kurve, unter der nächsten
                 ys = by + h / 2
-            score = core.anchor_score(bx + w / 2, ys)
-            hit = fs.find(w, h, lambda X, Y, w_, h_: score(X, Y, w_, h_) + (Y < ys) * 1.0,
-                          curves=lines if own else None)
-            if hit is None or hit[1] + h / 2 < by + h / 2:        # nur darüber, sonst bleibt der erste Messpunkt
+            prefer = None if own else self.cfg.get("scan_arrow_prefer")
+            if prefer:                                         # CV: feste Ecke über den Kurven (Entscheidung 179)
+                hit = fs.find(w, h, core.corner_score(prefer))
+            else:
+                score = core.anchor_score(bx + w / 2, ys)
+                hit = fs.find(w, h, lambda X, Y, w_, h_: score(X, Y, w_, h_) + (Y < ys) * 1.0,
+                              curves=lines if own else None)
+            if hit is None or (not prefer and hit[1] + h / 2 < by + h / 2):   # nur darüber, sonst erster Messpunkt
                 self._fallback = True
                 continue
             ann.xyann = (hit[0] + dx, hit[1] + dy)
