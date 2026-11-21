@@ -5604,7 +5604,7 @@ def main():
         i = sys.argv.index("--selftest")
         outdir = sys.argv[i + 1] if len(sys.argv) > i + 1 and not sys.argv[i + 1].startswith("--") \
             else "selftest_out"
-        group = None                                      # --selftest-group NAME: nur diese Gruppe (Rauchtest: smoke)
+        group = None                                      # --selftest-group NAME[,NAME…]: nur diese Gruppen (Rauchtest: smoke)
         if "--selftest-group" in sys.argv:
             j = sys.argv.index("--selftest-group")
             group = sys.argv[j + 1] if len(sys.argv) > j + 1 else ""
