@@ -690,7 +690,16 @@ als eigene Word-Datei oder im SI-Abschnitt.
     und dem **berechneten Isotopenmuster** des Ions gespiegelt darunter (rot; Feinstruktur, die das TOF nicht trennt,
     z. B. ¹³C/¹⁵N, zusammengefasst); die gemessenen/berechneten Isotopenverhältnisse (M+1, M+2 …) stehen dabei;
   - **Peak anklicken**, um ihn als *found* zu übernehmen (neben dem Wert aus dem Bericht und dem Mittel über den LC-Peak).
-- Export: Spektrum als Abbildung (PDF/SVG/PNG), `…_sticks.csv` (gemessen und berechnet), `…_check.csv` (Prüftabelle) und `…_SI.txt`.
+- **PDF-Bericht** (Knopf oder auf den Tab HRMS ziehen): Ein Bruker-„Compound Spectrum SmartFormula Report“ wird
+  automatisch gelesen – found ist der Wert der Tabellenzeile mit der Ionenformel des gewählten Ions, calc. rechnet
+  Elucida selbst (Warnung, wenn calc. im Bericht abweicht). Aus anderen PDFs mit Textebene erscheinen die Zahlen bis
+  ± 2 Da um calc. als **Kandidaten** mit ihrer Textzeile und der Abweichung in ppm; nichts ist vorgewählt, erst ein
+  **Klick** übernimmt einen Wert („Aus PDF gewählt“), ein Wert gleich calc. ist markiert. Eingebettete Bilder des PDF
+  sind unter **Bild aus PDF** als Abbildung wählbar (unverändert, die Unterschrift sagt „image from the instrument
+  report“; ganze Seiten und Logos nie). Kopfdaten (Probe, Pfad, Bearbeiter) werden nie übernommen. PDFs ohne
+  Textebene (Scans) werden abgelehnt.
+- **Manuell (m/z):** found von Hand, immer verfügbar und als „Manuell“ gekennzeichnet; leeren nimmt den Wert zurück.
+- Export: Spektrum als Abbildung (PDF/SVG/PNG; mit Bild aus dem PDF dieses als PNG), `…_sticks.csv` (gemessen und berechnet), `…_check.csv` (Prüftabelle) und `…_SI.txt`.
 - **Prüfung gegen 5 ppm** (Angewandte: hohe Auflösung = 5 ppm): eine Tabelle unter *found* zeigt Ion, calc., found,
   Abweichung in ppm und den Status (über 5 ppm in der Warnfarbe); oben rechts stehen *found* und die Abweichung als
   Kacheln.
@@ -1684,7 +1693,7 @@ IR + EA, CV, SEC, H-Cell, EPR, CV-Stapel und Spektren im Vergleich; NMR, X-Ray, 
 | Synthese | Schema als CDXML (+ SVG/PDF), daneben **.cdx** für ein bearbeitbares ChemDraw-Objekt in Word, **.emf** für eine scharfe Vorschau |
 | NMR | MestReNova-Exporte als **SVG** oder **EMF**, Mnova-Bericht (Text), **TopSpin**-Experimente/-Datensätze (Ordner), **.mnova**-Dokumente |
 | IR + EA | Bruker **OPUS** (`.0`, `.1` …) und das OPUS-**PDF** mit Peakbeschriftung; Raman als Textdatei (zwei Spalten) |
-| HRMS | Bericht der Massenabteilung (**.docx**), Bruker-Rohdaten (**.d** mit analysis.baf) |
+| HRMS | Bericht der Massenabteilung (**.docx** oder **PDF**), Bruker-Rohdaten (**.d** mit analysis.baf) |
 | UV-Vis (ε) | **Cary**-CSV/TXT-Exporte, Cary-WinUV-**.DSW/.BSW** (Leser aus [parseuv](https://pypi.org/project/parseuv/)); mehrere Dateien bilden einen Datensatz |
 | TD-DFT | Die UV-Vis-Formate oben, TD-DFT-Ausgaben von **ORCA** (4–6, inkl. SOC) und **Gaussian**, SEC-Serien |
 | Fluoreszenz | Cary-**Eclipse**-CSV und .FBSW (Anregungswellenlänge aus den Metadaten) |

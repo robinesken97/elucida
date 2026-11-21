@@ -916,7 +916,7 @@ COMPOUNDS = {
         ea={"C": "81.88", "H": "6.07", "N": "11.86"},
         ea2={"C": "81.70", "H": "6.11", "N": "11.20"},     # Doppelbestimmung: Mittel N 0.43 % zu tief (Warnfall)
         ccdc="2000001",                                     # erfunden (Data Availability Statement)
-        ms_shift=0.0009,                                    # HRMS 7.4 ppm daneben (Warnfall der 5-ppm-Prüfung)
+        ms_shift=0.00012,                                   # HRMS ~+1 ppm (Normalfall; Warnfall > 5 ppm nur im Selbsttest)
         scheme={},
         reagents=[dict(name="S1", M="C11H15NSi", m_mg="947", role="ref"),
                   dict(name="K2CO3", M="K2CO3", m_mg="829", role="reagent"),
@@ -1033,8 +1033,13 @@ def load_data(w, inp, name="S3"):
     # IR (künstliche OPUS-Datei), HRMS (künstlicher Bericht der Massenabteilung), Elementaranalyse (erfundene Werte)
     w.irms_tab.load_ir(str(make_opus(inp / "irms" / f"{name}_IR.0", c["ir"])))
     sh = c.get("ms_shift", 0.0004)
-    w.hrms_tab.load_ms(str(make_ms_report(inp / "irms" / f"{name}_HRMS.docx", name, c["formula"], shift=sh)))
-    w.hrms_tab.load_raw(str(make_bruker_d(inp / "irms" / f"{name}_HRMS.d", name, c["formula"], shift=sh)))   # Spektrum + LC
+    if name == "S2":                                     # PDF-Bericht (SmartFormula-Aufbau), Abbildung = sein Spektrumbild
+        w.hrms_tab.load_ms(str(make_ms_pdf(inp / "irms" / f"{name}_HRMS.pdf", c["formula"], shift=sh)))
+        w.hrms_state["ms_img"] = 2
+        w.hrms_tab.sync_widgets()
+    else:
+        w.hrms_tab.load_ms(str(make_ms_report(inp / "irms" / f"{name}_HRMS.docx", name, c["formula"], shift=sh)))
+        w.hrms_tab.load_raw(str(make_bruker_d(inp / "irms" / f"{name}_HRMS.d", name, c["formula"], shift=sh)))  # LC
     if name == "S3":
         # IR-Rechnung (erfunden): Moden zu den gemessenen Banden, ungeskaliert etwas zu hoch wie bei Hybridfunktionalen;
         # der Faktor 0.965 ist wie vom Nutzer eingetragen (Vorgabe im Tab bleibt 1.000). 1596 liegt zwischen den Banden
@@ -1419,6 +1424,110 @@ def make_ms_report(path, name, formula, adduct="M+H", shift=0.0004) -> Path:
         z.writestr("word/media/image1.emf", emf(["Chemical Formula:", formula, "Exact Mass:", f"{exact:.4f}"]))
         z.writestr("word/media/image2.emf", emf([f"{found:.4f}", f"{found + 1.0034:.4f}", "x.d: +MS, 0.1-0.4min",
                                                  "m/z"]))
+    return Path(path)
+
+
+# Kopf der erfundenen PDF-Berichte: Werte, die nie in Zustand, Oberfläche, Export oder SI erscheinen dürfen
+# (Selbsttest); die Zahl liegt bewusst im m/z-Format
+PDF_HEADER = {"Analysis Name": r"D:\Data\HDRPATH-Q7\run_0001.d", "Sample Name": "HDRSAMPLE-Q7", "Method": "HDRMETHOD-Q7.m",
+              "Comment": "HDRCOMMENT-Q7 batch 0.7531", "Operator": "Hdroperator Q7"}
+
+
+def _ms_pdf_spectrum_png(peaks, lo, hi, scale=1e5, labels=()):
+    """Linienspektrum im Stil eines Geräteberichts als PNG (erfunden): Striche, „Intens. x10^5“, m/z rechts unten."""
+    import io
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure as MplFigure
+    fig = MplFigure(figsize=(10.2, 2.4), dpi=200)
+    FigureCanvasAgg(fig)
+    ax = fig.add_axes([0.06, 0.14, 0.92, 0.8])
+    for m, h in peaks:
+        ax.vlines(m, 0, h / scale, color="black", lw=0.9)
+    for m, h in labels:
+        ax.text(m, h / scale * 1.02, f"1+\n{m:.4f}", ha="center", va="bottom", fontsize=8)
+    top = max(h for _, h in peaks) / scale
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(0, top * 1.35)
+    ax.text(-0.055, 1.0, "Intens.\nx10$^5$", transform=ax.transAxes, fontsize=8, va="top")
+    ax.text(1.0, -0.14, "m/z", transform=ax.transAxes, fontsize=8, ha="right")
+    ax.text(0.99, 0.97, "+MS, 0.9min, -Peak Bkgrnd", transform=ax.transAxes, fontsize=8, ha="right", va="top")
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.tick_params(labelsize=8)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    return buf.getvalue()
+
+
+def make_ms_pdf(path, formula, adduct="M+H", shift=0.0004, calc_off=0.0) -> Path:
+    """Künstlicher PDF-Bericht im Aufbau eines Bruker-„Compound Spectrum SmartFormula Report“ (Kopf mit erfundenen
+    Angaben aus PDF_HEADER, Messangaben, Chromatogramm- und zwei Spektrenbilder, Tabelle Meas. m/z | Ion Formula | m/z |
+    err [ppm] mit [M+H]⁺ und [M+Na]⁺). Werte: calc. + shift, err wie im Bericht (calc − found, umgekehrtes Vorzeichen).
+    `calc_off` verschiebt die gedruckte calc.-Spalte (Warnfall im Selbsttest). Kein echter Bericht."""
+    import pymupdf
+    from elucida.tabs import hrms as HRMS
+    from elucida.tabs import ir_ea as IRMS
+    rows = []
+    for ad in (adduct, "M+Na"):
+        f_ion, z, calc, _ = IRMS.ion(formula, ad)
+        meas = calc + shift
+        rows.append((meas, f_ion, calc, (calc - meas) / calc * 1e6))
+    main = rows[0]
+    pat = HRMS.isotope_pattern(main[1], 1)
+    spec = [(m + shift, 2.4e5 * r / 100) for m, r in pat] + [(m + 22.9892 - 1.0073 + shift, 0.9e5 * r / 100)
+                                                           for m, r in pat] + [(149.0233, 0.6e5), (391.2843, 1.1e5)]
+    doc = pymupdf.open()
+    pg = doc.new_page(width=595, height=842)
+    t = lambda x, y, s, size=8, bold=False: pg.insert_text((x, y), s, fontsize=size,          # noqa: E731
+                                                          fontname="hebo" if bold else "helv")
+    t(146, 58, "Compound Spectrum SmartFormula Report", 16)
+    t(58, 83, "Analysis Info", 9, True)
+    y = 96
+    for k, v in PDF_HEADER.items():
+        t(58, y, k, 9)
+        t(130, y, v, 9)
+        y += 12
+    t(58, 166, "Acquisition Parameter", 9, True)
+    for x, y, s in ((58, 178, "Source Type"), (141, 178, "ESI"), (226, 178, "Ion Polarity"), (321, 178, "Positive"),
+                    (58, 188, "Scan Begin"), (141, 188, "50 m/z"), (226, 188, "Scan End"), (321, 188, "1500 m/z")):
+        t(x, y, s)
+    tt = np.linspace(0, 2, 400)                                    # Chromatogramm (erfunden)
+    import io
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure as MplFigure
+    fig = MplFigure(figsize=(10.2, 2.2), dpi=200)
+    FigureCanvasAgg(fig)
+    ax = fig.add_axes([0.06, 0.14, 0.92, 0.8])
+    ax.plot(tt, 0.6 + 3.2 * np.exp(-0.5 * ((tt - 0.9) / 0.05) ** 2) + 0.2 * np.exp(-tt), color="black", lw=0.8)
+    ax.set_xlabel("Time [min]", fontsize=8, loc="right")
+    ax.tick_params(labelsize=8)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    pg.insert_image(pymupdf.Rect(58, 200, 556, 305), stream=buf.getvalue())
+    t(58, 345, "Cmpd 1, 0.9 min", 9, True)
+    lo, hi = min(m for m, _ in spec) - 25, max(m for m, _ in spec) + 25
+    pg.insert_image(pymupdf.Rect(58, 360, 549, 476), stream=_ms_pdf_spectrum_png(
+        spec, lo, hi, labels=[(spec[0][0], spec[0][1]), (spec[len(pat)][0], spec[len(pat)][1])]))
+    t(88, 500, "Meas. m/z", 9)
+    t(140, 500, "Ion Formula", 9)
+    t(225, 500, "m/z", 9)
+    t(264, 500, "err [ppm]", 9)
+    for i, (meas, f_ion, calc, err) in enumerate(rows):
+        y = 511 + 10 * i
+        t(88, y, f"{meas:.6f}")
+        t(140, y, f_ion)
+        t(211, y, f"{calc + calc_off:.6f}")
+        t(276, y, f"{err:.1f}")
+    zoom = [(m, h) for m, h in spec if main[0] - 3 <= m <= main[0] + 6]
+    pg.insert_image(pymupdf.Rect(56, 540, 547, 656), stream=_ms_pdf_spectrum_png(
+        zoom, main[0] - 3, main[0] + 6, labels=[zoom[0]]))
+    t(51, 770, "run_0001.d", 8)
+    t(51, 781, "Bruker Compass DataAnalysis 6.2", 8)
+    t(217, 781, "printed:", 9)
+    t(381, 781, "by: " + PDF_HEADER["Operator"], 9)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+    doc.close()
     return Path(path)
 
 

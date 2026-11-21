@@ -880,13 +880,15 @@ TEXTS = {
                          "for the EA the formula of the compound (Compound tab)"),
     "guide_irms_steps": ('IR-Daten wählen – mit PDF gelten genau die OPUS-Peaks, sonst sucht das Programm die Banden (Peakschwelle)\nBanden, die nicht in die Liste sollen, abhaken; Intensitäten w/m/s/br optional\nEA: gefundene C/H/N/S-Werte eintragen, ggf. Solvat; Abweichungen über 0,4 % werden markiert\nZeilen kopieren (Formatierung bleibt in Word) oder SI (Word) im Tab „Export“', 'Choose the IR data – with the PDF the OPUS peaks are used exactly, otherwise bands are searched (peak threshold)\nUntick bands that should not be listed; intensities w/m/s/br optional\nEA: enter the found C/H/N/S values, a solvate if needed; deviations above 0.4 % are marked\nCopy the lines (formatting is kept in Word) or SI (Word) in the Export tab'),
     "guide_hrms_title": ('HRMS: HR-MS-Zeile (calc./found) mit Spektrum und Isotopenmuster', 'HRMS: HR-MS line (calc./found) with spectrum and isotope pattern'),
-    "guide_hrms_files": ('Dateien: Word-Bericht der Massenabteilung (.docx) und/oder Bruker-Messordner (.d), auch per Ziehen ins Fenster', 'Files: report of the mass spectrometry service (.docx) and/or Bruker measurement folder (.d), also by dragging'),
+    "guide_hrms_files": ('Dateien: Bericht der Massenabteilung (.docx oder PDF) und/oder Bruker-Messordner (.d), auch per Ziehen ins Fenster', 'Files: report of the mass spectrometry service (.docx or PDF) and/or Bruker measurement folder (.d), also by dragging'),
     "guide_hrms_steps": ("Bericht und/oder Rohdaten wählen\nSummenformel prüfen (aus der Verbindung oder „Verbindung aus dem "
-                         "MS-Bericht übernehmen“)\nIon wählen; found ist vorgewählt – mit Rohdaten den LC-Bereich im "
+                         "MS-Bericht übernehmen“)\nIon wählen; found aus einem bekannten Bericht ist vorgewählt, aus einem "
+                         "anderen PDF einen Kandidaten anklicken, sonst von Hand eintragen – mit Rohdaten den LC-Bereich im "
                          "Chromatogramm ziehen oder einen Peak anklicken\nHRMS-Zeile kopieren; Abbildung und SI (Word) "
                          "im Tab „Export“ (Strg+E exportiert den Tab)",
                          "Choose the report and/or raw data\nCheck the formula (from the compound or “Take compound from the "
-                         "MS report”)\nChoose the ion; found is preselected – with raw data drag the LC range in the "
+                         "MS report”)\nChoose the ion; found from a known report is preselected, from another PDF click a "
+                         "candidate, otherwise enter it manually – with raw data drag the LC range in the "
                          "chromatogram or click a peak\nCopy the HRMS line; figure and SI (Word) in the Export tab (Ctrl+E exports the tab)"),
     "guide_eps_title": ('UV-Vis (ε): Absorptionskoeffizienten aus einer Verdünnungsreihe, Abbildung im Origin-Stil', 'UV-Vis (ε): absorption coefficients from a dilution series, figure in Origin style'),
     "guide_eps_files": ('Dateien: Cary-CSV/TXT, DSW/BSW oder Eclipse-CSV, auch per Ziehen ins Fenster. Konzentration aus dem Probennamen, z. B. ABC-1-0p5mgml_THF = 0,5 mg mL⁻¹ – sonst Tabelle zum Eintragen', 'Files: Cary CSV/TXT, DSW/BSW or Eclipse CSV, also by dragging into the window. Concentration from the sample name, e.g. ABC-1-0p5mgml_THF = 0.5 mg mL⁻¹ – otherwise a table to fill in'),
@@ -1234,10 +1236,62 @@ TEXTS = {
     "compound_mp_ph": ("z. B. 67 °C oder 218 °C (decomp.)", "e.g. 67 °C or 218 °C (decomp.)"),
     "ms_group": ("HRMS", "HRMS"),
     "ms_file": ("MS-Bericht", "MS report"),
-    "ms_file_tip": ("Bericht der Massenabteilung (.docx): Summenformel, Ion und found. Mit Bericht und Rohdaten ist der "
-                    "Wert aus dem Bericht vorgewählt; der aus den Rohdaten steht unter „gefunden“ zur Auswahl.",
-                    "Report of the mass spectrometry service (.docx): formula, ion and found. With report and raw data, "
-                    "the report value is preselected; the raw-data value can be chosen under “found”."),
+    "ms_file_tip": ("Bericht der Massenabteilung (.docx) oder PDF: Summenformel, Ion und found. Mit Bericht und Rohdaten "
+                    "ist der Wert aus dem Bericht vorgewählt; der aus den Rohdaten steht unter „gefunden“ zur Auswahl. "
+                    "PDF: Bruker-SmartFormula-Bericht wird automatisch gelesen (calc. rechnet das Programm nach), bei "
+                    "anderen PDFs übernimmt nur ein Klick in die Kandidatenliste einen Wert. Kopfdaten (Probe, Pfad, "
+                    "Bearbeiter) werden nie übernommen.",
+                    "Report of the mass spectrometry service (.docx) or PDF: formula, ion and found. With report and raw "
+                    "data, the report value is preselected; the raw-data value can be chosen under “found”. PDF: a Bruker "
+                    "SmartFormula report is read automatically (calc. is recomputed), for other PDFs only a click in "
+                    "the candidate list takes a value. Header data (sample, path, operator) are never taken over."),
+    "ms_img": ("Bild aus PDF", "Image from PDF"),
+    "ms_img_tip": ("Eingebettetes Bild des PDF-Berichts als Abbildung (unverändert, in der SI als Bild aus dem Bericht "
+                   "gekennzeichnet); ganze Seiten und kleine Logos werden nie angeboten",
+                   "Embedded image of the PDF report as the figure (unchanged, marked in the SI as an image from the "
+                   "report); whole pages and small logos are never offered"),
+    "hrms_no_spectrum": ("Kein Spektrum gewählt – links ein Bild aus dem PDF wählen oder MS-Rohdaten (.d) laden.",
+                         "No spectrum selected – choose an image from the PDF on the left or load MS raw data (.d)."),
+    "ms_img_none": ("keins (Spektrum aus den Rohdaten)", "none (spectrum from the raw data)"),
+    "ms_img_item": ("Bild {k} · Seite {page} · {w} × {h} px", "Image {k} · page {page} · {w} × {h} px"),
+    "ms_cand_head": ("Kandidaten aus dem PDF (Klick übernimmt)", "Candidates from the PDF (click to take)"),
+    "ms_cand_mz": ("m/z", "m/z"),
+    "ms_cand_ppm": ("Δ [ppm]", "Δ [ppm]"),
+    "ms_cand_line": ("Zeile im PDF", "Line in the PDF"),
+    "ms_cand_tip": ("Zahlen mit mindestens drei Nachkommastellen bis ± 2 Da um calc., mit ihrer Textzeile und der "
+                    "Abweichung found − calc.; nichts ist vorgewählt, ein Klick übernimmt den Wert als found "
+                    "(„aus PDF gewählt“). Zeilen mit Kopfdaten (Probe, Name, Pfad, Datum) fehlen bewusst.",
+                    "Numbers with at least three decimals within ± 2 Da of calc., with their text line and the "
+                    "deviation found − calc.; nothing is preselected, a click takes the value as found (“from PDF”). "
+                    "Lines with header data (sample, name, path, date) are left out on purpose."),
+    "ms_cand_is_calc": ("= calc.", "= calc."),
+    "ms_cand_is_calc_tip": ("Gleich dem berechneten Wert auf 4 Stellen: vermutlich calc. im PDF, kein gemessener Wert",
+                            "Equal to the calculated value at 4 decimals: probably calc. in the PDF, not a measured value"),
+    "ms_cand_need_formula": ("PDF-Kandidaten erscheinen mit der Summenformel (Tab Verbindung)",
+                             "PDF candidates appear once the formula is set (Compound tab)"),
+    "ms_cand_none": ("⚠ im PDF keine Zahl bis ± {d} Da um calc. – Ion/Addukt prüfen oder found von Hand eintragen",
+                     "⚠ no number within ± {d} Da of calc. in the PDF – check the ion/adduct or enter found manually"),
+    "ms_cand_choose": ("found: Wert in der Kandidatenliste anklicken oder von Hand eintragen",
+                       "found: click a value in the candidate list or enter it manually"),
+    "ms_pdf_entry": ("Aus PDF gewählt: {mz}  ({ppm} ppm)", "From PDF: {mz}  ({ppm} ppm)"),
+    "ms_manual": ("Manuell (m/z)", "Manual (m/z)"),
+    "ms_manual_long": ("found von Hand (m/z)", "found entered manually (m/z)"),
+    "ms_manual_none": ("kein Wert", "no value"),
+    "ms_manual_tip": ("Gemessenes m/z von Hand eintragen (4 Nachkommastellen); wird als found gewählt und als „manuell“ "
+                      "gekennzeichnet. 0 bzw. leeren nimmt den Wert zurück.",
+                      "Enter the measured m/z manually (4 decimals); it is chosen as found and marked “manual”. 0 or "
+                      "clearing removes the value."),
+    "ms_manual_entry": ("Manuell: {mz}  ({ppm} ppm)", "Manual: {mz}  ({ppm} ppm)"),
+    "ms_pdf_kind_smartformula": ("SmartFormula", "SmartFormula"),
+    "ms_pdf_kind_text": ("per Klick", "by click"),
+    "ms_found_none": ("nicht gewählt", "not chosen"),
+    "ms_sf_ion_differs": ("⚠ Ionenformel im Bericht ({rep}) passt nicht zum gewählten Ion ({own})",
+                          "⚠ ion formula in the report ({rep}) does not match the chosen ion ({own})"),
+    "ms_sf_calc_differs": ("⚠ calc. im Bericht ({rep}) weicht vom berechneten Wert ({own}) ab – in der Zeile steht {own}",
+                           "⚠ calc. in the report ({rep}) differs from the computed value ({own}) – the line uses {own}"),
+    "ms_pdf_ionis": ("⚠ Ionisierung im PDF nicht eindeutig: {ion} angenommen", "⚠ ionisation not clear in the PDF: {ion} assumed"),
+    "ms_pdf_bad": ("{name}: kein lesbares PDF", "{name}: not a readable PDF"),
+    "ms_pdf_no_text": ("{name}: PDF ohne Textebene (Scan) – Werte von Hand eintragen", "{name}: PDF without a text layer (scan) – enter the values manually"),
     "line_ir": ("IR-Zeile für die SI", "IR line for the SI"),
     "line_ea": ("EA-Zeile für die SI", "EA line for the SI"),
     "line_ms": ("HRMS-Zeile für die SI", "HRMS line for the SI"),
@@ -1282,9 +1336,11 @@ TEXTS = {
     "ms_adduct": ("Ion", "Ion"),
     "ms_found": ("Gefunden (m/z)", "Found (m/z)"),
     "ms_found_tip": ("Gemessene m/z aus den Spektren im Bericht und das Mittel aus den Rohdaten; vorgewählt ist der "
-                     "Wert im Bericht am nächsten am berechneten, ohne Bericht das Mittel aus den Rohdaten",
+                     "Wert im Bericht am nächsten am berechneten (SmartFormula-PDF: die Zeile des gewählten Ions), ohne "
+                     "Bericht das Mittel aus den Rohdaten. Aus einem anderen PDF nur per Klick; dazu der Wert von Hand.",
                      "Measured m/z from the spectra in the report and the mean from the raw data; preselected is the "
-                     "report value closest to the calculated one, without a report the raw-data mean"),
+                     "report value closest to the calculated one (SmartFormula PDF: the row of the chosen ion), without "
+                     "a report the raw-data mean. From another PDF only by a click; plus the manual value."),
     "ms_no_formula": ("keine – im Tab Verbindung festlegen oder MS-Bericht laden",
                       "none – set it in the Compound tab or load an MS report"),
     "ea_no_formula": ("keine – im Tab Verbindung festlegen oder im Tab HRMS den MS-Bericht laden",

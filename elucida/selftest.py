@@ -19325,6 +19325,270 @@ def _g_lanes(ctx):
             assert "eps" in seen_l3 and len(seen_l3) >= 5, seen_l3
             report.append(f"Figure Labels card: automatic text readable as placeholder, no '$' "
                           f"({n_rows_l3} labels in {len(seen_l3)} tabs), untouched suggestion never stored: OK")
+        with section:
+            # Entscheidungen 171/172: HRMS aus PDF. Bekanntes Layout (SmartFormula) automatisch, calc. rechnet Elucida
+            # (Warnung bei Abweichung), Bild aus dem Bericht wählbar; unbekannte PDFs: Kandidaten, nichts gewählt bis
+            # zum Klick, Herkunft sichtbar, gespeichert; found von Hand; Kopfdaten nie in Zustand, Oberfläche, Export, SI
+            import pymupdf as fz_hp
+            import zipfile as zip_hp
+            from PySide6.QtCore import QUrl as QUrl_hp
+            from PySide6.QtWidgets import QTableWidget as QTW_hp, QTextBrowser as QTB_hp
+            from elucida.app import demo as DEMO_hp
+            from elucida.formats import ms_report as MSR_hp
+
+            def pump_hp(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+            f_hp = "C10H9NO2"                                           # erfundene Verbindung
+            calc_hp = IRMS.ion(f_hp, "M+H")[2]
+            inp_hp = out / "hrms_pdf_in"
+            head_hp = [v_.split("\\")[-2] if "\\" in v_ else v_.split()[0] for v_ in DEMO_hp.PDF_HEADER.values()] + \
+                ["HDRX-Q8", "Hdrx", f"{calc_hp + 0.3:.4f}"]            # Kopfdaten beider erfundener PDFs
+            assert "HDRPATH-Q7" in head_hp and "HDRSAMPLE-Q7" in head_hp, head_hp
+            logs_hp = []
+            w.log_signal.connect(logs_hp.append)
+
+            def ui_texts_hp(tab_):
+                out_ = []
+                for o_ in tab_.findChildren(QWidget):
+                    out_.append(o_.toolTip())
+                    if isinstance(o_, QLabel):
+                        out_.append(o_.text())
+                    elif isinstance(o_, QComboBox):
+                        out_ += [o_.itemText(i_) for i_ in range(o_.count())]
+                    elif isinstance(o_, QTW_hp):
+                        out_ += [o_.item(r_, c_).text() for r_ in range(o_.rowCount()) for c_ in range(o_.columnCount())
+                                 if o_.item(r_, c_) is not None]
+                    elif isinstance(o_, QTB_hp):
+                        out_.append(o_.toPlainText())
+                return "\n".join(out_)
+
+            def no_header_hp(where_, text_):
+                bad_ = [h_ for h_ in head_hp if h_ in text_]
+                assert not bad_, (where_, bad_)
+
+            def unknown_pdf_hp(path_):
+                """Erfundenes PDF ohne bekanntes Layout: Kopf mit Probe/Bearbeiter und einer Zahl im m/z-Format nahe
+                calc., Ergebniszeilen, ein Seitenscan (ganze Seite), ein Logo und ein Spektrumbild."""
+                doc_ = fz_hp.open()
+                pg_ = doc_.new_page(width=595, height=842)
+                for (w_, h_, rect_) in ((600, 850, pg_.rect), (60, 30, fz_hp.Rect(500, 20, 560, 50)),
+                                        (400, 150, fz_hp.Rect(60, 300, 540, 480))):
+                    pix_ = fz_hp.Pixmap(fz_hp.csRGB, fz_hp.IRect(0, 0, w_, h_), False)
+                    pix_.clear_with(235 if w_ == 600 else 120)
+                    pg_.insert_image(rect_, stream=pix_.tobytes("png"))
+                for y_, s_ in ((60, "Sample: HDRX-Q8, operator Hdrx Q8"), (74, f"Sample code {calc_hp + 0.3:.4f} HDRX-Q8"),
+                               (120, "Results of the HR-MS measurement (ESI, positive)"),
+                               (140, f"found {calc_hp + 0.0004:.4f} calculated {calc_hp:.4f}"),
+                               (154, f"isotope {calc_hp + 1.0036:.4f}"), (168, "other ion 412.1234")):
+                    pg_.insert_text((60, y_), s_, fontsize=9)
+                path_.parent.mkdir(parents=True, exist_ok=True)
+                doc_.save(str(path_))
+                doc_.close()
+                return path_
+
+            def cand_fits_hp(where_):
+                """Kandidatentabelle: ganze Zeilen (höchstens 6, dann Bildlauf), ragt nie in die Zeile „found“; Dateiname
+                bricht nie um, die Art steht daneben. Nur Geometrie, keine Schriftmaße (gilt auch unter win32)."""
+                tb_ = t_hp.tbl_cand
+                n_ = min(tb_.rowCount(), 6)
+                need_ = tb_.horizontalHeader().height() + sum(tb_.rowHeight(r_) for r_ in range(n_)) + 2 * tb_.frameWidth()
+                assert tb_.isVisible() and tb_.height() == need_, (where_, tb_.height(), need_)
+                assert len({tb_.rowHeight(r_) for r_ in range(tb_.rowCount())}) == 1, where_
+                bottom_ = tb_.mapTo(t_hp, QPoint(0, tb_.height())).y()
+                top_ = t_hp.cmb_found.mapTo(t_hp, QPoint(0, 0)).y()
+                assert bottom_ <= top_, (where_, bottom_, top_)
+                assert (tb_.verticalScrollBar().maximum() > 0) == (tb_.rowCount() > 6), where_
+                assert not t_hp.lbl_ms.wordWrap() and t_hp.lbl_ms.text().endswith(f"({T('ms_pdf_kind_text')})"), where_
+                lb_ = t_hp.lbl_ms                                      # Art in Klammern ganz sichtbar (Schriftmaße: nicht win32)
+                assert sys.platform == "win32" or lb_.fontMetrics().horizontalAdvance(lb_.text()) <= \
+                    lb_.contentsRect().width(), (where_, lb_.text(), lb_.contentsRect().width())
+                t_hp.column_fit.fit()                                  # Name und Art machen die Spalte nie breiter
+                assert t_hp.column_fit.column.width() == colw_hp["empty"], (where_, t_hp.column_fit.column.width(), colw_hp)
+            colw_hp = {}
+            errs_hp, keep_err_hp, keep_lang_hp = [], w.error, get_lang()
+            w.error = errs_hp.append
+            try:
+                w.switch_lang("en")
+                assert w.create_project(out / "hrms_pdf")
+                w.set_compound({"name": "P1", "formula": f_hp})
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("hrms"))
+                pump_hp(0.5)
+                t_hp = w.hrms_tab
+                t_hp.column_fit.fit()
+                colw_hp["empty"] = t_hp.column_fit.column.width()            # Spaltenbreite ohne Bericht
+                assert T("hrms_no_spectrum") not in t_hp.empty_guide.label.text()   # ohne Bericht: Anleitung
+                c_s2_hp = DEMO_hp.COMPOUNDS["S2"]                             # Beispiel S2: Normalfall (~+1 ppm)
+                ppm_s2_hp = c_s2_hp["ms_shift"] / IRMS.ion(c_s2_hp["formula"], "M+H")[2] * 1e6
+                assert 0.5 < ppm_s2_hp < 1.5, ppm_s2_hp
+                # -- bekanntes Layout: found aus der Zeile des Ions, calc. selbst gerechnet, keine Warnung
+                t_hp.load_ms(str(DEMO_hp.make_ms_pdf(inp_hp / "known.pdf", f_hp, shift=0.0003)))
+                t_hp.render()
+                pump_hp()
+                rep_hp = t_hp.ms_report()
+                assert rep_hp["kind"] == "smartformula" and len(rep_hp["rows"]) == 2, rep_hp
+                assert rep_hp["polarity"] == "+" and rep_hp["ionisation"] == "ESI" and not rep_hp["sample"], rep_hp
+                _, c_hp, fd_hp = t_hp._ms_vals
+                assert c_hp == calc_hp and abs(fd_hp - calc_hp - 0.0003) < 2e-6, (c_hp, fd_hp)
+                assert f"calc. C10H10NO2+ [M+H]+ {calc_hp:.4f}; found {fd_hp:.4f}." in t_hp._ms_line[0], t_hp._ms_line
+                assert f"{calc_hp:.4f}" not in t_hp.lbl_ms_warn.text() and "C₁₀H₁₀NO₂" in \
+                    t_hp.cmb_found.currentText(), (t_hp.lbl_ms_warn.text(), t_hp.cmb_found.currentText())
+                no_header_hp("UI known", ui_texts_hp(t_hp))
+                t_hp.cmb_adduct.setCurrentIndex(t_hp.cmb_adduct.findData("M+Na"))   # andere Zeile des Berichts
+                pump_hp(0.6)
+                na_hp = IRMS.ion(f_hp, "M+Na")[2]
+                assert w.hrms_state["adduct"] == "M+Na" and abs(t_hp._ms_vals[2] - na_hp - 0.0003) < 2e-6, t_hp._ms_vals
+                t_hp.cmb_adduct.setCurrentIndex(t_hp.cmb_adduct.findData("M+H"))
+                pump_hp(0.6)
+                # Bilder: drei Spektren-/Chromatogrammbilder, keins vorgewählt; gewählt -> Abbildung, SI, Export
+                assert len(rep_hp["images"]) == 3 and w.hrms_state["ms_img"] == 0 and t_hp.cmb_img.isVisibleTo(t_hp)
+                assert t_hp.report_image() is None
+                # Übernahme: Bericht ohne gewähltes Bild und ohne .d -> ein Satz statt der Anleitung, ohne Knopf
+                g_hp = t_hp.empty_guide
+                assert t_hp.preview_stack.currentIndex() == 0 and T("hrms_no_spectrum") in g_hp.label.text() \
+                    and (g_hp.btn is None or g_hp.btn.isHidden()), g_hp.label.text()
+                t_hp.cmb_img.setCurrentIndex(t_hp.cmb_img.findData(2))
+                pump_hp(0.8)
+                assert w.hrms_state["ms_img"] == 2 and t_hp.F is not None and t_hp.preview_stack.currentIndex() == 1
+                assert HRMS.IMG_CAPTION in t_hp.si_caption("P1"), t_hp.si_caption("P1")
+                blk_hp = t_hp.si_figure(out / "hrms_pdf_si", "P1")
+                assert blk_hp[0][0] == "image" and Path(blk_hp[0][1]).exists() and blk_hp[0][2] <= TABS.SI_MAX_W_CM, blk_hp
+                assert "image from the instrument report" in blk_hp[1][1], blk_hp
+                files_hp = t_hp.export_dialog()
+                assert any(Path(p_).suffix == ".png" for p_ in files_hp), files_hp
+                w.export_si()
+                pump_hp()
+                docx_hp = next(Path(w.project_dir, PRJ.SI_DIR).glob("*_SI.docx"))
+                with zip_hp.ZipFile(docx_hp) as z_:
+                    xml_hp = z_.read("word/document.xml").decode("utf-8")
+                    assert any(n_.startswith("word/media/") for n_ in z_.namelist())
+                assert "image from the instrument report" in xml_hp and f"{fd_hp:.4f}" in xml_hp
+                no_header_hp("SI known", xml_hp)
+                for p_ in Path(w.project_dir).rglob("*"):
+                    if p_.is_file() and p_.suffix in (".txt", ".csv", ".elucida", ".json"):
+                        no_header_hp(p_.name, p_.read_text(encoding="utf-8", errors="replace"))
+                # Warnfall: calc. im Bericht weicht ab -> Warnung, die Zeile behält das eigene calc.
+                t_hp.load_ms(str(DEMO_hp.make_ms_pdf(inp_hp / "known_off.pdf", f_hp, shift=0.0003, calc_off=0.0012)))
+                t_hp.render()
+                pump_hp()
+                assert f"{calc_hp + 0.0012:.4f}" in t_hp.lbl_ms_warn.text(), t_hp.lbl_ms_warn.text()
+                assert f"{calc_hp:.4f}; found" in t_hp._ms_line[0] and w.hrms_state["ms_img"] == 0, t_hp._ms_line
+                # Erklärtext unter der Prüftabelle: nie gequetscht (Höhe aus heightForWidth, die Spalte rollt)
+                t_hp.steps.set_step(0, remember=False)
+                t_hp.lbl_ms_info.setText("\n".join([T("ms_dev", ppm="+0.1")] * 3))
+                pump_hp(0.5)
+                lb_hp, tb_hp = t_hp.lbl_ms_info, t_hp.tbl_ms
+                assert lb_hp.isVisible() and lb_hp.height() >= lb_hp.heightForWidth(lb_hp.width()), \
+                    (lb_hp.height(), lb_hp.width())                     # relativ zur eigenen Schrift: auch win32
+                assert lb_hp.mapTo(t_hp, QPoint(0, 0)).y() >= tb_hp.mapTo(t_hp, QPoint(0, tb_hp.height())).y()
+                # -- unbekanntes Layout: Kandidaten (± 2 Da), Seitenscan und Logo nicht angeboten, nichts gewählt
+                unk_hp = unknown_pdf_hp(inp_hp / "unknown.pdf")
+                t_hp.load_ms(str(unk_hp))
+                t_hp.render()
+                pump_hp()
+                rep_hp = t_hp.ms_report()
+                assert rep_hp["kind"] == "text" and rep_hp["ionisation"] == "ESI", rep_hp["kind"]
+                assert [(i_["w"], i_["h"]) for i_ in rep_hp["images"]] == [(400, 150)], rep_hp["images"]
+                vals_hp = [round(v_, 4) for v_, _ in t_hp._cands]
+                assert vals_hp == [round(calc_hp + 0.0004, 4), round(calc_hp, 4), round(calc_hp + 1.0036, 4)], vals_hp
+                assert t_hp.tbl_cand.rowCount() == 3 and t_hp.tbl_cand.isVisibleTo(t_hp)
+                assert not t_hp.tbl_cand.selectedItems() and w.hrms_state["found"] is None and t_hp._ms_vals[2] is None
+                assert t_hp.tbl_cand.item(1, 1).text() == T("ms_cand_is_calc") and "found –." in t_hp._ms_line[0]
+                assert t_hp.cmb_found.count() == 0 and T("ms_cand_choose") in t_hp.lbl_ms_info.text()
+                cand_fits_hp("loaded")
+                t_hp.tbl_cand.setCurrentCell(0, 0)                      # Auswahl/Fokus übernimmt nichts
+                pump_hp()
+                assert w.hrms_state["found"] is None and w.hrms_state["found_pdf"] is None
+                t_hp.tbl_cand.cellClicked.emit(0, 0)                    # erst der Klick
+                pump_hp()
+                v_hp = round(calc_hp + 0.0004, 4)                       # wie im PDF gedruckt
+                assert w.hrms_state["found"] == "pdf" and abs(w.hrms_state["found_pdf"] - v_hp) < 1e-9, w.hrms_state
+                assert t_hp.cmb_found.currentText().startswith(T("ms_pdf_entry", mz="", ppm="").split(":")[0])
+                assert f"found {v_hp:.4f}." in t_hp._ms_line[0], t_hp._ms_line
+                cand_fits_hp("clicked")
+                no_header_hp("UI unknown", ui_texts_hp(t_hp))
+                # gespeichert und wieder geöffnet: Wahl und Herkunft bleiben
+                w.save_project()
+                no_header_hp("project file", PRJ.project_file(Path(w.project_dir)).read_text(encoding="utf-8"))
+                no_header_hp("state", json.dumps(w.get_state(), ensure_ascii=False))
+                pdir_hp = Path(w.project_dir)
+                assert w.open_project(pdir_hp, recent=False)
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("hrms"))
+                pump_hp(0.5)
+                t_hp = w.hrms_tab
+                t_hp.render()
+                pump_hp()
+                assert w.hrms_state["found"] == "pdf" and abs(t_hp._ms_vals[2] - v_hp) < 1e-9, w.hrms_state
+                assert [i_.row() for i_ in t_hp.tbl_cand.selectedIndexes()][:1] == [0]
+                assert T("ms_pdf_entry", mz="", ppm="").split(":")[0] in t_hp.cmb_found.currentText()
+                # found von Hand: eigene Herkunft, leeren nimmt ihn zurück
+                t_hp.sp_manual.setValue(round(calc_hp + 0.0002, 4))
+                t_hp.manual_edited()
+                pump_hp()
+                assert w.hrms_state["found"] == "manual" and w.hrms_state["found_manual"] == round(calc_hp + 0.0002, 4)
+                assert t_hp.cmb_found.currentText().startswith(T("ms_manual_entry", mz="", ppm="").split(":")[0])
+                assert f"found {calc_hp + 0.0002:.4f}." in t_hp._ms_line[0], t_hp._ms_line
+                w.export_si()
+                pump_hp()
+                with zip_hp.ZipFile(next(Path(w.project_dir, PRJ.SI_DIR).glob("*_SI.docx"))) as z_:
+                    xml_hp = z_.read("word/document.xml").decode("utf-8")
+                assert f"{calc_hp + 0.0002:.4f}" in xml_hp
+                no_header_hp("SI unknown", xml_hp)
+                t_hp.sp_manual.setValue(0)
+                t_hp.manual_edited()
+                pump_hp()
+                assert w.hrms_state["found"] is None and w.hrms_state["found_manual"] is None and t_hp._ms_vals[2] is None
+                # Scan ohne Textebene: abgelehnt mit Grund; Ziehen eines PDF auf den Tab HRMS lädt es dort
+                scan_hp = inp_hp / "scan.pdf"
+                doc_ = fz_hp.open()
+                pg_ = doc_.new_page(width=595, height=842)
+                pg_.insert_image(pg_.rect, stream=fz_hp.Pixmap(fz_hp.csRGB, fz_hp.IRect(0, 0, 300, 420), False).tobytes("png"))
+                doc_.save(str(scan_hp))
+                doc_.close()
+                try:
+                    MSR_hp.read_ms_pdf(scan_hp)
+                    raise AssertionError("scan without text accepted")
+                except ValueError as ex_:
+                    assert T("ms_pdf_no_text", name="scan.pdf") == str(ex_), str(ex_)
+
+                class Drop_hp:
+                    def __init__(self, ps_):
+                        self.ps_ = ps_
+
+                    def mimeData(self):
+                        return self
+
+                    def urls(self):
+                        return [QUrl_hp.fromLocalFile(str(p_)) for p_ in self.ps_]
+                w._drop(Drop_hp([DEMO_hp.make_ms_pdf(inp_hp / "dropped.pdf", f_hp, shift=0.0001)]))
+                pump_hp()
+                assert Path(w.hrms_state["ms_file"]).name == "dropped.pdf" and not errs_hp, (w.hrms_state["ms_file"], errs_hp)
+                # viele Kandidaten: 6 ganze Zeilen, dann Bildlauf; langer Dateiname bleibt einzeilig
+                many_hp = inp_hp / ("many_candidates_" + "x" * 60 + ".pdf")
+                doc_ = fz_hp.open()
+                pg_ = doc_.new_page(width=595, height=842)
+                for k_ in range(9):
+                    pg_.insert_text((60, 100 + 14 * k_), f"signal {calc_hp + 0.11 * (k_ + 1):.4f}", fontsize=9)
+                doc_.save(str(many_hp))
+                doc_.close()
+                t_hp.load_ms(str(many_hp))
+                t_hp.render()
+                pump_hp()
+                assert t_hp.tbl_cand.rowCount() == 9, t_hp.tbl_cand.rowCount()
+                cand_fits_hp("many")
+                no_header_hp("log", "\n".join(logs_hp))
+            finally:
+                w.error = keep_err_hp
+                w.log_signal.disconnect(logs_hp.append)
+                if get_lang() != keep_lang_hp:                          # spätere Gruppe (nmr_own) wie vorher
+                    w.switch_lang(keep_lang_hp)
+            report.append("HRMS from PDF (decisions 171/172): SmartFormula layout read (found from the ion's row, calc "
+                          "recomputed, warning when the report's calc differs, other adduct row), report image as "
+                          "figure/SI/export, unknown PDF: candidates within 2 Da, page scan and logo not offered, nothing "
+                          "chosen until a click, origin shown, saved and reopened, manual found, scan rejected, drop on the "
+                          "HRMS tab, header data never in state/UI/export/SI/log, explanation text not squeezed, candidate table "
+                          "whole rows (max 6, then scrolls) and clear of the found row, file name on one line: OK")
     finally:
         ctx.update(locals())
 

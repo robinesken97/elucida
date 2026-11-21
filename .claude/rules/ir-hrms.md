@@ -28,6 +28,11 @@ paths:
   (eine Messung, alle Peaks auf 4 Nachkommastellen). Unbekannte Varianten **ablehnen**, nicht raten. found = mit der
   Intensität gewichtetes Mittel über den LC-Peak (≥ 50 % des Maximums, zusammenhängend, ± 10 ppm um calc.); Streuung
   immer mit anzeigen. Bericht der Massenabteilung bleibt vorgewählt.
+- HRMS-Bericht als PDF: bekanntes Layout (Bruker Compass „SmartFormula Report“) automatisch, calc immer selbst gerechnet.
+  Unbekannte PDFs oder Bilder: Kandidatenliste aus der Textebene, ohne Textebene per OCR (Zahl mit Bildausschnitt,
+  Textzeile, ppm gegen calc; nichts vorgewählt; Kandidat = calc auf 4 Stellen markiert); Übernahme nur per Klick, Herkunft
+  sichtbar („aus PDF gewählt“, „per OCR erkannt“, „manuell“). Spektrumbild: eingebettete Bilder zur Auswahl, nie ganze
+  Seiten. Manuelles found-Feld immer verfügbar.
 - Prüfung nach den Richtlinien (1.2.0, Auftrag 2026-11-13; ACS: EA ≤ 0.4 %, Angew.: Doppelbestimmung mit beiden Sätzen
   und Mittel, HRMS-Genauigkeit 5 ppm): `SI.ea_check` (Werte wie gedruckt, Mittel exakt kaufmännisch auf 0.01) prüft den
   einen Wert bzw. das Mittel; `ea_found2` optional, ohne ihn bleibt die Zeile unverändert, mit ihm „found … and …

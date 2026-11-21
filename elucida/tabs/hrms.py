@@ -12,9 +12,10 @@ from elucida.app.canvas_theme import register as register_canvas
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure as MplFigure
 from matplotlib.widgets import SpanSelector
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
-                               QMessageBox, QPushButton, QTextBrowser, QWidget)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,
+                               QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSizePolicy, QTableWidget,
+                               QTableWidgetItem, QTextBrowser, QWidget)
 
 from elucida.tabs import base as TABS
 from elucida.core import uvvis as core
@@ -22,13 +23,16 @@ from elucida.app.i18n import T, T_en
 from elucida.core import tables as TBL
 from elucida.app import project as PRJ
 from elucida.tabs.ir_ea import (ADDUCTS, ELECTRON, copy_rich, ion, is_bruker_d, lc_found, ms_line, nearest, parse_formula,
-                        ppm, read_bruker_d, read_ms_docx)
+                        ppm, read_bruker_d)
 from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form
 from elucida.formats.bruker_ms import spectra_of
+from elucida.formats.ms_report import pdf_image_array, pdf_image_png, read_ms_report
 from elucida.tabs.ir_ea import mono_mass
 from elucida.si.lines import chem_plain
 
 MEASURED_COLOR, CALC_COLOR = "#111111", "#c0392b"
+IMG_CAPTION = " (image from the instrument report)"     # SI-Unterschrift, wenn das Bild aus dem PDF-Bericht stammt
+CAND_WINDOW_DA = 2.0          # unbekannte PDFs: Kandidaten nur bis ± 2 Da um calc. (Isotope M+1/M+2 bleiben sichtbar)
 
 
 # ---------------------------------------------------------------------------- Isotopenmuster
@@ -118,6 +122,60 @@ def dev_text(dev):
     return core.fmt_num(dev, 1, sign=True)
 
 
+def same_formula(a, b):
+    """Gleiche Summenformel (Reihenfolge und Ladungszeichen egal); nicht lesbar -> False."""
+    try:
+        return parse_formula(a) == parse_formula(b)
+    except ValueError:
+        return False
+
+
+class WrapHint(HintLabel):
+    """Mehrzeiliger Hinweis unter einer Tabelle: mindestens so hoch wie sein umbrochener Text (heightForWidth). Das
+    Formular gab ihm sonst bei Skalierung 1.25 zu wenig Höhe (oben unter der Tabelle, unten abgeschnitten); so rollt
+    stattdessen die linke Spalte."""
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        h = self.heightForWidth(self.width())
+        if h > 0 and h != self.minimumHeight():
+            self.setMinimumHeight(h)
+
+    def setText(self, text):
+        super().setText(text)
+        if self.width() > 0:
+            h = self.heightForWidth(self.width())
+            if h > 0:
+                self.setMinimumHeight(h)
+
+
+class FileLabel(QLabel):
+    """Dateiname in einer Zeile, am Ende gekürzt (ganz im Tooltip), die Art in Klammern bleibt stehen: bricht nie um und
+    macht die Spalte nie breiter, auch nicht mit langen Namen."""
+
+    def __init__(self, tip):
+        super().__init__("–")
+        self._full, self._tag, self._tip = "–", "", tip
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setMinimumWidth(40)
+        self.setToolTip(tip)
+
+    def set_full(self, text, tag=""):
+        self._full, self._tag = text, (f"  ({tag})" if tag else "")
+        self.setToolTip(text + self._tag + "\n" + self._tip if text != "–" else self._tip)
+        self._elide()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._elide()
+
+    def _elide(self):
+        fm = self.fontMetrics()
+        room = max(10, self.contentsRect().width() - 2 * max(0, self.margin()) - max(0, self.indent())
+                   - fm.horizontalAdvance(self._tag) - 2)              # Innenabstand des Stylesheets: Klammer nie abgeschnitten
+        QLabel.setText(self, fm.elidedText(self._full, Qt.ElideRight, room) + self._tag)
+
+
 def dev_ok(dev):
     """≤ 5 ppm an der gedruckten Zahl geprüft (wie die EA): „+5.0“ ist immer gleich bewertet."""
     return abs(float(f"{dev:.1f}")) <= 5
@@ -132,10 +190,13 @@ class HRMSTab(TABS.FigureTab):
     SI_CAPTION = "HR-MS spectrum of {name}."
     X_RANGE = (10.0, 5000.0, 2, 0.5)
     XRANGE_TEXT = "ms_xrange"
-    RESET_KEEP = ("ms_file", "ms_raw", "ms_rt", "adduct", "found", "found_pick",
+    RESET_KEEP = ("ms_file", "ms_raw", "ms_rt", "adduct", "found", "found_pick", "found_pdf", "found_manual", "ms_img",
                   "mz_labels")                                 # welche m/z im Bild stehen
+    # found: None | m/z aus dem Bericht | "raw" | "pick" (found_pick) | "pdf" (found_pdf: per Klick aus der Kandidatenliste
+    # eines unbekannten PDF) | "manual" (found_manual: von Hand); ms_img: Nummer des Bildes aus dem PDF-Bericht (0 = keins)
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, x_min=100.0, x_max=1000.0, ymax=0.0, ms_file=None, ms_raw=None,
-                         ms_rt=None, adduct="M+H", found=None, found_pick=None, show_calc=True, mz_labels=True)
+                         ms_rt=None, adduct="M+H", found=None, found_pick=None, found_pdf=None, found_manual=None,
+                         ms_img=0, show_calc=True, mz_labels=True)
 
     def build_controls(self):
         st = self.st
@@ -143,18 +204,18 @@ class HRMSTab(TABS.FigureTab):
         f = make_form(g)
         self._form = f
         row = QHBoxLayout()
-        self.lbl_ms = QLabel("–")
-        self.lbl_ms.setWordWrap(True)
-        self.lbl_ms.setToolTip(T("ms_file_tip"))
+        self.lbl_ms = FileLabel(T("ms_file_tip"))
         b = QPushButton(T("choose"))
         b.setToolTip(T("ms_file_tip"))
         b.clicked.connect(self.choose_ms)
         row.addWidget(self.lbl_ms, 1)
         row.addWidget(b)
         f.addRow(T("ms_file"), row)
+        self.cmb_img = QComboBox()                           # eingebettete Bilder des PDF-Berichts (nie ganze Seiten)
+        self.cmb_img.setToolTip(T("ms_img_tip"))
+        f.addRow(T("ms_img"), self.cmb_img)
         row = QHBoxLayout()
-        self.lbl_raw = QLabel("–")
-        self.lbl_raw.setWordWrap(True)
+        self.lbl_raw = FileLabel(T("ms_raw_tip"))
         b = QPushButton(T("choose"))
         b.setToolTip(T("ms_raw_tip"))
         b.clicked.connect(self.choose_raw)
@@ -195,21 +256,42 @@ class HRMSTab(TABS.FigureTab):
             self.cmb_adduct.addItem(lab.replace("$_4$", "₄") + ("⁺" if z > 0 else "⁻"), key)
         self.cmb_adduct.setCurrentIndex(max(0, self.cmb_adduct.findData(st["adduct"])))
         f.addRow(T("ms_adduct"), self.cmb_adduct)
+        # unbekanntes PDF: Zahlen mit Textzeile und ppm gegen calc.; übernommen wird nur ein angeklickter Wert
+        self.tbl_cand = QTableWidget(0, 3)
+        self.tbl_cand.setHorizontalHeaderLabels([T("ms_cand_mz"), T("ms_cand_ppm"), T("ms_cand_line")])
+        self.tbl_cand.verticalHeader().setVisible(False)
+        self.tbl_cand.verticalHeader().setDefaultSectionSize(TABS.STYLE.CHECK_ROW_H)   # wie fit_check_table rechnet
+        self.tbl_cand.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_cand.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_cand.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tbl_cand.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.tbl_cand.setToolTip(T("ms_cand_tip"))
+        self.tbl_cand.cellClicked.connect(self.candidate_clicked)
+        self.cand_head = TABS.STYLE.text_head(T("ms_cand_head"))
+        f.addRow(self.cand_head)
+        f.addRow(self.tbl_cand)
         self.cmb_found = QComboBox()
         self.cmb_found.setToolTip(T("ms_found_tip"))
+        self.cmb_found.setPlaceholderText(T("ms_found_none"))       # nichts gewählt (unbekanntes PDF vor dem Klick)
         f.addRow(T("ms_found"), self.cmb_found)
+        self.sp_manual = QDoubleSpinBox(decimals=4, minimum=0.0, maximum=9999.9999, singleStep=0.0001)
+        self.sp_manual.setSpecialValueText(T("ms_manual_none"))    # 0 = kein Wert (Rücksetz-Symbol über tidy)
+        self.sp_manual.setToolTip(T("ms_manual_tip"))
+        self.sp_manual.editingFinished.connect(self.manual_edited)
+        f.addRow(T("ms_manual"), self.sp_manual)
         # Prüfung found − calc gegen 5 ppm (Angew.) als kleine Tabelle, Abweichung in der Warnfarbe
         self.tbl_ms = TABS.STYLE.summary_grid([T("ea_chk_ms_ion"), T("ea_calc"), T("ea_chk_f1"), T("ea_chk_ms_dev"),
                                                T("ea_chk_ms_status")])
         self.tbl_ms.setToolTip(T("ea_chk_ms_tip"))
         TABS.STYLE.name_table(self.tbl_ms, "check", "HRMS check", csv=True)
-        f.addRow(TABS.STYLE.table_head(T("tbl_head_check"), self.tbl_ms))
+        self._ms_head = TABS.STYLE.table_head(T("tbl_head_check"), self.tbl_ms)
+        f.addRow(self._ms_head)
         f.addRow(self.tbl_ms)
-        self.lbl_ms_info = HintLabel("")
+        self.lbl_ms_info = WrapHint("")
         self.lbl_ms_info.setWordWrap(True)
         self.lbl_ms_info.setStyleSheet(HINT_CSS)
         f.addRow(self.lbl_ms_info)
-        self.lbl_ms_warn = HintLabel("")                 # Warnungen in eigener Zeile, nur sie in der Warnfarbe
+        self.lbl_ms_warn = WrapHint("")                  # Warnungen in eigener Zeile, nur sie in der Warnfarbe
         self.lbl_ms_warn.setWordWrap(True)
         self.lbl_ms_warn.setStyleSheet(WARN_CSS)
         f.addRow(self.lbl_ms_warn)
@@ -240,6 +322,7 @@ class HRMSTab(TABS.FigureTab):
         self._ion = self._lc = self._found = None
         self._sticks = (np.zeros(0), np.zeros(0))
         self._pick_cid = None
+        self._cands = []
         self.cb_rt_auto.toggled.connect(self.changed)
         for w_ in (self.sp_rt_lo, self.sp_rt_hi):
             w_.valueChanged.connect(self.changed)
@@ -247,6 +330,7 @@ class HRMSTab(TABS.FigureTab):
             w_.toggled.connect(self.changed)
         self.cmb_adduct.currentIndexChanged.connect(self.adduct_changed)
         self.cmb_found.currentIndexChanged.connect(self.changed)
+        self.cmb_img.currentIndexChanged.connect(self.changed)
         self.sync_widgets()
 
     def compound_changed(self):
@@ -257,11 +341,23 @@ class HRMSTab(TABS.FigureTab):
         st = self.st
         self._loading = True
         rep = self.ms_report()
-        self.lbl_ms.setText((Path(st["ms_file"]).name + (f"  ({rep['sample']})" if rep and rep.get("sample") else ""))
-                            if st.get("ms_file") else "–")
+        tag = (T("ms_pdf_kind_" + rep["kind"]) if rep.get("kind") else rep.get("sample")) if rep else ""
+        self.lbl_ms.set_full(Path(st["ms_file"]).name if st.get("ms_file") else "–", tag if st.get("ms_file") else "")
+        imgs = (rep or {}).get("images") or []
+        self.cmb_img.blockSignals(True)
+        self.cmb_img.clear()
+        self.cmb_img.addItem(T("ms_img_none"), 0)
+        for k, im in enumerate(imgs, 1):
+            self.cmb_img.addItem(T("ms_img_item", k=k, page=im["page"], w=im["w"], h=im["h"]), k)
+        self.cmb_img.setCurrentIndex(max(0, self.cmb_img.findData(int(st.get("ms_img") or 0))))
+        self.cmb_img.blockSignals(False)
+        self._form.setRowVisible(self.cmb_img, bool(imgs))
+        self.sp_manual.blockSignals(True)
+        self.sp_manual.setValue(float(st.get("found_manual") or 0.0))
+        self.sp_manual.blockSignals(False)
         raw = self.ms_raw()
-        self.lbl_raw.setText((Path(st["ms_raw"]).name + (f"  ({raw['instrument']})" if raw and raw.get("instrument")
-                                                          else "")) if st.get("ms_raw") else "–")
+        self.lbl_raw.set_full((Path(st["ms_raw"]).name + (f"  ({raw['instrument']})" if raw and raw.get("instrument")
+                                                           else "")) if st.get("ms_raw") else "–")
         self._form.setRowVisible(self.rt_row, raw is not None)     # LC-Bereich nur mit .d (wie das Chromatogramm)
         self._form.setRowVisible(self.ccanvas, raw is not None)     # mit Beschriftung, sonst bleibt sie allein
         rt = st.get("ms_rt")
@@ -287,6 +383,7 @@ class HRMSTab(TABS.FigureTab):
                 vals = [v if src is sp else p for p, v, sp in zip(sorted(prev), vals, (self.sp_rt_lo, self.sp_rt_hi))]
             st["ms_rt"] = sorted(vals)
         st.update(adduct=self.cmb_adduct.currentData(), found=self.cmb_found.currentData(),
+                  ms_img=int(self.cmb_img.currentData() or 0) if self.cmb_img.count() else int(st.get("ms_img") or 0),
                   show_calc=self.cb_calc.isChecked(), mz_labels=self.cb_mzlab.isChecked())
         self.sync_widgets()
 
@@ -294,18 +391,18 @@ class HRMSTab(TABS.FigureTab):
         if not self.main.ensure_project():
             return
         p, _ = QFileDialog.getOpenFileName(self, T("ms_file"), self.main.settings.value("last_dir", ""),
-                                           f"Word (*.docx);;{T('flt_all')}")
+                                           f"{T('ms_file')} (*.docx *.pdf);;Word (*.docx);;PDF (*.pdf);;{T('flt_all')}")
         if p:
             self.load_ms(p)
 
     def load_ms(self, p):
         p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
-            read_ms_docx(p)
+            read_ms_report(p)
         except Exception as e:
             self.main.error(f"{Path(p).name}: {e}")
             return
-        self.st.update(ms_file=p, found=None)
+        self.st.update(ms_file=p, found=None, found_pdf=None, ms_img=0)    # neuer Bericht: Auswahl daraus neu
         self.sync_widgets()
         self.timer.start()
 
@@ -342,7 +439,7 @@ class HRMSTab(TABS.FigureTab):
         if not p or not Path(p).exists():
             return None
         try:
-            return self.cache(("msdocx", p), lambda: read_ms_docx(p))
+            return self.cache(("msreport", p), lambda: read_ms_report(p))
         except Exception as ex:                # gespeicherter Bericht, den der Leser ablehnt: Tab bleibt bedienbar
             self.main.skip_part(ex, p)
             self._ms_error = str(ex)
@@ -413,6 +510,13 @@ class HRMSTab(TABS.FigureTab):
         self.changed()
 
     def update_ms(self):
+        self._update_ms()
+        QTimer.singleShot(0, self._form, self._form.invalidate)
+
+    def _update_ms(self):
+        """Hinweise, Kandidaten- und Prüftabelle ändern Text, Höhe und Sichtbarkeit; danach (update_ms) das Formular nach
+        der Ereignisschleife neu aufteilen: QFormLayout mit umbrechenden Zeilen behielt sonst die alte Aufteilung und die
+        Kandidatentabelle ragte über die Zeile „found“ (gemessen: sofort invalidiert half nicht)."""
         st = self.st
         self._ion, self._lc, self._found = None, None, None
         self._ms_error = None
@@ -422,6 +526,8 @@ class HRMSTab(TABS.FigureTab):
         self._ms_line = ("", "")
         self._ms_vals = None
         TABS.STYLE.fill_summary(self.tbl_ms, [])
+        self._form.setRowVisible(self._ms_head, False)        # Kopf „Prüfung“ nur mit Tabelle
+        self.fill_candidates(rep, None)
         self.cmb_found.blockSignals(True)
         self.cmb_found.clear()
         if not formula:
@@ -429,6 +535,8 @@ class HRMSTab(TABS.FigureTab):
             self.txt_ms.setHtml("")
             self.cmb_found.blockSignals(False)
             self.lbl_ms_info.setText("")
+            if rep and rep.get("kind") == "text":
+                notes.append(T("ms_cand_need_formula"))
             self.lbl_ms_warn.setText("\n".join(notes))
             return
         self.lbl_formula.setText(f"{chem_plain(formula)}  ({T('ms_src_' + src)})")
@@ -447,6 +555,8 @@ class HRMSTab(TABS.FigureTab):
         self._lc = lc
         rep_found = None
         info = []                                    # Hinweise ohne Warnung
+        kind = (rep or {}).get("kind", "docx")
+        f_ion = ion(formula, st["adduct"])[0]
         if rep:
             # Abgleich bevorzugt gegen die Struktur im Bericht (das Formelfeld ist von Hand getippt)
             ref_f = rep["structure"]["formula"] if rep.get("structure") else rep.get("formula")
@@ -462,10 +572,27 @@ class HRMSTab(TABS.FigureTab):
                         notes.append(T("ms_form_vs_struct", f=rep["formula"], s=rep["structure"]["formula"]))
                 except ValueError:
                     pass
+            ion_of = {r["meas"]: r["formula"] for r in rep.get("rows") or []}      # SmartFormula: Ionenformel je Zeile
             for v in rep["mz"]:
-                self.cmb_found.addItem(f"{v:.4f}  ({dev_text(ppm(v, calc))} ppm)", v)
-            rep_found = nearest(rep["mz"], calc)
-            if rep_found is None:
+                if v in ion_of and not same_formula(ion_of[v], f_ion):     # Zeile eines anderen Ions: kein ppm
+                    self.cmb_found.addItem(f"{v:.4f}  ({chem_plain(ion_of[v].rstrip('+-'))})", v)
+                    continue
+                tail = f", {chem_plain(ion_of[v].rstrip('+-'))}" if v in ion_of else ""
+                self.cmb_found.addItem(f"{v:.4f}  ({dev_text(ppm(v, calc))} ppm{tail})", v)
+            if kind == "smartformula":               # Zeile mit der Ionenformel des gewählten Ions, sonst die nächste
+                rep_found = next((r["meas"] for r in rep["rows"] if same_formula(r["formula"], f_ion)), None)
+                if rep_found is None:
+                    rep_found = nearest(rep["mz"], calc)
+                    if rep_found is not None:
+                        notes.append(T("ms_sf_ion_differs", rep=chem_plain(ion_of[rep_found].rstrip("+-")),
+                                       own=chem_plain(f_ion)))
+            elif kind == "docx":
+                rep_found = nearest(rep["mz"], calc)
+            if kind == "text":
+                self.fill_candidates(rep, calc)
+                if not self._cands:
+                    notes.append(T("ms_cand_none", d=f"{CAND_WINDOW_DA:g}"))
+            elif rep_found is None:
                 notes.append(T("ms_no_match"))
             pol = "+" if z > 0 else "-"
             if rep.get("polarity") and rep["polarity"] != pol:
@@ -496,17 +623,32 @@ class HRMSTab(TABS.FigureTab):
         pick = st.get("found_pick")
         if pick:                                     # im Spektrum angeklickt
             self.cmb_found.addItem(T("ms_pick_entry", mz=f"{pick:.4f}", ppm=dev_text(ppm(pick, calc))), "pick")
-        # Auswahl: gespeicherte Wahl, sonst Wert aus dem Bericht, sonst Mittel aus den Rohdaten
+        pdf_v = st.get("found_pdf")                  # aus der Kandidatenliste angeklickt: gilt, solange das PDF ihn nennt
+        pdf_ok = pdf_v is not None and kind == "text" and any(v == pdf_v for v, _ in rep["candidates"])
+        if pdf_ok:
+            self.cmb_found.addItem(T("ms_pdf_entry", mz=f"{pdf_v:.4f}", ppm=dev_text(ppm(pdf_v, calc))), "pdf")
+        man = st.get("found_manual")                 # von Hand eingetragen
+        if man:
+            self.cmb_found.addItem(T("ms_manual_entry", mz=f"{man:.4f}", ppm=dev_text(ppm(man, calc))), "manual")
+        # Auswahl: gespeicherte Wahl, sonst Wert aus dem Bericht, sonst Mittel aus den Rohdaten (unbekanntes PDF: nichts)
         want = st.get("found")
-        if not ((want == "raw" and lc is not None) or (rep and want in rep["mz"]) or (want == "pick" and pick)):
+        if not ((want == "raw" and lc is not None) or (rep and want in rep["mz"]) or (want == "pick" and pick)
+                or (want == "pdf" and pdf_ok) or (want == "manual" and man)):
             want = rep_found if rep_found is not None else ("raw" if lc else None)
-        if self._ms_error and st.get("found") not in ("raw", "pick"):   # Wert käme aus dem unlesbaren Bericht: nie still
-            want = None                                                  # durch das Mittel der Rohdaten ersetzen
-        found = lc["mz"] if want == "raw" else (pick if want == "pick" else want)
+        if self._ms_error and st.get("found") not in ("raw", "pick", "manual"):   # Wert käme aus dem unlesbaren
+            want = None                                                  # Bericht: nie still durch die Rohdaten ersetzen
+        found = {"raw": lc["mz"] if lc else None, "pick": pick, "pdf": pdf_v, "manual": man}.get(want, want)
+        if kind == "text" and want is None:
+            info.append(T("ms_cand_choose"))
+        row = next((r for r in (rep or {}).get("rows") or () if r["meas"] == found), None) if want == found else None
+        if row is not None and row.get("calc") is not None and abs(row["calc"] - calc) >= 0.5e-4:
+            notes.append(T("ms_sf_calc_differs", rep=f"{row['calc']:.4f}", own=f"{calc:.4f}"))
         # ohne Zuordnung keine Vorauswahl (sonst würde der erste Eintrag beim nächsten collect zu found)
         self.cmb_found.setCurrentIndex(max(0, self.cmb_found.findData(want)) if want is not None else -1)
         self.cmb_found.blockSignals(False)
-        ionis = rep["ionisation"] if rep else (raw["ionisation"] if raw else "ESI")
+        ionis = (rep or {}).get("ionisation") or (raw["ionisation"] if raw else "ESI")
+        if rep and not rep.get("ionisation"):        # unbekanntes PDF ohne eindeutige Ionisierung: Annahme nennen
+            notes.append(T("ms_pdf_ionis", ion=ionis))
         plain, html, calc = ms_line(formula, st["adduct"], found, ionis)
         self._ms_line = (plain, html)
         self._ms_vals = (st["adduct"], calc, found)
@@ -521,6 +663,62 @@ class HRMSTab(TABS.FigureTab):
         head = notes[:1] if found is not None else []    # „Abweichung found − calc“: Information, keine Warnung
         self.lbl_ms_info.setText("\n".join(head + info))
         self.lbl_ms_warn.setText("\n".join(notes[len(head):]))
+
+    def fill_candidates(self, rep, calc):
+        """Kandidaten eines unbekannten PDF (± CAND_WINDOW_DA um calc.) in die Tabelle; nichts wird gewählt, nur der schon
+        angeklickte Wert ist markiert. Ein Kandidat gleich calc. auf 4 Stellen ist vermutlich der berechnete Wert."""
+        from PySide6.QtGui import QBrush, QColor
+        show = bool(rep) and rep.get("kind") == "text" and calc is not None
+        self._cands = [(v, line) for v, line in (rep or {}).get("candidates") or () if show and abs(v - calc) <= CAND_WINDOW_DA]
+        t = self.tbl_cand
+        t.blockSignals(True)
+        t.clearSelection()
+        t.setRowCount(len(self._cands))
+        chosen = self.st.get("found_pdf") if self.st.get("found") == "pdf" else None
+        for r, (v, line) in enumerate(self._cands):
+            same = f"{v:.4f}" == f"{calc:.4f}"
+            cells = (f"{v:.4f}", T("ms_cand_is_calc") if same else dev_text(ppm(v, calc)), line)
+            for c, txt in enumerate(cells):
+                it = QTableWidgetItem(txt)
+                if c == 2:
+                    it.setToolTip(line)
+                if same:
+                    it.setForeground(QBrush(QColor(TABS.STYLE.WARN_COLOR)))
+                    it.setToolTip(T("ms_cand_is_calc_tip"))
+                t.setItem(r, c, it)
+            if v == chosen:
+                t.selectRow(r)
+        t.blockSignals(False)
+        TABS.STYLE.fit_columns(t)
+        TABS.STYLE.fit_check_table(t, 6)
+        self._form.setRowVisible(t, show)
+        self._form.setRowVisible(self.cand_head, show)
+
+    def candidate_clicked(self, r, _c=None):
+        """Kandidat übernehmen (nur per Klick): found = "pdf", Wert in found_pdf (Herkunft „aus PDF gewählt“)."""
+        if 0 <= r < len(self._cands):
+            self.st.update(found="pdf", found_pdf=self._cands[r][0])
+            self.render()
+
+    def manual_edited(self):
+        """Eigener found-Wert (Herkunft „manuell“); geleert (0) nimmt ihn zurück. Nur bei Änderung ein Schritt."""
+        v = round(self.sp_manual.value(), 4) or None
+        if v == self.st.get("found_manual"):
+            return
+        found = "manual" if v else (None if self.st.get("found") == "manual" else self.st.get("found"))
+        self.st.update(found_manual=v, found=found)
+        self.render()
+
+    def report_image(self):
+        """Gewähltes Bild aus dem PDF-Bericht -> dict(page, xref, w, h, w_cm, h_cm, k) oder None."""
+        k = int(self.st.get("ms_img") or 0)
+        rep = self.ms_report() if k else None
+        imgs = (rep or {}).get("images") or []
+        return dict(imgs[k - 1], k=k) if 0 < k <= len(imgs) else None
+
+    def image_size_cm(self, im):
+        w, h = im["w_cm"], im["h_cm"]
+        return (TABS.SI_MAX_W_CM, h * TABS.SI_MAX_W_CM / w) if w > TABS.SI_MAX_W_CM else (w, h)
 
     def si_parts(self):
         """HR-MS-Zeile für den SI-Export (leer, wenn nichts da ist)."""
@@ -654,6 +852,7 @@ class HRMSTab(TABS.FigureTab):
         if items:
             txt = self.lbl_ms_info.text()
             self.lbl_ms_info.setText((txt + "\n" if txt else "") + T("ms_iso_info", items=", ".join(items)))
+            QTimer.singleShot(0, self._form, self._form.invalidate)
 
     def fill_ms_table(self, adduct, calc, found, dev):
         from PySide6.QtGui import QBrush, QColor
@@ -664,6 +863,7 @@ class HRMSTab(TABS.FigureTab):
                                                N(f"{found:.4f}", found), N(dev_text(dev), dev),
                                                N(("✓ " if ok else "⚠ ") + T("ea_chk_ms_ok" if ok else "ea_chk_ms_bad"),
                                                  T_en("ea_chk_ms_ok" if ok else "ea_chk_ms_bad"))]])
+        self._form.setRowVisible(self._ms_head, True)
         if not ok:
             for c in range(self.tbl_ms.columnCount()):
                 self.tbl_ms.item(0, c).setForeground(QBrush(QColor(TABS.STYLE.WARN_COLOR)))
@@ -686,12 +886,75 @@ class HRMSTab(TABS.FigureTab):
         return F
 
     def render(self):
-        super().render()
         if self._pick_cid is not None:
             self.canvas.mpl_disconnect(self._pick_cid)
             self._pick_cid = None
-        if self.F is not None:
-            self._pick_cid = self.canvas.mpl_connect("button_press_event", self.spectrum_clicked)
+        im = self.report_image()
+        if im is None:
+            super().render()
+            if self.F is not None:
+                self._pick_cid = self.canvas.mpl_connect("button_press_event", self.spectrum_clicked)
+            self.sync_empty()
+            return
+        # Bild aus dem PDF-Bericht unverändert zeigen (wie im Tab „Weitere“), gekennzeichnet als Bild aus dem Bericht
+        self.notes_begin()
+        for attr in ("dragger", "hover"):
+            if getattr(self, attr):
+                getattr(self, attr).disconnect()
+                setattr(self, attr, None)
+        self.fig.clear()
+        self.F = None
+        try:
+            self.update_ms()
+            self.draw_chromatogram()
+            p = self.st["ms_file"]
+            arr = self.cache(("msimg", p, im["xref"], os.path.getmtime(p)), lambda: pdf_image_array(p, im["xref"]))
+            w, h = self.image_size_cm(im)
+            self.host.set_figure_size(w / 2.54, h / 2.54)
+            ax = self.fig.add_axes([0, 0, 1, 1])
+            ax.imshow(arr)
+            ax.set_axis_off()
+            self.F = ax
+            self.preview_stack.setCurrentIndex(1)
+            self.show_caption()
+            self.canvas.draw_idle()
+            self.notes_show()
+        except Exception as ex:
+            self.preview_stack.setCurrentIndex(0)
+            self.notes_show(error=ex)
+        if self.label_card is not None:
+            self.label_card.fill(())
+        self.main.push_undo()
+
+    def sync_empty(self):
+        """PDF-Bericht geladen, aber kein Bild daraus gewählt und keine .d-Daten: ein Satz statt der allgemeinen
+        Anleitung (Nutzerwunsch); sonst die Anleitung."""
+        g = self.empty_guide
+        if g is None:
+            return
+        p = self.st.get("ms_file")
+        only = self.F is None and bool(p) and Path(p).suffix.lower() == ".pdf" and not self.st.get("ms_raw")
+        g.label.setText(f"<p style='font-size:15px'>{T('hrms_no_spectrum')}</p>" if only else TABS.guide_html(self.GUIDE))
+        if g.btn is not None:
+            g.btn.setVisible(not only)
+        g.fit_width()
+
+    def copy_figure(self, tmp):
+        if self.report_image() is not None:      # Bild aus dem Bericht: kein eigenes SVG (wie Tab „Weitere“)
+            return T("copy_fig_none")
+        return super().copy_figure(tmp)
+
+    def si_caption(self, name):
+        cap = super().si_caption(name)
+        return cap[:-1] + IMG_CAPTION + "." if self.report_image() is not None else cap
+
+    def si_figure(self, out_dir, name):
+        im = self.report_image()
+        if im is None:
+            return super().si_figure(out_dir, name)
+        png = pdf_image_png(self.st["ms_file"], im["xref"], Path(out_dir) / f"{core.safe_name(name)}_hrms_report.png")
+        w, h = self.image_size_cm(im)
+        return [("image", str(png), w, h, None), ("figcap", self.si_caption(name))]
 
     def spectrum_clicked(self, ev):
         """Klick auf einen Peak (nicht auf ein Label) -> als found übernehmen."""
@@ -717,7 +980,12 @@ class HRMSTab(TABS.FigureTab):
         """Abbildung (falls Rohdaten), Strichspektrum + Isotopenmuster als CSV und die SI-Zeile als Text."""
         base = Path(base)
         files = []
-        if self.ms_raw() is not None:
+        im = self.report_image()
+        if im is not None:                           # Bild aus dem PDF-Bericht unverändert als PNG
+            base.parent.mkdir(parents=True, exist_ok=True)
+            files = [pdf_image_png(self.st["ms_file"], im["xref"], PRJ.with_ext(base, ".png"))]
+            self.update_ms()
+        elif self.ms_raw() is not None:
             files = super().export_to(base)
             for f_ in [f_ for f_ in files if f_.name.endswith("_data.csv")]:   # Linienspektren sind keine Kurven:
                 f_.unlink(missing_ok=True)                                     # die Daten stehen in _sticks.csv

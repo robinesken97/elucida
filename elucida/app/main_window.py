@@ -5255,10 +5255,13 @@ class MainWindow(QMainWindow):
             files = [p for p in files if p not in xyzs]
             if not files:
                 return
-        # HRMS: MS-Berichte (docx) und Bruker-.d-Ordner; IR + EA: OPUS-Dateien, PDF nur auf dem Tab IR + EA
-        ms = [p for p in files if IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"]
-        irms = [p for p in files if IRMS.is_opus(p)
-                or (Path(p).suffix.lower() == ".pdf" and self.main_tabs.currentWidget() is self.irms_tab)]
+        # HRMS: MS-Berichte (docx, PDF nur auf dem Tab HRMS) und Bruker-.d-Ordner; IR + EA: OPUS-Dateien, PDF nur auf
+        # dem Tab IR + EA
+        on_hrms = self.main_tabs.currentWidget() is self.__dict__.get("hrms_tab")       # nicht bauen, nur vergleichen
+        ms = [p for p in files if IRMS.is_bruker_d(p) or Path(p).suffix.lower() == ".docx"
+              or (on_hrms and Path(p).suffix.lower() == ".pdf")]
+        irms = [p for p in files if p not in ms and (IRMS.is_opus(p)
+                or (Path(p).suffix.lower() == ".pdf" and self.main_tabs.currentWidget() is self.irms_tab))]
         if (ms or irms) and self.ensure_project():
             for p in ms:
                 (self.hrms_tab.load_raw if IRMS.is_bruker_d(p) else self.hrms_tab.load_ms)(p)

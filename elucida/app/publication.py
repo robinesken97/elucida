@@ -401,7 +401,8 @@ def checklist_of(st) -> dict:
         if re.search(rf"(?<!\d){nuc[:-1]}\s*{nuc[-1]}\s*NMR|{'¹H' if nuc == '1H' else '¹³C'}\s*NMR", txt):
             nuclei.add(nuc)
     have = {k for k, ok in (("1H", "1H" in nuclei), ("13C", "13C" in nuclei), ("2D", two_d),
-                            ("ms", bool(hr.get("ms_file") or hr.get("ms_raw") or ir.get("ms_file") or ir.get("ms_raw"))),
+                            ("ms", bool(hr.get("ms_file") or hr.get("ms_raw") or hr.get("found_manual")
+                                         or ir.get("ms_file") or ir.get("ms_raw"))),
                             ("ir", bool(ir.get("ir_file") or ir.get("ir_pdf"))), ("mp", bool(comp.get("mp") or comp.get("oil"))),
                             ("ea", bool(ir.get("ea_found"))), ("uvvis", bool(g("eps").get("files"))),
                             ("xray", bool(g("xray").get("entries")))) if ok}

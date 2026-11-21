@@ -95,7 +95,8 @@ def project_info(path) -> dict | None:
         "syn": bool(g("syn", "proc") or g("syn", "scheme")),
         "nmr": bool(g("nmr", "spectra") or g("nmr", "raw") or g("nmr", "mnova")),
         "ir": bool(g("irms", "ir_file") or g("irms", "ir_pdf")),
-        "ms": bool(g("hrms", "ms_file") or g("hrms", "ms_raw") or g("irms", "ms_file") or g("irms", "ms_raw")),
+        "ms": bool(g("hrms", "ms_file") or g("hrms", "ms_raw") or g("hrms", "found_manual") or g("irms", "ms_file")
+                   or g("irms", "ms_raw")),
         "uvvis": bool(g("eps", "files")),
         "uvkin": bool(g("uvkin", "entries")),
         "fluo": bool(g("fluo", "abs_file") or g("fluo", "em_file") or g("fluo", "decay_file")),

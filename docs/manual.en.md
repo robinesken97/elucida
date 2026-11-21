@@ -657,7 +657,16 @@ to Word or as part of the SI section.
     and the **calculated isotope pattern** of the ion mirrored below (red; fine structure that the TOF does not
     resolve, e.g. ¹³C/¹⁵N, merged); the measured/calculated isotope ratios (M+1, M+2 …) are listed;
   - **click a peak** to use it as *found* (besides the report value and the LC-peak mean).
-- Export: spectrum figure (PDF/SVG/PNG), `…_sticks.csv` (measured and calculated), `…_check.csv` (check table) and `…_SI.txt`.
+- **PDF report** (button or drag onto the HRMS tab): a Bruker "Compound Spectrum SmartFormula Report" is read
+  automatically – found is the value of the table row with the ion formula of the chosen ion, calc. is computed by
+  Elucida (warning if the report's calc. differs). From other PDFs with a text layer the numbers within ± 2 Da of
+  calc. appear as **candidates** with their text line and the deviation in ppm; nothing is preselected, only a
+  **click** takes a value ("From PDF"), a value equal to calc. is marked. Embedded images of the PDF can be chosen
+  under **Image from PDF** as the figure (unchanged, the caption says "image from the instrument report"; never whole
+  pages or logos). Header data (sample, path, operator) are never taken over. PDFs without a text layer (scans) are
+  rejected.
+- **Manual (m/z):** found entered by hand, always available and marked "Manual"; clearing removes the value.
+- Export: spectrum figure (PDF/SVG/PNG; with an image from the PDF that image as PNG), `…_sticks.csv` (measured and calculated), `…_check.csv` (check table) and `…_SI.txt`.
 - **Check against 5 ppm** (Angewandte: high resolution = 5 ppm): a table below *found* shows ion, calc., found,
   deviation in ppm and the status (above 5 ppm in the warning colour); *found* and the deviation are shown as tiles at
   the top right.
@@ -1621,7 +1630,7 @@ CV, SEC, H-Cell, EPR, CV stack and spectra of a comparison; not yet NMR, X-Ray, 
 | Synthesis | Scheme as CDXML (+ SVG/PDF), **.cdx** next to it for an editable ChemDraw object in Word, **.emf** for a sharp preview |
 | NMR | MestReNova **SVG** or **EMF** exports, Mnova report (text), **TopSpin** experiments/datasets (folder), **.mnova** documents |
 | IR + EA | Bruker **OPUS** (`.0`, `.1` …) and the OPUS **PDF** with peak labels; Raman as a text file (two columns) |
-| HRMS | Report of the mass-spectrometry department (**.docx**), Bruker raw data (**.d** with analysis.baf) |
+| HRMS | Report of the mass-spectrometry department (**.docx** or **PDF**), Bruker raw data (**.d** with analysis.baf) |
 | UV-Vis (ε) | **Cary** CSV/TXT exports, Cary WinUV **.DSW/.BSW** (parser from [parseuv](https://pypi.org/project/parseuv/)); several files form one data set |
 | TD-DFT | The UV-Vis formats above, TD-DFT outputs of **ORCA** (4–6, incl. SOC) and **Gaussian**, SEC series |
 | Fluorescence | Cary **Eclipse** CSV and .FBSW (excitation wavelength from the metadata) |
