@@ -7,7 +7,6 @@ nicht benachbarten Zyklen unterbrochen.
 """
 from __future__ import annotations
 
-import csv
 import filecmp
 import re
 import uuid
@@ -246,7 +245,7 @@ class HCellTab(TABS.FigureTab):
 
         g = QGroupBox(T("hcell_results"))
         v = QVBoxLayout(g)
-        self.tbl_res = STYLE.FitGrid(0, 6)
+        self.tbl_res = STYLE.name_table(STYLE.FitGrid(0, 6), "cycles", "Cycles")   # CSV mit Rohwerten: _cycles.csv
         STYLE.empty_note(self.tbl_res, T("hcell_results_none"))
         self.tbl_res.setHorizontalHeaderLabels([T("hcell_meas"), "#", "Q_charge [mAh]", "Q_discharge [mAh]",
                                                 T("hcell_pct_col"), "CE [%]"])
@@ -258,6 +257,7 @@ class HCellTab(TABS.FigureTab):
         v.addWidget(self.tbl_res)
         self.tbl_sum = STYLE.summary_grid([T("hcell_meas"), "Q_theo [mAh]", T("hcell_col_first"), T("hcell_col_last"),
                                            T("hcell_col_ret"), T("hcell_col_ce"), T("hcell_col_n"), T("hcell_col_h")])
+        STYLE.name_table(self.tbl_sum, "summary", "Summary per measurement", csv=True)
         v.addWidget(self.tbl_sum)                        # Zusammenfassung je sichtbarer Messung
         self.lv.addWidget(g)
         self.lv.addWidget(self.caption_box())
@@ -660,11 +660,13 @@ class HCellTab(TABS.FigureTab):
         self.tbl_res.fit()
         srows = []
         for e, _d, _rs, s, q, src in res:
-            cyc = lambda c: f"{c['q_dis']:.3f} ({f(c['pct_dis'], '.1f')} %, #{c['cycle']})"   # noqa: E731
-            srows.append([e["label"], f"{q:.3f} ({T('hcell_src_' + src)})" if q else "–",
+            N = STYLE.num                                # CSV: Kapazität als Zahl (Anteil und Zyklus in _cycles.csv)
+            cyc = lambda c: N(f"{c['q_dis']:.3f} ({f(c['pct_dis'], '.1f')} %, #{c['cycle']})", c["q_dis"])   # noqa: E731
+            num = lambda v, fmt: "–" if v is None else N(format(v, fmt), v)                                   # noqa: E731
+            srows.append([e["label"], N(f"{q:.3f} ({T('hcell_src_' + src)})", q) if q else "–",
                           cyc(s["first"]) if s["first"] is not None else "–",
                           cyc(s["last"]) if s["first"] is not None else "–",
-                          f(s["retention"], ".1f"), f(s["ce_mean"], ".1f"), str(s["n"]), f(s["hours"], ".1f")])
+                          num(s["retention"], ".1f"), num(s["ce_mean"], ".1f"), str(s["n"]), num(s["hours"], ".1f")])
         STYLE.fill_summary(self.tbl_sum, srows, hidden=() if many else (0,))
 
     def kpis(self):
@@ -682,16 +684,12 @@ class HCellTab(TABS.FigureTab):
         data = Path(base).resolve().with_name(Path(base).name + "_data.csv")
         data.unlink(missing_ok=True)
         files = [f for f in files if f != data]
-        p = Path(base).resolve().with_name(Path(base).name + "_cycles.csv")
-        with open(p, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh, delimiter=";")
-            w.writerow(["measurement", "cycle", "Q_charge_mAh", "Q_discharge_mAh", "Q_charge_percent",
-                        "Q_discharge_percent", "coulombic_efficiency_percent", "Q_theo_mAh", "Q_theo_source"])
-            for e, _d, rows, _s, q, src in self._results:
-                for r in rows:
-                    w.writerow([e["label"], r["cycle"]] + ["" if r[k] is None else f"{r[k]:.6g}" for k in
-                                                           ("q_ch", "q_dis", "pct_ch", "pct_dis", "ce")]
-                               + [f"{q:.6g}" if q else "", src or ""])
+        from elucida.core import tables as TBL         # früher mit Semikolon: jetzt die eine CSV-Form (Komma)
+        p = TBL.write_csv(Path(base).resolve().with_name(Path(base).name + "_cycles.csv"),
+                          ["measurement", "cycle", "Q_charge [mAh]", "Q_discharge [mAh]", "Q_charge [%]", "Q_discharge [%]",
+                           "coulombic efficiency [%]", "Q_theo [mAh]", "Q_theo source"],
+                          [[e["label"], r["cycle"]] + [r[k] for k in ("q_ch", "q_dis", "pct_ch", "pct_dis", "ce")]
+                           + [q or None, src or ""] for e, _d, rows, _s, q, src in self._results for r in rows])
         return files + [p]
 
     # -- SI ---------------------------------------------------------------------------------

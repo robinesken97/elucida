@@ -45,6 +45,7 @@ Eine Ansicht ist erst fertig, wenn jeder Punkt an einem Bild geprüft ist, nicht
   Zahlen aufrecht (*E*el, *H*, *G*, −*TS*, *A*iso, *g*, *J*, *T*, *k*, δ/λ/ε nach `ui.md`), überall gleich: Tabellenköpfe,
   Hinweise, Kacheln, Bildunterschriften, SI-Text, Word. Über den vorhandenen Weg (`RichHeader`, `SciLabel`,
   Zeichentabelle), nie von Hand im Text formatiert; ein Kopf mit kursivem *E* neben aufrechtem H ist ein Fehler.
+- Jede neue Ergebnistabelle bekommt mit `name_table` einen Dateinamen und ein Blatt, zeigt „Kopieren“ und steht im Selbsttest-Abschnitt „Tables (decision 170)“ (Datei vorhanden, Mappe = Bildschirm). Angezeigte Zahlen mit Rohwert über `STYLE.num`, Texte der Zellen (Status, Hinweise) für Dateien englisch über `T_en`. Schreibt eine neue Ansicht Kurvenpunkte als CSV, kommt ihre Endung in `TABS.CURVE_CSV` (Blatt „data“ in der Mappe, Selbsttest vergleicht mit der CSV).
 
 ## Beispielprojekt
 - Jede neue Ansicht hat erfundene Daten im Beispielprojekt (`app/demo.py`), an denen ihr Normalfall und, wo es einen

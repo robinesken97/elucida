@@ -4644,7 +4644,7 @@ class MainWindow(QMainWindow):
             h_, r_ = xt.crystal_table()
             r_ = [[c_.replace(", ", "\n") if row_[0] == "Index ranges" else c_ for c_ in row_] for row_ in r_]
             names = [e.get("name") or e["block"] for e in es]
-            blocks += [("tabcap", "Crystal data and structure refinement", ", ".join(names)), ("crystal", h_, r_)]
+            blocks += [("tabcap", "Crystal data and structure refinement for", ", ".join(names)), ("crystal", h_, r_)]
         return blocks
 
     def fill_table(self, results, cfg):
@@ -4730,11 +4730,14 @@ class MainWindow(QMainWindow):
             return self.error(str(self._eps_error[1]) if self._eps_error else T("load_first"))
         if not self.ensure_project():
             return
+        self._eps_partial = False
         try:
             out = self.export_all()
         except PermissionError as e:
             return self.error(T("report_locked", p=getattr(e, "filename", "") or ""))
         used = [T("export_eps_series", n=len(self.groups))] if len(self.groups) > 1 else []
+        if not self._eps_partial:                      # Report gesperrt: unvollständig, nichts als veraltet ansehen
+            used += self.retire_exports("eps", out)
         self.exported((p.parent for p in out), out, used, [(T("export_change_formats"), self.show_eps_formats)])
 
     def show_export_card(self, key, label=None):
@@ -4977,7 +4980,8 @@ class MainWindow(QMainWindow):
             files = [f for b in batch for f in b[1]]
             missing = [name(k) for k in dict.fromkeys(keys) if k not in done]
             used = ([T("export_all_used", tabs=", ".join(name(k) for k in done))] if done else []) + \
-                ([T("export_all_missing", tabs=", ".join(missing))] if missing else [])
+                ([T("export_all_missing", tabs=", ".join(missing))] if missing else []) + \
+                list(dict.fromkeys(u for b in batch for u in b[2]))     # je Tab: z. B. Dateien in den Papierkorb
             self.exported([f for b in batch for f in b[0]], files, used,
                           [(T("export_change_formats"), self.show_eps_formats)])
         return files
@@ -5016,6 +5020,7 @@ class MainWindow(QMainWindow):
                                           results, g, files=self.csv_paths, version=APP_VERSION)
                 written.append(Path(rep))
             except PermissionError:
+                self._eps_partial = True
                 self.error(T("report_locked", p=folder_g / f"{name}_report.xlsx"))
         if folder is None and self.export_fmt().get("pptx"):
             written = self._eps_pptx(written)
@@ -5064,6 +5069,23 @@ class MainWindow(QMainWindow):
             return False
         self.add_recent_publication(q)
         return self.new_compound_in_publication(name)
+
+    def retire_exports(self, key, out):
+        """Nach einem Export des Tabs `key`: was der vorige Export schrieb und dieser nicht mehr, in den Papierkorb
+        (PRJ.retire_stale, Entscheidung 170) – nur nach einem vollständigen Export ins Projekt: nicht bei Auswahl
+        einzelner Dateien (Tab „Export“), nicht in der Schnellauswertung, nicht mit ausgelassenen oder zurückgehaltenen
+        Teilen. Ein Fehler hier stört den Export nie. -> Zeilen für die Exportmeldung"""
+        if (self.__dict__.get("_export_only") is not None or self.is_quick() or not self.project_dir
+                or self._skips or self._held):
+            return []
+        try:
+            gone, failed = PRJ.retire_stale(self.project_dir, key, out)
+        except Exception:                                # Manifest nicht schreibbar: nichts verschieben, nur Protokoll
+            self.log_signal.emit(traceback.format_exc())
+            return []
+        names = lambda ps: ", ".join(sorted(p.name for p in ps))         # noqa: E731
+        return (([T("export_retired", f=names(gone))] if gone else [])
+                + ([T("export_retired_failed", f=names(failed))] if failed else []))
 
     def place_exports(self, files):
         """Exporte ablegen: im Projekt nach figures/, tables/, SI/ – in einer Schnellauswertung in einen gewählten
@@ -5350,6 +5372,14 @@ class MainWindow(QMainWindow):
         fmts = list(dict.fromkeys(Path(f).suffix[1:].upper() for f in files if Path(f).suffix))
         if fmts:
             lines.append(T("export_formats", f=", ".join(fmts)))
+        per = {}                                          # Dateien je Ordner (Entscheidung 170: wo liegt was)
+        for f in files:
+            per[Path(f).parent] = per.get(Path(f).parent, 0) + 1
+        if per:
+            lines.append(T("export_counts", c=" · ".join(f"{d.name}/ {n}" for d, n in sorted(per.items(),
+                                                                                         key=lambda x: str(x[0])))))
+            if any(Path(f).suffix.lower() == ".csv" for f in files):   # deutsches Excel liest Komma-CSV als eine Spalte
+                lines.append(T("tbl_excel_hint"))
         lines += [u for u in used if u]
         held = list(self._held) if self._skips is not None else []
         if held:                                          # zurückgehalten (Freigabe fehlt): eine Zeile + „Details“
@@ -5360,8 +5390,12 @@ class MainWindow(QMainWindow):
             msg += "\n\n" + self.skips_text()
             view += "\n\n" + self.skips_text()
         self.last_export = folders
-        if folders:
-            links = list(links) + [(T("open_folder"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(folders[0])))]
+        tables = sorted({str(d) for d in per if d.name == PRJ.TABLES})
+        if tables:                                        # Tabellen liegen nie in folders[0] (= SI/): eigener Sprung
+            links = list(links) + [(T("open_tables"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(tables[0])))]
+        if folders:                                       # mehrere Ordner: die Verbindung (gemeinsamer Elternordner)
+            top = folders[0] if len(folders) == 1 else os.path.commonpath(folders)
+            links = list(links) + [(T("open_folder"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(top)))]
         n = len(self._skips or ())                       # ausgelassene Teile: zugeklappt eine Zeile (Entscheidung 57)
         brief = T("notice_hints_1" if n == 1 else "notice_hints", n=n,
                   head=T("notice_si_saved" if head else "notice_exported")) if n else None

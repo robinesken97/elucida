@@ -142,7 +142,7 @@ S2/
   project.elucida        Einstellungen (Pfade relativ zum Ordner)
   SI/                    Word-Dateien und SI-Texte: S2_SI.docx, S2_NMR.docx, S2_UV-Vis_methods.txt …
   figures/               Abbildungen (PDF/SVG/PNG): S2_CV.pdf, S2_X-ray.svg, <Serie>_UV-Vis.png …
-  tables/                Tabellen und Datendateien: S2_CV_results.csv, <Serie>_UV-Vis_report.xlsx, xyz …
+  tables/                Tabellen und Datendateien: S2_CV_results.csv, S2_DFT_tables.xlsx, <Serie>_UV-Vis_report.xlsx, xyz …
   data/nmr/ data/cv/ …   Kopien der Messdaten, ein Ordner je Analytik
   structures/            ChemDraw-Strukturen (mit ihren Exporten), Schemata, Fotos
   .elucida/              Zwischenbilder für Word, Cache, Sicherung (versteckt)
@@ -184,6 +184,35 @@ steckt dort noch ein Kürzel, nennt das Protokoll die Datei.
 
 Jeder Export aus den Tabs TD-DFT, UV-Vis-Kinetik, Fluoreszenz, CV, SEC und EPR schreibt zusätzlich `…_data.csv` mit genau den
 gezeichneten Kurven (ein x/y-Spaltenpaar pro Kurve, Werte ohne Stapelversatz) – für Origin, Excel oder MATLAB.
+
+### Tabellen: Dateien, Excel und Kopieren
+
+Jede Ergebnistabelle einer rechten Seite (Ergebnisse, Zusammenfassungen, Prüfungen) ist auch eine Datei und lässt sich
+kopieren. **Für Excel `<Verbindung>_<Tab>_tables.xlsx` öffnen; CSV-Dateien sind für Origin/Python** (in Excel über
+**Daten > Aus Text/CSV**: ein deutsches Excel öffnet eine Komma-CSV per Doppelklick als eine Spalte – keine CSV-Form
+passt überall).
+
+
+- **CSV** (`tables/<Verbindung>_<Tab>_<Tabelle>.csv`, z. B. `S3_H-Cell_summary.csv`): eine Form für alle Tabs – Komma als
+  Trennzeichen, Punkt als Dezimalzeichen, UTF-8 mit BOM (Excel und Origin öffnen sie direkt), englische Köpfe als
+  `Name [Einheit]` (Einheiten als `M^-1 cm^-1`, Indizes und Hochzahlen als `_` und `^`, griechische Buchstaben und Å/°
+  bleiben), einfaches Minus, **volle Rohwerte** (gerundet wird nur am Bildschirm, im Bild und in Word).
+- **Excel** (`tables/<Verbindung>_<Tab>_tables.xlsx`): ein Blatt je Tabelle mit **genau den Zahlen des Bildschirms**,
+  als Zahlen mit passendem Zahlenformat (nicht als Text). Der UV-Vis-(ε)-Bericht `<Serie>_UV-Vis_report.xlsx` bleibt wie
+  er ist (seine Spektren stehen dort schon im Blatt „Spektren“); X-Ray schreibt seine Tabellen in sein eigenes `…_tables.xlsx`.
+  Dazu stehen die **Kurvendaten** jedes Tabs (`…_data.csv`, Abklingkurve `…_decay.csv`, HRMS `…_sticks.csv`, PXRD
+  `…_pxrd_calculated.csv`, NICS-Scan) als Blatt **„data“** in derselben Mappe: dieselben Spalten und Köpfe wie die CSV, volle
+  Rohwerte als Zahlen. Ein Tab mit Kurven, aber ohne Ergebnistabelle bekommt die Mappe nur mit diesem Blatt.
+- **Kopieren** (Knopf an der Karte, Rechtsklick oder Strg+C in der Tabelle): Word erhält eine formatierte
+  Dreilinien-Tabelle (mit typografischem Minus), Excel dieselben Zellen als Zahlen mit Dezimalpunkt – in einem Schritt,
+  das Ziel entscheidet.
+- **Dateien, die ein Export nicht mehr schreibt** (z. B. `…_results.csv`, nachdem der Kinetik-Tab auf Titration
+  umgestellt wurde), wandern nach einem vollständigen Export des Tabs in den **Papierkorb** und stehen in der
+  Exportmeldung. Betroffen sind nur Dateien, die Exporte dieser Verbindung selbst geschrieben haben (Liste in
+  `.elucida/exports.json`); Dateien älterer Versionen, selbst abgelegte Dateien, einzelne Kacheln des Tabs Export,
+  Schnellauswertungen und fehlgeschlagene oder unvollständige Exporte löschen nie etwas.
+- Die **Exportmeldung** zählt die Dateien je Ordner (`SI/ 1 · figures/ 3 · tables/ 4`) und bietet **tables/ öffnen**.
+  Auch der Tab **Export** schreibt die Tabellen jedes exportierten Tabs.
 
 ### Projekte
 
@@ -661,7 +690,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
     und dem **berechneten Isotopenmuster** des Ions gespiegelt darunter (rot; Feinstruktur, die das TOF nicht trennt,
     z. B. ¹³C/¹⁵N, zusammengefasst); die gemessenen/berechneten Isotopenverhältnisse (M+1, M+2 …) stehen dabei;
   - **Peak anklicken**, um ihn als *found* zu übernehmen (neben dem Wert aus dem Bericht und dem Mittel über den LC-Peak).
-- Export: Spektrum als Abbildung (PDF/SVG/PNG), `…_sticks.csv` (gemessen und berechnet) und `…_SI.txt`.
+- Export: Spektrum als Abbildung (PDF/SVG/PNG), `…_sticks.csv` (gemessen und berechnet), `…_check.csv` (Prüftabelle) und `…_SI.txt`.
 - **Prüfung gegen 5 ppm** (Angewandte: hohe Auflösung = 5 ppm): eine Tabelle unter *found* zeigt Ion, calc., found,
   Abweichung in ppm und den Status (über 5 ppm in der Warnfarbe); oben rechts stehen *found* und die Abweichung als
   Kacheln.
@@ -870,7 +899,7 @@ Wie sich die Spektren einer Lösung über die Zeit ändern – Stabilität über
   und es gibt keine Halbwertszeit.
 - Keine Korrektur für Schichtdicke oder Konzentration: Absorbanz wie gemessen.
 - Rechts: Abbildung, **Ergebnisse** (Tabelle je Messpunkt, Zusammenfassung je Reihe: erster und letzter Wert, Rest in
-  %, Dauer, k und t½), SI-Text. Export: Abbildung und `…_kinetics.csv` (Reihe, Name, Zeit, A, relativ).
+  %, Dauer, k und t½), SI-Text. Export: Abbildung, `…_results.csv` (Reihe, Name, Zeit, A, relativ; bis 1.3 `…_kinetics.csv`) und `…_summary.csv`.
 
 ### Titration
 
@@ -930,7 +959,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   entfallen). Φ trägt man ein (0 < Φ ≤ 1 oder in %); es wird hier nicht bestimmt. Bei zwei Exponentialen wählt man, welche
   mittlere Lebensdauer für k_r/k_nr gilt; ein Hinweis unter der Tabelle nennt sie.
 - SI-Export: zweite Abbildung (Abklingkurve mit Residuen) mit eigener Unterschrift; Methodentext mit Modell, Gewichtung,
-  Intervallen und Ergebnissen; Export zusätzlich `…_decay` (Bild) und `…_decay.csv` (Zeit, Messwert, Fit, Residuum).
+  Intervallen und Ergebnissen; Export zusätzlich `…_decay` (Bild), `…_decay.csv` (Zeit, Messwert, Fit, Residuum), `…_lifetime_fit.csv`, `…_lifetime_summary.csv` und `…_photophysics.csv`.
 
 
 ## CV-Tab (Cyclovoltammetrie)
@@ -1098,7 +1127,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Ergebnisse:** Tabelle je Zyklus der gewählten Messung (Q_charge, Q_discharge, Kapazität in %, Effizienz) und für
   jede sichtbare Messung erste/letzte Entladekapazität, Erhalt (letzte/erste), mittlere Effizienz und Dauer; Erhalt und
   mittlere Effizienz als Kacheln. Keine Glättung, keine Fits, keine Unsicherheiten.
-- **Export:** Abbildung und die Zyklustabelle als CSV (`…_cycles.csv`); Bildunterschrift (Konzentration, Elektrolyt) und
+- **Export:** Abbildung, die Zyklustabelle (`…_cycles.csv`) und die Zusammenfassung (`…_summary.csv`); Bildunterschrift (Konzentration, Elektrolyt) und
   Methodentext im Reiter SI-Text.
 
 ## EPR-Tab (CW-EPR)
@@ -1193,7 +1222,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Export für EasySpin:** Neben der Abbildung wird jede Messung als zweispaltige Textdatei (B in mT, Intensität) in
   voller Auflösung nach Dunkelspektrum, Basislinie und Glättung geschrieben – ohne Normierung und ohne ausgeblendete
   Bereiche – mit `%`-Kopfzeilen zu Frequenz, Temperatur und Verarbeitung (`load(...)` in MATLAB, direkt für `esfit`).
-  Die Intensitätsreihe wird als `…_intensity.csv` gespeichert.
+  Die Intensitätsreihe wird als `…_intensity.csv` gespeichert (Spalte `role`: Referenz, Probe oder Messung; x und y mit Einheiten; Kalibriergerade und Zerfalls-/Arrhenius-Fits als Zeilen mit Parameter, Wert und Intervall).
 - **Spindichte und Hyperfeinkopplungen aus einer Rechnung:** Schritt **Daten**, Karte **Rechnung (DFT)**: eine
   Gaussian-16-Ausgabe einer offenschaligen Rechnung wählen (Mulliken-Spinpopulationen und Fermi-Kontakt-Kopplungen
   stehen in jeder solchen Ausgabe, die Dipolkopplungen mit `Prop=EPR`), dazu wahlweise eine Molden- oder Cube-Datei
@@ -1299,8 +1328,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Standardabweichung), wahlweise **Spalte Δ** (Rechnung − Kristall); dasselbe in Excel/CSV und Word, dort mit einer
   Fußnote zur Geometrie (Gasphase oder solvatisiert, wie die Rechnung angibt) und der RMSD. Mit Rechnung stehen die
   Werte immer in der Tabelle, nicht in der Bildunterschrift.
-- Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv` und
-  `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar, der **Hintergrund** wählbar (weiß, transparent, Farbe; gilt
+- Export: je Struktur eine Abbildung (PDF/SVG vektoriell, PNG) sowie `…_crystal_data.csv`, `…_parameters.csv`,
+  `…_contacts.csv` (Packung) und `…_tables.xlsx`. Die Labelgröße ist je Tab einstellbar, der **Hintergrund** wählbar (weiß, transparent, Farbe; gilt
   auch für Word).
 - **Packung** (Karte im Schritt Darstellung): „Abbildung: Packung (Elementarzelle)“ zeigt die Elementarzelle mit ihrem
   Inhalt – ganze Moleküle, deren Schwerpunkt in der Zelle liegt, oder alle, die mit mindestens einem Atom in ihr liegen –
@@ -1338,7 +1367,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   (HOMA = 1 − EN − GEO, Krygowski & Cyrański 1996). Ein Ring mit einem Bindungstyp ohne Literaturparameter (z. B. C–B,
   C–Si, Metall) bekommt keinen Wert, sondern den Hinweis, welche Bindung fehlt. Für HOMA wird keine Standardabweichung
   angegeben. „Werte im Bild“ setzt den Wert in die Ringmitte (wie ein Label ziehbar); „In die SI“ bringt die Tabelle mit
-  Formel und Zitaten in die SI und eine `…_HOMA.csv` in den Export.
+  Formel und Zitaten in die SI und immer eine `…_HOMA.csv` in den Export (die SI-Pille gilt nur für Word).
 
 ## DFT-Tab
 

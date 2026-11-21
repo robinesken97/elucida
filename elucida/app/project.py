@@ -464,6 +464,40 @@ def place_exports(project_dir, files) -> list:
     return out
 
 
+MANIFEST = "exports.json"              # .elucida/exports.json: je Export-Schlüssel die zuletzt geschriebenen Dateien
+
+
+def retire_stale(project_dir, key, written):
+    """Nach einem vollständig gelungenen Export (Entscheidung 170): Dateien, die der vorige Export unter `key`
+    schrieb und dieser nicht mehr, in den Papierkorb (nie löschen). Ohne Eintrag (erster Export mit Manifest, ältere
+    Versionen) nur vermerken: Dateien ohne Eintrag bleiben unberührt. -> (in den Papierkorb, nicht verschiebbar)"""
+    import json
+    from PySide6.QtCore import QFile
+    root = Path(project_dir)
+    mf = root / WORK / MANIFEST
+    try:
+        data = json.loads(mf.read_text(encoding="utf-8")) if mf.exists() else {}
+    except (OSError, ValueError):
+        data = {}
+    now = []
+    for p in map(Path, written):
+        try:
+            now.append(p.resolve().relative_to(root.resolve()).as_posix())
+        except ValueError:                             # außerhalb der Verbindung (Schnellauswertung): nie verwalten
+            pass
+    gone, failed = [], []
+    for rel in data.get(key) or []:
+        if rel in now or "/" not in rel or rel.split("/", 1)[0] not in (SI_DIR, FIGURES, TABLES):
+            continue                                   # nur eigene Exportordner, nie Daten/Strukturen
+        p = root / rel
+        if p.is_file():
+            (gone if QFile.moveToTrash(str(p)) else failed).append(p)
+    data[key] = sorted(set(now) | {p.relative_to(root).as_posix() for p in failed})
+    work_dir(root)
+    mf.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    return gone, failed
+
+
 # -- Leere ChemDraw-Dateien je Verbindung (Nutzerwunsch: sofort in ChemDraw bearbeitbar, ohne erst eine anzulegen) ----
 # Dokumenteinstellungen wie ChemDraw-Stil „ACS Document 1996“: Bindungslänge 14.4 pt, Abstand 18 %, Linie 0.6 pt,
 # fett 2 pt, Rand 1.6 pt, Schraffur 2.5 pt, Kettenwinkel 120°, Arial 10 (Labels im Formelstil)

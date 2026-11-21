@@ -902,6 +902,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                                           "G" + STYLE.QTY + " [Eₕ]"])   # kursiv; Einheit im Kopf wie in Word
         self.tbl_si2 = STYLE.summary_grid([T("dft_si_col_name"), "E_nuc [Eₕ]", "H_corr [Eₕ]", "−TS [Eₕ]", T("dft_si_col_prog"),
                                            T("dft_si_col_input")])
+        STYLE.name_table(self.tbl_si, "energies", "Energies")             # Rohwerte (Text der Ausgabe): _energies.csv
+        STYLE.name_table(self.tbl_si2, "energy_details", "Energy details")
         for t in (self.tbl_si, self.tbl_si2):
             t.elide_col = 0                                  # lange Namen gekürzt, Tooltip mit dem vollen Namen
             v.addWidget(t)
@@ -915,6 +917,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         v.addWidget(self.lbl_si_inp)
         self.btn_si_tbl_copy = STYLE.copy_button(T("dft_si_tbl_copy_tip"))
         self.btn_si_tbl_copy.clicked.connect(self.copy_si_table)
+        self.btn_si_tbl_copy.setProperty("tablecopy", True)  # kopiert die Tabelle schon (HTML + TSV): kein zweiter Knopf
         self.btn_si_xyz = QPushButton(T("dft_si_xyz"))
         self.btn_si_xyz.setToolTip(T("dft_si_xyz_tip"))
         self.btn_si_xyz.clicked.connect(lambda: self.save_collection())
@@ -1879,7 +1882,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         from elucida.tabs.ir_ea import copy_rich
         head = [h for _, h in SI_TABLE_HEAD]
         note = si_table_note(rows, prog)
-        pl = "\n".join("\t".join(r) for r in [head] + rows) + "\n" + XRAY.to_plain(note) + " " + prog
+        pl = ("\n".join("\t".join(r) for r in [head] + rows) + "\n" + XRAY.to_plain(note) + " " + prog
+              ).replace("\u2212", "-")                    # Excel: ASCII-Minus (Entscheidung 170)
         ht = XRAY.table_html([m for m, _ in SI_TABLE_HEAD], [[XRAY.esc_markup(v) for v in r] for r in rows])
         import html as _h
         copy_rich(pl, ht + f"<p>{XRAY.to_html(note)} {_h.escape(prog)}</p>")
@@ -2259,19 +2263,15 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
             g = self.geometry(e)
             files.append(write_xyz(PRJ.with_ext(stem, ".xyz"), g[0], self.order(e, len(g[1]))))
         files.append(self.write_collection(base.with_name(base.name + "_structures.xyz")))   # ACS: eine Datei
-        if self.st.get("homa_si"):                       # HOMA je Ring (Haken „In die SI“ der Karte HOMA)
-            files += self.homa.export_csv(base.with_name(base.name + "_HOMA.csv"),
-                                          [(e.get("name") or Path(e["file"]).stem, e) for e in es])
+        files += self.homa.export_csv(base.with_name(base.name + "_HOMA.csv"),     # immer; der Haken „In die SI“
+                                      [(e.get("name") or Path(e["file"]).stem, e) for e in es])   # gilt nur für Word
         rows, prog = self.si_table()
         if rows:                                         # Energietabelle maschinenlesbar (dieselben Zahlen wie die SI)
-            import csv
-            out = base.with_name(base.name + "_energies.csv")
-            with open(out, "w", newline="", encoding="utf-8-sig") as fh:
-                w = csv.writer(fh)
-                w.writerow([h.replace("−", "-") for _, h in SI_TABLE_HEAD] + ["Program"])
-                for r, (_, _, c) in zip(rows, self.calc_items()):          # CSV: fehlend = leere Zelle
-                    w.writerow(["" if v == DASH else v.replace("−", "-") for v in r] + [method_line(c)[0]])
-            files.append(out)
+            from elucida.core import tables as TBL
+            files.append(TBL.write_csv(base.with_name(base.name + "_energies.csv"),
+                                       [h for _, h in SI_TABLE_HEAD] + ["Program"],
+                                       [["" if v == DASH else v for v in r] + [method_line(c)[0]]   # fehlend = leer
+                                        for r, (_, _, c) in zip(rows, self.calc_items())]))
         from elucida.tabs import dft_pop as POP          # Ladungen/Spinpopulationen als CSV (gedruckte Werte)
         files += [f for f in [POP.write_csv(self, base.with_name(base.name + "_charges.csv"))] if f]
         if any(self.calc_of(e) is not None for e in es):

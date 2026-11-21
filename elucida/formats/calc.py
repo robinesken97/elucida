@@ -479,7 +479,7 @@ def parse_gaussian_epr(text) -> dict:
                 m = _DIP_ROW.match(L[j])
                 if m:
                     at = int(m.group(1)) - 1 if m.group(1) else at
-                    rows.append((float(m.group(4)), float(m.group(5))))
+                    rows.append((float(m.group(4)), float(m.group(5)), m.group(4)))   # Text: CSV wie gedruckt („-0.000“)
                     if m.group(2) == "cc" and at is not None and len(rows) == 3:
                         dipole[at] = rows
                     if m.group(2) == "cc":

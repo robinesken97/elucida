@@ -14,6 +14,7 @@ den vollen Wert, nur das Zahlenformat rundet.
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from pathlib import Path
 
 import numpy as np
@@ -543,3 +544,74 @@ def _spectra_sheet(ss, cfg, raw_spectra, spectra, unit):
     colors = _spectrum_colors(cfg, [spectra[i] for i in order])
     return dict(sheet=ss, n=n if len(xs) else 0, x_col=2, col0=c_corr, first=R_HEAD + 1, last=last, xlim=xlim,
                 ylim=ylim, colors=colors)
+
+
+def write_tables(path, sheets, curves=()):
+    """`<Verbindung>_<Tab>_tables.xlsx` (Entscheidung 170): je Tabelle des Bildschirms ein Blatt im Stil des Reports,
+    Zahlen genau wie angezeigt als Zahlenzellen (Format mit denselben Stellen), Übriges als Text.
+    sheets: [(Titel, Kopf, Zeilen der angezeigten Texte)]. -> path"""
+    wb = Workbook()
+    wb.remove(wb.active)
+    add_table_sheets(wb, sheets)
+    add_data_sheets(wb, curves)
+    wb.save(path)
+    return path
+
+
+def add_data_sheets(wb, csvs):
+    """Kurvendaten (Entscheidung 170, Robin: deutsches Excel öffnet die Komma-CSV nicht per Doppelklick): je Kurven-CSV
+    ein Blatt „data“ (weitere „data <Teil>“) mit genau den Werten der CSV als Zahlenzellen, Kopf wie dort, ohne Stil
+    je Zelle (Dateigröße). csvs: [(Blattname, Pfad)]"""
+    import csv
+    used = {ws.title.lower() for ws in wb.worksheets}
+    for title, path in csvs:
+        name, k = title[:31], 2
+        while name.lower() in used:
+            name, k = f"{title[:28]} {k}", k + 1
+        used.add(name.lower())
+        ws = wb.create_sheet(name)
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            for i, row in enumerate(csv.reader(fh)):
+                ws.append(row if i == 0 else [_csv_value(v) for v in row])
+        ws.freeze_panes = "A2"
+
+
+def _csv_value(v):
+    """Zelle der CSV -> Zahl, sonst Text; leer -> keine Zelle."""
+    if v == "":
+        return None
+    for conv in (int, float):
+        try:
+            return conv(v)
+        except ValueError:
+            pass
+    return v
+
+
+def add_table_sheets(wb, sheets):
+    """Blätter von `write_tables` an eine Arbeitsmappe anhängen (X-Ray: hinter Kristalldaten und Parametern)."""
+    from elucida.core import tables as TBL
+    used = {ws.title.lower() for ws in wb.worksheets}
+    for title, head, rows in sheets:
+        name = re.sub(r"[\[\]:*?/\\]", " ", TBL.plain(title)).strip()[:31] or "Table"
+        k = 2
+        while name.lower() in used:
+            name = f"{name[:28]} {k}"
+            k += 1
+        used.add(name.lower())
+        ws = wb.create_sheet(name)
+        _sheet(ws, [2] + [max(12, min(40, 2 + max([len(TBL.header(h))] + [len(str(r[c])) for r in rows if c < len(r)])))
+                          for c, h in enumerate(head)])
+        _put(ws, 2, 2, TBL.plain(title), F_TITLE, align=LEFT)
+        ws.row_dimensions[2].height = 26
+        _head(ws, 4, 2, [TBL.header(h) for h in head], left=(0,))
+        for ri, row in enumerate(rows, 5):
+            for c in range(len(head)):
+                v = row[c] if c < len(row) else ""
+                num = TBL.screen_number(v) if v not in (None, "") else None
+                if num is not None:
+                    _put(ws, ri, 2 + c, num[0], fmt=num[1], align=LEFT if c == 0 else CENTER, border=ROW_LINE)
+                else:
+                    _put(ws, ri, 2 + c, TBL.plain(v) if v not in (None, "") else None, align=LEFT if c == 0 else CENTER,
+                         border=ROW_LINE)
+            ws.row_dimensions[ri].height = ROW_H

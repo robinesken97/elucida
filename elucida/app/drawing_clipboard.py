@@ -2,7 +2,7 @@
 from __future__ import annotations
 import base64
 import sys
-from PySide6.QtCore import QMimeData
+from elucida.app import style as STYLE
 from PySide6.QtWidgets import QApplication
 
 MAX = 32 * 1024 * 1024
@@ -72,7 +72,7 @@ def copy_drawing(payload):
             if not board.setData_forType_(NSData.dataWithBytes_length_(raw, len(raw)), name):
                 raise RuntimeError('macOS rejected a clipboard format')
     else:
-        mime = QMimeData()
+        mime = STYLE.clip_mime()
         for name, raw in data.items():
             mime.setData(name, raw)
         QApplication.clipboard().setMimeData(mime)
@@ -94,7 +94,7 @@ def copy_picture(svg, png):
                 raise RuntimeError('macOS rejected a clipboard format')
     else:                                   # shortcut: Windows/Linux-Typen nicht in Office geprüft; prüfen, sobald ein Windows-Rechner bereitsteht
         from PySide6.QtGui import QImage
-        mime = QMimeData()
+        mime = STYLE.clip_mime()
         mime.setData('image/svg+xml', svg)
         mime.setData('image/png', png)
         mime.setImageData(QImage.fromData(png, 'PNG'))

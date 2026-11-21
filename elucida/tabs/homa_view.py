@@ -1,7 +1,6 @@
 """HOMA in den Tabs X-Ray und DFT (Paket A 1.2.0): Karte „Aromatizität (HOMA)“ im Schritt Auswertung, Seite „HOMA“
 rechts (Tabelle je Ring), Werte wahlweise in der Ringmitte des Molekülbilds (ziehbar), SI-Tabelle und CSV.
 Rechnung in `core/homa.py`; Ringe wie im Packungsbild (`xray.mol_rings`: ebene 5–7-Ringe ohne Sehne)."""
-import csv
 from pathlib import Path
 
 import matplotlib.patheffects as PE
@@ -89,7 +88,7 @@ class HomaView:
         v = QVBoxLayout(self.page)
         heads = [T("homa_col_ring"), "n" + STYLE.QTY, "HOMA", "EN", "GEO", "R_av [Å]",
                  "NICS(0) [ppm]", "NICS(1) [ppm]", "NICS(1)zz [ppm]", T("homa_col_note")]
-        self.tbl = STYLE.summary_grid(heads)
+        self.tbl = STYLE.name_table(STYLE.summary_grid(heads), "HOMA", "HOMA")   # Rohwerte: _HOMA.csv
         self.tbl.elide_col = 0                              # lange Ringe gekürzt, voller Name im Tooltip
         STYLE.rich_header(self.tbl)
         v.addWidget(self.tbl)
@@ -274,10 +273,8 @@ class HomaView:
                              + ["; ".join(H.bond_name(t) for t in res["missing"])])
         if not lines:
             return []
-        path = Path(path)
-        with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh)
-            w.writerow(["Structure", "Ring", "n", H.PARAMS[self.tab.st.get("homa_var", "homa")]["name"], "EN", "GEO",
-                        "R_av [A]", "NICS(0) [ppm]", "NICS(1) [ppm]", "NICS(1)zz [ppm]", "Missing parameters"])
-            w.writerows(lines)
+        from elucida.core import tables as TBL
+        path = TBL.write_csv(Path(path), ["Structure", "Ring", "n", H.PARAMS[self.tab.st.get("homa_var", "homa")]["name"],
+                                          "EN", "GEO", "R_av [Å]", "NICS(0) [ppm]", "NICS(1) [ppm]", "NICS(1)zz [ppm]",
+                                          "Missing parameters"], lines)
         return [path]

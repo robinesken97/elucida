@@ -12,7 +12,6 @@ esd:   Standardabweichungen nur aus der CIF (_geom_bond/_geom_angle/_geom_torsio
 """
 from __future__ import annotations
 
-import csv
 import itertools
 import math
 import re
@@ -1538,13 +1537,9 @@ def crystal_values(b: Block, ref="", ccdc=""):
 
 
 def write_table_csv(path, header, rows):
-    """rows: [[markup, …]] -> CSV (UTF-8 mit BOM, Unicode-Tief-/Hochstellung)."""
-    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-        w = csv.writer(fh)
-        w.writerow([to_plain(h) for h in header])
-        for r in rows:
-            w.writerow([to_plain(c) for c in r])
-    return path
+    """rows: [[markup, …]] -> CSV (core.tables: UTF-8 mit BOM, Komma, Kopf „Name [Einheit]“, ASCII-Minus)."""
+    from elucida.core import tables as TBL
+    return TBL.write_csv(path, [to_plain(h) for h in header], [[to_plain(c) for c in r] for r in rows])
 
 
 def table_html(header, rows, title=None, notes=()):
@@ -3511,7 +3506,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from elucida.core import uvvis as core  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
 from elucida.tabs import base as TABS  # noqa: E402
-from elucida.app.i18n import T  # noqa: E402
+from elucida.app.i18n import T, T_en  # noqa: E402
 from elucida.tabs.ir_ea import copy_rich  # noqa: E402
 from elucida.app import style as STYLE  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
@@ -5187,6 +5182,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.tbl_pack_res = STYLE.summary_grid([T("xray_pack_col_contact"), T("xray_pack_col_kind"), "d [Å]",
                                                 T("xray_pack_col_angle"), T("xray_pack_col_slip"),
                                                 T("xray_pack_col_sym")])
+        STYLE.name_table(self.tbl_pack_res, "contacts", "Packing contacts", csv=True)   # früher nur in captions.txt
         STYLE.rich_header(self.tbl_pack_res)
         v.addWidget(self.tbl_pack_res)
         self.lbl_pack_res = STYLE.SciLabel(empty=T("xray_pack_res_none"))
@@ -5368,11 +5364,12 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         names, codes, syms = contact_names(mol, [c for c, _ in cs], rings)
         res = []
         for (c, geo), name, sym in zip(cs, names, syms):
-            res.append([name, T("xray_pack_kind_" + c["kind"]),
-                        f"{geo['value']:.3f}" if geo["value"] is not None else "–",
-                        f"{geo['angle']:.1f}" if geo.get("angle") is not None else "–",
-                        f"{geo['slip']:.3f}" if c["kind"] == "cent" or (c["kind"] == "plane" and geo["value"] is not None)
-                        else "–", sym])
+            N = STYLE.num
+            res.append([name, N(T("xray_pack_kind_" + c["kind"]), T_en("xray_pack_kind_" + c["kind"])),
+                        N(f"{geo['value']:.3f}", geo["value"]) if geo["value"] is not None else "–",
+                        N(f"{geo['angle']:.1f}", geo["angle"]) if geo.get("angle") is not None else "–",
+                        N(f"{geo['slip']:.3f}", geo["slip"]) if c["kind"] == "cent" or
+                        (c["kind"] == "plane" and geo["value"] is not None) else "–", sym])
         STYLE.fill_summary(self.tbl_pack_res, res)
         notes = []
         for n_, atoms_ in cg_definitions(mol, rings, [c for c, _ in cs]):
@@ -5929,19 +5926,13 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         files = [PRJ.with_ext(stem, "." + x) for x in [F.cfg["_main_fmt"]] + F.cfg["extra_formats"]]
         x_ = F.curves[-1]["x"]
         y_ = F.curves[-1]["y"]
-        p = stem.with_name(stem.name + "_reflections.csv")
-        with open(p, "w", encoding="utf-8", newline="") as fh:
-            w_ = csv.writer(fh)
-            w_.writerow(["h", "k", "l", "d [A]", "2theta [deg]", "multiplicity", "|F|^2", "I rel"])
-            imax = max((r["I"] for r in spec[3]), default=1.0) or 1.0
-            for r in spec[3]:
-                w_.writerow([*r["hkl"], f"{r['d']:.5f}", f"{r['tth']:.4f}", r["m"], f"{r['F2']:.3f}",
-                             f"{100 * r['I'] / imax:.2f}"])
-        q = stem.with_name(stem.name + "_calculated.csv")
-        with open(q, "w", encoding="utf-8", newline="") as fh:
-            w_ = csv.writer(fh)
-            w_.writerow(["2theta [deg]", "I calc (max = 1)"])
-            w_.writerows([f"{a:.3f}", f"{b:.5f}"] for a, b in zip(x_, y_))
+        from elucida.core import tables as TBL         # BOM, Kopf „Name [Einheit]“ mit Å und ° (Entscheidung 170)
+        imax = max((r["I"] for r in spec[3]), default=1.0) or 1.0
+        p = TBL.write_csv(stem.with_name(stem.name + "_reflections.csv"),
+                          ["h", "k", "l", "d [Å]", "2θ [°]", "multiplicity", "|F|^2", "I rel [%]"],
+                          [[*r["hkl"], r["d"], r["tth"], r["m"], r["F2"], 100 * r["I"] / imax] for r in spec[3]])
+        q = TBL.write_csv(stem.with_name(stem.name + "_calculated.csv"), ["2θ [°]", "I calc (max = 1)"],
+                          [[a, b] for a, b in zip(x_, y_)])
         return files + [p, q]
 
     def caption(self, e=None):
@@ -6432,6 +6423,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         ws2 = wb.create_sheet("Selected parameters")
         h2, r2, notes = self.params_table()
         self._sheet(ws2, h2, r2, notes, "Selected bond lengths [Å], angles and torsion angles [°]")
+        from elucida.si import excel as XL               # Ergebnistabellen der Reiter (Packung, HOMA) wie angezeigt
+        XL.add_table_sheets(wb, [(sh, h_, r_) for _, sh, h_, r_ in TABS.table_sheets(self)])
         wb.save(path)
         return path
 
@@ -6439,6 +6432,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
     def _sheet(ws, header, rows, notes, title):
         """Tabelle im Stil des UV-Vis-Reports (`si/excel.py`): kein Gitter, Titel, Kopfzeile mit Linie, feine Zeilenlinien,
         erste Spalte links, übrige mittig; Fußnoten gedämpft darunter. Tabellen wie überall englisch beschriftet."""
+        from elucida.core import tables as TBL
         from elucida.si import excel as XL
         XL._sheet(ws, [2, 38] + [36] * max(len(header) - 1, 0) + [2])
         XL._put(ws, 2, 2, title, XL.F_TITLE, align=XL.LEFT)
@@ -6451,8 +6445,9 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         for ri, row in enumerate(rows, r0 + 1):
             for c in range(len(header)):
                 v = row[c] if c < len(row) else None
-                XL._put(ws, ri, 2 + c, to_rich_xlsx(v) if v else None, align=XL.LEFT if c == 0 else XL.CENTER,
-                        border=XL.ROW_LINE)
+                num = TBL.screen_number(v) if v and c and isinstance(v, str) else None   # reine Zahl: Zahlenzelle
+                XL._put(ws, ri, 2 + c, num[0] if num else (to_rich_xlsx(v) if v else None), fmt=num[1] if num else None,
+                        align=XL.LEFT if c == 0 else XL.CENTER, border=XL.ROW_LINE)
             ws.row_dimensions[ri].height = XL.ROW_H
         for k, n in enumerate(notes):
             XL._put(ws, r0 + len(rows) + 2 + k, 2, to_rich_xlsx(n), XL.F_MUTED, align=XL.LEFT)
@@ -6512,17 +6507,20 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                                       if any(self.pack(e).get(f) for f in ("on", "used", "si")) else "")
                                    for e in es) + "\n", encoding="utf-8")
         files.append(cap)
-        if self.st.get("homa_si"):                       # HOMA je Ring (Haken „In die SI“ der Karte HOMA)
-            files += self.homa.export_csv(base.with_name(base.name + "_HOMA.csv"),
-                                          [(e.get("name") or e["block"], e) for e in es])
+        files += self.homa.export_csv(base.with_name(base.name + "_HOMA.csv"),   # immer; der Haken „In die SI“
+                                      [(e.get("name") or e["block"], e) for e in es])   # gilt nur für Word
+
         h, r = self.crystal_table()
         files.append(write_table_csv(base.with_name(base.name + "_crystal_data.csv"), h, r))
         h2, r2, notes = self.params_table()
         files.append(write_table_csv(base.with_name(base.name + "_parameters.csv"), h2, r2 + [[n] for n in notes]))
         try:
             files.append(self.write_excel(base.with_name(base.name + "_tables.xlsx")))
-        except PermissionError:
-            self.main.error(T("report_locked", p=base.with_name(base.name + "_tables.xlsx")))
+        except PermissionError as ex:                    # Teil fehlt: in der Exportmeldung, nichts als veraltet ansehen
+            if getattr(self.main, "_skips", None) is not None:
+                self.main.skip_part(ex, base.with_name(base.name + "_tables.xlsx"))
+            else:
+                self.main.error(T("report_locked", p=base.with_name(base.name + "_tables.xlsx")))
         return files
 
 

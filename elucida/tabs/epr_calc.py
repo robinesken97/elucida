@@ -7,7 +7,6 @@ flachen Schlüsseln `spin_*`/`hfc_*` des Tabs.
 """
 from __future__ import annotations
 
-import csv
 import html
 import re
 import unicodedata
@@ -814,23 +813,23 @@ class SpinPages:
                 + [T("epr_calc_group")])
 
     def write_csv(self, kind, path):
-        """Rohwerte wie in der Ausgabe (CSV behält die Stellen der Rechnung)."""
+        """Rohwerte wie in der Ausgabe (CSV behält die Stellen der Rechnung; core.tables)."""
+        from elucida.core import tables as TBL
         d = self.data()
-        with open(path, "w", encoding="utf-8-sig", newline="") as fh:
-            w = csv.writer(fh)
-            if kind == "spin":
-                w.writerow(["atom", "element", "Mulliken spin population", "percent of sum"])
-                for k, (v, p) in enumerate(zip(d["spin"], percents(d["spin"]))):
-                    w.writerow([k + 1, d["els"][k], f"{v:.6f}", f"{p:.4f}"])
-            else:
-                bad = bad_groups(d, self.exp_groups(), self.assign())
-                group_of = {k: gi for gi, ats in self.assign().items() if gi not in bad for k in ats}
-                w.writerow(["atom", "nucleus", "A_iso [MHz]", "A_iso [G]", "B_aa [MHz]", "B_bb [MHz]", "B_cc [MHz]",
-                            "assigned group"])
-                for k, (iso, mhz, gauss) in sorted(d["fermi"].items()):
-                    b = d["dipole"].get(k) or [("", "")] * 3
-                    w.writerow([k + 1, iso, f"{mhz:.5f}", f"{gauss:.5f}"] + [x[0] for x in b]
-                               + [int(group_of[k]) + 1 if k in group_of else ""])
+        if kind == "spin":
+            TBL.write_csv(path, ["atom", "element", "Mulliken spin population", "percent of sum"],
+                          [[k + 1, d["els"][k], f"{v:.6f}", f"{p:.4f}"]
+                           for k, (v, p) in enumerate(zip(d["spin"], percents(d["spin"])))])
+        else:
+            bad = bad_groups(d, self.exp_groups(), self.assign())
+            group_of = {k: gi for gi, ats in self.assign().items() if gi not in bad for k in ats}
+            rows = []
+            for k, (iso, mhz, gauss) in sorted(d["fermi"].items()):
+                b = d["dipole"].get(k) or [("", "")] * 3
+                rows.append([k + 1, iso, f"{mhz:.5f}", f"{gauss:.5f}"] + [x[2] if len(x) > 2 else x[0] for x in b]
+                            + [int(group_of[k]) + 1 if k in group_of else ""])
+            TBL.write_csv(path, ["atom", "nucleus", "A_iso [MHz]", "A_iso [G]", "B_aa [MHz]", "B_bb [MHz]", "B_cc [MHz]",
+                                 "assigned group"], rows)
         return Path(path)
 
     # -- Oberfläche ----------------------------------------------------------------------------
@@ -998,7 +997,8 @@ class SpinPages:
         hint.setStyleSheet(STYLE.HINT_CSS)
         cv.addWidget(hint)
         heads = self.headers(kind)
-        t = self.tables[kind] = STYLE.FitGrid(0, len(heads))
+        t = self.tables[kind] = STYLE.name_table(STYLE.FitGrid(0, len(heads)), kind,
+                                                 {"spin": "Spin density", "hfc": "Hyperfine couplings"}.get(kind, kind))
         t.setHorizontalHeaderLabels(heads)
         t.verticalHeader().setVisible(False)
         t.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1011,6 +1011,7 @@ class SpinPages:
         v.addWidget(stack, 1)
         self.pages[kind] = content
         b = STYLE.copy_button(T("epr_calc_copy_tip"))
+        b.setProperty("tablecopy", True)                   # result_page: kein zweites „Kopieren“
         b.clicked.connect(lambda _=False, kind=kind: self.copy_table(kind))
         STYLE.card_actions(g, b)
         return g
@@ -1158,7 +1159,7 @@ class SpinPages:
         d = self.data() if self.has_data() else None
         if d is None:
             return
-        QApplication.clipboard().setText("\n".join("\t".join(r) for r in [self.headers(kind)] + self.rows(kind, d)))
+        STYLE.copy_tables([self.tables[kind]])            # Word (HTML) und Excel (TSV) in einem Eintrag
 
     # -- Dateien -------------------------------------------------------------------------------
     def _pick(self, title, flt):
