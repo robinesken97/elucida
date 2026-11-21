@@ -289,7 +289,7 @@ class _DemoPub:
                 if self.masters:                           # was anders ist als bei der vorigen Vorlage
                     a_, b_ = dict(json.loads(self.last_key)[1]), dict(json.loads(key)[1])
                     lang_ = [] if json.loads(self.last_key)[0] == json.loads(key)[0] else ["lang"]
-                    why = "new key: " + ", ".join(lang_ + sorted(k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k)))
+                    why = "new key: " + ", ".join(sorted(set(lang_) | {k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k)}))
                 self.masters[key] = (snap, time.time())
                 self.last_key = key
             self.calls.append((line, "built", time.perf_counter() - t0, why))
@@ -311,6 +311,16 @@ class _DemoPub:
         w.statusBar().showMessage(T("demo_pub_done", p=str(folder)), 10000)
         self.calls.append((line, "copied", time.perf_counter() - t0, ""))
         return folder
+
+
+def _until(cond, pump_fn, limit=10.0, step=0.05):
+    """Bedingungs-Wait (Selbsttest Stufe 2): Ereignisse verarbeiten, bis cond() gilt, höchstens limit s. -> cond().
+    Nur für eindeutige Bedingungen (etwas muss eintreten); „nichts passiert“ braucht weiter die volle Wartezeit."""
+    t_end = time.perf_counter() + limit
+    pump_fn(step)
+    while not cond() and time.perf_counter() < t_end:
+        pump_fn(step)
+    return cond()
 
 
 def _filled_ct(comp):
@@ -7302,10 +7312,10 @@ def selftest(outdir, with_isnet=False):
             w.dft_state["zero_based"] = False
             pump(0.3)
             w.undo()                                                               # Umnummerieren rückgängig
-            pump(0.4)
+            _until(lambda: not w._restoring, pump)   # war pump(0.4)
             assert w.dft_state["entries"][0]["order"] is None, w.dft_state["entries"][0]["order"]
             w.redo()
-            pump(0.4)
+            _until(lambda: not w._restoring, pump)   # war pump(0.4)
             t_d = w.dft_tab
             assert w.dft_state["entries"][0]["order"] == [1, 3, 2, 0, 4, 5, 6, 7]
             sx_ = t_d.save_xyz(out / "dft" / "dtest_new.xyz")
@@ -11710,7 +11720,7 @@ def selftest(outdir, with_isnet=False):
             assert w.compound["mw"] == drawn_ct["mw"] and ct_.ed_mw.text() == f"{drawn_ct['mw']:g}"
             # Rückgängig: Verbindung zurück, der Tab bleibt offen
             w.undo()
-            pump(0.4)
+            _until(lambda: not w._restoring, pump)   # war pump(0.4)
             assert w.compound["mw"] == 123.45 and w._tab_keys[w.main_tabs.currentIndex()] == "compound"
             assert w.comp_tab.ed_mw.text() == "123.45"
             w.set_compound(keep_ct)
@@ -16752,7 +16762,7 @@ def selftest(outdir, with_isnet=False):
             pump_a1(0.5)
             assert not w.groups and len(w._undo) == u_a1 + 1, (len(w._undo), u_a1)
             w.undo()
-            pump_a1(1.0)
+            _until(lambda: not w._restoring, pump_a1)   # war pump_a1(1.0)
             assert [Path(x_).name for x_ in w.csv_paths] == [Path(x_).name for x_ in eps_a1] and w.groups, w.csv_paths
             assert w.act_export_si.isEnabled() and w.act_datapack.isEnabled()
             w.go_publication()
@@ -17087,7 +17097,7 @@ def selftest(outdir, with_isnet=False):
                 assert saved_f1.get(k_) == want_f1[k_], (k_, saved_f1.get(k_))
             assert saved_f1.get("photo"), saved_f1
             w.undo()
-            pump_f1(1.5)
+            _until(lambda: not w._restoring, pump_f1)   # war pump_f1(1.5)
             assert [Path(x_).name for x_ in w.csv_paths] == old_f1 and w.series[g_f1]["solvent"] == "MeCN", \
                 (w.csv_paths, old_f1, w.series.get(g_f1, {}).get("solvent"), len(w._undo), n_f1)
             report.append("Lane A fix 1 (eps series settings survive new data of the same series, saved, undoable): OK")
@@ -17514,7 +17524,7 @@ def selftest(outdir, with_isnet=False):
             pump_x(0.3)
             assert not w.export_fmt()["svg"] and not w.cv_tab.fmt()["svg"]
             w.undo()
-            pump_x(0.5)
+            _until(lambda: not w._restoring, pump_x)   # war pump_x(0.5)
             assert w.export_fmt()["svg"] and w._tab_key == "export" and w.export_tab.cb_fmt["svg"].isChecked()
             # Vorschaubilder ohne Tab-Bau: aus dem letzten Export (figures/*.png); nie veraltet: das neueste gewinnt
             old_th = w.export_tab.thumb("cv", 0, None)
@@ -17645,10 +17655,10 @@ def selftest(outdir, with_isnet=False):
             pump_y(0.3)
             assert w.export_state["si_off"] == ["cv", "hcell"]
             w.undo()
-            pump_y(0.5)
+            _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert w.export_state.get("si_off") == ["hcell"] and w._tab_key == "export"
             w.redo()
-            pump_y(0.5)
+            _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert w.si_figs_off() == {"cv", "hcell"}
             pk_y = next(c_.pill for c_ in w.export_tab.cards                 # Packung: Pille statt Haken im X-Ray-Tab
                         if c_.key == "xray" and c_.label.endswith(T("export_part_packing")))
@@ -17658,7 +17668,7 @@ def selftest(outdir, with_isnet=False):
             pk_st = lambda: all((e_.get("pack") or {}).get("si") for e_ in w.xray_state["entries"])   # noqa: E731
             assert pk_st() == (not on_y) and w._tab_key == "export"
             w.undo()
-            pump_y(0.5)
+            _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert pk_st() == on_y and w._tab_key == "export"
             # ein Ort (67/93): im X-Ray-Tab statt der Haken ein Hinweis mit Link auf die Karte
             xt_y = w.xray_tab
@@ -18709,10 +18719,10 @@ def selftest(outdir, with_isnet=False):
                 assert t_n1.view.ph0 == 0.0
                 pump(0.3)
                 w.undo()
-                pump(0.5)
+                _until(lambda: not w._restoring, pump)   # war pump(0.5)
                 assert w.nmr_tab.current()["proc"]["phc0"] == 30.0 and w.nmr_tab.current()["proc"]["ref_status"] == "confirmed"
                 w.redo()
-                pump(0.5)
+                _until(lambda: not w._restoring, pump)   # war pump(0.5)
                 assert w.nmr_tab.current()["proc"]["phc0"] == 45.0
                 # Ausschnitt aus der Ansicht: reine Zahlen im Zustand (YAML), Bereich auf der unkalibrierten Achse
                 t_n1 = w.nmr_tab
@@ -19579,7 +19589,7 @@ def selftest(outdir, with_isnet=False):
             assert w.nmr_tab.current()["view"]["si_xlim"] == want_r2, w.nmr_tab.current()["view"]
             assert len(w.nmr_tab.current()["view"]["insets"][0]["parts"]) == 2
             w.undo()                                                    # je Schnitt ein Rückgängig-Schritt
-            pump(0.3)
+            _until(lambda: not w._restoring, pump)   # war pump(0.3)
             assert len(w.nmr_tab.current()["view"]["insets"][0].get("parts") or [None]) == 1, w.nmr_tab.current()["view"]
             report.append("NMR round 2 tab (export notice with withheld figures, open suggestions in the count, SI "
                           "range only from the field, view kept over language/theme/undo, grid, 2D SI tab, superscript "
@@ -19775,10 +19785,10 @@ def selftest(outdir, with_isnet=False):
             assert pr_bl["bl_model"] == "bernstein3" and pr_bl["baseline"] is True
             assert not np.array_equal(w.nmr_tab.raw_y(w.nmr_tab.current())["y"], y5_bl)
             w.undo()
-            pump(0.5)
+            _until(lambda: not w._restoring, pump)   # war pump(0.5)
             assert "bl_model" not in w.nmr_tab.current()["proc"] and w.nmr_tab.cmb_baseline.currentData() == "poly5"
             w.redo()
-            pump(0.5)
+            _until(lambda: not w._restoring, pump)   # war pump(0.5)
             assert w.nmr_tab.cmb_baseline.currentData() == "bernstein3"
             w.nmr_tab.cmb_baseline.setCurrentIndex(2)
             pump(0.3)
@@ -20219,7 +20229,7 @@ def selftest(outdir, with_isnet=False):
             t_nc.set_cmp_mode("overlay")
             t_nc = w.nmr_tab
             w.undo()
-            pump(0.2)
+            _until(lambda: not w._restoring, pump)   # war pump(0.2)
             t_nc = w.nmr_tab
             assert t_nc.cmp_mode() == "stack", t_nc.cmp_mode()
             w.save_project()
