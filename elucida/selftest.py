@@ -16796,7 +16796,10 @@ def selftest(outdir, with_isnet=False):
                 else:
                     w.switch_theme(step_a2)
                 pump_a2(2.0)
-                assert view_a2() == start_a2 and w._tab_key == "cv", (step_a2, view_a2(), start_a2, want_a2)
+                assert view_a2() == start_a2 and w._tab_key == "cv", (
+                    step_a2, view_a2(), start_a2, want_a2, "max", w.cv_tab._left_parts[2].verticalScrollBar().maximum(),
+                    "column h", w.cv_tab._left_parts[2].widget().height(), "first_done", w.cv_tab._first_done,
+                    "label rows/table h", w.cv_tab.label_card.table.rowCount(), w.cv_tab.label_card.table.height())
             w.resize(size_a2)
             cif_a2 = Path(shutil.copy(next((dp_a2 / "S3").rglob("*.cif")), out / "a2_drop.cif"))
             m_a2 = QMD_a2()
