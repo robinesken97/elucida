@@ -2967,6 +2967,8 @@ class XrayFigure:
             t += r"$^{\math" + ("bf" if bold else "rm") + "{" + a["sym"] + "}}$"
         return t
 
+    LABEL_CLEAR = 0.5    # Atomlabels mindestens eine halbe Schrifthöhe auseinander (Rand der Schrift = Halo mitgezählt)
+
     def _labels(self):
         o = self.opts
         if not o.get("labels", True):
@@ -3034,6 +3036,7 @@ class XrayFigure:
         segpts = np.vstack(segpts) if segpts else np.zeros((0, 2))
         seghw = np.concatenate(seghw) if seghw else np.zeros(0)
         boxes = []
+        clear = self.LABEL_CLEAR * fs * ppt               # Mindestabstand zwischen zwei Labels (px)
 
         def cost(bx):
             x0, y0, x1, y1 = bx
@@ -3053,6 +3056,8 @@ class XrayFigure:
                 oy = min(y1, b[3]) - max(y0, b[1])
                 if ox > 0 and oy > 0:
                     c += 3.0 * ox * oy
+                if ox > -clear and oy > -clear:          # näher als `clear`: las sich als ein Label („C1 C2“,
+                    c += 6.0 * (clear + min(ox, oy))     # Windows-Bericht 2026-11-20); je näher, desto teurer
             fw, fh = W, H
             if x0 < 0 or y0 < 0 or x1 > fw or y1 > fh:
                 c += 1e4

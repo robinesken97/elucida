@@ -3023,12 +3023,24 @@ class OverlayTab(FigureTab):
         arrows.addWidget(btns[5])
         arrows.addWidget(btns[6])
         arrows.addStretch(1)
+        # passen die vier Hinzufügen-Knöpfe nicht über die Knöpfe der zweiten Reihe (EN „Measurement …“, breitere Schrift
+        # unter Windows), zwei Reihen zu je zwei statt einer breiteren Spalte (Spalte bleibt COLUMN_W)
+        tabs_ = self.tabs_button(list_style=True)
+        for b_ in btns + [tabs_]:
+            b_.ensurePolished()
+        wd_ = lambda b_: b_.sizeHint().width()                     # noqa: E731
+        below_ = (wd_(btns[4]), 2 * 34 + arrows.spacing(), wd_(btns[7]), wd_(tabs_))   # Pfeile: 34 px (tidy)
+        two_ = sum(max(wd_(a_), b_) for a_, b_ in zip(btns[:4], below_)) + 3 * grid.spacing() > STYLE.INNER_W
         for k_ in range(4):
-            grid.addWidget(btns[k_], 0, 2 * k_, 1, 2)
-        grid.addWidget(btns[4], 1, 0, 1, 2)
-        grid.addLayout(arrows, 1, 2, 1, 2)
-        grid.addWidget(btns[7], 1, 4, 1, 2)
-        grid.addWidget(self.tabs_button(list_style=True), 1, 6, 1, 2)
+            if two_:
+                grid.addWidget(btns[k_], k_ // 2, 4 * (k_ % 2), 1, 4)
+            else:
+                grid.addWidget(btns[k_], 0, 2 * k_, 1, 2)
+        r_ = 2 if two_ else 1
+        grid.addWidget(btns[4], r_, 0, 1, 2)
+        grid.addLayout(arrows, r_, 2, 1, 2)
+        grid.addWidget(btns[7], r_, 4, 1, 2)
+        grid.addWidget(tabs_, r_, 6, 1, 2)
         v.addLayout(grid)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["", T("ov_name"), T("ov_color"), T("ov_type")])

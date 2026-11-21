@@ -100,17 +100,19 @@ def match_experiment(spec, raws, spectra=()):
     return hits[0] if len(hits) == 1 else None
 
 
-def params_html(p):
-    """Kleine Tabelle für die Anzeige im Tab."""
+def params_rows(p):
+    """Bruker-Parameter für die Tabelle im Tab: [(Beschriftung, Text, HTML)]; HTML setzt Massenzahlen hoch und Ziffern
+    der Lösungsmittelformel tief (wie die Bildunterschrift), der Text bleibt zum Kopieren."""
     rows = []
 
-    def add(lab, val):
+    def add(lab, val, html=None):
         if val not in (None, ""):
-            rows.append(f"<tr><td>{_h.escape(lab)}</td><td>{_h.escape(str(val))}</td></tr>")
-    add(T("nmr_p_nuc"), p.get("nucleus") + (f" / {p['nucleus2']}" if p.get("nucleus2") else "") if p.get("nucleus") else "")
+            rows.append((lab, str(val), html or _h.escape(str(val))))
+    nucs = [n for n in (p.get("nucleus"), p.get("nucleus2")) if n]
+    add(T("nmr_p_nuc"), sup_nuclei(" / ".join(nucs)), XRAY.to_html(" / ".join(nuc_markup(n) for n in nucs)))
     add(T("nmr_p_pulprog"), p.get("pulprog"))
-    add(T("nmr_p_solvent"), p.get("solvent"))
-    add("T", f"{p['te']:.1f} K" if p.get("te") else "")
+    add(T("nmr_p_solvent"), p.get("solvent"), XRAY.to_html(solvent_markup(p["solvent"])) if p.get("solvent") else None)
+    add(T("nmr_temp"), f"{p['te']:.1f} K" if p.get("te") else "")
     add("SFO1", f"{p['sfo1']:.4f} MHz" if p.get("sfo1") else "")
     add("O1P", f"{p['o1p']:.3f} ppm" if p.get("o1p") is not None else "")
     add("SW", f"{p['sw']:.2f} ppm" if p.get("sw") else "")
@@ -122,7 +124,7 @@ def params_html(p):
     if p.get("sfo1_2"):
         add("F1: SFO1 / SW", f"{p['sfo1_2']:.4f} MHz / {p.get('sw2') or 0:.1f} ppm")
     add(T("nmr_p_probe"), p.get("probe"))
-    return "<table cellspacing='0' cellpadding='1'>" + "".join(rows) + "</table>"
+    return rows
 
 
 # ---------------------------------------------------------------------------- Mnova-Text
@@ -1402,6 +1404,13 @@ class NMRTab(QWidget):
         self.lbl_par = STYLE.HintLabel("", wordWrap=True)
         self.lbl_par.setTextFormat(Qt.RichText)
         f.addRow(self.lbl_par)
+        # Bruker-Parameter als Tabelle wie alle Tabellen (Windows-Bericht 2026-11-20: vorher loses Textraster ohne
+        # Hoch-/Tiefstellung); Werte über RichDelegate (¹H, CDCl₃), kopiert wird der Text
+        self._par_html = {}
+        self.tbl_par = STYLE.summary_grid([T("xr_par_head"), T("xr_par_value")])
+        self.tbl_par.setItemDelegateForColumn(1, STYLE.RichDelegate(
+            self.tbl_par, lambda s: self._par_html.get(s) or _h.escape(s)))
+        f.addRow(self.tbl_par)
         row = QHBoxLayout()
         self.cb_struct = QCheckBox(T("nmr_struct_on"))
         self.cb_struct.setProperty("chip_here", True)        # gehört zur Zeile „Struktur“ darüber
@@ -1764,6 +1773,7 @@ class NMRTab(QWidget):
         self.lbl_struct.setText(T("nmr_struct_from", f=Path(sp_).name) if sp_ else T("nmr_struct_none"))
         if s is None:
             self.lbl_par.setText("")
+            STYLE.fill_summary(self.tbl_par, [])
             self.lbl_nuc.setText(T("nmr_select_first"))       # Grund für die gesperrten Felder
             self.lbl_nuc.setStyleSheet(HINT_CSS)
             return
@@ -1782,8 +1792,11 @@ class NMRTab(QWidget):
         self.cmb_spos.setCurrentIndex(max(0, self.cmb_spos.findData(s.get("struct_pos", "auto"))))
         self.sp_sw.setValue(self.struct_w())
         p = s.get("params")
-        self.lbl_par.setText(params_html(p) if p else T("nmr_no_bruker"))
-        self.lbl_par.setStyleSheet("" if p else HINT_CSS)     # Hinweis grau wie alle Hinweise, Parameter als Text
+        rows = params_rows(p) if p else []
+        self._par_html = {txt: html for _, txt, html in rows}
+        STYLE.fill_summary(self.tbl_par, [[lab, txt] for lab, txt, _ in rows])
+        self.lbl_par.setText("" if p else T("nmr_no_bruker"))
+        self.lbl_par.setStyleSheet(HINT_CSS)
 
     def fill_source(self, s):
         """Auswahl „Quelle“: Mnova nur mit SVG/EMF-Datei, Bruker nur mit verknüpftem Experiment."""

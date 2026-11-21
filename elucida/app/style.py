@@ -1153,7 +1153,10 @@ def _first_text(root):
 
 
 def _choose_rows(root):
-    """Dateizeilen: „Wählen …“ in einer Spalte; ohne Papierkorb reicht der Knopf bis zu dessen rechter Kante."""
+    """Dateizeilen: „Wählen …“ in einer Spalte; ohne Papierkorb reicht der Knopf bis zu dessen rechter Kante. Der Name
+    davor (Text oder Feld) füllt den Rest der Wertespalte: ein fest breites Feld vor dem verbreiterten Knopf zog sonst die
+    ganze Spalte breiter (EPR „Rechnung (DFT)“, Windows-Bericht 2026-11-20)."""
+    from PySide6.QtWidgets import QLineEdit
     from elucida.app.i18n import T
     rows = []
     for lay in root.findChildren(QHBoxLayout):
@@ -1161,7 +1164,7 @@ def _choose_rows(root):
         for i, b in enumerate(ws):
             if isinstance(b, QPushButton) and (b.text() == T("choose") or b.property("chooselike")):
                 t = ws[i + 1] if i + 1 < len(ws) and isinstance(ws[i + 1], QPushButton) and not ws[i + 1].text() else None
-                rows.append((lay, b, t, ws[i - 1] if i and isinstance(ws[i - 1], QLabel) else None))
+                rows.append((lay, b, t, ws[i - 1] if i and isinstance(ws[i - 1], (QLabel, QLineEdit)) else None))
     if not rows:
         return
     bw = max(84, *(b.sizeHint().width() for _, b, _t, _l in rows))

@@ -22500,6 +22500,162 @@ def _g_nmr_own(ctx):
             report.append(f"Example project from the template: first open builds with {len(pcts_tp)} progress steps "
                           f"({build_tp:.1f} s), later opens copy ({copy_tp:.2f} s, same content, edits replaced), wrong "
                           "key or damaged template = no copy, never in recent lists or the overview: OK")
+        # ---- lane-darstellung (Windows-Bericht 2026-11-20): EPR-Spalte, Atom-/Bandenlabels, NMR-Parameter ----
+        def pump_ds(sec=0.3):
+            t0_ = time.time()
+            while time.time() - t0_ < sec:
+                QApplication.processEvents()
+                time.sleep(0.01)
+        with section:
+            # Linke Spalte im EPR-Tab springt nicht: die Dateizeilen der Karte „Rechnung (DFT)“ (Feld + „Wählen …“)
+            # waren 28 px breiter als die Wertespalte (_choose_rows kannte nur Textnamen), die Spalte wuchs nur im
+            # Schritt Daten
+            d_ds = Path(w.open_demo_publication(out / "ds_pub"))   # nie der echte Datenordner
+            assert w.open_project(d_ds / "S3", ask=False, recent=False)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("epr"))
+            pump_ds(0.5)
+            cp_ds = w.epr_tab.calc_pages
+            btns_ds = [b_ for b_ in cp_ds.ed_file.parentWidget().findChildren(QPushButton) if b_.text() == T("choose")]
+            assert len(btns_ds) == 2, len(btns_ds)
+            for ed_, b_ in zip((cp_ds.ed_file, cp_ds.ed_orb), btns_ds):
+                assert ed_.maximumWidth() + 8 + b_.maximumWidth() == STYLE.VALUE_W, (ed_.maximumWidth(), b_.maximumWidth())
+            # alle Tabs und Schritte, DE und EN: Spalte überall COLUMN_W (TD-DFT EN: vier Hinzufügen-Knöpfe jetzt 2 × 2)
+            lang0_ds, wide_ds, n_ds = get_lang(), [], 0
+            try:
+                for lang_ in ("de", "en"):
+                    w.switch_lang(lang_)
+                    pump_ds(0.4)
+                    for key_ in w._tab_keys:
+                        idx_ = w._tab_keys.index(key_)
+                        w.main_tabs.setCurrentIndex(idx_)
+                        pump_ds(0.3)
+                        page_ = w.main_tabs.widget(idx_)
+                        steps_ = w.steps if key_ == "eps" else getattr(page_, "steps", None)
+                        for st_ in range(3 if steps_ is not None else 1):
+                            if steps_ is not None:
+                                steps_.set_step(st_, remember=False)
+                            pump_ds(0.3)
+                            for cf_ in w.findChildren(STYLE.ColumnFit):
+                                if cf_.column.isVisible():
+                                    n_ds += 1
+                                    if cf_.column.width() != STYLE.COLUMN_W:
+                                        wide_ds.append((lang_, key_, st_, cf_.column.width()))
+                        if steps_ is not None:
+                            steps_.set_step(0, remember=False)
+            finally:
+                w.switch_lang(lang0_ds)
+                pump_ds(0.4)
+            if sys.platform != "win32":                       # Schriftmaße (Knopfreihen) nur außerhalb von Windows
+                assert n_ds > 40 and not wide_ds, (n_ds, wide_ds)
+            report.append(f"Left column {STYLE.COLUMN_W} px in every tab and step, DE and EN ({n_ds} views; EPR file rows "
+                          "= value column, TD-DFT add buttons 2 x 2 when one row is too wide): OK")
+        with section:
+            # NMR: Bruker-Parameter als Tabelle wie alle Tabellen (vorher loses Textraster ohne Hoch-/Tiefstellung)
+            from elucida.tabs import nmr as NMR_ds
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("nmr"))
+            pump_ds(0.5)
+            nt_ds = w.nmr_tab
+            nt_ds.steps.set_step(0, remember=False)
+            rows_ds = None
+            for r_ in range(nt_ds.tbl.rowCount()):
+                nt_ds.tbl.selectRow(r_)
+                pump_ds(0.3)
+                s_ = nt_ds.current()
+                if s_ is not None and s_.get("params"):
+                    rows_ds = NMR_ds.params_rows(s_["params"])
+                    break
+                assert not nt_ds.tbl_par.isVisibleTo(nt_ds) and nt_ds.lbl_par.text(), r_   # ohne Bruker: nur Hinweis
+            assert rows_ds, "no spectrum with Bruker parameters in the example"
+            tp_ = nt_ds.tbl_par
+            assert isinstance(tp_, STYLE.FitGrid) and tp_.isVisibleTo(nt_ds) and not nt_ds.lbl_par.text()
+            assert tp_.rowCount() == len(rows_ds) and tp_.columnCount() == 2
+            assert [tp_.item(i_, 1).text() for i_ in range(tp_.rowCount())] == [t_ for _, t_, _ in rows_ds]
+            html_ds = dict(zip((l_ for l_, _, _ in rows_ds), (h_ for _, _, h_ in rows_ds)))
+            assert "<sup>1</sup>H" in html_ds[T("nmr_p_nuc")], html_ds
+            if T("nmr_p_solvent") in html_ds:
+                assert "<sub>" in html_ds[T("nmr_p_solvent")], html_ds
+            assert isinstance(tp_.itemDelegateForColumn(1), STYLE.RichDelegate)
+            tp_.fit()
+            assert not tp_.horizontalScrollBar().isVisible()
+            if sys.platform != "win32":                       # nichts abgeschnitten (Schriftmaße)
+                for c_ in range(2):
+                    assert tp_.columnWidth(c_) >= tp_.sizeHintForColumn(c_), (c_, tp_.columnWidth(c_))
+            # ungünstigster Fall (erfunden): 2D mit F1-Zeile und langem Probenkopf, Fenster 1200 px
+            keep_par_ds, keep_size_ds = s_["params"], w.size()
+            try:
+                w.resize(1200, w.height())
+                s_["params"] = {**keep_par_ds, "nucleus2": "13C", "sfo1_2": 125.7578, "sw2": 220.0,
+                                "probe": "Z000000_0000 (PA BBO 500S1 BBF-H-D-05 Z SP)"}
+                nt_ds.fill_selected()
+                pump_ds(0.4)
+                tp_.fit()
+                assert tp_.rowCount() == len(NMR_ds.params_rows(s_["params"])) == len(rows_ds) + 2
+                assert "<sup>13</sup>C" in nt_ds._par_html[tp_.item(0, 1).text()]
+                assert not tp_.horizontalScrollBar().isVisible()
+                if sys.platform != "win32":
+                    for c_ in range(2):
+                        assert tp_.columnWidth(c_) >= tp_.sizeHintForColumn(c_), (c_, tp_.columnWidth(c_))
+            finally:
+                s_["params"] = keep_par_ds
+                w.resize(keep_size_ds)
+                nt_ds.fill_selected()
+            report.append(f"NMR Bruker parameters as an app table ({len(rows_ds)} rows, nuclei/solvent typeset, "
+                          "2D + long probe at 1200 px without sideways scrolling or cut cells): OK")
+        with section:
+            # Labels berühren sich nicht (Windows-Bericht 2026-11-20): λ/ε-Labels mit großer Labelschrift relativ zur
+            # Schrift mindestens so weit auseinander wie bei der Vorgabegröße (bisher 18 pt untereinander 0.18 statt
+            # 0.3 Schrifthöhen); Atomlabels im X-Ray-Bild mit Abstand
+            import itertools as _it_ds
+
+            def sep_ds(b1, b2):                               # Abstand zweier Kästen (px) und ob sie übereinander stehen
+                dx, dy = max(b1.x0 - b2.x1, b2.x0 - b1.x1), max(b1.y0 - b2.y1, b2.y0 - b1.y1)
+                return max(dx, dy), dy > dx
+            keep_tf_ds = dict(w.text_fmt)
+            gaps_eps_ds, base_ds = [], None
+            try:
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+                for pt_ in (0.0, 18.0):
+                    w.text_fmt = {**keep_tf_ds, "label_pt": pt_}
+                    w.text_format_changed()
+                    pump_ds(0.5)
+                    F_ = w.F
+                    rd_ = F_._renderer()
+                    lab_ = [a_ for k_, a_ in F_.ann_items.items() if k_.startswith("label_") and a_.get_visible()]
+                    assert len(lab_) >= 2, list(F_.ann_items)
+                    em_ = max(a_.get_fontsize() for a_ in lab_) * F_.fig.dpi / 72
+                    if base_ds is None:                       # Vorgabegröße: bisherige Lücken (Achsenanteile) in Schrifthöhen
+                        base_ds = (0.012 * F_.ax.bbox.height / em_, 0.015 * F_.ax.bbox.width / em_)
+                    for a_, b_ in _it_ds.combinations(lab_, 2):
+                        g_, stacked_ = sep_ds(a_.get_window_extent(rd_), b_.get_window_extent(rd_))
+                        gaps_eps_ds.append(round(float(g_ / em_), 2))
+                        assert g_ >= 0.9 * base_ds[0 if stacked_ else 1] * em_, (pt_, g_, em_, stacked_, base_ds)
+                    assert not F_.check_overlaps(), F_.check_overlaps()
+            finally:
+                w.text_fmt = keep_tf_ds
+                w.text_format_changed()
+            from elucida.tabs import xray as XRAY_ds
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("xray"))
+            pump_ds(0.5)
+
+            def tightest_ds():                                # engstes Paar der Atomlabels in Schrifthöhen
+                w.xray_tab.render()
+                pump_ds(0.5)
+                FX_ = w.xray_tab.F
+                rdx_ = FX_.fig.canvas.get_renderer()
+                atl_ = [a_ for k_, a_ in FX_.ann_items.items() if k_.startswith("lbl_")]
+                emx_ = max(a_.get_fontsize() for a_ in atl_) * FX_.fig.dpi / 72
+                return min(sep_ds(a_.get_window_extent(rdx_), b_.get_window_extent(rdx_))[0]
+                           for a_, b_ in _it_ds.combinations(atl_, 2)) / emx_
+            keep_clear_ds = XRAY_ds.XrayFigure.LABEL_CLEAR
+            try:
+                XRAY_ds.XrayFigure.LABEL_CLEAR = 0.0          # wie vorher: Berühren kostete nichts
+                gx0_ = tightest_ds()
+            finally:
+                XRAY_ds.XrayFigure.LABEL_CLEAR = keep_clear_ds
+            gx_ = tightest_ds()
+            assert gx_ > gx0_ and gx_ >= 0.4, (gx0_, gx_)
+            report.append(f"Labels apart: UV-Vis label gaps {sorted(set(gaps_eps_ds))} em (default and 18 pt), X-Ray "
+                          f"tightest atom labels {gx0_:.2f} -> {gx_:.2f} em: OK")
         with section:
             # lane-salze: Salze als Verbindung (Gegenion als Beschriftung, Ladung nur im Text, Hinweise) -- erfundene
             # CDXMLs, Ion: N(CH3)4+ mit verschiedenen Anionen; jede Beschriftung gegen ihren gezeichneten Zwilling

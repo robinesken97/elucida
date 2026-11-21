@@ -2020,7 +2020,12 @@ class Figure:
         items = [it for it in items if it[1] not in near]
         if len(items) < 2:
             return near
-        gap_x, gap_y = 0.015, 0.012
+        # Abstände wachsen mit der Labelschrift (Windows-Bericht 2026-11-20): bei größerer Labelschrift schrumpfte die
+        # Lücke relativ zur Schrift (18 pt: 0.18 statt 0.3 Schrifthöhen, zwei λ/ε-Labels lasen sich als eins). Bei der
+        # Vorgabegröße genau wie bisher; mehr Abstand verschiebt Blöcke und Bilder und kostet Entscheidung 130 (Robin)
+        fs_lbl = max(self.ann_items[it[1]].get_fontsize() for it in items)
+        grow = max(1.0, round(fs_lbl / self.cfg["font_size"] / (DEFAULTS["labels"]["font_size"] / DEFAULTS["font_size"]), 6))
+        gap_x, gap_y = 0.015 * grow, 0.012 * grow
         hmax = max(it[3] for it in items)
 
         def row_xs():
