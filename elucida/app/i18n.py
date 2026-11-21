@@ -2245,7 +2245,7 @@ TEXTS = {
                         "Scanraten-Analyse.",
                         "Runs with the internal standard count as reference only: {rates} mV s⁻¹ is therefore missing "
                         "from the scan-rate analysis."),
-    "cv_ref_marker": ("Struktur des Standards", "Standard Structure"),
+    "cv_ref_marker": ("Struktur des Standards", "Standard structure"),
     "cv_ref_marker_long": ("Struktur des internen Standards (Fc bzw. Ac₂Fc) an seiner Welle, im Maßstab der Struktur der "
                            "Verbindung.",
                            "Structure of the internal standard (Fc or Ac₂Fc) at its wave, at the scale of the compound's "
@@ -5624,8 +5624,8 @@ TEXTS.update({                                      # Spur A2, Punkt 3a: Tab „
     "export_all_none": ("Nichts zu exportieren: noch keine Daten in den Tabs.", "Nothing to export: no data in the tabs yet."),
 })
 TEXTS.update({                                      # Spur A2, Punkt 3b: SI-Auswahl je Verbindung, SI/Datenpaket im Tab „Export“
-    "pub_si_figs_off": ("Abgewählte Abbildungen (Spalte „SI“ im Tab „Export“ der Verbindung): {items}",
-                        "Deselected figures (column “SI” in the compound's Export tab): {items}"),
+    "pub_si_figs_off": ("Abgewählte Abbildungen (Auswahl im Tab „Export“ der Verbindung): {items}",
+                        "Deselected figures (selection in the compound's Export tab): {items}"),
     "export_col_si": ("SI", "SI"),
     "export_si_tip": ("Abbildung in die SI (SI-Abschnitt und Gesamt-SI); gespeichert mit der Verbindung",
                       "Figure in the SI (SI section and complete SI); saved with the compound"),
@@ -5687,7 +5687,8 @@ TEXTS.update({                                      # Spur A2, Export-Tab Entwur
 })
 TEXTS.update({                                      # Spur A2, Export-Tab v3 (Karten-Galerie, Entscheidung 93)
     "export_page": ("Abbildungen und Berichte", "Figures and Reports"),
-    "export_cards_hint": ("Klick wählt aus · „SI“ an der Karte = kommt in die SI", "Click selects · “SI” on a card = goes into the SI"),
+    "export_cards_hint": ("Klick wählt aus · die Auswahl gilt für Bilder, Tabellen, PPTX und SI",
+                          "Click selects · the selection drives images, tables, PPTX and SI"),
     "export_select_all": ("Alle", "All"),
     "export_select_none": ("Keine", "None"),
     "export_n_selected": ("{n} ausgewählt", "{n} selected"),
@@ -5696,28 +5697,46 @@ TEXTS.update({                                      # Spur A2, Export-Tab v3 (Ka
     "export_slides_sel_tip": ("figures/<Verbindung>_slides.pptx mit einer Folie je Abbildung der gewählten Tabs (ohne "
                               "Auswahl: alle)", "figures/<compound>_slides.pptx with one slide per figure of the selected "
                               "tabs (without a selection: all)"),
-    "export_si_pill_tip": ("Kommt in die SI (SI-Abschnitt und Gesamt-SI); gespeichert mit der Verbindung",
-                           "Goes into the SI (SI section and complete SI); saved with the compound"),
     "export_si_parts_tip": ("In die SI über die Teile links (SI (Word) dieser Verbindung)",
                             "Into the SI via the parts on the left (SI (Word) of this compound)"),
     "export_item_series": ("Serie {s}", "Series {s}"),
     "export_grp_formats": ("Formate (Bilder)", "Formats (Images)"),
     "export_grp_si": ("SI (Word) dieser Verbindung", "SI (Word) of This Compound"),
     "export_formats_hint": ("Gilt für „exportieren“ und Strg+E in den Tabs.", "Applies to “Export” and Ctrl+E in the tabs."),
-    "export_si_hint": ("Abbildungen mit „SI“-Markierung. Die Gesamt-SI wählt ihre Kapitel auf der Projektseite.",
-                       "Figures marked “SI”. The complete SI picks its chapters on the project page."),
-    "export_si_pill_off_tip": ("Teil „{chip}“ der SI (Word) dieser Verbindung ist aus (Karte links); die Gesamt-SI "
-                               "richtet sich nach dieser Pille.",
-                               "Part “{chip}” of this compound's SI (Word) is off (card on the left); the complete SI "
-                               "follows this pill."),
+    "export_si_hint": ("Abbildungen = ausgewählte Karten. Die Gesamt-SI wählt ihre Kapitel auf der Projektseite.",
+                       "Figures = selected cards. The complete SI picks its chapters on the project page."),
 })
 TEXTS.update({                                      # Spur A2: ein Ort für die SI-Auswahl (Entscheidungen 67/93)
-    "si_elsewhere": ("In die SI: Pille „SI“ an der Karte im Tab <a href=\"export\">Export</a>",
-                     "Into the SI: pill “SI” on the card in the <a href=\"export\">Export</a> tab"),
+    "si_elsewhere": ("In die SI: Karte im Tab <a href=\"export\">Export</a> auswählen",
+                     "Into the SI: select the card in the <a href=\"export\">Export</a> tab"),
     "export_part_tdt": ("Anregungen (Tabelle)", "Excitations (table)"),
     "export_part_irc": ("IR-Rechnung (Tabelle)", "IR calculation (table)"),
-    "export_si_only_tip": ("Tabelle bzw. Text nur für die SI (keine eigenen Dateien): „SI“ schaltet sie",
-                           "Table or text for the SI only (no files of its own): “SI” switches it"),
+    "export_si_only_tip": ("Tabelle bzw. Text nur für die SI (keine eigenen Dateien)",
+                           "Table or text for the SI only (no files of its own)"),
+    "export_btn_img": ("Bilder", "Images"),
+    "export_btn_tab": ("Tabellen", "Tables"),
+    "export_btn_pptx": ("PPTX", "PPTX"),
+    "export_btn_si": ("SI (Word)", "SI (Word)"),
+    "export_btn_img_tip": ("Dateien der {n} gewählten Karte(n): Abbildungen nach figures/ (Formate links), Methodentexte, "
+                           "Bildunterschriften und Berichte nach SI/; ohne Tabellen (Strg+E)",
+                           "Files of the {n} selected card(s): figures to figures/ (formats on the left), methods texts, "
+                           "captions and reports to SI/; no tables (Ctrl+E)"),
+    "export_btn_tab_tip": ("CSV und Excel-Mappe der {n} Tab(s) mit gewählter Karte nach tables/",
+                           "CSV and Excel workbook of the {n} tab(s) with a selected card to tables/"),
+    "export_btn_pptx_tip": ("figures/<Verbindung>_slides.pptx: eine Folie je gewählter Abbildung ({n})",
+                            "figures/<compound>_slides.pptx: one slide per selected figure ({n})"),
+    "export_btn_si_tip": ("SI-Abschnitt dieser Verbindung (Teile links) mit {n} gewählten Abbildungen bzw. Tabellen; "
+                          "die Auswahl gilt auch für die Gesamt-SI",
+                          "SI section of this compound (parts on the left) with {n} selected figures or tables; the "
+                          "selection also applies to the complete SI"),
+    "export_btn_none_tip": ("Erst Karten auswählen", "Select cards first"),
+    "export_btn_img_empty": ("Die Auswahl hat keine Dateien (nur Tabellen für die SI)",
+                             "The selection has no files (SI tables only)"),
+    "export_btn_tab_empty": ("Die Auswahl hat keine Tabellen (Synthese, NMR, Weitere und SI-Tabellen schreiben keine)",
+                             "The selection has no tables (synthesis, NMR, further figures and SI tables write none)"),
+    "export_btn_pptx_empty": ("Die Auswahl hat keine Abbildung für Folien", "The selection has no figure for slides"),
+    "export_n_of": ("{n} von {m} ausgewählt", "{n} of {m} selected"),
+    "export_feeds": ("Gilt für: {items}", "Used by: {items}"),
 })
 TEXTS.update({                                      # Spur A2, Export v4: Kachelraster der Projektseite
     "pub_exp_tiles_hint": ("Kachel = Verbindung · Farbstreifen = vorhandene Daten · Zahl = Abbildungen in der SI · Klick "

@@ -38,6 +38,7 @@ paths:
   sonst der Knopf der Anleitung. Hauptknopf gleich groß wie die anderen, Schrift 600 statt 500, nie fett. Tabs
   behalten die Gruppenüberschriften (Nutzerwunsch); Tab-Text hell = dort liegen Daten, gedimmt = leer (`NavTab`, Tab bleibt symmetrisch). Auswahl mit
   Häkchen immer als Tabelle (`STYLE.check_table`/`check_row`: mittig, Datenspalten gleich breit, Nutzerwunsch).
+  Ausnahme Tab Export: kein blauer Hauptknopf; die Ausgabeknöpfe Bilder, Tabellen, PPTX und SI (Word) sind gleichrangig, Blau heißt dort nur „ausgewählt“ (Nutzerwunsch 2026-11-20).
 - Navigation: Tabs in vier Gruppen als Leiste **oben** (`nav_bar`, `NAV_GROUPS`), Reiter ausgeblendet. Keine Leisten
   links/rechts: die Vorschau ist in der Breite begrenzt (Seitenleiste −20 % Abbildung, gemessen); Selbsttest verlangt
   bei 1440 × 900 Abbildungsbreite ≥ halbe Fensterbreite. Leere Tabs: Anleitung (`EmptyGuide`, `guide_<tab>_*`), Hinweise

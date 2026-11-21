@@ -17880,7 +17880,7 @@ def _g_lanes(ctx):
             assert et_x._footer_parts[1].isHidden()                          # keine leere Fußleiste links
             assert keys_x == w.export_keys() and {"eps", "cv", "syn", "xray"} <= set(keys_x) and "compound" not in keys_x
             acc_x = [b_ for b_ in et_x.findChildren(PB_x) if b_.property("accent") and b_.isVisible()]
-            assert acc_x == [et_x.btn_all], [b_.text() for b_ in acc_x]                        # ein Hauptknopf
+            assert acc_x == [], [b_.text() for b_ in acc_x]       # kein blauer Hauptknopf (Entscheidung 182, ui.md)
             s3_x = dp_x / "S3"
 
             def files_x():
@@ -17888,12 +17888,12 @@ def _g_lanes(ctx):
                         if p_.is_file() and ".elucida" not in p_.parts and p_.suffix != ".elucida"}
             b0_x = files_x()
             time.sleep(0.05)
-            def row_x(k_, part_=""):                                          # Karte wählen -> „1 exportieren“
+            def row_x(k_, part_=""):                                          # Karte wählen -> „Bilder“
                 et_ = w.export_tab
                 et_.select_all(False)
                 et_.toggle(next(c_ for c_ in et_.cards if c_.key == k_ and part_ in c_.label))
-                assert et_.btn_main.text() == T("export_n", n=1), et_.btn_main.text()
-                return et_.btn_main
+                assert et_.lbl_count.text() == T("export_n_of", n=1, m=len(et_.cards)), et_.lbl_count.text()
+                return et_.btn_img
             row_x("cv").click()
             pump_x(0.3)
             ch_x = {p_.name for p_, m_ in files_x().items() if b0_x.get(p_) != m_}
@@ -17919,13 +17919,13 @@ def _g_lanes(ctx):
             et_k = w.export_tab
             et_k.area.setFocus()
             QT_x.keyClick(et_k.area, Qt.Key_A, Qt.ControlModifier)
-            assert et_k.cards and all(c_.selected == c_.selectable for c_ in et_k.cards)   # Tabellen nie (N2)
+            assert et_k.cards and all(c_.selected and c_.selectable for c_ in et_k.cards)   # alle Kacheln (182)
             et_k.select_all(False)
             QT_x.keyClick(et_k.area, Qt.Key_Right)
             QT_x.keyClick(et_k.area, Qt.Key_Space)
-            assert len(et_k.chosen()) == 1 and et_k.btn_main.text() == T("export_n", n=1)
+            assert len(et_k.chosen()) == 1 and et_k.lbl_count.text() == T("export_n_of", n=1, m=len(et_k.cards))
             et_k.select_all(False)
-            assert et_k.btn_main.text() == T("export_all")
+            assert not et_k.btn_img.isEnabled() and et_k.btn_img.toolTip() == T("export_btn_none_tip")
             n_undo_x, tab_x = len(w._undo), w._tab_key
             all_x = [Path(f_) for f_ in w.export_all_tabs()]
             pump_x(0.3)
@@ -18070,10 +18070,10 @@ def _g_lanes(ctx):
             w.show_tab("export")
             pump_y(0.5)
             et_y = w.export_tab
-            si_y = lambda k_: next(c_.pill for c_ in et_y.cards if c_.key == k_)   # noqa: E731  Pille „SI“ der Karte
-            assert not si_y("hcell").isChecked() and si_y("cv").isChecked()
-            assert all(c_.pill is None for c_ in et_y.cards if c_.key == "syn")   # Bericht: Teile links
-            si_y("cv").setChecked(False)
+            si_y = lambda k_: next(c_ for c_ in w.export_tab.cards if c_.key == k_)   # noqa: E731  Karte = SI-Auswahl
+            assert not si_y("hcell").selected and si_y("cv").selected
+            assert all("si" not in c_.feeds for c_ in et_y.cards if c_.key == "syn")   # Bericht: Teile links
+            et_y.toggle(si_y("cv"))
             pump_y(0.3)
             assert w.export_state["si_off"] == ["cv", "hcell"]
             w.undo()
@@ -18082,10 +18082,10 @@ def _g_lanes(ctx):
             w.redo()
             _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert w.si_figs_off() == {"cv", "hcell"}
-            pk_y = next(c_.pill for c_ in w.export_tab.cards                 # Packung: Pille statt Haken im X-Ray-Tab
+            pk_y = next(c_ for c_ in w.export_tab.cards                      # Packung: Karte statt Haken im X-Ray-Tab
                         if c_.key == "xray" and c_.label.endswith(T("export_part_packing")))
-            on_y = pk_y.isChecked()
-            pk_y.setChecked(not on_y)
+            on_y = pk_y.selected
+            w.export_tab.toggle(pk_y)
             pump_y(0.3)
             pk_st = lambda: all((e_.get("pack") or {}).get("si") for e_ in w.xray_state["entries"])   # noqa: E731
             assert pk_st() == (not on_y) and w._tab_key == "export"
@@ -18263,7 +18263,7 @@ def _g_lanes(ctx):
             assert cnt_s(i_ec).text() == "1" and cnt_s(i_syn).text() == "1" and cnt_s(0).text() == "2"
             et_s.select_all(False)                                            # „Keine“: nur das offene Segment
             assert not cv_s.selected and ir_s.selected and cnt_s(i_ec).isHidden()
-            assert et_s.btn_main.text() == T("export_n", n=1)                 # unten: die ganze Auswahl
+            assert et_s.lbl_count.text() == T("export_n_of", n=1, m=len(et_s.cards))   # unten: die ganze Auswahl
             assert w.settings.value("step/ExportSegment") == "nav_grp_ec"
             et_s.right_tabs.setCurrentIndex(0)
             et_s.select_all(False)
@@ -18428,32 +18428,33 @@ def _g_lanes(ctx):
             et_v = w.export_tab
             card_v = lambda k_, lab_=None: next(c_ for c_ in w.export_tab.cards if c_.key == k_   # noqa: E731
                                                and (lab_ is None or c_.label.endswith(lab_)))
-            # B1: Pille „SI“ der Packung aus -> Kachel bleibt, exportierbar, wieder an
+            # B1: Packung abgewählt (SI) -> Kachel bleibt, exportierbar, wieder an
             pk_v = card_v("xray", T("export_part_packing"))
-            pk_v.pill.setChecked(False)
+            assert pk_v.selected
+            w.export_tab.toggle(pk_v)
             pump_v(0.4)
             pk_v = card_v("xray", T("export_part_packing"))
-            assert not pk_v.pill.isChecked()
+            assert not pk_v.selected
             w._notice_done()
             w.export_key("xray")
             pump_v(0.3)
             assert list((dp_v / "S3" / "figures").glob("*_packing.*")), "Packung nicht exportiert"
-            card_v("xray", T("export_part_packing")).pill.setChecked(True)   # Export frischt die Kacheln auf
+            w.export_tab.toggle(card_v("xray", T("export_part_packing")))   # Export frischt die Kacheln auf
             pump_v(0.4)
-            assert card_v("xray", T("export_part_packing")).pill.isChecked()
+            assert card_v("xray", T("export_part_packing")).selected
             # B2: Auswahl übersteht Speichern/Auffrischen (Pille, Format, Autosave)
             et_v = w.export_tab
             et_v.right_tabs.setCurrentIndex(0)
             et_v.select_all(False)
             for c_ in (card_v("cv"), card_v("irms"), card_v("epr")):
                 et_v.toggle(c_)
-            card_v("sec").pill.setChecked(not card_v("sec").pill.isChecked())
+            w.export_tab.toggle(card_v("sec"))
             pump_v(0.3)
-            card_v("sec").pill.setChecked(not card_v("sec").pill.isChecked())
+            w.export_tab.toggle(card_v("sec"))
             w.autosave()
             pump_v(1.2)
             et_v = w.export_tab
-            assert len(et_v.chosen()) == 3 and et_v.btn_main.text() == T("export_n", n=3), \
+            assert len(et_v.chosen()) == 3 and et_v.lbl_count.text() == T("export_n_of", n=3, m=len(et_v.cards)), \
                 [(c_.key, c_.label) for c_ in et_v.chosen()]
             # N7: Strg+E im Tab „Export“ = Hauptknopf (nur die Auswahl)
             et_v.select_all(False)
@@ -18476,23 +18477,14 @@ def _g_lanes(ctx):
             w.export_tab.refresh()
             again_v = time.perf_counter() - t_v
             assert first_v < 1.5 * SLOW and again_v < 1.0 * SLOW and not w.export_tab._thumb_queue, (first_v, again_v)
-            # N2: „Alle“ und Leertaste wählen keine Tabellenkacheln (pred None = ganzer Tab)
+            # N2 (seit Entscheidung 182): „Alle“ wählt jede Kachel, auch die Nur-SI-Tabellen (sie speisen „SI (Word)“)
             et_v = w.export_tab
             et_v.right_tabs.setCurrentIndex(0)
             et_v.select_all(True)
-            assert all(c_.selectable for c_ in et_v.chosen()) and any(not c_.selectable for c_ in et_v.cards)
-            tb_v = next(c_ for c_ in et_v.cards if not c_.selectable)
-            tb_v.set_selected(True)
-            assert not tb_v.selected
+            assert len(et_v.chosen()) == len(et_v.cards) and any(c_.si_only for c_ in et_v.chosen())
             et_v.select_all(False)
-            # N6/B1: Teil „Abbildungen“ aus -> Pillen bleiben bedienbar (Gesamt-SI folgt ihnen), Hinweis nennt den Chip
-            keep_parts_v = [k_ for k_ in MW.SI_PARTS if k_ in w.si_parts_saved()]
-            w.set_si_parts([k_ for k_ in MW.SI_PARTS if k_ != "figs"])
-            et_v.sync_pills()
-            assert card_v("cv").pill.isEnabled() and T("si_chip_figs") in card_v("cv").pill.toolTip()
-            w.set_si_parts(keep_parts_v)
-            et_v.sync_pills()
-            assert card_v("cv").pill.isEnabled() and card_v("cv").pill.toolTip() == T("export_si_pill_tip")
+            # N6/B1: keine Pille mehr, die Auswahl ist die SI-Auswahl (Entscheidung 182)
+            assert all(c_.pill is None for c_ in et_v.cards)
             # N4: Folien ohne Auswahl = alle Abbildungen, keine alte Abwahl aus QSettings
             assert not hasattr(w, "pptx_figs_off") and not hasattr(w, "show_pptx_card")
             # B3: Gesamt-SI ohne DFT-Bilder mit Unterschrift, wenn die DFT-Pille aus ist
@@ -19755,6 +19747,189 @@ def _g_lanes(ctx):
             report.append("CV3: standard structure (Octet SVG, black or curve colour, compound's bond length, above its "
                           "wave, chip off = none; comparison chip, default off), E1/2 on one "
                           "line, scan arrow top-left and draggable, Fc runs reference only with hint for a missing scan rate: OK")
+        with section:
+            # Entscheidungen 182-184 (Spur footer): eine gespeicherte Auswahl je Karte (zugleich SI-Auswahl, Migration vom
+            # Tab-Schalter `si_off`), Fußleiste Bilder · Tabellen · PPTX · SI (Word) ohne blauen Knopf, grau mit Grund,
+            # jede Kartenart speist ihren Knopf, Mindestbreite, Kachel eingedrückt + Ring, Orbital-Symbol d-Kleeblatt
+            from types import SimpleNamespace as NS_ft
+            import zipfile as ZF_ft
+            from PySide6.QtCore import QFile as QF_ft
+            from PySide6.QtGui import QImage as QI_ft
+            from elucida.app import tiles as TILES_ft
+            from elucida.tabs import export as EXP_ft
+
+            def pump_ft(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+                    time.sleep(0.01)
+            size_ft = w.size()
+            w.switch_lang("de")
+            dp_ft = Path(w.open_demo_publication(out / "ft_pub"))
+            pump_ft(0.5)
+            s3_ft = dp_ft / "S3"
+            assert w.open_project(s3_ft, ask=False, recent=False)
+            pump_ft(0.5)
+            w.export_state["si_off"] = ["fluo"]                              # altes Projekt: Tab-Schalter Fluoreszenz aus
+            w.save_project()
+            assert w.open_project(s3_ft, ask=False, recent=False)
+            pump_ft(0.5)
+            raw_ft, n_undo_ft = (s3_ft / PRJ.PROJECT_FILE).read_bytes(), len(w._undo)
+            w.show_tab("export")
+            pump_ft(0.8)
+            card_ft = lambda cid_: next(c_ for c_ in w.export_tab.cards if c_.cid == cid_)   # noqa: E731
+            # Zeigen schreibt nichts und ist kein Schritt; alte Abwahl gilt für alle Karten des Tabs, die übrigen gewählt
+            assert (s3_ft / PRJ.PROJECT_FILE).read_bytes() == raw_ft and len(w._undo) == n_undo_ft, len(w._undo)
+            assert not card_ft("fluo:spectra").selected and not card_ft("fluo:decay").selected
+            assert all(c_.selected for c_ in w.export_tab.cards if c_.key != "fluo"), \
+                [c_.cid for c_ in w.export_tab.cards if not c_.selected]
+            # Klick = gespeicherte Änderung mit Rückgängig; der Tab-Schalter wird erst jetzt in Karten aufgelöst
+            w.export_tab.toggle(card_ft("fluo:decay"))
+            assert w.export_state["si_off"] == ["fluo:spectra"] and len(w._undo) == n_undo_ft + 1, w.export_state["si_off"]
+            assert card_ft("fluo:decay").selected and not card_ft("fluo:spectra").selected
+            w.undo()
+            pump_ft(0.5)
+            assert w.export_state["si_off"] == ["fluo"] and w._tab_key == "export", (w.export_state, w._tab_key)
+            w.redo()
+            pump_ft(0.5)
+            w.save_project()
+            assert (PRJ.load(s3_ft).get("export") or {}).get("si_off") == ["fluo:spectra"]
+            assert w.open_project(s3_ft, ask=False, recent=False)               # gespeichert: übersteht Öffnen
+            pump_ft(0.5)
+            w.show_tab("export")
+            pump_ft(0.5)
+            assert card_ft("fluo:decay").selected and not card_ft("fluo:spectra").selected
+            # „Keine“: ein Schritt; Karten mit eigenem Schlüssel (NTO, Packung, SI-Tabellen) setzen ihn in ihrem Tab
+            n_ft = len(w._undo)
+            w.export_tab.select_all(False)
+            assert len(w._undo) == n_ft + 1 and not w.export_tab.chosen(), [c_.cid for c_ in w.export_tab.chosen()]
+            assert w.ov_state["nto"]["si"] is False and w.ov_state["tdt_si"] is False and w.irms_state["irc_si"] is False
+            off_ft = EXP_ft.off_names(w)                                       # Meldung nennt auch Karten mit eigenem Schlüssel
+            assert {T(w._tab_spec("xray")[3]) + " · " + T("export_part_packing"), T("tab_overlay") + " · NTO"} <= set(off_ft), off_ft
+            # mehrere Strukturen: die Karte schaltet nur Strukturen mit Packung bzw. PXRD-Datei, legt nichts an
+            two_ft = NS_ft(xray_state={"entries": [{"pack": {"on": True, "si": True}}, {"name": "b"},
+                                                                   {"pxrd": {"si": True}}]})
+            get_ft, set_ft = EXP_ft.flag(two_ft, "xray", "packing")
+            set_ft(False)
+            assert not get_ft() and two_ft.xray_state["entries"][1:] == [{"name": "b"}, {"pxrd": {"si": True}}]
+            set_ft(True)
+            assert get_ft() and two_ft.xray_state["entries"][0]["pack"]["si"] is True
+            assert EXP_ft.flag(two_ft, "xray", "pxrd")[0]() is False                      # ohne Datei keine PXRD-Karte
+            assert all((e_.get("pack") or {}).get("si") is False for e_ in w.xray_state["entries"] if e_.get("pack"))
+            et_ft = w.export_tab
+            # Knöpfe: gleichrangig (kein Blau), ohne Auswahl grau mit Grund im Tooltip
+            assert list(et_ft.out_buttons) == ["img", "tab", "pptx", "si"]
+            assert [b_.text() for b_ in et_ft.out_buttons.values()] == ["Bilder", "Tabellen", "PPTX", "SI (Word)"]
+            assert not any(b_.property("accent") for b_ in et_ft.findChildren(QPushButton))
+            assert all(not b_.isEnabled() and b_.toolTip() == T("export_btn_none_tip") for b_ in et_ft.out_buttons.values())
+            assert et_ft.lbl_count.text() == T("export_n_of", n=0, m=len(et_ft.cards))
+            et_ft.toggle(card_ft("overlay:tdt"))                              # nur eine SI-Tabelle: Grund je Knopf
+            assert w.ov_state["tdt_si"] is True
+            for b_ in ("img", "tab", "pptx"):
+                assert not et_ft.out_buttons[b_].isEnabled() and et_ft.out_buttons[b_].toolTip() == T(f"export_btn_{b_}_empty")
+            assert et_ft.btn_si.isEnabled() and et_ft.btn_si.toolTip() == T("export_btn_si_tip", n=1)
+            et_ft.toggle(card_ft("eps"))
+            et_ft.toggle(card_ft("fluo:decay"))
+            assert et_ft.btn_img.toolTip() == T("export_btn_img_tip", n=2) and et_ft.btn_tables.toolTip() == \
+                T("export_btn_tab_tip", n=2) and et_ft.btn_slides.toolTip() == T("export_btn_pptx_tip", n=2)
+            assert et_ft.btn_si.toolTip() == T("export_btn_si_tip", n=3)
+            # jede Karte speist mindestens einen Knopf und nennt ihn; Nur-SI-Tabellen nur die SI; Berichte nur „Bilder“
+            for c_ in et_ft.cards:
+                assert c_.feeds and c_.feeds <= {"img", "tab", "pptx", "si"} and c_.selectable, c_.cid
+                assert (c_.feeds == {"si"}) == c_.si_only and (c_.key not in ("syn", "nmr") or c_.feeds == {"img"}), c_.cid
+                assert all(T("export_btn_" + f_) in c_.toolTip() for f_ in c_.feeds), (c_.cid, c_.toolTip())
+            # SI-Bild -> Karte (Namen, wie die Tabs sie für die SI schreiben)
+            for k_, stem_, pid_ in (("fluo", "S3_fluorescence_decay", "decay"), ("fluo", "S3_fluorescence", "spectra"),
+                                    ("epr", "S3_epr_hfc", "hfc"), ("epr", "S3_epr_spin", "spin"), ("epr", "S3_epr", "spectra"),
+                                    ("overlay", "S3_overlay_NTO_1", "nto"), ("overlay", "S3_overlay", "spectra"),
+                                    ("dft", "S3_dft_NICS", "nics"), ("dft", "S3_dft_profile", "report"),
+                                    ("dft", "0_S3_nbo", "report"), ("dft", "0_S3_opt_freq_dft", "geom")):
+                assert EXP_ft.si_pid(w, k_, stem_) == pid_, (k_, stem_, EXP_ft.si_pid(w, k_, stem_))
+            # SI-Abschnitt, Gesamt-SI und Meldung folgen der Karte: Abklingkurve drin, Fluoreszenzspektren nicht
+            fl_ft = "_" + w.fl_tab.STATE_KEY
+            si_ft, _ = w.si_blocks(["figs"], w.si_figs_off())
+            names_ft = [Path(b_[1]).stem for b_ in si_ft if b_[0] == "image"]
+            assert any(n_.endswith("_fluorescence_decay") for n_ in names_ft), names_ft
+            assert not any(n_.endswith(fl_ft) for n_ in names_ft) and any("_epsilon" in n_ for n_ in names_ft), names_ft
+            whole_ft = w.si_compound_parts(["uvvis", "cv"], methods=False)[1]
+            uv_ft = [Path(b_[1]).stem for b_ in whole_ft.get("uvvis", []) if b_[0] == "image"]
+            assert any(n_.endswith("_fluorescence_decay") for n_ in uv_ft) and not any(n_.endswith(fl_ft) for n_ in uv_ft)
+            assert not [b_ for b_ in whole_ft.get("cv", []) if b_[0] == "image"], whole_ft.get("cv")
+            assert T("tab_fluo") + " · " + T("export_part_spectra") in EXP_ft.off_names(w), EXP_ft.off_names(w)
+            w.__dict__.pop("_pub_si_off", None)
+            # Bilder / Tabellen / PPTX: nur die Dateien der Auswahl bzw. die Tabellen, nie etwas in den Papierkorb
+            trash_ft, keep_trash_ft = [], QF_ft.moveToTrash
+            QF_ft.moveToTrash = staticmethod(lambda p_, *a_: trash_ft.append(p_) or True)
+            try:
+                def changed_ft(run_):
+                    b0_ = {p_: p_.stat().st_mtime_ns for p_ in s3_ft.rglob("*") if p_.is_file()}
+                    time.sleep(0.05)
+                    run_()
+                    pump_ft(0.3)
+                    return {p_ for p_ in s3_ft.rglob("*") if p_.is_file() and ".elucida" not in p_.parts
+                            and p_.name != PRJ.PROJECT_FILE and b0_.get(p_) != p_.stat().st_mtime_ns}
+                for cid_ in ("cv", "fluo:decay", "epr:hfc", "xray:packing", "syn"):
+                    w.export_tab.select_all(False)
+                    w.export_tab.toggle(card_ft(cid_))
+                    c_ = card_ft(cid_)
+                    got_ = changed_ft(w.export_tab.btn_img.click)
+                    assert got_ and all(PRJ.export_kind(p_.name) != PRJ.TABLES and p_.stat().st_size
+                                        and (c_.pred is None or c_.pred(p_.name)) for p_ in got_), \
+                        (cid_, sorted(p_.name for p_ in got_))
+                    if "tab" in c_.feeds:
+                        got_ = changed_ft(w.export_tab.btn_tables.click)
+                        assert got_ and all(PRJ.export_kind(p_.name) == PRJ.TABLES for p_ in got_), \
+                            (cid_, sorted(p_.name for p_ in got_))
+                w.export_tab.select_all(False)
+                w.export_tab.toggle(card_ft("fluo:decay"))
+                got_ = changed_ft(w.export_tab.btn_slides.click)
+                pp_ = [p_ for p_ in got_ if p_.suffix == ".pptx"]
+                assert len(pp_) == 1 and len([n_ for n_ in ZF_ft.ZipFile(pp_[0]).namelist()
+                                              if re.fullmatch(r"ppt/slides/slide\d+\.xml", n_)]) == 1, pp_
+                assert not trash_ft, trash_ft
+            finally:
+                QF_ft.moveToTrash = keep_trash_ft
+            # Kachel: gewählt = Vorschau eingedrückt (Rand + Bild 92 %), Ring im Rand TILE_SEL; abgewählt unverändert
+            c_, o_ft = card_ft("fluo:decay"), card_ft("cv")
+            assert c_.selected and "margin" in c_.pic.styleSheet() and c_.sel.property("selected")
+            assert "margin" not in o_ft.pic.styleSheet() and not o_ft.sel.property("selected")
+            if c_._pm is not None and c_.pic.pixmap() is not None and not c_.pic.pixmap().isNull():
+                assert c_.pic.pixmap().width() < c_._pm.width(), (c_.pic.pixmap().width(), c_._pm.width())
+            dx_ft, dy_ft = TILES_ft.Ring.inset()
+            assert STYLE.TILE_SEL + dy_ft - (3 + 2.5) >= 0 and dx_ft >= dy_ft > 0, (dx_ft, dy_ft)
+            # Orbital-Symbol: d-Kleeblatt mittig, graues Atom in der Mitte, Phasen voll (oben rechts) / hell (oben links)
+            img_ft = TILES_ft.kind_pixmap("lobes", "overlay", 4).toImage().convertToFormat(QI_ft.Format_ARGB32)
+            xs_ft = [x_ for x_ in range(img_ft.width()) for y_ in range(0, img_ft.height(), 4)
+                     if img_ft.pixelColor(x_, y_).alpha() > 40]
+            ys_ft = [y_ for y_ in range(img_ft.height()) for x_ in range(0, img_ft.width(), 4)
+                     if img_ft.pixelColor(x_, y_).alpha() > 40]
+            assert abs((min(xs_ft) + max(xs_ft)) / 8 - 32) <= 1 and abs((min(ys_ft) + max(ys_ft)) / 8 - 20) <= 1
+            assert min(xs_ft) >= 8 and min(ys_ft) >= 8 and max(xs_ft) < img_ft.width() - 8 and max(ys_ft) < img_ft.height() - 8
+            assert img_ft.pixelColor(32 * 4, 20 * 4).name() == "#8a8f98"
+            filled_ft, light_ft = img_ft.pixelColor(41 * 4, 11 * 4), img_ft.pixelColor(23 * 4, 11 * 4)
+            assert filled_ft.alpha() > 200 and 40 < light_ft.alpha() < 140, (filled_ft.alpha(), light_ft.alpha())
+            # Mindestbreite: die Fußleiste treibt sie nicht hoch (vorher 1087 px DE / 1084 px EN, macOS)
+            for lang_ in ("de", "en"):
+                w.switch_lang(lang_)
+                w.show_tab("export")
+                pump_ft(0.5)
+                w.resize(600, w.height())
+                pump_ft(0.5)
+                et_ft = w.export_tab
+                bar_ft = et_ft.btn_img.parentWidget()
+                assert bar_ft.minimumSizeHint().width() <= bar_ft.width(), (lang_, bar_ft.minimumSizeHint().width())
+                if sys.platform != "win32":                                 # ohne Schriftmaße unter Windows
+                    assert all(b_.width() >= b_.sizeHint().width() for b_ in et_ft.out_buttons.values()), lang_
+                if sys.platform == "darwin" and not os.environ.get("CI"):
+                    assert w.width() <= 1087, (lang_, w.width())
+            w.switch_lang("de")
+            w.resize(size_ft)
+            pump_ft(0.3)
+            report.append("Export footer (decisions 182-184): per-card selection saved (undo, None one step, own flags), "
+                          "old tab switch kept until the first click, showing writes nothing; four equal buttons, greyed "
+                          "with a reason; every card feeds its buttons (images/tables only their files, nothing trashed, "
+                          "PPTX, SI and whole SI follow the card); pressed tile + ring; d-orbital icon; minimum width: OK")
     finally:
         ctx.update(locals())
 

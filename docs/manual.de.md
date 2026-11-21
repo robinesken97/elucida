@@ -63,9 +63,13 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    **SI-Text**. Labels, Strukturen und Insets lassen sich mit der Maus verschieben.
    **Strg+Z** / **⌘Z** macht alles rückgängig.
 5. **Exportieren:** Im letzten Tab **Export** (Gruppe „Ausgabe“) wählst du die Formate für alle Abbildungen
-   (PDF/SVG/PNG/PPTX, 16 × 11 cm für eine halbe A4-Seite); **Exportieren** je Zeile (eine Zeile je Abbildung bzw.
-   Bericht) schreibt genau diese Dateien mit ihren Daten in den Ordner der Verbindung (`figures/`, `tables/`, `SI/`), **Alles exportieren**
-   alle auf einmal. **Strg+E** exportiert im offenen Tab dessen Abbildung. **Bearbeiten → Abbildung kopieren (SVG)**
+   (PDF/SVG/PNG/PPTX, 16 × 11 cm für eine halbe A4-Seite) und rechts per Klick die Karten (eine je Abbildung bzw.
+   Bericht; gewählt = eingedrückt mit blauem Ring, **Alle**/**Keine** darüber). Die Auswahl wird mit der Verbindung
+   gespeichert und gilt für die vier gleichrangigen Knöpfe der Fußleiste: **Bilder** (Dateien der Karten in den Ordner
+   der Verbindung, `figures/` und `SI/`, ohne Tabellen), **Tabellen** (CSV und Excel-Mappe nach `tables/`), **PPTX**
+   (eine Folie je Abbildung) und **SI (Word)** (abgewählte Abbildungen fehlen auch in der Gesamt-SI). Der Tooltip nennt
+   die Anzahl, ein grauer Knopf den Grund. **Strg+E** exportiert im offenen Tab dessen Abbildung, im Tab Export die
+   **Bilder**. **Bearbeiten → Abbildung kopieren (SVG)**
    (**Strg+Umschalt+C** / **⌘⇧C**) legt die Abbildung der rechts sichtbaren Seite genau wie im Export als SVG mit
    PNG-Ersatz in die Zwischenablage (macOS zusätzlich als PDF), z. B. für PowerPoint; auf Seiten ohne Abbildung
    (Tabellen, SI-Text) und für ein zurückgehaltenes NMR-Spektrum kommt nur ein Hinweis. NMR kopiert den Bereich aus dem
@@ -212,7 +216,7 @@ passt überall).
   `.elucida/exports.json`); Dateien älterer Versionen, selbst abgelegte Dateien, einzelne Kacheln des Tabs Export,
   Schnellauswertungen und fehlgeschlagene oder unvollständige Exporte löschen nie etwas.
 - Die **Exportmeldung** zählt die Dateien je Ordner (`SI/ 1 · figures/ 3 · tables/ 4`) und bietet **tables/ öffnen**.
-  Auch der Tab **Export** schreibt die Tabellen jedes exportierten Tabs.
+  Im Tab **Export** schreibt **Tabellen** die Tabellen der Tabs mit gewählter Karte.
 
 ### Projekte
 
@@ -1038,8 +1042,10 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Kurven rücken sofort auf die Fc-Skala (E_Fc = E − (E½,Ref − E°Ref)). Gespeichert wird ein Referenzfenster wie ein
   eingetipptes (eingetippte Fenster alter Verbindungen gelten weiter); ein Schritt zum Rückgängigmachen, **Esc** bricht
   ab. Die Referenzmessung muss eingeblendet sein. Im Bild steht über dem Oxidationspeak des Standards seine **Struktur**
-  (Ferrocen bzw. 1,1'-Diacetylferrocen als Sandwich, in der Farbe seiner Kurve; Chip „Struktur des Standards“, Vorgabe
-  an, aus = keine Markierung); die Bildunterschrift nennt den internen Standard ohnehin. Angehakte Messungen dienen nur
+  (Ferrocen bzw. 1,1'-Diacetylferrocen als Sandwich, mit der Bindungslänge der Verbindungsstruktur; schwarz oder mit dem
+  Chip „Standard in Kurvenfarbe“ in der Farbe seiner Kurve; Chip „Struktur des Standards“, Vorgabe an, aus = keine
+  Markierung; der CV-Stapel eines Vergleichs hat denselben Chip, Vorgabe aus); die Bildunterschrift nennt den internen
+  Standard ohnehin. Angehakte Messungen dienen nur
   als Referenz und gehen nicht in die Scanraten-Analyse ein; fehlt dadurch eine Scanrate, sagt das ein Hinweis unter
   den Ergebnissen.
 - **Referenz je Messung** („Referenz der ausgewählten Messung“): eigener interner Standard (auch das Fc/Ac₂Fc-Paar in

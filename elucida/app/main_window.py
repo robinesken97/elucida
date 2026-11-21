@@ -4216,10 +4216,11 @@ class MainWindow(QMainWindow):
     def set_si_parts(self, parts):
         self.settings.setValue("si_parts", ",".join(k for k in SI_PARTS if k in parts))
 
-    def export_pptx_slides(self, keys=None):
-        """„Folien aus Auswahl (PPTX)“ im Tab „Export“: die Abbildungen der gewählten Tabs (`keys`, sonst alle außer der
-        alle Abbildungen) wie in der SI (Bild + Unterschrift), eine Folie je Abbildung, als
-        <Verbindung>_slides.pptx nach figures/."""
+    def export_pptx_slides(self, keys=None, cards=False):
+        """„PPTX“ im Tab „Export“: die Abbildungen der gewählten Tabs (`keys`, sonst alle) wie in der SI (Bild +
+        Unterschrift), eine Folie je Abbildung, als <Verbindung>_slides.pptx nach figures/. cards: nur die Abbildungen
+        gewählter Karten (gespeicherte Auswahl, Entscheidung 182)."""
+        keep = (lambda k, b: EXPORTTAB.si_keep(self, k, b)) if cards else (lambda k, b: b)       # noqa: E731
         from elucida.si import pptx as PPTX
         if not self.ensure_project():
             return None
@@ -4234,13 +4235,13 @@ class MainWindow(QMainWindow):
                 if k not in ("irms", "hrms") and not eps_done:
                     eps_done = True
                     if "eps" not in off and self.groups:
-                        blocks += self.si_part("eps", lambda: self.si_eps_figures(work, name))
+                        blocks += keep("eps", self.si_part("eps", lambda: self.si_eps_figures(work, name)))
                 if k not in off:
-                    blocks += self.si_part(k, lambda t=t: t.si_figure(work, name))
+                    blocks += keep(k, self.si_part(k, lambda t=t: t.si_figure(work, name)))
             if "xray" not in off and any(self.xray_tab.structure(e) is not None for e in self.xray_tab.entries()):
                 blocks += self.si_part("xray", self.si_xray_part)
             if "dft" not in off and self.dft_has_data():
-                blocks += self.si_part("dft", lambda: self.dft_tab.pages.si_figures(work, name))
+                blocks += keep("dft", self.si_part("dft", lambda: self.dft_tab.pages.si_figures(work, name)))
             figs = PPTX.figures_from_blocks(blocks)
             if not figs:
                 return self.notify(T("pptx_none"))
@@ -4251,7 +4252,8 @@ class MainWindow(QMainWindow):
             except PermissionError as e:
                 return self.error(T("report_locked", p=getattr(e, "filename", "") or ""))
             data = set(self.export_keys())               # nur Tabs mit Daten nennen
-            sel = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in sorted(off) if k in data]
+            sel = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in sorted(off) if k in data] \
+                if not cards else EXPORTTAB.off_names(self, "pptx")
             used = [T("pptx_used", n=len(figs))] + ([T("si_used_figs_off", tabs=", ".join(sel))] if sel else [])
             self.exported([p.parent], [p], used)
         return p
@@ -4364,7 +4366,7 @@ class MainWindow(QMainWindow):
         if "figs" in parts:
             data = set(self.export_keys())                # Tabs mit Daten, ohne sie zu bauen oder zu zeichnen
             off = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in COMP.SI_FIG_KEYS
-                   if k in skip_figs and k in data]
+                   if k in skip_figs and k in data] if set(skip_figs) != self.si_figs_off() else EXPORTTAB.off_names(self)
             if off:
                 out.append(T("si_used_figs_off", tabs=", ".join(off)))
         if self._si_tables:
@@ -4413,6 +4415,7 @@ class MainWindow(QMainWindow):
             db = self.si_part("dft", lambda: self.dft_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si")), [])
             if "dft" in skip_figs:                     # Chip „DFT“ unter „Abbildungen“ ab: auch Orbital-/NBO-Bilder weg
                 db = self.drop_captioned_images(db)
+            db = EXPORTTAB.si_keep(self, "dft", db)    # abgewählte Karten (Orbitale, Bericht): ihre Bilder weg
             if any(b[0] != "columns" for b in db):      # nur NICS/ACID: deren Abbildungen stehen bei den Abbildungen
                 blocks += [("gap",), ("columns", 2)] + db
         return blocks, missing
@@ -4486,9 +4489,8 @@ class MainWindow(QMainWindow):
         out_dir = PRJ.work_dir(self.project_dir, "si")
         parts = {}
         self.skip_eps_error()
-        off = self.si_figs_off()                          # Spalte „SI“ der Verbindung gilt auch hier (Entscheidung 67)
-        names = [T("tab_eps") if k == "eps" else T(self._tab_spec(k)[3]) for k in COMP.SI_FIG_KEYS
-                 if k in off and k in self.export_keys()]           # nur Tabs mit Daten nennen
+        off = self.si_figs_off()                          # Auswahl der Verbindung gilt auch hier (Entscheidungen 67, 182)
+        names = EXPORTTAB.off_names(self)                 # nur Karten mit Daten nennen
         if names:
             self.__dict__.setdefault("_pub_si_off", []).append((comp.get("name") or Path(self.project_dir).name, names))
 
@@ -4498,7 +4500,7 @@ class MainWindow(QMainWindow):
                 if self.tab_key_of(t) in off:
                     continue
                 try:
-                    res += t.si_figure(out_dir, title)
+                    res += EXPORTTAB.si_keep(self, self.tab_key_of(t), t.si_figure(out_dir, title))
                 except Exception as ex:
                     self.skip_part(ex, part=T(self._tab_spec(self.tab_key_of(t))[3]))
             return res
@@ -4514,7 +4516,8 @@ class MainWindow(QMainWindow):
         if "irms" in sections:
             parts["irms"] = figs([self.irms_tab, self.hrms_tab])
         if "uvvis" in sections:
-            parts["uvvis"] = (self.si_part("eps", lambda: self.si_eps_figures(out_dir, title)) if "eps" not in off else []) + \
+            parts["uvvis"] = (EXPORTTAB.si_keep(self, "eps", self.si_part("eps", lambda: self.si_eps_figures(out_dir, title)))
+                              if "eps" not in off else []) + \
                 figs([self.ov_tab, self.uvkin_tab, self.fl_tab])
         for key, tab in (("epr", self.epr_tab), ("cv", self.cv_tab), ("sec", self.sec_tab), ("hcell", self.hcell_tab)):
             if key in sections:
@@ -4529,15 +4532,19 @@ class MainWindow(QMainWindow):
         dt = self.dft_tab
         if "dft" in sections and self.dft_has_data():
             parts["dft"] = self.si_part("dft", lambda: dt.docx_blocks(out_dir))
-            if "dft" in off:                              # Pille „SI“ der DFT-Karten aus: Bilder mit Unterschrift weg (B3)
+            if "dft" in off:                              # alle DFT-Karten abgewählt: Bilder mit Unterschrift weg (B3)
                 parts["dft"] = self.drop_captioned_images(parts["dft"])
+            parts["dft"] = EXPORTTAB.si_keep(self, "dft", parts["dft"])
         if "dft" in sections:                   # IR- und TD-DFT-Tabellen im Kapitel Rechnungen
             parts["calc_tables"] = self.si_calc_tables(title)
         if "dft" in sections and self.dft_has_data() and "dft" not in off:
-            parts["dft_figs"] = self.si_part("dft", lambda: dt.pages.si_figures(out_dir, title))  # Energieprofil, IRC, NICS (F4)
+            parts["dft_figs"] = EXPORTTAB.si_keep(self, "dft", self.si_part(            # Energieprofil, IRC, NICS (F4)
+                "dft", lambda: dt.pages.si_figures(out_dir, title)))
         try:                                    # Tab „Weitere“: ins gewählte Kapitel oder eigenes Kapitel am Ende
             for key, bl in (self.other_tab.chapter_blocks(out_dir, title) if "other" not in off else []):
-                key = "dft_figs" if key == "dft" else key
+                key, bl = "dft_figs" if key == "dft" else key, EXPORTTAB.si_keep(self, "other", bl)
+                if not bl:
+                    continue
                 if key.startswith("new:") or key in sections or (key == "dft_figs" and "dft" in sections):
                     parts[key] = (parts.get(key) or []) + bl
         except Exception as ex:
@@ -4584,14 +4591,15 @@ class MainWindow(QMainWindow):
         """Abbildungen aller Tabs mit Daten (ε je Serie, IR, HR-MS, Overlay, Fluoreszenz, CV, SEC, EPR), immer zwei je
         Seite (SI.two_per_page verkleinert, wo nötig), jede mit „Figure Sn: …“."""
         figs, eps_done = [], False
-        eps = lambda: self.si_part("eps", lambda: self.si_eps_figures(out_dir, name)) if "eps" not in skip else []  # noqa: E731
+        eps = lambda: EXPORTTAB.si_keep(self, "eps", self.si_part(                                              # noqa: E731
+            "eps", lambda: self.si_eps_figures(out_dir, name))) if "eps" not in skip else []
         for t in self.figure_tabs():                      # Reihenfolge der Tabs (Entscheidung 99): IR + EA, HRMS vor ε
             if self.tab_key_of(t) not in ("irms", "hrms") and not eps_done:
                 figs, eps_done = figs + eps(), True
             if self.tab_key_of(t) in skip:
                 continue
             try:
-                fb = t.si_figure(out_dir, name)
+                fb = EXPORTTAB.si_keep(self, self.tab_key_of(t), t.si_figure(out_dir, name))   # Auswahl je Karte
                 if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
                     fb = [("char", SI.chem_html(t.si_setup_text()))] + fb
                 figs += fb
@@ -4600,7 +4608,7 @@ class MainWindow(QMainWindow):
         if not eps_done:
             figs += eps()
         if "dft" not in skip and self.dft_has_data():         # Energieprofil, IRC, NICS, ACID (NBO/Orbitale: si_blocks)
-            figs += self.si_part("dft", lambda: self.dft_tab.pages.si_figures(out_dir, name))
+            figs += EXPORTTAB.si_keep(self, "dft", self.si_part("dft", lambda: self.dft_tab.pages.si_figures(out_dir, name)))
         return SI.two_per_page(figs)
 
     def si_eps_figures(self, out_dir, name):
@@ -4883,7 +4891,7 @@ class MainWindow(QMainWindow):
             return False
         if self.__dict__.get("_part_cost", {}).get(key, EXPORTTAB.PART_COST_MAX) >= EXPORTTAB.PART_COST_MAX:
             return self.render_quick_parts(key, tab)     # Export teuer oder unbekannt: nur billige Teile direkt (132)
-        ps = [(i, pred) for i, (_, pred) in enumerate(EXPORTTAB.parts(self, key)) if pred is not None]
+        ps = [(i, pred) for i, (_, pred, _pid) in enumerate(EXPORTTAB.parts(self, key)) if pred is not None]
         out = PRJ.work_dir(self.project_dir, "thumbs")
         fp = json.dumps(getattr(self, self._tab_spec(key)[2]), sort_keys=True, default=str)
         fps = self.__dict__.setdefault("_thumb_fp_parts", {})
@@ -4932,7 +4940,7 @@ class MainWindow(QMainWindow):
         tab = tab or (self.__dict__.get(self._tab_spec(key)[0]) if key in ("fluo", "xray", "dft") else None)
         if tab is None:
             return {}
-        labs = [lab for lab, _ in EXPORTTAB.parts(self, key)]
+        labs = [lab for lab, *_ in EXPORTTAB.parts(self, key)]
         if key == "fluo" and T("export_part_decay") in labs:
             return {labs.index(T("export_part_decay")): tab.tau.draw}
         if key == "xray" and "PXRD" in labs:

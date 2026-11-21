@@ -61,9 +61,12 @@ project folder.
    something differs from the default), the figure on the right with the **Results** and **SI Text** tabs. Labels, structures and insets can be dragged with the mouse.
    **Ctrl+Z** / **⌘Z** undoes everything.
 5. **Export:** in the last tab **Export** (group "Output") you choose the formats for all figures (PDF/SVG/PNG/PPTX,
-   16 × 11 cm for half an A4 page); **Export** per row (one row per figure or report) writes exactly those files with their data into the
-   compound folder (`figures/`, `tables/`, `SI/`), **Export All** writes all of them. **Ctrl+E** exports the figure of
-   the open tab. **Edit → Copy Figure (SVG)** (**Ctrl+Shift+C** / **⌘⇧C**) puts the figure of the page shown on the right
+   16 × 11 cm for half an A4 page) and click the cards on the right (one per figure or report; selected = pressed with a
+   blue ring, **All**/**None** above them). The selection is saved with the compound and drives the four equal buttons of
+   the footer: **Images** (the cards' files in the compound folder, `figures/` and `SI/`, without tables), **Tables** (CSV
+   and Excel workbook to `tables/`), **PPTX** (one slide per figure) and **SI (Word)** (deselected figures are also left
+   out of the whole SI). The tooltip gives the count, a greyed button the reason. **Ctrl+E** exports the figure of the
+   open tab, in the tab Export the **Images**. **Edit → Copy Figure (SVG)** (**Ctrl+Shift+C** / **⌘⇧C**) puts the figure of the page shown on the right
    on the clipboard exactly as exported, as SVG with a PNG fallback (on macOS also as PDF), e.g. for PowerPoint; pages
    without a figure (tables, SI text) and a withheld NMR spectrum only show a notice. NMR copies the range from the
    field, not the preview zoom.
@@ -202,7 +205,7 @@ Text/CSV**: a German Excel opens a comma CSV by double-click as one column – n
   compound's exports wrote themselves (list in `.elucida/exports.json`) are affected; files from older versions, files you
   added yourself, single tiles of the Export tab, quick evaluations and failed or incomplete exports never delete anything.
 - The **export message** counts the files per folder (`SI/ 1 · figures/ 3 · tables/ 4`) and offers **Open tables/**.
-  The **Export** tab writes the tables of every exported tab as well.
+  In the **Export** tab, **Tables** writes the tables of the tabs with a selected card.
 
 ### Projects
 
@@ -996,8 +999,9 @@ Absorption and emission in one figure, as commonly shown in papers:
   move to the Fc scale at once (E_Fc = E − (E½,ref − E°ref)). A reference window is stored like a typed one (typed
   windows of older compounds keep working); one undo step, **Esc** cancels. The reference run must be shown. In the
   figure the **structure** of the standard stands above its oxidation peak (ferrocene or 1,1'-diacetylferrocene as a
-  sandwich, in the colour of its curve; chip "Standard Structure", on by default, off = no marker); the caption names the
-  internal standard anyway. Ticked runs serve as reference only and are left out of the scan-rate analysis; if a scan
+  sandwich, at the bond length of the compound's structure; black, or in the colour of its curve with the chip "Standard
+  in curve colour"; chip "Standard structure", on by default, off = no marker; the CV stack of a comparison has the same
+  chip, off by default); the caption names the internal standard anyway. Ticked runs serve as reference only and are left out of the scan-rate analysis; if a scan
   rate is missing because of that, a note below the results says so.
 - **Reference per measurement** ("Reference of the selected measurement"): own internal standard (also the
   Fc/Ac₂Fc couple in the same file, e.g. "with Ac₂Fc") or own shift – needed when comparing solvents, each against

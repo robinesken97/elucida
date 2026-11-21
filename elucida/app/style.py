@@ -3026,7 +3026,6 @@ QLabel#exportName {{ font-size: 13px; background: transparent; }}
 QWidget#tile {{ background: transparent; border: none; padding: 0; }}
 QFrame#tileSel {{ background: transparent; border: 2px solid transparent; border-radius: 8px; }}
 QFrame#tileSel[current="true"] {{ border-color: {c['border_strong']}; }}
-QFrame#tileSel[selected="true"] {{ border-color: {c['accent']}; }}
 QLabel#tileThumb {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 6px; }}
 QLabel#tileThumb[placeholder="true"] {{ background: {c['card']}; }}
 QLabel#tileCap {{ font-size: 10.5px; font-weight: 600; background: transparent; }}

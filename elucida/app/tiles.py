@@ -11,12 +11,13 @@ Datenart (vorhanden = Farbe, sonst Linienfarbe), darunter Nummer + Summenformel.
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from elucida.app import style as STYLE
 from elucida.app.i18n import T
 
+LOBE_LIGHT = 0.30                                         # Deckkraft der hellen Phase (Orbital-Symbol)
 EDGE = STYLE.TILE_SEL                                     # linke Kante aller Inhalte im Raster (Platz für den Rahmen)
 
 
@@ -138,10 +139,25 @@ def kind_pixmap(kind, key, ratio=1.0):
         for (x, y), c in zip(pts, ("#3b6fd6", "#8a8f98", "#8a8f98", "#d64545", "#8a8f98")):   # feste Atomfarben
             p.setBrush(QColor(c))
             p.drawEllipse(QPointF(x, y), 3.8, 3.8)
-    elif kind == "lobes":
-        p.drawEllipse(QRectF(10, 8, 20, 24))
-        p.drawEllipse(QRectF(34, 8, 20, 24))
-        p.drawLine(QPointF(30, 20), QPointF(34, 20))
+    elif kind == "lobes":                                 # d-Kleeblatt um ein graues Atom (Entscheidung 184, Entwurf b):
+        L, hw = 18, 6.0                                   # Phasen abwechselnd gefüllt / hell mit Umriss
+        lobe = QPainterPath(QPointF(0, 0))
+        lobe.cubicTo(QPointF(L * 0.30, -hw), QPointF(L, -hw * 1.15), QPointF(L, 0))
+        lobe.cubicTo(QPointF(L, hw * 1.15), QPointF(L * 0.30, hw), QPointF(0, 0))
+        p.setPen(QPen(col, 1.3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        for k, ang in enumerate((45, 135, 225, 315)):
+            t = QTransform()
+            t.translate(32, 20)
+            t.rotate(-ang)
+            t.translate(1.2, 0)
+            fill = QColor(col)
+            if k % 2:
+                fill.setAlphaF(LOBE_LIGHT)
+            p.setBrush(fill)
+            p.drawPath(t.map(lobe))
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#8a8f98"))                     # Atom wie C in der Molekülform
+        p.drawEllipse(QPointF(32, 20), 2.8, 2.8)
     elif kind == "table":
         p.drawRoundedRect(QRectF(8, 4, 48, 32), 2, 2)
         for y in (12, 20, 28):
@@ -210,6 +226,37 @@ class Legend(QWidget):
         h.addStretch(1)
 
 
+PRESS = 0.92                                              # gewählte Kachel: Vorschau eingedrückt auf 92 % (Entwurf A)
+
+
+class Ring(QFrame):
+    """Rahmen um die Vorschau einer Kachel: Fokus (`current`) über das Stylesheet; gewählt ein blauer Ring 2,5 px mit
+    3 px Abstand um die eingedrückte Vorschau (Entscheidung 182), innerhalb des Rands TILE_SEL."""
+
+    def __init__(self, tile):
+        super().__init__(tile, objectName="tileSel")
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    @staticmethod
+    def inset():
+        """Einzug der eingedrückten Vorschau je Seite (px): 4 % der Mindestbreite bzw. der Höhe (5 / 3)."""
+        return round(STYLE.TILE_W * (1 - PRESS) / 2), round(STYLE.TILE_THUMB_H * (1 - PRESS) / 2)
+
+    def paintEvent(self, ev):
+        super().paintEvent(ev)
+        if not self.property("selected"):
+            return
+        s, w = STYLE.TILE_SEL, 2.5
+        dx, dy = self.inset()
+        o = 3 + w / 2                                     # 3 px Lücke, Linienmitte
+        r = QRectF(self.rect()).adjusted(s + dx - o, s + dy - o, -(s + dx - o), -(s + dy - o))
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QPen(QColor(STYLE.colors()["accent"]), w))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r, 6 + o, 6 + o)
+
+
 class Tile(QWidget):
     """Eine Kachel. mark: (Text, Methodenschlüssel) oder None; pill: None, (lesen, setzen) für „SI“ oder ein Text (Zahl);
     slots: Farbstreifen der Projektseite oder None."""
@@ -242,12 +289,13 @@ class Tile(QWidget):
         capw.setFixedHeight(STYLE.TILE_CAP_H)
         capw.setLayout(cap)
         v.addWidget(capw)
-        self.sel = QFrame(self, objectName="tileSel")     # Auswahlrahmen nur um die Vorschau, 3 px außen (Entwurf)
-        self.sel.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.sel = Ring(self)                             # Auswahlrahmen nur um die Vorschau, 3 px außen (Entwurf)
         self.pic = QLabel(objectName="tileThumb", alignment=Qt.AlignCenter)
         self.pic.setFixedHeight(STYLE.TILE_THUMB_H)
+        self._pic_css, self._pm = "", None
         if mark is not None:                             # Vorschaufläche im Ton der Datenart (Entscheidung 99)
-            self.pic.setStyleSheet(f"background: {STYLE.method_tint(mark[1])};")
+            self._pic_css = f"background: {STYLE.method_tint(mark[1])};"
+            self.pic.setStyleSheet(self._pic_css)
         v.addWidget(self.pic)
         self.slotbar = SlotBar(slots, self) if slots else None   # nicht über den Canvas-Effekt der Vorschau
         from elucida.app.welcome import EndElided
@@ -277,16 +325,34 @@ class Tile(QWidget):
         """Vorschau (QPixmap) oder Platzhalter der Art `kind` in der Farbe von `key` (kind_pixmap)."""
         if pixmap is None or pixmap.isNull():
             self.pic.setProperty("placeholder", True)
-            self.pic.setPixmap(kind_pixmap(kind or "curve", key, max(1.0, self.pic.devicePixelRatioF())))
-        else:
-            self.pic.setPixmap(pixmap)
+            pixmap = kind_pixmap(kind or "curve", key, max(1.0, self.pic.devicePixelRatioF()))
+        self._pm = pixmap
+        self._show_pm()
+
+    def _show_pm(self):
+        """Vorschau; gewählt: eingedrückt (Fläche und Bild 92 %, Entscheidung 182 „ganze Karte schrumpft + Ring“)."""
+        pm = self._pm
+        if pm is not None and self.selected:
+            r = pm.devicePixelRatio()
+            pm = pm.scaled(round(pm.width() * PRESS), round(pm.height() * PRESS), Qt.KeepAspectRatio,
+                           Qt.SmoothTransformation)
+            pm.setDevicePixelRatio(r)
+        if pm is not None:
+            self.pic.setPixmap(pm)
 
     def set_selected(self, on):
-        self.selected = bool(on) and self.selectable            # nicht wählbare Kacheln (Tabellen) nie: Alle, Leertaste
-        self.setProperty("selected", self.selected)
-        self.sel.setProperty("selected", self.selected)
+        on = bool(on) and self.selectable                        # nicht wählbare Kacheln nie: Alle, Leertaste
+        changed = on != self.selected or self.property("selected") is None
+        self.selected = on
+        self.setProperty("selected", on)
+        self.sel.setProperty("selected", on)
+        if changed:
+            dx, dy = Ring.inset()
+            self.pic.setStyleSheet(self._pic_css + (f" margin: {dy}px {dx}px;" if on else ""))
+            self._show_pm()
         self.sel.style().unpolish(self.sel)
         self.sel.style().polish(self.sel)
+        self.sel.update()
 
     def set_current(self, on):
         self.setProperty("current", bool(on))

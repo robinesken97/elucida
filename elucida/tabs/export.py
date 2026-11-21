@@ -1,9 +1,10 @@
 """Tab „Export“ (letzter Tab, Gruppe „Ausgabe“; Entscheidungen 64–68, 93): links Formate der Bilder und der SI-Abschnitt
 dieser Verbindung, rechts eine Galerie mit einer Karte je Abbildung bzw. Bericht, nach Tab gruppiert (Entwurf v3,
-audit/export-tab-skizze.html). Klick wählt aus; „n exportieren“ bzw. „Alles exportieren“ (Hauptknopf) schreibt genau die
-Dateien der gewählten Karten, „Folien aus Auswahl (PPTX)“ eine Foliendatei. Die Pille „SI“ an einer Karte ist der eine Ort
-für die SI-Auswahl (Entscheidung 67): Abbildungen eines Tabs (`export_state.si_off`, mit der Verbindung gespeichert, gilt
-auch für die Gesamt-SI), Packung/PXRD (X-Ray) und NTO (TD-DFT) über ihre bisherigen Schlüssel im Zustand.
+audit/export-tab-skizze.html). Eine gespeicherte Auswahl (Entscheidungen 182/183): Klick auf eine Karte wählt sie aus
+oder ab (Rückgängig), die Fußleiste hat vier gleichrangige Knöpfe Bilder · Tabellen · PPTX · SI (Word); `feeds` sagt,
+welche Karte welchen Knopf speist. Die Auswahl ist zugleich die SI-Auswahl (SI-Abschnitt und Gesamt-SI), gespeichert als
+Abwahl in `export_state.si_off` (Tab = alle Karten, „Tab:Kennung“ = eine Karte); Packung/PXRD (X-Ray), NTO und die
+Nur-SI-Tabellen über ihre bisherigen Schlüssel im Zustand ihres Tabs.
 
 Zeigen baut keine anderen Tabs: Karten aus den Punkten der Tab-Leiste und dem gespeicherten Zustand, Vorschaubilder aus dem
 letzten Export (figures/*.png), sonst aus der SI (.elucida/si) oder dem Bild, das beim Speichern für den offenen Tab
@@ -29,17 +30,18 @@ TABLE_SUFFIXES = ("_captions", "_HOMA", "_crystal_data", "_parameters", "_tables
 
 
 def parts(main, key):
-    """Zeilen eines Tabs: [(Teil, Test auf den Dateinamen oder None)] – eine Zeile je Abbildung/Bericht, soweit der
-    gespeicherte Zustand sie nennt (baut keinen Tab); None = der ganze Tab bzw. alles, was keine andere Zeile nimmt.
-    Der Test gilt für die Dateien, die der Export des Tabs schreibt (`MainWindow.place_exports` legt nur diese ab)."""
+    """Zeilen eines Tabs: [(Teil, Test auf den Dateinamen oder None, Kennung)] – eine Zeile je Abbildung/Bericht, soweit
+    der gespeicherte Zustand sie nennt (baut keinen Tab); None = der ganze Tab bzw. alles, was keine andere Zeile nimmt.
+    Der Test gilt für die Dateien, die der Export des Tabs schreibt (`MainWindow.place_exports` legt nur diese ab).
+    Kennung: sprachunabhängig (gespeicherte Auswahl `card_id`), "" = einzige Karte des Tabs."""
     from elucida.app import project as PRJ
     from elucida.core import uvvis as core
     if key == "eps":
         gs = list(main.groups)
-        return [(g, lambda n, s=PRJ.export_stem(g, "eps"): n.startswith(s + ".") or n.startswith(s + "_"))
-                for g in gs] if len(gs) > 1 else [("", None)]
+        return [(g, lambda n, s=PRJ.export_stem(g, "eps"): n.startswith(s + ".") or n.startswith(s + "_"), g)
+                for g in gs] if len(gs) > 1 else [("", None, "")]
     if key in WORD_KEYS:
-        return [("", None)]
+        return [("", None, "")]
     _, cls, st_attr, _ = main._tab_spec(key)
     st = getattr(main, st_attr) or {}
     stem = PRJ.export_stem(main.export_name(), cls.STATE_KEY)
@@ -52,50 +54,210 @@ def parts(main, key):
         return lambda n: part in (rest(n) or "")
     out = []
     if key == "fluo" and st.get("decay_file"):
-        out = [(T("export_part_spectra"), None), (T("export_part_decay"), has("_decay"))]
+        out = [(T("export_part_spectra"), None, "spectra"), (T("export_part_decay"), has("_decay"), "decay")]
     elif key == "epr" and st.get("calc"):
-        out = [(T("export_part_spectra"), None), (T("export_part_hfc"), has("_hfc")), (T("export_part_spin"), has("_spin"))]
+        out = [(T("export_part_spectra"), None, "spectra"), (T("export_part_hfc"), has("_hfc"), "hfc"),
+               (T("export_part_spin"), has("_spin"), "spin")]
     elif key == "overlay" and (st.get("nto") or {}).get("items"):
-        out = [(T("export_part_spectra"), None), ("NTO", has("_NTO"))]
+        out = [(T("export_part_spectra"), None, "spectra"), ("NTO", has("_NTO"), "nto")]
     elif key == "xray":
         es = st.get("entries") or []
-        out = [(T("export_part_structure"), None)]
-        if any((e.get("pack") or {}).get(f) for e in es for f in ("on", "used", "si")):   # Pille aus: bleibt (B1)
-            out.append((T("export_part_packing"), has("_packing")))
+        out = [(T("export_part_structure"), None, "structure")]
+        if any((e.get("pack") or {}).get(f) for e in es for f in ("on", "used", "si")):   # abgewählt: bleibt (B1)
+            out.append((T("export_part_packing"), has("_packing"), "packing"))
         if any((e.get("pxrd") or {}).get("file") for e in es):
-            out.append(("PXRD", has("_pxrd")))
-        out.append((T("export_part_tables"), lambda n: (rest(n) or "").endswith(TABLE_SUFFIXES)))
+            out.append(("PXRD", has("_pxrd"), "pxrd"))
+        out.append((T("export_part_tables"), lambda n: (rest(n) or "").endswith(TABLE_SUFFIXES), "tables"))
     elif key == "dft":
         for e in st.get("entries") or []:
             nm = core.safe_name(e.get("name") or Path(e.get("file") or "").stem)
-            out.append((T("export_part_geometry", name=nm), lambda n, nm=nm: rest(n) == "_" + nm))
+            out.append((T("export_part_geometry", name=nm), lambda n, nm=nm: rest(n) == "_" + nm, "geom:" + nm))
             if e.get("orbitals"):
-                out.append((T("export_part_orbitals", name=nm), lambda n, nm=nm: (rest(n) or "").startswith(f"_{nm}_")))
+                out.append((T("export_part_orbitals", name=nm), lambda n, nm=nm: (rest(n) or "").startswith(f"_{nm}_"),
+                            "orb:" + nm))
         if (st.get("nics") or {}).get("files"):
-            out.append(("NICS", has("_NICS")))
-        out.append((T("export_part_report"), None))
+            out.append(("NICS", has("_NICS"), "nics"))
+        out.append((T("export_part_report"), None, "report"))
     elif key == "other":
         es = [e for e in st.get("entries") or [] if Path(e.get("file") or "").exists()]
         if len(es) > 1:                                   # wie OtherTab.export_to: <Stamm>_<k>.<Endung>
-            out = [(Path(e["file"]).name, lambda n, k=k: rest(n) == f"_{k}") for k, e in enumerate(es, 1)]
+            out = [(Path(e["file"]).name, lambda n, k=k: rest(n) == f"_{k}", Path(e["file"]).name)
+                   for k, e in enumerate(es, 1)]
     if len(out) < 2:
-        return [("", None)]
-    taken = [p for _, p in out if p is not None]
-    return [(lab, p if p is not None else (lambda n, ps=taken: not any(q(n) for q in ps))) for lab, p in out]
+        return [("", None, "")]
+    taken = [p for _, p, _ in out if p is not None]
+    return [(lab, p if p is not None else (lambda n, ps=taken: not any(q(n) for q in ps)), pid) for lab, p, pid in out]
+
+
+# -- Eine gespeicherte Auswahl (Entscheidungen 182/183): gilt für Bilder, Tabellen, PPTX und SI (Word) ------------------
+# Gespeichert als Abwahl in `export_state.si_off` (wie bisher der Tab-Schalter): ein Tabschlüssel = alle Karten des Tabs
+# aus (alte Projekte, unverändert gültig), „<Tab>:<Kennung>“ = eine Karte aus. Neue Karten sind gewählt (wie bisher: in
+# der SI). Karten mit eigenem SI-Schlüssel im Zustand ihres Tabs (Packung, PXRD, NTO, Nur-SI-Tabellen) lesen und setzen
+# diesen Schlüssel; die Tabs lesen ihn selbst.
+SI_ONLY = {"tdt": ("overlay", "tdt_si", True), "irc": ("irms", "irc_si", True), "homa": (None, "homa_si", False)}
+
+
+def card_id(key, pid):
+    return f"{key}:{pid}" if pid else key
+
+
+def flag(main, key, pid):
+    """(lesen, setzen) einer Karte mit eigenem SI-Schlüssel, sonst None. Lesen ändert den Zustand nie."""
+    if key == "xray" and pid in ("packing", "pxrd"):
+        sub = "pack" if pid == "packing" else "pxrd"
+        es = [e for e in main.xray_state.get("entries") or []          # nur Strukturen, die die Karte haben (wie parts)
+              if ((e.get(sub) or {}).get("file") if sub == "pxrd" else e.get(sub))]
+        # shortcut: eine Karte für alle Strukturen; wieder an schaltet alle betroffenen an, auch eine zuvor einzeln abgewählte
+        return (lambda: any(e[sub].get("si", sub == "pxrd") for e in es),
+                lambda on: [e[sub].__setitem__("si", on) for e in es])
+    if key == "overlay" and pid == "nto":
+        return (lambda: (main.ov_state.get("nto") or {}).get("si", True),
+                lambda on: main.ov_state.setdefault("nto", {}).__setitem__("si", on))
+    if pid in SI_ONLY and (SI_ONLY[pid][0] in (None, key)):
+        st, sk, default = getattr(main, main._tab_spec(key)[2]), SI_ONLY[pid][1], SI_ONLY[pid][2]
+        return (lambda: bool(st.get(sk, default)), lambda on: st.__setitem__(sk, on))
+    return None
+
+
+def is_on(main, key, pid):
+    """Karte gewählt? (gespeichert mit der Verbindung)"""
+    f = flag(main, key, pid)
+    if f is not None:
+        return bool(f[0]())
+    off = main.si_figs_off()
+    return key not in off and card_id(key, pid) not in off
+
+
+def set_on(main, changes):
+    """Auswahl ändern: [(Tab, Kennung, an)] -> ein Rückgängig-Schritt (Klick, Alle, Keine). Ein Tab-Schalter alter
+    Projekte wird erst beim ersten Klick auf eine Karte seines Tabs in Karten aufgelöst. -> True, wenn sich etwas änderte."""
+    off0 = main.si_figs_off()
+    off, touched = set(off0), []
+    for key, pid, on in changes:
+        f = flag(main, key, pid)
+        if f is not None:
+            if bool(f[0]()) != bool(on):
+                f[1](bool(on))
+                touched.append(key)
+            continue
+        if on and pid and key in off:                     # alter Tab-Schalter: übrige Karten des Tabs bleiben aus
+            off.discard(key)
+            off |= {card_id(key, p) for _, _, p in parts(main, key) if p and flag(main, key, p) is None}
+        (off.discard if on else off.add)(card_id(key, pid))
+    if off == off0 and not touched:
+        return False
+    if off != off0:
+        main.export_state["si_off"] = sorted(off)
+    main.export_state["si_mark"] = main.export_state.get("si_mark", 0) + 1     # Rückgängig bleibt im Tab „Export“
+    for key in dict.fromkeys(touched):
+        if main._built(key):
+            main.replace_tab(key)
+    main.push_undo()
+    return True
+
+
+def feeds(key, pid, si_only=False):
+    """Knöpfe, die eine Karte speist: img (Bilder: alle Dateien der Karte außer Tabellen, also auch Methodentext,
+    Bildunterschriften, Word-Berichte), tab (Tabellen: CSV/Excel ihres Tabs), pptx (Folien), si (Abbildung bzw. Tabelle
+    in der SI). Was nicht in „si“ steht, kommt über die Teile links in die SI (Synthese, NMR, Kristallstruktur, DFT)."""
+    if si_only:
+        return {"si"}                                     # TD-DFT-, IR-Rechnungs-, HOMA-Tabelle: Text der SI, keine Datei
+    if key in WORD_KEYS:
+        return {"img"}
+    out = {"img", "tab"} if key != "other" else {"img"}   # Weitere: fremde Bilder, keine Tabellen
+    if key == "xray":
+        return out | ({"pptx"} if pid == "structure" else {"si"} if pid in ("packing", "pxrd") else set())
+    if key == "dft":
+        return out | ({"pptx", "si"} if pid in ("nics", "report") else {"si"} if pid.startswith("orb:") else set())
+    if key == "overlay" and pid == "nto":
+        return out | {"si"}                               # NTO-Bilder: SI über si_calc_tables, keine Folie
+    return out | {"si"} | ({"pptx"} if key in PPTX_KEYS else set())
+
+
+def si_pid(main, key, stem):
+    """Kennung der Karte zu einem SI-Bild (Dateiname ohne Endung, wie ihn die Tabs für die SI schreiben)."""
+    from elucida.core import uvvis as core
+    if key == "eps":
+        return next((g for g in main.groups if stem.endswith("_epsilon_" + core.safe_name(g))), "")
+    if key == "fluo":
+        return "decay" if stem.endswith("_fluorescence_decay") else "spectra"
+    if key == "overlay":
+        return "nto" if "_NTO_" in stem else "spectra"
+    if key == "epr":
+        return next((k for k in ("hfc", "spin") if stem.endswith("_epr_" + k)), "spectra")
+    if key == "other" and "_other_" in stem:
+        k = stem.rsplit("_other_", 1)[1]
+        es = getattr(main, main._tab_spec("other")[2]).get("entries") or []
+        return Path(es[int(k)]["file"]).name if k.isdigit() and int(k) < len(es) else ""
+    if key == "dft":
+        if "_dft_NICS" in stem:
+            return "nics"
+        head, _, tail = stem.partition("_")
+        es = main.dft_state.get("entries") or []
+        if head.isdigit() and int(head) < len(es) and not stem.endswith("_dft") and "_nbo" not in stem \
+                and "_dft_" not in stem:
+            e = es[int(head)]                             # Orbitalbild `<n>_<Name>_<Orbital>` (DFTTab.orbital_blocks)
+            return "orb:" + core.safe_name(e.get("name") or Path(e.get("file") or "").stem)
+        return "geom" if stem.endswith("_dft") else "report"
+    return ""
+
+
+def si_keep(main, key, blocks):
+    """SI-/Folien-Blöcke eines Tabs ohne die Abbildungen abgewählter Karten (Bild samt folgender Unterschrift). Den
+    ganzen Tab (Tabschlüssel in der Abwahl) prüfen die Aufrufer wie bisher; Geometrie, Koordinaten, Tabellen bleiben."""
+    off = {pid for _, _, pid in parts(main, key) if pid and "si" in feeds(key, pid) and flag(main, key, pid) is None
+           and not is_on(main, key, pid)}
+    if not off or not blocks:
+        return blocks
+    out, drop = [], False
+    for b in blocks:
+        if b[0] == "image":
+            drop = si_pid(main, key, Path(str(b[1])).stem) in off
+            if not drop:
+                out.append(b)
+        elif drop and b[0] in ("figcap", "text"):         # Unterschrift des weggelassenen Bilds (Orbitale: „text“)
+            drop = False
+        else:
+            drop = False
+            out.append(b)
+    if key == "other":                                    # eigene Überschrift ohne Abbildung darunter: weg
+        out = [b for i, b in enumerate(out) if b[0] != "heading" or (i + 1 < len(out) and out[i + 1][0] != "heading")]
+    return out
+
+
+def off_names(main, feed="si"):
+    """Abgewählte Karten mit Daten, deren Abbildung sonst in der SI (bzw. `feed`) stünde (Meldungen): Tab bzw.
+    „Tab · Teil“; auch Karten mit eigenem Schlüssel (Packung, PXRD, NTO)."""
+    out = []
+    for k in main.export_keys():
+        tab = T("tab_eps") if k == "eps" else T(main._tab_spec(k)[3])
+        ps = parts(main, k)
+        if k not in SI_FIG_KEYS + ("xray",):                # X-Ray: Packung, PXRD
+            continue
+        if k in main.si_figs_off():
+            out.append(tab)
+            continue
+        out += [f"{tab} · {lab}" for lab, _, pid in ps
+                if pid and feed in feeds(k, pid) and not is_on(main, k, pid)]
+    return out
 
 
 class ExportCard(Tile):
-    """Kachel einer Abbildung bzw. eines Berichts (gemeinsames Kachelraster `app/tiles.py`): Marke der Datenart, Pille
-    „SI“, Vorschau, Teilname. Nur-SI-Kacheln (Tabellen ohne eigene Dateien) sind nicht wählbar."""
+    """Kachel einer Abbildung, eines Berichts oder einer Nur-SI-Tabelle (gemeinsames Kachelraster `app/tiles.py`):
+    Marke der Datenart, Vorschau, Teilname. Klick = gespeicherte Auswahl (`set_on`); Tooltip nennt die Knöpfe."""
 
-    def __init__(self, tab, key, idx, label, name, pred, report, si, si_only=False):
-        super().__init__((tab._name(key), key), name, si, selectable=not si_only,
-                         tip=T("export_si_only_tip") if si_only else
-                         ("" if si is not None else T("export_si_parts_tip") if key in ("syn", "nmr", "xray") else ""))
-        self.tab, self.key, self.idx, self.label, self.pred, self.report, self.si = tab, key, idx, label, pred, report, si
-        self.si_only = si_only
-        if self.pill is not None:
-            self.pill.setToolTip(T("export_si_pill_tip"))
+    def __init__(self, tab, key, idx, label, name, pred, report, pid="", si_only=False):
+        self.pid, self.si_only = pid, si_only
+        self.feeds = feeds(key, pid, si_only)
+        tips = [T("export_feeds", items=", ".join(T("export_btn_" + b) for b in ("img", "tab", "pptx", "si")
+                                                  if b in self.feeds))]
+        if si_only:
+            tips.append(T("export_si_only_tip"))
+        elif key in SI_FIG_KEYS + ("xray",) and "si" not in self.feeds or key in WORD_KEYS:
+            tips.append(T("export_si_parts_tip"))
+        super().__init__((tab._name(key), key), name, None, tip="\n".join(tips))
+        self.tab, self.key, self.idx, self.label, self.pred, self.report = tab, key, idx, label, pred, report
+        self.cid = card_id(key, pid)
 
     def set_thumb(self, path):
         """Vorschau aus dem Bild, sonst Platzhalter je Art in der Farbe der Datenart."""
@@ -256,21 +418,23 @@ class ExportTab(QWidget):
         self.right_tabs.setCurrentIndex(next((i for i, (sid, _) in enumerate(self.segments) if sid == seg), 0))
         self.right_tabs.widget(self.right_tabs.currentIndex()).layout().addWidget(self.content)
         self.right_tabs.currentChanged.connect(self._segment_changed)
+        # Fußleiste (Entscheidung 182, Variante A): vier gleichrangige Ausgabeknöpfe, kein blauer Hauptknopf (Blau =
+        # ausgewählt, Ausnahme in ui.md); Zahlen im Tooltip, ohne passende Auswahl grau mit Grund im Tooltip
         self.lbl_count = QLabel(objectName="recentSub")
-        self.btn_slides = QPushButton(T("export_slides_sel"))
-        self.btn_slides.setToolTip(T("export_slides_sel_tip"))
+        self.btn_img, self.btn_tables, self.btn_slides, self.btn_si = (
+            QPushButton(T("export_btn_" + b)) for b in ("img", "tab", "pptx", "si"))
+        self.btn_img.clicked.connect(self.run)
+        self.btn_tables.clicked.connect(self.run_tables)
         self.btn_slides.clicked.connect(self.run_slides)
-        self.btn_main = QPushButton(STYLE.icon("export", "#FFFFFF"), T("export_all"))
-        self.btn_main.setProperty("accent", True)                # Hauptknopf dieser Ansicht
-        self.btn_main.setToolTip(T("export_all_tip"))
-        self.btn_main.clicked.connect(self.run)
-        self.btn_all = self.btn_main
+        self.btn_si.clicked.connect(self.run_si)
+        self.out_buttons = {"img": self.btn_img, "tab": self.btn_tables, "pptx": self.btn_slides, "si": self.btn_si}
+        self.btn_all = self.btn_img                              # export_all_tabs sperrt ihn während des Exports
         right = QWidget()
         rv = QVBoxLayout(right)
         rv.setContentsMargins(0, TABS.PAGE_TOP, 0, 0)
         rv.setSpacing(0)
         rv.addWidget(self.right_tabs, 1)
-        rv.addWidget(TABS.side_bar(self.lbl_count, self.btn_slides, self.btn_main, stretch_at=1))
+        rv.addWidget(TABS.side_bar(self.lbl_count, *self.out_buttons.values(), stretch_at=1))
         split = QSplitter(Qt.Horizontal)
         split.addWidget(TABS.footer(self, ls))                   # Spalte mit Schrittleiste wie in allen Tabs
         split.addWidget(right)
@@ -314,14 +478,10 @@ class ExportTab(QWidget):
         self.cmb_si_font.setToolTip(T("si_font_tip"))
         self.cmb_si_font.currentFontChanged.connect(self._si_font_changed)
         f.addRow(T("si_font"), self.cmb_si_font)
-        row = QHBoxLayout()
-        self.btn_si = QPushButton(T("export_si_btn"))           # graue Knöpfe (Entscheidung 68)
-        self.btn_si.setToolTip(T("act_si_tip"))
-        self.btn_si.clicked.connect(self.main.export_si_dialog)
+        row = QHBoxLayout()                                     # „SI (Word)“ steht in der Fußleiste (Entscheidung 182)
         self.btn_dp = QPushButton(T("export_dp_btn"))
         self.btn_dp.setToolTip(T("export_dp_tip"))
         self.btn_dp.clicked.connect(self.main.export_datapack)
-        row.addWidget(self.btn_si)
         row.addWidget(self.btn_dp)
         f.addRow("", row)
         hint = STYLE.HintLabel(T("export_si_hint"))
@@ -343,7 +503,6 @@ class ExportTab(QWidget):
     def _si_parts_changed(self, *_):
         if not self._loading:
             self.main.set_si_parts([k for k, cb in self.si_parts.items() if cb.isChecked()])
-            self.sync_pills()
 
     def _si_font_changed(self, font):
         if self._loading:
@@ -357,65 +516,23 @@ class ExportTab(QWidget):
         return T("tab_eps") if k == "eps" else T(self.main._tab_spec(k)[3])
 
     def _items(self, k):
-        """Kacheln eines Tabs: [(Teil-Index, Bezeichnung „Tab · Teil“, Name auf der Kachel, Test)]; ein Bild: der
-        Tabname (die Marke oben nennt den Tab ohnehin)."""
+        """Kacheln eines Tabs: [(Teil-Index, Bezeichnung „Tab · Teil“, Name auf der Kachel, Test, Kennung)]; ein Bild:
+        der Tabname (die Marke oben nennt den Tab ohnehin)."""
         ps, name = parts(self.main, k), self._name(k)
         if len(ps) == 1 and not ps[0][0]:
-            return [(0, name, name, None)]
-        return [(i, f"{name} · {lab}", lab, p) for i, (lab, p) in enumerate(ps)]
+            return [(0, name, name, None, "")]
+        return [(i, f"{name} · {lab}", lab, p, pid) for i, (lab, p, pid) in enumerate(ps)]
 
     def _si_only(self, k):
-        """Tabellen/Texte, die nur in die SI gehen (früher Haken im Tab, jetzt die Pille hier): [(Name, (lesen, setzen))]."""
+        """Tabellen/Texte nur für die SI (Schlüssel im Tab, Auswahl hier): [(Bezeichnung, Kennung)]."""
         m, name, out = self.main, self._name(k), []
-
-        def flag(key, st, default):
-            return (lambda: bool(st.get(key, default)), lambda on: self._mark(k, lambda: st.__setitem__(key, on)))
         if k == "overlay" and any(e.get("kind") == "calc" for e in m.ov_state.get("entries") or []):
-            out.append((f"{name} · {T('export_part_tdt')}", flag("tdt_si", m.ov_state, True)))
+            out.append((f"{name} · {T('export_part_tdt')}", "tdt"))
         if k == "irms" and m.irms_state.get("irc_file"):
-            out.append((f"{name} · {T('export_part_irc')}", flag("irc_si", m.irms_state, True)))
+            out.append((f"{name} · {T('export_part_irc')}", "irc"))
         if k in ("xray", "dft") and (getattr(m, m._tab_spec(k)[2]).get("entries")):
-            out.append((f"{name} · HOMA", flag("homa_si", getattr(m, m._tab_spec(k)[2]), False)))
+            out.append((f"{name} · HOMA", "homa"))
         return out
-
-    def _si(self, k, label):
-        """Pille „SI“ einer Karte -> (lesen, setzen) oder None (Teile links: Synthese, NMR, Struktur)."""
-        m = self.main
-        if k == "xray" and label.endswith((T("export_part_packing"), "PXRD")):
-            sub = "pack" if not label.endswith("PXRD") else "pxrd"
-            es = (m.xray_state.get("entries") or [])
-            return (lambda: any((e.get(sub) or {}).get("si", sub == "pxrd") for e in es),
-                    lambda on: self._mark("xray", lambda: [e.setdefault(sub, {}).__setitem__("si", on) for e in es]))
-        if k == "overlay" and label.endswith("NTO"):
-            nto = m.ov_state.setdefault("nto", {})
-            return (lambda: nto.get("si", True), lambda on: self._mark("overlay", lambda: nto.__setitem__("si", on)))
-        if k in SI_FIG_KEYS:                                     # Abbildungen des Tabs (alle Karten des Tabs zusammen)
-            return (lambda: k not in m.si_figs_off(),
-                    lambda on: (m.set_si_figs_off(m.si_figs_off() - {k} | (set() if on else {k})),
-                                QTimer.singleShot(0, self, self.sync_pills)))
-        return None
-
-    def _mark(self, key, change):
-        """SI-Schalter im Zustand eines Tabs ändern (der eine Ort für die SI-Auswahl), Tab neu, ein Rückgängig-Schritt."""
-        change()
-        self.main.export_state["si_mark"] = self.main.export_state.get("si_mark", 0) + 1   # Rückgängig bleibt hier
-        if self.main._built(key):
-            self.main.replace_tab(key)
-        self.main.push_undo()
-        QTimer.singleShot(0, self, self.sync_pills)
-
-    def sync_pills(self):
-        """Pillen aus dem Zustand. Ist der Teil der SI (Chip links, nur dieser Rechner) aus, bleiben sie bedienbar: die
-        Gesamt-SI kennt die Chips nicht und richtet sich nach den Pillen; der Hinweis sagt das (B1)."""
-        saved = self.main.si_parts_saved()
-        for c in self.cards:
-            if c.pill is not None:
-                c.pill.blockSignals(True)
-                c.pill.setChecked(bool(c.si[0]()))
-                c.pill.blockSignals(False)
-                part = "xray" if c.key == "xray" else "dft" if c.key == "dft" and c.label.endswith("HOMA") else "figs"
-                c.pill.setToolTip(T("export_si_pill_tip") if part in saved else
-                                  T("export_si_pill_off_tip", chip=T("si_chip_" + part)))
 
     def thumb(self, k, idx, pred):
         """Vorschaubild ohne den Tab zu bauen: letzter Export, SI-Bild, Bild vom Speichern; sonst None."""
@@ -449,30 +566,26 @@ class ExportTab(QWidget):
         return max(cand, key=lambda p: p.stat().st_mtime) if cand else None    # nie veraltet: das neueste gewinnt
 
     def refresh(self):
-        """Formate, SI-Teile und Kacheln aus dem Zustand (Punkte der Leiste, ε-Serien); baut nichts. Die Auswahl bleibt
-        (nach Art und Teil), nur eine andere Verbindung beginnt ohne. Vorschaubilder: aus dem Zwischenspeicher sofort,
+        """Formate, SI-Teile und Kacheln aus dem Zustand (Punkte der Leiste, ε-Serien); baut nichts und schreibt nichts.
+        Die Auswahl ist gespeichert (`is_on`, Entscheidung 182). Vorschaubilder: aus dem Zwischenspeicher sofort,
         sonst erst ein Symbol und das Bild danach einzeln je Durchlauf der Ereignisschleife (nie sekundenlang lesen)."""
         from elucida.app.tiles import cached_pixmap
         self.sync_formats()
         self.sync_si()
         old = self.cards[self.current] if self.current is not None and self.current < len(self.cards) else None
         old = old and (old.key, old.label)                      # Markierung (Link „In die SI“) übersteht Auffrischen
-        same = getattr(self, "_sel_dir", None) == self.main.project_dir
-        keep = {(c.key, c.label) for c in self.cards if c.selected} if same else set()
-        self._sel_dir = self.main.project_dir
         self.cards, self.current, self._thumb_queue = [], None, []
         for k in self.main.export_keys():
-            for i, lab, name, pred in self._items(k):
-                c = ExportCard(self, k, i, lab, name, pred, k in WORD_KEYS, self._si(k, lab))
+            for i, lab, name, pred, pid in self._items(k):
+                c = ExportCard(self, k, i, lab, name, pred, k in WORD_KEYS, pid)
                 path = self.thumb(k, i, pred)
                 pm = cached_pixmap(path, c.pic) if path else None
                 c.set_thumb(None) if path and pm is None else c.set_pixmap(pm)
                 if path and pm is None:
                     self._thumb_queue.append((c, path))
-                c.set_selected((k, lab) in keep)
                 self.cards.append(c)
-            for lab, si in self._si_only(k):
-                c = ExportCard(self, k, -1, lab, lab.split(" · ", 1)[-1], None, True, si, si_only=True)
+            for lab, pid in self._si_only(k):
+                c = ExportCard(self, k, -1, lab, lab.split(" · ", 1)[-1], None, True, pid, si_only=True)
                 c.set_thumb(None)
                 self.cards.append(c)
         for c in self.cards:
@@ -484,8 +597,7 @@ class ExportTab(QWidget):
             if i is not None and self.cards[i] in self.shown():
                 self.set_current(i)
         self.lbl_empty.setText("" if self.cards else T("export_none"))
-        self.sync_pills()
-        self.sync_button()
+        self.sync_selection()
         if not hasattr(self, "_thumb_timer"):
             self._thumb_timer = QTimer(self, singleShot=True, interval=0, timeout=self._next_thumb)
         self._thumb_timer.start()
@@ -506,7 +618,14 @@ class ExportTab(QWidget):
         self.toggle(card)
 
     def toggle(self, card):
-        card.set_selected(not card.selected)
+        """Klick, Leertaste: gespeicherte Änderung mit Rückgängig (Entscheidung 182)."""
+        set_on(self.main, [(card.key, card.pid, not card.selected)])
+        self.sync_selection()
+
+    def sync_selection(self):
+        """Auswahl aller Kacheln aus dem Zustand, dann Zahl und Knöpfe."""
+        for c in self.cards:
+            c.set_selected(is_on(self.main, c.key, c.pid))
         self.sync_button()
 
     def set_current(self, i):
@@ -598,30 +717,59 @@ class ExportTab(QWidget):
         QTimer.singleShot(0, self, self._fit_segments)
 
     def select_all(self, on):
-        """„Alle · Keine“: nur das offene Segment."""
-        for c in self.shown():
-            c.set_selected(on)
-        self.sync_button()
+        """„Alle · Keine“: nur das offene Segment; ein Rückgängig-Schritt."""
+        set_on(self.main, [(c.key, c.pid, on) for c in self.shown()])
+        self.sync_selection()
 
     def chosen(self):
         return [c for c in self.cards if c.selected]
 
+    def counts(self):
+        """Zahl je Knopf aus der Auswahl: Karten (Bilder, PPTX, SI) bzw. Tabs (Tabellen)."""
+        sel = self.chosen()
+        return {b: len({c.key for c in sel if b in c.feeds}) if b == "tab" else sum(b in c.feeds for c in sel)
+                for b in self.out_buttons}
+
     def sync_button(self, *_):
         self.sync_segments()
-        n = len(self.chosen())
-        self.lbl_count.setText(T("export_n_selected", n=n) if n else T("export_none_selected"))
-        self.btn_main.setText(T("export_n", n=n) if n else T("export_all"))
-        self.btn_main.setEnabled(bool(self.cards))
-        self.btn_slides.setEnabled(any(c.key in PPTX_KEYS for c in (self.chosen() or self.cards)))
+        sel = self.chosen()
+        self.lbl_count.setText(T("export_n_of", n=len(sel), m=len(self.cards)))
+        for b, n in self.counts().items():
+            btn, on = self.out_buttons[b], bool(n or b == "si" and sel)   # SI: Teile links auch ohne gewählte Abbildung
+            btn.setEnabled(on)                                   # ohne Wirkung: grau, Tooltip nennt den Grund
+            btn.setToolTip(T(f"export_btn_{b}_tip", n=n) if on else
+                           T("export_btn_none_tip") if not sel else T(f"export_btn_{b}_empty"))
+
+    def jobs(self, button):
+        """[(Tab, Test auf den Dateinamen)] für „Bilder“ (Dateien der gewählten Karten außer Tabellen) bzw.
+        „Tabellen“ (Tabellen der Tabs mit gewählter Karte); je Tab ein Export. Der Test ist nie None: ein Export aus
+        diesem Tab legt nichts in den Papierkorb (Kachel-Export, `retire_exports`)."""
+        from elucida.app import project as PRJ
+        table = lambda n: PRJ.export_kind(n) == PRJ.TABLES                # noqa: E731
+        preds = {}
+        for c in self.chosen():
+            if button in c.feeds:
+                preds.setdefault(c.key, []).append(c.pred)
+        if button == "tab":
+            return [(k, table) for k in preds]
+        return [(k, lambda n, ps=None if None in ps else tuple(ps): not table(n) and (ps is None or any(p(n) for p in ps)))
+                for k, ps in preds.items()]
 
     def run(self):
-        sel = self.chosen()
-        items = [(c.key, c.pred) for c in sel] or None
-        return self.main.export_all_tabs(items)
+        """„Bilder“ (auch Strg+E in diesem Tab)."""
+        jobs = self.jobs("img")
+        return self.main.export_all_tabs(jobs) if jobs else self.main.notify(T("export_btn_none_tip"))
+
+    def run_tables(self):
+        jobs = self.jobs("tab")
+        return self.main.export_all_tabs(jobs) if jobs else self.main.notify(T("export_btn_none_tip"))
 
     def run_slides(self):
-        keys = [c.key for c in self.chosen() if c.key in PPTX_KEYS]
-        return self.main.export_pptx_slides(list(dict.fromkeys(keys)) or None)
+        keys = list(dict.fromkeys(c.key for c in self.chosen() if "pptx" in c.feeds))
+        return self.main.export_pptx_slides(keys, cards=True) if keys else self.main.notify(T("export_btn_none_tip"))
+
+    def run_si(self):
+        return self.main.export_si_dialog()
 
     def showEvent(self, ev):
         super().showEvent(ev)
