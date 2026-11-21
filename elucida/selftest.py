@@ -19434,11 +19434,15 @@ def _g_lanes(ctx):
                     t_hp.cmb_found.currentText(), (t_hp.lbl_ms_warn.text(), t_hp.cmb_found.currentText())
                 no_header_hp("UI known", ui_texts_hp(t_hp))
                 t_hp.cmb_adduct.setCurrentIndex(t_hp.cmb_adduct.findData("M+Na"))   # andere Zeile des Berichts
-                pump_hp(0.6)
+                t0_hp = time.time()                     # render läuft über den Timer; CI-arm64 brauchte > 1.5 s
+                while (t_hp._ms_vals or ("",))[0] != "M+Na" and time.time() - t0_hp < 15:
+                    pump_hp(0.2)
                 na_hp = IRMS.ion(f_hp, "M+Na")[2]
                 assert w.hrms_state["adduct"] == "M+Na" and abs(t_hp._ms_vals[2] - na_hp - 0.0003) < 2e-6, t_hp._ms_vals
                 t_hp.cmb_adduct.setCurrentIndex(t_hp.cmb_adduct.findData("M+H"))
-                pump_hp(0.6)
+                t0_hp = time.time()
+                while (t_hp._ms_vals or ("",))[0] != "M+H" and time.time() - t0_hp < 15:
+                    pump_hp(0.2)
                 # Bilder: drei Spektren-/Chromatogrammbilder, keins vorgewählt; gewählt -> Abbildung, SI, Export
                 assert len(rep_hp["images"]) == 3 and w.hrms_state["ms_img"] == 0 and t_hp.cmb_img.isVisibleTo(t_hp)
                 assert t_hp.report_image() is None
