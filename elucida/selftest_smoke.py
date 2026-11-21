@@ -59,7 +59,7 @@ def run(section, report, out: Path, with_isnet: bool):
     MW.SETTINGS_FILE.unlink(missing_ok=True)
     ws = None
     try:
-        with section:
+        with section:   # smoke: hidden imports and own modules
             src = ROOT / "tools" / "build.py"
             assert src.is_file(), f"tools/build.py fehlt unter ROOT ({ROOT})"
             mods = build_imports(src.read_text(encoding="utf-8"))
@@ -85,7 +85,7 @@ def run(section, report, out: Path, with_isnet: bool):
             assert not bad, bad
             report.append(f"smoke: {len(mods)} hidden imports / collected packages and {len(subs)} own modules from "
                           f"tools/build.py import: OK")
-        with section:
+        with section:   # smoke: repo files via elucida.ROOT
             from elucida.app.main_window import resource_path
             from elucida.tabs import base as TABS
             assert resource_path("assets") == ROOT / "assets", (resource_path("assets"), ROOT)
@@ -104,7 +104,7 @@ def run(section, report, out: Path, with_isnet: bool):
                 assert TABS.MANUAL[lang].startswith("docs/manual.") and TABS.README_URL.startswith("https://")
             report.append(f"smoke: repo files via elucida.ROOT ({len(pngs)} icons, {len(lic)} licence texts, Octet, "
                           f"Mnova script, manual links): OK")
-        with section:
+        with section:   # smoke: start, UV-Vis project
             csv, cdxml, photo = make_selftest_inputs(sm / "input")
             ws = MW.MainWindow()
             ws._allow_download = with_isnet
@@ -133,7 +133,7 @@ def run(section, report, out: Path, with_isnet: bool):
                 assert openpyxl.load_workbook(xlsx[0]).sheetnames
             report.append(f"smoke: start, UV-Vis project (rdkit, HEIC photo, background {bgm}, PDF/SVG/PNG export, "
                           f"MuPDF): OK")
-        with section:
+        with section:   # smoke: example project, all tabs
             assert ws is not None, "kein Fenster (voriger Abschnitt)"
             d = ws.open_demo_publication(sm / "demo")
             assert d and ws.open_project(Path(d) / "S3", ask=False, recent=False)
@@ -155,14 +155,14 @@ def run(section, report, out: Path, with_isnet: bool):
             assert tabs and all(ws._built(k) for k in tabs), [k for k in tabs if not ws._built(k)]
             assert len(drawn) >= 10, drawn
             report.append(f"smoke: example project, all {len(ws._TAB_ORDER)} tabs built, {len(drawn)} figures drawn: OK")
-        with section:
+        with section:   # smoke: Octet drawing editor (WebEngine)
             ws.show_tab("compound")
             ed = getattr(ws.comp_tab, "drawing_editor", None)
             assert ed is not None, "kein Zeichner im Tab Verbindung"
             ed.wait_ready(90)
             assert ed.ready, "Octet (WebEngine) nicht bereit"
             report.append("smoke: Octet drawing editor (WebEngine) loads: OK")
-        with section:
+        with section:   # smoke: one export, Word SI, PPTX
             ws.show_tab("cv")
             _pump(0.3)
             before = set((Path(ws.project_dir) / "figures").glob("*")) if (Path(ws.project_dir) / "figures").exists() else set()

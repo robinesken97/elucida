@@ -154,6 +154,7 @@ class _Section:
     def __enter__(self):
         f = sys._getframe(1)
         self.t0, self.line, self.file, self.n0 = time.perf_counter(), f.f_lineno, f.f_code.co_filename, len(self.report)
+        self.src = os.path.basename(self.file)               # selftest.py oder selftest_smoke.py (Rauchtest)
         if self.echo and sys.stderr is not None and sys.platform != "win32":   # hängt ein Abschnitt: alle Stacks ins
             import faulthandler      # CI-Log alle 10 min; nicht Windows (Stack-Ausgabe beim Zeichnen: access violation)
             faulthandler.dump_traceback_later(600, repeat=True)
@@ -165,7 +166,7 @@ class _Section:
             import faulthandler
             faulthandler.cancel_dump_traceback_later()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
-            print(f"slow section at selftest.py:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
+            print(f"slow section at {self.src}:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
         failed = kind is not None and issubclass(kind, Exception)
         self._record(dt, failed, traceback.format_exception_only(kind, ex)[-1].strip() if failed else "")
         if not failed:
@@ -178,8 +179,12 @@ class _Section:
         if self.out is not None:                             # Bild des Hauptfensters; darf nie selbst scheitern
             try:
                 w = sys._getframe(1).f_locals.get("w")
+                if w is None:                                # Rauchtest: eigenes Fenster unter anderem Namen
+                    w = next((t_ for t_ in QApplication.topLevelWidgets()
+                              if isinstance(t_, MainWindow)), None)
+                stem = "" if self.src == "selftest.py" else os.path.splitext(self.src)[0] + "_"
                 if w is not None:
-                    w.grab().save(str(self.out / f"failed_{self.line}.png"))
+                    w.grab().save(str(self.out / f"failed_{stem}{self.line}.png"))
             except Exception:
                 pass
         return True
@@ -201,7 +206,7 @@ class _Section:
 
     def _record(self, dt, failed, last):
         title = re.sub(r"\s+", " ", self._title())[:160]
-        self.rows.append((self.line, title, dt, "FAILED" if failed else "OK", last))
+        self.rows.append((self.line, title, dt, "FAILED" if failed else "OK", last, self.src))
         if self.out is not None:
             try:
                 with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
@@ -211,7 +216,7 @@ class _Section:
 
     def skip(self, group):
         """Gruppe nicht gelaufen (`--selftest-group`): eine Zeile SKIPPED in sections.tsv, nie OK."""
-        self.rows.append((0, group, 0.0, "SKIPPED", ""))
+        self.rows.append((0, group, 0.0, "SKIPPED", "", "selftest.py"))
         if self.out is not None:
             try:
                 with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
@@ -221,7 +226,7 @@ class _Section:
 
     def fixture(self, group, dt, failed=""):
         """Gruppe lief still als Fixture der gewählten Gruppe: eine Zeile FIXTURE (FAILED, wenn darin etwas scheiterte)."""
-        self.rows.append((0, f"fixture {group}", dt, "FAILED" if failed else "FIXTURE", failed))
+        self.rows.append((0, f"fixture {group}", dt, "FAILED" if failed else "FIXTURE", failed, "selftest.py"))
         if failed:
             self.failed += 1
             self.report.append(f"FAILED\nfixture {group}: {failed}")
@@ -242,14 +247,14 @@ class _Section:
         fixtures = [r[1][8:] for r in self.rows if r[1].startswith("fixture ") and r[0] == 0]
         if fixtures:                                         # still gelaufen, Titel nicht gezählt
             lines.append(f"fixture group(s): {', '.join(fixtures)}")
-        for i, (line, title, dt, _, last) in enumerate(fails):
-            lines.append(f"{'FIRST FAILED' if i == 0 else 'FAILED (possibly a consequence)'}: selftest.py:{line} "
+        for i, (line, title, dt, _, last, src) in enumerate(fails):
+            lines.append(f"{'FIRST FAILED' if i == 0 else 'FAILED (possibly a consequence)'}: {src}:{line} "
                          f"{title} -- {last}")
         if not fails:
             lines.append("no FAILED section")
         lines.append("10 slowest sections:")
-        for line, title, dt, status, _ in sorted((r for r in self.rows if r[0]), key=lambda r: -r[2])[:10]:
-            lines.append(f"  {dt:7.1f} s  selftest.py:{line} {status} {title}")
+        for line, title, dt, status, _, src in sorted((r for r in self.rows if r[0]), key=lambda r: -r[2])[:10]:
+            lines.append(f"  {dt:7.1f} s  {src}:{line} {status} {title}")
         lines.append("== End of summary ==")
         return [t.encode("ascii", "replace").decode() for t in lines]
 
