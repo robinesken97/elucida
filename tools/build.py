@@ -52,6 +52,27 @@ args = [
     "--exclude-module", "PySide6.QtDataVisualization",
     "Elucida.py",
 ]
+if sys.platform == "win32":
+    # Versionsressource der .exe (Eigenschaften → Details, sonst leer); Text im Format von PyInstallers versioninfo
+    nums = tuple((list(map(int, re.findall(r"\d+", VERSION)[:3])) + [0, 0, 0, 0])[:4])
+    vfile = Path("build/version_info.txt")
+    vfile.parent.mkdir(exist_ok=True)
+    vfile.write_text(f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={nums}, prodvers={nums}, mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', 'Elucida'),
+      StringStruct('FileDescription', 'Elucida'),
+      StringStruct('FileVersion', '{VERSION}'),
+      StringStruct('InternalName', 'Elucida'),
+      StringStruct('OriginalFilename', 'Elucida.exe'),
+      StringStruct('ProductName', 'Elucida'),
+      StringStruct('ProductVersion', '{VERSION}')])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+""", encoding="utf-8")
+    args[4:4] = ["--version-file", str(vfile)]
 if sys.platform == "darwin":
     args[4:4] = ["--hidden-import", "AppKit", "--hidden-import", "Foundation"]
     args[4:4] = ["--osx-bundle-identifier", "de.elucida.app"]

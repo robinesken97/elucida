@@ -312,3 +312,8 @@ paths:
   nennt ihn und markiert ihn. Ausnahmen: Rückgängig zeigt den Tab der Änderung (P9 R1), Konzentrationen klappen auf, EPR-Karte klappt beim
   Wählen auf, „Profil bearbeiten“ zeigt Rechendaten. Punkt-Farben: blau = geladen/geändert, noch nicht angesehen; orange (Schritt) = weicht
   vom Standard ab.
+- Oberflächengröße (Entscheidung 173): Menü Format → „Oberflächengröße“ 100/110/125/150 %, Standard 100 %, keine
+  Automatik; je Rechner in QSettings `ui/scale`, nie im Projekt. `main()` setzt sie nach dem Selbsttest-Zweig und vor
+  `QApplication` als `QT_SCALE_FACTOR` (`apply_ui_scale`); eine schon gesetzte Variable gewinnt. Gilt erst nach
+  Neustart (Hinweis im Menü, Einblendung). Selbsttest und `tools/make_screenshots.py` laufen nicht über `main()` und
+  bleiben bei 100 %.

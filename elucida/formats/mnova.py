@@ -120,6 +120,40 @@ def svg_peak_labels(path):
     return vals, solvent
 
 
+SANS = "Arial, Helvetica, sans-serif"
+_SHELL = {"ms shell dlg 2", "ms shell dlg"}          # Windows-Aliasse der Qt-Standardschrift, die MNova 14.2 schreibt
+_TAG = re.compile(r"""<(/?)([A-Za-z][\w.:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(/?)>""")
+_FAMILY = re.compile(r"""(\sfont-family\s*=\s*)(["'])(.*?)\2""")
+
+
+def svg_fonts(txt):
+    """Schriften eines MNova-SVG für Renderer ohne Windows-Aliasse (MuPDF, Word unter macOS): „MS Shell Dlg 2“/„MS Shell
+    Dlg“ → Arial, Helvetica, sans-serif; jedes <text> bekommt die Familie selbst, weil MuPDF sie nicht von <g>/<svg>
+    erbt (ohne Angabe: Times). Ohne Familie in der Kette → Arial. Text unverändert, wenn nichts zu tun ist."""
+    out, pos, stack = [], 0, [None]
+    for m in _TAG.finditer(txt):
+        close, name, attrs, empty = m.groups()
+        if close:
+            if len(stack) > 1:
+                stack.pop()
+            continue
+        f = _FAMILY.search(attrs)
+        own = f.group(3) if f else None
+        new = attrs
+        if own is not None and own.strip().lower() in _SHELL:
+            new, own = attrs[:f.start(3)] + SANS + attrs[f.end(3):], SANS
+        fam = own or stack[-1]
+        if name == "text" and own is None:
+            q = "'" if '"' in (fam or "") else '"'
+            new += f" font-family={q}{fam or SANS}{q}"
+        if new != attrs:
+            out += [txt[pos:m.start(3)], new]
+            pos = m.end(3)
+        if not empty:
+            stack.append(fam)
+    return "".join(out + [txt[pos:]]) if out else txt
+
+
 def is_nmr_svg(path):
     """Mnova-SVG (Titel „MestReNova …“ oder δ-Achse)."""
     p = Path(path)

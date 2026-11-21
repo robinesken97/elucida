@@ -1916,7 +1916,7 @@ class IRMSTab(TABS.FigureTab):
                                        "side": "below" if mode == "T" else "above",
                                        "text": wn_text(p["wn"])})
         sp_ = (self.main.compound or {}).get("structure")
-        if st.get("ir_struct") and sp_ and Path(sp_).exists():   # wie im ε-Tab: Vektorbild, Seitenverhältnis fest
+        if st.get("ir_struct") and PRJ.has_structure(sp_):   # wie im ε-Tab: Vektorbild, Seitenverhältnis fest
             cfg["images"] = [{"file": sp_, "id": "struktur", "width": st.get("struct_w", 20.0) / 100,
                               "prefer": "auto", "_asset": self.structure_asset(sp_)}]
         self._ir_fig = {"side": "below" if mode == "T" else "above",

@@ -280,8 +280,18 @@ class _CellDelegate(QStyledItemDelegate):
         r.moveCenter(option.rect.center())
         return r
 
+    SEL_GAP = 4     # gewählte Zeile einer Häkchen-Tabelle: Lücke zwischen den Zellen als Spaltentrenner (Nutzerwunsch)
+
     def paint(self, painter, option, index):
         self._paint(painter, option, index)
+        w = option.widget
+        if option.state & QStyle.State_Selected and w is not None and w.property("selgap"):
+            v, r, half = w.horizontalHeader().visualIndex(index.column()), option.rect, self.SEL_GAP // 2
+            col = QColor(colors()["field"])                  # Grund der Tabelle (Stylesheet)
+            if v > 0:
+                painter.fillRect(r.x(), r.y(), half, r.height(), col)
+            if v < w.horizontalHeader().count() - 1:
+                painter.fillRect(r.right() + 1 - half, r.y(), half, r.height(), col)
         painter.save()                                       # feine Linie unter jeder Zeile statt eines Gitters:
         painter.setPen(QColor(colors()["border"]))           # alle Tabellen sehen gleich aus (Nutzerwunsch)
         painter.drawLine(option.rect.bottomLeft(), option.rect.bottomRight())
@@ -385,6 +395,7 @@ class FitGrid(QTableWidget):
     def fit(self):
         rich_header(self)             # Köpfe, die erst nach `tidy` gesetzt werden („t [d]“): Größen trotzdem kursiv
         hh = self.horizontalHeader()
+        hh.setHighlightSections(False)                   # nie fetter Kopf bei Auswahl (Nutzerwunsch, alle Ergebnistabellen)
         head = lambda i: self.horizontalHeaderItem(i).text() if self.horizontalHeaderItem(i) else ""   # noqa: E731
         shown = [i for i in range(self.columnCount()) if not self.isColumnHidden(i)]
         # Kästchenspalten (ohne Kopf) behalten ihre feste Breite; ohne Kopfzeile (Vergleichstabelle) zählen alle Spalten
@@ -393,7 +404,6 @@ class FitGrid(QTableWidget):
             return hh.setSectionResizeMode(QHeaderView.Interactive)
         need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}   # gilt auch unsichtbar
         width, total = self.viewport().width() - CHECK_COL_W * (len(shown) - len(cols)), sum(need.values())
-        hh.setHighlightSections(True)                    # Qt-Vorgabe; nur die letzte Stufe unten schaltet sie ab
         if max(need.values()) * len(cols) <= width:
             hh.setSectionResizeMode(QHeaderView.Stretch)
         else:
@@ -406,7 +416,7 @@ class FitGrid(QTableWidget):
                     return max(head_w, self.sizeHintForColumn(i))
                 return max(head_w, self.sizeHintForColumn(i) - (_CellDelegate.PAD - 2))
             # Qt bemisst jeden Kopf in fetter Schrift (der Kopf der Spalte mit gewählter Zelle wird fett), gezeichnet wird
-            # er normal: als letzte Stufe Köpfe in normaler Schrift, dafür ohne fetten Kopf bei Auswahl (sonst „Absch…“).
+            # er normal: als letzte Stufe Köpfe in normaler Schrift (fett bei Auswahl ist oben für alle abgeschaltet).
             # Unter Linux ist DejaVu Sans Bold ~11 % breiter als normal: „Steigung [µA (V s⁻¹)^-½]“ 174 statt 156 px.
             bold = hh.font()
             bold.setBold(True)
@@ -415,7 +425,6 @@ class FitGrid(QTableWidget):
                                   + fr.horizontalAdvance(head(i)))
             steps = (need, {i: tight(i, hh.sectionSizeHint(i)) for i in cols}, {i: tight(i, plain(i)) for i in cols})
             for k, nd in enumerate(steps):
-                hh.setHighlightSections(k < 2)
                 total = sum(nd.values())
                 if total <= width:
                     hh.setSectionResizeMode(QHeaderView.Fixed)
@@ -432,7 +441,6 @@ class FitGrid(QTableWidget):
                     total = width
                     break
             else:
-                hh.setHighlightSections(True)
                 hh.setSectionResizeMode(QHeaderView.ResizeToContents)
         if len(cols) < len(shown):
             check_columns(self)
@@ -696,17 +704,19 @@ def check_table(headers):
     t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
     t.setColumnWidth(0, CHECK_COL_W)
     t.setItemDelegate(_CellDelegate(t))
+    t.setProperty("selgap", True)                    # erlaubt eine Tabelle Auswahl (Labels): Zellen mit Lücke markiert
     return t
 
 
 def check_row(table, data, texts, checked=True):
-    """Zeile anhängen: Häkchen (Qt.UserRole = data) in Spalte 0, danach die Texte."""
+    """Zeile anhängen: Häkchen (Qt.UserRole = data) in Spalte 0, danach die Texte. Spalte 0 ist auswählbar: in Tabellen
+    mit Auswahl wird die ganze Zeile markiert, auch die Häkchen-Spalte (ohne Auswahl ändert das nichts)."""
     from PySide6.QtWidgets import QTableWidgetItem
     r = table.rowCount()
     table.insertRow(r)
     it = QTableWidgetItem()
     it.setData(Qt.UserRole, data)
-    it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+    it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsSelectable)
     it.setCheckState(Qt.Checked if checked else Qt.Unchecked)
     table.setItem(r, 0, it)
     for c, text in enumerate(texts, 1):

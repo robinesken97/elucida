@@ -180,6 +180,27 @@ EPS_RESET_KEEP = ("path_length", "size", "w_cm", "h_cm", "fmt_pdf", "fmt_svg", "
 
 UNITS = [("mM", "mM"), ("uM", "µM"), ("mg/mL", "mg mL⁻¹"), ("M", "M")]     # (Schlüssel, Anzeige)
 
+UI_SCALES = (100, 110, 125, 150)   # Oberflächengröße in % (Entscheidung 173), je Rechner in QSettings, nie im Projekt
+
+
+def ui_scale(settings):
+    """Gespeicherte Oberflächengröße in % (unbekannte Werte = 100)."""
+    try:
+        v = int(settings.value("ui/scale", 100))
+    except (TypeError, ValueError):
+        return 100
+    return v if v in UI_SCALES else 100
+
+
+def apply_ui_scale(settings, env):
+    """Oberflächengröße als QT_SCALE_FACTOR, vor QApplication (gilt ab Neustart); eine schon gesetzte Variable gewinnt.
+    Selbsttest und Bildschirmfotos laufen nicht über main() und bleiben bei 100 %."""
+    v = ui_scale(settings)
+    if v != 100 and "QT_SCALE_FACTOR" not in env:
+        env["QT_SCALE_FACTOR"] = str(v / 100)
+    return v
+
+
 def migrate_settings(old, new):
     """Einstellungen des alten Programmnamens (zuletzt geöffnet, Sprache, Theme …) einmalig übernehmen,
     solange unter dem neuen Namen noch nichts gespeichert ist. Das Alte bleibt (Rückkehr zur alten Version)."""
@@ -244,6 +265,15 @@ def compound_from_structure(p):
         logging.getLogger('elucida.drawing').exception('Could not calculate compound properties from CDXML')
         return {}
 
+
+
+def fit_rect(g, avail, title=0):
+    """Fensterrechteck (ohne Rahmen) so verkleinern/verschieben, dass es samt Titelleiste (`title` px) in `avail` liegt."""
+    from PySide6.QtCore import QRect
+    w, h = min(g.width(), avail.width()), min(g.height(), avail.height() - title)
+    x = min(max(g.x(), avail.left()), avail.left() + avail.width() - w)
+    y = min(max(g.y(), avail.top() + title), avail.top() + avail.height() - h)
+    return QRect(x, y, w, h)
 
 
 def _restore_in_place(cur, old):
@@ -385,6 +415,21 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geo)
         else:
             self.resize(1320, 900)
+        self._fit_to_screen()
+
+    def _fit_to_screen(self):
+        """Startfenster ganz auf dem Bildschirm: gespeicherte Lage einer anderen Skalierung lag bei 150 % mit der
+        Titelleiste über dem oberen Rand (Windows-Bericht 2). Nicht offscreen (dort 800 × 800: Selbsttest/Screenshots)."""
+        if QGuiApplication.platformName() == "offscreen" or self.windowState() & (Qt.WindowMaximized | Qt.WindowFullScreen):
+            return
+        scr = QGuiApplication.screenAt(self.geometry().center()) or QGuiApplication.primaryScreen()
+        if scr is None:
+            return
+        from PySide6.QtWidgets import QStyle
+        # vor dem Anzeigen gehört der Rahmen nicht zu geometry(): Titelleiste als Abstand oben einrechnen
+        r = fit_rect(self.geometry(), scr.availableGeometry(), self.style().pixelMetric(QStyle.PM_TitleBarHeight))
+        if r != self.geometry():
+            self.setGeometry(r)
 
     # ------------------------------------------------------------------ UI
     def build_ui(self):
@@ -525,6 +570,15 @@ class MainWindow(QMainWindow):
             self.toolbar.addAction(self.canvas_toggle)
             self.toolbar.widgetForAction(self.canvas_toggle).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
             self._sync_canvas_toggle()
+        msc = mf.addMenu(T("menu_ui_scale"))
+        grp_s = QActionGroup(self)
+        for v in UI_SCALES:
+            act = QAction(T("ui_scale_value", v=v), self, checkable=True, checked=ui_scale(self.settings) == v)
+            act.triggered.connect(lambda _=False, v=v: self.set_ui_scale(v))
+            grp_s.addAction(act)
+            msc.addAction(act)
+        msc.addSeparator()
+        msc.addAction(QAction(T("ui_scale_note"), self, enabled=False))
         ml = mb.addMenu(T("menu_lang"))
         grp = QActionGroup(self)
         for code, name in (("de", "Deutsch"), ("en", "English")):
@@ -1545,6 +1599,11 @@ class MainWindow(QMainWindow):
         """Helles oder dunkles App-Symbol passend zum aktuellen Theme (Paket-Icons: .ico hell, .icns dunkel)."""
         return resource_path("assets/icon-dark.png" if STYLE._mode == "dark" else "assets/icon.png")
 
+    def set_ui_scale(self, v):
+        """Oberflächengröße merken (nur dieser Rechner); wirkt erst nach dem Neustart."""
+        self.settings.setValue("ui/scale", int(v))
+        self.statusBar().showMessage(T("ui_scale_restart", v=v), 8000)
+
     def switch_theme(self, mode):
         self.collect_globals()
         self.settings.setValue("ui/theme", mode)
@@ -1563,7 +1622,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("lang", code)
         # Hinweise zur Struktur werden beim Laden übersetzt und gespeichert -> in der neuen Sprache neu laden
         for g, st in self.series.items():
-            if st.get("structure") and Path(st["structure"]).exists():
+            if PRJ.has_structure(st.get("structure")):
                 self.set_structure(st["structure"], g, render=False, sync=True, autofill_mw=False)
         self.build_ui()
         self.render()
@@ -1915,7 +1974,7 @@ class MainWindow(QMainWindow):
                 old = old_series.get(g) or {}
                 for kind, setter in (("structure", self.set_structure), ("photo", self.set_photo)):
                     p = sd.get(kind)
-                    if p and Path(p).exists():
+                    if p and Path(p).exists() and (kind == "photo" or PRJ.has_structure(p)):
                         if old.get(kind) == p and old.get(kind + "_asset") is not None:
                             st[kind], st[kind + "_asset"] = p, old[kind + "_asset"]   # wiederverwenden
                             if kind == "structure":
@@ -2479,7 +2538,7 @@ class MainWindow(QMainWindow):
         cands = [(self.compound or {}).get("structure")]
         cands += [st.get("structure") for st in self.series.values()]
         cands += [self.nmr_state.get("structure")]
-        return next((p for p in cands if p and Path(p).exists()), None)
+        return next((p for p in cands if PRJ.has_structure(p)), None)
 
     def remove_recent(self, pdir):
         """Projekt aus der Liste nehmen (der Ordner bleibt unberührt)."""
@@ -2789,18 +2848,26 @@ class MainWindow(QMainWindow):
         Verbindung geändert wird. -> ersetzte abweichende Molmassen [(Serie, alt, neu)]."""
         c = self.compound
         p = c.get("structure")
+        usable = PRJ.has_structure(p)
         replaced = []
         for g, st in self.series.items():
             if c.get("mw") and not (only_empty and st.get("mw")):
                 if st.get("mw") and abs(st["mw"] - c["mw"]) >= 0.005:
                     replaced.append((g, st["mw"], c["mw"]))
                 st["mw"] = c["mw"]
-            if p and Path(p).exists() and not (only_empty and st.get("structure")) and not st.get("no_structure"):   # Molmasse der Verbindung gilt vor der Zeichnung
+            if usable and not (only_empty and st.get("structure")) and not st.get("no_structure"):   # Molmasse der Verbindung gilt vor der Zeichnung
                 self.set_structure(p, g, render=g == self.current, autofill_mw=not st.get("mw"))
-        if p and Path(p).exists() and not (only_empty and self.fl_state.get("structure")):
+            elif p and not usable and st.get("structure") == p:      # Zeichnung der Verbindung geleert: auch hier weg
+                st.update(structure=None, structure_asset=None, chem_info="", chem_warn=False)
+        if usable and not (only_empty and self.fl_state.get("structure")):
             self.fl_state["structure"] = p
             if self._built("fluo"):
                 self.fl_tab.lbl_struct.setText(Path(p).name)
+                self.fl_tab.timer.start()
+        elif p and not usable and self.fl_state.get("structure") == p:
+            self.fl_state["structure"] = None
+            if self._built("fluo"):
+                self.fl_tab.lbl_struct.setText("–")              # wie „Entfernen“ der Karte
                 self.fl_tab.timer.start()
         return replaced
 
@@ -3485,7 +3552,7 @@ class MainWindow(QMainWindow):
         st = self.series[self.current]
         st["no_structure"] = not on
         p = self.compound.get("structure") or st.get("structure")
-        self.set_structure(p if on and p and Path(p).exists() else None)
+        self.set_structure(p if on and PRJ.has_structure(p) else None)
 
     def choose_structure(self):
         if not self.current:
@@ -5610,6 +5677,8 @@ def main():
             group = sys.argv[j + 1] if len(sys.argv) > j + 1 else ""
         from elucida.selftest import selftest
         sys.exit(selftest(outdir, "--selftest-isnet" in sys.argv, group))
+    apply_ui_scale(QSettings(str(SETTINGS_FILE), QSettings.IniFormat) if SETTINGS_FILE
+                   else QSettings(APP_NAME, APP_NAME), os.environ)
     install_crash_handler()
     QApplication.setApplicationName(APP_NAME)
     QApplication.setApplicationVersion(APP_VERSION)

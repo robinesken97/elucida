@@ -366,9 +366,11 @@ def label_shapes(lines):
     """Zeilen als Umrisse in Einheiten der Schrifthöhe (y nach oben) -> [dict(segs, x0, w, bold)]."""
     from matplotlib.font_manager import FontProperties
     from matplotlib.textpath import TextPath
+    from elucida.core.uvvis import installed_fonts
+    fams = installed_fonts(["Arial", "Liberation Sans", "DejaVu Sans"])     # ohne findfont-Meldung je fehlender Familie
     out = []
     for text, bold in lines:
-        tp = TextPath((0, 0), text, size=100, prop=FontProperties(family=["Arial", "Liberation Sans", "DejaVu Sans"],
+        tp = TextPath((0, 0), text, size=100, prop=FontProperties(family=fams,
                                                                   weight="bold" if bold else "normal"))
         bb = tp.get_extents()
         out.append(dict(segs=[(int(code), (v / 100.0).tolist()) for v, code in tp.iter_segments(curves=True)],
@@ -4007,7 +4009,7 @@ class NMRTab(QWidget):
     def structure_path(self):
         """Eigene Struktur des Tabs, sonst die der Verbindung (CDXML; gleichnamige ChemDraw-SVG/PDF hat Vorrang)."""
         p = self.st.get("structure") or (getattr(self.main, "compound", None) or {}).get("structure")
-        return p if p and Path(p).exists() else None
+        return p if PRJ.has_structure(p) else None
 
     def pick_structure(self):
         p, _ = QFileDialog.getOpenFileName(self, T("nmr_struct_pick"), self.main.settings.value("last_dir", ""),
@@ -4083,7 +4085,7 @@ class NMRTab(QWidget):
         """SVG für Word: Mnova-SVG, wahlweise mit eingesetzter Struktur (Datei unter .elucida/nmr)."""
         st = self.structure_asset() if s.get("struct_on", True) else None
         src = self.svg_source(s)
-        if st is None:
+        if st is None:                                   # ohne Struktur: MNova-Kopie mit lesbaren Schriften (svg_fonts)
             return src
         fx, fy = self.struct_xy(s, st)
         width = self.struct_w() / 100
@@ -4101,7 +4103,30 @@ class NMRTab(QWidget):
         """SVG des Spektrums ohne Struktur: Mnova-Datei oder das eigene Spektrum (`raw_svg`, 2D `raw_svg2d`)."""
         if s.get("source") == "bruker" and s.get("kind", "1D") != "1D":
             return self.raw_svg2d(s)
-        return self.raw_svg(s) if s.get("source") == "bruker" and s.get("proc") else s["file"]
+        return self.raw_svg(s) if s.get("source") == "bruker" and s.get("proc") else self.fonts_svg(s["file"])
+
+    def fonts_svg(self, path):
+        """MNova-SVG mit lesbaren Schriften (`svg_fonts`) als Kopie unter .elucida/nmr; die Datei selbst bleibt
+        unverändert. Ohne Änderung der Pfad selbst."""
+        import zlib
+        from elucida.formats.mnova import svg_fonts
+        p = Path(path)
+        if p.suffix.lower() != ".svg" or not p.is_file():
+            return path
+        st = p.stat()
+        key = ("nmrfonts", str(p), st.st_mtime_ns, st.st_size)
+        if key not in self.main.extra_cache or not Path(self.main.extra_cache[key]).exists():
+            txt = p.read_text(encoding="utf-8", errors="replace")
+            fixed, out = svg_fonts(txt), str(path)
+            if fixed != txt:
+                import tempfile                                  # ohne Verbindung nie neben die Datei des Nutzers
+                o = PRJ.work_dir(self.main.project_dir or tempfile.gettempdir(), self.STATE_KEY) / \
+                    f"{p.stem}_fonts_{zlib.crc32(fixed.encode()):08x}.svg"
+                if not o.exists():
+                    o.write_text(fixed, encoding="utf-8")
+                out = str(o)
+            self.main.extra_cache[key] = out
+        return self.main.extra_cache[key]
 
     def raw_svg(self, s):
         """Eigenes Spektrum als SVG (16 × 11 cm, Text als Pfade) im Bereich der Abbildung, wie die Ansicht ohne
@@ -4288,7 +4313,7 @@ class NMRTab(QWidget):
         lw_ = float(int(min(aw, ah * cache[akey])))
         key = ("nmrprev", s["file"], int(lw_ * dpr) // 50)
         if key not in cache:
-            page = pymupdf.open(s["file"])[0]
+            page = pymupdf.open(self.fonts_svg(s["file"]))[0]        # Schriften wie in Word/SI (svg_fonts)
             dpi = int(round(max(60, min(600, lw_ * dpr / max(page.rect.width, 1) * 72))))   # pymupdf: nur ganze Zahl
             pix = page.get_pixmap(dpi=dpi)
             cache[key] = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()

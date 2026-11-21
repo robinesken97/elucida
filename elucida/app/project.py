@@ -541,4 +541,12 @@ def cdxml_has_content(path) -> bool:
     return any(tag in txt for tag in ("<n ", "<n>", "<fragment", "<t ", "<arrow", "<graphic"))
 
 
+def has_structure(path) -> bool:
+    """Strukturdatei benutzbar: vorhanden und, falls CDXML, nicht leer. Eine geleerte Zeichnung (Octet speichert die leere
+    Fläche) gilt als keine Struktur, statt beim Lesen „keine Struktur in CDXML“ zu melden (Windows-Bericht 2026-11-20)."""
+    if not path or not Path(path).is_file():
+        return False
+    return Path(path).suffix.lower() != ".cdxml" or cdxml_has_content(path)
+
+
 FIGURE_EXT.add(".pptx")              # Folien je Abbildung (si/pptx.py, 1.3.0) gehören zu den Abbildungen

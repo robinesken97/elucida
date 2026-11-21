@@ -2821,7 +2821,7 @@ class XrayFigure:
             fog = self._fog(it["z"])
             col = np.array(to_rgb(colors.get(el) or default_color(el, self.style))) * (1 - ORB.IBO_LABEL_DARK)
             t = self.ax.text(it["x"], it["y"], el, ha="center", va="center", fontsize=fs, color=fogged(col, fog),
-                             family=ORB.IBO_LABEL_FONTS,
+                             family=core.installed_fonts(ORB.IBO_LABEL_FONTS),   # ohne findfont-Meldungen
                              path_effects=[PE.withStroke(linewidth=ORB.IBO_LABEL_EDGE * fs,
                                                          foreground=fogged((0, 0, 0), fog))])
             t._fog = fog
@@ -4004,7 +4004,7 @@ class MeasureAlign:
         if st:
             p = Path(st)
             p = p if p.suffix.lower() == ".cdxml" else p.with_suffix(".cdxml")
-            if p.exists():
+            if PRJ.has_structure(p):
                 return p
         return None
 

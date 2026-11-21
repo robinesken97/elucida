@@ -357,9 +357,13 @@ class LabelCard(QObject):
         typed = self.ed.toPlainText() != self._ed_text
         if not self.ed.hasFocus() or key != self._ed_key or not typed:   # Getipptes nie überschreiben
             self._ed_key = key
-            self._ed_text = "" if r is None else r["text"] if r["text"] is not None else r["auto"]
+            # ohne eigenen Text bleibt das Feld leer, der automatische Text steht lesbar als Platzhalter (keine
+            # Mathtext-Quelle, ein unveränderter Vorschlag wird nie eigener Text)
+            self._ed_text = "" if r is None or r["text"] is None else r["text"]
             self.ed.blockSignals(True)
             self.ed.setPlainText(self._ed_text)
+            self.ed.setPlaceholderText("" if r is None or r["text"] is not None else
+                                       "\n".join(_label_line(x) for x in str(r["auto"]).splitlines() if x.strip()))
             self.ed.blockSignals(False)
         self.lbl_info.setText(T("lab_extra_tip") if r and r.get("extra") else
                               T("lab_auto", t=_label_line(r["auto"])) if r and r["text"] is not None else "")
@@ -1568,13 +1572,17 @@ class CanvasHost(QWidget):
         # kürzer als die Fläche, sobald deren Höhe aufgerundet wurde. Die unbedeckte Zeile zeigte die Hintergrundfarbe
         # des Designs – im dunklen Canvas eine helle Linie am unteren Rand, die beim Drehen flackerte. Deshalb vor
         # jedem Zeichnen angleichen.
-        draw = canvas.draw
+        # Immer die Originale umhüllen, nie die Hülle eines früheren Gastgebers: der ε-Tab behält seine Fläche über
+        # build_ui (Design/Sprache); die alte Hülle prüfte ihren gelöschten Gastgeber, ließ _draw_pending stehen und
+        # die Fläche zeichnete bis zum Neustart nie wieder (Windows-Bericht 2026-11-20)
+        orig = canvas.__dict__.setdefault("_host_orig", (canvas.draw, canvas._draw_idle))
+        draw = orig[0]
 
         def matched(*a, **k):
             self.match_buffer()
             return draw(*a, **k)
         canvas.draw = matched
-        idle = canvas._draw_idle
+        idle = orig[1]
 
         def idle_after_fit():
             # Verborgen: erst beim Anzeigen zeichnen (paintEvent holt das ausstehende Zeichnen nach). Größe ändert sich
@@ -1583,8 +1591,10 @@ class CanvasHost(QWidget):
             # matplotlib ruft das über QTimer.singleShot ohne Empfänger: Fläche oder Gastgeber können inzwischen gelöscht
             # sein (Tab ersetzt) – dann nichts anfassen (Windows stürzte sonst mit access violation ab)
             from shiboken6 import isValid
-            if not (isValid(canvas) and isValid(self) and isValid(self.fit_timer)) or not canvas.isVisible():
+            if not isValid(canvas) or not canvas.isVisible():
                 return None
+            if not (isValid(self) and isValid(self.fit_timer)):   # Gastgeber ersetzt, Fläche lebt (ε): zeichnen statt
+                return idle()                                       # _draw_pending stehen zu lassen
             if self.fit_timer.isActive() and getattr(canvas, "_draw_pending", False):
                 canvas._draw_pending = False
                 return None
@@ -4274,11 +4284,11 @@ class OverlayTab(FigureTab):
         cfg["ylabel"] = (r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else
                          "absorbance [a.u.]" if abs_mode else "normalized absorbance [a.u.]")
         items = []
-        if st.get("structure") and Path(st["structure"]).exists():
+        if PRJ.has_structure(st.get("structure")):
             items.append(("struktur", st["structure"], None, "top"))
         for e in vis:                                   # Struktur pro Spektrum, optional in Kurvenfarbe
             p = e.get("structure")
-            if p and Path(p).exists():
+            if PRJ.has_structure(p):
                 items.append(("struktur_" + e.get("uid", "x"), p, e["color"] if e.get("struct_color", True) else None,
                               "top"))
         cfg["images"] = self.structure_images(items)    # alle im selben Maßstab, eine Größe
@@ -4747,7 +4757,7 @@ class FluoTab(FigureTab):
         cfg["ylim"] = [0, st["ymax"] if st["ymax"] > 0 else 1.2]
         cfg["ylabel"] = "normalized intensity [a.u.]"
         imgs = []
-        if st.get("structure") and Path(st["structure"]).exists():
+        if PRJ.has_structure(st.get("structure")):
             imgs.append({"file": st["structure"], "id": "struktur", "width": st.get("struct_w", 20) / 100,
                          "prefer": "top", "_asset": self.structure_asset(st["structure"])})
         day = self.photo_asset(st["photo_day"], st["bg_day"]) if st.get("photo_day") else None

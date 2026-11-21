@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import functools
 import math
 import os
 import re
@@ -1216,6 +1217,19 @@ def first_font(names, default):
         except Exception:
             continue
     return default
+
+
+@functools.lru_cache(maxsize=None)
+def _installed_fonts(names):
+    found = [n for n in names if first_font([n], None) is not None]
+    return found or list(names)
+
+
+def installed_fonts(names):
+    """Nur die vorhandenen Familien einer Liste, in derselben Reihenfolge (Prüfung wie `first_font`). matplotlib meldet
+    sonst jede fehlende Familie bei jedem Text („findfont: Font family 'Liberation Sans' not found“); die Schrift, die es
+    nimmt, bleibt gleich: es reiht dieselben gefundenen Familien in derselben Reihenfolge. Keine gefunden: Liste unverändert."""
+    return list(_installed_fonts(tuple(names)))
 
 
 def setup_fonts(plt, cfg):

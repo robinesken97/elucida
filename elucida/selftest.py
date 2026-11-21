@@ -2611,6 +2611,7 @@ def _g_electrochem(ctx):
                 assert fg_.viewport().width() == vw_, (vw_, fg_.viewport().width())
                 assert (hmax_ == 0 and sum_ == vw_) or (hmax_ > 0 and sum_ > vw_), (vw_, sum_, hmax_, need_, tight_)
                 assert (hmax_ == 0) == (vw_ >= tight_), (vw_, sum_, hmax_, need_, tight_)
+                assert not hh_.highlightSections(), vw_          # nie fetter Kopf bei Auswahl (fix3, Punkt 20)
             host_.deleteLater()
             report.append(f"FitGrid fills 300..800 px exactly, less padding before scrolling ({tight_}..{need_} px): OK")
 
@@ -9399,7 +9400,7 @@ def _g_nmr_synthesis(ctx):
                 fs_ = t_n.figure_svg(t_n.spectra()[0])
                 assert fs_ != t_n.spectra()[0]["file"] and 'id="structure_0"' in Path(fs_).read_text(encoding="utf-8")
                 t_n.spectra()[1]["struct_on"] = False
-                assert t_n.figure_svg(t_n.spectra()[1]) == t_n.spectra()[1]["file"]
+                assert t_n.figure_svg(t_n.spectra()[1]) == t_n.fonts_svg(t_n.spectra()[1]["file"])   # Schriftkopie (fix3)
                 e0_ = t_n.spectra()[0]                                         # gezogen: Lage im Dateinamen
                 e0_.update(struct_pos="manual", struct_xy=[0.5, 0.3])
                 assert Path(t_n.figure_svg(e0_)).stem.endswith("_500_300_200"), t_n.figure_svg(e0_)
@@ -10910,8 +10911,9 @@ def _g_project_si(ctx):
             assert not card_l.menu(k_l).actions()[2].isEnabled()           # nichts zurückzusetzen
             # eigener Text: ein Rückgängig-Schritt, Bild ändert sich, Tabelle/SI-Zeile nicht, Hinweis + markierte Zeile
             card_l.edit(k_l)
-            assert card_l.ed.toPlainText() == auto_l
-            card_l._commit()                                                # unverändert: kein eigener Text, kein Schritt
+            assert card_l.ed.toPlainText() == "" and \
+                card_l.ed.placeholderText().replace("\n", " · ") == TABS._label_line(auto_l)   # lesbar (fix3)
+            card_l._commit()                                              # unverändert: kein eigener Text, kein Schritt
             assert not w.series[g_l].get("label_over")
             n_l = len(w._undo)
             card_l.ed.setPlainText("Zqx own")
@@ -11050,7 +11052,7 @@ def _g_project_si(ctx):
             assert "label_over" not in t_l.st and t_l.F.ann_items[k_s].get_text() != "Zxl free"   # nie die Nachbarzeile
             t_l.label_card.edit(k_s)
             pump(0.1)
-            assert t_l.label_card.ed.toPlainText() == a_s                # Feld zeigt die neu gewählte Zeile
+            assert t_l.label_card.ed.placeholderText().replace("\n", " · ") == TABS._label_line(a_s)   # Feld zeigt die neu gewählte Zeile
             assert [r_["key"] for r_ in t_l.F.label_rows if r_.get("extra")] == [k_x]
             assert not any(n_.startswith(T("lab_num_differs", label="")[:6]) for n_ in t_l._notes)   # kein Zahlhinweis
             assert t_l.F._fixed_labels()[k_x] == [round(got_x[0][0], 4), round(got_x[0][1], 4)]  # vor allem reserviert
@@ -19095,6 +19097,234 @@ def _g_lanes(ctx):
                           "per figure for SEC/H-Cell/HRMS/EPR without measurement lists, no colour word for own colours, own format "
                           "without inherited lines, colour buttons without effect visible but disabled with the reason as tooltip, "
                           "orphaned keys dropped): OK")
+        with section:
+            # ε-Fläche überlebt build_ui (Design, Sprache): jeder neue CanvasHost umwickelte früher den Wrapper des
+            # gelöschten Gastgebers, die Fläche zeichnete nie wieder. Nur mit echter Ereignisschleife sichtbar
+            # (deleteLater wird offscreen sonst nicht ausgeführt), deshalb DeferredDelete hier von Hand
+            import time as time_f3
+
+            def pump_f3(sec=0.4):
+                t0_ = time_f3.time()
+                while time_f3.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+            keep_mode_f3, keep_lang_f3 = w._theme_mode(), get_lang()
+            draws_f3 = []
+            try:
+                assert w.open_demo(out / "fix3_theme_demo")
+                pump_f3(1)
+                cid_f3 = w.canvas.mpl_connect("draw_event", lambda e_: draws_f3.append(1))
+                steps_f3 = [("theme", m_) for m_ in ("dark", "light")] + [("lang", l_) for l_ in ("en", "de")]
+                for first_f3 in ("eps", "nmr"):                  # ε offen beim Umschalten und ε erst danach gezeigt
+                    for kind_f3, val_f3 in steps_f3:
+                        w.main_tabs.setCurrentIndex(w._tab_keys.index(first_f3))
+                        pump_f3()
+                        n_f3 = len(draws_f3)
+                        (w.switch_theme if kind_f3 == "theme" else w.switch_lang)(val_f3)
+                        pump_f3()
+                        w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+                        pump_f3(1)
+                        assert len(draws_f3) > n_f3, (first_f3, kind_f3, val_f3, "eps canvas did not draw")
+                        assert not getattr(w.canvas, "_draw_pending", False), (first_f3, kind_f3, val_f3)
+                # genau eine Hülle um die ursprünglichen Methoden der Fläche
+                cells_f3 = {n_: c_.cell_contents for n_, c_ in zip(w.canvas._draw_idle.__code__.co_freevars,
+                                                                    w.canvas._draw_idle.__closure__)}
+                assert cells_f3["idle"] is w.canvas.__dict__["_host_orig"][1] and cells_f3["self"] is w.canvas_host
+                w.canvas.mpl_disconnect(cid_f3)
+            finally:
+                w.switch_theme(keep_mode_f3)
+                w.switch_lang(keep_lang_f3)
+                pump_f3()
+            report.append(f"UV-Vis canvas keeps drawing after theme/language switch (eps shown and not shown, "
+                          f"{len(draws_f3)} draws, one wrapper): OK")
+        with section:
+            # Leere Octet-Zeichnung (Autosave): gilt als keine Struktur, kein RuntimeError „no structure found in CDXML“;
+            # ε-Serien, Fluoreszenz und NMR nehmen sie heraus, die Datei selbst bleibt liegen
+            errs_e3, keep_err_e3 = [], w.error
+            w.error = lambda *a_, **k_: errs_e3.append(a_)
+            try:
+                assert not PRJ.has_structure(None) and not PRJ.has_structure(out / "fix3_missing.cdxml")
+                assert w.open_demo(out / "fix3_empty_demo")
+                for k_ in ("fluo", "nmr", "eps"):
+                    w.main_tabs.setCurrentIndex(w._tab_keys.index(k_))
+                    QApplication.processEvents()
+                p_e3 = Path(w.compound["structure"])
+                orig_e3 = p_e3.read_text(encoding="utf-8")
+                assert PRJ.has_structure(p_e3) and any(st_.get("structure") for st_ in w.series.values())
+                assert w.fl_state.get("structure") and w.nmr_tab.structure_path()
+                p_e3.write_text(PRJ.EMPTY_CDXML, encoding="utf-8")             # wie Octet nach „alles löschen“
+                assert not PRJ.has_structure(p_e3)
+                w.set_compound(dict(w.compound))                             # wie CompoundTab._drawing_saved
+                QApplication.processEvents()
+                assert not any(st_.get("structure") for st_ in w.series.values()), "eps series keep empty drawing"
+                assert not w.fl_state.get("structure") and w.nmr_tab.structure_path() is None
+                assert p_e3.exists() and not errs_e3, errs_e3
+                p_e3.write_text(orig_e3, encoding="utf-8")                   # wieder gezeichnet: alles zurück
+                w.set_compound(dict(w.compound))
+                QApplication.processEvents()
+                assert all(st_.get("structure") for st_ in w.series.values()) and w.fl_state.get("structure")
+                assert w.nmr_tab.structure_path() and not errs_e3, errs_e3
+            finally:
+                w.error = keep_err_e3
+            report.append("Empty compound drawing: no structure, eps/fluorescence/NMR drop it and take it back, "
+                          "file kept, no error: OK")
+        with section:
+            # Häkchen-Tabelle mit Auswahl (Karte Beschriftungen): ganze Zeile blau samt Häkchen-Spalte, schmale Lücke als
+            # Spaltentrenner; ohne Auswahl bleibt alles wie bisher
+            from PySide6.QtGui import QColor as QC_s3
+            t_s3 = STYLE.check_table(["Text"])
+            t_s3.setSelectionMode(QAbstractItemView.SingleSelection)
+            t_s3.setSelectionBehavior(QAbstractItemView.SelectRows)
+            it_s3 = STYLE.check_row(t_s3, "a", ["Label"])
+            assert it_s3.flags() & Qt.ItemIsSelectable and t_s3.property("selgap")
+            t_s3.item(0, 1).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)     # wie LabelCard.fill
+            t_s3.resize(300, 120)
+            t_s3.show()
+            t_s3.selectRow(0)
+            QApplication.processEvents()
+            assert t_s3.item(0, 0).isSelected(), "check column not selected"
+            img_s3 = t_s3.viewport().grab().toImage()
+            dpr_s3 = img_s3.devicePixelRatio()
+            y_s3 = int(t_s3.rowViewportPosition(0) + t_s3.rowHeight(0) // 2)
+            x0_s3 = t_s3.columnViewportPosition(1)                  # Grenze Häkchen-Spalte | Text
+            field_s3 = QC_s3(STYLE.colors()["field"]).rgb()
+
+            def px_s3(x_):
+                return img_s3.pixelColor(int(x_ * dpr_s3), int(y_s3 * dpr_s3)).rgb()
+            sel_s3 = px_s3(x0_s3 + t_s3.columnWidth(1) // 2 + 30)    # Textzelle (neben dem Text)
+            assert sel_s3 != field_s3 and px_s3(3) == sel_s3, (hex(sel_s3), hex(px_s3(3)))   # Häkchen-Spalte ebenso blau
+            assert px_s3(x0_s3 - 1) == field_s3 and px_s3(x0_s3) == field_s3, "no gap between selected cells"
+            t_s3.close()
+            t_s3.deleteLater()
+            report.append(f"Check table selection: whole row incl. check column, {STYLE._CellDelegate.SEL_GAP} px gap: OK")
+        with section:
+            # Startfenster passt samt Titelleiste in den freien Bildschirmbereich (150 %: Titelleiste über dem Rand)
+            from PySide6.QtCore import QRect as QR_g3
+            av_g3 = QR_g3(0, 0, 2560, 1400)
+            assert MW.fit_rect(QR_g3(100, -31, 1320, 900), av_g3, 30) == QR_g3(100, 30, 1320, 900)
+            assert MW.fit_rect(QR_g3(2000, 900, 1320, 900), av_g3, 30) == QR_g3(1240, 500, 1320, 900)
+            assert MW.fit_rect(QR_g3(-50, 0, 3000, 1600), av_g3, 30) == QR_g3(0, 30, 2560, 1370)
+            assert MW.fit_rect(QR_g3(10, 40, 800, 600), QR_g3(-1920, 0, 1920, 1080), 0) == QR_g3(-800, 40, 800, 600)
+            report.append("Startup geometry clamped to the available screen incl. title bar: OK")
+        with section:
+            # MNova-SVG (14.2) mit „MS Shell Dlg 2“ oder ohne Familie: MuPDF zeichnete Times; jetzt Arial/Helvetica in
+            # einer Kopie unter .elucida, die Datei bleibt. matplotlib-Schriftlisten nur installierte Familien: keine
+            # findfont-Meldung, dieselben Schriftdateien wie vorher
+            import logging as log_n3
+            import pymupdf as fitz_n3
+            from matplotlib import font_manager as fm_n3
+            from elucida.core import orbitals as ORB_n3
+            from elucida.formats import mnova as MN_n3
+            svg_n3 = ('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200">'
+                      '<g font-family="MS Shell Dlg 2" font-size="12"><text x="10" y="20">7.26</text></g>'
+                      '<text x="10" y="50" font-family="MS Shell Dlg 2" font-size="12">d <tspan dy="-4">1</tspan>'
+                      '<tspan dy="4">H (ppm)</tspan></text>'
+                      '<g font-family="MS Shell Dlg 2" transform="rotate(-90 100 100)"><text x="100" y="100">1.25</text></g>'
+                      '<text x="10" y="80" font-size="12">none</text>'
+                      '<g font-family="Courier"><text x="10" y="110" font-size="12">mono</text></g></svg>')
+
+            def fonts_n3(s_):
+                pg_ = fitz_n3.open(stream=s_.encode(), filetype="svg")[0]
+                return {sp_["text"].strip(): sp_["font"] for b_ in pg_.get_text("dict")["blocks"]
+                        for l_ in b_.get("lines", []) for sp_ in l_["spans"]}
+            fixed_n3 = MN_n3.svg_fonts(svg_n3)
+            f_n3 = fonts_n3(fixed_n3)
+            assert "MS Shell" not in fixed_n3 and MN_n3.svg_fonts(fixed_n3) == fixed_n3
+            assert all(f_n3[k_] == "Helvetica" for k_ in ("7.26", "d", "1", "H (ppm)", "1.25", "none")), f_n3
+            assert f_n3["mono"] == "Courier", f_n3                     # eigene Familie bleibt
+            assert MN_n3.svg_fonts('<svg><text font-family="Arial">x</text></svg>') == \
+                '<svg><text font-family="Arial">x</text></svg>'
+            # NMR-Tab: Kopie mit Schriften, Original unverändert
+            assert w.open_demo(out / "fix3_nmr_demo")
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("nmr"))
+            QApplication.processEvents()
+            src_n3 = next(Path(s_["file"]) for s_ in w.nmr_tab.st["spectra"] if str(s_.get("file", "")).endswith(".svg"))
+            before_n3 = src_n3.read_bytes()
+            cp_n3 = Path(w.nmr_tab.fonts_svg(src_n3))
+            assert cp_n3 != src_n3 and PRJ.WORK in cp_n3.parts and "font-family" in cp_n3.read_text(encoding="utf-8")
+            assert src_n3.read_bytes() == before_n3 and w.nmr_tab.fonts_svg(src_n3) == str(cp_n3)
+            sp_n3 = next(s_ for s_ in w.nmr_tab.st["spectra"] if Path(s_["file"]) == src_n3)
+            assert w.nmr_tab.figure_svg(dict(sp_n3, struct_on=False)) == str(cp_n3)   # Word ohne Struktur: auch die Kopie
+            # findfont: gefilterte Liste findet dieselben Dateien, ohne Meldung
+            msgs_n3 = []
+            h_n3 = log_n3.Handler()
+            h_n3.emit = lambda r_: msgs_n3.append(r_.getMessage())
+            for fam_n3 in (["Arial", "Liberation Sans", "DejaVu Sans"], ORB_n3.IBO_LABEL_FONTS):
+                for wt_ in ("normal", "bold"):
+                    a_ = fm_n3.fontManager._find_fonts_by_props(fm_n3.FontProperties(family=fam_n3, weight=wt_))
+                    log_n3.getLogger("matplotlib.font_manager").addHandler(h_n3)
+                    try:
+                        b_ = fm_n3.fontManager._find_fonts_by_props(
+                            fm_n3.FontProperties(family=core.installed_fonts(fam_n3), weight=wt_))
+                    finally:
+                        log_n3.getLogger("matplotlib.font_manager").removeHandler(h_n3)
+                    assert a_ == b_, (fam_n3, wt_, a_, b_)
+            assert not [m_ for m_ in msgs_n3 if "findfont" in m_], msgs_n3
+            report.append("MNova SVG fonts: Shell Dlg/missing -> Arial/Helvetica (MuPDF Helvetica), copy under "
+                          ".elucida (also for Word without a structure), source unchanged; installed_fonts: same font files, no findfont warning: OK")
+        with section:
+            # Oberflächengröße (Entscheidung 173): je Rechner in QSettings, nie im Projekt; QT_SCALE_FACTOR vor
+            # QApplication, eine gesetzte Variable gewinnt; Selbsttest selbst bleibt bei 100 %
+            ini_u3 = out / "fix3_scale.ini"
+            ini_u3.unlink(missing_ok=True)
+            s_u3 = QSettings(str(ini_u3), QSettings.IniFormat)
+            assert MW.ui_scale(s_u3) == 100
+            env_u3 = {}
+            assert MW.apply_ui_scale(s_u3, env_u3) == 100 and env_u3 == {}
+            s_u3.setValue("ui/scale", 125)
+            assert MW.apply_ui_scale(s_u3, env_u3) == 125 and env_u3 == {"QT_SCALE_FACTOR": "1.25"}
+            env_u3 = {"QT_SCALE_FACTOR": "2"}
+            MW.apply_ui_scale(s_u3, env_u3)
+            assert env_u3 == {"QT_SCALE_FACTOR": "2"}, "set environment variable must win"
+            s_u3.setValue("ui/scale", "97")
+            assert MW.ui_scale(s_u3) == 100
+            keep_u3 = w.settings.value("ui/scale")
+            try:
+                w.set_ui_scale(150)
+                assert MW.ui_scale(w.settings) == 150 and "150" in w.statusBar().currentMessage()
+                assert "ui/scale" not in json.dumps(w.get_state()) and "ui_scale" not in json.dumps(w.get_state())
+            finally:
+                if keep_u3 is None:
+                    w.settings.remove("ui/scale")
+                else:
+                    w.settings.setValue("ui/scale", keep_u3)
+            assert T("menu_ui_scale") and T("ui_scale_note")
+            report.append("Interface size: stored per computer, read back, environment wins, not in project: OK")
+        with section:
+            # Karte Beschriftungen, Feld „Eigener Text“: ohne eigenen Text leer, der automatische Text lesbar als
+            # Platzhalter (nie die Mathtext-Quelle „cm$^{-1}$“); ein unverändert gelassener Vorschlag wird nie eigener Text
+            import time as time_l3
+
+            def pump_l3(sec=0.4):
+                t0_ = time_l3.time()
+                while time_l3.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+            assert w.open_demo(out / "fix3_labels_demo")
+            pump_l3(0.5)
+            seen_l3, n_rows_l3 = [], 0
+            for key_l3 in w._tab_keys:
+                w.main_tabs.setCurrentIndex(w._tab_keys.index(key_l3))
+                pump_l3(0.6)
+                tab_l3 = w if key_l3 == "eps" else getattr(w, w._tab_spec(key_l3)[0]) if w._built(key_l3) else None
+                card_l3 = getattr(tab_l3, "label_card", None)
+                if card_l3 is None or not card_l3.rows:
+                    continue
+                seen_l3.append(key_l3)
+                over_l3 = json.dumps(card_l3.get_over() or {}, sort_keys=True)
+                for i_, r_ in enumerate(list(card_l3.rows)):
+                    if r_["text"] is not None or r_.get("extra"):
+                        continue
+                    card_l3.table.selectRow(i_)
+                    QApplication.processEvents()
+                    ph_ = card_l3.ed.placeholderText()
+                    assert card_l3.ed.toPlainText() == "" and ph_ and "$" not in ph_ and "\\" not in ph_, \
+                        (key_l3, r_["key"], card_l3.ed.toPlainText(), ph_)
+                    card_l3._commit()                                   # Feld verlassen ohne Tippen
+                    n_rows_l3 += 1
+                assert json.dumps(card_l3.get_over() or {}, sort_keys=True) == over_l3, (key_l3, "suggestion stored")
+            assert "eps" in seen_l3 and len(seen_l3) >= 5, seen_l3
+            report.append(f"Figure Labels card: automatic text readable as placeholder, no '$' "
+                          f"({n_rows_l3} labels in {len(seen_l3)} tabs), untouched suggestion never stored: OK")
     finally:
         ctx.update(locals())
 

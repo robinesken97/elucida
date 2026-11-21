@@ -411,8 +411,9 @@ class CompoundTab(QWidget):
                 if v and comp.get(k) == v:
                     comp[k] = "" if k == "formula" else None
             self.main._drawn[key] = {}
-            if _filled(comp) != _filled(self.main.compound):
-                self.main.set_compound(comp)
+            # auch ohne geänderte Felder: ε-Serien, Fluoreszenz und NMR nehmen die geleerte Zeichnung heraus
+            # (gleicher Zustand ergibt keinen Rückgängig-Schritt)
+            self.main.set_compound(comp)
 
     def export_dialog(self):
         return self.main.export_si_dialog()
