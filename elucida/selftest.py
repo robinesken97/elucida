@@ -156,15 +156,16 @@ class _Section:
     def __enter__(self):
         f = sys._getframe(1)
         self.t0, self.line, self.file, self.n0 = time.perf_counter(), f.f_lineno, f.f_code.co_filename, len(self.report)
+        self.src = os.path.basename(self.file)               # selftest.py oder selftest_smoke.py (Rauchtest)
         self._stop = None
         if self.echo and sys.stderr is not None:             # hängt ein Abschnitt: alle 10 min eine Zeile ins CI-Log
             # Nur eine Zeile aus einem eigenen Thread: faulthandler (alle Stacks) stürzte ab, während der Hauptthread
             # zeichnete (Windows access violation, macOS Intel exit 139); keine Qt-Aufrufe, deshalb ohne _load_note
             import threading
-            stop, line, t0 = threading.Event(), self.line, self.t0
+            stop, line, t0, src = threading.Event(), self.line, self.t0, self.src
             def watch():
                 while not stop.wait(self.WATCH_S):
-                    print(f"section at selftest.py:{line} still running after {time.perf_counter() - t0:.0f} s", flush=True)
+                    print(f"section at {src}:{line} still running after {time.perf_counter() - t0:.0f} s", flush=True)
             threading.Thread(target=watch, daemon=True).start()
             self._stop = stop
         return self
@@ -174,7 +175,7 @@ class _Section:
         if self._stop is not None:
             self._stop.set()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
-            print(f"slow section at selftest.py:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
+            print(f"slow section at {self.src}:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
         failed = kind is not None and issubclass(kind, Exception)
         self._record(dt, failed, traceback.format_exception_only(kind, ex)[-1].strip() if failed else "")
         if not failed:
@@ -187,8 +188,12 @@ class _Section:
         if self.out is not None:                             # Bild des Hauptfensters; darf nie selbst scheitern
             try:
                 w = sys._getframe(1).f_locals.get("w")
+                if w is None:                                # Rauchtest: eigenes Fenster unter anderem Namen
+                    w = next((t_ for t_ in QApplication.topLevelWidgets()
+                              if isinstance(t_, MainWindow)), None)
+                stem = "" if self.src == "selftest.py" else os.path.splitext(self.src)[0] + "_"
                 if w is not None:
-                    w.grab().save(str(self.out / f"failed_{self.line}.png"))
+                    w.grab().save(str(self.out / f"failed_{stem}{self.line}.png"))
             except Exception:
                 pass
         return True
@@ -210,7 +215,7 @@ class _Section:
 
     def _record(self, dt, failed, last):
         title = re.sub(r"\s+", " ", self._title())[:160]
-        self.rows.append((self.line, title, dt, "FAILED" if failed else "OK", last))
+        self.rows.append((self.line, title, dt, "FAILED" if failed else "OK", last, self.src))
         if self.out is not None:
             try:
                 with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
@@ -218,20 +223,147 @@ class _Section:
             except OSError:
                 pass
 
+    def skip(self, group):
+        """Gruppe nicht gelaufen (`--selftest-group`): eine Zeile SKIPPED in sections.tsv, nie OK."""
+        self.rows.append((0, group, 0.0, "SKIPPED", "", "selftest.py"))
+        if self.out is not None:
+            try:
+                with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
+                    fh.write(f"0\t{group}\t0.0\tSKIPPED\n")
+            except OSError:
+                pass
+
+    def fixture(self, group, dt, failed=""):
+        """Gruppe lief still als Fixture der gewählten Gruppe: eine Zeile FIXTURE (FAILED, wenn darin etwas scheiterte)."""
+        self.rows.append((0, f"fixture {group}", dt, "FAILED" if failed else "FIXTURE", failed, "selftest.py"))
+        if failed:
+            self.failed += 1
+            self.report.append(f"FAILED\nfixture {group}: {failed}")
+        if self.out is not None:
+            try:
+                with open(self.out / "sections.tsv", "a", encoding="utf-8") as fh:
+                    fh.write(f"0\tfixture {group}\t{dt:.1f}\t{self.rows[-1][3]}\n")
+            except OSError:
+                pass
+
     def summary(self):
         """Zusammenfassung oben im Report: erster FAILED, spätere als mögliche Folgefehler, 10 langsamste (nur ASCII)."""
         fails = [r for r in self.rows if r[3] == "FAILED"]
         lines = ["== Summary =="]
-        for i, (line, title, dt, _, last) in enumerate(fails):
-            lines.append(f"{'FIRST FAILED' if i == 0 else 'FAILED (possibly a consequence)'}: selftest.py:{line} "
+        skipped = [r[1] for r in self.rows if r[3] == "SKIPPED"]
+        if skipped:                                          # nie als OK gezählt (Gruppenlauf)
+            lines.append(f"skipped {len(skipped)} group(s): {', '.join(skipped)}")
+        fixtures = [r[1][8:] for r in self.rows if r[1].startswith("fixture ") and r[0] == 0]
+        if fixtures:                                         # still gelaufen, Titel nicht gezählt
+            lines.append(f"fixture group(s): {', '.join(fixtures)}")
+        for i, (line, title, dt, _, last, src) in enumerate(fails):
+            lines.append(f"{'FIRST FAILED' if i == 0 else 'FAILED (possibly a consequence)'}: {src}:{line} "
                          f"{title} -- {last}")
         if not fails:
             lines.append("no FAILED section")
         lines.append("10 slowest sections:")
-        for line, title, dt, status, _ in sorted(self.rows, key=lambda r: -r[2])[:10]:
-            lines.append(f"  {dt:7.1f} s  selftest.py:{line} {status} {title}")
+        for line, title, dt, status, _, src in sorted((r for r in self.rows if r[0]), key=lambda r: -r[2])[:10]:
+            lines.append(f"  {dt:7.1f} s  {src}:{line} {status} {title}")
         lines.append("== End of summary ==")
         return [t.encode("ascii", "replace").decode() for t in lines]
+
+
+class _DemoPub:
+    """Beispielpublikation für die Abschnitte (Selbsttest Stufe 2): einmal bauen, danach je Abschnitt eine frische Kopie.
+
+    Schlüssel = was der Bau liest: alle Einstellungen außer Pfaden, Zuletzt-Listen, Fenstergeometrie und Ansicht
+    (`SKIP`) plus Sprache; anderer Schlüssel = echt bauen (eine Vorlage je Schlüssel). Die Kopie liegt im Ordner des
+    Abschnitts (wie bisher; gespeichert wird nur relativ), Dateizeiten mit gleichem Abstand untereinander, die jüngste
+    = jetzt: Frische-Prüfungen vergleichen Dateien untereinander, „zuletzt geändert“ ist neu wie nach einem Bau. Im
+    Fenster dasselbe wie nach `open_demo_publication`: S2, dann S3 zuletzt benutzt, letzter Ordner, Publikation offen.
+    own=True: der Abschnitt prüft den Bau selbst (immer echt bauen; die Vorlage wird daraus genommen).
+    ELUCIDA_SELFTEST_DEMO_CHECK=1: immer echt bauen und jeden Bau mit der Vorlage seines Schlüssels vergleichen
+    (Ergebnis in demo_check.txt; Beleg, dass eine Kopie einem Bau gleicht)."""
+    SKIP = ("geometry", "last_dir", "last_img_dir", "last_project_dir", "recent_projects", "recent_publications",
+            "quick_export_dir", "update_last")
+    SKIP_GROUPS = ("datapack/", "fold/", "step/", "welcome/")
+
+    def __init__(self, out):
+        self.out, self.masters, self.calls, self.last_key = out, {}, [], None
+        self.check = os.environ.get("ELUCIDA_SELFTEST_DEMO_CHECK") == "1"
+
+    def key(self, w):
+        s = w.settings
+        items = sorted((k, str(s.value(k))) for k in s.allKeys()
+                       if k not in self.SKIP and not k.startswith(self.SKIP_GROUPS))
+        return json.dumps([get_lang(), items], ensure_ascii=False)
+
+    @staticmethod
+    def _tree(d):
+        """Normierter Inhalt eines Ordners: Pfad -> Text (zufällige 32-stellige Kennungen maskiert) oder Prüfsumme."""
+        import hashlib
+        hexid = re.compile(r"[0-9a-f]{32}")
+        res = {}
+        for p in sorted(Path(d).rglob("*")):
+            if p.is_file():
+                b = p.read_bytes()
+                try:
+                    v = hexid.sub("<id>", b.decode("utf-8"))
+                except UnicodeDecodeError:
+                    v = hashlib.sha256(b).hexdigest()
+                res[hexid.sub("<id>", p.relative_to(d).as_posix())] = v
+        return res
+
+    def __call__(self, w, folder, own=False):
+        folder = Path(folder)
+        key, t0 = self.key(w), time.perf_counter()
+        line = sys._getframe(1).f_lineno
+        master = self.masters.get(key)
+        if own or self.check or master is None:
+            d = w.open_demo_publication(folder)
+            if not d:
+                return d
+            snap = self.out / f"_demo_pub_master{len(self.masters)}"
+            if self.check and master is not None:          # Beleg: Bau gegen Vorlage desselben Schlüssels
+                a_, b_ = self._tree(master[0]), self._tree(d)
+                diff = sorted(k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k))
+                with open(self.out / "demo_check.txt", "a", encoding="utf-8") as fh:
+                    fh.write(f"{line}\t{len(diff)}\t{' '.join(diff[:20])}\n")
+            why = "own" if own else "check" if master is not None else ""
+            if master is None:                             # Vorlage sofort, bevor der Abschnitt etwas ändert
+                if snap.exists():
+                    shutil.rmtree(snap)
+                shutil.copytree(d, snap, copy_function=shutil.copy2)
+                if self.masters:                           # was anders ist als bei der vorigen Vorlage
+                    a_, b_ = dict(json.loads(self.last_key)[1]), dict(json.loads(key)[1])
+                    lang_ = [] if json.loads(self.last_key)[0] == json.loads(key)[0] else ["lang"]
+                    why = "new key: " + ", ".join(sorted(set(lang_) | {k for k in set(a_) | set(b_) if a_.get(k) != b_.get(k)}))
+                self.masters[key] = (snap, time.time())
+                self.last_key = key
+            self.calls.append((line, "built", time.perf_counter() - t0, why))
+            return d
+        if not w.maybe_save():
+            return False
+        if folder.exists():
+            shutil.rmtree(folder)
+        shutil.copytree(master[0], folder, copy_function=shutil.copy2)
+        shift = time.time() - master[1]
+        for p in [folder, *folder.rglob("*")]:
+            st = p.stat()
+            os.utime(p, (st.st_atime + shift, st.st_mtime + shift))
+        w.settings.setValue("last_project_dir", str(folder))   # wie create_project (S2, dann S3)
+        for n in ("S2", "S3"):
+            w.add_recent(folder / n)
+        if not w.open_publication(folder):
+            return False
+        w.statusBar().showMessage(T("demo_pub_done", p=str(folder)), 10000)
+        self.calls.append((line, "copied", time.perf_counter() - t0, ""))
+        return folder
+
+
+def _until(cond, pump_fn, limit=10.0, step=0.05):
+    """Bedingungs-Wait (Selbsttest Stufe 2): Ereignisse verarbeiten, bis cond() gilt, höchstens limit s. -> cond().
+    Nur für eindeutige Bedingungen (etwas muss eintreten); „nichts passiert“ braucht weiter die volle Wartezeit."""
+    t_end = time.perf_counter() + limit
+    pump_fn(step)
+    while not cond() and time.perf_counter() < t_end:
+        pump_fn(step)
+    return cond()
 
 
 def _filled_ct(comp):
@@ -430,16 +562,32 @@ def _display_reset_check(w, key, out, pump):
     return bad
 
 
-def selftest(outdir, with_isnet=False):
-    out = Path(outdir).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    MW.SETTINGS_FILE = out / "selftest_settings.ini"  # zuletzt geöffnet, Sprache usw. nicht beim Nutzer ändern
-    MW.SETTINGS_FILE.unlink(missing_ok=True)
-    report = [f"{APP_NAME} {APP_VERSION} selftest", f"python {sys.version.split()[0]}, {sys.platform}"]
-    ok = True
-    section = _Section(report, out=out)
-    app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
-    QApplication.setApplicationVersion(APP_VERSION)
+def _run_fixture(name, ctx):
+    """Gruppe als Fixture einer gewählten Gruppe (`--selftest-group`): läuft still (keine Titel, nie OK), eine Zeile
+    FIXTURE in sections.tsv; scheitert darin ein Abschnitt, wird die Zeile FAILED (die gewählte Gruppe hängt davon ab)."""
+    real, rep = ctx["section"], ctx["report"]
+    fx = _Section([], echo=False)
+    ctx["section"], ctx["report"] = fx, fx.report
+    t0 = time.perf_counter()
+    try:
+        _GROUP_FUNCS[GROUPS.index(name) - 1](ctx)
+    finally:
+        ctx["section"], ctx["report"] = real, rep
+    bad = [r for r in fx.rows if r[3] == "FAILED"]
+    real.fixture(name, time.perf_counter() - t0, f"{len(bad)} section(s) failed, first: {bad[0][1]} -- {bad[0][4]}"
+                 if bad else "")
+
+
+def _g_start(ctx):
+    """Selbsttest-Gruppe „start“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'with_isnet' in ctx:
+        with_isnet = ctx['with_isnet']
     try:
         with section:
             csv, cdxml, photo = make_selftest_inputs(out / "input")
@@ -464,6 +612,70 @@ def selftest(outdir, with_isnet=False):
                 w.switch_lang(lang)
                 assert hint_() in w.series["TEST-A"]["chem_info"], (lang, w.series["TEST-A"]["chem_info"])
             report.append("structure hints follow language switch: OK")
+        if True:
+            def pump(sec=0.4):
+                sec *= 2.5 if os.environ.get("CI") else 1      # CI: WebEngine rendert in Software, alles dauert länger
+                import time
+                t0 = time.time()
+                while time.time() - t0 < sec:
+                    QApplication.processEvents()
+                    # Wie die Ereignisschleife der App: mit deleteLater() ersetzte Tabs hier löschen. Ohne laufende
+                    # Schleife blieben sie bis zur ersten verschachtelten Schleife liegen – das ist das Warten des
+                    # Zeicheneditors auf JavaScript; dort gelöscht, brach WebEngine unter Windows ab (0x80000003).
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+                    time.sleep(0.02)
+
+            def free_win_(win):
+                # Zusatzfenster freigeben (Speicher auf CI-Macs); jedes MainWindow lenkt core.LOG auf sich um,
+                # nach dem Löschen also zurück auf das Hauptfenster w
+                win.close()
+                win.deleteLater()
+                core.LOG = IMG.LOG = lambda m="": w.log_signal.emit(str(m))
+
+            def wait_path_(ws_, limit=90):
+                # offener Reaktionspfad: warten, bis seine Zeichenfläche gespeichert ist (CDXML, dann SVG); vorher fehlt
+                # beim Schließen die Vorschau bzw. sie entsteht aus der Abbildung statt aus der SVG (langsame CI)
+                def state_():                                  # wie PathWorkspace.dispose: Editor oder gespeicherte Fläche
+                    c_ = ws_.composition
+                    comp_ = c_ and (c_.editor.path or ws_.host.tab.pages.prof.get("composition"))
+                    return c_ is None, c_ and c_._auto_pending, c_ and c_.editor.dirty, comp_ and Path(comp_).with_suffix(".svg").exists()
+
+                def ready_():
+                    none_, pend_, dirty_, svg_ = state_()
+                    return none_ or (not pend_ and not dirty_ and svg_)
+                t0_ = time.time()
+                while not ready_() and time.time() - t0_ < limit:
+                    pump(0.2)
+                assert ready_(), ("path drawing not saved (none, pending, dirty, svg)", state_())
+    finally:
+        ctx.update(locals())
+
+
+def _g_uvvis(ctx):
+    """Selbsttest-Gruppe „uvvis“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'cdxml' in ctx:
+        cdxml = ctx['cdxml']
+    if 'csv' in ctx:
+        csv = ctx['csv']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'photo' in ctx:
+        photo = ctx['photo']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'st' in ctx:
+        st = ctx['st']
+    if 'w' in ctx:
+        w = ctx['w']
+    if 'with_isnet' in ctx:
+        with_isnet = ctx['with_isnet']
+    try:
         with section:
             w.series["TEST-A"]["bg"] = "isnet" if with_isnet else "grabcut"
             w.set_photo(str(photo), "TEST-A", render=False, sync=True)
@@ -953,40 +1165,6 @@ def selftest(outdir, with_isnet=False):
             report.append("eps edge cases (names, snap, undefined R2, SE 0, equal c, baseline at start, ';' CSV): OK")
 
         with section:
-            def pump(sec=0.4):
-                sec *= 2.5 if os.environ.get("CI") else 1      # CI: WebEngine rendert in Software, alles dauert länger
-                import time
-                t0 = time.time()
-                while time.time() - t0 < sec:
-                    QApplication.processEvents()
-                    # Wie die Ereignisschleife der App: mit deleteLater() ersetzte Tabs hier löschen. Ohne laufende
-                    # Schleife blieben sie bis zur ersten verschachtelten Schleife liegen – das ist das Warten des
-                    # Zeicheneditors auf JavaScript; dort gelöscht, brach WebEngine unter Windows ab (0x80000003).
-                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-                    time.sleep(0.02)
-
-            def free_win_(win):
-                # Zusatzfenster freigeben (Speicher auf CI-Macs); jedes MainWindow lenkt core.LOG auf sich um,
-                # nach dem Löschen also zurück auf das Hauptfenster w
-                win.close()
-                win.deleteLater()
-                core.LOG = IMG.LOG = lambda m="": w.log_signal.emit(str(m))
-
-            def wait_path_(ws_, limit=90):
-                # offener Reaktionspfad: warten, bis seine Zeichenfläche gespeichert ist (CDXML, dann SVG); vorher fehlt
-                # beim Schließen die Vorschau bzw. sie entsteht aus der Abbildung statt aus der SVG (langsame CI)
-                def state_():                                  # wie PathWorkspace.dispose: Editor oder gespeicherte Fläche
-                    c_ = ws_.composition
-                    comp_ = c_ and (c_.editor.path or ws_.host.tab.pages.prof.get("composition"))
-                    return c_ is None, c_ and c_._auto_pending, c_ and c_.editor.dirty, comp_ and Path(comp_).with_suffix(".svg").exists()
-
-                def ready_():
-                    none_, pend_, dirty_, svg_ = state_()
-                    return none_ or (not pend_ and not dirty_ and svg_)
-                t0_ = time.time()
-                while not ready_() and time.time() - t0_ < limit:
-                    pump(0.2)
-                assert ready_(), ("path drawing not saved (none, pending, dirty, svg)", state_())
 
             # TD-DFT mit Spin-Bahn-Kopplung (ORCA 6): Zustandsnamen wie "0-1.0A" dürfen nicht als Zahl gelten
             soc = out / "input" / "orca_soc.out"
@@ -1664,7 +1842,25 @@ def selftest(outdir, with_isnet=False):
             w.render()
             assert not any("_{" in a_.get_text() for a_ in w.F.ann_items.values())
             report.append("label indices: OK")
+    finally:
+        ctx.update(locals())
 
+
+def _g_electrochem(ctx):
+    """Selbsttest-Gruppe „electrochem“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'cdxml' in ctx:
+        cdxml = ctx['cdxml']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # Cyclovoltammetrie: Gamry-Dateien (beide Varianten), Redoxpaare, interne Referenz, Export
             def cv_sweep(e0, ip, lo, hi, step=0.002, ref=None):
@@ -3079,7 +3275,23 @@ def selftest(outdir, with_isnet=False):
             st_hc.update(entries=[], current=None, cycles="", ref="", cap_conc="", cap_solvent="", view="capacity")
             w.replace_tab("hcell")
             report.append("H-Cell cycling (reader, capacity/efficiency, two cells, broken time axis, export, reset): OK")
+    finally:
+        ctx.update(locals())
 
+
+def _g_epr_kinetics(ctx):
+    """Selbsttest-Gruppe „epr_kinetics“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # EPR: BES3T lesen (G -> mT), Dunkelspektrum, Basislinie, Ausblenden, Simulation anpassen, EasySpin-Parameter
             eprdir = out / "input" / "epr"
@@ -4486,7 +4698,25 @@ def selftest(outdir, with_isnet=False):
             w.epr_state.update(entries=[], cap_acq=False, cap_hfc="MHz")
             t_e.fill_table()
             report.append("EPR acquisition parameters in the caption, coupling unit MHz/mT/G: OK")
+    finally:
+        ctx.update(locals())
 
+
+def _g_ui(ctx):
+    """Selbsttest-Gruppe „ui“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # Farbe der Lösung: Farbmetrik (Weiß, Grau, Gelb bei Blauabsorption) und Anzeige im ε-Tab
             L_ = COLOR.LAM
@@ -4819,7 +5049,26 @@ def selftest(outdir, with_isnet=False):
             assert (d_ / "models" / "neu.onnx").exists() and not (base_ / "Spectravolt").exists(), list(d_.rglob("*"))
             assert APP_NAME == "Elucida" and OLD_APP_NAMES[0] == "Spectravolt" and UPD.REPO.endswith("/elucida")
             report.append("rename (settings + data folder migration): OK")
+    finally:
+        ctx.update(locals())
 
+
+def _g_ir_hrms(ctx):
+    """Selbsttest-Gruppe „ir_hrms“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    import pymupdf
+    if 'cdxml' in ctx:
+        cdxml = ctx['cdxml']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # Verbindung auf Projektebene + Tab IR + MS (künstliche OPUS-, PDF- und Word-Dateien)
             import struct as _st
@@ -6070,7 +6319,25 @@ def selftest(outdir, with_isnet=False):
             w.compound = {}
             assert not fails_, "\n".join(fails_)
             report.append("audit P3 review fixes (Codex) + EA/IR decisions: OK")
+    finally:
+        ctx.update(locals())
 
+
+def _g_xray(ctx):
+    """Selbsttest-Gruppe „xray“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # X-Ray: künstliche CIF (Ring auf Inversionszentrum, PART 1/2, Wasser als zweites Fragment, ohne Torsionen)
             from matplotlib.backend_bases import MouseEvent
@@ -7158,6 +7425,34 @@ def selftest(outdir, with_isnet=False):
                 chk_("template small molecule", p4r_template_small)
             assert not fails_, "\n".join(fails_)
             report.append("audit P4 review fixes (Codex): OK")
+    finally:
+        ctx.update(locals())
+
+
+def _g_dft(ctx):
+    """Selbsttest-Gruppe „dft“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    from matplotlib.backend_bases import MouseEvent
+    if 'cif_' in ctx:
+        cif_ = ctx['cif_']
+    if 'npath_' in ctx:
+        npath_ = ctx['npath_']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'rot_keeps_scale_' in ctx:
+        rot_keeps_scale_ = ctx['rot_keeps_scale_']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 't_x' in ctx:
+        t_x = ctx['t_x']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # Zeichenfläche darf durch Leisten nicht schrumpfen: bei 1440 × 900 mindestens die halbe Fensterbreite
             # (gemessen ~55 %; eine Seitenleiste läge bei ~44 %). Relativ, damit andere Schriften in CI nicht stören.
@@ -7276,10 +7571,10 @@ def selftest(outdir, with_isnet=False):
             w.dft_state["zero_based"] = False
             pump(0.3)
             w.undo()                                                               # Umnummerieren rückgängig
-            pump(0.4)
+            _until(lambda: not w._restoring, pump)   # war pump(0.4)
             assert w.dft_state["entries"][0]["order"] is None, w.dft_state["entries"][0]["order"]
             w.redo()
-            pump(0.4)
+            _until(lambda: not w._restoring, pump)   # war pump(0.4)
             t_d = w.dft_tab
             assert w.dft_state["entries"][0]["order"] == [1, 3, 2, 0, 4, 5, 6, 7]
             sx_ = t_d.save_xyz(out / "dft" / "dtest_new.xyz")
@@ -9023,7 +9318,27 @@ def selftest(outdir, with_isnet=False):
             chk_("no nan orbital energy", p5r_nan)
             assert not fails_, "\n".join(fails_)
             report.append("audit P5 review fixes (Codex): OK")
+    finally:
+        ctx.update(locals())
 
+
+def _g_nmr_synthesis(ctx):
+    """Selbsttest-Gruppe „nmr_synthesis“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    import struct as _st
+    import zipfile as _zf
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # NMR: Mnova-SVGs (Kern aus der Achse, sonst von Hand), Sortierung, Mnova-Text + Zuordnung, Bruker acqus, Word
             ndir = out / "input" / "nmr"
@@ -9617,6 +9932,40 @@ def selftest(outdir, with_isnet=False):
                 ["500", "400", "270", "360", "850"]
             report.append("NMR/synthesis audit P7 review (comma without space, dropped fragment, NaN/inf, eq. digits, "
                           "nominal 1H frequency): OK")
+    finally:
+        ctx.update(locals())
+
+
+def _g_project_si(ctx):
+    """Selbsttest-Gruppe „project_si“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    import zipfile as _zf
+    if 'cdxml' in ctx:
+        cdxml = ctx['cdxml']
+    if 'csv' in ctx:
+        csv = ctx['csv']
+    if 'free_win_' in ctx:
+        free_win_ = ctx['free_win_']
+    if 'gf_' in ctx:
+        gf_ = ctx['gf_']
+    if 'irdir' in ctx:
+        irdir = ctx['irdir']
+    if 'orf_' in ctx:
+        orf_ = ctx['orf_']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'proj' in ctx:
+        proj = ctx['proj']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 't_d' in ctx:
+        t_d = ctx['t_d']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             w.dft_state.update(entries=[], current=None)
             t_d.sync_widgets()
@@ -11291,8 +11640,50 @@ def selftest(outdir, with_isnet=False):
             chk5_("GP rename like variables", r9_)
             assert not rv_, rv_
             report.append("F3-F5 review fixes (Codex) + GP keys like variables: OK")
+    finally:
+        ctx.update(locals())
+
+
+def _g_publication(ctx):
+    """Selbsttest-Gruppe „publication“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    from elucida.app import publication as PUB
+    from elucida.app import welcome as WEL
+    from elucida.exchange import datapack as DP
+    from elucida.si import publication_si as PSI
+    import zipfile as _zfp
+    if 'demo_pub' in ctx:
+        demo_pub = ctx['demo_pub']
+    if 'fixture_groups' in ctx:
+        fixture_groups = ctx['fixture_groups']
+    if 'heads_' in ctx:
+        heads_ = ctx['heads_']
+    if 'names_' in ctx:
+        names_ = ctx['names_']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'pub_' in ctx:
+        pub_ = ctx['pub_']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'sec_files' in ctx:
+        sec_files = ctx['sec_files']
+    if 'secdir' in ctx:
+        secdir = ctx['secdir']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'skipped_groups' in ctx:
+        skipped_groups = ctx['skipped_groups']
+    if 'w' in ctx:
+        w = ctx['w']
+    if 'write_dta' in ctx:
+        write_dta = ctx['write_dta']
+    if 'xyzf_' in ctx:
+        xyzf_ = ctx['xyzf_']
+    try:
         with section:
-            dpub_ = w.open_demo_publication(out / "demo_pub")                  # Beispielpublikation
+            dpub_ = demo_pub(w, out / "demo_pub", own=True)                  # Beispielpublikation
             assert dpub_ and Path(w.publication_dir) == out / "demo_pub" and w.center.currentIndex() == 2
             assert [PUB.compound_name(d_) for d_ in PUB.sync(dpub_)[0]] == ["S2", "S3"] and len(w.pub_page.rows) == 2
             assert PUB.load(dpub_)["si_texts"]["methods"].startswith("All reactions")
@@ -11687,7 +12078,7 @@ def selftest(outdir, with_isnet=False):
             assert w.compound["mw"] == drawn_ct["mw"] and ct_.ed_mw.text() == f"{drawn_ct['mw']:g}"
             # Rückgängig: Verbindung zurück, der Tab bleibt offen
             w.undo()
-            pump(0.4)
+            _until(lambda: not w._restoring, pump)   # war pump(0.4)
             assert w.compound["mw"] == 123.45 and w._tab_keys[w.main_tabs.currentIndex()] == "compound"
             assert w.comp_tab.ed_mw.text() == "123.45"
             w.set_compound(keep_ct)
@@ -12030,7 +12421,7 @@ def selftest(outdir, with_isnet=False):
 
         with section:
             # Tote Einträge in PySides Adresstabelle (Absturz beim nächsten Python-Qt-Objekt): STYLE.item_at statt itemAt
-            w.open_demo_publication(out / "demo_pub_items")
+            demo_pub(w, out / "demo_pub_items", own=True)
             pump(0.5)
             held_ = _held_qt_items()
             assert not held_, held_[:5]
@@ -12063,7 +12454,21 @@ def selftest(outdir, with_isnet=False):
             assert "10 slowest sections:" in sum_s1 and all(t_.isascii() for t_ in sum_s1)
             img_s1 = (d_s1 / f"failed_{rows_s1[2][0]}.png").exists()  # Bild nur gemeldet: darf nie scheitern lassen
             report.append(f"selftest stage 1: window image on FAILED {'written' if img_s1 else 'skipped'}")
-            assert len(section.rows) > 20 and {r_[3] for r_ in section.rows} <= {"OK", "FAILED"}
+            # Gruppenlauf (Stufe 2): nicht gelaufene Gruppe = eine Zeile SKIPPED, oben gezählt, nie OK, nie „langsam“
+            d_k1 = d_s1 / "skip"
+            d_k1.mkdir()
+            sec_k1 = _Section([], echo=False, out=d_k1)
+            with sec_k1:
+                sec_k1.report.append("kept part: OK")
+            sec_k1.skip("other")
+            rows_k1 = [r_.split("\t") for r_ in (d_k1 / "sections.tsv").read_text(encoding="utf-8").splitlines()]
+            assert [r_[3] for r_ in rows_k1[1:]] == ["OK", "SKIPPED"] and rows_k1[2][:3] == ["0", "other", "0.0"], rows_k1
+            sum_k1 = sec_k1.summary()
+            assert sum_k1[1] == "skipped 1 group(s): other" and "no FAILED section" in sum_k1, sum_k1
+            assert not any("SKIPPED" in t_ for t_ in sum_k1), sum_k1
+            assert len(section.rows) > 20 and {r_[3] for r_ in section.rows} <= {"OK", "FAILED", "SKIPPED", "FIXTURE"}
+            assert [r_[1] for r_ in section.rows if r_[3] == "SKIPPED"] == skipped_groups, skipped_groups
+            assert [r_[1][8:] for r_ in section.rows if r_[0] == 0 and r_[1].startswith("fixture ")] == fixture_groups
             assert len((out / "sections.tsv").read_text(encoding="utf-8").splitlines()) == len(section.rows) + 1
             shutil.rmtree(d_s1)
             report.append("selftest stage 1: sections.tsv, summary (first FAILED on top, later ones marked): OK")
@@ -12877,6 +13282,25 @@ def selftest(outdir, with_isnet=False):
                 short_ = [T(k_) for k_ in ("xr_prev_view", "xr_reset_view", "xr_reset_display")]    # drei in einer Reihe;
                 assert max(map(len, short_)) <= 14, short_       # Länge statt Pixel: Schriften im Testmodus je System anders
             report.append("DFT IboView style: labels clear of rods, rods meet atoms without a jump, element symbols switchable, view buttons fit: OK")
+    finally:
+        ctx.update(locals())
+
+
+def _g_comparison(ctx):
+    """Selbsttest-Gruppe „comparison“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'demo_pub' in ctx:
+        demo_pub = ctx['demo_pub']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # Reaction-path view: pages with the margins of the tabs, caption row symmetric, no permanent status line;
             # a loaded scheme sits horizontally centred in the upper third, also after the layout changed.
@@ -12966,7 +13390,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time_c_.sleep(0.02)
             dcmp_ = out / "demo_cmp"
-            w.open_demo_publication(dcmp_)                    # schreibt beim Speichern je Verbindung den Stand
+            demo_pub(w, dcmp_, own=True)                    # schreibt beim Speichern je Verbindung den Stand
             for n_ in ("S2", "S3"):
                 assert CMP.snapshot_path(dcmp_ / n_).exists(), n_
             size_c_ = CMP.snapshot_path(dcmp_ / "S3").stat().st_size
@@ -13727,7 +14151,7 @@ def selftest(outdir, with_isnet=False):
             assert SI.purity_line(["13C", "1H", "hplc"], "PXRD")[0] == \
                 "Purity was established by ¹H and ¹³C NMR spectroscopy, HPLC and PXRD.", SI.purity_line(["13C", "1H", "hplc"], "PXRD")
             assert "<sup>1</sup>H" in SI.purity_line(["1H"])[1]
-            dk_ = w.open_demo_publication(out / "demo_pub_siklein")
+            dk_ = demo_pub(w, out / "demo_pub_siklein")
             w.open_project(dk_ / "S3")
             assert w.compound.get("purity") == ["1H", "13C", "ea"], w.compound.get("purity")
             assert w.si_char_blocks(w.compound, "S3")[2].endswith("NMR spectroscopy and elemental analysis.")
@@ -13863,7 +14287,7 @@ def selftest(outdir, with_isnet=False):
             from elucida.tabs import dft_pages as PG_fx
             from elucida.tabs import nto as NTOV_fx
             from elucida.core import orbitals as ORB_fx
-            dz_ = w.open_demo_publication(out / "fixd_pub")
+            dz_ = demo_pub(w, out / "fixd_pub")
             w.open_project(dz_ / "S3")
             # A1: Projekt-Vergleich nimmt die Emission (Kennung), nie das Anregungsspektrum; alter Stand gilt als veraltet
             spec_fx = w.fl_tab.figure_spec()
@@ -14114,7 +14538,7 @@ def selftest(outdir, with_isnet=False):
             assert ">-4<" in x_r2 and ">−4<" not in x_r2, x_r2[:400]
             assert "S3_opt_freq" in x_r2 and "\\_" not in x_r2
             # Beispielprojekt S3
-            dz_r2 = w.open_demo_publication(out / "r2_pub")
+            dz_r2 = demo_pub(w, out / "r2_pub")
             w.open_project(dz_r2 / "S3")
             w.switch_lang("de")
             # 5 Word: Tabellenunterschriften mit Klartextnamen, nie „S3\_opt\_freq“
@@ -14303,7 +14727,7 @@ def selftest(outdir, with_isnet=False):
             import zipfile as _zf_r5
             from elucida.app import publication as PUB_r5
             from elucida.si import publication_si as PSI_r5
-            dp_r5 = w.open_demo_publication(out / "r5_pub")
+            dp_r5 = demo_pub(w, out / "r5_pub")
             s3_r5 = dp_r5 / "S3"
 
             def lines_r5(p_):                                              # Zeilen samt Endung (Windows: \r\n)
@@ -14576,7 +15000,7 @@ def selftest(outdir, with_isnet=False):
             assert s_es.isascii() and "Sys.g" not in p_es and "Sys.lwpp" not in p_es and "Exp.mwFreq" not in p_es, s_es
             assert p_es["Sys.A"] == [22.6, 0.0] and "-0.00" not in s_es and p_es["Sys.n"] == [1.0, 2.0], s_es
             assert "% Sys.g = ;  % set g" in s_es and "(simulation: 3 nuclei)" in s_es and "anisotropic tensors not exported" in s_es
-            dz_es = w.open_demo_publication(out / "es_pub")
+            dz_es = demo_pub(w, out / "es_pub")
             w.open_project(dz_es / "S3")
             cp_es = w.epr_tab.calc_pages
             sim_es = cp_es.sim()
@@ -14628,10 +15052,32 @@ def selftest(outdir, with_isnet=False):
                 del cp_es.easyspin_text
             report.append("EasySpin start script from calculated couplings (garlic, MHz, g from fit or placeholder, ASCII, "
                           "MATLAB file name, failure leaves out only the script and is named): OK")
+    finally:
+        ctx.update(locals())
+
+
+def _g_lanes(ctx):
+    """Selbsttest-Gruppe „lanes“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    from PySide6.QtWidgets import QCheckBox
+    if 'demo_pub' in ctx:
+        demo_pub = ctx['demo_pub']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    if 'wait_path_' in ctx:
+        wait_path_ = ctx['wait_path_']
+    try:
         with section:
             # 1.3.0: Verbindungsname mit Punkt (erfunden „S3.1“). Exportnamen bekamen ihre Endung über with_suffix: aus
             # „S3.1_CV“ wurde „S3.pdf“, die Tabs überschrieben sich still. Jetzt: jede Datei mit vollem Namen, keine doppelt.
-            dp_dot = w.open_demo_publication(out / "dot_pub")
+            dp_dot = demo_pub(w, out / "dot_pub")
             s3_dot = dp_dot / "S3"
             assert w.open_project(s3_dot, ask=False, recent=False)
             w.comp_tab.fields["name"].setText("S3.1")                     # wie im Tab Verbindung
@@ -15285,7 +15731,7 @@ def selftest(outdir, with_isnet=False):
         with section:
             # „Darstellung zurücksetzen“ setzt nur Darstellung zurück (Nutzerentscheidung 2026-11-14): je Tab des
             # Beispiels als Eigenschaft, nicht als Schlüsselliste (_display_reset_check)
-            pub_rs = Path(w.open_demo_publication(out / "reset_pub"))
+            pub_rs = Path(demo_pub(w, out / "reset_pub"))
             w.open_project(pub_rs / "S3", recent=False)
             pump(0.5)
             w.main_tabs.setCurrentWidget(w.dft_tab)            # die X-Ray-Zuordnung zur Rechnung braucht den DFT-Tab
@@ -15447,7 +15893,7 @@ def selftest(outdir, with_isnet=False):
                 assert (x0_ < .1 and y0_ < .1 and x1_ - x0_ > .6 and y1_ - y0_ > .6 and abs((x0_ + x1_) / 2 - .5) < .15
                         and abs((y0_ + y1_) / 2 - .5) < .15), (what_, x0_, x1_, y0_, y1_)
 
-            pub_p = Path(w.open_demo_publication(out / "p13p_demo"))
+            pub_p = Path(demo_pub(w, out / "p13p_demo"))
             item_p = PUB_p.load(pub_p)["reaction_paths"][0]
             dir_p = RP_p.directory(pub_p, item_p["uid"])
 
@@ -16497,7 +16943,7 @@ def selftest(outdir, with_isnet=False):
         with section:
             # Spur T 1.3.0, SEC „aus CV-Tab“ (Nachstellung repro): Feld zeigt den benutzten Wert, Hinweis bei fehlender
             # Referenz, ohne Fc-Referenz die Elektrode des SEC-Tabs, Vorschau zieht beim Anzeigen nach
-            dpub_t = w.open_demo_publication(out / "lane_t_demo")
+            dpub_t = demo_pub(w, out / "lane_t_demo")
             w.open_project(dpub_t / "S3", recent=False)
             sec_t, cv_t = w.sec_tab, w.cv_tab
             w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
@@ -16696,11 +17142,12 @@ def selftest(outdir, with_isnet=False):
             bl_a1 = [("image", "g"), ("fields", []), ("image", "o"), ("text", "orb"), ("image", "n"), ("figcap", "nbo"),
                      ("params", [], [])]
             assert MW.MainWindow.drop_captioned_images(bl_a1) == [("image", "g"), ("fields", []), ("params", [], [])]
-            dp_a1 = Path(w.open_demo_publication(out / "a1_pub"))
+            dp_a1 = Path(demo_pub(w, out / "a1_pub"))
             pump_a1(0.5)
             assert w.open_project(dp_a1 / "S3", ask=False, recent=False)
             pump_a1(0.5)
-            src_a1 = next((dp_a1 / "S3").glob("data/uvvis-kinetics/*.csv"))
+            # eine bestimmte Stabilitätsdatei (zwei Proben): glob liefert unsortiert, die Titrationsdatei hat mehr Proben
+            src_a1 = sorted((dp_a1 / "S3").glob("data/uvvis-kinetics/*_stability_day*.csv"))[0]
             ls_a1 = src_a1.read_text(encoding="utf-8").splitlines(True)
             ls_a1[0] = "S3_t0,,S3_t1,,\n"                                  # Probennamen ohne Konzentration
             kin_a1 = out / "a1_kinetics.csv"
@@ -16729,7 +17176,7 @@ def selftest(outdir, with_isnet=False):
             pump_a1(0.5)
             assert not w.groups and len(w._undo) == u_a1 + 1, (len(w._undo), u_a1)
             w.undo()
-            pump_a1(1.0)
+            _until(lambda: not w._restoring, pump_a1)   # war pump_a1(1.0)
             assert [Path(x_).name for x_ in w.csv_paths] == [Path(x_).name for x_ in eps_a1] and w.groups, w.csv_paths
             assert w.act_export_si.isEnabled() and w.act_datapack.isEnabled()
             w.go_publication()
@@ -16752,7 +17199,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_a2 = Path(w.open_demo_publication(out / "a2_pub"))
+            dp_a2 = Path(demo_pub(w, out / "a2_pub"))
             pump_a2(0.5)
             assert w.open_project(dp_a2 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16843,7 +17290,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
                     time.sleep(0.01)
-            dp_sr = Path(w.open_demo_publication(out / "sr_pub"))
+            dp_sr = Path(demo_pub(w, out / "sr_pub"))
             pump_sr(0.5)
             assert w.open_project(dp_sr / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16895,7 +17342,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_a3 = Path(w.open_demo_publication(out / "a3_pub"))
+            dp_a3 = Path(demo_pub(w, out / "a3_pub"))
             pump_a3(0.5)
             assert w.open_project(dp_a3 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -16978,7 +17425,7 @@ def selftest(outdir, with_isnet=False):
                 assert re.search(attr_a4 + r'[^>]*>(?:(?!</a:r>).)*<a:t>' + re.escape(t_a4) + "</a:t>", x_a4), t_a4
             assert "Figure" not in re.sub(r'name="[^"]*"', "", x_a4)            # Unterschrift ohne „Figure Sn:“
             assert "<p:sp>" not in z_a4.read(sl_a4[1]).decode()                 # ohne Unterschrift kein Textfeld
-            dp_a4 = Path(w.open_demo_publication(out / "a4_pub"))
+            dp_a4 = Path(demo_pub(w, out / "a4_pub"))
             pump_a4(0.5)
             assert w.open_project(dp_a4 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -17045,7 +17492,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_f1 = Path(w.open_demo_publication(out / "f1_pub"))
+            dp_f1 = Path(demo_pub(w, out / "f1_pub"))
             pump_f1(0.5)
             s3_f1 = dp_f1 / "S3"
             assert w.open_project(s3_f1, ask=False, recent=False)
@@ -17068,7 +17515,7 @@ def selftest(outdir, with_isnet=False):
                 assert saved_f1.get(k_) == want_f1[k_], (k_, saved_f1.get(k_))
             assert saved_f1.get("photo"), saved_f1
             w.undo()
-            pump_f1(1.5)
+            _until(lambda: not w._restoring, pump_f1)   # war pump_f1(1.5)
             assert [Path(x_).name for x_ in w.csv_paths] == old_f1 and w.series[g_f1]["solvent"] == "MeCN", \
                 (w.csv_paths, old_f1, w.series.get(g_f1, {}).get("solvent"), len(w._undo), n_f1)
             report.append("Lane A fix 1 (eps series settings survive new data of the same series, saved, undoable): OK")
@@ -17097,7 +17544,7 @@ def selftest(outdir, with_isnet=False):
                 finally:
                     TABS.QFileDialog.getSaveFileName, TABS.QFileDialog.getOpenFileName = real_z1
             ptab_z1 = w.pub_page.project_tabs.currentIndex()             # am Ende zurück: spätere Abschnitte unberührt
-            dp_z1 = Path(w.open_demo_publication(out / "z1_pub"))
+            dp_z1 = Path(demo_pub(w, out / "z1_pub"))
             pump_z1(0.5)
             w.go_publication()
             pump_z1(0.5)
@@ -17242,7 +17689,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_f2 = Path(w.open_demo_publication(out / "f2_pub"))
+            dp_f2 = Path(demo_pub(w, out / "f2_pub"))
             pump_f2(0.5)
             w.go_publication()
             pump_f2(0.5)
@@ -17287,7 +17734,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_f3 = Path(w.open_demo_publication(out / "f3_pub"))
+            dp_f3 = Path(demo_pub(w, out / "f3_pub"))
             pump_f3(0.5)
             assert w.open_project(dp_f3 / "S3", ask=False, recent=False)
             w.show_tab("cv")
@@ -17414,7 +17861,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
             keep_size_x = w.size()
-            dp_x = Path(w.open_demo_publication(out / "a2x_pub"))
+            dp_x = Path(demo_pub(w, out / "a2x_pub"))
             pump_x(0.5)
             assert w.open_project(dp_x / "S3", ask=False, recent=False)
             pump_x(0.8)
@@ -17495,7 +17942,7 @@ def selftest(outdir, with_isnet=False):
             pump_x(0.3)
             assert not w.export_fmt()["svg"] and not w.cv_tab.fmt()["svg"]
             w.undo()
-            pump_x(0.5)
+            _until(lambda: not w._restoring, pump_x)   # war pump_x(0.5)
             assert w.export_fmt()["svg"] and w._tab_key == "export" and w.export_tab.cb_fmt["svg"].isChecked()
             # Vorschaubilder ohne Tab-Bau: aus dem letzten Export (figures/*.png); nie veraltet: das neueste gewinnt
             old_th = w.export_tab.thumb("cv", 0, None)
@@ -17575,7 +18022,7 @@ def selftest(outdir, with_isnet=False):
             keep_y = {k_: w.settings.value(k_) for k_ in ("si_figs_off", "si_parts")}
             w.settings.setValue("si_figs_off", "hcell")                      # frühere Auswahl dieses Rechners
             w.settings.setValue("si_parts", ",".join(k_ for k_ in MW.SI_PARTS if k_ != "methods"))
-            dp_y_pub = Path(w.open_demo_publication(out / "a2y_pub"))
+            dp_y_pub = Path(demo_pub(w, out / "a2y_pub", own=True))
             pump_y(0.5)
 
             def tile_n_y():                                                   # Zahl auf der Projektkachel von S3
@@ -17626,10 +18073,10 @@ def selftest(outdir, with_isnet=False):
             pump_y(0.3)
             assert w.export_state["si_off"] == ["cv", "hcell"]
             w.undo()
-            pump_y(0.5)
+            _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert w.export_state.get("si_off") == ["hcell"] and w._tab_key == "export"
             w.redo()
-            pump_y(0.5)
+            _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert w.si_figs_off() == {"cv", "hcell"}
             pk_y = next(c_.pill for c_ in w.export_tab.cards                 # Packung: Pille statt Haken im X-Ray-Tab
                         if c_.key == "xray" and c_.label.endswith(T("export_part_packing")))
@@ -17639,7 +18086,7 @@ def selftest(outdir, with_isnet=False):
             pk_st = lambda: all((e_.get("pack") or {}).get("si") for e_ in w.xray_state["entries"])   # noqa: E731
             assert pk_st() == (not on_y) and w._tab_key == "export"
             w.undo()
-            pump_y(0.5)
+            _until(lambda: not w._restoring, pump_y)   # war pump_y(0.5)
             assert pk_st() == on_y and w._tab_key == "export"
             # ein Ort (67/93): im X-Ray-Tab statt der Haken ein Hinweis mit Link auf die Karte
             xt_y = w.xray_tab
@@ -17696,7 +18143,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_z = Path(w.open_demo_publication(out / "a2z_pub"))
+            dp_z = Path(demo_pub(w, out / "a2z_pub"))
             pump_z(0.5)
             dirs_z = PUB_y.sync(dp_z)[0]
             PUB_y.set_group(dp_z, dirs_z[1], "Produkte")                      # Gruppen: Kopfzeilen über die volle Breite
@@ -17968,7 +18415,7 @@ def selftest(outdir, with_isnet=False):
                     QApplication.processEvents()
                     QApplication.sendPostedEvents(None, QEvent.DeferredDelete)   # ersetzte Oberfläche wirklich löschen
                     time.sleep(0.01)
-            dp_v = Path(w.open_demo_publication(out / "a2v_pub"))
+            dp_v = Path(demo_pub(w, out / "a2v_pub"))
             pump_v(0.5)
             assert w.open_project(dp_v / "S3", ask=False, recent=False)
             pump_v(0.8)
@@ -18100,7 +18547,7 @@ def selftest(outdir, with_isnet=False):
                     return {r_ for n_ in zz_.namelist() for r_ in n_.split("/")[:2]}   # CompChem/<Verbindung>/…
             code_q = "QZ-9-901"                                              # erfundenes Laborkürzel
             prev_q = w.project_dir                                            # spätere Abschnitte erwarten die Verbindung
-            dp_q = Path(w.open_demo_publication(out / "a2q_pub"))
+            dp_q = Path(demo_pub(w, out / "a2q_pub"))
             pump_q(0.5)
             dirs_q = PUB_q.sync(dp_q)[0]
             dx_q = next(d_ for d_ in dirs_q if list((d_ / "data").rglob("*.out")))   # mit DFT: wird abgewählt
@@ -18648,6 +19095,27 @@ def selftest(outdir, with_isnet=False):
                           "per figure for SEC/H-Cell/HRMS/EPR without measurement lists, no colour word for own colours, own format "
                           "without inherited lines, colour buttons without effect visible but disabled with the reason as tooltip, "
                           "orphaned keys dropped): OK")
+    finally:
+        ctx.update(locals())
+
+
+def _g_nmr_own(ctx):
+    """Selbsttest-Gruppe „nmr_own“ (Abschnitte in der Reihenfolge des vollen Laufs)."""
+    if 'app' in ctx:
+        app = ctx['app']
+    if 'demo_pub' in ctx:
+        demo_pub = ctx['demo_pub']
+    if 'out' in ctx:
+        out = ctx['out']
+    if 'pump' in ctx:
+        pump = ctx['pump']
+    if 'report' in ctx:
+        report = ctx['report']
+    if 'section' in ctx:
+        section = ctx['section']
+    if 'w' in ctx:
+        w = ctx['w']
+    try:
         with section:
             # NMR-Tab, Quelle Bruker-Rohdaten (1.3.0 Spur N): erfundene TopSpin-Ordner, im Test erzeugt
             from elucida.formats import bruker_nmr as BN_n1
@@ -18690,10 +19158,10 @@ def selftest(outdir, with_isnet=False):
                 assert t_n1.view.ph0 == 0.0
                 pump(0.3)
                 w.undo()
-                pump(0.5)
+                _until(lambda: not w._restoring, pump)   # war pump(0.5)
                 assert w.nmr_tab.current()["proc"]["phc0"] == 30.0 and w.nmr_tab.current()["proc"]["ref_status"] == "confirmed"
                 w.redo()
-                pump(0.5)
+                _until(lambda: not w._restoring, pump)   # war pump(0.5)
                 assert w.nmr_tab.current()["proc"]["phc0"] == 45.0
                 # Ausschnitt aus der Ansicht: reine Zahlen im Zustand (YAML), Bereich auf der unkalibrierten Achse
                 t_n1 = w.nmr_tab
@@ -19560,7 +20028,7 @@ def selftest(outdir, with_isnet=False):
             assert w.nmr_tab.current()["view"]["si_xlim"] == want_r2, w.nmr_tab.current()["view"]
             assert len(w.nmr_tab.current()["view"]["insets"][0]["parts"]) == 2
             w.undo()                                                    # je Schnitt ein Rückgängig-Schritt
-            pump(0.3)
+            _until(lambda: not w._restoring, pump)   # war pump(0.3)
             assert len(w.nmr_tab.current()["view"]["insets"][0].get("parts") or [None]) == 1, w.nmr_tab.current()["view"]
             report.append("NMR round 2 tab (export notice with withheld figures, open suggestions in the count, SI "
                           "range only from the field, view kept over language/theme/undo, grid, 2D SI tab, superscript "
@@ -19597,7 +20065,7 @@ def selftest(outdir, with_isnet=False):
                 bx_ = [F._measure_af(F.ann_items[k_].get_window_extent(F._renderer())) for k_ in
                        sorted(keys, key=lambda k_: (F.ann_items[k_].xy[0] - x0_) / (x1_ - x0_))]
                 return all(a_[0] + a_[2] / 2 < b_[0] + b_[2] / 2 for a_, b_ in zip(bx_, bx_[1:]))
-            dp_l130 = Path(w.open_demo_publication(out / "l130_pub"))
+            dp_l130 = Path(demo_pub(w, out / "l130_pub"))
             pump(0.5)
             assert w.open_project(dp_l130 / "S3", ask=False, recent=False)
             # 1) SEC des Beispiels: 505/760 nm knapp über ihrem Maximum, 372 nm (oben kein Platz) wie bisher
@@ -19756,10 +20224,10 @@ def selftest(outdir, with_isnet=False):
             assert pr_bl["bl_model"] == "bernstein3" and pr_bl["baseline"] is True
             assert not np.array_equal(w.nmr_tab.raw_y(w.nmr_tab.current())["y"], y5_bl)
             w.undo()
-            pump(0.5)
+            _until(lambda: not w._restoring, pump)   # war pump(0.5)
             assert "bl_model" not in w.nmr_tab.current()["proc"] and w.nmr_tab.cmb_baseline.currentData() == "poly5"
             w.redo()
-            pump(0.5)
+            _until(lambda: not w._restoring, pump)   # war pump(0.5)
             assert w.nmr_tab.cmb_baseline.currentData() == "bernstein3"
             w.nmr_tab.cmb_baseline.setCurrentIndex(2)
             pump(0.3)
@@ -20200,7 +20668,7 @@ def selftest(outdir, with_isnet=False):
             t_nc.set_cmp_mode("overlay")
             t_nc = w.nmr_tab
             w.undo()
-            pump(0.2)
+            _until(lambda: not w._restoring, pump)   # war pump(0.2)
             t_nc = w.nmr_tab
             assert t_nc.cmp_mode() == "stack", t_nc.cmp_mode()
             w.save_project()
@@ -20526,13 +20994,90 @@ def selftest(outdir, with_isnet=False):
             left_ = [type(o_).__name__ for o_ in _shb_end.getAllValidWrappers() if isinstance(o_, _QW_end)]
             assert not app.topLevelWidgets() and not left_, left_[:10]
             report.append("Quit: no widgets left for PySide's atexit cleanup: OK")
-        report.append("OK" if not section.failed else f"FAILED: {section.failed} section(s), see above")
+    finally:
+        ctx.update(locals())
+
+
+_GROUP_FUNCS = (_g_start, _g_uvvis, _g_electrochem, _g_epr_kinetics, _g_ui, _g_ir_hrms, _g_xray, _g_dft, _g_nmr_synthesis, _g_project_si, _g_publication, _g_comparison, _g_lanes, _g_nmr_own)
+# Frühere Gruppen, die eine Gruppe allein braucht (still als Fixture): aus der Namensanalyse (Dateien, Namen) und aus
+# Einzelläufen (Zustand des Fensters, den die Namen nicht zeigen; Selbsttest Stufe 2, Bericht „Hebel 6“). Unklare
+# Zustandsabhängigkeit = alle früheren Gruppen (konservativ).
+GROUP_NEEDS = {
+    'start': (),
+    'uvvis': ('start',),
+    'electrochem': ('start', 'uvvis'),               # Rückgängig-Verlauf und ε-Daten aus uvvis (allein: w._undo[-2])
+    'epr_kinetics': ('start',),
+    'ui': ('start', 'uvvis', 'electrochem', 'epr_kinetics'),   # Klappbereiche, Tab, Daten
+    'ir_hrms': ('start',),
+    'xray': ('start',),
+    'dft': ('start', 'xray'),
+    'nmr_synthesis': ('start',),
+    'project_si': ('start', 'uvvis', 'ir_hrms', 'xray', 'dft'),    # Overlay-Einträge aus uvvis
+    'publication': ('start', 'uvvis', 'electrochem', 'ir_hrms', 'xray', 'dft', 'project_si'),
+    'comparison': ('start', 'uvvis', 'electrochem', 'epr_kinetics', 'ui', 'ir_hrms', 'xray', 'dft', 'nmr_synthesis', 'project_si', 'publication'),
+    'lanes': ('start', 'uvvis', 'electrochem', 'epr_kinetics', 'ui', 'ir_hrms', 'xray', 'dft', 'nmr_synthesis', 'project_si', 'publication', 'comparison'),
+    'nmr_own': ('start',),
+}
+
+
+GROUPS = ("smoke",) + tuple(f.__name__[3:] for f in _GROUP_FUNCS)   # Reihenfolge des vollen Laufs
+
+
+class _SkipRest(Exception):
+    """Rest des Laufs gehört zu nicht gewählten Gruppen."""
+
+
+def selftest(outdir, with_isnet=False, group=None):
+    """Voller Lauf (group=None) oder Gruppen aus GROUPS („a“ oder „a,b“); nicht gewählte = SKIPPED (nie OK), die ihnen
+    nötigen früheren Gruppen laufen still als Fixture (GROUP_NEEDS). -> Exit-Code."""
+    if group is not None and not set(group.split(",")) <= set(GROUPS):
+        print(f"unknown selftest group {group!r}; groups: {', '.join(GROUPS)}", flush=True)
+        return 2
+    out = Path(outdir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    MW.SETTINGS_FILE = out / "selftest_settings.ini"  # zuletzt geöffnet, Sprache usw. nicht beim Nutzer ändern
+    MW.SETTINGS_FILE.unlink(missing_ok=True)
+    report = [f"{APP_NAME} {APP_VERSION} selftest", f"python {sys.version.split()[0]}, {sys.platform}"]
+    ok = True
+    section = _Section(report, out=out)
+    demo_pub = _DemoPub(out)                     # Beispielpublikation einmal bauen, je Abschnitt eine Kopie
+    skipped_groups, fixture_groups = [], []
+    app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
+    QApplication.setApplicationVersion(APP_VERSION)
+    try:
+        ctx = dict(locals())                                 # Vorlauf (out, report, section, demo_pub, app …) für die Gruppen
+        sel = set(group.split(",")) if group else None
+        need = set().union(*(GROUP_NEEDS.get(g_, ()) for g_ in sel)) - sel if sel else set()
+        for name in GROUPS:
+            if sel is None or name in sel:
+                if name == "smoke":
+                    from elucida import selftest_smoke as SMOKE
+                    SMOKE.run(section, report, out, with_isnet)
+                else:
+                    _GROUP_FUNCS[GROUPS.index(name) - 1](ctx)
+            elif name in need:                               # Gruppe liefert Namen/Dateien für die gewählte: still
+                fixture_groups.append(name)
+                _run_fixture(name, ctx)
+            else:
+                skipped_groups.append(name)
+                section.skip(name)
+        if sel is not None and GROUPS[-1] not in sel:        # der Abschnitt „Quit“ lief nicht: Fenster jetzt freigeben
+            MW.release_widgets(app)
+        raise _SkipRest                                     # Ende des Laufs: Schlusszeile wie bei einer Gruppe
+    except _SkipRest:
+        report.append(("OK" if not section.failed else f"FAILED: {section.failed} section(s), see above")
+                      + (f" (group {group}; skipped {len(skipped_groups)} group(s): {', '.join(skipped_groups)}"
+                         + (f"; fixtures: {', '.join(fixture_groups)}" if fixture_groups else "") + ")"
+                         if skipped_groups else ""))
     except Exception:
         ok = False
         report.append("FAILED\n" + traceback.format_exc())
     ok = ok and not section.failed
     report[2:2] = section.summary()
     (out / "selftest_report.txt").write_text("\n".join(report), encoding="utf-8")
+    if demo_pub.calls:                     # Beispielpublikation: je Aufruf gebaut oder kopiert, Sekunden
+        (out / "demo_pub.tsv").write_text("line\thow\tseconds\twhy\n" + "".join(
+            f"{ln}\t{how}\t{dt:.1f}\t{why}\n" for ln, how, dt, why in demo_pub.calls), encoding="utf-8")
     try:                                   # Windows-Konsole (cp1252) kann z. B. kein λ: ersetzen statt abstürzen
         sys.stdout.reconfigure(errors="replace")
     except Exception:

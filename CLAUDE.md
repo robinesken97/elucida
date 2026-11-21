@@ -45,7 +45,7 @@ python tools/make_screenshots.py                       # README-Screenshots (doc
 ```
 - README kurz halten (Überblick, Abläufe, Download); alle Tab-Details in `docs/manual.de.md`/`docs/manual.en.md` (App-Links, Überschriften prüft der Selbsttest).
 - Neue Funktion → eigener Abschnitt `with section:` im `selftest()` (`elucida/selftest.py`, Muster: `report.append("…: OK")` am Ende). Ein Fehler stoppt nur den Abschnitt, spätere können als Folge scheitern: den ersten FAILED zuerst lesen.
-- Der Selbsttest läuft in CI auch mit der **fertig gebauten** App auf allen drei Systemen.
+- In CI läuft der volle Selbsttest aus dem Quelltext (Linux, Windows, macOS arm64); die **fertig gebaute** App und das AppImage laufen als Rauchtest (`--selftest-group smoke`: Start, alle Importe der gebauten App, jeder Tab, ein Export, Word-SI). macOS Intel prüft nur die gebaute App: Rauchtest plus plattformnahe Abschnitte (Entscheidung 185).
 
 ## Release-Ablauf
 **Versionszählung neu seit 2026-11 (Nutzerwunsch):** 1.0.0 ist die erste stabile Version; die Vorversionen (bis 2.7.1) und

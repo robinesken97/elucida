@@ -50,7 +50,7 @@ jobs:
         run: python tools/build_octet.py
 
       - name: Selbsttest aus dem Quellcode
-        # Intel-Mac: ein Selbsttest dauert dort > 3 h, zwei passen nicht in die 6 h eines Jobs; geprüft wird die fertige App
+        # Intel-Mac: ein voller Selbsttest dauert dort > 3 h; dort laufen Rauchtest + plattformnahe Gruppen der fertigen App
         if: matrix.label != 'macos-x64'
         timeout-minutes: 180
         env: { QT_QPA_PLATFORM: offscreen, PYTHONFAULTHANDLER: "1" }
@@ -59,32 +59,43 @@ jobs:
       - name: App bauen
         run: python tools/build.py
 
-      - name: Selbsttest der fertigen App (Windows)
-
-        timeout-minutes: 180
+      # Gebaute App und AppImage: nur der Rauchtest (Gruppe „smoke“: Module aus tools/build.py, Dateien über
+      # elucida.ROOT, Octet/WebEngine, rdkit, onnxruntime/ISNet, MuPDF, Word/PPTX, Start, Beispiel mit allen Tabs,
+      # Export, Word-SI); der volle Selbsttest läuft aus dem Quellcode auf Windows, Linux und macOS arm64
+      - name: Rauchtest der fertigen App (Windows)
+        timeout-minutes: 30
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $p = Start-Process -FilePath "dist\Elucida\Elucida.exe" `
-               -ArgumentList "--selftest","selftest_app","--selftest-isnet" -Wait -PassThru
+               -ArgumentList "--selftest","selftest_app","--selftest-group","smoke","--selftest-isnet" -Wait -PassThru
           Get-Content selftest_app\selftest_report.txt
           exit $p.ExitCode
 
-      - name: Selbsttest der fertigen App (macOS)
-
-        timeout-minutes: 320
-        if: runner.os == 'macOS'
+      - name: Rauchtest der fertigen App (macOS arm64)
+        timeout-minutes: 45
+        if: runner.os == 'macOS' && matrix.label != 'macos-x64'
         run: |
-          dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-isnet
+          dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-group smoke --selftest-isnet
           cat selftest_app/selftest_report.txt
 
-      - name: Selbsttest der fertigen App (Linux)
+      # Intel-Mac (nur fertige App, ältere rdkit/onnxruntime-Wheels): Rauchtest + plattformnahe Gruppen (Leser, Zeichnen,
+      # Word/Excel/PDF-Ausgabe, rdkit, onnxruntime); nicht mehr dort: Projekt/SI, Projektseite, Vergleich, späte Spuren,
+      # Oberfläche, CV/SEC
+      - name: Selbsttest der fertigen App (macOS Intel, Gruppen)
+        timeout-minutes: 120
+        if: matrix.label == 'macos-x64'
+        run: |
+          dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-isnet \
+            --selftest-group smoke,uvvis,epr_kinetics,ir_hrms,xray,dft,nmr_synthesis
+          cat selftest_app/selftest_report.txt
 
-        timeout-minutes: 180
+      - name: Rauchtest der fertigen App (Linux)
+        timeout-minutes: 30
         if: runner.os == 'Linux'
         env: { QT_QPA_PLATFORM: offscreen }
         run: |
-          dist/Elucida/Elucida --selftest selftest_app --selftest-isnet
+          dist/Elucida/Elucida --selftest selftest_app --selftest-group smoke --selftest-isnet
           cat selftest_app/selftest_report.txt
 
       - name: Packen (Windows)
@@ -121,13 +132,12 @@ jobs:
           ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool --runtime-file runtime-x86_64 \
             AppDir Elucida-${{ matrix.label }}.AppImage
 
-      - name: Selbsttest des AppImage (Linux)
-
-        timeout-minutes: 180
+      - name: Rauchtest des AppImage (Linux)
+        timeout-minutes: 30
         if: runner.os == 'Linux'
         env: { QT_QPA_PLATFORM: offscreen, APPIMAGE_EXTRACT_AND_RUN: "1" }
         run: |
-          ./Elucida-${{ matrix.label }}.AppImage --selftest selftest_appimage --selftest-isnet
+          ./Elucida-${{ matrix.label }}.AppImage --selftest selftest_appimage --selftest-group smoke --selftest-isnet
           cat selftest_appimage/selftest_report.txt
 
       - uses: actions/upload-artifact@v6
